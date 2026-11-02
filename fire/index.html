@@ -112,7 +112,7 @@ async function start() {
 
   const [
     THREE, TSL, { snoise, snoiseVec3 }, { ImprovedNoise }, { gaussianBlur }, { bloom },
-    { OrbitControls }, { DragControls }, { TeapotGeometry },
+    { DragControls }, { TeapotGeometry },
   ] = await Promise.all([
     import('three/webgpu'),
     import('three/tsl'),
@@ -120,7 +120,6 @@ async function start() {
     import('three/addons/math/ImprovedNoise.js'),
     import('three/addons/tsl/display/GaussianBlurNode.js'),
     import('three/addons/tsl/display/BloomNode.js'),
-    import('three/addons/controls/OrbitControls.js'),
     import('three/addons/controls/DragControls.js'),
     import('three/addons/geometries/TeapotGeometry.js'),
   ]);
@@ -416,15 +415,10 @@ async function start() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
-  const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
-  camera.position.set(14, 5.5, 4.4);
-
-  const controls = new OrbitControls(camera, canvas);
-  controls.target.set(0, -VOLUME_WORLD_SIZE_Y / 2 + 3.6 + VOLUME_WORLD_SIZE_Y / 2, 0);
-  controls.maxDistance = 40;
-  controls.minDistance = 2;
-  controls.enableDamping = !RM.matches;
-  controls.update();
+  // The camera is fixed and faces the key light, so the smoke backlights.
+  const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100);
+  camera.position.set(6.7, 5.5, -13.4);
+  camera.lookAt(0, 3.6, 0);
 
   // The volume raymarches the simulated dye texture.
   const volumetricMaterial = new THREE.VolumeNodeMaterial();
@@ -619,10 +613,9 @@ async function start() {
   pointLight.castShadow = false;
   teapot.add(pointLight);
 
-  // Dragging the teapot pauses orbiting and stays inside the box.
+  // Dragging moves the teapot but keeps it inside the box.
   const dragControls = new DragControls([teapot], camera, canvas);
   dragControls.rotateSpeed = 0;
-  dragControls.addEventListener('dragstart', () => { controls.enabled = false; });
   dragControls.addEventListener('drag', () => {
     const limitX = VOLUME_WORLD_SIZE_X / 2 - 1.5;
     const limitZ = VOLUME_WORLD_SIZE_Z / 2 - 1.5;
@@ -630,7 +623,6 @@ async function start() {
     teapot.position.y = Math.max(floorPlane.position.y - teapotMinY, Math.min(VOLUME_WORLD_SIZE_Y - 1.5, teapot.position.y));
     teapot.position.z = Math.max(-limitZ, Math.min(limitZ, teapot.position.z));
   });
-  dragControls.addEventListener('dragend', () => { controls.enabled = true; });
 
   // A white spot lights the smoke and casts its shadow.
   const keyLight = new THREE.SpotLight(0xffffff, 1000);
@@ -776,16 +768,12 @@ async function start() {
     const t = Math.min(Math.max(simulationTime / 3.0, 0.0), 1.0);
     pointLight.distance = Math.max(0.01, 40.0 * Math.max(0.2, sizeFactor) * t * t * (3.0 - 2.0 * t));
 
-    controls.update();
     renderPipeline.render();
     if (++frames === 3) canvas.classList.add('on');
   }
 
-  // Reduced motion slows the fire and drops orbit inertia.
-  RM.addEventListener('change', () => {
-    simSpeed = RM.matches ? 0.6 : 1.2;
-    controls.enableDamping = !RM.matches;
-  });
+  // Reduced motion slows the fire.
+  RM.addEventListener('change', () => { simSpeed = RM.matches ? 0.6 : 1.2; });
 
   // The loop runs only while the panel is on screen.
   let onScreen = false, running = false;
