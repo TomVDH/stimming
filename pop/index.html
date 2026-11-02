@@ -40,6 +40,20 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
 .home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
 .home:hover { color: var(--fg); }
+.tools { display: flex; align-items: center; gap: 8px; }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 main { display: grid; gap: 14px; min-width: 0; }
 /* The height cap keeps the Refill row on screen. */
@@ -65,13 +79,22 @@ main { display: grid; gap: 14px; min-width: 0; }
 .chip:hover { color: var(--fg); border-color: var(--muted); }
 .chip:active { transform: scale(0.94); transition-duration: 0.08s; }
 @media (pointer: coarse) { .chip { padding: 10px 16px; } }
-@media (prefers-reduced-motion: reduce) { .chip, .home { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd { transition: none; } }
 </style>
 
 <div class="wrap">
   <header>
     <h1>Pop field</h1>
-    <a class="home" href="https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd" data-local="../index.html">Stimming</a>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd" data-local="../index.html">Stimming</a>
+    </div>
   </header>
   <main>
     <div class="field" id="field">
@@ -337,6 +360,138 @@ function hit(x, y) {
   return best;
 }
 
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.pop.sound', MAXV = 12, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, popNext = 0, bloopNext = 0, restT = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+// Bigger cells sound slightly lower.
+const tone = () => (40 / R) ** 0.35;
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the field settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !timer && !ptrs.size && !kPress && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && e.key !== ' ' && e.key !== 'Enter')) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Pressing: a very quiet rubbery squelch as the dome gives.
+function squeak() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, f = tone() * jit(0.05), g = level() * jit(0.1);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), sg = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.Q.value = 9;
+  lp.frequency.setValueAtTime(240 * f, t);
+  lp.frequency.exponentialRampToValueAtTime(900 * f, t + 0.12);
+  sg.gain.setValueAtTime(0, t);
+  sg.gain.linearRampToValueAtTime(0.2 * g, t + 0.03);
+  sg.gain.setTargetAtTime(0, t + 0.07, 0.03);
+  src.connect(lp).connect(sg).connect(out);
+  src.start(t, Math.random() * 0.75, 0.2);
+  track(src, sg);
+}
+// Popping: a crisp bandpassed crack over a tiny falling pluck.
+function popSound(c) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, popNext);
+  // A fast sweep thins to a crackle instead of a wall.
+  if (t - t0 > 0.05 || voices >= MAXV) return;
+  popNext = t + 0.018 + Math.random() * 0.012;
+  // A deeper press sounds slightly lower.
+  const f = tone() * (1 - 0.1 * c.p) * jit(0.05), g = level() * jit(0.1), dur = 0.011 + Math.random() * 0.008;
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = clamp(1750 * f, 1200, 2400);
+  bp.Q.value = 1.5;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(1.2 * g, t + 0.0006);
+  ng.gain.setTargetAtTime(0, t + 0.0006, dur / 4);
+  // Sometimes the film tears twice, a hair apart.
+  if (Math.random() < 0.4) {
+    const t2 = t + 0.003 + Math.random() * 0.004;
+    ng.gain.setValueAtTime(0.5 * g, t2);
+    ng.gain.setTargetAtTime(0, t2, dur / 5);
+  }
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, dur + 0.02);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(700 * f, t);
+  o.frequency.exponentialRampToValueAtTime(300 * f, t + 0.03);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.22 * g, t + 0.0015);
+  og.gain.setTargetAtTime(0, t + 0.0015, 0.01);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.07);
+  track(o, og, ng);
+}
+// Regrowing: a soft bloop that rises as the dome fills.
+function bloop() {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD;
+  // A refill wave thins to a gentle cascade.
+  if (t < bloopNext || voices >= MAXV) return;
+  bloopNext = t + 0.045 + Math.random() * 0.03;
+  const f = tone() * jit(0.05), g = level() * jit(0.1);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(300 * f, t);
+  o.frequency.exponentialRampToValueAtTime(520 * f, t + 0.12);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.05 * g, t + 0.03);
+  og.gain.setTargetAtTime(0, t + 0.07, 0.03);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.24);
+  track(o, og);
+}
+
 /* ---------- physics ---------- */
 // Springs per phase: k is stiffness, z is the damping ratio.
 const SPR = {
@@ -351,6 +506,7 @@ const OK = 240, OC = 2 * 0.42 * Math.sqrt(OK);
 function pop(c, now, amp) {
   if (!c || c.state) return;
   c.state = 1; c.popAt = now; c.due = now + 6 + Math.random() * 6;
+  popSound(c);
   if (reduce) return;
   c.sv += 7.5;
   // A ripple travels out and shoves the inflated cells it reaches.
@@ -365,6 +521,7 @@ function pop(c, now, amp) {
 }
 function inflate(c, now) {
   c.state = 0; c.inAt = now; c.due = Infinity;
+  bloop();
   if (!reduce) c.sv -= 0.3;
 }
 // Popped cells re-inflate in a wave from the centre.
@@ -496,6 +653,7 @@ function frame(ms) {
   let next = Infinity;
   for (const c of cells) if (c.state && c.due < next) next = c.due;
   if (next < Infinity) timer = setTimeout(wake, Math.max(0, (next - ms / 1000) * 1000) + 4);
+  else rest();
 }
 
 /* ---------- input ---------- */
@@ -508,6 +666,7 @@ cv.addEventListener('pointerdown', e => {
   try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   ptrs.set(e.pointerId, { x: q.x, y: q.y, sx: q.x, sy: q.y, cell: c, drag: false });
   if (c) { fi = c.i; wantX = null; }
+  if (c && !c.state) squeak();
   ring = false;
   wake();
 });
@@ -568,7 +727,7 @@ cv.addEventListener('keydown', e => {
   } else if (e.key === ' ' || e.key === 'Enter') {
     e.preventDefault();
     ring = true;
-    if (!e.repeat) kPress = cells[fi];
+    if (!e.repeat) { kPress = cells[fi]; if (!kPress.state) squeak(); }
     wake();
   }
 });
@@ -576,6 +735,16 @@ cv.addEventListener('keyup', e => {
   if ((e.key === ' ' || e.key === 'Enter') && kPress) { pop(kPress, nowS(), 0.6); kPress = null; wake(); }
 });
 document.getElementById('refill').addEventListener('click', () => refill(nowS()));
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
 
 /* ---------- theme and size ---------- */
 function retheme() { tokens(); if (sR) buildSprites(); draw(); }
