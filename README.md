@@ -8,7 +8,7 @@ Small interactive desk toys for the office. One folder per toy, one self-contain
 | [Morphset](morphset/) | live | [Artifact](https://claude.ai/artifact/A4ssXXHbdd3T2796z41iLq) |
 | [Fidget board](fidget/) | live | [Artifact](https://claude.ai/artifact/9SHR7iEZY6rKeGXurgutTb) |
 | [Pop field](pop/) | live | [Artifact](https://claude.ai/artifact/RucayWpUUtft96KfB3imc6) |
-| Zen sand | planned | |
+| [Zen sand](sand/) | live | [Artifact](https://claude.ai/artifact/196KYWAcTLFsX5PRUYtZNa) |
 
 ## Run locally
 
