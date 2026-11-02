@@ -20,7 +20,8 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Pin art | [pins/](pins/) | live, with sound |
 | Tesseract | [tesseract/](tesseract/) | live, with sound |
 | Ferrofluid | [ferro/](ferro/) | live, with sound |
-| Glass, Galaxy, Soap cutting, Zipper, Bubble wand, Rain on glass, Spinning top | | in progress; outlines on the menu |
+| Galaxy | [galaxy/](galaxy/) | live, with sound; WebGPU only |
+| Glass, Soap cutting, Zipper, Bubble wand, Rain on glass, Spinning top | | in progress; outlines on the menu |
 
 ## Run locally
 
