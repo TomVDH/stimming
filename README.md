@@ -14,7 +14,9 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Slime | [slime/](slime/) | live, with sound |
 | Domino run | [domino/](domino/) | live, with sound |
 | Magnet balls | [magnet/](magnet/) | live, with sound |
-| Infinity cube | | in progress |
+| Infinity cube | [cube/](cube/) | live, with sound |
+| Ferrofluid, Pendulum wave, String harp, Pin art, Glass, Galaxy, Tesseract, Soap cutting | | in progress |
+| Zipper, Bubble wand, Rain on glass, Spinning top | | queued |
 
 ## Run locally
 
