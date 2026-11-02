@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Domino run</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the table panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --table: oklch(0.245 0.014 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); --table: oklch(0.925 0.008 275); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); --table: oklch(0.925 0.008 275); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+.tools { display: flex; align-items: center; gap: 8px; }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 12px; min-width: 0; }
+/* The table is 16:9, and 4:5 on phones. */
+/* A height cap keeps the chips on screen. */
+.table {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 190px));
+  border-radius: 18px; overflow: hidden; background: var(--table);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+}
+@media (max-width: 640px) { .table { aspect-ratio: 4 / 5; } }
+.table:focus-visible { outline-offset: 3px; }
+.table canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair;
+  opacity: 0; transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.table canvas.on { opacity: 1; }
+.table canvas.tip { cursor: pointer; }
+.hint {
+  position: absolute; left: 16px; bottom: 14px; margin: 0; pointer-events: none;
+  font-size: 13px; color: var(--muted); transition: opacity 0.6s ease;
+}
+.hint.gone { opacity: 0; }
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: var(--muted);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; transform: none; }
+.chip:disabled:hover { color: var(--muted); border-color: var(--line); }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .hint, .table canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Domino run</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles; tap a tile to tip it. Space tips the first tile, R stands them back up.">
+      <canvas></canvas>
+      <p class="hint" aria-hidden="true">draw a line &middot; tap the first tile</p>
+      <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
+    </div>
+    <div class="ctl">
+      <button class="chip" id="reset" type="button" disabled>Reset</button>
+      <button class="chip" id="clear" type="button" disabled>Clear</button>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; if (reduce) { intro = 0; wake(); } });
+const PI = Math.PI, HALF = PI / 2, D2R = PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const out3 = t => 1 - (1 - t) ** 3;
+const back = (t, s = 1) => 1 + (s + 1) * (t - 1) ** 3 + s * (t - 1) ** 2;
+const nowS = () => performance.now() / 1000;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+// Series hues in chain order: fire, amber, mint, cyan, blue, violet, magenta.
+const STOPS = [
+  [0.6, 0.21, 28], [0.7, 0.19, 52], [0.8, 0.17, 84], [0.77, 0.16, 160],
+  [0.69, 0.14, 206], [0.55, 0.18, 258], [0.51, 0.2, 292], [0.57, 0.22, 330],
+];
+const PER = 8;
+// Catmull-Rom through the stops, looping, with hue unwrapped.
+function rainbow(u) {
+  const N = STOPS.length, x = ((u % N) + N) % N, k = Math.floor(x), t = x - k;
+  const P = q => { const s = STOPS[(k + q + N) % N]; return [s[0], s[1], s[2] + 360 * Math.floor((k + q) / N)]; };
+  const a = P(-1), b = P(0), c = P(1), d = P(2), t2 = t * t, t3 = t2 * t;
+  return [0, 1, 2].map(i => 0.5 * (2 * b[i] + (c[i] - a[i]) * t + (2 * a[i] - 5 * b[i] + 4 * c[i] - d[i]) * t2 + (3 * b[i] - a[i] - 3 * c[i] + d[i]) * t3));
+}
+
+/* ---------- page ---------- */
+const panel = document.getElementById('table'), canvas = panel.querySelector('canvas');
+const hint = panel.querySelector('.hint'), resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.domino.sound', MAXV = 14, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, clackNext = 0, tickNext = 0, restT = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the table settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && e.key !== ' ' && e.key !== 'Enter')) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Impact: a crisp bandpassed click over a tiny pitched knock.
+function clack(s, run) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, clackNext);
+  // A fast run thins to a rattle instead of a wall.
+  if (t - t0 > 0.05 || voices >= MAXV) return;
+  clackNext = t + 0.014 + Math.random() * 0.012;
+  // Long runs climb slightly in pitch.
+  const f = (1 + 0.16 * (1 - Math.exp(-run / 70))) * jit(0.06), g = level() * (0.3 + 0.7 * clamp(s)) * jit(0.12);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 3300 * f;
+  bp.Q.value = 2.2;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(1.15 * g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, 0.0032);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.04);
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(1480 * f, t);
+  o.frequency.exponentialRampToValueAtTime(1120 * f, t + 0.03);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.3 * g, t + 0.001);
+  og.gain.setTargetAtTime(0, t + 0.001, 0.008);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.07);
+  track(o, og, ng);
+}
+// Landing flat: a lower, rounder knock on the table.
+function thud(s) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = Math.max(a.currentTime + LEAD, clackNext), f = jit(0.05), g = level() * (0.35 + 0.65 * clamp(s)) * jit(0.1);
+  clackNext = t + 0.02;
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 1700 * f;
+  bp.Q.value = 1.2;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.8 * g, t + 0.0008);
+  ng.gain.setTargetAtTime(0, t + 0.0008, 0.006);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.05);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(620 * f, t);
+  o.frequency.exponentialRampToValueAtTime(430 * f, t + 0.05);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.32 * g, t + 0.0015);
+  og.gain.setTargetAtTime(0, t + 0.0015, 0.016);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.12);
+  track(o, og, ng);
+}
+// Placing: a soft, short click.
+function tick(s = 1) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD;
+  if (t < tickNext || voices >= MAXV) return;
+  tickNext = t + 0.024 + Math.random() * 0.012;
+  const f = jit(0.08), g = level() * s * jit(0.15);
+  const src = a.createBufferSource(), hp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  hp.type = 'highpass';
+  hp.frequency.value = 4800 * f;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.3 * g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, 0.0018);
+  src.connect(hp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.02);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.value = 2500 * f;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.05 * g, t + 0.0008);
+  og.gain.setTargetAtTime(0, t + 0.0008, 0.003);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.03);
+  track(o, og, ng);
+}
+
+/* ---------- tiles ---------- */
+// One unit is a tile's height.
+// Tiles are 1 x 0.5 x 0.16 units.
+const H = 1, W = 0.5, T = 0.16, PITCH = 0.55, MAX = 400, GAP = 0.45, LEASH = 0.3;
+// Sharper turns than this would drop the chain.
+const TURN = 36 * (Math.PI / 180), SEEK = 0.08;
+// Gravity in tile heights per second squared, a ten-centimetre tile.
+const G = 98, K = (3 * G) / (2 * Math.hypot(H, T)), PHI = Math.atan2(T, H);
+// Impact hands on most of the spin; leaning tiles push the next.
+const C = 0.85, B = 0.6, WMIN = 1, TAP = 2.2, SUB = 1 / 240;
+const SPAWN = 0.2, DROP = 0.18;
+
+const PX = new Float32Array(MAX), PZ = new Float32Array(MAX), AX = new Float32Array(MAX), AZ = new Float32Array(MAX);
+const TH = new Float64Array(MAX), OM = new Float64Array(MAX), PUSH = new Float64Array(MAX), PREV = new Float64Array(MAX);
+const BORN = new Float64Array(MAX), RISE0 = new Float64Array(MAX), RISET = new Float64Array(MAX), HUE = new Float32Array(MAX);
+const SG = new Int8Array(MAX), ST = new Uint8Array(MAX), LAND = new Uint8Array(MAX), CL = new Uint8Array(MAX);
+const STILL = new Uint8Array(MAX), ACT = new Uint8Array(MAX), RANK = new Int32Array(MAX), RUN = new Int32Array(MAX);
+const MS = new Int32Array(MAX), STAMP = new Uint32Array(MAX), CANDS = new Array(MAX).fill(null);
+// ST: 0 standing, 1 falling, 2 down, 3 standing back up.
+let n = 0, rank = 0, stamp = 0, nextHue = 0, lastBorn = -1e9, clearing = 0;
+const active = [];
+
+// A one-unit grid finds neighbours without scanning every tile.
+const grid = new Map();
+const cellKey = (cx, cz) => (cx + 4096) * 8192 + (cz + 4096);
+function gridAdd(i) {
+  const k = cellKey(Math.floor(PX[i]), Math.floor(PZ[i]));
+  let a = grid.get(k);
+  if (!a) grid.set(k, (a = []));
+  a.push(i);
+}
+function near(x, z, r, fn) {
+  const x1 = Math.floor(x + r), z1 = Math.floor(z + r);
+  for (let cx = Math.floor(x - r); cx <= x1; cx++) {
+    for (let cz = Math.floor(z - r); cz <= z1; cz++) {
+      const a = grid.get(cellKey(cx, cz));
+      if (a) for (const j of a) fn(j);
+    }
+  }
+}
+function distSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+  const u = l ? clamp(((px - ax) * dx + (py - ay) * dy) / l) : 0;
+  return Math.hypot(px - ax - dx * u, py - ay - dy * u);
+}
+
+/* ---------- toppling, kinematic ---------- */
+// Tile j is a candidate when i's top edge can reach it.
+function candOf(i, j, fx, fz) {
+  const rx = PX[j] - PX[i], rz = PZ[j] - PZ[i], a = rx * fx + rz * fz;
+  if (a <= 0.02 || Math.abs(fx * rz - fz * rx) > W * 0.8) return null;
+  const cj = AX[j] * fx + AZ[j] * fz, sj = ST[j] === 0 ? (cj >= 0 ? 1 : -1) : SG[j];
+  // Gap from i's front face to j's near face, corner included.
+  const g = a - T / 2 - (sj * cj * T) / 2 - (W / 4) * Math.abs(AX[j] * fz - AZ[j] * fx);
+  if (g > H * 0.96) return null;
+  return { j, g: Math.max(g, 0.004), c: Math.abs(cj), hit: false, prop: false };
+}
+function findCands(i, fx, fz, standing) {
+  const out = [];
+  near(PX[i], PZ[i], H + W, j => {
+    if (j === i || j >= n || (standing && ST[j] !== 0)) return;
+    const e = candOf(i, j, fx, fz);
+    if (e) out.push(e);
+  });
+  return out.sort((a, b) => a.g - b.g);
+}
+// The furthest i can lean before its top edge rests on j.
+function lean(e, thj) {
+  const tj = e.c > 0.98 ? thj : Math.atan2(Math.sin(thj) * Math.max(e.c, 0.5), Math.cos(thj));
+  return tj + Math.asin(clamp(((e.g + T) * Math.cos(tj) - T) / H, -1, 1));
+}
+function start(i, sg, w) {
+  ST[i] = 1; SG[i] = sg; TH[i] = 0; OM[i] = w; PUSH[i] = 0; PREV[i] = 0;
+  LAND[i] = 0; CL[i] = 0; STILL[i] = 0; MS[i] = -1; RANK[i] = rank++;
+  CANDS[i] = findCands(i, AX[i] * sg, AZ[i] * sg, false);
+  if (!ACT[i]) { ACT[i] = 1; active.push(i); }
+}
+// Masters update first, so a leaning tile reads this step's angle.
+function upd(i, h) {
+  if (STAMP[i] === stamp) return;
+  STAMP[i] = stamp;
+  if (ST[i] !== 1 || LAND[i] === 2) return;
+  const cs = CANDS[i];
+  let leaning = false;
+  for (const e of cs) if (e.hit && !e.prop) { upd(e.j, h); leaning = true; }
+  const t0 = TH[i];
+  // Gravity turns the tile about its leading bottom edge.
+  OM[i] += (K * Math.sin(t0 - PHI) + PUSH[i]) * h;
+  if (OM[i] < WMIN && t0 < PHI + 0.1) OM[i] = WMIN;
+  TH[i] = t0 + OM[i] * h;
+  CL[i] = 0;
+  if (leaning) {
+    let lim = HALF, m = -1;
+    for (const e of cs) if (e.hit && !e.prop) { const v = lean(e, TH[e.j]); if (v < lim) { lim = v; m = e.j; } }
+    if (TH[i] >= lim) { TH[i] = lim; OM[i] = Math.max(-2, (lim - t0) / h); CL[i] = 1; MS[i] = m; }
+  }
+  if (TH[i] >= HALF) {
+    TH[i] = HALF;
+    if (LAND[i] === 0) thud(OM[i] / 10);
+    // One small bounce, then it lies flat.
+    if (OM[i] > 1.5 && !reduce && LAND[i] === 0) { OM[i] *= -0.25; LAND[i] = 1; }
+    else { OM[i] = 0; LAND[i] = 2; }
+  }
+}
+function hit(i, e) {
+  e.hit = true;
+  const j = e.j, w = Math.max(OM[i], 0), fx = AX[i] * SG[i], fz = AZ[i] * SG[i];
+  if (ST[j] === 0) {
+    RUN[j] = RUN[i] + 1;
+    start(j, AX[j] * fx + AZ[j] * fz >= 0 ? 1 : -1, Math.max(WMIN, C * w * (0.6 + 0.4 * e.c)));
+    clack(w / 7, RUN[j]);
+  } else if (ST[j] === 1 && LAND[j] !== 2 && C * w > OM[j]) {
+    OM[j] = lerp(OM[j], C * w, 0.5);
+    clack(w / 12, RUN[i]);
+  } else if (w > 1.2) clack(w / 14, RUN[i]);
+  TH[i] = Math.min(TH[i], lean(e, TH[j]));
+}
+// Head-on tiles stop where their tops meet.
+function meets(i, j) {
+  const fx = AX[i] * SG[i], fz = AZ[i] * SG[i];
+  const dx = PX[j] + (AX[j] * SG[j] * T) / 2 - PX[i] - (fx * T) / 2, dz = PZ[j] + (AZ[j] * SG[j] * T) / 2 - PZ[i] - (fz * T) / 2;
+  return H * Math.sin(TH[i]) + H * Math.sin(Math.min(TH[j], HALF)) >= dx * fx + dz * fz;
+}
+function contacts() {
+  for (let a = 0; a < active.length; a++) {
+    const i = active[a], cs = CANDS[i];
+    if (ST[i] !== 1 || LAND[i] === 2) continue;
+    const fx = AX[i] * SG[i], fz = AZ[i] * SG[i];
+    for (const e of cs) {
+      if (e.hit) continue;
+      const j = e.j;
+      if ((ST[j] === 1 || ST[j] === 2) && (AX[j] * fx + AZ[j] * fz) * SG[j] < -0.3) {
+        if (meets(i, j)) {
+          e.hit = e.prop = true;
+          clack(OM[i] / 9, RUN[i]);
+          OM[i] = 0; LAND[i] = 2;
+          if (ST[j] === 1) { OM[j] = 0; LAND[j] = 2; }
+        }
+        continue;
+      }
+      if (TH[i] >= lean(e, TH[j])) hit(i, e);
+    }
+  }
+}
+function physics(h) {
+  stamp++;
+  for (const i of active) PUSH[i] = 0;
+  for (const i of active) if (CL[i] && MS[i] >= 0) PUSH[MS[i]] += B * K * Math.max(0, Math.sin(TH[i] - PHI));
+  for (let a = 0; a < active.length; a++) upd(active[a], h);
+  contacts();
+}
+// A tile that holds still for a few frames is down.
+function settle() {
+  let k = 0;
+  for (const i of active) {
+    const moved = Math.abs(TH[i] - PREV[i]) > 3e-5;
+    PREV[i] = TH[i];
+    if (moved || (LAND[i] !== 2 && !CL[i])) STILL[i] = 0;
+    else if (++STILL[i] > 5) { ST[i] = 2; ACT[i] = 0; continue; }
+    active[k++] = i;
+  }
+  active.length = k;
+}
+// Counts standing tiles a push would reach, greedily.
+function reach(i, sg, cap) {
+  const seen = new Set([i]);
+  let k = i, s = sg, cnt = 0;
+  while (cnt < cap) {
+    const fx = AX[k] * s, fz = AZ[k] * s;
+    const c = findCands(k, fx, fz, true).find(e => !seen.has(e.j));
+    if (!c) break;
+    seen.add(c.j);
+    cnt++;
+    s = AX[c.j] * fx + AZ[c.j] * fz >= 0 ? 1 : -1;
+    k = c.j;
+  }
+  return cnt;
+}
+// Chain ends fall into the chain; otherwise away from the camera.
+function pushDir(i) {
+  const a = reach(i, 1, MAX), b = reach(i, -1, MAX);
+  if (a && !b) return 1;
+  if (b && !a) return -1;
+  const v = -AZ[i];
+  if (Math.abs(v) > 0.35 || a === b) return v >= 0 ? 1 : -1;
+  return a > b ? 1 : -1;
+}
+function tip(i, sg) {
+  if (ST[i] !== 0) return;
+  RUN[i] = 0;
+  start(i, sg, TAP);
+  tick(0.7);
+  syncChips();
+  wake();
+}
+function tipFirst() {
+  const t = nowS();
+  for (let i = 0; i < n; i++) {
+    if (ST[i] !== 0 || BORN[i] > t) continue;
+    const a = reach(i, 1, 1), b = reach(i, -1, 1);
+    if (a !== b) return tip(i, a ? 1 : -1);
+  }
+  for (let i = 0; i < n; i++) if (ST[i] === 0) return tip(i, pushDir(i));
+}
+// Reset rewinds: the last tile down stands up first.
+function reset() {
+  if (clearing) return;
+  const down = [];
+  for (let i = 0; i < n; i++) if (ST[i] !== 0) down.push(i);
+  if (!down.length) return;
+  down.sort((a, b) => RANK[b] - RANK[a]);
+  const t = nowS(), step = reduce ? 0.002 : Math.min(0.012, 0.75 / down.length);
+  down.forEach((i, k) => {
+    ST[i] = 3; RISE0[i] = TH[i]; RISET[i] = t + k * step;
+    OM[i] = 0; ACT[i] = 0; CANDS[i] = null; LAND[i] = 0; CL[i] = 0;
+  });
+  active.length = 0;
+  wake();
+}
+function clearAll() {
+  if (!n || clearing) return;
+  active.length = 0;
+  if (reduce) finishClear();
+  else clearing = nowS();
+  syncChips();
+  wake();
+}
+function finishClear() {
+  for (let i = 0; i < n; i++) { ACT[i] = 0; CANDS[i] = null; }
+  n = 0; clearing = 0; nextHue = 0; active.length = 0;
+  grid.clear();
+  if (mesh) mesh.count = 0;
+  syncChips();
+}
+function syncChips() {
+  let down = false;
+  for (let i = 0; i < n && !down; i++) if (ST[i] !== 0) down = true;
+  resetB.disabled = !ready || !down || !!clearing;
+  clearB.disabled = !ready || !n || !!clearing;
+}
+
+/* ---------- laying tiles ---------- */
+function blocked(x, z) {
+  let hitAny = false;
+  near(x, z, H + GAP, j => {
+    if (hitAny || j >= n) return;
+    let ex = PX[j], ez = PZ[j];
+    // A tile that is down covers the table out to its top.
+    if (ST[j] !== 0 && TH[j] > 0.05) {
+      const r = H * Math.sin(Math.min(TH[j], HALF));
+      ex += AX[j] * SG[j] * r; ez += AZ[j] * SG[j] * r;
+    }
+    if (distSeg(x, z, PX[j], PZ[j], ex, ez) < GAP) hitAny = true;
+  });
+  return hitAny;
+}
+function addTile(x, z, ax, az, hue, born) {
+  const i = n++;
+  PX[i] = x; PZ[i] = z; AX[i] = ax; AZ[i] = az; HUE[i] = hue; BORN[i] = born;
+  TH[i] = 0; OM[i] = 0; ST[i] = 0; SG[i] = 1; LAND[i] = 0; CL[i] = 0; ACT[i] = 0; CANDS[i] = null; RUN[i] = 0;
+  lastBorn = Math.max(lastBorn, born);
+  gridAdd(i);
+  mesh.setColorAt(i, col.setRGB(...rgb(rainbow(hue / PER)), THREE.SRGBColorSpace));
+  mesh.instanceColor.needsUpdate = true;
+  pose(i, nowS(), mesh.instanceMatrix.array, i * 16);
+  // Falling tiles learn about a tile laid in their path.
+  for (const k of active) {
+    if (ST[k] !== 1 || Math.hypot(PX[k] - x, PZ[k] - z) > H + W) continue;
+    const e = candOf(k, i, AX[k] * SG[k], AZ[k] * SG[k]);
+    if (e) { CANDS[k].push(e); CANDS[k].sort((a, b) => a.g - b.g); }
+  }
+  return i;
+}
+function place(p, x, z, dx, dz, first) {
+  const prev = p.last;
+  // A turn past the limit is eased into a wider curve.
+  if (prev >= 0 && p.hasIn && !p.seek) {
+    const ang = Math.atan2(p.inX * dz - p.inZ * dx, p.inX * dx + p.inZ * dz);
+    if (Math.abs(ang) > TURN) {
+      const c = Math.cos(Math.sign(ang) * TURN), s = Math.sin(Math.sign(ang) * TURN);
+      dx = p.inX * c - p.inZ * s; dz = p.inX * s + p.inZ * c;
+      x = p.lx + dx * PITCH; z = p.lz + dz * PITCH;
+    }
+  }
+  p.lx = x; p.lz = z; p.last = -1;
+  if (n >= MAX) return;
+  // At a crossing, the next free spot is sought in small steps.
+  if (blocked(x, z)) { p.seek = true; return; }
+  p.seek = false;
+  const i = addTile(x, z, dx, dz, p.hue++, p.preset ? p.t0 + p.count++ * p.dt : reduce ? -1e9 : nowS());
+  // Each tile turns to the curve's tangent once its next neighbour lands.
+  if (prev >= 0 && prev === p.mine && ST[prev] === 0) {
+    let ex = dx, ez = dz;
+    if (p.hasIn) { ex += p.inX; ez += p.inZ; const l = Math.hypot(ex, ez) || 1; ex /= l; ez /= l; }
+    AX[prev] = ex; AZ[prev] = ez;
+  }
+  p.inX = dx; p.inZ = dz; p.hasIn = !first; p.last = p.mine = i;
+  if (!p.preset) { tick(0.6); hint.classList.add('gone'); }
+}
+// Each tile lands exactly one pitch from the last.
+function walk(p, ax, az, bx, bz) {
+  if (p.pending) {
+    const d = Math.hypot(bx - p.lx, bz - p.lz);
+    if (d < 0.12) return;
+    p.pending = false;
+    place(p, p.lx, p.lz, (bx - p.lx) / d, (bz - p.lz) / d, true);
+  }
+  const dx = bx - ax, dz = bz - az, dd = dx * dx + dz * dz;
+  if (dd < 1e-10) return;
+  let u = 0, chase = 0;
+  for (let guard = 0; guard < 400; guard++) {
+    const mx = ax + dx * u - p.lx, mz = az + dz * u - p.lz, step = p.seek ? SEEK : PITCH;
+    const b = mx * dx + mz * dz, c = mx * mx + mz * mz - step * step, disc = b * b - dd * c;
+    const s = disc < 0 ? -1 : c <= 0 ? (-b + Math.sqrt(disc)) / dd : (-b - Math.sqrt(disc)) / dd;
+    if (s < 0 || u + s > 1) {
+      const l = Math.hypot(bx - p.lx, bz - p.lz);
+      // A seek always moves on along the path.
+      if (p.seek) {
+        if (l > SEEK) { const k = Math.sqrt(dd); place(p, bx, bz, dx / k, dz / k, false); }
+        return;
+      }
+      // A capped turn can leave the path.
+      // The next tiles steer back to it.
+      if (l < PITCH * 1.05 || ++chase > 3) return;
+      place(p, p.lx + ((bx - p.lx) / l) * PITCH, p.lz + ((bz - p.lz) / l) * PITCH, (bx - p.lx) / l, (bz - p.lz) / l, false);
+      continue;
+    }
+    u += s;
+    const qx = ax + dx * u, qz = az + dz * u, l = Math.hypot(qx - p.lx, qz - p.lz) || 1;
+    place(p, qx, qz, (qx - p.lx) / l, (qz - p.lz) / l, false);
+  }
+}
+function begin(p) {
+  const a = p.tile;
+  p.last = a; p.mine = -1; p.pending = a < 0; p.hasIn = false; p.seek = false;
+  if (a >= 0) { p.lx = PX[a]; p.lz = PZ[a]; p.hue = HUE[a] + 1; }
+  else { p.lx = p.q.x; p.lz = p.q.z; p.hue = nextHue; }
+  p.bx = p.lx; p.bz = p.lz;
+}
+// A lazy brush on a short leash smooths the pointer path.
+function brush(p, x, z) {
+  const dx = x - p.bx, dz = z - p.bz, d = Math.hypot(dx, dz);
+  if (d <= LEASH) return;
+  const k = (d - LEASH) / d, nx = p.bx + dx * k, nz = p.bz + dz * k;
+  walk(p, p.bx, p.bz, nx, nz);
+  p.bx = nx; p.bz = nz;
+}
+function finish(p, x, z) {
+  walk(p, p.bx, p.bz, x, z);
+  if (p.tile < 0) nextHue = p.hue;
+}
+// The opening run: an S across the table's long side.
+function preset(t0) {
+  // Centred on the screen's middle, which is the camera target.
+  const b = bounds, cx = 0, cz = 0.15;
+  const lx = 2 * Math.min(-b.x0, b.x1), lz = 2 * Math.min(cz - b.z0, b.z1 - cz);
+  const wide = lx >= lz, long = wide ? lx : lz, short = wide ? lz : lx;
+  const R = Math.min(long * 0.16, short * 0.28), tail = clamp(long * 0.4 - 2 * R, 0, 2.5);
+  const pts = [];
+  const add = (u, v) => pts.push(wide ? [cx + u, cz + v] : [cx - v, cz + u]);
+  for (let s = 0; s < 1; s += 0.05) add(-2 * R - tail * (1 - s), 0);
+  for (let a = PI; a > 0; a -= 0.03) add(-R + R * Math.cos(a), -R * Math.sin(a));
+  for (let a = PI; a <= 2 * PI + 1e-9; a += 0.03) add(R + R * Math.cos(a), -R * Math.sin(a));
+  for (let s = 0.05; s <= 1 + 1e-9; s += 0.05) add(2 * R + tail * s, 0);
+  const p = { preset: true, t0, dt: reduce ? 0 : 0.022, count: 0, tile: -1, q: { x: pts[0][0], z: pts[0][1] } };
+  if (reduce) p.t0 = -1e9;
+  begin(p);
+  for (let k = 1; k < pts.length; k++) walk(p, pts[k - 1][0], pts[k - 1][1], pts[k][0], pts[k][1]);
+  nextHue = p.hue;
+}
+
+/* ---------- three.js ---------- */
+let THREE, renderer, scene, camera, mesh, col, sun, shade, ray, ndc, vtmp, ready = false;
+const cam = { pitch: 55 * D2R, dist: 20, tx: 0, tz: 0 };
+const PITCH0 = 55 * D2R, PITCH_IN = 67 * D2R, FOV = 30;
+// The key light sits up and left, on the camera's side.
+const SUN = [-0.55, 1.15, 0.5];
+let D0 = 20, span = 16, bounds = { x0: -6, x1: 6, z0: -4, z1: 4 }, intro = 0, budget = 1.4e6;
+
+function placeCamera() {
+  camera.position.set(cam.tx, cam.dist * Math.sin(cam.pitch), cam.tz + cam.dist * Math.cos(cam.pitch));
+  camera.lookAt(cam.tx, 0, cam.tz);
+  camera.updateMatrixWorld();
+}
+// Where a screen point meets the table, in table units.
+function onTable(x, y) {
+  ray.setFromCamera(ndc.set(x, y), camera);
+  const o = ray.ray.origin, d = ray.ray.direction;
+  if (d.y > -1e-4) return null;
+  const t = -o.y / d.y;
+  return { x: o.x + d.x * t, z: o.z + d.z * t };
+}
+function tablePoint(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  // Points stay inside the frame, with headroom for a tile's height.
+  return onTable(clamp(((cx - r.left) / r.width) * 2 - 1, -0.96, 0.96), clamp(1 - ((cy - r.top) / r.height) * 2, -0.96, 0.84));
+}
+// The visible table at the resting camera, as an inner rectangle.
+function measure() {
+  const keep = { ...cam };
+  Object.assign(cam, { pitch: PITCH0, dist: D0, tx: 0, tz: 0 });
+  placeCamera();
+  const c = [onTable(-1, -1), onTable(1, -1), onTable(-1, 1), onTable(1, 1)];
+  Object.assign(cam, keep);
+  placeCamera();
+  if (c.some(q => !q)) return;
+  bounds = {
+    x0: Math.max(c[0].x, c[2].x) + 0.7, x1: Math.min(c[1].x, c[3].x) - 0.7,
+    z0: Math.max(c[2].z, c[3].z) + 1.3, z1: Math.min(c[0].z, c[1].z) - 0.5,
+  };
+  // The shadow box covers the whole view plus the camera's drift.
+  const zc = (c[0].z + c[2].z) / 2;
+  const half = Math.max(Math.abs(c[2].x), Math.abs(c[3].x), (c[0].z - c[2].z) / 2) * 1.2 + 1.5;
+  const L = Math.hypot(...SUN);
+  sun.target.position.set(0, 0, zc);
+  sun.position.set((SUN[0] / L) * 40, (SUN[1] / L) * 40, zc + (SUN[2] / L) * 40);
+  sun.target.updateMatrixWorld();
+  const sc = sun.shadow.camera;
+  sc.left = sc.bottom = -half; sc.right = sc.top = half; sc.near = 1; sc.far = 90;
+  sc.updateProjectionMatrix();
+}
+function layout() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(budget / (w * h))));
+  renderer.setSize(w, h, false);
+  const asp = w / h;
+  camera.aspect = asp;
+  camera.updateProjectionMatrix();
+  span = clamp(3.5 + 6.2 * asp, 8.5, 15.5);
+  D0 = span / 2 / (Math.tan((FOV / 2) * D2R) * asp);
+  if (!intro) cam.dist = D0;
+  measure();
+  placeCamera();
+  wake();
+}
+function tokens() {
+  const lite = (getComputedStyle(document.documentElement).colorScheme || '').includes('light');
+  if (shade) shade.opacity = lite ? 0.2 : 0.44;
+  wake();
+}
+
+/* ---------- drawing a frame ---------- */
+// Pose: yaw to the axis, then tip about the leading edge.
+function pose(i, t, te, o) {
+  let th = TH[i], sg = SG[i], k = 1, lift = 0;
+  // Leaning back pivots on the other edge.
+  if (th < 0) { th = -th; sg = -sg; }
+  const age = t - BORN[i];
+  if (age < SPAWN) {
+    if (age < 0) k = 0;
+    else { const u = age / SPAWN; k = 0.72 + 0.28 * out3(u); lift = DROP * (1 - u) * (1 - u); }
+  }
+  if (clearing) k *= 1 - out3(clamp((t - clearing - (i / Math.max(1, n)) * 0.14) / 0.16));
+  const cb = Math.cos(th), sb = -sg * Math.sin(th), ca = AX[i], sa = -AZ[i];
+  const vx = (-sg * T) / 2, vy = H / 2;
+  const cx = (sg * T) / 2 + cb * vx - sb * vy, cy = sb * vx + cb * vy;
+  te[o] = ca * cb * k; te[o + 1] = sb * k; te[o + 2] = -sa * cb * k; te[o + 3] = 0;
+  te[o + 4] = -ca * sb * k; te[o + 5] = cb * k; te[o + 6] = sa * sb * k; te[o + 7] = 0;
+  te[o + 8] = sa * k; te[o + 9] = 0; te[o + 10] = ca * k; te[o + 11] = 0;
+  te[o + 12] = PX[i] + ca * cx * k; te[o + 13] = cy * k + lift; te[o + 14] = PZ[i] - sa * cx * k; te[o + 15] = 1;
+}
+function animate(t) {
+  let busy = !!clearing || t - lastBorn < SPAWN + 0.05;
+  const dur = reduce ? 0.12 : 0.3;
+  for (let i = 0; i < n; i++) {
+    if (ST[i] !== 3) continue;
+    busy = true;
+    const u = (t - RISET[i]) / dur;
+    if (u >= 1) { ST[i] = 0; TH[i] = 0; tick(0.35); }
+    else if (u > 0) TH[i] = RISE0[i] * (1 - (reduce ? out3(u) : back(u)));
+  }
+  return busy;
+}
+const drawing = () => { for (const p of ptrs.values()) if (p.drawing) return true; return false; };
+// The camera settles in once, then leans gently toward the wave.
+function steer(dt, t) {
+  let moving = false;
+  if (intro) {
+    if (intro < 0) intro = t;
+    const u = clamp((t - intro) / 1.6), e = 1 - (1 - u) ** 4;
+    cam.pitch = lerp(PITCH_IN, PITCH0, e);
+    cam.dist = D0 * lerp(1.14, 1, e);
+    if (u >= 1) intro = 0; else moving = true;
+  }
+  let gx = 0, gz = 0, cnt = 0;
+  if (!reduce) {
+    for (const i of active) if (!CL[i] && LAND[i] === 0) { gx += PX[i]; gz += PZ[i]; cnt++; }
+    if (cnt) {
+      gx = clamp((gx / cnt) * 0.3, -0.08 * span, 0.08 * span);
+      gz = clamp((gz / cnt) * 0.3, -0.06 * span, 0.06 * span);
+    }
+  }
+  if (reduce) { cam.tx = cam.tz = 0; }
+  else if (!drawing()) {
+    const k = 1 - Math.exp(-dt * 1.5);
+    cam.tx += (gx - cam.tx) * k; cam.tz += (gz - cam.tz) * k;
+    if (Math.abs(gx - cam.tx) + Math.abs(gz - cam.tz) > 2e-3) moving = true;
+    else { cam.tx = gx; cam.tz = gz; }
+  }
+  placeCamera();
+  return moving;
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, visible = true, shown = 0, ema = 0, run = 0, drops = 0;
+function wake() {
+  if (!raf && ready && visible) { last = nowS(); run = 0; raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const t = ms / 1000, raw = t - last, dt = clamp(raw, 0, 1 / 30);
+  last = t;
+  let busy = false;
+  if (active.length) {
+    const steps = Math.max(1, Math.ceil(dt / SUB - 1e-6));
+    for (let s = 0; s < steps; s++) physics(dt / steps);
+    settle();
+    busy = true;
+  }
+  if (clearing && t - clearing > 0.34) finishClear();
+  busy = animate(t) || busy;
+  busy = steer(dt, t) || busy;
+  const te = mesh.instanceMatrix.array;
+  for (let i = 0; i < n; i++) pose(i, t, te, i * 16);
+  mesh.count = n;
+  mesh.instanceMatrix.needsUpdate = true;
+  renderer.render(scene, camera);
+  if (++shown === 2) canvas.classList.add('on');
+  // Sustained slow frames shrink the pixel budget, up to three times.
+  if (raw > 0 && raw < 0.25 && ++run > 8) {
+    ema = ema ? ema * 0.94 + raw * 0.06 : raw;
+    if (run > 50 && ema > 0.027 && drops < 3) { drops++; budget *= 0.7; ema = 0; run = 0; layout(); }
+  }
+  if ((busy || active.length) && visible) { if (!raf) raf = requestAnimationFrame(frame); }
+  else { syncChips(); rest(); }
+}
+
+/* ---------- input ---------- */
+const ptrs = new Map();
+// Picks the standing tile under a screen point, nearest first.
+function pick(x0, y0, touch) {
+  const r = canvas.getBoundingClientRect(), px = x0 - r.left, py = y0 - r.top, te = mesh.instanceMatrix.array;
+  const ppu = r.height / 2 / Math.tan((FOV / 2) * D2R), t = nowS();
+  let best = -1, bs = Infinity;
+  for (let i = 0; i < n; i++) {
+    if (ST[i] !== 0 || BORN[i] > t) continue;
+    const o = i * 16, x = te[o + 12], y = te[o + 13], z = te[o + 14], ux = (te[o + 4] * H) / 2, uy = (te[o + 5] * H) / 2, uz = (te[o + 6] * H) / 2;
+    vtmp.set(x - ux, y - uy, z - uz).project(camera);
+    const ax = ((vtmp.x + 1) / 2) * r.width, ay = ((1 - vtmp.y) / 2) * r.height;
+    vtmp.set(x + ux, y + uy, z + uz).project(camera);
+    const bx = ((vtmp.x + 1) / 2) * r.width, by = ((1 - vtmp.y) / 2) * r.height;
+    const depth = Math.hypot(x - camera.position.x, y - camera.position.y, z - camera.position.z);
+    const half = ((W / 2) * ppu) / depth, d = distSeg(px, py, ax, ay, bx, by);
+    if (d > Math.max(half + 2, touch ? 20 : 8)) continue;
+    const s = d <= half ? depth : 1e3 + d;
+    if (s < bs) { bs = s; best = i; }
+  }
+  return best;
+}
+canvas.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (clearing) finishClear();
+  const q = tablePoint(e.clientX, e.clientY);
+  if (!q) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const touch = e.pointerType !== 'mouse';
+  ptrs.set(e.pointerId, { sx: e.clientX, sy: e.clientY, q, touch, tile: pick(e.clientX, e.clientY, touch), drawing: false });
+});
+canvas.addEventListener('pointermove', e => {
+  if (!ready) return;
+  const p = ptrs.get(e.pointerId);
+  if (!p) {
+    if (e.pointerType === 'mouse') canvas.classList.toggle('tip', pick(e.clientX, e.clientY, false) >= 0);
+    return;
+  }
+  if (!p.drawing) {
+    // Past a small slop, a press becomes a stroke.
+    if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < (p.touch ? 10 : 5)) return;
+    p.drawing = true;
+    canvas.classList.remove('tip');
+    begin(p);
+  }
+  const list = e.getCoalescedEvents?.() || [];
+  for (const c of list.length ? list : [e]) {
+    const q = tablePoint(c.clientX, c.clientY);
+    if (q) brush(p, q.x, q.z);
+  }
+  syncChips();
+  wake();
+});
+function release(e, ok) {
+  const p = ptrs.get(e.pointerId);
+  if (!p) return;
+  ptrs.delete(e.pointerId);
+  if (p.drawing) {
+    const q = ok && tablePoint(e.clientX, e.clientY);
+    if (q) finish(p, q.x, q.z);
+  } else if (ok && p.tile >= 0 && ST[p.tile] === 0) tip(p.tile, pushDir(p.tile));
+  syncChips();
+  wake();
+}
+canvas.addEventListener('pointerup', e => release(e, true));
+canvas.addEventListener('pointercancel', e => release(e, false));
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') canvas.classList.remove('tip'); });
+
+addEventListener('keydown', e => {
+  if (!ready || e.metaKey || e.ctrlKey || e.altKey) return;
+  // Buttons and links keep their own keys.
+  if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea')) return;
+  if (e.key === ' ') { e.preventDefault(); if (!e.repeat) tipFirst(); }
+  else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) reset(); }
+});
+resetB.addEventListener('click', reset);
+clearB.addEventListener('click', clearAll);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+  canvas.hidden = true;
+  hint.hidden = true;
+}
+// WebGL setup runs in idle slices, so loading never stalls.
+async function init() {
+  let RoundedBoxGeometry, RoomEnvironment;
+  try {
+    THREE = await import('three');
+    [{ RoundedBoxGeometry }, { RoomEnvironment }] = await Promise.all([
+      import('three/addons/geometries/RoundedBoxGeometry.js'),
+      import('three/addons/environments/RoomEnvironment.js'),
+    ]);
+  } catch (err) {
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    return failed();
+  }
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  scene = new THREE.Scene();
+  await idle();
+  // Soft room light makes the lacquer read.
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+  pm.dispose();
+  scene.environmentIntensity = 0.65;
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.5, 200);
+  sun = new THREE.DirectionalLight(0xffffff, 1.7);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.02;
+  scene.add(sun, sun.target);
+  // The table itself is the panel; only shadows are drawn on it.
+  shade = new THREE.ShadowMaterial({ opacity: 0.44 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), shade);
+  floor.rotation.x = -HALF;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const mat = new THREE.MeshPhysicalMaterial({ roughness: 0.38, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 });
+  mesh = new THREE.InstancedMesh(new RoundedBoxGeometry(T, H, W, 2, 0.035), mat, MAX);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  col = new THREE.Color(1, 1, 1);
+  mesh.setColorAt(0, col);
+  mesh.count = 0;
+  mesh.frustumCulled = false;
+  mesh.castShadow = mesh.receiveShadow = true;
+  scene.add(mesh);
+  ray = new THREE.Raycaster();
+  ndc = new THREE.Vector2();
+  vtmp = new THREE.Vector3();
+  tokens();
+  await idle();
+  // Async compile keeps the physical-material build off the main thread.
+  try { await renderer.compileAsync(scene, camera); } catch (err) { /* first render compiles instead */ }
+  ready = true;
+  intro = reduce ? 0 : -1;
+  layout();
+  new ResizeObserver(layout).observe(panel);
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; wake(); }).observe(panel);
+  preset(nowS() + 0.25);
+  syncChips();
+  wake();
+}
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', tokens);
+new MutationObserver(tokens).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+if (document.readyState === 'complete') idle().then(init);
+else addEventListener('load', () => idle().then(init));
+</script>
+</body>
+</html>
