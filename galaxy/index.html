@@ -1,0 +1,1028 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Galaxy</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the space panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The panel is 16:9, 4:5 on phones, and black in both themes. */
+.space {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: #000;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.space:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .space { aspect-ratio: 4 / 5; } }
+.space canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.space canvas.on { opacity: 1; }
+.space.grab canvas { cursor: grab; }
+.space.held canvas { cursor: grabbing; }
+/* The line sits on black, so it keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .space canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Galaxy</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to add a gravity well, drag a well to move it. Space adds a well, C clears.">
+      <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
+    </div>
+    <div class="ctl" id="ctl">
+      <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('space');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.galaxy.sound', MAXV = 12, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
+let pad = null, padLp = null, padAt = 0;
+const padVoices = [];
+// The pad is a D chord, root first.
+// Its voices enter one by one as orbits fill.
+const PAD_NOTES = [73.42, 110, 164.81, 185, 277.18], PAD_AMP = [0.5, 0.34, 0.24, 0.17, 0.11];
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every whoosh.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // The pad drones under one breathing lowpass.
+    padLp = ac.createBiquadFilter();
+    padLp.type = 'lowpass';
+    padLp.frequency.value = 280;
+    padLp.Q.value = 0.4;
+    pad = ac.createGain();
+    pad.gain.value = 0;
+    padLp.connect(pad).connect(out);
+    PAD_NOTES.forEach((f, k) => {
+      const g = ac.createGain();
+      g.gain.value = 0;
+      g.connect(padLp);
+      for (const s of [-1, 1]) {
+        const o = ac.createOscillator();
+        o.type = k ? 'triangle' : 'sine';
+        o.frequency.value = f;
+        o.detune.value = s * (3 + 2 * k);
+        o.connect(g);
+        o.start();
+      }
+      padVoices.push(g);
+    });
+    const lfo = ac.createOscillator(), lg = ac.createGain();
+    lfo.frequency.value = 0.06;
+    lg.gain.value = 70;
+    lfo.connect(lg).connect(padLp.frequency);
+    lfo.start();
+    padTo(padAt);
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.then(() => padTo(padAt)).catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// While the panel is off screen, the context sleeps.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  pad.gain.setTargetAtTime(0, ac.currentTime, 0.08);
+  restT = setTimeout(() => {
+    if (!running && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 400);
+}
+function wakeSound() {
+  clearTimeout(restT);
+  if (!soundOn || !ac || ac.state === 'running') return;
+  askedAt = performance.now();
+  ac.resume()?.then(() => padTo(padAt)).catch(() => {});
+}
+const GESTURE_KEYS = new Set([' ', 'c', 'C', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Orbit count sets how thick the pad is, from 0 to 1.
+function padTo(t) {
+  padAt = t;
+  if (!pad || ac.state !== 'running') return;
+  const a = ac.currentTime;
+  pad.gain.setTargetAtTime(soundOn && running ? 0.05 + 0.11 * t : 0, a, 1.2);
+  padLp.frequency.setTargetAtTime(240 + 900 * t, a, 1.6);
+  padVoices.forEach((g, k) => g.gain.setTargetAtTime(clamp(t * PAD_NOTES.length - k + 1.2) * PAD_AMP[k], a, 1.6));
+}
+// Flinging: a bandpassed breath of noise that rises, then falls away.
+function whoosh(amt, pan) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level() * amt * jit(0.1), dur = 0.45 + 0.4 * amt;
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(340 * jit(0.08), t);
+  bp.frequency.exponentialRampToValueAtTime(800 + 1000 * amt, t + 0.16);
+  bp.frequency.exponentialRampToValueAtTime(240, t + dur);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.34 * g, t + 0.06);
+  ng.gain.setTargetAtTime(0, t + 0.1, dur / 4);
+  src.connect(bp).connect(ng);
+  const tails = [ng, bp];
+  if (a.createStereoPanner) {
+    const p = a.createStereoPanner();
+    p.pan.value = clamp(pan, -0.6, 0.6);
+    ng.connect(p).connect(out);
+    tails.push(p);
+  } else ng.connect(out);
+  src.start(t, Math.random() * 0.4);
+  src.stop(t + dur + 0.4);
+  track(src, ...tails);
+}
+// A well: a low sine drops into place over a soft octave.
+function tone(f, amp, tau) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level() * amp;
+  const o = a.createOscillator(), o2 = a.createOscillator(), og = a.createGain(), og2 = a.createGain();
+  o.frequency.setValueAtTime(f * 1.4, t);
+  o.frequency.exponentialRampToValueAtTime(f, t + 0.1);
+  o2.frequency.setValueAtTime(f * 2.8, t);
+  o2.frequency.exponentialRampToValueAtTime(f * 2, t + 0.1);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.32 * g, t + 0.025);
+  og.gain.setTargetAtTime(0, t + 0.06, tau);
+  og2.gain.setValueAtTime(0, t);
+  og2.gain.linearRampToValueAtTime(0.1 * g, t + 0.02);
+  og2.gain.setTargetAtTime(0, t + 0.05, tau * 0.6);
+  o.connect(og).connect(out);
+  o2.connect(og2).connect(out);
+  o.start(t);
+  o2.start(t);
+  o.stop(t + tau * 7);
+  o2.stop(t + tau * 7);
+  track(o, og, og2);
+}
+// Wells step through a D pentatonic, low enough to feel heavy.
+const WELL_NOTES = [73.42, 82.41, 98, 110, 65.41, 87.31];
+let noteAt = 0;
+const wellTone = () => tone(WELL_NOTES[noteAt++ % WELL_NOTES.length] * jit(0.01), 1, 0.45);
+const mergeTone = () => tone(55 * jit(0.01), 0.8, 0.7);
+
+/* ---------- capability check ---------- */
+// Without WebGPU the panel shows one line and nothing runs.
+async function hasWebGPU() {
+  if (!navigator.gpu) return false;
+  try {
+    const { default: WebGPU } = await import('three/addons/capabilities/WebGPU.js');
+    return WebGPU.isAvailable();
+  } catch {
+    return false;
+  }
+}
+function noWebGPU() {
+  panel.querySelector('.fail').hidden = false;
+  document.getElementById('ctl').hidden = true;
+  document.getElementById('snd').hidden = true;
+}
+
+/* ---------- constants ---------- */
+// Phones and tablets simulate fewer stars.
+const SMALL = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 600;
+const N = SMALL ? 131072 : 196608;
+// Two thirds of the stars seed the pair.
+// The rest wait for flings.
+const SEED = Math.round((N * 2) / 3);
+const MAXW = 8, CAP = 6;
+// Units: G is 1 and every mass is stored as GM.
+// The panel spans about twenty length units.
+const SEED_M = 26, TAP_M = 18, MAX_M = 80;
+const EPS2 = 0.2, EPSW2 = 0.64, KILL2 = 70 * 70, DEAD = -1e9;
+// Flings: an opening burst, then a steady stream while held.
+const INIT = 1600, RATE = 9000, MAXF = 14000;
+const STEP = 1 / 120;
+// Arms wind as log spirals, about 19 degrees of pitch.
+const WIND = 2.9;
+const FOV = 36, EL = (57 * Math.PI) / 180;
+
+let running = false, ready = false;
+let renderer = null, camera = null;
+let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false;
+const wells = [];
+
+async function start() {
+  if (!(await hasWebGPU())) return noWebGPU();
+
+  const [THREE, TSL, { bloom }] = await Promise.all([
+    import('three/webgpu'),
+    import('three/tsl'),
+    import('three/addons/tsl/display/BloomNode.js'),
+  ]);
+  const {
+    Fn, If, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select, uv, smoothstep,
+    mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, pass, max, atan,
+  } = TSL;
+
+  renderer = new THREE.WebGPURenderer({ antialias: false });
+  await renderer.init();
+  // WebGPURenderer can fall back to WebGL 2; this toy does not.
+  if (!renderer.backend.isWebGPUBackend) {
+    renderer.dispose();
+    return noWebGPU();
+  }
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1;
+  const canvas = renderer.domElement;
+
+  /* ---------- star buffers ---------- */
+  // Position xyz, w is speed relative to the strongest well.
+  const pos = instancedArray(N, 'vec4');
+  // Velocity xyz, w is the birth time.
+  // DEAD marks an empty slot.
+  const vel = instancedArray(N, 'vec4');
+  const counter = instancedArray(1, 'uint').toAtomic();
+
+  const uDt = uniform(STEP);
+  const uTime = uniform(0);
+  const uClearT = uniform(-1);
+  const uFrame = uniform(new THREE.Vector3());
+  const uW = [], uWV = [];
+  for (let k = 0; k < MAXW; k++) {
+    uW.push(uniform(new THREE.Vector4(0, 0, 0, 0)));
+    uWV.push(uniform(new THREE.Vector4()));
+  }
+  // The held cluster is a ring-buffer range that follows the pointer.
+  const uHeldStart = uniform(0, 'uint');
+  const uHeldCount = uniform(0, 'uint');
+  const uSalt = uniform(1, 'uint');
+  const uHoldPos = uniform(new THREE.Vector3());
+  const uHoldVel = uniform(new THREE.Vector3());
+  const uHoldT0 = uniform(0);
+  const uHoldR = uniform(0.3);
+  const uSettle = uniform(0.1);
+  const uArms = uniform(0.035);
+
+  const gauss = (a, b) => sqrt(log(a.max(1e-7)).mul(-2)).mul(cos(b.mul(TAU)));
+  // Softened circular speed around a point mass.
+  const vcirc = (m, r) => sqrt(m.mul(r).mul(r).div(r.mul(r).add(EPS2).pow(1.5)));
+
+  /* ---------- seed: two discs with two trailing arms each ---------- */
+  const gal = [0, 1].map(() => ({
+    c: uniform(new THREE.Vector4()), v: uniform(new THREE.Vector3()),
+    ex: uniform(new THREE.Vector3(1, 0, 0)), en: uniform(new THREE.Vector3(0, 1, 0)), ez: uniform(new THREE.Vector3(0, 0, 1)),
+    arm: uniform(0),
+  }));
+  const seedPass = Fn(() => {
+    const i = instanceIndex;
+    const P = pos.element(i), V = vel.element(i);
+    If(i.lessThan(uint(SEED)), () => {
+      const H = k => hash(i.mul(uint(29)).add(uint(k * 7919 + 3)));
+      // Odd slots belong to the second galaxy, so recycling thins both.
+      const isB = i.bitAnd(uint(1)).equal(uint(1));
+      const pick = key => select(isB, gal[1][key], gal[0][key]);
+      const C = pick('c'), M = C.w;
+      // Disc radii are exponential, the far tail folded inside.
+      const rr = log(H(1).mul(H(2)).max(1e-7)).negate().mul(1.15);
+      const r = select(rr.greaterThan(4.6), H(3).mul(4.6), rr).max(0.12).toVar();
+      // Most disc stars crowd two log spirals.
+      const inArm = H(4).lessThan(0.7);
+      const arm = select(H(5).lessThan(0.5), float(0), float(Math.PI)).add(pick('arm'));
+      const wind = log(r).mul(WIND);
+      const th = select(inArm, arm.sub(wind).add(gauss(H(6), H(7)).mul(0.3)), H(8).mul(TAU)).toVar();
+      const vc = vcirc(M, r).toVar();
+      const lp = vec3(cos(th).mul(r), gauss(H(9), H(10)).mul(r.mul(0.03).add(0.03)), sin(th).mul(r));
+      const lv = vec3(sin(th).negate(), 0, cos(th)).mul(vc)
+        .add(vec3(gauss(H(11), H(12)), gauss(H(13), H(14)).mul(0.4), gauss(H(15), H(16))).mul(vc.mul(0.05)));
+      // A bulge of stars on randomly tilted orbits.
+      const bulge = H(17).lessThan(0.09);
+      const br = H(18).pow(1.8).mul(0.95).add(0.06);
+      const cz = H(19).mul(2).sub(1), ph = H(20).mul(TAU), sz = sqrt(float(1).sub(cz.mul(cz)));
+      const bd = vec3(sz.mul(cos(ph)), cz.mul(0.55), sz.mul(sin(ph))).normalize().toVar();
+      const bt = cross(vec3(H(21).sub(0.5), H(22).sub(0.5).add(0.35), H(23).sub(0.5)), bd).normalize();
+      const L = select(bulge, bd.mul(br), lp).toVar();
+      const LV = select(bulge, bt.mul(vcirc(M, br).mul(0.82)), lv).toVar();
+      const EX = pick('ex'), EN = pick('en'), EZ = pick('ez');
+      const wp = C.xyz.add(EX.mul(L.x)).add(EN.mul(L.y)).add(EZ.mul(L.z));
+      const wv = pick('v').add(EX.mul(LV.x)).add(EN.mul(LV.y)).add(EZ.mul(LV.z));
+      P.assign(vec4(wp, LV.length()));
+      V.assign(vec4(wv, 0));
+    }).Else(() => {
+      P.assign(vec4(0, 0, 0, 0));
+      V.assign(vec4(0, 0, 0, DEAD));
+    });
+  })().compute(N);
+
+  /* ---------- update: wells pull, the held cluster follows ---------- */
+  const updatePass = Fn(() => {
+    const i = instanceIndex;
+    const P = pos.element(i), V = vel.element(i);
+    const born = V.w.toVar();
+    const rel = i.add(uint(N)).sub(uHeldStart).mod(uint(N));
+    // Held slots are reborn every step.
+    // Cleared and empty slots are skipped.
+    If(rel.lessThan(uHeldCount), () => {
+      const s = i.add(uSalt);
+      const H = k => hash(s.add(uint(k * N)));
+      // A small spinning cluster: inner stars circle faster.
+      const r = sqrt(log(float(1).sub(H(0).mul(0.93))).negate()).mul(uHoldR).mul(0.62).toVar();
+      const a = H(1).mul(TAU).add(uTime.mul(float(2.4).div(r.add(0.25)))).toVar();
+      const off = vec3(cos(a).mul(r), H(2).sub(0.5).mul(uHoldR).mul(0.14), sin(a).mul(r));
+      const tan = vec3(sin(a).negate(), 0, cos(a));
+      const spread = uHoldVel.length().mul(0.07).add(0.12);
+      const g = vec3(gauss(H(3), H(4)), gauss(H(5), H(6)).mul(0.25), gauss(H(7), H(8))).mul(spread);
+      const v = uHoldVel.add(tan.mul(r.mul(1.1))).add(g);
+      const t = uHoldT0.add(max(rel.toFloat().sub(INIT), 0).div(RATE));
+      P.assign(vec4(uHoldPos.add(off), uHoldVel.length().add(1.4)));
+      V.assign(vec4(v, t));
+    }).ElseIf(born.greaterThanEqual(uClearT), () => {
+      const p = P.xyz.toVar(), v = V.xyz.toVar();
+      const acc = uFrame.toVar();
+      const best = float(0).toVar(), host = vec3(0).toVar(), hostP = vec3(0).toVar(), hostM = float(0).toVar();
+      const hostPh = float(0).toVar();
+      for (let k = 0; k < MAXW; k++) {
+        const d = uW[k].xyz.sub(p).toVar();
+        const inv = inverseSqrt(d.dot(d).add(EPS2)).toVar();
+        const f = uW[k].w.mul(inv).mul(inv).toVar();
+        acc.addAssign(d.mul(f.mul(inv)));
+        // Colour speed is measured against the strongest pull.
+        If(f.greaterThan(best), () => {
+          best.assign(f); host.assign(uWV[k].xyz); hostP.assign(uW[k].xyz); hostM.assign(uW[k].w); hostPh.assign(uWV[k].w);
+        });
+      }
+      // Settling: near a well, orbits ease toward circles in the plane.
+      const dp = p.sub(hostP).toVar();
+      const r2 = dp.x.mul(dp.x).add(dp.z.mul(dp.z)).toVar();
+      const vr = v.sub(host).toVar();
+      const tng = vec3(dp.z.negate(), 0, dp.x).mul(inverseSqrt(r2.add(1e-4))).toVar();
+      // Each star keeps its own sense of rotation.
+      const sgn = select(vr.dot(tng).greaterThanEqual(0), float(1), float(-1));
+      const goal = tng.mul(vcirc(hostM, sqrt(r2)).mul(sgn)).add(vec3(0, dp.y.mul(-0.6), 0));
+      const ease = uSettle.mul(exp(r2.mul(-1 / 16))).mul(hostM.min(1));
+      v.addAssign(goal.sub(vr).mul(ease.mul(uDt)));
+      // A faint two-arm spiral potential turns with each well, so arms persist.
+      const rr = sqrt(r2.add(1e-4)).toVar();
+      const omega = sqrt(hostM.div(44));
+      const psi = atan(dp.z, dp.x).sub(uTime.mul(omega)).mul(2).add(log(rr).mul(WIND * 2)).add(hostPh).toVar();
+      const ip = inverseSqrt(r2.add(EPS2)).toVar();
+      const phi0 = hostM.mul(ip), dphi = hostM.mul(rr).mul(ip).mul(ip).mul(ip);
+      const fr = dphi.negate().mul(cos(psi)).sub(phi0.mul(WIND * 2).mul(sin(psi)).div(rr));
+      const ft = phi0.mul(-2).mul(sin(psi)).div(rr);
+      const fade = uArms.mul(exp(r2.mul(-1 / 50))).mul(r2.div(r2.add(1)));
+      acc.addAssign(vec3(dp.x, 0, dp.z).div(rr).mul(fr).add(tng.mul(ft)).mul(fade));
+      v.addAssign(acc.mul(uDt));
+      p.addAssign(v.mul(uDt));
+      P.assign(vec4(p, v.sub(host).length()));
+      V.assign(vec4(v, select(p.dot(p).greaterThan(KILL2), float(DEAD), born)));
+    });
+  })().compute(N);
+
+  /* ---------- counting stars in tight orbits, one in eight ---------- */
+  const resetPass = Fn(() => { atomicStore(counter.element(0), uint(0)); })().compute(1);
+  const countPass = Fn(() => {
+    const i = instanceIndex.mul(uint(8));
+    const P = pos.element(i), V = vel.element(i);
+    If(V.w.greaterThanEqual(uClearT), () => {
+      const p = P.xyz.toVar();
+      const bestR2 = float(1e9).toVar(), bestM = float(0).toVar();
+      for (let k = 0; k < MAXW; k++) {
+        const d = uW[k].xyz.sub(p).toVar();
+        const r2 = d.dot(d).toVar();
+        If(r2.lessThan(bestR2).and(uW[k].w.greaterThan(0)), () => { bestR2.assign(r2); bestM.assign(uW[k].w); });
+      }
+      // Tight: bound, and within about two units of its well.
+      const e = P.w.mul(P.w).mul(0.5).sub(bestM.mul(inverseSqrt(bestR2.add(EPS2))));
+      If(bestR2.lessThan(5.3).and(e.lessThan(0)), () => { atomicAdd(counter.element(0), uint(1)); });
+    });
+  })().compute(N / 8);
+
+  /* ---------- scene ---------- */
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.1, 500);
+
+  // Stars are instanced sprites a couple of pixels wide.
+  const uStarGain = uniform(0.6);
+  const uStarSize = uniform(2);
+  // View-space size of one CSS pixel at unit depth.
+  const uPx = uniform(0.001);
+  const spriteMat = () => {
+    const m = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+    m.sizeAttenuation = false;
+    return m;
+  };
+  const starMat = spriteMat();
+  const SP = pos.toAttribute(), SV = vel.toAttribute();
+  const born = SV.w;
+  const lum = hash(instanceIndex.add(uint(90001)));
+  // New stars fade in.
+  // Cleared stars fade out where they stand.
+  const vis = select(born.greaterThanEqual(uClearT), smoothstep(born, born.add(0.3), uTime),
+    select(born.greaterThan(-1e8), float(1).sub(uTime.sub(uClearT).div(0.45)).clamp(0, 1), float(0)));
+  starMat.positionNode = SP.xyz;
+  starMat.scaleNode = select(vis.greaterThan(0.002), uStarSize.mul(lum.pow(12).mul(1.3).add(1)).mul(uPx), float(0));
+  // Slow stars glow amber, fast ones blue-white.
+  const AMBER = vec3(1.0, 0.43, 0.11), ICE = vec3(0.56, 0.74, 1.0);
+  const tint = mix(AMBER, ICE, smoothstep(2, 6, SP.w));
+  // Fast core stars dim a little, so dense centres don't burn out.
+  const calm = float(1.3).div(SP.w.mul(0.2).pow(2).add(1));
+  const starCol = varying(tint.mul(lum.pow(5).mul(2.2).add(0.42)).mul(calm).mul(vis).mul(uStarGain));
+  starMat.colorNode = Fn(() => {
+    const d = uv().sub(0.5).length().mul(2);
+    const a = float(1).sub(d).max(0);
+    return vec4(starCol, a.mul(a));
+  })();
+  const stars = new THREE.Sprite(starMat);
+  stars.count = N;
+  stars.frustumCulled = false;
+  scene.add(stars);
+
+  // Each well is a small hot nucleus that blooms.
+  const wellDots = [];
+  for (let k = 0; k < MAXW; k++) {
+    const size = uniform(0);
+    const m = spriteMat();
+    m.scaleNode = size.mul(uPx);
+    m.colorNode = Fn(() => {
+      const d = uv().sub(0.5).length().mul(2);
+      return vec4(1.0, 0.86, 0.66, 1).mul(vec4(5, 5, 5, exp(d.mul(d).mul(-6)).mul(float(1).sub(d).max(0))));
+    })();
+    const s = new THREE.Sprite(m);
+    s.frustumCulled = false;
+    s.renderOrder = 2;
+    s.visible = false;
+    scene.add(s);
+    wellDots.push({ s, size });
+  }
+
+  const renderPipeline = new THREE.RenderPipeline(renderer);
+  const scenePass = pass(scene, camera);
+  const sceneColor = scenePass.getTextureNode('output');
+  const glow = bloom(sceneColor, 0.45, 0.35, 0.4);
+  renderPipeline.outputNode = sceneColor.add(glow);
+
+  /* ---------- camera: tilted toward the plane, drifting slowly ---------- */
+  let dist = 30, az = 0;
+  // The plane fits a wide and a narrow radius, by orientation.
+  function frameDist() {
+    const tv = Math.tan((FOV * Math.PI) / 360), th = tv * camera.aspect;
+    const [rh, rv] = camera.aspect >= 1 ? [10.5, 7.4] : [7.4, 10];
+    return Math.max(rh / th, (rv * Math.sin(EL)) / tv);
+  }
+  function placeCamera(t) {
+    const el = EL + (reduce ? 0 : 0.035 * Math.sin(t * 0.05));
+    camera.position.set(Math.sin(az) * Math.cos(el) * dist, Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+  }
+
+  /* ---------- size ---------- */
+  // DPR stays under 1.5 and about 1.4 million pixels.
+  function resize() {
+    const w = panel.clientWidth || 1, h = panel.clientHeight || 1;
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, lowDpr ? 1 : 1.5, Math.sqrt(1.4e6 / (w * h))));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    uPx.value = (2 * Math.tan((FOV * Math.PI) / 360)) / h;
+    dist = frameDist();
+    placeCamera(performance.now() / 1000);
+    // Small panels dim each star, so cores don't blow out.
+    uStarGain.value = 0.44 * clamp(Math.sqrt((w * h) / 7e5), 0.55, 1.1) * Math.sqrt(196608 / N);
+    uStarSize.value = w < 520 ? 1.7 : 2;
+  }
+
+  /* ---------- wells: a few heavy points, simulated on the CPU ---------- */
+  // Centring pulls the whole frame, so relative motion is untouched.
+  const K_C = 0.22, C_C = 0.9, GAMMA = 0.3, MERGE2 = 0.45 ** 2;
+  let frameX = 0, frameZ = 0;
+  function makeWell(x, z, vx, vz, m, mt) {
+    return { x, z, vx, vz, m, mt, ph: Math.random() * TAU, vis: 0, pulse: 0, held: false, born: performance.now(), ax: 0, az: 0, gx: 0, gz: 0, kept: null };
+  }
+  function stepWells(h) {
+    let ax0 = 0, az0 = 0;
+    if (!wells.some(w => w.held)) {
+      let M = 0, x = 0, z = 0, vx = 0, vz = 0;
+      for (const w of wells) { M += w.m; x += w.m * w.x; z += w.m * w.z; vx += w.m * w.vx; vz += w.m * w.vz; }
+      if (M > 1e-3) { ax0 = (-K_C * x - C_C * vx) / M; az0 = (-K_C * z - C_C * vz) / M; }
+    }
+    frameX = ax0;
+    frameZ = az0;
+    for (const w of wells) {
+      w.ax = ax0;
+      w.az = az0;
+      w.m += (w.mt - w.m) * (1 - Math.exp(-h / 0.18));
+    }
+    for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
+      const a = wells[i], b = wells[j], dx = b.x - a.x, dz = b.z - a.z, r2 = dx * dx + dz * dz;
+      const inv = 1 / (r2 + EPSW2) ** 1.5;
+      a.ax += b.m * dx * inv; a.az += b.m * dz * inv;
+      b.ax -= a.m * dx * inv; b.az -= a.m * dz * inv;
+      // Dynamical friction: close pairs shed relative speed and sink together.
+      const f = (GAMMA * Math.exp(-r2 / 10)) / (a.m + b.m + 1e-6), dvx = a.vx - b.vx, dvz = a.vz - b.vz;
+      a.ax -= f * b.m * dvx; a.az -= f * b.m * dvz;
+      b.ax += f * a.m * dvx; b.az += f * a.m * dvz;
+    }
+    for (const w of wells) {
+      if (w.held) continue;
+      w.vx += w.ax * h; w.vz += w.az * h;
+      w.x += w.vx * h; w.z += w.vz * h;
+    }
+    merge();
+  }
+  // Two wells that meet slowly become one, keeping momentum.
+  function merge() {
+    for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
+      const a = wells[i], b = wells[j];
+      if (a.mt <= 0 || b.mt <= 0) continue;
+      const dx = b.x - a.x, dz = b.z - a.z;
+      if (dx * dx + dz * dz > MERGE2 || Math.hypot(a.vx - b.vx, a.vz - b.vz) > 6) continue;
+      const keep = b.held ? b : a, gone = keep === a ? b : a, M = a.m + b.m || 1;
+      if (!keep.held) {
+        keep.x = (a.x * a.m + b.x * b.m) / M; keep.z = (a.z * a.m + b.z * b.m) / M;
+        keep.vx = (a.vx * a.m + b.vx * b.m) / M; keep.vz = (a.vz * a.m + b.vz * b.m) / M;
+      }
+      keep.m = a.m + b.m;
+      keep.mt = Math.min(MAX_M, a.mt + b.mt);
+      keep.vis = Math.max(a.vis, b.vis);
+      keep.pulse = 1;
+      wells.splice(wells.indexOf(gone), 1);
+      mergeTone();
+      return merge();
+    }
+  }
+  // Faded wells and runaways leave the list.
+  function prune() {
+    for (let k = wells.length - 1; k >= 0; k--) {
+      const w = wells[k];
+      const far = wells.length > 1 && !w.held && w.x * w.x + w.z * w.z > 1600;
+      if ((w.mt === 0 && w.m < 0.05) || far) wells.splice(k, 1);
+    }
+  }
+  // A new well gets a slightly slow circular orbit round the others.
+  function orbitVel(x, z, m) {
+    let M = 0, cx = 0, cz = 0, vx = 0, vz = 0;
+    for (const w of wells) if (w.mt > 0) { M += w.mt; cx += w.mt * w.x; cz += w.mt * w.z; vx += w.mt * w.vx; vz += w.mt * w.vz; }
+    if (!M) return [0, 0];
+    cx /= M; cz /= M; vx /= M; vz /= M;
+    const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz);
+    if (r < 0.5) return [vx, vz];
+    const v = 0.85 * Math.sqrt(((M + m) * r * r) / (r * r + EPSW2) ** 1.5);
+    return [vx - (dz / r) * v, vz + (dx / r) * v];
+  }
+  function addWell(x, z) {
+    const lit = wells.filter(w => w.mt > 0 && !w.held).sort((a, b) => a.born - b.born);
+    // At the cap, the oldest well lets go of its stars.
+    if (wells.filter(w => w.mt > 0).length >= CAP && lit.length) lit[0].mt = 0;
+    while (wells.length >= MAXW) {
+      const k = wells.findIndex(w => w.mt === 0);
+      if (k < 0) return;
+      wells.splice(k, 1);
+    }
+    const [vx, vz] = orbitVel(x, z, TAP_M);
+    const w = makeWell(x, z, vx, vz, 0, TAP_M);
+    w.pulse = 1;
+    wells.push(w);
+    wellTone();
+  }
+  // Space drops a well mid-panel, or beside whatever already sits there.
+  function dropCentre() {
+    if (!ready) return;
+    let x = 0, z = 0;
+    if (wells.some(w => w.mt > 0 && w.x * w.x + w.z * w.z < 2.6 * 2.6)) {
+      const a = Math.random() * TAU;
+      x = Math.cos(a) * 5.5;
+      z = Math.sin(a) * 5.5;
+    }
+    addWell(x, z);
+  }
+  function syncWells() {
+    for (let k = 0; k < MAXW; k++) {
+      const w = wells[k];
+      if (w) { uW[k].value.set(w.x, 0, w.z, w.m); uWV[k].value.set(w.vx, 0, w.vz, w.ph); }
+      else uW[k].value.set(0, 0, 0, 0);
+    }
+    uFrame.value.set(frameX, 0, frameZ);
+  }
+
+  /* ---------- seeding the pair ---------- */
+  // The pair falls together on a bound orbit, discs prograde.
+  function seed() {
+    const turn = camera.aspect < 1 ? Math.PI / 2 + 0.3 : 0.3;
+    const c = Math.cos(turn), s = Math.sin(turn);
+    const rot = (x, z) => [x * c - z * s, x * s + z * c];
+    const [ax, az] = rot(-4.5, 0), [bx, bz] = rot(4.5, 0);
+    const [vx, vz] = rot(0.5, -1);
+    wells.length = 0;
+    wells.push(makeWell(ax, az, vx, vz, SEED_M, SEED_M), makeWell(bx, bz, -vx, -vz, SEED_M, SEED_M));
+    wells.forEach(w => { w.vis = 1; });
+    const tilt = 0.7, spin = 1.1;
+    gal[0].c.value.set(ax, 0, az, SEED_M);
+    gal[0].v.value.set(vx, 0, vz);
+    // Seeded arms start in the spiral potential's troughs.
+    gal[0].arm.value = -wells[0].ph / 2;
+    gal[1].c.value.set(bx, 0, bz, SEED_M);
+    gal[1].v.value.set(-vx, 0, -vz);
+    gal[1].arm.value = -wells[1].ph / 2;
+    // The second disc leans out of the plane.
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, spin, 0));
+    gal[1].ex.value.set(1, 0, 0).applyQuaternion(q);
+    gal[1].en.value.set(0, 1, 0).applyQuaternion(q);
+    gal[1].ez.value.set(0, 0, 1).applyQuaternion(q);
+    simT = 0;
+    ring = SEED;
+    uClearT.value = -1;
+    renderer.compute(seedPass);
+  }
+
+  // Clear keeps the heaviest well, settled back to seed mass.
+  function clearAll() {
+    if (!ready) return;
+    uClearT.value = simT;
+    ring = 0;
+    fling = null;
+    uHeldCount.value = 0;
+    if (hold) { if (hold.well) hold.well.held = false; hold = null; panel.classList.remove('held'); }
+    let keep = null;
+    for (const w of wells) if (w.mt > 0 && (!keep || w.mt > keep.mt)) keep = w;
+    for (const w of wells) if (w !== keep) w.mt = 0;
+    if (keep) { keep.mt = SEED_M; keep.vx *= 0.3; keep.vz *= 0.3; }
+    else wells.push(makeWell(0, 0, 0, 0, 0, SEED_M));
+    whoosh(0.25, 0);
+  }
+
+  /* ---------- pointer: plane hits and flings ---------- */
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), hit = new THREE.Vector3(), tmp = new THREE.Vector3();
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  function toPlane(cx, cy) {
+    const r = panel.getBoundingClientRect();
+    ndc.set(((cx - r.left) / r.width) * 2 - 1, 1 - ((cy - r.top) / r.height) * 2);
+    ray.setFromCamera(ndc, camera);
+    if (!ray.ray.intersectPlane(plane, hit)) return null;
+    const d = Math.hypot(hit.x, hit.z), k = d > 30 ? 30 / d : 1;
+    return { x: hit.x * k, z: hit.z * k };
+  }
+  function pickWell(cx, cy, reach) {
+    const r = panel.getBoundingClientRect();
+    let best = null, bd = reach * reach;
+    for (const w of wells) {
+      if (w.mt <= 0) continue;
+      tmp.set(w.x, 0, w.z).project(camera);
+      const sx = r.left + ((tmp.x + 1) / 2) * r.width, sy = r.top + ((1 - tmp.y) / 2) * r.height;
+      const d2 = (sx - cx) ** 2 + (sy - cy) ** 2;
+      if (d2 < bd) { bd = d2; best = w; }
+    }
+    return best;
+  }
+  // Pointer speed eases into a throw that tops out near escape speed.
+  function throwVel(trail, at, top) {
+    const end = trail[trail.length - 1];
+    if (!end || at - end[0] > 90) return [0, 0];
+    const first = trail.find(s => end[0] - s[0] <= 100) || end, dt = (end[0] - first[0]) / 1000;
+    if (dt < 0.008) return [0, 0];
+    const vx = (end[1] - first[1]) / dt, vz = (end[2] - first[2]) / dt, s = Math.hypot(vx, vz);
+    const k = s > 1e-6 ? (top * Math.tanh((s * 0.55) / top)) / s : 0;
+    return [vx * k, vz * k];
+  }
+  function startFling() {
+    if (fling) return;
+    hold.kind = 'fling';
+    fling = { start: ring, count: INIT, t0: simT, x: hold.x, z: hold.z, vx: 0, vz: 0, releasing: false };
+    uSalt.value = (Math.random() * 1e6) | 0;
+  }
+  function letGo(e, ok) {
+    if (!hold || e.pointerId !== hold.id) return;
+    const h = hold;
+    hold = null;
+    panel.classList.remove('held');
+    if (h.kind === 'pending') {
+      if (ok) { const p = toPlane(e.clientX, e.clientY); if (p) addWell(p.x, p.z); }
+    } else if (h.kind === 'fling' && fling) {
+      const [vx, vz] = ok ? throwVel(h.trail, e.timeStamp, 7) : [0, 0];
+      fling.vx = vx;
+      fling.vz = vz;
+      fling.releasing = true;
+      const r = panel.getBoundingClientRect();
+      whoosh(clamp(0.25 + Math.hypot(vx, vz) / 6, 0.25, 1) * Math.sqrt(fling.count / MAXF + 0.2), ((e.clientX - r.left) / r.width) * 2 - 1);
+    } else if (h.kind === 'well' && h.well) {
+      const w = h.well;
+      w.held = false;
+      // A grab that barely moved hands the old orbit back.
+      if (!h.moved && h.kept) [w.vx, w.vz] = h.kept;
+      else [w.vx, w.vz] = ok ? throwVel(h.trail, e.timeStamp, 6) : [0, 0];
+    }
+  }
+  panel.addEventListener('pointerdown', e => {
+    if (!ready || hold || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const p = toPlane(e.clientX, e.clientY);
+    if (!p) return;
+    const w = pickWell(e.clientX, e.clientY, e.pointerType === 'mouse' ? 24 : 38);
+    try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+    hold = { id: e.pointerId, kind: w ? 'well' : 'pending', t0: performance.now(), cx: e.clientX, cy: e.clientY, sx: e.clientX, sy: e.clientY, x: p.x, z: p.z, trail: [[e.timeStamp, p.x, p.z]], well: w, moved: false, kept: null };
+    if (w) {
+      w.held = true;
+      w.gx = w.x - p.x;
+      w.gz = w.z - p.z;
+      hold.kept = [w.vx, w.vz];
+      panel.classList.add('held');
+    }
+  });
+  panel.addEventListener('pointermove', e => {
+    if (!ready) return;
+    if (hold && e.pointerId === hold.id) {
+      hold.cx = e.clientX;
+      hold.cy = e.clientY;
+      const p = toPlane(e.clientX, e.clientY);
+      if (!p) return;
+      hold.x = p.x;
+      hold.z = p.z;
+      hold.trail.push([e.timeStamp, p.x, p.z]);
+      if (hold.trail.length > 12) hold.trail.shift();
+      if (Math.hypot(e.clientX - hold.sx, e.clientY - hold.sy) > 7) {
+        hold.moved = true;
+        if (hold.kind === 'pending') startFling();
+      }
+      return;
+    }
+    if (e.pointerType === 'touch') return;
+    panel.classList.toggle('grab', !!pickWell(e.clientX, e.clientY, 24));
+  });
+  panel.addEventListener('pointerup', e => letGo(e, true));
+  panel.addEventListener('pointercancel', e => letGo(e, false));
+  panel.addEventListener('lostpointercapture', e => letGo(e, true));
+  panel.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') panel.classList.remove('grab'); });
+
+  // Each frame re-reads the pointer, since the camera drifts.
+  function updateHold(now) {
+    if (hold && hold.kind === 'pending' && now - hold.t0 > 180) startFling();
+    if (hold) {
+      const p = toPlane(hold.cx, hold.cy);
+      if (p) { hold.x = p.x; hold.z = p.z; }
+    }
+    if (hold && hold.kind === 'well' && hold.well) {
+      const w = hold.well, [vx, vz] = throwVel(hold.trail, performance.now(), 6);
+      w.x = hold.x + w.gx;
+      w.z = hold.z + w.gz;
+      w.vx += (vx - w.vx) * 0.3;
+      w.vz += (vz - w.vz) * 0.3;
+    }
+    if (!fling) return;
+    if (!fling.releasing) {
+      fling.count = Math.min(MAXF, INIT + Math.floor((simT - fling.t0) * RATE));
+      if (hold && hold.kind === 'fling') {
+        fling.x = hold.x;
+        fling.z = hold.z;
+        const [vx, vz] = throwVel(hold.trail, performance.now(), 7);
+        fling.vx += (vx - fling.vx) * 0.25;
+        fling.vz += (vz - fling.vz) * 0.25;
+      }
+    }
+    uHeldStart.value = fling.start;
+    uHeldCount.value = fling.count;
+    uHoldPos.value.set(fling.x, 0, fling.z);
+    uHoldVel.value.set(fling.vx, 0, fling.vz);
+    uHoldT0.value = fling.t0;
+    uHoldR.value = 0.22 + 0.62 * Math.sqrt(fling.count / MAXF);
+  }
+
+  /* ---------- keys and controls ---------- */
+  addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+    if (e.target.closest?.('input, textarea, select, button, a, [contenteditable]')) return;
+    if (e.key === ' ') { e.preventDefault(); if (!e.repeat) dropCentre(); }
+    else if (e.key === 'c' || e.key === 'C') { if (!e.repeat) clearAll(); }
+  });
+  document.getElementById('clear').addEventListener('click', clearAll);
+
+  /* ---------- async warm-up ---------- */
+  resize();
+  // Shaders compile off the critical path, so loading never freezes.
+  await renderer.compileComputeAsync([seedPass, updatePass, resetPass, countPass]);
+  seed();
+  syncWells();
+  await scenePass.compileAsync(renderer);
+
+  canvas.setAttribute('aria-hidden', 'true');
+  panel.prepend(canvas);
+  new ResizeObserver(resize).observe(panel);
+
+  /* ---------- animation loop ---------- */
+  let last = performance.now(), frames = 0, slow = 0, countAt = 0, counting = false;
+  // Twice a second, a sampled count of bound stars sets the pad.
+  function countTight(now) {
+    if (counting || now - countAt < 500 || !live()) return;
+    countAt = now;
+    counting = true;
+    renderer.compute(resetPass);
+    renderer.compute(countPass);
+    renderer.getArrayBufferAsync(counter.value)
+      .then(buf => padTo(Math.sqrt(clamp((new Uint32Array(buf)[0] * 8) / (N * 0.55)))))
+      .catch(() => {})
+      .finally(() => { counting = false; });
+  }
+  function animate() {
+    const now = performance.now();
+    const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 30);
+    last = now;
+    // Sustained slow frames drop the pixel ratio to 1.
+    if (!lowDpr && frames > 30) {
+      slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+      if (slow > 40) { lowDpr = true; resize(); }
+    }
+    // Reduced motion halves the simulation speed.
+    const simDt = dt * (reduce ? 0.5 : 1);
+    const n = Math.max(1, Math.min(4, Math.ceil(simDt / STEP - 1e-6))), h = simDt / n;
+    updateHold(now);
+    for (let s = 0; s < n; s++) {
+      for (let q = 0; q < 3; q++) stepWells(h / 3);
+      syncWells();
+      uDt.value = h;
+      uTime.value = simT;
+      renderer.compute(updatePass);
+      simT += h;
+    }
+    // The ring moves past a released cluster's slots.
+    if (fling && fling.releasing) {
+      ring = (fling.start + fling.count) % N;
+      fling = null;
+      uHeldCount.value = 0;
+    }
+    uTime.value = simT;
+    prune();
+    if (!reduce) az += dt * 0.016;
+    placeCamera(now / 1000);
+    for (let k = 0; k < MAXW; k++) {
+      const w = wells[k], dot = wellDots[k];
+      if (!w) { dot.s.visible = false; continue; }
+      w.vis += ((w.mt > 0 ? 1 : 0) - w.vis) * (1 - Math.exp(-dt / 0.22));
+      w.pulse *= Math.exp(-dt / 0.3);
+      dot.s.visible = w.vis > 0.01;
+      dot.s.position.set(w.x, 0, w.z);
+      dot.size.value = (7 + 5 * Math.sqrt(w.m / SEED_M)) * w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
+    }
+    renderPipeline.render();
+    countTight(now);
+    if (++frames === 3) canvas.classList.add('on');
+  }
+
+  // The loop runs only while the panel is on screen.
+  let onScreen = false;
+  const sync = () => {
+    const run = onScreen && !document.hidden;
+    if (run === running) return;
+    running = run;
+    last = performance.now();
+    renderer.setAnimationLoop(run ? animate : null);
+    if (run) wakeSound(); else rest();
+  };
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+  ready = true;
+}
+
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) { audio(); padTo(padAt); }
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+start().catch(err => console.error(err));
+</script>
+</body>
+</html>
