@@ -1,0 +1,597 @@
+<title>Pop field</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the honeycomb field, one control row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The height cap keeps the Refill row on screen. */
+.field {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 300px;
+  max-height: calc(100vh - 170px); max-height: calc(100svh - 170px); touch-action: none;
+}
+@media (max-width: 640px) { .field { aspect-ratio: 3 / 4; } }
+.field canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
+}
+/* The focus ring is drawn around the focused cell instead. */
+.field canvas:focus-visible { outline: none; }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Pop field</h1>
+    <a class="home" href="https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd" data-local="../index.html">Stimming</a>
+  </header>
+  <main>
+    <div class="field" id="field">
+      <canvas tabindex="0" role="application" aria-label="Bubble wrap. Arrow keys choose a bubble; Space or Enter pops it."></canvas>
+    </div>
+    <div class="ctl">
+      <button class="chip" id="refill" type="button">Refill</button>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, SQ3 = Math.sqrt(3);
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// Served locally, the home link opens the repo menu.
+if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  document.querySelectorAll('a[data-local]').forEach(a => { a.href = a.dataset.local; a.removeAttribute('target'); });
+}
+
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+function css(lch, a) {
+  const [r, g, b] = rgb(lch);
+  return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
+}
+function mixLch(A, B, t, raw) {
+  // Raw palettes keep their written hue direction instead of the shortest arc.
+  const dh = raw ? B[2] - A[2] : (((B[2] - A[2]) % 360) + 540) % 360 - 180;
+  return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
+}
+
+// The field runs mint, through cyan, to blue on one smooth curve.
+const MINT = [0.9, 0.11, 165], CYAN = [0.79, 0.125, 205], BLUE = [0.6, 0.14, 250];
+const PULL = CYAN.map((v, k) => 2 * v - (MINT[k] + BLUE[k]) / 2);
+const fieldAt = t => mixLch(mixLch(MINT, PULL, t, true), mixLch(PULL, BLUE, t, true), t, true);
+const WHITE = [1, 0, 0], SHADE = [0.42, 0.07, 240];
+const skinOf = ([L, C, h]) => ({
+  top: [Math.min(0.97, L + 0.07), C * 0.85, h - 10],
+  mid: [L, C, h],
+  low: [L - 0.15, C * 1.05, h + 14],
+  light: [0.97, 0.045, h - 20],
+});
+// Popped film is darker and duller; light theme keeps it paler.
+const flatOf = ([L, C, h], lite) => (lite ? [L * 0.74, C * 0.6, h + 6] : [L * 0.5 + 0.05, C * 0.55, h + 6]);
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+/* ---------- geometry ---------- */
+// Pointy-top hexagon with rounded corners, centred on the origin.
+function hexPath(r, cr) {
+  const p = new Path2D(), v = [];
+  for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU - PI / 2; v.push([r * Math.cos(a), r * Math.sin(a)]); }
+  p.moveTo((v[5][0] + v[0][0]) / 2, (v[5][1] + v[0][1]) / 2);
+  for (let k = 0; k < 6; k++) { const a = v[k], b = v[(k + 1) % 6]; p.arcTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, cr); }
+  p.closePath();
+  return p;
+}
+// The same outline as points, then crinkled by a few sine waves.
+function crinkle(r, cr, rnd) {
+  const pts = [], d = cr / Math.sin(PI / 3), c0 = r - d, ph = [rnd() * TAU, rnd() * TAU, rnd() * TAU];
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * TAU - PI / 2, a2 = a + PI / 3;
+    for (let j = 0; j <= 4; j++) {
+      const b = a - PI / 6 + (j / 4) * (PI / 3);
+      pts.push([c0 * Math.cos(a) + cr * Math.cos(b), c0 * Math.sin(a) + cr * Math.sin(b)]);
+    }
+    const [ex, ey] = pts[pts.length - 1];
+    const nx = c0 * Math.cos(a2) + cr * Math.cos(a2 - PI / 6), ny = c0 * Math.sin(a2) + cr * Math.sin(a2 - PI / 6);
+    for (let j = 1; j < 9; j++) pts.push([lerp(ex, nx, j / 9), lerp(ey, ny, j / 9)]);
+  }
+  return pts.map(([x, y]) => {
+    const t = Math.atan2(y, x);
+    const m = 0.975 + 0.026 * Math.sin(5 * t + ph[0]) + 0.017 * Math.sin(11 * t + ph[1]) + 0.011 * Math.sin(19 * t + ph[2]);
+    return [x * m, y * m];
+  });
+}
+
+/* ---------- sprites: one atlas, drawn once per size and theme ---------- */
+const field = document.getElementById('field'), cv = field.querySelector('canvas'), ctx = cv.getContext('2d');
+const atlas = document.createElement('canvas'), ax = atlas.getContext('2d');
+const NB = 32, SHADE_SLOT = NB * 2, SLOTS = NB * 2 + 1;
+let SP = 0, SB = 0, sR = 0, ox = [], oy = [], spriteTimer = 0;
+let lite = false, focusC = '#000', bgC = '#000';
+
+const gapOf = R => clamp(R * 0.075, 2.5, 4);
+// Glossy cell: three-stop gradient, top-left light, thin inner rim.
+function glossSprite(p, r, base) {
+  const s = skinOf(base);
+  const g = ax.createLinearGradient(-0.92 * r, -r, 0.92 * r, r);
+  g.addColorStop(0, css(s.top)); g.addColorStop(0.55, css(s.mid)); g.addColorStop(1, css(s.low));
+  ax.fillStyle = g; ax.fill(p);
+  const lx = -0.44 * r, ly = -0.6 * r, l = ax.createRadialGradient(lx, ly, 0, lx, ly, 1.16 * r);
+  l.addColorStop(0, css(s.light, 0.85)); l.addColorStop(1, css(s.light, 0));
+  ax.fillStyle = l; ax.fill(p);
+  ax.save();
+  ax.clip(p);
+  const w = (SQ3 * r) / 2, rim = ax.createLinearGradient(-w, -r, w, r);
+  rim.addColorStop(0, css(WHITE, 0.62)); rim.addColorStop(0.5, css(WHITE, 0));
+  ax.strokeStyle = rim; ax.lineWidth = Math.max(2.2, r * 0.065); ax.stroke(p);
+  ax.restore();
+}
+// Popped cell: matte film, crinkled edge, a few soft folds.
+function flatSprite(r, cr, base, rnd) {
+  const f = flatOf(base, lite), pts = crinkle(r * 0.97, cr, rnd), p = new Path2D();
+  pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y)));
+  p.closePath();
+  const g = ax.createLinearGradient(0, -r, 0, r);
+  g.addColorStop(0, css([f[0] + 0.035, f[1], f[2] - 4])); g.addColorStop(1, css([f[0] - 0.04, f[1], f[2] + 4]));
+  ax.fillStyle = g; ax.fill(p);
+  ax.save();
+  ax.clip(p);
+  ax.lineCap = 'round';
+  const a0 = rnd() * TAU;
+  for (let n = 0; n < 3; n++) {
+    const a = a0 + (n * TAU) / 3 + (rnd() - 0.5) * 0.9, len = r * (0.5 + rnd() * 0.35);
+    const sx = (rnd() - 0.5) * 0.3 * r, sy = (rnd() - 0.5) * 0.3 * r, bend = (rnd() - 0.5) * 0.4 * r;
+    const ex = sx + Math.cos(a) * len, ey = sy + Math.sin(a) * len;
+    const mx = (sx + ex) / 2 - Math.sin(a) * bend, my = (sy + ey) / 2 + Math.cos(a) * bend;
+    // A fold is a dark line with a pale lip lightward.
+    for (const [o, col, al, lw] of [[0, [f[0] - 0.1, f[1], f[2]], 0.55, 1.3], [-0.9, [f[0] + 0.09, f[1] * 0.8, f[2]], 0.32, 1]]) {
+      ax.beginPath(); ax.moveTo(sx + o, sy + o); ax.quadraticCurveTo(mx + o, my + o, ex + o, ey + o);
+      ax.strokeStyle = css(col, al); ax.lineWidth = lw; ax.stroke();
+    }
+  }
+  ax.restore();
+  ax.strokeStyle = css([f[0] - 0.08, f[1], f[2]], 0.7); ax.lineWidth = 1; ax.stroke(p);
+}
+// Press shade multiplies, darkest where the finger dents the dome.
+function shadeSprite(p, r) {
+  const g = ax.createRadialGradient(0, 0.1 * r, 0, 0, 0.1 * r, 1.05 * r);
+  g.addColorStop(0, css(SHADE, 0.85)); g.addColorStop(1, css(SHADE, 0.35));
+  ax.fillStyle = g; ax.fill(p);
+}
+function buildSprites() {
+  sR = R;
+  const k = dpr * 1.1, r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), n = Math.ceil(Math.sqrt(SLOTS));
+  SB = 2 * R + 6; SP = Math.ceil(SB * k);
+  atlas.width = n * SP; atlas.height = Math.ceil(SLOTS / n) * SP;
+  for (let i = 0; i < SLOTS; i++) {
+    ox[i] = (i % n) * SP; oy[i] = ((i / n) | 0) * SP;
+    ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2);
+    const base = fieldAt((i >> 1) / (NB - 1));
+    if (i === SHADE_SLOT) shadeSprite(hp, r0);
+    else if (i & 1) flatSprite(r0, c0, base, rng(i * 7919 + 13));
+    else glossSprite(hp, r0, base);
+  }
+  ax.setTransform(1, 0, 0, 1, 0, 0);
+}
+function tokens() {
+  const st = getComputedStyle(document.documentElement);
+  focusC = st.getPropertyValue('--focus').trim() || focusC;
+  bgC = st.getPropertyValue('--bg').trim() || bgC;
+  lite = (st.colorScheme || '').includes('light');
+}
+
+/* ---------- the field ---------- */
+let W = 0, H = 0, dpr = 1, R = 40, r = 37, cols = 0, rows = 0, ringP = null;
+let cells = [], events = [];
+let fi = 0, wantX = null, ring = false, kPress = null, hover = null, hoverCell = null;
+const ptrs = new Map();
+
+function makeCells() {
+  const out = [];
+  for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+    out.push({
+      i: out.length, row: i, col: j, x: 0, y: 0, b: 0,
+      flip: Math.random() < 0.5 ? -1 : 1, rot: (Math.random() - 0.5) * 0.09,
+      state: 0, s: 1, sv: 0, dx: 0, dy: 0, vx: 0, vy: 0, g: 1, p: 0, pT: 0,
+      popAt: -9, inAt: -9, due: Infinity,
+    });
+  }
+  return out;
+}
+// Cells sit centred; colour follows the field's diagonal.
+function place() {
+  const x0 = (W - SQ3 * R * (cols + 0.5)) / 2 + (SQ3 * R) / 2;
+  const y0 = (H - (2 * R + 1.5 * R * (rows - 1))) / 2 + R;
+  let lo = Infinity, hi = -Infinity;
+  for (const c of cells) {
+    c.x = x0 + SQ3 * R * (c.col + (c.row & 1) * 0.5);
+    c.y = y0 + 1.5 * R * c.row;
+    c.t = (c.x * W + c.y * H) / (W * W + H * H);
+    lo = Math.min(lo, c.t); hi = Math.max(hi, c.t);
+  }
+  for (const c of cells) c.b = Math.round(((c.t - lo) / (hi - lo || 1)) * (NB - 1));
+}
+function centreCell() {
+  let best = 0, bd = Infinity;
+  for (const c of cells) { const d = (c.x - W / 2) ** 2 + (c.y - H / 2) ** 2; if (d < bd) { bd = d; best = c.i; } }
+  return best;
+}
+function layout() {
+  const w = field.clientWidth, h = field.clientHeight, d = Math.min(devicePixelRatio || 1, 2);
+  if (!w || !h || (w === W && h === H && d === dpr)) return;
+  W = w; H = h; dpr = d;
+  cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+  // Cell size follows width; rows fill what height is left.
+  const R0 = clamp(w / 26, 28, 50), pad = R0 * 0.22;
+  const nc = Math.max(3, Math.round((w - 2 * pad) / (SQ3 * R0) - 0.5));
+  R = (w - 2 * pad) / (SQ3 * (nc + 0.5));
+  const nr = Math.max(2, Math.floor((h - 2 * pad - 2 * R) / (1.5 * R)) + 1);
+  const fresh = nc !== cols || nr !== rows;
+  if (fresh) {
+    cols = nc; rows = nr; cells = makeCells(); events = [];
+    ptrs.forEach(q => (q.cell = null)); hoverCell = null; kPress = null;
+  }
+  place();
+  if (fresh) { fi = centreCell(); wantX = null; }
+  r = R - gapOf(R) / SQ3;
+  ringP = hexPath(r + 3, r * 0.22 + 2);
+  // Resizing redraws old sprites scaled, then rebuilds once it settles.
+  if (!sR) buildSprites();
+  else if (Math.abs(R - sR) > 0.01 || dpr * 1.1 * SB > SP + 1 || dpr * 1.1 * SB < SP - 1) {
+    clearTimeout(spriteTimer);
+    spriteTimer = setTimeout(() => { buildSprites(); draw(); }, 140);
+  }
+  draw();
+}
+
+function hit(x, y) {
+  const y0 = cells.length ? cells[0].y : 0, x0 = cells.length ? cells[0].x : 0;
+  const i = Math.round((y - y0) / (1.5 * R));
+  let best = null, bd = R * R;
+  for (let ii = i - 1; ii <= i + 1; ii++) {
+    if (ii < 0 || ii >= rows) continue;
+    const j = Math.round((x - x0) / (SQ3 * R) - (ii & 1) * 0.5);
+    for (let jj = j - 1; jj <= j + 1; jj++) {
+      if (jj < 0 || jj >= cols) continue;
+      const c = cells[ii * cols + jj], d = (c.x - x) ** 2 + (c.y - y) ** 2;
+      if (d < bd) { bd = d; best = c; }
+    }
+  }
+  return best;
+}
+
+/* ---------- physics ---------- */
+// Springs per phase: k is stiffness, z is the damping ratio.
+const SPR = {
+  base: { k: 340, z: 0.38 },
+  burst: { k: 520, z: 0.34 },
+  flat: { k: 300, z: 0.6 },
+  swell: { k: 150, z: 0.2 },
+  calm: { k: 600, z: 1 },
+};
+const OK = 240, OC = 2 * 0.42 * Math.sqrt(OK);
+
+function pop(c, now, amp) {
+  if (!c || c.state) return;
+  c.state = 1; c.popAt = now; c.due = now + 6 + Math.random() * 6;
+  if (reduce) return;
+  c.sv += 7.5;
+  // A ripple travels out and shoves the inflated cells it reaches.
+  const D = R * 4.4, v = R * 13;
+  for (const o of cells) {
+    if (o === c || o.state) continue;
+    const ddx = o.x - c.x, ddy = o.y - c.y, d = Math.hypot(ddx, ddy);
+    if (d > D) continue;
+    const f = amp * (1 - d / D) ** 1.6;
+    events.push({ at: now + d / v, c: o, vx: (ddx / d) * R * 2.8 * f, vy: (ddy / d) * R * 2.8 * f, vs: 1.2 * f });
+  }
+}
+function inflate(c, now) {
+  c.state = 0; c.inAt = now; c.due = Infinity;
+  if (!reduce) c.sv -= 0.3;
+}
+// Popped cells re-inflate in a wave from the centre.
+function refill(now) {
+  const cx = W / 2, cy = H / 2, far = Math.hypot(cx, cy) || 1;
+  for (const c of cells) {
+    const ddx = c.x - cx, ddy = c.y - cy, d = Math.hypot(ddx, ddy) || 1;
+    const at = now + (reduce ? 0 : (0.85 * d) / far);
+    if (c.state) c.due = at;
+    else if (!reduce) events.push({ at, c, vx: (ddx / d) * R * 1.6, vy: (ddy / d) * R * 1.6, vs: 0.9 });
+  }
+  wake();
+}
+function sweep(xa, ya, xb, yb, now) {
+  const n = Math.max(1, Math.ceil(Math.hypot(xb - xa, yb - ya) / (R * 0.35)));
+  for (let k = 1; k <= n; k++) pop(hit(lerp(xa, xb, k / n), lerp(ya, yb, k / n)), now, 1);
+}
+
+function step(now, dt) {
+  let moving = false;
+  for (let n = events.length - 1; n >= 0; n--) {
+    const e = events[n];
+    if (e.at > now) continue;
+    if (!e.c.state) { e.c.vx += e.vx; e.c.vy += e.vy; e.c.sv += e.vs; }
+    events[n] = events[events.length - 1];
+    events.pop();
+  }
+  for (const c of cells) c.pT = 0;
+  for (const q of ptrs.values()) if (q.cell && !q.drag) q.cell.pT = 1;
+  if (kPress) kPress.pT = 1;
+  const down = ptrs.size > 0, presses = [];
+  for (const c of cells) if (!c.state && c.p > 0.01) presses.push(c);
+  const lim = R * 0.22, gDelay = reduce ? 0 : 0.045;
+
+  for (const c of cells) {
+    if (c.state && now >= c.due) inflate(c, now);
+    const m = reduce ? SPR.calm : c.state ? (now - c.popAt < 0.6 ? SPR.burst : SPR.flat) : now - c.inAt < 1.8 ? SPR.swell : SPR.base;
+    let sT, tx = 0, ty = 0;
+    if (c.state) sT = 0.9 - 0.05 * c.p;
+    else {
+      const h = c === hoverCell && !down ? 1 : 0;
+      sT = 1 + 0.07 * h * (1 - c.p) + 0.045 * c.p;
+      // Neighbours lean away from the pointer and from pressed cells.
+      if (!reduce) {
+        if (hover && c !== hoverCell) {
+          const ddx = c.x - hover.x, ddy = c.y - hover.y, d = Math.hypot(ddx, ddy);
+          if (d > 1 && d < R * 3.2) { const f = (R * 0.11 * Math.exp(-((d / (R * 1.6)) ** 2))) / d; tx += ddx * f; ty += ddy * f; }
+        }
+        for (const o of presses) {
+          if (o === c) continue;
+          const ddx = c.x - o.x, ddy = c.y - o.y, d = Math.hypot(ddx, ddy);
+          if (d < R * 3.2) { const f = (R * 0.16 * o.p * Math.exp(-((d / (R * 1.5)) ** 2))) / d; tx += ddx * f; ty += ddy * f; }
+        }
+      }
+    }
+    const cd = 2 * m.z * Math.sqrt(m.k);
+    c.sv += (-m.k * (c.s - sT) - cd * c.sv) * dt;
+    c.s = clamp(c.s + c.sv * dt, 0.6, 1.35);
+    c.vx += (-OK * (c.dx - tx) - OC * c.vx) * dt;
+    c.vy += (-OK * (c.dy - ty) - OC * c.vy) * dt;
+    c.dx += c.vx * dt; c.dy += c.vy * dt;
+    const dm = Math.hypot(c.dx, c.dy);
+    if (dm > lim) { c.dx *= lim / dm; c.dy *= lim / dm; }
+    const gT = c.state && now - c.popAt >= gDelay ? 0 : 1;
+    c.g += (gT - c.g) * (1 - Math.exp(-(c.state ? 17 : reduce ? 12 : 9) * dt));
+    c.p += (c.pT - c.p) * (1 - Math.exp(-(c.pT > c.p ? 26 : 14) * dt));
+    const busy = Math.abs(c.s - sT) > 4e-4 || Math.abs(c.sv) > 4e-3 || Math.abs(c.dx - tx) > 0.04 || Math.abs(c.dy - ty) > 0.04 ||
+      Math.abs(c.vx) + Math.abs(c.vy) > 0.5 || Math.abs(c.g - gT) > 2e-3 || Math.abs(c.p - c.pT) > 2e-3 || gT !== (c.state ? 0 : 1);
+    if (busy) moving = true;
+    else { c.s = sT; c.sv = 0; c.dx = tx; c.dy = ty; c.vx = 0; c.vy = 0; c.g = gT; c.p = c.pT; }
+  }
+  return moving;
+}
+
+/* ---------- drawing ---------- */
+function blit(c, slot, a, sx, sy, rot) {
+  const X = dpr * (c.x + c.dx), Y = dpr * (c.y + c.dy);
+  if (rot) {
+    const co = Math.cos(rot) * dpr, si = Math.sin(rot) * dpr;
+    ctx.setTransform(sx * co, sx * si, -sy * si, sy * co, X, Y);
+  } else ctx.setTransform(sx * dpr, 0, 0, sy * dpr, X, Y);
+  ctx.globalAlpha = a;
+  ctx.drawImage(atlas, ox[slot], oy[slot], SP, SP, -SB / 2, -SB / 2, SB, SB);
+}
+function draw() {
+  if (!cv.width || !sR) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const k = R / sR;
+  // Flat film first, glossy domes over it, swollen cells on top.
+  for (const c of cells) if (c.g < 0.999) blit(c, 2 * c.b + 1, 1, c.s * k * c.flip, c.s * k, c.rot);
+  for (let pass = 0; pass < 2; pass++) {
+    for (const c of cells) {
+      if (c.g < 0.001 || (c.s >= 1.03) !== (pass === 1)) continue;
+      blit(c, 2 * c.b, c.g, c.s * k, c.s * k, 0);
+      if (c.p > 0.002) {
+        ctx.globalCompositeOperation = 'multiply';
+        blit(c, SHADE_SLOT, c.p * c.g, c.s * k, c.s * k, 0);
+        ctx.globalCompositeOperation = 'source-over';
+      }
+    }
+  }
+  const c = ring && cells[fi];
+  if (c) {
+    const sc = c.s;
+    ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * (c.x + c.dx), dpr * (c.y + c.dy));
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 7 / sc; ctx.strokeStyle = bgC; ctx.stroke(ringP);
+    ctx.lineWidth = 3 / sc; ctx.strokeStyle = focusC; ctx.stroke(ringP);
+  }
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, timer = 0, last = 0;
+function wake() {
+  clearTimeout(timer);
+  timer = 0;
+  if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const dt = clamp((ms - last) / 1000, 0, 1 / 30);
+  last = ms;
+  const moving = step(ms / 1000, dt);
+  draw();
+  if (moving || events.length) { raf = requestAnimationFrame(frame); return; }
+  // Idle: a timer wakes the loop for the next re-inflation.
+  let next = Infinity;
+  for (const c of cells) if (c.state && c.due < next) next = c.due;
+  if (next < Infinity) timer = setTimeout(wake, Math.max(0, (next - ms / 1000) * 1000) + 4);
+}
+
+/* ---------- input ---------- */
+const local = e => { const b = cv.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+const nowS = () => performance.now() / 1000;
+
+cv.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const q = local(e), c = hit(q.x, q.y);
+  try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  ptrs.set(e.pointerId, { x: q.x, y: q.y, sx: q.x, sy: q.y, cell: c, drag: false });
+  if (c) { fi = c.i; wantX = null; }
+  ring = false;
+  wake();
+});
+cv.addEventListener('pointermove', e => {
+  const q = local(e), p = ptrs.get(e.pointerId);
+  if (e.pointerType !== 'touch') { hover = q; hoverCell = hit(q.x, q.y); }
+  if (p) {
+    // Past a small slop, a press becomes a sweep that pops everything.
+    if (!p.drag && Math.hypot(q.x - p.sx, q.y - p.sy) > R * 0.45) {
+      p.drag = true;
+      pop(p.cell, nowS(), 1);
+      sweep(p.sx, p.sy, q.x, q.y, nowS());
+    } else if (p.drag) sweep(p.x, p.y, q.x, q.y, nowS());
+    p.x = q.x; p.y = q.y;
+  }
+  wake();
+});
+function release(e, ok) {
+  const p = ptrs.get(e.pointerId);
+  if (!p) return;
+  ptrs.delete(e.pointerId);
+  if (ok && !p.drag && p.cell) { const q = local(e); if (hit(q.x, q.y) === p.cell) pop(p.cell, nowS(), 0.6); }
+  wake();
+}
+cv.addEventListener('pointerup', e => release(e, true));
+cv.addEventListener('pointercancel', e => release(e, false));
+cv.addEventListener('pointerleave', e => {
+  if (e.pointerType === 'touch') return;
+  hover = null; hoverCell = null;
+  wake();
+});
+
+// Up and down keep a remembered x, so columns zigzag straight.
+function move(key) {
+  const c = cells[fi];
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    fi = c.row * cols + clamp(c.col + (key === 'ArrowLeft' ? -1 : 1), 0, cols - 1);
+    wantX = null;
+    return;
+  }
+  const row = clamp(c.row + (key === 'ArrowUp' ? -1 : 1), 0, rows - 1);
+  if (row === c.row) return;
+  if (wantX == null) wantX = c.x;
+  let best = 0, bd = Infinity;
+  for (let j = 0; j < cols; j++) { const d = Math.abs(cells[row * cols + j].x - wantX); if (d < bd - 0.5) { bd = d; best = j; } }
+  fi = row * cols + best;
+}
+cv.addEventListener('focus', () => { ring = cv.matches(':focus-visible'); wake(); });
+cv.addEventListener('blur', () => { ring = false; kPress = null; wake(); });
+cv.addEventListener('keydown', e => {
+  if (!cells.length) return;
+  if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    kPress = null;
+    move(e.key);
+    ring = true;
+    wake();
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    ring = true;
+    if (!e.repeat) kPress = cells[fi];
+    wake();
+  }
+});
+cv.addEventListener('keyup', e => {
+  if ((e.key === ' ' || e.key === 'Enter') && kPress) { pop(kPress, nowS(), 0.6); kPress = null; wake(); }
+});
+document.getElementById('refill').addEventListener('click', () => refill(nowS()));
+
+/* ---------- theme and size ---------- */
+function retheme() { tokens(); if (sR) buildSprites(); draw(); }
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+tokens();
+layout();
+new ResizeObserver(layout).observe(field);
+// Scrolling moves the field under a still mouse, so hover lets go.
+addEventListener('scroll', () => { if (hover) { hover = null; hoverCell = null; wake(); } }, { passive: true });
+
+// On arrival the sheet lies flat, then inflates from the centre.
+if (!reduce) {
+  for (const c of cells) { c.state = 1; c.g = 0; c.s = 0.9; }
+  draw();
+  requestAnimationFrame(ms => refill(ms / 1000 + 0.15));
+}
+})();
+</script>
