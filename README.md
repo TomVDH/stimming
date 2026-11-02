@@ -11,9 +11,10 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Pop field | [pop/](pop/) | live, with sound |
 | Zen sand | [sand/](sand/) | live |
 | Fire | [fire/](fire/) | live, WebGPU only; port of the three.js volume fire example |
-| Slime | slime/ | in progress |
+| Slime | [slime/](slime/) | live, with sound |
 | Domino run | [domino/](domino/) | live, with sound |
-| Infinity cube, Magnet balls | | in progress |
+| Magnet balls | [magnet/](magnet/) | live, with sound |
+| Infinity cube | | in progress |
 
 ## Run locally
 
