@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>String harp</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the harp panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --table: oklch(0.21 0.008 265);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The harp is 16:9, 4:5 on phones, dark in both themes. */
+.harp {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--table);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+.harp:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .harp { aspect-ratio: 4 / 5; } }
+/* The instrument fades in on arrival. */
+.harp canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  animation: arrive 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes arrive { from { opacity: 0; } }
+.harp.grab { cursor: grab; }
+.harp.held { cursor: grabbing; }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd { transition: none; } .harp canvas { animation: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>String harp</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="harp" id="harp" tabindex="0" role="application" aria-label="String harp with twelve strings. Click or tap a string to pluck it, drag across strings to strum, press a string and drag sideways to pull it. Keys 1 to 0, minus and equals pluck; arrow keys strum.">
+      <canvas aria-hidden="true"></canvas>
+    </div>
+    <div class="ctl" role="group" aria-label="Scale">
+      <button class="chip" type="button" data-scale="pent" aria-pressed="true">Pentatonic</button>
+      <button class="chip" type="button" data-scale="lyd" aria-pressed="false">Lydian</button>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clock = () => performance.now() / 1000;
+
+const panel = document.getElementById('harp'), cv = panel.querySelector('canvas'), ctx = cv.getContext('2d');
+const under = document.createElement('canvas'), uctx = under.getContext('2d');
+const over = document.createElement('canvas'), octx = over.getContext('2d');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+function css(lch, a) {
+  const [r, g, b] = rgb(lch);
+  return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
+}
+// Series hues, low string to high, fire through to magenta.
+const STOPS = [
+  [0.6, 0.21, 28], [0.7, 0.19, 52], [0.8, 0.17, 84], [0.77, 0.16, 160],
+  [0.69, 0.14, 206], [0.55, 0.18, 258], [0.51, 0.2, 292], [0.57, 0.22, 330],
+];
+// Catmull-Rom through the stops, clamped at both ends.
+function hueAt(u) {
+  const n = STOPS.length, k = Math.min(n - 2, Math.floor(u)), t = u - k;
+  const P = q => STOPS[clamp(k + q, 0, n - 1)];
+  const a = P(-1), b = P(0), c = P(1), d = P(2), t2 = t * t, t3 = t2 * t;
+  return [0, 1, 2].map(i => 0.5 * (2 * b[i] + (c[i] - a[i]) * t + (2 * a[i] - 5 * b[i] + 4 * c[i] - d[i]) * t2 + (3 * b[i] - a[i] - 3 * c[i] + d[i]) * t3));
+}
+const WHITE = a => `rgba(255,255,255,${a})`;
+// Lacquer is a deep blue-black; rosewood and bone sit on it.
+const LAC = [[0.27, 0.026, 262], [0.205, 0.022, 266], [0.15, 0.018, 272]], LAC_LIT = [0.92, 0.02, 250];
+const WOOD = [[0.43, 0.065, 48], [0.34, 0.06, 40], [0.25, 0.05, 34]], WOOD_LIT = [0.95, 0.04, 75];
+const BONE = [[0.94, 0.022, 88], [0.86, 0.03, 80], [0.7, 0.04, 68]], BONE_LIT = [0.99, 0.012, 95];
+
+/* ---------- strings ---------- */
+const NS = 12, M = 12, NSEG = 48;
+const TONE = Array.from({ length: NS }, (_, i) => {
+  const [L, C, h] = hueAt((i / (NS - 1)) * (STOPS.length - 1));
+  const l = Math.max(0.72, L + 0.06), c = Math.min(C, 0.17);
+  const [r, g, b] = rgb([l, c, h]).map(v => Math.round(v * 255));
+  return {
+    base: [l, c, h], mid: css([l, c, h]), deep: css([l - 0.22, c * 0.9, h + 6]), lit: css([0.97, c * 0.25, h]),
+    rgba: a => `rgba(${r},${g},${b},${a.toFixed(3)})`,
+  };
+});
+// Semitones above C3 for each string, low to high.
+const SCALES = {
+  pent: [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26],
+  lyd: [5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24],
+};
+const C3 = 130.8128;
+let scale = 'pent';
+const S = Array.from({ length: NS }, (_, i) => ({
+  i, f: 0, om: 0, t60: 1, tau: 1, w: 2, side: i % 2 ? 1 : -1,
+  ax: 0, ay: 0, bx: 0, by: 0, dx: 0, dy: 1, px: 0, py: 0, hx: 0, hy: 0,
+  len: 1, ux: 0, uy: 1, nx: 1, ny: 0,
+  P: new Float64Array(M), Q: new Float64Array(M), act: 0, born: 0, td: 0, hold: null,
+}));
+// Mode shapes along the string, sampled once.
+const SIN = Array.from({ length: M }, (_, n) => Float64Array.from({ length: NSEG + 1 }, (_, k) => Math.sin(((n + 1) * PI * k) / NSEG)));
+const CO = new Float64Array(M), Y = new Float64Array(NSEG + 1), LO = new Float64Array(NSEG + 1), HI = new Float64Array(NSEG + 1);
+
+// Retuning keeps each mode's current position and phase.
+function rephase(st, om, tv) {
+  for (let n = 0; n < M; n++) {
+    const P = st.P[n], Q = st.Q[n], R = Math.hypot(P, Q);
+    if (!R) continue;
+    const th = om * (n + 1) * tv - (st.om * (n + 1) * tv - Math.atan2(Q, P));
+    st.P[n] = R * Math.cos(th);
+    st.Q[n] = R * Math.sin(th);
+  }
+}
+function tune() {
+  const tv = clock();
+  for (const st of S) {
+    const f = C3 * 2 ** (SCALES[scale][st.i] / 12);
+    // Slow motion: 7 Hz at C3, a little faster higher up.
+    const om = TAU * 7 * (f / C3) ** 0.45;
+    if (st.act) rephase(st, om, tv);
+    st.f = f;
+    st.om = om;
+    // Lower strings ring longer.
+    st.t60 = 5.2 * (C3 / f) ** 0.55;
+    st.tau = st.t60 / 6.9;
+  }
+}
+
+// A pluck is a triangle at the pluck point, split into modes.
+function excite(st, s, d) {
+  s = clamp(s, 0.04, 0.96);
+  const tv = clock(), k = ((reduce ? 0.35 : 1) * 2 * d) / (PI * PI * s * (1 - s));
+  let act = 0;
+  for (let n = 0; n < M; n++) {
+    const m = n + 1, A = (k * Math.sin(m * PI * s)) / (m * m), w = st.om * m * tv;
+    // A new pluck mostly stops what was ringing.
+    st.P[n] = st.P[n] * 0.25 + A * Math.cos(w);
+    st.Q[n] = st.Q[n] * 0.25 + A * Math.sin(w);
+    act += Math.abs(st.P[n]) + Math.abs(st.Q[n]);
+  }
+  st.act = act;
+  st.born = st.td = tv;
+}
+// Higher modes lose energy faster, as on a real string.
+// Decay runs on real elapsed time, so hidden pages settle.
+function decay(st, now) {
+  const dt = Math.max(0, now - st.td);
+  st.td = now;
+  if (!st.act) return;
+  let act = 0;
+  for (let n = 0; n < M; n++) {
+    const k = Math.exp((-dt * (1 + 0.45 * n)) / st.tau);
+    st.P[n] *= k;
+    st.Q[n] *= k;
+    act += Math.abs(st.P[n]) + Math.abs(st.Q[n]);
+  }
+  if (act < 0.12) { st.P.fill(0); st.Q.fill(0); act = 0; }
+  st.act = act;
+}
+
+/* ---------- geometry, in CSS pixels ---------- */
+let W = 0, H = 0, dpr = 1, lowDpr = false;
+let spT = 1, spB = 1, railT = 30, tN = 5, tB = 10, pegR = 8, pinR = 3, hole = { x: 0, y: 0, r: 1 };
+// String spacing at a point along the strings, top to bottom.
+const spc = s => lerp(spT, spB, clamp(s));
+
+function geometry() {
+  const port = W / H < 1.1, cx = W / 2, n1 = NS - 1;
+  // Strings fan out toward the bridge; the high ones are shorter.
+  const spanB = Math.min(W - 2 * clamp(W * 0.08, 24, 120), H * (port ? 1.2 : 1.4));
+  const spanT = spanB * (port ? 0.84 : 0.8);
+  spB = spanB / n1;
+  spT = spanT / n1;
+  railT = clamp(Math.min(W, H) * 0.075, 20, 44);
+  tN = clamp(H * 0.011, 4, 7);
+  tB = clamp(H * 0.024, 8, 15);
+  pegR = clamp(Math.min(spT * 0.36, railT * 0.2), 4.5, 9);
+  pinR = clamp(pegR * 0.45, 2.4, 4);
+  const yT0 = Math.max(H * 0.16, railT + H * 0.055), yT1 = yT0 + H * (port ? 0.12 : 0.16), yB = H * (port ? 0.85 : 0.84);
+  const k = clamp(Math.min(W, H * 1.6) / 1000, 0.8, 1.15);
+  for (const st of S) {
+    const t = st.i / n1;
+    st.ax = cx + spanT * (t - 0.5);
+    st.ay = lerp(yT0, yT1, t);
+    st.bx = cx + spanB * (t - 0.5);
+    st.by = yB;
+    st.dx = st.bx - st.ax;
+    st.dy = st.by - st.ay;
+    st.len = Math.hypot(st.dx, st.dy);
+    st.ux = st.dx / st.len;
+    st.uy = st.dy / st.len;
+    st.nx = st.uy;
+    st.ny = -st.ux;
+    // Pegs stagger in two rows on the pin block.
+    const off = railT * (st.i % 2 ? 0.68 : 0.3), ho = tB / 2 + pinR + 3;
+    st.px = st.ax - st.ux * off;
+    st.py = st.ay - st.uy * off;
+    st.hx = st.bx + st.ux * ho;
+    st.hy = st.by + st.uy * ho;
+    // Low strings are thicker.
+    st.w = lerp(3.6, 1.7, t) * k;
+  }
+  const yM = (yT0 + yT1) / 2;
+  hole = { x: cx, y: lerp(yM, yB, 0.52), r: Math.min(spanB * 0.15, (yB - yM) * 0.22) };
+}
+// Position along a string from the nut, and signed offset.
+const along = (st, x, y) => ((x - st.ax) * st.ux + (y - st.ay) * st.uy) / st.len;
+const off = (st, x, y) => (x - st.ax) * st.nx + (y - st.ay) * st.ny;
+
+/* ---------- the instrument, painted once per size ---------- */
+function roundPoly(pts, r) {
+  const p = new Path2D(), n = pts.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const m0 = mid(pts[n - 1], pts[0]);
+  p.moveTo(m0[0], m0[1]);
+  for (let k = 0; k < n; k++) {
+    const a = pts[k], m = mid(a, pts[(k + 1) % n]);
+    p.arcTo(a[0], a[1], m[0], m[1], r);
+  }
+  p.closePath();
+  return p;
+}
+// The rim: a thin white edge fading out by mid-shape.
+function rim(c, p, x0, y0, x1, y1, a = 0.62, lw = 1.5) {
+  c.save();
+  c.clip(p);
+  const g = c.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, WHITE(a));
+  g.addColorStop(0.5, WHITE(0));
+  c.strokeStyle = g;
+  c.lineWidth = lw * 2;
+  c.stroke(p);
+  c.restore();
+}
+// Round parts: diagonal gradient, top-left light, rim.
+function bead(c, x, y, r, [L, C, h]) {
+  const p = new Path2D();
+  p.arc(x, y, r, 0, TAU);
+  const g = c.createLinearGradient(x - 0.92 * r, y - r, x + 0.92 * r, y + r);
+  g.addColorStop(0, css([Math.min(0.97, L + 0.07), C * 0.85, h - 10]));
+  g.addColorStop(0.55, css([L, C, h]));
+  g.addColorStop(1, css([L - 0.15, C * 1.05, h + 14]));
+  c.fillStyle = g;
+  c.fill(p);
+  const lx = x - 0.44 * r, ly = y - 0.6 * r, l = c.createRadialGradient(lx, ly, 0, lx, ly, 1.16 * r);
+  l.addColorStop(0, css([0.97, 0.045, h - 20], 0.85));
+  l.addColorStop(1, css([0.97, 0.045, h - 20], 0));
+  c.fillStyle = l;
+  c.fill(p);
+  rim(c, p, x - r, y - r, x + r, y + r, 0.62, Math.max(0.8, r * 0.14));
+}
+// Bars take light from above, so shading runs across the short side.
+function bar(c, x0, y0, x1, y1, t, tones, lit, la, grain = 0) {
+  const vx = x1 - x0, vy = y1 - y0, L = Math.hypot(vx, vy), h = t / 2;
+  let upx = vy / L, upy = -vx / L;
+  if (upy > 0) { upx = -upx; upy = -upy; }
+  const pts = [[x0 + upx * h, y0 + upy * h], [x1 + upx * h, y1 + upy * h], [x1 - upx * h, y1 - upy * h], [x0 - upx * h, y0 - upy * h]];
+  const p = roundPoly(pts, Math.min(h, 8)), mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const tx = mx + upx * h, ty = my + upy * h, bx = mx - upx * h, by = my - upy * h;
+  const g = c.createLinearGradient(tx, ty, bx, by);
+  g.addColorStop(0, css(tones[0]));
+  g.addColorStop(0.55, css(tones[1]));
+  g.addColorStop(1, css(tones[2]));
+  c.fillStyle = g;
+  c.fill(p);
+  const lx = x0 + vx * 0.22 + upx * h * 0.5, ly = y0 + vy * 0.22 + upy * h * 0.5, l = c.createRadialGradient(lx, ly, 0, lx, ly, L * 0.5);
+  l.addColorStop(0, css(lit, la));
+  l.addColorStop(1, css(lit, 0));
+  c.fillStyle = l;
+  c.fill(p);
+  // Wood shows a few long, faint grain lines.
+  if (grain) {
+    c.save();
+    c.clip(p);
+    c.lineWidth = 0.7;
+    for (let g2 = 0; g2 < grain; g2++) {
+      const o = (((g2 * 0.618) % 1) - 0.5) * t * 0.9, ph = g2 * 2.3, amp = t * 0.06;
+      c.strokeStyle = css(tones[2], 0.35 + 0.25 * ((g2 * 0.37) % 1));
+      c.beginPath();
+      for (let k = 0; k <= 40; k++) {
+        const s = k / 40, w = o + amp * Math.sin(s * 9 + ph) + amp * 0.6 * Math.sin(s * 23 + ph * 1.7);
+        c.lineTo(x0 + vx * s + upx * w, y0 + vy * s + upy * w);
+      }
+      c.stroke();
+    }
+    c.restore();
+  }
+  rim(c, p, tx, ty, bx, by);
+}
+// The sound hole: dark inside, its far wall catching the light.
+function soundHole(c) {
+  const { x, y, r } = hole;
+  c.strokeStyle = css(BONE[1], 0.3);
+  c.lineWidth = Math.max(1, r * 0.035);
+  c.beginPath();
+  c.arc(x, y, r * 1.2, 0, TAU);
+  c.stroke();
+  c.strokeStyle = css(BONE[1], 0.16);
+  c.lineWidth = Math.max(1, r * 0.018);
+  c.beginPath();
+  c.arc(x, y, r * 1.29, 0, TAU);
+  c.stroke();
+  const p = new Path2D();
+  p.arc(x, y, r, 0, TAU);
+  const cx = x - r * 0.22, cy = y - r * 0.22, g = c.createRadialGradient(cx, cy, 0, cx, cy, r * 1.22);
+  g.addColorStop(0, css([0.075, 0.01, 270]));
+  g.addColorStop(0.72, css([0.095, 0.012, 270]));
+  g.addColorStop(1, css([0.22, 0.022, 266]));
+  c.fillStyle = g;
+  c.fill(p);
+  rim(c, p, x + r, y + r, x - r, y - r, 0.3);
+}
+function paint() {
+  for (const c of [under, over]) { c.width = cv.width; c.height = cv.height; }
+  const u = uctx, o = octx;
+  u.setTransform(dpr, 0, 0, dpr, 0, 0);
+  o.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const g = u.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, css(LAC[0]));
+  g.addColorStop(0.55, css(LAC[1]));
+  g.addColorStop(1, css(LAC[2]));
+  u.fillStyle = g;
+  u.fillRect(0, 0, W, H);
+  const R = Math.hypot(W, H), l = u.createRadialGradient(W * 0.22, H * 0.12, 0, W * 0.22, H * 0.12, R * 0.75);
+  l.addColorStop(0, css(LAC_LIT, 0.13));
+  l.addColorStop(1, css(LAC_LIT, 0));
+  u.fillStyle = l;
+  u.fillRect(0, 0, W, H);
+  rim(u, roundPoly([[0, 0], [W, 0], [W, H], [0, H]], 18), 0, 0, W, H, 0.4);
+  soundHole(u);
+  // Pin block and nut along the slanted top, the bridge below.
+  const a = S[0], b = S[NS - 1], vl = Math.hypot(b.ax - a.ax, b.ay - a.ay);
+  const vx = (b.ax - a.ax) / vl, vy = (b.ay - a.ay) / vl, upx = vy, upy = -vx, e = spT * 0.8, h = railT / 2;
+  bar(u, a.ax - vx * e + upx * h, a.ay - vy * e + upy * h, b.ax + vx * e + upx * h, b.ay + vy * e + upy * h, railT, WOOD, WOOD_LIT, 0.3, 7);
+  bar(u, a.ax - vx * e, a.ay - vy * e, b.ax + vx * e, b.ay + vy * e, tN, BONE, BONE_LIT, 0.7);
+  bar(u, a.bx - spB * 0.7, a.by, b.bx + spB * 0.7, b.by, tB, BONE, BONE_LIT, 0.7);
+  // Pegs and hitch pins sit over the string ends.
+  for (const st of S) {
+    bead(o, st.px, st.py, pegR, TONE[st.i].base);
+    bead(o, st.hx, st.hy, pinR, BONE[1]);
+  }
+}
+
+/* ---------- drawing ---------- */
+function drawString(st, tv, span) {
+  const tone = TONE[st.i], w = st.w, ends = new Path2D(), p = new Path2D();
+  const at = (k, y) => [st.ax + (st.dx * k) / NSEG + st.nx * y, st.ay + (st.dy * k) / NSEG + st.ny * y];
+  let band = null;
+  ends.moveTo(st.px, st.py);
+  ends.lineTo(st.ax, st.ay);
+  ends.moveTo(st.bx, st.by);
+  ends.lineTo(st.hx, st.hy);
+  p.moveTo(st.ax, st.ay);
+  if (st.hold) {
+    // A held string is two straight runs meeting at the finger.
+    const h = st.hold;
+    p.lineTo(st.ax + st.dx * h.s + st.nx * h.d, st.ay + st.dy * h.s + st.ny * h.d);
+  } else if (st.act) {
+    // The shutter stays open for the frame; the swept area blurs.
+    let speed = 0;
+    for (let n = 0; n < M; n++) speed += st.om * (n + 1) * Math.hypot(st.P[n], st.Q[n]);
+    const K = clamp(Math.ceil((speed * span) / Math.max(1, w * 0.6)), 1, 16);
+    LO.fill(0);
+    HI.fill(0);
+    for (let j = 0; j < K; j++) {
+      const t = Math.max(st.born, tv - span * (1 - (j + 1) / K));
+      for (let n = 0; n < M; n++) {
+        const a = st.om * (n + 1) * t;
+        CO[n] = st.P[n] * Math.cos(a) + st.Q[n] * Math.sin(a);
+      }
+      for (let k = 1; k < NSEG; k++) {
+        let y = 0;
+        for (let n = 0; n < M; n++) y += CO[n] * SIN[n][k];
+        if (!j || y < LO[k]) LO[k] = y;
+        if (!j || y > HI[k]) HI[k] = y;
+        Y[k] = y;
+      }
+    }
+    for (let k = 1; k < NSEG; k++) p.lineTo(...at(k, Y[k]));
+    if (K > 1) {
+      band = new Path2D();
+      band.moveTo(st.ax, st.ay);
+      for (let k = 1; k < NSEG; k++) band.lineTo(...at(k, HI[k]));
+      band.lineTo(st.bx, st.by);
+      for (let k = NSEG - 1; k > 0; k--) band.lineTo(...at(k, LO[k]));
+      band.closePath();
+    }
+  }
+  p.lineTo(st.bx, st.by);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (band) {
+    // Where the string sweeps wide, its blur is faint.
+    const g = ctx.createLinearGradient(st.ax, st.ay, st.bx, st.by);
+    for (let q = 0; q <= 8; q++) {
+      const k = (q * NSEG) / 8, bw = HI[k] - LO[k];
+      g.addColorStop(q / 8, tone.rgba(clamp((0.7 * w) / (bw + w), 0.06, 0.6)));
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = g;
+    ctx.fill(band);
+  }
+  // Body, then a darker far side, then the lit edge.
+  for (const path of [ends, p]) {
+    ctx.globalAlpha = 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = tone.mid;
+    ctx.lineWidth = w;
+    ctx.stroke(path);
+    ctx.setTransform(dpr, 0, 0, dpr, dpr * st.nx * w * 0.3, dpr * st.ny * w * 0.3);
+    ctx.strokeStyle = tone.deep;
+    ctx.lineWidth = w * 0.4;
+    ctx.stroke(path);
+    ctx.setTransform(dpr, 0, 0, dpr, -dpr * st.nx * w * 0.22, -dpr * st.ny * w * 0.22);
+    ctx.strokeStyle = tone.lit;
+    ctx.lineWidth = w * 0.3;
+    ctx.stroke(path);
+  }
+}
+function draw(tv, span) {
+  if (!W) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(under, 0, 0);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const st of S) drawString(st, tv, span);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(over, 0, 0);
+}
+function layout() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  // A pixel budget keeps big screens at frame rate.
+  const d = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(3.4e6 / (w * h)));
+  if (w === W && h === H && d === dpr) return;
+  W = w;
+  H = h;
+  dpr = d;
+  cv.width = Math.round(w * d);
+  cv.height = Math.round(h * d);
+  geometry();
+  paint();
+  draw(clock(), 0);
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.harp.sound', MAXV = 20, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, bus = null, askedAt = -1e9, voices = 0, lastOn = -1, restT = 0;
+const ringing = new Array(NS).fill(null), pool = [];
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.04 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    soundboard();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+// Strings feed a soft body: two resonances and a short room.
+function soundboard() {
+  bus = ac.createGain();
+  const warm = ac.createBiquadFilter(), dry = ac.createGain(), mix = ac.createGain();
+  warm.type = 'lowpass';
+  warm.frequency.value = 6000;
+  warm.Q.value = 0.5;
+  dry.gain.value = 0.78;
+  bus.connect(warm).connect(dry).connect(mix);
+  // An air mode and a top-plate mode, both gentle.
+  for (const [f, q, g] of [[196, 2.4, 0.42], [430, 3.2, 0.26]]) {
+    const bp = ac.createBiquadFilter(), bg = ac.createGain();
+    bp.type = 'bandpass';
+    bp.frequency.value = f;
+    bp.Q.value = q;
+    bg.gain.value = g;
+    warm.connect(bp).connect(bg).connect(mix);
+  }
+  mix.connect(out);
+  const pre = ac.createDelay(0.1), verb = ac.createConvolver(), wet = ac.createGain();
+  pre.delayTime.value = 0.016;
+  verb.buffer = room(2);
+  wet.gain.value = 0.3;
+  mix.connect(pre).connect(verb).connect(wet).connect(out);
+}
+// Room tail: decaying stereo noise that darkens as it fades.
+function room(sec) {
+  const sr = ac.sampleRate, n = Math.floor(sr * sec), b = ac.createBuffer(2, n, sr), on = sr * 0.004;
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, k = 0.2 + 0.75 * Math.min(1, t / sec);
+      lp += (Math.random() * 2 - 1 - lp) * (1 - k);
+      d[i] = lp * Math.exp(-t * 3.2) * Math.min(1, i / on);
+    }
+  }
+  return b;
+}
+// Karplus-Strong: a delay loop with an averaging filter, rendered ahead.
+function ks(f, p, amp, t60) {
+  const sr = ac.sampleRate, len = Math.floor(sr * Math.min(5, t60 * (0.5 + 0.5 * amp)));
+  // The averaging filter adds half a sample; an allpass tunes the rest.
+  const D = sr / f - 0.5, N = Math.floor(D - 0.1), eta = D - N, C = (1 - eta) / (1 + eta);
+  const line = new Float32Array(N), k = Math.max(1, Math.round(p * N));
+  // A pulse split at the pluck point gives the plucked spectrum.
+  for (let i = 0; i < N; i++) line[i] = (i < k ? 1 - k / N : -k / N) + (Math.random() * 2 - 1) * 0.06;
+  // Softer plucks are darker, like a softer fingertip.
+  const fc = clamp(f * (3 + 15 * amp), 500, 9000), al = 1 - Math.exp((-TAU * fc) / sr);
+  for (let st = 0; st < 2; st++) {
+    let s = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < N; i++) { s += (line[i] - s) * al; if (pass) line[i] = s; }
+    }
+  }
+  const rho = 10 ** (-3 / (t60 * f)), buf = ac.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  const fadeIn = Math.floor(sr * 0.002), fadeOut = Math.floor(sr * 0.08);
+  let idx = 0, prev = 0, ax = 0, ay = 0, hx0 = 0, hy0 = 0;
+  for (let n = 0; n < len; n++) {
+    const x = line[idx], avg = rho * 0.5 * (x + prev), y = C * avg + ax - C * ay;
+    prev = x;
+    ax = avg;
+    ay = y;
+    line[idx] = y;
+    if (++idx === N) idx = 0;
+    // A DC blocker keeps the output centred.
+    hy0 = x - hx0 + 0.995 * hy0;
+    hx0 = x;
+    d[n] = hy0 * (n < fadeIn ? n / fadeIn : n > len - fadeOut ? (len - n) / fadeOut : 1);
+  }
+  return buf;
+}
+// A finger on the string stops its sound quickly, without a click.
+function hush(v, t, k = 0.015) {
+  if (v.hushed) return;
+  v.hushed = true;
+  v.g.gain.cancelScheduledValues(t);
+  v.g.gain.setTargetAtTime(0, t, k);
+  try { v.src.stop(t + k * 8); } catch (err) { /* already stopping */ }
+}
+function mute(i) {
+  if (ac && ringing[i]) hush(ringing[i], ac.currentTime);
+  ringing[i] = null;
+}
+function sound(i, s, amp, at = 0, glide = 0) {
+  const a = live();
+  if (!a || !bus) return;
+  const st = S[i], want = a.currentTime + LEAD + at;
+  // Onsets closer than 2 ms are spread, so they never stack.
+  const t = Math.abs(want - lastOn) < 0.002 ? lastOn + 0.002 : want;
+  lastOn = t;
+  if (ringing[i]) hush(ringing[i], t);
+  // Past the cap, the oldest voice gives way.
+  while (pool.length >= MAXV) hush(pool.shift(), a.currentTime, 0.01);
+  const src = a.createBufferSource(), g = a.createGain();
+  src.buffer = ks(st.f, clamp(s, 0.04, 0.96), amp, st.t60);
+  // Hard plucks start a touch sharp, then settle.
+  if (glide) {
+    src.playbackRate.setValueAtTime(1 + glide, t);
+    src.playbackRate.setTargetAtTime(1, t, 0.07);
+  }
+  g.gain.value = 0.36 * amp ** 1.2 * (196 / st.f) ** 0.12 * level();
+  src.connect(g);
+  let tail = g;
+  if (a.createStereoPanner) {
+    tail = a.createStereoPanner();
+    tail.pan.value = lerp(-0.4, 0.4, i / (NS - 1));
+    g.connect(tail);
+  }
+  tail.connect(bus);
+  src.start(t);
+  const v = { src, g, hushed: false };
+  ringing[i] = v;
+  pool.push(v);
+  voices++;
+  src.onended = () => {
+    voices--;
+    const k = pool.indexOf(v);
+    if (k >= 0) pool.splice(k, 1);
+    if (ringing[i] === v) ringing[i] = null;
+    g.disconnect();
+    if (tail !== g) tail.disconnect();
+  };
+}
+// Once the strings and voices settle, the context sleeps.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (raf || ptrs.size) return;
+    if (voices) rest();
+    else if (ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE = /^(Digit\d|Minus|Equal|Arrow\w+|Space|Enter|NumpadEnter)$/;
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE.test(e.code) && !/^[0-9=-]$/.test(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+/* ---------- playing ---------- */
+const queue = [];
+function pluck(i, s, d, amp, at = 0, glide = 0) {
+  excite(S[i], s, d);
+  sound(i, s, amp, at, glide);
+  wake();
+}
+// One string after another, like a hand across the strings.
+function strum(dir, amp) {
+  const now = performance.now(), gap = 0.026;
+  for (let j = 0; j < NS; j++) {
+    const i = dir > 0 ? j : NS - 1 - j, s = 0.42;
+    if (S[i].hold) continue;
+    const a = amp * (0.92 + 0.08 * Math.random());
+    queue.push({ at: now + j * gap * 1000, i, s, d: dir * a * 0.45 * spc(s) });
+    sound(i, s, a, j * gap, 0.0015 * a * a);
+  }
+  wake();
+}
+function release(i, s, d, lim) {
+  S[i].hold = null;
+  const amp = Math.abs(d) / lim;
+  if (amp > 0.04) pluck(i, s, d, Math.max(0.12, amp), 0, 0.005 * amp * amp);
+}
+
+/* ---------- one loop, only while a string moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0;
+function wake() {
+  if (!raf && onScreen && !document.hidden && W) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame() {
+  raf = 0;
+  const ms = performance.now(), raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 20);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; layout(); }
+  }
+  for (let k = queue.length - 1; k >= 0; k--) {
+    const q = queue[k];
+    if (q.at > ms) continue;
+    queue.splice(k, 1);
+    if (!S[q.i].hold) excite(S[q.i], q.s, q.d);
+  }
+  let busy = queue.length > 0;
+  for (const st of S) {
+    decay(st, ms / 1000);
+    if (st.act || st.hold) busy = true;
+  }
+  draw(ms / 1000, Math.max(dt, 1 / 120));
+  if (busy) {
+    if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  } else rest();
+}
+
+/* ---------- input ---------- */
+const ptrs = new Map();
+// Touch reaches the nearest string; a mouse must be close.
+function grabAt(x, y, type) {
+  let best = -1, bd = Infinity;
+  for (const st of S) {
+    const s = along(st, x, y);
+    if (s < 0.03 || s > 0.97 || st.hold) continue;
+    const d = Math.abs(off(st, x, y)), sp = spc(s);
+    const reach = type === 'mouse' ? clamp(sp * 0.28, 8, 16) : Math.min(sp * 0.5, 26);
+    if (d < reach && d < bd) { bd = d; best = st.i; }
+  }
+  return best;
+}
+function pull(p, x, y, t) {
+  const st = S[p.i], s = along(st, x, y), d = off(st, x, y) - p.d0, lim = 0.6 * spc(s);
+  p.far = Math.max(p.far, Math.hypot(x - p.x0, y - p.y0));
+  if (s < 0.03 || s > 0.97 || Math.abs(d) > lim) {
+    // Pulled too far, the string slips off the finger and rings.
+    p.mode = 'strum';
+    p.hits[p.i] = t;
+    release(p.i, clamp(s, 0.04, 0.96), clamp(d, -lim, lim), lim);
+    return;
+  }
+  st.hold.s = s;
+  st.hold.d = d;
+}
+function cross(p, x, y, t, hits) {
+  const dt = Math.max(1, t - p.t);
+  for (const st of S) {
+    if (st.hold) continue;
+    const d0 = off(st, p.x, p.y), d1 = off(st, x, y);
+    if (d0 < 0 === d1 < 0) continue;
+    const u = d0 / (d0 - d1), s = along(st, lerp(p.x, x, u), lerp(p.y, y, u));
+    if (s < 0.03 || s > 0.97) continue;
+    const tc = p.t + u * dt;
+    // Jitter on one string does not re-pluck it.
+    if (tc - p.hits[st.i] < 45) continue;
+    p.hits[st.i] = tc;
+    // Crossing speed, in strings per second, sets the loudness.
+    const rate = ((Math.abs(d1 - d0) / dt) * 1000) / spc(s);
+    const amp = clamp(0.1 + (0.9 * Math.log(Math.max(1, rate / 2.5))) / Math.log(30), 0.1, 1);
+    hits.push({ i: st.i, s, tc, amp, dir: d1 > d0 ? 1 : -1 });
+  }
+}
+const grabbing = () => [...ptrs.values()].some(q => q.mode === 'grab');
+
+panel.addEventListener('pointerdown', e => {
+  if (!W || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const r = panel.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const p = { mode: 'strum', i: -1, x, y, t: e.timeStamp, x0: x, y0: y, t0: e.timeStamp, d0: 0, far: 0, side: 1, hits: new Float64Array(NS).fill(-1e9) };
+  // Shift strums from anywhere, even on a string.
+  const i = e.shiftKey ? -1 : grabAt(x, y, e.pointerType);
+  if (i >= 0) {
+    const st = S[i];
+    p.mode = 'grab';
+    p.i = i;
+    p.d0 = off(st, x, y);
+    p.side = p.d0 < 0 ? -1 : 1;
+    // Touching a string stops it.
+    st.P.fill(0);
+    st.Q.fill(0);
+    st.act = 0;
+    st.hold = { s: clamp(along(st, x, y), 0.04, 0.96), d: 0 };
+    mute(i);
+    panel.classList.add('held');
+  }
+  ptrs.set(e.pointerId, p);
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const r = panel.getBoundingClientRect(), p = ptrs.get(e.pointerId);
+  if (!p) {
+    if (e.pointerType !== 'touch' && W) panel.classList.toggle('grab', !e.shiftKey && grabAt(e.clientX - r.left, e.clientY - r.top, e.pointerType) >= 0);
+    return;
+  }
+  const list = e.getCoalescedEvents?.(), evs = list && list.length ? list : [e], hits = [];
+  for (const q of evs) {
+    const x = q.clientX - r.left, y = q.clientY - r.top;
+    if (p.mode === 'grab') pull(p, x, y, q.timeStamp);
+    if (p.mode === 'strum') cross(p, x, y, q.timeStamp, hits);
+    p.x = x;
+    p.y = y;
+    p.t = q.timeStamp;
+  }
+  if (hits.length) {
+    hits.sort((a, b) => a.tc - b.tc);
+    // Sounds keep the spacing the pointer crossed them with.
+    for (const h of hits) pluck(h.i, h.s, h.dir * h.amp * 0.45 * spc(h.s), h.amp, (h.tc - hits[0].tc) / 1000, 0.0015 * h.amp * h.amp);
+  }
+  if (!grabbing()) panel.classList.remove('held');
+  wake();
+});
+function finish(e, ok) {
+  const p = ptrs.get(e.pointerId);
+  if (!p) return;
+  ptrs.delete(e.pointerId);
+  if (p.mode === 'grab') {
+    const st = S[p.i], h = st.hold;
+    if (!ok) st.hold = null;
+    else if (p.far < 5 && e.timeStamp - p.t0 < 450) {
+      // A quick tap plucks at moderate strength.
+      st.hold = null;
+      pluck(p.i, h.s, p.side * 0.62 * 0.45 * spc(h.s), 0.62, 0, 0.001);
+    } else release(p.i, h.s, h.d, 0.6 * spc(h.s));
+  }
+  panel.classList.toggle('held', grabbing());
+  wake();
+}
+panel.addEventListener('pointerup', e => finish(e, true));
+panel.addEventListener('pointercancel', e => finish(e, false));
+panel.addEventListener('lostpointercapture', e => finish(e, true));
+panel.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') panel.classList.remove('grab'); });
+
+// The number row, 1 to 0, minus, equals: low to high.
+const KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
+const ROW = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='];
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  let k = KEYS.indexOf(e.code);
+  // Without a key code, the printed character decides.
+  if (k < 0 && !e.code) k = ROW.indexOf(e.key);
+  if (k >= 0) {
+    if (e.repeat || S[k].hold) return;
+    const st = S[k];
+    st.side = -st.side;
+    pluck(k, 0.42, st.side * 0.6 * 0.45 * spc(0.42), 0.6, 0, 0.001);
+    return;
+  }
+  const dir = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0;
+  if (!dir) return;
+  e.preventDefault();
+  if (!e.repeat) strum(dir, e.shiftKey ? 0.85 : 0.6);
+});
+
+const chips = [...document.querySelectorAll('.chip[data-scale]')];
+for (const b of chips) {
+  b.addEventListener('click', () => {
+    if (b.dataset.scale === scale) return;
+    scale = b.dataset.scale;
+    chips.forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+    tune();
+    // A soft run lets the new tuning be heard.
+    strum(1, 0.32);
+  });
+}
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start ---------- */
+tune();
+layout();
+new ResizeObserver(layout).observe(panel);
+})();
+</script>
+</body>
+</html>
