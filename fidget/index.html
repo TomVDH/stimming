@@ -1,0 +1,736 @@
+<title>Fidget board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, then the dial beside a cluster of small controls. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --well: oklch(0.12 0.01 275);
+  --tick: oklch(0.4 0.018 275);
+  --flash: oklch(0.88 0.14 84);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --well: oklch(0.915 0.006 275); --tick: oklch(0.76 0.012 275); --flash: oklch(0.66 0.17 52);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --well: oklch(0.915 0.006 275); --tick: oklch(0.76 0.012 275); --flash: oklch(0.66 0.17 52);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+.defs { position: absolute; width: 0; height: 0; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(28px, 5vw, 56px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.home { color: var(--muted); font-size: 14px; text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+/* The board sits on the page ground: no panel, no card. */
+.board { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: clamp(32px, 7vw, 88px); }
+.ctl {
+  display: block; position: relative; margin: 0; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; cursor: pointer; touch-action: none;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.ctl svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.ctl:focus-visible { outline-offset: 6px; }
+.dial { width: 100%; aspect-ratio: 1; border-radius: 50%; cursor: grab; }
+.held { cursor: grabbing; }
+.cluster {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; align-content: space-between;
+  grid-template-areas: "sw joy" "keys keys" "fader fader"; row-gap: clamp(32px, 5vw, 44px);
+}
+.switches { grid-area: sw; display: flex; gap: clamp(14px, 2.4vw, 28px); }
+.toggle { width: clamp(42px, 4.6vw, 54px); aspect-ratio: 48 / 124; border-radius: 999px; }
+.joy { grid-area: joy; width: clamp(118px, 13vw, 156px); aspect-ratio: 1; border-radius: 50%; cursor: grab; }
+.keys { grid-area: keys; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(10px, 1.6vw, 18px); }
+.key { aspect-ratio: 1; border-radius: 22%; }
+.fader { grid-area: fader; aspect-ratio: 500 / 120; border-radius: 12px; cursor: grab; }
+.well { fill: var(--well); stroke: var(--line); stroke-width: 1.5; }
+.tick { fill: none; stroke: var(--tick); stroke-linecap: round; }
+.flash { stroke: var(--flash); stroke-linecap: round; }
+.lit { stroke: var(--fg); stroke-linecap: round; }
+@media (max-width: 820px) {
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .dial { width: min(100%, 520px); justify-self: center; }
+  .cluster { width: min(100%, 560px); justify-self: center; }
+}
+@media (prefers-reduced-motion: reduce) { .home { transition: none; } }
+</style>
+
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <h1>Fidget board</h1>
+    <a class="home" href="https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd" data-local="../index.html">Stimming</a>
+  </header>
+  <main class="board">
+    <div class="ctl dial" id="dial" tabindex="0" role="slider" aria-label="Dial" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"></div>
+    <div class="cluster">
+      <div class="switches" role="group" aria-label="Switches">
+        <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Green switch" data-hue="150"></button>
+        <button class="ctl toggle" type="button" role="switch" aria-checked="false" aria-label="Teal switch" data-hue="200"></button>
+        <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Blue switch" data-hue="252"></button>
+      </div>
+      <div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick"></div>
+      <div class="keys" role="group" aria-label="Keys">
+        <button class="ctl key" type="button" aria-label="Key 1"></button>
+        <button class="ctl key" type="button" aria-label="Key 2"></button>
+        <button class="ctl key" type="button" aria-label="Key 3"></button>
+        <button class="ctl key" type="button" aria-label="Latching key" aria-pressed="false"></button>
+      </div>
+      <div class="ctl fader" id="fader" tabindex="0" role="slider" aria-label="Slider" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const RM = matchMedia('(prefers-reduced-motion: reduce)');
+  let reduce = RM.matches;
+  RM.addEventListener?.('change', e => { reduce = e.matches; });
+  const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, R2D = 180 / PI;
+  const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const mod = (a, n) => ((a % n) + n) % n;
+  const f2 = v => Math.round(v * 100) / 100;
+  const f3 = v => Math.round(v * 1000) / 1000;
+  const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > PI) d -= TAU; else if (d < -PI) d += TAU; return d; };
+  const KEYS = [' ', 'Enter'];
+
+  // Served locally, the home link opens the repo copy instead of the Artifact.
+  if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    document.querySelectorAll('a[data-local]').forEach(a => { a.href = a.dataset.local; a.removeAttribute('target'); });
+  }
+
+  /* ---------- colour: OKLCH in, sRGB hex out ---------- */
+  function lin(L, C, h) {
+    const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+    const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+    return [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+    ];
+  }
+  const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+  function rgb([L, C, h]) {
+    let c = lin(L, C, h);
+    // Chroma shrinks until the colour fits sRGB.
+    for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+    return [gam(c[0]), gam(c[1]), gam(c[2])];
+  }
+  const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+  function css(lch, a) {
+    const [r, g, b] = rgb(lch);
+    return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
+  }
+  function mixLch(A, B, t, raw) {
+    // Raw palettes keep their written hue direction instead of the shortest arc.
+    const dh = raw ? B[2] - A[2] : (((B[2] - A[2]) % 360) + 540) % 360 - 180;
+    return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
+  }
+
+  /* ---------- svg helpers ---------- */
+  function el(tag, attrs = {}, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function set(e, k, v) {
+    const c = e.__c || (e.__c = {});
+    if (c[k] !== v) { c[k] = v; e.setAttribute(k, v); }
+  }
+  const svgIn = (host, vb) => el('svg', { viewBox: vb, 'aria-hidden': 'true', focusable: 'false' }, host);
+
+  /* ---------- the shared fill recipe: base gradient, light, rim ---------- */
+  // Stops sit where Morphset puts them on its 128 box.
+  function grad(defs, id, [x, y, w, h]) {
+    const g = el('linearGradient', { id: id + 'g', gradientUnits: 'userSpaceOnUse', x1: f2(x + (w * 18) / 128), y1: f2(y + (h * 14) / 128), x2: f2(x + (w * 110) / 128), y2: f2(y + (h * 114) / 128) }, defs);
+    const gs = [0, 0.55, 1].map(o => el('stop', { offset: o }, g));
+    const l = el('radialGradient', { id: id + 'l', gradientUnits: 'userSpaceOnUse', cx: f2(x + (w * 42) / 128), cy: f2(y + (h * 34) / 128), r: f2((Math.max(w, h) * 58) / 128) }, defs);
+    const ls = [el('stop', { offset: 0, 'stop-opacity': 0.85 }, l), el('stop', { offset: 1, 'stop-opacity': 0 }, l)];
+    return { g, gs, l, ls };
+  }
+  function skin(defs, parent, id, tag, attrs, box, rim = 'rim') {
+    const G = grad(defs, id, box);
+    const s = el(tag, { id: id + 's', ...attrs }, defs);
+    const clip = el('clipPath', { id: id + 'c' }, defs);
+    el('use', { href: '#' + id + 's' }, clip);
+    const grp = el('g', {}, parent);
+    el('use', { href: '#' + id + 's', fill: `url(#${id}g)` }, grp);
+    el('use', { href: '#' + id + 's', fill: `url(#${id}l)` }, grp);
+    el('use', { href: '#' + id + 's', fill: 'none', stroke: `url(#${rim})`, 'stroke-width': 3, 'clip-path': `url(#${id}c)` }, grp);
+    return { ...G, s, grp };
+  }
+  // Tones are cached in 48 steps between rest and pressed.
+  function tone(pal, t) {
+    const q = Math.round(clamp(t) * 48), c = pal.c || (pal.c = []);
+    return c[q] || (c[q] = [0, 1, 2, 3].map(k => css(mixLch(pal.rest[k], pal.down[k], q / 48))));
+  }
+  function paint(G, pal, t) {
+    const c = tone(pal, t);
+    for (let k = 0; k < 3; k++) set(G.gs[k], 'stop-color', c[k]);
+    set(G.ls[0], 'stop-color', c[3]);
+    set(G.ls[1], 'stop-color', c[3]);
+  }
+
+  /* ---------- palettes: three gradient stops, then the light ---------- */
+  const pal = (rest, dl = 0.09) => ({ rest, down: rest.map(([L, C, h]) => [L - dl, C, h]) });
+  const hued = h => [[0.86, 0.12, h - 14], [0.72, 0.16, h], [0.58, 0.17, h + 16], [0.96, 0.05, h - 20]];
+  const CAP = pal([[0.89, 0.13, 88], [0.77, 0.16, 68], [0.64, 0.17, 48], [0.97, 0.05, 95]]);
+  const SKIRT = pal([[0.8, 0.14, 76], [0.67, 0.16, 58], [0.53, 0.15, 42], [0.94, 0.07, 88]]);
+  const PLASTIC = pal([[0.93, 0.008, 275], [0.83, 0.012, 275], [0.69, 0.018, 275], [0.99, 0.004, 275]], 0.1);
+  const SIDE = pal([[0.76, 0.014, 275], [0.63, 0.018, 275], [0.5, 0.022, 275], [0.88, 0.01, 275]], 0.08);
+  const VIOLET = pal(hued(298), 0.1);
+  const VIOLET_SIDE = pal([[0.68, 0.13, 290], [0.55, 0.16, 298], [0.43, 0.15, 308], [0.86, 0.06, 285]], 0.08);
+  const RED = pal([[0.8, 0.13, 26], [0.65, 0.2, 25], [0.51, 0.19, 20], [0.95, 0.04, 35]], 0.1);
+
+  /* ---------- physics loop ---------- */
+  // One rAF loop runs only while some body is still moving.
+  const live = new Set();
+  let raf = 0, last = 0;
+  function wake(b) {
+    live.add(b);
+    if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  }
+  function frame(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.05);
+    last = now;
+    // Substeps at 120 Hz keep stiff springs stable.
+    const n = Math.max(1, Math.ceil(dt * 120)), h = dt / n;
+    for (const b of live) {
+      for (let i = 0; i < n; i++) b.step(h);
+      b.draw();
+      if (!b.busy()) { b.draw(); live.delete(b); }
+    }
+    raf = live.size ? requestAnimationFrame(frame) : 0;
+  }
+  const S = (x = 0) => ({ x, v: 0, t: x });
+  // Semi-implicit Euler: velocity first, then position.
+  function spring(s, k, z, h) {
+    if (reduce) { s.x = s.t; s.v = 0; return; }
+    s.v += (k * (s.t - s.x) - 2 * z * Math.sqrt(k) * s.v) * h;
+    s.x += s.v * h;
+  }
+  // A spring close enough to its target snaps there and stops.
+  function rest(s, e = 1e-3) {
+    if (Math.abs(s.t - s.x) > e || Math.abs(s.v) > e * 20) return false;
+    s.x = s.t; s.v = 0;
+    return true;
+  }
+  const bodies = [];
+
+  /* ---------- dial ---------- */
+  const dialEl = document.getElementById('dial');
+  bodies.push((() => {
+    const svg = svgIn(dialEl, '0 0 400 400'), defs = el('defs', {}, svg);
+    const C = 200, N = 24, STEP = TAU / N;
+    const at = (r, a) => [f2(C + r * Math.sin(a)), f2(C - r * Math.cos(a))];
+    const ticks = el('g', { class: 'tick' }, svg), lit = el('g', { class: 'flash' }, svg), tl = [];
+    for (let k = 0; k < N; k++) {
+      const [x1, y1] = at(k % 6 ? 178 : 169, k * STEP), [x2, y2] = at(193, k * STEP);
+      const a = { x1, y1, x2, y2, 'stroke-width': k % 6 ? 3.5 : 5 };
+      el('line', a, ticks);
+      tl.push(el('line', { ...a, opacity: 0 }, lit));
+    }
+    // The skirt has a fine knurl, so turning reads at any speed.
+    const edge = [];
+    for (let i = 0; i < 384; i++) { const a = (i / 384) * TAU; edge.push(at(158 + 2.2 * Math.cos(48 * a), a).join(' ')); }
+    const knob = el('g', {}, svg);
+    const rim = el('linearGradient', { id: 'dial-rim', gradientUnits: 'userSpaceOnUse', x1: 42, y1: 42, x2: 358, y2: 358 }, defs);
+    el('stop', { offset: 0, 'stop-color': '#fff', 'stop-opacity': 0.62 }, rim);
+    el('stop', { offset: 0.5, 'stop-color': '#fff', 'stop-opacity': 0 }, rim);
+    const skirt = skin(defs, knob, 'dk', 'path', { d: 'M' + edge.join('L') + 'Z' }, [42, 42, 316, 316], 'dial-rim');
+    const ridges = el('g', { stroke: css([0.52, 0.13, 44]), 'stroke-width': 2, 'stroke-linecap': 'round', opacity: 0.5 }, knob);
+    for (let k = 0; k < 48; k++) {
+      const a = ((k + 0.5) / 48) * TAU, [x1, y1] = at(137, a), [x2, y2] = at(152, a);
+      el('line', { x1, y1, x2, y2 }, ridges);
+    }
+    const top = el('g', {}, svg);
+    const cap = skin(defs, top, 'dc', 'circle', { cx: C, cy: C, r: 128 }, [72, 72, 256, 256]);
+    const ind = el('rect', { x: C - 7, y: C - 118, width: 14, height: 56, rx: 7, fill: css([0.47, 0.12, 44]) }, top);
+
+    const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', pr: S(), fl: new Float32Array(N), floor: 0, pid: null, pu: 0, prev: 0, off: 0, trail: [], rect: null };
+    // Drag follow, detent pull, spin friction, settle spring.
+    const KD = 1600, CD = 68, AD = 70;
+    const AS = 14, CF = 0.4, MU = 4.5, WCAP = 2.2;
+    const KS = 520, CS = 23;
+
+    function cross() {
+      const f = Math.floor(s.th / STEP + 1e-6);
+      if (f === s.floor) return;
+      // Each detent the indicator passes lights its tick.
+      if (!reduce && (s.mode === 'drag' || Math.abs(s.w) > 0.3)) {
+        const lo = Math.min(f, s.floor), hi = Math.min(Math.max(f, s.floor), lo + N);
+        for (let k = lo + 1; k <= hi; k++) s.fl[mod(k, N)] = 1;
+      }
+      s.floor = f;
+    }
+    const body = {
+      step(h) {
+        if (reduce) {
+          if (s.mode === 'spin') { s.mode = 'settle'; s.T = Math.round(s.th / STEP) * STEP; }
+          if (s.mode !== 'rest') { s.th = s.T; s.w = 0; s.a = 0; }
+          s.fl.fill(0);
+          spring(s.pr, 700, 0.45, h);
+          cross();
+          return;
+        }
+        let a = 0;
+        if (s.mode === 'drag') a = KD * (s.T - s.th) - CD * s.w - AD * Math.sin(N * s.th);
+        else if (s.mode === 'spin') {
+          // Friction drains the flick; detents ripple its speed.
+          a = -AS * Math.sin(N * s.th) - CF * s.w - MU * Math.sign(s.w);
+          if (Math.abs(s.w) < WCAP) {
+            s.mode = 'settle';
+            s.T = (s.w > 0 ? Math.ceil(s.th / STEP) : Math.floor(s.th / STEP)) * STEP;
+          }
+        } else if (s.mode === 'settle') a = KS * (s.T - s.th) - CS * s.w;
+        s.a = a;
+        s.w += a * h;
+        s.th += s.w * h;
+        cross();
+        const k = Math.exp(-6 * h);
+        for (let i = 0; i < N; i++) if (s.fl[i]) s.fl[i] = s.fl[i] < 0.004 ? 0 : s.fl[i] * k;
+        spring(s.pr, 700, 0.45, h);
+      },
+      busy() {
+        let moving = s.mode === 'spin';
+        if (s.mode === 'drag') moving = Math.abs(s.w) > 1e-3 || Math.abs(s.a) > 1e-2;
+        else if (s.mode === 'settle') {
+          if (Math.abs(s.T - s.th) < 2e-4 && Math.abs(s.w) < 2e-3) {
+            // At rest the angle folds back into one turn.
+            const k = mod(Math.round(s.T / STEP), N);
+            s.th = s.T = k * STEP; s.w = 0; s.mode = 'rest'; s.floor = k;
+          } else moving = true;
+        }
+        const lit = s.fl.some(v => v > 0), still = rest(s.pr);
+        return moving || lit || !still;
+      },
+      draw() {
+        const deg = mod(s.th * R2D, 360), r = `rotate(${f2(deg)} 200 200)`, cr = `rotate(${f2(-deg)} 200 200)`;
+        set(knob, 'transform', r);
+        set(ind, 'transform', r);
+        // Gradients counter-rotate, so the light stays top-left.
+        set(skirt.g, 'gradientTransform', cr);
+        set(skirt.l, 'gradientTransform', cr);
+        set(rim, 'gradientTransform', cr);
+        const p = s.pr.x;
+        set(top, 'transform', `translate(200 200) scale(${f3(1 - 0.03 * p)}) translate(-200 -200)`);
+        paint(cap, CAP, p * 0.8);
+        paint(skirt, SKIRT, p * 0.5);
+        const cur = mod(Math.round(s.th / STEP), N);
+        for (let k = 0; k < N; k++) set(tl[k], 'opacity', f2(Math.max(s.fl[k], k === cur ? 0.55 : 0)));
+        set(dialEl, 'aria-valuenow', s.mode === 'settle' || s.mode === 'rest' ? mod(Math.round(s.T / STEP), N) : cur);
+      },
+    };
+
+    function polar(e) {
+      const r = s.rect, dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+      return [Math.atan2(dx, -dy), Math.hypot(dx, dy) / (r.width / 2)];
+    }
+    dialEl.addEventListener('pointerdown', e => {
+      if (s.pid != null || e.button > 0) return;
+      s.pid = e.pointerId;
+      try { dialEl.setPointerCapture(e.pointerId); } catch {}
+      s.rect = dialEl.getBoundingClientRect();
+      const [a] = polar(e);
+      // The grab point stays under the finger as the knob turns.
+      s.prev = s.pu = a; s.off = s.th - a; s.T = s.th;
+      s.mode = 'drag'; s.trail = [[e.timeStamp, a]];
+      s.pr.t = 1; dialEl.classList.add('held');
+      wake(body);
+    });
+    dialEl.addEventListener('pointermove', e => {
+      if (e.pointerId !== s.pid) return;
+      const [a, d] = polar(e);
+      if (d < 0.1) return;
+      s.pu += angDiff(a, s.prev); s.prev = a;
+      s.T = s.pu + s.off;
+      s.trail.push([e.timeStamp, s.pu]);
+      while (s.trail.length > 2 && e.timeStamp - s.trail[0][0] > 120) s.trail.shift();
+      wake(body);
+    });
+    function end(e) {
+      if (e.pointerId !== s.pid) return;
+      s.pid = null; s.pr.t = 0; dialEl.classList.remove('held');
+      // Pointer speed over the last 100 ms decides flick or snap.
+      const t = e.timeStamp, q = s.trail.filter(p => t - p[0] < 100);
+      let w = 0;
+      if (q.length > 1 && t - q[q.length - 1][0] < 50) {
+        const dt = (q[q.length - 1][0] - q[0][0]) / 1000;
+        if (dt > 0.008) w = (q[q.length - 1][1] - q[0][1]) / dt;
+      }
+      if (!reduce && Math.abs(w) > 5) { s.mode = 'spin'; s.w = clamp(w, -45, 45); }
+      else { s.mode = 'settle'; s.T = Math.round((reduce ? s.T : s.th) / STEP) * STEP; }
+      wake(body);
+    }
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => dialEl.addEventListener(t, end));
+    dialEl.addEventListener('keydown', e => {
+      if (s.pid != null) return;
+      const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 6, PageDown: -6 }[e.key];
+      const base = s.mode === 'settle' ? s.T : Math.round(s.th / STEP) * STEP;
+      if (d) { s.mode = 'settle'; s.T = base + d * STEP; }
+      else if (e.key === 'Home') { s.mode = 'settle'; s.T = Math.round(s.th / TAU) * TAU; }
+      else if (KEYS.includes(e.key)) {
+        // Space flicks the knob; Shift flicks it backwards.
+        const dir = e.shiftKey ? -1 : 1;
+        if (reduce) { s.mode = 'settle'; s.T = base + dir * STEP; }
+        else { s.mode = 'spin'; s.w = clamp(s.w + dir * 14, -45, 45); }
+      } else return;
+      e.preventDefault();
+      if (s.mode === 'settle') set(dialEl, 'aria-valuenow', mod(Math.round(s.T / STEP), N));
+      wake(body);
+    });
+    return body;
+  })());
+
+  /* ---------- toggle switches ---------- */
+  document.querySelectorAll('.toggle').forEach((btn, i) => {
+    const svg = svgIn(btn, '0 0 48 124'), defs = el('defs', {}, svg), id = 'tg' + i;
+    el('rect', { class: 'well', x: 0.75, y: 0.75, width: 46.5, height: 122.5, rx: 23.25 }, svg);
+    const fg = el('g', {}, svg);
+    paint(skin(defs, fg, id + 'f', 'rect', { width: 48, height: 124, rx: 24 }, [0, 0, 48, 124]), pal(hued(+btn.dataset.hue)), 0);
+    const lg = el('g', {}, svg);
+    const lever = skin(defs, lg, id + 'l', 'rect', { x: 4, width: 40, height: 52, rx: 20 }, [4, 0, 40, 52]);
+    const grip = el('g', { stroke: css([0.64, 0.016, 275]), 'stroke-width': 2.4, 'stroke-linecap': 'round' }, lg);
+    for (const y of [19, 26, 33]) el('line', { x1: 17, y1: y, x2: 31, y2: y }, grip);
+
+    const on = btn.getAttribute('aria-checked') === 'true';
+    const s = { p: S(+on), pr: S(), on, pid: null, y0: 0, p0: 0, span: 1, drag: false };
+    const body = {
+      step(h) {
+        // Free travel overshoots a little; a dragging finger damps it.
+        spring(s.p, s.drag ? 1400 : 600, s.drag ? 0.9 : 0.55, h);
+        spring(s.pr, 900, 0.6, h);
+      },
+      busy() { const a = rest(s.p), b = rest(s.pr); return !(a && b); },
+      draw() {
+        const p = s.p.x, st = clamp(Math.abs(s.p.v) * 0.012, 0, 0.1), sc = 1 - 0.06 * s.pr.x;
+        // The lever stretches along its travel while moving fast.
+        set(lg, 'transform', `translate(24 ${f2(94 - 64 * p)}) scale(${f3(sc * (1 - 0.5 * st))} ${f3(sc * (1 + st))}) translate(-24 -26)`);
+        set(fg, 'opacity', f3(clamp(p)));
+        paint(lever, PLASTIC, s.pr.x * 0.8);
+      },
+    };
+    function flip(v) { s.on = v; s.p.t = +v; btn.setAttribute('aria-checked', String(v)); wake(body); }
+    btn.addEventListener('pointerdown', e => {
+      if (s.pid != null || e.button > 0) return;
+      s.pid = e.pointerId;
+      try { btn.setPointerCapture(e.pointerId); } catch {}
+      s.y0 = e.clientY; s.p0 = s.p.x; s.drag = false;
+      s.span = (btn.getBoundingClientRect().height * 64) / 124;
+      s.pr.t = 1;
+      wake(body);
+    });
+    btn.addEventListener('pointermove', e => {
+      if (e.pointerId !== s.pid) return;
+      const dy = e.clientY - s.y0;
+      if (!s.drag && Math.abs(dy) > 5) s.drag = true;
+      if (s.drag) { s.p.t = clamp(s.p0 - dy / s.span); wake(body); }
+    });
+    const up = e => {
+      if (e.pointerId !== s.pid) return;
+      s.pid = null; s.pr.t = 0;
+      if (s.drag) { s.drag = false; flip(s.p.x + s.p.v * 0.05 > 0.5); }
+      else if (e.type === 'pointerup') flip(!s.on);
+      else wake(body);
+    };
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, up));
+    // Keyboard clicks arrive with detail 0; pointer taps are handled above.
+    btn.addEventListener('click', e => { if (e.detail === 0) { s.pr.v = 10; flip(!s.on); } });
+    btn.addEventListener('keydown', e => {
+      const v = e.key === 'ArrowUp' ? true : e.key === 'ArrowDown' ? false : null;
+      if (v === null) return;
+      e.preventDefault();
+      if (v !== s.on) { s.pr.v = 10; flip(v); }
+    });
+    bodies.push(body);
+  });
+
+  /* ---------- joystick ---------- */
+  const joyEl = document.getElementById('joy');
+  bodies.push((() => {
+    const svg = svgIn(joyEl, '0 0 200 200'), defs = el('defs', {}, svg), R = 56;
+    el('circle', { class: 'well', cx: 100, cy: 100, r: 98.25 }, svg);
+    el('circle', { class: 'tick', cx: 100, cy: 100, r: 76, 'stroke-width': 2, 'stroke-dasharray': '2 10' }, svg);
+    el('circle', { cx: 100, cy: 100, r: 24, fill: css([0.3, 0.014, 275]) }, svg);
+    const stem = el('line', { x1: 100, y1: 100, x2: 100, y2: 100, stroke: css([0.4, 0.016, 275]), 'stroke-width': 20, 'stroke-linecap': 'round' }, svg);
+    const ng = el('g', {}, svg);
+    const nub = skin(defs, ng, 'jn', 'circle', { cx: 100, cy: 100, r: 38 }, [62, 62, 76, 76]);
+    const s = { x: S(), y: S(), pr: S(), pid: null, ox: 0, oy: 0, keys: 0, rect: null };
+    const body = {
+      step(h) {
+        // Held, the nub tracks firmly; let go, it wobbles home.
+        const k = s.pid != null ? 1500 : s.keys ? 700 : 240, z = s.pid != null ? 0.85 : s.keys ? 0.7 : 0.16;
+        spring(s.x, k, z, h);
+        spring(s.y, k, z, h);
+        const m = Math.hypot(s.x.x, s.y.x);
+        if (m > R) {
+          // The gate rim stops the nub and returns part of its speed.
+          const nx = s.x.x / m, ny = s.y.x / m, vn = s.x.v * nx + s.y.v * ny;
+          s.x.x = nx * R; s.y.x = ny * R;
+          if (vn > 0) { s.x.v -= 1.5 * vn * nx; s.y.v -= 1.5 * vn * ny; }
+        }
+        spring(s.pr, 900, 0.55, h);
+      },
+      busy() { const a = rest(s.x, 0.05), b = rest(s.y, 0.05), c = rest(s.pr); return !(a && b && c); },
+      draw() {
+        const x = s.x.x, y = s.y.x, sc = 1 - 0.06 * s.pr.x;
+        set(stem, 'x2', f2(100 + x));
+        set(stem, 'y2', f2(100 + y));
+        set(ng, 'transform', `translate(${f2(100 + x)} ${f2(100 + y)}) scale(${f3(sc)}) translate(-100 -100)`);
+        paint(nub, RED, s.pr.x * 0.8);
+      },
+    };
+    function aim(x, y) {
+      const m = Math.hypot(x, y), k = m > R ? R / m : 1;
+      s.x.t = x * k; s.y.t = y * k;
+      wake(body);
+    }
+    const local = e => {
+      const r = s.rect;
+      return [((e.clientX - r.left) / r.width) * 200 - 100, ((e.clientY - r.top) / r.height) * 200 - 100];
+    };
+    joyEl.addEventListener('pointerdown', e => {
+      if (s.pid != null || e.button > 0) return;
+      s.pid = e.pointerId;
+      try { joyEl.setPointerCapture(e.pointerId); } catch {}
+      s.rect = joyEl.getBoundingClientRect();
+      const [qx, qy] = local(e), onNub = Math.hypot(qx - s.x.x, qy - s.y.x) < 44;
+      s.ox = onNub ? s.x.x - qx : 0; s.oy = onNub ? s.y.x - qy : 0;
+      s.pr.t = 1; joyEl.classList.add('held');
+      aim(qx + s.ox, qy + s.oy);
+    });
+    joyEl.addEventListener('pointermove', e => {
+      if (e.pointerId !== s.pid) return;
+      const [qx, qy] = local(e);
+      aim(qx + s.ox, qy + s.oy);
+    });
+    const up = e => {
+      if (e.pointerId !== s.pid) return;
+      s.pid = null; s.pr.t = 0; joyEl.classList.remove('held');
+      steer();
+    };
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => joyEl.addEventListener(t, up));
+    const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }, held = new Set();
+    function steer() {
+      let dx = 0, dy = 0;
+      held.forEach(k => { dx += dirs[k][0]; dy += dirs[k][1]; });
+      const m = Math.hypot(dx, dy) || 1;
+      s.keys = held.size;
+      aim((dx / m) * R, (dy / m) * R);
+    }
+    joyEl.addEventListener('keydown', e => {
+      if (dirs[e.key]) {
+        e.preventDefault();
+        if (!held.has(e.key) && s.pid == null) { held.add(e.key); steer(); }
+      } else if (KEYS.includes(e.key)) {
+        e.preventDefault();
+        s.pr.t = 1; wake(body);
+      }
+    });
+    joyEl.addEventListener('keyup', e => {
+      if (held.delete(e.key)) { if (s.pid == null) steer(); }
+      else if (KEYS.includes(e.key)) { s.pr.t = 0; wake(body); }
+    });
+    joyEl.addEventListener('blur', () => {
+      held.clear(); s.pr.t = 0;
+      if (s.pid == null) steer();
+    });
+    return body;
+  })());
+
+  /* ---------- keycaps ---------- */
+  document.querySelectorAll('.key').forEach((btn, i) => {
+    const latch = btn.hasAttribute('aria-pressed');
+    const svg = svgIn(btn, '0 0 100 100'), defs = el('defs', {}, svg), id = 'ky' + i;
+    const PT = latch ? VIOLET : PLASTIC, PS = latch ? VIOLET_SIDE : SIDE;
+    const skirt = skin(defs, svg, id + 's', 'rect', { y: 2, width: 100, height: 98, rx: 22 }, [0, 2, 100, 98]);
+    const tg = el('g', {}, svg);
+    const top = skin(defs, tg, id + 't', 'rect', { x: 10, y: 3, width: 80, height: 74, rx: 17 }, [10, 3, 80, 74]);
+    const pip = latch ? el('circle', { cx: 50, cy: 16, r: 4 }, tg) : null;
+    const s = { d: S(), lk: S(), held: false, locked: false, pid: null, kb: false, keyAt: 0 };
+    const body = {
+      step(h) {
+        // Fast firm downstroke, bouncy return, a softer catch when latched.
+        if (s.held) spring(s.d, 1800, 0.7, h);
+        else if (s.locked) spring(s.d, 900, 0.45, h);
+        else spring(s.d, 650, 0.32, h);
+        spring(s.lk, 400, 0.8, h);
+      },
+      busy() { const a = rest(s.d), b = rest(s.lk); return !(a && b); },
+      draw() {
+        const d = s.d.x, sq = clamp(s.d.v / 16, -1, 1), sc = 1 - 0.05 * clamp(d, -0.3, 1);
+        // The top sinks toward the board and squashes with its speed.
+        set(skirt.s, 'y', f2(2 + 6 * d));
+        set(skirt.s, 'height', f2(98 - 6 * d));
+        set(tg, 'transform', `translate(50 ${f2(40 + 8 * d)}) scale(${f3(sc * (1 + 0.07 * sq))} ${f3(sc * (1 - 0.09 * sq))}) translate(-50 -40)`);
+        paint(top, PT, d * 0.9);
+        paint(skirt, PS, d * 0.7);
+        if (pip) set(pip, 'fill', css(mixLch([0.42, 0.1, 292], [0.97, 0.04, 300], clamp(s.lk.x))));
+      },
+    };
+    function press() { s.held = true; s.d.t = 1; wake(body); }
+    function release() {
+      s.held = false;
+      if (latch) {
+        s.locked = !s.locked;
+        s.lk.t = +s.locked;
+        btn.setAttribute('aria-pressed', String(s.locked));
+      }
+      s.d.t = s.locked ? 0.6 : 0;
+      wake(body);
+    }
+    btn.addEventListener('pointerdown', e => {
+      if (s.pid != null || s.kb || e.button > 0) return;
+      s.pid = e.pointerId;
+      try { btn.setPointerCapture(e.pointerId); } catch {}
+      press();
+    });
+    const up = e => { if (e.pointerId === s.pid) { s.pid = null; release(); } };
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, up));
+    // Keys hold down for as long as Space or Enter is held.
+    btn.addEventListener('keydown', e => {
+      if (!KEYS.includes(e.key)) return;
+      e.preventDefault();
+      if (!e.repeat && !s.kb && s.pid == null) { s.kb = true; press(); }
+    });
+    btn.addEventListener('keyup', e => {
+      if (!KEYS.includes(e.key) || !s.kb) return;
+      e.preventDefault();
+      s.kb = false; s.keyAt = performance.now();
+      release();
+    });
+    btn.addEventListener('blur', () => { if (s.kb) { s.kb = false; release(); } });
+    // Assistive tech clicks without key events; they get a short tap.
+    btn.addEventListener('click', e => {
+      if (e.detail !== 0 || s.kb || s.pid != null || performance.now() - s.keyAt < 300) return;
+      press();
+      setTimeout(release, 140);
+    });
+    bodies.push(body);
+  });
+
+  /* ---------- slider ---------- */
+  const faderEl = document.getElementById('fader');
+  bodies.push((() => {
+    const svg = svgIn(faderEl, '0 0 500 120'), defs = el('defs', {}, svg);
+    const XS = [30, 140, 250, 360, 470];
+    el('rect', { class: 'well', x: 4.75, y: 40.75, width: 490.5, height: 10.5, rx: 5.25 }, svg);
+    const base = el('g', { class: 'tick' }, svg), lit = el('g', { class: 'lit' }, svg);
+    const marks = XS.map(x => {
+      const a = { x1: x, y1: 100, x2: x, y2: 114, 'stroke-width': 4 };
+      el('line', a, base);
+      return el('line', { ...a, opacity: 0 }, lit);
+    });
+    const tg = el('g', {}, svg);
+    const thumb = skin(defs, tg, 'fd', 'rect', { x: 6, y: 8, width: 48, height: 76, rx: 14 }, [6, 8, 48, 76]);
+    el('line', { x1: 30, y1: 24, x2: 30, y2: 68, stroke: css([0.52, 0.02, 275]), 'stroke-width': 4, 'stroke-linecap': 'round' }, tg);
+    const s = { x: S(XS[2]), n: 2, pr: S(), pid: null, off: 0, grab: false, drag: false, rect: null };
+    const body = {
+      step(h) {
+        // A soft spring under the finger makes the thumb feel heavy.
+        if (s.drag) spring(s.x, 170, 0.72, h);
+        else spring(s.x, 300, 0.5, h);
+        // End stops knock the thumb back.
+        const p = s.x;
+        if (p.x < 22) { p.x = 22; if (p.v < 0) p.v *= -0.35; }
+        else if (p.x > 478) { p.x = 478; if (p.v > 0) p.v *= -0.35; }
+        spring(s.pr, 900, 0.6, h);
+      },
+      busy() { const a = rest(s.x, 0.04), b = rest(s.pr); return !(a && b); },
+      draw() {
+        const x = s.x.x, st = clamp(Math.abs(s.x.v) / 2400, 0, 0.08), sc = 1 - 0.05 * s.pr.x;
+        set(tg, 'transform', `translate(${f2(x)} 46) scale(${f3(sc * (1 + st))} ${f3(sc * (1 - 0.5 * st))}) translate(-30 -46)`);
+        paint(thumb, PLASTIC, s.pr.x * 0.8);
+        // Notches brighten as the thumb nears them.
+        marks.forEach((m, i) => {
+          const o = clamp(1 - Math.abs(x - XS[i]) / 55);
+          set(m, 'opacity', f3(o * o * (3 - 2 * o)));
+        });
+      },
+    };
+    function go(n) {
+      s.n = n; s.x.t = XS[n]; s.drag = false;
+      faderEl.setAttribute('aria-valuenow', String(n + 1));
+      wake(body);
+    }
+    const local = e => ((e.clientX - s.rect.left) / s.rect.width) * 500;
+    faderEl.addEventListener('pointerdown', e => {
+      if (s.pid != null || e.button > 0) return;
+      s.pid = e.pointerId;
+      try { faderEl.setPointerCapture(e.pointerId); } catch {}
+      s.rect = faderEl.getBoundingClientRect();
+      const q = local(e);
+      // Grabbing the thumb keeps its offset; the track pulls it over.
+      s.grab = Math.abs(q - s.x.x) < 32;
+      s.off = s.grab ? s.x.x - q : 0;
+      s.drag = true; s.x.t = clamp(q + s.off, XS[0], XS[4]);
+      s.pr.t = 1; faderEl.classList.add('held');
+      wake(body);
+    });
+    faderEl.addEventListener('pointermove', e => {
+      if (e.pointerId !== s.pid) return;
+      s.x.t = clamp(local(e) + s.off, XS[0], XS[4]);
+      wake(body);
+    });
+    const up = e => {
+      if (e.pointerId !== s.pid) return;
+      s.pid = null; s.pr.t = 0; faderEl.classList.remove('held');
+      // A held thumb lands where it is heading; a track tap, where tapped.
+      const aim = s.grab ? s.x.x + s.x.v * 0.12 : s.x.t;
+      go(clamp(Math.round((aim - XS[0]) / 110), 0, 4));
+    };
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => faderEl.addEventListener(t, up));
+    faderEl.addEventListener('keydown', e => {
+      const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 1, PageDown: -1 }[e.key];
+      let n;
+      if (d) n = s.n + d;
+      else if (e.key === 'Home') n = 0;
+      else if (e.key === 'End') n = 4;
+      else return;
+      e.preventDefault();
+      if (s.pid == null) go(clamp(n, 0, 4));
+    });
+    return body;
+  })());
+
+  bodies.forEach(b => b.draw());
+})();
+</script>
