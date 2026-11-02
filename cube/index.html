@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Infinity cube</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, then the cube panel at full width. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { min-width: 0; }
+/* The panel is 16:9, 4:5 on phones, capped by the viewport. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 168px));
+  border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--surface);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+/* The panel wears the focus ring; its corners clip the canvas. */
+.stage:has(canvas:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; outline: none; cursor: grab;
+  opacity: 0; transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+.stage canvas.held { cursor: grabbing; }
+.hint {
+  position: absolute; left: 16px; bottom: 14px; pointer-events: none;
+  font-size: 13px; color: var(--muted); transition: opacity 0.6s ease;
+}
+.hint.gone { opacity: 0; }
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: var(--muted);
+}
+@media (prefers-reduced-motion: reduce) { .stage canvas, .hint, .home, .snd { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Infinity cube</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage">
+      <canvas tabindex="0" role="application" aria-label="Infinity cube. Space folds it; arrow keys turn it."></canvas>
+      <span class="hint">drag to fold</span>
+      <p class="fail" hidden>The cube needs WebGL, which this browser has turned off.</p>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const hint = stage.querySelector('.hint'), fail = stage.querySelector('.fail');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+const PI = Math.PI, HALF = PI / 2, D2R = PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+// Shell and lid face out at first.
+// A fold turns the warm core faces outward.
+const LACQUER = {
+  shell: [0.56, 0.16, 262],
+  lid: [0.86, 0.085, 222],
+  core: [0.75, 0.15, 44],
+  well: [0.68, 0.16, 32],
+  seam: [0.2, 0.02, 268],
+};
+
+/* ---------- the mechanism ---------- */
+// Four bars, each two cubes deep, ring around a rhombus of hinges.
+// Bars A to D run anticlockwise from the bottom left.
+// Closed, hinge A-B is bottom middle and C-D is top middle.
+// Hinges B-C and D-A both lie on the centre line.
+// The rhombus has unit sides.
+// Phi is each side's tilt from vertical.
+// Every hinge swings 180 degrees per fold.
+// Bars turn in place and never leave their cells.
+const P4 = [{}, {}, {}, {}];
+function put(o, px, py, th, ox, oy) {
+  const c = Math.cos(th), s = Math.sin(th);
+  o.x = px + c * ox - s * oy;
+  o.y = py + s * ox + c * oy;
+  o.r = th;
+}
+function pose(f) {
+  const s = Math.sin(f), c = Math.cos(f);
+  put(P4[0], -s, 0, f, -0.5, -0.5);
+  put(P4[1], 0, -c, -f, 0.5, 0.5);
+  put(P4[2], s, 0, f, 0.5, 0.5);
+  put(P4[3], 0, c, -f, -0.5, -0.5);
+  return P4;
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.cube.sound', MAXV = 10, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
+let clackAt = 0, tickAt = 0, rub = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice.
+// The compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every voice.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the cube settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !drag && !rub && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && e.key !== ' ' && e.key !== 'Enter')) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Closing: magnets meet, a soft click over a low thock.
+function clack(speed) {
+  const a = live();
+  if (!a || voices >= MAXV || speed < 0.3) return;
+  const t = a.currentTime + LEAD;
+  if (t - clackAt < 0.07) return;
+  clackAt = t;
+  const g = clamp(speed / 5, 0.12, 1) * level() * jit(0.1), f = jit(0.04);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 2100 * f;
+  bp.Q.value = 1.3;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.5 * g, t + 0.0008);
+  ng.gain.setTargetAtTime(0, t + 0.0008, 0.005);
+  // The second magnet seats a few milliseconds later.
+  const t2 = t + 0.005 + Math.random() * 0.004;
+  ng.gain.setValueAtTime(0.2 * g, t2);
+  ng.gain.setTargetAtTime(0, t2, 0.004);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.06);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(230 * f, t);
+  o.frequency.exponentialRampToValueAtTime(140 * f, t + 0.05);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.3 * g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, 0.016);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.12);
+  track(o, og, ng);
+}
+// Halfway: the hinges pass square, a faint tick.
+function tick() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t - tickAt < 0.05) return;
+  tickAt = t;
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = 'triangle';
+  o.frequency.value = 2600 * jit(0.05);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.05 * level(), t + 0.001);
+  og.gain.setTargetAtTime(0, t + 0.001, 0.004);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.04);
+  track(o, og);
+}
+// Scrubbing: felt on felt, louder and brighter with speed.
+function rubStart() {
+  const a = live();
+  if (!a || rub || voices >= MAXV) return;
+  const src = a.createBufferSource(), hp = a.createBiquadFilter(), lp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  hp.type = 'highpass';
+  hp.frequency.value = 160;
+  lp.type = 'lowpass';
+  lp.frequency.value = 700;
+  lp.Q.value = 0.5;
+  g.gain.value = 0;
+  src.connect(hp).connect(lp).connect(g).connect(out);
+  src.start(a.currentTime, Math.random() * 0.9);
+  track(src, hp, lp, g);
+  rub = { src, lp, g };
+}
+function rubSet(speed) {
+  if (!rub) return;
+  const t = ac.currentTime;
+  rub.g.gain.setTargetAtTime(Math.min(0.045, speed * 0.011), t, 0.04);
+  rub.lp.frequency.setTargetAtTime(600 + Math.min(900, speed * 150), t, 0.05);
+}
+function rubStop() {
+  if (!rub) return;
+  const t = ac.currentTime;
+  rub.g.gain.setTargetAtTime(0, t, 0.05);
+  rub.src.stop(t + 0.3);
+  rub = null;
+}
+
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else { rubStop(); if (ac) ac.suspend()?.catch(() => {}); }
+});
+
+/* ---------- state ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, cube = null, pm = null, Room = null;
+const bars = [], hits = [];
+let ready = false, onScreen = false, raf = 0, last = 0, wakeT = 0, W = 1, H = 1;
+let phi = 0, phiV = 0, target = 0, restEnd = 0, drag = null, lastInput = performance.now();
+const view = { yaw: -0.62, pitch: 0.42, yawT: -0.62, pitchT: 0.42, vy: 0, vp: 0 };
+const TURN = 0.0085, PITCH = 1.25;
+// Springs: k is stiffness, z the damping ratio, e the bounce.
+const SNAP = { k: 58, z: 0.42, e: 0.28 }, SNAP_RM = { k: 170, z: 0.8, e: 0 };
+
+/* ---------- one loop, only while something moves ---------- */
+const running = () => ready && onScreen && !document.hidden;
+function wake() {
+  clearTimeout(wakeT);
+  if (!raf && running()) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  const dt = Math.min((now - last) / 1000, 1 / 30);
+  last = now;
+  const a = stepFold(dt), b = stepTurn(dt, now);
+  draw();
+  if ((a || b) && running()) { raf = requestAnimationFrame(frame); return; }
+  // Idle drift starts after a pause, so a timer wakes the loop.
+  const quiet = (now - lastInput) / 1000;
+  if (!reduce && quiet < 3) wakeT = setTimeout(wake, (3 - quiet) * 1000 + 30);
+  rest();
+}
+function draw() {
+  if (!ready) return;
+  const P = pose(phi);
+  for (let i = 0; i < 4; i++) {
+    bars[i].position.set(P[i].x, P[i].y, 0);
+    bars[i].rotation.z = P[i].r;
+  }
+  cube.rotation.set(view.pitch, view.yaw, 0);
+  renderer.render(scene, camera);
+}
+
+// Passing square makes the halfway tick.
+function passHalf(a, b) { if ((a - HALF / 2) * (b - HALF / 2) < 0) tick(); }
+function stepFold(dt) {
+  if (drag && drag.kind === 'fold') return true;
+  if (Math.abs(phi - target) < 2e-4 && Math.abs(phiV) < 2e-3) {
+    phi = target;
+    phiV = 0;
+    if (target !== restEnd) { restEnd = target; hint.classList.add('gone'); }
+    return false;
+  }
+  const { k, z, e } = reduce ? SNAP_RM : SNAP, c = 2 * z * Math.sqrt(k);
+  const n = Math.max(1, Math.ceil(dt / 0.004)), h = dt / n;
+  for (let i = 0; i < n; i++) {
+    const was = phi;
+    phiV += (k * (target - phi) - c * phiV) * h;
+    phi += phiV * h;
+    // The closed cube is a hard stop.
+    // Overshoot bounces off it with a clack.
+    if (phi < 0 || phi > HALF) {
+      phi = phi < 0 ? 0 : HALF;
+      clack(Math.abs(phiV));
+      phiV *= -e;
+    }
+    passHalf(was, phi);
+  }
+  return true;
+}
+function stepTurn(dt, now) {
+  const v = view;
+  if (!(drag && drag.kind === 'turn')) {
+    v.yawT += v.vy * dt;
+    v.pitchT += v.vp * dt;
+    const f = Math.exp(-dt * 4);
+    v.vy = Math.abs(v.vy * f) < 1e-3 ? 0 : v.vy * f;
+    v.vp = Math.abs(v.vp * f) < 1e-3 ? 0 : v.vp * f;
+  }
+  // Drift eases in after a pause and out after a minute.
+  const quiet = (now - lastInput) / 1000;
+  const drift = reduce || drag ? 0 : sstep(3, 6, quiet) * (1 - sstep(50, 58, quiet));
+  v.yawT += 0.07 * drift * dt;
+  v.pitchT = clamp(v.pitchT, -PITCH, PITCH);
+  const k = 1 - Math.exp(-dt * (reduce ? 30 : 12));
+  v.yaw += (v.yawT - v.yaw) * k;
+  v.pitch += (v.pitchT - v.pitch) * k;
+  return drift > 0 || v.vy !== 0 || v.vp !== 0 || Math.abs(v.yawT - v.yaw) > 1e-4 || Math.abs(v.pitchT - v.pitch) > 1e-4;
+}
+// A press heads for the far end.
+// Pressing mid-fold sends it back.
+function foldOnce() {
+  target = target ? 0 : HALF;
+  lastInput = performance.now();
+  wake();
+}
+
+/* ---------- pointer: fold by the bar you hold, turn elsewhere ---------- */
+let ray = null, ndc = null, tv = null;
+function local(e) { const b = canvas.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; }
+// Screen position of the held point at fold angle f.
+function screenAt(d, f) {
+  const P = pose(f)[d.bar], c = Math.cos(P.r), s = Math.sin(P.r), q = d.loc;
+  tv.set(P.x + c * q.x - s * q.y, P.y + s * q.x + c * q.y, q.z).applyMatrix4(cube.matrixWorld).project(camera);
+  return [(tv.x + 1) * 0.5 * W, (1 - tv.y) * 0.5 * H];
+}
+// Newton steps keep the held point under the pointer.
+function follow(d, x, y) {
+  let f = phi;
+  for (let i = 0; i < 4; i++) {
+    const a = screenAt(d, f - 1e-3), b = screenAt(d, f + 1e-3), p = screenAt(d, f);
+    const gx = (b[0] - a[0]) / 2e-3, gy = (b[1] - a[1]) / 2e-3;
+    const st = ((x - p[0]) * gx + (y - p[1]) * gy) / Math.max(gx * gx + gy * gy, 1600);
+    f = clamp(f + clamp(st, -0.3, 0.3), 0, HALF);
+  }
+  return f;
+}
+function onDown(e) {
+  if (!ready || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  ndc.set((x / W) * 2 - 1, 1 - (y / H) * 2);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(hits, false)[0];
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  canvas.classList.add('held');
+  lastInput = performance.now();
+  const base = { id: e.pointerId, x, y, x0: x, y0: y, t0: e.timeStamp, lt: e.timeStamp, moved: false };
+  if (hit) {
+    const bar = hit.object.userData.bar;
+    drag = { ...base, kind: 'fold', bar, loc: bars[bar].worldToLocal(hit.point.clone()) };
+    phiV = 0;
+    rubStart();
+  } else {
+    drag = { ...base, kind: 'turn' };
+    view.vy = view.vp = 0;
+  }
+  wake();
+}
+function onMove(e) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const [x, y] = local(e), dt = Math.max(4, e.timeStamp - drag.lt) / 1000;
+  drag.lt = e.timeStamp;
+  lastInput = performance.now();
+  if (Math.hypot(x - drag.x0, y - drag.y0) > 5) drag.moved = true;
+  if (drag.kind === 'fold') {
+    const was = phi;
+    phi = follow(drag, x, y);
+    phiV = phiV * 0.5 + ((phi - was) / dt) * 0.5;
+    passHalf(was, phi);
+    if ((phi === 0 && was > 0) || (phi === HALF && was < HALF)) clack(Math.abs(phi - was) / dt);
+    rubSet(Math.abs(phiV));
+  } else {
+    const dx = (x - drag.x) * TURN, dy = (y - drag.y) * TURN;
+    drag.x = x;
+    drag.y = y;
+    view.yawT += dx;
+    view.pitchT = clamp(view.pitchT + dy, -PITCH, PITCH);
+    view.vy = view.vy * 0.5 + (dx / dt) * 0.5;
+    view.vp = view.vp * 0.5 + (dy / dt) * 0.5;
+  }
+  wake();
+}
+function onUp(e, ok) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const d = drag;
+  drag = null;
+  canvas.classList.remove('held');
+  lastInput = performance.now();
+  // A pause before letting go cancels the throw.
+  const still = e.timeStamp - d.lt > 90;
+  if (d.kind === 'fold') {
+    rubStop();
+    if (ok && !d.moved && e.timeStamp - d.t0 < 500) foldOnce();
+    else {
+      const v = still ? 0 : phiV;
+      phiV = v;
+      // A flick finishes the fold.
+      // Otherwise the nearer end wins.
+      target = Math.abs(v) > 2.4 ? (v > 0 ? HALF : 0) : phi > HALF / 2 ? HALF : 0;
+    }
+  } else if (still) view.vy = view.vp = 0;
+  wake();
+}
+
+canvas.addEventListener('keydown', e => {
+  if (!ready) return;
+  const v = view, s = 0.42;
+  if (e.key === ' ' || e.key === 'Enter') { if (!e.repeat) foldOnce(); }
+  else if (e.key === 'ArrowLeft') v.yawT -= s;
+  else if (e.key === 'ArrowRight') v.yawT += s;
+  else if (e.key === 'ArrowUp') v.pitchT = clamp(v.pitchT - s, -PITCH, PITCH);
+  else if (e.key === 'ArrowDown') v.pitchT = clamp(v.pitchT + s, -PITCH, PITCH);
+  else return;
+  e.preventDefault();
+  lastInput = performance.now();
+  wake();
+});
+
+/* ---------- build ---------- */
+function failed() {
+  ready = false;
+  canvas.hidden = true;
+  hint.hidden = true;
+  fail.hidden = false;
+}
+function fit() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h || !renderer) return;
+  W = w;
+  H = h;
+  // DPR stays under 1.5 and about 1.4 million pixels.
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(1.4e6 / (w * h))));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  // The open ring reaches 1.9 units.
+  // The frame leaves it a margin.
+  const t = Math.tan((camera.fov * D2R) / 2);
+  camera.position.set(0, 0, 2.2 / Math.min(t, t * camera.aspect));
+  camera.updateProjectionMatrix();
+  draw();
+}
+const colour = lch => new THREE.Color().setRGB(...rgb(lch), THREE.SRGBColorSpace);
+function lacquer(lch) {
+  return new THREE.MeshPhysicalMaterial({ color: colour(lch), vertexColors: true, roughness: 0.34, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 });
+}
+async function build(RBox) {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(28, 16 / 9, 0.1, 60);
+  pm = new THREE.PMREMGenerator(renderer);
+  await idle();
+  scene.environment = pm.fromScene(new Room(), 0.04).texture;
+  const key = new THREE.DirectionalLight(0xffffff, 1.25);
+  key.position.set(-3, 4, 5);
+  scene.add(key);
+  cube = new THREE.Group();
+  scene.add(cube);
+  const M = { shell: lacquer(LACQUER.shell), lid: lacquer(LACQUER.lid), core: lacquer(LACQUER.core), well: lacquer(LACQUER.well) };
+  const body = new RBox(0.994, 0.994, 0.994, 4, 0.045);
+  // Every bevel darkens, so the seams between cubes read dark.
+  const nrm = body.attributes.normal, shade = new Float32Array(nrm.count * 3), seam = rgb(LACQUER.seam);
+  for (let i = 0; i < nrm.count; i++) {
+    const tilt = Math.acos(Math.min(1, Math.max(Math.abs(nrm.getX(i)), Math.abs(nrm.getY(i)), Math.abs(nrm.getZ(i)))));
+    const t = sstep(1 * D2R, 12 * D2R, tilt);
+    for (let k = 0; k < 3; k++) shade[i * 3 + k] = 1 - t * (1 - seam[k]);
+  }
+  body.setAttribute('color', new THREE.BufferAttribute(shade, 3));
+  [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([u, v], i) => {
+    const g = new THREE.Group();
+    for (const z of [-0.5, 0.5]) {
+      // Face order is +x, -x, +y, -y, +z, -z.
+      // Each face takes its colour from where it starts.
+      const mats = [u ? M.shell : M.well, u ? M.well : M.shell, v ? M.lid : M.core, v ? M.core : M.lid, z > 0 ? M.shell : M.core, z > 0 ? M.core : M.shell];
+      const m = new THREE.Mesh(body, mats);
+      m.position.z = z;
+      m.userData.bar = i;
+      g.add(m);
+      hits.push(m);
+    }
+    cube.add(g);
+    bars.push(g);
+  });
+  ray = new THREE.Raycaster();
+  ndc = new THREE.Vector2();
+  tv = new THREE.Vector3();
+  cube.rotation.set(view.pitch, view.yaw, 0);
+  // Async compile keeps shader linking off the main thread.
+  await renderer.compileAsync(scene, camera);
+  ready = true;
+  fit();
+  new ResizeObserver(fit).observe(stage);
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onMove);
+  canvas.addEventListener('pointerup', e => onUp(e, true));
+  canvas.addEventListener('pointercancel', e => onUp(e, false));
+  canvas.addEventListener('lostpointercapture', e => onUp(e, false));
+  canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; });
+  canvas.addEventListener('webglcontextrestored', () => {
+    scene.environment = pm.fromScene(new Room(), 0.04).texture;
+    ready = true;
+    fit();
+    wake();
+  });
+  // The loop runs only while the panel is on screen.
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; wake(); }).observe(stage);
+  document.addEventListener('visibilitychange', wake);
+  canvas.classList.add('on');
+  lastInput = performance.now();
+  wake();
+}
+// Modules fetch at once.
+// GPU work waits for an idle slice.
+const libs = Promise.all([
+  import('three'),
+  import('three/addons/environments/RoomEnvironment.js'),
+  import('three/addons/geometries/RoundedBoxGeometry.js'),
+]);
+libs.catch(() => {});
+async function boot() {
+  let RBox;
+  try {
+    [THREE, { RoomEnvironment: Room }, { RoundedBoxGeometry: RBox }] = await libs;
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try { await build(RBox); } catch (err) { console.error(err); failed(); }
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
