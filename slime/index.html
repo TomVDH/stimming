@@ -1,0 +1,1480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Slime</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the slime panel at full width, one control row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+.tools { display: flex; align-items: center; gap: 8px; }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* 16:9 panel, 4:5 on phones, capped on short screens. */
+.slime {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 300px;
+  max-height: max(300px, calc(100vh - 170px)); max-height: max(300px, calc(100svh - 170px));
+  border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--surface);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+}
+@media (max-width: 640px) { .slime { aspect-ratio: 4 / 5; } }
+.slime.edge { cursor: grab; }
+.slime.body { cursor: pointer; }
+.slime.drag { cursor: grabbing; }
+.slime canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slime canvas.on { opacity: 1; }
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 15px; color: var(--muted);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .slime canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Slime</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="slime" id="slime" tabindex="0" role="application" aria-label="Slime. Press to squish, drag from the edge to stretch. Arrow keys nudge it; Space squishes it.">
+      <p class="fail" hidden>The slime needs WebGL 2.</p>
+    </div>
+    <div class="ctl">
+      <button class="chip" id="reset" type="button">Reset</button>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+const D2R = Math.PI / 180, SQ3 = Math.sqrt(3);
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+
+/* ---------- the putty: particles held together by springy bonds ---------- */
+// Lengths are in panel units: the panel's shorter side is 1.
+const N = 61, D = 0.05, KR = 2.4 * D, ISO = 0.6;
+const GRAV = 10, FLOOR = 0.5 * D, WALL = 0.5 * D, DMIN = 0.74 * D;
+// Bonds are stiff.
+// The seam around a grabbed chunk gives first.
+const BOND_C = 1.2e-4, FAR_C = 2, SEAM = 150, BREAK = 2.6 * D;
+const STRAND_C = 5e-3, SNAP = 0.62, RETRACT = 0.35, ROPE = 8;
+const TENSION = 30, CRAWL = 0.26, GRIP = 2, STICK = 14;
+let Wd = 16 / 9, Hd = 1, simT = 0;
+
+const P = Array.from({ length: N }, () => ({
+  x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, ax: 0, ay: 0, crawl: 0, fall: 0,
+  seed: 0, nb: 0, hx: 0, hy: 0, flowAt: 0, air: false, drip: false, land: 0, cool: 0, hold: 0,
+}));
+// Home is a round patch: a centre and four rings, innermost first.
+// Each ring rests on a flat pair, never on one point.
+const HEX = [[0, 0]];
+for (let k = 1; k <= 4; k++) for (let j = 0; j < 6 * k; j++) {
+  const a = ((j + 0.5 * (1 - (k & 1))) / (6 * k)) * 2 * Math.PI;
+  // Rest shape already sags: wider, with a flatter underside.
+  const y = k * D * Math.sin(a);
+  HEX.push([1.12 * k * D * Math.cos(a), y * (y < 0 ? 0.78 : 0.95)]);
+}
+const LOW = Math.min(...HEX.map(p => p[1]));
+const HEX_BONDS = [];
+for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+  const l = Math.hypot(HEX[i][0] - HEX[j][0], HEX[i][1] - HEX[j][1]);
+  // Second-ring bonds give shear stiffness, so the sagging blob never buckles.
+  if (l < 2.1 * D) HEX_BONDS.push([i, j, l]);
+}
+const homeOf = k => [Wd / 2 + HEX[k][0], FLOOR - LOW + HEX[k][1]];
+// Colour seeds swirl in soft bands through the putty.
+HEX.forEach(([x, y], i) => { P[i].seed = Math.sin((x / D) * 0.62 + 1.4 * Math.sin((y / D) * 0.33 + 0.8)); });
+
+const adj = new Uint8Array(N * N);
+let bonds = [];
+const nbrs = Array.from({ length: N }, () => []);
+// Each bond remembers its natural length and returns to it.
+// Only near bonds count toward a particle's six.
+function link(i, j, L) {
+  if (i === j || adj[i * N + j]) return;
+  const far = L > 1.4 * D;
+  adj[i * N + j] = adj[j * N + i] = 1;
+  if (!far) { P[i].nb++; P[j].nb++; }
+  bonds.push({ i, j, L, N: L, far, c: far ? FAR_C : 1, soft: 1 });
+}
+// Removing swaps the last bond in, so callers walk backwards.
+function unlink(k) {
+  const b = bonds[k];
+  adj[b.i * N + b.j] = adj[b.j * N + b.i] = 0;
+  if (!b.far) { P[b.i].nb--; P[b.j].nb--; }
+  bonds[k] = bonds[bonds.length - 1];
+  bonds.pop();
+}
+function clearBonds() { bonds = []; adj.fill(0); for (const p of P) p.nb = 0; }
+
+// Pointers, dents, strands and recoiling strand ends.
+const ptrs = new Map(), dents = [], stubs = [], events = [];
+let strands = [], gather = null;
+const owner = new Int16Array(N);
+const emit = (type, a = 0, b = 0) => events.push([type, a, b]);
+
+function place(lift) {
+  clearBonds();
+  P.forEach((p, k) => {
+    const [x, y] = homeOf(k);
+    p.x = p.px = x; p.y = p.py = y + lift; p.vx = p.vy = 0;
+    p.air = lift > 0; p.drip = false;
+  });
+  for (const [i, j, l] of HEX_BONDS) link(i, j, l);
+  group();
+}
+
+/* ---------- connected pieces ---------- */
+const root = new Int16Array(N), compOf = new Int16Array(N), prevOf = new Int16Array(N);
+let comps = [], main = null, prevSize = [];
+function find(i) { while (root[i] !== i) i = root[i] = root[root[i]]; return i; }
+function group() {
+  for (let i = 0; i < N; i++) root[i] = i;
+  for (const b of bonds) { const a = find(b.i), c = find(b.j); if (a !== c) root[a] = c; }
+  const at = new Map();
+  comps = [];
+  for (let i = 0; i < N; i++) {
+    const r = find(i);
+    let c = at.get(r);
+    if (!c) { c = { k: comps.length, ids: [], cx: 0, cy: 0, held: false, tied: false }; at.set(r, c); comps.push(c); }
+    compOf[i] = c.k;
+    c.ids.push(i); c.cx += P[i].x; c.cy += P[i].y;
+  }
+  main = comps[0];
+  for (const c of comps) {
+    c.cx /= c.ids.length; c.cy /= c.ids.length;
+    if (c.ids.length > main.ids.length) main = c;
+  }
+  for (const g of ptrs.values()) if (g.mode === 'grab' && g.chunk.length) comps[compOf[g.chunk[0]]].held = true;
+  for (const S of strands) comps[compOf[S.a]].tied = comps[compOf[S.b]].tied = true;
+}
+// A piece of three or more rejoining another makes a plop.
+function merges() {
+  for (const c of comps) {
+    const seen = new Set(), sizes = [];
+    for (const i of c.ids) {
+      const o = prevOf[i];
+      if (!seen.has(o)) { seen.add(o); sizes.push(prevSize[o] || 1); }
+    }
+    if (sizes.length < 2) continue;
+    sizes.sort((x, y) => y - x);
+    if (sizes[1] < 3) continue;
+    emit('plop', sizes[1]);
+    // After the plop, the joined piece slowly flows round again.
+    for (const i of c.ids) P[i].flowAt = simT + 0.5;
+  }
+}
+// Re-mesh a piece onto a round patch of the home lattice.
+// Rest lengths start where they are and relax, so it flows.
+const RINGS = [[0], ...[1, 2, 3, 4].map(k => Array.from({ length: 6 * k }, (_, j) => 3 * k * (k - 1) + 1 + j))];
+const angle = k => Math.atan2(HEX[k][1], HEX[k][0]);
+function remesh(c) {
+  const n = c.ids.length;
+  // Whitening maps a long piece onto a round one, keeping neighbours together.
+  let xx = 0, yy = 0, xy = 0;
+  for (const i of c.ids) { const dx = P[i].x - c.cx, dy = P[i].y - c.cy; xx += dx * dx; yy += dy * dy; xy += dx * dy; }
+  const tr = (xx + yy) / 2, det = Math.sqrt(Math.max(0, ((xx - yy) / 2) ** 2 + xy * xy)), l1 = tr + det, l2 = Math.max(tr - det, 1e-12);
+  const th = 0.5 * Math.atan2(2 * xy, xx - yy), co = Math.cos(th), si = Math.sin(th);
+  const items = c.ids.map(i => {
+    const dx = P[i].x - c.cx, dy = P[i].y - c.cy, u = (dx * co + dy * si) / Math.sqrt(l1), v = (-dx * si + dy * co) / Math.sqrt(l2);
+    return { i, r: u * u + v * v, a: Math.atan2(u * si + v * co, u * co - v * si) };
+  }).sort((p, q) => p.r - q.r);
+  // Inner rings fill first.
+  // The outer ring takes evenly spaced slots.
+  const pairs = [];
+  let at = 0;
+  for (const ring of RINGS) {
+    const m = Math.min(ring.length, n - at);
+    if (m <= 0) break;
+    const slots = Array.from({ length: m }, (_, j) => ring[Math.floor((j * ring.length) / m)]).sort((p, q) => angle(p) - angle(q));
+    const group = items.slice(at, at + m).sort((p, q) => p.a - q.a);
+    slots.forEach((k, j) => pairs.push([k, group[j].i]));
+    at += m;
+  }
+  const map = new Map(pairs);
+  const ids = new Set(c.ids);
+  for (let k = bonds.length - 1; k >= 0; k--) if (ids.has(bonds[k].i)) unlink(k);
+  for (const [i, j, l] of HEX_BONDS) {
+    const a = map.get(i), b = map.get(j);
+    if (a === undefined || b === undefined) continue;
+    link(a, b, l);
+    bonds[bonds.length - 1].L = Math.max(l, Math.hypot(P[a].x - P[b].x, P[a].y - P[b].y));
+  }
+}
+
+/* ---------- one frame of physics ---------- */
+function step(dt) {
+  // A frame stamped before the wake-up moves nothing.
+  if (!(dt > 0)) return;
+  simT += dt;
+  prepare(dt);
+  const n = Math.max(4, Math.ceil(dt * 600)), h = dt / n;
+  for (let s = 0; s < n; s++) sub(h);
+  settle(dt);
+}
+
+function prepare(dt) {
+  for (const p of P) { p.ax = 0; p.ay = 0; p.crawl = 0; p.hold = 0; }
+  for (const l of nbrs) l.length = 0;
+  for (const b of bonds) { b.soft = 1; if (!b.far) { nbrs[b.i].push(b.j); nbrs[b.j].push(b.i); } }
+  // Held chunks shrink a little, like putty pinched between fingers.
+  let id = 0;
+  for (const g of ptrs.values()) {
+    id++;
+    if (g.mode !== 'grab') continue;
+    g.shrink = Math.max(0.72, g.shrink - dt * 0.3);
+    for (const i of g.chunk) P[i].hold = id;
+    if (!g.strand) for (const b of bonds) if (P[b.i].hold !== P[b.j].hold && (P[b.i].hold === id || P[b.j].hold === id)) b.soft = SEAM;
+  }
+  for (const S of strands) {
+    S.pa = [S.a, ...nbrs[S.a]];
+    S.pb = [S.b, ...nbrs[S.b]];
+  }
+  // Dents spring toward their depth.
+  // Holding turns a poke into a squish.
+  for (let k = dents.length - 1; k >= 0; k--) {
+    const d = dents[k];
+    if (d.until && simT > d.until) release(d);
+    const age = simT - d.t0;
+    if (d.held && age > 0.14) d.sq = Math.min(1, d.sq + dt * 4);
+    const tgt = d.held ? (age > 0.14 ? clamp(0.35 + (age - 0.14) * 1.5, 0, 1) : 0.35) : 0;
+    const kk = reduce ? 140 : 260, c = 2 * (reduce ? 0.95 : 0.3) * Math.sqrt(kk);
+    d.v += (kk * (tgt - d.p) - c * d.v) * dt;
+    d.p += d.v * dt;
+    if (!d.held && Math.abs(d.p) < 0.004 && Math.abs(d.v) < 0.03) dents.splice(k, 1);
+  }
+  if (gather) return;
+  // Putty clings to the floor it rests on.
+  for (const p of P) {
+    const u = (p.y - FLOOR) / (0.6 * D);
+    if (u < 1) p.ay -= STICK * (1 - u);
+  }
+  // Surface tension draws stray putty toward each piece's middle.
+  for (const c of comps) {
+    const n = c.ids.length;
+    if (n < 3) continue;
+    const rn = D * Math.sqrt((n * SQ3) / (2 * Math.PI)) * 1.08;
+    let sx = 0, sy = 0;
+    for (const i of c.ids) {
+      const p = P[i], dx = c.cx - p.x, dy = c.cy - p.y, r = Math.hypot(dx, dy);
+      if (r > rn) { const a = (TENSION * (r - rn)) / r; p.ax += dx * a; p.ay += dy * a; sx += dx * a; sy += dy * a; }
+    }
+    // The pull nets to zero, so a piece never propels itself.
+    for (const i of c.ids) { P[i].ax -= sx / n; P[i].ay -= sy / n; }
+  }
+  // Putty does not roll: each piece's spin bleeds away.
+  const spin = 1 - Math.exp(-(reduce ? 14 : 8) * dt);
+  for (const c of comps) {
+    if (c.ids.length < 6 || c.held) continue;
+    let L = 0, I = 0, vx = 0, vy = 0;
+    for (const i of c.ids) { vx += P[i].vx; vy += P[i].vy; }
+    vx /= c.ids.length; vy /= c.ids.length;
+    for (const i of c.ids) {
+      const p = P[i], rx = p.x - c.cx, ry = p.y - c.cy;
+      L += rx * (p.vy - vy) - ry * (p.vx - vx); I += rx * rx + ry * ry;
+    }
+    const w = (L / (I || 1)) * spin;
+    for (const i of c.ids) { const p = P[i]; p.vx += w * (p.y - c.cy); p.vy -= w * (p.x - c.cx); }
+  }
+  // Loose pieces on the floor inch back toward the main blob.
+  // A big loose piece draws the main blob toward it too.
+  let other = null;
+  for (const c of comps) if (c !== main && (!other || c.ids.length > other.ids.length)) other = c;
+  for (const c of comps) {
+    const towards = c === main ? other : main;
+    if (!towards || c.held || c.tied || (c === main && towards.ids.length < 0.35 * main.ids.length)) continue;
+    let land = 0;
+    for (const i of c.ids) land = Math.max(land, P[i].land);
+    if (land < 0.5) continue;
+    const dir = Math.sign(towards.cx - c.cx) || 1, k = c === main ? towards.ids.length / c.ids.length : 1;
+    const v = CRAWL * k * (reduce ? 0.6 : 1) * (0.5 + 0.5 * Math.sin(simT * 6.5 + c.ids[0]));
+    for (const i of c.ids) P[i].crawl = dir * v;
+  }
+}
+
+// Solving alternates direction each substep, so no side is favoured.
+let flip = false;
+const CX = new Float64Array(N), CY = new Float64Array(N);
+function sub(h) {
+  flip = !flip;
+  const damp = Math.exp(-(reduce ? 3 : 1.5) * h), grav = gather ? 0 : GRAV;
+  for (const p of P) {
+    p.vx = p.vx * damp + p.ax * h;
+    p.vy = p.vy * damp + (p.ay - grav) * h;
+    p.px = p.x; p.py = p.y;
+    p.x += (p.vx + p.crawl) * h; p.y += p.vy * h;
+  }
+  if (gather) {
+    const s = 1 - Math.exp(-gather.k * h);
+    for (const p of P) { p.x += (p.hx - p.x) * s; p.y += (p.hy - p.y) * s; }
+  } else {
+    // Each bond pulls toward its rest length (XPBD, one pass per substep).
+    const at = BOND_C / (h * h), nb = bonds.length;
+    for (let m = 0; m < nb; m++) {
+      const b = bonds[flip ? m : nb - 1 - m], A = P[b.i], B = P[b.j];
+      let dx = A.x - B.x, dy = A.y - B.y;
+      const l = Math.hypot(dx, dy) || 1e-9, k = (b.L - l) / (2 + at * b.c * b.soft);
+      dx /= l; dy /= l;
+      A.x += dx * k; A.y += dy * k; B.x -= dx * k; B.y -= dy * k;
+    }
+    for (const S of strands) pull(S, h);
+    for (const g of ptrs.values()) if (g.mode === 'grab') drive(g, h);
+    for (const d of dents) if (d.p > 0.01) press(d);
+    // No two particles overlap.
+    // Pushes are summed first, so order never matters.
+    CX.fill(0); CY.fill(0);
+    for (let i = 0; i < N; i++) {
+      const A = P[i];
+      for (let j = i + 1; j < N; j++) {
+        const B = P[j], dx = B.x - A.x, dy = B.y - A.y, r2 = dx * dx + dy * dy;
+        if (r2 >= DMIN * DMIN || r2 < 1e-14) continue;
+        const r = Math.sqrt(r2), m = (0.5 * (DMIN - r)) / r;
+        CX[i] -= dx * m; CY[i] -= dy * m; CX[j] += dx * m; CY[j] += dy * m;
+      }
+    }
+    for (let i = 0; i < N; i++) { P[i].x += CX[i]; P[i].y += CY[i]; }
+  }
+  // Floor friction: putty in contact grips, and slides only when dragged fast.
+  const slide = 1 - Math.exp(-12 * h);
+  for (const p of P) {
+    if (p.y < FLOOR) p.y = FLOOR;
+    else if (p.y > Hd - WALL) p.y = Hd - WALL;
+    if (p.y < FLOOR + 0.02 * D) {
+      const tx = p.x - p.px - p.crawl * h;
+      p.x -= Math.abs(tx) < GRIP * h ? tx : tx * slide;
+    }
+    if (p.x < WALL) p.x = WALL;
+    else if (p.x > Wd - WALL) p.x = Wd - WALL;
+    // Crawling is a gait, not momentum.
+    p.vx = (p.x - p.px) / h - p.crawl; p.vy = (p.y - p.py) / h;
+  }
+  // Bond viscosity calms the jiggle without stiffening it.
+  const kv = 0.5 * (1 - Math.exp(-(reduce ? 120 : 70) * h));
+  CX.fill(0); CY.fill(0);
+  for (const b of bonds) {
+    const A = P[b.i], B = P[b.j];
+    let dx = B.x - A.x, dy = B.y - A.y;
+    const l = Math.hypot(dx, dy) || 1e-9;
+    dx /= l; dy /= l;
+    const dv = ((B.vx - A.vx) * dx + (B.vy - A.vy) * dy) * kv;
+    CX[b.i] += dx * dv; CY[b.i] += dy * dv; CX[b.j] -= dx * dv; CY[b.j] -= dy * dv;
+  }
+  for (let i = 0; i < N; i++) { P[i].vx += CX[i]; P[i].vy += CY[i]; }
+}
+
+// A strand only pulls.
+// Thinner strands pull more weakly.
+function pull(S, h) {
+  const A = P[S.a], B = P[S.b];
+  let dx = B.x - A.x, dy = B.y - A.y;
+  const l = Math.hypot(dx, dy) || 1e-9, C = l - S.rest;
+  if (C <= 0) return;
+  dx /= l; dy /= l;
+  const wa = 1 / S.pa.length, wb = 1 / S.pb.length, k = C / (wa + wb + (STRAND_C * S.weak) / (h * h));
+  for (const i of S.pa) { P[i].x += dx * k * wa; P[i].y += dy * k * wa; }
+  for (const i of S.pb) { P[i].x -= dx * k * wb; P[i].y -= dy * k * wb; }
+}
+// A grabbed chunk follows the hand on a soft leash.
+// Its speed is capped at 5 units a second.
+function drive(g, h) {
+  const x = clamp(g.x, WALL, Wd - WALL), y = clamp(g.y, FLOOR, Hd - WALL), cap = 5 * h;
+  for (let k = 0; k < g.chunk.length; k++) {
+    const w = g.w[k];
+    if (w < 0.02) continue;
+    const p = P[g.chunk[k]], s = 1 - Math.exp(-60 * w * h);
+    let dx = (x + g.ox[k] * g.shrink - p.x) * s, dy = (y + g.oy[k] * g.shrink - p.y) * s;
+    const m = Math.hypot(dx, dy);
+    if (m > cap) { dx *= cap / m; dy *= cap / m; }
+    p.x += dx; p.y += dy;
+  }
+}
+// A press dimples the surface.
+// A squish also lowers a soft plate.
+function press(d) {
+  const q = d.p, rc = D * (0.5 + 1.1 * q), rc2 = rc * rc;
+  const plate = d.top - q * 0.45 * (d.top - FLOOR), sw = D * (2.4 + 1.6 * q), span = d.top + 2 * D - plate;
+  for (const p of P) {
+    const dx = p.x - d.x, dy = p.y - d.y, r2 = dx * dx + dy * dy;
+    if (r2 < rc2 && r2 > 1e-12) { const r = Math.sqrt(r2), m = ((rc - r) / r) * 0.5; p.x += dx * m; p.y += dy * m; }
+    if (d.sq > 0) {
+      const lim = plate + (1 - Math.exp(-((dx / sw) ** 2))) * span;
+      if (p.y > lim) p.y += (lim - p.y) * 0.5 * d.sq;
+    }
+  }
+}
+
+function settle(dt) {
+  if (gather) {
+    gather.t += dt;
+    gather.k = 3 + 27 * (gather.t / gather.dur) ** 2;
+    if (gather.t >= gather.dur) finishGather();
+  } else {
+    // Stretched bonds yield, slowly remember their length, and tear when overdrawn.
+    const yieldK = 1 - Math.exp(-5 * dt), memK = 1 - Math.exp(-0.8 * dt);
+    for (let k = bonds.length - 1; k >= 0; k--) {
+      const b = bonds[k], A = P[b.i], B = P[b.j], l = Math.hypot(A.x - B.x, A.y - B.y);
+      if (l > Math.max(b.far ? 1.6 * b.N : BREAK, 1.5 * b.L) && b.soft !== SEAM) { unlink(k); continue; }
+      if (l > 1.25 * b.L) b.L += (l - 1.25 * b.L) * yieldK;
+      b.L += (b.N - b.L) * memK;
+    }
+    knit();
+  }
+  for (let i = 0; i < N; i++) prevOf[i] = compOf[i];
+  prevSize = comps.map(c => c.ids.length);
+  group();
+  if (!gather) {
+    merges();
+    for (const c of comps) {
+      if (c.held || c.tied || c.ids.length < 3) continue;
+      let due = 0;
+      for (const i of c.ids) due = Math.max(due, P[i].flowAt);
+      if (due && simT >= due) { for (const i of c.ids) P[i].flowAt = 0; remesh(c); }
+    }
+  }
+  seams();
+  strandsUpdate(dt);
+  stubsUpdate(dt);
+  if (!gather) landings(dt);
+}
+
+// Touching edges knit together, except a held chunk and fresh tears.
+function knit() {
+  const r2max = (1.08 * D) ** 2;
+  for (let i = 0; i < N; i++) {
+    const A = P[i];
+    if (A.nb >= 6 || A.cool > simT) continue;
+    for (let j = i + 1; j < N; j++) {
+      const B = P[j];
+      if (B.nb >= 6 || B.cool > simT || adj[i * N + j] || A.hold !== B.hold) continue;
+      const r2 = (A.x - B.x) ** 2 + (A.y - B.y) ** 2;
+      if (r2 < r2max) { link(i, j, clamp(Math.sqrt(r2), 0.92 * D, 1.05 * D)); if (A.nb >= 6) break; }
+    }
+  }
+}
+
+// A held chunk's drawn-out seam becomes a strand.
+function seams() {
+  const mine = new Uint8Array(N);
+  for (const g of ptrs.values()) {
+    g.seam = 0;
+    if (g.mode !== 'grab' || g.strand) continue;
+    mine.fill(0);
+    for (const i of g.chunk) mine[i] = 1;
+    const cut = [];
+    let sum = 0, max = 0;
+    for (let k = 0; k < bonds.length; k++) {
+      const b = bonds[k];
+      if (mine[b.i] === mine[b.j]) continue;
+      // Stretch is measured against each bond's natural length.
+      const r = Math.hypot(P[b.i].x - P[b.j].x, P[b.i].y - P[b.j].y) / b.N;
+      cut.push(k); sum += r; max = Math.max(max, r);
+    }
+    if (!cut.length) continue;
+    g.seam = sum / cut.length;
+    if (strands.length < 2 && (g.seam > 1.75 || max > 2.3)) form(g, cut, mine);
+  }
+}
+function form(g, cut, mine) {
+  let cx = 0, cy = 0;
+  for (const i of g.chunk) { cx += P[i].x; cy += P[i].y; }
+  cx /= g.chunk.length; cy /= g.chunk.length;
+  // The strand runs from the nearest body edge to the chunk.
+  let a = -1, b = -1, ad = Infinity, bd = Infinity;
+  for (const k of cut) {
+    const { i, j } = bonds[k], o = mine[i] ? j : i, d = (P[o].x - cx) ** 2 + (P[o].y - cy) ** 2;
+    if (d < ad) { ad = d; a = o; }
+  }
+  for (const k of cut) {
+    const { i, j } = bonds[k], c = mine[i] ? i : j, d = (P[c].x - P[a].x) ** 2 + (P[c].y - P[a].y) ** 2;
+    if (d < bd) { bd = d; b = c; }
+  }
+  cut.sort((x, y) => y - x).forEach(unlink);
+  const l = Math.sqrt(bd), S = {
+    a, b, rest: l, len: l, L0: Math.max(l, 2.2 * D), speed: 0, weak: 1,
+    holders: g.pair ? [g, g.pair] : [g], rope: [], pa: [a], pb: [b],
+  };
+  for (let k = 0; k < ROPE; k++) {
+    const t = k / (ROPE - 1), x = lerp(P[a].x, P[b].x, t), y = lerp(P[a].y, P[b].y, t);
+    S.rope.push({ x, y, ox: x, oy: y });
+  }
+  strands.push(S);
+  g.strand = S;
+  if (g.pair) g.pair.strand = S;
+  group();
+}
+const strandR = S => clamp(0.95 * KR * Math.sqrt(S.L0 / Math.max(S.len, S.L0)), 0.3 * KR, 0.95 * KR);
+
+function strandsUpdate(dt) {
+  for (let s = strands.length - 1; s >= 0; s--) {
+    const S = strands[s], A = P[S.a], B = P[S.b], l = Math.hypot(B.x - A.x, B.y - A.y);
+    S.speed += ((l - S.len) / Math.max(dt, 1e-4) - S.speed) * 0.25;
+    S.len = l;
+    const held = S.holders.some(g => g.mode === 'grab');
+    // Held strands flow longer.
+    // Let go, they draw back in.
+    if (held) { if (l > S.rest) S.rest += (l - S.rest) * (1 - Math.exp(-4 * dt)); }
+    else S.rest = Math.max(0, S.rest - (reduce ? 0.3 : RETRACT) * dt);
+    S.weak = Math.sqrt(Math.max(l, S.L0) / S.L0);
+    if (compOf[S.a] === compOf[S.b] || (!held && l < 1.1 * D)) {
+      strands.splice(s, 1);
+      for (const g of S.holders) if (g.strand === S) g.strand = null;
+      continue;
+    }
+    // Yanking snaps a strand sooner.
+    if (l > SNAP - 0.2 * clamp((S.speed - 0.8) / 2.5)) { snap(S, s); continue; }
+    rope(S, dt);
+  }
+}
+function snap(S, s) {
+  strands.splice(s, 1);
+  const A = P[S.a], B = P[S.b], l = S.len || 1e-9, ux = (B.x - A.x) / l, uy = (B.y - A.y) / l;
+  const kick = reduce ? 0.3 : 0.7;
+  for (const i of S.pa) { P[i].vx -= ux * kick; P[i].vy -= uy * kick; }
+  for (const i of S.pb) { P[i].vx += ux * kick * 0.6; P[i].vy += uy * kick * 0.6; }
+  stubs.push(stub(S, 0), stub(S, 1));
+  if (stubs.length > 2) stubs.splice(0, stubs.length - 2);
+  for (const g of S.holders) { if (g.mode === 'grab') g.mode = 'done'; g.strand = null; g.pair = null; }
+  // The loose end drips when it lands.
+  // Fresh ends wait a moment before re-knitting.
+  for (const i of comps[compOf[S.b]].ids) { P[i].drip = true; P[i].cool = simT + 0.6; }
+  for (const i of comps[compOf[S.a]].ids) P[i].cool = simT + 0.6;
+  emit('snap', (A.x + B.x) / 2);
+}
+// The rope only shapes the drawn strand: it sags and sways.
+function rope(S, dt) {
+  const R = S.rope, A = P[S.a], B = P[S.b], last = ROPE - 1;
+  R[0].x = A.x; R[0].y = A.y; R[last].x = B.x; R[last].y = B.y;
+  const seg = (Math.max(S.len, S.rest) * 1.05) / last, g = GRAV * 0.6 * dt * dt;
+  for (let k = 1; k < last; k++) {
+    const q = R[k], vx = (q.x - q.ox) * 0.97, vy = (q.y - q.oy) * 0.97;
+    q.ox = q.x; q.oy = q.y;
+    q.x += vx; q.y += vy - g;
+  }
+  for (let it = 0; it < 10; it++) for (let k = 0; k < last; k++) {
+    const a = R[k], b = R[k + 1], wa = k === 0 ? 0 : 1, wb = k + 1 === last ? 0 : 1;
+    const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1e-9;
+    if (l <= seg || !(wa + wb)) continue;
+    const m = (l - seg) / l / (wa + wb);
+    a.x += dx * m * wa; a.y += dy * m * wa; b.x -= dx * m * wb; b.y -= dy * m * wb;
+  }
+  for (let k = 1; k < last; k++) if (R[k].y < FLOOR * 0.5) R[k].y = FLOOR * 0.5;
+}
+// Each half of a snapped strand whips back into its end.
+function stub(S, side) {
+  const R = S.rope, pts = [];
+  for (let k = 0; k < ROPE; k++) {
+    const t = (k / (ROPE - 1)) * 0.5, f = (side ? 1 - t : t) * (ROPE - 1);
+    const i0 = Math.min(ROPE - 2, Math.floor(f)), u = f - i0;
+    pts.push({ x: lerp(R[i0].x, R[i0 + 1].x, u), y: lerp(R[i0].y, R[i0 + 1].y, u) });
+  }
+  return { root: side ? S.b : S.a, pts, r: strandR(S), age: 0 };
+}
+function stubsUpdate(dt) {
+  for (let s = stubs.length - 1; s >= 0; s--) {
+    const T = stubs[s], R = P[T.root];
+    T.age += dt;
+    if (T.age > 0.32) { stubs.splice(s, 1); continue; }
+    T.pts[0].x = R.x; T.pts[0].y = R.y;
+    for (let k = 1; k < ROPE; k++) {
+      const q = T.pts[k], s2 = 1 - Math.exp(-dt * (10 + 3 * k));
+      q.x += (R.x - q.x) * s2; q.y += (R.y - q.y) * s2;
+    }
+  }
+}
+// A piece that was airborne and now touches the floor has landed.
+function landings(dt) {
+  for (const c of comps) {
+    let air = true, onF = false, drip = false, fall = 0;
+    for (const i of c.ids) {
+      const p = P[i];
+      if (p.y <= FLOOR + 0.05 * D) onF = true;
+      if (!p.air) air = false;
+      if (p.drip) drip = true;
+      fall = Math.min(fall, p.fall);
+    }
+    if (onF && air && !c.held) emit(drip ? 'drip' : 'land', c.ids.length, -fall);
+    for (const i of c.ids) {
+      const p = P[i];
+      p.air = !onF;
+      if (onF) p.drip = false;
+      p.land = onF ? p.land + dt : 0;
+      p.fall = p.vy;
+    }
+  }
+}
+
+/* ---------- hands on the putty ---------- */
+function probe(x, y) {
+  let f = 0, gx = 0, gy = 0, near = 0, nd = Infinity;
+  const ir = 1 / (KR * KR);
+  for (let i = 0; i < N; i++) {
+    const dx = x - P[i].x, dy = y - P[i].y, r2 = dx * dx + dy * dy;
+    if (r2 < nd) { nd = r2; near = i; }
+    const q = r2 * ir;
+    if (q < 1) { const b = 1 - q; f += b * b * b; gx -= 6 * b * b * ir * dx; gy -= 6 * b * b * ir * dy; }
+  }
+  return { f, sd: (f - ISO) / Math.max(Math.hypot(gx, gy), 1e-6), near, nd: Math.sqrt(nd) };
+}
+// Touching near the edge grabs.
+// Touching the middle presses.
+function zone(x, y) {
+  const q = probe(x, y);
+  if (q.f < ISO && q.nd > 2.3 * D) return { kind: 'none', q };
+  const small = comps[compOf[q.near]].ids.length < 12;
+  return { kind: small || q.f < ISO || q.sd < 1.2 * D ? 'edge' : 'body', q };
+}
+function topAt(x) {
+  let top = -1;
+  for (const p of P) if (Math.abs(p.x - x) < 1.6 * D) top = Math.max(top, p.y);
+  return top;
+}
+function dentAt(x, y, poke) {
+  const top = topAt(x), d = { x, y, p: 0, v: poke ? 7 : 3.5, held: true, t0: simT, sq: 0, top: top < 0 ? y : top, until: 0 };
+  dents.push(d);
+  if (dents.length > 4) dents.shift();
+  return d;
+}
+// Letting go of a squish bounces the column back up.
+function release(d) {
+  if (!d.held) return;
+  d.held = false;
+  if (d.sq < 0.2) return;
+  const sw = D * 3.2, kick = (reduce ? 0.4 : 0.9) * d.sq;
+  for (const p of P) { const g = Math.exp(-(((p.x - d.x) / sw) ** 2)); if (g > 0.3) p.vy += kick * g; }
+}
+function chunkAt(x, y, near) {
+  const c = comps[compOf[near]];
+  if (c.ids.length < 12) return c.ids.slice();
+  const inside = probe(x, y).f >= ISO, ax = inside ? x : P[near].x, ay = inside ? y : P[near].y;
+  const dd = i => (P[i].x - ax) ** 2 + (P[i].y - ay) ** 2, ids = c.ids.slice().sort((i, j) => dd(i) - dd(j));
+  let n = 0;
+  while (n < ids.length && dd(ids[n]) < (1.9 * D) ** 2) n++;
+  return ids.slice(0, clamp(n, 3, 9));
+}
+function setChunk(g, ids, weight) {
+  g.chunk = ids;
+  g.ox = ids.map(i => P[i].x - g.x);
+  g.oy = ids.map(i => P[i].y - g.y);
+  g.w = ids.map(i => (weight ? weight(i) : 1));
+  g.shrink = 1;
+}
+function grab(g, x, y, near) {
+  Object.assign(g, { mode: 'grab', x, y, strand: null, pair: null, seam: 0 });
+  setChunk(g, chunkAt(x, y, near));
+  // A second hand on the same blob pulls it in two.
+  const c = comps[compOf[near]];
+  if (c.ids.length < 12) return;
+  for (const o of ptrs.values()) {
+    if (o === g || o.mode !== 'grab' || o.strand || o.pair || compOf[o.chunk[0]] !== c.k) continue;
+    if (Math.hypot(o.x - x, o.y - y) < 3 * D) continue;
+    halve(o, g, c);
+    break;
+  }
+}
+function halve(a, b, c) {
+  const ax = b.x - a.x, ay = b.y - a.y, l2 = ax * ax + ay * ay, A = [], B = [];
+  for (const i of c.ids) ((P[i].x - a.x) * ax + (P[i].y - a.y) * ay < 0.5 * l2 ? A : B).push(i);
+  if (!A.length || !B.length) return;
+  const fall = g => i => Math.min(1, 1.3 * Math.exp(-((P[i].x - g.x) ** 2 + (P[i].y - g.y) ** 2) / (3.2 * D) ** 2));
+  setChunk(a, A, fall(a));
+  setChunk(b, B, fall(b));
+  a.pair = b; b.pair = a;
+}
+function letGo(g) {
+  if (g.mode === 'grab') {
+    const o = g.pair;
+    if (o) {
+      o.pair = null;
+      if (o.mode === 'grab' && !o.strand) setChunk(o, chunkAt(o.x, o.y, probe(o.x, o.y).near));
+    }
+    if (g.strand) g.strand.holders = g.strand.holders.filter(h => h !== g);
+    // A throw keeps the hand's speed, within reason.
+    for (const i of g.chunk) {
+      const p = P[i], v = Math.hypot(p.vx, p.vy);
+      if (v > 3.5) { p.vx *= 3.5 / v; p.vy *= 3.5 / v; }
+    }
+  }
+  if (g.dent) release(g.dent);
+  g.mode = 'done';
+  g.strand = null; g.pair = null; g.dent = null;
+}
+
+/* ---------- reset: everything flows home into one blob ---------- */
+function reset() {
+  for (const g of ptrs.values()) letGo(g);
+  strands = [];
+  stubs.length = 0;
+  dents.forEach(release);
+  clearBonds();
+  // Outer home slots claim the nearest putty first.
+  const used = new Uint8Array(N);
+  for (let k = N - 1; k >= 0; k--) {
+    const [hx, hy] = homeOf(k);
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < N; i++) {
+      if (used[i]) continue;
+      const d = (P[i].x - hx) ** 2 + (P[i].y - hy) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    used[best] = 1; owner[k] = best;
+    P[best].hx = hx; P[best].hy = hy;
+  }
+  gather = { t: 0, dur: reduce ? 1 : 0.7, k: 3 };
+  group();
+}
+function finishGather() {
+  for (const p of P) { p.x = p.px = p.hx; p.y = p.py = p.hy; p.vx = p.vy = 0; p.drip = false; p.cool = 0; }
+  for (const [i, j, l] of HEX_BONDS) link(owner[i], owner[j], l);
+  gather = null;
+  emit('plop', N);
+}
+
+// Keyboard nudges push the whole main blob.
+function nudge(vx, vy) {
+  if (gather || !main) return;
+  const s = reduce ? 0.6 : 1;
+  for (const i of main.ids) { P[i].vx += vx * s; P[i].vy += vy * s; }
+}
+
+// Still means nothing held, pressed, loose or moving.
+function moving() {
+  if (ptrs.size || dents.length || strands.length || stubs.length || gather || comps.length > 1) return true;
+  let m = 0;
+  for (const p of P) m = Math.max(m, p.vx * p.vx + p.vy * p.vy);
+  return m > 0.01 * 0.01;
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.slime.sound', MAXV = 12, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
+let squishNext = 0, snapNext = 0, dripNext = 0, plopNext = 0, creakV = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the putty settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !ptrs.size && !creakV && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && e.key !== ' ' && e.key !== 'Enter' && !e.key.startsWith('Arrow'))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// A tiny rising blip, like a bubble bursting in wet putty.
+function bubble(a, t, f, g) {
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(f, t);
+  o.frequency.exponentialRampToValueAtTime(f * 1.9, t + 0.018);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.006, 0.008);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.06);
+  track(o, og);
+}
+// Pressing: a wet squelch, a resonant sweep through filtered noise.
+function squish(s = 1) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < squishNext) return;
+  squishNext = t + 0.07;
+  const f = jit(0.08), g = level() * jit(0.12) * s;
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), sg = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.Q.value = 7;
+  lp.frequency.setValueAtTime(240 * f, t);
+  lp.frequency.exponentialRampToValueAtTime(1050 * f, t + 0.08);
+  lp.frequency.exponentialRampToValueAtTime(380 * f, t + 0.22);
+  sg.gain.setValueAtTime(0, t);
+  sg.gain.linearRampToValueAtTime(0.2 * g, t + 0.025);
+  sg.gain.setTargetAtTime(0, t + 0.1, 0.045);
+  src.connect(lp).connect(sg).connect(out);
+  src.start(t, Math.random() * 0.6, 0.35);
+  track(src, sg);
+  const n = 1 + (Math.random() < 0.6);
+  for (let k = 0; k < n; k++) bubble(a, t + 0.03 + Math.random() * 0.08, 520 + Math.random() * 380, 0.045 * g);
+}
+// Stretching: a rubbery creak, filtered noise chopped by a stick-slip pulse.
+function creak(speed) {
+  const a = live(), v = clamp(speed / 1.8);
+  if (!a) { if (creakV) creakStop(); return; }
+  if (!creakV) {
+    if (v < 0.04 || voices >= MAXV) return;
+    const src = a.createBufferSource(), bp = a.createBiquadFilter(), am = a.createGain(), lv = a.createGain();
+    const lfo = a.createOscillator(), depth = a.createGain();
+    src.buffer = noise;
+    src.loop = true;
+    bp.type = 'bandpass';
+    bp.Q.value = 5;
+    bp.frequency.value = 420;
+    am.gain.value = 0.5;
+    lfo.type = 'sawtooth';
+    lfo.frequency.value = 22;
+    depth.gain.value = 0.5;
+    lv.gain.value = 0;
+    lfo.connect(depth).connect(am.gain);
+    src.connect(bp).connect(am).connect(lv).connect(out);
+    src.start(a.currentTime, Math.random());
+    lfo.start(a.currentTime);
+    track(src, bp, am, lv, depth);
+    creakV = { src, bp, lv, lfo, quiet: 0 };
+  }
+  const t = a.currentTime;
+  creakV.lv.gain.setTargetAtTime(0.11 * v * level(), t, 0.05);
+  creakV.bp.frequency.setTargetAtTime(380 + 760 * v, t, 0.08);
+  creakV.lfo.frequency.setTargetAtTime(16 + 34 * v, t, 0.08);
+  creakV.quiet = v < 0.02 ? creakV.quiet + 1 : 0;
+  if (creakV.quiet > 30) creakStop();
+}
+function creakStop() {
+  const c = creakV;
+  creakV = null;
+  if (!c || !ac) return;
+  const t = ac.currentTime;
+  c.lv.gain.setTargetAtTime(0, t, 0.03);
+  c.src.stop(t + 0.15);
+  c.lfo.stop(t + 0.15);
+}
+// Breaking: a sharp wet tick over a falling thwip.
+function snapSound() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < snapNext) return;
+  snapNext = t + 0.08;
+  const g = level() * jit(0.1), f = jit(0.06);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 2400 * f;
+  bp.Q.value = 1.2;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.5 * g, t + 0.0008);
+  ng.gain.setTargetAtTime(0, t + 0.001, 0.004);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.04);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(1100 * f, t);
+  o.frequency.exponentialRampToValueAtTime(260 * f, t + 0.06);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.09 * g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.01, 0.018);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.12);
+  track(o, og, ng);
+}
+// Landing droplet: a short upward chirp, the classic drip.
+function drip(size, speed) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < dripNext) return;
+  dripNext = t + 0.06;
+  // Smaller drops sound higher.
+  // Harder landings sound louder.
+  const f = (9 / Math.max(3, size)) ** 0.3 * jit(0.06), g = level() * jit(0.1) * clamp(0.4 + speed * 0.3, 0.4, 1);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(620 * f, t);
+  o.frequency.exponentialRampToValueAtTime(1500 * f, t + 0.035);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.08 * g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.012, 0.016);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.12);
+  track(o, og);
+}
+// Rejoining: a low, soft plop with a muffled thump.
+function plop(size, s = 1) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < plopNext) return;
+  plopNext = t + 0.09;
+  const f = (20 / Math.max(3, Math.min(size, 61))) ** 0.18 * jit(0.06), g = level() * jit(0.1) * s;
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(240 * f, t);
+  o.frequency.exponentialRampToValueAtTime(95 * f, t + 0.09);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.16 * g, t + 0.006);
+  og.gain.setTargetAtTime(0, t + 0.03, 0.035);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.25);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.frequency.value = 500 * f;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.1 * g, t + 0.004);
+  ng.gain.setTargetAtTime(0, t + 0.01, 0.02);
+  src.connect(lp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.1);
+  track(o, og);
+  track(src, ng);
+}
+// Physics events become sounds.
+function voice() {
+  for (const [type, a, b] of events) {
+    if (type === 'snap') snapSound();
+    else if (type === 'drip') drip(a, b);
+    else if (type === 'plop') plop(a);
+    else if (type === 'land' && b > 0.5) a < 12 ? drip(a, b * 0.6) : plop(a, clamp(b / 2.5, 0.3, 0.8));
+  }
+  events.length = 0;
+}
+
+/* ---------- colour: OKLCH in, OKLab out for the shader ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+function lab([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [L, C * Math.cos(h * D2R), C * Math.sin(h * D2R)];
+}
+// One violet putty: deep where thick, pinker where light passes through.
+const INK = {
+  uDeep: lab([0.44, 0.2, 296]),
+  uBody: lab([0.62, 0.25, 302]),
+  uSwA: lab([0.67, 0.23, 326]),
+  uSwB: lab([0.56, 0.23, 284]),
+  uThin: lab([0.82, 0.16, 316]),
+};
+
+/* ---------- rendering: one fragment shader draws the whole field ---------- */
+const VERT = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const FRAG = `#version 300 es
+precision highp float;
+uniform vec4 uP[64];
+uniform int uN;
+uniform vec4 uS[32];
+uniform vec4 uSB[4];
+uniform int uSN;
+uniform vec4 uDent[4];
+uniform int uDN;
+uniform vec4 uBox;
+uniform float uWpp, uR, uIso, uG0, uHM;
+uniform vec3 uDeep, uBody, uSwA, uSwB, uThin;
+out vec4 o;
+vec3 toLin(vec3 lab) {
+  vec3 l = mat3(1.0, 1.0, 1.0, 0.3963377774, -0.1055613458, -0.0894841775, 0.2158037573, -0.0638541728, -1.2914855480) * lab;
+  l = l * l * l;
+  return mat3(4.0767416621, -1.2684380046, -0.0041960863, -3.3077115913, 2.6097574011, -0.7034186147, 0.2309699292, -0.3413193965, 1.7076147010) * l;
+}
+void main() {
+  vec2 p = gl_FragCoord.xy * uWpp;
+  // f shapes the outline.
+  // g is a wide soft sum that domes the body.
+  float f = 0.0, g = 0.0, cs = 0.0;
+  vec2 df = vec2(0.0), dg = vec2(0.0);
+  float ir = 1.0 / (uR * uR), iw = ir / 7.0;
+  if (all(greaterThan(p, uBox.xy)) && all(lessThan(p, uBox.zw))) {
+    for (int i = 0; i < 64; i++) {
+      if (i >= uN) break;
+      vec2 v = p - uP[i].xy;
+      float r2 = dot(v, v), qw = r2 * iw;
+      if (qw >= 1.0) continue;
+      float a = 1.0 - qw;
+      g += a * a * a;
+      dg -= 6.0 * a * a * iw * v;
+      float q = r2 * ir;
+      if (q >= 1.0) continue;
+      float b = 1.0 - q, k = b * b * b;
+      f += k;
+      df -= 6.0 * b * b * ir * v;
+      cs += k * uP[i].z;
+    }
+  }
+  // Strands are tubes around a sagging polyline.
+  for (int s = 0; s < 4; s++) {
+    if (s >= uSN) break;
+    vec4 bb = uSB[s];
+    if (any(lessThan(p, bb.xy)) || any(greaterThan(p, bb.zw))) continue;
+    float best = 0.0, bs = 0.0;
+    vec2 bgr = vec2(0.0);
+    for (int k = 0; k < 7; k++) {
+      vec4 A = uS[s * 8 + k], B = uS[s * 8 + k + 1];
+      vec2 ab = B.xy - A.xy, pa = p - A.xy;
+      float t = clamp(dot(pa, ab) / max(dot(ab, ab), 1e-9), 0.0, 1.0);
+      vec2 v = pa - ab * t;
+      float r = max(mix(A.z, B.z, t), 1e-4), q = dot(v, v) / (r * r);
+      if (q >= 1.0) continue;
+      float b = 1.0 - q, kk = b * b * b;
+      if (kk > best) { best = kk; bgr = -6.0 * b * b * v / (r * r); bs = mix(A.w, B.w, t); }
+    }
+    f += best; df += bgr; cs += best * bs;
+  }
+  float gm = length(df);
+  float cov = clamp((f - uIso) / max(gm, 1e-5) / uWpp + 0.5, 0.0, 1.0);
+  if (cov <= 0.0) { o = vec4(0.0); return; }
+
+  // Height: a round shoulder at the edge, raised by the soft dome.
+  float e = clamp((f - uIso) / 3.4, 0.0, 1.0), u = 1.0 - e;
+  float sh = sqrt(max(1.0 - u * u, 1e-3));
+  vec2 dsh = e < 1.0 ? (u / sh) * df / 3.4 : vec2(0.0);
+  float gn = g / uG0, body = 0.3 + 0.7 * min(gn, 1.1);
+  vec2 dbody = gn < 1.1 ? 0.7 * dg / uG0 : vec2(0.0);
+  float h = uHM * sh * body;
+  vec2 dh = uHM * (dsh * body + sh * dbody);
+  // Fingers press dimples into the surface.
+  for (int k = 0; k < 4; k++) {
+    if (k >= uDN) break;
+    vec4 d = uDent[k];
+    vec2 v = p - d.xy;
+    float w = exp(-dot(v, v) / (d.w * d.w)), a = d.z * uHM * 0.6 * sh;
+    h -= a * w;
+    dh += a * w * 2.0 * v / (d.w * d.w);
+  }
+  vec3 n = normalize(vec3(-dh, 1.0));
+
+  // Colour: marbled violet, pinker and lighter where thin.
+  float th = clamp(h / (uHM * 0.9), 0.0, 1.0), seed = cs / max(f, 1e-4);
+  vec3 lab = seed < 0.0 ? mix(uBody, uSwB, -seed * 0.8) : mix(uBody, uSwA, seed * 0.8);
+  lab = mix(uThin, lab, smoothstep(0.0, 0.55, th));
+  lab = mix(lab, uDeep, 0.4 * smoothstep(0.45, 1.0, th));
+  vec3 alb = max(toLin(lab), 0.0);
+
+  // Top-left light: wrapped diffuse, a sharp highlight, a wet sheen.
+  vec3 L = normalize(vec3(-0.5, 0.62, 0.6)), H = normalize(L + vec3(0.0, 0.0, 1.0));
+  float nl = dot(n, L), nh = max(dot(n, H), 0.0);
+  float dif = clamp((nl + 0.4) / 1.4, 0.0, 1.0);
+  vec3 col = alb * (0.42 + 0.8 * dif);
+  // Light passing through thin putty glows from inside.
+  col += max(toLin(uThin), 0.0) * 0.28 * (1.0 - smoothstep(0.0, 0.4, th)) * (0.4 + 0.6 * dif);
+  // Fresnel reflects a bright room up and to the left, dark below.
+  float fr = pow(1.0 - n.z, 3.0), sky = smoothstep(-0.4, 0.95, dot(normalize(n.xy + 1e-5), vec2(-0.6, 0.8)));
+  col += fr * mix(0.0, 0.3, sky);
+  col += pow(nh, 70.0) * 0.55 + pow(nh, 600.0) * 1.2 + pow(nh, 12.0) * 0.05;
+  // A thin rim catches the light along top-left edges.
+  float sd = (f - uIso) / max(gm, 1e-5) / uWpp;
+  vec2 out2 = -df / max(gm, 1e-5);
+  col += 0.32 * (1.0 - smoothstep(0.5, 2.2, sd)) * max(0.0, dot(out2, vec2(-0.6, 0.8)));
+
+  float alpha = cov * mix(0.82, 1.0, smoothstep(0.0, 0.3, th));
+  vec3 rgb = pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2));
+  o = vec4(rgb * alpha, alpha);
+}`;
+
+const panel = document.getElementById('slime');
+let gl = null, cv = null, prog = null, vao = null, U = {}, ready = false, frames = 0;
+let W = 0, H = 0, UNIT = 1, dpr = 1;
+const UP = new Float32Array(256), US = new Float32Array(128), USB = new Float32Array(16), UD = new Float32Array(16);
+// The dome's height reference: the wide sum at the blob's middle.
+const G0 = HEX.reduce((s, [x, y]) => s + Math.max(0, 1 - (x * x + y * y) / (7 * KR * KR)) ** 3, 0);
+
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function layout() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  const oldW = Wd;
+  W = w; H = h; UNIT = Math.min(w, h);
+  Wd = w / UNIT; Hd = h / UNIT;
+  // The scene stays centred when the panel changes shape.
+  const sx = (Wd - oldW) / 2;
+  if (sx) {
+    for (const p of P) { p.x += sx; p.px += sx; p.hx += sx; }
+    for (const d of dents) d.x += sx;
+    for (const S of strands) for (const q of S.rope) { q.x += sx; q.ox += sx; }
+  }
+  if (cv) {
+    dpr = Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(1.4e6 / (w * h)));
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  draw();
+}
+
+async function startGL() {
+  cv = document.createElement('canvas');
+  gl = cv.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const vs = sh(gl.VERTEX_SHADER, VERT), fs = sh(gl.FRAGMENT_SHADER, FRAG);
+  prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  // Polling lets the driver link off the main thread.
+  if (par) while (!gl.isContextLost() && !gl.getProgramParameter(prog, par.COMPLETION_STATUS_KHR)) await nextFrame();
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(fs) || gl.getProgramInfoLog(prog) || 'link failed');
+  vao = gl.createVertexArray();
+  for (const n of ['uP', 'uN', 'uS', 'uSB', 'uSN', 'uDent', 'uDN', 'uBox', 'uWpp', 'uR', 'uIso', 'uG0', 'uHM', ...Object.keys(INK)]) U[n] = gl.getUniformLocation(prog, n);
+  gl.useProgram(prog);
+  for (const k in INK) gl.uniform3fv(U[k], INK[k]);
+  gl.uniform1f(U.uR, KR);
+  gl.uniform1f(U.uIso, ISO);
+  gl.uniform1f(U.uG0, G0);
+  gl.uniform1f(U.uHM, 0.13);
+  gl.disable(gl.BLEND);
+  cv.setAttribute('aria-hidden', 'true');
+  panel.prepend(cv);
+  // A lost context restarts on a fresh canvas once the GPU returns.
+  cv.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; });
+  cv.addEventListener('webglcontextrestored', () => { cv.remove(); startGL().catch(failed); });
+  ready = true;
+  frames = 0;
+  layout();
+  wake();
+}
+function failed(err) {
+  if (err) console.error(err);
+  ready = false;
+  cv?.remove();
+  panel.querySelector('.fail').hidden = false;
+}
+
+// Strands and recoiling ends go up as eight-point tubes.
+function tube(s, pts, rad, seed) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, rm = 0;
+  for (let k = 0; k < ROPE; k++) {
+    const q = pts[k], r = rad(k), o = (s * 8 + k) * 4;
+    US[o] = q.x; US[o + 1] = q.y; US[o + 2] = r; US[o + 3] = seed;
+    x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); rm = Math.max(rm, r);
+  }
+  USB.set([x0 - rm, y0 - rm, x1 + rm, y1 + rm], s * 4);
+}
+function draw() {
+  if (!ready || !cv.width) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < N; i++) {
+    const p = P[i];
+    UP[i * 4] = p.x; UP[i * 4 + 1] = p.y; UP[i * 4 + 2] = p.seed; UP[i * 4 + 3] = 1;
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  let s = 0;
+  for (const S of strands) {
+    if (s > 3) break;
+    const r = strandR(S);
+    tube(s++, S.rope, k => r * (1 - 0.3 * Math.sin((Math.PI * k) / (ROPE - 1))), (P[S.a].seed + P[S.b].seed) / 2);
+  }
+  for (const T of stubs) {
+    if (s > 3) break;
+    const fade = Math.max(0, 1 - T.age / 0.32);
+    tube(s++, T.pts, k => Math.max(1e-4, T.r * (1 - (0.75 * k) / (ROPE - 1)) * fade), P[T.root].seed);
+  }
+  let nd = 0;
+  for (const d of dents) {
+    if (nd > 3) break;
+    UD.set([d.x, d.y, d.p, D * (1.7 + 1.3 * Math.max(d.p, 0))], nd++ * 4);
+  }
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.useProgram(prog);
+  gl.bindVertexArray(vao);
+  gl.uniform4fv(U.uP, UP);
+  gl.uniform1i(U.uN, N);
+  gl.uniform4fv(U.uS, US);
+  gl.uniform4fv(U.uSB, USB);
+  gl.uniform1i(U.uSN, s);
+  gl.uniform4fv(U.uDent, UD);
+  gl.uniform1i(U.uDN, nd);
+  gl.uniform4f(U.uBox, x0 - KR, y0 - KR, x1 + KR, y1 + KR);
+  gl.uniform1f(U.uWpp, 1 / (UNIT * (cv.width / W)));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  if (++frames === 2) cv.classList.add('on');
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, still = 0, onScreen = true;
+function wake() {
+  still = 0;
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const dt = clamp((ms - last) / 1000, 0, 1 / 30);
+  last = ms;
+  // Reduced motion runs the putty a little slower.
+  step(dt * (reduce ? 0.8 : 1));
+  // Should the numbers ever break, the putty starts over rather than vanish.
+  if (P.some(p => !Number.isFinite(p.x + p.y + p.vx + p.vy))) { for (const g of ptrs.values()) letGo(g); strands = []; stubs.length = 0; dents.length = 0; gather = null; place(0.05); }
+  voice();
+  creak(strain());
+  draw();
+  still = moving() ? 0 : still + 1;
+  if (still < 20 && onScreen && !document.hidden) { raf = requestAnimationFrame(frame); return; }
+  // At rest every particle stops dead, so nothing drifts.
+  for (const p of P) { p.vx = 0; p.vy = 0; }
+  creakStop();
+  rest();
+}
+// Stretch speed drives the creak.
+function strain() {
+  let s = 0;
+  for (const S of strands) if (S.holders.some(g => g.mode === 'grab')) s += Math.abs(S.speed);
+  for (const g of ptrs.values()) if (g.mode === 'grab' && !g.strand && g.seam > 1.1) s += g.spd * clamp((g.seam - 1.1) / 0.6);
+  return s;
+}
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- input ---------- */
+const world = e => {
+  const r = panel.getBoundingClientRect();
+  return { x: (e.clientX - r.left - panel.clientLeft) / UNIT, y: (H - (e.clientY - r.top - panel.clientTop)) / UNIT };
+};
+function cursor(kind) {
+  panel.classList.toggle('edge', kind === 'edge');
+  panel.classList.toggle('body', kind === 'body');
+  panel.classList.toggle('drag', kind === 'drag');
+}
+
+panel.addEventListener('pointerdown', e => {
+  if (!ready || gather || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const q = world(e), z = zone(q.x, q.y), g = { mode: 'none', x: q.x, y: q.y, sx: q.x, sy: q.y, t0: performance.now(), t: e.timeStamp, spd: 0, dent: null };
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  ptrs.set(e.pointerId, g);
+  if (z.kind === 'body') {
+    g.mode = 'press';
+    g.dent = dentAt(q.x, q.y, true);
+    squish(1);
+  } else if (z.kind === 'edge') {
+    grab(g, q.x, q.y, z.q.near);
+    squish(0.6);
+    cursor('drag');
+  }
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const q = world(e), g = ptrs.get(e.pointerId);
+  if (!g) {
+    if (e.pointerType === 'mouse' && ready && !gather) cursor(zone(q.x, q.y).kind);
+    return;
+  }
+  // Hand speed comes from event timestamps, not frames.
+  const dts = (e.timeStamp - g.t) / 1000;
+  if (dts > 0) g.spd += (Math.hypot(q.x - g.x, q.y - g.y) / dts - g.spd) * Math.min(1, dts * 20);
+  g.t = e.timeStamp;
+  g.x = q.x; g.y = q.y;
+  if (g.mode === 'press' && g.dent) {
+    g.dent.x = q.x; g.dent.y = q.y;
+    // Dragging a press out past the edge pulls a strand.
+    if (probe(q.x, q.y).f < ISO * 0.9) {
+      release(g.dent);
+      g.dent = null;
+      const z = zone(q.x, q.y);
+      if (z.kind !== 'none') { grab(g, q.x, q.y, z.q.near); cursor('drag'); }
+      else g.mode = 'none';
+    }
+  }
+  wake();
+});
+function up(e) {
+  const g = ptrs.get(e.pointerId);
+  if (!g) return;
+  ptrs.delete(e.pointerId);
+  const q = world(e), quick = performance.now() - g.t0 < 260 && Math.hypot(q.x - g.sx, q.y - g.sy) < 0.6 * D;
+  const wasGrab = g.mode === 'grab' && !g.strand;
+  letGo(g);
+  // A quick tap at the edge is a poke too.
+  if (wasGrab && quick && e.type === 'pointerup') release(dentAt(g.sx, g.sy, true));
+  if (!ptrs.size) cursor(e.pointerType === 'mouse' ? zone(q.x, q.y).kind : '');
+  wake();
+}
+panel.addEventListener('pointerup', up);
+panel.addEventListener('pointercancel', up);
+panel.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !ptrs.has(e.pointerId)) cursor(''); });
+
+// Arrow keys nudge the blob.
+// Space squishes it from the top.
+let keyDent = null, keyAt = 0;
+panel.addEventListener('keydown', e => {
+  if (!ready) return;
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (e.repeat || keyDent || gather || !main) return;
+    keyDent = dentAt(main.cx, Math.max(...main.ids.map(i => P[i].y)) - 1.4 * D, false);
+    squish(1);
+    wake();
+  } else if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    const now = performance.now();
+    if (now - keyAt < 110) return;
+    keyAt = now;
+    if (e.key === 'ArrowLeft') nudge(-0.8, 0.9);
+    else if (e.key === 'ArrowRight') nudge(0.8, 0.9);
+    else if (e.key === 'ArrowUp') nudge(0, 1.6);
+    else if (main && !gather) {
+      const d = dentAt(main.cx, Math.max(...main.ids.map(i => P[i].y)) - 1.4 * D, false);
+      d.until = simT + 0.22;
+      squish(0.7);
+    }
+    wake();
+  }
+});
+function keyUp() { if (keyDent) { release(keyDent); keyDent = null; wake(); } }
+panel.addEventListener('keyup', e => { if (e.key === ' ') keyUp(); });
+panel.addEventListener('blur', keyUp);
+
+document.getElementById('reset').addEventListener('click', () => {
+  keyDent = null;
+  reset();
+  squish(0.5);
+  wake();
+});
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else { creakStop(); if (ac) ac.suspend()?.catch(() => {}); }
+});
+
+/* ---------- boot ---------- */
+layout();
+// On arrival the putty drops onto the floor and settles.
+place(reduce ? 0 : 0.14);
+new ResizeObserver(() => { layout(); wake(); }).observe(panel);
+async function boot() {
+  await idle();
+  try { await startGL(); } catch (err) { failed(err); }
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+})();
+</script>
+</body>
+</html>
