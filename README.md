@@ -19,7 +19,8 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | String harp | [harp/](harp/) | live, with sound |
 | Pin art | [pins/](pins/) | live, with sound |
 | Tesseract | [tesseract/](tesseract/) | live, with sound |
-| Ferrofluid, Glass, Galaxy, Soap cutting, Zipper, Bubble wand, Rain on glass, Spinning top | | in progress; outlines on the menu |
+| Ferrofluid | [ferro/](ferro/) | live, with sound |
+| Glass, Galaxy, Soap cutting, Zipper, Bubble wand, Rain on glass, Spinning top | | in progress; outlines on the menu |
 
 ## Run locally
 
