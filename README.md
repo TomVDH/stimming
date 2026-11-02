@@ -10,7 +10,7 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Fidget board | [fidget/](fidget/) | live, with sound |
 | Pop field | [pop/](pop/) | live, with sound |
 | Zen sand | [sand/](sand/) | live |
-| Fire | fire/ | in progress, WebGPU only |
+| Fire | [fire/](fire/) | live, WebGPU only; port of the three.js volume fire example |
 | Slime | slime/ | in progress |
 | Domino run, Infinity cube, Magnet balls | | planned |
 
