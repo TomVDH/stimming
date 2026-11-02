@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Pin art</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the pin screen at full width, one chip. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --panel: oklch(0.21 0.008 265);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The board is 16:9, 4:5 on phones, and dark in both themes. */
+.board {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--panel);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+.board:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .board { aspect-ratio: 4 / 5; } }
+.board canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.board canvas.on { opacity: 1; }
+/* On the dark board the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .board canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Pin art</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="board" id="board" tabindex="0" role="application" aria-label="Pin screen. Press and drag to push pins forward; hold to push deeper. Arrow keys move the press point, Space presses, S shakes the pins flat.">
+      <p class="fail" hidden>Pin art needs WebGL, which this browser has turned off.</p>
+    </div>
+    <div class="ctl">
+      <button class="chip" id="shake" type="button" aria-keyshortcuts="S">Shake</button>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('board');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.pins.sound', MAXV = 40, LEAD = 0.004;
+// Grains refill at RATE per second, up to BURST at once.
+const RATE = 240, BURST = 24;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
+let tokens = BURST, shimAcc = 0, fine = [], clack = [];
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.04 * voices);
+
+// One struck pin: a resonant click over two inharmonic partials.
+function strike(f, ring, mix) {
+  const sr = ac.sampleRate, len = Math.floor(sr * 0.045), buf = ac.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  const fc = Math.min(f * 2.2, sr * 0.42), w = (TAU * fc) / sr, r = Math.exp((-Math.PI * fc) / (4 * sr));
+  const a1 = 2 * r * Math.cos(w), a2 = -r * r, ke = Math.exp(-1 / (sr * 0.0006));
+  let y1 = 0, y2 = 0, e = 1, top = 1e-9;
+  for (let n = 0; n < len; n++) {
+    const y = (Math.random() * 2 - 1) * e + a1 * y1 + a2 * y2;
+    y2 = y1; y1 = y; e *= ke;
+    d[n] = y;
+    top = Math.max(top, Math.abs(y));
+  }
+  // Partial ratios follow a free steel bar: 1 and 2.76.
+  const w1 = (TAU * f) / sr, w2 = (TAU * f * 2.76 * jit(0.02)) / sr;
+  const k1 = Math.exp(-1 / (sr * ring)), k2 = Math.exp(-1 / (sr * ring * 0.5));
+  let e1 = mix, e2 = mix * 0.6, peak = 1e-9;
+  for (let n = 0; n < len; n++) {
+    d[n] = d[n] / top + e1 * Math.sin(w1 * n) + e2 * Math.sin(w2 * n);
+    e1 *= k1; e2 *= k2;
+    peak = Math.max(peak, Math.abs(d[n]));
+  }
+  for (let n = 0; n < len; n++) d[n] *= (0.95 / peak) * Math.min(1, (len - n) / (len * 0.1));
+  return buf;
+}
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds the knock and the sizzle.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // Fine ticks for sliding pins; lower clacks for landing ones.
+    fine = Array.from({ length: 8 }, () => strike(3600 * jit(0.25), 0.006 * jit(0.3), 0.45));
+    clack = Array.from({ length: 8 }, () => strike(2100 * jit(0.2), 0.014 * jit(0.3), 0.7));
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the pins settle, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !brushes.size && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['s', 'S', ' ', 'Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each grain is one buffered tick; tokens and voices cap the rate.
+function grain(a, set, amp, t, rate) {
+  if (voices >= MAXV || tokens < 1) return;
+  tokens--;
+  const src = a.createBufferSource(), g = a.createGain();
+  src.buffer = set[(Math.random() * set.length) | 0];
+  src.playbackRate.value = rate * jit(0.1);
+  g.gain.value = amp * level();
+  src.connect(g).connect(out);
+  src.start(t);
+  track(src, g);
+}
+// Sliding pins shimmer; grain density follows how many move.
+function shimmer(movers, speed, dt) {
+  const a = live();
+  if (!a || !movers) { shimAcc = 0; return; }
+  shimAcc += Math.min(150, 3.4 * movers ** 0.7) * dt;
+  const amp = 0.05 + 0.2 * clamp(speed / 24), t0 = a.currentTime + LEAD;
+  for (; shimAcc >= 1; shimAcc--) grain(a, fine, amp * jit(0.5), t0 + Math.random() * dt, 1);
+}
+// Landing pins clack; a crowded frame plays a few, slightly louder.
+function clatter(n, vmax, vsum, dt) {
+  const a = live();
+  if (!a || !n) return;
+  const m = Math.min(n, 10), boost = 1 + 0.12 * Math.log2(n / m), vm = vsum / n, t0 = a.currentTime + LEAD;
+  for (let k = 0; k < m; k++) {
+    const q = clamp(lerp(vm, vmax, Math.random() ** 2) / 36);
+    // Lighter landings ring a little higher.
+    grain(a, clack, (0.05 + 0.45 * q ** 1.3) * boost, t0 + Math.random() * dt, 1.25 - 0.3 * q);
+  }
+}
+// A shake: a dull knock of the frame, then a bright sizzle.
+function rattle(span) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD;
+  const k = a.createBufferSource(), lp = a.createBiquadFilter(), kg = a.createGain();
+  k.buffer = noise;
+  lp.type = 'lowpass';
+  lp.frequency.value = 170;
+  lp.Q.value = 1.2;
+  kg.gain.setValueAtTime(0, t);
+  kg.gain.linearRampToValueAtTime(0.9 * level(), t + 0.004);
+  kg.gain.setTargetAtTime(0, t + 0.004, 0.035);
+  k.connect(lp).connect(kg).connect(out);
+  k.start(t, Math.random() * 0.5, 0.25);
+  track(k, lp, kg);
+  // The sizzle brightens as the wave crosses the board.
+  const s = a.createBufferSource(), bp = a.createBiquadFilter(), sg = a.createGain();
+  s.buffer = noise;
+  s.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(5200, t);
+  bp.frequency.linearRampToValueAtTime(7800, t + span);
+  sg.gain.setValueAtTime(0, t);
+  sg.gain.linearRampToValueAtTime(0.06 * level(), t + 0.05);
+  sg.gain.setTargetAtTime(0, t + span, 0.12);
+  s.connect(bp).connect(sg).connect(out);
+  s.start(t, Math.random() * 0.5);
+  s.stop(t + span + 0.8);
+  track(s, bp, sg);
+}
+
+/* ---------- the grid: hex rows, one pin pitch apart ---------- */
+const MAXN = 2600, TARGET = 2000, ROW = Math.sqrt(3) / 2;
+// Heights are in pin pitches; at rest a little shaft shows.
+const HMAX = 7, L0 = 0.3, HEAD_Z = 0.22;
+// The frame: inner margin, border width, front lip.
+const MARGIN = 0.8, BORDER = 2.1, LIP = 1, BEV = 0.2;
+let cols = 0, rows = 0, N = 0, halfW = 0, halfH = 0;
+const PX = new Float32Array(MAXN), PY = new Float32Array(MAXN);
+const H = new Float32Array(MAXN), V = new Float32Array(MAXN), T = new Float32Array(MAXN), HP = new Float32Array(MAXN);
+// Per pin for the shader: occlusion, then neighbours' mean head height.
+const SH = new Float32Array(MAXN * 2).fill(1);
+const NB = new Int16Array(MAXN * 6), due = new Float64Array(MAXN), mode = new Uint8Array(MAXN), act = new Uint8Array(MAXN);
+const SPRING = 0, FALL = 1, WAIT_FALL = 2, FADE = 3, WAIT_RISE = 4;
+
+// Even rows sit a quarter pitch left, odd rows a quarter right.
+const shift = r => (r & 1 ? 0.25 : -0.25);
+// Nearest pin of a given grid, or -1 off the board.
+function nearestIn(x, y, nc, nr) {
+  const r = Math.round(((nr - 1) * ROW / 2 - y) / ROW);
+  if (r < 0 || r >= nr) return -1;
+  const c = Math.round(x + (nc - 1) / 2 - shift(r));
+  return c < 0 || c >= nc ? -1 : r * nc + c;
+}
+const nearest = (x, y) => nearestIn(x, y, cols, rows);
+function build(nc, nr) {
+  // Old targets carry over by position.
+  const oc = cols, or = rows, old = N ? T.slice(0, N) : null;
+  cols = nc; rows = nr; N = nc * nr;
+  halfW = (nc - 1) / 2 + 0.25;
+  halfH = ((nr - 1) * ROW) / 2;
+  for (let r = 0; r < nr; r++) for (let c = 0; c < nc; c++) {
+    const i = r * nc + c;
+    PX[i] = c - (nc - 1) / 2 + shift(r);
+    PY[i] = halfH - r * ROW;
+    const j = old ? nearestIn(PX[i], PY[i], oc, or) : -1;
+    T[i] = H[i] = j >= 0 ? old[j] : 0;
+    V[i] = 0;
+    mode[i] = SPRING;
+    act[i] = 0;
+  }
+  // Six neighbours per pin; -1 past the edge.
+  for (let r = 0; r < nr; r++) for (let c = 0; c < nc; c++) {
+    const i = r * nc + c, k = i * 6, o = r & 1 ? 0 : -1;
+    NB[k] = c > 0 ? i - 1 : -1;
+    NB[k + 1] = c < nc - 1 ? i + 1 : -1;
+    for (let s = 0; s < 4; s++) {
+      const rr = r + (s < 2 ? -1 : 1), cc = c + o + (s & 1);
+      NB[k + 2 + s] = rr >= 0 && rr < nr && cc >= 0 && cc < nc ? rr * nc + cc : -1;
+    }
+  }
+  shade();
+  place();
+}
+// Neighbours standing proud shade a pin and the foot of its shaft.
+function shade() {
+  for (let i = 0; i < N; i++) {
+    let occ = 0, sum = 0, n = 0;
+    for (let k = i * 6, e = k + 6; k < e; k++) {
+      const j = NB[k];
+      if (j < 0) continue;
+      const d = H[j] - H[i] - 0.15;
+      if (d > 0) occ += d;
+      sum += H[j];
+      n++;
+    }
+    SH[i * 2] = Math.max(0.34, 1 / (1 + 0.11 * occ));
+    SH[i * 2 + 1] = L0 + sum / n;
+  }
+}
+
+/* ---------- the opening relief: a hand pressed in from behind ---------- */
+// Digits in palm widths: base x, base y, lean, length, radius, depth.
+const DIGITS = [
+  [-0.31, 0.34, 9, 0.74, 0.1, 3.1],
+  [-0.1, 0.38, 2, 0.86, 0.105, 3.3],
+  [0.12, 0.36, -5, 0.78, 0.1, 3.1],
+  [0.32, 0.28, -14, 0.6, 0.09, 2.8],
+  [-0.4, -0.16, 52, 0.62, 0.125, 3],
+];
+// A rounded cross-section, like flesh pressed against pins.
+const dome = q => (q < 1 ? (1 - q * q) ** 0.55 : 0);
+// Distance to a segment, and how far along it the nearest point lies.
+function seg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, t = clamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1));
+  return [Math.hypot(px - ax - dx * t, py - ay - dy * t), t];
+}
+function hand(u, v) {
+  // The palm is a rounded square, slimmer toward the wrist.
+  const a = 0.5 - 0.05 * clamp(-v / 0.5), q = ((Math.abs(u) / a) ** 2.8 + (Math.abs(v) / 0.5) ** 2.8) ** (1 / 2.8);
+  let h = 3.4 * dome(q);
+  for (const [bx, by, lean, len, rad, dep] of DIGITS) {
+    const r = (lean * Math.PI) / 180, [d, t] = seg(u, v, bx, by, bx - Math.sin(r) * len, by + Math.cos(r) * len);
+    // Fingertip pads press a little deeper.
+    h = Math.max(h, dep * (0.9 + 0.14 * t) * dome(d / rad));
+  }
+  // The wrist fades out toward the board's edge.
+  const [d, t] = seg(u, v, 0, -0.35, 0.03, -1.5);
+  return Math.max(h, 2.6 * (1 - t) ** 1.6 * dome(d / 0.33));
+}
+function seedHand() {
+  const bw = 2 * halfW, bh = 2 * halfH, port = bw < bh;
+  const s = Math.min(0.42 * bh, 0.44 * bw), tilt = port ? -0.08 : -0.16;
+  const cx = port ? 0.03 * bw : 0.15 * bw, cy = -0.4 * s, co = Math.cos(tilt), si = Math.sin(tilt);
+  for (let i = 0; i < N; i++) {
+    const x = PX[i] - cx, y = PY[i] - cy, h = hand((x * co + y * si) / s, (y * co - x * si) / s);
+    // A hair of jitter keeps the print from looking machined.
+    T[i] = h > 0.02 ? Math.min(HMAX, h + (Math.random() - 0.5) * 0.08) : 0;
+  }
+}
+// Pins rise into the print from the wrist up.
+function intro() {
+  seedHand();
+  for (let i = 0; i < N; i++) {
+    if (reduce || !T[i]) { H[i] = T[i]; continue; }
+    H[i] = 0;
+    mode[i] = WAIT_RISE;
+    act[i] = 1;
+    due[i] = simT + 0.15 + (0.55 * (PY[i] + halfH)) / (2 * halfH) + Math.random() * 0.06;
+  }
+  shade();
+}
+
+/* ---------- pins: friction holds them, a spring settles them ---------- */
+const STEP = 1 / 240, G = 190, BOUNCE = 0.36, VSTOP = 3, KICK = 9;
+let simT = 0, impN = 0, impMax = 0, impSum = 0;
+function integrate() {
+  // Reduced motion settles critically damped and faster.
+  const w = reduce ? TAU * 9 : TAU * 5.5, kk = w * w, cc = 2 * (reduce ? 1 : 0.6) * w, fade = Math.exp(-STEP / 0.05);
+  for (let i = 0; i < N; i++) {
+    if (!act[i]) continue;
+    let m = mode[i];
+    if (m === WAIT_FALL || m === WAIT_RISE) {
+      if (simT < due[i]) continue;
+      // The jolt hops every pin forward before it drops.
+      if (m === WAIT_FALL) { V[i] = Math.max(V[i], 0) + KICK * (0.5 + Math.random()); m = FALL; }
+      else m = SPRING;
+      mode[i] = m;
+    }
+    if (m === FALL) {
+      V[i] -= G * STEP;
+      H[i] += V[i] * STEP;
+      if (H[i] <= 0) {
+        H[i] = 0;
+        const v = -V[i];
+        if (v > VSTOP) {
+          V[i] = v * BOUNCE;
+          impN++;
+          impSum += v;
+          if (v > impMax) impMax = v;
+        } else { V[i] = 0; mode[i] = SPRING; }
+      }
+    } else if (m === FADE) {
+      H[i] *= fade;
+      if (H[i] < 0.004) { H[i] = 0; mode[i] = SPRING; }
+    } else {
+      V[i] += (kk * (T[i] - H[i]) - cc * V[i]) * STEP;
+      H[i] += V[i] * STEP;
+      if (Math.abs(T[i] - H[i]) < 0.002 && Math.abs(V[i]) < 0.03) { H[i] = T[i]; V[i] = 0; act[i] = 0; }
+    }
+  }
+  simT += STEP;
+}
+
+/* ---------- brushes: a soft round press from behind ---------- */
+const brushes = new Map(), R_MOUSE = 3.5, R_TOUCH = 4.2;
+// Depth starts just past the pins under it, then grows while held.
+function press(id, x, y, p, r) {
+  const j = nearest(x, y);
+  const b = { x, y, lx: x, ly: y, ox: 0, oy: 0, p, r, d: Math.min(HMAX, (j >= 0 ? T[j] : 0) + 1.1 * p) };
+  brushes.set(id, b);
+  // A tap lifts before the next frame, so it stamps at once.
+  stamp(b);
+  wake();
+  return b;
+}
+// Holding longer pushes deeper, easing toward the pins' full travel.
+function sculpt(dt) {
+  for (const b of brushes.values()) {
+    b.d += (HMAX - b.d) * (1 - Math.exp(-0.55 * b.p * dt));
+    stamp(b);
+  }
+}
+// A capsule from the last point to this one; pins never move back.
+function stamp(b) {
+  const { x, y, lx, ly, r, d } = b, ex = x - lx, ey = y - ly, l2 = ex * ex + ey * ey || 1e-9, r2 = r * r;
+  const r0 = Math.max(0, Math.floor((halfH - Math.max(y, ly) - r) / ROW));
+  const r1 = Math.min(rows - 1, Math.ceil((halfH - Math.min(y, ly) + r) / ROW));
+  const xa = Math.min(x, lx) - r + (cols - 1) / 2, xb = Math.max(x, lx) + r + (cols - 1) / 2;
+  for (let row = r0; row <= r1; row++) {
+    const s = shift(row), c0 = Math.max(0, Math.ceil(xa - s)), c1 = Math.min(cols - 1, Math.floor(xb - s));
+    for (let c = c0, i = row * cols + c0; c <= c1; c++, i++) {
+      const px = PX[i] - lx, py = PY[i] - ly, t = clamp((px * ex + py * ey) / l2);
+      const qx = px - ex * t, qy = py - ey * t, q = (qx * qx + qy * qy) / r2;
+      if (q >= 1) continue;
+      const h = Math.min(HMAX, d * (1 - q) * (1 - q));
+      if (h > T[i] + 1e-3) { T[i] = h; mode[i] = SPRING; act[i] = 1; }
+    }
+  }
+  b.lx = x;
+  b.ly = y;
+}
+
+/* ---------- shake: the pins drop back in a sweeping wave ---------- */
+let joltAt = -9, flip = 1;
+// The frame rattles sideways and dies out in about half a second.
+const jolt = () => {
+  const t = simT - joltAt;
+  return t > 0.6 || reduce ? 0 : -flip * 0.4 * Math.exp(-t / 0.12) * Math.sin(TAU * 7 * t);
+};
+function shake() {
+  if (!ready) return;
+  flip = -flip;
+  for (let i = 0; i < N; i++) {
+    T[i] = 0;
+    if (reduce) {
+      // Reduced motion: the relief fades flat, with no wave.
+      if (H[i] > 0) { mode[i] = FADE; act[i] = 1; }
+      continue;
+    }
+    const u = (flip > 0 ? PX[i] + halfW : halfW - PX[i]) / (2 * halfW), v = (halfH - PY[i]) / (2 * halfH);
+    due[i] = simT + 0.05 + 0.5 * (0.8 * u + 0.2 * v) + Math.random() * 0.05;
+    mode[i] = WAIT_FALL;
+    act[i] = 1;
+  }
+  if (!reduce) joltAt = simT;
+  // Hands still pressing start again from shallow.
+  for (const b of brushes.values()) b.d = 0.6;
+  rattle(reduce ? 0.25 : 0.6);
+  wake();
+}
+
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, board = null, mark = null;
+let shafts = null, heads = null, hAttr = null, sAttr = null, frameMesh = null, plate = null;
+let ray = null, ndc = null, tmp = null, ready = false, kbd = false;
+// The camera looks down 24 degrees onto the upright board.
+const EL = (24 * Math.PI) / 180, FOV = 26;
+let lowDpr = false;
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+// Counter-clockwise rounded rectangle from half sizes.
+function rounded(p, w, h, r) {
+  p.moveTo(-w + r, -h);
+  p.lineTo(w - r, -h);
+  p.absarc(w - r, -h + r, r, -Math.PI / 2, 0);
+  p.lineTo(w, h - r);
+  p.absarc(w - r, h - r, r, 0, Math.PI / 2);
+  p.lineTo(-w + r, h);
+  p.absarc(-w + r, h - r, r, Math.PI / 2, Math.PI);
+  p.lineTo(-w, -h + r);
+  p.absarc(-w + r, -h + r, r, Math.PI, Math.PI * 1.5);
+  return p;
+}
+// Pins take their grid spots; the frame and plate refit around them.
+function place() {
+  const M = shafts.instanceMatrix.array;
+  for (let i = 0; i < N; i++) { M[i * 16 + 12] = PX[i]; M[i * 16 + 13] = PY[i]; }
+  shafts.instanceMatrix.needsUpdate = true;
+  shafts.count = heads.count = N;
+  hAttr.needsUpdate = sAttr.needsUpdate = true;
+  const iw = halfW + MARGIN, ih = halfH + MARGIN, shape = rounded(new THREE.Shape(), iw + BORDER, ih + BORDER, 1.5);
+  // The bevel narrows the hole, so it starts a bevel wider.
+  shape.holes.push(rounded(new THREE.Path(), iw + BEV, ih + BEV, 0.6));
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth: LIP + 0.6 - 2 * BEV, bevelEnabled: true, bevelThickness: BEV, bevelSize: BEV, bevelSegments: 3, curveSegments: 10,
+  });
+  g.translate(0, 0, BEV - 0.6);
+  frameMesh.geometry.dispose();
+  frameMesh.geometry = g;
+  plate.geometry.dispose();
+  plate.geometry = new THREE.PlaneGeometry(2 * iw + 0.6, 2 * ih + 0.6);
+}
+function aimCam(d, ty) {
+  camera.position.set(0, ty + d * Math.sin(EL), d * Math.cos(EL));
+  camera.lookAt(0, ty, 0);
+  camera.updateMatrixWorld();
+}
+function bounds(pts) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of pts) {
+    tmp.copy(p).project(camera);
+    x0 = Math.min(x0, tmp.x); x1 = Math.max(x1, tmp.x);
+    y0 = Math.min(y0, tmp.y); y1 = Math.max(y1, tmp.y);
+  }
+  return [x0, x1, y0, y1];
+}
+// The grid follows the panel's shape; the camera backs off until the frame fits.
+function fit(w, h) {
+  const A = (w / h) * 0.92;
+  let nr = Math.round(Math.sqrt(TARGET / (A * ROW))), nc = Math.round(TARGET / nr);
+  nc = clamp(nc, 16, 72);
+  nr = clamp(nr, 16, 72);
+  while (nc * nr > MAXN) nr--;
+  if (!N || Math.abs(nc - cols) > 1 || Math.abs(nr - rows) > 1) build(nc, nr);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  const fw = halfW + MARGIN + BORDER + BEV, fh = halfH + MARGIN + BORDER + BEV, pts = [];
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) for (const z of [-0.6, LIP]) pts.push(new THREE.Vector3(sx * fw, sy * fh, z));
+    pts.push(new THREE.Vector3(sx * halfW, -halfH, L0 + HMAX + HEAD_Z));
+  }
+  let d = 150, ty = 0;
+  for (let it = 0; it < 4; it++) {
+    let lo = 20, hi = 3000;
+    for (let k = 0; k < 30; k++) {
+      d = (lo + hi) / 2;
+      aimCam(d, ty);
+      const [x0, x1, y0, y1] = bounds(pts);
+      if (Math.max(-x0, x1) <= 0.95 && y1 - y0 <= 1.86) hi = d; else lo = d;
+    }
+    d = hi;
+    aimCam(d, ty);
+    // Recentre: an NDC offset becomes a shift along the board.
+    const [, , y0, y1] = bounds(pts);
+    ty += (((y0 + y1) / 2) * d * Math.tan((FOV * Math.PI) / 360)) / Math.cos(EL);
+  }
+  aimCam(d, ty);
+  camera.near = Math.max(1, d - 90);
+  camera.far = d + 90;
+  camera.updateProjectionMatrix();
+}
+function draw(dirty = true) {
+  if (dirty) hAttr.needsUpdate = sAttr.needsUpdate = true;
+  board.position.x = jolt();
+  mark.visible = kbd;
+  if (kbd) {
+    const j = nearest(kb.x, kb.y);
+    mark.position.set(kb.x, kb.y, L0 + HEAD_Z + 0.3 + (j >= 0 ? H[j] : 0));
+    mark.scale.setScalar(brushes.has('key') ? 0.86 : 1);
+  }
+  renderer.render(scene, camera);
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, acc = 0, quiet = 0, onScreen = true, slow = 0;
+function wake() {
+  quiet = 0;
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  steer(dt);
+  sculpt(dt);
+  HP.set(H.subarray(0, N));
+  acc += dt;
+  const n = Math.min(8, Math.floor(acc / STEP));
+  acc = n === 8 ? 0 : acc - n * STEP;
+  impN = impSum = impMax = 0;
+  for (let k = 0; k < n; k++) integrate();
+  let movers = 0, sp = 0, awake = 0;
+  for (let i = 0; i < N; i++) {
+    const s = Math.abs(H[i] - HP[i]);
+    if (s > 0.6 * dt) { movers++; sp += s; }
+    awake += act[i];
+  }
+  const dirty = movers > 0 || awake > 0;
+  if (dirty) shade();
+  tokens = Math.min(BURST, tokens + RATE * dt);
+  shimmer(movers, movers && dt ? sp / movers / dt : 0, dt);
+  clatter(impN, impMax, impSum, dt);
+  draw(dirty);
+  const busy = awake || brushes.size || kb.keys.size || simT - joltAt < 0.6;
+  quiet = busy ? 0 : quiet + 1;
+  if (quiet < 4) {
+    if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  } else rest();
+}
+
+/* ---------- input ---------- */
+function force(e) {
+  // Mouse buttons report 0.5; pens and some screens report real force.
+  const p = e.pressure;
+  return e.pointerType === 'mouse' || !p || p === 0.5 ? 1 : clamp(0.35 + 1.3 * p, 0.35, 1.65);
+}
+function rayAt(e) {
+  const r = panel.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, 1 - ((e.clientY - r.top) / r.height) * 2);
+  ray.setFromCamera(ndc, camera);
+  return ray.ray;
+}
+// Where a ray meets the plate.
+function onPlate(rr) {
+  const o = rr.origin, d = rr.direction, t = -o.z / d.z;
+  return [o.x + d.x * t - board.position.x, o.y + d.y * t];
+}
+// Where a ray first touches the pin heads, marching down from the top.
+function onPins(rr) {
+  const o = rr.origin, d = rr.direction, top = L0 + HMAX + HEAD_Z + 0.5;
+  for (let k = 0; k <= 48; k++) {
+    const z = top * (1 - k / 48), t = (z - o.z) / d.z, x = o.x + d.x * t - board.position.x, y = o.y + d.y * t;
+    const j = nearest(x, y);
+    if (j >= 0 && z <= L0 + HEAD_Z + H[j]) return [x, y];
+  }
+  return onPlate(rr);
+}
+// The press lands on the pin you see, then follows the pointer without drifting.
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const rr = rayAt(e), [px, py] = onPlate(rr), [sx, sy] = onPins(rr);
+  const b = press(e.pointerId, sx, sy, force(e), e.pointerType === 'touch' ? R_TOUCH : R_MOUSE);
+  b.ox = sx - px;
+  b.oy = sy - py;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+});
+panel.addEventListener('pointermove', e => {
+  const b = brushes.get(e.pointerId);
+  if (!b) return;
+  const [px, py] = onPlate(rayAt(e));
+  b.x = px + b.ox;
+  b.y = py + b.oy;
+  b.p = force(e);
+  wake();
+});
+function lift(e) { if (brushes.delete(e.pointerId)) wake(); }
+panel.addEventListener('pointerup', lift);
+panel.addEventListener('pointercancel', lift);
+panel.addEventListener('lostpointercapture', lift);
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+// Keyboard: a press point steered by arrows, Space pushes.
+const kb = { x: 0, y: 0, keys: new Map() };
+const DIRS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+function moveKb(dx, dy) {
+  kb.x = clamp(kb.x + dx, -halfW, halfW);
+  kb.y = clamp(kb.y + dy, -halfH, halfH);
+  const b = brushes.get('key');
+  if (b) { b.x = kb.x; b.y = kb.y; }
+}
+// A tap steps one pitch; holding glides after a short pause.
+function steer(dt) {
+  if (!kb.keys.size) return;
+  const now = performance.now();
+  let dx = 0, dy = 0;
+  for (const [k, t] of kb.keys) if (now - t > 160) { dx += DIRS[k][0]; dy += DIRS[k][1]; }
+  if (!dx && !dy) return;
+  const s = (15 * dt) / Math.hypot(dx, dy);
+  moveKb(dx * s, dy * s);
+}
+// The aim ring shows only for keyboard focus.
+panel.addEventListener('focus', () => { kbd = panel.matches(':focus-visible'); if (ready) draw(false); });
+panel.addEventListener('blur', () => {
+  kbd = false;
+  kb.keys.clear();
+  brushes.delete('key');
+  if (ready) { draw(false); wake(); }
+});
+panel.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || !ready) return;
+  const k = e.key;
+  if (DIRS[k]) {
+    e.preventDefault();
+    kbd = true;
+    if (!e.repeat && !kb.keys.has(k)) { kb.keys.set(k, performance.now()); moveKb(...DIRS[k]); }
+    wake();
+  } else if (k === ' ') {
+    e.preventDefault();
+    kbd = true;
+    if (!e.repeat && !brushes.has('key')) press('key', kb.x, kb.y, 1, R_MOUSE);
+    wake();
+  }
+});
+panel.addEventListener('keyup', e => {
+  if (DIRS[e.key]) { kb.keys.delete(e.key); wake(); }
+  else if (e.key === ' ' && brushes.delete('key')) wake();
+});
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if ((e.key === 's' || e.key === 'S') && !e.repeat) shake();
+});
+document.getElementById('shake').addEventListener('click', shake);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+// Nearer pins catch more of the front lamp.
+const LAMP = 'mix(0.7, 1.14, smoothstep(0.0, 5.0, pinH))';
+// Shafts stretch from the plate to the head; pinH is the push.
+function patchShaft(s) {
+  s.vertexShader = 'attribute float pinH;\nattribute vec2 pinS;\nvarying vec2 vS;\nvarying float vZ;\n' + s.vertexShader.replace(
+    '#include <begin_vertex>',
+    `#include <begin_vertex>\ntransformed.z *= ${(L0 + 0.06).toFixed(3)} + pinH;\nvS = vec2(pinS.x * ${LAMP}, pinS.y);\nvZ = transformed.z;`,
+  );
+  // Shaft feet below the neighbours' heads sit in shadow.
+  s.fragmentShader = 'varying vec2 vS;\nvarying float vZ;\n' + s.fragmentShader.replace(
+    '#include <opaque_fragment>',
+    'outgoingLight *= vS.x * mix(0.2, 1.0, smoothstep(vS.y - 1.6, vS.y + 0.5, vZ));\n#include <opaque_fragment>',
+  );
+}
+// Heads ride on top of the shaft.
+function patchHead(s) {
+  s.vertexShader = 'attribute float pinH;\nattribute vec2 pinS;\nvarying float vAO;\n' + s.vertexShader.replace(
+    '#include <begin_vertex>',
+    `#include <begin_vertex>\ntransformed.z += ${L0.toFixed(3)} + pinH;\nvAO = pinS.x * ${LAMP};`,
+  );
+  s.fragmentShader = 'varying float vAO;\n' + s.fragmentShader.replace(
+    '#include <opaque_fragment>',
+    'outgoingLight *= vAO;\n#include <opaque_fragment>',
+  );
+}
+async function start() {
+  let RoomEnvironment;
+  try {
+    THREE = await import('three');
+    ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.setClearColor(0x000000, 0);
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 1, 2000);
+  ray = new THREE.Raycaster();
+  ndc = new THREE.Vector2();
+  tmp = new THREE.Vector3();
+  await idle();
+
+  // A dim wall behind the viewer gives the chrome dark centres and bright rims.
+  const room = new RoomEnvironment();
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(24, 22), new THREE.MeshBasicMaterial({ color: 0x1a1c21 }));
+  wall.position.set(0, 9, 14.4);
+  wall.rotation.y = Math.PI;
+  room.add(wall);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(room, 0.03).texture;
+  room.dispose();
+  pm.dispose();
+  // The key light sits up and left in front; nearer pins catch more.
+  const key = new THREE.SpotLight(0xfff4e8, 3000, 0, 0.75, 0.9, 1.6);
+  key.position.set(-28, 52, 64);
+  scene.add(key, key.target);
+  await idle();
+
+  board = new THREE.Group();
+  scene.add(board);
+  plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshStandardMaterial({ color: 0x0e1013, metalness: 0.3, roughness: 0.78 }),
+  );
+  frameMesh = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshStandardMaterial({ color: 0x30343b, metalness: 0.45, roughness: 0.5 }),
+  );
+  board.add(plate, frameMesh);
+
+  // Slim brushed-steel shafts, one unit long before stretching.
+  const small = Math.min(innerWidth, innerHeight) < 700;
+  const shaftGeo = new THREE.CylinderGeometry(0.07, 0.07, 1, 6, 1, true).translate(0, 0.5, 0).rotateX(Math.PI / 2);
+  // Domed chrome heads with a narrow rim, turned on a lathe.
+  const prof = [[0.1, -0.04], [0.44, -0.04], [0.45, -0.01], [0.45, 0.02]];
+  for (let k = 1; k <= 6; k++) { const a = (k / 6) * (Math.PI / 2); prof.push([0.44 * Math.cos(a), 0.03 + (HEAD_Z - 0.03) * Math.sin(a)]); }
+  const headGeo = new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), small ? 12 : 18).rotateX(Math.PI / 2);
+  hAttr = new THREE.InstancedBufferAttribute(H, 1).setUsage(THREE.DynamicDrawUsage);
+  sAttr = new THREE.InstancedBufferAttribute(SH, 2).setUsage(THREE.DynamicDrawUsage);
+  for (const g of [shaftGeo, headGeo]) { g.setAttribute('pinH', hAttr); g.setAttribute('pinS', sAttr); }
+  const steel = new THREE.MeshStandardMaterial({ color: 0xb4b8bf, metalness: 1, roughness: 0.36 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xe6e8ec, metalness: 1, roughness: 0.09 });
+  steel.onBeforeCompile = patchShaft;
+  chrome.onBeforeCompile = patchHead;
+  shafts = new THREE.InstancedMesh(shaftGeo, steel, MAXN);
+  heads = new THREE.InstancedMesh(headGeo, chrome, MAXN);
+  // Both meshes share one set of grid spots.
+  heads.instanceMatrix = shafts.instanceMatrix;
+  for (const m of [shafts, heads]) m.frustumCulled = false;
+  board.add(shafts, heads);
+  // The keyboard aim ring keeps the dark-theme focus colour on the board.
+  mark = new THREE.Mesh(
+    new THREE.RingGeometry(R_MOUSE - 0.22, R_MOUSE, 64),
+    new THREE.MeshBasicMaterial({ color: 0x40e2f3, toneMapped: false, depthTest: false, depthWrite: false, transparent: true }),
+  );
+  mark.renderOrder = 2;
+  mark.visible = false;
+  board.add(mark);
+
+  panel.prepend(canvas);
+  fitRenderer(renderer, panel, 1.5, (w, h) => {
+    fit(w, h);
+    if (ready) { draw(); wake(); }
+  }, 1.4e6);
+  // A panel with no size yet still gets a grid.
+  if (!N) fit(16, 9);
+  kb.x = -0.5 * halfW;
+  await idle();
+  intro();
+  // Async compile keeps the shader build off the main thread.
+  await renderer.compileAsync(scene, camera);
+  ready = true;
+  draw();
+  requestAnimationFrame(() => { canvas.classList.add('on'); wake(); });
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
