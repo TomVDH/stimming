@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Ferrofluid</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, then the dish panel at full width. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --pool: oklch(0.185 0.006 265);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; min-width: 0; }
+/* The panel is 16:9, 4:5 on phones, dark in both themes. */
+.pool {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  max-height: max(320px, calc(100vh - 150px)); max-height: max(320px, calc(100svh - 150px));
+  border-radius: 18px; overflow: hidden; background: var(--pool);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.pool:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .pool { aspect-ratio: 4 / 5; } }
+.pool canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pool canvas.on { opacity: 1; }
+/* On the dark panel the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+@media (prefers-reduced-motion: reduce) { .home, .snd, .pool canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Ferrofluid</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape" aria-label="A dish of ferrofluid. The pointer holds a magnet above it; pressing strengthens the field. Arrow keys move the magnet, Space toggles a strong field, Escape lifts it away.">
+      <p class="fail" hidden>Ferrofluid needs WebGL, which this browser has turned off.</p>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('pool');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+const TAU = Math.PI * 2, S3 = Math.sqrt(3) / 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+// Small screens get a coarser mesh and larger spikes.
+const small = Math.min(innerWidth, innerHeight) < 700;
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.ferro.sound', MAXV = 14, LEAD = 0.004, HUMV = 0.065;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, crackNext = 0, restT = 0;
+let humG = null, humF = null, humAt = -1, humTone = -1;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // The hum: a buzzing fundamental and a beating octave, lowpassed.
+    const o1 = ac.createOscillator(), o2 = ac.createOscillator(), g1 = ac.createGain(), g2 = ac.createGain();
+    const lp = ac.createBiquadFilter();
+    o1.type = 'sawtooth';
+    o1.frequency.value = 50;
+    o2.frequency.value = 100.6;
+    g1.gain.value = 0.5;
+    g2.gain.value = 0.8;
+    lp.type = 'lowpass';
+    lp.frequency.value = 150;
+    lp.Q.value = 0.9;
+    humG = ac.createGain();
+    humG.gain.value = 0;
+    o1.connect(g1).connect(lp);
+    o2.connect(g2).connect(lp);
+    lp.connect(humG).connect(out);
+    o1.start();
+    o2.start();
+    humF = lp.frequency;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the field is gone, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && Fs.x < 0.01 && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Field strength sets the hum's level and brightness.
+function hum(v, bright) {
+  if (!humG) return;
+  const lv = live() ? v : 0;
+  if (Math.abs(lv - humAt) < 0.004 && Math.abs(bright - humTone) < 0.02) return;
+  humAt = lv;
+  humTone = bright;
+  const t = ac.currentTime;
+  humG.gain.cancelScheduledValues(t);
+  humG.gain.setTargetAtTime(lv * HUMV, t, 0.12);
+  humF.setTargetAtTime(150 + 450 * bright, t, 0.2);
+}
+// A wet bead: a falling sine blip over a soft noise tick.
+function crackle(amp) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, crackNext);
+  // A burst of new spikes thins to a patter.
+  if (t - t0 > 0.07) return;
+  crackNext = t + 0.018 + Math.random() * 0.03;
+  const g = level() * amp * jit(0.25), f = 1250 * jit(0.3);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(f, t);
+  o.frequency.exponentialRampToValueAtTime(f * 0.4, t + 0.035);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.06 * g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, 0.01);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.07);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 2400 * jit(0.25);
+  bp.Q.value = 1.3;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.09 * g, t + 0.0006);
+  ng.gain.setTargetAtTime(0, t + 0.0006, 0.004);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.025);
+  track(o, og, bp, ng);
+}
+
+/* ---------- the field and the spike lattice ---------- */
+// The dish's inner radius is 1; the fluid rests at y = 0.
+const RIN = 1, K = 9, KW = 2 * K + 1, RHO = 0.7;
+// Lattice spacing, hover spike height, mesh vertices per spacing.
+const LAM = small ? 0.16 : 0.15, A0 = LAM * 1.05, MESH_N = small ? 10 : 14;
+// Field falloff, spike threshold, hover and pressed strengths.
+const SIG2 = 0.42 ** 2, FC = 0.36, HOVER = 1, STRONG = 1.75;
+// Crowding radius in lattice units; lean falloff and maximum.
+const CS2 = 3.2 ** 2, SIGL = 0.3, LEANMAX = 0.22;
+const mag = { x: 0, z: 0, present: false, pressed: false, locked: false, via: '' };
+const Fs = { x: 0, v: 0 };
+const E = { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 }, L = { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 };
+let crowdNow = 0, idleAmt = 0, stirT = 0, tNow = 0, amax = 0;
+
+// One cell per lattice point, axial coordinates within K rings.
+const NC = 1 + 3 * K * (K + 1);
+const CU = new Float32Array(NC), CV = new Float32Array(NC), CR = new Float32Array(NC), CE = new Float32Array(NC);
+const CF = new Float32Array(NC), WA = new Float32Array(NC), WS = new Float32Array(NC), PH = new Float32Array(NC);
+const A = new Float32Array(NC), VA = new Float32Array(NC), SX = new Float32Array(NC), SZ = new Float32Array(NC);
+const VSX = new Float32Array(NC), VSZ = new Float32Array(NC), COFF = new Int32Array(NC), FORM = new Uint8Array(NC);
+const CD = new Float32Array(KW * KW * 4);
+let nc = 0;
+for (let j = -K; j <= K; j++) for (let i = -K; i <= K; i++) {
+  if (Math.abs(i + j) > K) continue;
+  CU[nc] = i + j / 2;
+  CV[nc] = j * S3;
+  CR[nc] = Math.hypot(CU[nc], CV[nc]);
+  CE[nc] = Math.exp(-(CR[nc] ** 2) / CS2);
+  // Cells near the texture edge never rise.
+  CF[nc] = smooth(7.6, 5.6, CR[nc]);
+  COFF[nc] = ((j + K) * KW + i + K) * 4;
+  // Each spike springs at its own slightly different rate.
+  WA[nc] = jit(0.15);
+  WS[nc] = jit(0.18);
+  PH[nc] = Math.random() * TAU;
+  nc++;
+}
+
+function spring2(s, tx, tz, w, z, h) {
+  s.ax = w * w * (tx - s.x) - 2 * z * w * s.vx;
+  s.az = w * w * (tz - s.z) - 2 * z * w * s.vz;
+  s.vx += s.ax * h;
+  s.vz += s.az * h;
+  s.x += s.vx * h;
+  s.z += s.vz * h;
+}
+// Spikes swell, sway and melt on their own springs.
+function cellsStep(h, F, crowd, atten, mx, mz, kx, kz) {
+  const wr = reduce ? 22 : 10, zr = reduce ? 1 : 0.45, wf = reduce ? 18 : 6.5, zf = reduce ? 1 : 0.8;
+  const ws = reduce ? 20 : 13, zs = reduce ? 1 : 0.16;
+  let busy = false, top = 0;
+  for (let k = 0; k < nc; k++) {
+    const w = (1 - crowd * CE[k]) * LAM, x = L.x + CU[k] * w, z = L.z + CV[k] * w;
+    const dx = x - E.x, dz = z - E.z;
+    // The field falls off like a dipole's; spikes need a threshold.
+    const f = F / (1 + (dx * dx + dz * dz) / SIG2) ** 1.5;
+    let at = 0;
+    if (f > FC) {
+      at = A0 * ((f - FC) / (1 - FC)) ** 0.7 * atten * CF[k] * smooth(0.95, 0.74, Math.hypot(x, z));
+      // The idle ripple runs outward through the lattice.
+      if (idleAmt) at *= 1 + 0.07 * idleAmt * Math.sin(tNow * 2.3 - CR[k] * 1.1 + PH[k] * 0.35);
+    }
+    const up = at > A[k], om = (up ? wr : wf) * WA[k], ze = up ? zr : zf;
+    VA[k] += (om * om * (at - A[k]) - 2 * ze * om * VA[k]) * h;
+    A[k] += VA[k] * h;
+    if (at === 0 && Math.abs(A[k]) < 1e-5 && Math.abs(VA[k]) < 1e-4) { A[k] = 0; VA[k] = 0; }
+    // Spikes lean toward the magnet, most at middle distance.
+    const lx = mx - x, lz = mz - z, lr = Math.hypot(lx, lz);
+    let tx = 0, tz = 0;
+    if (lr > 1e-5) {
+      const q = lr / SIGL, m = (2 * LEANMAX * q) / (1 + q * q) / lr;
+      tx = lx * m;
+      tz = lz * m;
+    }
+    if (A[k] < 1e-4 && at === 0) {
+      SX[k] = tx; SZ[k] = tz; VSX[k] = VSZ[k] = 0;
+    } else {
+      // The lattice's acceleration swings the tips the other way.
+      const os = ws * WS[k];
+      VSX[k] += (os * os * (tx - SX[k]) - 2 * zs * os * VSX[k] - kx) * h;
+      VSZ[k] += (os * os * (tz - SZ[k]) - 2 * zs * os * VSZ[k] - kz) * h;
+      SX[k] += VSX[k] * h;
+      SZ[k] += VSZ[k] * h;
+      if (Math.abs(tx - SX[k]) + Math.abs(tz - SZ[k]) > 2e-3 || Math.abs(VSX[k]) + Math.abs(VSZ[k]) > 2e-2) busy = true;
+    }
+    if (Math.abs(at - A[k]) > 1e-4 || Math.abs(VA[k]) > 1e-3) busy = true;
+    if (A[k] > top) top = A[k];
+    // A spike crossing half height makes a wet click.
+    if (!FORM[k]) {
+      if (A[k] > 0.45 * A0 && VA[k] > 0) { FORM[k] = 1; crackle(clamp(VA[k] / (A0 * 6), 0.15, 1)); }
+    } else if (A[k] < 0.2 * A0) FORM[k] = 0;
+  }
+  amax = top;
+  return busy;
+}
+
+/* ---------- the pool: a shallow-water heightfield ---------- */
+const G = small ? 96 : 128, DX = (2 * RIN) / G;
+const H = new Float32Array(G * G), V = new Float32Array(G * G), P = new Float32Array(G * G), PHI = new Float32Array(G * G);
+let IN, NL, NR, NU, ND, GXW, GZW, ACC, FO, FI, NIN = 0, pOn = false;
+function simInit() {
+  const ins = new Uint8Array(G * G), at = i => -RIN + (i + 0.5) * DX, list = [];
+  for (let z = 0; z < G; z++) for (let x = 0; x < G; x++) {
+    if (Math.hypot(at(x), at(z)) < RIN) { ins[z * G + x] = 1; list.push(z * G + x); }
+  }
+  NIN = list.length;
+  IN = Int32Array.from(list);
+  NL = new Int32Array(NIN); NR = new Int32Array(NIN); NU = new Int32Array(NIN); ND = new Int32Array(NIN);
+  GXW = new Float32Array(NIN); GZW = new Float32Array(NIN); ACC = new Float32Array(NIN);
+  // Wall neighbours point back at the cell: no flow through the wall.
+  for (let m = 0; m < NIN; m++) {
+    const k = IN[m], x = k % G, z = (k / G) | 0;
+    NL[m] = x > 0 && ins[k - 1] ? k - 1 : k;
+    NR[m] = x < G - 1 && ins[k + 1] ? k + 1 : k;
+    NU[m] = z > 0 && ins[k - G] ? k - G : k;
+    ND[m] = z < G - 1 && ins[k + G] ? k + G : k;
+    GXW[m] = at(x);
+    GZW[m] = at(z);
+  }
+  // Wall cells copy their nearest fluid cell, so sampling stays smooth.
+  const fo = [], fi = [];
+  for (let z = 0; z < G; z++) for (let x = 0; x < G; x++) {
+    const k = z * G + x;
+    if (ins[k] || Math.hypot(at(x), at(z)) > RIN + 3 * DX) continue;
+    let best = -1, bd = Infinity;
+    for (let b = -4; b <= 4; b++) for (let a = -4; a <= 4; a++) {
+      const xx = x + a, zz = z + b;
+      if (xx < 0 || zz < 0 || xx >= G || zz >= G || !ins[zz * G + xx]) continue;
+      if (a * a + b * b < bd) { bd = a * a + b * b; best = zz * G + xx; }
+    }
+    if (best >= 0) { fo.push(k); fi.push(best); }
+  }
+  FO = Int32Array.from(fo);
+  FI = Int32Array.from(fi);
+}
+// The pull is a pressure head: a tight mound, a broad swell.
+function pressure(F) {
+  if (F < 1e-4) {
+    if (pOn) { P.fill(0); pOn = false; }
+    return;
+  }
+  pOn = true;
+  const hm = 0.05 * F, hb = 0.018 * F, ex = E.x, ez = E.z;
+  for (let m = 0; m < NIN; m++) {
+    const dx = GXW[m] - ex, dz = GZW[m] - ez, d2 = dx * dx + dz * dz;
+    P[IN[m]] = hm * Math.exp(-d2 / 0.073) + hb * Math.exp(-d2 / 0.38);
+  }
+}
+// Waves carry the pool toward the pull; volume is conserved.
+function simulate(dt) {
+  const n = Math.max(1, Math.ceil(dt * 180 - 1e-6)), h = dt / n;
+  const c2 = 1.21 / (DX * DX), nu = 0.0035 / (DX * DX), damp = 1 - (reduce ? 9 : 2.4) * h;
+  let top = 0;
+  for (let s = 0; s < n; s++) {
+    for (let m = 0; m < NIN; m++) { const k = IN[m]; PHI[k] = H[k] - P[k]; }
+    for (let m = 0; m < NIN; m++) {
+      const k = IN[m], a = NL[m], b = NR[m], c = NU[m], d = ND[m];
+      ACC[m] = c2 * (PHI[a] + PHI[b] + PHI[c] + PHI[d] - 4 * PHI[k]) + nu * (V[a] + V[b] + V[c] + V[d] - 4 * V[k]);
+    }
+    top = 0;
+    for (let m = 0; m < NIN; m++) {
+      const k = IN[m], v = (V[k] + ACC[m] * h) * damp;
+      V[k] = v;
+      H[k] += v * h;
+      if (v > top) top = v; else if (-v > top) top = -v;
+    }
+  }
+  for (let m = 0; m < FO.length; m++) H[FO[m]] = H[FI[m]];
+  return top;
+}
+
+/* ---------- one step of everything ---------- */
+const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+const keys = new Set();
+function step(dt) {
+  tNow += dt;
+  if (keys.size) {
+    let kx = 0, kz = 0;
+    for (const k of keys) { kx += ARROWS[k][0]; kz += ARROWS[k][1]; }
+    const l = Math.hypot(kx, kz);
+    if (l) {
+      let x = mag.x + (kx / l) * 0.85 * dt, z = mag.z + (kz / l) * 0.85 * dt;
+      const r = Math.hypot(x, z);
+      if (r > 0.95) { x *= 0.95 / r; z *= 0.95 / r; }
+      mag.x = x;
+      mag.z = z;
+      stirT = tNow;
+    }
+  }
+  // Off the dish the field fades; the pattern stays inside.
+  const reach = smooth(1.55, 1.05, Math.hypot(mag.x, mag.z));
+  const Ft = mag.present ? (mag.pressed || mag.locked ? STRONG : HOVER) * reach : 0;
+  let mx = mag.x, mz = mag.z;
+  const mr = Math.hypot(mx, mz);
+  if (mr > 1.02) { mx *= 1.02 / mr; mz *= 1.02 / mr; }
+  // With nothing raised, the pattern jumps straight to the magnet.
+  if (Fs.x < 0.02 && amax < 1e-3) {
+    E.x = L.x = mx; E.z = L.z = mz;
+    E.vx = E.vz = L.vx = L.vz = 0;
+  }
+  if (reduce || !mag.present) idleAmt = 0;
+  else {
+    const since = tNow - stirT;
+    idleAmt = since < 2.5 ? 1 : Math.exp(-(since - 2.5) / 1.6);
+    if (idleAmt < 0.01) idleAmt = 0;
+  }
+  const n = Math.max(1, Math.ceil(dt * 120 - 1e-6)), h = dt / n;
+  const wF = reduce ? 14 : 7.5, zF = reduce ? 1 : 0.7, kick = reduce ? 0.25 : 1;
+  const wE = reduce ? 24 : 15, zE = reduce ? 1 : 0.9, wL = reduce ? 18 : 6.5, zL = reduce ? 1 : 0.8;
+  let busy = false;
+  for (let s = 0; s < n; s++) {
+    Fs.v += (wF * wF * (Ft - Fs.x) - 2 * zF * wF * Fs.v) * h;
+    Fs.x += Fs.v * h;
+    // The envelope follows the magnet closely; the lattice lags behind.
+    spring2(E, mx, mz, wE, zE, h);
+    spring2(L, mx, mz, wL, zL, h);
+    const ex = L.x - E.x, ez = L.z - E.z, el = Math.hypot(ex, ez);
+    if (el > 0.3) { L.x = E.x + (ex * 0.3) / el; L.z = E.z + (ez * 0.3) / el; }
+    const F = Math.max(0, Fs.x);
+    // A stronger field packs the spikes closer together.
+    crowdNow = 0.2 * smooth(0.3, STRONG, F);
+    // A fast magnet outruns the fluid, so its spikes sink.
+    const sp = Math.hypot(E.vx, E.vz);
+    if (cellsStep(h, F, crowdNow, 1 / (1 + (sp / 2.2) ** 2), mx, mz, L.ax * kick, L.az * kick)) busy = true;
+  }
+  pressure(Math.max(0, Fs.x));
+  const top = simulate(dt);
+  hum(clamp(Fs.x / STRONG), clamp((Fs.x - HOVER) / (STRONG - HOVER)));
+  return busy || keys.size > 0 || idleAmt > 0 || top > 1.2e-4 ||
+    Math.abs(Fs.x - Ft) > 1e-4 || Math.abs(Fs.v) > 1e-3 ||
+    Math.abs(E.x - mx) + Math.abs(E.z - mz) > 1e-4 || Math.abs(E.vx) + Math.abs(E.vz) > 1e-3 ||
+    Math.abs(L.x - mx) + Math.abs(L.z - mz) > 1e-4 || Math.abs(L.vx) + Math.abs(L.vz) > 1e-3;
+}
+
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, U = null, cellTex = null, bulkTex = null;
+let ray = null, plane = null, ndc = null, hitV = null, tmp = null;
+let ready = false, lowDpr = false;
+
+// The surface: lattice coordinates in, displaced world position out.
+const VERT = /* glsl */ `
+uniform sampler2D uCells;
+uniform sampler2D uBulk;
+uniform vec2 uL;
+uniform float uLam, uCrowd, uG, uRclip, uEps, uAmax;
+varying vec2 vXZ;
+varying float vSheen;
+const float S3 = 0.8660254;
+const float RHO = ${RHO.toFixed(3)};
+const int KC = ${K};
+const float CS2 = ${CS2.toFixed(3)};
+const ivec2 NB[7] = ivec2[7](ivec2(0, 0), ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1), ivec2(1, -1), ivec2(-1, 1));
+// Pool height, bilinear, plus the meniscus climbing the wall.
+float bulkAt(vec2 xz) {
+  vec2 g = clamp((xz * 0.5 + 0.5) * uG - 0.5, vec2(0.0), vec2(uG - 1.001));
+  ivec2 i = ivec2(g);
+  vec2 f = g - vec2(i);
+  float a = texelFetch(uBulk, i, 0).r;
+  float b = texelFetch(uBulk, i + ivec2(1, 0), 0).r;
+  float c = texelFetch(uBulk, i + ivec2(0, 1), 0).r;
+  float d = texelFetch(uBulk, i + ivec2(1, 1), 0).r;
+  float men = 0.011 * exp(-max(0.0, ${RIN.toFixed(3)} - length(xz)) / 0.028);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) + men;
+}
+// One spike: a rounded bump when weak, a concave cone when strong.
+float kern(float r, float sh) {
+  float x = r / RHO;
+  float b = 1.0 - x * x;
+  float rt = mix(0.22, 0.05, sh);
+  float xs = (sqrt(x * x + rt * rt) - rt) / (sqrt(1.0 + rt * rt) - rt);
+  float cone = pow(max(1.0 - xs, 0.0), mix(1.6, 3.0, sh));
+  return mix(b * b * b, cone, sh);
+}
+vec3 surf(vec2 u, out float hs) {
+  vec2 base = uL + u * (1.0 - uCrowd * exp(-dot(u, u) / CS2)) * uLam;
+  vec2 shear = vec2(0.0);
+  hs = 0.0;
+  if (uAmax > 0.0 && dot(u, u) < float((KC + 1) * (KC + 1))) {
+    // Nearest lattice point by cube rounding, then its six neighbours.
+    float j = u.y / S3, i = u.x - 0.5 * j, k = -i - j;
+    float ri = floor(i + 0.5), rj = floor(j + 0.5), rk = floor(k + 0.5);
+    float di = abs(ri - i), dj = abs(rj - j), dk = abs(rk - k);
+    if (di > dj && di > dk) ri = -rj - rk;
+    else if (dj > dk) rj = -ri - rk;
+    for (int n = 0; n < 7; n++) {
+      vec2 cij = vec2(ri, rj) + vec2(NB[n]);
+      vec2 c = vec2(cij.x + 0.5 * cij.y, cij.y * S3);
+      float r = length(u - c);
+      if (r >= RHO) continue;
+      ivec2 t = ivec2(cij) + KC;
+      if (t.x < 0 || t.y < 0 || t.x > 2 * KC || t.y > 2 * KC) continue;
+      vec4 cd = texelFetch(uCells, t, 0);
+      if (cd.x <= 0.0) continue;
+      float h = cd.x * kern(r, cd.y);
+      hs += h;
+      // Lean and sway shear each spike sideways with height.
+      shear += cd.zw * h;
+    }
+  }
+  return vec3(base.x + shear.x, bulkAt(base) + hs, base.y + shear.y);
+}
+// Normals come from central differences of the same surface.
+void ferro(vec2 u, out vec3 p, out vec3 n) {
+  float hs, hx;
+  p = surf(u, hs);
+  vec3 tx = surf(u + vec2(uEps, 0.0), hx) - surf(u - vec2(uEps, 0.0), hx);
+  vec3 tz = surf(u + vec2(0.0, uEps), hx) - surf(u - vec2(0.0, uEps), hx);
+  n = normalize(cross(tz, tx));
+  // Vertices past the wall fold onto it, so they draw nothing.
+  float r = length(p.xz);
+  if (r > uRclip) p.xz *= uRclip / r;
+  vXZ = p.xz;
+  vSheen = clamp(hs * 5.0, 0.0, 1.0);
+}
+`;
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+// A lattice-aligned triangle grid: every spike tip is a vertex.
+function buildPool(n) {
+  // Past S0 the grid thins out quadratically to reach the far wall.
+  const S0 = 8, KQ = 0.25, need = (2 * 1.03 + 0.12) / LAM;
+  const sMax = S0 + (-1 + Math.sqrt(1 + 4 * KQ * (need - S0))) / (2 * KQ);
+  const N = Math.ceil(1.6 * sMax * n) + 2, W = 2 * N + 1;
+  const map = new Int32Array(W * W).fill(-1), tmpPos = [];
+  let nv = 0;
+  for (let q = -N; q <= N; q++) for (let p = -N; p <= N; p++) {
+    const sx = (p + q / 2) / n, sz = (q * S3) / n, s = Math.hypot(sx, sz);
+    if (s > sMax + 1.5 / n) continue;
+    const f = s > S0 ? (s + KQ * (s - S0) ** 2) / s : 1;
+    map[(q + N) * W + p + N] = nv++;
+    tmpPos.push(sx * f, sz * f, 0);
+  }
+  const idx = new Uint32Array(nv * 6);
+  let ni = 0;
+  for (let q = -N; q < N; q++) for (let p = -N; p < N; p++) {
+    const o = (q + N) * W + p + N, a = map[o], b = map[o + 1], c = map[o + W], d = map[o + W + 1];
+    // Wound to face up, toward the camera.
+    if (a >= 0 && b >= 0 && c >= 0) { idx[ni++] = a; idx[ni++] = c; idx[ni++] = b; }
+    if (b >= 0 && c >= 0 && d >= 0) { idx[ni++] = b; idx[ni++] = c; idx[ni++] = d; }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(tmpPos, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx.subarray(0, ni), 1));
+  return geo;
+}
+// Rim and base circles, plus the tallest spike, set the framing.
+const FIT = [[0, 0.34, 0]];
+for (let k = 0; k < 64; k++) {
+  const a = (k / 64) * TAU, c = Math.cos(a) * 1.1, s = Math.sin(a) * 1.1;
+  FIT.push([c, 0.09, s], [c, -0.13, s]);
+}
+function fitCamera(w, h) {
+  const port = w / h < 1.1, el = ((port ? 60 : 40) * Math.PI) / 180;
+  camera.aspect = w / h;
+  camera.fov = port ? 32 : 27;
+  camera.updateProjectionMatrix();
+  const mxN = port ? 0.97 : 0.94, myN = port ? 0.92 : 0.93;
+  let off = 0, d = 5;
+  // The target slides along the camera's up vector to centre the dish.
+  const place = () => {
+    const ty = off * Math.cos(el), tz = -off * Math.sin(el);
+    camera.position.set(0, ty + d * Math.sin(el), tz + d * Math.cos(el));
+    camera.lookAt(0, ty, tz);
+    camera.updateMatrixWorld();
+  };
+  const box = () => {
+    let x1 = 0, y0 = Infinity, y1 = -Infinity;
+    for (const p of FIT) {
+      tmp.set(p[0], p[1], p[2]).project(camera);
+      x1 = Math.max(x1, Math.abs(tmp.x));
+      y0 = Math.min(y0, tmp.y);
+      y1 = Math.max(y1, tmp.y);
+    }
+    return [x1, y0, y1];
+  };
+  for (let pass = 0; pass < 4; pass++) {
+    let lo = 0.5, hi = 60;
+    for (let it = 0; it < 30; it++) {
+      d = (lo + hi) / 2;
+      place();
+      const [x1, y0, y1] = box();
+      if (Math.max(x1 / mxN, (y1 - y0) / 2 / myN) > 1) lo = d; else hi = d;
+    }
+    d = hi;
+    place();
+    const [, y0, y1] = box();
+    off += ((y0 + y1) / 2) * d * Math.tan((camera.fov * Math.PI) / 360);
+  }
+  place();
+}
+function draw() {
+  for (let k = 0; k < nc; k++) {
+    const a = A[k] > 0 ? A[k] : 0, o = COFF[k], sh = Math.min(1, a / (A0 * 1.25)) ** 0.6;
+    // Shear stays below the flank slope, so no spike folds over.
+    const lim = Math.min(0.35, (0.8 * RHO * (1 - crowdNow * CE[k]) * LAM) / (Math.max(a, 1e-4) * (1.2 + 1.4 * sh)));
+    let sx = SX[k], sz = SZ[k];
+    const sl = Math.hypot(sx, sz);
+    if (sl > lim) { sx *= lim / sl; sz *= lim / sl; }
+    CD[o] = a;
+    CD[o + 1] = sh;
+    CD[o + 2] = sx;
+    CD[o + 3] = sz;
+  }
+  cellTex.needsUpdate = true;
+  bulkTex.needsUpdate = true;
+  U.uL.value.set(L.x, L.z);
+  U.uCrowd.value = crowdNow;
+  U.uAmax.value = amax > 1e-5 ? amax : 0;
+  renderer.render(scene, camera);
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, quiet = 0, onScreen = true, slow = 0;
+function wake() {
+  quiet = 0;
+  // The next hum update applies even if the level looks unchanged.
+  humAt = -1;
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  const busy = step(dt);
+  draw();
+  quiet = busy ? 0 : quiet + 1;
+  if (quiet < 10) {
+    if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  } else if (Fs.x < 0.01) rest();
+  else if (humG && humAt > 0 && live()) {
+    // A steady field settles to a quieter hum.
+    humG.gain.setTargetAtTime(humAt * HUMV * 0.45, ac.currentTime + 1.2, 1.5);
+  }
+}
+
+/* ---------- input ---------- */
+let ptrId = -1, resumeAt = 0;
+function aimAt(e) {
+  const r = panel.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, 1 - ((e.clientY - r.top) / r.height) * 2);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(plane, hitV)) return false;
+  mag.x = hitV.x;
+  mag.z = hitV.z;
+  return true;
+}
+function stir() {
+  stirT = tNow;
+  wake();
+}
+panel.addEventListener('pointermove', e => {
+  if (!ready || (e.pointerType === 'touch' && e.pointerId !== ptrId)) return;
+  if (!aimAt(e)) return;
+  mag.via = 'pointer';
+  mag.present = true;
+  // After a first gesture, hovering wakes a sleeping context.
+  if (ac && soundOn && ac.state === 'suspended' && e.timeStamp - resumeAt > 500) { resumeAt = e.timeStamp; audio(); }
+  stir();
+});
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  aimAt(e);
+  mag.via = 'pointer';
+  mag.present = true;
+  mag.pressed = true;
+  ptrId = e.pointerId;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  stir();
+});
+function release(e) {
+  if (e.pointerId !== ptrId) return;
+  ptrId = -1;
+  mag.pressed = false;
+  const r = panel.getBoundingClientRect();
+  const over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  // A lifted finger takes the magnet with it.
+  if (e.pointerType === 'touch' || !over) mag.present = false;
+  stir();
+}
+panel.addEventListener('pointerup', release);
+panel.addEventListener('pointercancel', release);
+panel.addEventListener('lostpointercapture', release);
+panel.addEventListener('pointerleave', e => {
+  if (e.pointerType === 'touch' || mag.pressed || mag.via !== 'pointer') return;
+  mag.present = false;
+  stir();
+});
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (ARROWS[e.key]) {
+    e.preventDefault();
+    keys.add(e.key);
+    if (mag.via !== 'pointer' || !mag.present) { mag.via = 'key'; mag.present = true; }
+    stir();
+  } else if (e.key === ' ') {
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (e.repeat) return;
+    if (!mag.present) { mag.via = 'key'; mag.present = true; }
+    mag.locked = !mag.locked;
+    stir();
+  } else if (e.key === 'Escape') {
+    mag.present = mag.locked = false;
+    keys.clear();
+    stir();
+  }
+});
+addEventListener('keyup', e => { keys.delete(e.key); });
+addEventListener('blur', () => keys.clear());
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) { audio(); wake(); }
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function start() {
+  let RoomEnvironment;
+  try {
+    THREE = await import('three');
+    ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.setClearColor(0x121316);
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(27, 16 / 9, 0.1, 100);
+  ray = new THREE.Raycaster();
+  plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  ndc = new THREE.Vector2();
+  hitV = new THREE.Vector3();
+  tmp = new THREE.Vector3();
+  await idle();
+
+  // The room's light panels give every spike a crisp reflection.
+  const room = new RoomEnvironment();
+  // Dark walls make it a studio, so the black reads as black.
+  room.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.material.isMeshStandardMaterial) {
+      o.material.color.setScalar(0.06);
+      // The clutter boxes would block the low panels.
+      if (o.material.side !== THREE.BackSide) o.visible = false;
+    }
+    // The side panel dims; the one the mirror faces goes.
+    else if (o.position.x > 10) o.material.color.setScalar(4);
+    else if (o.position.z < -10) o.visible = false;
+  });
+  const glow = (w, h, d, v, x, y, z, ry = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial());
+    m.material.color.setScalar(v);
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    room.add(m);
+  };
+  // Long strips behind the dish draw a line across the mirror.
+  // One sits in view from each camera height.
+  glow(26, 0.2, 0.2, 4, 0, 9.5, -12);
+  glow(30, 0.26, 0.26, 4, 0, 21, -12);
+  // Low panels light the steep flanks, not the flat pool.
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * TAU + 0.2;
+    glow(2.2, 3.2, 0.1, k % 3 ? 4 : 6.5, Math.sin(a) * 12.5, 1.9, Math.cos(a) * 12.5, a);
+  }
+  // No extra blur: bright panels would bloom across the mirror.
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(room, 0).texture;
+  room.dispose();
+  pm.dispose();
+  // A soft spot pools light on the dish and sparks each spike.
+  const key = new THREE.SpotLight(0xfff4ea, 9, 0, 0.36, 1, 0);
+  key.position.set(-1.7, 7, 2.6);
+  key.target.position.set(0, 0, 0);
+  // A cool back light catches the far flanks.
+  const back = new THREE.DirectionalLight(0xdde6ff, 1.6);
+  back.position.set(3, 2.2, -3.2);
+  scene.add(key, key.target, back);
+
+  const table = new THREE.Mesh(
+    new THREE.CircleGeometry(40, 64),
+    new THREE.MeshStandardMaterial({ color: 0x17181c, roughness: 0.9, metalness: 0, envMapIntensity: 0.25 }),
+  );
+  table.rotation.x = -Math.PI / 2;
+  table.position.y = -0.13;
+  scene.add(table);
+  // A dark satin dish: straight inner wall, rounded rim.
+  const prof = [[0.999, -0.13], [0.999, 0.058], [1.004, 0.071], [1.015, 0.08], [1.032, 0.085], [1.058, 0.085],
+    [1.076, 0.08], [1.087, 0.069], [1.092, 0.052], [1.098, -0.13]].map(([x, y]) => new THREE.Vector2(x, y));
+  const dish = new THREE.Mesh(
+    new THREE.LatheGeometry(prof, 160),
+    new THREE.MeshPhysicalMaterial({
+      color: 0x2a2c32, metalness: 0.4, roughness: 0.32, clearcoat: 0.3, clearcoatRoughness: 0.25, side: THREE.DoubleSide,
+    }),
+  );
+  scene.add(dish);
+  await idle();
+
+  simInit();
+  cellTex = new THREE.DataTexture(CD, KW, KW, THREE.RGBAFormat, THREE.FloatType);
+  bulkTex = new THREE.DataTexture(H, G, G, THREE.RedFormat, THREE.FloatType);
+  for (const t of [cellTex, bulkTex]) { t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; }
+  U = {
+    uCells: { value: cellTex }, uBulk: { value: bulkTex }, uL: { value: new THREE.Vector2() },
+    uLam: { value: LAM }, uCrowd: { value: 0 }, uG: { value: G }, uRclip: { value: RIN + 0.02 },
+    uEps: { value: 0.35 / MESH_N }, uAmax: { value: 0 }, uRin: { value: RIN + 0.003 },
+  };
+  // Deep black with a clear coat and a faint thin-film sheen.
+  const ink = new THREE.MeshPhysicalMaterial({
+    color: 0x030304, metalness: 0, roughness: 0.07, ior: 1.6, specularIntensity: 1,
+    clearcoat: 0.6, clearcoatRoughness: 0.05,
+    iridescence: 0.15, iridescenceIOR: 1.32, iridescenceThicknessRange: [260, 560],
+    envMapIntensity: 2,
+  });
+  ink.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, U);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\n' + VERT)
+      .replace('#include <beginnormal_vertex>', 'vec3 fPos;\nvec3 objectNormal;\nferro(position.xy, fPos, objectNormal);')
+      .replace('#include <begin_vertex>', 'vec3 transformed = fPos;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vXZ;\nvarying float vSheen;\nuniform float uRin;')
+      .replace('void main() {', 'void main() {\n\tif (dot(vXZ, vXZ) > uRin * uRin) discard;')
+      .replace('#include <lights_physical_fragment>',
+        '#include <lights_physical_fragment>\n#ifdef USE_IRIDESCENCE\n\tmaterial.iridescenceThickness = mix(260.0, 560.0, vSheen);\n#endif');
+  };
+  ink.customProgramCacheKey = () => 'ferro-ink';
+  const fluid = new THREE.Mesh(buildPool(MESH_N), ink);
+  fluid.frustumCulled = false;
+  scene.add(fluid);
+
+  panel.prepend(canvas);
+  fitRenderer(renderer, panel, 1.5, (w, h) => {
+    fitCamera(w, h);
+    if (ready) { draw(); wake(); }
+  }, 1.4e6);
+  if (!panel.clientWidth) fitCamera(16, 9);
+  await idle();
+  // Async compile keeps the shader build off the main thread.
+  await renderer.compileAsync(scene, camera);
+  ready = true;
+  // The page opens with a magnet resting over the middle.
+  if (!mag.via) { mag.via = 'intro'; mag.present = true; mag.x = 0; mag.z = 0.05; }
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  stir();
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
