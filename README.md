@@ -12,7 +12,8 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Zen sand | [sand/](sand/) | live |
 | Fire | [fire/](fire/) | live, WebGPU only; port of the three.js volume fire example |
 | Slime | slime/ | in progress |
-| Domino run, Infinity cube, Magnet balls | | planned |
+| Domino run | [domino/](domino/) | live, with sound |
+| Infinity cube, Magnet balls | | in progress |
 
 ## Run locally
 
