@@ -1,0 +1,848 @@
+<title>Zen sand</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header, full-width sand tray, one row of chips. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sand: oklch(0.86 0.05 80);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.15s ease; }
+.home:hover { color: var(--fg); }
+main { display: grid; gap: 12px; min-width: 0; }
+/* The tray is 16:9 unless the viewport is short. */
+.tray {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 168px));
+  border-radius: 18px; overflow: hidden; background: var(--sand);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 640px) { .tray { aspect-ratio: 4 / 3; } }
+.tray canvas {
+  display: block; width: 100%; height: 100%; cursor: crosshair;
+  opacity: 0; transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tray canvas.on { opacity: 1; }
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 15px; color: oklch(0.36 0.04 65);
+}
+.fail[hidden] { display: none; }
+.ctl { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 14px; }
+.group { display: flex; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+.chip:disabled { opacity: 0.45; cursor: default; }
+.chip:disabled:hover { color: var(--muted); border-color: var(--line); }
+@media (pointer: coarse) { .chip { padding: 10px 11px; } }
+@media (prefers-reduced-motion: reduce) { .tray canvas, .chip, .home { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Zen sand</h1>
+    <a class="home" href="https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd" data-local="../index.html">Stimming</a>
+  </header>
+  <main>
+    <div class="tray" id="tray">
+      <canvas role="img" aria-label="Raked sand tray with three stones"></canvas>
+      <p class="fail" hidden>The sand needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="ctl">
+      <div class="group" role="group" aria-label="Tool">
+        <button class="chip" type="button" data-tool="rake" aria-pressed="true">Rake</button>
+        <button class="chip" type="button" data-tool="finger" aria-pressed="false">Finger</button>
+        <button class="chip" type="button" data-tool="smooth" aria-pressed="false">Smooth</button>
+      </div>
+      <div class="group">
+        <button class="chip" type="button" id="rings">Rings</button>
+        <button class="chip" type="button" id="shake">Shake</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const out3 = t => 1 - (1 - t) ** 3;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+// Served locally, the home link opens the repo copy instead.
+if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  document.querySelectorAll('a[data-local]').forEach(a => { a.href = a.dataset.local; a.removeAttribute('target'); });
+}
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const COL = {
+  uSandLit: linear(0.86, 0.05, 80),
+  uSandShade: linear(0.7, 0.06, 65),
+  uSandDeep: linear(0.6, 0.066, 60),
+  uStoneLit: linear(0.52, 0.012, 250),
+  uStoneShade: linear(0.2, 0.01, 260),
+};
+// Low sun from the top-left, in screen space with y up.
+const LIGHT = (() => { const v = [-0.62, 0.6, 0.4], n = Math.hypot(...v); return v.map(x => x / n); })();
+
+/* ---------- sand grid ---------- */
+const tray = document.getElementById('tray'), canvas = tray.querySelector('canvas');
+const ROWS = 288;
+let cols = 512;
+let h = new Float32Array(cols * ROWS);
+let f = new Float32Array(cols * ROWS);
+let mask = new Float32Array(cols * ROWS).fill(1);
+// S is tine spacing and A groove amplitude, in texels.
+let S = 10.5, A = 1.26;
+const dirty = { x0: 0, y0: 0, x1: -1, y1: -1 };
+let snap = null, snapT = 0, pristine = true;
+function touch(x0, y0, x1, y1) {
+  x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(cols, x1); y1 = Math.min(ROWS, y1);
+  if (x1 <= x0 || y1 <= y0) return;
+  if (dirty.x1 < 0) Object.assign(dirty, { x0, y0, x1, y1 });
+  else {
+    dirty.x0 = Math.min(dirty.x0, x0); dirty.y0 = Math.min(dirty.y0, y0);
+    dirty.x1 = Math.max(dirty.x1, x1); dirty.y1 = Math.max(dirty.y1, y1);
+  }
+  // New marks make the resize snapshot stale.
+  snap = null;
+  pristine = false;
+}
+function sizeTools(trayH) {
+  S = (clamp(trayH * 0.036, 13, 24) * ROWS) / trayH;
+  A = 0.12 * S;
+}
+
+/* ---------- stones ---------- */
+const stones = [
+  { u: 0.28, v: 0.52, rx: 40, ry: 31, rot: -0.22, k2: 0.05, k3: 0.035, ph: 0.8 },
+  { u: 0.665, v: 0.33, rx: 27, ry: 22, rot: 0.5, k2: 0.04, k3: 0.045, ph: 2.6 },
+  { u: 0.745, v: 0.7, rx: 18.5, ry: 15, rot: 1.1, k2: 0.06, k3: 0.03, ph: 4.1 },
+].map((s, i) => ({
+  ...s, x: 0, y: 0, z: i, placed: true, held: false, lift: 0,
+  c: Math.cos(s.rot), sn: Math.sin(s.rot),
+  br: Math.max(s.rx, s.ry) * (1 + s.k2 + s.k3), rm: ((s.rx + s.ry) / 2) * (1 + s.k2),
+}));
+let zTop = stones.length;
+let RHO = 0;
+// Radial signed distance to the stone's edge; also sets RHO.
+function sdist(s, x, y) {
+  const dx = x - s.x, dy = y - s.y;
+  const ux = (s.c * dx + s.sn * dy) / s.rx, uy = (-s.sn * dx + s.c * dy) / s.ry;
+  const th = Math.atan2(uy, ux);
+  const r = 1 + s.k2 * Math.cos(2 * th + s.ph) + s.k3 * Math.cos(3 * th + 1.7 * s.ph);
+  const lu = Math.hypot(ux, uy);
+  RHO = lu / r;
+  return (lu - r) * Math.hypot(Math.cos(th) * s.rx, Math.sin(th) * s.ry);
+}
+function keepIn(s, x, y) {
+  const m = s.br + 2;
+  return [clamp(x, m, cols - m), clamp(y, m, ROWS - m)];
+}
+function moveStone(s, x, y) {
+  for (let pass = 0; pass < 2; pass++) {
+    for (const o of stones) {
+      if (o === s) continue;
+      // The held stone slides around others rather than overlapping.
+      const dx = x - o.x, dy = y - o.y, d = Math.hypot(dx, dy), min = 0.95 * (s.rm + o.rm);
+      if (d >= min) continue;
+      if (d > 1e-3) { x = o.x + (dx / d) * min; y = o.y + (dy / d) * min; } else x = o.x + min;
+    }
+    [x, y] = keepIn(s, x, y);
+  }
+  s.x = x; s.y = y;
+}
+// Mask is 0 under placed stones, so grooves stop at their edges.
+function buildMask(x0, y0, x1, y1) {
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+  x1 = Math.min(cols, Math.ceil(x1)); y1 = Math.min(ROWS, Math.ceil(y1));
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const px = x + 0.5, py = y + 0.5;
+      let m = 1;
+      for (const s of stones) {
+        if (!s.placed) continue;
+        const dx = px - s.x, dy = py - s.y, r = s.br + 4;
+        if (dx * dx + dy * dy < r * r) m *= sstep(0.5, 3, sdist(s, px, py));
+      }
+      mask[y * cols + x] = m;
+    }
+  }
+}
+const maskAround = s => buildMask(s.x - s.br - 5, s.y - s.br - 5, s.x + s.br + 5, s.y + s.br + 5);
+// A placed stone presses a bowl ringed by a low rim.
+function impress(s, arr) {
+  const rimW = 0.5 * S, dep = 1.4 * A, rimH = 0.45 * A, r = s.br + rimW + 1;
+  const x0 = Math.max(0, Math.floor(s.x - r)), x1 = Math.min(cols, Math.ceil(s.x + r));
+  const y0 = Math.max(0, Math.floor(s.y - r)), y1 = Math.min(ROWS, Math.ceil(s.y + r));
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * cols + x, d = sdist(s, x + 0.5, y + 0.5);
+      if (d < 0) {
+        // The bowl wall eases in over several texels.
+        const bowl = -dep * sstep(0, 0.3 * s.rm, -d);
+        arr[i] += (bowl - arr[i]) * sstep(0, 2.5, -d);
+      } else if (d < rimW) {
+        // The rim fades out at both ends, leaving no step.
+        const k = Math.sin((Math.PI * d) / rimW) ** 2;
+        arr[i] += (Math.max(arr[i], rimH) - arr[i]) * k;
+      }
+    }
+  }
+  if (arr === h) touch(x0, y0, x1, y1);
+}
+// Concentric grooves follow each stone's outline.
+function ringsInto(arr, n) {
+  const ext = n * S, fade = 0.6 * S, reach = ext + fade;
+  const on = stones.filter(s => s.placed);
+  if (!on.length) return;
+  const x0 = Math.max(0, Math.floor(Math.min(...on.map(s => s.x - s.br - reach)))), x1 = Math.min(cols, Math.ceil(Math.max(...on.map(s => s.x + s.br + reach))));
+  const y0 = Math.max(0, Math.floor(Math.min(...on.map(s => s.y - s.br - reach)))), y1 = Math.min(ROWS, Math.ceil(Math.max(...on.map(s => s.y + s.br + reach))));
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const px = x + 0.5, py = y + 0.5;
+      let d = 1e9;
+      for (const s of on) {
+        const dx = px - s.x, dy = py - s.y, r = s.br + reach + 1;
+        if (dx * dx + dy * dy < r * r) d = Math.min(d, sdist(s, px, py));
+      }
+      if (d < -3 || d >= reach) continue;
+      let tgt, w;
+      if (d <= ext) { tgt = -A * Math.cos((TAU * (Math.max(d, 0) - 0.5 * S)) / S); w = 1; }
+      else { w = 0.5 + 0.5 * Math.cos((Math.PI * (d - ext)) / fade); tgt = A * w; }
+      // The first ridge tucks a little under the stone, hiding any seam.
+      const i = y * cols + x;
+      arr[i] += (tgt - arr[i]) * w * sstep(-3, 0, d);
+    }
+  }
+  if (arr === h) touch(x0, y0, x1, y1);
+}
+// Straight rows fill the tray, then rings circle each stone.
+function seed() {
+  for (let y = 0; y < ROWS; y++) h.fill(-A * Math.cos((TAU * (y + 0.5 - ROWS / 2)) / S), y * cols, (y + 1) * cols);
+  ringsInto(h, 3);
+  for (const s of stones) impress(s, h);
+  buildMask(0, 0, cols, ROWS);
+}
+
+/* ---------- tools ---------- */
+let PT = 0, PW = 0;
+// Five tines: troughs at the tines, ridges between and outside.
+function rakeProfile(b, _, arc) {
+  const B = Math.abs(b), edge = 2.5 * S, fade = 0.6 * S;
+  if (B > edge + fade) { PW = 0; return; }
+  if (B <= edge) {
+    // Depth wanders a little along the stroke, like a hand-held rake.
+    const amp = A * (1 + 0.07 * Math.sin(arc * 0.045 + b * 0.31) * Math.sin(arc * 0.017 + b * 0.53));
+    PT = -amp * Math.cos((TAU * b) / S); PW = 1;
+  } else { PW = 0.5 + 0.5 * Math.cos((Math.PI * (B - edge)) / fade); PT = A * PW; }
+}
+// One deep narrow trough with pushed-up sand on both sides.
+function fingerProfile(b, old) {
+  const B = Math.abs(b), wt = 0.42 * S, rw = 0.38 * S;
+  if (B >= wt + 2 * rw) { PW = 0; return; }
+  const tr = B < wt ? -1.9 * A * (0.5 + 0.5 * Math.cos((Math.PI * B) / wt)) : 0;
+  const rg = B > wt ? 0.75 * A * Math.sin((Math.PI * (B - wt)) / (2 * rw)) ** 2 : 0;
+  PT = tr + Math.max(old * sstep(0.5 * wt, wt, B), rg);
+  PW = 1 - sstep(wt + rw, wt + 2 * rw, B);
+}
+const fingerReach = () => (0.42 + 0.76) * S;
+// Stamps a thin slice of the tool across the stroke direction.
+function stampLine(cx, cy, tx, ty, W, prof, arc) {
+  const L = 1.25, nx = -ty, ny = tx;
+  const ey = Math.abs(ty) * L + Math.abs(ny) * W;
+  const y0 = Math.max(0, Math.floor(cy - ey)), y1 = Math.min(ROWS - 1, Math.ceil(cy + ey));
+  let bx0 = cols, bx1 = -1;
+  for (let y = y0; y <= y1; y++) {
+    const py = y + 0.5 - cy;
+    let lo = -1e9, hi = 1e9;
+    // Each row's span solves |along| <= L and |across| <= W.
+    if (Math.abs(tx) > 1e-6) {
+      const a = (-L - py * ty) / tx, b = (L - py * ty) / tx;
+      lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b));
+    } else if (Math.abs(py * ty) > L) continue;
+    if (Math.abs(nx) > 1e-6) {
+      const a = (-W - py * ny) / nx, b = (W - py * ny) / nx;
+      lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b));
+    } else if (Math.abs(py * ny) > W) continue;
+    const xa = Math.max(0, Math.ceil(cx + lo - 0.5)), xb = Math.min(cols - 1, Math.floor(cx + hi - 0.5));
+    for (let x = xa; x <= xb; x++) {
+      const i = y * cols + x, m = mask[i];
+      if (m <= 0) continue;
+      const px = x + 0.5 - cx, a = px * tx + py * ty;
+      prof(px * nx + py * ny, h[i], arc);
+      if (PW <= 0) continue;
+      h[i] += (PT - h[i]) * Math.min(1, 0.7 * (1 - (a / L) ** 2) * PW * m);
+    }
+    if (xa <= xb) { bx0 = Math.min(bx0, xa); bx1 = Math.max(bx1, xb); }
+  }
+  if (bx1 >= 0) touch(bx0, y0, bx1 + 1, y1 + 1);
+}
+// A pressed fingertip leaves a round pit.
+function pit(cx, cy) {
+  const R = fingerReach();
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(cols, Math.ceil(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(ROWS, Math.ceil(cy + R));
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * cols + x;
+      fingerProfile(Math.hypot(x + 0.5 - cx, y + 0.5 - cy) * 1.15, h[i]);
+      if (PW > 0) h[i] += (PT - h[i]) * PW * mask[i];
+    }
+  }
+  touch(x0, y0, x1, y1);
+}
+// A soft brush that relaxes the sand toward flat.
+function smoothAt(cx, cy, k = 0.16) {
+  const R = 2.4 * S, R2 = R * R;
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(cols, Math.ceil(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(ROWS, Math.ceil(cy + R));
+  for (let y = y0; y < y1; y++) {
+    const dy = y + 0.5 - cy;
+    for (let x = x0; x < x1; x++) {
+      const dx = x + 0.5 - cx, d2 = dx * dx + dy * dy;
+      if (d2 >= R2) continue;
+      const i = y * cols + x;
+      h[i] *= 1 - k * (1 - d2 / R2) ** 2 * mask[i];
+    }
+  }
+  touch(x0, y0, x1, y1);
+}
+
+/* ---------- strokes ---------- */
+const strokes = new Map(), drags = new Map();
+let tool = 'rake';
+function newStroke(x, y) {
+  const ds = tool === 'smooth' ? 0.3 * S : 0.5;
+  return { tool, ds, min: Math.max(2, 0.22 * S), q: [], ended: false, moved: false,
+    c0x: x, c0y: y, c1x: x, c1y: y, px: x, py: y, tx: 1, ty: 0, acc: ds, arc: 0 };
+}
+function stamp(st, x, y) {
+  if (st.tool === 'rake') stampLine(x, y, st.tx, st.ty, 3.1 * S, rakeProfile, st.arc);
+  else if (st.tool === 'finger') stampLine(x, y, st.tx, st.ty, fingerReach(), fingerProfile, st.arc);
+  else smoothAt(x, y);
+}
+// Stamps along a quadratic at even spacing, turning with its tangent.
+function curve(st, ax, ay, cx, cy, bx, by) {
+  const len = Math.hypot(cx - ax, cy - ay) + Math.hypot(bx - cx, by - cy);
+  const n = Math.max(1, Math.ceil(len / Math.min(0.5, st.ds * 0.5)));
+  let px = st.px, py = st.py;
+  for (let k = 1; k <= n; k++) {
+    const t = k / n, u = 1 - t;
+    const x = u * u * ax + 2 * u * t * cx + t * t * bx, y = u * u * ay + 2 * u * t * cy + t * t * by;
+    const d = Math.hypot(x - px, y - py);
+    let tx = 2 * (u * (cx - ax) + t * (bx - cx)), ty = 2 * (u * (cy - ay) + t * (by - cy));
+    let tl = Math.hypot(tx, ty);
+    if (tl < 1e-6) { tx = x - px; ty = y - py; tl = d; }
+    if (tl > 1e-6) { st.tx = tx / tl; st.ty = ty / tl; }
+    st.acc += d; st.arc += d; px = x; py = y;
+    if (st.acc >= st.ds) { st.acc %= st.ds; stamp(st, x, y); }
+  }
+  st.px = px; st.py = py;
+}
+// Midpoint quadratics keep fast curves smooth and gap-free.
+function feed(st, x, y) {
+  if (Math.hypot(x - st.c1x, y - st.c1y) < st.min) return;
+  st.moved = true;
+  curve(st, (st.c0x + st.c1x) / 2, (st.c0y + st.c1y) / 2, st.c1x, st.c1y, (st.c1x + x) / 2, (st.c1y + y) / 2);
+  st.c0x = st.c1x; st.c0y = st.c1y; st.c1x = x; st.c1y = y;
+}
+function drain(id, st) {
+  for (const [x, y] of st.q) feed(st, x, y);
+  st.q.length = 0;
+  if (!st.ended) return;
+  if (st.moved) curve(st, (st.c0x + st.c1x) / 2, (st.c0y + st.c1y) / 2, st.c1x, st.c1y, st.c1x, st.c1y);
+  else if (st.tool === 'finger') pit(st.c1x, st.c1y);
+  else if (st.tool === 'smooth') smoothAt(st.c1x, st.c1y, 0.45);
+  strokes.delete(id);
+}
+
+/* ---------- WebGL ---------- */
+const VERT = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const FRAG = /* glsl */ `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uH, uH2;
+uniform vec2 uRes, uGrid;
+uniform vec3 uL, uSandLit, uSandShade, uSandDeep, uStoneLit, uStoneShade;
+uniform float uAmp, uStep;
+uniform vec4 uS0[3], uS1[3];
+uniform float uPlaced[3];
+uniform int uMode;
+uniform vec4 uAnim;
+out vec4 outColor;
+
+float gB = 0.0;
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+// Signed distance to a stone's edge along its radius, in texels.
+float sdist(vec4 a, vec4 b, vec2 p, out float rho) {
+  vec2 d = p - a.xy;
+  float c = cos(b.x), s = sin(b.x);
+  vec2 u = vec2(c * d.x + s * d.y, -s * d.x + c * d.y) / a.zw;
+  float th = atan(u.y, u.x + 1e-6);
+  float r = 1.0 + b.y * cos(2.0 * th + b.w) + b.z * cos(3.0 * th + 1.7 * b.w);
+  float lu = length(u);
+  rho = lu / r;
+  return (lu - r) * length(vec2(cos(th) * a.z, sin(th) * a.w));
+}
+// Shake: a damped wave trails the flattening front.
+float ripple(float x) {
+  float k = uAnim.x - x;
+  if (k <= 0.0) return 0.0;
+  return uAnim.y * sin(k * uAnim.z) * exp(-k * uAnim.w) * min(k * uAnim.z / 3.14159, 1.0);
+}
+float H(vec2 p) {
+  vec2 uv = p / uGrid;
+  float h = texture(uH, uv).r;
+  if (uMode != 0) h = mix(h, texture(uH2, uv).r, gB);
+  if (uMode == 1) h += ripple(p.x);
+  return h;
+}
+float dome(float r) { return sqrt(max(1.0 - r * r * r * r, 0.0)); }
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  vec2 p = vec2(fc.x, uRes.y - fc.y) / uRes * uGrid;
+  float px = uGrid.y / uRes.y;
+  float rr;
+  if (uMode == 1) gB = smoothstep(0.0, 0.16 * uGrid.x, uAnim.x - p.x);
+  else if (uMode == 2) {
+    float dm = 1e5;
+    for (int k = 0; k < 3; k++) if (uPlaced[k] > 0.5) dm = min(dm, sdist(uS0[k], uS1[k], p, rr));
+    gB = clamp((uAnim.x - dm) / uAnim.y, 0.0, 1.0);
+  } else if (uMode == 3) gB = uAnim.x;
+
+  float h0 = H(p);
+  float hx = H(p + vec2(1.0, 0.0)) - H(p - vec2(1.0, 0.0));
+  float hy = H(p + vec2(0.0, 1.0)) - H(p - vec2(0.0, 1.0));
+  vec3 n = normalize(vec3(-0.5 * hx, 0.5 * hy, 1.0));
+  // Ridges between here and the low sun shade the groove floor.
+  vec2 ld = normalize(vec2(uL.x, -uL.y));
+  float tanE = uL.z / length(uL.xy), occ = 0.0;
+  for (int i = 1; i <= 5; i++) {
+    float t = float(i) * uStep;
+    occ = max(occ, H(p + ld * t) - h0 - t * tanE);
+  }
+  float sun = max(dot(n, uL), 0.0) * (1.0 - smoothstep(0.0, 0.35 * uAmp, occ));
+  float fl = sun / uL.z;
+  vec3 col = mix(uSandShade, uSandLit, clamp(fl, 0.0, 1.0)) + uSandLit * 0.14 * clamp(fl - 1.0, 0.0, 0.7);
+  col = mix(col, uSandDeep, 0.4 * smoothstep(0.2 * uAmp, 1.8 * uAmp, -h0));
+  // Grain: per-pixel speckle, a slow drift in tone, rare bright crystals.
+  col *= 0.965 + 0.07 * hash(fc) + 0.05 * (vnoise(p * 0.03) - 0.5);
+  col += step(0.994, hash(fc + 17.0)) * 0.05 * clamp(fl, 0.0, 1.0);
+
+  for (int k = 0; k < 3; k++) {
+    vec4 a = uS0[k], b = uS1[k];
+    vec2 d = p - a.xy;
+    float br = max(a.z, a.w) * (1.0 + b.y + b.z) + 2.0;
+    if (dot(d, d) > br * br) continue;
+    float rho, r1, r2;
+    float sd = sdist(a, b, p, rho);
+    float al = clamp(0.5 - sd / px, 0.0, 1.0);
+    if (al <= 0.0) continue;
+    sdist(a, b, p + vec2(0.4, 0.0), r1);
+    sdist(a, b, p + vec2(0.0, 0.4), r2);
+    float hs = 0.7 * min(a.z, a.w) / 0.4, z0 = dome(rho);
+    vec3 sn = normalize(vec3(-(dome(r1) - z0) * hs, (dome(r2) - z0) * hs, 1.0));
+    float dif = dot(sn, uL);
+    vec3 sc = mix(uStoneShade, uStoneLit, smoothstep(-0.25, 0.95, dif));
+    sc *= 0.9 + 0.2 * vnoise(d / a.w * 2.2 + b.w * 9.0);
+    sc += 0.06 * pow(max(dot(sn, normalize(uL + vec3(0.0, 0.0, 1.0))), 0.0), 24.0);
+    // A faint rim catches the light on the sun side.
+    vec2 nd = sn.xy / max(length(sn.xy), 1e-4);
+    sc += 0.05 * smoothstep(0.72, 1.0, rho) * max(dot(nd, normalize(uL.xy)), 0.0);
+    col = mix(col, sc, al);
+  }
+  outColor = vec4(srgb(col), 1.0);
+}`;
+
+let gl = null, prog = null, vao = null, texCur = null, texNext = null, texFmt = 0, ready = false;
+const U = {};
+const s0 = new Float32Array(12), s1 = new Float32Array(12), pl = new Float32Array(3), animU = new Float32Array(4);
+function makeTex() {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function upload(t, arr) {
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+  gl.texImage2D(gl.TEXTURE_2D, 0, texFmt, cols, ROWS, 0, gl.RED, gl.FLOAT, arr);
+}
+// Only the changed rectangle goes to the GPU.
+function flush() {
+  if (dirty.x1 < 0) return false;
+  gl.bindTexture(gl.TEXTURE_2D, texCur);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, cols);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, dirty.x0, dirty.y0, dirty.x1 - dirty.x0, dirty.y1 - dirty.y0, gl.RED, gl.FLOAT, h, dirty.y0 * cols + dirty.x0);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+  dirty.x1 = -1;
+  return true;
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  texFmt = gl.getExtension('OES_texture_float_linear') ? gl.R32F : gl.R16F;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const vs = sh(gl.VERTEX_SHADER, VERT), fs = sh(gl.FRAGMENT_SHADER, FRAG);
+  const p = gl.createProgram();
+  gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+  // Polling lets the driver link off the main thread.
+  if (par) while (!gl.isContextLost() && !gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR)) await nextFrame();
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(fs) || gl.getProgramInfoLog(p) || 'link failed');
+  prog = p;
+  vao = gl.createVertexArray();
+  for (const n of ['uH', 'uH2', 'uRes', 'uGrid', 'uL', 'uAmp', 'uStep', 'uS0', 'uS1', 'uPlaced', 'uMode', 'uAnim', ...Object.keys(COL)]) U[n] = gl.getUniformLocation(prog, n);
+  gl.useProgram(prog);
+  gl.uniform1i(U.uH, 0);
+  gl.uniform1i(U.uH2, 1);
+  gl.uniform3fv(U.uL, LIGHT);
+  for (const k in COL) gl.uniform3fv(U[k], COL[k]);
+  texCur = makeTex();
+  texNext = makeTex();
+}
+function draw() {
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(prog);
+  gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texCur);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texNext);
+  gl.uniform2f(U.uRes, canvas.width, canvas.height);
+  gl.uniform2f(U.uGrid, cols, ROWS);
+  gl.uniform1f(U.uAmp, A);
+  gl.uniform1f(U.uStep, 0.13 * S);
+  // The most recently held stone draws last, on top.
+  stones.slice().sort((a, b) => a.z - b.z).forEach((s, k) => {
+    const g = 1 + 0.035 * s.lift;
+    s0.set([s.x, s.y, s.rx * g, s.ry * g], k * 4);
+    s1.set([s.rot, s.k2, s.k3, s.ph], k * 4);
+    pl[k] = s.placed ? 1 : 0;
+  });
+  gl.uniform4fv(U.uS0, s0);
+  gl.uniform4fv(U.uS1, s1);
+  gl.uniform1fv(U.uPlaced, pl);
+  gl.uniform1i(U.uMode, anim ? anim.mode : 0);
+  gl.uniform4fv(U.uAnim, animU);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ---------- Rings and Shake ---------- */
+// The shader blends toward an end state built on the CPU.
+let anim = null;
+function finishAnim() {
+  if (!anim) return;
+  [texCur, texNext] = [texNext, texCur];
+  [h, f] = [f, h];
+  anim = null;
+  animU.fill(0);
+  needDraw = true;
+}
+function startAnim(mode, build, dur) {
+  if (!ready) return;
+  finishAnim();
+  strokes.clear();
+  flush();
+  f.set(h);
+  build(f);
+  upload(texNext, f);
+  snap = null;
+  pristine = false;
+  anim = reduce ? { mode: 3, t0: performance.now(), dur: 220 } : { mode, t0: performance.now(), dur };
+  stepAnim(anim.t0);
+  wake();
+}
+function stepAnim(now) {
+  const t = clamp((now - anim.t0) / anim.dur);
+  if (anim.mode === 1) {
+    const lam = 2.2 * S;
+    animU.set([-0.05 * cols + 1.3 * cols * (1 - (1 - t) ** 2), 1.5 * A * (1 - t) ** 1.2, TAU / lam, 1 / (3 * lam)]);
+  } else if (anim.mode === 2) {
+    const w = 1.4 * S;
+    animU.set([(4.6 * S + w) * out3(t), w, 0, 0]);
+  } else animU.set([out3(t), 0, 0, 0]);
+  if (t >= 1) finishAnim();
+}
+document.getElementById('rings').addEventListener('click', () => startAnim(2, arr => ringsInto(arr, 4), 1500));
+document.getElementById('shake').addEventListener('click', () => {
+  startAnim(1, arr => { arr.fill(0); for (const s of stones) if (s.placed) impress(s, arr); }, 1100);
+  if (ready && !reduce) {
+    tray.animate([{ transform: 'none' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(2px)' }, { transform: 'translateX(-1px)' }, { transform: 'none' }], { duration: 380, easing: 'ease-out' });
+  }
+});
+const toolChips = [...document.querySelectorAll('[data-tool]')];
+toolChips.forEach(b => b.addEventListener('click', () => {
+  tool = b.dataset.tool;
+  toolChips.forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+}));
+
+/* ---------- frame loop: runs only while something changes ---------- */
+let raf = 0, last = 0, needDraw = false, visible = true, lowDpr = false, slowN = 0, slowSum = 0;
+function wake() { if (!raf && ready && visible) raf = requestAnimationFrame(tick); }
+function tick(now) {
+  raf = 0;
+  if (!ready) return;
+  const gap = now - last, dt = gap > 100 ? 1 / 60 : gap / 1000;
+  last = now;
+  let more = false;
+  for (const [id, st] of strokes) drain(id, st);
+  for (const s of stones) {
+    const tgt = s.held ? 1 : 0;
+    if (s.lift === tgt) continue;
+    s.lift = reduce ? tgt : s.lift + (tgt - s.lift) * (1 - Math.exp(-dt * 20));
+    if (Math.abs(tgt - s.lift) < 0.004) s.lift = tgt;
+    more = needDraw = true;
+  }
+  if (anim) { stepAnim(now); needDraw = true; more = more || !!anim; }
+  if (flush()) needDraw = true;
+  if (needDraw) draw();
+  needDraw = false;
+  // Slow raking frames drop the pixel ratio to 1.
+  if (strokes.size && gap < 100 && !lowDpr) {
+    slowSum += gap;
+    if (++slowN === 30) { if (slowSum / 30 > 26) { lowDpr = true; fit(); } slowN = 0; slowSum = 0; }
+  }
+  if (more) wake();
+}
+
+/* ---------- sizing ---------- */
+let rect = null;
+function regrid(nc) {
+  finishAnim();
+  const fresh = pristine;
+  if (!snap) snap = { h: h.slice(), cols, xs: stones.map(s => s.x) };
+  clearTimeout(snapT);
+  snapT = setTimeout(() => { snap = null; }, 600);
+  const src = snap.h, sc = snap.cols, xs = snap.xs, off = Math.round((nc - sc) / 2);
+  cols = nc; h = new Float32Array(nc * ROWS); f = new Float32Array(nc * ROWS); mask = new Float32Array(nc * ROWS);
+  if (fresh) {
+    // Untouched sand is simply laid out again at the new size.
+    stones.forEach(s => { [s.x, s.y] = keepIn(s, s.u * cols, s.v * ROWS); });
+    seed();
+  } else {
+    // The old grid is centred and its edge columns extend.
+    for (let y = 0; y < ROWS; y++) {
+      const ro = y * sc, wo = y * nc;
+      for (let x = 0; x < nc; x++) h[wo + x] = src[ro + clamp(x - off, 0, sc - 1)];
+    }
+    stones.forEach((s, i) => {
+      const [x, y] = keepIn(s, xs[i] + off, s.y), moved = Math.abs(x - xs[i] - off) > 0.5;
+      s.x = x; s.y = y;
+      if (moved && s.placed) impress(s, h);
+    });
+    buildMask(0, 0, cols, ROWS);
+  }
+  pristine = fresh;
+  dirty.x1 = -1;
+  if (ready) { upload(texCur, h); upload(texNext, h); }
+}
+function fit() {
+  const w = tray.clientWidth, ht = tray.clientHeight;
+  if (!w || !ht) return;
+  const dpr = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 1.5, Math.sqrt(1.4e6 / (w * ht)));
+  rect = null;
+  sizeTools(ht);
+  const nc = Math.round(clamp((ROWS * w) / ht, ROWS * 0.75, ROWS * 2.6));
+  if (nc !== cols) regrid(nc);
+  const cw = Math.round(w * dpr), ch = Math.round(ht * dpr);
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  // A resized canvas is blank until drawn, so draw now.
+  if (ready) { flush(); draw(); }
+}
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+
+/* ---------- input ---------- */
+function toGrid(e) {
+  const r = rect || (rect = canvas.getBoundingClientRect());
+  return [((e.clientX - r.left) / r.width) * cols, ((e.clientY - r.top) / r.height) * ROWS];
+}
+function stoneAt(x, y) {
+  let best = null;
+  for (const s of stones) if (!s.held && sdist(s, x, y) < 2 && (!best || s.z > best.z)) best = s;
+  return best;
+}
+function drop(s) {
+  finishAnim();
+  s.held = false;
+  s.placed = true;
+  impress(s, h);
+  maskAround(s);
+}
+canvas.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault();
+  finishAnim();
+  const [x, y] = toGrid(e);
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  const s = stoneAt(x, y);
+  if (s) {
+    // A lifted stone uncovers its impression for raking.
+    s.held = true; s.placed = false; s.z = ++zTop;
+    maskAround(s);
+    drags.set(e.pointerId, { s, dx: s.x - x, dy: s.y - y });
+    canvas.style.cursor = 'grabbing';
+  } else strokes.set(e.pointerId, newStroke(x, y));
+  needDraw = true;
+  wake();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!ready) return;
+  const d = drags.get(e.pointerId), st = strokes.get(e.pointerId);
+  if (d) {
+    const [x, y] = toGrid(e);
+    moveStone(d.s, x + d.dx, y + d.dy);
+    needDraw = true;
+    wake();
+  } else if (st) {
+    const list = e.getCoalescedEvents?.() || [];
+    for (const c of list.length ? list : [e]) st.q.push(toGrid(c));
+    wake();
+  } else if (e.pointerType === 'mouse') {
+    const [x, y] = toGrid(e);
+    canvas.style.cursor = stoneAt(x, y) ? 'grab' : '';
+  }
+});
+function release(e) {
+  const d = drags.get(e.pointerId);
+  if (d) {
+    drags.delete(e.pointerId);
+    drop(d.s);
+    canvas.style.cursor = e.pointerType === 'mouse' ? 'grab' : '';
+  }
+  const st = strokes.get(e.pointerId);
+  if (st) st.ended = true;
+  wake();
+}
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------- boot ---------- */
+function failed() {
+  ready = false;
+  canvas.hidden = true;
+  tray.querySelector('.fail').hidden = false;
+  document.querySelectorAll('.chip').forEach(b => { b.disabled = true; });
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    finishAnimSilently();
+    upload(texCur, h); upload(texNext, h);
+    dirty.x1 = -1;
+    ready = true;
+    fit();
+  } catch (err) { console.error(err); failed(); }
+});
+function finishAnimSilently() {
+  if (!anim) return;
+  [h, f] = [f, h];
+  anim = null;
+  animU.fill(0);
+}
+async function boot() {
+  await idle();
+  const gate = initGL();
+  gate.catch(() => {});
+  // The sand is shaped on the CPU while the shader links.
+  const w = tray.clientWidth || 1160, ht = tray.clientHeight || 652;
+  sizeTools(ht);
+  cols = Math.round(clamp((ROWS * w) / ht, ROWS * 0.75, ROWS * 2.6));
+  h = new Float32Array(cols * ROWS); f = new Float32Array(cols * ROWS); mask = new Float32Array(cols * ROWS);
+  stones.forEach(s => { [s.x, s.y] = keepIn(s, s.u * cols, s.v * ROWS); });
+  await idle();
+  seed();
+  pristine = true;
+  try { await gate; } catch (err) { console.error(err); failed(); return; }
+  upload(texCur, h);
+  upload(texNext, h);
+  dirty.x1 = -1;
+  ready = true;
+  new ResizeObserver(fit).observe(tray);
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible) { needDraw = true; wake(); } }).observe(tray);
+  fit();
+  canvas.classList.add('on');
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
