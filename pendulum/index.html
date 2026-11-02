@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Pendulum wave</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the stage at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --stage: oklch(0.205 0.012 272);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); --stage: oklch(0.935 0.007 272); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); --stage: oklch(0.935 0.007 272); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The stage is 16:9, 4:5 on phones, and follows the theme. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--stage);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+.stage.grab canvas { cursor: grab; }
+.stage.held canvas { cursor: grabbing; }
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: var(--muted);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Pendulum wave</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="Pendulum wave. Drag across the strings to lift balls. Space releases them all, Escape stops them.">
+      <p class="fail" hidden>Pendulum wave needs WebGL, which this browser has turned off.</p>
+    </div>
+    <div class="ctl">
+      <button class="chip" id="release" type="button" aria-keyshortcuts="Space">Release</button>
+      <button class="chip" id="stop" type="button" aria-keyshortcuts="Escape">Stop</button>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('stage');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- the machine: lengths tuned to one 60 second cycle ---------- */
+// Pendulum n swings K + n times per CYCLE seconds.
+const N = 20, K = 48, CYCLE = 60;
+// Gentle air drag; 0 keeps every later cycle exact too.
+const DAMP = 0.012;
+const H = 1 / 240;
+// Scene units: the longest string is 1; balls hang GAP apart.
+const GAP = 0.16, BALL = 0.058, VEE = 0.05, ROD = 0.014;
+const LEN = new Float64Array(N), ZP = new Float64Array(N), OM = new Float64Array(N), OM2 = new Float64Array(N);
+const TH = new Float64Array(N), VE = new Float64Array(N), AIM = new Float64Array(N), HOLD = new Uint8Array(N);
+// Small-angle period grows with the root of length.
+for (let n = 0; n < N; n++) {
+  LEN[n] = (K / (K + n)) ** 2;
+  ZP[n] = ((N - 1) / 2 - n) * GAP;
+}
+// Held balls ride springs: 1 is the hand, 2 the lift.
+const HAND_K = 150, HAND_C = 2 * 0.85 * Math.sqrt(HAND_K), LIFT_K = 60, LIFT_C = 2 * Math.sqrt(LIFT_K);
+const swing = () => (reduce ? 0.16 : 0.36);
+const reach = () => (reduce ? 0.35 : 1.15);
+let simT = 0, goAt = -1, stopAt = -1;
+
+function agm(a, b) {
+  for (let k = 0; k < 8; k++) [a, b] = [(a + b) / 2, Math.sqrt(a * b)];
+  return a;
+}
+// Wide swings run slow by 1 / agm(1, cos(A / 2)).
+// Drag shrinks the swing, so the first cycle averages that slowdown.
+// The first realignment then lands at exactly 60 s.
+function tune() {
+  let pace = 0;
+  for (let k = 0; k < 64; k++) pace += agm(1, Math.cos((swing() * Math.exp((-DAMP * CYCLE * (k + 0.5)) / 128)) / 2)) / 64;
+  const slow = 1 / pace;
+  for (let n = 0; n < N; n++) {
+    OM[n] = ((TAU * (K + n)) / CYCLE) * slow;
+    OM2[n] = OM[n] * OM[n];
+  }
+}
+tune();
+RM.addEventListener?.('change', e => { reduce = e.matches; tune(); });
+
+function acc(n, th, v, brake) {
+  if (HOLD[n] === 1) return HAND_K * (AIM[n] - th) - HAND_C * v;
+  if (HOLD[n] === 2) return LIFT_K * (AIM[n] - th) - LIFT_C * v;
+  return -OM2[n] * Math.sin(th) - (DAMP + brake * OM[n]) * v;
+}
+// One RK4 step for every pendulum; bottom passes are logged.
+function step(h, at, hits) {
+  // Stop ramps the brake up to critical damping.
+  const brake = stopAt < 0 ? 0 : 2 * clamp((simT - stopAt) / 0.35);
+  for (let n = 0; n < N; n++) {
+    const th = TH[n], v = VE[n];
+    const a1 = acc(n, th, v, brake);
+    const v2 = v + 0.5 * h * a1, a2 = acc(n, th + 0.5 * h * v, v2, brake);
+    const v3 = v + 0.5 * h * a2, a3 = acc(n, th + 0.5 * h * v2, v3, brake);
+    const v4 = v + h * a3, a4 = acc(n, th + h * v3, v4, brake);
+    TH[n] = th + (h / 6) * (v + 2 * v2 + 2 * v3 + v4);
+    VE[n] = v + (h / 6) * (a1 + 2 * a2 + 2 * a3 + a4);
+    // Passing the bottom left to right knocks once per swing.
+    if (!HOLD[n] && th < 0 && TH[n] >= 0 && VE[n] > 0) {
+      const amp = 2 * Math.asin(Math.min(1, VE[n] / (2 * OM[n])));
+      if (amp > 0.02) hits.push({ n, at: at + (h * -th) / (TH[n] - th), amp });
+    }
+  }
+  simT += h;
+}
+// A let-go never carries more energy than a swing to 75 degrees.
+function cap(n) {
+  const room = 2 * OM2[n] * (Math.cos(TH[n]) - Math.cos(1.3));
+  const top = room > 0 ? Math.sqrt(room) : 0;
+  VE[n] = clamp(VE[n], -top, top);
+}
+// Phase coherence: 1 when every swinging ball moves as one.
+function coherence() {
+  let sx = 0, sy = 0, k = 0;
+  for (let n = 0; n < N; n++) {
+    if (HOLD[n]) return NaN;
+    const q = VE[n] / OM[n], a = Math.hypot(TH[n], q);
+    if (a < 0.02) continue;
+    sx += TH[n] / a;
+    sy += q / a;
+    k++;
+  }
+  return k >= N - 2 ? Math.hypot(sx, sy) / k : 0;
+}
+
+/* ---------- commands ---------- */
+// Release: all balls rise to one angle, then let go together.
+function release() {
+  if (!ready) return;
+  endDrag();
+  stopAt = -1;
+  const a = swing();
+  for (let n = 0; n < N; n++) { HOLD[n] = 2; AIM[n] = a; }
+  goAt = simT + (reduce ? 0.8 : 1.05);
+  wake();
+}
+function letGo() {
+  const a = swing();
+  goAt = -1;
+  for (let n = 0; n < N; n++) { TH[n] = a; VE[n] = 0; HOLD[n] = 0; }
+  // The first realignment is a full cycle away.
+  armed = false;
+  rPrev = 1;
+}
+// Stop: a brake eases every ball to rest.
+function stop() {
+  if (!ready) return;
+  endDrag();
+  goAt = -1;
+  HOLD.fill(0);
+  stopAt = simT;
+  wake();
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.pendulum.sound', MAXV = 16, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0, tokens = 8, tokenAt = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+// Major pentatonic from G3: shorter strings sit higher.
+const STEPS = [0, 2, 4, 7, 9];
+const PITCH = Array.from({ length: N }, (_, n) => 196 * 2 ** ((12 * Math.floor(n / 5) + STEPS[n % 5]) / 12));
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the row rests, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ptr < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 3000);
+}
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && e.key !== ' ' && e.key !== 'Enter')) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// A wooden knock: a short noise strike over a damped, hollow tone.
+function knock(n, amp, at) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD + at, f = PITCH[n] * jit(0.004);
+  // High notes are quieter, so the row sounds even.
+  const g = level() * amp * (330 / f) ** 0.3 * jit(0.1);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = Math.min(5200, f * 2.6);
+  bp.Q.value = 1.4;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.05 * g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, 0.002);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.03);
+  // The body dips in pitch as it is struck, like a woodblock.
+  const o = a.createOscillator(), og = a.createGain(), o2 = a.createOscillator(), og2 = a.createGain();
+  const tau = 0.028 * (330 / f) ** 0.35;
+  o.frequency.setValueAtTime(f * 1.025, t);
+  o.frequency.exponentialRampToValueAtTime(f, t + 0.012);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.075 * g, t + 0.0015);
+  og.gain.setTargetAtTime(0, t + 0.0015, tau);
+  o2.frequency.value = f * 2.76;
+  og2.gain.setValueAtTime(0, t);
+  og2.gain.linearRampToValueAtTime(0.018 * g, t + 0.001);
+  og2.gain.setTargetAtTime(0, t + 0.001, tau * 0.35);
+  o.connect(og).connect(out);
+  o2.connect(og2).connect(out);
+  o.start(t);
+  o2.start(t);
+  o.stop(t + 0.3);
+  o2.stop(t + 0.3);
+  track(o, og, og2, ng);
+}
+// Bottom passes from one frame, replayed with their own timing.
+function knocks(list) {
+  const a = live();
+  if (!a || !list.length) return;
+  // A bucket refills 30 knocks a second, so crowds thin out.
+  tokens = Math.min(8, tokens + (a.currentTime - tokenAt) * 30);
+  tokenAt = a.currentTime;
+  list.sort((p, q) => p.at - q.at);
+  for (let i = 0; i < list.length;) {
+    let j = i + 1;
+    while (j < list.length && list[j].at - list[i].at < 0.006) j++;
+    // Near-simultaneous passes share one chord of up to four notes.
+    const k = j - i, take = Math.min(4, k), g = 1 / Math.sqrt(take);
+    for (let m = 0; m < take && tokens >= 1; m++, tokens--) {
+      const c = list[i + Math.floor(((m + 0.5) * k) / take)];
+      knock(c.n, clamp(c.amp / 0.36) ** 0.7 * g, c.at);
+    }
+    i = j;
+  }
+}
+// A small bell rings when the whole row lines up again.
+function bell() {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, f = 784, end = t + 6;
+  const bus = a.createGain();
+  bus.gain.value = 0.05;
+  bus.connect(out);
+  // Partials: ratio, level, decay; a detuned twin makes it shimmer.
+  const parts = [[1, 1, 1.5], [1.0028, 0.55, 1.8], [2, 0.32, 0.8], [3.01, 0.18, 0.45], [4.17, 0.09, 0.3], [5.43, 0.05, 0.2]];
+  const tails = [bus];
+  let first = null;
+  for (const [r, lv, tau] of parts) {
+    const o = a.createOscillator(), og = a.createGain();
+    o.frequency.value = f * r;
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(lv, t + 0.004);
+    og.gain.setTargetAtTime(0, t + 0.004, tau);
+    o.connect(og).connect(bus);
+    o.start(t);
+    o.stop(end);
+    tails.push(og);
+    first = first || o;
+  }
+  track(first, ...tails);
+}
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos((h * Math.PI) / 180), b = C * Math.sin((h * Math.PI) / 180);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear([L, C, h]) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.92), h);
+  return c.map(v => clamp(v));
+}
+// Series hues, red through magenta, on one smooth curve.
+const HUES = [
+  [0.64, 0.2, 26], [0.74, 0.17, 52], [0.85, 0.16, 90], [0.8, 0.17, 148],
+  [0.78, 0.13, 202], [0.64, 0.16, 252], [0.6, 0.2, 292], [0.67, 0.21, 328],
+];
+const cr = (a, b, c, d, t) => b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
+function rainbow(t) {
+  const u = t * (HUES.length - 1), i = Math.min(HUES.length - 2, Math.floor(u)), f = u - i;
+  const p = [HUES[Math.max(0, i - 1)], HUES[i], HUES[i + 1], HUES[Math.min(HUES.length - 1, i + 2)]];
+  return [0, 1, 2].map(k => cr(p[0][k], p[1][k], p[2][k], p[3][k], f));
+}
+
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, balls = null, strings = null, M = null, S = null;
+let ray = null, ndc = null, tmp = null, look = null, ready = false, lowDpr = false, pw = 1, ph = 1;
+// The camera sits past the long end, off-axis, under the bar.
+// Wide and tall panels each get their own yaw and lens.
+const YAW = [0.4, 0.14], FOV = [28, 40], EYE = -0.06, AIM0 = [0, -0.76, 0];
+let yaw = YAW[0];
+let frame0 = [];
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+// Points that must stay in view: bar ends and every ball's swing.
+function framePoints() {
+  const pts = [[0, ROD, ZP[0] + 0.1], [0, ROD, ZP[N - 1] - 0.1]];
+  const s = Math.sin(0.42), c = Math.cos(0.42);
+  for (let n = 0; n < N; n++) {
+    const L = LEN[n];
+    pts.push([L * s + BALL, -L * c, ZP[n]], [-L * s - BALL, -L * c, ZP[n]], [0, -L - BALL, ZP[n]]);
+  }
+  return pts.map(p => new THREE.Vector3(...p));
+}
+// Places the camera at distance d; returns the row's screen box.
+function place(d, box) {
+  const k = d / Math.hypot(yaw, 1);
+  camera.position.set(look.x + yaw * k, EYE, look.z + k);
+  camera.lookAt(look);
+  camera.updateMatrixWorld();
+  box[0] = box[1] = Infinity;
+  box[2] = box[3] = -Infinity;
+  for (const p of frame0) {
+    tmp.copy(p).applyMatrix4(camera.matrixWorldInverse);
+    if (tmp.z > -0.1) return false;
+    tmp.applyMatrix4(camera.projectionMatrix);
+    box[0] = Math.min(box[0], tmp.x); box[2] = Math.max(box[2], tmp.x);
+    box[1] = Math.min(box[1], tmp.y); box[3] = Math.max(box[3], tmp.y);
+  }
+  return (box[2] - box[0]) / 2 <= 0.88 && (box[3] - box[1]) / 2 <= 0.8;
+}
+// Back off until the row fits; a lens shift centres it.
+function fit(w, h) {
+  pw = w;
+  ph = h;
+  camera.aspect = w / h;
+  const tall = w / h < 1;
+  camera.fov = FOV[+tall];
+  yaw = YAW[+tall];
+  camera.updateProjectionMatrix();
+  look.set(...AIM0);
+  const box = [0, 0, 0, 0];
+  let lo = 0.5, hi = 40;
+  for (let k = 0; k < 36; k++) {
+    const d = (lo + hi) / 2;
+    if (place(d, box)) hi = d; else lo = d;
+  }
+  place(hi, box);
+  const e = camera.projectionMatrix.elements;
+  e[8] += (box[0] + box[2]) / 2;
+  e[9] += (box[1] + box[3]) / 2;
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+}
+function ballAt(n, v) {
+  return v.set(LEN[n] * Math.sin(TH[n]), -LEN[n] * Math.cos(TH[n]), ZP[n]);
+}
+function draw() {
+  for (let n = 0; n < N; n++) {
+    const x = LEN[n] * Math.sin(TH[n]), y = -LEN[n] * Math.cos(TH[n]), z = ZP[n], o = n * 16, q = n * 12;
+    M[o + 12] = x; M[o + 13] = y; M[o + 14] = z;
+    // Two strings in a V keep each ball in its own plane.
+    S[q] = 0; S[q + 1] = 0; S[q + 2] = z + VEE; S[q + 3] = x; S[q + 4] = y; S[q + 5] = z;
+    S[q + 6] = 0; S[q + 7] = 0; S[q + 8] = z - VEE; S[q + 9] = x; S[q + 10] = y; S[q + 11] = z;
+  }
+  balls.instanceMatrix.needsUpdate = true;
+  strings.geometry.attributes.position.needsUpdate = true;
+  renderer.render(scene, camera);
+}
+function tokensOfTheme() {
+  const lite = (getComputedStyle(document.documentElement).colorScheme || '').includes('light');
+  if (!strings) return;
+  strings.material.color.setRGB(...linear(lite ? [0.42, 0.015, 272] : [0.8, 0.012, 272]));
+  strings.material.opacity = lite ? 0.75 : 0.6;
+  if (ready) draw();
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0, armed = false, rPrev = 0;
+const hits = [];
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 0.05);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  const steps = Math.ceil(dt / H - 1e-6), h = steps ? dt / steps : 0;
+  hits.length = 0;
+  for (let k = 0; k < steps; k++) {
+    step(h, k * h, hits);
+    if (goAt >= 0 && simT >= goAt - 1e-9) letGo();
+  }
+  knocks(hits);
+  // The bell rings at the peak of a return to full coherence.
+  const r = coherence();
+  if (Number.isNaN(r)) rPrev = 0;
+  else {
+    if (r < 0.4) armed = true;
+    if (armed && rPrev > 0.97 && r < rPrev) { armed = false; bell(); }
+    rPrev = r;
+  }
+  let busy = ptr >= 0 || goAt >= 0, moving = false;
+  for (let n = 0; n < N; n++) {
+    if (HOLD[n]) { busy = true; continue; }
+    // Swings under a pixel come to rest.
+    if (Math.hypot(TH[n], VE[n] / OM[n]) < 0.0015) TH[n] = VE[n] = 0;
+    else moving = true;
+  }
+  if (!moving) stopAt = -1;
+  draw();
+  if (busy || moving) {
+    if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  } else rest();
+}
+
+/* ---------- input ---------- */
+let ptr = -1, solo = false, px0 = 0, py0 = 0;
+const A2 = [0, 0], B2 = [0, 0], V3 = { x: 0, y: 0, z: 0 };
+function local(e) {
+  const r = panel.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+function screen(v, o) {
+  tmp.copy(v).project(camera);
+  o[0] = (tmp.x + 1) * 0.5 * pw;
+  o[1] = (1 - tmp.y) * 0.5 * ph;
+  return o;
+}
+// A ball's radius on screen, in panel pixels.
+function radiusPx(v) {
+  return (BALL / camera.position.distanceTo(v)) * (ph / 2 / Math.tan((camera.fov * Math.PI) / 360));
+}
+// The nearest ball under the pointer, or -1.
+function pick(x, y) {
+  let best = -1, bd = Infinity;
+  const v = new THREE.Vector3();
+  for (let n = 0; n < N; n++) {
+    ballAt(n, v);
+    const [sx, sy] = screen(v, A2), rp = radiusPx(v), d = camera.position.distanceTo(v);
+    if (Math.hypot(sx - x, sy - y) < rp * 1.3 + 4 && d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+function grab(n) {
+  HOLD[n] = 1;
+  AIM[n] = TH[n];
+}
+const side = (ax, ay, bx, by, cx, cy) => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+function segDist(x, y, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, t = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1));
+  return Math.hypot(x - ax - t * dx, y - ay - t * dy);
+}
+// Sweeping catches every pendulum whose string the pointer crosses.
+function sweep(x0, y0, x1, y1) {
+  const v = new THREE.Vector3();
+  for (let n = 0; n < N; n++) {
+    if (HOLD[n]) continue;
+    const [ax, ay] = screen(v.set(0, 0, ZP[n]), A2);
+    ballAt(n, v);
+    const rp = radiusPx(v), [bx0, by0] = screen(v, B2), l = Math.hypot(bx0 - ax, by0 - ay) || 1;
+    const bx = bx0 + ((bx0 - ax) / l) * rp, by = by0 + ((by0 - ay) / l) * rp;
+    const crossed = side(x0, y0, x1, y1, ax, ay) * side(x0, y0, x1, y1, bx, by) <= 0
+      && side(ax, ay, bx, by, x0, y0) * side(ax, ay, bx, by, x1, y1) <= 0;
+    if (crossed || segDist(x1, y1, ax, ay, bx, by) < Math.max(4, rp * 0.6)) grab(n);
+  }
+}
+// Held balls aim at the pointer's ray where it meets their plane.
+function aimAll(x, y) {
+  ndc.set((x / pw) * 2 - 1, 1 - (y / ph) * 2);
+  ray.setFromCamera(ndc, camera);
+  const o = ray.ray.origin, d = ray.ray.direction, top = reach();
+  for (let n = 0; n < N; n++) {
+    if (HOLD[n] !== 1 || Math.abs(d.z) < 1e-6) continue;
+    const t = (ZP[n] - o.z) / d.z;
+    if (t <= 0) continue;
+    V3.x = o.x + d.x * t;
+    V3.y = o.y + d.y * t;
+    if (solo) AIM[n] = clamp(Math.atan2(V3.x, -V3.y), -top, top);
+    else {
+      // A swept ball rises to the pointer's height, on its side.
+      const a = Math.acos(clamp(-V3.y / LEN[n], -1, 1));
+      const sg = Math.abs(V3.x) > 1e-4 ? Math.sign(V3.x) : Math.sign(TH[n]) || 1;
+      AIM[n] = sg * Math.min(top, a);
+    }
+  }
+}
+function endDrag() {
+  if (ptr < 0) return;
+  ptr = -1;
+  for (let n = 0; n < N; n++) if (HOLD[n] === 1) { HOLD[n] = 0; cap(n); }
+  panel.classList.remove('held');
+  wake();
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || ptr >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  // Grabbing cancels a lift or a stop in progress.
+  if (goAt >= 0) { goAt = -1; HOLD.fill(0); }
+  stopAt = -1;
+  const [x, y] = local(e), i = pick(x, y);
+  ptr = e.pointerId;
+  solo = i >= 0;
+  if (solo) grab(i);
+  else sweep(x, y, x, y);
+  aimAll(x, y);
+  px0 = x;
+  py0 = y;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  panel.classList.add('held');
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  if (!ready) return;
+  const [x, y] = local(e);
+  if (e.pointerId === ptr) {
+    if (!solo) sweep(px0, py0, x, y);
+    aimAll(x, y);
+    px0 = x;
+    py0 = y;
+    wake();
+    return;
+  }
+  if (e.pointerType === 'touch' || ptr >= 0) return;
+  panel.classList.toggle('grab', pick(x, y) >= 0);
+});
+const letPtr = e => { if (e.pointerId === ptr) endDrag(); };
+panel.addEventListener('pointerup', letPtr);
+panel.addEventListener('pointercancel', letPtr);
+panel.addEventListener('lostpointercapture', letPtr);
+panel.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') panel.classList.remove('grab'); });
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'Escape') stop();
+  else if (e.key === ' ') {
+    // A focused button keeps Space for itself.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat) release();
+  }
+});
+document.getElementById('release').addEventListener('click', release);
+document.getElementById('stop').addEventListener('click', stop);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', tokensOfTheme);
+new MutationObserver(tokensOfTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function start() {
+  let RoomEnvironment;
+  try {
+    THREE = await import('three');
+    ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.05, 60);
+  ray = new THREE.Raycaster();
+  ndc = new THREE.Vector2();
+  tmp = new THREE.Vector3();
+  look = new THREE.Vector3();
+  frame0 = framePoints();
+  await idle();
+
+  const pm = new THREE.PMREMGenerator(renderer);
+  const room = new RoomEnvironment();
+  scene.environment = pm.fromScene(room, 0.04).texture;
+  scene.environmentIntensity = 0.7;
+  room.dispose();
+  pm.dispose();
+  // A key light from upper left gives each ball one crisp highlight.
+  const key = new THREE.DirectionalLight(0xffffff, 2.4);
+  key.position.set(-2.5, 3, 3.5);
+  scene.add(key);
+
+  // The bar: brushed steel, a little past both end balls.
+  const span = ZP[0] - ZP[N - 1] + 0.2;
+  const bar = new THREE.Mesh(
+    new THREE.CapsuleGeometry(ROD, span, 6, 20),
+    new THREE.MeshStandardMaterial({ color: 0xd4d6db, metalness: 1, roughness: 0.3 }),
+  );
+  bar.rotation.x = Math.PI / 2;
+  scene.add(bar);
+
+  // Lacquered balls: a clear coat over the rainbow.
+  const small = Math.min(innerWidth, innerHeight) < 700;
+  balls = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(BALL, small ? 36 : 48, small ? 24 : 32),
+    new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04 }),
+    N,
+  );
+  balls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  balls.frustumCulled = false;
+  M = balls.instanceMatrix.array;
+  const col = new THREE.Color();
+  for (let n = 0; n < N; n++) {
+    M.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], n * 16);
+    balls.setColorAt(n, col.setRGB(...linear(rainbow(n / (N - 1)))));
+  }
+  scene.add(balls);
+
+  const sg = new THREE.BufferGeometry();
+  S = new Float32Array(N * 12);
+  sg.setAttribute('position', new THREE.BufferAttribute(S, 3).setUsage(THREE.DynamicDrawUsage));
+  strings = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ transparent: true, depthWrite: false }));
+  strings.frustumCulled = false;
+  scene.add(strings);
+  tokensOfTheme();
+
+  panel.prepend(canvas);
+  fitRenderer(renderer, panel, 1.5, (w, h) => {
+    fit(w, h);
+    if (ready) draw();
+  }, 1.4e6);
+  if (!pw || pw === 1) fit(16, 9);
+  await idle();
+  // Async compile keeps the physical-material build off the main thread.
+  await renderer.compileAsync(scene, camera);
+  ready = true;
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
