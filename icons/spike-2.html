@@ -185,7 +185,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   // A: a shaded pane; a touched drop lets go and runs to the sill.
   {
-    const drops = [[30, 28, 4.5], [54, 20, 3], [80, 36, 6], [104, 52, 3.5], [42, 60, 7], [68, 66, 3.2], [98, 82, 5.5], [24, 88, 3.6], [58, 98, 5], [88, 106, 3]];
+    const drops = [[30, 28, 5.5], [54, 20, 3.6], [82, 38, 7.5], [104, 56, 4.2], [42, 62, 8.5], [68, 66, 3.8], [98, 84, 6.5], [24, 90, 4.4], [58, 100, 6], [88, 108, 3.6]];
     const specks = [[40, 40], [62, 44], [90, 22], [110, 70], [18, 60], [74, 88], [36, 110], [106, 98], [52, 80], [82, 56], [20, 30], [68, 114], [112, 30], [30, 72]];
     const trail = 'M68 9C67 24 69 40 68 62';
     const dropMark = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="url(#r-drop)"/><circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="oklch(0.95 0.02 250 / 0.5)" stroke-width="0.8"/><ellipse cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.42)}" rx="${f(r * 0.3)}" ry="${f(r * 0.2)}" fill="#fff" fill-opacity="0.85"/>`;
@@ -319,7 +319,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     const TOP = [T, UR, C, UL], LEFT = [UL, C, B, LL], RIGHT = [C, UR, LR, B];
     const topL = x => 37 + (x - (64 - H)) * m, topR = x => 64 - (x - 64) * m;
     // Each drop: face, column, phase, laps per loop, radius.
-    const DROPS = [['l', 28, 0.55, 1, 3], ['l', 41, 0.25, 2, 2.4], ['l', 53, 0.8, 1, 3.4], ['r', 76, 0.35, 1, 3], ['r', 91, 0.7, 2, 2.6], ['r', 104, 0.3, 1, 2.8]];
+    const DROPS = [['l', 28, 0.55, 1, 4.2], ['l', 41, 0.25, 2, 3.2], ['l', 53, 0.8, 1, 4.6], ['r', 76, 0.35, 1, 4.2], ['r', 91, 0.7, 2, 3.4], ['r', 104, 0.3, 1, 3.8]];
     const pos = (d, t) => {
       const [face, x, ph, sp] = d, top = face === 'l' ? topL(x) : topR(x);
       return [x, top - 6 + (((t * sp + ph) % 1) + 1) % 1 * 66];
@@ -709,14 +709,16 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
           <path d="${L.d}" stroke="#fff" stroke-opacity="0.6" stroke-width="3" transform="translate(-5.5 -1.5)"/>
         </g>
       </g>`).join('');
-      const G = [...svg.querySelectorAll('.lt')];
-      const lean = p => G.forEach((g, i) => {
-        const L = LETTERS[i], d = p[0] - L.c[0], k = Math.exp(-(d * d) / (2 * 30 * 30));
-        gsap.to(g, { rotation: -Math.sign(d || 1) * 8 * k, y: -4 * k, svgOrigin: L.a.join(' '), duration: 0.5, ease: 'power2.out', overwrite: true });
+      // Each letter turns about its ribbon end; the attribute is written direct.
+      const G = [...svg.querySelectorAll('.lt')].map((g, i) => ({ g, L: LETTERS[i], r: 0, y: 0 }));
+      const draw = o => o.g.setAttribute('transform', `translate(0 ${f(o.y)}) rotate(${f(o.r)} ${o.L.a.join(' ')})`);
+      const lean = p => G.forEach(o => {
+        const d = p[0] - o.L.c[0], k = Math.exp(-(d * d) / (2 * 30 * 30));
+        gsap.to(o, { r: -Math.sign(d || 1) * 8 * k, y: -4 * k, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: () => draw(o) });
       });
       return {
         enter: p => lean(p || [64, 60]), move: p => p && lean(p),
-        leave: () => G.forEach((g, i) => gsap.to(g, { rotation: 0, y: 0, svgOrigin: LETTERS[i].a.join(' '), duration: 1.4, ease: 'elastic.out(1, 0.3)', overwrite: true })),
+        leave: () => G.forEach(o => gsap.to(o, { r: 0, y: 0, duration: 1.4, ease: 'elastic.out(1, 0.3)', overwrite: true, onUpdate: () => draw(o) })),
       };
     },
     emblem: emb(LETTERS.map(L => `
@@ -851,7 +853,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         const draw = () => PILLS.forEach(([x, y, w, h, , sx, sy, rot, ph], k) => {
           const wob = TAU * (st.t + ph), cx = x + w / 2, cy = y + h / 2;
           const dx = st.s * (sx + 2 * Math.sin(wob)), dy = st.s * (sy + 2.5 * Math.cos(wob)), r = st.s * (rot + 3 * Math.sin(wob));
-          gsap.set(G[k], { x: dx, y: dy, rotation: r, svgOrigin: `${cx} ${cy}` });
+          G[k].setAttribute('transform', `translate(${f(dx)} ${f(dy)}) rotate(${f(r)} ${f(cx)} ${f(cy)})`);
           // The string meets the pill's turned bottom.
           const a = (r * Math.PI) / 180;
           S[k].setAttribute('d', str([cx + dx - Math.sin(a) * (h / 2), cy + dy + Math.cos(a) * (h / 2)]));
