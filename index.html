@@ -615,17 +615,13 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
         <a class="toy" id="fire" href="fire/index.html">
           <span class="obj">
             <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-              <linearGradient id="g-fireiron" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.38 0.02 50)"/><stop offset="1" stop-color="oklch(0.2 0.012 50)"/></linearGradient>
-              <!-- Three angular tongues rise out of a slotted iron box. -->
-              <path id="fire-outer" fill="url(#g-fire)"/>
-              <path id="fire-inner" fill="url(#g-fire-core)"/>
-              <g id="fire-sparks" fill="oklch(0.92 0.12 85)"><rect x="38" y="30" width="4" height="4"/><rect x="88" y="22" width="4" height="4"/><rect x="62" y="6" width="3.5" height="3.5"/></g>
-              <rect x="32" y="78" width="64" height="38" rx="4" fill="url(#g-fireiron)"/>
-              <rect x="32" y="78" width="64" height="38" rx="4" fill="url(#lit)"/>
-              <rect x="32" y="78" width="64" height="38" rx="4" fill="none" stroke="url(#rim)" stroke-width="2"/>
-              <rect x="32" y="78" width="64" height="5" rx="2" fill="oklch(0.66 0.2 40)"/>
-              <!-- The slots are cuts that show the fire inside. -->
-              <g id="fire-slots" fill="url(#g-fire-core)"><rect x="44" y="89" width="7" height="19" rx="1"/><rect x="60.5" y="89" width="7" height="19" rx="1"/><rect x="77" y="89" width="7" height="19" rx="1"/></g>
+              <!-- One bold flame; it leans from its base on hover. -->
+              <g id="fire-flame">
+                <path id="fire-outer" fill="url(#g-fire)"/>
+                <path id="fire-lit" fill="url(#lit)" fill-opacity="0.55"/>
+                <path id="fire-inner" fill="url(#g-fire-core)"/>
+                <path id="fire-rim" fill="none" stroke="url(#rim)" stroke-width="2"/>
+              </g>
             </svg>
           </span>
           <span class="name">Fire</span>
@@ -1252,35 +1248,28 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
   };
 
 
-  // Three angular tongues snap between poses; slots flicker, sparks lift.
-  const fireOuter = document.getElementById('fire-outer'), fireInner = document.getElementById('fire-inner');
-  const fireSlots = document.getElementById('fire-slots'), fireSparks = [...document.querySelectorAll('#fire-sparks rect')];
-  // A pose is the left tip, left notch, centre tip, right notch and right tip.
-  const fireTongues = p => `M34 82L34 60L${p[0]}L${p[1]}L${p[2]}L${p[3]}L${p[4]}L94 60L94 82Z`;
-  const fireCore = p => `M46 82L46 68L${p[0]}L${p[1]}L${p[2]}L${p[3]}L${p[4]}L82 68L82 82Z`;
-  const firePoses = [
-    [['40 28', '52 50', '64 4', '75 46', '88 20'], ['52 52', '58 62', '64 30', '70 60', '77 48']],
-    [['36 34', '50 48', '58 8', '72 42', '90 28'], ['50 56', '57 60', '60 34', '69 58', '78 52']],
-    [['44 22', '54 52', '70 6', '77 48', '86 30'], ['54 50', '60 62', '68 32', '72 60', '76 54']],
-  ].map(([o, i]) => [fireTongues(o), fireCore(i)]);
-  fireOuter.setAttribute('d', firePoses[0][0]);
+  // One flame: a pose moves the main tip and the side tongue; the base stays put.
+  const fireFlame = document.getElementById('fire-flame'), fireInner = document.getElementById('fire-inner');
+  const fireBody = ['fire-outer', 'fire-lit', 'fire-rim'].map(id => document.getElementById(id));
+  const fireFlameOf = ([tx, ty, lx, ly]) => `M${tx} ${ty}C${tx + 6} ${ty + 24} 94 44 97 70C100 94 84 116 64 116C44 116 29 101 30 80C31 63 ${lx - 5} ${ly + 12} ${lx} ${ly}C${lx + 1} ${ly + 13} 50 66 57 69C52 48 ${tx - 9} ${ty + 22} ${tx} ${ty}Z`;
+  const fireCore = ([tx, ty]) => `M${tx} ${ty}C${tx + 6} ${ty + 15} 79 84 78 97C77 105 72 110 64 110C56 110 51 105 51 97C51 86 ${tx - 4} ${ty + 17} ${tx} ${ty}Z`;
+  const firePoses = [[[64, 6, 45, 44], [64, 60]], [[57, 11, 41, 50], [61, 64]], [[71, 9, 48, 40], [67, 61]], [[60, 4, 43, 46], [63, 59]]]
+    .map(([o, c]) => [fireFlameOf(o), fireCore(c)]);
+  const firePose = (k, duration, ease) => [[fireBody, { morphSVG: firePoses[k][0], duration, ease }], [fireInner, { morphSVG: firePoses[k][1], duration, ease }]];
+  fireBody.forEach(p => p.setAttribute('d', firePoses[0][0]));
   fireInner.setAttribute('d', firePoses[0][1]);
-  gsap.set(fireSparks, { opacity: 0 });
   toys.fire = {
+    // The flame flickers, leans and settles, then rests before the next gust.
     play() {
-      const tl = gsap.timeline({ repeat: -1 });
-      [1, 2, 0].forEach(k => tl
-        .to(fireOuter, { morphSVG: firePoses[k][0], duration: 0.22, ease: 'steps(3)' })
-        .to(fireInner, { morphSVG: firePoses[k][1], duration: 0.22, ease: 'steps(3)' }, '<'));
-      tl.to(fireSlots, { opacity: 0.55, duration: 0.11, yoyo: true, repeat: 5, ease: 'steps(1)' }, 0);
-      fireSparks.forEach((s, i) => tl.fromTo(s, { y: 0, opacity: 1 }, { y: -18, opacity: 0, duration: 0.5, ease: 'power1.out' }, i * 0.22));
+      const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.5 });
+      [1, 2, 3, 1, 0].forEach((k, i) => firePose(k, 0.16, 'steps(2)').forEach(([t, v]) => tl.to(t, v, i * 0.16)));
+      tl.to(fireFlame, { skewX: -9, duration: 0.4, ease: 'sine.out', transformOrigin: '50% 100%' }, 0)
+        .to(fireFlame, { skewX: 0, duration: 0.5, ease: 'back.out(2.4)', transformOrigin: '50% 100%' }, 0.5);
       return tl;
     },
     rest() {
-      gsap.to(fireOuter, { morphSVG: firePoses[0][0], duration: 0.3 });
-      gsap.to(fireInner, { morphSVG: firePoses[0][1], duration: 0.3 });
-      gsap.to(fireSlots, { opacity: 1, duration: 0.2 });
-      gsap.to(fireSparks, { opacity: 0, y: 0, duration: 0.2 });
+      firePose(0, 0.3, 'power2.out').forEach(([t, v]) => gsap.to(t, v));
+      gsap.to(fireFlame, { skewX: 0, duration: 0.3, transformOrigin: '50% 100%' });
     },
   };
 
