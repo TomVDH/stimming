@@ -32,13 +32,18 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--tesseract" id="stage" tabindex="0" role="application" aria-label="Tesseract, a four-dimensional cube. Drag to turn it; Shift-drag or a two-finger drag turns it through the fourth dimension. Arrow keys turn it, Shift with arrows through the fourth dimension. Double-click or Space sets it square again.">
+    <div class="stage stage--tesseract" id="stage" tabindex="0" role="application" aria-label="Tesseract, a four-dimensional cube. Drag to turn it; Shift-drag or a two-finger drag turns it through the fourth dimension. Arrow keys turn it, Shift with arrows through the fourth dimension. Double-click or Space sets it square again. I turns it inside out; S shows a sweeping 3D slice.">
       <p class="fail" hidden>Tesseract needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices" role="group" aria-label="Shape">
-        <button class="chip" id="cube4" type="button" aria-pressed="true">Hypercube</button>
-        <button class="chip" id="cell24" type="button" aria-pressed="false">24-cell</button>
+        <button class="chip" type="button" data-value="0" aria-pressed="true">Hypercube</button>
+        <button class="chip" type="button" data-value="1" aria-pressed="false">24-cell</button>
+        <button class="chip" type="button" data-value="2" aria-pressed="false">16-cell</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="evert" type="button" aria-keyshortcuts="I">Inside out</button>
+        <button class="chip" id="slice" type="button" aria-pressed="false" aria-keyshortcuts="S">Slice</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>turn</dd></div>
@@ -59,7 +64,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, choices } from '../shared/stim.js';
 initPage({ id: 'tesseract' });
 const stage = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -69,6 +74,7 @@ const D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const ease = t => t * t * (3 - 2 * t);
+const ease5 = t => t * t * t * (t * (6 * t - 15) + 10);
 const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 
 /* ---------- colour: OKLCH in, linear and gamma sRGB out ---------- */
@@ -91,16 +97,11 @@ function linRGB([L, C, h]) {
 }
 const gam = x => (x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
 const srgb = lch => linRGB(lch).map(gam);
-// Hues take the short way round.
-function mixLch(A, B, t) {
-  const dh = ((((B[2] - A[2]) % 360) + 540) % 360) - 180;
-  return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
-}
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
+// Turning makes no sound; only arrivals ring.
 const LEAD = 0.004;
-let ac = null, out = null, askedAt = -1e9, humG = null, humLP = null, humOsc = [];
-let humLvl = 0, humF = 0, humAt = 0, chimeAt = -1e9, loudAt = -1e9;
+let ac = null, out = null, askedAt = -1e9, chimeAt = -1e9, loudAt = -1e9;
 
 function audio() {
   if (!ac) {
@@ -114,22 +115,6 @@ function audio() {
     out.gain.value = 0.55;
     out.connect(comp);
     comp.connect(ac.destination);
-    // The hum: a sine pair beating slowly, with two glassy partials.
-    humLP = ac.createBiquadFilter();
-    humLP.type = 'lowpass';
-    humLP.Q.value = 6;
-    humLP.frequency.value = 480;
-    humG = ac.createGain();
-    humG.gain.value = 0;
-    humLP.connect(humG).connect(out);
-    humOsc = [[1, 0.5], [1.004, 0.4], [2.002, 0.14], [3.01, 0.05]].map(([m, g]) => {
-      const o = ac.createOscillator(), og = ac.createGain();
-      o.frequency.value = 147 * m;
-      og.gain.value = g;
-      o.connect(og).connect(humLP);
-      o.start();
-      return [o, m];
-    });
   }
   if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
 }
@@ -138,7 +123,7 @@ function live() {
   if (!sound.on || !ac || ac.state === 'closed') return null;
   return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'i', 'I', 's', 'S']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -148,58 +133,57 @@ function unlock(e) {
 // Touchend is the gesture iOS needs.
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
 
-// Turning through W raises the hum and glides its pitch.
-function hum(speed) {
-  if (!humG) return;
-  const now = performance.now();
-  if (now - humAt < 30) return;
-  const a = live(), u = clamp((speed - 0.35) / 6), lvl = a ? ease(clamp((speed - 0.35) / 2.6)) : 0;
-  const f = 147 * 2 ** (1.5 * u);
-  if (Math.abs(lvl - humLvl) < 0.004 && Math.abs(f / (humF || 1) - 1) < 0.004) return;
-  humAt = now;
-  const t = ac.currentTime;
-  humG.gain.setTargetAtTime(lvl * 0.075, t, lvl > humLvl ? 0.05 : 0.2);
-  for (const [o, m] of humOsc) o.frequency.setTargetAtTime(f * m, t, 0.08);
-  humLP.frequency.setTargetAtTime(f * 3.2, t, 0.08);
-  humLvl = lvl;
-  humF = f;
-  if (lvl > 0.001) loudAt = now;
-}
-// Settling square: a small bell, at most twice a second.
-function chime() {
-  const a = live(), now = performance.now();
-  if (!a || now - chimeAt < 500) return;
-  chimeAt = loudAt = now;
-  const t = a.currentTime + LEAD;
-  for (const [m, g, d] of [[1, 0.085, 1.5], [2.76, 0.03, 0.8], [5.4, 0.014, 0.4], [8.93, 0.006, 0.22]]) {
+// A small glass bell: a pure tone with three bright partials.
+function bell(f, g, at = 0) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD + at;
+  for (const [m, k, d] of [[1, 1, 1.5], [2.76, 0.35, 0.8], [5.4, 0.16, 0.4], [8.93, 0.07, 0.22]]) {
     const o = a.createOscillator(), og = a.createGain();
-    o.frequency.value = 659.3 * m;
+    o.frequency.value = f * m;
     og.gain.setValueAtTime(0, t);
-    og.gain.linearRampToValueAtTime(g, t + 0.004);
+    og.gain.linearRampToValueAtTime(g * k, t + 0.004);
     og.gain.setTargetAtTime(0, t + 0.004, d / 4);
     o.connect(og).connect(out);
     o.start(t);
     o.stop(t + d * 1.6);
     o.onended = () => og.disconnect();
   }
+  loudAt = performance.now();
+}
+// Settling square rings once, at most twice a second.
+function chime() {
+  const now = performance.now();
+  if (now - chimeAt < 500) return;
+  chimeAt = now;
+  bell(659.3, 0.085);
+}
+// Coming out inside out lands on a low open fifth.
+function landed() {
+  chimeAt = performance.now();
+  bell(392, 0.08);
+  bell(587.3, 0.06, 0.09);
 }
 // A quiet toy lets the context sleep until the next gesture.
 function nap() {
-  if (!ac || ac.state !== 'running' || ptrs.size || humLvl > 0.001) return;
+  if (!ac || ac.state !== 'running' || ptrs.size) return;
   const now = performance.now();
   if (now - loudAt > 2200 && now - lastIn > 2200) ac.suspend()?.catch(() => {});
 }
 
-/* ---------- shapes: the tesseract, plus eight apexes for the 24-cell ---------- */
+/* ---------- shapes: one set of 24 points makes all three ---------- */
 // Corners sit at (±½, ±½, ±½, ±½), so the circumradius is 1.
+// Apexes sit on the axes; they are the 24-cell's other eight vertices.
+// The 16-cell keeps only the apexes.
 // Cell index: axis * 2, plus 1 on the negative side.
 const cellOf = (a, bit) => a * 2 + (bit ? 0 : 1);
 const NV = 24, BASE = new Float64Array(NV * 4);
 for (let i = 0; i < 16; i++) for (let a = 0; a < 4; a++) BASE[i * 4 + a] = (i >> a) & 1 ? 0.5 : -0.5;
-// Edges: 32 of the tesseract, then 64 reaching each apex.
+// Edges: 32 of the tesseract, 64 to the apexes, 24 between apexes.
 const EDGES = [];
 for (let i = 0; i < 16; i++) for (let a = 0; a < 4; a++) { const j = i ^ (1 << a); if (i < j) EDGES.push(i, j); }
 for (let k = 0; k < 8; k++) for (let i = 0; i < 16; i++) if (cellOf(k >> 1, (i >> (k >> 1)) & 1) === k) EDGES.push(i, 16 + k);
+for (let k = 0; k < 8; k++) for (let l = k + 1; l < 8; l++) if (k >> 1 !== l >> 1) EDGES.push(16 + k, 16 + l);
 const NE = EDGES.length / 2;
 // Squares: four corners in turn, then the two cells they bound.
 const SQ = [];
@@ -214,11 +198,27 @@ for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) {
 const TR = [];
 for (let e = 0; e < 32; e++) {
   const i = EDGES[e * 2], j = EDGES[e * 2 + 1], a = Math.log2(i ^ j);
-  for (let b = 0; b < 4; b++) if (b !== a) { const k = cellOf(b, (i >> b) & 1); TR.push([i, j, 16 + k, k]); }
+  for (let b = 0; b < 4; b++) if (b !== a) TR.push([i, j, 16 + cellOf(b, (i >> b) & 1)]);
 }
-// Cells run x+, x−, y+, y−, z+, z−, w+, w−.
-// Opposite cells take complementary hues.
-const HUES = [25, 205, 115, 295, 160, 340, 70, 250];
+// Triangles of the 16-cell: three apexes on three different axes.
+const T16 = [];
+for (let skip = 0; skip < 4; skip++) {
+  const axes = [0, 1, 2, 3].filter(a => a !== skip);
+  for (let m = 0; m < 8; m++) T16.push(axes.map((a, q) => 16 + a * 2 + ((m >> q) & 1)));
+}
+// Solid pieces for the slice, as flat lists of edge pairs.
+// Up to the 24-cell: a pyramid on each square of each cube.
+const PYR = [];
+for (const [a, b, c, d, c1, c2] of SQ) {
+  for (const k of [c1, c2]) PYR.push([a, b, b, c, c, d, d, a, a, 16 + k, b, 16 + k, c, 16 + k, d, 16 + k]);
+}
+// From the 24-cell on: four tetrahedra under each corner.
+const TET = [];
+for (let i = 0; i < 16; i++) for (let skip = 0; skip < 4; skip++) {
+  const v = [i];
+  for (let b = 0; b < 4; b++) if (b !== skip) v.push(16 + cellOf(b, (i >> b) & 1));
+  TET.push([v[0], v[1], v[0], v[2], v[0], v[3], v[1], v[2], v[1], v[3], v[2], v[3]]);
+}
 
 /* ---------- 4D turning: a rotation is a pair of unit quaternions ---------- */
 // A point v turns to L·v·R; quaternions are [x, y, z, w].
@@ -258,6 +258,7 @@ function matrix(L = QL, R = QR, out = M) {
   return out;
 }
 // The 192 turns that map the tesseract onto itself.
+// The 24-cell and the 16-cell share every one of them.
 const SYM = (() => {
   const seen = new Set(), list = [], m = new Float64Array(16);
   const key = (L, R) => Array.from(matrix(L, R, m), v => Math.round(v)).join();
@@ -275,7 +276,7 @@ const SYM = (() => {
   }
   return list;
 })();
-// Square poses: the hypercube cell-first, the 24-cell octahedron-first.
+// Square poses: the hypercube cell-first, the others turned 45° through W.
 function pose(w45) {
   const L = [0, 0, 0, 1], R = [0, 0, 0, 1];
   if (w45) turn(3, Math.PI / 4, L, R);
@@ -283,7 +284,7 @@ function pose(w45) {
   turn(2, 0.4, L, R);
   return [L, R];
 }
-const HOME = [pose(false), pose(true)];
+const HOME = [pose(false), pose(true), pose(true)];
 function slerp(a, b, t, o) {
   const d = clamp(dot4(a, b), -1, 1), th = Math.acos(d);
   let wa = 1 - t, wb = t;
@@ -297,9 +298,12 @@ function slerp(a, b, t, o) {
 const om = new Float64Array(6);
 // Idle drift: mostly through W, with a slow 3D yaw.
 const IDLE = [0, 0.024, 0, 0.11, 0, 0.045], IDLE_WAIT = 4000;
+// A slice sweeps the full depth in W once every eight seconds.
+const SWEEP = (2 * Math.PI) / 8;
 const ptrs = new Map();
-let shape = 0, mu = 0, snap = null, idleAmt = 0, lastIn = -1e9, dirty = true;
-let wS = 0, tapT = -1e9, tapX = 0, tapY = 0, downT = 0, downX = 0, downY = 0, moved = false;
+let shape = 0, mu = 0, snap = null, evert = null, flip = 1, idleAmt = 0, lastIn = -1e9, dirty = true;
+let slicing = false, cut = 0, phase = 0;
+let tapT = -1e9, tapX = 0, tapY = 0, downT = 0, downX = 0, downY = 0, moved = false;
 let cx = 0, cy = 0, trail = [];
 Object.assign(QL, HOME[0][0]);
 Object.assign(QR, HOME[0][1]);
@@ -319,22 +323,43 @@ function snapHome() {
   // Both halves flip together, so the turn stays the same.
   if (dot4(QL, bl) < 0) for (let i = 0; i < 4; i++) { bl[i] = -bl[i]; br[i] = -br[i]; }
   snap = { l0: QL.slice(), r0: QR.slice(), l1: bl, r1: br, s: 0, v: 0, rang: false };
+  evert = null;
   om.fill(0);
   idleAmt = 0;
   touch();
   wake();
 }
+// Inside out: half a turn through X and W.
+// The far cell swaps places with the near cell.
+// Each press turns the other way.
+function insideOut() {
+  if (!ready) return;
+  snap = null;
+  om.fill(0);
+  idleAmt = 0;
+  flip = -flip;
+  evert = { t: 0, dur: reduce ? 0.6 : 2.8, done: 0, sign: flip };
+  touch();
+  wake();
+}
 function setShape(s) {
   shape = s;
-  document.getElementById('cube4').setAttribute('aria-pressed', String(!s));
-  document.getElementById('cell24').setAttribute('aria-pressed', String(!!s));
+  touch();
+  wake();
+}
+function setSlice(on) {
+  slicing = on;
+  sliceB.setAttribute('aria-pressed', String(on));
+  // A new slice starts at the middle depth.
+  if (on && cut === 0) phase = 0;
+  touch();
   wake();
 }
 // One frame of motion; true when anything changed.
 function step(dt) {
   const now = performance.now();
   let any = false;
-  const want = !reduce && !ptrs.size && !snap && now - lastIn > IDLE_WAIT;
+  const want = !reduce && !ptrs.size && !snap && !evert && now - lastIn > IDLE_WAIT;
   idleAmt = want ? Math.min(1, idleAmt + dt * 0.4) : Math.max(0, idleAmt - dt * 3);
   // Friction is gentle; reduced motion stops sooner.
   const fr = Math.exp(-(reduce ? 5 : 1.1) * dt), drift = ease(idleAmt);
@@ -342,6 +367,14 @@ function step(dt) {
     if (om[p]) { om[p] *= fr; if (Math.abs(om[p]) < 0.012) om[p] = 0; }
     const th = (om[p] + drift * IDLE[p]) * dt;
     if (th) { turn(p, th); any = true; }
+  }
+  if (evert) {
+    evert.t = Math.min(evert.dur, evert.t + dt);
+    const u = evert.t / evert.dur, th = evert.sign * Math.PI * ease5(u);
+    turn(3, th - evert.done);
+    evert.done = th;
+    if (u >= 1) { evert = null; landed(); }
+    any = true;
   }
   if (snap) {
     // A light underdamped spring; reduced motion lands critically damped.
@@ -358,9 +391,19 @@ function step(dt) {
     any = true;
   }
   if (mu !== shape) {
-    mu = shape ? Math.min(1, mu + dt / (reduce ? 0.45 : 1.6)) : Math.max(0, mu - dt / (reduce ? 0.45 : 1.6));
+    const d = dt / (reduce ? 0.45 : 1.6);
+    mu = mu < shape ? Math.min(shape, mu + d) : Math.max(shape, mu - d);
     any = true;
   }
+  const goal = slicing ? 1 : 0;
+  if (cut !== goal) {
+    const d = dt / (reduce ? 0.15 : 0.5);
+    cut = cut < goal ? Math.min(goal, cut + d) : Math.max(goal, cut - d);
+    any = true;
+  }
+  // Reduced motion holds the slice at the middle depth.
+  if (slicing && !reduce) { phase += dt * SWEEP; any = true; }
+  else if (reduce) phase = 0;
   norm4(QL);
   norm4(QR);
   return any;
@@ -369,19 +412,26 @@ function step(dt) {
 /* ---------- projection: 4D perspective, then the 3D camera ---------- */
 // The 4D eye sits at w = 2, so nearer looks bigger.
 const D4 = 2, BOUND = 1.27;
-const P = new Float32Array(NV * 3), Wv = new Float64Array(NV), Sv = new Float64Array(NV), prevW = new Float64Array(16);
-let rise = 0, grow = 0, sqA = 1, trA = 0;
+const P = new Float32Array(NV * 3), R4 = new Float64Array(NV * 3), Wv = new Float64Array(NV), Sv = new Float64Array(NV);
+let rise = 0, apex = 0, grow = 0, fade = 1, grow16 = 0, sqA = 1, trA = 0, t16A = 0, m2e = 0, sliceH = 0;
 function project() {
   matrix();
-  // Apexes rise from the cell centres as the 24-cell forms.
-  rise = ease(clamp(mu / 0.75));
-  grow = 1 - (1 - clamp((mu - 0.04) / 0.6)) ** 3;
-  sqA = 1 - ease(clamp((mu - 0.15) / 0.6));
-  trA = ease(clamp((mu - 0.3) / 0.7));
-  const ap = 0.5 + 0.5 * rise;
+  // First morph: apexes rise from the cell centres into the 24-cell.
+  // Second morph: corners sink into the 16-cell's cells and vanish.
+  const m1 = clamp(mu), m2 = clamp(mu - 1);
+  m2e = ease(m2);
+  rise = ease(clamp(m1 / 0.75));
+  apex = 1 - (1 - clamp((m1 - 0.04) / 0.6)) ** 3;
+  grow = apex * (1 - ease(clamp(m2 / 0.7)));
+  fade = 1 - ease(clamp(m2 / 0.6));
+  grow16 = ease(clamp((m2 - 0.2) / 0.8));
+  sqA = 1 - ease(clamp((m1 - 0.15) / 0.6));
+  trA = ease(clamp((m1 - 0.3) / 0.7)) * (1 - ease(clamp(m2 / 0.6)));
+  t16A = ease(clamp((m2 - 0.35) / 0.65));
+  const ap = 0.5 + 0.5 * rise, cs = 1 - 0.5 * m2e;
   for (let k = 0; k < NV; k++) {
     let b0, b1, b2, b3;
-    if (k < 16) { b0 = BASE[k * 4]; b1 = BASE[k * 4 + 1]; b2 = BASE[k * 4 + 2]; b3 = BASE[k * 4 + 3]; }
+    if (k < 16) { b0 = BASE[k * 4] * cs; b1 = BASE[k * 4 + 1] * cs; b2 = BASE[k * 4 + 2] * cs; b3 = BASE[k * 4 + 3] * cs; }
     else {
       const a = (k - 16) >> 1, v = (k - 16) & 1 ? -ap : ap;
       b0 = a === 0 ? v : 0; b1 = a === 1 ? v : 0; b2 = a === 2 ? v : 0; b3 = a === 3 ? v : 0;
@@ -391,15 +441,20 @@ function project() {
     const z = M[2] * b0 + M[6] * b1 + M[10] * b2 + M[14] * b3;
     const w = M[3] * b0 + M[7] * b1 + M[11] * b2 + M[15] * b3;
     const s = D4 / (D4 - w);
+    R4[k * 3] = x; R4[k * 3 + 1] = y; R4[k * 3 + 2] = z;
     P[k * 3] = x * s; P[k * 3 + 1] = y * s; P[k * 3 + 2] = z * s;
     Wv[k] = w;
     Sv[k] = s;
   }
+  // The slice level sweeps between the nearest and farthest points in W.
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < NV; k++) { if (Wv[k] < lo) lo = Wv[k]; if (Wv[k] > hi) hi = Wv[k]; }
+  sliceH = lerp(lo, hi, 0.5 + 0.47 * Math.sin(phase));
 }
 
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, ready = false, lowDpr = false, lite = false;
-let tubes = null, balls = null, panes = null, ramp = null, paneU = null;
+let THREE = null, renderer = null, scene = null, camera = null, ready = false, lowDpr = false;
+let tubes = null, balls = null, panes = null, slice = null, ramp = null, dim = null, paneU = null, sliceU = null;
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
 function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
   const apply = () => {
@@ -425,42 +480,29 @@ function fit(w, h) {
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
-// Thickness follows the 4D perspective, gently.
-const radius = k => lerp(0.031, 0.025, rise) * Sv[k] ** 0.7;
+// Thickness follows the 4D perspective, gently; the 16-cell's few edges run thicker.
+const radius = k => lerp(lerp(0.031, 0.025, rise), 0.032, m2e) * Sv[k] ** 0.7;
 const tw = k => clamp((Wv[k] + 1) / 2);
 
-// Panes: squares first, then triangles, flat-shaded and sorted.
-const NSQ = SQ.length, NF = NSQ + TR.length, PV = NSQ * 4 + TR.length * 3;
-const paneP = new Float32Array(PV * 3), paneN = new Float32Array(PV * 3), paneC = new Float32Array(PV * 3), paneK = new Float32Array(PV);
-const paneI = new Uint16Array(NSQ * 6 + TR.length * 3), order = new Int16Array(NF), depth = new Float32Array(NF);
-const faceAt = f => (f < NSQ ? f * 4 : NSQ * 4 + (f - NSQ) * 3);
-const FACEV = Array.from({ length: NF }, (_, f) => (f < NSQ ? SQ[f].slice(0, 4) : TR[f - NSQ].slice(0, 3)));
-for (let f = 0; f < NF; f++) { order[f] = f; if (f >= NSQ) for (let n = 0; n < 3; n++) paneK[faceAt(f) + n] = 1; }
-function tints() {
-  const [L, C] = lite ? [0.6, 0.15] : [0.8, 0.13];
-  const cell = HUES.map(h => [L, C, h]);
-  for (let f = 0; f < NF; f++) {
-    const col = srgb(f < NSQ ? mixLch(cell[SQ[f][4]], cell[SQ[f][5]], 0.5) : cell[TR[f - NSQ][3]]);
-    const o = faceAt(f), n = f < NSQ ? 4 : 3;
-    for (let v = 0; v < n; v++) paneC.set(col, (o + v) * 3);
-  }
-}
+// Panes: squares, then 24-cell triangles, then 16-cell triangles, flat-shaded and sorted.
+const FACES = [...SQ.map(f => f.slice(0, 4)), ...TR, ...T16];
+const KIND = [...SQ.map(() => 0), ...TR.map(() => 1), ...T16.map(() => 2)];
+const NF = FACES.length, FAT = new Int32Array(NF + 1);
+for (let f = 0; f < NF; f++) FAT[f + 1] = FAT[f] + FACES[f].length;
+const PV = FAT[NF];
+const paneP = new Float32Array(PV * 3), paneN = new Float32Array(PV * 3), paneW = new Float32Array(PV), paneK = new Float32Array(PV);
+const paneI = new Uint16Array(NF * 6), order = new Int16Array(NF), depth = new Float32Array(NF);
+for (let f = 0; f < NF; f++) { order[f] = f; for (let v = FAT[f]; v < FAT[f + 1]; v++) paneK[v] = KIND[f]; }
 
 // Writes vertex k's position and a radius at offset o.
 function vec(arr, o, k, r) {
   arr[o] = P[k * 3]; arr[o + 1] = P[k * 3 + 1]; arr[o + 2] = P[k * 3 + 2]; arr[o + 3] = r;
 }
-let primed = false, wMove = 0;
 function draw() {
   project();
-  // Corners moving through W drive the hum.
-  if (!primed) { prevW.set(Wv.subarray(0, 16)); primed = true; }
-  let s2 = 0;
-  for (let k = 0; k < 16; k++) { const d = Wv[k] - prevW[k]; s2 += d * d; prevW[k] = Wv[k]; }
-  wMove += Math.sqrt(s2 / 16) / 0.5;
   const ta = tubes.geometry.attributes, A = ta.aA.array, B = ta.aB.array, T = ta.aT.array, on = mu > 0 ? NE : 32;
   for (let e = 0; e < on; e++) {
-    const i = EDGES[e * 2], j = EDGES[e * 2 + 1], g = e < 32 ? 1 : grow;
+    const i = EDGES[e * 2], j = EDGES[e * 2 + 1], g = e < 32 ? fade : e < 96 ? grow : grow16;
     vec(A, e * 4, i, radius(i) * g);
     vec(B, e * 4, j, radius(j) * g);
     T[e * 2] = tw(i);
@@ -470,23 +512,28 @@ function draw() {
   ta.aA.needsUpdate = ta.aB.needsUpdate = ta.aT.needsUpdate = true;
   const ba = balls.geometry.attributes, nb = mu > 0 ? NV : 16;
   for (let k = 0; k < nb; k++) {
-    vec(ba.aS.array, k * 4, k, radius(k) * 1.42 * (k < 16 ? 1 : grow));
+    vec(ba.aS.array, k * 4, k, radius(k) * 1.42 * (k < 16 ? fade : apex));
     ba.aW.array[k] = tw(k);
   }
   balls.geometry.instanceCount = nb;
   ba.aS.needsUpdate = ba.aW.needsUpdate = true;
+  // The wire dims to a ghost while a slice shows.
+  dim.value = 1 - 0.62 * ease(cut);
   drawPanes();
+  drawSlice();
   renderer.render(scene, camera);
 }
 // Faint panes sort back to front each frame.
 function drawPanes() {
-  const cz = camera.position.z;
+  const cz = camera.position.z, keep = 1 - ease(cut);
+  const alpha = [sqA * keep, trA * keep, t16A * keep];
   for (let f = 0; f < NF; f++) {
-    const vs = FACEV[f], o = faceAt(f), n = vs.length;
+    const vs = FACES[f], o = FAT[f], n = vs.length;
     let mx = 0, my = 0, mz = 0;
     for (let v = 0; v < n; v++) {
       const k = vs[v];
       paneP[(o + v) * 3] = P[k * 3]; paneP[(o + v) * 3 + 1] = P[k * 3 + 1]; paneP[(o + v) * 3 + 2] = P[k * 3 + 2];
+      paneW[o + v] = tw(k);
       mx += P[k * 3]; my += P[k * 3 + 1]; mz += P[k * 3 + 2];
     }
     // Squares use their diagonals; projected squares stay planar.
@@ -503,14 +550,101 @@ function drawPanes() {
   order.sort((p, q) => depth[q] - depth[p] || p - q);
   let m = 0;
   for (let i = 0; i < NF; i++) {
-    const f = order[i], o = faceAt(f);
-    if (f < NSQ) { if (sqA < 0.002) continue; paneI.set([o, o + 1, o + 2, o, o + 2, o + 3], m); m += 6; }
-    else { if (trA < 0.002) continue; paneI[m++] = o; paneI[m++] = o + 1; paneI[m++] = o + 2; }
+    const f = order[i], o = FAT[f];
+    if (alpha[KIND[f]] < 0.002) continue;
+    if (FACES[f].length === 4) { paneI.set([o, o + 1, o + 2, o, o + 2, o + 3], m); m += 6; }
+    else { paneI[m++] = o; paneI[m++] = o + 1; paneI[m++] = o + 2; }
   }
   const g = panes.geometry;
   g.setDrawRange(0, m);
-  g.index.needsUpdate = g.attributes.position.needsUpdate = g.attributes.normal.needsUpdate = true;
-  paneU.uMix.value.set(sqA, trA);
+  g.index.needsUpdate = g.attributes.position.needsUpdate = g.attributes.normal.needsUpdate = g.attributes.wt.needsUpdate = true;
+  paneU.uMix.value.set(...alpha);
+}
+
+/* ---------- the slice: where a 3D hyperplane cuts the shape ---------- */
+// Each solid piece cut at w = h gives one flat polygon.
+// The polygons tile the cut, a solid in ordinary 3D space.
+// Cut points lie on the drawn edges, inside the wire.
+const NCELL = Math.max(PYR.length, TET.length);
+const sliceP = new Float32Array(NCELL * 12 * 3), sliceN = new Float32Array(NCELL * 12 * 3);
+const cutP = new Float64Array(NCELL * 8 * 3), cutN = new Uint8Array(NCELL);
+const ord = [0, 0, 0, 0, 0, 0, 0, 0], ang = new Float64Array(8);
+function drawSlice() {
+  const g = slice.geometry;
+  slice.visible = cut > 0.002;
+  if (!slice.visible) return;
+  sliceU.uAmt.value = ease(cut);
+  const cells = mu > 1 ? TET : PYR, h = sliceH, s = D4 / (D4 - h);
+  let gx = 0, gy = 0, gz = 0, gn = 0;
+  // Pass one: cut points per piece, and their mean, which lies inside.
+  for (let c = 0; c < cells.length; c++) {
+    const E = cells[c], o = c * 24;
+    let k = 0;
+    for (let e = 0; e < E.length && k < 8; e += 2) {
+      const i = E[e], j = E[e + 1], wi = Wv[i], wj = Wv[j];
+      if (wi >= h === wj >= h) continue;
+      const t = (h - wi) / (wj - wi);
+      const x = (R4[i * 3] + (R4[j * 3] - R4[i * 3]) * t) * s;
+      const y = (R4[i * 3 + 1] + (R4[j * 3 + 1] - R4[i * 3 + 1]) * t) * s;
+      const z = (R4[i * 3 + 2] + (R4[j * 3 + 2] - R4[i * 3 + 2]) * t) * s;
+      let dup = false;
+      for (let q = 0; q < k && !dup; q++) dup = Math.abs(cutP[o + q * 3] - x) + Math.abs(cutP[o + q * 3 + 1] - y) + Math.abs(cutP[o + q * 3 + 2] - z) < 1e-7;
+      if (dup) continue;
+      cutP[o + k * 3] = x; cutP[o + k * 3 + 1] = y; cutP[o + k * 3 + 2] = z;
+      gx += x; gy += y; gz += z; gn++;
+      k++;
+    }
+    cutN[c] = k;
+  }
+  let m = 0;
+  if (gn) {
+    gx /= gn; gy /= gn; gz /= gn;
+    // Pass two: each polygon in turn order, wound to face outward.
+    for (let c = 0; c < cells.length; c++) {
+      const k = cutN[c], o = c * 24;
+      if (k < 3) continue;
+      let px = 0, py = 0, pz = 0;
+      for (let q = 0; q < k; q++) { px += cutP[o + q * 3]; py += cutP[o + q * 3 + 1]; pz += cutP[o + q * 3 + 2]; }
+      px /= k; py /= k; pz /= k;
+      const ux = cutP[o] - px, uy = cutP[o + 1] - py, uz = cutP[o + 2] - pz;
+      let nx = 0, ny = 0, nz = 0, best = 0;
+      for (let q = 1; q < k; q++) {
+        const vx = cutP[o + q * 3] - px, vy = cutP[o + q * 3 + 1] - py, vz = cutP[o + q * 3 + 2] - pz;
+        const cx2 = uy * vz - uz * vy, cy2 = uz * vx - ux * vz, cz2 = ux * vy - uy * vx, l2 = cx2 * cx2 + cy2 * cy2 + cz2 * cz2;
+        if (l2 > best) { best = l2; nx = cx2; ny = cy2; nz = cz2; }
+      }
+      const ul = Math.hypot(ux, uy, uz);
+      if (best < 1e-14 || ul < 1e-9) continue;
+      const nl = Math.sqrt(best);
+      nx /= nl; ny /= nl; nz /= nl;
+      const ex = ux / ul, ey = uy / ul, ez = uz / ul;
+      const fx = ny * ez - nz * ey, fy = nz * ex - nx * ez, fz = nx * ey - ny * ex;
+      for (let q = 0; q < k; q++) {
+        const vx = cutP[o + q * 3] - px, vy = cutP[o + q * 3 + 1] - py, vz = cutP[o + q * 3 + 2] - pz;
+        ang[q] = Math.atan2(vx * fx + vy * fy + vz * fz, vx * ex + vy * ey + vz * ez);
+        ord[q] = q;
+      }
+      for (let q = 1; q < k; q++) {
+        const v = ord[q];
+        let r = q - 1;
+        while (r >= 0 && ang[ord[r]] > ang[v]) { ord[r + 1] = ord[r]; r--; }
+        ord[r + 1] = v;
+      }
+      // Turn order runs counterclockwise about n; an inward n reverses both.
+      const inward = nx * (px - gx) + ny * (py - gy) + nz * (pz - gz) < 0;
+      if (inward) { nx = -nx; ny = -ny; nz = -nz; }
+      for (let q = 1; q < k - 1; q++) {
+        const tri = inward ? [ord[0], ord[q + 1], ord[q]] : [ord[0], ord[q], ord[q + 1]];
+        for (const v of tri) {
+          sliceP[m * 3] = cutP[o + v * 3]; sliceP[m * 3 + 1] = cutP[o + v * 3 + 1]; sliceP[m * 3 + 2] = cutP[o + v * 3 + 2];
+          sliceN[m * 3] = nx; sliceN[m * 3 + 1] = ny; sliceN[m * 3 + 2] = nz;
+          m++;
+        }
+      }
+    }
+  }
+  g.setDrawRange(0, m);
+  g.attributes.position.needsUpdate = g.attributes.normal.needsUpdate = true;
 }
 
 /* ---------- theme ---------- */
@@ -523,26 +657,24 @@ function cssRGB(str) {
   return [d[0] / 255, d[1] / 255, d[2] / 255];
 }
 // Far in W fades toward the stage; near in W stands out.
-const RAMPS = {
-  dark: [[0.52, 0.17, 292], [0.74, 0.14, 236], [0.93, 0.09, 178]],
-  light: [[0.8, 0.07, 292], [0.58, 0.16, 255], [0.4, 0.14, 264]],
-};
+// Wire and panes share this ramp: colour always means depth in W.
+const RAMP = [[0.52, 0.17, 292], [0.74, 0.14, 236], [0.93, 0.09, 178]];
+// The slice is one hot colour in three flat tones.
+const CUT = [[0.86, 0.15, 72], [0.73, 0.19, 46], [0.55, 0.18, 30]];
 function theme() {
-  lite = (getComputedStyle(document.documentElement).colorScheme || '').includes('light');
   if (!renderer) return;
   const [r, g, b] = cssRGB(getComputedStyle(stage).backgroundColor);
   renderer.setClearColor(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
-  RAMPS[lite ? 'light' : 'dark'].forEach((c, i) => ramp[i].value.setRGB(...linRGB(c)));
-  paneU.uAlpha.value = lite ? 0.09 : 0.11;
+  RAMP.forEach((c, i) => {
+    ramp[i].value.setRGB(...linRGB(c));
+    paneU[`uP${i}`].value.setRGB(...srgb(c));
+  });
+  ['uLit', 'uSide', 'uShade'].forEach((u, i) => sliceU[u].value.setRGB(...srgb(CUT[i])));
   // Stacked panes add up, so each stays faint.
-  paneU.uRim.value = lite ? 0.16 : 0.2;
-  paneU.uSheen.value = lite ? 0.12 : 0.24;
-  tints();
-  panes.geometry.attributes.tint.needsUpdate = true;
+  paneU.uAlpha.value = 0.1;
+  paneU.uRim.value = 0.22;
   if (ready) draw();
 }
-matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', theme);
-new MutationObserver(theme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 /* ---------- one loop, only while something moves ---------- */
 let raf = 0, last = 0, onScreen = true, slow = 0, idleT = 0;
@@ -561,18 +693,13 @@ function frame(ms) {
   }
   if (step(dt)) dirty = true;
   if (dirty) { draw(); dirty = false; }
-  const inst = dt > 0 ? wMove / dt : 0;
-  wMove = 0;
-  wS += (inst - wS) * (1 - Math.exp(-dt * 10));
-  hum(wS);
   nap();
-  const busy = ptrs.size || snap || mu !== shape || idleAmt > 0 || om.some(Boolean) || wS > 0.02;
+  const busy = ptrs.size || snap || evert || mu !== shape || idleAmt > 0 || om.some(Boolean)
+    || cut !== (slicing ? 1 : 0) || (slicing && !reduce);
   if (busy) {
     if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
     return;
   }
-  wS = 0;
-  hum(0);
   // At rest, a timer brings the idle drift back.
   if (!reduce) idleT = setTimeout(wake, Math.max(0, lastIn + IDLE_WAIT - performance.now()) + 30);
   setTimeout(nap, 2400);
@@ -592,8 +719,9 @@ stage.addEventListener('pointerdown', e => {
   try { stage.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   [cx, cy] = centre();
   trail = [];
-  // A grab catches the spin.
+  // A grab catches the spin, and stops a turn inside out.
   om.fill(0);
+  evert = null;
   touch();
   stage.classList.add('held');
   if (ptrs.size === 1) {
@@ -644,6 +772,7 @@ stage.addEventListener('pointercancel', letGo);
 stage.addEventListener('lostpointercapture', letGo);
 
 // Arrows flick it; Shift flicks it through the fourth dimension.
+// I turns it inside out; S shows the slice.
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
@@ -656,18 +785,22 @@ addEventListener('keydown', e => {
     if (dx) { const p = e.shiftKey ? 3 : 1; om[p] = clamp(om[p] - dx * kick, -cap, cap); }
     if (dy) { const p = e.shiftKey ? 4 : 2; om[p] = clamp(om[p] + dy * kick, -cap, cap); }
     snap = null;
+    evert = null;
     touch();
     wake();
   } else if ((k === ' ' || k === 'Enter') && e.target === stage) {
     e.preventDefault();
     if (!e.repeat) snapHome();
-  }
+  } else if ((k === 'i' || k === 'I') && !e.repeat) insideOut();
+  else if ((k === 's' || k === 'S') && !e.repeat && ready) setSlice(!slicing);
 });
-document.getElementById('cube4').addEventListener('click', () => setShape(0));
-document.getElementById('cell24').addEventListener('click', () => setShape(1));
+const sliceB = document.getElementById('slice');
+choices(document.querySelector('.bar .choices'), v => setShape(Number(v)));
+document.getElementById('evert').addEventListener('click', insideOut);
+sliceB.addEventListener('click', () => { if (ready) setSlice(!slicing); });
 sound.onChange(on => {
   if (on) audio();
-  else if (ac) { humLvl = 0; humG?.gain.setValueAtTime(0, ac.currentTime); ac.suspend()?.catch(() => {}); }
+  else ac?.suspend()?.catch(() => {});
 });
 new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(stage);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
@@ -682,6 +815,7 @@ function patch(mat, kind) {
     sh.uniforms.uRamp0 = ramp[0];
     sh.uniforms.uRamp1 = ramp[1];
     sh.uniforms.uRamp2 = ramp[2];
+    sh.uniforms.uDim = dim;
     const head = kind === 'tube'
       ? 'attribute vec4 aA;\nattribute vec4 aB;\nattribute vec2 aT;\nvarying float vT;'
       : 'attribute vec4 aS;\nattribute float aW;\nvarying float vT;';
@@ -702,8 +836,8 @@ function patch(mat, kind) {
       .replace('#include <beginnormal_vertex>', normal)
       .replace('#include <begin_vertex>', place);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uRamp0;\nuniform vec3 uRamp1;\nuniform vec3 uRamp2;\nvarying float vT;')
-      .replace('#include <color_fragment>', 'diffuseColor.rgb = vT < 0.5 ? mix(uRamp0, uRamp1, vT * 2.0) : mix(uRamp1, uRamp2, vT * 2.0 - 1.0);');
+      .replace('#include <common>', '#include <common>\nuniform vec3 uRamp0;\nuniform vec3 uRamp1;\nuniform vec3 uRamp2;\nuniform float uDim;\nvarying float vT;')
+      .replace('#include <color_fragment>', 'diffuseColor.rgb = uDim * (vT < 0.5 ? mix(uRamp0, uRamp1, vT * 2.0) : mix(uRamp1, uRamp2, vT * 2.0 - 1.0));');
   };
   mat.customProgramCacheKey = () => 'tesseract-' + kind;
   return mat;
@@ -719,30 +853,53 @@ function instanced(base, attrs) {
   g.instanceCount = 0;
   return g;
 }
+// A clean studio for reflections: three soft boxes in a dark dome.
+// Big, smooth highlights replace the busy room, so turning never sparkles.
+function studio() {
+  const env = new THREE.Scene(), parts = [];
+  const add = (geo, color, side, x = 0, y = 0, z = 0) => {
+    const mat = new THREE.MeshBasicMaterial({ color, side });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    if (x || y || z) mesh.lookAt(0, 0, 0);
+    env.add(mesh);
+    parts.push(geo, mat);
+  };
+  add(new THREE.SphereGeometry(30, 32, 16), new THREE.Color().setRGB(0.014, 0.013, 0.022), THREE.BackSide);
+  // The key box sits up and left, behind the viewer.
+  add(new THREE.PlaneGeometry(16, 10), new THREE.Color().setScalar(5), THREE.DoubleSide, -9, 14, 12);
+  // A tall strip on the right draws a rim down every tube.
+  add(new THREE.PlaneGeometry(3, 22), new THREE.Color().setRGB(2.2, 2.3, 2.6), THREE.DoubleSide, 16, 2, -6);
+  // A faint, cool floor bounce lifts the undersides.
+  add(new THREE.PlaneGeometry(26, 8), new THREE.Color().setRGB(0.32, 0.36, 0.5), THREE.DoubleSide, 0, -16, 4);
+  return { env, dispose: () => parts.forEach(p => p.dispose()) };
+}
 const PANE_VS = `
-attribute vec3 tint;
+attribute float wt;
 attribute float kind;
 varying vec3 vP;
 varying vec3 vN;
-varying vec3 vC;
+varying float vW;
 varying float vK;
 void main() {
-  vP = position; vN = normal; vC = tint; vK = kind;
+  vP = position; vN = normal; vW = wt; vK = kind;
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
 }`;
-// Glass: a faint tint, firmer and shinier at grazing angles.
+// Glass: a faint tint of the depth ramp, firmer at grazing angles.
 const PANE_FS = `
 uniform vec3 uKey;
-uniform vec2 uMix;
+uniform vec3 uMix;
 uniform float uAlpha;
 uniform float uRim;
-uniform float uSheen;
+uniform vec3 uP0;
+uniform vec3 uP1;
+uniform vec3 uP2;
 varying vec3 vP;
 varying vec3 vN;
-varying vec3 vC;
+varying float vW;
 varying float vK;
 void main() {
-  float m = mix(uMix.x, uMix.y, vK);
+  float m = vK < 0.5 ? uMix.x : vK < 1.5 ? uMix.y : uMix.z;
   vec3 v = normalize(cameraPosition - vP);
   vec3 n = normalize(vN);
   float nv = dot(n, v);
@@ -750,14 +907,31 @@ void main() {
   float f = pow(1.0 - nv, 4.0);
   float a = m * (uAlpha + uRim * f);
   float sp = pow(max(dot(n, normalize(uKey + v)), 0.0), 240.0) * 0.3;
-  float sky = smoothstep(0.3, 0.95, reflect(-v, n).y) * uSheen * f;
-  gl_FragColor = vec4(vC * a + m * (sp + sky) * vec3(1.0, 0.99, 0.97), a);
+  vec3 c = vW < 0.5 ? mix(uP0, uP1, vW * 2.0) : mix(uP1, uP2, vW * 2.0 - 1.0);
+  gl_FragColor = vec4(c * a + m * sp * vec3(1.0, 0.99, 0.97), a);
+}`;
+const SLICE_VS = `
+varying vec3 vN;
+void main() {
+  vN = normal;
+  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+}`;
+// The slice is a stencil: each face takes one flat tone.
+const SLICE_FS = `
+uniform vec3 uKey;
+uniform vec3 uLit;
+uniform vec3 uSide;
+uniform vec3 uShade;
+uniform float uAmt;
+varying vec3 vN;
+void main() {
+  float d = dot(normalize(vN), uKey);
+  vec3 c = d > 0.45 ? uLit : d > -0.15 ? uSide : uShade;
+  gl_FragColor = vec4(c * uAmt, uAmt);
 }`;
 async function start() {
-  let RoomEnvironment;
   try {
     THREE = await import('three');
-    ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
   } catch (err) {
     console.error(err);
     return failed();
@@ -775,56 +949,76 @@ async function start() {
   camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 50);
   await idle();
 
-  const pm = new THREE.PMREMGenerator(renderer), room = new RoomEnvironment();
-  scene.environment = pm.fromScene(room, 0.04).texture;
+  const pm = new THREE.PMREMGenerator(renderer), room = studio();
+  scene.environment = pm.fromScene(room.env, 0.03).texture;
   room.dispose();
   pm.dispose();
+  scene.environmentIntensity = 0.9;
   // The key light sits up and to the left, behind the viewer.
-  const key = new THREE.DirectionalLight(0xffffff, 1.7);
+  const key = new THREE.DirectionalLight(0xffffff, 1.6);
   key.position.set(-2.4, 4, 3.2);
   scene.add(key);
+  const keyDir = new THREE.Vector3().copy(key.position).normalize();
 
   ramp = [0, 1, 2].map(() => ({ value: new THREE.Color() }));
-  // Lacquered tubes: a soft base under a hard clear coat.
-  const lacquer = () => new THREE.MeshPhysicalMaterial({ roughness: 0.34, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.06 });
+  dim = { value: 1 };
+  // Lacquered tubes: a clear coat, rough enough not to glint.
+  const lacquer = () => new THREE.MeshPhysicalMaterial({ roughness: 0.32, metalness: 0.04, clearcoat: 1, clearcoatRoughness: 0.11 });
   const small = Math.min(innerWidth, innerHeight) < 700;
   tubes = new THREE.Mesh(
-    instanced(new THREE.CylinderGeometry(1, 1, 1, small ? 16 : 22, 1, true), [['aA', 4, NE], ['aB', 4, NE], ['aT', 2, NE]]),
+    instanced(new THREE.CylinderGeometry(1, 1, 1, small ? 20 : 30, 1, true), [['aA', 4, NE], ['aB', 4, NE], ['aT', 2, NE]]),
     patch(lacquer(), 'tube'),
   );
   balls = new THREE.Mesh(
-    instanced(new THREE.SphereGeometry(1, small ? 22 : 30, small ? 14 : 20), [['aS', 4, NV], ['aW', 1, NV]]),
+    instanced(new THREE.SphereGeometry(1, small ? 28 : 40, small ? 18 : 26), [['aS', 4, NV], ['aW', 1, NV]]),
     patch(lacquer(), 'ball'),
   );
   tubes.frustumCulled = balls.frustumCulled = false;
 
   paneU = {
-    uKey: { value: new THREE.Vector3().copy(key.position).normalize() },
-    uMix: { value: new THREE.Vector2(1, 0) },
-    uAlpha: { value: 0.07 }, uRim: { value: 0.3 }, uSheen: { value: 0.4 },
+    uKey: { value: keyDir },
+    uMix: { value: new THREE.Vector3(1, 0, 0) },
+    uAlpha: { value: 0.1 }, uRim: { value: 0.22 },
+    uP0: { value: new THREE.Color() }, uP1: { value: new THREE.Color() }, uP2: { value: new THREE.Color() },
   };
   const pg = new THREE.BufferGeometry();
   pg.setAttribute('position', new THREE.BufferAttribute(paneP, 3).setUsage(THREE.DynamicDrawUsage));
   pg.setAttribute('normal', new THREE.BufferAttribute(paneN, 3).setUsage(THREE.DynamicDrawUsage));
-  pg.setAttribute('tint', new THREE.BufferAttribute(paneC, 3));
+  pg.setAttribute('wt', new THREE.BufferAttribute(paneW, 1).setUsage(THREE.DynamicDrawUsage));
   pg.setAttribute('kind', new THREE.BufferAttribute(paneK, 1));
   pg.setIndex(new THREE.BufferAttribute(paneI, 1).setUsage(THREE.DynamicDrawUsage));
-  // Premultiplied blending lets the sheen add light without dimming it.
+  // Premultiplied blending lets the highlight add light without dimming it.
+  const premul = { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor };
   panes = new THREE.Mesh(pg, new THREE.ShaderMaterial({
     uniforms: paneU, vertexShader: PANE_VS, fragmentShader: PANE_FS,
-    transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, ...premul,
   }));
   panes.frustumCulled = false;
   panes.renderOrder = 1;
-  scene.add(tubes, balls, panes);
+
+  sliceU = {
+    uKey: { value: keyDir }, uAmt: { value: 0 },
+    uLit: { value: new THREE.Color() }, uSide: { value: new THREE.Color() }, uShade: { value: new THREE.Color() },
+  };
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.BufferAttribute(sliceP, 3).setUsage(THREE.DynamicDrawUsage));
+  sg.setAttribute('normal', new THREE.BufferAttribute(sliceN, 3).setUsage(THREE.DynamicDrawUsage));
+  sg.setDrawRange(0, 0);
+  // The shown slice is opaque and writes depth.
+  // The wire behind it stays hidden.
+  slice = new THREE.Mesh(sg, new THREE.ShaderMaterial({
+    uniforms: sliceU, vertexShader: SLICE_VS, fragmentShader: SLICE_FS, side: THREE.DoubleSide, ...premul,
+  }));
+  slice.frustumCulled = false;
+  slice.visible = false;
+  scene.add(tubes, balls, slice, panes);
   theme();
 
   stage.prepend(canvas);
-  fitRenderer(renderer, stage, 1.5, (w, h) => {
+  fitRenderer(renderer, stage, 2, (w, h) => {
     fit(w, h);
     if (ready) { draw(); wake(); }
-  }, 1.4e6);
+  }, 2.4e6);
   if (!camera.position.z) fit(16, 9);
   await idle();
   // Async compile keeps the physical-material build off the main thread.
