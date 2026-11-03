@@ -3,7 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
 <title>Domino run</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -123,12 +140,19 @@ main { display: grid; gap: 12px; min-width: 0; }
   <main>
     <div class="table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles; tap a tile to tip it. Space tips the first tile, R stands them back up.">
       <canvas></canvas>
-      <p class="hint" aria-hidden="true">draw a line &middot; tap the first tile</p>
       <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
     </div>
-    <div class="ctl">
-      <button class="chip" id="reset" type="button" disabled>Reset</button>
-      <button class="chip" id="clear" type="button" disabled>Clear</button>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="reset" type="button" disabled>Reset</button>
+        <button class="chip" id="clear" type="button" disabled>Clear</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>lay tiles</dd></div>
+        <div><dt><span class="fine">Click a tile</span><span class="touch">Tap a tile</span></dt><dd>tip it</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>tip the first</dd></div>
+        <div class="fine"><dt><kbd>R</kbd></dt><dd>stand them up</dd></div>
+      </dl>
     </div>
   </main>
 </div>
@@ -626,7 +650,7 @@ function place(p, x, z, dx, dz, first) {
     AX[prev] = ex; AZ[prev] = ez;
   }
   p.inX = dx; p.inZ = dz; p.hasIn = !first; p.last = p.mine = i;
-  if (!p.preset) { tick(0.6); hint.classList.add('gone'); }
+  if (!p.preset) { tick(0.6); hint?.classList.add('gone'); }
 }
 // Each tile lands exactly one pitch from the last.
 function walk(p, ax, az, bx, bz) {
@@ -960,7 +984,7 @@ sndB.addEventListener('click', () => {
 function failed() {
   panel.querySelector('.fail').hidden = false;
   canvas.hidden = true;
-  hint.hidden = true;
+  if (hint) hint.hidden = true;
 }
 // WebGL setup runs in idle slices, so loading never stalls.
 async function init() {
