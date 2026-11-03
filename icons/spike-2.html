@@ -95,32 +95,20 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       <stop offset="1" style="stop-color: oklch(0.42 0.12 280)"/>
     </linearGradient>
     <!-- TV tree. -->
-    <linearGradient id="tv-trunk" gradientUnits="userSpaceOnUse" x1="0" y1="124" x2="0" y2="10">
-      <stop offset="0" style="stop-color: oklch(0.34 0.11 330)"/>
-      <stop offset="1" style="stop-color: oklch(0.58 0.17 345)"/>
+    <linearGradient id="tv-bark" gradientUnits="userSpaceOnUse" x1="0" y1="124" x2="0" y2="10">
+      <stop offset="0" style="stop-color: oklch(0.4 0.15 322)"/>
+      <stop offset="1" style="stop-color: oklch(0.72 0.19 348)"/>
     </linearGradient>
-    <linearGradient id="tv-wood" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" style="stop-color: oklch(0.62 0.1 55)"/>
-      <stop offset="1" style="stop-color: oklch(0.4 0.08 42)"/>
+    <linearGradient id="tv-case" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.84 0.15 66)"/>
+      <stop offset="1" style="stop-color: oklch(0.58 0.18 34)"/>
     </linearGradient>
-    <radialGradient id="tv-teal" cx="0.36" cy="0.3" r="0.75">
-      <stop offset="0" style="stop-color: oklch(0.78 0.08 205)"/>
-      <stop offset="1" style="stop-color: oklch(0.42 0.08 225)"/>
-    </radialGradient>
-    <linearGradient id="tv-green" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" style="stop-color: oklch(0.6 0.1 150)"/>
-      <stop offset="1" style="stop-color: oklch(0.38 0.07 165)"/>
-    </linearGradient>
-    <linearGradient id="tv-red" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" style="stop-color: oklch(0.74 0.15 32)"/>
-      <stop offset="1" style="stop-color: oklch(0.54 0.17 18)"/>
-    </linearGradient>
-    <linearGradient id="tv-glass" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" style="stop-color: oklch(0.27 0.06 290)"/>
-      <stop offset="1" style="stop-color: oklch(0.17 0.04 270)"/>
+    <linearGradient id="tv-glare" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
     <pattern id="tv-scan" patternUnits="userSpaceOnUse" width="4" height="2.4">
-      <rect width="4" height="0.9" fill="#000" fill-opacity="0.22"/>
+      <rect width="4" height="0.9" fill="#000" fill-opacity="0.2"/>
     </pattern>
     <!-- Balloon letters. -->
     <linearGradient id="b-gold" gradientUnits="userSpaceOnUse" x1="10" y1="12" x2="106" y2="96">
@@ -408,281 +396,320 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= TV tree ================= */
 
-  // The curly tree shared by A and C: trunk, roots and three branches.
-  const TREE = {
-    trunk: 'M64 121C63 110 66 98 64 84',
-    roots: 'M50 122C58 119 61 112 61.5 102L66.5 102C67 112 70 119 78 122Z',
-    branches: [
-      'M64 88C54 80 40 72 34 58C28 44 18 40 14 48C11 55 18 60 22 55C24 52 21 49 19 51',
-      'M64 84C74 76 88 66 94 50C100 36 110 32 114 40C117 47 110 52 106 47C104 44 107 41 109 43',
-      'M64 86C62 72 60 58 64 44C67 34 70 24 64 18C59 13 52 18 55 23C57 26 61 24 60 21',
-    ],
-    // Hang point, thread length, kind, channel.
-    sets: [[48, 75, 6, 'box', 0], [82, 70, 6, 'globe', 2], [98, 45, 6, 'small', 1]],
-  };
-  const CH = ['oklch(0.86 0.12 62)', 'oklch(0.74 0.16 350)', 'oklch(0.8 0.12 190)', 'oklch(0.7 0.16 292)', 'oklch(0.88 0.13 120)'];
-  // Each set kind: body box, screen box, and its extras.
-  const SET = {
-    box: { body: [-13, 0, 26, 19, 3.5], scr: [-10, 3, 15, 13, 2.5], knobs: [[8.5, 6.5], [8.5, 12.5]], ant: true },
-    globe: { circle: [0, 11, 11], scr: [-7, 5.5, 14, 10, 3], stand: true },
-    small: { body: [-9, 0, 18, 14, 3], scr: [-6.5, 2.5, 13, 9, 2] },
-  };
+  // Channel colours for the lit screens.
+  const CH = ['oklch(0.86 0.15 200)', 'oklch(0.76 0.2 350)', 'oklch(0.87 0.15 78)', 'oklch(0.72 0.19 295)', 'oklch(0.9 0.17 128)'];
 
-  // A: the shaded tree; sets swing when the pointer brushes them.
-  DIRS.push({
-    toy: 'tvtree', l: 'A', name: 'Tree of sets', idea: 'Shaded curly tree with moon-blue rim. Brush a set to swing it; hover changes the channel.',
-    art(svg) {
-      const rimLine = 'oklch(0.82 0.08 245 / 0.55)';
-      const setMark = ([hx, hy, len, kind, ch]) => {
-        const k = SET[kind], t = hy + len, fill = kind === 'box' ? 'url(#tv-wood)' : kind === 'globe' ? 'url(#tv-teal)' : 'url(#tv-green)';
-        const [sx, sy, sw, sh, sr] = k.scr;
-        let s = `<g class="set" data-h="${hx} ${hy}"><line x1="${hx}" y1="${hy}" x2="${hx}" y2="${t}" stroke="oklch(0.75 0.02 260)" stroke-width="1.2"/>`;
-        if (k.ant) s += `<path d="M${hx - 3} ${t}L${hx - 11} ${t - 10}M${hx + 3} ${t}L${hx + 10} ${t - 11}" stroke="oklch(0.82 0.01 260)" stroke-width="1.2"/><circle cx="${hx - 11}" cy="${t - 10}" r="1.4" fill="oklch(0.9 0.01 260)"/><circle cx="${hx + 10}" cy="${t - 11}" r="1.4" fill="oklch(0.9 0.01 260)"/>`;
-        if (k.stand) s += `<path d="M${hx - 3} ${t + 21}L${hx + 3} ${t + 21}L${hx + 6} ${t + 25}L${hx - 6} ${t + 25}Z" fill="oklch(0.5 0.06 220)"/>`;
-        const shape = k.circle ? `<circle cx="${hx}" cy="${t + k.circle[1]}" r="${k.circle[2]}"` : `<rect x="${hx + k.body[0]}" y="${t}" width="${k.body[2]}" height="${k.body[3]}" rx="${k.body[4]}"`;
-        s += `${shape} fill="${fill}"/>`;
-        s += `<rect class="scr" x="${hx + sx}" y="${t + sy}" width="${sw}" height="${sh}" rx="${sr}" style="fill: ${CH[ch]}"/><rect x="${hx + sx}" y="${t + sy}" width="${sw}" height="${sh}" rx="${sr}" fill="url(#tv-scan)"/><rect x="${hx + sx}" y="${t + sy}" width="${sw}" height="${sh}" rx="${sr}" fill="url(#lit)"/>`;
-        (k.knobs || []).forEach(([x, y]) => (s += `<circle cx="${hx + x}" cy="${t + y}" r="1.8" fill="oklch(0.26 0.03 50)"/>`));
-        s += `${shape} fill="url(#lit)"/>${shape} fill="none" stroke="url(#rim)" stroke-width="1"/></g>`;
-        return s;
-      };
-      svg.innerHTML = `
-        <path d="${TREE.roots}" fill="url(#tv-trunk)"/>
-        <g fill="none" stroke="url(#tv-trunk)" stroke-linecap="round">
-          <path d="${TREE.trunk}" stroke-width="9"/>
-          ${TREE.branches.map(b => `<path d="${b}" stroke-width="5.5"/>`).join('')}
-        </g>
-        <g fill="none" stroke="${rimLine}" stroke-width="1.2" stroke-linecap="round" transform="translate(1.6 -1.2)">
-          ${TREE.branches.map(b => `<path d="${b}"/>`).join('')}
-          <path d="M67 104C68 96 68 90 67 84"/>
-        </g>
-        ${TREE.sets.map(setMark).join('')}`;
-      const sets = [...svg.querySelectorAll('.set')].map((g, i) => {
-        const [hx, hy] = g.dataset.h.split(' ').map(Number);
-        return { g, hx, hy: hy + 16, scr: g.querySelector('.scr'), ch: TREE.sets[i][4] };
-      });
-      let last = null;
-      const swing = (s, a) => gsap.timeline({ overwrite: true })
-        .to(s.g, { rotation: a, svgOrigin: s.g.dataset.h, duration: 0.18, ease: 'power2.out' })
-        .to(s.g, { rotation: 0, svgOrigin: s.g.dataset.h, duration: 1.6, ease: 'elastic.out(1, 0.25)' });
-      // A quick white flick, then the next channel.
-      const tune = (s, ch) => gsap.timeline({ overwrite: true }).set(s.scr, { fill: 'oklch(0.97 0.01 250)' }).set(s.scr, { fill: CH[ch] }, 0.07);
-      return {
-        enter(p) { last = p; sets.forEach(s => tune(s, (s.ch + 1) % CH.length)); if (!p) sets.forEach((s, i) => swing(s, i % 2 ? 12 : -12)); },
-        move(p) {
-          if (!p) return;
-          const vx = last ? p[0] - last[0] : 0;
-          last = p;
-          sets.forEach(s => { if (Math.abs(vx) > 0.4 && Math.hypot(p[0] - s.hx, p[1] - s.hy) < 15) swing(s, clamp(vx * 3, -16, 16)); });
-        },
-        leave() { last = null; sets.forEach(s => tune(s, s.ch)); },
-      };
-    },
-    emblem: emb(`
-      <path d="${TREE.roots}" fill="#fff"/>
-      <path d="${TREE.trunk}" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
-      ${TREE.branches.map(b => `<path d="${b}" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round"/>`).join('\n')}
-      ${TREE.sets.map(([hx, hy, len, kind]) => {
-        const k = SET[kind], t = hy + len, [sx, sy, sw, sh, sr] = k.scr;
-        let s = `<line x1="${hx}" y1="${hy}" x2="${hx}" y2="${t}" stroke="#fff" stroke-width="2"/>`;
-        if (k.ant) s += `<path d="M${hx - 3} ${t}L${hx - 11} ${t - 10}M${hx + 3} ${t}L${hx + 10} ${t - 11}" stroke="#fff" stroke-width="2" stroke-linecap="round"/>`;
-        if (k.stand) s += `<path d="M${hx - 3} ${t + 21}L${hx + 3} ${t + 21}L${hx + 6} ${t + 25}L${hx - 6} ${t + 25}Z" fill="#fff"/>`;
-        s += k.circle ? `<circle cx="${hx}" cy="${t + k.circle[1]}" r="${k.circle[2] + 1}" fill="#fff" stroke="#000" stroke-width="2"/>` : `<rect x="${hx + k.body[0] - 1}" y="${t - 1}" width="${k.body[2] + 2}" height="${k.body[3] + 2}" rx="${k.body[4]}" fill="#fff" stroke="#000" stroke-width="2"/>`;
-        s += `<rect x="${hx + sx}" y="${t + sy}" width="${sw}" height="${sh}" rx="${sr}" fill="#000"/>`;
-        (k.knobs || []).forEach(([x, y]) => (s += `<circle cx="${hx + x}" cy="${t + y}" r="2" fill="#000"/>`));
-        return s;
-      }).join('\n')}
-    `),
-  });
-
-  // B: a stencil set whose antennas curl into branches; the picture rolls.
+  // A: one big set swings from a single curling bough.
   {
-    const mini = dy => `<g transform="translate(0 ${dy})">
-      <rect x="22" y="48" width="66" height="3.5" fill="#000" fill-opacity="0.55"/>
-      <circle cx="77" cy="60" r="4.5" fill="oklch(0.93 0.04 250)"/>
-      <path d="M32 98H78" stroke="oklch(0.84 0.12 190 / 0.5)" stroke-width="1.5"/>
-      <g fill="none" stroke="oklch(0.84 0.12 190)" stroke-linecap="round">
-        <path d="M55 98C54 90 56 84 55 78" stroke-width="4"/>
-        <path d="M55 82C48 77 38 77 36 67C35 61 41 58 44 62" stroke-width="2.8"/>
-        <path d="M55 80C62 75 72 74 74 65C75 59 69 56 66 60" stroke-width="2.8"/>
-      </g>
-      <rect x="39" y="72" width="7" height="5.5" rx="1" fill="oklch(0.86 0.12 62)"/>
-      <rect x="66" y="70" width="7" height="5.5" rx="1" fill="oklch(0.74 0.16 350)"/>
-    </g>`;
-    const ANT = 'M60 40L46 26C40 20 42 11 49 12C55 13 54 21 49 20M68 40L82 24C88 17 86 9 79 10C73 11 74 19 79 18';
-    const SLOTS = 'M95 92H107M95 97H107M95 102H107';
+    const ROOTS = 'M6 122C17 119 22 111 22.5 98L35.5 98C36 111 41 119 52 122Z';
+    const TRUNK = 'M29 114C28 100 27 84 28 68';
+    const BOUGH = 'M28 70C30 40 50 15 76 15C90 15 101 19 108 28';
+    const CURL = 'M108 28C116 39 110 52 100 48C93 45 95 35 102 37';
+    const HANG = '71 15';
+    const SCR = [44, 54, 46, 40, 8];
+    // Five channels fill one screen box; channel 0 is the rest channel.
+    const [sx, sy, sw, sh] = SCR;
+    const BARS = ['oklch(0.92 0.02 90)', 'oklch(0.88 0.17 100)', 'oklch(0.82 0.13 195)', 'oklch(0.78 0.18 145)', 'oklch(0.66 0.23 330)', 'oklch(0.62 0.22 25)', 'oklch(0.5 0.18 265)'];
+    const snow = (() => {
+      // A fixed sequence keeps the static the same on every load.
+      let s = 7, out = '';
+      const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 70; i++) out += `<rect x="${f(sx + rnd() * sw)}" y="${f(sy + rnd() * sh)}" width="${f(1.5 + rnd() * 4)}" height="1.6" fill="${rnd() < 0.5 ? '#fff' : '#000'}"/>`;
+      return out;
+    })();
+    const PICS = [
+      BARS.map((c, k) => `<rect x="${f(sx + (k * sw) / 7)}" y="${sy}" width="${f(sw / 7 + 0.3)}" height="${sh}" fill="${c}"/>`).join(''),
+      `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="oklch(0.42 0.15 300)"/><rect x="${sx}" y="${sy + 12}" width="${sw}" height="10" fill="oklch(0.6 0.21 350)"/><rect x="${sx}" y="${sy + 20}" width="${sw}" height="6" fill="oklch(0.76 0.18 50)"/><circle cx="${sx + 23}" cy="${sy + 26}" r="9.5" fill="oklch(0.93 0.14 90)"/><rect x="${sx}" y="${sy + 26}" width="${sw}" height="14" fill="oklch(0.3 0.09 260)"/><path d="M${sx + 9} ${sy + 30}H${sx + 37}M${sx + 14} ${sy + 34}H${sx + 32}" stroke="oklch(0.85 0.14 70)" stroke-width="1.6"/>`,
+      `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="oklch(0.74 0.17 22)"/><ellipse cx="${sx + 23}" cy="${sy + 20}" rx="18" ry="11" fill="#fff"/><circle cx="${sx + 23}" cy="${sy + 20}" r="8.5" fill="oklch(0.62 0.13 215)"/><circle cx="${sx + 23}" cy="${sy + 20}" r="4.4" fill="#000"/><circle cx="${sx + 20}" cy="${sy + 17}" r="1.8" fill="#fff"/>`,
+      `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="oklch(0.2 0.06 300)"/><path d="M${sx + 23} ${sy + 33}C${sx + 8} ${sy + 22} ${sx + 9} ${sy + 8} ${sx + 17} ${sy + 8}C${sx + 20} ${sy + 8} ${sx + 22} ${sy + 10} ${sx + 23} ${sy + 13}C${sx + 24} ${sy + 10} ${sx + 26} ${sy + 8} ${sx + 29} ${sy + 8}C${sx + 37} ${sy + 8} ${sx + 38} ${sy + 22} ${sx + 23} ${sy + 33}Z" fill="oklch(0.68 0.25 15)"/>`,
+      `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="oklch(0.55 0.01 270)"/>${snow}`,
+    ];
     DIRS.push({
-      toy: 'tvtree', l: 'B', name: 'Set that grew', idea: 'Stencil set whose antennas curl into branches. Hover rolls the picture and sways the antennas.',
+      toy: 'tvtree', l: 'A', name: 'Shaded object', idea: 'One big glossy set on a long cord from a single curling bough. Brush it to swing it; hover changes the channel.',
       art(svg, u) {
         svg.innerHTML = `
-          <clipPath id="${u}s"><rect x="22" y="48" width="66" height="54" rx="9"/></clipPath>
-          <path class="ant" d="${ANT}" fill="none" stroke="oklch(0.66 0.16 25)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <rect x="26" y="108" width="11" height="8" rx="2" fill="oklch(0.46 0.14 20)"/>
-          <rect x="91" y="108" width="11" height="8" rx="2" fill="oklch(0.46 0.14 20)"/>
-          <rect x="14" y="40" width="100" height="72" rx="11" fill="url(#tv-red)"/>
-          <rect x="14" y="40" width="100" height="72" rx="11" fill="url(#lit)"/>
-          <rect x="14" y="40" width="100" height="72" rx="11" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
-          <rect x="22" y="48" width="66" height="54" rx="9" fill="url(#tv-glass)"/>
-          <g clip-path="url(#${u}s)"><g class="roll">${mini(0)}${mini(-54)}</g><rect x="22" y="48" width="66" height="54" fill="url(#tv-scan)"/></g>
-          <g style="fill: ${BG}"><circle cx="101" cy="58" r="6"/><circle cx="101" cy="77" r="6"/></g>
-          <path d="M101 53V58M97 79L101 77" stroke="oklch(0.66 0.16 25)" stroke-width="2" stroke-linecap="round"/>
-          <path d="${SLOTS}" style="stroke: ${BG}" stroke-width="2" stroke-linecap="round"/>`;
-        const roll = svg.querySelector('.roll'), ant = svg.querySelector('.ant');
+          <clipPath id="${u}s"><rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${SCR[4]}"/></clipPath>
+          <path d="${ROOTS}" fill="url(#tv-bark)"/>
+          <g fill="none" stroke="url(#tv-bark)" stroke-linecap="round">
+            <path d="${TRUNK}" stroke-width="14"/><path d="${BOUGH}" stroke-width="10.5"/><path d="${CURL}" stroke-width="7.5"/>
+          </g>
+          <path d="${TRUNK}" fill="none" stroke="#fff" stroke-opacity="0.34" stroke-width="3" stroke-linecap="round" transform="translate(-2.6 -1)"/>
+          <path d="${BOUGH}" fill="none" stroke="#fff" stroke-opacity="0.4" stroke-width="2.6" stroke-linecap="round" transform="translate(-1.2 -2.2)"/>
+          <g class="set">
+            <path d="M71 15V46M62 46L50 27M80 46L93 29" fill="none" stroke="oklch(0.9 0.02 300)" stroke-width="2.2" stroke-linecap="round"/>
+            <circle cx="50" cy="27" r="2.8" fill="oklch(0.97 0.02 300)"/><circle cx="93" cy="29" r="2.8" fill="oklch(0.97 0.02 300)"/>
+            <rect x="48" y="102" width="9" height="6" rx="2" fill="oklch(0.36 0.09 38)"/><rect x="88" y="102" width="9" height="6" rx="2" fill="oklch(0.36 0.09 38)"/>
+            <rect x="38" y="46" width="72" height="58" rx="13" fill="url(#tv-case)"/>
+            <rect x="38" y="46" width="72" height="58" rx="13" fill="url(#lit)"/>
+            <g clip-path="url(#${u}s)">
+              ${PICS.map((p, k) => `<g class="pic"${k ? ' style="display: none"' : ''}>${p}</g>`).join('')}
+              <rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="url(#tv-scan)"/>
+              <rect class="flick" x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="#fff" opacity="0"/>
+              <rect x="${sx}" y="${sy}" width="${sw}" height="${sh * 0.42}" fill="url(#tv-glare)"/>
+            </g>
+            <rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${SCR[4]}" fill="none" stroke="oklch(0.3 0.09 36)" stroke-width="1.8"/>
+            <circle cx="100" cy="63" r="4.6" fill="oklch(0.36 0.09 38)"/><circle cx="98.6" cy="61.6" r="1.4" fill="#fff" fill-opacity="0.6"/>
+            <circle cx="100" cy="78" r="4.6" fill="oklch(0.36 0.09 38)"/><circle cx="98.6" cy="76.6" r="1.4" fill="#fff" fill-opacity="0.6"/>
+            <path d="M95 88H105M95 92H105" stroke="oklch(0.42 0.1 38)" stroke-width="1.8" stroke-linecap="round"/>
+            <rect x="38" y="46" width="72" height="58" rx="13" fill="none" stroke="url(#rim)" stroke-width="2"/>
+          </g>`;
+        const set = svg.querySelector('.set'), pics = [...svg.querySelectorAll('.pic')], flick = svg.querySelector('.flick');
+        let ch = 0, last = null, at = 0;
+        const tune = k => {
+          ch = k;
+          pics.forEach((p, i) => (p.style.display = i === k ? '' : 'none'));
+          gsap.fromTo(flick, { opacity: 0.95 }, { opacity: 0, duration: 0.16, ease: 'steps(3)', overwrite: true });
+        };
+        const swing = a => {
+          gsap.killTweensOf(set);
+          gsap.timeline()
+            .to(set, { rotation: a, svgOrigin: HANG, duration: 0.2, ease: 'power2.out' })
+            .to(set, { rotation: 0, svgOrigin: HANG, duration: 1.8, ease: 'elastic.out(1, 0.22)' });
+        };
+        return {
+          enter(p) { last = p; tune((ch + 1) % PICS.length); if (!p) swing(9); },
+          // A fast brush across the set swings it and flips the channel.
+          move(p) {
+            if (!p) return;
+            const vx = last ? p[0] - last[0] : 0, now = performance.now();
+            last = p;
+            if (Math.abs(vx) < 0.5 || p[1] < 40) return;
+            swing(clamp(vx * 2.4, -13, 13));
+            if (now - at > 380) { at = now; tune((ch + 1) % PICS.length); }
+          },
+          leave() { last = null; tune(0); },
+        };
+      },
+      emblem: emb(`
+        <path d="${ROOTS}" fill="#fff"/>
+        <g fill="none" stroke="#fff" stroke-linecap="round"><path d="${TRUNK}" stroke-width="14"/><path d="${BOUGH}" stroke-width="10.5"/><path d="${CURL}" stroke-width="7.5"/></g>
+        <path d="M62 46L50 27M80 46L93 29" fill="none" stroke="#000" stroke-width="6" stroke-linecap="round"/>
+        <path d="M71 15V46M62 46L50 27M80 46L93 29" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
+        <circle cx="50" cy="27" r="3.2" fill="#fff"/><circle cx="93" cy="29" r="3.2" fill="#fff"/>
+        <rect x="48" y="102" width="9" height="6" rx="2" fill="#fff"/><rect x="88" y="102" width="9" height="6" rx="2" fill="#fff"/>
+        <rect x="37" y="45" width="74" height="60" rx="14" fill="#fff" stroke="#000" stroke-width="3"/>
+        <rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="8" fill="#000"/>
+        <circle cx="100" cy="63" r="4.6" fill="#000"/><circle cx="100" cy="78" r="4.6" fill="#000"/>
+        <path d="M95 89H105" stroke="#000" stroke-width="2.4" stroke-linecap="round"/>
+      `),
+    });
+  }
+
+  // B: the tree stands stencilled in the screen; the picture rolls behind it.
+  {
+    const SLAB = 'oklch(0.74 0.17 32)', DEPTH = 'oklch(0.42 0.13 22)', HOLE = 'oklch(0.2 0.03 30)';
+    const EARS = 'M42 26C40 18 36 11 29 10C22 9 19 17 24 20M60 26C62 18 66 11 73 10C80 9 83 17 78 20';
+    const SX = 18, SY = 33, SW = 68, SH = 73, BW = SW / 7;
+    const COLS = ['oklch(0.92 0.02 90)', 'oklch(0.88 0.17 100)', 'oklch(0.82 0.13 195)', 'oklch(0.78 0.18 145)', 'oklch(0.66 0.23 330)', 'oklch(0.62 0.22 25)', 'oklch(0.5 0.18 265)'];
+    const bars = COLS.map((c, k) => `<rect x="${f(SX + k * BW)}" y="${SY}" width="${f(BW + 0.3)}" height="${SH}" fill="${c}"/>`).join('');
+    const TRUNK = 'M52 110C51 100 54 90 52 78';
+    const ARMS = 'M52 86C44 80 35 72 32 60M52 80C60 74 69 66 72 54M52 82C50 70 50 60 52 50';
+    const CURLS = 'M32 60C30 50 22 46 22 54C22 60 29 61 30 56M72 54C74 44 82 40 82 48C82 54 75 55 74 50M52 50C54 42 48 38 45 43C43 47 48 50 50 47';
+    // Stubs tie each curl to the frame, so the cut-out holds as one piece.
+    const STUBS = 'M23 50L14 44M81 44L90 38M47 42L44 28';
+    const KNOBS = [[100, 48], [100, 68]];
+    DIRS.push({
+      toy: 'tvtree', l: 'B', name: 'Stencil cut-out', idea: 'A flat set on a hard slab. The tree is stencilled in its screen, and the colour bars roll behind it.',
+      art(svg, u) {
+        svg.innerHTML = `
+          <clipPath id="${u}c"><rect x="${SX}" y="${SY}" width="${SW}" height="${SH}" rx="9"/></clipPath>
+          <rect x="16" y="31" width="106" height="92" rx="13" fill="${DEPTH}"/>
+          <path d="${EARS}" fill="none" stroke="${SLAB}" stroke-width="5.5" stroke-linecap="round"/>
+          <rect x="10" y="25" width="106" height="92" rx="13" fill="${SLAB}"/>
+          <g clip-path="url(#${u}c)">
+            <rect x="${SX}" y="${SY}" width="${SW}" height="${SH}" fill="${HOLE}"/>
+            <g class="bars">${bars}<g transform="translate(${SW} 0)">${bars}</g></g>
+            <rect class="bar" x="${SX}" y="${SY - 16}" width="${SW}" height="14" fill="#fff" fill-opacity="0.5"/>
+            <g fill="none" stroke="${SLAB}" stroke-linecap="round">
+              <path d="${TRUNK}" stroke-width="10"/><path d="${ARMS}" stroke-width="6.5"/><path d="${CURLS}" stroke-width="5"/><path d="${STUBS}" stroke-width="3"/>
+            </g>
+            <path d="M36 110C45 107 47 100 47 92L57 92C57 100 59 107 68 110Z" fill="${SLAB}"/>
+          </g>
+          ${KNOBS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6.5" fill="${HOLE}"/>`).join('')}
+          <path d="M94 86H106M94 92H106M94 98H106" stroke="${HOLE}" stroke-width="3" stroke-linecap="round"/>`;
+        const g = svg.querySelector('.bars'), bar = svg.querySelector('.bar');
         return hoverLoop(
-          () => gsap.timeline()
-            .fromTo(roll, { y: 0 }, { y: 54, duration: 1.8, ease: 'none', repeat: -1 }, 0)
-            .fromTo(ant, { rotation: -4, svgOrigin: '64 40' }, { rotation: 4, svgOrigin: '64 40', duration: 0.9, ease: 'sine.inOut', yoyo: true, repeat: -1 }, 0),
+          () => gsap.timeline({ repeat: -1 })
+            .fromTo(g, { x: 0 }, { x: -SW, duration: 2.4, ease: 'none' }, 0)
+            .fromTo(bar, { y: 0 }, { y: SH + 18, duration: 1.2, ease: 'none', repeat: 1 }, 0),
           () => {
-            const y = gsap.getProperty(roll, 'y');
-            gsap.to(roll, { y: y > 27 ? 54 : 0, duration: 0.3, ease: 'power2.out', onComplete: () => gsap.set(roll, { y: 0 }) });
-            gsap.to(ant, { rotation: 0, svgOrigin: '64 40', duration: 0.6, ease: 'elastic.out(1, 0.4)' });
+            const x = gsap.getProperty(g, 'x');
+            gsap.to(g, { x: x < -SW / 2 ? -SW : 0, duration: 0.35, ease: 'power2.out', onComplete: () => gsap.set(g, { x: 0 }) });
+            gsap.set(bar, { y: 0 });
           });
       },
       emblem: emb(`
-        <path d="${ANT}" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect x="26" y="108" width="11" height="8" rx="2" fill="#fff"/>
-        <rect x="91" y="108" width="11" height="8" rx="2" fill="#fff"/>
-        <rect x="14" y="40" width="100" height="72" rx="11" fill="#fff"/>
-        <rect x="22" y="48" width="66" height="54" rx="9" fill="#000"/>
-        <circle cx="77" cy="60" r="4.5" fill="#fff"/>
-        <g fill="none" stroke="#fff" stroke-linecap="round"><path d="M55 98C54 90 56 84 55 78" stroke-width="4.4"/><path d="M55 82C48 77 38 77 36 67C35 61 41 58 44 62" stroke-width="3.2"/><path d="M55 80C62 75 72 74 74 65C75 59 69 56 66 60" stroke-width="3.2"/><path d="M32 98H78" stroke-width="2"/></g>
-        <rect x="39" y="72" width="7" height="5.5" rx="1" fill="#fff"/><rect x="66" y="70" width="7" height="5.5" rx="1" fill="#fff"/>
-        <circle cx="101" cy="58" r="6" fill="#000"/><circle cx="101" cy="77" r="6" fill="#000"/>
-        <path d="${SLOTS}" stroke="#000" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="${EARS}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>
+        <rect x="10" y="25" width="106" height="92" rx="13" fill="#fff"/>
+        <clipPath id="c"><rect x="${SX}" y="${SY}" width="${SW}" height="${SH}" rx="9"/></clipPath>
+        <rect x="${SX}" y="${SY}" width="${SW}" height="${SH}" rx="9" fill="#000"/>
+        <g clip-path="url(#c)">
+          <g fill="none" stroke="#fff" stroke-linecap="round"><path d="${TRUNK}" stroke-width="10"/><path d="${ARMS}" stroke-width="6.5"/><path d="${CURLS}" stroke-width="5"/><path d="${STUBS}" stroke-width="3"/></g>
+          <path d="M36 110C45 107 47 100 47 92L57 92C57 100 59 107 68 110Z" fill="#fff"/>
+        </g>
+        ${KNOBS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6.5" fill="#000"/>`).join('')}
+        <path d="M94 86H106M94 92H106M94 98H106" stroke="#000" stroke-width="3" stroke-linecap="round"/>
       `),
     });
   }
 
-  // C: the tree in one line weight; hover powers the screens on in turn.
+  // C: a pen grows the tree; each set lights as its line closes.
   {
-    const LINE = 'oklch(0.84 0.05 250)';
-    const outline = ([hx, hy, len, kind]) => {
-      const k = SET[kind], t = hy + len, [sx, sy, sw, sh, sr] = k.scr;
-      let s = `M${hx} ${hy}V${t}`;
-      if (k.ant) s += `M${hx - 3} ${t}L${hx - 11} ${t - 10}M${hx + 3} ${t}L${hx + 10} ${t - 11}`;
-      if (k.stand) s += `M${hx} ${t + 22}V${t + 25}M${hx - 6} ${t + 25}H${hx + 6}`;
-      return { s, k, t, scr: [hx + sx, t + sy, sw, sh, sr] };
+    const rrect = (cx, y, w, h, r) => {
+      const x0 = cx - w / 2, x1 = cx + w / 2, y1 = y + h;
+      return `H${x1 - r}A${r} ${r} 0 0 1 ${x1} ${y + r}V${y1 - r}A${r} ${r} 0 0 1 ${x1 - r} ${y1}H${x0 + r}A${r} ${r} 0 0 1 ${x0} ${y1 - r}V${y + r}A${r} ${r} 0 0 1 ${x0 + r} ${y}H${cx}`;
     };
-    const shapes = (hx, o, stroke, w, fillScr) => {
-      const { k, t, scr } = o;
-      const body = k.circle ? `<circle cx="${hx}" cy="${t + k.circle[1]}" r="${k.circle[2]}"` : `<rect x="${hx + k.body[0]}" y="${t}" width="${k.body[2]}" height="${k.body[3]}" rx="${k.body[4]}"`;
-      return `${body} fill="none" stroke="${stroke}" stroke-width="${w}"/><rect x="${scr[0]}" y="${scr[1]}" width="${scr[2]}" height="${scr[3]}" rx="${scr[4]}" fill="${fillScr}" stroke="${stroke}" stroke-width="${w}"/>`;
-    };
+    const STEM = 'M38 122C52 122 62 118 62 104C62 96 65 84 62 72C60 66 62 60 62 56M86 122C72 122 62 118 62 104';
+    const LIMBS = [
+      { d: `M62 90C52 84 42 72 36 60C32 52 26 47 22 51C19 54 20 62 20 76${rrect(20, 76, 28, 22, 5)}`, scr: [10, 80, 20, 14], k: 0 },
+      { d: `M62 80C72 74 84 62 90 46C94 34 102 27 108 31C112 34 110 42 110 50${rrect(110, 50, 28, 22, 5)}`, scr: [100, 54, 20, 14], k: 1 },
+      { d: `M62 56C62 40 62 24 56 14C52 8 44 6 41 10C39 12 41 16 41 25${rrect(41, 25, 26, 19, 4.5)}`, scr: [32, 29, 18, 11], k: 2 },
+    ];
+    const INK = 'oklch(0.86 0.1 205)', W = 4.6;
     DIRS.push({
-      toy: 'tvtree', l: 'C', name: 'One line', idea: 'The tree and its sets in one moon-blue line weight. Hover powers the screens on, one by one.',
+      toy: 'tvtree', l: 'C', name: 'Single-weight line', idea: 'The tree in one moon-blue line weight. On hover the pen grows it from the roots, and each set lights as it closes.',
       art(svg) {
-        const O = TREE.sets.map(outline);
         svg.innerHTML = `
-          <g fill="none" stroke="${LINE}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="${TREE.trunk}M48 121H80"/>
-            ${TREE.branches.map(b => `<path d="${b}"/>`).join('')}
-            ${O.map(o => `<path d="${o.s}"/>`).join('')}
-          </g>
-          ${O.map((o, i) => `<rect class="scr" x="${o.scr[0]}" y="${o.scr[1]}" width="${o.scr[2]}" height="${o.scr[3]}" rx="${o.scr[4]}" style="fill: ${CH[TREE.sets[i][4]]}" opacity="0"/>`).join('')}
-          ${O.map((o, i) => shapes(TREE.sets[i][0], o, LINE, 2.6, 'none')).join('')}`;
-        const scr = [...svg.querySelectorAll('.scr')];
-        const tl = gsap.timeline({ paused: true });
-        scr.forEach((s, i) => tl.to(s, { keyframes: [{ opacity: 1, duration: 0.04 }, { opacity: 0.15, duration: 0.05 }, { opacity: 1, duration: 0.07 }], ease: 'none' }, i * 0.16));
-        return { enter() { tl.timeScale(1).play(); }, move() {}, leave() { tl.timeScale(2.2).reverse(); } };
+          ${LIMBS.map(L => `<rect class="scr" x="${L.scr[0]}" y="${L.scr[1]}" width="${L.scr[2]}" height="${L.scr[3]}" rx="2" fill="${CH[L.k]}" opacity="0"/>`).join('')}
+          <g fill="none" stroke="${INK}" stroke-width="${W}" stroke-linecap="round" stroke-linejoin="round">
+            <path class="ln" pathLength="1" d="${STEM}"/>
+            ${LIMBS.map(L => `<path class="ln" pathLength="1" d="${L.d}"/>`).join('')}
+          </g>`;
+        const ln = [...svg.querySelectorAll('.ln')], scr = [...svg.querySelectorAll('.scr')];
+        const whole = () => gsap.set(ln, { strokeDasharray: 'none', strokeDashoffset: 0, opacity: 1 });
+        return hoverLoop(
+          () => {
+            const t = gsap.timeline();
+            // A limb stays hidden until its turn; a round cap would show a dot.
+            t.set(ln, { strokeDasharray: '1 1', strokeDashoffset: 1, opacity: 0 }).set(scr, { opacity: 0 });
+            t.set(ln[0], { opacity: 1 }).to(ln[0], { strokeDashoffset: 0, duration: 0.4, ease: 'none' });
+            // Every limb grows after the last, then its screen lights.
+            ln.slice(1).forEach((p, i) => {
+              t.set(p, { opacity: 1 }).to(p, { strokeDashoffset: 0, duration: 0.62, ease: 'sine.inOut' });
+              t.set(scr[i], { opacity: 1 }).set(scr[i], { fill: '#fff' }, '<').set(scr[i], { fill: CH[LIMBS[i].k] }, '>0.07');
+            });
+            return t.add(whole);
+          },
+          () => { whole(); gsap.to(scr, { opacity: 0, duration: 0.25 }); });
       },
       emblem: emb(`
-        <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
-          <path d="${TREE.trunk}M46 121H82"/>
-          ${TREE.branches.map(b => `<path d="${b}"/>`).join('')}
-          ${TREE.sets.map(s => `<path d="${outline(s).s}"/>`).join('')}
+        <g fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="${STEM}"/>
+          ${LIMBS.map(L => `<path d="${L.d}"/>`).join('\n')}
         </g>
-        ${TREE.sets.map(s => shapes(s[0], outline(s), '#fff', 3.4, '#fff')).join('\n')}
       `),
     });
   }
 
-  // D: an isometric totem of sets; hover sends channels up the stack.
+  // D: a tree sprouts from a big set's lid; small sets hang from its boughs.
   {
-    const U = 22, OY = 97;
-    const P3 = (x, y, z) => [64 + (x - y) * 0.866 * U, OY + (x + y) * 0.5 * U - z * U];
-    const CUBES = [[0, 0, 0], [0, 0, 1], [-1, 0, 2], [0, -1, 2], [0, 0, 2], [1, 0, 2], [0, 1, 2], [0, 0, 3]].sort((a, b) => a[0] + a[1] + a[2] - (b[0] + b[1] + b[2]));
-    const BODY = [[0.56, 0.09, 55], [0.55, 0.08, 200], [0.52, 0.09, 140], [0.56, 0.14, 25], [0.46, 0.08, 265], [0.6, 0.1, 100], [0.5, 0.12, 330], [0.66, 0.06, 80]];
-    const shade = ([l, c, h], dl) => `oklch(${f(l + dl)} ${c} ${h})`;
-    const faces = ([x, y, z]) => ({
-      top: [P3(x, y, z + 1), P3(x + 1, y, z + 1), P3(x + 1, y + 1, z + 1), P3(x, y + 1, z + 1)],
-      left: [P3(x, y + 1, z), P3(x + 1, y + 1, z), P3(x + 1, y + 1, z + 1), P3(x, y + 1, z + 1)],
-      right: [P3(x + 1, y, z), P3(x + 1, y + 1, z), P3(x + 1, y + 1, z + 1), P3(x + 1, y, z + 1)],
-      sl: [P3(x + 0.14, y + 1, z + 0.18), P3(x + 0.86, y + 1, z + 0.18), P3(x + 0.86, y + 1, z + 0.84), P3(x + 0.14, y + 1, z + 0.84)],
-      sr: [P3(x + 1, y + 0.14, z + 0.18), P3(x + 1, y + 0.86, z + 0.18), P3(x + 1, y + 0.86, z + 0.84), P3(x + 1, y + 0.14, z + 0.84)],
+    const U = 20, OY = 84, H = 1.55;
+    const P3 = (x, y, z, u = U, o = [64, OY]) => [o[0] + (x - y) * 0.866 * u, o[1] + (x + y) * 0.5 * u - z * u];
+    const box = (s, h, P) => ({
+      top: [P(0, 0, h), P(s, 0, h), P(s, s, h), P(0, s, h)],
+      left: [P(0, s, 0), P(s, s, 0), P(s, s, h), P(0, s, h)],
+      right: [P(s, 0, 0), P(s, s, 0), P(s, s, h), P(s, 0, h)],
     });
+    const MAIN = box(2, H, P3);
+    const MS = [P3(0.18, 2, 0.2), P3(1.82, 2, 0.2), P3(1.82, 2, H - 0.2), P3(0.18, 2, H - 0.2)];
+    // A round knob on the right face comes out as an ellipse.
+    const knob = (y, z, r) => poly(Array.from({ length: 16 }, (_, i) => P3(2, y + r * Math.cos((i / 16) * TAU), z + r * Math.sin((i / 16) * TAU))));
+    const VENT = [0.4, 0.62].map(z => `M${P3(2, 1.15, z).map(f).join(' ')}L${P3(2, 1.8, z).map(f).join(' ')}`).join('');
+    const TRUNK = 'M64 75C63 64 66 54 64 42';
+    const BOUGHS = 'M64 50C54 44 44 37 37 27C32 20 25 17 21 22C18 27 23 32 27 28M64 45C74 39 84 32 91 22C96 15 103 13 107 18C110 23 105 28 101 24M64 44C63 32 62 22 64 12C65 6 58 3 56 8C55 12 60 13 61 10';
+    const MINI = [
+      { hx: 36, hy: 26, c: [0.72, 0.11, 200], k: 2 },
+      { hx: 92, hy: 21, c: [0.8, 0.16, 128], k: 3 },
+    ].map(m => {
+      const u = 14.5, h = 0.86, o = [m.hx, m.hy + 6 - u * 0.5 * 1 + h * u];
+      const P = (x, y, z) => P3(x, y, z, u, o);
+      return { ...m, F: box(1, h, P), S: [P(0.14, 1, 0.15), P(0.86, 1, 0.15), P(0.86, 1, h - 0.15), P(0.14, 1, h - 0.15)] };
+    });
+    const shade = ([l, c, h], dl) => `oklch(${f(l + dl)} ${c} ${h})`;
+    const BODY = [0.7, 0.16, 42];
     DIRS.push({
-      toy: 'tvtree', l: 'D', name: 'Video totem', idea: 'Isometric stack of sets in a tree shape. Hover sends the channels up the stack in a wave.',
+      toy: 'tvtree', l: 'D', name: 'Isometric block', idea: 'A big isometric set with a tree growing out of its lid and two small sets on the boughs. Hover changes the channels and swings the small sets.',
       art(svg) {
-        const scr = [];
-        svg.innerHTML = CUBES.map((c, i) => {
-          const F = faces(c), b = BODY[i % BODY.length];
-          return `<path d="${poly(F.top)}" fill="${shade(b, 0.12)}"/><path d="${poly(F.left)}" fill="${shade(b, 0)}"/><path d="${poly(F.right)}" fill="${shade(b, -0.1)}"/>
-            <path class="s" data-z="${c[2]}" data-k="${(i * 2) % CH.length}" d="${poly(F.sl)}"/><path class="s" data-z="${c[2]}" data-k="${(i * 2 + 3) % CH.length}" d="${poly(F.sr)}"/>
-            <path d="${poly(F.sl)}" fill="url(#tv-scan)"/><path d="${poly(F.sr)}" fill="url(#tv-scan)"/>
-            <path d="${poly(F.top)}" fill="url(#lit)"/>`;
-        }).join('');
-        svg.querySelectorAll('.s').forEach(n => scr.push({ n, z: +n.dataset.z, k: +n.dataset.k, cur: -1 }));
+        svg.innerHTML = `
+          <path d="${poly(MAIN.top)}" fill="${shade(BODY, 0.13)}"/><path d="${poly(MAIN.left)}" fill="${shade(BODY, 0)}"/><path d="${poly(MAIN.right)}" fill="${shade(BODY, -0.14)}"/>
+          <path class="s" d="${poly(MS)}" style="fill: ${CH[0]}"/><path d="${poly(MS)}" fill="url(#tv-scan)"/>
+          <path d="${poly(MS)}" fill="none" stroke="oklch(0.28 0.07 36)" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="${knob(0.55, 1.08, 0.2)}" fill="oklch(0.26 0.06 36)"/><path d="${knob(1.3, 1.08, 0.2)}" fill="oklch(0.26 0.06 36)"/>
+          <path d="${VENT}" stroke="oklch(0.3 0.07 36)" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="${poly(MAIN.top)}" fill="url(#lit)"/>
+          <ellipse cx="64" cy="75" rx="9.5" ry="5" fill="oklch(0.3 0.07 322)"/>
+          <g fill="none" stroke-linecap="round">
+            <g stroke="oklch(0.44 0.16 330)"><path d="${TRUNK}" stroke-width="10"/><path d="${BOUGHS}" stroke-width="6"/></g>
+            <g stroke="oklch(0.66 0.18 345)" transform="translate(-1.2 -0.6)"><path d="${TRUNK}" stroke-width="6"/><path d="${BOUGHS}" stroke-width="3"/></g>
+          </g>
+          ${MINI.map(m => `<g class="mini">
+            <path d="M${m.hx} ${m.hy}V${m.hy + 6}" stroke="oklch(0.88 0.02 300)" stroke-width="1.8"/>
+            <path d="${poly(m.F.top)}" fill="${shade(m.c, 0.12)}"/><path d="${poly(m.F.left)}" fill="${shade(m.c, 0)}"/><path d="${poly(m.F.right)}" fill="${shade(m.c, -0.14)}"/>
+            <path class="s" d="${poly(m.S)}" style="fill: ${CH[m.k]}"/><path d="${poly(m.S)}" fill="url(#tv-scan)"/>
+          </g>`).join('')}`;
+        const scr = [...svg.querySelectorAll('.s')], minis = [...svg.querySelectorAll('.mini')], base = [0, ...MINI.map(m => m.k)];
         const st = { t: 0 };
-        // The wave climbs: lower sets change channel first.
-        const draw = () => scr.forEach(s => {
-          const i = (s.k + Math.floor(st.t - s.z * 0.3 + 1)) % CH.length;
-          if (i !== s.cur) { s.cur = i; s.n.style.fill = CH[(i + CH.length) % CH.length]; }
-        });
-        const rest = () => { st.t = 0; scr.forEach(s => { s.cur = s.k; s.n.style.fill = CH[s.k]; }); };
-        rest();
-        return hoverLoop(() => gsap.timeline({ repeat: -1 }).fromTo(st, { t: 0 }, { t: CH.length, duration: 3.5, ease: 'none', onUpdate: draw }), rest);
+        const draw = () => scr.forEach((s, i) => (s.style.fill = CH[(base[i] + Math.floor(st.t + i * 0.4)) % CH.length]));
+        return hoverLoop(
+          () => {
+            const t = gsap.timeline({ repeat: -1 }).fromTo(st, { t: 0 }, { t: CH.length, duration: 3.5, ease: 'none', onUpdate: draw }, 0);
+            minis.forEach((g, i) => t.fromTo(g, { rotation: i ? 9 : -9, svgOrigin: `${MINI[i].hx} ${MINI[i].hy}` }, { rotation: i ? -9 : 9, svgOrigin: `${MINI[i].hx} ${MINI[i].hy}`, duration: 0.875, ease: 'sine.inOut', yoyo: true, repeat: 3 }, 0));
+            return t;
+          },
+          () => {
+            st.t = 0; draw();
+            minis.forEach((g, i) => gsap.to(g, { rotation: 0, svgOrigin: `${MINI[i].hx} ${MINI[i].hy}`, duration: 0.8, ease: 'elastic.out(1, 0.4)' }));
+          });
       },
-      emblem: emb(CUBES.map(c => {
-        const F = faces(c);
-        return ['top', 'left', 'right'].map(k => `<path d="${poly(F[k])}" fill="#fff" stroke="#000" stroke-width="2.2" stroke-linejoin="round"/>`).join('') + `<path d="${poly(F.sl)}" fill="#000"/><path d="${poly(F.sr)}" fill="#000"/>`;
-      }).join('\n')),
+      emblem: emb(`
+        ${['top', 'left', 'right'].map(k => `<path d="${poly(MAIN[k])}" fill="#fff" stroke="#000" stroke-width="2.4" stroke-linejoin="round"/>`).join('')}
+        <path d="${poly(MS)}" fill="#000"/>
+        <path d="${knob(0.55, 1.08, 0.2)}" fill="#000"/><path d="${knob(1.3, 1.08, 0.2)}" fill="#000"/>
+        <path d="${VENT}" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+        <g fill="none" stroke-linecap="round">
+          <path d="${TRUNK}" stroke="#000" stroke-width="15"/>
+          <path d="${TRUNK}" stroke="#fff" stroke-width="10"/><path d="${BOUGHS}" stroke="#fff" stroke-width="6"/>
+        </g>
+        ${MINI.map(m => `<path d="M${m.hx} ${m.hy}V${m.hy + 6}" stroke="#fff" stroke-width="2.4"/>${['top', 'left', 'right'].map(k => `<path d="${poly(m.F[k])}" fill="#fff" stroke="#000" stroke-width="2" stroke-linejoin="round"/>`).join('')}<path d="${poly(m.S)}" fill="#000"/>`).join('\n')}
+      `),
     });
   }
 
-  // E: a tree of colour bars; the pointer lifts bars and rolls the channels.
+  // E: a tree drawn as one screen's scanlines; the pointer tugs the raster.
   {
-    const TC = ['oklch(0.9 0.02 90)', 'oklch(0.88 0.15 100)', 'oklch(0.82 0.11 195)', 'oklch(0.78 0.16 145)', 'oklch(0.66 0.2 330)', 'oklch(0.62 0.2 25)', 'oklch(0.5 0.16 265)'];
-    const GAP = 14.5, R = 46, CY = 56, W = 11;
-    // Bar tops trace a round crown; the middle bar runs on down as the trunk.
-    const BARS = [-3, -2, -1, 0, 1, 2, 3].map(k => {
-      const x = 64 + k * GAP, s = Math.sqrt(R * R - (k * GAP) ** 2);
-      return { x, top: f(CY - s + W / 2), bot: k ? f(CY + s * 0.5 - W / 2) : 116 };
-    });
-    const bar = (b, lift = 0) => `M${b.x} ${f(b.top - lift)}V${b.bot}`;
+    // Half width of each line, top to bottom: crown, trunk, then roots.
+    const HALF = [13, 28, 38, 45, 48, 48, 45, 37, 22, 6, 6, 6, 6, 11, 21];
+    const Y0 = 11, PITCH = 7.6, W = 4.8;
+    const LINES = HALF.map((h, i) => ({ h, y: f(Y0 + i * PITCH) }));
+    const line = L => `M${f(64 - L.h)} ${L.y}H${f(64 + L.h)}`;
+    // Phosphor runs from rose at the crown to cyan at the roots.
+    const hue = i => f(350 - (145 * i) / (HALF.length - 1));
     DIRS.push({
-      toy: 'tvtree', l: 'E', name: 'Bar tree', idea: 'A round tree of colour bars on a bar trunk. The pointer lifts the bars it passes and rolls the channels.',
+      toy: 'tvtree', l: 'E', name: 'Abstract mark', idea: 'A tree drawn only in scanlines. The pointer tugs the raster sideways, like a magnet held to a tube.',
       art(svg) {
-        svg.innerHTML = `<g fill="none" stroke-width="${W}" stroke-linecap="round">${BARS.map((b, k) => `<path d="${bar(b)}" style="stroke: ${TC[k]}"/>`).join('')}</g>`;
-        const P = [...svg.querySelectorAll('path')], L = BARS.map(() => ({ v: 0 }));
-        let roll = 0, col = null, tl = null;
-        // Each column step rolls the colours one bar along.
-        const paint = () => P.forEach((p, k) => (p.style.stroke = TC[(((k - roll) % 7) + 7) % 7]));
-        const lift = (k, v, duration = 0.25, ease = 'power2.out') =>
-          gsap.to(L[k], { v, duration, ease, overwrite: true, onUpdate: () => P[k].setAttribute('d', bar(BARS[k], L[k].v)) });
-        const at = p => {
-          BARS.forEach((b, k) => lift(k, 11 * Math.exp(-((p[0] - b.x) ** 2) / (2 * 9 * 9))));
-          const c = Math.round((p[0] - 64) / GAP);
-          if (col !== null && c !== col) { roll += Math.sign(c - col); paint(); }
-          col = c;
-        };
-        // From the keyboard, a lift wave crosses the crown and the channels roll.
-        const wave = () => {
+        svg.innerHTML = `<g fill="none" stroke-width="${W}" stroke-linecap="round">${LINES.map((L, i) => `<path d="${line(L)}" style="stroke: oklch(0.8 0.16 ${hue(i)})"/>`).join('')}</g>`;
+        const P = [...svg.querySelectorAll('path')];
+        let tl = null;
+        // Lines near the pointer bend towards it; odd lines lag a little.
+        const tug = p => P.forEach((n, i) => {
+          const k = Math.exp(-((p[1] - LINES[i].y) ** 2) / (2 * 15 * 15));
+          gsap.to(n, { x: clamp((p[0] - 64) * 0.42, -20, 20) * k * (i % 2 ? 0.72 : 1), duration: 0.28, ease: 'power2.out', overwrite: true });
+        });
+        // From the keyboard, a tear rolls down the raster.
+        const roll = () => {
           const t = gsap.timeline({ repeat: -1 });
-          BARS.forEach((_, k) => t.to(L[k], { v: 11, duration: 0.22, yoyo: true, repeat: 1, ease: 'sine.inOut', onUpdate: () => P[k].setAttribute('d', bar(BARS[k], L[k].v)) }, k * 0.11));
-          return t.add(() => { roll++; paint(); }, 0);
+          P.forEach((n, i) => t.to(n, { x: i % 2 ? -12 : 12, duration: 0.14, yoyo: true, repeat: 1, ease: 'sine.inOut' }, i * 0.09));
+          return t;
         };
         return {
-          enter(p) { if (p) at(p); else if (!tl) tl = wave(); },
-          move(p) { if (p) at(p); },
-          leave() {
-            tl?.kill(); tl = null; col = null; roll = 0; paint();
-            BARS.forEach((_, k) => lift(k, 0, 0.9, 'elastic.out(1, 0.35)'));
-          },
+          enter(p) { if (p) tug(p); else if (!tl) tl = roll(); },
+          move(p) { if (p) tug(p); },
+          leave() { tl?.kill(); tl = null; gsap.to(P, { x: 0, duration: 0.9, ease: 'elastic.out(1, 0.3)', overwrite: true }); },
         };
       },
       emblem: emb(`
-        <g fill="none" stroke="#fff" stroke-width="${W}" stroke-linecap="round">
-          ${BARS.map(b => `<path d="${bar(b)}"/>`).join('\n')}
+        <g fill="none" stroke="#fff" stroke-width="${W + 0.4}" stroke-linecap="round">
+          ${LINES.map(L => `<path d="${line(L)}"/>`).join('\n')}
         </g>
       `),
     });
