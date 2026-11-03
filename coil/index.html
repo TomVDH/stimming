@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Coil</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the stairs panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --studio: oklch(0.19 0.03 290);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The studio is 16:9, 4:5 on phones, and dark. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--studio);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+.stage.near { cursor: grab; }
+.stage.held { cursor: grabbing; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark studio the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Coil</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A rainbow coil spring on three wooden steps. Drag an end to stretch it, or drop it over the edge and it walks down the stairs. Space nudges it into a walk, the up arrow stretches it, and R resets it.">
+      <p class="fail" hidden>Coil needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="nudge" type="button" aria-keyshortcuts="Space">Nudge</button>
+        <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag an end</dt><dd>stretch</dd></div>
+        <div><dt>Drop it over the edge</dt><dd>walk</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>nudge</dd></div>
+        <div class="fine"><dt><kbd>R</kbd></dt><dd>reset</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('stage');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.coil.sound', MAXV = 18, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0, shim = null;
+let clackNext = 0, knockNext = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.07 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.6;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    shimmer();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the coil settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (shim && ac) shim.g.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['r', 'R', ' ', 'ArrowUp', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place on the stairs.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.55;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0006);
+  ng.gain.setTargetAtTime(0, t + 0.0006, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 0.8, len);
+}
+// A short damped tone; it returns the oscillator and its gain.
+function tone(a, dst, t, type, f, g, tau) {
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = type;
+  o.frequency.value = f;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.0015);
+  og.gain.setTargetAtTime(0, t + 0.0015, tau);
+  o.connect(og).connect(dst);
+  o.start(t);
+  o.stop(t + tau * 8 + 0.01);
+  return [o, og];
+}
+// Turns meeting: a bright plastic tick over a short hollow tock.
+// A rush of hits thins to a patter instead of a wall.
+function clack(v, x, at = 0) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD + at, t = Math.max(t0, clackNext);
+  if (t - t0 > 0.05) return;
+  clackNext = t + 0.024 + Math.random() * 0.02;
+  const g = level() * clamp(v / 1.2, 0.1, 1) * jit(0.2), d = bus(a, x);
+  burst(a, d, t, 'bandpass', 3100 * jit(0.2), 1.8, 0.42 * g, 0.004, 0.03);
+  const [o, og] = tone(a, d, t, 'triangle', 1250 * jit(0.14), 0.16 * g, 0.009);
+  track(o, og, d);
+}
+// The coil landing on wood: a rounder, lower knock.
+function knock(v, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, knockNext);
+  if (t - t0 > 0.04) return;
+  knockNext = t + 0.05 + Math.random() * 0.03;
+  const g = level() * clamp(v / 1.5, 0.12, 1) * jit(0.2), d = bus(a, x);
+  burst(a, d, t, 'bandpass', 900 * jit(0.15), 1.2, 0.5 * g, 0.012, 0.08);
+  const [o, og] = tone(a, d, t, 'sine', 230 * jit(0.1), 0.34 * g, 0.03);
+  track(o, og, d);
+}
+// The shimmer: soft high partials that ring while the coil stretches.
+const SHIM = [1, 1.5, 2.02, 3.01], SHIM_G = [0.5, 0.26, 0.17, 0.08];
+function shimmer() {
+  const g = ac.createGain(), bp = ac.createBiquadFilter(), lfo = ac.createOscillator(), lg = ac.createGain();
+  g.gain.value = 0;
+  bp.type = 'bandpass';
+  bp.frequency.value = 1600;
+  bp.Q.value = 2.2;
+  lfo.frequency.value = 5.2;
+  lg.gain.value = 5;
+  lfo.connect(lg);
+  const oscs = SHIM.map((r, k) => {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = 'sine';
+    o.frequency.value = 520 * r;
+    og.gain.value = SHIM_G[k];
+    lg.connect(o.frequency);
+    o.connect(og).connect(bp);
+    o.start();
+    return o;
+  });
+  lfo.start();
+  bp.connect(g).connect(out);
+  shim = { g, bp, oscs };
+}
+// Pitch follows the stretch; loudness follows how fast it changes.
+function shimmerAt(rate, len) {
+  const a = live();
+  if (!a || !shim) return;
+  const t = a.currentTime, f = 420 + 640 * clamp((len - 0.09) / 0.45);
+  shim.g.gain.setTargetAtTime(0.06 * clamp((rate - 0.04) / 0.8), t, 0.06);
+  shim.oscs.forEach((o, k) => o.frequency.setTargetAtTime(f * SHIM[k], t, 0.07));
+  shim.bp.frequency.setTargetAtTime(f * 2.4, t, 0.07);
+}
+
+/* ---------- physics: a planar chain of rigid rings ---------- */
+// Units are metres, kilograms and seconds.
+// X runs down the stairs and Y runs up.
+// Each ring has a centre, a tilt, and their rates.
+const N = 80, RMID = 0.034, BAND = 0.0105, ROUT = RMID + BAND / 2, THK = 0.00118;
+const MASS = 0.00051, INER = (MASS * ((RMID - BAND / 2) ** 2 + ROUT ** 2)) / 4;
+const IM = 1 / MASS, II = 1 / INER, GRAV = 9.81;
+const P = { ks: 5.17, cs: 0.0006, ksh: 600, csh: 0.0036, kb: 0.00011, cb: 0.000004, mu: 0.43, rest: 0.06, air: 0.00012, kg: 300, cg: 1.2, stiff: 40, subs: 10 };
+// Three treads step down to the right; the floor lies beyond.
+const TREAD = 0.088, RISE = 0.079, BACK = -0.6;
+const NOSE = [0, TREAD, 2 * TREAD], LEVEL = [3 * RISE, 2 * RISE, RISE, 0];
+const CORNERS = [[NOSE[0], LEVEL[0]], [NOSE[1], LEVEL[1]], [NOSE[2], LEVEL[2]], [BACK, LEVEL[0]]];
+const X = new Float64Array(N), Y = new Float64Array(N), TH = new Float64Array(N);
+const VX = new Float64Array(N), VY = new Float64Array(N), W = new Float64Array(N);
+const PX = new Float64Array(N), PY = new Float64Array(N), PT = new Float64Array(N);
+// The implicit step's tridiagonal system: diagonal and upper 3x3 blocks.
+const AD = new Float64Array(9 * N), AU = new Float64Array(9 * N), RB = new Float64Array(3 * N);
+const AD0 = new Float64Array(9 * N), AU0 = new Float64Array(9 * N), RB0 = new Float64Array(3 * N);
+const CP = new Float64Array(9 * N), DP = new Float64Array(3 * N), M3 = new Float64Array(9), T3 = new Float64Array(9);
+// Contacts between neighbouring turns, two sides per gap.
+// Each has a gap axis, edge levers, a target speed, its old speed, a state and a push.
+const NG = 2 * (N - 1);
+const GN = new Float64Array(2 * NG), GL = new Float64Array(4 * NG), GB = new Float64Array(NG), GV = new Float64Array(NG);
+const GON = new Uint8Array(NG), GF = new Float64Array(NG);
+// Contacts with the stairs: ring, lever, normal, target, old speed, state, push.
+const MT = 8 * N;
+const TI = new Int32Array(MT), TL = new Float64Array(2 * MT), TNm = new Float64Array(2 * MT), TB = new Float64Array(MT), TV = new Float64Array(MT);
+const TON = new Uint8Array(MT), TF = new Float64Array(MT);
+let nT = 0;
+const grip = { i: -1, x: 0, y: 0 };
+// Impacts since the last frame, for the sound.
+const hits = { ring: 0, ringN: 0, ringX: 0, step: 0, stepN: 0, stepX: 0 };
+
+// Region 0 is the top tread, 3 the floor, 4 behind the stairs.
+const region = x => (x < BACK ? 4 : x < NOSE[0] ? 0 : x < NOSE[1] ? 1 : x < NOSE[2] ? 2 : 3);
+const levelOf = k => (k > 3 ? 0 : LEVEL[k]);
+const levelAt = x => levelOf(region(x));
+
+// Adds Gp' E Gq to a 3x3 block, where G maps a ring's motion to a point's.
+// The point moves by (p1, p2) per unit turn of its ring.
+function addGEG(o, base, p1, p2, q1, q2, e11, e12, e22, sg) {
+  const e = e11 * q1 + e12 * q2, f = e12 * q1 + e22 * q2;
+  o[base] += sg * e11; o[base + 1] += sg * e12; o[base + 2] += sg * e;
+  o[base + 3] += sg * e12; o[base + 4] += sg * e22; o[base + 5] += sg * f;
+  o[base + 6] += sg * (p1 * e11 + p2 * e12); o[base + 7] += sg * (p1 * e12 + p2 * e22); o[base + 8] += sg * (p1 * e + p2 * f);
+}
+
+// Shear between rings i and j along t, with gradients for both rings.
+// L is half the gap, the lever by which a turn of either ring shears it.
+const GI = new Float64Array(3), GJ = new Float64Array(3);
+function shear(i, j, tx, ty, d, vd, L, pa1, pa2, pb1, pb2, h) {
+  const k = P.ksh, c = P.csh;
+  GI[0] = -tx; GI[1] = -ty; GI[2] = -(pa1 * tx + pa2 * ty) + L;
+  GJ[0] = tx; GJ[1] = ty; GJ[2] = pb1 * tx + pb2 * ty + L;
+  const rate = vd + L * (W[i] + W[j]);
+  const e = h * h * k + h * c, f = -h * (k * d + (c + h * k) * rate);
+  for (let r = 0; r < 3; r++) {
+    RB0[3 * i + r] += f * GI[r];
+    RB0[3 * j + r] += f * GJ[r];
+    for (let q = 0; q < 3; q++) {
+      AD0[9 * i + 3 * r + q] += e * GI[r] * GI[q];
+      AD0[9 * j + 3 * r + q] += e * GJ[r] * GJ[q];
+      AU0[9 * i + 3 * r + q] += e * GI[r] * GJ[q];
+    }
+  }
+}
+
+// Builds the linearly implicit step without contacts.
+// The system is (M - hD - h^2 K) dv = h (f + h K v).
+function assemble(h) {
+  const { ks, cs, kb, cb, air } = P, h2 = h * h;
+  AD0.fill(0); AU0.fill(0);
+  for (let i = 0; i < N; i++) {
+    const o = 9 * i;
+    AD0[o] = AD0[o + 4] = MASS + h * air;
+    AD0[o + 8] = INER + h * air * 0.0005;
+    RB0[3 * i] = -h * air * VX[i];
+    RB0[3 * i + 1] = -h * (MASS * GRAV + air * VY[i]);
+    RB0[3 * i + 2] = -h * air * 0.0005 * W[i];
+  }
+  for (let i = 0; i < N - 1; i++) {
+    const j = i + 1, si = Math.sin(TH[i]), ci = Math.cos(TH[i]), sj = Math.sin(TH[j]), cj = Math.cos(TH[j]);
+    let nx = ci + cj, ny = si + sj;
+    const nl = Math.hypot(nx, ny) || 1;
+    nx /= nl; ny /= nl;
+    for (let s = -1, k = 2 * i; s <= 1; s += 2, k++) {
+      const rax = s * RMID * si, ray = -s * RMID * ci, rbx = s * RMID * sj, rby = -s * RMID * cj;
+      const pa1 = -ray, pa2 = rax, pb1 = -rby, pb2 = rbx;
+      const dx = X[j] + rbx - X[i] - rax, dy = Y[j] + rby - Y[i] - ray;
+      const dvx = VX[j] + W[j] * pb1 - VX[i] - W[i] * pa1, dvy = VY[j] + W[j] * pb2 - VY[i] - W[i] * pa2;
+      // A zero-length spring joins matching edges of neighbouring rings.
+      const e = h2 * ks + h * cs;
+      addGEG(AD0, 9 * i, pa1, pa2, pa1, pa2, e, 0, e, 1);
+      addGEG(AD0, 9 * j, pb1, pb2, pb1, pb2, e, 0, e, 1);
+      addGEG(AU0, 9 * i, pa1, pa2, pb1, pb2, e, 0, e, -1);
+      const gx = h * (ks * dx + cs * dvx + h * ks * dvx), gy = h * (ks * dy + cs * dvy + h * ks * dvy);
+      RB0[3 * i] += gx; RB0[3 * i + 1] += gy; RB0[3 * i + 2] += pa1 * gx + pa2 * gy;
+      RB0[3 * j] -= gx; RB0[3 * j + 1] -= gy; RB0[3 * j + 2] -= pb1 * gx + pb2 * gy;
+      // Sliding sideways is far stiffer and turns the rings.
+      // So each ring's axis follows the line of the coil.
+      shear(i, j, ny, -nx, dx * ny - dy * nx, dvx * ny - dvy * nx, 0.5 * (dx * nx + dy * ny), pa1, pa2, pb1, pb2, h);
+      // The contact on this side: where the turns would touch.
+      GN[2 * k] = nx; GN[2 * k + 1] = ny;
+      GL[4 * k] = pa1; GL[4 * k + 1] = pa2; GL[4 * k + 2] = pb1; GL[4 * k + 3] = pb2;
+      const gap = dx * nx + dy * ny - THK;
+      // Open gaps may close within the step; overlaps ease apart.
+      GB[k] = gap > 0 ? -gap / h : (Math.min(-gap, 0.00004) * 0.3) / h;
+      GV[k] = dvx * nx + dvy * ny;
+      // A fast clack bounces back a little: the plastic is springy.
+      if (gap < 0.0002 && GV[k] < -0.05 && !GON[k]) GB[k] = Math.max(GB[k], -P.rest * GV[k]);
+    }
+    // Bending resists a change of tilt between neighbours.
+    const eb = h2 * kb + h * cb, tb = h * (kb * (TH[j] - TH[i]) + (cb + h * kb) * (W[j] - W[i]));
+    AD0[9 * i + 8] += eb; AD0[9 * j + 8] += eb; AU0[9 * i + 8] -= eb;
+    RB0[3 * i + 2] += tb;
+    RB0[3 * j + 2] -= tb;
+  }
+  // The held ring hangs from a stiff spring to the pointer.
+  const g = grip.i;
+  if (g >= 0) {
+    const { kg, cg } = P, eg = h2 * kg + h * cg, o = 9 * g;
+    AD0[o] += eg; AD0[o + 4] += eg;
+    RB0[3 * g] += h * (kg * (grip.x - X[g]) - (cg + h * kg) * VX[g]);
+    RB0[3 * g + 1] += h * (kg * (grip.y - Y[g]) - (cg + h * kg) * VY[g]);
+    AD0[o + 8] += h * 2e-6;
+    RB0[3 * g + 2] -= h * 2e-6 * W[g];
+  }
+}
+
+// Depth and outward normal of a point inside the staircase.
+const tp = { C: 0, nx: 0, ny: 0 };
+function inStairs(x, y) {
+  const k = region(x), lv = levelOf(k);
+  if (y >= lv) return false;
+  tp.C = lv - y; tp.nx = 0; tp.ny = 1;
+  // A point just behind a riser leaves through it.
+  if (k <= 2 && y > levelOf(k + 1) && NOSE[k] - x < tp.C) { tp.C = NOSE[k] - x; tp.nx = 1; tp.ny = 0; }
+  if (k === 0 && y > 0 && x - BACK < tp.C) { tp.C = x - BACK; tp.nx = -1; tp.ny = 0; }
+  return true;
+}
+function addTouch(i, rx, ry, nx, ny, d, h) {
+  if (nT >= MT) return;
+  const k = nT++;
+  TI[k] = i; TL[2 * k] = -ry; TL[2 * k + 1] = rx; TNm[2 * k] = nx; TNm[2 * k + 1] = ny;
+  TB[k] = d > 0 ? -d / h : (Math.min(-d, 0.00004) * 0.3) / h;
+  TV[k] = (VX[i] - W[i] * ry) * nx + (VY[i] + W[i] * rx) * ny;
+  TON[k] = d < 0.00002 ? 1 : 0;
+}
+// Finds stair contacts: box corners near a tread, and noses in a ring.
+function gatherTouches(h) {
+  nT = 0;
+  for (let i = 0; i < N; i++) {
+    const s = Math.sin(TH[i]), c = Math.cos(TH[i]);
+    for (let a = -1; a <= 1; a += 2) for (let b = -1; b <= 1; b += 2) {
+      const rx = a * ROUT * s + b * 0.5 * THK * c, ry = -a * ROUT * c + b * 0.5 * THK * s, px = X[i] + rx, py = Y[i] + ry;
+      if (inStairs(px, py)) addTouch(i, rx, ry, tp.nx, tp.ny, -tp.C, h);
+      else {
+        const d = py - levelAt(px);
+        if (d < 0.004) addTouch(i, rx, ry, 0, 1, d, h);
+      }
+    }
+    for (const [qx, qy] of CORNERS) {
+      const dx = qx - X[i], dy = qy - Y[i];
+      if (dx * dx + dy * dy > (ROUT + THK) ** 2) continue;
+      const u = dx * s - dy * c, v = dx * c + dy * s, cu = ROUT - Math.abs(u), cv = 0.5 * THK - Math.abs(v);
+      if (cu <= 0 || cv <= 0) continue;
+      // The ring moves away from the nose along the shallower axis.
+      if (cv < cu) { const g = v > 0 ? -1 : 1; addTouch(i, dx, dy, g * c, g * s, -cv, h); }
+      else { const g = u > 0 ? -1 : 1; addTouch(i, dx, dy, g * s, -g * c, -cu, h); }
+    }
+  }
+}
+
+// Inverts a 3x3 block into T3.
+function inv3(m) {
+  const a = m[0], b = m[1], c = m[2], d = m[3], e = m[4], f = m[5], g = m[6], hh = m[7], k = m[8];
+  const A = e * k - f * hh, B = f * g - d * k, C = d * hh - e * g, r = 1 / (a * A + b * B + c * C);
+  T3[0] = A * r; T3[1] = (c * hh - b * k) * r; T3[2] = (b * f - c * e) * r;
+  T3[3] = B * r; T3[4] = (a * k - c * g) * r; T3[5] = (c * d - a * f) * r;
+  T3[6] = C * r; T3[7] = (b * g - a * hh) * r; T3[8] = (a * e - b * d) * r;
+}
+// Block Thomas solve along the chain; the answer replaces RB.
+function solveChain() {
+  for (let i = 0; i < N; i++) {
+    const o = 9 * i;
+    for (let k = 0; k < 9; k++) M3[k] = AD[o + k];
+    let r0 = RB[3 * i], r1 = RB[3 * i + 1], r2 = RB[3 * i + 2];
+    if (i > 0) {
+      // The lower block is the upper block of the row above, transposed.
+      const u = o - 9, p = 3 * i - 3;
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+        M3[3 * r + c] -= AU[u + r] * CP[u + c] + AU[u + 3 + r] * CP[u + 3 + c] + AU[u + 6 + r] * CP[u + 6 + c];
+      }
+      r0 -= AU[u] * DP[p] + AU[u + 3] * DP[p + 1] + AU[u + 6] * DP[p + 2];
+      r1 -= AU[u + 1] * DP[p] + AU[u + 4] * DP[p + 1] + AU[u + 7] * DP[p + 2];
+      r2 -= AU[u + 2] * DP[p] + AU[u + 5] * DP[p + 1] + AU[u + 8] * DP[p + 2];
+    }
+    inv3(M3);
+    DP[3 * i] = T3[0] * r0 + T3[1] * r1 + T3[2] * r2;
+    DP[3 * i + 1] = T3[3] * r0 + T3[4] * r1 + T3[5] * r2;
+    DP[3 * i + 2] = T3[6] * r0 + T3[7] * r1 + T3[8] * r2;
+    if (i < N - 1) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+      CP[o + 3 * r + c] = T3[3 * r] * AU[o + c] + T3[3 * r + 1] * AU[o + 3 + c] + T3[3 * r + 2] * AU[o + 6 + c];
+    }
+  }
+  for (let i = N - 1; i >= 0; i--) {
+    let x0 = DP[3 * i], x1 = DP[3 * i + 1], x2 = DP[3 * i + 2];
+    if (i < N - 1) {
+      const o = 9 * i, q = 3 * i + 3;
+      x0 -= CP[o] * RB[q] + CP[o + 1] * RB[q + 1] + CP[o + 2] * RB[q + 2];
+      x1 -= CP[o + 3] * RB[q] + CP[o + 4] * RB[q + 1] + CP[o + 5] * RB[q + 2];
+      x2 -= CP[o + 6] * RB[q] + CP[o + 7] * RB[q + 1] + CP[o + 8] * RB[q + 2];
+    }
+    RB[3 * i] = x0; RB[3 * i + 1] = x1; RB[3 * i + 2] = x2;
+  }
+}
+
+// Contacts are stiff dampers that hold each touching speed at its target.
+// A contact switches on where it would be broken and off where it would pull.
+function solveStep(h) {
+  const sp = P.stiff, e = h * sp;
+  for (let pass = 0; pass < 5; pass++) {
+    AD.set(AD0); AU.set(AU0); RB.set(RB0);
+    for (let k = 0; k < NG; k++) {
+      if (!GON[k]) continue;
+      const i = k >> 1, j = i + 1, nx = GN[2 * k], ny = GN[2 * k + 1];
+      const pa1 = GL[4 * k], pa2 = GL[4 * k + 1], pb1 = GL[4 * k + 2], pb2 = GL[4 * k + 3];
+      addGEG(AD, 9 * i, pa1, pa2, pa1, pa2, e * nx * nx, e * nx * ny, e * ny * ny, 1);
+      addGEG(AD, 9 * j, pb1, pb2, pb1, pb2, e * nx * nx, e * nx * ny, e * ny * ny, 1);
+      addGEG(AU, 9 * i, pa1, pa2, pb1, pb2, e * nx * nx, e * nx * ny, e * ny * ny, -1);
+      const f = e * (GB[k] - GV[k]), fx = f * nx, fy = f * ny;
+      RB[3 * i] -= fx; RB[3 * i + 1] -= fy; RB[3 * i + 2] -= pa1 * fx + pa2 * fy;
+      RB[3 * j] += fx; RB[3 * j + 1] += fy; RB[3 * j + 2] += pb1 * fx + pb2 * fy;
+    }
+    for (let k = 0; k < nT; k++) {
+      if (!TON[k]) continue;
+      const i = TI[k], p1 = TL[2 * k], p2 = TL[2 * k + 1], nx = TNm[2 * k], ny = TNm[2 * k + 1];
+      addGEG(AD, 9 * i, p1, p2, p1, p2, e * nx * nx, e * nx * ny, e * ny * ny, 1);
+      const f = e * (TB[k] - TV[k]);
+      RB[3 * i] += f * nx; RB[3 * i + 1] += f * ny; RB[3 * i + 2] += f * (p1 * nx + p2 * ny);
+    }
+    solveChain();
+    let changed = false;
+    for (let k = 0; k < NG; k++) {
+      const i = k >> 1, j = i + 1, nx = GN[2 * k], ny = GN[2 * k + 1];
+      const vn = GV[k] + (RB[3 * j] + RB[3 * j + 2] * GL[4 * k + 2] - RB[3 * i] - RB[3 * i + 2] * GL[4 * k]) * nx
+        + (RB[3 * j + 1] + RB[3 * j + 2] * GL[4 * k + 3] - RB[3 * i + 1] - RB[3 * i + 2] * GL[4 * k + 1]) * ny;
+      if (GON[k]) {
+        GF[k] = sp * (GB[k] - vn);
+        if (GF[k] < 0) { GON[k] = 0; changed = true; }
+      } else if (vn < GB[k] - 1e-7) { GON[k] = 1; changed = true; }
+    }
+    for (let k = 0; k < nT; k++) {
+      const i = TI[k], nx = TNm[2 * k], ny = TNm[2 * k + 1];
+      const vn = TV[k] + (RB[3 * i] + RB[3 * i + 2] * TL[2 * k]) * nx + (RB[3 * i + 1] + RB[3 * i + 2] * TL[2 * k + 1]) * ny;
+      if (TON[k]) {
+        TF[k] = sp * (TB[k] - vn);
+        if (TF[k] < 0) { TON[k] = 0; changed = true; }
+      } else if (vn < TB[k] - 1e-7) { TON[k] = 1; changed = true; }
+    }
+    if (!changed) break;
+  }
+}
+
+// Friction stops sliding at each stair contact, up to mu times the push.
+function rub(h) {
+  const mu = P.mu;
+  for (let k = 0; k < nT; k++) {
+    if (!TON[k] || TF[k] <= 0) continue;
+    const i = TI[k], p1 = TL[2 * k], p2 = TL[2 * k + 1], nx = TNm[2 * k], ny = TNm[2 * k + 1];
+    const vx = VX[i] + W[i] * p1, vy = VY[i] + W[i] * p2, vn = vx * nx + vy * ny;
+    const tx = vx - vn * nx, ty = vy - vn * ny, tl = Math.hypot(tx, ty);
+    if (tl < 1e-9) continue;
+    const ux = tx / tl, uy = ty / tl, ru = p1 * ux + p2 * uy;
+    const j = Math.min(tl / (IM + ru * ru * II), mu * TF[k] * h);
+    VX[i] -= ux * j * IM; VY[i] -= uy * j * IM; W[i] -= ru * j * II;
+  }
+}
+
+// Pushes ring b along n at a point with lever (p1, p2); ring a goes back.
+// The previous pose moves too, so speeds stay.
+function shove(a, pa1, pa2, b, pb1, pb2, nx, ny, C) {
+  const ka = pa1 * nx + pa2 * ny, kb = pb1 * nx + pb2 * ny;
+  const w = (a >= 0 ? IM + ka * ka * II : 0) + (b >= 0 ? IM + kb * kb * II : 0), l = C / w;
+  if (a >= 0) { const dx = -nx * l * IM, dy = -ny * l * IM, dt = -ka * l * II; X[a] += dx; Y[a] += dy; TH[a] += dt; PX[a] += dx; PY[a] += dy; PT[a] += dt; }
+  if (b >= 0) { const dx = nx * l * IM, dy = ny * l * IM, dt = kb * l * II; X[b] += dx; Y[b] += dy; TH[b] += dt; PX[b] += dx; PY[b] += dy; PT[b] += dt; }
+}
+// Deep overlaps left after a step are undone directly.
+function untangle() {
+  for (let i = 0; i < N - 1; i++) {
+    const j = i + 1, si = Math.sin(TH[i]), ci = Math.cos(TH[i]), sj = Math.sin(TH[j]), cj = Math.cos(TH[j]);
+    let nx = ci + cj, ny = si + sj;
+    const nl = Math.hypot(nx, ny) || 1;
+    nx /= nl; ny /= nl;
+    for (let s = -1; s <= 1; s += 2) {
+      const rax = s * RMID * si, ray = -s * RMID * ci, rbx = s * RMID * sj, rby = -s * RMID * cj;
+      const C = THK - 0.0001 - ((X[j] + rbx - X[i] - rax) * nx + (Y[j] + rby - Y[i] - ray) * ny);
+      if (C > 0) shove(i, -ray, rax, j, -rby, rbx, nx, ny, C);
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    const s = Math.sin(TH[i]), c = Math.cos(TH[i]);
+    for (let a = -1; a <= 1; a += 2) for (let b = -1; b <= 1; b += 2) {
+      const rx = a * ROUT * s + b * 0.5 * THK * c, ry = -a * ROUT * c + b * 0.5 * THK * s;
+      if (inStairs(X[i] + rx, Y[i] + ry) && tp.C > 0.0003) shove(-1, 0, 0, i, -ry, rx, tp.nx, tp.ny, tp.C - 0.0003);
+    }
+  }
+}
+
+// Distant turns collide where the coil folds onto itself.
+function folds() {
+  for (let i = 0; i < N; i++) {
+    const si = Math.sin(TH[i]), ci = Math.cos(TH[i]);
+    for (let j = i + 2; j < N; j++) {
+      const dx = X[j] - X[i], dy = Y[j] - Y[i];
+      if (dx * dx + dy * dy > (2 * ROUT + THK) ** 2) continue;
+      const sj = Math.sin(TH[j]), cj = Math.cos(TH[j]);
+      if (Math.abs(dx * ci + dy * si) - ROUT * Math.abs(ci * sj - si * cj) > THK) continue;
+      for (let e = -1; e <= 1; e += 2) {
+        const rx = e * ROUT * sj, ry = -e * ROUT * cj, px = X[j] + rx, py = Y[j] + ry;
+        const ex = px - X[i], ey = py - Y[i], u = ex * si - ey * ci, v = ex * ci + ey * si;
+        const cu = ROUT - Math.abs(u), cv = THK - Math.abs(v);
+        if (cu <= 0 || cv <= 0) continue;
+        let nx, ny, C;
+        if (cv < cu * 4) { const g = v > 0 ? 1 : -1; nx = g * ci; ny = g * si; C = cv; }
+        else { const g = u > 0 ? 1 : -1; nx = g * si; ny = -g * ci; C = cu; }
+        shove(i, -ey, ex, j, -ry, rx, nx, ny, C);
+        // Both rings also lose their closing speed.
+        const vrel = (VX[j] - W[j] * ry - VX[i] + W[i] * ey) * nx + (VY[j] + W[j] * rx - VY[i] - W[i] * ex) * ny;
+        if (vrel < 0) {
+          const dv = -vrel / 2;
+          VX[i] -= nx * dv; VY[i] -= ny * dv; VX[j] += nx * dv; VY[j] += ny * dv;
+        }
+      }
+    }
+  }
+}
+
+function substep(h) {
+  assemble(h);
+  gatherTouches(h);
+  // Each gap starts from its last state, which settles fastest.
+  solveStep(h);
+  for (let i = 0; i < N; i++) {
+    VX[i] += RB[3 * i];
+    VY[i] += RB[3 * i + 1];
+    W[i] += RB[3 * i + 2];
+  }
+  rub(h);
+  for (let k = 0; k < NG; k++) {
+    if (GON[k] && GV[k] < -0.08 && GB[k] < 0) {
+      if (-GV[k] > hits.ring) hits.ring = -GV[k];
+      hits.ringN++;
+      hits.ringX = X[k >> 1];
+    }
+  }
+  for (let k = 0; k < nT; k++) {
+    if (TON[k] && TV[k] < -0.1 && TB[k] < 0) {
+      if (-TV[k] > hits.step) hits.step = -TV[k];
+      hits.stepN++;
+      hits.stepX = X[TI[k]];
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    PX[i] = X[i]; PY[i] = Y[i]; PT[i] = TH[i];
+    X[i] += VX[i] * h;
+    Y[i] += VY[i] * h;
+    TH[i] += W[i] * h;
+  }
+  untangle();
+  folds();
+}
+// Advances one display frame; returns the coil's kinetic energy.
+function stepCoil(dt) {
+  const n = Math.max(1, Math.round(dt * 60 * P.subs)), h = dt / n;
+  for (let k = 0; k < n; k++) substep(h);
+  let e = 0;
+  for (let i = 0; i < N; i++) e += VX[i] * VX[i] + VY[i] * VY[i] + 0.0006 * W[i] * W[i];
+  return e;
+}
+function resetCoil(x0, lift) {
+  const lv = levelAt(x0);
+  for (let i = 0; i < N; i++) {
+    X[i] = x0;
+    Y[i] = lv + 0.5 * THK + i * THK + lift;
+    TH[i] = Math.PI / 2;
+    VX[i] = VY[i] = W[i] = 0;
+  }
+  GON.fill(1);
+  grip.i = -1;
+}
+/* ---------- end physics ---------- */
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.92), h);
+  return c.map(v => clamp(v));
+}
+
+/* ---------- shaders ---------- */
+// Each vertex knows its place along the helix and across the band.
+// The ring texture holds each ring's centre and tilt.
+const COIL_VS = `
+uniform sampler2D tRing;
+attribute float aS;
+attribute vec4 aSec;
+vec3 coilPos, coilNrm;
+vec3 ringAt(int i) { return texelFetch(tRing, ivec2(clamp(i, 0, ${N - 1}), 0), 0).xyz; }
+void coilPoint() {
+  float fi = floor(aS), f = aS - fi;
+  int i = int(fi);
+  vec3 p1 = ringAt(i), p2 = ringAt(i + 1);
+  vec3 p0 = i > 0 ? ringAt(i - 1) : 2.0 * p1 - p2;
+  vec3 p3 = i < ${N - 2} ? ringAt(i + 2) : 2.0 * p2 - p1;
+  // Catmull-Rom runs smoothly through every ring.
+  vec3 q = 0.5 * (2.0 * p1 + (p2 - p0) * f + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * f * f + (3.0 * p1 - p0 - 3.0 * p2 + p3) * f * f * f);
+  float ph = 6.2831853 * aS;
+  vec3 n = vec3(cos(q.z), sin(q.z), 0.0), t = vec3(sin(q.z), -cos(q.z), 0.0);
+  vec3 e = cos(ph) * t + vec3(0.0, 0.0, sin(ph));
+  coilPos = vec3(q.xy, 0.0) + (${RMID.toFixed(4)} + aSec.x) * e + aSec.y * n;
+  coilNrm = normalize(aSec.z * e + aSec.w * n);
+}`;
+// Varnished wood: growth rings around logs that run along the steps.
+const WOOD_FS = `
+uniform vec3 uWoodA, uWoodB, uWoodC;
+varying vec3 vWP;
+float woodK;
+float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + 1.0), u.x), u.y);
+}
+vec3 woodColor(vec3 p) {
+  vec2 q = p.xy - vec2(0.09, -0.55);
+  float wob = (vnoise(vec2(p.z * 6.0, length(q) * 36.0)) - 0.5) * 0.007 + (vnoise(p.xy * 70.0 + p.z * 3.0) - 0.5) * 0.0015;
+  float r = length(q) + wob;
+  float ring = fract(r * 118.0 + 0.35 * vnoise(vec2(r * 9.0, p.z * 2.0)));
+  float late = smoothstep(0.5, 0.82, ring) * smoothstep(1.0, 0.88, ring);
+  // Pores run along the grain as fine dark streaks.
+  float pore = vnoise(vec2(p.z * 16.0 + r * 40.0, r * 3400.0));
+  float blot = vnoise(vec2(p.z * 8.0, r * 22.0));
+  float plank = hash21(vec2(floor(p.x / ${TREAD.toFixed(3)} + 20.0), 3.0));
+  woodK = late;
+  vec3 c = mix(uWoodA, uWoodB, 0.5 * late + 0.3 * blot);
+  c = mix(c, uWoodC, 0.35 * pore * pore * pore);
+  return c * mix(0.9, 1.08, plank);
+}`;
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, canvas = null;
+let ringTex = null, ringData = null, coilMesh = null, sun = null;
+let ray = null, ndc = null, hitV = null, plane = null, tmpV = null;
+let ready = false, lowDpr = false;
+const FOV = 30, SEG = 40, WIDE = 0.24;
+// The view frames the stairs, the floor beyond and room to stretch.
+const BOX = { x0: -0.088, x1: 0.33, y0: -0.005, y1: 0.37 };
+
+function coilGeometry() {
+  // The band's cross-section is a rounded rectangle, radial by axial.
+  const a = BAND / 2, b = THK / 2, r = b * 0.8, prof = [];
+  for (const [sx, sy, q] of [[1, 1, 0], [-1, 1, 1], [-1, -1, 2], [1, -1, 3]]) {
+    for (let k = 0; k < 3; k++) {
+      const g = ((q + k / 2) * Math.PI) / 2, nr = Math.cos(g), na = Math.sin(g);
+      prof.push([sx * (a - r) + r * nr, sy * (b - r) + r * na, nr, na]);
+    }
+  }
+  const P = prof.length, M = (N - 1) * SEG, V = (M + 1) * P;
+  const pos = new Float32Array(V * 3), s = new Float32Array(V), sec = new Float32Array(V * 4), col = new Float32Array(V * 3);
+  for (let j = 0; j <= M; j++) {
+    // The hue runs red to violet along the coil.
+    const u = j / M, c = linear(0.72, 0.19, 22 + 300 * u);
+    for (let p = 0; p < P; p++) {
+      const v = j * P + p;
+      s[v] = j / SEG;
+      sec.set(prof[p], v * 4);
+      col.set(c, v * 3);
+    }
+  }
+  const idx = new Uint32Array(M * P * 6);
+  let o = 0;
+  for (let j = 0; j < M; j++) for (let p = 0; p < P; p++) {
+    const a0 = j * P + p, a1 = j * P + ((p + 1) % P), b0 = a0 + P, b1 = a1 + P;
+    idx[o++] = a0; idx[o++] = a1; idx[o++] = b0;
+    idx[o++] = a1; idx[o++] = b1; idx[o++] = b0;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aS', new THREE.BufferAttribute(s, 1));
+  g.setAttribute('aSec', new THREE.BufferAttribute(sec, 4));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  return g;
+}
+function coilMaterials() {
+  const mat = new THREE.MeshPhysicalMaterial({
+    vertexColors: true, roughness: 0.34, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06, specularIntensity: 0.6,
+  });
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.tRing = { value: ringTex };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n' + COIL_VS)
+      .replace('#include <beginnormal_vertex>', 'coilPoint();\nvec3 objectNormal = coilNrm;')
+      .replace('#include <begin_vertex>', 'vec3 transformed = coilPos;');
+    // Thin plastic glows a little in its own colour.
+    sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor * 0.045;');
+  };
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  depth.onBeforeCompile = sh => {
+    sh.uniforms.tRing = { value: ringTex };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n' + COIL_VS)
+      .replace('#include <begin_vertex>', 'coilPoint();\nvec3 transformed = coilPos;');
+  };
+  return [mat, depth];
+}
+function woodMaterial(RoundedBoxGeometry) {
+  const mat = new THREE.MeshPhysicalMaterial({ roughness: 0.5, metalness: 0, clearcoat: 0.45, clearcoatRoughness: 0.32 });
+  const W = [linear(0.62, 0.09, 64), linear(0.45, 0.085, 48), linear(0.34, 0.065, 40)];
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uWoodA = { value: new THREE.Vector3(...W[0]) };
+    sh.uniforms.uWoodB = { value: new THREE.Vector3(...W[1]) };
+    sh.uniforms.uWoodC = { value: new THREE.Vector3(...W[2]) };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + WOOD_FS)
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = woodColor(vWP);')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.42, 0.66, woodK);');
+  };
+  const group = new THREE.Group();
+  // Three solid steps; the top one runs back out of view.
+  const blocks = [[BACK, NOSE[0], LEVEL[0]], [NOSE[0], NOSE[1], LEVEL[1]], [NOSE[1], NOSE[2], LEVEL[2]]];
+  for (const [x0, x1, top] of blocks) {
+    const m = new THREE.Mesh(new RoundedBoxGeometry(x1 - x0, top, WIDE, 3, 0.0035), mat);
+    m.position.set((x0 + x1) / 2, top / 2, 0);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+  }
+  return group;
+}
+
+// A photo sweep: the floor curves up into a wall behind the stairs.
+function sweep() {
+  const prof = [[2.5, 0, 0, 1], [-0.3, 0, 0, 1]], R = 0.5;
+  for (let k = 1; k <= 18; k++) {
+    const b = (k / 18) * (Math.PI / 2);
+    prof.push([-0.3 - R * Math.sin(b), R - R * Math.cos(b), Math.sin(b), Math.cos(b)]);
+  }
+  prof.push([-0.3 - R, 5, 1, 0]);
+  const pos = [], nrm = [], idx = [];
+  prof.forEach(([z, y, nz, ny], i) => {
+    for (const x of [-6, 6]) { pos.push(x, y, z); nrm.push(0, ny, nz); }
+    if (i) idx.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setIndex(idx);
+  return g;
+}
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(cap, budget) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    fit(w / h);
+    if (ready) { draw(); wake(); }
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+// The camera looks in from the front right and a little above.
+// It backs off until the whole box of action fits.
+function fit(A) {
+  camera.aspect = A;
+  camera.updateProjectionMatrix();
+  const az = A < 1.1 ? 0.22 : 0.3, el = 0.21;
+  const cx = (BOX.x0 + BOX.x1) / 2, cy = (BOX.y0 + BOX.y1) / 2 - 0.01;
+  const dir = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+  let lo = 0.2, hi = 4;
+  for (let it = 0; it < 30; it++) {
+    const d = (lo + hi) / 2;
+    camera.position.set(cx + dir.x * d, cy + dir.y * d, dir.z * d);
+    camera.lookAt(cx, cy, 0);
+    camera.updateMatrixWorld();
+    let ok = true;
+    for (const x of [BOX.x0, BOX.x1]) for (const y of [BOX.y0, BOX.y1]) for (const z of [-0.05, 0.05]) {
+      tmpV.set(x, y, z).project(camera);
+      if (Math.abs(tmpV.x) > 0.94 || Math.abs(tmpV.y) > 0.92) ok = false;
+    }
+    if (ok) hi = d; else lo = d;
+  }
+  camera.position.set(cx + dir.x * hi, cy + dir.y * hi, dir.z * hi);
+  camera.lookAt(cx, cy, 0);
+  camera.updateMatrixWorld();
+}
+function upload() {
+  for (let i = 0; i < N; i++) {
+    ringData[4 * i] = X[i];
+    ringData[4 * i + 1] = Y[i];
+    ringData[4 * i + 2] = TH[i];
+  }
+  ringTex.needsUpdate = true;
+}
+function draw() {
+  upload();
+  renderer.render(scene, camera);
+}
+
+/* ---------- the hand: held by the pointer or by a key ---------- */
+// A scripted hand follows a curve, holds, then lets go.
+let hand = null, drag = null;
+const bez = (a, b, c, d, u) => {
+  const m = 1 - u;
+  return m * m * m * a + 3 * m * m * u * b + 3 * m * u * u * c + u * u * u * d;
+};
+function coilLength() {
+  let s = 0;
+  for (let i = 1; i < N; i++) s += Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]);
+  return s;
+}
+// The end that sits higher is the one a hand would pick up.
+function ends() {
+  if (Math.abs(Y[N - 1] - Y[0]) < 0.03) return X[0] < X[N - 1] ? [0, N - 1] : [N - 1, 0];
+  return Y[N - 1] > Y[0] ? [N - 1, 0] : [0, N - 1];
+}
+// Lifts the top end over the next edge and sets it down beyond.
+function nudge() {
+  if (!ready || drag) return;
+  const [top, base] = ends();
+  const k = Math.min(3, region(X[base]) % 4);
+  let lx, ly;
+  if (k < 2) { lx = NOSE[k] + TREAD * 0.6; ly = LEVEL[k + 1]; }
+  else if (k === 2) { lx = NOSE[2] + 0.07; ly = 0; }
+  else { lx = X[base] + (X[base] > 0.3 ? -0.1 : 0.1); ly = 0; }
+  const up = Math.max(Y[top], ly) + 0.12;
+  hand = { i: top, t: 0, dur: 0.8, hold: 0.1, px: [X[top], X[top], lx, lx], py: [Y[top], up, up, ly + 2 * THK] };
+  wake();
+}
+// The up arrow plucks the top end upward and lets it snap back.
+function pluck() {
+  if (!ready || drag) return;
+  const [top] = ends();
+  hand = { i: top, t: 0, dur: 0.35, hold: 0.12, px: [X[top], X[top], X[top], X[top]], py: [Y[top], Y[top] + 0.08, Y[top] + 0.16, Y[top] + 0.16] };
+  wake();
+}
+function steer(dt) {
+  if (drag) {
+    grip.i = drag.i;
+    drag.ox *= 0.86; drag.oy *= 0.86;
+    grip.x = clamp(drag.x + drag.ox, BOX.x0 + 0.02, BOX.x1 + 0.05);
+    grip.y = clamp(drag.y + drag.oy, levelAt(grip.x) + 0.004, 0.62);
+    return true;
+  }
+  if (!hand) { grip.i = -1; return false; }
+  hand.t += dt;
+  const u = clamp(hand.t / hand.dur), e = u * u * (3 - 2 * u);
+  grip.i = hand.i;
+  grip.x = bez(...hand.px, e);
+  grip.y = bez(...hand.py, e);
+  if (hand.t > hand.dur + hand.hold) { hand = null; grip.i = -1; }
+  return true;
+}
+function resetCoil0() {
+  hand = drag = null;
+  resetCoil(NOSE[0] - ROUT - 0.006, reduce ? 0 : 0.014);
+  calm = 0;
+  wake();
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0, calm = 0, lenPrev = 0, rate = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = clamp(raw, 1 / 240, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  const held = steer(dt);
+  hits.ring = hits.ringN = hits.step = hits.stepN = 0;
+  const e = stepCoil(dt);
+  if (!Number.isFinite(e)) { resetCoil0(); return; }
+  const pan = x => (x - 0.15) / 0.3;
+  if (hits.ringN) {
+    clack(hits.ring, pan(hits.ringX));
+    // Many turns closing at once rattle for a moment.
+    if (hits.ringN > 4) clack(hits.ring * 0.7, pan(hits.ringX), 0.03);
+  }
+  if (hits.stepN) knock(hits.step, pan(hits.stepX));
+  const len = coilLength();
+  rate += (Math.abs(len - lenPrev) / dt - rate) * 0.3;
+  lenPrev = len;
+  shimmerAt(rate, len);
+  draw();
+  // The coil sleeps once it has been still for a moment.
+  calm = e < 2e-4 && !held ? calm + dt : 0;
+  if (calm < 0.4 && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else rest();
+}
+
+/* ---------- input ---------- */
+function toPlane(cx, cy) {
+  const r = panel.getBoundingClientRect();
+  ndc.set(((cx - r.left) / r.width) * 2 - 1, 1 - ((cy - r.top) / r.height) * 2);
+  ray.setFromCamera(ndc, camera);
+  return ray.ray.intersectPlane(plane, hitV) ? { x: hitV.x, y: hitV.y } : null;
+}
+// The nearer end of the coil, if the point is on or near the coil.
+function pick(p, touch) {
+  let near = Infinity;
+  for (let i = 0; i < N; i += 3) near = Math.min(near, Math.hypot(X[i] - p.x, Y[i] - p.y));
+  const d0 = Math.hypot(X[0] - p.x, Y[0] - p.y), d1 = Math.hypot(X[N - 1] - p.x, Y[N - 1] - p.y);
+  const reach = touch ? 0.075 : 0.055;
+  if (Math.min(near, d0, d1) > reach) return -1;
+  return d1 <= d0 ? N - 1 : 0;
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const p = toPlane(e.clientX, e.clientY);
+  if (!p) return;
+  const i = pick(p, e.pointerType !== 'mouse');
+  if (i < 0) return;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  hand = null;
+  drag = { id: e.pointerId, i, x: p.x, y: p.y, ox: X[i] - p.x, oy: Y[i] - p.y };
+  panel.classList.add('held');
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  if (!ready) return;
+  const p = toPlane(e.clientX, e.clientY);
+  if (drag && e.pointerId === drag.id) {
+    if (p) { drag.x = p.x; drag.y = p.y; }
+    wake();
+  } else if (!drag && e.pointerType === 'mouse' && p) panel.classList.toggle('near', pick(p, false) >= 0);
+});
+const lift = e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  drag = null;
+  grip.i = -1;
+  panel.classList.remove('held');
+  wake();
+};
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === 'r' || k === 'R') { if (!e.repeat) resetCoil0(); }
+  else if (k === ' ') {
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat) nudge();
+  } else if (k === 'ArrowUp') {
+    if (e.target !== panel) return;
+    e.preventDefault();
+    if (!e.repeat) pluck();
+  }
+});
+document.getElementById('nudge').addEventListener('click', nudge);
+document.getElementById('reset').addEventListener('click', resetCoil0);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function start() {
+  if (!document.createElement('canvas').getContext('webgl2')) return failed();
+  let RoomEnvironment, RoundedBoxGeometry;
+  try {
+    THREE = await import('three');
+    [{ RoomEnvironment }, { RoundedBoxGeometry }] = await Promise.all([
+      import('three/addons/environments/RoomEnvironment.js'),
+      import('three/addons/geometries/RoundedBoxGeometry.js'),
+    ]);
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.02, 30);
+  ray = new THREE.Raycaster();
+  ndc = new THREE.Vector2();
+  hitV = new THREE.Vector3();
+  tmpV = new THREE.Vector3();
+  plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  await idle();
+
+  // Soft studio light: a room for reflections, a warm key, a cool rim.
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.45;
+  pm.dispose();
+  const C3 = c => new THREE.Color(c[0], c[1], c[2]);
+  sun = new THREE.DirectionalLight(C3(linear(0.97, 0.035, 75)), 2.6);
+  sun.position.set(-0.45, 0.95, 0.75);
+  sun.target.position.set(0.12, 0.12, 0);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -0.42, right: 0.42, top: 0.42, bottom: -0.42, near: 0.3, far: 2.4 });
+  sun.shadow.bias = -0.0002;
+  sun.shadow.normalBias = 0.0008;
+  sun.shadow.radius = 3;
+  const rim = new THREE.DirectionalLight(C3(linear(0.85, 0.09, 235)), 1.5);
+  rim.position.set(0.7, 0.5, -0.8);
+  const fill = new THREE.HemisphereLight(C3(linear(0.7, 0.06, 290)), C3(linear(0.35, 0.05, 50)), 0.2);
+  scene.add(sun, sun.target, rim, fill);
+  await idle();
+
+  const studio = new THREE.Mesh(sweep(), new THREE.MeshStandardMaterial({ color: C3(linear(0.3, 0.03, 285)), roughness: 0.9 }));
+  studio.receiveShadow = true;
+  // Coloured lamps wash the sweep: rose on the left, teal on the right.
+  const lamp = (c, k, x, y, z, tx, ty) => {
+    const l = new THREE.SpotLight(C3(c), k, 0, 0.55, 1, 1.6);
+    l.position.set(x, y, z);
+    l.target.position.set(tx, ty, -0.85);
+    scene.add(l, l.target);
+  };
+  lamp(linear(0.66, 0.2, 345), 7, -0.5, 0.75, 0.5, -0.45, 0.35);
+  lamp(linear(0.72, 0.15, 210), 6, 0.95, 0.7, 0.5, 0.8, 0.2);
+  scene.add(studio, woodMaterial(RoundedBoxGeometry));
+
+  ringData = new Float32Array(N * 4);
+  ringTex = new THREE.DataTexture(ringData, N, 1, THREE.RGBAFormat, THREE.FloatType);
+  ringTex.magFilter = ringTex.minFilter = THREE.NearestFilter;
+  const [mat, depth] = coilMaterials();
+  coilMesh = new THREE.Mesh(coilGeometry(), mat);
+  coilMesh.customDepthMaterial = depth;
+  coilMesh.castShadow = coilMesh.receiveShadow = true;
+  coilMesh.frustumCulled = false;
+  scene.add(coilMesh);
+  resetCoil(NOSE[0] - ROUT - 0.006, reduce ? 0 : 0.014);
+  upload();
+  await idle();
+
+  panel.prepend(canvas);
+  fitRenderer(2, 1.4e6);
+  // Async compile keeps the shader builds off the main thread.
+  try { await renderer.compileAsync(scene, camera); } catch (err) { /* the first render compiles instead */ }
+  ready = true;
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  wake();
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
