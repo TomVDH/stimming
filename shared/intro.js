@@ -56,6 +56,7 @@ const play = (el, frame, ms, ease = linear) => {
 export const TIMING = {
   lead: 3,      // frames of glass before the flash
   pop: 2,       // frames the flash fills the eye
+  popScale: 3.4, // how far the blown-up flash fills the eye
   flash: 13,    // frames the box holds at size after the pop
   unfurl: 333,  // ms each line takes to open
   nlLag: 2,     // frames between the name and the Dutch line
@@ -223,7 +224,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   }
   box(true);
   // For a few frames the flash fills the eye, then it snaps to its place.
-  big.style.transform = 'scale(2.6)';
+  big.style.transform = `scale(${T.popScale})`;
   text.style.opacity = 1;
   await wait(T.pop);
   await gate('pop');
