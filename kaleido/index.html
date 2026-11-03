@@ -23,8 +23,33 @@
 }
 .stage canvas.on { opacity: 1; }
 /* Number chips keep an even width. */
-.choices .chip { justify-content: center; min-width: 38px; }
-@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+.bar > .choices .chip { justify-content: center; min-width: 38px; }
+/* Shuffle carries a die. */
+#shuffle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+#shuffle .pip { fill: currentColor; stroke: none; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* Phones close the group gaps, so the bar keeps one row. */
+@media (max-width: 400px) { .bar { column-gap: 18px; } }
+.setter { position: relative; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings opens a tray above the bar. */
+.sets {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: grid; gap: 8px; width: max-content; padding: 10px; white-space: nowrap;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+/* A clear strip bridges the gap, so hover survives the move up. */
+.sets::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 12px; }
+.setter.is-open .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .setter:hover .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .choices { display: flex; flex-wrap: nowrap; gap: 4px; }
+.sets .chip { padding: 4px 9px; }
+@media (prefers-reduced-motion: reduce) { .stage canvas, .sets { transition: none; } }
 /* The rosette figure stays small and overlapping glass multiplies. */
 .vignette figure svg { max-width: 280px; color: var(--fg); }
 .vignette figure use { mix-blend-mode: multiply; }
@@ -46,17 +71,27 @@
       <div class="choices" role="group" aria-label="Mirror sectors">
         <button class="chip" type="button" data-n="6" aria-pressed="true">6</button>
         <button class="chip" type="button" data-n="12" aria-pressed="false">12</button>
-        <button class="chip" type="button" data-n="0" aria-pressed="false">Tri</button>
       </div>
       <div class="actions">
-        <button class="chip" id="shuffle" type="button">Shuffle</button>
+        <button class="chip" id="shuffle" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="3"/><circle class="pip" cx="5.4" cy="5.4" r="1.15"/><circle class="pip" cx="10.6" cy="5.4" r="1.15"/><circle class="pip" cx="8" cy="8" r="1.15"/><circle class="pip" cx="5.4" cy="10.6" r="1.15"/><circle class="pip" cx="10.6" cy="10.6" r="1.15"/></svg>Shuffle</button>
       </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>turn</dd></div>
-        <div><dt>Flick</dt><dd>spin</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>shake</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>turn</dd></div>
-      </dl>
+      <div class="edge">
+        <div class="setter" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Mirrors</span><div class="choices" id="mirrors" role="group" aria-label="Mirrors">
+              <button class="chip" type="button" data-m="2" aria-pressed="true">Two</button>
+              <button class="chip" type="button" data-m="3" aria-pressed="false">Tri</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt>Drag</dt><dd>turn</dd></div>
+          <div><dt>Flick</dt><dd>spin</dd></div>
+          <div class="fine"><dt><kbd>Space</kbd></dt><dd>shake</dd></div>
+          <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>turn</dd></div>
+        </dl>
+      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Kaleidoscope</h1>
@@ -64,7 +99,7 @@
       <div>
         <h2>Two mirrors and a handful of glass</h2>
         <p>David Brewster, a Scottish physicist, built the first kaleidoscope in 1816 while he studied how mirrors bend light. He named it from the Greek words for beautiful, form and look. Copies sold by the hundred thousand within months, but a flaw in his patent let anyone make them, and he earned little.</p>
-        <p>Two mirrors meet at an angle that divides the circle evenly. At 60 degrees, the glass in one wedge shows six times. Each copy is the mirror image of the one beside it, so the edges always match. <em>12</em> closes the angle to 30 degrees. <em>Tri</em> adds a third mirror: three mirrors in a triangle never close the loop, so the images run on to the edge.</p>
+        <p>Two mirrors meet at an angle that divides the circle evenly. At 60 degrees, the glass in one wedge shows six times. Each copy is the mirror image of the one beside it, so the edges always match. <em>12</em> closes the angle to 30 degrees. <em>Tri</em>, in Settings, adds a third mirror: three mirrors in a triangle never close the loop, so the images run on to the edge.</p>
       </div>
       <figure>
         <svg viewBox="-110 -110 220 220" role="img" aria-label="A round rosette of coloured glass. Two dark lines from the centre mark the mirrors around one wedge; the other five wedges repeat it, each flipped against its neighbour.">
@@ -1304,16 +1339,33 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { held.delete(e.key); });
 addEventListener('blur', () => held.clear());
 
+// Two mirrors show 6 or 12 sectors; Tri sets n to 0.
 const chips = [...document.querySelectorAll('.chip[data-n]')];
+const mirrors = [...document.querySelectorAll('.chip[data-m]')];
+let sectors = 6;
 function setN(n) {
   if (n === nNew) return;
   nOld = mixT < 0.5 ? nOld : nNew;
   nNew = n;
   mixT = reduce ? 1 : 0;
-  chips.forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.n === n)));
+  if (n) sectors = n;
+  // Under Tri the sector chips keep their count but go dim.
+  chips.forEach(c => {
+    c.setAttribute('aria-pressed', String(+c.dataset.n === sectors));
+    c.setAttribute('aria-disabled', String(!n));
+  });
+  mirrors.forEach(c => c.setAttribute('aria-pressed', String((+c.dataset.m === 3) === !n)));
   if (ready) { if (raf) return; render(); wake(); }
 }
-chips.forEach(c => c.addEventListener('click', () => setN(+c.dataset.n)));
+chips.forEach(c => c.addEventListener('click', () => { if (nNew) setN(+c.dataset.n); }));
+// Settings opens on hover or tap.
+// A pick, a tap elsewhere or Escape closes it.
+const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
+const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
+setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
+document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
+mirrors.forEach(c => c.addEventListener('click', () => { setN(+c.dataset.m === 3 ? 0 : sectors); openSets(false); }));
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
