@@ -38,6 +38,7 @@
     </div>
     <div class="bar">
       <div class="actions">
+        <button class="chip" id="act-roll" type="button" aria-keyshortcuts="R" aria-label="Roll a new lineup of channels"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="8" r="1.7" fill="currentColor"/><circle cx="16" cy="8" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="8" cy="16" r="1.7" fill="currentColor"/><circle cx="16" cy="16" r="1.7" fill="currentColor"/></svg>Roll</button>
         <button class="chip" id="act-shuffle" type="button" aria-keyshortcuts="S">Shuffle</button>
         <button class="chip" id="act-tune" type="button" aria-keyshortcuts="T">Tune</button>
         <button class="chip" id="act-eyes" type="button" aria-keyshortcuts="E">Eyes</button>
@@ -63,7 +64,7 @@
 </script>
 <script type="module">
 import { initPage, sound } from '../shared/stim.js';
-import { LIB, BIG, GROUPS, groupOf, NCH, SNOW, CH_LIGHT, BIG_OF } from './channels.js';
+import { LIB, BIG, GROUPS, groupOf, SNOW, CH_LIGHT, BIG_OF } from './channels.js';
 initPage({ id: 'tvtree' });
 // A header pill opens the contact sheet of every channel.
 const sheetLink = Object.assign(document.createElement('a'), { className: 'ver', href: 'channels.html', textContent: 'Channels', title: 'Every channel on one sheet' });
@@ -1248,11 +1249,35 @@ function physics(dt) {
 /* ---------- screens: channels, static, power and the big picture ---------- */
 // The first big picture comes soon, so a new visitor sees it.
 const party = { phase: 'idle', t: 0, wait: 8, kind: 0, clock: 0, order: [] };
-// Channels run in order.
-// Now and then a channel is only snow.
+// The tree tunes to a lineup of 14 channels; Roll deals a new lineup.
+// A shuffled deck deals every channel once before any repeats.
+const LINEUP = 14, deck = [];
+let lineup = [];
+function dealOne() {
+  if (!deck.length) {
+    deck.push(...Array(SNOW).keys());
+    for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+  }
+  return deck.pop();
+}
+function dealLineup() {
+  const next = [];
+  while (next.length < LINEUP) { const ch = dealOne(); if (!next.includes(ch)) next.push(ch); }
+  lineup = next;
+}
+dealLineup();
+// A set takes a lineup channel that no other set shows, if one is free.
+function fresh() {
+  const free = lineup.filter(ch => !sets.some(s => s.ch === ch || s.next === ch));
+  const from = free.length ? free : lineup;
+  return from[Math.floor(Math.random() * from.length)];
+}
+// A tap steps through the lineup in order, so sets can be lined up.
+// Now and then a channel is only snow; snow clears to a lineup channel.
 function nextChannel(ch) {
   if (ch !== SNOW && Math.random() < 0.1) return SNOW;
-  return ch === SNOW ? Math.floor(Math.random() * SNOW) : (ch + 1) % SNOW;
+  if (ch === SNOW) return fresh();
+  return lineup[(lineup.indexOf(ch) + 1) % lineup.length];
 }
 function changeChannel(s, to = -1, hand = true) {
   if (!s.power) return powerSet(s, true);
@@ -1615,8 +1640,8 @@ function settle(n) {
   quiet = q;
 }
 function makeSets() {
-  const R = rng(20261102), order = [...Array(NCH - 1).keys()];
-  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  // Each visit opens on a fresh deal of channels.
+  const R = rng(20261102);
   SETS.forEach((def, i) => {
     const info = buildSet(def), [cL, cC, hueV] = SET_COLS[i % SET_COLS.length];
     const body = new THREE.MeshPhysicalMaterial({
@@ -1665,7 +1690,7 @@ function makeSets() {
       rest: [0, 0, 0], anchor: [0, 0, 0], along: 0, slot: 0, R: 1, up: [0, 1, 0],
       c: [0, 0, 0], n: [0, 0, 0], v: [0, 0, 0], ax: [1, 0, 0], yaw: def.yaw, tw: 0, twv: 0,
       o: [0, 0, 0], ov: [0, 0, 0], tilt: [0, 0], tiltV: [0, 0], seatP: [0, 0, 0], seatV: [0, 0, 0], seatA: [0, 0, 0],
-      ch: order[i % order.length], next: -1, burst: 0, burstLen: 0, roll: 0, rollV: 0, lost: 0, jolt: 0, flash: 0,
+      ch: fresh(), next: -1, burst: 0, burstLen: 0, roll: 0, rollV: 0, lost: 0, jolt: 0, flash: 0,
       interf: 0, stat: 0, off: 0, power: true, sync: 0, syncOn: false, seed: R(), tOff: R() * 60, drag: null, look: [0, 0],
       earG, ea: earG.map(() => [0, 0, 0, 0]), pv: [0, 0, 0], pre: 0, hov: 0,
     });
@@ -2135,15 +2160,16 @@ panel.addEventListener('blur', () => { kbd = false; showRing(); wake(); });
 // Waves start at the trunk and spread out along the branches.
 const waveDelay = (s, ms) => Math.hypot(s.c[0], s.c[1] - 1.6 * KY) * ms;
 const ACTS = {
-  // Every lit set jumps to a new channel, never to snow.
+  // Roll deals a new lineup; every lit set tunes into it.
+  roll() {
+    dealLineup();
+    for (const s of sets) if (s.power) setTimeout(() => changeChannel(s, fresh(), false), waveDelay(s, 160));
+  },
+  // Every lit set jumps to another lineup channel, never to snow.
   shuffle() {
     for (const s of sets) {
       if (!s.power) continue;
-      setTimeout(() => {
-        let ch = s.ch;
-        while (ch === s.ch) ch = Math.floor(Math.random() * SNOW);
-        changeChannel(s, ch, false);
-      }, waveDelay(s, 160));
+      setTimeout(() => changeChannel(s, fresh(), false), waveDelay(s, 160));
     }
   },
   shake,
@@ -2160,7 +2186,7 @@ const ACTS = {
   },
 };
 for (const k of Object.keys(ACTS)) document.getElementById('act-' + k)?.addEventListener('click', () => { if (ready) { ACTS[k](); wake(); } });
-const ACT_KEYS = { s: 'shuffle', t: 'tune', e: 'eyes', p: 'power', l: 'lantern' };
+const ACT_KEYS = { r: 'roll', s: 'shuffle', t: 'tune', e: 'eyes', p: 'power', l: 'lantern' };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !ready || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
