@@ -31,7 +31,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D" aria-label="A dish of ferrofluid. The pointer holds a magnet above it; pressing strengthens the field and lifts drops up to it. Arrow keys move the magnet, Space toggles a strong field, Escape lifts it away, D lets a drop fall.">
+    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D - =" aria-label="A dish of ferrofluid. The pointer holds a magnet above it; scrolling sets the field strength, and holding charges the field and lifts drops up to it. Arrow keys move the magnet, minus and equals set the strength, Space toggles a full field, Escape lifts it away, D lets a drop fall.">
       <p class="fail" hidden>Ferrofluid needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -41,8 +41,9 @@
       <dl class="how" aria-label="How to play">
         <div class="fine"><dt>Hover</dt><dd>move the magnet</dd></div>
         <div class="touch"><dt>Drag</dt><dd>move the magnet</dd></div>
-        <div><dt>Press</dt><dd>lift drops</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>strong field</dd></div>
+        <div class="fine"><dt>Scroll</dt><dd>field strength</dd></div>
+        <div><dt>Hold</dt><dd>charge, lift drops</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>full field</dd></div>
       </dl>
     </div>
   </main>
@@ -132,7 +133,7 @@ function rest() {
     if (!raf && Fs.x < 0.01 && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'd', 'D']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'd', 'D', '-', '=', '+']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -221,7 +222,10 @@ const LAM = small ? 0.16 : 0.15, A0 = LAM * 1.05, MESH_N = small ? 10 : 14;
 const SIG2 = 0.42 ** 2, FC = 0.36, HOVER = 1, STRONG = 2;
 // Crowding radius in lattice units; lean falloff and maximum.
 const CS2 = 3.2 ** 2, SIGL = 0.3, LEANMAX = 0.22;
-const mag = { x: 0, z: 0, present: false, pressed: false, locked: false, via: '' };
+// The scroll dial sets the resting field; a hold charges it to STRONG.
+const DMIN = 0.5, DMAX = 1.7, CHARGE_UP = 2.6, CHARGE_DOWN = 6;
+// pen holds the stylus pressure while pressed, else -1.
+const mag = { x: 0, z: 0, present: false, pressed: false, locked: false, via: '', dial: HOVER, charge: 0, pen: -1 };
 const Fs = { x: 0, v: 0 };
 // E is the field envelope; it follows the magnet on a spring.
 // L is the window centre, always a node of the fixed world lattice.
@@ -436,8 +440,8 @@ function simulate(dt) {
 /* ---------- drops: beads that leap, hang, merge and splash ---------- */
 // Gravity, magnet underside height at hover, pull strength.
 const GRAV = 5.5, YA = 0.62, KP = 18;
-// A strong field brings the magnet this much closer.
-const DIP = 0.03;
+// Each unit of field brings the magnet this much closer.
+const DIP = 0.07;
 // The magnet: a hex bar, inradius and height.
 const MR = 0.068, MH = 0.14;
 // Bead cap, beads per press, thrown size, drip size.
@@ -760,7 +764,12 @@ function step(dt) {
   }
   // Off the dish the field fades; the pattern stays inside.
   const reach = smooth(1.55, 1.05, Math.hypot(mag.x, mag.z));
-  const Ft = mag.present ? (mag.pressed || mag.locked ? STRONG : HOVER) * reach : 0;
+  // A hold charges the field smoothly; a pen sets the charge by pressure.
+  const held = mag.locked ? 1 : mag.pressed ? (mag.pen >= 0 ? mag.pen : 1) : 0;
+  const rate = mag.pen >= 0 ? 14 : held > mag.charge ? CHARGE_UP : CHARGE_DOWN;
+  mag.charge += (held - mag.charge) * (1 - Math.exp(-rate * dt));
+  if (Math.abs(held - mag.charge) < 1e-3) mag.charge = held;
+  const Ft = mag.present ? (mag.dial + mag.charge * (STRONG - mag.dial)) * reach : 0;
   let mx = mag.x, mz = mag.z;
   const mr = Math.hypot(mx, mz);
   if (mr > 1.02) { mx *= 1.02 / mr; mz *= 1.02 / mr; }
@@ -807,7 +816,7 @@ function step(dt) {
   pullX = E.x;
   pullZ = E.z;
   // A stronger field means a closer magnet.
-  pullY = hoverY(E.x, E.z) - DIP * clamp(Fs.x - HOVER) + Math.max(0, lift.x);
+  pullY = hoverY(E.x, E.z) - DIP * (clamp(Fs.x, DMIN, STRONG) - HOVER) + Math.max(0, lift.x);
   // Each strong press lets the crown throw a few beads.
   const strong = Ft > 1.5;
   if (strong && !spit.was) { spit.left = SPITS; spit.next = tNow + 0.28; }
@@ -823,7 +832,7 @@ function step(dt) {
   pressure(Math.max(0, Fs.x));
   const top = simulate(dt);
   hum(clamp(Fs.x / STRONG), clamp((Fs.x - HOVER) / (STRONG - HOVER)));
-  return busy || keys.size > 0 || idleAmt > 0 || top > 1.2e-4 || (strong && spit.left > 0) ||
+  return busy || mag.charge !== held || keys.size > 0 || idleAmt > 0 || top > 1.2e-4 || (strong && spit.left > 0) ||
     Math.abs(Fs.x - Ft) > 1e-4 || Math.abs(Fs.v) > 1e-3 ||
     Math.abs(E.x - mx) + Math.abs(E.z - mz) > 1e-4 || Math.abs(E.vx) + Math.abs(E.vz) > 1e-3;
 }
@@ -990,7 +999,7 @@ for (let k = 0; k < 64; k++) {
 }
 // The magnet's top stays in frame over most of the dish.
 // Near the back rim the frame can cut its top.
-for (let z = -0.55; z <= 0.951; z += 0.05) FIT.push([0, hoverY(0, z) + MH + 0.01, z - MR]);
+for (let z = -0.55; z <= 0.951; z += 0.05) FIT.push([0, hoverY(0, z) + DIP * (HOVER - DMIN) + MH + 0.01, z - MR]);
 function fitCamera(w, h) {
   const port = w / h < 1.1, el = ((port ? 45 : 32) * Math.PI) / 180;
   camera.aspect = w / h;
@@ -1160,6 +1169,7 @@ panel.addEventListener('pointermove', e => {
   if (!aimAt(e)) return;
   mag.via = 'pointer';
   mag.present = true;
+  if (e.pointerId === ptrId) mag.pen = e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : -1;
   // After a first gesture, hovering wakes a sleeping context.
   if (ac && sound.on && ac.state === 'suspended' && e.timeStamp - resumeAt > 500) { resumeAt = e.timeStamp; audio(); }
   stir();
@@ -1170,6 +1180,7 @@ panel.addEventListener('pointerdown', e => {
   mag.via = 'pointer';
   mag.present = true;
   mag.pressed = true;
+  mag.pen = e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : -1;
   ptrId = e.pointerId;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   stir();
@@ -1178,6 +1189,7 @@ function release(e) {
   if (e.pointerId !== ptrId) return;
   ptrId = -1;
   mag.pressed = false;
+  mag.pen = -1;
   const r = panel.getBoundingClientRect();
   const over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   // A lifted finger takes the magnet with it.
@@ -1187,6 +1199,18 @@ function release(e) {
 panel.addEventListener('pointerup', release);
 panel.addEventListener('pointercancel', release);
 panel.addEventListener('lostpointercapture', release);
+// Scroll over the dish turns the resting field up or down.
+function turnDial(by) {
+  mag.dial = clamp(mag.dial + by, DMIN, DMAX);
+  stir();
+}
+panel.addEventListener('wheel', e => {
+  if (!ready) return;
+  e.preventDefault();
+  const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+  if (aimAt(e)) { mag.via = 'pointer'; mag.present = true; }
+  turnDial(-dy * 0.0016);
+}, { passive: false });
 panel.addEventListener('pointerleave', e => {
   if (e.pointerType === 'touch' || mag.pressed || mag.via !== 'pointer') return;
   mag.present = false;
@@ -1213,6 +1237,9 @@ addEventListener('keydown', e => {
     stir();
   } else if (e.key === 'd' || e.key === 'D') {
     if (!e.repeat) drip();
+  } else if (e.key === '-' || e.key === '=' || e.key === '+') {
+    if (!mag.present) { mag.via = 'key'; mag.present = true; }
+    turnDial(e.key === '-' ? -0.15 : 0.15);
   }
 });
 document.getElementById('drip').addEventListener('click', drip);
