@@ -33,6 +33,14 @@
 .drop svg { display: block; width: 100%; height: 100%; animation: drop-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 .drop .disc { fill: currentColor; }
 .drop .cut { fill: none; stroke: var(--stage); stroke-width: 2.6; stroke-linecap: square; }
+/* A blurred ring of glass frames each sensor picture. */
+.pips { position: absolute; inset: 0; pointer-events: none; }
+.pips i {
+  position: absolute; left: 0; top: 0; border-radius: 50%;
+  -webkit-backdrop-filter: blur(14px) brightness(0.55); backdrop-filter: blur(14px) brightness(0.55);
+  -webkit-mask: radial-gradient(closest-side, transparent var(--hole), #000 calc(var(--hole) + 1%), #000 70%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent var(--hole), #000 calc(var(--hole) + 1%), #000 70%, transparent 100%);
+}
 @keyframes drop-in { from { transform: scale(0.3); } to { transform: none; } }
 @media (pointer: coarse) { .drop { left: -18px; top: -18px; width: 36px; height: 36px; } }
 @media (prefers-reduced-motion: reduce) { .stage canvas, .drop { transition: none; } .drop svg { animation: none; } }
@@ -49,18 +57,21 @@
     <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the bar. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Tab picks a piece, arrow keys move it, Q and E turn it, Delete removes it, Escape lets go.">
       <canvas aria-hidden="true"></canvas>
       <button class="drop" type="button" tabindex="-1" aria-label="Remove" hidden><svg viewBox="0 0 26 26" aria-hidden="true"><circle class="disc" cx="13" cy="13" r="12"/><path class="cut" d="M9 9l8 8M17 9l-8 8"/></svg></button>
+      <div class="pips" aria-hidden="true"></div>
       <p class="fail" hidden>Prism needs canvas drawing, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="actions">
         <div class="add" id="add" role="group" aria-label="Add a piece">
           <button class="chip icon" type="button" data-kind="prism" aria-label="Add a prism" title="Prism"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/></svg></button>
-          <button class="chip icon" type="button" data-kind="lens" aria-label="Add a lens" title="Lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.4 2.2 2.4 10.2 0 12.4c-2.4-2.2-2.4-10.2 0-12.4z"/></svg></button>
+          <button class="chip icon" type="button" data-kind="lens" aria-label="Add a convex lens" title="Convex lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.4 2.2 2.4 10.2 0 12.4c-2.4-2.2-2.4-10.2 0-12.4z"/></svg></button>
+          <button class="chip icon" type="button" data-kind="dlens" aria-label="Add a concave lens" title="Concave lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 1.8h6.8c-2 2.6-2 9.8 0 12.4h-6.8c2-2.6 2-9.8 0-12.4z"/></svg></button>
           <button class="chip icon" type="button" data-kind="mirror" aria-label="Add a flat mirror" title="Mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="6.9" y="1.5" width="2.2" height="13" rx="0.5" transform="rotate(35 8 8)"/></svg></button>
           <button class="chip icon" type="button" data-kind="convex" aria-label="Add a convex mirror" title="Convex mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg></button>
           <button class="chip icon" type="button" data-kind="concave" aria-label="Add a concave mirror" title="Concave mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg></button>
           <button class="chip icon" type="button" data-kind="sensor" aria-label="Add a sensor pad" title="Sensor pad"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg></button>
         </div>
+        <button class="chip" id="haze" type="button" aria-pressed="false" title="Fine haze">Fine haze</button>
         <button class="chip" id="clear" type="button" aria-disabled="true">Clear</button>
         <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
       </div>
@@ -84,6 +95,11 @@ playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'prism' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
+// Fine haze trades frame time for full-resolution smoke and bloom.
+const hazeB = document.getElementById('haze'), HAZE_KEY = 'stimming.prism.haze';
+let fine = false;
+try { fine = localStorage.getItem(HAZE_KEY) === '1'; } catch (err) {}
+hazeB.setAttribute('aria-pressed', String(fine));
 const addG = document.getElementById('add'), addBs = [...addG.querySelectorAll('.chip')];
 const dropB = panel.querySelector('.drop'), barEl = document.querySelector('.bar');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -182,12 +198,13 @@ const SPEC = {
   source: { w: 0.17, h: 0.078 },
   prism: { side: 0.2 },
   lens: { a: 0.12, t: 0.08 },
+  dlens: { a: 0.12, tc: 0.016, rl: 0.2 },
   mirror: { len: 0.24, th: 0.02 },
   convex: { a: 0.12, rc: 0.34, th: 0.024 },
   concave: { a: 0.12, rc: 0.34, th: 0.024 },
   sensor: { len: 0.2, th: 0.028 },
 };
-const NAMES = { prism: 'prism', lens: 'lens', mirror: 'flat mirror', convex: 'convex mirror', concave: 'concave mirror', sensor: 'sensor pad' };
+const NAMES = { prism: 'prism', lens: 'convex lens', dlens: 'concave lens', mirror: 'flat mirror', convex: 'convex mirror', concave: 'concave mirror', sensor: 'sensor pad' };
 const BASE_SIDE = 0.3, MAXADD = 10, BEAM = 0.028;
 const curved = p => p.kind === 'convex' || p.kind === 'concave';
 const make = (kind, extra = {}) => ({
@@ -252,6 +269,18 @@ function build(p) {
     g.bx = p.x - c * off;
     g.by = p.y - s * off;
     p.r = a;
+  } else if (p.kind === 'dlens') {
+    // The concave lens is a slab with a disc cut from each face.
+    const a = p.a * Sz, R = p.rl * Sz, off = (p.tc * Sz) / 2 + R;
+    g.R = R;
+    g.a = a;
+    g.al = Math.asin(a / R);
+    g.e = off - Math.sqrt(R * R - a * a);
+    g.ax = p.x + c * off;
+    g.ay = p.y + s * off;
+    g.bx = p.x - c * off;
+    g.by = p.y - s * off;
+    p.r = Math.hypot(a, g.e);
   } else if (curved(p)) {
     // A curved mirror is a circular arc with a backing.
     const a = p.a * Sz, R = p.rc * Sz, th = Math.max(3, p.th * Sz), cav = p.kind === 'concave' ? 1 : -1;
@@ -339,6 +368,31 @@ function spanHit(cx, cy, R, axx, axy, cosA, i, f, ox, oy, dx, dy) {
     if (nx * axx + ny * axy >= cosA) { hT = t; hNX = nx; hNY = ny; hI = i; hS = f; return; }
   }
 }
+// A cut face counts only on the lens side, within the aperture.
+// Its outward normal points to the disc centre.
+function cutHit(p, cx, cy, side, i, f, ox, oy, dx, dy) {
+  const g = p.g, R = g.R, fx = ox - cx, fy = oy - cy, b = fx * dx + fy * dy, disc = b * b - (fx * fx + fy * fy - R * R);
+  if (disc <= 0) return;
+  const q = Math.sqrt(disc), ux = Math.cos(p.rot), uy = Math.sin(p.rot);
+  for (const t of [-b - q, -b + q]) {
+    if (t <= EPS || t >= hT) continue;
+    const x = ox + t * dx - cx, y = oy + t * dy - cy;
+    if ((x * ux + y * uy) * side > 0 || Math.abs(-x * uy + y * ux) > g.a) continue;
+    hT = t; hNX = -x / R; hNY = -y / R; hI = i; hS = f;
+  }
+}
+// The two flat rims close the slab.
+function rimHit(p, i, ox, oy, dx, dy) {
+  const g = p.g, ux = Math.cos(p.rot), uy = Math.sin(p.rot), vx = -uy, vy = ux;
+  const rx = ox - p.x, ry = oy - p.y, pv = rx * vx + ry * vy, dv = dx * vx + dy * vy;
+  if (Math.abs(dv) < 1e-12) return;
+  for (const side of [1, -1]) {
+    const t = (side * g.a - pv) / dv;
+    if (t <= EPS || t >= hT) continue;
+    if (Math.abs((rx + t * dx) * ux + (ry + t * dy) * uy) > g.e) continue;
+    hT = t; hNX = vx * side; hNY = vy * side; hI = i; hS = side > 0 ? 2 : 3;
+  }
+}
 function nearest(ox, oy, dx, dy) {
   hT = Infinity;
   hI = -1;
@@ -350,6 +404,10 @@ function nearest(ox, oy, dx, dy) {
     if (p.kind === 'lens') {
       circHit(g.ax, g.ay, g.R, g.bx, g.by, i, 0, ox, oy, dx, dy);
       circHit(g.bx, g.by, g.R, g.ax, g.ay, i, 1, ox, oy, dx, dy);
+    } else if (p.kind === 'dlens') {
+      cutHit(p, g.ax, g.ay, 1, i, 0, ox, oy, dx, dy);
+      cutHit(p, g.bx, g.by, -1, i, 1, ox, oy, dx, dy);
+      rimHit(p, i, ox, oy, dx, dy);
     } else if (curved(p)) {
       spanHit(g.cx, g.cy, g.R, g.axx, g.axy, g.cosA, i, 0, ox, oy, dx, dy);
       spanHit(g.cx, g.cy, g.Rb, g.axx, g.axy, g.cosA, i, 1, ox, oy, dx, dy);
@@ -573,10 +631,6 @@ const edge = a => `rgba(${EDGE.join(',')},${a})`;
 const LDX = -0.6, LDY = -0.8;
 // Stencil tones: flat fills, two values per part.
 const TONE = {
-  body: css(0.27, 0.014, 266), bodyLit: css(0.4, 0.016, 262),
-  barrel: css(0.19, 0.012, 266), barrelLit: css(0.32, 0.014, 262),
-  collar: css(0.7, 0.17, 45), led: css(0.84, 0.16, 75), dark: css(0.1, 0.008, 270),
-  lensRim: css(0.13, 0.01, 268), lensHot: css(0.99, 0.02, 95), lensWarm: css(0.9, 0.08, 80),
   concave: css(0.44, 0.1, 330), convex: css(0.46, 0.08, 200), face: css(0.92, 0.012, 235),
   pad: css(0.3, 0.012, 266), padFace: css(0.15, 0.01, 270), sens: css(0.87, 0.18, 128),
   pipBg: css(0.09, 0.006, 270), pipCard: css(0.17, 0.01, 268), pipLine: css(0.25, 0.012, 268),
@@ -602,11 +656,11 @@ function buildTable() {
 }
 // Smoke and dust motes at full resolution show where light passes.
 function buildDust() {
-  const w = dustC.width, h = dustC.height, c = dX, q = 4;
+  const w = dustC.width, h = dustC.height, c = dX, q = 4, dp = w / W;
   const [t, tx] = mk(), tw = Math.ceil(w / q), th = Math.ceil(h / q);
   t.width = tw;
   t.height = th;
-  const img = tx.createImageData(tw, th), sc = q / (pr * 0.2 * S);
+  const img = tx.createImageData(tw, th), sc = q / (dp * 0.2 * S);
   for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
     // Warped noise draws slow wisps of smoke.
     const X = x * sc, Y = y * sc;
@@ -623,7 +677,7 @@ function buildDust() {
   c.imageSmoothingEnabled = true;
   c.imageSmoothingQuality = 'high';
   c.drawImage(t, 0, 0, w, h);
-  const R = rng(20261103), area = (w * h) / (pr * pr), sz = Math.max(1, pr * 0.9);
+  const R = rng(20261103), area = (w * h) / (dp * dp), sz = Math.max(1, dp * 0.9);
   c.globalCompositeOperation = 'lighter';
   for (let b = 0; b < 6; b++) {
     const v = Math.round(255 * (0.16 + 0.15 * b));
@@ -635,7 +689,7 @@ function buildDust() {
   }
   // A few large motes sit out of focus.
   for (let i = 0; i < area / 9000; i++) {
-    const r = (2 + 7 * R() ** 2) * pr;
+    const r = (2 + 7 * R() ** 2) * dp;
     c.globalAlpha = 0.12 + 0.22 * R();
     c.drawImage(SPR[WHITE], R() * w - r, R() * h - r, r * 2, r * 2);
   }
@@ -703,6 +757,13 @@ function glassPath(c, p) {
   if (p.kind === 'lens') {
     c.arc(g.ax, g.ay, g.R, p.rot + Math.PI - g.al, p.rot + Math.PI + g.al);
     c.arc(g.bx, g.by, g.R, p.rot - g.al, p.rot + g.al);
+  } else if (p.kind === 'dlens') {
+    const ux = Math.cos(p.rot), uy = Math.sin(p.rot), vx = -uy, vy = ux;
+    c.moveTo(p.x - ux * g.e - vx * g.a, p.y - uy * g.e - vy * g.a);
+    c.lineTo(p.x + ux * g.e - vx * g.a, p.y + uy * g.e - vy * g.a);
+    c.arc(g.ax, g.ay, g.R, p.rot + Math.PI + g.al, p.rot + Math.PI - g.al, true);
+    c.lineTo(p.x - ux * g.e + vx * g.a, p.y - uy * g.e + vy * g.a);
+    c.arc(g.bx, g.by, g.R, p.rot + g.al, p.rot - g.al, true);
   } else {
     c.moveTo(g.v[0], g.v[1]);
     for (let i = 2; i < g.v.length; i += 2) c.lineTo(g.v[i], g.v[i + 1]);
@@ -727,7 +788,7 @@ function glassBody(p, i) {
   c.globalCompositeOperation = 'lighter';
   c.strokeStyle = RIMIN;
   for (const w of [0.34, 0.2, 0.09]) {
-    c.lineWidth = w * p.r * (p.kind === 'lens' ? 0.8 : 1);
+    c.lineWidth = w * p.r * (p.kind === 'prism' ? 1 : 0.8);
     c.stroke();
   }
   const big = 0.17 * S;
@@ -793,7 +854,7 @@ function padBody(p) {
 function drawBody(p, i) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
-  if (p.kind === 'prism' || p.kind === 'lens') glassBody(p, i);
+  if (p.kind === 'prism' || p.kind === 'lens' || p.kind === 'dlens') glassBody(p, i);
   else if (p.kind === 'mirror') mirrorBody(p);
   else if (p.kind === 'sensor') padBody(p);
   else arcBody(p);
@@ -891,84 +952,65 @@ function rrect(q, x, y, w, h, [a, b, c, d]) {
   q.arcTo(x, y, x + w, y, a);
   q.closePath();
 }
-// Each stencil part gets a flat fill and a lit band.
-function part(path, base, lit, up, hh) {
-  const c = ctx;
-  c.fillStyle = base;
-  c.fill(path, 'evenodd');
-  c.save();
-  c.clip(path, 'evenodd');
-  c.fillStyle = lit;
-  c.fillRect(-1e4, up > 0 ? hh * 0.22 : -2e4, 2e4, 2e4 - hh * 0.22);
-  c.restore();
-}
-// The lamp has a finned body, a collar, a barrel and a lens.
+// The lamp is a shaded housing with fins and a bright bezel.
 function drawSource(p) {
-  const c = ctx, g = p.g, hw = g.hw, hh = g.hh;
+  const c = ctx, g = p.g, hw = g.hw, hh = g.hh, co = Math.cos(p.rot), si = Math.sin(p.rot);
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
-  local(p);
-  const up = -Math.sin(p.rot) * LDX + Math.cos(p.rot) * LDY > 0 ? 1 : -1;
-  const xb = hw * 0.3, xn = hw * 0.46, xg = hw * 0.76, rr = hh * 0.34;
-  // Cooling fins cut clean through the body.
-  const body = new Path2D();
-  rrect(body, -hw, -hh, xb + hw, hh * 2, [rr, 0, 0, rr]);
-  for (let i = 0; i < 6; i++) body.rect(-hw * (0.84 - i * 0.13), -hh * 0.64, hw * 0.055, hh * 1.28);
-  part(body, TONE.body, TONE.bodyLit, up, hh);
-  // A status lamp sits in a cut ring.
-  c.fillStyle = TONE.dark;
+  c.setTransform(pr * co, pr * si, -pr * si, pr * co, pr * p.x, pr * p.y);
+  const rr = hh * 0.42, path = new Path2D();
+  rrect(path, -hw, -hh, hw * 2, hh * 2, [rr, rr, rr, rr]);
+  const gr = c.createLinearGradient(0, -hh, 0, hh);
+  gr.addColorStop(0, css(0.4, 0.02, 255));
+  gr.addColorStop(0.18, css(0.29, 0.018, 260));
+  gr.addColorStop(0.7, css(0.19, 0.015, 264));
+  gr.addColorStop(1, css(0.13, 0.012, 266));
+  c.fillStyle = gr;
+  c.fill(path);
+  // Each fin is a dark groove with a lit edge.
+  c.lineWidth = 1;
+  c.strokeStyle = css(0.1, 0.012, 266, 0.9);
   c.beginPath();
-  c.arc(hw * 0.08, 0, hh * 0.24, 0, TAU);
-  c.fill();
-  c.fillStyle = TONE.led;
+  for (let i = 0; i < 4; i++) { const x = -hw * (0.78 - i * 0.14); c.moveTo(x, -hh * 0.62); c.lineTo(x, hh * 0.62); }
+  c.stroke();
+  c.strokeStyle = css(0.5, 0.02, 250, 0.35);
   c.beginPath();
-  c.arc(hw * 0.08, 0, hh * 0.13, 0, TAU);
-  c.fill();
-  c.fillStyle = TONE.collar;
-  c.fillRect(xb, -hh * 0.76, xn - xb, hh * 1.52);
-  // A groove cuts the barrel in two.
-  const barrel = new Path2D();
-  barrel.rect(xn, -hh * 0.9, xg - xn, hh * 1.8);
-  rrect(barrel, xg + hw * 0.035, -hh * 0.9, hw - xg - hw * 0.035, hh * 1.8, [0, rr * 0.6, rr * 0.6, 0]);
-  part(barrel, TONE.barrel, TONE.barrelLit, up, hh);
-  c.fillStyle = TONE.lensRim;
+  for (let i = 0; i < 4; i++) { const x = -hw * (0.78 - i * 0.14) + 1; c.moveTo(x, -hh * 0.62); c.lineTo(x, hh * 0.62); }
+  c.stroke();
+  const bz = c.createLinearGradient(0, -hh, 0, hh);
+  bz.addColorStop(0, css(0.62, 0.02, 245));
+  bz.addColorStop(0.5, css(0.36, 0.02, 255));
+  bz.addColorStop(1, css(0.22, 0.02, 262));
+  c.fillStyle = bz;
+  const bez = new Path2D();
+  rrect(bez, hw * 0.5, -hh, hw * 0.5, hh * 2, [0, rr, rr, 0]);
+  c.fill(bez);
+  c.strokeStyle = css(0.82, 0.03, 235, 0.3);
+  c.stroke(path);
+  c.fillStyle = css(0.12, 0.01, 265);
   c.beginPath();
-  c.ellipse(hw, 0, hh * 0.2, hh * 0.76, 0, 0, TAU);
+  c.ellipse(hw * 0.97, 0, hh * 0.16, hh * 0.5, 0, 0, TAU);
   c.fill();
-  const lg = c.createRadialGradient(hw, 0, 0, hw, 0, hh * 0.6);
-  lg.addColorStop(0, TONE.lensHot);
-  lg.addColorStop(0.6, TONE.lensHot);
-  lg.addColorStop(1, TONE.lensWarm);
-  c.fillStyle = lg;
+  c.fillStyle = css(0.98, 0.02, 95);
   c.beginPath();
-  c.ellipse(hw, 0, hh * 0.12, hh * 0.6, 0, 0, TAU);
+  c.ellipse(hw * 0.98, 0, hh * 0.09, hh * 0.32, 0, 0, TAU);
   c.fill();
-  // Light spills forward from the lens as a soft cone.
+  // The aperture glows where the beam leaves.
   c.globalCompositeOperation = 'lighter';
-  const Lc = 0.24 * S, wc = 0.05 * S;
-  c.globalAlpha = 0.32;
-  c.drawImage(SPR[WHITE], hw - Lc * 0.3, -wc, Lc, wc * 2);
-  c.globalAlpha = 0.45;
-  c.drawImage(SPR[WHITE], hw - 0.007 * S, -0.1 * S, 0.014 * S, 0.2 * S);
   c.setTransform(pr, 0, 0, pr, 0, 0);
-  for (const [r, a] of [[0.04, 0.95], [0.12, 0.26], [0.26, 0.08]]) {
+  for (const [r, a] of [[0.045, 0.9], [0.13, 0.22]]) {
     const R = r * S;
     c.globalAlpha = a;
     c.drawImage(SPR[WHITE], g.ex - R, g.ey - R, R * 2, R * 2);
   }
   c.globalAlpha = 1;
 }
-// The picture sits behind the pad, or wherever it fits best.
+// Pictures stack from the top left corner.
+const pipR = () => clamp(0.12 * S, 54, 92);
 function pipAt(p) {
-  const g = p.g, rp = clamp(0.12 * S, 54, 92) * Math.min(1, p.z), nfx = Math.sin(p.rot), nfy = -Math.cos(p.rot);
-  const ux = Math.cos(p.rot), uy = Math.sin(p.rot), off = g.th / 2 + 18 + rp, offL = g.L + 18 + rp;
-  const lo = rp + 8, hiX = W - rp - 8, hiY = Math.max(lo, H - safeB - rp - 4);
-  let best = null, bd = Infinity;
-  for (const [dx, dy, o] of [[-nfx, -nfy, off], [ux, uy, offL], [-ux, -uy, offL], [nfx, nfy, off]]) {
-    const x = p.x + dx * o, y = p.y + dy * o, cx = clamp(x, lo, hiX), cy = clamp(y, lo, hiY), d = Math.hypot(cx - x, cy - y);
-    if (d < bd - 4) { bd = d; best = [cx, cy]; }
-  }
-  return [best[0], best[1], rp];
+  const rp = pipR(), gap = 2 * rp + 30, rows = Math.max(1, Math.floor((H - safeB - 24) / gap));
+  const n = pieces.filter(q => q.kind === 'sensor' && q.pc).indexOf(p), k = Math.max(0, n);
+  return [rp + 24 + Math.floor(k / rows) * gap, rp + 24 + (k % rows) * gap, rp];
 }
 function drawPip(p) {
   if (!p.pc) return;
@@ -977,16 +1019,18 @@ function drawPip(p) {
   c.setTransform(pr, 0, 0, pr, 0, 0);
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
-  // A lime lead joins the pad to its picture.
+  // A thin lime lead joins the pad to its picture.
   const dx = x - p.x, dy = y - p.y, d = Math.hypot(dx, dy);
   if (d > rp + g.th) {
     c.strokeStyle = TONE.sens;
-    c.lineWidth = 2;
+    c.globalAlpha = 0.45;
+    c.lineWidth = 1.25;
     c.lineCap = 'butt';
     c.beginPath();
     c.moveTo(p.x + (dx / d) * g.th * 0.6, p.y + (dy / d) * g.th * 0.6);
     c.lineTo(x - (dx / d) * (rp + 6), y - (dy / d) * (rp + 6));
     c.stroke();
+    c.globalAlpha = 1;
   }
   c.fillStyle = TONE.pipBg;
   c.beginPath();
@@ -1142,6 +1186,23 @@ function beams() {
   }
   c.globalAlpha = 1;
 }
+// Each shown picture gets one glass ring.
+const pipsEl = panel.querySelector('.pips'), glass = [];
+function placeGlass() {
+  const shown = pieces.filter(q => q.kind === 'sensor' && q.pc);
+  while (glass.length < shown.length) glass.push(pipsEl.appendChild(document.createElement('i')));
+  glass.forEach((el, k) => {
+    const q = shown[k];
+    el.hidden = !q;
+    if (!q) return;
+    const [x, y, rp] = pipAt(q), R = rp + 34, key = `${x}|${y}|${rp}`;
+    if (el.dataset.k === key) return;
+    el.dataset.k = key;
+    el.style.width = el.style.height = `${R * 2}px`;
+    el.style.transform = `translate(${x - R}px, ${y - R}px)`;
+    el.style.setProperty('--hole', `${((rp + 3) / R) * 100}%`);
+  });
+}
 let geomDirty = true, cost = 0, slowN = 0;
 function render() {
   const t0 = performance.now();
@@ -1166,6 +1227,7 @@ function render() {
   for (let i = 1; i < n; i++) rims(pieces[i]);
   drawSource(pieces[0]);
   for (let i = 1; i < n; i++) if (pieces[i].kind === 'sensor') drawPip(pieces[i]);
+  placeGlass();
   if (sel >= 0 && ringA > 0) ring(pieces[sel]);
   placeDrop();
   // Slow frames drop the pixel ratio to 1.
@@ -1404,7 +1466,7 @@ function aim(kind, th, x, y, cx, cy) {
   const tx = cx - x, ty = cy - y, toward = a => Math.cos(a) * tx + Math.sin(a) * ty;
   const pickA = (a, b, outA, outB) => (toward(outA) >= toward(outB) ? a : b);
   if (kind === 'sensor') return th - Math.PI / 2;
-  if (kind === 'lens') return th;
+  if (kind === 'lens' || kind === 'dlens') return th;
   if (kind === 'mirror') return pickA(th + Math.PI / 4, th - Math.PI / 4, th + Math.PI / 2, th - Math.PI / 2);
   if (kind === 'prism') return pickA(th + 0.4, th + Math.PI - 0.4, th + 0.8, th - 0.8);
   const tilt = 0.45;
@@ -1552,8 +1614,23 @@ let raf = 0, last = 0, onScreen = true;
 function wake() {
   if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
+// Long gaps between close frames step quality down.
+// Fine haze goes first, then the pixel ratio.
+let gapAvg = 16, lastDraw = 0;
+function watch(ms) {
+  const gap = ms - lastDraw;
+  lastDraw = ms;
+  if (gap > 100 || lowDpr) return;
+  gapAvg = lerp(gapAvg, gap, 0.1);
+  if (gapAvg < 26 || ++slowN < 24) return;
+  slowN = 0;
+  gapAvg = 16;
+  if (fine) { fine = false; hazeB.setAttribute('aria-pressed', 'false'); fit(true); }
+  else { lowDpr = true; fit(); }
+}
 function frame(ms) {
   raf = 0;
+  watch(ms);
   const dt = Math.min(Math.max(0, (ms - last) / 1000), 1 / 30);
   last = ms;
   let busy = false;
@@ -1578,6 +1655,11 @@ function at(e) {
 function inside(p, x, y, pad) {
   const g = p.g;
   if (p.kind === 'lens') return Math.hypot(x - g.ax, y - g.ay) < g.R + pad && Math.hypot(x - g.bx, y - g.by) < g.R + pad;
+  if (p.kind === 'dlens') {
+    const rx = x - p.x, ry = y - p.y, co = Math.cos(p.rot), si = Math.sin(p.rot);
+    if (Math.abs(rx * co + ry * si) > g.e + pad || Math.abs(-rx * si + ry * co) > g.a + pad) return false;
+    return Math.hypot(x - g.ax, y - g.ay) > g.R - pad && Math.hypot(x - g.bx, y - g.by) > g.R - pad;
+  }
   if (curved(p)) {
     const d = Math.hypot(x - g.cx, y - g.cy), e = pad + 5;
     if (d < Math.min(g.R, g.Rb) - e || d > Math.max(g.R, g.Rb) + e) return false;
@@ -1709,6 +1791,15 @@ addEventListener('keydown', e => {
     moveTo(p, p.x + arrow[0] * st, p.y + arrow[1] * st);
   } else setRot(p, p.rot + (k === 'e' ? 1 : -1) * (e.shiftKey ? 15 : 3) * D2R);
 });
+hazeB.addEventListener('click', () => {
+  fine = !fine;
+  hazeB.setAttribute('aria-pressed', String(fine));
+  try { localStorage.setItem(HAZE_KEY, fine ? '1' : '0'); } catch (err) {}
+  lowDpr = false;
+  slowN = 0;
+  gapAvg = 16;
+  fit(true);
+});
 addBs.forEach(b => b.addEventListener('click', () => {
   if (b.getAttribute('aria-disabled') === 'true') return;
   addPiece(b.dataset.kind);
@@ -1727,22 +1818,26 @@ function measureBar() {
   const first = barEl?.firstElementChild;
   safeB = first ? clamp(panel.getBoundingClientRect().bottom - first.getBoundingClientRect().top, 0, H * 0.4) : 0;
 }
-function fit() {
+function fit(force) {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(2e6 / (w * h)));
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt((fine ? 2e6 : 1.4e6) / (w * h)));
   const nw = Math.floor(w * p), nh = Math.floor(h * p);
   tall = w / h < 1.2;
   if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
   measureBar();
   if (pristine() && !tween) applyLayout();
-  if (nw !== cw || nh !== ch || !bgC.width) {
-    cw = canvas.width = bgC.width = hzC.width = dustC.width = nw;
-    ch = canvas.height = bgC.height = hzC.height = dustC.height = nh;
+  if (force === true || nw !== cw || nh !== ch || !bgC.width) {
+    cw = canvas.width = bgC.width = nw;
+    ch = canvas.height = bgC.height = nh;
+    // Plain haze runs smoke at half size and glow at a third.
+    const hz = fine ? 1 : 2;
+    hzC.width = dustC.width = Math.ceil(nw / hz);
+    hzC.height = dustC.height = Math.ceil(nh / hz);
     pr = cw / W;
     MIP.forEach((m, i) => {
-      const f = 2 ** (i + 1);
+      const f = (fine ? 2 : 3) * 2 ** i;
       m.c.width = Math.ceil(cw / f);
       m.c.height = Math.ceil(ch / f);
     });
