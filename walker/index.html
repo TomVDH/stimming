@@ -577,17 +577,64 @@ void main() {
     vec3 hd = normalize(vec3(d.x, 0.0, d.z));
     col = mix(col, skyBase(hd, length(hd - SD)) * 0.8, 1.0 - exp(-t * 0.003));
   }
-  // The lens darkens toward the frame corners.
-  vec2 vq = (gl_FragCoord.xy / uRes - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-  col *= mix(1.0, 0.45, smoothstep(0.25, 0.95, length(vq)));
-  // Exposure, gamma, then dither against banding.
+  // Exposure; the post pass grades the frame.
   col = 1.0 - exp(-col * 1.15);
-  col = pow(col, vec3(1.0 / 2.2));
-  // An S-curve deepens the shadows and lifts the highlights.
-  col = mix(col, col * col * (3.0 - 2.0 * col), 0.65);
-  col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
   gl_FragColor = vec4(col, 1.0);
 }`;
+/* ---------- lens and grade ---------- */
+// The post pass adds the sun flare, then grades the whole frame.
+// The flare follows Buoy Business: haze, orb, streak and warm ghosts.
+// Depth taps round the sun hide it where the walker covers it.
+const POST_FS = `
+uniform sampler2D tColor, tDepth;
+uniform vec2 uSun;
+uniform float uAspect;
+varying vec2 vUv;
+const float RING = 0.012;
+const vec3 ORANGE = vec3(1.0, 0.42, 0.1), CREAM = vec3(1.0, 0.86, 0.66);
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main() {
+  vec3 base = texture2D(tColor, vUv).rgb;
+  // The sky writes no depth; any nearer sample covers the sun.
+  float seen = 0.0;
+  for (int k = 0; k < 9; k++) {
+    float a = float(k) * 0.7854;
+    vec2 o = k == 0 ? vec2(0.0) : vec2(cos(a), sin(a)) * RING;
+    seen += texture2D(tDepth, clamp(uSun + o / vec2(uAspect, 1.0), 0.0, 1.0)).r > 0.9999 ? 1.0 : 0.0;
+  }
+  float cover = seen / 9.0;
+  vec3 col = mix(CREAM, ORANGE, 0.3);
+  vec2 d = vUv - uSun;
+  float ax = d.x * uAspect, ay = d.y;
+  // A wide veil of haze and a soft orb, squashed sideways.
+  float r = length(vec2(ax * 0.6, ay));
+  vec3 add = col * (0.035 * exp(-r * 1.6) + 0.09 * exp(-r * 6.0) + 0.3 * exp(-r * 24.0));
+  // The anamorphic streak: a thin hot line in a broad soft sheath.
+  float line = exp(-abs(ay) * 160.0) + 0.07 * exp(-abs(ay) * 13.0);
+  add += col * line * exp(-abs(ax) / 0.7) * 0.7;
+  // Ghosts sit on the line from the sun through the frame centre.
+  vec2 toC = vec2(0.5) - uSun;
+  vec3 gs[4];
+  gs[0] = vec3(0.7, 0.05, 0.9); gs[1] = vec3(1.4, 0.09, 0.6); gs[2] = vec3(2.2, 0.15, 0.4); gs[3] = vec3(-0.45, 0.03, 0.5);
+  for (int i = 0; i < 4; i++) {
+    vec2 g = (vUv - (uSun + toC * gs[i].x)) * vec2(uAspect, 1.0);
+    add += mix(col, ORANGE, 0.4) * exp(-dot(g, g) / (gs[i].y * gs[i].y)) * gs[i].z * 0.12;
+  }
+  add *= cover;
+  // Haze sits lighter on the near walker than on the far sky.
+  add *= texture2D(tDepth, vUv).r > 0.9999 ? 1.0 : 0.45;
+  // Screen blend: the flare washes the frame instead of clipping it.
+  vec3 c = 1.0 - (1.0 - base) * (1.0 - min(add, 1.0));
+  // The lens darkens toward the corners.
+  vec2 vq = (vUv - 0.5) * vec2(uAspect, 1.0);
+  c *= mix(1.0, 0.45, smoothstep(0.25, 0.95, length(vq)));
+  // Gamma, an S-curve for contrast, then dither against banding.
+  c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.65);
+  c += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
 /* ---------- three.js world ---------- */
 // three draws the sky, sea and a solid 3D walker through one long lens.
 // The walker stands at distance 1; one leg unit is s / focal world units.
@@ -596,10 +643,9 @@ const YAW = 0.5, DZ3 = 8;
 // The cast shadow uses a higher sun, so it stays on screen.
 // Its bearing swings aside, so the shadow falls at an angle.
 const SHADOW_ELEV = 0.18, SHADOW_TURN = -0.2;
-let THREE = null, Lensflare = null, LensflareElement = null;
+let THREE = null;
 try {
   THREE = await import('three');
-  ({ Lensflare, LensflareElement } = await import('three/addons/objects/Lensflare.js'));
 } catch (err) { console.warn('three did not load; the flat scene shows instead.', err); }
 // A rod between two joints, as joint slots and a radius in leg units.
 const LEG_RODS = [[O, B, 1.6], [O, A, 1.5], [B, P1, 1.2], [P1, P2, 1.2], [P2, B, 1.2], [B, P4, 1.2], [P2, P3, 1.2], [P4, P3, 1.2], [P3, F, 1.2], [F, P4, 1.2], [A, P4, 1.1], [A, P1, 1.1]];
@@ -614,6 +660,8 @@ const sea = (() => {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.autoClear = true;
+  // The post pass does gamma and grade, so the target holds linear light.
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(20, 1, 0.004, 60);
   camera.rotation.order = 'YXZ';
@@ -633,7 +681,7 @@ const sea = (() => {
   scene.add(back);
 
   // Backlit tubes: dark faces, a warm rim where the low sun grazes them.
-  const rodMat = new THREE.MeshStandardMaterial({ color: 0x17120f, roughness: 0.42, metalness: 0.25 });
+  const rodMat = new THREE.MeshStandardMaterial({ color: 0x0b0908, roughness: 0.42, metalness: 0.25 });
   const vaneMat = new THREE.MeshStandardMaterial({ color: 0x7c1a10, emissive: 0x2c0602, roughness: 0.85, side: THREE.DoubleSide });
   const rods = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 10), rodMat, MAX_LEGS * LEG_RODS.length + FRAME_RODS);
   const joints = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), rodMat, MAX_LEGS * LEG_JOINTS.length + 1);
@@ -682,37 +730,20 @@ const sea = (() => {
   Object.assign(sun.shadow.camera, { left: -0.4, right: 0.4, top: 0.4, bottom: -0.4, near: 0.05, far: 8 });
   sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun, sun.target);
-  scene.add(new THREE.HemisphereLight(0x4a2a3a, 0x3a2014, 0.55));
+  scene.add(new THREE.HemisphereLight(0x4a2a3a, 0x3a2014, 0.18));
 
-  // The flare: glare, an anamorphic streak and a row of oval ghosts.
-  const tex = paint => { const c = document.createElement('canvas'); c.width = c.height = 512; paint(c.getContext('2d')); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
-  const radial = (c, stops, sx = 1) => {
-    c.save(); c.translate(256, 256); c.scale(sx, 1);
-    const R = 255 / sx, g = c.createRadialGradient(0, 0, 0, 0, 0, R); stops.forEach(([o, col]) => g.addColorStop(o, col));
-    c.fillStyle = g; c.beginPath(); c.arc(0, 0, R, 0, TAU); c.fill(); c.restore();
-  };
-  const glareTex = tex(c => radial(c, [[0, 'rgb(255 200 140 / 0.9)'], [0.12, 'rgb(255 150 80 / 0.35)'], [0.5, 'rgb(255 110 60 / 0.06)'], [1, 'rgb(255 90 40 / 0)']]));
-  const streakTex = tex(c => {
-    c.save(); c.translate(256, 256); c.scale(1, 0.012);
-    const g = c.createRadialGradient(0, 0, 0, 0, 0, 256);
-    [[0, 'rgb(255 245 230 / 1)'], [0.2, 'rgb(170 205 255 / 0.7)'], [0.6, 'rgb(100 150 255 / 0.2)'], [1, 'rgb(80 120 255 / 0)']].forEach(([o, col]) => g.addColorStop(o, col));
-    c.fillStyle = g; c.beginPath(); c.arc(0, 0, 256, 0, TAU); c.fill(); c.restore();
-    c.save(); c.translate(256, 256); c.scale(1, 0.05);
-    const g2 = c.createRadialGradient(0, 0, 0, 0, 0, 256);
-    [[0, 'rgb(130 170 255 / 0.25)'], [1, 'rgb(90 130 255 / 0)']].forEach(([o, col]) => g2.addColorStop(o, col));
-    c.fillStyle = g2; c.beginPath(); c.arc(0, 0, 256, 0, TAU); c.fill(); c.restore();
-  });
-  const ghostTex = tex(c => radial(c, [[0, 'rgb(255 255 255 / 0.05)'], [0.75, 'rgb(255 255 255 / 0.14)'], [0.9, 'rgb(255 255 255 / 0.28)'], [1, 'rgb(255 255 255 / 0)']], 1.35));
-  const flare = new Lensflare();
-  const flareEls = {
-    glare: new LensflareElement(glareTex, 400, 0, new THREE.Color(1, 0.85, 0.7)),
-    streak: new LensflareElement(streakTex, 1800, 0, new THREE.Color(1, 1, 1)),
-  };
-  flare.addElement(flareEls.glare); flare.addElement(flareEls.streak);
-  for (const [size, dist, col] of [[70, 0.35, [1, 0.7, 0.4]], [40, 0.6, [0.5, 1, 0.85]], [150, 0.9, [0.6, 0.5, 1]], [60, 1.15, [1, 0.6, 0.45]], [110, 1.45, [0.45, 0.7, 1]]]) {
-    flare.addElement(new LensflareElement(ghostTex, size, dist, new THREE.Color(...col).multiplyScalar(0.3)));
-  }
-  scene.add(flare);
+  // The scene renders to a target; the post pass reads its colour and depth.
+  const rt = new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType });
+  rt.depthTexture = new THREE.DepthTexture(1, 1);
+  const postU = { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 } };
+  const postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: postU, depthTest: false, depthWrite: false,
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: POST_FS,
+  }));
+  postQuad.frustumCulled = false;
+  postScene.add(postQuad);
 
   const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3(), _s = new THREE.Vector3();
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3();
@@ -734,7 +765,7 @@ const sea = (() => {
   return {
     legZ,
     fit() {
-      const pr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(1.6e6 / (w * h)));
+      const pr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(1.3e6 / (w * h)));
       renderer.setPixelRatio(pr);
       renderer.setSize(w, h, false);
       const W = Math.round(w * pr), H = Math.round(h * pr);
@@ -744,8 +775,8 @@ const sea = (() => {
       camera.fov = (2 * Math.atan(half / focal) * 180) / PI;
       camera.aspect = w / (2 * half);
       camera.setViewOffset(w, 2 * half, 0, half - horizonY, w, h);
-      flareEls.streak.size = w * 2.2;
-      flareEls.glare.size = sunR * 6;
+      rt.setSize(W, H);
+      postU.uAspect.value = w / h;
     },
     // Leg-unit point to screen pixels, through the live camera.
     project(lx, ly, lz) {
@@ -766,7 +797,7 @@ const sea = (() => {
       U.uRot.value.setFromMatrix4(camera.matrixWorld);
       U.uSD.value.copy(sd);
       U.uHor.value = horizonY; U.uF.value = focal; U.uTime.value = simT; U.uWind.value = Math.abs(wind); U.uSunR.value = sunR / focal;
-      flare.position.copy(camera.position).addScaledVector(sd, 40);
+      postU.uSun.value.set(sunX / w, 1 - sunY / h);
       // The shadow light shares the sun bearing at a higher angle.
       const flat = Math.hypot(sd.x, sd.z), c0 = Math.cos(SHADOW_TURN), s0 = Math.sin(SHADOW_TURN);
       const hx = sd.x / flat, hz = sd.z / flat;
@@ -816,7 +847,10 @@ const sea = (() => {
       printMesh.count = n; printMesh.instanceMatrix.needsUpdate = true;
       groundMesh.position.set(tx, 0, -1);
 
+      renderer.setRenderTarget(rt);
       renderer.render(scene, camera);
+      renderer.setRenderTarget(null);
+      renderer.render(postScene, postCam);
     },
   };
 })();
