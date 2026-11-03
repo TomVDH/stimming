@@ -832,7 +832,7 @@ function step(dt) {
 
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, U = null, cellTex = null, bulkTex = null, dropMesh = null;
-let glow = null, neckMesh = null, NA = null, NB2 = null, NN = null;
+let glow = null, groove = null, neckMesh = null, NA = null, NB2 = null, NN = null;
 let ray = null, plane = null, ndc = null, hitV = null, tmp = null;
 let ready = false, lowDpr = false;
 
@@ -982,13 +982,15 @@ function buildPool(n) {
   geo.setIndex(new THREE.BufferAttribute(idx.subarray(0, ni), 1));
   return geo;
 }
-// The rim, the back base and the top spike set the framing.
+// The dish's base sits on a plinth; the fluid floor is above it.
+const PLINTH_Y = -0.13, PLINTH_R = 1.22, FLOOR_Y = -0.1;
+// The rim, the back of the plinth and the top spike set the framing.
 // The front of the base can go under the bar.
 const FIT = [[0, 0.34, 0]];
 for (let k = 0; k < 64; k++) {
-  const a = (k / 64) * TAU, c = Math.cos(a) * 1.1, s = Math.sin(a) * 1.1;
-  FIT.push([c, 0.09, s]);
-  if (s < 0.2) FIT.push([c, -0.13, s]);
+  const a = (k / 64) * TAU, c = Math.cos(a), s = Math.sin(a);
+  FIT.push([c * 1.04, 0.08, s * 1.04]);
+  if (s < 0.2) FIT.push([c * PLINTH_R, PLINTH_Y, s * PLINTH_R]);
 }
 // The magnet's top stays in frame over most of the dish.
 // Near the back rim the frame can cut its top.
@@ -1362,20 +1364,41 @@ async function start() {
 
   const table = new THREE.Mesh(
     new THREE.CircleGeometry(40, 64),
-    new THREE.MeshStandardMaterial({ color: 0x17181c, roughness: 0.9, metalness: 0, envMapIntensity: 0.25 }),
+    new THREE.MeshStandardMaterial({ color: 0x101114, roughness: 0.9, metalness: 0, envMapIntensity: 0.25 }),
   );
   table.rotation.x = -Math.PI / 2;
-  table.position.y = -0.13;
+  table.position.y = PLINTH_Y - 0.09;
   scene.add(table);
-  // A dark satin dish: straight inner wall, rounded rim.
-  const prof = [[0.999, -0.13], [0.999, 0.058], [1.004, 0.071], [1.015, 0.08], [1.032, 0.085], [1.058, 0.085],
-    [1.076, 0.08], [1.087, 0.069], [1.092, 0.052], [1.098, -0.13]].map(([x, y]) => new THREE.Vector2(x, y));
-  const dish = new THREE.Mesh(
-    new THREE.LatheGeometry(prof, 160),
+  // A chamfered steel plinth carries the dish.
+  const lathe = pts => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), 160);
+  const py = PLINTH_Y, pr = PLINTH_R;
+  const plinth = new THREE.Mesh(
+    lathe([[0, py - 0.09], [pr - 0.03, py - 0.09], [pr, py - 0.06], [pr, py - 0.025], [pr - 0.025, py], [0, py]]),
     new THREE.MeshPhysicalMaterial({
-      color: 0x2a2c32, metalness: 0.4, roughness: 0.32, clearcoat: 0.3, clearcoatRoughness: 0.25, side: THREE.DoubleSide,
+      color: new THREE.Color().setRGB(...oklchRgb(0.24, 0.01, 265), THREE.SRGBColorSpace),
+      metalness: 0.6, roughness: 0.42, clearcoat: 0.15, clearcoatRoughness: 0.4, side: THREE.DoubleSide,
     }),
   );
+  scene.add(plinth);
+  // A cut groove rings the plinth top and carries the glow's hue.
+  groove = new THREE.Mesh(new THREE.RingGeometry(pr - 0.085, pr - 0.072, 160), new THREE.MeshBasicMaterial());
+  groove.rotation.x = -Math.PI / 2;
+  groove.position.y = py + 0.0008;
+  scene.add(groove);
+  // A thin glass petri dish: straight wall, rounded lip, flat floor.
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0x1c2028, metalness: 0, roughness: 0.04, ior: 1.5, specularIntensity: 1, envMapIntensity: 1.6,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  });
+  glass.onBeforeCompile = shader => {
+    // Glass shows through face on and mirrors at grazing angles.
+    shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>',
+      '#include <normal_fragment_maps>\n\tdiffuseColor.a = mix(0.06, 0.92, pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 3.0));');
+  };
+  glass.customProgramCacheKey = () => 'ferro-glass';
+  const dish = new THREE.Mesh(lathe([[0, py], [1.024, py], [1.03, py + 0.006], [1.03, 0.062], [1.027, 0.071],
+    [1.0195, 0.0755], [1.0065, 0.0725], [1.0005, 0.064], [0.9995, FLOOR_Y], [0, FLOOR_Y]]), glass);
+  dish.renderOrder = 1;
   scene.add(dish);
   await idle();
 
@@ -1408,6 +1431,10 @@ async function start() {
   const fluid = new THREE.Mesh(buildPool(MESH_N), ink);
   fluid.frustumCulled = false;
   scene.add(fluid);
+  // The fluid's side shows through the glass wall.
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(RIN, RIN, 0.012 - FLOOR_Y, 160, 1, true), new THREE.MeshPhysicalMaterial(INK));
+  body.position.y = (0.012 + FLOOR_Y) / 2;
+  scene.add(body);
   // Loose beads share the fluid's finish.
   dropMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 28, 18), new THREE.MeshPhysicalMaterial(INK), NDROP);
   dropMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -1447,6 +1474,7 @@ async function start() {
   neckMesh.count = 0;
   scene.add(neckMesh);
   glow = buildGlow();
+  groove.material.color.copy(glow.light.color).multiplyScalar(0.55);
   scene.add(glow.sprite, glow.light);
 
   panel.prepend(canvas);
