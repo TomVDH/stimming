@@ -85,128 +85,172 @@ const planetSpin = () => st.arm - (st.sun - st.arm) * ZS / ZP;
 /* ---------- drawing ---------- */
 let size = { w: 1, h: 1, dpr: 1 }, m = 4;
 function fit() {
-  size = fitCanvas(canvas, { maxDpr: 2, budget: 2.4e6 });
+  size = fitCanvas(canvas, { maxDpr: 2, budget: 2.6e6 });
   // The ring's rim fits the shorter side with a margin.
-  m = (Math.min(size.w, size.h) * 0.44) / (ZR / 2 + 5.5);
+  m = (Math.min(size.w, size.h) * 0.45) / (ZR / 2 + 6);
+  shapes = null;
   draw();
 }
-// One tooth outline per gear; internal gears point their teeth inward.
-function toothed(z, r, inward = false) {
-  const p = TAU / z, add = inward ? -m : m, ded = inward ? 1.25 * m : -1.25 * m;
-  const path = new Path2D();
+const at = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
+// Curved flanks and a rounded tip on every tooth; internal teeth point inward.
+function teeth(path, z, r, inward) {
+  const p = TAU / z, tip = inward ? r - m : r + m, root = inward ? r + 1.25 * m : r - 1.25 * m;
   for (let i = 0; i < z; i++) {
     const a = i * p;
-    const pts = [[r + ded, a - 0.27 * p], [r + add, a - 0.12 * p], [r + add, a + 0.12 * p], [r + ded, a + 0.27 * p]];
-    pts.forEach(([rr, aa], j) => (i === 0 && j === 0 ? path.moveTo : path.lineTo).call(path, rr * Math.cos(aa), rr * Math.sin(aa)));
+    const s = at(root, a - 0.5 * p);
+    if (i === 0) path.moveTo(...s); else path.lineTo(...s);
+    path.lineTo(...at(root, a - 0.3 * p));
+    path.quadraticCurveTo(...at(r, a - 0.22 * p), ...at(tip, a - 0.12 * p));
+    path.quadraticCurveTo(...at(tip + (inward ? -0.18 : 0.18) * m, a), ...at(tip, a + 0.12 * p));
+    path.quadraticCurveTo(...at(r, a + 0.22 * p), ...at(root, a + 0.3 * p));
   }
   path.closePath();
-  return path;
+}
+function circle(path, x, y, r) { path.moveTo(x + r, y); path.arc(x, y, r, 0, TAU); }
+// A bore with a key slot, punched through the centre.
+function bore(path, r) {
+  path.moveTo(r, -0.22 * r);
+  path.arc(0, 0, r, -0.22, TAU - 0.22);
+  path.lineTo(r * 1.32, 0.22 * r); path.lineTo(r * 1.32, -0.22 * r); path.closePath();
 }
 let shapes = null;
 function build() {
   const rs = (m * ZS) / 2, rp = (m * ZP) / 2, rr = (m * ZR) / 2;
-  const ring = new Path2D();
-  ring.arc(0, 0, rr + 5.5 * m, 0, TAU);
-  ring.addPath(toothed(ZR, rr, true));
-  shapes = { rs, rp, rr, sun: toothed(ZS, rs), planet: toothed(ZP, rp), ring };
+  const sun = new Path2D(); teeth(sun, ZS, rs, false); bore(sun, 2.2 * m);
+  for (let k = 0; k < 6; k++) circle(sun, ...at(rs * 0.56, (k * TAU) / 6), rs * 0.14);
+  const planet = new Path2D(); teeth(planet, ZP, rp, false); circle(planet, 0, 0, 1.7 * m);
+  for (let k = 0; k < 3; k++) circle(planet, ...at(rp * 0.52, (k * TAU) / 3 + 0.5), rp * 0.2);
+  const ring = new Path2D(); circle(ring, 0, 0, rr + 6 * m); teeth(ring, ZR, rr, true);
+  // The arm is one plate: a hub and four lobes out to the planet pins.
+  const c = rs + rp, arm = new Path2D();
+  for (let k = 0; k < PLANETS; k++) {
+    const a = (k * TAU) / PLANETS, [x, y] = at(c, a), [nx, ny] = at(2.1 * m, a + Math.PI / 2);
+    arm.moveTo(nx, ny); arm.lineTo(x + nx, y + ny); arm.arc(x, y, 2.1 * m, a + Math.PI / 2, a - Math.PI / 2, true); arm.lineTo(-nx, -ny); arm.closePath();
+  }
+  circle(arm, 0, 0, 4.4 * m);
+  shapes = { rs, rp, rr, c, sun, planet, ring, arm };
 }
 // Colour by role: the input glows brass, the follower steel, the held part sleeps.
 const LOOK = {
-  input: ['oklch(0.9 0.12 85)', 'oklch(0.62 0.14 55)'],
-  follow: ['oklch(0.88 0.04 230)', 'oklch(0.5 0.06 250)'],
-  held: ['oklch(0.42 0.015 260)', 'oklch(0.26 0.015 265)'],
-  planet: ['oklch(0.84 0.05 200)', 'oklch(0.48 0.07 220)'],
+  input: ['oklch(0.92 0.11 88)', 'oklch(0.72 0.15 65)', 'oklch(0.48 0.12 45)'],
+  follow: ['oklch(0.93 0.025 230)', 'oklch(0.7 0.04 240)', 'oklch(0.42 0.045 255)'],
+  held: ['oklch(0.5 0.015 260)', 'oklch(0.36 0.015 262)', 'oklch(0.24 0.012 265)'],
+  planet: ['oklch(0.9 0.04 205)', 'oklch(0.66 0.06 215)', 'oklch(0.4 0.06 230)'],
 };
-function roleOf(part) { return part === hold ? 'held' : part === INPUT[hold] ? 'input' : 'follow'; }
-function metal(r, [a, b]) {
-  const g = ctx.createLinearGradient(-r, -r, r, r);
-  g.addColorStop(0, a); g.addColorStop(1, b);
-  return g;
-}
-function shine(path, r) {
-  const g = ctx.createRadialGradient(-r * 0.4, -r * 0.5, 0, -r * 0.4, -r * 0.5, r * 1.3);
-  g.addColorStop(0, 'rgba(255,255,255,0.32)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g; ctx.fill(path, 'evenodd');
-}
-function bore(r) {
-  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU);
-  ctx.fillStyle = 'oklch(0.14 0.015 265)'; ctx.fill();
-}
-function drawGear(path, r, angle, look, holeR) {
-  ctx.save();
-  ctx.rotate(angle);
-  ctx.fillStyle = metal(r, look);
-  ctx.fill(path, 'evenodd');
-  shine(path, r);
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.stroke(path);
-  if (holeR) bore(holeR);
+const roleOf = part => (part === hold ? 'held' : part === INPUT[hold] ? 'input' : 'follow');
+// The light sits top left and stays put while the metal turns under it.
+function metal(path, x, y, r, [hi, mid, lo]) {
+  const base = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+  base.addColorStop(0, hi); base.addColorStop(0.5, mid); base.addColorStop(1, lo);
+  ctx.fillStyle = base; ctx.fill(path, 'evenodd');
+  // Brushed sheen: two soft streaks along the light's axis.
+  ctx.save(); ctx.clip(path, 'evenodd');
+  const sheen = ctx.createConicGradient(-Math.PI / 4, x, y);
+  [[0, 0.22], [0.06, 0], [0.44, 0], [0.5, 0.14], [0.56, 0], [0.94, 0], [1, 0.22]].forEach(([o, a]) => sheen.addColorStop(o, `rgba(255,255,255,${a})`));
+  ctx.fillStyle = sheen; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+  const lit = ctx.createRadialGradient(x - r * 0.35, y - r * 0.45, 0, x - r * 0.35, y - r * 0.45, r * 1.25);
+  lit.addColorStop(0, 'rgba(255,255,255,0.22)'); lit.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = lit; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
   ctx.restore();
+  // A bevel: lit on the top-left edges, shaded on the bottom-right.
+  const edge = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+  edge.addColorStop(0, 'rgba(255,255,255,0.55)'); edge.addColorStop(0.5, 'rgba(255,255,255,0.08)'); edge.addColorStop(1, 'rgba(0,0,0,0.45)');
+  ctx.lineWidth = Math.max(1, m * 0.28); ctx.lineJoin = 'round'; ctx.strokeStyle = edge; ctx.stroke(path);
 }
+// A machined groove: dark ring with a lit lip just inside it.
+function groove(x, y, r) {
+  ctx.lineWidth = Math.max(1, m * 0.22);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, r - ctx.lineWidth, Math.PI, TAU * 0.75); ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.stroke();
+}
+const placed = (path, x, y, a) => { const p = new Path2D(); p.addPath(path, new DOMMatrix().translate(x, y).rotate((a * 180) / Math.PI)); return p; };
+function hex(x, y, r, a) {
+  const p = new Path2D();
+  for (let k = 0; k < 6; k++) { const [px, py] = at(r, a + (k * TAU) / 6); k ? p.lineTo(x + px, y + py) : p.moveTo(x + px, y + py); }
+  p.closePath();
+  return p;
+}
+let shake = { part: null, t: 0 };
 function draw() {
   if (!shapes) build();
   const { w, h, dpr } = size;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  ctx.translate(w / 2, h / 2);
-  const { rs, rp, rr } = shapes, c = rs + rp;
-  // The ring, outermost.
-  drawGear(shapes.ring, rr + 5.5 * m, st.ring, LOOK[roleOf('ring')]);
-  // A bolt on the ring shows its turn.
-  ctx.save(); ctx.rotate(st.ring);
-  ctx.beginPath(); ctx.arc(rr + 3 * m, 0, 1.1 * m, 0, TAU); ctx.fillStyle = 'oklch(0.14 0.015 265)'; ctx.fill();
-  ctx.restore();
-  // The arm sits under the planets.
-  ctx.save(); ctx.rotate(st.arm);
-  ctx.fillStyle = metal(c, LOOK[roleOf('arm')]);
-  for (let k = 0; k < PLANETS; k++) {
-    ctx.save(); ctx.rotate((k * TAU) / PLANETS);
-    ctx.beginPath(); ctx.roundRect(0, -1.6 * m, c, 3.2 * m, 1.6 * m); ctx.fill();
-    ctx.restore();
+  const ox = w / 2, oy = h / 2, { rs, rp, rr, c } = shapes;
+  // A freshly held part shudders as its lock bites.
+  const jolt = part => (shake.part === part && shake.t > 0 ? Math.sin(shake.t * 60) * shake.t * 0.6 * m : 0);
+  // Ring with a bolt circle on its rim.
+  const rx = ox + jolt('ring'), ry = oy;
+  metal(placed(shapes.ring, rx, ry, st.ring), rx, ry, rr + 6 * m, LOOK[roleOf('ring')]);
+  groove(rx, ry, rr + 3.1 * m);
+  for (let k = 0; k < 12; k++) {
+    const [bx, by] = at(rr + 4.4 * m, st.ring + (k * TAU) / 12 + TAU / 24);
+    metal(hex(rx + bx, ry + by, 0.95 * m, st.ring + k), rx + bx, ry + by, 1 * m, ['oklch(0.82 0.01 250)', 'oklch(0.6 0.01 255)', 'oklch(0.38 0.01 260)']);
   }
-  ctx.restore();
-  // Planets ride the arm and spin against the sun.
+  // Arm under the planets, with a cap on each pin.
+  const ax = ox + jolt('arm'), ay = oy;
+  metal(placed(shapes.arm, ax, ay, st.arm), ax, ay, c + 2 * m, LOOK[roleOf('arm')]);
+  // Planets spin against the sun as the arm carries them.
   const spin = planetSpin();
   for (let k = 0; k < PLANETS; k++) {
-    const phi = st.arm + (k * TAU) / PLANETS;
-    ctx.save(); ctx.translate(c * Math.cos(phi), c * Math.sin(phi));
-    drawGear(shapes.planet, rp, spin + (k * TAU) / PLANETS + Math.PI + TAU / ZP / 2, LOOK.planet, 1.6 * m);
-    ctx.restore();
+    const [px, py] = at(c, st.arm + (k * TAU) / PLANETS);
+    metal(placed(shapes.planet, ax + px, ay + py, spin + (k * TAU) / PLANETS + Math.PI + TAU / ZP / 2), ax + px, ay + py, rp + m, LOOK.planet);
+    groove(ax + px, ay + py, rp * 0.82);
+    const pin = new Path2D(); circle(pin, ax + px, ay + py, 1.25 * m);
+    metal(pin, ax + px, ay + py, 1.3 * m, LOOK[roleOf('arm')]);
   }
-  // The sun, centre.
-  drawGear(shapes.sun, rs, st.sun, LOOK[roleOf('sun')], 2.2 * m);
-  // A hub mark shows which way the sun faces.
-  ctx.save(); ctx.rotate(st.sun);
-  ctx.fillStyle = 'oklch(0.14 0.015 265)';
-  ctx.fillRect(2.4 * m, -0.6 * m, 4 * m, 1.2 * m);
-  ctx.restore();
+  // Sun at the centre.
+  const sx = ox + jolt('sun'), sy = oy;
+  metal(placed(shapes.sun, sx, sy, st.sun), sx, sy, rs + m, LOOK[roleOf('sun')]);
+  groove(sx, sy, rs * 0.82);
 }
 
 /* ---------- sound ---------- */
-// Each tooth that passes clicks; pitch rises with speed.
 const kit = audioKit({ gain: 0.5, keys: new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '1', '2', '3']) });
 let lastTooth = 0, lastClick = 0;
-function click(speed) {
+// A filtered noise burst: bright for ticks, low and long for clunks.
+function burst(freq, q, peak, len) {
   const ac = kit.live(); if (!ac || !kit.noise) return;
+  const src = ac.createBufferSource(); src.buffer = kit.noise;
+  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = q; bp.frequency.value = freq;
+  const g = ac.createGain(), t = ac.currentTime;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(bp); bp.connect(g); g.connect(kit.out);
+  src.start(t, Math.random() * 0.5, len + 0.02);
+}
+function tick(speed) {
+  const tooth = Math.round(st[INPUT[hold]] / (TAU / ZS));
+  if (tooth === lastTooth) return;
+  lastTooth = tooth;
   const now = performance.now();
   if (now - lastClick < 33) return;
   lastClick = now;
-  const src = ac.createBufferSource(); src.buffer = kit.noise;
-  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 9;
-  bp.frequency.value = 1400 + Math.min(4200, Math.abs(speed) * 260);
-  const g = ac.createGain(), t = ac.currentTime;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.5, t + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
-  src.connect(bp); bp.connect(g); g.connect(kit.out);
-  src.start(t, Math.random() * 0.5, 0.06);
+  burst(1400 + Math.min(4200, Math.abs(speed) * 260), 9, 0.45, 0.045);
 }
-function tick(speed) {
-  const tooth = Math.floor(st[INPUT[hold]] / (TAU / ZS));
-  if (tooth !== lastTooth) { lastTooth = tooth; click(speed); }
+const clunk = () => { burst(170, 2.2, 0.9, 0.2); burst(900, 6, 0.3, 0.06); };
+// The mesh whine rises with speed and fades out as the gears slow.
+let whine = null;
+function hum(speed) {
+  const ac = kit.live();
+  if (!ac) { if (whine) { whine.g.gain.value = 0; } return; }
+  if (!whine) {
+    const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+    o.type = 'sawtooth'; f.type = 'bandpass'; f.Q.value = 4; g.gain.value = 0;
+    o.connect(f); f.connect(g); g.connect(kit.out); o.start();
+    whine = { o, f, g };
+  }
+  const s = Math.abs(speed), t = ac.currentTime;
+  const hz = 60 + s * 55;
+  whine.o.frequency.setTargetAtTime(hz, t, 0.05);
+  whine.f.frequency.setTargetAtTime(hz * 3, t, 0.05);
+  whine.g.gain.setTargetAtTime(Math.min(0.09, Math.max(0, s - 1.5) * 0.012), t, 0.08);
 }
 
 /* ---------- motion ---------- */
 let omega = 0, raf = 0, prevT = 0, dragging = false;
+const PITCH = TAU / ZS;
 function turn(d) {
   st[INPUT[hold]] += d;
   solve();
@@ -215,15 +259,24 @@ function turn(d) {
 function frame(t) {
   const dt = Math.min(0.05, (t - (prevT || t)) / 1000);
   prevT = t;
+  let settled = false;
   if (!dragging) {
+    // Friction lets a flick coast; near rest a detent pulls to the next tooth.
+    omega *= Math.exp(-dt * 1.3);
+    if (Math.abs(omega) < 1.2) {
+      const a = st[INPUT[hold]], off = Math.round(a / PITCH) * PITCH - a;
+      omega += off * 90 * dt;
+      omega *= Math.exp(-dt * 9);
+      if (Math.abs(off) < 0.002 && Math.abs(omega) < 0.05) { turn(off); omega = 0; settled = true; }
+    }
     turn(omega * dt);
-    // Friction lets a flick coast and settle.
-    omega *= Math.exp(-dt * 1.4);
   }
+  if (shake.t > 0) shake.t = Math.max(0, shake.t - dt);
   tick(omega);
+  hum(dragging || !settled ? omega : 0);
   draw();
-  if (dragging || Math.abs(omega) > 0.02) raf = requestAnimationFrame(frame);
-  else { raf = 0; omega = 0; prevT = 0; kit.rest(() => !raf); }
+  if (dragging || !settled || shake.t > 0) raf = requestAnimationFrame(frame);
+  else { raf = 0; prevT = 0; hum(0); burst(600, 4, 0.25, 0.05); kit.rest(() => !raf); }
 }
 const wake = () => { if (!raf) raf = requestAnimationFrame(frame); };
 
@@ -240,8 +293,7 @@ canvas.addEventListener('pointermove', e => {
   let d = a - lastA;
   if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
   turn(d);
-  const dt = Math.max(1, now - lastT) / 1000;
-  omega = omega * 0.6 + (d / dt) * 0.4;
+  omega = omega * 0.6 + (d / (Math.max(1, now - lastT) / 1000)) * 0.4;
   lastA = a; lastT = now;
 });
 const release = () => {
@@ -254,12 +306,19 @@ const release = () => {
 canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 
-const hold3 = choices(document.querySelector('.choices'), v => { hold = v; solve(); draw(); });
+function setHold(v) {
+  if (v === hold) return;
+  hold = v; solve();
+  lastTooth = Math.round(st[INPUT[hold]] / PITCH);
+  shake = { part: v, t: reduced() ? 0 : 0.28 };
+  clunk(); wake(); draw();
+}
+const hold3 = choices(document.querySelector('.choices'), setHold);
 stage.addEventListener('keydown', e => {
   const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-  if (step) { e.preventDefault(); omega += step * (reduced() ? 0 : 2.4); if (reduced()) turn(step * (TAU / ZS)); wake(); draw(); return; }
+  if (step) { e.preventDefault(); if (reduced()) turn(step * PITCH); else omega += step * 2.4; wake(); return; }
   const pick = { 1: 'ring', 2: 'sun', 3: 'arm' }[e.key];
-  if (pick) { hold3.set(pick); hold = pick; solve(); draw(); }
+  if (pick) { hold3.set(pick); setHold(pick); }
 });
 resetBtn.addEventListener('click', () => {
   st.sun = st.arm = st.ring = 0; omega = 0;
@@ -267,7 +326,7 @@ resetBtn.addEventListener('click', () => {
   draw();
 });
 
-new ResizeObserver(() => { shapes = null; fit(); }).observe(stage);
+new ResizeObserver(fit).observe(stage);
 fit();
 </script>
 </body>
