@@ -33,18 +33,20 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--rain" id="pane" tabindex="0" role="application" aria-label="A rainy window at dusk. Drag to wipe the fog. Arrow keys wipe a stripe; Space makes the rain heavier or lighter.">
+    <div class="stage stage--rain" id="pane" tabindex="0" role="application" aria-label="A rainy window at dusk. Drag to wipe the fog. Arrow keys wipe a stripe; Space steps through drizzle, rain and storm.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Rain on glass needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="actions">
-        <button class="chip" id="heavy" type="button" aria-keyshortcuts="Space">Heavier</button>
+      <div class="choices" role="group" aria-label="Weather" aria-keyshortcuts="Space">
+        <button class="chip" type="button" data-value="drizzle" aria-pressed="false">Drizzle</button>
+        <button class="chip" type="button" data-value="rain" aria-pressed="true">Rain</button>
+        <button class="chip" type="button" data-value="storm" aria-pressed="false">Storm</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>wipe the fog</dd></div>
         <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>wipe a stripe</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>heavier or lighter</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>next weather</dd></div>
       </dl>
     </div>
   </main>
@@ -52,7 +54,7 @@
 </div>
 
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, choices } from '../shared/stim.js';
 initPage({ id: 'rain' });
 const panel = document.getElementById('pane'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -305,10 +307,10 @@ function ambience() {
 // Heavier rain is louder and brighter.
 function rainLevel(fade) {
   if (!amb) return;
-  const t = ac.currentTime, k = (heavy ? 1 : 0.62) * (reduce ? 0.8 : 1);
+  const t = ac.currentTime, k = wx.gain * (reduce ? 0.8 : 1);
   amb.gain.setTargetAtTime(k, t, fade ? 0.9 : 0.4);
-  bedF.setTargetAtTime(heavy ? 2300 : 1500, t, 0.5);
-  patG.gain.setTargetAtTime(heavy ? 0.7 : 0.45, t, 0.5);
+  bedF.setTargetAtTime(wx.bed, t, 0.5);
+  patG.gain.setTargetAtTime(wx.pat, t, 0.5);
 }
 // A sawtooth through a narrow band: the glass's squeak.
 function squeaker() {
@@ -390,12 +392,18 @@ function drip(x, size) {
 // Water fills the middle 0.43 of that radius.
 const MAX_DROPS = 1200, REF = 1160 * 652, VIS = 0.43;
 let W = 0, H = 0, S = 1, R_MIN = 10, R_MAX = 40, G = 46, area = 1, pr = 1;
-let drops = [], born = [], heavy = false, rainAcc = 0, mistAcc = 0;
+// Each weather sets drop and mist rates per second and the sound.
+const WEATHER = {
+  drizzle: { rain: 6, mist: 90, gain: 0.4, bed: 1100, pat: 0.3 },
+  rain: { rain: 16, mist: 220, gain: 0.62, bed: 1500, pat: 0.45 },
+  storm: { rain: 44, mist: 520, gain: 1, bed: 2300, pat: 0.7 },
+};
+let drops = [], born = [], wx = WEATHER.rain, rainAcc = 0, mistAcc = 0;
 // Queued instances, six floats each, in device pixels.
 const mistQ = [], eraseQ = [];
 const rates = () => {
   const k = reduce ? 0.45 : 1;
-  return heavy ? { rain: 44 * k, mist: 520 * k } : { rain: 16 * k, mist: 220 * k };
+  return { rain: wx.rain * k, mist: wx.mist * k };
 };
 function makeDrop(o) {
   if (drops.length + born.length >= MAX_DROPS) return null;
@@ -1169,13 +1177,13 @@ panel.addEventListener('pointerup', lift);
 panel.addEventListener('pointercancel', lift);
 panel.addEventListener('contextmenu', e => e.preventDefault());
 
-const heavyB = document.getElementById('heavy');
-function setHeavy(v) {
-  heavy = v;
-  heavyB.textContent = heavy ? 'Lighter' : 'Heavier';
-  rainLevel();
-}
-heavyB.addEventListener('click', () => setHeavy(!heavy));
+const wxGroup = document.querySelector('.choices');
+const weather = choices(wxGroup, v => { wx = WEATHER[v]; rainLevel(); });
+// Space steps to the next weather and wraps round.
+const nextWeather = () => {
+  const keys = Object.keys(WEATHER);
+  weather.set(keys[(keys.indexOf(weather.value) + 1) % keys.length], true);
+};
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
@@ -1186,7 +1194,7 @@ addEventListener('keydown', e => {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
-    if (!e.repeat) setHeavy(!heavy);
+    if (!e.repeat) nextWeather();
   }
 });
 sound.onChange(on => {
@@ -1200,7 +1208,7 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  heavyB.disabled = true;
+  wxGroup.querySelectorAll('.chip').forEach(b => { b.disabled = true; });
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
