@@ -24,6 +24,25 @@
 .stage canvas.on { opacity: 1; }
 .stage canvas.tip { cursor: pointer; }
 .stage canvas.turn { cursor: grabbing; }
+/* The add tray and the picture tray open above the bar. */
+.adder { position: relative; }
+.add {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; gap: 6px; padding: 8px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+#addBtn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
+.add .chip.icon svg { stroke-linecap: round; }
+.add .chip.icon svg .solid { fill: currentColor; stroke: none; }
+/* Tools sit four to a row. */
+#add { display: grid; grid-template-columns: repeat(4, auto); }
+.add.sets { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px; }
+.sets .choices { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; }
+@media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 .hint {
   position: absolute; left: 16px; bottom: 14px; margin: 0; pointer-events: none;
   font-size: 13px; color: var(--muted); transition: opacity 0.6s ease;
@@ -40,14 +59,41 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles, or in Field mode a box of tiles that falls into a picture; a long line ends at a tower. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. R stands the tiles back up.">
+    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay what the add tray picks: a line, rows, a picture field, a spiral, a star, a tower or a steel ball; a long line ends at a tower. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. R stands the tiles back up.">
       <canvas></canvas>
       <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices">
-        <button class="chip" id="rows" type="button" aria-label="Rows per stroke: 1">1 row</button>
+        <div class="adder" id="adder">
+          <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span id="addName">Line</span></button>
+          <div class="add" id="add" role="group" aria-label="What a drag makes">
+            <button class="chip icon" type="button" data-tool="line" aria-pressed="true" aria-label="Line" title="Line"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4v8M6 4v8M9.5 4v8M13 4v8"/></svg></button>
+            <button class="chip icon" type="button" data-tool="rows3" aria-pressed="false" aria-label="Three rows" title="Three rows"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" stroke-dasharray="1.4 1.6"/></svg></button>
+            <button class="chip icon" type="button" data-tool="rows5" aria-pressed="false" aria-label="Five rows" title="Five rows"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M2 5h12M2 8h12M2 11h12M2 14h12" stroke-dasharray="1.4 1.6"/></svg></button>
+            <button class="chip icon" type="button" data-tool="field" aria-pressed="false" aria-label="Picture field" title="Picture field"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="solid" d="M1.5 2.5h3.4v2.6H1.5zM6.3 2.5h3.4v2.6H6.3zM11.1 2.5h3.4v2.6h-3.4zM3.9 6.7h3.4v2.6H3.9zM8.7 6.7h3.4v2.6H8.7zM1.5 10.9h3.4v2.6H1.5zM6.3 10.9h3.4v2.6H6.3zM11.1 10.9h3.4v2.6h-3.4z"/></svg></button>
+            <button class="chip icon" type="button" data-tool="spiral" aria-pressed="false" aria-label="Spiral" title="Spiral"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8.6 8.4c.6-.7 0-1.8-.9-1.7-1.3.1-1.8 1.7-1.1 2.7 1 1.5 3.3 1.3 4.1-.3 1-2-.4-4.4-2.6-4.7-2.7-.4-5 2-4.6 4.7.4 3 3.6 4.8 6.4 3.9 2.2-.7 3.6-2.8 3.6-5"/></svg></button>
+            <button class="chip icon" type="button" data-tool="star" aria-pressed="false" aria-label="Star" title="Star"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v4.2M8 10.3v4.2M1.5 8h4.2M10.3 8h4.2M3.4 3.4l3 3M9.6 9.6l3 3M12.6 3.4l-3 3M6.4 9.6l-3 3" stroke-dasharray="1.3 1.1"/></svg></button>
+            <button class="chip icon" type="button" data-tool="tower" aria-pressed="false" aria-label="Tower" title="Tower"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 14.5V9.6M12 14.5V9.6M4 7V2.6M12 7V2.6"/><path class="solid" d="M2.6 7.2h10.8v1.6H2.6zM2.6 1h10.8v1.6H2.6z"/></svg></button>
+            <button class="chip icon" type="button" data-tool="ball" aria-pressed="false" aria-label="Steel ball" title="Steel ball"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="10.4" cy="8" r="3.8"/><path d="M1.5 5.6h3.4M1 8h3M1.5 10.4h3.4"/></svg></button>
+          </div>
+        </div>
         <button class="chip" id="iso" type="button" aria-pressed="false" aria-keyshortcuts="I">Iso</button>
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Field picture" title="Field picture"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.2"/><path d="M2.4 11.6l3.6-4 3 3 2-2 2.8 3"/><circle cx="11" cy="6" r="1.1"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Field picture">
+            <div class="choices" id="pics" role="group" aria-label="Picture">
+              <button class="chip" type="button" data-value="mix" aria-pressed="true">Mix</button>
+              <button class="chip" type="button" data-value="grin" aria-pressed="false">Grin</button>
+              <button class="chip" type="button" data-value="sun" aria-pressed="false">Sun</button>
+              <button class="chip" type="button" data-value="heart" aria-pressed="false">Heart</button>
+              <button class="chip" type="button" data-value="rings" aria-pressed="false">Rings</button>
+              <button class="chip" type="button" data-value="own" aria-pressed="false">Yours</button>
+            </div>
+            <button class="chip" id="upload" type="button">Use your own picture</button>
+            <input type="file" id="file" accept="image/*" hidden>
+          </div>
+        </div>
       </div>
       <div class="actions">
         <button class="chip" id="reset" type="button" aria-keyshortcuts="R" disabled>Reset</button>
@@ -74,7 +120,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, audioKit, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, audioKit, choices, reduced, onReducedChange } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -127,7 +173,7 @@ function rainbow(u) {
 /* ---------- page ---------- */
 const panel = document.getElementById('table'), canvas = panel.querySelector('canvas');
 const hint = panel.querySelector('.hint'), resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
-const isoB = document.getElementById('iso'), rowsB = document.getElementById('rows');
+const isoB = document.getElementById('iso'), dragHow = document.getElementById('drag-how');
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 // The kit wakes on the first gesture (Space or Enter from the keyboard) and follows the header toggle.
@@ -308,8 +354,7 @@ const SID = new Int32Array(MAX), SEQ = new Int32Array(MAX);
 // Parallel rows of one stroke share a group and start together.
 const GRP = new Int32Array(MAX);
 // Rows per stroke, and the spacing between rows.
-// Zero rows means Field mode: a drag fills a box.
-const ROWS = [1, 3, 5, 0], LANE = 0.85;
+const LANE = 0.85;
 let rows = 1;
 // A starter tips with its group: a row's first tile, a field's front row.
 const START = new Uint8Array(MAX);
@@ -451,6 +496,7 @@ function physics(h) {
   contacts();
   strike();
   shake(h);
+  roll(h);
 }
 // A tile that holds still for a few frames is down.
 function settle() {
@@ -520,6 +566,7 @@ function reset() {
   for (let i = 0; i < n; i++) if (ST[i] !== 0) down.push(i);
   const rose = rebuild(t);
   queue.length = 0;
+  dropBalls();
   if (!down.length && !rose) return;
   down.sort((a, b) => RANK[b] - RANK[a]);
   const step = reduce ? 0.002 : Math.min(0.012, 0.75 / down.length);
@@ -531,7 +578,8 @@ function reset() {
   wake();
 }
 function clearAll() {
-  if ((!n && !towers.length) || clearing) return;
+  if ((!n && !towers.length && !marbles.length) || clearing) return;
+  dropBalls();
   active.length = 0;
   loose = 0;
   if (reduce) finishClear();
@@ -550,7 +598,7 @@ function syncChips() {
   let down = towers.some(tw => tw.st === 1);
   for (let i = 0; i < n && !down; i++) if (ST[i] !== 0) down = true;
   resetB.disabled = !ready || !down || !!clearing;
-  clearB.disabled = !ready || (!n && !towers.length) || !!clearing;
+  clearB.disabled = !ready || (!n && !towers.length && !marbles.length) || !!clearing;
 }
 
 /* ---------- laying tiles ---------- */
@@ -917,28 +965,37 @@ const CW = 0.62;
 const CREAM = rgb([0.93, 0.02, 85]);
 let fields = 0;
 // Pictures in a centred square: x right, y down, the short side spans one.
-const MOTIFS = [
+const MOTIFS = {
   // A grin.
-  (x, y) => {
+  grin: (x, y) => {
     if (Math.hypot(x, y) > 0.47) return [0.6, 0.23, 350];
     const eye = Math.hypot(Math.abs(x) - 0.17, y + 0.12) < 0.085;
     const smile = y > 0.04 && Math.abs(Math.hypot(x, y + 0.05) - 0.27) < 0.06;
     return eye || smile ? [0.24, 0.05, 275] : [0.87, 0.18, 95];
   },
   // A sunburst.
-  (x, y) => {
+  sun: (x, y) => {
     const r = Math.hypot(x, y), a = Math.atan2(y, x);
     if (r < 0.17) return [0.9, 0.17, 100];
     return Math.floor((a + PI) / (PI / 8)) % 2 ? [0.72, 0.19, 55] : [0.45, 0.2, 18];
   },
   // A heart.
-  (x, y) => {
+  heart: (x, y) => {
     const X = x / 0.42, Y = -y / 0.42 + 0.25, q = X * X + Y * Y - 1;
     return q * q * q - X * X * Y * Y * Y < 0 ? [0.62, 0.24, 25] : [0.42, 0.09, 200];
   },
   // Target rings.
-  (x, y) => [[0.82, 0.17, 85], [0.6, 0.22, 340], [0.72, 0.14, 210]][Math.floor(Math.hypot(x, y) / 0.1) % 3],
-];
+  rings: (x, y) => [[0.82, 0.17, 85], [0.6, 0.22, 340], [0.72, 0.14, 210]][Math.floor(Math.hypot(x, y) / 0.1) % 3],
+};
+const MIX = Object.keys(MOTIFS);
+// The picture tray picks one motif, a mix, or the viewer's own image.
+let picture = 'mix', own = null;
+// An own image covers the field, cropped to its shape, in sRGB.
+function ownAt(x, y, ex, ey) {
+  const { data, w, h } = own, k = Math.min(w / (2 * ex), h / (2 * ey));
+  const u = clamp(Math.floor(w / 2 + x * k), 0, w - 1), v = clamp(Math.floor(h / 2 + y * k), 0, h - 1), o = (v * w + u) * 4;
+  return [data[o] / 255, data[o + 1] / 255, data[o + 2] / 255];
+}
 // True when a field tile fits among other tiles and towers.
 function room(x, z, ax, az, p) {
   if (walled(x, z, ax, az, T / 2 + MARGIN, W / 2 + MARGIN)) return false;
@@ -963,9 +1020,11 @@ function layField(A, B) {
   let nr = Math.floor((len - 0.3) / PITCH) + 1;
   nr = Math.min(nr, Math.floor((MAX - n) / nc));
   if (nr < 3 || nc < 2) return;
-  const p = { id: ++strokes, seq: 0 }, motif = MOTIFS[fields++ % MOTIFS.length], t0 = nowS();
+  const p = { id: ++strokes, seq: 0 }, t0 = nowS();
   p.grp = p.id;
-  const sw = Math.abs(d1) || 1, sh = Math.abs(d2) || 1, m = Math.min(sw, sh);
+  const sw = Math.abs(d1) || 1, sh = Math.abs(d2) || 1, m = Math.min(sw, sh), ex = sw / m / 2, ey = sh / m / 2;
+  const name = picture === 'mix' || (picture === 'own' && !own) ? MIX[fields++ % MIX.length] : picture;
+  const paintAt = name === 'own' ? (x, y) => ownAt(x, y, ex, ey) : (x, y) => rgb(MOTIFS[name](x, y));
   for (let r = 0; r < nr; r++) {
     for (let c = 0; c < nc; c++) {
       const s = v0 + c * CW + (r % 2 ? CW / 2 : 0), a = 0.3 + r * PITCH;
@@ -978,7 +1037,7 @@ function layField(A, B) {
       const i = addTile(x, z, ux, uz, 0, born, p);
       FIELD[i] = 1; START[i] = r === 0 ? 1 : 0;
       BASE.set(CREAM, i * 3);
-      PIC.set(rgb(motif(((px - 0.5) * sw) / m, ((py - 0.5) * sh) / m)), i * 3);
+      PIC.set(paintAt(((px - 0.5) * sw) / m, ((py - 0.5) * sh) / m), i * 3);
       mesh.setColorAt(i, col.setRGB(...CREAM, THREE.SRGBColorSpace));
     }
   }
@@ -992,17 +1051,166 @@ function tone(i) {
   mesh.setColorAt(i, col.setRGB(lerp(BASE[o], PIC[o], k), lerp(BASE[o + 1], PIC[o + 1], k), lerp(BASE[o + 2], PIC[o + 2], k), THREE.SRGBColorSpace));
   tint = true;
 }
-// The box outline while a field is dragged.
-function outline(A, B) {
-  const [ax, az, bx, bz] = screenAxes(), dx = B.x - A.x, dz = B.z - A.z;
-  const d1 = dx * ax + dz * az, d2 = dx * bx + dz * bz, P = ghost.geometry.attributes.position;
-  const pts = [[0, 0], [d1, 0], [d1, d2], [0, d2], [0, 0]];
-  pts.forEach(([u, v], k) => P.setXYZ(k, A.x + ax * u + bx * v, 0.01, A.z + az * u + bz * v));
+// The outline shown while a shape is dragged: a polyline on the table.
+const GHOST = 600;
+function sketch(pts) {
+  const P = ghost.geometry.attributes.position, k = Math.min(pts.length, GHOST);
+  for (let i = 0; i < k; i++) P.setXYZ(i, pts[i][0], 0.01, pts[i][1]);
   P.needsUpdate = true;
+  ghost.geometry.setDrawRange(0, k);
   ghost.visible = true;
 }
+function boxPts(A, B) {
+  const [ax, az, bx, bz] = screenAxes(), dx = B.x - A.x, dz = B.z - A.z;
+  const d1 = dx * ax + dz * az, d2 = dx * bx + dz * bz;
+  return [[0, 0], [d1, 0], [d1, d2], [0, d2], [0, 0]].map(([u, v]) => [A.x + ax * u + bx * v, A.z + az * u + bz * v]);
+}
 
-/* ---------- the finale tower ---------- */
+/* ---------- shapes ---------- */
+// A shape lays its tiles along a set path and drops them in like the opening run.
+function layPath(pts, grp = 0) {
+  const p = { preset: true, t0: reduce ? -1e9 : nowS(), dt: reduce ? 0 : 0.012, count: 0, tile: -1, q: { x: pts[0][0], z: pts[0][1] } };
+  begin(p);
+  p.rows = 1;
+  if (grp) p.grp = grp;
+  for (let k = 1; k < pts.length; k++) addPoint(p, pts[k][0], pts[k][1]);
+  advance(p, true);
+  nextHue = p.hue;
+  return p;
+}
+// A spiral winds in from the drag's end toward its start.
+// Turns sit 1.3 apart, clear of a falling tile's reach.
+function spiralPts(A, B) {
+  const R = Math.min(Math.hypot(B.x - A.x, B.z - A.z), 7), a0 = Math.atan2(B.z - A.z, B.x - A.x), pts = [];
+  for (let th = 0, r = R; r > 1.25; ) {
+    pts.push([A.x + r * Math.cos(a0 + th), A.z + r * Math.sin(a0 + th)]);
+    const d = 0.12 / r;
+    th += d; r -= (1.3 * d) / (2 * PI);
+  }
+  return pts;
+}
+function laySpiral(A, B) {
+  const pts = spiralPts(A, B);
+  if (pts.length < 20) return;
+  crown(layPath(pts));
+}
+// A star lays eight spokes outward; their first tiles start together.
+function starPts(A, B) {
+  const R = Math.min(Math.hypot(B.x - A.x, B.z - A.z), 6), a0 = Math.atan2(B.z - A.z, B.x - A.x), spokes = [];
+  for (let k = 0; k < 8; k++) {
+    const a = a0 + (k * PI) / 4, pts = [];
+    for (let r = 0.75; r <= R; r += 0.15) pts.push([A.x + Math.cos(a) * r, A.z + Math.sin(a) * r]);
+    spokes.push(pts);
+  }
+  return spokes;
+}
+function layStar(A, B) {
+  if (Math.hypot(B.x - A.x, B.z - A.z) < 1.8) return;
+  let grp = 0;
+  for (const pts of starPts(A, B)) {
+    const p = layPath(pts, grp);
+    grp = grp || p.id;
+  }
+}
+// The tower tool stands a tower at the press, facing the drag or away from view.
+function towerDir(A, B) {
+  const d = B ? Math.hypot(B.x - A.x, B.z - A.z) : 0;
+  if (d > 0.3) return [(B.x - A.x) / d, (B.z - A.z) / d];
+  const [, , bx, bz] = screenAxes();
+  return [-bx, -bz];
+}
+function placeTower(A, B) {
+  const [dx, dz] = towerDir(A, B);
+  if (!raise(A.x, A.z, dx, dz, nextHue, -1)) return;
+  nextHue += PER;
+  tick(0.8);
+}
+// What a released drag or a click makes with the current tool.
+function make(t, A, B) {
+  if (t === 'field') layField(A, B || A);
+  else if (t === 'spiral') laySpiral(A, B || A);
+  else if (t === 'star') layStar(A, B || A);
+  else if (t === 'tower') placeTower(A, B);
+  else if (t === 'ball') throwBall(A, B);
+  syncChips();
+  wake();
+}
+// The outline for a shape while it is dragged.
+function preview(t, A, B) {
+  if (t === 'field') return boxPts(A, B);
+  if (t === 'spiral') return spiralPts(A, B).filter((q, k) => k % 3 === 0);
+  if (t === 'star') return starPts(A, B).flatMap(s => [[A.x, A.z], s[s.length - 1] || [A.x, A.z]]);
+  if (t === 'tower') {
+    const [dx, dz] = towerDir(A, B), c = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]];
+    return c.map(([s, k]) => [A.x + dx * s * TA - dz * k * TC, A.z + dz * s * TA + dx * k * TC]);
+  }
+  // The ball's arrow points along the throw.
+  const [dx, dz] = towerDir(A, B), L = Math.hypot(B.x - A.x, B.z - A.z), tx = A.x + dx * L, tz = A.z + dz * L;
+  return [[A.x, A.z], [tx, tz], [tx - dx * 0.4 - dz * 0.25, tz - dz * 0.4 + dx * 0.25], [tx, tz], [tx - dx * 0.4 + dz * 0.25, tz - dz * 0.4 - dx * 0.25]];
+}
+
+/* ---------- steel balls ---------- */
+// A thrown ball rolls, slows, and tips the standing tiles it meets.
+const BR = 0.26, BMAX = 6, ROLL = 1.6;
+const marbles = [];
+let rolling = 0, ballGeo, ballMat;
+function throwBall(A, B) {
+  const [dx, dz] = towerDir(A, B), d = B ? Math.hypot(B.x - A.x, B.z - A.z) : 0, sp = d > 0.3 ? clamp(d * 2.2, 2.5, 11) : 5;
+  if (marbles.length >= BMAX) scene.remove(marbles.shift().mesh);
+  const mesh = new THREE.Mesh(ballGeo, ballMat);
+  mesh.castShadow = true;
+  scene.add(mesh);
+  marbles.push({ x: A.x, z: A.z, vx: dx * sp, vz: dz * sp, mesh, born: nowS(), rest: false });
+  rolling = 1;
+  tick(1);
+}
+function dropBalls() {
+  for (const m of marbles) scene.remove(m.mesh);
+  marbles.length = 0;
+  rolling = 0;
+}
+function roll(h) {
+  rolling = 0;
+  for (const m of marbles) {
+    if (m.rest) continue;
+    let sp = Math.hypot(m.vx, m.vz);
+    if (sp < 0.08) { m.rest = true; m.vx = m.vz = 0; continue; }
+    const k = Math.max(0, 1 - (ROLL * h) / sp);
+    m.vx *= k; m.vz *= k;
+    m.x += m.vx * h; m.z += m.vz * h;
+    rolling++;
+    near(m.x, m.z, 1, j => {
+      if (j >= n || ST[j] !== 0 || BORN[j] > simT) return;
+      const rx = m.x - PX[j], rz = m.z - PZ[j];
+      if (Math.abs(rx * AX[j] + rz * AZ[j]) > T / 2 + BR || Math.abs(rz * AX[j] - rx * AZ[j]) > W / 2 + BR * 0.5) return;
+      const along = m.vx * AX[j] + m.vz * AZ[j];
+      RUN[j] = 0;
+      start(j, along >= 0 ? 1 : -1, clamp(Math.abs(along) * 1.4 + 1, WMIN, 7));
+      clack(clamp(Math.abs(along) / 6), 0);
+      // The knock takes most of the push along the tile's axis.
+      m.vx -= AX[j] * along * 0.55; m.vz -= AZ[j] * along * 0.55;
+    });
+    sp = Math.hypot(m.vx, m.vz) || 1;
+    for (const tw of towers) {
+      if (tw.st !== 0 || tw.ready > simT) continue;
+      const rx = m.x - tw.x, rz = m.z - tw.z;
+      if (Math.abs(rx * tw.dx + rz * tw.dz) > TA + BR || Math.abs(rz * tw.dx - rx * tw.dz) > TC + BR) continue;
+      burst(tw, m.vx / sp, m.vz / sp, sp * 1.2);
+      m.vx *= -0.3; m.vz *= -0.3;
+    }
+  }
+}
+// A rolling ball turns about the axis across its path.
+function drawBalls(t, dt) {
+  for (const m of marbles) {
+    const s = out3(clamp((t - m.born) / 0.15)) || 1e-3, sp = Math.hypot(m.vx, m.vz);
+    m.mesh.position.set(m.x, BR * s, m.z);
+    m.mesh.scale.setScalar(s);
+    if (sp > 1e-3) m.mesh.rotateOnWorldAxis(vtmp.set(m.vz / sp, 0, -m.vx / sp), (sp * dt) / BR);
+  }
+}
+
+/* ---------- the finale tower ---------- *//* ---------- the finale tower ---------- */
 // A long chain ends at a tower of stacked tiles.
 // Each level is two pillars: two standing tiles under a flat cap.
 // The last tile knocks the tower, and its tiles burst across the table.
@@ -1116,25 +1324,29 @@ function crown(p) {
   const i = p.last;
   if (i < 0 || SID[i] !== p.id || p.len < TLEN || ST[i] !== 0) return;
   const sg = AX[i] * p.hx + AZ[i] * p.hz >= 0 ? 1 : -1, dx = AX[i] * sg, dz = AZ[i] * sg;
-  const x = PX[i] + dx * TGAP, z = PZ[i] + dz * TGAP;
+  raise(PX[i] + dx * TGAP, PZ[i] + dz * TGAP, dx, dz, HUE[i], i);
+}
+// Raises a tower where it fits; src is the tile that feeds it, or -1.
+function raise(x, z, dx, dz, hue, src) {
   let used = 0;
   for (const tw of towers) used += tw.ps.length;
   let levels = LEVELS;
   while (levels >= 2 && !fits(x, z, dx, dz, levels)) levels--;
-  if (levels < 2 || used + levels * COLS * 3 > MAXP) return;
-  if (walled(x, z, dx, dz, TA + MARGIN, TC + MARGIN)) return;
+  if (levels < 2 || used + levels * COLS * 3 > MAXP) return null;
+  if (walled(x, z, dx, dz, TA + MARGIN, TC + MARGIN)) return null;
   let ok = true;
   near(x, z, H + W + 0.6, j => {
     if (!ok || j >= n) return;
     const [fx, fz, fl] = foot(j);
     if (overlap(x, z, dx, dz, TA + MARGIN, TC + MARGIN, fx, fz, AX[j], AZ[j], fl, W / 2)) ok = false;
   });
-  if (!ok) return;
+  if (!ok) return null;
   const born = reduce ? -1e9 : Math.max(nowS(), lastBorn) + 0.12;
-  const tw = build(x, z, dx, dz, levels, HUE[i], born);
-  tw.src = i;
+  const tw = build(x, z, dx, dz, levels, hue, born);
+  tw.src = src;
   towers.push(tw);
   paint = true;
+  return tw;
 }
 // Extending the chain from its last tile takes its tower away.
 function uncrown(i) {
@@ -1673,7 +1885,7 @@ function frame(ms) {
     if (ST[q.i] === 0) { RUN[q.i] = 0; start(q.i, q.sg, TAP); }
   }
   if (queue.length) busy = true;
-  if (active.length || loose) {
+  if (active.length || loose || rolling) {
     const steps = Math.max(1, Math.ceil(dt / SUB - 1e-6));
     for (let s = 0; s < steps; s++) physics(dt / steps);
     settle();
@@ -1689,6 +1901,7 @@ function frame(ms) {
   mesh.count = n;
   mesh.instanceMatrix.needsUpdate = true;
   drawTowers(t);
+  drawBalls(t, dt);
   fitShadow();
   renderer.render(scene, camera);
   if (++shown === 2) canvas.classList.add('on');
@@ -1785,12 +1998,12 @@ canvas.addEventListener('pointermove', e => {
     if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < (p.touch ? 10 : 5)) return;
     p.drawing = true;
     canvas.classList.remove('tip');
-    if (!rows) p.field = true;
-    else begin(p);
+    if (TOOLS[tool].rows) begin(p);
+    else p.shape = tool;
   }
-  if (p.field) {
+  if (p.shape) {
     const q = tablePoint(e.clientX, e.clientY);
-    if (q) { p.b = q; outline(p.q, q); }
+    if (q) { p.b = q; sketch(preview(p.shape, p.q, q)); }
     wake();
     return;
   }
@@ -1806,15 +2019,17 @@ function release(e, ok) {
   const p = ptrs.get(e.pointerId);
   if (!p) return;
   ptrs.delete(e.pointerId);
-  if (p.field) {
+  if (p.shape) {
     ghost.visible = false;
     const q = ok && (tablePoint(e.clientX, e.clientY) || p.b);
-    if (q) layField(p.q, q);
+    if (q) make(p.shape, p.q, q);
   } else if (p.drawing) {
     const q = ok && tablePoint(e.clientX, e.clientY);
     if (q) finish(p, q.x, q.z);
   } else if (ok && p.tile >= 0 && ST[p.tile] === 0) tip(p.tile, pushDir(p.tile));
   else if (ok && p.tower && p.tower.st === 0) shove(p.tower);
+  // A plain click places a tower or drops a ball.
+  else if (ok && (tool === 'tower' || tool === 'ball')) make(tool, p.q, null);
   syncChips();
   wake();
 }
@@ -1840,20 +2055,78 @@ addEventListener('keydown', e => {
 });
 resetB.addEventListener('click', reset);
 isoB.addEventListener('click', () => setView(!lensTo));
-// The Rows chip cycles 1, 3 and 5 rows per stroke, then Field.
-function setRows(r, save = true) {
-  rows = ROWS.includes(r) ? r : 1;
-  rowsB.textContent = !rows ? 'Field' : rows === 1 ? '1 row' : `${rows} rows`;
-  rowsB.setAttribute('aria-label', rows ? `Rows per stroke: ${rows}` : 'Field: a drag fills a box');
-  rowsB.setAttribute('aria-pressed', String(rows !== 1));
-  document.getElementById('drag-how').textContent = rows ? 'lay tiles' : 'fill a field';
-  if (save) try { localStorage.setItem('stimming.domino.rows', String(rows)); } catch (err) { /* storage is optional */ }
+/* ---------- trays ---------- */
+// The add tray picks what a drag makes.
+const TOOLS = {
+  line: { rows: 1, how: 'lay tiles' }, rows3: { rows: 3, how: 'lay three rows' }, rows5: { rows: 5, how: 'lay five rows' },
+  field: { how: 'fill a picture field' }, spiral: { how: 'lay a spiral' }, star: { how: 'lay a star' },
+  tower: { how: 'place a tower' }, ball: { how: 'throw a ball' },
+};
+let tool = 'line';
+const save = (k, v) => { try { localStorage.setItem(`stimming.domino.${k}`, v); } catch (err) { /* storage is optional */ } };
+const load = k => { try { return localStorage.getItem(`stimming.domino.${k}`); } catch (err) { return null; } };
+// A tray opens on hover or tap, and closes on a click elsewhere or Escape.
+function popover(box, btn) {
+  const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
+  return open;
 }
-rowsB.addEventListener('click', () => setRows(ROWS[(ROWS.indexOf(rows) + 1) % ROWS.length]));
-try {
-  const v = localStorage.getItem('stimming.domino.rows');
-  setRows(v === null ? 1 : +v, false);
-} catch (err) { setRows(1, false); }
+const toolBs = [...document.querySelectorAll('#add .chip')], addName = document.getElementById('addName');
+const openTray = popover(document.getElementById('adder'), document.getElementById('addBtn'));
+const openSets = popover(document.getElementById('setter'), document.getElementById('setBtn'));
+function setTool(t) {
+  tool = TOOLS[t] ? t : 'line';
+  rows = TOOLS[tool].rows || 1;
+  const b = toolBs.find(o => o.dataset.tool === tool);
+  toolBs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+  addName.textContent = b.title;
+  dragHow.textContent = TOOLS[tool].how;
+}
+toolBs.forEach(b => b.addEventListener('click', () => {
+  setTool(b.dataset.tool);
+  save('tool', tool);
+  openTray(false);
+  panel.focus({ preventScroll: true });
+}));
+setTool(load('tool'));
+// The picture tray picks a field's image; Yours asks for one the first time.
+const fileIn = document.getElementById('file');
+const pics = choices(document.getElementById('pics'), v => {
+  if (v === 'own' && !own) { fileIn.click(); return; }
+  picture = v;
+  save('picture', v);
+});
+document.getElementById('upload').addEventListener('click', () => fileIn.click());
+fileIn.addEventListener('cancel', () => pics.set(picture));
+// An image shrinks to 48 pixels on its long side: one pixel per tile or more.
+function loadOwn(src, pickIt, keep) {
+  const img = new Image();
+  img.onload = () => {
+    const k = 48 / Math.max(img.width, img.height), w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    g.drawImage(img, 0, 0, w, h);
+    own = { data: g.getImageData(0, 0, w, h).data, w, h };
+    if (keep) save('own', cv.toDataURL('image/png'));
+    if (pickIt) { picture = 'own'; pics.set('own'); save('picture', 'own'); openSets(false); }
+    if (src.startsWith('blob:')) URL.revokeObjectURL(src);
+  };
+  img.onerror = () => pics.set(picture);
+  img.src = src;
+}
+fileIn.addEventListener('change', () => {
+  const f = fileIn.files[0];
+  fileIn.value = '';
+  if (f) loadOwn(URL.createObjectURL(f), true, true);
+});
+{
+  const o = load('own'), v = load('picture');
+  if (o) loadOwn(o, false, false);
+  if (v && (v === 'mix' || v === 'own' || MOTIFS[v])) { picture = v; pics.set(v); }
+}
 clearB.addEventListener('click', clearAll);
 
 /* ---------- tile finish ---------- */
@@ -1947,7 +2220,10 @@ async function init() {
   });
   ray = new THREE.Raycaster();
   ndc = new THREE.Vector2();
-  ghost = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(15), 3)), new THREE.LineBasicMaterial({ color: 0xe8e0d0 }));
+  ghost = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(GHOST * 3), 3)), new THREE.LineBasicMaterial({ color: 0xe8e0d0 }));
+  // Steel balls are polished chrome that catches the room light.
+  ballGeo = new THREE.SphereGeometry(BR, 32, 16);
+  ballMat = new THREE.MeshPhysicalMaterial({ color: 0xdcdce4, metalness: 1, roughness: 0.16 });
   ghost.visible = false;
   ghost.frustumCulled = false;
   scene.add(ghost);
