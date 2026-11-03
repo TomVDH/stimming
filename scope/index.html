@@ -16,10 +16,10 @@
 /* Oscilloscope: a flat stencil face on a live phosphor screen. */
 :root { --stage: oklch(0.13 0.01 265); }
 .stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
-/* The knot ratio sits in the top left corner in the phosphor colour. */
-.ratio {
-  position: absolute; left: 18px; top: 14px; margin: 0; pointer-events: none;
-  font: 800 clamp(26px, 4vw, 44px)/1 var(--sans); letter-spacing: -0.02em; color: var(--ink, var(--fg));
+/* The sound tag is drawn on the screen; this clear button sits over it. */
+.snd-tag {
+  position: absolute; z-index: 1; margin: 0; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
 /* The pitch readout is a live number, so it is monospace. */
 .slider output {
@@ -50,7 +50,7 @@
   <main>
     <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope in X–Y mode. In Pen mode, drag to draw a shape; the beam plays it as a stereo tone, left channel across and right channel up. In Knot mode, drag to pick a ratio of two sine waves. Up and down arrows change the pitch, S shuffles, C clears, P changes the phosphor.">
       <canvas aria-hidden="true"></canvas>
-      <p class="ratio" id="ratio" aria-hidden="true" hidden></p>
+      <button class="snd-tag" id="snd-tag" type="button" aria-label="Turn sound on" hidden></button>
       <p class="fail" hidden>Oscilloscope needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -102,7 +102,7 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const now = () => performance.now() / 1000;
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
-const bar = document.querySelector('.bar'), ratioEl = document.getElementById('ratio');
+const bar = document.querySelector('.bar'), sndTag = document.getElementById('snd-tag');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
 if (!gl) fail();
@@ -214,7 +214,7 @@ function knotPerim(k) {
 /* ---------- state ---------- */
 let mode = 'pen', presetIdx = 0, pitch = 110, phos = 0;
 let pen = (({ pts, closed }) => makePen(pts, closed))(PRESETS[0]());
-let knot = { a: 3, b: 2 }, knotT0 = now();
+let knot = { a: 3, b: 2 }, knotT0 = now(), pickCell = [3, 2];
 const drifting = () => mode === 'knot' && !!knot && !reduced();
 const psiAt = t => (drifting() ? TAU * (t - knotT0) / DRIFT_T : 0);
 
@@ -291,7 +291,8 @@ function silence() {
   if (voice && kit.ac) fade(voice, kit.ac.currentTime);
   voice = null; dirty = true;
 }
-sound.onChange(on => { if (on) { dirty = true; sync(); } else silence(); });
+sound.onChange(on => { if (on) { dirty = true; sync(); } else silence(); paintHud(); });
+sndTag.addEventListener('click', () => sound.set(true));
 // The first gesture wakes the context; the voice joins once it runs.
 ['pointerup', 'keydown'].forEach(type => addEventListener(type, () => setTimeout(sync, 0), { passive: true }));
 
@@ -306,8 +307,7 @@ function changed({ first = false } = {}) {
   const born = first ? t - FADE : t;
   if (mode === 'pen' && pen) traces.push({ kind: 'pen', loop: pen.loop, perim: pen.perim, born, dieAt: 0 });
   if (mode === 'knot' && knot) traces.push({ kind: 'knot', a: knot.a, b: knot.b, perim: knotPerim(knot), born, dieAt: 0 });
-  ratioEl.hidden = mode !== 'knot' || !knot;
-  if (knot) ratioEl.textContent = `${knot.a}:${knot.b}`;
+  paintHud();
   dirty = true; sync();
   poke();
 }
@@ -316,12 +316,15 @@ function changed({ first = false } = {}) {
 // Flash and glow colours, fast and slow decay, the slow share and gains.
 const lin = c => oklchLinear(...c).map(x => Math.max(0, x));
 const PHOS = [
-  { css: 'oklch(0.9 0.2 145)', flash: lin([0.9, 0.21, 145]), glow: lin([0.6, 0.17, 150]), tf: 0.045, ts: 0.4, slow: 0.12, gain: [1, 0.9, 0.34] },
-  { css: 'oklch(0.86 0.17 105)', flash: lin([0.88, 0.1, 250]), glow: lin([0.8, 0.17, 105]), tf: 0.03, ts: 1.5, slow: 0.05, gain: [0.9, 0.7, 0.3] },
-  { css: 'oklch(0.84 0.16 68)', flash: lin([0.86, 0.15, 72]), glow: lin([0.6, 0.17, 52]), tf: 0.05, ts: 0.35, slow: 0.12, gain: [1, 0.9, 0.34] },
-  { css: 'oklch(0.94 0.03 240)', flash: lin([0.95, 0.03, 240]), glow: lin([0.62, 0.09, 258]), tf: 0.05, ts: 0.28, slow: 0.1, gain: [1, 0.9, 0.3] },
+  { flash: lin([0.9, 0.21, 145]), glow: lin([0.6, 0.17, 150]), tf: 0.045, ts: 0.4, slow: 0.12, gain: [1, 0.9, 0.34] },
+  { flash: lin([0.88, 0.1, 250]), glow: lin([0.8, 0.17, 105]), tf: 0.03, ts: 1.5, slow: 0.05, gain: [0.9, 0.7, 0.3] },
+  { flash: lin([0.86, 0.15, 72]), glow: lin([0.6, 0.17, 52]), tf: 0.05, ts: 0.35, slow: 0.12, gain: [1, 0.9, 0.34] },
+  { flash: lin([0.95, 0.03, 240]), glow: lin([0.62, 0.09, 258]), tf: 0.05, ts: 0.28, slow: 0.1, gain: [1, 0.9, 0.3] },
 ];
-const BG = lin([0.13, 0.01, 265]), THIN = lin([0.2, 0.012, 265]), BARS = lin([0.32, 0.016, 265]), BRACKET = lin([0.62, 0.02, 265]);
+// The tube bulges a little; the pointer maps through the same curve.
+const WARP = 0.045;
+// Colour fringing grows with distance from the centre.
+const FRINGE = 0.011;
 
 /* ---------- shaders ---------- */
 const QUAD_VS = `#version 300 es
@@ -392,60 +395,98 @@ void main() {
   s += (texture(uSrc, vUv + uDir * 3.230769).rg + texture(uSrc, vUv - uDir * 3.230769).rg) * 0.070270;
   o = vec4(s, 0.0, 1.0);
 }`;
-// The screen: a flat stencil face, then the phosphor through mask and scanlines.
+// The screen: one bulged tube face behind dusty glass.
+// The beam and the HUD both emit through fringe, grille and scanlines.
 const SCREEN = `#version 300 es
 precision highp float;
 out vec4 o;
-uniform sampler2D uAccum, uBloom;
-uniform vec2 uRes, uC;
-uniform float uDiv, uDpr, uTime;
-uniform vec3 uFlash, uGlow, uGain, uBg, uThin, uBars, uBracket;
+uniform sampler2D uAccum, uBloom, uHud;
+uniform vec2 uRes;
+uniform float uDpr, uTime, uWarp, uFringe;
+uniform vec3 uFlash, uGlow, uGain, uTint;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-// Coverage of the band lo..hi, antialiased over one pixel.
-float band(float x, float lo, float hi) { return clamp(x - lo + 0.5, 0.0, 1.0) * clamp(hi - x + 0.5, 0.0, 1.0); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
+}
+// Barrel curvature: the face bulges, so the content squeezes to the edges.
+vec2 warp(vec2 uv) {
+  vec2 as = vec2(uRes.x / uRes.y, 1.0), c = (uv - 0.5) * as;
+  return c * (1.0 + uWarp * dot(c, c)) / as + 0.5;
+}
 vec3 phosphor(vec2 uv) {
   vec2 e = texture(uAccum, uv).rg;
   float a = 1.0 - exp(-e.r * uGain.x), b = 1.0 - exp(-e.g * uGain.y);
   float hot = 1.0 - exp(-e.r * uGain.x * 0.08);
   return uFlash * a + uGlow * b + vec3(0.9, 0.95, 1.0) * hot * hot * 0.9;
 }
+// Specks of dust and a few soft motes sit on the glass, in CSS pixels.
+float dust(vec2 p) {
+  vec2 c = floor(p / 7.0);
+  float d = 0.0;
+  if (hash(c) > 0.94) {
+    vec2 o = vec2(hash(c + 3.1), hash(c + 7.7)) * 7.0;
+    float r = 0.45 + 1.1 * hash(c + 1.3);
+    d += (1.0 - smoothstep(r * 0.4, r, length(p - c * 7.0 - o))) * (0.35 + 0.65 * hash(c + 9.2));
+  }
+  vec2 c2 = floor(p / 53.0);
+  if (hash(c2 + 17.0) > 0.82) {
+    vec2 o = vec2(hash(c2 + 5.3), hash(c2 + 2.9)) * 53.0;
+    float r = 2.0 + 4.0 * hash(c2 + 8.1);
+    d += (1.0 - smoothstep(0.0, r, length(p - c2 * 53.0 - o))) * 0.3;
+  }
+  return d;
+}
+float smudge(vec2 p) {
+  float n = vnoise(p / 190.0) * 0.6 + vnoise(p / 64.0) * 0.28 + vnoise(p / 21.0) * 0.12;
+  return smoothstep(0.56, 0.86, n);
+}
 void main() {
-  vec2 p = gl_FragCoord.xy, d = p - uC, q = abs(d);
-  float e5 = 5.0 * uDiv;
+  vec2 uv0 = gl_FragCoord.xy / uRes, uv = warp(uv0);
+  vec2 css = gl_FragCoord.xy / uDpr;
+  // Past the edge of the warped face the tube is black.
+  vec2 edge = min(uv, 1.0 - uv) * uRes;
+  float inside = clamp(min(edge.x, edge.y) / (2.0 * uDpr), 0.0, 1.0);
 
-  // Stencil face: thin lines, cut axis bars, corner brackets.
-  vec2 g = d / uDiv;
-  vec2 fd = abs(fract(g + 0.5) - 0.5) * uDiv;
-  float thin = max(band(fd.x, -0.5 * uDpr, 0.5 * uDpr), band(fd.y, -0.5 * uDpr, 0.5 * uDpr));
-  float t = clamp(uDiv * 0.08, 3.0 * uDpr, 6.0 * uDpr), gap = max(3.0 * uDpr, t);
-  float hb = band(d.y, -0.5 * t, 0.5 * t) * band(q.x, -1.0, e5) * clamp(fd.x - 0.5 * gap + 0.5, 0.0, 1.0);
-  float vb = band(d.x, -0.5 * t, 0.5 * t) * band(q.y, -1.0, e5) * clamp(fd.y - 0.5 * gap + 0.5, 0.0, 1.0);
-  float arm = uDiv * 0.55, bt = clamp(uDiv * 0.1, 3.0 * uDpr, 6.0 * uDpr);
-  float br = max(band(q.x, e5 - arm, e5) * band(q.y, e5 - bt, e5), band(q.x, e5 - bt, e5) * band(q.y, e5 - arm, e5));
-  vec3 col = mix(uBg, uThin, thin);
-  col = mix(col, uBars, max(hb, vb));
-  col = mix(col, uBracket, br);
-
-  // Misconvergence splits the beam a little, more so away from centre.
-  vec2 uv = p / uRes;
-  vec2 ca = (vec2(0.8 * uDpr, 0.0) + d * 0.0035) / uRes;
+  // Each colour lands a little apart, more so away from centre.
+  vec2 ca = (uv - 0.5) * uFringe + vec2(0.7 * uDpr / uRes.x, 0.0);
   vec3 beam = vec3(phosphor(uv + ca).r, phosphor(uv).g, phosphor(uv - ca).b);
+  vec3 hud = vec3(texture(uHud, uv + ca * 1.4).r, texture(uHud, uv).r, texture(uHud, uv - ca * 1.4).r) * uTint;
+  vec3 light = beam + hud;
 
-  // Aperture grille: red, green and blue stripes, one device pixel each.
-  float m = floor(mod(p.x / max(1.0, floor(uDpr + 0.5)), 3.0));
+  // Aperture grille and scanlines follow the bulged raster.
+  vec2 pw = uv * uRes;
+  float m = floor(mod(pw.x / max(1.0, floor(uDpr + 0.5)), 3.0));
   vec3 grille = vec3(m == 0.0, m == 1.0, m == 2.0) * 0.75 + 0.42;
-  // Scanlines swell where the beam is bright.
-  float lum = clamp(dot(beam, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
-  float sy = fract(p.y / (3.0 * uDpr)) - 0.5, sw = mix(0.2, 0.5, lum);
-  float scan = exp(-sy * sy / (sw * sw)) * 1.55;
-  beam *= grille * scan;
+  float lum = clamp(dot(light, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
+  float sy = fract(pw.y / (3.0 * uDpr)) - 0.5, sw = mix(0.2, 0.52, lum);
+  light *= grille * exp(-sy * sy / (sw * sw)) * 1.55;
 
+  // Halation: the beam's bloom and a wide halo round the HUD.
   vec2 bl = texture(uBloom, uv).rg;
   vec3 halo = (uFlash * (1.0 - exp(-bl.r * uGain.x)) + uGlow * (1.0 - exp(-bl.g * uGain.y))) * uGain.z;
-  // Unlit phosphor shows the grille faintly over the whole face.
-  col *= mix(vec3(1.0), grille, 0.18);
-  col += beam + halo;
-  col += (hash(p + fract(uTime) * 61.0) - 0.5) * 0.006;
+  halo += uTint * (textureLod(uHud, uv, 3.5).r * 0.3 + textureLod(uHud, uv, 5.5).r * 0.18);
+
+  // Unlit phosphor is a dim grey-green with the grille just visible.
+  vec3 col = vec3(0.010, 0.013, 0.012) * mix(vec3(1.0), grille, 0.5);
+  // A faint band rolls down the raster.
+  float roll = exp(-pow((fract(uv0.y + uTime * 0.07) - 0.5) * 9.0, 2.0)) * 0.03;
+  col += light * (1.0 + roll) + halo * (1.0 + roll);
+
+  // Smudges on the glass spread the halo; dust blocks light and catches it.
+  float sm = smudge(css), du = dust(css);
+  float glowLum = dot(halo, vec3(0.3, 0.6, 0.1));
+  col += halo * sm * 1.1 + vec3(0.006, 0.007, 0.007) * sm;
+  col = col * (1.0 - 0.5 * du) + du * (0.008 + 0.7 * glowLum) * vec3(0.9, 0.9, 0.85);
+
+  // The corners fall off; a broad dull sheen sits high on the left.
+  vec2 c = (uv0 - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.38 * smoothstep(0.25, 1.1, dot(c, c));
+  col += (1.0 - smoothstep(0.0, 0.85, length((uv0 - vec2(0.22, 0.86)) * vec2(0.8, 1.5)))) * 0.008;
+  col *= 1.0 + 0.012 * sin(uTime * 113.0);
+  col += (hash(gl_FragCoord.xy + fract(uTime) * 61.0) - 0.5) * 0.006;
+  col *= inside;
   col = pow(max(col, 0.0), vec3(1.0 / 2.2));
   o = vec4(col, 1.0);
 }`;
@@ -519,6 +560,114 @@ function target(w, h) {
 const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
 const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
 
+/* ---------- the HUD: graticule, readouts and hints, all lit in phosphor ---------- */
+// A 2D canvas holds grey levels; the screen shader turns them into light.
+const hud = document.createElement('canvas'), hctx = hud.getContext('2d');
+const hudTex = gl.createTexture();
+const NOTES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+const noteOf = f => { const n = Math.round(69 + 12 * Math.log2(f / 440)); return `${NOTES[(n % 12 + 12) % 12]}${Math.floor(n / 12) - 1}`; };
+const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+// Each hint shows until its gesture has been used once.
+const taught = { pen: false, knot: false };
+const grey = v => `rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})`;
+// Content space to screen space: the inverse of the shader's warp.
+function unwarp(x, y) {
+  const w = canvas.clientWidth, h = canvas.clientHeight, as = w / h;
+  const tx = (x / w - 0.5) * as, ty = 0.5 - y / h;
+  let sx = tx, sy = ty;
+  for (let i = 0; i < 6; i++) { const f = 1 + WARP * (sx * sx + sy * sy); sx = tx / f; sy = ty / f; }
+  return [(sx / as + 0.5) * w, (0.5 - sy) * h];
+}
+function paintHud() {
+  if (!acc.length) return;
+  const w = canvas.clientWidth, h = canvas.clientHeight, g = hctx, d = cssDiv, [cx, cy] = cssC;
+  if (hud.width !== canvas.width || hud.height !== canvas.height) { hud.width = canvas.width; hud.height = canvas.height; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  // Graticule: faint lines, cut centre bars with fine ticks, bright corner brackets.
+  g.fillStyle = grey(0.075);
+  for (let i = -Math.ceil(cx / d) - 1; i <= Math.ceil(cx / d) + 1; i++) g.fillRect(Math.round(cx + i * d) - 0.5, 0, 1, h);
+  for (let j = -Math.ceil(h / d) - 1; j <= Math.ceil(h / d) + 1; j++) g.fillRect(0, Math.round(cy + j * d) - 0.5, w, 1);
+  const t = clamp(d * 0.07, 2.5, 5), gap = Math.max(3, t);
+  g.fillStyle = grey(0.3);
+  for (let i = -5; i < 5; i++) {
+    const a = i * d + gap / 2, b = (i + 1) * d - gap / 2;
+    g.fillRect(cx + a, cy - t / 2, b - a, t);
+    g.fillRect(cx - t / 2, cy + a, t, b - a);
+    for (let k = 1; k < 5; k++) {
+      const s = (i + k / 5) * d, tl = d * 0.12;
+      g.fillRect(cx + s - 0.5, cy - tl, 1, 2 * tl);
+      g.fillRect(cx - tl, cy + s - 0.5, 2 * tl, 1);
+    }
+  }
+  const arm = d * 0.55, bt = clamp(d * 0.09, 2.5, 5), e = 5 * d;
+  g.fillStyle = grey(0.55);
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    const x = cx + sx * e, y = cy + sy * e;
+    g.fillRect(sx < 0 ? x : x - arm, sy < 0 ? y : y - bt, arm, bt);
+    g.fillRect(sx < 0 ? x : x - bt, sy < 0 ? y : y - arm, bt, arm);
+  }
+  // In Knot mode the face is a five by five picker with numbered edges.
+  const big = Math.round(clamp(d * 0.5, 17, 28)), small = Math.round(clamp(d * 0.28, 11, 15));
+  if (mode === 'knot') {
+    if (knot && picking) {
+      g.fillStyle = grey(0.07);
+      g.fillRect(cx + (-5 + 2 * (pickCell[0] - 1)) * d, cy + (5 - 2 * pickCell[1]) * d, 2 * d, 2 * d);
+    }
+    // The edge numbers light the picked cell, or the knot's own ratio.
+    const lit = picking ? pickCell : knot ? [knot.a, knot.b] : [0, 0];
+    g.font = `700 ${small}px ${MONO}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (let n = 1; n <= 5; n++) {
+      g.fillStyle = grey(lit[0] === n ? 0.85 : 0.32);
+      g.fillText(String(n), cx + (-6 + 2 * n) * d, cy + 4.7 * d);
+      g.fillStyle = grey(lit[1] === n ? 0.85 : 0.32);
+      g.fillText(String(n), cx - 4.7 * d, cy - (-6 + 2 * n) * d);
+    }
+  }
+  // Readouts: the mode on the left, the pitch and its note on the right.
+  const pad = 18;
+  g.textBaseline = 'top'; g.textAlign = 'left';
+  g.fillStyle = grey(0.92); g.font = `800 ${big}px Gabarito, system-ui, sans-serif`;
+  const label = mode === 'pen' ? 'PEN' : 'KNOT';
+  g.fillText(label, pad, pad);
+  if (mode === 'knot' && knot) {
+    const lw = g.measureText(`${label} `).width;
+    g.font = `700 ${big}px ${MONO}`;
+    g.fillText(`${knot.a}:${knot.b}`, pad + lw, pad);
+  }
+  g.textAlign = 'right';
+  g.font = `700 ${big}px ${MONO}`;
+  g.fillText(`${Math.round(pitch)} Hz`, w - pad, pad);
+  g.fillStyle = grey(0.5); g.font = `700 ${small}px ${MONO}`;
+  g.fillText(noteOf(pitch), w - pad, pad + big + 6);
+  // The sound tag invites a tap while the toy is muted.
+  sndTag.hidden = sound.on;
+  if (!sound.on) {
+    const txt = '♪ SOUND OFF · TAP', y = pad + big + small + 16;
+    g.fillStyle = grey(0.62); g.font = `700 ${small}px ${MONO}`;
+    g.fillText(txt, w - pad, y);
+    const tw = g.measureText(txt).width;
+    const [x0, y0] = unwarp(w - pad - tw - 8, y - 8), [x1, y1] = unwarp(w - pad + 8, y + small + 8);
+    Object.assign(sndTag.style, { left: `${x0}px`, top: `${y0}px`, width: `${x1 - x0}px`, height: `${y1 - y0}px` });
+  }
+  // A hint sits at the top of the face until the gesture is used.
+  const hint = mode === 'pen' ? (!taught.pen || !pen ? 'DRAG ANYWHERE TO DRAW' : '') : (!taught.knot || !knot ? 'DRAG ACROSS THE GRID TO TIE A KNOT' : '');
+  if (hint && !stroke) {
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = grey(0.7); g.font = `700 ${small}px ${MONO}`;
+    g.fillText(`▸ ${hint}`, cx, cy - 4.55 * d);
+  }
+  gl.bindTexture(gl.TEXTURE_2D, hudTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hud);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  gl.generateMipmap(gl.TEXTURE_2D);
+  if (!raf && visible) settle();
+}
+
 /* ---------- layout ---------- */
 // The face is square and sits above the inset bar; the screen runs full bleed.
 // Face geometry is in device pixels, y up.
@@ -543,6 +692,7 @@ function layout() {
   const BW = Math.max(4, Math.round(AW / 4)), BH = Math.max(4, Math.round(AH / 4));
   blm = [target(BW, BH), target(BW, BH)];
   ai = 0;
+  paintHud();
   // The beam restarts in the new pixel space, so no stray streak shows.
   if (raf) { tS = now(); sample(ph, tS); last = [pt[0], pt[1]]; return; }
   if (visible) settle();
@@ -595,12 +745,14 @@ function present(t) {
   gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex);
-  gl.uniform1i(u.uAccum, 0); gl.uniform1i(u.uBloom, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, hudTex);
+  gl.uniform1i(u.uAccum, 0); gl.uniform1i(u.uBloom, 1); gl.uniform1i(u.uHud, 2);
   gl.uniform2f(u.uRes, canvas.width, canvas.height);
-  gl.uniform2f(u.uC, CX, CY);
-  gl.uniform1f(u.uDiv, DIV); gl.uniform1f(u.uDpr, dpr); gl.uniform1f(u.uTime, t);
+  gl.uniform1f(u.uDpr, dpr); gl.uniform1f(u.uTime, t % 1000);
+  gl.uniform1f(u.uWarp, WARP); gl.uniform1f(u.uFringe, FRINGE);
   gl.uniform3fv(u.uFlash, ph.flash); gl.uniform3fv(u.uGlow, ph.glow); gl.uniform3fv(u.uGain, ph.gain);
-  gl.uniform3fv(u.uBg, BG); gl.uniform3fv(u.uThin, THIN); gl.uniform3fv(u.uBars, BARS); gl.uniform3fv(u.uBracket, BRACKET);
+  // The HUD glows in a blend of the flash and glow colours.
+  gl.uniform3fv(u.uTint, ph.flash.map((f, i) => (f * 0.45 + ph.glow[i] * 0.8) * 0.9));
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.activeTexture(gl.TEXTURE0);
 }
@@ -715,9 +867,13 @@ whenVisible(stage, v => {
 });
 
 /* ---------- pointer ---------- */
+// The pointer maps through the same bulge as the face.
 function toDiv(e) {
-  const r = canvas.getBoundingClientRect();
-  return [clamp((e.clientX - r.left - cssC[0]) / cssDiv, -5, 5), clamp((cssC[1] - (e.clientY - r.top)) / cssDiv, -5, 5)];
+  const r = canvas.getBoundingClientRect(), as = r.width / r.height;
+  let x = ((e.clientX - r.left) / r.width - 0.5) * as, y = 0.5 - (e.clientY - r.top) / r.height;
+  const f = 1 + WARP * (x * x + y * y);
+  x = (x * f / as + 0.5) * r.width; y = (0.5 - y * f) * r.height;
+  return [clamp((x - cssC[0]) / cssDiv, -5, 5), clamp((cssC[1] - y) / cssDiv, -5, 5)];
 }
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 // The ratio picker splits the face into five by five cells.
@@ -725,6 +881,8 @@ const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 function pick(p) {
   const ca = 1 + clamp(Math.floor((p[0] + 5) / 2), 0, 4), cb = 1 + clamp(Math.floor((p[1] + 5) / 2), 0, 4);
   const g = gcd(ca, cb), a = ca / g, b = cb / g;
+  taught.knot = true;
+  if (pickCell[0] !== ca || pickCell[1] !== cb) { pickCell = [ca, cb]; paintHud(); }
   if (knot && knot.a === a && knot.b === b) return;
   knot = { a, b };
   changed();
@@ -752,10 +910,10 @@ canvas.addEventListener('pointermove', e => {
   poke();
 });
 function lift() {
-  if (picking) { picking = false; poke(); return; }
+  if (picking) { picking = false; paintHud(); poke(); return; }
   if (!stroke) return;
   const s = stroke; stroke = null;
-  if (strokeLen > 0.3 && s.length > 1) { pen = fromStroke(s); changed(); }
+  if (strokeLen > 0.3 && s.length > 1) { taught.pen = true; pen = fromStroke(s); changed(); }
   else { pen = before; if (lastBuild) changed(); }
   poke();
 }
@@ -771,6 +929,7 @@ function setPitch(f) {
   pitch = clamp(f, 40, 400);
   hz.value = `${Math.round(pitch)} Hz`;
   pitchIn.setAttribute('aria-valuetext', `${Math.round(pitch)} hertz`);
+  paintHud();
   // Playback rate moves the pitch now; a fresh buffer follows at rest.
   if (voice && kit.ac) voice.src.playbackRate.setValueAtTime(pitch / voice.pitch, kit.ac.currentTime);
   sliding = true;
@@ -810,7 +969,6 @@ function clear() {
 }
 function nextPhosphor() {
   phos = (phos + 1) % PHOS.length;
-  stage.style.setProperty('--ink', PHOS[phos].css);
   poke();
 }
 document.getElementById('shuffle').addEventListener('click', shuffle);
@@ -827,7 +985,7 @@ addEventListener('keydown', e => {
 onReducedChange(() => changed());
 
 /* ---------- start ---------- */
-stage.style.setProperty('--ink', PHOS[phos].css);
+document.fonts.ready.then(paintHud);
 new ResizeObserver(layout).observe(stage);
 new ResizeObserver(layout).observe(bar);
 layout();
