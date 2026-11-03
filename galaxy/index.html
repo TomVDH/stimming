@@ -260,6 +260,8 @@ const EPS2 = 0.2, EPSW2 = 1, KILL2 = 70 * 70, DEAD = -1e9;
 // Flings: an opening burst, then a steady stream while held.
 const INIT = 2000, RATE = 12000, MAXF = Math.round(N / 14);
 const STEP = 1 / 120;
+// Streaks fade with this time constant, in seconds.
+const EXPOSE = 0.12;
 // Arms wind as log spirals, about 19 degrees of pitch.
 const WIND = 2.9;
 const FOV = 36, EL = (32 * Math.PI) / 180;
@@ -274,16 +276,30 @@ const wells = [];
 async function start() {
   if (!(await hasWebGPU())) return noWebGPU();
 
-  const [THREE, TSL, { bloom }] = await Promise.all([
+  const [THREE, TSL, { bloom }, { default: AfterImageNode }] = await Promise.all([
     import('three/webgpu'),
     import('three/tsl'),
     import('three/addons/tsl/display/BloomNode.js'),
+    import('three/addons/tsl/display/AfterImageNode.js'),
   ]);
   const {
     Fn, If, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select, uv, smoothstep,
     mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, pass, max, atan,
     fract, step, cameraPosition,
   } = TSL;
+
+  // The stock after-image cuts trails at a hard threshold.
+  // This one lets the old frame decay smoothly to black.
+  class Exposure extends AfterImageNode {
+    setup(builder) {
+      const old = this._textureNodeOld;
+      old.uvNode = this.textureNode.uvNode || uv();
+      const mat = this._materialComposed || (this._materialComposed = new THREE.NodeMaterial());
+      mat.fragmentNode = Fn(() => max(this.textureNode.sample(), old.sample().mul(this.damp).sub(0.0005).max(0)))();
+      builder.getNodeProperties(this).textureNode = this.textureNode;
+      return this._textureNode;
+    }
+  }
 
   renderer = new THREE.WebGPURenderer({ antialias: false });
   await renderer.init();
@@ -658,8 +674,11 @@ async function start() {
   const renderPipeline = new THREE.RenderPipeline(renderer);
   const scenePass = pass(scene, camera);
   const sceneColor = scenePass.getTextureNode('output');
-  const glow = bloom(sceneColor, 0.45, 0.35, 0.4);
-  renderPipeline.outputNode = sceneColor.add(glow);
+  // Long exposure: the last frame fades under this one, so motion streaks.
+  const uDamp = uniform(0);
+  const exposure = TSL.nodeObject(new Exposure(TSL.convertToTexture(sceneColor), uDamp));
+  const glow = bloom(exposure, 0.45, 0.35, 0.4);
+  renderPipeline.outputNode = exposure.add(glow);
 
   /* ---------- camera: tilted toward the plane, drifting slowly ---------- */
   let dist = 30, az = 0;
@@ -1180,6 +1199,8 @@ async function start() {
     if (!reduce && simDt > 0) az += dt * 0.016;
     placeCamera(now / 1000);
     updateHole(dt);
+    // Reduced motion draws each frame alone, with no streaks.
+    uDamp.value = reduce ? 0 : Math.exp(-dt / EXPOSE);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
       if (!w) { dot.s.visible = false; continue; }
