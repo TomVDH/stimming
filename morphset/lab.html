@@ -1,0 +1,1659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Morphset</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, 5-column grid of square mark cells, 3-panel lab strip. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --glow-a: 0.5;
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --num: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.defs { position: absolute; width: 0; height: 0; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.name { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 14px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; }
+.home:hover { color: var(--fg); }
+.fps { font: 400 12px/1 var(--num); color: var(--muted); font-variant-numeric: tabular-nums; white-space: pre; }
+.play {
+  inline-size: 34px; block-size: 34px; display: grid; place-items: center; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--fg); cursor: pointer;
+}
+.play:hover { border-color: var(--muted); }
+.play svg { width: 12px; height: 12px; }
+.play .i-pause, .play[aria-pressed="true"] .i-play { display: none; }
+.play[aria-pressed="true"] .i-pause { display: block; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+main { display: grid; gap: clamp(28px, 5vw, 56px); }
+.grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(4px, 1.6vw, 20px); }
+@media (max-width: 760px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.mark {
+  position: relative; aspect-ratio: 1; max-width: 100%; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 24%; background: none; cursor: pointer; contain: layout paint;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.mark:focus-visible { outline-offset: -2px; }
+.mark svg { position: relative; width: 72%; height: 72%; overflow: visible; }
+.glow {
+  position: absolute; inset: 6%; border-radius: 50%; pointer-events: none; opacity: 0;
+  background: radial-gradient(closest-side, var(--g1), transparent); transition: opacity 0.5s ease;
+}
+.mark.on .glow { opacity: var(--glow-a); }
+.lab { display: grid; gap: 28px; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 20px; }
+@media (max-width: 860px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+.cell { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.panel {
+  position: relative; margin: 0; aspect-ratio: 4 / 3; max-width: 100%; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+}
+.panel figcaption {
+  position: absolute; top: 12px; left: 14px; z-index: 1; pointer-events: none;
+  font-size: 13px; color: var(--muted);
+}
+.panel > svg, .panel > canvas { display: block; width: 100%; height: 100%; }
+.panel canvas { touch-action: pan-y; }
+#lab-morph { cursor: pointer; }
+.panel.wide { aspect-ratio: 16 / 9; }
+@media (max-width: 640px) { .panel.wide { aspect-ratio: 4 / 3; } }
+#lab-sdf canvas { cursor: none; }
+.hint {
+  position: absolute; left: 14px; bottom: 12px; pointer-events: none;
+  font-size: 13px; color: var(--muted);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.shapes { display: flex; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip[aria-pressed="true"], .chip[aria-current="true"] { color: var(--fg); border-color: var(--fg); }
+.chip.icon { padding: 6px; }
+.chip svg { width: 16px; height: 16px; fill: currentColor; display: block; }
+.sep { width: 1px; height: 18px; background: var(--line); }
+.slider { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.slider input { width: 92px; accent-color: var(--fg); }
+.slider output { min-width: 5ch; font: 400 12px/1 var(--num); color: var(--fg); font-variant-numeric: tabular-nums; }
+.thumbs { display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); gap: 2px; width: 100%; }
+@media (max-width: 860px) { .thumbs { grid-template-columns: repeat(5, minmax(0, 1fr)); max-width: 320px; } }
+.thumb {
+  aspect-ratio: 1; padding: 4px; cursor: pointer; color: var(--muted);
+  background: none; border: 1px solid transparent; border-radius: 8px;
+}
+.thumb svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+.thumb:hover { color: var(--fg); }
+.thumb[aria-current="true"] { color: var(--c); border-color: var(--line); }
+</style>
+
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <h1 class="name">Morphset</h1>
+    <div class="tools">
+      <a class="home" href="../index.html">Stimming</a>
+      <span class="fps" id="fps">-- fps</span>
+      <button class="play" id="play" type="button" aria-pressed="false" aria-label="Play all marks">
+        <svg class="i-play" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor"/></svg>
+        <svg class="i-pause" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 1.5H5v9H2.5zM7 1.5h2.5v9H7z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+  <main>
+    <div class="grid" id="grid"></div>
+    <div class="foot">
+      <dl class="how" aria-label="How to play">
+        <div class="fine"><dt>Hover</dt><dd>morph</dd></div>
+        <div class="touch"><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>morph</dd></div>
+      </dl>
+    </div>
+    <section class="lab" id="lab" aria-label="Lab">
+      <div class="cell">
+        <figure class="panel wide" id="lab-sdf">
+          <figcaption>GLSL &middot; SDF</figcaption>
+          <canvas aria-label="Signed-distance shapes. Click to drop blobs, drag to throw them."></canvas>
+          <span class="hint">click to drop &middot; drag to throw</span>
+        </figure>
+        <div class="ctl">
+          <div class="shapes" id="sdf-shapes" role="group" aria-label="Shape">
+            <button class="chip icon" type="button" aria-label="Circle"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg></button>
+            <button class="chip icon" type="button" aria-label="Triangle"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.5 11.5h-13z"/></svg></button>
+            <button class="chip icon" type="button" aria-label="Square"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/></svg></button>
+            <button class="chip icon" type="button" aria-label="Hexagon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z"/></svg></button>
+            <button class="chip icon" type="button" aria-label="Star"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2l2 4.3 4.7.5-3.5 3.2 1 4.6L8 11.5l-4.2 2.3 1-4.6L1.3 6l4.7-.5z"/></svg></button>
+            <button class="chip icon" type="button" aria-label="Rose"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3.7" r="2.4"/><circle cx="11.7" cy="5.85" r="2.4"/><circle cx="11.7" cy="10.15" r="2.4"/><circle cx="8" cy="12.3" r="2.4"/><circle cx="4.3" cy="10.15" r="2.4"/><circle cx="4.3" cy="5.85" r="2.4"/><circle cx="8" cy="8" r="3"/></svg></button>
+          </div>
+          <button class="chip" id="sdf-auto" type="button" aria-pressed="true">Auto</button>
+          <span class="sep" aria-hidden="true"></span>
+          <label class="slider"><span>Blend</span><input type="range" id="sdf-blend" min="0.02" max="0.3" step="0.01" value="0.14"><output></output></label>
+          <label class="slider"><span>Pip</span><input type="range" id="sdf-pip" min="0.03" max="0.14" step="0.005" value="0.065"><output></output></label>
+          <label class="slider"><span>Trail</span><input type="range" id="sdf-trail" min="0" max="8" step="1" value="6"><output></output></label>
+          <button class="chip" id="sdf-clear" type="button">Clear</button>
+        </div>
+      </div>
+      <div class="pair">
+        <div class="cell">
+          <figure class="panel" id="lab-morph" tabindex="0" role="button" aria-label="Morph to the next mark">
+            <figcaption>GSAP &middot; MorphSVG</figcaption>
+            <svg viewBox="-20 -20 168 168" aria-hidden="true"></svg>
+          </figure>
+          <div class="ctl">
+            <div class="thumbs" id="morph-thumbs" role="group" aria-label="Morph target"></div>
+            <button class="chip" id="morph-auto" type="button" aria-pressed="true">Auto</button>
+            <button class="chip" id="morph-rot" type="button" aria-pressed="false">Rotational</button>
+            <label class="slider"><span>Time</span><input type="range" id="morph-dur" min="0.3" max="2.5" step="0.1" value="1"><output></output></label>
+          </div>
+        </div>
+        <div class="cell">
+          <figure class="panel" id="lab-extrude">
+            <figcaption>Three.js &middot; extrude</figcaption>
+            <canvas aria-label="Nine extruded marks. Hover to morph, click to lock, drag to rotate."></canvas>
+            <span class="hint">hover &middot; click to lock &middot; drag to rotate</span>
+          </figure>
+          <div class="ctl">
+            <button class="chip" id="ex-all" type="button" aria-pressed="false">Morph all</button>
+            <button class="chip" id="ex-spin" type="button" aria-pressed="false">Spin</button>
+            <button class="chip" id="ex-reset" type="button">Reset</button>
+            <label class="slider"><span>Depth</span><input type="range" id="ex-depth" min="0.04" max="0.45" step="0.01" value="0.17"><output></output></label>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/MorphSVGPlugin.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const { gsap, MorphSVGPlugin } = window;
+gsap.registerPlugin(MorphSVGPlugin);
+
+// Served locally, the home link opens the repo menu instead of the Artifact.
+if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  document.querySelectorAll('a[data-local]').forEach(a => { a.href = a.dataset.local; });
+}
+
+const NS = 'http://www.w3.org/2000/svg';
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, N = 120;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const r1 = v => Math.round(v * 10) / 10;
+const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > PI) d -= TAU; else if (d < -PI) d += TAU; return d; };
+const E = {
+  out3: t => 1 - (1 - t) ** 3,
+  inOut3: t => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2),
+  back: (t, s = 1.8) => 1 + (s + 1) * (t - 1) ** 3 + s * (t - 1) ** 2,
+};
+
+/* ---------- colour: OKLCH in, sRGB hex out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+function css(lch, a) {
+  const [r, g, b] = rgb(lch);
+  return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
+}
+function mixLch(A, B, t, raw) {
+  // Raw palettes keep their written hue direction instead of the shortest arc.
+  const dh = raw ? B[2] - A[2] : (((B[2] - A[2]) % 360) + 540) % 360 - 180;
+  return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
+}
+const mix = (A, B, t, raw) => css(mixLch(A, B, t, raw));
+const P = (h, dh, x = {}) => ({
+  rest: [[0.85, 0.12, h - 22], [0.71, 0.18, h], [0.55, 0.19, h + 24], [0.96, 0.06, h - 36]],
+  hover: [[0.87, 0.13, h + dh - 22], [0.7, 0.2, h + dh], [0.51, 0.2, h + dh + 28], [0.97, 0.07, h + dh - 44]],
+  ...x,
+});
+
+/* ---------- svg helpers ---------- */
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function set(e, k, v) {
+  const c = e.__c || (e.__c = {});
+  if (c[k] !== v) { c[k] = v; e.setAttribute(k, v); }
+}
+
+/* ---------- geometry ---------- */
+const ngon = (n, r, rot = -PI / 2, cx = 64, cy = 64) =>
+  Array.from({ length: n }, (_, k) => [cx + r * Math.cos(rot + (k * TAU) / n), cy + r * Math.sin(rot + (k * TAU) / n)]);
+function roundPoly(v, r = 6, seg = 6) {
+  const out = [], n = v.length;
+  for (let i = 0; i < n; i++) {
+    const P0 = v[(i - 1 + n) % n], V = v[i], Q = v[(i + 1) % n];
+    const d1 = Math.hypot(P0[0] - V[0], P0[1] - V[1]) || 1, d2 = Math.hypot(Q[0] - V[0], Q[1] - V[1]) || 1;
+    const k1 = Math.min(r, d1 / 2) / d1, k2 = Math.min(r, d2 / 2) / d2;
+    const A = [V[0] + (P0[0] - V[0]) * k1, V[1] + (P0[1] - V[1]) * k1];
+    const B = [V[0] + (Q[0] - V[0]) * k2, V[1] + (Q[1] - V[1]) * k2];
+    for (let s = 0; s <= seg; s++) {
+      const t = s / seg, u = 1 - t;
+      out.push([u * u * A[0] + 2 * u * t * V[0] + t * t * B[0], u * u * A[1] + 2 * u * t * V[1] + t * t * B[1]]);
+    }
+  }
+  return out;
+}
+function arc(cx, cy, r, a0, a1, n = 48) {
+  const o = [];
+  for (let i = 0; i <= n; i++) { const a = a0 + ((a1 - a0) * i) / n; o.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+  return o;
+}
+function polar(fn, n = 720) {
+  const o = [];
+  for (let i = 0; i < n; i++) { const a = (i / n) * TAU, r = fn(a); o.push([64 + r * Math.cos(a - PI / 2), 64 + r * Math.sin(a - PI / 2)]); }
+  return o;
+}
+function densify(pts, step = 1) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let j = 0; j < k; j++) out.push([a[0] + ((b[0] - a[0]) * j) / k, a[1] + ((b[1] - a[1]) * j) / k]);
+  }
+  return out;
+}
+// Every outline runs clockwise from straight above centre, so point i matches point i.
+function resample(pts, n = N) {
+  let d = densify(pts, 0.8), area = 0;
+  for (let i = 0; i < d.length; i++) { const a = d[i], b = d[(i + 1) % d.length]; area += a[0] * b[1] - b[0] * a[1]; }
+  if (area < 0) d.reverse();
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < d.length; i++) {
+    const e = Math.abs(angDiff(Math.atan2(d[i][1] - 64, d[i][0] - 64), -PI / 2));
+    if (e < bd) { bd = e; best = i; }
+  }
+  d = d.slice(best).concat(d.slice(0, best));
+  const L = [0];
+  for (let i = 1; i <= d.length; i++) { const a = d[i - 1], b = d[i % d.length]; L.push(L[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  const total = L[d.length], out = new Float32Array(n * 2);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const s = (i / n) * total;
+    while (L[j + 1] < s) j++;
+    const a = d[j], b = d[(j + 1) % d.length], u = (s - L[j]) / (L[j + 1] - L[j] || 1);
+    out[2 * i] = a[0] + (b[0] - a[0]) * u; out[2 * i + 1] = a[1] + (b[1] - a[1]) * u;
+  }
+  return out;
+}
+function lerpPts(out, A, B, t) { for (let i = 0; i < out.length; i++) out[i] = A[i] + (B[i] - A[i]) * t; return out; }
+function dLine(p) {
+  let s = 'M' + r1(p[0]) + ' ' + r1(p[1]);
+  for (let i = 2; i < p.length; i += 2) s += 'L' + r1(p[i]) + ' ' + r1(p[i + 1]);
+  return s + 'Z';
+}
+// Catmull-Rom through every point, written as cubic Béziers.
+function dCurve(p) {
+  const n = p.length >> 1;
+  let s = 'M' + r1(p[0]) + ' ' + r1(p[1]);
+  for (let i = 0; i < n; i++) {
+    const a = ((i - 1 + n) % n) * 2, b = i * 2, c = ((i + 1) % n) * 2, d = ((i + 2) % n) * 2;
+    s += 'C' + r1(p[b] + (p[c] - p[a]) / 6) + ' ' + r1(p[b + 1] + (p[c + 1] - p[a + 1]) / 6) + ' ' +
+      r1(p[c] - (p[d] - p[b]) / 6) + ' ' + r1(p[c + 1] - (p[d + 1] - p[b + 1]) / 6) + ' ' + r1(p[c]) + ' ' + r1(p[c + 1]);
+  }
+  return s + 'Z';
+}
+const dPts = (pts, ox = 0, oy = 0) => 'M' + pts.map(q => r1(q[0] + ox) + ' ' + r1(q[1] + oy)).join('L') + 'Z';
+const dCircle = (cx, cy, r, ccw) => {
+  const f = ccw ? 0 : 1;
+  return `M${r1(cx - r)} ${r1(cy)}a${r} ${r} 0 1 ${f} ${2 * r} 0a${r} ${r} 0 1 ${f} ${-2 * r} 0Z`;
+};
+function clipHalf(pts, f, sg) {
+  const out = [], n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n], fa = f(a) * sg, fb = f(b) * sg;
+    if (fa >= 0) out.push(a);
+    if (fa >= 0 !== fb >= 0) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out;
+}
+
+/* ---------- shared shapes ---------- */
+const S = {
+  tri: () => resample(roundPoly(ngon(3, 56, -PI / 2, 64, 72), 9)),
+  hex: () => resample(roundPoly(ngon(6, 50), 8)),
+  bud: () => {
+    const R = 60, d = 30, a = Math.atan2(Math.sqrt(R * R - d * d), d);
+    return resample([...arc(64 - d, 64, R, -a, a), ...arc(64 + d, 64, R, PI - a, PI + a)]);
+  },
+  rose: () => resample(polar(a => 20 + 34 * Math.abs(Math.cos(3 * a)) ** 0.55)),
+  starV: (off, inner) => {
+    const v = [];
+    for (let k = 0; k < 5; k++) {
+      const a = -PI / 2 + (k * TAU) / 5, b = a + TAU / 10 + off;
+      v.push([64 + 56 * Math.cos(a), 68 + 56 * Math.sin(a)], [64 + inner * Math.cos(b), 68 + inner * Math.sin(b)]);
+    }
+    return v;
+  },
+  capsule: () => resample([...arc(94, 64, 22, -PI / 2, PI / 2, 40), ...arc(34, 64, 22, PI / 2, PI * 1.5, 40)]),
+  drop: () => {
+    const g = Math.acos(36 / 66);
+    return resample([[64, 8], ...arc(64, 74, 36, -PI / 2 + g, PI * 1.5 - g, 90)]);
+  },
+  circle: (r, cx = 64, cy = 64) => resample(arc(cx, cy, r, -PI / 2, PI * 1.5 - 0.001, 180)),
+  pebble: a => 47 + 4 * Math.sin(2 * a + 0.6) + 3 * Math.cos(3 * a - 1.1) + 1.6 * Math.sin(5 * a + 2),
+  square: () => roundPoly([[20, 20], [108, 20], [108, 108], [20, 108]], 12, 8),
+  octagon: () => roundPoly(ngon(8, 56, -PI / 2 - PI / 8), 9),
+  tile: () => roundPoly([[0, -26], [46, 0], [0, 26], [-46, 0]], 9, 6),
+};
+function waveOutline(a, out, k, A, ph, c) {
+  for (let i = 0; i < N; i++) {
+    const x = a[2 * i], y = a[2 * i + 1];
+    const up = clamp((64 - y) / 22), dn = clamp((y - 64) / 22);
+    const w = Math.sin(PI * clamp((x - 12) / 104)) ** 0.7, u = (k * TAU * (x - 12)) / 104 - ph;
+    out[2 * i] = x;
+    out[2 * i + 1] = y - c * up * w * (7 + A * Math.sin(u)) + c * dn * w * 1.6 * Math.sin(u + 1.2);
+  }
+  return out;
+}
+
+/* ---------- the shared fill recipe: base gradient, light, rim ---------- */
+function grad(m) {
+  const id = m.id;
+  const g = el('linearGradient', { id: id + 'g', gradientUnits: 'userSpaceOnUse', x1: 18, y1: 14, x2: 110, y2: 114 }, m.defs);
+  const gs = [0, 0.55, 1].map(o => el('stop', { offset: o }, g));
+  const l = el('radialGradient', { id: id + 'l', gradientUnits: 'userSpaceOnUse', cx: 42, cy: 34, r: 58 }, m.defs);
+  const ls = [el('stop', { offset: 0, 'stop-opacity': 0.85 }, l), el('stop', { offset: 1, 'stop-opacity': 0 }, l)];
+  return { g, gs, l, ls };
+}
+function skin(m, o = {}) {
+  const G = grad(m), id = m.id;
+  const s = el(o.tag || 'path', { id: id + 's' }, m.defs);
+  const clip = el('clipPath', { id: id + 'c' }, m.defs);
+  el('use', { href: '#' + id + 's' }, clip);
+  const grp = el('g', {}, o.parent || m.svg);
+  el('use', { href: '#' + id + 's', fill: `url(#${id}g)` }, grp);
+  el('use', { href: '#' + id + 's', fill: `url(#${id}l)` }, grp);
+  el('use', { href: '#' + id + 's', fill: 'none', stroke: 'url(#rim)', 'stroke-width': 3, 'clip-path': `url(#${id}c)` }, grp);
+  return { ...G, s, grp };
+}
+function paint(G, pal, t) {
+  t = clamp(t);
+  for (let k = 0; k < 3; k++) set(G.gs[k], 'stop-color', mix(pal.rest[k], pal.hover[k], t, pal.raw));
+  const lc = mix(pal.rest[3], pal.hover[3], t, pal.raw);
+  set(G.ls[0], 'stop-color', lc);
+  set(G.ls[1], 'stop-color', lc);
+}
+
+/* ---------- the 15 marks, ordered by hue ---------- */
+const MARKS = [];
+const def = o => MARKS.push(o);
+
+def({
+  label: 'Bloom',
+  pal: P(0, 22, { hover: [[0.86, 0.14, 355], [0.68, 0.22, 10], [0.5, 0.2, 28], [0.93, 0.15, 88]] }),
+  dIn: 1.05, eIn: 'none', dOut: 0.75, eOut: 'power1.inOut',
+  sil: () => dLine(S.bud()),
+  build(m) {
+    const sk = skin(m), a = S.bud(), b = S.rose(), delay = new Float32Array(N);
+    for (let i = 0; i < N; i++) delay[i] = (1 - Math.cos(Math.atan2(b[2 * i + 1] - 64, b[2 * i] - 64) + PI / 2)) / 2;
+    set(sk.l, 'cx', 64); set(sk.l, 'cy', 64);
+    return { sk, a, b, delay, out: new Float32Array(N * 2) };
+  },
+  render(m) {
+    const { sk, a, b, delay, out } = m.st, p = m.s.p;
+    // Petals open top first; each vertex runs its own overshoot.
+    for (let i = 0; i < N; i++) {
+      const t = E.back(clamp((p - 0.45 * delay[i]) / 0.55), 1.6);
+      out[2 * i] = a[2 * i] + (b[2 * i] - a[2 * i]) * t;
+      out[2 * i + 1] = a[2 * i + 1] + (b[2 * i + 1] - a[2 * i + 1]) * t;
+    }
+    set(sk.s, 'd', dCurve(out));
+    set(sk.grp, 'transform', `rotate(${r1(E.out3(clamp(p)) * 30)} 64 64)`);
+    set(sk.l, 'r', r1(16 + 44 * clamp(p)));
+    paint(sk, this.pal, E.out3(clamp(p)));
+  },
+});
+
+def({
+  label: 'Prism',
+  pal: { rest: [[0.84, 0.14, 62], [0.69, 0.2, 36], [0.56, 0.21, 18], [0.96, 0.05, 70]], hover: [[0.88, 0.16, 96], [0.65, 0.25, 352], [0.52, 0.22, 268], [0.97, 0.04, 200]] },
+  dIn: 0.85,
+  sil: () => dLine(S.tri()),
+  build(m) {
+    const rays = el('g', { fill: 'none', 'stroke-width': 5, 'stroke-linecap': 'round' }, m.svg);
+    const beam = el('path', { d: 'M-8 84L46 66', pathLength: 1 }, rays);
+    const ray = ['M84 62L140 36', 'M86 64L143 64', 'M84 66L140 92'].map(d => el('path', { d, pathLength: 1 }, rays));
+    return { sk: skin(m), a: S.tri(), b: S.hex(), out: new Float32Array(N * 2), beam, ray };
+  },
+  render(m) {
+    const { sk, a, b, out, beam, ray } = m.st, p = m.s.p, c = clamp(p), pal = this.pal;
+    set(sk.s, 'd', dLine(lerpPts(out, a, b, p)));
+    set(sk.grp, 'transform', `rotate(${r1(30 * p)} 64 64)`);
+    set(sk.g, 'gradientTransform', `rotate(${r1(120 * c)} 64 64)`);
+    paint(sk, pal, c);
+    const bt = clamp(c / 0.45);
+    set(beam, 'stroke', css(pal.hover[3]));
+    set(beam, 'stroke-dasharray', `${bt.toFixed(3)} 1`);
+    set(beam, 'opacity', bt > 0.002 ? 1 : 0);
+    ray.forEach((r, k) => {
+      const t = clamp((c - 0.4 - k * 0.08) / 0.44);
+      set(r, 'stroke', css(pal.hover[k]));
+      set(r, 'stroke-dasharray', `${t.toFixed(3)} 1`);
+      set(r, 'opacity', t > 0.002 ? 1 : 0);
+    });
+  },
+});
+
+def({
+  label: 'Stack',
+  pal: { rest: [[0.87, 0.14, 82], [0.72, 0.19, 52], [0.58, 0.21, 28], [0.96, 0.05, 80]], hover: [[0.84, 0.15, 30], [0.66, 0.22, 8], [0.5, 0.2, 340], [0.96, 0.05, 40]] },
+  dIn: 0.6, dOut: 0.6,
+  sil: () => [-7, 0, 7, 13].map(y => dPts(S.tile(), 64, 64 + y)).join(''),
+  build(m) {
+    const G = grad(m), id = m.id;
+    for (const [k, v] of [['x1', 64], ['y1', 8], ['x2', 64], ['y2', 120]]) set(G.g, k, v);
+    const edge = el('linearGradient', { id: id + 'e', gradientUnits: 'userSpaceOnUse', x1: 64, y1: 8, x2: 64, y2: 120 }, m.defs);
+    const es = [0, 1].map(o => el('stop', { offset: o }, edge));
+    const layers = [2, 1, 0].map(k => {
+      const g = el('g', {}, m.svg);
+      return {
+        k, x: 0, y: (k - 1) * 7, vx: 0, vy: 0,
+        side: el('path', { fill: `url(#${id}e)` }, g),
+        face: el('path', { fill: `url(#${id}g)` }, g),
+        rim: el('path', { fill: 'none', stroke: 'url(#rim)', 'stroke-width': 1.5 }, g),
+      };
+    });
+    return { G, es, layers, tile: S.tile(), busy: false };
+  },
+  render(m, dt) {
+    const st = m.st, c = clamp(m.s.p), pal = this.pal;
+    const tilt = m.on ? ((m.ptr.x - 64) / 64) * 14 : 0;
+    const steps = dt > 0 ? Math.ceil(dt * 120) : 0, h = steps ? dt / steps : 0;
+    let busy = false;
+    for (const L of st.layers) {
+      const ty = (L.k - 1) * (m.on ? 26 : 7), tx = -(L.k - 1) * tilt;
+      if (reduce) { L.x = tx; L.y = ty; L.vx = L.vy = 0; }
+      // Each layer has its own stiffness, so the fan settles unevenly.
+      const K = 200 - L.k * 25;
+      for (let s = 0; s < steps; s++) {
+        L.vx += (K * (tx - L.x) - 18 * L.vx) * h; L.vy += (K * (ty - L.y) - 18 * L.vy) * h;
+        L.x += L.vx * h; L.y += L.vy * h;
+      }
+      if (Math.abs(L.vx) + Math.abs(L.vy) > 0.01 || Math.abs(tx - L.x) + Math.abs(ty - L.y) > 0.02) busy = true;
+      const d = dPts(st.tile, 64 + L.x, 64 + L.y);
+      set(L.face, 'd', d); set(L.rim, 'd', d);
+      set(L.side, 'd', dPts(st.tile, 64 + L.x, 70 + L.y));
+    }
+    st.busy = busy;
+    paint(st.G, pal, c);
+    const e1 = mixLch(pal.rest[1], pal.hover[1], c), e2 = mixLch(pal.rest[2], pal.hover[2], c);
+    set(st.es[0], 'stop-color', css([e1[0] - 0.17, e1[1], e1[2]]));
+    set(st.es[1], 'stop-color', css([e2[0] - 0.15, e2[1], e2[2]]));
+  },
+  busy: m => m.st.busy,
+});
+
+def({
+  label: 'Aperture',
+  pal: { rest: [[0.9, 0.12, 98], [0.78, 0.16, 78], [0.64, 0.17, 60], [0.97, 0.05, 95]], hover: [[0.88, 0.14, 82], [0.73, 0.18, 60], [0.57, 0.19, 42], [0.97, 0.06, 85]] },
+  dIn: 0.5, eIn: 'power3.in', dOut: 0.45, eOut: 'power3.in',
+  sil: () => dPts(S.octagon()),
+  build(m) {
+    const id = m.id, G = grad(m);
+    const g2 = el('linearGradient', { id: id + 'h', gradientUnits: 'userSpaceOnUse', x1: 110, y1: 14, x2: 18, y2: 114 }, m.defs);
+    const g2s = [0, 1].map(o => el('stop', { offset: o }, g2));
+    const oct = S.octagon();
+    const clip = el('clipPath', { id: id + 'c' }, m.defs);
+    el('path', { d: dPts(oct) }, clip);
+    const body = el('g', { 'clip-path': `url(#${id}c)` }, m.svg);
+    const pupil = el('circle', { cx: 64, cy: 64, r: 34, fill: css([0.27, 0.1, 292]) }, body);
+    const glint = el('circle', { r: 0, fill: '#fff', opacity: 0.85 }, body);
+    const V = ngon(8, 66, -PI / 2 - PI / 8);
+    const blades = V.map((_, k) => el('path', { fill: `url(#${id}${k % 2 ? 'h' : 'g'})`, 'stroke-linejoin': 'round', 'stroke-width': 1.2 }, body));
+    el('rect', { x: 0, y: 0, width: 128, height: 128, fill: `url(#${id}l)` }, body);
+    el('path', { d: dPts(oct), fill: 'none', stroke: 'url(#rim)', 'stroke-width': 3, 'clip-path': `url(#${id}c)` }, m.svg);
+    return { G, g2s, V, blades, pupil, glint, cx: 64, cy: 64 };
+  },
+  render(m, dt) {
+    const st = m.st, c = clamp(m.s.p), pal = this.pal;
+    let lx = (m.ptr.x - 64) * 0.14, ly = (m.ptr.y - 64) * 0.14;
+    const ll = Math.hypot(lx, ly);
+    if (ll > 7) { lx *= 7 / ll; ly *= 7 / ll; }
+    const k = reduce ? 1 : 1 - Math.exp(-dt * 12);
+    st.cx += (64 + lx * c - st.cx) * k; st.cy += (64 + ly * c - st.cy) * k;
+    const h = 30 * c, ph = 40 * D2R * c;
+    const I = st.V.map((_, i) => {
+      const a = -PI / 2 - PI / 8 + (i * TAU) / 8 + ph;
+      return [st.cx + h * Math.cos(a), st.cy + h * Math.sin(a)];
+    });
+    const seam = mixLch(pal.rest[2], pal.hover[2], c);
+    const seamC = css([seam[0] - 0.22, seam[1], seam[2]], 0.55);
+    st.blades.forEach((b, i) => {
+      const j = (i + 1) % 8;
+      set(b, 'd', dPts([st.V[i], st.V[j], I[j], I[i]]));
+      set(b, 'stroke', seamC);
+    });
+    set(st.pupil, 'cx', r1(st.cx)); set(st.pupil, 'cy', r1(st.cy));
+    set(st.glint, 'cx', r1(st.cx - 7)); set(st.glint, 'cy', r1(st.cy - 7)); set(st.glint, 'r', r1(4.5 * c));
+    paint(st.G, pal, c);
+    const a1 = mixLch(pal.rest[1], pal.hover[1], c), a2 = mixLch(pal.rest[2], pal.hover[2], c);
+    set(st.g2s[0], 'stop-color', css([a1[0] - 0.06, a1[1], a1[2] - 6]));
+    set(st.g2s[1], 'stop-color', css([a2[0] - 0.08, a2[1], a2[2] - 6]));
+  },
+  busy: m => Math.abs(m.st.cx - 64) + Math.abs(m.st.cy - 64) > 0.05,
+});
+
+def({
+  label: 'Eclipse',
+  pal: { rest: [[0.92, 0.13, 98], [0.82, 0.16, 75], [0.68, 0.19, 45], [0.98, 0.06, 100]], hover: [[0.8, 0.1, -78], [0.6, 0.16, -92], [0.42, 0.15, -108], [0.93, 0.08, -150]], raw: true },
+  dIn: 1, eIn: 'power3.out', dOut: 0.7,
+  sil: () => dLine(resample(arc(64, 92, 48, PI, TAU, 96))) + 'M12 98.5h104a3.5 3.5 0 0 1 0 7h-104a3.5 3.5 0 0 1 0-7Z',
+  build(m) {
+    const id = m.id;
+    const cor = el('radialGradient', { id: id + 'r' }, m.defs);
+    const cs = [[0, 0], [0.72, 0], [0.86, 0.95], [1, 0]].map(([o, op]) => el('stop', { offset: o, 'stop-opacity': op }, cor));
+    const corona = el('circle', { cx: 64, cy: 62, r: 56, fill: `url(#${id}r)`, opacity: 0 }, m.svg);
+    const bar = el('line', { x1: 12, x2: 116, y1: 102, y2: 102, 'stroke-width': 7, 'stroke-linecap': 'round' }, m.svg);
+    const mk = el('mask', { id: id + 'm', maskUnits: 'userSpaceOnUse', x: -40, y: -40, width: 208, height: 208 }, m.defs);
+    el('rect', { x: -40, y: -40, width: 208, height: 208, fill: '#fff' }, mk);
+    const occ = el('circle', { r: 40, cy: 62, fill: '#000' }, mk);
+    const wrap = el('g', { mask: `url(#${id}m)` }, m.svg);
+    const sk = skin(m, { parent: wrap });
+    return { sk, a: resample(arc(64, 92, 48, PI, TAU, 96)), b: S.circle(42, 64, 62), out: new Float32Array(N * 2), corona, cs, bar, occ, side: 1 };
+  },
+  enter(m) { m.st.side = m.entry.x < 64 ? -1 : 1; },
+  render(m) {
+    const st = m.st, p = m.s.p, c = clamp(p), pal = this.pal;
+    set(st.sk.s, 'd', dLine(lerpPts(st.out, st.a, st.b, p)));
+    // The occluder enters from the side the pointer came in.
+    const e = E.inOut3(clamp((c - 0.3) / 0.7));
+    set(st.occ, 'cx', r1(64 + st.side * (124 - 104 * e)));
+    set(st.occ, 'cy', r1(62 - 10 * e));
+    const cc = css(mixLch(pal.rest[3], pal.hover[3], c, true));
+    st.cs.forEach(s => set(s, 'stop-color', cc));
+    set(st.corona, 'opacity', (e * (0.85 + 0.15 * Math.sin(m.time * 2.4))).toFixed(3));
+    set(st.bar, 'stroke', mix(pal.rest[2], pal.hover[2], c, true));
+    set(st.bar, 'opacity', (1 - c).toFixed(3));
+    set(st.bar, 'transform', `translate(64 0) scale(${(1 - 0.6 * c).toFixed(3)} 1) translate(-64 0)`);
+    paint(st.sk, pal, c);
+  },
+});
+
+def({
+  label: 'Fuse',
+  pal: { rest: [[0.88, 0.15, 124], [0.82, 0.18, 134], [0.74, 0.18, 146], [0.95, 0.08, 120]], hover: [[0.88, 0.17, 100], [0.76, 0.19, 150], [0.66, 0.15, 200], [0.95, 0.08, 120]] },
+  dIn: 1.25, eIn: 'elastic.out(1,0.6)', dOut: 0.75, eOut: 'back.out(2.2)',
+  sil: () => [0, 1, 2].map(k => { const a = -PI / 2 + (k * TAU) / 3; return dCircle(r1(64 + 15 * Math.cos(a)), r1(64 + 15 * Math.sin(a)), 26); }).join('') + dCircle(64, 64, 17),
+  build(m) {
+    const id = m.id;
+    const f = el('filter', { id: id + 'f', filterUnits: 'userSpaceOnUse', x: -12, y: -12, width: 152, height: 152, 'color-interpolation-filters': 'sRGB' }, m.defs);
+    el('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: 4.5, result: 'b' }, f);
+    el('feColorMatrix', { in: 'b', mode: 'matrix', values: '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -9' }, f);
+    const g = el('g', { filter: `url(#${id}f)` }, m.svg);
+    const balls = [3, 0, 1, 2].map(k => {
+      const rg = el('radialGradient', { id: id + 'b' + k, cx: 0.38, cy: 0.32, r: 0.78 }, m.defs);
+      return { k, c: el('circle', { fill: `url(#${id}b${k})` }, g), st: [el('stop', { offset: 0 }, rg), el('stop', { offset: 1 }, rg)] };
+    });
+    return { g, balls, spin: 0 };
+  },
+  leave(m) { gsap.to(m.st, { spin: Math.ceil(m.st.spin / 120) * 120, duration: 0.75, ease: 'power2.out' }); },
+  render(m, dt) {
+    const st = m.st, p = m.s.p, c = clamp(p), pal = this.pal;
+    if (m.on && !reduce) st.spin += dt * 24 * c;
+    const d = Math.max(0, lerp(15, 40, p)), r = lerp(26, 19, p);
+    for (const b of st.balls) {
+      if (b.k === 3) {
+        set(b.c, 'cx', 64); set(b.c, 'cy', 64); set(b.c, 'r', r1(Math.max(0, 17 * (1 - p * 1.4))));
+      } else {
+        const a = -PI / 2 + (b.k * TAU) / 3;
+        set(b.c, 'cx', r1(64 + d * Math.cos(a))); set(b.c, 'cy', r1(64 + d * Math.sin(a))); set(b.c, 'r', r1(r));
+      }
+      const col = mixLch(pal.rest[b.k === 3 ? 1 : b.k], pal.hover[b.k === 3 ? 1 : b.k], c);
+      set(b.st[0], 'stop-color', css([col[0] + 0.1, col[1] * 0.75, col[2]]));
+      set(b.st[1], 'stop-color', css(col));
+    }
+    set(st.g, 'transform', `rotate(${r1(p * 60 + st.spin)} 64 64)`);
+  },
+});
+
+def({
+  label: 'Facet',
+  pal: { rest: [[0.88, 0.12, 165], [0.72, 0.16, 152], [0.54, 0.15, 162], [0.96, 0.05, 160]], hover: [[0.9, 0.1, 195], [0.72, 0.15, 218], [0.5, 0.16, 255], [0.96, 0.05, 200]] },
+  dIn: 0.9, eIn: 'expo.out', dOut: 0.6,
+  sil: () => 'M64 10L108 62L64 118L20 62Z',
+  build(m) {
+    const R = { A: [20, 62], B: [108, 62], C: [64, 118], T1: [64, 10], T2: [64, 10], G1: [42, 62], M: [64, 62], G2: [86, 62] };
+    const H = { A: [14, 44], B: [114, 44], C: [64, 112], T1: [40, 18], T2: [88, 18], G1: [40, 44], M: [64, 44], G2: [88, 44] };
+    const F = [['A', 'T1', 'G1'], ['T1', 'M', 'G1'], ['T1', 'T2', 'M'], ['T2', 'G2', 'M'], ['T2', 'B', 'G2'],
+      ['A', 'G1', 'C'], ['G1', 'M', 'C'], ['M', 'G2', 'C'], ['G2', 'B', 'C']];
+    const g = el('g', { 'stroke-linejoin': 'round', 'stroke-width': 0.8 }, m.svg);
+    const clip = el('clipPath', { id: m.id + 'c' }, m.defs);
+    return {
+      R, H, F, P: {}, lx: -0.55, ly: -0.7,
+      faces: F.map(() => el('path', {}, g)),
+      silC: el('path', {}, clip),
+      rim: el('path', { fill: 'none', stroke: 'url(#rim)', 'stroke-width': 3, 'clip-path': `url(#${m.id}c)` }, m.svg),
+    };
+  },
+  render(m, dt) {
+    const st = m.st, p = m.s.p, c = clamp(p), pal = this.pal;
+    for (const k in st.R) st.P[k] = [lerp(st.R[k][0], st.H[k][0], p), lerp(st.R[k][1], st.H[k][1], p)];
+    // Facets fly apart mid-transition and settle at the end.
+    const ex = Math.sin(PI * c) * 7;
+    const tx = m.on ? clamp((m.ptr.x - 64) / 64, -1, 1) : -0.55, ty = m.on ? clamp((m.ptr.y - 64) / 64, -1, 1) : -0.7;
+    const k = reduce ? 1 : 1 - Math.exp(-dt * 8);
+    st.lx += (tx - st.lx) * k; st.ly += (ty - st.ly) * k;
+    const ll = Math.hypot(st.lx, st.ly, 0.9);
+    const top = mixLch(pal.rest[0], pal.hover[0], c), bot = mixLch(pal.rest[2], pal.hover[2], c);
+    st.F.forEach((f, i) => {
+      const pts = f.map(n => st.P[n]);
+      const gx = (pts[0][0] + pts[1][0] + pts[2][0]) / 3, gy = (pts[0][1] + pts[1][1] + pts[2][1]) / 3;
+      let nx = gx - 64, ny = gy - 62;
+      const nl = Math.hypot(nx, ny) || 1;
+      nx /= nl; ny /= nl;
+      set(st.faces[i], 'd', dPts(pts, nx * ex, ny * ex));
+      // Lambert term against a light that follows the pointer.
+      const shade = (nx * st.lx + ny * st.ly + 0.75 * 0.9) / (Math.hypot(1, 0.75) * ll);
+      const col = mixLch(top, bot, clamp((gy - 10) / 108));
+      col[0] = clamp(col[0] + (shade - 0.5) * (0.1 + 0.2 * c), 0.2, 0.98);
+      const s = css(col);
+      set(st.faces[i], 'fill', s); set(st.faces[i], 'stroke', s);
+    });
+    const d = dPts(['A', 'T1', 'T2', 'B', 'C'].map(n => st.P[n]));
+    set(st.silC, 'd', d); set(st.rim, 'd', d);
+  },
+  busy: m => Math.abs(m.st.lx + 0.55) + Math.abs(m.st.ly + 0.7) > 0.01,
+});
+
+def({
+  label: 'Fold',
+  pal: { rest: [[0.86, 0.11, 182], [0.72, 0.14, 174], [0.56, 0.13, 192], [0.96, 0.04, 175]], hover: [[0.88, 0.13, 158], [0.74, 0.16, 160], [0.55, 0.14, 180], [0.97, 0.05, 150]] },
+  dIn: 0.7, dOut: 0.6,
+  sil: () => dPts(S.square()),
+  build(m) {
+    const id = m.id;
+    const fg = el('linearGradient', { id: id + 'k', gradientUnits: 'userSpaceOnUse' }, m.defs);
+    const fs = [0, 1].map(o => el('stop', { offset: o }, fg));
+    const sk = skin(m);
+    const shadow = el('path', { fill: '#000', opacity: 0.28, 'clip-path': `url(#${id}c)` }, m.svg);
+    const flap = el('path', { fill: `url(#${id}k)` }, m.svg);
+    const flapRim = el('path', { fill: 'none', stroke: 'url(#rim)', 'stroke-width': 1.5 }, m.svg);
+    return { sk, fg, fs, shadow, flap, flapRim, base: densify(S.square(), 1.2), s: 0 };
+  },
+  render(m, dt) {
+    const st = m.st, c = clamp(m.s.p), pal = this.pal;
+    const C = [108, 20], ux = -Math.SQRT1_2, uy = Math.SQRT1_2;
+    // Fold depth grows as the pointer nears the corner.
+    const near = 1 - clamp(Math.hypot(m.ptr.x - C[0], m.ptr.y - C[1]) / 110);
+    const target = c * (16 + 34 * near);
+    st.s += (target - st.s) * (reduce ? 1 : 1 - Math.exp(-dt * 9));
+    const s = st.s, f = q => (q[0] - C[0]) * ux + (q[1] - C[1]) * uy - s;
+    const main = clipHalf(st.base, f, 1), cut = clipHalf(st.base, f, -1);
+    set(st.sk.s, 'd', main.length > 2 ? dPts(main) : 'M0 0');
+    if (cut.length > 2) {
+      const fl = cut.map(q => { const v = f(q); return [q[0] - 2 * v * ux, q[1] - 2 * v * uy]; });
+      const d = dPts(fl);
+      set(st.flap, 'd', d); set(st.flapRim, 'd', d); set(st.shadow, 'd', dPts(fl, -1.5, 3));
+      set(st.fg, 'x1', r1(C[0] + s * ux)); set(st.fg, 'y1', r1(C[1] + s * uy));
+      set(st.fg, 'x2', r1(C[0] + 2 * s * ux)); set(st.fg, 'y2', r1(C[1] + 2 * s * uy));
+    } else {
+      set(st.flap, 'd', 'M0 0'); set(st.flapRim, 'd', 'M0 0'); set(st.shadow, 'd', 'M0 0');
+    }
+    paint(st.sk, pal, c);
+    const f0 = mixLch(pal.rest[0], pal.hover[0], c), f2 = mixLch(pal.rest[2], pal.hover[2], c);
+    set(st.fs[0], 'stop-color', css([f0[0] + 0.04, f0[1], f0[2] + 8]));
+    set(st.fs[1], 'stop-color', css([f2[0] - 0.1, f2[1], f2[2] + 8]));
+  },
+  busy: m => m.st.s > 0.02,
+});
+
+def({
+  label: 'Ripple',
+  pal: { rest: [[0.92, 0.08, 190], [0.78, 0.12, 200], [0.6, 0.13, 222], [0.98, 0.03, 190]], hover: [[0.6, 0.12, 238], [0.45, 0.14, 252], [0.32, 0.11, 265], [0.86, 0.1, 205]] },
+  dIn: 0.9, eIn: 'power3.out', dOut: 0.6,
+  sil: () => dLine(S.drop()),
+  build(m) {
+    const rings = el('g', { fill: 'none' }, m.svg);
+    const rs = [0, 1, 2].map(() => el('circle', { cx: 64, cy: 64, r: 30, opacity: 0 }, rings));
+    return { sk: skin(m), a: S.drop(), b: S.circle(30), out: new Float32Array(N * 2), rs };
+  },
+  render(m) {
+    const st = m.st, p = m.s.p, c = clamp(p), pal = this.pal;
+    set(st.sk.s, 'd', dLine(lerpPts(st.out, st.a, st.b, p)));
+    const q = Math.sin(PI * c);
+    set(st.sk.grp, 'transform', `translate(64 100) scale(${(1 + 0.16 * q).toFixed(3)} ${(1 - 0.22 * q).toFixed(3)}) translate(-64 -100)`);
+    const vis = clamp((c - 0.25) / 0.75), rc = mix(pal.rest[3], pal.hover[3], c);
+    st.rs.forEach((r, k) => {
+      const ph = (m.time * 0.55 + k / 3) % 1;
+      set(r, 'r', r1(30 + 32 * ph));
+      set(r, 'stroke-width', r1(7 * (1 - ph) + 1));
+      set(r, 'opacity', ((1 - ph) ** 1.5 * vis).toFixed(3));
+      set(r, 'stroke', rc);
+    });
+    paint(st.sk, pal, c);
+  },
+});
+
+def({
+  label: 'Wave',
+  pal: { rest: [[0.88, 0.09, 205], [0.72, 0.14, 228], [0.56, 0.17, 250], [0.97, 0.04, 210]], hover: [[0.9, 0.1, 185], [0.74, 0.14, 212], [0.52, 0.18, 262], [0.97, 0.05, 190]] },
+  dIn: 0.8, dOut: 0.7,
+  sil: () => dLine(S.capsule()),
+  build(m) {
+    const sk = skin(m);
+    for (const [k, v] of [['x1', 12], ['y1', 64], ['x2', 64], ['y2', 64], ['spreadMethod', 'reflect']]) set(sk.g, k, v);
+    return { sk, a: S.capsule(), out: new Float32Array(N * 2), k: 2, A: 8, ph: 0 };
+  },
+  render(m, dt) {
+    const st = m.st, c = clamp(m.s.p);
+    // Pointer x sets the frequency, pointer y sets the amplitude.
+    const tk = 1 + 2.2 * clamp(m.ptr.x / 128), tA = 4 + 12 * clamp(1 - m.ptr.y / 128);
+    const s = reduce ? 1 : 1 - Math.exp(-dt * 5);
+    st.k += (tk - st.k) * s; st.A += (tA - st.A) * s;
+    if (!reduce) st.ph += dt * 4.2;
+    set(st.sk.s, 'd', dCurve(waveOutline(st.a, st.out, st.k, st.A, st.ph, c)));
+    set(st.sk.g, 'gradientTransform', `translate(${r1((st.ph * 9 * c) % 104)} 0)`);
+    paint(st.sk, this.pal, c);
+  },
+});
+
+def({
+  label: 'Loop',
+  pal: { rest: [[0.82, 0.12, 225], [0.66, 0.18, 245], [0.52, 0.2, 265], [0.95, 0.05, 230]], hover: [[0.82, 0.14, 300], [0.64, 0.22, 320], [0.55, 0.21, 350], [0.96, 0.05, 330]] },
+  dIn: 0.85, dOut: 0.65,
+  sil: () => dCircle(64, 64, 46.5) + dCircle(64, 64, 35.5, true),
+  build(m) {
+    const id = m.id, G = grad(m), a = new Float32Array(N * 2), b = new Float32Array(N * 2);
+    // Circle and lemniscate share one parameter, so the top and bottom fold into the crossing.
+    for (let i = 0; i < N; i++) {
+      const t = (i / N) * TAU, s = Math.sin(t), q = 1 + s * s;
+      a[2 * i] = 64 + 41 * Math.cos(t); a[2 * i + 1] = 64 + 41 * s;
+      b[2 * i] = 64 + (54 * Math.cos(t)) / q; b[2 * i + 1] = 64 + (1.5 * 54 * s * Math.cos(t)) / q;
+    }
+    const base = el('path', { fill: 'none', stroke: `url(#${id}g)`, 'stroke-width': 11, 'stroke-linejoin': 'round' }, m.svg);
+    const dash = { fill: 'none', 'stroke-linecap': 'round', pathLength: 100, 'stroke-dasharray': '14 86', opacity: 0 };
+    const glow = el('path', { ...dash, 'stroke-width': 19 }, m.svg);
+    const hi = el('path', { ...dash, 'stroke-width': 11 }, m.svg);
+    return { G, a, b, out: new Float32Array(N * 2), base, glow, hi, rot: 0 };
+  },
+  leave(m) { gsap.to(m.st, { rot: Math.round(m.st.rot / 360) * 360, duration: 0.65, ease: 'power3.inOut' }); },
+  render(m, dt) {
+    const st = m.st, c = clamp(m.s.p), pal = this.pal;
+    if (m.on && !reduce) st.rot += dt * 70 * c;
+    const d = dCurve(lerpPts(st.out, st.a, st.b, m.s.p));
+    set(st.base, 'd', d); set(st.glow, 'd', d); set(st.hi, 'd', d);
+    const off = r1(-(m.time * 38) % 100), hc = mix(pal.rest[3], pal.hover[3], c);
+    for (const e of [st.hi, st.glow]) { set(e, 'stroke-dashoffset', off); set(e, 'stroke', hc); }
+    set(st.hi, 'opacity', c.toFixed(3)); set(st.glow, 'opacity', (c * 0.28).toFixed(3));
+    set(st.G.g, 'gradientTransform', `rotate(${r1(c * 90 + st.rot)} 64 64)`);
+    paint(st.G, pal, c);
+  },
+});
+
+def({
+  label: 'Grid',
+  pal: { rest: [[0.84, 0.1, 250], [0.66, 0.17, 268], [0.5, 0.2, 285], [0.95, 0.05, 250]], hover: [[0.86, 0.12, 195], [0.68, 0.16, 232], [0.5, 0.2, 275], [0.96, 0.05, 200]] },
+  dIn: 1, eIn: 'none', dOut: 0.85, eOut: 'none',
+  sil: () => {
+    let s = '';
+    for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) {
+      const l = 52 + x * 32, t = 52 + y * 32;
+      s += `M${l + 6} ${t}h12a6 6 0 0 1 6 6v12a6 6 0 0 1-6 6h-12a6 6 0 0 1-6-6v-12a6 6 0 0 1 6-6Z`;
+    }
+    return s;
+  },
+  build(m) {
+    const G = grad(m), id = m.id, cells = [];
+    for (let gy = -1; gy <= 1; gy++) for (let gx = -1; gx <= 1; gx++) {
+      const ctr = gx === 0 && gy === 0, a = Math.atan2(gy, gx) + PI / 8;
+      // Squares repeat every 90°, so each cell turns at most 45°.
+      let rot = (((a / D2R + 45) % 90) + 90) % 90;
+      if (rot > 45) rot -= 90;
+      const cid = id + 'q' + cells.length;
+      const rect = el('rect', { id: cid }, m.defs);
+      el('use', { href: '#' + cid, fill: `url(#${id}g)` }, m.svg);
+      el('use', { href: '#' + cid, fill: 'none', stroke: 'url(#rim)', 'stroke-width': 1.5 }, m.svg);
+      cells.push({
+        rect, d: 0,
+        r: [64 + gx * 32, 64 + gy * 32, 24, 6, 0],
+        h: ctr ? [64, 64, 30, 15, 0] : [64 + 46 * Math.cos(a), 64 + 46 * Math.sin(a), 19, 4, rot],
+      });
+    }
+    return { G, cells };
+  },
+  enter(m) { this.stagger(m, false); },
+  leave(m) { this.stagger(m, true); },
+  // Cells nearest the pointer move first, both on entry and on exit.
+  stagger(m, out) {
+    for (const cl of m.st.cells) {
+      const d = clamp(Math.hypot(cl.r[0] - m.ptr.x, cl.r[1] - m.ptr.y) / 120);
+      cl.d = out ? 1 - d : d;
+    }
+  },
+  render(m) {
+    const st = m.st, p = m.s.p;
+    for (const cl of st.cells) {
+      const t = E.inOut3(clamp((p - cl.d * 0.4) / 0.6));
+      const cx = lerp(cl.r[0], cl.h[0], t), cy = lerp(cl.r[1], cl.h[1], t), s = lerp(cl.r[2], cl.h[2], t);
+      set(cl.rect, 'x', r1(cx - s / 2)); set(cl.rect, 'y', r1(cy - s / 2));
+      set(cl.rect, 'width', r1(s)); set(cl.rect, 'height', r1(s));
+      set(cl.rect, 'rx', r1(lerp(cl.r[3], cl.h[3], t)));
+      set(cl.rect, 'transform', `rotate(${r1(lerp(0, cl.h[4], t))} ${r1(cx)} ${r1(cy)})`);
+    }
+    set(st.G.g, 'gradientTransform', `rotate(${r1(E.inOut3(clamp(p)) * 90)} 64 64)`);
+    paint(st.G, this.pal, E.inOut3(clamp(p)));
+  },
+});
+
+def({
+  label: 'Orbit',
+  pal: P(288, -70),
+  dIn: 0.9, dOut: 0.7,
+  sil: () => dCircle(64, 64, 40) + dCircle(r1(64 + 54 * Math.cos(-PI / 4)), r1(64 + 54 * Math.sin(-PI / 4)), 9),
+  build(m) {
+    const id = m.id, sk = skin(m, { tag: 'circle' });
+    set(sk.s, 'cx', 64); set(sk.s, 'cy', 64);
+    const ring = el('circle', { cx: 64, cy: 64, r: 44, fill: 'none', stroke: `url(#${id}g)`, 'stroke-width': 7, pathLength: 100, 'stroke-linecap': 'round' }, m.svg);
+    const moons = [0, 1, 2].map(() => el('circle', {}, m.svg));
+    return { sk, ring, moons, spin: 0, prim: 0 };
+  },
+  // Spin ends on a multiple of 120°; the moon landing at 1:30 becomes the resting moon.
+  leave(m) {
+    const T3 = TAU / 3, q = Math.ceil(m.st.spin / T3 - 1e-6);
+    m.st.prim = ((-q % 3) + 3) % 3;
+    gsap.to(m.st, { spin: q * T3, duration: 0.7, ease: 'power3.inOut' });
+  },
+  render(m, dt) {
+    const st = m.st, c = clamp(m.s.p), pal = this.pal, T3 = TAU / 3;
+    if (m.on && !reduce) {
+      // Moons speed up when the pointer is ahead of them and slow when it is behind.
+      const ph = -PI / 4 + st.spin, pa = Math.atan2(m.ptr.y - 64, m.ptr.x - 64);
+      st.spin += dt * c * Math.max(0.2, 1.1 + 1.3 * Math.sin(angDiff(pa, ph)));
+    }
+    const base = -PI / 4 + st.spin + st.prim * T3;
+    set(st.sk.s, 'r', r1(lerp(40, 22, m.s.p)));
+    set(st.ring, 'stroke-dasharray', `${(c * 100).toFixed(1)} 100`);
+    set(st.ring, 'transform', `rotate(${r1(base / D2R)} 64 64)`);
+    set(st.ring, 'opacity', c > 0.002 ? 1 : 0);
+    const mc = mix(pal.rest[1], pal.hover[3], c), dist = lerp(54, 44, c);
+    st.moons.forEach((mo, k) => {
+      const j = (((k - st.prim) % 3) + 3) % 3, a = base + j * T3 * c;
+      set(mo, 'cx', r1(64 + dist * Math.cos(a))); set(mo, 'cy', r1(64 + dist * Math.sin(a)));
+      set(mo, 'r', r1(j === 0 ? lerp(9, 6.5, c) : 6.5 * c));
+      set(mo, 'fill', mc);
+    });
+    set(st.sk.l, 'cx', r1(lerp(42, 64 + 24 * Math.cos(base), c)));
+    set(st.sk.l, 'cy', r1(lerp(34, 64 + 24 * Math.sin(base), c)));
+    paint(st.sk, pal, c);
+  },
+});
+
+def({
+  label: 'Twist',
+  pal: P(312, -48),
+  dIn: 0.95, eIn: 'back.out(1.6)', dOut: 0.6,
+  sil: () => dPts(roundPoly(S.starV(0, 25), 5, 5)),
+  build(m) { return { sk: skin(m) }; },
+  render(m) {
+    const st = m.st, p = m.s.p, c = clamp(p);
+    // Inner vertices turn 36° to meet the next point: star becomes pinwheel.
+    set(st.sk.s, 'd', dPts(roundPoly(S.starV(36 * D2R * p, lerp(25, 31, c)), 5, 5)));
+    set(st.sk.grp, 'transform', `rotate(${r1(72 * p)} 64 68)`);
+    set(st.sk.g, 'gradientTransform', `rotate(${r1(-140 * c)} 64 68)`);
+    paint(st.sk, this.pal, c);
+  },
+});
+
+def({
+  label: 'Magnet',
+  pal: P(336, 40),
+  dIn: 0.6, dOut: 0.8,
+  sil: () => dLine(resample(polar(S.pebble))),
+  build(m) {
+    const n = 72, th = new Float32Array(n), r0 = new Float32Array(n);
+    for (let i = 0; i < n; i++) { th[i] = (i / n) * TAU; r0[i] = S.pebble(th[i]); }
+    return { sk: skin(m), n, th, r0, o: new Float32Array(n), v: new Float32Array(n), out: new Float32Array(n * 2), lx: 42, ly: 34, tx: 0, ty: 0, busy: false };
+  },
+  render(m, dt) {
+    const st = m.st, c = clamp(m.s.p), n = st.n;
+    const dx = m.ptr.x - 64, dy = m.ptr.y - 64, pd = Math.hypot(dx, dy), pa = Math.atan2(dy, dx) + PI / 2;
+    const pull = c * (8 + 12 * clamp((pd - 18) / 40));
+    const steps = dt > 0 ? Math.ceil(dt * 120) : 0, h = steps ? dt / steps : 0;
+    let busy = false;
+    // One spring per vertex; the surface bulges toward the pointer.
+    for (let i = 0; i < n; i++) {
+      const fo = Math.max(0, Math.cos(st.th[i] - pa)) ** 6;
+      const tg = pull * fo - 2 * c + (reduce ? 0 : 1.2 * c * Math.sin(m.time * 3 + st.th[i] * 3));
+      if (reduce) { st.o[i] = tg; st.v[i] = 0; }
+      for (let s = 0; s < steps; s++) { st.v[i] += (170 * (tg - st.o[i]) - 12 * st.v[i]) * h; st.o[i] += st.v[i] * h; }
+      if (Math.abs(st.v[i]) > 0.02 || Math.abs(st.o[i] - tg) > 0.02) busy = true;
+    }
+    st.busy = busy;
+    const k = reduce ? 1 : 1 - Math.exp(-dt * 6), sh = c * Math.min(5, pd * 0.08);
+    st.tx += ((pd ? (dx / pd) * sh : 0) - st.tx) * k;
+    st.ty += ((pd ? (dy / pd) * sh : 0) - st.ty) * k;
+    for (let i = 0; i < n; i++) {
+      const r = st.r0[i] + st.o[i], a = st.th[i] - PI / 2;
+      st.out[2 * i] = 64 + st.tx + r * Math.cos(a); st.out[2 * i + 1] = 64 + st.ty + r * Math.sin(a);
+    }
+    set(st.sk.s, 'd', dCurve(st.out));
+    st.lx += ((m.on ? m.ptr.x : 42) - st.lx) * k; st.ly += ((m.on ? m.ptr.y : 34) - st.ly) * k;
+    set(st.sk.l, 'cx', r1(st.lx)); set(st.sk.l, 'cy', r1(st.ly));
+    paint(st.sk, this.pal, c);
+  },
+  busy: m => m.st.busy || Math.abs(m.st.tx) + Math.abs(m.st.ty) > 0.05 || Math.abs(m.st.lx - 42) + Math.abs(m.st.ly - 34) > 0.2,
+});
+
+/* ---------- mount, input, ticker ---------- */
+const grid = document.getElementById('grid');
+const active = new Set();
+let lastType = 'mouse';
+
+function local(m, e) {
+  const r = m.rect || (m.rect = m.svg.getBoundingClientRect());
+  return { x: ((e.clientX - r.left) / r.width) * 128, y: ((e.clientY - r.top) / r.height) * 128 };
+}
+function enter(m, e) {
+  if (e && e.clientX != null) { m.rect = null; const q = local(m, e); m.entry = q; m.ptr = { ...q }; }
+  if (m.on) return;
+  m.on = true;
+  m.btn.classList.add('on');
+  gsap.killTweensOf(m.st);
+  m.def.enter?.(m);
+  gsap.to(m.s, { p: 1, duration: reduce ? 0.2 : m.def.dIn ?? 0.72, ease: reduce ? 'none' : m.def.eIn ?? 'expo.out', overwrite: true });
+  active.add(m);
+}
+function leave(m) {
+  if (!m.on) return;
+  m.on = false;
+  m.btn.classList.remove('on');
+  m.def.leave?.(m);
+  gsap.to(m.s, { p: 0, duration: reduce ? 0.2 : m.def.dOut ?? 0.56, ease: reduce ? 'none' : m.def.eOut ?? 'power3.inOut', overwrite: true });
+  active.add(m);
+}
+
+const marks = MARKS.map((d, i) => {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mark';
+  btn.setAttribute('aria-label', d.label);
+  const glow = document.createElement('span');
+  glow.className = 'glow';
+  const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true', focusable: 'false' });
+  btn.append(glow, svg);
+  grid.append(btn);
+  btn.style.setProperty('--g1', css(d.pal.hover[1], 0.75));
+  const m = { i, def: d, btn, svg, id: 'm' + i + '_', defs: el('defs', {}, svg), s: { p: 0 }, time: 0, ptr: { x: 64, y: 64 }, entry: { x: 64, y: 64 }, on: false, auto: false, rect: null };
+  m.st = d.build(m);
+  d.render(m, 0);
+
+  btn.addEventListener('pointerdown', e => { lastType = e.pointerType; });
+  btn.addEventListener('pointerenter', e => { if (e.pointerType !== 'touch') enter(m, e); });
+  btn.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') leave(m); });
+  btn.addEventListener('pointermove', e => {
+    if (!m.on || (e.pointerType === 'touch' && !e.isPrimary)) return;
+    const q = local(m, e);
+    m.ptr.x = q.x; m.ptr.y = q.y;
+  });
+  btn.addEventListener('click', e => {
+    if (lastType === 'touch') {
+      // Touch toggles; one mark stays open at a time.
+      if (m.on) leave(m);
+      else { marks.forEach(o => o !== m && !o.auto && leave(o)); enter(m, e); }
+    } else if (e.detail === 0) {
+      // Enter or Space replays the morph.
+      leave(m);
+      gsap.delayedCall(0.2, () => enter(m));
+    }
+    lastType = 'mouse';
+  });
+  btn.addEventListener('focus', () => { if (btn.matches(':focus-visible')) enter(m); });
+  btn.addEventListener('blur', () => { if (!m.auto) leave(m); });
+  return m;
+});
+addEventListener('scroll', () => marks.forEach(m => (m.rect = null)), { passive: true });
+addEventListener('resize', () => marks.forEach(m => (m.rect = null)));
+
+const fpsEl = document.getElementById('fps');
+const ft = [];
+let uiAt = 0, slowFired = false;
+function meter(time, dms) {
+  ft.push(dms);
+  if (ft.length > 300) ft.shift();
+  if (time - uiAt < 0.25) return;
+  uiAt = time;
+  let sum = 0, n = 0, worst = 0;
+  for (let i = ft.length - 1; i >= 0 && sum < 1000; i--) { sum += ft[i]; n++; }
+  for (let i = ft.length - 1, s = 0; i >= 0 && s < 2000; i--) { s += ft[i]; worst = Math.max(worst, ft[i]); }
+  const fps = Math.round((n * 1000) / (sum || 1)), low = Math.round(1000 / (worst || 1));
+  fpsEl.textContent = `${String(fps).padStart(3)} fps  ${String(low).padStart(3)} low`;
+  if (!slowFired && sum / n > 28 && n > 20) { slowFired = true; dispatchEvent(new Event('perf-low')); }
+}
+
+gsap.ticker.add((time, dms) => {
+  const dt = Math.min(dms / 1000, 0.05);
+  for (const m of active) {
+    if (!reduce) m.time += dt;
+    if (m.auto) {
+      m.ptr.x = 64 + 44 * Math.sin(m.time * 1.3 + m.i);
+      m.ptr.y = 64 + 38 * Math.sin(m.time * 1.9 + m.i * 2.1);
+    }
+    m.def.render(m, dt);
+    const idle = !m.on && Math.abs(m.s.p) < 1e-4 && !gsap.isTweening(m.s) && !gsap.isTweening(m.st) && !(m.def.busy && m.def.busy(m));
+    if (idle) { m.s.p = 0; m.def.render(m, 0); active.delete(m); }
+  }
+  meter(time, dms);
+});
+
+/* ---------- play all ---------- */
+const playBtn = document.getElementById('play');
+let playTl = null;
+function playAll(on) {
+  playBtn.setAttribute('aria-pressed', String(on));
+  playTl?.kill();
+  playTl = null;
+  if (!on) { marks.forEach(m => { if (m.auto) { m.auto = false; leave(m); } }); return; }
+  const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+  marks.forEach((m, i) => tl.call(() => {
+    m.auto = true;
+    m.entry = { x: i % 2 ? 0 : 128, y: 40 + (i % 3) * 24 };
+    m.ptr = { ...m.entry };
+    enter(m);
+  }, null, i * 0.07));
+  marks.forEach((m, i) => tl.call(() => { leave(m); m.auto = false; }, null, 3.4 + i * 0.05));
+  playTl = tl;
+}
+playBtn.addEventListener('click', () => playAll(playBtn.getAttribute('aria-pressed') !== 'true'));
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  playAll(false);
+  marks.forEach(leave);
+});
+
+/* ---------- lab helpers ---------- */
+const palOf = label => MARKS.find(d => d.label === label).pal;
+const toLinear = x => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4);
+let lowDpr = false;
+addEventListener('perf-low', () => { lowDpr = true; });
+
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+function whenVisible(panel, frame) {
+  new IntersectionObserver(([e]) => {
+    if (e.isIntersecting) gsap.ticker.add(frame);
+    else gsap.ticker.remove(frame);
+  }).observe(panel);
+}
+function failed(panel, what) {
+  panel.querySelector('figcaption').textContent = what + ' \u00b7 WebGL unavailable';
+  panel.querySelector('canvas').hidden = true;
+}
+function toggle(id, v, on) {
+  const b = document.getElementById(id);
+  const show = () => b.setAttribute('aria-pressed', String(v));
+  b.addEventListener('click', () => { v = !v; show(); on(v); });
+  show();
+  return { set(x) { v = x; show(); } };
+}
+function slider(id, fmt, on) {
+  const inp = document.getElementById(id), out = inp.parentElement.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); on(+inp.value); };
+  inp.addEventListener('input', upd);
+  upd();
+}
+
+/* ---------- lab: GSAP MorphSVG ---------- */
+function labMorph() {
+  const panel = document.getElementById('lab-morph'), svg = panel.querySelector('svg');
+  const sk = skin({ id: 'lm_', svg, defs: el('defs', {}, svg) });
+  const list = MARKS.map(d => ({ d: d.sil(), pal: d.pal, label: d.label }));
+  let i = 0, dc = null, auto = true, rot = false, dur = 1, visible = false, hovered = false;
+  let cur = list[0].pal.rest.map(c => [...c]);
+  const col = { t: 0 };
+  sk.s.setAttribute('d', list[0].d);
+  paint(sk, { rest: cur, hover: cur }, 0);
+  const thumbs = list.map((it, k) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'thumb';
+    b.setAttribute('aria-label', it.label);
+    b.style.setProperty('--c', css(it.pal.rest[1]));
+    b.innerHTML = `<svg viewBox="0 0 128 128" aria-hidden="true"><path d="${it.d}"/></svg>`;
+    b.addEventListener('click', () => { auto = false; autoT.set(false); go(k); });
+    document.getElementById('morph-thumbs').append(b);
+    return b;
+  });
+  thumbs[0].setAttribute('aria-current', 'true');
+  function go(k) {
+    // Colours start from what is on screen, so a retarget mid-morph never jumps.
+    const from = cur.map(c => [...c]), to = list[k].pal.rest, d = reduce ? 0.3 : dur;
+    thumbs[i].removeAttribute('aria-current');
+    i = k;
+    thumbs[i].setAttribute('aria-current', 'true');
+    const ms = { shape: list[k].d, type: rot ? 'rotational' : 'linear' };
+    if (!rot) ms.shapeIndex = 'auto';
+    gsap.to(sk.s, { morphSVG: ms, duration: d, ease: 'expo.inOut', overwrite: true });
+    gsap.fromTo(col, { t: 0 }, {
+      t: 1, duration: d, ease: 'expo.inOut', overwrite: true,
+      onUpdate: () => { cur = from.map((c, n) => mixLch(c, to[n], col.t)); paint(sk, { rest: cur, hover: cur }, 0); },
+    });
+    schedule();
+  }
+  function schedule() {
+    dc?.kill();
+    dc = null;
+    if (auto && !reduce && visible && !hovered) dc = gsap.delayedCall(dur + 1.1, () => go((i + 1) % list.length));
+  }
+  const autoT = toggle('morph-auto', true, v => { auto = v; schedule(); });
+  toggle('morph-rot', false, v => { rot = v; });
+  slider('morph-dur', v => v.toFixed(1) + 's', v => { dur = v; });
+  panel.addEventListener('pointerenter', e => { if (e.pointerType !== 'touch') { hovered = true; schedule(); } });
+  panel.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') { hovered = false; schedule(); } });
+  panel.addEventListener('click', () => go((i + 1) % list.length));
+  panel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go((i + 1) % list.length); } });
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; schedule(); }).observe(panel);
+}
+labMorph();
+
+/* ---------- lab: Three.js extrude ---------- */
+async function labExtrude(THREE, RoomEnvironment) {
+  const panel = document.getElementById('lab-extrude'), canvas = panel.querySelector('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  const scene = new THREE.Scene(), pm = new THREE.PMREMGenerator(renderer);
+  await idle();
+  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+  const camera = new THREE.PerspectiveCamera(30, 4 / 3, 0.1, 60);
+  camera.position.set(0, 0, 11.6);
+  const key = new THREE.DirectionalLight(0xffffff, 1.4);
+  key.position.set(-3, 4, 5);
+  scene.add(key);
+  const group = new THREE.Group();
+  scene.add(group);
+
+  const cap = S.capsule(), pebble = resample(polar(S.pebble));
+  const fold = q => (q[0] - 108) * -Math.SQRT1_2 + (q[1] - 20) * Math.SQRT1_2 - 34;
+  const cfg = [
+    ['Prism', S.tri(), S.hex(), -PI / 6],
+    ['Bloom', S.bud(), S.rose(), -PI / 6],
+    ['Twist', resample(roundPoly(S.starV(0, 25), 5, 5)), resample(roundPoly(S.starV(36 * D2R, 31), 5, 5)), -72 * D2R],
+    ['Facet', resample([[64, 10], [108, 62], [64, 118], [20, 62]]), resample([[14, 44], [40, 18], [88, 18], [114, 44], [64, 112]]), 0],
+    ['Fold', resample(S.square()), resample(clipHalf(densify(S.square(), 1.2), fold, 1)), 0],
+    ['Eclipse', resample(arc(64, 92, 48, PI, TAU, 96)), S.circle(42, 64, 62), 0],
+    ['Wave', cap, waveOutline(cap, new Float32Array(N * 2), 2.2, 12, 0.6, 1), 0],
+    ['Ripple', S.drop(), S.circle(32), 0],
+    ['Magnet', pebble, resample(polar(a => S.pebble(a) + 18 * Math.max(0, Math.cos(a - 0.8)) ** 6)), 0],
+  ];
+  const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12 });
+  const tmpC = new THREE.Color(), tmpD = new THREE.Color();
+  const n = N, F0 = 0, B0 = n + 1, SF = 2 * n + 2, SB = 3 * n + 2;
+  let D = 0.17;
+  const index = [];
+  // Fan caps from the centre keep one index buffer valid for both outlines.
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    index.push(F0, F0 + 1 + i, F0 + 1 + j, B0, B0 + 1 + j, B0 + 1 + i);
+    index.push(SF + i, SB + i, SF + j, SF + j, SB + i, SB + j);
+  }
+  const pieces = cfg.map(([label, A, B, rz], i) => {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array((4 * n + 2) * 3), colA = new Float32Array((4 * n + 2) * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colA, 3));
+    geo.setIndex(index);
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.4);
+    const mesh = new THREE.Mesh(geo, mat);
+    const pc = {
+      i, A, B, rz, geo, pos, colA, mesh, p: 0, tg: 0, lt: -1, locked: false,
+      tmp: new Float32Array(n * 2), pal: palOf(label),
+      x: ((i % 3) - 1) * 2.2, y: (1 - Math.floor(i / 3)) * 1.85,
+    };
+    mesh.userData.pc = pc;
+    group.add(mesh);
+    return pc;
+  });
+  function writeGeo(pc, t) {
+    const o = lerpPts(pc.tmp, pc.A, pc.B, t), P0 = pc.pos;
+    P0.fill(0, 0, 3);
+    P0[2] = D;
+    P0[B0 * 3] = 0; P0[B0 * 3 + 1] = 0; P0[B0 * 3 + 2] = -D;
+    for (let i = 0; i < n; i++) {
+      const x = (o[2 * i] - 64) / 64, y = -(o[2 * i + 1] - 64) / 64;
+      for (const [v, z] of [[F0 + 1 + i, D], [B0 + 1 + i, -D], [SF + i, D], [SB + i, -D]]) { P0[v * 3] = x; P0[v * 3 + 1] = y; P0[v * 3 + 2] = z; }
+    }
+    pc.geo.attributes.position.needsUpdate = true;
+    pc.geo.computeVertexNormals();
+  }
+  function writeCol(pc, t) {
+    const c3 = [0, 1, 2].map(k => rgb(mixLch(pc.pal.rest[k], pc.pal.hover[k], t, pc.pal.raw)));
+    const C = pc.colA, P0 = pc.pos;
+    tmpC.setRGB(...c3[1], THREE.SRGBColorSpace);
+    for (const v of [F0, B0]) { C[v * 3] = tmpC.r; C[v * 3 + 1] = tmpC.g; C[v * 3 + 2] = tmpC.b; }
+    for (let i = 0; i < n; i++) {
+      const ty = clamp((1 - P0[(F0 + 1 + i) * 3 + 1]) / 2);
+      tmpD.setRGB(...c3[0], THREE.SRGBColorSpace).lerp(tmpC.setRGB(...c3[2], THREE.SRGBColorSpace), ty);
+      for (const [v, mul] of [[F0 + 1 + i, 1], [B0 + 1 + i, 1], [SF + i, 0.72], [SB + i, 0.6]]) {
+        C[v * 3] = tmpD.r * mul; C[v * 3 + 1] = tmpD.g * mul; C[v * 3 + 2] = tmpD.b * mul;
+      }
+    }
+    pc.geo.attributes.color.needsUpdate = true;
+  }
+
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(9, 9), meshes = pieces.map(p => p.mesh);
+  let hovered = null, all = false, spin = false, down = null, dragX = 0, dragY = 0;
+  const view = { rx: 0, ry: 0, wx: 0, wy: 0 };
+  function retarget() {
+    for (const pc of pieces) {
+      const tg = all || pc.locked || pc === hovered ? 1 : 0;
+      if (tg === pc.tg) continue;
+      pc.tg = tg;
+      gsap.to(pc, { p: tg, duration: reduce ? 0.2 : tg ? 0.8 : 0.6, ease: tg ? 'expo.out' : 'power3.inOut', overwrite: true });
+    }
+  }
+  function pickAt(e) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1));
+    ray.setFromCamera(ndc, camera);
+    return ray.intersectObjects(meshes, false)[0]?.object.userData.pc ?? null;
+  }
+  canvas.addEventListener('pointerdown', e => {
+    down = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false };
+    gsap.killTweensOf(view);
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (down) {
+      if (!down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.moved = true;
+      if (down.moved) { dragX += e.clientX - down.lx; dragY += e.clientY - down.ly; }
+      down.lx = e.clientX; down.ly = e.clientY;
+      return;
+    }
+    if (e.pointerType !== 'touch') { hovered = pickAt(e); retarget(); }
+  });
+  canvas.addEventListener('pointerup', e => {
+    // A click without a drag locks or unlocks the piece under it.
+    if (down && !down.moved) { const pc = pickAt(e); if (pc) { pc.locked = !pc.locked; retarget(); } }
+    down = null;
+  });
+  canvas.addEventListener('pointercancel', () => { down = null; });
+  canvas.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !down) { hovered = null; retarget(); } });
+  const allT = toggle('ex-all', false, v => { all = v; retarget(); });
+  const spinT = toggle('ex-spin', false, v => { spin = v; });
+  document.getElementById('ex-reset').addEventListener('click', () => {
+    allT.set((all = false));
+    spinT.set((spin = false));
+    pieces.forEach(pc => (pc.locked = false));
+    retarget();
+    view.wx = view.wy = 0;
+    gsap.to(view, { rx: 0, ry: Math.round(view.ry / TAU) * TAU, duration: reduce ? 0.2 : 0.9, ease: 'power3.inOut' });
+  });
+  slider('ex-depth', v => v.toFixed(2), v => { D = v; pieces.forEach(pc => (pc.lt = -1)); });
+
+  // Async compile keeps the 500 ms physical-material build off the main thread.
+  await renderer.compileAsync(scene, camera);
+  fitRenderer(renderer, panel, 1.75, (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); });
+  whenVisible(panel, (time, dms) => {
+    const dt = Math.min(dms / 1000, 0.05);
+    const v = view;
+    if (down?.moved) {
+      v.ry += dragX * 0.005;
+      v.rx = clamp(v.rx + dragY * 0.005, -1, 1);
+      v.wy = dt ? clamp((dragX * 0.005) / dt, -4, 4) : 0;
+      v.wx = dt ? clamp((dragY * 0.005) / dt, -4, 4) : 0;
+      dragX = dragY = 0;
+    } else {
+      // Release keeps the drag velocity and lets it decay.
+      v.ry += v.wy * dt;
+      v.rx = clamp(v.rx + v.wx * dt, -1, 1);
+      const k = Math.exp(-dt * 5);
+      v.wx *= k; v.wy *= k;
+      if (spin && !reduce) v.ry += dt * 0.35;
+    }
+    group.rotation.set(v.rx, v.ry, 0);
+    for (const pc of pieces) {
+      const t = pc.p;
+      if (t !== pc.lt) { writeGeo(pc, t); writeCol(pc, clamp(t)); pc.lt = t; }
+      const m = pc.mesh, k = reduce ? 0 : 1, on = hovered === pc ? t : 0;
+      m.position.set(pc.x, pc.y + k * Math.sin(time * 0.8 + pc.i) * 0.05, 0.7 * t);
+      m.rotation.set(-0.3 - ndc.y * 0.4 * on, k * Math.sin(time * 0.5 + pc.i * 1.3) * 0.22 + ndc.x * 0.5 * on, pc.rz * t);
+      m.scale.setScalar(0.76 * (1 + 0.12 * t));
+    }
+    renderer.render(scene, camera);
+  });
+}
+
+/* ---------- lab: GLSL signed-distance playground ---------- */
+const FRAG = /* glsl */ `
+precision highp float;
+uniform vec2 uRes, uVel;
+uniform float uTime, uMorph, uK;
+uniform vec4 uPip;
+uniform vec4 uBl[16];
+uniform int uN;
+uniform vec3 uA[6], uB[6];
+float sdCircle(vec2 p, float r) { return length(p) - r; }
+float sdTri(vec2 p, float r) {
+  const float k = 1.7320508;
+  p.x = abs(p.x) - r; p.y = p.y + r / k;
+  if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
+  p.x -= clamp(p.x, -2.0 * r, 0.0);
+  return -length(p) * sign(p.y);
+}
+float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+float sdHex(vec2 p, float r) {
+  const vec3 k = vec3(-0.866025404, 0.5, 0.577350269);
+  p = abs(p); p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
+  p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
+  return length(p) * sign(p.y);
+}
+float sdStar5(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+  const vec2 k2 = vec2(-k1.x, k1.y);
+  p.x = abs(p.x);
+  p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+  p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+  p.x = abs(p.x); p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+  float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+float sdSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0); return length(pa - ba * h); }
+float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+// Six petal circles fused onto a centre disc: a true distance field, no seams.
+float sdRose(vec2 p, float r) {
+  float d = length(p) - r * 0.42;
+  for (int k = 0; k < 6; k++) {
+    float a = float(k) * 1.0471976;
+    d = smin(d, length(p - r * 0.66 * vec2(sin(a), cos(a))) - r * 0.3, r * 0.22);
+  }
+  return d;
+}
+float shape(int i, vec2 p) {
+  if (i == 0) return sdCircle(p, 0.3);
+  if (i == 1) return sdTri(p + vec2(0.0, 0.045), 0.29) - 0.045;
+  if (i == 2) return sdBox(p, vec2(0.27), 0.07);
+  if (i == 3) return sdHex(p, 0.27) - 0.035;
+  if (i == 4) return sdStar5(p + vec2(0.0, 0.02), 0.34, 0.5) - 0.022;
+  return sdRose(p, 0.34);
+}
+vec3 toLin(vec3 lab) {
+  vec3 l = mat3(1.0, 1.0, 1.0, 0.3963377774, -0.1055613458, -0.0894841775, 0.2158037573, -0.0638541728, -1.2914855480) * lab;
+  l = l * l * l;
+  return mat3(4.0767416621, -1.2684380046, -0.0041960863, -3.3077115913, 2.6097574011, -0.7034186147, 0.2309699292, -0.3413193965, 1.7076147010) * l;
+}
+// uA and uB arrive in OKLab, converted once on the CPU.
+void main() {
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  float m = mod(uMorph, 6.0);
+  int i = int(floor(m));
+  int j = i == 5 ? 0 : i + 1;
+  float f = smoothstep(0.1, 0.9, fract(m));
+  float tw = 0.5 * sin(f * 3.14159265);
+  vec2 q = mat2(cos(tw), -sin(tw), sin(tw), cos(tw)) * p;
+  float dS = mix(shape(i, q), shape(j, q), f);
+  // The pip stretches toward its spring tail; blobs and trail fuse with it.
+  float dB = mix(10.0, sdSeg(p, uPip.xy, uPip.xy - uVel) - uPip.z, uPip.w);
+  for (int k = 0; k < 16; k++) {
+    if (k >= uN) break;
+    dB = smin(dB, length(p - uBl[k].xy) - uBl[k].z, uK * 0.7);
+  }
+  // h is the shape's share of each pixel; colour blends with the same weight.
+  float h = clamp(0.5 + 0.5 * (dB - dS) / uK, 0.0, 1.0);
+  float d = mix(dB, dS, h) - uK * h * (1.0 - h);
+  // The edge stays within 1.5 px even where the field bends sharply.
+  float aa = min(fwidth(d), 1.5 / uRes.y);
+  float a = 1.0 - smoothstep(-aa, aa, d);
+  vec2 dir = vec2(cos(uTime * 0.4), sin(uTime * 0.4));
+  float t = clamp(dot(p, dir) * 1.3 + 0.5, 0.0, 1.0);
+  int c2 = i < 3 ? i + 3 : i - 3;
+  vec3 sLab = mix(mix(uA[i], uA[j], f), mix(uB[i], uB[j], f), t);
+  vec3 bLab = mix(uA[c2], uB[c2], 1.0 - t);
+  vec3 lab = mix(bLab, sLab, h);
+  vec3 col = toLin(lab);
+  col += 0.2 * exp(-length(p - vec2(-0.16, 0.2)) * 5.0);
+  vec2 n = normalize(vec2(dFdx(d), dFdy(d)) + 1e-6);
+  col += 0.5 * smoothstep(0.022, 0.0, -d) * max(0.0, dot(n, vec2(-0.7071, 0.7071)));
+  float g = exp(-max(d, 0.0) * 16.0) * 0.32 * (1.0 - a);
+  float alpha = a + g;
+  vec3 outc = pow(clamp((col * a + toLin(lab) * g) / max(alpha, 1e-4), 0.0, 1.0), vec3(1.0 / 2.2));
+  gl_FragColor = vec4(outc * alpha, alpha);
+}`;
+
+async function labSdf(THREE) {
+  const panel = document.getElementById('lab-sdf'), canvas = panel.querySelector('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
+  const order = ['Orbit', 'Prism', 'Fold', 'Grid', 'Twist', 'Bloom'];
+  const vec = lch => {
+    const [r, g, b] = rgb(lch).map(toLinear);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return new THREE.Vector3(
+      0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+    );
+  };
+  const bl = Array.from({ length: 16 }, () => new THREE.Vector4());
+  const U = {
+    uRes: { value: new THREE.Vector2(1, 1) }, uVel: { value: new THREE.Vector2() },
+    uTime: { value: 0 }, uMorph: { value: 0 }, uK: { value: 0.14 },
+    uPip: { value: new THREE.Vector4(0, 0, 0.065, 0) }, uBl: { value: bl }, uN: { value: 0 },
+    uA: { value: order.map(l => vec(palOf(l).rest[0])) },
+    uB: { value: order.map(l => vec(palOf(l).rest[2])) },
+  };
+  const mat = new THREE.ShaderMaterial({ uniforms: U, vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: FRAG });
+  const scene = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
+
+  let auto = true, morph = 0, target = 0, pip = 0.065, trailLen = 6, shown = -1, down = null, rect = null;
+  const ptr = { x: 0, y: 0, vx: 0, vy: 0, t: 0, on: false, w: 0 };
+  const tail = { x: 0, y: 0, vx: 0, vy: 0 };
+  const chain = Array.from({ length: 8 }, () => ({ x: 0, y: 0 }));
+  const drops = [];
+  // A scroll under a still cursor may skip pointerleave, so the pip hides until the next move.
+  addEventListener('scroll', () => { rect = null; if (!down) ptr.on = false; }, { passive: true });
+  // The head sits on the pointer; speed comes from event timestamps, not frames.
+  function track(e) {
+    const r = rect || (rect = canvas.getBoundingClientRect());
+    const x = (e.clientX - r.left - r.width / 2) / r.height, y = (r.height / 2 - (e.clientY - r.top)) / r.height;
+    const dt = (e.timeStamp - ptr.t) / 1000;
+    if (!ptr.on) {
+      // A fresh entry snaps the tail and trail to the pointer.
+      tail.x = x; tail.y = y; tail.vx = tail.vy = 0;
+      chain.forEach(c => { c.x = x; c.y = y; });
+      ptr.vx = ptr.vy = 0;
+    } else if (dt > 0 && dt < 0.1) {
+      const k = 1 - Math.exp(-dt * 20);
+      ptr.vx += ((x - ptr.x) / dt - ptr.vx) * k;
+      ptr.vy += ((y - ptr.y) / dt - ptr.vy) * k;
+    }
+    ptr.x = x; ptr.y = y; ptr.t = e.timeStamp; ptr.on = true;
+  }
+  canvas.addEventListener('pointermove', track);
+  canvas.addEventListener('pointerdown', e => {
+    track(e);
+    down = { x: ptr.x, y: ptr.y };
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+  });
+  canvas.addEventListener('pointerup', e => {
+    if (!down) return;
+    // A drag throws the blob with the pointer's velocity; a click just drops it.
+    const thrown = Math.hypot(ptr.x - down.x, ptr.y - down.y) > 0.02;
+    drops.push({ x: ptr.x, y: ptr.y, vx: thrown ? ptr.vx : 0, vy: thrown ? ptr.vy : 0, r: pip * 1.15 });
+    if (drops.length > 8) drops.shift();
+    down = null;
+    if (e.pointerType === 'touch') ptr.on = false;
+  });
+  canvas.addEventListener('pointercancel', () => { down = null; ptr.on = false; });
+  canvas.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !down) ptr.on = false; });
+
+  const chips = [...document.querySelectorAll('#sdf-shapes .chip')];
+  const autoT = toggle('sdf-auto', true, v => { auto = v; target = Math.round(morph); });
+  chips.forEach((b, k) => b.addEventListener('click', () => { auto = false; autoT.set(false); target = k; }));
+  slider('sdf-blend', v => v.toFixed(2), v => { U.uK.value = v; });
+  slider('sdf-pip', v => v.toFixed(3), v => { pip = v; });
+  slider('sdf-trail', v => String(v), v => { trailLen = v; });
+  document.getElementById('sdf-clear').addEventListener('click', () => { drops.length = 0; });
+
+  await renderer.compileAsync(scene, cam);
+  fitRenderer(renderer, panel, 1.5, () => { rect = null; renderer.getDrawingBufferSize(U.uRes.value); }, 1.4e6);
+  whenVisible(panel, (time, dms) => {
+    const dt = Math.min(dms / 1000, 0.05);
+    // A still pointer sends no events, so its speed decays here.
+    if (performance.now() - ptr.t > 50) { const k = Math.exp(-dt * 20); ptr.vx *= k; ptr.vy *= k; }
+    ptr.w += ((ptr.on ? 1 : 0) - ptr.w) * (1 - Math.exp(-dt * 12));
+    // The tail follows the head on a critically damped spring.
+    const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
+    for (let s = 0; s < steps; s++) {
+      tail.vx += (260 * (ptr.x - tail.x) - 32 * tail.vx) * h;
+      tail.vy += (260 * (ptr.y - tail.y) - 32 * tail.vy) * h;
+      tail.x += tail.vx * h; tail.y += tail.vy * h;
+    }
+    let sx = reduce ? 0 : ptr.x - tail.x, sy = reduce ? 0 : ptr.y - tail.y;
+    const sl = Math.hypot(sx, sy);
+    if (sl > 0.16) { sx *= 0.16 / sl; sy *= 0.16 / sl; }
+    U.uPip.value.set(ptr.x, ptr.y, pip * (1 - Math.min(sl, 0.16) * 2), ptr.w);
+    U.uVel.value.set(sx, sy);
+    // Each trail link eases toward the one ahead, like a rope.
+    const kc = reduce ? 1 : 1 - Math.exp(-dt * 26);
+    let ax = ptr.x, ay = ptr.y;
+    for (const c of chain) { c.x += (ax - c.x) * kc; c.y += (ay - c.y) * kc; ax = c.x; ay = c.y; }
+    // Dropped blobs orbit for a few seconds, then spiral in and dissolve.
+    const hw = U.uRes.value.x / U.uRes.value.y / 2;
+    for (const b of drops) {
+      const ax = -2.4 * b.x - 1.0 * b.y - 0.9 * b.vx, ay = -2.4 * b.y + 1.0 * b.x - 0.9 * b.vy;
+      b.vx += ax * dt; b.vy += ay * dt;
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      // Panel edges bounce blobs back.
+      if (Math.abs(b.x) > hw - b.r) { b.x = Math.sign(b.x) * (hw - b.r); b.vx *= -0.6; }
+      if (Math.abs(b.y) > 0.5 - b.r) { b.y = Math.sign(b.y) * (0.5 - b.r); b.vy *= -0.6; }
+      if (Math.hypot(b.x, b.y) < 0.2) b.r -= dt * 0.025;
+    }
+    for (let k = drops.length - 1; k >= 0; k--) if (drops[k].r <= 0.004) drops.splice(k, 1);
+    let cnt = 0;
+    for (const b of drops) bl[cnt++].set(b.x, b.y, b.r, 0);
+    for (let k = 0; k < trailLen && cnt < 16; k++) {
+      bl[cnt++].set(chain[k].x, chain[k].y, pip * (1 - (k + 1) / (trailLen + 1)) * ptr.w, 0);
+    }
+    U.uN.value = cnt;
+
+    if (auto && !reduce) morph += dt * 0.32;
+    else {
+      const near = target + 6 * Math.round((morph - target) / 6);
+      morph += (near - morph) * (reduce ? 1 : 1 - Math.exp(-dt * 5));
+    }
+    const cur = ((Math.round(morph) % 6) + 6) % 6;
+    if (cur !== shown) {
+      chips[shown]?.removeAttribute('aria-current');
+      chips[cur].setAttribute('aria-current', 'true');
+      shown = cur;
+    }
+    U.uMorph.value = morph;
+    U.uTime.value = time;
+    renderer.render(scene, cam);
+  });
+}
+
+let threeStarted = false;
+// WebGL setup runs in idle slices, so scrolling to the lab never stalls.
+async function startThree() {
+  if (threeStarted) return;
+  threeStarted = true;
+  let THREE, Room;
+  try {
+    THREE = await import('three');
+    ({ RoomEnvironment: Room } = await import('three/addons/environments/RoomEnvironment.js'));
+  } catch (err) {
+    failed(document.getElementById('lab-extrude'), 'Three.js');
+    failed(document.getElementById('lab-sdf'), 'GLSL');
+    return;
+  }
+  await idle();
+  try { await labSdf(THREE); } catch (err) { console.error(err); failed(document.getElementById('lab-sdf'), 'GLSL'); }
+  await idle();
+  try { await labExtrude(THREE, Room); } catch (err) { console.error(err); failed(document.getElementById('lab-extrude'), 'Three.js'); }
+}
+new IntersectionObserver(([e], io) => { if (e.isIntersecting) { io.disconnect(); startThree(); } }, { rootMargin: '600px' })
+  .observe(document.getElementById('lab'));
+if (document.readyState === 'complete') idle().then(startThree);
+else addEventListener('load', () => idle().then(startThree));
+</script>
