@@ -313,7 +313,7 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
         <a class="toy" id="domino" href="domino/index.html">
           <span class="obj">
             <svg viewBox="0 0 128 128" aria-hidden="true">
-              <line class="sketch" x1="12" y1="92" x2="116" y2="92"/>
+              <rect x="10" y="94" width="108" height="4" rx="2" style="fill: var(--sketch)"/>
               <g id="domino-tiles"></g>
             </svg>
           </span>
@@ -347,20 +347,17 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
         <a class="toy" id="prism" href="prism/index.html">
           <span class="obj">
             <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-              <linearGradient id="g-ray" gradientUnits="userSpaceOnUse" x1="10" y1="0" x2="40" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity="0.95"/></linearGradient>
-              <path id="prism-ray" d="M10 56L10 84L40 56Z" fill="url(#g-ray)"/>
+              <line id="prism-beam" x1="6" y1="68" x2="40" y2="60.8" stroke="oklch(0.97 0.01 90)" stroke-width="4"/>
               <g id="prism-fan">
-                <path d="M76 56L116 30V40Z" fill="oklch(0.64 0.22 28)"/>
-                <path d="M76 56L116 40V49Z" fill="oklch(0.76 0.17 62)"/>
-                <path d="M76 56L116 51V59Z" fill="oklch(0.9 0.17 102)"/>
-                <path d="M76 56L116 62V69Z" fill="oklch(0.78 0.18 150)"/>
-                <path d="M76 56L116 73V79Z" fill="oklch(0.64 0.15 240)"/>
-                <path d="M76 56L116 84V89Z" fill="oklch(0.55 0.2 295)"/>
+                <path d="M76 60.8L118 44V51Z" fill="oklch(0.66 0.21 28)"/>
+                <path d="M76 60.8L118 54V61Z" fill="oklch(0.85 0.16 90)"/>
+                <path d="M76 60.8L118 64V71Z" fill="oklch(0.75 0.15 165)"/>
+                <path d="M76 60.8L118 74V81Z" fill="oklch(0.6 0.19 290)"/>
               </g>
-              <path d="M58 18L96 98H20Z" fill="url(#g-prism)"/>
-              <path d="M58 18L96 98H20Z" fill="url(#lit)"/>
-              <path d="M58 18L96 98H20Z" fill="none" stroke="url(#rim)" stroke-width="2"/>
-              <line x1="40" y1="56" x2="76" y2="56" stroke="oklch(0.99 0.01 90 / 0.55)" stroke-width="2" stroke-linecap="round"/>
+              <path d="M58 29.6L94 92H22Z" fill="url(#g-prism)"/>
+              <path d="M58 29.6L94 92H22Z" fill="url(#lit)"/>
+              <path d="M58 29.6L94 92H22Z" fill="none" stroke="url(#rim)" stroke-width="2"/>
+              <line x1="40" y1="60.8" x2="76" y2="60.8" stroke="oklch(0.99 0.01 90 / 0.6)" stroke-width="2.5"/>
             </svg>
           </span>
           <span class="name">Prism</span>
@@ -1523,12 +1520,13 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
   toys.fidget = { enter: aim, move: aim, leave() {} };
 
   // Domino run: the row falls on hover and stands back up after.
-  const tiles = [20, 42, 64, 86, 108].map((x, k) => el('rect', {
-    x: x - 7, y: 32, width: 14, height: 60, rx: 3,
-    style: `fill: oklch(0.74 0.16 ${28 + k * 62})`, stroke: 'url(#rim)', 'stroke-width': 1.2,
+  // Seven thin tiles stand in a row, like a long domino chain.
+  const tiles = [14, 30, 46, 62, 78, 94, 110].map((x, k) => el('rect', {
+    x: x - 3.5, y: 36, width: 7, height: 56, rx: 1.5,
+    style: `fill: oklch(0.76 0.15 ${28 + k * 45})`, stroke: 'url(#rim)', 'stroke-width': 1,
   }, $('domino-tiles')));
   toys.domino = {
-    enter: () => gsap.to(tiles, { rotation: 58, transformOrigin: '100% 100%', duration: 0.3, ease: 'power2.in', stagger: 0.12, overwrite: true }),
+    enter: () => gsap.to(tiles, { rotation: 64, transformOrigin: '100% 100%', duration: 0.28, ease: 'power2.in', stagger: 0.09, overwrite: true }),
     move() {},
     leave: () => gsap.to(tiles, { rotation: 0, transformOrigin: '100% 100%', duration: 0.4, ease: 'back.out(2)', stagger: { each: 0.05, from: 'end' }, overwrite: true }),
   };
@@ -1550,28 +1548,10 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 
   // Galaxy: circling the pointer spins the disc; it coasts to a stop.
   const disc = $('galaxy-stars');
-  // Three arms wind out from the core; dust and stars ride along them.
-  const arms = el('g', { fill: 'none', stroke: 'url(#g-galaxy)', 'stroke-linecap': 'round' }, disc);
-  for (let m = 0; m < 3; m++) {
-    const o = (m * TAU) / 3, pts = [];
-    for (let t = 0; t < 2.6; t += 0.08) {
-      const r = 10 * Math.exp(0.7 * t);
-      if (r > 52) break;
-      pts.push(`${(64 + r * Math.cos(t + o)).toFixed(1)} ${(64 + r * Math.sin(t + o)).toFixed(1)}`);
-    }
-    el('path', { d: 'M' + pts.join('L'), 'stroke-width': 7 }, arms);
-  }
-  for (let k = 0; k < 60; k++) {
-    const o = ((k % 3) * TAU) / 3, t = 0.2 + ((k / 3) % 20) * 0.12;
-    const r = 10 * Math.exp(0.7 * t) + (Math.random() - 0.5) * 6, a = t + o + (Math.random() - 0.5) * 0.4;
-    if (r > 54) continue;
-    const f = r / 54;
-    el('circle', {
-      cx: (64 + r * Math.cos(a)).toFixed(1), cy: (64 + r * Math.sin(a)).toFixed(1), r: (2.8 - 1.4 * f).toFixed(1),
-      style: `fill: oklch(${(0.97 - 0.1 * f).toFixed(2)} ${(0.06 + 0.05 * f).toFixed(2)} ${Math.round(85 + 160 * f)})`,
-    }, disc);
-  }
-  [[16, 22], [110, 28], [108, 106], [20, 104], [66, 12]].forEach(([x, y]) => el('circle', { cx: x, cy: y, r: 1.6, style: 'fill: oklch(0.92 0.05 230)' }, disc));
+  // Two heavy arms open out from the core; three square stars ride along.
+  const arms = el('g', { fill: 'none', stroke: 'url(#g-galaxy)', 'stroke-width': 9 }, disc);
+  ['M81.0 64.0L81.8 65.5L82.5 67.2L83.0 69.0L83.3 70.8L83.5 72.8L83.4 74.9L83.2 77.0L82.7 79.1L81.9 81.2L81.0 83.3L79.8 85.4L78.4 87.4L76.7 89.4L74.9 91.2L72.8 92.8L70.5 94.3L68.0 95.6L65.3 96.7L62.5 97.6L59.6 98.2L56.5 98.6L53.3 98.6L50.1 98.4L46.8 97.9L43.5 97.1L40.3 95.9L37.1 94.4L34.0 92.6L31.0 90.5L28.1 88.1L25.4 85.4L22.9 82.4L20.7 79.2L18.7 75.6L17.0 71.9L15.7 68.0L14.6 63.8L13.9 59.6L13.6 55.2L13.7 50.7', 'M47.0 64.0L46.2 62.5L45.5 60.8L45.0 59.0L44.7 57.2L44.5 55.2L44.6 53.1L44.8 51.0L45.3 48.9L46.1 46.8L47.0 44.7L48.2 42.6L49.6 40.6L51.3 38.6L53.1 36.8L55.2 35.2L57.5 33.7L60.0 32.4L62.7 31.3L65.5 30.4L68.4 29.8L71.5 29.4L74.7 29.4L77.9 29.6L81.2 30.1L84.5 30.9L87.7 32.1L90.9 33.6L94.0 35.4L97.0 37.5L99.9 39.9L102.6 42.6L105.1 45.6L107.3 48.8L109.3 52.4L111.0 56.1L112.3 60.0L113.4 64.2L114.1 68.4L114.4 72.8L114.3 77.3'].forEach(d => el('path', { d }, arms));
+  [[18, 24], [106, 30], [104, 100]].forEach(([x, y]) => el('rect', { x: x - 2.5, y: y - 2.5, width: 5, height: 5, style: 'fill: oklch(0.92 0.05 230)' }, disc));
   let spin = 0, turn = 0, last = null;
   const coast = () => {
     turn += spin;
@@ -1595,18 +1575,16 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     leave: () => (last = null),
   };
 
-  // Prism: the light cone follows the pointer and the spectrum swings.
-  const ray = $('prism-ray'), fan = $('prism-fan'), src = { y: 70 };
-  const drawRay = () => ray.setAttribute('d', `M10 ${(src.y - 14).toFixed(1)}L10 ${(src.y + 14).toFixed(1)}L40 56Z`);
-  drawRay();
+  // Prism: the beam's source follows the pointer and the spectrum swings.
+  const beam = $('prism-beam'), fan = $('prism-fan');
   const aimBeam = y => {
-    gsap.to(src, { y, duration: 0.3, ease: 'power3.out', overwrite: true, onUpdate: drawRay });
-    gsap.to(fan, { rotation: (y - 70) * -0.35, scaleY: 1 + Math.abs(y - 70) / 60, svgOrigin: '76 56', duration: 0.3, ease: 'power3.out', overwrite: true });
+    gsap.to(beam, { attr: { y1: y }, duration: 0.3, ease: 'power3.out', overwrite: true });
+    gsap.to(fan, { rotation: (y - 68) * -0.35, scaleY: 1 + Math.abs(y - 68) / 70, svgOrigin: '76 60.8', duration: 0.3, ease: 'power3.out', overwrite: true });
   };
   toys.prism = {
     enter: p => p && aimBeam(Math.max(24, Math.min(104, p[1]))),
     move: p => p && aimBeam(Math.max(24, Math.min(104, p[1]))),
-    leave: () => aimBeam(70),
+    leave: () => aimBeam(68),
   };
 
   // Lab icons: hover or focus plays a loop; touch plays them in view.
