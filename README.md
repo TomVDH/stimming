@@ -38,7 +38,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
 | Split-flap | [flap/](flap/) | live draft, still being refined |
 | Harmonograph | [harmono/](harmono/) | live draft, still being refined |
-| Snow globe, Murmuration, Coil, Frost, Gear train, Dandelion, Music box, Neon sign | | in progress; outlines on the menu |
+| Neon sign | [neon/](neon/) | live draft, still being refined |
+| Snow globe, Murmuration, Coil, Frost, Gear train, Dandelion, Music box | | in progress; outlines on the menu |
 
 ## Run locally
 
