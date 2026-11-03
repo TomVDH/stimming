@@ -1839,10 +1839,24 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
     });
   }
 
+  // Every icon is framed to its drawing, so its long side fills 110 of 128 like Pin art.
+  // Icons whose drawing runs past the tile (clipped art) keep their frame.
+  const fitIcon = svg => {
+    const b = svg.getBBox(), side = Math.max(b.width, b.height);
+    if (!side || b.x < -2 || b.y < -2 || b.x + b.width > 130 || b.y + b.height > 130) return;
+    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    svg.setAttribute('viewBox', `${(cx - size / 2).toFixed(2)} ${(cy - size / 2).toFixed(2)} ${size.toFixed(2)} ${size.toFixed(2)}`);
+    svg.style.overflow = 'visible';
+  };
+  const fitAll = root => root.querySelectorAll('.toy .obj svg').forEach(fitIcon);
+  fitAll(document.querySelector('main'));
+  // Lab icons measure once the drawer opens.
+  document.querySelector('.lab')?.addEventListener('toggle', e => { if (e.target.open) fitAll(e.target); }, { once: true });
+
   // Main icons map the pointer into viewBox units and react to it.
   const local = (t, e) => {
-    const r = t.querySelector('.obj svg').getBoundingClientRect();
-    return [((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128];
+    const svg = t.querySelector('.obj svg'), r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
   };
   const main = [...document.querySelectorAll('main > .shelf .toy')];
   if (!reduce) main.forEach(t => {
