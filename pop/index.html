@@ -622,16 +622,33 @@ function popSound(c) {
   }
   src.connect(bp).connect(ng).connect(kit.out);
   src.start(t, Math.random() * 0.9, dur + 0.02);
-  const o = a.createOscillator(), og = a.createGain();
-  o.frequency.setValueAtTime(700 * f, t);
-  o.frequency.exponentialRampToValueAtTime(300 * f, t + 0.03);
+  // The note snaps down onto its pitch and rings briefly.
+  const o = a.createOscillator(), og = a.createGain(), nf = noteOf(c) * tone();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(nf * 1.06, t);
+  o.frequency.exponentialRampToValueAtTime(nf, t + 0.012);
   og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.22 * g, t + 0.0015);
-  og.gain.setTargetAtTime(0, t + 0.0015, 0.01);
+  og.gain.linearRampToValueAtTime(0.2 * g, t + 0.0015);
+  og.gain.setTargetAtTime(0, t + 0.0015, 0.045);
   o.connect(og).connect(kit.out);
   o.start(t);
-  o.stop(t + 0.07);
+  o.stop(t + 0.2);
   track(o, og, ng);
+}
+// Columns map left to right onto two octaves of a major pentatonic.
+// A drag across the sheet plays a run.
+const PENT = [0, 2, 4, 7, 9];
+function noteOf(c) {
+  const n = Math.round((c.col / Math.max(1, cols - 1)) * 10);
+  return 330 * 2 ** ((12 * Math.floor(n / 5) + PENT[n % 5]) / 12);
+}
+// Touch devices tick once per pop, at most every 30 ms.
+let buzzNext = 0;
+function buzz(p, force) {
+  const t = performance.now();
+  if (!navigator.vibrate || (!force && t < buzzNext)) return;
+  buzzNext = t + 30;
+  navigator.vibrate(p);
 }
 // Regrowing: a soft bloop that rises as the dome fills.
 function bloop() {
@@ -734,7 +751,7 @@ function pop(c, now, amp, force) {
     return;
   }
   c.state = 1; c.popAt = now; c.due = now + 6 + Math.random() * 6;
-  if (c.J) boom(); else popSound(c);
+  if (c.J) { boom(); buzz([14, 40, 30], true); } else { popSound(c); buzz(6); }
   // The blast pops the ring of small cells round a jumbo.
   if (c.J) for (const o of units) {
     const d = Math.hypot(o.x - c.x, o.y - c.y);
