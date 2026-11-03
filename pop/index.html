@@ -22,6 +22,8 @@
 }
 /* The focus ring is drawn around the focused cell instead. */
 .field canvas:focus-visible { outline: none; }
+/* The WebGL canvas only draws; the 2D canvas above takes input. */
+.field canvas.gl { pointer-events: none; }
 /* The die is a solid face with its pips cut out. */
 .chip.icon svg.die { fill: currentColor; stroke: none; }
 </style>
@@ -56,7 +58,21 @@
   </section>
 </div>
 
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+  "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+  "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+  "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+} }
+</script>
 <script type="module">
+import * as THREE from 'three';
+import { toGamut, converter, formatHex, formatRgb } from 'culori';
+import * as Tone from 'tone';
+import { gsap } from 'gsap';
+import { createNoise2D } from 'simplex-noise';
 import { initPage, audioKit, reduced, onReducedChange } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
@@ -71,30 +87,21 @@ const lerp = (a, b, t) => a + (b - a) * t;
 let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
-/* ---------- colour: OKLCH in, sRGB out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
-}
-const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
-function rgb([L, C, h]) {
-  let c = lin(L, C, h);
-  // Chroma shrinks until the colour fits sRGB.
-  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return [gam(c[0]), gam(c[1]), gam(c[2])];
-}
-const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+/* ---------- colour: culori does the OKLCH maths ---------- */
+const inRgb = toGamut('rgb', 'oklch'), toLrgb = converter('lrgb'), toOklab = converter('oklab'), toOklch = converter('oklch');
+const ok = ([l, c, h]) => ({ mode: 'oklch', l, c, h });
+// A CSS colour, gamut-mapped into sRGB.
 function css(lch, a) {
-  const [r, g, b] = rgb(lch);
-  return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
+  const c = inRgb(ok(lch));
+  return a == null ? formatHex(c) : formatRgb({ ...c, alpha: a });
 }
+// Linear sRGB inside the gamut, for per-pixel lighting.
+function linFit(lch) {
+  const c = toLrgb(inRgb(ok(lch)));
+  return [clamp(c.r), clamp(c.g), clamp(c.b)];
+}
+// The sRGB transfer curve, for the 8-bit table.
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
 
 // A palette is three OKLCH stops: light, middle, deep.
 // The first field runs mint, through cyan, to blue.
@@ -117,8 +124,8 @@ const PALS = {
   dusk: h => { const s = R01(40, 110) * sgn(); return [[0.66, 0.12, h], [0.5, 0.13, h + s / 2], [0.36, 0.11, h + s]]; },
 };
 // A colour field maps a spot on the sheet, 0..1 each way, to OKLab.
-const toLab = ([L, C, h]) => [L, C * Math.cos(h * D2R), C * Math.sin(h * D2R)];
-const toLch = ([L, a, b]) => [L, Math.hypot(a, b), Math.atan2(b, a) / D2R];
+const toLab = lch => { const o = toOklab(ok(lch)); return [o.l, o.a, o.b]; };
+const toLch = ([l, a, b]) => { const o = toOklch({ mode: 'oklab', l, a, b }); return [o.l, o.c, o.h ?? 0]; };
 // Mesh: colour points blend by soft Gaussian weights across the sheet.
 function rbf(pts) {
   return (u, v) => {
@@ -213,12 +220,8 @@ const rng = s => () => {
   t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
-// Linear sRGB inside the gamut, for per-pixel lighting.
-function linFit([L, C, h]) {
-  let c = lin(L, C, h);
-  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return c.map(v => clamp(v));
-}
+// Ridged noise draws the lava veins.
+const noise2 = createNoise2D(rng(7));
 // A table turns linear light into 8-bit sRGB.
 const LUT = new Uint8ClampedArray(4097);
 for (let i = 0; i <= 4096; i++) LUT[i] = Math.round(gam(i / 4096) * 255);
@@ -457,9 +460,9 @@ function litTerms(a, hgt, dep, n, k) {
         break;
       case 'lava': {
         // Lava: a dark crust split by glowing veins.
-        const q = R * 0.5, v = Math.abs(Math.sin((x / q) * 2.1 + Math.sin((y / q) * 1.3)) * Math.sin((y / q) * 1.9 + Math.sin((x / q) * 1.7)));
+        const v = Math.abs(noise2(x / (R * 0.6), y / (R * 0.6)));
         u = clamp(ndl * 0.5 + 0.35); ao = 0.6 + 0.4 * rim; w = 0.15 * soft; s = 0.3 * ndh ** 40; t = 0;
-        T.e[i] = step01(0.1 - v, 0.06) * (0.6 + 0.4 * rim);
+        T.e[i] = step01(0.08 - v, 0.05) * (0.6 + 0.4 * rim);
         break;
       }
       case 'ice':
@@ -811,6 +814,9 @@ function buildAtlas() {
     paints[i >> 1] = { mid: css(s.mid), top: css(s.top), low: css(s.low), light: css(s.light) };
   }
   ax.setTransform(1, 0, 0, 1, 0, 0);
+  const aw = atlas.width, ah = atlas.height;
+  rects = Array.from({ length: SLOTS }, (_, i) => [ox[i] / aw, oy[i] / ah, SP / aw, SP / ah]);
+  atlTex.dispose(); atlTex.needsUpdate = true;
   buildJumbos();
 }
 // Jumbo sprites exist only for the bins the jumbos use.
@@ -826,6 +832,22 @@ function buildJumbos() {
     flatJumbo(jx, base, rng(c.b * 104729 + 7));
     jat.set(c.b, jc);
   }
+  // One jumbo atlas: the shade, then each bin's dome and film.
+  const bins = [...jat.keys()], slots = 1 + 2 * bins.length, nc = Math.ceil(Math.sqrt(slots));
+  jatl.width = nc * SPJ; jatl.height = Math.ceil(slots / nc) * SPJ;
+  const kx = jatl.getContext('2d'), at = i => [(i % nc) * SPJ, ((i / nc) | 0) * SPJ];
+  const rect = i => { const [x, y] = at(i); return [x / jatl.width, y / jatl.height, SPJ / jatl.width, SPJ / jatl.height]; };
+  kx.clearRect(0, 0, jatl.width, jatl.height);
+  if (jShade) kx.drawImage(jShade, ...at(0));
+  jShadeRect = rect(0);
+  jRects = new Map();
+  bins.forEach((bin, n) => {
+    const src = jat.get(bin), d = at(1 + 2 * n), f = at(2 + 2 * n);
+    kx.drawImage(src, 0, 0, SPJ, SPJ, d[0], d[1], SPJ, SPJ);
+    kx.drawImage(src, SPJ, 0, SPJ, SPJ, f[0], f[1], SPJ, SPJ);
+    jRects.set(bin, [rect(1 + 2 * n), rect(2 + 2 * n)]);
+  });
+  jatlTex.dispose(); jatlTex.needsUpdate = true;
 }
 function buildSprites() {
   sR = R;
@@ -913,6 +935,7 @@ function layout(force) {
   if (!w || !h || (!force && w === W && h === H && d === dpr)) return;
   W = w; H = h; dpr = d;
   cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+  glSize(w, h, d);
   // Cell size follows width; rows fill what height is left.
   // The recipe sets about how many cells span a wide sheet.
   const R0 = clamp(w / (SQ3 * rec.den * clamp(w / 1000, 0.45, 1.2)), 10, 60), pad = R0 * 0.22;
@@ -925,6 +948,7 @@ function layout(force) {
     cols = nc; rows = nr; cells = makeCells(); events = [];
     merge();
     units = cells.filter(c => !c.host);
+    growLayers(units.length);
     ptrs.forEach(q => (q.cell = null)); hoverCell = null; kPress = null;
   }
   place();
@@ -962,43 +986,77 @@ function hit(x, y) {
   return own(best);
 }
 
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 12, LEAD = 0.004;
+/* ---------- sound: Tone.js voices on the shared audio kit ---------- */
+const LEAD = 0.004;
 // A held squeeze charges fully in this many seconds.
 const HOLD = 0.45, HOLD_J = 1.1;
 // Space and Enter pop, so they count as gestures; arrow keys do not.
 const kit = audioKit({ keys: new Set([' ', 'Enter']) });
-let voices = 0, popNext = 0, bloopNext = 0;
+let V = null, popNext = 0, bloopNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
-const level = () => 1 / (1 + 0.08 * voices);
 // Bigger cells sound slightly lower.
-const tone = () => (40 / R) ** 0.35;
-
-function track(src, ...tails) {
-  voices++;
-  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
-}
+const pitchOf = () => (40 / R) ** 0.35;
 // Once the field settles, the context sleeps until the next gesture.
 const rest = () => kit.rest(() => !raf && !timer && !ptrs.size && !kPress);
 
+// Tone runs on the kit's context and output, so mute and sleep still hold.
+// The voices exist only once sound is on and a gesture woke the context.
+function voices() {
+  const a = kit.live();
+  if (!a) return null;
+  if (!V) {
+    Tone.setContext(new Tone.Context({ context: a, lookAhead: 0, latencyHint: 'interactive' }));
+    V = buildVoices();
+    tuneVoices();
+  }
+  return V;
+}
+// A noise voice: a short noise burst through one filter.
+function noisy(type, ftype, q) {
+  const f = new Tone.Filter({ type: ftype, Q: q, frequency: 1000 }).connect(kit.out);
+  const n = new Tone.NoiseSynth({ noise: { type }, envelope: { attack: 0.0005, decay: 0.02, sustain: 0, release: 0.005 } }).connect(f);
+  return { n, f };
+}
+function buildVoices() {
+  const note = new Tone.PolySynth(Tone.MembraneSynth).connect(kit.out), ping = new Tone.PolySynth(Tone.Synth).connect(kit.out);
+  note.maxPolyphony = 16; ping.maxPolyphony = 16;
+  note.volume.value = -8; ping.volume.value = -10;
+  // The creak runs all the time at zero gain; a squeeze opens it.
+  const cg = new Tone.Gain(0).connect(kit.out), trem = new Tone.Tremolo({ frequency: 13, depth: 0.6 }).connect(cg).start();
+  const cf = new Tone.Filter({ type: 'bandpass', Q: 7, frequency: 170 }).connect(trem);
+  new Tone.Noise('white').connect(cf).start();
+  return {
+    note, ping,
+    crack: noisy('white', 'bandpass', 1.5), fx: noisy('white', 'bandpass', 1), squeak: noisy('pink', 'lowpass', 9),
+    rattle: noisy('white', 'bandpass', 4), thump: noisy('white', 'lowpass', 0.7),
+    bloop: new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.03, decay: 0.08, sustain: 0, release: 0.05 }, volume: -14 }).connect(kit.out),
+    boom: new Tone.MembraneSynth({ pitchDecay: 0.25, octaves: 1.5, envelope: { attack: 0.004, decay: 0.5, sustain: 0, release: 0.1 } }).connect(kit.out),
+    creak: { g: cg, trem, f: cf },
+  };
+}
+// Each material retunes the note voices: wave, bend and ring time.
+function tuneVoices() {
+  if (!V) return;
+  const S = SND[rec.mat] || SND.gloss;
+  V.note.set({ oscillator: { type: S.wave }, octaves: Math.max(0.01, Math.log2(Math.max(1, S.bend))), pitchDecay: S.bt, envelope: { attack: 0.0015, decay: S.tau * 4, sustain: 0, release: S.tau } });
+  V.ping.set({ oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: S.tau * 3, sustain: 0, release: S.tau } });
+  V.fx.f.type = S.hiss ? 'bandpass' : S.rip ? 'highpass' : 'lowpass';
+}
+// One noise burst: filter set, optional sweep, then the hit.
+function burstAt(vo, freq, q, vel, at, dur, to) {
+  vo.f.Q.setValueAtTime(q, at);
+  vo.f.frequency.setValueAtTime(freq, at);
+  if (to) vo.f.frequency.exponentialRampToValueAtTime(to, at + dur);
+  vo.n.envelope.decay = dur;
+  vo.n.triggerAttackRelease(dur, at, clamp(vel));
+}
+
 // Pressing: a very quiet rubbery squelch as the dome gives.
 function squeak() {
-  const a = kit.live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD, f = tone() * jit(0.05), g = level() * jit(0.1);
-  const src = a.createBufferSource(), lp = a.createBiquadFilter(), sg = a.createGain();
-  src.buffer = kit.noise;
-  lp.type = 'lowpass';
-  lp.Q.value = 9;
-  lp.frequency.setValueAtTime(240 * f, t);
-  lp.frequency.exponentialRampToValueAtTime(900 * f, t + 0.12);
-  sg.gain.setValueAtTime(0, t);
-  sg.gain.linearRampToValueAtTime(0.2 * g, t + 0.03);
-  sg.gain.setTargetAtTime(0, t + 0.07, 0.03);
-  src.connect(lp).connect(sg).connect(kit.out);
-  src.start(t, Math.random() * 0.75, 0.2);
-  track(src, sg);
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime + LEAD, f = pitchOf() * jit(0.05);
+  burstAt(v.squeak, 240 * f, 9, 0.2 * jit(0.1), t, 0.12, 900 * f);
 }
 // Pop voices per material.
 // crack: band, Q, gain. Note: wave, octave, bend, bend time, decay, gain.
@@ -1024,63 +1082,32 @@ const SND = {
   disco: { crack: [7000, 2, 0.3], wave: 'sine', oct: 2, bend: 1, bt: 0.01, tau: 0.16, ng: 0.05, ping: [1.5, 2, 3] },
 };
 function popSound(c) {
-  const a = kit.live();
-  if (!a) return;
-  const t0 = a.currentTime + LEAD, t = Math.max(t0, popNext);
+  const v = voices();
+  if (!v) return;
+  const t0 = kit.ac.currentTime + LEAD, t = Math.max(t0, popNext);
   // A fast sweep thins to a crackle instead of a wall.
-  if (t - t0 > 0.05 || voices >= MAXV) return;
+  if (t - t0 > 0.05) return;
   popNext = t + 0.018 + Math.random() * 0.012;
-  const V = SND[rec.mat] || SND.gloss, end = t + V.tau * 5 + 0.08, tails = [];
+  const S = SND[rec.mat] || SND.gloss, g = jit(0.1);
   // A deeper press sounds slightly lower.
-  const f = tone() * (1 - 0.1 * c.p) * jit(0.05), g = level() * jit(0.1), nf = noteOf(c) * tone() * V.oct;
-  const noise = (type, freq, q, gain, at, dur, fall) => {
-    const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
-    src.buffer = kit.noise;
-    fl.type = type; fl.Q.value = q;
-    fl.frequency.setValueAtTime(freq, at);
-    if (fall) fl.frequency.exponentialRampToValueAtTime(fall, at + dur);
-    ng.gain.setValueAtTime(0, at);
-    ng.gain.linearRampToValueAtTime(gain * g, at + 0.0006);
-    ng.gain.setTargetAtTime(0, at + 0.0006, dur / 4);
-    src.connect(fl).connect(ng).connect(kit.out);
-    src.start(at, Math.random() * 0.9, dur + 0.02);
-    tails.push(fl, ng);
-    return ng;
-  };
-  const tonal = (wave, fr, bend, gain, at, tau) => {
-    const o = a.createOscillator(), og = a.createGain();
-    o.type = wave;
-    o.frequency.setValueAtTime(fr * bend, at);
-    o.frequency.exponentialRampToValueAtTime(fr, at + V.bt);
-    og.gain.setValueAtTime(0, at);
-    og.gain.linearRampToValueAtTime(gain * g, at + 0.0015);
-    og.gain.setTargetAtTime(0, at + 0.0015, tau);
-    o.connect(og).connect(kit.out);
-    o.start(at);
-    o.stop(end);
-    tails.push(og);
-    return o;
-  };
-  if (V.crack) {
-    const [cf, cq, cg] = V.crack, dur = 0.011 + Math.random() * 0.008;
-    const ng = noise('bandpass', clamp(cf * f, 300, 9000), cq, cg, t, dur);
-    // Sometimes the skin tears twice, a hair apart.
-    if (Math.random() < 0.4) { const t2 = t + 0.003 + Math.random() * 0.004; ng.gain.setValueAtTime(0.5 * g * cg, t2); ng.gain.setTargetAtTime(0, t2, dur / 5); }
-    // Candy crunches: a few more clicks, close behind.
-    for (let k = 1; k < (V.crunch || 1); k++) noise('bandpass', cf * f * jit(0.3), cq, cg * 0.6, t + k * (0.008 + Math.random() * 0.01), dur);
+  const f = pitchOf() * (1 - 0.1 * c.p) * jit(0.05), nf = noteOf(c) * pitchOf() * S.oct;
+  if (S.crack) {
+    const [cf, cq, cg] = S.crack, dur = 0.011 + Math.random() * 0.008;
+    burstAt(v.crack, clamp(cf * f, 300, 9000), cq, cg * g, t, dur);
+    // Candy and ice crunch: a few more clicks, close behind.
+    for (let k = 1; k < (S.crunch || 1); k++) burstAt(v.crack, clamp(cf * f * jit(0.3), 300, 9000), cq, cg * g * 0.6, t + k * (0.008 + Math.random() * 0.01), dur);
   }
-  // Jelly squishes: a dark wet slide under the note.
-  if (V.squish) noise('lowpass', 900, 2, 0.5, t, 0.08, 220);
-  // Lava hisses; paper rips upward.
-  if (V.hiss) noise('bandpass', 5200, 0.8, 0.3, t, 0.26);
-  if (V.rip) noise('highpass', 1400, 0.7, 0.9, t, 0.07, 6500);
+  // Jelly and gum squish; lava hisses; paper rips upward.
+  if (S.squish) burstAt(v.fx, 900, 2, 0.5 * g, t, 0.08, 220);
+  if (S.hiss) burstAt(v.fx, 5200, 0.8, 0.3 * g, t, 0.26);
+  if (S.rip) burstAt(v.fx, 1400, 0.7, 0.9 * g, t, 0.07, 6500);
   // The note snaps onto its pitch and rings briefly.
-  const o = tonal(V.wave, nf, V.bend, V.ng, t, V.tau);
-  // Foil and glass ring with inharmonic partials.
-  for (const r of V.ping || []) tonal('sine', nf * r, 1, V.ng * 0.55, t, V.tau * 0.8);
+  const vel = clamp(S.ng * 1.8 * g);
+  v.note.triggerAttackRelease(nf, S.tau * 3, t, vel);
+  // Foil, glass and disco ring with inharmonic partials.
+  if (S.ping) v.ping.triggerAttackRelease(S.ping.map(r => nf * r), S.tau * 2, t, clamp(S.ng * 1.2 * g));
   // Pixel pops step up a fifth, as in a game blip.
-  if (V.arp) tonal(V.wave, nf * V.arp, 1, V.ng, t + 0.04, V.tau);
-  track(o, ...tails);
+  if (S.arp) v.note.triggerAttackRelease(nf * S.arp, S.tau * 3, t + 0.04, vel);
 }
 // Columns map left to right onto two octaves of a major pentatonic.
 // A drag across the sheet plays a run.
@@ -1100,84 +1127,45 @@ function buzz(p, force) {
 }
 // Regrowing: a soft bloop that rises as the dome fills.
 function bloop() {
-  const a = kit.live();
-  if (!a) return;
-  const t = a.currentTime + LEAD;
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime + LEAD;
   // A refill wave thins to a gentle cascade.
-  if (t < bloopNext || voices >= MAXV) return;
+  if (t < bloopNext) return;
   bloopNext = t + 0.045 + Math.random() * 0.03;
-  const f = tone() * jit(0.05), g = level() * jit(0.1);
-  const o = a.createOscillator(), og = a.createGain();
-  o.frequency.setValueAtTime(300 * f, t);
-  o.frequency.exponentialRampToValueAtTime(520 * f, t + 0.12);
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.05 * g, t + 0.03);
-  og.gain.setTargetAtTime(0, t + 0.07, 0.03);
-  o.connect(og).connect(kit.out);
-  o.start(t);
-  o.stop(t + 0.24);
-  track(o, og);
+  const f = pitchOf() * jit(0.05);
+  v.bloop.triggerAttackRelease(300 * f, 0.1, t, 0.6 * jit(0.1));
+  v.bloop.frequency.exponentialRampToValueAtTime(520 * f, t + 0.12);
 }
 // Squeezing a jumbo: a rubbery creak that tightens as charge builds.
 // The result stops the creak.
 function creak() {
-  const a = kit.live();
-  if (!a) return null;
-  const t = a.currentTime + LEAD, f = tone();
-  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain(), lfo = a.createOscillator(), lg = a.createGain();
-  src.buffer = kit.noise;
-  src.loop = true;
-  bp.type = 'bandpass';
-  bp.Q.value = 7;
-  bp.frequency.setValueAtTime(170 * f, t);
-  bp.frequency.exponentialRampToValueAtTime(760 * f, t + HOLD_J);
-  // A fast wobble in the gain makes the rubber judder.
-  lfo.frequency.setValueAtTime(13, t);
-  lfo.frequency.linearRampToValueAtTime(40, t + HOLD_J);
-  lg.gain.value = 0.06;
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.08, t + 0.08);
-  g.gain.linearRampToValueAtTime(0.17, t + HOLD_J);
-  lfo.connect(lg).connect(g.gain);
-  src.connect(bp).connect(g).connect(kit.out);
-  src.start(t, Math.random() * 0.5);
-  lfo.start(t);
-  voices++;
+  const v = voices();
+  if (!v) return null;
+  const C = v.creak, t = kit.ac.currentTime + LEAD, f = pitchOf();
+  C.f.frequency.cancelScheduledValues(t);
+  C.f.frequency.setValueAtTime(170 * f, t);
+  C.f.frequency.exponentialRampToValueAtTime(760 * f, t + HOLD_J);
+  C.trem.frequency.cancelScheduledValues(t);
+  C.trem.frequency.setValueAtTime(13, t);
+  C.trem.frequency.linearRampToValueAtTime(40, t + HOLD_J);
+  C.g.gain.cancelScheduledValues(t);
+  C.g.gain.setValueAtTime(0, t);
+  C.g.gain.linearRampToValueAtTime(0.1, t + 0.08);
+  C.g.gain.linearRampToValueAtTime(0.2, t + HOLD_J);
   return () => {
-    const e = a.currentTime;
-    if (g.gain.cancelAndHoldAtTime) g.gain.cancelAndHoldAtTime(e); else g.gain.cancelScheduledValues(e);
-    g.gain.setTargetAtTime(0, e, 0.025);
-    src.onended = () => { voices--; [bp, g, lg].forEach(n => n.disconnect()); };
-    src.stop(e + 0.2);
-    lfo.stop(e + 0.2);
+    const e = kit.ac.currentTime;
+    C.g.gain.cancelScheduledValues(e);
+    C.g.gain.setTargetAtTime(0, e, 0.025);
   };
 }
 // A jumbo bursts: a low boom under a wide, dark crack.
 function boom() {
-  const a = kit.live();
-  if (!a) return;
-  const t = a.currentTime + LEAD, f = tone();
-  const o = a.createOscillator(), og = a.createGain();
-  o.frequency.setValueAtTime(120 * f, t);
-  o.frequency.exponentialRampToValueAtTime(42 * f, t + 0.25);
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.75, t + 0.004);
-  og.gain.setTargetAtTime(0, t + 0.004, 0.11);
-  o.connect(og).connect(kit.out);
-  o.start(t);
-  o.stop(t + 0.8);
-  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
-  src.buffer = kit.noise;
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(2600, t);
-  lp.frequency.exponentialRampToValueAtTime(300, t + 0.15);
-  ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(1.1, t + 0.001);
-  ng.gain.setTargetAtTime(0, t + 0.001, 0.035);
-  src.connect(lp).connect(ng).connect(kit.out);
-  src.start(t, Math.random() * 0.5, 0.4);
-  track(o, og);
-  track(src, lp, ng);
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime + LEAD;
+  v.boom.triggerAttackRelease(42 * pitchOf(), 0.5, t, 1);
+  burstAt(v.thump, 2600, 0.7, 1, t, 0.15, 300);
 }
 
 /* ---------- physics ---------- */
@@ -1653,21 +1641,11 @@ function showFace(n) {
 showFace(face);
 // Rolling: a few hard plastic clicks that die away.
 function rattle() {
-  const a = kit.live();
-  if (!a) return;
-  let t = a.currentTime + LEAD;
-  for (let k = 0; k < 4 && voices < MAXV; k++) {
-    const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain(), amp = 0.75 * 0.62 ** k * level();
-    src.buffer = kit.noise;
-    bp.type = 'bandpass';
-    bp.frequency.value = 2600 * jit(0.25);
-    bp.Q.value = 4;
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(amp, t + 0.001);
-    g.gain.setTargetAtTime(0, t + 0.001, 0.006);
-    src.connect(bp).connect(g).connect(kit.out);
-    src.start(t, Math.random() * 0.9, 0.05);
-    track(src, bp, g);
+  const v = voices();
+  if (!v) return;
+  let t = kit.ac.currentTime + LEAD;
+  for (let k = 0; k < 4; k++) {
+    burstAt(v.rattle, 2600 * jit(0.25), 4, 0.75 * 0.62 ** k, t, 0.02);
     t += (0.05 + Math.random() * 0.05) * (1 + 0.3 * k);
   }
 }
@@ -1678,8 +1656,10 @@ const WIPE_S = 0.9;
 function roll() {
   if (!cells.length || !sR) return;
   const now = nowS();
-  if (!reduce) { snap.width = cv.width; snap.height = cv.height; snap.getContext('2d').drawImage(cv, 0, 0); }
+  // The snapshot takes the GL cells and the 2D layer in one task.
+  if (!reduce) { draw(); snap.width = cv.width; snap.height = cv.height; const sx = snap.getContext('2d'); sx.drawImage(glc, 0, 0, cv.width, cv.height); sx.drawImage(cv, 0, 0); }
   rec = freshRecipe(rec);
+  tuneVoices();
   layout(true);
   clearTimeout(spriteTimer);
   buildSprites();
@@ -1689,11 +1669,7 @@ function roll() {
   showFace(n);
   rattle();
   if (reduce) { draw(); return; }
-  dieSvg.animate([
-    { transform: 'rotate(-280deg) scale(0.5)' },
-    { transform: 'rotate(16deg) scale(1.15)', offset: 0.7 },
-    { transform: 'none' },
-  ], { duration: 520, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' });
+  gsap.fromTo(dieSvg, { rotation: -280, scale: 0.5 }, { rotation: 0, scale: 1, duration: 0.52, ease: 'back.out(2.2)', transformOrigin: '50% 50%', overwrite: true });
   // The new sheet grows out from the die's corner, bottom left.
   const far = Math.hypot(W, H) || 1;
   wipe = { t0: now, far, col: paints[NB >> 1]?.light || focusC };
@@ -1703,21 +1679,111 @@ function roll() {
 }
 die.addEventListener('click', roll);
 
-/* ---------- drawing ---------- */
-// A sprite is an image, its corner, its pixel size and its CSS size.
-function sprite(c, flat) {
-  if (!c.J) { const i = 2 * c.b + flat; return [atl, ox[i], oy[i], SP, SB]; }
-  const J = jat.get(c.b);
-  return J && [J, flat * SPJ, 0, SPJ, SBJ];
+/* ---------- drawing: three.js draws the cells; a 2D canvas draws the rest ---------- */
+// The WebGL canvas sits under the 2D one, which keeps the input.
+const glc = document.createElement('canvas');
+glc.className = 'gl';
+glc.setAttribute('aria-hidden', 'true');
+field.insertBefore(glc, cv);
+const gl = new THREE.WebGLRenderer({ canvas: glc, alpha: true, antialias: false, premultipliedAlpha: true });
+gl.setClearColor(0x000000, 0);
+// The camera works in CSS pixels, y down, like the 2D canvas.
+const scene = new THREE.Scene(), camera = new THREE.OrthographicCamera(0, 1, 0, 1, -1, 1), quad = new THREE.PlaneGeometry(1, 1);
+// Each quad: an atlas rect, a centre and size in CSS px, a turn, an opacity.
+const VERT = `
+attribute vec4 aUv;
+attribute vec4 aXf;
+attribute vec2 aRa;
+varying vec2 vUv;
+varying float vA;
+void main() {
+  vec2 p = position.xy * aXf.zw;
+  float c = cos(aRa.x), s = sin(aRa.x);
+  p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+  vUv = aUv.xy + uv * aUv.zw;
+  vA = aRa.y;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(aXf.xy + p, 0.0, 1.0);
+}`;
+// The atlas is premultiplied, so opacity scales every channel.
+const FRAG = `
+uniform sampler2D map;
+varying vec2 vUv;
+varying float vA;
+void main() { gl_FragColor = texture2D(map, vUv) * vA; }`;
+const OVER = { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor };
+// The press shade multiplies the colour below and keeps its alpha.
+const MULT = { blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor };
+const texOf = img => {
+  const t = new THREE.CanvasTexture(img);
+  t.flipY = false; t.premultiplyAlpha = true; t.generateMipmaps = false;
+  t.minFilter = t.magFilter = THREE.LinearFilter; t.colorSpace = THREE.NoColorSpace;
+  return t;
+};
+const jatl = document.createElement('canvas'), atlTex = texOf(atl), jatlTex = texOf(jatl);
+let rects = [], jRects = new Map(), jShadeRect = [0, 0, 1, 1];
+// A layer is one instanced draw: one texture, one blend, many quads.
+// The y-down camera flips winding, so quads draw both sides.
+const layer = (tex, blend) => ({ mat: new THREE.ShaderMaterial({ uniforms: { map: { value: tex } }, vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide, ...blend }), n: 0, cap: 0 });
+// Films first; then flat domes, then swollen ones, each with its press shade.
+const LAYERS = [
+  layer(atlTex, OVER), layer(jatlTex, OVER),
+  layer(atlTex, OVER), layer(atlTex, MULT), layer(jatlTex, OVER), layer(jatlTex, MULT),
+  layer(atlTex, OVER), layer(atlTex, MULT), layer(jatlTex, OVER), layer(jatlTex, MULT),
+];
+// DOME[swollen][jumbo] holds the dome layer and its shade layer.
+const [filmS, filmJ] = LAYERS, DOME = [[LAYERS.slice(2, 4), LAYERS.slice(4, 6)], [LAYERS.slice(6, 8), LAYERS.slice(8, 10)]];
+function growLayers(cap) {
+  LAYERS.forEach((L, o) => {
+    if (L.mesh && L.cap >= cap) return;
+    if (L.mesh) { scene.remove(L.mesh); L.g.dispose(); }
+    const g = new THREE.InstancedBufferGeometry();
+    g.index = quad.index;
+    g.setAttribute('position', quad.getAttribute('position'));
+    g.setAttribute('uv', quad.getAttribute('uv'));
+    const att = (name, n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * n), n); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a.array; };
+    L.uv = att('aUv', 4); L.xf = att('aXf', 4); L.ra = att('aRa', 2); L.g = g; L.cap = cap;
+    L.mesh = new THREE.Mesh(g, L.mat);
+    L.mesh.frustumCulled = false;
+    L.mesh.renderOrder = o;
+    scene.add(L.mesh);
+  });
 }
-function blit(c, [img, x0, y0, sp, sb], a, sx, sy, rot) {
-  const X = dpr * (c.x + c.dx), Y = dpr * (c.y + c.dy);
-  if (rot) {
-    const co = Math.cos(rot) * dpr, si = Math.sin(rot) * dpr;
-    ctx.setTransform(sx * co, sx * si, -sy * si, sy * co, X, Y);
-  } else ctx.setTransform(sx * dpr, 0, 0, sy * dpr, X, Y);
-  ctx.globalAlpha = a;
-  ctx.drawImage(img, x0, y0, sp, sp, -sb / 2, -sb / 2, sb, sb);
+function put(L, r, c, sx, sy, rot, a) {
+  const i = L.n++, u = i * 4;
+  L.uv[u] = r[0]; L.uv[u + 1] = r[1]; L.uv[u + 2] = r[2]; L.uv[u + 3] = r[3];
+  L.xf[u] = c.x + c.dx; L.xf[u + 1] = c.y + c.dy; L.xf[u + 2] = sx; L.xf[u + 3] = sy;
+  L.ra[i * 2] = rot; L.ra[i * 2 + 1] = a;
+}
+function glSize(w, h, d) {
+  gl.setPixelRatio(d);
+  gl.setSize(w, h, false);
+  camera.right = w; camera.bottom = h;
+  camera.updateProjectionMatrix();
+}
+function drawCells() {
+  const k = R / sR;
+  for (const L of LAYERS) L.n = 0;
+  for (const c of units) {
+    if (c.hid) continue;
+    const J = c.J ? jRects.get(c.b) : null;
+    // A jumbo waiting on its sprite skips a frame or two.
+    if (c.J && !J) continue;
+    const sb = (c.J ? SBJ : SB) * c.s * k;
+    if (c.g < 0.999) put(c.J ? filmJ : filmS, c.J ? J[1] : rects[2 * c.b + 1], c, sb * c.flip, sb, c.rot, 1);
+    if (c.g < 0.001) continue;
+    const [dome, shade] = DOME[c.s >= 1.03 ? 1 : 0][c.J ? 1 : 0];
+    put(dome, c.J ? J[0] : rects[2 * c.b], c, sb, sb, 0, c.g);
+    // A jumbo dents less, and its shade lifts as it grows taut.
+    if (c.p > 0.002) put(shade, c.J ? jShadeRect : rects[SHADE_SLOT], c, sb, sb, 0, (c.J ? 0.45 * (1 - 0.7 * c.q) : 1) * c.p * c.g);
+  }
+  for (const L of LAYERS) {
+    L.g.instanceCount = L.n;
+    for (const [name, n] of [['aUv', 4], ['aXf', 4], ['aRa', 2]]) {
+      const a = L.g.getAttribute(name);
+      a.clearUpdateRanges(); a.addUpdateRange(0, L.n * n); a.needsUpdate = true;
+    }
+  }
+  gl.render(scene, camera);
 }
 // The wipe front's radius, or zero once it has passed.
 function wipeFront() {
@@ -1727,35 +1793,18 @@ function wipeFront() {
   return wipe.far * Math.max(0, u);
 }
 function draw() {
-  if (!cv.width || !sR) return;
+  if (!cv.width || !sR || !LAYERS[0].mesh) return;
+  drawCells();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.clearRect(0, 0, cv.width, cv.height);
-  const k = R / sR, wf = wipeFront();
+  const wf = wipeFront();
   // Outside the wipe front the old sheet still shows.
   if (wf) {
     const p = new Path2D();
     p.rect(0, 0, cv.width, cv.height);
     p.arc(0, dpr * H, dpr * wf, 0, TAU);
     ctx.save(); ctx.clip(p, 'evenodd'); ctx.drawImage(snap, 0, 0); ctx.restore();
-  }
-  // Flat film first, glossy domes over it, swollen cells on top.
-  // A jumbo waiting on its sprite skips a frame or two.
-  for (const c of units) { const s = !c.hid && c.g < 0.999 && sprite(c, 1); if (s) blit(c, s, 1, c.s * k * c.flip, c.s * k, c.rot); }
-  for (let pass = 0; pass < 2; pass++) {
-    for (const c of units) {
-      if (c.hid || c.g < 0.001 || (c.s >= 1.03) !== (pass === 1)) continue;
-      const s = sprite(c, 0);
-      if (!s) continue;
-      blit(c, s, c.g, c.s * k, c.s * k, 0);
-      if (c.p > 0.002) {
-        ctx.globalCompositeOperation = 'multiply';
-        // A jumbo dents less, and its shade lifts as it grows taut.
-        const a = c.J ? 0.45 * (1 - 0.7 * c.q) : 1;
-        blit(c, c.J ? [jShade, 0, 0, SPJ, SBJ] : [atl, ox[SHADE_SLOT], oy[SHADE_SLOT], SP, SB], a * c.p * c.g, c.s * k, c.s * k, 0);
-        ctx.globalCompositeOperation = 'source-over';
-      }
-    }
   }
   drawBits();
   // The wipe front is a hard band in the new paint.
