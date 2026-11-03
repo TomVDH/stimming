@@ -335,10 +335,10 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
 
   const emblem = text.querySelector('.intro-emblem'), name = text.querySelector('.intro-name');
   const sub = text.querySelector('.intro-sub');
-  // The number sits in the box, among the subtitles, or at the foot of the page.
-  const numAt = root.dataset.numAt || 'box';
+  // The number stays off unless a page asks for it: box, subtitles or foot.
+  const numAt = root.dataset.numAt || 'none';
   let num = null;
-  if (info?.number && numAt !== 'box') {
+  if (info?.number && (numAt === 'subs' || numAt === 'bottom')) {
     num = Object.assign(document.createElement('span'), { className: 'intro-num', textContent: `#${info.number}` });
     if (numAt === 'bottom') root.append(num); else (nl || name).after(num);
   }
