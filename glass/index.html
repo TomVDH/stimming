@@ -362,8 +362,9 @@ function loadShot(a) {
 // A shot: the recording, pitched a touch for variety, then the casing.
 function gunSound(x, auto = false) {
   const a = live();
-  if (!a || voices >= MAXV - 2) return;
+  if (!a) return;
   if (shotBuf) return playShot(a, x, auto);
+  if (voices >= MAXV - 2) return;
   const t = a.currentTime + LEAD, g = level() * (auto ? 0.8 : 1), d = bus(a, x), rv = roomBus(a);
   const sh = a.createWaveShaper(), pre = a.createGain();
   sh.curve = drive;
@@ -393,16 +394,28 @@ function gunSound(x, auto = false) {
     setTimeout(() => dc.disconnect(), 1200);
   }
 }
+// Each shot chokes the one before with a short fade, as a real gun's tail is cut.
+// Shots skip the voice count, so full auto never goes quiet.
+let lastShot = null;
 function playShot(a, x, auto) {
-  const t = a.currentTime + LEAD, g = level() * (auto ? 0.75 : 1), d = bus(a, x * 0.5);
+  const t = a.currentTime + LEAD, g = auto ? 0.8 : 1, d = bus(a, x * 0.5);
+  if (lastShot) {
+    const { src, sg } = lastShot;
+    sg.gain.cancelScheduledValues(t);
+    sg.gain.setValueAtTime(sg.gain.value, t);
+    sg.gain.linearRampToValueAtTime(0, t + 0.03);
+    try { src.stop(t + 0.035); } catch (err) { /* already stopped */ }
+  }
   const src = a.createBufferSource(), sg = a.createGain();
   src.buffer = shotBuf;
   src.playbackRate.value = rnd(0.95, 1.05);
-  sg.gain.value = 1.15 * g;
+  sg.gain.setValueAtTime(1.15 * g, t);
   src.connect(sg).connect(d);
   src.start(t);
-  track(src, sg, d);
-  casing(a, x, t, g, auto);
+  const me = { src, sg };
+  lastShot = me;
+  src.onended = () => { sg.disconnect(); d.disconnect(); if (lastShot === me) lastShot = null; };
+  if (voices < MAXV - 4) casing(a, x, t, g, auto);
 }
 // The brass casing lands a moment later and rings twice.
 function casing(a, x, t, g, auto) {
@@ -1433,15 +1446,17 @@ uniform vec3 uCore, uRay;
 varying vec2 vUv;
 void main() {
   vec2 q = vUv * 2.0 - 1.0;
-  float r = length(q), a = atan(q.y, q.x) + uTurn, aa = fwidth(r);
-  float rays = 1.0 - smoothstep(-aa, aa, r - (0.28 + 0.72 * pow(abs(cos(a * 3.0)), 10.0)));
-  float fine = 1.0 - smoothstep(-aa, aa, r - (0.2 + 0.46 * pow(abs(cos(a * 3.0 + 0.52)), 18.0)));
-  float core = 1.0 - smoothstep(0.3 - aa, 0.3 + aa, r);
-  float m = max(rays, fine);
-  if (m < 0.01) discard;
+  float r = length(q), a = atan(q.y, q.x) + uTurn;
+  // Out of focus at the lens: a soft core, soft spokes and a wide haze.
+  float core = exp(-r * r * 16.0);
+  float rays = pow(abs(cos(a * 3.0)), 6.0) * exp(-r * 2.6);
+  float fine = pow(abs(cos(a * 2.5 + 0.7)), 12.0) * exp(-r * 3.4);
+  float haze = exp(-r * r * 3.5) * 0.4;
+  float m = (core + 0.5 * rays + 0.35 * fine + haze) * (1.0 - smoothstep(0.7, 1.0, r));
+  if (m < 0.002) discard;
   // Far brighter than white, so the bloom spreads it.
-  vec3 col = mix(uRay * (1.0 - 0.5 * r), uCore, core) * uK;
-  gl_FragColor = vec4(col * m, 1.0);
+  vec3 col = mix(uRay, uCore, core) * m * uK;
+  gl_FragColor = vec4(col, 1.0);
 }`;
 // Bullet holes: an open hole in a frosted cone of crushed glass.
 // Alpha marks the hole; the glass there is gone.
@@ -2311,8 +2326,9 @@ function shotWeb(x, y) {
 // The gun is held just below the eye, to the right; it leans toward the aim.
 function muzzle(x, y) {
   const c = camera.position;
-  tmpV.set(0.42 + 0.18 * (x / (PW / 2)), -0.66 + 0.08 * (y / (PH / 2)), 0.5).unproject(camera).sub(c).normalize().multiplyScalar(0.5).add(c);
-  flash = { t0: performance.now(), x: tmpV.x, y: tmpV.y, z: tmpV.z, s: 0.062 * rnd(0.85, 1.15) };
+  // It blooms right at the lens: very near, very large, half off the corner.
+  tmpV.set(0.5 + 0.16 * (x / (PW / 2)), -0.72 + 0.08 * (y / (PH / 2)), 0.5).unproject(camera).sub(c).normalize().multiplyScalar(0.22).add(c);
+  flash = { t0: performance.now(), x: tmpV.x, y: tmpV.y, z: tmpV.z, s: 0.12 * rnd(0.85, 1.15) };
   // A timer clears the flash even if frames stop.
   clearTimeout(flashT);
   flashT = setTimeout(endFlash, 150);
@@ -2327,8 +2343,10 @@ function stepFlash() {
   if (!w) return endFlash(false);
   flashU.value.set(flash.x, flash.y, flash.z, w * (reduce ? 0.4 : 1));
   flashMesh.visible = !reduce;
-  flashMesh.scale.setScalar(flash.s * (w < 1 ? 0.7 : 1));
+  flashMesh.scale.setScalar(flash.s * (w < 1 ? 0.8 : 1));
   flashMesh.material.uniforms.uK.value = w;
+  // The lens hazes over while the flash lasts.
+  bloom.strength = 0.6 + 0.9 * w * (reduce ? 0.3 : 1);
   flashLight.intensity = 34 * w * (reduce ? 0.4 : 1);
 }
 function endFlash(redraw = true) {
@@ -2337,6 +2355,7 @@ function endFlash(redraw = true) {
   flashU.value.w = 0;
   flashMesh.visible = false;
   flashLight.intensity = 0;
+  bloom.strength = 0.6;
   if (redraw && ready) draw();
 }
 function shoot(x, y, auto = false) {
@@ -2846,7 +2865,7 @@ async function start() {
   // The flash sits between the eye and the pane and lights the frame.
   flashMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
     vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: { uTurn: { value: 0 }, uK: { value: 1 }, uCore: { value: new THREE.Color(...lin(1, 0, 0, 9)) }, uRay: { value: new THREE.Color(...lin(0.94, 0.035, 70, 3.2)) } },
+    uniforms: { uTurn: { value: 0 }, uK: { value: 1 }, uCore: { value: new THREE.Color(...lin(1, 0, 0, 9)) }, uRay: { value: new THREE.Color(...lin(0.94, 0.04, 70, 2.6)) } },
   }));
   flashMesh.renderOrder = 3;
   flashMesh.visible = false;
