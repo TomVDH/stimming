@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <style>
-/* Icon sets: every toy, each direction at rest beside its hover transition. */
+/* Icon sets: every toy, each direction as its colour icon and its transition emblem. */
 :root { --bg: oklch(0.16 0.012 275); --fg: oklch(0.95 0.008 275); --muted: oklch(0.6 0.02 275); color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body { background: var(--bg); }
@@ -32,7 +32,7 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
   <h1>Icon sets</h1>
   <div class="show" role="group" aria-label="Show" id="show">
     <button type="button" data-v="both" aria-pressed="true">Both</button>
-    <button type="button" data-v="rest" aria-pressed="false">Rest</button>
+    <button type="button" data-v="icon" aria-pressed="false">Icon</button>
     <button type="button" data-v="trans" aria-pressed="false">Transition</button>
   </div>
   <div id="frames"></div>
@@ -40,29 +40,28 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
 <script type="module">
 // The galleries, in order; each holds one to three toys.
 const SPIKES = 11;
-// Each gallery shows its toys; the small tile grows to full size and plays.
+// Each gallery shows its toys: the colour icon and the luminance emblem.
 const CSS = `
 html, body { background: transparent !important; }
 body { margin: 0 !important; padding: 0 !important; overflow: hidden; }
 .wrap, #out, main { max-width: none !important; margin: 0 !important; padding: 0 !important; gap: 0 !important; display: block !important; }
-h1, .lede, .emb, .embs, .idea, .pick, .size { display: none !important; }
+h1, .lede, .idea, .pick, .size { display: none !important; }
 section { display: grid !important; gap: 12px !important; margin: 0 !important; padding: 20px 0 !important; border-top: 1px solid oklch(0.26 0.014 275); }
 section > h2 { margin: 0 !important; font-size: 22px !important; font-weight: 700 !important; letter-spacing: -0.01em !important; text-transform: none !important; color: oklch(0.95 0.008 275) !important; }
 section > h2 small { display: none; }
 .dirs, .row { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important; gap: 12px !important; }
 .icons { gap: 14px !important; align-items: center !important; }
-.t64, .t64 svg, .s64 { width: 128px !important; height: 128px !important; }
-.t64, .s64 { pointer-events: none; }
-body.rest .t64, body.rest .icons > div:has(.s64) { display: none !important; }
-body.trans .t128, body.trans .icons > div:has(.s128) { display: none !important; }
+.t64, .icons > div:has(.s64) { display: none !important; }
+body.icon .emb, body.icon .embs { display: none !important; }
+body.trans .icons { display: none !important; }
 `;
-// Both, Rest or Transition; the choice applies to every gallery.
+// Both, Icon or Transition (the luminance emblem); the choice applies to every gallery.
 let view = 'both';
 const docs = [];
 const setView = v => {
   view = v;
   document.querySelectorAll('#show button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
-  docs.forEach(d => { d.body.classList.toggle('rest', v === 'rest'); d.body.classList.toggle('trans', v === 'trans'); });
+  docs.forEach(d => { d.body.classList.toggle('icon', v === 'icon'); d.body.classList.toggle('trans', v === 'trans'); });
 };
 document.getElementById('show').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });
 const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
@@ -87,11 +86,6 @@ for (let n = 1; n <= SPIKES; n++) {
     const toy = sec.id?.replace(/^row-/, '') || (first?.id || first?.dataset.key || '').split('-')[0];
     sec.querySelector('h2').textContent = names[toy]?.name ?? toy;
   }
-  // The keyboard path plays each icon's full transition, with no pointer aim.
-  doc.querySelectorAll('.t64, .s64').forEach(t => {
-    t.dispatchEvent(new win.FocusEvent('focus'));
-    t.dispatchEvent(new win.FocusEvent('focusin', { bubbles: true }));
-  });
   const fit = () => { frame.style.height = `${Math.ceil(Math.max(0, ...rows.map(s => s.getBoundingClientRect().bottom)) + win.scrollY)}px`; };
   new win.ResizeObserver(fit).observe(doc.body);
   fit();

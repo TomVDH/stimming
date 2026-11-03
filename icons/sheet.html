@@ -66,7 +66,7 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
   <h1>Icon sheet</h1>
   <div class="bar">
     <div class="actions" role="group" aria-label="Show">
-      <button class="chip" id="rest" type="button" aria-pressed="true">Rest</button>
+      <button class="chip" id="rest" type="button" aria-pressed="true">Icon</button>
       <button class="chip" id="all" type="button" aria-pressed="false">Transition</button>
     </div>
     <div class="actions">
@@ -111,7 +111,13 @@ const FRAME_CSS = `
 html, body { background: transparent !important; }
 body { margin: 0 !important; padding: 0 !important; overflow: hidden; }
 .wrap, #out, main { max-width: none !important; margin: 0 !important; padding: 0 !important; gap: 0 !important; display: block !important; }
-h1, .lede, .dir > header, .dir > .tag, .emb, .embs, .idea, .pick, .size { display: none !important; }
+h1, .lede, .dir > header, .dir > .tag, .idea, .pick, .size { display: none !important; }
+/* Transition shows the luminance emblem, white on glass, in the icon's place. */
+.emb, .embs { display: none !important; }
+body.trans .icons, body.trans .flash { display: none !important; }
+body.trans .emb, body.trans .embs { display: block !important; }
+body.trans .glass { width: var(--tile) !important; height: var(--tile) !important; border-radius: 10px; }
+body.trans .glass i, body.trans .glass .em { width: 76% !important; height: auto !important; aspect-ratio: 1; }
 section { display: grid !important; grid-template-columns: var(--label) repeat(6, var(--tile)) !important; gap: var(--gap) !important;
   align-items: center; margin: 0 !important; padding: 8px 0 !important; border-top: 1px solid oklch(0.26 0.014 275); }
 section > h2 { grid-column: 1; grid-row: 1; margin: 0 !important; display: block !important;
@@ -195,7 +201,7 @@ const paint = () => {
 
 const goTo = (i, scroll = true) => {
   if (i === cur || i < 0 || i >= cells.length) return;
-  if (!all) play(cells[cur], false);
+  play(cells[cur], false);
   cur = i;
   play(cells[cur], true);
   paint();
@@ -247,11 +253,10 @@ const onKey = e => {
 addEventListener('keydown', onKey);
 
 $('hide').addEventListener('click', () => { hide = !hide; if (hide && cells[cur] && cut.has(cells[cur].key)) step(1); paint(); });
-// Rest shows every icon still; Transition plays every hover at once.
+// Icon shows the colour icons; Transition shows each luminance emblem instead.
 const show = on => {
-  if (on === all) return;
   all = on;
-  cells.forEach(c => { if (c !== cells[cur]) play(c, all); });
+  docs.forEach(d => d.body.classList.toggle('trans', on));
   paint();
 };
 $('rest').addEventListener('click', () => show(false));
@@ -318,7 +323,7 @@ for (const [n] of SPIKES) {
   const fit = () => { frame.style.height = `${Math.ceil(Math.max(0, ...rows.map(s => s.getBoundingClientRect().bottom)) + win.scrollY)}px`; };
   new win.ResizeObserver(fit).observe(doc.body);
   fit();
-  if (all) cells.filter(c => c.frame === frame).forEach(c => play(c, true));
+  doc.body.classList.toggle('trans', all);
   paint();
 }
 addEventListener('resize', layout);
