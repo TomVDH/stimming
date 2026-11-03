@@ -120,6 +120,8 @@ uniform vec4 uHand;
 ${LIB}
 float slump(float d) { return sign(d) * max(abs(d) - uYield, 0.0) * 0.12; }
 void main() {
+  // Rates are per 60 Hz step; k scales them for substeps.
+  float k = uDt * 60.0;
   vec2 A = vec2(uAspect, 1.0), p = vUv * A;
   vec4 s = texture(uState, vUv);
   vec4 l = texture(uState, vUv - vec2(uTexel.x, 0.0)), r = texture(uState, vUv + vec2(uTexel.x, 0.0));
@@ -131,15 +133,15 @@ void main() {
   float div = (r.z - l.z) / (2.0 * uTexel.x * uAspect) + (u.w - d.w) / (2.0 * uTexel.y);
   m *= 1.0 - clamp(div * uDt, -0.2, 0.2);
   // Putty has a yield stress: only slopes past it slump.
-  m += slump(l.g - s.g) + slump(r.g - s.g) + slump(d.g - s.g) + slump(u.g - s.g);
+  m += k * (slump(l.g - s.g) + slump(r.g - s.g) + slump(d.g - s.g) + slump(u.g - s.g));
   // Flowing putty loses its fine ripples; resting putty keeps its shape.
   float flow = smoothstep(0.02, 0.25, length(s.zw));
-  m += 0.07 * flow * (l.g + r.g + d.g + u.g - 4.0 * s.g);
-  heat += uDiff * (l.r + r.r + d.r + u.r - 4.0 * s.r);
+  m += 0.07 * k * flow * (l.g + r.g + d.g + u.g - 4.0 * s.g);
+  heat += uDiff * k * (l.r + r.r + d.r + u.r - 4.0 * s.r);
   heat *= exp(-uDt * uCool / (6.0 * (0.6 + 0.4 * clamp(m, 0.3, 2.6))));
   // Viscous putty stops almost at once without a push.
   // Velocity blurs with its neighbours, which kills odd-even stripes.
-  vec2 v = (s.zw * 0.5 + (l.zw + r.zw + d.zw + u.zw) * 0.125) * 0.55;
+  vec2 v = (s.zw * 0.5 + (l.zw + r.zw + d.zw + u.zw) * 0.125) * pow(0.55, k);
   // The dents push against a smoothed thickness, for the same reason.
   float ms = m * 0.5 + (l.g + r.g + d.g + u.g) * 0.125;
 
@@ -151,14 +153,14 @@ void main() {
     float dist = length(dv), rad = uFinger.x, q = dist / rad;
     float g = exp(-q * q);
     // Putty under the finger moves with the finger.
-    v = mix(v, uVel, g * 0.85 * uFinger.y);
+    v = mix(v, uVel, 1.0 - pow(1.0 - g * 0.85 * uFinger.y, k));
     // The fingertip is a rigid dent; excess putty flows out of it.
     float prof = 0.5 + 1.4 * q * q;
     vec2 dir = dist > 1e-6 ? dv / dist : vec2(0.0);
     // Putty behind the fingertip goes sideways, never back into the groove.
     float seg = length(ab);
     if (seg > 1e-6) { vec2 md = ab / seg; dir -= md * min(dot(dir, md), 0.0); }
-    v += dir * max(ms - prof, 0.0) * rad * 14.0 * uFinger.y;
+    v += dir * max(ms - prof, 0.0) * rad * 14.0 * uFinger.y * k;
     // Skin warms by contact; a fast drag adds friction heat.
     // Friction scales with speed, so a quick swipe still flips the dye.
     float touch = exp(-q * q * 2.0);
@@ -174,9 +176,9 @@ void main() {
     float ex = max(ms - prof, 0.0) * uHand.w;
     // Only a band at the outline flows out; that builds the rim.
     float band = smoothstep(-0.014, -0.004, sd);
-    v += normalize(gq + 1e-7) * ex * 0.35 * band;
+    v += normalize(gq + 1e-7) * ex * 0.35 * band * k;
     // The flat of the hand presses the inside down directly.
-    m -= max(m - prof, 0.0) * uHand.w * mix(0.08, 0.02, band);
+    m -= max(m - prof, 0.0) * uHand.w * mix(0.08, 0.02, band) * k;
     heat += uDt * uHand.w * smoothstep(0.004, -0.004, sd) * 2.2 * max(1.2 - heat, 0.0);
   }
 
@@ -402,23 +404,32 @@ function step() {
   const press = F.down && !hand.on ? 1 : 0;
   const cool = reduced() && !F.down ? 8 : 1;
 
-  pass(sim, targets[1 - flip], GW, GH, targets[flip]);
-  const u = sim.u;
-  gl.uniform2f(u.uTexel, 1 / GW, 1 / GH);
-  gl.uniform1f(u.uAspect, GW / GH);
-  gl.uniform1f(u.uDt, DT);
-  gl.uniform1f(u.uCool, cool);
-  const texCss = slab.w / GW;
-  gl.uniform1f(u.uYield, 0.03 * texCss);
-  gl.uniform1f(u.uDiff, Math.min(0.2, 0.05 * (1.5 / texCss) ** 2));
   // The sim finger eases after the pointer, so sparse events do not stamp.
   F.at = [F.at[0] + (F.pos[0] - F.at[0]) * 0.5, F.at[1] + (F.pos[1] - F.at[1]) * 0.5];
-  gl.uniform4f(u.uSeg, F.last[0], F.last[1], F.at[0], F.at[1]);
-  gl.uniform2f(u.uVel, F.vel[0], F.vel[1]);
-  gl.uniform2f(u.uFinger, (F.touch ? 22 : 18) / slab.h, press);
-  gl.uniform4f(u.uHand, hand.c[0], hand.c[1], handSize(), hand.on ? hand.amt : 0);
-  draw();
-  flip = 1 - flip;
+  const rad = (F.touch ? 22 : 18) / slab.h;
+  // A fast finger takes substeps of a quarter radius, so its path stays smooth.
+  const travel = press ? Math.hypot(F.at[0] - F.last[0], F.at[1] - F.last[1]) : 0;
+  const n = Math.min(8, Math.max(1, Math.ceil(travel / (0.25 * rad))));
+  const texCss = slab.w / GW;
+  for (let i = 0; i < n; i++) {
+    pass(sim, targets[1 - flip], GW, GH, targets[flip]);
+    const u = sim.u;
+    gl.uniform2f(u.uTexel, 1 / GW, 1 / GH);
+    gl.uniform1f(u.uAspect, GW / GH);
+    gl.uniform1f(u.uDt, DT / n);
+    gl.uniform1f(u.uCool, cool);
+    gl.uniform1f(u.uYield, 0.03 * texCss);
+    gl.uniform1f(u.uDiff, Math.min(0.2, 0.05 * (1.5 / texCss) ** 2));
+    const a = i / n, b = (i + 1) / n;
+    gl.uniform4f(u.uSeg,
+      F.last[0] + (F.at[0] - F.last[0]) * a, F.last[1] + (F.at[1] - F.last[1]) * a,
+      F.last[0] + (F.at[0] - F.last[0]) * b, F.last[1] + (F.at[1] - F.last[1]) * b);
+    gl.uniform2f(u.uVel, F.vel[0], F.vel[1]);
+    gl.uniform2f(u.uFinger, rad, press);
+    gl.uniform4f(u.uHand, hand.c[0], hand.c[1], handSize(), hand.on ? hand.amt : 0);
+    draw();
+    flip = 1 - flip;
+  }
   F.last = [...F.at];
 
   // The heat bound decays at the slowest cooling rate.
