@@ -127,7 +127,7 @@ const hint = panel.querySelector('.hint'), resetB = document.getElementById('res
 // The kit wakes on the first gesture (Space or Enter from the keyboard) and follows the header toggle.
 // One second of white noise feeds every burst.
 const kit = audioKit({ gain: 0.55, keys: new Set([' ', 'Enter']), noiseSeconds: 1, sleepMs: 1500 });
-const MAXV = 14, LEAD = 0.004;
+const MAXV = 22, LEAD = 0.004;
 let voices = 0, clackNext = 0, tickNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Busy moments soften each voice; the compressor catches the rest.
@@ -226,35 +226,45 @@ function tick(s = 1) {
   o.stop(t + 0.03);
   track(o, og, ng);
 }
-// A tower falls: a low knock under a spray of clicks.
+// A tower falls: a deep thump, a dull whump, then a long clatter.
 function crash(s) {
   const a = live();
   if (!a) return;
-  const t = a.currentTime + LEAD, g = level() * clamp(s, 0.5, 1.2);
+  const t = a.currentTime + LEAD, g = level() * clamp(s, 0.6, 1.2);
   const o = a.createOscillator(), og = a.createGain();
-  o.type = 'triangle';
-  o.frequency.setValueAtTime(230, t);
-  o.frequency.exponentialRampToValueAtTime(85, t + 0.14);
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(46, t + 0.2);
   og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.55 * g, t + 0.002);
-  og.gain.setTargetAtTime(0, t + 0.002, 0.05);
+  og.gain.linearRampToValueAtTime(0.8 * g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.003, 0.09);
   o.connect(og).connect(kit.out);
   o.start(t);
-  o.stop(t + 0.35);
+  o.stop(t + 0.6);
   track(o, og);
-  // Eight clicks scatter over a third of a second, most of them early.
-  for (let k = 0; k < 8; k++) {
-    const tk = t + 0.012 + 0.32 * (k / 8) ** 1.6 + Math.random() * 0.02, gk = g * (0.3 + 0.5 * Math.random()) * (1 - k / 11);
+  const wn = a.createBufferSource(), lp = a.createBiquadFilter(), wg = a.createGain();
+  wn.buffer = kit.noise;
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(900, t);
+  lp.frequency.exponentialRampToValueAtTime(220, t + 0.15);
+  wg.gain.setValueAtTime(0, t);
+  wg.gain.linearRampToValueAtTime(0.75 * g, t + 0.004);
+  wg.gain.setTargetAtTime(0, t + 0.004, 0.05);
+  wn.connect(lp).connect(wg).connect(kit.out);
+  wn.start(t, Math.random() * 0.6, 0.3);
+  track(wn, lp, wg);
+  // Fourteen knocks spill over half a second, thinning out.
+  for (let k = 0; k < 14; k++) {
+    const tk = t + 0.015 + 0.5 * (k / 14) ** 1.5 + Math.random() * 0.025, gk = g * (0.3 + 0.5 * Math.random()) * (1 - k / 17);
     const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
     src.buffer = kit.noise;
     bp.type = 'bandpass';
-    bp.frequency.value = 2100 + Math.random() * 2400;
-    bp.Q.value = 2;
+    bp.frequency.value = 1200 + Math.random() * 2600;
+    bp.Q.value = 1.6;
     ng.gain.setValueAtTime(0, tk);
-    ng.gain.linearRampToValueAtTime(gk, tk + 0.0005);
-    ng.gain.setTargetAtTime(0, tk + 0.0005, 0.004);
+    ng.gain.linearRampToValueAtTime(gk, tk + 0.0006);
+    ng.gain.setTargetAtTime(0, tk + 0.0006, 0.006);
     src.connect(bp).connect(ng).connect(kit.out);
-    src.start(tk, Math.random() * 0.9, 0.04);
+    src.start(tk, Math.random() * 0.9, 0.05);
     track(src, bp, ng);
   }
 }
@@ -840,7 +850,7 @@ function preset(t0) {
 // A long chain ends at a tower of stacked tiles.
 // Each level is two pillars: two standing tiles under a flat cap.
 // The last tile knocks the tower, and its tiles burst across the table.
-const COLS = 2, LEVELS = 3, MAXP = 216, TLEN = 6;
+const COLS = 2, LEVELS = 4, MAXP = 240, TLEN = 6;
 // Half sizes of the tower's footprint: along the run, then across it.
 const TA = 0.5, TC = W + 0.03;
 // The tower's centre sits this far past the last tile's centre.
@@ -848,10 +858,10 @@ const TGAP = 1.0;
 // Box half sizes and the inverse inertia of a unit mass.
 const HX = T / 2, HY = H / 2, HZ = W / 2;
 const IX = 12 / (H * H + W * W), IY = 12 / (T * T + W * W), IZ = 12 / (T * T + H * H);
-// Table friction, and the spacing of loose tiles that lie on the table.
-const MU = 0.45, APART = 0.48;
+// Table friction.
+const MU = 0.45;
 const towers = [];
-const R = new Float64Array(9), R2 = new Float64Array(9), IA = new Float64Array(3), IB = new Float64Array(3), FP = new Float64Array(6);
+const R2 = new Float64Array(9), IA = new Float64Array(3), IB = new Float64Array(3), FP = new Float64Array(6);
 let loose = 0, paint = false, simT = 0;
 
 const qmul = (a, b) => [
@@ -869,7 +879,7 @@ function rotOf(p, M) {
   M[6] = 2 * (x * z - y * w); M[7] = 2 * (y * z + x * w); M[8] = 1 - 2 * (x * x + y * y);
 }
 // World inverse inertia times a vector: R I⁻¹ Rᵀ v.
-function iw(a, b, c, out) {
+function iw(R, a, b, c, out) {
   const u = (R[0] * a + R[3] * b + R[6] * c) * IX, v = (R[1] * a + R[4] * b + R[7] * c) * IY, w = (R[2] * a + R[5] * b + R[8] * c) * IZ;
   out[0] = R[0] * u + R[1] * v + R[2] * w;
   out[1] = R[3] * u + R[4] * v + R[5] * w;
@@ -879,7 +889,8 @@ function piece(tw, x, y, z, q, L, hue, born) {
   tw.ps.push({
     h: [x, y, z, ...q], x, y, z, qx: q[0], qy: q[1], qz: q[2], qw: q[3],
     vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0, L, hue, born,
-    wait: 0, sleep: true, still: 0, age: 0, landed: false, r: null, rt: 0,
+    wait: 0, sleep: true, still: 0, age: 0, landed: false, touch: false, r: null, rt: 0,
+    R: new Float64Array(9), S: new Float64Array(18),
   });
 }
 function build(x, z, dx, dz, levels, hue, born) {
@@ -983,6 +994,8 @@ function burst(tw, fx, fz, w) {
   for (const p of tw.ps) {
     const along = (p.x - tw.x) * fx + (p.z - tw.z) * fz, side = (p.x - tw.x) * ax + (p.z - tw.z) * az;
     p.sleep = false; p.still = 0; p.age = 0; p.landed = false;
+    rotOf(p, p.R);
+    balls(p.R, p.x, p.y, p.z, p.S);
     if (reduce) {
       p.wait = 0; p.vx = fx * 0.6; p.vy = 0; p.vz = fz * 0.6;
       p.wx = fz * 3; p.wy = 0; p.wz = -fx * 3;
@@ -990,7 +1003,7 @@ function burst(tw, fx, fz, w) {
     }
     // The front and bottom tiles go first.
     p.wait = 0.035 * p.L + 0.03 * (along + TA) + Math.random() * 0.02;
-    const fwd = (2 + 1.4 * p.L + Math.random() * 1.8) * s, out = side * (2.5 + Math.random() * 3.5) * s;
+    const fwd = (2 + 1.2 * p.L + Math.random() * 1.8) * s, out = side * (2.5 + Math.random() * 3.5) * s;
     p.vx = fx * fwd + ax * out; p.vy = 0.5 + Math.random() * 1.5; p.vz = fz * fwd + az * out;
     // The spin tips each tile's top toward the fall.
     const spin = (5 + Math.random() * 6) * s;
@@ -1013,19 +1026,89 @@ function strike() {
     }
   }
 }
+// Each box is six spheres: three along its length, two across.
+const BALLS = [-0.33, 0, 0.33].flatMap(y => [[0, y, -0.15], [0, y, 0.15]]), RB = 0.09;
+const TM = new Float64Array(9), TS = new Float64Array(18), CN = new Float64Array(3), CP = new Float64Array(3);
+// Sphere centres of a box with rotation M at a point.
+function balls(M, x, y, z, out) {
+  for (let k = 0; k < 6; k++) {
+    const [lx, ly, lz] = BALLS[k];
+    out[k * 3] = x + M[0] * lx + M[1] * ly + M[2] * lz;
+    out[k * 3 + 1] = y + M[3] * lx + M[4] * ly + M[5] * lz;
+    out[k * 3 + 2] = z + M[6] * lx + M[7] * ly + M[8] * lz;
+  }
+}
+// A chain tile's spheres come from its drawn matrix.
+function tileBalls(te, o) {
+  TM[0] = te[o]; TM[1] = te[o + 4]; TM[2] = te[o + 8];
+  TM[3] = te[o + 1]; TM[4] = te[o + 5]; TM[5] = te[o + 9];
+  TM[6] = te[o + 2]; TM[7] = te[o + 6]; TM[8] = te[o + 10];
+  balls(TM, te[o + 12], te[o + 13], te[o + 14], TS);
+}
+// The deepest overlap of two sphere sets sets the contact normal and point.
+function deepest(A, B) {
+  let best = 0, bi = -1, bj = -1;
+  for (let i = 0; i < 18; i += 3) {
+    for (let j = 0; j < 18; j += 3) {
+      const dx = A[i] - B[j], dy = A[i + 1] - B[j + 1], dz = A[i + 2] - B[j + 2], d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= 4 * RB * RB) continue;
+      const pen = 2 * RB - Math.sqrt(d2);
+      if (pen > best) { best = pen; bi = i; bj = j; }
+    }
+  }
+  if (bi < 0) return 0;
+  const dx = A[bi] - B[bj], dy = A[bi + 1] - B[bj + 1], dz = A[bi + 2] - B[bj + 2], d = Math.hypot(dx, dy, dz);
+  // Coincident spheres part straight up.
+  if (d < 1e-6) { CN[0] = 0; CN[1] = 1; CN[2] = 0; } else { CN[0] = dx / d; CN[1] = dy / d; CN[2] = dz / d; }
+  CP[0] = (A[bi] + B[bj]) / 2; CP[1] = (A[bi + 1] + B[bj + 1]) / 2; CP[2] = (A[bi + 2] + B[bj + 2]) / 2;
+  return best;
+}
+// Two boxes meet: they push apart, then trade a normal impulse.
+// A null b is a chain tile, which does not move.
+function meetBox(a, b) {
+  const pen = deepest(a.S, b ? b.S : TS);
+  if (!pen) return;
+  const nx = CN[0], ny = CN[1], nz = CN[2], mb = !!b && !b.sleep, sa = mb ? 0.5 : 1;
+  a.x += nx * pen * sa; a.y += ny * pen * sa; a.z += nz * pen * sa;
+  balls(a.R, a.x, a.y, a.z, a.S);
+  if (mb) { b.x -= nx * pen * 0.5; b.y -= ny * pen * 0.5; b.z -= nz * pen * 0.5; balls(b.R, b.x, b.y, b.z, b.S); }
+  a.touch = true;
+  if (b) b.touch = true;
+  const rax = CP[0] - a.x, ray = CP[1] - a.y, raz = CP[2] - a.z;
+  let vx = a.vx + a.wy * raz - a.wz * ray, vy = a.vy + a.wz * rax - a.wx * raz, vz = a.vz + a.wx * ray - a.wy * rax;
+  let rbx = 0, rby = 0, rbz = 0;
+  if (mb) {
+    rbx = CP[0] - b.x; rby = CP[1] - b.y; rbz = CP[2] - b.z;
+    vx -= b.vx + b.wy * rbz - b.wz * rby; vy -= b.vy + b.wz * rbx - b.wx * rbz; vz -= b.vz + b.wx * rby - b.wy * rbx;
+  }
+  const vn = vx * nx + vy * ny + vz * nz;
+  if (vn >= 0) return;
+  // A hard hit wakes a sleeping tile for the next step.
+  if (b && b.sleep && vn < -1.5) { b.sleep = false; b.still = 0; }
+  iw(a.R, ray * nz - raz * ny, raz * nx - rax * nz, rax * ny - ray * nx, IA);
+  let k = 1 + nx * (IA[1] * raz - IA[2] * ray) + ny * (IA[2] * rax - IA[0] * raz) + nz * (IA[0] * ray - IA[1] * rax);
+  if (mb) {
+    iw(b.R, rby * nz - rbz * ny, rbz * nx - rbx * nz, rbx * ny - rby * nx, IB);
+    k += 1 + nx * (IB[1] * rbz - IB[2] * rby) + ny * (IB[2] * rbx - IB[0] * rbz) + nz * (IB[0] * rby - IB[1] * rbx);
+  }
+  const j = (-1.15 * vn) / k;
+  a.vx += nx * j; a.vy += ny * j; a.vz += nz * j; a.wx += IA[0] * j; a.wy += IA[1] * j; a.wz += IA[2] * j;
+  if (mb) { b.vx -= nx * j; b.vy -= ny * j; b.vz -= nz * j; b.wx -= IB[0] * j; b.wy -= IB[1] * j; b.wz -= IB[2] * j; }
+  if (vn < -3) clack(clamp(-vn / 14), 0);
+}
 // One corner on the table: a normal impulse, then capped friction.
 function kick(p, rx, ry, rz) {
   let vx = p.vx + p.wy * rz - p.wz * ry, vz = p.vz + p.wx * ry - p.wy * rx;
   const vy = p.vy + p.wz * rx - p.wx * rz;
   if (vy >= 0) return 0;
-  iw(-rz, 0, rx, IA);
+  iw(p.R, -rz, 0, rx, IA);
   const j = (-(vy < -4 ? 1.2 : 1) * vy) / (1 + IA[2] * rx - IA[0] * rz);
   p.vy += j; p.wx += IA[0] * j; p.wy += IA[1] * j; p.wz += IA[2] * j;
   vx = p.vx + p.wy * rz - p.wz * ry; vz = p.vz + p.wx * ry - p.wy * rx;
   const vt = Math.hypot(vx, vz);
   if (vt > 1e-5) {
     const tx = vx / vt, tz = vz / vt;
-    iw(ry * tz, rz * tx - rx * tz, -ry * tx, IB);
+    iw(p.R, ry * tz, rz * tx - rx * tz, -ry * tx, IB);
     const kt = 1 + tx * (IB[1] * rz - IB[2] * ry) + tz * (IB[0] * ry - IB[1] * rx);
     const jt = -Math.min(vt / kt, MU * j);
     p.vx += jt * tx; p.vz += jt * tz; p.wx += IB[0] * jt; p.wy += IB[1] * jt; p.wz += IB[2] * jt;
@@ -1036,51 +1119,41 @@ function kick(p, rx, ry, rz) {
 function fly(p, h) {
   if (p.wait > 0) { p.wait -= h; return; }
   p.age += h;
+  p.touch = false;
   p.vy -= G * h;
   p.x += p.vx * h; p.y += p.vy * h; p.z += p.vz * h;
-  const { wx, wy, wz, qx, qy, qz, qw } = p, k = h / 2;
+  const { wx, wy, wz, qx, qy, qz, qw } = p, k = h / 2, M = p.R;
   const nx = qx + k * (wx * qw + wy * qz - wz * qy), ny = qy + k * (wy * qw + wz * qx - wx * qz);
   const nz = qz + k * (wz * qw + wx * qy - wy * qx), nw = qw - k * (wx * qx + wy * qy + wz * qz), l = Math.hypot(nx, ny, nz, nw);
   p.qx = nx / l; p.qy = ny / l; p.qz = nz / l; p.qw = nw / l;
-  rotOf(p, R);
+  rotOf(p, M);
   let low = 0, hit = 0;
   for (let c = 0; c < 8; c++) {
     const sx = c & 1 ? HX : -HX, sy = c & 2 ? HY : -HY, sz = c & 4 ? HZ : -HZ;
-    const rx = R[0] * sx + R[1] * sy + R[2] * sz, ry = R[3] * sx + R[4] * sy + R[5] * sz, rz = R[6] * sx + R[7] * sy + R[8] * sz;
+    const rx = M[0] * sx + M[1] * sy + M[2] * sz, ry = M[3] * sx + M[4] * sy + M[5] * sz, rz = M[6] * sx + M[7] * sy + M[8] * sz;
     if (p.y + ry >= 0) continue;
     low = Math.min(low, p.y + ry);
     hit = Math.max(hit, kick(p, rx, ry, rz));
   }
   if (low < 0) {
     p.y -= low;
+    p.touch = true;
     const d = 1 - 3 * h;
     p.wx *= d; p.wy *= d; p.wz *= d;
-    if (!p.landed && hit > 3) { p.landed = true; thud(hit / 25); }
+    if (!p.landed && hit > 3) { p.landed = true; thud(hit / 22); }
   }
-  const calm = low < 0 && p.vx * p.vx + p.vy * p.vy + p.vz * p.vz < 0.03 && p.wx * p.wx + p.wy * p.wy + p.wz * p.wz < 0.08;
-  p.still = calm ? p.still + 1 : 0;
-  // A tile still for a sixth of a second, or loose for five, sleeps.
-  if (p.still > 40 || p.age > 5) { p.sleep = true; p.vx = p.vy = p.vz = p.wx = p.wy = p.wz = 0; }
+  balls(M, p.x, p.y, p.z, p.S);
 }
-// Tiles on the table push apart, so none lies inside another.
-function spread(tw, a) {
-  if (a.y > 0.45) return;
-  rotOf(a, R);
-  const ax = R[1] * 0.3, az = R[7] * 0.3;
-  for (const b of tw.ps) {
-    if (b === a || b.y > 0.45 || Math.abs(b.x - a.x) > 1.2 || Math.abs(b.z - a.z) > 1.2) continue;
-    rotOf(b, R2);
-    const bx = R2[1] * 0.3, bz = R2[7] * 0.3;
-    for (let u = -1; u <= 1; u++) {
-      for (let v = -1; v <= 1; v++) {
-        const dx = a.x + ax * u - b.x - bx * v, dz = a.z + az * u - b.z - bz * v, d = Math.hypot(dx, dz);
-        if (d >= APART || d < 1e-6) continue;
-        const nx = dx / d, nz = dz / d, push = (APART - d) * 0.5, vn = a.vx * nx + a.vz * nz;
-        a.x += nx * push; a.z += nz * push;
-        if (vn < 0) { a.vx -= vn * nx; a.vz -= vn * nz; }
-      }
-    }
-  }
+// Loose tiles meet the chain's tiles, which stay where they are.
+function obstacles(a) {
+  const te = mesh.instanceMatrix.array;
+  near(a.x, a.z, 1.1, j => {
+    if (j >= n || BORN[j] > simT) return;
+    const o = j * 16;
+    if (Math.abs(te[o + 12] - a.x) > 1.1 || Math.abs(te[o + 13] - a.y) > 1.1 || Math.abs(te[o + 14] - a.z) > 1.1) return;
+    tileBalls(te, o);
+    meetBox(a, null);
+  });
 }
 // A fast loose tile tips any standing tile it meets.
 function knock(p) {
@@ -1099,15 +1172,30 @@ function shake(h) {
   loose = 0;
   for (const tw of towers) {
     if (tw.st !== 1) continue;
-    const bb = tw.bb;
-    bb[0] = bb[2] = Infinity; bb[1] = bb[3] = -Infinity;
-    for (const p of tw.ps) {
-      if (!p.sleep) {
-        fly(p, h);
-        spread(tw, p);
-        knock(p);
-        if (!p.sleep) loose++;
+    const ps = tw.ps, bb = tw.bb;
+    for (const p of ps) if (!p.sleep) fly(p, h);
+    // Each awake pair meets once; a sleeping tile is a fixed obstacle.
+    for (let i = 0; i < ps.length; i++) {
+      const a = ps[i];
+      if (a.sleep || a.wait > 0) continue;
+      for (let j = 0; j < ps.length; j++) {
+        const b = ps[j];
+        if (j === i || b.wait > 0 || (!b.sleep && j < i)) continue;
+        if (Math.abs(b.x - a.x) > 1.1 || Math.abs(b.y - a.y) > 1.1 || Math.abs(b.z - a.z) > 1.1) continue;
+        meetBox(a, b);
       }
+      obstacles(a);
+      knock(a);
+    }
+    bb[0] = bb[2] = Infinity; bb[1] = bb[3] = -Infinity;
+    for (const p of ps) {
+      if (!p.sleep && p.wait <= 0) {
+        const calm = p.touch && p.vx * p.vx + p.vy * p.vy + p.vz * p.vz < 0.03 && p.wx * p.wx + p.wy * p.wy + p.wz * p.wz < 0.08;
+        p.still = calm ? p.still + 1 : 0;
+        // A tile still for a sixth of a second, or loose for five, sleeps.
+        if (p.still > 40 || p.age > 5) { p.sleep = true; p.vx = p.vy = p.vz = p.wx = p.wy = p.wz = 0; }
+      }
+      if (!p.sleep) loose++;
       bb[0] = Math.min(bb[0], p.x - 0.6); bb[1] = Math.max(bb[1], p.x + 0.6);
       bb[2] = Math.min(bb[2], p.z - 0.6); bb[3] = Math.max(bb[3], p.z + 0.6);
     }
