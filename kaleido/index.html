@@ -227,7 +227,7 @@ function tick(sp) {
 /* ---------- physics: circles and convex polygons in a turning drum ---------- */
 // Units are drum radii; y runs up; gravity pulls down the screen.
 const DT = 1 / 120, GRAV = 7, MARGIN = 0.012, SLOP = 0.003, BETA = 0.22, ITER = 8, PITER = 3;
-const MU = 0.26, MU_WALL = 0.45, E = 0.3, E_WALL = 0.22, BOUNCE = 0.35, WALL = 63;
+const MU = 0.26, MU_WALL = 0.45, E = 0.3, E_WALL = 0.22, BOUNCE = 0.35, WALL = 255;
 const bodies = [], contacts = [];
 let nC = 0, simT = 0, spinW = 0, drumW = 0, asleep = false, restClock = 0, holdN = 0;
 const warm = new Map();
@@ -410,7 +410,8 @@ function pair(A, B, ia, ib) {
         if (u.t === 0) cnt = circleCircle(s, u);
         else { cnt = polyCircle(u, s); sg = -1; }
       } else cnt = u.t === 0 ? polyCircle(s, u) : polyPoly(s, u);
-      const pk = ((ia * 64 + ib) * 8 + i) * 8 + j;
+      // Keys allow 255 bodies and 16 shapes per body.
+      const pk = ((ia * 256 + ib) * 16 + i) * 16 + j;
       for (let k = 0; k < cnt; k++) push(A, B, pk, M.f[k], M.nx * sg, M.ny * sg, M.px[k], M.py[k], M.pen[k]);
     }
   }
@@ -420,7 +421,7 @@ function wallHits(A, ia) {
   for (let i = 0; i < A.sh.length; i++) {
     const s = A.sh[i];
     if (Math.hypot(s.bx, s.by) + s.br < 1 - MARGIN) continue;
-    const pk = ((ia * 64 + WALL) * 8 + i) * 8;
+    const pk = ((ia * 256 + WALL) * 16 + i) * 16;
     if (s.t === 0) {
       const d = Math.hypot(s.wx, s.wy) || 1e-9, pen = d + s.r - 1;
       if (pen > -MARGIN) { const nx = s.wx / d, ny = s.wy / d, m = 1 + pen * 0.5; push(A, null, pk, 0, nx, ny, nx * m, ny * m, pen); }
@@ -569,17 +570,18 @@ function step() {
   }
 }
 
-/* ---------- the glass: forty pieces in two depths ---------- */
+/* ---------- the glass: ninety pieces in two depths ---------- */
 // House glass as OKLCH: magenta, cyan, safety orange, cobalt.
 // Acid lime is the off-key accent, so it comes up rarely.
 const GEMS = [[0.6, 0.24, 338], [0.74, 0.14, 205], [0.7, 0.2, 45], [0.5, 0.21, 262], [0.9, 0.22, 125]];
 // Opaque ink pieces are stencils: light shows only through their cuts.
 const INK = css(0.15, 0.012, 275);
 // Back pieces are broad and paler; front pieces are small and deep.
+// Each layer fills about half the drum, so wedges stay full.
 const PLAN = [
-  ['shard', 0, 10, 0.14, 0.2], ['nut', 0, 2, 0.12, 0.15], ['moon', 0, 4, 0.16, 0.2], ['bead', 0, 3, 0.11, 0.14],
-  ['bead', 1, 8, 0.085, 0.125], ['shard', 1, 6, 0.11, 0.16], ['rod', 1, 4, 0.17, 0.24], ['moon', 1, 2, 0.14, 0.165], ['seed', 1, 8, 0.04, 0.05],
-  ['plate', 1, 2, 0.13, 0.16],
+  ['shard', 0, 22, 0.11, 0.16], ['nut', 0, 3, 0.09, 0.12], ['moon', 0, 6, 0.12, 0.16], ['bead', 0, 8, 0.085, 0.11],
+  ['bead', 1, 14, 0.07, 0.1], ['shard', 1, 12, 0.09, 0.13], ['rod', 1, 6, 0.13, 0.19], ['moon', 1, 4, 0.11, 0.14], ['seed', 1, 14, 0.035, 0.045],
+  ['plate', 1, 3, 0.1, 0.13],
 ];
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 let cell = null, cx = null;
@@ -685,7 +687,7 @@ function shard(g, r) {
   b.paint = () => {
     for (const [f, c] of facets) { cx.fillStyle = c; cx.fill(f); }
     grain();
-    rims(path, g, 0.05, 0.012);
+    rims(path, g, 0.3 * r, 0.07 * r);
   };
   b.shine = () => {
     cx.strokeStyle = WHITE(0.42); cx.lineWidth = 0.008; cx.lineCap = 'round';
@@ -738,7 +740,7 @@ function moon(g, r) {
   const gr = cx.createRadialGradient(d, 0, r2, d, 0, r + d);
   [[0, -0.26, 1], [0.1, -0.04, 1], [0.38, 0.14, 0.7], [0.72, 0, 1], [0.92, -0.16, 1], [1, -0.28, 1]].forEach(([o, dL, kC]) => gr.addColorStop(o, tone(g, dL, kC)));
   const grain = mottle(b, path);
-  b.paint = () => { cx.fillStyle = gr; cx.fill(path); grain(); rims(path, g, 0.04, 0.01); };
+  b.paint = () => { cx.fillStyle = gr; cx.fill(path); grain(); rims(path, g, 0.22 * r, 0.055 * r); };
   b.shine = () => {
     cx.beginPath(); cx.arc(0, 0, r - 0.035, Math.PI * 0.62, Math.PI * 1.05);
     cx.strokeStyle = WHITE(0.34); cx.lineWidth = 0.009; cx.lineCap = 'round'; cx.stroke();
@@ -769,8 +771,11 @@ function plate(L, hl) {
 }
 function build(top = false) {
   bodies.length = 0;
-  const main = k => [0, 1, 2, 3].flatMap(i => Array(k).fill(i));
-  const bags = [shuffle([...main(4), 4]), shuffle([...main(6), 4, 4, 4, 4])];
+  // One glass piece in nine is lime; the rest share the four main colours.
+  const bags = [0, 1].map(L => {
+    const n = PLAN.reduce((t, [kind, l, k]) => t + (l === L && kind !== 'nut' && kind !== 'plate' ? k : 0), 0), lime = Math.round(n / 9);
+    return shuffle(Array.from({ length: n }, (_, i) => (i < lime ? 4 : i % 4)));
+  });
   for (const [kind, L, n, lo, hi] of PLAN) {
     for (let i = 0; i < n; i++) {
       if (kind === 'nut' || kind === 'plate') { bodies.push((kind === 'nut' ? nut : plate)(L, rand(lo, hi))); continue; }
@@ -792,7 +797,8 @@ function build(top = false) {
       for (let t = 0; t < 400; t++) {
         const rr = (1 - b.br * 0.8) * Math.sqrt(Math.random()), a = Math.random() * TAU;
         b.x = rr * Math.cos(a); b.y = rr * Math.sin(a);
-        if (top) b.y = Math.abs(b.y);
+        // Poured glass prefers the upper half while there is room.
+        if (top && t < 200) b.y = Math.abs(b.y);
         if (placed.every(o => Math.hypot(o.x - b.x, o.y - b.y) > 0.72 * (o.br + b.br))) break;
       }
       b.a = Math.random() * TAU;
