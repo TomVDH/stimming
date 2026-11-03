@@ -45,6 +45,9 @@
         <button class="chip" type="button" data-n="8" aria-pressed="false">8</button>
         <button class="chip" type="button" data-n="12" aria-pressed="false">12</button>
       </div>
+      <div class="actions">
+        <button class="chip" id="shuffle" type="button">Shuffle</button>
+      </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>turn</dd></div>
         <div><dt>Flick</dt><dd>spin</dd></div>
@@ -738,7 +741,8 @@ function moon(g, r) {
   };
   return b;
 }
-function build() {
+// With top set, the glass starts in the upper half and pours down.
+function build(top = false) {
   bodies.length = 0;
   const bags = [shuffle([0, 1, 2, 3, 4].flatMap(i => [i, i, i, i])), shuffle([...[0, 1, 2, 3, 4].flatMap(i => [i, i, i, i, i]), 5, 5, 5])];
   for (const [kind, L, n, lo, hi] of PLAN) {
@@ -761,9 +765,12 @@ function build() {
       for (let t = 0; t < 400; t++) {
         const rr = (1 - b.br * 0.8) * Math.sqrt(Math.random()), a = Math.random() * TAU;
         b.x = rr * Math.cos(a); b.y = rr * Math.sin(a);
+        if (top) b.y = Math.abs(b.y);
         if (placed.every(o => Math.hypot(o.x - b.x, o.y - b.y) > 0.72 * (o.br + b.br))) break;
       }
       b.a = Math.random() * TAU;
+      // Poured glass tumbles as it falls.
+      if (top) { b.vx = rand(-0.8, 0.8); b.vy = rand(-0.4, 1.2); b.w = rand(-6, 6); }
       placed.push(b);
     }
   }
@@ -1134,6 +1141,19 @@ function shake() {
   restClock = 0;
   wake();
 }
+// Shuffle swaps in fresh glass and pours it in from the top.
+function pour() {
+  if (!ready) return;
+  build(true);
+  warm.clear();
+  for (const b of bodies) { b.hx = b.x; b.hy = b.y; b.ha = b.a; }
+  asleep = false;
+  restClock = 0;
+  holdN = 0;
+  cellDirty = true;
+  wake();
+}
+document.getElementById('shuffle').addEventListener('click', pour);
 const ARROWS = { ArrowLeft: 1, ArrowUp: 1, ArrowRight: -1, ArrowDown: -1 };
 let shookAt = -1e9;
 addEventListener('keydown', e => {
@@ -1178,7 +1198,7 @@ function failed() {
   ready = false;
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  chips.forEach(c => { c.disabled = true; });
+  document.querySelectorAll('.bar .chip').forEach(c => { c.disabled = true; });
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; cancelAnimationFrame(raf); raf = 0; });
 canvas.addEventListener('webglcontextrestored', async () => {
