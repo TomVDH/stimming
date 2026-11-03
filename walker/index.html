@@ -1032,7 +1032,7 @@ void main() {
   // Lensing bends the far side of the disc over the top of the hole.
   const DISK_N = 32768, TRAIL = 7;
   const HU = {
-    uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uW: { value: 1 }, uRot: { value: new THREE.Matrix3() },
+    uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uW: { value: 1 }, uShadow: { value: 1 }, uRot: { value: new THREE.Matrix3() },
     uTime: U.uTime, uVis: { value: 0 }, uGain: { value: 1 }, uPxSize: { value: 2.4 }, uRingDir: { value: new THREE.Vector2(1, 0) },
   };
   const diskGeo = new THREE.BufferGeometry();
@@ -1044,7 +1044,7 @@ void main() {
     uniforms: HU, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: `
 attribute float aId;
-uniform vec3 uC; uniform float uR, uW, uTime, uVis, uGain, uPxSize; uniform mat3 uRot;
+uniform vec3 uC; uniform float uR, uW, uShadow, uTime, uVis, uGain, uPxSize; uniform mat3 uRot;
 varying vec3 vCol;
 const float TAU = 6.2831853, TRAIL = ${TRAIL}.0;
 const vec3 HOT = vec3(1.0, 0.86, 0.66), AMBER = vec3(1.0, 0.43, 0.11), EMBER = vec3(0.75, 0.1, 0.04), ICE = vec3(0.56, 0.74, 1.0);
@@ -1064,7 +1064,8 @@ void main() {
   float re2 = uW * behind / s, root = sqrt(ul * ul + re2 * 4.0), ul2 = (ul + root) * 0.5;
   vec3 p = cameraPosition + (uC + u * (ul2 / ul) - cameraPosition) * (s / dL);
   float mu = min((ul * ul + re2 * 2.0) / max(ul * root, 1e-6), 3.0);
-  bool hidden = behind > 0.0 && ul2 < uR;
+  // The traced shadow is a solid sphere; no far-side point shows inside it.
+  bool hidden = behind > 0.0 && ul2 < uShadow;
   // Doppler: the approaching side brightens and shifts toward blue.
   vec3 toCam = normalize(cameraPosition - P);
   float beta = dot(uRot * vec3(-sin(th), 0.0, cos(th)), toCam) * inversesqrt(dr) * 0.5;
@@ -1448,7 +1449,9 @@ void main() {
         // Galaxy's particles sparkle over the traced disc, at its tilt and size.
         const R = 1.5 * RSw;
         HU.uR.value = R; HU.uW.value = 29 * R; HU.uVis.value = look.hole;
-        diskM.makeRotationAxis(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -0.25);
+        HU.uShadow.value = 0.18 * S;
+        // The near side tilts below the hole, as on the traced disc.
+        diskM.makeRotationAxis(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), 0.25);
         HU.uRot.value.setFromMatrix4(diskM);
         HU.uGain.value = 0.35 * clamp((160 * sunR * sunR) / DISK_N, 0.08, 2.5);
         HU.uPxSize.value = 1.5 * renderer.getPixelRatio();
