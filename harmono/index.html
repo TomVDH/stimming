@@ -68,7 +68,7 @@ h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-sp
 .snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
 @media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
 main { display: grid; gap: 14px; min-width: 0; }
-/* The desk is 16:9, 4:5 on phones, and peacock leather in both themes. */
+/* The desk is 16:9, 4:5 on phones, and peacock leather. */
 .stage {
   position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
   border-radius: 18px; overflow: hidden; background: var(--desk);
@@ -87,6 +87,8 @@ main { display: grid; gap: 14px; min-width: 0; }
   font-size: 14px; color: oklch(0.7 0.02 230);
 }
 .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* The ink chips flow in one row with New sheet. */
+.ctl .ctl { display: contents; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
   font: inherit; font-size: 13px; color: var(--muted);
@@ -396,8 +398,8 @@ function voice(dt, touching) {
 }
 
 /* ---------- the mechanism: two lateral pendulums and a rotary table ---------- */
-// The faster pendulum swings at about 1.2 Hz.
-const OMEGA = 7.6, PEN_MIN = 0.03, REST = 0.015;
+// The faster pendulum swings at about 1.7 Hz.
+const OMEGA = 10.5, PEN_MIN = 0.04, REST = 0.015;
 const RATIOS = [[2, 3], [3, 4], [1, 2], [3, 2], [4, 3], [2, 1], [3, 5], [1, 1], [5, 4]];
 let ri = Math.floor(Math.random() * RATIOS.length);
 const mkPend = () => ({ a: 0, ph: 0, w: OMEGA, d: 0.1, held: false, hp: 0, hv: 0, tgt: 0, off: 0, key: 0, bob: 0.5, bobT: 0.5, lf: 0 });
@@ -428,8 +430,8 @@ function tune(p, w, d) {
 function newRatio() {
   ri = (ri + 1 + (Math.random() < 0.3 ? 1 : 0)) % RATIOS.length;
   const [nx, ny] = RATIOS[ri], m = Math.max(nx, ny), det = sign() * rnd(0.004, 0.011);
-  tune(P[0], ((OMEGA * nx) / m) * (1 - det / 2), rnd(0.085, 0.13));
-  tune(P[1], ((OMEGA * ny) / m) * (1 + det / 2), rnd(0.085, 0.13));
+  tune(P[0], ((OMEGA * nx) / m) * (1 - det / 2), rnd(0.05, 0.08));
+  tune(P[1], ((OMEGA * ny) / m) * (1 + det / 2), rnd(0.05, 0.08));
 }
 // A resting partner gets a push, so every release draws a figure.
 function push(q) {
@@ -445,8 +447,8 @@ function startLayer(k) {
   rot.ph = rnd(0, TAU);
   rot.dir = sign();
   rot.w = P[Math.random() < 0.5 ? 0 : 1].w * (1 + rnd(-0.012, 0.012));
-  rot.d = rnd(0.1, 0.16);
-  table.rate = sign() * rnd(0.02, 0.05);
+  rot.d = rnd(0.06, 0.1);
+  table.rate = sign() * rnd(0.015, 0.04);
   drawing = true;
 }
 function advance(h, E) {
@@ -473,7 +475,7 @@ function penAt(o) {
 /* ---------- layout and cached surfaces ---------- */
 let W = 0, H = 0, pr = 1, lowDpr = false, ctx = null, ready = false;
 const L = {};
-let bgC = null, paperTex = null, shadowC = null, sheet = null, sheetG = null, wetC = null, wetG = null;
+let bgC = null, mechC = null, paperTex = null, shadowC = null, sheet = null, sheetG = null, wetC = null, wetG = null;
 function layout() {
   const port = W / H < 1.1;
   L.port = port;
@@ -496,10 +498,10 @@ function layout() {
     L.well = { x: W * 0.39, y: py + (H - py) * 0.46, r };
     L.dial = { x: W * 0.61, y: py + (H - py) * 0.46, r };
   }
-  L.R = 0.29 * Math.min(L.paper.w, L.paper.h);
+  L.R = 0.33 * Math.min(L.paper.w, L.paper.h);
   L.wB = clamp(L.R / 150, 0.7, 1.25);
-  L.bw = 30 * L.k;
-  L.bh = 40 * L.k;
+  L.bw = 34 * L.k;
+  L.bh = 46 * L.k;
   L.pad = 30;
 }
 // The leather desk: lamp pool, mottle, grain and a gilt rule.
@@ -507,9 +509,9 @@ function makeDesk() {
   const c = mk(Math.round(W * pr), Math.round(H * pr)), g = c.getContext('2d');
   const cw = c.width, ch = c.height, R = rng(31);
   let gr = g.createRadialGradient(cw * 0.42, ch * 0.36, 0, cw * 0.42, ch * 0.36, Math.hypot(cw, ch) * 0.62);
-  gr.addColorStop(0, css(0.36, 0.07, 200));
-  gr.addColorStop(0.55, css(0.26, 0.06, 212));
-  gr.addColorStop(1, css(0.15, 0.04, 232));
+  gr.addColorStop(0, css(0.42, 0.08, 198));
+  gr.addColorStop(0.5, css(0.3, 0.068, 210));
+  gr.addColorStop(1, css(0.16, 0.045, 232));
   g.fillStyle = gr;
   g.fillRect(0, 0, cw, ch);
   // Mottle gives the leather its uneven dye.
@@ -526,9 +528,17 @@ function makeDesk() {
   // The edges fall into shadow.
   gr = g.createRadialGradient(cw * 0.45, ch * 0.42, Math.min(cw, ch) * 0.3, cw * 0.45, ch * 0.42, Math.hypot(cw, ch) * 0.6);
   gr.addColorStop(0, 'rgb(0 0 0 / 0)');
-  gr.addColorStop(1, 'rgb(2 6 12 / 0.5)');
+  gr.addColorStop(1, 'rgb(2 6 12 / 0.42)');
   g.fillStyle = gr;
   g.fillRect(0, 0, cw, ch);
+  // The desk lamp throws a warm pool from the upper left.
+  gr = g.createRadialGradient(cw * 0.3, ch * 0.18, 0, cw * 0.3, ch * 0.18, Math.hypot(cw, ch) * 0.55);
+  gr.addColorStop(0, 'rgb(255 196 120 / 0.13)');
+  gr.addColorStop(1, 'rgb(255 196 120 / 0)');
+  g.globalCompositeOperation = 'screen';
+  g.fillStyle = gr;
+  g.fillRect(0, 0, cw, ch);
+  g.globalCompositeOperation = 'source-over';
   g.setTransform(pr, 0, 0, pr, 0, 0);
   // A gilt rule runs round the desk.
   const gi = L.port ? 7 : 9, gold = g.createLinearGradient(0, 0, W, H);
@@ -540,6 +550,12 @@ function makeDesk() {
   g.beginPath(); g.roundRect(gi, gi, W - 2 * gi, H - 2 * gi, 12); g.stroke();
   g.lineWidth = 0.6;
   g.beginPath(); g.roundRect(gi + 4, gi + 4, W - 2 * gi - 8, H - 2 * gi - 8, 9); g.stroke();
+  return c;
+}
+// Brackets and scales sit above any sheet that slides under them.
+function makeMech() {
+  const c = mk(Math.round(W * pr), Math.round(H * pr)), g = c.getContext('2d');
+  g.setTransform(pr, 0, 0, pr, 0, 0);
   L.pend.forEach(Q => bracket(g, Q));
   return c;
 }
@@ -611,7 +627,7 @@ function makePaper() {
   const mw = 64, mh = Math.max(8, Math.round((64 * ch) / cw)), m = mk(mw, mh), mg = m.getContext('2d'), id = mg.createImageData(mw, mh);
   for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
     const n = vnoise(x * 0.2 + 3, y * 0.2 + 7) * 0.6 + vnoise(x * 0.55 + 11, y * 0.55 + 2) * 0.4, i = (y * mw + x) * 4;
-    id.data[i] = 150; id.data[i + 1] = 120; id.data[i + 2] = 70; id.data[i + 3] = n * n * 46;
+    id.data[i] = 150; id.data[i + 1] = 120; id.data[i + 2] = 70; id.data[i + 3] = n * n * 30;
   }
   mg.putImageData(id, 0, 0);
   g.imageSmoothingQuality = 'high';
@@ -674,7 +690,7 @@ function strokeRun(g, pts, s, ci, live) {
   const path = new Path2D(), R = L.R, ox = L.paper.w / 2, oy = L.paper.h / 2;
   path.moveTo(ox + pts[0] * R, oy + pts[1] * R);
   for (let i = 2; i < pts.length; i += 2) path.lineTo(ox + pts[i] * R, oy + pts[i + 1] * R);
-  const w = L.wB * (0.7 + 1.0 * s), al = 0.36 + 0.56 * s, ink = INKS[ci];
+  const w = L.wB * (0.78 + 1.0 * s), al = 0.44 + 0.5 * s, ink = INKS[ci];
   // A faint wide pass bleeds into the fibres.
   g.lineWidth = w * 2.8;
   g.strokeStyle = ink.at(al * 0.07);
@@ -783,6 +799,7 @@ function step(dt, offline = false) {
     if (touch) {
       penAt(q);
       blot(sheetG, q.x, q.y, inkI, true);
+      inkPoint(q.x, q.y, 1);
       if (!offline) sfxTap(penX());
     } else inkUp();
   }
@@ -847,7 +864,7 @@ function letGo(k, fling) {
   sfxLetGo(bobX(k));
   if (!P[0].held && !P[1].held && !auto) startLayer(k);
 }
-// Space: an unseen hand pulls both bobs aside and lets go in turn.
+// Space: an unseen hand pulls both bobs, then lets go.
 function randomSwing() {
   if (!ready || grabs.size || auto) return;
   P.forEach(p => { if (p.held) letGo(P.indexOf(p), false); });
@@ -875,6 +892,16 @@ function stepAuto(dt) {
     }
   }
   if (A.rel[0] && A.rel[1]) { auto = null; startLayer(-1); }
+}
+// A hand on a bob takes over from the unseen hand.
+function endAuto() {
+  if (!auto) return;
+  P.forEach((p, k) => {
+    if (auto.rel[k]) return;
+    p.held = false;
+    setState(p, p.hp, 0);
+  });
+  auto = null;
 }
 function newSheet() {
   if (!ready) return;
@@ -923,6 +950,9 @@ function draw() {
       drawSheet(g, sheet, (1 - e2) * (W - L.paper.x + L.pad * 2), slide.rot * (1 - e2), 1);
     }
   } else drawSheet(g, sheet, 0, 0, 1);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.drawImage(mechC, 0, 0);
+  g.setTransform(pr, 0, 0, pr, 0, 0);
   drawPend(g, 0);
   drawPend(g, 1);
   drawWell(g);
@@ -971,6 +1001,17 @@ function drawPend(g, k) {
   g.beginPath(); g.roundRect(-bw / 2, by - bh / 2, bw, bh, 3 * s); g.fill();
   g.restore();
   g.rotate(-th);
+  // A fast bob leaves a faint ghost of its last frame.
+  const gh = p.lastTh === undefined ? 0 : clamp((Math.abs(th - p.lastTh) * by) / bw - 0.15) * 0.3;
+  if (gh > 0.01) {
+    g.save();
+    g.rotate(th - p.lastTh);
+    g.globalAlpha = gh;
+    g.fillStyle = BRASS[3];
+    g.beginPath(); g.roundRect(-bw / 2, by - bh / 2, bw, bh, 3 * s); g.fill();
+    g.restore();
+  }
+  p.lastTh = th;
   g.fillStyle = lg('rod' + k, -1.6 * s, 0, 1.6 * s, 0, [[0, STEEL[0]], [0.4, STEEL[1]], [1, STEEL[2]]]);
   g.fillRect(-1.6 * s, 0, 3.2 * s, end);
   // The bob: a turned brass cylinder.
@@ -1106,7 +1147,8 @@ function drawDial(g) {
   g.fillStyle = 'rgb(255 255 255 / 0.25)';
   g.beginPath(); g.ellipse(x - r * 0.3, y - r * 0.35, r * 0.28, r * 0.1, -0.7, 0, TAU); g.fill();
 }
-// The pen leans up and to the right; lifted, it rises off the paper.
+// The pen leans up and right.
+// A lifted pen rises off the paper.
 function drawPen(g) {
   const s = L.k, lift = pen.lift, ink = INKS[inkI], len = 64 * s;
   const px = clamp(penX(), L.paper.x + 2, L.paper.x + L.paper.w - 2), py = clamp(penY(), L.paper.y + 2, L.paper.y + L.paper.h - 2);
@@ -1180,7 +1222,7 @@ function local(e) {
   const r = rect || (rect = panel.getBoundingClientRect());
   return [e.clientX - r.left, e.clientY - r.top];
 }
-// Which bob a point reaches: its column, or close to the bob itself.
+// A point grabs a bob in its column or near the bob.
 function hitBob(x, y) {
   for (let k = 0; k < 2; k++) {
     const Q = L.pend[k], ang = pos(P[k]) * Q.th, by = Q.len * (0.74 + 0.26 * P[k].bob);
@@ -1210,8 +1252,8 @@ panel.addEventListener('pointerdown', e => {
   const [x, y] = local(e);
   if (onWell(x, y)) { setInk((inkI + 1) % INKS.length); return; }
   const k = hitBob(x, y);
+  endAuto();
   if (k < 0 || P[k].held) return;
-  if (auto) return;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   grabs.set(e.pointerId, k);
   grab(k);
@@ -1260,7 +1302,8 @@ addEventListener('keydown', e => {
     if (!e.repeat) newSheet();
   } else if (ARROWS[key]) {
     e.preventDefault();
-    if (e.repeat || !ready || auto) return;
+    if (e.repeat || !ready) return;
+    endAuto();
     const [k, d] = ARROWS[key], p = P[k];
     if (p.held && !p.key) return;
     if (!p.held) grab(k);
@@ -1308,6 +1351,7 @@ function fit() {
   slide = null;
   layout();
   bgC = makeDesk();
+  mechC = makeMech();
   paperTex = makePaper();
   shadowC = makeShadow();
   sheet = makeSheet();
@@ -1360,7 +1404,7 @@ async function boot() {
     W = 1160; H = 652; pr = 1;
     canvas.width = W; canvas.height = H;
     layout();
-    bgC = makeDesk(); paperTex = makePaper(); shadowC = makeShadow();
+    bgC = makeDesk(); mechC = makeMech(); paperTex = makePaper(); shadowC = makeShadow();
     sheet = makeSheet(); sheetG = sheet.g;
     wetC = mk(paperTex.width, paperTex.height); wetG = wetC.getContext('2d'); wetG.setTransform(1, 0, 0, 1, 0, 0);
   }
