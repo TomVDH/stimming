@@ -21,29 +21,32 @@
 }
 .stage canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
-#tools .chip svg, .sets .chip svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-.sets .chip svg .solid { fill: currentColor; stroke: none; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.setter { position: relative; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings opens a tray of glasses above the bar. */
-.sets {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: grid; gap: 8px; width: max-content; padding: 10px; white-space: nowrap;
+#tools .chip svg, .picker .chip svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.picker .chip svg .solid { fill: currentColor; stroke: none; }
+/* The glass stepper: an arrow each side of the name. */
+.picker { position: relative; display: flex; align-items: center; gap: 2px; }
+.picker > .chip { justify-content: center; }
+.picker > .step { padding-inline: 7px; }
+.picker > #glassBtn { min-width: 112px; }
+/* The name opens a tray of all the glasses, from the bar's left edge. */
+.tray {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: grid; grid-template-columns: repeat(3, auto); gap: 6px; padding: 8px;
   background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   opacity: 0; visibility: hidden; transform: translateY(4px);
   transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
 }
-/* A clear strip bridges the gap, so hover survives the move up. */
-.sets::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 12px; }
-.setter.is-open .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .setter:hover .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
-.sets .choices { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; }
-@media (max-width: 520px) { .sets .choices { grid-template-columns: repeat(2, auto); } }
-@media (prefers-reduced-motion: reduce) { .sets { transition: none; transform: none; } }
+.tray .chip { justify-content: flex-start; }
+.picker.is-open .tray { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+/* Phones: stepper, Rewind and (i) on one row, the tools on the next. */
+@media (max-width: 520px) {
+  .bar { column-gap: 12px; }
+  #tools { order: 3; flex-basis: 100%; }
+  .picker > #glassBtn { min-width: 100px; }
+  .tray { grid-template-columns: repeat(2, auto); }
+}
+@media (prefers-reduced-motion: reduce) { .tray { transition: none; transform: none; } }
 </style>
 </head>
 <body>
@@ -58,6 +61,22 @@
       <p class="fail" hidden>Glass needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="picker" id="picker" role="group" aria-label="Glass">
+        <button class="chip step" id="glassPrev" type="button" aria-label="Previous glass"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
+        <button class="chip" id="glassBtn" type="button" aria-expanded="false" aria-controls="glasses"></button>
+        <button class="chip step" id="glassNext" type="button" aria-label="Next glass"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button>
+        <div class="tray" id="glasses" role="group" aria-label="All glasses">
+          <button class="chip" type="button" data-value="annealed" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path d="M5.2 9.6l4.4-4.4"/></svg>Window</button>
+          <button class="chip" type="button" data-value="tempered" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><circle class="solid" cx="5.8" cy="5.8" r="1"/><circle class="solid" cx="10.2" cy="5.8" r="1"/><circle class="solid" cx="5.8" cy="10.2" r="1"/><circle class="solid" cx="10.2" cy="10.2" r="1"/></svg>Tempered</button>
+          <button class="chip" type="button" data-value="laminated" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="4.2"/><rect x="2.5" y="8.8" width="11" height="4.2"/></svg>Laminated</button>
+          <button class="chip" type="button" data-value="armored" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4"/><rect x="4.6" y="4.6" width="6.8" height="6.8"/></svg>Armored</button>
+          <button class="chip" type="button" data-value="reeded" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path d="M5.3 2.5v11M8 2.5v11M10.7 2.5v11"/></svg>Ribbed</button>
+          <button class="chip" type="button" data-value="shuttle" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 5h11.6l-1.8 6.5H4z"/><path d="M5.2 7.2h5.6"/></svg>Shuttle</button>
+          <button class="chip" type="button" data-value="stained" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 2.2v11.6M2.2 8h11.6M3.9 3.9l8.2 8.2"/></svg>Stained</button>
+          <button class="chip" type="button" data-value="rice" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path class="solid" d="M5 5.5l1.8 1-0.6 0.9-1.8-1zM9.6 9l1.8 1-0.6 0.9-1.8-1zM9.4 4.6l1 1.6-0.9 0.5-1-1.6z"/></svg>Rice</button>
+          <button class="chip" type="button" data-value="dichroic" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path class="solid" d="M2.5 13.5L13.5 2.5v11z"/></svg>Rainbow</button>
+        </div>
+      </div>
       <div class="choices" id="tools" role="group" aria-label="Tool">
         <button class="chip" type="button" data-value="hammer" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.2 2.6l4.2 4.2-2.2 2.2-4.2-4.2z"/><path d="M8.1 6.9L2.6 12.4l1 1 5.5-5.5"/></svg>Hammer</button>
         <button class="chip" type="button" data-value="gun" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="M8 1.5v3.5M8 11v3.5M1.5 8h3.5M11 8h3.5"/></svg>Gun</button>
@@ -66,30 +85,12 @@
       <div class="actions">
         <button class="chip" id="rewind" type="button" aria-keyshortcuts="R" aria-disabled="true">Rewind</button>
       </div>
-      <div class="edge">
-        <div class="setter" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="sets" id="sets" role="group" aria-label="Settings">
-            <div class="group"><span>Glass</span><div class="choices" id="glasses" role="group" aria-label="Glass">
-              <button class="chip" type="button" data-value="annealed" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path d="M5.2 9.6l4.4-4.4"/></svg>Window</button>
-              <button class="chip" type="button" data-value="tempered" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><circle class="solid" cx="5.8" cy="5.8" r="1"/><circle class="solid" cx="10.2" cy="5.8" r="1"/><circle class="solid" cx="5.8" cy="10.2" r="1"/><circle class="solid" cx="10.2" cy="10.2" r="1"/></svg>Tempered</button>
-              <button class="chip" type="button" data-value="laminated" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="4.2"/><rect x="2.5" y="8.8" width="11" height="4.2"/></svg>Laminated</button>
-              <button class="chip" type="button" data-value="armored" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4"/><rect x="4.6" y="4.6" width="6.8" height="6.8"/></svg>Armored</button>
-              <button class="chip" type="button" data-value="reeded" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path d="M5.3 2.5v11M8 2.5v11M10.7 2.5v11"/></svg>Ribbed</button>
-              <button class="chip" type="button" data-value="shuttle" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 5h11.6l-1.8 6.5H4z"/><path d="M5.2 7.2h5.6"/></svg>Shuttle</button>
-              <button class="chip" type="button" data-value="stained" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 2.2v11.6M2.2 8h11.6M3.9 3.9l8.2 8.2"/></svg>Stained</button>
-              <button class="chip" type="button" data-value="rice" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path class="solid" d="M5 5.5l1.8 1-0.6 0.9-1.8-1zM9.6 9l1.8 1-0.6 0.9-1.8-1zM9.4 4.6l1 1.6-0.9 0.5-1-1.6z"/></svg>Rice</button>
-              <button class="chip" type="button" data-value="dichroic" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path class="solid" d="M2.5 13.5L13.5 2.5v11z"/></svg>Rainbow</button>
-            </div></div>
-          </div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd id="click-dd">crack</dd></div>
-          <div><dt>Hold</dt><dd id="hold-dd">shatter</dd></div>
-          <div class="fine"><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>tools</dd></div>
-          <div class="fine"><dt><kbd>R</kbd></dt><dd>rewind</dd></div>
-        </dl>
-      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd id="click-dd">crack</dd></div>
+        <div><dt>Hold</dt><dd id="hold-dd">shatter</dd></div>
+        <div class="fine"><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>tools</dd></div>
+        <div class="fine"><dt><kbd>R</kbd></dt><dd>rewind</dd></div>
+      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Glass</h1><div class="vignette" hidden></div></section>
@@ -2649,17 +2650,29 @@ addEventListener('keydown', e => {
   }
 });
 addEventListener('keyup', e => { if (e.key === ' ' && spaceDown) { spaceDown = false; endUse(); } });
-// Settings opens on hover or tap.
-// A tap on a glass, a tap elsewhere or Escape closes it.
-const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn'), glassTray = document.getElementById('glasses');
-const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
-setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
-document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
-addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
-const glassPick = choices(glassTray, v => { setGlass(v); stir(); });
-glassTray.addEventListener('click', e => { if (e.target.closest('.chip')) openSets(false); });
+// The arrows step through the glasses and wrap at each end.
+// The name opens the tray; a tap on a glass, a tap elsewhere or Escape closes it.
+const picker = document.getElementById('picker'), glassBtn = document.getElementById('glassBtn'), glassTray = document.getElementById('glasses');
+const openTray = on => { picker.classList.toggle('is-open', on); glassBtn.setAttribute('aria-expanded', String(on)); };
+glassBtn.addEventListener('click', () => openTray(!picker.classList.contains('is-open')));
+document.addEventListener('pointerdown', e => { if (!picker.contains(e.target)) openTray(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape') openTray(false); });
+const showGlass = () => {
+  const b = glassTray.querySelector(`[data-value="${glass}"]`);
+  glassBtn.innerHTML = b.innerHTML;
+  glassBtn.setAttribute('aria-label', `Glass: ${b.textContent}. Show all glasses.`);
+};
+const glassPick = choices(glassTray, v => { setGlass(v); showGlass(); stir(); });
+glassTray.addEventListener('click', e => { if (e.target.closest('.chip')) openTray(false); });
+const stepGlass = d => {
+  const all = [...glassTray.querySelectorAll('.chip')].map(c => c.dataset.value);
+  glassPick.set(all[(all.indexOf(glass) + d + all.length) % all.length], true);
+};
+document.getElementById('glassPrev').addEventListener('click', () => stepGlass(-1));
+document.getElementById('glassNext').addEventListener('click', () => stepGlass(1));
 rewindB.addEventListener('click', () => { rewind(); stir(); });
 glassPick.set(glass);
+showGlass();
 applyLook();
 new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) stir(); }).observe(panel);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) stir(); });
