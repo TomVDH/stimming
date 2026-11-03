@@ -1,0 +1,1561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Murmuration</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the dusk sky at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --dusk-top: oklch(0.29 0.08 288);
+  --dusk-low: oklch(0.74 0.11 45);
+  --reeds: oklch(0.14 0.025 296);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The sky is 16:9, 4:5 on phones, and dusk in both themes. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  max-height: max(320px, calc(100vh - 176px)); max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden;
+  background: linear-gradient(var(--dusk-top), var(--dusk-low) 68%, var(--reeds) 76%);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+/* The hawk replaces the mouse cursor. */
+@media (hover: hover) { .stage.live { cursor: none; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dusk sky the line keeps a pale tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.94 0.02 300);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Murmuration</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A flock of starlings over a reedbed at dusk. Move the pointer, or drag, to hunt them as a hawk; click or tap to clap. Arrow keys move the hawk; Space claps.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Murmuration needs WebGL 2 with float textures, which this browser lacks.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="roost" type="button">Roost</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Move</span><span class="touch">Drag</span></dt><dd>hawk</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>clap</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>clap</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>move the hawk</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; poke(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const COL = {
+  Sky0: linear(0.87, 0.09, 72),
+  Sky1: linear(0.77, 0.125, 46),
+  Sky2: linear(0.62, 0.14, 352),
+  Sky3: linear(0.45, 0.125, 310),
+  Sky4: linear(0.27, 0.085, 287),
+  Sun: linear(0.93, 0.11, 80),
+  CloudLo: linear(0.85, 0.12, 60),
+  CloudHi: linear(0.7, 0.16, 356),
+  CloudSh: linear(0.42, 0.085, 314),
+  Hill: linear(0.46, 0.075, 318),
+  Water: linear(0.32, 0.065, 296),
+  ReedFar: linear(0.25, 0.05, 308),
+  ReedNear: linear(0.13, 0.026, 296),
+  Plume: linear(0.24, 0.045, 20),
+  Rim: linear(0.82, 0.13, 60),
+  Ink: linear(0.12, 0.022, 292),
+  InkFar: linear(0.36, 0.07, 318),
+  Star: linear(0.96, 0.03, 280),
+};
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.flock.sound', MAXV = 10, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0, clapNext = 0, rushNext = 0;
+let wingG = null, wingF = null, wingP = null, chatG = null, sndAt = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.1 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    bed();
+  }
+  // Off screen, the flock stays silent until the sky returns.
+  if (!running) { ac.suspend()?.catch(() => {}); return; }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the flock roosts, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Scales a buffer channel to a target loudness.
+function norm(d, rms) {
+  let s = 0;
+  for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+  const k = rms / Math.sqrt(s / d.length || 1);
+  for (let i = 0; i < d.length; i++) d[i] *= k;
+}
+// Each voice pans with its place in the sky.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0006);
+  ng.gain.setTargetAtTime(0, t + 0.0006, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 0.8, len);
+  return src;
+}
+// Distant chatter: clicks, chirps and whistles from far birds.
+function chatterBuffer() {
+  const sr = ac.sampleRate, len = Math.round(sr * 9.7), buf = ac.createBuffer(2, len, sr);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const add = (at, n, fn, amp, pan) => {
+    for (let i = 0; i < n && at + i < len; i++) {
+      const v = fn(i) * amp;
+      L[at + i] += v * (1 - pan);
+      R[at + i] += v * pan;
+    }
+  };
+  for (let e = 0; e < 9.7 * 34; e++) {
+    const at = Math.floor(Math.random() * len), amp = 0.03 + 0.5 * Math.random() ** 3, pan = Math.random(), kind = Math.random();
+    if (kind < 0.55) {
+      // A chirp: a quick sine sweep.
+      const n = Math.round(sr * rand(0.012, 0.06)), f0 = rand(2300, 5600), f1 = f0 * rand(0.6, 1.5);
+      let ph = 0;
+      add(at, n, i => { const u = i / n; ph += (TAU * (f0 + (f1 - f0) * u)) / sr; return Math.sin(ph) * Math.sin(Math.PI * u) ** 2; }, amp, pan);
+    } else if (kind < 0.8) {
+      // A rattle: a few dry clicks.
+      const k = 3 + Math.floor(Math.random() * 5), gap = Math.round(sr * rand(0.012, 0.024)), f = (TAU * rand(3000, 6000)) / sr, n = Math.round(sr * 0.003);
+      for (let j = 0; j < k; j++) add(at + j * gap, n, i => Math.sin(f * i) * Math.exp(-i / (n * 0.3)), amp * 0.8, pan);
+    } else {
+      // A whistle: a falling tone with a fast trill.
+      const n = Math.round(sr * rand(0.08, 0.2)), f0 = rand(3000, 4600);
+      let ph = 0;
+      add(at, n, i => { const u = i / n; ph += (TAU * f0 * (1 - 0.3 * u) * (1 + 0.03 * Math.sin((TAU * 32 * i) / sr))) / sr; return Math.sin(ph) * Math.sin(Math.PI * u); }, amp * 0.6, pan);
+    }
+  }
+  norm(L, 0.07);
+  norm(R, 0.07);
+  return buf;
+}
+// The bed: a wing rush steered by the flock, and far chatter.
+function bed() {
+  const sr = ac.sampleRate;
+  const pink = ac.createBuffer(2, Math.round(sr * 4.3), sr);
+  for (let c = 0; c < 2; c++) {
+    const d = pink.getChannelData(c);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < d.length; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.099046;
+      b1 = 0.963 * b1 + w * 0.2965164;
+      b2 = 0.57 * b2 + w * 1.0526913;
+      d[i] = b0 + b1 + b2 + w * 0.1848;
+    }
+    norm(d, 0.25);
+  }
+  const loop = (buf, rate, off) => {
+    const s = ac.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.playbackRate.value = rate;
+    s.start(0, off);
+    return s;
+  };
+  const filter = (type, f, q) => {
+    const b = ac.createBiquadFilter();
+    b.type = type;
+    b.frequency.value = f;
+    b.Q.value = q;
+    return b;
+  };
+  const gain = v => { const g = ac.createGain(); g.gain.value = v; return g; };
+  const lfo = (f, depth, param) => {
+    const o = ac.createOscillator();
+    o.frequency.value = f;
+    o.connect(gain(depth)).connect(param);
+    o.start();
+  };
+  // Thousands of wingbeats blur into a soft, fluttering rush.
+  const bp = filter('bandpass', 850, 0.6), flut = gain(1), wg = gain(0);
+  lfo(13.3, 0.16, flut.gain);
+  lfo(8.7, 0.1, flut.gain);
+  let end = out;
+  if (ac.createStereoPanner) {
+    const p = ac.createStereoPanner();
+    p.connect(out);
+    wingP = p.pan;
+    end = p;
+  }
+  loop(pink, 1, 0).connect(bp).connect(filter('lowpass', 2600, 0.5)).connect(flut).connect(wg).connect(end);
+  wingG = wg.gain;
+  wingF = bp.frequency;
+  const chat = chatterBuffer(), cg = gain(0), swell = gain(1), hp = filter('highpass', 1500, 0.5), lp = filter('lowpass', 5000, 0.5);
+  hp.connect(lp).connect(swell).connect(cg).connect(out);
+  loop(chat, 1, 0).connect(hp);
+  loop(chat, 0.91, 4.3).connect(hp);
+  lfo(0.071, 0.3, swell.gain);
+  chatG = cg.gain;
+}
+// A hand clap: three quick slaps and a short room tail.
+function clapSound(x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < clapNext) return;
+  clapNext = t + 0.08;
+  const d = bus(a, x), g = level() * jit(0.05), f = 1250 * jit(0.06);
+  [0, 0.0085, 0.0165].forEach((o, i) => burst(a, d, t + o + Math.random() * 0.002, 'bandpass', f * (1 + 0.05 * i), 1.5, (0.95 - 0.24 * i) * g, 0.0045, 0.03));
+  burst(a, d, t, 'lowpass', 320, 0.7, 0.45 * g, 0.012, 0.06);
+  const tail = burst(a, d, t + 0.02, 'bandpass', f * 0.8, 0.7, 0.2 * g, 0.06, 0.32);
+  track(tail, d);
+}
+// Wings erupting: a fluttering surge of filtered noise.
+function rush(x, amt, dur = 1.3) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < rushNext) return;
+  rushNext = t + 0.12;
+  const d = bus(a, x), src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain(), fl = a.createGain(), o = a.createOscillator(), og = a.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(420 * jit(0.1), t);
+  bp.frequency.exponentialRampToValueAtTime(1400 * jit(0.08), t + 0.22);
+  bp.frequency.exponentialRampToValueAtTime(560, t + dur);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.32 * amt * level() * jit(0.06), t + 0.06);
+  g.gain.setTargetAtTime(0, t + 0.1, dur / 4);
+  // The surge flutters at a wingbeat rate.
+  o.frequency.value = 15 * jit(0.1);
+  og.gain.value = 0.35;
+  fl.gain.value = 1;
+  o.connect(og).connect(fl.gain);
+  src.connect(bp).connect(fl).connect(g).connect(d);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + dur + 0.3);
+  o.start(t);
+  o.stop(t + dur + 0.3);
+  track(src, bp, fl, g, og, d);
+}
+let swell = 0;
+// The rush follows the birds near the hawk; chatter follows the whole flock.
+function soundTick(now) {
+  if (!wingG || now - sndAt < 66) return;
+  const a = live();
+  if (!a) return;
+  sndAt = now;
+  const t = a.currentTime, air = clamp(probe.air), near = hawk.a * (1 - Math.exp(-probe.near / 420));
+  const quiet = reduce ? 0.8 : 1, roosting = roostT >= 0 ? clamp(1 - (roostT - 8) / 3.5) : 1;
+  wingG.setTargetAtTime((0.03 * air + 0.55 * near + 0.18 * swell) * quiet * roosting, t, 0.12);
+  wingF.setTargetAtTime(650 + 750 * near + 500 * clamp(probe.alarmNear * 3), t, 0.2);
+  wingP?.setTargetAtTime(clamp(hawk.x / A, -1, 1) * 0.6 * hawk.a, t, 0.25);
+  const roostBuzz = roostT >= 0 ? Math.sin(Math.PI * clamp(roostT / 11.5)) : 0;
+  chatG.setTargetAtTime((0.045 * air + 0.05 * roostBuzz + 0.05 * clamp(probe.alarm * 4)) * quiet * roosting, t, 0.5);
+}
+
+/* ---------- the sky's geometry ---------- */
+// World units: the sky is two units tall at depth zero.
+// The camera sits at z = CZ and looks down negative z.
+// Bird state lives in TW-wide float textures.
+const TW = 128, ROWS_MAX = 144, CZ = 4, CELL = 0.07, GZ = 16, TX = 4, TY = 4, TAU_E = 0.2;
+const SPAN = 0.017, HAWK_Z = 0.35, KEY_SPEED = 1.1;
+let W = 0, H = 0, A = 16 / 9, pr = 1;
+let rows = 64, GX = 0, GY = 0, AW = 0, AH = 0, fieldA = 0;
+const GMIN = [0, 0, 0];
+
+/* ---------- WebGL ---------- */
+const HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+`;
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const HASH = `
+uint ih(uint x) {
+  x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+  return x;
+}
+float h01(uint x) { return float(ih(x) >> 8) / 16777216.0; }
+`;
+// Field lookups: the 3D grid is tiled as slices in a 2D atlas.
+const FIELD = `
+uniform vec3 uGMin, uGf;
+uniform float uCell;
+uniform vec2 uAtlas;
+vec4 fs(sampler2D t, vec3 p) {
+  vec3 g = clamp((p - uGMin) / uCell - 0.5, vec3(0.0), uGf - 1.0);
+  float z0 = floor(g.z), fz = g.z - z0, z1 = min(z0 + 1.0, uGf.z - 1.0);
+  vec2 t0 = vec2(mod(z0, ${TX}.0), floor(z0 / ${TX}.0)) * uGf.xy;
+  vec2 t1 = vec2(mod(z1, ${TX}.0), floor(z1 / ${TX}.0)) * uGf.xy;
+  return mix(texture(t, (t0 + g.xy + 0.5) / uAtlas), texture(t, (t1 + g.xy + 0.5) / uAtlas), fz);
+}
+`;
+// Each bird adds its velocity, a count and its alarm to one cell.
+const SPLAT_VS = `${HEAD}
+uniform sampler2D uPos, uVel, uAux;
+uniform vec3 uGMin, uGf;
+uniform float uCell;
+uniform vec2 uAtlas;
+out vec4 vV;
+out float vE;
+void main() {
+  ivec2 ij = ivec2(gl_VertexID % ${TW}, gl_VertexID / ${TW});
+  vec4 P = texelFetch(uPos, ij, 0), V = texelFetch(uVel, ij, 0);
+  vec3 g = floor((P.xyz - uGMin) / uCell);
+  gl_PointSize = 1.0;
+  vV = vec4(V.xyz, 1.0);
+  vE = exp(-V.w / ${TAU_E});
+  if (texelFetch(uAux, ij, 0).z > 0.5 || any(lessThan(g, vec3(0.0))) || any(greaterThanEqual(g, uGf))) {
+    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+    return;
+  }
+  vec2 px = vec2(mod(g.z, ${TX}.0), floor(g.z / ${TX}.0)) * uGf.xy + g.xy + 0.5;
+  gl_Position = vec4(px / uAtlas * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const SPLAT_FS = `${HEAD}
+in vec4 vV;
+in float vE;
+layout(location = 0) out vec4 o0;
+layout(location = 1) out vec4 o1;
+void main() {
+  o0 = vV;
+  o1 = vec4(vE, 0.0, 0.0, 0.0);
+}`;
+// A five-tap blur along one grid axis, within the atlas tiles.
+const BLUR_FS = `${HEAD}
+uniform sampler2D uA, uB;
+uniform ivec3 uStep, uG;
+layout(location = 0) out vec4 oA;
+layout(location = 1) out vec4 oB;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy), tile = p / uG.xy;
+  ivec3 c = ivec3(p - tile * uG.xy, tile.x + tile.y * ${TX});
+  oA = vec4(0.0);
+  oB = vec4(0.0);
+  if (c.z >= uG.z) return;
+  for (int k = -2; k <= 2; k++) {
+    ivec3 q = c + uStep * k;
+    if (any(lessThan(q, ivec3(0))) || any(greaterThanEqual(q, uG))) continue;
+    float w = k == 0 ? 0.375 : (k == 1 || k == -1) ? 0.25 : 0.0625;
+    ivec2 t = ivec2(q.z % ${TX}, q.z / ${TX}) * uG.xy + q.xy;
+    oA += texelFetch(uA, t, 0) * w;
+    oB += texelFetch(uB, t, 0) * w;
+  }
+}`;
+// One step of flight for every bird.
+const UPDATE_FS = `${HEAD}
+uniform sampler2D uPos, uVel, uAux, uF0, uF1;
+${FIELD}
+uniform float uDt, uTime, uA, uStretch, uWake, uRoostT;
+uniform vec3 uM, uC0, uC1, uC2;
+uniform vec4 uHawk, uClap, uSeed, uRoost;
+uniform vec2 uOrigin;
+uniform uint uFrame;
+layout(location = 0) out vec4 oPos;
+layout(location = 1) out vec4 oVel;
+layout(location = 2) out vec4 oAux;
+${HASH}
+const float CZ = ${CZ}.0, RHO = 12.0, V0 = 0.55;
+float dn(vec3 p) { return fs(uF0, p).w; }
+vec3 grad(vec3 p, float h) {
+  vec3 x = vec3(h, 0.0, 0.0), y = vec3(0.0, h, 0.0), z = vec3(0.0, 0.0, h);
+  return vec3(dn(p + x) - dn(p - x), dn(p + y) - dn(p - y), dn(p + z) - dn(p - z)) / (2.0 * h);
+}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  uint id = uint(ij.y * ${TW} + ij.x);
+  vec4 P = texelFetch(uPos, ij, 0), V = texelFetch(uVel, ij, 0), X = texelFetch(uAux, ij, 0);
+  vec3 p = P.xyz, v = V.xyz;
+  float age = V.w, roll = X.x, landed = X.z, dt = uDt;
+  float r1 = h01(id), r2 = h01(id ^ 0x5bd1e995u), r3 = h01(id * 3u + 0x27d4eb2du);
+  if (landed > 0.5) {
+    // Roosting birds wait in the reeds until the flock wakes.
+    if (uWake < 0.0 || uWake < r1 * 0.8) { oPos = P; oVel = V; oAux = X; return; }
+    landed = 0.0;
+    v = vec3((r2 - 0.5) * 0.8, 0.9 + 0.8 * r3, (r1 - 0.5) * 0.6);
+    age = 0.0;
+  }
+  vec4 F = fs(uF0, p);
+  float n = F.w;
+  vec3 vbar = F.xyz / max(n, 1e-3);
+  float al = fs(uF1, p).x / max(n, 1.0);
+  vec3 gN = grad(p, uCell), gW = grad(p, uCell * 3.0);
+  float sp = length(v);
+  vec3 f = sp > 1e-4 ? v / sp : vec3(1.0, 0.0, 0.0);
+  float e = exp(-age / ${TAU_E});
+  float calm = 1.0 - 0.75 * e;
+  vec3 a = vec3(0.0);
+  // Alignment, cohesion at a wide scale, separation at a narrow one.
+  a += 3.2 * (vbar - v) * n / (n + 2.0);
+  a += 0.16 * gW / (n + 4.0) * calm;
+  a -= 0.22 * gN / RHO * (0.25 + smoothstep(0.5 * RHO, 1.6 * RHO, n));
+  // Each bird favours one of three roaming leaders.
+  vec3 C = r1 < 0.334 ? uC0 : r1 < 0.667 ? uC1 : uC2;
+  vec3 T = mix(uM, C, uStretch * (0.4 + 0.6 * r2));
+  vec3 dT = T - p;
+  float dl = length(dT);
+  a += 0.9 * dT / max(dl, 1e-3) * min(dl, 1.2) * calm;
+  // A slow private wander breaks symmetry.
+  float t = uTime;
+  a += 0.3 * vec3(sin(t * 0.83 + r1 * 40.0), 0.7 * sin(t * 1.07 + r2 * 40.0), 0.8 * sin(t * 0.71 + r3 * 40.0));
+  // Starlings prefer level flight.
+  a.y -= 0.5 * v.y;
+  // Soft walls keep the flock in the frame.
+  float k = CZ / (CZ - p.z);
+  vec2 s = p.xy * k;
+  float wx = uA - 0.3, floorY = uRoost.w > 0.0 ? -3.0 : -0.24;
+  a.x -= 5.0 * (max(s.x - wx, 0.0) - max(-wx - s.x, 0.0));
+  a.y -= 5.0 * max(s.y - 0.7, 0.0);
+  a.y += 5.0 * max(floorY - s.y, 0.0);
+  a.z -= 5.0 * (max(p.z - 0.38, 0.0) - max(-0.38 - p.z, 0.0));
+  // Speed holds near cruise; alarm adds a burst.
+  float v0 = V0 * (0.9 + 0.2 * r2) * (1.0 + 0.6 * e);
+  a += 2.4 * (v0 - sp) * f;
+  // Alarm spreads from neighbour to neighbour after a short delay.
+  bool ready = age > 1.3;
+  bool trig = ready && al > 0.14 && h01(id ^ ih(uFrame)) < 1.0 - exp(-16.0 * dt);
+  if (uHawk.w > 0.0) {
+    vec2 dh = s - uHawk.xy;
+    float rh = length(dh), q = max(1.0 - rh / uHawk.z, 0.0);
+    a.xy += 8.0 * uHawk.w * q * q * dh / max(rh, 1e-3);
+    a.z += 2.4 * uHawk.w * q * q * (r3 - 0.5);
+    trig = trig || (ready && q > 0.45 && uHawk.w > 0.3);
+  }
+  if (uSeed.w > 0.0 && ready && distance(p, uSeed.xyz) < uSeed.w) trig = true;
+  if (uClap.w > 0.0) {
+    vec2 dc = s - uClap.xy;
+    float rc = length(dc), q = 1.0 - rc / uClap.z;
+    if (q > 0.0) {
+      v.xy += uClap.w * (0.5 + 0.9 * q) * dc / max(rc, 1e-3);
+      v.y += 0.25 * uClap.w * q;
+      v.z += (r3 - 0.5) * uClap.w * q;
+      trig = true;
+    }
+  }
+  if (trig) age = 0.0;
+  e = exp(-age / ${TAU_E});
+  // Alarmed birds jink away from the source.
+  vec2 aw = s - uOrigin;
+  a.xy += 3.2 * e * aw / max(length(aw), 0.05);
+  // Roosting pulls the flock down into the reeds in a funnel.
+  if (uRoost.w > 0.0) {
+    vec3 dR = uRoost.xyz - p;
+    float lr = length(dR);
+    vec3 sw = normalize(cross(vec3(0.0, 1.0, 0.0), dR + vec3(1e-3, 0.0, 1e-3)));
+    a = mix(a, a * 0.35, uRoost.w);
+    a += uRoost.w * (2.8 + 6.0 * smoothstep(7.0, 10.0, uRoostT)) * (dR / max(lr, 1e-3) * min(lr, 1.0) + 0.6 * sw * smoothstep(0.1, 0.6, lr));
+    if (s.y < -0.62 || uRoostT > 11.5) { landed = 1.0; v = vec3(0.0); }
+  }
+  float am = length(a);
+  if (am > 7.0) a *= 7.0 / am;
+  if (landed < 0.5) {
+    v += a * dt;
+    float vm = length(v);
+    if (vm > 1.7) v *= 1.7 / vm;
+    p += v * dt;
+  }
+  // Birds bank into the turn.
+  vec3 sd = cross(f, vec3(0.0, 1.0, 0.0));
+  float sl = length(sd);
+  float lat = sl > 1e-3 ? dot(a, sd / sl) : 0.0;
+  roll = mix(roll, clamp(atan(lat * 0.45) * 1.3, -1.25, 1.25), 1.0 - exp(-dt * 9.0));
+  // Wingbeats quicken in alarm.
+  float ph = fract(P.w + dt * 7.0 * (0.85 + 0.3 * r3) * (1.0 + 0.7 * e));
+  age = min(age + dt, 60.0);
+  oPos = vec4(p, ph);
+  oVel = vec4(v, age);
+  oAux = vec4(roll, 0.0, landed, 0.0);
+}`;
+// Birds as tiny 3D silhouettes: body, two wings, seen from below.
+const BIRD_VS = `${HEAD}
+uniform sampler2D uPos, uVel, uAux;
+uniform vec2 uRes;
+uniform float uA, uTime, uSpan, uFade;
+uniform int uN;
+uniform vec4 uHP, uHV;
+uniform vec2 uHR;
+flat out vec4 vP0, vP1, vP2;
+flat out vec3 vK;
+out vec2 vPx;
+${HASH}
+const float CZ = ${CZ}.0;
+void main() {
+  int i = gl_InstanceID;
+  vec3 p, v;
+  float ph, roll, e, op, haze, span, flap, nl, tl, sweep, br;
+  if (i == uN) {
+    p = uHP.xyz; v = uHV.xyz; ph = uHV.w; roll = uHR.x; flap = uHR.y;
+    e = 0.0; op = uHP.w * 1.5; haze = 0.0; span = uSpan * 3.4;
+    nl = 0.2; tl = 0.42; sweep = 0.3; br = 0.045;
+  } else {
+    ivec2 ij = ivec2(i % ${TW}, i / ${TW});
+    vec4 X = texelFetch(uAux, ij, 0);
+    if (X.z > 0.5) { gl_Position = vec4(2.0, 2.0, 0.0, 1.0); return; }
+    vec4 P = texelFetch(uPos, ij, 0), V = texelFetch(uVel, ij, 0);
+    p = P.xyz; v = V.xyz; ph = P.w; roll = X.x;
+    e = exp(-V.w / ${TAU_E});
+    float r = h01(uint(i));
+    span = uSpan * (0.85 + 0.3 * r) * (1.0 + 0.25 * e);
+    op = 0.9 * (1.0 + 0.4 * e) * uFade;
+    haze = clamp(0.5 - p.z * 1.1, 0.0, 1.0);
+    // Starlings mix bursts of flapping with short glides.
+    flap = max(smoothstep(-0.5, 0.1, sin(uTime * (0.6 + 0.5 * r) + r * 40.0)), e);
+    nl = 0.27; tl = 0.3; sweep = 0.13; br = 0.07;
+  }
+  if (op < 0.01) { gl_Position = vec4(2.0, 2.0, 0.0, 1.0); return; }
+  float fl = length(v);
+  vec3 f = fl > 1e-4 ? v / fl : vec3(1.0, 0.0, 0.0);
+  vec3 sd = cross(f, vec3(0.0, 1.0, 0.0));
+  float sl = length(sd);
+  sd = sl > 1e-3 ? sd / sl : vec3(0.0, 0.0, 1.0);
+  vec3 up = cross(sd, f);
+  float cr = cos(roll), sr = sin(roll);
+  vec3 u2 = up * cr + sd * sr, s2 = sd * cr - up * sr;
+  float th = mix(0.1, 0.15 + 0.6 * sin(ph * 6.2831853), flap), hs = span * 0.5;
+  vec3 back = -f * span * sweep, lift = u2 * sin(th) * hs, reach = s2 * cos(th) * hs;
+  float k = CZ / (CZ - p.z), ppu = k * 0.5 * uRes.y;
+  vec2 c = (p.xy * k / vec2(uA, 1.0) * 0.5 + 0.5) * uRes;
+  // A low viewpoint shows a little of each wing's underside.
+  #define PR(o) (c + vec2((o).x, (o).y * 0.9 + (o).z * 0.43) * ppu)
+  vec2 pn = PR(f * span * nl), pt = PR(-f * span * tl);
+  vec2 pf = PR(f * span * 0.07), pb = PR(-f * span * 0.13);
+  vec2 pl = PR(lift - reach + back), pr = PR(lift + reach + back);
+  float rb = max(br * span * ppu, 0.35);
+  vec2 mn = min(min(pn, pt), min(pl, pr)) - rb - 1.5, mx = max(max(pn, pt), max(pl, pr)) + rb + 1.5;
+  vec2 px = mix(mn, mx, vec2(gl_VertexID & 1, gl_VertexID >> 1));
+  gl_Position = vec4(px / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vPx = px;
+  vP0 = vec4(pn, pt);
+  vP1 = vec4(pf, pb);
+  vP2 = vec4(pl, pr);
+  vK = vec3(rb, min(op, 1.0) * (i == uN ? 1.6 : 1.0), haze);
+}`;
+const BIRD_FS = `${HEAD}
+in vec2 vPx;
+flat in vec4 vP0, vP1, vP2;
+flat in vec3 vK;
+out vec4 o;
+float seg(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a, ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0));
+}
+float cr2(vec2 a, vec2 b) { return a.x * b.y - a.y * b.x; }
+// Distance to a triangle; a degenerate one acts as its edges.
+float tri(vec2 p, vec2 a, vec2 b, vec2 c) {
+  float d = min(seg(p, a, b), min(seg(p, b, c), seg(p, c, a)));
+  float c0 = cr2(b - a, p - a), c1 = cr2(c - b, p - b), c2 = cr2(a - c, p - c);
+  bool inside = (c0 >= 0.0 && c1 >= 0.0 && c2 >= 0.0) || (c0 <= 0.0 && c1 <= 0.0 && c2 <= 0.0);
+  return inside && abs(cr2(b - a, c - a)) > 1e-3 ? -d : d;
+}
+void main() {
+  float d = seg(vPx, vP0.xy, vP0.zw) - vK.x;
+  d = min(d, tri(vPx, vP1.xy, vP1.zw, vP2.xy));
+  d = min(d, tri(vPx, vP1.xy, vP1.zw, vP2.zw));
+  float cov = clamp(0.5 - d, 0.0, 1.0) * vK.y;
+  if (cov < 0.004) discard;
+  o = vec4(cov, cov * vK.z, 0.0, 0.0);
+}`;
+// Two numbers for sound: birds near the hawk, and the whole flock.
+const PROBE_FS = `${HEAD}
+uniform sampler2D uF0, uF1;
+${FIELD}
+uniform vec2 uHawk;
+uniform ivec2 uAt;
+out vec4 o;
+void main() {
+  vec4 r = vec4(0.0);
+  if (gl_FragCoord.x < 1.0) {
+    for (int z = 0; z < ${GZ}; z++) {
+      float pz = uGMin.z + (float(z) + 0.5) * uCell;
+      vec2 c = uHawk * (${CZ}.0 - pz) / ${CZ}.0;
+      for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+          vec3 p = vec3(c + vec2(i, j) * uCell * 1.5, pz);
+          r.x += fs(uF0, p).w;
+          r.y += fs(uF1, p).x;
+        }
+      }
+    }
+  } else {
+    for (int y = 1; y < uAt.y; y += 3) {
+      for (int x = 1; x < uAt.x; x += 3) {
+        r.x += texelFetch(uF0, ivec2(x, y), 0).w;
+        r.y += texelFetch(uF1, ivec2(x, y), 0).x;
+      }
+    }
+    r *= 9.0;
+  }
+  o = r;
+}`;
+// The dusk: sky, clouds, far shore, water, birds and the reedbed.
+const COMP_FS = `${HEAD}
+uniform sampler2D uBirds;
+uniform vec2 uRes;
+uniform float uT, uSway, uAsp, uSunX;
+uniform vec3 uSky0, uSky1, uSky2, uSky3, uSky4, uSun, uCloudLo, uCloudHi, uCloudSh, uHill, uWater;
+uniform vec3 uReedFar, uReedNear, uPlume, uRim, uInk, uInkFar, uStar;
+out vec4 o;
+const float YH = 0.3;
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec4 hash4(vec2 p) {
+  vec4 q = fract(p.xyxy * vec4(0.1031, 0.103, 0.0973, 0.1099));
+  q += dot(q, q.wzxy + 33.33);
+  return fract((q.xxyz + q.yzzw) * q.zywx);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * noise(p); p = p * 2.03 + 17.1; a *= 0.5; }
+  return s;
+}
+vec3 sky(vec2 q) {
+  float t = clamp((q.y - YH) / (1.0 - YH), 0.0, 1.0);
+  vec3 c = mix(uSky0, uSky1, smoothstep(0.0, 0.16, t));
+  c = mix(c, uSky2, smoothstep(0.1, 0.42, t));
+  c = mix(c, uSky3, smoothstep(0.35, 0.72, t));
+  c = mix(c, uSky4, smoothstep(0.62, 1.0, t));
+  // The set sun warms the low sky.
+  vec2 sd = (q - vec2(uSunX, YH - 0.02)) * vec2(0.55, 1.5);
+  float r2 = dot(sd, sd);
+  return c + uSun * (0.5 * exp(-r2 * 9.0) + 0.16 * exp(-r2 * 1.5));
+}
+// Long cloud banks; their undersides catch the sunset.
+vec3 clouds(vec2 q, vec3 c) {
+  float t = (q.y - YH) / (1.0 - YH);
+  if (t < 0.03) return c;
+  vec2 cp = vec2(q.x * 1.3 + uT * 0.005, q.y * 8.5);
+  float w = fbm(cp * 0.5 + 3.7);
+  float n = fbm(cp + vec2(w * 1.2, 0.0));
+  float band = smoothstep(0.03, 0.2, t) * (1.0 - smoothstep(0.8, 1.0, t)) * (0.55 + 0.45 * sin(q.y * 11.0 + 1.0));
+  float d = smoothstep(0.5, 0.78, n) * band;
+  if (d <= 0.0) return c;
+  float nb = fbm(cp + vec2(w * 1.2, -0.45));
+  float lit = clamp((n - nb) * 3.0 + 0.55, 0.0, 1.0);
+  vec3 l = mix(uCloudLo, uCloudHi, smoothstep(0.1, 0.6, t));
+  l *= 1.0 + 0.6 * exp(-pow((q.x - uSunX) * 0.9, 2.0)) * (1.0 - t);
+  return mix(c, mix(uCloudSh * (0.8 + 0.4 * (1.0 - t)), l, lit), d * 0.9);
+}
+float stars(vec2 q) {
+  vec2 g = q * 150.0, id = floor(g), f = fract(g) - 0.5;
+  float h = hash(id + 11.0);
+  if (h < 0.986) return 0.0;
+  float r = length(f - (hash4(id).xy - 0.5) * 0.6);
+  return smoothstep(0.2, 0.0, r) * (h - 0.986) / 0.014 * smoothstep(0.62, 0.95, q.y) * (0.75 + 0.25 * sin(uT * 2.0 + h * 900.0));
+}
+// The far tree line along the shore.
+float ridge(float x) {
+  return YH + 0.006 + 0.02 * noise(vec2(x * 2.3, 1.7)) + 0.011 * noise(vec2(x * 9.0, 4.1)) + 0.008 * smoothstep(0.3, 0.9, noise(vec2(x * 41.0, 2.2)));
+}
+// Coverage of one reed layer, with its plumes and their backlit rims.
+float reeds(vec2 q, float L, float cw, float base, float tall, float px, out float pl, out float rim) {
+  pl = 0.0;
+  rim = 0.0;
+  float m = base + 0.018 * noise(vec2(q.x * 6.0, L * 7.0)) + 0.01 * noise(vec2(q.x * 29.0, L * 3.0)) + 0.005 * noise(vec2(q.x * 95.0, L));
+  float cov = clamp((m - q.y) / px + 0.5, 0.0, 1.0);
+  if (q.y > base + tall + 0.06 || cov >= 1.0) return cov;
+  float ci = floor(q.x / cw), th = L > 1.5 ? 0.6 : 1.0;
+  for (int k = -2; k <= 2; k++) {
+    float c = ci + float(k);
+    vec4 h = hash4(vec2(c, L * 37.0));
+    float y0 = base - 0.03, top = base + tall * (0.25 + 0.75 * h.y), sp = top - y0;
+    float gust = sin(uT * 0.8 - c * cw * 5.0) * 0.65 + sin(uT * 2.1 + h.x * 6.28) * 0.2;
+    float bend = ((h.z - 0.3) * 0.05 + uSway * gust * 0.011 * (0.5 + h.w)) * sp / 0.15;
+    float xb = (c + 0.15 + 0.7 * h.x) * cw;
+    float ty = clamp((q.y - y0) / sp, 0.0, 1.0);
+    float w = (0.001 + 0.0008 * h.w) * (1.0 - 0.45 * ty) * th;
+    if (q.y < top) cov = max(cov, clamp((w - abs(q.x - xb - bend * ty * ty)) / px + 0.5, 0.0, 1.0));
+    // One blade leaves each stem, rises and droops.
+    float tl = 0.25 + 0.4 * h.x, lb = y0 + sp * tl, side = h.w > 0.5 ? 1.0 : -1.0;
+    float dx = (q.x - xb - bend * tl * tl) * side, ll = (0.025 + 0.03 * h.y) * th;
+    if (dx > 0.0 && dx < ll) {
+      float s = dx / ll;
+      float yc = lb + ll * (1.1 * s - 1.3 * s * s);
+      float wl = 0.006 * th * sqrt(s) * (1.0 - s);
+      cov = max(cov, clamp((wl - abs(q.y - yc)) / px + 0.5, 0.0, 1.0));
+    }
+    // Plumes nod downwind at the stem tips.
+    if (h.w < 0.15) continue;
+    vec2 tip = vec2(xb + bend, top);
+    vec2 ax = normalize(normalize(vec2(2.0 * bend / sp, 1.0)) + vec2(0.55 + 0.5 * h.z + uSway * gust * 0.2, 0.0));
+    float len = (0.022 + 0.02 * h.y) * th;
+    vec2 d = q - tip;
+    float s = dot(d, ax) / len;
+    if (s < -0.1 || s > 1.1) continue;
+    float acr = dot(d, vec2(-ax.y, ax.x)) + sign(ax.x) * s * s * len * 0.35;
+    float sc = clamp(s, 0.0, 1.0);
+    float wid = (0.0032 + 0.0025 * h.x) * th * pow(sin(sc * 3.14159), 0.6) * (0.6 + 0.6 * sc);
+    float fl = 0.75 + 0.5 * noise(vec2(sc * 18.0 + c * 3.1, acr / max(wid, 1e-4)));
+    float dp = abs(acr) - wid * fl;
+    float pv = clamp(0.5 - dp / px, 0.0, 1.0) * 0.95;
+    if (pv > pl) { pl = pv; rim = smoothstep(-wid * 0.8, 0.0, dp) * smoothstep(0.0, 0.3, sc); }
+  }
+  return cov;
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+void main() {
+  vec2 fc = gl_FragCoord.xy, uv = fc / uRes, q = vec2(uv.x * uAsp, uv.y);
+  float px = 1.0 / uRes.y;
+  vec3 col, land = mix(uHill, sky(vec2(q.x, YH + 0.02)), 0.3);
+  if (q.y >= YH) {
+    col = clouds(q, sky(q));
+    col += uStar * stars(q);
+    // The evening star.
+    vec2 vd = (q - vec2(uAsp * 0.21, 0.86)) / px;
+    col += uStar * (1.4 * exp(-dot(vd, vd) * 0.35) + 0.05 * exp(-length(vd) * 0.25));
+    col = mix(col, land, clamp((ridge(q.x) - q.y) / px + 0.5, 0.0, 1.0));
+  } else {
+    float dy = YH - q.y;
+    float rip = (noise(vec2(q.x * 2.0, dy * 260.0 - uT * 0.8)) - 0.5) * (0.002 + dy * 0.05);
+    vec2 m = vec2(q.x + rip, YH + dy);
+    col = clouds(m, sky(m));
+    col = mix(col, land * 0.9, clamp((ridge(m.x) - m.y) / px + 0.5, 0.0, 1.0));
+    // Mirrored birds darken the water.
+    float rb = texture(uBirds, vec2(m.x / uAsp, m.y)).r;
+    col *= mix(1.0, exp(-1.6 * rb), 0.8);
+    col = mix(col * 0.8, uWater, 0.16 + 0.5 * smoothstep(0.0, 0.1, dy));
+    // The sun lays a broken glitter path.
+    float g = exp(-pow((q.x - uSunX) * 7.0, 2.0)) * smoothstep(0.55, 0.85, noise(vec2(q.x * 60.0, dy * 400.0 + uT * 1.5)));
+    col += uSun * (g * 0.45 * (1.0 - smoothstep(0.0, 0.09, dy)) + 0.12 * exp(-dy * 900.0));
+  }
+  vec4 B = texelFetch(uBirds, ivec2(fc), 0);
+  if (B.r > 1e-3) {
+    vec3 ink = mix(uInk, mix(uInkFar, col, 0.45), clamp(B.g / B.r, 0.0, 1.0));
+    col = mix(ink, col, exp(-2.3 * B.r));
+  }
+  if (q.y < 0.36) {
+    float pl, rim, sunK = 0.45 + 0.55 * exp(-pow((q.x - uSunX) * 1.4, 2.0));
+    float cb = reeds(q, 2.0, 0.0085, 0.195, 0.07, px, pl, rim);
+    vec3 far = mix(uReedFar, col, 0.15);
+    col = mix(col, far, cb);
+    col = mix(col, mix(far * 1.3, uPlume * 1.6, 0.5) + uRim * rim * sunK * 0.55, pl);
+    float cf = reeds(q, 1.0, 0.017, 0.105, 0.15, px, pl, rim);
+    col = mix(col, uReedNear, cf);
+    col = mix(col, uPlume + uRim * rim * sunK * 0.45, pl);
+  }
+  vec2 v = uv - 0.5;
+  col *= 1.0 - 0.32 * dot(v, v);
+  o = vec4(srgb(col) + (hash(fc + fract(uT) * 91.0) - 0.5) / 255.0, 1.0);
+}`;
+
+let gl = null, P = null, vao = null, ready = false;
+let S = [], cur = 0, FA = null, FB = null, birdT = null, probeT = null, pbo = null, fence = null;
+const probeBuf = new Float32Array(8);
+const probe = { near: 0, alarmNear: 0, air: 1, alarm: 0 };
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+function texParams(filter) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+function tex(w, h, fmt, filter) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  texParams(filter);
+  return t;
+}
+// A framebuffer that draws into several textures at once.
+function target(texs) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  gl.drawBuffers(texs.map((t, i) => gl.COLOR_ATTACHMENT0 + i));
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Float targets unavailable');
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return fb;
+}
+function bindTex(unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+}
+
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float render targets unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    splat: compile(SPLAT_VS, SPLAT_FS), blur: compile(TRI, BLUR_FS), upd: compile(TRI, UPDATE_FS),
+    bird: compile(BIRD_VS, BIRD_FS), probe: compile(TRI, PROBE_FS), comp: compile(TRI, COMP_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  const grid = ['uGMin', 'uGf', 'uCell', 'uAtlas'];
+  uni(P.splat, ['uPos', 'uVel', 'uAux', ...grid]);
+  uni(P.blur, ['uA', 'uB', 'uStep', 'uG']);
+  uni(P.upd, ['uPos', 'uVel', 'uAux', 'uF0', 'uF1', ...grid, 'uDt', 'uTime', 'uA', 'uStretch', 'uWake', 'uRoostT', 'uM', 'uC0', 'uC1', 'uC2', 'uHawk', 'uClap', 'uSeed', 'uRoost', 'uOrigin', 'uFrame']);
+  uni(P.bird, ['uPos', 'uVel', 'uAux', 'uRes', 'uA', 'uTime', 'uSpan', 'uFade', 'uN', 'uHP', 'uHV', 'uHR']);
+  uni(P.probe, ['uF0', 'uF1', ...grid, 'uHawk', 'uAt']);
+  uni(P.comp, ['uBirds', 'uRes', 'uT', 'uSway', 'uAsp', 'uSunX', ...Object.keys(COL).map(k => 'u' + k)]);
+  // Samplers keep fixed units: state 0-2, field 3-4, birds 5.
+  for (const q of [P.splat, P.upd, P.bird]) ['uPos', 'uVel', 'uAux'].forEach((n, i) => { gl.useProgram(q.p); gl.uniform1i(q.u[n], i); });
+  for (const q of [P.upd, P.probe]) { gl.useProgram(q.p); gl.uniform1i(q.u.uF0, 3); gl.uniform1i(q.u.uF1, 4); }
+  gl.useProgram(P.blur.p);
+  gl.uniform1i(P.blur.u.uA, 3);
+  gl.uniform1i(P.blur.u.uB, 4);
+  gl.useProgram(P.comp.p);
+  gl.uniform1i(P.comp.u.uBirds, 5);
+  for (const k in COL) gl.uniform3fv(P.comp.u['u' + k], COL[k]);
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  S = [0, 1].map(() => {
+    const pos = tex(TW, ROWS_MAX, gl.RGBA32F, gl.NEAREST), vel = tex(TW, ROWS_MAX, gl.RGBA32F, gl.NEAREST), aux = tex(TW, ROWS_MAX, gl.RGBA32F, gl.NEAREST);
+    return { pos, vel, aux, fb: target([pos, vel, aux]) };
+  });
+  const pt = tex(2, 1, gl.RGBA32F, gl.NEAREST);
+  probeT = { tex: pt, fb: target([pt]) };
+  pbo = gl.createBuffer();
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.bufferData(gl.PIXEL_PACK_BUFFER, 32, gl.STREAM_READ);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  fieldA = 0;
+  birdT = null;
+  fence = null;
+}
+// The field grid spans the frame, so its width follows the aspect.
+function allocField() {
+  if (Math.abs(A - fieldA) < 0.01) return;
+  fieldA = A;
+  for (const f of [FA, FB]) if (f) { gl.deleteFramebuffer(f.fb); gl.deleteTexture(f.t0); gl.deleteTexture(f.t1); }
+  GX = Math.ceil((2 * A + 0.8) / CELL);
+  GY = Math.ceil(2.3 / CELL);
+  AW = GX * TX;
+  AH = GY * TY;
+  GMIN[0] = (-GX * CELL) / 2;
+  GMIN[1] = -1.1;
+  GMIN[2] = (-GZ * CELL) / 2;
+  const mk = () => {
+    const t0 = tex(AW, AH, gl.RGBA16F, gl.LINEAR), t1 = tex(AW, AH, gl.RGBA16F, gl.LINEAR);
+    return { t0, t1, fb: target([t0, t1]) };
+  };
+  FA = mk();
+  FB = mk();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+function allocBirds() {
+  const cw = canvas.width, ch = canvas.height;
+  if (birdT && birdT.w === cw && birdT.h === ch) return;
+  if (birdT) { gl.deleteFramebuffer(birdT.fb); gl.deleteTexture(birdT.tex); }
+  const t = tex(cw, ch, gl.RGBA16F, gl.NEAREST);
+  birdT = { tex: t, fb: target([t]), w: cw, h: ch };
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+function gridUniforms(q) {
+  gl.uniform3f(q.u.uGMin, GMIN[0], GMIN[1], GMIN[2]);
+  gl.uniform3f(q.u.uGf, GX, GY, GZ);
+  gl.uniform1f(q.u.uCell, CELL);
+  gl.uniform2f(q.u.uAtlas, AW, AH);
+}
+
+/* ---------- the flock's state ---------- */
+// Birds start as one thick sheet above the reeds, flying right.
+function seedFlock() {
+  const n = TW * ROWS_MAX, pos = new Float32Array(n * 4), vel = new Float32Array(n * 4), aux = new Float32Array(n * 4);
+  const w = Math.min(0.8, A * 0.45);
+  for (let i = 0; i < n; i++) {
+    let x, y, z;
+    do { x = rand(-1, 1); y = rand(-1, 1); z = rand(-1, 1); } while (x * x + y * y + z * z > 1);
+    pos.set([x * w, 0.3 + y * 0.2, z * 0.3, Math.random()], i * 4);
+    vel.set([0.5 + rand(-0.05, 0.05), rand(-0.05, 0.05), rand(-0.08, 0.08), 30], i * 4);
+  }
+  for (const s of S) {
+    [[s.pos, pos], [s.vel, vel], [s.aux, aux]].forEach(([t, d]) => {
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TW, ROWS_MAX, gl.RGBA, gl.FLOAT, d);
+    });
+  }
+  cur = 0;
+}
+
+/* ---------- leaders, hawk, claps and the roost ---------- */
+let simT = 0, frameNo = 0, stretch = 0.5;
+const M = [0, 0.3, 0], LEAD3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+// The main centre roams; three leaders circle it at a varying reach.
+function leaders(t) {
+  const ax = Math.max(0.2, A - 0.6);
+  M[0] = ax * (0.7 * Math.sin(t * 0.19) + 0.3 * Math.sin(t * 0.43 + 1.3));
+  M[1] = 0.27 + 0.18 * Math.sin(t * 0.31 + 0.7) + 0.07 * Math.sin(t * 0.67);
+  M[2] = 0.15 * Math.sin(t * 0.23 + 2);
+  const r = 0.3 + 0.14 * Math.sin(t * 0.13);
+  for (let k = 0; k < 3; k++) {
+    const g = t * (0.37 + 0.11 * k) + (k * TAU) / 3, L = LEAD3[k];
+    L[0] = clamp(M[0] + Math.cos(g) * r * 1.5, -ax - 0.2, ax + 0.2);
+    L[1] = clamp(M[1] + Math.sin(g * 1.3) * r * 0.6, -0.12, 0.62);
+    L[2] = M[2] + Math.sin(g * 0.7) * r * 0.7;
+  }
+  stretch = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(t * 0.11 + 1));
+}
+
+const hawk = { x: 0, y: 0.2, vx: 0, vy: 0, tx: 0, ty: 0, on: false, a: 0, ph: 0, roll: 0, hx: 1, hy: 0, flap: 1, src: '' };
+const keys = new Set();
+let keyAt = 0, clapQ = null, origin = [0, 0], seedQ = null, nextSeed = 5;
+let lastInput = 0, roostT = -1, wakeT = -1, asleep = false;
+const IDLE = () => (reduce ? 15000 : 40000);
+function hawkStep(dt, now) {
+  if (keys.size) {
+    const kx = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0);
+    const ky = (keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0);
+    const n = Math.hypot(kx, ky) || 1;
+    hawk.tx = clamp(hawk.tx + (kx / n) * KEY_SPEED * dt, -A + 0.05, A - 0.05);
+    hawk.ty = clamp(hawk.ty + (ky / n) * KEY_SPEED * dt, -0.35, 0.92);
+    keyAt = now;
+  }
+  if (hawk.src === 'key' && now - keyAt > 3500) hawk.on = false;
+  if (hawk.on) {
+    // A stiff, critically damped spring follows the pointer.
+    const w = 30;
+    hawk.vx += (w * w * (hawk.tx - hawk.x) - 2 * w * hawk.vx) * dt;
+    hawk.vy += (w * w * (hawk.ty - hawk.y) - 2 * w * hawk.vy) * dt;
+    hawk.a = Math.min(1, hawk.a + dt * 6);
+  } else {
+    // Unhunted, the hawk climbs away along its heading.
+    hawk.vx = lerp(hawk.vx, hawk.hx * 1.4, 1 - Math.exp(-dt * 2));
+    hawk.vy = lerp(hawk.vy, hawk.hy * 1.4 + 0.6, 1 - Math.exp(-dt * 2));
+    hawk.a = Math.max(0, hawk.a - dt * 1.6);
+  }
+  hawk.x += hawk.vx * dt;
+  hawk.y += hawk.vy * dt;
+  const sp = Math.hypot(hawk.vx, hawk.vy);
+  if (sp > 0.08) {
+    const k = 1 - Math.exp(-dt * 10), hx = lerp(hawk.hx, hawk.vx / sp, k), hy = lerp(hawk.hy, hawk.vy / sp, k), n = Math.hypot(hx, hy) || 1;
+    const turn = (hawk.hx * hy - hawk.hy * hx) / n / Math.max(dt, 1e-3);
+    hawk.hx = hx / n;
+    hawk.hy = hy / n;
+    hawk.roll = lerp(hawk.roll, clamp(-turn * 0.25, -1.1, 1.1), 1 - Math.exp(-dt * 8));
+  } else hawk.roll *= Math.exp(-dt * 4);
+  // A slow hawk hovers on quick beats; a fast one glides.
+  hawk.flap = lerp(hawk.flap, sp < 0.9 ? 1 : 0.25, 1 - Math.exp(-dt * 4));
+  hawk.ph = (hawk.ph + dt * (4 + 3 * hawk.flap)) % 1;
+}
+function clap(sx, sy) {
+  clapQ = [sx, sy, 0.62, 1.05];
+  origin = [sx, sy];
+  swell = 1;
+  clapSound(sx / A);
+  rush(sx / A, 0.5 + 0.8 * clamp(probe.air), 1.2);
+}
+function startRoost() {
+  if (roostT >= 0) return;
+  roostT = 0;
+  wakeT = -1;
+  hawk.on = false;
+  roostB.textContent = 'Rise';
+}
+function wakeUp() {
+  if (roostT < 0) return;
+  const landed = roostT > 6;
+  roostT = -1;
+  asleep = false;
+  roostB.textContent = 'Roost';
+  if (landed) {
+    wakeT = 0;
+    origin = [M[0], -0.7];
+    swell = 1;
+    rush(clamp(M[0] / A, -1, 1), 1, 1.6);
+  }
+}
+// Any input resets the idle clock and wakes the flock.
+function poke() {
+  lastInput = performance.now();
+  if (roostT >= 0) wakeUp();
+  kick();
+}
+
+/* ---------- one frame ---------- */
+function simStep(dt) {
+  const n = TW * rows, s = S[cur], d = S[1 - cur];
+  gl.bindVertexArray(vao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, FA.fb);
+  gl.viewport(0, 0, AW, AH);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P.splat.p);
+  gridUniforms(P.splat);
+  bindTex(0, s.pos);
+  bindTex(1, s.vel);
+  bindTex(2, s.aux);
+  gl.drawArrays(gl.POINTS, 0, n);
+  gl.disable(gl.BLEND);
+  // Three passes blur the field along x, y and z.
+  gl.useProgram(P.blur.p);
+  gl.uniform3i(P.blur.u.uG, GX, GY, GZ);
+  [[FA, FB, [1, 0, 0]], [FB, FA, [0, 1, 0]], [FA, FB, [0, 0, 1]]].forEach(([a, b, st]) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b.fb);
+    bindTex(3, a.t0);
+    bindTex(4, a.t1);
+    gl.uniform3i(P.blur.u.uStep, ...st);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, d.fb);
+  gl.viewport(0, 0, TW, rows);
+  const U = P.upd.u;
+  gl.useProgram(P.upd.p);
+  gridUniforms(P.upd);
+  bindTex(3, FB.t0);
+  bindTex(4, FB.t1);
+  gl.uniform1f(U.uDt, dt);
+  gl.uniform1f(U.uTime, simT);
+  gl.uniform1f(U.uA, A);
+  gl.uniform1f(U.uStretch, stretch);
+  gl.uniform1f(U.uWake, wakeT);
+  gl.uniform1f(U.uRoostT, roostT);
+  gl.uniform3fv(U.uM, M);
+  gl.uniform3fv(U.uC0, LEAD3[0]);
+  gl.uniform3fv(U.uC1, LEAD3[1]);
+  gl.uniform3fv(U.uC2, LEAD3[2]);
+  const hs = hawk.a * (0.6 + 0.4 * Math.min(Math.hypot(hawk.vx, hawk.vy) / 1.2, 1));
+  gl.uniform4f(U.uHawk, hawk.x, hawk.y, 0.2 + 0.1 * Math.min(Math.hypot(hawk.vx, hawk.vy) / 1.5, 1), roostT >= 0 ? 0 : hs);
+  gl.uniform4fv(U.uClap, clapQ || [0, 0, 1, 0]);
+  gl.uniform4fv(U.uSeed, seedQ || [0, 0, 0, 0]);
+  const rk = roostT >= 0 ? clamp(roostT / 1.5) : 0;
+  gl.uniform4f(U.uRoost, clamp(M[0], -A * 0.5, A * 0.5), -0.78, 0, rk);
+  gl.uniform2fv(U.uOrigin, origin);
+  gl.uniform1ui(U.uFrame, frameNo++);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  clapQ = null;
+  seedQ = null;
+  cur = 1 - cur;
+}
+let drawT = 0;
+function draw() {
+  const cw = canvas.width, ch = canvas.height, n = TW * rows, s = S[cur];
+  gl.bindVertexArray(vao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, birdT.fb);
+  gl.viewport(0, 0, cw, ch);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  const U = P.bird.u;
+  gl.useProgram(P.bird.p);
+  bindTex(0, s.pos);
+  bindTex(1, s.vel);
+  bindTex(2, s.aux);
+  gl.uniform2f(U.uRes, cw, ch);
+  gl.uniform1f(U.uA, A);
+  gl.uniform1f(U.uTime, simT);
+  gl.uniform1f(U.uSpan, SPAN);
+  gl.uniform1f(U.uFade, roostT >= 0 ? 1 - clamp((roostT - 9.5) / 2) : 1);
+  gl.uniform1i(U.uN, n);
+  const k = (CZ - HAWK_Z) / CZ;
+  gl.uniform4f(U.uHP, hawk.x * k, hawk.y * k, HAWK_Z, hawk.a);
+  gl.uniform4f(U.uHV, hawk.hx, hawk.hy, 0, hawk.ph);
+  gl.uniform2f(U.uHR, hawk.roll, hawk.flap);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n + 1);
+  gl.disable(gl.BLEND);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.useProgram(P.comp.p);
+  bindTex(5, birdT.tex);
+  gl.uniform2f(P.comp.u.uRes, cw, ch);
+  gl.uniform1f(P.comp.u.uT, drawT);
+  gl.uniform1f(P.comp.u.uSway, reduce ? 0 : 1);
+  gl.uniform1f(P.comp.u.uAsp, cw / ch);
+  gl.uniform1f(P.comp.u.uSunX, (cw / ch) * 0.7);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// The probe reads back two pixels without stalling the GPU.
+function readProbe() {
+  if (fence) {
+    if (gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+    gl.deleteSync(fence);
+    fence = null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, probeBuf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    const n = TW * rows;
+    probe.near = probeBuf[0];
+    probe.alarmNear = probeBuf[1] / Math.max(probeBuf[0], 1);
+    probe.air = probeBuf[4] / n;
+    probe.alarm = probeBuf[5] / n;
+    return;
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, probeT.fb);
+  gl.viewport(0, 0, 2, 1);
+  gl.useProgram(P.probe.p);
+  gridUniforms(P.probe);
+  bindTex(3, FB.t0);
+  bindTex(4, FB.t1);
+  gl.uniform2f(P.probe.u.uHawk, hawk.x, hawk.y);
+  gl.uniform2i(P.probe.u.uAt, AW, AH);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.readPixels(0, 0, 2, 1, gl.RGBA, gl.FLOAT, 0);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+/* ---------- one loop, running while the flock flies ---------- */
+let raf = 0, last = 0, running = false, onScreen = false, lowDpr = false, slow = 0, frames = 0;
+function tick(dt, now) {
+  const sdt = dt * (reduce ? 0.5 : 1);
+  hawkStep(dt, now);
+  if (roostT < 0 && now - lastInput > IDLE()) startRoost();
+  if (roostT >= 0) roostT += dt;
+  if (wakeT >= 0 && (wakeT += sdt) > 1.5) wakeT = -1;
+  swell *= Math.exp(-dt * 1.5);
+  // Now and then a bird startles by itself, and a wave runs.
+  if (roostT < 0 && simT > nextSeed) {
+    const L = LEAD3[Math.floor(Math.random() * 3)];
+    seedQ = [L[0], L[1], L[2], 0.16];
+    origin = [L[0], L[1]];
+    nextSeed = simT + rand(4, 9);
+  }
+  simT += sdt;
+  leaders(simT);
+  drawT += sdt;
+  simStep(sdt);
+}
+function frame(now) {
+  raf = 0;
+  if (!running || !ready) return;
+  const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = now;
+  // Sustained slow frames drop the pixel ratio, then half the flock.
+  if (++frames > 40) {
+    slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 45) {
+      slow = 0;
+      if (!lowDpr) { lowDpr = true; fit(); } else if (rows > 64) rows = 64;
+    }
+  }
+  tick(dt, now);
+  draw();
+  readProbe();
+  soundTick(now);
+  if (frames === 2) canvas.classList.add('on');
+  // Once every bird has settled, the loop stops until the next input.
+  if (roostT > 12) {
+    asleep = true;
+    rest();
+    return;
+  }
+  raf = requestAnimationFrame(frame);
+}
+function kick() {
+  if (!running || !ready || raf) return;
+  asleep = false;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+// Off screen or hidden, the flock pauses and goes quiet.
+function sync() {
+  const run = ready && onScreen && !document.hidden;
+  if (run === running) return;
+  running = run;
+  if (run) {
+    if (!asleep) kick();
+    if (soundOn && ac && ac.state !== 'running' && !asleep) audio();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const cw = Math.round(w * p), ch = Math.round(h * p);
+  W = w;
+  H = h;
+  A = w / h;
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+  pr = cw / w;
+  if (!ready) return;
+  allocField();
+  allocBirds();
+  // A resized canvas is blank until drawn, so draw now.
+  if (running) draw();
+}
+
+/* ---------- input ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+const toSky = (x, y) => [(x / W * 2 - 1) * A, 1 - (y / H) * 2];
+function aim(sx, sy, src) {
+  if (!hawk.on || hawk.a < 0.05) {
+    // The hawk swoops in from where it is, or appears in place.
+    if (hawk.a < 0.05) { hawk.x = sx; hawk.y = sy; hawk.vx = 0; hawk.vy = 0; }
+  }
+  hawk.tx = sx;
+  hawk.ty = sy;
+  hawk.on = true;
+  hawk.src = src;
+}
+const taps = new Map();
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e), [sx, sy] = toSky(x, y);
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  poke();
+  aim(sx, sy, e.pointerType);
+  if (e.pointerType === 'mouse') clap(sx, sy);
+  else taps.set(e.pointerId, { x, y, t: e.timeStamp, moved: false });
+});
+panel.addEventListener('pointermove', e => {
+  if (!ready) return;
+  const tp = taps.get(e.pointerId);
+  if (e.pointerType !== 'mouse' && !tp) return;
+  const [x, y] = local(e);
+  if (tp && Math.hypot(x - tp.x, y - tp.y) > 12) tp.moved = true;
+  const [sx, sy] = toSky(x, y);
+  aim(sx, sy, e.pointerType);
+  poke();
+});
+function lift(e) {
+  const tp = taps.get(e.pointerId);
+  if (!tp) return;
+  taps.delete(e.pointerId);
+  // A short touch that stays put is a clap.
+  if (e.type === 'pointerup' && !tp.moved && e.timeStamp - tp.t < 350) clap(...toSky(tp.x, tp.y));
+  if (!taps.size) hawk.on = false;
+}
+panel.addEventListener('pointerup', lift);
+panel.addEventListener('pointercancel', lift);
+panel.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && hawk.src === 'mouse') hawk.on = false; });
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+// Space claps under the hawk, or at the flock's heart.
+function spaceClap() {
+  if (hawk.on && hawk.a > 0.3) clap(hawk.x, hawk.y);
+  else clap(M[0], M[1]);
+}
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    if (!ready) return;
+    if (!keys.size && (!hawk.on || hawk.src !== 'key')) {
+      // The keyboard hawk starts where it is, or above the flock.
+      const seen = hawk.a > 0.3;
+      hawk.tx = seen ? hawk.x : M[0];
+      hawk.ty = seen ? hawk.y : Math.min(0.85, M[1] + 0.45);
+      if (!seen) { hawk.x = hawk.tx; hawk.y = hawk.ty; hawk.vx = 0; hawk.vy = 0; }
+      hawk.on = true;
+      hawk.src = 'key';
+    }
+    keys.add(e.key);
+    poke();
+  } else if (e.key === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat && ready) {
+      poke();
+      spaceClap();
+    }
+  }
+});
+addEventListener('keyup', e => keys.delete(e.key));
+addEventListener('blur', () => keys.clear());
+
+const roostB = document.getElementById('roost');
+roostB.addEventListener('click', () => {
+  if (!ready) return;
+  if (roostT >= 0) poke();
+  else {
+    lastInput = performance.now();
+    startRoost();
+    kick();
+  }
+});
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start: shaders link while the page settles ---------- */
+function failed() {
+  ready = false;
+  sync();
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  panel.classList.remove('live');
+  roostB.disabled = true;
+}
+async function prepare() {
+  await initGL();
+  allocField();
+  allocBirds();
+  seedFlock();
+  // A few seconds of flight run before the first paint.
+  for (let k = 0; k < 6; k++) {
+    for (let j = 0; j < 30; j++) {
+      simT += 1 / 60;
+      leaders(simT);
+      simStep(1 / 60);
+    }
+    await nextFrame();
+  }
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await prepare();
+    ready = true;
+    sync();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!W) {
+    W = 1160;
+    H = 652;
+    A = W / H;
+    canvas.width = W;
+    canvas.height = H;
+  }
+  rows = matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency || 8) < 6 ? 64 : ROWS_MAX;
+  try { await prepare(); } catch (err) { console.error(err); failed(); return; }
+  ready = true;
+  lastInput = performance.now();
+  panel.classList.add('live');
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>

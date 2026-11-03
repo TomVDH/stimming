@@ -1,0 +1,1799 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Music box</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the box at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --wood: oklch(0.27 0.06 38);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The box is 16:9, 4:5 on phones, and dark wood in both themes. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--wood);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark wood the line keeps a pale tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.74 0.02 60);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Music box</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="An open music box. Click the brass drum to place or remove a pin, drag the crank or the drum to play, and flick to wind the spring. Space winds the motor, Up and Down turn the drum one step, Left and Right pick a tooth, and Enter places or removes a pin.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Music box needs Canvas, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="clear" type="button">Clear</button>
+        <button class="chip" id="tune" type="button">Tune</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Click the drum</span><span class="touch">Tap the drum</span></dt><dd>pin</dd></div>
+        <div><dt>Drag the crank</dt><dd>play</dd></div>
+        <div><dt>Flick</dt><dd>wind up</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>wind</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), cv = panel.querySelector('canvas');
+const ctx = cv.getContext('2d', { alpha: false });
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const mod = (a, n) => ((a % n) + n) % n;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; };
+const hash2 = (x, y) => {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+function vnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(ix, iy), hash2(ix + 1, iy), sx), lerp(hash2(ix, iy + 1), hash2(ix + 1, iy + 1), sx), sy);
+}
+const fbm = (x, y) => 0.5 * vnoise(x, y) + 0.27 * vnoise(x * 2.03 + 17, y * 2.03 + 9) + 0.15 * vnoise(x * 4.1 + 3, y * 4.1 + 31) + 0.08 * vnoise(x * 8.3, y * 8.3);
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linFit(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const enc = v => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+const rgb = (L, C, h) => linFit(L, C, h).map(v => Math.round(enc(v) * 255));
+const okMemo = new Map();
+function ok(L, C, h, a = 1) {
+  const key = L + ',' + C + ',' + h;
+  let c = okMemo.get(key);
+  if (!c) okMemo.set(key, (c = rgb(L, C, h)));
+  return `rgba(${c[0]},${c[1]},${c[2]},${+a.toFixed(3)})`;
+}
+
+/* ---------- music: fifteen teeth, C major over two octaves ---------- */
+const N = 15, S = 32, DPHI = TAU / S;
+// Pins cross the comb half a step after a rest position.
+const P = 6.5, CRANK = 8, BASE = 1 / 0.24, CAP = 3.5 * S, FLICK = 6.5, FANR = 26;
+const SEMI = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24];
+const FREQ = SEMI.map(s => 523.25 * 2 ** (s / 12));
+const HUE = Array.from({ length: N }, (_, i) => 18 + i * (290 / (N - 1)));
+// Each entry is a step, then the teeth pinned on that step.
+const TUNES = [
+  [[0, 0, 9], [2, 4, 11], [3, 12], [4, 2, 11], [6, 4, 9],
+    [8, 5, 12], [10, 2, 14], [12, 0, 13], [13, 12], [14, 2, 11],
+    [16, 3, 10], [18, 5, 12], [20, 4, 11], [22, 6, 9], [23, 8],
+    [24, 0, 7], [26, 4, 9], [28, 2, 11], [30, 4, 14]],
+  [[0, 5, 14], [3, 0, 13], [6, 2, 12], [7, 11],
+    [8, 3, 12], [11, 0, 10], [13, 11], [14, 5, 12],
+    [16, 0, 11], [19, 4, 9], [22, 2, 7], [23, 8],
+    [24, 4, 9], [27, 1, 8], [28, 11], [30, 6, 13]],
+];
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.musicbox.sound', MAXV = 14, LEAD = 0.006;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, inst = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
+let whirG = null, whirF = null, whirAt = 0, clickAt = 0, tickAt = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.05 * voices);
+const held = [], ringV = new Array(N).fill(null), lastAt = new Float64Array(N).fill(-1);
+// Each mode: frequency ratio, level, decay as a share of the fundamental's.
+const MODES = [[1, 1, 1], [1.0013, 0.2, 0.85], [2.76, 0.3, 0.3], [5.4, 0.11, 0.13], [8.93, 0.035, 0.06]];
+
+function biq(type, f, q, gain = 0) {
+  const b = ac.createBiquadFilter();
+  b.type = type;
+  b.frequency.value = f;
+  b.Q.value = q;
+  b.gain.value = gain;
+  return b;
+}
+// A dark, short room: noise that loses its top end as it fades.
+function impulse(sec) {
+  const sr = ac.sampleRate, n = Math.round(sr * sec), buf = ac.createBuffer(2, n, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    let y = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      y += lerp(0.6, 0.07, t / sec) * (Math.random() * 2 - 1 - y);
+      d[i] = y * Math.exp(-t / 0.45) * Math.min(1, t / 0.006);
+    }
+  }
+  return buf;
+}
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // The wooden box warms each note, then a small room follows.
+    inst = ac.createGain();
+    const lp = biq('lowpass', 9000, 0.5);
+    inst.connect(biq('peaking', 420, 0.9, 3)).connect(biq('peaking', 1300, 1.3, 1.5))
+      .connect(biq('highshelf', 5200, 0.7, -6)).connect(lp).connect(out);
+    const pre = ac.createDelay(0.05), verb = ac.createConvolver(), wet = ac.createGain();
+    pre.delayTime.value = 0.016;
+    verb.buffer = impulse(2.4);
+    wet.gain.value = 0.32;
+    lp.connect(pre).connect(verb).connect(wet).connect(out);
+    whir();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+// Once the box settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (whirG && ac.state === 'running') whirTo(0);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (raf || grab || voices > 0) return rest();
+    if (ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 0.8, len);
+}
+function ping(a, t, f, g, tau) {
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.value = f;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.0008);
+  og.gain.setTargetAtTime(0, t + 0.001, tau);
+  o.connect(og).connect(inst);
+  o.onended = () => og.disconnect();
+  o.start(t);
+  o.stop(t + tau * 8 + 0.02);
+}
+// A tooth rings in a few inharmonic modes after a short pluck.
+function pluck(i, t, v) {
+  const a = live();
+  if (!a) return;
+  t = Math.max(t, a.currentTime);
+  if (t - lastAt[i] < 0.03) return;
+  lastAt[i] = t;
+  hush(ringV[i], t);
+  while (held.length >= MAXV) hush(held[0], t);
+  const k = i / (N - 1), f0 = FREQ[i] * jit(0.002), tau = lerp(1.6, 0.6, k);
+  const amp = 0.17 * v * level() * jit(0.06) * lerp(1, 0.72, k);
+  const vg = a.createGain(), pan = a.createStereoPanner ? a.createStereoPanner() : null;
+  if (pan) { pan.pan.value = lerp(-0.5, 0.5, k); vg.connect(pan).connect(inst); } else vg.connect(inst);
+  const oscs = [];
+  for (const [r, l, dk] of MODES) {
+    const f = f0 * r;
+    if (f > 10500) continue;
+    const o = a.createOscillator(), og = a.createGain(), d = tau * dk;
+    o.frequency.value = f;
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(amp * l * (r > 2 ? lerp(1, 0.55, k) : 1), t + (r > 2 ? 0.0007 : 0.0018));
+    og.gain.setTargetAtTime(0, t + 0.002, d);
+    o.connect(og).connect(vg);
+    o.start(t);
+    o.stop(t + d * 7 + 0.05);
+    oscs.push(o);
+  }
+  burst(a, vg, t, 'bandpass', clamp(f0 * 3.3, 2200, 7500), 1.4, amp * 0.5, 0.0035, 0.03);
+  const vc = { vg, oscs, hushed: false };
+  ringV[i] = vc;
+  held.push(vc);
+  voices++;
+  oscs[0].onended = () => {
+    voices--;
+    vg.disconnect();
+    pan?.disconnect();
+    const n = held.indexOf(vc);
+    if (n >= 0) held.splice(n, 1);
+    if (ringV[i] === vc) ringV[i] = null;
+  };
+}
+// A re-plucked tooth stops its old ring first.
+function hush(vc, t) {
+  if (!vc || vc.hushed) return;
+  vc.hushed = true;
+  const n = held.indexOf(vc);
+  if (n >= 0) held.splice(n, 1);
+  vc.vg.gain.setValueAtTime(1, t);
+  vc.vg.gain.setTargetAtTime(0, t, 0.012);
+  for (const o of vc.oscs) try { o.stop(t + 0.1); } catch (err) { /* already stopping */ }
+}
+// The ratchet clicks as the spring winds.
+function click(t, g = 1) {
+  const a = live();
+  if (!a) return;
+  burst(a, inst, t, 'bandpass', 3000 * jit(0.1), 2, 0.12 * g * jit(0.08), 0.003, 0.02);
+  ping(a, t, 2350 * jit(0.04), 0.018 * g, 0.012);
+}
+// A pin taps into the brass.
+function tap(t, f, g) {
+  const a = live();
+  if (!a) return;
+  burst(a, inst, t, 'highpass', 4200, 0.7, 0.05 * g * jit(0.08), 0.0018, 0.015);
+  ping(a, t, f * jit(0.03), 0.022 * g, 0.016);
+}
+// The governor fan flutters while the motor runs.
+function whir() {
+  const src = ac.createBufferSource(), am = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  am.gain.value = 0.55;
+  lg.gain.value = 0.45;
+  lfo.frequency.value = 8;
+  lfo.connect(lg).connect(am.gain);
+  whirG = ac.createGain();
+  whirG.gain.value = 0;
+  src.connect(biq('bandpass', 520, 0.8)).connect(am).connect(whirG).connect(out);
+  src.start();
+  lfo.start();
+  whirF = lfo.frequency;
+}
+function whirTo(rps) {
+  if (!whirG) return;
+  const g = soundOn ? clamp(rps / 6) * 0.05 : 0;
+  if (Math.abs(g - whirAt) < 0.002 && (g > 0 || whirAt === 0)) return;
+  whirAt = g;
+  const t = ac.currentTime;
+  whirG.gain.setTargetAtTime(g, t, 0.08);
+  whirF.setTargetAtTime(Math.max(1, rps * 2), t, 0.1);
+}
+
+/* ---------- state: the drum, the spring, the teeth ---------- */
+let u = P - 0.5, vel = 0, mode = 'free', goal = 0, handU = 0, wind = 0, windIn = 0, windOut = 0, arborVis = 0;
+let tuneIx = 0, kc = 7, kbd = false, hover = null, dir = 1;
+const pins = new Uint8Array(S * N), born = new Float32Array(S * N).fill(-9);
+let ghosts = [];
+const amp = new Float32Array(N), age = new Float32Array(N), glow = new Float32Array(N), lift = new Float32Array(N);
+const clock = () => performance.now() / 1000;
+const pinAt = (k, i) => pins[mod(k, S) * N + i];
+
+/* ---------- layout: every size in CSS pixels ---------- */
+let G = null, W = 0, H = 0, dpr = 1, lowDpr = false;
+function layout(w, h) {
+  const g = { w, h, port: w / h < 1.2 };
+  if (!g.port) {
+    const cw = Math.min(w, h * 1.85), ox = (w - cw) / 2;
+    g.rim = clamp(0.043 * h, 12, 30);
+    g.R = 0.185 * h;
+    g.cy = 0.305 * h;
+    g.x0 = ox + 0.255 * cw;
+    g.x1 = ox + 0.785 * cw;
+    g.Lmax = 0.27 * h;
+    g.Lmin = 0.165 * h;
+    g.pad = 0.075 * h;
+    g.bx = ox + 0.145 * cw; g.by = 0.335 * h; g.rb = Math.min(0.13 * h, 0.085 * cw);
+    g.fx = g.bx; g.fy = 0.7 * h; g.fr = 0.068 * h;
+    g.kx = g.x1 + 0.095 * cw; g.ky = g.cy; g.kr = 0.08 * h; g.arm = 0.14 * h; g.knob = 0.026 * h;
+  } else {
+    g.rim = clamp(0.04 * w, 12, 30);
+    g.R = 0.235 * w;
+    g.cy = g.rim + 0.04 * w + g.R;
+    g.x0 = 0.12 * w;
+    g.x1 = 0.88 * w;
+    g.Lmax = 0.23 * w;
+    g.Lmin = 0.15 * w;
+    g.pad = 0.06 * w;
+    const tip = g.cy + g.R * Math.sin(P * DPHI) - g.R * 0.035, top = tip + g.Lmax + g.pad + 0.035 * w;
+    const bot = h - g.rim - 0.025 * w, mid = (top + bot) / 2, band = bot - top;
+    g.bx = 0.2 * w; g.by = mid; g.rb = Math.min(0.13 * w, band * 0.45);
+    g.fx = 0.47 * w; g.fy = mid; g.fr = Math.min(0.075 * w, band * 0.3);
+    g.kx = 0.76 * w; g.ky = mid; g.kr = Math.min(0.07 * w, band * 0.22); g.arm = Math.min(0.12 * w, band * 0.38); g.knob = 0.034 * w;
+  }
+  g.u = g.R / 120;
+  g.cwid = (g.x1 - g.x0) / N;
+  g.tw = g.cwid * 0.74;
+  g.yp = g.cy + g.R * Math.sin(P * DPHI);
+  g.tip = g.yp - g.R * 0.035;
+  g.bottom = g.tip + g.Lmax + g.pad;
+  g.push = g.R * 0.05;
+  return g;
+}
+const colX = i => G.x0 + (i + 0.5) * G.cwid;
+const rootY = i => G.tip + lerp(G.Lmax, G.Lmin, i / (N - 1));
+
+/* ---------- textures: wood, velvet, brass, steel ---------- */
+let bg = null, drumSpr = null, combSpr = null, pinSpr = null, barrelSpr = null, ratchetSpr = null, crownSpr = null, bladeSpr = null, sheenSpr = null;
+const glowSpr = [];
+const mix3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+function rr(g, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
+// Mitred rim pieces: grain runs along each side.
+function woodTex(w, h, rim) {
+  const sc = Math.min(1.25, dpr) * 0.8, tw = Math.ceil(w * sc), th = Math.ceil(h * sc);
+  const c = mk(tw, th), g = c.getContext('2d'), img = g.createImageData(tw, th), d = img.data;
+  const dark = rgb(0.2, 0.06, 32), mid = rgb(0.32, 0.085, 38), light = rgb(0.45, 0.1, 50);
+  const band = (rim + 4) * sc;
+  for (let y = 0; y < th; y++) {
+    for (let x = 0; x < tw; x++) {
+      const ex = Math.min(x, tw - 1 - x), ey = Math.min(y, th - 1 - y);
+      if (ex > band && ey > band) continue;
+      const horiz = ey < ex, px = x / sc, py = y / sc;
+      const a = horiz ? px : py, b = horiz ? py + (y > th / 2 ? 913 : 0) : px + (x > tw / 2 ? 517 : 0);
+      const warp = fbm(a * 0.004, b * 0.035) * 6 + vnoise(a * 0.03, b * 0.4) * 0.5;
+      let v = 0.5 + 0.5 * Math.sin(b * 0.5 + warp * 2.4);
+      v = v * v * v;
+      const streak = vnoise(a * 0.08, b * 1.6) - 0.5;
+      const t = clamp(0.62 - 0.5 * v + 0.22 * streak + 0.25 * (fbm(a * 0.006 + 40, b * 0.02) - 0.5));
+      const col = t < 0.5 ? mix3(dark, mid, t * 2) : mix3(mid, light, (t - 0.5) * 2);
+      const o = (y * tw + x) * 4;
+      d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+// Crushed velvet: soft patches of sheen over a deep pile.
+function velvetTex(w, h) {
+  const sc = 0.5, tw = Math.ceil(w * sc), th = Math.ceil(h * sc);
+  const c = mk(tw, th), g = c.getContext('2d'), img = g.createImageData(tw, th), d = img.data;
+  const deep = rgb(0.17, 0.085, 8), base = rgb(0.3, 0.135, 12), sheen = rgb(0.43, 0.16, 18);
+  for (let y = 0; y < th; y++) {
+    for (let x = 0; x < tw; x++) {
+      const px = x / sc, py = y / sc;
+      const n = fbm(px * 0.0065 + 3, py * 0.0065 + 11), f = vnoise(px * 0.06, py * 0.06);
+      let col = mix3(deep, base, clamp(0.25 + n * 1.05 + (f - 0.5) * 0.12));
+      col = mix3(col, sheen, sstep(0.58, 0.82, n) * 0.7);
+      const o = (y * tw + x) * 4;
+      d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+// A fine tile of light and dark specks for pile and brushing.
+function speckTile(n, stretch) {
+  const c = mk(n, n), g = c.getContext('2d'), img = g.createImageData(n, n), d = img.data;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const v = stretch ? vnoise((x / n) * 3 * 7, y * 0.9) * 0.7 + Math.random() * 0.3 : Math.random();
+      const o = (y * n + x) * 4, on = v > 0.5;
+      d[o] = d[o + 1] = d[o + 2] = on ? 255 : 0;
+      d[o + 3] = Math.abs(v - 0.5) * 2 * 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+// Polished brass: a sharp highlight, velvet glow in the lower edge.
+function paintDrum() {
+  const wpx = Math.ceil((G.x1 - G.x0) * dpr), hpx = Math.ceil(2 * G.R * dpr);
+  const c = mk(wpx, hpx), g = c.getContext('2d'), img = g.createImageData(wpx, hpx), d = img.data;
+  const base = linFit(0.76, 0.125, 84), deep = linFit(0.36, 0.08, 62), red = linFit(0.42, 0.16, 15), lamp = linFit(0.98, 0.04, 90);
+  const Lv = [-0.35, -0.55, 0.76], ln = Math.hypot(...Lv), L = Lv.map(v => v / ln);
+  const Hv = [L[0], L[1], L[2] + 1], hn = Math.hypot(...Hv), Hh = Hv.map(v => v / hn);
+  const row = new Float32Array(hpx * 3), colk = new Float32Array(wpx);
+  for (let y = 0; y < hpx; y++) {
+    const s = ((y + 0.5) / hpx) * 2 - 1, nz = Math.sqrt(Math.max(0, 1 - s * s));
+    const diff = Math.max(0, s * L[1] + nz * L[2]), nh = Math.max(0, s * Hh[1] + nz * Hh[2]);
+    const spec = nh ** 90 * 1.6 + nh ** 12 * 0.22, fres = (1 - nz) ** 2;
+    for (let k = 0; k < 3; k++) {
+      let v = base[k] * (0.1 + 0.95 * diff ** 1.4) + lamp[k] * spec;
+      v = lerp(v, deep[k], fres * 0.55 * (s < 0 ? 1 : 0.4));
+      v += red[k] * Math.max(0, s) * fres * 0.9;
+      row[y * 3 + k] = v;
+    }
+  }
+  // Lathe rings and chamfered ends vary along the axis.
+  let sm = 0;
+  for (let x = 0; x < wpx; x++) {
+    const lx = (x + 0.5) / wpx, e = Math.min(lx, 1 - lx) * (G.x1 - G.x0);
+    sm = lerp(sm, Math.random() - 0.5, 0.35);
+    colk[x] = (1 + sm * 0.09) * lerp(1.1, 0.9, lx) * (e < 2.5 ? 0.55 : e < 4.5 ? 1.25 : 1);
+  }
+  for (let y = 0; y < hpx; y++) {
+    for (let x = 0; x < wpx; x++) {
+      const o = (y * wpx + x) * 4, k = colk[x];
+      d[o] = enc(clamp(row[y * 3] * k)) * 255;
+      d[o + 1] = enc(clamp(row[y * 3 + 1] * k)) * 255;
+      d[o + 2] = enc(clamp(row[y * 3 + 2] * k)) * 255;
+      d[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  // Fine grooves mark each tooth's track.
+  g.scale(dpr, dpr);
+  const ht = 2 * G.R;
+  const fade = g.createLinearGradient(0, 0, 0, ht);
+  fade.addColorStop(0, 'rgba(40,20,0,0)');
+  fade.addColorStop(0.5, 'rgba(40,20,0,0.22)');
+  fade.addColorStop(1, 'rgba(40,20,0,0)');
+  const shine = g.createLinearGradient(0, 0, 0, ht);
+  shine.addColorStop(0, 'rgba(255,240,200,0)');
+  shine.addColorStop(0.4, 'rgba(255,240,200,0.18)');
+  shine.addColorStop(1, 'rgba(255,240,200,0)');
+  for (let i = 0; i < N; i++) {
+    const x = (i + 0.5) * G.cwid;
+    g.fillStyle = fade;
+    g.fillRect(x - 0.6, 0, 1.2, ht);
+    g.fillStyle = shine;
+    g.fillRect(x + 0.6, 0, 0.8, ht);
+  }
+  return c;
+}
+// Blued steel with a temper sweep from straw to violet.
+function paintComb() {
+  const xa = G.x0 - G.cwid * 0.35, xb = G.x1 + G.cwid * 0.35, ya = G.tip + G.Lmin - 6 * G.u, yb = G.bottom;
+  const c = mk((xb - xa) * dpr, (yb - ya) * dpr), g = c.getContext('2d');
+  g.scale(dpr, dpr);
+  g.translate(-xa, -ya);
+  const r0 = rootY(0), r1 = rootY(N - 1), x0 = colX(0), x1 = colX(N - 1);
+  const edgeY = x => r0 + ((r1 - r0) * (x - x0)) / (x1 - x0);
+  const path = () => {
+    g.beginPath();
+    g.moveTo(xa, edgeY(xa));
+    g.lineTo(xb, edgeY(xb));
+    g.lineTo(xb, yb - 6 * G.u);
+    g.quadraticCurveTo(xb, yb, xb - 6 * G.u, yb);
+    g.lineTo(xa + 6 * G.u, yb);
+    g.quadraticCurveTo(xa, yb, xa, yb - 6 * G.u);
+    g.closePath();
+  };
+  path();
+  const temper = g.createLinearGradient(xa, 0, xb, 0);
+  temper.addColorStop(0, ok(0.5, 0.075, 70));
+  temper.addColorStop(0.22, ok(0.46, 0.1, 40));
+  temper.addColorStop(0.45, ok(0.42, 0.12, 330));
+  temper.addColorStop(0.7, ok(0.42, 0.13, 285));
+  temper.addColorStop(1, ok(0.4, 0.12, 255));
+  g.fillStyle = temper;
+  g.fill();
+  g.save();
+  g.clip();
+  // Brushed lines run along the comb.
+  g.globalAlpha = 0.16;
+  g.globalCompositeOperation = 'overlay';
+  g.fillStyle = g.createPattern(speckTile(128, true), 'repeat');
+  g.fillRect(xa, ya, xb - xa, yb - ya);
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+  const lit = g.createLinearGradient(0, ya, 0, yb);
+  lit.addColorStop(0, 'rgba(255,255,255,0.16)');
+  lit.addColorStop(0.35, 'rgba(255,255,255,0.02)');
+  lit.addColorStop(1, 'rgba(0,0,0,0.3)');
+  g.fillStyle = lit;
+  g.fillRect(xa, ya, xb - xa, yb - ya);
+  const sweep = g.createLinearGradient(xa, ya, xb, yb);
+  sweep.addColorStop(0.2, 'rgba(255,255,255,0)');
+  sweep.addColorStop(0.32, 'rgba(255,250,240,0.2)');
+  sweep.addColorStop(0.44, 'rgba(255,255,255,0)');
+  g.fillStyle = sweep;
+  g.fillRect(xa, ya, xb - xa, yb - ya);
+  g.restore();
+  // The cut edge catches the light.
+  g.beginPath();
+  g.moveTo(xa, edgeY(xa));
+  g.lineTo(xb, edgeY(xb));
+  g.lineWidth = 1.2 * G.u + 0.4;
+  g.strokeStyle = ok(0.9, 0.04, 250, 0.7);
+  g.stroke();
+  // Three domed screws hold the comb down.
+  const sy = (edgeY((xa + xb) / 2) + yb) / 2 + 2 * G.u;
+  for (const f of [0.1, 0.5, 0.9]) screw(g, lerp(xa, xb, f), Math.max(sy, edgeY(lerp(xa, xb, f)) + 10 * G.u), 6.5 * G.u, f * 3);
+  return { c, x: xa, y: ya, w: xb - xa, h: yb - ya };
+}
+function screw(g, x, y, r, a) {
+  const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+  gr.addColorStop(0, ok(0.95, 0.06, 90));
+  gr.addColorStop(0.5, ok(0.72, 0.11, 82));
+  gr.addColorStop(1, ok(0.38, 0.07, 65));
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  g.beginPath();
+  g.arc(x + r * 0.2, y + r * 0.3, r * 1.05, 0, TAU);
+  g.fill();
+  g.fillStyle = gr;
+  g.beginPath();
+  g.arc(x, y, r, 0, TAU);
+  g.fill();
+  g.strokeStyle = ok(0.3, 0.05, 60, 0.85);
+  g.lineWidth = Math.max(1, r * 0.22);
+  g.beginPath();
+  g.moveTo(x - Math.cos(a) * r * 0.75, y - Math.sin(a) * r * 0.75);
+  g.lineTo(x + Math.cos(a) * r * 0.75, y + Math.sin(a) * r * 0.75);
+  g.stroke();
+}
+// A disc's teeth: n bumps between two radii.
+function teethPath(g, n, r0, r1, flat = 0.45) {
+  g.beginPath();
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * TAU, h = (TAU / n) * 0.5;
+    g.lineTo(Math.cos(a - h) * r0, Math.sin(a - h) * r0);
+    g.lineTo(Math.cos(a - h * flat) * r1, Math.sin(a - h * flat) * r1);
+    g.lineTo(Math.cos(a + h * flat) * r1, Math.sin(a + h * flat) * r1);
+    g.lineTo(Math.cos(a + h) * r0, Math.sin(a + h) * r0);
+  }
+  g.closePath();
+}
+function brassRadial(g, r, L = 0.72) {
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, r);
+  gr.addColorStop(0, ok(L, 0.1, 84));
+  gr.addColorStop(0.75, ok(L - 0.08, 0.11, 80));
+  gr.addColorStop(0.93, ok(L + 0.08, 0.09, 88));
+  gr.addColorStop(1, ok(L - 0.3, 0.07, 62));
+  return gr;
+}
+function paintSprites() {
+  const ps = 44;
+  pinSpr = mk(ps, ps);
+  let g = pinSpr.getContext('2d');
+  let gr = g.createRadialGradient(ps * 0.36, ps * 0.33, 1, ps / 2, ps / 2, ps / 2);
+  gr.addColorStop(0, ok(0.99, 0.01, 240));
+  gr.addColorStop(0.3, ok(0.86, 0.02, 240));
+  gr.addColorStop(0.75, ok(0.5, 0.025, 250));
+  gr.addColorStop(1, ok(0.28, 0.02, 250));
+  g.fillStyle = gr;
+  g.beginPath();
+  g.arc(ps / 2, ps / 2, ps / 2 - 0.5, 0, TAU);
+  g.fill();
+  // Each tooth glows in its own hue while it rings.
+  glowSpr.length = 0;
+  for (let i = 0; i < N; i++) {
+    const c = mk(64, 160);
+    g = c.getContext('2d');
+    g.translate(32, 80);
+    g.scale(1, 2.5);
+    gr = g.createRadialGradient(0, 0, 0, 0, 0, 32);
+    gr.addColorStop(0, ok(0.86, 0.15, HUE[i], 0.9));
+    gr.addColorStop(0.3, ok(0.74, 0.17, HUE[i], 0.45));
+    gr.addColorStop(1, ok(0.6, 0.17, HUE[i], 0));
+    g.fillStyle = gr;
+    g.beginPath();
+    g.arc(0, 0, 32, 0, TAU);
+    g.fill();
+    glowSpr.push(c);
+  }
+  // A soft white highlight for the turning parts.
+  sheenSpr = mk(64, 64);
+  g = sheenSpr.getContext('2d');
+  gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,248,230,0.85)');
+  gr.addColorStop(1, 'rgba(255,248,230,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  // The spring barrel: toothed rim around a dark floor.
+  const rb = G.rb, bs = rb * 2.24;
+  barrelSpr = mk(bs * dpr, bs * dpr);
+  g = barrelSpr.getContext('2d');
+  g.scale(dpr, dpr);
+  g.translate(bs / 2, bs / 2);
+  teethPath(g, 72, rb * 1.0, rb * 1.07);
+  g.fillStyle = ok(0.6, 0.1, 80);
+  g.fill();
+  g.beginPath();
+  g.arc(0, 0, rb, 0, TAU);
+  g.fillStyle = brassRadial(g, rb, 0.74);
+  g.fill();
+  g.beginPath();
+  g.arc(0, 0, rb * 0.87, 0, TAU);
+  gr = g.createRadialGradient(0, 0, rb * 0.2, 0, 0, rb * 0.87);
+  gr.addColorStop(0, ok(0.3, 0.04, 70));
+  gr.addColorStop(0.85, ok(0.2, 0.035, 60));
+  gr.addColorStop(1, ok(0.1, 0.02, 50));
+  g.fillStyle = gr;
+  g.fill();
+  for (let k = 0; k < 3; k++) {
+    g.beginPath();
+    g.arc(0, 0, rb * (0.9 + k * 0.035), 0, TAU);
+    g.strokeStyle = k === 1 ? ok(0.88, 0.08, 88, 0.6) : ok(0.45, 0.08, 70, 0.5);
+    g.lineWidth = 0.8;
+    g.stroke();
+  }
+  // The click wheel and butterfly key turn with the arbor.
+  const rk = rb * 0.62, ks = rk * 2.2;
+  ratchetSpr = mk(ks * dpr, ks * dpr);
+  g = ratchetSpr.getContext('2d');
+  g.scale(dpr, dpr);
+  g.translate(ks / 2, ks / 2);
+  g.beginPath();
+  const rr0 = rb * 0.26, rr1 = rb * 0.33;
+  for (let k = 0; k < 14; k++) {
+    const a = (k / 14) * TAU;
+    g.lineTo(Math.cos(a) * rr0, Math.sin(a) * rr0);
+    g.lineTo(Math.cos(a + 0.05) * rr1, Math.sin(a + 0.05) * rr1);
+  }
+  g.closePath();
+  g.fillStyle = ok(0.78, 0.03, 250);
+  g.fill();
+  g.strokeStyle = ok(0.4, 0.03, 250, 0.8);
+  g.lineWidth = 0.8;
+  g.stroke();
+  g.beginPath();
+  g.ellipse(0, -rk * 0.52, rk * 0.3, rk * 0.5, 0, 0, TAU);
+  g.ellipse(0, rk * 0.52, rk * 0.3, rk * 0.5, 0, 0, TAU);
+  g.fillStyle = ok(0.7, 0.11, 82);
+  g.fill();
+  g.lineWidth = 1.2;
+  g.strokeStyle = ok(0.42, 0.08, 66, 0.9);
+  g.stroke();
+  g.beginPath();
+  g.ellipse(0, -rk * 0.55, rk * 0.15, rk * 0.3, 0, 0, TAU);
+  g.ellipse(0, rk * 0.55, rk * 0.15, rk * 0.3, 0, 0, TAU);
+  g.fillStyle = ok(0.86, 0.09, 90, 0.55);
+  g.fill();
+  g.beginPath();
+  g.arc(0, 0, rb * 0.13, 0, TAU);
+  g.fillStyle = brassRadial(g, rb * 0.13, 0.8);
+  g.fill();
+  // The crank's crown wheel.
+  const kr = G.kr, cs = kr * 2.3;
+  crownSpr = mk(cs * dpr, cs * dpr);
+  g = crownSpr.getContext('2d');
+  g.scale(dpr, dpr);
+  g.translate(cs / 2, cs / 2);
+  teethPath(g, 28, kr * 0.98, kr * 1.1, 0.4);
+  g.fillStyle = ok(0.62, 0.1, 80);
+  g.fill();
+  g.beginPath();
+  g.arc(0, 0, kr, 0, TAU);
+  g.fillStyle = brassRadial(g, kr, 0.72);
+  g.fill();
+  for (let k = 1; k < 5; k++) {
+    g.beginPath();
+    g.arc(0, 0, kr * (0.25 + k * 0.16), 0, TAU);
+    g.strokeStyle = k % 2 ? ok(0.9, 0.07, 90, 0.35) : ok(0.4, 0.07, 66, 0.35);
+    g.lineWidth = 0.8;
+    g.stroke();
+  }
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * TAU + 0.4;
+    g.beginPath();
+    g.arc(Math.cos(a) * kr * 0.62, Math.sin(a) * kr * 0.62, kr * 0.13, 0, TAU);
+    g.fillStyle = ok(0.25, 0.05, 50, 0.9);
+    g.fill();
+  }
+  // The governor's two vanes.
+  const fr = G.fr, fs = fr * 2.2;
+  bladeSpr = mk(fs * dpr, fs * dpr);
+  g = bladeSpr.getContext('2d');
+  g.scale(dpr, dpr);
+  g.translate(fs / 2, fs / 2);
+  for (const sgn of [-1, 1]) {
+    g.save();
+    g.scale(sgn, 1);
+    g.beginPath();
+    rr(g, fr * 0.16, -fr * 0.27, fr * 0.84, fr * 0.54, fr * 0.12);
+    gr = g.createLinearGradient(0, -fr * 0.27, 0, fr * 0.27);
+    gr.addColorStop(0, ok(0.86, 0.06, 88));
+    gr.addColorStop(0.5, ok(0.7, 0.11, 82));
+    gr.addColorStop(1, ok(0.46, 0.09, 68));
+    g.fillStyle = gr;
+    g.fill();
+    g.strokeStyle = ok(0.36, 0.06, 60, 0.8);
+    g.lineWidth = 0.8;
+    g.stroke();
+    g.restore();
+  }
+  g.fillStyle = ok(0.6, 0.03, 250);
+  g.fillRect(-fr * 0.2, -fr * 0.05, fr * 0.4, fr * 0.1);
+}
+
+// Everything that never moves, painted once per size.
+function paintBg() {
+  const { w, h, rim } = G;
+  bg = mk(w * dpr, h * dpr);
+  const g = bg.getContext('2d');
+  g.scale(dpr, dpr);
+  g.drawImage(woodTex(w, h, rim), 0, 0, w, h);
+  // Varnish catches a broad window light.
+  let gr = g.createLinearGradient(0, 0, w * 0.6, h);
+  gr.addColorStop(0, 'rgba(255,225,190,0.13)');
+  gr.addColorStop(0.5, 'rgba(255,225,190,0.02)');
+  gr.addColorStop(1, 'rgba(0,0,0,0.12)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, w, h);
+  // Mitre joints at the corners.
+  g.strokeStyle = 'rgba(20,6,2,0.45)';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (const [x, y, dx, dy] of [[0, 0, 1, 1], [w, 0, -1, 1], [0, h, 1, -1], [w, h, -1, -1]]) {
+    g.moveTo(x, y);
+    g.lineTo(x + dx * rim, y + dy * rim);
+  }
+  g.stroke();
+  // The velvet bed.
+  const ix = rim, iy = rim, iw = w - 2 * rim, ih = h - 2 * rim, ir = Math.max(4, rim * 0.3);
+  g.save();
+  g.beginPath();
+  rr(g, ix, iy, iw, ih, ir);
+  g.clip();
+  g.drawImage(velvetTex(iw, ih), ix, iy, iw, ih);
+  g.globalAlpha = 0.1;
+  g.fillStyle = g.createPattern(speckTile(96, false), 'repeat');
+  g.fillRect(ix, iy, iw, ih);
+  g.globalAlpha = 1;
+  // The rim walls shade the velvet edge.
+  g.shadowColor = 'rgba(8,0,2,0.85)';
+  g.shadowBlur = rim * 1.1;
+  g.shadowOffsetX = rim * 0.2;
+  g.shadowOffsetY = rim * 0.3;
+  g.beginPath();
+  g.rect(ix - 400, iy - 400, iw + 800, ih + 800);
+  rr(g, ix, iy, iw, ih, ir);
+  g.fillStyle = '#000';
+  g.fill('evenodd');
+  g.restore();
+  // The lip of the rim: lit on the far side, dark on the near.
+  g.lineWidth = 1.5;
+  gr = g.createLinearGradient(ix, iy, ix + iw, iy + ih);
+  gr.addColorStop(0, 'rgba(0,0,0,0.5)');
+  gr.addColorStop(1, 'rgba(255,215,170,0.35)');
+  g.strokeStyle = gr;
+  g.beginPath();
+  rr(g, ix - 0.75, iy - 0.75, iw + 1.5, ih + 1.5, ir + 0.75);
+  g.stroke();
+  paintPlate(g);
+  paintStatics(g);
+  // Lamp light pools on the upper left; corners fall away.
+  gr = g.createRadialGradient(w * 0.3, h * 0.15, 0, w * 0.3, h * 0.15, Math.hypot(w, h) * 0.75);
+  gr.addColorStop(0, 'rgba(255,214,160,0.09)');
+  gr.addColorStop(0.5, 'rgba(255,214,160,0)');
+  gr.addColorStop(1, 'rgba(0,0,0,0.32)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, w, h);
+}
+function platePath(g) {
+  const u = G.u;
+  if (!G.port) {
+    rr(g, G.x0 - G.cwid * 1.3, G.cy - G.R - 16 * u, G.x1 - G.x0 + G.cwid * 2.25, G.bottom - G.cy + G.R + 30 * u, 14 * u);
+    rr(g, G.bx - G.rb - 18 * u, G.by - G.rb - 22 * u, G.x0 - G.bx + G.rb, G.fy + G.fr - G.by + G.rb + 40 * u, 14 * u);
+  } else {
+    rr(g, G.rim + 6 * u, G.cy - G.R - 10 * u, G.w - 2 * G.rim - 12 * u, G.bottom - G.cy + G.R + 18 * u, 12 * u);
+    rr(g, G.bx - G.rb - 10 * u, G.by - G.rb - 10 * u, G.kx - G.bx + G.rb + G.kr + 20 * u, 2 * G.rb + 20 * u, 12 * u);
+  }
+}
+// The cast bedplate: antique gilt with a brushed face.
+function paintPlate(g) {
+  const { w, h } = G, u = G.u;
+  g.save();
+  g.shadowColor = 'rgba(10,0,4,0.6)';
+  g.shadowBlur = 18 * u;
+  g.shadowOffsetX = 5 * u;
+  g.shadowOffsetY = 9 * u;
+  g.beginPath();
+  platePath(g);
+  g.fillStyle = ok(0.5, 0.075, 76);
+  g.fill();
+  g.restore();
+  g.save();
+  g.beginPath();
+  platePath(g);
+  g.clip();
+  let gr = g.createLinearGradient(0, 0, w, h);
+  gr.addColorStop(0, ok(0.6, 0.085, 82));
+  gr.addColorStop(0.5, ok(0.5, 0.08, 75));
+  gr.addColorStop(1, ok(0.4, 0.07, 68));
+  g.fillStyle = gr;
+  g.fillRect(0, 0, w, h);
+  g.globalAlpha = 0.22;
+  g.globalCompositeOperation = 'overlay';
+  g.fillStyle = g.createPattern(speckTile(128, true), 'repeat');
+  g.fillRect(0, 0, w, h);
+  g.restore();
+  g.save();
+  g.beginPath();
+  platePath(g);
+  gr = g.createLinearGradient(0, 0, w, h);
+  gr.addColorStop(0, 'rgba(255,240,200,0.55)');
+  gr.addColorStop(1, 'rgba(40,20,0,0.6)');
+  g.strokeStyle = gr;
+  g.lineWidth = 1.4;
+  g.stroke();
+  g.restore();
+}
+// Shadows, bearing blocks, axles and the governor's worm.
+function paintStatics(g) {
+  const u = G.u, R = G.R;
+  // The drum's shadow falls down and right.
+  g.save();
+  g.shadowColor = 'rgba(25,8,0,0.7)';
+  g.shadowBlur = 16 * u;
+  g.shadowOffsetX = 6 * u;
+  g.shadowOffsetY = 12 * u;
+  g.fillStyle = ok(0.3, 0.05, 60);
+  g.fillRect(G.x0 + 4, G.cy - R * 0.7, G.x1 - G.x0 - 8, R * 1.6);
+  g.restore();
+  // Comb shadow.
+  g.save();
+  g.shadowColor = 'rgba(25,8,0,0.55)';
+  g.shadowBlur = 8 * u;
+  g.shadowOffsetX = 3 * u;
+  g.shadowOffsetY = 5 * u;
+  g.fillStyle = ok(0.3, 0.05, 60);
+  g.fillRect(G.x0 - G.cwid * 0.3, rootY(N - 1) + 4, G.x1 - G.x0 + G.cwid * 0.6, G.bottom - rootY(N - 1) - 6);
+  g.restore();
+  // The axle runs through both bearing blocks.
+  const gw = 0.09 * R, cw = 0.15 * R, ch = 0.95 * R;
+  const axY = G.cy, axR = 0.045 * R;
+  const axL = G.x0 - gw - cw - 6 * u, axRt = G.port ? G.x1 + cw + 0.2 * R : G.kx - G.kr;
+  rod(g, axL, axY, axRt - axL, axR);
+  block(g, G.x0 - gw - 2 * u - cw, G.cy - ch / 2, cw, ch);
+  block(g, G.x1 + 2 * u, G.cy - ch / 2, cw, ch);
+  // Barrel and governor sit on round bosses.
+  g.save();
+  g.shadowColor = 'rgba(25,8,0,0.65)';
+  g.shadowBlur = 12 * u;
+  g.shadowOffsetX = 4 * u;
+  g.shadowOffsetY = 7 * u;
+  g.fillStyle = ok(0.32, 0.05, 60);
+  g.beginPath();
+  g.arc(G.bx, G.by, G.rb * 1.04, 0, TAU);
+  g.fill();
+  g.beginPath();
+  g.arc(G.kx, G.ky, G.kr * 1.05, 0, TAU);
+  g.fill();
+  g.restore();
+  // The governor: a worm on its arbor under a small bridge.
+  const fx = G.fx, fy = G.fy, fr = G.fr;
+  rod(g, fx - fr * 1.25, fy + fr * 0.95, fr * 2.5, fr * 0.12);
+  g.fillStyle = 'rgba(30,12,0,0.5)';
+  for (let k = 0; k < 9; k++) g.fillRect(fx - fr * 1.1 + k * fr * 0.27, fy + fr * 0.83, 1.2, fr * 0.24);
+  g.save();
+  g.shadowColor = 'rgba(25,8,0,0.6)';
+  g.shadowBlur = 6 * u;
+  g.shadowOffsetX = 2 * u;
+  g.shadowOffsetY = 4 * u;
+  g.beginPath();
+  g.arc(fx, fy, fr * 0.22, 0, TAU);
+  g.fillStyle = brassRadialAt(g, fx, fy, fr * 0.22);
+  g.fill();
+  g.restore();
+}
+function brassRadialAt(g, x, y, r) {
+  const gr = g.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.05, x, y, r);
+  gr.addColorStop(0, ok(0.94, 0.06, 90));
+  gr.addColorStop(0.55, ok(0.7, 0.11, 82));
+  gr.addColorStop(1, ok(0.36, 0.07, 64));
+  return gr;
+}
+// A polished steel rod.
+function rod(g, x, y, len, r) {
+  const lg = g.createLinearGradient(0, y - r, 0, y + r);
+  lg.addColorStop(0, ok(0.5, 0.02, 250));
+  lg.addColorStop(0.35, ok(0.95, 0.01, 240));
+  lg.addColorStop(1, ok(0.35, 0.02, 250));
+  g.fillStyle = 'rgba(20,6,0,0.4)';
+  g.fillRect(x + 2, y - r + 3, len, 2 * r);
+  g.fillStyle = lg;
+  g.fillRect(x, y - r, len, 2 * r);
+}
+// A brass bearing block with its pivot screw.
+function block(g, x, y, w, h) {
+  const u = G.u;
+  g.save();
+  g.shadowColor = 'rgba(25,8,0,0.6)';
+  g.shadowBlur = 8 * u;
+  g.shadowOffsetX = 3 * u;
+  g.shadowOffsetY = 6 * u;
+  g.beginPath();
+  rr(g, x, y, w, h, 4 * u);
+  const lg = g.createLinearGradient(x, 0, x + w, 0);
+  lg.addColorStop(0, ok(0.82, 0.1, 86));
+  lg.addColorStop(0.5, ok(0.68, 0.11, 80));
+  lg.addColorStop(1, ok(0.48, 0.09, 70));
+  g.fillStyle = lg;
+  g.fill();
+  g.restore();
+  g.strokeStyle = 'rgba(60,30,0,0.5)';
+  g.lineWidth = 1;
+  g.beginPath();
+  rr(g, x + 0.5, y + 0.5, w - 1, h - 1, 4 * u);
+  g.stroke();
+  screw(g, x + w / 2, y + h / 2, Math.min(w * 0.3, 6 * u), 0.7);
+  screw(g, x + w / 2, y + h * 0.13, Math.min(w * 0.22, 4 * u), 2.1);
+  screw(g, x + w / 2, y + h * 0.87, Math.min(w * 0.22, 4 * u), 1.2);
+}
+
+/* ---------- drawing, every frame ---------- */
+function draw(now) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.drawImage(bg, 0, 0, W, H);
+  drawWheels();
+  drawDrum(now);
+  drawTeeth();
+  ctx.drawImage(combSpr.c, combSpr.x, combSpr.y, combSpr.w, combSpr.h);
+  drawGlow();
+  drawBarrel();
+  drawFan();
+  drawCrank();
+}
+// Edge-on gears: the great wheel on the left, a pinion on the right.
+function drawWheels() {
+  const R = G.R, s = G.u, gw = 0.09 * R, rg = R * 0.97, a = u * DPHI;
+  const edge = (x, wid, rad, n, ph) => {
+    const lg = ctx.createLinearGradient(0, G.cy - rad, 0, G.cy + rad);
+    lg.addColorStop(0, ok(0.35, 0.07, 64));
+    lg.addColorStop(0.3, ok(0.86, 0.1, 88));
+    lg.addColorStop(0.62, ok(0.66, 0.11, 80));
+    lg.addColorStop(1, ok(0.3, 0.06, 60));
+    ctx.fillStyle = lg;
+    ctx.fillRect(x, G.cy - rad, wid, 2 * rad);
+    ctx.fillStyle = 'rgba(40,18,0,0.55)';
+    for (let k = 0; k < n; k++) {
+      const th = ph + (k / n) * TAU, c = Math.cos(th);
+      if (c <= 0.08) continue;
+      ctx.fillRect(x, G.cy + rad * Math.sin(th) - 0.5, wid, Math.max(0.8, 1.6 * c));
+    }
+  };
+  edge(G.x0 - gw - 1.5 * s, gw, rg, 64, a);
+  const pw = 0.13 * R, px = G.port ? G.x1 + 0.17 * R + 2 * s : G.kx - G.kr - pw - 1;
+  edge(px, pw, R * 0.24, 12, a);
+}
+function drawDrum(now) {
+  const { x0, x1, cy, R } = G, u2 = G.u;
+  ctx.drawImage(drumSpr, x0, cy - R, x1 - x0, 2 * R);
+  // Axial lines mark each step and turn with the drum.
+  for (let k = 0; k < S; k++) {
+    const th = (u - k) * DPHI, c = Math.cos(th);
+    if (c <= 0.06) continue;
+    const y = cy + R * Math.sin(th);
+    ctx.fillStyle = `rgba(70,38,4,${(0.22 * c).toFixed(3)})`;
+    ctx.fillRect(x0 + 3, y - 0.5, x1 - x0 - 6, 1);
+    if (k % 8 === 0) {
+      ctx.fillStyle = `rgba(70,38,4,${(0.22 * c).toFixed(3)})`;
+      ctx.fillRect(x0 + 3, y + 0.5, x1 - x0 - 6, 1);
+    }
+  }
+  // Keyboard cursor: the picked track and the front cell.
+  if (kbd) {
+    const x = colX(kc);
+    ctx.fillStyle = ok(0.84, 0.13, 205, 0.16);
+    ctx.fillRect(x - G.cwid / 2, cy - R, G.cwid, 2 * R);
+  }
+  const pr = Math.max(2.2, 4.2 * u2), ph = R * 0.07;
+  const drawPin = (k, i, s, alpha) => {
+    const th = (u - k) * DPHI, c = Math.cos(th);
+    if (c <= 0.03 || s <= 0) return;
+    const sn = Math.sin(th), x = colX(i), yb = cy + R * sn, yt = cy + (R + ph * s) * sn, r = pr * s * (0.75 + 0.25 * c);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(40,16,0,0.42)';
+    ctx.beginPath();
+    ctx.ellipse(x + 2 * u2 * s, yb + 2.6 * u2 * c * s, r * 1.05, r * Math.max(0.4, c), 0, 0, TAU);
+    ctx.fill();
+    if (Math.abs(yt - yb) > 0.8) {
+      ctx.strokeStyle = ok(0.7, 0.02, 245);
+      ctx.lineWidth = r * 0.75;
+      ctx.beginPath();
+      ctx.moveTo(x, yb);
+      ctx.lineTo(x, yt);
+      ctx.stroke();
+    }
+    ctx.drawImage(pinSpr, x - r, yt - r, 2 * r, 2 * r);
+    if (c < 0.6) {
+      ctx.fillStyle = `rgba(30,12,0,${((0.6 - c) * 0.9).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(x, yt, r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  };
+  for (let k = 0; k < S; k++) {
+    for (let i = 0; i < N; i++) {
+      const ix = k * N + i;
+      if (!pins[ix]) continue;
+      const t = now - born[ix];
+      drawPin(k, i, reduce || t > 0.3 ? 1 : t < 0 ? 0 : backOut(t / 0.3), 1);
+    }
+  }
+  for (const gh of ghosts) {
+    const t = (now - gh.t) / 0.22;
+    if (t < 0) drawPin(gh.k, gh.i, 1, 1);
+    else if (t < 1) drawPin(gh.k, gh.i, 1 + t * 0.3, 1 - t);
+  }
+  // Hover shows where a click lands.
+  if (hover && !grab) {
+    const th = (u - hover.k) * DPHI, x = colX(hover.i), y = cy + (R + ph) * Math.sin(th);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = pinAt(hover.k, hover.i) ? 'rgba(255,240,230,0.85)' : 'rgba(255,250,240,0.6)';
+    ctx.beginPath();
+    ctx.arc(x, y, pr * 1.9, 0, TAU);
+    ctx.stroke();
+    if (!pinAt(hover.k, hover.i)) {
+      ctx.globalAlpha = 0.5;
+      ctx.drawImage(pinSpr, x - pr, y - pr, 2 * pr, 2 * pr);
+      ctx.globalAlpha = 1;
+    }
+  }
+  if (kbd) {
+    const k = mod(Math.round(u), S), th = (u - k) * DPHI, x = colX(kc), y = cy + (R + ph) * Math.sin(th);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = ok(0.84, 0.13, 205, 0.95);
+    ctx.beginPath();
+    ctx.arc(x, y, pr * 2.1, 0, TAU);
+    ctx.stroke();
+  }
+}
+const backOut = t => { const s = 2.2; t -= 1; return 1 + t * t * ((s + 1) * t + s); };
+function drawTeeth() {
+  const hw0 = G.tw / 2, u2 = G.u;
+  for (let i = 0; i < N; i++) {
+    const z = lift[i], x = colX(i), root = rootY(i) + 4, tip = G.tip + z * 0.3, hw = hw0 * (1 + 0.04 * Math.abs(z) / G.push);
+    // The shadow slides away as the tip lifts.
+    const so = 2.5 * u2, st = so + Math.abs(z) * 1.1;
+    ctx.fillStyle = 'rgba(20,6,10,0.42)';
+    ctx.beginPath();
+    ctx.moveTo(x - hw0 + so, root + so);
+    ctx.lineTo(x - hw + st, tip + st + hw * 0.4);
+    ctx.lineTo(x + hw + st, tip + st + hw * 0.4);
+    ctx.lineTo(x + hw0 + so, root + so);
+    ctx.fill();
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(x - hw0, root);
+      ctx.lineTo(x - hw, tip + hw * 0.55);
+      ctx.quadraticCurveTo(x - hw, tip, x, tip);
+      ctx.quadraticCurveTo(x + hw, tip, x + hw, tip + hw * 0.55);
+      ctx.lineTo(x + hw0, root);
+      ctx.closePath();
+    };
+    path();
+    const lg = ctx.createLinearGradient(x - hw, 0, x + hw, 0);
+    lg.addColorStop(0, ok(0.42, 0.04, 255));
+    lg.addColorStop(0.28, ok(0.8, 0.03, 245));
+    lg.addColorStop(0.5, ok(0.93, 0.02, 240));
+    lg.addColorStop(0.75, ok(0.66, 0.04, 255));
+    lg.addColorStop(1, ok(0.36, 0.05, 260));
+    ctx.fillStyle = lg;
+    ctx.fill();
+    // Temper tint deepens toward the root.
+    const vg = ctx.createLinearGradient(0, tip, 0, root);
+    vg.addColorStop(0, ok(0.7, 0.1, 290, 0));
+    vg.addColorStop(1, ok(0.5, 0.14, 290, 0.45));
+    ctx.fillStyle = vg;
+    ctx.fill();
+    if (glow[i] > 0.02) {
+      ctx.fillStyle = ok(0.82, 0.15, HUE[i], glow[i] * 0.4);
+      ctx.fill();
+    }
+    // A bent tooth flashes its glint toward the lamp.
+    const f = clamp(z / G.push, -1, 1), gy = lerp(root, tip, 0.55 + 0.3 * f), gh = (root - tip) * 0.22;
+    const gg = ctx.createLinearGradient(0, gy - gh, 0, gy + gh);
+    const ga = 0.18 + 0.5 * Math.abs(f);
+    gg.addColorStop(0, 'rgba(255,255,255,0)');
+    gg.addColorStop(0.5, `rgba(255,255,255,${ga.toFixed(3)})`);
+    gg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gg;
+    ctx.fillRect(x - hw * 0.35, gy - gh, hw * 0.5, 2 * gh);
+  }
+}
+function drawGlow() {
+  let any = false;
+  for (let i = 0; i < N; i++) if (glow[i] > 0.02) any = true;
+  if (!any) return;
+  ctx.globalCompositeOperation = 'lighter';
+  const gw = G.cwid * 2.4, gh = G.Lmax * 1.15;
+  for (let i = 0; i < N; i++) {
+    if (glow[i] <= 0.02) continue;
+    ctx.globalAlpha = Math.min(1, glow[i]) * 0.75;
+    ctx.drawImage(glowSpr[i], colX(i) - gw / 2, G.tip - gh * 0.38, gw, gh);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+// The spring: tight round the arbor when wound, loose at the wall when spent.
+function drawBarrel() {
+  const { bx, by, rb } = G, u2 = G.u, bs = rb * 2.24, ks = rb * 0.62 * 2.2;
+  const barrelA = windOut * TAU * 1.3, arborA = arborVis * TAU * 1.3;
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.save();
+  ctx.rotate(barrelA);
+  ctx.drawImage(barrelSpr, -bs / 2, -bs / 2, bs, bs);
+  ctx.restore();
+  const r0 = rb * 0.2, r1 = rb * 0.84, turns = 5 + 3 * wind, p = lerp(0.45, 2.6, wind), n = 220;
+  const pts = [];
+  for (let k = 0; k <= n; k++) {
+    const s = k / n, r = r0 + (r1 - r0) * s ** p, a = arborA + s * turns * TAU + (barrelA - arborA) * s;
+    pts.push(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  const line = (dx, dy) => {
+    ctx.beginPath();
+    for (let k = 0; k < pts.length; k += 2) ctx.lineTo(pts[k] + dx, pts[k + 1] + dy);
+    ctx.stroke();
+  };
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1.6, 2.6 * u2);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  line(1.2 * u2, 1.8 * u2);
+  ctx.strokeStyle = ok(0.42, 0.11, 268);
+  line(0, 0);
+  ctx.lineWidth = Math.max(0.6, 0.9 * u2);
+  ctx.strokeStyle = ok(0.78, 0.08, 250, 0.8);
+  line(-0.5 * u2, -0.6 * u2);
+  // The bridge holds the arbor and never turns.
+  ctx.save();
+  ctx.rotate(-0.55);
+  ctx.shadowColor = 'rgba(20,6,0,0.55)';
+  ctx.shadowBlur = 6 * u2;
+  ctx.shadowOffsetX = 2 * u2;
+  ctx.shadowOffsetY = 4 * u2;
+  ctx.beginPath();
+  rr(ctx, -rb * 1.0, -rb * 0.15, rb * 2.0, rb * 0.3, rb * 0.15);
+  const lg = ctx.createLinearGradient(0, -rb * 0.15, 0, rb * 0.15);
+  lg.addColorStop(0, ok(0.86, 0.09, 88));
+  lg.addColorStop(0.5, ok(0.68, 0.11, 80));
+  lg.addColorStop(1, ok(0.45, 0.08, 68));
+  ctx.fillStyle = lg;
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.rotate(-0.55);
+  screw(ctx, -rb * 0.82, 0, rb * 0.08, 0.4);
+  screw(ctx, rb * 0.82, 0, rb * 0.08, 1.9);
+  ctx.restore();
+  ctx.save();
+  ctx.shadowColor = 'rgba(20,6,0,0.6)';
+  ctx.shadowBlur = 8 * u2;
+  ctx.shadowOffsetX = 3 * u2;
+  ctx.shadowOffsetY = 6 * u2;
+  ctx.rotate(arborA);
+  ctx.drawImage(ratchetSpr, -ks / 2, -ks / 2, ks, ks);
+  ctx.restore();
+  // The pawl rides the click wheel.
+  ctx.save();
+  ctx.rotate(-2.2);
+  ctx.beginPath();
+  ctx.moveTo(rb * 0.31, -rb * 0.04);
+  ctx.lineTo(rb * 0.62, -rb * 0.07);
+  ctx.lineTo(rb * 0.62, rb * 0.07);
+  ctx.lineTo(rb * 0.31, rb * 0.02);
+  ctx.closePath();
+  ctx.fillStyle = ok(0.82, 0.03, 245);
+  ctx.fill();
+  ctx.restore();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = 0.35;
+  ctx.drawImage(sheenSpr, -rb * 0.9, -rb * 0.95, rb * 1.1, rb * 1.1);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+}
+function drawFan() {
+  const { fx, fy, fr } = G, fs = fr * 2.2, a = u * DPHI * FANR, w = Math.abs(vel * DPHI * FANR);
+  const blur = reduce ? 0 : clamp((w - 6) / 30);
+  ctx.save();
+  ctx.translate(fx, fy);
+  if (blur > 0) {
+    const gr = ctx.createRadialGradient(0, 0, fr * 0.15, 0, 0, fr);
+    gr.addColorStop(0, ok(0.8, 0.09, 85, 0.35 * blur));
+    gr.addColorStop(0.85, ok(0.75, 0.1, 82, 0.22 * blur));
+    gr.addColorStop(1, ok(0.75, 0.1, 82, 0));
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.arc(0, 0, fr, 0, TAU);
+    ctx.fill();
+  }
+  ctx.rotate(a);
+  ctx.globalAlpha = 0.35;
+  ctx.drawImage(bladeSpr, -fs / 2 + 3 * G.u, -fs / 2 + 5 * G.u, fs, fs);
+  ctx.globalAlpha = 1 - 0.6 * blur;
+  ctx.drawImage(bladeSpr, -fs / 2, -fs / 2, fs, fs);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(fx, fy, fr * 0.12, 0, TAU);
+  ctx.fillStyle = brassRadialAt(ctx, fx, fy, fr * 0.12);
+  ctx.fill();
+}
+function drawCrank() {
+  const { kx, ky, kr, arm, knob } = G, u2 = G.u, cs = kr * 2.3, a = u * TAU / CRANK;
+  ctx.save();
+  ctx.translate(kx, ky);
+  ctx.save();
+  ctx.rotate(a);
+  ctx.drawImage(crownSpr, -cs / 2, -cs / 2, cs, cs);
+  ctx.restore();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = 0.3;
+  ctx.drawImage(sheenSpr, -kr * 0.95, -kr * 0.95, kr * 1.2, kr * 1.2);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  const ex = Math.cos(a) * arm, ey = Math.sin(a) * arm, aw = Math.max(5, 9 * u2);
+  // Arm and knob cast shadows on the velvet.
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(15,0,5,0.38)';
+  ctx.lineWidth = aw;
+  ctx.beginPath();
+  ctx.moveTo(6 * u2, 9 * u2);
+  ctx.lineTo(ex + 9 * u2, ey + 13 * u2);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(15,0,5,0.38)';
+  ctx.beginPath();
+  ctx.arc(ex + 14 * u2, ey + 19 * u2, knob * 1.05, 0, TAU);
+  ctx.fill();
+  const nx = -Math.sin(a), ny = Math.cos(a);
+  const lg = ctx.createLinearGradient(nx * aw * 0.5, ny * aw * 0.5, -nx * aw * 0.5, -ny * aw * 0.5);
+  const lit = clamp(0.5 + 0.5 * (nx * 0.5 + ny * 0.7));
+  lg.addColorStop(0, ok(lerp(0.5, 0.92, 1 - lit), 0.09, 86));
+  lg.addColorStop(0.5, ok(0.74, 0.11, 82));
+  lg.addColorStop(1, ok(lerp(0.5, 0.92, lit), 0.09, 86));
+  ctx.strokeStyle = lg;
+  ctx.lineWidth = aw;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, kr * 0.26, 0, TAU);
+  ctx.fillStyle = brassRadialAt(ctx, 0, 0, kr * 0.26);
+  ctx.fill();
+  screw(ctx, 0, 0, kr * 0.12, a);
+  // A turned wooden knob, lit from the upper left.
+  const kg = ctx.createRadialGradient(ex - knob * 0.35, ey - knob * 0.4, knob * 0.05, ex, ey, knob);
+  kg.addColorStop(0, ok(0.86, 0.06, 60));
+  kg.addColorStop(0.45, ok(0.55, 0.12, 40));
+  kg.addColorStop(1, ok(0.26, 0.07, 30));
+  ctx.fillStyle = kg;
+  ctx.beginPath();
+  ctx.arc(ex, ey, knob, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ---------- physics: the drum, the motor, the comb ---------- */
+function stepDrum(dt) {
+  if (mode === 'hand') {
+    u = handU;
+  } else if (mode === 'goal') {
+    const k = 320, c = 2 * Math.sqrt(k);
+    vel += (k * (goal - u) - c * vel) * dt;
+    u += vel * dt;
+    if (Math.abs(goal - u) < 0.003 && Math.abs(vel) < 0.08) { u = goal; vel = 0; mode = 'free'; }
+  } else {
+    if (wind > 0) {
+      // The governor holds the tempo until the spring runs low.
+      const target = BASE * Math.min(1, Math.sqrt(wind / 0.12));
+      vel += (target - vel) * (1 - Math.exp(-dt / (vel > target ? 0.35 : 0.5)));
+      const used = (Math.max(0, Math.min(vel, target)) * dt) / CAP;
+      wind = Math.max(0, wind - used);
+      windOut += used;
+      if (wind < 1e-4) wind = 0;
+    } else {
+      vel *= Math.exp(-dt / (reduce ? 0.25 : 0.5));
+      if (Math.abs(vel) < 0.05) vel = 0;
+    }
+    u += vel * dt;
+  }
+}
+// A pin crosses the comb each time u passes P plus a whole step.
+function crossings(u0, u1, dt) {
+  if (u1 === u0) return;
+  const fwd = u1 > u0;
+  dir = fwd ? 1 : -1;
+  let ja = fwd ? Math.floor(u0 - P) + 1 : Math.ceil(u1 - P), jb = fwd ? Math.floor(u1 - P) : Math.ceil(u0 - P) - 1;
+  if (jb - ja > S) ja = jb - S;
+  const a = live(), t0 = a ? a.currentTime + LEAD : 0;
+  for (let j = ja; j <= jb; j++) {
+    const f = clamp((P + j - u0) / (u1 - u0)), k = mod(j, S);
+    for (let i = 0; i < N; i++) {
+      if (!pins[k * N + i]) continue;
+      if (a) pluck(i, t0 + f * dt, fwd ? jit(0.05) * 0.95 : 0.7);
+      ring(i, 1);
+    }
+  }
+}
+function ring(i, v) {
+  amp[i] = G.push * v;
+  age[i] = 0;
+  glow[i] = Math.min(1.2, glow[i] * 0.4 + v);
+}
+// Tooth lift: a pin presses it up, then it rings and settles.
+function stepTeeth(dt) {
+  let busy = false;
+  const q = u - P, d = dir > 0 ? Math.floor(q) + 1 - q : q - (Math.ceil(q) - 1), k = mod(dir > 0 ? Math.floor(q) + 1 : Math.ceil(q) - 1, S);
+  const near = d < 0.45 ? 1 - d / 0.45 : 0;
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1), tv = lerp(0.7, 0.35, t), tg = lerp(1.2, 0.55, t) * (reduce ? 0.6 : 1);
+    let z = near && pins[k * N + i] ? G.push * near * near : 0;
+    if (amp[i] > 0) {
+      age[i] += dt;
+      const e = Math.exp(-age[i] / tv);
+      if (amp[i] * e < 0.05) amp[i] = 0;
+      else {
+        z += reduce ? amp[i] * e * 0.3 : amp[i] * e * Math.cos(TAU * lerp(19, 27, t) * age[i]);
+        busy = true;
+      }
+    }
+    if (glow[i] > 0) {
+      glow[i] *= Math.exp(-dt / tg);
+      if (glow[i] < 0.02) glow[i] = 0;
+      else busy = true;
+    }
+    lift[i] = z;
+  }
+  return busy;
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, ready = false, slow = 0, frames = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 20), now = ms / 1000;
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr && ++frames > 20) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 24) { lowDpr = true; fit(); }
+  }
+  const u0 = u;
+  stepDrum(dt);
+  crossings(u0, u, dt);
+  const ringing = stepTeeth(dt);
+  arborVis += (windIn - arborVis) * (1 - Math.exp(-dt / 0.08));
+  ghosts = ghosts.filter(g => now - g.t < 0.25);
+  const popping = ghosts.length > 0 || now - lastBorn < 0.35;
+  const moving = mode !== 'free' || vel !== 0 || wind > 0 || Math.abs(windIn - arborVis) > 1e-4;
+  draw(now);
+  if (frames === 2) cv.classList.add('on');
+  if (ac && ac.state === 'running') whirTo(Math.abs(vel * DPHI * FANR) / TAU);
+  if ((moving || ringing || popping || grab) && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else rest();
+}
+
+/* ---------- actions ---------- */
+let lastBorn = -9;
+function togglePin(i, k) {
+  const ix = k * N + i, now = clock();
+  const a = live();
+  if (pins[ix]) {
+    pins[ix] = 0;
+    ghosts.push({ i, k, t: now });
+    if (a) tap(a.currentTime + LEAD, 2600, 0.7);
+  } else {
+    pins[ix] = 1;
+    born[ix] = now;
+    lastBorn = now;
+    if (a) {
+      tap(a.currentTime + LEAD, 3900, 1);
+      pluck(i, a.currentTime + LEAD + 0.03, 0.5);
+    }
+    ring(i, 0.45);
+  }
+  wake();
+}
+function clearPins(now) {
+  let n = 0;
+  for (let k = 0; k < S; k++) {
+    for (let i = 0; i < N; i++) {
+      if (!pins[k * N + i]) continue;
+      pins[k * N + i] = 0;
+      // Pins nearest the front leave first.
+      const th = mod((u - k) * DPHI + Math.PI, TAU) - Math.PI;
+      ghosts.push({ i, k, t: now + (reduce ? 0 : Math.abs(th) * 0.12 + i * 0.004) });
+      n++;
+    }
+  }
+  return n;
+}
+function loadTune(ix) {
+  const now = clock(), a = live();
+  clearPins(now);
+  let n = 0;
+  for (const [k, ...teeth] of TUNES[ix]) {
+    for (const i of teeth) {
+      const j = k * N + i, th = mod((u - k) * DPHI + Math.PI, TAU) - Math.PI;
+      pins[j] = 1;
+      born[j] = now + (reduce ? 0 : 0.18 + Math.abs(th) * 0.16 + i * 0.006);
+      lastBorn = Math.max(lastBorn, born[j]);
+      n++;
+    }
+  }
+  if (a) for (let k = 0; k < 7; k++) tap(a.currentTime + LEAD + 0.2 + k * 0.07, 3600 - k * 120, 0.55 - k * 0.05);
+  wake();
+}
+function windUp(dw, clicks = true) {
+  const add = Math.min(1 - wind, dw);
+  if (add <= 0.001) return;
+  wind += add;
+  windIn += add;
+  const a = live();
+  if (a && clicks) {
+    const n = clamp(Math.round(add * 22), 1, 10);
+    const t = Math.max(a.currentTime + LEAD, clickAt);
+    for (let k = 0; k < n; k++) click(t + k * 0.032, 0.8 + 0.2 * Math.random());
+    clickAt = t + n * 0.032;
+  }
+  wake();
+}
+function stepBy(d) {
+  if (mode !== 'goal') { goal = Math.round(u); vel = mode === 'hand' ? 0 : vel; }
+  goal += d;
+  mode = 'goal';
+  wake();
+}
+
+/* ---------- input ---------- */
+let rect = null, grab = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H];
+}
+function cellAt(x, y) {
+  if (x < G.x0 || x >= G.x1) return null;
+  const s = (y - G.cy) / G.R;
+  if (Math.abs(s) > 0.93) return null;
+  const i = clamp(Math.floor((x - G.x0) / G.cwid), 0, N - 1), k = mod(Math.round(u - Math.asin(s) / DPHI), S);
+  return { i, k };
+}
+const onCrank = (x, y) => Math.hypot(x - G.kx, y - G.ky) < G.arm + G.knob + 10 * G.u;
+const onDrum = (x, y) => x > G.x0 - 4 && x < G.x1 + 4 && Math.abs(y - G.cy) < G.R;
+const onBarrel = (x, y) => Math.hypot(x - G.bx, y - G.by) < G.rb * 1.08;
+function cursorFor(x, y) {
+  panel.style.cursor = grab ? 'grabbing' : onCrank(x, y) || onBarrel(x, y) ? 'grab' : onDrum(x, y) ? 'pointer' : '';
+}
+function sample(t) {
+  grab.hist.push(t, handU);
+  while (grab.hist.length > 4 && t - grab.hist[0] > 110) grab.hist.splice(0, 2);
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || grab || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  const kind = onCrank(x, y) ? 'crank' : onDrum(x, y) ? 'drum' : onBarrel(x, y) ? 'barrel' : null;
+  if (!kind) return;
+  kbd = false;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  grab = { id: e.pointerId, kind, sx: x, sy: y, ly: y, moved: false, cell: kind === 'drum' ? cellAt(x, y) : null, hist: [] };
+  grab.a = kind === 'crank' ? Math.atan2(y - G.ky, x - G.kx) : Math.atan2(y - G.by, x - G.bx);
+  if (kind !== 'barrel') {
+    // A hand on the drum or crank holds it still.
+    handU = u;
+    mode = 'hand';
+    vel = 0;
+    sample(e.timeStamp);
+  }
+  hover = null;
+  cursorFor(x, y);
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  if (!grab) {
+    if (e.pointerType !== 'mouse' || !ready) return;
+    const [x, y] = local(e), c = onDrum(x, y) ? cellAt(x, y) : null;
+    cursorFor(x, y);
+    if ((c && hover && c.i === hover.i && c.k === hover.k) || (!c && !hover)) return;
+    hover = c;
+    wake();
+    return;
+  }
+  if (e.pointerId !== grab.id) return;
+  const list = e.getCoalescedEvents?.() || [];
+  for (const ev of list.length ? list : [e]) {
+    const [x, y] = local(ev);
+    if (grab.kind === 'drum') {
+      if (!grab.moved && Math.hypot(x - grab.sx, y - grab.sy) > 6) { grab.moved = true; grab.ly = y; }
+      if (grab.moved) {
+        const s = clamp((y - G.cy) / G.R, -0.95, 0.95), c = Math.max(0.45, Math.sqrt(1 - s * s));
+        handU += (y - grab.ly) / (G.R * c * DPHI);
+        grab.ly = y;
+      }
+    } else {
+      const cx = grab.kind === 'crank' ? G.kx : G.bx, cy = grab.kind === 'crank' ? G.ky : G.by;
+      const r = Math.hypot(x - cx, y - cy), a = Math.atan2(y - cy, x - cx);
+      let da = a - grab.a;
+      da = mod(da + Math.PI, TAU) - Math.PI;
+      grab.a = a;
+      if (r < 6 * G.u) continue;
+      grab.moved = true;
+      if (grab.kind === 'crank') handU += (da / TAU) * CRANK;
+      else if (da > 0) windUp((da / TAU) * 0.3);
+    }
+    if (grab.kind !== 'barrel') sample(ev.timeStamp);
+  }
+  wake();
+});
+function release(e) {
+  if (!grab || e.pointerId !== grab.id) return;
+  const g = grab;
+  grab = null;
+  if (g.kind === 'drum' && !g.moved && g.cell && e.type === 'pointerup') togglePin(g.cell.i, g.cell.k);
+  if (g.kind !== 'barrel') {
+    // Release speed from the last tenth of a second of the drag.
+    let v = 0;
+    const hs = g.hist, n = hs.length;
+    if (n >= 4 && e.timeStamp - hs[n - 2] < 70) {
+      const span = (hs[n - 2] - hs[0]) / 1000;
+      if (span > 0.012) v = (hs[n - 1] - hs[1]) / span;
+    }
+    v = clamp(v, -60, 60);
+    mode = 'free';
+    vel = g.moved ? v : 0;
+    if (v > FLICK) windUp(clamp((v - 4) / 40, 0.1, 1));
+  }
+  const [x, y] = local(e);
+  cursorFor(x, y);
+  wake();
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, release));
+panel.addEventListener('pointerleave', () => { if (hover) { hover = null; wake(); } });
+panel.addEventListener('contextmenu', e => e.preventDefault());
+// The keyboard cursor shows only for keyboard use.
+panel.addEventListener('blur', () => { if (kbd) { kbd = false; wake(); } });
+let spaceAt = 0;
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === ' ') {
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!ready) return;
+    const t = performance.now();
+    if (e.repeat && t - spaceAt < 110) return;
+    spaceAt = t;
+    windUp(e.repeat ? 0.06 : 0.22);
+  } else if (k === 'ArrowUp' || k === 'ArrowDown') {
+    e.preventDefault();
+    if (!ready) return;
+    kbd = true;
+    stepBy(k === 'ArrowDown' ? 1 : -1);
+  } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    e.preventDefault();
+    if (!ready) return;
+    kbd = true;
+    kc = clamp(kc + (k === 'ArrowRight' ? 1 : -1), 0, N - 1);
+    wake();
+  } else if (k === 'Enter') {
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!ready || e.repeat) return;
+    kbd = true;
+    togglePin(kc, mod(Math.round(u), S));
+  }
+});
+const clearB = document.getElementById('clear'), tuneB = document.getElementById('tune');
+clearB.addEventListener('click', () => {
+  if (!ready) return;
+  const now = clock(), a = live();
+  if (clearPins(now) && a) for (let k = 0; k < 6; k++) tap(a.currentTime + LEAD + k * 0.05, 2800 - k * 160, 0.5 - k * 0.06);
+  wake();
+});
+tuneB.addEventListener('click', () => {
+  if (!ready) return;
+  tuneIx = 1 - tuneIx;
+  loadTune(tuneIx);
+});
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- size: canvas pixels follow the stage ---------- */
+function fit() {
+  const r = panel.getBoundingClientRect();
+  rect = null;
+  if (r.width < 2 || r.height < 2) return;
+  W = r.width;
+  H = r.height;
+  dpr = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (W * H)));
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  G = layout(W, H);
+  paintBg();
+  drumSpr = paintDrum();
+  combSpr = paintComb();
+  paintSprites();
+  if (ready) draw(clock());
+  wake();
+}
+let fitT = 0;
+function refit() {
+  clearTimeout(fitT);
+  fitT = setTimeout(fit, 60);
+}
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); else rest(); });
+
+async function boot() {
+  if (!ctx) {
+    panel.querySelector('.fail').hidden = false;
+    clearB.disabled = tuneB.disabled = true;
+    return;
+  }
+  await idle();
+  for (const [k, ...teeth] of TUNES[0]) for (const i of teeth) pins[k * N + i] = 1;
+  fit();
+  ready = true;
+  draw(clock());
+  cv.classList.add('on');
+  new ResizeObserver(refit).observe(panel);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
