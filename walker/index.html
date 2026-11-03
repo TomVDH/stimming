@@ -846,11 +846,10 @@ void main() {
 // The flare follows Buoy Business: haze, orb, streak and warm ghosts.
 // Depth taps round the sun hide it where the walker covers it.
 const POST_FS = `
-uniform sampler2D tColor, tDepth, tHaze;
+uniform sampler2D tColor, tDepth, tHaze, tMask;
 uniform vec2 uSun;
 uniform float uAspect, uGain, uBand, uHard;
-uniform vec2 uHazeR, uHole;
-uniform float uHoleR;
+uniform vec2 uHazeR;
 uniform vec3 uFlareCol;
 varying vec2 vUv;
 const float RING = 0.012;
@@ -879,7 +878,7 @@ void main() {
   float line = mix(0.9, 0.45, uBand) * exp(-abs(ay) * 34.0 / tall) + 0.3 * exp(-abs(ay) * 9.0 / tall) + mix(0.07, 0.16, uBand) * exp(-abs(ay) * 2.6 / tall);
   // A hard flare: a razor-thin, bright core instead of soft bands.
   line = mix(line, 1.6 * exp(-abs(ay) * 220.0) + 0.12 * exp(-abs(ay) * 30.0), uHard);
-  add += mix(mix(col, vec3(0.85, 0.8, 1.0), 0.25), col, uBand) * line * exp(-abs(ax) / 1.4);
+  vec3 streak = mix(mix(col, vec3(0.85, 0.8, 1.0), 0.25), col, uBand) * line * exp(-abs(ax) / 1.4);
   // Ghosts sit on the line from the sun through the frame centre.
   vec2 toC = vec2(0.5) - uSun;
   vec3 gs[4];
@@ -899,11 +898,11 @@ void main() {
       haze += texture2D(tHaze, vUv + vec2(cos(a), sin(a)) * uHazeR).rgb;
     }
     add += haze / 9.0 * 1.6 * uHard * uGain;
-    // No flare light falls on the shadow, so the hole stays black.
-    float hd = length((vUv - uHole) * vec2(uAspect, 1.0));
-    float dark = 1.0 - smoothstep(0.03, 0.2, dot(base, vec3(0.3, 0.5, 0.2)));
-    add *= 1.0 - uHard * dark * (1.0 - smoothstep(uHoleR * 0.9, uHoleR * 1.1, hd));
+    // Veil and haze stop at the hole's footprint; the hole stays opaque.
+    add *= 1.0 - texture2D(tMask, vUv).a;
   }
+  // The streak alone crosses in front of the hole.
+  add += streak * cover * uGain;
   // Haze sits lighter on the near walker than on the far sky.
   add *= texture2D(tDepth, vUv).r > 0.9999 ? 1.0 : 0.3;
   // Screen blend: the flare washes the frame instead of clipping it.
@@ -1118,8 +1117,9 @@ vec3 bbColor(float t) {
   c = mix(c, vec3(1.0, 0.93, 0.82), smoothstep(0.3, 0.8, t));
   return mix(c, vec3(0.65, 0.82, 1.0), smoothstep(0.8, 1.8, t));
 }
-vec4 shadeDisk(vec3 hit, vec3 vel, float time) {
+vec4 shadeDisk(vec3 hit, vec3 vel, float time, out vec3 fill) {
   float r = length(hit.xz);
+  fill = vec3(0.0);
   if (r < DISK_IN * 0.5 || r > DISK_OUT * 1.05) return vec4(0.0);
   float tProfile = pow(ISCO / r, 0.75) * pow(max(0.001, 1.0 - sqrt(ISCO / r)), 0.25) * sqrt(max(0.01, 1.0 - RS / r));
   float lr = log2(max(r, 0.1));
@@ -1135,6 +1135,8 @@ vec4 shadeDisk(vec3 hit, vec3 vel, float time) {
   float I = tProfile * turb * 6.0;
   I *= smoothstep(DISK_IN * 0.7, DISK_IN * 1.2, r) * (0.35 + 0.65 * smoothstep(ISCO * 0.85, ISCO * 1.2, r)) * (1.0 - smoothstep(DISK_OUT * 0.55, DISK_OUT, r));
   vec3 col = bbColor(tProfile * pow(dop, 1.8) * 1.2) * I * dop * dop * dop;
+  // Smooth gas under the rings fills their gaps, so no sky shows through.
+  fill = bbColor(tProfile * pow(dop, 1.8) * 1.2) * (0.14 + tProfile * 1.3) * min(dop * dop, 2.5);
   return vec4(col, clamp(I * 1.3, 0.0, 0.96));
 }
 void main() {
@@ -1145,7 +1147,7 @@ void main() {
   vec3 fwd = normalize(-eye), rt = normalize(cross(fwd, vec3(0.0, 1.0, 0.0))), up = cross(rt, fwd);
   vec3 pos = eye, vel = normalize(fwd + uv.x * rt + uv.y * up);
   vec3 Lv = cross(pos, vel); float gravCoeff = -1.5 * RS * dot(Lv, Lv);
-  vec4 acc4 = vec4(0.0); vec3 glow = vec3(0.0); float solid = 0.0; bool absorbed = false; int crossings = 0; float minR = 1000.0;
+  vec4 acc4 = vec4(0.0); vec3 glow = vec3(0.0); float solid = 0.0; vec3 gas = vec3(0.0); bool absorbed = false; int crossings = 0; float minR = 1000.0;
   for (int i = 0; i < 200; i++) {
     float r = length(pos), h = 0.16 * clamp(r - 0.4 * RS, 0.06, 3.5);
     vec3 a = (gravCoeff / (r * r * r * r * r)) * pos;
@@ -1156,10 +1158,13 @@ void main() {
     minR = min(minR, r1);
     if (pos.y * p1.y < 0.0 && acc4.a < 0.97) {
       vec3 hit = mix(pos, p1, pos.y / (pos.y - p1.y));
-      vec4 dc = shadeDisk(hit, vel, uTime * 0.3);
-      // Dim disc gas still hides the sky; only the outer rim feathers.
+      vec3 fill;
+      vec4 dc = shadeDisk(hit, vel, uTime * 0.3, fill);
+      // The gas body is opaque; only its outer rim feathers into the sky.
       float hr = length(hit.xz);
-      solid = max(solid, smoothstep(DISK_IN * 0.5, DISK_IN * 0.7, hr) * (1.0 - smoothstep(DISK_OUT * 0.5, DISK_OUT * 0.8, hr)));
+      float body = smoothstep(DISK_IN * 0.5, DISK_IN * 0.7, hr) * (1.0 - smoothstep(DISK_OUT * 0.6, DISK_OUT * 0.95, hr));
+      gas += fill * body * (1.0 - solid);
+      solid += body * (1.0 - solid);
       if (crossings >= 2) dc *= 0.15;
       acc4.rgb += dc.rgb * dc.a * (1.0 - acc4.a); acc4.a += dc.a * (1.0 - acc4.a);
       glow += dc.rgb * 0.04 * max(dot(dc.rgb, vec3(0.3, 0.5, 0.2)) * dc.a - 0.3, 0.0);
@@ -1175,7 +1180,7 @@ void main() {
     if (r1 > 55.0) break;
     pos = p1; vel = v1;
   }
-  vec3 col = acc4.rgb;
+  vec3 col = acc4.rgb + gas * (1.0 - acc4.a);
   float ringDist = abs(minR - 1.5 * RS);
   col.r += exp(-(ringDist + 0.08) * (ringDist + 0.08) * 35.0) * 0.03;
   col.b += exp(-(ringDist - 0.08) * (ringDist - 0.08) * 35.0) * 0.035;
@@ -1192,6 +1197,11 @@ void main() {
   const ehMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), ehMat);
   ehMesh.frustumCulled = false; ehMesh.renderOrder = -4;
   scene.add(ehMesh, disk);
+  // A twin in its own scene renders the mask without lights or shadows.
+  const ehMask = new THREE.Mesh(ehMesh.geometry, ehMat);
+  ehMask.frustumCulled = false;
+  const maskScene = new THREE.Scene();
+  maskScene.add(ehMask);
   const diskM = new THREE.Matrix4();
 
   // Backlit tubes: dark faces, a warm rim where the low sun grazes them.
@@ -1290,7 +1300,9 @@ void main() {
   rt.depthTexture = new THREE.DepthTexture(1, 1);
   // The black hole's haze renders small, so it stays soft and cheap.
   const hazeRt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
-  const postU = { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, tHaze: { value: hazeRt.texture }, uHazeR: { value: new THREE.Vector2() }, uHole: { value: new THREE.Vector2(0.5, 0.5) }, uHoleR: { value: 0 }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 }, uGain: { value: 1 }, uFlareCol: { value: new THREE.Vector3(1, 0.73, 0.49) }, uBand: { value: 0 }, uHard: { value: 0 } };
+  // The hole's alpha renders alone at quarter size, so flare light can stop at its edge.
+  const maskRt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+  const postU = { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, tHaze: { value: hazeRt.texture }, tMask: { value: maskRt.texture }, uHazeR: { value: new THREE.Vector2() }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 }, uGain: { value: 1 }, uFlareCol: { value: new THREE.Vector3(1, 0.73, 0.49) }, uBand: { value: 0 }, uHard: { value: 0 } };
   // three's bloom spreads the sun, the horizon glow and the glitter.
   // It adds onto the scene target before the flare and grade pass.
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.75, 0.86);
@@ -1305,7 +1317,7 @@ void main() {
   };
   postScene.add(screenQuad(postU, POST_FS));
   const hazeScene = new THREE.Scene();
-  const hazeU = { tColor: postU.tColor, uHole: postU.uHole };
+  const hazeU = { tColor: postU.tColor, uHole: { value: new THREE.Vector2(0.5, 0.5) } };
   hazeScene.add(screenQuad(hazeU, HAZE_FS));
 
   const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3(), _s = new THREE.Vector3();
@@ -1335,6 +1347,7 @@ void main() {
       U.uRes.value.set(W, H); U.uDpr.value = W / w;
       rt.setSize(W, H);
       hazeRt.setSize(Math.ceil(W / 4), Math.ceil(H / 4));
+      maskRt.setSize(Math.ceil(W / 4), Math.ceil(H / 4));
       postU.uHazeR.value.set(10 / W, 10 / H);
       postU.uAspect.value = w / h;
       bloom.setSize(W, H);
@@ -1449,9 +1462,7 @@ void main() {
           .addScaledVector(_a.set(0, 1, 0).applyQuaternion(camera.quaternion), -0.1 * S).project(camera);
         postU.uSun.value.lerp(new THREE.Vector2((_b.x + 1) / 2, (_b.y + 1) / 2), look.hole);
         _b.copy(HU.uC.value).project(camera);
-        postU.uHole.value.set((_b.x + 1) / 2, (_b.y + 1) / 2);
-        // The shadow spans about 0.17 of the quad's half size.
-        postU.uHoleR.value = (0.17 * S * focal) / (30 * h);
+        hazeU.uHole.value.set((_b.x + 1) / 2, (_b.y + 1) / 2);
       }
       // The planet keeps its place in the sky, thirty units out along its bearing.
       planet.visible = look.alien > 0.5;
@@ -1468,7 +1479,14 @@ void main() {
       renderer.render(scene, camera);
       bloom.strength = 0.7 * flareGain * (0.4 + 0.6 * look.flareK) * (1 - 0.6 * look.hole);
       bloom.render(renderer, null, rt, 0, false);
-      if (look.hole > 0.01) { renderer.setRenderTarget(hazeRt); renderer.render(hazeScene, postCam); }
+      if (look.hole > 0.01) {
+        renderer.setRenderTarget(hazeRt); renderer.render(hazeScene, postCam);
+        ehMask.position.copy(ehMesh.position); ehMask.scale.copy(ehMesh.scale); ehMask.quaternion.copy(ehMesh.quaternion);
+        const clearA = renderer.getClearAlpha();
+        renderer.setClearAlpha(0);
+        renderer.setRenderTarget(maskRt); renderer.render(maskScene, camera);
+        renderer.setClearAlpha(clearA);
+      }
       renderer.setRenderTarget(null);
       renderer.render(postScene, postCam);
     },
