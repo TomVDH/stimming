@@ -437,8 +437,9 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       <li>
         <a class="toy" id="magnet" href="magnet/index.html">
           <span class="obj">
-            <svg viewBox="0 0 128 128" aria-hidden="true">
-              <g id="magnet-balls" fill="url(#g-ball)"></g>
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <radialGradient id="g-magball" cx="0.34" cy="0.3" r="0.75"><stop offset="0" stop-color="oklch(0.95 0.06 30)"/><stop offset="0.35" stop-color="oklch(0.66 0.22 27)"/><stop offset="1" stop-color="oklch(0.34 0.13 22)"/></radialGradient>
+              <g id="magnet-balls"></g>
             </svg>
           </span>
           <span class="name">Magnet balls</span>
@@ -1056,20 +1057,29 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     rest() { gsap.to(cubeTop, { scaleY: 1, duration: 0.3, overwrite: true }); },
   };
 
-  const pile = [[50, 74], [64, 70], [78, 76], [57, 86], [72, 88], [44, 62], [86, 62]];
-  const balls = pile.map(([x, y]) => el('circle', { cx: x, cy: y, r: 7 }, document.getElementById('magnet-balls')));
+  // Magnet balls: a ring of twelve; on hover it opens and snaps shut, a ball's step on.
+  const magRing = document.getElementById('magnet-balls');
+  const magBalls = Array.from({ length: 12 }, (_, k) => {
+    const a = -Math.PI / 2 + (k * TAU) / 12;
+    const g = el('g', {}, magRing);
+    el('circle', { cx: 64 + 40 * Math.cos(a), cy: 64 + 40 * Math.sin(a), r: 10.5, fill: 'url(#g-magball)' }, g);
+    el('circle', { cx: 64 + 40 * Math.cos(a) - 3.4, cy: 64 + 40 * Math.sin(a) - 3.8, r: 2.4, fill: 'oklch(0.99 0.02 40 / 0.85)' }, g);
+    return g;
+  });
   toys.magnet = {
-    // Balls snap from a loose pile into a ring and back.
     play() {
-      const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.6 });
-      balls.forEach((b, k) => {
-        const a = -Math.PI / 2 + (k * TAU) / balls.length;
-        tl.to(b, { attr: { cx: 64 + 26 * Math.cos(a), cy: 64 + 26 * Math.sin(a) }, duration: 0.3, ease: 'back.out(2.4)' }, k * 0.07);
-      });
-      return tl.to(balls, { attr: { cx: k => pile[k][0], cy: k => pile[k][1] }, duration: 0.5, ease: 'power3.inOut', stagger: 0.04 }, '+=0.7');
+      // A twelfth of a turn lands every ball on the next, so the loop is seamless.
+      return gsap.timeline({ repeat: -1 })
+        .to(magBalls, { scale: 1.1, svgOrigin: '64 64', duration: 0.35, ease: 'power2.out' })
+        .to(magRing, { rotation: '+=30', svgOrigin: '64 64', duration: 0.5, ease: 'power2.inOut' }, 0.1)
+        .to(magBalls, { scale: 1, svgOrigin: '64 64', duration: 0.5, ease: 'elastic.out(1.2, 0.35)' }, 0.42);
     },
-    rest() { gsap.to(balls, { attr: { cx: k => pile[k][0], cy: k => pile[k][1] }, duration: 0.3, overwrite: true }); },
+    rest() {
+      gsap.to(magBalls, { scale: 1, svgOrigin: '64 64', duration: 0.3, overwrite: true });
+      gsap.to(magRing, { rotation: Math.round(gsap.getProperty(magRing, 'rotation') / 30) * 30, svgOrigin: '64 64', duration: 0.3 });
+    },
   };
+
 
   /* ---------- toys ten onwards ---------- */
   const $ = id => document.getElementById(id);
