@@ -20,6 +20,9 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
+/* The halo spills edge light onto the page around the stage. */
+body { overflow-x: clip; }
+.halo { position: absolute; left: 0; top: 0; pointer-events: none; }
 /* The add chips sit together as one strip. */
 /* Add opens a tray of pieces above the bar. */
 .adder { position: relative; }
@@ -66,6 +69,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
+    <canvas class="halo" aria-hidden="true"></canvas>
     <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the bar. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Scroll or pinch to resize a piece. Tab picks a piece, arrow keys move it, Q and E turn it, minus and plus resize it, Delete removes it, Escape lets go.">
       <canvas aria-hidden="true"></canvas>
       <button class="drop" type="button" tabindex="-1" aria-label="Remove" hidden><svg viewBox="0 0 26 26" aria-hidden="true"><circle class="disc" cx="13" cy="13" r="12"/><path class="cut" d="M9 9l8 8M17 9l-8 8"/></svg></button>
@@ -747,7 +751,7 @@ function bake() {
 /* ---------- edge light: a soft bleed where light meets the frame ---------- */
 // Each side holds one strip: along the edge, then depth into the table.
 // The blur widens with depth, so the light fans out as it fades.
-const EB = 384, ER = 48, ESD = [0.006, 0.045, 0.13], EDEP = 0.22;
+const EB = 384, ER = 48, HR = 24, ESD = [0.006, 0.045, 0.13], EDEP = 0.22;
 const EPR = ESD.map(() => new Float32Array(EB * 3));
 const EFO = Float32Array.from({ length: ER }, (_, r) => {
   const d = r / (ER - 1);
@@ -759,7 +763,11 @@ const STRIP = [0, 1, 2, 3].map(() => {
   c.height = ER;
   const img = x.createImageData(EB, ER);
   for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
-  return { c, x, img, on: false };
+  // The outer strip carries its light in alpha for the page behind.
+  const [oc, ox] = mk();
+  oc.width = EB;
+  oc.height = HR;
+  return { c, x, img, oc, ox, oimg: ox.createImageData(EB, HR), on: false };
 });
 function bleed() {
   for (let s = 0; s < 4; s++) {
@@ -798,6 +806,50 @@ function bleed() {
       }
     }
     st.x.putImageData(st.img, 0, 0);
+    // Outside the frame only the wide blurs remain, fading fast.
+    const q = st.oimg.data;
+    for (let r = 0; r < HR; r++) {
+      const t = r / (HR - 1), f = 2.6 * Math.exp(-t / 0.28) * (1 - t) ** 2;
+      let o = r * EB * 4;
+      for (let b = 0; b < EB * 3; b += 3, o += 4) {
+        const R = 1 - Math.exp(-f * ((1 - t) * B[b] + t * C[b]));
+        const G = 1 - Math.exp(-f * ((1 - t) * B[b + 1] + t * C[b + 1]));
+        const Bl = 1 - Math.exp(-f * ((1 - t) * B[b + 2] + t * C[b + 2]));
+        const a = Math.max(R, G, Bl, 1e-4);
+        q[o] = (255 * R) / a;
+        q[o + 1] = (255 * G) / a;
+        q[o + 2] = (255 * Bl) / a;
+        q[o + 3] = 255 * a;
+      }
+    }
+    st.ox.putImageData(st.oimg, 0, 0);
+  }
+  drawHalo();
+}
+const halo = document.querySelector('.halo'), hX = halo.getContext('2d');
+const HM = 84, HQ = 0.5;
+// The halo sits behind the stage and reaches HM pixels past it.
+function placeHalo() {
+  const w = W + 2 * HM, h = H + 2 * HM;
+  halo.style.transform = `translate(${panel.offsetLeft - HM}px, ${panel.offsetTop - HM}px)`;
+  const cw2 = Math.ceil(w * HQ), ch2 = Math.ceil(h * HQ);
+  if (halo.width === cw2 && halo.height === ch2) return;
+  halo.style.width = `${w}px`;
+  halo.style.height = `${h}px`;
+  halo.width = cw2;
+  halo.height = ch2;
+  geomDirty = true;
+}
+function drawHalo() {
+  const k = halo.width / (W + 2 * HM);
+  hX.setTransform(1, 0, 0, 1, 0, 0);
+  hX.clearRect(0, 0, halo.width, halo.height);
+  hX.globalCompositeOperation = 'lighter';
+  for (let s = 0; s < 4; s++) {
+    if (!STRIP[s].on) continue;
+    const [tx, ty, ix, iy, ox, oy] = SIDE[s];
+    hX.setTransform(k * tx, k * ty, -k * ix, -k * iy, k * (HM + ox * W), k * (HM + oy * H));
+    hX.drawImage(STRIP[s].oc, 0, 0, s & 1 ? H : W, HM);
   }
 }
 // Each side maps strip x along the edge and strip y inward.
@@ -2050,6 +2102,7 @@ function fit(force) {
   const nw = Math.floor(w * p), nh = Math.floor(h * p);
   if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
   measureBar();
+  placeHalo();
   if (pristine() && !tween) applyLayout();
   if (force === true || nw !== cw || nh !== ch || !bgC.width) {
     cw = canvas.width = bgC.width = nw;
