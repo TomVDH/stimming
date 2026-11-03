@@ -31,12 +31,11 @@ const play = (el, frame, ms, ease = linear) => {
 };
 
 // ready is a promise; the intro holds at least min ms before it clears.
-export async function intro({ ready = Promise.resolve(), min = 1200 } = {}) {
+export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
   root.classList.add('is-live');
-  const flash = root.querySelector('.intro-flash'), text = root.querySelector('.intro-text');
-  const grain = root.querySelector('.intro-grain');
+  const text = root.querySelector('.intro-text'), grain = root.querySelector('.intro-grain');
   const held = Promise.all([ready, wait(frames(min))]);
 
   if (RM.matches) {
@@ -48,12 +47,29 @@ export async function intro({ ready = Promise.resolve(), min = 1200 } = {}) {
     return;
   }
 
-  // The viewport flashes white, holds, then drops away to leave the white name.
+  // The flash copy is the name in a white box; the whiteout sits under it.
+  const flash = text.cloneNode(true);
+  flash.className = 'intro-flash';
+  text.after(flash);
+  const whiteout = Object.assign(document.createElement('div'), { className: 'intro-whiteout' });
+  root.querySelector('.intro-mark').before(whiteout);
+  const fold = flash.querySelector('.intro-sub');
+  if (fold) fold.style.transform = 'rotateX(-90deg)';
+
+  // The viewport whites out, then shrinks back to the glowing box.
   await wait(3);
+  whiteout.style.opacity = 1;
   flash.style.opacity = 1;
-  await wait(5);
+  await wait(2);
+  play(whiteout, p => ({ opacity: [0.8, 0.45, 0.15, 0][Math.min(3, Math.floor(p * 4))] }), 4000 / FPS);
+  // The subtitle folds down inside the box.
+  if (fold) await play(fold, p => ({ transform: `rotateX(${(-90 * (1 - p)).toFixed(2)}deg)` }), 250, settle);
+  await wait(8);
+  // The box flickers out and leaves the name in white.
   text.style.opacity = 1;
   await play(flash, p => ({ opacity: [1, 0.2, 0.9, 0][Math.min(3, Math.floor(p * 4))] }), 4000 / FPS);
+  flash.remove();
+  whiteout.remove();
 
   await held;
 
