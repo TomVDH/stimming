@@ -58,6 +58,10 @@ h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
 .narrow .cols > :first-child, .narrow .cols span span { display: none; }
 .frames { display: grid; }
 iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg); }
+/* The output panel holds the selection as JSON, ready to paste. */
+.out { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.out b { font-size: 15px; font-weight: 800; }
+.out textarea { width: 100%; min-height: 220px; padding: 12px; resize: vertical; color: var(--fg); background: oklch(0.12 0.01 275); border: 1px solid var(--line); border-radius: 10px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 @media (pointer: coarse) { .chip { padding: 9px 14px; } }
 @media (prefers-reduced-motion: reduce) { .chip { transition: none; } }
 </style>
@@ -71,6 +75,10 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
       <button class="chip" id="all" type="button" aria-pressed="false">Transition</button>
       <button class="chip" id="both" type="button" aria-pressed="false">Both</button>
     </div>
+    <div class="actions" role="group" aria-label="Click to">
+      <button class="chip" id="mcut" type="button" aria-pressed="true">Cut</button>
+      <button class="chip" id="msel" type="button" aria-pressed="false">Select</button>
+    </div>
     <div class="actions">
       <button class="chip" id="hide" type="button" aria-pressed="false">Hide cut</button>
       <button class="chip" id="copy" type="button">Copy</button>
@@ -78,8 +86,9 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
     </div>
     <span class="left" id="left"></span>
     <dl class="how">
-      <div><dt>Click</dt><dd>cut</dd></div>
+      <div><dt>Click</dt><dd>cut or select</dd></div>
       <div class="fine"><dt><kbd>X</kbd></dt><dd>cut</dd></div>
+      <div class="fine"><dt><kbd>S</kbd></dt><dd>select</dd></div>
       <div class="fine"><dt><kbd>Z</kbd></dt><dd>undo</dd></div>
       <div class="fine"><dt>Arrows</dt><dd>move</dd></div>
       <div class="fine"><dt><kbd>T</kbd></dt><dd>transition</dd></div>
@@ -87,6 +96,7 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
   </div>
   <div class="cols" id="cols"></div>
   <div class="frames" id="frames"></div>
+  <section class="out" aria-label="Output"><b>Output</b><textarea id="out" readonly spellcheck="false" aria-label="Selection as JSON"></textarea></section>
 </div>
 <script type="module">
 // Each gallery and the toys it holds, in gallery order.
@@ -138,7 +148,9 @@ body.narrow .dir[data-col="0"] { grid-column: 1; } body.narrow .dir[data-col="1"
 body.hide .dir.cut { visibility: hidden; }
 /* The Current column sits on its own panel. */
 .dir[data-col="0"] { background: oklch(0.21 0.014 275); box-shadow: 0 0 0 6px oklch(0.21 0.014 275); }
-.dir.pick { box-shadow: 0 0 0 2px oklch(0.85 0.14 85); }
+.dir.pick { box-shadow: 0 0 0 2px oklch(0.8 0.15 150); }
+.dir.sel { outline: 3px solid oklch(0.85 0.14 85); outline-offset: 3px; }
+.dir.empty .t128 { outline: 1px dashed oklch(0.34 0.016 275) !important; border-radius: 10px; }
 .dir.cur { box-shadow: 0 0 0 2px oklch(0.84 0.13 205); }
 body.narrow section { grid-template-columns: var(--tile) var(--seg) repeat(5, var(--tile)) !important; }
 body.narrow section > h2 { grid-column: 1 / -1; }
@@ -151,6 +163,11 @@ const store = {
   write(s) { try { localStorage.setItem(KEY, JSON.stringify([...s])); } catch {} },
 };
 const cut = store.read();
+// Selected slots go to the output for an update or an edit.
+const SEL_KEY = 'stimming.icons.select';
+const sel = (() => { try { return new Set(JSON.parse(localStorage.getItem(SEL_KEY) || '[]')); } catch { return new Set(); } })();
+const keepSel = () => { try { localStorage.setItem(SEL_KEY, JSON.stringify([...sel])); } catch {} };
+let mode = 'cut';
 const undo = [];
 const cells = [];
 const docs = [];
@@ -160,7 +177,7 @@ const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
 // The menu's own icon fills Current where a gallery has none.
 // The menu renders off screen first, because its script draws some icons.
 // Its shared gradients come along under ids of their own.
-const menuFrame = Object.assign(document.createElement('iframe'), { src: '../index.html', title: 'Menu', tabIndex: -1 });
+const menuFrame = Object.assign(document.createElement('iframe'), { src: '../index.html?lab', title: 'Menu', tabIndex: -1 });
 menuFrame.setAttribute('aria-hidden', 'true');
 menuFrame.style.cssText = 'position: absolute; left: -10000px; top: 0; width: 1280px; height: 900px; visibility: hidden;';
 document.body.append(menuFrame);
@@ -198,7 +215,7 @@ function addCurrent(doc, sec, toy) {
   card.innerHTML = `<header><b>Current</b></header><div class="icons"><div class="tile t128">${menuIcon(toy)}</div></div>` + (emb ? `<div class="emb"><div class="flash">${mask}</div><div class="glass">${mask}</div></div>` : '');
   (sec.querySelector('.row, .dirs') || sec).prepend(card);
 }
-const nameOf = id => names[id]?.name ?? id;
+const nameOf = id => names[id]?.name ?? menu?.querySelector(`a.toy#${id}`)?.textContent.trim() ?? id;
 const $ = id => document.getElementById(id);
 $('cols').innerHTML = '<span></span>' + COLS.map((l, i) => `${i === 1 ? '<span></span>' : ''}<span><b>${l}</b><span>${RUB[l]}</span></span>`).join('');
 
@@ -230,6 +247,7 @@ const paint = () => {
   for (const c of cells) {
     c.card.classList.toggle('cut', cut.has(c.key));
     c.card.classList.toggle('cur', cells[cur] === c);
+    c.card.classList.toggle('sel', sel.has(c.key));
   }
   // A row with one survivor shows it as the pick.
   for (const id of ORDER) {
@@ -237,13 +255,24 @@ const paint = () => {
     row.forEach(c => c.card.classList.toggle('pick', left.length === 1 && left[0] === c));
   }
   docs.forEach(d => d.body.classList.toggle('hide', hide));
-  const n = cells.filter(c => !cut.has(c.key)).length;
-  $('left').innerHTML = `<b>${n}</b> of ${cells.length} left`;
+  const real = cells.filter(c => !c.empty), n = real.filter(c => !cut.has(c.key)).length;
+  $('left').innerHTML = `<b>${n}</b> of ${real.length} left · <b>${sel.size}</b> selected`;
+  $('out').value = output();
+  $('mcut').setAttribute('aria-pressed', String(mode === 'cut'));
+  $('msel').setAttribute('aria-pressed', String(mode === 'sel'));
   $('hide').setAttribute('aria-pressed', String(hide));
   $('rest').setAttribute('aria-pressed', String(view === 'icon'));
   $('all').setAttribute('aria-pressed', String(view === 'trans'));
   $('both').setAttribute('aria-pressed', String(view === 'both'));
 };
+
+// The output lists slots by toy id: Current, then A to E.
+const pack = set => {
+  const o = {};
+  for (const id of ORDER) { const ls = cells.filter(c => c.toy === id && set.has(c.key)).map(c => c.l); if (ls.length) o[id] = ls; }
+  return o;
+};
+const output = () => JSON.stringify({ select: pack(sel), cut: pack(cut) }, null, 2);
 
 const goTo = (i, scroll = true) => {
   if (i === cur || i < 0 || i >= cells.length) return;
@@ -254,12 +283,13 @@ const goTo = (i, scroll = true) => {
   if (scroll) cells[cur].card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 };
 
-const toggle = (i, record = true) => {
+const toggle = (i, record = true, which = mode) => {
   const c = cells[i];
   if (!c) return;
-  cut.has(c.key) ? cut.delete(c.key) : cut.add(c.key);
-  if (record) undo.push(i);
-  store.write(cut);
+  const set = which === 'sel' ? sel : cut;
+  set.has(c.key) ? set.delete(c.key) : set.add(c.key);
+  if (record) undo.push([i, which]);
+  which === 'sel' ? keepSel() : store.write(cut);
   paint();
 };
 
@@ -287,10 +317,11 @@ const onKey = e => {
   else if (k === 'x' || k === 'delete' || k === 'backspace') {
     if (cur < 0) return;
     const was = cut.has(cells[cur].key);
-    toggle(cur);
+    toggle(cur, true, 'cut');
     // A cut moves on, so a row clears in a few presses.
     if (!was) { const c = cur; step(1); if (cur === c) step(-1); }
-  } else if (k === 'z') { const i = undo.pop(); if (i !== undefined) { toggle(i, false); goTo(i); } }
+  } else if (k === 's') { if (cur >= 0) toggle(cur, true, 'sel'); }
+  else if (k === 'z') { const u = undo.pop(); if (u) { toggle(u[0], false, u[1]); goTo(u[0]); } }
   else if (k === 'h') $('hide').click();
   else if (k === 't' || k === 'p') show(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
   else return;
@@ -314,13 +345,14 @@ const show = async v => {
     await new Promise(r => setTimeout(r, 90));
   }
 };
+$('mcut').addEventListener('click', () => { mode = 'cut'; paint(); });
+$('msel').addEventListener('click', () => { mode = 'sel'; paint(); });
 $('rest').addEventListener('click', () => show('icon'));
 $('all').addEventListener('click', () => show('trans'));
 $('both').addEventListener('click', () => show('both'));
 $('copy').addEventListener('click', async () => {
-  const lines = ORDER.map(id => `${nameOf(id)}: ${cells.filter(c => c.toy === id && !cut.has(c.key)).map(c => c.l).join(', ') || 'none'}`);
-  const text = `Icon picks\n${lines.join('\n')}\n`;
-  try { await navigator.clipboard.writeText(text); } catch { prompt('Copy the picks', text); }
+  const text = output();
+  try { await navigator.clipboard.writeText(text); } catch { $('out').select(); }
   $('copy').textContent = 'Copied';
   setTimeout(() => { $('copy').textContent = 'Copy'; }, 1400);
 });
@@ -334,17 +366,15 @@ $('reset').addEventListener('click', () => {
     setTimeout(() => { $('reset').classList.remove('armed'); $('reset').textContent = 'Reset'; }, 2500);
     return;
   }
-  cut.clear(); undo.length = 0; store.write(cut); paint();
+  cut.clear(); sel.clear(); undo.length = 0; store.write(cut); keepSel(); paint();
 });
 
 // Galleries load one at a time; the local server drops large bursts.
 const base = new URL('./', location.href).href;
 const frames = $('frames');
-for (const [n] of SPIKES) {
-  const src = await fetch(`spike-${n}.html`).then(r => r.text()).catch(() => '');
-  if (!src) continue;
+async function mount(src, title) {
   const frame = document.createElement('iframe');
-  frame.title = `Spike ${n}`;
+  frame.title = title;
   frame.setAttribute('scrolling', 'no');
   frame.srcdoc = src.replace(/<head>/i, `<head><base href="${base}">`).replace(/<\/head>/i, `<style>${FRAME_CSS}</style></head>`);
   frames.append(frame);
@@ -363,7 +393,7 @@ for (const [n] of SPIKES) {
       if (!COLS.includes(l) || !tile) continue;
       card.dataset.col = String(COLS.indexOf(l));
       sec.dataset.toy = toy;
-      cells.push({ key: `${toy}-${l.toLowerCase()}`, toy, l, card, tile, win, frame });
+      cells.push({ key: `${toy}-${l.toLowerCase()}`, toy, l, card, tile, win, frame, empty: card.classList.contains('empty') });
     }
   }
   // Cells sort into toy order, then column order.
@@ -383,6 +413,19 @@ for (const [n] of SPIKES) {
   doc.body.classList.toggle('trans', view === 'trans');
   doc.body.classList.toggle('both', view === 'both');
   paint();
+}
+for (const [n] of SPIKES) {
+  const src = await fetch(`spike-${n}.html`).then(r => r.text()).catch(() => '');
+  if (src) await mount(src, `Spike ${n}`);
+}
+// Every other menu toy gets a row: its Current, then five empty slots.
+const extra = [...new Set([...(menu?.querySelectorAll('a.toy[id]') || [])].map(a => a.id))].filter(id => !ORDER.includes(id));
+if (extra.length) {
+  ORDER.push(...extra);
+  const slot = l => `<article class="dir empty"><header><b>${l}</b></header><div class="icons"><div class="tile t128"></div></div></article>`;
+  const rows = extra.map(id => `<section id="row-${id}"><h2>${nameOf(id)}</h2><div class="row">${['A', 'B', 'C', 'D', 'E'].map(slot).join('')}</div></section>`).join('');
+  const look = 'body { font: 500 13px/1.35 Gabarito, system-ui, sans-serif; color: #fff; } .flash, .glass { display: grid; place-items: center; width: 96px; height: 96px; } .flash { background: #fff; color: oklch(0.16 0.012 275); } .glass { color: #fff; background: oklch(0.12 0.01 275); }';
+  await mount(`<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="dark"><style>:root { color-scheme: dark; } ${look}</style></head><body><div class="wrap">${rows}</div></body></html>`, 'More toys');
 }
 menuFrame.remove();
 addEventListener('resize', layout);
