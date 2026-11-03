@@ -148,12 +148,13 @@ function whump() {
 }
 
 /* ---------- fuels: OKLCH ramps, hottest first ---------- */
-// Each fuel sets the start, mid and end colours of the flame.
+// Each fuel sets the flame's start, mid and end colours.
+// The fourth colour tints the smoke.
 const FUELS = {
-  wood: [[0.93, 0.11, 95], [0.72, 0.19, 52], [0.6, 0.24, 30]],
-  copper: [[0.92, 0.08, 175], [0.72, 0.18, 152], [0.48, 0.14, 162]],
-  potassium: [[0.9, 0.07, 320], [0.66, 0.22, 310], [0.5, 0.24, 295]],
-  sodium: [[0.98, 0.1, 105], [0.88, 0.18, 92], [0.75, 0.18, 68]],
+  wood: [[0.93, 0.11, 95], [0.72, 0.19, 52], [0.6, 0.24, 30], [0.8, 0.03, 50]],
+  copper: [[0.92, 0.08, 175], [0.72, 0.18, 152], [0.48, 0.14, 162], [0.8, 0.035, 165]],
+  potassium: [[0.9, 0.07, 320], [0.66, 0.22, 310], [0.5, 0.24, 295], [0.78, 0.04, 305]],
+  sodium: [[0.98, 0.1, 105], [0.88, 0.18, 92], [0.75, 0.18, 68], [0.84, 0.035, 85]],
 };
 
 // Without WebGPU the panel shows one line and nothing runs.
@@ -190,7 +191,7 @@ async function start() {
     vec3, vec4, uvec3, float, Fn, uniform, texture3D, textureStore, instanceIndex,
     screenCoordinate, pass, smoothstep, mix, min, max, floor, mx_noise_float, storage, storageTexture, If,
     cameraPosition, Loop, positionWorld, positionLocal, interleavedGradientNoise, frameId, fract,
-    saturation,
+    saturation, cos, sin, abs,
   } = TSL;
 
   const renderer = new THREE.WebGPURenderer();
@@ -228,7 +229,7 @@ async function start() {
 
   // The example's GUI defaults, fixed.
   const TURBULENCE = 3.2;
-  const SMOKE_LIFESPAN = 3.5;
+  const SMOKE_LIFESPAN = 2.4;
   const FIRE_LIFESPAN = 1.3;
   const SIM_SPEED = 1.2;
   // Full fuel: the example's emit temperature and density.
@@ -266,6 +267,8 @@ async function start() {
   const uFireStartColor = uniform(new THREE.Color());
   const uFireMidColor = uniform(new THREE.Color());
   const uFireEndColor = uniform(new THREE.Color());
+  const uSmokeTint = uniform(new THREE.Color());
+  const uBlockAngle = uniform(0.0);
   const uAsymmetry = uniform(0.0);
   const uPowderStrength = uniform(0.59);
   const uMultiScattering = uniform(1.0);
@@ -274,7 +277,7 @@ async function start() {
   const uLightNearIntensity = uniform(10.0);
   const uLightFarIntensity = uniform(15.0);
   const uLightFarDistance = uniform(10.0);
-  const uPoolRadius = uniform(3.4);
+  const uPoolRadius = uniform(5.2);
   const uFlameHeight = uniform(3.5);
   const uSway = uniform(new THREE.Vector3());
   const uFlicker = uniform(1.0);
@@ -282,7 +285,7 @@ async function start() {
   const uSaturation = uniform(1.1);
   // Glow scales the fire light; 1 is the full example fire.
   const uGlow = uniform(1.0);
-  const denoiseStrength = uniform(0.5);
+  const denoiseStrength = uniform(0.75);
   const cpuNoise = new ImprovedNoise();
 
   /* ---------- storage 3D textures ---------- */
@@ -573,12 +576,12 @@ async function start() {
 
   // The fixed camera faces the key light, so the smoke backlights.
   const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100);
-  camera.position.set(6.7, 5.5, -13.4);
-  camera.lookAt(0, 3.6, 0);
+  camera.position.set(5.4, 4.7, -10.8);
+  camera.lookAt(0, 3.5, 0);
 
   // The volume raymarches the simulated dye texture.
   const volumetricMaterial = new THREE.VolumeNodeMaterial();
-  volumetricMaterial.steps = 16;
+  volumetricMaterial.steps = 22;
   volumetricMaterial.transparent = true;
   volumetricMaterial.blending = THREE.AdditiveBlending;
   volumetricMaterial.depthWrite = false;
@@ -640,7 +643,7 @@ async function start() {
     const viewDir = cameraPosition.sub(positionRay).normalize();
     const cosTheta = viewDir.dot(lightDir).clamp(-1.0, 1.0);
     const phase = henyeyGreenstein(cosTheta, uAsymmetry);
-    return vec3(density).mul(lightTransmittance).mul(phase.mul(12.56637));
+    return uSmokeTint.mul(density).mul(lightTransmittance).mul(phase.mul(12.56637));
   });
 
   // Fire is emission tinted by temperature.
@@ -806,13 +809,29 @@ async function start() {
     return coloredFire.mul(max(uGlow, 0.3)).mul(0.12).mul(uFireIntensity).mul(uFlicker).mul(uCoreIntensity);
   })();
 
-  // The floor takes a flat, hard-rimmed pool of fire light.
+  // Light escapes through the slots and throws hard rays on the floor.
+  // The rays turn with the block.
   floorPlane.material.emissiveNode = Fn(() => {
-    const d = positionWorld.xz.sub(uBlockPosition.xz).length();
-    const rim = float(1.0).sub(smoothstep(uPoolRadius.sub(0.06), uPoolRadius, d));
-    const fall = mix(float(1.0), float(0.55), d.div(uPoolRadius).clamp(0.0, 1.0));
-    const tint = saturation(fireRamp(float(0.5).add(uColorNoise)), uSaturation);
-    return tint.mul(rim).mul(fall).mul(max(uGlow, 0.15)).mul(uFlicker).mul(smoothstep(0.0, 3.0, uTime)).mul(0.22);
+    const d = positionWorld.xz.sub(uBlockPosition.xz);
+    const c = cos(uBlockAngle), s = sin(uBlockAngle);
+    const lx = c.mul(d.x).sub(s.mul(d.y));
+    const lz = s.mul(d.x).add(c.mul(d.y));
+    const ax = abs(lx), az = abs(lz);
+    // Along runs out from the nearest face; across runs beside it.
+    const along = max(ax, az);
+    const across = ax.greaterThan(az).select(lz, lx);
+    // Project each floor point back onto the outer face.
+    const atFace = across.mul(float(BW / 2).div(along.max(0.001)));
+    const toSlot = min(abs(atFace.sub(SLOTS[0])), min(abs(atFace.sub(SLOTS[1])), abs(atFace.sub(SLOTS[2]))));
+    const inSlot = float(1.0).sub(smoothstep(SLOT / 2 - 0.006, SLOT / 2, toSlot));
+    // Rays end hard at the pool radius.
+    const reach = float(1.0).sub(smoothstep(uPoolRadius.sub(0.04), uPoolRadius, along));
+    const fall = mix(float(1.0), float(0.35), along.div(uPoolRadius).clamp(0.0, 1.0));
+    // A lifted block throws weaker rays.
+    const lift = float(1.0).sub(uBlockPosition.y.sub(HOME_Y).div(4.0).clamp(0.0, 0.8));
+    const tint = saturation(fireRamp(float(0.62).add(uColorNoise)), uSaturation);
+    const lit = inSlot.mul(reach).mul(fall).mul(lift).mul(along.greaterThan(BW / 2));
+    return tint.mul(lit).mul(max(uGlow, 0.15)).mul(uFlicker).mul(smoothstep(0.0, 3.0, uTime)).mul(0.36);
   })();
 
   // Blurred volume is composed over the scene, then bloomed.
@@ -840,8 +859,8 @@ async function start() {
   }
 
   /* ---------- fuel colours ---------- */
-  const rampTarget = [new THREE.Color(), new THREE.Color(), new THREE.Color()];
-  const rampNow = [uFireStartColor.value, uFireMidColor.value, uFireEndColor.value];
+  const rampTarget = [new THREE.Color(), new THREE.Color(), new THREE.Color(), new THREE.Color()];
+  const rampNow = [uFireStartColor.value, uFireMidColor.value, uFireEndColor.value, uSmokeTint.value];
   function setFuel(name, snap) {
     FUELS[name].forEach((lch, i) => {
       okColor(...lch, rampTarget[i]);
@@ -881,8 +900,9 @@ async function start() {
     uSway.value.set(cpuNoise.noise(time * 3.5, 0, 0) * 0.4, 0, cpuNoise.noise(0, 0, time * 3.5) * 0.4);
     uFlicker.value = cpuNoise.noise(0, time * 0.8, 0) * 0.12 + cpuNoise.noise(0, time * 15.0, 0) * 0.06 + 0.82;
     uColorNoise.value = cpuNoise.noise(time * 5.0, time * 5.0, 0) * 0.08;
-    uPoolRadius.value = 3.4 + cpuNoise.noise(0, time * 1.3, 4) * 0.25;
+    uPoolRadius.value = 5.2 + cpuNoise.noise(0, time * 1.3, 4) * 0.3;
     block.rotation.y = time * 0.15;
+    uBlockAngle.value = block.rotation.y;
     block.updateMatrixWorld();
     uBlockMatrix.value.copy(block.matrixWorld);
   }
