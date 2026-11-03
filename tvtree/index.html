@@ -101,11 +101,11 @@ function linear(L, C, h) {
   return c.map(v => clamp(v));
 }
 const PAL = {
-  bark: linear(0.27, 0.08, 318), barkTip: linear(0.38, 0.1, 330), barkRim: linear(0.62, 0.12, 300),
+  bark: linear(0.27, 0.08, 318), barkTip: linear(0.38, 0.1, 330), barkRim: linear(0.78, 0.09, 245),
   leaf: linear(0.42, 0.1, 168), leafLit: linear(0.62, 0.13, 150),
   cream: linear(0.8, 0.04, 85), dark: linear(0.2, 0.012, 270), cord: linear(0.17, 0.01, 280),
   bgTop: linear(0.095, 0.03, 288), bgMid: linear(0.13, 0.04, 298), bgLow: linear(0.075, 0.02, 280),
-  key: linear(0.95, 0.04, 75), rim: linear(0.78, 0.1, 290), sky: linear(0.42, 0.05, 280), ground: linear(0.18, 0.03, 330),
+  key: linear(0.95, 0.04, 75), rim: linear(0.8, 0.09, 245), sky: linear(0.42, 0.05, 280), ground: linear(0.18, 0.03, 330),
 };
 // Cheerful set colours as lightness, chroma and hue.
 // Neighbours on the tree differ in hue and lightness.
@@ -1260,7 +1260,8 @@ void main() {
   // Fine grooves run along the wood.
   base *= 0.92 + 0.08 * sin(vI.w * 140.0 + atan(N.z, N.x) * 5.0);
   float wrap = max((dot(N, uKeyDir) + 0.45) / 1.45, 0.0);
-  vec3 col = base * (mix(uGround, uSky, N.y * 0.5 + 0.5) * 0.8 + uKey * wrap * 0.9);
+  // The front of the tree stays dark; the screens light it.
+  vec3 col = base * (mix(uGround, uSky, N.y * 0.5 + 0.5) * 0.45 + uKey * wrap * 0.3);
   vec3 tv = vec3(0.0);
   for (int i = 0; i < 16; i++) {
     vec3 L = uTvP[i] - vW;
@@ -1269,8 +1270,9 @@ void main() {
     tv += uTvC[i] * max(dot(N, L) * 0.75 + 0.25, 0.0) / (1.0 + d2 * 5.0);
   }
   col += base * tv * 9.0;
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-  col += uRim * rim * (0.12 + 0.18 * max(N.y, 0.0));
+  // A cold moon behind the tree rims its edges.
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 2.5);
+  col += uRim * rim * (0.25 + 0.75 * max(dot(N, normalize(vec3(0.35, 0.55, -0.75))), 0.0)) * 1.1;
   col += uKey * pow(max(dot(N, normalize(uKeyDir + V)), 0.0), 36.0) * 0.07;
   // The roots sink into a soft shadow on the stage.
   col *= mix(0.1, 1.0, smoothstep(-0.1, 0.5, vW.y));
@@ -2453,7 +2455,8 @@ async function start() {
   scene.add(new THREE.HemisphereLight(col3(PAL.sky), col3(PAL.ground), 0.3));
   const key = new THREE.DirectionalLight(col3(PAL.key), 0.6);
   key.position.set(-2.5, 4, 5);
-  const rim = new THREE.DirectionalLight(col3(PAL.rim), 0.7);
+  // The moon sits behind the tree and rims the sets in blue.
+  const rim = new THREE.DirectionalLight(col3(PAL.rim), 1.3);
   rim.position.set(2.5, 3, -4);
   scene.add(key, rim);
   mats = {
