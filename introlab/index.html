@@ -45,6 +45,8 @@ button { cursor: pointer; }
 button:hover { border-color: var(--fg); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .check { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.pauses { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+#go { border-color: var(--fg); font-weight: 700; }
 @media (max-width: 640px) { .panel { top: auto; height: 48svh; } }
 /* The intro plays in the space beside the panel. */
 @media (min-width: 641px) { .intro { right: 372px; } }
@@ -59,30 +61,41 @@ button:hover { border-color: var(--fg); }
   <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
   <label class="check"><input type="checkbox" id="done"> Signed off (tick)</label>
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
+  <div class="row"><label for="fd">Name font</label><select id="fd"></select></div>
+  <div class="row"><label for="ft">Detail font</label><select id="ft"></select></div>
   <div id="knobs"></div>
+  <p>Pause at a phase: the intro freezes there until Continue (or Space).</p>
+  <div id="pauses" class="pauses"></div>
   <div class="actions">
     <button type="button" id="play">Play</button>
+    <button type="button" id="go" hidden>Continue</button>
     <button type="button" id="reset">Defaults</button>
     <button type="button" id="copy">Copy table</button>
   </div>
 </aside>
 
 <script type="module">
-import { intro, TIMING } from '../shared/intro.js';
+import { intro, TIMING, PHASES } from '../shared/intro.js';
 
 // Each beat gets a slider: frames step by 1, milliseconds by 10.
 const RANGE = {
   lead: [0, 20, 1, 'f'], pop: [0, 10, 1, 'f'], flash: [0, 30, 1, 'f'], unfurl: [50, 1500, 10, 'ms'],
   nlLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], hold: [500, 6000, 50, 'ms'],
-  tickPop: [0, 10, 1, 'f'], tickHold: [0, 30, 1, 'f'], wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'],
+  wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'],
 };
 const KEY = 'stimming.introlab';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (err) { return {}; } };
 const saved = load();
 const T = { ...TIMING, ...(saved.timing || {}) };
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ timing: T, toy: toySel.value, done: doneBox.checked })); } catch (err) {} };
+const pauses = new Set(saved.pauses || []);
+const save = () => {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ timing: T, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fd: fdSel.value, ft: ftSel.value }));
+  } catch (err) {}
+};
 
 const knobs = document.getElementById('knobs'), toySel = document.getElementById('toy');
+const fdSel = document.getElementById('fd'), ftSel = document.getElementById('ft');
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop');
 for (const [k, [lo, hi, step, unit]] of Object.entries(RANGE)) {
   const row = document.createElement('div');
@@ -95,6 +108,48 @@ for (const [k, [lo, hi, step, unit]] of Object.entries(RANGE)) {
   show();
   input.addEventListener('input', () => { T[k] = +input.value; show(); save(); });
 }
+
+// Font candidates: the house face, stencils, grotesks and a mono for details.
+const FONTS = [
+  'Gabarito', 'Big Shoulders Stencil Display', 'Saira Stencil One', 'Stardos Stencil', 'Archivo Black',
+  'Anybody', 'Unbounded', 'Syne', 'Bricolage Grotesque', 'Space Grotesk', 'Familjen Grotesk',
+  'Instrument Sans', 'Schibsted Grotesk', 'JetBrains Mono', 'Space Mono', 'IBM Plex Mono',
+];
+const loaded = new Set(['Gabarito']);
+function useFont(family, prop) {
+  if (!loaded.has(family)) {
+    loaded.add(family);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}:wght@400;500;600;700;800;900&display=swap`;
+    document.head.append(link);
+  }
+  document.documentElement.style.setProperty(prop, `"${family}", system-ui, sans-serif`);
+}
+for (const sel of [fdSel, ftSel]) for (const f of FONTS) sel.add(new Option(f, f));
+fdSel.value = saved.fd || 'Gabarito';
+ftSel.value = saved.ft || 'Gabarito';
+useFont(fdSel.value, '--intro-display');
+useFont(ftSel.value, '--intro-detail');
+fdSel.addEventListener('change', () => { useFont(fdSel.value, '--intro-display'); save(); });
+ftSel.addEventListener('change', () => { useFont(ftSel.value, '--intro-detail'); save(); });
+
+// One toggle per phase; a paused phase waits for Continue.
+const pauseBox = document.getElementById('pauses'), go = document.getElementById('go');
+for (const ph of PHASES) {
+  const lab = document.createElement('label');
+  lab.className = 'check';
+  lab.innerHTML = `<input type="checkbox" ${pauses.has(ph) ? 'checked' : ''}> ${ph}`;
+  lab.querySelector('input').addEventListener('change', e => { e.target.checked ? pauses.add(ph) : pauses.delete(ph); save(); });
+  pauseBox.append(lab);
+}
+let resume = null;
+const gate = ph => pauses.has(ph) ? new Promise(res => {
+  go.hidden = false;
+  go.textContent = `Continue (${ph})`;
+  resume = () => { go.hidden = true; resume = null; res(); };
+}) : null;
+go.addEventListener('click', () => resume?.());
 
 const toys = await fetch('../toys.json').then(r => r.json());
 for (const [id, t] of Object.entries(toys)) toySel.add(new Option(`${t.name}${t.number ? ` · ${t.number}` : ''}`, id));
@@ -112,9 +167,10 @@ async function run() {
   root.className = 'intro';
   root.setAttribute('aria-hidden', 'true');
   const emblem = t.emblem ? '<span class="intro-emblem"></span>' : '';
-  root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span><span class="intro-sub"></span></div></div>`;
+  const subSpan = t.sub ? '<span class="intro-sub"></span>' : '';
+  root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span>${subSpan}</div></div>`;
   document.body.prepend(root);
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...T } });
+  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...T }, gate });
   playing = false;
   if (loopBox.checked) setTimeout(run, 600);
 }
@@ -128,7 +184,11 @@ document.getElementById('copy').addEventListener('click', async e => {
   try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied'; } catch (err) { e.target.textContent = 'Copy failed'; }
   setTimeout(() => { e.target.textContent = 'Copy table'; }, 1200);
 });
-addEventListener('keydown', e => { if (e.key === ' ' && !e.target.closest('input, select, button')) { e.preventDefault(); run(); } });
+addEventListener('keydown', e => {
+  if (e.key !== ' ' || e.target.closest('input, select, button')) return;
+  e.preventDefault();
+  resume ? resume() : run();
+});
 run();
 </script>
 </body>
