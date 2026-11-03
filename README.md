@@ -8,7 +8,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 
 | Toy | Folder | Status |
 |---|---|---|
-| Morphset | [morphset/](morphset/) | live |
+| Morpher | [morphset/](morphset/) | live, with sound; renamed from Morphset |
 | Fidget board | [fidget/](fidget/) | live, with sound |
 | Pop field | [pop/](pop/) | live, with sound |
 | Zen sand | [sand/](sand/) | live |
@@ -81,7 +81,7 @@ Publish `index.html` to the Artifact link above with every toy page passed as a 
 - Colours are OKLCH tokens. Every page is dark only for now.
 - Animation runs on one loop and holds 30 fps or better; idle pages do no per-frame work.
 - On the toy itself, visible text is the name, control labels and the how-to line: no blurbs, taglines or eyebrow labels.
-- Writing lives in the vignette under each toy: a short heading, two plain paragraphs and a small figure. Morphset has the first one.
+- Writing lives in the vignette under each toy: a short heading, two plain paragraphs and a small figure. Morpher has the first one.
 - Every toy has one control bar under the stage: choices (one pressed), then actions (verbs: Clear, Reset, Shuffle), then the how-to line (`dl.how`, at most four entries, gesture then result). Keys show on mouse devices only. At most five visible controls.
 - Type is Gabarito. Monospace only for live numbers such as an fps readout.
 - No glows, drop shadows or contact shadows.
