@@ -83,6 +83,10 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       <stop id="morph-a" offset="0" style="stop-color: #f7b65b"/>
       <stop id="morph-b" offset="1" style="stop-color: #d23c34"/>
     </linearGradient>
+    <linearGradient id="g-blob" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: #f7a1c4"/>
+      <stop offset="1" style="stop-color: #d63b6e"/>
+    </linearGradient>
     <linearGradient id="g-knob" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" style="stop-color: oklch(0.89 0.13 88)"/>
       <stop offset="1" style="stop-color: oklch(0.64 0.17 48)"/>
@@ -259,10 +263,15 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       <li>
         <a class="toy" id="morphset" href="morphset/index.html">
           <span class="obj">
-            <svg viewBox="0 0 128 128" aria-hidden="true">
-              <path id="morph-shape" fill="url(#g-morph)"/>
-              <use href="#morph-shape" fill="url(#lit)"/>
-              <use href="#morph-shape" fill="none" stroke="url(#rim)" stroke-width="2"/>
+            <svg class="flat" viewBox="0 0 128 128" aria-hidden="true">
+              <clipPath id="m-disc"><circle cx="52" cy="76" r="34"/></clipPath>
+              <circle cx="52" cy="76" r="34" fill="url(#g-blob)"/>
+              <circle cx="52" cy="76" r="34" fill="url(#lit)"/>
+              <circle cx="52" cy="76" r="34" fill="none" stroke="url(#rim)" stroke-width="2"/>
+              <path class="m-tri" d="M82 12L122 90H42Z" fill="url(#g-morph)"/>
+              <path class="m-tri" d="M82 12L122 90H42Z" fill="url(#lit)"/>
+              <path class="m-tri" d="M82 12L122 90H42Z" fill="none" stroke="url(#rim)" stroke-width="2" stroke-linejoin="round"/>
+              <g clip-path="url(#m-disc)"><path class="m-tri" d="M82 12L122 90H42Z" style="fill: var(--bg)"/></g>
             </svg>
           </span>
           <span class="name">Morpher</span>
@@ -281,15 +290,18 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       <li>
         <a class="toy" id="fidget" href="fidget/index.html">
           <span class="obj">
-            <svg viewBox="0 0 128 128" aria-hidden="true">
-              <g id="dial-ticks" class="sketch"></g>
-              <circle cx="64" cy="64" r="40" fill="url(#g-knob)"/>
-              <circle cx="64" cy="64" r="40" fill="url(#lit)"/>
-              <circle cx="64" cy="64" r="40" fill="none" stroke="url(#rim)" stroke-width="2"/>
-              <g id="dial-knob">
-                <circle cx="64" cy="64" r="31" fill="none" stroke="oklch(0.55 0.12 50 / 0.35)" stroke-width="1.5"/>
-                <line x1="64" y1="30" x2="64" y2="43" stroke="oklch(0.36 0.08 45)" stroke-width="5" stroke-linecap="round"/>
-              </g>
+            <svg class="flat" viewBox="0 0 128 128" aria-hidden="true">
+              <g id="dial-ticks" stroke="oklch(0.78 0.11 72)" stroke-width="4"></g>
+              <circle cx="64" cy="64" r="39" fill="url(#g-knob)"/>
+              <circle cx="64" cy="64" r="39" fill="url(#lit)"/>
+              <circle cx="64" cy="64" r="39" fill="none" stroke="url(#rim)" stroke-width="2"/>
+              <circle cx="64" cy="64" r="29" fill="none" stroke="oklch(0.55 0.12 50 / 0.45)" stroke-width="2.5"/>
+              <g id="dial-knob"><rect x="60" y="28" width="8" height="24" rx="4" fill="oklch(0.36 0.08 45)"/></g>
+              <rect x="80" y="80" width="40" height="40" rx="7" style="fill: var(--bg)"/>
+              <rect x="85" y="85" width="30" height="30" rx="5" fill="url(#g-cell)"/>
+              <rect x="85" y="85" width="30" height="30" rx="5" fill="url(#lit)"/>
+              <rect x="85" y="85" width="30" height="30" rx="5" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
+              <circle cx="100" cy="100" r="6" fill="oklch(0.42 0.1 225)"/>
             </svg>
           </span>
           <span class="name">Fidget board</span>
@@ -1460,22 +1472,14 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
   // Each art fills the same 104-unit square, centred at 64 64.
   // enter, move and leave get a point in viewBox units, or null from the keyboard.
 
-  // Morpher: a blob turns into the prism mark and turns as it goes.
-  const morphPath = $('morph-shape'), stopA = $('morph-a'), stopB = $('morph-b');
-  const blob = [d(polar(a => 50 + 2.5 * Math.sin(2 * a + 0.5) + 1.5 * Math.cos(3 * a))), '#f7a1c4', '#d63b6e'];
-  const mark = [d(polar(a => 40 + 12 * Math.cos(3 * a))), '#f7b65b', '#d23c34'];
-  morphPath.setAttribute('d', blob[0]);
-  gsap.set(stopA, { stopColor: blob[1] });
-  gsap.set(stopB, { stopColor: blob[2] });
-  // A step counter keeps every rest pose on a 120° turn.
+  // Morpher: the triangle turns a third over the disc; the overlap stays cut.
+  const tris = [...document.querySelectorAll('.m-tri')];
   let morphTurn = 0;
-  const morphTo = ([shape, a, b]) => {
+  const turnTri = () => {
     morphTurn += 120;
-    gsap.to(morphPath, { morphSVG: shape, rotation: morphTurn, svgOrigin: '64 64', duration: 0.8, ease: 'expo.inOut', overwrite: true });
-    gsap.to(stopA, { stopColor: a, duration: 0.8, ease: 'expo.inOut', overwrite: true });
-    gsap.to(stopB, { stopColor: b, duration: 0.8, ease: 'expo.inOut', overwrite: true });
+    gsap.to(tris, { rotation: morphTurn, svgOrigin: '82 64', duration: 0.6, ease: 'back.inOut(1.6)', overwrite: true });
   };
-  toys.morphset = { enter: () => morphTo(mark), move() {}, leave: () => morphTo(blob) };
+  toys.morphset = { enter: turnTri, move() {}, leave() {} };
 
   // Pop field: a cell pops when the pointer crosses it, then refills.
   const cellsG = $('pop-cells');
@@ -1499,9 +1503,11 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 
   // Fidget board: the dial turns to face the pointer in 15° detents.
   const ticks = $('dial-ticks'), knob = $('dial-knob');
+  // The bezel skips the corner where the key sits.
   for (let k = 0; k < 24; k++) {
-    const a = (k / 24) * TAU, r0 = k % 3 ? 48 : 45;
-    el('line', { x1: 64 + r0 * Math.sin(a), y1: 64 - r0 * Math.cos(a), x2: 64 + 52 * Math.sin(a), y2: 64 - 52 * Math.cos(a) }, ticks);
+    const a = (k / 24) * TAU, r0 = k % 6 ? 51 : 47;
+    if (a > 1.9 && a < 2.9) continue;
+    el('line', { x1: 64 + r0 * Math.sin(a), y1: 64 - r0 * Math.cos(a), x2: 64 + 58 * Math.sin(a), y2: 64 - 58 * Math.cos(a) }, ticks);
   }
   let dial = 0;
   const aim = p => {
