@@ -106,7 +106,6 @@ const NMAX = 32;
 // Gentle air drag; 0 keeps every later cycle exact too.
 const DAMP = 0.012;
 const H = 1 / 240;
-const ROD = 0.016;
 const LEN = new Float64Array(NMAX), ZP = new Float64Array(NMAX), OM = new Float64Array(NMAX), OM2 = new Float64Array(NMAX);
 const TH = new Float64Array(NMAX), VE = new Float64Array(NMAX), AIM = new Float64Array(NMAX), HOLD = new Uint8Array(NMAX);
 let N = 0, rig = RIGS[20], vee = 0.05;
@@ -417,16 +416,17 @@ function linear([L, C, h]) {
   for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.92), h);
   return c.map(v => clamp(v));
 }
-// Series hues, red through magenta, on one smooth curve.
-const HUES = [
-  [0.64, 0.2, 26], [0.74, 0.17, 52], [0.85, 0.16, 90], [0.8, 0.17, 148],
-  [0.78, 0.13, 202], [0.64, 0.16, 252], [0.6, 0.2, 292], [0.67, 0.21, 328],
-];
-const cr = (a, b, c, d, t) => b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
-function rainbow(t) {
-  const u = t * (HUES.length - 1), i = Math.min(HUES.length - 2, Math.floor(u)), f = u - i;
-  const p = [HUES[Math.max(0, i - 1)], HUES[i], HUES[i + 1], HUES[Math.min(HUES.length - 1, i + 2)]];
-  return [0, 1, 2].map(k => cr(p[0][k], p[1][k], p[2][k], p[3][k], f));
+// Each rig runs one two-hue ramp, long string first.
+// 12 runs orange to ink blue, 20 lime to cobalt, 32 hot pink to butter.
+const RAMPS = {
+  12: [[0.76, 0.17, 55], [0.5, 0.2, 268]],
+  20: [[0.9, 0.19, 122], [0.5, 0.21, 266]],
+  32: [[0.68, 0.23, 355], [0.92, 0.15, 96]],
+};
+// Hue takes the short way round; lightness and chroma blend straight.
+function ramp(t) {
+  const [a, b] = RAMPS[N], dh = ((b[2] - a[2] + 540) % 360) - 180;
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + dh * t];
 }
 
 /* ---------- trails: stencil afterimages in each swing plane ---------- */
@@ -468,8 +468,37 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+/* ---------- strings: flat quads of fixed screen width ---------- */
+// aSide.x picks the edge; aSide.y flips the far end's direction.
+// Both ends then offset to the same side of the string.
+const STRING_VS = /* glsl */ `
+uniform vec2 uRes;
+uniform float uPx;
+attribute vec3 aOther;
+attribute vec2 aSide;
+void main() {
+  vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 o = projectionMatrix * modelViewMatrix * vec4(aOther, 1.0);
+  vec2 d = normalize((o.xy / o.w - p.xy / p.w) * uRes + 1e-6) * aSide.y;
+  p.xy += vec2(-d.y, d.x) * aSide.x * uPx / uRes * p.w;
+  gl_Position = p;
+}`;
+const STRING_FS = /* glsl */ `
+uniform vec3 uColor;
+void main() {
+  gl_FragColor = vec4(uColor, 1.0);
+  #include <colorspace_fragment>
+}`;
+// String width in CSS pixels.
+const STRING_PX = 1.6;
+
+/* ---------- the beam: an I-section in flat paint ---------- */
+// Flange width and thickness, web thickness, overall height.
+// The lower flange breaks at each hanger, so every V has a slot.
+const FW = 0.064, FT = 0.009, WEB = 0.014, BH = 0.05;
+
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, balls = null, strings = null, bar = null, M = null, S = null;
+let THREE = null, renderer = null, scene = null, camera = null, balls = null, strings = null, bar = null, M = null, SP = null, SO = null;
 let trails = null, TP = null, BT = null, bandTex = null;
 let ray = null, ndc = null, tmp = null, look = null, ready = false, lowDpr = false, pw = 1, ph = 1;
 // The camera sits past the long end, off-axis, above the bar.
@@ -559,6 +588,65 @@ function makeTrails() {
   mesh.frustumCulled = false;
   return mesh;
 }
+// Each string has four corners; each corner knows the far end.
+function makeStrings() {
+  const V = NMAX * 2 * 4;
+  SP = new Float32Array(V * 3);
+  SO = new Float32Array(V * 3);
+  const side = new Float32Array(V * 2), idx = new Uint16Array(NMAX * 2 * 6);
+  for (let i = 0; i < NMAX * 2; i++) {
+    side.set([-1, 1, 1, 1, -1, -1, 1, -1], i * 8);
+    const a = i * 4;
+    idx.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], i * 6);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(SP, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aOther', new THREE.BufferAttribute(SO, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aSide', new THREE.BufferAttribute(side, 2));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uRes: { value: new THREE.Vector2(1, 1) }, uPx: { value: STRING_PX }, uColor: { value: new THREE.Color().setRGB(...linear([0.74, 0.014, 272])) } },
+    vertexShader: STRING_VS,
+    fragmentShader: STRING_FS,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+// Writes string i from end a to end b.
+function putString(i, ax, ay, az, bx, by, bz) {
+  for (let k = 0; k < 4; k++) {
+    const p = (i * 4 + k) * 3, near = k < 2;
+    SP[p] = near ? ax : bx; SP[p + 1] = near ? ay : by; SP[p + 2] = near ? az : bz;
+    SO[p] = near ? bx : ax; SO[p + 1] = near ? by : ay; SO[p + 2] = near ? bz : az;
+  }
+}
+// Unit boxes make the beam: top flange, web, then lower flange pieces.
+function makeBeam() {
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.66, metalness: 0 });
+  mat.color.setRGB(...linear([0.8, 0.016, 272]));
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, NMAX + 3);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+function shapeBeam() {
+  const len = (N - 1) * rig.GAP + 0.24, s = vee + 0.008, m = new THREE.Matrix4();
+  let i = 0;
+  const box = (x, y, z, w, h, d) => bar.setMatrixAt(i++, m.makeScale(w, h, d).setPosition(x, y, z));
+  box(0, BH - FT / 2, 0, FW, FT, len);
+  box(0, BH / 2, 0, WEB, BH - 2 * FT, len);
+  // The loop runs n down, so z rises along the beam.
+  let from = -len / 2;
+  for (let n = N - 1; n >= 0; n--) {
+    box(0, FT / 2, (from + ZP[n] - s) / 2, FW, FT, ZP[n] - s - from);
+    from = ZP[n] + s;
+  }
+  box(0, FT / 2, (from + len / 2) / 2, FW, FT, len / 2 - from);
+  bar.count = i;
+  bar.instanceMatrix.needsUpdate = true;
+}
 // New samples enter at slot 0; older ones shift one slot along.
 // Each row's last sample spills into the next row's slot 0.
 // The fresh write then replaces it, and the side values keep their order.
@@ -574,7 +662,7 @@ function push() {
 function paint() {
   const col = new THREE.Color();
   for (let n = 0; n < N; n++) {
-    const [L, C, h] = rainbow(n / (N - 1));
+    const [L, C, h] = ramp(n / (N - 1));
     balls.setColorAt(n, col.setRGB(...linear([L, C, h])));
     for (let k = 0; k < BANDS; k++) BT.set([...linear([L - 0.04 - 0.085 * k, C * (1 - 0.1 * k), h - 5 * k]), 1], (n * BANDS + k) * 4);
   }
@@ -604,7 +692,7 @@ function build(c) {
   balls.count = N;
   for (let n = 0; n < NMAX; n++) M.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], n * 16);
   paint();
-  strings.geometry.setDrawRange(0, N * 4);
+  strings.geometry.setDrawRange(0, N * 2 * 6);
   // Trail history starts long expired, at rest.
   const g = trails.geometry, TA = g.attributes.aP.array;
   for (let n = 0; n < N; n++) {
@@ -617,7 +705,7 @@ function build(c) {
   g.attributes.aP.needsUpdate = true;
   g.attributes.position.needsUpdate = true;
   g.setDrawRange((NMAX - N) * (HIST - 1) * 6, N * (HIST - 1) * 6);
-  bar.scale.z = (N - 1) * rig.GAP + 0.24;
+  shapeBeam();
   frame0 = framePoints();
   fit(pw, ph);
 }
@@ -640,7 +728,7 @@ function fitRenderer(cap, onSize, budget = Infinity) {
 // Points that must stay in view: bar ends and every ball's swing.
 function framePoints() {
   const b = rig.BALL * 1.25, half = ((N - 1) / 2) * rig.GAP + 0.12;
-  const pts = [[0, ROD * 2, half], [0, ROD * 2, -half]];
+  const pts = [[0, BH, half], [0, BH, -half]];
   const s = Math.sin(0.42), c = Math.cos(0.42);
   for (let n = 0; n < N; n++) {
     const L = LEN[n];
@@ -699,17 +787,18 @@ function draw(fresh) {
   const pop = clamp(grow * 1.6), s = Math.max(1e-5, rig.BALL * pop);
   for (let n = 0; n < N; n++) {
     const sn = Math.sin(TH[n]), c = Math.cos(TH[n]), L = LEN[n] * grow;
-    const x = L * sn, y = -L * c, z = ZP[n], o = n * 16, q = n * 12;
+    const x = L * sn, y = -L * c, z = ZP[n], o = n * 16;
     // The bead turns with its string and scales to its rig.
     M[o] = s * c; M[o + 1] = s * sn; M[o + 4] = -s * sn; M[o + 5] = s * c; M[o + 10] = s;
     M[o + 12] = x; M[o + 13] = y; M[o + 14] = z;
-    // Two strings in a V meet at the tip of the neck.
+    // Two strings in a V rise from the neck tip into the beam's slot.
     const tx = x - sn * s * 1.2, ty = y + c * s * 1.2;
-    S[q] = 0; S[q + 1] = 0; S[q + 2] = z + vee; S[q + 3] = tx; S[q + 4] = ty; S[q + 5] = z;
-    S[q + 6] = 0; S[q + 7] = 0; S[q + 8] = z - vee; S[q + 9] = tx; S[q + 10] = ty; S[q + 11] = z;
+    putString(n * 2, 0, FT, z + vee, tx, ty, z);
+    putString(n * 2 + 1, 0, FT, z - vee, tx, ty, z);
   }
   balls.instanceMatrix.needsUpdate = true;
   strings.geometry.attributes.position.needsUpdate = true;
+  strings.geometry.attributes.aOther.needsUpdate = true;
   if (fresh) trails.geometry.attributes.position.needsUpdate = true;
   const u = trails.material.uniforms;
   u.uNow.value = simT;
@@ -992,11 +1081,30 @@ function introGone() {
     setTimeout(() => { mo.disconnect(); r(); }, 6000);
   });
 }
+// A studio for reflections: three soft boxes in a dark dome.
+// Each bead's clear coat catches one broad key and one rim strip.
+function studio() {
+  const env = new THREE.Scene(), parts = [];
+  const add = (geo, color, side, x = 0, y = 0, z = 0) => {
+    const mat = new THREE.MeshBasicMaterial({ color, side });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    if (x || y || z) mesh.lookAt(0, 0, 0);
+    env.add(mesh);
+    parts.push(geo, mat);
+  };
+  add(new THREE.SphereGeometry(30, 32, 16), new THREE.Color().setRGB(0.014, 0.013, 0.022), THREE.BackSide);
+  // The key box sits up and left, behind the viewer.
+  add(new THREE.PlaneGeometry(16, 10), new THREE.Color().setScalar(5), THREE.DoubleSide, -9, 14, 12);
+  // A tall strip at the far end draws a rim down every bead.
+  add(new THREE.PlaneGeometry(3, 22), new THREE.Color().setRGB(2.2, 2.3, 2.6), THREE.DoubleSide, 16, 2, -6);
+  // A faint, cool floor bounce lifts the undersides.
+  add(new THREE.PlaneGeometry(26, 8), new THREE.Color().setRGB(0.32, 0.36, 0.5), THREE.DoubleSide, 0, -16, 4);
+  return { env, dispose: () => parts.forEach(p => p.dispose()) };
+}
 async function start() {
-  let RoomEnvironment;
   try {
     THREE = await import('three');
-    ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
   } catch (err) {
     console.error(err);
     return failed();
@@ -1020,9 +1128,9 @@ async function start() {
   await idle();
 
   const pm = new THREE.PMREMGenerator(renderer);
-  const room = new RoomEnvironment();
-  scene.environment = pm.fromScene(room, 0.04).texture;
-  scene.environmentIntensity = 0.6;
+  const room = studio();
+  scene.environment = pm.fromScene(room.env, 0.04).texture;
+  scene.environmentIntensity = 0.8;
   room.dispose();
   pm.dispose();
   // A warm key from upper left gives each bead one crisp highlight.
@@ -1035,16 +1143,10 @@ async function start() {
   rim.position.set(2.5, 1.2, -4);
   scene.add(key, rim);
 
-  // The beam: a square steel rail, scaled to the row.
-  bar = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshStandardMaterial({ color: 0xd4d6db, metalness: 1, roughness: 0.32 }),
-  );
-  bar.scale.set(0.044, ROD * 2, 1);
-  bar.position.y = ROD;
+  bar = makeBeam();
   scene.add(bar);
 
-  // Lacquered beads: a clear coat over the rainbow.
+  // Lacquered beads: a clear coat over the ramp.
   const small = Math.min(innerWidth, innerHeight) < 700;
   balls = new THREE.InstancedMesh(
     bead(small ? 32 : 48),
@@ -1057,13 +1159,7 @@ async function start() {
   balls.setColorAt(0, new THREE.Color(1, 1, 1));
   scene.add(balls);
 
-  const sg = new THREE.BufferGeometry();
-  S = new Float32Array(NMAX * 12);
-  sg.setAttribute('position', new THREE.BufferAttribute(S, 3).setUsage(THREE.DynamicDrawUsage));
-  strings = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false }));
-  strings.material.color.setRGB(...linear([0.8, 0.012, 272]));
-  strings.frustumCulled = false;
-  strings.renderOrder = 1;
+  strings = makeStrings();
   scene.add(strings);
 
   trails = makeTrails();
@@ -1072,6 +1168,9 @@ async function start() {
   build(nextN);
   panel.prepend(canvas);
   fitRenderer(2, (w, h) => {
+    const su = strings.material.uniforms;
+    renderer.getDrawingBufferSize(su.uRes.value);
+    su.uPx.value = STRING_PX * renderer.getPixelRatio();
     fit(w, h);
     if (ready) draw(false);
   }, 2.2e6);
