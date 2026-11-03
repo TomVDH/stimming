@@ -132,6 +132,9 @@ void main() {
   m *= 1.0 - clamp(div * uDt, -0.2, 0.2);
   // Putty has a yield stress: only slopes past it slump.
   m += slump(l.g - s.g) + slump(r.g - s.g) + slump(d.g - s.g) + slump(u.g - s.g);
+  // Flowing putty loses its fine ripples; resting putty keeps its shape.
+  float flow = smoothstep(0.02, 0.25, length(s.zw));
+  m += 0.07 * flow * (l.g + r.g + d.g + u.g - 4.0 * s.g);
   heat += uDiff * (l.r + r.r + d.r + u.r - 4.0 * s.r);
   heat *= exp(-uDt * uCool / (6.0 * (0.6 + 0.4 * clamp(m, 0.3, 2.6))));
   // Viscous putty stops almost at once without a push.
@@ -152,6 +155,9 @@ void main() {
     // The fingertip is a rigid dent; excess putty flows out of it.
     float prof = 0.5 + 1.4 * q * q;
     vec2 dir = dist > 1e-6 ? dv / dist : vec2(0.0);
+    // Putty behind the fingertip goes sideways, never back into the groove.
+    float seg = length(ab);
+    if (seg > 1e-6) { vec2 md = ab / seg; dir -= md * min(dot(dir, md), 0.0); }
     v += dir * max(ms - prof, 0.0) * rad * 14.0 * uFinger.y;
     // Skin warms by contact; a fast drag adds friction heat.
     float touch = exp(-q * q * 2.0);
@@ -204,7 +210,7 @@ uniform sampler2D uState;
 uniform vec2 uTexel, uShadow;
 uniform vec4 uSlab;
 uniform float uRad, uBevel, uDpr, uT0, uTexCss, uHeight;
-uniform vec3 uCold, uHot, uFlash, uTable, uShade;
+uniform vec3 uCold, uHot, uTable, uShade;
 ${LIB}
 float rbox(vec2 p, vec2 c, vec2 h, float r) {
   vec2 q = abs(p - c) - h + r;
@@ -233,14 +239,19 @@ void main() {
     vec2 gm = vec2(r.g - l.g, u.g - d.g) * 0.5;
     vec2 gh = vec2(r.r - l.r, u.r - d.r) * 0.5;
 
-    // The pigment flips at one heat: a crisp front, one pixel of antialias.
+    // A leuco dye over the base pigment turns clear as it warms.
+    // The dye switches across a narrow heat band, never under one pixel.
     float tpx = uTexCss * uDpr;
-    float e = (heat - uT0) / max(length(gh) / tpx, 1e-5);
-    float w = 2.4 * uDpr;
-    vec3 alb = mix(uCold, uFlash, clamp(e + w + 0.5, 0.0, 1.0));
-    alb = mix(alb, uHot, clamp(e + 0.5, 0.0, 1.0));
-    // Thin putty goes dark; thick ridges hold more pigment.
-    alb = mix(alb * alb * 1.2, alb, smoothstep(0.25, 1.0, m)) * (1.0 + 0.08 * clamp(m - 1.0, -0.5, 1.2));
+    float bw = max(0.035, length(gh) / tpx);
+    // Pigment grains switch at slightly different heats, so the front frays.
+    vec2 pc0 = px / uDpr;
+    float th = uT0 + (vnoise(pc0 * 0.11) - 0.5) * 0.07 + (vnoise(pc0 * 0.45 + 31.0) - 0.5) * 0.03;
+    float clear = smoothstep(th - bw, th + bw, heat);
+    // Dye absorbance follows Beer-Lambert, so midtones mix like paint.
+    vec3 dye = clamp(uCold / max(uHot, vec3(1e-4)), 0.003, 6.0);
+    vec3 alb = uHot * pow(dye, vec3(1.0 - clear));
+    // Only putty pressed near the table goes darker; ridges hold more pigment.
+    alb = mix(alb * 0.78, alb, smoothstep(0.2, 0.55, m)) * (1.0 + 0.06 * clamp(m - 1.0, -0.5, 1.2));
 
     // The surface normal comes from the thickness slope.
     vec3 n = normalize(vec3(-gm * uHeight / uTexCss, 1.0));
@@ -293,12 +304,12 @@ gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 /* ---------- palettes ---------- */
-// Each putty is a bold duotone plus a flash colour at the front.
+// Each putty is a bold duotone: dyed cold, base pigment hot.
 // Values are OKLCH: lightness, chroma, hue.
 const PUTTY = [
-  { cold: [0.4, 0.19, 298], hot: [0.8, 0.16, 350], flash: [0.94, 0.12, 98], hue: 300 },
-  { cold: [0.48, 0.1, 210], hot: [0.9, 0.19, 115], flash: [0.68, 0.21, 28], hue: 215 },
-  { cold: [0.22, 0.012, 280], hot: [0.74, 0.17, 55], flash: [0.95, 0.1, 100], hue: 280 },
+  { cold: [0.4, 0.19, 298], hot: [0.74, 0.19, 356], hue: 300 },
+  { cold: [0.48, 0.1, 210], hot: [0.9, 0.19, 115], hue: 215 },
+  { cold: [0.22, 0.012, 280], hot: [0.74, 0.17, 55], hue: 280 },
 ];
 // Chroma shrinks until the colour fits linear sRGB.
 function lin([L, C, h]) {
@@ -309,7 +320,7 @@ function lin([L, C, h]) {
 let pal = null;
 function setPutty(i) {
   const P = PUTTY[i];
-  pal = { cold: lin(P.cold), hot: lin(P.hot), flash: lin(P.flash), table: lin([0.19, 0.035, P.hue]), shade: lin([0.125, 0.03, P.hue]) };
+  pal = { cold: lin(P.cold), hot: lin(P.hot), table: lin([0.19, 0.035, P.hue]), shade: lin([0.125, 0.03, P.hue]) };
   // The stage behind the canvas takes the same table colour.
   stage.style.setProperty('--stage', `oklch(0.19 0.035 ${P.hue})`);
 }
@@ -426,7 +437,7 @@ function render() {
   gl.uniform1f(u.uT0, T0);
   gl.uniform1f(u.uTexCss, slab.w / GW);
   gl.uniform1f(u.uHeight, HEIGHT_PX);
-  gl.uniform3f(u.uCold, ...pal.cold); gl.uniform3f(u.uHot, ...pal.hot); gl.uniform3f(u.uFlash, ...pal.flash);
+  gl.uniform3f(u.uCold, ...pal.cold); gl.uniform3f(u.uHot, ...pal.hot);
   gl.uniform3f(u.uTable, ...pal.table); gl.uniform3f(u.uShade, ...pal.shade);
   draw();
 }
