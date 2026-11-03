@@ -254,6 +254,17 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       <stop offset="0" style="stop-color: oklch(0.82 0.15 355)"/>
       <stop offset="1" style="stop-color: oklch(0.6 0.23 340)"/>
     </linearGradient>
+    <!-- Brut style: neutral grey shading and fine grain. -->
+    <linearGradient id="g-gray" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.9 0.004 275)"/>
+      <stop offset="1" style="stop-color: oklch(0.5 0.008 275)"/>
+    </linearGradient>
+    <filter id="grain" filterUnits="userSpaceOnUse" x="-8" y="-8" width="144" height="144">
+      <feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.25" result="specks"/>
+      <feComposite in="specks" in2="SourceGraphic" operator="in" result="grit"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="grit"/></feMerge>
+    </filter>
     <clipPath id="tray-clip"><rect x="12" y="20" width="104" height="88" rx="18"/></clipPath>
   </defs>
 </svg>
@@ -1601,6 +1612,39 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     running.delete(t);
     toys[t.id].rest();
   }
+  // Brut style (?style=brut): grey shading, grain, one signal accent per icon.
+  if (new URLSearchParams(location.search).get('style') === 'brut') {
+    const ACCENT = 'oklch(0.7 0.21 35)';
+    const accent = {
+      morphset: '.m-tri:not([style])', pop: '#pop-cells > g:nth-child(2) path:first-child',
+      fidget: 'rect[fill="url(#g-cell)"]', domino: '#domino-tiles rect:nth-child(5)',
+      pins: '#pin-heads circle:is(:nth-child(28), :nth-child(29), :nth-child(36), :nth-child(37))',
+      galaxy: '#galaxy circle[fill^="oklch"]', prism: '#prism-fan path:first-child',
+    };
+    // Highlights, rims, cut-outs and dark details keep their own paint.
+    const keepPaint = (n, v) => {
+      if (!v || v === 'none' || /#(lit|rim)\b/.test(v) || /var\(--bg\)/.test(n.getAttribute('style') || '')) return true;
+      const m = v.match(/rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/);
+      return m && (0.2126 * m[1] + 0.7152 * m[2] + 0.0722 * m[3]) / 255 < 0.3;
+    };
+    document.querySelectorAll('main > .shelf .toy').forEach(t => {
+      const svg = t.querySelector('.obj svg');
+      const hot = new Set(svg.querySelectorAll(accent[t.id]));
+      svg.querySelectorAll('path, circle, rect, line, ellipse').forEach(n => {
+        if (n.closest('clipPath')) return;
+        const cs = getComputedStyle(n);
+        if (hot.has(n)) { n.style.fill = ACCENT; return; }
+        if (!keepPaint(n, cs.fill)) n.style.fill = 'url(#g-gray)';
+        if (!keepPaint(n, cs.stroke)) n.style.stroke = 'oklch(0.72 0.006 275)';
+      });
+      // One grain filter wraps the whole icon.
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('filter', 'url(#grain)');
+      g.append(...[...svg.childNodes].filter(c => c.nodeName !== 'clipPath' && c.nodeName !== 'linearGradient'));
+      svg.append(g);
+    });
+  }
+
   // Main icons map the pointer into viewBox units and react to it.
   const local = (t, e) => {
     const r = t.querySelector('.obj svg').getBoundingClientRect();
