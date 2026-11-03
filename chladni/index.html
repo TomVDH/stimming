@@ -221,7 +221,7 @@ function linear(L, C, h, k = 1) {
 }
 const PAL = {
   uEnvLo: linear(0.16, 0.04, 285), uEnvHi: linear(0.3, 0.07, 268),
-  uKeyC: linear(0.82, 0.16, 62, 5.5), uFillC: linear(0.8, 0.13, 212, 3.6), uTopC: linear(0.62, 0.13, 300, 0.8),
+  uKeyC: linear(0.82, 0.1, 62, 2.4), uFillC: linear(0.8, 0.08, 212, 1.5), uTopC: linear(0.62, 0.13, 300, 0.8),
   uSteel: linear(0.66, 0.018, 255), uFloorC: linear(0.26, 0.06, 284), uPoolC: linear(0.55, 0.12, 330),
   uWood: linear(0.42, 0.12, 38), uHair: linear(0.93, 0.03, 88), uEbony: linear(0.2, 0.01, 270),
   uSilver: linear(0.84, 0.01, 250), uPearl: linear(0.9, 0.05, 330),
@@ -236,7 +236,12 @@ function basis(c) {
   const u = unit(cross(c, [0, 0, 1]));
   return [c, u, cross(u, c)];
 }
-const LAMPS = { Key: basis(dirOf(-6.5, 42)), Fill: basis(dirOf(7, 41)), Top: basis(dirOf(0, 54)) };
+let LAMPS = null;
+// Lamps sit where the plate mirrors them, whatever the camera's tilt.
+function placeLamps(tiltDeg) {
+  const el = 90 - tiltDeg, cos = e => Math.cos((el + e) * D2R);
+  LAMPS = { Key: basis(dirOf(-4.8 / cos(2), el + 2)), Fill: basis(dirOf(5.2 / cos(1), el + 1)), Top: basis(dirOf(0, el + 13)) };
+}
 const SUN = unit(dirOf(-24, 46));
 
 /* ---------- the mode ladder ---------- */
@@ -299,7 +304,7 @@ function track(src, ...tails) {
 // Once the plate rests, the context sleeps until the next gesture.
 function rest() {
   clearTimeout(restT);
-  if (!ac || ac.state !== 'running') return;
+  if (!ac || ac.state === 'closed') return;
   restT = setTimeout(() => {
     if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
@@ -349,7 +354,7 @@ function filterOf(type, f, q) {
   b.Q.value = q;
   return b;
 }
-// One continuous voice: sine, a slow-beating twin, an octave and a bowed tone.
+// One continuous voice: sine, beating twin, octave and bowed tone.
 // A looped sand bed hisses under it.
 function voice() {
   const osc = (type, f) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; return o; };
@@ -549,7 +554,7 @@ void main() {
     }
   }
   p += v * uDt;
-  // The mean drift runs down the slope of u squared, onto the nodal lines.
+  // The mean drift runs down the slope of u squared.
   p -= uDrift * uAmp * f.x * f.yz / (k * k) * uDt;
   // A steady restlessness gives the lines their width.
   vec3 r3 = rnd3(uvec3(uvec2(ip) + 31u, uFrame + 101u));
@@ -696,7 +701,8 @@ void main() {
   vec3 ro = uEye, rd = normalize(b.xyz / b.w - a.xyz / a.w);
   float tp = -ro.z / rd.z;
   vec3 hp = ro + rd * tp;
-  // Streak noise runs along x; it fades where a pixel spans many grooves.
+  // Streak noise runs along x.
+  // It fades where a pixel spans many grooves.
   float gy = (hp.y + 0.5) * 1100.0, my = (hp.y + 0.5) * 120.0;
   float fine = mix(vnoise(vec2(hp.x * 9.0, gy)), 0.5, smoothstep(0.25, 0.9, fwidth(gy)));
   float broad = mix(vnoise(vec2(hp.x * 3.0 + 7.0, my)), 0.5, smoothstep(0.25, 0.9, fwidth(my)));
@@ -710,7 +716,7 @@ void main() {
       vec3 n1, n2;
       float t1 = cyl(ro, rd, 0.022, FZ, -PT, n1), t2 = cyl(ro, rd, 0.15, FZ, FZ + 0.035, n2);
       float tfl = (FZ - ro.z) / rd.z;
-      // The stand is steel too, with a warm side and a cool side.
+      // The stand is steel, warm on one side and cool on the other.
       if (t1 > 0.0 && (t2 < 0.0 || t1 < t2)) col = fresnel(clamp(dot(n1, -rd), 0.0, 1.0)) * (brushed(rd, n1, vec3(0, 0, 1), 0.35, 0.5) * 0.7 + 0.05 * (uKeyC * max(-n1.x, 0.0) + uFillC * max(n1.x, 0.0)));
       else if (t2 > 0.0) col = fresnel(clamp(dot(n2, -rd), 0.0, 1.0)) * (brushed(rd, n2, vec3(0, 0, 1), 0.3, 0.5) * 0.6 + 0.04 * (uKeyC * max(-n2.x, 0.0) + uFillC * max(n2.x, 0.0)));
       else col = floorAt(ro + rd * tfl, tfl);
@@ -730,16 +736,16 @@ uniform mat4 uVP;
 uniform vec3 uEye, uSun;
 uniform float uSize, uRefW, uJit, uRelief;
 uniform uint uSeed;
-uniform int uN;
 uniform vec3 uS0, uS1, uS2, uS3, uKeyCol, uFillCol, uAmb;
 ${FIELD}
 ${HASH}
 ${TONE}
 out vec3 vCol;
 void main() {
-  int W = textureSize(uA, 0).x;
+  ivec2 TS = textureSize(uA, 0);
+  int W = TS.x;
   // A stride spreads a partial draw over the whole plate.
-  int id = int((uint(gl_VertexID) * 7919u) % uint(uN));
+  int id = int((uint(gl_VertexID) * 7919u) % uint(W * TS.y));
   ivec2 ip = ivec2(id % W, id / W);
   vec4 A = texelFetch(uA, ip, 0);
   vec3 r = rnd3(uvec3(uvec2(ip), 40503u));
@@ -798,7 +804,7 @@ void main() {
   float tp = t * len, tc = clamp(t, 0.0, 1.0);
   float gap = mix(uGeo.x, uGeo.y, tc) - uGeo.z * sin(3.14159265 * tc);
   float rs = mix(uRad.x, uRad.y, tc), hw = uRad.z;
-  // Frog: ebony block holding the hair, with a pearl eye and a silver ferrule.
+  // Frog: an ebony block with a pearl eye and silver ferrule.
   float fd = rbox(vec2(tp - 0.045 * len, w - uGeo.x * 0.45), vec2(0.05 * len, uGeo.x * 0.55 + hw), 3.0);
   if (fd < 1.0) {
     vec2 eye = vec2(tp - 0.04 * len, w - uGeo.x * 0.42);
@@ -928,7 +934,6 @@ async function initGL() {
   gl.uniform1i(P.scene.u.uDen, 2);
   gl.uniform3fv(P.scene.u.uSun, SUN);
   setVec3s(P.scene, PAL);
-  for (const k in LAMPS) ['', 'U', 'V'].forEach((s, i) => gl.uniform3fv(P.scene.u['u' + k + s], LAMPS[k][i]));
   gl.useProgram(P.grain.p);
   gl.uniform1i(P.grain.u.uA, 0);
   gl.uniform1i(P.grain.u.uDen, 2);
@@ -954,7 +959,8 @@ async function initGL() {
 }
 
 /* ---------- the plate's state ---------- */
-// s is the place on the ladder; D is the drive, zero to one.
+// s is the place on the ladder.
+// D is the drive, from zero to one.
 let s = START, sT = START, D = 0, holdUntil = 0, settleUntil = 0, frameNo = 1;
 let formed = 1, domK = START, bowing = false, bowSpeed = 0, freq = 196, near = 1;
 let tossQ = null, scatterQ = false;
@@ -1017,16 +1023,17 @@ function seed() {
 let W = 0, H = 0, pr = 1, cw = 0, ch = 0, lowDpr = false;
 let VP = null, INV = null, EYE = [0, -2, 2], refW = 1, plateW = 1, drawN = N;
 const BOW = { len: 1.1, tc: 0.42, yc: -0.3 }, BOW_REST = BOW.tc;
-const bowAxis = unit([0.1, 0.42, 1]);
+const bowAxis = unit([-0.07, 0.42, 1]);
 const bowSide = unit(sub([1, 0, 0], mul3(bowAxis, bowAxis[0])));
 const bowC = [0.506, BOW.yc, 0.004];
 const hairAt = t => add(bowC, mul3(bowAxis, BOW.len * (BOW.tc - t)));
 const stickAt = (t, g) => add(hairAt(t), mul3(bowSide, g));
 function camera() {
-  const A = cw / ch, tilt = lerp(32, 50, sstep(0.75, 1.78, A)) * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
+  const A = cw / ch, deg = lerp(20, 50, sstep(0.75, 1.78, A)), tilt = deg * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
+  placeLamps(deg);
   EYE = [0, tgt[1] - dist * Math.sin(tilt), tgt[2] + dist * Math.cos(tilt)];
   const pv = mul4(persp(28 * D2R, A, 0.1, 30), lookAt(EYE, tgt, [0, 0, 1]));
-  // The view fits the plate, its front edge and room for the bow.
+  // The view fits the plate, its front edge and the bow.
   const tc = BOW.tc;
   BOW.tc = BOW_REST;
   const pts = [[-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0], [-0.5, -0.5, -PLATE_T], [0.5, -0.5, -PLATE_T], stickAt(0, 0.05), stickAt(0.2, 0.04)];
@@ -1044,7 +1051,7 @@ function camera() {
   refW = xf(VP, [0, 0, 0])[3];
   const l = toDevice([-0.5, 0, 0]), r = toDevice([0.5, 0, 0]);
   plateW = Math.hypot(r[0] - l[0], r[1] - l[1]);
-  // Small plates draw a share of the grains, so the figure stays crisp.
+  // Small plates draw only a share of the grains.
   drawN = Math.round(N * clamp((plateW / pr) ** 2 / 820 ** 2, 0.4, 1));
 }
 // World to device pixels, y up.
@@ -1052,7 +1059,7 @@ function toDevice(p) {
   const c = xf(VP, p);
   return [(c[0] / c[3] * 0.5 + 0.5) * cw, (c[1] / c[3] * 0.5 + 0.5) * ch, c[3]];
 }
-// CSS pixels to the plate, in plate units from the front-left corner.
+// CSS pixels to plate units, from the front-left corner.
 function toPlate(x, y) {
   const nx = (x / W) * 2 - 1, ny = 1 - (y / H) * 2;
   const a = xf(INV, [nx, ny, -1]), b = xf(INV, [nx, ny, 1]);
@@ -1119,6 +1126,7 @@ function render() {
   gl.uniformMatrix4fv(P.scene.u.uInv, false, INV);
   gl.uniform3fv(P.scene.u.uEye, EYE);
   gl.uniform2f(P.scene.u.uRes, cw, ch);
+  for (const k in LAMPS) ['', 'U', 'V'].forEach((s, i) => gl.uniform3fv(P.scene.u['u' + k + s], LAMPS[k][i]));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   gl.enable(gl.BLEND);
@@ -1130,7 +1138,6 @@ function render() {
   gl.uniform1f(P.grain.u.uSize, plateW * 0.0021);
   gl.uniform1f(P.grain.u.uRefW, refW);
   gl.uniform1ui(P.grain.u.uSeed, frameNo);
-  gl.uniform1i(P.grain.u.uN, drawN);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, sa);
   gl.drawArrays(gl.POINTS, 0, drawN);
@@ -1206,7 +1213,7 @@ function advance(dt, now) {
   if (!tuning) s += (sT - s) * (1 - Math.exp(-dt * 8));
   if (Math.abs(sT - s) < 1e-3) s = sT;
   const goal = driving ? 1 : 0;
-  D += (goal - D) * (1 - Math.exp(-dt / (goal > D ? 0.1 : reduce ? 0.35 : 0.7)));
+  D += (goal - D) * (1 - Math.exp(-dt / (goal > D ? 0.1 : reduce ? 0.3 : 0.55)));
   if (!driving && D < 0.003) D = 0;
   tune();
   if (F.amp > 0.12) settleUntil = Math.max(settleUntil, now + 1500);
@@ -1343,8 +1350,10 @@ sndB.addEventListener('click', () => {
   soundOn = !soundOn;
   showSound();
   try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
-  if (soundOn) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
+  if (soundOn) {
+    audio();
+    if (!raf) rest();
+  } else if (ac) ac.suspend()?.catch(() => {});
 });
 // Hidden or off screen, the plate pauses and goes quiet.
 function pause() {
