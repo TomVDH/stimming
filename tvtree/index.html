@@ -48,7 +48,7 @@
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a TV</dt><dd>change channel</dd></div>
         <div><dt>Drag a TV</dt><dd>swing</dd></div>
         <div><dt>Hold</dt><dd>power off</dd></div>
-        <div><dt>Drag the trunk</dt><dd>sway</dd></div>
+        <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>zoom</dd></div>
       </dl>
     </div>
   </main>
@@ -1268,7 +1268,7 @@ void main() {
     L *= inversesqrt(d2);
     tv += uTvC[i] * max(dot(N, L) * 0.75 + 0.25, 0.0) / (1.0 + d2 * 5.0);
   }
-  col += base * tv * 5.0;
+  col += base * tv * 9.0;
   float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
   col += uRim * rim * (0.12 + 0.18 * max(N.y, 0.0));
   col += uKey * pow(max(dot(N, normalize(uKeyDir + V)), 0.0), 36.0) * 0.07;
@@ -1821,18 +1821,18 @@ function makeSets() {
     const info = buildSet(def), [cL, cC, hueV] = SET_COLS[i % SET_COLS.length];
     const body = new THREE.MeshPhysicalMaterial({
       // Cases sit darker than the screens, so the pictures lead.
-      color: col3(linear(cL * 0.78, cC * 0.85, hueV)), roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.3, envMapIntensity: 0.35,
+      color: col3(linear(cL * 0.78, cC * 0.85, hueV)), roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.3, envMapIntensity: 0.16,
     });
     const group = new THREE.Group();
     // The bezel is a deep shade of the body colour.
-    const bezel = new THREE.MeshStandardMaterial({ color: col3(linear(cL * 0.5, 0.08, hueV)), roughness: 0.32, envMapIntensity: 0.5 });
+    const bezel = new THREE.MeshStandardMaterial({ color: col3(linear(cL * 0.5, 0.08, hueV)), roughness: 0.32, envMapIntensity: 0.25 });
     for (const k of Object.keys(info.geo)) group.add(new THREE.Mesh(info.geo[k], k === 'body' ? body : k === 'bezel' ? bezel : mats[k]));
     const col = i % TC, row = Math.floor(i / TC);
     const sm = new THREE.ShaderMaterial({
       vertexShader: SCREEN_VS, fragmentShader: SCREEN_FS,
       uniforms: {
         tAtlas: { value: atlasRT.texture }, uTile: { value: new THREE.Vector4(col / TC, row / TC, 1 / TC, 1 / TC) },
-        uOff: { value: 0 }, uFlash: { value: 0 }, uTime: { value: 0 }, uSeed: { value: R() }, uBright: { value: 1.45 }, uJolt: { value: 0 }, uLines: { value: 48 },
+        uOff: { value: 0 }, uFlash: { value: 0 }, uTime: { value: 0 }, uSeed: { value: R() }, uBright: { value: 1.9 }, uJolt: { value: 0 }, uLines: { value: 48 },
       },
     });
     const screen = new THREE.Mesh(info.screen, sm);
@@ -1943,7 +1943,7 @@ function upload() {
     u.uTime.value = fxClock;
     u.uJolt.value = s.jolt * 0.6;
     // A hovered set brightens a little.
-    u.uBright.value = 1.45 + 0.25 * s.hov;
+    u.uBright.value = 1.9 + 0.3 * s.hov;
     // Scanlines stay about three device pixels apart.
     u.uLines.value = clamp((Math.abs(tl.y - bl.y) * 0.5 * dbH) / 3, 22, 90);
     // Each lit screen throws its channel's colour onto the wood.
@@ -1979,6 +1979,7 @@ function step(dt, now) {
     if (s.power) { lit++; snow += s.lost > 0 ? 1 : s.interf * 0.5; }
   }
   if (stepParty(dt)) act = true;
+  if (stepZoom(dt)) act = true;
   if (stepWatch(dt)) act = true;
   if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) {
     busy = true;
@@ -2011,11 +2012,22 @@ function fit(w, h) {
   view.A = A;
   if (kx !== KX || ky !== KY || !built) { KX = kx; KY = ky; build(); }
   const x0 = -2.0 * KX, x1 = 2.0 * KX, y0 = -0.12, y1 = 3.3 * KY, t = Math.tan((FOV * D2R) / 2);
-  const halfH = Math.max(((y1 - y0) / 2) * 1.04, (((x1 - x0) / 2) * 1.03) / A), cy = (y0 + y1) / 2;
+  // The tree stands back in the dark with room around it.
+  const halfH = Math.max(((y1 - y0) / 2) * 1.16, (((x1 - x0) / 2) * 1.14) / A), cy = (y0 + y1) / 2;
   camera.aspect = A;
-  camera.position.set(0, cy + 0.4, halfH / t);
-  camera.lookAt(0, cy, 0);
   camera.updateProjectionMatrix();
+  baseCam.cy = cy;
+  baseCam.d = halfH / t;
+  baseCam.hw = halfH * A;
+  baseCam.hh = halfH;
+  aimCamera();
+}
+// Zoom 1 shows the whole tree; the user can lean in to 1.9.
+const ZMAX = 1.9, zoom = { k: 1, goal: 1, fx: 0, fy: 0, gx: 0, gy: 0 }, baseCam = { cy: 1.6, d: 10, hw: 3, hh: 2 };
+function aimCamera() {
+  const k = zoom.k;
+  camera.position.set(zoom.fx, baseCam.cy + zoom.fy + 0.4 / k, baseCam.d / k);
+  camera.lookAt(zoom.fx, baseCam.cy + zoom.fy, 0);
   camera.updateMatrixWorld();
   const c = ndcOf(0, 1.75 * KY, 0);
   view.cx = c.x;
@@ -2023,8 +2035,30 @@ function fit(w, h) {
   const top = ndcOf(0, 2.95 * KY, 0).y, low = ndcOf(0, 0.55 * KY, 0).y;
   view.hS = ((top - low) * 0.5) / 2;
   const b = ndcOf(0, 0, 0);
-  bgMat.uniforms.uAspect.value = A;
+  bgMat.uniforms.uAspect.value = view.A;
   bgMat.uniforms.uBase.value.set((b.x + 1) / 2, (b.y + 1) / 2);
+}
+// The point under the hand stays put while the zoom changes.
+// At zoom 1 the view is centred again.
+function zoomTo(goal, px, py) {
+  const k0 = zoom.goal, k1 = clamp(goal, 1, ZMAX);
+  if (k1 === k0) return false;
+  const lim = f => (1 - 1 / k1) * f;
+  zoom.gx = clamp(px + (zoom.gx - px) * (k0 / k1), -lim(baseCam.hw), lim(baseCam.hw));
+  zoom.gy = clamp(py + (zoom.gy - py) * (k0 / k1), -lim(baseCam.hh), lim(baseCam.hh));
+  zoom.goal = k1;
+  wake();
+  return true;
+}
+function stepZoom(dt) {
+  const e = 1 - Math.exp(-dt * (reduce ? 40 : 12));
+  const d = Math.abs(zoom.goal - zoom.k) + Math.abs(zoom.gx - zoom.fx) + Math.abs(zoom.gy - zoom.fy);
+  if (d < 1e-4) return false;
+  zoom.k += (zoom.goal - zoom.k) * e;
+  zoom.fx += (zoom.gx - zoom.fx) * e;
+  zoom.fy += (zoom.gy - zoom.fy) * e;
+  aimCamera();
+  return true;
 }
 function onSize(w, h) {
   sized = true;
@@ -2314,7 +2348,46 @@ addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   const a = ACT_KEYS[e.key.toLowerCase()];
   if (a) { e.preventDefault(); ACTS[a](); wake(); }
+  // Plus and minus zoom about the current view.
+  else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomTo(zoom.goal * 1.25, zoom.gx, zoom.gy); }
+  else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomTo(zoom.goal / 1.25, zoom.gx, zoom.gy); }
 });
+
+/* ---------- zoom: the wheel and a pinch lean in toward a point ---------- */
+// At a zoom limit the wheel scrolls the page as usual.
+panel.addEventListener('wheel', e => {
+  if (!ready) return;
+  const p = planeHit(e, 0);
+  if (p && zoomTo(zoom.goal * Math.exp(-e.deltaY * 0.0016), p.x, p.y - baseCam.cy)) e.preventDefault();
+}, { passive: false });
+const touches = new Map();
+let pinch = null;
+const spread = () => { const [a, b] = [...touches.values()]; return [Math.hypot(a[0] - b[0], a[1] - b[1]), (a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+panel.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (touches.size !== 2) return;
+  // A second finger turns the touch into a pinch.
+  if (held) {
+    clearTimeout(holdT);
+    if (held.s) held.s.drag = null;
+    else sway.tgt = null;
+    held = null;
+    panel.classList.remove('held');
+  }
+  pinch = { d: spread()[0], k: zoom.goal };
+});
+panel.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (!pinch || touches.size !== 2) return;
+  const [d, mx, my] = spread(), p = planeHit({ clientX: mx, clientY: my }, 0);
+  if (p && pinch.d > 0) zoomTo(pinch.k * (d / pinch.d), p.x, p.y - baseCam.cy);
+});
+['pointerup', 'pointercancel'].forEach(t => panel.addEventListener(t, e => {
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = null;
+}));
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -2325,14 +2398,15 @@ function failed() {
   panel.querySelector('.fail').hidden = false;
 }
 async function start() {
-  let EffectComposer, RenderPass, ShaderPass, RoomEnvironment;
+  let EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, RoomEnvironment;
   try {
     THREE = await import('three');
-    [{ RoundedBoxGeometry }, { mergeGeometries }, { EffectComposer }, { RenderPass }, { ShaderPass }, { RoomEnvironment }] = await Promise.all([
+    [{ RoundedBoxGeometry }, { mergeGeometries }, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { ShaderPass }, { RoomEnvironment }] = await Promise.all([
       import('three/addons/geometries/RoundedBoxGeometry.js'),
       import('three/addons/utils/BufferGeometryUtils.js'),
       import('three/addons/postprocessing/EffectComposer.js'),
       import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'),
       import('three/addons/postprocessing/ShaderPass.js'),
       import('three/addons/environments/RoomEnvironment.js'),
     ]);
@@ -2352,7 +2426,7 @@ async function start() {
     return failed();
   }
   renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.95;
   canvas = renderer.domElement;
   canvas.setAttribute('aria-hidden', 'true');
   scene = new THREE.Scene();
@@ -2375,10 +2449,11 @@ async function start() {
   room.dispose();
   pm.dispose();
   await idle();
-  scene.add(new THREE.HemisphereLight(col3(PAL.sky), col3(PAL.ground), 0.55));
-  const key = new THREE.DirectionalLight(col3(PAL.key), 1.25);
+  // The night light is low; the screens do most of the lighting.
+  scene.add(new THREE.HemisphereLight(col3(PAL.sky), col3(PAL.ground), 0.3));
+  const key = new THREE.DirectionalLight(col3(PAL.key), 0.6);
   key.position.set(-2.5, 4, 5);
-  const rim = new THREE.DirectionalLight(col3(PAL.rim), 1.0);
+  const rim = new THREE.DirectionalLight(col3(PAL.rim), 0.7);
   rim.position.set(2.5, 3, -4);
   scene.add(key, rim);
   mats = {
@@ -2407,8 +2482,8 @@ async function start() {
     vertexShader: TREE_VS, fragmentShader: TREE_FS, side: THREE.DoubleSide,
     uniforms: {
       uSway: { value: new THREE.Vector2() }, uWob: { value: Array.from({ length: 8 }, v3) },
-      uBark: { value: V(PAL.bark) }, uTip: { value: V(PAL.barkTip) }, uRim: { value: V(PAL.barkRim) }, uKey: { value: V(PAL.key) },
-      uKeyDir: { value: new THREE.Vector3(-2.5, 4, 5).normalize() }, uSky: { value: V(PAL.sky).multiplyScalar(0.7) }, uGround: { value: V(PAL.ground).multiplyScalar(0.7) },
+      uBark: { value: V(PAL.bark) }, uTip: { value: V(PAL.barkTip) }, uRim: { value: V(PAL.barkRim) }, uKey: { value: V(PAL.key).multiplyScalar(0.55) },
+      uKeyDir: { value: new THREE.Vector3(-2.5, 4, 5).normalize() }, uSky: { value: V(PAL.sky).multiplyScalar(0.4) }, uGround: { value: V(PAL.ground).multiplyScalar(0.4) },
       uTvP: { value: Array.from({ length: 16 }, () => new THREE.Vector3(0, -50, 0)) }, uTvC: { value: Array.from({ length: 16 }, v3) },
     },
   });
@@ -2433,7 +2508,9 @@ async function start() {
   const rt = new THREE.WebGLRenderTarget(16, 9, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  // No bloom: the screens carry their own brightness.
+  // A faint bloom lifts only what passes full white: the screens.
+  const bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.32, 0.55, 0.95);
+  composer.addPass(bloom);
   const fin = new ShaderPass({ uniforms: { tDiffuse: { value: null } }, vertexShader: FINAL_VS, fragmentShader: FINAL_FS });
   composer.addPass(fin);
 
@@ -2450,6 +2527,7 @@ async function start() {
   await renderer.compileAsync(scene, camera);
   await renderer.compileAsync(atlasScene, atlasCam);
   renderer.setRenderTarget(null);
+  await renderer.compileAsync(pre([bloom.materialHighPassFilter, ...bloom.separableBlurMaterials, bloom.compositeMaterial, bloom.blendMaterial]), camera);
   await renderer.compileAsync(pre([fin.material]), camera);
   ready = true;
   step(0, performance.now());
