@@ -65,6 +65,9 @@
 import { initPage, sound } from '../shared/stim.js';
 import { LIB, BIG, GROUPS, groupOf, NCH, SNOW, CH_LIGHT, BIG_OF } from './channels.js';
 initPage({ id: 'tvtree' });
+// A header pill opens the contact sheet of every channel.
+const sheetLink = Object.assign(document.createElement('a'), { className: 'ver', href: 'channels.html', textContent: 'Channels', title: 'Every channel on one sheet' });
+document.querySelector('header[data-shell] .tools')?.prepend(sheetLink);
 const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1813,12 +1816,13 @@ function draw() {
 }
 // The camera frames the whole tree, wide or tall.
 function fit(w, h) {
-  const A = w / h, portrait = A < 1.1, kx = portrait ? 0.82 : 1.42, ky = portrait ? 1.12 : 1;
+  // A tall stage grows a taller tree, so the crown fills the frame.
+  const A = w / h, portrait = A < 1.1, kx = portrait ? 0.82 : 1.42, ky = portrait ? clamp(0.95 / A, 1.12, 1.6) : 1;
   view.A = A;
   if (kx !== KX || ky !== KY || !built) { KX = kx; KY = ky; build(); }
   const x0 = -2.0 * KX, x1 = 2.0 * KX, y0 = -0.12, y1 = 3.3 * KY, t = Math.tan((FOV * D2R) / 2);
   // The tree stands back in the dark with room around it.
-  const halfH = Math.max(((y1 - y0) / 2) * 1.16, (((x1 - x0) / 2) * 1.14) / A), cy = (y0 + y1) / 2;
+  const halfH = Math.max(((y1 - y0) / 2) * 1.16, (((x1 - x0) / 2) * (portrait ? 1.06 : 1.14)) / A), cy = (y0 + y1) / 2;
   camera.aspect = A;
   camera.updateProjectionMatrix();
   baseCam.cy = cy;
