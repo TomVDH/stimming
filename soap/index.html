@@ -393,6 +393,10 @@ const bond = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
 // The face each score came in from.
 const scoredFrom = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
 const scorePlanes = [new Set(), new Set(), new Set()];
+// The stroke axis that cut each bond, plus one; 0 means no blade.
+const chatAx = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
+// Chatter ridge spacing in cells for each cut plane; 0 means unset.
+const chatPitch = [new Float32Array(NX + 1), new Float32Array(NY + 1), new Float32Array(NZ + 1)];
 // A score is a fixed two cells deep; only a slice cuts through.
 const SCORE = 2;
 const co = [0, 0, 0];
@@ -497,7 +501,7 @@ const lPos = new Float32Array(NL * 3), lThin = new Float32Array(NL), lAo = new F
 const vGen = new Int32Array(NL * 7), vAt = new Int32Array(NL * 7);
 const faceBuf = new Int32Array(NC * 6), corner = new Int32Array((S + 1) * (S + 1));
 const NRM = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-let gen = 0, vCap = 0, iCap = 0, vPos = null, vSoap = null, vIdx = null;
+let gen = 0, vCap = 0, iCap = 0, vPos = null, vSoap = null, vChat = null, vIdx = null;
 
 // Looks for a cut across plane b beside a lattice point.
 // Returns 0 none, 1 a piece's edge, 2 an inner score.
@@ -631,13 +635,16 @@ function buildGeometry(ch, cells, bottom) {
     }
   }
   const maxV = nf * (S + 1) * (S + 1), maxI = nf * S * S * 6;
-  if (maxV > vCap) { vCap = maxV; vPos = new Float32Array(vCap * 3); vSoap = new Float32Array(vCap * 3); }
+  if (maxV > vCap) { vCap = maxV; vPos = new Float32Array(vCap * 3); vSoap = new Float32Array(vCap * 3); vChat = new Float32Array(vCap * 2); }
   if (maxI > iCap) { iCap = maxI; vIdx = new Uint32Array(iCap); }
   let nv = 0, ni = 0;
   for (let f = 0; f < nf; f++) {
     const fb = faceBuf[f], id = fb >> 4, d = (fb >> 1) & 7, isCut = fb & 1, grp = isCut ? 1 + d : 0;
     const a = d >> 1, u = (a + 1) % 3, v = (a + 2) % 3;
     const base = (COORD[a][id] + (d & 1 ? 0 : 1)) * S * LM[a] + COORD[u][id] * S * LM[u] + COORD[v][id] * S * LM[v];
+    // A blade cut carries chatter: its axis and the plane's ridge pitch.
+    const plane = COORD[a][id] + (d & 1 ? 0 : 1), ax = isCut ? chatAx[a][d & 1 ? id - STRIDE[a] : id] - 1 : -1;
+    const pitch = ax >= 0 ? chatPitch[a][plane] || 0.3 : 0;
     for (let sv = 0; sv <= S; sv++) for (let su = 0; su <= S; su++) {
       const L = base + su * LM[u] + sv * LM[v], key = L * 7 + grp;
       if (vGen[key] !== gen) {
@@ -650,6 +657,10 @@ function buildGeometry(ch, cells, bottom) {
         vSoap[nv * 3] = isCut;
         vSoap[nv * 3 + 1] = lThin[L];
         vSoap[nv * 3 + 2] = lAo[L];
+        // Ridge phase runs along the stroke axis, in ridges.
+        const along = ax === u ? COORD[u][id] * S + su : COORD[v][id] * S + sv;
+        vChat[nv * 2] = pitch ? along / S / pitch + 0.37 * plane : 0;
+        vChat[nv * 2 + 1] = pitch;
         nv++;
       }
       corner[sv * (S + 1) + su] = vAt[key];
@@ -680,6 +691,7 @@ function buildGeometry(ch, cells, bottom) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   g.setAttribute('aSoap', new THREE.BufferAttribute(vSoap.slice(0, nv * 3), 3));
+  g.setAttribute('aChat', new THREE.BufferAttribute(vChat.slice(0, nv * 2), 2));
   // Pieces sit in the bar's frame, so rest is the position.
   g.setAttribute('aRest', g.attributes.position);
   g.setIndex(new THREE.BufferAttribute(nv < 65536 ? Uint16Array.from(vIdx.subarray(0, ni)) : vIdx.slice(0, ni), 1));
@@ -1191,6 +1203,7 @@ function shavingGeometry() {
   const soap = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { soap[i * 3] = 0.7; soap[i * 3 + 1] = 1; soap[i * 3 + 2] = 1; }
   g.setAttribute('aSoap', new THREE.BufferAttribute(soap, 3));
+  g.setAttribute('aChat', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
   const idx = [];
   for (let k = 0; k < SH_M - 1; k++) for (let j = 0; j < SH_R; j++) {
     const a = k * SH_R + j, b = k * SH_R + ((j + 1) % SH_R), c = a + SH_R, d = b + SH_R;
@@ -1413,7 +1426,7 @@ function makeStroke(kind) {
   return {
     kind, pc: bar, box, outside: false, a: -1, sg: 0, F: 0, t: -1, p: -1, c: 0, lo: 0, hi: -1, s: 0, s0: 0, smin: 1e9, smax: -1e9,
     pts: [], ray: null, cols: new Uint8Array(64), worn: new Uint8Array(64), surf: new Int8Array(64).fill(127), done: false, dead: false,
-    mode: '', shave: null, gap: 0.45, moved: 0, speed: 0, dirT: 1, id: -1, front: null,
+    mode: '', shave: null, gap: 0.45, moved: 0, speed: 0, dirT: 1, id: -1, front: null, born: nowS(),
   };
 }
 function bindFace(st, hit, prev) {
@@ -1498,6 +1511,7 @@ function scoreColumn(st, i) {
     if (owner[lo] !== id || owner[lo + STRIDE[p]] !== id || bond[p][lo]) continue;
     bond[p][lo] = 1;
     scoredFrom[p][lo] = a * 2 + (st.sg > 0 ? 0 : 1);
+    chatAx[p][lo] = st.t + 1;
     any = true;
   }
   return any;
@@ -1521,7 +1535,7 @@ function push(st, s) {
     if (scoreColumn(st, i)) changed = true;
     else st.worn[i] = 1;
   }
-  if (changed) { dirty.add(st.pc); scorePlanes[st.p].add(st.c); }
+  if (changed) { dirty.add(st.pc); scorePlanes[st.p].add(st.c); pitchOf(st); }
   // Fresh travel is new ground beyond this stroke's reach, on unscored soap.
   let fresh = s > hi0 ? s - Math.max(s0, hi0) : s < lo0 ? Math.min(s0, lo0) - s : 0;
   if (st.worn[clamp(Math.floor(s), 0, 63)]) fresh = 0;
@@ -1531,13 +1545,22 @@ function push(st, s) {
   if (thru && st.smin <= st.lo + 0.35 && st.smax >= st.hi + 0.65) { through(st); return; }
   shaveAlong(st, ds, inside, Math.max(0, fresh));
 }
+// The blade chatters at a steady rate, so a fast stroke spaces ridges wide.
+// The first stroke on a plane sets its pitch, so ridges never seam.
+function pitchOf(st) {
+  const P = chatPitch[st.p];
+  if (!P[st.c]) P[st.c] = lerp(0.25, 0.8, clamp(((st.smax - st.smin) / Math.max(0.05, nowS() - st.born) - 5) / 70));
+}
 function through(st) {
   st.done = true;
   const id = st.pc.id;
   for (const c of st.pc.cells) {
     if (COORD[st.p][c] !== st.c - 1) continue;
-    if (owner[c + STRIDE[st.p]] === id) bond[st.p][c] = 2;
+    if (owner[c + STRIDE[st.p]] !== id) continue;
+    bond[st.p][c] = 2;
+    if (!chatAx[st.p][c]) chatAx[st.p][c] = st.t + 1;
   }
+  pitchOf(st);
   const f = surfAt(st, Math.floor(st.s)), bx = st.box;
   bl.to = Math.min(4.6 / K, st.sg > 0 ? f - bx.lo[st.a] : bx.hi[st.a] + 1 - f);
   if (st.shave) { loose(st.shave); st.shave = null; }
@@ -1940,12 +1963,13 @@ function soapMaterial(v, side) {
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 aSoap;\nattribute vec3 aRest;\nvarying vec3 vSoap;\nvarying vec3 vRest;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvSoap = aSoap;\n\tvRest = aRest;');
+      .replace('#include <common>', '#include <common>\nattribute vec3 aSoap;\nattribute vec3 aRest;\nattribute vec2 aChat;\nvarying vec3 vSoap;\nvarying vec3 vRest;\nvarying vec2 vChat;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvSoap = aSoap;\n\tvRest = aRest;\n\tvChat = aChat;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n' + SOAP_PARS)
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + SOAP_COLOR)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n\troughnessFactor = mix( roughnessFactor * ( 0.9 + 0.25 * soapM ), uCutRough, vSoap.x );')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + SOAP_CHAT)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + SOAP_RIM)
       .replace('#include <transmission_fragment>', THREE.ShaderChunk.transmission_fragment.replace('material.thickness = thickness;', 'material.thickness = thickness * ( 1.0 - 0.85 * vSoap.y );'))
       .replace('#include <lights_fragment_begin>', soapLights());
@@ -1971,6 +1995,7 @@ uniform float uClear;
 uniform float uGlow;
 varying vec3 vSoap;
 varying vec3 vRest;
+varying vec2 vChat;
 float soapHash( vec3 p ) {
 	p = fract( p * vec3( 0.1031, 0.1030, 0.0973 ) );
 	p += dot( p, p.yxz + 33.33 );
@@ -2029,6 +2054,24 @@ const SOAP_COLOR = `
 	diffuseColor.rgb *= mix( mix( uSub, vec3( 0.55 ), 0.35 ), vec3( 1.0 ), vSoap.z );
 	// A clear soap deepens toward its sub tone where light travels far.
 	diffuseColor.rgb = mix( diffuseColor.rgb, mix( uSub * 0.7, diffuseColor.rgb * 1.15, smoothstep( 0.0, 0.6, vSoap.y ) ), uClear );
+	// Knife chatter: lopsided ridges across each blade cut, wobbled by noise.
+	// Ridges finer than about six pixels fade out.
+	float soapChatK = step( 0.001, vChat.y ) * ( 1.0 - smoothstep( 0.15, 0.35, fwidth( vChat.x ) ) );
+	float soapPh = vChat.x + 0.35 * soapNoise( vRest * 0.9 + 11.0 );
+	float soapW = 6.2832 * soapPh;
+	float soapChat = 0.5 + 0.4 * ( sin( soapW ) + 0.35 * sin( 2.0 * soapW ) );
+	diffuseColor.rgb *= 1.0 - 0.18 * soapChatK * ( 1.0 - soapChat );
+`;
+// The ridge height bends the normal, as a bump map does.
+// The slope is exact, so fine ridges never break into pixel blocks.
+// Height scales with pitch, so every ridge has the same slope.
+const SOAP_CHAT = `
+	float soapDh = 0.06 * vChat.y * soapChatK * 2.513 * ( cos( soapW ) + 0.7 * cos( 2.0 * soapW ) );
+	vec3 soapPx = dFdx( - vViewPosition ), soapPy = dFdy( - vViewPosition );
+	vec3 soapR1 = cross( soapPy, normal ), soapR2 = cross( normal, soapPx );
+	float soapDet = dot( soapPx, soapR1 ) * faceDirection;
+	vec3 soapG = sign( soapDet ) * soapDh * ( dFdx( soapPh ) * soapR1 + dFdy( soapPh ) * soapR2 );
+	normal = normalize( abs( soapDet ) * normal - soapG );
 `;
 // Light scattered inside glows softly at grazing edges and thin parts.
 const SOAP_RIM = `
@@ -2410,6 +2453,8 @@ let barSoap = -1;
 function resetBar() {
   owner.fill(0);
   for (const b of bond) b.fill(0);
+  for (const c of chatAx) c.fill(0);
+  for (const c of chatPitch) c.fill(0);
   for (const s of scorePlanes) s.clear();
   dirty.clear();
   pN = 0;
