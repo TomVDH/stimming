@@ -68,7 +68,7 @@ h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-sp
 .snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
 @media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
 main { display: grid; gap: 14px; min-width: 0; }
-/* The window is 16:9, 4:5 on phones, and night in both. */
+/* The window is 16:9, and 4:5 on phones. */
 .stage {
   position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
   border-radius: 18px; overflow: hidden; background: var(--night);
@@ -144,7 +144,6 @@ let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
 const TAU = Math.PI * 2, D2R = Math.PI / 180, SECTOR = Math.PI / 3;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
-const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
 const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
@@ -256,6 +255,8 @@ function bus(a, x) {
 function ring(a, dst, t, f, parts, g) {
   let last = null, end = 0;
   for (const [r, amp, d] of parts) {
+    // Partials above the audible band are skipped.
+    if (f * r > 16000) continue;
     const o = a.createOscillator(), og = a.createGain();
     o.frequency.value = f * r * jit(0.006);
     og.gain.setValueAtTime(0, t);
@@ -291,8 +292,8 @@ function crackle(x, k) {
   const dst = bus(a, x), g = level() * (0.4 + 0.6 * k) * jit(0.3);
   const [src, hp, ng] = click(a, dst, t, rand(3500, 7500), 0.11 * g, rand(0.0006, 0.002));
   if (Math.random() < 0.5) {
-    const f = rand(4200, 9800) * jit(0.04);
-    const o = ring(a, dst, t, f, [[1, 0.026, rand(0.006, 0.018)], [rand(1.9, 2.8), 0.011, 0.005]], g);
+    const f = rand(3800, 8200) * jit(0.04);
+    const o = ring(a, dst, t, f, [[1, 0.026, rand(0.006, 0.018)], [rand(1.5, 2.2), 0.011, 0.005]], g);
     src.onended = () => { hp.disconnect(); ng.disconnect(); };
     track(o, dst);
   } else track(src, hp, ng, dst);
@@ -337,15 +338,15 @@ function hissTo(v) {
 
 /* ---------- the frost: a Kobayashi phase field on float textures ---------- */
 // One cell is 0.03 units; 6-fold anisotropy; latent heat K.
-const KOB = { dt: 2e-4, tau: 3e-4, eps: 0.01, del: 0.045, K: 1.9, alpha: 0.9, gamma: 10, noise: 0.03, idx: 1 / 0.03 };
+const KOB = { dt: 1e-4, tau: 1.5e-4, eps: 0.01, del: 0.05, K: 2.0, alpha: 0.9, gamma: 20, noise: 0.025, idx: 1 / 0.03 };
 // Each tier trades frost detail for speed.
 const TIERS = [
-  { cells: 1024 * 576, steps: 18 },
-  { cells: 800 * 450, steps: 14 },
-  { cells: 640 * 360, steps: 11 },
-  { cells: 480 * 270, steps: 8 },
+  { cells: 1280 * 720, steps: 6 },
+  { cells: 1024 * 576, steps: 5 },
+  { cells: 800 * 450, steps: 4 },
+  { cells: 640 * 360, steps: 3 },
 ];
-const COLD_T = -0.25, REGROW_T = 0.3, FOG_TAU = 2.4, THAW_DUR = 1.1;
+const COLD = { base: 0.5, frame: 0.3 }, COLD_T = 0.3, GROW_BOOT = 26, GROW_TAP = 13, GROW_BREATH = 12, REGROW_T = 0.45, FOG_TAU = 2.4, THAW_DUR = 1.1;
 
 /* ---------- shaders ---------- */
 const TRI = `#version 300 es
@@ -484,7 +485,7 @@ void main() {
   }
   o = vec4(acc / ws, 1.0);
 }`;
-// Sim texels: phase in R, temperature in G, crystal axis in B, fog in A.
+// Sim texels hold phase, temperature, crystal axis and fog, as RGBA.
 const SIM_HEAD = `#version 300 es
 precision highp float;
 precision highp int;
@@ -498,13 +499,14 @@ vec4 S(ivec2 p) { return texelFetch(uS, clamp(p, ivec2(0), uN - 1), 0); }
 float tInit(vec2 p) {
   vec2 n = vec2(uN), e = min(p, n - p);
   float d = max(0.0, min(e.x, e.y) - uCold.w);
-  return uCold.x - uCold.y * exp(-d / uCold.z) - 0.14 * (1.0 - p.y / n.y);
+  return uCold.x - uCold.y * exp(-d / uCold.z) - 0.1 * (1.0 - p.y / n.y);
 }
 `;
 const INIT_FS = SIM_HEAD + `void main() { o = vec4(0.0, tInit(gl_FragCoord.xy), 0.0, 0.0); }`;
 const STEP_FS = SIM_HEAD + `
 uniform float uDt, uTau, uEps, uDel, uK, uAlpha, uGamma, uNoise, uIdx, uHeat, uRegrow;
 uniform uint uSeed;
+uniform sampler2D uAct;
 uniform vec4 uBreath, uRate, uThaw;
 uint pcg(uint v) {
   uint s = v * 747796405u + 2891336453u;
@@ -546,22 +548,29 @@ void main() {
   float tC = kC * kC * lap + dot(vec2(kE * kE - kW * kW, kN * kN - kS * kS) * h, gC);
   float m = uAlpha / 3.14159265 * atan(uGamma * (1.0 - c.g));
   float chi = float(pcg(uint(p.x) * 1973u + pcg(uint(p.y) * 9277u + uSeed))) / 4294967295.0 - 0.5;
-  float dphi = uDt / uTau * (tA + tB + tC + c.r * (1.0 - c.r) * (c.r - 0.5 + m + uNoise * chi));
+  // Each region grows only while its time budget lasts.
+  float act = smoothstep(0.0, 3.0, texture(uAct, (vec2(p) + 0.5) / vec2(uN)).r);
+  float dphi = act * uDt / uTau * (tA + tB + tC + c.r * (1.0 - c.r) * (c.r - 0.5 + m + uNoise * chi));
   float lapT = (4.0 * (e.g + w.g + n.g + s.g) + ne.g + nw.g + se.g + sw.g - 20.0 * c.g) * l9;
-  float phi = c.r + dphi, T = c.g + uDt * lapT + uK * dphi, th = c.b, fog = c.a;
-  // Breath warms a soft disc and melts the ice under it.
+  // Breath and thaw only take ice away.
   vec2 q = vec2(p) + 0.5;
   float bm = uBreath.w * (1.0 - smoothstep(0.3, 1.0, length(q - uBreath.xy) / uBreath.z));
   // A thaw sweeps up from the sill with a ragged front.
   float wav = uThaw.y * (0.35 * sin(q.x * 0.023 + 1.3) + 0.2 * sin(q.x * 0.061 + 4.0));
   float tm = uThaw.z * (1.0 - smoothstep(uThaw.x - uThaw.y, uThaw.x, q.y + wav));
   float melt = max(bm, tm);
+  if (melt > 0.01) dphi = min(dphi, 0.0);
+  float phi = c.r + dphi;
+  // Settled ice keeps its fine branches; only real warmth melts it.
+  if (c.r > 0.7 && c.g < 1.05) phi = max(phi, c.r);
+  float T = c.g + act * uDt * lapT + uK * (phi - c.r), th = c.b, fog = c.a;
+  // Melting ice fogs the glass; breath also warms it.
   phi -= (phi * uRate.w + 0.003) * melt;
-  T += (1.6 - T) * bm * uHeat;
+  T += (1.3 - T) * bm * uHeat;
   T = mix(T, tInit(q), tm * 0.3);
-  fog = min(1.0, fog + melt * uRate.x);
+  fog += max(melt - fog, 0.0) * uRate.x;
   // As fog clears, the cold glass draws the heat back out.
-  T -= max(0.0, T - uRegrow) * fog * uRate.z * (1.0 - step(0.02, bm));
+  T -= max(0.0, T - uRegrow) * min(1.0, fog * 4.0) * uRate.z * (1.0 - step(0.02, melt));
   fog *= uRate.y;
   // Liquid next to a crystal takes on that crystal's axis.
   if (c.r < 0.3) {
@@ -577,7 +586,7 @@ void main() {
 const STAMP_FS = SIM_HEAD + `
 uniform vec4 uA[24], uB[24];
 uniform int uCount;
-uniform float uColdT;
+uniform float uCT[24];
 void main() {
   ivec2 ip = ivec2(gl_FragCoord.xy);
   vec4 c = texelFetch(uS, ip, 0);
@@ -588,10 +597,33 @@ void main() {
     vec2 pa = q - a.xy, ba = a.zw - a.xy;
     float t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0), d = length(pa - ba * t);
     float sd = 1.0 - smoothstep(b.x - 0.7, b.x + 0.7, d);
-    if (sd > c.r) { c.r = sd; if (sd > 0.2) c.b = b.y; }
-    c.g -= exp(-d * d / (b.z * b.z)) * b.w * max(0.0, c.g - uColdT);
+    if (sd > 0.2) c.b = b.y;
+    c.r = max(c.r, sd);
+    if (b.z > 0.0) c.g -= exp(-d * d / (b.z * b.z)) * b.w * max(0.0, c.g - uCT[i]);
   }
   o = c;
+}`;
+// Activity: seconds of growth left, per coarse cell.
+const ACT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uP;
+uniform vec2 uCell;
+uniform float uDt, uAll;
+uniform vec4 uA[16];
+uniform vec2 uB[16];
+uniform int uCount;
+out vec4 o;
+void main() {
+  float r = max(texelFetch(uP, ivec2(gl_FragCoord.xy), 0).r - uDt, uAll);
+  vec2 q = gl_FragCoord.xy * uCell;
+  for (int i = 0; i < 16; i++) {
+    if (i >= uCount) break;
+    vec4 a = uA[i];
+    vec2 pa = q - a.xy, ba = a.zw - a.xy;
+    float d = length(pa - ba * clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0));
+    r = max(r, uB[i].y * (1.0 - smoothstep(0.6 * uB[i].x, uB[i].x, d)));
+  }
+  o = vec4(max(r, 0.0), 0.0, 0.0, 1.0);
 }`;
 const LOOK_FS = SIM_HEAD + `void main() {
   vec4 c = texelFetch(uS, ivec2(gl_FragCoord.xy), 0);
@@ -649,21 +681,22 @@ void main() {
   vec3 col = b0 + uRoom * (0.012 + 0.035 * exp(-dot(rq, rq) * 1.6));
   // The pointer is the light the crystals answer to.
   vec3 Lv = normalize(vec3(uLight.xy - fc, uLight.z));
-  vec3 nrm = normalize(vec3(-g * 2.0, 1.0));
-  float facing = max(dot(nrm, Lv), 0.0);
-  float spec = pow(max(dot(nrm, normalize(Lv + vec3(0.0, 0.0, 1.0))), 0.0), 50.0);
-  // Ice scatters the scene behind it into a bright blur.
+  vec2 lDir = Lv.xy / max(length(Lv.xy), 1e-4), nOut = -g / max(length(g), 1e-4);
+  // Light gathers toward edges: thin arms glow right through.
+  float glow = cov * (1.0 - smoothstep(0.45, 0.97, d1));
+  // Ridges: where the smoothed phase peaks across an arm.
+  vec2 t2 = ts * 1.6;
+  float around = textureLod(uLook, uv + vec2(t2.x, 0.0), 1.0).r + textureLod(uLook, uv - vec2(t2.x, 0.0), 1.0).r
+    + textureLod(uLook, uv + vec2(0.0, t2.y), 1.0).r + textureLod(uLook, uv - vec2(0.0, t2.y), 1.0).r;
+  float ridge = cov * smoothstep(0.03, 0.3, d1 - 0.25 * around);
+  // The body is see-through: the scene, blurred and lifted.
   vec3 behind = mix(b1, b2, dens);
-  vec3 ice = behind * (1.35 + 1.7 * dens) + uIce * (0.05 + 0.12 * dens + 0.05 * d1) + uRoom * 0.045 * (0.4 + dens);
   float grain = 0.5 * hash(floor(cp * 0.9)) + 0.5 * vnoise(cp * 0.33);
-  ice *= (0.84 + 0.3 * grain) * (0.8 + 0.45 * facing);
-  ice += uIce * spec * 0.3;
-  // Edges catch the light as thin bright rims.
-  float edge = cov * (1.0 - smoothstep(0.55, 0.92, phi));
-  vec2 nOut = -g / max(length(g), 1e-4), lDir = Lv.xy / max(length(Lv.xy), 1e-4);
-  ice += uIce * edge * (0.25 + 0.75 * pow(max(dot(nOut, lDir), 0.0), 2.0)) * 0.5;
-  // Spines of thin arms run brighter.
-  ice += uIce * smoothstep(0.8, 0.98, d1) * (1.0 - 0.7 * dens) * 0.12;
+  vec3 ice = mix(b0, behind, 0.5 + 0.5 * dens) * (1.25 + 0.6 * dens) + uIce * (0.05 + 0.08 * dens) + uRoom * 0.035 * dens;
+  ice *= 0.86 + 0.28 * grain;
+  // Edges facing the pointer catch the most light.
+  float face = 0.5 + 0.5 * max(dot(nOut, lDir), 0.0);
+  ice += (uIce * 0.5 + behind * 1.1) * glow * face + (uIce * 0.35 + behind * 0.6) * ridge;
   col = mix(col, ice, cov);
   // Glints: tiny facets that flash when the pointer lines them up.
   float gs = 7.0 * uPr;
@@ -682,22 +715,22 @@ void main() {
       float a = r2.x * TAU, tilt = 0.6 * sqrt(r2.y);
       vec3 nf = normalize(vec3(cos(a) * tilt, sin(a) * tilt, 1.0));
       vec3 Lg = normalize(vec3(uLight.xy - ctr, uLight.z));
-      float s = pow(max(dot(nf, normalize(Lg + vec3(0.0, 0.0, 1.0))), 0.0), 1400.0) * wgt;
+      float s = pow(max(dot(nf, normalize(Lg + vec3(0.0, 0.0, 1.0))), 0.0), 900.0) * wgt;
       if (s < 0.003) continue;
       vec2 d = fc - ctr;
       float rr = (0.55 + 0.8 * r.z) * uPr;
       float core = exp(-dot(d, d) / (rr * rr));
       float spk = exp(-abs(d.x) / (rr * 2.8)) * exp(-d.y * d.y / (0.2 * rr * rr)) + exp(-abs(d.y) / (rr * 2.8)) * exp(-d.x * d.x / (0.2 * rr * rr));
       vec3 tint = mix(vec3(1.0), 0.55 + 0.45 * cos(TAU * (r2.z + vec3(0.0, 0.33, 0.67))), 0.55);
-      sp += tint * s * (core * 3.2 + spk * 0.9);
+      sp += tint * s * (core * 3.6 + spk * 1.2);
     }
   }
   col += sp;
   // Breath fog: a milky veil that clears unevenly.
   float fn = 0.6 * vnoise(cp * 0.05) + 0.4 * vnoise(cp * 0.19);
-  float fv = smoothstep(0.04, 0.7, fog - 0.4 * (fn - 0.5) - 0.05);
-  vec3 fogCol = b2 * 1.4 + uFogC * 0.16 + uFogC * 0.1 * step(0.94, hash(floor(cp * 0.55)));
-  col = mix(col, fogCol, fv * 0.9);
+  float fv = smoothstep(0.02, 0.85, fog * (0.75 + 0.5 * fn) - 0.04);
+  vec3 fogCol = b2 * 1.35 + uFogC * 0.14 + uFogC * 0.1 * step(0.94, hash(floor(cp * 0.55)));
+  col = mix(col, fogCol, fv * 0.85);
   // The painted frame, lit warm from the room.
   vec2 cr = uRes / uPr;
   float de = min(min(cp.x, cr.x - cp.x), min(cp.y, cr.y - cp.y));
@@ -739,7 +772,7 @@ async function initGL() {
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     scene: compile(TRI, SCENE_FS), blur: compile(TRI, BLUR_FS), init: compile(TRI, INIT_FS), step: compile(TRI, STEP_FS),
-    stamp: compile(TRI, STAMP_FS), look: compile(TRI, LOOK_FS), resample: compile(TRI, RESAMPLE_FS), comp: compile(TRI, COMP_FS),
+    stamp: compile(TRI, STAMP_FS), act: compile(TRI, ACT_FS), look: compile(TRI, LOOK_FS), resample: compile(TRI, RESAMPLE_FS), comp: compile(TRI, COMP_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -748,6 +781,7 @@ async function initGL() {
     if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
   }
   P = progs;
+  pbo = null;
   vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   gl.disable(gl.BLEND);
@@ -756,7 +790,6 @@ async function initGL() {
   gl.useProgram(P.comp.p);
   for (const k in LOOK) gl.uniform3fv(U(P.comp, k), LOOK[k]);
   ['uLook', 'uB0', 'uB1', 'uB2'].forEach((n, i) => gl.uniform1i(U(P.comp, n), i));
-  pbo = gl.createBuffer();
 }
 function makeTex(w, h, fmt, filter, levels = 1) {
   const t = gl.createTexture();
@@ -835,10 +868,15 @@ function makeSim(t, A) {
     s.tex[k] = makeTex(w, h, gl.RGBA32F, gl.NEAREST);
     s.fb[k] = makeFb(s.tex[k]);
   }
+  // Growth budgets live on a grid four times coarser.
+  s.aw = Math.ceil(w / 4);
+  s.ah = Math.ceil(h / 4);
+  s.act = [0, 1].map(() => { const t = makeTex(s.aw, s.ah, gl.R16F, gl.LINEAR); return { tex: t, fb: makeFb(t) }; });
+  s.aCur = 0;
   s.levels = Math.floor(Math.log2(Math.max(w, h))) + 1;
   s.look = makeTex(w, h, gl.RGBA16F, gl.LINEAR_MIPMAP_LINEAR, s.levels);
   s.lookFb = makeFb(s.look);
-  // A coarse mip level is read back to hear where the frost grows.
+  // A coarse mip level is read back to locate the growth.
   s.rbL = Math.min(s.levels - 1, Math.max(0, Math.ceil(Math.log2(w / 32))));
   s.rbW = Math.max(1, w >> s.rbL);
   s.rbH = Math.max(1, h >> s.rbL);
@@ -853,6 +891,7 @@ function freeSim(s) {
   gl.deleteTexture(s.look);
   gl.deleteFramebuffer(s.lookFb);
   gl.deleteFramebuffer(s.rbFb);
+  s.act.forEach(a => { gl.deleteTexture(a.tex); gl.deleteFramebuffer(a.fb); });
 }
 const frameCells = () => (frameCss * sim.w) / Math.max(1, W);
 // Draws one pass from the current grid into the other.
@@ -864,7 +903,7 @@ function simPass(prog, setup) {
   src(0, sim.tex[sim.cur]);
   gl.uniform1i(U(prog, 'uS'), 0);
   gl.uniform2i(U(prog, 'uN'), sim.w, sim.h);
-  gl.uniform4f(U(prog, 'uCold'), 0.12, 0.32, 0.07 * Math.min(sim.w, sim.h), frameCells());
+  gl.uniform4f(U(prog, 'uCold'), COLD.base, COLD.frame, 0.07 * Math.min(sim.w, sim.h), frameCells());
   if (setup) setup(prog);
   tri();
   sim.cur = dst;
@@ -889,6 +928,9 @@ function rebuildSim(t) {
   sim = s;
   steps = TIERS[t].steps;
   stamps.length = 0;
+  recent.length = 0;
+  grants.length = 0;
+  actPass(0, budget);
   fence = null;
   rbPrev = null;
   lookPass();
@@ -914,10 +956,38 @@ function runSteps(n, dt) {
   const br = breathRadius() * rcells, [bx, by] = toCell(breath.x, breath.y);
   gl.uniform4f(U(prog, 'uBreath'), bx, by, br, breath.s);
   const band = 0.3 * sim.h;
+  src(1, sim.act[sim.aCur].tex);
+  gl.uniform1i(U(prog, 'uAct'), 1);
   gl.uniform4f(U(prog, 'uThaw'), thawT < 0 ? -1e4 : (thawT / thawDur()) * (sim.h + 2 * band), band, thawT < 0 ? 0 : 1, 0);
   for (let i = 0; i < n; i++) {
     simPass(prog, () => gl.uniform1ui(U(prog, 'uSeed'), ++seedCtr >>> 0));
   }
+}
+// Ages every budget by dt and adds new grants.
+const GA = new Float32Array(64), GB = new Float32Array(32);
+function actPass(dt, all = 0) {
+  const prog = P.act;
+  do {
+    const batch = grants.splice(0, 16);
+    GA.fill(0);
+    GB.fill(0);
+    batch.forEach((g, i) => { GA.set(g.slice(0, 4), i * 4); GB.set(g.slice(4), i * 2); });
+    const dst = 1 - sim.aCur;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sim.act[dst].fb);
+    gl.viewport(0, 0, sim.aw, sim.ah);
+    gl.useProgram(prog.p);
+    src(0, sim.act[sim.aCur].tex);
+    gl.uniform1i(U(prog, 'uP'), 0);
+    gl.uniform2f(U(prog, 'uCell'), sim.w / sim.aw, sim.h / sim.ah);
+    gl.uniform1f(U(prog, 'uDt'), dt);
+    gl.uniform1f(U(prog, 'uAll'), all);
+    gl.uniform4fv(U(prog, 'uA'), GA);
+    gl.uniform2fv(U(prog, 'uB'), GB);
+    gl.uniform1i(U(prog, 'uCount'), batch.length);
+    tri();
+    sim.aCur = dst;
+    dt = all = 0;
+  } while (grants.length);
 }
 function lookPass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, sim.lookFb);
@@ -935,29 +1005,40 @@ const stamps = [];
 function toCell(x, y) {
   return [(x / Math.max(1, W)) * sim.w, (1 - y / Math.max(1, H)) * sim.h];
 }
-// Radius, axis, cold reach and cold strength, in cells.
-function stamp(x0, y0, x1, y1, r, th, cr, ck) {
-  stamps.push([x0, y0, x1, y1, r, th, cr, ck]);
+// Radius, axis, cold reach and strength in cells; then the cold target.
+function stamp(x0, y0, x1, y1, r, th, cr, ck, ct = COLD_T) {
+  stamps.push([x0, y0, x1, y1, r, th, cr, ck, ct]);
 }
-const SA = new Float32Array(96), SB = new Float32Array(96);
+const SA = new Float32Array(96), SB = new Float32Array(96), SC = new Float32Array(24);
+// A grant gives a capsule of cells some seconds of growth.
+const grants = [];
+let budget = 0, budgetAll = 0;
+function grant(x0, y0, x1, y1, r, sec) {
+  grants.push([x0, y0, x1, y1, r, sec]);
+  budget = Math.max(budget, sec);
+}
+function grantAll(sec) {
+  budgetAll = Math.max(budgetAll, sec);
+  budget = Math.max(budget, sec);
+}
 function flushStamps() {
   while (stamps.length) {
     const batch = stamps.splice(0, 24);
     SA.fill(0);
     SB.fill(0);
-    batch.forEach((s, i) => { SA.set(s.slice(0, 4), i * 4); SB.set(s.slice(4), i * 4); });
+    batch.forEach((s, i) => { SA.set(s.slice(0, 4), i * 4); SB.set(s.slice(4, 8), i * 4); SC[i] = s[8]; });
     simPass(P.stamp, prog => {
       gl.uniform4fv(U(prog, 'uA'), SA);
       gl.uniform4fv(U(prog, 'uB'), SB);
       gl.uniform1i(U(prog, 'uCount'), batch.length);
-      gl.uniform1f(U(prog, 'uColdT'), COLD_T);
+      gl.uniform1fv(U(prog, 'uCT'), SC);
     });
   }
 }
 // Frost nucleates along the frame, thickest at the sill.
 function edgeSeeds(k = 1) {
   const { w, h } = sim, inset = frameCells() + 1.2;
-  const n = Math.round(((w + h) / 52) * k);
+  const n = Math.round(((w + h) / 100) * k);
   for (let i = 0; i < n; i++) {
     const side = Math.random(), t = rand(0.03, 0.97);
     let x, y;
@@ -971,31 +1052,50 @@ function edgeSeeds(k = 1) {
 function seedAt(x, y, quiet) {
   if (!sim) return;
   const [cx, cy] = toCell(x, y);
-  stamp(cx, cy, cx, cy, 2.6, Math.random() * SECTOR, 46, 1);
+  stamp(cx, cy, cx, cy, 2.4, Math.random() * SECTOR, 60, 1);
+  grant(cx, cy, cx, cy, 90, GROW_TAP);
   if (!quiet) tink((x / W) * 2 - 1);
   stir();
 }
-// A trail: seeds every few cells, axes along the stroke.
-const trail = { x: 0, y: 0, carry: 0, ang: 0 };
+// A trail: seeds at uneven spacing along the stroke.
+// Their axes follow its heading, so their arms knit into a stem.
+const trail = { x: 0, y: 0, next: 0 };
+// Recent seeds, so a scribble does not pile seeds into a slab.
+const recent = [];
+function roomAt(x, y) {
+  for (let i = 0; i < recent.length; i += 2) {
+    const dx = recent[i] - x, dy = recent[i + 1] - y;
+    if (dx * dx + dy * dy < 196) return false;
+  }
+  recent.push(x, y);
+  if (recent.length > 600) recent.splice(0, 2);
+  return true;
+}
+const TRAIL = { gap: [16, 44], jit: 0.14, reach: 22, cold: 0.6, lead: 10 };
 function trailStart(x, y) {
   trail.x = x;
   trail.y = y;
-  trail.carry = 0;
+  trail.next = 0;
 }
 function trailTo(x, y) {
   if (!sim) return;
   const dx = x - trail.x, dy = y - trail.y, len = Math.hypot(dx, dy);
   if (len < 0.5) return;
-  const gap = (9 * W) / sim.w, ang = Math.atan2(-dy, dx);
-  trail.ang = ang;
-  let d = gap - trail.carry;
+  const cell = W / sim.w, ang = Math.atan2(-dy, dx);
+  let d = trail.next;
   while (d <= len) {
-    const t = d / len, [cx, cy] = toCell(trail.x + dx * t, trail.y + dy * t);
-    const th = (((ang + rand(-0.06, 0.06)) % SECTOR) + SECTOR) % SECTOR;
-    stamp(cx, cy, cx, cy, 2.1, th, 30, 0.9);
-    d += gap;
+    const [cx, cy] = toCell(trail.x + (dx * d) / len, trail.y + (dy * d) / len);
+    const th = (((ang + rand(-TRAIL.jit, TRAIL.jit)) % SECTOR) + SECTOR) % SECTOR;
+    const fx = cx + (TRAIL.lead * dx) / len, fy = cy - (TRAIL.lead * dy) / len;
+    if (roomAt(cx, cy)) {
+      stamp(cx, cy, cx, cy, rand(1.6, 2.6), th, 0, 0);
+      stamp(fx, fy, fx, fy, -2, th, TRAIL.reach, TRAIL.cold, 0.38);
+    }
+    d += rand(TRAIL.gap[0], TRAIL.gap[1]) * cell;
   }
-  trail.carry = len - (d - gap);
+  trail.next = d - len;
+  const [ax, ay] = toCell(trail.x, trail.y), [bx, by] = toCell(x, y);
+  grant(ax, ay, bx, by, 70, GROW_TAP);
   trail.x = x;
   trail.y = y;
   tink((x / W) * 2 - 1, 0.45);
@@ -1011,6 +1111,7 @@ function thawAll() {
   if (!ready) return;
   thawT = 0;
   stamps.length = 0;
+  recent.length = 0;
   regrowAt = 0;
   thawSnd = 1;
   stir();
@@ -1021,13 +1122,16 @@ let fence = null, rbBuf = null, rbPrev = null, rbPrevT = 0, growth = 0, fogMax =
 function readback(now) {
   if (fence || !sim) return;
   const n = sim.rbW * sim.rbH * 4;
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
   if (!rbBuf || rbBuf.length !== n) {
     rbBuf = new Float32Array(n);
     heat = new Float32Array(n / 4);
     rbPrev = null;
-    gl.bufferData(gl.PIXEL_PACK_BUFFER, n * 4, gl.STREAM_READ);
   }
+  // A fresh buffer per read keeps Chrome's readback path quiet.
+  if (pbo) gl.deleteBuffer(pbo);
+  pbo = gl.createBuffer();
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.bufferData(gl.PIXEL_PACK_BUFFER, n * 4, gl.STREAM_READ);
   gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sim.rbFb);
   gl.readPixels(0, 0, sim.rbW, sim.rbH, gl.RGBA, gl.FLOAT, 0);
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
@@ -1037,16 +1141,18 @@ function readback(now) {
 }
 function poll() {
   if (!fence) return;
-  const st = gl.clientWaitSync(fence.s, 0, 0);
-  if (st === gl.TIMEOUT_EXPIRED) return;
+  if (gl.getSyncParameter(fence.s, gl.SYNC_STATUS) !== gl.SIGNALED) return;
   const f = fence;
   fence = null;
+  const ok = f.sim === sim;
+  // The buffer is read while its fence still exists.
+  if (ok) {
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, rbBuf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  }
   gl.deleteSync(f.s);
-  if (st === gl.WAIT_FAILED || f.sim !== sim) return;
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
-  gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, rbBuf);
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-  digest(f.t);
+  if (ok) digest(f.t);
 }
 function digest(t) {
   const nb = rbBuf.length / 4, span = (t - rbPrevT) / 1000;
@@ -1089,7 +1195,7 @@ function fit() {
   const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
   const cw = Math.round(w * p), ch = Math.round(h * p);
   if (w !== W || h !== H) {
-    // The aim and the breath keep their place, in proportion.
+    // The aim and the light keep their place, in proportion.
     if (W) { aim.x *= w / W; aim.y *= h / H; light.x *= w / W; light.y *= h / H; }
     else { aim.x = w / 2; aim.y = h / 2; light.x = w * 0.22; light.y = h * 0.12; }
     W = w;
@@ -1133,7 +1239,6 @@ function composite() {
 /* ---------- one loop, only while something moves ---------- */
 let raf = 0, last = 0, onScreen = true, dirty = false, simOn = false, quietAt = 0, holdUntil = 0, boostUntil = 0;
 let frames = 0, slowN = 0;
-const QUIET = 0.0005;
 function wake() {
   if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
@@ -1165,11 +1270,18 @@ function frame(ms) {
     thawT += dt;
     if (thawT > thawDur() + 0.45) { thawT = -1; regrowAt = ms + (reduce ? 1200 : 2400); }
   }
-  if (regrowAt && ms >= regrowAt) { regrowAt = 0; edgeSeeds(0.75); stir(); }
+  if (regrowAt && ms >= regrowAt) { regrowAt = 0; edgeSeeds(0.75); grantAll(GROW_BOOT); stir(); }
+  if (breath.on && sim) {
+    const [bx, by] = toCell(breath.x, breath.y);
+    grant(bx, by, bx, by, breathRadius() * (sim.w / W) * 1.5, GROW_BREATH);
+  }
   let simmed = false;
   if (simOn) {
     flushStamps();
-    const n = Math.max(2, Math.round(steps * (reduce ? 0.5 : 1) * (ms < boostUntil ? 1.8 : 1)));
+    actPass(dt, budgetAll);
+    budgetAll = 0;
+    budget = Math.max(0, budget - dt);
+    const n = Math.max(2, Math.round(steps * (reduce ? 0.5 : 1) * (ms < boostUntil ? 2 : 1)));
     runSteps(n, dt);
     lookPass();
     if (frames % 3 === 0) readback(ms);
@@ -1177,8 +1289,9 @@ function frame(ms) {
     perf(raw);
   }
   poll();
+  // The sim rests when every budget is spent and the fog clears.
   const calm = !breath.s && thawT < 0 && !stamps.length && !regrowAt && ms > holdUntil;
-  if (simOn && calm && growth < QUIET && fogMax < 0.01) {
+  if (simOn && calm && budget <= 0 && fogMax < 0.01) {
     if (!quietAt) quietAt = ms;
     else if (ms - quietAt > 900) { simOn = false; growth = 0; }
   } else quietAt = 0;
@@ -1218,7 +1331,6 @@ panel.addEventListener('pointerdown', e => {
   downY = y;
   light.x = x;
   light.y = y;
-  seedAt(x, y);
   trailStart(x, y);
   clearTimeout(holdT);
   holdT = setTimeout(() => {
@@ -1248,6 +1360,7 @@ panel.addEventListener('pointermove', e => {
 });
 const lift = e => {
   if (e.pointerId !== ptr) return;
+  if (mode === 'tap' && e.type === 'pointerup') seedAt(downX, downY);
   ptr = -1;
   mode = '';
   clearTimeout(holdT);
@@ -1358,10 +1471,13 @@ async function start() {
   edgeSeeds(1);
   for (let i = 0; i < 3; i++) seedAt(rand(0.2, 0.8) * W, rand(0.25, 0.85) * H, true);
   flushStamps();
+  grants.length = 0;
+  actPass(0, GROW_BOOT);
+  budget = GROW_BOOT;
   lookPass();
   fence = null;
   ready = true;
-  boostUntil = performance.now() + 2000;
+  boostUntil = performance.now() + 1500;
   stir(3000);
 }
 async function boot() {

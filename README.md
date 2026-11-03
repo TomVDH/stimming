@@ -40,7 +40,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Harmonograph | [harmono/](harmono/) | live, with sound; Canvas 2D only |
 | Neon sign | [neon/](neon/) | live, with sound |
 | Snow globe | [snow/](snow/) | live, with sound |
-| Frost | [frost/](frost/) | live draft, still being refined |
+| Frost | [frost/](frost/) | live, with sound |
 | Music box | [musicbox/](musicbox/) | live, with sound; Canvas 2D only |
 | Murmuration | [flock/](flock/) | live, with sound |
 | Dandelion | [dandelion/](dandelion/) | live, with sound |
