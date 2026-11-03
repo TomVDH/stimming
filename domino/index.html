@@ -39,7 +39,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles; click or tap a tile to tip it. Space tips the first tile, R stands them back up.">
+    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles; a long line ends at a tower. Click or tap a tile to tip it. Space tips the first tile, R stands them back up.">
       <canvas></canvas>
       <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
     </div>
@@ -226,6 +226,38 @@ function tick(s = 1) {
   o.stop(t + 0.03);
   track(o, og, ng);
 }
+// A tower falls: a low knock under a spray of clicks.
+function crash(s) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, g = level() * clamp(s, 0.5, 1.2);
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(230, t);
+  o.frequency.exponentialRampToValueAtTime(85, t + 0.14);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.55 * g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, 0.05);
+  o.connect(og).connect(kit.out);
+  o.start(t);
+  o.stop(t + 0.35);
+  track(o, og);
+  // Eight clicks scatter over a third of a second, most of them early.
+  for (let k = 0; k < 8; k++) {
+    const tk = t + 0.012 + 0.32 * (k / 8) ** 1.6 + Math.random() * 0.02, gk = g * (0.3 + 0.5 * Math.random()) * (1 - k / 11);
+    const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+    src.buffer = kit.noise;
+    bp.type = 'bandpass';
+    bp.frequency.value = 2100 + Math.random() * 2400;
+    bp.Q.value = 2;
+    ng.gain.setValueAtTime(0, tk);
+    ng.gain.linearRampToValueAtTime(gk, tk + 0.0005);
+    ng.gain.setTargetAtTime(0, tk + 0.0005, 0.004);
+    src.connect(bp).connect(ng).connect(kit.out);
+    src.start(tk, Math.random() * 0.9, 0.04);
+    track(src, bp, ng);
+  }
+}
 
 /* ---------- tiles ---------- */
 // One unit is a tile's height.
@@ -389,6 +421,8 @@ function physics(h) {
   for (const i of active) if (CL[i] && MS[i] >= 0) PUSH[MS[i]] += B * K * Math.max(0, Math.sin(TH[i] - PHI));
   for (let a = 0; a < active.length; a++) upd(active[a], h);
   contacts();
+  strike();
+  shake(h);
 }
 // A tile that holds still for a few frames is down.
 function settle() {
@@ -446,11 +480,12 @@ function tipFirst() {
 // Reset rewinds: the last tile down stands up first.
 function reset() {
   if (clearing) return;
-  const down = [];
+  const down = [], t = nowS();
   for (let i = 0; i < n; i++) if (ST[i] !== 0) down.push(i);
-  if (!down.length) return;
+  const rose = rebuild(t);
+  if (!down.length && !rose) return;
   down.sort((a, b) => RANK[b] - RANK[a]);
-  const t = nowS(), step = reduce ? 0.002 : Math.min(0.012, 0.75 / down.length);
+  const step = reduce ? 0.002 : Math.min(0.012, 0.75 / down.length);
   down.forEach((i, k) => {
     ST[i] = 3; RISE0[i] = TH[i]; RISET[i] = t + k * step;
     OM[i] = 0; ACT[i] = 0; CANDS[i] = null; LAND[i] = 0; CL[i] = 0;
@@ -459,8 +494,9 @@ function reset() {
   wake();
 }
 function clearAll() {
-  if (!n || clearing) return;
+  if ((!n && !towers.length) || clearing) return;
   active.length = 0;
+  loose = 0;
   if (reduce) finishClear();
   else clearing = nowS();
   syncChips();
@@ -468,16 +504,16 @@ function clearAll() {
 }
 function finishClear() {
   for (let i = 0; i < n; i++) { ACT[i] = 0; CANDS[i] = null; }
-  n = 0; clearing = 0; nextHue = 0; active.length = 0;
+  n = 0; clearing = 0; nextHue = 0; active.length = 0; loose = 0; towers.length = 0;
   grid.clear();
-  if (mesh) mesh.count = 0;
+  if (mesh) mesh.count = tmesh.count = 0;
   syncChips();
 }
 function syncChips() {
-  let down = false;
+  let down = towers.some(tw => tw.st === 1);
   for (let i = 0; i < n && !down; i++) if (ST[i] !== 0) down = true;
   resetB.disabled = !ready || !down || !!clearing;
-  clearB.disabled = !ready || !n || !!clearing;
+  clearB.disabled = !ready || (!n && !towers.length) || !!clearing;
 }
 
 /* ---------- laying tiles ---------- */
@@ -532,6 +568,7 @@ function meet(ax, az, ux, uz, bx, bz, vx, vz) {
 // Every neighbour must be knocked squarely or missed.
 // Two skipped tiles let a laid tile be tested again.
 function free(x, z, ax, az, p, skipA = -1, skipB = -1) {
+  if (walled(x, z, ax, az, T / 2 + MARGIN, W / 2 + MARGIN)) return false;
   let ok = true;
   near(x, z, H + W + 0.2, j => {
     if (!ok || j >= n || j === p.last || j === skipA || j === skipB) return;
@@ -631,6 +668,7 @@ function lay(p, x, z, hx, hz) {
   const prev = p.last;
   const born = p.preset ? p.t0 + p.count++ * p.dt : reduce ? -1e9 : nowS();
   const i = addTile(x, z, hx, hz, p.hue++, born, p);
+  p.len++;
   // The predecessor turns to the curve's tangent, halfway between its two steps.
   // The turned tile must pass the same test.
   // Else it turns half, or keeps its step direction.
@@ -708,7 +746,7 @@ function head(p, final) {
     if (l < 0.1) return false;
     const clear = !p.stall || Math.hypot(a[0] - p.stall[0], a[1] - p.stall[1]) >= BREAK;
     if (free(a[0], a[1], dx / l, dz / l, p) && (clear || knocked(a[0], a[1], dx / l, dz / l, p))) {
-      p.hx = dx / l; p.hz = dz / l; p.stall = null;
+      p.hx = dx / l; p.hz = dz / l; p.stall = null; p.len = 0;
       lay(p, a[0], a[1], dx / l, dz / l);
       p.s = along(p, a[0], a[1]);
       return true;
@@ -721,7 +759,7 @@ function head(p, final) {
 // A stall ends this chain where it stands.
 function lift(p) {
   p.stall = [p.lx, p.lz];
-  p.last = p.prev2 = -1; p.has = false; p.stuck = 0; p.push = 0;
+  p.last = p.prev2 = -1; p.has = false; p.stuck = 0; p.push = 0; p.len = 0;
 }
 // The cart chases a smoothed point a little ahead on the path.
 // While drawing, it waits until the path leads by that much.
@@ -754,8 +792,9 @@ function advance(p, final) {
 function begin(p) {
   const a = p.tile;
   p.id = ++strokes; p.seq = 0; p.s = 0; p.stuck = 0; p.push = 0; p.has = false; p.stall = null; p.prev2 = -1;
-  if (a >= 0) { p.lx = PX[a]; p.lz = PZ[a]; p.hue = HUE[a] + 1; p.last = a; }
-  else { p.lx = p.q.x; p.lz = p.q.z; p.hue = nextHue; p.last = -1; }
+  // A stroke from a standing tile continues a chain, so it counts as long.
+  if (a >= 0) { p.lx = PX[a]; p.lz = PZ[a]; p.hue = HUE[a] + 1; p.last = a; p.len = TLEN; uncrown(a); }
+  else { p.lx = p.q.x; p.lz = p.q.z; p.hue = nextHue; p.last = -1; p.len = 0; }
   p.pts = [[p.lx, p.lz, 0]];
   p.bx = p.lx; p.bz = p.lz;
 }
@@ -771,15 +810,17 @@ function brush(p, x, z) {
 function finish(p, x, z) {
   addPoint(p, x, z);
   advance(p, true);
+  crown(p);
   if (p.tile < 0) nextHue = p.hue;
 }
 // The opening run: an S across the table's long side.
+// Its tail stops short, so the tower fits past it.
 function preset(t0) {
   // Centred on the screen's middle, which is the camera target.
   const b = bounds, cx = 0, cz = 0.15;
   const lx = 2 * Math.min(-b.x0, b.x1), lz = 2 * Math.min(cz - b.z0, b.z1 - cz);
   const wide = lx >= lz, long = wide ? lx : lz, short = wide ? lz : lx;
-  const R = Math.min(long * 0.16, short * 0.28), tail = clamp(long * 0.4 - 2 * R, 0, 2.5);
+  const R = Math.min(long * 0.16, short * 0.28), tail = clamp(long * 0.4 - 2 * R - 1.4, 0, 2.5);
   const pts = [];
   const add = (u, v) => pts.push(wide ? [cx + u, cz + v] : [cx - v, cz + u]);
   for (let s = 0; s < 1; s += 0.05) add(-2 * R - tail * (1 - s), 0);
@@ -791,11 +832,396 @@ function preset(t0) {
   begin(p);
   for (let k = 1; k < pts.length; k++) addPoint(p, pts[k][0], pts[k][1]);
   advance(p, true);
+  crown(p);
   nextHue = p.hue;
 }
 
+/* ---------- the finale tower ---------- */
+// A long chain ends at a tower of stacked tiles.
+// Each level is two pillars: two standing tiles under a flat cap.
+// The last tile knocks the tower, and its tiles burst across the table.
+const COLS = 2, LEVELS = 3, MAXP = 216, TLEN = 6;
+// Half sizes of the tower's footprint: along the run, then across it.
+const TA = 0.5, TC = W + 0.03;
+// The tower's centre sits this far past the last tile's centre.
+const TGAP = 1.0;
+// Box half sizes and the inverse inertia of a unit mass.
+const HX = T / 2, HY = H / 2, HZ = W / 2;
+const IX = 12 / (H * H + W * W), IY = 12 / (T * T + W * W), IZ = 12 / (T * T + H * H);
+// Table friction, and the spacing of loose tiles that lie on the table.
+const MU = 0.45, APART = 0.48;
+const towers = [];
+const R = new Float64Array(9), R2 = new Float64Array(9), IA = new Float64Array(3), IB = new Float64Array(3), FP = new Float64Array(6);
+let loose = 0, paint = false, simT = 0;
+
+const qmul = (a, b) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+const yawQ = a => [0, Math.sin(a / 2), 0, Math.cos(a / 2)];
+// Row-major rotation of a piece's quaternion.
+function rotOf(p, M) {
+  const x = p.qx, y = p.qy, z = p.qz, w = p.qw;
+  M[0] = 1 - 2 * (y * y + z * z); M[1] = 2 * (x * y - z * w); M[2] = 2 * (x * z + y * w);
+  M[3] = 2 * (x * y + z * w); M[4] = 1 - 2 * (x * x + z * z); M[5] = 2 * (y * z - x * w);
+  M[6] = 2 * (x * z - y * w); M[7] = 2 * (y * z + x * w); M[8] = 1 - 2 * (x * x + y * y);
+}
+// World inverse inertia times a vector: R I⁻¹ Rᵀ v.
+function iw(a, b, c, out) {
+  const u = (R[0] * a + R[3] * b + R[6] * c) * IX, v = (R[1] * a + R[4] * b + R[7] * c) * IY, w = (R[2] * a + R[5] * b + R[8] * c) * IZ;
+  out[0] = R[0] * u + R[1] * v + R[2] * w;
+  out[1] = R[3] * u + R[4] * v + R[5] * w;
+  out[2] = R[6] * u + R[7] * v + R[8] * w;
+}
+function piece(tw, x, y, z, q, L, hue, born) {
+  tw.ps.push({
+    h: [x, y, z, ...q], x, y, z, qx: q[0], qy: q[1], qz: q[2], qw: q[3],
+    vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0, L, hue, born,
+    wait: 0, sleep: true, still: 0, age: 0, landed: false, r: null, rt: 0,
+  });
+}
+function build(x, z, dx, dz, levels, hue, born) {
+  const tw = { x, z, dx, dz, levels, st: 0, src: -1, gone: 0, ps: [], bb: [x - 1, x + 1, z - 1, z + 1] };
+  // Standing tiles face the run; caps lie flat with their length along it.
+  const qs = yawQ(Math.atan2(-dz, dx)), qc = qmul(yawQ(Math.atan2(dz, -dx)), [0, 0, Math.SQRT1_2, Math.SQRT1_2]);
+  const reach = TA - T / 2;
+  for (let L = 0; L < levels; L++) {
+    // Each level moves one full colour stop on from the chain.
+    const y0 = L * (H + T), b = born + L * 0.09, hl = hue + PER * (L + 1);
+    for (let c = 0; c < COLS; c++) {
+      const off = (c - (COLS - 1) / 2) * (W + 0.03), ox = x - dz * off, oz = z + dx * off;
+      piece(tw, ox - dx * reach, y0 + H / 2, oz - dz * reach, qs, L, hl, b + c * 0.03);
+      piece(tw, ox + dx * reach, y0 + H / 2, oz + dz * reach, qs, L, hl, b + c * 0.03 + 0.025);
+      piece(tw, ox, y0 + H + T / 2, oz, qc, L, hl, b + c * 0.03 + 0.05);
+    }
+  }
+  tw.ready = Math.max(...tw.ps.map(p => p.born)) + SPAWN;
+  return tw;
+}
+// A loose piece's footprint on the table, as a rectangle.
+function print(p) {
+  rotOf(p, R2);
+  const ex = R2[0] * HX, ez0 = R2[6] * HX, yx = R2[1] * HY, yz = R2[7] * HY, zx = R2[2] * HZ, zz = R2[8] * HZ;
+  let ux = yx, uz = yz, l = Math.hypot(ux, uz);
+  // An upright piece lies along its width instead.
+  if (l < 0.05) { ux = zx; uz = zz; l = Math.hypot(ux, uz) || 1; }
+  ux /= l; uz /= l;
+  const ext = (a, b) => Math.abs(ex * a + ez0 * b) + Math.abs(yx * a + yz * b) + Math.abs(zx * a + zz * b);
+  FP[0] = p.x; FP[1] = p.z; FP[2] = ux; FP[3] = uz; FP[4] = ext(ux, uz); FP[5] = ext(-uz, ux);
+  return FP;
+}
+// True when a rectangle meets a tower's ground or its loose tiles.
+function walled(x, z, ax, az, al, aw) {
+  for (const tw of towers) {
+    if (tw.st === 3) continue;
+    const bb = tw.bb, m = al + aw;
+    if (x < bb[0] - m || x > bb[1] + m || z < bb[2] - m || z > bb[3] + m) continue;
+    // The tower's own spot stays reserved, so Reset can rebuild it.
+    if (overlap(x, z, ax, az, al, aw, tw.x, tw.z, tw.dx, tw.dz, TA + MARGIN, TC + MARGIN)) return true;
+    if (tw.st !== 1) continue;
+    for (const p of tw.ps) {
+      if (p.y > H) continue;
+      const f = print(p);
+      if (overlap(x, z, ax, az, al, aw, f[0], f[1], f[2], f[3], f[4], f[5])) return true;
+    }
+  }
+  return false;
+}
+// True when the tower stays inside the frame at the resting camera.
+function fits(x, z, dx, dz, levels) {
+  const keep = { ...cam };
+  Object.assign(cam, { pitch: PITCH0, dist: D0, tx: 0, tz: 0 });
+  placeCamera();
+  let ok = true;
+  for (const y of [0, levels * (H + T)]) {
+    for (const s of [-1, 1]) {
+      for (const c of [-1, 1]) {
+        vtmp.set(x + dx * s * TA - dz * c * TC, y, z + dz * s * TA + dx * c * TC).project(camera);
+        if (Math.abs(vtmp.x) > 0.97 || vtmp.y > 0.94 || vtmp.y < -0.8) ok = false;
+      }
+    }
+  }
+  Object.assign(cam, keep);
+  placeCamera();
+  return ok;
+}
+// A finished chain of TLEN tiles or more gets a tower past its last tile.
+function crown(p) {
+  const i = p.last;
+  if (i < 0 || SID[i] !== p.id || p.len < TLEN || ST[i] !== 0) return;
+  const sg = AX[i] * p.hx + AZ[i] * p.hz >= 0 ? 1 : -1, dx = AX[i] * sg, dz = AZ[i] * sg;
+  const x = PX[i] + dx * TGAP, z = PZ[i] + dz * TGAP;
+  let used = 0;
+  for (const tw of towers) used += tw.ps.length;
+  let levels = LEVELS;
+  while (levels >= 2 && !fits(x, z, dx, dz, levels)) levels--;
+  if (levels < 2 || used + levels * COLS * 3 > MAXP) return;
+  if (walled(x, z, dx, dz, TA + MARGIN, TC + MARGIN)) return;
+  let ok = true;
+  near(x, z, H + W + 0.6, j => {
+    if (!ok || j >= n) return;
+    const [fx, fz, fl] = foot(j);
+    if (overlap(x, z, dx, dz, TA + MARGIN, TC + MARGIN, fx, fz, AX[j], AZ[j], fl, W / 2)) ok = false;
+  });
+  if (!ok) return;
+  const born = reduce ? -1e9 : Math.max(nowS(), lastBorn) + 0.12;
+  const tw = build(x, z, dx, dz, levels, HUE[i], born);
+  tw.src = i;
+  towers.push(tw);
+  paint = true;
+}
+// Extending the chain from its last tile takes its tower away.
+function uncrown(i) {
+  for (const tw of towers) if (tw.src === i && tw.st === 0) { tw.st = 3; tw.gone = nowS(); }
+}
+// The knock throws each tile forward, the upper levels furthest.
+function burst(tw, fx, fz, w) {
+  tw.st = 1;
+  const s = clamp(w / 10, 0.6, 1.4), ax = -fz, az = fx;
+  for (const p of tw.ps) {
+    const along = (p.x - tw.x) * fx + (p.z - tw.z) * fz, side = (p.x - tw.x) * ax + (p.z - tw.z) * az;
+    p.sleep = false; p.still = 0; p.age = 0; p.landed = false;
+    if (reduce) {
+      p.wait = 0; p.vx = fx * 0.6; p.vy = 0; p.vz = fz * 0.6;
+      p.wx = fz * 3; p.wy = 0; p.wz = -fx * 3;
+      continue;
+    }
+    // The front and bottom tiles go first.
+    p.wait = 0.035 * p.L + 0.03 * (along + TA) + Math.random() * 0.02;
+    const fwd = (2 + 1.4 * p.L + Math.random() * 1.8) * s, out = side * (2.5 + Math.random() * 3.5) * s;
+    p.vx = fx * fwd + ax * out; p.vy = 0.5 + Math.random() * 1.5; p.vz = fz * fwd + az * out;
+    // The spin tips each tile's top toward the fall.
+    const spin = (5 + Math.random() * 6) * s;
+    p.wx = fz * spin + (Math.random() - 0.5) * 3; p.wy = (Math.random() - 0.5) * 4; p.wz = -fx * spin + (Math.random() - 0.5) * 3;
+  }
+  loose = tw.ps.length;
+  crash(s);
+  syncChips();
+  wake();
+}
+// A falling tile whose top enters a standing tower knocks it.
+function strike() {
+  for (const tw of towers) {
+    if (tw.st !== 0 || tw.ready > simT) continue;
+    for (const i of active) {
+      if (ST[i] !== 1 || TH[i] < 0.1) continue;
+      const fx = AX[i] * SG[i], fz = AZ[i] * SG[i], r = T / 2 + H * Math.sin(Math.min(TH[i], HALF));
+      const rx = PX[i] + fx * r - tw.x, rz = PZ[i] + fz * r - tw.z;
+      if (Math.abs(rx * tw.dx + rz * tw.dz) < TA && Math.abs(rz * tw.dx - rx * tw.dz) < TC) { burst(tw, fx, fz, OM[i]); break; }
+    }
+  }
+}
+// One corner on the table: a normal impulse, then capped friction.
+function kick(p, rx, ry, rz) {
+  let vx = p.vx + p.wy * rz - p.wz * ry, vz = p.vz + p.wx * ry - p.wy * rx;
+  const vy = p.vy + p.wz * rx - p.wx * rz;
+  if (vy >= 0) return 0;
+  iw(-rz, 0, rx, IA);
+  const j = (-(vy < -4 ? 1.2 : 1) * vy) / (1 + IA[2] * rx - IA[0] * rz);
+  p.vy += j; p.wx += IA[0] * j; p.wy += IA[1] * j; p.wz += IA[2] * j;
+  vx = p.vx + p.wy * rz - p.wz * ry; vz = p.vz + p.wx * ry - p.wy * rx;
+  const vt = Math.hypot(vx, vz);
+  if (vt > 1e-5) {
+    const tx = vx / vt, tz = vz / vt;
+    iw(ry * tz, rz * tx - rx * tz, -ry * tx, IB);
+    const kt = 1 + tx * (IB[1] * rz - IB[2] * ry) + tz * (IB[0] * ry - IB[1] * rx);
+    const jt = -Math.min(vt / kt, MU * j);
+    p.vx += jt * tx; p.vz += jt * tz; p.wx += IB[0] * jt; p.wy += IB[1] * jt; p.wz += IB[2] * jt;
+  }
+  return -vy;
+}
+// A loose tile: gravity, a spin, and its corners against the table.
+function fly(p, h) {
+  if (p.wait > 0) { p.wait -= h; return; }
+  p.age += h;
+  p.vy -= G * h;
+  p.x += p.vx * h; p.y += p.vy * h; p.z += p.vz * h;
+  const { wx, wy, wz, qx, qy, qz, qw } = p, k = h / 2;
+  const nx = qx + k * (wx * qw + wy * qz - wz * qy), ny = qy + k * (wy * qw + wz * qx - wx * qz);
+  const nz = qz + k * (wz * qw + wx * qy - wy * qx), nw = qw - k * (wx * qx + wy * qy + wz * qz), l = Math.hypot(nx, ny, nz, nw);
+  p.qx = nx / l; p.qy = ny / l; p.qz = nz / l; p.qw = nw / l;
+  rotOf(p, R);
+  let low = 0, hit = 0;
+  for (let c = 0; c < 8; c++) {
+    const sx = c & 1 ? HX : -HX, sy = c & 2 ? HY : -HY, sz = c & 4 ? HZ : -HZ;
+    const rx = R[0] * sx + R[1] * sy + R[2] * sz, ry = R[3] * sx + R[4] * sy + R[5] * sz, rz = R[6] * sx + R[7] * sy + R[8] * sz;
+    if (p.y + ry >= 0) continue;
+    low = Math.min(low, p.y + ry);
+    hit = Math.max(hit, kick(p, rx, ry, rz));
+  }
+  if (low < 0) {
+    p.y -= low;
+    const d = 1 - 3 * h;
+    p.wx *= d; p.wy *= d; p.wz *= d;
+    if (!p.landed && hit > 3) { p.landed = true; thud(hit / 25); }
+  }
+  const calm = low < 0 && p.vx * p.vx + p.vy * p.vy + p.vz * p.vz < 0.03 && p.wx * p.wx + p.wy * p.wy + p.wz * p.wz < 0.08;
+  p.still = calm ? p.still + 1 : 0;
+  // A tile still for a sixth of a second, or loose for five, sleeps.
+  if (p.still > 40 || p.age > 5) { p.sleep = true; p.vx = p.vy = p.vz = p.wx = p.wy = p.wz = 0; }
+}
+// Tiles on the table push apart, so none lies inside another.
+function spread(tw, a) {
+  if (a.y > 0.45) return;
+  rotOf(a, R);
+  const ax = R[1] * 0.3, az = R[7] * 0.3;
+  for (const b of tw.ps) {
+    if (b === a || b.y > 0.45 || Math.abs(b.x - a.x) > 1.2 || Math.abs(b.z - a.z) > 1.2) continue;
+    rotOf(b, R2);
+    const bx = R2[1] * 0.3, bz = R2[7] * 0.3;
+    for (let u = -1; u <= 1; u++) {
+      for (let v = -1; v <= 1; v++) {
+        const dx = a.x + ax * u - b.x - bx * v, dz = a.z + az * u - b.z - bz * v, d = Math.hypot(dx, dz);
+        if (d >= APART || d < 1e-6) continue;
+        const nx = dx / d, nz = dz / d, push = (APART - d) * 0.5, vn = a.vx * nx + a.vz * nz;
+        a.x += nx * push; a.z += nz * push;
+        if (vn < 0) { a.vx -= vn * nx; a.vz -= vn * nz; }
+      }
+    }
+  }
+}
+// A fast loose tile tips any standing tile it meets.
+function knock(p) {
+  const sp = Math.hypot(p.vx, p.vz);
+  if (sp < 1.5 || p.y > H) return;
+  near(p.x, p.z, 0.8, j => {
+    if (j >= n || ST[j] !== 0 || BORN[j] > simT) return;
+    const rx = p.x - PX[j], rz = p.z - PZ[j];
+    if (Math.abs(rx * AX[j] + rz * AZ[j]) > T / 2 + 0.3 || Math.abs(rz * AX[j] - rx * AZ[j]) > W / 2 + 0.2) return;
+    RUN[j] = 0;
+    start(j, p.vx * AX[j] + p.vz * AZ[j] >= 0 ? 1 : -1, clamp(sp * 0.8, WMIN, 6));
+    clack(sp / 8, 0);
+  });
+}
+function shake(h) {
+  loose = 0;
+  for (const tw of towers) {
+    if (tw.st !== 1) continue;
+    const bb = tw.bb;
+    bb[0] = bb[2] = Infinity; bb[1] = bb[3] = -Infinity;
+    for (const p of tw.ps) {
+      if (!p.sleep) {
+        fly(p, h);
+        spread(tw, p);
+        knock(p);
+        if (!p.sleep) loose++;
+      }
+      bb[0] = Math.min(bb[0], p.x - 0.6); bb[1] = Math.max(bb[1], p.x + 0.6);
+      bb[2] = Math.min(bb[2], p.z - 0.6); bb[3] = Math.max(bb[3], p.z + 0.6);
+    }
+    // The reserved spot stays inside the box.
+    bb[0] = Math.min(bb[0], tw.x - 1); bb[1] = Math.max(bb[1], tw.x + 1);
+    bb[2] = Math.min(bb[2], tw.z - 1); bb[3] = Math.max(bb[3], tw.z + 1);
+  }
+}
+// Reset rebuilds a fallen tower, bottom level first.
+function rebuild(t) {
+  let any = false;
+  for (const tw of towers) {
+    if (tw.st !== 1) continue;
+    any = true;
+    tw.st = 2;
+    for (const p of tw.ps) {
+      p.sleep = true; p.vx = p.vy = p.vz = p.wx = p.wy = p.wz = 0;
+      p.r = [p.x, p.y, p.z, p.qx, p.qy, p.qz, p.qw];
+      p.rt = t + (reduce ? 0 : 0.06 * p.L + Math.random() * 0.05);
+    }
+  }
+  loose = 0;
+  return any;
+}
+// Spawn, rebuild and removal run on the clock.
+function towersAt(t) {
+  let busy = false;
+  const dur = reduce ? 0.12 : 0.36;
+  for (let k = towers.length - 1; k >= 0; k--) {
+    const tw = towers[k];
+    if (tw.st === 3) {
+      busy = true;
+      if (t - tw.gone > 0.2) { towers.splice(k, 1); paint = true; }
+      continue;
+    }
+    if (t < tw.ready + 0.05) busy = true;
+    if (tw.st !== 2) continue;
+    busy = true;
+    let done = true;
+    for (const p of tw.ps) {
+      const u = (t - p.rt) / dur;
+      if (u < 1) done = false;
+      if (u <= 0) continue;
+      const e = u >= 1 ? 1 : reduce ? out3(u) : back(u, 0.8), r = p.r, h = p.h;
+      // Quaternions take the short way round.
+      const sg = r[3] * h[3] + r[4] * h[4] + r[5] * h[5] + r[6] * h[6] < 0 ? -1 : 1;
+      p.x = lerp(r[0], h[0], e); p.y = lerp(r[1], h[1], e); p.z = lerp(r[2], h[2], e);
+      const qx = lerp(r[3] * sg, h[3], e), qy = lerp(r[4] * sg, h[4], e), qz = lerp(r[5] * sg, h[5], e), qw = lerp(r[6] * sg, h[6], e);
+      const l = Math.hypot(qx, qy, qz, qw);
+      p.qx = qx / l; p.qy = qy / l; p.qz = qz / l; p.qw = qw / l;
+    }
+    if (done) {
+      tw.st = 0;
+      tw.bb = [tw.x - 1, tw.x + 1, tw.z - 1, tw.z + 1];
+      for (const p of tw.ps) { [p.x, p.y, p.z, p.qx, p.qy, p.qz, p.qw] = p.h; p.landed = false; }
+      tick(0.5);
+      syncChips();
+    }
+  }
+  return busy;
+}
+function place(tw, p, t, te, o) {
+  let k = 1, lift = 0;
+  const age = t - p.born;
+  if (age < SPAWN) {
+    if (age < 0) k = 0;
+    else { const u = age / SPAWN; k = 0.72 + 0.28 * out3(u); lift = DROP * (1 - u) * (1 - u); }
+  }
+  if (clearing) k *= 1 - out3(clamp((t - clearing - 0.14) / 0.16));
+  if (tw.st === 3) k *= 1 - out3(clamp((t - tw.gone) / 0.18));
+  const x = p.qx, y = p.qy, z = p.qz, w = p.qw;
+  te[o] = (1 - 2 * (y * y + z * z)) * k; te[o + 1] = 2 * (x * y + z * w) * k; te[o + 2] = 2 * (x * z - y * w) * k; te[o + 3] = 0;
+  te[o + 4] = 2 * (x * y - z * w) * k; te[o + 5] = (1 - 2 * (x * x + z * z)) * k; te[o + 6] = 2 * (y * z + x * w) * k; te[o + 7] = 0;
+  te[o + 8] = 2 * (x * z + y * w) * k; te[o + 9] = 2 * (y * z - x * w) * k; te[o + 10] = (1 - 2 * (x * x + y * y)) * k; te[o + 11] = 0;
+  te[o + 12] = p.x; te[o + 13] = p.y + lift; te[o + 14] = p.z; te[o + 15] = 1;
+}
+function drawTowers(t) {
+  const te = tmesh.instanceMatrix.array;
+  let k = 0;
+  for (const tw of towers) {
+    for (const p of tw.ps) {
+      place(tw, p, t, te, k * 16);
+      if (paint) tmesh.setColorAt(k, col.setRGB(...rgb(rainbow(p.hue / PER)), THREE.SRGBColorSpace));
+      k++;
+    }
+  }
+  if (paint) { tmesh.instanceColor.needsUpdate = true; paint = false; }
+  tmesh.count = k;
+  tmesh.instanceMatrix.needsUpdate = true;
+}
+// The standing tower under a screen point, if any.
+// Slack widens the target in pixels.
+function pickTower(x0, y0, slack) {
+  const r = canvas.getBoundingClientRect(), px = x0 - r.left, py = y0 - r.top, t = nowS();
+  const ppu = r.height / 2 / Math.tan((FOV / 2) * D2R);
+  for (const tw of towers) {
+    if (tw.st !== 0 || tw.ready > t) continue;
+    vtmp.set(tw.x, 0, tw.z).project(camera);
+    const ax = ((vtmp.x + 1) / 2) * r.width, ay = ((1 - vtmp.y) / 2) * r.height;
+    vtmp.set(tw.x, tw.levels * (H + T), tw.z).project(camera);
+    const bx = ((vtmp.x + 1) / 2) * r.width, by = ((1 - vtmp.y) / 2) * r.height;
+    const depth = Math.hypot(tw.x - camera.position.x, camera.position.y, tw.z - camera.position.z);
+    if (distSeg(px, py, ax, ay, bx, by) <= (TC * ppu) / depth + slack) return tw;
+  }
+  return null;
+}
+// A click pushes the tower away from the viewer.
+function shove(tw) {
+  const dx = tw.x - camera.position.x, dz = tw.z - camera.position.z, l = Math.hypot(dx, dz) || 1;
+  burst(tw, dx / l, dz / l, 9);
+}
+
 /* ---------- three.js ---------- */
-let THREE, renderer, scene, camera, mesh, col, sun, shade, ray, ndc, vtmp, ready = false;
+let THREE, renderer, scene, camera, mesh, tmesh, col, sun, shade, ray, ndc, vtmp, ready = false;
 const cam = { pitch: 55 * D2R, dist: 20, tx: 0, tz: 0 };
 const PITCH0 = 55 * D2R, PITCH_IN = 67 * D2R, FOV = 30;
 // The key light sits up and left, on the camera's side.
@@ -891,7 +1317,7 @@ function animate(t) {
     if (u >= 1) { ST[i] = 0; TH[i] = 0; tick(0.35); }
     else if (u > 0) TH[i] = RISE0[i] * (1 - (reduce ? out3(u) : back(u)));
   }
-  return busy;
+  return towersAt(t) || busy;
 }
 const drawing = () => { for (const p of ptrs.values()) if (p.drawing) return true; return false; };
 // The camera settles in once, then leans gently toward the wave.
@@ -933,7 +1359,8 @@ function frame(ms) {
   const t = ms / 1000, raw = t - last, dt = clamp(raw, 0, 1 / 30);
   last = t;
   let busy = false;
-  if (active.length) {
+  simT = t;
+  if (active.length || loose) {
     const steps = Math.max(1, Math.ceil(dt / SUB - 1e-6));
     for (let s = 0; s < steps; s++) physics(dt / steps);
     settle();
@@ -946,6 +1373,7 @@ function frame(ms) {
   for (let i = 0; i < n; i++) pose(i, t, te, i * 16);
   mesh.count = n;
   mesh.instanceMatrix.needsUpdate = true;
+  drawTowers(t);
   renderer.render(scene, camera);
   if (++shown === 2) canvas.classList.add('on');
   // Sustained slow frames shrink the pixel budget, up to three times.
@@ -985,14 +1413,17 @@ canvas.addEventListener('pointerdown', e => {
   const q = tablePoint(e.clientX, e.clientY);
   if (!q) return;
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  const touch = e.pointerType !== 'mouse';
-  ptrs.set(e.pointerId, { sx: e.clientX, sy: e.clientY, q, touch, tile: pick(e.clientX, e.clientY, touch), drawing: false });
+  // A point squarely on a tower picks the tower before any tile.
+  const touch = e.pointerType !== 'mouse', square = pickTower(e.clientX, e.clientY, 0);
+  const tile = square ? -1 : pick(e.clientX, e.clientY, touch);
+  const tower = square || (tile < 0 ? pickTower(e.clientX, e.clientY, touch ? 12 : 4) : null);
+  ptrs.set(e.pointerId, { sx: e.clientX, sy: e.clientY, q, touch, tile, tower, drawing: false });
 });
 canvas.addEventListener('pointermove', e => {
   if (!ready) return;
   const p = ptrs.get(e.pointerId);
   if (!p) {
-    if (e.pointerType === 'mouse') canvas.classList.toggle('tip', pick(e.clientX, e.clientY, false) >= 0);
+    if (e.pointerType === 'mouse') canvas.classList.toggle('tip', pick(e.clientX, e.clientY, false) >= 0 || !!pickTower(e.clientX, e.clientY, 4));
     return;
   }
   if (!p.drawing) {
@@ -1018,6 +1449,7 @@ function release(e, ok) {
     const q = ok && tablePoint(e.clientX, e.clientY);
     if (q) finish(p, q.x, q.z);
   } else if (ok && p.tile >= 0 && ST[p.tile] === 0) tip(p.tile, pushDir(p.tile));
+  else if (ok && p.tower && p.tower.st === 0) shove(p.tower);
   syncChips();
   wake();
 }
@@ -1109,14 +1541,19 @@ async function init() {
   scene.add(floor);
   const mat = new THREE.MeshPhysicalMaterial({ roughness: 0.34, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 });
   carve(mat);
-  mesh = new THREE.InstancedMesh(new RoundedBoxGeometry(T, H, W, 4, 0.03), mat, MAX);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const geo = new RoundedBoxGeometry(T, H, W, 4, 0.03);
   col = new THREE.Color(1, 1, 1);
-  mesh.setColorAt(0, col);
-  mesh.count = 0;
-  mesh.frustumCulled = false;
-  mesh.castShadow = mesh.receiveShadow = true;
-  scene.add(mesh);
+  // Chain tiles and tower tiles share one shape and one finish.
+  [mesh, tmesh] = [MAX, MAXP].map(cap => {
+    const m = new THREE.InstancedMesh(geo, mat, cap);
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.setColorAt(0, col);
+    m.count = 0;
+    m.frustumCulled = false;
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
+    return m;
+  });
   ray = new THREE.Raycaster();
   ndc = new THREE.Vector2();
   vtmp = new THREE.Vector3();
