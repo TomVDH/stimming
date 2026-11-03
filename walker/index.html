@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Beach walker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Beach walker: a wind-driven linkage walker on wet sand at dusk. */
+:root { --stage: oklch(0.19 0.035 285); }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
+.stage canvas.grab { cursor: grab; }
+.stage canvas.turning { cursor: grabbing; }
+.vignette figure svg { color: var(--fg); }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/walker.svg)"></span><span class="intro-name">Beach walker</span><span class="intro-sub">Stimming No. 20</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The arrow keys blow gusts, B starts a breeze, P shows the foot path and R resets.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Beach walker needs canvas drawing, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" role="group" aria-label="Legs">
+        <button class="chip" type="button" data-value="4" aria-pressed="false">8 legs</button>
+        <button class="chip" type="button" data-value="6" aria-pressed="true">12 legs</button>
+        <button class="chip" type="button" data-value="8" aria-pressed="false">16 legs</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="breeze" type="button" aria-pressed="false" aria-keyshortcuts="B">Breeze</button>
+        <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>blow wind</dd></div>
+        <div><dt>Drag the hub</dt><dd>crank by hand</dd></div>
+        <div class="fine"><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>gust</dd></div>
+        <div class="fine"><dt><kbd>P</kbd></dt><dd>foot path</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Beach walker</h1>
+    <div class="vignette">
+      <div>
+        <h2>Thirteen numbers that walk</h2>
+        <p>Each leg is eleven rods on one crank. The rod lengths are the set the Dutch artist Theo Jansen found in the early 1990s, when he let a computer breed thousands of legs and kept the ones whose feet moved best. Turn the crank once and the foot draws a closed loop: a long flat line along the bottom, then a quick lift and a swing back.</p>
+        <p>The flat line is the trick. While a foot is on it, the foot moves level, so the body glides instead of bobbing. Mirrored legs share each crank pin, and the pins sit at even steps around the shaft, so some foot is always flat on the sand. <em>Legs</em> adds pairs and spreads their phases around the turn.</p>
+      </div>
+      <figure>
+        <svg id="leg" viewBox="0 0 300 220" role="img" aria-label="One leg drawn as rods and joints, with its crank circle at the upper right and the loop its foot traces at the bottom: flat along the base, rounded on top."></svg>
+        <figcaption>One leg, its crank circle, and the loop its foot draws in one turn.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+</script>
+<script type="module">
+import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb } from '../shared/stim.js';
+initPage({ id: 'walker' });
+
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const bar = document.querySelector('.bar');
+const ctx = canvas.getContext('2d');
+if (!ctx) { stage.querySelector('.fail').hidden = false; throw new Error('no canvas'); }
+
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+let reduce = reduced();
+
+/* ---------- colour ---------- */
+// OKLCH triples become canvas colour strings.
+const css = ([L, C, h], a = 1) => {
+  const [r, g, b] = oklchRgb(L, C, h);
+  return `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)} / ${a})`;
+};
+const mix = (p, q, t) => [lerp(p[0], q[0], t), lerp(p[1], q[1], t), lerp(p[2], q[2], t)];
+// Far hues sit below zero so the fade passes through mauve, not teal.
+const BONE = [0.93, 0.03, 85], BONE_FAR = [0.5, 0.05, -65];
+const STEEL = [0.7, 0.025, 250], STEEL_FAR = [0.37, 0.04, 285];
+const JOINT = [0.3, 0.025, 55], JOINT_FAR = [0.24, 0.035, -75];
+const ACCENT = [0.83, 0.12, 192];
+
+/* ---------- linkage ---------- */
+// The thirteen leg lengths, in the published proportions.
+const LEN = { a: 38, b: 41.5, c: 39.3, d: 40.1, e: 55.8, f: 39.4, g: 36.7, h: 65.7, i: 49, j: 50, k: 61.9, l: 7.8, m: 15 };
+// The crank axle is the origin; y points up.
+// The fixed pivot sits left of the axle and a little below it.
+const BX = -LEN.a, BY = -LEN.l;
+// Joint slots in a leg array: O, A, B, P1, P2, P3, P4, F.
+const O = 0, A = 2, B = 4, P1 = 6, P2 = 8, P3 = 10, P4 = 12, F = 14;
+
+// Two circles meet; side picks the point left (+1) or right (-1) of p to q.
+function meet(J, p, r0, q, r1, side, o) {
+  const dx = J[q] - J[p], dy = J[q + 1] - J[p + 1];
+  const d2 = dx * dx + dy * dy, d = Math.sqrt(d2);
+  const a = (r0 * r0 - r1 * r1 + d2) / (2 * d);
+  const h = Math.sqrt(Math.max(0, r0 * r0 - a * a));
+  const mx = J[p] + (a * dx) / d, my = J[p + 1] + (a * dy) / d;
+  J[o] = mx - (side * h * dy) / d;
+  J[o + 1] = my + (side * h * dx) / d;
+}
+// The solver fills J from the crank angle t.
+// A flipped leg mirrors the frame and shares the same crank pin.
+function solveLeg(t, flip, J) {
+  const tt = flip ? PI - t : t;
+  J[O] = 0; J[O + 1] = 0;
+  J[A] = LEN.m * Math.cos(tt); J[A + 1] = LEN.m * Math.sin(tt);
+  J[B] = BX; J[B + 1] = BY;
+  meet(J, A, LEN.j, B, LEN.b, -1, P1);
+  meet(J, B, LEN.d, P1, LEN.e, 1, P2);
+  meet(J, A, LEN.k, B, LEN.c, 1, P4);
+  meet(J, P2, LEN.f, P4, LEN.g, -1, P3);
+  meet(J, P3, LEN.h, P4, LEN.i, -1, F);
+  if (flip) for (let n = 0; n < 16; n += 2) J[n] = -J[n];
+  return J;
+}
+// The foot loop of one unflipped leg, sampled once.
+const LOOP = (() => {
+  const J = new Float64Array(16), pts = [];
+  for (let n = 0; n <= 180; n++) { solveLeg((n / 180) * TAU, false, J); pts.push([J[F], J[F + 1]]); }
+  return pts;
+})();
+// Ground stroke per crank radian, measured on the flat part of the loop.
+const GEAR = (() => {
+  const J = new Float64Array(16);
+  solveLeg(-0.6, false, J); const x0 = J[F];
+  solveLeg(0.6, false, J); return (J[F] - x0) / 1.2;
+})();
+// The leg geometry list: each entry is a rod between two joints.
+// Plates are rigid triangles drawn as solid shapes with a cut window.
+const PLATES = [[B, P1, P2], [P4, P3, F]];
+const RODS = [[B, P4], [P2, P3], [A, P4], [A, P1]];
+
+/* ---------- ground ---------- */
+// Gentle dunes; heights are in leg units.
+const ground = x => 3.2 * Math.sin(x * 0.011 + 0.4) + 1.6 * Math.sin(x * 0.027 + 2.1) + 0.7 * Math.sin(x * 0.063);
+
+/* ---------- walker state ---------- */
+// Depth step between sub-layers, in leg units.
+// Far layers shift right and up on screen.
+const DZ = 3.4, OX = 0.85, OY = 0.42;
+let pairs = 6, legs = [];
+function build(n) {
+  pairs = n;
+  const count = n * 2;
+  legs = [];
+  for (let s = 0; s < count; s++) {
+    const pair = s >> 1, flip = s & 1;
+    const near = 1 - s / (count - 1);
+    const fade = near ** 1.25;
+    legs.push({
+      phase: (pair / n) * TAU, flip: !!flip,
+      z: (s - (count - 1) / 2) * DZ, near,
+      J: solveLeg((pair / n) * TAU + theta, !!flip, new Float64Array(16)),
+      fx: 0, down: true, half: 0,
+      tube: css(mix(BONE_FAR, BONE, fade)), steel: css(mix(STEEL_FAR, STEEL, fade)), joint: css(mix(JOINT_FAR, JOINT, fade)),
+    });
+  }
+  legs.forEach(L => { L.fx = L.J[F]; L.half = Math.floor((theta + L.phase) / PI); });
+  settle();
+}
+let theta = 0, u = 0, bodyX = 0, bodyY = 92, camX = 0;
+// The body rests on whichever foot sits lowest against the ground.
+function settle() {
+  let best = -1e9;
+  for (const L of legs) {
+    const need = ground(bodyX + L.J[F]) - L.J[F + 1];
+    if (need > best) best = need;
+  }
+  bodyY = best;
+}
+
+/* ---------- wind ---------- */
+// Wind is in units of a firm gust; one gust pushes WMAX leg units per second.
+const WMAX = 200, DRAG = 2.36e-3, ROLL = 0.35, STICK = 6;
+let windUser = 0, keyWind = 0, breezeOn = false, breezeAmt = 0, wind = 0, rel = 0, simT = 0, puffT = 0;
+const gust = t => 0.55 + 0.22 * Math.sin(0.31 * t) + 0.15 * Math.sin(0.83 * t + 1.7) + 0.1 * Math.sin(2.3 * t + 0.4);
+
+/* ---------- streaks and prints ---------- */
+const streaks = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), len: 0.3 + Math.random() * 0.7, sp: 0.6 + Math.random() * 0.8 }));
+let prints = [];
+const PRINT_LIFE = 22;
+
+/* ---------- sound ---------- */
+// Clicks at crank dead centre, a crunch per footfall, a breathy wind bed.
+const kit = audioKit({ gain: 0.5, keys: new Set(['ArrowLeft', 'ArrowRight', 'b', 'B']), noiseSeconds: 2, sleepMs: 1200 });
+let voices = 0, clickAt = 0, crunchAt = 0, bed = null, bedLevel = -1;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+function track(src, ...nodes) { voices++; src.onended = () => { voices--; nodes.forEach(n => n.disconnect()); }; }
+function click(near) {
+  const ac = kit.live(), t0 = performance.now();
+  if (!ac || voices > 12 || t0 - clickAt < 45) return;
+  clickAt = t0;
+  const t = ac.currentTime + 0.005, v = 0.035 + 0.05 * near;
+  // A short falling tone reads as a plastic knock.
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(1150 * jit(0.08), t);
+  o.frequency.exponentialRampToValueAtTime(620, t + 0.04);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(v, t + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  o.connect(g); g.connect(kit.out);
+  o.start(t); o.stop(t + 0.07);
+  track(o, o, g);
+}
+function crunch(near) {
+  const ac = kit.live(), t0 = performance.now();
+  if (!ac || !kit.noise || voices > 12 || t0 - crunchAt < 35) return;
+  crunchAt = t0;
+  const t = ac.currentTime + 0.005, v = 0.05 + 0.09 * near;
+  const src = ac.createBufferSource(); src.buffer = kit.noise;
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1700 * jit(0.25); f.Q.value = 0.9;
+  const g = ac.createGain();
+  // Two grains a few milliseconds apart give the sand its crunch.
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(v, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(v * 0.25, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(v * 0.7, t + 0.042);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+  src.connect(f); f.connect(g); g.connect(kit.out);
+  src.start(t, Math.random() * 1.6, 0.14);
+  track(src, src, f, g);
+}
+// The wind bed is one looped noise voice; its level follows the wind.
+function windBed(level) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  if (!bed) {
+    const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.6; f.frequency.value = 400;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+    const g = ac.createGain(); g.gain.value = 0;
+    src.connect(f); f.connect(lp); lp.connect(g); g.connect(kit.out);
+    src.start();
+    bed = { f, g };
+  }
+  if (Math.abs(level - bedLevel) < 0.01) return;
+  bedLevel = level;
+  const t = ac.currentTime;
+  bed.g.gain.setTargetAtTime(0.32 * level ** 1.5, t, 0.15);
+  bed.f.frequency.setTargetAtTime(320 + 900 * level, t, 0.25);
+}
+
+/* ---------- layout ---------- */
+// Every length below is in CSS pixels unless it says leg units.
+let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1;
+const bg = document.createElement('canvas'), bgc = bg.getContext('2d');
+const wc = document.createElement('canvas'), wctx = wc.getContext('2d');
+const SKY = [[0.14, 0.03, 272], [0.2, 0.05, 290], [0.36, 0.09, 12], [0.5, 0.11, 38]];
+const SEA = [0.23, 0.045, 270], SAND_FAR = [0.38, 0.08, 28], SAND_MID = [0.24, 0.045, 292], SAND_NEAR = [0.16, 0.025, 272];
+const SUN = [0.86, 0.11, 78];
+const PRINT = css([0.12, 0.025, 275]);
+function fit() {
+  const r = fitCanvas(canvas, { budget: 2.6e6 });
+  w = r.w; h = r.h; dpr = r.dpr;
+  wc.width = bg.width = r.W; wc.height = bg.height = r.H;
+  // The bar sits on the stage; the feet stay just above it.
+  const barH = bar.offsetHeight || 90;
+  trackY = Math.round(Math.min(h * 0.8, h - barH + 26));
+  horizonY = Math.round(trackY - clamp(h * 0.17, 44, 130));
+  seaY = horizonY + Math.max(6, h * 0.022);
+  s = Math.min((trackY - h * 0.07) / 190, w / 330, 2.5);
+  paintBackdrop();
+  draw();
+}
+// The sky, sun, sea and sand base are painted once per resize.
+function paintBackdrop() {
+  const c = bgc;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sky = c.createLinearGradient(0, 0, 0, horizonY);
+  sky.addColorStop(0, css(SKY[0])); sky.addColorStop(0.45, css(SKY[1]));
+  sky.addColorStop(0.85, css(SKY[2])); sky.addColorStop(1, css(SKY[3]));
+  c.fillStyle = sky; c.fillRect(0, 0, w, horizonY + 1);
+  // A low sun, half set, with stencil slits across its lower half.
+  const R = clamp(Math.min(w, h) * 0.075, 26, 70), sunX = w * 0.74, sunY = horizonY - R * 0.3;
+  c.save();
+  c.beginPath(); c.rect(0, 0, w, horizonY); c.clip();
+  c.fillStyle = css(SUN); c.beginPath(); c.arc(sunX, sunY, R, 0, TAU); c.fill();
+  c.fillStyle = css(SKY[3]);
+  for (let k = 0; k < 4; k++) { const y = sunY + R * (0.02 + k * 0.2), t = 1.5 + k * 1.6; c.fillRect(sunX - R - 1, y, R * 2 + 2, t); }
+  c.restore();
+  // The sea is a thin dark band under the horizon.
+  c.fillStyle = css(SEA); c.fillRect(0, horizonY, w, seaY - horizonY + 1);
+  const sand = c.createLinearGradient(0, seaY, 0, h);
+  sand.addColorStop(0, css(SAND_FAR)); sand.addColorStop(0.3, css(SAND_MID)); sand.addColorStop(1, css(SAND_NEAR));
+  c.fillStyle = sand; c.fillRect(0, seaY, w, h - seaY);
+  // The wet sand mirrors the sun as a column of short dashes.
+  for (let k = 0; k < 26; k++) {
+    const f = k / 26, y = seaY + 3 + (h - seaY) * f ** 1.4, half = R * (0.9 - f * 0.5) * (0.5 + 0.5 * Math.sin(k * 2.7) ** 2);
+    c.fillStyle = css(SUN, 0.22 * (1 - f) ** 1.5);
+    c.fillRect(sunX - half, y, half * 2, 1 + f * 2);
+  }
+}
+
+/* ---------- motion ---------- */
+let mode = null, handTurn = 0, showPath = false, camLock = 0;
+function step(dt) {
+  simT += dt;
+  // Wind sums the drag gust, the arrow keys and the breeze.
+  windUser *= Math.exp(-dt / (mode === 'wind' ? 0.35 : 0.8));
+  if (Math.abs(windUser) < 0.004) windUser = 0;
+  breezeAmt = clamp(breezeAmt + (breezeOn ? dt : -dt) / 1.5, 0, 1);
+  const target = clamp(windUser + keyWind * 1.1 + breezeAmt * gust(simT), -1.8, 1.8);
+  wind += (target - wind) * (1 - Math.exp(-dt * 6));
+  if (Math.abs(wind) < 0.003 && target === 0) wind = 0;
+
+  let dTheta;
+  if (mode === 'crank') {
+    // The hand sets the crank; the speed it leaves carries on after release.
+    dTheta = handTurn; handTurn = 0;
+    const uHand = (-GEAR * dTheta) / dt;
+    u += (uHand - u) * (1 - Math.exp(-dt * 18));
+  } else {
+    // Drag grows with the square of the wind against the body.
+    const r = wind * WMAX - u;
+    const push = DRAG * r * Math.abs(r);
+    if (u === 0 && Math.abs(push) <= STICK) {
+      // Static friction holds the walker still in a weak wind.
+    } else {
+      u += (push - ROLL * u - STICK * Math.sign(u)) * dt;
+      if (Math.abs(u) < 1.2 && Math.abs(push) <= STICK) u = 0;
+    }
+    dTheta = (-u / GEAR) * dt;
+  }
+  rel += (clamp((wind * WMAX - u) / WMAX, -1.5, 1.5) - rel) * (1 - Math.exp(-dt * 4));
+  theta += dTheta;
+  if (theta > 1e4 || theta < -1e4) theta %= TAU;
+
+  // Each foot keeps its old x so the planted one can push the body.
+  let lead = null, best = -1e9;
+  for (const L of legs) {
+    L.fx = L.J[F];
+    solveLeg(theta + L.phase, L.flip, L.J);
+    const need = ground(bodyX + L.J[F]) - L.J[F + 1];
+    if (need > best) { best = need; lead = L; }
+  }
+  // The planted foot stays put, so the body moves the other way.
+  if (lead) bodyX -= lead.J[F] - lead.fx;
+  settle();
+
+  // Prints and sounds follow each footfall and each crank dead centre.
+  for (const L of legs) {
+    const fx = bodyX + L.J[F], gap = bodyY + L.J[F + 1] - ground(fx);
+    const down = gap < 0.7;
+    if (down && !L.down && dTheta !== 0) {
+      prints.push({ x: fx, z: L.z, life: 1 });
+      crunch(L.near);
+    }
+    L.down = down;
+    if (!L.flip) {
+      const half = Math.floor((theta + L.phase) / PI);
+      if (half !== L.half) { L.half = half; click(L.near); }
+    }
+  }
+  for (const p of prints) p.life -= dt / PRINT_LIFE;
+  if (prints.length > 420) prints.splice(0, prints.length - 420);
+  if (prints.length && prints[0].life <= 0) prints = prints.filter(p => p.life > 0);
+
+  // The camera trails the walker.
+  // While the hand cranks, the camera holds the hub under the pointer.
+  const camWas = camX;
+  if (mode === 'crank') camX = bodyX + camLock;
+  else camX = reduce ? bodyX : camX + (bodyX - camX) * (1 - Math.exp(-dt * 3));
+
+  // Streaks ride the wind and slide with the camera.
+  const pan = ((camX - camWas) * s) / w;
+  if (!reduce) for (const k of streaks) {
+    k.x += wind * k.sp * 0.9 * dt - pan;
+    if (k.x > 1.15) { k.x -= 1.3; k.y = Math.random(); }
+    if (k.x < -0.15) { k.x += 1.3; k.y = Math.random(); }
+  }
+  windBed(clamp(Math.abs(wind), 0, 1.5) / 1.5);
+}
+
+/* ---------- drawing ---------- */
+// Leg units map to the screen through the body and the depth offset.
+let cx = 0, cy = 0;
+const X = (lx, z) => cx + (lx + z * OX) * s;
+const Y = (ly, z) => cy - (ly + z * OY) * s;
+let hubHover = false;
+function hub() {
+  const near = legs[0].z, far = legs[legs.length - 1].z;
+  return { x: X(0, near), y: Y(0, near), fx: X(0, far), fy: Y(0, far) };
+}
+
+// A tube first cuts a gap through whatever lies behind it, then fills.
+function tube(c, x0, y0, x1, y1, width, color, gap) {
+  c.globalCompositeOperation = 'destination-out';
+  c.lineWidth = width + gap * 2;
+  c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = color; c.lineWidth = width;
+  c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+}
+// A plate is a solid triangle with a smaller triangle cut from its middle.
+function plate(c, pts, width, color, gap) {
+  const [ax, ay, bx, by, qx, qy] = pts;
+  const tri = () => { c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.lineTo(qx, qy); c.closePath(); };
+  c.globalCompositeOperation = 'destination-out';
+  c.lineWidth = width + gap * 2; tri(); c.fill(); c.stroke();
+  c.globalCompositeOperation = 'source-over';
+  c.fillStyle = color; c.strokeStyle = color; c.lineWidth = width; tri(); c.fill(); c.stroke();
+  // The window shrinks toward the incentre, inset past the tube edge.
+  const la = Math.hypot(bx - qx, by - qy), lb = Math.hypot(ax - qx, ay - qy), lc = Math.hypot(ax - bx, ay - by), per = la + lb + lc;
+  const ix = (la * ax + lb * bx + lc * qx) / per, iy = (la * ay + lb * by + lc * qy) / per;
+  const area = Math.abs((bx - ax) * (qy - ay) - (qx - ax) * (by - ay)) / 2, rin = (2 * area) / per;
+  const k = (rin - width * 0.5 - gap * 1.6) / rin;
+  if (k <= 0.15) return;
+  c.globalCompositeOperation = 'destination-out';
+  c.beginPath();
+  c.moveTo(ix + (ax - ix) * k, iy + (ay - iy) * k); c.lineTo(ix + (bx - ix) * k, iy + (by - iy) * k); c.lineTo(ix + (qx - ix) * k, iy + (qy - iy) * k);
+  c.closePath(); c.fill();
+  c.globalCompositeOperation = 'source-over';
+}
+function joint(c, x, y, r, color, pin) {
+  c.fillStyle = color; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  c.fillStyle = pin; c.beginPath(); c.arc(x, y, r * 0.36, 0, TAU); c.fill();
+}
+
+function drawWalker() {
+  const c = wctx;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, wc.width, wc.height);
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const tw = Math.max(1.6, 2.5 * s), gap = Math.max(1.2, 0.75 * s), jr = Math.max(1.6, 2.1 * s);
+  const near = legs[0].z, far = legs[legs.length - 1].z, mid = legs[legs.length >> 1];
+  const steelMid = mid.steel;
+
+  // The shaft and the two frame rails run front to back.
+  for (const bx of [BX, -BX]) tube(c, X(bx, far), Y(BY, far), X(bx, near), Y(BY, near), tw * 1.1, steelMid, gap);
+  tube(c, X(0, far), Y(0, far), X(0, near), Y(0, near), tw * 1.5, steelMid, gap);
+
+  // The sail stands edge-on and bellies out downwind.
+  const zs = 0, top = 74, foot = 12, belly = clamp(rel, -1.2, 1.2) * 16;
+  c.globalCompositeOperation = 'destination-out';
+  c.lineWidth = gap * 2;
+  const sailPath = () => {
+    c.beginPath(); c.moveTo(X(0, zs), Y(top, zs));
+    c.quadraticCurveTo(X(belly * 1.6, zs), Y((top + foot) / 2, zs), X(0, zs), Y(foot, zs));
+    c.closePath();
+  };
+  sailPath(); c.fill(); c.stroke();
+  c.globalCompositeOperation = 'source-over';
+  c.fillStyle = mid.tube; sailPath(); c.fill();
+  tube(c, X(0, zs), Y(0, zs), X(0, zs), Y(top + 4, zs), tw * 0.9, steelMid, gap);
+
+  // Legs draw from the far side to the near side.
+  for (let n = legs.length - 1; n >= 0; n--) {
+    const L = legs[n], J = L.J, z = L.z;
+    const px = q => X(J[q], z), py = q => Y(J[q + 1], z);
+    tube(c, px(O), py(O), px(B), py(B), tw * 1.3, L.steel, gap);
+    tube(c, px(O), py(O), px(A), py(A), tw * 1.15, L.steel, gap);
+    plate(c, [px(B), py(B), px(P1), py(P1), px(P2), py(P2)], tw, L.tube, gap);
+    tube(c, px(B), py(B), px(P4), py(P4), tw, L.tube, gap);
+    tube(c, px(P2), py(P2), px(P3), py(P3), tw, L.tube, gap);
+    plate(c, [px(P4), py(P4), px(P3), py(P3), px(F), py(F)], tw, L.tube, gap);
+    tube(c, px(A), py(A), px(P4), py(P4), tw, L.tube, gap);
+    tube(c, px(A), py(A), px(P1), py(P1), tw, L.tube, gap);
+    for (const q of [B, P1, P2, P3, P4]) joint(c, px(q), py(q), jr, L.joint, L.tube);
+    joint(c, px(A), py(A), jr * 1.1, L.joint, L.steel);
+    // The foot is a flat dark pad.
+    c.fillStyle = L.joint;
+    c.beginPath(); c.roundRect(px(F) - 2.6 * s, py(F) - 1.1 * s, 5.2 * s, 2.2 * s, 1.1 * s); c.fill();
+  }
+  // The near hub is the handle; it lights while hovered or held.
+  const H = hub(), lit = hubHover || mode === 'crank';
+  c.globalCompositeOperation = 'destination-out';
+  c.beginPath(); c.arc(H.x, H.y, 5.4 * s + gap, 0, TAU); c.fill();
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = lit ? css(ACCENT) : legs[0].tube; c.lineWidth = Math.max(1.5, 1.5 * s);
+  c.beginPath(); c.arc(H.x, H.y, 4.4 * s, 0, TAU); c.stroke();
+  joint(c, H.x, H.y, jr * 1.2, legs[0].joint, lit ? css(ACCENT) : legs[0].tube);
+}
+
+// Dashed contour rows give the sand depth, parallax and the dune shape.
+const ROWS = Array.from({ length: 10 }, (_, k) => (k + 0.6) / 10);
+function drawSand() {
+  const c = ctx;
+  c.lineCap = 'butt';
+  // Sea swell lines drift slowly with the camera.
+  c.strokeStyle = css([0.4, 0.05, 260], 0.25); c.lineWidth = 1;
+  for (let k = 0; k < 3; k++) {
+    const y = horizonY + ((seaY - horizonY) * (k + 0.5)) / 3;
+    c.setLineDash([6 + k * 5, 10 + k * 9]); c.lineDashOffset = camX * s * (0.03 + k * 0.02);
+    c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+  }
+  for (let k = 0; k < ROWS.length; k++) {
+    const f = ROWS[k] ** 1.7, y0 = seaY + (h - seaY) * f, par = 0.2 + 1.5 * f;
+    c.strokeStyle = css([0.62, 0.05, 40], 0.05 + 0.1 * f);
+    c.lineWidth = 0.8 + f * 1.2;
+    const dash = 4 + 26 * f;
+    c.setLineDash([dash, dash * (1.4 + (k % 3) * 0.7)]);
+    c.lineDashOffset = camX * s * par;
+    c.beginPath();
+    for (let sx = -8; sx <= w + 8; sx += 8) {
+      const xw = camX + (sx - w / 2) / (s * par);
+      const y = y0 - ground(xw) * s * par * 0.6;
+      sx < 0 ? c.moveTo(sx, y) : c.lineTo(sx, y);
+    }
+    c.stroke();
+  }
+  c.setLineDash([]);
+}
+function drawPrints() {
+  const c = ctx, rx = 2.7 * s, ry = Math.max(0.8, 0.85 * s);
+  for (const p of prints) {
+    const x = w / 2 + (p.x - camX + p.z * OX) * s;
+    if (x < -20 || x > w + 20) continue;
+    const y = trackY - (ground(p.x) + p.z * OY) * s;
+    // A print fills in: it shallows, then fades.
+    const d = p.life ** 0.7;
+    c.globalAlpha = 0.75 * d;
+    c.fillStyle = PRINT;
+    c.beginPath(); c.ellipse(x, y + ry * 0.4, rx, ry * (0.5 + 0.5 * d), 0, 0, TAU); c.fill();
+  }
+  c.globalAlpha = 1;
+}
+// The wet sand mirrors the walker, fading with distance from the feet.
+function drawReflection(mirror, top) {
+  const c = ctx, Ym = mirror * dpr, H = canvas.height;
+  const span = Math.min(H - Ym, (Ym - top * dpr) * 0.85);
+  if (span <= 2) return;
+  c.setTransform(1, 0, 0, -1, 0, 2 * Ym);
+  const n = 12;
+  for (let k = 0; k < n; k++) {
+    const y0 = Ym + (span * k) / n, y1 = Ym + (span * (k + 1)) / n;
+    const sy = Math.max(0, 2 * Ym - y1), sh = 2 * Ym - y0 - sy;
+    if (sh <= 0) continue;
+    c.globalAlpha = 0.17 * (1 - k / n) ** 1.6;
+    c.drawImage(wc, 0, sy, wc.width, sh, 0, sy, wc.width, sh);
+  }
+  c.globalAlpha = 1;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function drawStreaks() {
+  const a = clamp(Math.abs(wind), 0, 1.4);
+  if (reduce || a < 0.02) return;
+  const c = ctx, dir = Math.sign(wind);
+  c.strokeStyle = css([0.9, 0.02, 80], 0.32 * Math.min(1, a)); c.lineWidth = 1; c.lineCap = 'round';
+  c.beginPath();
+  const count = Math.round(streaks.length * Math.min(1, 0.25 + a * 0.6));
+  for (let n = 0; n < count; n++) {
+    const k = streaks[n], x = k.x * w, y = 10 + k.y * (trackY - 10), len = (20 + 90 * a) * k.len;
+    c.moveTo(x, y); c.lineTo(x - dir * len, y);
+  }
+  c.stroke();
+}
+// The foot path shows as a thin line under the nearest pair.
+function drawPath() {
+  if (!showPath) return;
+  const c = ctx;
+  c.strokeStyle = css(ACCENT, 0.9); c.lineWidth = 1.25; c.lineJoin = 'round';
+  for (const L of legs.slice(0, 2)) {
+    const sg = L.flip ? -1 : 1;
+    c.beginPath();
+    LOOP.forEach(([x, y], n) => (n ? c.lineTo(X(sg * x, L.z), Y(y, L.z)) : c.moveTo(X(sg * x, L.z), Y(y, L.z))));
+    c.stroke();
+    c.fillStyle = css(ACCENT);
+    c.beginPath(); c.arc(X(L.J[F], L.z), Y(L.J[F + 1], L.z), 2.5, 0, TAU); c.fill();
+  }
+}
+function draw() {
+  if (!legs.length) return;
+  cx = w / 2 + (bodyX - camX) * s;
+  cy = trackY - bodyY * s;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(bg, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawSand();
+  drawPrints();
+  drawWalker();
+  const top = Y(74 + 4, 0);
+  drawReflection(trackY - ground(bodyX) * s, top);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(wc, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawPath();
+  drawStreaks();
+}
+
+/* ---------- loop ---------- */
+// The loop runs while anything moves, then sleeps.
+let raf = 0, last = 0, visible = true;
+const busy = () => mode === 'crank' || u !== 0 || windUser !== 0 || keyWind !== 0 || breezeAmt > 0 || breezeOn
+  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05;
+function frame(now) {
+  raf = 0;
+  const dt = clamp((now - last) / 1000, 0.001, 0.05);
+  last = now;
+  step(dt);
+  draw();
+  if (visible && busy()) raf = requestAnimationFrame(frame);
+  else { windBed(0); kit.rest(() => !raf); }
+}
+function wake() {
+  if (raf || !visible) return;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+whenVisible(stage, v => { visible = v; if (v) wake(); else windBed(0); });
+
+/* ---------- input ---------- */
+const local = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+// The hub catches a press near it or along the shaft behind it.
+function onHub([x, y]) {
+  const H = hub(), R = Math.max(22, 8 * s);
+  if (Math.hypot(x - H.x, y - H.y) < R) return true;
+  const dx = H.fx - H.x, dy = H.fy - H.y, t = clamp(((x - H.x) * dx + (y - H.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+  return Math.hypot(x - (H.x + dx * t), y - (H.y + dy * t)) < Math.max(14, 4 * s);
+}
+const angleAt = ([x, y]) => { const H = hub(); return Math.atan2(H.y - y, x - H.x); };
+let lastAng = 0, lastX = 0, lastT = 0, downX = 0, downT = 0, moved = 0;
+canvas.addEventListener('pointerdown', e => {
+  const p = local(e);
+  canvas.setPointerCapture(e.pointerId);
+  if (onHub(p)) { mode = 'crank'; camLock = camX - bodyX; lastAng = angleAt(p); handTurn = 0; canvas.classList.add('turning'); }
+  else { mode = 'wind'; lastX = downX = p[0]; lastT = downT = e.timeStamp; moved = 0; }
+  wake();
+});
+canvas.addEventListener('pointermove', e => {
+  const p = local(e);
+  if (mode === 'crank') {
+    let d = angleAt(p) - lastAng;
+    d -= TAU * Math.round(d / TAU);
+    lastAng += d; handTurn += d;
+    wake();
+  } else if (mode === 'wind') {
+    const dt = Math.max(8, e.timeStamp - lastT) / 1000, vx = (p[0] - lastX) / dt;
+    moved += Math.abs(p[0] - lastX);
+    lastX = p[0]; lastT = e.timeStamp;
+    // A fast stroke is a firm gust; the gust grows quickly and fades slowly.
+    const want = clamp(vx / (w * 0.55), -1.7, 1.7);
+    const grow = Math.abs(want) > Math.abs(windUser) || Math.sign(want) !== Math.sign(windUser);
+    windUser += (want - windUser) * (grow ? 0.35 : 0.06);
+    wake();
+  } else {
+    const on = onHub(p);
+    if (on !== hubHover) { hubHover = on; canvas.classList.toggle('grab', on); if (!raf) draw(); }
+  }
+});
+function release(e) {
+  // A quick tap away from the hub puffs air toward the walker.
+  if (mode === 'wind' && moved < 6 && e.timeStamp - downT < 350) {
+    const p = local(e), dir = Math.sign(w / 2 + (bodyX - camX) * s - p[0]) || 1;
+    windUser = clamp(windUser + dir * 0.8, -1.7, 1.7);
+  }
+  mode = null;
+  canvas.classList.remove('turning');
+  wake();
+}
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('pointerleave', () => { if (!mode && hubHover) { hubHover = false; canvas.classList.remove('grab'); if (!raf) draw(); } });
+
+const breezeBtn = document.getElementById('breeze');
+function setBreeze(on) { breezeOn = on; breezeBtn.setAttribute('aria-pressed', String(on)); wake(); }
+breezeBtn.addEventListener('click', () => setBreeze(!breezeOn));
+function reset() {
+  theta = 0; u = 0; bodyX = 0; camX = 0; windUser = 0; keyWind = 0; wind = 0; rel = 0; prints = [];
+  setBreeze(false); breezeAmt = 0;
+  build(pairs);
+  draw();
+}
+document.getElementById('reset').addEventListener('click', reset);
+const legsPick = choices(document.querySelector('.choices'), v => { build(+v); draw(); wake(); });
+
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key;
+  if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    if (tag === 'BUTTON') return;
+    e.preventDefault(); keyWind = k === 'ArrowRight' ? 1 : -1; wake();
+  } else if (k === 'r' || k === 'R') reset();
+  else if (k === 'p' || k === 'P') { showPath = !showPath; if (!raf) draw(); }
+  else if (k === 'b' || k === 'B') setBreeze(!breezeOn);
+});
+addEventListener('keyup', e => {
+  if ((e.key === 'ArrowLeft' && keyWind < 0) || (e.key === 'ArrowRight' && keyWind > 0)) keyWind = 0;
+});
+addEventListener('blur', () => { keyWind = 0; });
+
+onReducedChange(on => { reduce = on; camX = bodyX; if (!raf) draw(); });
+
+/* ---------- start ---------- */
+build(+legsPick.value || 6);
+new ResizeObserver(fit).observe(stage);
+fit();
+// After the intro, one soft puff shows the stride.
+if (!reduce) setTimeout(() => { if (!mode && u === 0 && windUser === 0) { windUser = 1.1; wake(); } }, 2600);
+
+/* ---------- vignette figure ---------- */
+// One leg at a set crank angle, drawn from the same solver.
+(() => {
+  const svg = document.getElementById('leg');
+  const J = solveLeg(0.9, false, new Float64Array(16));
+  // Leg units map into the 300 by 220 view box.
+  const k = 1.6, ox = 224, oy = 64;
+  const P = q => `${(ox + J[q] * k).toFixed(1)} ${(oy - J[q + 1] * k).toFixed(1)}`;
+  const line = (p, q, cls = '') => `<line class="${cls}" x1="${(ox + J[p] * k).toFixed(1)}" y1="${(oy - J[p + 1] * k).toFixed(1)}" x2="${(ox + J[q] * k).toFixed(1)}" y2="${(oy - J[q + 1] * k).toFixed(1)}"/>`;
+  const loop = LOOP.map(([x, y], n) => `${n ? 'L' : 'M'}${(ox + x * k).toFixed(1)} ${(oy - y * k).toFixed(1)}`).join('') + 'Z';
+  const joints = [O, A, B, P1, P2, P3, P4].map(q => { const [x, y] = P(q).split(' '); return `<circle cx="${x}" cy="${y}" r="3.2"/>`; }).join('');
+  const [fx, fy] = P(F).split(' ');
+  svg.innerHTML = `
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="${ox}" cy="${oy}" r="${LEN.m * k}" stroke-width="1" opacity="0.35" stroke-dasharray="3 4"/>
+      <path d="${loop}" stroke-width="1.25" opacity="0.55"/>
+      <path d="M${P(B)}L${P(P1)}L${P(P2)}Z M${P(P4)}L${P(P3)}L${P(F)}Z" stroke-width="3.2"/>
+      <g stroke-width="3.2">${line(B, P4)}${line(P2, P3)}${line(A, P4)}${line(A, P1)}</g>
+      <g stroke-width="4" opacity="0.55">${line(O, B)}${line(O, A)}</g>
+    </g>
+    <g fill="var(--bg)" stroke="currentColor" stroke-width="1.5">${joints}<circle cx="${fx}" cy="${fy}" r="3.2"/></g>
+    <path d="M${ox - 8} ${oy - 8}L${ox + 8} ${oy + 8}M${ox + 8} ${oy - 8}L${ox - 8} ${oy + 8}" stroke="currentColor" stroke-width="1" opacity="0.4"/>`;
+})();
+</script>
+</body>
+</html>
