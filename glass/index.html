@@ -131,6 +131,7 @@ function audio() {
     const d = noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
+  loadShot(ac);
   if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
 }
 // A context still waking queues sounds for a moment.
@@ -337,10 +338,18 @@ function roomBus(a) {
   drive = new Float32Array(1024).map((_, i) => Math.tanh(((i / 1023) * 2 - 1) * 3.2) / Math.tanh(3.2));
   return hall;
 }
-// A shot: a click, a supersonic crack, a clipped boom, then the room.
+// A recorded pistol shot, trimmed and compressed, loads with the sound.
+let shotBuf = null, shotAsked = false;
+function loadShot(a) {
+  if (shotAsked) return;
+  shotAsked = true;
+  fetch('gunshot.wav').then(r => r.arrayBuffer()).then(b => a.decodeAudioData(b)).then(buf => { shotBuf = buf; }).catch(() => { shotAsked = false; });
+}
+// A shot: the recording, pitched a touch for variety, then the casing.
 function gunSound(x, auto = false) {
   const a = live();
   if (!a || voices >= MAXV - 2) return;
+  if (shotBuf) return playShot(a, x, auto);
   const t = a.currentTime + LEAD, g = level() * (auto ? 0.8 : 1), d = bus(a, x), rv = roomBus(a);
   const sh = a.createWaveShaper(), pre = a.createGain();
   sh.curve = drive;
@@ -369,6 +378,27 @@ function gunSound(x, auto = false) {
     }
     setTimeout(() => dc.disconnect(), 1200);
   }
+}
+function playShot(a, x, auto) {
+  const t = a.currentTime + LEAD, g = level() * (auto ? 0.75 : 1), d = bus(a, x * 0.5);
+  const src = a.createBufferSource(), sg = a.createGain();
+  src.buffer = shotBuf;
+  src.playbackRate.value = rnd(0.95, 1.05);
+  sg.gain.value = 1.15 * g;
+  src.connect(sg).connect(d);
+  src.start(t);
+  track(src, sg, d);
+  casing(a, x, t, g, auto);
+}
+// The brass casing lands a moment later and rings twice.
+function casing(a, x, t, g, auto) {
+  if (auto && Math.random() > 0.3) return;
+  const tc = t + rnd(0.32, 0.48), dc = bus(a, clamp(x + 0.5, -1, 1));
+  for (const [dt, k] of [[0, 1], [rnd(0.07, 0.11), 0.45]]) {
+    const [oc, gs] = partials(a, dc, tc + dt, 4300 * jit(0.05), [1, 1.52, 2.36], [0.05, 0.035, 0.02], [0.09, 0.06, 0.04], g * k);
+    track(oc, ...gs);
+  }
+  setTimeout(() => dc.disconnect(), 1200);
 }
 // A round glancing off armored glass whines away.
 function ricochetSound(x) {
@@ -1182,10 +1212,6 @@ void main() {
   env *= 1.0 - 0.4 * uQuench * spots;
   vec3 L = normalize(vec3(-0.45, 0.75, 0.5));
   float spec = pow(max(dot(N, normalize(L + V)), 0.0), 300.0) * 5.0;
-  // A small lamp behind the viewer leaves one hot glint; cracks and shards catch it too.
-  // The lobe is very tight; a cross product keeps small angles precise.
-  vec3 Lg = normalize(vec3(-0.17, 0.03, 1.0)), gx = cross(N, normalize(Lg + V));
-  spec += exp(-dot(gx, gx) / 1.0e-5) * 3.0 * (1.0 - vSide * 0.6);
   // Cracks are hard dark cut gaps with one lit edge.
   // Crack walls darken the glass beside them.
   float face = uLine * (1.0 - vSide), gap = ck.g * face, lit = ck.b * face;
@@ -1305,7 +1331,7 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 const FLASH_FS = `
-uniform float uTurn;
+uniform float uTurn, uK;
 uniform vec3 uCore, uRay;
 varying vec2 vUv;
 void main() {
@@ -1313,11 +1339,12 @@ void main() {
   float r = length(q), a = atan(q.y, q.x) + uTurn, aa = fwidth(r);
   float rays = 1.0 - smoothstep(-aa, aa, r - (0.28 + 0.72 * pow(abs(cos(a * 3.0)), 10.0)));
   float fine = 1.0 - smoothstep(-aa, aa, r - (0.2 + 0.46 * pow(abs(cos(a * 3.0 + 0.52)), 18.0)));
-  float core = 1.0 - smoothstep(0.26 - aa, 0.26 + aa, r);
+  float core = 1.0 - smoothstep(0.3 - aa, 0.3 + aa, r);
   float m = max(rays, fine);
   if (m < 0.01) discard;
-  gl_FragColor = vec4(mix(uRay, uCore, core), m);
-  #include <colorspace_fragment>
+  // Far brighter than white, so the bloom spreads it.
+  vec3 col = mix(uRay * (1.0 - 0.5 * r), uCore, core) * uK;
+  gl_FragColor = vec4(col * m, 1.0);
 }`;
 // Bullet holes: an open hole in a frosted cone of crushed glass.
 // Alpha marks the hole; the glass there is gone.
@@ -2163,24 +2190,27 @@ function shotWeb(x, y) {
   return { x, y, end, ticks: [0.004, 0.009, 0.016, 0.026], rNext: r1 * gr ** 3 };
 }
 // The flash sits on the line from the eye to the aim point.
+// The gun is held just below the eye, to the right; it leans toward the aim.
 function muzzle(x, y) {
-  const c = camera.position, px = x - c.x, py = FH / 2 + y - c.y, pz = T / 2 - c.z, l = Math.hypot(px, py, pz), k = 1 / l;
-  flash = { t0: performance.now(), x: c.x + px * k, y: c.y + py * k, z: c.z + pz * k, s: 0.075 * rnd(0.85, 1.15) };
+  const c = camera.position;
+  tmpV.set(0.42 + 0.18 * (x / (PW / 2)), -0.66 + 0.08 * (y / (PH / 2)), 0.5).unproject(camera).sub(c).normalize().multiplyScalar(0.5).add(c);
+  flash = { t0: performance.now(), x: tmpV.x, y: tmpV.y, z: tmpV.z, s: 0.062 * rnd(0.85, 1.15) };
   // A timer clears the flash even if frames stop.
   clearTimeout(flashT);
-  flashT = setTimeout(endFlash, 140);
+  flashT = setTimeout(endFlash, 150);
   flashMesh.position.set(flash.x, flash.y, flash.z);
   flashMesh.material.uniforms.uTurn.value = rnd(0, TAU);
   flashS.value.y = rnd(0, TAU);
   flashLight.position.set(flash.x, flash.y, flash.z);
 }
-// The flash runs on the clock: 35 ms full, 35 ms at half size, then dark.
+// The flash runs on the clock: 45 ms full, 40 ms at half size, then dark.
 function stepFlash() {
-  const t = performance.now() - flash.t0, w = t < 35 ? 1 : t < 70 ? 0.5 : 0;
+  const t = performance.now() - flash.t0, w = t < 45 ? 1 : t < 85 ? 0.5 : 0;
   if (!w) return endFlash(false);
   flashU.value.set(flash.x, flash.y, flash.z, w * (reduce ? 0.4 : 1));
   flashMesh.visible = !reduce;
   flashMesh.scale.setScalar(flash.s * (w < 1 ? 0.7 : 1));
+  flashMesh.material.uniforms.uK.value = w;
   flashLight.intensity = 34 * w * (reduce ? 0.4 : 1);
 }
 function endFlash(redraw = true) {
@@ -2629,7 +2659,7 @@ async function start() {
     uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.4 },
     uWallZ: { value: WALLZ }, uLine: { value: 1 }, uDisp: { value: 0.18 }, uBend: { value: 0.7 },
     uAbs: { value: new THREE.Vector3(0.07, 0.016, 0.05) }, uQuench: { value: 0 }, uReed: { value: 0 }, uDich: { value: 0 }, uArmor: { value: 0 },
-    uFlash: flashU, uFlashS: flashS, uFlashC: { value: V3(lin(0.92, 0.13, 78, 1)) },
+    uFlash: flashU, uFlashS: flashS, uFlashC: { value: V3(lin(0.96, 0.035, 80, 1)) },
     uBoxA: { value: new THREE.Vector4() }, uBoxB: { value: new THREE.Vector4() }, uKey: { value: V3(lin(0.97, 0.025, 80, 0.6)) },
   });
   paneMat = new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: {
@@ -2692,12 +2722,12 @@ async function start() {
   brickMesh.visible = false;
   // The flash sits between the eye and the pane and lights the frame.
   flashMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
-    vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthTest: false, depthWrite: false,
-    uniforms: { uTurn: { value: 0 }, uCore: { value: new THREE.Color(...lin(0.98, 0.05, 98)) }, uRay: { value: new THREE.Color(...lin(0.78, 0.17, 58)) } },
+    vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uTurn: { value: 0 }, uK: { value: 1 }, uCore: { value: new THREE.Color(...lin(1, 0, 0, 9)) }, uRay: { value: new THREE.Color(...lin(0.94, 0.035, 70, 3.2)) } },
   }));
   flashMesh.renderOrder = 3;
   flashMesh.visible = false;
-  flashLight = new THREE.PointLight(new THREE.Color(...lin(0.9, 0.12, 75)), 0, 0, 2);
+  flashLight = new THREE.PointLight(new THREE.Color(...lin(0.96, 0.03, 80)), 0, 0, 2);
   scene.add(brickMesh, flashMesh, flashLight);
 
   panel.prepend(canvas);
