@@ -35,7 +35,7 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
   root.classList.add('is-live');
-  const text = root.querySelector('.intro-text'), grain = root.querySelector('.intro-grain');
+  const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min))]);
 
   if (RM.matches) {
@@ -47,21 +47,17 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
     return;
   }
 
-  // The flash copy is the name in a white box; the whiteout sits under it.
+  // The flash copy is the name in a white box.
   const flash = text.cloneNode(true);
   flash.className = 'intro-flash';
   text.after(flash);
-  const whiteout = Object.assign(document.createElement('div'), { className: 'intro-whiteout' });
-  root.querySelector('.intro-mark').before(whiteout);
   const fold = flash.querySelector('.intro-sub');
   if (fold) fold.style.transform = 'rotateX(-90deg)';
 
-  // The viewport whites out, then shrinks back to the box.
+  // The box flashes on over the frosted glass.
   await wait(3);
-  whiteout.style.opacity = 1;
   flash.style.opacity = 1;
   await wait(2);
-  play(whiteout, p => ({ opacity: [0.8, 0.45, 0.15, 0][Math.min(3, Math.floor(p * 4))] }), 4000 / FPS);
   // The subtitle folds down inside the box.
   if (fold) await play(fold, p => ({ transform: `rotateX(${(-90 * (1 - p)).toFixed(2)}deg)` }), 250, settle);
   await wait(8);
@@ -69,18 +65,11 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   text.style.opacity = 1;
   await play(flash, p => ({ opacity: [1, 0.2, 0.9, 0][Math.min(3, Math.floor(p * 4))] }), 4000 / FPS);
   flash.remove();
-  whiteout.remove();
 
   await held;
 
-  // The name wipes off and the grain and blur resolve to nothing.
+  // The name wipes off, then the glass fades away whole.
   await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
-  await Promise.all([
-    play(root, p => ({
-      backdropFilter: `blur(${(48 * (1 - p)).toFixed(2)}px) brightness(${(0.6 + 0.4 * p).toFixed(3)})`,
-      backgroundColor: `oklch(0.1 0.01 275 / ${(0.9 * (1 - p)).toFixed(3)})`,
-    }), 708, settle),
-    play(grain, p => ({ opacity: 0.4 * (1 - p) }), 708),
-  ]);
+  await play(root, p => ({ opacity: 1 - p }), 500, settle);
   root.remove();
 }
