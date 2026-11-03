@@ -48,7 +48,7 @@ Read `README.md` for the toy list and the full rules.
 - `tvtree/channels.js` holds the TV tree's 155 channel shaders in seven groups of 25, one shader each.
   `tvtree/channels.html` is the live contact sheet. `tvtree/lab.html` is the older four-tree lab, `noindex`.
   Publish all three TV tree files with the page.
-- `<id>/legacy.html` keeps an older build of a toy (`noindex`), reached from the header's Classic pill: today Pop field (CPU-lit), Heat putty, Caustic pool, Prism, Glass and Neon sign.
+- `<id>/legacy.html` keeps an older build of a toy (`noindex`), reached from the header's Fresh / Classic switch: today Pop field (CPU-lit), Heat putty, Caustic pool, Prism, Glass, Neon sign and Lava lamp.
 - `toys.json` (root) is the one source for each toy's name, number, intro subtitle, emblem, Dutch (Flemish) name and IPA. The intro reads it (the menu shows English names only); each page's own intro text is only the fallback. It also holds an optional motto (`tag`, `tagNl`) that the intro shows under the subtitle; numbered toys show `#N` in the flash box. Tom sets the Dutch words and mottos. Add a new toy here.
 - Version tag (`0.N` beside the onnozelaer mark in the footer, shown on hover; the codename sits in its tooltip); the tagline sits under the title: `v0.N` steps once per signed-off toy; its codename is that toy's Dutch name from `toys.json`. Now v0.3 "Knalveld".
 - The intro (`shared/intro.js`) ships the Snap variety: `TIMING` is its table, `DEFAULT_VARIETY` names it. The other varieties in `VARIETIES` are proposals. `introlab/` tunes any variety live (`?v=<variety>`), with icon size and Y per step and four font slots.
@@ -102,7 +102,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
   Pop field (`pop/`) is the reference port.
 - Intro lines, in order: main title (`name`), classic notice, translation (`nl`, `ipa`), subtitle (`tag`), subtitle translation (`tagNl`), audio notice. The flash stages sit centred; the emblem rises as the lines open. Lab toys also carry a lab tag (`sub`).
 - Fresh is the standard: the menu always opens a toy's `index.html`. Classic stays an option wherever an older build exists, and its intro adds a `< CLASSIC >` line.
-- Legacy: when a toy ports to the library set, its pre-port page is kept as `<id>/legacy.html` (with `noindex`). Set `legacy: true` on the toy in `toys.json`; the shell header then shows a Legacy pill, and the legacy page shows Current.
+- Legacy: when a toy ports to the library set, its pre-port page is kept as `<id>/legacy.html` (with `noindex`). Set `legacy: true` on the toy in `toys.json`; the shell header then shows the Fresh / Classic switch, with the intro's flash box on the current build.
 - Control bar standard (Tom, 2026-11-03). Left to right, one row:
   1. Choice: at most one group. Up to five options as segmented chips, one pressed (palettes: dot plus name). More than five: one stepper, `‹ Name ›`.
   2. Main slider: at most one, labelled with a word, no number readout.

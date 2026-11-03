@@ -54,9 +54,7 @@ function headerHTML(home) {
 /* ---------- legacy: the pre-port page, one tap away ---------- */
 // A toy that moved to the library set keeps its old page as legacy.html.
 // toys.json flags it with legacy: true.
-// The header then offers Classic; the classic page offers Fresh.
-// These toys show the stamped switch; the rest keep the plain pill.
-const STAMPED = new Set(['lava']);
+// The header then shows a switch between Fresh and Classic.
 function legacyLink() {
   const tools = document.querySelector('header[data-shell] .tools');
   if (!tools) return;
@@ -68,13 +66,8 @@ function legacyLink() {
     a.textContent = label;
     return a;
   };
-  const add = (href, label, title) => {
-    const a = link(href, label);
-    a.title = title;
-    tools.prepend(a);
-  };
-  // Both builds show; the current one stamps as a hard block.
-  const stamp = () => {
+  // Both builds show; the flash box marks the current one.
+  const addSwitch = () => {
     const nav = document.createElement('nav'), fresh = link('index.html', 'Fresh'), classic = link('legacy.html', 'Classic');
     nav.className = 'vers';
     nav.setAttribute('aria-label', 'Version');
@@ -82,22 +75,12 @@ function legacyLink() {
     nav.append(fresh, classic);
     tools.prepend(nav);
   };
-  const stamped = STAMPED.has(document.documentElement.dataset.toy);
-  if (onLegacy) {
-    if (stamped) stamp();
-    else add('index.html', 'Fresh', 'Back to the fresh version');
-    document.documentElement.dataset.legacy = '';
-    return;
-  }
+  if (onLegacy) { addSwitch(); document.documentElement.dataset.legacy = ''; return; }
   // toys.json marks which toys keep a legacy page, so no page probes for one.
   const id = location.pathname.split('/').filter(Boolean).filter(p => !p.endsWith('.html')).pop();
   fetch(new URL('../toys.json', import.meta.url))
     .then(r => r.json())
-    .then(toys => {
-      if (!toys[id]?.legacy) return;
-      if (stamped) stamp();
-      else add('legacy.html', 'Classic', 'The classic build of this toy');
-    })
+    .then(toys => { if (toys[id]?.legacy) addSwitch(); })
     .catch(() => {});
 }
 
