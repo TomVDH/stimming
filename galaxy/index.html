@@ -23,6 +23,20 @@
 .space.grab canvas { cursor: grab; }
 .space.held canvas { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .space canvas { transition: none; } }
+/* Add opens a tray of objects above the bar. */
+.adder { position: relative; }
+#addBtn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
+.add {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; gap: 6px; padding: 8px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.add .chip.icon svg .solid { fill: currentColor; stroke: none; }
+@media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 </style>
 </head>
 <body>
@@ -33,14 +47,23 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place a star, pulsar or dark well, drag one to move it. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
+    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole or dark well. Drag one to move it. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
       <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="kind" role="group" aria-label="Object to place">
-        <button class="chip" type="button" data-value="star" aria-pressed="true">Star</button>
-        <button class="chip" type="button" data-value="pulsar" aria-pressed="false">Pulsar</button>
-        <button class="chip" type="button" data-value="well" aria-pressed="false">Well</button>
+      <div class="choices" id="kind">
+        <div class="adder">
+          <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span id="addName">Star</span></button>
+          <div class="add" id="add" role="group" aria-label="Add an object">
+            <button class="chip icon" type="button" data-kind="star" aria-pressed="true" aria-label="Add a star" title="Star"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="3.4"/><path d="M8 1.2v2M8 12.8v2M1.2 8h2M12.8 8h2"/></svg></button>
+            <button class="chip icon" type="button" data-kind="binary" aria-pressed="false" aria-label="Add a binary star" title="Binary star"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="4.6" cy="9.6" r="2.4"/><circle class="solid" cx="11.4" cy="6.4" r="1.8"/><path d="M1.8 6.2a7 3.6 -24 0 1 12.8 -2.6M14.2 9.8a7 3.6 -24 0 1 -12.8 2.6"/></svg></button>
+            <button class="chip icon" type="button" data-kind="pulsar" aria-pressed="false" aria-label="Add a pulsar" title="Pulsar"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="2"/><path d="M6 6L1.5 1.5M10 10l4.5 4.5"/></svg></button>
+            <button class="chip icon" type="button" data-kind="nova" aria-pressed="false" aria-label="Add a supernova" title="Supernova"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="2.2"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3M3 3l2 2M11 11l2 2M13 3l-2 2M5 11l-2 2"/></svg></button>
+            <button class="chip icon" type="button" data-kind="white" aria-pressed="false" aria-label="Add a white hole" title="White hole"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.4v2.4M8 12.2v2.4M1.4 8h2.4M12.2 8h2.4M6.6 2.8L8 1.4l1.4 1.4M6.6 13.2L8 14.6l1.4-1.4M2.8 6.6L1.4 8l1.4 1.4M13.2 6.6L14.6 8l-1.4 1.4"/></svg></button>
+            <button class="chip icon" type="button" data-kind="well" aria-pressed="false" aria-label="Add a dark well" title="Dark well"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3.2"/><circle class="solid" cx="8" cy="8" r="1"/></svg></button>
+          </div>
+        </div>
+        <label class="slider"><span>Gravity</span><input type="range" id="grav" min="0.3" max="1.2" step="0.05" value="0.7"></label>
       </div>
       <div class="actions" id="ctl">
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
@@ -48,7 +71,7 @@
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>fling stars</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>place the picked object</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>place the object in Add</dd></div>
         <div><dt>Drag an object</dt><dd>move it</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>place one mid-sky</dd></div>
       </dl>
@@ -70,7 +93,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, choices, oklchLinear } from '../shared/stim.js';
+import { initPage, sound, oklchLinear } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -262,7 +285,7 @@ const BH_M = 48, HOLE_R = 0.2, LENS = 0.3, SHADOW_K = 1.3, DISK_TILT = (-18 * Ma
 const HOLE_REACH = 6, INFLOW = 0.3, EAT = 160 / N;
 const DISK_N = SMALL ? 16384 : 32768, DISK_SPIN = 2.4, DISK_PX = 2.4, TRAIL = 7, TRAIL_DT = 0.08;
 const JET_N = SMALL ? 4096 : 8192, JET_RATE = 0.45;
-const BEAM_N = SMALL ? 1024 : 2048, BEAM_RATE = 0.6;
+const BEAM_N = SMALL ? 1024 : 2048, BEAM_RATE = 0.6, SHELL_N = SMALL ? 3072 : 6144;
 const EPS2 = 0.2, EPSW2 = 1, KILL2 = 70 * 70, DEAD = -1e9;
 // Flings: an opening burst, then a steady stream while held.
 const INIT = 2000, RATE = 12000, MAXF = Math.round(N / 14);
@@ -276,7 +299,15 @@ const STAR_TYPES = [
   { m: 12, col: oklchLinear(0.93, 0.07, 95) },
   { m: 9, col: oklchLinear(0.78, 0.16, 50) },
 ];
-const PULSAR_M = 8;
+const PULSAR_M = 8, WHITE_M = 14, NOVA_M = 16;
+// The sim runs at this share of real time until Gravity changes it.
+const PACE = 0.7;
+// A binary's two stars start this far apart.
+const BIN_D = 1.6;
+// A supernova burns this long, in sim seconds, then blows its shell.
+// The shell runs at BLAST_V and fades out by BLAST_T.
+const NOVA_FUSE = 3, BLAST_V = 5, BLAST_T = 3, BLAST_A = 25;
+const WHITE_COL = oklchLinear(0.95, 0.05, 300);
 // A pulsar spins its two beams at this rate, in radians per second.
 // The beams reach BEAM_L units and push stars outward.
 const PULSAR_W = 1.7, BEAM_L = 9, BEAM_PUSH = 5;
@@ -288,7 +319,7 @@ const holeRadius = m => Math.min(0.55, HOLE_R * Math.sqrt(m / BH_M));
 let running = false, ready = false, shown = !document.querySelector('.intro');
 curtain.then(() => { shown = true; });
 let renderer = null, camera = null;
-let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star';
+let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star', pace = PACE;
 const wells = [];
 
 async function start() {
@@ -359,6 +390,8 @@ async function start() {
     uPul.push(uniform(new THREE.Vector4()));
     uPulOn.push(uniform(0));
   }
+  // The supernova shell: xz centre, radius, push strength.
+  const uBlast = uniform(new THREE.Vector4()), uBlastAge = uniform(0);
   // Beam weight at p: a narrow cone along both beams.
   const beamAt = (k, p) => {
     const P = uPul[k];
@@ -500,6 +533,13 @@ async function start() {
           acc.addAssign(vec3(uPul[k].z, 0, uPul[k].w).mul(b.along.sign()).mul(b.w.mul(BEAM_PUSH)));
         });
       }
+      // A supernova shell shoves stars outward as it passes.
+      If(uBlast.w.greaterThan(0), () => {
+        const bx = p.x.sub(uBlast.x), bz = p.z.sub(uBlast.y);
+        const br = sqrt(bx.mul(bx).add(bz.mul(bz)).add(1e-4));
+        const shell = exp(br.sub(uBlast.z).div(0.6).pow(2).negate());
+        acc.addAssign(vec3(bx, 0, bz).div(br).mul(shell.mul(uBlast.w)));
+      });
       v.addAssign(acc.mul(uDt));
       p.addAssign(v.mul(uDt));
       // A star inside a horizon is gone, and the hole counts it.
@@ -540,6 +580,9 @@ async function start() {
 
   /* ---------- scene ---------- */
   const scene = new THREE.Scene();
+  // Effects draw in their own pass, so only they streak.
+  const fxScene = new THREE.Scene();
+  fxScene.background = new THREE.Color(0x000000);
   scene.background = new THREE.Color(0x000000);
   camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.1, 500);
 
@@ -661,6 +704,20 @@ async function start() {
     beams.push(s);
   }
 
+  // The supernova shell: a ring of hot gas that cools as it spreads.
+  const shellMat = spriteMat();
+  const sh = n => hash(instanceIndex.add(uint(n * 3967 + 71)));
+  const sa = sh(1).mul(TAU), sr = uBlast.z.add(gauss(sh(2), sh(3)).mul(uBlast.z.mul(0.04).add(0.12)));
+  shellMat.positionNode = vec3(uBlast.x.add(cos(sa).mul(sr)), gauss(sh(4), sh(5)).mul(0.12), uBlast.y.add(sin(sa).mul(sr)));
+  shellMat.scaleNode = uPx.mul(2.2);
+  const age = uBlastAge.div(BLAST_T).clamp(0, 1);
+  shellMat.colorNode = dotOf(varying(mix(HOT.mul(3), EMBER.mul(1.6), age).mul(float(1).sub(age).pow(1.5))));
+  const shellFx = new THREE.Sprite(shellMat);
+  shellFx.count = SHELL_N;
+  shellFx.frustumCulled = false;
+  shellFx.visible = false;
+  fxScene.add(shellFx);
+
   /* ---------- the hole: shadow, photon ring, disk and jets ---------- */
   // The shadow is a solid black disc with a thin hot rim.
   // The rim brightens on the side that moves toward the camera.
@@ -720,10 +777,7 @@ async function start() {
   disk.count = DISK_N * TRAIL;
   disk.frustumCulled = false;
   disk.visible = false;
-  // The disk draws in its own pass, so only it streaks.
-  const diskScene = new THREE.Scene();
-  diskScene.background = new THREE.Color(0x000000);
-  diskScene.add(disk);
+  fxScene.add(disk);
 
   // Jets: while the hole feeds hard, it fires along its axis.
   // The jet streams out steadily and fades toward its tip.
@@ -740,15 +794,14 @@ async function start() {
   const jets = new THREE.Sprite(jetMat);
   jets.count = JET_N;
   jets.frustumCulled = false;
-  jets.renderOrder = 4;
   jets.visible = false;
-  scene.add(jets);
+  fxScene.add(jets);
 
   const renderPipeline = new THREE.RenderPipeline(renderer);
   const scenePass = pass(scene, camera);
   const sceneColor = scenePass.getTextureNode('output');
-  // Long exposure on the disk: its last frame fades under this one.
-  const diskPass = pass(diskScene, camera);
+  // Long exposure on the effects: their last frame fades under this one.
+  const diskPass = pass(fxScene, camera);
   const uDamp = uniform(0);
   const exposure = TSL.nodeObject(new Exposure(diskPass.getTextureNode('output'), uDamp));
   const lit = sceneColor.add(vec4(exposure.rgb, 0));
@@ -803,6 +856,7 @@ async function start() {
   function stepWells(h) {
     let W = 0, x = 0, z = 0, vx = 0, vz = 0, M = 0, mx = 0, mz = 0;
     for (const w of wells) {
+      if (w.kind === 'white') continue;
       const q = w.m * w.m;
       W += q; x += q * w.x; z += q * w.z; vx += q * w.vx; vz += q * w.vz;
       M += w.m; mx += w.m * w.vx; mz += w.m * w.vz;
@@ -828,16 +882,19 @@ async function start() {
     for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
       const a = wells[i], b = wells[j], dx = b.x - a.x, dz = b.z - a.z, r2 = dx * dx + dz * dz;
       const inv = 1 / (r2 + EPSW2) ** 1.5;
-      a.ax += b.m * dx * inv * a.k; a.az += b.m * dz * inv * a.k;
-      b.ax -= a.m * dx * inv * b.k; b.az -= a.m * dz * inv * b.k;
+      // A white hole repels with the same strength a well attracts.
+      const ma = a.kind === 'white' ? -a.m : a.m, mb = b.kind === 'white' ? -b.m : b.m;
+      a.ax += mb * dx * inv * a.k; a.az += mb * dz * inv * a.k;
+      b.ax -= ma * dx * inv * b.k; b.az -= ma * dz * inv * b.k;
       // Dynamical friction: two close halos shed relative speed and sink together.
       if (a.kind !== 'well' || b.kind !== 'well') continue;
       const f = (GAMMA * Math.exp(-r2 / 14)) / (a.m + b.m + 1e-6), dvx = a.vx - b.vx, dvz = a.vz - b.vz;
       a.ax -= f * b.m * dvx * a.k; a.az -= f * b.m * dvz * a.k;
       b.ax += f * a.m * dvx * b.k; b.az += f * a.m * dvz * b.k;
     }
+    // White holes stay where they are put.
     for (const w of wells) {
-      if (w.held) continue;
+      if (w.held || w.kind === 'white') continue;
       w.vx += w.ax * h; w.vz += w.az * h;
       w.x += w.vx * h; w.z += w.vz * h;
     }
@@ -848,7 +905,7 @@ async function start() {
   function merge() {
     for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
       const a = wells[i], b = wells[j];
-      if (a.mt <= 0 || b.mt <= 0) continue;
+      if (a.mt <= 0 || b.mt <= 0 || a.kind === 'white' || b.kind === 'white') continue;
       const dx = b.x - a.x, dz = b.z - a.z;
       const reach = MERGE_R + 1.5 * ((a.hole ? holeRadius(a.m) : 0) + (b.hole ? holeRadius(b.m) : 0));
       const fast = a.hole || b.hole ? 10 : 6;
@@ -871,6 +928,7 @@ async function start() {
       keep.kind = heavy.kind;
       keep.col = heavy.col;
       keep.th = heavy.th;
+      keep.fuse = heavy.fuse;
       keep.pulse = 1;
       wells.splice(wells.indexOf(gone), 1);
       if (keep.hole && !was) holeBorn(keep);
@@ -888,7 +946,7 @@ async function start() {
   // A new well gets a slightly slow circular orbit round the others.
   function orbitVel(x, z, m) {
     let M = 0, cx = 0, cz = 0, vx = 0, vz = 0;
-    for (const w of wells) if (w.mt > 0) { M += w.mt; cx += w.mt * w.x; cz += w.mt * w.z; vx += w.mt * w.vx; vz += w.mt * w.vz; }
+    for (const w of wells) if (w.mt > 0 && w.kind !== 'white') { M += w.mt; cx += w.mt * w.x; cz += w.mt * w.z; vx += w.mt * w.vx; vz += w.mt * w.vz; }
     if (!M) return [0, 0];
     cx /= M; cz /= M; vx /= M; vz /= M;
     const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz);
@@ -896,22 +954,44 @@ async function start() {
     const v = 0.85 * Math.sqrt((resp(m) * (M + m * 0.5) * r * r) / (r * r + EPSW2) ** 1.5);
     return [vx - (dz / r) * v, vz + (dx / r) * v];
   }
-  function addWell(x, z) {
+  // At the cap, the oldest object lets go; a full list refuses.
+  function room() {
     // A hole never lets go of its stars.
     const lit = wells.filter(w => w.mt > 0 && !w.held && !w.hole).sort((a, b) => a.born - b.born);
-    // At the cap, the oldest well lets go of its stars.
     if (wells.filter(w => w.mt > 0).length >= CAP && lit.length) lit[0].mt = 0;
     while (wells.length >= MAXW) {
       const k = wells.findIndex(w => w.mt === 0);
-      if (k < 0) return;
+      if (k < 0) return false;
       wells.splice(k, 1);
     }
-    const type = STAR_TYPES[(Math.random() * STAR_TYPES.length) | 0];
-    const m = pick === 'star' ? type.m : pick === 'pulsar' ? PULSAR_M : TAP_M;
-    const [vx, vz] = orbitVel(x, z, m);
-    const w = makeWell(x, z, vx, vz, 0, m, pick, pick === 'star' ? type.col : null);
+    return true;
+  }
+  function place(w) {
+    if (!room()) return;
     w.pulse = 1;
     wells.push(w);
+  }
+  const starType = () => STAR_TYPES[(Math.random() * STAR_TYPES.length) | 0];
+  function addWell(x, z) {
+    if (pick === 'binary') return addBinary(x, z);
+    const type = starType();
+    const m = { star: type.m, nova: NOVA_M, pulsar: PULSAR_M, white: WHITE_M }[pick] ?? TAP_M;
+    const [vx, vz] = pick === 'white' ? [0, 0] : orbitVel(x, z, m);
+    const col = pick === 'star' ? type.col : pick === 'nova' ? STAR_TYPES[0].col : pick === 'white' ? WHITE_COL : null;
+    const w = makeWell(x, z, vx, vz, 0, m, pick, col);
+    if (pick === 'nova') w.fuse = simT + NOVA_FUSE;
+    place(w);
+  }
+  // Two stars circle their shared centre while the pair orbits the sky.
+  function addBinary(x, z) {
+    const a = Math.random() * TAU, ux = Math.cos(a), uz = Math.sin(a);
+    const t1 = starType(), t2 = starType(), m1 = t1.m * 0.8, m2 = t2.m * 0.8, M = m1 + m2;
+    const [vx, vz] = orbitVel(x, z, M);
+    const r1 = (BIN_D * m2) / M, r2 = (BIN_D * m1) / M, f = BIN_D / (BIN_D * BIN_D + EPSW2) ** 1.5;
+    const v1 = Math.sqrt(m2 * resp(m1) * f * r1), v2 = Math.sqrt(m1 * resp(m2) * f * r2);
+    // Both start at full mass, so the pair holds from the first step.
+    place(makeWell(x + ux * r1, z + uz * r1, vx - uz * v1, vz + ux * v1, m1, m1, 'star', t1.col));
+    place(makeWell(x - ux * r2, z - uz * r2, vx + uz * v2, vz - ux * v2, m2, m2, 'star', t2.col));
   }
   // Space drops a well mid-panel, or beside whatever already sits there.
   function dropCentre() {
@@ -928,7 +1008,7 @@ async function start() {
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k];
       if (w) {
-        uW[k].value.set(w.x, 0, w.z, w.m);
+        uW[k].value.set(w.x, 0, w.z, w.kind === 'white' ? -w.m : w.m);
         uWV[k].value.set(w.vx, 0, w.vz, w.ph);
         uWH[k].value = w.hole ? holeRadius(w.m) : 0;
       } else {
@@ -937,6 +1017,11 @@ async function start() {
       }
     }
     uFrame.value.set(frameX, 0, frameZ);
+    const bt = blast ? simT - blast.t0 : 0;
+    if (blast && bt > BLAST_T) blast = null;
+    if (blast) uBlast.value.set(blast.x, blast.z, BLAST_V * bt, BLAST_A * Math.exp(-bt / 1.2));
+    else uBlast.value.w = 0;
+    uBlastAge.value = bt;
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], on = w && w.kind === 'pulsar' && !w.hole && w.mt > 0;
       if (on) uPul[k].value.set(w.x, w.z, Math.cos(w.th), Math.sin(w.th));
@@ -954,6 +1039,15 @@ async function start() {
     return best;
   }
   // Collapse: a rush of air and a burst of feeding.
+  // A supernova blows its shell and leaves a pulsar behind.
+  let blast = null;
+  function explode(w) {
+    w.kind = 'pulsar';
+    w.mt = PULSAR_M;
+    w.col = null;
+    w.flash = 1;
+    blast = { x: w.x, z: w.z, t0: simT };
+  }
   function holeBorn(w) {
     w.pulse = 1;
     feed = Math.max(feed, 0.9);
@@ -1024,6 +1118,7 @@ async function start() {
     uClearT.value = -1;
     holeWell = null;
     holeVis = feed = feedGoal = jet = 0;
+    blast = null;
     renderer.compute(seedPass);
   }
 
@@ -1041,7 +1136,7 @@ async function start() {
     ring = 0;
     letGoAll();
     let keep = null;
-    for (const w of wells) if (w.mt > 0 && (!keep || w.mt > keep.mt)) keep = w;
+    for (const w of wells) if (w.mt > 0 && w.kind !== 'white' && (!keep || w.mt > keep.mt)) keep = w;
     for (const w of wells) if (w !== keep) w.mt = 0;
     if (keep) {
       if (!keep.hole) keep.mt = SEED_M;
@@ -1197,7 +1292,25 @@ async function start() {
     else if (e.key === 'c' || e.key === 'C') { if (!e.repeat) clearAll(); }
     else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) resetAll(); }
   });
-  choices(document.getElementById('kind'), v => { pick = v; });
+  // The add tray opens on hover or tap and closes after a pick.
+  // A pick drops one object and sets what a click places.
+  const adder = document.querySelector('.adder'), addBtn = document.getElementById('addBtn');
+  const addName = document.getElementById('addName'), addBs = [...document.querySelectorAll('#add .chip')];
+  const openTray = on => { adder.classList.toggle('is-open', on); addBtn.setAttribute('aria-expanded', String(on)); };
+  addBtn.addEventListener('click', () => openTray(!adder.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!adder.contains(e.target)) openTray(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') openTray(false); });
+  addBs.forEach(b => b.addEventListener('click', () => {
+    pick = b.dataset.kind;
+    addBs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    addName.textContent = b.title;
+    dropCentre();
+    openTray(false);
+    panel.focus({ preventScroll: true });
+  }));
+  // Gravity sets the pace of every orbit.
+  const grav = document.getElementById('grav');
+  grav.addEventListener('input', () => { pace = Number(grav.value); });
   document.getElementById('clear').addEventListener('click', clearAll);
   document.getElementById('reset').addEventListener('click', resetAll);
 
@@ -1210,9 +1323,11 @@ async function start() {
   // The hole's sprites compile now, drawn at zero size.
   shadow.visible = disk.visible = jets.visible = true;
   beams.forEach(b => { b.visible = true; });
+  shellFx.visible = true;
   await Promise.all([scenePass.compileAsync(renderer), diskPass.compileAsync(renderer)]);
   shadow.visible = disk.visible = jets.visible = false;
   beams.forEach(b => { b.visible = false; });
+  shellFx.visible = false;
 
   canvas.setAttribute('aria-hidden', 'true');
   panel.prepend(canvas);
@@ -1248,7 +1363,7 @@ async function start() {
   }
   // Layers follow wells by mass: the heaviest sounds the bass.
   function mixFromWells() {
-    const ranked = wells.filter(w => w.mt > 0).sort((a, b) => b.m - a.m);
+    const ranked = wells.filter(w => w.mt > 0 && w.kind !== 'white').sort((a, b) => b.m - a.m);
     for (let k = 0; k < 8; k++) {
       const w = ranked[k];
       if (!w) { mixAt.level[k] = 0; continue; }
@@ -1272,7 +1387,7 @@ async function start() {
     }
     // Reduced motion halves the simulation speed.
     // Behind the intro, the seeded pair holds still.
-    const simDt = shown || hold ? dt * (reduce ? 0.5 : 1) : 0;
+    const simDt = shown || hold ? dt * pace * (reduce ? 0.5 : 1) : 0;
     const n = simDt > 0 ? Math.max(1, Math.min(4, Math.ceil(simDt / STEP - 1e-6))) : 0, h = n ? simDt / n : 0;
     updateHold(now);
     for (let s = 0; s < n; s++) {
@@ -1283,6 +1398,8 @@ async function start() {
       renderer.compute(updatePass);
       simT += h;
     }
+    for (const w of wells) if (w.kind === 'nova' && simT >= w.fuse && !w.hole) explode(w);
+    shellFx.visible = !!blast;
     // The ring moves past a released cluster's slots.
     if (fling && fling.releasing) {
       ring = (fling.start + fling.count) % N;
@@ -1306,16 +1423,23 @@ async function start() {
       dot.s.position.set(w.x, 0, w.z);
       const grow = w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
       beams[k].visible = w.kind === 'pulsar' && !w.hole && w.vis > 0.01;
-      if (w.kind === 'star') {
-        dot.size.value = (18 + 8 * Math.sqrt(w.m / SEED_M)) * grow;
+      w.flash = (w.flash || 0) * Math.exp(-dt / 0.4);
+      if (w.kind === 'star' || w.kind === 'nova') {
+        // A supernova swells and shudders as its fuse burns down.
+        const due = w.kind === 'nova' ? clamp(1 - (w.fuse - simT) / NOVA_FUSE) : 0;
+        dot.size.value = (18 + 8 * Math.sqrt(w.m / SEED_M)) * grow * (1 + due * (0.3 + 0.12 * Math.sin(simT * 14)));
         dot.col.value.setRGB(...w.col);
-        dot.gain.value = 4;
+        dot.gain.value = 4 + 4 * due;
+      } else if (w.kind === 'white') {
+        dot.size.value = 16 * grow;
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 5;
       } else if (w.kind === 'pulsar') {
         // The core flashes as a beam sweeps past the camera.
         const face = Math.abs(Math.cos(w.th) * Math.sin(az) + Math.sin(w.th) * Math.cos(az));
-        dot.size.value = 6 * grow;
+        dot.size.value = 6 * grow * (1 + 4 * w.flash);
         dot.col.value.setRGB(0.56, 0.74, 1);
-        dot.gain.value = 3 + 14 * face ** 24;
+        dot.gain.value = 3 + 14 * face ** 24 + 40 * w.flash;
       } else {
         dot.size.value = (7 + 5 * Math.sqrt(w.m / SEED_M)) * grow;
         dot.col.value.setRGB(1, 0.86, 0.66);
