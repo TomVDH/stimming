@@ -80,11 +80,8 @@ const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 20, LEAD = 0.004;
-let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
-const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
-const level = () => 1 / (1 + 0.08 * voices);
+// Only the drone sounds: one voice per cluster.
+let ac = null, out = null, askedAt = -1e9, restT = 0;
 const mtof = m => 440 * 2 ** ((m - 69) / 12);
 
 // The drone is one D chord, root first.
@@ -94,7 +91,7 @@ const AMP = [0.08, 0.055, 0.045, 0.038, 0.032, 0.024, 0.019, 0.016];
 const layers = [];
 // The star count writes these targets twice a second.
 const mixAt = { level: new Float32Array(8), pan: new Float32Array(8), feed: 0, jet: 0 };
-let chordAt = 0, roar = null, hiss = null, droneLfo = null;
+let chordAt = 0, droneLfo = null;
 
 function audio() {
   if (!ac) {
@@ -108,10 +105,6 @@ function audio() {
     out.gain.value = 0.55;
     out.connect(comp);
     comp.connect(ac.destination);
-    // One second of white noise feeds every whoosh.
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     // One slow wave breathes every voice's lowpass.
     const lfo = ac.createOscillator();
     droneLfo = ac.createGain();
@@ -120,23 +113,8 @@ function audio() {
     lfo.connect(droneLfo);
     lfo.start();
     for (let k = 0; k < 8; k++) layers.push(makeLayer(k));
-    // The hole roars low while it feeds; its jets hiss high.
-    roar = noiseBand(150, 0.8);
-    hiss = noiseBand(2600, 2.5);
   }
   if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.then(() => mixLayers()).catch(() => {}); }
-}
-function noiseBand(f, q) {
-  const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
-  src.buffer = noise;
-  src.loop = true;
-  bp.type = 'bandpass';
-  bp.frequency.value = f;
-  bp.Q.value = q;
-  g.gain.value = 0;
-  src.connect(bp).connect(g).connect(out);
-  src.start();
-  return g;
 }
 // One drone voice per cluster rank, silent until stars bind.
 // Each voice is a detuned pair under a breathing lowpass.
@@ -174,17 +152,11 @@ function mixLayers(tau = 1.1) {
     L.lp.frequency.setTargetAtTime(240 + 900 * lv + (k ? 0 : 400 * mixAt.feed), t, 1.6);
     L.pan?.pan.setTargetAtTime(mixAt.pan[k], t, 0.6);
   });
-  roar.gain.setTargetAtTime(on ? 0.07 * mixAt.feed : 0, t, tau * 0.7);
-  hiss.gain.setTargetAtTime(on ? 0.05 * mixAt.jet : 0, t, tau * 0.7);
 }
 // A context still waking queues sounds for a moment.
 function live() {
   if (!sound.on || !ac || ac.state === 'closed') return null;
   return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
-}
-function track(src, ...tails) {
-  voices++;
-  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
 }
 // While the panel is off screen, the context sleeps.
 function rest() {
@@ -212,34 +184,6 @@ function unlock(e) {
 // Touchend is the gesture iOS needs.
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
 
-// Flinging: a bandpassed breath of noise that rises, then falls away.
-function whoosh(amt, pan) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD, g = level() * amt * jit(0.1), dur = 0.45 + 0.4 * amt;
-  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
-  src.buffer = noise;
-  src.loop = true;
-  bp.type = 'bandpass';
-  bp.Q.value = 1.1;
-  bp.frequency.setValueAtTime(340 * jit(0.08), t);
-  bp.frequency.exponentialRampToValueAtTime(800 + 1000 * amt, t + 0.16);
-  bp.frequency.exponentialRampToValueAtTime(240, t + dur);
-  ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(0.34 * g, t + 0.06);
-  ng.gain.setTargetAtTime(0, t + 0.1, dur / 4);
-  src.connect(bp).connect(ng);
-  const tails = [ng, bp];
-  if (a.createStereoPanner) {
-    const p = a.createStereoPanner();
-    p.pan.value = clamp(pan, -0.6, 0.6);
-    ng.connect(p).connect(out);
-    tails.push(p);
-  } else ng.connect(out);
-  src.start(t, Math.random() * 0.4);
-  src.stop(t + dur + 0.4);
-  track(src, ...tails);
-}
 
 /* ---------- capability check ---------- */
 // Without WebGPU the panel shows one line and nothing runs.
@@ -857,7 +801,6 @@ async function start() {
   function holeBorn(w) {
     w.pulse = 1;
     feed = Math.max(feed, 0.9);
-    whoosh(0.8, 0);
   }
   function updateHole(dt) {
     const hw = heaviestHole();
@@ -947,7 +890,6 @@ async function start() {
       keep.vx *= 0.3;
       keep.vz *= 0.3;
     } else wells.push(makeWell(0, 0, 0, 0, 0, SEED_M));
-    whoosh(0.25, 0);
   }
   // Reset brings back the colliding pair.
   function resetAll() {
@@ -955,7 +897,6 @@ async function start() {
     letGoAll();
     seed();
     syncWells();
-    whoosh(0.4, 0);
   }
 
   /* ---------- pointer: plane hits and flings ---------- */
@@ -1010,7 +951,6 @@ async function start() {
       fling.vz = vz;
       fling.releasing = true;
       const r = panel.getBoundingClientRect();
-      whoosh(clamp(0.25 + Math.hypot(vx, vz) / 6, 0.25, 1) * Math.sqrt(fling.count / MAXF + 0.2), ((e.clientX - r.left) / r.width) * 2 - 1);
     } else if (h.kind === 'well' && h.well) {
       const w = h.well;
       w.held = false;
