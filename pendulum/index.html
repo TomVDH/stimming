@@ -479,7 +479,10 @@ uniform vec2 uRes;
 uniform float uPx;
 attribute vec3 aOther;
 attribute vec2 aSide;
+varying float vT;
 void main() {
+  // vT runs 0 at the beam to 1 at the bead.
+  vT = 0.5 - 0.5 * aSide.y;
   vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   vec4 o = projectionMatrix * modelViewMatrix * vec4(aOther, 1.0);
   vec2 d = normalize((o.xy / o.w - p.xy / p.w) * uRes + 1e-6) * aSide.y;
@@ -488,14 +491,17 @@ void main() {
 }`;
 const STRING_FS = /* glsl */ `
 uniform vec3 uColor;
+uniform float uAlpha;
+varying float vT;
 void main() {
-  gl_FragColor = vec4(uColor, 1.0);
+  // The string fades in from the beam down to the bead.
+  gl_FragColor = vec4(uColor, uAlpha * mix(0.04, 1.0, smoothstep(0.0, 0.9, vT)));
   #include <colorspace_fragment>
 }`;
 // String width in CSS pixels.
-const STRING_PX = 1.6;
+const STRING_PX = 1;
 
-/* ---------- the beam: an I-section in flat paint ---------- */
+/* ---------- the beam: a dark I-section ---------- */
 // Flange width and thickness, web thickness, overall height.
 // The lower flange breaks at each hanger, so every V has a slot.
 const FW = 0.064, FT = 0.009, WEB = 0.014, BH = 0.05;
@@ -608,10 +614,12 @@ function makeStrings() {
   g.setAttribute('aSide', new THREE.BufferAttribute(side, 2));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uRes: { value: new THREE.Vector2(1, 1) }, uPx: { value: STRING_PX }, uColor: { value: new THREE.Color().setRGB(...linear([0.74, 0.014, 272])) } },
+    uniforms: { uRes: { value: new THREE.Vector2(1, 1) }, uPx: { value: STRING_PX }, uAlpha: { value: 0.42 }, uColor: { value: new THREE.Color().setRGB(...linear([0.8, 0.012, 272])) } },
     vertexShader: STRING_VS,
     fragmentShader: STRING_FS,
     side: THREE.DoubleSide,
+    transparent: true,
+    depthWrite: false,
     toneMapped: false,
   });
   const mesh = new THREE.Mesh(g, mat);
@@ -628,8 +636,9 @@ function putString(i, ax, ay, az, bx, by, bz) {
 }
 // Unit boxes make the beam: top flange, web, then lower flange pieces.
 function makeBeam() {
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.66, metalness: 0 });
-  mat.color.setRGB(...linear([0.8, 0.016, 272]));
+  // Dark gunmetal, half sunk into the stage, with a soft sheen.
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0.3, transparent: true, opacity: 0.8 });
+  mat.color.setRGB(...linear([0.44, 0.016, 272]));
   const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, NMAX + 3);
   mesh.frustumCulled = false;
   return mesh;
