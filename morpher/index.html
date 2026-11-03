@@ -44,6 +44,16 @@
 /* A new shape pops into the picker. */
 .picker .now.pop svg { animation: pick-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
 @keyframes pick-pop { from { transform: scale(0.4) rotate(-30deg); } }
+/* The flash box carries the toy's number, cut out of the white. */
+.intro-badge::after {
+  content: "#1"; position: absolute; top: 0.3em; left: 0.4em; line-height: 1;
+  font-size: clamp(12px, 1.5vw, 20px); font-weight: 800; letter-spacing: -0.02em;
+  color: var(--intro-bg); opacity: var(--box, 0);
+}
+/* The motto closes the column; the Dutch line trails it, quieter. */
+.intro-tag { margin-top: 1.5em; font-size: 1.15em; font-weight: 500; letter-spacing: 0.01em; }
+.intro-tag--nl { margin-top: 0.2em; opacity: 0.6; }
+@media (prefers-reduced-motion: no-preference) { .intro.is-live .intro-tag { clip-path: inset(0 50% 0 50%); } }
 .vignette figure canvas { aspect-ratio: 21 / 13; border-radius: 14px; background: var(--stage); }
 @media (pointer: coarse) { .picker .step { width: 40px; height: 38px; } }
 @media (prefers-reduced-motion: reduce) {
@@ -54,7 +64,7 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true" data-done>
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/morpher.svg)"></span><span class="intro-name">Morpher</span><span class="intro-sub">Stimming No. 01</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/morpher.svg)"></span><span class="intro-name">Morpher</span><span class="intro-sub">Stimming No. 01</span><span class="intro-tag" lang="en">We always start somewhere</span><span class="intro-tag intro-tag--nl" lang="nl">We beginnen altijd ergens</span></div></div>
 </div>
 
 <div class="wrap">
@@ -112,6 +122,29 @@ import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+// The motto opens after the subtitle, then the Dutch line a beat later.
+// It starts when the flash box cuts out, as the name does.
+const introText = document.querySelector('.intro-text'), tags = [...document.querySelectorAll('.intro-tag')];
+if (introText && tags.length && !reduced()) {
+  let lit = false;
+  const unfurl = el => {
+    const keys = Array.from({ length: 11 }, (_, k) => {
+      const c = (50 * (1 - k / 10) ** 5).toFixed(2);
+      return { clipPath: `inset(0 ${c}% 0 ${c}%)`, offset: k / 10 };
+    });
+    el.animate(keys, { duration: 333, easing: 'steps(10, jump-end)', fill: 'forwards' });
+  };
+  const mo = new MutationObserver(() => {
+    const badge = introText.querySelector('.intro-badge');
+    if (!badge) return;
+    if (badge.classList.contains('is-flash')) { lit = true; return; }
+    if (!lit) return;
+    mo.disconnect();
+    // Frames at 30 fps: the subtitle opens at 6, the motto at 10, Dutch at 14.
+    tags.forEach((el, i) => setTimeout(() => unfurl(el), ((10 + 4 * i) * 1000) / 30));
+  });
+  mo.observe(introText, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+}
 // Morpher is silent, so the header hides the sound toggle.
 initPage({ id: 'morpher', silent: true });
 
