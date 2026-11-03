@@ -13,27 +13,26 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Oscilloscope: a phosphor tube in a dark bezel; the drawing is the sound. */
-:root { --stage: oklch(0.15 0.006 250); }
+/* Oscilloscope: a flat stencil grid; the drawing is the sound. */
+:root { --stage: oklch(0.14 0.01 265); }
 .stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
 /* The pitch readout is a live number, so it is monospace. */
 .slider output {
   min-width: 6ch; color: var(--fg); text-align: right;
   font: 500 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums;
 }
-.slider input { width: 132px; }
+.slider input { width: 120px; }
 /* On a narrow bar the pitch slider takes its own row. */
 @media (max-width: 520px) {
   .bar .slider { flex: 1 1 100%; }
   .bar .slider input { flex: 1; width: auto; min-width: 0; }
 }
-.vignette figure svg { background: oklch(0.13 0.008 170); border-radius: 14px; }
-.vignette figure .grid { stroke: oklch(0.36 0.02 160); stroke-width: 1; fill: none; }
-.vignette figure .frame { stroke: oklch(0.5 0.02 160); stroke-width: 1.5; fill: none; }
-.vignette figure .trace { stroke: oklch(0.86 0.2 148); stroke-width: 2; fill: none; stroke-linejoin: round; }
-.vignette figure .wave { stroke: var(--muted); stroke-width: 1.5; fill: none; stroke-linejoin: round; }
-.vignette figure .lead { stroke: oklch(0.36 0.02 160); stroke-width: 1; stroke-dasharray: 2 4; }
-.vignette figure text { fill: var(--muted); font: 600 12px var(--sans); }
+.vignette figure svg { background: oklch(0.14 0.01 265); }
+.vignette figure .grid { stroke: oklch(0.26 0.014 265); stroke-width: 1; fill: none; }
+.vignette figure .axis { stroke: oklch(0.36 0.016 265); stroke-width: 3; fill: none; }
+.vignette figure .trace { stroke: oklch(0.9 0.21 128); stroke-width: 4; fill: none; stroke-linejoin: round; }
+.vignette figure .wave { stroke: var(--muted); stroke-width: 2; fill: none; stroke-linejoin: round; }
+.vignette figure text { fill: var(--muted); font: 700 13px var(--sans); }
 </style>
 </head>
 <body>
@@ -44,25 +43,24 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope tube. Drag across it to draw a shape; the shape becomes a stereo tone, left channel across and right channel up, and the beam draws it back from that tone. Up and down arrows change the pitch, S shuffles the shapes, C clears, P changes the phosphor colour.">
+    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope in X–Y mode. In Pen mode, drag to draw a shape; the beam plays it as a stereo tone, left channel across and right channel up. In Knot mode, drag to pick a ratio of two sine waves. Up and down arrows change the pitch, S shuffles, C clears, P changes the ink.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Oscilloscope needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices">
+        <button class="chip" type="button" data-value="pen" aria-pressed="true">Pen</button>
+        <button class="chip" type="button" data-value="knot" aria-pressed="false">Knot</button>
         <label class="slider"><span>Pitch</span><input type="range" id="pitch" min="0" max="1000" step="1" value="439" aria-valuetext="110 hertz"><output id="hz" for="pitch">110 Hz</output></label>
-        <button class="chip" id="spin" type="button" aria-pressed="true">Spin</button>
-        <button class="chip" id="morph" type="button" aria-pressed="false">Morph</button>
       </div>
       <div class="actions">
         <button class="chip" id="shuffle" type="button" aria-keyshortcuts="S">Shuffle</button>
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Drag</span><span class="touch">Drag</span></dt><dd>draw a sound</dd></div>
+        <div><dt>Drag</dt><dd>draw, or tie a knot</dd></div>
         <div class="fine"><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>pitch</dd></div>
         <div class="fine"><dt><kbd>S</kbd></dt><dd>shuffle</dd></div>
-        <div class="fine"><dt><kbd>P</kbd></dt><dd>phosphor</dd></div>
+        <div class="fine"><dt><kbd>P</kbd></dt><dd>ink</dd></div>
       </dl>
     </div>
   </main>
@@ -72,10 +70,10 @@
       <div>
         <h2>Two channels, one beam</h2>
         <p>In X–Y mode an oscilloscope stops drawing time. The left channel pushes the beam across and the right channel pushes it up, so a stereo signal draws a shape. A circle is two sine waves a quarter turn apart.</p>
-        <p>Your stroke is walked at a steady pace, and one lap becomes one cycle of the tone. <em>Pitch</em> sets the laps per second. The phosphor glows hardest where the beam slows, so turning points burn bright. <em>Spin</em> mixes depth into the left channel; <em>Morph</em> blends two drawings, sample by sample.</p>
+        <p>In <em>Pen</em>, your stroke is the signal: the beam runs it out and back, and a closed loop just goes round. <em>Pitch</em> sets the laps per second, and sharp corners sound sharp. In <em>Knot</em>, two pure tones tie the shape; their ratio picks the knot, and a slight detune rolls it.</p>
       </div>
       <figure>
-        <svg id="figure" viewBox="0 0 400 300" role="img" aria-label="A three to two Lissajous knot on a graticule. Under it the left channel plots as a wave that sets the horizontal position; to its left the right channel plots as a wave that sets the vertical position."></svg>
+        <svg id="figure" viewBox="0 0 400 300" role="img" aria-label="A three to two Lissajous knot on a grid. Under it the left channel plots as a wave that sets the horizontal position; to its left the right channel plots as a wave that sets the vertical position."></svg>
         <figcaption>Left sets x, right sets y: a 3 to 2 ratio ties this knot.</figcaption>
       </figure>
     </div>
@@ -89,7 +87,7 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 <script type="module">
-import { initPage, sound, audioKit, whenVisible, reduced, onReducedChange, fitCanvas, oklchLinear } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices, whenVisible, reduced, onReducedChange, fitCanvas } from '../shared/stim.js';
 initPage({ id: 'scope' });
 
 const TAU = Math.PI * 2;
@@ -98,182 +96,90 @@ const now = () => performance.now() / 1000;
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const bar = document.querySelector('.bar');
-const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
-if (!gl) fail();
-// Half floats keep the afterglow smooth; bytes are the fallback.
-const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
+const ctx = canvas.getContext('2d');
 
 /* ---------- signal space ---------- */
-// The face is 10 by 8 divisions; signal units are divisions.
-// Audio is the division value over five, so one is full scale.
+// The face is ten by ten divisions; five divisions are full scale.
 const N = 1024;
-const CYCLE = 10;
-const FADE = 0.05;
-const PERSP = 22;
-const BARREL = 0.06;
+const FADE = 0.04;
+// The knot rolls once per DRIFT_T seconds.
+const DRIFT_T = 5;
+const KNOT_AMP = 4.2;
 
-/* ---------- shapes: N points of x, y and depth ---------- */
-const shape = fn => {
-  const a = new Float32Array(N * 3);
-  for (let i = 0; i < N; i++) a.set(fn(i / N), i * 3);
-  return a;
-};
-// A closed path over corners; the beam slows near each corner.
-function corners(verts, dwell) {
-  const lens = verts.map((v, i) => { const w = verts[(i + 1) % verts.length]; return Math.hypot(w[0] - v[0], w[1] - v[1], w[2] - v[2]); });
-  const total = lens.reduce((s, l) => s + l, 0);
-  let e = 0, start = 0;
-  return shape(s => {
-    const at = s * total;
-    while (e < verts.length - 1 && at > start + lens[e]) start += lens[e++];
-    const t = clamp((at - start) / lens[e]), k = t - dwell * Math.sin(TAU * t) / TAU;
-    const a = verts[e], b = verts[(e + 1) % verts.length];
-    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
-  });
+/* ---------- shapes: lists of [x, y] in divisions ---------- */
+function poly(n, r, rot = Math.PI / 2) {
+  return Array.from({ length: n }, (_, i) => { const a = rot + i * TAU / n; return [r * Math.cos(a), r * Math.sin(a)]; });
 }
-function cube() {
-  const v = [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]];
-  // This walk covers all twelve edges and retraces four.
-  const walk = [0, 1, 2, 3, 0, 4, 5, 6, 7, 4, 5, 1, 2, 6, 7, 3];
-  const ax = 0.5, ay = 0.62, s = 2.1;
-  return corners(walk.map(i => {
-    let [x, y, z] = v[i];
-    [x, z] = [x * Math.cos(ay) + z * Math.sin(ay), -x * Math.sin(ay) + z * Math.cos(ay)];
-    [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
-    return [x * s, y * s, z * s];
-  }), 0.55);
-}
-function star() {
-  const v = [];
-  for (let i = 0; i < 10; i++) {
-    const a = Math.PI / 2 + i * TAU / 10, r = i % 2 ? 1.45 : 3.5;
-    v.push([r * Math.cos(a), r * Math.sin(a) - 0.2, i % 2 ? (i % 4 === 1 ? 1.1 : -1.1) : 0]);
-  }
-  return corners(v, 0.5);
-}
+function curve(n, fn) { return Array.from({ length: n }, (_, i) => fn(TAU * i / n)); }
 const PRESETS = [
-  // A curve on a cylinder; spin turns it into the drifting figure.
-  () => shape(s => { const u = TAU * s; return [3.3 * Math.sin(3 * u), 3 * Math.sin(2 * u), 3.3 * Math.cos(3 * u)]; }),
-  cube,
-  () => shape(s => {
-    const u = TAU * s, x = 16 * Math.sin(u) ** 3;
-    const y = 13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u);
-    return [x * 0.2, (y + 2.5) * 0.19, 1.4 * Math.sin(u)];
-  }),
-  star,
-  // An in-and-out spiral whose depth makes a cone.
-  () => shape(s => { const u = TAU * s, r = 3.4 * (0.5 - 0.5 * Math.cos(u)), a = 7 * u; return [r * Math.cos(a), 0.9 * r * Math.sin(a), 2.6 * Math.cos(u)]; }),
+  // A five-point star.
+  () => ({ pts: poly(10, 1).map((p, i) => [p[0] * (i % 2 ? 1.7 : 4.3), p[1] * (i % 2 ? 1.7 : 4.3) - 0.3]), closed: true }),
+  // A heart.
+  () => ({ pts: curve(240, u => [0.24 * 16 * Math.sin(u) ** 3, 0.23 * (13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u)) + 0.6]), closed: true }),
+  // A lightning bolt, played out and back.
+  () => ({ pts: [[-1.2, 4.5], [1.6, 0.9], [-0.9, 0.5], [2.2, -4.5]], closed: false }),
+  // A cube in two-point view; the walk covers all twelve edges.
+  () => {
+    const v = [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]].map(([x, y, z]) => {
+      const ay = 0.62, ax = 0.5;
+      [x, z] = [x * Math.cos(ay) + z * Math.sin(ay), -x * Math.sin(ay) + z * Math.cos(ay)];
+      [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
+      return [x * 2.2, y * 2.2];
+    });
+    return { pts: [0, 1, 2, 3, 0, 4, 5, 6, 7, 4, 5, 1, 2, 6, 7, 3].map(i => v[i]), closed: true };
+  },
+  // A square spiral, played out and back.
+  () => {
+    const pts = [[0, 0]];
+    let x = 0, y = 0;
+    for (let i = 1; i <= 10; i++) { const d = i * 0.42, s = i % 4; x += s === 1 ? d : s === 3 ? -d : 0; y += s === 2 ? d : s === 0 ? -d : 0; pts.push([x, y]); }
+    return { pts: pts.map(([px, py]) => [px - 0.2, py - 0.2]), closed: false };
+  },
+  // A figure eight.
+  () => ({ pts: curve(240, u => [4.3 * Math.sin(u), 2.6 * Math.sin(2 * u)]), closed: true }),
 ];
 
-// Arc-length resampling around a closed loop.
-function resample(pts, n) {
-  const m = pts.length, cum = [0];
-  for (let i = 0; i < m; i++) { const a = pts[i], b = pts[(i + 1) % m]; cum.push(cum[i] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
-  const total = cum[m], out = [];
+// Arc-length resampling along a path; a closed path wraps to its start.
+function resample(pts, n, closed) {
+  const m = pts.length, segs = closed ? m : m - 1, cum = [0];
+  for (let i = 0; i < segs; i++) { const a = pts[i], b = pts[(i + 1) % m]; cum.push(cum[i] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  const total = cum[segs], out = new Float32Array(n * 2);
   let j = 0;
   for (let k = 0; k < n; k++) {
-    const at = (k / n) * total;
-    while (j < m - 1 && cum[j + 1] < at) j++;
-    const a = pts[j], b = pts[(j + 1) % m], t = total > 0 ? clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9)) : 0;
-    out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    const at = closed ? (k / n) * total : (k / (n - 1)) * total;
+    while (j < segs - 1 && cum[j + 1] < at) j++;
+    const a = pts[j], b = pts[(j + 1) % m], t = clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9));
+    out[2 * k] = a[0] + (b[0] - a[0]) * t; out[2 * k + 1] = a[1] + (b[1] - a[1]) * t;
   }
   return out;
 }
-// A stroke becomes a smooth loop with a slow twist in depth.
-function fromStroke(raw) {
-  let p = resample(raw, 256);
-  for (let pass = 0; pass < 3; pass++) {
-    p = p.map((c, i) => { const a = p[(i + 255) % 256], b = p[(i + 1) % 256]; return [(a[0] + 2 * c[0] + b[0]) / 4, (a[1] + 2 * c[1] + b[1]) / 4]; });
-  }
-  p = resample(p, N);
-  const cx = p.reduce((s, c) => s + c[0], 0) / N, cy = p.reduce((s, c) => s + c[1], 0) / N;
-  const rms = Math.sqrt(p.reduce((s, c) => s + (c[0] - cx) ** 2 + (c[1] - cy) ** 2, 0) / N);
-  return shape(s => { const c = p[Math.round(s * N) % N]; return [c[0], c[1], 0.4 * rms * Math.sin(TAU * s)]; });
+const pathLen = pts => pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
+// An open stroke plays out and back; a closed one goes round.
+function makePen(pts, closed) {
+  const path = closed ? pts : pts.concat(pts.slice(1, -1).reverse());
+  return { pts, closed, loop: resample(path, N, true) };
 }
-// The new shape starts where the old one lines up best, for a clean morph.
-function align(a, b) {
-  if (!a || !b) return b;
-  const cost = (o, d, step) => {
-    let c = 0;
-    for (let i = 0; i < N; i += step) { const j = (((o + d * i) % N) + N) % N; c += (a[i * 3] - b[j * 3]) ** 2 + (a[i * 3 + 1] - b[j * 3 + 1]) ** 2; }
-    return c;
-  };
-  let best = [Infinity, 0, 1];
-  for (const d of [1, -1]) for (let o = 0; o < N; o += 16) { const c = cost(o, d, 16); if (c < best[0]) best = [c, o, d]; }
-  const [, o0, d] = best;
-  let o = o0, low = Infinity;
-  for (let k = -16; k <= 16; k++) { const c = cost(o0 + k, d, 4); if (c < low) { low = c; o = o0 + k; } }
-  const out = new Float32Array(N * 3);
-  for (let i = 0; i < N; i++) { const j = (((o + d * i) % N) + N) % N; out.set(b.subarray(j * 3, j * 3 + 3), i * 3); }
-  return out;
+// A stroke closes when its end comes back near its start.
+function fromStroke(pts) {
+  const a = pts[0], b = pts[pts.length - 1], gap = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const closed = pts.length > 3 && gap < Math.max(0.5, 0.12 * pathLen(pts));
+  return makePen(closed && gap < 0.2 ? pts.slice(0, -1) : pts, closed);
+}
+function knotPts(k, psi, n = 720) {
+  return curve(n, u => [KNOT_AMP * Math.sin(k.a * u), KNOT_AMP * Math.sin(k.b * u + psi)]);
 }
 
 /* ---------- state ---------- */
-let pitch = 110, spinOn = !reduced(), morphOn = false, phos = 0;
-let preset = 0;
-let cur = PRESETS[0](), prev = align(cur, PRESETS[3]());
-// Each voice is one looping stereo buffer; the beam reads the same samples.
-let voices = [];
-
-/* ---------- the signal ---------- */
-const posAt = (v, t) => { const p = (v.pos0 + (t - v.t0) * v.rate * v.sr) % v.len; return p < 0 ? p + v.len : p; };
-const angleAt = (v, t) => v.th0 + TAU * posAt(v, t) / v.len;
-const morphAt = (v, t) => v.mp0 + TAU * posAt(v, t) / v.len;
-const weight = (v, t) => clamp((t - v.born) / FADE) * (v.dieAt ? clamp(1 - (t - v.dieAt) / FADE) : 1);
-
-// The buffer holds whole loops; spin and morph buffers hold one full cycle.
-function generate(A, B, { sr, spin, morph, th0, mp0 }) {
-  const dyn = spin || morph;
-  const loops = Math.max(1, Math.round(pitch * (dyn ? CYCLE : 0.5)));
-  const len = Math.round(loops * sr / pitch);
-  const L = new Float32Array(len), R = new Float32Array(len);
-  let px = 0, py = 0, path = 0;
-  for (let k = 0; k < len; k++) {
-    const ph = ((k * loops) / len % 1) * N, i = ph | 0, f = ph - i, j = i + 1 === N ? 0 : i + 1;
-    const i3 = i * 3, j3 = j * 3;
-    let x = B[i3] + (B[j3] - B[i3]) * f, y = B[i3 + 1] + (B[j3 + 1] - B[i3 + 1]) * f, z = B[i3 + 2] + (B[j3 + 2] - B[i3 + 2]) * f;
-    if (morph) {
-      const m = 0.5 + 0.5 * Math.cos(mp0 + TAU * k / len);
-      x = A[i3] + (A[j3] - A[i3]) * f + (x - A[i3] - (A[j3] - A[i3]) * f) * m;
-      y = A[i3 + 1] + (A[j3 + 1] - A[i3 + 1]) * f + (y - A[i3 + 1] - (A[j3 + 1] - A[i3 + 1]) * f) * m;
-      z = A[i3 + 2] + (A[j3 + 2] - A[i3 + 2]) * f + (z - A[i3 + 2] - (A[j3 + 2] - A[i3 + 2]) * f) * m;
-    }
-    if (spin) {
-      // Spin turns the shape round the vertical axis, with mild perspective.
-      const th = th0 + TAU * k / len, c = Math.cos(th), s = Math.sin(th);
-      const xr = x * c + z * s, zr = -x * s + z * c, p = PERSP / (PERSP - zr);
-      x = xr * p; y *= p;
-    }
-    const l = clamp(x / 5, -1, 1), r = clamp(y / 5, -1, 1);
-    L[k] = l; R[k] = r;
-    if (k) path += Math.hypot(l - px, r - py);
-    px = l; py = r;
-  }
-  return { L, R, len, loops, perim: (path * 5) / loops };
-}
-
-function build({ fresh = false, temp = null } = {}) {
-  const t = now(), live = voices.find(v => !v.dieAt);
-  voices.forEach(kill);
-  const B = temp || cur;
-  if (B) {
-    const sr = kit.ac?.sampleRate || 48000;
-    const spin = spinOn && !temp && !reduced(), morph = morphOn && !temp && !!prev;
-    const th0 = !fresh && spin && live?.spin ? angleAt(live, t) % TAU : 0;
-    const mp0 = !fresh && morph && live?.morph ? morphAt(live, t) % TAU : 0;
-    const g = generate(prev, B, { sr, spin, morph, th0, mp0 });
-    const v = { ...g, sr, f: pitch, rate: 1, pos0: 0, t0: t, born: live ? t : t - FADE, dieAt: 0, spin, morph, th0, mp0, node: null, gain: null };
-    voices.push(v);
-    attach(v);
-  }
-  poke();
-}
+let mode = 'pen', presetIdx = 0, pitch = 110, ink = 0;
+let pen = (({ pts, closed }) => makePen(pts, closed))(PRESETS[0]());
+let knot = { a: 3, b: 2 }, knotT0 = now();
+const drifting = () => mode === 'knot' && !!knot && !reduced();
+const psiAt = t => (drifting() ? TAU * (t - knotT0) / DRIFT_T : 0);
 
 /* ---------- sound ---------- */
 // The master gain and the level gain land near 0.2 overall.
 const kit = audioKit({ gain: 0.55, noiseSeconds: 0 });
-let chain = null, hooked = null;
+let chain = null, hooked = null, voice = null, dirty = true, visible = true;
 function ensureChain(ac) {
   if (chain?.ac === ac) return chain;
   // A low cut drops the offset; a gentle low pass softens sharp corners.
@@ -284,462 +190,236 @@ function ensureChain(ac) {
   chain = { ac, in: hp };
   return chain;
 }
-function attach(v) {
-  if (!visible || v.node) return;
+// The pen buffer holds whole laps, about half a second of them.
+function penWave(loop, sr) {
+  const laps = Math.max(1, Math.round(pitch * 0.5)), len = Math.round(laps * sr / pitch);
+  const L = new Float32Array(len), R = new Float32Array(len);
+  for (let k = 0; k < len; k++) {
+    const ph = ((k * laps) / len % 1) * N, i = ph | 0, f = ph - i, j = i + 1 === N ? 0 : i + 1;
+    L[k] = clamp((loop[2 * i] + (loop[2 * j] - loop[2 * i]) * f) / 5, -1, 1);
+    R[k] = clamp((loop[2 * i + 1] + (loop[2 * j + 1] - loop[2 * i + 1]) * f) / 5, -1, 1);
+  }
+  return { L, R, len, pitch };
+}
+// The knot buffer holds one full roll; the right tone runs one cycle extra.
+// The higher tone sits at the pitch.
+function knotWave(k, sr) {
+  const T = drifting() ? DRIFT_T : 1, len = Math.round(T * sr);
+  const fb = Math.max(1, Math.round((pitch / Math.max(k.a, k.b)) * T)) / T, extra = drifting() ? 1 / T : 0;
+  const L = new Float32Array(len), R = new Float32Array(len), A = KNOT_AMP / 5;
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    L[i] = A * Math.sin(TAU * k.a * fb * t);
+    R[i] = A * Math.sin(TAU * (k.b * fb + extra) * t);
+  }
+  return { L, R, len, pitch };
+}
+function signal(sr) {
+  if (mode === 'pen') return pen ? penWave(pen.loop, sr) : null;
+  return knot ? knotWave(knot, sr) : null;
+}
+function fade(v, at) {
+  v.gain.gain.cancelScheduledValues(at);
+  v.gain.gain.setValueAtTime(v.gain.gain.value, at);
+  v.gain.gain.linearRampToValueAtTime(0, at + FADE);
+  try { v.src.stop(at + FADE + 0.02); } catch (err) { /* the node already stopped */ }
+}
+// The voice follows the current shape; a new shape crossfades in.
+function sync() {
+  if (!visible || !sound.on || !dirty) return;
   const ac = kit.live();
   if (!ac) return;
-  if (hooked !== ac) { hooked = ac; ac.addEventListener('statechange', ensureAudio); }
-  const t = now(), at = ac.currentTime, w = weight(v, t);
-  if (v.dieAt && w <= 0) return;
-  const buf = ac.createBuffer(2, v.len, v.sr);
-  buf.copyToChannel(v.L, 0); buf.copyToChannel(v.R, 1);
-  const src = ac.createBufferSource(); src.buffer = buf; src.loop = true; src.playbackRate.value = v.rate;
-  const g = ac.createGain();
-  // The gain follows the same ramps as the beam's weights.
-  g.gain.setValueAtTime(w, at);
-  if (!v.dieAt && t < v.born + FADE) g.gain.linearRampToValueAtTime(1, at + v.born + FADE - t);
-  src.connect(g); g.connect(ensureChain(ac).in);
-  src.start(at, posAt(v, t) / v.sr);
-  v.node = src; v.gain = g;
-  if (v.dieAt) fadeOut(v);
+  if (hooked !== ac) { hooked = ac; ac.addEventListener('statechange', () => { if (ac.state === 'running') sync(); }); }
+  dirty = false;
+  const at = ac.currentTime;
+  if (voice) fade(voice, at);
+  voice = null;
+  const s = signal(ac.sampleRate);
+  if (!s) return;
+  const buf = ac.createBuffer(2, s.len, ac.sampleRate);
+  buf.copyToChannel(s.L, 0); buf.copyToChannel(s.R, 1);
+  const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+  const gain = ac.createGain();
+  gain.gain.setValueAtTime(0, at); gain.gain.linearRampToValueAtTime(1, at + FADE);
+  src.connect(gain); gain.connect(ensureChain(ac).in);
+  src.start(at);
+  voice = { src, gain, pitch: s.pitch };
 }
-function fadeOut(v) {
-  const ac = kit.ac, t = now();
-  if (!v.node || !ac) return;
-  const at = ac.currentTime, end = Math.max(0, v.dieAt + FADE - t);
-  v.gain.gain.cancelScheduledValues(at);
-  v.gain.gain.setValueAtTime(weight(v, t), at);
-  v.gain.gain.linearRampToValueAtTime(0, at + end);
-  try { v.node.stop(at + end + 0.02); } catch (err) { /* the node already stopped */ }
+function changed() { dirty = true; sync(); }
+function silence() {
+  if (voice && kit.ac) fade(voice, kit.ac.currentTime);
+  voice = null; dirty = true;
 }
-function kill(v) { if (v.dieAt) return; v.dieAt = now(); fadeOut(v); }
-function detach() {
-  voices.forEach(v => { try { v.node?.stop(); } catch (err) { /* already stopped */ } v.node?.disconnect(); v.node = v.gain = null; });
-}
-function ensureAudio() { if (visible && sound.on) voices.forEach(attach); }
-sound.onChange(on => { if (on) ensureAudio(); else detach(); });
-// The first gesture wakes the context; the voices join once it runs.
-['pointerup', 'keydown'].forEach(type => addEventListener(type, () => setTimeout(ensureAudio, 0), { passive: true }));
+sound.onChange(on => { if (on) changed(); else silence(); });
+// The first gesture wakes the context; the voice joins once it runs.
+['pointerup', 'keydown'].forEach(type => addEventListener(type, () => setTimeout(sync, 0), { passive: true }));
 
-/* ---------- phosphors ---------- */
-// Flash and glow colours, fast and slow decay, and the slow share.
-const lin = c => oklchLinear(...c).map(x => Math.max(0, x));
-const PHOS = [
-  { flash: lin([0.9, 0.2, 148]), glow: lin([0.62, 0.16, 152]), tf: 0.045, ts: 0.4, slow: 0.1, gain: [1, 0.9, 0.22] },
-  { flash: lin([0.86, 0.11, 250]), glow: lin([0.8, 0.16, 72]), tf: 0.03, ts: 1.6, slow: 0.04, gain: [0.9, 0.6, 0.22] },
-  { flash: lin([0.93, 0.045, 235]), glow: lin([0.62, 0.1, 255]), tf: 0.05, ts: 0.25, slow: 0.12, gain: [1, 0.9, 0.2] },
-];
+/* ---------- inks ---------- */
+// Each ink is a beam tone, then two flat afterimage tones.
+const INKS = [[0.9, 0.21, 128], [0.75, 0.2, 42], [0.72, 0.24, 350], [0.94, 0.02, 250]].map(([L, C, h]) => [
+  `oklch(${L} ${C} ${h})`, `oklch(${(L * 0.6).toFixed(3)} ${(C * 0.7).toFixed(3)} ${h})`, `oklch(${(L * 0.38).toFixed(3)} ${(C * 0.45).toFixed(3)} ${h})`,
+]);
 
-/* ---------- shaders ---------- */
-const QUAD_VS = `#version 300 es
-in vec2 aPos; out vec2 vUv;
-void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
-// Afterglow: each channel fades at its own rate.
-const DECAY = `#version 300 es
-precision highp float;
-in vec2 vUv; out vec4 o;
-uniform sampler2D uSrc; uniform vec2 uDecay; uniform float uEps;
-void main() { o = vec4(max(texture(uSrc, vUv).rg * uDecay - uEps, 0.0), 0.0, 1.0); }`;
-// One quad per sample step; it covers the segment plus the beam's spread.
-const BEAM_VS = `#version 300 es
-in vec2 aCorner; in vec4 aSeg; in float aE;
-uniform vec2 uRes; uniform float uSigma;
-out vec2 vP; flat out vec4 vSeg; flat out float vE;
-void main() {
-  vec2 a = aSeg.xy, b = aSeg.zw, d = b - a;
-  float l = length(d);
-  vec2 u = l > 1e-4 ? d / l : vec2(1.0, 0.0), n = vec2(-u.y, u.x);
-  float r = uSigma * 3.5;
-  vec2 p = (aCorner.x < 0.0 ? a - u * r : b + u * r) + n * aCorner.y * r;
-  vP = p; vSeg = aSeg; vE = aE;
-  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
-}`;
-// A gaussian spot swept along the segment: the exposure integrates exactly.
-// A short segment holds the same energy, so slow beams burn brighter.
-const BEAM_FS = `#version 300 es
-precision highp float;
-in vec2 vP; flat in vec4 vSeg; flat in float vE;
-uniform float uSigma; uniform vec2 uW;
-out vec4 o;
-float erf1(float x) {
-  float s = sign(x); x = abs(x);
-  float t = 1.0 + x * (0.278393 + x * (0.230389 + x * (0.000972 + x * 0.078108)));
-  t *= t; t *= t;
-  return s - s / t;
-}
-void main() {
-  vec2 a = vSeg.xy, d = vSeg.zw - a;
-  float l = length(d);
-  vec2 u = l > 1e-4 ? d / l : vec2(1.0, 0.0);
-  float len = max(l, 0.05 * uSigma);
-  vec2 w = vP - a;
-  float s = dot(w, u), perp2 = max(dot(w, w) - s * s, 0.0);
-  float k = 0.70710678 / uSigma;
-  float along = erf1((len - s) * k) + erf1(s * k);
-  float e = vE / len * exp(-perp2 / (2.0 * uSigma * uSigma)) * along / (5.0132565 * uSigma);
-  o = vec4(e * uW, 0.0, 0.0);
-}`;
-// Four bilinear taps average a four by four block.
-const DOWN = `#version 300 es
-precision highp float;
-in vec2 vUv; out vec4 o;
-uniform sampler2D uSrc; uniform vec2 uTexel;
-void main() {
-  vec2 s = texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rg
-         + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rg;
-  o = vec4(s * 0.25, 0.0, 1.0);
-}`;
-const BLUR = `#version 300 es
-precision highp float;
-in vec2 vUv; out vec4 o;
-uniform sampler2D uSrc; uniform vec2 uDir;
-void main() {
-  vec2 s = texture(uSrc, vUv).rg * 0.227027;
-  s += (texture(uSrc, vUv + uDir * 1.384615).rg + texture(uSrc, vUv - uDir * 1.384615).rg) * 0.316216;
-  s += (texture(uSrc, vUv + uDir * 3.230769).rg + texture(uSrc, vUv - uDir * 3.230769).rg) * 0.070270;
-  o = vec4(s, 0.0, 1.0);
-}`;
-// The tube: curved face, graticule, phosphor, halo, then the bezel.
-const SCREEN = `#version 300 es
-precision highp float;
-out vec4 o;
-uniform sampler2D uAccum, uBloom;
-uniform vec4 uTube;
-uniform vec2 uDiv;
-uniform float uRadius, uDpr, uK;
-uniform vec3 uFlash, uGlow, uGlass, uBezel, uGrat, uGain;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-void main() {
-  vec2 fc = gl_FragCoord.xy;
-  vec2 q = (fc - uTube.xy) / uTube.zw;
-  float r2 = dot(q * q, uDiv * uDiv) / dot(uDiv, uDiv);
-  // Barrel curvature: the face bulges, so its edges squeeze.
-  vec2 qs = q * (1.0 + uK * r2);
-  vec2 hp = uTube.zw;
-  vec2 dd = abs(qs * hp) - (hp - uRadius);
-  float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0) - uRadius;
-  float inside = clamp(0.5 - sd, 0.0, 1.0);
-  float n = hash(fc);
-
-  // The bezel is one matte plate; a black gap and a lit lip cut the window.
-  float gapW = 5.0 * uDpr, lipW = 1.5 * uDpr;
-  float g1 = smoothstep(gapW - 0.5, gapW + 0.5, sd);
-  float lip = g1 * (1.0 - smoothstep(gapW + lipW - 0.5, gapW + lipW + 0.5, sd));
-  vec3 bez = uBezel * (0.94 + 0.12 * hash(floor(fc / (1.5 * uDpr))));
-  bez = mix(uBezel * 0.12, bez, g1) + uBezel * 0.9 * lip;
-
-  vec2 uv = qs * 0.5 + 0.5;
-  vec2 e = texture(uAccum, uv).rg;
-  vec2 bl = texture(uBloom, uv).rg;
-  float a = 1.0 - exp(-e.r * uGain.x);
-  float b = 1.0 - exp(-e.g * uGain.y);
-  float hot = 1.0 - exp(-e.r * uGain.x * 0.08);
-  vec3 beam = uFlash * a + uGlow * b + vec3(0.85, 0.95, 0.9) * hot * hot * 0.8;
-  vec3 halo = (uFlash * (1.0 - exp(-bl.r * uGain.x)) + uGlow * (1.0 - exp(-bl.g * uGain.y))) * uGain.z;
-  float haloLum = dot(halo, vec3(0.25, 0.6, 0.15));
-
-  // Graticule: ten by eight divisions, with fifth ticks on the centre axes.
-  vec2 g = qs * uDiv;
-  float ppd = hp.x / uDiv.x;
-  float lw = 0.5 * uDpr;
-  vec2 fd = abs(fract(g + 0.5) - 0.5) * ppd;
-  float grid = max(1.0 - smoothstep(lw, lw + 1.0, fd.x), 1.0 - smoothstep(lw, lw + 1.0, fd.y));
-  vec2 ft = abs(fract(g * 5.0 + 0.5) - 0.5) * ppd / 5.0;
-  float tl = 0.1 * ppd;
-  float tick = max((1.0 - smoothstep(lw, lw + 1.0, ft.x)) * step(abs(g.y) * ppd, tl),
-                   (1.0 - smoothstep(lw, lw + 1.0, ft.y)) * step(abs(g.x) * ppd, tl));
-  float grat = max(grid * 0.6, tick * 0.85);
-
-  float vig = 1.0 - 0.65 * smoothstep(0.2, 1.15, r2);
-  vec3 glass = uGlass * vig * (0.92 + 0.16 * n);
-  // A faint broad sheen sits high on the left of the glass.
-  float sheen = (1.0 - smoothstep(0.0, 0.9, length((q - vec2(-0.5, 0.6)) * vec2(0.75, 1.4)))) * 0.012;
-  vec3 col = glass + uGrat * grat * (0.4 + 4.0 * haloLum) + beam + halo + sheen;
-  col = mix(bez, col, inside);
-  col = pow(max(col, 0.0), vec3(1.0 / 2.2)) + (n - 0.5) / 255.0;
-  o = vec4(col, 1.0);
-}`;
-const SCREEN_VS = `#version 300 es
-in vec2 aPos;
-void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
-
-function program(vs, fs, attrs) {
-  const p = gl.createProgram();
-  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
-    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
-    gl.attachShader(p, sh);
-  });
-  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
-  const u = {};
-  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
-  return { p, u };
-}
-const P = {
-  decay: program(QUAD_VS, DECAY, ['aPos']),
-  beam: program(BEAM_VS, BEAM_FS, ['aCorner', 'aSeg', 'aE']),
-  down: program(QUAD_VS, DOWN, ['aPos']),
-  blur: program(QUAD_VS, BLUR, ['aPos']),
-  screen: program(SCREEN_VS, SCREEN, ['aPos']),
-};
-
-const quadVao = gl.createVertexArray();
-gl.bindVertexArray(quadVao);
-gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-gl.enableVertexAttribArray(0);
-gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-
-// Segment data: a then b in pixels, then energy.
-const MAXSEG = 9000;
-const inst = new Float32Array(MAXSEG * 5);
-const beamVao = gl.createVertexArray();
-gl.bindVertexArray(beamVao);
-gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-gl.enableVertexAttribArray(0);
-gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-const instBuf = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
-gl.enableVertexAttribArray(1);
-gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 20, 0);
-gl.vertexAttribDivisor(1, 1);
-gl.enableVertexAttribArray(2);
-gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 20, 16);
-gl.vertexAttribDivisor(2, 1);
-gl.bindVertexArray(null);
-
-/* ---------- targets ---------- */
-function target(w, h) {
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
-  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
-  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
-  const fb = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-  return { tex, fb, w, h };
-}
-const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
-
-// The tube keeps a 5 by 4 face above the inset bar.
-// A tall stage turns the face upright, 4 by 5.
-let acc = [], blm = [], ai = 0, tube = null, sigma = 1, ppd = 1, dpr = 1, DX = 5, DY = 4;
+/* ---------- layout ---------- */
+// The face is square and sits above the inset bar; the grid runs full bleed.
+let W = 1, H = 1, dpr = 1, cx = 0, cy = 0, div = 1, line = 4;
+const grid = document.createElement('canvas'), gctx = grid.getContext('2d');
 function layout() {
-  const { w, h, dpr: d, W, H } = fitCanvas(canvas, { budget: 2.6e6 });
-  dpr = W / w;
-  const m = clamp(Math.min(w, h) * 0.04, 12, 36);
-  const reserve = Math.max(0, bar.getBoundingClientRect().height - 34);
-  const availW = w - 2 * m, availH = h - reserve - 1.5 * m;
-  [DX, DY] = availW / availH < 0.95 ? [4, 5] : [5, 4];
-  const aspect = DX / DY;
-  const tw = Math.max(40, Math.min(availW, availH * aspect)), th = tw / aspect;
-  const left = (w - tw) / 2, top = m + Math.max(0, (availH - th) / 2);
-  tube = { cx: (left + tw / 2) * dpr, cy: (h - top - th / 2) * dpr, hx: (tw / 2) * dpr, hy: (th / 2) * dpr, css: tw };
-  // The phosphor layer matches the tube's pixels, within a budget.
-  const scale = Math.min(1, Math.sqrt(1.6e6 / (tw * dpr * th * dpr)));
-  const AW = Math.max(16, Math.round(tw * dpr * scale)), AH = Math.max(16, Math.round(AW / aspect));
-  ppd = AW / (2 * DX);
-  sigma = 0.85 * (AW / tw) * clamp(tw / 760, 0.85, 1.25);
-  [...acc, ...blm].forEach(drop);
-  acc = [target(AW, AH), target(AW, AH)];
-  const BW = Math.max(4, Math.round(AW / 4)), BH = Math.max(4, Math.round(AH / 4));
-  blm = [target(BW, BH), target(BW, BH)];
-  ai = 0;
-  // The beam restarts in the new pixel space, so no stray streak shows.
-  if (raf) { tS = now(); sample(tS); last = [pt[0], pt[1]]; return; }
-  if (visible) settle();
+  const f = fitCanvas(canvas, { budget: 2.6e6 });
+  W = f.w; H = f.h; dpr = f.dpr;
+  const m = clamp(Math.min(W, H) * 0.05, 14, 40);
+  const reserve = bar.getBoundingClientRect().height;
+  const availH = H - reserve - m, size = Math.max(60, Math.min(W - 2 * m, availH - m));
+  div = size / 10; line = clamp(div * 0.14, 4, 9);
+  cx = W / 2; cy = m + (availH - m) / 2 + m / 2;
+  paintGrid();
+  draw(now());
 }
-
-/* ---------- passes ---------- */
-function decayPass(dt) {
-  const ph = PHOS[phos], src = acc[ai], dst = acc[1 - ai];
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
-  gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
-  gl.uniform1i(P.decay.u.uSrc, 0);
-  gl.uniform2f(P.decay.u.uDecay, Math.exp(-dt / ph.tf), Math.exp(-dt / ph.ts));
-  gl.uniform1f(P.decay.u.uEps, FLOAT ? 0 : 0.6 / 255);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  ai = 1 - ai;
-}
-function beamPass(count, wf, ws) {
-  if (!count) return;
-  const dst = acc[ai];
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
-  gl.useProgram(P.beam.p); gl.bindVertexArray(beamVao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, count * 5);
-  gl.uniform2f(P.beam.u.uRes, dst.w, dst.h);
-  gl.uniform1f(P.beam.u.uSigma, sigma);
-  gl.uniform2f(P.beam.u.uW, wf, ws);
-  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
-  gl.disable(gl.BLEND);
-}
-function quadPass(prog, dst, src, set) {
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
-  gl.useProgram(prog.p); gl.bindVertexArray(quadVao);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
-  gl.uniform1i(prog.u.uSrc, 0);
-  set(prog.u);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-}
-function present() {
-  const src = acc[ai];
-  quadPass(P.down, blm[0], src, u => gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h));
-  quadPass(P.blur, blm[1], blm[0], u => gl.uniform2f(u.uDir, 1.5 / blm[0].w, 0));
-  quadPass(P.blur, blm[0], blm[1], u => gl.uniform2f(u.uDir, 0, 1.5 / blm[0].h));
-  const ph = PHOS[phos], u = P.screen.u;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex);
-  gl.uniform1i(u.uAccum, 0); gl.uniform1i(u.uBloom, 1);
-  gl.uniform4f(u.uTube, tube.cx, tube.cy, tube.hx, tube.hy);
-  gl.uniform1f(u.uRadius, tube.hy * 0.07);
-  gl.uniform1f(u.uDpr, dpr);
-  gl.uniform1f(u.uK, BARREL);
-  gl.uniform2f(u.uDiv, DX, DY);
-  gl.uniform3fv(u.uFlash, ph.flash); gl.uniform3fv(u.uGlow, ph.glow);
-  gl.uniform3fv(u.uGlass, GLASS); gl.uniform3fv(u.uBezel, BEZEL); gl.uniform3fv(u.uGrat, GRAT);
-  gl.uniform3fv(u.uGain, ph.gain);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  gl.activeTexture(gl.TEXTURE0);
-}
-const GLASS = lin([0.2, 0.012, 175]), BEZEL = lin([0.19, 0.006, 250]), GRAT = lin([0.5, 0.025, 165]);
-
-/* ---------- the beam reads the voices ---------- */
-// Energy per second keeps a line's brightness steady across sizes.
-const IK = 85, IDOT = 300;
-const pt = [0, 0];
-function sample(t) {
-  let x = 0, y = 0, ws = 0, I = 0;
-  for (const v of voices) {
-    const w = weight(v, t);
-    if (w <= 0) continue;
-    const p = posAt(v, t), i = Math.floor(p) % v.len, f = p - Math.floor(p), j = i + 1 === v.len ? 0 : i + 1;
-    x += w * (v.L[i] + (v.L[j] - v.L[i]) * f);
-    y += w * (v.R[i] + (v.R[j] - v.R[i]) * f);
-    ws += w; I += w * IK * sigma * Math.max(v.perim * ppd, 20);
+// The grid is one stencil plate: thin lines, cut axis bars, corner brackets.
+function paintGrid() {
+  grid.width = canvas.width; grid.height = canvas.height;
+  const g = gctx;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = 'oklch(0.14 0.01 265)'; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'oklch(0.215 0.012 265)';
+  const nx = Math.ceil(cx / div) + 1, ny = Math.ceil(Math.max(cy, H - cy) / div) + 1;
+  for (let i = -nx; i <= nx; i++) g.fillRect(Math.round(cx + i * div) - 0.5, 0, 1, H);
+  for (let j = -ny; j <= ny; j++) g.fillRect(0, Math.round(cy + j * div) - 0.5, W, 1);
+  // The centre axes are thick bars, cut through at every division.
+  const t = clamp(div * 0.08, 3, 6), gap = Math.max(3, t);
+  g.fillStyle = 'oklch(0.33 0.016 265)';
+  for (let i = -5; i < 5; i++) {
+    const a = cx + i * div + gap / 2, b = cx + (i + 1) * div - gap / 2;
+    g.fillRect(a, cy - t / 2, b - a, t);
+    const c = cy + i * div + gap / 2, d = cy + (i + 1) * div - gap / 2;
+    g.fillRect(cx - t / 2, c, t, d - c);
   }
-  pt[0] = (x * 5 / (2 * DX) + 0.5) * acc[0].w;
-  pt[1] = (y * 5 / (2 * DY) + 0.5) * acc[0].h;
-  return I + Math.max(0, 1 - ws) * IDOT * sigma * sigma;
-}
-const srNow = () => voices.find(v => !v.dieAt)?.sr || 48000;
-
-let tS = 0, last = [0, 0];
-function sweep(t) {
-  const sr = srNow();
-  if (t - tS > 0.1) { tS = t - 0.1; sample(tS); last = [pt[0], pt[1]]; }
-  const n = Math.min(MAXSEG, Math.floor((t - tS) * sr));
-  for (let k = 0; k < n; k++) {
-    const e = sample(tS + (k + 1) / sr) / sr, o = k * 5;
-    inst[o] = last[0]; inst[o + 1] = last[1]; inst[o + 2] = pt[0]; inst[o + 3] = pt[1]; inst[o + 4] = e;
-    last[0] = pt[0]; last[1] = pt[1];
+  // Brackets mark the corners of full scale.
+  const arm = div * 0.55, bt = clamp(div * 0.1, 3, 6), e = 5 * div;
+  g.fillStyle = 'oklch(0.6 0.02 265)';
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    const x = cx + sx * e, y = cy + sy * e;
+    g.fillRect(sx < 0 ? x : x - arm, sy < 0 ? y : y - bt, arm, bt);
+    g.fillRect(sx < 0 ? x : x - bt, sy < 0 ? y : y - arm, bt, arm);
   }
-  tS += n / sr;
-  return n;
 }
 
-// At rest the face shows the steady glow of one full loop.
-function settle() {
-  acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
-  const ph = PHOS[phos], dtF = 1 / 60, ss = tau => dtF / (1 - Math.exp(-dtF / tau));
-  const v = voices.find(x => !x.dieAt), t = now();
-  if (v) {
-    const span = v.len / v.loops / v.rate, n = Math.min(MAXSEG, Math.ceil(span)), fl = (v.loops * v.sr * v.rate) / v.len;
-    sample(t); let a = [pt[0], pt[1]];
-    for (let k = 0; k < n; k++) {
-      const e = sample(t + (k + 1) / v.sr) / v.sr, o = k * 5;
-      inst.set([a[0], a[1], pt[0], pt[1], e], o);
-      a = [pt[0], pt[1]];
-    }
-    beamPass(n, fl * ss(ph.tf), fl * ph.slow * ss(ph.ts));
-  } else {
-    const e = sample(t);
-    inst.set([pt[0], pt[1], pt[0], pt[1], e], 0);
-    beamPass(1, ss(ph.tf), ph.slow * ss(ph.ts));
+/* ---------- drawing ---------- */
+// Afterimages step down in flat tones, then drop.
+const ECHO = [0.11, 0.24];
+let echoes = [], lastSnap = 0;
+function pushEcho(pts, closed) {
+  if (!pts || reduced()) return;
+  echoes.push({ pts, closed, t: now() });
+  if (echoes.length > 12) echoes.shift();
+}
+function trace(pts, closed, color, flat = false) {
+  const n = flat ? pts.length / 2 : pts.length;
+  if (n < 2) return;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = flat ? pts[2 * i] : pts[i][0], y = flat ? pts[2 * i + 1] : pts[i][1];
+    const px = cx + x * div, py = cy - y * div;
+    if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
   }
-  present();
+  if (closed) ctx.closePath();
+  ctx.strokeStyle = color;
+  ctx.stroke();
+}
+// The ratio picker splits the face into five by five cells.
+const cellOf = p => [1 + clamp(Math.floor((p[0] + 5) / 2), 0, 4), 1 + clamp(Math.floor((p[1] + 5) / 2), 0, 4)];
+let stroke = null, picking = false;
+function draw(t) {
+  const tones = INKS[ink];
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(grid, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineWidth = line; ctx.lineJoin = 'miter'; ctx.miterLimit = 3; ctx.lineCap = 'square';
+  if (mode === 'knot' && knot && picking) {
+    // The picked cell shows as a flat block under the knot.
+    ctx.fillStyle = 'oklch(0.2 0.014 265)';
+    ctx.fillRect(cx + (-5 + 2 * (knot.a - 1)) * div, cy - (-5 + 2 * knot.b) * div, 2 * div, 2 * div);
+  }
+  echoes = echoes.filter(e => t - e.t < ECHO[1]);
+  for (const e of echoes) trace(e.pts, e.closed, t - e.t < ECHO[0] ? tones[1] : tones[2]);
+  if (mode === 'pen') {
+    if (stroke) trace(stroke, false, tones[0]);
+    else if (pen) trace(pen.pts, pen.closed, tones[0]);
+  } else if (knot) {
+    const psi = psiAt(t);
+    if (drifting() && t - lastSnap > 0.09) { lastSnap = t; pushEcho(knotPts(knot, psi, 360), true); }
+    ctx.lineJoin = 'round';
+    trace(knotPts(knot, psi), true, tones[0]);
+    // The ratio reads in the top left corner of the stage.
+    ctx.fillStyle = tones[0];
+    ctx.font = `800 ${Math.round(clamp(div * 0.9, 26, 44))}px Gabarito, system-ui, sans-serif`;
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${knot.a}:${knot.b}`, 18, 16);
+  }
 }
 
 /* ---------- loop ---------- */
-// The loop sleeps after a still spell unless the signal moves.
+// The loop runs only while something moves; a calm knot draws at 30 fps.
 const IDLE = 8;
-let raf = 0, visible = true, lastFrame = 0, lastInput = 0, stroke = null, sliding = false;
-const moving = () => voices.length > 1 || voices.some(v => v.spin || v.morph || v.rate !== 1);
+let raf = 0, lastFrame = 0, lastInput = 0, sliding = false;
 function frame() {
   raf = 0;
-  const t = now(), calm = !stroke && !sliding && t - lastInput >= IDLE;
-  // A calm signal draws at 30 fps to halve the work.
-  if (calm && moving() && t - lastFrame < 1 / 31) { raf = requestAnimationFrame(frame); return; }
-  const dt = clamp(t - lastFrame, 0, 0.25);
+  const t = now(), calm = !stroke && !picking && !sliding && t - lastInput >= IDLE;
+  if (calm && drifting() && t - lastFrame < 1 / 31) { raf = requestAnimationFrame(frame); return; }
   lastFrame = t;
-  voices = voices.filter(v => !v.dieAt || t < v.dieAt + FADE);
-  ensureAudio();
-  const n = sweep(t), ph = PHOS[phos];
-  decayPass(dt);
-  beamPass(n, 1, ph.slow);
-  present();
-  if (!visible) return;
-  if (!calm || moving()) raf = requestAnimationFrame(frame);
-  else settle();
+  draw(t);
+  if (visible && (stroke || picking || sliding || echoes.length || drifting())) raf = requestAnimationFrame(frame);
 }
-function kick() {
-  if (raf || !visible || !tube) return;
-  const t = now();
-  lastFrame = t; tS = t; sample(t); last = [pt[0], pt[1]];
-  raf = requestAnimationFrame(frame);
-}
-function poke() { lastInput = now(); kick(); }
+function poke() { lastInput = now(); if (!raf && visible) raf = requestAnimationFrame(frame); }
 whenVisible(stage, v => {
   visible = v;
-  if (v) { if (kit.ac) kit.wake(); ensureAudio(); poke(); }
-  else { cancelAnimationFrame(raf); raf = 0; detach(); kit.ac?.suspend()?.catch(() => {}); }
+  if (v) { if (kit.ac) kit.wake(); changed(); poke(); }
+  else { cancelAnimationFrame(raf); raf = 0; silence(); kit.ac?.suspend()?.catch(() => {}); }
 });
 
-/* ---------- drawing ---------- */
-// The pointer maps through the same curvature as the face.
+/* ---------- pointer ---------- */
 function toDiv(e) {
   const r = canvas.getBoundingClientRect();
-  const px = (e.clientX - r.left) * dpr, py = (r.bottom - e.clientY) * dpr;
-  const qx = (px - tube.cx) / tube.hx, qy = (py - tube.cy) / tube.hy;
-  const k = 1 + BARREL * (qx * qx * DX * DX + qy * qy * DY * DY) / (DX * DX + DY * DY);
-  return [clamp(qx * k * DX, -DX, DX), clamp(qy * k * DY, -DY, DY)];
+  return [clamp((e.clientX - r.left - cx) / div, -5, 5), clamp((cy - (e.clientY - r.top)) / div, -5, 5)];
 }
-let strokeLen = 0, lastBuild = 0;
+function pick(p) {
+  // A ratio such as 4:2 ties the same knot as 2:1.
+  const [ca, cb] = cellOf(p), g = gcd(ca, cb), a = ca / g, b = cb / g;
+  if (knot && knot.a === a && knot.b === b) return;
+  if (knot) pushEcho(knotPts(knot, psiAt(now()), 360), true);
+  knot = { a, b };
+  changed();
+}
+let strokeLen = 0, lastBuild = 0, before = null;
 canvas.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   canvas.setPointerCapture(e.pointerId);
-  stroke = [toDiv(e)]; strokeLen = 0; lastBuild = 0;
+  const p = toDiv(e);
+  if (mode === 'pen') {
+    if (pen) pushEcho(pen.pts, pen.closed);
+    before = pen; stroke = [p]; strokeLen = 0; lastBuild = 0;
+  } else { picking = true; pick(p); }
   poke();
 });
 canvas.addEventListener('pointermove', e => {
-  if (!stroke) { if (e.pointerType === 'mouse') poke(); return; }
-  const p = toDiv(e), q = stroke[stroke.length - 1], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
-  if (d < 0.03) return;
-  stroke.push(p); strokeLen += d;
-  // While the pen moves, the open stroke plays as its own closed loop.
+  if (picking) { pick(toDiv(e)); poke(); return; }
+  if (!stroke) return;
+  for (const ev of e.getCoalescedEvents?.() || [e]) {
+    const p = toDiv(ev), q = stroke[stroke.length - 1], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d < 0.04) continue;
+    stroke.push(p); strokeLen += d;
+  }
+  // While the pen moves, the open stroke plays out and back.
   const t = now();
-  if (strokeLen > 0.3 && t - lastBuild > 0.045) { lastBuild = t; build({ temp: fromStroke(stroke) }); }
+  if (strokeLen > 0.3 && t - lastBuild > 0.05) { lastBuild = t; pen = makePen(stroke.slice(), false); changed(); }
   poke();
 });
 function lift() {
+  if (picking) { picking = false; poke(); return; }
   if (!stroke) return;
   const s = stroke; stroke = null;
-  if (strokeLen > 0.3 && s.length > 2) {
-    prev = cur; cur = align(prev, fromStroke(s));
-    build({ fresh: true });
-    chips();
-  } else if (lastBuild) build();
+  if (strokeLen > 0.3 && s.length > 1) { pen = fromStroke(s); changed(); }
+  else { pen = before; if (lastBuild) changed(); }
   poke();
 }
 canvas.addEventListener('pointerup', lift);
@@ -747,23 +427,18 @@ canvas.addEventListener('pointercancel', lift);
 
 /* ---------- controls ---------- */
 const pitchIn = document.getElementById('pitch'), hz = document.getElementById('hz');
-const spinBtn = document.getElementById('spin'), morphBtn = document.getElementById('morph');
 // The slider is logarithmic from 40 to 400 hertz.
 const toHz = v => 40 * 10 ** (v / 1000);
 let pitchT = 0;
 function setPitch(f) {
   pitch = clamp(f, 40, 400);
-  const label = `${Math.round(pitch)} Hz`;
-  hz.value = label; pitchIn.setAttribute('aria-valuetext', `${Math.round(pitch)} hertz`);
-  const t = now(), at = kit.ac?.currentTime ?? 0;
-  // Playback rate glides the pitch now; a fresh buffer follows at rest.
-  voices.forEach(v => {
-    v.pos0 = posAt(v, t); v.t0 = t; v.rate = pitch / v.f;
-    v.node?.playbackRate.setValueAtTime(v.rate, at);
-  });
+  hz.value = `${Math.round(pitch)} Hz`;
+  pitchIn.setAttribute('aria-valuetext', `${Math.round(pitch)} hertz`);
+  // Playback rate moves the pitch now; a fresh buffer follows at rest.
+  if (voice && kit.ac) voice.src.playbackRate.setValueAtTime(pitch / voice.pitch, kit.ac.currentTime);
   sliding = true;
   clearTimeout(pitchT);
-  pitchT = setTimeout(() => { sliding = false; build(); }, 160);
+  pitchT = setTimeout(() => { sliding = false; changed(); }, 160);
   poke();
 }
 pitchIn.addEventListener('input', () => setPitch(toHz(+pitchIn.value)));
@@ -772,27 +447,38 @@ function stepPitch(dir) {
   pitchIn.value = String(Math.round(1000 * Math.log10(f / 40)));
   setPitch(f);
 }
-function chips() {
-  spinBtn.setAttribute('aria-pressed', String(spinOn && !reduced()));
-  spinBtn.setAttribute('aria-disabled', String(reduced()));
-  morphBtn.setAttribute('aria-pressed', String(morphOn && !!prev));
-  morphBtn.setAttribute('aria-disabled', String(!prev));
-}
-spinBtn.addEventListener('click', () => { if (reduced()) return; spinOn = !spinOn; chips(); build(); });
-morphBtn.addEventListener('click', () => { if (!prev) return; morphOn = !morphOn; chips(); build(); });
+// The old figure steps out as the new mode comes in.
+choices(document.querySelector('.bar .choices'), v => {
+  if (v === mode) return;
+  if (mode === 'pen' && pen) pushEcho(pen.pts, pen.closed);
+  if (mode === 'knot' && knot) pushEcho(knotPts(knot, psiAt(now()), 360), true);
+  mode = v; knotT0 = now();
+  changed(); poke();
+});
+const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 function shuffle() {
-  let k = preset;
-  while (k === preset) k = Math.floor(Math.random() * PRESETS.length);
-  preset = k;
-  prev = cur; cur = align(prev, PRESETS[k]());
-  chips(); build({ fresh: true });
+  if (mode === 'pen') {
+    if (pen) pushEcho(pen.pts, pen.closed);
+    let k = presetIdx;
+    while (k === presetIdx) k = Math.floor(Math.random() * PRESETS.length);
+    presetIdx = k;
+    const { pts, closed } = PRESETS[k]();
+    pen = makePen(pts, closed);
+  } else {
+    const pairs = [];
+    for (let a = 1; a <= 5; a++) for (let b = 1; b <= 5; b++) if (gcd(a, b) === 1 && !(knot && knot.a === a && knot.b === b)) pairs.push([a, b]);
+    const [a, b] = pairs[Math.floor(Math.random() * pairs.length)];
+    if (knot) pushEcho(knotPts(knot, psiAt(now()), 360), true);
+    knot = { a, b };
+  }
+  changed(); poke();
 }
 function clear() {
-  prev = cur = null; morphOn = false;
-  acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
-  chips(); build();
+  if (mode === 'pen') { if (pen) pushEcho(pen.pts, pen.closed); pen = null; }
+  else { if (knot) pushEcho(knotPts(knot, psiAt(now()), 360), true); knot = null; }
+  changed(); poke();
 }
-function nextPhosphor() { phos = (phos + 1) % PHOS.length; poke(); }
+function nextInk() { ink = (ink + 1) % INKS.length; poke(); }
 document.getElementById('shuffle').addEventListener('click', shuffle);
 document.getElementById('clear').addEventListener('click', clear);
 addEventListener('keydown', e => {
@@ -802,16 +488,15 @@ addEventListener('keydown', e => {
   if ((k === 'arrowup' || k === 'arrowdown') && document.activeElement === stage) { e.preventDefault(); stepPitch(k === 'arrowup' ? 1 : -1); }
   else if (k === 's') shuffle();
   else if (k === 'c') clear();
-  else if (k === 'p') nextPhosphor();
+  else if (k === 'p') nextInk();
 });
-onReducedChange(() => { if (reduced()) spinOn = false; chips(); build(); });
+onReducedChange(() => { echoes = []; changed(); poke(); });
 
 /* ---------- start ---------- */
-chips();
 new ResizeObserver(layout).observe(stage);
 new ResizeObserver(layout).observe(bar);
+document.fonts.ready.then(() => draw(now()));
 layout();
-build({ fresh: true });
 
 /* ---------- the vignette figure ---------- */
 // Box centre 250,112; one division is 24 units.
@@ -826,8 +511,7 @@ build({ fresh: true });
     left += `${c}${f(112 - (i / 160) * 92)} ${f(112 - y * 80)}`;
     below += `${c}${f(250 + x * 96)} ${f(224 + (i / 160) * 66)}`;
   }
-  svg.innerHTML = `<path class="grid" d="${grid}"/><rect class="frame" x="130" y="16" width="240" height="192" rx="10"/>`
-    + `<path class="lead" d="M112 112H130M250 208V224"/>`
+  svg.innerHTML = `<path class="grid" d="${grid}"/><path class="axis" d="M130 112H370M250 16V208"/>`
     + `<path class="wave" d="${left}"/><path class="wave" d="${below}"/><path class="trace" d="${knot}"/>`
     + `<text x="20" y="226">R</text><text x="378" y="292">L</text>`;
 })();
