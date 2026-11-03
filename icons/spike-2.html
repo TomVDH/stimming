@@ -639,49 +639,50 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     });
   }
 
-  // E: a test card with the tree cut out; hover scrolls the bars.
+  // E: a tree of colour bars; the pointer lifts bars and rolls the channels.
   {
-    const BW = 110 / 7;
     const TC = ['oklch(0.9 0.02 90)', 'oklch(0.88 0.15 100)', 'oklch(0.82 0.11 195)', 'oklch(0.78 0.16 145)', 'oklch(0.66 0.2 330)', 'oklch(0.62 0.2 25)', 'oklch(0.5 0.16 265)'];
-    const TRUNK = 'M64 121C63 110 66 98 64 86';
-    const BR = ['M64 90C55 82 44 76 39 64C34 52 26 48 22 55C19 61 25 65 29 61C31 58 28 56 26 58', 'M64 86C73 79 85 70 89 56C93 44 102 41 105 48C107 54 101 58 98 54C96 51 99 49 101 50', 'M64 88C62 76 60 64 64 52C67 43 69 35 64 30C60 26 54 30 57 34C59 37 62 35 61 33'];
-    const MINI = [[48, 80, 0], [81, 77, 2], [96, 62, 4]];
-    const bars = TC.map((c, k) => `<rect x="${f(9 + k * BW)}" y="9" width="${f(BW + 0.3)}" height="94" fill="${c}"/>`).join('');
-    const CAST = Array.from({ length: 7 }, (_, k) => k);
+    const GAP = 14.5, R = 46, CY = 56, W = 11;
+    // Bar tops trace a round crown; the middle bar runs on down as the trunk.
+    const BARS = [-3, -2, -1, 0, 1, 2, 3].map(k => {
+      const x = 64 + k * GAP, s = Math.sqrt(R * R - (k * GAP) ** 2);
+      return { x, top: f(CY - s + W / 2), bot: k ? f(CY + s * 0.5 - W / 2) : 116 };
+    });
+    const bar = (b, lift = 0) => `M${b.x} ${f(b.top - lift)}V${b.bot}`;
     DIRS.push({
-      toy: 'tvtree', l: 'E', name: 'Test card', idea: 'Colour bars with the curly tree cut out of them. Hover scrolls the bars behind it.',
-      art(svg, u) {
-        svg.innerHTML = `
-          <clipPath id="${u}c"><rect x="9" y="9" width="110" height="110" rx="8"/></clipPath>
-          <g clip-path="url(#${u}c)">
-            <g class="bars">${bars}<g transform="translate(110 0)">${bars}</g></g>
-            <rect x="9" y="103" width="110" height="16" fill="oklch(0.22 0.02 275)"/>
-            ${CAST.map(k => `<rect x="${f(9 + k * BW + 3)}" y="107" width="${f(BW - 6)}" height="8" fill="${k % 2 ? 'oklch(0.32 0.02 275)' : 'oklch(0.86 0.01 275)'}"/>`).join('')}
-            <g style="stroke: ${BG}" fill="none" stroke-linecap="round">
-              <path d="${TRUNK}" stroke-width="10"/>
-              ${BR.map(b => `<path d="${b}" stroke-width="6.5"/>`).join('')}
-            </g>
-            <path d="M50 122C58 119 61 112 61.5 102L66.5 102C67 112 70 119 78 122Z" style="fill: ${BG}"/>
-            ${MINI.map(([x, y, c]) => `<path d="M${x} ${y - 7}V${y}" style="stroke: ${BG}" stroke-width="1.5"/><rect x="${x - 7}" y="${y}" width="14" height="11" rx="2" style="fill: ${BG}"/><rect x="${x - 5}" y="${y + 2}" width="10" height="7" rx="1" fill="${CH[c]}"/>`).join('')}
-          </g>
-          <rect x="9" y="9" width="110" height="110" rx="8" fill="url(#lit)"/>
-          <rect x="9" y="9" width="110" height="110" rx="8" fill="none" stroke="url(#rim)" stroke-width="1.5"/>`;
-        const g = svg.querySelector('.bars');
-        return hoverLoop(
-          () => gsap.timeline({ repeat: -1 }).fromTo(g, { x: 0 }, { x: -110, duration: 3.5, ease: 'none' }),
-          () => {
-            const x = gsap.getProperty(g, 'x');
-            gsap.to(g, { x: x < -55 ? -110 : 0, duration: 0.35, ease: 'power2.out', onComplete: () => gsap.set(g, { x: 0 }) });
-          });
+      toy: 'tvtree', l: 'E', name: 'Bar tree', idea: 'A round tree of colour bars on a bar trunk. The pointer lifts the bars it passes and rolls the channels.',
+      art(svg) {
+        svg.innerHTML = `<g fill="none" stroke-width="${W}" stroke-linecap="round">${BARS.map((b, k) => `<path d="${bar(b)}" style="stroke: ${TC[k]}"/>`).join('')}</g>`;
+        const P = [...svg.querySelectorAll('path')], L = BARS.map(() => ({ v: 0 }));
+        let roll = 0, col = null, tl = null;
+        // Each column step rolls the colours one bar along.
+        const paint = () => P.forEach((p, k) => (p.style.stroke = TC[(((k - roll) % 7) + 7) % 7]));
+        const lift = (k, v, duration = 0.25, ease = 'power2.out') =>
+          gsap.to(L[k], { v, duration, ease, overwrite: true, onUpdate: () => P[k].setAttribute('d', bar(BARS[k], L[k].v)) });
+        const at = p => {
+          BARS.forEach((b, k) => lift(k, 11 * Math.exp(-((p[0] - b.x) ** 2) / (2 * 9 * 9))));
+          const c = Math.round((p[0] - 64) / GAP);
+          if (col !== null && c !== col) { roll += Math.sign(c - col); paint(); }
+          col = c;
+        };
+        // From the keyboard, a lift wave crosses the crown and the channels roll.
+        const wave = () => {
+          const t = gsap.timeline({ repeat: -1 });
+          BARS.forEach((_, k) => t.to(L[k], { v: 11, duration: 0.22, yoyo: true, repeat: 1, ease: 'sine.inOut', onUpdate: () => P[k].setAttribute('d', bar(BARS[k], L[k].v)) }, k * 0.11));
+          return t.add(() => { roll++; paint(); }, 0);
+        };
+        return {
+          enter(p) { if (p) at(p); else if (!tl) tl = wave(); },
+          move(p) { if (p) at(p); },
+          leave() {
+            tl?.kill(); tl = null; col = null; roll = 0; paint();
+            BARS.forEach((_, k) => lift(k, 0, 0.9, 'elastic.out(1, 0.35)'));
+          },
+        };
       },
       emblem: emb(`
-        <clipPath id="c"><rect x="9" y="9" width="110" height="110" rx="8"/></clipPath>
-        <g clip-path="url(#c)">
-          ${TC.map((_, k) => `<rect x="${f(9 + k * BW + (k ? 1.3 : 0))}" y="9" width="${f(BW - (k ? 1.3 : 0) - (k < 6 ? 1.3 : 0))}" height="92" fill="#fff"/>`).join('')}
-          ${CAST.map(k => `<rect x="${f(9 + k * BW + 3)}" y="106" width="${f(BW - 6)}" height="9" fill="${k % 2 ? '#000' : '#fff'}"/>`).join('')}
-          <g stroke="#000" fill="none" stroke-linecap="round"><path d="${TRUNK}" stroke-width="10"/>${BR.map(b => `<path d="${b}" stroke-width="6.5"/>`).join('')}</g>
-          <path d="M50 122C58 119 61 112 61.5 102L66.5 102C67 112 70 119 78 122Z" fill="#000"/>
-          ${MINI.map(([x, y]) => `<path d="M${x} ${y - 7}V${y}" stroke="#000" stroke-width="2"/><rect x="${x - 7}" y="${y}" width="14" height="11" rx="2" fill="#000"/><rect x="${x - 5}" y="${y + 2}" width="10" height="7" rx="1" fill="#fff"/>`).join('')}
+        <g fill="none" stroke="#fff" stroke-width="${W}" stroke-linecap="round">
+          ${BARS.map(b => `<path d="${bar(b)}"/>`).join('\n')}
         </g>
       `),
     });
