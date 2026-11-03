@@ -39,7 +39,7 @@
     </div>
     <div class="bar bar--below">
       <div class="actions">
-        <button class="chip icon" id="roll" type="button" aria-label="Shuffle colours" title="Shuffle colours"><svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d=""/></svg></button>
+        <button class="chip icon" id="roll" type="button" aria-label="Shuffle" title="Shuffle: a new sheet"><svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d=""/></svg></button>
         <button class="chip" id="reset" type="button">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
@@ -109,20 +109,36 @@ function rampOf([A, M, B]) {
   const P = M.map((v, k) => 2 * v - (A[k] + B[k]) / 2);
   return t => mixLch(mixLch(A, P, t, true), mixLch(P, B, t, true), t, true);
 }
-// A new palette sweeps a random hue arc, light to deep.
-function freshPalette(prev) {
-  let h0 = 0;
-  // The new arc starts well away from the old one.
-  for (let n = 0; n < 8; n++) {
-    h0 = Math.random() * 360;
-    if (!prev || Math.abs(((h0 - prev[0][2] + 540) % 360) - 180) > 70) break;
-  }
-  const span = (60 + Math.random() * 130) * (Math.random() < 0.5 ? -1 : 1), c = 0.11 + Math.random() * 0.06;
-  return [
-    [0.86 + Math.random() * 0.05, c * 0.95, h0],
-    [0.77 + Math.random() * 0.04, c, h0 + span / 2],
-    [0.56 + Math.random() * 0.07, c * 1.05, h0 + span],
-  ];
+const R01 = (a, b) => a + Math.random() * (b - a);
+const sgn = () => (Math.random() < 0.5 ? -1 : 1);
+// Palette kinds: each makes three stops from a start hue.
+const PALS = {
+  // A hue arc, light to deep.
+  arc: h => { const s = R01(60, 190) * sgn(), c = R01(0.11, 0.17); return [[R01(0.86, 0.91), c * 0.95, h], [R01(0.77, 0.81), c, h + s / 2], [R01(0.56, 0.63), c * 1.05, h + s]]; },
+  // One hue, pale to ink.
+  mono: h => [[0.93, 0.06, h], [0.72, 0.15, h + 4], [0.42, 0.13, h + 10]],
+  // Two opposite hues meet at a grey middle.
+  split: h => [[0.86, 0.14, h], [0.7, 0.025, h + 90], [0.6, 0.16, h + 180]],
+  // Loud chroma over a wide sweep.
+  neon: h => { const s = R01(160, 260) * sgn(); return [[0.86, 0.2, h], [0.78, 0.24, h + s / 2], [0.68, 0.26, h + s]]; },
+  // Chalky pastels.
+  chalk: h => { const s = R01(90, 160) * sgn(); return [[0.94, 0.05, h], [0.89, 0.07, h + s / 2], [0.83, 0.08, h + s]]; },
+  // Dark and moody.
+  dusk: h => { const s = R01(40, 110) * sgn(); return [[0.66, 0.12, h], [0.5, 0.13, h + s / 2], [0.36, 0.11, h + s]]; },
+};
+// A recipe sets the whole sheet: paint, material, burst, size, jumbos and gap.
+const MATS = ['gloss', 'matte', 'chrome', 'jelly', 'pearl', 'toon'];
+const FXS = ['shards', 'confetti', 'sparks', 'drops', 'rings'];
+const DENS = [6, 9, 12, 15, 20, 27], JUMS = [0, 1, 2, 3, 5, 8], GAPS = [0.05, 0.075, 0.11];
+const pick = (a, not) => { let v; do v = a[(Math.random() * a.length) | 0]; while (a.length > 1 && v === not); return v; };
+let rec = { kind: 'arc', pal: [MINT, CYAN, BLUE], mat: 'gloss', fx: 'shards', den: 15, jum: null, gap: 0.075 };
+// Each roll changes the material and the burst, at least.
+function freshRecipe(p) {
+  let h = 0;
+  // The new hue starts well away from the old one.
+  for (let n = 0; n < 8; n++) { h = Math.random() * 360; if (Math.abs(((h - p.pal[0][2] + 540) % 360) - 180) > 70) break; }
+  const kind = pick(Object.keys(PALS));
+  return { kind, pal: PALS[kind](h), mat: pick(MATS, p.mat), fx: pick(FXS, p.fx), den: pick(DENS), jum: pick(JUMS), gap: pick(GAPS) };
 }
 const SHADE = [0.42, 0.07, 240];
 const skinOf = ([L, C, h]) => ({
@@ -252,16 +268,15 @@ function blur(h, n, rad) {
 /* ---------- sprites: one atlas per palette, drawn once per size ---------- */
 const field = document.getElementById('field'), cv = field.querySelector('canvas'), ctx = cv.getContext('2d');
 // Two atlases let a new palette sweep in over the old one.
-const atl = [document.createElement('canvas'), document.createElement('canvas')];
+const atl = document.createElement('canvas');
 const NB = 32, SHADE_SLOT = NB * 2, SLOTS = NB * 2 + 1;
-const pals = [[MINT, CYAN, BLUE], null], paints = [[], []];
-let SP = 0, SB = 0, sR = 0, ox = [], oy = [], spriteTimer = 0, cur = 0, LT = null;
+let SP = 0, SB = 0, sR = 0, ox = [], oy = [], spriteTimer = 0, LT = null, paints = [];
 // Jumbo sprites: one canvas per colour bin, glossy then popped.
-const JF = 2.7, jat = [new Map(), new Map()];
+const JF = 2.7, jat = new Map();
 let SPJ = 0, SBJ = 0, LTJ = null, jPath = null, jShade = null;
 let lite = false, focusC = '#000', bgC = '#000';
 
-const gapOf = R => clamp(R * 0.075, 2.5, 4);
+const gapOf = R => clamp(R * rec.gap, 2, 9);
 const norm3 = (x, y, z) => { const l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; };
 // The key light sits up and left, in front of the sheet.
 const KEY = norm3(-0.5, -0.68, 0.54), HALF = norm3(KEY[0], KEY[1], KEY[2] + 1);
@@ -311,36 +326,68 @@ function jumboTerms(r0, k) {
   return litTerms(A, hgt, dep, n);
 }
 // Light from a height map: normals, paint ramp, shade, gloss and glow.
+// The recipe's material decides how each term reads the normal.
+const step01 = (x, e = 0.03) => clamp(x / e + 0.5);
 function litTerms(a, hgt, dep, n) {
-  const m = n * n;
-  const T = { a, u: new Float32Array(m), ao: new Float32Array(m), w: new Float32Array(m), s: new Float32Array(m), t: new Float32Array(m) };
+  const m = n * n, M = rec.mat, f32 = () => new Float32Array(m);
+  const T = { a, u: f32(), ao: f32(), w: f32(), s: f32(), t: f32(), ip: M === 'pearl' ? f32() : null, iw: M === 'pearl' ? f32() : null };
   for (let py = 1; py < n - 1; py++) for (let px = 1, i = py * n + 1; px < n - 1; px++, i++) {
     if (!T.a[i]) continue;
     const [nx, ny, nz] = norm3((hgt[i - 1] - hgt[i + 1]) / 2, (hgt[i - n] - hgt[i + n]) / 2, 1);
     const ndl = nx * KEY[0] + ny * KEY[1] + nz * KEY[2], ndh = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
-    // Half-Lambert picks a spot on the deep-to-light paint ramp.
-    T.u[i] = clamp(ndl * 0.6 + 0.42) ** 1.15;
-    // The foot of the wall sits in its own shade.
-    T.ao[i] = 0.62 + 0.38 * clamp(dep[i] / 0.09);
     // The view ray bounces off the dome into the room.
-    const rx = 2 * nz * nx, ry = 2 * nz * ny;
-    T.w[i] = 0.82 * box(rx, ry, -0.36, -0.44, 0.19, 0.1, 0.03) + 0.24 * box(rx, ry, 0.4, 0.5, 0.15, 0.05, 0.03);
-    T.s[i] = 1.1 * ndh ** 90 + 0.1 * ndh ** 14;
+    const rx = 2 * nz * nx, ry = 2 * nz * ny, rim = clamp(dep[i] / 0.09);
+    const soft = 0.82 * box(rx, ry, -0.36, -0.44, 0.19, 0.1, 0.03) + 0.24 * box(rx, ry, 0.4, 0.5, 0.15, 0.05, 0.03);
     // Light leaks through the far walls, as in thin plastic.
-    const f = (1 - nz) ** 2.2;
-    T.t[i] = 0.55 * f * clamp(0.25 + 0.65 * nx + 0.75 * ny);
+    const f = (1 - nz) ** 2.2, leak = f * clamp(0.25 + 0.65 * nx + 0.75 * ny);
+    let u, ao, w, s, t;
+    if (M === 'matte') {
+      // Soft-touch rubber: broad light, no reflections.
+      u = clamp(ndl * 0.7 + 0.38) ** 1.2; ao = 0.55 + 0.45 * rim; w = 0; s = 0.05 * ndh ** 6; t = 0.12 * leak;
+    } else if (M === 'chrome') {
+      // Chrome: a bright sky over a dark floor, split at a hard horizon.
+      const sky = step01(0.05 - ry, 0.04);
+      u = lerp(0.06 + 0.25 * clamp(ry), 0.6 + 0.4 * clamp(-ry * 1.4), sky); ao = 0.75 + 0.25 * rim; w = 0.9 * soft; s = 1.5 * ndh ** 160; t = 0;
+    } else if (M === 'jelly') {
+      // Jelly: light passes through and glows in the far wall.
+      u = clamp(ndl * 0.35 + 0.55); ao = 0.85 + 0.15 * rim; w = 0.55 * soft; s = 1.3 * ndh ** 150; t = 1.3 * leak + 0.12 * (1 - rim);
+    } else if (M === 'toon') {
+      // Stencil: three hard tones, a cut rim and solid highlights.
+      u = 0.1 + 0.45 * step01(ndl + 0.1) + 0.42 * step01(ndl - 0.45); ao = 0.5 + 0.5 * step01(rim - 0.4, 0.1); w = step01(soft - 0.5, 0.1); s = step01(ndh ** 40 - 0.5, 0.05); t = 0;
+    } else {
+      // Gloss and pearl: half-Lambert on the paint ramp, a softbox and a hot spot.
+      u = clamp(ndl * 0.6 + 0.42) ** 1.15; ao = 0.62 + 0.38 * rim; w = soft; s = 1.1 * ndh ** 90 + 0.1 * ndh ** 14; t = 0.55 * leak;
+      if (T.ip) {
+        // Pearl: a thin film shifts hue toward the rim.
+        T.ip[i] = 5 * (1 - nz) + 1.5 * (nx - ny); T.iw[i] = 0.6 * clamp((1 - nz) * 4) ** 0.8;
+        w *= 0.6; s = 0.6 * ndh ** 40 + 0.1 * ndh ** 8;
+      }
+    }
+    T.u[i] = u; T.ao[i] = ao; T.w[i] = w; T.s[i] = s; T.t[i] = t;
   }
   return T;
 }
 // Glossy cell: the shared bump terms painted with one colour bin.
 function glossSprite(img, base, L = LT) {
   const s = skinOf(base), lo = linFit(s.low), mi = linFit(s.mid), hi = linFit(s.top), li = linFit(s.light), d = img.data;
-  const { a, u, ao, w, s: sp, t } = L;
+  const { a, u, ao, w, s: sp, t, ip, iw } = L;
+  // Pearl film colours sit a third of the wheel apart.
+  const P = ip && [0, 120, 240].map(dh => linFit([0.88, 0.12, base[2] + dh])), film = [0, 0, 0];
   for (let i = 0, j = 0; i < a.length; i++, j += 4) {
     if (!a[i]) { d[j + 3] = 0; continue; }
     const q = u[i], A = q < 0.5 ? lo : mi, B = q < 0.5 ? mi : hi, f = q < 0.5 ? 2 * q : 2 * q - 1, o = ao[i], W = w[i];
+    if (P) {
+      let sum = 0;
+      film[0] = film[1] = film[2] = 0;
+      for (let k = 0; k < 3; k++) {
+        const e = (0.5 + 0.5 * Math.cos(ip[i] - (k * TAU) / 3)) ** 2;
+        sum += e; film[0] += P[k][0] * e; film[1] += P[k][1] * e; film[2] += P[k][2] * e;
+      }
+      for (let c = 0; c < 3; c++) film[c] /= sum || 1;
+    }
     for (let c = 0; c < 3; c++) {
       let v = (A[c] + (B[c] - A[c]) * f) * o + hi[c] * t[i];
+      if (P) v += (film[c] - v) * iw[i];
       v = v + (li[c] - v) * W + sp[i];
       d[j + c] = enc(v);
     }
@@ -387,14 +434,14 @@ function shadeSprite(ax, p, r) {
   g.addColorStop(0, css(SHADE, 0.85)); g.addColorStop(1, css(SHADE, 0.35));
   ax.fillStyle = g; ax.fill(p);
 }
-// One atlas holds every bin of one palette, glossy and popped.
-function buildAtlas(idx) {
-  const atlas = atl[idx], ax = atlas.getContext('2d'), n = Math.ceil(Math.sqrt(SLOTS)), k = dpr * 1.1;
-  const r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), ramp = rampOf(pals[idx]), img = ax.createImageData(SP, SP);
+// One atlas holds every bin of the palette, glossy and popped.
+function buildAtlas() {
+  const atlas = atl, ax = atlas.getContext('2d'), n = Math.ceil(Math.sqrt(SLOTS)), k = dpr * 1.1;
+  const r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), ramp = rampOf(rec.pal), img = ax.createImageData(SP, SP);
   if (atlas.width !== n * SP || atlas.height !== Math.ceil(SLOTS / n) * SP) { atlas.width = n * SP; atlas.height = Math.ceil(SLOTS / n) * SP; }
   ax.setTransform(1, 0, 0, 1, 0, 0);
   ax.clearRect(0, 0, atlas.width, atlas.height);
-  paints[idx] = [];
+  paints = [];
   for (let i = 0; i < SLOTS; i++) {
     ox[i] = (i % n) * SP; oy[i] = ((i / n) | 0) * SP;
     const base = ramp((i >> 1) / (NB - 1));
@@ -403,23 +450,23 @@ function buildAtlas(idx) {
     ax.putImageData(glossSprite(img, base), ox[i], oy[i]);
     // Shards and rings take the bin's own paint.
     const s = skinOf(base);
-    paints[idx][i >> 1] = { mid: css(s.mid), top: css(s.top), low: css(s.low), light: css(s.light) };
+    paints[i >> 1] = { mid: css(s.mid), top: css(s.top), low: css(s.low), light: css(s.light) };
   }
   ax.setTransform(1, 0, 0, 1, 0, 0);
-  buildJumbos(idx);
+  buildJumbos();
 }
 // Jumbo sprites exist only for the bins the jumbos use.
-function buildJumbos(idx) {
-  const ramp = rampOf(pals[idx]), k = dpr * 1.1;
-  jat[idx].clear();
+function buildJumbos() {
+  const ramp = rampOf(rec.pal), k = dpr * 1.1;
+  jat.clear();
   for (const c of units) {
-    if (!c.J || jat[idx].has(c.b)) continue;
+    if (!c.J || jat.has(c.b)) continue;
     const jc = document.createElement('canvas'), jx = jc.getContext('2d'), base = ramp(c.b / (NB - 1));
     jc.width = 2 * SPJ; jc.height = SPJ;
     jx.putImageData(glossSprite(jx.createImageData(SPJ, SPJ), base, LTJ), 0, 0);
     jx.setTransform(k, 0, 0, k, SPJ * 1.5, SPJ / 2);
     flatJumbo(jx, base, rng(c.b * 104729 + 7));
-    jat[idx].set(c.b, jc);
+    jat.set(c.b, jc);
   }
 }
 function buildSprites() {
@@ -436,9 +483,7 @@ function buildSprites() {
   const sx = jShade.getContext('2d');
   sx.setTransform(k, 0, 0, k, SPJ / 2, SPJ / 2);
   shadeSprite(sx, jPath, 2.5 * R);
-  buildAtlas(cur);
-  // A sweep in progress keeps its old palette too.
-  if (pals[1 - cur] && units.some(c => c.pa !== cur)) buildAtlas(1 - cur);
+  buildAtlas();
 }
 function tokens() {
   const st = getComputedStyle(document.documentElement);
@@ -462,7 +507,7 @@ function makeCells() {
       i: out.length, row: i, col: j, x: 0, y: 0, b: 0,
       flip: Math.random() < 0.5 ? -1 : 1, rot: (Math.random() - 0.5) * 0.09,
       state: 0, s: 1, sv: 0, dx: 0, dy: 0, vx: 0, vy: 0, g: 1, p: 0, pT: 0,
-      popAt: -9, inAt: -9, due: Infinity, pa: cur, h0: -1, q: 0, nudge: 0,
+      popAt: -9, inAt: -9, due: Infinity, h0: -1, q: 0, nudge: 0,
     });
   }
   return out;
@@ -478,7 +523,7 @@ function around(c) {
 // A few jumbos swallow their six neighbours.
 // A ring of small cells always keeps two jumbos apart.
 function merge() {
-  const want = clamp(Math.floor(cells.length / 35), 2, 5), blocked = new Set();
+  const want = rec.jum ?? clamp(Math.floor(cells.length / 35), 2, 5), blocked = new Set();
   let made = 0;
   for (let n = 0; n < 400 && made < want && rows > 2 && cols > 2; n++) {
     const c = cells[(1 + ((Math.random() * (rows - 2)) | 0)) * cols + 1 + ((Math.random() * (cols - 2)) | 0)];
@@ -508,17 +553,19 @@ function centreCell() {
   for (const c of cells) { const d = (c.x - W / 2) ** 2 + (c.y - H / 2) ** 2; if (d < bd) { bd = d; best = own(c).i; } }
   return best;
 }
-function layout() {
+// Force rebuilds the grid even at the same size.
+function layout(force) {
   const w = field.clientWidth, h = field.clientHeight, d = Math.min(devicePixelRatio || 1, 2);
-  if (!w || !h || (w === W && h === H && d === dpr)) return;
+  if (!w || !h || (!force && w === W && h === H && d === dpr)) return;
   W = w; H = h; dpr = d;
   cv.width = Math.round(w * d); cv.height = Math.round(h * d);
   // Cell size follows width; rows fill what height is left.
-  const R0 = clamp(w / 26, 28, 50), pad = R0 * 0.22;
+  // The recipe sets about how many cells span a wide sheet.
+  const R0 = clamp(w / (SQ3 * rec.den * clamp(w / 1000, 0.45, 1.2)), 14, 90), pad = R0 * 0.22;
   const nc = Math.max(3, Math.round((w - 2 * pad) / (SQ3 * R0) - 0.5));
   R = (w - 2 * pad) / (SQ3 * (nc + 0.5));
   const nr = Math.max(2, Math.floor((h - 2 * pad - 2 * R) / (1.5 * R)) + 1);
-  const fresh = nc !== cols || nr !== rows;
+  const fresh = force || nc !== cols || nr !== rows;
   if (fresh) {
     for (const c of units) c.creak?.();
     cols = nc; rows = nr; cells = makeCells(); events = [];
@@ -744,7 +791,7 @@ const SPR = {
 const OK = 240, OC = 2 * 0.42 * Math.sqrt(OK);
 
 function pop(c, now, amp, force) {
-  if (!c || c.state) return;
+  if (!c || c.state || c.hid) return;
   // A jumbo bursts only at full charge; anything less makes it wobble.
   if (c.J && !force) {
     if (!reduce && now > c.nudge) { c.nudge = now + 0.12; c.sv += 2.4; }
@@ -797,10 +844,9 @@ function step(now, dt) {
     const e = events[n];
     if (e.at > now) continue;
     if (e.pop) pop(e.c, now, e.pop);
-    else if (e.swap != null) {
-      // The new paint lands with a small hop.
-      e.c.pa = e.swap;
-      if (!e.c.state) { e.c.sv += 2.6; bloop(); }
+    else if (e.born) {
+      // A new cell lands with a hop as the wipe passes it.
+      e.c.hid = false; e.c.s = 0.5; e.c.sv += 5; bloop();
     } else if (!e.c.state) { e.c.vx += e.vx; e.c.vy += e.vy; e.c.sv += e.vs; }
     events[n] = events[events.length - 1];
     events.pop();
@@ -876,30 +922,50 @@ const SHARDS = [
   shard([[-0.7, -0.12], [0.7, -0.2], [0.62, 0.14], [-0.66, 0.1]]),
   shard([[-0.4, -0.45], [0.45, -0.38], [0.3, 0.42], [-0.48, 0.3]]),
 ];
+// Confetti is a thin card; drops are round beads.
+const CARD = shard([[-1, -0.4], [1, -0.4], [1, 0.4], [-1, 0.4]]), BEAD = new Path2D();
+BEAD.arc(0, 0, 0.5, 0, TAU);
+// Each burst kind: count, speed, size, life, drag and fall.
+const FXK = {
+  shards: { n: [5, 8], v: [5, 13], s: [0.12, 0.27], life: [0.32, 0.62], dr: 3.2, gm: 1 },
+  confetti: { n: [9, 13], v: [4, 10], s: [0.09, 0.15], life: [0.8, 1.25], dr: 5, gm: 0.3 },
+  sparks: { n: [8, 12], v: [12, 22], s: [0.3, 0.6], life: [0.16, 0.3], dr: 2, gm: 0.15 },
+  drops: { n: [5, 8], v: [4, 9], s: [0.1, 0.2], life: [0.4, 0.7], dr: 2.4, gm: 1.4 },
+};
 function burst(c, now, amp) {
-  const pt = paints[c.pa][c.b];
+  const pt = paints[c.b];
   if (!pt) return;
-  const x = c.x + c.dx, y = c.y + c.dy, big = c.J ? 1 : 0;
-  rings.push({ x, y, t0: now, col: pt.top, amp, path: big ? jRing : ringP, w: big ? 0.32 : 0.2, life: big ? 0.55 : RING_S });
-  // A busy sweep throws fewer shards per pop; a jumbo throws a fistful.
-  const n = big ? 18 + ((Math.random() * 6) | 0) : bits.length > MAXBITS / 2 ? 3 : 5 + ((Math.random() * 3) | 0);
+  const x = c.x + c.dx, y = c.y + c.dy, big = c.J ? 1 : 0, ring = { x, y, col: pt.top, amp, path: big ? jRing : ringP, w: big ? 0.32 : 0.2, life: big ? 0.55 : RING_S };
+  rings.push({ ...ring, t0: now });
+  // The rings burst sends three nested rings and nothing else.
+  if (rec.fx === 'rings') {
+    rings.push({ ...ring, t0: now + 0.07, amp: amp * 0.75, col: pt.light }, { ...ring, t0: now + 0.14, amp: amp * 0.5, col: pt.low });
+    return;
+  }
+  const K = FXK[rec.fx], conf = rec.fx === 'confetti';
+  // A busy sweep throws fewer bits per pop; a jumbo throws a fistful.
+  const n = big ? Math.round(K.n[1] * 3) : bits.length > MAXBITS / 2 ? 3 : K.n[0] + ((Math.random() * (K.n[1] - K.n[0])) | 0);
   for (let k = 0; k < n; k++) {
-    const a = Math.random() * TAU, v = R * (5 + Math.random() * 8) * (0.7 + 0.5 * amp), o = R * (big ? 1.6 : 0.3) * Math.random(), q = Math.random();
+    const a = Math.random() * TAU, v = R * R01(K.v[0], K.v[1]) * (0.7 + 0.5 * amp), o = R * (big ? 1.6 : 0.3) * Math.random(), q = Math.random();
+    // Confetti takes paint from anywhere on the ramp.
+    const p = conf ? paints[(Math.random() * NB) | 0] || pt : pt;
     bits.push({
       x: x + Math.cos(a) * o, y: y + Math.sin(a) * o, vx: Math.cos(a) * v, vy: Math.sin(a) * v - R * 3,
-      a: Math.random() * TAU, va: (Math.random() - 0.5) * 26, s: R * (0.12 + Math.random() * 0.15) * (big ? 1.7 : 1),
-      t0: now, life: 0.32 + Math.random() * 0.3, col: q < 0.3 ? pt.light : q < 0.65 ? pt.top : pt.low, sh: (Math.random() * 3) | 0,
+      a: Math.random() * TAU, va: (Math.random() - 0.5) * 26, s: R * R01(K.s[0], K.s[1]) * (big ? 1.7 : 1),
+      t0: now, life: R01(K.life[0], K.life[1]), dr: K.dr, gm: K.gm, k: rec.fx,
+      col: rec.fx === 'sparks' ? (q < 0.6 ? p.light : p.top) : q < 0.3 ? p.light : q < 0.65 ? p.top : p.low, sh: (Math.random() * 3) | 0,
     });
   }
   if (bits.length > MAXBITS) bits.splice(0, bits.length - MAXBITS);
 }
-// Shards drift out, slow down and fall; the result says if any fly.
+// Bits drift out, slow down and fall; the result says if any fly.
 function fly(now, dt) {
-  const drag = Math.exp(-3.2 * dt), g = R * 22 * dt;
+  const g = R * 22 * dt;
   for (let n = bits.length - 1; n >= 0; n--) {
     const b = bits[n];
     if (now - b.t0 > b.life) { bits[n] = bits[bits.length - 1]; bits.pop(); continue; }
-    b.vx *= drag; b.vy = b.vy * drag + g;
+    const drag = Math.exp(-b.dr * dt);
+    b.vx *= drag; b.vy = b.vy * drag + g * b.gm;
     b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va * dt;
   }
   for (let n = rings.length - 1; n >= 0; n--) if (now - rings[n].t0 > rings[n].life) rings.splice(n, 1);
@@ -911,21 +977,32 @@ function drawBits() {
   ctx.globalAlpha = 1;
   // The ring is a hard hexagon outline that thins as it grows.
   for (const q of rings) {
+    if (now < q.t0) continue;
     const u = clamp((now - q.t0) / q.life), sc = 1 + (0.35 + 0.4 * q.amp) * (1 - (1 - u) ** 3), lw = R * q.w * (1 - u) ** 1.5;
     if (lw < 0.25) continue;
     ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * q.x, dpr * q.y);
     ctx.lineWidth = lw / sc; ctx.strokeStyle = q.col; ctx.stroke(q.path);
   }
+  ctx.lineCap = 'butt';
   for (const b of bits) {
     const u = clamp((now - b.t0) / b.life), sc = b.s * (1 - u * u);
     if (sc < 0.3) continue;
+    if (b.k === 'sparks') {
+      // A spark is a hard streak along its own path.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx * 0.035, b.y - b.vy * 0.035);
+      ctx.lineWidth = Math.max(0.6, R * 0.07 * (1 - u)); ctx.strokeStyle = b.col; ctx.stroke();
+      continue;
+    }
+    // Confetti flutters: its card turns edge-on and back.
+    const fl = b.k === 'confetti' ? Math.cos(b.a * 2.3) : 1;
     const co = Math.cos(b.a) * sc * dpr, si = Math.sin(b.a) * sc * dpr;
-    ctx.setTransform(co, si, -si, co, dpr * b.x, dpr * b.y);
-    ctx.fillStyle = b.col; ctx.fill(SHARDS[b.sh]);
+    ctx.setTransform(co, si, -si * fl, co * fl, dpr * b.x, dpr * b.y);
+    ctx.fillStyle = b.col; ctx.fill(b.k === 'confetti' ? CARD : b.k === 'drops' ? BEAD : SHARDS[b.sh]);
   }
 }
 
-/* ---------- the die: a new palette floods in from the bar ---------- */
+/* ---------- the die: a whole new sheet sweeps in from the bar ---------- */
 const die = document.getElementById('roll'), dieSvg = die.querySelector('svg'), diePath = dieSvg.querySelector('path');
 const P0 = 4.6, P1 = 8, P2 = 11.4;
 const FACES = [
@@ -964,29 +1041,34 @@ function rattle() {
     t += (0.05 + Math.random() * 0.05) * (1 + 0.3 * k);
   }
 }
+// The old sheet stays as a picture until the new one sweeps over it.
+const snap = document.createElement('canvas');
+let wipe = null;
+const WIPE_S = 0.9;
 function roll() {
   if (!cells.length || !sR) return;
   const now = nowS();
-  // A roll mid-sweep finishes the old sweep first.
-  events = events.filter(e => e.swap == null);
-  for (const c of units) c.pa = cur;
-  const next = 1 - cur;
-  pals[next] = freshPalette(pals[cur]);
-  buildAtlas(next);
-  cur = next;
+  if (!reduce) { snap.width = cv.width; snap.height = cv.height; snap.getContext('2d').drawImage(cv, 0, 0); }
+  rec = freshRecipe(rec);
+  layout(true);
+  clearTimeout(spriteTimer);
+  buildSprites();
+  bits.length = 0; rings.length = 0;
   let n = face;
   while (n === face) n = (Math.random() * 6) | 0;
   showFace(n);
   rattle();
-  if (reduce) { for (const c of units) c.pa = cur; draw(); return; }
+  if (reduce) { draw(); return; }
   dieSvg.animate([
     { transform: 'rotate(-280deg) scale(0.5)' },
     { transform: 'rotate(16deg) scale(1.15)', offset: 0.7 },
     { transform: 'none' },
   ], { duration: 520, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' });
-  // The new paint floods out from the die's corner, bottom left.
+  // The new sheet grows out from the die's corner, bottom left.
   const far = Math.hypot(W, H) || 1;
-  for (const c of units) events.push({ at: now + 0.03 + (0.8 * Math.hypot(c.x, H - c.y)) / far + Math.random() * 0.03, c, swap: cur });
+  wipe = { t0: now, far, col: paints[NB >> 1]?.light || focusC };
+  for (const c of units) { c.hid = true; events.push({ at: now + (WIPE_S * Math.hypot(c.x, H - c.y)) / far, c, born: 1 }); }
+  draw();
   wake();
 }
 die.addEventListener('click', roll);
@@ -994,8 +1076,8 @@ die.addEventListener('click', roll);
 /* ---------- drawing ---------- */
 // A sprite is an image, its corner, its pixel size and its CSS size.
 function sprite(c, flat) {
-  if (!c.J) { const i = 2 * c.b + flat; return [atl[c.pa], ox[i], oy[i], SP, SB]; }
-  const J = jat[c.pa].get(c.b);
+  if (!c.J) { const i = 2 * c.b + flat; return [atl, ox[i], oy[i], SP, SB]; }
+  const J = jat.get(c.b);
   return J && [J, flat * SPJ, 0, SPJ, SBJ];
 }
 function blit(c, [img, x0, y0, sp, sb], a, sx, sy, rot) {
@@ -1007,18 +1089,32 @@ function blit(c, [img, x0, y0, sp, sb], a, sx, sy, rot) {
   ctx.globalAlpha = a;
   ctx.drawImage(img, x0, y0, sp, sp, -sb / 2, -sb / 2, sb, sb);
 }
+// The wipe front's radius, or zero once it has passed.
+function wipeFront() {
+  if (!wipe) return 0;
+  const u = (nowS() - wipe.t0) / WIPE_S;
+  if (u >= 1) { wipe = null; return 0; }
+  return wipe.far * Math.max(0, u);
+}
 function draw() {
   if (!cv.width || !sR) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.clearRect(0, 0, cv.width, cv.height);
-  const k = R / sR;
+  const k = R / sR, wf = wipeFront();
+  // Outside the wipe front the old sheet still shows.
+  if (wf) {
+    const p = new Path2D();
+    p.rect(0, 0, cv.width, cv.height);
+    p.arc(0, dpr * H, dpr * wf, 0, TAU);
+    ctx.save(); ctx.clip(p, 'evenodd'); ctx.drawImage(snap, 0, 0); ctx.restore();
+  }
   // Flat film first, glossy domes over it, swollen cells on top.
   // A jumbo waiting on its sprite skips a frame or two.
-  for (const c of units) { const s = c.g < 0.999 && sprite(c, 1); if (s) blit(c, s, 1, c.s * k * c.flip, c.s * k, c.rot); }
+  for (const c of units) { const s = !c.hid && c.g < 0.999 && sprite(c, 1); if (s) blit(c, s, 1, c.s * k * c.flip, c.s * k, c.rot); }
   for (let pass = 0; pass < 2; pass++) {
     for (const c of units) {
-      if (c.g < 0.001 || (c.s >= 1.03) !== (pass === 1)) continue;
+      if (c.hid || c.g < 0.001 || (c.s >= 1.03) !== (pass === 1)) continue;
       const s = sprite(c, 0);
       if (!s) continue;
       blit(c, s, c.g, c.s * k, c.s * k, 0);
@@ -1026,12 +1122,19 @@ function draw() {
         ctx.globalCompositeOperation = 'multiply';
         // A jumbo dents less, and its shade lifts as it grows taut.
         const a = c.J ? 0.45 * (1 - 0.7 * c.q) : 1;
-        blit(c, c.J ? [jShade, 0, 0, SPJ, SBJ] : [atl[cur], ox[SHADE_SLOT], oy[SHADE_SLOT], SP, SB], a * c.p * c.g, c.s * k, c.s * k, 0);
+        blit(c, c.J ? [jShade, 0, 0, SPJ, SBJ] : [atl, ox[SHADE_SLOT], oy[SHADE_SLOT], SP, SB], a * c.p * c.g, c.s * k, c.s * k, 0);
         ctx.globalCompositeOperation = 'source-over';
       }
     }
   }
   drawBits();
+  // The wipe front is a hard band in the new paint.
+  if (wf) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(0, H, wf, 0, TAU);
+    ctx.lineWidth = Math.max(4, R * 0.28); ctx.strokeStyle = wipe.col; ctx.stroke();
+  }
   const c = ring && own(cells[fi]);
   if (c) {
     const sc = c.s, p = c.J ? jRing : ringP;
@@ -1055,7 +1158,7 @@ function frame(ms) {
   last = ms;
   const moving = step(ms / 1000, dt);
   draw();
-  if (moving || events.length) { raf = requestAnimationFrame(frame); return; }
+  if (moving || events.length || wipe) { raf = requestAnimationFrame(frame); return; }
   // Idle: a timer wakes the loop for the next re-inflation.
   let next = Infinity;
   for (const c of units) if (c.state && c.due < next) next = c.due;
