@@ -39,10 +39,10 @@
     <div class="bar">
       <div class="actions">
         <button class="chip" id="act-shuffle" type="button" aria-keyshortcuts="S">Shuffle</button>
-        <button class="chip" id="act-shake" type="button" aria-keyshortcuts="Space">Shake</button>
         <button class="chip" id="act-tune" type="button" aria-keyshortcuts="T">Tune</button>
         <button class="chip" id="act-eyes" type="button" aria-keyshortcuts="E">Eyes</button>
         <button class="chip" id="act-power" type="button" aria-keyshortcuts="P">Power</button>
+        <button class="chip" id="act-lantern" type="button" aria-pressed="false" aria-keyshortcuts="L">Lantern</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a TV</dt><dd>change channel</dd></div>
@@ -160,7 +160,7 @@ function rest() {
     if (!raf && !held && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 's', 'S', 't', 'T', 'e', 'E', 'p', 'P']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 's', 'S', 't', 'T', 'e', 'E', 'p', 'P', 'l', 'L']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -1250,7 +1250,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const TREE_FS = `
-uniform vec3 uBark, uTip, uRim, uKey, uKeyDir, uSky, uGround;
+uniform vec3 uBark, uTip, uRim, uKey, uKeyDir, uSky, uGround, uLanP, uLanC;
 uniform vec3 uTvP[16], uTvC[16];
 varying vec3 vW, vN;
 varying vec4 vI;
@@ -1261,7 +1261,7 @@ void main() {
   base *= 0.92 + 0.08 * sin(vI.w * 140.0 + atan(N.z, N.x) * 5.0);
   float wrap = max((dot(N, uKeyDir) + 0.45) / 1.45, 0.0);
   // The front of the tree stays dark; the screens light it.
-  vec3 col = base * (mix(uGround, uSky, N.y * 0.5 + 0.5) * 0.45 + uKey * wrap * 0.3);
+  vec3 col = base * (mix(uGround, uSky, N.y * 0.5 + 0.5) * 0.3 + uKey * wrap * 0.18);
   vec3 tv = vec3(0.0);
   for (int i = 0; i < 16; i++) {
     vec3 L = uTvP[i] - vW;
@@ -1269,7 +1269,11 @@ void main() {
     L *= inversesqrt(d2);
     tv += uTvC[i] * max(dot(N, L) * 0.75 + 0.25, 0.0) / (1.0 + d2 * 5.0);
   }
-  col += base * tv * 9.0;
+  col += base * tv * 6.0;
+  // A lantern on the ground warms the front.
+  vec3 LL = uLanP - vW;
+  float ld = dot(LL, LL);
+  col += base * uLanC * (max(dot(N, LL * inversesqrt(ld)), 0.0) * 0.85 + 0.1) / (1.0 + ld * 1.4);
   // A cold moon behind the tree rims its edges.
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.5);
   col += uRim * rim * (0.25 + 0.75 * max(dot(N, normalize(vec3(0.35, 0.55, -0.75))), 0.0)) * 1.1;
@@ -1311,6 +1315,38 @@ void main() {
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}`;
+// The ground is a pool of dark earth that fades into the night.
+// Screens and the lantern light it from above.
+const GROUND_VS = `
+varying vec3 vW;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const GROUND_FS = `
+uniform vec3 uSoil, uMoon, uLanP, uLanC;
+uniform vec3 uTvP[16], uTvC[16];
+varying vec3 vW;
+${LIB}
+void main() {
+  float r = length(vW.xz * vec2(0.7, 1.0));
+  vec3 base = uSoil * (0.7 + 0.6 * fbm(vW.xz * 2.5));
+  vec3 col = base * 0.25;
+  vec3 tv = vec3(0.0);
+  for (int i = 0; i < 16; i++) {
+    vec3 L = uTvP[i] - vW;
+    float d2 = dot(L, L);
+    tv += uTvC[i] * max(L.y, 0.0) * inversesqrt(d2) / (1.0 + d2 * 1.6);
+  }
+  col += base * tv * 7.0;
+  vec3 LL = uLanP - vW;
+  float ld = dot(LL, LL);
+  col += base * uLanC * max(LL.y, 0.0) * inversesqrt(ld) / (1.0 + ld * 2.5) * 1.6;
+  // Moonlight grazes the far side of the patch.
+  col += uMoon * 0.05 * smoothstep(0.0, -3.0, vW.z) * fbm(vW.xz * 6.0);
+  gl_FragColor = vec4(col, 1.0 - smoothstep(2.6, 5.2, r));
 }`;
 const FINAL_VS = `
 varying vec2 vUv;
@@ -1685,6 +1721,84 @@ function stepWatch(dt) {
   return watch.on;
 }
 
+/* ---------- the lantern: a small warm light set down on the ground ---------- */
+const lantern = { on: false, fade: 0, t: 0, x: 0.75, z: 0.55, group: null, glass: null, light: null };
+const WARM = linear(0.86, 0.12, 62);
+let floor = null;
+// A dark tin lantern: base, glass, four posts, a cap and a handle.
+function buildLantern() {
+  const g = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: col3(linear(0.22, 0.01, 280)), metalness: 0.7, roughness: 0.45, envMapIntensity: 0.3 });
+  const add = (geo, m, y) => { const o = new THREE.Mesh(geo, m); o.position.y = y; g.add(o); return o; };
+  add(new THREE.CylinderGeometry(0.085, 0.095, 0.035, 20), metal, 0.0175);
+  lantern.glass = add(new THREE.CylinderGeometry(0.06, 0.06, 0.16, 20), new THREE.MeshBasicMaterial({ color: 0xffffff }), 0.115);
+  for (let k = 0; k < 4; k++) {
+    const a = (k + 0.5) * (Math.PI / 2), o = add(new THREE.BoxGeometry(0.014, 0.18, 0.014), metal, 0.115);
+    o.position.x = Math.cos(a) * 0.066;
+    o.position.z = Math.sin(a) * 0.066;
+  }
+  add(new THREE.ConeGeometry(0.095, 0.075, 20), metal, 0.232);
+  add(new THREE.TorusGeometry(0.042, 0.007, 8, 20, Math.PI), metal, 0.27);
+  g.scale.setScalar(1.35);
+  g.visible = false;
+  // The light stays in the scene at zero, so shaders never rebuild.
+  lantern.light = new THREE.PointLight(col3(WARM), 0, 7, 2);
+  lantern.light.position.y = 0.12;
+  g.add(lantern.light);
+  lantern.group = g;
+  g.position.set(lantern.x, 0, lantern.z);
+  return g;
+}
+// The flame flickers on two slow beats; reduced motion holds it steady.
+function stepLantern(dt) {
+  const goal = lantern.on ? 1 : 0;
+  lantern.fade += (goal - lantern.fade) * Math.min(1, dt * 5);
+  if (Math.abs(goal - lantern.fade) < 0.002) lantern.fade = goal;
+  lantern.t += dt;
+  const f = lantern.fade * (reduce ? 0.95 : 0.86 + 0.08 * Math.sin(lantern.t * 11.3) + 0.06 * Math.sin(lantern.t * 23.7 + 1.3));
+  const TU = treeMat.uniforms, k = 0.4 + 2.4 * f;
+  TU.uLanP.value.set(lantern.x, 0.22, lantern.z);
+  TU.uLanC.value.set(WARM[0], WARM[1], WARM[2]).multiplyScalar(f * 0.55);
+  lantern.light.intensity = f * 1.0;
+  lantern.glass.material.color.setRGB(WARM[0] * k, WARM[1] * k, WARM[2] * k, THREE.LinearSRGBColorSpace);
+  lantern.group.visible = lantern.on || lantern.fade > 0.01;
+  return lantern.fade > 0;
+}
+// A match strikes and the wick catches.
+function strike() {
+  const a = live();
+  if (!a || voices >= MAXV - 2) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, clamp(lantern.x / 2, -1, 1));
+  burst(a, d, t, 'highpass', 3200, 0.7, 0.3 * g, 0.012, 0.07);
+  burst(a, d, t + 0.06, 'bandpass', 900, 0.8, 0.2 * g, 0.09, 0.35);
+  setTimeout(() => d.disconnect(), 1200);
+}
+function toggleLantern() {
+  lantern.on = !lantern.on;
+  document.getElementById('act-lantern').setAttribute('aria-pressed', String(lantern.on));
+  if (lantern.on) strike();
+  wake();
+}
+// The lit lantern is picked within a finger's width of its glass.
+function nearLantern(e) {
+  if (!lantern.on) return false;
+  const r = panel.getBoundingClientRect(), p = ndcOf(lantern.x, 0.18, lantern.z);
+  return Math.hypot(((p.x + 1) / 2) * r.width + r.left - e.clientX, ((1 - p.y) / 2) * r.height + r.top - e.clientY) < 34;
+}
+// Dragged, it slides on the ground, inside the patch and clear of the trunk.
+function moveLantern(e) {
+  toNdc(e);
+  floor = floor || new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  if (!ray.ray.intersectPlane(floor, hitV)) return;
+  let x = hitV.x, z = hitV.z;
+  const er = Math.hypot(x * 0.7, z), tr = Math.hypot(x, z);
+  if (er > 3.0) { x *= 3.0 / er; z *= 3.0 / er; }
+  else if (tr < 0.42) { x *= 0.42 / Math.max(tr, 1e-3); z *= 0.42 / Math.max(tr, 1e-3); }
+  lantern.x = x;
+  lantern.z = z;
+  lantern.group.position.set(x, 0, z);
+}
+
 /* ---------- rendering ---------- */
 let THREE = null, RoundedBoxGeometry = null, mergeGeometries = null;
 let renderer = null, scene = null, camera = null, composer = null, canvas = null;
@@ -1823,7 +1937,7 @@ function makeSets() {
     const info = buildSet(def), [cL, cC, hueV] = SET_COLS[i % SET_COLS.length];
     const body = new THREE.MeshPhysicalMaterial({
       // Cases sit darker than the screens, so the pictures lead.
-      color: col3(linear(cL * 0.78, cC * 0.85, hueV)), roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.3, envMapIntensity: 0.16,
+      color: col3(linear(cL * 0.32, cC * 0.7, hueV)), roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.3, envMapIntensity: 0.08,
     });
     const group = new THREE.Group();
     // The bezel is a deep shade of the body colour.
@@ -1982,6 +2096,7 @@ function step(dt, now) {
   }
   if (stepParty(dt)) act = true;
   if (stepZoom(dt)) act = true;
+  if (stepLantern(dt)) busy = true;
   if (stepWatch(dt)) act = true;
   if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) {
     busy = true;
@@ -2161,6 +2276,12 @@ panel.addEventListener('pointerdown', e => {
   kbd = false;
   showRing();
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  if (nearLantern(e)) {
+    held = { id: e.pointerId, lantern: true };
+    panel.classList.add('held');
+    wake();
+    return;
+  }
   const s = pick(e);
   held = { id: e.pointerId, s, x0: e.clientX, y0: e.clientY, drag: false, long: false, lx: e.clientX, t0: performance.now() };
   if (s) {
@@ -2191,12 +2312,13 @@ panel.addEventListener('pointermove', e => {
   if (!held) {
     if (e.pointerType === 'mouse') {
       const h = pick(e);
-      panel.classList.toggle('grab', !!h);
+      panel.classList.toggle('grab', !!h || nearLantern(e));
       if (h !== hover) { hover = h; wake(); }
     }
     return;
   }
   if (e.pointerId !== held.id) return;
+  if (held.lantern) { moveLantern(e); wake(); return; }
   if (!held.drag && Math.hypot(e.clientX - held.x0, e.clientY - held.y0) > 7) { held.drag = true; clearTimeout(holdT); }
   if (!held.drag) return;
   const s = held.s;
@@ -2216,6 +2338,7 @@ panel.addEventListener('pointerleave', () => { pointerIn = false; hover = null; 
 function lift(e) {
   if (!held || e.pointerId !== held.id) return;
   clearTimeout(holdT);
+  if (held.lantern) { held = null; panel.classList.remove('held'); wake(); return; }
   const s = held.s;
   if (s) {
     if (!held.drag && !held.long && e.type === 'pointerup') changeChannel(s);
@@ -2337,14 +2460,15 @@ const ACTS = {
     if (party.phase === 'idle' && !watch.on && sets.some(s => s.power)) startParty((party.kind + 1 + Math.floor(Math.random() * 3)) % 4);
   },
   eyes: () => startWatch(),
+  lantern: toggleLantern,
   // With any set lit, all go dark; with all dark, all come on.
   power() {
     const on = !sets.some(s => s.power);
     for (const s of sets) setTimeout(() => powerSet(s, on), waveDelay(s, 140));
   },
 };
-for (const k of Object.keys(ACTS)) document.getElementById('act-' + k).addEventListener('click', () => { if (ready) { ACTS[k](); wake(); } });
-const ACT_KEYS = { s: 'shuffle', t: 'tune', e: 'eyes', p: 'power' };
+for (const k of Object.keys(ACTS)) document.getElementById('act-' + k)?.addEventListener('click', () => { if (ready) { ACTS[k](); wake(); } });
+const ACT_KEYS = { s: 'shuffle', t: 'tune', e: 'eyes', p: 'power', l: 'lantern' };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !ready || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
@@ -2452,15 +2576,15 @@ async function start() {
   pm.dispose();
   await idle();
   // The night light is low; the screens do most of the lighting.
-  scene.add(new THREE.HemisphereLight(col3(PAL.sky), col3(PAL.ground), 0.3));
-  const key = new THREE.DirectionalLight(col3(PAL.key), 0.6);
+  scene.add(new THREE.HemisphereLight(col3(PAL.sky), col3(PAL.ground), 0.08));
+  const key = new THREE.DirectionalLight(col3(PAL.key), 0.12);
   key.position.set(-2.5, 4, 5);
   // The moon sits behind the tree and rims the sets in blue.
   const rim = new THREE.DirectionalLight(col3(PAL.rim), 1.3);
   rim.position.set(2.5, 3, -4);
   scene.add(key, rim);
   mats = {
-    trim: new THREE.MeshStandardMaterial({ color: col3(PAL.cream), roughness: 0.45, envMapIntensity: 0.35 }),
+    trim: new THREE.MeshStandardMaterial({ color: col3(linear(0.55, 0.03, 85)), roughness: 0.45, envMapIntensity: 0.15 }),
     metal: new THREE.MeshStandardMaterial({ color: 0xb8bcc8, metalness: 1, roughness: 0.3, envMapIntensity: 0.55 }),
     dark: new THREE.MeshStandardMaterial({ color: col3(PAL.dark), roughness: 0.5, envMapIntensity: 0.5 }),
     // Cords and hooks are dull steel.
@@ -2488,11 +2612,19 @@ async function start() {
       uBark: { value: V(PAL.bark) }, uTip: { value: V(PAL.barkTip) }, uRim: { value: V(PAL.barkRim) }, uKey: { value: V(PAL.key).multiplyScalar(0.55) },
       uKeyDir: { value: new THREE.Vector3(-2.5, 4, 5).normalize() }, uSky: { value: V(PAL.sky).multiplyScalar(0.4) }, uGround: { value: V(PAL.ground).multiplyScalar(0.4) },
       uTvP: { value: Array.from({ length: 16 }, () => new THREE.Vector3(0, -50, 0)) }, uTvC: { value: Array.from({ length: 16 }, v3) },
+      uLanP: { value: new THREE.Vector3(0, -50, 0) }, uLanC: { value: v3() },
     },
   });
   treeMesh = new THREE.Mesh(new THREE.BufferGeometry(), treeMat);
   treeMesh.frustumCulled = false;
-  scene.add(bg, treeMesh);
+  const TU = treeMat.uniforms;
+  const groundMat = new THREE.ShaderMaterial({
+    vertexShader: GROUND_VS, fragmentShader: GROUND_FS, transparent: true, depthWrite: false,
+    uniforms: { uSoil: { value: V(linear(0.17, 0.025, 300)) }, uMoon: { value: V(PAL.rim) }, uLanP: TU.uLanP, uLanC: TU.uLanC, uTvP: TU.uTvP, uTvC: TU.uTvC },
+  });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(16, 16).rotateX(-Math.PI / 2), groundMat);
+  ground.frustumCulled = false;
+  scene.add(bg, treeMesh, ground, buildLantern());
 
   atlasRT = new THREE.WebGLRenderTarget(TW * TC, TH * TC, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   const v4 = () => Array.from({ length: 16 }, () => new THREE.Vector4());
