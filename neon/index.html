@@ -1084,10 +1084,18 @@ void main() {
     col = metal(N, uv, 0.42) * (1.0 - 0.6 * gr) * (0.45 + 0.55 * nz);
   } else {
     float F = 0.04 + 0.96 * pow(1.0 - nz, 5.0);
-    vec3 bg = wallAt(fc - N.xy * uR * 0.85);
+    // Dark glass flips and squeezes the scene behind it, lit tubes too.
+    // Lit gas hides its own light, so only dark glass looks far.
+    float clear = 1.0 - clamp(gas.w * 3.0, 0.0, 1.0);
+    vec2 fl = -N.xy * uR * mix(0.85, 2.7, clear);
+    vec2 fuv = (fc + fl) / uRes;
+    // The glass also carries the near halo, as a light pipe does.
+    vec3 bg = wallAt(fc + fl) + (texture(uEm, fuv).rgb * 0.8 + texture(uHalo, fuv).rgb * 0.7) * clear;
     vec3 tint = mix(vec3(1.0), gas.rgb / max(max(gas.r, gas.g), max(gas.b, 1e-3)), 0.12);
     // The glass wall, seen edge-on, darkens and tints the rim.
     float band = smoothstep(inner - 0.08, inner + 0.05, rr);
+    // The rim bends in the light of tubes beside it.
+    bg += texture(uEm, (fc + N.xy * uR * 1.7) / uRes).rgb * band * 0.9;
     col = bg * tint * (1.0 - F) * mix(0.96, 0.62, band);
     vec3 env = texture(uGlow, uv + R.xy * 0.04).rgb * uWallK * 0.5 + uKey * 0.06;
     float k1 = pow(max(dot(R, uLamb), 0.0), 140.0), k2 = pow(max(dot(R, normalize(uLamb * vec3(-1.0, -0.7, 1.0))), 0.0), 26.0);
