@@ -36,7 +36,7 @@
   --muted: oklch(0.64 0.02 275);
   --focus: oklch(0.84 0.13 205);
   --pick: oklch(0.7 0.18 320 / 0.35);
-  --housing: oklch(0.175 0.014 262);
+  --housing: oklch(0.19 0.034 258);
   --ink: oklch(0.93 0.03 84);
   --amber: oklch(0.82 0.15 72);
   --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
@@ -75,9 +75,9 @@ main { display: grid; gap: 14px; min-width: 0; }
   position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
   border-radius: 18px; overflow: hidden; cursor: pointer;
   background:
-    radial-gradient(90% 60% at 50% -12%, oklch(0.34 0.045 70 / 0.42), transparent 70%),
+    radial-gradient(80% 55% at 50% -14%, oklch(0.42 0.07 68 / 0.5), transparent 72%),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
-    linear-gradient(to bottom, oklch(0.2 0.016 262), var(--housing) 55%, oklch(0.145 0.012 262));
+    linear-gradient(to bottom, oklch(0.23 0.038 256), var(--housing) 50%, oklch(0.145 0.03 262));
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
 }
 .stage:focus-visible { outline-offset: 3px; }
@@ -87,8 +87,8 @@ main { display: grid; gap: 14px; min-width: 0; }
 /* Each row sits in a recessed rail with a lit lower lip. */
 .rail {
   position: absolute; border-radius: 6px;
-  background: linear-gradient(to bottom, oklch(0.095 0.01 262), oklch(0.125 0.012 262));
-  border-top: 1px solid oklch(0.07 0.008 262); border-bottom: 1px solid oklch(0.3 0.016 262 / 0.75);
+  background: linear-gradient(to bottom, oklch(0.095 0.018 262), oklch(0.13 0.024 262));
+  border-top: 1px solid oklch(0.07 0.012 262); border-bottom: 1px solid oklch(0.36 0.04 258 / 0.7);
 }
 .m { position: absolute; contain: layout size style; }
 /* Axle pins show through the split at both sides. */
@@ -127,8 +127,9 @@ main { display: grid; gap: 14px; min-width: 0; }
 .glare {
   position: absolute; inset: 0; pointer-events: none;
   background:
-    radial-gradient(70% 55% at 50% 0%, oklch(0.95 0.04 80 / 0.07), transparent 70%),
-    radial-gradient(120% 100% at 50% 45%, transparent 55%, oklch(0.08 0.01 262 / 0.55));
+    linear-gradient(112deg, transparent 34%, oklch(0.98 0.02 250 / 0.035) 44%, transparent 56%),
+    radial-gradient(70% 55% at 50% 0%, oklch(0.95 0.05 78 / 0.08), transparent 70%),
+    radial-gradient(120% 100% at 50% 45%, transparent 55%, oklch(0.08 0.02 262 / 0.55));
 }
 /* On the dark housing the line keeps the dark muted tone. */
 .fail {
@@ -298,7 +299,7 @@ function unlock(e) {
 // Touchend is the gesture iOS needs.
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
 
-// Landed flaps this frame, spread over the frame as a clatter.
+// Flaps that land in one frame click across that frame.
 const landC = [], landF = [];
 function clatter(dt) {
   const n = landC.length, a = live();
@@ -471,7 +472,7 @@ const hhmm = d => `${two(d.getHours())}:${two(d.getMinutes())}`;
 let cityI = 0, nextMin = 0, deps = [];
 function departures(n) {
   const now = Math.floor(Date.now() / 60000);
-  if (nextMin < now + 1 || nextMin > now + 720) nextMin = now + 2 + Math.floor(rng() * 4);
+  if (nextMin < now + 1 || nextMin > now + 240) nextMin = now + 2 + Math.floor(rng() * 4);
   const out = [];
   for (let k = 0; k < n; k++) {
     const [p, dg, col] = KINDS[Math.floor(rng() * KINDS.length)];
@@ -483,15 +484,19 @@ function departures(n) {
 }
 // Wide boards use one row per train; narrow boards use two.
 const wide = () => cols >= 16;
-const depCount = () => (wide() ? rows - 1 : Math.floor((rows - 1) / 2));
-const header = () => (wide() ? 'DEPARTURES' : 'DEP').padEnd(cols - 5) + hhmm(new Date());
+// On narrow boards, a spare row holds the clock.
+const headRows = () => (wide() || rows % 2 ? 1 : 2);
+const depCount = () => (wide() ? rows - 1 : Math.floor((rows - headRows()) / 2));
+function head() {
+  const t = hhmm(new Date());
+  if (headRows() === 2) return ['DEPARTURES', t.padStart(cols)];
+  return [(wide() ? 'DEPARTURES' : 'DEP').padEnd(cols - 5) + t];
+}
 function pageText() {
-  const lines = [header()];
-  if (wide()) {
-    for (const d of deps) lines.push(d.t + d.col + d.city.padEnd(8) + ' ' + d.no.padStart(3));
-  } else {
-    if ((rows - 1) % 2) lines.push('');
-    for (const d of deps) lines.push(d.t + ' ' + d.no.padStart(4), d.col + ' ' + d.city);
+  const lines = head();
+  for (const d of deps) {
+    if (wide()) lines.push(d.t + d.col + d.city.padEnd(8) + ' ' + d.no.padStart(3));
+    else lines.push(d.t + ' ' + d.no.padStart(4), d.col + ' ' + d.city);
   }
   return lines.map(l => l.padEnd(cols).slice(0, cols));
 }
@@ -617,7 +622,9 @@ function shuffle() {
 }
 // The clock row turns over on the minute.
 function tick() {
-  if (shown && !rowOwned[0]) [...header()].forEach((ch, c) => setTarget(mods[0][c], code(ch), reduce ? 0 : c * 0.03));
+  if (shown) head().forEach((l, r) => {
+    if (!rowOwned[r]) [...l.padEnd(cols)].forEach((ch, c) => setTarget(mods[r][c], code(ch), reduce ? 0 : c * 0.03));
+  });
   setTimeout(tick, 60000 - (Date.now() % 60000) + 40);
 }
 
@@ -646,14 +653,12 @@ function frame(ms) {
 
 /* ---------- input ---------- */
 let drag = null, typing = false, typedAt = 0;
-function cellAt(x, y, loose) {
+// A point in a gap belongs to the nearest flap.
+function cellAt(x, y) {
   if (!geo) return null;
   const { w, h, gx, gy, bx, by } = geo;
-  const fx = (x - bx + (loose ? gx / 2 : 0)) / (w + gx), fy = (y - by + (loose ? gy / 2 : 0)) / (h + gy);
-  const c = Math.floor(fx), r = Math.floor(fy);
-  if (c < 0 || r < 0 || c >= cols || r >= rows) return null;
-  if (!loose && ((fx - c) * (w + gx) > w || (fy - r) * (h + gy) > h)) return null;
-  return mods[r][c];
+  const c = Math.floor((x - bx + gx / 2) / (w + gx)), r = Math.floor((y - by + gy / 2) / (h + gy));
+  return c < 0 || r < 0 || c >= cols || r >= rows ? null : mods[r][c];
 }
 // A crossed flap spins; the rows beside it ripple a moment later.
 function cascade(m, k) {
@@ -669,7 +674,7 @@ function local(e) {
 }
 stage.addEventListener('pointerdown', e => {
   if (drag || !geo || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  const [x, y] = local(e), m = cellAt(x, y, false);
+  const [x, y] = local(e), m = cellAt(x, y);
   drag = { id: e.pointerId, x, y, t: e.timeStamp, m, v: 0 };
   try { stage.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   typing = false;
@@ -690,7 +695,7 @@ stage.addEventListener('pointermove', e => {
   const k = Math.round(clamp(2 + drag.v * 0.32, 2, 18));
   const steps = Math.ceil(dist / (pitch * 0.25));
   for (let i = 1; i <= steps; i++) {
-    const m = cellAt(drag.x + (dx * i) / steps, drag.y + (dy * i) / steps, true);
+    const m = cellAt(drag.x + (dx * i) / steps, drag.y + (dy * i) / steps);
     if (m && m !== drag.m) { drag.m = m; cascade(m, k); }
   }
   drag.x = x;
