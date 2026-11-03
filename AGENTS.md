@@ -100,7 +100,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
   `shared/stim.js` imports culori by the same URL, so it loads once. Its colour helpers are `oklchLinear`, `oklchRgb`, `linFit` and `css([L, C, h], alpha)`.
   For sound, `audioKit()` returns a kit; `await kit.tone()` gives Tone.js on the kit's context. Connect Tone nodes to `kit.out`, so mute-by-default, gesture start and sleep still hold.
   Pop field (`pop/`) is the reference port.
-- Intro lines, in order: main title (`name`), translation (`nl`, `ipa`), subtitle (`tag`), subtitle translation (`tagNl`), audio notice, classic notice. Lab toys also carry a lab tag (`sub`).
+- Intro lines, in order: main title (`name`), classic notice, translation (`nl`, `ipa`), subtitle (`tag`), subtitle translation (`tagNl`), audio notice. The flash stages sit centred; the emblem rises as the lines open. Lab toys also carry a lab tag (`sub`).
 - Fresh is the standard: the menu always opens a toy's `index.html`. Classic stays an option wherever an older build exists, and its intro adds a `< CLASSIC >` line.
 - Legacy: when a toy ports to the library set, its pre-port page is kept as `<id>/legacy.html` (with `noindex`). Set `legacy: true` on the toy in `toys.json`; the shell header then shows a Legacy pill, and the legacy page shows Current.
 - Control bar standard (Tom, 2026-11-03). Left to right, one row:

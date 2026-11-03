@@ -58,7 +58,7 @@ const keys = (el, list) => {
 };
 const pct = v => `${(100 * v).toFixed(2)}%`;
 
-// The lines, in order: main title, translation, subtitle, subtitle translation, audio notice, classic notice.
+// The lines, in order: main title, classic notice, translation, subtitle, subtitle translation, audio notice.
 // Lab toys also carry a lab tag under the translation.
 // Every beat of the shipped intro (Snap), in frames at 30 fps or in milliseconds.
 // The intro lab at /introlab/ edits a copy of this table live.
@@ -276,11 +276,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
   }
 
-  // A classic build says so in the last line.
+  // A classic build says so right under the main title.
   let cls = null;
   if (classic && nameEl) {
     cls = Object.assign(document.createElement('span'), { className: 'intro-classic', textContent: '< CLASSIC >' });
-    text.append(cls);
+    nameEl.after(cls);
   }
 
   if (RM.matches) {
@@ -321,7 +321,6 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     const icon = soundNote.glyph ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" fill="none" stroke="currentColor" stroke-width="2.6"/><rect x="2.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/><rect x="16.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/></svg>' : '';
     snd.innerHTML = icon + (soundNote.words ? `<span>${soundNote.words}</span>` : '');
     text.append(snd);
-    if (cls) text.append(cls);
   }
   // A toy Tom signs off shows a tick cut into the box at size.
   const big = badge || name;
@@ -333,11 +332,21 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     big.append(tick);
   }
   // Each line starts closed in the variety's own way, then opens on its beat.
-  const lines = [badge ? name : null, nl, numAt === 'subs' ? num : null, sub,
-    text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, cls, numAt === 'bottom' ? num : null];
-  const lags = [0, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.clsLag, T.sndLag];
+  const lines = [badge ? name : null, cls, nl, numAt === 'subs' ? num : null, sub,
+    text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
+  const lags = [0, T.clsLag, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
   const R = REVEAL[V.reveal] || REVEAL.unfurl;
   lines.forEach(el => { if (el) Object.assign(el.style, R.shut); });
+  // The flash stages sit dead centre in the page.
+  // The hidden lines still take layout, so the box measures its own offset.
+  let dy = 0;
+  if (badge && !nameFlash) {
+    badge.style.translate = 'none';
+    const r = root.getBoundingClientRect(), b = badge.getBoundingClientRect();
+    dy = Math.round(r.top + r.height / 2 - (b.top + b.height / 2));
+    badge.style.setProperty('--dy', `${dy}px`);
+    badge.style.translate = `0 calc(${dy}px + ${T.iconY}vh)`;
+  }
   // A try-out: the name can share the flash, boxed and blown up with the mark.
   const both = nameFlash && badge;
   const box = on => {
@@ -396,9 +405,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   } else box(false);
   if (both) box(false);
   // The emblem moves to its rest size and place as the lines open.
-  if (badge && (T.flashScale !== T.restScale || T.iconY !== T.restY)) {
+  if (badge && (dy || T.flashScale !== T.restScale || T.iconY !== T.restY)) {
     play(emblem, p => ({ '--emblem-k': (T.flashScale + (T.restScale - T.flashScale) * p).toFixed(3) }), T.unfurl, settle);
-    play(badge, p => ({ translate: `0 ${(T.iconY + (T.restY - T.iconY) * p).toFixed(2)}vh` }), T.unfurl, settle);
+    play(badge, p => ({ translate: `0 calc(${(dy * (1 - p)).toFixed(1)}px + ${(T.iconY + (T.restY - T.iconY) * p).toFixed(2)}vh)` }), T.unfurl, settle);
   }
   // Each line opens a beat after the one above; the last one is awaited.
   let last = null, first = true;

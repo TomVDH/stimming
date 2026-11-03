@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=11">
+<link rel="stylesheet" href="../shared/intro.css?v=12">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -127,13 +127,13 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=11';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=12';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
   Flash: { lead: [0, 20, 1, 'f'], pop: [0, 10, 1, 'f'], popScale: [1, 5, 0.1, 'x'], flash: [0, 30, 1, 'f'] },
   Icon: { flashScale: [0.4, 2.5, 0.05, 'x'], iconY: [-30, 30, 0.5, 'vh'], restScale: [0.4, 2.5, 0.05, 'x'], restY: [-30, 30, 0.5, 'vh'] },
-  Lines: { unfurl: [50, 1500, 10, 'ms'], nlLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], sndLag: [0, 15, 1, 'f'], clsLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'] },
+  Lines: { unfurl: [50, 1500, 10, 'ms'], clsLag: [0, 15, 1, 'f'], nlLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], sndLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'] },
   Hold: { readBase: [0, 3000, 50, 'ms'], readPer: [0, 60, 1, 'ms'], readCap: [0, 5000, 50, 'ms'], hold: [500, 6000, 50, 'ms'] },
   Exit: { wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'] },
 };
@@ -366,8 +366,10 @@ function applyPose() {
     }
   }
   const scale = held === 'lines' ? t.restScale : t.flashScale, y = held === 'lines' ? t.restY : t.iconY;
+  // The flash stages keep the box's centring offset; the lines beat has none.
+  const dy = held === 'lines' ? '0px' : 'var(--dy, 0px)';
   emblem.style.setProperty('--emblem-k', scale);
-  badge.style.translate = `0 ${y}vh`;
+  badge.style.translate = `0 calc(${dy} + ${y}vh)`;
 }
 function pose(ph) {
   if (held === ph) applyPose();
@@ -435,7 +437,7 @@ let runStart = 0, tlTotal = 1;
 function beats() {
   const t = T(), v = V(), info = toys[toySel.value] || {};
   const note = soundNote(), hasSnd = !!info.sound && (note.glyph || !!note.words);
-  const lines = [[!!info.emblem, 0], [!!info.nl, t.nlLag], [!!info.number && numSel.value === 'subs', t.nlLag], [!!info.sub, t.subLag], [!!info.tag, t.tagLag], [!!info.tagNl, t.tagNlLag], [hasSnd, t.sndLag], [classicBox.checked, t.clsLag], [!!info.number && numSel.value === 'bottom', t.sndLag]].filter(([on]) => on);
+  const lines = [[!!info.emblem, 0], [classicBox.checked, t.clsLag], [!!info.nl, t.nlLag], [!!info.number && numSel.value === 'subs', t.nlLag], [!!info.sub, t.subLag], [!!info.tag, t.tagLag], [!!info.tagNl, t.tagNlLag], [hasSnd, t.sndLag], [!!info.number && numSel.value === 'bottom', t.sndLag]].filter(([on]) => on);
   const lags = lines.slice(1).reduce((a, [, lag]) => a + F(lag), 0);
   const open = { type: F(Math.min(20, Math.max(4, (info.tagNl || info.tag || info.name || '').length))), stamp: F(3), glitch: F(4), cut: F(1) }[v.reveal] ?? t.unfurl;
   const seg = {};
