@@ -247,6 +247,13 @@ const REVEAL = {
   },
 };
 
+// The largest flash scale that leaves a margin around the box.
+export function popFit(root, box, want) {
+  const r = root.getBoundingClientRect(), b = box.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
+  const cy = b.top + b.height / 2 - r.top, margin = 0.06 * r.height;
+  return Math.min(want, (2 * (cy - margin)) / h, (r.width - 2 * margin) / w).toFixed(3);
+}
+
 // The size knobs, as the CSS variables they set.
 const SIZES = { logoK: '--logo-k', nameK: '--name-k', nlK: '--nl-k', tagK: '--tag-k', tagNlK: '--tagnl-k', sndK: '--snd-k', clsK: '--cls-k', gapK: '--gap-k' };
 
@@ -418,9 +425,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
   } else {
     // For a few frames the flash fills the eye, then it snaps to its place.
-    // The cap keeps the box's top edge on screen; the logo's point stays put.
-    const b = big.getBoundingClientRect();
-    blow.style.transform = `scale(${Math.min(T.popScale, (2 * (b.top + b.height / 2) - 16) / b.height).toFixed(3)})`;
+    // The cap keeps a clear margin on every side; the logo's point stays put.
+    blow.style.transform = `scale(${popFit(root, big, T.popScale)})`;
   }
   await wait(T.pop);
   await gate('pop');
