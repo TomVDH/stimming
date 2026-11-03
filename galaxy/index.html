@@ -38,6 +38,12 @@
 .add .chip.icon svg .solid { fill: currentColor; stroke: none; }
 /* Objects sit four to a row. */
 #add { display: grid; grid-template-columns: repeat(4, auto); }
+/* Settings sits at the right edge, next to the (i). */
+.setter { margin-left: auto; }
+.setter + .how-tip { margin-left: 0; }
+#setBtn svg { stroke-linecap: round; }
+/* The Settings tray hangs from its right edge. */
+.add.sets { left: auto; right: 0; }
 @media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 </style>
 </head>
@@ -79,7 +85,12 @@
       </div>
       <div class="actions" id="ctl">
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
-        <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
+      </div>
+      <div class="adder setter" id="setter">
+        <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+        <div class="add sets" id="sets" role="group" aria-label="Settings">
+          <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
+        </div>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>place the object in Add</dd></div>
@@ -1821,9 +1832,9 @@ async function start() {
     addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
     return open;
   }
-  const adder = document.querySelector('.adder'), addBtn = document.getElementById('addBtn');
+  const addBtn = document.getElementById('addBtn');
   const addName = document.getElementById('addName'), addBs = [...document.querySelectorAll('#add .chip')];
-  const openTray = popover(adder, addBtn);
+  const openTray = popover(addBtn.closest('.adder'), addBtn);
   addBs.forEach(b => b.addEventListener('click', () => {
     pick = b.dataset.kind;
     addBs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
@@ -1835,7 +1846,9 @@ async function start() {
   const grav = document.getElementById('grav');
   grav.addEventListener('input', () => { pace = Number(grav.value); });
   document.getElementById('clear').addEventListener('click', clearAll);
-  document.getElementById('reset').addEventListener('click', resetAll);
+  // Reset lives in Settings, so it never sits beside Clear.
+  const openSets = popover(document.getElementById('setter'), document.getElementById('setBtn'));
+  document.getElementById('reset').addEventListener('click', () => { resetAll(); openSets(false); });
 
   /* ---------- async warm-up ---------- */
   resize();
