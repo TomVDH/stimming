@@ -172,7 +172,7 @@ function linear(L, C, h) {
   for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
   return c.map(v => clamp(v));
 }
-// Three glow hues per palette, a tip hue, a hot core and the room.
+// Each palette holds glow hues, a tip, a hot core and a room.
 const PAL = {
   violet: { glows: [[0.6, 0.28, 338], [0.57, 0.27, 302], [0.57, 0.25, 270]], tip: [0.6, 0.22, 262], core: [0.95, 0.06, 345], room: [0.115, 0.022, 292] },
   ice: { glows: [[0.72, 0.15, 222], [0.64, 0.2, 252], [0.8, 0.12, 196]], tip: [0.64, 0.19, 268], core: [0.97, 0.035, 215], room: [0.115, 0.02, 250] },
@@ -267,7 +267,8 @@ function unlock(e) {
 // Touchend is the gesture iOS needs.
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
 
-// The mains hum: 50 Hz harmonics, strongest at 100 Hz, under a low-pass.
+// The mains hum stacks 50 Hz harmonics under a low-pass.
+// The 100 Hz harmonic is the strongest.
 function buildHum() {
   const N = 16, re = new Float32Array(N), im = new Float32Array(N);
   [0, 0.3, 1, 0.3, 0.55, 0.14, 0.26, 0.06, 0.12, 0.04, 0.07, 0, 0.035, 0, 0.02, 0].forEach((v, i) => { im[i] = v; });
@@ -350,7 +351,7 @@ function crackle(x, size, kind) {
 }
 
 /* ---------- the camera, shared by the shader and the input ---------- */
-// The globe has radius 1 and sits on its base; the floor is at YBOT.
+// The globe has radius 1 and sits on the base.
 const RE = 0.1, RIN = 0.972, YTOP = -0.78;
 const C = { px: 0, py: 0, pz: 0, fx: 0, fy: 0, fz: 0, ux: 0, uy: 0, uz: 0, s: 1, a: 1, gx: 0, gy: 0, gr: 1 };
 let W = 0, H = 0, cw = 1, ch = 1;
@@ -379,7 +380,7 @@ function proj(x, y, z, i) {
   PY[i] = (0.5 + (0.5 * (vy * C.uy + vz * C.uz) * inv) / C.s) * ch;
   PK[i] = (ch * 0.5 * inv) / C.s;
 }
-// The point under a stage position on the globe's front, or its rim.
+// Finds the glass point under a stage position, or the nearest rim.
 function globeAt(x, y, margin) {
   const u = (x / W) * 2 - 1, v = 1 - (y / H) * 2;
   let dx = u * C.s * C.a, dy = C.fy + C.uy * v * C.s, dz = C.fz + C.uz * v * C.s;
@@ -614,7 +615,7 @@ function put(ax, ay, bx, by, ia, ib, sc, sg, r, g, b, ca) {
   inst[o++] = ia; inst[o++] = ib; inst[o++] = sc; inst[o++] = sg;
   inst[o++] = r; inst[o++] = g; inst[o++] = b; inst[o] = ca;
 }
-// A blob is a segment of zero length with a negative core width.
+// A blob is a zero-length segment with a negative core width.
 function blob(x, y, z, I, sc, sg, col, ca) {
   proj(x, y, z, NP - 1);
   const k = PK[NP - 1];
@@ -622,7 +623,8 @@ function blob(x, y, z, I, sc, sg, col, ca) {
 }
 const ST = { n: 8, amp: 0, seed: 0, tseed: 0, k: 0, grow: 1, I0: 1, I1: 1, c0: 1, c1: 1, sc: 0.003, sg0: 0.01, sg1: 0.01, colA: null, colB: null, arch: 0 };
 const wander = (t, s) => 0.72 * noise(t * 1.7 + s, T * 0.33 + s * 0.37) + 0.3 * noise(t * 4.6 + s * 1.3, T * 1.25 + 3.1) + 0.14 * noise(t * 15 + s * 0.7, T * 7.5 + 9.7);
-// Emits one strand from a point to a point; its points stay in the scratch.
+// Emits one strand between two points.
+// Its points stay in the scratch arrays.
 function strand(x0, y0, z0, x1, y1, z1) {
   const n = ST.n, lx = x1 - x0, ly = y1 - y0, lz = z1 - z0, len = Math.hypot(lx, ly, lz) || 1e-6;
   perp(lx / len, ly / len, lz / len);
@@ -682,7 +684,7 @@ function drawFil(f) {
   }
   const ol = (RE * 1.02) / Math.hypot(ox, oy, oz);
   ox *= ol; oy *= ol; oz *= ol;
-  const I = f.I * (1 + f.flare) * (1 + 0.45 * k + 1.5 * hk), wk = 1 + 0.25 * k + 0.75 * hk;
+  const I = f.I * (1 + f.flare) * (1 + 0.6 * k + 2.1 * hk), wk = 1 + 0.25 * k + 0.55 * hk;
   Object.assign(ST, {
     n: 30, amp: 0.2 * (1 - 0.45 * k), seed: f.seed, tseed: f.tseed, k, grow: f.grow,
     I0: I, I1: I * (0.5 + 0.35 * k), c0: 2.6, c1: 0.7 + 1.2 * k, sc: 0.0032 * wk, sg0: 0.017 * wk, sg1: 0.03 * wk,
@@ -842,7 +844,7 @@ vec2 sphere(vec3 ro, vec3 rd, float r) {
   return vec2(-b - h, -b + h);
 }
 float bump(float y, float c, float w) { float d = (y - c) / w; return exp(-d * d); }
-// Rises from 0 at a to 1 at b, where b lies below a.
+// Rises from 0 at height a to 1 at lower height b.
 float fall(float a, float b, float y) { return 1.0 - smoothstep(b, a, y); }
 // The lathe profile: radius at each height.
 float prof(float y) {
@@ -957,7 +959,7 @@ vec3 baseCol(vec3 p, vec3 rd, float t) {
   c += vec3(0.5, 0.55, 0.7) * 0.03 * pow(1.0 - max(dot(n, v), 0.0), 3.0) * max(dot(n, normalize(vec3(-0.7, 0.4, -0.5))), 0.0);
   return c;
 }
-// Through the glass: the electrode, its stalk, the base top and the room.
+// The glass reveals the electrode, stalk, base top and room.
 vec3 glassCol(vec3 ro, vec3 rd, float t0, vec2 fc) {
   vec3 P = ro + rd * t0, N = normalize(P);
   float c = clamp(-dot(rd, N), 0.0, 1.0), fr = 0.04 + 0.96 * pow(1.0 - c, 5.0);

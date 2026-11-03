@@ -29,7 +29,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Spinning top | [top/](top/) | live, with sound |
 | Soap cutting | [soap/](soap/) | live, with sound |
 | Rain on glass | [rain/](rain/) | live, with sound |
-| Plasma globe | [plasma/](plasma/) | live draft, still being refined |
+| Plasma globe | [plasma/](plasma/) | live, with sound |
 | Marbling | [marble/](marble/) | live draft, still being refined |
 | Caustic pool | [pool/](pool/) | live draft, still being refined |
 | Lava lamp | [lava/](lava/) | live draft, still being refined |
