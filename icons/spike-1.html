@@ -193,6 +193,12 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
     plates: `M${pt(L.B)}L${pt(L.C)}L${pt(L.D)}ZM${pt(L.E)}L${pt(L.F)}L${pt(L.G)}Z`,
     lines: `M${pt(L.B)}L${pt(L.C)}L${pt(L.D)}ZM${pt(L.E)}L${pt(L.F)}L${pt(L.G)}Z`,
   });
+  // A lightening hole: the triangle shrunk toward its incentre.
+  const inset = (a, b, c, k) => {
+    const la = Math.hypot(b[0] - c[0], b[1] - c[1]), lb = Math.hypot(c[0] - a[0], c[1] - a[1]), lc = Math.hypot(a[0] - b[0], a[1] - b[1]), P = la + lb + lc;
+    const I = [(a[0] * la + b[0] * lb + c[0] * lc) / P, (a[1] * la + b[1] * lb + c[1] * lc) / P];
+    return 'M' + [a, b, c].map(q => pt([I[0] + (q[0] - I[0]) * k, I[1] + (q[1] - I[1]) * k])).join('L') + 'Z';
+  };
   // A walker is a row of leg pairs on one body; phases spread the gait.
   const walkerPaths = (mods, ay, s, th) => {
     let bars = '', plates = '', xs = [];
@@ -482,6 +488,7 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
             frame.setAttribute('d', `M${ox} ${oy}L${f1(ox - J.a * s)} ${f1(oy + J.l * s)}`);
             const bars = el('path', { fill: 'none', stroke: bone, 'stroke-width': 4.6, 'stroke-linecap': 'round' }, svg);
             const plates = el('path', { fill: bone, stroke: bone, 'stroke-width': 4.6, 'stroke-linejoin': 'round' }, svg);
+            const light = el('path', { style: 'fill: var(--bg)' }, svg);
             const crank = el('circle', { cx: ox, cy: oy, r: J.m * s + 4.5, fill: bone }, svg);
             const foot = el('circle', { r: 4.2, fill: 'oklch(0.72 0.16 42)' }, svg);
             const holes = el('g', { style: 'fill: var(--bg)' }, svg);
@@ -490,6 +497,7 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
             const draw = () => {
               const L = toScreen(jansen(st.th), ox, oy, s), q = legPaths(L);
               bars.setAttribute('d', q.bars); plates.setAttribute('d', q.plates);
+              light.setAttribute('d', inset(L.B, L.C, L.D, 0.42) + inset(L.E, L.F, L.G, 0.42));
               'OBMCDEFG'.split('').forEach((k, i) => { hs[i].setAttribute('cx', f1(L[k][0])); hs[i].setAttribute('cy', f1(L[k][1])); });
               foot.setAttribute('cx', f1(L.G[0])); foot.setAttribute('cy', f1(L.G[1]));
             };
@@ -504,7 +512,7 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
             const s = 0.87, ox = 104, oy = 38.8;
             const L = toScreen(jansen(0), ox, oy, s), q = legPaths(L);
             const holes = 'OBMCDEFG'.split('').map(k => `<circle cx="${f1(L[k][0])}" cy="${f1(L[k][1])}" r="2.6" fill="#000"/>`).join('');
-            return svgDoc(`  <path d="M${ox} ${oy}L${f1(ox - J.a * s)} ${f1(oy + J.l * s)}${q.bars}" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>\n  <path d="${q.plates}" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>\n  <circle cx="${ox}" cy="${oy}" r="${f1(J.m * s + 5)}" fill="#fff"/>\n  ${holes}`);
+            return svgDoc(`  <path d="M${ox} ${oy}L${f1(ox - J.a * s)} ${f1(oy + J.l * s)}${q.bars}" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>\n  <path d="${q.plates}" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>\n  <path d="${inset(L.B, L.C, L.D, 0.42)}${inset(L.E, L.F, L.G, 0.42)}" fill="#000"/>\n  <circle cx="${ox}" cy="${oy}" r="${f1(J.m * s + 5)}" fill="#fff"/>\n  ${holes}`);
           },
         },
         {
@@ -593,33 +601,35 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
         },
         {
           letter: 'E', kind: 'Abstract mark',
-          idea: 'Three true foot paths stacked as a gait chart; a sun-dot runs each loop a third apart.',
+          idea: 'The true foot path as a horizon under a low sun; three legs run it a third apart.',
           icon(svg) {
-            const s = 110 / 67, rows = [30, 64, 98];
             const raw = footPath(0, 0, 1);
-            const minx = Math.min(...raw.map(p => p[0])), maxx = Math.max(...raw.map(p => p[0]));
-            const miny = Math.min(...raw.map(p => p[1])), maxy = Math.max(...raw.map(p => p[1]));
-            const loops = rows.map(cy => raw.map(([x, y]) => [9 + (x - minx) * s * (110 / ((maxx - minx) * s)), cy + (y - (miny + maxy) / 2) * s]));
-            const bone = 'oklch(0.86 0.03 75)';
-            loops.forEach(L => el('path', { d: 'M' + L.map(pt).join('L') + 'Z', fill: 'none', stroke: bone, 'stroke-width': 3, 'stroke-linejoin': 'round' }, svg));
-            const sunC = ['oklch(0.9 0.14 85)', 'oklch(0.76 0.17 50)', 'oklch(0.64 0.19 25)'];
-            const dots = rows.map((_, k) => el('circle', { r: 5.2, fill: sunC[k], style: 'stroke: var(--bg)', 'stroke-width': 2 }, svg));
+            const minx = Math.min(...raw.map(p => p[0])), maxx = Math.max(...raw.map(p => p[0])), maxy = Math.max(...raw.map(p => p[1]));
+            const s = 110 / (maxx - minx);
+            // The flat stance phase is the beach line at y 104.
+            const loop = raw.map(([x, y]) => [9 + (x - minx) * s, 104 + (y - maxy) * s]);
+            const d = 'M' + loop.map(pt).join('L') + 'Z';
+            el('circle', { cx: 64, cy: 52, r: 40, fill: grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 0, y2: 1 }, [[0, 'oklch(0.92 0.11 88)'], [0.6, 'oklch(0.74 0.17 48)'], [1, 'oklch(0.58 0.19 25)']]) }, svg);
+            el('path', { d, fill: 'none', style: 'stroke: var(--bg)', 'stroke-width': 8, 'stroke-linejoin': 'round' }, svg);
+            el('path', { d, fill: 'none', stroke: 'oklch(0.9 0.025 78)', 'stroke-width': 3, 'stroke-linejoin': 'round' }, svg);
+            const dots = [0, 1, 2].map(() => el('circle', { r: 4.6, fill: 'oklch(0.9 0.025 78)', style: 'stroke: var(--bg)', 'stroke-width': 2.2 }, svg));
             const st = { t: 0 };
-            const at = (L, t) => { const n = L.length - 1, x = (((t % 1) + 1) % 1) * n, i = Math.floor(x), f = x - i; return [lerp(L[i][0], L[i + 1][0], f), lerp(L[i][1], L[i + 1][1], f)]; };
-            const draw = () => dots.forEach((d, k) => { const p = at(loops[k], st.t + k / 3); d.setAttribute('cx', f1(p[0])); d.setAttribute('cy', f1(p[1])); });
+            const at = t => { const n = loop.length - 1, x = (((t % 1) + 1) % 1) * n, i = Math.floor(x), f = x - i; return [lerp(loop[i][0], loop[i + 1][0], f), lerp(loop[i][1], loop[i + 1][1], f)]; };
+            const draw = () => dots.forEach((c, k) => { const p = at(st.t + k / 3); c.setAttribute('cx', f1(p[0])); c.setAttribute('cy', f1(p[1])); });
             draw();
             return loopToy(
-              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { t: 0 }, { t: 1, duration: 2.2, ease: 'none' }),
+              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { t: 0 }, { t: 1, duration: 2.4, ease: 'none' }),
               () => gsap.to(st, { t: st.t > 0.5 ? 1 : 0, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: draw, onComplete() { st.t = 0; draw(); } }),
             );
           },
           emblem() {
-            const s = 110 / 67, rows = [30, 64, 98];
             const raw = footPath(0, 0, 1);
-            const minx = Math.min(...raw.map(p => p[0])), miny = Math.min(...raw.map(p => p[1])), maxy = Math.max(...raw.map(p => p[1]));
-            const loops = rows.map(cy => raw.map(([x, y]) => [9 + (x - minx) * s, cy + (y - (miny + maxy) / 2) * s]));
-            const dots = rows.map((_, k) => loops[k][Math.round(((k / 3) % 1) * 120)]);
-            return svgDoc(`  <path d="${loops.map(L => 'M' + L.map(pt).join('L') + 'Z').join('')}" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round"/>\n${dots.map(p => `  <circle cx="${f1(p[0])}" cy="${f1(p[1])}" r="9" fill="#fff" stroke="#000" stroke-width="3"/>`).join('\n')}`);
+            const minx = Math.min(...raw.map(p => p[0])), maxx = Math.max(...raw.map(p => p[0])), maxy = Math.max(...raw.map(p => p[1]));
+            const s = 110 / (maxx - minx);
+            const loop = raw.map(([x, y]) => [9 + (x - minx) * s, 104 + (y - maxy) * s]);
+            const d = 'M' + loop.map(pt).join('L') + 'Z';
+            const dots = [0, 40, 80].map(i => loop[i]);
+            return svgDoc(`  <circle cx="64" cy="52" r="40" fill="#fff"/>\n  <path d="${d}" fill="none" stroke="#000" stroke-width="13" stroke-linejoin="round"/>\n  <path d="${d}" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>\n${dots.map(p => `  <circle cx="${f1(p[0])}" cy="${f1(p[1])}" r="7.5" fill="#fff" stroke="#000" stroke-width="3"/>`).join('\n')}`);
           },
         },
       ],
