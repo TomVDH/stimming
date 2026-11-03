@@ -311,10 +311,6 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
       <stop offset="0" style="stop-color: oklch(0.95 0.1 95)"/>
       <stop offset="1" style="stop-color: oklch(0.72 0.18 55)"/>
     </radialGradient>
-    <linearGradient id="g-balloon" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" style="stop-color: oklch(0.82 0.15 355)"/>
-      <stop offset="1" style="stop-color: oklch(0.6 0.23 340)"/>
-    </linearGradient>
     <!-- Brut style: neutral grey shading and fine grain. -->
     <linearGradient id="g-gray" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" style="stop-color: oklch(0.9 0.004 275)"/>
@@ -750,9 +746,33 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
         <a class="toy" id="balloons" href="balloons/index.html">
           <span class="obj">
             <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-              <g id="balloon-set" font-size="52" font-weight="900" text-anchor="middle">
-                <g><line x1="44" y1="78" x2="46" y2="114" stroke="oklch(0.7 0.02 260)" stroke-width="1.2"/><text x="44" y="78" fill="url(#g-balloon)">H</text></g>
-                <g><line x1="84" y1="72" x2="80" y2="114" stroke="oklch(0.7 0.02 260)" stroke-width="1.2"/><text x="84" y="72" fill="url(#g-balloon)">i</text></g>
+              <defs>
+                <path id="balloon-h" d="M10 24A12 12 0 0 1 34 24V37Q34 42 39 42H41Q46 42 46 37V24A12 12 0 0 1 70 24V84A12 12 0 0 1 46 84V71Q46 66 41 66H39Q34 66 34 71V84A12 12 0 0 1 10 84Z"/>
+                <path id="balloon-i" d="M82 24A12 12 0 0 1 106 24V84A12 12 0 0 1 82 84Z"/>
+              </defs>
+              <linearGradient id="g-balloon" gradientUnits="userSpaceOnUse" x1="10" y1="12" x2="106" y2="96"><stop offset="0" stop-color="oklch(0.95 0.09 95)"/><stop offset="0.42" stop-color="oklch(0.82 0.14 80)"/><stop offset="0.7" stop-color="oklch(0.66 0.14 58)"/><stop offset="1" stop-color="oklch(0.86 0.12 85)"/></linearGradient>
+              <!-- Gold foil HI on curly ribbons. Each letter turns about its ribbon end. -->
+              <g id="balloon-set" stroke-linecap="round" stroke-linejoin="round">
+                <g>
+                  <path d="M22 97C22 102 26 103 25 107C24 111 19 111 20 115C21 119 25 119 24 124" fill="none" stroke="oklch(0.66 0.2 350)" stroke-width="2.2"/>
+                  <use href="#balloon-h" fill="none" stroke="oklch(0.5 0.11 52)" stroke-width="4.5"/>
+                  <path d="M17.5 95H26.5L22 101Z" fill="oklch(0.56 0.12 55)"/>
+                  <use href="#balloon-h" fill="url(#g-balloon)"/>
+                  <use href="#balloon-h" fill="url(#lit)"/>
+                  <path d="M22 28V80M58 28V80M30 54H50" fill="none" stroke="oklch(0.6 0.12 58)" stroke-opacity="0.45" stroke-width="1.4"/>
+                  <use href="#balloon-h" fill="none" stroke="url(#rim)" stroke-width="2"/>
+                  <path d="M16 21V40M52 21V34" fill="none" stroke="#fff" stroke-opacity="0.75" stroke-width="3.2"/>
+                </g>
+                <g>
+                  <path d="M94 97C94 102 98 103 97 107C96 111 91 111 92 115C93 119 97 119 96 124" fill="none" stroke="oklch(0.7 0.12 190)" stroke-width="2.2"/>
+                  <use href="#balloon-i" fill="none" stroke="oklch(0.5 0.11 52)" stroke-width="4.5"/>
+                  <path d="M89.5 95H98.5L94 101Z" fill="oklch(0.56 0.12 55)"/>
+                  <use href="#balloon-i" fill="url(#g-balloon)"/>
+                  <use href="#balloon-i" fill="url(#lit)"/>
+                  <path d="M94 28V80" fill="none" stroke="oklch(0.6 0.12 58)" stroke-opacity="0.45" stroke-width="1.4"/>
+                  <use href="#balloon-i" fill="none" stroke="url(#rim)" stroke-width="2"/>
+                  <path d="M88 21V40" fill="none" stroke="#fff" stroke-opacity="0.75" stroke-width="3.2"/>
+                </g>
               </g>
             </svg>
           </span>
@@ -1878,12 +1898,20 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
     rest: () => gsap.to(pupils, { x: 0, y: 0, duration: 0.3, ease: 'back.out(2)', overwrite: true }),
   };
 
-  // Each letter bobs on its own string.
-  const balloons = [...$('balloon-set').children];
+  // Balloon letters: each letter leans away from the pointer, then bobs back.
+  // A letter turns about its ribbon end; the lean fades with distance.
+  // The lean is zero above a letter and peaks one width to its side.
+  // A lean toward the other letter stops short, so they never overlap.
+  const balloons = [...$('balloon-set').children].map((g, i) => ({ g, cx: i ? 94 : 40, origin: i ? '94 124' : '22 124', range: i ? [-3.5, 8] : [-8, 3.5] }));
+  const balloonLean = p => balloons.forEach(({ g, cx, origin, range }) => {
+    const u = (p[0] - cx) / 34, k = Math.exp(-u * u / 2);
+    const rotation = gsap.utils.clamp(...range, (-8 * u * k) / 0.6065);
+    gsap.to(g, { rotation, y: -4 * k, svgOrigin: origin, duration: 0.5, ease: 'power2.out', overwrite: true });
+  });
   toys.balloons = {
-    play: () => loop({ yoyo: true })
-      .to(balloons, { y: -8, rotation: i => (i ? 6 : -5), svgOrigin: '64 114', duration: 1.1, ease: 'sine.inOut', stagger: 0.25 }),
-    rest: () => gsap.to(balloons, { y: 0, rotation: 0, svgOrigin: '64 114', duration: 0.4, overwrite: true }),
+    enter: p => balloonLean(p || [64, 60]),
+    move: p => p && balloonLean(p),
+    leave: () => balloons.forEach(({ g, origin }) => gsap.to(g, { rotation: 0, y: 0, svgOrigin: origin, duration: 1.4, ease: 'elastic.out(1, 0.3)', overwrite: true })),
   };
 
   // The seven main icons answer the pointer and never play on their own.
