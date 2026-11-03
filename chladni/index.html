@@ -13,11 +13,11 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Chladni plate: a steel plate on a post, sand, a bow and a rail. */
+/* Chladni plate: a raw steel slab on a post, loud sand, a bow and a rail. */
 :root {
-  --stage: oklch(0.17 0.012 262);
-  --sand: oklch(0.9 0.05 84);
-  --rail: oklch(0.33 0.014 262);
+  --stage: oklch(0.2 0.006 260);
+  --sand: oklch(0.7 0.2 42);
+  --rail: oklch(0.36 0.008 260);
 }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -60,13 +60,13 @@
 .tune.ringing output { color: var(--fg); }
 /* Each finish chip shows its plate and its sand, split diagonally. */
 .chip i { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, var(--pl) 50%, var(--sd) 50%); }
-.chip[data-value="steel"] { --pl: oklch(0.72 0.01 250); --sd: oklch(0.9 0.05 84); }
-.chip[data-value="brass"] { --pl: oklch(0.78 0.11 84); --sd: oklch(0.24 0.01 250); }
+.chip[data-value="steel"] { --pl: oklch(0.34 0.008 255); --sd: oklch(0.7 0.2 42); }
+.chip[data-value="blued"] { --pl: oklch(0.36 0.07 262); --sd: oklch(0.9 0.19 108); }
 @media (max-width: 640px) { .tune { flex-basis: 100%; max-width: none; } }
 @media (prefers-reduced-motion: reduce) { .stage canvas, .tune .tick, .tune output { transition: none; } }
 
 /* ---------- vignette figure ---------- */
-.vignette figure canvas { border-radius: 14px; background: oklch(0.13 0.01 262); }
+.vignette figure canvas { border-radius: 14px; background: oklch(0.2 0.006 260); }
 </style>
 </head>
 <body>
@@ -88,7 +88,7 @@
       </div>
       <div class="choices">
         <button class="chip" type="button" data-value="steel" aria-pressed="true"><i></i>Steel</button>
-        <button class="chip" type="button" data-value="brass" aria-pressed="false"><i></i>Brass</button>
+        <button class="chip" type="button" data-value="blued" aria-pressed="false"><i></i>Blued</button>
       </div>
       <div class="actions">
         <button class="chip" id="sweep" type="button" aria-pressed="false" aria-keyshortcuts="Space">Sweep</button>
@@ -125,7 +125,7 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { initPage, sound, audioKit, choices, whenVisible, reduced, onReducedChange, oklchLinear } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices, whenVisible, reduced, onReducedChange, oklchLinear, oklchRgb } from '../shared/stim.js';
 initPage({ id: 'chladni' });
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
@@ -142,7 +142,7 @@ onReducedChange(v => { reduce = v; });
 /* ---------- plate and modes ---------- */
 // The plate spans -1 to 1 in x and z.
 // Its top face sits at y = PT / 2.
-const PT = 0.024;
+const PT = 0.045;
 // The plate mesh has GN segments a side.
 // The field has one sample per vertex.
 const GN = 160, FG = GN + 1;
@@ -240,8 +240,8 @@ try {
   throw err;
 }
 renderer.setClearColor(0x000000, 0);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+// No tone mapping keeps the flat colours true to their tokens.
+renderer.toneMapping = THREE.NoToneMapping;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1.6, 0.1, 40);
 
@@ -259,105 +259,24 @@ densTex.needsUpdate = true;
 // Plate and sand share these uniforms.
 const U = {
   uField: { value: fieldTex }, uCS: { value: new THREE.Vector2(1, 0) }, uAmp: { value: 0 },
-  uDens: { value: densTex }, uShadow: { value: new THREE.Vector2(0.012, 0.006) },
+  uDens: { value: densTex }, uShadow: { value: new THREE.Vector2(-0.012, 0.008) },
 };
 
-/* ---------- light: one key, one rim, a studio for reflections ---------- */
-const KEY = new THREE.Vector3(-2.2, 3.6, 1.8).normalize(), RIM = new THREE.Vector3(1.6, 1.4, -3.2).normalize();
-const key = new THREE.DirectionalLight(lin(0.97, 0.02, 80), 2.1);
+/* ---------- light: one hard key and a flat fill, no reflections ---------- */
+// Each face of a flat box then reads as one flat tone.
+const KEY = new THREE.Vector3(-2.2, 3.6, 1.8).normalize();
+const key = new THREE.DirectionalLight(0xffffff, 3);
 key.position.copy(KEY).multiplyScalar(6);
-const rim = new THREE.DirectionalLight(lin(0.9, 0.04, 240), 1.5);
-rim.position.copy(RIM).multiplyScalar(6);
-scene.add(key, rim, new THREE.HemisphereLight(lin(0.5, 0.02, 250), lin(0.12, 0.01, 262), 0.35));
-function studio() {
-  const s = new THREE.Scene();
-  const room = new THREE.Mesh(new THREE.BoxGeometry(24, 12, 24), new THREE.MeshBasicMaterial({ color: lin(0.13, 0.01, 262), side: THREE.BackSide }));
-  room.position.y = 4;
-  s.add(room);
-  const panel = (w, h, c, k, p) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: c.multiplyScalar(k), side: THREE.DoubleSide }));
-    m.position.copy(p);
-    m.lookAt(0, 0, 0);
-    s.add(m);
-  };
-  // A warm softbox sits with the key light.
-  // A cool strip sits with the rim light.
-  panel(4.5, 2.6, lin(0.97, 0.02, 80), 2.6, KEY.clone().multiplyScalar(7));
-  panel(9, 0.8, lin(0.9, 0.04, 240), 4, RIM.clone().multiplyScalar(8));
-  panel(10, 10, lin(0.4, 0.01, 262), 0.35, new THREE.Vector3(0, 9, 0));
-  panel(14, 1.2, lin(0.8, 0.02, 262), 1.4, new THREE.Vector3(-1, 1.2, 9));
-  return s;
-}
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(studio(), 0.02).texture;
-pmrem.dispose();
-
-/* ---------- textures drawn once ---------- */
-// The plate is spun: fine concentric rings with a tangent grain.
-function spunTextures() {
-  const S = 1024, rough = new Uint8Array(S * S * 4), dir = new Uint8Array(S * S * 4);
-  const ring = new Float32Array(2048);
-  let v = 0;
-  for (let i = 0; i < ring.length; i++) { v = v * 0.55 + (Math.random() - 0.5); ring[i] = v; }
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const dx = (x + 0.5) / S - 0.5, dy = (y + 0.5) / S - 0.5, r = Math.hypot(dx, dy) + 1e-6;
-      const o = (y * S + x) * 4, n = ring[Math.min(2047, (r * 2896) | 0)];
-      const g = clamp(0.36 + n * 0.11 + (Math.random() - 0.5) * 0.04, 0.12, 0.7);
-      rough[o] = rough[o + 1] = rough[o + 2] = g * 255;
-      rough[o + 3] = 255;
-      // Direction is the circle tangent, stored as 0.5 + 0.5 · t.
-      dir[o] = (0.5 - (0.5 * dy) / r) * 255;
-      dir[o + 1] = (0.5 + (0.5 * dx) / r) * 255;
-      dir[o + 2] = 255;
-      dir[o + 3] = 255;
-    }
-  }
-  const mk = d => { const t = new THREE.DataTexture(d, S, S); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8; t.needsUpdate = true; return t; };
-  return { rough: mk(rough), dir: mk(dir) };
-}
-// The bench fades out into the stage.
-function radial(size, stops) {
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const g = c.getContext('2d'), grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  stops.forEach(([t, a]) => grad.addColorStop(t, `rgba(255,255,255,${a})`));
-  g.fillStyle = grad;
-  g.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(c);
-}
-// A soft square marks the plate shadow on the bench.
-// Inner is the solid half width, from 0 to 0.5.
-// Soft is the fade width, from 0 to 0.5.
-function squareShadow(size, inner, soft) {
-  const d = new Uint8Array(size * size * 4);
-  const ramp = t => { const k = clamp((0.5 - inner - Math.abs(t - 0.5) + soft) / soft); return k * k * (3 - 2 * k); };
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const o = (y * size + x) * 4, a = ramp((x + 0.5) / size) * ramp((y + 0.5) / size) * 255;
-      d[o] = d[o + 1] = d[o + 2] = a;
-      d[o + 3] = 255;
-    }
-  }
-  const t = new THREE.DataTexture(d, size, size);
-  t.magFilter = THREE.LinearFilter;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.generateMipmaps = true;
-  t.needsUpdate = true;
-  return t;
-}
+scene.add(key, new THREE.HemisphereLight(0xffffff, lin(0.3, 0.006, 260), 1.1));
 
 /* ---------- the plate ---------- */
-const spun = spunTextures();
-const plateMat = new THREE.MeshPhysicalMaterial({
-  color: lin(0.8, 0.008, 250), metalness: 1, roughness: 1, roughnessMap: spun.rough,
-  anisotropy: 0.85, anisotropyMap: spun.dir, envMapIntensity: 1.1,
-});
-// The thin sides are ground plain, with no spun grain.
-const edgeMat = new THREE.MeshStandardMaterial({ color: lin(0.8, 0.008, 250), metalness: 1, roughness: 0.3 });
+// The top is raw mill steel; the cut sides are ground bright.
+const plateMat = new THREE.MeshStandardMaterial({ color: lin(0.34, 0.008, 255), metalness: 0, roughness: 0.85 });
+const edgeMat = new THREE.MeshStandardMaterial({ color: lin(0.8, 0.006, 255), metalness: 0, roughness: 0.85 });
 plateMat.customProgramCacheKey = () => 'chladni-plate';
 edgeMat.customProgramCacheKey = () => 'chladni-edge';
-plateMat.onBeforeCompile = edgeMat.onBeforeCompile = sh => {
+// Only the top and bottom faces take the sand shadow and the cuts.
+const bend = (sh, top) => {
   sh.uniforms.uField = U.uField; sh.uniforms.uCS = U.uCS; sh.uniforms.uAmp = U.uAmp;
   sh.uniforms.uDens = U.uDens; sh.uniforms.uShadow = U.uShadow;
   sh.vertexShader = sh.vertexShader
@@ -384,63 +303,65 @@ vec3 objectTangent = vec3(tangent.xyz);
     .replace('#include <begin_vertex>', `#include <begin_vertex>
 transformed.y += wv;
 vPlate = position.xz * 0.5 + 0.5;`);
-  sh.fragmentShader = sh.fragmentShader
+  if (top) sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>
 uniform sampler2D uDens;
 uniform vec2 uShadow;
 varying vec2 vPlate;`)
     .replace('#include <opaque_fragment>', `
-// Sand darkens the steel under it and casts a short shadow.
-float dA = texture2D(uDens, vPlate).r, dS = texture2D(uDens, vPlate + uShadow).r;
-outgoingLight *= (1.0 - 0.3 * smoothstep(0.02, 0.5, dA)) * (1.0 - 0.5 * smoothstep(0.02, 0.45, dS));
+// Sand casts a short, hard shadow on the steel.
+float dS = texture2D(uDens, vPlate + uShadow).r;
+outgoingLight *= 1.0 - 0.55 * smoothstep(0.1, 0.16, dS);
+// Two machined cuts: a groove inside the rim and a ring round the clamp.
+float rr = 0.5 - max(abs(vPlate.x - 0.5), abs(vPlate.y - 0.5)), rc = length(vPlate - 0.5);
+float gw = fwidth(rr) + 1e-5, cw = fwidth(rc) + 1e-5;
+float cut = max(1.0 - smoothstep(0.003 - gw, 0.003 + gw, abs(rr - 0.028)), 1.0 - smoothstep(0.003 - cw, 0.003 + cw, abs(rc - 0.075)));
+outgoingLight *= 1.0 - 0.72 * cut;
 #include <opaque_fragment>`);
 };
+plateMat.onBeforeCompile = sh => bend(sh, true);
+edgeMat.onBeforeCompile = sh => bend(sh, false);
 // Box groups: +x, -x, top, bottom, +z, -z.
 const plate = new THREE.Mesh(new THREE.BoxGeometry(2, PT, 2, GN, 1, GN), [edgeMat, edgeMat, plateMat, plateMat, edgeMat, edgeMat]);
 scene.add(plate);
 
-/* ---------- the stand: post, base, washer and nut ---------- */
-const darkMetal = new THREE.MeshStandardMaterial({ color: lin(0.3, 0.01, 262), metalness: 0.85, roughness: 0.38 });
-const brightMetal = new THREE.MeshStandardMaterial({ color: lin(0.82, 0.006, 250), metalness: 1, roughness: 0.22 });
+/* ---------- the stand: square post, base plate, washer and nut ---------- */
+const darkMetal = new THREE.MeshStandardMaterial({ color: lin(0.3, 0.006, 260), metalness: 0, roughness: 0.85 });
+const brightMetal = new THREE.MeshStandardMaterial({ color: lin(0.86, 0.004, 255), metalness: 0, roughness: 0.85 });
+// The finish recolours the nut in the sand's accent.
+const accentMat = new THREE.MeshStandardMaterial({ color: lin(0.7, 0.2, 42), metalness: 0, roughness: 0.85 });
 const postH = -PT / 2 - BENCH;
-const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, postH, 32), darkMetal);
+const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, postH, 0.1), darkMetal);
 post.position.y = BENCH + postH / 2;
-const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 64), darkMetal);
+const base = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 0.62), darkMetal);
 base.position.y = BENCH + 0.025;
-const washer = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.008, 48), brightMetal);
+const washer = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.008, 0.16), brightMetal);
 washer.position.y = PT / 2 + 0.004;
-const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.04, 6), brightMetal);
-nut.position.y = PT / 2 + 0.028;
-const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.02, 24), brightMetal);
-stud.position.y = PT / 2 + 0.056;
-scene.add(post, base, washer, nut, stud);
+const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.042, 6), accentMat);
+nut.position.y = PT / 2 + 0.029;
+scene.add(post, base, washer, nut);
 
-/* ---------- the bench ---------- */
-const bench = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), new THREE.MeshStandardMaterial({
-  color: lin(0.24, 0.012, 262), roughness: 0.62, metalness: 0, transparent: true, depthWrite: false,
-  alphaMap: radial(256, [[0, 1], [0.32, 0.95], [0.62, 0.4], [1, 0]]),
-}));
-bench.rotation.x = -Math.PI / 2;
-bench.position.y = BENCH;
-bench.renderOrder = -2;
-const shadowMat = (tex, o) => new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: o, alphaMap: tex, depthWrite: false });
-const plateShadow = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 2.9), shadowMat(squareShadow(256, 0.5 - 0.36, 0.13), 0.62));
-plateShadow.rotation.x = -Math.PI / 2;
-plateShadow.position.set(0.16, BENCH + 0.002, -0.1);
-plateShadow.renderOrder = -1;
-const baseShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), shadowMat(radial(128, [[0, 1], [0.6, 0.7], [1, 0]]), 0.75));
-baseShadow.rotation.x = -Math.PI / 2;
-baseShadow.position.set(0, BENCH + 0.003, 0);
-baseShadow.renderOrder = -1;
-scene.add(bench, plateShadow, baseShadow);
+/* ---------- hard shadows: flat dark shapes, offset from the key ---------- */
+// The key throws them toward +x and -z.
+const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false });
+const shadowAt = (w, x, z) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w), shadowMat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, BENCH + 0.002, z);
+  m.renderOrder = -1;
+  scene.add(m);
+};
+// The plate's shadow covers the base's, so one shape is enough.
+shadowAt(2, 0.3, -0.25);
 
 /* ---------- the bow ---------- */
 // The bow stands at the edge and leans out.
 // It slides along its length as you drag.
 const bow = new THREE.Group(), bowBody = new THREE.Group();
-const wood = new THREE.MeshStandardMaterial({ color: lin(0.34, 0.08, 38), roughness: 0.32, metalness: 0.05 });
-const hair = new THREE.MeshStandardMaterial({ color: lin(0.92, 0.02, 90), roughness: 0.85 });
-const ebony = new THREE.MeshStandardMaterial({ color: lin(0.16, 0.01, 60), roughness: 0.4 });
+// The bow is a black stick, pale hair and an accent frog.
+const wood = new THREE.MeshStandardMaterial({ color: lin(0.2, 0.006, 260), roughness: 0.85 });
+const hair = new THREE.MeshStandardMaterial({ color: lin(0.92, 0.004, 255), roughness: 0.85 });
+const ebony = accentMat;
 const part = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); bowBody.add(m); return m; };
 part(new THREE.BoxGeometry(0.011, 1.5, 0.011), wood, 0, 0, 0.034);
 part(new THREE.BoxGeometry(0.046, 1.36, 0.005), hair, 0, 0, 0.004);
@@ -499,10 +420,7 @@ grainGeo.instanceCount = NL;
 const grainMat = new THREE.ShaderMaterial({
   uniforms: {
     uField: U.uField, uCS: U.uCS, uAmp: U.uAmp, uR: { value: RG },
-    uKey: { value: KEY }, uRim: { value: RIM },
-    uKeyCol: { value: lin(0.97, 0.02, 80).multiplyScalar(2.3) },
-    uRimCol: { value: lin(0.9, 0.04, 240).multiplyScalar(1.2) },
-    uAmb: { value: lin(0.5, 0.02, 250).multiplyScalar(0.55) },
+    uKey: { value: KEY },
   },
   vertexShader: `
 uniform sampler2D uField;
@@ -537,21 +455,20 @@ void main() {
   // A grain deep in a pile sits in shade.
   float pile = aPos.w;
   float depth = clamp(aPos.z / max(pile, 1e-4), 0.0, 1.0);
-  vAO = mix(1.0, mix(0.38, 1.0, depth), smoothstep(0.0, 0.01, pile));
+  vAO = mix(1.0, mix(0.6, 1.0, depth), smoothstep(0.0, 0.01, pile));
   vCol = aCol;
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
 }`,
   fragmentShader: `
-uniform vec3 uKey, uRim, uKeyCol, uRimCol, uAmb;
+uniform vec3 uKey;
 varying vec3 vN, vV, vCol;
 varying float vAO;
 void main() {
-  vec3 N = normalize(vN), V = normalize(vV);
+  vec3 N = normalize(vN);
+  // Facets snap to three flat tones: lit, side and shade.
   float k = max(dot(N, uKey), 0.0);
-  float r = max(dot(N, uRim), 0.0) * pow(1.0 - max(dot(N, V), 0.0), 2.0);
-  float sp = pow(max(dot(N, normalize(uKey + V)), 0.0), 48.0);
-  vec3 c = vCol * (uAmb * (0.55 + 0.45 * N.y) + uKeyCol * k) * vAO + uKeyCol * sp * 0.22 * vAO + uRimCol * r * 0.5;
-  gl_FragColor = vec4(c, 1.0);
+  float tone = k > 0.62 ? 1.0 : k > 0.25 ? 0.84 : 0.68;
+  gl_FragColor = vec4(vCol * tone * vAO, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`,
@@ -561,27 +478,28 @@ grains.frustumCulled = false;
 scene.add(grains);
 
 /* ---------- finishes ---------- */
-// Each finish: plate colour, then sand tones with their shares.
+// Each finish: plate top, ground edge, then one accent sand in three tones.
+// The first sand tone is the accent; it also colours the nut and rail.
 const FINISH = {
-  steel: { plate: [0.8, 0.008, 250], rough: 1, sand: [[0.93, 0.03, 88, 0.34], [0.88, 0.045, 80, 0.3], [0.8, 0.055, 70, 0.2], [0.97, 0.012, 95, 0.12], [0.4, 0.02, 55, 0.04]] },
-  brass: { plate: [0.8, 0.1, 84], rough: 0.9, sand: [[0.25, 0.01, 250, 0.38], [0.21, 0.008, 60, 0.28], [0.31, 0.012, 70, 0.2], [0.17, 0.006, 260, 0.11], [0.78, 0.03, 80, 0.03]] },
+  steel: { plate: [0.34, 0.008, 255], edge: [0.8, 0.006, 255], sand: [[0.7, 0.2, 42, 0.72], [0.64, 0.19, 38, 0.24], [0.84, 0.12, 58, 0.04]] },
+  blued: { plate: [0.36, 0.07, 262], edge: [0.78, 0.03, 255], sand: [[0.9, 0.19, 108, 0.72], [0.84, 0.18, 104, 0.24], [0.97, 0.06, 105, 0.04]] },
 };
 function finish(name) {
   const F = FINISH[name] || FINISH.steel;
   plateMat.color.copy(lin(...F.plate));
-  edgeMat.color.copy(plateMat.color);
-  plateMat.roughness = F.rough;
+  edgeMat.color.copy(lin(...F.edge));
+  accentMat.color.copy(lin(...F.sand[0].slice(0, 3)));
   const tones = F.sand.map(([L, C, h, w]) => [lin(L, C, h), w]);
   for (let i = 0; i < NMAX; i++) {
     let r = Math.random(), c = tones[0][0];
     for (const [t, w] of tones) { if (r < w) { c = t; break; } r -= w; }
     // Each grain varies a little in lightness.
-    const v = 0.88 + Math.random() * 0.24;
+    const v = 0.94 + Math.random() * 0.12;
     COL[i * 3] = c.r * v; COL[i * 3 + 1] = c.g * v; COL[i * 3 + 2] = c.b * v;
   }
   colAttr.needsUpdate = true;
-  const sd = F.sand[0];
-  document.documentElement.style.setProperty('--sand', `oklch(${name === 'brass' ? '0.82 0.11 84' : `${sd[0]} ${sd[1] + 0.02} ${sd[2]}`})`);
+  const [L, C, h] = F.sand[0];
+  document.documentElement.style.setProperty('--sand', `oklch(${L} ${C} ${h})`);
 }
 
 /* ---------- sand physics ---------- */
@@ -805,6 +723,8 @@ function update(dt, now) {
 // The camera sits front left and looks down at the plate.
 const look = new THREE.Vector3(), corners = [];
 for (const x of [-1.05, 1.05]) for (const z of [-1.05, 1.05]) for (const y of [-0.05, 0.08]) corners.push(new THREE.Vector3(x, y, z));
+// The hard shadow stays in frame too.
+for (const x of [-0.7, 1.3]) for (const z of [-1.25, 0.75]) corners.push(new THREE.Vector3(x, BENCH, z));
 let W = 0, H = 0, camDist = 6, camT = 0;
 function frameCamera() {
   const portrait = clamp((H / W - 0.7) / 0.9);
@@ -944,7 +864,7 @@ sweepB.addEventListener('click', () => setSweep(!sweeping));
 document.getElementById('reset').addEventListener('click', spread);
 const STORE = 'stimming.chladni.finish';
 let finishName = 'steel';
-try { finishName = localStorage.getItem(STORE) === 'brass' ? 'brass' : 'steel'; } catch (err) { /* storage is optional */ }
+try { finishName = localStorage.getItem(STORE) === 'blued' ? 'blued' : 'steel'; } catch (err) { /* storage is optional */ }
 const finishPick = choices(document.querySelector('.bar .choices'), v => {
   finish(v);
   try { localStorage.setItem(STORE, v); } catch (err) { /* storage is optional */ }
@@ -1226,7 +1146,8 @@ boot().catch(err => { console.error(err); stage.querySelector('.fail').hidden = 
   const cv = document.getElementById('figure'), g = cv.getContext('2d', { willReadFrequently: true });
   const S = 220, gap = (cv.width - 3 * S) / 4, y0 = (cv.height - S) / 2;
   const sets = [[0, 2, -1], [0, 3, -1], [3, 5, -1]];
-  const plateC = '#2b2f38';
+  const hex = c => `rgb(${oklchRgb(...c).map(v => Math.round(v * 255)).join(',')})`;
+  const plateC = hex([0.34, 0.008, 255]), sandC = oklchRgb(0.7, 0.2, 42).map(v => Math.round(v * 255));
   sets.forEach(([m, n, s], k) => {
     const x0 = gap + k * (S + gap);
     g.fillStyle = plateC;
@@ -1238,13 +1159,14 @@ boot().catch(err => { console.error(err); stage.querySelector('.fail').hidden = 
         const a = Math.abs(phiAt(k0, (i + 0.5) / S, (j + 0.5) / S));
         // Sand lies thick where the plate stands still.
         const p = Math.exp(-((a / 0.07) ** 2)) * 0.95;
-        if (Math.random() < p) { const o = (j * S + i) * 4; d[o] = 239; d[o + 1] = 227; d[o + 2] = 196; }
+        if (Math.random() < p) { const o = (j * S + i) * 4; d[o] = sandC[0]; d[o + 1] = sandC[1]; d[o + 2] = sandC[2]; }
       }
     }
     g.putImageData(img, x0, y0);
-    g.fillStyle = '#9aa0ad';
+    // The clamp is a solid hex in the accent.
+    g.fillStyle = `rgb(${sandC.join(',')})`;
     g.beginPath();
-    g.arc(x0 + S / 2, y0 + S / 2, 6, 0, TAU);
+    for (let a = 0; a < 6; a++) g.lineTo(x0 + S / 2 + 8 * Math.cos((a * TAU) / 6), y0 + S / 2 + 8 * Math.sin((a * TAU) / 6));
     g.fill();
   });
 })();
