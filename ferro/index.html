@@ -35,6 +35,12 @@
       <p class="fail" hidden>Ferrofluid needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices" role="group" aria-label="Fluid">
+        <button class="chip" type="button" data-value="ink" aria-pressed="true">Ink</button>
+        <button class="chip" type="button" data-value="alien" aria-pressed="false">Alien</button>
+        <button class="chip" type="button" data-value="magma" aria-pressed="false">Magma</button>
+        <button class="chip" type="button" data-value="oil" aria-pressed="false">Oil</button>
+      </div>
       <div class="actions">
         <button class="chip" id="drip" type="button" aria-keyshortcuts="D">Drip</button>
       </div>
@@ -57,7 +63,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, oklchRgb } from '../shared/stim.js';
+import { initPage, sound, oklchRgb, choices } from '../shared/stim.js';
 initPage({ id: 'ferro' });
 const panel = document.getElementById('pool');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -843,6 +849,7 @@ uniform sampler2D uBulk;
 uniform vec2 uL, uC;
 uniform float uLam, uCrowd, uG, uRclip, uEps, uAmax;
 varying vec2 vXZ;
+varying float vTip;
 const float S3 = 0.8660254;
 const float RHO = ${RHO.toFixed(3)};
 const int KC = ${K};
@@ -910,6 +917,8 @@ void ferro(vec2 u, out vec3 p, out vec3 n) {
   float r = length(p.xz);
   if (r > uRclip) p.xz *= uRclip / r;
   vXZ = p.xz;
+  // Tip height, 0 on the pool and 1 on a tall spike.
+  vTip = clamp(hs / ${(A0 * 1.8).toFixed(4)}, 0.0, 1.0);
 }
 `;
 
@@ -1280,6 +1289,60 @@ function buildGlow() {
   return { sprite, light };
 }
 
+/* ---------- fluids: plain ink, two that glow inside, one oily ---------- */
+// base and glow are OKLCH; inner sets the core glow; irid sets the film.
+const FLUIDS = {
+  ink: { base: [0.07, 0.003, 270], glow: [0.86, 0.09, 215], inner: 0, irid: 0, rough: 0.07 },
+  alien: { base: [0.05, 0.02, 165], glow: [0.86, 0.23, 150], inner: 0.9, irid: 0, rough: 0.05 },
+  magma: { base: [0.05, 0.015, 35], glow: [0.72, 0.2, 45], inner: 1.3, irid: 0, rough: 0.12 },
+  oil: { base: [0.08, 0.006, 280], glow: [0.9, 0.06, 320], inner: 0, irid: 1, rough: 0.05 },
+};
+const FLUID_KEY = 'stimming.ferro.fluid';
+let fluidNow = 'ink', GLU = null;
+const inks = [];
+try { const v = localStorage.getItem(FLUID_KEY); if (FLUIDS[v]) fluidNow = v; } catch (err) { /* storage is optional */ }
+// Light from inside: thin tips and grazing rims glow brightest.
+function innerGlow(shader, tip) {
+  Object.assign(shader.uniforms, GLU);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform float uInner;\nuniform vec3 uInnerCol;')
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+\tfloat tipG = ${tip}, ndv = abs(dot(normal, normalize(vViewPosition)));
+\ttotalEmissiveRadiance += uInnerCol * uInner * (0.004 + 1.5 * pow(tipG, 2.5) + 0.3 * pow(1.0 - ndv, 4.0));`);
+}
+// One fluid part with the inner glow and its own program.
+function inkPart(params, tip, key) {
+  const m = new THREE.MeshPhysicalMaterial(params);
+  m.onBeforeCompile = shader => innerGlow(shader, tip);
+  m.customProgramCacheKey = () => key;
+  inks.push(m);
+  return m;
+}
+function setFluid(name) {
+  fluidNow = FLUIDS[name] ? name : 'ink';
+  if (!glow) return;
+  const f = FLUIDS[fluidNow], col = new THREE.Color().setRGB(...oklchRgb(...f.glow), THREE.SRGBColorSpace);
+  for (const m of inks) {
+    m.color.setRGB(...oklchRgb(...f.base), THREE.SRGBColorSpace);
+    m.roughness = f.rough;
+    m.iridescence = f.irid;
+    m.iridescenceIOR = 1.33;
+    m.iridescenceThicknessRange = [250, 900];
+  }
+  GLU.uInner.value = f.inner;
+  GLU.uInnerCol.value.copy(col);
+  // The glow, its light and the groove take the fluid's hue.
+  glow.sprite.material.color.copy(col);
+  glow.light.color.copy(col);
+  groove.material.color.copy(col).multiplyScalar(0.55);
+  if (ready) { draw(); wake(); }
+}
+const fluidPick = choices(document.querySelector('.choices'), v => {
+  setFluid(v);
+  try { localStorage.setItem(FLUID_KEY, fluidNow); } catch (err) { /* storage is optional */ }
+});
+fluidPick.set(fluidNow);
+
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
@@ -1411,12 +1474,14 @@ async function start() {
     uLam: { value: LAM }, uCrowd: { value: 0 }, uG: { value: G }, uRclip: { value: RIN + 0.02 },
     uEps: { value: 0.35 / MESH_N }, uAmax: { value: 0 }, uRin: { value: RIN + 0.003 },
   };
+  GLU = { uInner: { value: 0 }, uInnerCol: { value: new THREE.Color() } };
   // Deep black with a clear coat: pure ink, no film sheen.
   const INK = {
     color: 0x030304, metalness: 0, roughness: 0.07, ior: 1.6, specularIntensity: 1,
     clearcoat: 0.6, clearcoatRoughness: 0.05, envMapIntensity: 2,
   };
   const ink = new THREE.MeshPhysicalMaterial(INK);
+  inks.push(ink);
   ink.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, U);
     shader.vertexShader = shader.vertexShader
@@ -1425,18 +1490,20 @@ async function start() {
       .replace('#include <begin_vertex>', 'vec3 transformed = fPos;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vXZ;\nuniform float uRin;')
+      .replace('#include <common>', '#include <common>\nvarying float vTip;')
       .replace('void main() {', 'void main() {\n\tif (dot(vXZ, vXZ) > uRin * uRin) discard;');
+    innerGlow(shader, 'vTip');
   };
   ink.customProgramCacheKey = () => 'ferro-ink';
   const fluid = new THREE.Mesh(buildPool(MESH_N), ink);
   fluid.frustumCulled = false;
   scene.add(fluid);
   // The fluid's side shows through the glass wall.
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(RIN, RIN, 0.012 - FLOOR_Y, 160, 1, true), new THREE.MeshPhysicalMaterial(INK));
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(RIN, RIN, 0.012 - FLOOR_Y, 160, 1, true), inkPart(INK, '0.0', 'ferro-body'));
   body.position.y = (0.012 + FLOOR_Y) / 2;
   scene.add(body);
   // Loose beads share the fluid's finish.
-  dropMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 28, 18), new THREE.MeshPhysicalMaterial(INK), NDROP);
+  dropMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 28, 18), inkPart(INK, '0.55', 'ferro-drop'), NDROP);
   dropMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   dropMesh.frustumCulled = false;
   dropMesh.count = 0;
@@ -1462,7 +1529,9 @@ async function start() {
   ng.setAttribute('iB', NB2);
   ng.setAttribute('iN', NN);
   const neckInk = new THREE.MeshPhysicalMaterial(INK);
+  inks.push(neckInk);
   neckInk.onBeforeCompile = shader => {
+    innerGlow(shader, '0.8');
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + NECK)
       .replace('#include <beginnormal_vertex>', 'vec3 nPos;\nvec3 objectNormal;\nneck(position, nPos, objectNormal);')
@@ -1474,8 +1543,8 @@ async function start() {
   neckMesh.count = 0;
   scene.add(neckMesh);
   glow = buildGlow();
-  groove.material.color.copy(glow.light.color).multiplyScalar(0.55);
   scene.add(glow.sprite, glow.light);
+  setFluid(fluidNow);
 
   panel.prepend(canvas);
   fitRenderer(renderer, panel, 1.5, (w, h) => {
