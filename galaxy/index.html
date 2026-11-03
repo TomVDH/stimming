@@ -58,7 +58,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole, magnetar, wormhole, nebula, comet, red giant, globular cluster, kilonova, gamma-ray burst, cosmic string, dark nebula or dark well. Hold to grow a star cluster and drag to throw it. Drag an object to move it. Scroll or pinch to zoom. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
+    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole, magnetar, wormhole, nebula, comet, red giant, globular cluster, kilonova, gamma-ray burst, cosmic string, dark nebula, dark well or supermassive black hole. Hold to grow a star cluster and drag to throw it. Drag an object to move it. Scroll or pinch to zoom. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
       <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
@@ -82,6 +82,7 @@
             <button class="chip icon" type="button" data-kind="string" aria-pressed="false" aria-label="Add a cosmic string" title="Cosmic string"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 12.5c2-1 2.5-3.5 4.5-4.5s3 1 5-1 2.5-3.5 3.5-4.5"/></svg></button>
             <button class="chip icon" type="button" data-kind="dark" aria-pressed="false" aria-label="Add a dark nebula" title="Dark nebula"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="solid" d="M3.6 12c-2-0.2-2.4-3-0.6-3.6-0.2-2.8 3.2-3.8 4.6-1.8 1.2-2.6 5.4-1.6 4.8 1.4 2.2 0.4 2 3.8-0.2 4z"/></svg></button>
             <button class="chip icon" type="button" data-kind="well" aria-pressed="false" aria-label="Add a dark well" title="Dark well"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3.2"/><circle class="solid" cx="8" cy="8" r="1"/></svg></button>
+            <button class="chip icon" type="button" data-kind="super" aria-pressed="false" aria-label="Add a supermassive black hole" title="Supermassive"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="3"/><ellipse cx="8" cy="8" rx="7" ry="2.4" transform="rotate(-18 8 8)"/></svg></button>
           </div>
         </div>
         <label class="slider"><span>Gravity</span><input type="range" id="grav" min="0.3" max="1.2" step="0.05" value="0.3"></label>
@@ -298,7 +299,8 @@ const MAXW = 8, CAP = 6, HOLE_WELLS = 6;
 // The panel spans about twenty length units.
 const SEED_M = 26, TAP_M = 18, MAX_M = 240;
 // A merger this heavy collapses into a black hole.
-const BH_M = 48, HOLE_R = 0.2, LENS = 0.3, SHADOW_K = 1.3, DISK_TILT = (-18 * Math.PI) / 180;
+// LENS multiplies the horizon radius; 2 is the physical value.
+const BH_M = 48, HOLE_R = 0.2, LENS = 2, SHADOW_K = 1.3, DISK_TILT = (-18 * Math.PI) / 180;
 // Near a hole, stars spiral in and feed it.
 const HOLE_REACH = 6, INFLOW = 0.3, EAT = 160 / N;
 const DISK_N = SMALL ? 16384 : 32768, DISK_SPIN = 2.4, DISK_PX = 2.4, TRAIL = 7, TRAIL_DT = 0.08;
@@ -740,7 +742,8 @@ async function start() {
     // The point, carried along its sight line into the lens plane.
     const u = cameraPosition.add(rel.mul(dL.div(s))).sub(C);
     const ul = u.length().max(1e-5);
-    const re2 = uHole.w.mul(behind).div(s);
+    // The Einstein radius follows the horizon and holds at any zoom.
+    const re2 = uHole.w.mul(behind).mul(dL).div(s);
     const root = sqrt(ul.mul(ul).add(re2.mul(4)));
     const ul2 = ul.add(root).mul(0.5);
     const p = cameraPosition.add(C.add(u.mul(ul2.div(ul))).sub(cameraPosition).mul(s.div(dL)));
@@ -1355,7 +1358,16 @@ async function start() {
     if (!place(b)) wells.splice(wells.indexOf(a), 1);
   }
   const starType = () => STAR_TYPES[(Math.random() * STAR_TYPES.length) | 0];
+  // A supermassive hole needs no mergers, and it grows to the top mass.
+  function addSuper(x, z) {
+    const [vx, vz] = orbitVel(x, z, MAX_M, 0.55);
+    const w = makeWell(x, z, vx, vz, BH_M, MAX_M);
+    w.n = HOLE_WELLS + 1;
+    w.hole = true;
+    if (place(w)) holeBorn(w);
+  }
   function addWell(x, z) {
+    if (pick === 'super') return addSuper(x, z);
     if (pick === 'binary') return addBinary(x, z);
     if (pick === 'worm') return addWorm(x, z);
     // One string at a time; a new one cuts the old.
@@ -1529,7 +1541,7 @@ async function start() {
     jets.visible = on && jet > 0.01;
     if (!on) { uHole.value.w = 0; uHoleVis.value = 0; return; }
     const rS = holeRadius(holeM);
-    uHole.value.set(holeX, 0, holeZ, LENS * Math.min(holeM, 120) * holeVis);
+    uHole.value.set(holeX, 0, holeZ, LENS * rS * holeVis);
     uHoleR.value = rS;
     uHoleVis.value = holeVis;
     uFeed.value = feed;
