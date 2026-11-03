@@ -55,7 +55,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole, magnetar, wormhole, nebula, comet, red giant or dark well. Hold to grow a star cluster and drag to throw it. Drag an object to move it. Scroll or pinch to zoom. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
+    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole, magnetar, wormhole, nebula, comet, red giant, globular cluster, kilonova, gamma-ray burst, cosmic string, dark nebula or dark well. Hold to grow a star cluster and drag to throw it. Drag an object to move it. Scroll or pinch to zoom. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
       <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
@@ -73,6 +73,11 @@
             <button class="chip icon" type="button" data-kind="nebula" aria-pressed="false" aria-label="Add a nebula" title="Nebula"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.6 12c-2-0.2-2.4-3-0.6-3.6-0.2-2.8 3.2-3.8 4.6-1.8 1.2-2.6 5.4-1.6 4.8 1.4 2.2 0.4 2 3.8-0.2 4z"/><circle class="solid" cx="6.4" cy="9.8" r="0.9"/><circle class="solid" cx="10" cy="8.8" r="0.7"/></svg></button>
             <button class="chip icon" type="button" data-kind="comet" aria-pressed="false" aria-label="Add a comet" title="Comet"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="11.6" cy="4.4" r="2.2"/><path d="M9.8 6.2L2 14M10.8 7.6L5.4 13M8.4 5.2L3 10.6"/></svg></button>
             <button class="chip icon" type="button" data-kind="giant" aria-pressed="false" aria-label="Add a red giant" title="Red giant"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="4.6"/><circle cx="8" cy="8" r="6.8" stroke-dasharray="1.4 1.6"/></svg></button>
+            <button class="chip icon" type="button" data-kind="globe" aria-pressed="false" aria-label="Add a globular cluster" title="Globular cluster"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle class="solid" cx="8" cy="8" r="1.7"/><circle class="solid" cx="5" cy="6" r="0.8"/><circle class="solid" cx="10.8" cy="5.6" r="0.8"/><circle class="solid" cx="10.4" cy="10.6" r="0.8"/><circle class="solid" cx="5.6" cy="10.6" r="0.8"/></svg></button>
+            <button class="chip icon" type="button" data-kind="kilo" aria-pressed="false" aria-label="Add a kilonova" title="Kilonova"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="6" cy="8" r="1.6"/><circle class="solid" cx="10" cy="8" r="1.6"/><path d="M8 2.4a5.6 5.6 0 1 1 -5.3 3.8"/></svg></button>
+            <button class="chip icon" type="button" data-kind="grb" aria-pressed="false" aria-label="Add a gamma-ray burst" title="Gamma-ray burst"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="2"/><path d="M8 5.2V1M8 10.8V15M6.4 3L8 1l1.6 2M6.4 13L8 15l1.6-2"/></svg></button>
+            <button class="chip icon" type="button" data-kind="string" aria-pressed="false" aria-label="Add a cosmic string" title="Cosmic string"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 12.5c2-1 2.5-3.5 4.5-4.5s3 1 5-1 2.5-3.5 3.5-4.5"/></svg></button>
+            <button class="chip icon" type="button" data-kind="dark" aria-pressed="false" aria-label="Add a dark nebula" title="Dark nebula"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="solid" d="M3.6 12c-2-0.2-2.4-3-0.6-3.6-0.2-2.8 3.2-3.8 4.6-1.8 1.2-2.6 5.4-1.6 4.8 1.4 2.2 0.4 2 3.8-0.2 4z"/></svg></button>
             <button class="chip icon" type="button" data-kind="well" aria-pressed="false" aria-label="Add a dark well" title="Dark well"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3.2"/><circle class="solid" cx="8" cy="8" r="1"/></svg></button>
           </div>
         </div>
@@ -351,9 +356,20 @@ const GIANT_COL = oklchLinear(0.68, 0.18, 35), DWARF_COL = oklchLinear(0.96, 0.0
 const SHELLS = {
   nova: { v: BLAST_V, a: BLAST_A, t: BLAST_T, hot: [3, 2.58, 1.98], cool: [1.2, 0.16, 0.064] },
   giant: { v: 1.8, a: 5, t: 5.5, hot: oklchLinear(0.8, 0.13, 190).map(c => c * 2.4), cool: oklchLinear(0.55, 0.16, 300).map(c => c * 1.4) },
+  kilo: { v: 4, a: 10, t: 3.5, hot: oklchLinear(0.9, 0.13, 85).map(c => c * 3), cool: oklchLinear(0.55, 0.2, 35).map(c => c * 1.4) },
 };
-// White holes and wormholes stay put and never merge.
-const pinned = w => w.kind === 'white' || w.kind === 'worm';
+// A globular cluster drops an old, round ball of stars all at once.
+const GLOBE_M = 16, GLOBE_COL = oklchLinear(0.8, 0.12, 70);
+// A kilonova is two neutron stars that spiral in over KILO_T, then blast.
+const KILO_M = 12, KILO_T = 5;
+// A gamma-ray burst fires two fixed beams for a moment, then is gone.
+const GRB_M = 6, GRB_COL = oklchLinear(0.92, 0.06, 290);
+// A cosmic string is a pinned line that draws stars into a thin wake.
+const STR_L = 6, STR_K = 2.2;
+// A dark nebula pours out light-eating dust for DARK_T sim seconds.
+const DARK_M = 4, DARK_T = 2;
+// White holes, wormholes and strings stay put and never merge.
+const pinned = w => w.kind === 'white' || w.kind === 'worm' || w.kind === 'string';
 // Zoom scales the camera distance within these bounds.
 const ZOOM_MIN = 0.55, ZOOM_MAX = 1.5;
 // A pulsar spins its two beams at this rate, in radians per second.
@@ -367,6 +383,8 @@ const holeRadius = m => Math.min(0.55, HOLE_R * Math.sqrt(m / BH_M));
 let running = false, ready = false, shown = !document.querySelector('.intro');
 curtain.then(() => { shown = true; });
 let renderer = null, camera = null;
+// Object timelines (fuses, bursts) run on their own clock, apart from Gravity.
+let clockT = 0;
 let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star', pace = PACE;
 // Streak lengths in seconds: stars and objects, then effects.
 let starStreak = Number(saved('starStreak') ?? 0.15), streak = Number(saved('streak') ?? 0.3), zoom = 1, zoomGoal = 1;
@@ -442,6 +460,16 @@ async function start() {
     uPul.push(uniform(new THREE.Vector4()));
     uPulOn.push(uniform(0));
   }
+  // The cosmic string: centre xz, then its unit direction; uStrOn fades it.
+  const uStr = uniform(new THREE.Vector4()), uStrOn = uniform(0);
+  // Pull toward the string's line, inside its length.
+  const stringPull = p => {
+    const sx = p.x.sub(uStr.x), sz = p.z.sub(uStr.y);
+    const along = sx.mul(uStr.z).add(sz.mul(uStr.w)), perp = sz.mul(uStr.z).sub(sx.mul(uStr.w));
+    const inside = float(1).sub(smoothstep(STR_L - 1, STR_L, along.abs()));
+    const pull = exp(perp.div(0.7).pow(2).negate()).mul(inside).mul(uStrOn).mul(STR_K);
+    return vec3(uStr.w.negate(), 0, uStr.z).mul(perp.sign().negate()).mul(pull);
+  };
   // Magnetars: xz position and swirl strength.
   const uMag = [];
   for (let k = 0; k < MAXW; k++) uMag.push(uniform(new THREE.Vector3()));
@@ -559,10 +587,17 @@ async function start() {
       for (let k = 1; k < LOBES; k++) lo = select(lobe.equal(float(k)), uLobe[k], lo);
       const cOff = lo.add(vec3(gauss(H(10), H(11)), gauss(H(12), H(13)).mul(0.6), gauss(H(14), H(15))).mul(0.3)).mul(uHoldR);
       const cV = uHoldVel.add(vec3(gauss(H(3), H(4)), gauss(H(5), H(6)).mul(0.5), gauss(H(7), H(8))).mul(0.18));
-      const cloud = uHoldCloud.greaterThan(0.5);
-      const t = uHoldT0.add(max(rel.toFloat().sub(INIT), 0).div(RATE));
-      P.assign(vec4(uHoldPos.add(select(cloud, cOff, off)), uHoldVel.length().add(1.4)));
-      V.assign(vec4(select(cloud, cV, v), t));
+      // A globular cluster is a Plummer ball on random orbits, born long ago.
+      const pu = H(16).max(0.02);
+      const pr = float(0.35).div(sqrt(pu.pow(-2 / 3).sub(1).max(0.01))).min(2.4);
+      const gOff = vec3(gauss(H(17), H(18)), gauss(H(19), H(20)), gauss(H(21), H(22))).normalize().mul(pr);
+      const sig = sqrt(float(GLOBE_M).div(pr.add(0.35))).mul(0.26);
+      const gV = uHoldVel.add(vec3(gauss(H(23), H(24)), gauss(H(25), H(26)), gauss(H(27), H(28))).mul(sig));
+      const cloud = uHoldCloud.greaterThan(0.5), globe = uHoldCloud.greaterThan(1.5);
+      // Old stars skip the birth flash, but never predate the last Clear.
+      const t = select(globe, max(uHoldT0.sub(0.5), uClearT.add(0.001)), uHoldT0.add(max(rel.toFloat().sub(INIT), 0).div(RATE)));
+      P.assign(vec4(uHoldPos.add(select(globe, gOff, select(cloud, cOff, off))), uHoldVel.length().add(1.4)));
+      V.assign(vec4(select(globe, gV, select(cloud, cV, v)), t));
     }).ElseIf(born.greaterThanEqual(uClearT), () => {
       const p = P.xyz.toVar(), v = V.xyz.toVar();
       const acc = uFrame.toVar();
@@ -619,6 +654,8 @@ async function start() {
           acc.addAssign(vec3(mz.negate(), 0, mx).mul(sw.mul(inverseSqrt(m2.add(1e-4)))));
         });
       }
+      // A cosmic string draws stars into a thin wake along its line.
+      If(uStrOn.greaterThan(0), () => { acc.addAssign(stringPull(p)); });
       // A supernova shell shoves stars outward as it passes.
       If(uBlast.w.greaterThan(0), () => {
         const bx = p.x.sub(uBlast.x), bz = p.z.sub(uBlast.y);
@@ -818,6 +855,8 @@ async function start() {
   const dyeRead = texture3D(gDyeA), dyeWrite = storageTexture(gDyeB).toWriteOnly();
   // Splat targets: parcel weight and hue-weighted sum, in 1/256 units.
   const gMass = instancedArray(CELLS, 'uint').toAtomic(), gHue = instancedArray(CELLS, 'uint').toAtomic();
+  // Dark dust weight, so glowing and dark gas can share the grid.
+  const gDark = instancedArray(CELLS, 'uint').toAtomic();
   const GP = SMALL ? 16384 : 32768;
   // Parcel: xyz and hue; velocity and birth time (DEAD when empty).
   const gPos = instancedArray(GP, 'vec4'), gVel = instancedArray(GP, 'vec4');
@@ -877,6 +916,7 @@ async function start() {
         const bx = p.x.sub(uBlast.x), bz = p.z.sub(uBlast.y), br = sqrt(bx.mul(bx).add(bz.mul(bz)).add(1e-4));
         acc.addAssign(vec3(bx, 0, bz).div(br).mul(exp(br.sub(uBlast.z).div(0.6).pow(2).negate()).mul(uBlast.w)));
       });
+      If(uStrOn.greaterThan(0), () => { acc.addAssign(stringPull(p)); });
       // A slow small-scale stir curls the smoke into wisps, as in Fire.
       const f = p.mul(2.2).add(vec3(uTime.mul(0.6), 0, uTime.mul(-0.45)));
       acc.addAssign(vec3(sin(f.z).add(cos(f.y.mul(2))), sin(f.x).mul(0.3), sin(f.y.mul(2)).add(cos(f.x))).mul(0.25));
@@ -893,6 +933,7 @@ async function start() {
         const idx = cellIndex(cx, cy, cz);
         atomicAdd(gMass.element(idx), uint(wgt.mul(256)));
         atomicAdd(gHue.element(idx), uint(wgt.mul(P4.w.fract()).mul(256)));
+        atomicAdd(gDark.element(idx), uint(wgt.mul(step(1.5, P4.w)).mul(256)));
       });
     });
   })().compute(GP);
@@ -907,22 +948,25 @@ async function start() {
       return cellIndex(x, y, z);
     };
     const taps = [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    let m = float(0), h = float(0);
+    let m = float(0), h = float(0), dk = float(0);
     taps.forEach(([dx, dy, dz], k) => {
       const wt = k ? 1 : 2, idx = at(dx, dy, dz);
       m = m.add(float(atomicLoad(gMass.element(idx))).mul(wt));
       h = h.add(float(atomicLoad(gHue.element(idx))).mul(wt));
+      dk = dk.add(float(atomicLoad(gDark.element(idx))).mul(wt));
     });
     const dens = m.div(8 * 256).mul(GAS_K);
     const hue = h.div(m.max(1));
     const uvw = vec3(c).add(0.5).div(vec3(GX, GY, GZ));
     const prev = dyeRead.sample(uvw).level(0);
-    const next = mix(prev, vec4(dens, select(m.greaterThan(0), hue, prev.g), uEmitDark, 1), 0.35);
+    const has = m.greaterThan(0);
+    const next = mix(prev, vec4(dens, select(has, hue, prev.g), select(has, dk.div(m.max(1)), prev.b), 1), 0.35);
     textureStore(dyeWrite, c, next).toWriteOnly();
   })().compute(CELLS);
   const gasZero = Fn(() => {
     atomicStore(gMass.element(instanceIndex), uint(0));
     atomicStore(gHue.element(instanceIndex), uint(0));
+    atomicStore(gDark.element(instanceIndex), uint(0));
   })().compute(CELLS);
   const gasPasses = [gasStep, gasResolve, gasZero];
 
@@ -932,6 +976,7 @@ async function start() {
     textureStore(gDyeB, c, vec4(0)).toWriteOnly();
     atomicStore(gMass.element(instanceIndex), uint(0));
     atomicStore(gHue.element(instanceIndex), uint(0));
+    atomicStore(gDark.element(instanceIndex), uint(0));
     If(instanceIndex.lessThan(uint(GP)), () => { gVel.element(instanceIndex).assign(vec4(0, 0, 0, DEAD)); });
   })().compute(CELLS);
 
@@ -988,6 +1033,48 @@ async function start() {
     scene.add(s);
     tails.push(s);
   }
+
+  // Kilonova pairs: per slot xz, separation and phase.
+  const uKilo = [];
+  for (let k = 0; k < MAXW; k++) uKilo.push(uniform(new THREE.Vector4()));
+  const pairMat = spriteMat();
+  {
+    const slot = instanceIndex.div(uint(2)), side = select(instanceIndex.bitAnd(uint(1)).equal(uint(1)), float(1), float(-1));
+    let K = uKilo[0];
+    for (let k = 1; k < MAXW; k++) K = select(slot.equal(uint(k)), uKilo[k], K);
+    const at = vec3(K.x.add(cos(K.w).mul(K.z).mul(side)), 0, K.y.add(sin(K.w).mul(K.z).mul(side)));
+    pairMat.positionNode = lensOf(at).p;
+    pairMat.scaleNode = select(K.z.greaterThan(0), uPx.mul(7), float(0));
+    pairMat.colorNode = Fn(() => {
+      const d = uv().sub(0.5).length().mul(2);
+      return vec4(ICE.mul(1.2).add(0.6).mul(6), exp(d.mul(d).mul(-6)).mul(float(1).sub(d).max(0)));
+    })();
+  }
+  const pairs = new THREE.Sprite(pairMat);
+  pairs.count = MAXW * 2;
+  pairs.frustumCulled = false;
+  pairs.visible = false;
+  scene.add(pairs);
+
+  // The cosmic string: a shimmering line of light.
+  const strMat = spriteMat();
+  {
+    const sh2 = n => hash(instanceIndex.add(uint(n * 5309 + 19)));
+    const a = sh2(1).mul(2).sub(1).mul(STR_L);
+    const wob = sin(a.mul(2.5).add(uTime.mul(3))).mul(0.06).add(gauss(sh2(2), sh2(3)).mul(0.015));
+    const at = vec3(uStr.x, cos(a.mul(1.7).add(uTime.mul(2.3))).mul(0.04), uStr.y)
+      .add(vec3(uStr.z, 0, uStr.w).mul(a)).add(vec3(uStr.w.negate(), 0, uStr.z).mul(wob));
+    strMat.positionNode = lensOf(at).p;
+    strMat.scaleNode = uPx.mul(1.6);
+    const glint = sin(a.mul(9).add(uTime.mul(7))).mul(0.4).add(0.6);
+    const fadeEnds = float(1).sub(smoothstep(STR_L - 1.2, STR_L, a.abs()));
+    strMat.colorNode = dotOf(varying(vec3(...oklchLinear(0.9, 0.07, 300)).mul(1.6).mul(glint).mul(fadeEnds).mul(uStrOn)));
+  }
+  const strFx = new THREE.Sprite(strMat);
+  strFx.count = SMALL ? 900 : 1600;
+  strFx.frustumCulled = false;
+  strFx.visible = false;
+  scene.add(strFx);
 
   // The supernova shell: a ring of hot gas that cools as it spreads.
   const shellMat = spriteMat();
@@ -1167,12 +1254,16 @@ async function start() {
       w.az = az0 - drag * (w.vz - uz);
       w.k = resp(Math.max(w.m, w.mt));
       if (w.kind === 'pulsar') w.th += PULSAR_W * h;
+      // A kilonova pair whirls faster as it closes: a chirp.
+      if (w.kind === 'kilo') w.th += h * 1.4 / (0.9 * (1 - clamp((clockT - w.t0) / KILO_T)) ** 0.4 + 0.05) ** 1.5;
     }
     for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
       const a = wells[i], b = wells[j], dx = b.x - a.x, dz = b.z - a.z, r2 = dx * dx + dz * dz;
       const inv = 1 / (r2 + EPSW2) ** 1.5;
       // A white hole repels with the same strength a well attracts.
-      const ma = a.kind === 'white' ? -a.m : a.m, mb = b.kind === 'white' ? -b.m : b.m;
+      // A string bends paths but carries no ordinary mass.
+      const sm = w => (w.kind === 'white' ? -w.m : w.kind === 'string' ? 0 : w.m);
+      const ma = sm(a), mb = sm(b);
       a.ax += mb * dx * inv * a.k; a.az += mb * dz * inv * a.k;
       b.ax -= ma * dx * inv * b.k; b.az -= ma * dz * inv * b.k;
       // Dynamical friction: two close halos shed relative speed and sink together.
@@ -1219,6 +1310,8 @@ async function start() {
       keep.th = heavy.th;
       keep.fuse = heavy.fuse;
       keep.nursed = a.nursed || b.nursed;
+      keep.t0 = heavy.t0;
+      keep.emitUntil = heavy.emitUntil;
       keep.pulse = 1;
       // A nebula's stream and gas follow it into the merger.
       if (fling?.nursery === gone) fling.nursery = keep;
@@ -1276,15 +1369,25 @@ async function start() {
   function addWell(x, z) {
     if (pick === 'binary') return addBinary(x, z);
     if (pick === 'worm') return addWorm(x, z);
+    // One string at a time; a new one cuts the old.
+    if (pick === 'string') for (const w of wells) if (w.kind === 'string') w.mt = 0;
     const type = starType();
-    const m = { star: type.m, nova: NOVA_M, pulsar: PULSAR_M, white: WHITE_M, magnetar: MAG_M, nebula: NEBULA_M, comet: COMET_M, giant: GIANT_M }[pick] ?? TAP_M;
-    let [vx, vz] = pick === 'white' ? [0, 0] : orbitVel(x, z, m);
+    const m = {
+      star: type.m, nova: NOVA_M, pulsar: PULSAR_M, white: WHITE_M, magnetar: MAG_M, nebula: NEBULA_M, comet: COMET_M,
+      giant: GIANT_M, globe: GLOBE_M, kilo: KILO_M, grb: GRB_M, string: 0.5, dark: DARK_M,
+    }[pick] ?? TAP_M;
+    let [vx, vz] = pick === 'white' || pick === 'string' ? [0, 0] : orbitVel(x, z, m);
     // A comet runs fast, on a long and narrow orbit.
     if (pick === 'comet') { vx *= 1.45; vz *= 1.45; }
-    const col = { star: type.col, nova: STAR_TYPES[0].col, white: WHITE_COL, magnetar: MAG_COL, nebula: NEBULA_COL, comet: COMET_COL, giant: GIANT_COL }[pick] ?? null;
+    const col = {
+      star: type.col, nova: STAR_TYPES[0].col, white: WHITE_COL, magnetar: MAG_COL, nebula: NEBULA_COL, comet: COMET_COL,
+      giant: GIANT_COL, globe: GLOBE_COL, grb: GRB_COL, kilo: MAG_COL,
+    }[pick] ?? null;
     const w = makeWell(x, z, vx, vz, 0, m, pick, col);
-    if (pick === 'nova') w.fuse = simT + NOVA_FUSE;
-    if (pick === 'giant') w.fuse = simT + GIANT_FUSE;
+    if (pick === 'nova') w.fuse = clockT + NOVA_FUSE;
+    if (pick === 'giant') w.fuse = clockT + GIANT_FUSE;
+    if (pick === 'kilo' || pick === 'grb') w.t0 = clockT;
+    if (pick === 'dark') { w.emitUntil = clockT + DARK_T; setLobes(); }
     place(w);
   }
   // One wormhole at a time: a new pair closes the old one.
@@ -1324,7 +1427,7 @@ async function start() {
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k];
       if (w) {
-        uW[k].value.set(w.x, 0, w.z, w.kind === 'white' ? -w.m : w.m);
+        uW[k].value.set(w.x, 0, w.z, w.kind === 'white' ? -w.m : w.kind === 'string' ? 0 : w.m);
         uWV[k].value.set(w.vx, 0, w.vz, w.ph);
         uWH[k].value = w.hole ? holeRadius(w.m) : 0;
       } else {
@@ -1340,8 +1443,15 @@ async function start() {
     uBlastAge.value = bt;
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], on = w && w.kind === 'pulsar' && !w.hole && w.mt > 0;
-      if (on) uPul[k].value.set(w.x, w.z, Math.cos(w.th), Math.sin(w.th));
-      uPulOn[k].value = on ? w.vis : 0;
+      // A gamma-ray burst fires its fixed beams hard for a moment.
+      const grb = w && w.kind === 'grb' && !w.hole ? grbPower(w) : 0;
+      if (on || grb > 0) uPul[k].value.set(w.x, w.z, Math.cos(w.th), Math.sin(w.th));
+      uPulOn[k].value = on ? w.vis : grb;
+      const ki = w && w.kind === 'kilo' && !w.hole && w.mt > 0;
+      if (ki) {
+        const pr = clamp((clockT - w.t0) / KILO_T);
+        uKilo[k].value.set(w.x, w.z, 0.9 * (1 - pr) ** 0.4 + 0.02, w.th);
+      } else uKilo[k].value.z = 0;
       const mag = w && w.kind === 'magnetar' && !w.hole && w.mt > 0;
       if (mag) uMag[k].value.set(w.x, w.z, MAG_SWIRL * w.vis);
       else uMag[k].value.z = 0;
@@ -1358,6 +1468,9 @@ async function start() {
       }
       uTailOn[k].value = on ? w.vis : 0;
     }
+    const str = wells.find(w => w.kind === 'string' && w.mt > 0);
+    if (str) uStr.value.set(str.x, str.z, Math.cos(str.th), Math.sin(str.th));
+    uStrOn.value = str ? str.vis : 0;
     const mouth = wells.find(w => w.kind === 'worm' && w.mt > 0 && w.link?.mt > 0);
     if (mouth) uWorm.value.set(mouth.x, mouth.z, mouth.link.x, mouth.link.z);
     uWormOn.value = mouth ? 1 : 0;
@@ -1396,6 +1509,18 @@ async function start() {
     w.col = DWARF_COL;
     w.flash = 0.5;
     shell(w, 'giant');
+  }
+  // Burst power: dark for 0.6 s, a hard flash, then fading over 1.5 s.
+  function grbPower(w) {
+    const a = clockT - w.t0;
+    return a < 0.6 ? 0 : a < 2.1 ? 3 * Math.sqrt(1 - (a - 0.6) / 1.5) : 0;
+  }
+  // The pair touches: a kilonova shell, and a magnetar is left.
+  function kilonova(w) {
+    w.kind = 'magnetar';
+    w.col = MAG_COL;
+    w.flash = 1;
+    shell(w, 'kilo');
   }
   function holeBorn(w) {
     w.pulse = 1;
@@ -1543,13 +1668,22 @@ async function start() {
     return [vx * k, vz * k];
   }
   // A nebula borrows the cluster stream until it is done.
-  function nurse(w) {
+  // Lobes: offsets in units of the cloud radius, fresh for each cloud.
+  function setLobes() {
     for (const L of uLobe) {
       const a = Math.random() * TAU, r = 0.25 + Math.random() * 0.55;
       L.value.set(Math.cos(a) * r, (Math.random() - 0.5) * 0.5, Math.sin(a) * r);
     }
-    uHoldCloud.value = 1;
-    fling = { start: ring, count: INIT, t0: simT, x: w.x, z: w.z, vx: w.vx, vz: w.vz, releasing: false, nursery: w, max: Math.round(MAXF / 2) };
+  }
+  function nurse(w, shape = 1) {
+    if (shape === 1) setLobes();
+    uHoldCloud.value = shape;
+    // A globe drops all its stars at once and lets go almost at once.
+    const max = Math.round(shape === 2 ? MAXF / 3 : MAXF / 2);
+    fling = {
+      start: ring, count: shape === 2 ? max : INIT, t0: simT, x: w.x, z: w.z, vx: w.vx, vz: w.vz, releasing: false,
+      nursery: w, max, init: shape === 2 ? max : INIT, life: shape === 2 ? 0.25 : NURSE_T,
+    };
     uSalt.value = (Math.random() * 1e6) | 0;
     w.nursed = true;
   }
@@ -1669,14 +1803,14 @@ async function start() {
     }
     if (!fling) return;
     if (!fling.releasing) {
-      fling.count = Math.min(fling.max ?? MAXF, INIT + Math.floor((simT - fling.t0) * RATE));
+      fling.count = Math.min(fling.max ?? MAXF, (fling.init ?? INIT) + Math.floor((simT - fling.t0) * RATE));
       const n = fling.nursery;
       if (n) {
         fling.x = n.x;
         fling.z = n.z;
         fling.vx = n.vx;
         fling.vz = n.vz;
-        if (simT - fling.t0 > NURSE_T || n.mt === 0) {
+        if (simT - fling.t0 > (fling.life ?? NURSE_T) || n.mt === 0) {
           fling.releasing = true;
           if (n.kind === 'nebula') n.kind = 'well';
         }
@@ -1759,12 +1893,14 @@ async function start() {
   shadow.visible = disk.visible = jets.visible = true;
   beams.forEach(b => { b.visible = true; });
   tails.forEach(t => { t.visible = true; });
+  pairs.visible = strFx.visible = true;
   gas.visible = true;
   shellFx.visible = true;
   await Promise.all([scenePass.compileAsync(renderer), diskPass.compileAsync(renderer)]);
   shadow.visible = disk.visible = jets.visible = false;
   beams.forEach(b => { b.visible = false; });
   tails.forEach(t => { t.visible = false; });
+  pairs.visible = strFx.visible = false;
   gas.visible = false;
   shellFx.visible = false;
 
@@ -1827,6 +1963,7 @@ async function start() {
     // Reduced motion halves the simulation speed.
     // Behind the intro, the seeded pair holds still.
     const simDt = shown || hold ? dt * pace * (reduce ? 0.5 : 1) : 0;
+    if (simDt > 0) clockT += dt * 0.7 * (reduce ? 0.5 : 1);
     const n = simDt > 0 ? Math.max(1, Math.min(4, Math.ceil(simDt / STEP - 1e-6))) : 0, h = n ? simDt / n : 0;
     // Pruning first keeps each slot k matched to its uniforms all frame.
     prune();
@@ -1840,12 +1977,15 @@ async function start() {
       simT += h;
     }
     // A nursing nebula releases gas parcels; they then move on their own.
-    const nn = fling?.nursery?.kind === 'nebula' ? fling.nursery : null;
+    // A dark nebula pours out dust when no nebula is nursing.
+    const nn = fling?.nursery?.kind === 'nebula' ? fling.nursery : wells.find(w => w.kind === 'dark' && w.mt > 0 && clockT < w.emitUntil);
     uSpawnCount.value = 0;
     if (nn && simDt > 0) {
-      uEmit.value.set(nn.x, nn.z, 2.2, 1);
+      const dark = nn.kind === 'dark';
+      uEmit.value.set(nn.x, nn.z, dark ? 2.6 : 2.2, 1);
       uEmitVel.value.set(nn.vx, 0, nn.vz);
-      const n = Math.min(GP, Math.round((GP * simDt) / NURSE_T));
+      uEmitDark.value = dark ? 1 : 0;
+      const n = Math.min(GP, Math.round((GP * simDt) / (dark ? DARK_T * 1.6 : NURSE_T)));
       uSpawnStart.value = gasRing;
       uSpawnCount.value = n;
       uGasSalt.value = (Math.random() * 1e6) | 0;
@@ -1860,13 +2000,18 @@ async function start() {
     }
     gas.visible = simT < gasUntil;
     for (const w of wells) {
-      if (w.kind === 'nova' && simT >= w.fuse && !w.hole) explode(w);
-      if (w.kind === 'giant' && simT >= w.fuse && !w.hole) shed(w);
+      if (w.kind === 'nova' && clockT >= w.fuse && !w.hole) explode(w);
+      if (w.kind === 'giant' && clockT >= w.fuse && !w.hole) shed(w);
+      if (w.kind === 'kilo' && clockT - w.t0 >= KILO_T && !w.hole) kilonova(w);
+      if (w.kind === 'grb' && clockT - w.t0 > 2.4) w.mt = 0;
+      if (w.kind === 'globe' && !w.nursed && !fling && w.mt > 0) nurse(w, 2);
       if (w.kind === 'nebula' && !w.nursed && !fling && w.mt > 0) nurse(w);
       // A nebula cut short by a hand or a reset settles as a cluster core.
       if (w.kind === 'nebula' && w.nursed && fling?.nursery !== w) w.kind = 'well';
     }
     shellFx.visible = !!blast;
+    pairs.visible = wells.some(w => w.kind === 'kilo' && !w.hole && w.mt > 0);
+    strFx.visible = uStrOn.value > 0.01;
     // The ring moves past a released cluster's slots.
     if (fling && fling.releasing) {
       ring = (fling.start + fling.count) % N;
@@ -1891,19 +2036,19 @@ async function start() {
       dot.s.visible = w.vis > 0.01;
       dot.s.position.set(w.x, 0, w.z);
       const grow = w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
-      beams[k].visible = w.kind === 'pulsar' && !w.hole && w.vis > 0.01;
+      beams[k].visible = (w.kind === 'pulsar' && !w.hole && w.vis > 0.01) || (w.kind === 'grb' && !w.hole && grbPower(w) > 0);
       w.flash = (w.flash || 0) * Math.exp(-dt / 0.4);
       // A hole that is not the main one draws as a plain well core.
       const look = w.hole ? 'well' : w.kind;
       if (look === 'star' || look === 'nova') {
         // A supernova swells and shudders as its fuse burns down.
-        const due = look === 'nova' ? clamp(1 - (w.fuse - simT) / NOVA_FUSE) : 0;
+        const due = look === 'nova' ? clamp(1 - (w.fuse - clockT) / NOVA_FUSE) : 0;
         dot.size.value = (18 + 8 * Math.sqrt(w.m / SEED_M)) * grow * (1 + due * (0.3 + 0.12 * Math.sin(simT * 14)));
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 4 + 4 * due;
       } else if (look === 'giant') {
         // A red giant swells and throbs slowly before it sheds.
-        const due = clamp(1 - (w.fuse - simT) / GIANT_FUSE);
+        const due = clamp(1 - (w.fuse - clockT) / GIANT_FUSE);
         dot.size.value = (42 + 22 * due) * grow * (1 + 0.06 * due * Math.sin(simT * 3));
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 3 + 2 * due;
@@ -1920,6 +2065,18 @@ async function start() {
         dot.size.value = 7 * grow;
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 5;
+      } else if (look === 'globe') {
+        dot.size.value = 14 * grow;
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 3;
+      } else if (look === 'kilo' || look === 'string' || look === 'dark') {
+        // The pair, the line or the dust draws these; the dot hides.
+        dot.size.value = 0;
+      } else if (look === 'grb') {
+        const pw = grbPower(w);
+        dot.size.value = (8 + 10 * pw) * grow;
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 4 + 14 * pw;
       } else if (look === 'magnetar') {
         // A magnetar flares in sharp bursts as its crust quakes.
         const quake = Math.max(0, Math.sin(simT * 2.3 + w.ph) * Math.sin(simT * 0.7 + w.th)) ** 16;
