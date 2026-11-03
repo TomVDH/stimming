@@ -552,7 +552,8 @@ function layout() {
   const BW = Math.max(4, Math.round(AW / 4)), BH = Math.max(4, Math.round(AH / 4));
   blm = [target(BW, BH), target(BW, BH)];
   ai = 0;
-  if (raf) return;
+  // The beam restarts in the new pixel space, so no stray streak shows.
+  if (raf) { tS = now(); sample(tS); last = [pt[0], pt[1]]; return; }
   if (visible) settle();
 }
 
@@ -677,7 +678,10 @@ let raf = 0, visible = true, lastFrame = 0, lastInput = 0, stroke = null, slidin
 const moving = () => voices.length > 1 || voices.some(v => v.spin || v.morph || v.rate !== 1);
 function frame() {
   raf = 0;
-  const t = now(), dt = clamp(t - lastFrame, 0, 0.25);
+  const t = now(), calm = !stroke && !sliding && t - lastInput >= IDLE;
+  // A calm signal draws at 30 fps to halve the work.
+  if (calm && moving() && t - lastFrame < 1 / 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = clamp(t - lastFrame, 0, 0.25);
   lastFrame = t;
   voices = voices.filter(v => !v.dieAt || t < v.dieAt + FADE);
   ensureAudio();
@@ -686,7 +690,7 @@ function frame() {
   beamPass(n, 1, ph.slow);
   present();
   if (!visible) return;
-  if (stroke || sliding || moving() || t - lastInput < IDLE) raf = requestAnimationFrame(frame);
+  if (!calm || moving()) raf = requestAnimationFrame(frame);
   else settle();
 }
 function kick() {
