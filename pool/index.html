@@ -29,6 +29,11 @@
   transition: border-color 0.2s ease;
 }
 .picker.on { border-color: var(--fg); }
+/* On the bright water the pill takes the same dark backing as the chips. */
+.stage + .bar:not(.bar--below) .picker {
+  background-color: oklch(0.15 0.012 275 / 0.84);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
 .picker .step {
   display: grid; place-items: center; width: 30px; height: 30px; padding: 0; cursor: pointer;
   color: var(--muted); background: none; border: 0; border-radius: 999px; -webkit-tap-highlight-color: transparent;
@@ -91,8 +96,20 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Caustic pool</h1><div class="vignette" hidden></div></section>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
 <script type="module">
-import { initPage, sound, audioKit } from '../shared/stim.js';
+import { initPage, sound, audioKit, linFit } from '../shared/stim.js';
 initPage({ id: 'pool' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const nightB = document.getElementById('night'), clearB = document.getElementById('clear'), poolB = document.getElementById('pool');
@@ -118,57 +135,40 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
 };
 
-/* ---------- colour: OKLCH in, linear sRGB out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
-}
-// Chroma shrinks until the colour fits sRGB.
-function linear(L, C, h) {
-  let c = lin(L, C, h);
-  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return c.map(v => clamp(v));
-}
+/* ---------- colour: OKLCH in, linear sRGB out, fitted by culori ---------- */
 const mul = (c, k) => c.map(v => v * k);
 const PAL = {
-  SUN: mul(linear(0.97, 0.045, 80), 2.6),
-  ZEN: linear(0.7, 0.11, 238),
-  HOR: linear(0.9, 0.075, 58),
-  HALO: linear(0.95, 0.09, 75),
-  AMB: mul(linear(0.84, 0.07, 215), 0.62),
+  SUN: mul(linFit(0.97, 0.045, 80), 2.6),
+  ZEN: linFit(0.7, 0.11, 238),
+  HOR: linFit(0.9, 0.075, 58),
+  HALO: linFit(0.95, 0.09, 75),
+  AMB: mul(linFit(0.84, 0.07, 215), 0.62),
   // Pale water white for droplets and foam; each pool brings its own tiles.
-  TW: linear(0.88, 0.045, 205),
-  SCAT: mul(linear(0.66, 0.13, 196), 0.55),
+  TW: linFit(0.88, 0.045, 205),
+  SCAT: mul(linFit(0.66, 0.13, 196), 0.55),
   // The floaters share one sun-yellow accent.
-  ACC: linear(0.9, 0.18, 100),
+  ACC: linFit(0.9, 0.18, 100),
   // Night: a cool moon, a deep sky and two warm-white pool lamps.
-  MOON: mul(linear(0.86, 0.035, 245), 0.24),
-  AMBN: mul(linear(0.5, 0.06, 262), 0.06),
-  NZEN: linear(0.12, 0.035, 270),
-  NHOR: linear(0.25, 0.05, 248),
-  MOONH: linear(0.5, 0.04, 240),
-  STAR: mul(linear(0.97, 0.03, 85), 9),
-  LAMPC: mul(linear(0.9, 0.11, 192), 3.4),
-  WGLOW: mul(linear(0.62, 0.13, 200), 0.95),
-  LENS: linear(0.88, 0.015, 220),
-  RIMC: linear(0.74, 0.01, 250),
+  MOON: mul(linFit(0.86, 0.035, 245), 0.24),
+  AMBN: mul(linFit(0.5, 0.06, 262), 0.06),
+  NZEN: linFit(0.12, 0.035, 270),
+  NHOR: linFit(0.25, 0.05, 248),
+  MOONH: linFit(0.5, 0.04, 240),
+  STAR: mul(linFit(0.97, 0.03, 85), 9),
+  LAMPC: mul(linFit(0.9, 0.11, 192), 3.4),
+  WGLOW: mul(linFit(0.62, 0.13, 200), 0.95),
+  LENS: linFit(0.88, 0.015, 220),
+  RIMC: linFit(0.74, 0.01, 250),
   // A beach ball: coral, white, cobalt, sun yellow and teal.
-  BAR: linear(0.64, 0.21, 30),
-  BAW: linear(0.96, 0.01, 95),
-  BAB: linear(0.5, 0.19, 262),
-  BAY: linear(0.88, 0.17, 95),
-  BAT: linear(0.72, 0.13, 182),
+  BAR: linFit(0.64, 0.21, 30),
+  BAW: linFit(0.96, 0.01, 95),
+  BAB: linFit(0.5, 0.19, 262),
+  BAY: linFit(0.88, 0.17, 95),
+  BAT: linFit(0.72, 0.13, 182),
   // Cast iron, a ground steel face and an orange enamel bell.
-  IRON: linear(0.26, 0.012, 255),
-  STEEL: linear(0.6, 0.014, 245),
-  BELL: linear(0.7, 0.19, 45),
+  IRON: linFit(0.26, 0.012, 255),
+  STEEL: linFit(0.6, 0.014, 245),
+  BELL: linFit(0.7, 0.19, 45),
 };
 const f5 = v => v.toFixed(5);
 const v3 = c => `vec3(${c.map(f5).join(', ')})`;
@@ -336,108 +336,115 @@ const WAVES = [[14, 0.15, 0.036], [79, 0.115, 0.03], [141, 0.17, 0.04], [205, 0.
     return { dx: Math.cos(deg * D2R), dz: Math.sin(deg * D2R), k, w: k * c, amp: 2.1 / (k * k), ph: i * 2.399 };
   });
 
-/* ---------- sound: synthesised through the shell's audio kit ---------- */
-const MAXV = 16, LEAD = 0.004;
+/* ---------- sound: Tone.js voices on the shared audio kit ---------- */
+const LEAD = 0.004;
 const GESTURE_KEYS = new Set([' ', 'Enter', 'r', 'R', 'n', 'N', 'c', 'C', 'x', 'X', 'p', 'P', '1', '2', '3', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const kit = audioKit({ gain: 0.55, keys: GESTURE_KEYS });
-let voices = 0, plopNext = 0, tickNext = 0, slapNext = 0, gurgleNext = 0, lapG = null, patG = null;
+let V = null, T = null, toneLoad = null, plopNext = 0, tickNext = 0, slapNext = 0, gurgleNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
-const level = () => 1 / (1 + 0.07 * voices);
-// The beds start with the first live context.
-function live() {
-  const a = kit.live();
-  if (a && !lapG) bed(a);
-  return a;
+// The shared kit loads Tone on its own context, so mute and sleep still hold.
+// The first live call starts the load; voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
+  });
+  return null;
 }
-function track(src, ...tails) {
-  voices++;
-  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+// Each voice is two tones and a filtered noise, panned as one.
+// Voices take turns, so overlapping splashes keep their own place.
+const NVOX = 10, NRING = 2;
+function buildVoices() {
+  const env = { attack: 0.004, decay: 0.1, sustain: 0, release: 0.02 };
+  const vox = Array.from({ length: NVOX }, () => {
+    const p = new T.Panner(0).connect(kit.out), f = new T.Filter({ type: 'bandpass', frequency: 1000, Q: 1 }).connect(p);
+    return {
+      p, f,
+      a: new T.Synth({ oscillator: { type: 'sine' }, envelope: env }).connect(p),
+      b: new T.Synth({ oscillator: { type: 'sine' }, envelope: env }).connect(p),
+      n: new T.NoiseSynth({ noise: { type: 'white' }, envelope: env }).connect(f),
+    };
+  });
+  // Iron rings: inharmonic triangle partials through a soft lowpass.
+  const rings = Array.from({ length: NRING }, () => {
+    const p = new T.Panner(0).connect(kit.out), f = new T.Filter({ type: 'lowpass', frequency: 2000, Q: 0.6 }).connect(p);
+    return { p, f, syn: Array.from({ length: 4 }, () => new T.Synth({ oscillator: { type: 'triangle' }, envelope: env }).connect(f)) };
+  });
+  // Two quiet beds: slow lapping and rain hiss.
+  // Thick water laps low and slow.
+  const lapG = new T.Gain(0).connect(kit.out), lapAm = new T.Gain(0.65).connect(lapG);
+  const lapBand = new T.Filter({ type: 'bandpass', frequency: 340, Q: 0.9 });
+  lapBand.chain(new T.Filter({ type: 'lowpass', frequency: 900, Q: 0.5 }), lapAm);
+  new T.LFO(0.17, 220, 460).connect(lapBand.frequency).start();
+  new T.LFO(0.43, 0.33, 0.97).connect(lapAm.gain).start();
+  new T.Noise({ type: 'brown', playbackRate: 0.85, volume: -6 }).connect(lapBand).start();
+  const patG = new T.Gain(0).connect(kit.out);
+  new T.Noise({ type: 'white', volume: -8 }).chain(new T.Filter({ type: 'highpass', frequency: 3200, Q: 0.6 }), patG).start();
+  // The trench hiss: band noise that brightens and swells with speed.
+  const swishG = new T.Gain(0).connect(kit.out), swishF = new T.Filter({ type: 'bandpass', frequency: 500, Q: 1.1 }).connect(swishG);
+  new T.Noise({ type: 'white', volume: -4 }).connect(swishF).start();
+  return { vox, rings, at: 0, ra: 0, lapG, patG, swishG, swishF };
 }
-// Each voice pans with its place on the water.
-function bus(a, x) {
-  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
-  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.7;
-  p.connect(kit.out);
-  return p;
+function voice(t, x) {
+  const v = V.vox[V.at++ % NVOX];
+  v.p.pan.setValueAtTime(clamp(x, -1, 1) * 0.7, t);
+  return v;
 }
-function burst(a, dst, t, type, f, q, g, tau, len) {
-  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
-  src.buffer = kit.noise;
-  fl.type = type;
-  fl.frequency.value = f;
-  fl.Q.value = q;
-  ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(g, t + 0.004);
-  ng.gain.setTargetAtTime(0, t + 0.004, tau);
-  src.connect(fl).connect(ng).connect(dst);
-  src.onended = () => { fl.disconnect(); ng.disconnect(); };
-  src.start(t, Math.random() * 0.3, len);
-  return fl;
+// A tone that glides from f0 to f1, then dies with time constant tau.
+function glide(syn, t, f0, f1, ramp, g, tau) {
+  syn.envelope.decay = tau * 4;
+  syn.triggerAttackRelease(f0, tau * 4, t, clamp(g));
+  syn.frequency.exponentialRampToValueAtTime(f1, t + ramp);
 }
-function tone(a, dst, t, f0, f1, ramp, g, tau, len, type = 'sine') {
-  const o = a.createOscillator(), og = a.createGain();
-  o.type = type;
-  o.frequency.setValueAtTime(f0, t);
-  o.frequency.exponentialRampToValueAtTime(f1, t + ramp);
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(g, t + 0.004);
-  og.gain.setTargetAtTime(0, t + 0.006, tau);
-  o.connect(og).connect(dst);
-  o.start(t);
-  o.stop(t + len);
-  return { o, og };
+// A noise burst through the voice filter, with an optional sweep.
+function burst(v, t, type, f, q, g, tau, to = 0, sweep = 0) {
+  v.f.type = type;
+  v.f.Q.setValueAtTime(q, t);
+  v.f.frequency.setValueAtTime(f, t);
+  if (to) v.f.frequency.exponentialRampToValueAtTime(to, t + sweep);
+  v.n.envelope.decay = tau * 4;
+  v.n.triggerAttackRelease(tau * 4, t, clamp(g));
 }
 // A plop: a bubble's rising ring, with spray for bigger drops.
 // Bigger drops ring lower and longer.
 function plop(x, s) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD;
+  if (!voices()) return;
+  const t = kit.ac.currentTime + LEAD;
   if (t < plopNext && s < 0.9) return;
   plopNext = t + 0.035;
-  const g = level() * lerp(0.45, 1, s) * jit(0.12), d = bus(a, x);
-  const f0 = lerp(1150, 280, s) * jit(0.07);
-  const { o, og } = tone(a, d, t, f0, f0 * lerp(2.3, 1.7, s), lerp(0.045, 0.1, s), 0.34 * g, lerp(0.024, 0.065, s), 0.5);
-  if (s > 0.3) burst(a, d, t, 'bandpass', lerp(2600, 1300, s) * jit(0.1), 0.8, 0.07 * g * s, 0.03 + 0.08 * s, 0.5);
-  track(o, og, d);
+  const g = lerp(0.45, 1, s) * jit(0.12), v = voice(t, x), f0 = lerp(1150, 280, s) * jit(0.07);
+  glide(v.a, t, f0, f0 * lerp(2.3, 1.7, s), lerp(0.045, 0.1, s), 0.34 * g, lerp(0.024, 0.065, s));
+  if (s > 0.3) burst(v, t, 'bandpass', lerp(2600, 1300, s) * jit(0.1), 0.8, 0.07 * g * s, 0.03 + 0.08 * s);
 }
 // A heavy thing: a wash, a deep thump and one big bubble.
 // The size of the sploosh follows the splash power.
 function sploosh(x, S) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD, k = clamp(S / 1.5), g = level() * lerp(0.6, 1.1, k), d = bus(a, x);
-  const fl = burst(a, d, t, 'lowpass', 2800 * jit(0.08), 0.7, 0.5 * g, 0.12 + 0.16 * k, 0.7);
-  fl.frequency.setValueAtTime(2800 * jit(0.08), t);
-  fl.frequency.exponentialRampToValueAtTime(lerp(520, 300, k), t + 0.3 + 0.25 * k);
-  const th = tone(a, d, t, lerp(130, 80, k) * jit(0.05), 36, 0.3, 0.62 * g, 0.08 + 0.05 * k, 0.7);
-  th.o.onended = () => th.og.disconnect();
+  if (!voices()) return;
+  const t = kit.ac.currentTime + LEAD, k = clamp(S / 1.5), g = lerp(0.6, 1.1, k), v = voice(t, x);
+  burst(v, t, 'lowpass', 2800 * jit(0.08), 0.7, 0.5 * g, 0.12 + 0.16 * k, lerp(520, 300, k), 0.3 + 0.25 * k);
+  glide(v.a, t, lerp(130, 80, k) * jit(0.05), 36, 0.3, 0.62 * g, 0.08 + 0.05 * k);
   const f0 = lerp(380, 170, k) * jit(0.06);
-  const bb = tone(a, d, t + 0.05 + 0.04 * k, f0, f0 * 1.9, 0.16, 0.22 * g, 0.06, 0.5);
-  track(bb.o, bb.og, d);
+  glide(v.b, t + 0.05 + 0.04 * k, f0, f0 * 1.9, 0.16, 0.22 * g, 0.06);
 }
 // A raindrop or a falling droplet: a tiny high plink.
 function tick(x, s = Math.random()) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD;
+  if (!voices()) return;
+  const t = kit.ac.currentTime + LEAD;
   if (t < tickNext) return;
   tickNext = t + rand(0.035, 0.09);
-  const g = level() * lerp(0.3, 0.6, s) * jit(0.2), d = bus(a, x), f = lerp(2700, 1500, s) * jit(0.08);
-  const { o, og } = tone(a, d, t, f, f * 1.8, 0.025, 0.07 * g, 0.012, 0.12);
-  track(o, og, d);
+  const f = lerp(2700, 1500, s) * jit(0.08);
+  glide(voice(t, x).a, t, f, f * 1.8, 0.025, 0.07 * lerp(0.3, 0.6, s) * jit(0.2), 0.012);
 }
 // A bubble lets go under water: a short low chirp.
 function gurgle(x, s = Math.random()) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD;
+  if (!voices()) return;
+  const t = kit.ac.currentTime + LEAD;
   if (t < gurgleNext) return;
   gurgleNext = t + rand(0.045, 0.12);
-  const g = level() * jit(0.25), d = bus(a, x), f = lerp(820, 300, s) * jit(0.12);
-  const { o, og } = tone(a, d, t, f, f * lerp(1.7, 1.4, s), lerp(0.04, 0.07, s), 0.13 * g, lerp(0.018, 0.04, s), 0.25);
-  track(o, og, d);
+  const f = lerp(820, 300, s) * jit(0.12);
+  glide(voice(t, x).a, t, f, f * lerp(1.7, 1.4, s), lerp(0.04, 0.07, s), 0.13 * jit(0.25), lerp(0.018, 0.04, s));
 }
 // Iron meets tile under water: a muffled ring over a thud.
 // Each shape rings with its own inharmonic partials.
@@ -445,90 +452,36 @@ const RINGS = {
   1: { f: 420, p: [[1, 1, 0.45], [2.41, 0.62, 0.3], [3.93, 0.42, 0.2], [5.62, 0.28, 0.13]] },
   2: { f: 300, p: [[1, 1, 0.3], [2.72, 0.5, 0.17], [5.18, 0.3, 0.1]] },
 };
-function clank(x, v, type) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD, e = clamp(v / 0.5, 0.15, 1), g = level() * e, d = bus(a, x);
-  const lp = a.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.value = 1400 + 1000 * e;
-  lp.Q.value = 0.6;
-  lp.connect(d);
-  const R = RINGS[type] || RINGS[1];
-  let first = null;
-  R.p.forEach(([r, amp, tau]) => {
-    const f = R.f * r * jit(0.012), v0 = tone(a, lp, t, f, f * 0.995, 0.3, 0.2 * amp * g, tau, tau * 7, 'triangle');
-    if (first) v0.o.onended = () => v0.og.disconnect();
-    else first = v0;
+function clank(x, vel, type) {
+  if (!voices()) return;
+  const t = kit.ac.currentTime + LEAD, e = clamp(vel / 0.5, 0.15, 1), R = RINGS[type] || RINGS[1];
+  const r = V.rings[V.ra++ % NRING];
+  r.p.pan.setValueAtTime(clamp(x, -1, 1) * 0.7, t);
+  r.f.frequency.setValueAtTime(1400 + 1000 * e, t);
+  R.p.forEach(([k, amp, tau], i) => {
+    const f = R.f * k * jit(0.012);
+    glide(r.syn[i], t, f, f * 0.995, 0.3, 0.2 * amp * e, tau);
   });
-  const th = tone(a, d, t, 110, 42, 0.12, 0.45 * g, 0.05, 0.4);
-  th.o.onended = () => th.og.disconnect();
-  track(first.o, first.og, lp, d);
+  glide(voice(t, x).a, t, 110, 42, 0.12, 0.45 * e, 0.05);
 }
 // Water slaps a wall: a short wash sweeping down.
 function slap(x, e) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD;
+  if (!voices()) return;
+  const t = kit.ac.currentTime + LEAD;
   if (t < slapNext) return;
   slapNext = t + rand(0.3, 0.8);
-  const d = bus(a, x), fl = burst(a, d, t, 'bandpass', 800 * jit(0.15), 1.4, 0.08 * e * level() * jit(0.2), 0.08, 0.4);
-  fl.frequency.setValueAtTime(820 * jit(0.1), t);
-  fl.frequency.exponentialRampToValueAtTime(240, t + 0.18);
-  setTimeout(() => d.disconnect(), 700);
+  burst(voice(t, x), t, 'bandpass', 820 * jit(0.1), 1.4, 0.08 * e * jit(0.2), 0.08, 240, 0.18);
 }
-function norm(d, rms) {
-  let s = 0;
-  for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-  const k = rms / Math.sqrt(s / d.length || 1);
-  for (let i = 0; i < d.length; i++) d[i] *= k;
-}
-// Two quiet beds: slow lapping and rain hiss.
-function bed(a) {
-  const sr = a.sampleRate, len = Math.round(sr * 5.3), brown = a.createBuffer(2, len, sr);
-  for (let c = 0; c < 2; c++) {
-    const d = brown.getChannelData(c);
-    let b = 0;
-    for (let i = 0; i < len; i++) { b = 0.985 * b + 0.15 * (Math.random() * 2 - 1); d[i] = b; }
-    norm(d, 0.25);
-  }
-  const loop = (buf, rate, off) => {
-    const s = a.createBufferSource();
-    s.buffer = buf;
-    s.loop = true;
-    s.playbackRate.value = rate;
-    s.start(0, off);
-    return s;
-  };
-  const filter = (type, f, q) => {
-    const b = a.createBiquadFilter();
-    b.type = type;
-    b.frequency.value = f;
-    b.Q.value = q;
-    return b;
-  };
-  const gain = v => { const g = a.createGain(); g.gain.value = v; return g; };
-  const lfo = (f, depth, param) => {
-    const o = a.createOscillator();
-    o.frequency.value = f;
-    o.connect(gain(depth)).connect(param);
-    o.start();
-  };
-  // Thick water laps low and slow.
-  const lapBand = filter('bandpass', 340, 0.9), lapAm = gain(0.65);
-  lapG = gain(0);
-  loop(brown, 0.85, 0).connect(lapBand).connect(filter('lowpass', 900, 0.5)).connect(lapAm).connect(lapG).connect(kit.out);
-  lfo(0.17, 120, lapBand.frequency);
-  lfo(0.43, 0.32, lapAm.gain);
-  patG = gain(0);
-  loop(kit.noise, 0.9, 0.3).connect(filter('highpass', 3200, 0.6)).connect(patG).connect(kit.out);
-}
+// Bed levels change only when they move by a step.
+let bedLap = -1, bedPat = -1;
 function bedLevel(e) {
-  const a = live();
-  if (!a || !lapG) return;
-  const t = a.currentTime;
-  lapG.gain.setTargetAtTime(clamp(e * 5, 0, 0.45), t, 0.25);
-  patG.gain.setTargetAtTime(raining ? 0.03 : 0, t, 0.5);
+  const lap = Math.round(clamp(e * 5, 0, 0.45) * 100) / 100, pat = raining ? 0.05 : 0;
+  if ((lap === bedLap && pat === bedPat) || !voices()) return;
+  const t = kit.ac.currentTime;
+  V.lapG.gain.setTargetAtTime(lap, t, 0.25);
+  V.patG.gain.setTargetAtTime(pat, t, 0.5);
+  bedLap = lap;
+  bedPat = pat;
 }
 
 /* ---------- shaders ---------- */
@@ -1419,7 +1372,7 @@ function allocPool() {
     setU(pr, 'uShape', '1i', shape);
   }
   // Each pool brings its own palette and lamp places.
-  const pl = POOLS[poolId], col = c => linear(...c);
+  const pl = POOLS[poolId], col = c => linFit(c);
   gl.useProgram(P.view.p);
   setU(P.view, 'uTileA', '3fv', col(pl.tiles[0]));
   setU(P.view, 'uTileB', '3fv', col(pl.tiles[1]));
@@ -1734,7 +1687,7 @@ function raindrop() {
 // Radius and depth are world units; the pool is 0.45 deep.
 const CUT_R = 0.055, CUT_D = 0.085, NCUT = 4;
 const cutters = new Map(), CUT = new Float32Array(NCUT * 4), CUTV = new Float32Array(NCUT * 2);
-let nCut = 0, cutGlow = 0, swishG = null, swishF = null;
+let nCut = 0, cutGlow = 0, swishOn = false;
 function startCut(id, x, z) {
   if (cutters.size >= NCUT) return;
   const [cx, cz] = inPool(x, z, 0.01);
@@ -1750,20 +1703,6 @@ function endCut(id) {
   plop(pan(c.x, c.z), 0.95);
   for (let i = 0; i < 6; i++) bubble(c.x + rand(-0.03, 0.03), -rand(0.02, 0.09), c.z + rand(-0.03, 0.03), rand(0.004, 0.009));
   poke();
-}
-// The trench hiss: band noise that brightens and swells with speed.
-function swish(a) {
-  const src = a.createBufferSource(), bp = a.createBiquadFilter();
-  src.buffer = kit.noise;
-  src.loop = true;
-  bp.type = 'bandpass';
-  bp.Q.value = 1.1;
-  bp.frequency.value = 500;
-  swishG = a.createGain();
-  swishG.gain.value = 0;
-  src.connect(bp).connect(swishG).connect(kit.out);
-  src.start();
-  swishF = bp.frequency;
 }
 function stepCuts(dt) {
   let fast = 0;
@@ -1806,15 +1745,12 @@ function stepCuts(dt) {
   }
   if (nCut) { cutGlow = CUT_D * 1.35; poke(); }
   else cutGlow *= Math.exp(-dt / 1.2);
-  // The hiss follows the fastest blade.
-  const a = live();
-  if (a) {
-    if (!swishG && nCut) swish(a);
-    if (swishG) {
-      const e = nCut ? clamp(fast / 1.6) : 0;
-      swishG.gain.setTargetAtTime(0.16 * e * e + (nCut ? 0.012 : 0), a.currentTime, 0.05);
-      swishF.setTargetAtTime(380 + 1500 * e, a.currentTime, 0.06);
-    }
+  // The hiss follows the fastest blade, and falls silent once.
+  if ((nCut || swishOn) && voices()) {
+    const e = nCut ? clamp(fast / 1.6) : 0, t = kit.ac.currentTime;
+    V.swishG.gain.setTargetAtTime(0.16 * e * e + (nCut ? 0.012 : 0), t, 0.05);
+    V.swishF.frequency.setTargetAtTime(380 + 1500 * e, t, 0.06);
+    swishOn = nCut > 0;
   }
 }
 /* ---------- orbit: the view turns around the pool ---------- */
