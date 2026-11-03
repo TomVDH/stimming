@@ -29,7 +29,7 @@
 </style>
 </head>
 <body>
-<div class="intro" aria-hidden="true">
+<div class="intro" aria-hidden="true" data-done>
   <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pop.svg)"></span><span class="intro-name">Pop field</span><span class="intro-sub">Stimming No. 02</span></div></div>
 </div>
 
@@ -72,7 +72,13 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 import { converter } from 'culori';
+const toRgbC = converter('rgb');
 import { gsap } from 'gsap';
 import { createNoise2D } from 'simplex-noise';
 import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb } from '../shared/stim.js';
@@ -694,6 +700,8 @@ function tokens() {
   const st = getComputedStyle(document.documentElement);
   focusC = st.getPropertyValue('--focus').trim() || focusC;
   bgC = st.getPropertyValue('--bg').trim() || bgC;
+  const bg = toRgbC(bgC);
+  if (bg) gl.setClearColor(new THREE.Color().setRGB(bg.r, bg.g, bg.b, THREE.LinearSRGBColorSpace), 1);
   lite = (st.colorScheme || '').includes('light');
 }
 
@@ -1023,6 +1031,7 @@ function pop(c, now, amp, force) {
     const d = Math.hypot(o.x - c.x, o.y - c.y);
     if (!o.J && !o.state && d < R * 3.7) events.push({ at: now + (reduce ? 0 : 0.02 + d / (R * 30)), c: o, pop: 0.9 });
   }
+  addWave(c.x + c.dx, c.y + c.dy, c.J);
   if (reduce) return;
   c.sv += 7.5;
   burst(c, now, amp);
@@ -1131,7 +1140,7 @@ function step(now, dt) {
   const lk = reduce ? 1 : 1 - Math.exp(-7 * dt);
   light.x += (lightT.x - light.x) * lk; light.y += (lightT.y - light.y) * lk;
   const lit = Math.abs(lightT.x - light.x) + Math.abs(lightT.y - light.y) > 0.5;
-  return fly(now, dt) || moving || lit;
+  return fly(now, dt) || moving || lit || ageWaves(now);
 }
 
 /* ---------- burst: shards and a ring leave every pop ---------- */
@@ -1173,12 +1182,13 @@ function burst(c, now, amp) {
   if (!pt) return;
   const M = rec.mat, x = c.x + c.dx, y = c.y + c.dy, big = c.J ? 1 : 0, rs = RINGS[M];
   if (rs) {
-    const wk = M === 'rubber' ? 1.5 : M === 'soap' || M === 'topo' ? 0.3 : M === 'latex' ? 1.3 : M === 'ice' ? 0.5 : 1;
+    const wk = 0.8 * (M === 'rubber' ? 1.5 : M === 'soap' || M === 'topo' ? 0.3 : M === 'latex' ? 1.3 : M === 'ice' ? 0.5 : 1);
     rings.push({ x, y, t0: now, amp, shape: rs, path: big ? jRing : ringP, rad: big ? 2.6 * R : r,
       col: M === 'soap' ? IRID[(Math.random() * 3) | 0] : M === 'holo' ? HOLO[(Math.random() * 6) | 0] : M === 'ice' ? WHITE : pt.top, w: (big ? 0.32 : 0.2) * wk, life: (big ? 0.55 : RING_S) * (M === 'rubber' ? 1.3 : M === 'latex' ? 0.7 : 1) });
   }
   // A busy sweep throws fewer bits per pop; a jumbo throws a fistful.
-  const mul = big ? 3 : bits.length > MAXBITS / 2 ? 0.45 : 1, sz = big ? 1.7 : 1, spread = R * (big ? 1.6 : 0.3);
+  // Bursts run at three quarters; a jumbo throws a fistful.
+  const mul = big ? 2.3 : bits.length > MAXBITS / 2 ? 0.4 : 0.75, sz = big ? 1.6 : 1, spread = R * (big ? 1.6 : 0.3);
   const N = n => Math.max(1, Math.round(n * mul * R01(0.8, 1.2)));
   const pc = () => { const q = Math.random(); return q < 0.3 ? pt.light : q < 0.65 ? pt.top : pt.low; };
   // One bit of kind k flies out at v cell radii per second.
@@ -1513,6 +1523,8 @@ glc.className = 'gl';
 glc.setAttribute('aria-hidden', 'true');
 field.insertBefore(glc, cv);
 const gl = new THREE.WebGLRenderer({ canvas: glc, alpha: true, antialias: false, premultipliedAlpha: true });
+// The shaders write display-ready colour, so three converts nothing.
+gl.outputColorSpace = THREE.LinearSRGBColorSpace;
 gl.setClearColor(0x000000, 0);
 // The camera works in CSS pixels, y down, like the 2D canvas.
 const scene = new THREE.Scene(), camera = new THREE.OrthographicCamera(0, 1, 0, 1, -1, 1), quad = new THREE.PlaneGeometry(1, 1);
@@ -1687,10 +1699,10 @@ void main() {
     em = st01(0.08 - vn, 0.05) * (0.6 + 0.4 * rim);
   } else if (uMat == M_ICE) {
     u = sat(ndl * 0.45 + 0.5); ao = 0.8 + 0.2 * rim; w = 0.7 * soft; t = 0.6 * leak; mw = 0.35 + 0.35 * (1.0 - n.z);
-    s = 1.4 * pow(ndh, 200.0) + (hash2(floor(xy * 2.2) + vMisc.z) > 0.992 ? 0.9 : 0.0);
+    s = 1.4 * pow(ndh, 200.0) + (hash2(floor(xy * 2.2) + vMisc.z) > 0.995 ? 0.6 : 0.0);
   } else if (uMat == M_HOLO) {
     w = soft; s = 1.4 * pow(ndh, 120.0); t = 0.0;
-    ip = atan(n.y, n.x) + 6.0 * (1.0 - n.z) + (xy.x + xy.y) / (uR * 0.7); iw = 0.78; nf = 6.0;
+    ip = atan(n.y, n.x) + 6.0 * (1.0 - n.z) + (xy.x + xy.y) / (uR * 0.7); iw = 0.65; nf = 6.0;
   } else if (uMat == M_PAPER) {
     // Six flat folds meet at a peak; each fold takes the light flat.
     float mid = floor(atan(xy.y, xy.x) / 1.0471976 + 0.5) * 1.0471976;
@@ -1710,7 +1722,7 @@ void main() {
     // Tiles sit in dark grout; a few tiles flash white.
     vec2 cell = vUv * uBlocks, g = fract(cell);
     if (min(g.x, g.y) < 0.09) grout = 0.22;
-    if (hash2(floor(cell) + vMisc.z) > 0.86) s += 0.9;
+    if (hash2(floor(cell) + vMisc.z) > 0.92) s += 0.6;
   }
   vec3 v = mix(q < 0.5 ? vLo : vMi, q < 0.5 ? vMi : vHi, q < 0.5 ? 2.0 * q : 2.0 * q - 1.0) * ao;
   if (uMat == M_CANDY) v = mix(mix(oklchLin(vec3(0.68, 0.02, hue)), oklchLin(vec3(0.97, 0.015, hue)), q) * ao, v, stp);
@@ -1729,7 +1741,8 @@ void main() {
   }
   if (uMat == M_ICE) v = mix(v, oklchLin(vec3(0.97, 0.02, hue)), mw);
   if (uMat == M_LAVA) v = mix(oklchLin(vec3(0.3, 0.015, 50.0)) * (0.35 + 0.9 * q) * ao, oklchLin(vec3(0.84, 0.2, hue)), em);
-  v = mix(v, vLi, w) + s;
+  // Reflections and hot spots stay a little quieter than full strength.
+  v = mix(v, vLi, w * 0.72) + s * 0.68;
   vec3 col = enc(v * grout);
   // The press shade multiplies, darkest where the finger dents the dome.
   float sh = vMisc.x * mix(0.85, 0.35, sat(length(vLocal - vec2(0.0, 0.1 * uShR)) / (1.05 * uShR)));
@@ -1807,9 +1820,63 @@ function putDome(L, c, sb, sk, sh) {
   A.aLo.set(sk[0], v); A.aMi.set(sk[1], v); A.aHi.set(sk[2], v); A.aLi.set(sk[3], v);
   A.aMisc[u] = sh; A.aMisc[u + 1] = c.p; A.aMisc[u + 2] = c.seed; A.aMisc[u + 3] = sk[4];
 }
+// Post effects: a shockwave ripple bends the sheet, then a faint bloom.
+// The sheet renders opaque on the stage colour, so the passes keep no alpha.
+const MAXW = 6, waves = [];
+const ShockShader = {
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uWaves: { value: Array.from({ length: MAXW }, () => new THREE.Vector4()) } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+uniform sampler2D tDiffuse;
+uniform vec2 uRes;
+uniform vec4 uWaves[${MAXW}];
+varying vec2 vUv;
+void main() {
+  vec2 px = vUv * uRes, off = vec2(0.0);
+  // Each wave is a ring: centre, radius and push, in CSS pixels.
+  for (int i = 0; i < ${MAXW}; i++) {
+    vec4 w = uWaves[i];
+    if (w.w <= 0.0) continue;
+    vec2 d = px - w.xy;
+    float r = length(d), band = exp(-pow((r - w.z) / 16.0, 2.0));
+    off += d / max(r, 1e-3) * band * w.w;
+  }
+  gl_FragColor = texture2D(tDiffuse, vUv - off / uRes);
+}`,
+};
+const composer = new EffectComposer(gl);
+const shock = new ShaderPass(ShockShader), bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.35, 0.96);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(shock);
+composer.addPass(bloom);
+composer.addPass(new ShaderPass(CopyShader));
+// A pop sends a ring across the sheet; a jumbo sends a strong one.
+function addWave(x, y, big) {
+  if (reduce) return;
+  waves.push({ x, y, t0: nowS(), life: big ? 0.75 : 0.35, amp: big ? 11 : 2.2, v: R * (big ? 16 : 11) });
+  if (waves.length > MAXW) waves.shift();
+}
+// Waves age out; the result says if any still move.
+function ageWaves(now) {
+  for (let i = waves.length - 1; i >= 0; i--) if (now - waves[i].t0 > waves[i].life) waves.splice(i, 1);
+  return waves.length > 0;
+}
+function setWaves(now) {
+  const U = shock.uniforms;
+  U.uRes.value.set(W, H);
+  U.uWaves.value.forEach((v, i) => {
+    const w = waves[i];
+    if (!w) { v.set(0, 0, 0, 0); return; }
+    const u = (now - w.t0) / w.life;
+    // The ring's y flips: render targets count up from the bottom.
+    v.set(w.x, H - w.y, w.v * (now - w.t0), w.amp * (1 - u) ** 2);
+  });
+}
 function glSize(w, h, d) {
   gl.setPixelRatio(d);
   gl.setSize(w, h, false);
+  composer.setPixelRatio(d);
+  composer.setSize(w, h);
   camera.right = w; camera.bottom = h;
   camera.updateProjectionMatrix();
   light.z = 0.8 * Math.max(w, h);
@@ -1834,7 +1901,8 @@ function drawCells() {
       a.clearUpdateRanges(); a.addUpdateRange(0, L.n * n); a.needsUpdate = true;
     }
   }
-  gl.render(scene, camera);
+  setWaves(nowS());
+  composer.render();
 }
 // The wipe front's radius, or zero once it has passed.
 function wipeFront() {
@@ -1863,7 +1931,7 @@ function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;
     ctx.beginPath(); ctx.arc(0, H, wf, 0, TAU);
-    ctx.lineWidth = Math.max(4, R * 0.28); ctx.strokeStyle = wipe.col; ctx.stroke();
+    ctx.lineWidth = Math.max(3, R * 0.18); ctx.strokeStyle = wipe.col; ctx.stroke();
   }
   const c = ring && own(cells[fi]);
   if (c) {
