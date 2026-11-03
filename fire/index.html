@@ -22,6 +22,34 @@
 .stage--fire canvas:active { cursor: grabbing; }
 .stage--fire canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--fire canvas { transition: none; } }
+/* Fuel and Settings open trays above the bar. */
+.adder { position: relative; }
+.add {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; gap: 6px; padding: 8px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+/* Chemicals sit four to a row. */
+#fuels { display: grid; grid-template-columns: repeat(4, auto); }
+/* Settings is a column of tweaks. */
+.add.sets { flex-direction: column; align-items: stretch; gap: 8px; min-width: 19em; padding: 10px; }
+.sets .slider { justify-content: space-between; }
+.sets .slider span, .sets .group > span { white-space: nowrap; }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+/* Narrow screens take three chemicals a row; trays hang from the bar. */
+@media (max-width: 520px) {
+  #fuels { grid-template-columns: repeat(3, auto); }
+  .bar > .choices { position: relative; }
+  .bar > .choices .adder { position: static; }
+}
+@media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 </style>
 </head>
 <body>
@@ -32,21 +60,52 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--fire" id="fire" tabindex="0" role="application" aria-label="A fire burns in a slotted iron block. Drag the block to move the fire, drag through the air to blow on it, and click or press Space to make it flare. Type a word to burn it in an iron plate; Escape brings the block back. The chips change what burns.">
+    <div class="stage stage--fire" id="fire" tabindex="0" role="application" aria-label="A fire burns in a slotted iron block. Drag the block to move the fire, drag through the air to blow on it, and click or press Space to make it flare. Type a word to burn it in an iron plate; Escape brings the block back. Fuel picks the chemical that burns; Intensity sets its size, and Settings hold temperature, chaos, motion and the object.">
       <p class="fail" hidden>Fire needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
-      <div class="choices" role="group" aria-label="Fuel">
-        <button class="chip" type="button" data-value="wood" aria-pressed="true"><span class="dot" style="--c: oklch(0.72 0.19 52)"></span>Wood</button>
-        <button class="chip" type="button" data-value="copper" aria-pressed="false"><span class="dot" style="--c: oklch(0.72 0.18 152)"></span>Copper</button>
-        <button class="chip" type="button" data-value="potassium" aria-pressed="false"><span class="dot" style="--c: oklch(0.66 0.22 310)"></span>Potassium</button>
-        <button class="chip" type="button" data-value="sodium" aria-pressed="false"><span class="dot" style="--c: oklch(0.88 0.18 92)"></span>Sodium</button>
+      <div class="choices">
+        <div class="adder" id="fueler">
+          <button class="chip" id="fuelBtn" type="button" aria-expanded="false" aria-controls="fuels"><span class="dot" id="fuelDot" style="--c: oklch(0.72 0.19 52)"></span><span id="fuelName">Wood</span></button>
+          <div class="add" id="fuels" role="group" aria-label="Fuel">
+            <button class="chip" type="button" data-value="wood" aria-pressed="true"><span class="dot" style="--c: oklch(0.72 0.19 52)"></span>Wood</button>
+            <button class="chip" type="button" data-value="sodium" aria-pressed="false"><span class="dot" style="--c: oklch(0.88 0.18 92)"></span>Sodium</button>
+            <button class="chip" type="button" data-value="calcium" aria-pressed="false"><span class="dot" style="--c: oklch(0.68 0.2 45)"></span>Calcium</button>
+            <button class="chip" type="button" data-value="strontium" aria-pressed="false"><span class="dot" style="--c: oklch(0.6 0.24 25)"></span>Strontium</button>
+            <button class="chip" type="button" data-value="lithium" aria-pressed="false"><span class="dot" style="--c: oklch(0.6 0.23 5)"></span>Lithium</button>
+            <button class="chip" type="button" data-value="copper" aria-pressed="false"><span class="dot" style="--c: oklch(0.72 0.18 152)"></span>Copper</button>
+            <button class="chip" type="button" data-value="boron" aria-pressed="false"><span class="dot" style="--c: oklch(0.78 0.22 142)"></span>Boron</button>
+            <button class="chip" type="button" data-value="barium" aria-pressed="false"><span class="dot" style="--c: oklch(0.85 0.15 120)"></span>Barium</button>
+            <button class="chip" type="button" data-value="potassium" aria-pressed="false"><span class="dot" style="--c: oklch(0.66 0.22 310)"></span>Potassium</button>
+            <button class="chip" type="button" data-value="cesium" aria-pressed="false"><span class="dot" style="--c: oklch(0.62 0.2 275)"></span>Cesium</button>
+            <button class="chip" type="button" data-value="methanol" aria-pressed="false"><span class="dot" style="--c: oklch(0.62 0.16 250)"></span>Methanol</button>
+            <button class="chip" type="button" data-value="magnesium" aria-pressed="false"><span class="dot" style="--c: oklch(0.97 0.03 90)"></span>Magnesium</button>
+          </div>
+        </div>
+        <label class="slider"><span>Intensity</span><input type="range" id="intensity" min="0" max="1" step="0.01" value="0.6"></label>
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <label class="slider"><span>Temperature</span><input type="range" id="temp" min="0" max="1" step="0.01" value="0.5"></label>
+            <label class="slider"><span>Chaos</span><input type="range" id="chaos" min="0" max="1" step="0.01" value="0.4"></label>
+            <div class="group"><span>Motion</span><div class="choices" id="motion" role="group" aria-label="Motion">
+              <button class="chip" type="button" data-value="steady" aria-pressed="true">Steady</button>
+              <button class="chip" type="button" data-value="gusts" aria-pressed="false">Gusts</button>
+              <button class="chip" type="button" data-value="twister" aria-pressed="false">Twister</button>
+              <button class="chip" type="button" data-value="pulse" aria-pressed="false">Pulse</button>
+            </div></div>
+            <div class="group"><span>Object</span><div class="choices" id="object" role="group" aria-label="Object">
+              <button class="chip" type="button" data-value="block" aria-pressed="true">Block</button>
+              <button class="chip" type="button" data-value="none" aria-pressed="false">None</button>
+            </div></div>
+          </div>
+        </div>
       </div>
       <div class="actions">
         <button class="chip" id="reset" type="button">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag the block</dt><dd>move the fire</dd></div>
+        <div><dt>Drag the fire</dt><dd>move it</dd></div>
         <div><dt>Drag the air</dt><dd>blow</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>flare</dd></div>
         <div class="fine"><dt>Type</dt><dd>burn a word</dd></div>
@@ -147,15 +206,35 @@ function whump() {
   src.connect(lp).connect(g).connect(kit.out); src.start(t, Math.random(), 0.9);
 }
 
-/* ---------- fuels: OKLCH ramps, hottest first ---------- */
-// Each fuel sets the flame's start, mid and end colours.
-// The fourth colour tints the smoke.
-const FUELS = {
-  wood: [[0.93, 0.11, 95], [0.72, 0.19, 52], [0.6, 0.24, 30], [0.8, 0.03, 50]],
-  copper: [[0.92, 0.08, 175], [0.72, 0.18, 152], [0.48, 0.14, 162], [0.8, 0.035, 165]],
-  potassium: [[0.9, 0.07, 320], [0.66, 0.22, 310], [0.5, 0.24, 295], [0.78, 0.04, 305]],
-  sodium: [[0.98, 0.1, 105], [0.88, 0.18, 92], [0.75, 0.18, 68], [0.84, 0.035, 85]],
+/* ---------- chemicals: OKLCH ramps and behaviour ---------- */
+// Ramps run hottest first: start, mid and end, then the smoke tint.
+// Smoke, crackle and sparks scale the base fire; sparks are per second.
+// Sputter makes the flame stutter and spit, from 0 to 1.
+// Glow scales the light; it defaults to 1.
+const CHEMS = {
+  wood: { ramp: [[0.93, 0.11, 95], [0.72, 0.19, 52], [0.6, 0.24, 30], [0.8, 0.03, 50]], smoke: 1, crackle: 1, sparks: 90, spark: [0.82, 0.17, 58], sputter: 0 },
+  sodium: { ramp: [[0.98, 0.1, 105], [0.88, 0.18, 92], [0.75, 0.18, 68], [0.84, 0.035, 85]], smoke: 0.6, crackle: 0.5, sparks: 30, spark: [0.93, 0.16, 95], sputter: 0 },
+  calcium: { ramp: [[0.9, 0.1, 75], [0.68, 0.2, 45], [0.52, 0.2, 32], [0.8, 0.03, 45]], smoke: 0.8, crackle: 0.8, sparks: 50, spark: [0.8, 0.18, 50], sputter: 0.1 },
+  strontium: { ramp: [[0.86, 0.1, 35], [0.6, 0.24, 25], [0.45, 0.2, 20], [0.78, 0.05, 15]], smoke: 0.9, crackle: 0.6, sparks: 70, spark: [0.7, 0.22, 28], sputter: 0.15 },
+  lithium: { ramp: [[0.86, 0.1, 10], [0.6, 0.23, 5], [0.45, 0.2, 355], [0.78, 0.04, 0]], smoke: 0.5, crackle: 0.4, sparks: 20, spark: [0.7, 0.2, 10], sputter: 0 },
+  copper: { ramp: [[0.92, 0.08, 175], [0.72, 0.18, 152], [0.48, 0.14, 162], [0.8, 0.035, 165]], smoke: 0.6, crackle: 0.7, sparks: 30, spark: [0.85, 0.17, 150], sputter: 0.25 },
+  boron: { ramp: [[0.95, 0.12, 135], [0.78, 0.22, 142], [0.55, 0.18, 150], [0.82, 0.04, 140]], smoke: 0.35, crackle: 0.3, sparks: 10, spark: [0.88, 0.2, 140], sputter: 0 },
+  barium: { ramp: [[0.96, 0.08, 112], [0.85, 0.15, 120], [0.62, 0.14, 130], [0.84, 0.03, 115]], smoke: 0.6, crackle: 0.5, sparks: 25, spark: [0.9, 0.14, 115], sputter: 0.05 },
+  potassium: { ramp: [[0.9, 0.07, 320], [0.66, 0.22, 310], [0.5, 0.24, 295], [0.78, 0.04, 305]], smoke: 0.4, crackle: 0.4, sparks: 15, spark: [0.75, 0.18, 315], sputter: 0.1 },
+  cesium: { ramp: [[0.88, 0.08, 270], [0.62, 0.2, 275], [0.44, 0.2, 285], [0.78, 0.04, 275]], smoke: 0.4, crackle: 0.6, sparks: 35, spark: [0.75, 0.17, 270], sputter: 0.2 },
+  methanol: { ramp: [[0.9, 0.06, 240], [0.62, 0.16, 250], [0.4, 0.14, 262], [0.8, 0.02, 250]], smoke: 0.04, crackle: 0, sparks: 0, spark: [0.8, 0.1, 250], sputter: 0, glow: 0.6 },
+  magnesium: { ramp: [[1, 0, 0], [0.97, 0.03, 90], [0.86, 0.07, 70], [0.82, 0.005, 90]], smoke: 0.8, crackle: 1.6, sparks: 600, spark: [0.98, 0.04, 95], sputter: 0.8, glow: 1.5 },
 };
+
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.fire.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.fire.${k}`, String(v)); } catch { /* storage is optional */ } };
+const unit = (k, d) => { const v = saved(k); return v !== null && Number.isFinite(+v) ? Math.min(1, Math.max(0, +v)) : d; };
+const MOTIONS = ['steady', 'gusts', 'twister', 'pulse'];
+let fuel = CHEMS[saved('fuel')] ? saved('fuel') : 'wood';
+let intensity = unit('intensity', 0.6), temp = unit('temp', 0.5), chaos = unit('chaos', 0.4);
+let motion = MOTIONS.includes(saved('motion')) ? saved('motion') : 'steady';
+let object = saved('object') === 'none' ? 'none' : 'block';
 
 // Without WebGPU the panel shows one line and nothing runs.
 async function hasWebGPU() {
@@ -176,7 +255,7 @@ async function start() {
 
   const [
     THREE, TSL, { snoise, snoiseVec3 }, { ImprovedNoise }, { gaussianBlur }, { bloom },
-    { DragControls }, { mergeGeometries },
+    { DragControls }, { mergeGeometries }, { RoundedBoxGeometry },
   ] = await Promise.all([
     import('three/webgpu'),
     import('three/tsl'),
@@ -186,12 +265,13 @@ async function start() {
     import('three/addons/tsl/display/BloomNode.js'),
     import('three/addons/controls/DragControls.js'),
     import('three/addons/utils/BufferGeometryUtils.js'),
+    import('three/addons/geometries/RoundedBoxGeometry.js'),
   ]);
   const {
     vec3, vec4, uvec3, float, Fn, uniform, texture3D, textureStore, instanceIndex,
     screenCoordinate, pass, smoothstep, mix, min, max, floor, mx_noise_float, storage, storageTexture, If,
     cameraPosition, Loop, positionWorld, positionLocal, interleavedGradientNoise, frameId, fract,
-    saturation, cos, sin, abs,
+    saturation, cos, sin, abs, vec2, uint, hash, select, uv, instancedArray,
   } = TSL;
 
   const renderer = new THREE.WebGPURenderer();
@@ -205,6 +285,8 @@ async function start() {
   renderer.toneMappingExposure = 2;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.transmitted = true;
+  // Soft shadows filter the key light's map.
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const canvas = renderer.domElement;
   // OKLCH in, a THREE colour out.
   const okColor = (L, C, h, c = new THREE.Color()) => c.setRGB(...oklchRgb(L, C, h), THREE.SRGBColorSpace);
@@ -246,6 +328,9 @@ async function start() {
   const uTurbFrequency = uniform(10.0);
   const uVelDamping = uniform(0.25);
   const uVorticity = uniform(3.0);
+  // Twister spins gas round the block; Gusts push it sideways.
+  const uSwirl = uniform(0.0);
+  const uWind = uniform(new THREE.Vector3());
   const uCooling = uniform(1 / FIRE_LIFESPAN);
   const uDissipation = uniform(1 / SMOKE_LIFESPAN);
   const uEmitDensity = uniform(EMIT_D);
@@ -324,7 +409,8 @@ async function start() {
   const SLOTS = [-0.5, 0, 0.5];
   const INNER = BW / 2 - WALL;
   const shellParts = [];
-  const slab = (w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); shellParts.push(g); };
+  // Rounded edges catch the fire light.
+  const slab = (w, h, d, x, y, z) => { const g = new RoundedBoxGeometry(w, h, d, 2, 0.028); g.translate(x, y, z); shellParts.push(g); };
   slab(BW, BASE, BW, 0, BASE / 2, 0);
   // The rim is a closed ring round the open top.
   for (const s of [-1, 1]) {
@@ -482,6 +568,15 @@ async function start() {
       const falloff = smoothstep(0.0, 1.0, float(1.0).sub(airDist.div(WIND_RADIUS)));
       newVel.addAssign(uAirVelocity.mul(2.5).mul(uDt).mul(falloff));
     });
+
+    // Twister spins hot gas round the block and draws it inward.
+    const rel = worldPos.xz.sub(uBlockPosition.xz);
+    const rl = rel.length().add(0.35);
+    const spin = vec3(rel.y.negate(), 0, rel.x).sub(vec3(rel.x, 0, rel.y).mul(0.45)).div(rl);
+    const hot = temperature.add(density.mul(0.3)).clamp(0, 1);
+    newVel.addAssign(spin.mul(uSwirl).mul(float(1.0).sub(smoothstep(0.5, 6.0, rl))).mul(hot).mul(uDt));
+    // Gusts push hot gas and smoke sideways.
+    newVel.addAssign(uWind.mul(temperature.add(density.mul(0.5)).clamp(0, 1)).mul(uDt));
 
     // Velocity fades near the box walls.
     const edge = min(uvw, vec3(1).sub(uvw));
@@ -723,10 +818,13 @@ async function start() {
 
   // The block: a matte iron shell round a glowing core.
   const block = new THREE.Group();
-  const shell = new THREE.Mesh(shellGeometry, new THREE.MeshStandardMaterial({ color: okColor(0.2, 0.012, 50), roughness: 0.75, metalness: 0.35 }));
+  const shell = new THREE.Mesh(shellGeometry, new THREE.MeshStandardMaterial({ color: okColor(0.22, 0.012, 50), roughness: 0.55, metalness: 0.55 }));
   const core = new THREE.Mesh(coreGeometry, new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1.0 }));
   shell.receiveShadow = true;
-  block.add(shell, core);
+  shell.castShadow = true;
+  // An unseen box keeps the fire draggable with no object shown.
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(BW, BH, BW).translate(0, BH / 2, 0), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+  block.add(shell, core, proxy);
   const HOME_Y = floorPlane.position.y;
   block.position.set(0, HOME_Y, 0);
   scene.add(block);
@@ -737,6 +835,41 @@ async function start() {
   uBlockPosition.value.copy(block.position);
 
   const isVolume = Fn(({ material }) => float(material && material.isVolumeNodeMaterial ? 1.0 : 0.0))();
+
+  // Slot beam: 1 in a slot's beam, 0 behind a wall, soft between.
+  // It returns the beam and the distance out from the block.
+  const slotBeam = Fn(([P]) => {
+    const d = P.xz.sub(uBlockPosition.xz);
+    const c = cos(uBlockAngle), s = sin(uBlockAngle);
+    const lx = c.mul(d.x).sub(s.mul(d.y));
+    const lz = s.mul(d.x).add(c.mul(d.y));
+    const ax = abs(lx), az = abs(lz);
+    // Along runs out from the nearest face; across runs beside it.
+    const along = max(ax, az);
+    const across = ax.greaterThan(az).select(lz, lx);
+    // Each floor point projects back onto the outer face.
+    const atFace = across.mul(float(BW / 2).div(along.max(0.001)));
+    const toSlot = min(abs(atFace.sub(SLOTS[0])), min(abs(atFace.sub(SLOTS[1])), abs(atFace.sub(SLOTS[2]))));
+    // The penumbra widens with distance from the wall.
+    const pen = along.sub(BW / 2).max(0).div(along.max(0.001)).mul(0.07).add(0.006);
+    const beam = float(1.0).sub(smoothstep(float(SLOT / 2).sub(pen), float(SLOT / 2).add(pen), toSlot));
+    return vec2(beam, along);
+  });
+  // The flame is a line light; the walls hide its lower part.
+  // This gives the block a soft shadow on the floor.
+  const floorShade = Fn(([P]) => {
+    const b = slotBeam(P);
+    const along = b.y;
+    const W = float(BW / 2);
+    const h = uBlockPosition.y.sub(HOME_Y);
+    const k = along.div(along.sub(W).max(0.02));
+    // Heights on the flame line, from the floor.
+    const y0 = h.add(BH * 0.6), y1 = y0.add(uFlameHeight);
+    const hidden = min(y1, h.add(BH).mul(k)).sub(max(y0, h.mul(k))).max(0).div(uFlameHeight);
+    const open = mix(float(1.0).sub(hidden), float(1.0), b.x);
+    const onFloor = P.y.lessThan(HOME_Y + 0.03).and(along.greaterThan(W));
+    return onFloor.select(open, float(1.0));
+  });
 
   // Fire light: a flickering capsule on smoke, a point on surfaces.
   const pointLightColor = Fn(() => {
@@ -763,7 +896,9 @@ async function start() {
     const distRatio = distToSegment.div(uLightFarDistance).clamp(0.0, 1.0);
     const distanceScale = mix(uLightNearIntensity, uLightFarIntensity, smoothstep(0.0, 1.0, distRatio));
     const finalScale = isVolume.equal(1.0).select(distanceScale, float(1.0));
-    return baseColor.mul(attenuationCorrection).mul(finalScale);
+    // Only the slotted block shades the floor.
+    const shade = isVolume.equal(1.0).select(float(1.0), mix(float(1.0), floorShade(P), uRays));
+    return baseColor.mul(attenuationCorrection).mul(finalScale).mul(shade);
   })();
 
   const pointLight = new THREE.PointLight(0xffffff, 1, 100, 2);
@@ -823,30 +958,75 @@ async function start() {
     return coloredFire.mul(max(uGlow, 0.3)).mul(0.12).mul(uFireIntensity).mul(uFlicker).mul(uCoreIntensity);
   })();
 
-  // Light escapes through the slots and throws hard rays on the floor.
-  // The rays turn with the block.
+  // Light escapes through the slots and throws rays on the floor.
+  // The rays turn with the block and soften with distance.
   floorPlane.material.emissiveNode = Fn(() => {
-    const d = positionWorld.xz.sub(uBlockPosition.xz);
-    const c = cos(uBlockAngle), s = sin(uBlockAngle);
-    const lx = c.mul(d.x).sub(s.mul(d.y));
-    const lz = s.mul(d.x).add(c.mul(d.y));
-    const ax = abs(lx), az = abs(lz);
-    // Along runs out from the nearest face; across runs beside it.
-    const along = max(ax, az);
-    const across = ax.greaterThan(az).select(lz, lx);
-    // Project each floor point back onto the outer face.
-    const atFace = across.mul(float(BW / 2).div(along.max(0.001)));
-    const toSlot = min(abs(atFace.sub(SLOTS[0])), min(abs(atFace.sub(SLOTS[1])), abs(atFace.sub(SLOTS[2]))));
-    const inSlot = float(1.0).sub(smoothstep(SLOT / 2 - 0.006, SLOT / 2, toSlot));
-    // Rays end hard at the pool radius.
-    const reach = float(1.0).sub(smoothstep(uPoolRadius.sub(0.04), uPoolRadius, along));
-    const fall = mix(float(1.0), float(0.35), along.div(uPoolRadius).clamp(0.0, 1.0));
+    const b = slotBeam(positionWorld);
+    const along = b.y;
+    const reach = float(1.0).sub(smoothstep(uPoolRadius.mul(0.6), uPoolRadius, along));
+    const fall = mix(float(1.0), float(0.3), along.div(uPoolRadius).clamp(0.0, 1.0));
     // A lifted block throws weaker rays.
     const lift = float(1.0).sub(uBlockPosition.y.sub(HOME_Y).div(4.0).clamp(0.0, 0.8));
     const tint = saturation(fireRamp(float(0.62).add(uColorNoise)), uSaturation);
-    const lit = inSlot.mul(reach).mul(fall).mul(lift).mul(along.greaterThan(BW / 2)).mul(uRays);
-    return tint.mul(lit).mul(max(uGlow, 0.15)).mul(uFlicker).mul(smoothstep(0.0, 3.0, uTime)).mul(0.36);
+    const lit = b.x.mul(reach).mul(fall).mul(lift).mul(along.greaterThan(BW / 2)).mul(uRays);
+    return tint.mul(lit).mul(max(uGlow, 0.15)).mul(uFlicker).mul(smoothstep(0.0, 3.0, uTime)).mul(0.3);
   })();
+
+  // Iron glows dull red near the open top.
+  shell.material.emissiveNode = Fn(() => {
+    const rim = smoothstep(BH - 0.6, BH, positionLocal.y).pow(2.0);
+    const n = mx_noise_float(positionLocal.mul(5.0).add(vec3(0, uTime.mul(-0.4), 0))).mul(0.35).add(0.65);
+    return uFireEndColor.mul(rim).mul(n).mul(max(uGlow, 0.2)).mul(uFlicker).mul(0.7);
+  })();
+
+  /* ---------- sparks: embers that ride the fluid ---------- */
+  // xyz is the position; w is life, from 1 down to 0.
+  const SPARKS = 4096;
+  const sparkPos = instancedArray(SPARKS, 'vec4');
+  // xyz is the velocity; w is the death rate per second.
+  const sparkVel = instancedArray(SPARKS, 'vec4');
+  const uSparkSpawn = uniform(0.0), uSparkDt = uniform(0.016), uSeed = uniform(0, 'uint');
+  const uSparkColor = uniform(new THREE.Color());
+  const sparkPass = Fn(() => {
+    const p = sparkPos.element(instanceIndex), v = sparkVel.element(instanceIndex);
+    const seed = instanceIndex.mul(uint(8)).add(uSeed.mul(uint(SPARKS * 8)));
+    const H = k => hash(seed.add(uint(k)));
+    If(p.w.lessThanEqual(0.0), () => {
+      // A dead ember respawns at a random emitter point.
+      If(H(1).lessThan(uSparkSpawn).and(uEmitCount.greaterThan(uint(0))), () => {
+        const k = H(2).mul(uEmitCount.toFloat()).toUint().min(uEmitCount.sub(uint(1)));
+        const wp = uBlockMatrix.mul(vec4(emitterBuffer.element(k).xyz, 1.0)).xyz;
+        p.assign(vec4(wp, 1.0));
+        const kick = vec3(H(3).sub(0.5).mul(2.6), H(4).mul(3.0).add(1.2), H(5).sub(0.5).mul(2.6));
+        v.assign(vec4(kick, float(1.0).div(H(6).mul(1.6).add(0.5))));
+      });
+    }).Else(() => {
+      const uvw = p.xyz.sub(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0)).div(uVolumeWorldSize).add(0.5);
+      const flow = texture3D(velTexA, uvw.clamp(0.0, 1.0), 0).xyz;
+      // Embers drift toward the flow and sink a little.
+      const nv = mix(v.xyz, flow, float(1.0).sub(uSparkDt.mul(-3.0).exp())).add(vec3(0, -1.0, 0).mul(uSparkDt));
+      const np = p.xyz.add(nv.mul(uSparkDt));
+      const life = p.w.sub(v.w.mul(uSparkDt));
+      // The floor and the volume walls kill an ember.
+      const gone = np.y.lessThan(HOME_Y).or(uvw.x.lessThan(0.0)).or(uvw.x.greaterThan(1.0)).or(uvw.y.greaterThan(1.0)).or(uvw.z.lessThan(0.0)).or(uvw.z.greaterThan(1.0));
+      p.assign(vec4(np, select(gone, float(0.0), life)));
+      v.assign(vec4(nv, v.w));
+    });
+  })().compute(SPARKS);
+  // Embers are small additive sprites that cool as they die.
+  const sparkMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  const sparkLife = sparkPos.element(instanceIndex).w;
+  sparkMat.positionNode = sparkPos.element(instanceIndex).xyz;
+  sparkMat.scaleNode = select(sparkLife.greaterThan(0.0), sparkLife.mul(0.05).add(0.018), float(0.0));
+  sparkMat.colorNode = Fn(() => {
+    const d = uv().sub(0.5).length().mul(2.0);
+    const a = float(1.0).sub(d).max(0.0);
+    return vec4(uSparkColor.mul(sparkLife.mul(7.0).add(1.0)), a.mul(a).mul(sparkLife.min(1.0)));
+  })();
+  const sparks = new THREE.Sprite(sparkMat);
+  sparks.count = SPARKS;
+  sparks.frustumCulled = false;
+  scene.add(sparks);
 
   // Blurred volume is composed over the scene, then bloomed.
   const blurredVolumetricPass = gaussianBlur(volumetricPass, denoiseStrength, 1);
@@ -869,6 +1049,7 @@ async function start() {
   const plateIron = new THREE.MeshStandardMaterial({ color: okColor(0.2, 0.012, 50), roughness: 0.75, metalness: 0.35, alphaTest: 0.5, side: THREE.DoubleSide });
   const plateGlow = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1.0, side: THREE.DoubleSide });
   plateGlow.emissiveNode = core.material.emissiveNode;
+  const plateEdge = new THREE.MeshStandardMaterial({ color: okColor(0.22, 0.012, 50), roughness: 0.55, metalness: 0.55 });
   let word = '';
 
   // Draws the mask, builds the plate and returns emitter points.
@@ -908,11 +1089,11 @@ async function start() {
     plateIron.alphaMap = new THREE.CanvasTexture(cv);
     plateIron.alphaMap.colorSpace = THREE.NoColorSpace;
     plateIron.needsUpdate = true;
-    const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.receiveShadow = true; plate.add(o); };
+    const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.receiveShadow = true; o.castShadow = mat !== plateGlow; plate.add(o); };
     for (const z of [-PLATE_T / 2, PLATE_T / 2]) add(new THREE.PlaneGeometry(Ww, Hw), plateIron, 0, cy, z);
     add(new THREE.PlaneGeometry(Ww - 0.08, Hw - 0.08), plateGlow, 0, cy, 0);
     // Edges close the plate; a heavy foot holds it up.
-    const iron = shell.material;
+    const iron = plateEdge;
     add(new THREE.BoxGeometry(Ww, 0.05, PLATE_T), iron, 0, FOOT + Hw - 0.025, 0);
     add(new THREE.BoxGeometry(0.05, Hw, PLATE_T), iron, -Ww / 2 + 0.025, cy, 0);
     add(new THREE.BoxGeometry(0.05, Hw, PLATE_T), iron, Ww / 2 - 0.025, cy, 0);
@@ -929,17 +1110,26 @@ async function start() {
     }
     return out;
   }
-  // An empty word puts the slotted block back.
+  // With no object, the fire burns on bare floor.
+  const groundPts = blockPts.map((v, i) => (i % 3 === 1 ? v - BH + 0.12 : v));
+  // A word shows the plate; otherwise the object setting decides.
+  function rebuild() {
+    block.remove(shell, core, plate);
+    uEmitGain.value = 1;
+    if (word) {
+      setEmitters(buildWord(word));
+      block.add(plate);
+      uRays.value = 0; uEmitGain.value = 4;
+    } else if (object === 'block') {
+      block.add(shell, core);
+      setEmitters(blockPts); uRays.value = 1;
+    } else {
+      setEmitters(groundPts); uRays.value = 0;
+    }
+  }
   function showWord(text) {
     word = text;
-    if (!word) {
-      block.remove(plate); block.add(shell, core);
-      setEmitters(blockPts); uRays.value = 1; uEmitGain.value = 1;
-      return;
-    }
-    const pts = buildWord(word);
-    block.remove(shell, core); block.add(plate);
-    setEmitters(pts); uRays.value = 0; uEmitGain.value = 4;
+    rebuild();
   }
 
   /* ---------- size ---------- */
@@ -959,17 +1149,43 @@ async function start() {
   /* ---------- fuel colours ---------- */
   const rampTarget = [new THREE.Color(), new THREE.Color(), new THREE.Color(), new THREE.Color()];
   const rampNow = [uFireStartColor.value, uFireMidColor.value, uFireEndColor.value, uSmokeTint.value];
-  function setFuel(name, snap) {
-    FUELS[name].forEach((lch, i) => {
-      okColor(...lch, rampTarget[i]);
+  // Heat bleaches the hottest stops; cold darkens them.
+  function setRamp(snap) {
+    CHEMS[fuel].ramp.forEach(([L, C, h], i) => {
+      const w = [1, 0.5, 0.25, 0][i];
+      const dL = (temp - 0.5) * 0.16 * w, kC = 1 - Math.max(0, temp - 0.5) * 1.2 * w;
+      okColor(Math.min(1, Math.max(0, L + dL)), C * kC, h, rampTarget[i]);
       if (snap) rampNow[i].copy(rampTarget[i]);
     });
   }
-  setFuel('wood', true);
+
+  /* ---------- smart sync ---------- */
+  // Intensity, Temperature, Chaos and the chemical set every hidden parameter.
+  const live = { emit: 1, smoke: 1, crackle: 1, sparks: 0, sputter: 0, flick: 1, sway: 1, height: 3.5 };
+  function tune() {
+    const I = intensity, T = temp, C = chaos, chem = CHEMS[fuel];
+    live.emit = 0.4 + 0.75 * I;
+    live.height = 2.8 + 1.4 * I;
+    uFireIntensity.value = (30 + 16 * I) * (chem.glow ?? 1);
+    // Hot fires rise fast and burn clean; cool fires smoke and linger.
+    uBuoyancy.value = 2.2 + 2.0 * T;
+    uCooling.value = 1 / (0.9 + 0.9 * T + 0.4 * I);
+    uDissipation.value = 1 / Math.max(0.3, (3.2 - 1.8 * T) * (0.3 + 0.55 * chem.smoke));
+    live.smoke = 0.6 + 0.4 * Math.min(chem.smoke, 1.5);
+    uFireGlowSpread.value = 4.4 + 1.0 * T;
+    // Chaos stirs the flow and the flicker.
+    uTurbulence.value = (1.8 + 3.4 * C) / Math.sqrt(SIM_SPEED);
+    uVorticity.value = 1 + 6 * C;
+    live.flick = 0.5 + 1.2 * C;
+    live.sway = 0.5 + 1.3 * C;
+    live.crackle = chem.crackle * (0.6 + 0.8 * C) * (0.5 + I);
+    live.sparks = chem.sparks * (0.4 + 1.2 * I) * (0.6 + 0.8 * C);
+    live.sputter = chem.sputter;
+  }
 
   /* ---------- async warm-up ---------- */
   // Shaders compile off the critical path, so loading never freezes.
-  await renderer.compileComputeAsync([computeCurlNoisePass, clearPass, ...new Set(stepPasses)]);
+  await renderer.compileComputeAsync([computeCurlNoisePass, clearPass, sparkPass, ...new Set(stepPasses)]);
   renderer.compute(computeCurlNoisePass);
   await scenePass.compileAsync(renderer);
   const cameraMask = camera.layers.mask;
@@ -994,9 +1210,9 @@ async function start() {
   // CPU noise drives flame height, sway, flicker and colour.
   function updateTemporalUniforms(time) {
     uTime.value = time % 1000;
-    uFlameHeight.value = 3.5 + cpuNoise.noise(0, time * 2.5, 0) * 0.8;
-    uSway.value.set(cpuNoise.noise(time * 3.5, 0, 0) * 0.4, 0, cpuNoise.noise(0, 0, time * 3.5) * 0.4);
-    uFlicker.value = cpuNoise.noise(0, time * 0.8, 0) * 0.12 + cpuNoise.noise(0, time * 15.0, 0) * 0.06 + 0.82;
+    uFlameHeight.value = live.height + cpuNoise.noise(0, time * 2.5, 0) * 0.8 * live.sway;
+    uSway.value.set(cpuNoise.noise(time * 3.5, 0, 0) * 0.4 * live.sway, 0, cpuNoise.noise(0, 0, time * 3.5) * 0.4 * live.sway);
+    uFlicker.value = (cpuNoise.noise(0, time * 0.8, 0) * 0.12 + cpuNoise.noise(0, time * 15.0, 0) * 0.06) * live.flick + 0.82;
     uColorNoise.value = cpuNoise.noise(time * 5.0, time * 5.0, 0) * 0.08;
     uPoolRadius.value = 5.2 + cpuNoise.noise(0, time * 1.3, 4) * 0.3;
     // A word faces the camera and sways; the block turns.
@@ -1007,10 +1223,13 @@ async function start() {
   }
 
   // Heat, flare and a gust set emission and the light's glow.
+  // Boost carries Pulse and sputter; Intensity scales the base.
+  let boost = 1;
   function feed(gust) {
-    const t = EMIT_T * heat + 4.5 * flare + 2.0 * gust * heat;
+    const base = heat * live.emit * boost;
+    const t = EMIT_T * base + 4.5 * flare + 2.0 * gust * base;
     uEmitTemperature.value = t;
-    uEmitDensity.value = EMIT_D * heat + 3.0 * flare;
+    uEmitDensity.value = (EMIT_D * base + 3.0 * flare) * live.smoke;
     const lt = Math.max(Math.min(t, 7.5), 3.2);
     const ld = Math.max(uEmitDensity.value, 0.4 * EMIT_D);
     uGlow.value = ((lt / 8.34) ** 4 * (ld / 11.02)) / 0.12;
@@ -1019,14 +1238,13 @@ async function start() {
   // One fixed simulation step.
   function simulate(step) {
     uDt.value = step;
-    uTurbulence.value = TURBULENCE / Math.sqrt(SIM_SPEED);
     simulationTime += step;
     updateTemporalUniforms(simulationTime);
     renderer.compute(stepPasses);
     // Dye textures ping-pong each step.
-    const temp = dyeTexNode.value;
+    const swap = dyeTexNode.value;
     dyeTexNode.value = dyeTexWriteNode.value;
-    dyeTexWriteNode.value = temp;
+    dyeTexWriteNode.value = swap;
   }
 
   // Without the frame loop, passes need a manual frame tick.
@@ -1061,20 +1279,51 @@ async function start() {
     if (!ac || !kit.noise) { if (roar && kit.ac) roar.g.gain.setTargetAtTime(0, kit.ac.currentTime, 0.05); return; }
     const t = ac.currentTime, r = roarVoice(ac);
     // The roar swells and opens with drag speed and flares.
-    const level = heat * (0.09 + 0.5 * drive + 0.45 * flare) * uFlicker.value;
+    // Intensity, Pulse and the twister swell it too.
+    const swell = (0.5 + 0.7 * intensity) * boost + swirlNow / 40;
+    const level = heat * (0.09 * swell + 0.5 * drive + 0.45 * flare) * uFlicker.value;
     r.g.gain.setTargetAtTime(level, t, 0.06);
-    r.lp.frequency.setTargetAtTime(150 + 1100 * drive + 900 * flare, t, 0.08);
+    r.lp.frequency.setTargetAtTime(150 + 160 * temp + 1100 * drive + 900 * flare + 6 * swirlNow, t, 0.08);
     // Crackles fall as a Poisson stream; drag and flare raise the rate.
-    const rate = 0.4 + heat * (3 + 24 * drive + 40 * flare);
+    const rate = 0.4 + heat * (3 * live.crackle * boost + 24 * drive + 40 * flare);
     if (nextCrackle < t) nextCrackle = t + (-Math.log(1 - Math.random()) / rate);
     while (nextCrackle < t + delta + 0.03) {
       const amt = 0.35 + 0.5 * heat + 0.4 * drive;
-      if (Math.random() < 0.1) pop(ac, nextCrackle, amt); else crackle(ac, nextCrackle, amt);
+      if (Math.random() < 0.1 + 0.3 * live.sputter) pop(ac, nextCrackle, amt); else crackle(ac, nextCrackle, amt);
       nextCrackle += -Math.log(1 - Math.random()) / rate;
     }
     // A fast drag past the threshold adds a whoosh.
     if (drive > 0.5 && driveWas <= 0.5 && performance.now() - lastWhoosh > 350) { whoosh(ac, drive); lastWhoosh = performance.now(); }
     driveWas = drive;
+  }
+
+  /* ---------- motion and sparks ---------- */
+  // Pulse breathes, Gusts blow, Twister spins; sputter stutters any of them.
+  let swirlNow = 0, frameSeed = 0;
+  const windNow = new THREE.Vector3(), windGoal = new THREE.Vector3();
+  function motionStep(delta) {
+    const t = simulationTime, ease = 1 - Math.exp(-delta / 0.8);
+    const pulse = motion === 'pulse' ? 0.35 + 1.4 * (0.5 + 0.5 * Math.sin(t * 2.2)) ** 4 : 1;
+    const sp = live.sputter ? Math.min(2, Math.max(0.2, 1 + live.sputter * 1.6 * cpuNoise.noise(t * 11, 7, 0))) : 1;
+    boost = pulse * sp;
+    swirlNow += ((motion === 'twister' ? 14 + 18 * chaos : 0) - swirlNow) * ease;
+    uSwirl.value = swirlNow;
+    if (motion === 'gusts') {
+      // A gust swells, then turns slowly round the compass.
+      const g = Math.max(0, cpuNoise.noise(t * 0.4, 11, 0) + 0.2) ** 2 * (16 + 18 * chaos);
+      const a = cpuNoise.noise(t * 0.12, 0, 5) * 4;
+      windGoal.set(Math.cos(a) * g, 0, Math.sin(a) * g);
+    } else windGoal.set(0, 0, 0);
+    windNow.lerp(windGoal, 1 - Math.exp(-delta / 0.3));
+    uWind.value.copy(windNow);
+  }
+  // Embers spawn at the chemical's rate; flares and pulses burst them.
+  function sparkStep(delta) {
+    const rate = live.sparks * heat * boost * (1 + 12 * flare);
+    uSparkSpawn.value = Math.min(1, (rate * delta) / (SPARKS * 0.7));
+    uSparkDt.value = delta * SIM_SPEED;
+    uSeed.value = frameSeed = (frameSeed + 1) % 100000;
+    renderer.compute(sparkPass);
   }
 
   /* ---------- animation loop ---------- */
@@ -1109,6 +1358,7 @@ async function start() {
     // A gust near the fire feeds it.
     const near = Math.max(0, 1 - Math.hypot(air.pos.x - currentPos.x, air.pos.z - currentPos.z) / 3);
     const gust = near * Math.min(1, gustSpeed / 12);
+    motionStep(delta);
     feed(gust);
 
     const target = Math.min(1, Math.max(uBlockSpeed.value / 10, gustSpeed / 14));
@@ -1121,6 +1371,7 @@ async function start() {
       simulate(simStep);
       simAccumulator -= simStep;
     }
+    sparkStep(delta);
     draw();
     mixSound(delta);
 
@@ -1221,7 +1472,7 @@ async function start() {
   // Typing burns a word; Backspace trims it; Escape restores the block.
   addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey || (e.repeat && e.key !== 'Backspace')) return;
-    if (e.target.closest?.('input, textarea, [contenteditable]')) return;
+    if (e.target.closest?.('input:not([type=range]), textarea, [contenteditable]')) return;
     let next = null;
     if (/^[a-z0-9]$/i.test(e.key)) next = (word + e.key.toUpperCase()).slice(0, WORD_MAX);
     else if (e.key === 'Backspace' && word) next = word.slice(0, -1);
@@ -1243,11 +1494,55 @@ async function start() {
     flareUp();
   });
 
-  choices(document.querySelector('.choices'), v => {
-    setFuel(v, reduced());
-    wake();
-    if (reduced()) draw();
-  });
+  /* ---------- controls ---------- */
+  // Each tray opens on hover or tap and closes on a click elsewhere or Escape.
+  function popover(box, btn) {
+    const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+    btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
+    document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
+    addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
+    return open;
+  }
+  const openFuels = popover(document.getElementById('fueler'), document.getElementById('fuelBtn'));
+  popover(document.getElementById('setter'), document.getElementById('setBtn'));
+  // Any change rekindles the fire; reduced motion redraws one still.
+  const changed = steps => { wake(); if (reduced()) still(steps); };
+  const fuelBs = [...document.querySelectorAll('#fuels .chip')];
+  function pickFuel(v, snap) {
+    fuel = v;
+    const b = fuelBs.find(o => o.dataset.value === v);
+    fuelBs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    document.getElementById('fuelName').textContent = b.textContent.trim();
+    document.getElementById('fuelDot').style.setProperty('--c', b.querySelector('.dot').style.getPropertyValue('--c'));
+    okColor(...CHEMS[v].spark, uSparkColor.value);
+    setRamp(snap);
+    tune();
+  }
+  fuelBs.forEach(b => b.addEventListener('click', () => {
+    pickFuel(b.dataset.value, reduced());
+    save('fuel', fuel);
+    openFuels(false);
+    changed(120);
+  }));
+  // Sliders store a value from 0 to 1.
+  const slide = (id, get, set) => {
+    const el = document.getElementById(id);
+    el.value = String(get());
+    el.addEventListener('input', () => { set(Number(el.value)); save(id, el.value); setRamp(reduced()); tune(); wake(); });
+    el.addEventListener('change', () => { if (reduced()) still(120); });
+  };
+  slide('intensity', () => intensity, v => { intensity = v; });
+  slide('temp', () => temp, v => { temp = v; });
+  slide('chaos', () => chaos, v => { chaos = v; });
+  choices(document.getElementById('motion'), v => { motion = v; save('motion', v); changed(120); }).set(motion);
+  choices(document.getElementById('object'), v => {
+    object = v;
+    save('object', v);
+    if (!word) rebuild();
+    changed(120);
+  }).set(object);
+  pickFuel(fuel, true);
+  rebuild();
   document.getElementById('reset').addEventListener('click', () => {
     block.position.set(0, HOME_Y, 0);
     prevBlockPos.copy(block.position);
