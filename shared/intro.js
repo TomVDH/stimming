@@ -1,10 +1,35 @@
-// Stimming intro: flash, masked title, hold until ready, then clear.
-// Pages import it as './shared/intro.js' or '../shared/intro.js'. No dependencies.
+// Stimming intro: flash, toy name, hold until ready, then clear.
+// Toy pages import it as '../shared/intro.js'. No dependencies.
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
-const wait = ms => new Promise(r => setTimeout(r, ms));
-const play = (el, frames, o) => el.animate(frames, { fill: 'forwards', ...o }).finished;
-const snap = 'cubic-bezier(0.2, 0.9, 0.1, 1)';
+
+/* ---------- 24 fps timing ---------- */
+// Every transition steps at 24 fps, like film.
+const FPS = 24;
+const frames = ms => Math.max(1, Math.round((ms / 1000) * FPS));
+const wait = n => new Promise(r => setTimeout(r, (n * 1000) / FPS));
+
+// A CSS cubic-bezier as a function of progress.
+const bezier = (x1, y1, x2, y2) => t => {
+  const at = (a, b, s) => 3 * a * s * (1 - s) ** 2 + 3 * b * s * s * (1 - s) + s ** 3;
+  let lo = 0, hi = 1, s = t;
+  for (let i = 0; i < 20; i++) {
+    s = (lo + hi) / 2;
+    if (at(x1, x2, s) < t) lo = s; else hi = s;
+  }
+  return at(y1, y2, s);
+};
+const linear = t => t;
+const snap = bezier(0.2, 0.9, 0.1, 1);
+const accel = bezier(0.7, 0, 0.84, 0);
+const settle = bezier(0.16, 1, 0.3, 1);
+
+// frame(p) gives the style at eased progress p; one keyframe per film frame.
+const play = (el, frame, ms, ease = linear) => {
+  const n = frames(ms);
+  const keys = Array.from({ length: n + 1 }, (_, k) => ({ ...frame(ease(k / n)), offset: k / n }));
+  return el.animate(keys, { duration: (n * 1000) / FPS, easing: `steps(${n}, jump-end)`, fill: 'forwards' }).finished;
+};
 
 // ready is a promise; the intro holds at least min ms before it clears.
 export async function intro({ ready = Promise.resolve(), min = 1200 } = {}) {
@@ -13,37 +38,36 @@ export async function intro({ ready = Promise.resolve(), min = 1200 } = {}) {
   root.classList.add('is-live');
   const flash = root.querySelector('.intro-flash'), text = root.querySelector('.intro-text');
   const grain = root.querySelector('.intro-grain');
-  const held = Promise.all([ready, wait(min)]);
+  const held = Promise.all([ready, wait(frames(min))]);
 
   if (RM.matches) {
-    // Reduced motion: no flash, the title fades in and out.
-    await play(text, [{ opacity: 0 }, { opacity: 1 }], { duration: 300 });
+    // Reduced motion: no flash, the name fades in and out.
+    await play(text, p => ({ opacity: p }), 300);
     await held;
-    await play(root, [{ opacity: 1 }, { opacity: 0 }], { duration: 300 });
+    await play(root, p => ({ opacity: 1 - p }), 300);
     root.remove();
     return;
   }
 
-  // The slab snaps open, holds, then drops away to leave the white title.
-  await wait(140);
-  await play(flash, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }], { duration: 90, easing: snap });
-  await wait(170);
+  // The slab snaps open, holds, then drops away to leave the white name.
+  await wait(3);
+  await play(flash, p => ({ transform: `scaleY(${p})` }), 125, snap);
+  await wait(4);
   text.style.opacity = 1;
-  const settle = [{ letterSpacing: '0.44em', marginRight: '-0.44em' }, { letterSpacing: '0.32em', marginRight: '-0.32em' }];
-  await play(flash, [{ opacity: 1 }, { opacity: 0.2 }, { opacity: 0.9 }, { opacity: 0 }], { duration: 140, easing: 'steps(4, end)' });
-  // The title tightens once the slab has gone.
-  play(text, settle, { duration: 900, easing: snap });
+  await play(flash, p => ({ opacity: [1, 0.2, 0.9, 0][Math.min(3, Math.floor(p * 4))] }), 4000 / FPS);
+  // The name tightens once the slab has gone.
+  play(text, p => ({ letterSpacing: `${(0.02 - 0.06 * p).toFixed(4)}em` }), 900, snap);
 
   await held;
 
-  // The title wipes off and the grain and blur resolve to nothing.
-  await play(text, [{ clipPath: 'inset(0 0 0 0)' }, { clipPath: 'inset(0 0 0 100%)' }], { duration: 320, easing: 'cubic-bezier(0.7, 0, 0.84, 0)' });
+  // The name wipes off and the grain and blur resolve to nothing.
+  await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
   await Promise.all([
-    play(root, [
-      { backdropFilter: 'blur(24px)', backgroundColor: 'oklch(0.16 0.012 275 / 0.78)' },
-      { backdropFilter: 'blur(0px)', backgroundColor: 'oklch(0.16 0.012 275 / 0)' },
-    ], { duration: 700, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }),
-    play(grain, [{ opacity: 0.2 }, { opacity: 0 }], { duration: 700 }),
+    play(root, p => ({
+      backdropFilter: `blur(${(24 * (1 - p)).toFixed(2)}px)`,
+      backgroundColor: `oklch(0.16 0.012 275 / ${(0.78 * (1 - p)).toFixed(3)})`,
+    }), 708, settle),
+    play(grain, p => ({ opacity: 0.2 * (1 - p) }), 708),
   ]);
   root.remove();
 }
