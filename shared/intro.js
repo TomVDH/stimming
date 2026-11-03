@@ -113,6 +113,11 @@ export const VARIETIES = {
     label: 'Punch: rings close in, lines zoom out of blur', group: 'New',
     timing: { unfurl: 260, wipe: 280 }, flash: 'rings', reveal: 'punch', exit: 'punch', read: true,
   },
+  squad: {
+    label: 'Squad: the emblem stands left, lines type in beside it, a bar sweeps it off', group: 'New',
+    timing: { flash: 8, nlLag: 2, subLag: 2, tagLag: 2, tagNlLag: 2, sndLag: 2, wipe: 300 },
+    layout: 'side', cut: 'bar', reveal: 'type', exit: 'scan', read: true,
+  },
   classic: {
     label: 'Classic', group: 'Earlier',
     timing: { lead: 3, flash: 13, unfurl: 333, nlLag: 2, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, wipe: 333, fade: 500 }, exit: 'wipe',
@@ -233,6 +238,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
   const T = { ...TIMING, ...(V.timing || {}), ...timing };
   root.classList.add('is-live');
+  if (V.layout) root.dataset.layout = V.layout;
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
   const info = await entry(id), nameEl = text.querySelector('.intro-name');
@@ -274,8 +280,13 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
 
   const emblem = text.querySelector('.intro-emblem'), name = text.querySelector('.intro-name');
   const sub = text.querySelector('.intro-sub');
-  // The name carries the number too, for a lab layout that shows it there.
-  if (info?.number && name) name.dataset.num = `#${info.number}`;
+  // The number sits in the box, among the subtitles, or at the foot of the page.
+  const numAt = root.dataset.numAt || 'box';
+  let num = null;
+  if (info?.number && numAt !== 'box') {
+    num = Object.assign(document.createElement('span'), { className: 'intro-num', textContent: `#${info.number}` });
+    if (numAt === 'bottom') root.append(num); else (nl || name).after(num);
+  }
   // The emblem sits in a badge whose white box is the flash.
   let badge = null;
   if (emblem) {
@@ -283,7 +294,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     badge.className = 'intro-badge';
     emblem.before(badge);
     badge.append(emblem);
-    if (info?.number) badge.dataset.num = `#${info.number}`;
+    if (info?.number && numAt === 'box') badge.dataset.num = `#${info.number}`;
     // The emblem takes its flash size and place before it shows.
     emblem.style.setProperty('--emblem-k', T.flashScale);
     badge.style.translate = `0 ${T.iconY}vh`;
@@ -307,9 +318,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     big.append(tick);
   }
   // Each line starts closed in the variety's own way, then opens on its beat.
-  const lines = [badge ? name : null, nl, sub,
-    text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd];
-  const lags = [0, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag];
+  const lines = [badge ? name : null, nl, numAt === 'subs' ? num : null, sub,
+    text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
+  const lags = [0, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
   const R = REVEAL[V.reveal] || REVEAL.unfurl;
   lines.forEach(el => { if (el) Object.assign(el.style, R.shut); });
   // A try-out: the name can share the flash, boxed and blown up with the mark.

@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=7">
+<link rel="stylesheet" href="../shared/intro.css?v=8">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -60,6 +60,14 @@ button:hover { border-color: var(--fg); }
 .row.is-tuned label::after { content: " •"; color: oklch(0.86 0.15 128); }
 .row label { cursor: default; user-select: none; }
 .row.is-idle { opacity: 0.4; }
+/* The timeline: one block per beat, sized by its share of the run. */
+.tl { display: grid; gap: 6px; }
+.tl-bar { position: relative; display: flex; height: 18px; border-radius: 5px; overflow: hidden; background: var(--line); }
+.tl-bar i { display: block; height: 100%; min-width: 2px; border-right: 1px solid oklch(0.14 0.012 275); }
+.tl-head { position: absolute; top: -2px; bottom: -2px; width: 2px; left: 0; background: #fff; opacity: 0; }
+.tl-keys { display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-keys span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; background: var(--c); }
+.tl-total { font-size: 12px; font-variant-numeric: tabular-nums; }
 .row select { max-width: 190px; }
 .spk { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; margin-left: auto; color: var(--muted); }
 .spk svg { width: 16px; height: 16px; }
@@ -77,6 +85,7 @@ button:hover { border-color: var(--fg); }
   <h1>Intro lab</h1>
   <div class="vrow"><button type="button" class="step" id="prev" aria-label="Previous variety">‹</button><select id="variety" aria-label="Variety"></select><button type="button" class="step" id="next" aria-label="Next variety">›</button></div>
   <p id="took">Run time: –</p>
+  <div class="tl" id="tl" aria-label="Timeline"><div class="tl-total" id="tl-total"></div><div class="tl-bar" id="tl-bar"></div><div class="tl-keys" id="tl-keys"></div></div>
   <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
   <label class="check"><input type="checkbox" id="done"> Signed off (tick)</label>
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
@@ -92,11 +101,9 @@ button:hover { border-color: var(--fg); }
     <option value="|Ears on">Ears on (no glyph)</option>
   </select></div>
   <div class="row"><label for="numat">Number</label><select id="numat">
-    <option value="">Box, top left</option>
-    <option value="br">Box, bottom right</option>
-    <option value="under">Under the box</option>
-    <option value="side">Beside the box</option>
-    <option value="name">After the name</option>
+    <option value="">In the square</option>
+    <option value="subs">Among the subtitles</option>
+    <option value="bottom">Bottom of the page</option>
   </select></div>
   <label class="check"><input type="checkbox" id="nudge"> Pulse the speaker after the intro <button type="button" id="snd" aria-pressed="false" aria-label="Sound off" class="spk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l4 6M21 9l-4 6" stroke="currentColor" stroke-width="2"/></svg></button></label>
   <details class="group" id="fonts" open><summary>Fonts</summary><div class="rows">
@@ -119,7 +126,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=7';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=8';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -138,7 +145,9 @@ const STAMP = JSON.stringify([TIMING, Object.fromEntries(Object.entries(VARIETIE
 // tune[variety] holds only the knobs moved away from that variety's own table.
 const tune = saved.stamp === STAMP ? saved.tune || {} : {};
 const pauses = new Set(saved.pauses || []);
+let tlReady = false;
 const save = () => {
+  if (tlReady) drawTL();
   try {
     localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, numAt: numSel.value }));
   } catch (err) {}
@@ -173,7 +182,7 @@ const soundNote = () => {
 };
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
 const flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat');
-numSel.value = saved.numAt || '';
+numSel.value = ['subs', 'bottom'].includes(saved.numAt) ? saved.numAt : '';
 numSel.addEventListener('change', () => { save(); replay(); });
 replayBox.checked = saved.replay ?? true;
 loopBox.checked = !!saved.loop;
@@ -359,6 +368,7 @@ const toys = await fetch('../toys.json').then(r => r.json());
 for (const [id, t] of Object.entries(toys)) toySel.add(new Option(`${t.name}${t.number ? ` · ${t.number}` : ''}`, id));
 toySel.value = saved.toy && toys[saved.toy] ? saved.toy : 'morpher';
 doneBox.checked = !!saved.done;
+tlReady = true;
 [toySel, doneBox].forEach(el => el.addEventListener('change', () => { save(); replay(); }));
 
 // Each play builds a fresh intro block, as a toy page carries it.
@@ -384,6 +394,8 @@ async function run({ hold = null } = {}) {
   root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span>${subSpan}</div></div>`;
   document.body.prepend(root);
   const t0 = performance.now();
+  runStart = t0;
+  drawTL();
   // A replaced run waits here for good; the held beat waits for the next play.
   const beat = ph => {
     if (my !== gen) return new Promise(() => {});
@@ -402,6 +414,48 @@ async function run({ hold = null } = {}) {
   if (loopBox.checked) loopTimer = setTimeout(() => { if (my === gen) run(); }, 600);
 }
 document.getElementById('play').addEventListener('click', () => run());
+
+// The timeline estimates each beat from the knobs, the variety and the toy's text.
+// Frames run at 30 fps; line reveals and exits follow the engine's own rules.
+const SEGS = [['glass', 'oklch(0.5 0.03 275)'], ['pop', 'oklch(0.85 0.14 85)'], ['flash', 'oklch(0.72 0.16 40)'], ['lines', 'oklch(0.72 0.13 200)'], ['hold', 'oklch(0.6 0.08 260)'], ['exit', 'oklch(0.7 0.16 330)'], ['fade', 'oklch(0.45 0.05 300)']];
+const F = n => (n * 1000) / 30;
+let runStart = 0, tlTotal = 1;
+function beats() {
+  const t = T(), v = V(), info = toys[toySel.value] || {};
+  const note = soundNote(), hasSnd = !!info.sound && (note.glyph || !!note.words);
+  const lines = [[!!info.emblem, 0], [!!info.nl, t.nlLag], [!!info.number && numSel.value === 'subs', t.nlLag], [!!info.sub, t.subLag], [!!info.tag, t.tagLag], [!!info.tagNl, t.tagNlLag], [hasSnd, t.sndLag], [!!info.number && numSel.value === 'bottom', t.sndLag]].filter(([on]) => on);
+  const lags = lines.slice(1).reduce((a, [, lag]) => a + F(lag), 0);
+  const open = { type: F(Math.min(20, Math.max(4, (info.tagNl || info.tag || info.name || '').length))), stamp: F(3), glitch: F(4), cut: F(1) }[v.reveal] ?? t.unfurl;
+  const seg = {};
+  seg.glass = F(t.lead) + (v.flash === 'strobe' ? F(4) : 0);
+  seg.pop = F(t.pop) + (v.land === 'stamp' ? F(3) : 0);
+  seg.flash = v.flash === 'jitter' ? F(Math.max(5, t.flash)) : F(t.flash);
+  seg.lines = lags + open;
+  const chars = [info.tag, info.tagNl].join('').length;
+  seg.hold = v.read ? Math.min(t.readCap, t.readBase + t.readPer * chars) : Math.max(0, t.hold - seg.glass - seg.pop - seg.flash - seg.lines);
+  const n = lines.length + 1, ex = v.exit || 'wipe';
+  seg.exit = ['erase', 'drop', 'fold'].includes(ex) ? t.wipe + F(n - 1) : ex === 'cut' ? F(1) : ['blow', 'glitch'].includes(ex) ? F(4) : t.wipe;
+  seg.fade = t.fade;
+  return seg;
+}
+function drawTL() {
+  const seg = beats();
+  tlTotal = Object.values(seg).reduce((a, b) => a + b, 0) || 1;
+  document.getElementById('tl-total').textContent = `Total ≈ ${(tlTotal / 1000).toFixed(2)} s`;
+  document.getElementById('tl-bar').innerHTML = SEGS.map(([k, c]) => `<i style="flex: ${seg[k]} 0 0; background: ${c}" title="${k} ${Math.round(seg[k])} ms"></i>`).join('') + '<b class="tl-head" id="tl-head"></b>';
+  document.getElementById('tl-keys').innerHTML = SEGS.map(([k, c]) => `<span style="--c: ${c}">${k} ${Math.round(seg[k])}</span>`).join('');
+}
+// The playhead runs while a play is live and stops at a held beat.
+(function head() {
+  const el = document.getElementById('tl-head');
+  if (el) {
+    const live = playing && !held && !resume;
+    el.style.opacity = live ? 1 : 0;
+    if (live) el.style.left = `${Math.min(100, ((performance.now() - runStart) / tlTotal) * 100)}%`;
+  }
+  requestAnimationFrame(head);
+})();
+drawTL();
 document.getElementById('reset').addEventListener('click', () => { delete tune[varSel.value]; paintAll(); save(); held ? applyPose() : replay(); });
 // Copy gives the shipped table for the default, or a variety's timing line.
 document.getElementById('copy').addEventListener('click', async e => {
