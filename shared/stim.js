@@ -16,7 +16,8 @@ export const onReducedChange = fn => RM.addEventListener?.('change', e => fn(e.m
 /* ---------- sound toggle ---------- */
 // The header button is the one source of truth for sound.
 const listeners = new Set();
-let soundKey = null, soundOn = true, soundBtn = null;
+// Sound starts muted; a toy speaks only once its sound is switched on.
+let soundKey = null, soundOn = false, soundBtn = null;
 export const sound = {
   get on() { return soundOn; },
   set(v) {
@@ -129,7 +130,7 @@ export function initPage({ id, silent = false, home = '../index.html' } = {}) {
   const shell = document.querySelector('header[data-shell]');
   if (shell && !shell.children.length) shell.innerHTML = headerHTML(home);
   soundKey = `stimming.${id}.sound`;
-  soundOn = store.get(soundKey) !== '0';
+  soundOn = store.get(soundKey) === '1';
   soundBtn = document.getElementById('snd');
   if (soundBtn) {
     soundBtn.hidden = silent;

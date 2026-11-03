@@ -66,7 +66,7 @@ Open <http://localhost:8000/>. All links are relative.
   3. Then the how-to line: four entries at most, gesture then result.
   Keys show on mouse devices only. Click/Tap uses the `fine`/`touch` span pair.
 - Copy: no blurbs or taglines on the toy. Writing lives only in the vignette: a short heading, two plain paragraphs, a small figure.
-- Sound is synthesized with Web Audio. It starts after a user gesture. Mute is remembered in `stimming.<id>.sound`.
+- Sound is synthesized with Web Audio. It is muted by default and starts after a user gesture. The choice is remembered in `stimming.<id>.sound`.
 - Hold 30 fps or better. Idle pages do no per-frame work. Respect `prefers-reduced-motion`.
 - Code comments follow ASD-STE100: one fact per line, twelve words or fewer, active voice, present tense.
 - Never use brand names for toys.
