@@ -33,14 +33,14 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to add a gravity well, drag a well to move it. Wells that meet merge, and heavy merges collapse into a black hole. Space adds a well, C clears, R resets.">
+    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place a star, pulsar or dark well, drag one to move it. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
       <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="streak" role="group" aria-label="Disk streaks">
-        <button class="chip" type="button" data-value="0" aria-pressed="false">Sharp</button>
-        <button class="chip" type="button" data-value="0.3" aria-pressed="true">Streak</button>
-        <button class="chip" type="button" data-value="0.9" aria-pressed="false">Smear</button>
+      <div class="choices" id="kind" role="group" aria-label="Object to place">
+        <button class="chip" type="button" data-value="star" aria-pressed="true">Star</button>
+        <button class="chip" type="button" data-value="pulsar" aria-pressed="false">Pulsar</button>
+        <button class="chip" type="button" data-value="well" aria-pressed="false">Well</button>
       </div>
       <div class="actions" id="ctl">
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
@@ -48,9 +48,9 @@
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>fling stars</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>add a well</dd></div>
-        <div><dt>Drag a well</dt><dd>move it</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>add a well</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>place the picked object</dd></div>
+        <div><dt>Drag an object</dt><dd>move it</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>place one mid-sky</dd></div>
       </dl>
     </div>
   </main>
@@ -70,7 +70,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, choices } from '../shared/stim.js';
+import { initPage, sound, choices, oklchLinear } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -241,7 +241,7 @@ async function hasWebGPU() {
 function noWebGPU() {
   panel.querySelector('.fail').hidden = false;
   document.getElementById('ctl').hidden = true;
-  document.getElementById('streak').hidden = true;
+  document.getElementById('kind').hidden = true;
   document.getElementById('snd').hidden = true;
 }
 
@@ -262,12 +262,24 @@ const BH_M = 48, HOLE_R = 0.2, LENS = 0.3, SHADOW_K = 1.3, DISK_TILT = (-18 * Ma
 const HOLE_REACH = 6, INFLOW = 0.3, EAT = 160 / N;
 const DISK_N = SMALL ? 16384 : 32768, DISK_SPIN = 2.4, DISK_PX = 2.4, TRAIL = 7, TRAIL_DT = 0.08;
 const JET_N = SMALL ? 4096 : 8192, JET_RATE = 0.45;
+const BEAM_N = SMALL ? 1024 : 2048, BEAM_RATE = 0.6;
 const EPS2 = 0.2, EPSW2 = 1, KILL2 = 70 * 70, DEAD = -1e9;
 // Flings: an opening burst, then a steady stream while held.
 const INIT = 2000, RATE = 12000, MAXF = Math.round(N / 14);
 const STEP = 1 / 120;
 // The disk's streaks fade with this time constant, in seconds.
-let expose = 0.3;
+const EXPOSE = 0.3;
+// Placed objects: mass, and for stars a surface colour.
+// Blue stars run heavy, red ones light.
+const STAR_TYPES = [
+  { m: 16, col: oklchLinear(0.86, 0.1, 250) },
+  { m: 12, col: oklchLinear(0.93, 0.07, 95) },
+  { m: 9, col: oklchLinear(0.78, 0.16, 50) },
+];
+const PULSAR_M = 8;
+// A pulsar spins its two beams at this rate, in radians per second.
+// The beams reach BEAM_L units and push stars outward.
+const PULSAR_W = 1.7, BEAM_L = 9, BEAM_PUSH = 5;
 // Arms wind as log spirals, about 19 degrees of pitch.
 const WIND = 2.9;
 const FOV = 36, EL = (32 * Math.PI) / 180;
@@ -276,7 +288,7 @@ const holeRadius = m => Math.min(0.55, HOLE_R * Math.sqrt(m / BH_M));
 let running = false, ready = false, shown = !document.querySelector('.intro');
 curtain.then(() => { shown = true; });
 let renderer = null, camera = null;
-let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false;
+let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star';
 const wells = [];
 
 async function start() {
@@ -340,6 +352,23 @@ async function start() {
     // Horizon radius, zero for an ordinary well.
     uWH.push(uniform(0));
   }
+  // Pulsars: xz position, then the beam direction as cos and sin.
+  // uPulOn is zero for every slot that holds no pulsar.
+  const uPul = [], uPulOn = [];
+  for (let k = 0; k < MAXW; k++) {
+    uPul.push(uniform(new THREE.Vector4()));
+    uPulOn.push(uniform(0));
+  }
+  // Beam weight at p: a narrow cone along both beams.
+  const beamAt = (k, p) => {
+    const P = uPul[k];
+    const dx = p.x.sub(P.x), dz = p.z.sub(P.y);
+    const along = dx.mul(P.z).add(dz.mul(P.w)), perp = dx.mul(P.w).sub(dz.mul(P.z));
+    const ra = along.abs();
+    const wd = ra.mul(0.05).add(0.12);
+    const w = exp(perp.div(wd).pow(2).negate()).mul(smoothstep(0.2, 0.8, ra)).mul(exp(ra.div(-BEAM_L))).mul(uPulOn[k]);
+    return { w, along };
+  };
   // The held cluster is a ring-buffer range that follows the pointer.
   const uHeldStart = uniform(0, 'uint');
   const uHeldCount = uniform(0, 'uint');
@@ -464,6 +493,13 @@ async function start() {
       const ft = phi0.mul(-2).mul(sin(psi)).div(rr);
       const fade = uArms.mul(exp(r2.mul(-1 / 50))).mul(r2.div(r2.add(1)));
       acc.addAssign(vec3(dp.x, 0, dp.z).div(rr).mul(fr).add(tng.mul(ft)).mul(fade));
+      // Pulsar beams blow stars outward along the beam.
+      for (let k = 0; k < MAXW; k++) {
+        If(uPulOn[k].greaterThan(0), () => {
+          const b = beamAt(k, p);
+          acc.addAssign(vec3(uPul[k].z, 0, uPul[k].w).mul(b.along.sign()).mul(b.w.mul(BEAM_PUSH)));
+        });
+      }
       v.addAssign(acc.mul(uDt));
       p.addAssign(v.mul(uDt));
       // A star inside a horizon is gone, and the hole counts it.
@@ -571,29 +607,58 @@ async function start() {
   const calm = float(1.3).div(SP.w.mul(0.2).pow(2).add(1));
   // Stars near a hole dim, so the disk reads against the core.
   const nearHole = mix(float(1), smoothstep(uHoleR.mul(2.5), uHoleR.mul(10), SP.xyz.sub(uHole.xyz).length()).mul(0.85).add(0.15), uHoleVis);
-  const starCol = varying(tint.mul(lum.pow(5).mul(2.2).add(0.42)).mul(calm).mul(vis).mul(uStarGain).mul(starLens.mu).mul(nearHole));
+  // A star caught in a pulsar beam flares blue-white.
+  let flare = float(0);
+  for (let k = 0; k < MAXW; k++) flare = flare.add(beamAt(k, SP.xyz).w);
+  flare = flare.min(1);
+  const starCol = varying(mix(tint, ICE, flare.mul(0.7)).mul(flare.mul(3).add(1))
+    .mul(lum.pow(5).mul(2.2).add(0.42)).mul(calm).mul(vis).mul(uStarGain).mul(starLens.mu).mul(nearHole));
   starMat.colorNode = dotOf(starCol);
   const stars = new THREE.Sprite(starMat);
   stars.count = N;
   stars.frustumCulled = false;
   scene.add(stars);
 
-  // Each well is a small hot nucleus that blooms.
+  // Each object is a hot nucleus that blooms.
+  // A star whitens at its centre and shows its colour at the rim.
   const wellDots = [];
   for (let k = 0; k < MAXW; k++) {
-    const size = uniform(0);
+    const size = uniform(0), col = uniform(new THREE.Color(1, 0.86, 0.66)), gain = uniform(5);
     const m = spriteMat();
     m.scaleNode = size.mul(uPx);
     m.colorNode = Fn(() => {
       const d = uv().sub(0.5).length().mul(2);
-      return vec4(1.0, 0.86, 0.66, 1).mul(vec4(5, 5, 5, exp(d.mul(d).mul(-6)).mul(float(1).sub(d).max(0))));
+      const c = mix(vec3(1), col, smoothstep(0, 0.45, d)).mul(gain);
+      return vec4(c, exp(d.mul(d).mul(-6)).mul(float(1).sub(d).max(0)));
     })();
     const s = new THREE.Sprite(m);
     s.frustumCulled = false;
     s.renderOrder = 2;
     s.visible = false;
     scene.add(s);
-    wellDots.push({ s, size });
+    wellDots.push({ s, size, col, gain });
+  }
+
+  // Pulsar beams: particles stream out along two opposite rays.
+  const beams = [];
+  for (let k = 0; k < MAXW; k++) {
+    const m = spriteMat();
+    const P = uPul[k];
+    const bh = n => hash(instanceIndex.add(uint(n * 4241 + k * 977 + 13)));
+    const side = select(instanceIndex.bitAnd(uint(1)).equal(uint(1)), float(1), float(-1));
+    const bt = fract(bh(1).add(uTime.mul(BEAM_RATE)));
+    const br = bt.mul(BEAM_L).add(0.12);
+    const jit = gauss(bh(2), bh(3)).mul(br.mul(0.03).add(0.02));
+    const at = vec3(P.x, 0, P.y).add(vec3(P.z, 0, P.w).mul(br.mul(side))).add(vec3(P.w.negate(), 0, P.z).mul(jit));
+    m.positionNode = lensOf(at).p;
+    m.scaleNode = uPx.mul(2);
+    m.colorNode = dotOf(varying(ICE.mul(1.5).mul(smoothstep(0, 0.04, bt)).mul(float(1).sub(bt).pow(1.5)).mul(uPulOn[k])));
+    const s = new THREE.Sprite(m);
+    s.count = BEAM_N;
+    s.frustumCulled = false;
+    s.visible = false;
+    scene.add(s);
+    beams.push(s);
   }
 
   /* ---------- the hole: shadow, photon ring, disk and jets ---------- */
@@ -728,10 +793,11 @@ async function start() {
   const INERT = 30, DRAG = 0.05, RAMP = 0.7;
   const resp = m => 1 / (1 + m / INERT);
   let frameX = 0, frameZ = 0;
-  function makeWell(x, z, vx, vz, m, mt) {
+  // Kind is star, pulsar or well; a well is dark mass with a hot core.
+  function makeWell(x, z, vx, vz, m, mt, kind = 'well', col = null) {
     return {
       x, z, vx, vz, m, mt, ph: Math.random() * TAU, vis: 0, pulse: 0, held: false, born: performance.now(),
-      ax: 0, az: 0, gx: 0, gz: 0, k: 1, n: 1, hole: false, bound: 0,
+      ax: 0, az: 0, gx: 0, gz: 0, k: 1, n: 1, hole: false, bound: 0, kind, col, th: Math.random() * TAU,
     };
   }
   function stepWells(h) {
@@ -751,17 +817,21 @@ async function start() {
     frameZ = az0;
     for (const w of wells) {
       w.m += (w.mt - w.m) * (1 - Math.exp(-h / RAMP));
-      // Halo drag: each well sheds speed against the mean flow, and sinks.
-      w.ax = ax0 - DRAG * (w.vx - ux);
-      w.az = az0 - DRAG * (w.vz - uz);
+      // Halo drag: each dark well sheds speed against the mean flow, and sinks.
+      // Stars and pulsars keep their orbits.
+      const drag = w.kind === 'well' ? DRAG : 0;
+      w.ax = ax0 - drag * (w.vx - ux);
+      w.az = az0 - drag * (w.vz - uz);
       w.k = resp(Math.max(w.m, w.mt));
+      if (w.kind === 'pulsar') w.th += PULSAR_W * h;
     }
     for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
       const a = wells[i], b = wells[j], dx = b.x - a.x, dz = b.z - a.z, r2 = dx * dx + dz * dz;
       const inv = 1 / (r2 + EPSW2) ** 1.5;
       a.ax += b.m * dx * inv * a.k; a.az += b.m * dz * inv * a.k;
       b.ax -= a.m * dx * inv * b.k; b.az -= a.m * dz * inv * b.k;
-      // Dynamical friction: close pairs shed relative speed and sink together.
+      // Dynamical friction: two close halos shed relative speed and sink together.
+      if (a.kind !== 'well' || b.kind !== 'well') continue;
       const f = (GAMMA * Math.exp(-r2 / 14)) / (a.m + b.m + 1e-6), dvx = a.vx - b.vx, dvz = a.vz - b.vz;
       a.ax -= f * b.m * dvx * a.k; a.az -= f * b.m * dvz * a.k;
       b.ax += f * a.m * dvx * b.k; b.az += f * a.m * dvz * b.k;
@@ -796,6 +866,11 @@ async function start() {
       keep.hole = was || keep.n > HOLE_WELLS;
       keep.bound = a.bound + b.bound;
       keep.vis = Math.max(a.vis, b.vis);
+      // The heavier body sets what the merger is.
+      const heavy = a.m >= b.m ? a : b;
+      keep.kind = heavy.kind;
+      keep.col = heavy.col;
+      keep.th = heavy.th;
       keep.pulse = 1;
       wells.splice(wells.indexOf(gone), 1);
       if (keep.hole && !was) holeBorn(keep);
@@ -831,8 +906,10 @@ async function start() {
       if (k < 0) return;
       wells.splice(k, 1);
     }
-    const [vx, vz] = orbitVel(x, z, TAP_M);
-    const w = makeWell(x, z, vx, vz, 0, TAP_M);
+    const type = STAR_TYPES[(Math.random() * STAR_TYPES.length) | 0];
+    const m = pick === 'star' ? type.m : pick === 'pulsar' ? PULSAR_M : TAP_M;
+    const [vx, vz] = orbitVel(x, z, m);
+    const w = makeWell(x, z, vx, vz, 0, m, pick, pick === 'star' ? type.col : null);
     w.pulse = 1;
     wells.push(w);
   }
@@ -860,6 +937,11 @@ async function start() {
       }
     }
     uFrame.value.set(frameX, 0, frameZ);
+    for (let k = 0; k < MAXW; k++) {
+      const w = wells[k], on = w && w.kind === 'pulsar' && !w.hole && w.mt > 0;
+      if (on) uPul[k].value.set(w.x, w.z, Math.cos(w.th), Math.sin(w.th));
+      uPulOn[k].value = on ? w.vis : 0;
+    }
   }
 
   /* ---------- the hole: one per sky, the heaviest ---------- */
@@ -1115,7 +1197,7 @@ async function start() {
     else if (e.key === 'c' || e.key === 'C') { if (!e.repeat) clearAll(); }
     else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) resetAll(); }
   });
-  choices(document.getElementById('streak'), v => { expose = Number(v); });
+  choices(document.getElementById('kind'), v => { pick = v; });
   document.getElementById('clear').addEventListener('click', clearAll);
   document.getElementById('reset').addEventListener('click', resetAll);
 
@@ -1127,8 +1209,10 @@ async function start() {
   syncWells();
   // The hole's sprites compile now, drawn at zero size.
   shadow.visible = disk.visible = jets.visible = true;
+  beams.forEach(b => { b.visible = true; });
   await Promise.all([scenePass.compileAsync(renderer), diskPass.compileAsync(renderer)]);
   shadow.visible = disk.visible = jets.visible = false;
+  beams.forEach(b => { b.visible = false; });
 
   canvas.setAttribute('aria-hidden', 'true');
   panel.prepend(canvas);
@@ -1211,16 +1295,32 @@ async function start() {
     placeCamera(now / 1000);
     updateHole(dt);
     // Reduced motion draws each frame alone, with no streaks.
-    uDamp.value = reduce || !expose ? 0 : Math.exp(-dt / expose);
+    uDamp.value = reduce ? 0 : Math.exp(-dt / EXPOSE);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
-      if (!w) { dot.s.visible = false; continue; }
+      if (!w) { dot.s.visible = beams[k].visible = false; continue; }
       // The hole shows its shadow instead of a nucleus.
       w.vis += ((w.mt > 0 && w !== holeWell ? 1 : 0) - w.vis) * (1 - Math.exp(-dt / 0.22));
       w.pulse *= Math.exp(-dt / 0.3);
       dot.s.visible = w.vis > 0.01;
       dot.s.position.set(w.x, 0, w.z);
-      dot.size.value = (7 + 5 * Math.sqrt(w.m / SEED_M)) * w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
+      const grow = w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
+      beams[k].visible = w.kind === 'pulsar' && !w.hole && w.vis > 0.01;
+      if (w.kind === 'star') {
+        dot.size.value = (18 + 8 * Math.sqrt(w.m / SEED_M)) * grow;
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 4;
+      } else if (w.kind === 'pulsar') {
+        // The core flashes as a beam sweeps past the camera.
+        const face = Math.abs(Math.cos(w.th) * Math.sin(az) + Math.sin(w.th) * Math.cos(az));
+        dot.size.value = 6 * grow;
+        dot.col.value.setRGB(0.56, 0.74, 1);
+        dot.gain.value = 3 + 14 * face ** 24;
+      } else {
+        dot.size.value = (7 + 5 * Math.sqrt(w.m / SEED_M)) * grow;
+        dot.col.value.setRGB(1, 0.86, 0.66);
+        dot.gain.value = 5;
+      }
     }
     renderPipeline.render();
     sample(now);
