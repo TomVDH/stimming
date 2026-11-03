@@ -270,7 +270,7 @@ function layoutPool(A) {
 const WAVES = [[14, 0.15, 0.036], [79, 0.115, 0.03], [141, 0.17, 0.04], [205, 0.13, 0.033], [262, 0.1, 0.027], [326, 0.16, 0.038]]
   .map(([deg, lam, c], i) => {
     const k = TAU / lam;
-    return { dx: Math.cos(deg * D2R), dz: Math.sin(deg * D2R), k, w: k * c, amp: 2.7 / (k * k), ph: i * 2.399 };
+    return { dx: Math.cos(deg * D2R), dz: Math.sin(deg * D2R), k, w: k * c, amp: 2.1 / (k * k), ph: i * 2.399 };
   });
 function swellGrad(x, z, t) {
   let gx = 0, gz = 0;
@@ -367,7 +367,7 @@ function plop(x, s) {
   o.frequency.setValueAtTime(f0, t);
   o.frequency.exponentialRampToValueAtTime(f0 * lerp(2.3, 1.7, s), t + lerp(0.045, 0.1, s));
   og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.24 * g, t + 0.004);
+  og.gain.linearRampToValueAtTime(0.34 * g, t + 0.004);
   og.gain.setTargetAtTime(0, t + 0.006, lerp(0.024, 0.065, s));
   o.connect(og).connect(d);
   o.start(t);
@@ -472,7 +472,7 @@ function bed() {
 function bedLevel(e, finger) {
   if (!lapG || !live()) return;
   const t = ac.currentTime;
-  lapG.gain.setTargetAtTime(clamp(e * 2.4, 0, 0.5), t, 0.25);
+  lapG.gain.setTargetAtTime(clamp(e * 5, 0, 0.45), t, 0.25);
   patG.gain.setTargetAtTime(raining ? 0.03 : 0, t, 0.5);
   swG.gain.setTargetAtTime(clamp(finger * 0.08, 0, 0.14), t, 0.06);
   swF.frequency.setTargetAtTime(600 + 450 * clamp(finger, 0, 2), t, 0.1);
@@ -502,7 +502,8 @@ vec3 swell(vec2 p) {
 const PETAL_U = `uniform vec4 uPA[${NPM}], uPB[${NPM}];
 uniform int uNP;`;
 const PETAL_FN = `
-// Distance to petal i in world units; q gets local coordinates.
+// Returns the distance to petal i in world units.
+// q gets the local coordinates.
 float petalSd(vec2 p, int i, out vec2 q) {
   vec4 A = uPA[i], B = uPB[i];
   vec2 d = p - A.xy;
@@ -530,12 +531,13 @@ float petals(vec2 p, out int k, out vec2 q) {
   }
   return best;
 }
-// Water climbs a petal's edge, so the surface slopes up toward it.
+// Water climbs a petal's edge.
+// The surface slopes up toward the petal.
 vec2 meniscus(vec2 p, int k, float s) {
   if (k < 0 || s <= 0.0 || s > 0.12) return vec2(0.0);
   vec2 q;
   vec2 n = vec2(petalSd(p + vec2(0.002, 0.0), k, q) - s, petalSd(p + vec2(0.0, 0.002), k, q) - s) / 0.002;
-  // The rise starts flat at the edge, so the light bends gently.
+  // The rise starts flat at the edge, so light bends gently.
   float x = s / MEN_L;
   return -MEN * x * exp(1.0 - x) * n;
 }`;
@@ -559,7 +561,8 @@ void main() {
   vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
-// One wave step: neighbours pull each cell; walls reflect.
+// One wave step: neighbours pull each cell.
+// Clamped edges reflect waves like walls.
 const SIM_FS = `${HEAD}
 uniform sampler2D uSim;
 uniform float uDamp;
@@ -588,7 +591,8 @@ void main() {
   float d = texelFetch(uSim, clamp(p - ivec2(0, 1), ivec2(0), m), 0).x;
   o = vec4(c.xy, (r - l) / (2.0 * uCell), (u - d) / (2.0 * uCell));
 }`;
-// Drops dent the surface; a moving finger pushes water ahead of it.
+// Drops dent the surface.
+// A moving finger pushes water ahead of it.
 const DIST_FS = `${HEAD}
 uniform sampler2D uSim;
 uniform vec4 uPool;
@@ -608,7 +612,8 @@ void main() {
   for (int i = 0; i < uNS; i++) c.x += uSegK[i].y * (bump(w - uSeg[i].zw, uSegK[i].x) - bump(w - uSeg[i].xy, uSegK[i].x));
   o = c;
 }`;
-// Each petal reads the water under it; the last pixel sums wave energy.
+// Each petal's pixel reads the water under that petal.
+// The last pixel sums the wave energy.
 const PROBE_FS = `${HEAD}
 uniform sampler2D uSim;
 uniform vec4 uPool;
@@ -660,7 +665,7 @@ void main() {
   vNew = f.xz - f.y * uRl.xz / uRl.y;
   vOld = p;
   float cov = smoothstep(0.016, -0.012, ps);
-  // Light fades in over the last cells, so wall shadows have soft edges.
+  // Light fades over the last cells to soften wall shadows.
   vec2 e = min(vec2(c), vec2(uN - 1 - c));
   vTint = mix(vec3(1.0), uPB[max(k, 0)].z > 0.5 ? LEAF_T : PETAL_T, cov) * smoothstep(0.0, 2.5, min(e.x, e.y));
   gl_Position = vec4(vNew / uPool.xy, 0.0, 1.0);
@@ -697,7 +702,7 @@ vec3 sky(vec3 d) {
   vec3 c = mix(HOR, ZEN, pow(clamp(d.y, 0.0, 1.0), 0.55));
   return c + HALO * pow(max(dot(d, uSun), 0.0), 7.0) * 0.5;
 }
-// Glazed tiles; face 0 is the floor and face 1 a wall.
+// Glazed tiles: face 0 is the floor and face 1 is a wall.
 vec3 tiles(vec2 fq, float face) {
   vec2 g = fq / uTile, id = floor(g), f = fract(g), fw = fwidth(g);
   vec2 cen = (id + 0.5) * uTile;
@@ -769,7 +774,7 @@ void main() {
   vec3 rd = normalize(uFwd + vec3(ndc.x * uTan.x, 0.0, 0.0) + ndc.y * uTan.y * uUp);
   float D = uPool.z, HD = uPool.w;
 
-  // The deck, and the open top of the pool at deck height.
+  // The ray meets the deck plane at the pool's open top.
   vec3 Q = uCam + rd * ((HD - uCam.y) / rd.y);
   float eq = max(abs(Q.x) - PH.x, abs(Q.z) - PH.y);
   float mDeck = clamp(eq / max(fwidth(eq), 1e-6) + 0.5, 0.0, 1.0);
@@ -785,7 +790,7 @@ void main() {
   vec3 Nd = xw ? vec3(-sign(rd.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(rd.z));
   vec3 dry = tiles(vec2(xw ? Pd.z + PH.y : Pd.x + PH.x, Pd.y + D), 1.0) * (SUN * max(dot(Nd, uSun), 0.0) + AMB);
 
-  // The surface: ripples, swell and the meniscus round each petal.
+  // Ripples, swell and each petal's meniscus tilt the surface.
   vec2 wp = clamp(W.xz, -PH, PH);
   vec4 s = texture(uSim, wp / PH * 0.5 + 0.5);
   int k;
@@ -921,9 +926,6 @@ async function initGL() {
   vaoCaus = gl.createVertexArray();
   idxBuf = gl.createBuffer();
   pbo = gl.createBuffer();
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
-  gl.bufferData(gl.PIXEL_PACK_BUFFER, probeData.byteLength, gl.STREAM_READ);
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   probeT = target(NPM + 1, 1, gl.RGBA32F, gl.NEAREST);
   fence = null;
 }
@@ -1038,7 +1040,11 @@ function probe() {
   gl.bindTexture(gl.TEXTURE_2D, sim[cur].tex);
   gl.bindVertexArray(vaoEmpty);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // A fresh buffer per read keeps Chrome's readback path quiet.
+  gl.deleteBuffer(pbo);
+  pbo = gl.createBuffer();
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.bufferData(gl.PIXEL_PACK_BUFFER, probeData.byteLength, gl.STREAM_READ);
   gl.readPixels(0, 0, probeT.w, 1, gl.RGBA, gl.FLOAT, 0);
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -1064,7 +1070,7 @@ function render(dt) {
   if (simActive) simulate(dt);
   if (simActive && !fence) probe();
   const amp = 1;
-  // Caustics: additive light on the floor map.
+  // Caustics add light into the floor map.
   gl.useProgram(P.caus.p);
   gl.uniform1f(P.caus.u.uT, swellT);
   gl.uniform1f(P.caus.u.uAmp, amp);
@@ -1083,7 +1089,6 @@ function render(dt) {
   gl.bindVertexArray(vaoCaus);
   gl.drawElements(gl.TRIANGLES, nIdx, gl.UNSIGNED_INT, 0);
   gl.disable(gl.BLEND);
-  // The view.
   gl.useProgram(P.view.p);
   gl.uniform2f(P.view.u.uRes, canvas.width, canvas.height);
   gl.uniform1f(P.view.u.uT, swellT);
@@ -1121,10 +1126,10 @@ const SLOPE_G = 2.2;
 function stepPetals(dt) {
   const brz = reduce ? 0 : 1;
   petals.forEach((p, i) => {
-    const sg = swellGrad(p.x, p.z, swellT), gx = probeData[i * 4 + 2] + sg[0], gz = probeData[i * 4 + 3] + sg[1];
+    const sg = swellGrad(p.x, p.z, swellT), gx = probeData[i * 4 + 2] + 0.3 * sg[0], gz = probeData[i * 4 + 3] + 0.3 * sg[1];
     // Petals slide down wave slopes and drift on a faint breeze.
-    let ax = -SLOPE_G * gx + brz * 0.012 * Math.sin(0.11 * clock + p.z * 1.7 + p.seed);
-    let az = -SLOPE_G * gz + brz * 0.012 * Math.cos(0.09 * clock + p.x * 1.3 + p.seed * 2);
+    let ax = -SLOPE_G * gx + brz * 0.007 * Math.sin(0.11 * clock + p.z * 1.7 + p.seed);
+    let az = -SLOPE_G * gz + brz * 0.007 * Math.cos(0.09 * clock + p.x * 1.3 + p.seed * 2);
     // Walls push back softly.
     const mx = PX - 0.06 - p.L, mz = PZ - 0.06 - p.L;
     if (Math.abs(p.x) > mx) ax -= 40 * (p.x - Math.sign(p.x) * mx);
@@ -1170,7 +1175,7 @@ function poke() {
   lastPoke = clock;
   wake();
 }
-const STR = 1;
+const STR = 3;
 const inX = x => clamp(x, -PX + 0.01, PX - 0.01), inZ = z => clamp(z, -PZ + 0.01, PZ - 0.01);
 function addDrop(x, z, r, s) {
   dropQ.push(inX(x), inZ(z), Math.max(r, 2.2 * CELL), s * STR);
@@ -1199,8 +1204,8 @@ function stone(x, z, s) {
 }
 function splash() {
   const x = rand(-0.7, 0.7) * PX, z = rand(-0.65, 0.65) * PZ;
-  addDrop(x, z, 0.085, -0.032);
-  after(0.11, () => addDrop(x, z, 0.035, 0.024));
+  addDrop(x, z, 0.085, -0.025);
+  after(0.11, () => addDrop(x, z, 0.035, 0.018));
   // Thrown droplets land in a ring.
   for (let n = 5 + ((Math.random() * 4) | 0), i = 0; i < n; i++) {
     const a = rand(0, TAU), d = rand(0.12, 0.34), t = rand(0.22, 0.62);
@@ -1218,7 +1223,7 @@ function raindrop() {
   if (Math.random() < 0.55) tick(pan(x));
 }
 // A finger stroke: water piles ahead and drops behind.
-const FR = 0.03, PUSH = 0.0045;
+const FR = 0.03, PUSH = 0.0032;
 function drag(ax, az, bx, bz, dts) {
   const len = Math.hypot(bx - ax, bz - az);
   if (len < 1e-4) return;
@@ -1270,11 +1275,12 @@ function setRain(v) {
 }
 
 /* ---------- one loop: full rate while busy, half rate while calm ---------- */
-let raf = 0, running = false, onScreen = false, lastDraw = 0, drawn = 0, slowN = 0, busyN = 0, lowDpr = false, quiet = 0;
+let raf = 0, inFrame = false, running = false, onScreen = false, lastDraw = 0, drawn = 0, slowN = 0, busyN = 0, lowDpr = false, quiet = 0;
 let W = 0, H = 0;
 const busy = () => simActive || fingers.size > 0 || sweeps.length > 0 || raining || later.length > 0 || dropQ.length > 0 || segQ.length > 0;
 function wake() {
-  if (!running || !ready || raf) return;
+  // A frame in progress schedules its own successor.
+  if (!running || !ready || raf || inFrame) return;
   lastDraw = performance.now();
   raf = requestAnimationFrame(frame);
 }
@@ -1296,9 +1302,12 @@ function frame(now) {
       else if (SIMN > 160) { SIMN = 160; layoutPool(aspect); allocPool(); }
     }
   }
+  inFrame = true;
   step(dt);
   render(dt);
-  if (++drawn === 2) canvas.classList.add('on');
+  inFrame = false;
+  // The canvas fades in once its first frame is up.
+  if (++drawn === 1) requestAnimationFrame(() => canvas.classList.add('on'));
   if (busy() || ambient || petalsMoving()) raf = requestAnimationFrame(frame);
   else bedLevel(0, 0);
 }
@@ -1315,11 +1324,11 @@ function step(dt) {
   stepPetals(dt);
   finger *= Math.exp(-6 * dt);
   // Lively water slaps the walls now and then.
-  if (simActive && energy > 0.02 && Math.random() < dt * clamp(energy * 12, 0, 3)) slap(rand(-0.8, 0.8), clamp(energy * 4, 0.2, 1));
+  if (simActive && energy > 0.03 && Math.random() < dt * clamp(energy * 10, 0, 3)) slap(rand(-0.8, 0.8), clamp(energy * 3, 0.2, 1));
   bedLevel(simActive ? energy : 0, finger);
   // Quiet water for a moment means the ripples have died.
   if (simActive && clock - lastPoke > 0.8 && !dropQ.length && !segQ.length) {
-    quiet = energy < 0.0025 && probeData[NPM * 4 + 2] < 0.0004 ? quiet + dt : 0;
+    quiet = energy < 0.005 && probeData[NPM * 4 + 2] < 0.0008 ? quiet + dt : 0;
     if (quiet > 0.5) { settle(); quiet = 0; energy = 0; }
   }
 }
@@ -1347,7 +1356,8 @@ function fit() {
   const cw = Math.round(w * p), ch = Math.round(h * p);
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   if (!ready) return;
-  // A new shape rebuilds the pool; a small change only reframes it.
+  // A new shape rebuilds the pool.
+  // A small change only reframes it.
   if (Math.abs(w / h / aspect - 1) > 0.02) { layoutPool(w / h); allocPool(); }
   else { fitCam(w / h, PZ); camUniforms(); }
   if (running) render(0);

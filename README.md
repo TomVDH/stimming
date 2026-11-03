@@ -31,7 +31,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Rain on glass | [rain/](rain/) | live, with sound |
 | Plasma globe | [plasma/](plasma/) | live, with sound |
 | Marbling | [marble/](marble/) | live draft, still being refined |
-| Caustic pool | [pool/](pool/) | live draft, still being refined |
+| Caustic pool | [pool/](pool/) | live, with sound |
 | Lava lamp | [lava/](lava/) | live draft, still being refined |
 | Kaleidoscope | [kaleido/](kaleido/) | live draft, still being refined |
 | Chladni plate | [chladni/](chladni/) | live, with sound |
