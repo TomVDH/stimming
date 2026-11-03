@@ -33,7 +33,8 @@ Read `README.md` for the toy list and the full rules.
 - `icons/index.html` is an unlinked lab of old icon directions. The spheres are rejected.
 - Icon iteration happens per toy, in that toy's own chat. Tom starts those chats; do not iterate icons across toys here.
   Tom's icon verdicts live in `icons/picks.json`; D and E stay as the iteration columns.
-  Cut directions move to `icons/archive/`. Leave that folder out of context unless Tom asks.
+  Cut directions move to `icons/archive/` (list: `icons/archive/cut.json`, emblems: `icons/archive/emblems/`). Leave that folder out of context unless Tom asks.
+  The spike galleries still hold cut directions' code for reference; the icons page hides them.
   `icons/sheet.html` is the one icons page: every toy's directions (Current, A to E) as Icon, Transition (the luminance emblem) or Both; scrub and cut.
   The galleries are `icons/spike-1.html` to `spike-11.html`; emblems sit in `icons/spike/emblems/<id>-<a..e>.svg`.
 - `shared/stim.css` and `shared/stim.js` are the shared shell.

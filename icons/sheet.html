@@ -174,6 +174,9 @@ const docs = [];
 let cur = -1, hide = false, view = 'icon';
 
 const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
+// Cut directions sit in the archive and stay off this page.
+const archived = await fetch('archive/cut.json').then(r => r.json()).catch(() => ({ cut: {} }));
+const gone = new Set(Object.entries(archived.cut || {}).flatMap(([id, ls]) => ls.map(l => `${id}-${l.toLowerCase()}`)));
 // The menu's own icon fills Current where a gallery has none.
 // The menu renders off screen first, because its script draws some icons.
 // Its shared gradients come along under ids of their own.
@@ -391,6 +394,7 @@ async function mount(src, title) {
       const l = card.querySelector('b')?.textContent.trim();
       const tile = card.querySelector('.t128, .s128');
       if (!COLS.includes(l) || !tile) continue;
+      if (gone.has(`${toy}-${l.toLowerCase()}`)) { card.remove(); continue; }
       card.dataset.col = String(COLS.indexOf(l));
       sec.dataset.toy = toy;
       cells.push({ key: `${toy}-${l.toLowerCase()}`, toy, l, card, tile, win, frame, empty: card.classList.contains('empty') });
