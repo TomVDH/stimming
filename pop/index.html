@@ -59,21 +59,23 @@
 </div>
 
 <script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-  "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-  "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-  "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-  "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-} }
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { toGamut, converter, formatHex, formatRgb } from 'culori';
-import * as Tone from 'tone';
+import { converter } from 'culori';
 import { gsap } from 'gsap';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, audioKit, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, audioKit, reduced, onReducedChange, css, linFit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -87,19 +89,9 @@ const lerp = (a, b, t) => a + (b - a) * t;
 let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
-/* ---------- colour: culori does the OKLCH maths ---------- */
-const inRgb = toGamut('rgb', 'oklch'), toLrgb = converter('lrgb'), toOklab = converter('oklab'), toOklch = converter('oklch');
+/* ---------- colour: shared css and linFit; culori converts for the fields ---------- */
+const toOklab = converter('oklab'), toOklch = converter('oklch');
 const ok = ([l, c, h]) => ({ mode: 'oklch', l, c, h });
-// A CSS colour, gamut-mapped into sRGB.
-function css(lch, a) {
-  const c = inRgb(ok(lch));
-  return a == null ? formatHex(c) : formatRgb({ ...c, alpha: a });
-}
-// Linear sRGB inside the gamut, for per-pixel lighting.
-function linFit(lch) {
-  const c = toLrgb(inRgb(ok(lch)));
-  return [clamp(c.r), clamp(c.g), clamp(c.b)];
-}
 // The sRGB transfer curve, for the 8-bit table.
 const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
 
@@ -992,45 +984,44 @@ const LEAD = 0.004;
 const HOLD = 0.45, HOLD_J = 1.1;
 // Space and Enter pop, so they count as gestures; arrow keys do not.
 const kit = audioKit({ keys: new Set([' ', 'Enter']) });
-let V = null, popNext = 0, bloopNext = 0;
+let V = null, T = null, toneLoad = null, popNext = 0, bloopNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Bigger cells sound slightly lower.
 const pitchOf = () => (40 / R) ** 0.35;
 // Once the field settles, the context sleeps until the next gesture.
 const rest = () => kit.rest(() => !raf && !timer && !ptrs.size && !kPress);
 
-// Tone runs on the kit's context and output, so mute and sleep still hold.
-// The voices exist only once sound is on and a gesture woke the context.
+// The shared kit loads Tone on its own context, so mute and sleep still hold.
+// The first live call starts the load; voices answer once it lands.
 function voices() {
-  const a = kit.live();
-  if (!a) return null;
-  if (!V) {
-    Tone.setContext(new Tone.Context({ context: a, lookAhead: 0, latencyHint: 'interactive' }));
-    V = buildVoices();
-    tuneVoices();
-  }
-  return V;
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); tuneVoices(); }
+  });
+  return null;
 }
 // A noise voice: a short noise burst through one filter.
 function noisy(type, ftype, q) {
-  const f = new Tone.Filter({ type: ftype, Q: q, frequency: 1000 }).connect(kit.out);
-  const n = new Tone.NoiseSynth({ noise: { type }, envelope: { attack: 0.0005, decay: 0.02, sustain: 0, release: 0.005 } }).connect(f);
+  const f = new T.Filter({ type: ftype, Q: q, frequency: 1000 }).connect(kit.out);
+  const n = new T.NoiseSynth({ noise: { type }, envelope: { attack: 0.0005, decay: 0.02, sustain: 0, release: 0.005 } }).connect(f);
   return { n, f };
 }
 function buildVoices() {
-  const note = new Tone.PolySynth(Tone.MembraneSynth).connect(kit.out), ping = new Tone.PolySynth(Tone.Synth).connect(kit.out);
+  const note = new T.PolySynth(T.MembraneSynth).connect(kit.out), ping = new T.PolySynth(T.Synth).connect(kit.out);
   note.maxPolyphony = 16; ping.maxPolyphony = 16;
   note.volume.value = -8; ping.volume.value = -10;
   // The creak runs all the time at zero gain; a squeeze opens it.
-  const cg = new Tone.Gain(0).connect(kit.out), trem = new Tone.Tremolo({ frequency: 13, depth: 0.6 }).connect(cg).start();
-  const cf = new Tone.Filter({ type: 'bandpass', Q: 7, frequency: 170 }).connect(trem);
-  new Tone.Noise('white').connect(cf).start();
+  const cg = new T.Gain(0).connect(kit.out), trem = new T.Tremolo({ frequency: 13, depth: 0.6 }).connect(cg).start();
+  const cf = new T.Filter({ type: 'bandpass', Q: 7, frequency: 170 }).connect(trem);
+  new T.Noise('white').connect(cf).start();
   return {
     note, ping,
     crack: noisy('white', 'bandpass', 1.5), fx: noisy('white', 'bandpass', 1), squeak: noisy('pink', 'lowpass', 9),
     rattle: noisy('white', 'bandpass', 4), thump: noisy('white', 'lowpass', 0.7),
-    bloop: new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.03, decay: 0.08, sustain: 0, release: 0.05 }, volume: -14 }).connect(kit.out),
-    boom: new Tone.MembraneSynth({ pitchDecay: 0.25, octaves: 1.5, envelope: { attack: 0.004, decay: 0.5, sustain: 0, release: 0.1 } }).connect(kit.out),
+    bloop: new T.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.03, decay: 0.08, sustain: 0, release: 0.05 }, volume: -14 }).connect(kit.out),
+    boom: new T.MembraneSynth({ pitchDecay: 0.25, octaves: 1.5, envelope: { attack: 0.004, decay: 0.5, sustain: 0, release: 0.1 } }).connect(kit.out),
     creak: { g: cg, trem, f: cf },
   };
 }
