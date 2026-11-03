@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=6">
+<link rel="stylesheet" href="../shared/intro.css?v=7">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -91,6 +91,13 @@ button:hover { border-color: var(--fg); }
     <option value="glyph|Listen">Headphones + Listen</option>
     <option value="|Ears on">Ears on (no glyph)</option>
   </select></div>
+  <div class="row"><label for="numat">Number</label><select id="numat">
+    <option value="">Box, top left</option>
+    <option value="br">Box, bottom right</option>
+    <option value="under">Under the box</option>
+    <option value="side">Beside the box</option>
+    <option value="name">After the name</option>
+  </select></div>
   <label class="check"><input type="checkbox" id="nudge"> Pulse the speaker after the intro <button type="button" id="snd" aria-pressed="false" aria-label="Sound off" class="spk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l4 6M21 9l-4 6" stroke="currentColor" stroke-width="2"/></svg></button></label>
   <details class="group" id="fonts" open><summary>Fonts</summary><div class="rows">
     <div class="row"><label for="fd">Name</label><select id="fd"></select></div>
@@ -112,7 +119,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=6';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=7';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -133,7 +140,7 @@ const tune = saved.stamp === STAMP ? saved.tune || {} : {};
 const pauses = new Set(saved.pauses || []);
 const save = () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked }));
+    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, numAt: numSel.value }));
   } catch (err) {}
 };
 
@@ -165,7 +172,9 @@ const soundNote = () => {
   return { glyph: g === 'glyph', words: words || null, nudge: nudgeBox.checked };
 };
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
-const flashBox = document.getElementById('nameflash');
+const flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat');
+numSel.value = saved.numAt || '';
+numSel.addEventListener('change', () => { save(); replay(); });
 replayBox.checked = saved.replay ?? true;
 loopBox.checked = !!saved.loop;
 flashBox.checked = !!saved.nameFlash;
@@ -369,6 +378,7 @@ async function run({ hold = null } = {}) {
   const t = toys[toySel.value], root = document.createElement('div');
   root.className = 'intro';
   root.setAttribute('aria-hidden', 'true');
+  if (numSel.value) root.dataset.numAt = numSel.value;
   const emblem = t.emblem ? '<span class="intro-emblem"></span>' : '';
   const subSpan = t.sub ? '<span class="intro-sub"></span>' : '';
   root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span>${subSpan}</div></div>`;

@@ -274,6 +274,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
 
   const emblem = text.querySelector('.intro-emblem'), name = text.querySelector('.intro-name');
   const sub = text.querySelector('.intro-sub');
+  // The name carries the number too, for a lab layout that shows it there.
+  if (info?.number && name) name.dataset.num = `#${info.number}`;
   // The emblem sits in a badge whose white box is the flash.
   let badge = null;
   if (emblem) {
