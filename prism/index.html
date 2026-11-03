@@ -21,7 +21,19 @@
 }
 .stage canvas.on { opacity: 1; }
 /* The add chips sit together as one strip. */
-.add { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Add opens a tray of pieces above the bar. */
+.adder { position: relative; }
+#addBtn { display: inline-flex; align-items: center; gap: 6px; }
+#addBtn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
+.add {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; gap: 6px; padding: 8px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
 .add .chip.icon svg .solid { fill: currentColor; stroke: none; }
 /* The remove button is a solid disc with a cut cross. */
 .drop {
@@ -62,6 +74,8 @@
     </div>
     <div class="bar">
       <div class="actions">
+        <div class="adder">
+        <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Add</button>
         <div class="add" id="add" role="group" aria-label="Add a piece">
           <button class="chip icon" type="button" data-kind="prism" aria-label="Add a prism" title="Prism"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/></svg></button>
           <button class="chip icon" type="button" data-kind="lens" aria-label="Add a convex lens" title="Convex lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.4 2.2 2.4 10.2 0 12.4c-2.4-2.2-2.4-10.2 0-12.4z"/></svg></button>
@@ -71,9 +85,9 @@
           <button class="chip icon" type="button" data-kind="concave" aria-label="Add a concave mirror" title="Concave mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg></button>
           <button class="chip icon" type="button" data-kind="sensor" aria-label="Add a sensor pad" title="Sensor pad"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg></button>
         </div>
+        </div>
         <button class="chip" id="light" type="button" aria-label="Light: white">White</button>
-        <button class="chip" id="wire" type="button" aria-pressed="false">Wireframe</button>
-        <button class="chip" id="haze" type="button" aria-pressed="false" title="Fine haze">Fine haze</button>
+        <button class="chip" id="look" type="button" aria-label="Look: solid">Solid</button>
         <button class="chip" id="clear" type="button" aria-disabled="true">Clear</button>
         <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
       </div>
@@ -98,17 +112,23 @@ initPage({ id: 'prism' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
 // Fine haze trades frame time for full-resolution smoke and bloom.
-const hazeB = document.getElementById('haze'), HAZE_KEY = 'stimming.prism.haze';
+const HAZE_KEY = 'stimming.prism.haze';
 let fine = false;
 try { fine = localStorage.getItem(HAZE_KEY) === '1'; } catch (err) {}
-hazeB.setAttribute('aria-pressed', String(fine));
 // The lamp shines white light or one laser line.
 // Each laser is one wavelength bin, so it never splits.
 const LIGHTS = [['White', -1], ['Red laser', 20], ['Green laser', 10], ['Violet laser', 1]];
-const lightB = document.getElementById('light'), wireB = document.getElementById('wire');
+const lightB = document.getElementById('light'), lookB = document.getElementById('look');
 let lightAt = 0, wire = false;
 try { wire = localStorage.getItem('stimming.prism.wire') === '1'; } catch (err) {}
-wireB.setAttribute('aria-pressed', String(wire));
+// One chip cycles the look: solid, solid with fine haze, wireframe.
+const LOOKS = ['Solid', 'Hazy', 'Wire'];
+function showLook() {
+  const name = LOOKS[wire ? 2 : fine ? 1 : 0];
+  lookB.textContent = name;
+  lookB.setAttribute('aria-label', `Look: ${name.toLowerCase()}`);
+}
+showLook();
 const addG = document.getElementById('add'), addBs = [...addG.querySelectorAll('.chip')];
 const dropB = panel.querySelector('.drop'), barEl = document.querySelector('.bar');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -1725,7 +1745,7 @@ function watch(ms) {
   if (gapAvg < 26 || ++slowN < 24) return;
   slowN = 0;
   gapAvg = 16;
-  if (fine) { fine = false; hazeB.setAttribute('aria-pressed', 'false'); fit(true); }
+  if (fine) { fine = false; showLook(); fit(true); }
   else { lowDpr = true; fit(); }
 }
 function frame(ms) {
@@ -1911,24 +1931,27 @@ lightB.addEventListener('click', () => {
   geomDirty = true;
   wake();
 });
-wireB.addEventListener('click', () => {
-  wire = !wire;
-  wireB.setAttribute('aria-pressed', String(wire));
-  try { localStorage.setItem('stimming.prism.wire', wire ? '1' : '0'); } catch (err) {}
-  wake();
+lookB.addEventListener('click', () => {
+  const next = ((wire ? 2 : fine ? 1 : 0) + 1) % LOOKS.length, wasFine = fine;
+  wire = next === 2;
+  fine = next === 1;
+  showLook();
+  try {
+    localStorage.setItem('stimming.prism.wire', wire ? '1' : '0');
+    localStorage.setItem(HAZE_KEY, fine ? '1' : '0');
+  } catch (err) {}
+  if (fine !== wasFine) { lowDpr = false; slowN = 0; gapAvg = 16; fit(true); } else wake();
 });
-hazeB.addEventListener('click', () => {
-  fine = !fine;
-  hazeB.setAttribute('aria-pressed', String(fine));
-  try { localStorage.setItem(HAZE_KEY, fine ? '1' : '0'); } catch (err) {}
-  lowDpr = false;
-  slowN = 0;
-  gapAvg = 16;
-  fit(true);
-});
+// The add tray opens on hover or tap and closes after a pick.
+const adder = document.querySelector('.adder'), addBtn = document.getElementById('addBtn');
+const openTray = on => { adder.classList.toggle('is-open', on); addBtn.setAttribute('aria-expanded', String(on)); };
+addBtn.addEventListener('click', () => openTray(!adder.classList.contains('is-open')));
+document.addEventListener('pointerdown', e => { if (!adder.contains(e.target)) openTray(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape') openTray(false); });
 addBs.forEach(b => b.addEventListener('click', () => {
   if (b.getAttribute('aria-disabled') === 'true') return;
   addPiece(b.dataset.kind);
+  openTray(false);
   panel.focus({ preventScroll: true });
 }));
 clearB.addEventListener('click', clearAll);
