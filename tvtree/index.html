@@ -397,7 +397,7 @@ const TREE = [
   { pts: [[0.02, 1.12, 0], [0.46, 1.28, -0.03], [0.98, 1.37, -0.02], [1.44, 1.56, 0.02], [1.66, 1.84, 0]], r: [0.082, 0.032], w: 2, curl: 1 },
   { pts: [[0.0, 1.66, 0], [-0.32, 2.0, 0.02], [-0.76, 2.28, -0.02], [-1.16, 2.43, 0], [-1.4, 2.66, 0]], r: [0.078, 0.03], w: 3, curl: -1 },
   { pts: [[0.03, 1.68, 0], [0.36, 2.02, -0.02], [0.8, 2.26, 0.02], [1.18, 2.4, 0], [1.42, 2.62, 0]], r: [0.076, 0.03], w: 4, curl: 1 },
-  { pts: [[0.24, 1.92, -0.12], [0.18, 2.38, -0.14], [0.26, 2.8, -0.1], [0.5, 3.06, -0.06], [0.78, 3.02, -0.03]], r: [0.05, 0.026], w: 5, crook: 1 },
+  { pts: [[0.24, 1.92, -0.06], [0.2, 2.34, -0.36], [0.26, 2.8, -0.24], [0.5, 3.06, -0.1], [0.78, 3.02, -0.03]], r: [0.05, 0.026], w: 5, crook: 1 },
   { pts: [[-0.6, 1.25, -0.06], [-0.69, 1.52, -0.12], [-0.64, 1.78, -0.14]], r: [0.04, 0.02], w: 1, curl: 1, from: 0.45 },
   { pts: [[0.74, 1.33, -0.06], [0.86, 1.6, -0.12], [0.8, 1.84, -0.14]], r: [0.04, 0.02], w: 2, curl: -1, from: 0.5 },
 ];
@@ -414,8 +414,8 @@ const SETS = [
   { b: 4, t: 0.84, L: 0.2, kind: 'classic', s: 0.92, yaw: -0.22 },
   { b: 4, t: 0.47, L: 0.18, kind: 'orb', s: 0.9, yaw: -0.05 },
   { b: 5, t: 1.0, L: 0.2, kind: 'cube', s: 0.85, yaw: -0.12 },
-  // The big set is wedged in the V between the two upper branches.
-  { b: -1, seat: [0.02, 1.73, 0.04], wedge: [3, 4], w: 0, al: 0, kind: 'cabinet', s: 1.0, yaw: 0.0 },
+  // The big set is turned aside and wedged down in the V of the two upper branches.
+  { b: -1, seat: [0.02, 1.73, 0.06], wedge: [3, 4], roll: -0.1, w: 0, al: 0, kind: 'cabinet', s: 0.9, yaw: -0.62 },
   { b: -1, seat: [-0.46, 1.27, 0.06], w: 1, al: 0.3, kind: 'wide', s: 0.8, yaw: 0.16 },
 ];
 // The stage shape decides how wide the tree spreads.
@@ -1751,31 +1751,50 @@ function placeRest(s) {
   s.seatV = [0, 0, 0];
   s.seatA = [0, 0, 0];
 }
-// A wedged set sits where the V opens as wide as the set.
-// Its lower corners then rest on both branches.
+// A wedged set drops into the V until its box first meets the wood.
+// The box is turned by its roll; every branch is tested in 3D.
 function wedgeSeat(s) {
-  const side = s.def.wedge.map(i => {
-    const m = treeMeta[i], br = TREE[i], pts = [];
-    for (let j = 0; j <= 80; j++) {
-      const t = j / 80, p = m.main.getPointAt(t);
-      pts.push([p.x, p.y, lerp(br.r[0], br.r[1], Math.pow((t * m.mainLen) / m.len, 0.85))]);
+  const roll = s.def.roll || 0, cr = Math.cos(roll), sr = Math.sin(roll), z0 = s.def.seat[2];
+  const cy0 = Math.cos(s.def.yaw), sy0 = Math.sin(s.def.yaw);
+  const wood = TREE.map((br, bi) => {
+    const m = treeMeta[bi], pts = [];
+    for (let j = 0; j <= 60; j++) {
+      const t = j / 60, p = m.main.getPointAt(t);
+      pts.push([p.x, p.y, p.z, lerp(br.r[0], br.r[1], Math.pow((t * m.mainLen) / m.len, 0.85)) + (bi ? 0 : 0.11 * Math.exp(-t * 16))]);
     }
     return pts;
   });
-  // Each branch's inner edge at a height, from its samples.
-  const edge = (pts, y, sgn) => {
-    for (let j = 1; j < pts.length; j++) {
-      const [x0, y0, r0] = pts[j - 1], [x1, y1, r1] = pts[j];
-      if ((y0 - y) * (y1 - y) <= 0 && y1 !== y0) { const u = (y - y0) / (y1 - y0); return lerp(x0, x1, u) + sgn * lerp(r0, r1, u); }
-    }
-    return null;
-  };
-  const [L, R] = side[0][side[0].length - 1][0] < side[1][side[1].length - 1][0] ? side : [side[1], side[0]];
-  for (let y = Math.max(L[0][1], R[0][1]); y < 3; y += 0.005) {
-    const xl = edge(L, y, 1), xr = edge(R, y, -1);
-    if (xl !== null && xr !== null && xr - xl >= s.w * 0.97) return [(xl + xr) / 2, y - 0.015, s.def.seat[2]];
+  // Points on the box faces, turned about the view axis.
+  const box = [];
+  for (let i = 0; i <= 6; i++) for (let j = 0; j <= 6; j++) for (let k = 0; k <= 4; k++) {
+    const u = i / 6 - 0.5, v = j / 6 - 0.5, q = k / 4 - 0.5;
+    if (Math.abs(u) < 0.5 && Math.abs(v) < 0.5 && Math.abs(q) < 0.5) continue;
+    const x = u * s.w, y = v * s.h, z = q * s.d, rx = x * cr - y * sr, ry = x * sr + y * cr;
+    box.push([rx * cy0 + z * sy0, ry, -rx * sy0 + z * cy0]);
   }
-  return [s.def.seat[0] * KX, s.def.seat[1] * KY, s.def.seat[2]];
+  const hits = (cx, cy) => wood.some(pts => {
+    for (let j = 1; j < pts.length; j++) {
+      const [ax, ay, az, ra] = pts[j - 1], [bx, by, bz, rb] = pts[j], dx = bx - ax, dy = by - ay, dz = bz - az, l2 = dx * dx + dy * dy + dz * dz;
+      for (const [px, py, pz] of box) {
+        const qx = cx + px - ax, qy = cy + py - ay, qz = z0 + pz - az;
+        const t = clamp((qx * dx + qy * dy + qz * dz) / l2), ex = qx - dx * t, ey = qy - dy * t, ez = qz - dz * t;
+        if (ex * ex + ey * ey + ez * ez < lerp(ra, rb, t) ** 2) return true;
+      }
+    }
+    return false;
+  });
+  // The centre follows the middle of the V as it climbs.
+  const [L, R] = s.def.wedge.map(i => treeMeta[i].main);
+  const mid = y => {
+    const near = (c) => { let b = c.getPointAt(0); for (let j = 1; j <= 60; j++) { const p = c.getPointAt(j / 60); if (Math.abs(p.y - y) < Math.abs(b.y - y)) b = p; } return b.x; };
+    return (near(L) + near(R)) / 2;
+  };
+  const half = s.h / 2;
+  for (let cy = treeMeta[0].main.getPointAt(1).y; cy < 3.2; cy += 0.006) {
+    const cx = mid(cy - half * 0.5);
+    if (!hits(cx, cy)) return [cx, cy + s.low, z0];
+  }
+  return [s.def.seat[0] * KX, s.def.seat[1] * KY, z0];
 }
 // Quiet steps let overlapping sets nudge apart before anyone looks.
 function settle(n) {
@@ -1855,7 +1874,7 @@ function place(s) {
     tq2.setFromAxisAngle(Y, s.yaw + s.tw);
     s.group.quaternion.multiplyQuaternions(tq, tq2);
   } else {
-    eul.set(s.tilt[1], s.yaw + s.tw, s.tilt[0], 'YXZ');
+    eul.set(s.tilt[1], s.yaw + s.tw, s.tilt[0] + (s.def.roll || 0), 'YXZ');
     s.group.quaternion.setFromEuler(eul);
   }
   s.group.position.set(s.c[0], s.c[1], s.c[2]);
