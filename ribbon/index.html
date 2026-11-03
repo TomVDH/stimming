@@ -1,0 +1,1398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Ribbon</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the stage at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --stage: oklch(0.15 0.02 320);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The stage is 16:9, 4:5 on phones, and a dark gradient. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 44%, oklch(0.2 0.03 330), var(--stage) 60%, oklch(0.11 0.012 300));
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark stage the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+/* Each swatch shows its ribbon's run of colour. */
+.sw { width: 16px; height: 6px; border-radius: 3px; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Ribbon</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A long silk ribbon that follows you. Move or drag to lead it, flick to crack it and hold still to make it spiral; arrow keys lead it and Space performs a flourish.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Ribbon needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl" role="group" aria-label="Colours">
+        <button class="chip" type="button" data-pal="sunset" aria-pressed="true"><span class="sw" style="background: linear-gradient(90deg, oklch(0.58 0.21 355), oklch(0.72 0.19 45), oklch(0.9 0.14 98))" aria-hidden="true"></span>Sunset</button>
+        <button class="chip" type="button" data-pal="ocean" aria-pressed="false"><span class="sw" style="background: linear-gradient(90deg, oklch(0.5 0.18 278), oklch(0.68 0.15 228), oklch(0.88 0.11 170))" aria-hidden="true"></span>Ocean</button>
+        <button class="chip" type="button" data-pal="prism" aria-pressed="false"><span class="sw" style="background: linear-gradient(90deg, oklch(0.65 0.22 25), oklch(0.85 0.17 95), oklch(0.8 0.18 155), oklch(0.68 0.15 240), oklch(0.62 0.22 315))" aria-hidden="true"></span>Prism</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Move</span><span class="touch">Drag</span></dt><dd>lead</dd></div>
+        <div><dt>Flick</dt><dd>crack</dd></div>
+        <div><dt>Hold still</dt><dd>spiral</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>flourish</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+const unit = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
+
+// Loop and readiness flags; the sound code reads them too.
+let raf = 0, last = 0, visible = false, onScreen = false, ready = false, lowDpr = false;
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// Five stops run from the stick end to the tip.
+// Hues are unwrapped, so each gradient turns the intended way.
+// The back face is deeper and turned a little round the hue wheel.
+const PALS = {
+  sunset: {
+    stops: [[0.52, 0.2, 345], [0.63, 0.22, 375], [0.73, 0.19, 405], [0.83, 0.16, 432], [0.91, 0.14, 458]],
+    turn: 14, iri: 0.25, bg: [[0.2, 0.034, 338], [0.148, 0.022, 322], [0.1, 0.012, 300]],
+  },
+  ocean: {
+    stops: [[0.44, 0.17, 282], [0.56, 0.18, 258], [0.68, 0.15, 228], [0.8, 0.13, 196], [0.9, 0.11, 168]],
+    turn: -16, iri: 0.25, bg: [[0.2, 0.034, 248], [0.148, 0.022, 254], [0.1, 0.012, 266]],
+  },
+  prism: {
+    stops: [[0.65, 0.23, 22], [0.84, 0.17, 92], [0.82, 0.19, 152], [0.69, 0.16, 238], [0.6, 0.23, 318]],
+    turn: 40, iri: 1, bg: [[0.2, 0.028, 296], [0.148, 0.018, 290], [0.1, 0.01, 280]],
+  },
+};
+const GN = 256, PALD = new Float32Array(GN * 4 * 4);
+// Rows 0 and 1 hold the new front and back; rows 2 and 3 the old.
+function bake(pal, row) {
+  for (let k = 0; k < GN; k++) {
+    const u = (k / (GN - 1)) * 4, i = Math.min(3, Math.floor(u)), f = u - i;
+    const a = pal.stops[i], b = pal.stops[i + 1];
+    const L = lerp(a[0], b[0], f), C = lerp(a[1], b[1], f), h = lerp(a[2], b[2], f);
+    PALD.set([...linear(L, C, h), 1], (row * GN + k) * 4);
+    PALD.set([...linear(L - 0.08, C * 1.08, h + pal.turn), 1], ((row + 1) * GN + k) * 4);
+  }
+}
+const bgOf = pal => pal.bg.map(c => linear(...c));
+const KEY = unit([-0.45, 0.78, 0.55]), RIM = unit([0.78, 0.2, -0.6]);
+const KEYC = linear(0.98, 0.025, 85).map(v => v * 2.5), RIMC = linear(0.86, 0.08, 248).map(v => v * 1.5);
+const SKYC = linear(0.62, 0.05, 285).map(v => v * 0.55), GNDC = linear(0.42, 0.05, 25).map(v => v * 0.32);
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.ribbon.sound', MAXV = 14, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, crackNext = 0, sheenNext = 0, restT = 0, sw = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    swishVoice();
+  }
+  // Off screen, the ribbon stays silent until the stage returns.
+  if (!visible) { ac.suspend()?.catch(() => {}); return; }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the ribbon rests, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (sw) sw.g.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // The sound toggle wakes or sleeps the context itself.
+  if (e.target instanceof Element && e.target.closest('#snd')) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place on the stage.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0006);
+  ng.gain.setTargetAtTime(0, t + 0.0006, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 0.8, len);
+}
+// The swish: soft noise in two bands, with a flutter, follows the tip.
+function swishVoice() {
+  const sr = ac.sampleRate, buf = ac.createBuffer(1, Math.round(sr * 2.7), sr), d = buf.getChannelData(0);
+  // Pink noise sounds softer than white, like cloth through air.
+  let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < d.length; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99765 * b0 + w * 0.099046;
+    b1 = 0.963 * b1 + w * 0.2965164;
+    b2 = 0.57 * b2 + w * 1.0526913;
+    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.22;
+  }
+  const loop = (rate, off) => {
+    const s = ac.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.playbackRate.value = rate;
+    s.start(0, off);
+    return s;
+  };
+  const filt = (type, f, q) => {
+    const b = ac.createBiquadFilter();
+    b.type = type;
+    b.frequency.value = f;
+    b.Q.value = q;
+    return b;
+  };
+  const bp = filt('bandpass', 600, 0.8), lp = filt('lowpass', 2000, 0.4), hp = filt('highpass', 4200, 0.5);
+  const flut = ac.createGain(), g = ac.createGain(), g2 = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
+  g.gain.value = 0;
+  g2.gain.value = 0;
+  depth.gain.value = 0;
+  lfo.frequency.value = 10;
+  lfo.connect(depth).connect(flut.gain);
+  const pan = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
+  pan.connect(out);
+  loop(1, 0).connect(bp).connect(lp).connect(flut).connect(g).connect(pan);
+  loop(1.31, 1.2).connect(hp).connect(g2).connect(pan);
+  lfo.start();
+  sw = { bp, lp, g, g2, lfo, depth, pan };
+}
+// Level and brightness follow the tip's speed.
+function swishTo(sp, x) {
+  if (!sw) return;
+  const t = ac.currentTime, on = soundOn && ac.state === 'running' && visible;
+  const k = sstep(0.7, 9, sp);
+  sw.g.gain.setTargetAtTime(on ? 0.34 * k ** 1.5 * jit(0.04) : 0, t, 0.045);
+  sw.bp.frequency.setTargetAtTime((380 + 2600 * k) * jit(0.03), t, 0.06);
+  sw.lp.frequency.setTargetAtTime(1300 + 6500 * k, t, 0.06);
+  sw.g2.gain.setTargetAtTime(on ? 0.11 * sstep(4, 14, sp) ** 2 : 0, t, 0.05);
+  sw.lfo.frequency.setTargetAtTime(7 + 21 * k, t, 0.12);
+  sw.depth.gain.setTargetAtTime(0.42 * k, t, 0.12);
+  if (sw.pan.pan) sw.pan.pan.setTargetAtTime(clamp(x, -1, 1) * 0.6, t, 0.1);
+}
+// The crack: a soft snap, a papery flap and a low thump.
+function crackSound(k, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < crackNext) return;
+  crackNext = t + 0.12;
+  const g = level() * (0.55 + 0.45 * k) * jit(0.06), d = bus(a, x);
+  burst(a, d, t, 'bandpass', 2300 * jit(0.07), 0.9, 0.95 * g, 0.009, 0.06);
+  burst(a, d, t, 'highpass', 6200 * jit(0.05), 0.7, 0.45 * g, 0.0022, 0.02);
+  burst(a, d, t + 0.011, 'bandpass', 1250 * jit(0.08), 1.1, 0.32 * g, 0.022, 0.09);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(150 * jit(0.05), t);
+  o.frequency.exponentialRampToValueAtTime(62, t + 0.08);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.3 * g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.003, 0.035);
+  o.connect(og).connect(d);
+  o.start(t);
+  o.stop(t + 0.25);
+  track(o, og, d);
+}
+// A new colour slides along the silk with a rising shimmer.
+function shimmer() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < sheenNext) return;
+  sheenNext = t + 0.25;
+  const g = level() * jit(0.08), d = bus(a, 0);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 2.2;
+  bp.frequency.setValueAtTime(900 * jit(0.05), t);
+  bp.frequency.exponentialRampToValueAtTime(5200 * jit(0.05), t + 0.6);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.1 * g, t + 0.18);
+  ng.gain.setTargetAtTime(0, t + 0.22, 0.13);
+  src.connect(bp).connect(ng).connect(d);
+  src.start(t);
+  src.stop(t + 0.95);
+  track(src, bp, ng, d);
+}
+
+/* ---------- the ribbon: a centre line with a twisting frame ---------- */
+// Units: the stage's shorter half-side spans one unit.
+const N = 360, NV = N + 1, LEN = 4.2, SEG = LEN / N, WID = 0.086, ITER = 3, SD = 0.9;
+// Air drag is strong face-on, weaker edge-on and weakest lengthwise.
+const CN = 5.5, CNQ = 3.5, CW = 1.1, CT = 0.22;
+// Bending, in-plane stiffness, twist alignment, twist stiffness and twist damping.
+const KB = 0.05, KH = 0.22, KC = 0.16, CE2 = (SEG * SEG / 0.45) ** 2, KT = 0.5, TD = 6, OMAX = 40;
+const X = new Float64Array(NV * 3), Vl = new Float64Array(NV * 3), Pr = new Float64Array(NV * 3), Fx = new Float64Array(NV * 3);
+const Wf = new Float64Array(NV * 3), Tg = new Float64Array(NV * 3), To = new Float64Array(NV * 3);
+const Om = new Float64Array(NV), Ac = new Float64Array(NV), Sx = new Float64Array(NV);
+const Wind = new Float64Array(NV * 3), Glow = new Float32Array(NV);
+for (let i = 0; i < NV; i++) Sx[i] = i * SEG;
+let hx = 16 / 9, hy = 1, clock = 0;
+const CAMZ = 4.6;
+
+function tangents(P, T) {
+  for (let i = 0; i < NV; i++) {
+    const a = Math.max(0, i - 1) * 3, b = Math.min(N, i + 1) * 3;
+    const x = P[b] - P[a], y = P[b + 1] - P[a + 1], z = P[b + 2] - P[a + 2], l = Math.hypot(x, y, z) || 1;
+    T[i * 3] = x / l;
+    T[i * 3 + 1] = y / l;
+    T[i * 3 + 2] = z / l;
+  }
+}
+// Carries frame i from the old tangent to the new one without spin.
+function carry(i) {
+  const o = i * 3, ax = To[o], ay = To[o + 1], az = To[o + 2], bx = Tg[o], by = Tg[o + 1], bz = Tg[o + 2];
+  let wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
+  const c = 1 + ax * bx + ay * by + az * bz;
+  if (c > 1e-6) {
+    const k = (bx * wx + by * wy + bz * wz) / c;
+    wx -= (ax + bx) * k;
+    wy -= (ay + by) * k;
+    wz -= (az + bz) * k;
+  }
+  const d = wx * bx + wy * by + wz * bz;
+  wx -= d * bx;
+  wy -= d * by;
+  wz -= d * bz;
+  let l = Math.hypot(wx, wy, wz);
+  // A frame lost in a hard kink restarts square to the tangent.
+  if (l < 1e-6) {
+    wx = -by;
+    wy = bx;
+    wz = 0;
+    l = Math.hypot(wx, wy) || 1;
+    if (l < 1e-6) { wx = 1; wy = 0; l = 1; }
+  }
+  Wf[o] = wx / l;
+  Wf[o + 1] = wy / l;
+  Wf[o + 2] = wz / l;
+}
+// Turns frame i about its tangent.
+function spin(i, a) {
+  const o = i * 3, tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
+  const c = Math.cos(a), s = Math.sin(a);
+  Wf[o] = wx * c + (ty * wz - tz * wy) * s;
+  Wf[o + 1] = wy * c + (tz * wx - tx * wz) * s;
+  Wf[o + 2] = wz * c + (tx * wy - ty * wx) * s;
+}
+// The twist from frame i to frame i + 1, in radians.
+function twistAt(i) {
+  const o = i * 3, p = o + 3;
+  const ax = Tg[o], ay = Tg[o + 1], az = Tg[o + 2], bx = Tg[p], by = Tg[p + 1], bz = Tg[p + 2];
+  let ux = Wf[o], uy = Wf[o + 1], uz = Wf[o + 2];
+  const c = 1 + ax * bx + ay * by + az * bz;
+  if (c > 1e-6) {
+    const k = (bx * ux + by * uy + bz * uz) / c;
+    ux -= (ax + bx) * k;
+    uy -= (ay + by) * k;
+    uz -= (az + bz) * k;
+  }
+  const wx = Wf[p], wy = Wf[p + 1], wz = Wf[p + 2];
+  const cx = uy * wz - uz * wy, cy = uz * wx - ux * wz, cz = ux * wy - uy * wx;
+  return Math.atan2(cx * bx + cy * by + cz * bz, ux * wx + uy * wy + uz * wz);
+}
+
+// Gauss-Seidel bending on the predicted positions.
+// The in-plane part is stiffer, so the silk bends flat-wise.
+function bend(rev) {
+  for (let k = 1; k < N; k++) {
+    const i = rev ? N - k : k, a = (i - 1) * 3, o = i * 3, b = o + 3;
+    const bx = Pr[a] + Pr[b] - 2 * Pr[o], by = Pr[a + 1] + Pr[b + 1] - 2 * Pr[o + 1], bz = Pr[a + 2] + Pr[b + 2] - 2 * Pr[o + 2];
+    const wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2], hc = (bx * wx + by * wy + bz * wz) * KH;
+    const cx = bx * KB + wx * hc, cy = by * KB + wy * hc, cz = bz * KB + wz * hc;
+    // The head is held, so it takes no share.
+    const ma = i === 1 ? 0 : 1, den = ma + 5, fa = ma / den, fb = 1 / den, fo = 2 / den;
+    Pr[a] -= cx * fa; Pr[a + 1] -= cy * fa; Pr[a + 2] -= cz * fa;
+    Pr[b] -= cx * fb; Pr[b + 1] -= cy * fb; Pr[b + 2] -= cz * fb;
+    Pr[o] += cx * fo; Pr[o + 1] += cy * fo; Pr[o + 2] += cz * fo;
+  }
+}
+
+// Steering and wind settings for one frame.
+const env = { grav: 1.5, coil: 0, cx: 0, cy: 0, cz: 0, ax: 0, ay: 0, az: 1, spin: 1, tn: 1.5 };
+const waves = [];
+
+function substep(h, px, py, pz) {
+  const { grav, coil, cx, cy, cz, ax, ay, az } = env;
+  const kc = coil > 0.002 ? 1 - Math.exp(-h * 7 * coil) : 0;
+  const bx = hx + 0.35, by = hy + 0.45;
+  for (let i = 1; i < NV; i++) {
+    const o = i * 3;
+    let vx = Vl[o], vy = Vl[o + 1], vz = Vl[o + 2];
+    const tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
+    const nx = ty * wz - tz * wy, ny = tz * wx - tx * wz, nz = tx * wy - ty * wx;
+    const rx = vx - Wind[o], ry = vy - Wind[o + 1], rz = vz - Wind[o + 2];
+    const vt = rx * tx + ry * ty + rz * tz, vw = rx * wx + ry * wy + rz * wz, vn = rx * nx + ry * ny + rz * nz;
+    // Each part of the drag decays implicitly, so it never overshoots.
+    const dn = vn * (1 - 1 / (1 + h * (CN + CNQ * Math.abs(vn)))), dw = vw * (1 - 1 / (1 + h * CW)), dt = vt * (1 - 1 / (1 + h * CT));
+    vx -= dn * nx + dw * wx + dt * tx;
+    vy -= dn * ny + dw * wy + dt * ty + grav * h;
+    vz -= dn * nz + dw * wz + dt * tz;
+    if (kc) {
+      // Holding still: a vortex winds the silk round the pointer.
+      const qx = X[o] - cx, qy = X[o + 1] - cy, qz = X[o + 2] - cz, ha = qx * ax + qy * ay + qz * az;
+      let ux = qx - ha * ax, uy = qy - ha * ay, uz = qz - ha * az;
+      const rl = Math.hypot(ux, uy, uz) || 1e-6;
+      ux /= rl; uy /= rl; uz /= rl;
+      const u = Sx[i] / LEN, R = 0.09 + 0.6 * u ** 0.8, H = -0.85 * u;
+      const ex = ay * uz - az * uy, ey = az * ux - ax * uz, ez = ax * uy - ay * ux;
+      const vtan = (4.6 - 2.2 * u) * env.spin * R, vr = (R - rl) * 5, va = (H - ha) * 4;
+      vx += (ex * vtan + ux * vr + ax * va - vx) * kc;
+      vy += (ey * vtan + uy * vr + ay * va - vy) * kc;
+      vz += (ez * vtan + uz * vr + az * va - vz) * kc;
+    }
+    // Soft walls of air keep the silk near the stage.
+    const x = X[o], y = X[o + 1], z = X[o + 2];
+    if (x > bx) vx -= (x - bx) * 30 * h; else if (x < -bx) vx -= (x + bx) * 30 * h;
+    if (y > by) vy -= (y - by) * 30 * h; else if (y < -by) vy -= (y + by) * 30 * h;
+    if (z > 1.7) vz -= (z - 1.7) * 30 * h; else if (z < -2.2) vz -= (z + 2.2) * 30 * h;
+    Vl[o] = vx; Vl[o + 1] = vy; Vl[o + 2] = vz;
+    Pr[o] = x + vx * h; Pr[o + 1] = y + vy * h; Pr[o + 2] = z + vz * h;
+  }
+  // A flick sends a bulge down the silk.
+  for (const wv of waves) {
+    const i0 = Math.max(1, Math.floor((wv.s - 0.6) / SEG)), i1 = Math.min(N, Math.ceil((wv.s + 0.6) / SEG));
+    for (let i = i0; i <= i1; i++) {
+      const o = i * 3, e = (Sx[i] - wv.s) / 0.2, g = Math.exp(-e * e) * wv.k * 26 * h;
+      const d = wv.dx * Tg[o] + wv.dy * Tg[o + 1] + wv.dz * Tg[o + 2];
+      Pr[o] += (wv.dx - d * Tg[o]) * g * h;
+      Pr[o + 1] += (wv.dy - d * Tg[o + 1]) * g * h;
+      Pr[o + 2] += (wv.dz - d * Tg[o + 2]) * g * h;
+    }
+  }
+  Pr[0] = px; Pr[1] = py; Pr[2] = pz;
+  for (let it = 0; it < ITER; it++) bend(it & 1);
+  // Follow the leader keeps every segment its exact length.
+  for (let i = 1; i < NV; i++) {
+    const o = i * 3, q = o - 3;
+    const dx = Pr[o] - Pr[q], dy = Pr[o + 1] - Pr[q + 1], dz = Pr[o + 2] - Pr[q + 2];
+    const k = SEG / (Math.hypot(dx, dy, dz) || 1e-9);
+    const nx = Pr[q] + dx * k, ny = Pr[q + 1] + dy * k, nz = Pr[q + 2] + dz * k;
+    Fx[o] = nx - Pr[o]; Fx[o + 1] = ny - Pr[o + 1]; Fx[o + 2] = nz - Pr[o + 2];
+    Pr[o] = nx; Pr[o + 1] = ny; Pr[o + 2] = nz;
+  }
+  // The next segment's correction damps each velocity.
+  const ih = 1 / h;
+  for (let i = 1; i < NV; i++) {
+    const o = i * 3, p = o + 3, last = i === N;
+    Vl[o] = (Pr[o] - X[o] - (last ? 0 : SD * Fx[p])) * ih;
+    Vl[o + 1] = (Pr[o + 1] - X[o + 1] - (last ? 0 : SD * Fx[p + 1])) * ih;
+    Vl[o + 2] = (Pr[o + 2] - X[o + 2] - (last ? 0 : SD * Fx[p + 2])) * ih;
+    X[o] = Pr[o]; X[o + 1] = Pr[o + 1]; X[o + 2] = Pr[o + 2];
+  }
+  X[0] = px; X[1] = py; X[2] = pz;
+  To.set(Tg);
+  tangents(X, Tg);
+  for (let i = 0; i < NV; i++) carry(i);
+  twist(h);
+}
+
+// The frame turns with inertia, toward easy bends, and evens out.
+function twist(h) {
+  const tn = env.tn * h, ph = clock;
+  for (let i = 0; i < NV; i++) {
+    // Slow travelling twists keep the silk turning.
+    Om[i] += tn * (Math.sin(1.3 * Sx[i] - 0.9 * ph) + 0.7 * Math.sin(3.1 * Sx[i] + 1.4 * ph + 1));
+    const a = Om[i] * h;
+    Ac[i] = a;
+    if (a) spin(i, a);
+  }
+  for (let i = 1; i < N; i++) {
+    const a = (i - 1) * 3, o = i * 3, b = o + 3;
+    const bx = X[a] + X[b] - 2 * X[o], by = X[a + 1] + X[b + 1] - 2 * X[o + 1], bz = X[a + 2] + X[b + 2] - 2 * X[o + 2];
+    const tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
+    const nx = ty * wz - tz * wy, ny = tz * wx - tx * wz, nz = tx * wy - ty * wx;
+    const bn = bx * nx + by * ny + bz * nz, bw = bx * wx + by * wy + bz * wz, m2 = bn * bn + bw * bw;
+    if (m2 < 1e-16) continue;
+    // A bend turns the silk until the bend runs flat-wise.
+    const ang = Math.abs(bn) > 1e-12 ? -Math.atan(bw / bn) : bw > 0 ? -Math.PI / 2 : Math.PI / 2;
+    spin(i, ang * KC * (m2 / (m2 + CE2)));
+  }
+  for (let it = 0; it < 2; it++) {
+    for (let k = 0; k < N; k++) {
+      const i = it & 1 ? N - 1 - k : k, c = twistAt(i) * KT * 0.5;
+      spin(i, c);
+      Ac[i] += c;
+      spin(i + 1, -c);
+      Ac[i + 1] -= c;
+    }
+  }
+  const damp = Math.exp(-h * TD), ih = 1 / h;
+  for (let i = 0; i < NV; i++) Om[i] = clamp(Ac[i] * ih * damp, -OMAX, OMAX);
+}
+
+// Wind: a slow swirling flow that is free of sources and sinks.
+function windField(t, amp) {
+  if (!amp) { Wind.fill(0); return; }
+  const k = 1.3;
+  for (let i = 0; i < NV; i++) {
+    const o = i * 3, x = X[o] * k, y = X[o + 1] * k, z = X[o + 2] * k;
+    Wind[o] = amp * (0.9 * Math.sin(z + 0.31 * t) + 0.6 * Math.cos(y + 0.17 * t));
+    Wind[o + 1] = amp * (0.7 * Math.sin(x + 0.23 * t) + 0.9 * Math.cos(z - 0.13 * t) + 0.25);
+    Wind[o + 2] = amp * (0.6 * Math.sin(y - 0.29 * t) + 0.7 * Math.cos(x + 0.11 * t));
+  }
+}
+
+// Lays the ribbon in a loose curve with a few twists.
+function seed() {
+  const h0 = [0, 0, 0];
+  drift(clock, h0);
+  for (let i = 0; i < NV; i++) {
+    const s = Sx[i], o = i * 3;
+    X[o] = h0[0] + 0.7 * Math.sin(s * 0.8);
+    X[o + 1] = h0[1] - 0.32 * s + 0.2 * Math.sin(s * 1.9);
+    X[o + 2] = h0[2] + 0.25 * Math.cos(s * 1.1) - 0.25 - 0.1 * s;
+    Vl[o] = Vl[o + 1] = Vl[o + 2] = 0;
+    Om[i] = 0;
+  }
+  // The first pass makes every segment its true length.
+  for (let i = 1; i < NV; i++) {
+    const o = i * 3, q = o - 3, dx = X[o] - X[q], dy = X[o + 1] - X[q + 1], dz = X[o + 2] - X[q + 2];
+    const k = SEG / (Math.hypot(dx, dy, dz) || 1);
+    X[o] = X[q] + dx * k; X[o + 1] = X[q + 1] + dy * k; X[o + 2] = X[q + 2] + dz * k;
+  }
+  tangents(X, Tg);
+  To.set(Tg);
+  const w = unit([-Tg[1], Tg[0], 0]);
+  Wf[0] = w[0]; Wf[1] = w[1]; Wf[2] = w[2];
+  for (let i = 1; i < NV; i++) {
+    const o = i * 3;
+    Wf[o] = Wf[o - 3]; Wf[o + 1] = Wf[o - 2]; Wf[o + 2] = Wf[o - 1];
+    To[o] = Tg[o - 3]; To[o + 1] = Tg[o - 2]; To[o + 2] = Tg[o - 1];
+    carry(i);
+  }
+  for (let i = 0; i < NV; i++) spin(i, 1.6 * Math.sin(Sx[i] * 1.1) + 0.6 * Math.sin(Sx[i] * 2.9 + 1));
+  head.set(h0);
+  headV.fill(0);
+  centre.set(h0);
+  lastLead.set(h0);
+}
+
+/* ---------- leading: pointer, keys, flourish and idle drift ---------- */
+const head = new Float64Array(3), headV = new Float64Array(3), head0 = new Float64Array(3);
+const goal = new Float64Array(3), centre = new Float64Array(3), prevC = new Float64Array(3);
+const tmp = new Float64Array(3), lastLead = new Float64Array(3);
+const axis = new Float64Array(3), e1 = new Float64Array(3), e2 = new Float64Array(3);
+const lead = { on: false, src: 'mouse', id: -1, down: false, nx: 0, ny: 0 };
+const kb = { on: false, x: 0, y: 0, vx: 0, vy: 0, at: -1e9 };
+const held = new Map();
+const ARROWS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+const FLO_8 = 2.7, FLO_S = 2.5, FLO_T = FLO_8 + FLO_S, V_FLICK = 5.2, DASH = 5.6, KB_HOLD = 8;
+let idleT = 99, stillT = 0, coilK = 0, coilPh = 0, softT = 0, cS = 0, flo = null;
+let armed = false, fPeak = 0, fT = 0, tipFlash = 0, tipSp = 0;
+const fDir = [0, 0, 0];
+
+// The head rides a shallow dome, nearer in the middle.
+function toWorld(nx, ny, o) {
+  const z = 0.42 - 0.5 * (nx * nx + 0.6 * ny * ny), k = (CAMZ - z) / CAMZ;
+  o[0] = nx * hx * k;
+  o[1] = ny * hy * k;
+  o[2] = z;
+}
+function toNdc(p) {
+  const k = CAMZ / (CAMZ - p[2]);
+  return [clamp((p[0] * k) / hx, -0.9, 0.9), clamp((p[1] * k) / hy, -0.88, 0.88)];
+}
+// Idle: the stick wanders on a slow, wide figure.
+function drift(t, o) {
+  o[0] = 0.5 * hx * Math.sin(0.21 * t + 0.6);
+  o[1] = 0.16 + 0.3 * hy * Math.sin(0.29 * t + 1.3);
+  o[2] = 0.15 + 0.3 * Math.sin(0.17 * t + 2.1);
+}
+// The flourish: a figure of eight, then an opening spiral.
+function floPath(t, o) {
+  if (t < FLO_8) {
+    const u = t / FLO_8, th = TAU * (0.6 * u + 0.4 * (0.5 - 0.5 * Math.cos(Math.PI * u)));
+    o[0] = 0.62 * hx * Math.sin(th);
+    o[1] = 0.05 + 0.4 * hy * Math.sin(2 * th);
+    o[2] = 0.2 + 0.32 * Math.sin(th);
+  } else {
+    const u = clamp((t - FLO_8) / FLO_S), r = (0.06 + 0.58 * u) * Math.min(hx, hy), a = TAU * 2.4 * u + 0.4;
+    o[0] = r * Math.cos(a) * 1.1;
+    o[1] = 0.05 + r * Math.sin(a);
+    o[2] = 0.2 + 0.25 * Math.sin(Math.PI * u) - 0.3 * u;
+  }
+}
+// The coil's axis leans toward the viewer and wanders slowly.
+function coilAxis(t) {
+  const al = 0.72 + 0.12 * Math.sin(t * 0.21), be = 1.9 + 0.5 * Math.sin(t * 0.13);
+  axis[0] = Math.sin(al) * Math.cos(be);
+  axis[1] = Math.sin(al) * Math.sin(be);
+  axis[2] = Math.cos(al);
+  let x = axis[1], y = -axis[0];
+  const l = Math.hypot(x, y) || 1;
+  x /= l; y /= l;
+  e1[0] = x; e1[1] = y; e1[2] = 0;
+  e2[0] = axis[1] * 0 - axis[2] * y;
+  e2[1] = axis[2] * x - axis[0] * 0;
+  e2[2] = axis[0] * y - axis[1] * x;
+}
+// Keys push a cursor that glides and stops.
+function kbStep(dt) {
+  let ax = 0, ay = 0;
+  for (const k of held.keys()) { ax += ARROWS[k][0]; ay += ARROWS[k][1]; }
+  const l = Math.hypot(ax, ay);
+  if (l) {
+    kb.vx += (ax / l) * 7 * dt;
+    kb.vy += (ay / l) * 7 * dt;
+    const sp = Math.hypot(kb.vx, kb.vy);
+    if (sp > 1.25) { kb.vx *= 1.25 / sp; kb.vy *= 1.25 / sp; }
+  } else {
+    const f = Math.exp(-dt * 9);
+    kb.vx *= f;
+    kb.vy *= f;
+  }
+  kb.x += kb.vx * dt;
+  kb.y += kb.vy * dt;
+  if (Math.abs(kb.x) > 0.9) { kb.x = Math.sign(kb.x) * 0.9; kb.vx *= -0.4; }
+  if (Math.abs(kb.y) > 0.88) { kb.y = Math.sign(kb.y) * 0.88; kb.vy *= -0.4; }
+}
+// A critically damped spring carries the head to its goal.
+function spring(dt, w) {
+  const e = Math.exp(-w * dt);
+  for (let a = 0; a < 3; a++) {
+    const x0 = head[a] - goal[a], v0 = headV[a], k = (v0 + w * x0) * dt;
+    head[a] = goal[a] + (x0 + k) * e;
+    headV[a] = (v0 - w * k) * e;
+  }
+}
+function control(dt) {
+  prevC.set(centre);
+  let w = 44;
+  if (flo) {
+    flo.t += dt;
+    floPath(flo.t, tmp);
+    const k = sstep(0, 0.45, flo.t);
+    for (let a = 0; a < 3; a++) centre[a] = lerp(flo.from[a], tmp[a], k);
+    w = 34;
+    idleT = 0;
+    if (flo.t >= FLO_T) { flo = null; softT = 0.5; }
+  } else if (lead.on) {
+    toWorld(lead.nx, lead.ny, centre);
+    w = lead.src === 'touch' ? 30 : 44;
+    idleT = 0;
+  } else if (kb.on && clock - kb.at < KB_HOLD) {
+    kbStep(dt);
+    toWorld(kb.x, kb.y, centre);
+    w = 40;
+    idleT = 0;
+  } else {
+    kb.on = false;
+    if (idleT === 0) lastLead.set(centre);
+    idleT += dt;
+    if (reduce) centre.set(lastLead);
+    else {
+      drift(clock, tmp);
+      const k = sstep(0.5, 3.5, idleT);
+      for (let a = 0; a < 3; a++) centre[a] = lerp(lastLead[a], tmp[a], k);
+    }
+    w = 16;
+  }
+  // After a jump the head glides over instead of snapping.
+  if (softT > 0) { softT = Math.max(0, softT - dt); w = lerp(w, 9, softT / 0.5); }
+  const gs = Math.hypot(centre[0] - prevC[0], centre[1] - prevC[1], centre[2] - prevC[2]) / dt;
+  cS += (gs - cS) * (1 - Math.exp(-dt / 0.07));
+  const leading = !flo && (lead.on || kb.on);
+  stillT = leading && cS < 0.25 ? stillT + dt : 0;
+  const want = stillT > 0.4 ? 1 : 0;
+  coilK += (want - coilK) * (1 - Math.exp(-dt * (want ? 1.2 : 7)));
+  goal.set(centre);
+  if (coilK > 0.002) {
+    coilAxis(clock);
+    coilPh += dt * 5 * env.spin;
+    const r = 0.07 * coilK, c = Math.cos(coilPh), s = Math.sin(coilPh);
+    for (let a = 0; a < 3; a++) goal[a] += r * (c * e1[a] + s * e2[a]);
+  }
+  head0.set(head);
+  spring(dt, w);
+  // A fast stroke that stops short is a flick.
+  const s = Math.hypot(headV[0], headV[1], headV[2]);
+  if (s > V_FLICK && (!armed || s > fPeak)) {
+    armed = true;
+    fPeak = s;
+    fT = 0;
+    for (let a = 0; a < 3; a++) fDir[a] = headV[a] / s;
+  } else if (armed) {
+    fT += dt;
+    if (s < 0.45 * fPeak) { launch(fPeak); armed = false; }
+    else if (fT > 0.35) armed = false;
+  }
+}
+function launch(peak) {
+  const k = clamp((peak - V_FLICK) / 8 + 0.4, 0.4, 1);
+  if (waves.length >= 3) waves.shift();
+  waves.push({ s: 0, k, dx: fDir[0], dy: fDir[1], dz: fDir[2], cracked: false });
+}
+function flourish() {
+  if (!ready || flo) return;
+  flo = { t: 0, from: Float64Array.from(centre), nx: lead.nx, ny: lead.ny };
+  stillT = 0;
+  wake();
+}
+function cancelFlourish() {
+  if (!flo) return;
+  flo = null;
+  softT = 0.4;
+}
+
+/* ---------- sparks: the crack's flash and glints ---------- */
+const SPMAX = 48, sparks = [], SPD = new Float32Array(SPMAX * 8);
+let palName = 'sunset', dye = 2, bgFrom = bgOf(PALS.sunset), bgTo = bgFrom;
+const tipColour = () => [...PALD.subarray((GN - 1) * 4, (GN - 1) * 4 + 3)];
+function snap(wv) {
+  const o = N * 3, k = wv.k;
+  // The tip lashes outward along its own line.
+  for (let i = N - 24; i <= N; i++) {
+    const g = ((i - (N - 24)) / 24) * 2.4 * k, p = i * 3;
+    Vl[p] += Tg[p] * g; Vl[p + 1] += Tg[p + 1] * g; Vl[p + 2] += Tg[p + 2] * g;
+  }
+  tipFlash = Math.max(tipFlash, k);
+  const c = tipColour(), x = X[o], y = X[o + 1], z = X[o + 2];
+  sparks.push({ x, y, z, vx: 0, vy: 0, vz: 0, age: 0, life: 0.22, size: 0.3 + 0.2 * k, c: c.map(v => v * 0.6 + 0.5), flash: true });
+  for (let j = 0, n = Math.round(8 + 10 * k); j < n && sparks.length < SPMAX; j++) {
+    const d = unit([Tg[o] + rnd(-0.9, 0.9), Tg[o + 1] + rnd(-0.9, 0.9), Tg[o + 2] + rnd(-0.9, 0.9)]), sp = rnd(0.5, 2) * (0.6 + 0.6 * k);
+    const m = rnd(0.3, 0.85);
+    sparks.push({ x, y, z, vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, age: 0, life: rnd(0.35, 0.8), size: rnd(0.02, 0.05), c: c.map(v => lerp(v, 1, m)) });
+  }
+  crackSound(k, x / hx);
+}
+function stepSparks(dt) {
+  const f = Math.exp(-dt * 2.5);
+  for (let j = sparks.length - 1; j >= 0; j--) {
+    const s = sparks[j];
+    s.age += dt;
+    if (s.age >= s.life) { sparks.splice(j, 1); continue; }
+    s.vx *= f; s.vy = s.vy * f - 0.6 * dt; s.vz *= f;
+    s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
+  }
+}
+
+/* ---------- one step of the toy ---------- */
+function step(dt) {
+  clock += dt;
+  const idleK = lead.on || kb.on || flo ? 0 : sstep(0, 3, idleT);
+  env.grav = lerp(1.5, 0.7, idleK);
+  env.spin = reduce ? 0.5 : 1;
+  env.tn = reduce ? 0 : lerp(1.2, 4, idleK);
+  windField(clock, reduce ? 0 : lerp(0.1, 0.42, idleK));
+  control(dt);
+  env.coil = coilK;
+  env.cx = centre[0]; env.cy = centre[1]; env.cz = centre[2];
+  env.ax = axis[0]; env.ay = axis[1]; env.az = axis[2];
+  const n = clamp(Math.round(dt * 240), 2, lowDpr ? 4 : 6), h = dt / n;
+  for (let k = 1; k <= n; k++) {
+    const a = k / n;
+    substep(h, lerp(head0[0], head[0], a), lerp(head0[1], head[1], a), lerp(head0[2], head[2], a));
+  }
+  Vl[0] = headV[0]; Vl[1] = headV[1]; Vl[2] = headV[2];
+  // A broken state starts over rather than draw garbage.
+  if (!Number.isFinite(X[N * 3] + X[N * 3 + 1] + Wf[N * 3])) seed();
+  for (let j = waves.length - 1; j >= 0; j--) {
+    const wv = waves[j];
+    wv.s += (LEN / 0.24) * dt;
+    if (!wv.cracked && wv.s >= LEN * 0.93) { wv.cracked = true; snap(wv); }
+    if (wv.s > LEN + 0.8) waves.splice(j, 1);
+  }
+  tipFlash *= Math.exp(-dt / 0.12);
+  for (let i = 0; i < NV; i++) {
+    let g = 0;
+    for (const wv of waves) { const e = (Sx[i] - wv.s) / 0.3; g += wv.k * Math.exp(-e * e); }
+    Glow[i] = g + tipFlash * sstep(LEN - 0.35, LEN, Sx[i]) * 1.5;
+  }
+  stepSparks(dt);
+  if (dye < 1.3) dye = reduce ? 1.3 : dye + dt / 0.9;
+  // The swish follows the fastest part of the tip.
+  let sp = 0, ke = 0;
+  for (let i = N - 14; i <= N; i++) sp = Math.max(sp, Math.hypot(Vl[i * 3], Vl[i * 3 + 1], Vl[i * 3 + 2]));
+  for (let i = 1; i < NV; i += 6) ke += Vl[i * 3] ** 2 + Vl[i * 3 + 1] ** 2 + Vl[i * 3 + 2] ** 2;
+  tipSp += (sp - tipSp) * (1 - Math.exp(-dt / 0.05));
+  if (sw) swishTo(tipSp, X[N * 3] / hx);
+  return lead.down || !!flo || coilK > 0.01 || waves.length > 0 || sparks.length > 0 || dye < 1.3 || held.size > 0 || ke / 60 > 4e-4 || Math.hypot(headV[0], headV[1]) > 0.01;
+}
+
+/* ---------- WebGL ---------- */
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const COMMON = `
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}`;
+// The stage: a dark radial gradient tinted by the palette.
+const BG_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform vec3 uC0, uC1, uC2;
+out vec4 o;
+${COMMON}
+void main() {
+  vec2 q = (gl_FragCoord.xy / uRes - vec2(0.5, 0.56)) * vec2(uRes.x / uRes.y, 1.0);
+  float r = length(q);
+  vec3 col = mix(uC0, uC1, smoothstep(0.0, 0.62, r));
+  col = mix(col, uC2, smoothstep(0.5, 1.25, r));
+  o = vec4(srgb(col) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+// The strip is built from the data texture by vertex number.
+// Coarse samples along the ribbon give occlusion and soft shadow.
+const RIB_VS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uData;
+uniform mat4 uVP;
+uniform int uM, uStep;
+uniform float uHalf, uLen, uWid, uArea;
+uniform vec3 uKey;
+out vec3 vPos, vT, vW, vOcc;
+out vec2 vUV;
+out float vGlow;
+vec4 at(int i, int r) { return texelFetch(uData, ivec2(clamp(i, 0, ${NV - 1}), r), 0); }
+void main() {
+  int i = gl_VertexID >> 1;
+  float side = float(gl_VertexID & 1) * 2.0 - 1.0;
+  vec4 p = at(i, 0), f = at(i, 1);
+  vec3 t = normalize(at(i + 1, 0).xyz - at(i - 1, 0).xyz);
+  vec3 w = normalize(f.xyz - t * dot(f.xyz, t));
+  vec3 n = cross(t, w);
+  float u = p.w / uLen;
+  // The neck narrows into the stick; the tail tapers to a point.
+  float hw = uHalf * mix(0.5, 1.0, smoothstep(0.0, 0.03, u)) * mix(0.1, 1.0, smoothstep(1.0, 0.955, u));
+  vec3 pos = p.xyz + w * (side * hw);
+  float aoP = 0.0, aoN = 0.0, sh = 1.0;
+  for (int j = 0; j < 128; j++) {
+    if (j >= uM) break;
+    vec4 q = at(j * uStep + (uStep >> 1), 0);
+    if (abs(q.w - p.w) < 2.5 * uWid) continue;
+    vec3 d = q.xyz - pos;
+    float d2 = dot(d, d);
+    float ff = uArea / (3.14159 * (d2 + 0.0012));
+    float c = dot(n, d) * inversesqrt(d2 + 1e-8);
+    aoP += ff * clamp(0.15 + 0.85 * c, 0.0, 1.0);
+    aoN += ff * clamp(0.15 - 0.85 * c, 0.0, 1.0);
+    float a = dot(d, uKey);
+    if (a > 0.0) {
+      float r = length(d - uKey * a);
+      sh *= 1.0 - 0.42 * (1.0 - smoothstep(0.25 * uWid, 0.6 * uWid + 0.16 * a, r));
+    }
+  }
+  vOcc = vec3(aoP, aoN, sh);
+  vPos = pos;
+  vT = t;
+  vW = w;
+  vUV = vec2(u, side * 0.5 + 0.5);
+  vGlow = f.w;
+  gl_Position = uVP * vec4(pos, 1.0);
+}`;
+// Silk: wrapped diffuse, dyed light through the back, anisotropic sheen.
+const RIB_FS = `#version 300 es
+precision highp float;
+in vec3 vPos, vT, vW, vOcc;
+in vec2 vUV;
+in float vGlow;
+uniform sampler2D uPal;
+uniform vec3 uEye, uKey, uKeyC, uRim, uRimC, uSky, uGnd;
+uniform float uDye, uIri;
+out vec4 o;
+${COMMON}
+vec3 knee(vec3 c) { return mix(c, 0.8 + 0.2 * (1.0 - exp(-(c - 0.8) * 5.0)), step(0.8, c)); }
+vec3 pal(float u, float row) { return texture(uPal, vec2(u, (row + 0.5) / 4.0)).rgb; }
+// One light: lit side, light through the silk, and a satin highlight.
+vec3 shine(vec3 L, vec3 C, vec3 N, vec3 V, vec3 T, vec3 W, vec3 alb, float NdV) {
+  float NdL = dot(N, L);
+  vec3 c = alb * max(NdL, 0.0) * 0.9 + alb * alb * max(-NdL, 0.0) * 0.6;
+  if (NdL > 0.0) {
+    vec3 H = normalize(L + V);
+    float ht = dot(H, T), hb = dot(H, W), hn = max(dot(H, N), 0.05);
+    float s1 = exp(-(ht * ht / 0.0196 + hb * hb / 0.25) / (hn * hn)) * sqrt(NdL / max(NdV, 0.2));
+    float s2 = exp(-(ht * ht / 0.16 + hb * hb / 0.64) / (hn * hn)) * NdL;
+    c += mix(alb, vec3(1.0), 0.45) * s1 * 0.95 + alb * s2 * 0.35;
+  }
+  return c * C;
+}
+void main() {
+  vec3 T = normalize(vT);
+  vec3 W = normalize(vW - T * dot(vW, T));
+  vec3 N = cross(T, W);
+  vec3 V = normalize(uEye - vPos);
+  float face = dot(N, V) >= 0.0 ? 1.0 : -1.0;
+  N *= face;
+  float x = vUV.y * 2.0 - 1.0;
+  // A gentle cup across the width tilts the normal near the edges.
+  vec3 Nc = normalize(N + W * (x * 0.32 * face));
+  float NdV = max(dot(Nc, V), 0.0);
+  // Iridescence slides the gradient with the viewing angle.
+  float u = clamp(vUV.x + uIri * (1.0 - NdV) * 0.22, 0.0, 1.0);
+  float back = 0.5 - 0.5 * face;
+  vec3 alb = mix(pal(u, back), pal(u, 2.0 + back), smoothstep(uDye - 0.06, uDye + 0.06, vUV.x));
+  float ao = 1.0 - 0.7 * clamp(face > 0.0 ? vOcc.x : vOcc.y, 0.0, 1.0);
+  vec3 col = alb * mix(uGnd, uSky, Nc.y * 0.5 + 0.5) * ao;
+  col += shine(uKey, uKeyC * vOcc.z, Nc, V, T, W, alb, NdV) * mix(1.0, ao, 0.5);
+  col += shine(uRim, uRimC, Nc, V, T, W, alb, NdV) * ao;
+  // Silk glows softly at grazing angles.
+  col += alb * pow(1.0 - NdV, 3.0) * 0.4 * (uSky + 0.25 * uKeyC) * ao;
+  col *= mix(1.0, 0.8, smoothstep(0.86, 1.0, abs(x)));
+  col += (alb * 1.4 + 0.22) * vGlow;
+  o = vec4(srgb(knee(col)) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+const SP_VS = `#version 300 es
+layout(location = 0) in vec4 aP;
+layout(location = 1) in vec4 aC;
+uniform mat4 uVP;
+uniform float uPx;
+out vec4 vC;
+void main() {
+  vec4 c = uVP * vec4(aP.xyz, 1.0);
+  gl_Position = c;
+  gl_PointSize = clamp(aP.w * uPx / c.w, 1.0, 256.0);
+  vC = aC;
+}`;
+// A spark is a soft dot with a four-point glint.
+const SP_FS = `#version 300 es
+precision highp float;
+in vec4 vC;
+out vec4 o;
+${COMMON}
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r = length(q);
+  float a = (exp(-r * r * 7.0) + 0.5 * exp(-abs(q.x * q.y) * 60.0) * (1.0 - smoothstep(0.2, 1.0, r))) * vC.a;
+  o = vec4(srgb(vC.rgb) * a, 1.0);
+}`;
+
+let gl = null, P = null, vao = null, spVao = null, spBuf = null, dataTex = null, palTex = null;
+const TEXD = new Float32Array(NV * 8), VP = new Float32Array(16), PSTEP = 4, PM = Math.ceil(NV / PSTEP);
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: true, depth: true, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = { bg: compile(TRI, BG_FS), rib: compile(RIB_VS, RIB_FS), sp: compile(SP_VS, SP_FS) };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  uni(P.bg, ['uRes', 'uC0', 'uC1', 'uC2']);
+  uni(P.rib, ['uData', 'uVP', 'uM', 'uStep', 'uHalf', 'uLen', 'uWid', 'uArea', 'uKey', 'uPal', 'uEye', 'uKeyC', 'uRim', 'uRimC', 'uSky', 'uGnd', 'uDye', 'uIri']);
+  uni(P.sp, ['uVP', 'uPx']);
+  gl.useProgram(P.rib.p);
+  gl.uniform1i(P.rib.u.uData, 0);
+  gl.uniform1i(P.rib.u.uPal, 1);
+  gl.uniform1i(P.rib.u.uM, PM);
+  gl.uniform1i(P.rib.u.uStep, PSTEP);
+  gl.uniform1f(P.rib.u.uHalf, WID / 2);
+  gl.uniform1f(P.rib.u.uLen, LEN);
+  gl.uniform1f(P.rib.u.uWid, WID);
+  gl.uniform1f(P.rib.u.uArea, PSTEP * SEG * WID);
+  gl.uniform3fv(P.rib.u.uKey, KEY);
+  gl.uniform3fv(P.rib.u.uKeyC, KEYC);
+  gl.uniform3fv(P.rib.u.uRim, RIM);
+  gl.uniform3fv(P.rib.u.uRimC, RIMC);
+  gl.uniform3fv(P.rib.u.uSky, SKYC);
+  gl.uniform3fv(P.rib.u.uGnd, GNDC);
+  gl.uniform3f(P.rib.u.uEye, 0, 0, CAMZ);
+  vao = gl.createVertexArray();
+  dataTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, dataTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, NV, 2);
+  texParams(gl.NEAREST);
+  palTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, palTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, GN, 4);
+  texParams(gl.LINEAR);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GN, 4, gl.RGBA, gl.FLOAT, PALD);
+  gl.activeTexture(gl.TEXTURE0);
+  spVao = gl.createVertexArray();
+  gl.bindVertexArray(spVao);
+  spBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, spBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, SPD.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16);
+  gl.bindVertexArray(null);
+  camera();
+}
+function texParams(f) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+function uploadPal() {
+  if (!gl) return;
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, palTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GN, 4, gl.RGBA, gl.FLOAT, PALD);
+  gl.activeTexture(gl.TEXTURE0);
+}
+// The camera steps back from the stage plane and frames it exactly.
+function camera() {
+  if (!gl) return;
+  const a = hx / hy, f = CAMZ / hy, nr = 0.5, fr = 14, A = (fr + nr) / (nr - fr), B = (2 * fr * nr) / (nr - fr);
+  VP.set([f / a, 0, 0, 0, 0, f, 0, 0, 0, 0, A, -1, 0, 0, B - A * CAMZ, CAMZ]);
+  gl.useProgram(P.rib.p);
+  gl.uniformMatrix4fv(P.rib.u.uVP, false, VP);
+  gl.useProgram(P.sp.p);
+  gl.uniformMatrix4fv(P.sp.u.uVP, false, VP);
+  gl.uniform1f(P.sp.u.uPx, canvas.height * 0.5 * f);
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const cw = Math.round(w * p), ch = Math.round(h * p), a = w / h;
+  if (a >= 1) { hx = a; hy = 1; } else { hx = 1; hy = 1 / a; }
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  camera();
+  // A resized canvas is blank until drawn, so draw now.
+  if (ready && visible) render();
+}
+
+function render() {
+  for (let i = 0; i < NV; i++) {
+    const o = i * 3, p = i * 4, q = (NV + i) * 4;
+    TEXD[p] = X[o]; TEXD[p + 1] = X[o + 1]; TEXD[p + 2] = X[o + 2]; TEXD[p + 3] = Sx[i];
+    TEXD[q] = Wf[o]; TEXD[q + 1] = Wf[o + 1]; TEXD[q + 2] = Wf[o + 2]; TEXD[q + 3] = Glow[i];
+  }
+  const cw = canvas.width, ch = canvas.height;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, dataTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NV, 2, gl.RGBA, gl.FLOAT, TEXD);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, palTex);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.depthMask(true);
+  gl.clearDepth(1);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(vao);
+  gl.useProgram(P.bg.p);
+  const k = clamp(dye);
+  gl.uniform2f(P.bg.u.uRes, cw, ch);
+  ['uC0', 'uC1', 'uC2'].forEach((n, j) => gl.uniform3f(P.bg.u[n], ...bgFrom[j].map((v, c) => lerp(v, bgTo[j][c], k))));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.useProgram(P.rib.p);
+  gl.uniform1f(P.rib.u.uDye, dye);
+  gl.uniform1f(P.rib.u.uIri, PALS[palName].iri);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, NV * 2);
+  if (sparks.length) {
+    let o = 0;
+    for (const s of sparks) {
+      const t = 1 - s.age / s.life, a = s.flash ? t * t * t : t * t;
+      SPD.set([s.x, s.y, s.z, s.size * (s.flash ? 0.6 + 0.4 * t : 1), s.c[0], s.c[1], s.c[2], a], o);
+      o += 8;
+    }
+    gl.bindVertexArray(spVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, spBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, SPD, 0, o);
+    gl.useProgram(P.sp.p);
+    gl.depthMask(false);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.drawArrays(gl.POINTS, 0, sparks.length);
+    gl.disable(gl.BLEND);
+    gl.depthMask(true);
+  }
+  gl.bindVertexArray(null);
+}
+
+/* ---------- one loop: always alive in view, at rest when reduced ---------- */
+let slow = 0, frames = 0, drawn = 0;
+function wake() {
+  if (!raf && visible) {
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+    if (soundOn && ac && ac.state !== 'running') audio();
+  }
+}
+function frame(now) {
+  raf = 0;
+  if (!visible) return;
+  const raw = Math.max(0, (now - last) / 1000), dt = raw > 0 ? Math.min(raw, 1 / 20) : 1 / 60;
+  last = now;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr && ++frames > 30) {
+    slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { lowDpr = true; fit(); }
+  }
+  const busy = step(dt);
+  render();
+  if (++drawn === 2) canvas.classList.add('on');
+  // Reduced motion stills the wind, so the loop rests once the silk settles.
+  if (!reduce || busy || drawn < 3) raf = requestAnimationFrame(frame);
+  else rest();
+}
+// Off screen or hidden, the ribbon pauses and goes quiet.
+function sync() {
+  const v = ready && onScreen && !document.hidden;
+  if (v === visible) return;
+  visible = v;
+  if (v) wake();
+  else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+
+/* ---------- input ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function ndc(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1.1, 1.1), clamp(1 - ((e.clientY - r.top) / r.height) * 2, -1.1, 1.1)];
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (lead.down && lead.id !== e.pointerId) return;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const touch = e.pointerType !== 'mouse';
+  // A finger lands anywhere, so the head glides over first.
+  if (touch || !lead.on) softT = 0.5;
+  lead.on = lead.down = true;
+  lead.id = e.pointerId;
+  lead.src = touch ? 'touch' : 'mouse';
+  [lead.nx, lead.ny] = ndc(e);
+  kb.on = false;
+  cancelFlourish();
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  if (!ready || (lead.down ? e.pointerId !== lead.id : e.pointerType !== 'mouse')) return;
+  const list = e.getCoalescedEvents?.() || [];
+  const [nx, ny] = ndc(list.length ? list[list.length - 1] : e);
+  if (!lead.on) { softT = 0.5; lead.on = true; lead.src = 'mouse'; }
+  if (flo && Math.hypot(nx - flo.nx, ny - flo.ny) > 0.04) cancelFlourish();
+  lead.nx = nx;
+  lead.ny = ny;
+  kb.on = false;
+  wake();
+});
+const lift = e => {
+  if (e.pointerId !== lead.id) return;
+  lead.down = false;
+  lead.id = -1;
+  // A lifted finger lets the ribbon drift.
+  if (e.pointerType !== 'mouse') lead.on = false;
+};
+panel.addEventListener('pointerup', lift);
+panel.addEventListener('pointercancel', lift);
+panel.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !lead.down) lead.on = false; });
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (ARROWS[k]) {
+    e.preventDefault();
+    if (!ready) return;
+    if (!kb.on) {
+      [kb.x, kb.y] = toNdc(centre);
+      kb.vx = kb.vy = 0;
+      kb.on = true;
+      lead.on = false;
+    }
+    cancelFlourish();
+    if (!held.has(k)) held.set(k, performance.now());
+    kb.at = clock;
+    wake();
+  } else if (k === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat) flourish();
+  }
+});
+addEventListener('keyup', e => {
+  const t0 = held.get(e.key);
+  if (t0 === undefined) return;
+  held.delete(e.key);
+  // A quick tap dashes and stops, so the ribbon cracks.
+  if (performance.now() - t0 < 200) {
+    kb.vx += (ARROWS[e.key][0] * DASH) / hx;
+    kb.vy += (ARROWS[e.key][1] * DASH) / hy;
+  }
+  kb.at = clock;
+  wake();
+});
+addEventListener('blur', () => held.clear());
+
+const chips = [...document.querySelectorAll('[data-pal]')];
+function setPal(name) {
+  if (!PALS[name] || name === palName) return;
+  const k = clamp(dye);
+  bgFrom = bgFrom.map((c, j) => c.map((v, i) => lerp(v, bgTo[j][i], k)));
+  bgTo = bgOf(PALS[name]);
+  palName = name;
+  chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.pal === name)));
+  // The old colours move down two rows; the new ones flow in from the stick.
+  PALD.copyWithin(GN * 2 * 4, 0, GN * 2 * 4);
+  bake(PALS[name], 0);
+  uploadPal();
+  dye = reduce ? 1.3 : -0.08;
+  shimmer();
+  wake();
+}
+chips.forEach(c => c.addEventListener('click', () => setPal(c.dataset.pal)));
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start: shaders link while the ribbon settles ---------- */
+bake(PALS.sunset, 0);
+bake(PALS.sunset, 2);
+function failed() {
+  ready = false;
+  sync();
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  chips.forEach(c => { c.disabled = true; });
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    ready = true;
+    sync();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  const gate = initGL();
+  gate.catch(() => {});
+  await idle();
+  seed();
+  // A few seconds of drifting have already run.
+  for (let k = 0; k < 90; k++) step(1 / 60);
+  try { await gate; } catch (err) { console.error(err); failed(); return; }
+  ready = true;
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
