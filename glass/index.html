@@ -1182,6 +1182,10 @@ void main() {
   env *= 1.0 - 0.4 * uQuench * spots;
   vec3 L = normalize(vec3(-0.45, 0.75, 0.5));
   float spec = pow(max(dot(N, normalize(L + V)), 0.0), 300.0) * 5.0;
+  // A small lamp behind the viewer leaves one hot glint; cracks and shards catch it too.
+  // The lobe is very tight; a cross product keeps small angles precise.
+  vec3 Lg = normalize(vec3(-0.17, 0.03, 1.0)), gx = cross(N, normalize(Lg + V));
+  spec += exp(-dot(gx, gx) / 1.0e-5) * 3.0 * (1.0 - vSide * 0.6);
   // Cracks are hard dark cut gaps with one lit edge.
   // Crack walls darken the glass beside them.
   float face = uLine * (1.0 - vSide), gap = ck.g * face, lit = ck.b * face;
@@ -1526,10 +1530,10 @@ let bokeh = null, bokehMat = null, bgQuad = null, bgMat = null, backDirty = true
 let shardMesh = null, shardMat = null, xfTex = null, mark = null;
 let ray = null, ndc = null, hitV = null, tmpV = null, paneP = null, floorP = null, dbs = null;
 const FOV = 28, MT = 0.055, WALLZ = -1.5, CAPS = 512, CLEAR = 0x121318;
-let lowDpr = false;
+let lowDpr = false, composer = null, bloom = null;
 // The muzzle flash: world place and strength; angular size and turn.
 const flashU = { value: null }, flashS = { value: null };
-let flashMesh = null, flashLight = null, flash = null;
+let flashMesh = null, flashLight = null, flash = null, flashT = 0;
 
 /* ---------- the city: rooflines and lights, the same on every visit ---------- */
 // OKLCH in, linear light out, scaled by k.
@@ -1691,6 +1695,8 @@ function renderBack() {
 }
 function onSize(w, h) {
   fit(w, h);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(w, h);
   renderer.getDrawingBufferSize(dbs);
   backRT.setSize(dbs.x, dbs.y);
   for (const m of [paneMat, shardMat, bgMat]) m.uniforms.uRes.value.copy(dbs);
@@ -2153,21 +2159,31 @@ function shotWeb(x, y) {
 // The flash sits on the line from the eye to the aim point.
 function muzzle(x, y) {
   const c = camera.position, px = x - c.x, py = FH / 2 + y - c.y, pz = T / 2 - c.z, l = Math.hypot(px, py, pz), k = 1 / l;
-  flash = { t: 0, x: c.x + px * k, y: c.y + py * k, z: c.z + pz * k, s: 0.075 * rnd(0.85, 1.15) };
+  flash = { t0: performance.now(), x: c.x + px * k, y: c.y + py * k, z: c.z + pz * k, s: 0.075 * rnd(0.85, 1.15) };
+  // A timer clears the flash even if frames stop.
+  clearTimeout(flashT);
+  flashT = setTimeout(endFlash, 140);
   flashMesh.position.set(flash.x, flash.y, flash.z);
   flashMesh.material.uniforms.uTurn.value = rnd(0, TAU);
   flashS.value.y = rnd(0, TAU);
   flashLight.position.set(flash.x, flash.y, flash.z);
 }
-function stepFlash(dt) {
-  flash.t += dt;
-  // Two frames full, two at half size, then dark.
-  const w = flash.t < 0.035 ? 1 : flash.t < 0.07 ? 0.5 : 0;
+// The flash runs on the clock: 35 ms full, 35 ms at half size, then dark.
+function stepFlash() {
+  const t = performance.now() - flash.t0, w = t < 35 ? 1 : t < 70 ? 0.5 : 0;
+  if (!w) return endFlash(false);
   flashU.value.set(flash.x, flash.y, flash.z, w * (reduce ? 0.4 : 1));
-  flashMesh.visible = w > 0 && !reduce;
+  flashMesh.visible = !reduce;
   flashMesh.scale.setScalar(flash.s * (w < 1 ? 0.7 : 1));
   flashLight.intensity = 34 * w * (reduce ? 0.4 : 1);
-  if (!w) flash = null;
+}
+function endFlash(redraw = true) {
+  clearTimeout(flashT);
+  flash = null;
+  flashU.value.w = 0;
+  flashMesh.visible = false;
+  flashLight.intensity = 0;
+  if (redraw && ready) draw();
 }
 function shoot(x, y, auto = false) {
   if (!ready || rw) return;
@@ -2371,7 +2387,7 @@ function frame(ms) {
   if (bulge && !rw) { stepBulge(dt); busy = true; }
   if (brick && !brick.sleep && !rw) { stepBrick(dt); busy = true; }
   if (using && using.wind) busy = true;
-  if (flash) { stepFlash(dt); busy = true; }
+  if (flash) { stepFlash(); busy = true; }
   // Dents and the bow ease toward their goals.
   const ez = reduce ? 1 : 1 - Math.exp(-dt * 9);
   for (const D of dents) if (Math.abs(D.goal - D.sink) > 1e-5) { D.sink += (D.goal - D.sink) * ez; busy = true; }
@@ -2407,7 +2423,7 @@ function draw() {
     mark.position.set(at.x, FH / 2 + at.y, T / 2 + 0.004);
     mark.scale.setScalar(1 + 2.2 * Math.max(0, wind - 0.35));
   }
-  renderer.render(scene, camera);
+  composer.render();
 }
 
 /* ---------- input ---------- */
@@ -2496,11 +2512,15 @@ function failed() {
   panel.querySelector('.fail').hidden = false;
 }
 async function start() {
-  let RoomEnvironment, RoundedBoxGeometry;
+  let RoomEnvironment, RoundedBoxGeometry, EffectComposer, RenderPass, UnrealBloomPass, OutputPass;
   try {
     THREE = await import('three');
     ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
     ({ RoundedBoxGeometry } = await import('three/addons/geometries/RoundedBoxGeometry.js'));
+    [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'),
+    ]);
   } catch (err) {
     console.error(err);
     return failed();
@@ -2677,6 +2697,13 @@ async function start() {
   panel.prepend(canvas);
   // The backdrop draws only into its target.
   wall.visible = floor.visible = bokeh.visible = false;
+  // The scene renders linear, then bloom, then tone mapping on output.
+  // Only highlights above the threshold bloom: speculars, the flash, lit cracks.
+  composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+  composer.addPass(new RenderPass(scene, camera));
+  bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.6, 0.42, 0.72);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
   fitRenderer(renderer, panel, 2, onSize, 2.4e6);
   // A panel with no size yet still gets a frame.
   if (!built) onSize(16, 9);
