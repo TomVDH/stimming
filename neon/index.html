@@ -44,11 +44,52 @@
 .gas-rail i.prism { background: linear-gradient(90deg, oklch(0.7 0.22 25), oklch(0.88 0.18 100), oklch(0.82 0.2 150), oklch(0.7 0.16 230), oklch(0.6 0.24 300)); }
 .gas-rail i.candy { background: repeating-linear-gradient(135deg, oklch(0.66 0.26 350) 0 2px, oklch(0.96 0.02 350) 2px 4px); }
 .gas-rail i.mix { background: linear-gradient(90deg, oklch(0.66 0.22 30) 0 25%, oklch(0.86 0.18 100) 0 50%, oklch(0.8 0.2 150) 0 75%, oklch(0.6 0.2 266) 0); }
+/* Settings and the (i) sit together at the right edge. */
+.edge { position: relative; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings opens a tray above the bar, flush with its right edge. */
+.sets {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: grid; gap: 8px; width: max-content; padding: 10px; white-space: nowrap;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+/* A clear strip bridges the gap, so hover survives the move up. */
+.sets::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 10px; }
+.setter.is-open .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .setter:hover .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .choices { display: flex; flex-wrap: nowrap; gap: 4px; }
+.sets .chip { padding: 4px 9px; }
+/* The wall stepper is one pill: back, the wall, forward. */
+.picker { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; }
+.picker .step {
+  display: grid; place-items: center; width: 26px; height: 26px; padding: 0; cursor: pointer;
+  color: var(--muted); background: none; border: 0; border-radius: 999px; -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.picker .step:hover { color: var(--fg); }
+.picker .step:active { transform: scale(0.84); transition-duration: 0.08s; }
+.picker .step:disabled { opacity: 0.45; cursor: default; }
+.picker .step svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+/* The minimum width holds the pill still between wall names. */
+.picker .now { min-width: 4.6em; font-size: 13px; color: var(--fg); text-align: center; }
 @media (pointer: coarse) {
   .gas { padding: 10px 16px; }
   .gas-rail i { width: 11px; }
+  .sets .chip { padding: 9px 12px; }
+  .picker .step { width: 38px; height: 36px; }
 }
-@media (prefers-reduced-motion: reduce) { .stage canvas, .gas-rail i { transition: none; } }
+/* Phones close the gaps and narrow the rail, so the bar keeps one row. */
+@media (max-width: 480px) {
+  .bar { column-gap: 8px; }
+  .gas { padding-inline: 8px; }
+  .gas-rail { gap: 2px; }
+  .gas-rail i { width: 7px; }
+}
+@media (prefers-reduced-motion: reduce) { .stage canvas, .gas-rail i, .sets, .picker .step { transition: none; } }
 </style>
 </head>
 <body>
@@ -59,26 +100,45 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag, or Snap, for straight runs with round corners; click a tube to switch it off or on; double-click a tube for the next gas; click the bare wall to knock on it and shake the tubes. Arrow keys draw, Shift with arrows moves the pen, Space ends a stroke or switches the nearest tube, Backspace undoes, C clears.">
+    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag, or set Tube to Straight in Settings, for straight runs with round corners; click a tube to switch it off or on; double-click a tube for the next gas; click the bare wall to knock on it and shake the tubes. Arrow keys draw, Shift with arrows moves the pen, Space ends a stroke or switches the nearest tube, Backspace undoes, C clears.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Neon Hum needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices">
         <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="13" aria-valuenow="7" aria-valuetext="Blue"><span class="gas-rail" aria-hidden="true"></span></div>
-        <button class="chip" id="wall" type="button" aria-label="Wall: Brick">Brick</button>
       </div>
       <div class="actions">
-        <button class="chip" id="snap" type="button" aria-pressed="false">Snap</button>
-        <button class="chip" id="show" type="button" aria-pressed="false" aria-label="Show: off">Show</button>
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
       </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>draw a tube</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a tube</dt><dd>switch</dd></div>
-        <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span> a tube</dt><dd>new gas</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the wall</dt><dd>knock</dd></div>
-      </dl>
+      <div class="edge">
+        <div class="setter" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Lights</span><div class="choices" id="lights" role="group" aria-label="Lights">
+              <button class="chip" type="button" data-value="0" aria-pressed="true">Off</button>
+              <button class="chip" type="button" data-value="1" aria-pressed="false">Chase</button>
+              <button class="chip" type="button" data-value="2" aria-pressed="false">Rave</button>
+              <button class="chip" type="button" data-value="3" aria-pressed="false">Storm</button>
+            </div></div>
+            <div class="group"><span>Wall</span><div class="picker" role="group" aria-label="Wall">
+              <button class="step" id="wallPrev" type="button" aria-label="Previous wall"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
+              <span class="now" id="wallName" aria-live="polite">Brick</span>
+              <button class="step" id="wallNext" type="button" aria-label="Next wall"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button>
+            </div></div>
+            <div class="group"><span>Tube</span><div class="choices" id="tube" role="group" aria-label="Tube">
+              <button class="chip" type="button" data-value="free" aria-pressed="true">Free</button>
+              <button class="chip" type="button" data-value="straight" aria-pressed="false">Straight</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt>Drag</dt><dd>draw a tube</dd></div>
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a tube</dt><dd>switch</dd></div>
+          <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span> a tube</dt><dd>new gas</dd></div>
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the wall</dt><dd>knock</dd></div>
+        </dl>
+      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Neon Hum</h1><div class="vignette" hidden></div></section>
@@ -97,7 +157,7 @@
 }
 </script>
 <script type="module">
-import { initPage, sound, audioKit, linFit, css } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices, linFit, css } from '../shared/stim.js';
 import { createNoise2D } from 'simplex-noise';
 initPage({ id: 'neon' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
@@ -721,20 +781,18 @@ function setChase(on) {
 }
 
 /* ---------- shows: Chase, Rave and Storm ---------- */
-const SHOWS = ['Show', 'Chase', 'Rave', 'Storm'], RBEAT = 0.5;
+const RBEAT = 0.5;
 const STORM = linFit(0.95, 0.04, 250);
 let show = 0, rave = null, hueShift = 0, lightDirty = true;
 const storm = { at: -1e9, timer: 0 };
 const light = { amb: AMB, key: KEY };
 function setShow(k) {
-  k = reduce || !ready ? 0 : (k + SHOWS.length) % SHOWS.length;
+  k = reduce || !ready ? 0 : k;
   show = k;
   setChase(k === 1);
   rave = k === 2 ? { t0: performance.now() / 1000, k: -1, hue: rand(0, 360), at: -1e9, col: AMB } : null;
   stormLater(k === 3 ? 0.8 : -1);
-  showBtn.textContent = SHOWS[k];
-  showBtn.setAttribute('aria-pressed', String(k > 0));
-  showBtn.setAttribute('aria-label', `Show: ${k ? SHOWS[k] : 'off'}`);
+  lightPick.set(String(k));
   lightDirty = true;
   wake();
 }
@@ -2031,7 +2089,7 @@ panel.addEventListener('pointermove', e => {
     if (!press.moved) {
       if (Math.hypot(x - press.x, y - press.y) < (press.touch ? 9 : 5)) continue;
       press.moved = true;
-      beginDraft(press.x, press.y, press.id, snapOn || c.shiftKey);
+      beginDraft(press.x, press.y, press.id, straightOn || c.shiftKey);
     }
     if (draft && draft.pid === press.id) addPoint(x, y);
   }
@@ -2084,9 +2142,9 @@ function clearAll() {
   humSync();
   wake();
 }
-/* ---------- the bar: gas rail, wall, snap, show, clear ---------- */
+/* ---------- the bar: gas rail and Clear; Settings holds lights, wall and tube ---------- */
 const gasEl = document.getElementById('gas'), rail = gasEl.querySelector('.gas-rail');
-const wallBtn = document.getElementById('wall'), showBtn = document.getElementById('show'), clearBtn = document.getElementById('clear');
+const clearBtn = document.getElementById('clear'), wallName = document.getElementById('wallName');
 const NAMES = [...GAS_SPEC.map(g => g[0]), 'Mix'];
 rail.innerHTML = GAS_SPEC.map(([, L, C, h, , , fx]) => (fx ? `<i class="${fx === 1 ? 'prism' : 'candy'}"></i>` : `<i style="--c: ${css([L, C * 0.92, h])}"></i>`)).join('') + '<i class="mix"></i>';
 const swatches = [...rail.children];
@@ -2148,8 +2206,7 @@ paintGas();
 function setWall(i) {
   wallNow = (i + WALLS.length) % WALLS.length;
   const w = WALLS[wallNow];
-  wallBtn.textContent = w.name;
-  wallBtn.setAttribute('aria-label', `Wall: ${w.name}`);
+  wallName.textContent = w.name;
   if (!ready) return;
   bakeWall();
   // The swap dips the power for a blink.
@@ -2165,24 +2222,28 @@ function setWall(i) {
   wake();
 }
 setWall(0);
-// Snap makes every drag run straight; touch has no Shift key.
-const snapBtn = document.getElementById('snap');
-let snapOn = false;
-snapBtn.addEventListener('click', () => {
-  snapOn = !snapOn;
-  snapBtn.setAttribute('aria-pressed', String(snapOn));
-});
-wallBtn.addEventListener('click', () => setWall(wallNow + 1));
+// Settings opens on hover or tap.
+// A tap elsewhere or Escape closes it.
+const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
+const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
+setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
+document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
+const lightPick = choices(document.getElementById('lights'), v => setShow(+v));
+// Straight makes every drag run straight; touch has no Shift key.
+let straightOn = false;
+choices(document.getElementById('tube'), v => { straightOn = v === 'straight'; });
+document.getElementById('wallPrev').addEventListener('click', () => setWall(wallNow - 1));
+document.getElementById('wallNext').addEventListener('click', () => setWall(wallNow + 1));
 // On a phone the bar sits under the wall, so the whole wall draws.
 const NARROW = matchMedia('(max-width: 560px)'), barEl = panel.nextElementSibling;
 const barPlace = () => barEl.classList.toggle('bar--below', NARROW.matches);
 NARROW.addEventListener?.('change', barPlace);
 barPlace();
-showBtn.addEventListener('click', () => setShow(show + 1));
 clearBtn.addEventListener('click', clearAll);
-// Reduced motion stops the show and rests its chip.
+// Reduced motion stops the show and rests its chips.
 function motionPref() {
-  showBtn.setAttribute('aria-disabled', String(reduce));
+  document.querySelectorAll('#lights .chip:not([data-value="0"])').forEach(c => c.setAttribute('aria-disabled', String(reduce)));
   if (reduce) setShow(0);
 }
 motionPref();
@@ -2232,7 +2293,7 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  [snapBtn, wallBtn, showBtn, clearBtn].forEach(c => { c.disabled = true; });
+  document.querySelectorAll('.bar .chip, .bar .step').forEach(c => { c.disabled = true; });
   gasEl.setAttribute('aria-disabled', 'true');
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
