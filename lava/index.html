@@ -25,7 +25,7 @@
 }
 </script>
 <style>
-/* Lava lamp: brushed metal and glass before a faint wall. */
+/* Lava lamp: a soft metal lamp on a desk in a dark room. */
 :root { --stage: oklch(0.13 0.02 30); }
 .stage--lava { cursor: grab; }
 .stage--lava.held { cursor: grabbing; }
@@ -47,7 +47,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp. Drag a blob to pull it apart, hold the liquid to warm it, drag around the lamp to tip and shake it. Arrow keys tip it, F flips it, Space shakes it.">
+    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Drag a blob to pull it apart, hold the liquid to warm it, drag the metal to pick the lamp up and shake it, drag beside it to tip it. F flips it, Space shakes it.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Lava lamp needs WebGL 2, which this browser has turned off.</p>
     </div>
@@ -63,8 +63,8 @@
       <dl class="how" aria-label="How to play">
         <div><dt>Drag a blob</dt><dd>pull it apart</dd></div>
         <div><dt>Hold the liquid</dt><dd>warm it</dd></div>
-        <div><dt>Drag the lamp</dt><dd>tip, shake</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd> <kbd>F</kbd> <kbd>Space</kbd></dt><dd>tip, flip, shake</dd></div>
+        <div><dt>Drag the metal</dt><dd>lift, shake</dd></div>
+        <div><dt>Drag beside it</dt><dd>tip it</dd></div>
       </dl>
     </div>
   </main>
@@ -87,17 +87,17 @@ const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestId
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
-// Hot and cool wax, liquid glow, liquid tint, room tint.
-function palette(hot, cool, liq, tint, bg) {
+// Hot and cool wax, liquid glow, liquid tint.
+function palette(hot, cool, liq, tint) {
   const H = linFit(...hot), T = linFit(...tint), Lq = linFit(...liq);
   const abs = T.map(v => -Math.log(Math.max(v, 0.002)) * 1.7);
   const glow = Lq.map((v, i) => v * 0.75 + H[i] * 0.3);
-  return [...H, ...linFit(...cool), ...Lq, ...abs, ...glow, ...linFit(...bg)];
+  return [...H, ...linFit(...cool), ...Lq, ...abs, ...glow];
 }
 const PALS = {
-  classic: palette([0.84, 0.19, 78], [0.64, 0.22, 44], [0.5, 0.21, 27], [0.64, 0.2, 30], [0.17, 0.03, 30]),
-  violet: palette([0.82, 0.15, 352], [0.62, 0.22, 356], [0.42, 0.2, 304], [0.56, 0.2, 302], [0.16, 0.03, 300]),
-  sea: palette([0.86, 0.15, 172], [0.68, 0.14, 190], [0.38, 0.15, 258], [0.52, 0.15, 254], [0.16, 0.03, 250]),
+  classic: palette([0.84, 0.19, 78], [0.64, 0.22, 44], [0.5, 0.21, 27], [0.64, 0.2, 30]),
+  violet: palette([0.82, 0.15, 352], [0.62, 0.22, 356], [0.42, 0.2, 304], [0.56, 0.2, 302]),
+  sea: palette([0.86, 0.15, 172], [0.68, 0.14, 190], [0.38, 0.15, 258], [0.52, 0.15, 254]),
 };
 let palName = 'classic';
 const pal = Float32Array.from(PALS.classic);
@@ -113,13 +113,14 @@ function prof(y) {
 }
 const inR = y => prof(y) - TH;
 const TOP = Y1 - TH - 0.003;
-// The lamp turns about its middle; the camera looks at that point.
+// The lamp stands on the desk at y = 0 and turns about its middle.
 const PIV = 0.5;
-const CAM = { pos: [0, 0.6, 2.6], at: [0, PIV, 0] };
+const CAM = { pos: [0, 0.6, 2.5], at: [0, 0.482, 0] };
 const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const norm3 = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
 const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const CZ = norm3(sub3(CAM.at, CAM.pos)), CX = norm3(cross3(CZ, [0, 1, 0])), CY = cross3(CX, CZ);
+const CAMD = Math.hypot(...sub3(CAM.pos, CAM.at));
 let tanF = 0.23;
 // The key light comes from the upper left, in front.
 const KEY = norm3([-0.5, 0.72, 0.6]);
@@ -127,13 +128,24 @@ const KEY = norm3([-0.5, 0.72, 0.6]);
 /* ---------- the lamp in the hand: springs, a tip, a flip ---------- */
 // th is the angle, w its rate, rest where it settles.
 // x and y are the hand's offset; tx and ty are its target.
-const lamp = { th: 0, w: 0, rest: 0, grab: null, tw: null, prev: 0, al: 0, wPrev: 0, x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0, shakeT: 0, shakeAge: 0 };
+const lamp = { th: 0, w: 0, rest: 0, grab: null, hand: false, tw: null, prev: 0, al: 0, wPrev: 0, x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0, shakeT: 0, shakeAge: 0 };
+const soft = (x, m) => m * Math.tanh(x / m);
+// The lamp's outline corners: base foot, cap top, cap rim.
+const FOOT = [[0.212, 0], [-0.212, 0], [0.076, 1], [-0.076, 1], [0.116, 0.862], [-0.116, 0.862]];
+// How far the lamp must rise at an angle to clear the desk.
+function floorAt(c, s) {
+  let lo = 0;
+  for (const [x, y] of FOOT) lo = Math.min(lo, s * x + c * (y - PIV) + PIV);
+  return -lo;
+}
 // World up and the pool's surface normal, both in the lamp frame.
 let up = [0, 1], pn = [0, 1], pa = 0, pw = 0;
 // Liquid state: stir energy E, slosh S in the lamp frame, field drift D.
 const LQ = { E: 0, S: [0, 0], D: [0.13, 0.41, 0.77] };
 function lampStep(h) {
   if (!lamp.tw) {
+    // In the hand, the lamp leans against its motion.
+    if (lamp.hand) lamp.grab = lamp.rest + soft(lamp.vx * 0.3, 0.55);
     if (lamp.grab !== null) lamp.w += ((lamp.grab - lamp.th) * 140 - lamp.w * 18) * h;
     // A released lamp rocks back to rest, upright or upside down.
     else lamp.w += ((lamp.rest - lamp.th) * 26 - lamp.w * 3.4) * h;
@@ -165,6 +177,16 @@ function lampStep(h) {
   lamp.x += lamp.vx * h;
   lamp.vy += ay * h;
   lamp.y += lamp.vy * h;
+  // The desk stops the lamp; a hard landing knocks and stirs.
+  const fl = floorAt(c, s);
+  if (lamp.y < fl) {
+    if (lamp.vy < -0.7) {
+      thud(-lamp.vy);
+      LQ.E = Math.min(1.7, LQ.E - lamp.vy * 0.1);
+    }
+    lamp.y = fl;
+    if (lamp.vy < 0) lamp.vy *= -0.15;
+  }
   if (Math.abs(lamp.x - tx) + Math.abs(lamp.y - ty) + Math.abs(lamp.vx) + Math.abs(lamp.vy) < 1e-4 && lamp.shakeT <= 0) {
     lamp.x = tx;
     lamp.y = ty;
@@ -278,7 +300,9 @@ function buildVoices() {
   const gloops = Array.from({ length: 4 }, () => new T.Synth({
     oscillator: { partials: [1, 0.18] }, envelope: { attack: 0.014, decay: 0.24, sustain: 0, release: 0.1 }, volume: -8,
   }).connect(gl));
-  return { hum, creak, cf, slosh, sf, gloops, gi: 0 };
+  // A landing thuds on the desk.
+  const thump = new T.MembraneSynth({ pitchDecay: 0.05, octaves: 3, envelope: { attack: 0.002, decay: 0.22, sustain: 0, release: 0.05 }, volume: -8 }).connect(kit.out);
+  return { hum, creak, cf, slosh, sf, gloops, gi: 0, thump };
 }
 // A warm low gloop marks each pinch, tear and merge.
 // It rises on a pinch and falls on a merge.
@@ -296,6 +320,11 @@ function gloop(size, rise, k = 1) {
   s.frequency.setValueAtTime(f0, t);
   s.frequency.exponentialRampToValueAtTime(f1, t + 0.07);
   s.frequency.exponentialRampToValueAtTime(f2, t + 0.26);
+}
+function thud(speed) {
+  if (seeding || !sound.on) return;
+  const v = voices();
+  if (v) v.thump.triggerAttackRelease(58, 0.1, kit.ac.currentTime + LEAD, clamp(speed / 3));
 }
 // Creak, slosh and hum follow the lamp each frame.
 function soundFrame(now, dt) {
@@ -818,6 +847,13 @@ function inside(x, y, b) {
   return [x, y];
 }
 const inGlass = (x, y) => y > Y0 + 0.004 && y < TOP && Math.abs(x) < inR(y);
+// The lamp's outline: the metal and the glass rim pick it up.
+function onLamp(x, y) {
+  if (y < -0.01 || y > 1.01) return false;
+  if (y < Y0) return Math.abs(x) < lerp(0.216, 0.135, clamp(y / 0.26));
+  if (y > Y1 - 0.01) return Math.abs(x) < lerp(0.12, 0.08, clamp((y - Y1) / 0.135));
+  return Math.abs(x) < prof(y) + 0.012;
+}
 // The screen angle of a point around the stage's middle.
 const angleAt = (px, py) => Math.atan2(H / 2 - py, px - W / 2);
 
@@ -829,9 +865,10 @@ void main() {
 }`;
 const FS = `#version 300 es
 precision highp float;
-uniform vec2 uRes, uRot, uUp;
+uniform vec2 uRes, uRot;
 uniform vec3 uRo, uCx, uCy, uCz, uPool, uKey, uOff;
-uniform float uTan, uPix, uTime, uLight, uHeat;
+uniform vec4 uFoot;
+uniform float uTan, uPix, uTime, uLight, uHeat, uLift;
 uniform int uN, uNN, uNH;
 uniform vec4 uB[${MAXB}];
 uniform vec4 uE[${MAXB}];
@@ -839,15 +876,14 @@ uniform vec4 uNa[${MAXG}];
 uniform vec4 uNb[${MAXG}];
 uniform vec4 uH[${MAXG}];
 uniform vec3 uEm[4];
-uniform vec3 uHot, uCool, uLiq, uAbs, uGlow, uBg;
+uniform vec3 uHot, uCool, uLiq, uAbs, uGlow;
 out vec4 o;
 #define Y0 ${Y0}
 #define Y1 ${Y1}
 #define TH ${TH}
 #define KB ${KB}
 #define PIV ${PIV}
-#define WZ 0.6
-const vec3 WARM = vec3(1.0, 0.97, 0.93);
+#define WZ 1.15
 const vec3 AMB = vec3(0.004, 0.0045, 0.006);
 
 float hash(vec2 p) {
@@ -980,23 +1016,42 @@ float fingers(vec3 p) {
   return s;
 }
 
-/* Light: the bulb under the glass, the fingers, and studio strips. */
+/* The room: a back wall, a desk, and the lamp's own light. */
 // Light leaving the glass at a height: strongest over the bulb.
 vec3 emit(float y) { return uGlow * uLight * (0.22 + 1.7 * exp(-(y - Y0) * 2.8)); }
-// A faint plaster wall behind the lamp, lit mostly by the lamp.
-vec3 wall(vec3 P) {
-  vec3 L = vec3(0.0);
+vec3 lampLight(vec3 P, vec3 N, bool desk) {
+  vec3 sum = vec3(0.0);
+  float rho = length(P.xz - vec2(uFoot.x, 0.0));
+  // A lifted or tipped lamp shades the desk less.
+  float hide = abs(uRot.x) * (1.0 - clamp(uLift * 6.0, 0.0, 1.0));
   for (int i = 0; i < 4; i++) {
-    vec3 d = uEm[i] - P;
-    float d2 = dot(d, d);
-    L += emit(0.33 + 0.15 * float(i)) * (d.z * inversesqrt(d2)) / (d2 + 0.08);
+    float y = 0.33 + 0.15 * float(i), er = prof(y).x * 0.7;
+    vec2 dir = normalize(P.xz - vec2(uEm[i].x, 0.0) + vec2(1e-5, 0.0));
+    vec3 E = vec3(uEm[i].x + dir.x * er, uEm[i].y, dir.y * er), L = E - P;
+    float d2 = dot(L, L);
+    float c = max(dot(N, L * inversesqrt(d2)), 0.0);
+    // On the desk, the foot hides the glass near it.
+    float sh = desk ? smoothstep(-0.015, 0.05, min(rho - uFoot.y, rho + (er - rho) * uFoot.w / max(E.y, 0.05) - uFoot.z)) : 1.0;
+    sum += emit(y) * c * mix(1.0, sh, hide) / (d2 + 0.03);
   }
-  float g = 0.94 + 0.1 * vnoise(P.xy * 34.0) + 0.04 * vnoise(P.xy * 170.0);
-  return vec3(0.17, 0.165, 0.16) * (L * 0.09 + uBg * 0.16 + AMB) * g;
+  return sum * 0.15;
 }
-vec3 backdrop(vec3 ro, vec3 rd) {
-  if (rd.z > -1e-3) return AMB + uBg * 0.04;
-  return wall(ro + rd * ((-WZ - ro.z) / rd.z));
+// Where a ray passes the lamp's axis, it may see the lamp.
+vec4 seeLamp(vec3 Pw, vec3 dw, float blur) {
+  vec3 P = toLamp(Pw), d = turn(dw);
+  float dd = dot(d.xz, d.xz);
+  if (dd < 1e-5) return vec4(0.0);
+  float t = -dot(P.xz, d.xz) / dd;
+  if (t <= 0.0) return vec4(0.0);
+  vec3 Q = P + d * t;
+  if (Q.y < 0.0 || Q.y > 1.0) return vec4(0.0);
+  float R;
+  vec3 c;
+  if (Q.y < Y0) { R = 0.215 - 0.31 * Q.y; c = vec3(0.05) + emit(Y0) * 0.06; }
+  else if (Q.y < Y1) { R = prof(Q.y).x; c = emit(Q.y) * 1.3 + uHot * uLight * 0.5 * exp(-(Q.y - uPool.z) * 30.0) * step(0.0, Q.y - Y0); }
+  else { R = 0.12 - 0.3 * (Q.y - Y1); c = vec3(0.035); }
+  float b = blur * t + 0.003;
+  return vec4(c, smoothstep(R + b, R - b, length(Q.xz)));
 }
 // Two soft strip lights behind the camera.
 vec3 env(vec3 r, float rough) {
@@ -1005,7 +1060,36 @@ vec3 env(vec3 r, float rough) {
   float v = smoothstep(-0.5, 0.05, r.y) * smoothstep(0.98, 0.5, r.y);
   float b1 = exp(-pow((az + 0.62) / w1, 2.0)) * 0.05 / w1;
   float b2 = exp(-pow((az - 0.82) / w2, 2.0)) * 0.03 / w2 * 0.35;
-  return vec3(1.0, 0.97, 0.93) * (b1 + b2) * v * 10.0;
+  return vec3(1.0, 0.96, 0.9) * (b1 + b2) * v * 10.0;
+}
+vec3 wallCol(vec3 P) {
+  vec3 c = vec3(0.2, 0.19, 0.185) * (lampLight(P, vec3(0.0, 0.0, 1.0), false) + AMB);
+  // The glow pools behind the lamp and fades toward the corners.
+  vec2 q = P.xy - vec2(uOff.x, 0.5 + uOff.y);
+  c *= 0.35 + 0.9 * exp(-dot(q, q) * 0.9);
+  return c * (1.0 - 0.5 * exp(-P.y * 7.0)) * (0.96 + 0.08 * vnoise(P.xy * 40.0));
+}
+vec3 deskCol(vec3 P, vec3 rd) {
+  // Dark wood: fine grain running across the desk.
+  float grain = vnoise(vec2(P.x * 3.0, P.z * 90.0 + vnoise(P.xz * 6.0) * 4.0));
+  vec3 alb = vec3(0.085, 0.06, 0.045) * (0.8 + 0.4 * grain);
+  vec3 c = alb * (lampLight(P, vec3(0.0, 1.0, 0.0), true) + AMB);
+  // The foot's shadow softens and fades as the lamp lifts.
+  float rho = length(P.xz - vec2(uFoot.x, 0.0));
+  c *= mix(0.3 + 0.7 * min(uLift * 2.5, 1.0), 1.0, smoothstep(uFoot.y * 0.8, uFoot.y * 1.6 + uLift, rho));
+  c *= 1.0 - 0.45 * exp(-(P.z + WZ) * 7.0);
+  // The lacquer mirrors the lamp, softly.
+  vec4 m = seeLamp(P, vec3(rd.x, -rd.y, rd.z), 0.05 + 0.04 * grain);
+  float fr = 0.05 + 0.5 * pow(1.0 - abs(rd.y), 5.0);
+  return c + m.rgb * m.a * fr;
+}
+vec3 room(vec3 ro, vec3 rd) {
+  float tf = rd.y < -1e-4 ? -ro.y / rd.y : 1e9;
+  float tw = rd.z < -1e-4 ? (-WZ - ro.z) / rd.z : 1e9;
+  if (tf < tw) return deskCol(ro + rd * tf, rd);
+  if (tw < 1e8) return wallCol(ro + rd * tw);
+  // Behind the viewer the room is dark, tinted by the lamp.
+  return AMB + emit(0.5) * 0.03 * (1.0 - 0.5 * rd.y);
 }
 vec3 shadeWax(vec3 p, vec3 rd, vec3 n) {
   vec2 m = waxMat(p);
@@ -1035,11 +1119,11 @@ vec3 shadeWax(vec3 p, vec3 rd, vec3 n) {
   vec3 col = alb * tint * I * 2.4 + uHot * tint * min(I * I, 1.0) * 0.5 * c;
   col *= 0.6 + 0.4 * c;
   col += uCool * tint * uLight * 0.08 * thin;
-  col += WARM * pow(clamp(dot(reflect(rd, n), uKey), 0.0, 1.0), 14.0) * 0.12 * tint;
+  col += env(unturn(reflect(rd, n)), 0.3) * (0.01 + 0.1 * pow(1.0 - c, 4.0)) * tint;
   return col * (1.0 + 0.55 * m.y);
 }
 // The liquid: tinted, lit from below, glowing round the wax.
-vec3 liquid(vec3 ro, vec3 rd, float tc, vec3 bgc) {
+vec3 liquid(vec3 ro, vec3 rd, float tc) {
   if (wax(ro) < 0.0) return shadeWax(ro, rd, normalize(vec3(ro.x, 0.0, ro.z) + vec3(0.0, 0.0, 1e-4)));
   vec3 T = vec3(1.0), S = vec3(0.0), p = ro;
   // The nearest miss of the wax, kept to soften its edge.
@@ -1068,7 +1152,10 @@ vec3 liquid(vec3 ro, vec3 rd, float tc, vec3 bgc) {
   vec3 back;
   if (hit == 1) back = shadeWax(p, rd, nWax(p));
   else {
-    back = bgc * 0.8 + emit(p.y) * 0.05;
+    vec3 n = nGlass(p, TH);
+    vec3 r2 = refract(rd, -n, 1.12);
+    if (dot(r2, r2) < 0.5) r2 = reflect(rd, -n);
+    back = room(fromLamp(p), unturn(r2)) * 0.9 + env(unturn(reflect(rd, -n)), 0.15) * 0.05;
     if (bq < 1.0) {
       vec3 pb = ro + rd * bt;
       return mix(S + T * back, bS + bT * shadeWax(pb, rd, nWax(pb)), clamp(1.0 - bq, 0.0, 1.0));
@@ -1076,18 +1163,18 @@ vec3 liquid(vec3 ro, vec3 rd, float tc, vec3 bgc) {
   }
   return S + T * back;
 }
-// Glass: soft broad highlights from one box light.
-vec3 shadeGlass(vec3 p, vec3 rd, float tc, vec3 bgc) {
+// Glass: only the edge mirrors the room; the middle stays clear.
+vec3 shadeGlass(vec3 p, vec3 rd, float tc) {
   vec3 n = nGlass(p, 0.0);
   float c = clamp(dot(-rd, n), 0.0, 1.0);
   float F = 0.04 + 0.96 * pow(1.0 - c, 5.0);
-  vec3 r1 = refract(rd, n, 1.0 / 1.08);
-  vec3 inner = liquid(p + r1 * (TH / max(dot(r1, -n), 0.25) + 0.002), r1, tc, bgc);
+  vec3 r = unturn(reflect(rd, n));
+  vec3 refl = env(r, 0.35) * 0.45 + room(fromLamp(p), r);
+  vec3 r1 = refract(rd, n, 1.0 / 1.12);
+  vec3 inner = liquid(p + r1 * (TH / max(dot(r1, -n), 0.25) + 0.002), r1, tc);
   // The glass edge thickens toward the silhouette.
-  inner *= mix(1.0, 0.7, pow(1.0 - c, 3.0));
-  float k = dot(reflect(rd, n), uKey);
-  vec3 refl = WARM * smoothstep(0.7, 0.97, k) * 0.9 + emit(p.y) * 0.08 + uBg * 0.5;
-  return mix(inner, refl, F) + WARM * smoothstep(0.9, 0.99, k) * 0.22;
+  inner *= mix(1.0, 0.6, pow(1.0 - c, 3.0));
+  return mix(inner, refl, F);
 }
 // Soft brushed metal: faint fine rings under wide, gentle highlights.
 vec3 shadeMetal(vec3 p, vec3 rd) {
@@ -1099,15 +1186,12 @@ vec3 shadeMetal(vec3 p, vec3 rd) {
   float c = clamp(dot(-rd, nb), 0.0, 1.0);
   vec3 F0 = vec3(0.66, 0.66, 0.67);
   vec3 F = F0 + (1.0 - F0) * pow(1.0 - c, 5.0);
-  // The strips and the wall live in the world, so the turn undoes here.
-  vec3 rw = unturn(r), pw = fromLamp(p + n * 0.003);
-  // A broad satin sheen keeps the metal grey between the strips.
+  // The strips and the room live in the world, so the turn undoes here.
+  vec3 rw = unturn(r), q = fromLamp(p + n * 0.003);
+  // A broad satin sheen keeps the metal grey, with hardly any glint.
   float sheen = 0.1 + 0.6 * pow(clamp(dot(n, uKey) * 0.5 + 0.5, 0.0, 1.0), 2.2);
-  vec3 refl = env(rw, 2.2) * 0.22 + backdrop(pw, rw) + vec3(0.34, 0.34, 0.35) * sheen;
-  // The glass above lights the collar and the base top.
-  float lo = exp(-abs(p.y - Y0) * 26.0) * smoothstep(-0.3, 0.6, n.y);
-  float hi = exp(-abs(p.y - Y1) * 30.0) * smoothstep(-0.3, 0.6, -n.y);
-  return F * refl * (0.94 + 0.12 * ln) + F0 * uGlow * uLight * (lo * 0.9 + hi * 0.45);
+  vec3 refl = env(rw, 2.2) * 0.1 + room(q, rw) + vec3(0.3, 0.3, 0.31) * sheen;
+  return F * refl * (0.94 + 0.12 * ln) + F0 * lampLight(q, unturn(n), false) * 0.12;
 }
 vec2 cyl(vec3 ro, vec3 rd, float r, float y0, float y1) {
   float a = dot(rd.xz, rd.xz), b = dot(ro.xz, rd.xz), c = dot(ro.xz, ro.xz) - r * r, h = b * b - a * c;
@@ -1122,7 +1206,7 @@ vec3 srgb(vec3 c) { return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.05
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / (0.5 * uRes.y);
   vec3 rw = normalize(uCz + uTan * (uv.x * uCx + uv.y * uCy));
-  vec3 bgc = backdrop(uRo, rw), col = bgc;
+  vec3 col = room(uRo, rw);
   vec3 ro = toLamp(uRo), rd = turn(rw);
   vec2 tb = cyl(ro, rd, 0.226, -0.005, 1.005);
   if (tb.x < tb.y) {
@@ -1140,7 +1224,7 @@ void main() {
     if (a > 0.0) {
       if (!hit) t = bt;
       vec3 p = ro + rd * t;
-      vec3 lc = sdGlass(p, 0.0) < sdMetal(p) ? shadeGlass(p, rd, t, bgc) : shadeMetal(p, rd);
+      vec3 lc = sdGlass(p, 0.0) < sdMetal(p) ? shadeGlass(p, rd, t) : shadeMetal(p, rd);
       col = mix(col, lc, a);
     }
   }
@@ -1219,8 +1303,8 @@ void main() {
 let gl = null, prog = null, bprog = null, U = {}, UB2 = {}, vao = null, bvao = null, bbuf = null, ready = false;
 const UB = new Float32Array(4 * MAXB), UE = new Float32Array(4 * MAXB);
 const UNA = new Float32Array(4 * MAXG), UNB = new Float32Array(4 * MAXG), UH = new Float32Array(4 * MAXG), UEM = new Float32Array(12);
-const UNIFORMS = ['uRes', 'uRot', 'uUp', 'uRo', 'uCx', 'uCy', 'uCz', 'uPool', 'uKey', 'uOff', 'uTan', 'uPix', 'uTime', 'uLight', 'uHeat',
-  'uN', 'uNN', 'uNH', 'uB', 'uE', 'uNa', 'uNb', 'uH', 'uEm', 'uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow', 'uBg'];
+const UNIFORMS = ['uRes', 'uRot', 'uFoot', 'uLift', 'uRo', 'uCx', 'uCy', 'uCz', 'uPool', 'uKey', 'uOff', 'uTan', 'uPix', 'uTime', 'uLight', 'uHeat',
+  'uN', 'uNN', 'uNH', 'uB', 'uE', 'uNa', 'uNb', 'uH', 'uEm', 'uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow'];
 const BOB_UNIFORMS = ['uRes', 'uRot', 'uRo', 'uCx', 'uCy', 'uCz', 'uOff', 'uCamL', 'uHot', 'uCool', 'uAbs', 'uTan', 'uLight', 'uN', 'uB', 'uE'];
 async function link(vs, fs, par) {
   const sh = (type, src) => {
@@ -1277,7 +1361,7 @@ function fit() {
   H = h;
   rect = null;
   // The lamp fills the height; narrow stages pull the camera back.
-  tanF = Math.max(0.6, 0.42 / (w / h)) / Math.hypot(...sub3(CAM.pos, CAM.at));
+  tanF = Math.max(0.58, 0.42 / (w / h)) / CAMD;
   const p = Math.min(devicePixelRatio || 1, 2, Math.sqrt(1.4e6 / (w * h))) * SCALES[scaleI];
   const cw = Math.max(1, Math.round(w * p)), ch = Math.max(1, Math.round(h * p));
   if (canvas.width !== cw || canvas.height !== ch) {
@@ -1323,7 +1407,9 @@ function render() {
   gl.useProgram(prog);
   gl.uniform2f(U.uRes, cw, ch);
   gl.uniform2f(U.uRot, c, s);
-  gl.uniform2f(U.uUp, s, c);
+  // The foot is the base, or the cap once the lamp stands upside down.
+  gl.uniform4f(U.uFoot, lamp.x, c >= 0 ? 0.212 : 0.08, c >= 0 ? 0.13 : 0.116, c >= 0 ? 0.27 : 0.14);
+  gl.uniform1f(U.uLift, Math.max(0, lamp.y - floorAt(c, s)));
   gl.uniform3f(U.uOff, lamp.x, lamp.y, 0);
   gl.uniform3f(U.uKey, c * KEY[0] + s * KEY[1], -s * KEY[0] + c * KEY[1], KEY[2]);
   gl.uniform3f(U.uPool, pn[0], pn[1], poolY * pn[1]);
@@ -1341,7 +1427,7 @@ function render() {
   gl.uniform4fv(U.uNb, UNB);
   gl.uniform4fv(U.uH, UH);
   gl.uniform3fv(U.uEm, UEM);
-  ['uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow', 'uBg'].forEach((k, i) => gl.uniform3fv(U[k], pal.subarray(i * 3, i * 3 + 3)));
+  ['uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow'].forEach((k, i) => gl.uniform3fv(U[k], pal.subarray(i * 3, i * 3 + 3)));
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   if (!nb) return;
@@ -1433,11 +1519,11 @@ function wake() {
 }
 
 /* ---------- input ---------- */
-// One gesture per pointer: blob, pool, carry, heat or tip.
+// One gesture per pointer: blob, pool, carry, heat, lift or tip.
 const grabs = new Map();
 // The lamp turns under a held pointer, so targets follow each frame.
 function retarget(g) {
-  if (g.kind === 'tip') return;
+  if (g.kind === 'tip' || g.kind === 'lift') return;
   const d = rayAt(g.sx, g.sy);
   if (g.kind === 'heat') {
     let [x, y] = lampAt(d, 0);
@@ -1453,7 +1539,7 @@ function retarget(g) {
 // The pointer picks a blob, the pool, the liquid or the lamp.
 function pick(sx, sy) {
   const d = rayAt(sx, sy), [lx, ly] = lampAt(d, 0);
-  if (!inGlass(lx, ly)) return { kind: 'tip', a: angleAt(sx, sy), acc: 0, th0: lamp.th };
+  if (!inGlass(lx, ly)) return onLamp(lx, ly) ? { kind: 'lift' } : { kind: 'tip', a: angleAt(sx, sy), acc: 0, th0: lamp.th };
   let best = null, bd = 1e9, bp = null;
   for (const b of blobs) {
     if (b.state === 'sink' || b.grab || b.tug || b.body) continue;
@@ -1499,12 +1585,16 @@ panel.addEventListener('pointerdown', e => {
   const [sx, sy] = local(e), g = pick(sx, sy);
   g.sx = sx;
   g.sy = sy;
-  if (g.kind === 'tip') {
-    // A hand on the lamp stops a flip and takes over.
-    for (const o of grabs.values()) if (o.kind === 'tip') return;
+  if (g.kind === 'tip' || g.kind === 'lift') {
+    // One hand holds the lamp; it stops a flip and takes over.
+    for (const o of grabs.values()) if (o.kind === 'tip' || o.kind === 'lift') return;
     if (lamp.tw) { lamp.tw.kill(); lamp.tw = null; g.th0 = lamp.th; }
-    lamp.grab = lamp.th;
-    g.w0 = worldAt(rayAt(sx, sy), 0);
+    if (g.kind === 'tip') lamp.grab = lamp.th;
+    else {
+      lamp.hand = true;
+      g.w0 = worldAt(rayAt(sx, sy), 0);
+      g.o0 = [lamp.x, lamp.y];
+    }
   }
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   grabs.set(e.pointerId, g);
@@ -1518,11 +1608,14 @@ panel.addEventListener('pointermove', e => {
   const [sx, sy] = local(e);
   g.sx = sx;
   g.sy = sy;
+  if (g.kind === 'lift') {
+    // The lamp follows the hand, from the desk up.
+    const [wx, wy] = worldAt(rayAt(sx, sy), 0), mx = Math.max(0.06, (tanF * CAMD * W) / H - 0.24);
+    lamp.tx = clamp(g.o0[0] + wx - g.w0[0], -mx, mx);
+    lamp.ty = clamp(g.o0[1] + wy - g.w0[1], 0, 0.18);
+    return;
+  }
   if (g.kind === 'tip') {
-    // The lamp follows the hand part of the way, so a jiggle shakes it.
-    const [wx, wy] = worldAt(rayAt(sx, sy), 0);
-    lamp.tx = clamp((wx - g.w0[0]) * 0.5, -0.2, 0.2);
-    lamp.ty = clamp((wy - g.w0[1]) * 0.5, -0.08, 0.1);
     // Near the middle the angle is noise, so it holds.
     if (Math.hypot(sx - W / 2, sy - H / 2) < 30) return;
     const a = angleAt(sx, sy);
@@ -1537,9 +1630,13 @@ function lift(e) {
   const g = grabs.get(e.pointerId);
   if (!g) return;
   grabs.delete(e.pointerId);
-  if (g.kind === 'tip') {
+  if (g.kind === 'lift') {
+    // Let go, the lamp drops back to its place on the desk.
+    lamp.hand = false;
     lamp.grab = null;
     lamp.tx = lamp.ty = 0;
+  } else if (g.kind === 'tip') {
+    lamp.grab = null;
     lamp.rest = Math.round(lamp.th / Math.PI) * Math.PI;
   } else if (g.kind !== 'heat') {
     const L = g.b;
@@ -1563,7 +1660,9 @@ function flip() {
   if (!ready) return;
   wake();
   if (lamp.tw) return;
-  for (const [id, g] of grabs) if (g.kind === 'tip') grabs.delete(id);
+  for (const [id, g] of grabs) if (g.kind === 'tip' || g.kind === 'lift') grabs.delete(id);
+  panel.classList.remove('held');
+  lamp.hand = false;
   lamp.grab = null;
   lamp.tx = lamp.ty = 0;
   lamp.rest = Math.round(lamp.th / Math.PI) * Math.PI + Math.PI;
