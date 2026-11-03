@@ -39,7 +39,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Split-flap | [flap/](flap/) | live draft, still being refined |
 | Harmonograph | [harmono/](harmono/) | live draft, still being refined |
 | Neon sign | [neon/](neon/) | live draft, still being refined |
-| Snow globe, Murmuration, Coil, Frost, Gear train, Dandelion, Music box | | in progress; outlines on the menu |
+| Snow globe | [snow/](snow/) | live draft, still being refined |
+| Murmuration, Coil, Frost, Gear train, Dandelion, Music box | | in progress; outlines on the menu |
 
 ## Run locally
 
