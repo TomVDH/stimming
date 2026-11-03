@@ -47,7 +47,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Drag a blob to pull it apart, hold the liquid to warm it, drag the metal to pick the lamp up and shake it, drag beside it to tip it. F flips it, Space shakes it.">
+    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Drag a blob to pull it apart, hold the liquid or the base to warm it, drag the metal to pick the lamp up and shake it, drag beside it to tip it. F flips it, Space shakes it.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Lava lamp needs WebGL 2, which this browser has turned off.</p>
     </div>
@@ -62,7 +62,7 @@
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag a blob</dt><dd>pull it apart</dd></div>
-        <div><dt>Hold the liquid</dt><dd>warm it</dd></div>
+        <div><dt>Hold the liquid or base</dt><dd>warm it</dd></div>
         <div><dt>Drag the metal</dt><dd>lift, shake</dd></div>
         <div><dt>Drag beside it</dt><dd>tip it</dd></div>
       </dl>
@@ -345,7 +345,7 @@ function soundFrame(now, dt) {
   v.sf.frequency.rampTo(180 + 420 * sl, 0.08);
   if (now - humAt > 250) {
     humAt = now;
-    v.hum.gain.rampTo((0.015 + 0.012 * fingers()) * heat, 0.35);
+    v.hum.gain.rampTo((0.015 + 0.024 * warm + 0.012 * fingers()) * heat, 0.35);
   }
 }
 
@@ -354,7 +354,7 @@ const G = 0.38, T0 = 0.45, DRAG = 1.3, V0 = 9e-4;
 const IDLE = () => (reduce ? 25 : 150);
 // A lobe pulled from the pool hangs on this marker.
 const POOL = { pool: true };
-let blobs = [], poolV = V0, poolY = 0.325, heat = 1, spawnAcc = 0, simT = 0, idleT = 0, nextId = 1;
+let blobs = [], poolV = V0, poolY = 0.325, heat = 1, warm = 0, spawnAcc = 0, simT = 0, idleT = 0, nextId = 1;
 let seeding = false, motion = 1, coldT = 0;
 const poolLevel = () => clamp(0.325 + (poolV - V0) * 14, 0.305, 0.35);
 // Height above the pool surface, along its normal.
@@ -561,11 +561,16 @@ function step(h) {
   coldT = heat === 0 ? coldT + h : 0;
   // Cooling wax grows sticky, so a cold pile stops sliding.
   const stick = Math.exp(-h * 30 * (1 - Math.min(heat / 0.3, 1)));
-  const burn = heat;
+  // A hand held on the base turns the bulb up; it cools slowly after.
+  const holding = [...grabs.values()].some(g => g.warm);
+  warm += ((holding ? 1 : 0) - warm) * (1 - Math.exp(-h / (holding ? 0.9 : 7)));
+  if (holding) idleT = 0;
+  else if (warm < 0.004) warm = 0;
+  const burn = heat * (1 + 1.6 * warm);
   lampStep(h);
   poolY = poolLevel();
   const turning = Math.abs(lamp.w) > 0.02 || Math.abs(pw) > 0.02 || LQ.E > 0.03;
-  let act = Math.abs((asleep ? 0 : 1) - heat) + Math.abs(lamp.w) + Math.abs(pw) + Math.abs(lamp.rest - lamp.th) + (lamp.tw ? 1 : 0)
+  let act = Math.abs((asleep ? 0 : 1) - heat) + warm + Math.abs(lamp.w) + Math.abs(pw) + Math.abs(lamp.rest - lamp.th) + (lamp.tw ? 1 : 0)
     + Math.abs(lamp.vx) + Math.abs(lamp.vy) + Math.abs(lamp.x - lamp.tx) + Math.abs(lamp.y - lamp.ty) + LQ.E + (lamp.shakeT > 0 ? 1 : 0);
   // The pool feeds new wax only while it faces up.
   const facing = up[1] > 0.4;
@@ -622,7 +627,7 @@ function step(h) {
     }
     b.hot += (Math.min(fh, 1.2) - b.hot) * (1 - Math.exp(-h * 2.5));
     if (b.state === 'grow') {
-      const nr = Math.min(b.rt, b.r + h * 0.012 * (1 + 2 * fh) * Math.max(heat, 0.3));
+      const nr = Math.min(b.rt, b.r + h * 0.012 * (1 + 2 * fh + 2 * warm) * Math.max(heat, 0.3));
       poolV -= nr ** 3 - b.r ** 3;
       b.r = nr;
       const k = (b.r - 0.014) / (b.rt - 0.014);
@@ -686,7 +691,7 @@ function step(h) {
     b.T = clamp(b.T + (heatIn * (1.1 - b.T) - cool * b.T) * Math.pow(0.04 / b.r, 0.7) * h);
     const buoy = G * (b.T - T0);
     // The liquid rises over the bulb and sinks by the glass.
-    const plume = 0.028 * heat * (1 - 2 * (rho / R) ** 2), sw = 0.012 * heat;
+    const plume = 0.028 * heat * (1 + warm) * (1 - 2 * (rho / R) ** 2), sw = 0.012 * heat;
     swirl(b.x, b.y, b.z, 0.6);
     // A turning lamp leaves the syrup behind for a moment.
     const ux = plume * up[0] + sw * Math.sin(simT * 0.21 + b.id * 1.7 + b.y * 9) + lamp.w * (b.y - PIV) * 0.35 + UF[0] + LQ.S[0];
@@ -1515,7 +1520,7 @@ function frame(now) {
   for (const g of grabs.values()) retarget(g);
   simulate(dt * (reduce ? 0.5 : 1));
   // The bulb's light follows its heat and the fingers.
-  const lt = 0.6 + 0.4 * heat + 0.12 * fingers();
+  const lt = (0.6 + 0.4 * heat) * (1 + 0.5 * warm) + 0.12 * fingers();
   light += (lt - light) * (1 - Math.exp(-dt / 0.25));
   const tp = PALS[palName];
   let dp = 0;
@@ -1576,7 +1581,7 @@ function retarget(g) {
 // The pointer picks a blob, the pool, the liquid or the lamp.
 function pick(sx, sy) {
   const d = rayAt(sx, sy), [lx, ly] = lampAt(d, 0);
-  if (!inGlass(lx, ly)) return onLamp(lx, ly) ? { kind: 'lift' } : { kind: 'tip', a: angleAt(sx, sy), acc: 0, th0: lamp.th };
+  if (!inGlass(lx, ly)) return onLamp(lx, ly) ? { kind: 'lift', warm: ly < Y0 } : { kind: 'tip', a: angleAt(sx, sy), acc: 0, th0: lamp.th };
   let best = null, bd = 1e9, bp = null;
   for (const b of blobs) {
     if (b.state === 'sink' || b.state === 'flow' || b.grab || b.tug || b.body) continue;
@@ -1631,6 +1636,7 @@ panel.addEventListener('pointerdown', e => {
       lamp.hand = true;
       g.w0 = worldAt(rayAt(sx, sy), 0);
       g.o0 = [lamp.x, lamp.y];
+      g.s0 = [sx, sy];
     }
   }
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
@@ -1646,6 +1652,9 @@ panel.addEventListener('pointermove', e => {
   g.sx = sx;
   g.sy = sy;
   if (g.kind === 'lift') {
+    // A still hand on the base heats; a moving one lifts.
+    if (g.warm && Math.hypot(sx - g.s0[0], sy - g.s0[1]) < 6) return;
+    g.warm = false;
     // The lamp follows the hand, from the desk up.
     const [wx, wy] = worldAt(rayAt(sx, sy), 0), mx = Math.max(0.06, (tanF * CAMD * W) / H - 0.24);
     lamp.tx = clamp(g.o0[0] + wx - g.w0[0], -mx, mx);
