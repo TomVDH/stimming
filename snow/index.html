@@ -274,7 +274,7 @@ function partials(a, dst, t, f0, ratios, gains, decays, g) {
   });
   return [first, gs];
 }
-// The liquid: one looped noise through a low band and a glassy ring.
+// One looped noise feeds a low slosh band and a glassy ring.
 function sloshInit() {
   const a = ac, src = a.createBufferSource();
   src.buffer = noise;
@@ -341,7 +341,8 @@ function tinkle(x, k) {
 }
 
 /* ---------- the globe's shape, in dome radii ---------- */
-// The floor inside is y = 0; the dome's centre sits at CY.
+// The floor inside the globe is at y = 0.
+// The dome's centre sits at height CY.
 const CY = 0.55, R_IN = 0.965, LIM = R_IN - 0.016, BASE_H = 0.5, BASE_R = 1.11, HUB = BASE_H + CY;
 const CAB = { x: 0.14, z: 0.1, a: -0.45, y: 0, W: 0.3, D: 0.26, EH: 0.17, RH: 0.29 };
 const TREES = [
@@ -455,7 +456,7 @@ function curlAdd(x, y, z, amp) {
       + CURL[e + k] * we + CURL[f + k] * wf + CURL[g + k] * wg + CURL[h + k] * wh;
   }
 }
-// E: turbulence energy. S: bulk slosh. W: swirl. D: field drift.
+// Liquid state: energy E, slosh S, swirl W, field drift D.
 const LQ = { E: 0, S: [0, 0, 0], W: [0, 0, 0], D: [0.13, 0.41, 0.77] };
 const TURB = 1.05, FQ = 0.42, FQ2 = 0.97;
 // Liquid velocity at a point in globe space, written into U.
@@ -507,7 +508,7 @@ function seedFlakes() {
     SEED[i * 4 + 1] = glit ? 1 : 0;
     SEED[i * 4 + 2] = Math.random();
     SEED[i * 4 + 3] = Math.random();
-    WS[i] = glit ? rnd(0.12, 0.19) : rnd(0.07, 0.14) * (big ? 1.4 : 1);
+    WS[i] = glit ? rnd(0.14, 0.22) : rnd(0.085, 0.165) * (big ? 1.4 : 1);
     TH[i] = glit ? rnd(0.08, 0.3) : rnd(0.12, 0.5);
     SPIN[i * 2] = rnd(2, 7) * (Math.random() < 0.5 ? -1 : 1) * (glit ? 1.6 : 1);
     SPIN[i * 2 + 1] = rnd(-3, 3);
@@ -552,12 +553,18 @@ function stepFlakes(dt) {
     moving++;
     if (i >= NS) glitterMoving++;
     flow(px, py, pz, 2);
-    const w = WS[i] * ws * (AGE[i] > 30 ? 3 : 1);
+    const w = WS[i] * ws * (AGE[i] > 14 ? 2.5 : 1);
     V[j] += (U[0] + gx * w - V[j]) * kr;
     V[j + 1] += (U[1] + gy * w - V[j + 1]) * kr;
     V[j + 2] += (U[2] + gz * w - V[j + 2]) * kr;
     px += V[j] * dt; py += V[j + 1] * dt; pz += V[j + 2] * dt;
-    AGE[i] += dt;
+    // A flake still adrift long after the liquid calms lies down.
+    if ((AGE[i] += dt) > 25 && LQ.E < 0.05) {
+      settle(i, px, pz);
+      moving--;
+      if (i >= NS) glitterMoving--;
+      continue;
+    }
     // Tumbling quickens with speed.
     const sp = Math.hypot(V[j], V[j + 1], V[j + 2]);
     O[i * 2] += SPIN[i * 2] * dt * (0.35 + 2.5 * sp);
@@ -575,8 +582,9 @@ function stepFlakes(dt) {
       py = hy;
       const k = cellOf(px, pz);
       const fl = Math.hypot(U[0], U[1], U[2]);
-      if (NYM[k] < 0.6) {
+      if (NYM[k] < 0.6 && AGE[i] < 9) {
         // Steep faces shed snow downhill.
+        // A flake stuck in a crease stays.
         const g = Math.hypot(GXM[k], GZM[k]) || 1;
         V[j] = V[j] * 0.5 - (GXM[k] / g) * 0.25;
         V[j + 2] = V[j + 2] * 0.5 - (GZM[k] / g) * 0.25;
@@ -593,8 +601,8 @@ function stepFlakes(dt) {
 }
 
 /* ---------- the globe in the hand: springs ---------- */
-// x, y: offset from rest. rz, rx: tilt. tx, ty: where the hand wants it.
-const G = { x: 0, y: 0, vx: 0, vy: 0, rz: 0, wz: 0, rx: 0, wx: 0, tx: 0, ty: 0, ax: 0, ay: 0, az: 0, arx: 0, lift: 0 };
+// Globe state: offset x, y, tilt rz, rx, hand target tx, ty.
+const G = { x: 0, y: 0, vx: 0, vy: 0, rz: 0, wz: 0, rx: 0, wx: 0, tx: 0, ty: 0, ax: 0, ay: 0, az: 0, arx: 0, lift: 0, kz: 0, kx: 0 };
 const held = new Set();
 let shakeT = 0, shakeAge = 0, maxX = 0.4, lastAm = 0;
 function stepGlobe(dt) {
@@ -609,18 +617,22 @@ function stepGlobe(dt) {
   }
   const k = 240, c = 2 * Math.sqrt(k) * 0.4;
   G.ax = k * (tx - G.x) - c * G.vx;
-  G.ay = k * (ty - G.y) - c * G.vy;
+  G.ay = k * (ty - G.y) - c * G.vy - (G.y > 0.32 ? (G.y - 0.32) * 900 : 0);
   G.vx += G.ax * dt; G.x += G.vx * dt;
   G.vy += G.ay * dt; G.y += G.vy * dt;
-  // The table stops the base; a hard landing knocks.
+  // The table stops the base.
+  // A hard landing knocks.
   if (G.y < 0) {
     if (G.vy < -0.8) { knock(G.x / 2, -G.vy / 4); LQ.E = Math.min(1.7, LQ.E - G.vy * 0.08); LQ.S[1] += G.vy * 0.3; }
     G.y = 0;
     if (G.vy < 0) G.vy *= -0.15;
   }
-  const kz = (held.has('ArrowLeft') ? 1 : 0) - (held.has('ArrowRight') ? 1 : 0);
-  const kx = (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0);
-  const rzT = soft(G.vx * 0.13, 0.42) * m + kz * 0.24 * m, rxT = soft(G.vy * 0.04, 0.12) * m + kx * 0.2 * m;
+  // Keys ease the tilt in and out.
+  const kz = ((held.has('ArrowLeft') ? 1 : 0) - (held.has('ArrowRight') ? 1 : 0)) * 0.24 * m;
+  const kx = ((held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0)) * 0.2 * m;
+  G.kz += clamp(kz - G.kz, -0.8 * dt, 0.8 * dt);
+  G.kx += clamp(kx - G.kx, -0.8 * dt, 0.8 * dt);
+  const rzT = soft(G.vx * 0.12, 0.3) * m + G.kz, rxT = soft(G.vy * 0.04, 0.12) * m + G.kx;
   const kt = 150, ct = 2 * Math.sqrt(kt) * 0.3;
   G.az = kt * (rzT - G.rz) - ct * G.wz;
   G.arx = kt * (rxT - G.rx) - ct * G.wx;
@@ -629,26 +641,29 @@ function stepGlobe(dt) {
   // Tipped, it rocks on the rim of its base.
   G.lift = BASE_R * Math.sin(Math.min(0.6, Math.hypot(G.rz, G.rx)));
   const still = Math.abs(G.x - tx) + Math.abs(G.y - ty) + Math.abs(G.vx) + Math.abs(G.vy) + Math.abs(G.rz - rzT) + Math.abs(G.wz) + Math.abs(G.rx - rxT) + Math.abs(G.wx);
-  return still > 2e-4 || shakeT > 0;
+  return still + Math.abs(G.kz - kz) + Math.abs(G.kx - kx) > 2e-4 || shakeT > 0;
 }
-// Jolts and turns stir the liquid; it calms over a few seconds.
+// Jolts and turns stir the liquid.
+// The liquid calms over a few seconds.
 function stepLiquid(dt) {
   const m = reduce ? 0.6 : 1;
   // The liquid lags the glass: it feels the globe's acceleration reversed.
-  const ax = G.ax - G.az * HUB, ay = G.ay, az = G.arx * HUB;
+  const ax = G.ax - 0.4 * G.az * HUB, ay = G.ay, az = 0.4 * G.arx * HUB;
   const am = Math.hypot(ax, ay, az);
-  const E0 = LQ.E;
-  LQ.E += 0.018 * am * dt * m * Math.max(0, 1 - LQ.E / 1.7);
-  LQ.E *= Math.exp(-dt / (reduce ? 1.4 : 2.4));
+  // Turning stirs less than jolting.
+  const stirA = Math.hypot(G.ax, G.ay) + 0.45 * Math.hypot(G.az, G.arx) * HUB;
+  LQ.E += 0.018 * stirA * dt * m * Math.max(0, 1 - LQ.E / 1.7);
+  LQ.E *= Math.exp(-dt / (reduce ? 1.3 : 2.1));
   const dS = Math.exp(-dt / 0.45), dW = Math.exp(-dt / 2.2), S = LQ.S, W = LQ.W;
   S[0] = (S[0] - 0.2 * ax * dt * m) * dS;
   S[1] = (S[1] - 0.2 * ay * dt * m) * dS;
   S[2] = (S[2] - 0.2 * az * dt * m) * dS;
-  // Side jolts roll the liquid; circling stirs a whirl.
+  // Side jolts roll the liquid.
+  // Circling stirs a whirl.
   const circ = (G.vx * ay - G.vy * ax) * 0.02;
-  W[0] = (W[0] - az * 0.15 * dt * m - G.arx * 0.4 * dt * m) * dW;
+  W[0] = (W[0] - az * 0.15 * dt * m - G.arx * 0.3 * dt * m) * dW;
   W[1] = (W[1] + circ * 0.6 * dt * m) * dW;
-  W[2] = (W[2] + ax * 0.15 * dt * m + circ * dt * m - G.az * 0.4 * dt * m) * dW;
+  W[2] = (W[2] + ax * 0.15 * dt * m + circ * dt * m - G.az * 0.3 * dt * m) * dW;
   const wl = Math.hypot(...W);
   if (wl > 3.5) for (let k = 0; k < 3; k++) W[k] *= 3.5 / wl;
   const sl = Math.hypot(...S);
@@ -656,8 +671,9 @@ function stepLiquid(dt) {
   const r = dt * (0.05 + 0.3 * LQ.E);
   LQ.D[0] += r * 0.37; LQ.D[1] += r * 0.53; LQ.D[2] -= r * 0.29;
   if (LQ.E < 0.002) LQ.E = 0;
-  // A sharp jolt thuds; a stirred liquid bubbles.
-  if (am > 55 && am > lastAm * 1.05 && LQ.E - E0 > -1) knock(G.x / 2, am / 260);
+  // A sharp jolt thuds.
+  // A stirred liquid bubbles.
+  if (am > 55 && am > lastAm * 1.05) knock(G.x / 2, am / 300);
   lastAm = am;
   if (Math.random() < LQ.E * dt * 5) bubble(rnd(-0.5, 0.5), LQ.E);
   return LQ.E > 0 || sl > 0.004 || wl > 0.01;
@@ -665,9 +681,8 @@ function stepLiquid(dt) {
 // A flick or a fling: a burst of energy in its direction.
 function bigShake(dx, dy, k) {
   const m = reduce ? 0.6 : 1;
-  G.vx += dx * (2.4 + 3 * k) * m;
-  G.vy += Math.max(0, dy) * (1.4 + 2 * k) * m;
-  G.wz += -dx * (2 + 2 * k) * m;
+  G.vx += dx * (1.5 + 1.6 * k) * m;
+  G.vy += Math.max(0, dy) * (0.6 + 0.8 * k) * m;
   LQ.E = Math.min(1.7, LQ.E + (0.7 + 0.5 * k) * m);
   LQ.S[0] -= dx * 1.2 * m;
   LQ.S[1] -= dy * 1.2 * m;
@@ -688,7 +703,8 @@ varying vec3 vCol, vShape;
 vec3 iri(float t) { return 0.6 + 0.4 * cos(6.2832 * (t + vec3(0.0, 0.33, 0.67))); }
 void main() {
   vec4 w = modelMatrix * vec4(position, 1.0);
-  // A flake is a tiny disc; aOri is its normal's tilt and turn.
+  // A flake is a tiny disc.
+  // aOri holds the tilt and turn of its normal.
   vec3 n = normalize(mat3(modelMatrix) * vec3(sin(aOri.x) * cos(aOri.y), cos(aOri.x), sin(aOri.x) * sin(aOri.y)));
   vec3 V = normalize(cameraPosition - w.xyz);
   float nv = dot(n, V);
@@ -789,7 +805,7 @@ uniform float uK;
 varying vec3 vN, vW;
 void main() {
   vec3 V = normalize(cameraPosition - vW), N = normalize(vN);
-  float f = pow(1.0 - abs(dot(N, V)), 3.5);
+  float f = pow(clamp(1.0 - abs(dot(N, V)), 0.0, 1.0), 3.5);
   vec3 c = mix(uCool, uWarm, smoothstep(-0.3, 0.6, dot(N, uKeyD))) * f * uK;
   gl_FragColor = vec4(c, 1.0);
 }`;
@@ -798,7 +814,7 @@ void main() {
 let THREE = null, renderer = null, scene = null, camera = null, composer = null, bloom = null;
 let rig = null, globe = null, flakeGeo = null, flakeMat = null, sweepMat = null, key = null, lamp = null;
 let ready = false, lowDpr = false, wpp = 0.004, camDist = 8;
-const FOV = 26, AIM = new Float32Array([0, 1.0, 0]), ELEV = 11 * D2R;
+const FOV = 26, AIM = new Float32Array([0, 0.93, 0]), ELEV = 10 * D2R;
 const KEY_D = [-0.62, 0.66, 0.42], RIM_D = [0.74, 0.32, -0.6];
 let tq = null, tv = null, tw = null;
 
@@ -808,17 +824,19 @@ function col(L, C, h, k = 1) {
 }
 // A turned base reads its grain from a tiled walnut texture.
 function walnut() {
-  const W = 512, H = 256, cv = document.createElement('canvas');
+  const W = 768, H = 192, cv = document.createElement('canvas');
   cv.width = W;
   cv.height = H;
   const g = cv.getContext('2d'), img = g.createImageData(W, H), d = img.data;
-  const C = [linear(0.25, 0.045, 45), linear(0.35, 0.062, 52), linear(0.47, 0.08, 62)];
+  const C = [linear(0.2, 0.035, 40), linear(0.29, 0.05, 47), linear(0.42, 0.07, 60)];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const u = x / W, v = y / H;
-    const warp = pnoise(u * 8, v * 3, 8) * 0.9 + pnoise(u * 24, v * 9, 24) * 0.3;
-    const band = (0.5 + 0.5 * Math.sin((u * 34 + warp * 2.4) * TAU)) ** 2.4;
-    const fig = pnoise(u * 64, v * 30, 64), pore = pnoise(u * 256, v * 5, 256);
-    const t = clamp(0.62 + 0.45 * (pnoise(u * 5, v * 2, 5) - 0.5) - 0.5 * band + 0.25 * (fig - 0.5) - (pore > 0.78 ? 0.18 : 0));
+    // Growth rings: a slow rise, then a dark late band.
+    const warp = 1.7 * pnoise(u * 5, v * 2.2, 5) + 0.45 * pnoise(u * 16, v * 6, 16);
+    const f = (u * 15 + warp) % 1;
+    const ring = sstep(0, 0.12, f) * sstep(1, 0.4, f);
+    const zone = pnoise(u * 3, v * 1.5 + 7, 3), pore = pnoise(u * 320, v * 14, 320);
+    const t = clamp(0.22 + 0.58 * ring * (0.5 + 0.7 * zone) + 0.12 * (pnoise(u * 40, v * 20, 40) - 0.5) - (pore > 0.8 ? 0.14 : 0));
     const c = t < 0.5 ? C[0].map((a, k) => lerp(a, C[1][k], t * 2)) : C[1].map((a, k) => lerp(a, C[2][k], (t - 0.5) * 2));
     const o = (y * W + x) * 4;
     d[o] = enc(c[0]); d[o + 1] = enc(c[1]); d[o + 2] = enc(c[2]); d[o + 3] = 255;
@@ -840,8 +858,8 @@ function studio(pm) {
     m.lookAt(0, 1, 0);
     s.add(m);
   };
-  box(8, 6, col(0.9, 0.07, 70, 8), KEY_D[0] * 18, KEY_D[1] * 18, KEY_D[2] * 18);
-  box(2.4, 14, col(0.85, 0.1, 235, 7), RIM_D[0] * 18, RIM_D[1] * 18 + 2, RIM_D[2] * 18);
+  box(1.8, 10, col(0.9, 0.07, 70, 3.4), KEY_D[0] * 18, KEY_D[1] * 18, KEY_D[2] * 18);
+  box(0.8, 14, col(0.85, 0.1, 235, 2), RIM_D[0] * 18, RIM_D[1] * 18 + 2, RIM_D[2] * 18);
   box(10, 10, col(0.8, 0.02, 260, 0.7), 0, 22, 0);
   box(30, 4, col(0.45, 0.12, 300, 1.2), 0, 4, -24);
   const tex = pm.fromScene(s, 0.02).texture;
@@ -864,7 +882,7 @@ function sweepGeo() {
   g.setIndex(idx);
   return g;
 }
-// The base: a lathe profile with a bead, a cove and an ogee foot.
+// The base is a lathe profile: bead, cove and ogee foot.
 function baseGeo() {
   const pr = [[0, -0.035], [0.6, -0.035], [0.86, -0.04], [0.895, -0.06], [0.912, -0.09], [0.905, -0.12], [0.888, -0.15],
     [0.9, -0.19], [0.95, -0.25], [1.02, -0.33], [1.075, -0.395], [1.1, -0.425], [1.112, -0.455], [1.105, -0.482], [1.085, -0.497], [1.04, -0.5], [0, -0.5]];
@@ -974,7 +992,7 @@ function build(env) {
     vertexShader: WORLD_VS, fragmentShader: SWEEP_FS, side: R.DoubleSide,
     uniforms: {
       uBase: { value: col(0.15, 0.03, 272) }, uWall: { value: col(0.14, 0.045, 280) },
-      uPool: { value: col(0.5, 0.09, 58, 0.32) }, uHalo: { value: col(0.42, 0.15, 305, 0.55) },
+      uPool: { value: col(0.5, 0.09, 58, 0.32) }, uHalo: { value: col(0.42, 0.15, 305, 0.42) },
       uCool: { value: col(0.5, 0.11, 232, 0.22) }, uCaustic: { value: col(0.9, 0.11, 75, 0.55) },
       uGlobe: { value: new R.Vector3() }, uSh: { value: new R.Vector2(-KEY_D[0] / KEY_D[1], -KEY_D[2] / KEY_D[1]) },
     },
@@ -988,7 +1006,7 @@ function build(env) {
   Object.assign(key.shadow.camera, { left: -1.3, right: 1.3, top: 1.3, bottom: -1.3, near: 1, far: 16 });
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.012;
-  const rim = new R.DirectionalLight(col(0.84, 0.11, 238), 3.2);
+  const rim = new R.DirectionalLight(col(0.84, 0.1, 238), 2.6);
   rim.position.set(...RIM_D);
   const hemi = new R.HemisphereLight(col(0.62, 0.07, 255), col(0.3, 0.05, 40), 0.55);
   scene.add(key, key.target, rim, hemi);
@@ -999,7 +1017,7 @@ function build(env) {
   rig.add(globe);
   scene.add(rig);
 
-  const wood = new R.MeshPhysicalMaterial({ map: walnut(), roughness: 0.5, clearcoat: 1, clearcoatRoughness: 0.09, envMapIntensity: 1.2 });
+  const wood = new R.MeshPhysicalMaterial({ map: walnut(), roughness: 0.58, specularIntensity: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.18, envMapIntensity: 0.5 });
   const brass = new R.MeshStandardMaterial({ color: col(0.8, 0.12, 82), metalness: 1, roughness: 0.24, envMapIntensity: 1.4 });
   const base = new R.Mesh(baseGeo(), wood);
   const collar = new R.Mesh(collarGeo(), brass);
@@ -1062,8 +1080,8 @@ function build(env) {
 
   // The dome: real refraction through a thick, clear shell.
   const dome = new R.Mesh(new R.SphereGeometry(1, 128, 96, 0, TAU, 0, Math.acos(-CY)), new R.MeshPhysicalMaterial({
-    color: 0xffffff, metalness: 0, roughness: 0.03, transmission: 1, ior: 1.45, thickness: 1.0, dispersion: 0.35,
-    specularIntensity: 1, envMapIntensity: 0.7, attenuationColor: col(0.93, 0.035, 205), attenuationDistance: 4,
+    color: 0xffffff, metalness: 0, roughness: 0.03, transmission: 1, ior: 1.45, thickness: 0.55, dispersion: 0.3,
+    specularIntensity: 1, envMapIntensity: 0.3, attenuationColor: col(0.93, 0.035, 205), attenuationDistance: 4,
   }));
   dome.position.y = CY;
   const shell = new R.Mesh(new R.SphereGeometry(1.004, 96, 64, 0, TAU, 0, Math.acos(-CY / 1.004)), new R.ShaderMaterial({
@@ -1077,13 +1095,13 @@ function build(env) {
 // The camera frames the globe with room for it to move.
 function fit(w, h) {
   const A = w / h, t = Math.tan((FOV * D2R) / 2);
-  const halfH = Math.max(1.3, 1.5 / A);
+  const halfH = Math.max(1.5, 1.48 / A);
   camDist = halfH / t;
   camera.aspect = A;
   camera.position.set(AIM[0], AIM[1] + Math.sin(ELEV) * camDist, Math.cos(ELEV) * camDist);
   camera.lookAt(AIM[0], AIM[1], AIM[2]);
   camera.updateProjectionMatrix();
-  maxX = Math.max(0.15, halfH * A - BASE_R - 0.08);
+  maxX = clamp(halfH * A - BASE_R - 0.1, 0.12, 0.5);
   wpp = (2 * halfH) / h;
   const db = renderer.getDrawingBufferSize(tv);
   flakeMat.uniforms.uPx.value = (db.y * camera.projectionMatrix.elements[5]) / 2;
@@ -1099,7 +1117,7 @@ function resize() {
   fit(w, h);
   if (ready) draw();
 }
-// Pose the globe, aim the key light at it, then draw.
+// Each frame poses the globe and aims the key light at it.
 function draw() {
   rig.position.set(G.x, G.y + G.lift, 0);
   rig.rotation.set(G.rx, 0, G.rz);
@@ -1169,8 +1187,8 @@ panel.addEventListener('pointermove', e => {
   const dx = e.clientX - down.x, dy = e.clientY - down.y;
   down.moved = Math.max(down.moved, Math.hypot(dx, dy));
   // The globe follows the hand, softly limited to the stage.
-  G.tx = soft(dx * wpp * 0.85, maxX);
-  G.ty = clamp(soft(-dy * wpp * 0.85, 0.3), 0, 0.3);
+  G.tx = soft(dx * wpp * 0.65, maxX);
+  G.ty = clamp(soft(-dy * wpp * 0.65, 0.26), 0, 0.26);
   wake();
 });
 function lift(e) {
@@ -1278,13 +1296,12 @@ async function start() {
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.55, 0.9);
+  bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.4, 1.5);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
   panel.prepend(canvas);
   new ResizeObserver(resize).observe(panel);
-  addEventListener('perf-low', resize);
   resize();
   await idle();
   // Async compile keeps the shader builds off the main thread.

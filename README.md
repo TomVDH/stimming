@@ -39,7 +39,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Split-flap | [flap/](flap/) | live, with sound |
 | Harmonograph | [harmono/](harmono/) | live, with sound; Canvas 2D only |
 | Neon sign | [neon/](neon/) | live, with sound |
-| Snow globe | [snow/](snow/) | live draft, still being refined |
+| Snow globe | [snow/](snow/) | live, with sound |
 | Frost | [frost/](frost/) | live draft, still being refined |
 | Music box | [musicbox/](musicbox/) | live, with sound; Canvas 2D only |
 | Murmuration | [flock/](flock/) | live draft, still being refined |
