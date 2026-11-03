@@ -198,7 +198,7 @@ const CANDY = [[0.74, 0.19, 28], [0.82, 0.17, 62], [0.9, 0.17, 102], [0.84, 0.16
 const FRAG = /* glsl */ `
 precision highp float;
 uniform vec2 uRes, uVel, uSq;
-uniform float uTime, uK, uTw, uCut;
+uniform float uTime, uK, uTw;
 uniform vec4 uPip;
 uniform vec3 uPC, uSA, uSB;
 uniform vec4 uW[5];
@@ -390,7 +390,6 @@ void main() {
   float kb = uK * 0.7;
   float dB = mix(10.0, sdSeg(p, uPip.xy, uPip.xy - uVel) - uPip.z, uPip.w);
   vec3 cB = uPC;
-  float gB = 10.0;
   for (int k = 0; k < 32; k++) {
     if (k >= uN) break;
     vec4 b = uBl[k], c = uBc[k];
@@ -399,7 +398,6 @@ void main() {
     float hb = clamp(0.5 + 0.5 * (dB - db) / kb, 0.0, 1.0);
     dB = mix(dB, db, hb) - kb * hb * (1.0 - hb);
     cB = mix(cB, c.xyz, hb);
-    gB = min(gB, sdSeg(p - b.xy, c.w * vec2(-0.4, 0.1), c.w * vec2(-0.14, 0.38)) - c.w * 0.1);
   }
   // h is the shape's share of each pixel; colour blends with the same weight.
   float h = clamp(0.5 + 0.5 * (dB - dS) / uK, 0.0, 1.0);
@@ -408,34 +406,25 @@ void main() {
   vec2 gd = vec2(dFdx(d), dFdy(d));
   float fw = clamp(length(gd), 0.5 * px, 2.0 * px);
   float a = clamp(0.5 - d / fw, 0.0, 1.0);
-  if (a <= 0.0) { gl_FragColor = vec4(0.0); return; }
+  // A soft glow halo spreads just past the edge.
+  float g = exp(-max(d, 0.0) * 16.0) * 0.32 * (1.0 - a);
+  if (a + g <= 0.002) { gl_FragColor = vec4(0.0); return; }
   vec2 dir = vec2(cos(uTime * 0.4), sin(uTime * 0.4));
   float t = clamp(dot(p, dir) * 1.3 + 0.5, 0.0, 1.0);
   vec3 lab = mix(cB + vec3(0.08 * (0.5 - t), 0.0, 0.0), mix(uSA, uSB, t), h);
   vec3 col = toLin(lab);
-  // A rim band is lit above and shaded below.
-  float nl = dot(normalize(gd + 1e-6), vec2(-0.6, 0.8));
-  float lit = smoothstep(-0.12, 0.12, nl);
-  float band = clamp(0.5 - (-d - uCut) / fw, 0.0, 1.0);
-  col = mix(col, toLin(lab + vec3(mix(-0.11, 0.1, lit), 0.0, 0.0)), band);
-  // A hard glint sits inside the cut on shape and blobs.
-  float gS = sdSeg(q, vec2(-0.17, 0.05), vec2(-0.1, 0.16)) - 0.022;
-  float side = smoothstep(0.35, 0.65, h);
-  float deep = clamp(0.5 - (d + uCut + 0.008) / fw, 0.0, 1.0);
-  float gl = max(clamp(0.5 - gS / fw, 0.0, 1.0) * side, clamp(0.5 - gB / fw, 0.0, 1.0) * (1.0 - side)) * deep;
-  col = mix(col, toLin(vec3(0.98, lab.yz * 0.2)), gl * 0.9);
-  // A thin inset cut runs along the lit side.
-  // The cut tapers at both ends.
-  // Flat mid-morph fields get no cut, so it never blotches.
-  float cm = smoothstep(0.1, 0.7, nl) * smoothstep(0.4, 0.75, length(gd) / px);
-  float gap = clamp(0.5 - (abs(d + uCut) - 0.0022 * cm) / fw, 0.0, 1.0) * cm;
-  float alpha = a * (1.0 - gap);
-  vec3 outc = pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2));
+  // A soft highlight sits upper left.
+  col += 0.2 * exp(-length(p - vec2(-0.16, 0.2)) * 5.0);
+  // The lit rim brightens toward the upper left.
+  vec2 n = normalize(gd + 1e-6);
+  col += 0.5 * smoothstep(0.022, 0.0, -d) * max(0.0, dot(n, vec2(-0.7071, 0.7071)));
+  float alpha = a + g;
+  vec3 outc = pow(clamp((col * a + toLin(lab) * g) / max(alpha, 1e-4), 0.0, 1.0), vec3(1.0 / 2.2));
   gl_FragColor = vec4(outc * alpha, alpha);
 }`;
 
 /* ---------- state ---------- */
-const PIP = 0.065, TRAIL = 6, MAXN = 32, MAXB = 24, CUT = 0.024, HOLD = 2.8;
+const PIP = 0.065, TRAIL = 6, MAXN = 32, MAXB = 24, HOLD = 2.8;
 // Morph weights ride a slightly bouncy spring: rate and damping ratio.
 const OM = 8, ZETA = 0.62;
 let THREE = null, renderer = null, scene = null, cam = null, U = null, bl = null, bc = null, uw = null;
@@ -896,7 +885,7 @@ async function start() {
   uw = Array.from({ length: 5 }, () => new THREE.Vector4());
   U = {
     uRes: { value: new THREE.Vector2(1, 1) }, uVel: { value: new THREE.Vector2() }, uSq: { value: new THREE.Vector2(1, 1) },
-    uTime: { value: 0 }, uK: { value: +blendI.value }, uTw: { value: 0 }, uCut: { value: CUT },
+    uTime: { value: 0 }, uK: { value: +blendI.value }, uTw: { value: 0 },
     uPip: { value: new THREE.Vector4(0, 0, PIP, 0) }, uPC: { value: new THREE.Vector3() },
     uSA: { value: new THREE.Vector3() }, uSB: { value: new THREE.Vector3() }, uW: { value: uw },
     uBl: { value: bl }, uBc: { value: bc }, uN: { value: 0 },
