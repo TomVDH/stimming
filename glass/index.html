@@ -1,0 +1,1492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Glass</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the pane panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --table: oklch(0.21 0.008 265);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The pane is 16:9, 4:5 on phones, and dark in both themes. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--table);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark stage the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+/* With nothing broken, Rewind rests dimmed. */
+.chip[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.chip[aria-disabled="true"]:hover { color: var(--muted); border-color: var(--line); }
+.chip[aria-disabled="true"]:active { transform: none; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Glass</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A pane of glass in a frame. Tap to crack it; keep tapping or hold to shatter it. Space taps, arrow keys move the tap point, R rewinds.">
+      <p class="fail" hidden>Glass needs WebGL, which this browser has turned off.</p>
+    </div>
+    <div class="ctl">
+      <button class="chip" id="rewind" type="button" aria-keyshortcuts="R" aria-disabled="true">Rewind</button>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('stage');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.glass.sound', MAXV = 24, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tinkNext = 0, restT = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.06 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the pane settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ptr < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['r', 'R', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place on the pane.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 0.8, len);
+}
+// Inharmonic partials ring like a struck plate.
+function partials(a, dst, t, f0, ratios, gains, decays, g, swell = 0) {
+  const gs = [];
+  let first = null;
+  ratios.forEach((r, k) => {
+    const o = a.createOscillator(), og = a.createGain(), end = swell ? t + swell : t + decays[k] * 6;
+    o.frequency.value = f0 * r * jit(0.004);
+    if (swell) {
+      // Reversed: the ring grows out of silence and stops dead.
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(gains[k] * g, end - 0.012);
+      og.gain.linearRampToValueAtTime(0, end);
+    } else {
+      og.gain.setValueAtTime(0, t);
+      og.gain.linearRampToValueAtTime(gains[k] * g, t + 0.002);
+      og.gain.setTargetAtTime(0, t + 0.002, decays[k]);
+    }
+    o.connect(og).connect(dst);
+    o.start(t);
+    o.stop(end + 0.01);
+    gs.push(og);
+    if (!first) first = o;
+  });
+  return [first, gs];
+}
+const RING = [1, 1.593, 2.135, 2.917, 4.15], RING_G = [0.07, 0.05, 0.04, 0.028, 0.02], RING_D = [0.42, 0.28, 0.2, 0.12, 0.07];
+
+// A crack: a sharp snap, a dull knock and a glassy ring.
+// Ticks follow the crack as it runs.
+function crackSound(x, hard, ticks) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level() * (hard ? 1 : 0.78), d = bus(a, x), k = hard ? 1.35 : 1;
+  burst(a, d, t, 'bandpass', 3400 * jit(0.1), 0.8, 1.1 * g, hard ? 0.009 : 0.006, 0.08);
+  burst(a, d, t, 'highpass', 7000, 0.7, 0.6 * g, 0.0025, 0.03);
+  burst(a, d, t, 'lowpass', hard ? 240 : 380, 0.9, (hard ? 0.9 : 0.45) * g, 0.03, 0.2);
+  const [o, gs] = partials(a, d, t + 0.001, (hard ? 1500 : 2100) * jit(0.12), RING, RING_G, RING_D.map(v => v * k), g);
+  ticks.forEach((dt, i) => burst(a, d, t + dt, 'highpass', rnd(5200, 8200), 0.8, (0.3 - i * 0.016) * g * jit(0.3), 0.0015, 0.02));
+  track(o, ...gs, d);
+}
+// Shards landing: a tiny tick and a short high ring.
+// Smaller shards ring higher.
+function tinkle(size, sp, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, tinkNext);
+  // A rush of hits thins to a patter instead of a wall.
+  if (t - t0 > 0.07) return;
+  tinkNext = t + 0.01 + Math.random() * 0.014;
+  const g = level() * clamp(sp / 3, 0.12, 0.8) * jit(0.2), d = bus(a, x), s = clamp(size / 0.1, 0.6, 1.6);
+  burst(a, d, t, 'highpass', 6000, 0.7, 0.35 * g, 0.0015, 0.02);
+  const [o, gs] = partials(a, d, t, clamp(4200 * (0.1 / size) ** 0.35, 2400, 8500) * jit(0.08), [1, 1.47, 2.09], [0.1, 0.07, 0.045], [0.08 * s, 0.05 * s, 0.03 * s], g);
+  track(o, ...gs, d);
+}
+// The burst: a hard crack, a wide crash and rings scattering.
+function shatterSound(x) {
+  crackSound(x, true, []);
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, x);
+  burst(a, d, t + 0.004, 'bandpass', 2600, 0.45, 0.9 * g, 0.09, 0.6);
+  burst(a, d, t + 0.01, 'highpass', 5500, 0.5, 0.5 * g, 0.05, 0.5);
+  let first = null;
+  const all = [];
+  for (let k = 0; k < 9 && voices + k < MAXV; k++) {
+    const [o, gs] = partials(a, d, t + 0.012 + k * 0.022 + Math.random() * 0.03, rnd(2600, 7200), [1, 1.47, 2.09], [0.06, 0.04, 0.03], [0.09, 0.06, 0.035], g);
+    first = first || o;
+    all.push(...gs);
+  }
+  if (first) track(first, ...all, d);
+  else setTimeout(() => d.disconnect(), 800);
+}
+// Rewinding: noise rising through a sweeping band, rings swelling backwards.
+function whoosh(dur) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, end = t + dur, g = level(), d = bus(a, 0);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(420, t);
+  bp.frequency.exponentialRampToValueAtTime(5600, end);
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.24 * g, end - 0.015);
+  ng.gain.linearRampToValueAtTime(0, end + 0.01);
+  src.connect(bp).connect(ng).connect(d);
+  src.start(t);
+  src.stop(end + 0.02);
+  const [, gs] = partials(a, d, t, rnd(2200, 2600), [1, 1.47, 2.09, 2.93], [0.035, 0.028, 0.02, 0.014], [0, 0, 0, 0], g, dur);
+  track(src, bp, ng, ...gs, d);
+}
+// Cracks unzipping: ticks bunch up, then a reversed ring closes the pane.
+function unzipSound(dur) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, 0);
+  for (let i = 0; i < 12; i++) {
+    const at = dur * (1 - ((12 - i) / 12) ** 1.6);
+    burst(a, d, t + at, 'highpass', rnd(5200, 8200), 0.8, (0.1 + i * 0.012) * g * jit(0.3), 0.0015, 0.02);
+  }
+  const [o, gs] = partials(a, d, t, rnd(1900, 2300), RING, RING_G.map(v => v * 0.7), RING_D, g, dur);
+  track(o, ...gs, d);
+}
+
+/* ---------- cracks: line segments in pane coordinates, y up ---------- */
+// The frame is FH tall; its width follows the panel's shape.
+const FH = 2, FB = 0.05, FD = 0.08, T = 0.026, GLOW = 0.25;
+let FW = 3.6, PW = FW - 2 * FB, PH = FH - 2 * FB, S = PH;
+// Each segment: ends, birth times on the crack clock, width and glint.
+const segs = [], tips = [];
+// A coarse grid finds nearby segments quickly.
+const GC = 0.12, cells = new Map();
+let mark0 = 0;
+const cellKey = (i, j) => (i + 500) * 1000 + j + 500;
+let cClock = 0, growEnd = -1, damage = 0, limit = 5, lastWeb = null;
+const L2X = -0.6, L2Y = 0.8;
+
+// Where p→q first meets a crack or the edge, as a fraction.
+function firstHit(px, py, qx, qy) {
+  const rx = qx - px, ry = qy - py, hx = PW / 2, hy = PH / 2;
+  let best = 1, hit = false;
+  const edge = t => { if (t < best) { best = t; hit = true; } };
+  if (qx > hx) edge((hx - px) / rx);
+  if (qx < -hx) edge((-hx - px) / rx);
+  if (qy > hy) edge((hy - py) / ry);
+  if (qy < -hy) edge((-hy - py) / ry);
+  const x0 = Math.min(px, qx), x1 = Math.max(px, qx), y0 = Math.min(py, qy), y1 = Math.max(py, qy);
+  mark0++;
+  for (let i = Math.floor(x0 / GC); i <= Math.floor(x1 / GC); i++) {
+    for (let j = Math.floor(y0 / GC); j <= Math.floor(y1 / GC); j++) {
+      for (const s of cells.get(cellKey(i, j)) || []) {
+        if (s.m === mark0 || s.x1 < x0 || s.x0 > x1 || s.y1 < y0 || s.y0 > y1) continue;
+        s.m = mark0;
+        const sx = s.bx - s.ax, sy = s.by - s.ay, den = rx * sy - ry * sx;
+        if (Math.abs(den) < 1e-14) continue;
+        const wx = s.ax - px, wy = s.ay - py, t = (wx * sy - wy * sx) / den, u = (wx * ry - wy * rx) / den;
+        if (t > 1e-6 && t < best && u >= -1e-9 && u <= 1 + 1e-9) { best = t; hit = true; }
+      }
+    }
+  }
+  return [Math.max(0, best), hit];
+}
+function addSeg(ax, ay, bx, by, ta, tb, w) {
+  const l = Math.hypot(bx - ax, by - ay) || 1;
+  // Cracks across the light catch more of it.
+  const g = (0.3 + 0.7 * Math.abs((-(by - ay) / l) * L2X + ((bx - ax) / l) * L2Y) ** 3) * rnd(0.55, 1);
+  const s = { ax, ay, bx, by, ta, tb, w, g, m: 0, x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
+  segs.push(s);
+  for (let i = Math.floor(s.x0 / GC); i <= Math.floor(s.x1 / GC); i++) for (let j = Math.floor(s.y0 / GC); j <= Math.floor(s.y1 / GC); j++) {
+    const k = cellKey(i, j);
+    if (cells.has(k)) cells.get(k).push(s); else cells.set(k, [s]);
+  }
+}
+// A crack runs on, wandering, until it reaches len or meets another.
+function grow(x, y, dir, len, t0, rate, w, wander, branches) {
+  const step = S * 0.034, pts = [[x, y, 0, t0 + rate(0)]];
+  let d = 0;
+  while (d < len - 1e-6) {
+    dir += (Math.random() - 0.5) * wander;
+    const l = Math.min(step * rnd(0.6, 1.4), len - d);
+    const [f, hit] = firstHit(x, y, x + Math.cos(dir) * l, y + Math.sin(dir) * l);
+    const qx = x + Math.cos(dir) * l * f, qy = y + Math.sin(dir) * l * f;
+    if (l * f > 1e-7) {
+      addSeg(x, y, qx, qy, t0 + rate(d), t0 + rate(d + l * f), w);
+      d += l * f;
+      x = qx;
+      y = qy;
+      pts.push([x, y, d, t0 + rate(d)]);
+    }
+    if (hit) return { x, y, dir, pts, open: false };
+    if (branches && d > S * 0.06 && Math.random() < 0.08) {
+      branches.push([x, y, dir + (Math.random() < 0.5 ? -1 : 1) * rnd(0.35, 0.75), (len - d) * rnd(0.3, 0.75), t0 + rate(d)]);
+    }
+  }
+  return { x, y, dir, pts, open: true };
+}
+// Where a radial first reaches radius r from the centre.
+function onRadial(pts, cx, cy, r) {
+  let pd = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay, , ta] = pts[i - 1], [bx, by, , tb] = pts[i], dd = Math.hypot(bx - cx, by - cy);
+    if (dd >= r) {
+      const f = clamp((r - pd) / Math.max(1e-9, dd - pd));
+      return [lerp(ax, bx, f), lerp(ay, by, f), lerp(ta, tb, f)];
+    }
+    pd = dd;
+  }
+  return null;
+}
+// A web: radial cracks with branches, linked by ring cracks.
+function web(cx, cy, hard) {
+  const t0 = cClock, T1 = (hard ? 0.3 : 0.55) * (reduce ? 0.5 : 1);
+  const rate = d => T1 * (d / S) ** 0.8;
+  const n = hard ? 11 + Math.floor(Math.random() * 4) : 7 + Math.floor(Math.random() * 5);
+  const a0 = Math.random() * TAU, rads = [], branches = [];
+  for (let k = 0; k < n; k++) {
+    const ang = a0 + (k + rnd(-0.3, 0.3)) * (TAU / n);
+    const len = S * (hard ? rnd(0.9, 1.7) : rnd(0.14, 0.42) * (Math.random() < 0.3 ? 2.2 : 1));
+    const r = grow(cx, cy, ang, len, t0, rate, 1, 0.3, branches);
+    rads.push(r.pts);
+    if (r.open) tips.push([r.x, r.y, r.dir]);
+  }
+  for (const [x, y, dir, len, tb] of branches) {
+    const r = grow(x, y, dir, len, tb, d => rate(d) * 0.8 + 0, 0.8, 0.3, null);
+    if (r.open) tips.push([r.x, r.y, r.dir]);
+  }
+  // Rings sit at roughly geometric radii and sag slightly inward.
+  const r1 = S * rnd(0.03, 0.05), gr = rnd(1.55, 1.85), m = hard ? 5 : 2 + Math.floor(Math.random() * 3);
+  for (let j = 0; j < m; j++) {
+    const r = r1 * gr ** j;
+    for (let k = 0; k < n; k++) {
+      if (Math.random() < 0.12 + 0.08 * j) continue;
+      let A = onRadial(rads[k], cx, cy, r), B = onRadial(rads[(k + 1) % n], cx, cy, r);
+      if (!A || !B) continue;
+      if (Math.random() < 0.5) [A, B] = [B, A];
+      const aa = Math.atan2(A[1] - cy, A[0] - cx);
+      let ab = Math.atan2(B[1] - cy, B[0] - cx) - aa;
+      ab -= Math.round(ab / TAU) * TAU;
+      if (Math.abs(ab) > 1.6) continue;
+      let x = A[0], y = A[1], t = Math.max(A[2], B[2]) + rnd(0.01, 0.05);
+      const parts = 3;
+      for (let p = 1; p <= parts; p++) {
+        const sag = p < parts ? r * rnd(0.92, 0.98) : 0;
+        const qx = p < parts ? cx + Math.cos(aa + (ab * p) / parts) * sag : B[0];
+        const qy = p < parts ? cy + Math.sin(aa + (ab * p) / parts) * sag : B[1];
+        const [f, hit] = firstHit(x, y, qx, qy);
+        const ex = lerp(x, qx, f), ey = lerp(y, qy, f), dt = Math.hypot(ex - x, ey - y) / (S * 2.2);
+        if (dt > 0) addSeg(x, y, ex, ey, t, t + dt, 0.7);
+        x = ex;
+        y = ey;
+        t += dt;
+        if (hit) break;
+      }
+    }
+  }
+  let end = t0;
+  for (const s of segs) if (s.tb > end) end = s.tb;
+  growEnd = Math.max(growEnd, end);
+  // The crack's run ticks as it goes, quicker near the start.
+  const ticks = [];
+  for (let i = 0; i < 12; i++) ticks.push(rate(S * 0.5 * ((i + 1) / 12) ** 1.5) * rnd(0.85, 1.15));
+  return { x: cx, y: cy, end, ticks };
+}
+// At the burst, every open end runs to the next crack.
+function extend(t) {
+  const now = () => 0;
+  for (const [x, y, dir] of tips.splice(0)) grow(x, y, dir, 99, t, now, 0.9, 0.12, null);
+}
+
+/* ---------- shards: faces of the crack graph ---------- */
+// Segments split wherever they cross.
+// Each face is walked counter-clockwise around the graph.
+function arrange() {
+  const hx = PW / 2, hy = PH / 2;
+  const L = [[-hx, -hy, hx, -hy], [hx, -hy, hx, hy], [hx, hy, -hx, hy], [-hx, hy, -hx, -hy]];
+  for (const s of segs) L.push([s.ax, s.ay, s.bx, s.by]);
+  const n = L.length, cuts = L.map(() => [0, 1]);
+  const order = [...Array(n).keys()].sort((i, j) => Math.min(L[i][0], L[i][2]) - Math.min(L[j][0], L[j][2]));
+  for (let ii = 0; ii < n; ii++) {
+    const a = L[order[ii]], ax1 = Math.max(a[0], a[2]), ay0 = Math.min(a[1], a[3]), ay1 = Math.max(a[1], a[3]);
+    const rx = a[2] - a[0], ry = a[3] - a[1];
+    for (let jj = ii + 1; jj < n; jj++) {
+      const b = L[order[jj]];
+      if (Math.min(b[0], b[2]) > ax1 + 1e-9) break;
+      if (Math.min(b[1], b[3]) > ay1 + 1e-9 || Math.max(b[1], b[3]) < ay0 - 1e-9) continue;
+      const sx = b[2] - b[0], sy = b[3] - b[1], den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-14) continue;
+      const wx = b[0] - a[0], wy = b[1] - a[1], t = (wx * sy - wy * sx) / den, u = (wx * ry - wy * rx) / den;
+      const et = 1e-7 / (Math.hypot(rx, ry) || 1), eu = 1e-7 / (Math.hypot(sx, sy) || 1);
+      if (t < -et || t > 1 + et || u < -eu || u > 1 + eu) continue;
+      cuts[order[ii]].push(clamp(t));
+      cuts[order[jj]].push(clamp(u));
+    }
+  }
+  // Points closer than TOL are one vertex.
+  const TOL = 2e-6, CELL = 1e-5, grid = new Map(), VX = [], VY = [];
+  const vid = (x, y) => {
+    const gx = Math.round(x / CELL), gy = Math.round(y / CELL);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const c = grid.get((gx + i) * 4e6 + gy + j);
+      if (c) for (const v of c) if (Math.abs(VX[v] - x) < TOL && Math.abs(VY[v] - y) < TOL) return v;
+    }
+    const v = VX.length, k = gx * 4e6 + gy;
+    VX.push(x);
+    VY.push(y);
+    if (grid.has(k)) grid.get(k).push(v); else grid.set(k, [v]);
+    return v;
+  };
+  const adj = [], edges = new Set();
+  const link = (u, v) => {
+    if (u === v) return;
+    const k = u < v ? u * 1e6 + v : v * 1e6 + u;
+    if (edges.has(k)) return;
+    edges.add(k);
+    (adj[u] ||= []).push(v);
+    (adj[v] ||= []).push(u);
+  };
+  L.forEach((s, i) => {
+    const c = cuts[i].sort((p, q) => p - q);
+    let prev = vid(s[0], s[1]);
+    for (let k = 1; k < c.length; k++) {
+      if (c[k] - c[k - 1] < 1e-9 && k < c.length - 1) continue;
+      const v = vid(lerp(s[0], s[2], c[k]), lerp(s[1], s[3], c[k]));
+      link(prev, v);
+      prev = v;
+    }
+  });
+  // Dead ends bound no face.
+  const nv = VX.length, deg = new Int32Array(nv), gone = new Uint8Array(nv), stack = [];
+  for (let v = 0; v < nv; v++) { deg[v] = adj[v] ? adj[v].length : 0; if (deg[v] === 1) stack.push(v); }
+  while (stack.length) {
+    const v = stack.pop();
+    if (gone[v] || deg[v] !== 1) continue;
+    gone[v] = 1;
+    deg[v] = 0;
+    for (const u of adj[v]) if (!gone[u]) { deg[u]--; if (deg[u] === 1) stack.push(u); }
+  }
+  // Neighbours sorted by angle, counter-clockwise.
+  const nb = [];
+  for (let v = 0; v < nv; v++) {
+    if (gone[v] || !adj[v]) continue;
+    nb[v] = adj[v].filter(u => !gone[u]).sort((p, q) => Math.atan2(VY[p] - VY[v], VX[p] - VX[v]) - Math.atan2(VY[q] - VY[v], VX[q] - VX[v]));
+  }
+  const seen = new Set(), polys = [];
+  for (let u = 0; u < nv; u++) {
+    if (!nb[u]) continue;
+    for (const v0 of nb[u]) {
+      if (seen.has(u * 1e6 + v0)) continue;
+      const poly = [];
+      let a = u, b = v0, guard = 0, area = 0;
+      do {
+        seen.add(a * 1e6 + b);
+        poly.push(VX[a], VY[a]);
+        area += VX[a] * VY[b] - VX[b] * VY[a];
+        const l = nb[b], i = l.indexOf(a), c = l[(i - 1 + l.length) % l.length];
+        a = b;
+        b = c;
+      } while ((a !== u || b !== v0) && ++guard < 20000);
+      if (area > 2e-6 && guard < 20000) polys.push(poly);
+    }
+  }
+  return polys;
+}
+const polyArea = p => { let a = 0; for (let i = 0, n = p.length; i < n; i += 2) { const j = (i + 2) % n; a += p[i] * p[j + 1] - p[j] * p[i + 1]; } return a / 2; };
+// Big faces get hidden cracks of their own before they fall.
+function splitBig(polys, t, amax) {
+  let added = 0;
+  for (const p of polys) {
+    const area = polyArea(p);
+    if (area < amax) continue;
+    const pts = [];
+    for (let i = 0; i < p.length; i += 2) pts.push(new THREE.Vector2(p[i], p[i + 1]));
+    const tris = THREE.ShapeUtils.triangulateShape(pts, []);
+    const cuts = Math.min(5, Math.ceil(Math.log2(area / amax)));
+    for (let c = 0; c < cuts; c++) {
+      // A random inside point: a triangle by area, then a point.
+      let pick = Math.random() * area, tri = tris[0];
+      for (const tr of tris) {
+        const [A, B, C] = tr.map(i => pts[i]);
+        pick -= Math.abs((B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y)) / 2;
+        if (pick <= 0) { tri = tr; break; }
+      }
+      let u = Math.random(), v = Math.random();
+      if (u + v > 1) { u = 1 - u; v = 1 - v; }
+      const [A, B, C] = tri.map(i => pts[i]);
+      const x = A.x + (B.x - A.x) * u + (C.x - A.x) * v, y = A.y + (B.y - A.y) * u + (C.y - A.y) * v;
+      const dir = Math.random() * Math.PI;
+      grow(x, y, dir, 99, t, () => 0, 0.85, 0.1, null);
+      grow(x, y, dir + Math.PI, 99, t, () => 0, 0.85, 0.1, null);
+      added++;
+    }
+  }
+  return added;
+}
+
+/* ---------- shard bodies: rigid plates over a height field ---------- */
+const H = 1 / 240, REC = 4, CAP = 480, HS = 0.012, MU = 0.45;
+let bodies = [], frames = [], sim = null, hf = null;
+// Floor bounds, set when the camera is fitted.
+let XB = 2, ZMAX = 0.6, Z0 = -0.4;
+const qrot = (q, x, y, z, o, k = 0) => {
+  const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+  const cx = qy * z - qz * y + qw * x, cy = qz * x - qx * z + qw * y, cz = qx * y - qy * x + qw * z;
+  o[k] = x + 2 * (qy * cz - qz * cy);
+  o[k + 1] = y + 2 * (qz * cx - qx * cz);
+  o[k + 2] = z + 2 * (qx * cy - qy * cx);
+  return o;
+};
+const tq = [0, 0, 0, 1], tv = [0, 0, 0], tw = [0, 0, 0];
+// World inverse inertia times a vector: rotate in, scale, rotate out.
+function iinv(b, x, y, z, o) {
+  tq[0] = -b.q[0]; tq[1] = -b.q[1]; tq[2] = -b.q[2]; tq[3] = b.q[3];
+  qrot(tq, x, y, z, tv);
+  return qrot(b.q, tv[0] * b.ii[0], tv[1] * b.ii[1], tv[2] * b.ii[2], o);
+}
+function hfInit() {
+  const nx = Math.ceil((2 * XB) / HS), nz = Math.ceil((ZMAX - Z0) / HS);
+  hf = { nx, nz, h: new Float32Array(nx * nz) };
+  // The frame's bottom bar is a sill shards can land on.
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const x = -XB + (i + 0.5) * HS, z = Z0 + (j + 0.5) * HS;
+    if (Math.abs(x) <= FW / 2 && Math.abs(z) <= FD / 2) hf.h[j * nx + i] = FB;
+  }
+}
+function ground(x, z) {
+  const i = Math.floor((x + XB) / HS), j = Math.floor((z - Z0) / HS);
+  return i < 0 || j < 0 || i >= hf.nx || j >= hf.nz ? 0 : hf.h[j * hf.nx + i];
+}
+// A resting shard raises the floor under its outline.
+function stamp(b) {
+  const n = b.poly.length / 2, W = new Float64Array(n * 3);
+  for (let k = 0; k < n; k++) {
+    qrot(b.q, b.poly[2 * k], b.poly[2 * k + 1], 0, W, 3 * k);
+    W[3 * k] += b.p[0]; W[3 * k + 1] += b.p[1]; W[3 * k + 2] += b.p[2];
+  }
+  const N = qrot(b.q, 0, 0, 1, [0, 0, 0]), flat = Math.abs(N[1]) > 0.25;
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, top = -1e9;
+  for (let k = 0; k < n; k++) {
+    x0 = Math.min(x0, W[3 * k]); x1 = Math.max(x1, W[3 * k]);
+    z0 = Math.min(z0, W[3 * k + 2]); z1 = Math.max(z1, W[3 * k + 2]);
+    top = Math.max(top, W[3 * k + 1]);
+  }
+  const i0 = Math.max(0, Math.floor((x0 + XB) / HS)), i1 = Math.min(hf.nx - 1, Math.floor((x1 + XB) / HS));
+  const j0 = Math.max(0, Math.floor((z0 - Z0) / HS)), j1 = Math.min(hf.nz - 1, Math.floor((z1 - Z0) / HS));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const x = -XB + (i + 0.5) * HS, z = Z0 + (j + 0.5) * HS;
+    let inside = false;
+    for (let k = 0, m = n - 1; k < n; m = k++) {
+      const zk = W[3 * k + 2], zm = W[3 * m + 2];
+      if ((zk > z) !== (zm > z) && x < ((W[3 * m] - W[3 * k]) * (z - zk)) / (zm - zk) + W[3 * k]) inside = !inside;
+    }
+    if (!inside) continue;
+    const y = flat ? b.p[1] - (N[0] * (x - b.p[0]) + N[2] * (z - b.p[2])) / N[1] + T / (2 * Math.abs(N[1])) : top;
+    const c = j * hf.nx + i;
+    if (y > hf.h[c]) hf.h[c] = Math.min(y, top + T);
+  }
+}
+// One contact: a normal impulse with a little bounce, then friction.
+function impulse(b, px, py, pz, nx, ny, nz) {
+  const rx = px - b.p[0], ry = py - b.p[1], rz = pz - b.p[2], w = b.w, v = b.v;
+  let vx = v[0] + w[1] * rz - w[2] * ry, vy = v[1] + w[2] * rx - w[0] * rz, vz = v[2] + w[0] * ry - w[1] * rx;
+  const vn = vx * nx + vy * ny + vz * nz;
+  if (vn >= 0) return 0;
+  const k = cn => {
+    iinv(b, ry * cn[2] - rz * cn[1], rz * cn[0] - rx * cn[2], rx * cn[1] - ry * cn[0], tw);
+    return b.im + cn[0] * (tw[1] * rz - tw[2] * ry) + cn[1] * (tw[2] * rx - tw[0] * rz) + cn[2] * (tw[0] * ry - tw[1] * rx);
+  };
+  const apply = (jx, jy, jz) => {
+    v[0] += jx * b.im; v[1] += jy * b.im; v[2] += jz * b.im;
+    iinv(b, ry * jz - rz * jy, rz * jx - rx * jz, rx * jy - ry * jx, tw);
+    w[0] += tw[0]; w[1] += tw[1]; w[2] += tw[2];
+  };
+  const jn = (-(1 + (vn < -1.1 ? 0.28 : 0)) * vn) / k([nx, ny, nz]);
+  apply(nx * jn, ny * jn, nz * jn);
+  vx = v[0] + w[1] * rz - w[2] * ry; vy = v[1] + w[2] * rx - w[0] * rz; vz = v[2] + w[0] * ry - w[1] * rx;
+  const vd = vx * nx + vy * ny + vz * nz, tx = vx - nx * vd, ty = vy - ny * vd, tz = vz - nz * vd, ts = Math.hypot(tx, ty, tz);
+  if (ts > 1e-7) {
+    const t = [tx / ts, ty / ts, tz / ts], jt = Math.min(ts / k(t), MU * jn);
+    apply(-t[0] * jt, -t[1] * jt, -t[2] * jt);
+  }
+  return -vn;
+}
+function substep() {
+  const g = reduce ? 17 : 8.4, now = sim.t;
+  let moving = 0;
+  for (const b of bodies) {
+    if (b.sleep) continue;
+    moving++;
+    if (now < b.rel) continue;
+    const p = b.p, q = b.q, v = b.v, w = b.w;
+    v[1] -= g * H;
+    p[0] += v[0] * H; p[1] += v[1] * H; p[2] += v[2] * H;
+    // Spin advances the orientation, renormalised each step.
+    const dx = 0.5 * H * (w[0] * q[3] + w[1] * q[2] - w[2] * q[1]), dy = 0.5 * H * (w[1] * q[3] + w[2] * q[0] - w[0] * q[2]);
+    const dz = 0.5 * H * (w[2] * q[3] + w[0] * q[1] - w[1] * q[0]), dw = -0.5 * H * (w[0] * q[0] + w[1] * q[1] + w[2] * q[2]);
+    q[0] += dx; q[1] += dy; q[2] += dz; q[3] += dw;
+    const ql = Math.hypot(q[0], q[1], q[2], q[3]);
+    q[0] /= ql; q[1] /= ql; q[2] /= ql; q[3] /= ql;
+    let pen = 0, touch = false, hit = 0;
+    const P = b.cp, n = P.length / 3, wp = tv;
+    for (let k = 0; k < n; k++) {
+      qrot(q, P[3 * k], P[3 * k + 1], P[3 * k + 2], wp);
+      const x = wp[0] + p[0], y = wp[1] + p[1], z = wp[2] + p[2], gy = ground(x, z);
+      if (y < gy) { touch = true; pen = Math.max(pen, gy - y); hit = Math.max(hit, impulse(b, x, y, z, 0, 1, 0)); }
+      if (x < -XB) { impulse(b, x, y, z, 1, 0, 0); p[0] += (-XB - x) * 0.5; }
+      if (x > XB) { impulse(b, x, y, z, -1, 0, 0); p[0] -= (x - XB) * 0.5; }
+      if (z > ZMAX) { impulse(b, x, y, z, 0, 0, -1); p[2] -= (z - ZMAX) * 0.5; }
+      if (z < Z0) { impulse(b, x, y, z, 0, 0, 1); p[2] += (Z0 - z) * 0.5; }
+    }
+    if (pen) p[1] += Math.min(pen, 0.01) * 0.8;
+    if (hit > 0.6 && now - b.hit > 0.05) { b.hit = now; tinkle(b.size, hit, p[0] / XB); }
+    if (touch) {
+      v[0] *= 0.996; v[2] *= 0.996;
+      w[0] *= 0.985; w[1] *= 0.985; w[2] *= 0.985;
+    }
+    const still = touch && v[0] ** 2 + v[1] ** 2 + v[2] ** 2 < 0.0025 && w[0] ** 2 + w[1] ** 2 + w[2] ** 2 < 0.3;
+    b.still = still ? b.still + H : 0;
+    if (b.still > 0.15 || now - b.rel > 6) {
+      b.sleep = true;
+      v.fill(0);
+      w.fill(0);
+      stamp(b);
+    }
+  }
+  sim.t += H;
+  return moving;
+}
+function record() {
+  if (frames.length >= CAP) return;
+  const f = new Float32Array(bodies.length * 7);
+  bodies.forEach((b, i) => { f.set(b.p, i * 7); f.set(b.q, i * 7 + 3); });
+  frames.push(f);
+}
+// Playback reads recorded frames, blending between neighbours.
+function applyFrame(s) {
+  const i0 = Math.floor(s), i1 = Math.min(frames.length - 1, i0 + 1), f = s - i0, A = frames[i0], B = frames[i1];
+  bodies.forEach((b, i) => {
+    const o = i * 7, sg = A[o + 3] * B[o + 3] + A[o + 4] * B[o + 4] + A[o + 5] * B[o + 5] + A[o + 6] * B[o + 6] < 0 ? -1 : 1;
+    for (let k = 0; k < 3; k++) b.p[k] = lerp(A[o + k], B[o + k], f);
+    for (let k = 0; k < 4; k++) b.q[k] = lerp(A[o + 3 + k], sg * B[o + 3 + k], f);
+    const ql = Math.hypot(...b.q);
+    for (let k = 0; k < 4; k++) b.q[k] /= ql;
+  });
+}
+function stepSim(dt) {
+  sim.acc += dt;
+  const n = Math.min(8, Math.floor(sim.acc / H));
+  sim.acc = n === 8 ? 0 : sim.acc - n * H;
+  let moving = 1;
+  for (let k = 0; k < n && moving; k++) {
+    moving = substep();
+    if (++sim.steps % REC === 0) record();
+  }
+  if (!moving) { record(); sim.active = false; }
+}
+
+/* ---------- shaders ---------- */
+const GLASS_FS = `
+uniform mat4 projectionMatrix;
+uniform sampler2D tBack, tCrack;
+uniform samplerCube tEnv;
+uniform vec2 uRes, uTexel, uPane;
+uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine;
+varying vec3 vWorld, vNormal;
+varying vec2 vPuv;
+varying float vSide, vFade;
+void main() {
+  vec3 N = normalize(vNormal);
+  if (!gl_FrontFacing) N = -N;
+  vec3 V = normalize(cameraPosition - vWorld);
+  float cosT = clamp(dot(N, V), 0.0, 1.0);
+  // Crack field: ridge in R, bright core in G, glint in B.
+  vec3 ck = texture2D(tCrack, vPuv).rgb * uCrackK;
+  vec2 cg = vec2(
+    texture2D(tCrack, vPuv + vec2(uTexel.x, 0.0)).r - texture2D(tCrack, vPuv - vec2(uTexel.x, 0.0)).r,
+    texture2D(tCrack, vPuv + vec2(0.0, uTexel.y)).r - texture2D(tCrack, vPuv - vec2(0.0, uTexel.y)).r) * uCrackK;
+  // Float glass is never quite flat.
+  vec2 wav = vec2(sin(vPuv.y * 23.0 + vPuv.x * 5.0), sin(vPuv.x * 17.0 - vPuv.y * 7.0)) * 0.006;
+  vec3 Nv = normalize((viewMatrix * vec4(N, 0.0)).xyz);
+  vec2 suv = gl_FragCoord.xy / uRes;
+  vec2 off = -(Nv.xy * (1.0 + vSide * 2.0) + wav) * uRefr + cg * 30.0 / uRes;
+  vec3 back = texture2D(tBack, suv + off).rgb;
+  // Light through glass turns green with path length.
+  // Side walls are the longest paths.
+  float rim = min(min(vPuv.x, 1.0 - vPuv.x) * uPane.x, min(vPuv.y, 1.0 - vPuv.y) * uPane.y);
+  float path = mix(1.0 / max(cosT, 0.2), 20.0, vSide) + ck.r * 5.0 + uEdge * 14.0 * smoothstep(0.035, 0.0, rim);
+  vec3 tint = exp(-vec3(0.07, 0.016, 0.05) * path);
+  float F = max(0.04 + 0.96 * pow(1.0 - cosT, 5.0), vSide * 0.2);
+  vec3 R = reflect(-V, N);
+  vec3 env = textureCube(tEnv, R).rgb * uEnvI;
+  // Reflections aimed at the back wall pick up its colours.
+  if (R.z < -0.02) {
+    vec4 c = projectionMatrix * viewMatrix * vec4(vWorld + R * ((uWallZ - vWorld.z) / R.z), 1.0);
+    vec2 ruv = c.xy / c.w * 0.5 + 0.5;
+    float k = smoothstep(-0.02, -0.25, R.z) * smoothstep(1.25, 1.0, ruv.y);
+    env = mix(env, texture2D(tBack, clamp(ruv, 0.0, 1.0)).rgb * 1.15, k);
+  }
+  env *= mix(vec3(1.0), vec3(0.55, 1.0, 0.8), vSide);
+  vec3 L = normalize(vec3(-0.45, 0.75, 0.5));
+  float spec = pow(max(dot(N, normalize(L + V)), 0.0), 300.0) * 5.0;
+  // Crack cores are thin bright lines.
+  // Crack walls darken the glass beside them.
+  float line = ck.g * (0.12 + 1.7 * ck.b * ck.b) * uLine * (1.0 - vSide);
+  vec3 col = back * tint * (1.0 - F) * (1.0 - 0.3 * ck.r * (1.0 - ck.g)) + env * F + spec + line * vec3(0.84, 1.0, 0.96);
+  gl_FragColor = vec4(col, uOpacity * vFade);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+const PANE_VS = `
+uniform vec4 uFlex;
+uniform vec2 uPane;
+varying vec3 vWorld, vNormal;
+varying vec2 vPuv;
+varying float vSide, vFade;
+void main() {
+  // The impact dents the pane.
+  // The dent's slope bends the light.
+  vec3 p = position;
+  vec2 d = p.xy - uFlex.xy;
+  float s2 = uFlex.w * uFlex.w, g = uFlex.z * exp(-dot(d, d) / s2);
+  p.z += g;
+  vec3 n = normalize(vec3(2.0 * g * d / s2, 1.0));
+  vPuv = position.xy / uPane + 0.5;
+  vec4 w = modelMatrix * vec4(p, 1.0);
+  vWorld = w.xyz;
+  vNormal = normalize(mat3(modelMatrix) * n);
+  vSide = 0.0;
+  vFade = 1.0;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const SHARD_VS = `
+uniform sampler2D tXf;
+attribute vec2 aPuv;
+attribute float aSid, aSide;
+varying vec3 vWorld, vNormal;
+varying vec2 vPuv;
+varying float vSide, vFade;
+vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+void main() {
+  // Each shard's place and turn come from a float texture.
+  int i = int(aSid + 0.5) * 2;
+  vec4 P = texelFetch(tXf, ivec2(i, 0), 0), Q = texelFetch(tXf, ivec2(i + 1, 0), 0);
+  vWorld = qrot(Q, position) + P.xyz;
+  vNormal = qrot(Q, normal);
+  vPuv = aPuv;
+  vSide = aSide;
+  vFade = P.w;
+  gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
+}`;
+const CRACK_VS = `
+attribute vec4 aInfo;
+varying float vCross, vT, vCore, vGlint;
+void main() {
+  vCross = aInfo.x; vT = aInfo.y; vCore = aInfo.z; vGlint = aInfo.w;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+const CRACK_FS = `
+uniform float uTime;
+varying float vCross, vT, vCore, vGlint;
+void main() {
+  if (vT > uTime) discard;
+  float a = abs(vCross), ridge = (1.0 - a) * (1.0 - a);
+  float core = 1.0 - smoothstep(vCore, vCore * 2.4, a);
+  // The running tip flares, then cools.
+  float tip = exp((vT - uTime) * 14.0);
+  gl_FragColor = vec4(ridge, core, core * clamp(vGlint + tip, 0.0, 1.0), 1.0);
+}`;
+const WORLD_VS = `
+varying vec3 vW;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const DITHER = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
+const WALL_FS = `
+uniform vec3 uTop, uLow, uCol[7];
+uniform vec4 uBlob[7];
+varying vec3 vW;
+${DITHER}
+void main() {
+  // Out-of-focus discs over a calm vertical field.
+  vec3 col = mix(uLow, uTop, smoothstep(-0.4, 3.2, vW.y));
+  for (int i = 0; i < 7; i++) {
+    float d = length(vW.xy - uBlob[i].xy);
+    col = mix(col, uCol[i], smoothstep(uBlob[i].z, uBlob[i].z * 0.5, d) * uBlob[i].w);
+  }
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}`;
+const FLOOR_FS = `
+uniform vec3 uBase, uPool, uSpill;
+uniform vec2 uPoolC;
+uniform float uPoolR, uWallZ;
+varying vec3 vW;
+${DITHER}
+void main() {
+  // A soft pool of light lies where shards land.
+  // The wall's colour spills onto the floor near it.
+  vec2 q = (vW.xz - uPoolC) / vec2(uPoolR, uPoolR * 0.45);
+  vec3 col = uBase + uPool * exp(-dot(q, q)) + uSpill * exp(-(vW.z - uWallZ) * 1.6);
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}`;
+
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, built = false;
+let backRT = null, crackRT = null, crackScene = null, crackCam = null, crackMesh = null, crackMat = null;
+let wallMat = null, floorMat = null, frameG = null, frameMat = null, pane = null, paneMat = null;
+let shardMesh = null, shardMat = null, xfTex = null, mark = null;
+let ray = null, ndc = null, hitV = null, tmpV = null, paneP = null, floorP = null, dbs = null;
+const FOV = 28, MT = 0.055, WALLZ = -1.5, CAPS = 512, CLEAR = 0x121318;
+// Series hues as soft discs: x, y in frame units, radius, strength.
+const BLOBS = [
+  [-0.3, 0.74, 0.3, 0.8, '#d9a04e'], [0.2, 0.92, 0.22, 0.7, '#cf5d55'], [0.36, 0.38, 0.4, 0.72, '#7d4fc4'],
+  [-0.04, 0.2, 0.26, 0.7, '#2f9fae'], [-0.44, 0.14, 0.22, 0.75, '#4fae73'], [0.05, 0.6, 0.15, 0.6, '#3e6fcf'],
+  [0.3, 0.04, 0.12, 0.7, '#d9a04e'],
+];
+let lowDpr = false;
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+const ndcOf = (x, y, z) => tmpV.set(x, y, z).project(camera);
+// The camera looks straight ahead; a lens shift keeps verticals upright.
+// The frame fills the panel; a strip of floor shows below it.
+function fit(w, h) {
+  const A = w / h, kh = A < 1.1 ? 0.68 : 0.77, e5 = 1 / Math.tan((FOV * Math.PI) / 360);
+  camera.aspect = A;
+  const fw = Math.round(((FH * A * 0.93) / kh) * 50) / 50;
+  if (fw !== FW || !built) {
+    FW = fw;
+    PW = FW - 2 * FB;
+    PH = FH - 2 * FB;
+    S = Math.min(PW, PH);
+    build();
+  }
+  const d = (FH * e5) / (2 * kh), ey = FH * 0.66;
+  camera.position.set(0, ey, FD / 2 + d);
+  camera.rotation.set(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.projectionMatrix.elements[9] = (e5 * (FH - ey)) / d - (1 - 2 * MT);
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  camera.updateMatrixWorld();
+  ray.setFromCamera(ndc.set(0, -1), camera);
+  if (ray.ray.intersectPlane(floorP, hitV)) ZMAX = Math.max(FD / 2 + 0.2, hitV.z - 0.06);
+  ray.setFromCamera(ndc.set(1, -1), camera);
+  if (ray.ray.intersectPlane(floorP, hitV)) XB = Math.max(FW / 2, hitV.x * 0.97);
+  Z0 = -0.5;
+  floorMat.uniforms.uPoolC.value.set(0, (FD / 2 + ZMAX) / 2);
+  floorMat.uniforms.uPoolR.value = FW * 0.42;
+  hfInit();
+}
+// New frame, pane and backdrop for a new panel shape.
+function build() {
+  built = true;
+  pane.geometry.dispose();
+  pane.geometry = new THREE.PlaneGeometry(PW, PH, 96, 56).translate(0, 0, T / 2);
+  pane.position.set(0, FH / 2, 0);
+  for (const m of [paneMat, shardMat]) m.uniforms.uPane.value.set(PW, PH);
+  while (frameG.children.length) { const c = frameG.children.pop(); c.geometry.dispose(); }
+  const bar = (w, h, x, y) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, FD), frameMat); m.position.set(x, y, 0); frameG.add(m); };
+  bar(FW, FB, 0, FB / 2);
+  bar(FW, FB, 0, FH - FB / 2);
+  bar(FB, FH - 2 * FB, -FW / 2 + FB / 2, FH / 2);
+  bar(FB, FH - 2 * FB, FW / 2 - FB / 2, FH / 2);
+  const r = Math.sqrt(FW * FH) * 0.78;
+  BLOBS.forEach(([u, v, s, k], i) => wallMat.uniforms.uBlob.value[i].set(u * FW * 1.25, v * FH * 1.2, s * r, k));
+  Object.assign(crackCam, { left: -PW / 2, right: PW / 2, top: PH / 2, bottom: -PH / 2 });
+  crackCam.updateProjectionMatrix();
+  heal(true);
+}
+// Each crack becomes a ribbon: a soft ridge around a thin core.
+function ribbons() {
+  const n = segs.length, m = Math.max(1, n), tex = PW / crackRT.width;
+  const pos = new Float32Array(m * 12), info = new Float32Array(m * 16), idx = new Uint32Array(m * 6);
+  if (!n) info.fill(1e9);
+  for (let i = 0; i < n; i++) {
+    const s = segs[i], dx = s.bx - s.ax, dy = s.by - s.ay, l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
+    const hw = tex * (2 + 6 * s.w), core = (0.55 * tex * (0.6 + 0.4 * s.w)) / hw, ex = hw * 0.35;
+    const c = [[s.ax - ux * ex, s.ay - uy * ex, s.ta], [s.bx + ux * ex, s.by + uy * ex, s.tb]];
+    for (let k = 0; k < 4; k++) {
+      const [x, y, t] = c[k >> 1], side = k & 1 ? -1 : 1;
+      pos.set([x - uy * hw * side, y + ux * hw * side, 0], (i * 4 + k) * 3);
+      info.set([side, t, core, s.g * (0.55 + 0.45 * s.w)], (i * 4 + k) * 4);
+    }
+    idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 1, i * 4 + 3, i * 4 + 2], i * 6);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aInfo', new THREE.BufferAttribute(info, 4));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  crackMesh.geometry.dispose();
+  crackMesh.geometry = g;
+  crackDirty = true;
+}
+function renderCracks() {
+  crackMat.uniforms.uTime.value = cClock;
+  renderer.setClearColor(0x000000, 0);
+  renderer.setRenderTarget(crackRT);
+  renderer.render(crackScene, crackCam);
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(CLEAR, 1);
+}
+// The backdrop never moves, so it is drawn once per size.
+function renderBack() {
+  const vis = [pane.visible, shardMesh.visible, mark.visible];
+  pane.visible = shardMesh.visible = mark.visible = false;
+  renderer.setRenderTarget(backRT);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  [pane.visible, shardMesh.visible, mark.visible] = vis;
+}
+function onSize(w, h) {
+  fit(w, h);
+  renderer.getDrawingBufferSize(dbs);
+  backRT.setSize(dbs.x, dbs.y);
+  for (const m of [paneMat, shardMat]) m.uniforms.uRes.value.copy(dbs);
+  const px = ((ndcOf(PW / 2, FH / 2, T / 2).x - ndcOf(-PW / 2, FH / 2, T / 2).x) / 2) * dbs.x;
+  const cw = Math.round(clamp(px, 256, 2048)), ch = Math.round((cw * PH) / PW);
+  if (crackRT.width !== cw || crackRT.height !== ch) crackRT.setSize(cw, ch);
+  for (const m of [paneMat, shardMat]) m.uniforms.uTexel.value.set(1 / cw, 1 / ch);
+  ribbons();
+  renderBack();
+  if (ready) { draw(); wake(); }
+}
+
+/* ---------- shards from faces ---------- */
+function buildShards(polys) {
+  bodies = [];
+  const P = [], Nn = [], U = [], SID = [], SIDE = [], I = [];
+  polys.sort((a, b) => polyArea(b) - polyArea(a));
+  for (const poly of polys) {
+    if (bodies.length >= CAPS) break;
+    const area = polyArea(poly), n0 = poly.length / 2;
+    let gx = 0, gy = 0;
+    for (let i = 0; i < n0; i++) {
+      const j = (i + 1) % n0, c = poly[2 * i] * poly[2 * j + 1] - poly[2 * j] * poly[2 * i + 1];
+      gx += (poly[2 * i] + poly[2 * j]) * c;
+      gy += (poly[2 * i + 1] + poly[2 * j + 1]) * c;
+    }
+    gx /= 6 * area;
+    gy /= 6 * area;
+    // Points on a straight run add nothing; drop them.
+    const pts = [];
+    for (let i = 0; i < n0; i++) {
+      const a = (i - 1 + n0) % n0, b = (i + 1) % n0;
+      const ax = poly[2 * i] - poly[2 * a], ay = poly[2 * i + 1] - poly[2 * a + 1], bx = poly[2 * b] - poly[2 * i], by = poly[2 * b + 1] - poly[2 * i + 1];
+      if (Math.abs(ax * by - ay * bx) > 1e-10) pts.push([poly[2 * i] - gx, poly[2 * i + 1] - gy]);
+    }
+    if (pts.length < 3) continue;
+    const tris = THREE.ShapeUtils.triangulateShape(pts.map(([x, y]) => new THREE.Vector2(x, y)), []);
+    if (!tris.length) continue;
+    const id = bodies.length, n = pts.length, vb = P.length / 3;
+    const puv = (x, y) => U.push((x + gx) / PW + 0.5, (y + gy) / PH + 0.5);
+    for (const z of [T / 2, -T / 2]) for (const [x, y] of pts) {
+      P.push(x, y, z); Nn.push(0, 0, Math.sign(z)); puv(x, y); SID.push(id); SIDE.push(0);
+    }
+    let sxx = 0, syy = 0;
+    for (const t of tris) {
+      const [A, B, C] = t.map(i => pts[i]), cr = (B[0] - A[0]) * (C[1] - A[1]) - (C[0] - A[0]) * (B[1] - A[1]);
+      const [i0, i1, i2] = cr > 0 ? t : [t[0], t[2], t[1]], ta = Math.abs(cr) / 2;
+      I.push(vb + i0, vb + i1, vb + i2, vb + n + i0, vb + n + i2, vb + n + i1);
+      sxx += (ta / 6) * (A[0] ** 2 + B[0] ** 2 + C[0] ** 2 + A[0] * B[0] + B[0] * C[0] + C[0] * A[0]);
+      syy += (ta / 6) * (A[1] ** 2 + B[1] ** 2 + C[1] ** 2 + A[1] * B[1] + B[1] * C[1] + C[1] * A[1]);
+    }
+    // Side walls face outward from the counter-clockwise outline.
+    for (let k = 0; k < n; k++) {
+      const [ax, ay] = pts[k], [bx, by] = pts[(k + 1) % n], l = Math.hypot(bx - ax, by - ay) || 1, sb = P.length / 3;
+      for (const [x, y, z] of [[ax, ay, T / 2], [bx, by, T / 2], [bx, by, -T / 2], [ax, ay, -T / 2]]) {
+        P.push(x, y, z); Nn.push((by - ay) / l, -(bx - ax) / l, 0); puv(x, y); SID.push(id); SIDE.push(1);
+      }
+      I.push(sb, sb + 2, sb + 1, sb, sb + 3, sb + 2);
+    }
+    const m = area * T, step = Math.max(1, Math.ceil(n / 10)), cp = [];
+    for (let k = 0; k < n; k += step) cp.push(pts[k][0], pts[k][1], T / 2, pts[k][0], pts[k][1], -T / 2);
+    const edge = pts.some(([x, y]) => Math.abs(x + gx) > PW / 2 - 1e-4 || Math.abs(y + gy) > PH / 2 - 1e-4);
+    bodies.push({
+      p: [gx, FH / 2 + gy, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], im: 1 / m,
+      ii: [1 / (m * (syy / area + T * T / 12)), 1 / (m * (sxx / area + T * T / 12)), 1 / (m * ((sxx + syy) / area))],
+      cp: new Float32Array(cp), poly: pts.flat(), size: Math.sqrt(area), cx: gx, cy: gy, edge,
+      rel: 0, hit: -1, still: 0, sleep: false,
+    });
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3));
+  g.setAttribute('aPuv', new THREE.Float32BufferAttribute(U, 2));
+  g.setAttribute('aSid', new THREE.Float32BufferAttribute(SID, 1));
+  g.setAttribute('aSide', new THREE.Float32BufferAttribute(SIDE, 1));
+  g.setIndex(I);
+  shardMesh.geometry.dispose();
+  shardMesh.geometry = g;
+  return bodies.length > 0;
+}
+function upload(fade = 1) {
+  const d = xfTex.image.data;
+  bodies.forEach((b, i) => {
+    d[i * 8] = b.p[0]; d[i * 8 + 1] = b.p[1]; d[i * 8 + 2] = b.p[2]; d[i * 8 + 3] = fade;
+    d[i * 8 + 4] = b.q[0]; d[i * 8 + 5] = b.q[1]; d[i * 8 + 6] = b.q[2]; d[i * 8 + 7] = b.q[3];
+  });
+  xfTex.needsUpdate = true;
+}
+
+/* ---------- the pane: whole, cracked, shattered, rewinding ---------- */
+let state = 'whole', pending = null, rw = null, crackDirty = true, lastCT = NaN;
+let ready = false, kbd = false;
+const aim = { x: 0, y: 0 }, flex = { x: 0, y: 0, a: 0, t: 9 };
+const rewindB = document.getElementById('rewind');
+const showChip = () => rewindB.setAttribute('aria-disabled', String(state === 'whole' && !rw));
+function flexAt(x, y, a) { flex.x = x; flex.y = y; flex.a = a * (reduce ? 0.4 : 1); flex.t = 0; }
+
+function tap(x, y, hard = false) {
+  if (!ready || rw || pending || state === 'shattered') return;
+  const w = web(x, y, hard);
+  state = 'cracked';
+  damage += hard ? limit : 1;
+  flexAt(x, y, hard ? -0.02 : -0.012);
+  crackSound(x / (PW / 2), hard, w.ticks);
+  // Enough damage and the pane goes once this crack has run.
+  if (damage >= limit) pending = { at: w.end, x, y };
+  ribbons();
+  showChip();
+  wake();
+}
+// Holding on: the pane gives way where it was struck.
+function press(x, y) {
+  if (!ready || rw || pending || state !== 'cracked') return;
+  pending = { at: cClock, x, y };
+  wake();
+}
+// The burst runs over a few frames so no single frame stalls.
+function shatter() {
+  const p = pending, t = cClock;
+  try {
+    if (!p.stage) {
+      // Unfinished cracks finish at once.
+      for (const s of segs) { s.ta = Math.min(s.ta, t); s.tb = Math.min(s.tb, t); }
+      extend(t);
+      growEnd = Math.max(growEnd, t + 0.02);
+      ribbons();
+      shatterSound(p.x / (PW / 2));
+      flex.t = 9;
+      p.polys = arrange();
+      p.stage = 1;
+      return;
+    }
+    if (p.stage < 3) {
+      // Big faces split along hidden cracks of their own.
+      if (splitBig(p.polys, t, (PW * PH) / 80)) { p.polys = arrange(); ribbons(); p.stage++; }
+      else p.stage = 3;
+      return;
+    }
+    pending = null;
+    if (!buildShards(p.polys)) throw new Error('No shards');
+  } catch (err) {
+    console.error(err);
+    pending = null;
+    return;
+  }
+  // Near pieces go first: outward, forward, tipping toward the viewer.
+  for (const b of bodies) {
+    const dx = b.cx - p.x, dy = b.cy - p.y, d = Math.hypot(dx, dy) || 1;
+    const near = Math.exp(-d / (0.4 * S)), small = clamp(0.25 / b.size, 0.6, 2);
+    b.rel = (0.02 + 0.24 * clamp(d / (1.2 * S)) + Math.random() * 0.06 + (b.edge ? 0.08 : 0)) * (reduce ? 0.5 : 1);
+    b.v = [(dx / d) * (0.1 + 0.4 * near), (dy / d) * 0.3 * near + 0.1, rnd(0.35, 0.9) + 0.7 * near];
+    b.w = [rnd(1.5, 4.5) * small, rnd(-2, 2) * small, rnd(-2.5, 2.5) * small];
+  }
+  frames = [];
+  sim = { t: 0, acc: 0, steps: 0, active: true };
+  record();
+  state = 'shattered';
+  pane.visible = false;
+  shardMesh.visible = true;
+  upload();
+  showChip();
+}
+function rewind() {
+  if (!ready || rw || state === 'whole') return;
+  clearTimeout(holdT);
+  clearTimeout(spaceT);
+  pending = null;
+  if (reduce) {
+    // Reduced motion crossfades the broken pane to the whole one.
+    rw = { phase: 'fade', t: 0 };
+    if (state === 'shattered') { pane.visible = true; paneMat.uniforms.uCrackK.value = 0; paneMat.uniforms.uOpacity.value = 0; }
+    unzipSound(0.35);
+  } else if (state === 'shattered') {
+    if (sim.active) { record(); sim.active = false; }
+    const secs = frames.length / 60, rate = Math.max(1.5, secs / 2);
+    rw = { phase: 'A', s: frames.length - 1, t: 0, rate };
+    whoosh(secs / rate + 0.12);
+  } else unzip();
+  showChip();
+  wake();
+}
+function unzip() {
+  const dur = clamp(cClock * 0.45, 0.35, 1);
+  rw = { phase: 'B', rate: cClock / dur };
+  unzipSound(dur);
+}
+// Time runs backwards: shards replay their fall, then cracks close.
+function stepRewind(dt) {
+  if (rw.phase === 'A') {
+    rw.t += dt;
+    rw.s -= dt * 60 * rw.rate * (0.4 + 0.6 * Math.min(1, rw.t / 0.3));
+    applyFrame(Math.max(0, rw.s));
+    upload();
+    if (rw.s > 0) return;
+    // Every shard is home; the cracked pane takes over seamlessly.
+    shardMesh.visible = false;
+    pane.visible = true;
+    state = 'cracked';
+    sim = null;
+    unzip();
+  } else if (rw.phase === 'B') {
+    cClock = Math.max(0, cClock - dt * rw.rate);
+    if (cClock <= 0) heal();
+  } else {
+    rw.t += dt;
+    const k = Math.min(1, rw.t / 0.35);
+    if (state === 'shattered') { shardMat.uniforms.uOpacity.value = 1 - k; paneMat.uniforms.uOpacity.value = k; }
+    else paneMat.uniforms.uCrackK.value = 1 - k;
+    if (k >= 1) heal();
+  }
+}
+function heal(quiet) {
+  segs.length = 0;
+  cells.clear();
+  tips.length = 0;
+  cClock = 0;
+  growEnd = -1;
+  damage = 0;
+  limit = 5 + (Math.random() < 0.5 ? 1 : 0);
+  pending = rw = sim = null;
+  bodies = [];
+  frames = [];
+  state = 'whole';
+  pane.visible = true;
+  shardMesh.visible = false;
+  paneMat.uniforms.uCrackK.value = paneMat.uniforms.uOpacity.value = shardMat.uniforms.uOpacity.value = 1;
+  ribbons();
+  if (!quiet) flexAt(0, 0, 0.004);
+  showChip();
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  let busy = !!pending;
+  if (rw) { stepRewind(dt); busy = true; }
+  else if (cClock < growEnd + GLOW) { cClock = Math.min(cClock + dt, growEnd + GLOW); busy = true; }
+  if (pending && cClock >= pending.at) shatter();
+  if (flex.t < 0.7) { flex.t += dt; busy = true; }
+  if (sim && sim.active && !rw) { stepSim(dt); upload(); busy = true; }
+  draw();
+  if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else rest();
+}
+function draw() {
+  if (crackDirty || cClock !== lastCT) { renderCracks(); lastCT = cClock; crackDirty = false; }
+  const k = flex.t < 0.7 ? Math.cos(flex.t * TAU * 11) * Math.exp(-flex.t / 0.12) : 0;
+  paneMat.uniforms.uFlex.value.set(flex.x, flex.y, flex.a * k, S * 0.3);
+  mark.visible = kbd && state !== 'shattered' && !rw;
+  if (mark.visible) mark.position.set(aim.x, FH / 2 + aim.y, T / 2 + 0.004);
+  renderer.render(scene, camera);
+}
+
+/* ---------- input ---------- */
+let ptr = -1, holdT = 0, spaceT = 0, downX = 0, downY = 0;
+function toPane(e) {
+  const r = panel.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, 1 - ((e.clientY - r.top) / r.height) * 2);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(paneP, hitV)) return null;
+  const x = hitV.x, y = hitV.y - FH / 2;
+  return Math.abs(x) < PW / 2 - 0.005 && Math.abs(y) < PH / 2 - 0.005 ? { x, y } : null;
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || ptr >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  kbd = false;
+  const p = toPane(e);
+  if (!p) return;
+  ptr = e.pointerId;
+  downX = e.clientX;
+  downY = e.clientY;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  aim.x = p.x;
+  aim.y = p.y;
+  tap(p.x, p.y, e.pointerType === 'pen' && e.pressure > 0.85);
+  clearTimeout(holdT);
+  holdT = setTimeout(() => { if (ptr === e.pointerId) press(p.x, p.y); }, 480);
+});
+panel.addEventListener('pointermove', e => {
+  if (e.pointerId === ptr && Math.hypot(e.clientX - downX, e.clientY - downY) > 14) clearTimeout(holdT);
+});
+const lift = e => { if (e.pointerId === ptr) { ptr = -1; clearTimeout(holdT); } };
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+// The aim ring shows only for keyboard use.
+panel.addEventListener('focus', () => { kbd = panel.matches(':focus-visible'); if (ready) draw(); });
+panel.addEventListener('blur', () => { kbd = false; if (ready) draw(); });
+const ARROWS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === 'r' || k === 'R') { if (!e.repeat) rewind(); }
+  else if (k === ' ') {
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (e.repeat || !ready) return;
+    kbd = true;
+    tap(aim.x, aim.y);
+    clearTimeout(spaceT);
+    spaceT = setTimeout(() => press(aim.x, aim.y), 480);
+    draw();
+  } else if (ARROWS[k]) {
+    e.preventDefault();
+    if (!ready) return;
+    kbd = true;
+    const st = S * 0.06;
+    aim.x = clamp(aim.x + ARROWS[k][0] * st, -PW / 2 + 0.02, PW / 2 - 0.02);
+    aim.y = clamp(aim.y + ARROWS[k][1] * st, -PH / 2 + 0.02, PH / 2 - 0.02);
+    draw();
+  }
+});
+addEventListener('keyup', e => { if (e.key === ' ') clearTimeout(spaceT); });
+rewindB.addEventListener('click', rewind);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function start() {
+  let RoomEnvironment;
+  try {
+    THREE = await import('three');
+    ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.setClearColor(CLEAR);
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.1, 100);
+  ray = new THREE.Raycaster();
+  ndc = new THREE.Vector2();
+  hitV = new THREE.Vector3();
+  tmpV = new THREE.Vector3();
+  dbs = new THREE.Vector2();
+  paneP = new THREE.Plane(new THREE.Vector3(0, 0, 1), -T / 2);
+  floorP = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  await idle();
+
+  // The room lights the frame and mirrors in the glass.
+  const room = new RoomEnvironment();
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(room, 0.04).texture;
+  const cubeRT = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+  new THREE.CubeCamera(0.1, 100, cubeRT).update(renderer, room);
+  room.dispose();
+  pm.dispose();
+  await idle();
+
+  const CL = c => new THREE.Color(c);
+  wallMat = new THREE.ShaderMaterial({
+    vertexShader: WORLD_VS, fragmentShader: WALL_FS,
+    uniforms: { uTop: { value: CL('#24273a') }, uLow: { value: CL('#121320') }, uCol: { value: BLOBS.map(b => CL(b[4])) }, uBlob: { value: BLOBS.map(() => new THREE.Vector4()) } },
+  });
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), wallMat);
+  wall.position.z = WALLZ;
+  floorMat = new THREE.ShaderMaterial({
+    vertexShader: WORLD_VS, fragmentShader: FLOOR_FS,
+    uniforms: {
+      uBase: { value: CL('#101116') }, uPool: { value: CL('#2b2c35') }, uSpill: { value: CL('#2c2742') },
+      uPoolC: { value: new THREE.Vector2() }, uPoolR: { value: 1 }, uWallZ: { value: WALLZ },
+    },
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.z = WALLZ + 200;
+  frameMat = new THREE.MeshStandardMaterial({ color: 0x34363e, metalness: 0.6, roughness: 0.36 });
+  frameG = new THREE.Group();
+  scene.add(wall, floor, frameG);
+
+  backRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  crackRT = new THREE.WebGLRenderTarget(256, 144, { depthBuffer: false });
+  const glassU = () => ({
+    tBack: { value: backRT.texture }, tCrack: { value: crackRT.texture }, tEnv: { value: cubeRT.texture },
+    uRes: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1 / 256, 1 / 144) }, uPane: { value: new THREE.Vector2(PW, PH) },
+    uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.55 },
+    uWallZ: { value: WALLZ }, uLine: { value: 1 },
+  });
+  paneMat = new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: { ...glassU(), uFlex: { value: new THREE.Vector4(0, 0, 0, 1) } } });
+  pane = new THREE.Mesh(new THREE.BufferGeometry(), paneMat);
+  xfTex = new THREE.DataTexture(new Float32Array(CAPS * 8), CAPS * 2, 1, THREE.RGBAFormat, THREE.FloatType);
+  xfTex.needsUpdate = true;
+  shardMat = new THREE.ShaderMaterial({ vertexShader: SHARD_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: { ...glassU(), tXf: { value: xfTex } } });
+  shardMat.uniforms.uRefr.value = 0.07;
+  shardMat.uniforms.uEdge.value = 0;
+  shardMat.uniforms.uLine.value = 0.6;
+  // One stand-in triangle lets the shard shader compile up front.
+  const stand = new THREE.BufferGeometry();
+  stand.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.01, 0, 0, 0, 0.01, 0], 3));
+  stand.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+  stand.setAttribute('aPuv', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 2));
+  stand.setAttribute('aSid', new THREE.Float32BufferAttribute([0, 0, 0], 1));
+  stand.setAttribute('aSide', new THREE.Float32BufferAttribute([0, 0, 0], 1));
+  shardMesh = new THREE.Mesh(stand, shardMat);
+  shardMesh.frustumCulled = pane.frustumCulled = false;
+  // The keyboard aim ring keeps the dark-theme focus colour.
+  mark = new THREE.Mesh(new THREE.RingGeometry(0.028, 0.038, 40), new THREE.MeshBasicMaterial({ color: 0x40e2f3, toneMapped: false, depthTest: false, transparent: true }));
+  mark.renderOrder = 2;
+  mark.visible = false;
+  scene.add(pane, shardMesh, mark);
+  crackScene = new THREE.Scene();
+  crackCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
+  crackMat = new THREE.ShaderMaterial({
+    vertexShader: CRACK_VS, fragmentShader: CRACK_FS, uniforms: { uTime: { value: 0 } },
+    depthTest: false, depthWrite: false,
+    blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  });
+  crackMesh = new THREE.Mesh(new THREE.BufferGeometry(), crackMat);
+  crackMesh.frustumCulled = false;
+  crackScene.add(crackMesh);
+
+  panel.prepend(canvas);
+  fitRenderer(renderer, panel, 1.5, onSize, 1.4e6);
+  // A panel with no size yet still gets a frame.
+  if (!built) onSize(16, 9);
+  await idle();
+  shardMesh.visible = true;
+  // Async compile keeps the shader builds off the main thread.
+  await renderer.compileAsync(scene, camera);
+  shardMesh.visible = false;
+  renderCracks();
+  ready = true;
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
