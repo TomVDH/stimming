@@ -36,7 +36,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Kaleidoscope | [kaleido/](kaleido/) | live, with sound |
 | Chladni plate | [chladni/](chladni/) | live, with sound |
 | Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
-| Snow globe, Murmuration, Coil, Frost, Gear train, Harmonograph, Split-flap, Dandelion, Music box, Neon sign | | in progress; outlines on the menu |
+| Split-flap | [flap/](flap/) | live draft, still being refined |
+| Snow globe, Murmuration, Coil, Frost, Gear train, Harmonograph, Dandelion, Music box, Neon sign | | in progress; outlines on the menu |
 
 ## Run locally
 
