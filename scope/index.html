@@ -48,9 +48,11 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope in X–Y mode. In Pen mode, drag to draw a shape; the beam plays it as a stereo tone, left channel across and right channel up. In Knot mode, drag to pick a ratio of two sine waves. Up and down arrows change the pitch, S shuffles, C clears, P changes the phosphor.">
+    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope in X–Y mode. In Pen mode, drag to draw a shape; the beam plays it as a stereo tone, left channel across and right channel up. In Knot mode, drag to pick a ratio of two sine waves. Shapes are 3D wires that spin. Up and down arrows change the pitch, Space starts and stops the spin, S shuffles, C clears, P changes the phosphor.">
       <canvas aria-hidden="true"></canvas>
       <button class="snd-tag" id="snd-tag" type="button" aria-label="Turn sound on" hidden></button>
+      <button class="snd-tag" id="spin-tag" type="button" aria-label="Spin" aria-keyshortcuts="Space"></button>
+      <button class="snd-tag" id="phos-tag" type="button" aria-label="Change the phosphor" aria-keyshortcuts="P"></button>
       <p class="fail" hidden>Oscilloscope needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -66,7 +68,7 @@
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>draw, or tie a knot</dd></div>
         <div class="fine"><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>pitch</dd></div>
-        <div class="fine"><dt><kbd>S</kbd></dt><dd>shuffle</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>spin</dd></div>
         <div class="fine"><dt><kbd>P</kbd></dt><dd>phosphor</dd></div>
       </dl>
     </div>
@@ -103,6 +105,7 @@ const now = () => performance.now() / 1000;
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const bar = document.querySelector('.bar'), sndTag = document.getElementById('snd-tag');
+const spinTag = document.getElementById('spin-tag'), phosTag = document.getElementById('phos-tag');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
 if (!gl) fail();
@@ -115,96 +118,149 @@ const N = 1024;
 const FADE = 0.04;
 // The beam steps at this rate, sample by sample.
 const SR = 48000;
-// The knot rolls once per DRIFT_T seconds.
-const DRIFT_T = 12;
+// One spin takes SPIN_T seconds; a spinning voice holds one whole turn.
+const SPIN_T = 12;
 const KNOT_AMP = 4.2;
+// The eye sits PERSP divisions in front of the face.
+const PERSP = 16;
+// Solids lean back a little, so their tops show.
+const TILT = 0.3;
+// A new solid pushes out its depth over GROW seconds.
+const GROW = 0.55;
 
-/* ---------- shapes: lists of [x, y] in divisions ---------- */
+/* ---------- spin and projection ---------- */
+let spinOn = !reduced(), theta0 = 0, thetaT0 = now();
+const thetaAt = t => (spinOn && !reduced() ? theta0 + TAU * (t - thetaT0) / SPIN_T : theta0);
+function setTheta(th) { theta0 = th; thetaT0 = now(); }
+// Turn round the vertical axis, lean back, then project with perspective.
+function project(x, y, z, th, ct, st, out) {
+  const c = Math.cos(th), s = Math.sin(th);
+  const x1 = x * c + z * s, z1 = -x * s + z * c;
+  const y2 = y * ct - z1 * st, z2 = y * st + z1 * ct;
+  const p = PERSP / (PERSP - z2);
+  out[0] = x1 * p; out[1] = y2 * p;
+  return out;
+}
+// The grow curve overshoots a little, so a solid pops out.
+const pop = g => 1 + 2.4 * (g - 1) ** 3 + 1.4 * (g - 1) ** 2;
+
+/* ---------- shapes: paths of [x, y, z] in divisions ---------- */
 function poly(n, rot = Math.PI / 2) {
   return Array.from({ length: n }, (_, i) => { const a = rot + i * TAU / n; return [Math.cos(a), Math.sin(a)]; });
 }
 function curve(n, fn) { return Array.from({ length: n }, (_, i) => fn(TAU * i / n)); }
-const PRESETS = [
-  // A five-point star.
-  () => ({ pts: poly(10).map((p, i) => [p[0] * (i % 2 ? 1.7 : 4.3), p[1] * (i % 2 ? 1.7 : 4.3) - 0.3]), closed: true }),
-  // A heart.
-  () => ({ pts: curve(240, u => [0.24 * 16 * Math.sin(u) ** 3, 0.23 * (13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u)) + 0.6]), closed: true }),
-  // A lightning bolt, played out and back.
-  () => ({ pts: [[-1.2, 4.5], [1.6, 0.9], [-0.9, 0.5], [2.2, -4.5]], closed: false }),
-  // A cube in two-point view; the walk covers all twelve edges.
-  () => {
-    const v = [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]].map(([x, y, z]) => {
-      const ay = 0.62, ax = 0.5;
-      [x, z] = [x * Math.cos(ay) + z * Math.sin(ay), -x * Math.sin(ay) + z * Math.cos(ay)];
-      [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
-      return [x * 2.2, y * 2.2];
-    });
-    return { pts: [0, 1, 2, 3, 0, 4, 5, 6, 7, 4, 5, 1, 2, 6, 7, 3].map(i => v[i]), closed: true };
-  },
-  // A square spiral, played out and back.
-  () => {
-    const pts = [[0, 0]];
-    let x = 0, y = 0;
-    for (let i = 1; i <= 10; i++) { const d = i * 0.42, s = i % 4; x += s === 1 ? d : s === 3 ? -d : 0; y += s === 2 ? d : s === 0 ? -d : 0; pts.push([x, y]); }
-    return { pts: pts.map(([px, py]) => [px - 0.2, py - 0.2]), closed: false };
-  },
-  // A figure eight.
-  () => ({ pts: curve(240, u => [4.3 * Math.sin(u), 2.6 * Math.sin(2 * u)]), closed: true }),
-];
-
+const dist = (a, b) => Math.hypot(...a.map((v, d) => b[d] - v));
 // Arc-length resampling along a path; a closed path wraps to its start.
 function resample(pts, n, closed) {
   const m = pts.length, segs = closed ? m : m - 1, cum = [0];
-  for (let i = 0; i < segs; i++) { const a = pts[i], b = pts[(i + 1) % m]; cum.push(cum[i] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
-  const total = cum[segs], out = new Float32Array(n * 2);
+  for (let i = 0; i < segs; i++) cum.push(cum[i] + dist(pts[i], pts[(i + 1) % m]));
+  const total = cum[segs], out = [];
   let j = 0;
   for (let k = 0; k < n; k++) {
     const at = closed ? (k / n) * total : (k / (n - 1)) * total;
     while (j < segs - 1 && cum[j + 1] < at) j++;
     const a = pts[j], b = pts[(j + 1) % m], t = clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9));
-    out[2 * k] = a[0] + (b[0] - a[0]) * t; out[2 * k + 1] = a[1] + (b[1] - a[1]) * t;
+    out.push(a.map((v, d) => v + (b[d] - v) * t));
   }
-  return { loop: out, perim: total };
+  return { pts: out, perim: total };
 }
-const pathLen = pts => pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
 // The beam slows through each turn, so corners and stroke ends burn bright.
 // DWELL is the extra path, in divisions, spent per radian of turn.
 const DWELL = 0.45;
-function retime({ loop, perim }) {
-  const n = loop.length / 2, ds = perim / n, turn = new Float32Array(n), cum = new Float64Array(n + 1);
-  for (let i = 0; i < n; i++) {
-    const h = (i + n - 1) % n, j = (i + 1) % n;
-    const a = Math.atan2(loop[2 * i + 1] - loop[2 * h + 1], loop[2 * i] - loop[2 * h]);
-    const b = Math.atan2(loop[2 * j + 1] - loop[2 * i + 1], loop[2 * j] - loop[2 * i]);
-    turn[i] = Math.abs(((b - a + 3 * Math.PI) % TAU) - Math.PI);
-  }
+function turnAt(a, b, c) {
+  const u = b.map((v, d) => v - a[d]), w = c.map((v, d) => v - b[d]);
+  const lu = Math.hypot(...u), lw = Math.hypot(...w);
+  if (lu < 1e-9 || lw < 1e-9) return 0;
+  return Math.acos(clamp(u.reduce((s, v, d) => s + v * w[d], 0) / (lu * lw), -1, 1));
+}
+function retime({ pts, perim }) {
+  const n = pts.length, ds = perim / n, turn = new Float32Array(n), cum = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) turn[i] = turnAt(pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n]);
   for (let i = 0; i < n; i++) cum[i + 1] = cum[i] + ds + DWELL * (turn[i] + turn[(i + 1) % n]) / 2;
-  const out = new Float32Array(N * 2), total = cum[n];
+  const loop = new Float32Array(N * 3), total = cum[n];
   let j = 0;
   for (let k = 0; k < N; k++) {
     const at = (k / N) * total;
     while (j < n - 1 && cum[j + 1] < at) j++;
-    const t = clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9)), j2 = (j + 1) % n;
-    out[2 * k] = loop[2 * j] + (loop[2 * j2] - loop[2 * j]) * t; out[2 * k + 1] = loop[2 * j + 1] + (loop[2 * j2 + 1] - loop[2 * j + 1]) * t;
+    const t = clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9)), a = pts[j], b = pts[(j + 1) % n];
+    for (let d = 0; d < 3; d++) loop[3 * k + d] = a[d] + (b[d] - a[d]) * t;
   }
-  return { loop: out, perim };
+  return { loop, perim };
 }
-// An open stroke plays out and back; a closed one goes round.
-function makePen(pts, closed) {
-  const path = closed ? pts : pts.concat(pts.slice(1, -1).reverse());
-  return { pts, closed, ...retime(resample(path, 2 * N, true)) };
+// A shape is one closed 3D loop, an offset on the face, and its birth time.
+function makeShape(path, { off = [0, 0], flat = false } = {}) {
+  return { ...retime(resample(path, 2 * N, true)), off, flat, grow0: now() };
+}
+// A flat outline becomes a solid: a front face, a back face, and struts at the corners.
+// An open stroke becomes a ribbon: out along the front, back along the rear.
+function extrude(outline, closed) {
+  const { pts } = resample(outline, 240, closed), m = pts.length;
+  const cx = pts.reduce((s, p) => s + p[0], 0) / m, cy = pts.reduce((s, p) => s + p[1], 0) / m;
+  const rms = Math.sqrt(pts.reduce((s, p) => s + (p[0] - cx) ** 2 + (p[1] - cy) ** 2, 0) / m);
+  const d = Math.max(0.6, 0.38 * rms);
+  // A corner is a sharp turn over a short window, and a local peak.
+  const ang = i => turnAt(pts[(i - 3 + m) % m], pts[i], pts[(i + 3) % m]);
+  let struts = [];
+  for (let i = closed ? 0 : 3; i < (closed ? m : m - 3); i++) {
+    const t = ang(i);
+    if (t > 0.6 && t >= ang((i + 1) % m) && t >= ang((i - 1 + m) % m) && (!struts.length || i - struts[struts.length - 1] > 6)) struts.push(i);
+  }
+  // A smooth outline gets evenly spaced struts instead.
+  if (struts.length < 3) struts = closed ? Array.from({ length: 8 }, (_, k) => Math.floor((k * m) / 8)) : [Math.floor(m / 3), Math.floor((2 * m) / 3)];
+  const at = new Set(struts), F = p => [p[0] - cx, p[1] - cy, d], B = p => [p[0] - cx, p[1] - cy, -d];
+  const path = [];
+  if (closed) {
+    const s0 = struts[0];
+    for (let k = 0; k <= m; k++) { const p = pts[(s0 + k) % m]; path.push(F(p)); if (k > 0 && k < m && at.has((s0 + k) % m)) path.push(B(p), F(p)); }
+    for (let k = 0; k <= m; k++) path.push(B(pts[(s0 + k) % m]));
+  } else {
+    for (let i = 0; i < m; i++) { const p = pts[i]; path.push(F(p)); if (at.has(i)) path.push(B(p), F(p)); }
+    for (let i = m - 1; i >= 0; i--) path.push(B(pts[i]));
+  }
+  return makeShape(path, { off: [cx, cy] });
+}
+// While the pen moves, the open stroke plays flat, out and back.
+function flatStroke(pts) {
+  const path = pts.concat(pts.slice(1, -1).reverse()).map(p => [p[0], p[1], 0]);
+  return makeShape(path, { flat: true });
 }
 // A stroke closes when its end comes back near its start.
+const pathLen = pts => pts.reduce((s, p, i) => (i ? s + dist(pts[i - 1], p) : 0), 0);
 function fromStroke(pts) {
-  const a = pts[0], b = pts[pts.length - 1], gap = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const a = pts[0], b = pts[pts.length - 1], gap = dist(a, b);
   const closed = pts.length > 3 && gap < Math.max(0.5, 0.12 * pathLen(pts));
-  return makePen(closed && gap < 0.2 ? pts.slice(0, -1) : pts, closed);
+  return extrude(closed && gap < 0.2 ? pts.slice(0, -1) : pts, closed);
 }
+const PRESETS = [
+  // A cube; the walk covers all twelve edges.
+  () => {
+    const v = [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]].map(p => p.map(c => c * 2));
+    return makeShape([0, 1, 2, 3, 0, 4, 5, 6, 7, 4, 5, 1, 2, 6, 7, 3].map(i => v[i]));
+  },
+  // A five-point star, pushed out into a prism.
+  () => extrude(poly(10).map((p, i) => [p[0] * (i % 2 ? 1.6 : 4), p[1] * (i % 2 ? 1.6 : 4)]), true),
+  // A trefoil knot.
+  () => makeShape(curve(480, u => [1.2 * (Math.sin(u) + 2 * Math.sin(2 * u)), 1.2 * (Math.cos(u) - 2 * Math.cos(2 * u)), -1.2 * Math.sin(3 * u)])),
+  // A coil spring with a rod down its middle.
+  () => {
+    const path = Array.from({ length: 560 }, (_, i) => { const u = i / 559, a = TAU * 7 * u; return [2.2 * Math.cos(a), -3.4 + 6.8 * u, 2.2 * Math.sin(a)]; });
+    return makeShape(path.concat([[0, 3.4, 0], [0, -3.4, 0]]));
+  },
+  // A heart, pushed out.
+  () => extrude(curve(240, u => [0.22 * 16 * Math.sin(u) ** 3, 0.21 * (13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u)) + 0.5]), true),
+  // A square pyramid; the walk covers all eight edges.
+  () => {
+    const b = [[-2.2, -1.8, -2.2], [2.2, -1.8, -2.2], [2.2, -1.8, 2.2], [-2.2, -1.8, 2.2]], A = [0, 2.8, 0];
+    return makeShape([b[0], b[1], b[2], b[3], b[0], A, b[1], b[2], A, b[3]]);
+  },
+  // A lightning bolt, as a ribbon.
+  () => extrude([[-1.2, 4.2], [1.6, 0.8], [-0.9, 0.4], [2.2, -4.2]], false),
+];
 // The knot path length over one base cycle, in divisions.
 function knotPerim(k) {
   let s = 0, px = 0, py = 0;
   for (let i = 0; i <= 2000; i++) {
-    const u = TAU * i / 2000, x = KNOT_AMP * Math.sin(k.a * u), y = KNOT_AMP * Math.sin(k.b * u + Math.PI / 4);
+    const u = TAU * i / 2000, x = KNOT_AMP * Math.sin(k.a * u + Math.PI / 4), y = KNOT_AMP * Math.sin(k.b * u);
     if (i) s += Math.hypot(x - px, y - py);
     px = x; py = y;
   }
@@ -213,10 +269,10 @@ function knotPerim(k) {
 
 /* ---------- state ---------- */
 let mode = 'pen', presetIdx = 0, pitch = 110, phos = 0;
-let pen = (({ pts, closed }) => makePen(pts, closed))(PRESETS[0]());
-let knot = { a: 3, b: 2 }, knotT0 = now(), pickCell = [3, 2];
-const drifting = () => mode === 'knot' && !!knot && !reduced();
-const psiAt = t => (drifting() ? TAU * (t - knotT0) / DRIFT_T : 0);
+let pen = PRESETS[0]();
+let knot = { a: 3, b: 2 }, pickCell = [3, 2];
+// The figure turns while spin is on and a solid or knot is up.
+const drifting = () => spinOn && !reduced() && (mode === 'knot' ? !!knot : !!pen && !pen.flat);
 
 /* ---------- sound ---------- */
 // The master gain and the level gain land near 0.2 overall.
@@ -232,32 +288,38 @@ function ensureChain(ac) {
   chain = { ac, in: hp };
   return chain;
 }
-// The pen buffer holds whole laps, about half a second of them.
-function penWave(loop, sr) {
-  const laps = Math.max(1, Math.round(pitch * 0.5)), len = Math.round(laps * sr / pitch);
-  const L = new Float32Array(len), R = new Float32Array(len);
+// A still voice holds whole laps, about half a second of them.
+// A spinning voice holds one whole turn, SPIN_T seconds.
+function penWave(S, sr) {
+  const spin = drifting() && !S.flat, th0 = thetaAt(now());
+  const laps = spin ? Math.max(1, Math.round(pitch * SPIN_T)) : Math.max(1, Math.round(pitch * 0.5));
+  const len = spin ? Math.round(SPIN_T * sr) : Math.round(laps * sr / pitch);
+  const L = new Float32Array(len), R = new Float32Array(len), lp = S.loop, out = [0, 0];
+  const ct = Math.cos(S.flat ? 0 : TILT), st = Math.sin(S.flat ? 0 : TILT);
   for (let k = 0; k < len; k++) {
     const ph = ((k * laps) / len % 1) * N, i = ph | 0, f = ph - i, j = i + 1 === N ? 0 : i + 1;
-    L[k] = clamp((loop[2 * i] + (loop[2 * j] - loop[2 * i]) * f) / 5, -1, 1);
-    R[k] = clamp((loop[2 * i + 1] + (loop[2 * j + 1] - loop[2 * i + 1]) * f) / 5, -1, 1);
+    const x = lp[3 * i] + (lp[3 * j] - lp[3 * i]) * f, y = lp[3 * i + 1] + (lp[3 * j + 1] - lp[3 * i + 1]) * f, z = lp[3 * i + 2] + (lp[3 * j + 2] - lp[3 * i + 2]) * f;
+    if (S.flat) { out[0] = x; out[1] = y; } else project(x, y, z, spin ? th0 + TAU * k / len : th0, ct, st, out);
+    L[k] = clamp((out[0] + S.off[0]) / 5, -1, 1);
+    R[k] = clamp((out[1] + S.off[1]) / 5, -1, 1);
   }
   return { L, R, len, pitch };
 }
-// The knot buffer holds one full roll; the right tone runs one cycle extra.
+// The knot is a curve on a cylinder; a turn of spin adds one cycle on the left.
 // The higher tone sits at the pitch.
 function knotWave(k, sr) {
-  const T = drifting() ? DRIFT_T : 1, len = Math.round(T * sr);
-  const fb = Math.max(1, Math.round((pitch / Math.max(k.a, k.b)) * T)) / T, extra = drifting() ? 1 / T : 0;
+  const spin = drifting(), T = spin ? SPIN_T : 1, len = Math.round(T * sr), th0 = thetaAt(now());
+  const fb = Math.max(1, Math.round((pitch / Math.max(k.a, k.b)) * T)) / T, extra = spin ? 1 / T : 0;
   const L = new Float32Array(len), R = new Float32Array(len), A = KNOT_AMP / 5;
   for (let i = 0; i < len; i++) {
     const t = i / sr;
-    L[i] = A * Math.sin(TAU * k.a * fb * t);
-    R[i] = A * Math.sin(TAU * (k.b * fb + extra) * t);
+    L[i] = A * Math.sin(TAU * (k.a * fb + extra) * t + th0);
+    R[i] = A * Math.sin(TAU * k.b * fb * t);
   }
   return { L, R, len, pitch };
 }
 function signal(sr) {
-  if (mode === 'pen') return pen ? penWave(pen.loop, sr) : null;
+  if (mode === 'pen') return pen ? penWave(pen, sr) : null;
   return knot ? knotWave(knot, sr) : null;
 }
 function fade(v, at) {
@@ -305,7 +367,7 @@ function changed({ first = false } = {}) {
   const t = now();
   traces.forEach(v => { if (!v.dieAt) v.dieAt = t; });
   const born = first ? t - FADE : t;
-  if (mode === 'pen' && pen) traces.push({ kind: 'pen', loop: pen.loop, perim: pen.perim, born, dieAt: 0 });
+  if (mode === 'pen' && pen) traces.push({ kind: 'pen', s: pen, perim: pen.perim, born, dieAt: 0 });
   if (mode === 'knot' && knot) traces.push({ kind: 'knot', a: knot.a, b: knot.b, perim: knotPerim(knot), born, dieAt: 0 });
   paintHud();
   dirty = true; sync();
@@ -316,10 +378,10 @@ function changed({ first = false } = {}) {
 // Flash and glow colours, fast and slow decay, the slow share and gains.
 const lin = c => oklchLinear(...c).map(x => Math.max(0, x));
 const PHOS = [
-  { flash: lin([0.9, 0.21, 145]), glow: lin([0.6, 0.17, 150]), tf: 0.045, ts: 0.4, slow: 0.12, gain: [1, 0.9, 0.34] },
-  { flash: lin([0.88, 0.1, 250]), glow: lin([0.8, 0.17, 105]), tf: 0.03, ts: 1.5, slow: 0.05, gain: [0.9, 0.7, 0.3] },
-  { flash: lin([0.86, 0.15, 72]), glow: lin([0.6, 0.17, 52]), tf: 0.05, ts: 0.35, slow: 0.12, gain: [1, 0.9, 0.34] },
-  { flash: lin([0.95, 0.03, 240]), glow: lin([0.62, 0.09, 258]), tf: 0.05, ts: 0.28, slow: 0.1, gain: [1, 0.9, 0.3] },
+  { name: 'P31 GREEN', flash: lin([0.9, 0.21, 145]), glow: lin([0.6, 0.17, 150]), tf: 0.045, ts: 0.4, slow: 0.12, gain: [1, 0.9, 0.34] },
+  { name: 'P7 RADAR', flash: lin([0.88, 0.1, 250]), glow: lin([0.8, 0.17, 105]), tf: 0.03, ts: 1.5, slow: 0.05, gain: [0.9, 0.7, 0.3] },
+  { name: 'P3 AMBER', flash: lin([0.86, 0.15, 72]), glow: lin([0.6, 0.17, 52]), tf: 0.05, ts: 0.35, slow: 0.12, gain: [1, 0.9, 0.34] },
+  { name: 'P4 WHITE', flash: lin([0.95, 0.03, 240]), glow: lin([0.62, 0.09, 258]), tf: 0.05, ts: 0.28, slow: 0.1, gain: [1, 0.9, 0.3] },
 ];
 // The tube bulges a little; the pointer maps through the same curve.
 const WARP = 0.045;
@@ -402,7 +464,7 @@ precision highp float;
 out vec4 o;
 uniform sampler2D uAccum, uBloom, uHud;
 uniform vec2 uRes;
-uniform float uDpr, uTime, uWarp, uFringe;
+uniform float uDpr, uTime, uWarp, uFringe, uPower;
 uniform vec3 uFlash, uGlow, uGain, uTint;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 float vnoise(vec2 p) {
@@ -444,6 +506,9 @@ float smudge(vec2 p) {
 }
 void main() {
   vec2 uv0 = gl_FragCoord.xy / uRes, uv = warp(uv0);
+  // Power-on: a dot opens to a line, then the raster opens to full height.
+  vec2 open = vec2(max(0.002, smoothstep(0.0, 0.3, uPower)), max(0.002, smoothstep(0.22, 0.78, uPower)));
+  uv = (uv - 0.5) / open + 0.5;
   vec2 css = gl_FragCoord.xy / uDpr;
   // Past the edge of the warped face the tube is black.
   vec2 edge = min(uv, 1.0 - uv) * uRes;
@@ -486,7 +551,7 @@ void main() {
   col += (1.0 - smoothstep(0.0, 0.85, length((uv0 - vec2(0.22, 0.86)) * vec2(0.8, 1.5)))) * 0.008;
   col *= 1.0 + 0.012 * sin(uTime * 113.0);
   col += (hash(gl_FragCoord.xy + fract(uTime) * 61.0) - 0.5) * 0.006;
-  col *= inside;
+  col *= inside * (1.0 + 3.0 * (1.0 - smoothstep(0.55, 1.0, uPower)));
   col = pow(max(col, 0.0), vec3(1.0 / 2.2));
   o = vec4(col, 1.0);
 }`;
@@ -578,6 +643,11 @@ function unwarp(x, y) {
   for (let i = 0; i < 6; i++) { const f = 1 + WARP * (sx * sx + sy * sy); sx = tx / f; sy = ty / f; }
   return [(sx / as + 0.5) * w, (0.5 - sy) * h];
 }
+// A clear button covers a tag where the bulge shows it on screen.
+function placeTag(el, x, y, tw, th) {
+  const [x0, y0] = unwarp(x - 8, y - 6), [x1, y1] = unwarp(x + tw + 8, y + th + 6);
+  Object.assign(el.style, { left: `${x0}px`, top: `${y0}px`, width: `${x1 - x0}px`, height: `${y1 - y0}px` });
+}
 function paintHud() {
   if (!acc.length) return;
   const w = canvas.clientWidth, h = canvas.clientHeight, g = hctx, d = cssDiv, [cx, cy] = cssC;
@@ -635,6 +705,15 @@ function paintHud() {
     g.font = `700 ${big}px ${MONO}`;
     g.fillText(`${knot.a}:${knot.b}`, pad + lw, pad);
   }
+  // Two tappable tags sit under the mode: spin, then the phosphor.
+  g.font = `700 ${small}px ${MONO}`;
+  const tagY = [pad + big + 8, pad + big + small + 18];
+  const spinTxt = reduced() ? '⟳ SPIN —' : spinOn ? '⟳ SPIN ON' : '⟳ SPIN OFF';
+  g.fillStyle = grey(spinOn && !reduced() ? 0.85 : 0.45); g.fillText(spinTxt, pad, tagY[0]);
+  g.fillStyle = grey(0.6); g.fillText(`◐ ${PHOS[phos].name}`, pad, tagY[1]);
+  placeTag(spinTag, pad, tagY[0], g.measureText(spinTxt).width, small);
+  placeTag(phosTag, pad, tagY[1], g.measureText(`◐ ${PHOS[phos].name}`).width, small);
+  spinTag.setAttribute('aria-pressed', String(spinOn && !reduced()));
   g.textAlign = 'right';
   g.font = `700 ${big}px ${MONO}`;
   g.fillText(`${Math.round(pitch)} Hz`, w - pad, pad);
@@ -647,8 +726,7 @@ function paintHud() {
     g.fillStyle = grey(0.62); g.font = `700 ${small}px ${MONO}`;
     g.fillText(txt, w - pad, y);
     const tw = g.measureText(txt).width;
-    const [x0, y0] = unwarp(w - pad - tw - 8, y - 8), [x1, y1] = unwarp(w - pad + 8, y + small + 8);
-    Object.assign(sndTag.style, { left: `${x0}px`, top: `${y0}px`, width: `${x1 - x0}px`, height: `${y1 - y0}px` });
+    placeTag(sndTag, w - pad - tw, y, tw, small);
   }
   // A hint sits at the top of the face until the gesture is used.
   const hint = mode === 'pen' ? (!taught.pen || !pen ? 'DRAG ANYWHERE TO DRAW' : '') : (!taught.knot || !knot ? 'DRAG ACROSS THE GRID TO TIE A KNOT' : '');
@@ -677,10 +755,12 @@ function layout() {
   const { w, h, dpr: d, W, H } = fitCanvas(canvas, { budget: 2.6e6 });
   dpr = W / w;
   const m = clamp(Math.min(w, h) * 0.05, 14, 40);
-  const reserve = bar.getBoundingClientRect().height;
-  const availH = h - reserve - m, size = Math.max(60, Math.min(w - 2 * m, availH - m));
+  const reserve = bar.getBoundingClientRect().height, yBot = h - reserve - m / 2;
+  // With no room beside the face, the face drops below a strip for the HUD.
+  let yTop = m, size = Math.max(60, Math.min(w - 2 * m, yBot - yTop));
+  if ((w - size) / 2 < 190) { yTop = 96; size = Math.max(60, Math.min(w - 2 * m, yBot - yTop)); }
   cssDiv = size / 10;
-  cssC = [w / 2, m + (availH - m) / 2 + m / 2];
+  cssC = [w / 2, (yTop + yBot) / 2];
   CX = cssC[0] * dpr; CY = (h - cssC[1]) * dpr; DIV = cssDiv * dpr;
   // The phosphor layer covers the whole screen, within a budget.
   K = Math.min(1, Math.sqrt(1.6e6 / (W * H)));
@@ -750,6 +830,7 @@ function present(t) {
   gl.uniform2f(u.uRes, canvas.width, canvas.height);
   gl.uniform1f(u.uDpr, dpr); gl.uniform1f(u.uTime, t % 1000);
   gl.uniform1f(u.uWarp, WARP); gl.uniform1f(u.uFringe, FRINGE);
+  gl.uniform1f(u.uPower, clamp((t - powerT0) / 0.9));
   gl.uniform3fv(u.uFlash, ph.flash); gl.uniform3fv(u.uGlow, ph.glow); gl.uniform3fv(u.uGain, ph.gain);
   // The HUD glows in a blend of the flash and glow colours.
   gl.uniform3fv(u.uTint, ph.flash.map((f, i) => (f * 0.45 + ph.glow[i] * 0.8) * 0.9));
@@ -766,7 +847,8 @@ let ph = 0;
 // Chop mode: each block of 64 steps shows one trace, picked by weight.
 // The beam blanks while it jumps between traces.
 // No trace, or a fading one, leaves the spot parked at centre.
-let sn = 0, shown = null;
+let sn = 0, shown = null, lastG = -1, ctG = 1, stG = 0;
+const xy = [0, 0];
 function sample(phase, t) {
   const r = (Math.floor(sn++ / 64) * 0.6180339887) % 1;
   let total = 0;
@@ -778,12 +860,20 @@ function sample(phase, t) {
   }
   let x = 0, y = 0, I;
   if (pick?.kind === 'pen') {
-    const f = (phase % 1) * N, i = f | 0, q = f - i, j = i + 1 === N ? 0 : i + 1, L = pick.loop;
-    x = L[2 * i] + (L[2 * j] - L[2 * i]) * q; y = L[2 * i + 1] + (L[2 * j + 1] - L[2 * i + 1]) * q;
+    const S = pick.s, L = S.loop, f = (phase % 1) * N, i = f | 0, q = f - i, j = i + 1 === N ? 0 : i + 1;
+    x = L[3 * i] + (L[3 * j] - L[3 * i]) * q; y = L[3 * i + 1] + (L[3 * j + 1] - L[3 * i + 1]) * q;
+    if (!S.flat) {
+      // A new solid pushes its depth and lean out as it is born.
+      const g = pop(clamp((t - S.grow0) / GROW)), z = L[3 * i + 2] + (L[3 * j + 2] - L[3 * i + 2]) * q;
+      if (g !== lastG) { lastG = g; ctG = Math.cos(TILT * g); stG = Math.sin(TILT * g); }
+      project(x, y, z * g, thetaAt(t), ctG, stG, xy);
+      x = xy[0]; y = xy[1];
+    }
+    x += S.off[0]; y += S.off[1];
     I = IK * sigma * Math.max(pick.perim * DIV * K, 20) * pitch;
   } else if (pick) {
     const top = Math.max(pick.a, pick.b), u = TAU * phase / top;
-    x = KNOT_AMP * Math.sin(pick.a * u); y = KNOT_AMP * Math.sin(pick.b * u + psiAt(t));
+    x = KNOT_AMP * Math.sin(pick.a * u + thetaAt(t)); y = KNOT_AMP * Math.sin(pick.b * u);
     I = IK * sigma * Math.max(pick.perim * DIV * K, 20) * pitch / top;
   } else I = IDOT * sigma * sigma;
   pt[0] = (CX + clamp(x, -5, 5) * DIV) * K;
@@ -906,14 +996,14 @@ canvas.addEventListener('pointermove', e => {
   }
   // While the pen moves, the open stroke plays out and back.
   const t = now();
-  if (strokeLen > 0.3 && t - lastBuild > 0.05) { lastBuild = t; pen = makePen(stroke.slice(), false); changed(); }
+  if (strokeLen > 0.3 && t - lastBuild > 0.05) { lastBuild = t; pen = flatStroke(stroke.slice()); changed(); }
   poke();
 });
 function lift() {
   if (picking) { picking = false; paintHud(); poke(); return; }
   if (!stroke) return;
   const s = stroke; stroke = null;
-  if (strokeLen > 0.3 && s.length > 1) { taught.pen = true; pen = fromStroke(s); changed(); }
+  if (strokeLen > 0.3 && s.length > 1) { taught.pen = true; pen = fromStroke(s); setTheta(0); changed(); }
   else { pen = before; if (lastBuild) changed(); }
   poke();
 }
@@ -945,7 +1035,7 @@ function stepPitch(dir) {
 }
 choices(document.querySelector('.bar .choices'), v => {
   if (v === mode) return;
-  mode = v; knotT0 = now();
+  mode = v;
   changed();
 });
 function shuffle() {
@@ -953,8 +1043,8 @@ function shuffle() {
     let k = presetIdx;
     while (k === presetIdx) k = Math.floor(Math.random() * PRESETS.length);
     presetIdx = k;
-    const { pts, closed } = PRESETS[k]();
-    pen = makePen(pts, closed);
+    pen = PRESETS[k]();
+    setTheta(0);
   } else {
     const pairs = [];
     for (let a = 1; a <= 5; a++) for (let b = 1; b <= 5; b++) if (gcd(a, b) === 1 && !(knot && knot.a === a && knot.b === b)) pairs.push([a, b]);
@@ -969,8 +1059,17 @@ function clear() {
 }
 function nextPhosphor() {
   phos = (phos + 1) % PHOS.length;
-  poke();
+  paintHud(); poke();
 }
+// Spin freezes the figure where it stands, or sets it turning again.
+function toggleSpin() {
+  if (reduced()) return;
+  const th = thetaAt(now());
+  spinOn = !spinOn; setTheta(th);
+  paintHud(); dirty = true; sync(); poke();
+}
+spinTag.addEventListener('click', toggleSpin);
+phosTag.addEventListener('click', nextPhosphor);
 document.getElementById('shuffle').addEventListener('click', shuffle);
 document.getElementById('clear').addEventListener('click', clear);
 addEventListener('keydown', e => {
@@ -981,8 +1080,20 @@ addEventListener('keydown', e => {
   else if (k === 's') shuffle();
   else if (k === 'c') clear();
   else if (k === 'p') nextPhosphor();
+  else if (k === ' ' && !e.target.closest?.('button')) { e.preventDefault(); toggleSpin(); }
 });
-onReducedChange(() => changed());
+onReducedChange(() => { if (reduced()) spinOn = false; changed(); });
+
+/* ---------- power-on ---------- */
+// The tube stays dark under the intro and switches on as it clears.
+let powerT0 = Infinity;
+function powerOn() { if (powerT0 === Infinity) { powerT0 = now(); poke(); } }
+if (reduced() || !document.querySelector('.intro')) powerT0 = -1e9;
+else {
+  const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); powerOn(); } });
+  mo.observe(document.body, { childList: true });
+  setTimeout(powerOn, 8000);
+}
 
 /* ---------- start ---------- */
 document.fonts.ready.then(paintHud);
