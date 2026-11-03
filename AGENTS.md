@@ -17,7 +17,7 @@ Read `README.md` for the toy list and the full rules.
 |---|---|
 | Working tree | (this folder) |
 | Remote | `git@github.com:TomVDH/stimming.git` (private), branch `main` |
-| Artifact | <https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd> |
+| Site | <https://tomvdh.github.io/stimming/> (GitHub Pages; the claude.ai Artifact is retired) |
 | Canonical context | [[stimming/brief]] |
 | Decisions | [[stimming/decisions]] |
 | Sessions | [[stimming/sessions]] |
@@ -25,7 +25,7 @@ Read `README.md` for the toy list and the full rules.
 
 ## Layout
 
-- `index.html` is the menu. It is an Artifact body fragment.
+- `index.html` is the menu: a body fragment; the Pages build adds the doctype and viewport.
   - Main shelf (7): morpher, pop, fidget, domino, pins, galaxy, prism.
   - Lab (`section.lab`, 22 toys): all other toys. It shows only at `?lab`; `lab/` redirects there. The menu has no link to it.
 - Menu icons are inline SVG in an angular brut style: a hex, square or angled block with a hard offset shadow.
@@ -64,9 +64,8 @@ Open <http://localhost:8000/>. All links are relative.
 
 ## Publishing
 
-1. Read the Artifact before the first publish in a session.
-2. Publish root `index.html` to the Artifact URL.
-3. Pass each changed page in `files` at its folder path (`prism/index.html`, `shared/stim.css`, `toys.json`). Use absolute source paths.
+The claude.ai Artifact is retired: never publish to it.
+Build locally, commit and push to `main`. GitHub Pages deploys every push to <https://tomvdh.github.io/stimming/> (`.github/workflows/pages.yml`).
 
 ## Conventions
 

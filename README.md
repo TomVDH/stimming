@@ -2,7 +2,7 @@
 
 Small interactive desk toys for the office. One folder per toy, one self-contained `index.html` each. The root `index.html` is the menu.
 
-Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd>. The menu is its main page and every toy is a page inside it.
+The site is hosted on GitHub Pages: <https://tomvdh.github.io/stimming/>. Every push to `main` deploys it. The menu is the main page and every toy is a page under it. The old claude.ai Artifact is retired.
 
 Source: <https://github.com/TomVDH/stimming> (private).
 
@@ -53,13 +53,13 @@ Source: <https://github.com/TomVDH/stimming> (private).
 
 ## Run locally
 
-Each toy is a full HTML page; the menu is an Artifact body fragment, which browsers render as is. Serve the folder so the modules and fonts load:
+Each toy is a full HTML page; the menu is a body fragment, which browsers render as is. Serve the folder so the modules and fonts load:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000/>. All links are relative, so the menu and toys work the same locally and in the Artifact. Libraries and fonts load from cdnjs, jsDelivr and Google Fonts, so the toys need an internet connection.
+Then open <http://localhost:8000/>. All links are relative, so the menu and toys work the same locally and on GitHub Pages. Libraries and fonts load from cdnjs, jsDelivr and Google Fonts, so the toys need an internet connection.
 
 ## Shared shell
 
@@ -72,7 +72,7 @@ There is no build step. Toys stay independent pages that share one wrapper.
 
 ## Publishing
 
-Publish `index.html` to the Artifact link above with every toy page passed as a file at its folder path (`morpher/index.html`, `fidget/index.html`, and so on), plus `shared/stim.css`, `shared/stim.js`, `shared/intro.css`, `shared/intro.js` and `toys.json`. Add each new toy's path when it lands.
+Push to `main`. The Pages workflow (`.github/workflows/pages.yml`) copies the site files and deploys them. The claude.ai Artifact is retired.
 
 ## Conventions
 
