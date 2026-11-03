@@ -172,8 +172,8 @@ function linear(L, C, h) {
   for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
   return c.map(v => clamp(v));
 }
-// Ruby, citrine, emerald, aquamarine, sapphire, amethyst, tourmaline, topaz, peridot, tanzanite.
-const JEWELS = [[0.64, 0.22, 20], [0.85, 0.16, 90], [0.74, 0.19, 155], [0.8, 0.13, 210], [0.62, 0.2, 260], [0.65, 0.21, 305], [0.72, 0.2, 352], [0.75, 0.17, 50], [0.86, 0.19, 128], [0.6, 0.19, 283]];
+// The jewels: ruby, citrine, emerald, aquamarine, sapphire, amethyst, tourmaline, topaz, peridot, tanzanite.
+const JEWELS = [[0.64, 0.22, 20], [0.82, 0.17, 88], [0.72, 0.19, 155], [0.76, 0.14, 210], [0.6, 0.2, 260], [0.6, 0.22, 305], [0.7, 0.2, 352], [0.74, 0.17, 50], [0.8, 0.2, 130], [0.6, 0.19, 283]];
 let bag = [];
 // A shuffled bag keeps neighbouring launches in different colours.
 function jewel() {
@@ -193,7 +193,7 @@ const level = () => 1 / (1 + 0.05 * voices);
 // D major pentatonic: inner orbits take the higher degrees.
 const PENTA = [0, 2, 4, 7, 9], ROOT = 146.83, NDEG = 16;
 const freq = d => ROOT * 2 ** ((12 * Math.floor(d / 5) + PENTA[((d % 5) + 5) % 5]) / 12);
-// The sun hums an open fifth whose root walks D, B, G, A.
+// The sun drones an open fifth on D, B, G or A.
 const ROOTS = [146.83, 123.47, 98, 110];
 let rootI = 0;
 
@@ -256,13 +256,15 @@ function unlock(e) {
 // A stereo hall: decaying noise whose highs fade first.
 function hall(dur) {
   const sr = ac.sampleRate, n = Math.round(sr * dur), b = ac.createBuffer(2, n, sr);
+  const kTone = Math.exp(-1 / (sr * 0.5)), kAmp = Math.exp(-1 / (sr * 0.62)), fade = 1 / (sr * 0.015);
   for (let c = 0; c < 2; c++) {
     const d = b.getChannelData(c);
-    let lp = 0;
+    let lp = 0, tone = 1, amp = 1;
     for (let i = 0; i < n; i++) {
-      const t = i / sr;
-      lp += (Math.random() * 2 - 1 - lp) * (0.12 + 0.8 * Math.exp(-t / 0.5));
-      d[i] = lp * Math.exp(-t / 0.62) * Math.min(1, t / 0.015);
+      lp += (Math.random() * 2 - 1 - lp) * (0.12 + 0.8 * tone);
+      d[i] = lp * amp * Math.min(1, i * fade);
+      tone *= kTone;
+      amp *= kAmp;
     }
   }
   return b;
@@ -294,7 +296,7 @@ function makeDrone() {
 // The hum grows with the number of planets.
 function droneLevel(n) {
   if (!drone) return;
-  drone.g.gain.setTargetAtTime(n < 2 ? 0 : 0.075 * Math.min(1, (n - 1) / 5), ac.currentTime, 1.6);
+  drone.g.gain.setTargetAtTime(n < 2 ? 0 : 0.045 * Math.min(1, (n - 1) / 5), ac.currentTime, 1.6);
 }
 // The root glides to its next step.
 function droneStep() {
@@ -312,13 +314,13 @@ function bus(a, x) {
 // A soft bell: small bodies ring glassy, big ones round and long.
 function bell(a, dst, t, f, g, size, tails) {
   const glass = clamp(1 - (size - 0.014) / 0.034);
-  const tau = clamp(1.5 * (330 / f) ** 0.35, 0.55, 2.6) * (1.2 - 0.35 * glass);
+  const tau = clamp(1.4 * (330 / f) ** 0.35, 0.5, 1.6) * (1.2 - 0.35 * glass);
   const parts = [[1, 1, 1], [2, 0.26 + 0.2 * glass, 0.42], [3.01, 0.07 + 0.1 * glass, 0.24], [4.17, 0.04 + 0.12 * glass, 0.15]];
   if (glass < 0.5 && f > 150) parts.push([0.5, 0.3 * (1 - 2 * glass), 1.25]);
   let long = null, end = 0;
   for (const [r, v, k] of parts) {
     if (f * r > 9000) continue;
-    const o = a.createOscillator(), og = a.createGain(), stop = t + 0.02 + tau * k * 6;
+    const o = a.createOscillator(), og = a.createGain(), stop = t + 0.02 + tau * k * 3.6;
     o.frequency.value = f * r * jit(0.0015);
     og.gain.setValueAtTime(0, t);
     og.gain.linearRampToValueAtTime(v * g, t + 0.006);
@@ -397,7 +399,7 @@ function chord(fs, x) {
       og.gain.setTargetAtTime(0, t + 0.6, 0.85);
       o.connect(lp).connect(og).connect(d);
       o.start(t);
-      o.stop(t + 6.6);
+      o.stop(t + 4.8);
       tails.push(lp, og);
       src = src || o;
     }
@@ -405,7 +407,7 @@ function chord(fs, x) {
   track(src, ...tails);
   fs.forEach((f, i) => chime(f, 0.03, x, 0.045 * i, 0.5));
 }
-// A merger: a soft low thump, a sparkle and both notes at once.
+// A merger: a low thump, a sparkle and both notes.
 function mergeSound(f1, f2, f3, size, x) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -474,7 +476,8 @@ function clearSound() {
 }
 
 /* ---------- the system: units of half the stage's short side ---------- */
-// The sun's pull carries a small 1/r³ term, so orbits precess into rosettes.
+// The sun's pull has a small 1/r³ term.
+// That term makes orbits precess into rosettes.
 const GM = 0.24, GAMMA = 0.0045, H = 1 / 240, MAXB = 26, A_IN = 0.17, A_OUT = 1.7;
 let U = 300, HW = 16 / 9, HH = 1, SZ = 1, SUN_R = 0.078;
 const bodies = [], sparks = [], rings = [], links = [], waves = [], flares = [], queue = [];
@@ -535,9 +538,12 @@ function makeBody(x, y, vx, vy, size, col, ring) {
   paint(b);
   return b;
 }
+// Pale trails dim and deep ones brighten, so every colour reads alike.
 function paint(b) {
   b.rgb = linear(b.L, b.C, b.h);
   b.trail = linear(Math.min(0.9, b.L + 0.05), b.C, b.h);
+  const [r, g, bl] = b.trail;
+  b.tk = clamp(Math.sqrt(0.3 / (0.2126 * r + 0.7152 * g + 0.0722 * bl + 1e-3)), 0.6, 1.4);
 }
 function add(b) {
   // The oldest free planet drifts away to make room.
@@ -589,7 +595,8 @@ function accel() {
     }
   }
 }
-// A moon rides a circle around its host, eased in from where it was caught.
+// A moon rides a circle around its host.
+// It eases in from the point of capture.
 function moonPlace(m) {
   const p = m.host, d = lerp(m.md0, m.md, smooth(m.capT)), c = Math.cos(m.ma), s = Math.sin(m.ma);
   m.x = p.x + d * c;
@@ -644,7 +651,8 @@ function collide() {
 }
 
 /* ---------- orbits, moons and music ---------- */
-// Orbital energy gives the semi-major axis; inner orbits sing higher.
+// Orbital energy gives the semi-major axis.
+// Inner orbits sing higher.
 function orbit(b) {
   const c = b.host || b, r = Math.hypot(c.x, c.y), E = 0.5 * (c.vx * c.vx + c.vy * c.vy) - GM / r - GAMMA / (r * r);
   b.a = E < 0 ? -GM / (2 * E) : 0;
@@ -655,7 +663,7 @@ function orbit(b) {
   }
   if (!b.a) return;
   b.T = TAU * Math.sqrt(b.a ** 3 / GM);
-  // Pitch keeps its note until the orbit moves well past the next one.
+  // A note holds until the orbit moves well past the next note.
   const f = clamp(((NDEG - 1) * Math.log2(A_OUT / b.a)) / Math.log2(A_OUT / A_IN), 0, NDEG - 1);
   if (b.deg < 0 || Math.abs(f - b.deg) > 0.7) b.deg = Math.round(f);
 }
@@ -677,9 +685,12 @@ function sing(b) {
   if (!b.a || !(prev < 0 && nu >= 0 && nu - prev < 1.5) || simT - b.chimeAt < 0.45 * b.T) return;
   b.chimeAt = simT;
   b.flash = Math.max(b.flash, 0.6);
+  // The sun's corona breathes with the music.
+  heat = Math.min(2.2, heat + 0.04);
   ring(b.x, b.y, b.rad * 1.2, b.rad * 3.6, 0.9, b.rgb, 0.5, b);
   if (!take()) return;
-  chime(note(b), b.size, panOf(b));
+  // Fast inner planets whisper and slow outer ones ring fuller.
+  chime(note(b), b.size, panOf(b), 0, clamp(Math.sqrt(b.T / 3), 0.55, 1));
   // Moons answer with grace notes above.
   b.moons.forEach((m, i) => chime(note(m), m.size, panOf(m), 0.09 * (i + 1), 0.45));
 }
@@ -714,8 +725,8 @@ function release(m) {
   m.noCap = simT + 2;
   m.capT = 1;
 }
-// A freshly flung small body that drifts slowly past a heavy one is caught.
-// Old bodies are caught only when nearly at rest beside it.
+// A heavy body catches a fresh small body that drifts past slowly.
+// It catches an old body only when nearly at rest beside it.
 function catchable(p, s, dx, dy, rvx, rvy, young) {
   if (p.mu < 3.5 * s.mu || p.moons.length >= 3) return false;
   const reach = (young ? 2.8 : 2) * p.rad + s.rad, v = Math.hypot(rvx, rvy);
@@ -737,7 +748,8 @@ function captures() {
 /* ---------- events: flashes, mergers, flares, escapes, the pulse ---------- */
 const SUNC = linear(0.86, 0.17, 70), WAVEC = linear(0.88, 0.12, 80);
 const mixRgb = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
-// Rings spread from a point; a blob is a soft flash.
+// A ring spreads from a point.
+// A blob is a soft flash.
 function ring(x, y, r0, r1, life, rgb, k, follow = null, blob = false) {
   if (rings.length > 70) rings.shift();
   rings.push({ x, y, r0, r1, t0: simT, life, rgb, k, follow, dx: follow ? x - follow.x : 0, dy: follow ? y - follow.y : 0, blob });
@@ -752,12 +764,13 @@ function spray(x, y, n, speed, rgb, life, fall = 0, dir = 0, spread = Math.PI) {
 function merge(p, q) {
   const [a, b] = q.mu > p.mu || (q.mu === p.mu && p.host) ? [q, p] : [p, q];
   const m = a.mu + b.mu, ka = a.mu / m, kb = 1 - ka, f1 = note(a), f2 = note(b);
-  // Hues blend in OKLab; chroma and lightness only climb.
+  // Hues blend in OKLab.
+  // Chroma never drops.
   const A = ka * a.C * Math.cos(a.h * D2R) + kb * b.C * Math.cos(b.h * D2R);
   const B = ka * a.C * Math.sin(a.h * D2R) + kb * b.C * Math.sin(b.h * D2R);
   a.h = (Math.atan2(B, A) / D2R + 360) % 360;
   a.C = Math.max(a.C, b.C);
-  a.L = Math.min(0.9, Math.max(a.L, b.L) + 0.03);
+  a.L = Math.min(0.82, ka * a.L + kb * b.L + 0.02);
   if (!a.host) {
     a.x = ka * a.x + kb * b.x;
     a.y = ka * a.y + kb * b.y;
@@ -789,12 +802,15 @@ function merge(p, q) {
 }
 // Too close to the sun: the body melts into a flare.
 function swallow(b) {
-  const ang = Math.atan2(b.y, b.x), k = clamp(Math.sqrt(b.mu / 0.0012), 0.45, 1.6);
+  const ang = Math.atan2(b.y, b.x), k = clamp(0.7 + 0.5 * Math.sqrt(b.mu / 0.0012), 0.8, 1.6), c = Math.cos(ang), s = Math.sin(ang);
   if (flares.length >= 4) flares.shift();
   flares.push({ ang, t0: simT, k, rgb: b.trail });
   heat = Math.min(2.2, heat + 0.35 * k);
-  sunV += 1.4 * k;
-  spray(Math.cos(ang) * SUN_R, Math.sin(ang) * SUN_R, Math.round(12 * k) + 8, 0.7, mixRgb(b.trail, SUNC, 0.45), 1.5, 1, ang, 0.8);
+  sunV += 1.6 * k;
+  const fc = mixRgb(b.trail, SUNC, 0.35), x = c * SUN_R * 1.08, y = s * SUN_R * 1.08;
+  ring(x, y, 0.01, SUN_R * 1.6, 0.45, mixRgb(fc, [1, 1, 1], 0.4), 1.6 * k, null, true);
+  ring(x, y, SUN_R * 0.3, SUN_R * 3.2, 0.8, fc, 1.1 * k);
+  spray(x, y, Math.round(14 * k) + 10, 1.05, fc, 1.6, 1, ang, 0.75);
   swallowSound(note(b), panOf(b));
   kill(b, 1.6);
 }
@@ -864,15 +880,16 @@ function conjunctions() {
 function kepler(a, e, w, nu, dir = 1) {
   const p = a * (1 - e * e), r = p / (1 + e * Math.cos(nu)), th = w + dir * nu, k = Math.sqrt(GM / p);
   const vr0 = k * e * Math.sin(nu), vt0 = k * (1 + e * Math.cos(nu));
-  // Extra speed pays for the extra pull, so the orbit keeps its energy.
+  // Extra speed pays for the extra pull.
+  // The orbit keeps its Kepler energy.
   const s = Math.sqrt(1 + (2 * GAMMA) / (r * r * (vr0 * vr0 + vt0 * vt0)));
   const vr = vr0 * s, vt = vt0 * s, c = Math.cos(th), sn = Math.sin(th);
   return [r * c, r * sn, vr * c - dir * vt * sn, vr * sn + dir * vt * c];
 }
 function pickSize(small) {
-  if (small) return rand(0.012, 0.016);
+  if (small) return rand(0.013, 0.017);
   const r = Math.random();
-  return r < 0.18 ? rand(0.013, 0.017) : r < 0.52 ? rand(0.02, 0.026) : r < 0.84 ? rand(0.027, 0.034) : rand(0.037, 0.046);
+  return r < 0.18 ? rand(0.014, 0.018) : r < 0.52 ? rand(0.022, 0.028) : r < 0.84 ? rand(0.03, 0.037) : rand(0.04, 0.048);
 }
 // New circular orbits turn the way most of the system already does.
 function spin() {
@@ -904,13 +921,13 @@ function randomPlanet() {
   hello(b);
   wake();
 }
-// Semi-major axis, eccentricity, periapsis, start, size, jewel, ring, moons.
+// Each preset row: semi-major axis, eccentricity, periapsis, start, size, jewel, ring, moons.
 const PRESET = [
-  [0.2, 0.2, 30, 40, 0.016, 0, 0, 0],
-  [0.32, 0.12, 150, 200, 0.024, 1, 0, 0],
-  [0.47, 0.06, 260, 300, 0.038, 4, 1, 0],
-  [0.63, 0.11, 10, 120, 0.02, 3, 0, 0],
-  [0.86, 0.015, 80, 250, 0.044, 5, 0, 1],
+  [0.2, 0.2, 30, 40, 0.018, 0, 0, 0],
+  [0.32, 0.12, 150, 200, 0.026, 1, 0, 0],
+  [0.47, 0.06, 260, 300, 0.04, 4, 1, 0],
+  [0.63, 0.11, 10, 120, 0.022, 3, 0, 0],
+  [0.86, 0.015, 80, 250, 0.046, 5, 0, 1],
 ];
 const MOON_JEWELS = [6, 8, 7];
 function seed(instant) {
@@ -923,7 +940,7 @@ function seed(instant) {
       if (instant) b.grow = 1;
       else hello(b, 0.75);
       for (let k = 0; k < nm; k++) {
-        const m = add(makeBody(b.x, b.y, b.vx, b.vy, 0.012 + 0.002 * k, JEWELS[MOON_JEWELS[k]], 0)), ang = rand(0, TAU);
+        const m = add(makeBody(b.x, b.y, b.vx, b.vy, 0.013 + 0.002 * k, JEWELS[MOON_JEWELS[k]], 0)), ang = rand(0, TAU);
         const d = 1.9 * b.rad + 1.4 * m.rad + k * 2.6 * m.rad;
         hook(b, m, Math.cos(ang) * d, Math.sin(ang) * d, -Math.sin(ang), Math.cos(ang), false, false);
         if (instant) m.grow = 1;
@@ -954,7 +971,15 @@ function launchV(g) {
   const s = Math.min(d * K_LAUNCH, VMAX) / d;
   return [dx * s, dy * s];
 }
+// A tap on a planet rings its note.
+function ping(b) {
+  b.flash = 1.1;
+  ring(b.x, b.y, b.rad, b.rad * 4.5, 0.8, b.trail, 1, b);
+  chime(note(b), b.size, panOf(b), 0, 0.95);
+  for (const m of b.moons) chime(note(m), m.size, panOf(m), 0.1, 0.5);
+}
 function fling(g) {
+  if (g.on && !g.on.dead && !launchV(g)) return ping(g.on);
   let v = launchV(g);
   if (!v) {
     // A tap leaves the planet on a neat circular orbit.
@@ -968,12 +993,13 @@ function fling(g) {
   launchSound(Math.hypot(v[0], v[1]), panOf(b));
   wake();
 }
-// The path ahead: other planets coast on the sun alone; the new one feels them all.
+// The path ahead: other planets coast on the sun alone.
+// The new planet feels the sun and every planet.
 function predict(g) {
   const v = launchV(g);
   g.n = 0;
   if (!v) return;
-  let x = g.x, y = g.y, vx = v[0], vy = v[1], host = null, ma = 0, md = 0, md0 = 0, mw = 0, ct = 0;
+  let x = g.x, y = g.y, vx = v[0], vy = v[1], host = null, ma = 0, md = 0, md0 = 0, mw = 0, ct = 0, left = Infinity;
   const rad = g.size * SZ, mu = 0.0012 * (g.size / 0.035) ** 3, h = 1 / 120;
   const os = bodies.filter(free).map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, gm: b.gm, rad: b.rad, mu: b.mu, nm: b.moons.length }));
   const r0 = Math.hypot(x, y), E = 0.5 * (vx * vx + vy * vy) - GM / r0 - GAMMA / (r0 * r0);
@@ -1007,6 +1033,14 @@ function predict(g) {
       const d = lerp(md0, md, smooth(ct));
       x = host.x + d * Math.cos(ma);
       y = host.y + d * Math.sin(ma);
+      // One lap around the new host is enough to show the catch.
+      if ((left -= h) <= 0) {
+        g.end = 3;
+        g.hx = host.x;
+        g.hy = host.y;
+        g.hr = md;
+        break;
+      }
     } else {
       vx += ax * h * 0.5;
       vy += ay * h * 0.5;
@@ -1028,6 +1062,7 @@ function predict(g) {
           md0 = d;
           md = clamp(d, 1.9 * o.rad + 1.4 * rad, 3.3 * o.rad + rad);
           mw = (dx * rvy - dy * rvx >= 0 ? 1 : -1) * (TAU / clamp(1.8 * (md / (2.6 * o.rad)) ** 1.5, 0.9, 4.5));
+          left = 0.8 + TAU / Math.abs(mw);
           break;
         }
       }
@@ -1050,7 +1085,7 @@ function record() {
     const tau = b.host ? Math.min(9, 1.6 * b.host.T) : b.a ? clamp(2.1 * b.T, 3.5, 15) : 3;
     slotTau[s] = tau;
     slotCol.set(b.trail, s * 4);
-    slotCol[s * 4 + 3] = 0.55 + 0.22 * b.glow;
+    slotCol[s * 4 + 3] = (0.46 + 0.2 * b.glow) * b.tk;
     if (simT - b.recT < Math.max(1 / 75, (3.3 * tau) / CAP)) continue;
     writeSeg(s, b.rx, b.ry, b.x, b.y, 0.7 + (0.55 * b.size) / 0.035);
     b.rx = b.x;
@@ -1095,23 +1130,25 @@ function update(dt) {
     }
   }
   sweep();
-  heat *= Math.exp(-dt / 1.8);
+  heat *= Math.exp(-dt / 1.3);
+  if (heat < 0.02) heat = 0;
   sunV += (-170 * sunS - 8 * sunV) * dt;
   sunS += sunV * dt;
   for (let i = sparks.length - 1; i >= 0; i--) {
-    const s = sparks[i], r2 = s.x * s.x + s.y * s.y, k = (s.fall * 0.6 * GM) / (r2 * Math.sqrt(r2)), drag = Math.exp(-dt * 1.4);
+    const s = sparks[i], r2 = s.x * s.x + s.y * s.y, k = (s.fall * 0.05 * GM) / (r2 * Math.sqrt(r2)), drag = Math.exp(-dt * 1.2);
     s.vx = (s.vx - k * s.x * dt) * drag;
     s.vy = (s.vy - k * s.y * dt) * drag;
     s.x += s.vx * dt;
     s.y += s.vy * dt;
     s.t += dt;
-    if (s.t > s.life || r2 < SUN_R * SUN_R) sparks.splice(i, 1);
+    if (s.t > s.life || (s.t > 0.1 && r2 < SUN_R * SUN_R * 0.8)) sparks.splice(i, 1);
   }
   for (let i = rings.length - 1; i >= 0; i--) if (simT - rings[i].t0 > rings[i].life) rings.splice(i, 1);
   for (let i = links.length - 1; i >= 0; i--) if (simT - links[i].t0 > 2) links.splice(i, 1);
   for (let i = flares.length - 1; i >= 0; i--) if (simT - flares[i].t0 > 2.4) flares.splice(i, 1);
   record();
-  // The hum follows the crowd; its root moves every 24 seconds.
+  // The drone grows with the crowd.
+  // Its root moves every 24 seconds.
   const n = bodies.reduce((c, b) => c + (free(b) ? 1 : 0), 0);
   if (simT - droneAt > 0.5 && ac) {
     droneAt = simT;
@@ -1137,7 +1174,7 @@ float vnoise(vec2 p) {
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }`;
-// Deep space: a violet hollow, two faint nebulae, the sun's glow and stars.
+// Deep space: a violet hollow, faint nebulae, the sun's glow, stars.
 const BG_FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes, uScale;
@@ -1173,7 +1210,7 @@ void main() {
   vQ = aCorner * 3.4;
   gl_Position = vec4(vQ * uR * uScale, 0.0, 1.0);
 }`;
-// The sun: a shimmering limb-darkened disk, a streaming corona and flares.
+// The sun: a boiling limb-darkened disk, a streaming corona and flares.
 const SUN_FS = `#version 300 es
 precision highp float;
 uniform float uT, uPx, uPulse, uHeat;
@@ -1188,27 +1225,44 @@ void main() {
   vec2 q = vQ;
   float d = length(q), e = max(d - 1.0, 0.0);
   vec2 dir = q / max(d, 1e-4);
-  float lift = 1.0 + 0.9 * uPulse + 0.6 * uHeat;
-  float rays = 0.55 * vnoise(dir * 2.4 + vec2(uT * 0.05, -uT * 0.04)) + 0.45 * vnoise(dir * 6.0 + vec2(d * 1.3 - uT * 0.16, uT * 0.07));
-  float cor = exp(-e * 3.4) * (0.3 + rays) + 0.3 * exp(-e * 1.25);
-  vec3 col = mix(uCorona, uRose, smoothstep(0.0, 1.6, e)) * cor * lift * smoothstep(0.9, 1.02, d);
+  float lift = 1.0 + 0.8 * uPulse + 0.5 * uHeat;
+  // Streamers: broad petals turning slowly, fine rays drifting outward.
+  float petals = vnoise(dir * 1.7 + vec2(uT * 0.03, -uT * 0.02));
+  float fine = vnoise(dir * 7.0 + vec2(-uT * 0.05, uT * 0.04) + d * 0.6);
+  float streak = vnoise(dir * 16.0 + vec2(uT * 0.02, -uT * 0.03) + e * 0.35);
+  float rays = 0.2 + 1.3 * petals * petals + 0.5 * fine * fine + 0.6 * pow(streak, 4.0);
+  float cor = exp(-e * 3.8) * (0.45 + 0.75 * rays) + 0.4 * exp(-e * 1.35) * rays;
+  vec3 col = mix(uCorona, uRose, smoothstep(0.0, 1.3, e)) * cor * lift * smoothstep(0.95, 1.01, d);
+  // The disk: cells boil under a darkened, redder limb.
   float mu = sqrt(max(0.0, 1.0 - d * d));
-  vec2 sp = q / (0.45 + 0.55 * mu);
-  float g = fbm(sp * 3.2 + vec2(uT * 0.06, -uT * 0.05)), g2 = vnoise(sp * 9.0 - vec2(uT * 0.11, uT * 0.07));
-  vec3 surf = mix(uLimb, uBody, smoothstep(0.0, 0.55, mu));
-  surf = mix(surf, uCore, 0.85 * smoothstep(0.5, 1.0, mu));
-  surf *= (0.8 + 0.34 * g + 0.12 * g2) * lift;
-  col = mix(col, surf * 2.4, smoothstep(1.0, 1.0 - 1.5 / uPx, d));
+  vec2 sp = q / (0.4 + 0.6 * mu);
+  float gran = fbm(sp * 11.0 + vec2(uT * 0.12, -uT * 0.09)), big = fbm(sp * 2.6 - vec2(uT * 0.04, uT * 0.03));
+  vec3 surf = mix(uLimb, uBody, smoothstep(0.0, 0.65, mu));
+  surf = mix(surf, uCore, 0.5 * smoothstep(0.72, 1.0, mu) * (0.5 + 0.5 * big));
+  surf *= (0.5 + 0.5 * pow(mu, 0.45)) * (0.8 + 0.28 * gran + 0.16 * big) * lift * 1.1;
+  float edge = smoothstep(1.0, 1.0 - 1.5 / uPx, d);
+  col = mix(col, surf, edge) + uRose * 0.9 * exp(-abs(d - 1.0) * uPx * 0.35) * lift;
   for (int i = 0; i < 4; i++) {
     vec4 f = uFlare[i];
     if (f.z <= 0.0) continue;
-    vec2 fd = vec2(cos(f.x), sin(f.x));
-    float t = f.y, fade = smoothstep(0.0, 0.06, t) * exp(-t / 0.75);
-    float plume = exp(-(1.0 - dot(dir, fd)) * 70.0) * exp(-e / (0.2 + t * 1.6)) * smoothstep(0.96, 1.0, d);
-    float ar = 0.6 * (0.3 + 0.8 * sin(clamp(t / 1.7, 0.0, 1.0) * 3.14159));
-    float ad = abs(length(q - fd) - ar);
-    float arch = exp(-ad * ad * 260.0) * smoothstep(0.98, 1.04, d) * exp(-t / 1.0);
-    col += uFlareCol[i] * f.z * (plume * 2.6 * fade + arch * 1.8 * smoothstep(0.0, 0.1, t));
+    vec2 fd = vec2(cos(f.x), sin(f.x)), pd = vec2(-fd.y, fd.x);
+    float t = f.y, k = f.z, ca = dot(dir, fd), sa = dot(dir, pd);
+    float on = smoothstep(0.0, 0.05, t), fall = exp(-t / 0.7);
+    // A hot spot burns where the body fell in.
+    vec2 hs = q - fd * 0.82;
+    float spot = exp(-dot(hs, hs) * 30.0) * edge * exp(-t / 0.5);
+    // A plume shoots out along the impact line.
+    float w = 0.06 + 0.22 * e;
+    float plume = exp(-sa * sa / (w * w)) * step(0.0, ca) * exp(-e / (0.35 + 2.0 * t)) * smoothstep(0.97, 1.03, d);
+    // An arch of plasma loops up from the limb and falls back.
+    float ar = 0.2 + 0.55 * sin(clamp(t / 2.0, 0.0, 1.0) * 3.14159);
+    vec2 aq = q - fd * 0.97 - pd * 0.1;
+    float ad = abs(length(aq) - ar), lean = dot(aq, fd);
+    float arch = exp(-ad * ad * 380.0) * smoothstep(-0.02, 0.1, lean) * smoothstep(0.99, 1.04, d) * exp(-t / 1.3);
+    arch *= 0.75 + 0.25 * sin(atan(aq.y, aq.x) * 9.0 - uT * 3.0);
+    vec3 fc = uFlareCol[i];
+    col += k * on * (fc * (plume * 4.0 * fall + arch * 2.2 + spot * 2.5) + vec3(1.0, 0.88, 0.7) * (arch * arch * 0.6 + plume * plume * fall * 0.8));
+    col += k * on * fall * uCorona * exp(-(1.0 - ca) * 6.0) * exp(-e * 1.5) * 0.8 * step(1.0, d);
   }
   o = vec4(col * smoothstep(3.4, 2.5, d), 1.0);
 }`;
@@ -1229,7 +1283,8 @@ void main() {
   vC = aC;
   gl_Position = vec4((aA.xy + vQ * aA.z) * uScale, 0.0, 1.0);
 }`;
-// A jewel sphere lit by the sun, with a thin rim, a halo and maybe a ring.
+// A jewel sphere lit by the sun, with a thin rim.
+// A halo and an optional ring surround it.
 const PLANET_FS = `#version 300 es
 precision highp float;
 uniform float uUpx;
@@ -1242,22 +1297,27 @@ void main() {
   float d = length(q), R = vA.z, glow = vB.w, flash = vC.x;
   vec3 base = vB.rgb;
   vec2 sd = -normalize(vA.xy + vec2(1e-6));
-  vec3 L = normalize(vec3(sd, 0.5));
+  vec3 L = normalize(vec3(sd, 0.38));
   float cov = smoothstep(1.0, 1.0 - 1.4 / max(R * uUpx, 1.0), d);
   vec3 n = vec3(q, sqrt(max(0.0, 1.0 - d * d)));
-  float diff = clamp((dot(n, L) + 0.3) / 1.3, 0.0, 1.0);
-  diff *= diff;
+  float ndl = dot(n, L), diff = smoothstep(-0.22, 0.95, ndl);
   float tilt = (vC.w - 0.5) * 0.7;
   float by = dot(q, vec2(-sin(tilt), cos(tilt)));
-  float band = 1.0 + 0.1 * sin(by * 8.5 + vC.w * 40.0) * smoothstep(0.026, 0.045, R);
-  vec3 deep = base * base * 0.5 + base * vec3(0.04, 0.03, 0.1);
-  vec3 col = mix(deep * 0.4, base * 1.25, diff) * band;
+  float band = 1.0 + 0.12 * sin(by * 8.5 + vC.w * 40.0) * smoothstep(0.026, 0.045, R);
+  // A lit face, a dark jewel night side and inner light.
+  vec3 col = base * (0.1 + 1.3 * diff * diff) * band;
+  col += base * 0.16 * pow(1.0 - d * d, 2.0) * (0.4 + 0.6 * diff);
   vec3 hv = normalize(L + vec3(0.0, 0.0, 1.0));
-  col += pow(max(dot(n, hv), 0.0), 40.0) * 0.6 * mix(vec3(1.0), base, 0.25);
-  float rim = smoothstep(0.72, 0.98, d) * (0.3 + 0.7 * clamp(dot(q / max(d, 1e-4), sd) * 0.5 + 0.5, 0.0, 1.0));
-  col += mix(base, vec3(1.0), 0.5) * rim * 0.75;
-  col *= 1.0 + 0.4 * glow + 1.1 * flash;
-  float halo = (0.1 + 0.22 * glow + 0.7 * flash) * exp(-max(d - 1.0, 0.0) * 2.6) * smoothstep(vExt, vExt * 0.6, d);
+  float nh = max(dot(n, hv), 0.0);
+  col += (pow(nh, 70.0) * 1.1 + pow(nh, 9.0) * 0.12) * mix(vec3(1.0, 0.97, 0.9), base, 0.2);
+  // The thin rim is bright on the sun side.
+  // A faint glow lines the night side.
+  float facing = clamp(dot(q / max(d, 1e-4), sd) * 0.5 + 0.5, 0.0, 1.0);
+  float rim = smoothstep(0.8, 0.985, d);
+  col += mix(base, vec3(1.0), 0.55) * rim * (0.1 + 0.7 * facing * facing) + base * rim * 0.22;
+  col *= 1.0 + 0.25 * glow + 0.7 * flash;
+  col += vec3(0.25) * flash * flash;
+  float halo = (0.08 + 0.2 * glow + 0.6 * flash) * exp(-max(d - 1.0, 0.0) * 2.6) * smoothstep(vExt, vExt * 0.6, d);
   float ra = 0.0;
   vec3 rc = vec3(0.0);
   if (vC.y > 0.0) {
@@ -1290,7 +1350,7 @@ void main() {
   vK = aK;
   gl_Position = vec4((aA.xy + vP) * uScale, 0.0, 1.0);
 }`;
-// Kind 0 is a soft flash, kind 1 a ring, kind 2 a dot.
+// Kinds: 0 is a soft flash, 1 a ring, 2 a dot.
 const FX_FS = `#version 300 es
 precision highp float;
 in vec2 vP;
@@ -1329,7 +1389,8 @@ out vec4 o;
 void main() {
   o = vec4(vCol.rgb * vCol.a * (exp(-vT * vT * 1.4) + 0.2 * exp(-vT * vT * 0.3)), 0.0);
 }`;
-// Trails fade with age, per slot; a cleared slot fades out fast.
+// Trails fade with age, per slot.
+// A cleared slot fades out fast.
 const TRAIL_VS = `#version 300 es
 layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec4 aA;
@@ -1389,7 +1450,7 @@ const SKY = {
   uNebA: linear(0.2, 0.08, 330).map(v => v * 0.6), uNebB: linear(0.2, 0.06, 215).map(v => v * 0.55),
 };
 const SUN = {
-  uCore: linear(0.99, 0.05, 95), uBody: linear(0.9, 0.17, 80), uLimb: linear(0.7, 0.2, 45),
+  uCore: linear(0.97, 0.08, 95), uBody: linear(0.85, 0.18, 72), uLimb: linear(0.64, 0.21, 38),
   uCorona: linear(0.78, 0.17, 60).map(v => v * 1.2), uRose: linear(0.62, 0.2, 15),
 };
 let gl = null, FLOAT = false, P = null, emptyVao = null, ready = false, scene = null;
@@ -1554,7 +1615,7 @@ function dots(g) {
     let s = gap - carry;
     while (s <= len) {
       const t = s / len, f = i / end;
-      fx(lerp(x0, x1, t), lerp(y0, y1, t), 1.5 * px, 0, g.trail, 0.85 * (1 - 0.8 * f) * smooth(g.grow), 2);
+      fx(lerp(x0, x1, t), lerp(y0, y1, t), 1.4 * px, 0, g.trail, 0.65 * (1 - 0.8 * f) * smooth(g.grow), 2);
       shown++;
       s += gap;
     }
@@ -1563,7 +1624,8 @@ function dots(g) {
   if (end > 1 && g.end) {
     const x = g.pts[2 * end - 2], y = g.pts[2 * end - 1];
     if (g.end === 1) fx(x, y, 6 * px, 0, SUNC, 0.9, 0);
-    else fx(x, y, 7 * px, 1.4 * px, g.trail, 0.8, 1);
+    else if (g.end === 2) fx(x, y, 7 * px, 1.4 * px, g.trail, 0.8, 1);
+    else fx(g.hx, g.hy, g.hr, 1.2 * px, g.trail, 0.45, 1);
   }
 }
 function draw() {
@@ -1690,8 +1752,8 @@ function draw() {
   const px = 1 / U;
   for (const w of waves) {
     const rw = SUN_R + (simT - w.t0) * 1.4, k = Math.exp(-(rw - SUN_R) / 1.1);
-    fx(0, 0, rw, 2.2 * px, WAVEC, 0.9 * k, 1);
-    fx(0, 0, rw * 0.94, 7 * px, SUNC, 0.22 * k, 1);
+    fx(0, 0, rw, 1.6 * px, WAVEC, 1.4 * k, 1);
+    fx(0, 0, rw - 9 * px, 10 * px, SUNC, 0.1 * k, 1);
   }
   for (const r of rings) {
     const t = clamp((simT - r.t0) / r.life), e = 1 - (1 - t) ** 3, f = r.follow && !r.follow.dead ? r.follow : r;
@@ -1699,7 +1761,7 @@ function draw() {
     if (r.blob) fx(f.x, f.y, rad, 0, r.rgb, r.k * (1 - t) ** 2, 0);
     else fx(f.x, f.y, rad, 1.3 * px, r.rgb, r.k * (1 - t) ** 2, 1);
   }
-  for (const s of sparks) fx(s.x, s.y, s.s * 2.2 * px, 0, s.rgb, 1.5 * (1 - s.t / s.life) ** 2, 0);
+  for (const s of sparks) fx(s.x, s.y, s.s * 3.2 * px, 0, s.rgb, 1.8 * (1 - s.t / s.life) ** 1.5, 0);
   for (const g of ptrs.values()) dots(g);
   if (nf) {
     gl.blendFunc(gl.ONE, gl.ONE);
@@ -1810,12 +1872,15 @@ function local(e) {
 panel.addEventListener('pointerdown', e => {
   if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
   const [x, y] = local(e);
-  // The sun takes taps; anywhere else starts a launch.
+  // A tap on the sun pulses it.
+  // A press anywhere else starts a launch.
   if (Math.hypot(x, y) < Math.max(SUN_R * 1.7, 24 / U)) return pulse();
   if (ptrs.size >= 4) return;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   const size = pickSize(nearHost(x, y)), col = jewel();
+  const on = bodies.find(b => !b.dead && !b.die && Math.hypot(b.x - x, b.y - y) < b.rad * 1.3 + 7 / U);
   ptrs.set(e.pointerId, {
+    on,
     x, y, px: x, py: y, size, col, ring: size > 0.035 && Math.random() < 0.5 ? [rand(0.3, 0.42), rand(-0.6, 0.6)] : null,
     rgb: linear(...col), trail: linear(Math.min(0.9, col[0] + 0.05), col[1], col[2]), grow: 0, n: 0, pts: null, end: 0, seed: Math.random(),
   });
@@ -1906,7 +1971,12 @@ async function boot() {
   // Sixteen seconds have already run, so the rosettes have begun.
   seed(true);
   for (let i = 0; i < 960; i++) update(1 / 60);
-  try { await gate; } catch (err) { console.error(err); failed(); return; }
+  try { await gate; } catch (err) {
+    // A browser without WebGL 2 gets the quiet fail line.
+    if (gl) console.error(err);
+    failed();
+    return;
+  }
   slotLo.fill(0);
   slotHi.fill(CAP - 1);
   allocScene();
