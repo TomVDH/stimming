@@ -110,8 +110,21 @@ body { overflow-x: clip; }
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Prism</h1><div class="vignette" hidden></div></section>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import * as THREE from 'three';
+import { initPage, sound, oklchRgb, css as okCss } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -166,27 +179,11 @@ function fbm(x, y, o) {
   return v / (1 - 0.5 ** o);
 }
 
-/* ---------- colour: OKLCH in, sRGB strings out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
-}
-// Chroma shrinks until the colour fits sRGB.
-function linear(L, C, h) {
-  let c = lin(L, C, h);
-  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return c.map(v => clamp(v));
-}
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+// The shared helpers fit each colour into sRGB.
 const enc = v => (v <= 0.0031308 ? 12.92 * v : 1.055 * clamp(v) ** (1 / 2.4) - 0.055);
-const rgb = (L, C, h) => linear(L, C, h).map(v => Math.round(enc(v) * 255));
-const css = (L, C, h, a = 1) => `rgba(${rgb(L, C, h).join(',')},${a})`;
+const rgb = (L, C, h) => oklchRgb(L, C, h).map(v => Math.round(v * 255));
+const css = (L, C, h, a = 1) => okCss([L, C, h], a);
 
 /* ---------- light: 24 wavelengths, Cauchy glass ---------- */
 const NK = 24, L0 = 0.405, L1 = 0.69, CA = 1.5, CB = 0.028;
@@ -874,24 +871,27 @@ function pack() {
     }
   }
   if (!G) return;
-  gl.bindBuffer(gl.ARRAY_BUFFER, G.ib);
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, INST, 0, nInst * 12);
-  gl.bindBuffer(gl.ARRAY_BUFFER, G.sb);
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, SHV, 0, nShv * 5);
+  for (const [b, n] of [[G.ib, nInst * 12], [G.sb, nShv * 5]]) {
+    b.clearUpdateRanges();
+    b.addUpdateRange(0, Math.max(1, n));
+    b.needsUpdate = true;
+  }
+  G.segG.instanceCount = nInst;
+  G.seg.visible = nInst > 0;
+  G.shG.setDrawRange(0, nShv);
+  G.sheet.visible = nShv > 0;
   lightDirty = true;
 }
 
-/* ---------- light: WebGL2 draws beams, glow, bloom and haze ---------- */
+/* ---------- light: three.js draws beams, glow, bloom and haze ---------- */
 const glc = panel.querySelector('canvas.light'), overC = panel.querySelector('canvas.over');
 const over = overC.getContext('2d');
-const gl = glc.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false });
 let G = null, lightDirty = true;
 // A segment is a quad around its line, with room for caps.
-const VS_SEG = `#version 300 es
-layout(location = 0) in vec2 aC;
-layout(location = 1) in vec4 aSeg;
-layout(location = 2) in vec4 aCol;
-layout(location = 3) in vec4 aCore;
+const VS_SEG = `in vec3 position;
+in vec4 aSeg;
+in vec4 aCol;
+in vec4 aCore;
 uniform vec2 uRes;
 uniform float uHalf;
 out vec2 vP;
@@ -901,7 +901,7 @@ void main() {
   vec2 d = aSeg.zw - aSeg.xy;
   float L = length(d);
   vec2 t = L > 1e-4 ? d / L : vec2(1.0, 0.0), n = vec2(-t.y, t.x);
-  float s = mix(-uHalf, L + uHalf, aC.x), q = aC.y * uHalf;
+  float s = mix(-uHalf, L + uHalf, position.x), q = position.y * uHalf;
   vP = vec2(s, q);
   vLen = L;
   vCol = aCol;
@@ -910,8 +910,7 @@ void main() {
   gl_Position = vec4(p.x, -p.y, 0.0, 1.0);
 }`;
 // Mode 0 draws the mid line and the hot core; mode 1 draws the glow.
-const FS_SEG = `#version 300 es
-precision highp float;
+const FS_SEG = `precision highp float;
 in vec2 vP;
 flat in float vLen;
 flat in vec4 vCol, vCore;
@@ -934,33 +933,29 @@ void main() {
   }
   o = vec4(c, 0.0);
 }`;
-const VS_SHEET = `#version 300 es
-layout(location = 0) in vec2 aP;
-layout(location = 1) in vec3 aC;
+const VS_SHEET = `in vec3 position;
+in vec3 aC;
 uniform vec2 uRes;
 out vec3 vC;
 void main() {
   vC = aC;
-  vec2 p = aP / uRes * 2.0 - 1.0;
+  vec2 p = position.xy / uRes * 2.0 - 1.0;
   gl_Position = vec4(p.x, -p.y, 0.0, 1.0);
 }`;
-const FS_SHEET = `#version 300 es
-precision highp float;
+const FS_SHEET = `precision highp float;
 in vec3 vC;
 uniform float uK;
 out vec4 o;
 void main() { o = vec4(vC * uK, 0.0); }`;
 // One triangle covers the screen.
-const VS_FULL = `#version 300 es
+const VS_FULL = `in vec3 position;
 out vec2 vUv;
 void main() {
-  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
-  vUv = p * 0.5 + 0.5;
-  gl_Position = vec4(p, 0.0, 1.0);
+  vUv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
 }`;
 // Each mip halves the last with a five-tap filter.
-const FS_DOWN = `#version 300 es
-precision highp float;
+const FS_DOWN = `precision highp float;
 in vec2 vUv;
 uniform sampler2D uT;
 uniform vec2 uTx;
@@ -972,8 +967,7 @@ void main() {
   o = vec4(s / 8.0, 0.0);
 }`;
 // A tent filter folds each small mip back into the next.
-const FS_UP = `#version 300 es
-precision highp float;
+const FS_UP = `precision highp float;
 in vec2 vUv;
 uniform sampler2D uT;
 uniform vec2 uTx;
@@ -989,8 +983,7 @@ void main() {
 }`;
 // Lines, glow, bloom and dust-lit haze add up.
 // The page blend adds the light onto the table.
-const FS_COMP = `#version 300 es
-precision highp float;
+const FS_COMP = `precision highp float;
 in vec2 vUv;
 uniform sampler2D uL, uG, uB, uD;
 out vec4 o;
@@ -1000,62 +993,52 @@ void main() {
   c = min(c, vec3(1.0));
   o = vec4(c, max(c.r, max(c.g, c.b)));
 }`;
-function shader(type, src) {
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
-  return sh;
-}
-function program(vs, fs) {
-  const pg = gl.createProgram();
-  gl.attachShader(pg, shader(gl.VERTEX_SHADER, vs));
-  gl.attachShader(pg, shader(gl.FRAGMENT_SHADER, fs));
-  gl.linkProgram(pg);
-  if (!gl.getProgramParameter(pg, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pg));
-  const u = {};
-  for (let i = 0, n = gl.getProgramParameter(pg, gl.ACTIVE_UNIFORMS); i < n; i++) {
-    const name = gl.getActiveUniform(pg, i).name;
-    u[name] = gl.getUniformLocation(pg, name);
-  }
-  return { pg, u };
-}
+// Additive passes sum the light; the rest overwrite their target.
+const ADD = { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, transparent: true };
+const raw = (vertexShader, fragmentShader, uniforms, add) => new THREE.RawShaderMaterial({
+  glslVersion: THREE.GLSL3, vertexShader, fragmentShader, uniforms, depthTest: false, depthWrite: false,
+  // Quads face either way, so both sides draw.
+  side: THREE.DoubleSide,
+  ...(add ? ADD : { blending: THREE.NoBlending }),
+});
+const U = v => ({ value: v });
 function initGL() {
-  if (!gl) return false;
   try {
+    const r = new THREE.WebGLRenderer({ canvas: glc, alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false });
+    r.autoClear = false;
+    r.setClearColor(0x000000, 0);
+    G = { r, cam: new THREE.Camera(), beams: new THREE.Scene(), pass: new THREE.Scene(), t: [], dust: null };
     // Half floats keep bright overlaps from clipping before the end.
-    G = { half: !!gl.getExtension('EXT_color_buffer_float'), t: [] };
-    G.seg = program(VS_SEG, FS_SEG);
-    G.sheet = program(VS_SHEET, FS_SHEET);
-    G.down = program(VS_FULL, FS_DOWN);
-    G.up = program(VS_FULL, FS_UP);
-    G.comp = program(VS_FULL, FS_COMP);
-    G.segV = gl.createVertexArray();
-    gl.bindVertexArray(G.segV);
-    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, -1, 1, -1, 0, 1, 1, 1]), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    G.ib = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, G.ib);
-    gl.bufferData(gl.ARRAY_BUFFER, INST.byteLength, gl.DYNAMIC_DRAW);
-    for (let i = 1; i <= 3; i++) {
-      gl.enableVertexAttribArray(i);
-      gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 48, (i - 1) * 16);
-      gl.vertexAttribDivisor(i, 1);
-    }
-    G.shV = gl.createVertexArray();
-    gl.bindVertexArray(G.shV);
-    G.sb = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, G.sb);
-    gl.bufferData(gl.ARRAY_BUFFER, SHV.byteLength, gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 20, 0);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 20, 8);
-    G.fullV = gl.createVertexArray();
-    gl.bindVertexArray(null);
-    G.dust = gl.createTexture();
+    G.type = r.extensions.has('EXT_color_buffer_float') ? THREE.HalfFloatType : THREE.UnsignedByteType;
+    // Segments: one quad, many instances.
+    const segG = new THREE.InstancedBufferGeometry();
+    segG.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, -1, 0, 1, -1, 0, 0, 1, 0, 1, 1, 0]), 3));
+    segG.setIndex([0, 1, 2, 2, 1, 3]);
+    G.ib = new THREE.InstancedInterleavedBuffer(INST, 12).setUsage(THREE.DynamicDrawUsage);
+    ['aSeg', 'aCol', 'aCore'].forEach((n, i) => segG.setAttribute(n, new THREE.InterleavedBufferAttribute(G.ib, 4, i * 4)));
+    segG.instanceCount = 0;
+    G.segG = segG;
+    G.segU = { uRes: U(new THREE.Vector2()), uHalf: U(0), uMode: U(0), uWs: U(1), uPr: U(1) };
+    G.seg = new THREE.Mesh(segG, raw(VS_SEG, FS_SEG, G.segU, true));
+    // Sheets: flat triangles between neighbouring wavelengths.
+    const shG = new THREE.BufferGeometry();
+    G.sb = new THREE.InterleavedBuffer(SHV, 5).setUsage(THREE.DynamicDrawUsage);
+    shG.setAttribute('position', new THREE.InterleavedBufferAttribute(G.sb, 2, 0));
+    shG.setAttribute('aC', new THREE.InterleavedBufferAttribute(G.sb, 3, 2));
+    shG.setDrawRange(0, 0);
+    G.shG = shG;
+    G.shU = { uRes: U(new THREE.Vector2()), uK: U(0.42) };
+    G.sheet = new THREE.Mesh(shG, raw(VS_SHEET, FS_SHEET, G.shU, true));
+    for (const m of [G.sheet, G.seg]) { m.frustumCulled = false; G.beams.add(m); }
+    // Screen passes share one triangle and swap materials.
+    const tri = new THREE.BufferGeometry();
+    tri.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+    G.down = raw(VS_FULL, FS_DOWN, { uT: U(null), uTx: U(new THREE.Vector2()) });
+    G.up = raw(VS_FULL, FS_UP, { uT: U(null), uTx: U(new THREE.Vector2()), uK: U(0.7) }, true);
+    G.comp = raw(VS_FULL, FS_COMP, { uL: U(null), uG: U(null), uB: U(null), uD: U(null) });
+    G.full = new THREE.Mesh(tri, G.down);
+    G.full.frustumCulled = false;
+    G.pass.add(G.full);
     return true;
   } catch (err) {
     console.warn(err);
@@ -1063,112 +1046,68 @@ function initGL() {
     return false;
   }
 }
-function texParams() {
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-}
-function target(w, h) {
-  const t = gl.createTexture(), f = gl.createFramebuffer();
-  gl.bindTexture(gl.TEXTURE_2D, t);
-  gl.texImage2D(gl.TEXTURE_2D, 0, G.half ? gl.RGBA16F : gl.RGBA8, w, h, 0, gl.RGBA, G.half ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
-  texParams();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
-  return { t, f, w, h };
-}
 // Targets: lines at full size, glow at half, then four bloom mips.
 function sizeGL() {
   if (!G) return;
-  glc.width = cw;
-  glc.height = ch;
-  G.t.forEach(x => { gl.deleteTexture(x.t); gl.deleteFramebuffer(x.f); });
-  G.t = [1, 2, 4, 8, 16, 32].map(d => target(Math.max(1, Math.ceil(cw / d)), Math.max(1, Math.ceil(ch / d))));
-  gl.bindTexture(gl.TEXTURE_2D, G.dust);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, dustC);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  texParams();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  G.r.setPixelRatio(1);
+  G.r.setSize(cw, ch, false);
+  const dims = [1, 2, 4, 8, 16, 32].map(d => [Math.max(1, Math.ceil(cw / d)), Math.max(1, Math.ceil(ch / d))]);
+  if (!G.t.length) {
+    G.t = dims.map(([w, h]) => new THREE.WebGLRenderTarget(w, h, {
+      type: G.type, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false,
+    }));
+  } else G.t.forEach((t, i) => t.setSize(...dims[i]));
+  // The smoke texture is rebuilt at each new size.
+  G.dust?.dispose();
+  G.dust = new THREE.CanvasTexture(dustC);
+  G.dust.colorSpace = THREE.NoColorSpace;
+  G.dust.minFilter = THREE.LinearFilter;
+  G.dust.generateMipmaps = false;
   lightDirty = true;
 }
-function bindTex(unit, t) {
-  gl.activeTexture(gl.TEXTURE0 + unit);
-  gl.bindTexture(gl.TEXTURE_2D, t);
+function pass(mat, tg) {
+  G.full.material = mat;
+  G.r.setRenderTarget(tg);
+  G.r.render(G.pass, G.cam);
 }
 function drawLight() {
-  const [L, Gw, ...D] = G.t, ws = clamp(S / 600, 0.75, 1.25);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE);
-  gl.clearColor(0, 0, 0, 0);
+  const r = G.r, [L, Gw, ...D] = G.t, ws = clamp(S / 600, 0.75, 1.25);
+  G.segU.uRes.value.set(W, H);
+  G.shU.uRes.value.set(W, H);
+  G.segU.uWs.value = ws;
   for (const [tg, mode, k] of [[L, 0, 0.42], [Gw, 1, 0.35]]) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, tg.f);
-    gl.viewport(0, 0, tg.w, tg.h);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    if (nShv) {
-      gl.useProgram(G.sheet.pg);
-      gl.uniform2f(G.sheet.u.uRes, W, H);
-      gl.uniform1f(G.sheet.u.uK, k);
-      gl.bindVertexArray(G.shV);
-      gl.drawArrays(gl.TRIANGLES, 0, nShv);
-    }
-    if (nInst) {
-      const u = G.seg.u;
-      gl.useProgram(G.seg.pg);
-      gl.uniform2f(u.uRes, W, H);
-      gl.uniform1f(u.uHalf, mode ? 4 * ws + 3 : 1.8 * ws + 1.5);
-      gl.uniform1i(u.uMode, mode);
-      gl.uniform1f(u.uWs, ws);
-      gl.uniform1f(u.uPr, tg.w / W);
-      gl.bindVertexArray(G.segV);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nInst);
-    }
+    G.shU.uK.value = k;
+    G.segU.uMode.value = mode;
+    G.segU.uHalf.value = mode ? 4 * ws + 3 : 1.8 * ws + 1.5;
+    G.segU.uPr.value = tg.width / W;
+    r.setRenderTarget(tg);
+    r.clear();
+    r.render(G.beams, G.cam);
   }
-  gl.bindVertexArray(G.fullV);
-  gl.disable(gl.BLEND);
-  gl.useProgram(G.down.pg);
-  gl.uniform1i(G.down.u.uT, 0);
   let src = Gw;
   for (const d of D) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, d.f);
-    gl.viewport(0, 0, d.w, d.h);
-    bindTex(0, src.t);
-    gl.uniform2f(G.down.u.uTx, 1 / src.w, 1 / src.h);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    G.down.uniforms.uT.value = src.texture;
+    G.down.uniforms.uTx.value.set(1 / src.width, 1 / src.height);
+    pass(G.down, d);
     src = d;
   }
   // The small mips fold back as wide bloom.
-  gl.enable(gl.BLEND);
-  gl.useProgram(G.up.pg);
-  gl.uniform1i(G.up.u.uT, 0);
-  gl.uniform1f(G.up.u.uK, 0.7);
   for (let i = D.length - 1; i > 0; i--) {
-    const sm = D[i], d = D[i - 1];
-    gl.bindFramebuffer(gl.FRAMEBUFFER, d.f);
-    gl.viewport(0, 0, d.w, d.h);
-    bindTex(0, sm.t);
-    gl.uniform2f(G.up.u.uTx, 0.5 / sm.w, 0.5 / sm.h);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    G.up.uniforms.uT.value = D[i].texture;
+    G.up.uniforms.uTx.value.set(0.5 / D[i].width, 0.5 / D[i].height);
+    pass(G.up, D[i - 1]);
   }
-  gl.disable(gl.BLEND);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, cw, ch);
-  const u = G.comp.u;
-  gl.useProgram(G.comp.pg);
-  [L.t, Gw.t, D[0].t, G.dust].forEach((t, i) => bindTex(i, t));
-  gl.uniform1i(u.uL, 0);
-  gl.uniform1i(u.uG, 1);
-  gl.uniform1i(u.uB, 2);
-  gl.uniform1i(u.uD, 3);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-  gl.bindVertexArray(null);
+  const u = G.comp.uniforms;
+  u.uL.value = L.texture;
+  u.uG.value = Gw.texture;
+  u.uB.value = D[0].texture;
+  u.uD.value = G.dust;
+  pass(G.comp, null);
 }
-glc.addEventListener('webglcontextlost', e => { e.preventDefault(); G = null; });
+// three.js rebuilds its state after a lost context.
 glc.addEventListener('webglcontextrestored', () => {
-  if (!initGL()) return;
-  sizeGL();
   geomDirty = true;
+  lightDirty = true;
   wake();
 });
 function glassPath(c, p) {
