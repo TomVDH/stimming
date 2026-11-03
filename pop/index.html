@@ -95,20 +95,10 @@ function css(lch, a) {
   const [r, g, b] = rgb(lch);
   return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
 }
-function mixLch(A, B, t, raw) {
-  // Raw palettes keep their written hue direction instead of the shortest arc.
-  const dh = raw ? B[2] - A[2] : (((B[2] - A[2]) % 360) + 540) % 360 - 180;
-  return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
-}
 
 // A palette is three OKLCH stops: light, middle, deep.
 // The first field runs mint, through cyan, to blue.
 const MINT = [0.9, 0.11, 165], CYAN = [0.79, 0.125, 205], BLUE = [0.6, 0.14, 250];
-// The ramp is a quadratic curve that passes through the middle stop.
-function rampOf([A, M, B]) {
-  const P = M.map((v, k) => 2 * v - (A[k] + B[k]) / 2);
-  return t => mixLch(mixLch(A, P, t, true), mixLch(P, B, t, true), t, true);
-}
 const R01 = (a, b) => a + Math.random() * (b - a);
 const sgn = () => (Math.random() < 0.5 ? -1 : 1);
 // Palette kinds: each makes three stops from a start hue.
@@ -126,22 +116,87 @@ const PALS = {
   // Dark and moody.
   dusk: h => { const s = R01(40, 110) * sgn(); return [[0.66, 0.12, h], [0.5, 0.13, h + s / 2], [0.36, 0.11, h + s]]; },
 };
+// A colour field maps a spot on the sheet, 0..1 each way, to OKLab.
+const toLab = ([L, C, h]) => [L, C * Math.cos(h * D2R), C * Math.sin(h * D2R)];
+const toLch = ([L, a, b]) => [L, Math.hypot(a, b), Math.atan2(b, a) / D2R];
+// Mesh: colour points blend by soft Gaussian weights across the sheet.
+function rbf(pts) {
+  return (u, v) => {
+    let s = 0, L = 0, A = 0, B = 0;
+    for (const p of pts) { const w = Math.exp(-((u - p.x) ** 2 + (v - p.y) ** 2) / 0.12); s += w; L += p.c[0] * w; A += p.c[1] * w; B += p.c[2] * w; }
+    return [L / s, A / s, B / s];
+  };
+}
+// Ramp stops go to the corners; a fourth stop fills the last one.
+function meshOf([A, M, B], fixed) {
+  const D = [M[0] + 0.05, M[1], M[2] + 40 * sgn()], cs = [A, M, D, B];
+  const at = [[0.05, 0.05], [0.95, 0.08], [0.08, 0.95], [0.95, 0.95]];
+  if (!fixed) for (let i = 3; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [at[i], at[j]] = [at[j], at[i]]; }
+  return rbf(cs.map((c, i) => ({ x: at[i][0] + (fixed ? 0 : R01(-0.1, 0.1)), y: at[i][1] + (fixed ? 0 : R01(-0.1, 0.1)), c: toLab(c) })));
+}
+// A random direction across the sheet, as 0..1 from corner to corner.
+const sweepOf = () => { const t = Math.random() * TAU, c = Math.cos(t), s = Math.sin(t), e = Math.abs(c) + Math.abs(s); return (u, v) => clamp(((u - 0.5) * c + (v - 0.5) * s) / e + 0.5); };
+const KINDS = [...Object.keys(PALS), 'mesh', 'monotone', 'shaded', 'refracted'];
+function fieldOf(kind, h) {
+  if (PALS[kind]) return meshOf(PALS[kind](h));
+  if (kind === 'mesh') {
+    // Mesh: five free colour points round a wide hue arc.
+    return rbf(Array.from({ length: 5 }, (_, i) => ({ x: i ? Math.random() : 0.5, y: i ? Math.random() : 0.5, c: toLab([R01(0.6, 0.9), R01(0.1, 0.18), h + R01(-120, 120)]) })));
+  }
+  if (kind === 'monotone') {
+    // Monotone: one colour for the whole sheet.
+    const c = toLab([R01(0.62, 0.88), R01(0.1, 0.17), h]);
+    return () => c;
+  }
+  const d = sweepOf();
+  if (kind === 'shaded') {
+    // Shaded: one hue, light falling from one side to the other.
+    return (u, v) => { const t = d(u, v); return toLab([lerp(0.92, 0.34, t), 0.11 + 0.05 * Math.sin(t * PI), h + 15 * t]); };
+  }
+  // Refracted: a full spectrum fans across the sheet.
+  const span = R01(240, 330) * sgn();
+  return (u, v) => { const t = d(u, v); return toLab([0.78 + 0.05 * Math.sin(t * TAU), 0.17, h + span * t]); };
+}
+// Bins: k-means in OKLab picks NB colours that cover the sheet.
+let binLch = [];
+function paintCells() {
+  const us = units.length ? units : cells;
+  let lx = Infinity, hx = -Infinity, ly = Infinity, hy = -Infinity;
+  for (const c of us) { lx = Math.min(lx, c.x); hx = Math.max(hx, c.x); ly = Math.min(ly, c.y); hy = Math.max(hy, c.y); }
+  const col = us.map(c => rec.field((c.x - lx) / (hx - lx || 1), (c.y - ly) / (hy - ly || 1)));
+  const k = Math.min(NB, us.length), cent = Array.from({ length: k }, (_, i) => col[Math.floor(((i + 0.5) / k) * col.length)].slice());
+  const idx = new Int32Array(us.length);
+  for (let it = 0; it < 6; it++) {
+    for (let n = 0; n < col.length; n++) {
+      let best = 0, bd = Infinity;
+      for (let j = 0; j < k; j++) { const q = cent[j], dd = (col[n][0] - q[0]) ** 2 + (col[n][1] - q[1]) ** 2 + (col[n][2] - q[2]) ** 2; if (dd < bd) { bd = dd; best = j; } }
+      idx[n] = best;
+    }
+    const sum = cent.map(() => [0, 0, 0, 0]);
+    for (let n = 0; n < col.length; n++) { const S = sum[idx[n]]; S[0] += col[n][0]; S[1] += col[n][1]; S[2] += col[n][2]; S[3]++; }
+    sum.forEach((S, j) => { if (S[3]) cent[j] = [S[0] / S[3], S[1] / S[3], S[2] / S[3]]; });
+  }
+  binLch = Array.from({ length: NB }, (_, j) => toLch(cent[j % k]));
+  us.forEach((c, n) => { c.b = idx[n]; });
+}
 // A recipe sets the whole sheet: paint, material, size, jumbos and gap.
 // The material brings its own light, popped look, burst, sound and feel.
 const MATS = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel', 'lava', 'ice', 'holo', 'paper', 'gum', 'topo', 'popcorn', 'disco'];
-const DENS = [6, 9, 12, 15, 20, 27], JUMS = [0, 1, 2, 3, 5, 8], GAPS = [0.05, 0.075, 0.11];
+const DENS = [18, 22, 27, 33, 40, 48], JUMS = [0, 2, 3, 5, 8, 12], GAPS = [0.05, 0.075, 0.11];
 const pick = (a, not) => { let v; do v = a[(Math.random() * a.length) | 0]; while (a.length > 1 && v === not); return v; };
-let rec = { kind: 'arc', pal: [MINT, CYAN, BLUE], mat: 'gloss', den: 15, jum: null, gap: 0.075 };
+let rec = { kind: 'arc', h: 165, field: meshOf([MINT, CYAN, BLUE], true), mat: 'gloss', den: 22, jum: null, gap: 0.075 };
 // A ?mat= query starts the sheet in that material.
-const qMat = new URLSearchParams(location.search).get('mat');
+const qs = new URLSearchParams(location.search), qMat = qs.get('mat'), qKind = qs.get('kind');
 if (MATS.includes(qMat)) rec.mat = qMat;
+// A ?kind= query starts the sheet in that colour mode.
+if (KINDS.includes(qKind)) { rec.kind = qKind; rec.field = fieldOf(qKind, rec.h); }
 // Each roll changes the material, at least.
 function freshRecipe(p) {
   let h = 0;
   // The new hue starts well away from the old one.
-  for (let n = 0; n < 8; n++) { h = Math.random() * 360; if (Math.abs(((h - p.pal[0][2] + 540) % 360) - 180) > 70) break; }
-  const kind = pick(Object.keys(PALS));
-  return { kind, pal: PALS[kind](h), mat: pick(MATS, p.mat), den: pick(DENS), jum: pick(JUMS), gap: pick(GAPS) };
+  for (let n = 0; n < 8; n++) { h = Math.random() * 360; if (Math.abs(((h - p.h + 540) % 360) - 180) > 70) break; }
+  const kind = pick(KINDS, p.kind);
+  return { kind, h, field: fieldOf(kind, h), mat: pick(MATS, p.mat), den: pick(DENS), jum: pick(JUMS), gap: pick(GAPS) };
 }
 const SHADE = [0.42, 0.07, 240];
 const skinOf = ([L, C, h]) => ({
@@ -740,14 +795,14 @@ function shadeSprite(ax, p, r) {
 // One atlas holds every bin of the palette, glossy and popped.
 function buildAtlas() {
   const atlas = atl, ax = atlas.getContext('2d'), n = Math.ceil(Math.sqrt(SLOTS)), k = dpr * 1.1;
-  const r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), ramp = rampOf(rec.pal), img = ax.createImageData(SP, SP);
+  const r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), img = ax.createImageData(SP, SP);
   if (atlas.width !== n * SP || atlas.height !== Math.ceil(SLOTS / n) * SP) { atlas.width = n * SP; atlas.height = Math.ceil(SLOTS / n) * SP; }
   ax.setTransform(1, 0, 0, 1, 0, 0);
   ax.clearRect(0, 0, atlas.width, atlas.height);
   paints = [];
   for (let i = 0; i < SLOTS; i++) {
     ox[i] = (i % n) * SP; oy[i] = ((i / n) | 0) * SP;
-    const base = ramp((i >> 1) / (NB - 1));
+    const base = binLch[i >> 1];
     if (i === SHADE_SLOT) { ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2); shadeSprite(ax, hp, r0); continue; }
     if (i & 1) { ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2); flatSprite(ax, r0, c0, base, rng(i * 7919 + 13)); continue; }
     ax.putImageData(glossSprite(img, base), ox[i], oy[i]);
@@ -760,11 +815,11 @@ function buildAtlas() {
 }
 // Jumbo sprites exist only for the bins the jumbos use.
 function buildJumbos() {
-  const ramp = rampOf(rec.pal), k = dpr * 1.1;
+  const k = dpr * 1.1;
   jat.clear();
   for (const c of units) {
     if (!c.J || jat.has(c.b)) continue;
-    const jc = document.createElement('canvas'), jx = jc.getContext('2d'), base = ramp(c.b / (NB - 1));
+    const jc = document.createElement('canvas'), jx = jc.getContext('2d'), base = binLch[c.b];
     jc.width = 2 * SPJ; jc.height = SPJ;
     jx.putImageData(glossSprite(jx.createImageData(SPJ, SPJ), base, LTJ), 0, 0);
     jx.setTransform(k, 0, 0, k, SPJ * 1.5, SPJ / 2);
@@ -842,14 +897,10 @@ function merge() {
 function place() {
   const x0 = (W - SQ3 * R * (cols + 0.5)) / 2 + (SQ3 * R) / 2;
   const y0 = (H - (2 * R + 1.5 * R * (rows - 1))) / 2 + R;
-  let lo = Infinity, hi = -Infinity;
   for (const c of cells) {
     c.x = x0 + SQ3 * R * (c.col + (c.row & 1) * 0.5);
     c.y = y0 + 1.5 * R * c.row;
-    c.t = (c.x * W + c.y * H) / (W * W + H * H);
-    lo = Math.min(lo, c.t); hi = Math.max(hi, c.t);
   }
-  for (const c of cells) c.b = Math.round(((c.t - lo) / (hi - lo || 1)) * (NB - 1));
 }
 function centreCell() {
   let best = 0, bd = Infinity;
@@ -864,7 +915,7 @@ function layout(force) {
   cv.width = Math.round(w * d); cv.height = Math.round(h * d);
   // Cell size follows width; rows fill what height is left.
   // The recipe sets about how many cells span a wide sheet.
-  const R0 = clamp(w / (SQ3 * rec.den * clamp(w / 1000, 0.45, 1.2)), 14, 90), pad = R0 * 0.22;
+  const R0 = clamp(w / (SQ3 * rec.den * clamp(w / 1000, 0.45, 1.2)), 10, 60), pad = R0 * 0.22;
   const nc = Math.max(3, Math.round((w - 2 * pad) / (SQ3 * R0) - 0.5));
   R = (w - 2 * pad) / (SQ3 * (nc + 0.5));
   const nr = Math.max(2, Math.floor((h - 2 * pad - 2 * R) / (1.5 * R)) + 1);
@@ -877,6 +928,7 @@ function layout(force) {
     ptrs.forEach(q => (q.cell = null)); hoverCell = null; kPress = null;
   }
   place();
+  if (fresh) paintCells();
   // New jumbos get sprites now; the full rebuild waits for the resize to settle.
   if (fresh && sR) buildJumbos();
   if (fresh) { fi = centreCell(); wantX = null; }
