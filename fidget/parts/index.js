@@ -48,4 +48,9 @@ export default [
   { id: 'bellows', slot: 'band', load: () => import('./bellows.js') },
   { id: 'timer', slot: 'small', load: () => import('./timer.js') },
   { id: 'toaster', slot: 'small', load: () => import('./toaster.js') },
+  { id: 'crank', slot: 'big', load: () => import('./crank.js') },
+  { id: 'stopwatch', slot: 'big', load: () => import('./stopwatch.js') },
+  { id: 'newton', slot: 'row', load: () => import('./newton.js') },
+  { id: 'ruler', slot: 'band', load: () => import('./ruler.js') },
+  { id: 'duck', slot: 'small', load: () => import('./duck.js') },
 ];
