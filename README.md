@@ -20,7 +20,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Pendulum wave | [pendulum/](pendulum/) | live, with sound |
 | String harp | [harp/](harp/) | live, with sound |
 | Pin art | [pins/](pins/) | live, with sound |
-| Tesseract | [tesseract/](tesseract/) | live, with sound |
+| Tesseract | [tesseract/](tesseract/) | Lab: retired from the main shelf (not fun enough) |
 | Ferrofluid | [ferro/](ferro/) | live, with sound |
 | Galaxy | [galaxy/](galaxy/) | live, with sound; WebGPU only |
 | Zipper | [zipper/](zipper/) | live, with sound |
