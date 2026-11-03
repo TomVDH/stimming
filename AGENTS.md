@@ -101,6 +101,13 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
   For sound, `audioKit()` returns a kit; `await kit.tone()` gives Tone.js on the kit's context. Connect Tone nodes to `kit.out`, so mute-by-default, gesture start and sleep still hold.
   Pop field (`pop/`) is the reference port.
 - Legacy: when a toy ports to the library set, its pre-port page is kept as `<id>/legacy.html` (with `noindex`). Set `legacy: true` on the toy in `toys.json`; the shell header then shows a Legacy pill, and the legacy page shows Current.
+- Control bar standard (Tom, 2026-11-03). Left to right, one row:
+  1. Choice: at most one group. Up to five options as segmented chips, one pressed (palettes: dot plus name). More than five: one stepper, `‹ Name ›`.
+  2. Main slider: at most one, labelled with a word, no number readout.
+  3. Actions: at most three. `+ Noun` adds; `Shuffle` (die icon plus the word) randomizes everywhere; `Clear` empties; `Reset` returns to the start. Clear and Reset never sit side by side: Reset then lives in Settings. One-word literal verbs are fine (Drip, Blow, Release).
+  4. Right edge: Settings (sliders icon) for everything else, then the (i).
+  At most five visible controls; a choice group counts as one; Settings and (i) do not count. Chips carry text; icon-only is only for Settings and (i).
+  The shared shell gives the bar its inset, scrim and chip backing; toys do not restyle it.
 - Controls: one bar under the stage, five visible controls at most.
   1. Choices first, as segmented chips with `aria-pressed`.
   2. Then actions, with the shared verbs Clear, Reset and Shuffle.
