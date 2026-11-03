@@ -4,6 +4,8 @@ Small interactive desk toys for the office. One folder per toy, one self-contain
 
 Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2xwNTd>. The menu is its main page and every toy is a page inside it.
 
+Source: <https://github.com/TomVDH/stimming> (private).
+
 | Toy | Folder | Status |
 |---|---|---|
 | Morphset | [morphset/](morphset/) | live |
