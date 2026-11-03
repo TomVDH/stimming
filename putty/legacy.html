@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heat putty</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Heat putty: a bar of thermochromic putty that smears and warms under the pointer. */
+:root { --stage: oklch(0.19 0.035 300); }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab; }
+.stage canvas:active { cursor: grabbing; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/putty.svg)"></span><span class="intro-name">Heat putty</span><span class="intro-sub">Stimming No. 18</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--putty" id="stage" tabindex="0" role="application" aria-label="A bar of heat-sensitive putty. Drag to push and smear it; the warm trail changes colour and cools back slowly. Hold still to press a handprint. The chips change the putty's colours.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Heat putty needs WebGL 2 with float textures, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" role="group" aria-label="Putty">
+        <button class="chip" type="button" data-value="0" aria-pressed="true">Violet</button>
+        <button class="chip" type="button" data-value="1" aria-pressed="false">Teal</button>
+        <button class="chip" type="button" data-value="2" aria-pressed="false">Noir</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="clear" type="button">Clear</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>smear</dd></div>
+        <div><dt>Hold</dt><dd>print</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Heat putty</h1><div class="vignette" hidden></div></section>
+</div>
+
+<script type="module">
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+</script>
+<script type="module">
+import { initPage, audioKit, choices, whenVisible, reduced, fitCanvas, oklchLinear } from '../shared/stim.js';
+initPage({ id: 'putty' });
+
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const bar = document.querySelector('.bar');
+const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false });
+const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) fail();
+// Full floats need linear filtering; half floats always have it.
+const FMT = gl.getExtension('OES_texture_float_linear') ? [gl.RGBA32F, gl.FLOAT] : [gl.RGBA16F, gl.HALF_FLOAT];
+
+/* ---------- tuning ---------- */
+// The sim steps at a fixed rate, whatever the display rate.
+const DT = 1 / 60;
+// Heat above this value shows the hot colour.
+const T0 = 0.45;
+// One unit of thickness stands this many CSS pixels tall.
+const HEIGHT_PX = 22;
+// Thick putty cools slower; this is the slowest time constant, in seconds.
+const TAU_MAX = 6 * (0.6 + 0.4 * 2.6);
+
+/* ---------- shaders ---------- */
+const VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+// Shared helpers: value noise and the hand outline.
+const LIB = `
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float capsule(vec2 p, vec2 a, vec2 b, float r) {
+  vec2 pa = p - a, ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)) - r;
+}
+float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+// A right hand, palm down, fingers up. The units are hand lengths.
+float hand(vec2 q) {
+  vec2 b = abs(q - vec2(0.0, -0.13)) - vec2(0.15, 0.14);
+  float palm = length(max(b, 0.0)) + min(max(b.x, b.y), 0.0) - 0.07;
+  float f = capsule(q, vec2(-0.155, 0.05), vec2(-0.19, 0.36), 0.047);
+  f = min(f, capsule(q, vec2(-0.05, 0.07), vec2(-0.056, 0.44), 0.05));
+  f = min(f, capsule(q, vec2(0.055, 0.06), vec2(0.078, 0.4), 0.047));
+  f = min(f, capsule(q, vec2(0.155, 0.02), vec2(0.215, 0.29), 0.041));
+  f = min(f, capsule(q, vec2(-0.17, -0.2), vec2(-0.37, 0.0), 0.055));
+  return smin(palm, f, 0.04);
+}`;
+
+// The state texel: R heat, G thickness, BA velocity in slab units per second.
+// Slab units: the slab is one unit tall and uAspect units wide.
+const SIM = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uState;
+uniform vec2 uTexel;
+uniform float uAspect, uDt, uCool, uYield, uDiff;
+uniform vec4 uSeg;
+uniform vec2 uVel, uFinger;
+uniform vec4 uHand;
+${LIB}
+float slump(float d) { return sign(d) * max(abs(d) - uYield, 0.0) * 0.12; }
+void main() {
+  // Rates are per 60 Hz step; k scales them for substeps.
+  float k = uDt * 60.0;
+  vec2 A = vec2(uAspect, 1.0), p = vUv * A;
+  vec4 s = texture(uState, vUv);
+  vec4 l = texture(uState, vUv - vec2(uTexel.x, 0.0)), r = texture(uState, vUv + vec2(uTexel.x, 0.0));
+  vec4 d = texture(uState, vUv - vec2(0.0, uTexel.y)), u = texture(uState, vUv + vec2(0.0, uTexel.y));
+  // Semi-Lagrangian advection carries heat and thickness with the flow.
+  vec4 a = texture(uState, vUv - s.zw * uDt / A);
+  float heat = a.r, m = a.g;
+  // Converging flow piles putty up; diverging flow thins it.
+  float div = (r.z - l.z) / (2.0 * uTexel.x * uAspect) + (u.w - d.w) / (2.0 * uTexel.y);
+  m *= 1.0 - clamp(div * uDt, -0.2, 0.2);
+  // Putty has a yield stress: only slopes past it slump.
+  m += k * (slump(l.g - s.g) + slump(r.g - s.g) + slump(d.g - s.g) + slump(u.g - s.g));
+  // Flowing putty loses its fine ripples; resting putty keeps its shape.
+  float flow = smoothstep(0.02, 0.25, length(s.zw));
+  m += 0.07 * k * flow * (l.g + r.g + d.g + u.g - 4.0 * s.g);
+  heat += uDiff * k * (l.r + r.r + d.r + u.r - 4.0 * s.r);
+  heat *= exp(-uDt * uCool / (6.0 * (0.6 + 0.4 * clamp(m, 0.3, 2.6))));
+  // Viscous putty stops almost at once without a push.
+  // Velocity blurs with its neighbours, which kills odd-even stripes.
+  vec2 v = (s.zw * 0.5 + (l.zw + r.zw + d.zw + u.zw) * 0.125) * pow(0.55, k);
+  // The dents push against a smoothed thickness, for the same reason.
+  float ms = m * 0.5 + (l.g + r.g + d.g + u.g) * 0.125;
+
+  // The finger is a capsule from the last step's spot to this one.
+  if (uFinger.y > 0.0) {
+    vec2 fa = uSeg.xy, ab = uSeg.zw - uSeg.xy;
+    float t = clamp(dot(p - fa, ab) / max(dot(ab, ab), 1e-9), 0.0, 1.0);
+    vec2 dv = p - (fa + ab * t);
+    float dist = length(dv), rad = uFinger.x, q = dist / rad;
+    float g = exp(-q * q);
+    // Putty under the finger moves with the finger.
+    v = mix(v, uVel, 1.0 - pow(1.0 - g * 0.85 * uFinger.y, k));
+    // The fingertip is a rigid dent; excess putty flows out of it.
+    float prof = 0.5 + 1.4 * q * q;
+    vec2 dir = dist > 1e-6 ? dv / dist : vec2(0.0);
+    // Putty behind the fingertip goes sideways, never back into the groove.
+    float seg = length(ab);
+    if (seg > 1e-6) { vec2 md = ab / seg; dir -= md * min(dot(dir, md), 0.0); }
+    v += dir * max(ms - prof, 0.0) * rad * 14.0 * uFinger.y * k;
+    // Skin warms by contact; a fast drag adds friction heat.
+    // Friction scales with speed, so a quick swipe still flips the dye.
+    float touch = exp(-q * q * 2.0);
+    heat += uDt * uFinger.y * (touch * 6.0 * max(1.2 - heat, 0.0) + g * 9.0 * length(uVel) * max(1.25 - heat, 0.0));
+  }
+
+  // The handprint presses the hand outline down and warms it.
+  if (uHand.w > 0.0) {
+    vec2 hq = (p - uHand.xy) / uHand.z;
+    float sd = hand(hq) * uHand.z, e = 0.004;
+    vec2 gq = vec2(hand(hq + vec2(e, 0.0)) - hand(hq - vec2(e, 0.0)), hand(hq + vec2(0.0, e)) - hand(hq - vec2(0.0, e)));
+    float prof = 0.6 + max(sd, 0.0) * 60.0;
+    float ex = max(ms - prof, 0.0) * uHand.w;
+    // Only a band at the outline flows out; that builds the rim.
+    float band = smoothstep(-0.014, -0.004, sd);
+    v += normalize(gq + 1e-7) * ex * 0.35 * band * k;
+    // The flat of the hand presses the inside down directly.
+    m -= max(m - prof, 0.0) * uHand.w * mix(0.08, 0.02, band) * k;
+    heat += uDt * uHand.w * smoothstep(0.004, -0.004, sd) * 2.2 * max(1.2 - heat, 0.0);
+  }
+
+  v /= max(1.0, length(v) / 3.0);
+  o = vec4(clamp(heat, 0.0, 1.25), clamp(m, 0.2, 2.6), v);
+}`;
+
+// A fresh slab: cold, at rest, with a faint low lumpiness.
+const INIT = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform float uAspect, uSeed;
+${LIB}
+void main() {
+  vec2 p = vUv * vec2(uAspect, 1.0);
+  float m = 1.0 + 0.05 * (vnoise(p * 4.0 + uSeed) - 0.5) + 0.02 * (vnoise(p * 11.0 - uSeed) - 0.5);
+  o = vec4(0.0, m, 0.0, 0.0);
+}`;
+
+// A resize stretches the old slab onto the new grid.
+const COPY = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uState;
+void main() { o = texture(uState, vUv); }`;
+
+// The table, the slab with a cut bevel, and lit thermochromic putty.
+const VIEW = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D uState;
+uniform vec2 uTexel, uShadow;
+uniform vec4 uSlab;
+uniform float uRad, uBevel, uDpr, uT0, uTexCss, uHeight;
+uniform vec3 uCold, uHot, uTable, uShade;
+${LIB}
+float rbox(vec2 p, vec2 c, vec2 h, float r) {
+  vec2 q = abs(p - c) - h + r;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+vec3 encode(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+void main() {
+  vec2 px = gl_FragCoord.xy;
+  vec2 c = (uSlab.xy + uSlab.zw) * 0.5, h = (uSlab.zw - uSlab.xy) * 0.5;
+  float sd = rbox(px, c, h, uRad);
+  // The slab casts a hard offset block, not a soft shadow.
+  float sh = rbox(px - uShadow, c, h, uRad);
+  vec3 col = mix(uTable, uShade, clamp(0.5 - sh, 0.0, 1.0));
+
+  if (sd < 1.0) {
+    vec2 uv = clamp((px - uSlab.xy) / (uSlab.zw - uSlab.xy), 0.0, 1.0);
+    vec2 tx = uTexel;
+    vec4 s = texture(uState, uv);
+    vec4 l = texture(uState, uv - vec2(tx.x, 0.0)), r = texture(uState, uv + vec2(tx.x, 0.0));
+    vec4 d = texture(uState, uv - vec2(0.0, tx.y)), u = texture(uState, uv + vec2(0.0, tx.y));
+    float heat = s.r, m = s.g;
+    // Gradients are per texel, from samples one texel apart.
+    vec2 gm = vec2(r.g - l.g, u.g - d.g) * 0.5;
+    vec2 gh = vec2(r.r - l.r, u.r - d.r) * 0.5;
+
+    // A leuco dye over the base pigment turns clear as it warms.
+    // The dye switches across a narrow heat band, never under one pixel.
+    float tpx = uTexCss * uDpr;
+    float bw = max(0.035, length(gh) / tpx);
+    // Pigment grains switch at slightly different heats, so the front frays.
+    vec2 pc0 = px / uDpr;
+    float th = uT0 + (vnoise(pc0 * 0.11) - 0.5) * 0.07 + (vnoise(pc0 * 0.45 + 31.0) - 0.5) * 0.03;
+    float clear = smoothstep(th - bw, th + bw, heat);
+    // Dye absorbance follows Beer-Lambert, so midtones mix like paint.
+    vec3 dye = clamp(uCold / max(uHot, vec3(1e-4)), 0.003, 6.0);
+    vec3 alb = uHot * pow(dye, vec3(1.0 - clear));
+    // Only putty pressed near the table goes darker; ridges hold more pigment.
+    alb = mix(alb * 0.78, alb, smoothstep(0.2, 0.55, m)) * (1.0 + 0.06 * clamp(m - 1.0, -0.5, 1.2));
+
+    // The surface normal comes from the thickness slope.
+    vec3 n = normalize(vec3(-gm * uHeight / uTexCss, 1.0));
+    // Fine grain keeps the surface matte.
+    n.xy += (vec2(vnoise(px / uDpr * 0.9), vnoise(px / uDpr * 0.9 + 17.0)) - 0.5) * 0.05;
+    // A hard-cut bevel runs round the slab edge.
+    vec2 qd = px - c, qq = abs(qd) - (h - uRad);
+    vec2 outw = (qq.x > 0.0 && qq.y > 0.0) ? normalize(qq) * sign(qd) : (qq.x > qq.y ? vec2(sign(qd.x), 0.0) : vec2(0.0, sign(qd.y)));
+    float bev = clamp(sd + uBevel + 0.5, 0.0, 1.0);
+    n = normalize(mix(n, vec3(outw * 0.9, 1.0), bev));
+
+    // Cavities darken and crests lift, from a wider ring of samples.
+    float k = 3.0;
+    float ring = (texture(uState, uv + vec2(tx.x * k, 0.0)).g + texture(uState, uv - vec2(tx.x * k, 0.0)).g
+                + texture(uState, uv + vec2(0.0, tx.y * k)).g + texture(uState, uv - vec2(0.0, tx.y * k)).g) * 0.25;
+    float ao = clamp(1.0 - (ring - m) * 1.6, 0.62, 1.12);
+
+    vec3 L = normalize(vec3(-0.45, 0.55, 0.72)), V = vec3(0.0, 0.0, 1.0), H = normalize(L + V);
+    float ndl = dot(n, L);
+    float wrap = clamp((ndl + 0.5) / 1.5, 0.0, 1.0);
+    // Light scatters inside the putty: shade turns deep and saturated, not grey.
+    vec3 deep = alb * alb * 1.6;
+    vec3 diff = alb * (0.22 + 0.86 * wrap) + deep * (1.0 - wrap) * 0.3;
+    float nh = max(dot(n, H), 0.0);
+    float spec = pow(nh, 16.0) * 0.06 + pow(nh, 64.0) * 0.18;
+    float fres = pow(1.0 - clamp(n.z, 0.0, 1.0), 3.0) * 0.12;
+    vec3 pc = diff * ao + spec + fres * alb;
+    pc += (hash(floor(px / uDpr)) - 0.5) * 0.012;
+    col = mix(col, pc, clamp(0.5 - sd, 0.0, 1.0));
+  }
+  o = vec4(encode(col), 1.0);
+}`;
+
+function program(fs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]].forEach(([t, src]) => {
+    const sh = gl.createShader(t); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  gl.bindAttribLocation(p, 0, 'aPos'); gl.linkProgram(p);
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+const sim = program(SIM), init = program(INIT), copy = program(COPY), view = program(VIEW);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+/* ---------- palettes ---------- */
+// Each putty is a bold duotone: dyed cold, base pigment hot.
+// Values are OKLCH: lightness, chroma, hue.
+const PUTTY = [
+  { cold: [0.4, 0.19, 298], hot: [0.74, 0.19, 356], hue: 300 },
+  { cold: [0.48, 0.1, 210], hot: [0.9, 0.19, 115], hue: 215 },
+  { cold: [0.22, 0.012, 280], hot: [0.74, 0.17, 55], hue: 280 },
+];
+// Chroma shrinks until the colour fits linear sRGB.
+function lin([L, C, h]) {
+  let c = C, v = oklchLinear(L, c, h);
+  while (c > 0 && v.some(x => x < 0 || x > 1)) { c -= 0.005; v = oklchLinear(L, Math.max(c, 0), h); }
+  return v.map(x => Math.min(1, Math.max(0, x)));
+}
+let pal = null;
+function setPutty(i) {
+  const P = PUTTY[i];
+  pal = { cold: lin(P.cold), hot: lin(P.hot), table: lin([0.19, 0.035, P.hue]), shade: lin([0.125, 0.03, P.hue]) };
+  // The stage behind the canvas takes the same table colour.
+  stage.style.setProperty('--stage', `oklch(0.19 0.035 ${P.hue})`);
+}
+setPutty(0);
+
+/* ---------- targets ---------- */
+let GW = 0, GH = 0, targets = null, flip = 0;
+function makeTarget(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, FMT[0], w, h, 0, gl.RGBA, FMT[1], null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb };
+}
+function pass(prog, dst, w, h, src) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null); gl.viewport(0, 0, w, h);
+  gl.useProgram(prog.p);
+  if (src) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex); gl.uniform1i(prog.u.uState, 0); }
+}
+const draw = () => gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+function knead() {
+  pass(init, targets[flip], GW, GH);
+  gl.uniform1f(init.u.uAspect, GW / GH);
+  gl.uniform1f(init.u.uSeed, Math.random() * 100);
+  draw();
+}
+// A new grid copies the old slab across; the first grid kneads a fresh one.
+function grid(w, h) {
+  const old = targets ? targets[flip] : null, next = [makeTarget(w, h), makeTarget(w, h)];
+  GW = w; GH = h;
+  if (old) { pass(copy, next[0], w, h, old); draw(); }
+  targets?.forEach(t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); });
+  targets = next; flip = 0;
+  if (!old) knead();
+}
+
+/* ---------- layout ---------- */
+// The slab sits inset on the stage, clear of the control bar.
+let slab = { x: 0, y: 0, w: 1, h: 1 }, css = { w: 1, h: 1 }, dev = { W: 1, H: 1 }, dpr = 1;
+function fit() {
+  const f = fitCanvas(canvas, { budget: 2.2e6 });
+  css = { w: f.w, h: f.h }; dev = { W: f.W, H: f.H }; dpr = f.W / f.w;
+  const m = Math.round(Math.min(40, Math.max(14, Math.min(f.w, f.h) * 0.04)));
+  // The slab stops a small gap above the highest control on the stage.
+  const sr = stage.getBoundingClientRect();
+  const top = Math.min(...[...bar.children].map(el => el.getBoundingClientRect().top));
+  const below = Math.max(m, Math.round(sr.bottom - top) + 12);
+  const sh = f.h - m - below >= 160 ? f.h - m - below : f.h - 2 * m;
+  slab = { x: m, y: m, w: f.w - 2 * m, h: sh };
+  // The grid keeps about one texel per 1.5 CSS pixels, 720 at most.
+  const tc = Math.max(1.5, Math.max(slab.w, slab.h) / 720);
+  const w = Math.round(slab.w / tc), h = Math.round(slab.h / tc);
+  // Small resizes keep the grid; a big change moves to a new one.
+  if (!targets || Math.abs(w - GW) / GW > 0.2 || Math.abs(h - GH) / GH > 0.2) grid(w, h);
+  render();
+}
+
+/* ---------- finger and hand ---------- */
+// Positions are in slab units: one unit tall, origin bottom left.
+const F = { down: false, id: -1, pos: [0, 0], at: [0, 0], last: [0, 0], vel: [0, 0], t: 0, anchor: [0, 0], still: 0, touch: false };
+const hand = { on: false, c: [0, 0], amt: 0 };
+const aspect = () => slab.w / slab.h;
+const handSize = () => 0.6 * Math.min(aspect(), 1);
+
+let hb = 0, quiet = 0;
+function step() {
+  const now = performance.now();
+  // A finger that stops sending moves has no speed.
+  if (now - F.t > 70) F.vel = [0, 0];
+  // A still hold of 450 ms presses a handprint.
+  if (F.down && !hand.on && now - F.still > 450) {
+    hand.on = true; hand.amt = 0;
+    hand.c = [F.pos[0], F.pos[1] - 0.07 * handSize()];
+    squelch();
+  }
+  if (hand.on) hand.amt = Math.min(1, hand.amt + DT / 0.7);
+  const press = F.down && !hand.on ? 1 : 0;
+  const cool = reduced() && !F.down ? 8 : 1;
+
+  // The sim finger eases after the pointer, so sparse events do not stamp.
+  F.at = [F.at[0] + (F.pos[0] - F.at[0]) * 0.5, F.at[1] + (F.pos[1] - F.at[1]) * 0.5];
+  const rad = (F.touch ? 22 : 18) / slab.h;
+  // A fast finger takes substeps of a quarter radius, so its path stays smooth.
+  const travel = press ? Math.hypot(F.at[0] - F.last[0], F.at[1] - F.last[1]) : 0;
+  const n = Math.min(8, Math.max(1, Math.ceil(travel / (0.25 * rad))));
+  const texCss = slab.w / GW;
+  for (let i = 0; i < n; i++) {
+    pass(sim, targets[1 - flip], GW, GH, targets[flip]);
+    const u = sim.u;
+    gl.uniform2f(u.uTexel, 1 / GW, 1 / GH);
+    gl.uniform1f(u.uAspect, GW / GH);
+    gl.uniform1f(u.uDt, DT / n);
+    gl.uniform1f(u.uCool, cool);
+    gl.uniform1f(u.uYield, 0.03 * texCss);
+    gl.uniform1f(u.uDiff, Math.min(0.2, 0.05 * (1.5 / texCss) ** 2));
+    const a = i / n, b = (i + 1) / n;
+    gl.uniform4f(u.uSeg,
+      F.last[0] + (F.at[0] - F.last[0]) * a, F.last[1] + (F.at[1] - F.last[1]) * a,
+      F.last[0] + (F.at[0] - F.last[0]) * b, F.last[1] + (F.at[1] - F.last[1]) * b);
+    gl.uniform2f(u.uVel, F.vel[0], F.vel[1]);
+    gl.uniform2f(u.uFinger, rad, press);
+    gl.uniform4f(u.uHand, hand.c[0], hand.c[1], handSize(), hand.on ? hand.amt : 0);
+    draw();
+    flip = 1 - flip;
+  }
+  F.last = [...F.at];
+
+  // The heat bound decays at the slowest cooling rate.
+  if (F.down) { hb = 1.25; quiet = 0; } else { hb *= Math.exp(-DT * cool / TAU_MAX); quiet++; }
+}
+
+function render() {
+  if (!targets) return;
+  pass(view, null, dev.W, dev.H, targets[flip]);
+  const u = view.u, sx = dev.W / css.w, sy = dev.H / css.h;
+  gl.uniform2f(u.uTexel, 1 / GW, 1 / GH);
+  gl.uniform4f(u.uSlab, slab.x * sx, (css.h - slab.y - slab.h) * sy, (slab.x + slab.w) * sx, (css.h - slab.y) * sy);
+  gl.uniform1f(u.uRad, 16 * sx);
+  gl.uniform1f(u.uBevel, 6 * sx);
+  gl.uniform2f(u.uShadow, 7 * sx, -9 * sy);
+  gl.uniform1f(u.uDpr, sx);
+  gl.uniform1f(u.uT0, T0);
+  gl.uniform1f(u.uTexCss, slab.w / GW);
+  gl.uniform1f(u.uHeight, HEIGHT_PX);
+  gl.uniform3f(u.uCold, ...pal.cold); gl.uniform3f(u.uHot, ...pal.hot);
+  gl.uniform3f(u.uTable, ...pal.table); gl.uniform3f(u.uShade, ...pal.shade);
+  draw();
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.45 });
+// A soft squish when the putty is pressed.
+function squish() {
+  const ac = kit.live(); if (!ac || !kit.noise) return;
+  const src = ac.createBufferSource(); src.buffer = kit.noise;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 6;
+  const g = ac.createGain(), t = ac.currentTime;
+  f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(1400, t + 0.15);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+  src.connect(f); f.connect(g); g.connect(kit.out); src.start(t, Math.random() * 0.5, 0.3);
+}
+// The handprint gives a deep, slow squelch and a soft thump.
+function squelch() {
+  const ac = kit.live(); if (!ac || !kit.noise) return;
+  const t = ac.currentTime;
+  const src = ac.createBufferSource(); src.buffer = kit.noise;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 9;
+  f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(160, t + 0.5);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.45, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  src.connect(f); f.connect(g); g.connect(kit.out); src.start(t, Math.random() * 0.3, 0.65);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.3);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.3, t + 0.02); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+  o.connect(og); og.connect(kit.out); o.start(t); o.stop(t + 0.4);
+}
+// A rub bed of filtered noise follows the drag speed.
+let rub = null;
+function rubTo(v) {
+  if (!rub) {
+    if (v <= 0) return;
+    const ac = kit.live(); if (!ac || !kit.noise) return;
+    const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.4; f.frequency.value = 300;
+    const g = ac.createGain(); g.gain.value = 0;
+    src.connect(f); f.connect(g); g.connect(kit.out); src.start();
+    rub = { f, g };
+  }
+  const t = kit.ac.currentTime;
+  rub.g.gain.setTargetAtTime(v * 0.2, t, 0.05);
+  rub.f.frequency.setTargetAtTime(240 + v * 760, t, 0.08);
+}
+
+/* ---------- loop ---------- */
+// Steps run at 60 Hz from an accumulator; the loop sleeps once all is cold.
+let raf = 0, prev = 0, acc = 0, visible = true;
+const idle = () => !F.down && quiet > (reduced() ? 30 : 150) && hb < T0 - 0.03;
+function frame(now) {
+  raf = 0;
+  acc += prev ? Math.min(0.1, (now - prev) / 1000) : DT;
+  prev = now;
+  let n = 0;
+  while (acc >= DT && n < 4) { step(); acc -= DT; n++; }
+  if (n === 4) acc = 0;
+  render();
+  rubTo(F.down && !hand.on ? Math.min(1, Math.hypot(...F.vel) / 1.2) : 0);
+  // Reduced motion keeps the loop for direct drags and a fast cool only.
+  if (visible && !idle()) raf = requestAnimationFrame(frame);
+  else { prev = 0; acc = 0; kit.rest(() => !raf); }
+}
+function wake() { if (!raf && visible) raf = requestAnimationFrame(frame); }
+whenVisible(stage, v => { visible = v; if (v) wake(); });
+
+/* ---------- input ---------- */
+function at(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left - slab.x) / slab.h, 1 - (e.clientY - r.top - slab.y) / slab.h];
+}
+canvas.addEventListener('pointerdown', e => {
+  if (F.down) return;
+  canvas.setPointerCapture(e.pointerId);
+  const p = at(e);
+  Object.assign(F, { down: true, id: e.pointerId, pos: p, at: p, last: p, vel: [0, 0], t: performance.now(), anchor: [e.clientX, e.clientY], still: performance.now(), touch: e.pointerType !== 'mouse' });
+  hb = 1.25; quiet = 0;
+  squish(); wake();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!F.down || e.pointerId !== F.id) return;
+  const p = at(e), now = performance.now(), dt = (now - F.t) / 1000;
+  if (dt > 0.004) {
+    // Speed is smoothed and capped in slab units per second.
+    let vx = (p[0] - F.pos[0]) / dt, vy = (p[1] - F.pos[1]) / dt;
+    const k = Math.min(1, 2.5 / Math.max(1e-6, Math.hypot(vx, vy)));
+    vx *= k; vy *= k;
+    F.vel = [F.vel[0] * 0.5 + vx * 0.5, F.vel[1] * 0.5 + vy * 0.5];
+    F.t = now;
+  }
+  F.pos = p;
+  // Moving off the anchor restarts the hold timer and lifts the hand.
+  if (Math.hypot(e.clientX - F.anchor[0], e.clientY - F.anchor[1]) > 7) {
+    F.anchor = [e.clientX, e.clientY]; F.still = now;
+    if (hand.on) { hand.on = false; F.at = [...p]; F.last = [...p]; }
+  }
+  wake();
+});
+const lift = e => {
+  if (e.pointerId !== F.id) return;
+  F.down = false; F.id = -1; F.vel = [0, 0]; hand.on = false;
+  wake();
+};
+canvas.addEventListener('pointerup', lift);
+canvas.addEventListener('pointercancel', lift);
+
+choices(document.querySelector('.choices'), v => { setPutty(+v); render(); });
+document.getElementById('clear').addEventListener('click', () => { knead(); hb = 0; render(); });
+
+new ResizeObserver(fit).observe(stage);
+new ResizeObserver(fit).observe(bar);
+fit();
+</script>
+</body>
+</html>

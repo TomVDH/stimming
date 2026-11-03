@@ -89,6 +89,7 @@ Open <http://localhost:8000/>. All links are relative.
   `shared/stim.js` imports culori by the same URL, so it loads once. Its colour helpers are `oklchLinear`, `oklchRgb`, `linFit` and `css([L, C, h], alpha)`.
   For sound, `audioKit()` returns a kit; `await kit.tone()` gives Tone.js on the kit's context. Connect Tone nodes to `kit.out`, so mute-by-default, gesture start and sleep still hold.
   Pop field (`pop/`) is the reference port.
+- Legacy: when a toy ports to the library set, its pre-port page is kept as `<id>/legacy.html` (with `noindex`). The shell header then shows a Legacy pill; the legacy page shows Current.
 - Controls: one bar under the stage, five visible controls at most.
   1. Choices first, as segmented chips with `aria-pressed`.
   2. Then actions, with the shared verbs Clear, Reset and Shuffle.

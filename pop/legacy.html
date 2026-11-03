@@ -1,0 +1,1903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pop field</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Pop field: a honeycomb of bubbles laid straight on the page. */
+:root { --stage: var(--bg); }
+@media (max-width: 640px) { .field { aspect-ratio: 3 / 4; } }
+.field canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
+}
+/* The focus ring is drawn around the focused cell instead. */
+.field canvas:focus-visible { outline: none; }
+/* The die is a solid face with its pips cut out. */
+.chip.icon svg.die { fill: currentColor; stroke: none; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pop.svg)"></span><span class="intro-name">Pop field</span><span class="intro-sub">Stimming No. 02</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--pop field" id="field">
+      <canvas tabindex="0" role="application" aria-label="Bubble wrap. Arrow keys choose a bubble; Space or Enter pops it. Hold Space on a big bubble to burst it."></canvas>
+    </div>
+    <div class="bar bar--below">
+      <div class="actions">
+        <button class="chip icon" id="roll" type="button" aria-label="Shuffle" title="Shuffle: a new sheet"><svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d=""/></svg></button>
+        <button class="chip" id="reset" type="button">Reset</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>pop</dd></div>
+        <div><dt>Drag</dt><dd>sweep</dd></div>
+        <div><dt>Hold</dt><dd>burst a big one</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd> <kbd>Space</kbd></dt><dd>choose, pop</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Pop field</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="module">
+import { initPage, audioKit, reduced, onReducedChange } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+initPage({ id: 'pop' });
+
+const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, SQ3 = Math.sqrt(3);
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+function css(lch, a) {
+  const [r, g, b] = rgb(lch);
+  return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
+}
+
+// A palette is three OKLCH stops: light, middle, deep.
+// The first field runs mint, through cyan, to blue.
+const MINT = [0.9, 0.11, 165], CYAN = [0.79, 0.125, 205], BLUE = [0.6, 0.14, 250];
+const R01 = (a, b) => a + Math.random() * (b - a);
+const sgn = () => (Math.random() < 0.5 ? -1 : 1);
+// Palette kinds: each makes three stops from a start hue.
+const PALS = {
+  // A hue arc, light to deep.
+  arc: h => { const s = R01(60, 190) * sgn(), c = R01(0.11, 0.17); return [[R01(0.86, 0.91), c * 0.95, h], [R01(0.77, 0.81), c, h + s / 2], [R01(0.56, 0.63), c * 1.05, h + s]]; },
+  // One hue, pale to ink.
+  mono: h => [[0.93, 0.06, h], [0.72, 0.15, h + 4], [0.42, 0.13, h + 10]],
+  // Two opposite hues meet at a grey middle.
+  split: h => [[0.86, 0.14, h], [0.7, 0.025, h + 90], [0.6, 0.16, h + 180]],
+  // Loud chroma over a wide sweep.
+  neon: h => { const s = R01(160, 260) * sgn(); return [[0.86, 0.2, h], [0.78, 0.24, h + s / 2], [0.68, 0.26, h + s]]; },
+  // Chalky pastels.
+  chalk: h => { const s = R01(90, 160) * sgn(); return [[0.94, 0.05, h], [0.89, 0.07, h + s / 2], [0.83, 0.08, h + s]]; },
+  // Dark and moody.
+  dusk: h => { const s = R01(40, 110) * sgn(); return [[0.66, 0.12, h], [0.5, 0.13, h + s / 2], [0.36, 0.11, h + s]]; },
+};
+// A colour field maps a spot on the sheet, 0..1 each way, to OKLab.
+const toLab = ([L, C, h]) => [L, C * Math.cos(h * D2R), C * Math.sin(h * D2R)];
+const toLch = ([L, a, b]) => [L, Math.hypot(a, b), Math.atan2(b, a) / D2R];
+// Mesh: colour points blend by soft Gaussian weights across the sheet.
+function rbf(pts) {
+  return (u, v) => {
+    let s = 0, L = 0, A = 0, B = 0;
+    for (const p of pts) { const w = Math.exp(-((u - p.x) ** 2 + (v - p.y) ** 2) / 0.12); s += w; L += p.c[0] * w; A += p.c[1] * w; B += p.c[2] * w; }
+    return [L / s, A / s, B / s];
+  };
+}
+// Ramp stops go to the corners; a fourth stop fills the last one.
+function meshOf([A, M, B], fixed) {
+  const D = [M[0] + 0.05, M[1], M[2] + 40 * sgn()], cs = [A, M, D, B];
+  const at = [[0.05, 0.05], [0.95, 0.08], [0.08, 0.95], [0.95, 0.95]];
+  if (!fixed) for (let i = 3; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [at[i], at[j]] = [at[j], at[i]]; }
+  return rbf(cs.map((c, i) => ({ x: at[i][0] + (fixed ? 0 : R01(-0.1, 0.1)), y: at[i][1] + (fixed ? 0 : R01(-0.1, 0.1)), c: toLab(c) })));
+}
+// A random direction across the sheet, as 0..1 from corner to corner.
+const sweepOf = () => { const t = Math.random() * TAU, c = Math.cos(t), s = Math.sin(t), e = Math.abs(c) + Math.abs(s); return (u, v) => clamp(((u - 0.5) * c + (v - 0.5) * s) / e + 0.5); };
+const KINDS = [...Object.keys(PALS), 'mesh', 'monotone', 'shaded', 'refracted'];
+function fieldOf(kind, h) {
+  if (PALS[kind]) return meshOf(PALS[kind](h));
+  if (kind === 'mesh') {
+    // Mesh: five free colour points round a wide hue arc.
+    return rbf(Array.from({ length: 5 }, (_, i) => ({ x: i ? Math.random() : 0.5, y: i ? Math.random() : 0.5, c: toLab([R01(0.6, 0.9), R01(0.1, 0.18), h + R01(-120, 120)]) })));
+  }
+  if (kind === 'monotone') {
+    // Monotone: one colour for the whole sheet.
+    const c = toLab([R01(0.62, 0.88), R01(0.1, 0.17), h]);
+    return () => c;
+  }
+  const d = sweepOf();
+  if (kind === 'shaded') {
+    // Shaded: one hue, light falling from one side to the other.
+    return (u, v) => { const t = d(u, v); return toLab([lerp(0.92, 0.34, t), 0.11 + 0.05 * Math.sin(t * PI), h + 15 * t]); };
+  }
+  // Refracted: a full spectrum fans across the sheet.
+  const span = R01(240, 330) * sgn();
+  return (u, v) => { const t = d(u, v); return toLab([0.78 + 0.05 * Math.sin(t * TAU), 0.17, h + span * t]); };
+}
+// Bins: k-means in OKLab picks NB colours that cover the sheet.
+let binLch = [];
+function paintCells() {
+  const us = units.length ? units : cells;
+  let lx = Infinity, hx = -Infinity, ly = Infinity, hy = -Infinity;
+  for (const c of us) { lx = Math.min(lx, c.x); hx = Math.max(hx, c.x); ly = Math.min(ly, c.y); hy = Math.max(hy, c.y); }
+  const col = us.map(c => rec.field((c.x - lx) / (hx - lx || 1), (c.y - ly) / (hy - ly || 1)));
+  const k = Math.min(NB, us.length), cent = Array.from({ length: k }, (_, i) => col[Math.floor(((i + 0.5) / k) * col.length)].slice());
+  const idx = new Int32Array(us.length);
+  for (let it = 0; it < 6; it++) {
+    for (let n = 0; n < col.length; n++) {
+      let best = 0, bd = Infinity;
+      for (let j = 0; j < k; j++) { const q = cent[j], dd = (col[n][0] - q[0]) ** 2 + (col[n][1] - q[1]) ** 2 + (col[n][2] - q[2]) ** 2; if (dd < bd) { bd = dd; best = j; } }
+      idx[n] = best;
+    }
+    const sum = cent.map(() => [0, 0, 0, 0]);
+    for (let n = 0; n < col.length; n++) { const S = sum[idx[n]]; S[0] += col[n][0]; S[1] += col[n][1]; S[2] += col[n][2]; S[3]++; }
+    sum.forEach((S, j) => { if (S[3]) cent[j] = [S[0] / S[3], S[1] / S[3], S[2] / S[3]]; });
+  }
+  binLch = Array.from({ length: NB }, (_, j) => toLch(cent[j % k]));
+  us.forEach((c, n) => { c.b = idx[n]; });
+}
+// A recipe sets the whole sheet: paint, material, size, jumbos and gap.
+// The material brings its own light, popped look, burst, sound and feel.
+const MATS = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel', 'lava', 'ice', 'holo', 'paper', 'gum', 'topo', 'popcorn', 'disco'];
+const DENS = [18, 22, 27, 33, 40, 48], JUMS = [0, 2, 3, 5, 8, 12], GAPS = [0.05, 0.075, 0.11];
+const pick = (a, not) => { let v; do v = a[(Math.random() * a.length) | 0]; while (a.length > 1 && v === not); return v; };
+let rec = { kind: 'arc', h: 165, field: meshOf([MINT, CYAN, BLUE], true), mat: 'gloss', den: 22, jum: null, gap: 0.075 };
+// A ?mat= query starts the sheet in that material.
+const qs = new URLSearchParams(location.search), qMat = qs.get('mat'), qKind = qs.get('kind');
+if (MATS.includes(qMat)) rec.mat = qMat;
+// A ?kind= query starts the sheet in that colour mode.
+if (KINDS.includes(qKind)) { rec.kind = qKind; rec.field = fieldOf(qKind, rec.h); }
+// Each roll changes the material, at least.
+function freshRecipe(p) {
+  let h = 0;
+  // The new hue starts well away from the old one.
+  for (let n = 0; n < 8; n++) { h = Math.random() * 360; if (Math.abs(((h - p.h + 540) % 360) - 180) > 70) break; }
+  const kind = pick(KINDS, p.kind);
+  return { kind, h, field: fieldOf(kind, h), mat: pick(MATS, p.mat), den: pick(DENS), jum: pick(JUMS), gap: pick(GAPS) };
+}
+const SHADE = [0.42, 0.07, 240];
+const skinOf = ([L, C, h]) => ({
+  top: [Math.min(0.97, L + 0.08), C * 0.85, h - 10],
+  mid: [L, C, h],
+  low: [L - 0.2, C * 1.05, h + 16],
+  light: [0.98, 0.03, h - 20],
+});
+// Popped film is darker and duller; light theme keeps it paler.
+const flatOf = ([L, C, h], lite) => (lite ? [L * 0.74, C * 0.6, h + 6] : [L * 0.5 + 0.05, C * 0.55, h + 6]);
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+// Linear sRGB inside the gamut, for per-pixel lighting.
+function linFit([L, C, h]) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// A table turns linear light into 8-bit sRGB.
+const LUT = new Uint8ClampedArray(4097);
+for (let i = 0; i <= 4096; i++) LUT[i] = Math.round(gam(i / 4096) * 255);
+const enc = v => LUT[v >= 1 ? 4096 : v <= 0 ? 0 : (v * 4096) | 0];
+
+/* ---------- geometry ---------- */
+// Pointy-top hexagon with rounded corners, centred on the origin.
+function hexPath(r, cr) {
+  const p = new Path2D(), v = [];
+  for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU - PI / 2; v.push([r * Math.cos(a), r * Math.sin(a)]); }
+  p.moveTo((v[5][0] + v[0][0]) / 2, (v[5][1] + v[0][1]) / 2);
+  for (let k = 0; k < 6; k++) { const a = v[k], b = v[(k + 1) % 6]; p.arcTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, cr); }
+  p.closePath();
+  return p;
+}
+// Signed distance to a pointy-top hexagon of apothem a.
+function hexSD(x, y, a) {
+  let px = Math.abs(y), py = Math.abs(x);
+  const d = 2 * Math.min(-0.866025404 * px + 0.5 * py, 0);
+  px -= d * -0.866025404; py -= d * 0.5;
+  px -= clamp(px, -0.577350269 * a, 0.577350269 * a); py -= a;
+  return Math.hypot(px, py) * Math.sign(py);
+}
+// A few sine waves crinkle an outline, as in crumpled film.
+function wobble(pts, rnd) {
+  const ph = [rnd() * TAU, rnd() * TAU, rnd() * TAU];
+  return pts.map(([x, y]) => {
+    const t = Math.atan2(y, x);
+    const m = 0.975 + 0.026 * Math.sin(5 * t + ph[0]) + 0.017 * Math.sin(11 * t + ph[1]) + 0.011 * Math.sin(19 * t + ph[2]);
+    return [x * m, y * m];
+  });
+}
+const outline = pts => { const p = new Path2D(); pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y))); p.closePath(); return p; };
+// The hex outline as points, crinkled when given a random source.
+function crinkle(r, cr, rnd) {
+  const pts = [], d = cr / Math.sin(PI / 3), c0 = r - d;
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * TAU - PI / 2, a2 = a + PI / 3;
+    for (let j = 0; j <= 4; j++) {
+      const b = a - PI / 6 + (j / 4) * (PI / 3);
+      pts.push([c0 * Math.cos(a) + cr * Math.cos(b), c0 * Math.sin(a) + cr * Math.sin(b)]);
+    }
+    const [ex, ey] = pts[pts.length - 1];
+    const nx = c0 * Math.cos(a2) + cr * Math.cos(a2 - PI / 6), ny = c0 * Math.sin(a2) + cr * Math.sin(a2 - PI / 6);
+    for (let j = 1; j < 9; j++) pts.push([lerp(ex, nx, j / 9), lerp(ey, ny, j / 9)]);
+  }
+  return rnd ? wobble(pts, rnd) : pts;
+}
+
+/* ---------- jumbo: seven cells merged into one big dome ---------- */
+// The seven-hex flower outline, each edge moved in by t.
+// Outer corners and notches both move 2t / sqrt 3 along their bisectors.
+function flowerPts(R, t) {
+  const m = (2 * t) / SQ3, pts = [];
+  for (let k = 0; k < 6; k++) {
+    const a = (k * PI) / 3, cx = SQ3 * R * Math.cos(a), cy = SQ3 * R * Math.sin(a), n = a + PI / 6;
+    for (const b of [a - PI / 6, n]) pts.push([cx + (R - m) * Math.cos(b), cy + (R - m) * Math.sin(b)]);
+    pts.push([(2 * R - m) * Math.cos(n), (2 * R - m) * Math.sin(n)]);
+  }
+  return pts;
+}
+// Every third point is a notch; notches take a wider fillet.
+// A notch fillet of cr + gap keeps the gap even round a neighbour's corner.
+function roundPath(pts, cr, notch) {
+  const p = new Path2D(), n = pts.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const s = mid(pts[n - 1], pts[0]);
+  p.moveTo(s[0], s[1]);
+  for (let k = 0; k < n; k++) {
+    const a = pts[k], m = mid(a, pts[(k + 1) % n]);
+    p.arcTo(a[0], a[1], m[0], m[1], k % 3 === 2 ? notch : cr);
+  }
+  p.closePath();
+  return p;
+}
+// Signed distance to a polygon, negative inside.
+function polySD(px, py, v) {
+  let d = Infinity, s = 1;
+  for (let i = 0, j = v.length - 1; i < v.length; j = i++) {
+    const ex = v[j][0] - v[i][0], ey = v[j][1] - v[i][1], wx = px - v[i][0], wy = py - v[i][1];
+    const h = clamp((wx * ex + wy * ey) / (ex * ex + ey * ey)), bx = wx - ex * h, by = wy - ey * h;
+    d = Math.min(d, bx * bx + by * by);
+    const c1 = py >= v[i][1], c2 = py < v[j][1], c3 = ex * wy > ey * wx;
+    if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) s = -s;
+  }
+  return s * Math.sqrt(d);
+}
+// Two box passes each way soften the creases in a height map.
+function blur(h, n, rad) {
+  const t = new Float32Array(h.length), w = 2 * rad + 1;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < n; y++) {
+      const o = y * n;
+      let s = 0;
+      for (let x = -rad; x <= rad; x++) s += h[o + clamp(x, 0, n - 1)];
+      for (let x = 0; x < n; x++) { t[o + x] = s / w; s += h[o + Math.min(x + rad + 1, n - 1)] - h[o + Math.max(x - rad, 0)]; }
+    }
+    for (let x = 0; x < n; x++) {
+      let s = 0;
+      for (let y = -rad; y <= rad; y++) s += t[clamp(y, 0, n - 1) * n + x];
+      for (let y = 0; y < n; y++) { h[y * n + x] = s / w; s += t[Math.min(y + rad + 1, n - 1) * n + x] - t[Math.max(y - rad, 0) * n + x]; }
+    }
+  }
+}
+
+/* ---------- sprites: one atlas per palette, drawn once per size ---------- */
+const field = document.getElementById('field'), cv = field.querySelector('canvas'), ctx = cv.getContext('2d');
+// Two atlases let a new palette sweep in over the old one.
+const atl = document.createElement('canvas');
+const NB = 32, SHADE_SLOT = NB * 2, SLOTS = NB * 2 + 1;
+let SP = 0, SB = 0, sR = 0, ox = [], oy = [], spriteTimer = 0, LT = null, paints = [];
+// Jumbo sprites: one canvas per colour bin, glossy then popped.
+const JF = 2.7, jat = new Map();
+let SPJ = 0, SBJ = 0, LTJ = null, jPath = null, jShade = null;
+let lite = false, focusC = '#000', bgC = '#000';
+
+const gapOf = R => clamp(R * rec.gap, 2, 9);
+const norm3 = (x, y, z) => { const l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; };
+// The key light sits up and left, in front of the sheet.
+const KEY = norm3(-0.5, -0.68, 0.54), HALF = norm3(KEY[0], KEY[1], KEY[2] + 1);
+// A crisp box in reflection space: the softbox seen in the plastic.
+const box = (x, y, cx, cy, hw, hh, e) => clamp((hw - Math.abs(x - cx)) / e + 0.5) * clamp((hh - Math.abs(y - cy)) / e + 0.5);
+
+// Bump terms per pixel: the dome's height gives normals, normals give light.
+// Every colour bin shares these terms; only the paint changes.
+function lightTerms(r0, cr, k) {
+  const n = SP, m = n * n, ap = (r0 * SQ3) / 2 - cr;
+  const hgt = new Float32Array(m), dep = new Float32Array(m), A = new Float32Array(m);
+  for (let py = 0, i = 0; py < n; py++) for (let px = 0; px < n; px++, i++) {
+    const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k, sd = hexSD(x, y, ap) - cr;
+    A[i] = clamp(0.5 - sd * k);
+    if (sd >= 0) continue;
+    // A smooth hexagon norm has no creases from the corners.
+    const q0 = Math.abs(x), q1 = Math.abs(0.5 * x + 0.866025404 * y), q2 = Math.abs(0.5 * x - 0.866025404 * y);
+    const sm = Math.min(-sd, (r0 * SQ3) / 2 - (q0 ** 10 + q1 ** 10 + q2 ** 10) ** 0.1);
+    // A pillow: steep walls, a soft crown over the middle.
+    const e = clamp(sm / (0.5 * r0)), rho = (x * x + y * y) / (r0 * r0);
+    hgt[i] = k * r0 * (0.27 * (1 - (1 - e) ** 2.4) + 0.12 * Math.max(0, 1 - rho));
+    dep[i] = -sd / r0;
+  }
+  return litTerms(A, hgt, dep, n, k);
+}
+// Jumbo bump terms: the mask comes from the rounded path.
+// Depth comes from the sharp outline; a blur smooths its creases.
+function jumboTerms(r0, k) {
+  const n = SPJ, m = n * n, pts = flowerPts(R, gapOf(R) / 2), RJ = 2.5 * R;
+  const mc = document.createElement('canvas');
+  mc.width = mc.height = n;
+  const mx = mc.getContext('2d');
+  mx.setTransform(k, 0, 0, k, n / 2, n / 2);
+  mx.fill(jPath);
+  const md = mx.getImageData(0, 0, n, n).data;
+  const hgt = new Float32Array(m), dep = new Float32Array(m), A = new Float32Array(m);
+  for (let py = 0, i = 0; py < n; py++) for (let px = 0; px < n; px++, i++) {
+    A[i] = md[i * 4 + 3] / 255;
+    if (!A[i]) continue;
+    const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k, d = Math.max(0, -polySD(x, y, pts));
+    // Steep walls like the small cells, under a broad high crown.
+    const e = clamp(d / (0.6 * r0)), rho = (x * x + y * y) / (RJ * RJ);
+    hgt[i] = k * r0 * (0.3 * (1 - (1 - e) ** 2.4) + 0.65 * Math.max(0, 1 - rho));
+    dep[i] = d / r0;
+  }
+  blur(hgt, n, Math.max(1, Math.round(0.12 * r0 * k)));
+  return litTerms(A, hgt, dep, n, k);
+}
+// Light from a height map: normals, paint ramp, shade, gloss and glow.
+// The recipe's material decides how each term reads the normal.
+const step01 = (x, e = 0.03) => clamp(x / e + 0.5);
+// A stable hash of two integers, in 0..1.
+const hash = (a, b) => { let h = Math.imul(a, 374761393) + Math.imul(b, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+function litTerms(a, hgt, dep, n, k) {
+  const m = n * n, M = rec.mat, f32 = () => new Float32Array(m), see = M === 'soap' || M === 'glass' || M === 'topo', irid = M === 'soap' || M === 'holo';
+  const T = {
+    a, n, u: f32(), ao: f32(), w: f32(), s: f32(), t: f32(),
+    ip: irid ? f32() : null, iw: irid ? f32() : null, op: see ? f32() : null, st: M === 'candy' ? f32() : null,
+    e: M === 'lava' ? f32() : null, mw: M === 'ice' ? f32() : null,
+  };
+  // Contours need the peak height.
+  let hmax = 1e-6;
+  if (M === 'topo') for (const v of hgt) if (v > hmax) hmax = v;
+  for (let py = 1; py < n - 1; py++) for (let px = 1, i = py * n + 1; px < n - 1; px++, i++) {
+    if (!T.a[i]) continue;
+    const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k;
+    const [nx, ny, nz] = norm3((hgt[i - 1] - hgt[i + 1]) / 2, (hgt[i - n] - hgt[i + n]) / 2, 1);
+    const ndl = nx * KEY[0] + ny * KEY[1] + nz * KEY[2], ndh = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
+    // The view ray bounces off the dome into the room.
+    const rx = 2 * nz * nx, ry = 2 * nz * ny, rim = clamp(dep[i] / 0.09);
+    const soft = 0.82 * box(rx, ry, -0.36, -0.44, 0.19, 0.1, 0.03) + 0.24 * box(rx, ry, 0.4, 0.5, 0.15, 0.05, 0.03);
+    // Light leaks through the far walls, as in thin plastic.
+    const leak = (1 - nz) ** 2.2 * clamp(0.25 + 0.65 * nx + 0.75 * ny);
+    let u = clamp(ndl * 0.6 + 0.42) ** 1.15, ao = 0.62 + 0.38 * rim, w = soft, s = 1.1 * ndh ** 90 + 0.1 * ndh ** 14, t = 0.55 * leak;
+    switch (M) {
+      case 'rubber':
+        // Soft-touch rubber: broad light, no reflections.
+        u = clamp(ndl * 0.7 + 0.38) ** 1.2; ao = 0.55 + 0.45 * rim; w = 0; s = 0.05 * ndh ** 6; t = 0.12 * leak;
+        break;
+      case 'foil': {
+        // Foil: a bright sky over a dark floor, split at a hard horizon.
+        const sky = step01(0.05 - ry, 0.04);
+        u = lerp(0.06 + 0.25 * clamp(ry), 0.6 + 0.4 * clamp(-ry * 1.4), sky); ao = 0.75 + 0.25 * rim; w = 0.9 * soft; s = 1.5 * ndh ** 160; t = 0;
+        break;
+      }
+      case 'jelly':
+        // Jelly: light passes through and glows in the far wall.
+        u = clamp(ndl * 0.5 + 0.3); ao = 0.7 + 0.3 * rim; w = 0.6 * soft; s = 1.4 * ndh ** 150; t = 1.8 * leak + 0.15 * (1 - rim);
+        break;
+      case 'toon':
+        // Stencil: three hard tones, a cut rim and solid highlights.
+        u = 0.1 + 0.45 * step01(ndl + 0.1) + 0.42 * step01(ndl - 0.45); ao = 0.5 + 0.5 * step01(rim - 0.4, 0.1);
+        w = step01(soft - 0.5, 0.1); s = step01(ndh ** 40 - 0.5, 0.05); t = 0;
+        break;
+      case 'soap':
+        // Soap film: clear in the middle, coloured bands toward the rim.
+        u = 0.8; ao = 1; w = 0.8 * soft; s = 1.2 * ndh ** 120; t = 0;
+        T.ip[i] = 7 * (1 - nz) + 2 * (nx - ny); T.iw[i] = 0.9;
+        T.op[i] = 0.16 + 0.84 * clamp((1 - nz) * 2.4) ** 0.9;
+        break;
+      case 'glass': {
+        // Glass: a dark see-through body, a bright rim and a caustic.
+        const fr = (1 - nz) ** 1.5;
+        u = 0.2 + 0.4 * clamp(ndl * 0.5 + 0.5); ao = 1; w = soft + 0.7 * clamp(fr * 2.2) ** 2;
+        s = 1.8 * ndh ** 220 + 0.2 * ndh ** 20; t = 1.6 * leak;
+        T.op[i] = 0.3 + 0.7 * clamp(fr * 2.5);
+        break;
+      }
+      case 'candy': {
+        // Candy: a peppermint swirl under a hard lacquer.
+        s = 1.2 * ndh ** 110 + 0.1 * ndh ** 14; t = 0.3 * leak;
+        T.st[i] = step01(Math.sin(6 * Math.atan2(y, x) + Math.hypot(x, y) / (R * 0.32)), 0.25);
+        break;
+      }
+      case 'latex':
+        // Balloon latex: deep colour, a long stretched highlight.
+        u = clamp(ndl * 0.8 + 0.32) ** 1.5; ao = 0.5 + 0.5 * rim;
+        w = 1.1 * box(rx, ry, -0.34, -0.42, 0.3, 0.08, 0.03) + 0.2 * box(rx, ry, 0.42, 0.5, 0.12, 0.04, 0.03);
+        s = 1.3 * ndh ** 60; t = 0.9 * leak;
+        break;
+      case 'lava': {
+        // Lava: a dark crust split by glowing veins.
+        const q = R * 0.5, v = Math.abs(Math.sin((x / q) * 2.1 + Math.sin((y / q) * 1.3)) * Math.sin((y / q) * 1.9 + Math.sin((x / q) * 1.7)));
+        u = clamp(ndl * 0.5 + 0.35); ao = 0.6 + 0.4 * rim; w = 0.15 * soft; s = 0.3 * ndh ** 40; t = 0;
+        T.e[i] = step01(0.1 - v, 0.06) * (0.6 + 0.4 * rim);
+        break;
+      }
+      case 'ice':
+        // Ice: frost whitens the paint; a hard glint and loose sparkles.
+        u = clamp(ndl * 0.45 + 0.5); ao = 0.8 + 0.2 * rim; w = 0.7 * soft; s = 1.4 * ndh ** 200 + (hash(px, py) > 0.992 ? 0.9 : 0); t = 0.6 * leak;
+        T.mw[i] = 0.35 + 0.35 * (1 - nz);
+        break;
+      case 'holo':
+        // Hologram: rainbow bands follow the slope and sweep across.
+        w = soft; s = 1.4 * ndh ** 120; t = 0;
+        T.ip[i] = Math.atan2(ny, nx) + 6 * (1 - nz) + (x + y) / (R * 0.7); T.iw[i] = 0.78;
+        break;
+      case 'paper': {
+        // Paper: six flat folds meet at a peak in the middle.
+        const mid = Math.round(Math.atan2(y, x) / (PI / 3)) * (PI / 3), fn = norm3(Math.cos(mid) * 0.5, Math.sin(mid) * 0.5, 1);
+        u = clamp((fn[0] * KEY[0] + fn[1] * KEY[1] + fn[2] * KEY[2]) * 0.9 + 0.25); ao = 0.85 + 0.15 * rim; w = 0; s = 0; t = 0;
+        break;
+      }
+      case 'gum':
+        // Bubblegum: soft and sticky, with a faint sheen.
+        u = clamp(ndl * 0.6 + 0.4) ** 1.1; ao = 0.6 + 0.4 * rim; w = 0.15 * soft; s = 0.25 * ndh ** 25; t = 0.35 * leak;
+        break;
+      case 'topo': {
+        // Contours: only lines of equal height, and the rim.
+        const hn = hgt[i] / hmax, fr = (hn * 7) % 1;
+        u = 0.25 + 0.75 * hn; ao = 1; w = 0; s = 0; t = 0;
+        T.op[i] = Math.max(step01(0.06 - Math.min(fr, 1 - fr), 0.03), step01(0.03 - dep[i], 0.015));
+        break;
+      }
+      case 'disco': {
+        // Mirror tiles: each tile reflects a sky over a dark floor.
+        const sky = step01(0.05 - ry, 0.04);
+        u = lerp(0.1 + 0.25 * clamp(ry), 0.55 + 0.45 * clamp(-ry * 1.4), sky); ao = 0.8 + 0.2 * rim; w = 0.6 * soft; s = ndh ** 60; t = 0;
+        break;
+      }
+    }
+    T.u[i] = u; T.ao[i] = ao; T.w[i] = w; T.s[i] = s; T.t[i] = t;
+  }
+  return T;
+}
+// Glossy cell: the bump terms painted with one colour bin.
+function glossSprite(img, base, L = LT) {
+  const s = skinOf(base), lo = linFit(s.low), mi = linFit(s.mid), hi = linFit(s.top), li = linFit(s.light), d = img.data;
+  const { a, n, u, ao, w, s: sp, t, ip, iw, op, st, e, mw } = L;
+  // Film colours: three for soap, six for a hologram.
+  const HN = rec.mat === 'holo' ? 6 : 3, film = [0, 0, 0];
+  const P = ip && Array.from({ length: HN }, (_, k) => linFit(HN === 6 ? [0.8, 0.17, base[2] + k * 60] : [0.86, 0.13, base[2] + k * 120]));
+  // Frost whitens toward this; lava veins glow in this.
+  const WH = mw && linFit([0.97, 0.02, base[2]]), HOTL = e && linFit([0.84, 0.2, base[2]]), CRL = e && linFit([0.3, 0.015, 50]);
+  // Candy's white body takes the same light as its paint.
+  const CW = st && linFit([0.97, 0.015, base[2]]), CL = st && linFit([0.68, 0.02, base[2]]);
+  // Pixel mode reads the terms in blocks and posterizes them.
+  const pix = rec.mat === 'pixel', disco = rec.mat === 'disco', blk = pix || disco, B = Math.max(2, Math.round(SP / (disco ? 15 : 12)));
+  for (let i = 0, j = 0; i < a.length; i++, j += 4) {
+    let I = i;
+    if (blk) {
+      const x = i % n, y = (i / n) | 0;
+      I = Math.min(n - 1, ((y / B) | 0) * B + (B >> 1)) * n + Math.min(n - 1, ((x / B) | 0) * B + (B >> 1));
+    }
+    const al = blk ? (a[I] > 0.5 ? 1 : 0) : a[i];
+    if (!al) { d[j + 3] = 0; continue; }
+    let q = u[I], W = w[I], S = sp[I];
+    if (pix) { q = Math.round(q * 3) / 3; W = W > 0.4 ? 1 : 0; S = S > 0.4 ? 0.8 : 0; }
+    // Disco tiles sit in dark grout; a few tiles flash white.
+    let grout = 1;
+    if (disco) {
+      const x = i % n, y = (i / n) | 0;
+      if (x % B === 0 || y % B === 0) grout = 0.22;
+      if (hash((x / B) | 0, (y / B) | 0) > 0.86) S += 0.9;
+    }
+    const A = q < 0.5 ? lo : mi, Bc = q < 0.5 ? mi : hi, f = q < 0.5 ? 2 * q : 2 * q - 1, o = ao[I];
+    if (P) {
+      let sum = 0;
+      film[0] = film[1] = film[2] = 0;
+      for (let k = 0; k < HN; k++) {
+        const g = (0.5 + 0.5 * Math.cos(ip[I] - (k * TAU) / HN)) ** 2;
+        sum += g; film[0] += P[k][0] * g; film[1] += P[k][1] * g; film[2] += P[k][2] * g;
+      }
+      for (let c = 0; c < 3; c++) film[c] /= sum || 1;
+    }
+    for (let c = 0; c < 3; c++) {
+      let v = (A[c] + (Bc[c] - A[c]) * f) * o;
+      if (st) v += ((CL[c] + (CW[c] - CL[c]) * q) * o - v) * (1 - st[I]);
+      v += hi[c] * t[I];
+      if (P) v += (film[c] - v) * iw[I];
+      if (WH) v += (WH[c] - v) * mw[I];
+      if (HOTL) { const cr = CRL[c] * (0.35 + 0.9 * q) * o; v = cr + (HOTL[c] - cr) * e[I]; }
+      v = v + (li[c] - v) * W + S;
+      d[j + c] = enc(v * grout);
+    }
+    d[j + 3] = (al * (op ? op[I] : 1) * 255 + 0.5) | 0;
+  }
+  return img;
+}
+// Popped cell: each material leaves its own wreck.
+function flatSprite(ax, r, cr, base, rnd) {
+  popped(ax, crinkle(r * 0.97, cr), r, base, rnd, 3);
+}
+// Popped jumbo: the same wreck over the flower outline.
+function flatJumbo(ax, base, rnd) {
+  const src = flowerPts(R, gapOf(R) / 2), pts = [];
+  // Each edge gets extra points, so a crinkle can bend it.
+  src.forEach((a, k) => { const b = src[(k + 1) % src.length]; for (let j = 0; j < 4; j++) pts.push([lerp(a[0], b[0], j / 4) * 0.97, lerp(a[1], b[1], j / 4) * 0.97]); });
+  popped(ax, pts, 2.4 * R, base, rnd, 6);
+}
+const dot = (ax, x, y, r, col) => { ax.beginPath(); ax.arc(x, y, r, 0, TAU); ax.fillStyle = col; ax.fill(); };
+function popped(ax, pts, r, base, rnd, nf) {
+  const f = flatOf(base, lite), M = rec.mat, [L, C, h] = base;
+  if (M === 'soap') {
+    // A burst soap film leaves only a wet rim and a few beads.
+    ax.lineWidth = Math.max(1, r * 0.05); ax.strokeStyle = css([0.8, 0.09, h + 60], 0.6); ax.stroke(outline(wobble(pts, rnd)));
+    for (let n = 0; n < 3; n++) { const a = rnd() * TAU, d = r * (0.5 + 0.35 * rnd()); dot(ax, Math.cos(a) * d, Math.sin(a) * d, r * (0.04 + 0.04 * rnd()), css([0.88, 0.06, h + 120 * n], 0.8)); }
+    return;
+  }
+  if (M === 'latex') {
+    // A popped balloon shrivels to a small knot of rubber.
+    const a0 = rnd() * TAU, kn = Array.from({ length: 11 }, (_, k) => { const a = a0 + (k / 11) * TAU, d = r * (0.2 + 0.17 * rnd()); return [Math.cos(a) * d, Math.sin(a) * d]; });
+    const p = outline(kn), na = a0 + rnd() * TAU, nx = Math.cos(na), ny = Math.sin(na);
+    ax.fillStyle = css([L * 0.62, C * 1.1, h]); ax.fill(p);
+    // The tied neck pokes out of the knot.
+    ax.beginPath(); ax.moveTo(nx * r * 0.18 - ny * r * 0.07, ny * r * 0.18 + nx * r * 0.07); ax.lineTo(nx * r * 0.42, ny * r * 0.42); ax.lineTo(nx * r * 0.18 + ny * r * 0.07, ny * r * 0.18 - nx * r * 0.07); ax.closePath(); ax.fill();
+    ax.save(); ax.clip(p); ax.lineCap = 'round'; ax.lineWidth = Math.max(1, r * 0.035); ax.strokeStyle = css([L * 0.42, C, h]);
+    for (let n = 0; n < 4; n++) { const a = rnd() * TAU; ax.beginPath(); ax.moveTo(Math.cos(a) * r * 0.05, Math.sin(a) * r * 0.05); ax.lineTo(Math.cos(a + 0.4) * r * 0.32, Math.sin(a + 0.4) * r * 0.32); ax.stroke(); }
+    ax.restore();
+    return;
+  }
+  if (M === 'jelly') {
+    // A burst jelly slumps into a glossy puddle.
+    const p = outline(wobble(wobble(pts.map(([x, y]) => [x * 1.02, y * 1.02]), rnd), rnd));
+    ax.fillStyle = css([L * 0.72, C * 1.05, h + 4]); ax.fill(p);
+    ax.save(); ax.translate(-0.34 * r, -0.3 * r); ax.rotate(-0.5); ax.scale(1, 0.42);
+    dot(ax, 0, 0, 0.2 * r, css([Math.min(0.97, L + 0.1), C * 0.5, h]));
+    ax.restore();
+    dot(ax, 0.28 * r, 0.22 * r, 0.07 * r, css([L * 0.85, C, h]));
+    return;
+  }
+  if (M === 'glass') {
+    // A cracked pane: the cell stays, crazed from one impact.
+    const p = outline(pts), ix = (rnd() - 0.5) * 0.4 * r, iy = (rnd() - 0.5) * 0.4 * r, nr = 7, rays = [];
+    ax.fillStyle = css([L * 0.42, C * 0.7, h], 0.85); ax.fill(p);
+    ax.save(); ax.clip(p); ax.strokeStyle = css([0.95, 0.03, h], 0.85); ax.lineWidth = Math.max(0.8, r * 0.022); ax.lineJoin = 'miter';
+    for (let n = 0; n < nr; n++) {
+      const a = (n / nr) * TAU + (rnd() - 0.5) * 0.5, ray = [];
+      for (let j = 0; j <= 4; j++) { const d = (j / 4) * 1.4 * r, b = a + (rnd() - 0.5) * 0.25 * (j ? 1 : 0); ray.push([ix + Math.cos(b) * d, iy + Math.sin(b) * d]); }
+      rays.push(ray);
+      ax.beginPath(); ray.forEach(([x, y], j) => (j ? ax.lineTo(x, y) : ax.moveTo(x, y))); ax.stroke();
+    }
+    // Two rings of chords join the rays, as in a spider web.
+    for (const j of [1, 2]) for (let n = 0; n < nr; n++) {
+      if (rnd() < 0.25) continue;
+      const A = rays[n][j], Bp = rays[(n + 1) % nr][j];
+      ax.beginPath(); ax.moveTo(A[0], A[1]); ax.lineTo(Bp[0], Bp[1]); ax.stroke();
+    }
+    ax.restore();
+    ax.lineWidth = 1; ax.strokeStyle = css([0.9, 0.04, h], 0.5); ax.stroke(p);
+    return;
+  }
+  if (M === 'candy') {
+    // Crushed shell: wedges from an impact point, knocked apart.
+    const m = pts.length, np = 5 + ((rnd() * 2) | 0), s0 = rnd() * m, P = [(rnd() - 0.5) * 0.3 * r, (rnd() - 0.5) * 0.3 * r];
+    const cut = Array.from({ length: np }, (_, k) => Math.floor(s0 + (k + 0.3 * (rnd() - 0.5)) * (m / np)));
+    for (let k = 0; k < np; k++) {
+      const poly = [P];
+      for (let j = cut[k]; j <= cut[(k + 1) % np] + (k === np - 1 ? m : 0); j++) poly.push(pts[((j % m) + m) % m]);
+      const mx = poly.reduce((v, q) => v + q[0], 0) / poly.length - P[0], my = poly.reduce((v, q) => v + q[1], 0) / poly.length - P[1], ml = Math.hypot(mx, my) || 1;
+      ax.save(); ax.translate((mx / ml) * r * 0.07, (my / ml) * r * 0.07);
+      ax.fillStyle = css(k & 1 ? [0.9 + rnd() * 0.05, 0.015, h] : [L * 0.82 + (rnd() - 0.5) * 0.06, C * 1.2, h]); ax.fill(outline(poly));
+      ax.restore();
+    }
+    return;
+  }
+  if (M === 'toon') {
+    // Stencil: a flat solid with two slits cut clean through.
+    const p = outline(pts), a = rnd() * PI;
+    ax.fillStyle = css([L * 0.45 + 0.04, C * 0.9, h]); ax.fill(p);
+    ax.globalCompositeOperation = 'destination-out'; ax.lineWidth = r * 0.13;
+    for (const o of [-0.22, 0.22]) {
+      const cx = Math.cos(a + PI / 2) * o * r, cy = Math.sin(a + PI / 2) * o * r;
+      ax.beginPath(); ax.moveTo(cx - Math.cos(a) * r * 0.5, cy - Math.sin(a) * r * 0.5); ax.lineTo(cx + Math.cos(a) * r * 0.5, cy + Math.sin(a) * r * 0.5); ax.stroke();
+    }
+    ax.globalCompositeOperation = 'source-over';
+    return;
+  }
+  if (M === 'pixel') {
+    // A dithered flat, block by block.
+    const ps = R * 0.16, n = Math.ceil(r / ps) + 1, dk = css([f[0] - 0.08, f[1], f[2]]), lt = css(f);
+    for (let y = -n; y < n; y++) for (let x = -n; x < n; x++) {
+      if (polySD((x + 0.5) * ps, (y + 0.5) * ps, pts) > -ps * 0.2) continue;
+      ax.fillStyle = (x + y) & 1 ? dk : lt; ax.fillRect(x * ps, y * ps, ps + 0.3, ps + 0.3);
+    }
+    return;
+  }
+  if (M === 'foil') {
+    // Crumpled foil: facets of light and dark round a few creases.
+    const p = outline(wobble(pts, rnd)), m = pts.length, Q = [0, 1, 2].map(() => [(rnd() - 0.5) * r, (rnd() - 0.5) * r]);
+    const fl = [L * 0.6, C * 0.6, h];
+    ax.fillStyle = css(fl); ax.fill(p);
+    ax.save(); ax.clip(p);
+    for (let k = 0; k < m; k += 3) {
+      const q = Q[(rnd() * 3) | 0], a = pts[k], b = pts[(k + 3) % m], g = rnd();
+      ax.fillStyle = css([fl[0] + (g < 0.15 ? 0.3 : (g - 0.5) * 0.24), fl[1], fl[2]]);
+      ax.beginPath(); ax.moveTo(q[0], q[1]); ax.lineTo(a[0] * 1.1, a[1] * 1.1); ax.lineTo(b[0] * 1.1, b[1] * 1.1); ax.closePath(); ax.fill();
+    }
+    ax.restore();
+    ax.lineWidth = 1; ax.strokeStyle = css([fl[0] - 0.12, fl[1], fl[2]], 0.8); ax.stroke(p);
+    return;
+  }
+  if (M === 'lava') {
+    // Cooled lava: black crust with a few veins still hot.
+    const p = outline(wobble(pts, rnd));
+    ax.fillStyle = css([0.2, 0.012, 50]); ax.fill(p);
+    ax.save(); ax.clip(p); ax.lineJoin = 'round'; ax.strokeStyle = css([0.8, 0.2, h]); ax.lineWidth = Math.max(1, r * 0.045);
+    for (let n = 0; n < 4; n++) {
+      let x = (rnd() - 0.5) * r, y = (rnd() - 0.5) * r, a = rnd() * TAU;
+      ax.beginPath(); ax.moveTo(x, y);
+      for (let j = 0; j < 5; j++) { a += (rnd() - 0.5) * 1.2; x += Math.cos(a) * r * 0.25; y += Math.sin(a) * r * 0.25; ax.lineTo(x, y); }
+      ax.stroke();
+    }
+    ax.restore();
+    return;
+  }
+  if (M === 'ice') {
+    // Frost: a pale flat with a six-armed crystal grown across it.
+    const p = outline(pts), a0 = rnd() * PI;
+    ax.fillStyle = css([0.88, 0.04, h], 0.9); ax.fill(p);
+    ax.save(); ax.clip(p); ax.strokeStyle = css([0.99, 0.01, h]); ax.lineCap = 'round'; ax.lineWidth = Math.max(1, r * 0.035);
+    for (let k = 0; k < 6; k++) {
+      const a = a0 + (k * PI) / 3, ca = Math.cos(a), sa = Math.sin(a);
+      ax.beginPath(); ax.moveTo(0, 0); ax.lineTo(ca * r * 0.85, sa * r * 0.85);
+      for (const d of [0.35, 0.6]) for (const sd of [-1, 1]) {
+        const b = a + sd * 0.8, bx = ca * r * d, by = sa * r * d;
+        ax.moveTo(bx, by); ax.lineTo(bx + Math.cos(b) * r * 0.2, by + Math.sin(b) * r * 0.2);
+      }
+      ax.stroke();
+    }
+    ax.restore();
+    return;
+  }
+  if (M === 'holo') {
+    // Spent hologram: dark film inside a rainbow rim.
+    const m = pts.length;
+    ax.fillStyle = css([0.24, 0.04, h]); ax.fill(outline(pts));
+    ax.lineWidth = Math.max(1.2, r * 0.08); ax.lineJoin = 'round';
+    for (let k = 0; k < 6; k++) {
+      const j0 = Math.floor((k * m) / 6), j1 = Math.floor(((k + 1) * m) / 6);
+      ax.beginPath();
+      for (let j = j0; j <= j1; j++) { const q = pts[j % m]; if (j === j0) ax.moveTo(q[0], q[1]); else ax.lineTo(q[0], q[1]); }
+      ax.strokeStyle = css([0.78, 0.17, h + k * 60]); ax.stroke();
+    }
+    return;
+  }
+  if (M === 'paper') {
+    // Torn paper: the sheet stays, with a ragged hole punched through.
+    const hole = outline(Array.from({ length: 14 }, (_, k) => { const a = (k / 14) * TAU, d = r * (0.3 + 0.28 * rnd()); return [Math.cos(a) * d + (rnd() - 0.5) * r * 0.1, Math.sin(a) * d]; }));
+    ax.fillStyle = css([Math.min(0.92, L * 0.95), C * 0.5, h]); ax.fill(outline(pts));
+    ax.globalCompositeOperation = 'destination-out'; ax.fill(hole); ax.globalCompositeOperation = 'source-over';
+    ax.lineWidth = Math.max(1, r * 0.03); ax.strokeStyle = css([0.97, 0.01, h]); ax.stroke(hole);
+    return;
+  }
+  if (M === 'gum') {
+    // Burst gum: a sticky splat with strands still clinging.
+    const col = css([L * 0.8, C, h]);
+    ax.fillStyle = col; ax.fill(outline(wobble(wobble(pts, rnd), rnd)));
+    ax.lineCap = 'round'; ax.strokeStyle = col; ax.lineWidth = Math.max(1, r * 0.06);
+    for (let n = 0; n < 3; n++) {
+      const a = rnd() * TAU;
+      ax.beginPath(); ax.moveTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7);
+      ax.quadraticCurveTo(Math.cos(a + 0.3) * r * 0.95, Math.sin(a + 0.3) * r * 0.95, Math.cos(a + 0.1) * r * 1.05, Math.sin(a + 0.1) * r * 1.05); ax.stroke();
+    }
+    dot(ax, -0.3 * r, -0.3 * r, 0.1 * r, css([Math.min(0.97, L + 0.08), C * 0.6, h]));
+    return;
+  }
+  if (M === 'topo') {
+    // A spent contour: only a dashed outline and a mark are left.
+    ax.setLineDash([r * 0.14, r * 0.1]); ax.lineWidth = Math.max(1, r * 0.035); ax.strokeStyle = css([L * 0.75, C, h]); ax.stroke(outline(pts)); ax.setLineDash([]);
+    ax.beginPath(); ax.moveTo(-r * 0.1, 0); ax.lineTo(r * 0.1, 0); ax.moveTo(0, -r * 0.1); ax.lineTo(0, r * 0.1); ax.stroke();
+    return;
+  }
+  if (M === 'popcorn') {
+    // Popcorn: the kernel bursts into a puffy white cloud.
+    const blobs = Array.from({ length: 6 }, () => { const a = rnd() * TAU, d = r * 0.4 * rnd(); return [Math.cos(a) * d, Math.sin(a) * d, r * (0.3 + 0.18 * rnd())]; });
+    for (const [x, y, b] of blobs) dot(ax, x + r * 0.06, y + r * 0.07, b, css([0.74, 0.06, 75]));
+    for (const [x, y, b] of blobs) dot(ax, x, y, b, css([0.94, 0.04, 90]));
+    for (const [x, y, b] of blobs) dot(ax, x - b * 0.28, y - b * 0.3, b * 0.35, css([0.99, 0.02, 95]));
+    // A scrap of husk keeps the kernel's colour.
+    const a = rnd() * TAU;
+    ax.save(); ax.translate(Math.cos(a) * r * 0.35, Math.sin(a) * r * 0.35); ax.rotate(a); ax.scale(r * 0.22, r * 0.22);
+    ax.fillStyle = css([L * 0.6, C * 1.2, h]); ax.fill(SHARDS[0]); ax.restore();
+    return;
+  }
+  if (M === 'disco') {
+    // A stripped mirror ball: dark grout with a few dull tiles left.
+    const ps = R * 0.2, n = Math.ceil(r / ps) + 1;
+    ax.fillStyle = css([0.18, 0.02, h]); ax.fill(outline(pts));
+    for (let y = -n; y < n; y++) for (let x = -n; x < n; x++) {
+      if (rnd() > 0.35 || polySD((x + 0.5) * ps, (y + 0.5) * ps, pts) > -ps * 0.4) continue;
+      ax.fillStyle = css([L * 0.55 + rnd() * 0.15, C * 0.4, h]); ax.fillRect(x * ps + 1, y * ps + 1, ps - 2, ps - 2);
+    }
+    return;
+  }
+  // Gloss and rubber: crumpled film; rubber is darker, with heavy folds.
+  const rub = M === 'rubber';
+  film(ax, outline(wobble(pts, rnd)), rub ? [f[0] * 0.85, f[1], f[2]] : f, r, rub ? Math.max(2, nf - 1) : nf, rnd, rub ? 2.4 : 1);
+}
+function film(ax, p, f, r, nf, rnd, lw = 1) {
+  const g = ax.createLinearGradient(0, -r, 0, r);
+  g.addColorStop(0, css([f[0] + 0.035, f[1], f[2] - 4])); g.addColorStop(1, css([f[0] - 0.04, f[1], f[2] + 4]));
+  ax.fillStyle = g; ax.fill(p);
+  ax.save();
+  ax.clip(p);
+  ax.lineCap = 'round';
+  const a0 = rnd() * TAU;
+  for (let n = 0; n < nf; n++) {
+    const a = a0 + (n * TAU) / nf + (rnd() - 0.5) * 0.9, len = r * (0.5 + rnd() * 0.35);
+    const sx = (rnd() - 0.5) * 0.3 * r, sy = (rnd() - 0.5) * 0.3 * r, bend = (rnd() - 0.5) * 0.4 * r;
+    const ex = sx + Math.cos(a) * len, ey = sy + Math.sin(a) * len;
+    const mx = (sx + ex) / 2 - Math.sin(a) * bend, my = (sy + ey) / 2 + Math.cos(a) * bend;
+    // A fold is a dark line with a pale lip lightward.
+    for (const [o, col, al, w] of [[0, [f[0] - 0.1, f[1], f[2]], 0.55, 1.3], [-0.9, [f[0] + 0.09, f[1] * 0.8, f[2]], 0.32, 1]]) {
+      ax.beginPath(); ax.moveTo(sx + o * lw, sy + o * lw); ax.quadraticCurveTo(mx + o * lw, my + o * lw, ex + o * lw, ey + o * lw);
+      ax.strokeStyle = css(col, al); ax.lineWidth = w * lw; ax.stroke();
+    }
+  }
+  ax.restore();
+  ax.strokeStyle = css([f[0] - 0.08, f[1], f[2]], 0.7); ax.lineWidth = 1; ax.stroke(p);
+}
+// Press shade multiplies, darkest where the finger dents the dome.
+function shadeSprite(ax, p, r) {
+  const g = ax.createRadialGradient(0, 0.1 * r, 0, 0, 0.1 * r, 1.05 * r);
+  g.addColorStop(0, css(SHADE, 0.85)); g.addColorStop(1, css(SHADE, 0.35));
+  ax.fillStyle = g; ax.fill(p);
+}
+// One atlas holds every bin of the palette, glossy and popped.
+function buildAtlas() {
+  const atlas = atl, ax = atlas.getContext('2d'), n = Math.ceil(Math.sqrt(SLOTS)), k = dpr * 1.1;
+  const r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), img = ax.createImageData(SP, SP);
+  if (atlas.width !== n * SP || atlas.height !== Math.ceil(SLOTS / n) * SP) { atlas.width = n * SP; atlas.height = Math.ceil(SLOTS / n) * SP; }
+  ax.setTransform(1, 0, 0, 1, 0, 0);
+  ax.clearRect(0, 0, atlas.width, atlas.height);
+  paints = [];
+  for (let i = 0; i < SLOTS; i++) {
+    ox[i] = (i % n) * SP; oy[i] = ((i / n) | 0) * SP;
+    const base = binLch[i >> 1];
+    if (i === SHADE_SLOT) { ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2); shadeSprite(ax, hp, r0); continue; }
+    if (i & 1) { ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2); flatSprite(ax, r0, c0, base, rng(i * 7919 + 13)); continue; }
+    ax.putImageData(glossSprite(img, base), ox[i], oy[i]);
+    // Shards and rings take the bin's own paint.
+    const s = skinOf(base);
+    paints[i >> 1] = { mid: css(s.mid), top: css(s.top), low: css(s.low), light: css(s.light) };
+  }
+  ax.setTransform(1, 0, 0, 1, 0, 0);
+  buildJumbos();
+}
+// Jumbo sprites exist only for the bins the jumbos use.
+function buildJumbos() {
+  const k = dpr * 1.1;
+  jat.clear();
+  for (const c of units) {
+    if (!c.J || jat.has(c.b)) continue;
+    const jc = document.createElement('canvas'), jx = jc.getContext('2d'), base = binLch[c.b];
+    jc.width = 2 * SPJ; jc.height = SPJ;
+    jx.putImageData(glossSprite(jx.createImageData(SPJ, SPJ), base, LTJ), 0, 0);
+    jx.setTransform(k, 0, 0, k, SPJ * 1.5, SPJ / 2);
+    flatJumbo(jx, base, rng(c.b * 104729 + 7));
+    jat.set(c.b, jc);
+  }
+}
+function buildSprites() {
+  sR = R;
+  const k = dpr * 1.1, g = gapOf(R), r0 = R - g / SQ3, c0 = r0 * 0.22;
+  SB = 2 * R + 6; SP = Math.ceil(SB * k);
+  SBJ = 2 * JF * R + 6; SPJ = Math.ceil(SBJ * k);
+  LT = lightTerms(r0, c0, k);
+  jPath = roundPath(flowerPts(R, g / 2), c0, c0 + g);
+  LTJ = jumboTerms(r0, k);
+  // The jumbo press shade is one sprite for every palette.
+  jShade = document.createElement('canvas');
+  jShade.width = jShade.height = SPJ;
+  const sx = jShade.getContext('2d');
+  sx.setTransform(k, 0, 0, k, SPJ / 2, SPJ / 2);
+  shadeSprite(sx, jPath, 2.5 * R);
+  buildAtlas();
+}
+function tokens() {
+  const st = getComputedStyle(document.documentElement);
+  focusC = st.getPropertyValue('--focus').trim() || focusC;
+  bgC = st.getPropertyValue('--bg').trim() || bgC;
+  lite = (st.colorScheme || '').includes('light');
+}
+
+/* ---------- the field ---------- */
+let W = 0, H = 0, dpr = 1, R = 40, r = 37, cols = 0, rows = 0, ringP = null, jRing = null;
+// Cells is the grid; units are what draws and pops: small cells and jumbos.
+let cells = [], units = [], events = [];
+const own = c => c && (c.host || c);
+let fi = 0, wantX = null, ring = false, kPress = null, hover = null, hoverCell = null;
+const ptrs = new Map();
+
+function makeCells() {
+  const out = [];
+  for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+    out.push({
+      i: out.length, row: i, col: j, x: 0, y: 0, b: 0,
+      flip: Math.random() < 0.5 ? -1 : 1, rot: (Math.random() - 0.5) * 0.09,
+      state: 0, s: 1, sv: 0, dx: 0, dy: 0, vx: 0, vy: 0, g: 1, p: 0, pT: 0,
+      popAt: -9, inAt: -9, due: Infinity, h0: -1, q: 0, nudge: 0,
+    });
+  }
+  return out;
+}
+// Grid neighbours; odd rows sit half a cell to the right.
+function around(c) {
+  const { row: i, col: j } = c, d = i & 1 ? 0 : -1, out = [];
+  for (const [ii, jj] of [[i, j - 1], [i, j + 1], [i - 1, j + d], [i - 1, j + d + 1], [i + 1, j + d], [i + 1, j + d + 1]]) {
+    if (ii >= 0 && ii < rows && jj >= 0 && jj < cols) out.push(cells[ii * cols + jj]);
+  }
+  return out;
+}
+// A few jumbos swallow their six neighbours.
+// A ring of small cells always keeps two jumbos apart.
+function merge() {
+  const want = rec.jum ?? clamp(Math.floor(cells.length / 35), 2, 5), blocked = new Set();
+  let made = 0;
+  for (let n = 0; n < 400 && made < want && rows > 2 && cols > 2; n++) {
+    const c = cells[(1 + ((Math.random() * (rows - 2)) | 0)) * cols + 1 + ((Math.random() * (cols - 2)) | 0)];
+    const mem = around(c);
+    if (blocked.has(c) || mem.some(m => blocked.has(m))) continue;
+    c.J = true; c.mem = mem;
+    for (const m of mem) m.host = c;
+    for (const m of [c, ...mem]) { blocked.add(m); around(m).forEach(o => blocked.add(o)); }
+    made++;
+  }
+}
+// Cells sit centred; colour follows the field's diagonal.
+function place() {
+  const x0 = (W - SQ3 * R * (cols + 0.5)) / 2 + (SQ3 * R) / 2;
+  const y0 = (H - (2 * R + 1.5 * R * (rows - 1))) / 2 + R;
+  for (const c of cells) {
+    c.x = x0 + SQ3 * R * (c.col + (c.row & 1) * 0.5);
+    c.y = y0 + 1.5 * R * c.row;
+  }
+}
+function centreCell() {
+  let best = 0, bd = Infinity;
+  for (const c of cells) { const d = (c.x - W / 2) ** 2 + (c.y - H / 2) ** 2; if (d < bd) { bd = d; best = own(c).i; } }
+  return best;
+}
+// Force rebuilds the grid even at the same size.
+function layout(force) {
+  const w = field.clientWidth, h = field.clientHeight, d = Math.min(devicePixelRatio || 1, 2);
+  if (!w || !h || (!force && w === W && h === H && d === dpr)) return;
+  W = w; H = h; dpr = d;
+  cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+  // Cell size follows width; rows fill what height is left.
+  // The recipe sets about how many cells span a wide sheet.
+  const R0 = clamp(w / (SQ3 * rec.den * clamp(w / 1000, 0.45, 1.2)), 10, 60), pad = R0 * 0.22;
+  const nc = Math.max(3, Math.round((w - 2 * pad) / (SQ3 * R0) - 0.5));
+  R = (w - 2 * pad) / (SQ3 * (nc + 0.5));
+  const nr = Math.max(2, Math.floor((h - 2 * pad - 2 * R) / (1.5 * R)) + 1);
+  const fresh = force || nc !== cols || nr !== rows;
+  if (fresh) {
+    for (const c of units) c.creak?.();
+    cols = nc; rows = nr; cells = makeCells(); events = [];
+    merge();
+    units = cells.filter(c => !c.host);
+    ptrs.forEach(q => (q.cell = null)); hoverCell = null; kPress = null;
+  }
+  place();
+  if (fresh) paintCells();
+  // New jumbos get sprites now; the full rebuild waits for the resize to settle.
+  if (fresh && sR) buildJumbos();
+  if (fresh) { fi = centreCell(); wantX = null; }
+  const g = gapOf(R);
+  r = R - g / SQ3;
+  ringP = hexPath(r + 3, r * 0.22 + 2);
+  jRing = roundPath(flowerPts(R, g / 2 - 2.6), r * 0.22 + 2, r * 0.22 + g - 2);
+  // Resizing redraws old sprites scaled, then rebuilds once it settles.
+  // New jumbos may need bins the old sprites lack.
+  if (!sR) buildSprites();
+  else if (fresh || Math.abs(R - sR) > 0.01 || dpr * 1.1 * SB > SP + 1 || dpr * 1.1 * SB < SP - 1) {
+    clearTimeout(spriteTimer);
+    spriteTimer = setTimeout(() => { buildSprites(); draw(); }, 140);
+  }
+  draw();
+}
+
+function hit(x, y) {
+  const y0 = cells.length ? cells[0].y : 0, x0 = cells.length ? cells[0].x : 0;
+  const i = Math.round((y - y0) / (1.5 * R));
+  let best = null, bd = R * R;
+  for (let ii = i - 1; ii <= i + 1; ii++) {
+    if (ii < 0 || ii >= rows) continue;
+    const j = Math.round((x - x0) / (SQ3 * R) - (ii & 1) * 0.5);
+    for (let jj = j - 1; jj <= j + 1; jj++) {
+      if (jj < 0 || jj >= cols) continue;
+      const c = cells[ii * cols + jj], d = (c.x - x) ** 2 + (c.y - y) ** 2;
+      if (d < bd) { bd = d; best = c; }
+    }
+  }
+  return own(best);
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const MAXV = 12, LEAD = 0.004;
+// A held squeeze charges fully in this many seconds.
+const HOLD = 0.45, HOLD_J = 1.1;
+// Space and Enter pop, so they count as gestures; arrow keys do not.
+const kit = audioKit({ keys: new Set([' ', 'Enter']) });
+let voices = 0, popNext = 0, bloopNext = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+// Bigger cells sound slightly lower.
+const tone = () => (40 / R) ** 0.35;
+
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the field settles, the context sleeps until the next gesture.
+const rest = () => kit.rest(() => !raf && !timer && !ptrs.size && !kPress);
+
+// Pressing: a very quiet rubbery squelch as the dome gives.
+function squeak() {
+  const a = kit.live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, f = tone() * jit(0.05), g = level() * jit(0.1);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), sg = a.createGain();
+  src.buffer = kit.noise;
+  lp.type = 'lowpass';
+  lp.Q.value = 9;
+  lp.frequency.setValueAtTime(240 * f, t);
+  lp.frequency.exponentialRampToValueAtTime(900 * f, t + 0.12);
+  sg.gain.setValueAtTime(0, t);
+  sg.gain.linearRampToValueAtTime(0.2 * g, t + 0.03);
+  sg.gain.setTargetAtTime(0, t + 0.07, 0.03);
+  src.connect(lp).connect(sg).connect(kit.out);
+  src.start(t, Math.random() * 0.75, 0.2);
+  track(src, sg);
+}
+// Pop voices per material.
+// crack: band, Q, gain. Note: wave, octave, bend, bend time, decay, gain.
+// Extras: inharmonic pings, a crunch of clicks, an arpeggio step, a squish.
+const SND = {
+  gloss: { crack: [1750, 1.5, 1.2], wave: 'triangle', oct: 1, bend: 1.06, bt: 0.012, tau: 0.045, ng: 0.2 },
+  rubber: { crack: [650, 0.9, 1], wave: 'sine', oct: 0.5, bend: 1.4, bt: 0.03, tau: 0.06, ng: 0.4 },
+  foil: { crack: [4200, 3, 0.7], wave: 'sine', oct: 2, bend: 1, bt: 0.01, tau: 0.09, ng: 0.1, ping: [2.76, 5.4] },
+  jelly: { crack: null, wave: 'sine', oct: 0.5, bend: 1.9, bt: 0.07, tau: 0.07, ng: 0.4, squish: 1 },
+  soap: { crack: [6500, 0.8, 0.35], wave: 'sine', oct: 2, bend: 1.02, bt: 0.01, tau: 0.03, ng: 0.05 },
+  toon: { crack: [2400, 2, 0.5], wave: 'square', oct: 1, bend: 0.7, bt: 0.03, tau: 0.04, ng: 0.08 },
+  glass: { crack: [3200, 1.2, 0.9], wave: 'sine', oct: 2, bend: 1, bt: 0.01, tau: 0.13, ng: 0.09, ping: [1.47, 2.09, 2.91] },
+  candy: { crack: [2600, 4, 0.8], wave: 'triangle', oct: 1, bend: 1.04, bt: 0.012, tau: 0.04, ng: 0.15, crunch: 3 },
+  latex: { crack: [1100, 0.7, 1.8], wave: 'sine', oct: 0.25, bend: 1.6, bt: 0.05, tau: 0.08, ng: 0.55 },
+  pixel: { crack: null, wave: 'square', oct: 1, bend: 1, bt: 0.01, tau: 0.05, ng: 0.07, arp: 1.5 },
+  lava: { crack: null, wave: 'sine', oct: 0.35, bend: 1.8, bt: 0.06, tau: 0.08, ng: 0.4, hiss: 1 },
+  ice: { crack: [6000, 5, 0.6], wave: 'sine', oct: 2, bend: 1, bt: 0.01, tau: 0.1, ng: 0.06, crunch: 4, ping: [2.4] },
+  holo: { crack: [3000, 1, 0.4], wave: 'sine', oct: 1, bend: 1, bt: 0.01, tau: 0.12, ng: 0.09, ping: [1.26, 1.5, 2] },
+  paper: { crack: null, wave: 'triangle', oct: 1, bend: 1, bt: 0.01, tau: 0.02, ng: 0.05, rip: 1 },
+  gum: { crack: [500, 1, 0.8], wave: 'sine', oct: 0.5, bend: 0.6, bt: 0.05, tau: 0.06, ng: 0.35, squish: 1 },
+  topo: { crack: null, wave: 'sawtooth', oct: 1, bend: 2, bt: 0.025, tau: 0.03, ng: 0.06 },
+  popcorn: { crack: [900, 6, 1.3], wave: 'sine', oct: 0.5, bend: 1.5, bt: 0.02, tau: 0.035, ng: 0.3 },
+  disco: { crack: [7000, 2, 0.3], wave: 'sine', oct: 2, bend: 1, bt: 0.01, tau: 0.16, ng: 0.05, ping: [1.5, 2, 3] },
+};
+function popSound(c) {
+  const a = kit.live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, popNext);
+  // A fast sweep thins to a crackle instead of a wall.
+  if (t - t0 > 0.05 || voices >= MAXV) return;
+  popNext = t + 0.018 + Math.random() * 0.012;
+  const V = SND[rec.mat] || SND.gloss, end = t + V.tau * 5 + 0.08, tails = [];
+  // A deeper press sounds slightly lower.
+  const f = tone() * (1 - 0.1 * c.p) * jit(0.05), g = level() * jit(0.1), nf = noteOf(c) * tone() * V.oct;
+  const noise = (type, freq, q, gain, at, dur, fall) => {
+    const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+    src.buffer = kit.noise;
+    fl.type = type; fl.Q.value = q;
+    fl.frequency.setValueAtTime(freq, at);
+    if (fall) fl.frequency.exponentialRampToValueAtTime(fall, at + dur);
+    ng.gain.setValueAtTime(0, at);
+    ng.gain.linearRampToValueAtTime(gain * g, at + 0.0006);
+    ng.gain.setTargetAtTime(0, at + 0.0006, dur / 4);
+    src.connect(fl).connect(ng).connect(kit.out);
+    src.start(at, Math.random() * 0.9, dur + 0.02);
+    tails.push(fl, ng);
+    return ng;
+  };
+  const tonal = (wave, fr, bend, gain, at, tau) => {
+    const o = a.createOscillator(), og = a.createGain();
+    o.type = wave;
+    o.frequency.setValueAtTime(fr * bend, at);
+    o.frequency.exponentialRampToValueAtTime(fr, at + V.bt);
+    og.gain.setValueAtTime(0, at);
+    og.gain.linearRampToValueAtTime(gain * g, at + 0.0015);
+    og.gain.setTargetAtTime(0, at + 0.0015, tau);
+    o.connect(og).connect(kit.out);
+    o.start(at);
+    o.stop(end);
+    tails.push(og);
+    return o;
+  };
+  if (V.crack) {
+    const [cf, cq, cg] = V.crack, dur = 0.011 + Math.random() * 0.008;
+    const ng = noise('bandpass', clamp(cf * f, 300, 9000), cq, cg, t, dur);
+    // Sometimes the skin tears twice, a hair apart.
+    if (Math.random() < 0.4) { const t2 = t + 0.003 + Math.random() * 0.004; ng.gain.setValueAtTime(0.5 * g * cg, t2); ng.gain.setTargetAtTime(0, t2, dur / 5); }
+    // Candy crunches: a few more clicks, close behind.
+    for (let k = 1; k < (V.crunch || 1); k++) noise('bandpass', cf * f * jit(0.3), cq, cg * 0.6, t + k * (0.008 + Math.random() * 0.01), dur);
+  }
+  // Jelly squishes: a dark wet slide under the note.
+  if (V.squish) noise('lowpass', 900, 2, 0.5, t, 0.08, 220);
+  // Lava hisses; paper rips upward.
+  if (V.hiss) noise('bandpass', 5200, 0.8, 0.3, t, 0.26);
+  if (V.rip) noise('highpass', 1400, 0.7, 0.9, t, 0.07, 6500);
+  // The note snaps onto its pitch and rings briefly.
+  const o = tonal(V.wave, nf, V.bend, V.ng, t, V.tau);
+  // Foil and glass ring with inharmonic partials.
+  for (const r of V.ping || []) tonal('sine', nf * r, 1, V.ng * 0.55, t, V.tau * 0.8);
+  // Pixel pops step up a fifth, as in a game blip.
+  if (V.arp) tonal(V.wave, nf * V.arp, 1, V.ng, t + 0.04, V.tau);
+  track(o, ...tails);
+}
+// Columns map left to right onto two octaves of a major pentatonic.
+// A drag across the sheet plays a run.
+const PENT = [0, 2, 4, 7, 9];
+function noteOf(c) {
+  const n = Math.round((c.col / Math.max(1, cols - 1)) * 10);
+  return 330 * 2 ** ((12 * Math.floor(n / 5) + PENT[n % 5]) / 12);
+}
+// Touch pops tick once each, at most every 30 ms.
+let buzzNext = 0, touchy = false;
+addEventListener('pointerdown', e => { touchy = e.pointerType === 'touch'; }, { capture: true, passive: true });
+function buzz(p, force) {
+  const t = performance.now();
+  if (!touchy || !navigator.vibrate || (!force && t < buzzNext)) return;
+  buzzNext = t + 30;
+  navigator.vibrate(p);
+}
+// Regrowing: a soft bloop that rises as the dome fills.
+function bloop() {
+  const a = kit.live();
+  if (!a) return;
+  const t = a.currentTime + LEAD;
+  // A refill wave thins to a gentle cascade.
+  if (t < bloopNext || voices >= MAXV) return;
+  bloopNext = t + 0.045 + Math.random() * 0.03;
+  const f = tone() * jit(0.05), g = level() * jit(0.1);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(300 * f, t);
+  o.frequency.exponentialRampToValueAtTime(520 * f, t + 0.12);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.05 * g, t + 0.03);
+  og.gain.setTargetAtTime(0, t + 0.07, 0.03);
+  o.connect(og).connect(kit.out);
+  o.start(t);
+  o.stop(t + 0.24);
+  track(o, og);
+}
+// Squeezing a jumbo: a rubbery creak that tightens as charge builds.
+// The result stops the creak.
+function creak() {
+  const a = kit.live();
+  if (!a) return null;
+  const t = a.currentTime + LEAD, f = tone();
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain(), lfo = a.createOscillator(), lg = a.createGain();
+  src.buffer = kit.noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 7;
+  bp.frequency.setValueAtTime(170 * f, t);
+  bp.frequency.exponentialRampToValueAtTime(760 * f, t + HOLD_J);
+  // A fast wobble in the gain makes the rubber judder.
+  lfo.frequency.setValueAtTime(13, t);
+  lfo.frequency.linearRampToValueAtTime(40, t + HOLD_J);
+  lg.gain.value = 0.06;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.08, t + 0.08);
+  g.gain.linearRampToValueAtTime(0.17, t + HOLD_J);
+  lfo.connect(lg).connect(g.gain);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(t, Math.random() * 0.5);
+  lfo.start(t);
+  voices++;
+  return () => {
+    const e = a.currentTime;
+    if (g.gain.cancelAndHoldAtTime) g.gain.cancelAndHoldAtTime(e); else g.gain.cancelScheduledValues(e);
+    g.gain.setTargetAtTime(0, e, 0.025);
+    src.onended = () => { voices--; [bp, g, lg].forEach(n => n.disconnect()); };
+    src.stop(e + 0.2);
+    lfo.stop(e + 0.2);
+  };
+}
+// A jumbo bursts: a low boom under a wide, dark crack.
+function boom() {
+  const a = kit.live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, f = tone();
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(120 * f, t);
+  o.frequency.exponentialRampToValueAtTime(42 * f, t + 0.25);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.75, t + 0.004);
+  og.gain.setTargetAtTime(0, t + 0.004, 0.11);
+  o.connect(og).connect(kit.out);
+  o.start(t);
+  o.stop(t + 0.8);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = kit.noise;
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(2600, t);
+  lp.frequency.exponentialRampToValueAtTime(300, t + 0.15);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(1.1, t + 0.001);
+  ng.gain.setTargetAtTime(0, t + 0.001, 0.035);
+  src.connect(lp).connect(ng).connect(kit.out);
+  src.start(t, Math.random() * 0.5, 0.4);
+  track(o, og);
+  track(src, lp, ng);
+}
+
+/* ---------- physics ---------- */
+// Springs per phase: k is stiffness, z is the damping ratio.
+const SPR = {
+  base: { k: 340, z: 0.38 },
+  burst: { k: 520, z: 0.34 },
+  flat: { k: 300, z: 0.6 },
+  swell: { k: 150, z: 0.2 },
+  calm: { k: 600, z: 1 },
+};
+const OK = 240, OC = 2 * 0.42 * Math.sqrt(OK);
+// Materials differ in feel: stiffness and damping scales.
+// Jelly wobbles long; glass and pixels barely give.
+const FEEL = {
+  jelly: [0.7, 0.45], rubber: [1.1, 0.7], latex: [1.2, 0.8], glass: [1.4, 1.5], foil: [1, 1.4], toon: [1.3, 0.8], pixel: [1.4, 1.8], soap: [0.8, 0.7],
+  gum: [0.8, 0.5], ice: [1.4, 1.5], paper: [1.3, 1.6], popcorn: [1.2, 0.6], topo: [1.2, 1], disco: [1.1, 1.2], lava: [0.9, 1.1],
+};
+
+function pop(c, now, amp, force) {
+  if (!c || c.state || c.hid) return;
+  // A jumbo bursts only at full charge; anything less makes it wobble.
+  if (c.J && !force) {
+    if (!reduce && now > c.nudge) { c.nudge = now + 0.12; c.sv += 2.4; }
+    return;
+  }
+  c.state = 1; c.popAt = now; c.due = now + 6 + Math.random() * 6;
+  if (c.J) { boom(); buzz([14, 40, 30], true); } else { popSound(c); buzz(6); }
+  // The blast pops the ring of small cells round a jumbo.
+  if (c.J) for (const o of units) {
+    const d = Math.hypot(o.x - c.x, o.y - c.y);
+    if (!o.J && !o.state && d < R * 3.7) events.push({ at: now + (reduce ? 0 : 0.02 + d / (R * 30)), c: o, pop: 0.9 });
+  }
+  if (reduce) return;
+  c.sv += 7.5;
+  burst(c, now, amp);
+  // A ripple travels out and shoves the inflated cells it reaches.
+  const D = R * (c.J ? 9 : 4.4), v = R * 13;
+  for (const o of units) {
+    if (o === c || o.state) continue;
+    const ddx = o.x - c.x, ddy = o.y - c.y, d = Math.hypot(ddx, ddy);
+    if (d > D) continue;
+    const f = amp * (1 - d / D) ** 1.6;
+    events.push({ at: now + d / v, c: o, vx: (ddx / d) * R * 2.8 * f, vy: (ddy / d) * R * 2.8 * f, vs: 1.2 * f });
+  }
+}
+function inflate(c, now) {
+  c.state = 0; c.inAt = now; c.due = Infinity;
+  bloop();
+  if (!reduce) c.sv -= 0.3;
+}
+// Popped cells re-inflate in a wave from the centre.
+function refill(now) {
+  const cx = W / 2, cy = H / 2, far = Math.hypot(cx, cy) || 1;
+  for (const c of units) {
+    const ddx = c.x - cx, ddy = c.y - cy, d = Math.hypot(ddx, ddy) || 1;
+    const at = now + (reduce ? 0 : (0.85 * d) / far);
+    if (c.state) c.due = at;
+    else if (!reduce) events.push({ at, c, vx: (ddx / d) * R * 1.6, vy: (ddy / d) * R * 1.6, vs: 0.9 });
+  }
+  wake();
+}
+function sweep(xa, ya, xb, yb, now) {
+  const n = Math.max(1, Math.ceil(Math.hypot(xb - xa, yb - ya) / (R * 0.35)));
+  for (let k = 1; k <= n; k++) pop(hit(lerp(xa, xb, k / n), lerp(ya, yb, k / n)), now, 1);
+}
+
+function step(now, dt) {
+  let moving = false;
+  for (let n = events.length - 1; n >= 0; n--) {
+    const e = events[n];
+    if (e.at > now) continue;
+    if (e.pop) pop(e.c, now, e.pop);
+    else if (e.born) {
+      // A new cell lands with a hop as the wipe passes it.
+      e.c.hid = false; e.c.s = 0.5; e.c.sv += 5; bloop();
+    } else if (!e.c.state) { e.c.vx += e.vx; e.c.vy += e.vy; e.c.sv += e.vs; }
+    events[n] = events[events.length - 1];
+    events.pop();
+  }
+  for (const c of units) c.pT = 0;
+  for (const q of ptrs.values()) if (q.cell && !q.drag) q.cell.pT = 1;
+  if (kPress) kPress.pT = 1;
+  // A held press charges; a full jumbo bursts while still held.
+  for (const c of units) {
+    if (c.pT && !c.state) { if (c.h0 < 0) c.h0 = now; c.q = clamp((now - c.h0) / (c.J ? HOLD_J : HOLD)); }
+    else { c.h0 = -1; c.q = 0; }
+    if (c.J && c.q >= 1) pop(c, now, 2, true);
+    if (c.J) {
+      const want = c.pT && !c.state;
+      if (want && !c.creak) c.creak = creak() || (() => {});
+      else if (!want && c.creak) { c.creak(); c.creak = null; }
+    }
+  }
+  const down = ptrs.size > 0, presses = [];
+  for (const c of units) if (!c.state && c.p > 0.01) presses.push(c);
+  const lim = R * 0.22, gDelay = reduce ? 0 : 0.045;
+
+  for (const c of units) {
+    if (c.state && now >= c.due) inflate(c, now);
+    const m = reduce ? SPR.calm : c.state ? (now - c.popAt < 0.6 ? SPR.burst : SPR.flat) : now - c.inAt < 1.8 ? SPR.swell : SPR.base;
+    let sT, tx = 0, ty = 0;
+    if (c.state) sT = 0.9 - 0.05 * c.p;
+    else {
+      const h = c === hoverCell && !down ? 1 : 0;
+      // A jumbo swells less on hover and press, and bulges more with charge.
+      sT = c.J ? 1 + 0.025 * h * (1 - c.p) + 0.02 * c.p + 0.13 * c.q : 1 + 0.07 * h * (1 - c.p) + 0.045 * c.p + 0.05 * c.q;
+      if (!reduce) {
+        // A nearly full jumbo trembles.
+        if (c.J && c.q > 0.3) { const j = R * 0.06 * ((c.q - 0.3) / 0.7) ** 2; tx += j * Math.sin(now * 71); ty += j * Math.cos(now * 83); }
+        // Neighbours lean away from the pointer and from pressed cells.
+        if (hover && c !== hoverCell) {
+          const ddx = c.x - hover.x, ddy = c.y - hover.y, d = Math.hypot(ddx, ddy);
+          if (d > 1 && d < R * 3.2) { const f = (R * 0.11 * Math.exp(-((d / (R * 1.6)) ** 2))) / d; tx += ddx * f; ty += ddy * f; }
+        }
+        for (const o of presses) {
+          if (o === c) continue;
+          const ddx = c.x - o.x, ddy = c.y - o.y, d = Math.hypot(ddx, ddy), w = o.J ? 3.2 : 1.5;
+          if (d < R * 2.2 * w) { const f = (R * 0.16 * o.p * (1 + 1.5 * o.q) * Math.exp(-((d / (R * w)) ** 2))) / d; tx += ddx * f; ty += ddy * f; }
+        }
+      }
+    }
+    const fe = FEEL[rec.mat] || [1, 1], kk = m.k * fe[0], cd = 2 * m.z * fe[1] * Math.sqrt(kk);
+    c.sv += (-kk * (c.s - sT) - cd * c.sv) * dt;
+    c.s = clamp(c.s + c.sv * dt, 0.6, 1.35);
+    c.vx += (-OK * (c.dx - tx) - OC * c.vx) * dt;
+    c.vy += (-OK * (c.dy - ty) - OC * c.vy) * dt;
+    c.dx += c.vx * dt; c.dy += c.vy * dt;
+    const dm = Math.hypot(c.dx, c.dy);
+    if (dm > lim) { c.dx *= lim / dm; c.dy *= lim / dm; }
+    const gT = c.state && now - c.popAt >= gDelay ? 0 : 1;
+    c.g += (gT - c.g) * (1 - Math.exp(-(c.state ? 17 : reduce ? 12 : 9) * dt));
+    c.p += (c.pT - c.p) * (1 - Math.exp(-(c.pT > c.p ? 26 : 14) * dt));
+    const busy = Math.abs(c.s - sT) > 4e-4 || Math.abs(c.sv) > 4e-3 || Math.abs(c.dx - tx) > 0.04 || Math.abs(c.dy - ty) > 0.04 ||
+      Math.abs(c.vx) + Math.abs(c.vy) > 0.5 || Math.abs(c.g - gT) > 2e-3 || Math.abs(c.p - c.pT) > 2e-3 || gT !== (c.state ? 0 : 1);
+    if (busy) moving = true;
+    else { c.s = sT; c.sv = 0; c.dx = tx; c.dy = ty; c.vx = 0; c.vy = 0; c.g = gT; c.p = c.pT; }
+  }
+  return fly(now, dt) || moving;
+}
+
+/* ---------- burst: shards and a ring leave every pop ---------- */
+// Shards are solid cut shapes; they shrink away, they never fade.
+const MAXBITS = 420, RING_S = 0.34, bits = [], rings = [];
+const shard = pts => { const p = new Path2D(); pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y))); p.closePath(); return p; };
+// A sharp triangle, a thin sliver and a chip, about one unit across.
+const SHARDS = [
+  shard([[0, -0.62], [0.55, 0.42], [-0.5, 0.36]]),
+  shard([[-0.7, -0.12], [0.7, -0.2], [0.62, 0.14], [-0.66, 0.1]]),
+  shard([[-0.4, -0.45], [0.45, -0.38], [0.3, 0.42], [-0.48, 0.3]]),
+];
+// A bead, a ten-point comic star and a rounded sprinkle.
+const BEAD = new Path2D();
+BEAD.arc(0, 0, 0.5, 0, TAU);
+const STAR = shard(Array.from({ length: 20 }, (_, i) => { const a = (i / 20) * TAU - PI / 2, d = i & 1 ? 0.48 : 1; return [Math.cos(a) * d, Math.sin(a) * d]; }));
+const PILL = new Path2D();
+PILL.moveTo(-0.65, -0.35); PILL.lineTo(0.65, -0.35); PILL.arc(0.65, 0, 0.35, -PI / 2, PI / 2); PILL.lineTo(-0.65, 0.35); PILL.arc(-0.65, 0, 0.35, PI / 2, PI * 1.5); PILL.closePath();
+// Sprinkles and soap film keep their own fixed colours.
+const CANDY = [[0.72, 0.19, 25], [0.86, 0.17, 95], [0.8, 0.17, 150], [0.7, 0.15, 245], [0.74, 0.2, 335], [0.96, 0.01, 0]].map(c => css(c));
+const IRID = [[0.84, 0.12, 330], [0.88, 0.1, 200], [0.9, 0.11, 95]].map(c => css(c));
+const HOLO = [0, 60, 120, 180, 240, 300].map(h => css([0.8, 0.17, h]));
+const CRUST = css([0.24, 0.03, 40]), WHITE = css([0.98, 0.01, 230]), CREAM = css([0.94, 0.04, 90]);
+// A square tile, a four-point glint and a six-armed snowflake.
+const SQ = shard([[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]);
+// A paper scrap is a skewed quad.
+const CARD = shard([[-1, -0.6], [0.9, -0.8], [1, 0.7], [-0.8, 0.6]]);
+const GLINT = shard(Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * TAU, d = i & 1 ? 0.18 : 1; return [Math.cos(a) * d, Math.sin(a) * d]; }));
+const SNOW = new Path2D();
+for (let k = 0; k < 6; k++) {
+  const a = (k * PI) / 3, c = Math.cos(a), s = Math.sin(a);
+  SNOW.moveTo(0, 0); SNOW.lineTo(c, s);
+  for (const sd of [-1, 1]) { SNOW.moveTo(c * 0.55, s * 0.55); SNOW.lineTo(c * 0.55 + Math.cos(a + sd * 0.7) * 0.3, s * 0.55 + Math.sin(a + sd * 0.7) * 0.3); }
+}
+// Ring styles per material; the rest leave no ring.
+const RINGS = { gloss: 'hex', rubber: 'hex', candy: 'hex', soap: 'circle', latex: 'circle', pixel: 'square', ice: 'spike', holo: 'circle', topo: 'hex' };
+function burst(c, now, amp) {
+  const pt = paints[c.b];
+  if (!pt) return;
+  const M = rec.mat, x = c.x + c.dx, y = c.y + c.dy, big = c.J ? 1 : 0, rs = RINGS[M];
+  if (rs) {
+    const wk = M === 'rubber' ? 1.5 : M === 'soap' || M === 'topo' ? 0.3 : M === 'latex' ? 1.3 : M === 'ice' ? 0.5 : 1;
+    rings.push({ x, y, t0: now, amp, shape: rs, path: big ? jRing : ringP, rad: big ? 2.6 * R : r,
+      col: M === 'soap' ? IRID[(Math.random() * 3) | 0] : M === 'holo' ? HOLO[(Math.random() * 6) | 0] : M === 'ice' ? WHITE : pt.top, w: (big ? 0.32 : 0.2) * wk, life: (big ? 0.55 : RING_S) * (M === 'rubber' ? 1.3 : M === 'latex' ? 0.7 : 1) });
+  }
+  // A busy sweep throws fewer bits per pop; a jumbo throws a fistful.
+  const mul = big ? 3 : bits.length > MAXBITS / 2 ? 0.45 : 1, sz = big ? 1.7 : 1, spread = R * (big ? 1.6 : 0.3);
+  const N = n => Math.max(1, Math.round(n * mul * R01(0.8, 1.2)));
+  const pc = () => { const q = Math.random(); return q < 0.3 ? pt.light : q < 0.65 ? pt.top : pt.low; };
+  // One bit of kind k flies out at v cell radii per second.
+  const out = (k, v, s, life, more) => {
+    const a = Math.random() * TAU, o = spread * Math.random(), V = R * v * (0.7 + 0.5 * amp);
+    bits.push({
+      k, x: x + Math.cos(a) * o, y: y + Math.sin(a) * o, vx: Math.cos(a) * V, vy: Math.sin(a) * V - R * 3,
+      a: Math.random() * TAU, va: (Math.random() - 0.5) * 26, s: R * s * sz, t0: now, life, dr: 3.2, gm: 1, bo: 0,
+      col: pt.top, sh: (Math.random() * 3) | 0, ...more,
+    });
+  };
+  switch (M) {
+    case 'rubber':
+      // Rubber: fat chunks that bounce on the floor.
+      for (let i = N(5); i--;) out('chunk', R01(4, 9), R01(0.16, 0.26), R01(0.9, 1.4), { col: pc(), bo: 0.62, dr: 1.2, va: (Math.random() - 0.5) * 8 });
+      break;
+    case 'foil':
+      // Foil: flakes that glint as they flip, and a spray of sparks.
+      for (let i = N(9); i--;) out('flake', R01(5, 12), R01(0.12, 0.24), R01(0.6, 1), { col: pt.light, col2: pt.low, dr: 4, gm: 0.45, va: (Math.random() - 0.5) * 30 });
+      for (let i = N(5); i--;) out('spark', R01(14, 24), 0.4, R01(0.14, 0.24), { col: pt.light, dr: 2, gm: 0.1 });
+      break;
+    case 'jelly':
+      // Jelly: goo blobs stretch as they fly, then splats land and dry.
+      for (let i = N(6); i--;) out('goo', R01(5, 11), R01(0.12, 0.22), R01(0.25, 0.4), { col: pt.mid, gm: 1.3, dr: 2 });
+      for (let i = N(4); i--;) {
+        const a = Math.random() * TAU, d = R * R01(0.9, 1.9) * (big ? 2 : 1);
+        bits.push({ k: 'splat', x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, vx: 0, vy: 0, a: Math.random() * TAU, va: 0, s: R * R01(0.14, 0.24) * sz, t0: now + R01(0.1, 0.22), life: 1.1, dr: 0, gm: 0, bo: 0, col: pt.low, sx: R01(1, 1.7) });
+      }
+      break;
+    case 'soap':
+      // Soap: film scraps curl up in rainbow colours over a fine mist.
+      for (let i = N(6); i--;) out('curl', R01(3, 7), R01(0.2, 0.35), R01(0.35, 0.55), { dr: 4, gm: 0.25, lw: R * 0.05 * sz, hue: Math.random() });
+      for (let i = N(10); i--;) out('mist', R01(6, 14), R01(0.04, 0.07), R01(0.3, 0.5), { col: pt.light, dr: 3, gm: 0.6 });
+      break;
+    case 'toon': {
+      // Toon: a comic star punches out behind hard speed lines.
+      bits.push({ k: 'pow', x, y, vx: 0, vy: 0, a: (Math.random() - 0.5) * 0.6, va: 0, s: R * (big ? 2.8 : 1.15), t0: now, life: 0.26, dr: 0, gm: 0, bo: 0, col: pt.light, col2: pt.low });
+      const n = N(8), a0 = Math.random() * TAU;
+      for (let i = 0; i < n; i++) bits.push({ k: 'line', x, y, vx: 0, vy: 0, a: a0 + (i / n) * TAU + (Math.random() - 0.5) * 0.3, va: 0, s: R * (big ? 2.4 : 1), t0: now, life: 0.22, dr: 0, gm: 0, bo: 0, col: pt.low });
+      break;
+    }
+    case 'glass':
+      // Glass: clear slivers with dark edges; they skitter on the floor.
+      for (let i = N(10); i--;) out('glass', R01(4, 11), R01(0.14, 0.3), R01(0.6, 0.95), { col: pt.light, col2: pt.low, bo: 0.35, gm: 1.2 });
+      break;
+    case 'candy':
+      // Candy: a fistful of hard sprinkles in every colour.
+      for (let i = N(14); i--;) out('sprinkle', R01(4, 10), R01(0.08, 0.12), R01(0.8, 1.2), { col: CANDY[(Math.random() * CANDY.length) | 0], bo: 0.4, gm: 1.3, dr: 2.2 });
+      break;
+    case 'latex':
+      // Latex: thick tatters whip out and curl.
+      for (let i = N(5); i--;) out('curl', R01(7, 14), R01(0.22, 0.4), R01(0.35, 0.5), { col: pt.mid, lw: R * 0.12 * sz, dr: 4, gm: 0.8 });
+      break;
+    case 'pixel':
+      // Pixels: square blocks on a grid, no spin.
+      for (let i = N(12); i--;) out('pixel', R01(4, 10), 0.16, R01(0.5, 0.8), { col: pc(), va: 0, dr: 2.5 });
+      break;
+    case 'lava':
+      // Lava: molten drips cool as they fall; embers rise.
+      for (let i = N(6); i--;) out('drip', R01(4, 9), R01(0.12, 0.2), R01(0.7, 1.1), { col: pt.light, col2: CRUST, gm: 1.3, dr: 1.5 });
+      for (let i = N(8); i--;) out('ember', R01(2, 6), R01(0.05, 0.09), R01(0.8, 1.4), { col: Math.random() < 0.5 ? pt.light : pt.top, gm: -0.25, dr: 2 });
+      break;
+    case 'ice':
+      // Ice: snowflakes drift down slowly, turning.
+      for (let i = N(7); i--;) out('snow', R01(3, 7), R01(0.16, 0.28), R01(1.1, 1.7), { col: WHITE, gm: 0.12, dr: 3, va: (Math.random() - 0.5) * 3 });
+      break;
+    case 'holo':
+      // Hologram: rainbow prisms spin out behind white streaks.
+      for (let i = N(9); i--;) out('prism', R01(5, 12), R01(0.14, 0.26), R01(0.5, 0.9), { col: HOLO[(Math.random() * 6) | 0], gm: 0.6, dr: 3, va: (Math.random() - 0.5) * 24 });
+      for (let i = N(4); i--;) out('spark', R01(14, 24), 0.4, R01(0.14, 0.24), { col: WHITE, dr: 2, gm: 0.1 });
+      break;
+    case 'paper':
+      // Paper: scraps tumble down slowly, two-faced.
+      for (let i = N(6); i--;) out('scrap', R01(3, 8), R01(0.16, 0.26), R01(1.2, 1.7), { col: pt.light, col2: pt.mid, gm: 0.35, dr: 3.5, va: (Math.random() - 0.5) * 8 });
+      break;
+    case 'gum':
+      // Gum: strings stretch out from the burst and snap back.
+      for (let i = N(6); i--;) bits.push({ k: 'string', x, y, vx: 0, vy: 0, a: Math.random() * TAU, va: 0, s: R * R01(0.9, 1.6) * sz, t0: now, life: R01(0.35, 0.5), dr: 0, gm: 0, bo: 0, col: pt.mid, lw: R * 0.09 * sz });
+      break;
+    case 'topo':
+      // Contours: line scraps spin away.
+      for (let i = N(10); i--;) out('seg', R01(4, 10), R01(0.3, 0.5), R01(0.4, 0.7), { col: pc(), gm: 0.3, dr: 2.5, va: (Math.random() - 0.5) * 14 });
+      break;
+    case 'popcorn':
+      // Popcorn: husks fly off and small puffs bounce.
+      for (let i = N(4); i--;) out('husk', R01(5, 10), R01(0.1, 0.16), R01(0.6, 0.9), { col: pt.low, bo: 0.4, gm: 1.2 });
+      for (let i = N(3); i--;) out('puff', R01(4, 8), R01(0.12, 0.18), R01(0.8, 1.1), { col: CREAM, bo: 0.5, gm: 1.2, dr: 1.5 });
+      break;
+    case 'disco':
+      // Disco: mirror tiles flip and flash; glints flare round the hole.
+      for (let i = N(10); i--;) out('tile', R01(4, 11), R01(0.1, 0.16), R01(0.6, 1), { col: WHITE, col2: pt.low, gm: 0.8, dr: 2.5, va: (Math.random() - 0.5) * 20 });
+      for (let i = N(4); i--;) {
+        const a = Math.random() * TAU, d = R * R01(0.3, 1.2) * sz;
+        bits.push({ k: 'glint', x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, vx: 0, vy: 0, a: 0, va: 0, s: R * R01(0.2, 0.35) * sz, t0: now + Math.random() * 0.15, life: 0.35, dr: 0, gm: 0, bo: 0, col: WHITE });
+      }
+      break;
+    default:
+      // Gloss: hard shards.
+      for (let i = N(6); i--;) out('shard', R01(5, 13), R01(0.12, 0.27), R01(0.32, 0.62), { col: pc() });
+  }
+  if (bits.length > MAXBITS) bits.splice(0, bits.length - MAXBITS);
+}
+// Bits drift out, slow down and fall; the result says if any fly.
+function fly(now, dt) {
+  const g = R * 22 * dt, floor = H - 3;
+  for (let n = bits.length - 1; n >= 0; n--) {
+    const b = bits[n];
+    if (now - b.t0 > b.life) { bits[n] = bits[bits.length - 1]; bits.pop(); continue; }
+    if (now < b.t0) continue;
+    const drag = Math.exp(-b.dr * dt);
+    b.vx *= drag; b.vy = b.vy * drag + g * b.gm;
+    b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va * dt;
+    // Bouncy bits hit the stage floor and come back up.
+    if (b.bo && b.y > floor && b.vy > 0) { b.y = floor; b.vy *= -b.bo; b.vx *= 0.75; b.va *= 0.6; }
+  }
+  for (let n = rings.length - 1; n >= 0; n--) if (now - rings[n].t0 > rings[n].life) rings.splice(n, 1);
+  return bits.length > 0 || rings.length > 0;
+}
+function drawBits() {
+  if (!bits.length && !rings.length) return;
+  const now = nowS();
+  ctx.globalAlpha = 1;
+  // A ring is a hard outline that thins as it grows.
+  for (const q of rings) {
+    if (now < q.t0) continue;
+    let u = clamp((now - q.t0) / q.life);
+    // The pixel ring grows in steps.
+    if (q.shape === 'square') u = Math.ceil(u * 5) / 5;
+    const sc = 1 + (0.35 + 0.4 * q.amp) * (1 - (1 - u) ** 3), lw = R * q.w * (1 - u) ** 1.5;
+    if (lw < 0.25) continue;
+    ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * q.x, dpr * q.y);
+    ctx.lineWidth = lw / sc; ctx.strokeStyle = q.col;
+    if (q.shape === 'circle') { ctx.beginPath(); ctx.arc(0, 0, q.rad, 0, TAU); ctx.stroke(); }
+    else if (q.shape === 'square') ctx.strokeRect(-q.rad, -q.rad, 2 * q.rad, 2 * q.rad);
+    else if (q.shape === 'spike') { ctx.setTransform(dpr * sc * q.rad, 0, 0, dpr * sc * q.rad, dpr * q.x, dpr * q.y); ctx.lineWidth = lw / (sc * q.rad); ctx.stroke(STAR); }
+    else ctx.stroke(q.path);
+  }
+  ctx.lineCap = 'butt';
+  for (const b of bits) {
+    if (now < b.t0) continue;
+    const u = clamp((now - b.t0) / b.life);
+    let sc = b.s * (1 - u * u);
+    switch (b.k) {
+      case 'spark':
+        // A spark is a hard streak along its own path.
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx * 0.035, b.y - b.vy * 0.035);
+        ctx.lineWidth = Math.max(0.6, R * 0.07 * (1 - u)); ctx.strokeStyle = b.col; ctx.stroke();
+        break;
+      case 'line': {
+        // A speed line rushes outward and shortens.
+        const co = Math.cos(b.a), si = Math.sin(b.a), d0 = b.s * (0.9 + 1.8 * u), d1 = d0 + b.s * 0.8 * (1 - u);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.beginPath(); ctx.moveTo(b.x + co * d0, b.y + si * d0); ctx.lineTo(b.x + co * d1, b.y + si * d1);
+        ctx.lineWidth = Math.max(1, R * 0.1 * (1 - u)); ctx.strokeStyle = b.col; ctx.stroke();
+        break;
+      }
+      case 'curl': {
+        // A scrap curls tighter as it flies.
+        if (sc < 0.3) break;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.s * (1 - 0.5 * u), b.a, b.a + 0.8 + 2.6 * u);
+        ctx.lineCap = 'round'; ctx.lineWidth = Math.max(0.6, b.lw * (1 - u * u));
+        ctx.strokeStyle = b.hue != null ? IRID[((b.hue * 3 + u * 4) | 0) % 3] : b.col; ctx.stroke();
+        ctx.lineCap = 'butt';
+        break;
+      }
+      case 'pow': {
+        // The star punches out fast, holds, then snaps away.
+        sc = b.s * (u < 0.3 ? (u / 0.3) * 1.15 : 1.15 * (1 - (u - 0.3) / 0.7) ** 2);
+        if (sc < 0.3) break;
+        const co = Math.cos(b.a) * sc * dpr, si = Math.sin(b.a) * sc * dpr;
+        ctx.setTransform(co, si, -si, co, dpr * b.x, dpr * b.y);
+        ctx.fillStyle = b.col2; ctx.fill(STAR);
+        ctx.setTransform(co * 0.62, si * 0.62, -si * 0.62, co * 0.62, dpr * b.x, dpr * b.y);
+        ctx.fillStyle = b.col; ctx.fill(STAR);
+        break;
+      }
+      case 'pixel': {
+        // Blocks snap to their grid and shrink in steps.
+        const ps = b.s, s2 = ps * (u < 0.5 ? 1 : u < 0.8 ? 0.66 : 0.33);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = b.col; ctx.fillRect(Math.round(b.x / ps) * ps - s2 / 2, Math.round(b.y / ps) * ps - s2 / 2, s2, s2);
+        break;
+      }
+      case 'splat': {
+        // A splat lands fast, spreads, then dries away.
+        sc = b.s * 2 * Math.min(1, u / 0.12) * (1 - clamp((u - 0.55) / 0.45) ** 2);
+        if (sc < 0.3) break;
+        const co = Math.cos(b.a) * dpr, si = Math.sin(b.a) * dpr;
+        ctx.setTransform(co * sc * b.sx, si * sc * b.sx, -si * sc, co * sc, dpr * b.x, dpr * b.y);
+        ctx.fillStyle = b.col; ctx.fill(BEAD);
+        break;
+      }
+      case 'snow': {
+        // A snowflake: six thin arms, each with two short branches.
+        if (sc < 0.3) break;
+        const co = Math.cos(b.a) * sc * dpr, si = Math.sin(b.a) * sc * dpr;
+        ctx.setTransform(co, si, -si, co, dpr * b.x, dpr * b.y);
+        ctx.lineWidth = 0.12; ctx.lineCap = 'round'; ctx.strokeStyle = b.col; ctx.stroke(SNOW); ctx.lineCap = 'butt';
+        break;
+      }
+      case 'string': {
+        // A gum string reaches out, then snaps back to the splat.
+        const d = b.s * Math.sin(PI * u) ** 0.7, ex = b.x + Math.cos(b.a) * d, ey = b.y + Math.sin(b.a) * d;
+        if (d < 0.5) break;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.beginPath(); ctx.moveTo(b.x, b.y);
+        ctx.quadraticCurveTo(b.x + Math.cos(b.a + 0.3) * d * 0.5, b.y + Math.sin(b.a + 0.3) * d * 0.5 + d * 0.15, ex, ey);
+        ctx.lineCap = 'round'; ctx.lineWidth = b.lw * (1 - 0.6 * u); ctx.strokeStyle = b.col; ctx.stroke(); ctx.lineCap = 'butt';
+        ctx.beginPath(); ctx.arc(ex, ey, b.lw * 0.9, 0, TAU); ctx.fillStyle = b.col; ctx.fill();
+        break;
+      }
+      case 'seg': {
+        // A contour scrap spins away as a hard line.
+        if (sc < 0.3) break;
+        const co = Math.cos(b.a) * sc, si = Math.sin(b.a) * sc;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.beginPath(); ctx.moveTo(b.x - co, b.y - si); ctx.lineTo(b.x + co, b.y + si);
+        ctx.lineWidth = Math.max(1, R * 0.05); ctx.strokeStyle = b.col; ctx.stroke();
+        break;
+      }
+      case 'glint': {
+        // A mirror glint flares, then shrinks back to nothing.
+        sc = b.s * Math.sin(PI * u);
+        if (sc < 0.3) break;
+        ctx.setTransform(sc * dpr, 0, 0, sc * dpr, dpr * b.x, dpr * b.y);
+        ctx.fillStyle = b.col; ctx.fill(GLINT);
+        break;
+      }
+      case 'ember': {
+        // Embers flicker as they rise.
+        if (((now * 24 + b.sh * 5) | 0) % 4 === 0 || sc < 0.3) break;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = b.col; ctx.fillRect(b.x - sc / 2, b.y - sc / 2, sc, sc);
+        break;
+      }
+      case 'drip':
+      case 'goo': {
+        // Goo stretches along its flight; lava drips cool as they go.
+        const sp = Math.hypot(b.vx, b.vy), st = 1 + sp / (R * 10), an = Math.atan2(b.vy, b.vx);
+        sc *= 2;
+        if (sc < 0.3) break;
+        const co = Math.cos(an) * dpr, si = Math.sin(an) * dpr;
+        ctx.setTransform(co * sc * st, si * sc * st, (-si * sc) / Math.sqrt(st), (co * sc) / Math.sqrt(st), dpr * b.x, dpr * b.y);
+        ctx.fillStyle = b.k === 'drip' && u > 0.45 ? b.col2 : b.col; ctx.fill(BEAD);
+        break;
+      }
+      default: {
+        if (sc < 0.3) break;
+        // Flakes and glass flip edge-on; the face shown sets the colour.
+        const flip = b.k === 'flake' || b.k === 'tile' || b.k === 'scrap' || b.k === 'prism', round = b.k === 'chunk' || b.k === 'mist' || b.k === 'puff';
+        const turn = flip ? Math.cos(b.a * 2.7) : b.k === 'glass' ? Math.cos(b.a * 1.9) : 1;
+        if (round) sc = b.s * 2 * (1 - u ** 3);
+        const co = Math.cos(b.a) * sc * dpr, si = Math.sin(b.a) * sc * dpr;
+        ctx.setTransform(co, si, -si * turn, co * turn, dpr * b.x, dpr * b.y);
+        const path = round ? BEAD : b.k === 'sprinkle' ? PILL : b.k === 'scrap' ? CARD : b.k === 'tile' ? SQ : SHARDS[b.sh];
+        if (b.k === 'glass') {
+          ctx.globalAlpha = 0.7; ctx.fillStyle = b.col; ctx.fill(path); ctx.globalAlpha = 1;
+          ctx.lineWidth = 1.5 / sc; ctx.strokeStyle = b.col2; ctx.stroke(path);
+        } else {
+          ctx.fillStyle = flip && b.col2 && turn < 0 ? b.col2 : b.col; ctx.fill(path);
+        }
+      }
+    }
+  }
+}
+
+/* ---------- the die: a whole new sheet sweeps in from the bar ---------- */
+const die = document.getElementById('roll'), dieSvg = die.querySelector('svg'), diePath = dieSvg.querySelector('path');
+const P0 = 4.6, P1 = 8, P2 = 11.4;
+const FACES = [
+  [[P1, P1]],
+  [[P0, P2], [P2, P0]],
+  [[P0, P2], [P1, P1], [P2, P0]],
+  [[P0, P0], [P2, P0], [P0, P2], [P2, P2]],
+  [[P0, P0], [P2, P0], [P1, P1], [P0, P2], [P2, P2]],
+  [[P0, P0], [P2, P0], [P0, P1], [P2, P1], [P0, P2], [P2, P2]],
+];
+const BODY = 'M4.5 1.5h7a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z';
+let face = 4;
+// Each pip is a round hole cut through the solid face.
+function showFace(n) {
+  face = n;
+  diePath.setAttribute('d', BODY + FACES[n].map(([x, y]) => `M${x - 1.2} ${y}a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0Z`).join(''));
+}
+showFace(face);
+// Rolling: a few hard plastic clicks that die away.
+function rattle() {
+  const a = kit.live();
+  if (!a) return;
+  let t = a.currentTime + LEAD;
+  for (let k = 0; k < 4 && voices < MAXV; k++) {
+    const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain(), amp = 0.75 * 0.62 ** k * level();
+    src.buffer = kit.noise;
+    bp.type = 'bandpass';
+    bp.frequency.value = 2600 * jit(0.25);
+    bp.Q.value = 4;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(amp, t + 0.001);
+    g.gain.setTargetAtTime(0, t + 0.001, 0.006);
+    src.connect(bp).connect(g).connect(kit.out);
+    src.start(t, Math.random() * 0.9, 0.05);
+    track(src, bp, g);
+    t += (0.05 + Math.random() * 0.05) * (1 + 0.3 * k);
+  }
+}
+// The old sheet stays as a picture until the new one sweeps over it.
+const snap = document.createElement('canvas');
+let wipe = null;
+const WIPE_S = 0.9;
+function roll() {
+  if (!cells.length || !sR) return;
+  const now = nowS();
+  if (!reduce) { snap.width = cv.width; snap.height = cv.height; snap.getContext('2d').drawImage(cv, 0, 0); }
+  rec = freshRecipe(rec);
+  layout(true);
+  clearTimeout(spriteTimer);
+  buildSprites();
+  bits.length = 0; rings.length = 0;
+  let n = face;
+  while (n === face) n = (Math.random() * 6) | 0;
+  showFace(n);
+  rattle();
+  if (reduce) { draw(); return; }
+  dieSvg.animate([
+    { transform: 'rotate(-280deg) scale(0.5)' },
+    { transform: 'rotate(16deg) scale(1.15)', offset: 0.7 },
+    { transform: 'none' },
+  ], { duration: 520, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' });
+  // The new sheet grows out from the die's corner, bottom left.
+  const far = Math.hypot(W, H) || 1;
+  wipe = { t0: now, far, col: paints[NB >> 1]?.light || focusC };
+  for (const c of units) { c.hid = true; events.push({ at: now + (WIPE_S * Math.hypot(c.x, H - c.y)) / far, c, born: 1 }); }
+  draw();
+  wake();
+}
+die.addEventListener('click', roll);
+
+/* ---------- drawing ---------- */
+// A sprite is an image, its corner, its pixel size and its CSS size.
+function sprite(c, flat) {
+  if (!c.J) { const i = 2 * c.b + flat; return [atl, ox[i], oy[i], SP, SB]; }
+  const J = jat.get(c.b);
+  return J && [J, flat * SPJ, 0, SPJ, SBJ];
+}
+function blit(c, [img, x0, y0, sp, sb], a, sx, sy, rot) {
+  const X = dpr * (c.x + c.dx), Y = dpr * (c.y + c.dy);
+  if (rot) {
+    const co = Math.cos(rot) * dpr, si = Math.sin(rot) * dpr;
+    ctx.setTransform(sx * co, sx * si, -sy * si, sy * co, X, Y);
+  } else ctx.setTransform(sx * dpr, 0, 0, sy * dpr, X, Y);
+  ctx.globalAlpha = a;
+  ctx.drawImage(img, x0, y0, sp, sp, -sb / 2, -sb / 2, sb, sb);
+}
+// The wipe front's radius, or zero once it has passed.
+function wipeFront() {
+  if (!wipe) return 0;
+  const u = (nowS() - wipe.t0) / WIPE_S;
+  if (u >= 1) { wipe = null; return 0; }
+  return wipe.far * Math.max(0, u);
+}
+function draw() {
+  if (!cv.width || !sR) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const k = R / sR, wf = wipeFront();
+  // Outside the wipe front the old sheet still shows.
+  if (wf) {
+    const p = new Path2D();
+    p.rect(0, 0, cv.width, cv.height);
+    p.arc(0, dpr * H, dpr * wf, 0, TAU);
+    ctx.save(); ctx.clip(p, 'evenodd'); ctx.drawImage(snap, 0, 0); ctx.restore();
+  }
+  // Flat film first, glossy domes over it, swollen cells on top.
+  // A jumbo waiting on its sprite skips a frame or two.
+  for (const c of units) { const s = !c.hid && c.g < 0.999 && sprite(c, 1); if (s) blit(c, s, 1, c.s * k * c.flip, c.s * k, c.rot); }
+  for (let pass = 0; pass < 2; pass++) {
+    for (const c of units) {
+      if (c.hid || c.g < 0.001 || (c.s >= 1.03) !== (pass === 1)) continue;
+      const s = sprite(c, 0);
+      if (!s) continue;
+      blit(c, s, c.g, c.s * k, c.s * k, 0);
+      if (c.p > 0.002) {
+        ctx.globalCompositeOperation = 'multiply';
+        // A jumbo dents less, and its shade lifts as it grows taut.
+        const a = c.J ? 0.45 * (1 - 0.7 * c.q) : 1;
+        blit(c, c.J ? [jShade, 0, 0, SPJ, SBJ] : [atl, ox[SHADE_SLOT], oy[SHADE_SLOT], SP, SB], a * c.p * c.g, c.s * k, c.s * k, 0);
+        ctx.globalCompositeOperation = 'source-over';
+      }
+    }
+  }
+  drawBits();
+  // The wipe front is a hard band in the new paint.
+  if (wf) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(0, H, wf, 0, TAU);
+    ctx.lineWidth = Math.max(4, R * 0.28); ctx.strokeStyle = wipe.col; ctx.stroke();
+  }
+  const c = ring && own(cells[fi]);
+  if (c) {
+    const sc = c.s, p = c.J ? jRing : ringP;
+    ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * (c.x + c.dx), dpr * (c.y + c.dy));
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 7 / sc; ctx.strokeStyle = bgC; ctx.stroke(p);
+    ctx.lineWidth = 3 / sc; ctx.strokeStyle = focusC; ctx.stroke(p);
+  }
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, timer = 0, last = 0;
+function wake() {
+  clearTimeout(timer);
+  timer = 0;
+  if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const dt = clamp((ms - last) / 1000, 0, 1 / 30);
+  last = ms;
+  const moving = step(ms / 1000, dt);
+  draw();
+  if (moving || events.length || wipe) { raf = requestAnimationFrame(frame); return; }
+  // Idle: a timer wakes the loop for the next re-inflation.
+  let next = Infinity;
+  for (const c of units) if (c.state && c.due < next) next = c.due;
+  if (next < Infinity) timer = setTimeout(wake, Math.max(0, (next - ms / 1000) * 1000) + 4);
+  else rest();
+}
+
+/* ---------- input ---------- */
+const local = e => { const b = cv.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+const nowS = () => performance.now() / 1000;
+
+cv.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const q = local(e), c = hit(q.x, q.y);
+  try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  ptrs.set(e.pointerId, { x: q.x, y: q.y, sx: q.x, sy: q.y, cell: c, drag: false });
+  if (c) { fi = c.i; wantX = null; }
+  if (c && !c.state && !c.J) squeak();
+  ring = false;
+  wake();
+});
+cv.addEventListener('pointermove', e => {
+  const q = local(e), p = ptrs.get(e.pointerId);
+  if (e.pointerType !== 'touch') { hover = q; hoverCell = hit(q.x, q.y); }
+  if (p) {
+    // Past a small slop, a press becomes a sweep that pops everything.
+    if (!p.drag && Math.hypot(q.x - p.sx, q.y - p.sy) > R * 0.45) {
+      p.drag = true;
+      pop(p.cell, nowS(), 1);
+      sweep(p.sx, p.sy, q.x, q.y, nowS());
+    } else if (p.drag) sweep(p.x, p.y, q.x, q.y, nowS());
+    p.x = q.x; p.y = q.y;
+  }
+  wake();
+});
+function release(e, ok) {
+  const p = ptrs.get(e.pointerId);
+  if (!p) return;
+  ptrs.delete(e.pointerId);
+  // A longer squeeze pops harder.
+  if (ok && !p.drag && p.cell) { const q = local(e); if (hit(q.x, q.y) === p.cell) pop(p.cell, nowS(), 0.6 + 0.9 * p.cell.q); }
+  wake();
+}
+cv.addEventListener('pointerup', e => release(e, true));
+cv.addEventListener('pointercancel', e => release(e, false));
+cv.addEventListener('pointerleave', e => {
+  if (e.pointerType === 'touch') return;
+  hover = null; hoverCell = null;
+  wake();
+});
+
+// A move repeats until it leaves a jumbo or meets the edge.
+function move(key) {
+  const from = own(cells[fi]);
+  for (let n = 0; n < 3; n++) { const was = fi; move1(key); if (fi === was || own(cells[fi]) !== from) break; }
+}
+// Up and down keep a remembered x, so columns zigzag straight.
+function move1(key) {
+  const c = cells[fi];
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    fi = c.row * cols + clamp(c.col + (key === 'ArrowLeft' ? -1 : 1), 0, cols - 1);
+    wantX = null;
+    return;
+  }
+  const row = clamp(c.row + (key === 'ArrowUp' ? -1 : 1), 0, rows - 1);
+  if (row === c.row) return;
+  if (wantX == null) wantX = c.x;
+  let best = 0, bd = Infinity;
+  for (let j = 0; j < cols; j++) { const d = Math.abs(cells[row * cols + j].x - wantX); if (d < bd - 0.5) { bd = d; best = j; } }
+  fi = row * cols + best;
+}
+cv.addEventListener('focus', () => { ring = cv.matches(':focus-visible'); wake(); });
+cv.addEventListener('blur', () => { ring = false; kPress = null; wake(); });
+cv.addEventListener('keydown', e => {
+  if (!cells.length) return;
+  if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    kPress = null;
+    move(e.key);
+    ring = true;
+    wake();
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    ring = true;
+    if (!e.repeat) { kPress = own(cells[fi]); if (!kPress.state && !kPress.J) squeak(); }
+    wake();
+  }
+});
+cv.addEventListener('keyup', e => {
+  if ((e.key === ' ' || e.key === 'Enter') && kPress) { pop(kPress, nowS(), 0.6 + 0.9 * kPress.q); kPress = null; wake(); }
+});
+document.getElementById('reset').addEventListener('click', () => refill(nowS()));
+
+/* ---------- theme and size ---------- */
+function retheme() { tokens(); if (sR) buildSprites(); draw(); }
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+tokens();
+layout();
+new ResizeObserver(layout).observe(field);
+// Scrolling moves the field under a still mouse, so hover lets go.
+addEventListener('scroll', () => { if (hover) { hover = null; hoverCell = null; wake(); } }, { passive: true });
+
+// On arrival the sheet lies flat, then inflates from the centre.
+if (!reduce) {
+  for (const c of units) { c.state = 1; c.g = 0; c.s = 0.9; }
+  draw();
+  requestAnimationFrame(ms => refill(ms / 1000 + 0.15));
+}
+</script>
+</body>
+</html>

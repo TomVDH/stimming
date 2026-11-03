@@ -51,6 +51,27 @@ function headerHTML(home) {
     + `<div class="tools"><button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">${SOUND_SVG}</button></div>`;
 }
 
+/* ---------- legacy: the pre-port page, one tap away ---------- */
+// A toy that moved to the library set keeps its old page as legacy.html.
+// The header then offers Legacy; the legacy page offers Current.
+function legacyLink() {
+  const tools = document.querySelector('header[data-shell] .tools');
+  if (!tools) return;
+  const onLegacy = /\/legacy\.html$/.test(location.pathname);
+  const add = (href, label, title) => {
+    const a = document.createElement('a');
+    a.className = 'ver';
+    a.href = href;
+    a.textContent = label;
+    a.title = title;
+    tools.prepend(a);
+  };
+  if (onLegacy) { add('index.html', 'Current', 'Back to the current version'); document.documentElement.dataset.legacy = ''; return; }
+  fetch('legacy.html', { method: 'HEAD', cache: 'no-store' })
+    .then(r => { if (r.ok) add('legacy.html', 'Legacy', 'The version before the library port'); })
+    .catch(() => {});
+}
+
 // Call once per page, before the toy wires its audio.
 // A page with an empty <header data-shell> gets the shared header.
 /* ---------- mouse keys: gesture words become mouse keycaps ---------- */
@@ -142,6 +163,7 @@ export function initPage({ id, silent = false, home = '../index.html' } = {}) {
     soundBtn.addEventListener('click', () => sound.toggle());
   }
   document.documentElement.dataset.toy = id;
+  legacyLink();
   mouseKeys();
   howTip();
   fitStage();
