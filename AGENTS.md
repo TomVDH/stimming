@@ -59,8 +59,36 @@ Open <http://localhost:8000/>. All links are relative.
 ## Conventions
 
 - Dark only. Colours are OKLCH tokens. The font is Gabarito.
-- Libraries are exact pinned versions from cdnjs or jsDelivr.
-  three 0.170.0 loads by importmap. Galaxy and Fire use the three 0.186.1 WebGPU build.
+- Libraries: Tom picked one set. Add no other library without Tom.
+
+  | Role | Library |
+  |---|---|
+  | Rendering | three.js 0.170.0 (Galaxy and Fire keep the 0.186.1 WebGPU build) |
+  | Colour | culori 4.0.1 |
+  | Sound | Tone.js 15.0.4 |
+  | Motion | GSAP 3.13.0 (the menu keeps the cdnjs UMD build) |
+  | Noise | simplex-noise 4.0.3 |
+
+  Every toy page that uses them carries this importmap, word for word:
+
+  ```html
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+      "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+      "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+      "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+    }
+  }
+  </script>
+  ```
+
+  `shared/stim.js` imports culori by the same URL, so it loads once. Its colour helpers are `oklchLinear`, `oklchRgb`, `linFit` and `css([L, C, h], alpha)`.
+  For sound, `audioKit()` returns a kit; `await kit.tone()` gives Tone.js on the kit's context. Connect Tone nodes to `kit.out`, so mute-by-default, gesture start and sleep still hold.
+  Pop field (`pop/`) is the reference port.
 - Controls: one bar under the stage, five visible controls at most.
   1. Choices first, as segmented chips with `aria-pressed`.
   2. Then actions, with the shared verbs Clear, Reset and Shuffle.

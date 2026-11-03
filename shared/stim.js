@@ -1,5 +1,9 @@
 // Stimming shared page module.
-// Toys import it as '../shared/stim.js'. It has no dependencies.
+// Toys import it as '../shared/stim.js'.
+// Colour comes from culori; Tone.js loads only when a toy asks for it.
+// Full URLs match the shared importmap, so each library loads once.
+import { converter, toGamut, formatRgb } from 'https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm';
+const TONE_URL = 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
 
 /* ---------- storage ---------- */
 // Storage is optional; private windows can refuse it.
@@ -194,9 +198,20 @@ export function audioKit({ gain = 0.55, keys = null, noiseSeconds = 1, sleepMs =
     get ac() { return ac; },
     get out() { return out; },
     get noise() { return noise; },
-    wake, live, rest,
+    wake, live, rest, tone,
   };
+  // Tone.js runs on this kit's context, so mute, gesture start and sleep still hold.
+  // Connect Tone nodes to kit.out; it returns null before the first gesture.
+  async function tone() {
+    if (!ac) return null;
+    toneMod ||= import(TONE_URL).then(T => {
+      T.setContext(new T.Context({ context: ac, lookAhead: 0, latencyHint: 'interactive' }));
+      return T;
+    });
+    return toneMod;
+  }
 }
+let toneMod = null;
 
 /* ---------- chip groups ---------- */
 // A choice group keeps exactly one chip pressed.
@@ -248,21 +263,26 @@ export function whenVisible(el, fn) {
 }
 
 /* ---------- colour ---------- */
-// OKLCH in, linear sRGB out.
+// Colours are OKLCH, given as (L, C, h) or as one [L, C, h] array.
+// culori maps any colour into sRGB by reducing chroma, as CSS Color 4 does.
+const toLin = converter('lrgb'), toRgb = converter('rgb'), fit = toGamut('rgb', 'oklch');
+const ok = (L, C, h) => (Array.isArray(L) ? { mode: 'oklch', l: L[0], c: L[1], h: L[2] } : { mode: 'oklch', l: L, c: C, h });
+// OKLCH in, linear sRGB out, not clamped.
 export function oklchLinear(L, C, h) {
-  const a = C * Math.cos((h * Math.PI) / 180), b = C * Math.sin((h * Math.PI) / 180);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
+  const c = toLin(ok(L, C, h));
+  return [c.r, c.g, c.b];
 }
-// Chroma shrinks until the colour fits sRGB; the result is gamma encoded, 0 to 1.
+// OKLCH in, gamma-encoded sRGB out, 0 to 1, fitted into gamut.
 export function oklchRgb(L, C, h) {
-  let c = C, rgb = oklchLinear(L, c, h);
-  while (c > 0 && rgb.some(v => v < -1e-4 || v > 1 + 1e-4)) { c -= 0.005; rgb = oklchLinear(L, Math.max(c, 0), h); }
-  return rgb.map(v => { v = Math.min(1, Math.max(0, v)); return v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055; });
+  const c = toRgb(fit(ok(L, C, h)));
+  return [c.r, c.g, c.b].map(v => Math.min(1, Math.max(0, v)));
+}
+// OKLCH in, linear sRGB out, fitted into gamut: ready for shaders.
+export function linFit(L, C, h) {
+  const c = toLin(fit(ok(L, C, h)));
+  return [c.r, c.g, c.b].map(v => Math.min(1, Math.max(0, v)));
+}
+// A CSS colour string for canvas and DOM, with optional alpha.
+export function css(lch, alpha = 1) {
+  return formatRgb({ ...fit(ok(lch)), alpha });
 }
