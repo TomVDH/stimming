@@ -69,7 +69,7 @@
 .c-tog .grp { --n: 3; --sr: 1.3065; }
 .c-safe .grp { --sr: 0.641; }
 .c-rock .grp { --n: 2; --sr: 1.2308; }
-.c-wheel .grp { --n: 2; --sr: 0.6; }
+.c-wheel .grp { --sr: 0.3333; }
 /* The bands stretch to their plate; their tracks follow the length. */
 .wide { width: calc(100cqw - 2 * var(--p)); height: calc(100cqh - 2 * var(--p)); }
 
@@ -88,7 +88,6 @@
 .safety { --ar: 100 / 156; border-radius: 14px; }
 .rocker { --ar: 64 / 104; border-radius: 14px; }
 .wheel { --ar: 60 / 180; border-radius: 14px; cursor: grab; }
-.pen { --ar: 64 / 240; border-radius: 999px; }
 .fader, .abacus { border-radius: 10px; cursor: grab; }
 .held { cursor: grabbing; }
 /* The safety's buttons only carry focus; the face takes the pointer. */
@@ -174,7 +173,6 @@
         </div></div>
         <div class="cell c-wheel"><div class="grp">
           <div class="ctl wheel" id="wheel" tabindex="0" role="slider" aria-orientation="vertical" aria-label="Thumb wheel" aria-valuemin="0" aria-valuemax="19" aria-valuenow="0"></div>
-          <button class="ctl pen" id="pen" type="button" aria-label="Pen" aria-pressed="false"></button>
         </div></div>
       </div>
     </div>
@@ -261,7 +259,7 @@ const C = {
   butter: [0.9, 0.12, 95], lilac: [0.77, 0.1, 302], navy: [0.36, 0.035, 265], steel: [0.8, 0.012, 255],
   red: [0.63, 0.18, 26], ink: [0.17, 0.014, 275],
 };
-const TICK = css([0.46, 0.02, 268]), DARK = css([0.2, 0.016, 270]), BUTTER = css(C.butter);
+const TICK = css([0.46, 0.02, 268]), BUTTER = css(C.butter);
 
 /* ---------- svg helpers ---------- */
 function el(tag, attrs = {}, parent) {
@@ -596,23 +594,6 @@ const snd = (() => {
     // Pressing the side already down: a muted tap.
     dead: () => play('dead', 0.03, 0.03, (t, P, G) => {
       hiss(t, 'lowpass', 1200 * P, 0.8, 0.012, 0.16 * G);
-    }),
-    // Pen in: the cam clicks bright and metallic.
-    cam: () => play('cam', 0.015, 0.05, (t, P, G) => {
-      hiss(t, 'highpass', 5000 * P, 0.7, 0.003, 0.5 * G);
-      ring(t, 2100 * P, 2080 * P, 0.025, 0.045 * G);
-      ring(t, 3350 * P, 3320 * P, 0.018, 0.03 * G);
-      ring(t, 180 * P, 140 * P, 0.03, 0.14 * G);
-    }),
-    // Let go: the plunger catches the latch or hits the top stop.
-    snap: held => play('snap', 0.015, 0.05, (t, P, G) => {
-      if (held) {
-        hiss(t, 'highpass', 4200 * P, 0.7, 0.003, 0.32 * G);
-        ring(t, 2650 * P, 2620 * P, 0.02, 0.035 * G);
-      } else {
-        hiss(t, 'bandpass', 2300 * P, 1.2, 0.007, 0.32 * G);
-        ring(t, 240 * P, 180 * P, 0.03, 0.12 * G);
-      }
     }),
     // Abacus beads: a wooden clack, louder when faster.
     clack: v => play('clack', 0.012, 0.05, (t, P, G) => {
@@ -1742,82 +1723,6 @@ bodies.push((() => {
       s.mode = 'settle'; s.T = Math.round(s.th / TAU) * TAU;
       wake(body);
     },
-  });
-  return body;
-})());
-
-/* ---------- pen clicker ---------- */
-// A cream cap and cone on a sky barrel, each part a lit cylinder.
-const penEl = document.getElementById('pen');
-bodies.push((() => {
-  const svg = svgIn(penEl, '0 0 64 240'), defs = svg.k.defs;
-  // One soft shadow lies under the whole pen.
-  el('rect', { x: 16, y: 40, width: 32, height: 190, rx: 16, fill: '#000', opacity: 0.5, filter: blur(defs, 4.5), transform: 'translate(0 6)' }, svg);
-  // The refill point hides inside the cone until clicked out.
-  const tip = el('line', { x1: 32, y1: 220, x2: 32, y2: 224, stroke: DARK, 'stroke-width': 3.5, 'stroke-linecap': 'round' }, svg);
-  const pg = el('g', {}, svg);
-  const plunger = skin(svg, pg, 'rect', { x: 25, width: 14, height: 46, rx: 6 }, mat(C.cream, 0.14), { rim: 1.5, cyl: true, sheen: false });
-  // Cone, barrel, cap and clip, drawn bottom up.
-  skin(svg, svg, 'path', { d: 'M18 202H46L36.5 230Q32 235 27.5 230Z' }, mat(C.cream, 0), { rim: 1.5, cyl: true, sheen: false });
-  skin(svg, svg, 'rect', { x: 16, y: 96, width: 32, height: 112, rx: 13 }, mat(C.sky, 0), { rim: 2, cyl: true, sheen: false, shadow: { b: 2, y: 2, o: 0.3 } });
-  skin(svg, svg, 'rect', { x: 16, y: 34, width: 32, height: 72, rx: 13 }, mat(C.cream, 0), { rim: 2, cyl: true, sheen: false, shadow: { b: 2.5, y: 3, o: 0.4 } });
-  skin(svg, svg, 'rect', { x: 28, y: 40, width: 8, height: 108, rx: 4 }, mat(C.steel, 0), { rim: 1.2, cyl: true, sheen: false, shadow: { b: 1.5, y: 2, o: 0.45 } });
-  const s = { q: S(), e: S(), held: false, in: false, pid: null, kb: false, keyAt: 0 };
-  const body = {
-    step(h) {
-      // Pressed, it bottoms hard; let go, it springs back to the latch.
-      if (s.held) spring(s.q, 2600, 0.8, h);
-      else spring(s.q, s.in ? 1100 : 650, s.in ? 0.45 : 0.3, h);
-      // The barrel top stops the plunger on its way out.
-      if (s.q.x < -0.08) { s.q.x = -0.08; if (s.q.v < 0) s.q.v *= -0.3; }
-      spring(s.e, 1800, 0.42, h);
-    },
-    busy() { const a = rest(s.q), b = rest(s.e); return !(a && b); },
-    draw() {
-      set(pg, 'transform', `translate(0 ${f2(4 + 24 * s.q.x)})`);
-      set(tip, 'y2', f2(224 + 14 * clamp(s.e.x, 0, 1.3)));
-      plunger.paint(clamp(s.q.x) * 0.5);
-    },
-  };
-  // Each press turns the cam: in, then out, clicking both ways.
-  function press() { s.held = true; s.in = !s.in; s.q.t = 1; s.e.t = 1.12; snd.cam(); wake(body); }
-  function release() {
-    s.held = false;
-    s.q.t = s.in ? 0.58 : 0; s.e.t = +s.in;
-    snd.snap(s.in);
-    penEl.setAttribute('aria-pressed', String(s.in));
-    wake(body);
-  }
-  penEl.addEventListener('pointerdown', e => {
-    if (s.pid != null || s.kb || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { penEl.setPointerCapture(e.pointerId); } catch {}
-    press();
-  });
-  const up = e => { if (e.pointerId === s.pid) { s.pid = null; release(); } };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => penEl.addEventListener(t, up));
-  // The plunger stays down while Space or Enter is held.
-  penEl.addEventListener('keydown', e => {
-    if (!KEYS.includes(e.key)) return;
-    e.preventDefault();
-    if (!e.repeat && !s.kb && s.pid == null) { s.kb = true; press(); }
-  });
-  penEl.addEventListener('keyup', e => {
-    if (!KEYS.includes(e.key) || !s.kb) return;
-    e.preventDefault();
-    s.kb = false; s.keyAt = performance.now();
-    release();
-  });
-  penEl.addEventListener('blur', () => { if (s.kb) { s.kb = false; release(); } });
-  const tap = () => { if (s.held || s.kb || s.pid != null) return; press(); setTimeout(release, 120); };
-  penEl.addEventListener('click', e => {
-    if (e.detail !== 0 || performance.now() - s.keyAt < 300) return;
-    tap();
-  });
-  moves.push({
-    el: penEl,
-    shuffle() { if (Math.random() < 0.5) tap(); },
-    reset() { if (s.in) tap(); },
   });
   return body;
 })());
