@@ -621,17 +621,18 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
         <a class="toy" id="scope" href="scope/index.html">
           <span class="obj">
             <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-              <linearGradient id="g-scope" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.5 0.02 160)"/><stop offset="1" stop-color="oklch(0.3 0.015 160)"/></linearGradient>
-              <rect x="10" y="14" width="108" height="100" rx="16" fill="url(#g-scope)"/>
-              <rect x="10" y="14" width="108" height="100" rx="16" fill="url(#lit)"/>
-              <rect x="17" y="21" width="94" height="86" rx="9" fill="oklch(0.12 0.025 155)"/>
-              <!-- The face matches the toy: centre bars and corner brackets. -->
-              <path d="M23 64H105M64 27V101" stroke="oklch(0.36 0.06 150)" stroke-width="2"/>
-              <path d="M23 34V27H30M98 27H105V34M23 94V101H30M98 101H105V94" fill="none" stroke="oklch(0.66 0.09 150)" stroke-width="3"/>
-              <!-- The trace is a 3:2 Lissajous: a dark cut, a bright core, a hot beam head. -->
-              <path id="scope-cut" fill="none" stroke="oklch(0.12 0.025 155)" stroke-width="8" stroke-linejoin="round"/>
-              <path id="scope-trace" fill="none" stroke="oklch(0.92 0.2 145)" stroke-width="3.6" stroke-linejoin="round"/>
-              <circle id="scope-head" r="4.2" fill="oklch(0.99 0.04 140)"/>
+              <!-- The display alone: dark glass, a phosphor knot, a hot beam head. -->
+              <radialGradient id="g-scope" cx="0.5" cy="0.5" r="0.62"><stop offset="0" stop-color="oklch(0.21 0.05 150)"/><stop offset="1" stop-color="oklch(0.1 0.022 155)"/></radialGradient>
+              <filter id="scope-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3.2"/></filter>
+              <clipPath id="scope-clip"><rect x="10" y="12" width="108" height="104" rx="18"/></clipPath>
+              <rect x="10" y="12" width="108" height="104" rx="18" fill="url(#g-scope)"/>
+              <g clip-path="url(#scope-clip)">
+                <path id="scope-bloom" fill="none" stroke="oklch(0.8 0.22 145)" stroke-width="6" opacity="0.55" filter="url(#scope-glow)"/>
+                <path id="scope-trace" fill="none" stroke="oklch(0.92 0.2 145)" stroke-width="3.6" stroke-linejoin="round"/>
+                <circle id="scope-halo" r="8" fill="oklch(0.9 0.18 145)" opacity="0.6" filter="url(#scope-glow)"/>
+                <circle id="scope-head" r="4.2" fill="oklch(0.99 0.04 140)"/>
+              </g>
+              <rect x="10.75" y="12.75" width="106.5" height="102.5" rx="17.25" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
             </svg>
           </span>
           <span class="name">Oscilloscope</span>
@@ -1288,29 +1289,53 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
     },
   };
 
-  // Oscilloscope: a 3:2 Lissajous trace; hover rolls its phase one full turn.
-  // A dark cut stroke under the trace breaks the bars it crosses.
-  // The beam head rests on a turning point and runs four laps per roll.
-  const scopeTrace = document.getElementById('scope-trace'), scopeCut = document.getElementById('scope-cut');
-  const scopeHead = document.getElementById('scope-head'), scopeState = { q: 0 };
-  const SCOPE_REST = (Math.PI / 2 - 0.6) / 3;
-  const scopeAt = (t, p) => [64 + 32 * Math.sin(3 * t + p), 64 + 29 * Math.sin(2 * t)];
+  // Oscilloscope: hover tours every knot of the toy's five by five picker.
+  // Each knot holds, then morphs point by point into the next.
+  // The phase rolls three turns per tour; the head runs one lap per knot.
+  // Rest blends the frozen frame back to the 3:2 knot.
+  const SCOPE_KNOTS = [[3, 2], [4, 3], [5, 4], [4, 5], [3, 4], [2, 3], [1, 2], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [5, 2], [5, 3], [3, 5], [2, 5], [1, 5], [1, 4], [1, 3]];
+  const SCOPE_N = SCOPE_KNOTS.length, SCOPE_HOLD = 0.5;
+  const scopeTrace = document.getElementById('scope-trace'), scopeBloom = document.getElementById('scope-bloom');
+  const scopeHead = document.getElementById('scope-head'), scopeHalo = document.getElementById('scope-halo');
+  const scopeState = { s: 0, w: 0 };
+  const scopeFrame = s => {
+    const i = Math.floor(s), k = Math.max(0, (s - i - SCOPE_HOLD) / (1 - SCOPE_HOLD));
+    return { a: SCOPE_KNOTS[i % SCOPE_N], b: SCOPE_KNOTS[(i + 1) % SCOPE_N], m: k * k * (3 - 2 * k), p: Math.PI / 2 + (Math.PI * 6 / SCOPE_N) * s, u: Math.PI * 2 * s };
+  };
+  const SCOPE_REST = scopeFrame(0);
+  let scopeHeld = SCOPE_REST;
+  // A point a given lag behind the head, in unit x and y.
+  const scopeAt = (f, lag) => {
+    const u = f.u - lag, ax = Math.sin(f.a[0] * u + f.p), bx = Math.sin(f.b[0] * u + f.p);
+    const ay = Math.sin(f.a[1] * u), by = Math.sin(f.b[1] * u);
+    return [ax + (bx - ax) * f.m, ay + (by - ay) * f.m];
+  };
   const drawScope = () => {
-    const p = 0.6 + Math.PI * 2 * scopeState.q;
+    const { s, w } = scopeState, f = w ? scopeHeld : scopeFrame(s);
+    const at = lag => {
+      const [x0, y0] = scopeAt(f, lag), [x1, y1] = scopeAt(SCOPE_REST, lag);
+      return [(64 + 38 * (x0 + (x1 - x0) * w)).toFixed(1), (64 + 34 * (y0 + (y1 - y0) * w)).toFixed(1)];
+    };
     let d = '';
-    for (let i = 0; i <= 180; i++) {
-      const [x, y] = scopeAt((i / 180) * Math.PI * 2, p);
-      d += `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
-    }
+    for (let i = 0; i <= 240; i++) d += `${i ? 'L' : 'M'}${at((i / 240) * Math.PI * 2).join(' ')}`;
     scopeTrace.setAttribute('d', d + 'Z');
-    scopeCut.setAttribute('d', d + 'Z');
-    const [hx, hy] = scopeAt(SCOPE_REST + Math.PI * 8 * scopeState.q, p);
-    scopeHead.setAttribute('cx', hx.toFixed(1)); scopeHead.setAttribute('cy', hy.toFixed(1));
+    scopeBloom.setAttribute('d', d + 'Z');
+    const [hx, hy] = at(0);
+    for (const c of [scopeHead, scopeHalo]) { c.setAttribute('cx', hx); c.setAttribute('cy', hy); }
   };
   drawScope();
   toys.scope = {
-    play: () => gsap.timeline({ repeat: -1 }).fromTo(scopeState, { q: 0 }, { q: 1, duration: 4, ease: 'none', onUpdate: drawScope }),
-    rest: () => gsap.to(scopeState, { q: 0, duration: 0.4, onUpdate: drawScope, overwrite: true }),
+    play: () => {
+      gsap.killTweensOf(scopeState);
+      Object.assign(scopeState, { s: 0, w: 0 });
+      return gsap.timeline({ repeat: -1 }).fromTo(scopeState, { s: 0 }, { s: SCOPE_N, duration: SCOPE_N * 0.8, ease: 'none', onUpdate: drawScope });
+    },
+    rest: () => {
+      // A second leave mid-blend keeps the blend running.
+      if (scopeState.w) return;
+      scopeHeld = scopeFrame(scopeState.s);
+      gsap.fromTo(scopeState, { w: 0 }, { w: 1, duration: 0.45, ease: 'power2.inOut', onUpdate: drawScope, overwrite: true, onComplete: () => { Object.assign(scopeState, { s: 0, w: 0 }); drawScope(); } });
+    },
   };
 
   // Beach walker: three leg pairs on the true linkage; the flag flutters with the gait.
