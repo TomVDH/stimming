@@ -257,13 +257,16 @@ export function fitIntro(root, T) {
   for (const [k, name] of Object.entries(SIZES)) root.style.setProperty(name, T[k] ?? 1);
   text.style.removeProperty('--copy-k');
   const badge = root.dataset.layout ? null : text.querySelector('.intro-badge');
+  const foot = text.querySelector('.intro-foot');
   let k = 1;
   for (let i = 0; i < 4; i++) {
     const r = root.getBoundingClientRect(), t = text.getBoundingClientRect();
     const top = badge ? badge.getBoundingClientRect().bottom : t.top;
-    const tall = (r.bottom - 24 - top) / (t.bottom - top);
+    const last = foot ? foot.previousElementSibling : text.lastElementChild;
+    const limit = foot ? foot.getBoundingClientRect().top - 16 : r.bottom - 24;
+    const tall = Math.max(0.1, limit - top) / Math.max(1, last.getBoundingClientRect().bottom - top);
     // A word wider than its box overflows; the title then shrinks too.
-    const wide = Math.min(1, ...[...text.children].map(el => el.clientWidth && el.scrollWidth > el.clientWidth ? el.clientWidth / el.scrollWidth : 1));
+    const wide = Math.min(1, ...[...text.children, ...(foot?.children || [])].map(el => el.clientWidth && el.scrollWidth > el.clientWidth ? el.clientWidth / el.scrollWidth : 1));
     if (tall >= 1 && wide >= 1) break;
     k = Math.max(0.4, k * Math.min(tall, wide));
     text.style.setProperty('--copy-k', k.toFixed(3));
@@ -364,6 +367,16 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     tick.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.5l5.5 5.5L20.5 6" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="square"/></svg>';
     big.append(tick);
   }
+  // The subtitles and the notes sit at the foot, away from the logo.
+  if (!V.layout) {
+    const make = (tag, className) => Object.assign(document.createElement(tag), { className });
+    const foot = make('div', 'intro-foot'), notes = make('div', 'intro-notes'), left = make('span', 'intro-notes-l');
+    foot.append(...text.querySelectorAll('.intro-tag'));
+    left.append(...[num, cls].filter(Boolean));
+    notes.append(left, ...(snd ? [snd] : []));
+    foot.append(notes);
+    text.append(foot);
+  }
   // Each line starts closed in the variety's own way, then opens on its beat.
   const lines = [cls, badge ? name : null, nl, numAt === 'subs' ? num : null, sub,
     text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
@@ -404,7 +417,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   } else {
     // For a few frames the flash fills the eye, then it snaps to its place.
     // The cap keeps the box's top edge on screen; the logo's point stays put.
-    const b = blow.getBoundingClientRect();
+    const b = big.getBoundingClientRect();
     blow.style.transform = `scale(${Math.min(T.popScale, (2 * (b.top + b.height / 2) - 16) / b.height).toFixed(3)})`;
   }
   await wait(T.pop);
