@@ -252,16 +252,20 @@ void main() {
     float heat = s.r, m = s.g;
     // Gradients are per texel, from samples one texel apart.
     vec2 gm = vec2(r.g - l.g, u.g - d.g) * 0.5;
-    vec2 gh = vec2(r.r - l.r, u.r - d.r) * 0.5;
 
     // A leuco dye over the base pigment turns clear as it warms.
-    // The dye switches across a narrow heat band, never under one pixel.
-    float tpx = uTexCss * uDpr;
-    float bw = max(0.035, length(gh) / tpx);
-    // Pigment grains switch at slightly different heats, so the front frays.
+    // A wide ring of heat samples feathers the edge in space.
+    float hk = 5.0;
+    float hr = (texture(uState, uv + vec2(tx.x, tx.y) * hk).r + texture(uState, uv - vec2(tx.x, tx.y) * hk).r
+              + texture(uState, uv + vec2(tx.x, -tx.y) * hk).r + texture(uState, uv - vec2(tx.x, -tx.y) * hk).r
+              + texture(uState, uv + vec2(tx.x * hk * 1.4, 0.0)).r + texture(uState, uv - vec2(tx.x * hk * 1.4, 0.0)).r
+              + texture(uState, uv + vec2(0.0, tx.y * hk * 1.4)).r + texture(uState, uv - vec2(0.0, tx.y * hk * 1.4)).r) * 0.125;
+    float hf = mix(heat, hr, 0.55);
+    // Pigment grains switch at slightly different heats, so the feather is uneven.
     vec2 pc0 = px / uDpr;
-    float th = uT0 + (vnoise(pc0 * 0.11) - 0.5) * 0.07 + (vnoise(pc0 * 0.45 + 31.0) - 0.5) * 0.03;
-    float clear = smoothstep(th - bw, th + bw, heat);
+    float th = uT0 + (vnoise(pc0 * 0.11) - 0.5) * 0.05 + (vnoise(pc0 * 0.45 + 31.0) - 0.5) * 0.015;
+    // The dye clears over a wide heat band, so the colour fades out softly.
+    float clear = smoothstep(th - 0.24, th + 0.08, hf);
     // Dye absorbance follows Beer-Lambert, so midtones mix like paint.
     vec3 dye = clamp(uCold / max(uHot, vec3(1e-4)), 0.003, 6.0);
     vec3 alb = uHot * pow(dye, vec3(1.0 - clear));
