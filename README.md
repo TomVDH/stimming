@@ -45,7 +45,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Murmuration | [flock/](flock/) | live, with sound |
 | Dandelion | [dandelion/](dandelion/) | live, with sound |
 | Gear train | [gears/](gears/) | live, with sound; SVG only |
-| Coil | | in progress; outlines on the menu |
+| Coil | [coil/](coil/) | live draft, still being refined |
 
 ## Run locally
 
