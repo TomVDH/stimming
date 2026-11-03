@@ -161,12 +161,13 @@ const AMP0 = 0.6, SWELL_T = 2.7;
 // Dispersion is several times real water's, so the fringes show.
 const DISP = 0.025;
 /* ---------- pools: a shape, a depth and a palette each ---------- */
-// Colours are OKLCH: two tiles, grout, deck, coping and deck joints.
+// Colours are OKLCH: two tiles, grout, ground, coping and coping joints.
+// The ground is concrete, sandstone or lawn.
 // Fixed pools keep their own proportions; ar is depth over width.
 const POOLS = {
-  lane: { name: 'Lane', shape: 0, depth: 0.45, ar: 0, tiles: [[0.88, 0.045, 205], [0.44, 0.17, 262]], grout: [0.3, 0.06, 255], deck: [0.66, 0.15, 42], cope: [0.93, 0.02, 90], joint: [0.36, 0.09, 38] },
-  plunge: { name: 'Plunge', shape: 1, depth: 0.7, ar: 1, tiles: [[0.93, 0.015, 95], [0.3, 0.05, 265]], grout: [0.52, 0.03, 260], deck: [0.7, 0.17, 355], cope: [0.93, 0.02, 90], joint: [0.42, 0.12, 355] },
-  lagoon: { name: 'Lagoon', shape: 2, depth: 0.38, ar: 0.72, tiles: [[0.86, 0.09, 165], [0.56, 0.12, 178]], grout: [0.32, 0.06, 185], deck: [0.62, 0.14, 295], cope: [0.92, 0.03, 95], joint: [0.36, 0.09, 295] },
+  lane: { name: 'Lane', shape: 0, depth: 0.45, ar: 0, tiles: [[0.88, 0.045, 205], [0.44, 0.17, 262]], grout: [0.3, 0.06, 255], deck: [0.7, 0.012, 85], cope: [0.9, 0.012, 90], joint: [0.6, 0.012, 85] },
+  plunge: { name: 'Plunge', shape: 1, depth: 0.7, ar: 1, tiles: [[0.93, 0.015, 95], [0.3, 0.05, 265]], grout: [0.52, 0.03, 260], deck: [0.7, 0.045, 68], cope: [0.88, 0.022, 82], joint: [0.58, 0.04, 66] },
+  lagoon: { name: 'Lagoon', shape: 2, depth: 0.38, ar: 0.72, tiles: [[0.86, 0.09, 165], [0.56, 0.12, 178]], grout: [0.32, 0.06, 185], deck: [0.54, 0.1, 138], cope: [0.84, 0.03, 80], joint: [0.64, 0.03, 76] },
 };
 const POOL_IDS = Object.keys(POOLS), POOL_KEY = 'stimming.pool.pool';
 let poolId = POOLS[store.get(POOL_KEY)] ? store.get(POOL_KEY) : 'lane', shape = POOLS[poolId].shape;
@@ -214,7 +215,8 @@ function refract(I, N, eta) {
 const RL = refract(mul(SUN_DIR, -1), [0, 1, 0], 0.75);
 // The camera orbits the pool: yaw turns it, tilt leans it from straight down.
 const TILT_MIN = 6 * D2R, TILT_MAX = 50 * D2R;
-const cam = { p: [0, 0, 0], f: [0, 0, 0], r: [1, 0, 0], u: [0, 0, 0], tx: 1, ty: 1, yaw: 0, tilt: TILT };
+const cam = { p: [0, 0, 0], f: [0, 0, 0], r: [1, 0, 0], u: [0, 0, 0], tx: 1, ty: 1, yaw: 0, tilt: TILT, dist: 5, tz: 0, zoom: 1 };
+const ZOOM_MIN = 0.4, ZOOM_MAX = 1.5;
 function place(A, dist, tz, yaw = cam.yaw) {
   const c = Math.cos(cam.tilt), s = Math.sin(cam.tilt), cy = Math.cos(yaw), sy = Math.sin(yaw);
   // The target sits tz toward the viewer from the pool centre.
@@ -224,6 +226,8 @@ function place(A, dist, tz, yaw = cam.yaw) {
   cam.u = [-c * sy, s, -c * cy];
   cam.ty = Math.tan(FOVY / 2);
   cam.tx = cam.ty * A;
+  cam.dist = dist;
+  cam.tz = tz;
 }
 const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 function project(x, y, z) {
@@ -249,6 +253,11 @@ function fitCam(A, pz, yaw = cam.yaw) {
   }
   place(A, dist, tz, yaw);
   return { w: xm, h: (y1 - y0) / 2 };
+}
+// The front view sets the distance; a turn keeps it, so the view stays close.
+function frameCam(A) {
+  fitCam(A, PZ, 0);
+  place(A, cam.dist * cam.zoom, cam.tz, cam.yaw);
 }
 const petals = [], objs = [];
 let petalScale = 1, outline = [], lampZ = [-0.62, 0.62];
@@ -279,7 +288,7 @@ function layoutPool(A) {
     return [Math.cos(a) * r, Math.sin(a) * r];
   });
   lampZ = [-edgeAlong(0, -1, 0), edgeAlong(0, 1, 0)];
-  fitCam(A, PZ);
+  frameCam(A);
   for (const p of petals) {
     p.z = (p.z * PZ) / oz;
     p.L = p.L0 * petalScale;
@@ -499,7 +508,7 @@ const vec3 SIG = vec3(0.85, 0.19, 0.11), SIGS = vec3(0.45);
 // Floaters are opaque, so they cast near-black shadows.
 const vec3 FLT_T = vec3(0.05);
 const float BAND = 0.1, WLH = 0.075, GW = 0.045, COPE_W = 0.07, MEN = 0.06, MEN_L = 0.02, VSW = 0.55, EXPO = 0.8, EXPON = 1.0;
-const float LAMPX = 0.0, LAMPY = -0.19, LENS_E = 2.6, BALL_R = 0.058;
+const float CAUS_K = 3.0, LAMPX = 0.0, LAMPY = -0.19, LENS_E = 2.6, BALL_R = 0.058;
 const int NPM = ${NPM}, NOB = ${NOB};`;
 const SWELL = `
 const vec4 WV[6] = vec4[6](${WAVES.map(v => `vec4(${f5(v.dx)}, ${f5(v.dz)}, ${f5(v.k)}, ${f5(v.w)})`).join(', ')});
@@ -829,7 +838,8 @@ void main() {
   int k;
   vec2 q;
   float ps = petals(p, k, q);
-  vec2 g = clamp(s.zw + sw.yz + meniscus(p, k, ps), -2.0, 2.0);
+  // Live ripples bend the light harder than the still relief does.
+  vec2 g = clamp(s.zw * CAUS_K + sw.yz + meniscus(p, k, ps), -2.0, 2.0);
   vec3 r = refract(-uSun, normalize(vec3(-g.x, 1.0, -g.y)), uEta);
   float h = s.x + sw.x;
   vec3 f = vec3(p.x, h, p.y) + r * ((-uPool.z - h) / r.y);
@@ -930,18 +940,16 @@ vec3 tiles(vec2 fq, float face) {
   vec3 avg = mix(c, uGrout, 0.25);
   return mix(res, avg, smoothstep(0.35, 0.8, max(fw.x, fw.y)));
 }
-// One flat deck colour, a bone coping band and hard cut joints.
+// One flat ground colour, a pale coping band with cut joints.
 // At night the lit water washes the coping nearest it.
 vec3 deck(vec3 Q, float e) {
-  vec2 p = Q.xz;
   float fe = fwidth(e);
   float cope = 1.0 - smoothstep(COPE_W - fe, COPE_W + fe, e);
   vec3 c = mix(uDeckC, uCopeC, cope);
   bool sideX = abs(Q.x) - uPool.x > abs(Q.z) - uPool.y;
   float jc = joint(wallU(Q, vec3(sideX ? 1.0 : 0.0, 0.0, 0.0)) / 0.4, 0.014) * cope;
-  float jd = max(joint(p.x / 0.62, 0.01), joint(p.y / 0.62 + 0.31, 0.01)) * (1.0 - cope);
   float jr = 1.0 - smoothstep(0.004 - fe, 0.004 + fe, abs(e - COPE_W));
-  c = mix(c, uJointC, max(max(jc, jd), jr));
+  c = mix(c, uJointC, max(jc, jr));
   return c * (gSun * uSun.y + gAmb * 0.8 + WGLOW * gLamp * 0.22 * exp(-max(e, 0.0) / 0.07));
 }
 vec3 caustic(vec2 cp) {
@@ -1152,8 +1160,9 @@ void main() {
   float soft = 0.006 + 0.05 * depth;
   float sh = 1.0 - 0.5 * smoothstep(soft, -0.3 * soft, petals(cp, k2, q2));
   float osh = uNO > 0 ? sunShadow(P + N * 0.002) : 1.0;
-  vec3 sunL = cz * gSun * max(dot(N, -uRl), 0.0) * exp(-SIG * depth / -uRl.y) * osh;
-  vec3 ambL = gAmb * ao * sh * exp(-SIG * (depth * 1.2 + 0.1));
+  // Bright lines sharpen and the shade between them deepens.
+  vec3 sunL = pow(cz, vec3(1.5)) * gSun * max(dot(N, -uRl), 0.0) * exp(-SIG * depth / -uRl.y) * osh;
+  vec3 ambL = gAmb * 0.6 * ao * sh * exp(-SIG * (depth * 1.2 + 0.1));
   vec3 lampL = lampLight(P + N * 0.002, N, lum(cz)) * mix(1.0, ao, 0.6) * sh;
   vec3 emit = LAMPC * LENS_E * gLamp * lens * (0.8 + 0.2 * cos(lr * 150.0));
   // By day sunlit water scatters blue.
@@ -1592,7 +1601,8 @@ function render(dt) {
 /* ---------- floaters: slotted rings and chevrons ---------- */
 function seedPetals() {
   petals.length = 0;
-  const R = rng(20261102), types = [0, 1, 0, 1];
+  // The pool holds no floaters for now; the shape code stays ready.
+  const R = rng(20261102), types = [];
   types.forEach((type, i) => {
     let x = 0, z = 0;
     for (let tries = 0; tries < 80; tries++) {
@@ -1779,7 +1789,7 @@ function stepCuts(dt) {
 // A let-go keeps a little spin that slows to a stop.
 let turn = null, spin = 0;
 function aim() {
-  fitCam(aspect, PZ);
+  frameCam(aspect);
   if (ready) camUniforms();
   wake();
 }
@@ -2228,7 +2238,7 @@ function fit() {
   // A new shape rebuilds the pool.
   // A small change only reframes it.
   if (Math.abs(w / h / aspect - 1) > 0.02) { layoutPool(w / h); allocPool(); }
-  else { fitCam(w / h, PZ); camUniforms(); }
+  else { frameCam(w / h); camUniforms(); }
   if (running) render(0);
 }
 
@@ -2246,6 +2256,34 @@ function planeAt(px, py, y) {
   const t = (y - cam.p[1]) / d[1];
   return [cam.p[0] + d[0] * t, cam.p[2] + d[2] * t];
 }
+// The wheel or a pinch zooms; the turn keeps the zoom.
+function zoomTo(z) {
+  cam.zoom = clamp(z, ZOOM_MIN, ZOOM_MAX);
+  aim();
+}
+panel.addEventListener('wheel', e => {
+  if (!ready) return;
+  e.preventDefault();
+  zoomTo(cam.zoom * Math.exp(e.deltaY * (e.deltaMode ? 0.05 : 0.0015)));
+}, { passive: false });
+// Two fingers pinch; the first finger's drop, cut or turn is let go.
+const touches = new Map();
+let pinch = null;
+function dropAction(id) {
+  const o = holds.get(id);
+  if (o) { holds.delete(id); retire(o); }
+  if (cutters.has(id)) endCut(id);
+  if (turn && turn.id === id) turn = null;
+}
+function pinchStart() {
+  const [a, b] = [...touches.values()];
+  for (const id of touches.keys()) dropAction(id);
+  pinch = { d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, z0: cam.zoom };
+}
+function pinchMove() {
+  const [a, b] = [...touches.values()];
+  zoomTo(pinch.z0 * (pinch.d0 / (Math.hypot(a[0] - b[0], a[1] - b[1]) || 1)));
+}
 const onWater = e => {
   const [x, z] = planeAt(...local(e), 0);
   return poolSd(x, z) < 0;
@@ -2255,6 +2293,11 @@ const holds = new Map();
 panel.addEventListener('pointerdown', e => {
   if (!ready || (e.pointerType === 'mouse' && e.button > 2)) return;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (touches.size === 2) { pinchStart(); return; }
+    if (touches.size > 2 || pinch) return;
+  }
   if (e.button === 2 || !onWater(e)) {
     if (!turn) turn = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, v: 0 };
     spin = 0;
@@ -2278,6 +2321,10 @@ panel.addEventListener('pointerdown', e => {
   addObj(o);
 });
 panel.addEventListener('pointermove', e => {
+  if (touches.has(e.pointerId)) {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pinch && touches.size === 2) { pinchMove(); return; }
+  }
   if (turn && turn.id === e.pointerId) {
     // Half the stage width turns the view half a circle.
     const k = (Math.PI / Math.max(W, 1)) * 1.6, dx = e.clientX - turn.x, dt = Math.max(e.timeStamp - turn.t, 1) / 1000;
@@ -2309,6 +2356,10 @@ panel.addEventListener('pointermove', e => {
 });
 // The last tenth of a second of motion sets the throw.
 function letGo(e, fling) {
+  if (touches.delete(e.pointerId) && pinch) {
+    if (!touches.size) pinch = null;
+    return;
+  }
   if (turn && turn.id === e.pointerId) {
     spin = fling && !reduce && e.timeStamp - turn.t < 80 ? clamp(turn.v, -4, 4) : 0;
     turn = null;
