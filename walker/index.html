@@ -628,9 +628,20 @@ vec3 sky(vec3 d, bool withSun) {
     float rr = length(rv);
     float ring = smoothstep(1.45, 1.5, rr) * (1.0 - smoothstep(2.35, 2.4, rr)) * (0.55 + 0.45 * sin(rr * 26.0));
     float pr = length(pv);
+    // The white star lights the planet from its own side of the sky.
+    vec2 toStar = normalize(vec2(dot(SD - PL, rt), dot(SD - PL, u2)));
+    vec3 L3 = normalize(vec3(toStar * 0.85, 0.5));
+    // The planet shades the rings on the side away from the star.
+    float behind = step(dot(pv, toStar), 0.0) * (1.0 - smoothstep(0.92, 1.0, abs(pv.x * toStar.y - pv.y * toStar.x)));
+    ring *= 1.0 - 0.85 * behind;
     if (pr < 1.0) {
       vec3 nrm = vec3(pv, sqrt(1.0 - pr * pr));
-      float lit = clamp(dot(nrm, normalize(vec3(0.6, -0.2, 0.75))), 0.0, 1.0);
+      float lit = clamp(dot(nrm, L3), 0.0, 1.0);
+      // The rings cast their shadow across the disc, offset away from the star.
+      vec2 sv = pv - toStar * 0.22;
+      vec2 srv = vec2(sv.x * 0.95 + sv.y * 0.3, (sv.y - sv.x * 0.3) / 0.26);
+      float sr = length(srv);
+      lit *= 1.0 - 0.7 * smoothstep(1.45, 1.5, sr) * (1.0 - smoothstep(2.35, 2.4, sr));
       float band = 0.5 + 0.5 * sin(pv.y * 11.0 + fbm(pv * 3.0) * 3.0);
       vec3 body = mix(vec3(0.35, 0.18, 0.45), vec3(0.85, 0.55, 0.4), band) * (0.06 + 1.1 * lit);
       c = mix(c, body, uAlien * (1.0 - smoothstep(0.97, 1.0, pr)));
@@ -640,24 +651,26 @@ vec3 sky(vec3 d, bool withSun) {
     // Local coordinates round the main star, in main-star radii.
     vec3 r0 = normalize(cross(SD, up)), u0 = cross(r0, SD);
     vec2 uv = vec2(dot(d - SD, r0), dot(d - SD, u0)) / r;
-    // A red giant glows far off, smaller and dimmer than the main star.
-    vec3 G = normalize(SD + FH * vec3(0.28, 0.3, 0.0));
+    // A red giant hangs just beside the white star but far behind it: small, dim and hazed.
+    vec3 G = normalize(SD + FH * vec3(0.14, 0.05, 0.0));
     vec2 gp = vec2(dot(G - SD, r0), dot(G - SD, u0)) / r;
-    float rg = 0.45;
+    float rg = 0.34;
     // A sprawling, streaky corona swirls round the bright main star like an aurora.
     float rho = length(uv), phi = atan(uv.y, uv.x);
-    float tw = phi + 0.35 * log(max(rho, 1.0)) - uTime * 0.01;
-    float wisp = fbm(vec2(tw * 5.0, rho * 0.35 - uTime * 0.03));
-    float streak = pow(clamp(wisp, 0.0, 1.0), 2.6) * 2.2 + 0.25 * fbm(vec2(tw * 14.0, rho * 1.2));
-    float reach = exp(-max(rho - 1.0, 0.0) / 2.4) * smoothstep(0.9, 1.15, rho);
+    float tw = phi + 0.9 * log(max(rho, 1.0)) + 0.15 * sin(rho * 0.8 - uTime * 0.05) - uTime * 0.012;
+    float wisp = fbm(vec2(tw * 5.0, rho * 0.3 - uTime * 0.03)) * 0.7 + fbm(vec2(tw * 11.0 + 2.0, rho * 0.6)) * 0.3;
+    float streak = pow(clamp(wisp, 0.0, 1.0), 2.4) * 2.6 + 0.3 * fbm(vec2(tw * 16.0, rho * 1.2));
+    float reach = exp(-max(rho - 1.0, 0.0) / 3.6) * smoothstep(0.9, 1.15, rho);
     vec3 auroraC = mix(vec3(0.25, 1.0, 0.7), vec3(0.9, 0.35, 1.0), smoothstep(0.35, 0.75, fbm(vec2(tw * 2.0 + 3.0, rho * 0.2))));
-    c += auroraC * streak * reach * 0.55 * uAlien;
+    // The planet stands in front of the corona.
+    float pmask = 1.0 - smoothstep(0.97, 1.0, pr);
+    c += auroraC * streak * reach * 0.8 * uAlien * (1.0 - pmask);
     // The giant: dim, mottled and darker at the limb.
     float gr = length(uv - gp) / rg;
     if (gr < 1.0) {
       float gl = sqrt(1.0 - gr * gr);
       vec3 gc = vec3(0.8, 0.2, 0.07) * (0.35 + 0.65 * gl) * (0.75 + 0.5 * fbm((uv - gp) * 4.0 + 9.0));
-      c = mix(c, gc, uAlien * (1.0 - smoothstep(0.96, 1.0, gr)));
+      c = mix(c, mix(gc, c, 0.35), uAlien * (1.0 - smoothstep(0.96, 1.0, gr)));
     }
     c += vec3(1.0, 0.25, 0.08) * uAlien * 0.12 * exp(-max(gr - 1.0, 0.0) * 3.0) * step(1.0, gr);
     vec3 M2 = normalize(SD + FH * vec3(0.5, 0.5, 0.0));
@@ -723,30 +736,31 @@ void main() {
   // The ray leaves the level camera; uRot turns it into the world.
   vec3 d = normalize(uRot * vec3((px.x - cx) / uF, (uHor - px.y) / uF, -1.0));
   vec3 col;
-  // Near the black hole, two huge tidal swells drift along the far horizon.
+  // Near the black hole, one colossal wall of water spans the horizon.
+  // It rises and falls with the tide, about every forty-five seconds.
   float wall = 0.0, ax = atan(d.x, -d.z) / FH;
   vec3 hazeW = mix(mix(uHorC, uScat, 0.3) * 0.8, vec3(0.42, 0.52, 0.72), uRay);
   if (uHole > 0.0 && d.y >= 0.0) {
-    // One long wall of water spans most of the horizon, its crest uneven.
-    float s = ax + 0.1 - uTime * 0.006;
-    float sw = smoothstep(-1.1, -0.55, s) * (1.0 - smoothstep(0.75, 1.25, s));
-    sw *= 0.72 + 0.18 * sin(s * 4.0 + 1.3) + 0.1 * sin(s * 9.0);
-    // The crest is ragged where it breaks.
-    wall = uHole * FH * (0.12 * sw + 0.004 * sw * noise(vec2(ax * 60.0, uTime * 0.3)));
+    float tide = 0.35 + 0.65 * (0.5 - 0.5 * cos(uTime * 6.2832 / 45.0));
+    float sw = 0.86 + 0.09 * sin(ax * 3.0 + 1.3 - uTime * 0.02) + 0.05 * sin(ax * 7.3);
+    wall = uHole * FH * 0.13 * tide * sw;
+    // The lip is ragged where it starts to break.
+    wall += uHole * FH * 0.004 * tide * noise(vec2(ax * 70.0, uTime * 0.4));
   }
   if (d.y >= wall) {
     col = sky(d, true);
-    // Spray hangs as mist just above a crest.
-    if (wall > 0.0) col = mix(col, hazeW * 1.1, uHole * 0.45 * exp(-(d.y - wall) / (FH * 0.012)) * smoothstep(0.0, FH * 0.02, wall));
+    // Spray lifts off the crest as mist.
+    if (wall > 0.0) col = mix(col, hazeW * 1.2, uHole * 0.55 * exp(-(d.y - wall) / (FH * 0.018)));
   } else if (d.y >= 0.0) {
-    // The wave face: dark water that mirrors the sky above it.
+    // The face leans toward us, so it mirrors the sky high above, hole and disc included.
     float h01 = clamp(d.y / max(wall, 1e-4), 0.0, 1.0);
-    vec3 face = mix(uDeep * 1.5, sky(normalize(vec3(d.x, (1.0 - h01) * 0.12 * FH + 0.01 * FH, d.z)), false) * 0.55, 0.35 + 0.5 * h01);
-    // Long wave lines run across the face.
+    vec3 face = sky(normalize(vec3(d.x, d.y + (0.25 + 0.45 * (1.0 - h01)) * FH, d.z)), false) * 0.5;
+    face = mix(uDeep, face, 0.35 + 0.55 * h01);
     face *= 0.85 + 0.3 * smoothstep(0.4, 0.8, noise(vec2(ax * 6.0, h01 * 26.0 - uTime * 0.4)));
-    // Foam streaks run down the face; the crest is white water.
-    face += vec3(0.5, 0.48, 0.5) * 0.12 * smoothstep(0.6, 0.9, noise(vec2(ax * 35.0, h01 * 3.0 - uTime * 0.2))) * h01;
-    face += vec3(0.75, 0.72, 0.72) * 0.45 * exp(-(1.0 - h01) * 14.0) * (0.5 + 0.5 * noise(vec2(ax * 80.0, 1.0)));
+    // Foam streaks run down; the thin lip glows with the disc light behind it.
+    face += vec3(0.5, 0.48, 0.5) * 0.1 * smoothstep(0.6, 0.9, noise(vec2(ax * 35.0, h01 * 3.0 - uTime * 0.2))) * h01;
+    face += vec3(1.6, 1.05, 0.65) * 0.22 * exp(-(1.0 - h01) * 9.0);
+    face += vec3(0.8, 0.78, 0.76) * 0.35 * exp(-(1.0 - h01) * 18.0) * (0.5 + 0.5 * noise(vec2(ax * 80.0, 1.0)));
     // The far wave sits deep in the horizon haze.
     col = mix(face, hazeW, clamp(uHaze * 0.45, 0.0, 0.5));
   } else {
