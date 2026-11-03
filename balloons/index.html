@@ -198,9 +198,10 @@ const SKEY = 'stimming.balloons.sound', MAXV = 24, LEAD = 0.004;
 let soundOn = true;
 try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
 let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
-const gate = { infl: 0, bump: 0, pop: 0, creak: 0 };
+const gate = { infl: 0, bump: 0, pop: 0 };
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
+// Busy moments soften each voice.
+// The compressor catches the rest.
 const level = () => 1 / (1 + 0.06 * voices);
 
 function audio() {
@@ -240,7 +241,7 @@ function rest() {
   }, 1500);
 }
 // Typing is a gesture, as are the toy's own keys.
-const toyKey = e => e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter' || e.key.startsWith('Arrow');
+const toyKey = e => { const k = e.key || ''; return k.length === 1 || k === 'Backspace' || k === 'Delete' || k === 'Enter' || k.startsWith('Arrow'); };
 function unlock(e) {
   if (!soundOn || (e.type === 'keydown' && (!toyKey(e) || e.metaKey || e.ctrlKey || e.altKey))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -257,7 +258,7 @@ function bus(a, x) {
   p.connect(out);
   return p;
 }
-// A noise burst through one filter; it tidies itself up.
+// A noise burst passes through one filter and tidies itself up.
 function burst(a, dst, t, type, f, q, g, tau, len) {
   const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
   src.buffer = noise;
@@ -281,7 +282,7 @@ function filt(a, type, f, q) {
   return b;
 }
 
-// Inflating: a rubbery buzz stretches upward, air rushes in, then a soft pomf.
+// Inflation is a rubbery buzz that stretches up, then a soft pomf.
 function inflateSound(x, k) {
   const a = live();
   if (!a || voices >= MAXV || a.currentTime < gate.infl) return;
@@ -327,7 +328,7 @@ function inflateSound(x, k) {
   th.stop(t2 + 0.4);
   track(th, bp, am, env, lg, nf, ng, tg, d);
 }
-// Two balloons meeting: a short rubbery doonk.
+// Two balloons meet with a short rubbery doonk.
 function bumpSound(x, v, k = 1) {
   const a = live();
   if (!a || voices >= MAXV || a.currentTime < gate.bump) return;
@@ -351,7 +352,7 @@ function bumpSound(x, v, k = 1) {
   o2.stop(t + 0.2);
   track(o, og, og2, d);
 }
-// A pop: a sharp bang, a low thud, then foil confetti rustling.
+// A pop is a sharp bang, a low thud and rustling confetti.
 function popSound(x, k = 1) {
   const a = live();
   if (!a || a.currentTime < gate.pop) return;
@@ -376,7 +377,7 @@ function popSound(x, k = 1) {
   }
   track(o, og, d);
 }
-// The zany option: a flapping raspberry that climbs as the air runs out.
+// The zany option is a flapping raspberry that climbs as air leaks.
 function raspberry(x, dur) {
   const a = live();
   if (!a) return;
@@ -419,7 +420,7 @@ function raspberry(x, dur) {
   src.stop(end + 0.02);
   track(o, bp, lp, am, fg, env, nf, ng, d);
 }
-// Letting go: a slide whistle up and away.
+// Letting go plays a slide whistle up and away.
 function wheeSound() {
   const a = live();
   if (!a) return;
@@ -446,7 +447,7 @@ function wheeSound() {
   vib.stop(t + dur + 0.02);
   track(o, vg, env, nf, ng, d);
 }
-// A gust: a soft rush of air sweeping across.
+// A gust is a soft rush of air sweeping across.
 function whoosh(x) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -463,7 +464,7 @@ function whoosh(x) {
   src.start(t, Math.random() * 0.5, dur + 0.02);
   track(src, bp, ng, d);
 }
-// Pressing to prick: the rubber creaks tighter and higher.
+// A long press makes the rubber creak tighter and higher.
 let creak = null;
 function creakStart(x) {
   const a = live();
@@ -493,7 +494,7 @@ function creakStop() {
   c.wob.stop(t + 0.08);
   c.o.onended = () => { voices--; [c.bp, c.g, c.d].forEach(n => n.disconnect()); };
 }
-// Rubbing: stick-slip chirps whose pitch follows the finger.
+// Rubbing makes stick-slip chirps whose pitch follows the finger.
 const sq = { o: null, quiet: 0 };
 function squeak(e, speed, x) {
   if (!sq.o) {
@@ -530,9 +531,9 @@ function squeakStop() {
 
 /* ---------- glyphs: raster, distance field, puffed mesh ---------- */
 const FONT = '"Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif';
-// Raster size, fattening stroke, field blur and mesh step, in raster pixels.
+// Font, fattening stroke, blur and mesh step are in raster pixels.
 const FPX = 200, FAT = 0.07, BLUR = 3.4, STEP = 2;
-// Seam width and thickness, puff and crimp pitch, in cap heights.
+// Seam width and depth, puff and crimp pitch are in cap heights.
 const WF = 0.034, TF = 0.006, PUFF = 0.36, CRIMP = 0.024;
 const CHARS = /^[A-Z0-9!?&@#$%+=*'".,:;()\-]$/;
 const INF = 1e20;
@@ -540,7 +541,7 @@ let capPx = 140, THREE = null;
 const glyphs = new Map();
 const rc = document.createElement('canvas'), rx = rc.getContext('2d', { willReadFrequently: true });
 
-// Felzenszwalb's squared distance transform along one line.
+// This runs Felzenszwalb's squared distance transform along one line.
 function edt1d(g, off, stride, n, f, v, z) {
   v[0] = 0;
   z[0] = -INF;
@@ -592,7 +593,7 @@ function blur(src, w, h, sigma) {
   }
   return dst;
 }
-// The field, in cap heights, at a point in the letter's own frame.
+// This samples the field, in cap heights, in the letter's frame.
 function sdfAt(g, X, Y) {
   let x = g.cx + X * capPx, y = g.cy - Y * capPx, extra = 0;
   if (x < 1 || y < 1 || x > g.w - 2 || y > g.h - 2) {
@@ -632,7 +633,7 @@ function buildGlyph(ch) {
   rx.fillText(ch, ox, oy);
   rx.strokeText(ch, ox, oy);
   const img = rx.getImageData(0, 0, w, h).data;
-  // Signed distance with sub-pixel edges, positive inside.
+  // The signed distance is positive inside and keeps sub-pixel edges.
   const outer = new Float64Array(n), inner = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     const a = img[4 * i + 3] / 255;
@@ -655,7 +656,7 @@ function buildGlyph(ch) {
   cx /= cnt;
   cy /= cnt;
 
-  // Front surface: depth rises like sqrt(distance) from the seam.
+  // On the front, depth rises like sqrt(distance) from the seam.
   const P = [], N = [], S = [], T = [], segs = [];
   const vert = (X, Y, Z, nx, ny, nz, a, b, c) => { P.push(X, Y, Z); N.push(nx, ny, nz); S.push(a, b, c); return P.length / 3 - 1; };
   const grad = (x, y) => [(sd[y * w + x + 1] - sd[y * w + x - 1]) * 0.5, (sd[(y + 1) * w + x] - sd[(y - 1) * w + x]) * 0.5];
@@ -673,7 +674,7 @@ function buildGlyph(ch) {
     if (gid[k] < 0) { const [gx, gy] = grad(i * G, j * G); gid[k] = surf(i * G, j * G, val(i, j), gx, gy); }
     return gid[k];
   };
-  // A seam vertex where the field crosses zero on a grid edge.
+  // A seam vertex sits where the field crosses zero on an edge.
   const edgeV = (i0, j0, i1, j1) => {
     const arr = j0 === j1 ? eh : ev, k = j0 * gw + i0;
     if (arr[k] >= 0) return arr[k];
@@ -713,7 +714,7 @@ function buildGlyph(ch) {
   }
   const nf = P.length / 3;
 
-  // The seam: a crimped flange with a ridge, chained around each outline.
+  // A crimped flange with a ridge runs around each outline.
   const nb = new Map();
   const link = (a, b) => { if (a === b) return; if (!nb.has(a)) nb.set(a, []); if (!nb.has(b)) nb.set(b, []); nb.get(a).push(b); nb.get(b).push(a); };
   for (let i = 0; i < segs.length; i += 2) link(segs[i], segs[i + 1]);
@@ -811,7 +812,7 @@ function buildGlyph(ch) {
       for (let x = Math.max(0, Math.floor(bx - rr)); x <= Math.min(w - 1, Math.ceil(bx + rr)); x++) if ((x - bx) ** 2 + (y - by) ** 2 < rr * rr) cov[y * w + x] = 1;
     }
   }
-  // Bounds include the seam; the string ties on near the bottom middle.
+  // The bounds include the seam.
   let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, rad = 0, yb = 0;
   const edge = -WF * capPx;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -871,7 +872,7 @@ uniform vec4 uDent, uRip;
 varying vec3 vSeam;
 varying vec3 vObj;
 ${NOISE}
-// Skin offset along the face's own outward axis, in cap heights.
+// This offsets the skin along its face's outward axis, in cap heights.
 float fOff(vec2 p, float side) {
   vec2 dd = p - uDent.xy, dr = p - uRip.xy;
   float r = length(dr);
@@ -900,10 +901,10 @@ varying vec3 vSeam;
 varying vec3 vObj;
 ${NOISE}
 float fRidge(vec2 p) { return 1.0 - abs(fNoise(p) * 2.0 - 1.0); }
-// Skin height: pleats by the seam, crinkles all over, crimps on the flange.
+// The skin has seam pleats, crinkles all over and flange crimps.
 // A deflated skin adds sharp creases.
 float foilH(vec3 s, vec2 o, float crimp) {
-  if (s.z < -0.5) return 0.0016 * crimp * sin(6.2831853 * s.x);
+  if (s.z < -0.5) return 0.0012 * crimp * sin(6.2831853 * s.x);
   float r = fRidge(s.xy * 31.0);
   float h = 0.0065 * exp(-s.z * 26.0) * r * r;
   h += uCrinkle * 0.0009 * (fNoise(o * 17.0) + 0.5 * fNoise(o * 43.0 + 7.3));
@@ -915,7 +916,7 @@ vec3 holoTint(float t) { return 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.33,
 #endif`;
 const FOIL_FN = `
 {
-  // Bump mapping from the skin height, with screen-space steps.
+  // The skin height bump-maps the normal with screen-space steps.
   float crimp = clamp(1.6 - fwidth(vSeam.x) * 3.0, 0.0, 1.0);
   vec3 sx = dFdx(vSeam), sy = dFdy(vSeam);
   vec2 qx = dFdx(vObj.xy), qy = dFdy(vObj.xy);
@@ -981,10 +982,10 @@ void main() {
   vec3 col = mix(uLow, uTop, smoothstep(0.0, 1.0, uv.y));
   vec2 q = (uv - vec2(0.5, 0.64)) * k;
   col += uHaze * exp(-dot(q, q) * 2.4);
-  // Party lights far behind, thrown out of focus.
+  // Party lights glow far behind, out of focus.
   for (int i = 0; i < 8; i++) {
     float d = length((uv - uBokeh[i].xy) * k), r = uBokeh[i].z;
-    col += uBokehC[i] * uBokeh[i].w * smoothstep(r, r * 0.9, d) * (0.7 + 0.3 * smoothstep(r * 0.5, r, d));
+    col += uBokehC[i] * uBokeh[i].w * 0.7 * smoothstep(r, r * 0.88, d) * (0.7 + 0.3 * smoothstep(r * 0.5, r, d));
   }
   // Foil throws a little coloured light onto the dark behind it.
   for (int i = 0; i < 24; i++) {
@@ -997,7 +998,7 @@ void main() {
   #include <colorspace_fragment>
   gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
 }`;
-// Bokeh discs: place in stage fractions, radius, strength, colour.
+// Each backdrop disc has a place, radius, strength and colour.
 const BOKEH = [
   [0.08, 0.86, 0.07, 0.06, [0.75, 0.16, 350]], [0.22, 0.95, 0.045, 0.05, [0.85, 0.14, 85]], [0.9, 0.82, 0.08, 0.05, [0.8, 0.13, 200]],
   [0.74, 0.97, 0.05, 0.05, [0.72, 0.16, 300]], [0.95, 0.22, 0.06, 0.04, [0.82, 0.15, 60]], [0.04, 0.2, 0.05, 0.04, [0.78, 0.13, 180]],
@@ -1010,11 +1011,25 @@ const STAR_FS = `
 uniform vec3 uCol;
 varying vec2 vUv;
 void main() {
-  // Four thin rays and a soft core: a cartoon twinkle.
+  // Four thin rays and a soft core make a cartoon twinkle.
   vec2 p = abs(vUv);
   float rays = max(0.0, 1.0 - p.x * 10.0 - p.y * 1.05) + max(0.0, 1.0 - p.y * 10.0 - p.x * 1.05);
   float core = exp(-dot(vUv, vUv) * 28.0);
   gl_FragColor = vec4(uCol * (rays + core * 1.4), 1.0);
+}`;
+const PUFF_VS = `
+attribute float aFade;
+varying vec2 vUv;
+varying float vFade;
+void main() { vUv = uv * 2.0 - 1.0; vFade = aFade; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`;
+const PUFF_FS = `
+uniform vec3 uCol;
+varying vec2 vUv;
+varying float vFade;
+void main() {
+  // Each puff is a soft round cloud of escaping air.
+  float a = smoothstep(1.0, 0.1, length(vUv));
+  gl_FragColor = vec4(uCol * a * a * vFade, 1.0);
 }`;
 const FLASH_VS = `
 varying vec2 vUv;
@@ -1024,7 +1039,8 @@ uniform float uT;
 uniform vec3 uCol;
 varying vec2 vUv;
 void main() {
-  // A bright ring races out and fades; a star flickers at its heart.
+  // A bright ring races out and fades.
+  // A star flickers at its heart.
   float r = length(vUv), a = atan(vUv.y, vUv.x);
   float f = 1.0 - uT, ring = exp(-pow((r - 0.15 - uT * 0.8) * 16.0, 2.0)) * f * f;
   float rays = pow(abs(cos(a * 4.0 + 0.4)), 14.0) * exp(-r * 6.0) + exp(-r * 16.0);
@@ -1033,7 +1049,8 @@ void main() {
 }`;
 
 /* ---------- the stage: letters, strings, confetti ---------- */
-// World units: the stage is 2 tall at z = 0; SW is its width.
+// The stage is two world units tall at z = 0.
+// SW holds its width.
 let SW = 3.56, ambient = 1, lastPoke = 0, simT = 0;
 const letters = [], ropes = [];
 let word = [], foil = 'gold', LID = 0, ropeColor = 0;
@@ -1062,13 +1079,16 @@ function setFoil(L, kind) {
 }
 function removeLetter(L) {
   L.state = 'gone';
+  // Its contact records go with it.
+  for (const k of contactT.keys()) if (Math.floor(k / PAIR) === L.id || k % PAIR === L.id) contactT.delete(k);
+  for (const k of ghost) if (Math.floor(k / PAIR) === L.id || k % PAIR === L.id) ghost.delete(k);
   scene.remove(L.mesh);
   L.mesh.material.dispose();
   const i = letters.indexOf(L);
   if (i >= 0) letters.splice(i, 1);
   if (L.rope) L.rope.dead = true;
 }
-// The letter's string tie point, in world units.
+// This finds the string's tie point in world units.
 function anchorOf(L) {
   const c = Math.cos(L.a), s = Math.sin(L.a), [ax, ay] = L.g.anchor, k = L.k;
   const lx = ax * k * (1 + L.wob), ly = ay * k * (1 - 0.8 * L.wob), x = lx * c - ly * s, y = lx * s + ly * c;
@@ -1146,7 +1166,13 @@ function typeChar(ch) {
     if (word.length && !word[word.length - 1].space && word.length < MAXTOK) { word.push({ space: true }); layout(); }
     return;
   }
-  if (word.length >= MAXTOK || !CHARS.test(ch)) return;
+  if (!CHARS.test(ch)) return;
+  // A full word shrugs instead.
+  if (word.length >= MAXTOK) {
+    const L = word.filter(t => !t.space).pop();
+    if (L) { L.wobV += 4; L.va += rnd(-2, 2); bumpSound(pan(L.x), 0.8, 1.3); }
+    return;
+  }
   const g = glyph(ch);
   if (!g) return;
   const L = makeLetter(g);
@@ -1161,7 +1187,6 @@ function typeChar(ch) {
   makeRope(L);
   inflateSound(pan(L.x), FOILS[L.kind].pitch * (0.9 + 0.25 * Math.random()) * Math.sqrt(0.7 / L.sizeT));
 }
-function lastLetter() { for (let i = word.length - 1; i >= 0; i--) if (!word[i].space) return word[i]; return null; }
 function backspace() {
   poke();
   const t = word[word.length - 1];
@@ -1178,7 +1203,7 @@ function prick(L, lx, ly) {
   while (word.length && word[word.length - 1].space) word.pop();
   layout();
   L.u.uDent.value.z = L.dent = 0;
-  if (coin !== null ? coin : Math.random() < 0.5) pop(L);
+  if (Math.random() < 0.5) pop(L);
   else deflate(L, lx, ly);
   poke();
 }
@@ -1203,8 +1228,10 @@ function deflate(L, lx, ly) {
   L.state = reduce ? 'limp' : 'zoom';
   L.t = 0;
   L.zDur = reduce ? 0.6 : rnd(1.7, 2.2);
-  // Air leaves through the hole, so the first push points the other way.
+  // The first push points away from the hole.
   const [gx, gy] = sdfGrad(L.g, lx, ly), c = Math.cos(L.a), s = Math.sin(L.a);
+  L.hole = [lx, ly];
+  L.puffT = 0;
   L.hd = Math.atan2(gx * s + gy * c, gx * c - gy * s) + rnd(-0.4, 0.4);
   L.turn = 0;
   L.turnW = 0;
@@ -1223,7 +1250,8 @@ function letGo() {
   ls.forEach((L, i) => { L.state = 'away'; L.t = -i * 0.07 - Math.random() * 0.05; L.drift = rnd(-0.35, 0.35); sparkle(L, 2); });
   wheeSound();
 }
-// Arrow keys bat the word; a quick reversal rubs it instead.
+// Arrow keys bat the word.
+// A quick reversal rubs it instead.
 let lastArrow = { k: '', t: 0 };
 const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
 function gust(k) {
@@ -1248,7 +1276,7 @@ function gust(k) {
     }
   });
 }
-let kbdRub = 0, coin = null;
+let kbdRub = 0;
 function chooseFoil(kind) {
   foil = kind;
   chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.foil === kind)));
@@ -1260,7 +1288,36 @@ function chooseFoil(kind) {
 
 /* ---------- confetti and flashes ---------- */
 const CMAX = 900;
-let conf = null, flashes = [], stars = null;
+let conf = null, flashes = [], stars = null, puffs = null;
+const PMX = 90;
+// Air jets out of the hole as a trail of puffs.
+function puffFrom(L) {
+  if (puffs.items.length >= PMX) return;
+  const [hx, hy] = L.hole, c = Math.cos(L.a), s = Math.sin(L.a), k = L.k;
+  const sp = Math.hypot(L.vx, L.vy) || 1;
+  puffs.items.push({
+    x: L.x + (hx * c - hy * s) * k, y: L.y + (hx * s + hy * c) * k, z: 0.06,
+    vx: (-L.vx / sp) * 0.5 + rnd(-0.15, 0.15), vy: (-L.vy / sp) * 0.5 + rnd(-0.15, 0.15),
+    t: 0, life: rnd(0.4, 0.6), s: rnd(0.07, 0.11) * L.size, a: rnd(0.26, 0.38),
+  });
+}
+function stepPuffs(dt) {
+  const it = puffs.items, M = conf.m, q = conf.q, e = conf.e, sc = conf.sc, fade = puffs.fade;
+  let n = 0;
+  for (let i = it.length - 1; i >= 0; i--) { it[i].t += dt; if (it[i].t > it[i].life) it.splice(i, 1); }
+  q.identity();
+  for (const p of it) {
+    const f = p.t / p.life, z = p.s * (1 + 3 * f);
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    M.compose(e.set(p.x, p.y, p.z), q, sc.set(z, z, z));
+    puffs.mesh.setMatrixAt(n, M);
+    fade.array[n++] = p.a * (1 - f) * (1 - f);
+  }
+  puffs.mesh.count = n;
+  puffs.mesh.instanceMatrix.needsUpdate = true;
+  fade.needsUpdate = true;
+}
 const SMX = 64;
 // Twinkles ride on the letter's front skin for a moment.
 function sparkle(L, n) {
@@ -1329,7 +1386,7 @@ function stepConfetti(dt) {
       j--;
       continue;
     }
-    // Foil flutters: heavy drag, a gentle fall and a side-to-side sway.
+    // Foil flutters down with heavy drag and a side-to-side sway.
     const dr = Math.exp(-2.4 * dt);
     c.v[o] = c.v[o] * dr + Math.sin(simT * 6 + c.ph[j]) * 1.1 * dt;
     c.v[o + 1] = c.v[o + 1] * dr - 2.1 * dt;
@@ -1357,17 +1414,17 @@ function flashAt(x, y, size, kind) {
 }
 
 /* ---------- physics: soft balloons on springs, verlet strings ---------- */
-const H = 1 / 120, KH = 8, CAIR = 1.7, CQ = 0.5, KR = 12, CR = 2.6, KC = 90, CC = 4, KW = 140, VMAX = 7;
+const H = 1 / 120, KH = 8, CAIR = 1.7, CQ = 0.9, KR = 12, CR = 2.6, KC = 90, VMAX = 6;
 let acc = 0;
-const contactT = new Map(), ghost = new Set();
+const contactT = new Map(), ghost = new Set(), PAIR = 1048576;
 const inertia = L => (0.34 * L.k) ** 2;
 function force(L, px, py, fx, fy) {
   L.fx += fx;
   L.fy += fy;
   L.tq += (px - L.x) * fy - (py - L.y) * fx;
 }
-// One letter's circles against another letter's field.
-// Overlaps pool into one soft contact, so many circles never stack up.
+// One letter's circles test against another letter's field.
+// Overlaps pool into one soft contact, so circles never stack up.
 const pool = { w: 0, x: 0, y: 0, nx: 0, ny: 0, pen: 0 };
 function contacts(A, B, sign) {
   const ca = Math.cos(A.a), sa = Math.sin(A.a), cb = Math.cos(B.a), sb = Math.sin(B.a);
@@ -1389,7 +1446,7 @@ function collide() {
   const act = letters.filter(L => L.solid && !L.transit);
   for (let i = 0; i < act.length; i++) for (let j = i + 1; j < act.length; j++) {
     const A = act[i], B = act[j], dx = B.x - A.x, dy = B.y - A.y, rr = A.g.rad * A.k + B.g.rad * B.k;
-    const key = A.id * 4096 + B.id;
+    const key = A.id * PAIR + B.id;
     if (dx * dx + dy * dy > rr * rr) { ghost.delete(key); continue; }
     pool.w = pool.x = pool.y = pool.nx = pool.ny = pool.pen = 0;
     contacts(A, B, 1);
@@ -1398,13 +1455,14 @@ function collide() {
     // Deeply tangled balloons squish past each other until they part.
     const kmin = Math.min(A.k, B.k);
     if (ghost.has(key) && pool.pen < 0.03 * kmin) ghost.delete(key);
-    if (ghost.has(key) || pool.pen > 0.11 * kmin) { ghost.add(key); continue; }
+    if (ghost.has(key) || pool.pen > 0.2 * kmin) { ghost.add(key); continue; }
     // The pooled normal points from B toward A.
     const px = pool.x / pool.w, py = pool.y / pool.w, nl = Math.hypot(pool.nx, pool.ny) || 1, nx = pool.nx / nl, ny = pool.ny / nl;
     // Two letters whose homes lie through each other swap places freely.
     if (A.state === 'float' && B.state === 'float' && (A.hx - A.x) * nx + (A.hy - A.y) * ny < -0.06 && (B.hx - B.x) * nx + (B.hy - B.y) * ny > 0.06) { ghost.add(key); continue; }
     const vn = (A.vx - A.va * (py - A.y) - B.vx + B.va * (py - B.y)) * nx + (A.vy + A.va * (px - A.x) - B.vy - B.va * (px - B.x)) * ny;
-    // Closing contacts bounce at once; resting ones lean on a soft spring.
+    // Closing contacts bounce at once.
+    // Resting contacts lean on a soft spring.
     if (vn < 0) {
       const ia = inertia(A), ib = inertia(B), ra = (px - A.x) * ny - (py - A.y) * nx, rb = (px - B.x) * ny - (py - B.y) * nx;
       const jn = (-1.45 * vn) / (2 + (ra * ra) / ia + (rb * rb) / ib);
@@ -1424,29 +1482,39 @@ function collide() {
     contactT.set(key, simT);
   }
 }
-// The stage edges are soft, bouncy walls; floating letters ignore the top.
+// The stage edges are soft, bouncy walls.
+// Floating letters ignore the top wall.
 function walls(L) {
   const c = Math.cos(L.a), s = Math.sin(L.a), hw = SW / 2 - 0.015, top = L.state === 'away' ? 99 : 0.985, bot = -0.985;
-  let hit = 0;
+  // The deepest circle against each wall: right, left, top, floor.
+  const deep = [0, 0, 0, 0], at = [null, null, null, null];
   for (const q of L.g.circles) {
     const wx = L.x + (q.x * c - q.y * s) * L.k, wy = L.y + (q.x * s + q.y * c) * L.k, r = (q.r + WF) * L.k;
-    const vx = L.vx - L.va * (wy - L.y), vy = L.vy + L.va * (wx - L.x);
-    let fx = 0, fy = 0;
-    if (wx + r > hw) { fx -= KW * (wx + r - hw) + 6 * Math.max(0, vx); hit = Math.max(hit, vx); }
-    if (wx - r < -hw) { fx += KW * (-hw - wx + r) - 6 * Math.min(0, vx); hit = Math.max(hit, -vx); }
-    if (wy + r > top) { fy -= KW * (wy + r - top) + 6 * Math.max(0, vy); hit = Math.max(hit, vy); }
-    if (wy - r < bot) {
-      fy += KW * (bot - wy + r) - 6 * Math.min(0, vy);
-      hit = Math.max(hit, -vy);
-      if (L.state === 'limp' || L.state === 'sink') { L.onFloor = true; fx -= 4 * vx; }
+    const pens = [wx + r - hw, -hw - wx + r, wy + r - top, bot - wy + r];
+    for (let k = 0; k < 4; k++) if (pens[k] > deep[k]) { deep[k] = pens[k]; at[k] = [wx, wy]; }
+  }
+  let hit = 0;
+  for (let k = 0; k < 4; k++) {
+    if (!at[k]) continue;
+    const nx = k === 0 ? -1 : k === 1 ? 1 : 0, ny = k === 2 ? -1 : k === 3 ? 1 : 0, [px, py] = at[k];
+    const vn = (L.vx - L.va * (py - L.y)) * nx + (L.vy + L.va * (px - L.x)) * ny;
+    // A letter moving into a wall bounces off it at once.
+    if (vn < 0) {
+      const I = inertia(L), arm = (px - L.x) * ny - (py - L.y) * nx, j = (-1.5 * vn) / (1 + (arm * arm) / I);
+      L.vx += nx * j;
+      L.vy += ny * j;
+      L.va += (arm * j) / I;
+      hit = Math.max(hit, -vn);
     }
-    if (fx || fy) force(L, wx, wy, fx, fy);
+    L.x += nx * deep[k] * 0.5;
+    L.y += ny * deep[k] * 0.5;
+    if (k === 3 && (L.state === 'limp' || L.state === 'sink')) { L.onFloor = true; L.vx *= 0.96; }
   }
   if (hit > 0.45 && simT - (L.wallT || -1) > 0.2) bumpSound(pan(L.x), hit * 0.8, 0.85 * Math.sqrt(0.7 / L.size));
   if (hit > 0) L.wallT = simT;
 }
-// The pointer is a paddle; letters it sweeps into get batted.
-function paddle(L, x, y, h) {
+// The pointer is a paddle that bats the letters it sweeps into.
+function paddle(L, x, y) {
   if (!L.solid || L.state === 'limp' || L.state === 'sink') return;
   const c = Math.cos(L.a), s = Math.sin(L.a), rx = x - L.x, ry = y - L.y;
   const lx = (rx * c + ry * s) / L.k, ly = (-rx * s + ry * c) / L.k;
@@ -1497,7 +1565,7 @@ function integrate(L, h) {
     if (L.a < -Math.PI) L.a += TAU;
   } else if (L.state === 'zoom') {
     const k = clamp(L.t / L.zDur);
-    // The flapping neck jerks the heading about, so the flight loops and zigzags.
+    // The flight loops and zigzags as the flapping neck jerks it.
     if (simT > L.turnT) { L.turnW = rnd(-1, 1) * (Math.random() < 0.3 ? 15 : 9); L.turnT = simT + rnd(0.1, 0.32); }
     L.turn += (L.turnW - L.turn) * Math.min(1, h * 12);
     L.hd += L.turn * h;
@@ -1506,9 +1574,11 @@ function integrate(L, h) {
       const d = Math.atan2(-L.y, -L.x) - L.hd;
       L.hd += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, h * 7);
     }
-    const sp = lerp(3.4, 1.5, k);
-    ax += 7 * (Math.cos(L.hd) * sp - L.vx);
-    ay += 7 * (Math.sin(L.hd) * sp - L.vy) - 0.8 * k;
+    L.puffT -= h;
+    if (L.puffT <= 0) { L.puffT = 0.022; puffFrom(L); }
+    const fly = lerp(3.4, 1.5, k);
+    ax += 7 * (Math.cos(L.hd) * fly - L.vx);
+    ay += 7 * (Math.sin(L.hd) * fly - L.vy) - 0.8 * k;
     al += 9 * (L.turn * 0.9 + L.spin - L.va);
     L.infl = lerp(1, 0.14, sstep(0, 1, k));
     L.size = L.sizeT * lerp(1, 0.74, k);
@@ -1524,7 +1594,7 @@ function integrate(L, h) {
     if (L.state === 'limp' && (L.floorT > 1.8 || L.t > 7)) { L.state = 'sink'; L.solid = false; }
     if (L.state === 'sink') { ay = 0; L.vy = -0.4; L.vx *= 0.9; }
   } else if (L.state === 'away') {
-    // Let go, each letter rises, swaying on its own breeze.
+    // Each released letter rises and sways on its own breeze.
     if (L.t > 0) ay += 0.75 + 0.55 * Math.min(1, L.t / 1.2) - 1.0 * L.vy;
     ax += L.drift * Math.sin(L.t * 1.4 + L.ph) * 1.1 - 0.9 * L.vx;
     al += -3 * (L.a - 0.3 * Math.sin(L.t * 1.6 + L.ph2)) - 1.2 * L.va;
@@ -1539,7 +1609,7 @@ function integrate(L, h) {
   L.x += L.vx * h;
   L.y += L.vy * h;
   L.a += L.va * h;
-  // Turning and tipping only show; they don't collide.
+  // Turning and tipping are visual only.
   const yt = am * 0.2 * Math.sin(simT * 0.41 * L.f + L.ph2) + clamp(L.vx * 0.12, -0.5, 0.5);
   L.vyaw += (10 * (yt - L.yaw) - 2.2 * L.vyaw) * h;
   L.yaw = clamp(L.yaw + L.vyaw * h, -0.75, 0.75);
@@ -1581,7 +1651,7 @@ function substep(h, f) {
   for (const L of letters) if (L.solid) walls(L);
   if (ptr.on) {
     const x = lerp(ptr.fx, ptr.x, f), y = lerp(ptr.fy, ptr.y, f);
-    if (ptr.mode === 'paddle') for (const L of letters) paddle(L, x, y, h);
+    if (ptr.mode === 'paddle') for (const L of letters) paddle(L, x, y);
     else if (ptr.mode === 'touch' && ptr.L) hold(ptr.L, x, y);
   }
   for (const L of letters) integrate(L, h);
@@ -1618,7 +1688,7 @@ function onSize(w, h) {
   if (ready) { draw(); wake(); }
 }
 
-// A party room for the foil to mirror: soft boxes, coloured strips, bulbs.
+// The foil mirrors a party room of soft boxes, strips and bulbs.
 function partyRoom() {
   const env = new THREE.Scene(), C = (L, Cc, h, k = 1) => new THREE.Color().setRGB(...linear(L, Cc, h).map(v => v * k));
   const sky = new THREE.Mesh(new THREE.SphereGeometry(30, 48, 24), new THREE.ShaderMaterial({
@@ -1645,7 +1715,8 @@ function partyRoom() {
   const bulb = new THREE.SphereGeometry(0.28, 12, 8);
   for (let i = 0; i < 26; i++) {
     const a = (i / 26) * TAU + 0.3, e = rnd(-0.2, 0.75), r = 12;
-    const m = new THREE.Mesh(bulb, new THREE.MeshBasicMaterial({ color: C(0.82, 0.17, (i * 137) % 360, 9) }));
+    // Bulb hues skip the greens, which muddy gold.
+    const m = new THREE.Mesh(bulb, new THREE.MeshBasicMaterial({ color: C(0.82, 0.17, (200 + ((i * 137) % 220)) % 360, 9) }));
     m.position.set(Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r);
     env.add(m);
   }
@@ -1659,7 +1730,7 @@ function drawRopes() {
   for (const r of ropes) {
     if (slot >= ROPE_MAX) break;
     const n = r.n, w = 0.0105 * (r.L ? r.L.size / 0.8 : 1), base = slot * RPTS * 2;
-    // A smooth centreline through the verlet points.
+    // A smooth centreline runs through the verlet points.
     for (let k = 0; k < RPTS; k++) {
       const u = k / RSUB, i = Math.min(n - 2, Math.floor(u)), t = u - i;
       const i0 = Math.max(0, i - 1), i2 = i + 1, i3 = Math.min(n - 1, i + 2), t2 = t * t, t3 = t2 * t;
@@ -1742,7 +1813,8 @@ function frame(ms) {
     slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
     if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
-  // Idle balloons slowly settle; any touch or key stirs them again.
+  // Idle balloons slowly settle.
+  // Any touch or key stirs them again.
   const idleS = (performance.now() - lastPoke) / 1000, want = idleS > 20 ? 0 : 1;
   ambient += (want - ambient) * Math.min(1, dt / (want > ambient ? 0.8 : 2.5));
   if (reduce || (ambient < 0.002 && want === 0)) ambient = 0;
@@ -1763,7 +1835,8 @@ function perFrame(dt) {
     if (L.state === 'grow') {
       L.grow = Math.min(1, L.grow + dt / (reduce ? 0.25 : 0.7));
       const g = L.grow;
-      // An elastic overshoot as the foil fills; depth lags the outline.
+      // The outline overshoots elastically as the foil fills.
+      // Depth lags the outline.
       L.gs = 1 - 0.68 * Math.exp(-4.5 * g) * Math.cos(g * 8);
       L.gi = sstep(0.05, 0.8, g);
       if (g >= 1) { L.state = 'float'; L.wobV += 2.5; sparkle(L, 5); }
@@ -1791,7 +1864,9 @@ function perFrame(dt) {
   for (const f of flashes) if (f.t < 1) { f.t = Math.min(1, f.t + dt / 0.24); f.mesh.visible = f.t < 1; }
   stepConfetti(dt);
   stepStars(dt);
-  // Rubbing squeaks; the keyboard rub fades on its own.
+  stepPuffs(dt);
+  // Rubbing squeaks.
+  // The keyboard rub fades on its own.
   kbdRub *= Math.exp(-dt / 0.18);
   const rubL = ptr.on && ptr.mode === 'touch' ? ptr.L : null;
   const e = Math.max(rubL ? rubL.rubE : 0, kbdRub);
@@ -1799,7 +1874,7 @@ function perFrame(dt) {
   if (ptr.on && ptr.mode === 'touch' && ptr.L) pressTick(dt);
 }
 function busy() {
-  if (ptr.on || conf.n || stars.items.length || flashes.some(f => f.t < 1) || kbdRub > 0.01) return true;
+  if (ptr.on || conf.n || stars.items.length || puffs.items.length || flashes.some(f => f.t < 1) || kbdRub > 0.01) return true;
   if (letters.length && ambient > 0) return true;
   for (const L of letters) {
     if (L.state !== 'float') return true;
@@ -1822,7 +1897,7 @@ function toWorld(e) {
   const r = rect || (rect = panel.getBoundingClientRect());
   return [((e.clientX - r.left) / r.width - 0.5) * SW, (0.5 - (e.clientY - r.top) / r.height) * 2];
 }
-// The letter under a point, by how deep the point sits inside it.
+// This finds the letter that sits deepest under a point.
 function letterAt(x, y, slack) {
   let best = null, bd = -1e9;
   for (const L of letters) {
@@ -1865,7 +1940,7 @@ panel.addEventListener('pointermove', e => {
     ptr.y = y;
     ptr.hist.push([x, y, c.timeStamp]);
   }
-  // Velocity over the last 60 ms.
+  // Velocity averages over the last 60 ms.
   const now = e.timeStamp;
   while (ptr.hist.length > 2 && now - ptr.hist[0][2] > 60) ptr.hist.shift();
   const [x0, y0, t0] = ptr.hist[0], dtp = Math.max(8, now - t0) / 1000;
@@ -1874,7 +1949,7 @@ panel.addEventListener('pointermove', e => {
   ptr.speed = Math.hypot(ptr.vx, ptr.vy);
   poke();
 });
-// Touching a letter: rub it, hold it to prick, or swipe to bat it away.
+// A touch on a letter rubs it, pricks it or bats it.
 function hold(L, x, y) {
   if (!['grow', 'float'].includes(L.state)) { ptr.mode = 'paddle'; ptr.L = null; return; }
   const c = Math.cos(L.a), s = Math.sin(L.a), k = L.k;
@@ -1900,7 +1975,7 @@ function pressTick(dt) {
     creakStop();
     return;
   }
-  // Rubbing: quick moves in a small patch.
+  // Quick moves in a small patch rub the letter.
   if (ptr.speed > 0.35) {
     L.rubE = Math.min(1.2, L.rubE + ptr.speed * dt * 1.6);
     L.ripX = ptr.lx;
@@ -1957,7 +2032,7 @@ addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   const t = e.target, own = t === keysIn;
   if (!own && t.closest?.('input, textarea, select, [contenteditable]')) return;
-  const k = e.key, onButton = !own && t.closest?.('button, a');
+  const k = e.key || '', onButton = !own && t.closest?.('button, a');
   if (k === 'Enter') {
     if (onButton) return;
     e.preventDefault();
@@ -1989,7 +2064,7 @@ keysIn.addEventListener('input', e => {
   keysIn.value = SENT;
 });
 const chips = [...document.querySelectorAll('.chip[data-foil]')];
-// A mouse or touch click hands the keys back to the stage for typing.
+// A pointer click gives the keys back to the stage.
 const backToStage = e => { if (e.detail > 0) panel.focus({ preventScroll: true }); };
 chips.forEach(c => c.addEventListener('click', e => { chooseFoil(c.dataset.foil); backToStage(e); }));
 const sndB = document.getElementById('snd');
@@ -2065,7 +2140,7 @@ async function start() {
   bg.renderOrder = -10;
   scene.add(bg);
 
-  // Strings: one ribbon mesh for all of them.
+  // One ribbon mesh draws all the strings.
   const rg = new THREE.BufferGeometry(), rv = ROPE_MAX * RPTS * 2, ri = [];
   rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rv * 3), 3).setUsage(THREE.DynamicDrawUsage));
   rg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(rv * 3), 3).setUsage(THREE.DynamicDrawUsage));
@@ -2079,9 +2154,9 @@ async function start() {
   ropeMesh.frustumCulled = false;
   scene.add(ropeMesh);
 
-  // Confetti: one instanced quad per scrap of foil.
+  // One instanced quad draws each scrap of confetti.
   const cmat = new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.3, side: THREE.DoubleSide, envMapIntensity: 1.4 });
-  // Scraps keep a little of their own colour when they face away from the light.
+  // Scraps keep some colour when they face away from the light.
   cmat.onBeforeCompile = sh => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * 0.28;');
   };
@@ -2106,6 +2181,18 @@ async function start() {
   sm.renderOrder = 6;
   scene.add(sm);
   stars = { mesh: sm, items: [] };
+  const pg = new THREE.PlaneGeometry(1, 1), fade = new THREE.InstancedBufferAttribute(new Float32Array(PMX), 1).setUsage(THREE.DynamicDrawUsage);
+  pg.setAttribute('aFade', fade);
+  const pmesh = new THREE.InstancedMesh(pg, new THREE.ShaderMaterial({
+    vertexShader: PUFF_VS, fragmentShader: PUFF_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uCol: { value: new THREE.Color().setRGB(...linear(0.95, 0.03, 300)) } },
+  }), PMX);
+  pmesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  pmesh.count = 0;
+  pmesh.frustumCulled = false;
+  pmesh.renderOrder = 4;
+  scene.add(pmesh);
+  puffs = { mesh: pmesh, items: [], fade };
   for (let i = 0; i < 3; i++) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
       vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -2146,12 +2233,14 @@ async function start() {
   }
   flashes.forEach(f => { f.mesh.visible = true; });
   stars.mesh.count = 1;
+  puffs.mesh.count = 1;
   cm.count = 1;
   await renderer.compileAsync(scene, camera);
   for (const m of spare) { m.visible = false; }
   flashes.forEach(f => { f.mesh.visible = false; });
   cm.count = 0;
   stars.mesh.count = 0;
+  puffs.mesh.count = 0;
   ready = true;
   lastPoke = performance.now();
   draw();
@@ -2164,7 +2253,6 @@ async function start() {
   }
 }
 start().catch(err => { console.error(err); failed(); });
-if (location.search.includes('qa')) window.qa = { set coin(v) { coin = v; }, build: ch => { const t = performance.now(); buildGlyph(ch); return performance.now() - t; }, ghost, letters, ropes, ptr, get word() { return word; }, get raf() { return raf; }, get ambient() { return ambient; }, get voices() { return voices; }, get ac() { return ac; }, get out() { return out; }, get conf() { return conf.n; } };
 </script>
 </body>
 </html>
