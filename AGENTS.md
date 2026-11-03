@@ -26,7 +26,7 @@ Read `README.md` for the toy list and the full rules.
 ## Layout
 
 - `index.html` is the menu. It is an Artifact body fragment.
-  - Main shelf (7): morphset (shown as "Morpher"), pop, fidget, domino, pins, galaxy, prism.
+  - Main shelf (7): morpher, pop, fidget, domino, pins, galaxy, prism.
   - Lab (`<details class="lab">`, 36 toys): all other toys.
 - Menu icons are inline SVG in an angular brut style: a hex, square or angled block with a hard offset shadow.
   A GSAP 3.13 timeline animates each icon on hover: `toys.<id> = { play, rest }`.
@@ -38,7 +38,7 @@ Read `README.md` for the toy list and the full rules.
   2. `.stage.stage--<id>`, then `.bar` with `.choices`, `.actions` and `dl.how`.
   3. `section.about` with `h1.display` and a `.vignette`.
 - Glass uses the shell but keeps its old header. Other Lab toys keep their own inline shell until Tom picks them.
-- `morphset/lab.html` is the old full Morphset page, `noindex`.
+- `morpher/lab.html` is the old full Morphset page, `noindex`.
 
 ## Running
 
