@@ -30,7 +30,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The arrow keys blow gusts, B starts a breeze, P shows the foot path and R resets.">
+    <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The arrow keys blow gusts, B starts a breeze, V switches wide and close views, P shows the foot path and R resets.">
       <canvas class="sky" aria-hidden="true"></canvas>
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Beach walker needs canvas drawing, which this browser has turned off.</p>
@@ -39,9 +39,9 @@
       <div class="choices" role="group" aria-label="Legs">
         <button class="chip" type="button" data-value="4" aria-pressed="false">8 legs</button>
         <button class="chip" type="button" data-value="6" aria-pressed="true">12 legs</button>
-        <button class="chip" type="button" data-value="8" aria-pressed="false">16 legs</button>
       </div>
       <div class="actions">
+        <button class="chip" id="wide" type="button" aria-pressed="true" aria-keyshortcuts="V">Wide</button>
         <button class="chip" id="breeze" type="button" aria-pressed="false" aria-keyshortcuts="B">Breeze</button>
         <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
       </div>
@@ -336,6 +336,9 @@ sound.onChange(on => { if (on) setTimeout(seaSound, 300); });
 /* ---------- layout ---------- */
 // Every length below is in CSS pixels unless it says leg units.
 let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1, sunX = 1, sunY = 1, sunR = 1, focal = 1;
+// The view eases between close (0) and wide (1).
+// The close lens sets the world: camera height and leg size stay fixed.
+let viewK = 1, viewTo = 1, depth = 1, shift = 0, horClose = 1, focalClose = 1, sunRClose = 1, camH = 0.1, kLeg = 0.001;
 const bg = document.createElement('canvas'), bgc = bg.getContext('2d');
 const wc = document.createElement('canvas'), wctx = wc.getContext('2d');
 // Sky stops run from the zenith to the horizon.
@@ -362,16 +365,29 @@ function fit() {
   // The bar sits on the stage; the feet stay just above it.
   const barH = bar.offsetHeight || 90;
   trackY = Math.round(clamp(h * 0.85, h * 0.5, h - barH - 12));
-  // The horizon crosses the body; the legs stand on the bright wet sand.
-  horizonY = Math.max(20, Math.round(trackY - Math.max(96 * s, h * 0.2)));
-  seaY = horizonY + Math.max(3, Math.round(h * 0.01));
+  // Close view: the horizon crosses the body; the legs stand on wet sand.
+  horClose = Math.max(20, Math.round(trackY - Math.max(96 * s, h * 0.2)));
   // A long lens: a large sun, low over the sea, behind the walker.
-  focal = 2.2 * Math.max(w, h);
-  sunR = clamp(Math.min(w, h) * 0.15, 30, 150);
-  // The sun sits right of the walker, so the shadow falls at an angle.
-  sunX = w * 0.6; sunY = horizonY - sunR * 0.35;
+  focalClose = 2.2 * Math.max(w, h);
+  sunRClose = clamp(Math.min(w, h) * 0.15, 30, 150);
+  camH = (trackY - horClose) / focalClose; kLeg = s / focalClose;
+  lens();
   if (sea) sea.fit(); else paintBackdrop();
   draw();
+}
+// The wide view uses a shorter lens and stands the walker far off.
+// It sits small on the horizon, on the left third of the frame.
+function lens() {
+  const v = sea ? viewK * viewK * (3 - 2 * viewK) : 0;
+  focal = lerp(focalClose, 1.25 * Math.max(w, h), v);
+  horizonY = Math.round(lerp(horClose, h * 0.6, v));
+  depth = lerp(1, 2.6, v);
+  shift = lerp(0, w / 6, v);
+  seaY = horizonY + Math.max(3, Math.round(h * 0.01));
+  sunR = sunRClose * Math.max(0.75, focal / focalClose);
+  // The sun sits right of the walker, so the shadow falls at an angle.
+  sunX = w * lerp(0.6, 0.62, v); sunY = horizonY - sunR * 0.35;
+  sea?.lens();
 }
 // The sky, sun, sea and wet sand are painted once per resize.
 function paintBackdrop() {
@@ -431,6 +447,7 @@ precision highp float;
 uniform vec2 uRes;
 uniform float uDpr, uHor, uF, uTime, uWind, uSunR;
 uniform vec3 uCamPos, uSD;
+uniform float uShore;
 uniform mat3 uRot;
 vec3 SD;
 // FH is the frame height in radians; sky falloffs scale with it.
@@ -522,7 +539,7 @@ void main() {
     // The swash runs up fast and drains back slowly, about every nine seconds.
     float ph = fract(uTime / 9.0);
     float run = sin(3.14159 * pow(ph, 0.4));
-    float zS = 2.8 - 1.15 * run + 0.18 * (noise(vec2(X * 5.0, 3.0)) - 0.5) + 0.04 * sin(X * 13.0 + uTime * 0.6);
+    float zS = 2.8 + uShore - 1.15 * run + 0.18 * (noise(vec2(X * 5.0, 3.0)) - 0.5) + 0.04 * sin(X * 13.0 + uTime * 0.6);
     float into = z - zS;
     vec3 n;
     float wet;
@@ -564,7 +581,7 @@ void main() {
       float pool = smoothstep(0.56, 0.64, fbm(p * vec2(2.2, 4.5) + 3.0));
       float film = exp(-back * 5.0);
       float aaR = 1.0 - smoothstep(0.2, 0.8, foot * 45.0 / 6.283);
-      float rip = cos(z * 45.0 + noise(p * vec2(3.0, 6.0)) * 7.0) * 0.05 * aaR * (1.0 - pool) * (1.0 - film);
+      float rip = cos(z * 45.0 + (noise(p * vec2(3.0, 6.0)) + 0.5 * noise(p * vec2(11.0, 19.0))) * 12.0) * 0.025 * noise(p * vec2(4.0, 2.0)) * aaR * (1.0 - pool) * (1.0 - film);
       n = normalize(vec3(0.0, 1.0, rip));
       wet = clamp(0.55 * smoothstep(0.4, 1.1, z) + pool + film, 0.0, 1.0);
       vec3 sand = vec3(0.3, 0.2, 0.15) * (0.75 + 0.5 * grain) * mix(1.0, 0.5, wet);
@@ -623,7 +640,7 @@ void main() {
   }
   add *= cover;
   // Haze sits lighter on the near walker than on the far sky.
-  add *= texture2D(tDepth, vUv).r > 0.9999 ? 1.0 : 0.45;
+  add *= texture2D(tDepth, vUv).r > 0.9999 ? 1.0 : 0.3;
   // Screen blend: the flare washes the frame instead of clipping it.
   vec3 c = 1.0 - (1.0 - base) * (1.0 - min(add, 1.0));
   // The lens darkens toward the corners.
@@ -670,7 +687,7 @@ const sea = (() => {
   // The sky and sea fill the frame behind everything and write no depth.
   const U = {
     uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uHor: { value: 1 }, uF: { value: 1 },
-    uTime: { value: 0 }, uWind: { value: 0 }, uSunR: { value: 0.05 },
+    uTime: { value: 0 }, uWind: { value: 0 }, uSunR: { value: 0.05 }, uShore: { value: 0 },
     uCamPos: { value: new THREE.Vector3() }, uSD: { value: new THREE.Vector3(0, 0, -1) }, uRot: { value: new THREE.Matrix3() },
   };
   const back = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
@@ -771,25 +788,28 @@ const sea = (() => {
       renderer.setSize(w, h, false);
       const W = Math.round(w * pr), H = Math.round(h * pr);
       U.uRes.value.set(W, H); U.uDpr.value = W / w;
-      // The principal point sits on the horizon line.
+      rt.setSize(W, H);
+      postU.uAspect.value = w / h;
+      this.lens();
+    },
+    // The principal point sits on the horizon line.
+    lens() {
       const half = Math.max(horizonY, h - horizonY);
       camera.fov = (2 * Math.atan(half / focal) * 180) / PI;
       camera.aspect = w / (2 * half);
       camera.setViewOffset(w, 2 * half, 0, half - horizonY, w, h);
-      rt.setSize(W, H);
-      postU.uAspect.value = w / h;
     },
     // Leg-unit point to screen pixels, through the live camera.
     project(lx, ly, lz) {
-      _v.set(bodyX * k + lx * k, ly * k, -1 + lz * k).project(camera);
+      _v.set(bodyX * k + lx * k, ly * k, -depth + lz * k).project(camera);
       return [((_v.x + 1) / 2) * w, ((1 - _v.y) / 2) * h];
     },
     render() {
-      k = s / focal;
-      const span = trackY - horizonY, Hc = span / focal;
-      // The camera follows the walker at distance 1, turned by YAW.
-      const tx = camX * k, tz = -1;
-      camera.position.set(tx + Math.sin(YAW), Hc, tz + Math.cos(YAW));
+      k = kLeg;
+      // The camera follows the walker at the view depth, turned by YAW.
+      // A sideways step puts the walker off centre in the wide view.
+      const tx = camX * k, tz = -depth, sx = (shift / focal) * depth;
+      camera.position.set(tx + Math.sin(YAW) * depth + Math.cos(YAW) * sx, camH, tz + Math.cos(YAW) * depth - Math.sin(YAW) * sx);
       camera.rotation.set(0, YAW, 0);
       camera.updateMatrixWorld();
       // The sun is fixed on screen; its world bearing follows the camera.
@@ -797,13 +817,13 @@ const sea = (() => {
       U.uCamPos.value.copy(camera.position);
       U.uRot.value.setFromMatrix4(camera.matrixWorld);
       U.uSD.value.copy(sd);
-      U.uHor.value = horizonY; U.uF.value = focal; U.uTime.value = simT; U.uWind.value = Math.abs(wind); U.uSunR.value = sunR / focal;
+      U.uHor.value = horizonY; U.uF.value = focal; U.uTime.value = simT; U.uWind.value = Math.abs(wind); U.uSunR.value = sunR / focal; U.uShore.value = depth - 1;
       postU.uSun.value.set(sunX / w, 1 - sunY / h);
       // The shadow light shares the sun bearing at a higher angle.
       const flat = Math.hypot(sd.x, sd.z), c0 = Math.cos(SHADOW_TURN), s0 = Math.sin(SHADOW_TURN);
       const hx = sd.x / flat, hz = sd.z / flat;
       _d.set(hx * c0 + hz * s0, Math.tan(SHADOW_ELEV), -hx * s0 + hz * c0).normalize();
-      sun.target.position.set(bodyX * k + 0.08 * Math.sin(YAW), 0, -1 + 0.25);
+      sun.target.position.set(bodyX * k + 0.08 * Math.sin(YAW), 0, -depth + 0.25);
       sun.position.copy(sun.target.position).addScaledVector(_d, 3);
 
       // Build every rod and joint of the walker in leg units.
@@ -835,18 +855,18 @@ const sea = (() => {
       vaneGeo.attributes.position.needsUpdate = true;
       vaneGeo.computeVertexNormals();
 
-      walker.position.set(bodyX * k, 0, -1); walker.scale.setScalar(k);
+      walker.position.set(bodyX * k, 0, -depth); walker.scale.setScalar(k);
       mirror.position.copy(walker.position); mirror.scale.set(k, -k, k);
 
       let n = 0;
       for (const p of prints) {
         if (n >= 420) break;
         const r = 2.6 * (0.4 + 0.6 * p.life ** 0.7) * k;
-        _m.makeScale(r, 1, r * 0.55).setPosition(p.x * k, 0.00005, -1 + legZ(p) * k);
+        _m.makeScale(r, 1, r * 0.55).setPosition(p.x * k, 0.00005, -depth + legZ(p) * k);
         printMesh.setMatrixAt(n++, _m);
       }
       printMesh.count = n; printMesh.instanceMatrix.needsUpdate = true;
-      groundMesh.position.set(tx, 0, -1);
+      groundMesh.position.set(tx, 0, -depth);
 
       renderer.setRenderTarget(rt);
       renderer.render(scene, camera);
@@ -860,6 +880,11 @@ const sea = (() => {
 let mode = null, handTurn = 0, showPath = false, camLock = 0;
 function step(dt) {
   simT += dt;
+  // The view eases between close and wide over about a second.
+  if (viewK !== viewTo) {
+    viewK = reduce ? viewTo : clamp(viewK + Math.sign(viewTo - viewK) * dt / 1.1, 0, 1);
+    lens();
+  }
   // Wind sums the drag gust, the arrow keys and the breeze.
   windUser *= Math.exp(-dt / (mode === 'wind' ? 0.35 : 0.8));
   if (Math.abs(windUser) < 0.004) windUser = 0;
@@ -1210,7 +1235,7 @@ function draw() {
 // The loop runs while anything moves, then sleeps.
 let raf = 0, last = 0, visible = true;
 const busy = () => mode === 'crank' || u !== 0 || windUser !== 0 || keyWind !== 0 || breezeAmt > 0 || breezeOn
-  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05 || vane !== 0;
+  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05 || vane !== 0 || viewK !== viewTo;
 function frame(now) {
   raf = 0;
   const dt = clamp((now - last) / 1000, 0.001, 0.05);
@@ -1284,6 +1309,11 @@ canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('pointerleave', () => { if (!mode && hubHover) { hubHover = false; canvas.classList.remove('grab'); if (!raf) draw(); } });
 
+// Wide stands the walker far off; unpressed is the standard close view.
+const wideBtn = document.getElementById('wide');
+function setWide(on) { viewTo = on ? 1 : 0; wideBtn.setAttribute('aria-pressed', String(on)); wake(); }
+wideBtn.addEventListener('click', () => setWide(viewTo === 0));
+if (!sea) wideBtn.hidden = true;
 const breezeBtn = document.getElementById('breeze');
 function setBreeze(on) { breezeOn = on; breezeBtn.setAttribute('aria-pressed', String(on)); wake(); }
 breezeBtn.addEventListener('click', () => setBreeze(!breezeOn));
@@ -1307,6 +1337,7 @@ addEventListener('keydown', e => {
   } else if (k === 'r' || k === 'R') reset();
   else if (k === 'p' || k === 'P') { showPath = !showPath; if (!raf) draw(); }
   else if (k === 'b' || k === 'B') setBreeze(!breezeOn);
+  else if (k === 'v' || k === 'V') setWide(viewTo === 0);
 });
 addEventListener('keyup', e => {
   if ((e.key === 'ArrowLeft' && keyWind < 0) || (e.key === 'ArrowRight' && keyWind > 0)) keyWind = 0;
