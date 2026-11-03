@@ -36,6 +36,10 @@
       <p class="fail" hidden>Pin art needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices" role="group" aria-label="Finish">
+        <button class="chip" type="button" data-value="chrome" aria-pressed="true">Chrome</button>
+        <button class="chip" type="button" data-value="anodised" aria-pressed="false">Anodised</button>
+      </div>
       <div class="actions">
         <button class="chip" id="shuffle" type="button">Shuffle</button>
         <button class="chip" id="flip" type="button" aria-keyshortcuts="Enter">Flip</button>
@@ -62,7 +66,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, reduced, onReducedChange, oklchRgb } from '../shared/stim.js';
+import { initPage, sound, reduced, onReducedChange, oklchRgb, choices } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -277,6 +281,11 @@ const NB = new Int16Array(MAXN * 6), due = new Float64Array(MAXN), mode = new Ui
 const SPRING = 0, FALL = 1, WAIT_FALL = 2, FADE = 3, WAIT_RISE = 4;
 // Side 1 is the back: pins pushed out at the front sink in here.
 const uSide = { value: 0 };
+// Anodised heads take a thin-film hue that shifts with height.
+const uAnod = { value: 0 }, uRamp = { value: [] };
+// Ramp stops as OKLCH, from flat to RAMP_TOP pitches out.
+const RAMP_TOP = 5;
+const RAMP = [[0.86, 0.14, 72], [0.62, 0.19, 352], [0.52, 0.2, 296], [0.64, 0.17, 252], [0.8, 0.12, 196], [0.86, 0.15, 124]];
 const disp = i => (uSide.value ? HMAX - H[i] : H[i]);
 
 // Even rows sit a quarter pitch left, odd rows a quarter right.
@@ -1079,6 +1088,15 @@ addEventListener('keydown', e => {
 document.getElementById('shake').addEventListener('click', shake);
 document.getElementById('flip').addEventListener('click', flipBoard);
 document.getElementById('shuffle').addEventListener('click', shuffle);
+// The finish choice is remembered between visits.
+const FINISH_KEY = 'stimming.pins.finish';
+function setFinish(v) {
+  uAnod.value = v === 'anodised' ? 1 : 0;
+  try { localStorage.setItem(FINISH_KEY, v); } catch (err) { /* storage is optional */ }
+  if (ready) draw(false);
+}
+const finish = choices(document.querySelector('.choices'), setFinish);
+try { if (localStorage.getItem(FINISH_KEY) === 'anodised') { finish.set('anodised'); uAnod.value = 1; } } catch (err) { /* storage is optional */ }
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1116,16 +1134,31 @@ const patchShaft = back => s => {
     'outgoingLight *= vS.x * mix(0.2, 1.0, smoothstep(vS.y - 1.6, vS.y + 0.5, vZ));\n#include <opaque_fragment>',
   );
 };
+// The thin-film ramp blends its stops by how far a pin stands out.
+const ANOD = `uniform float uAnod;
+uniform vec3 uRamp[${RAMP.length}];
+vec3 anod(float p) {
+  float t = clamp(p / ${RAMP_TOP.toFixed(1)}, 0.0, 1.0) * ${(RAMP.length - 1).toFixed(1)};
+  vec3 c = uRamp[0];
+  for (int k = 0; k < ${RAMP.length - 1}; k++) c = mix(c, uRamp[k + 1], clamp(t - float(k), 0.0, 1.0));
+  return c;
+}
+`;
 // Front heads ride on the shaft; back heads hang below the plate.
 const patchHead = back => s => {
   s.uniforms.uSide = uSide;
-  s.vertexShader = ATTRS + 'varying float vAO;\n' + s.vertexShader.replace(
+  s.uniforms.uAnod = uAnod;
+  s.uniforms.uRamp = uRamp;
+  s.vertexShader = ATTRS + 'varying float vAO;\nvarying float vP;\n' + s.vertexShader.replace(
     '#include <begin_vertex>',
-    `#include <begin_vertex>\n${pinP(back)}\ntransformed.z ${back ? '-=' : '+='} ${L0.toFixed(3)} + pinP;\nvAO = ${back ? '0.8' : `pinS.x * ${LAMP}`};`,
+    `#include <begin_vertex>\n${pinP(back)}\ntransformed.z ${back ? '-=' : '+='} ${L0.toFixed(3)} + pinP;\nvP = pinP;\nvAO = ${back ? '0.8' : `pinS.x * ${LAMP}`};`,
   );
-  s.fragmentShader = 'varying float vAO;\n' + s.fragmentShader.replace(
+  s.fragmentShader = `varying float vAO;\nvarying float vP;\n${ANOD}` + s.fragmentShader.replace(
     '#include <opaque_fragment>',
     'outgoingLight *= vAO;\n#include <opaque_fragment>',
+  ).replace(
+    '#include <color_fragment>',
+    '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, anod(vP), uAnod);',
   );
 };
 // A copy mirrored through the plate, with its winding put right.
@@ -1206,6 +1239,7 @@ async function start() {
   hAttr = new THREE.InstancedBufferAttribute(H, 1).setUsage(THREE.DynamicDrawUsage);
   sAttr = new THREE.InstancedBufferAttribute(SH, 2).setUsage(THREE.DynamicDrawUsage);
   for (const g of [shaftGeo, headGeo, shaftGeoB, headGeoB]) { g.setAttribute('pinH', hAttr); g.setAttribute('pinS', sAttr); }
+  uRamp.value = RAMP.map(c => new THREE.Color().setRGB(...oklchRgb(...c), THREE.SRGBColorSpace));
   const metal = (color, roughness, patch, key) => {
     const m = new THREE.MeshStandardMaterial({ color, metalness: 1, roughness });
     m.onBeforeCompile = patch;
