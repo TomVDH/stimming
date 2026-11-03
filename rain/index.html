@@ -391,12 +391,14 @@ function drip(x, size) {
 // A drop's radius is half its bitmap's size.
 // Water fills the middle 0.43 of that radius.
 const MAX_DROPS = 1200, REF = 1160 * 652, VIS = 0.43;
-let W = 0, H = 0, S = 1, R_MIN = 10, R_MAX = 40, G = 46, area = 1, pr = 1;
+// The rainfall follows a reference model with its own radius unit.
+// RK turns one of its radius pixels into ours; speeds stay in pixels.
+let W = 0, H = 0, S = 1, RK = 0.73, R_MIN = 15, R_MAX = 36, G = 42, area = 1, pr = 1;
 // Each weather sets drop and mist rates per second and the sound.
 const WEATHER = {
-  drizzle: { rain: 6, mist: 90, gain: 0.4, bed: 1100, pat: 0.3 },
-  rain: { rain: 16, mist: 220, gain: 0.62, bed: 1500, pat: 0.45 },
-  storm: { rain: 44, mist: 520, gain: 1, bed: 2300, pat: 0.7 },
+  drizzle: { rain: 10, mist: 110, gain: 0.4, bed: 1100, pat: 0.3 },
+  rain: { rain: 30, mist: 260, gain: 0.62, bed: 1500, pat: 0.45 },
+  storm: { rain: 72, mist: 560, gain: 1, bed: 2300, pat: 0.7 },
 };
 let drops = [], born = [], wx = WEATHER.rain, rainAcc = 0, mistAcc = 0;
 // Queued instances, six floats each, in device pixels.
@@ -405,10 +407,10 @@ const rates = () => {
   const k = reduce ? 0.45 : 1;
   return { rain: wx.rain * k, mist: wx.mist * k };
 };
+// A new drop checks once for drops it lands on.
 function makeDrop(o) {
   if (drops.length + born.length >= MAX_DROPS) return null;
-  // Surface tension varies a little from drop to drop.
-  return Object.assign({ x: 0, y: 0, r: R_MIN, sx: 0, sy: 0, m: 0, sl: 0, last: 0, tension: rand(0.7, 1.5), parent: null, dead: false, shrink: 0, ran: false }, o);
+  return Object.assign({ x: 0, y: 0, r: R_MIN, sx: 0, sy: 0, m: 0, mx: 0, last: 0, next: 0, parent: null, dead: false, shrink: 0, ran: false, fresh: true }, o);
 }
 // Sprite quads cover the bitmap's middle, where the water is.
 function stamp(q, x, y, r, sx = 0, sy = 0) {
@@ -432,13 +434,14 @@ function buildGrid() {
   for (let i = 0; i < n; i++) grid[i].length = 0;
   for (const d of drops) if (!d.dead) grid[gy(d.y) * gcols + gx(d.x)].push(d);
 }
-// The larger drop takes most of the other's water and a push.
+// The larger drop takes most of the other's water and its speed.
 function merge(a, b) {
   const moving = a.m > S || b.m > S;
   a.r = Math.min(R_MAX, Math.sqrt(a.r * a.r + 0.8 * b.r * b.r));
-  a.m += 1.5 * S;
-  a.sx = Math.max(a.sx, 0.25);
-  a.sy = Math.max(a.sy, 0.15);
+  // It jogs toward the drop it swallows, and speeds up.
+  a.mx += (b.x - a.x) * 0.1;
+  a.sx = a.sy = 0;
+  a.m = Math.max(b.m, Math.min(40 * S, a.m + (a.r / RK) * 0.05 * S + S));
   b.dead = true;
   if (moving && a.r > R_MAX * 0.5 && Math.random() < 0.3) drip(a.x / W, (a.r - R_MIN) / (R_MAX - R_MIN));
 }
@@ -457,58 +460,84 @@ function collide(d) {
   }
 }
 // One step of the rain, in sixtieths of a second.
+// Speeds are pixels per sixtieth; d.r / RK is a radius in model units.
 function step(dt) {
-  const ts = dt * 60, slow = reduce ? 0.55 : 1, rt = rates(), stick = 14 * S;
+  const ts = dt * 60, slow = reduce ? 0.55 : 1, rt = rates();
   born.length = 0;
   rainAcc += rt.rain * area * dt;
   while (rainAcc >= 1) {
     rainAcc--;
-    // Fresh drops land splayed wide, then pull in.
-    const d = makeDrop({ x: Math.random() * W, y: H * rand(-0.05, 0.95), r: R_MIN + (R_MAX - R_MIN) * Math.random() ** 3, sx: 1.5, sy: 1.5 });
+    // Fresh drops land splayed wide and already sliding a little.
+    const r = R_MIN + (R_MAX - R_MIN) * Math.random() ** 3;
+    const d = makeDrop({ x: Math.random() * W, y: H * rand(-0.1, 0.95), r, m: S * (1 + (r / RK - 20) * 0.1 + rand(0, 2)), sx: 1.5, sy: 1.5 });
     if (d) born.push(d);
   }
   mistAcc += rt.mist * area * dt;
-  while (mistAcc >= 1) { mistAcc--; stamp(mistQ, Math.random() * W, Math.random() * H, sprayR()); }
+  while (mistAcc >= 1) {
+    // Most spray lands in tight clusters of four to eight specks.
+    if (mistAcc >= 4 && Math.random() < 0.8) {
+      const n = Math.min(Math.floor(mistAcc), 4 + Math.floor(Math.random() * 5));
+      const cx = Math.random() * W, cy = Math.random() * H, spread = (4 + Math.random() * 8) * S;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * TAU, s = Math.random() * spread;
+        stamp(mistQ, cx + Math.cos(a) * s, cy + Math.sin(a) * s, sprayR());
+      }
+      mistAcc -= n;
+    } else {
+      mistAcc--;
+      stamp(mistQ, Math.random() * W, Math.random() * H, sprayR());
+    }
+  }
   buildGrid();
   for (const d of drops) {
     if (d.dead) continue;
-    // Bigger drops, and slicker glass, break loose more often.
-    if (d.r > stick && Math.random() < ((d.r - stick) / 100) * ts * 0.5 / d.tension) d.m += rand(0.5, 2.5) * S;
-    // Small drops, and resting mid-size ones, sometimes start to dry up.
-    if (d.r <= R_MIN * 1.6 && Math.random() < (d.r <= R_MIN ? 0.02 : d.m > 0.3 * S ? 0 : 0.006) * ts) d.shrink += 0.004 * S;
+    const rr = d.r / RK;
+    // Bigger drops break loose more often, and harder.
+    if (rr > 20 && Math.random() < (rr - 20) * (0.1 / 30) * ts) d.m += rand(0, (rr / 50) * 4) * S;
+    // Small drops sometimes start to dry up.
+    if (rr <= 20 && Math.random() < 0.05 * ts) d.shrink += 0.01 * RK;
     d.r -= d.shrink * ts;
     if (d.r < 1.5) { d.dead = true; continue; }
+    // A sliding drop sheds a smaller one, more often as it speeds up.
+    d.last += d.m * ts;
+    if (d.m > 0 && d.last > d.next) {
+      const t = makeDrop({ x: d.x + rand(-1, 1) * d.r * 0.1, y: d.y - d.r * 0.01, r: d.r * rand(0.25, 0.35), sy: (d.m / S) * 0.1, parent: d });
+      if (t) {
+        born.push(t);
+        d.r *= 0.97 ** ts;
+        d.last = 0;
+        d.next = S * (rand(20, 50) + 50 - d.r / RK) - 2 * d.m;
+      }
+    }
     d.sx *= 0.4 ** ts;
     d.sy *= 0.7 ** ts;
-    d.m *= 0.95 ** ts;
-    // Below a small speed the drop clings in place.
-    if (d.m > 0.3 * S) {
-      // The path wanders: a slope that drifts at random.
-      d.sl = clamp((d.sl + rand(-1, 1) * 0.1 * ts) * 0.98 ** ts, -0.42, 0.42);
-      const dy = d.m * ts * slow;
-      d.y += dy;
-      d.x += d.sl * Math.min(d.m, 4 * S) * ts * slow;
-      if (d.y > H + d.r || d.x < -d.r || d.x > W + d.r) { d.dead = true; continue; }
-      // A sliding drop sheds a smaller one every so often.
-      d.last += dy;
-      if (d.m > 0.5 * S && d.last > 20 * S) {
-        const t = makeDrop({ x: d.x + rand(-1, 1) * d.r * 0.1, y: d.y - d.r * 0.01, r: d.r * rand(0.25, 0.42), sy: d.m * 0.1, parent: d });
-        if (t) {
-          born.push(t);
-          d.r *= 0.97;
-          d.last = 0;
-        }
+    if (d.m > 0) {
+      const dy = d.m * ts * slow, dx = d.mx * ts * slow;
+      // Fast drops move in short hops, so they clear and meet all in their path.
+      const n = Math.max(1, Math.ceil(dy / Math.max(2, VIS * d.r)));
+      for (let k = 0; k < n && !d.dead; k++) {
+        d.y += dy / n;
+        d.x += dx / n;
+        // Its lane is cleared of spray and fog.
+        const v = VIS * d.r;
+        eraseQ.push(d.x * pr, d.y * pr, v * 0.85 * pr, 1, v * 1.4 * pr, v * 0.9 * pr);
+        if (d.m > S) fogCut(d.x, d.y - v * 0.4, v * 1.1, Math.min(0.4, (0.045 * d.m) / S) * ts);
+        collide(d);
       }
-      // Its lane is cleared of spray and fog.
-      const v = VIS * d.r;
-      eraseQ.push(d.x * pr, d.y * pr, v * 0.85 * pr, 1, v * 1.4 * pr, v * 0.9 * pr);
-      if (d.m > S) fogCut(d.x, d.y - v * 0.4, v * 1.1, Math.min(0.4, (0.045 * d.m) / S) * ts);
+      if (d.dead) continue;
+      if (d.y > H + d.r || d.x < -d.r || d.x > W + d.r) { d.dead = true; continue; }
       if (!d.ran && d.m > 2.5 * S && d.r > R_MAX * 0.55) {
         d.ran = true;
         if (Math.random() < 0.35) drip(d.x / W, (d.r - R_MIN) / (R_MAX - R_MIN));
       }
-    } else d.ran = false;
-    collide(d);
+    } else {
+      d.ran = false;
+      if (d.fresh) collide(d);
+    }
+    d.fresh = false;
+    // Momentum bleeds away, fastest while the drop is slow.
+    d.m = Math.max(0, d.m - S * Math.max(1, 10 - d.m / S) * 0.1 * ts);
+    d.mx *= 0.7 ** ts;
   }
   let n = 0;
   for (const d of drops) if (!d.dead) drops[n++] = d;
@@ -584,10 +613,11 @@ function wipeAt(x, y, R) {
     const v = VIS * d.r, dx = d.x - x, dy = d.y - y, dist = Math.hypot(dx, dy), edge = R + v * 0.6;
     if (dist >= edge) continue;
     if (dist < R * 0.75 || v < 2) { d.dead = true; continue; }
-    // Water at the stroke's edge is shoved aside.
+    // Water at the stroke's edge is shoved aside and may pool.
     const k = edge / (dist || 1);
     d.x = x + dx * k;
     d.y = y + dy * k;
+    d.fresh = true;
   }
 }
 function wipeSeg(x0, y0, x1, y1, R) {
@@ -632,8 +662,10 @@ function layoutGlass(w, h) {
   W = w;
   H = h;
   S = clamp(Math.sqrt(w * h) / 870, 0.62, 1.2);
-  R_MIN = 10 * S;
-  R_MAX = 40 * S;
+  // Our drop shows 0.41 of its radius; the model's shows 0.3.
+  RK = 0.73 * S;
+  R_MIN = 20 * RK;
+  R_MAX = 50 * RK;
   G = 1.1 * R_MAX + 2;
   area = (w * h) / REF;
   // Drops keep their place on the glass, in proportion.
