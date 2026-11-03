@@ -92,7 +92,11 @@ export const SOUND_NOTE = { glyph: false, words: null, nudge: false };
 // read: true holds for reading time; false holds to T.hold from the start.
 export const DEFAULT_VARIETY = 'snap';
 export const VARIETIES = {
-  snap: { label: 'Snap', group: 'Default', read: true },
+  // Snap runs 20% longer than the base table, every beat in proportion.
+  snap: {
+    label: 'Snap', group: 'Default', read: true,
+    timing: { lead: 3, pop: 3, flash: 11, unfurl: 290, nlLag: 4, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, readBase: 420, readPer: 15, readCap: 1560, wipe: 300, fade: 460 },
+  },
   stamp: {
     label: 'Stamp: the box lands hard, lines stamp in', group: 'New',
     timing: { flash: 10 }, land: 'stamp', reveal: 'stamp', exit: 'blow', read: true,

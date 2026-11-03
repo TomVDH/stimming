@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=8">
+<link rel="stylesheet" href="../shared/intro.css?v=9">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -126,7 +126,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=8';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=9';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -419,6 +419,8 @@ document.getElementById('play').addEventListener('click', () => run());
 // Frames run at 30 fps; line reveals and exits follow the engine's own rules.
 const SEGS = [['glass', 'oklch(0.5 0.03 275)'], ['pop', 'oklch(0.85 0.14 85)'], ['flash', 'oklch(0.72 0.16 40)'], ['lines', 'oklch(0.72 0.13 200)'], ['hold', 'oklch(0.6 0.08 260)'], ['exit', 'oklch(0.7 0.16 330)'], ['fade', 'oklch(0.45 0.05 300)']];
 const F = n => (n * 1000) / 30;
+// Startup and frame rounding add about this many ms to a measured run.
+const STARTUP = 120;
 let runStart = 0, tlTotal = 1;
 function beats() {
   const t = T(), v = V(), info = toys[toySel.value] || {};
@@ -440,7 +442,7 @@ function beats() {
 }
 function drawTL() {
   const seg = beats();
-  tlTotal = Object.values(seg).reduce((a, b) => a + b, 0) || 1;
+  tlTotal = Object.values(seg).reduce((a, b) => a + b, 0) + STARTUP;
   document.getElementById('tl-total').textContent = `Total ≈ ${(tlTotal / 1000).toFixed(2)} s`;
   document.getElementById('tl-bar').innerHTML = SEGS.map(([k, c]) => `<i style="flex: ${seg[k]} 0 0; background: ${c}" title="${k} ${Math.round(seg[k])} ms"></i>`).join('') + '<b class="tl-head" id="tl-head"></b>';
   document.getElementById('tl-keys').innerHTML = SEGS.map(([k, c]) => `<span style="--c: ${c}">${k} ${Math.round(seg[k])}</span>`).join('');
