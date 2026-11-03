@@ -26,7 +26,7 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Bubble wand | [bubbles/](bubbles/) | live, with sound |
 | Spinning top | [top/](top/) | live, with sound |
 | Soap cutting | [soap/](soap/) | live, with sound |
-| Rain on glass | | in progress; outlines on the menu |
+| Rain on glass | [rain/](rain/) | live, with sound |
 
 ## Run locally
 
