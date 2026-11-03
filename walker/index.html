@@ -65,7 +65,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The breeze blows on its own and sometimes dies down. The arrow keys blow gusts, V switches wide and close views, P shows the foot path and R resets.">
+    <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The breeze blows on its own and sometimes dies down. The arrow keys blow gusts, V switches wide and close views and R resets.">
       <canvas class="sky" aria-hidden="true"></canvas>
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Beach walker needs canvas drawing, which this browser has turned off.</p>
@@ -76,25 +76,21 @@
         <span class="name"><output aria-live="polite">Sunset</output><span class="sizer" aria-hidden="true">End of the world</span></span>
         <button class="chip icon" type="button" data-step="1" aria-label="Next time" title="Next time"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
       </div>
+      <div class="choices" id="view" role="group" aria-label="Camera">
+        <button class="chip" type="button" data-value="wide" aria-pressed="true" aria-keyshortcuts="V">Wide</button>
+        <button class="chip" type="button" data-value="close" aria-pressed="false" aria-keyshortcuts="V">Close</button>
+      </div>
       <div class="tail">
         <div class="adder" id="setter">
           <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
           <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <div class="row"><span>View</span>
-              <div class="choices" id="view" role="group" aria-label="View">
-                <button class="chip" type="button" data-value="wide" aria-pressed="true" aria-keyshortcuts="V">Wide</button>
-                <button class="chip" type="button" data-value="close" aria-pressed="false" aria-keyshortcuts="V">Close</button>
-              </div>
-            </div>
             <div class="row"><span>Legs</span>
               <div class="choices" id="legs" role="group" aria-label="Legs">
                 <button class="chip" type="button" data-value="4" aria-pressed="false">8</button>
                 <button class="chip" type="button" data-value="6" aria-pressed="true">12</button>
               </div>
             </div>
-            <label class="slider"><span>Haze</span><input type="range" id="haze" min="0" max="2" step="0.05" value="1"></label>
             <button class="chip" id="cycle" type="button" aria-pressed="false">Cycle the day</button>
-            <button class="chip" id="path" type="button" aria-pressed="false" aria-keyshortcuts="P">Foot path</button>
             <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
           </div>
         </div>
@@ -162,7 +158,7 @@ const mix = (p, q, t) => [lerp(p[0], q[0], t), lerp(p[1], q[1], t), lerp(p[2], q
 const BODY = [0.06, 0.012, 290], BODY_FAR = [0.13, 0.03, 320];
 const STEEL = [0.07, 0.012, 280], STEEL_FAR = [0.14, 0.03, 315];
 const PAD = [0.05, 0.01, 290], PAD_FAR = [0.11, 0.025, 320];
-// RIM marks lit things: the held hub, the foot path, blown sand.
+// RIM marks lit things: the held hub and blown sand.
 // The vane is the one colour on the walker.
 const RIM = [0.93, 0.11, 78], VANE = [0.36, 0.15, 26];
 
@@ -395,7 +391,6 @@ sound.onChange(on => { if (on) setTimeout(seaSound, 300); });
 let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1, sunX = 1, sunY = 1, sunR = 1, focal = 1;
 // The view eases between close (0) and wide (1).
 // The close lens sets the world: camera height and leg size stay fixed.
-let flareGain = 1;
 /* ---------- time of day ---------- */
 // One value runs afternoon (0), golden hour, sunset, dusk, to night (1).
 // Each key holds linear colours, the sun height in radii and its size.
@@ -1392,7 +1387,7 @@ void main() {
       skyLight.color.setRGB(...look.sky); skyLight.intensity = look.skyK;
       V(postU.uFlareCol, look.flare); postU.uBand.value = look.end; postU.uHard.value = look.hole;
       // The flare fades as the sun sinks behind the sea.
-      postU.uGain.value = flareGain * look.flareK * clamp((horizonY - sunY) / sunR + 0.5, 0, 1);
+      postU.uGain.value = look.flareK * clamp((horizonY - sunY) / sunR + 0.5, 0, 1);
       // The shadow light shares the sun bearing at a higher angle.
       const flat = Math.hypot(sd.x, sd.z), c0 = Math.cos(SHADOW_TURN), s0 = Math.sin(SHADOW_TURN);
       const hx = sd.x / flat, hz = sd.z / flat;
@@ -1477,7 +1472,7 @@ void main() {
 
       renderer.setRenderTarget(rt);
       renderer.render(scene, camera);
-      bloom.strength = 0.7 * flareGain * (0.4 + 0.6 * look.flareK) * (1 - 0.6 * look.hole);
+      bloom.strength = 0.7 * (0.4 + 0.6 * look.flareK) * (1 - 0.6 * look.hole);
       bloom.render(renderer, null, rt, 0, false);
       if (look.hole > 0.01) {
         renderer.setRenderTarget(hazeRt); renderer.render(hazeScene, postCam);
@@ -1494,7 +1489,7 @@ void main() {
 })();
 
 /* ---------- motion ---------- */
-let mode = null, handTurn = 0, showPath = false, camLock = 0;
+let mode = null, handTurn = 0, camLock = 0;
 function step(dt) {
   simT += dt;
   // Cycle swings the hour back and forth, two minutes each way.
@@ -1812,23 +1807,6 @@ function drawStreaks() {
   }
   c.stroke();
 }
-// The foot path shows as a thin line under the nearest pair.
-function drawPath() {
-  if (!showPath) return;
-  const c = ctx;
-  c.strokeStyle = css(RIM, 0.9); c.lineWidth = 1.25; c.lineJoin = 'round';
-  // The 3D scene projects each point through its camera.
-  const at = sea ? (x, y, L) => sea.project(x, bodyY + y, sea.legZ(L)) : (x, y, L) => [X(x, L.z), Y(y, L.z)];
-  for (const L of legs.slice(0, 2)) {
-    const sg = L.flip ? -1 : 1;
-    c.beginPath();
-    LOOP.forEach(([x, y], n) => { const [px, py] = at(sg * x, y, L); n ? c.lineTo(px, py) : c.moveTo(px, py); });
-    c.stroke();
-    c.fillStyle = css(RIM);
-    const [fx, fy] = at(L.J[F], L.J[F + 1], L);
-    c.beginPath(); c.arc(fx, fy, 2.5, 0, TAU); c.fill();
-  }
-}
 function draw() {
   if (!legs.length) return;
   cx = w / 2 + (bodyX - camX) * s;
@@ -1839,7 +1817,6 @@ function draw() {
     sea.render();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawPath();
     drawStreaks();
     return;
   }
@@ -1860,7 +1837,6 @@ function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (box.w > 0 && box.h > 0) ctx.drawImage(wc, x0, y0, box.w, box.h, x0, y0, box.w, box.h);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawPath();
   drawStreaks();
 }
 
@@ -1945,7 +1921,7 @@ canvas.addEventListener('pointerleave', () => { if (!mode && hubHover) { hubHove
 // Wide stands the walker far off; Close is the standard view.
 const viewPick = choices(document.getElementById('view'), v => setWide(v === 'wide'));
 function setWide(on) { viewTo = on ? 1 : 0; viewPick.set(on ? 'wide' : 'close'); wake(); }
-if (!sea) document.getElementById('view').closest('.row').hidden = true;
+if (!sea) document.getElementById('view').hidden = true;
 // Settings opens a tray; a press outside or Escape closes it.
 const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
 const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
@@ -1985,13 +1961,6 @@ cycleBtn.addEventListener('click', () => {
   wake();
 });
 if (!sea) { document.getElementById('time').hidden = true; cycleBtn.hidden = true; }
-// Haze scales the whole lens flare.
-const hazeIn = document.getElementById('haze');
-hazeIn.addEventListener('input', () => { flareGain = Number(hazeIn.value); if (!raf) draw(); });
-if (!sea) hazeIn.closest('label').hidden = true;
-const pathBtn = document.getElementById('path');
-function setPath(on) { showPath = on; pathBtn.setAttribute('aria-pressed', String(on)); if (!raf) draw(); }
-pathBtn.addEventListener('click', () => setPath(!showPath));
 function reset() {
   theta = 0; u = 0; bodyX = 0; camX = 0; windUser = 0; keyWind = 0; wind = 0; rel = 0; vane = 0; prints = [];
   breezeOn = true; breezeAmt = 0; lullLeft = 0; lullIn = 25 + Math.random() * 30;
@@ -2010,7 +1979,6 @@ addEventListener('keydown', e => {
     if (tag === 'BUTTON') return;
     e.preventDefault(); keyWind = k === 'ArrowRight' ? 1 : -1; wake();
   } else if (k === 'r' || k === 'R') reset();
-  else if (k === 'p' || k === 'P') setPath(!showPath);
   else if (k === 'v' || k === 'V') setWide(viewTo === 0);
 });
 addEventListener('keyup', e => {
