@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oscilloscope</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Oscilloscope: a phosphor tube in a dark bezel; the drawing is the sound. */
+:root { --stage: oklch(0.15 0.006 250); }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
+/* The pitch readout is a live number, so it is monospace. */
+.slider output {
+  min-width: 6ch; color: var(--fg); text-align: right;
+  font: 500 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums;
+}
+.slider input { width: 132px; }
+/* On a narrow bar the pitch slider takes its own row. */
+@media (max-width: 520px) {
+  .bar .slider { flex: 1 1 100%; }
+  .bar .slider input { flex: 1; width: auto; min-width: 0; }
+}
+.vignette figure svg { background: oklch(0.13 0.008 170); border-radius: 14px; }
+.vignette figure .grid { stroke: oklch(0.36 0.02 160); stroke-width: 1; fill: none; }
+.vignette figure .frame { stroke: oklch(0.5 0.02 160); stroke-width: 1.5; fill: none; }
+.vignette figure .trace { stroke: oklch(0.86 0.2 148); stroke-width: 2; fill: none; stroke-linejoin: round; }
+.vignette figure .wave { stroke: var(--muted); stroke-width: 1.5; fill: none; stroke-linejoin: round; }
+.vignette figure .lead { stroke: oklch(0.36 0.02 160); stroke-width: 1; stroke-dasharray: 2 4; }
+.vignette figure text { fill: var(--muted); font: 600 12px var(--sans); }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/scope.svg)"></span><span class="intro-name">Oscilloscope</span><span class="intro-sub">Stimming No. 19</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope tube. Drag across it to draw a shape; the shape becomes a stereo tone, left channel across and right channel up, and the beam draws it back from that tone. Up and down arrows change the pitch, S shuffles the shapes, C clears, P changes the phosphor colour.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Oscilloscope needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices">
+        <label class="slider"><span>Pitch</span><input type="range" id="pitch" min="0" max="1000" step="1" value="439" aria-valuetext="110 hertz"><output id="hz" for="pitch">110 Hz</output></label>
+        <button class="chip" id="spin" type="button" aria-pressed="true">Spin</button>
+        <button class="chip" id="morph" type="button" aria-pressed="false">Morph</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="shuffle" type="button" aria-keyshortcuts="S">Shuffle</button>
+        <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Drag</span><span class="touch">Drag</span></dt><dd>draw a sound</dd></div>
+        <div class="fine"><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>pitch</dd></div>
+        <div class="fine"><dt><kbd>S</kbd></dt><dd>shuffle</dd></div>
+        <div class="fine"><dt><kbd>P</kbd></dt><dd>phosphor</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Oscilloscope</h1>
+    <div class="vignette">
+      <div>
+        <h2>Two channels, one beam</h2>
+        <p>In X–Y mode an oscilloscope stops drawing time. The left channel pushes the beam across and the right channel pushes it up, so a stereo signal draws a shape. A circle is two sine waves a quarter turn apart.</p>
+        <p>Your stroke is walked at a steady pace, and one lap becomes one cycle of the tone. <em>Pitch</em> sets the laps per second. The phosphor glows hardest where the beam slows, so turning points burn bright. <em>Spin</em> mixes depth into the left channel; <em>Morph</em> blends two drawings, sample by sample.</p>
+      </div>
+      <figure>
+        <svg id="figure" viewBox="0 0 400 300" role="img" aria-label="A three to two Lissajous knot on a graticule. Under it the left channel plots as a wave that sets the horizontal position; to its left the right channel plots as a wave that sets the vertical position."></svg>
+        <figcaption>Left sets x, right sets y: a 3 to 2 ratio ties this knot.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+</script>
+<script type="module">
+import { initPage, sound, audioKit, whenVisible, reduced, onReducedChange, fitCanvas, oklchLinear } from '../shared/stim.js';
+initPage({ id: 'scope' });
+
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const now = () => performance.now() / 1000;
+
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const bar = document.querySelector('.bar');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
+if (!gl) fail();
+// Half floats keep the afterglow smooth; bytes are the fallback.
+const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
+
+/* ---------- signal space ---------- */
+// The face is 10 by 8 divisions; signal units are divisions.
+// Audio is the division value over five, so one is full scale.
+const N = 1024;
+const CYCLE = 10;
+const FADE = 0.05;
+const PERSP = 22;
+const BARREL = 0.06;
+
+/* ---------- shapes: N points of x, y and depth ---------- */
+const shape = fn => {
+  const a = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) a.set(fn(i / N), i * 3);
+  return a;
+};
+// A closed path over corners; the beam slows near each corner.
+function corners(verts, dwell) {
+  const lens = verts.map((v, i) => { const w = verts[(i + 1) % verts.length]; return Math.hypot(w[0] - v[0], w[1] - v[1], w[2] - v[2]); });
+  const total = lens.reduce((s, l) => s + l, 0);
+  let e = 0, start = 0;
+  return shape(s => {
+    const at = s * total;
+    while (e < verts.length - 1 && at > start + lens[e]) start += lens[e++];
+    const t = clamp((at - start) / lens[e]), k = t - dwell * Math.sin(TAU * t) / TAU;
+    const a = verts[e], b = verts[(e + 1) % verts.length];
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  });
+}
+function cube() {
+  const v = [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]];
+  // This walk covers all twelve edges and retraces four.
+  const walk = [0, 1, 2, 3, 0, 4, 5, 6, 7, 4, 5, 1, 2, 6, 7, 3];
+  const ax = 0.5, ay = 0.62, s = 2.1;
+  return corners(walk.map(i => {
+    let [x, y, z] = v[i];
+    [x, z] = [x * Math.cos(ay) + z * Math.sin(ay), -x * Math.sin(ay) + z * Math.cos(ay)];
+    [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
+    return [x * s, y * s, z * s];
+  }), 0.55);
+}
+function star() {
+  const v = [];
+  for (let i = 0; i < 10; i++) {
+    const a = Math.PI / 2 + i * TAU / 10, r = i % 2 ? 1.45 : 3.5;
+    v.push([r * Math.cos(a), r * Math.sin(a) - 0.2, i % 2 ? (i % 4 === 1 ? 1.1 : -1.1) : 0]);
+  }
+  return corners(v, 0.5);
+}
+const PRESETS = [
+  // A curve on a cylinder; spin turns it into the drifting figure.
+  () => shape(s => { const u = TAU * s; return [3.3 * Math.sin(3 * u), 3 * Math.sin(2 * u), 3.3 * Math.cos(3 * u)]; }),
+  cube,
+  () => shape(s => {
+    const u = TAU * s, x = 16 * Math.sin(u) ** 3;
+    const y = 13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u);
+    return [x * 0.2, (y + 2.5) * 0.19, 1.4 * Math.sin(u)];
+  }),
+  star,
+  // An in-and-out spiral whose depth makes a cone.
+  () => shape(s => { const u = TAU * s, r = 3.4 * (0.5 - 0.5 * Math.cos(u)), a = 7 * u; return [r * Math.cos(a), 0.9 * r * Math.sin(a), 2.6 * Math.cos(u)]; }),
+];
+
+// Arc-length resampling around a closed loop.
+function resample(pts, n) {
+  const m = pts.length, cum = [0];
+  for (let i = 0; i < m; i++) { const a = pts[i], b = pts[(i + 1) % m]; cum.push(cum[i] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  const total = cum[m], out = [];
+  let j = 0;
+  for (let k = 0; k < n; k++) {
+    const at = (k / n) * total;
+    while (j < m - 1 && cum[j + 1] < at) j++;
+    const a = pts[j], b = pts[(j + 1) % m], t = total > 0 ? clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9)) : 0;
+    out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+  }
+  return out;
+}
+// A stroke becomes a smooth loop with a slow twist in depth.
+function fromStroke(raw) {
+  let p = resample(raw, 256);
+  for (let pass = 0; pass < 3; pass++) {
+    p = p.map((c, i) => { const a = p[(i + 255) % 256], b = p[(i + 1) % 256]; return [(a[0] + 2 * c[0] + b[0]) / 4, (a[1] + 2 * c[1] + b[1]) / 4]; });
+  }
+  p = resample(p, N);
+  const cx = p.reduce((s, c) => s + c[0], 0) / N, cy = p.reduce((s, c) => s + c[1], 0) / N;
+  const rms = Math.sqrt(p.reduce((s, c) => s + (c[0] - cx) ** 2 + (c[1] - cy) ** 2, 0) / N);
+  return shape(s => { const c = p[Math.round(s * N) % N]; return [c[0], c[1], 0.4 * rms * Math.sin(TAU * s)]; });
+}
+// The new shape starts where the old one lines up best, for a clean morph.
+function align(a, b) {
+  if (!a || !b) return b;
+  const cost = (o, d, step) => {
+    let c = 0;
+    for (let i = 0; i < N; i += step) { const j = (((o + d * i) % N) + N) % N; c += (a[i * 3] - b[j * 3]) ** 2 + (a[i * 3 + 1] - b[j * 3 + 1]) ** 2; }
+    return c;
+  };
+  let best = [Infinity, 0, 1];
+  for (const d of [1, -1]) for (let o = 0; o < N; o += 16) { const c = cost(o, d, 16); if (c < best[0]) best = [c, o, d]; }
+  const [, o0, d] = best;
+  let o = o0, low = Infinity;
+  for (let k = -16; k <= 16; k++) { const c = cost(o0 + k, d, 4); if (c < low) { low = c; o = o0 + k; } }
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { const j = (((o + d * i) % N) + N) % N; out.set(b.subarray(j * 3, j * 3 + 3), i * 3); }
+  return out;
+}
+
+/* ---------- state ---------- */
+let pitch = 110, spinOn = !reduced(), morphOn = false, phos = 0;
+let preset = 0;
+let cur = PRESETS[0](), prev = align(cur, PRESETS[3]());
+// Each voice is one looping stereo buffer; the beam reads the same samples.
+let voices = [];
+
+/* ---------- the signal ---------- */
+const posAt = (v, t) => { const p = (v.pos0 + (t - v.t0) * v.rate * v.sr) % v.len; return p < 0 ? p + v.len : p; };
+const angleAt = (v, t) => v.th0 + TAU * posAt(v, t) / v.len;
+const morphAt = (v, t) => v.mp0 + TAU * posAt(v, t) / v.len;
+const weight = (v, t) => clamp((t - v.born) / FADE) * (v.dieAt ? clamp(1 - (t - v.dieAt) / FADE) : 1);
+
+// The buffer holds whole loops; spin and morph buffers hold one full cycle.
+function generate(A, B, { sr, spin, morph, th0, mp0 }) {
+  const dyn = spin || morph;
+  const loops = Math.max(1, Math.round(pitch * (dyn ? CYCLE : 0.5)));
+  const len = Math.round(loops * sr / pitch);
+  const L = new Float32Array(len), R = new Float32Array(len);
+  let px = 0, py = 0, path = 0;
+  for (let k = 0; k < len; k++) {
+    const ph = ((k * loops) / len % 1) * N, i = ph | 0, f = ph - i, j = i + 1 === N ? 0 : i + 1;
+    const i3 = i * 3, j3 = j * 3;
+    let x = B[i3] + (B[j3] - B[i3]) * f, y = B[i3 + 1] + (B[j3 + 1] - B[i3 + 1]) * f, z = B[i3 + 2] + (B[j3 + 2] - B[i3 + 2]) * f;
+    if (morph) {
+      const m = 0.5 + 0.5 * Math.cos(mp0 + TAU * k / len);
+      x = A[i3] + (A[j3] - A[i3]) * f + (x - A[i3] - (A[j3] - A[i3]) * f) * m;
+      y = A[i3 + 1] + (A[j3 + 1] - A[i3 + 1]) * f + (y - A[i3 + 1] - (A[j3 + 1] - A[i3 + 1]) * f) * m;
+      z = A[i3 + 2] + (A[j3 + 2] - A[i3 + 2]) * f + (z - A[i3 + 2] - (A[j3 + 2] - A[i3 + 2]) * f) * m;
+    }
+    if (spin) {
+      // Spin turns the shape round the vertical axis, with mild perspective.
+      const th = th0 + TAU * k / len, c = Math.cos(th), s = Math.sin(th);
+      const xr = x * c + z * s, zr = -x * s + z * c, p = PERSP / (PERSP - zr);
+      x = xr * p; y *= p;
+    }
+    const l = clamp(x / 5, -1, 1), r = clamp(y / 5, -1, 1);
+    L[k] = l; R[k] = r;
+    if (k) path += Math.hypot(l - px, r - py);
+    px = l; py = r;
+  }
+  return { L, R, len, loops, perim: (path * 5) / loops };
+}
+
+function build({ fresh = false, temp = null } = {}) {
+  const t = now(), live = voices.find(v => !v.dieAt);
+  voices.forEach(kill);
+  const B = temp || cur;
+  if (B) {
+    const sr = kit.ac?.sampleRate || 48000;
+    const spin = spinOn && !temp && !reduced(), morph = morphOn && !temp && !!prev;
+    const th0 = !fresh && spin && live?.spin ? angleAt(live, t) % TAU : 0;
+    const mp0 = !fresh && morph && live?.morph ? morphAt(live, t) % TAU : 0;
+    const g = generate(prev, B, { sr, spin, morph, th0, mp0 });
+    const v = { ...g, sr, f: pitch, rate: 1, pos0: 0, t0: t, born: live ? t : t - FADE, dieAt: 0, spin, morph, th0, mp0, node: null, gain: null };
+    voices.push(v);
+    attach(v);
+  }
+  poke();
+}
+
+/* ---------- sound ---------- */
+// The master gain and the level gain land near 0.2 overall.
+const kit = audioKit({ gain: 0.55, noiseSeconds: 0 });
+let chain = null, hooked = null;
+function ensureChain(ac) {
+  if (chain?.ac === ac) return chain;
+  // A low cut drops the offset; a gentle low pass softens sharp corners.
+  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 15; hp.Q.value = 0.5;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000; lp.Q.value = 0.5;
+  const level = ac.createGain(); level.gain.value = 0.38;
+  hp.connect(lp); lp.connect(level); level.connect(kit.out);
+  chain = { ac, in: hp };
+  return chain;
+}
+function attach(v) {
+  if (!visible || v.node) return;
+  const ac = kit.live();
+  if (!ac) return;
+  if (hooked !== ac) { hooked = ac; ac.addEventListener('statechange', ensureAudio); }
+  const t = now(), at = ac.currentTime, w = weight(v, t);
+  if (v.dieAt && w <= 0) return;
+  const buf = ac.createBuffer(2, v.len, v.sr);
+  buf.copyToChannel(v.L, 0); buf.copyToChannel(v.R, 1);
+  const src = ac.createBufferSource(); src.buffer = buf; src.loop = true; src.playbackRate.value = v.rate;
+  const g = ac.createGain();
+  // The gain follows the same ramps as the beam's weights.
+  g.gain.setValueAtTime(w, at);
+  if (!v.dieAt && t < v.born + FADE) g.gain.linearRampToValueAtTime(1, at + v.born + FADE - t);
+  src.connect(g); g.connect(ensureChain(ac).in);
+  src.start(at, posAt(v, t) / v.sr);
+  v.node = src; v.gain = g;
+  if (v.dieAt) fadeOut(v);
+}
+function fadeOut(v) {
+  const ac = kit.ac, t = now();
+  if (!v.node || !ac) return;
+  const at = ac.currentTime, end = Math.max(0, v.dieAt + FADE - t);
+  v.gain.gain.cancelScheduledValues(at);
+  v.gain.gain.setValueAtTime(weight(v, t), at);
+  v.gain.gain.linearRampToValueAtTime(0, at + end);
+  try { v.node.stop(at + end + 0.02); } catch (err) { /* the node already stopped */ }
+}
+function kill(v) { if (v.dieAt) return; v.dieAt = now(); fadeOut(v); }
+function detach() {
+  voices.forEach(v => { try { v.node?.stop(); } catch (err) { /* already stopped */ } v.node?.disconnect(); v.node = v.gain = null; });
+}
+function ensureAudio() { if (visible && sound.on) voices.forEach(attach); }
+sound.onChange(on => { if (on) ensureAudio(); else detach(); });
+// The first gesture wakes the context; the voices join once it runs.
+['pointerup', 'keydown'].forEach(type => addEventListener(type, () => setTimeout(ensureAudio, 0), { passive: true }));
+
+/* ---------- phosphors ---------- */
+// Flash and glow colours, fast and slow decay, and the slow share.
+const lin = c => oklchLinear(...c).map(x => Math.max(0, x));
+const PHOS = [
+  { flash: lin([0.9, 0.2, 148]), glow: lin([0.62, 0.16, 152]), tf: 0.045, ts: 0.4, slow: 0.1, gain: [1, 0.9, 0.22] },
+  { flash: lin([0.86, 0.11, 250]), glow: lin([0.8, 0.16, 72]), tf: 0.03, ts: 1.6, slow: 0.04, gain: [0.9, 0.6, 0.22] },
+  { flash: lin([0.93, 0.045, 235]), glow: lin([0.62, 0.1, 255]), tf: 0.05, ts: 0.25, slow: 0.12, gain: [1, 0.9, 0.2] },
+];
+
+/* ---------- shaders ---------- */
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+// Afterglow: each channel fades at its own rate.
+const DECAY = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uDecay; uniform float uEps;
+void main() { o = vec4(max(texture(uSrc, vUv).rg * uDecay - uEps, 0.0), 0.0, 1.0); }`;
+// One quad per sample step; it covers the segment plus the beam's spread.
+const BEAM_VS = `#version 300 es
+in vec2 aCorner; in vec4 aSeg; in float aE;
+uniform vec2 uRes; uniform float uSigma;
+out vec2 vP; flat out vec4 vSeg; flat out float vE;
+void main() {
+  vec2 a = aSeg.xy, b = aSeg.zw, d = b - a;
+  float l = length(d);
+  vec2 u = l > 1e-4 ? d / l : vec2(1.0, 0.0), n = vec2(-u.y, u.x);
+  float r = uSigma * 3.5;
+  vec2 p = (aCorner.x < 0.0 ? a - u * r : b + u * r) + n * aCorner.y * r;
+  vP = p; vSeg = aSeg; vE = aE;
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// A gaussian spot swept along the segment: the exposure integrates exactly.
+// A short segment holds the same energy, so slow beams burn brighter.
+const BEAM_FS = `#version 300 es
+precision highp float;
+in vec2 vP; flat in vec4 vSeg; flat in float vE;
+uniform float uSigma; uniform vec2 uW;
+out vec4 o;
+float erf1(float x) {
+  float s = sign(x); x = abs(x);
+  float t = 1.0 + x * (0.278393 + x * (0.230389 + x * (0.000972 + x * 0.078108)));
+  t *= t; t *= t;
+  return s - s / t;
+}
+void main() {
+  vec2 a = vSeg.xy, d = vSeg.zw - a;
+  float l = length(d);
+  vec2 u = l > 1e-4 ? d / l : vec2(1.0, 0.0);
+  float len = max(l, 0.05 * uSigma);
+  vec2 w = vP - a;
+  float s = dot(w, u), perp2 = max(dot(w, w) - s * s, 0.0);
+  float k = 0.70710678 / uSigma;
+  float along = erf1((len - s) * k) + erf1(s * k);
+  float e = vE / len * exp(-perp2 / (2.0 * uSigma * uSigma)) * along / (5.0132565 * uSigma);
+  o = vec4(e * uW, 0.0, 0.0);
+}`;
+// Four bilinear taps average a four by four block.
+const DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+void main() {
+  vec2 s = texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rg
+         + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rg;
+  o = vec4(s * 0.25, 0.0, 1.0);
+}`;
+const BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uDir;
+void main() {
+  vec2 s = texture(uSrc, vUv).rg * 0.227027;
+  s += (texture(uSrc, vUv + uDir * 1.384615).rg + texture(uSrc, vUv - uDir * 1.384615).rg) * 0.316216;
+  s += (texture(uSrc, vUv + uDir * 3.230769).rg + texture(uSrc, vUv - uDir * 3.230769).rg) * 0.070270;
+  o = vec4(s, 0.0, 1.0);
+}`;
+// The tube: curved face, graticule, phosphor, halo, then the bezel.
+const SCREEN = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D uAccum, uBloom;
+uniform vec4 uTube;
+uniform vec2 uDiv;
+uniform float uRadius, uDpr, uK;
+uniform vec3 uFlash, uGlow, uGlass, uBezel, uGrat, uGain;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  vec2 q = (fc - uTube.xy) / uTube.zw;
+  float r2 = dot(q * q, uDiv * uDiv) / dot(uDiv, uDiv);
+  // Barrel curvature: the face bulges, so its edges squeeze.
+  vec2 qs = q * (1.0 + uK * r2);
+  vec2 hp = uTube.zw;
+  vec2 dd = abs(qs * hp) - (hp - uRadius);
+  float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0) - uRadius;
+  float inside = clamp(0.5 - sd, 0.0, 1.0);
+  float n = hash(fc);
+
+  // The bezel is one matte plate; a black gap and a lit lip cut the window.
+  float gapW = 5.0 * uDpr, lipW = 1.5 * uDpr;
+  float g1 = smoothstep(gapW - 0.5, gapW + 0.5, sd);
+  float lip = g1 * (1.0 - smoothstep(gapW + lipW - 0.5, gapW + lipW + 0.5, sd));
+  vec3 bez = uBezel * (0.94 + 0.12 * hash(floor(fc / (1.5 * uDpr))));
+  bez = mix(uBezel * 0.12, bez, g1) + uBezel * 0.9 * lip;
+
+  vec2 uv = qs * 0.5 + 0.5;
+  vec2 e = texture(uAccum, uv).rg;
+  vec2 bl = texture(uBloom, uv).rg;
+  float a = 1.0 - exp(-e.r * uGain.x);
+  float b = 1.0 - exp(-e.g * uGain.y);
+  float hot = 1.0 - exp(-e.r * uGain.x * 0.08);
+  vec3 beam = uFlash * a + uGlow * b + vec3(0.85, 0.95, 0.9) * hot * hot * 0.8;
+  vec3 halo = (uFlash * (1.0 - exp(-bl.r * uGain.x)) + uGlow * (1.0 - exp(-bl.g * uGain.y))) * uGain.z;
+  float haloLum = dot(halo, vec3(0.25, 0.6, 0.15));
+
+  // Graticule: ten by eight divisions, with fifth ticks on the centre axes.
+  vec2 g = qs * uDiv;
+  float ppd = hp.x / uDiv.x;
+  float lw = 0.5 * uDpr;
+  vec2 fd = abs(fract(g + 0.5) - 0.5) * ppd;
+  float grid = max(1.0 - smoothstep(lw, lw + 1.0, fd.x), 1.0 - smoothstep(lw, lw + 1.0, fd.y));
+  vec2 ft = abs(fract(g * 5.0 + 0.5) - 0.5) * ppd / 5.0;
+  float tl = 0.1 * ppd;
+  float tick = max((1.0 - smoothstep(lw, lw + 1.0, ft.x)) * step(abs(g.y) * ppd, tl),
+                   (1.0 - smoothstep(lw, lw + 1.0, ft.y)) * step(abs(g.x) * ppd, tl));
+  float grat = max(grid * 0.6, tick * 0.85);
+
+  float vig = 1.0 - 0.65 * smoothstep(0.2, 1.15, r2);
+  vec3 glass = uGlass * vig * (0.92 + 0.16 * n);
+  // A faint broad sheen sits high on the left of the glass.
+  float sheen = (1.0 - smoothstep(0.0, 0.9, length((q - vec2(-0.5, 0.6)) * vec2(0.75, 1.4)))) * 0.012;
+  vec3 col = glass + uGrat * grat * (0.4 + 4.0 * haloLum) + beam + halo + sheen;
+  col = mix(bez, col, inside);
+  col = pow(max(col, 0.0), vec3(1.0 / 2.2)) + (n - 0.5) / 255.0;
+  o = vec4(col, 1.0);
+}`;
+const SCREEN_VS = `#version 300 es
+in vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const P = {
+  decay: program(QUAD_VS, DECAY, ['aPos']),
+  beam: program(BEAM_VS, BEAM_FS, ['aCorner', 'aSeg', 'aE']),
+  down: program(QUAD_VS, DOWN, ['aPos']),
+  blur: program(QUAD_VS, BLUR, ['aPos']),
+  screen: program(SCREEN_VS, SCREEN, ['aPos']),
+};
+
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// Segment data: a then b in pixels, then energy.
+const MAXSEG = 9000;
+const inst = new Float32Array(MAXSEG * 5);
+const beamVao = gl.createVertexArray();
+gl.bindVertexArray(beamVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const instBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1);
+gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 20, 0);
+gl.vertexAttribDivisor(1, 1);
+gl.enableVertexAttribArray(2);
+gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 20, 16);
+gl.vertexAttribDivisor(2, 1);
+gl.bindVertexArray(null);
+
+/* ---------- targets ---------- */
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+
+// The tube keeps a 5 by 4 face above the inset bar.
+// A tall stage turns the face upright, 4 by 5.
+let acc = [], blm = [], ai = 0, tube = null, sigma = 1, ppd = 1, dpr = 1, DX = 5, DY = 4;
+function layout() {
+  const { w, h, dpr: d, W, H } = fitCanvas(canvas, { budget: 2.6e6 });
+  dpr = W / w;
+  const m = clamp(Math.min(w, h) * 0.04, 12, 36);
+  const reserve = Math.max(0, bar.getBoundingClientRect().height - 34);
+  const availW = w - 2 * m, availH = h - reserve - 1.5 * m;
+  [DX, DY] = availW / availH < 0.95 ? [4, 5] : [5, 4];
+  const aspect = DX / DY;
+  const tw = Math.max(40, Math.min(availW, availH * aspect)), th = tw / aspect;
+  const left = (w - tw) / 2, top = m + Math.max(0, (availH - th) / 2);
+  tube = { cx: (left + tw / 2) * dpr, cy: (h - top - th / 2) * dpr, hx: (tw / 2) * dpr, hy: (th / 2) * dpr, css: tw };
+  // The phosphor layer matches the tube's pixels, within a budget.
+  const scale = Math.min(1, Math.sqrt(1.6e6 / (tw * dpr * th * dpr)));
+  const AW = Math.max(16, Math.round(tw * dpr * scale)), AH = Math.max(16, Math.round(AW / aspect));
+  ppd = AW / (2 * DX);
+  sigma = 0.85 * (AW / tw) * clamp(tw / 760, 0.85, 1.25);
+  [...acc, ...blm].forEach(drop);
+  acc = [target(AW, AH), target(AW, AH)];
+  const BW = Math.max(4, Math.round(AW / 4)), BH = Math.max(4, Math.round(AH / 4));
+  blm = [target(BW, BH), target(BW, BH)];
+  ai = 0;
+  if (raf) return;
+  if (visible) settle();
+}
+
+/* ---------- passes ---------- */
+function decayPass(dt) {
+  const ph = PHOS[phos], src = acc[ai], dst = acc[1 - ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(P.decay.u.uSrc, 0);
+  gl.uniform2f(P.decay.u.uDecay, Math.exp(-dt / ph.tf), Math.exp(-dt / ph.ts));
+  gl.uniform1f(P.decay.u.uEps, FLOAT ? 0 : 0.6 / 255);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ai = 1 - ai;
+}
+function beamPass(count, wf, ws) {
+  if (!count) return;
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.beam.p); gl.bindVertexArray(beamVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, count * 5);
+  gl.uniform2f(P.beam.u.uRes, dst.w, dst.h);
+  gl.uniform1f(P.beam.u.uSigma, sigma);
+  gl.uniform2f(P.beam.u.uW, wf, ws);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+  gl.disable(gl.BLEND);
+}
+function quadPass(prog, dst, src, set) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(prog.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(prog.u.uSrc, 0);
+  set(prog.u);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function present() {
+  const src = acc[ai];
+  quadPass(P.down, blm[0], src, u => gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h));
+  quadPass(P.blur, blm[1], blm[0], u => gl.uniform2f(u.uDir, 1.5 / blm[0].w, 0));
+  quadPass(P.blur, blm[0], blm[1], u => gl.uniform2f(u.uDir, 0, 1.5 / blm[0].h));
+  const ph = PHOS[phos], u = P.screen.u;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex);
+  gl.uniform1i(u.uAccum, 0); gl.uniform1i(u.uBloom, 1);
+  gl.uniform4f(u.uTube, tube.cx, tube.cy, tube.hx, tube.hy);
+  gl.uniform1f(u.uRadius, tube.hy * 0.07);
+  gl.uniform1f(u.uDpr, dpr);
+  gl.uniform1f(u.uK, BARREL);
+  gl.uniform2f(u.uDiv, DX, DY);
+  gl.uniform3fv(u.uFlash, ph.flash); gl.uniform3fv(u.uGlow, ph.glow);
+  gl.uniform3fv(u.uGlass, GLASS); gl.uniform3fv(u.uBezel, BEZEL); gl.uniform3fv(u.uGrat, GRAT);
+  gl.uniform3fv(u.uGain, ph.gain);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.activeTexture(gl.TEXTURE0);
+}
+const GLASS = lin([0.2, 0.012, 175]), BEZEL = lin([0.19, 0.006, 250]), GRAT = lin([0.5, 0.025, 165]);
+
+/* ---------- the beam reads the voices ---------- */
+// Energy per second keeps a line's brightness steady across sizes.
+const IK = 85, IDOT = 300;
+const pt = [0, 0];
+function sample(t) {
+  let x = 0, y = 0, ws = 0, I = 0;
+  for (const v of voices) {
+    const w = weight(v, t);
+    if (w <= 0) continue;
+    const p = posAt(v, t), i = Math.floor(p) % v.len, f = p - Math.floor(p), j = i + 1 === v.len ? 0 : i + 1;
+    x += w * (v.L[i] + (v.L[j] - v.L[i]) * f);
+    y += w * (v.R[i] + (v.R[j] - v.R[i]) * f);
+    ws += w; I += w * IK * sigma * Math.max(v.perim * ppd, 20);
+  }
+  pt[0] = (x * 5 / (2 * DX) + 0.5) * acc[0].w;
+  pt[1] = (y * 5 / (2 * DY) + 0.5) * acc[0].h;
+  return I + Math.max(0, 1 - ws) * IDOT * sigma * sigma;
+}
+const srNow = () => voices.find(v => !v.dieAt)?.sr || 48000;
+
+let tS = 0, last = [0, 0];
+function sweep(t) {
+  const sr = srNow();
+  if (t - tS > 0.1) { tS = t - 0.1; sample(tS); last = [pt[0], pt[1]]; }
+  const n = Math.min(MAXSEG, Math.floor((t - tS) * sr));
+  for (let k = 0; k < n; k++) {
+    const e = sample(tS + (k + 1) / sr) / sr, o = k * 5;
+    inst[o] = last[0]; inst[o + 1] = last[1]; inst[o + 2] = pt[0]; inst[o + 3] = pt[1]; inst[o + 4] = e;
+    last[0] = pt[0]; last[1] = pt[1];
+  }
+  tS += n / sr;
+  return n;
+}
+
+// At rest the face shows the steady glow of one full loop.
+function settle() {
+  acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
+  const ph = PHOS[phos], dtF = 1 / 60, ss = tau => dtF / (1 - Math.exp(-dtF / tau));
+  const v = voices.find(x => !x.dieAt), t = now();
+  if (v) {
+    const span = v.len / v.loops / v.rate, n = Math.min(MAXSEG, Math.ceil(span)), fl = (v.loops * v.sr * v.rate) / v.len;
+    sample(t); let a = [pt[0], pt[1]];
+    for (let k = 0; k < n; k++) {
+      const e = sample(t + (k + 1) / v.sr) / v.sr, o = k * 5;
+      inst.set([a[0], a[1], pt[0], pt[1], e], o);
+      a = [pt[0], pt[1]];
+    }
+    beamPass(n, fl * ss(ph.tf), fl * ph.slow * ss(ph.ts));
+  } else {
+    const e = sample(t);
+    inst.set([pt[0], pt[1], pt[0], pt[1], e], 0);
+    beamPass(1, ss(ph.tf), ph.slow * ss(ph.ts));
+  }
+  present();
+}
+
+/* ---------- loop ---------- */
+// The loop sleeps after a still spell unless the signal moves.
+const IDLE = 8;
+let raf = 0, visible = true, lastFrame = 0, lastInput = 0, stroke = null, sliding = false;
+const moving = () => voices.length > 1 || voices.some(v => v.spin || v.morph || v.rate !== 1);
+function frame() {
+  raf = 0;
+  const t = now(), dt = clamp(t - lastFrame, 0, 0.25);
+  lastFrame = t;
+  voices = voices.filter(v => !v.dieAt || t < v.dieAt + FADE);
+  ensureAudio();
+  const n = sweep(t), ph = PHOS[phos];
+  decayPass(dt);
+  beamPass(n, 1, ph.slow);
+  present();
+  if (!visible) return;
+  if (stroke || sliding || moving() || t - lastInput < IDLE) raf = requestAnimationFrame(frame);
+  else settle();
+}
+function kick() {
+  if (raf || !visible || !tube) return;
+  const t = now();
+  lastFrame = t; tS = t; sample(t); last = [pt[0], pt[1]];
+  raf = requestAnimationFrame(frame);
+}
+function poke() { lastInput = now(); kick(); }
+whenVisible(stage, v => {
+  visible = v;
+  if (v) { if (kit.ac) kit.wake(); ensureAudio(); poke(); }
+  else { cancelAnimationFrame(raf); raf = 0; detach(); kit.ac?.suspend()?.catch(() => {}); }
+});
+
+/* ---------- drawing ---------- */
+// The pointer maps through the same curvature as the face.
+function toDiv(e) {
+  const r = canvas.getBoundingClientRect();
+  const px = (e.clientX - r.left) * dpr, py = (r.bottom - e.clientY) * dpr;
+  const qx = (px - tube.cx) / tube.hx, qy = (py - tube.cy) / tube.hy;
+  const k = 1 + BARREL * (qx * qx * DX * DX + qy * qy * DY * DY) / (DX * DX + DY * DY);
+  return [clamp(qx * k * DX, -DX, DX), clamp(qy * k * DY, -DY, DY)];
+}
+let strokeLen = 0, lastBuild = 0;
+canvas.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  canvas.setPointerCapture(e.pointerId);
+  stroke = [toDiv(e)]; strokeLen = 0; lastBuild = 0;
+  poke();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!stroke) { if (e.pointerType === 'mouse') poke(); return; }
+  const p = toDiv(e), q = stroke[stroke.length - 1], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+  if (d < 0.03) return;
+  stroke.push(p); strokeLen += d;
+  // While the pen moves, the open stroke plays as its own closed loop.
+  const t = now();
+  if (strokeLen > 0.3 && t - lastBuild > 0.045) { lastBuild = t; build({ temp: fromStroke(stroke) }); }
+  poke();
+});
+function lift() {
+  if (!stroke) return;
+  const s = stroke; stroke = null;
+  if (strokeLen > 0.3 && s.length > 2) {
+    prev = cur; cur = align(prev, fromStroke(s));
+    build({ fresh: true });
+    chips();
+  } else if (lastBuild) build();
+  poke();
+}
+canvas.addEventListener('pointerup', lift);
+canvas.addEventListener('pointercancel', lift);
+
+/* ---------- controls ---------- */
+const pitchIn = document.getElementById('pitch'), hz = document.getElementById('hz');
+const spinBtn = document.getElementById('spin'), morphBtn = document.getElementById('morph');
+// The slider is logarithmic from 40 to 400 hertz.
+const toHz = v => 40 * 10 ** (v / 1000);
+let pitchT = 0;
+function setPitch(f) {
+  pitch = clamp(f, 40, 400);
+  const label = `${Math.round(pitch)} Hz`;
+  hz.value = label; pitchIn.setAttribute('aria-valuetext', `${Math.round(pitch)} hertz`);
+  const t = now(), at = kit.ac?.currentTime ?? 0;
+  // Playback rate glides the pitch now; a fresh buffer follows at rest.
+  voices.forEach(v => {
+    v.pos0 = posAt(v, t); v.t0 = t; v.rate = pitch / v.f;
+    v.node?.playbackRate.setValueAtTime(v.rate, at);
+  });
+  sliding = true;
+  clearTimeout(pitchT);
+  pitchT = setTimeout(() => { sliding = false; build(); }, 160);
+  poke();
+}
+pitchIn.addEventListener('input', () => setPitch(toHz(+pitchIn.value)));
+function stepPitch(dir) {
+  const f = clamp(pitch * 2 ** (dir / 12), 40, 400);
+  pitchIn.value = String(Math.round(1000 * Math.log10(f / 40)));
+  setPitch(f);
+}
+function chips() {
+  spinBtn.setAttribute('aria-pressed', String(spinOn && !reduced()));
+  spinBtn.setAttribute('aria-disabled', String(reduced()));
+  morphBtn.setAttribute('aria-pressed', String(morphOn && !!prev));
+  morphBtn.setAttribute('aria-disabled', String(!prev));
+}
+spinBtn.addEventListener('click', () => { if (reduced()) return; spinOn = !spinOn; chips(); build(); });
+morphBtn.addEventListener('click', () => { if (!prev) return; morphOn = !morphOn; chips(); build(); });
+function shuffle() {
+  let k = preset;
+  while (k === preset) k = Math.floor(Math.random() * PRESETS.length);
+  preset = k;
+  prev = cur; cur = align(prev, PRESETS[k]());
+  chips(); build({ fresh: true });
+}
+function clear() {
+  prev = cur = null; morphOn = false;
+  acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
+  chips(); build();
+}
+function nextPhosphor() { phos = (phos + 1) % PHOS.length; poke(); }
+document.getElementById('shuffle').addEventListener('click', shuffle);
+document.getElementById('clear').addEventListener('click', clear);
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat && !e.key.startsWith('Arrow')) return;
+  if (e.target.closest?.('input, textarea, select')) return;
+  const k = e.key.toLowerCase();
+  if ((k === 'arrowup' || k === 'arrowdown') && document.activeElement === stage) { e.preventDefault(); stepPitch(k === 'arrowup' ? 1 : -1); }
+  else if (k === 's') shuffle();
+  else if (k === 'c') clear();
+  else if (k === 'p') nextPhosphor();
+});
+onReducedChange(() => { if (reduced()) spinOn = false; chips(); build(); });
+
+/* ---------- start ---------- */
+chips();
+new ResizeObserver(layout).observe(stage);
+new ResizeObserver(layout).observe(bar);
+layout();
+build({ fresh: true });
+
+/* ---------- the vignette figure ---------- */
+// Box centre 250,112; one division is 24 units.
+(function figure() {
+  const svg = document.getElementById('figure'), f = n => n.toFixed(1);
+  let grid = '', knot = '', left = '', below = '';
+  for (let i = 1; i < 10; i++) grid += `M${130 + i * 24} 16V208`;
+  for (let i = 1; i < 8; i++) grid += `M130 ${16 + i * 24}H370`;
+  for (let i = 0; i <= 160; i++) {
+    const u = TAU * i / 160, x = Math.sin(3 * u + 0.5), y = Math.sin(2 * u), c = i ? 'L' : 'M';
+    knot += `${c}${f(250 + x * 96)} ${f(112 - y * 80)}`;
+    left += `${c}${f(112 - (i / 160) * 92)} ${f(112 - y * 80)}`;
+    below += `${c}${f(250 + x * 96)} ${f(224 + (i / 160) * 66)}`;
+  }
+  svg.innerHTML = `<path class="grid" d="${grid}"/><rect class="frame" x="130" y="16" width="240" height="192" rx="10"/>`
+    + `<path class="lead" d="M112 112H130M250 208V224"/>`
+    + `<path class="wave" d="${left}"/><path class="wave" d="${below}"/><path class="trace" d="${knot}"/>`
+    + `<text x="20" y="226">R</text><text x="378" y="292">L</text>`;
+})();
+</script>
+</body>
+</html>
