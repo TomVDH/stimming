@@ -195,7 +195,13 @@ const cells = SLOTS.map(([name, kind]) => {
   return c;
 });
 const byId = new Map(PARTS.map(p => [p.id, p]));
-const mounted = new Map(), styled = new Set();
+const mounted = new Map(), styled = new Set(), mods = new Map();
+// Modules load one at a time; a small local server drops bursts.
+async function fetchAll(ids) {
+  for (const id of ids) {
+    if (id && !mods.has(id)) mods.set(id, (await byId.get(id).load()).default);
+  }
+}
 function mount(cell, part) {
   // A part's own styles load once, on its first mount.
   if (part.css && !styled.has(part.id)) {
@@ -255,7 +261,7 @@ const store = {
   set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch { /* storage is optional */ } },
 };
 let current = settle(store.get() || DEFAULT);
-cells.forEach((cell, i) => { if (current[i]) mount(cell, byId.get(current[i])); });
+fetchAll(current).then(() => cells.forEach((cell, i) => { if (current[i]) mount(cell, mods.get(current[i])); }));
 
 /* ---------- the die ---------- */
 const rollBtn = document.getElementById('roll'), pips = rollBtn.querySelector('.pips');
@@ -281,7 +287,7 @@ const rattle = () => snd.play('roll', 0.3, 0.5, (t, P, G) => {
   }
 });
 let rolling = false;
-function roll() {
+async function roll() {
   if (rolling) return;
   rolling = true;
   rattle();
@@ -293,11 +299,13 @@ function roll() {
   const flick = setInterval(() => face((Math.random() * 6) | 0), 70);
   setTimeout(() => { clearInterval(flick); face((Math.random() * 6) | 0); }, reduce ? 0 : 520);
   const next = deal(current), gap = reduce ? 0 : 45, out = reduce ? 0 : 150;
+  // The wave starts once every dealt part has loaded.
+  await fetchAll(next);
   cells.forEach((cell, i) => setTimeout(() => {
     cell.classList.add('out');
     setTimeout(() => {
       unmount(cell);
-      if (next[i]) mount(cell, byId.get(next[i]));
+      if (next[i]) mount(cell, mods.get(next[i]));
       requestAnimationFrame(() => requestAnimationFrame(() => cell.classList.remove('out')));
       if (++n === cells.length) { pruneLight(); rolling = false; }
     }, out);

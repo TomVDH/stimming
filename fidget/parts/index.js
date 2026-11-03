@@ -1,35 +1,46 @@
 // The part registry: every part the die can deal.
-// Each part names its slot kind: big, row, band or small.
-import dial from './dial.js';
-import keys from './keys.js';
-import fader from './fader.js';
-import abacus from './abacus.js';
-import joy from './joy.js';
-import tog from './tog.js';
-import safe from './safe.js';
-import rock from './rock.js';
-import wheel from './wheel.js';
-import trackball from './trackball.js';
-import bubbles from './bubbles.js';
-import string from './string.js';
-import selector from './selector.js';
-import slide from './slide.js';
-import spinner from './spinner.js';
-import piano from './piano.js';
-import slinky from './slinky.js';
-import doorstop from './doorstop.js';
-import counter from './counter.js';
-import tumblers from './tumblers.js';
-import marble from './marble.js';
-import dpad from './dpad.js';
-import squish from './squish.js';
-import bolt from './bolt.js';
-import knobs from './knobs.js';
-import phone from './phone.js';
-import radio from './radio.js';
-import tape from './tape.js';
-import arcade from './arcade.js';
-import bell from './bell.js';
-import chain from './chain.js';
-
-export default [dial, keys, fader, abacus, joy, tog, safe, rock, wheel, trackball, bubbles, string, selector, slide, spinner, piano, slinky, doorstop, counter, tumblers, marble, dpad, squish, bolt, knobs, phone, radio, tape, arcade, bell, chain];
+// Each entry names its slot kind and loads its module on demand.
+// The page fetches only the parts it deals, so a load stays light.
+export default [
+  { id: 'dial', slot: 'big', load: () => import('./dial.js') },
+  { id: 'keys', slot: 'row', load: () => import('./keys.js') },
+  { id: 'fader', slot: 'band', load: () => import('./fader.js') },
+  { id: 'abacus', slot: 'band', load: () => import('./abacus.js') },
+  { id: 'joy', slot: 'small', load: () => import('./joy.js') },
+  { id: 'tog', slot: 'small', load: () => import('./tog.js') },
+  { id: 'safe', slot: 'small', load: () => import('./safe.js') },
+  { id: 'rock', slot: 'small', load: () => import('./rock.js') },
+  { id: 'wheel', slot: 'small', load: () => import('./wheel.js') },
+  { id: 'trackball', slot: 'big', load: () => import('./trackball.js') },
+  { id: 'bubbles', slot: 'row', load: () => import('./bubbles.js') },
+  { id: 'string', slot: 'band', load: () => import('./string.js') },
+  { id: 'selector', slot: 'small', load: () => import('./selector.js') },
+  { id: 'slide', slot: 'small', load: () => import('./slide.js') },
+  { id: 'spinner', slot: 'big', load: () => import('./spinner.js') },
+  { id: 'piano', slot: 'row', load: () => import('./piano.js') },
+  { id: 'slinky', slot: 'band', load: () => import('./slinky.js') },
+  { id: 'doorstop', slot: 'small', load: () => import('./doorstop.js') },
+  { id: 'counter', slot: 'small', load: () => import('./counter.js') },
+  { id: 'tumblers', slot: 'row', load: () => import('./tumblers.js') },
+  { id: 'marble', slot: 'band', load: () => import('./marble.js') },
+  { id: 'dpad', slot: 'small', load: () => import('./dpad.js') },
+  { id: 'squish', slot: 'small', load: () => import('./squish.js') },
+  { id: 'bolt', slot: 'small', load: () => import('./bolt.js') },
+  { id: 'knobs', slot: 'small', load: () => import('./knobs.js') },
+  { id: 'phone', slot: 'big', load: () => import('./phone.js') },
+  { id: 'radio', slot: 'row', load: () => import('./radio.js') },
+  { id: 'tape', slot: 'band', load: () => import('./tape.js') },
+  { id: 'arcade', slot: 'small', load: () => import('./arcade.js') },
+  { id: 'bell', slot: 'small', load: () => import('./bell.js') },
+  { id: 'chain', slot: 'small', load: () => import('./chain.js') },
+  { id: 'sketch', slot: 'big', load: () => import('./sketch.js') },
+  { id: 'blinds', slot: 'row', load: () => import('./blinds.js') },
+  { id: 'level', slot: 'band', load: () => import('./level.js') },
+  { id: 'key', slot: 'small', load: () => import('./key.js') },
+  { id: 'yoyo', slot: 'small', load: () => import('./yoyo.js') },
+  { id: 'pinwheel', slot: 'big', load: () => import('./pinwheel.js') },
+  { id: 'xylo', slot: 'row', load: () => import('./xylo.js') },
+  { id: 'car', slot: 'band', load: () => import('./car.js') },
+  { id: 'hourglass', slot: 'small', load: () => import('./hourglass.js') },
+  { id: 'popup', slot: 'small', load: () => import('./popup.js') },
+];
