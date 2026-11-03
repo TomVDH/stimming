@@ -137,7 +137,7 @@ export const VARIETIES = {
   },
   classic: {
     label: 'Classic', group: 'Default',
-    timing: { lead: 3, flash: 13, unfurl: 333, nlLag: 2, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, wipe: 333, fade: 500 }, exit: 'wipe',
+    timing: { lead: 4, pop: 9, flash: 16, unfurl: 400, nlLag: 5, subLag: 5, tagLag: 5, tagNlLag: 5, sndLag: 5, readBase: 1000, readPer: 15, readCap: 2200, wipe: 400, fade: 600 }, exit: 'wipe', read: true,
   },
   type: {
     label: 'Type: lines are typed, then erased', group: 'Earlier',
@@ -437,8 +437,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     for (const x of steps) { blow.style.transform = x ? `translateX(${x}px)` : ''; await wait(1); }
     await wait(Math.max(0, T.flash - steps.length));
   } else {
-    // The text flash wipes every line in as a box while the logo's box holds.
-    const flashLines = textFlash ? lines.filter(Boolean) : [];
+    // The text flash wipes only the title in as a box while the logo's box holds.
+    const flashLines = textFlash && badge ? [name] : [];
     const wipe = { ...T, unfurl: Math.min(T.unfurl, (T.flash * 1000) / FPS) };
     flashLines.forEach(el => { el.classList.add('is-wipe'); R.open(el, wipe); });
     await wait(T.flash);
@@ -456,12 +456,12 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     play(badge, p => ({ '--box-y': (1 - 0.95 * p).toFixed(3) }), 160, accel).then(() => wait(2)).then(() => { badge.style.setProperty('--box', 0); badge.style.setProperty('--box-y', 1); });
   } else box(false);
   if (both) box(false);
-  // After a text flash the lines drop their boxes as the logo drops its box.
+  // After a text flash the title drops its box as the logo drops its box.
   lines.forEach(el => el?.classList.remove('is-wipe'));
   // Each line opens a beat after the one above; the last one is awaited.
   let last = null, first = true;
   for (let k = 0; k < lines.length; k++) {
-    if (!lines[k] || (textFlash && V.flash !== 'jitter')) continue;
+    if (!lines[k] || (textFlash && V.flash !== 'jitter' && lines[k] === name)) continue;
     if (!first) await wait(lags[k]);
     first = false;
     last = R.open(lines[k], T);
