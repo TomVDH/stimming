@@ -1,0 +1,1319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Dandelion</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the meadow panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --meadow: oklch(0.3 0.05 105);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The meadow is 16:9, 4:5 on phones, and warm in both themes. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--meadow);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the warm stage the line keeps a pale tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.8 0.03 95);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+/* With a full head, Regrow rests dimmed. */
+.chip[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.chip[aria-disabled="true"]:hover { color: var(--muted); border-color: var(--line); }
+.chip[aria-disabled="true"]:active { transform: none; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Dandelion</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A dandelion seed head in a golden meadow. Drag across it to blow the seeds away, or press and hold for a stronger gust. Space blows a gust, arrow keys blow that way, and R regrows the head.">
+      <p class="fail" hidden>Dandelion needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="regrow" type="button" aria-keyshortcuts="R" aria-disabled="true">Regrow</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>blow</dd></div>
+        <div><dt>Hold</dt><dd>stronger gust</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>gust</dd></div>
+        <div class="fine"><dt><kbd>R</kbd></dt><dd>regrow</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('stage');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+// Seeded random keeps the meadow the same across resizes.
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h, k = 1) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v) * k);
+}
+const PAL = {
+  skyHi: linear(0.74, 0.12, 72), skyLo: linear(0.64, 0.15, 56), haze: linear(0.86, 0.11, 80),
+  tree: linear(0.25, 0.055, 118), treeLit: linear(0.44, 0.1, 100), meadow: linear(0.37, 0.1, 132),
+  meadowLit: linear(0.64, 0.15, 104), deep: linear(0.21, 0.05, 145), sun: linear(0.97, 0.07, 84),
+  sunLight: linear(0.95, 0.09, 78, 3.2), sky: linear(0.72, 0.07, 75, 0.2),
+  achene: linear(0.36, 0.06, 55), acheneLit: linear(0.78, 0.15, 65),
+  bract: linear(0.36, 0.09, 136), bractLit: linear(0.72, 0.16, 120), bractEdge: linear(0.52, 0.1, 115),
+  stem: linear(0.5, 0.11, 128), stemLit: linear(0.85, 0.15, 112),
+  pod: linear(0.8, 0.06, 82), pit: linear(0.45, 0.06, 60),
+};
+const BOKEH = [linear(0.9, 0.14, 80), linear(0.84, 0.16, 62), linear(0.93, 0.07, 92), linear(0.8, 0.15, 118), linear(0.88, 0.12, 70)];
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.dandelion.sound', MAXV = 16, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, air = null, askedAt = -1e9, voices = 0, restT = 0, breathV = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // A longer loop keeps the breath free of a pulse.
+    air = ac.createBuffer(1, ac.sampleRate * 3, ac.sampleRate);
+    const e = air.getChannelData(0);
+    for (let i = 0; i < e.length; i++) e[i] = Math.random() * 2 - 1;
+    breath();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the air is still, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ptr < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['r', 'R', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place in the meadow.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// The breath: looped noise through a band that opens with the gust.
+function breath() {
+  const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), g = ac.createGain();
+  const hp = ac.createBiquadFilter(), gh = ac.createGain(), pan = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
+  src.buffer = air;
+  src.loop = true;
+  bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.55;
+  lp.type = 'lowpass'; lp.frequency.value = 1600; lp.Q.value = 0.2;
+  hp.type = 'highpass'; hp.frequency.value = 4200; hp.Q.value = 0.4;
+  g.gain.value = 0;
+  gh.gain.value = 0;
+  src.connect(bp).connect(lp).connect(g).connect(pan);
+  src.connect(hp).connect(gh).connect(pan);
+  pan.connect(out);
+  src.start();
+  breathV = { bp, lp, g, gh, pan, k: 0 };
+}
+// The breath follows the gust's strength and place.
+function breathSound(k, x) {
+  if (!breathV || !ac || ac.state !== 'running') return;
+  if (Math.abs(k - breathV.k) < 0.004 && k > 0.004) return;
+  breathV.k = k;
+  const t = ac.currentTime, s = Math.min(1.8, k);
+  breathV.g.gain.setTargetAtTime(0.42 * s ** 0.85, t, 0.05);
+  breathV.gh.gain.setTargetAtTime(0.045 * s ** 1.4, t, 0.06);
+  breathV.bp.frequency.setTargetAtTime(300 + 900 * s, t, 0.08);
+  breathV.lp.frequency.setTargetAtTime(1000 + 2400 * s, t, 0.08);
+  if (breathV.pan.pan) breathV.pan.pan.setTargetAtTime(clamp(x, -1, 1) * 0.45, t, 0.12);
+}
+// Seeds letting go: a puff of high air and a few soft bells.
+const SHIM = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2, 9 / 4, 5 / 2];
+function shimmer(n, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level() * (0.6 + 0.4 * Math.min(1, n / 6)), d = bus(a, x);
+  const src = a.createBufferSource(), hp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  hp.type = 'highpass';
+  hp.frequency.value = 6800 * jit(0.08);
+  hp.Q.value = 0.5;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.05 * g * jit(0.15), t + 0.03);
+  ng.gain.setTargetAtTime(0, t + 0.03, 0.07);
+  src.connect(hp).connect(ng).connect(d);
+  src.start(t, Math.random() * 0.6, 0.45);
+  const all = [hp, ng], root = 2350 * jit(0.04);
+  for (let k = 0, m = 2 + Math.min(4, n); k < m; k++) {
+    const o = a.createOscillator(), og = a.createGain(), at = t + Math.random() * 0.09, tau = rnd(0.1, 0.24);
+    o.frequency.value = root * SHIM[Math.floor(Math.random() * SHIM.length)] * jit(0.006);
+    og.gain.setValueAtTime(0, at);
+    og.gain.linearRampToValueAtTime(0.012 * g * jit(0.2), at + rnd(0.015, 0.04));
+    og.gain.setTargetAtTime(0, at + 0.04, tau);
+    o.connect(og).connect(d);
+    o.start(at);
+    o.stop(at + 0.06 + tau * 6);
+    all.push(og);
+  }
+  track(src, ...all, d);
+}
+
+/* ---------- noise: value noise with its gradient ---------- */
+const hash3 = (i, j, k) => {
+  let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(k, 1440662683)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (((h ^ (h >>> 16)) >>> 0) / 4294967296) * 2 - 1;
+};
+function noiseD(x, y, z, o) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy), uz = fz * fz * (3 - 2 * fz);
+  const dx = 6 * fx * (1 - fx), dy = 6 * fy * (1 - fy), dz = 6 * fz * (1 - fz);
+  const a = hash3(ix, iy, iz), b = hash3(ix + 1, iy, iz), c = hash3(ix, iy + 1, iz), d = hash3(ix + 1, iy + 1, iz);
+  const e = hash3(ix, iy, iz + 1), f = hash3(ix + 1, iy, iz + 1), g = hash3(ix, iy + 1, iz + 1), h = hash3(ix + 1, iy + 1, iz + 1);
+  const k1 = b - a, k2 = c - a, k3 = e - a, k4 = a - b - c + d, k5 = a - c - e + g, k6 = a - b - e + f, k7 = -a + b + c - d + e - f - g + h;
+  o[0] = a + k1 * ux + k2 * uy + k3 * uz + k4 * ux * uy + k5 * uy * uz + k6 * uz * ux + k7 * ux * uy * uz;
+  o[1] = dx * (k1 + k4 * uy + k6 * uz + k7 * uy * uz);
+  o[2] = dy * (k2 + k5 * uz + k4 * ux + k7 * uz * ux);
+  o[3] = dz * (k3 + k6 * ux + k5 * uy + k7 * ux * uy);
+}
+// Curl of a noise potential: swirling air that neither piles up nor thins.
+const nA = [0, 0, 0, 0], nB = [0, 0, 0, 0], nC = [0, 0, 0, 0];
+function curlAt(x, y, z, t, o) {
+  const X = x * 1.7 - t * 0.11, Y = y * 1.7, Z = z * 1.7 + t * 0.08;
+  noiseD(X, Y, Z, nA);
+  noiseD(X + 31.4, Y - 17.2, Z + 9.7, nB);
+  noiseD(X - 23.1, Y + 41.3, Z - 13.9, nC);
+  o[0] = nC[2] - nB[3];
+  o[1] = nA[3] - nC[1];
+  o[2] = nB[1] - nA[2];
+  return o;
+}
+
+/* ---------- the plant, in scene units: the head is 0.4 across ---------- */
+const N = 150, CAP = 600, NF = 40, FSEG = 3;
+const R0 = 0.042, AL = 0.03, BL = 0.088, PL = 0.068, STEM_R = 0.0125, REACH = AL + BL;
+const FOV = 32, TANH = Math.tan((FOV / 2) * D2R), GA = Math.PI * (3 - Math.sqrt(5));
+// Air: a light breeze, a settling speed and a drag time.
+const BREEZE = [0.085, 0.004, -0.01], VS = 0.045, TAU_D = 0.16, WMAX = 2.4;
+const view = { A: 16 / 9, halfH: 0.42, D: 1.46, H: [0, 0, 0], sun: [0, 0, -1] };
+
+// A rotation from +z onto the unit axis a, then a turn s about a.
+function seedQuat(ax, ay, az, s, o, k) {
+  let qx = -ay, qy = ax, qw = 1 + az;
+  if (qw < 1e-5) { qx = 1; qy = 0; qw = 0; }
+  const l = Math.hypot(qx, qy, qw);
+  qx /= l; qy /= l; qw /= l;
+  const ss = Math.sin(s / 2), cs = Math.cos(s / 2);
+  o[k] = qx * cs + qy * ss;
+  o[k + 1] = qy * cs - qx * ss;
+  o[k + 2] = qw * ss;
+  o[k + 3] = qw * cs;
+}
+const qrot = (q, x, y, z, o) => {
+  const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+  const cx = qy * z - qz * y + qw * x, cy = qz * x - qx * z + qw * y, cz = qx * y - qy * x + qw * z;
+  o[0] = x + 2 * (qy * cz - qz * cy);
+  o[1] = y + 2 * (qz * cx - qx * cz);
+  o[2] = z + 2 * (qx * cy - qy * cx);
+  return o;
+};
+
+/* ---------- seeds: on the head, then in the air ---------- */
+const slots = new Array(N).fill(null);
+let fliers = [], attached = 0;
+function sow() {
+  attached = 0;
+  for (let i = 0; i < N; i++) {
+    const y = 1 - ((i + 0.5) / N) * 1.74, r = Math.sqrt(Math.max(0, 1 - y * y)), ph = i * GA + rnd(-0.1, 0.1);
+    let dx = r * Math.cos(ph) + rnd(-0.03, 0.03), dy = y + rnd(-0.03, 0.03), dz = r * Math.sin(ph) + rnd(-0.03, 0.03);
+    const l = Math.hypot(dx, dy, dz);
+    dx /= l; dy /= l; dz /= l;
+    const fl = Math.hypot(dx * 0.1, 1, dz * 0.1);
+    // Looser seeds go first; the cube favours a few very loose ones.
+    const loose = Math.random();
+    slots[i] = {
+      d: [dx, dy, dz], fd: [(dx * 0.1) / fl, 1 / fl, (dz * 0.1) / fl], fb: [dx * R0 * 0.5, R0 * 0.55, dz * R0 * 0.5],
+      thr: 0.25 + 2.2 * (1 - loose) ** 1.5, stress: 0, spin: rnd(0, TAU), rand: Math.random(),
+      bend: [0, 0, 0], delay: 0.06 + 0.28 * (1 - dy) * 0.5 + rnd(0, 0.06),
+      open: 1, bk: 1, alpha: 1, wb: [0, 0, 0], wa: [0, 1, 0],
+      p: [0, 0, 0], v: [0, 0, 0], a: [0, 1, 0], w: [0, 0, 0], spinV: 0, age: 0,
+    };
+    attached++;
+  }
+}
+
+/* ---------- gusts: puffs of air that travel, spread and fade ---------- */
+const puffs = [];
+// Each puff carries the breath of one emit interval, so rates do not matter.
+function puff(x, y, z, ux, uy, uz, wx, wy, wz, r, gr, life, every) {
+  if (puffs.length >= 80) puffs.shift();
+  const k = every / 0.1;
+  puffs.push({ x, y, z, ux, uy, uz, wx: wx * k, wy: wy * k, wz: wz * k, r, gr, life, age: 0, env: 0 });
+}
+function stepPuffs(dt) {
+  for (let i = puffs.length - 1; i >= 0; i--) {
+    const q = puffs[i];
+    q.age += dt;
+    q.x += q.ux * dt; q.y += q.uy * dt; q.z += q.uz * dt;
+    q.r += q.gr * dt;
+    q.env = Math.min(1, q.age / 0.06) * Math.exp(-q.age / q.life);
+    if (q.age > q.life * 3) puffs.splice(i, 1);
+  }
+}
+function gustAt(x, y, z, o) {
+  let ox = 0, oy = 0, oz = 0;
+  for (const q of puffs) {
+    const dx = x - q.x, dy = y - q.y, dz = z - q.z, r2 = q.r * q.r, d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 > 6 * r2) continue;
+    const f = Math.exp(-d2 / r2) * q.env;
+    ox += q.wx * f; oy += q.wy * f; oz += q.wz * f;
+  }
+  // Overlapping puffs saturate instead of stacking without end.
+  const m = Math.hypot(ox, oy, oz), k = m > 1e-6 ? (WMAX * Math.tanh(m / WMAX)) / m : 1;
+  o[0] = ox * k; o[1] = oy * k; o[2] = oz * k;
+  return o;
+}
+
+/* ---------- the head: blown, bare, closing, bud, opening ---------- */
+let phase = 'full', phaseT = 0, nod = 0;
+const sway = [0, 0, 0], swayV = [0, 0, 0], hp = [0, 0, 0], hq = [0, 0, 0, 1];
+const DUR = { bare: 1.3, close: 1.3, bud: 0.55, open: 2.7 };
+const dur = k => DUR[k] * (reduce ? 0.3 : 1);
+const regrowB = document.getElementById('regrow');
+const showChip = () => regrowB.setAttribute('aria-disabled', String(phase === 'full' && attached === N));
+function setPhase(p) { phase = p; phaseT = 0; showChip(); }
+function regrow() {
+  if (!ready || phase === 'close' || phase === 'bud' || phase === 'open') return;
+  if (phase === 'full' && attached === N) return;
+  setPhase('close');
+  wake();
+}
+// The head sits on the bent stem and tilts with it.
+function headFrame() {
+  const ox = sway[0] - nod * 0.05, oy = sway[1] * 0.3 - nod * 0.03, oz = sway[2];
+  hp[0] = view.H[0] + ox; hp[1] = view.H[1] + oy; hp[2] = view.H[2] + oz;
+  const l = Math.hypot(ox, oz), ang = l * 2.2;
+  if (l < 1e-7) { hq[0] = hq[1] = hq[2] = 0; hq[3] = 1; }
+  else {
+    const s = Math.sin(ang / 2) / l;
+    hq[0] = oz * s; hq[1] = 0; hq[2] = -ox * s; hq[3] = Math.cos(ang / 2);
+  }
+  if (stemMat) stemMat.uniforms.uSway.value.set(ox, oy, oz);
+}
+
+/* ---------- one step of the world ---------- */
+let simT = 0, breathK = 0, breathX = 0, shimPend = 0, shimX = 0, shimAt = 0;
+const gw = [0, 0, 0], cw = [0, 0, 0], tv = [0, 0, 0], tb = [0, 0, 0];
+let IA = null, IB = null, IC = null, ni = 0;
+function put(bx, by, bz, open, ax, ay, az, spin, bk, alpha, rand, fly) {
+  if (ni >= CAP) return;
+  const o = ni * 4;
+  IA[o] = bx; IA[o + 1] = by; IA[o + 2] = bz; IA[o + 3] = open;
+  seedQuat(ax, ay, az, spin, IB, o);
+  IC[o] = bk; IC[o + 1] = alpha; IC[o + 2] = rand; IC[o + 3] = fly;
+  ni++;
+}
+function detach(i) {
+  const s = slots[i];
+  slots[i] = null;
+  attached--;
+  const [ax, ay, az] = s.wa;
+  s.p = [s.wb[0] + ax * REACH, s.wb[1] + ay * REACH, s.wb[2] + az * REACH];
+  gustAt(s.p[0], s.p[1], s.p[2], gw);
+  s.v = [gw[0] * 0.3 + ax * 0.12, gw[1] * 0.3 + ay * 0.12 + 0.03, gw[2] * 0.3 + az * 0.12];
+  s.a = [ax, ay, az];
+  const tw = reduce ? 1.2 : rnd(5, 11), u = [rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)], ul = Math.hypot(...u) || 1;
+  s.w = u.map(c => (c / ul) * tw);
+  s.spinV = rnd(-2.2, 2.2);
+  s.age = 0;
+  s.open = 1; s.bk = 1; s.alpha = 1;
+  fliers.push(s);
+  shimPend++;
+  shimX += s.p[0];
+  if (phase === 'full') setPhase('blown');
+}
+function step(dt) {
+  simT += dt;
+  phaseT += dt;
+  let busy = false;
+  emit(dt);
+  stepPuffs(dt);
+  if (puffs.length) busy = true;
+
+  // The stem springs back from the gust.
+  gustAt(hp[0], hp[1], hp[2], gw);
+  const catchK = (0.35 + 0.65 * (attached / N)) * (reduce ? 0.4 : 1);
+  for (let k = 0; k < 3; k++) {
+    swayV[k] += (gw[k] * 0.55 * catchK - 48 * sway[k] - 3.4 * swayV[k]) * dt;
+    sway[k] = clamp(sway[k] + swayV[k] * dt, -0.1, 0.1);
+  }
+  if (Math.abs(sway[0]) + Math.abs(sway[1]) + Math.abs(sway[2]) > 2e-5 || Math.hypot(...swayV) > 2e-4) busy = true;
+
+  // The time-lapse: the bud closes, then opens full.
+  let fold = 0, flat = 1, close = 0, openP = -1;
+  if (phase === 'blown' && attached === 0) setPhase('bare');
+  if (phase === 'bare') { busy = true; if (phaseT > dur('bare')) setPhase('close'); }
+  if (phase === 'close') {
+    busy = true;
+    fold = ease(clamp(phaseT / dur('close')));
+    close = fold;
+    flat = lerp(1, 0.6, fold);
+    if (phaseT > dur('close')) { sow(); setPhase('bud'); }
+  }
+  if (phase === 'bud') {
+    busy = true;
+    close = 1; flat = 0.6; openP = 0;
+    if (phaseT > dur('bud')) setPhase('open');
+  }
+  if (phase === 'open') {
+    busy = true;
+    const P = phaseT / dur('open');
+    close = 1 - ease(clamp(P / 0.45));
+    flat = lerp(0.6, 1, ease(clamp(P / 0.6)));
+    openP = P;
+    if (P >= 1) setPhase('full');
+  }
+  const nodT = phase === 'close' ? fold : phase === 'bud' ? 1 : phase === 'open' ? 1 - ease(clamp(openP / 0.7)) : 0;
+  nod += (nodT - nod) * Math.min(1, dt * (reduce ? 20 : 5));
+  if (Math.abs(nod - nodT) > 1e-4) busy = true;
+  headFrame();
+  bractMat.uniforms.uClose.value = close;
+  pod.scale.set(1, flat, 1);
+  headG.position.set(hp[0], hp[1], hp[2]);
+  headG.quaternion.set(hq[0], hq[1], hq[2], hq[3]);
+
+  ni = 0;
+  const canGo = phase === 'full' || phase === 'blown';
+  const looseK = 0.75 + 0.25 * (attached / N);
+  for (let i = 0; i < N; i++) {
+    const s = slots[i];
+    if (!s) continue;
+    // Where this seed sits and points on the head.
+    let lx, ly, lz, ax, ay, az;
+    if (openP >= 0) {
+      const e = ease(clamp((openP - s.delay) / 0.55));
+      s.open = e; s.bk = lerp(0.3, 1, e); s.alpha = sstep(0, 0.12, e) * (phase === 'bud' ? 0 : 1);
+      lx = lerp(s.fb[0], s.d[0] * R0, e); ly = lerp(s.fb[1], s.d[1] * R0, e); lz = lerp(s.fb[2], s.d[2] * R0, e);
+      ax = lerp(s.fd[0], s.d[0], e); ay = lerp(s.fd[1], s.d[1], e); az = lerp(s.fd[2], s.d[2], e);
+    } else {
+      s.open = 1 - fold; s.bk = lerp(1, 0.3, fold); s.alpha = 1 - sstep(0.65, 1, fold);
+      lx = lerp(s.d[0] * R0, s.fb[0], fold); ly = lerp(s.d[1] * R0, s.fb[1], fold); lz = lerp(s.d[2] * R0, s.fb[2], fold);
+      ax = lerp(s.d[0], s.fd[0], fold); ay = lerp(s.d[1], s.fd[1], fold); az = lerp(s.d[2], s.fd[2], fold);
+    }
+    qrot(hq, lx, ly, lz, tv);
+    const bx = hp[0] + tv[0], by = hp[1] + tv[1], bz = hp[2] + tv[2];
+    qrot(hq, ax, ay, az, tb);
+    let wx = tb[0], wy = tb[1], wz = tb[2];
+    const wl = Math.hypot(wx, wy, wz);
+    wx /= wl; wy /= wl; wz /= wl;
+    // The gust bends each seed, and a strong one tears it loose.
+    gustAt(bx + wx * REACH, by + wy * REACH, bz + wz * REACH, gw);
+    const along = gw[0] * wx + gw[1] * wy + gw[2] * wz, g = Math.hypot(gw[0], gw[1], gw[2]);
+    const flex = reduce ? 0.05 : 0.11;
+    const b = s.bend, kb = 1 - Math.exp(-dt * 14);
+    b[0] += ((gw[0] - wx * along) * flex - b[0]) * kb;
+    b[1] += ((gw[1] - wy * along) * flex - b[1]) * kb;
+    b[2] += ((gw[2] - wz * along) * flex - b[2]) * kb;
+    const bm = Math.abs(b[0]) + Math.abs(b[1]) + Math.abs(b[2]);
+    if (bm > 1e-4) busy = true;
+    let fx = wx + b[0], fy = wy + b[1], fz = wz + b[2];
+    const fl = Math.hypot(fx, fy, fz);
+    fx /= fl; fy /= fl; fz /= fl;
+    s.wb[0] = bx; s.wb[1] = by; s.wb[2] = bz;
+    s.wa[0] = fx; s.wa[1] = fy; s.wa[2] = fz;
+    if (canGo) {
+      const f = g * (0.75 + (0.25 * Math.abs(along)) / (g + 1e-6));
+      s.stress += (f - s.stress) * (1 - Math.exp(-dt / 0.1));
+      if (s.stress > s.thr * looseK) { detach(i); continue; }
+    }
+    put(bx, by, bz, s.open, fx, fy, fz, s.spin, s.bk, s.alpha, s.rand, 0);
+  }
+
+  // Free seeds ride the breeze, the swirl and the gust.
+  const turb = reduce ? 0.025 : 0.07, K = reduce ? 90 : 38, C = reduce ? 18 : 4.6, A = view.A;
+  for (let i = fliers.length - 1; i >= 0; i--) {
+    const s = fliers[i], p = s.p, v = s.v, a = s.a, w = s.w;
+    s.age += dt;
+    curlAt(p[0], p[1], p[2], simT, cw);
+    gustAt(p[0], p[1], p[2], gw);
+    const lift = 0.1 * Math.exp(-s.age / 2.6);
+    const ux = v[0] - (BREEZE[0] + cw[0] * turb + gw[0]);
+    const uy = v[1] - (BREEZE[1] + cw[1] * turb + gw[1] + lift);
+    const uz = v[2] - (BREEZE[2] + cw[2] * turb + gw[2]);
+    v[0] -= (ux / TAU_D) * dt;
+    v[1] -= (uy / TAU_D + VS / TAU_D) * dt;
+    v[2] -= (uz / TAU_D) * dt;
+    p[0] += v[0] * dt; p[1] += v[1] * dt; p[2] += v[2] * dt;
+    // The parachute turns to trail the air rushing past it.
+    let tx = -ux, ty = -uy + 0.035, tz = -uz;
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+    w[0] += (K * (a[1] * tz - a[2] * ty) - C * w[0]) * dt;
+    w[1] += (K * (a[2] * tx - a[0] * tz) - C * w[1]) * dt;
+    w[2] += (K * (a[0] * ty - a[1] * tx) - C * w[2]) * dt;
+    const nx = a[0] + (w[1] * a[2] - w[2] * a[1]) * dt, ny = a[1] + (w[2] * a[0] - w[0] * a[2]) * dt, nz = a[2] + (w[0] * a[1] - w[1] * a[0]) * dt;
+    const al = Math.hypot(nx, ny, nz);
+    a[0] = nx / al; a[1] = ny / al; a[2] = nz / al;
+    s.spin += s.spinV * dt;
+    // Seeds leave once they clear the frame.
+    const depth = view.D - p[2];
+    const sx = p[0] / (depth * TANH * A), sy = p[1] / (depth * TANH);
+    if (depth < 0.2 || Math.abs(sx) > 1.3 || Math.abs(sy) > 1.35 || s.age > 40) { fliers.splice(i, 1); continue; }
+    const fade = Math.min(1, s.age / 0.05) * clamp((40 - s.age) / 2);
+    put(p[0] - a[0] * REACH, p[1] - a[1] * REACH, p[2] - a[2] * REACH, 1, a[0], a[1], a[2], s.spin, 1, fade, s.rand, 1);
+  }
+  if (fliers.length) busy = true;
+  if (fliers.length > CAP - N) fliers.splice(0, fliers.length - (CAP - N));
+  upload();
+
+  // Release sounds bunch into one shimmer at most every 70 ms.
+  if (shimPend && simT >= shimAt) {
+    shimmer(shimPend, (shimX / shimPend) / (view.halfH * view.A));
+    shimAt = simT + 0.07;
+    shimPend = 0;
+    shimX = 0;
+  }
+  breathSound(breathK, breathX / (view.halfH * view.A));
+  if (breathK > 0.003) busy = true;
+  return busy || ptr >= 0 || !!kb;
+}
+
+/* ---------- breath from the pointer and the keys ---------- */
+const pin = { x: 0, y: 0, lx: 0, ly: 0, vx: 0, vy: 0, hold: 0, emit: 0 };
+let kb = null, kdir = [0.86, 0.4, -0.18];
+function emit(dt) {
+  let target = 0;
+  if (ptr >= 0) {
+    const rvx = (pin.x - pin.lx) / Math.max(dt, 1e-3), rvy = (pin.y - pin.ly) / Math.max(dt, 1e-3);
+    pin.lx = pin.x; pin.ly = pin.y;
+    const k = 1 - Math.exp(-dt / 0.045);
+    pin.vx += (rvx - pin.vx) * k;
+    pin.vy += (rvy - pin.vy) * k;
+    const sp = Math.hypot(pin.vx, pin.vy);
+    pin.emit -= dt;
+    if (sp > 0.3) {
+      // A drag blows along its own path, as hard as it moves.
+      pin.hold = Math.max(0, pin.hold - dt * 2.5);
+      const s = Math.min(2.8, sp * 1.05), ux = pin.vx / sp, uy = pin.vy / sp;
+      target = s;
+      if (pin.emit <= 0) {
+        pin.emit = 1 / 45;
+        puff(pin.x, pin.y, rnd(-0.04, 0.04), pin.vx * 0.3, pin.vy * 0.3 + 0.04, 0, ux * s, uy * s + 0.16 * s, rnd(-0.35, 0.35) * s, 0.13, 0.25, 0.4, 1 / 45);
+      }
+    } else {
+      // Holding still builds a stronger gust toward the head.
+      pin.hold += dt;
+      const h = 1 - Math.exp(-pin.hold / 1.4), s = 0.2 + 1.3 * h;
+      let dx = hp[0] - pin.x, dy = hp[1] - pin.y, dz = -0.35;
+      const dl = Math.hypot(dx, dy);
+      if (dl < 0.07) { dx = 0.1; dy = 0.3; dz = -1; }
+      else { dx /= dl; dy /= dl; }
+      const l = Math.hypot(dx, dy, dz);
+      dx /= l; dy /= l; dz /= l;
+      target = s;
+      if (pin.emit <= 0) {
+        pin.emit = 1 / 30;
+        puff(pin.x, pin.y, 0.06, dx * (0.6 + 0.7 * h), dy * (0.6 + 0.7 * h), dz * 0.4, dx * s, dy * s + 0.14 * s, dz * s, 0.11 + 0.06 * h, 0.3, 0.7, 1 / 30);
+      }
+    }
+    breathX = pin.x;
+  }
+  if (kb) {
+    kb.t += dt;
+    if (kb.held || kb.t < 0.3) {
+      // Keys blow from beyond the head, straight through it.
+      const h = kb.held ? 1 - Math.exp(-kb.t / 1.2) : 0, s = 0.62 + 0.9 * h, [dx, dy, dz] = kb.dir;
+      target = Math.max(target, s);
+      kb.emit -= dt;
+      if (kb.emit <= 0) {
+        kb.emit = 1 / 30;
+        const ox = view.H[0] - dx * 0.42 - dy * rnd(-0.08, 0.08), oy = view.H[1] - dy * 0.42 + dx * rnd(-0.08, 0.08);
+        puff(ox, oy, -dz * 0.42, dx * 1.15, dy * 1.15, dz * 1.15, dx * s, dy * s + 0.12 * s, dz * s, 0.15, 0.25, 0.75, 1 / 30);
+      }
+      breathX = view.H[0];
+    } else kb = null;
+  }
+  const up = target > breathK;
+  breathK += (target - breathK) * (1 - Math.exp(-dt / (up ? 0.05 : 0.22)));
+  if (breathK < 0.002 && !target) breathK = 0;
+}
+
+/* ---------- shaders ---------- */
+const QROT = `vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }`;
+const HASH = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
+const BG_VS = `
+varying vec2 vUv;
+void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const BG_FS = `
+uniform float uAspect;
+uniform vec2 uSun, uShift;
+uniform vec3 cSkyHi, cSkyLo, cHaze, cTree, cTreeLit, cMeadow, cMeadowLit, cDeep, cSun;
+varying vec2 vUv;
+${HASH}
+float vn(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.03 + 7.1; a *= 0.5; }
+  return s;
+}
+void main() {
+  vec2 uv = vUv, p = vec2(uv.x * uAspect, uv.y) + uShift;
+  // Golden air above, warmer toward the horizon.
+  vec3 col = mix(cSkyLo, cSkyHi, smoothstep(0.45, 1.05, uv.y));
+  // A far tree line, thrown well out of focus.
+  float tl = 0.6 + 0.1 * fbm(vec2(p.x * 1.9, 3.7)) + 0.05 * sin(p.x * 1.4 + 0.6);
+  float tree = smoothstep(tl + 0.11, tl - 0.09, uv.y);
+  float leaf = fbm(p * vec2(4.5, 5.5));
+  vec3 tc = mix(cTree, cTreeLit, smoothstep(0.4, 0.8, leaf) * 0.7);
+  col = mix(col, tc, tree * 0.93);
+  // The meadow: soft upright streaks of grass, gilded at the tips.
+  float m = smoothstep(0.46, 0.2, uv.y);
+  float grass = fbm(vec2(p.x * 13.0, p.y * 1.6));
+  vec3 md = mix(cMeadow, cMeadowLit, smoothstep(0.35, 0.85, grass) * smoothstep(0.02, 0.38, uv.y));
+  md = mix(cDeep, md, smoothstep(0.0, 0.32, uv.y));
+  col = mix(col, md, m);
+  // Low sun: a hot core, a wide veil and a haze band.
+  vec2 sd = p - uSun;
+  float ds = length(sd);
+  col += cSun * (2.6 * exp(-ds * ds * 55.0) + 0.38 * exp(-ds * 3.2) + 0.12 * exp(-ds * 1.1));
+  col += cHaze * 0.16 * exp(-pow((uv.y - 0.47) * 5.0, 2.0)) * (1.0 - 0.6 * smoothstep(0.0, 1.4, ds));
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const BOKEH_VS = `
+attribute vec4 iP;
+attribute vec3 iCol;
+uniform float uAspect;
+uniform vec2 uShift;
+varying vec2 vQ;
+varying vec3 vC;
+void main() {
+  vQ = position.xy;
+  vC = iCol * iP.w;
+  vec2 c = iP.xy * 2.0 - 1.0 + uShift * iP.z * 8.0;
+  gl_Position = vec4(c + position.xy * iP.z * 2.0 * vec2(1.0 / uAspect, 1.0), 0.0, 1.0);
+}`;
+const BOKEH_FS = `
+varying vec2 vQ;
+varying vec3 vC;
+void main() {
+  // A lens disc: soft edge, slightly brighter rim.
+  float d = length(vQ), disc = smoothstep(1.0, 0.9, d), ring = smoothstep(0.55, 0.96, d);
+  if (disc <= 0.0) discard;
+  gl_FragColor = vec4(vC * disc * (0.7 + 0.45 * ring), 1.0);
+}`;
+const FIBER_VS = `
+attribute vec4 aF;
+attribute vec4 iA, iB, iC;
+uniform float uPx, uFocus, uCoc, uGain, uAlpha;
+uniform vec3 uSun, uSunCol, uSky;
+varying vec3 vCol;
+varying float vA, vD, vW;
+${QROT}
+void main() {
+  // position: x runs along the fibre, y is the side, z marks the beak.
+  float s = position.x, side = position.y, beak = position.z;
+  float open = iA.w, bk = iC.x;
+  float top = ${AL} + ${BL} * bk;
+  vec3 lp, lt;
+  if (beak > 0.5) {
+    lp = vec3(0.0, 0.0, ${AL} + s * ${BL} * bk);
+    lt = vec3(0.0, 0.0, 1.0);
+  } else {
+    // Each filament is an arc that opens from the axis like an umbrella.
+    float th = mix(0.05, aF.y, open), k = aF.w * open, L = aF.z * mix(0.8, 1.0, open);
+    k = abs(k) < 1e-3 ? 1e-3 : k;
+    float a1 = th + k * s;
+    float r = (cos(th) - cos(a1)) / k * L, z = (sin(a1) - sin(th)) / k * L;
+    vec2 cs = vec2(cos(aF.x), sin(aF.x));
+    lp = vec3(cs * r, top + z);
+    lt = vec3(cs * sin(a1), cos(a1));
+  }
+  vec3 wp = qrot(iB, lp) + iA.xyz, wt = qrot(iB, lt);
+  vec4 mv = viewMatrix * vec4(wp, 1.0);
+  vec3 c = cross(mat3(viewMatrix) * wt, mv.xyz);
+  float cl = length(c);
+  vec3 perp = cl > 1e-9 ? c / cl : vec3(1.0, 0.0, 0.0);
+  // Widths in pixels: a fibre is thinner than a pixel, so it fades instead.
+  float depth = -mv.z, pix = depth * uPx;
+  float phys = (beak > 0.5 ? 0.0012 : 0.00052 * (1.0 - 0.45 * s)) / pix;
+  float coc = uCoc * max(abs(depth - uFocus) / depth - 0.06, 0.0);
+  float w = max(phys, 0.9) + coc;
+  vW = w;
+  vD = side * (w * 0.5 + 1.0);
+  mv.xyz += perp * vD * pix;
+  gl_Position = projectionMatrix * mv;
+  // Backlight scatters forward along a cone around each fibre.
+  vec3 V = normalize(cameraPosition - wp);
+  float fwd = max(dot(-V, uSun), 0.0), cone = dot(wt, uSun) + dot(wt, V);
+  vec3 axis = qrot(iB, vec3(0.0, 0.0, 1.0));
+  float rim = 1.0 - abs(dot(axis, V));
+  float rimK = mix(0.4 + 1.4 * rim * rim, 1.0, iC.w);
+  float sc = (0.3 * pow(fwd, 4.0) + 1.2 * exp(-cone * cone * 5.0) * fwd * fwd) * rimK * (0.7 + 0.6 * s * s);
+  vec3 alb = beak > 0.5 ? vec3(0.9, 0.78, 0.6) : vec3(1.0, 0.96, 0.88);
+  vCol = alb * (uSky * 0.6 + uSunCol * sc * uGain);
+  vA = iC.y * min(phys / w, 1.0) * uAlpha * (beak > 0.5 ? 1.4 : 1.0);
+}`;
+const FIBER_FS = `
+varying vec3 vCol;
+varying float vA, vD, vW;
+void main() {
+  float a = clamp(vW * 0.5 + 0.5 - abs(vD), 0.0, 1.0) * vA;
+  if (a < 0.002) discard;
+  gl_FragColor = vec4(vCol * a, a * 0.5);
+}`;
+const ACHENE_VS = `
+attribute vec4 iA, iB, iC;
+uniform float uFocus, uCoc;
+varying vec3 vN, vW, vL;
+varying float vA;
+${QROT}
+void main() {
+  vL = position;
+  vec3 wp = qrot(iB, position * mix(0.8, 1.0, iA.w)) + iA.xyz;
+  vN = qrot(iB, normal);
+  vW = wp;
+  vec4 mv = viewMatrix * vec4(wp, 1.0);
+  float depth = -mv.z, coc = uCoc * max(abs(depth - uFocus) / depth - 0.06, 0.0);
+  vA = iC.y / (1.0 + coc * 0.3);
+  gl_Position = projectionMatrix * mv;
+}`;
+const ACHENE_FS = `
+uniform vec3 uSun, uSunCol, uSky, cBody, cLit;
+varying vec3 vN, vW, vL;
+varying float vA;
+void main() {
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  vec3 V = normalize(cameraPosition - vW);
+  float fwd = max(dot(-V, uSun), 0.0), ndv = abs(dot(N, V));
+  // Ribs run the length of the seed; spines roughen its top.
+  float ang = atan(vL.y, vL.x), t = vL.z / ${AL};
+  float rib = 0.8 + 0.25 * cos(ang * 10.0) + 0.15 * step(0.85, fract(t * 9.0 + ang)) * t;
+  vec3 col = cBody * rib * (uSky * 1.6 + uSunCol * 0.12 * (dot(N, uSun) * 0.5 + 0.5));
+  col += cLit * uSunCol * pow(1.0 - ndv, 2.5) * fwd * 0.55;
+  gl_FragColor = vec4(col, vA);
+}`;
+const POD_VS = `
+varying vec3 vN, vW, vO;
+void main() {
+  vO = normalize(position);
+  vN = normalize(mat3(modelMatrix) * normal);
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const POD_FS = `
+uniform vec3 uSun, uSunCol, uSky, cPod, cPit;
+varying vec3 vN, vW, vO;
+vec3 h33(vec3 p) { return fract(sin(vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)))) * 43758.5453); }
+void main() {
+  // Pits mark where each seed sat.
+  vec3 q = vO * 7.0, i = floor(q);
+  float d = 9.0;
+  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {
+    vec3 c = i + vec3(x, y, z);
+    d = min(d, length(c + h33(c) - q));
+  }
+  vec3 N = normalize(vN), V = normalize(cameraPosition - vW);
+  float pit = smoothstep(0.12, 0.42, d), fwd = max(dot(-V, uSun), 0.0);
+  vec3 col = mix(cPit, cPod, pit) * (uSky * 2.2 + uSunCol * 0.2 * (dot(N, uSun) * 0.5 + 0.5));
+  col += cPod * uSunCol * pow(1.0 - abs(dot(N, V)), 3.0) * fwd * 0.5;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const BRACT_VS = `
+attribute vec4 aB;
+uniform float uClose;
+varying vec3 vN, vW;
+varying float vS, vU;
+void main() {
+  // Each bract curls down from the head, or up around the bud.
+  float s = position.x, u = position.y, inner = aB.w;
+  float c = inner > 0.5 ? uClose : uClose * 0.3;
+  float a0 = mix(inner > 0.5 ? 2.45 : 2.2, 0.16, c), k = mix(inner > 0.5 ? 0.75 : 0.6, -0.5, c);
+  k = abs(k) < 1e-3 ? 1e-3 : k;
+  // Inner bracts stretch to wrap the whole bud.
+  float L = aB.y * (1.0 + 0.7 * c * inner), a1 = a0 + k * s;
+  float rho = (cos(a0) - cos(a1)) / k * L, y = (sin(a1) - sin(a0)) / k * L;
+  vec2 cs = vec2(cos(aB.x), sin(aB.x));
+  vec3 radial = vec3(cs.x, 0.0, cs.y), tang = vec3(-cs.y, 0.0, cs.x);
+  vec3 T = radial * sin(a1) + vec3(0.0, cos(a1), 0.0), N = normalize(cross(T, tang));
+  float w = aB.z * pow(1.0 - s, 0.7) * (0.7 + 0.3 * sin(3.14159 * s));
+  vec3 p = vec3(0.0, ${-R0 * 0.5}, 0.0) + radial * (${R0 * 0.78} + rho) + vec3(0.0, y, 0.0) + tang * u * w - N * u * u * w * 0.35;
+  vS = s; vU = u;
+  vN = normalize(mat3(modelMatrix) * N);
+  vec4 wp = modelMatrix * vec4(p, 1.0);
+  vW = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+const BRACT_FS = `
+uniform vec3 uSun, uSunCol, uSky, cBract, cLit, cEdge;
+varying vec3 vN, vW;
+varying float vS, vU;
+void main() {
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  vec3 V = normalize(cameraPosition - vW);
+  float fwd = max(dot(-V, uSun), 0.0);
+  // Thin green tissue glows where the low sun shines through.
+  float trans = pow(fwd, 3.0) * (0.35 + 0.65 * (1.0 - abs(dot(N, V))));
+  vec3 base = mix(cBract, cEdge, smoothstep(0.5, 1.0, abs(vU)) * 0.6 + vS * 0.25);
+  vec3 col = base * (uSky * 2.0 + uSunCol * 0.1 * max(dot(N, uSun), 0.0)) + cLit * uSunCol * trans * 0.16;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const STEM_VS = `
+attribute float aH;
+uniform vec3 uSway;
+varying vec3 vN, vW;
+varying float vH;
+void main() {
+  vH = aH;
+  vec3 p = position + uSway * aH * aH;
+  vN = normalize(normal + vec3(-2.0 * uSway.x * aH, 0.0, -2.0 * uSway.z * aH));
+  vW = p;
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+}`;
+const STEM_FS = `
+uniform vec3 uSun, uSunCol, uSky, cStem, cLit;
+varying vec3 vN, vW;
+varying float vH;
+void main() {
+  vec3 N = normalize(vN), V = normalize(cameraPosition - vW);
+  float fwd = max(dot(-V, uSun), 0.0), ndv = abs(dot(N, V));
+  // The hollow stem lets light through at its edges.
+  vec3 col = cStem * (0.75 + 0.25 * vH) * (uSky * 2.0 + uSunCol * 0.08 * (dot(N, uSun) * 0.5 + 0.5));
+  col += cLit * uSunCol * (pow(1.0 - ndv, 2.2) * 0.45 + 0.04) * fwd;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const FINAL_FS = `
+uniform sampler2D tDiffuse;
+uniform float uVig;
+varying vec2 vUv;
+${HASH}
+void main() {
+  vec3 c = texture2D(tDiffuse, vUv).rgb;
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - uVig * dot(q, q) * 2.0;
+  gl_FragColor = vec4(c, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}`;
+const FINAL_VS = `
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, composer = null, bloom = null;
+let bgMat = null, bokMat = null, fiberMat = null, achMat = null, bractMat = null, stemMat = null, podMat = null;
+let fiberG = null, achG = null, stem = null, pod = null, headG = null, iAttr = [], dbs = null;
+let ready = false, lowDpr = false, sized = false;
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+function fiberGeo() {
+  const R = rng(4127), P = [], F = [], I = [];
+  for (const s of [0, 1]) for (const side of [-1, 1]) { P.push(s, side, 1); F.push(0, 0, 0, 0); }
+  I.push(0, 1, 2, 1, 3, 2);
+  let v = 4;
+  for (let f = 0; f < NF; f++) {
+    const ph = ((f + (R() - 0.5) * 0.8) / NF) * TAU, th = (56 + R() * 28) * D2R, L = PL * (0.82 + R() * 0.3), k = 0.1 + R() * 0.4;
+    for (let j = 0; j <= FSEG; j++) for (const side of [-1, 1]) { P.push(j / FSEG, side, 0); F.push(ph, th, L, k); }
+    for (let j = 0; j < FSEG; j++) { const a = v + j * 2; I.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    v += (FSEG + 1) * 2;
+  }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('aF', new THREE.Float32BufferAttribute(F, 4));
+  g.setIndex(I);
+  return g;
+}
+function acheneGeo() {
+  const pts = [];
+  for (let j = 0; j <= 12; j++) {
+    const t = j / 12;
+    pts.push(new THREE.Vector2(0.0008 + 0.0034 * Math.sin(Math.PI * t ** 0.8) ** 0.9, t * AL));
+  }
+  const lathe = new THREE.LatheGeometry(pts, 10).rotateX(Math.PI / 2);
+  const g = new THREE.InstancedBufferGeometry();
+  g.setIndex(lathe.index);
+  g.setAttribute('position', lathe.getAttribute('position'));
+  g.setAttribute('normal', lathe.getAttribute('normal'));
+  return g;
+}
+function bractGeo() {
+  const R = rng(911), P = [], B = [], I = [], NS = 10, list = [];
+  for (let k = 0; k < 13; k++) list.push([((k + (R() - 0.5) * 0.4) / 13) * TAU, 0.09 + R() * 0.02, 0.008 + R() * 0.003, 1]);
+  for (let k = 0; k < 11; k++) list.push([((k + 0.5 + (R() - 0.5) * 0.5) / 11) * TAU, 0.04 + R() * 0.02, 0.006 + R() * 0.002, 0]);
+  for (const b of list) {
+    const v0 = P.length / 3;
+    for (let j = 0; j <= NS; j++) for (const u of [-1, 0, 1]) { P.push(j / NS, u, 0); B.push(...b); }
+    for (let j = 0; j < NS; j++) for (let c = 0; c < 2; c++) {
+      const a = v0 + j * 3 + c, d = a + 3;
+      I.push(a, a + 1, d, a + 1, d + 1, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('aB', new THREE.Float32BufferAttribute(B, 4));
+  g.setIndex(I);
+  return g;
+}
+// The stem rises from below the frame to the head.
+function buildStem() {
+  const [hx, hy] = view.H, by = -view.halfH * 1.35, ty = hy - R0 * 0.55;
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(hx - 0.06, by, -0.03),
+    new THREE.Vector3(hx - 0.07, lerp(by, ty, 0.38), -0.02),
+    new THREE.Vector3(hx - 0.03, lerp(by, ty, 0.76), -0.006),
+    new THREE.Vector3(hx, ty, 0),
+  ]);
+  const TS = 56, RS = 12, g = new THREE.TubeGeometry(curve, TS, STEM_R, RS, false), n = g.attributes.position.count, h = new Float32Array(n);
+  for (let i = 0; i < n; i++) h[i] = Math.floor(i / (RS + 1)) / TS;
+  g.setAttribute('aH', new THREE.BufferAttribute(h, 1));
+  stem.geometry.dispose();
+  stem.geometry = g;
+}
+function bokehGeo() {
+  const R = rng(20261102), P = [], C = [];
+  const add = (n, y0, y1, r0, r1, i0, i1) => {
+    for (let k = 0; k < n; k++) {
+      P.push(R(), y0 + R() * (y1 - y0), r0 + R() * (r1 - r0), i0 + R() * (i1 - i0));
+      C.push(...BOKEH[Math.floor(R() * BOKEH.length)]);
+    }
+  };
+  add(13, 0.38, 0.78, 0.035, 0.085, 0.12, 0.35);
+  add(20, 0.04, 0.48, 0.014, 0.034, 0.18, 0.5);
+  add(12, 0.36, 0.66, 0.005, 0.011, 0.8, 1.8);
+  const g = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+  g.setAttribute('iP', new THREE.InstancedBufferAttribute(new Float32Array(P), 4));
+  g.setAttribute('iCol', new THREE.InstancedBufferAttribute(new Float32Array(C), 3));
+  g.instanceCount = P.length / 4;
+  return g;
+}
+function upload() {
+  fiberG.instanceCount = achG.instanceCount = ni;
+  for (const a of iAttr) a.needsUpdate = true;
+}
+// The camera frames the head left of centre with the meadow beyond.
+function fit(w, h) {
+  const A = w / h, halfH = Math.max(0.42, 0.4 / A), D = halfH / TANH, u = clamp((A - 0.8) / 0.98);
+  Object.assign(view, { A, halfH, D });
+  camera.aspect = A;
+  camera.position.set(0, 0, D);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  const sx = lerp(0.5, 0.385, u), sy = lerp(0.4, 0.44, u);
+  view.H = [(sx * 2 - 1) * halfH * A, (1 - sy * 2) * halfH, 0];
+  // The sun sits just past the top left corner, behind the head.
+  const nx = -1.02, ny = 1.14, sl = Math.hypot(nx * TANH * A, ny * TANH, 1);
+  view.sun = [(nx * TANH * A) / sl, (ny * TANH) / sl, -1 / sl];
+  for (const m of [fiberMat, achMat, bractMat, stemMat, podMat]) m.uniforms.uSun.value.set(...view.sun);
+  bgMat.uniforms.uSun.value.set(((nx + 1) / 2) * A, (ny + 1) / 2);
+  bgMat.uniforms.uAspect.value = bokMat.uniforms.uAspect.value = A;
+  for (const m of [fiberMat, achMat]) m.uniforms.uFocus.value = D - 0.06;
+  buildStem();
+  headFrame();
+  headG.position.set(hp[0], hp[1], hp[2]);
+}
+function onSize(w, h) {
+  sized = true;
+  fit(w, h);
+  renderer.getDrawingBufferSize(dbs);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(w, h);
+  fiberMat.uniforms.uPx.value = (2 * TANH) / dbs.y;
+  for (const m of [fiberMat, achMat]) m.uniforms.uCoc.value = 0.05 * dbs.y;
+  if (ready) { step(0); draw(); }
+}
+function draw() {
+  // The far meadow shifts a little against the swaying head.
+  bgMat.uniforms.uShift.value.set(-sway[0] * 0.15, -sway[1] * 0.1);
+  bokMat.uniforms.uShift.value.copy(bgMat.uniforms.uShift.value);
+  composer.render();
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  const busy = step(dt);
+  draw();
+  if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else { breathK = 0; breathSound(0, 0); rest(); }
+}
+
+/* ---------- input ---------- */
+let ptr = -1;
+function toWorld(e) {
+  const r = panel.getBoundingClientRect();
+  const nx = ((e.clientX - r.left) / r.width) * 2 - 1, ny = 1 - ((e.clientY - r.top) / r.height) * 2;
+  return [nx * view.halfH * view.A, ny * view.halfH];
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || ptr >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  ptr = e.pointerId;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const [x, y] = toWorld(e);
+  Object.assign(pin, { x, y, lx: x, ly: y, vx: 0, vy: 0, hold: 0, emit: 0 });
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  if (e.pointerId !== ptr) return;
+  [pin.x, pin.y] = toWorld(e);
+});
+const lift = e => { if (e.pointerId === ptr) ptr = -1; };
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+const ARROWS = { ArrowUp: [0.12, 1, -0.1], ArrowDown: [0.1, -1, -0.1], ArrowLeft: [-1, 0.3, -0.12], ArrowRight: [1, 0.3, -0.12] };
+function keyGust(key, dir) {
+  const l = Math.hypot(...dir);
+  kb = { key, t: 0, held: true, emit: 0, dir: dir.map(c => c / l) };
+  wake();
+}
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === 'r' || k === 'R') { if (!e.repeat) regrow(); }
+  else if (k === ' ' || ARROWS[k]) {
+    if (k === ' ' && e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (e.repeat || !ready) return;
+    if (ARROWS[k]) kdir = ARROWS[k];
+    keyGust(k, kdir);
+  }
+});
+addEventListener('keyup', e => { if (kb && e.key === kb.key) kb.held = false; });
+addEventListener('blur', () => { if (kb) kb.held = false; });
+regrowB.addEventListener('click', regrow);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function start() {
+  let EffectComposer, RenderPass, UnrealBloomPass, ShaderPass;
+  try {
+    THREE = await import('three');
+    [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { ShaderPass }] = await Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'),
+      import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'),
+      import('three/addons/postprocessing/ShaderPass.js'),
+    ]);
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  // The glow needs float render targets.
+  if (!renderer.extensions.has('EXT_color_buffer_float') && !renderer.extensions.has('EXT_color_buffer_half_float')) {
+    renderer.dispose();
+    return failed();
+  }
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.05, 50);
+  dbs = new THREE.Vector2();
+  await idle();
+
+  const V3 = c => new THREE.Vector3(...c);
+  const lightU = () => ({ uSun: { value: new THREE.Vector3(0, 0, -1) }, uSunCol: { value: V3(PAL.sunLight) }, uSky: { value: V3(PAL.sky) } });
+  bgMat = new THREE.ShaderMaterial({
+    vertexShader: BG_VS, fragmentShader: BG_FS, depthTest: false, depthWrite: false,
+    uniforms: {
+      uAspect: { value: 16 / 9 }, uSun: { value: new THREE.Vector2() }, uShift: { value: new THREE.Vector2() },
+      cSkyHi: { value: V3(PAL.skyHi) }, cSkyLo: { value: V3(PAL.skyLo) }, cHaze: { value: V3(PAL.haze) },
+      cTree: { value: V3(PAL.tree) }, cTreeLit: { value: V3(PAL.treeLit) }, cMeadow: { value: V3(PAL.meadow) },
+      cMeadowLit: { value: V3(PAL.meadowLit) }, cDeep: { value: V3(PAL.deep) }, cSun: { value: V3(PAL.sun) },
+    },
+  });
+  const bg = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
+  bg.frustumCulled = false;
+  bg.renderOrder = -3;
+  bokMat = new THREE.ShaderMaterial({
+    vertexShader: BOKEH_VS, fragmentShader: BOKEH_FS, depthTest: false, depthWrite: false,
+    blending: THREE.AdditiveBlending, uniforms: { uAspect: { value: 16 / 9 }, uShift: { value: new THREE.Vector2() } },
+  });
+  const bok = new THREE.Mesh(bokehGeo(), bokMat);
+  bok.frustumCulled = false;
+  bok.renderOrder = -2;
+
+  stemMat = new THREE.ShaderMaterial({
+    vertexShader: STEM_VS, fragmentShader: STEM_FS,
+    uniforms: { ...lightU(), uSway: { value: new THREE.Vector3() }, cStem: { value: V3(PAL.stem) }, cLit: { value: V3(PAL.stemLit) } },
+  });
+  stem = new THREE.Mesh(new THREE.BufferGeometry(), stemMat);
+  stem.frustumCulled = false;
+  bractMat = new THREE.ShaderMaterial({
+    vertexShader: BRACT_VS, fragmentShader: BRACT_FS, side: THREE.DoubleSide,
+    uniforms: { ...lightU(), uClose: { value: 0 }, cBract: { value: V3(PAL.bract) }, cLit: { value: V3(PAL.bractLit) }, cEdge: { value: V3(PAL.bractEdge) } },
+  });
+  const bracts = new THREE.Mesh(bractGeo(), bractMat);
+  bracts.frustumCulled = false;
+  podMat = new THREE.ShaderMaterial({
+    vertexShader: POD_VS, fragmentShader: POD_FS,
+    uniforms: { ...lightU(), cPod: { value: V3(PAL.pod) }, cPit: { value: V3(PAL.pit) } },
+  });
+  pod = new THREE.Mesh(new THREE.SphereGeometry(R0 * 0.97, 40, 28), podMat);
+  headG = new THREE.Group();
+  headG.add(pod, bracts);
+
+  // Seeds share one set of per-seed attributes.
+  IA = new Float32Array(CAP * 4);
+  IB = new Float32Array(CAP * 4);
+  IC = new Float32Array(CAP * 4);
+  iAttr = [IA, IB, IC].map(a => new THREE.InstancedBufferAttribute(a, 4).setUsage(THREE.DynamicDrawUsage));
+  fiberG = fiberGeo();
+  achG = acheneGeo();
+  for (const g of [fiberG, achG]) ['iA', 'iB', 'iC'].forEach((n, i) => g.setAttribute(n, iAttr[i]));
+  fiberMat = new THREE.ShaderMaterial({
+    vertexShader: FIBER_VS, fragmentShader: FIBER_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    uniforms: { ...lightU(), uPx: { value: 0.001 }, uFocus: { value: 1.4 }, uCoc: { value: 40 }, uGain: { value: 0.36 }, uAlpha: { value: 0.55 } },
+  });
+  const fibers = new THREE.Mesh(fiberG, fiberMat);
+  fibers.frustumCulled = false;
+  fibers.renderOrder = 2;
+  achMat = new THREE.ShaderMaterial({
+    vertexShader: ACHENE_VS, fragmentShader: ACHENE_FS, transparent: true,
+    uniforms: { ...lightU(), uFocus: { value: 1.4 }, uCoc: { value: 40 }, cBody: { value: V3(PAL.achene) }, cLit: { value: V3(PAL.acheneLit) } },
+  });
+  const achenes = new THREE.Mesh(achG, achMat);
+  achenes.frustumCulled = false;
+  achenes.renderOrder = 1;
+  scene.add(bg, bok, stem, headG, achenes, fibers);
+  sow();
+  await idle();
+
+  const rt = new THREE.WebGLRenderTarget(16, 9, { type: THREE.HalfFloatType, samples: 4 });
+  composer = new EffectComposer(renderer, rt);
+  composer.addPass(new RenderPass(scene, camera));
+  bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.55, 0.6, 0.8);
+  composer.addPass(bloom);
+  composer.addPass(new ShaderPass({ uniforms: { tDiffuse: { value: null }, uVig: { value: 0.7 } }, vertexShader: FINAL_VS, fragmentShader: FINAL_FS }));
+
+  panel.prepend(canvas);
+  fitRenderer(renderer, panel, 2, onSize, 1.4e6);
+  // A panel with no size yet still gets a frame.
+  if (!sized) onSize(16, 9);
+  step(0);
+  await idle();
+  // Async compile keeps the shader builds off the main thread.
+  await renderer.compileAsync(scene, camera);
+  ready = true;
+  showChip();
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
