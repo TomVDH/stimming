@@ -70,6 +70,8 @@
                 <button class="chip" type="button" data-value="6" aria-pressed="true">12</button>
               </div>
             </div>
+            <label class="slider"><span>Time</span><input type="range" id="time" min="0" max="1" step="0.01" value="0.6" aria-label="Time of day, afternoon to night"></label>
+            <button class="chip" id="cycle" type="button" aria-pressed="false">Cycle the day</button>
             <label class="slider"><span>Haze</span><input type="range" id="haze" min="0" max="2" step="0.05" value="1"></label>
             <button class="chip" id="path" type="button" aria-pressed="false" aria-keyshortcuts="P">Foot path</button>
           </div>
@@ -374,6 +376,26 @@ let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1, sunX = 1, 
 // The view eases between close (0) and wide (1).
 // The close lens sets the world: camera height and leg size stay fixed.
 let flareGain = 1;
+/* ---------- time of day ---------- */
+// One value runs afternoon (0), golden hour, sunset, dusk, to night (1).
+// Each key holds linear colours, the sun height in radii and its size.
+const TOD_KEYS = [
+  { t: 0, zen: [0.025, 0.07, 0.2], low: [0.15, 0.21, 0.33], hor: [0.62, 0.56, 0.46], scat: [0.8, 0.74, 0.62], sunC: [3, 2.8, 2.4], sunE: [2.4, 2.1, 1.7], lit: [0.7, 0.68, 0.66], dark: [0.2, 0.22, 0.28], amb: 0.45, deep: [0.01, 0.03, 0.045], sand: [0.75, 0.66, 0.58], stars: 0, rise: 4.2, size: 0.85, light: [1, 0.95, 0.88], lightK: 3.2, sky: [0.55, 0.65, 0.85], skyK: 0.8, flare: [1, 0.95, 0.85], flareK: 0.7 },
+  { t: 0.3, zen: [0.025, 0.05, 0.14], low: [0.36, 0.24, 0.22], hor: [1.1, 0.6, 0.25], scat: [1, 0.72, 0.42], sunC: [2.6, 1.5, 0.55], sunE: [1.8, 0.8, 0.25], lit: [1, 0.55, 0.3], dark: [0.1, 0.07, 0.1], amb: 0.2, deep: [0.006, 0.012, 0.022], sand: [0.5, 0.36, 0.3], stars: 0, rise: 1.8, size: 1, light: [1, 0.75, 0.5], lightK: 4.2, sky: [0.4, 0.3, 0.35], skyK: 0.35, flare: [1, 0.88, 0.7], flareK: 1 },
+  { t: 0.6, zen: [0.002, 0.003, 0.012], low: [0.22, 0.05, 0.09], hor: [1.1, 0.28, 0.06], scat: [1, 0.6, 0.3], sunC: [2.2, 1, 0.3], sunE: [1.2, 0.28, 0.04], lit: [1, 0.3, 0.12], dark: [0.006, 0.004, 0.01], amb: 0, deep: [0.004, 0.007, 0.014], sand: [0.32, 0.22, 0.26], stars: 0, rise: 0.35, size: 1, light: [1, 0.66, 0.39], lightK: 5, sky: [0.29, 0.16, 0.23], skyK: 0.18, flare: [1, 0.73, 0.49], flareK: 1 },
+  { t: 0.8, zen: [0.003, 0.005, 0.02], low: [0.07, 0.035, 0.08], hor: [0.55, 0.13, 0.06], scat: [0.6, 0.26, 0.16], sunC: [1.2, 0.3, 0.06], sunE: [0.8, 0.15, 0.03], lit: [0.45, 0.12, 0.1], dark: [0.008, 0.008, 0.016], amb: 0, deep: [0.003, 0.005, 0.012], sand: [0.12, 0.09, 0.12], stars: 0.12, rise: -1.4, size: 1, light: [0.9, 0.45, 0.35], lightK: 1.4, sky: [0.15, 0.1, 0.2], skyK: 0.12, flare: [1, 0.55, 0.4], flareK: 0 },
+  { t: 1, zen: [0.002, 0.004, 0.014], low: [0.01, 0.016, 0.04], hor: [0.04, 0.055, 0.09], scat: [0.5, 0.6, 0.8], sunC: [1.5, 1.55, 1.6], sunE: [1.1, 1.15, 1.25], lit: [0.14, 0.16, 0.22], dark: [0.006, 0.008, 0.016], amb: 0.25, deep: [0.002, 0.004, 0.01], sand: [0.05, 0.06, 0.09], stars: 1, rise: 3.2, size: 0.5, light: [0.6, 0.7, 1], lightK: 0.7, sky: [0.15, 0.2, 0.35], skyK: 0.2, flare: [0.75, 0.85, 1], flareK: 0.35 },
+];
+let tod = 0.6, todCycle = false, todPhase = 0;
+// The look between the two keys around t, blended linearly.
+function todLook(t) {
+  let i = 0;
+  while (i < TOD_KEYS.length - 2 && t > TOD_KEYS[i + 1].t) i++;
+  const A = TOD_KEYS[i], B = TOD_KEYS[i + 1], f = clamp((t - A.t) / (B.t - A.t), 0, 1);
+  const out = {};
+  for (const key in A) out[key] = Array.isArray(A[key]) ? A[key].map((v, j) => lerp(v, B[key][j], f)) : lerp(A[key], B[key], f);
+  return out;
+}
 let viewK = 1, viewTo = 1, depth = 1, shift = 0, horClose = 1, focalClose = 1, sunRClose = 1, camH = 0.1, kLeg = 0.001;
 const bg = document.createElement('canvas'), bgc = bg.getContext('2d');
 const wc = document.createElement('canvas'), wctx = wc.getContext('2d');
@@ -420,9 +442,10 @@ function lens() {
   depth = lerp(1, 2.2, v);
   shift = lerp(0, w / 6, v);
   seaY = horizonY + Math.max(3, Math.round(h * 0.01));
-  sunR = sunRClose * Math.max(0.75, focal / focalClose);
+  const look = todLook(tod);
+  sunR = sunRClose * Math.max(0.75, focal / focalClose) * look.size;
   // The sun sits right of the walker, so the shadow falls at an angle.
-  sunX = w * lerp(0.6, 0.62, v); sunY = horizonY - sunR * 0.35;
+  sunX = w * lerp(0.6, 0.62, v); sunY = horizonY - sunR * look.rise;
   sea?.lens();
 }
 // The sky, sun, sea and wet sand are painted once per resize.
@@ -483,6 +506,9 @@ precision highp float;
 uniform vec2 uRes;
 uniform float uDpr, uHor, uF, uTime, uWind, uSunR;
 uniform vec3 uCamPos, uSD;
+// Time of day: sky, sun, cloud, water and sand colours, and the star field.
+uniform vec3 uZen, uLow, uHorC, uScat, uSunC, uSunE, uCloudLit, uCloudDark, uDeep, uSandLit;
+uniform float uCloudAmb, uStars;
 uniform mat3 uRot;
 vec3 SD;
 // FH is the frame height in radians; sky falloffs scale with it.
@@ -506,7 +532,7 @@ float fbm(vec2 p) {
   return s;
 }
 
-const vec3 SUNC = vec3(1.0, 0.6, 0.3);
+#define SUNC uScat
 // Clear sky: a dark zenith, a hot horizon, forward scatter round the sun.
 // The long lens sees a narrow cone, so falloffs use the angle a to the sun.
 vec3 skyBase(vec3 d, float a) {
@@ -514,8 +540,8 @@ vec3 skyBase(vec3 d, float a) {
   // Side glow follows the bearing away from the sun.
   vec2 hd = normalize(d.xz + 1e-6), hs = normalize(SD.xz);
   float side = exp(-acos(clamp(dot(hd, hs), -1.0, 1.0)) / FH * 0.9);
-  vec3 c = mix(vec3(0.22, 0.05, 0.09), vec3(0.002, 0.003, 0.012), smoothstep(0.0, 0.75, E));
-  c = mix(c, vec3(1.1, 0.28, 0.06) * (0.2 + 0.8 * side), exp(-E * 4.5));
+  vec3 c = mix(uLow, uZen, smoothstep(0.0, 0.75, E));
+  c = mix(c, uHorC * (0.2 + 0.8 * side), exp(-E * 4.5));
   c += SUNC * (0.06 * exp(-A * 2.5) + 0.4 * exp(-A * 9.0) + 0.2 * exp(-A * 45.0));
   return c;
 }
@@ -526,15 +552,21 @@ vec3 sky(vec3 d, bool withSun) {
   float disc = 1.0 - smoothstep(r * 0.97, r, a);
   float limb = sqrt(max(0.0, 1.0 - (a / r) * (a / r)));
   // The limb darkens and reddens toward the edge.
-  vec3 sun = mix(vec3(1.2, 0.22, 0.03), vec3(2.2, 0.75, 0.16), limb);
+  vec3 sun = mix(uSunE, uSunC, limb);
   if (withSun) c = mix(c, sun, disc);
   if (d.y <= 0.0) return c;
+  // Stars show at night, fixed to the sky.
+  if (uStars > 0.0) {
+    vec2 sg = floor(d.xy / d.z * 700.0);
+    float st = step(0.9965, hash(sg)) * (0.4 + 0.6 * hash(sg + 7.0));
+    c += vec3(0.9, 0.95, 1.0) * st * uStars * 0.6 * smoothstep(0.02, 0.12, d.y);
+  }
   // The deck curves away, so its depth stays finite at the horizon.
   vec2 P = d.xz / (d.y + 0.05);
   vec2 uv = vec2(P.x * 0.3 + uTime * 0.01, P.y * 0.7);
   float n = fbm(uv + vec2(0.0, fbm(uv * 0.5) * 0.8));
   float cl = smoothstep(0.34, 0.62, n) * smoothstep(0.0, 0.025, d.y);
-  vec3 under = vec3(0.006, 0.004, 0.01) + vec3(1.0, 0.3, 0.12) * (0.02 + 1.1 * exp(-a / FH * 6.0) + 0.5 * exp(-max(d.y, 0.0) / FH * 7.0));
+  vec3 under = uCloudDark + uCloudLit * (uCloudAmb + 0.02 + 1.1 * exp(-a / FH * 6.0) + 0.5 * exp(-max(d.y, 0.0) / FH * 7.0));
   // Thin edges near the sun catch a bright lining.
   under += SUNC * 3.5 * exp(-a / FH * 16.0) * (1.0 - smoothstep(0.48, 0.68, n));
   // Thick cloud blocks the light and goes dark against the sun.
@@ -544,7 +576,7 @@ vec3 sky(vec3 d, bool withSun) {
 
 // The sun reflects as a lobe whose width grows with unresolved slope.
 // Far water then shows a smooth glitter column, not noise.
-const vec3 SUNG = vec3(2.4, 1.05, 0.3);
+#define SUNG (uSunC * 1.1)
 vec3 reflectSky(vec3 d, vec3 n, float sig2) {
   vec3 r = reflect(d, n); r.y = abs(r.y);
   vec3 q = r - SD;
@@ -599,7 +631,7 @@ void main() {
       g *= sheet; sig2 *= sheet;
       n = normalize(vec3(-g.x, 1.0, -g.y));
       float F = 0.02 + 0.98 * pow(1.0 - clamp(dot(-d, n), 0.0, 1.0), 5.0);
-      col = mix(vec3(0.004, 0.007, 0.014), reflectSky(d, n, sig2), F);
+      col = mix(uDeep, reflectSky(d, n, sig2), F);
       // Breakers roll in as foam lines, and lace marks the swash edge.
       float lace = smoothstep(0.3, 0.7, noise(p * vec2(26.0, 70.0)));
       float roll = pow(max(sin((into * 3.0 - uTime * 0.28) * 6.283), 0.0), 10.0) * exp(-into * 0.8) * smoothstep(0.0, 0.25, into);
@@ -621,7 +653,7 @@ void main() {
       n = normalize(vec3(0.0, 1.0, rip));
       wet = clamp(0.3 * smoothstep(0.4, 1.1, z) + pool + film, 0.0, 1.0);
       vec3 sand = vec3(0.3, 0.2, 0.15) * (0.75 + 0.5 * grain) * mix(1.0, 0.5, wet);
-      sand *= vec3(0.32, 0.22, 0.26);
+      sand *= uSandLit;
       float F = 0.02 + 0.98 * pow(1.0 - clamp(dot(-d, n), 0.0, 1.0), 5.0);
       // Pools are mirrors; open wet sand blurs the reflection.
       col = mix(sand, reflectSky(d, n, mix(0.02, 0.0003, max(pool, film))), F * wet * 0.95);
@@ -642,6 +674,7 @@ const POST_FS = `
 uniform sampler2D tColor, tDepth;
 uniform vec2 uSun;
 uniform float uAspect, uGain;
+uniform vec3 uFlareCol;
 varying vec2 vUv;
 const float RING = 0.012;
 const vec3 ORANGE = vec3(1.0, 0.42, 0.1), CREAM = vec3(1.0, 0.86, 0.66);
@@ -656,7 +689,7 @@ void main() {
     seen += texture2D(tDepth, clamp(uSun + o / vec2(uAspect, 1.0), 0.0, 1.0)).r > 0.9999 ? 1.0 : 0.0;
   }
   float cover = seen / 9.0;
-  vec3 col = mix(CREAM, ORANGE, 0.3);
+  vec3 col = uFlareCol;
   vec2 d = vUv - uSun;
   float ax = d.x * uAspect, ay = d.y;
   // A wide veil of haze and a soft orb, squashed sideways.
@@ -672,7 +705,7 @@ void main() {
   gs[0] = vec3(0.7, 0.05, 0.9); gs[1] = vec3(1.4, 0.09, 0.6); gs[2] = vec3(2.2, 0.15, 0.4); gs[3] = vec3(-0.45, 0.03, 0.5);
   for (int i = 0; i < 4; i++) {
     vec2 g = (vUv - (uSun + toC * gs[i].x)) * vec2(uAspect, 1.0);
-    add += mix(col, ORANGE, 0.4) * exp(-dot(g, g) / (gs[i].y * gs[i].y)) * gs[i].z * 0.12;
+    add += mix(col, col * ORANGE, 0.4) * exp(-dot(g, g) / (gs[i].y * gs[i].y)) * gs[i].z * 0.12;
   }
   add *= cover * uGain;
   // Haze sits lighter on the near walker than on the far sky.
@@ -725,6 +758,9 @@ const sea = (() => {
   const U = {
     uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uHor: { value: 1 }, uF: { value: 1 },
     uTime: { value: 0 }, uWind: { value: 0 }, uSunR: { value: 0.05 },
+    uZen: { value: new THREE.Vector3() }, uLow: { value: new THREE.Vector3() }, uHorC: { value: new THREE.Vector3() }, uScat: { value: new THREE.Vector3() },
+    uSunC: { value: new THREE.Vector3() }, uSunE: { value: new THREE.Vector3() }, uCloudLit: { value: new THREE.Vector3() }, uCloudDark: { value: new THREE.Vector3() },
+    uDeep: { value: new THREE.Vector3() }, uSandLit: { value: new THREE.Vector3() }, uCloudAmb: { value: 0 }, uStars: { value: 0 },
     uCamPos: { value: new THREE.Vector3() }, uSD: { value: new THREE.Vector3(0, 0, -1) }, uRot: { value: new THREE.Matrix3() },
   };
   const back = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
@@ -817,18 +853,19 @@ const sea = (() => {
   scene.add(groundMesh);
 
   const sun = new THREE.DirectionalLight(0xffa864, 5);
+  const skyLight = new THREE.HemisphereLight(0x4a2a3a, 0x3a2014, 0.18);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.0004; sun.shadow.radius = 3;
   Object.assign(sun.shadow.camera, { left: -0.4, right: 0.4, top: 0.4, bottom: -0.4, near: 0.05, far: 8 });
   sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun, sun.target);
-  scene.add(new THREE.HemisphereLight(0x4a2a3a, 0x3a2014, 0.18));
+  scene.add(skyLight);
 
   // The scene renders to a target; the post pass reads its colour and depth.
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType });
   rt.depthTexture = new THREE.DepthTexture(1, 1);
-  const postU = { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 }, uGain: { value: 1 } };
+  const postU = { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 }, uGain: { value: 1 }, uFlareCol: { value: new THREE.Vector3(1, 0.73, 0.49) } };
   // three's bloom spreads the sun, the horizon glow and the glitter.
   // It adds onto the scene target before the flare and grade pass.
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.75, 0.86);
@@ -898,11 +935,20 @@ const sea = (() => {
       U.uSD.value.copy(sd);
       U.uHor.value = horizonY; U.uF.value = focal; U.uTime.value = simT; U.uWind.value = Math.abs(wind); U.uSunR.value = sunR / focal;
       postU.uSun.value.set(sunX / w, 1 - sunY / h);
-      postU.uGain.value = flareGain;
+      // The look of this time of day drives sky, water, sand, lights and flare.
+      const look = todLook(tod), V = (u, a) => u.value.set(a[0], a[1], a[2]);
+      V(U.uZen, look.zen); V(U.uLow, look.low); V(U.uHorC, look.hor); V(U.uScat, look.scat);
+      V(U.uSunC, look.sunC); V(U.uSunE, look.sunE); V(U.uCloudLit, look.lit); V(U.uCloudDark, look.dark);
+      V(U.uDeep, look.deep); V(U.uSandLit, look.sand); U.uCloudAmb.value = look.amb; U.uStars.value = look.stars;
+      sun.color.setRGB(...look.light); sun.intensity = look.lightK;
+      skyLight.color.setRGB(...look.sky); skyLight.intensity = look.skyK;
+      V(postU.uFlareCol, look.flare);
+      // The flare fades as the sun sinks behind the sea.
+      postU.uGain.value = flareGain * look.flareK * clamp((horizonY - sunY) / sunR + 0.5, 0, 1);
       // The shadow light shares the sun bearing at a higher angle.
       const flat = Math.hypot(sd.x, sd.z), c0 = Math.cos(SHADOW_TURN), s0 = Math.sin(SHADOW_TURN);
       const hx = sd.x / flat, hz = sd.z / flat;
-      _d.set(hx * c0 + hz * s0, Math.tan(SHADOW_ELEV), -hx * s0 + hz * c0).normalize();
+      _d.set(hx * c0 + hz * s0, Math.tan(Math.max(SHADOW_ELEV, sd.y * 1.4)), -hx * s0 + hz * c0).normalize();
       sun.target.position.set(bodyX * k + 0.08 * Math.sin(YAW), 0, -1 + 0.25);
       sun.position.copy(sun.target.position).addScaledVector(_d, 3);
 
@@ -952,7 +998,7 @@ const sea = (() => {
 
       renderer.setRenderTarget(rt);
       renderer.render(scene, camera);
-      bloom.strength = 0.7 * flareGain;
+      bloom.strength = 0.7 * flareGain * (0.4 + 0.6 * look.flareK);
       bloom.render(renderer, null, rt, 0, false);
       renderer.setRenderTarget(null);
       renderer.render(postScene, postCam);
@@ -964,6 +1010,12 @@ const sea = (() => {
 let mode = null, handTurn = 0, showPath = false, camLock = 0;
 function step(dt) {
   simT += dt;
+  // Cycle swings the hour back and forth, two minutes each way.
+  if (todCycle && !reduce) {
+    todPhase += (dt * PI) / 120;
+    tod = (1 - Math.cos(todPhase)) / 2; timeIn.value = String(tod);
+    lens();
+  }
   // The view eases between close and wide over about a second.
   if (viewK !== viewTo) {
     viewK = reduce ? viewTo : clamp(viewK + Math.sign(viewTo - viewK) * dt / 1.1, 0, 1);
@@ -1319,7 +1371,7 @@ function draw() {
 // The loop runs while anything moves, then sleeps.
 let raf = 0, last = 0, visible = true;
 const busy = () => mode === 'crank' || u !== 0 || windUser !== 0 || keyWind !== 0 || breezeAmt > 0 || breezeOn
-  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05 || vane !== 0 || viewK !== viewTo;
+  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05 || vane !== 0 || viewK !== viewTo || todCycle;
 function frame(now) {
   raf = 0;
   const dt = clamp((now - last) / 1000, 0.001, 0.05);
@@ -1403,6 +1455,16 @@ const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttri
 setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
 document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
 addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
+// Time sets the hour; Cycle runs it slowly, sunset to night and back to afternoon.
+const timeIn = document.getElementById('time'), cycleBtn = document.getElementById('cycle');
+function setTime(v) { tod = clamp(v, 0, 1); timeIn.value = String(tod); lens(); if (!raf) draw(); }
+timeIn.addEventListener('input', () => setTime(Number(timeIn.value)));
+cycleBtn.addEventListener('click', () => {
+  todCycle = !todCycle; cycleBtn.setAttribute('aria-pressed', String(todCycle));
+  todPhase = Math.acos(clamp(1 - 2 * tod, -1, 1));
+  wake();
+});
+if (!sea) { timeIn.closest('label').hidden = true; cycleBtn.hidden = true; }
 // Haze scales the whole lens flare.
 const hazeIn = document.getElementById('haze');
 hazeIn.addEventListener('input', () => { flareGain = Number(hazeIn.value); if (!raf) draw(); });
