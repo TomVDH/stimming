@@ -73,6 +73,16 @@ playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'galaxy' });
 
 const panel = document.getElementById('space');
+// The first pass waits for the intro to clear, so nobody misses it.
+const curtain = new Promise(res => {
+  const el = document.querySelector('.intro');
+  if (!el) return res();
+  let to = 0;
+  const done = () => { mo.disconnect(); clearTimeout(to); setTimeout(res, 250); };
+  const mo = new MutationObserver(() => { if (!el.isConnected || el.querySelector('.intro-tick')) done(); });
+  mo.observe(document.body, { childList: true, subtree: true });
+  to = setTimeout(done, 7000);
+});
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
@@ -86,12 +96,12 @@ const mtof = m => 440 * 2 ** ((m - 69) / 12);
 
 // The drone is one D chord, root first.
 // Each cluster rank adds one voice, heaviest on the root.
-const CHORDS = [[38, 45, 50, 54, 57, 61, 64, 69]];
+const DRONE = [38, 45, 50, 54, 57, 61, 64, 69];
 const AMP = [0.08, 0.055, 0.045, 0.038, 0.032, 0.024, 0.019, 0.016];
 const layers = [];
 // The star count writes these targets twice a second.
 const mixAt = { level: new Float32Array(8) };
-let chordAt = 0, droneLfo = null;
+let droneLfo = null;
 
 function audio() {
   if (!ac) {
@@ -126,7 +136,7 @@ function makeLayer(k) {
   lp.Q.value = 0.4;
   droneLfo.connect(lp.frequency);
   lp.connect(g).connect(out);
-  const f = mtof(CHORDS[chordAt][k]);
+  const f = mtof(DRONE[k]);
   for (const sgn of [-1, 1]) {
     const o = ac.createOscillator();
     o.type = k ? 'triangle' : 'sine';
@@ -255,7 +265,8 @@ const WIND = 2.9;
 const FOV = 36, EL = (32 * Math.PI) / 180;
 const holeRadius = m => Math.min(0.55, HOLE_R * Math.sqrt(m / BH_M));
 
-let running = false, ready = false;
+let running = false, ready = false, shown = !document.querySelector('.intro');
+curtain.then(() => { shown = true; });
 let renderer = null, camera = null;
 let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false;
 const wells = [];
@@ -361,7 +372,8 @@ async function start() {
       const wp = C.xyz.add(EX.mul(L.x)).add(EN.mul(L.y)).add(EZ.mul(L.z));
       const wv = pick('v').add(EX.mul(LV.x)).add(EN.mul(LV.y)).add(EZ.mul(LV.z));
       P.assign(vec4(wp, LV.length()));
-      V.assign(vec4(wv, 0));
+      // Seeded stars are born lit, so the still pair shows at once.
+      V.assign(vec4(wv, -0.5));
     }).Else(() => {
       P.assign(vec4(0, 0, 0, 0));
       V.assign(vec4(0, 0, 0, DEAD));
@@ -870,15 +882,16 @@ async function start() {
   }
 
   /* ---------- seeding the pair ---------- */
-  // The pair falls together on a bound orbit, discs prograde.
+  // The pair grazes past, swings wide, then falls back and merges.
+  // The first pass tears out tidal tails within two seconds.
   function seed() {
     const turn = camera.aspect < 1 ? Math.PI / 2 + 0.3 : 0.3;
     const c = Math.cos(turn), s = Math.sin(turn);
     const rot = (x, z) => [x * c - z * s, x * s + z * c];
-    const [ax, az] = rot(-4.5, 0), [bx, bz] = rot(4.5, 0);
+    const [ax, az] = rot(-3, 0), [bx, bz] = rot(3, 0);
     // Heavy wells answer slowly, so the pair keeps its path, slower.
     const sv = Math.sqrt(resp(SEED_M));
-    const [vx, vz] = rot(0.5 * sv, -1 * sv);
+    const [vx, vz] = rot(1.2 * sv, -2 * sv);
     wells.length = 0;
     wells.push(makeWell(ax, az, vx, vz, SEED_M, SEED_M), makeWell(bx, bz, -vx, -vz, SEED_M, SEED_M));
     wells.forEach(w => { w.vis = 1; });
@@ -984,7 +997,6 @@ async function start() {
       fling.vx = vx;
       fling.vz = vz;
       fling.releasing = true;
-      const r = panel.getBoundingClientRect();
     } else if (h.kind === 'well' && h.well) {
       const w = h.well;
       w.held = false;
@@ -1145,8 +1157,9 @@ async function start() {
       if (slow > 40) { lowDpr = true; resize(); }
     }
     // Reduced motion halves the simulation speed.
-    const simDt = dt * (reduce ? 0.5 : 1);
-    const n = Math.max(1, Math.min(4, Math.ceil(simDt / STEP - 1e-6))), h = simDt / n;
+    // Behind the intro, the seeded pair holds still.
+    const simDt = shown || hold ? dt * (reduce ? 0.5 : 1) : 0;
+    const n = simDt > 0 ? Math.max(1, Math.min(4, Math.ceil(simDt / STEP - 1e-6))) : 0, h = n ? simDt / n : 0;
     updateHold(now);
     for (let s = 0; s < n; s++) {
       for (let q = 0; q < 3; q++) stepWells(h / 3);
@@ -1164,7 +1177,7 @@ async function start() {
     }
     uTime.value = simT;
     prune();
-    if (!reduce) az += dt * 0.016;
+    if (!reduce && simDt > 0) az += dt * 0.016;
     placeCamera(now / 1000);
     updateHole(dt);
     for (let k = 0; k < MAXW; k++) {
