@@ -42,8 +42,11 @@
 .setter { margin-left: auto; }
 .setter + .how-tip { margin-left: 0; }
 #setBtn svg { stroke-linecap: round; }
-/* The Settings tray hangs from its right edge. */
-.add.sets { left: auto; right: 0; }
+/* The Settings tray hangs from its right edge, as a column of tweaks. */
+.add.sets { left: auto; right: 0; flex-direction: column; align-items: stretch; gap: 8px; width: max-content; padding: 10px; }
+.sets .slider { justify-content: space-between; }
+.sets .slider span { white-space: nowrap; }
+.sets .chip { justify-content: center; }
 @media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 </style>
 </head>
@@ -89,6 +92,8 @@
       <div class="adder setter" id="setter">
         <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
         <div class="add sets" id="sets" role="group" aria-label="Settings">
+          <label class="slider"><span>Star streaks</span><input type="range" id="starStreak" min="0" max="1" step="0.01" value="0.18"></label>
+          <label class="slider"><span>Effect streaks</span><input type="range" id="fxStreak" min="0" max="1.2" step="0.01" value="0.18"></label>
           <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
         </div>
       </div>
@@ -365,8 +370,11 @@ let renderer = null, camera = null;
 // Object timelines (fuses, bursts) run on their own clock, apart from Gravity.
 let clockT = 0;
 let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star', pace = PACE;
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.galaxy.${k}`); } catch (err) { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.galaxy.${k}`, v); } catch (err) { /* storage is optional */ } };
 // Streak lengths in seconds: stars and objects, then effects.
-const STAR_STREAK = 0.18, FX_STREAK = 0.18;
+let starStreak = Number(saved('streakStars') ?? 0.18), fxStreak = Number(saved('streakFx') ?? 0.18);
 let zoom = 1, zoomGoal = 1;
 const wells = [];
 
@@ -1849,6 +1857,12 @@ async function start() {
   // Reset lives in Settings, so it never sits beside Clear.
   const openSets = popover(document.getElementById('setter'), document.getElementById('setBtn'));
   document.getElementById('reset').addEventListener('click', () => { resetAll(); openSets(false); });
+  // Streaks set how long stars and effects linger; zero turns them off.
+  const starIn = document.getElementById('starStreak'), fxIn = document.getElementById('fxStreak');
+  starIn.value = String(starStreak);
+  fxIn.value = String(fxStreak);
+  starIn.addEventListener('input', () => { starStreak = Number(starIn.value); save('streakStars', starIn.value); });
+  fxIn.addEventListener('input', () => { fxStreak = Number(fxIn.value); save('streakFx', fxIn.value); });
 
   /* ---------- async warm-up ---------- */
   resize();
@@ -1991,8 +2005,8 @@ async function start() {
     placeCamera(now / 1000);
     updateHole(dt);
     // Reduced motion draws each frame alone, with no streaks.
-    uDamp.value = reduce ? 0 : Math.exp(-dt / FX_STREAK);
-    uDampStars.value = reduce ? 0 : Math.exp(-dt / STAR_STREAK);
+    uDamp.value = reduce || !fxStreak ? 0 : Math.exp(-dt / fxStreak);
+    uDampStars.value = reduce || !starStreak ? 0 : Math.exp(-dt / starStreak);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
       tails[k].visible = !!w && w.kind === 'comet' && !w.hole && w.vis > 0.01;
