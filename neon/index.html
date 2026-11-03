@@ -56,7 +56,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; click a tube to switch it off or on; click the bare wall to knock on it. Arrow keys draw, Shift with arrows moves the pen, Enter finishes, Space switches the nearest tube, K knocks, Backspace undoes, C clears, 1 to 0 and M pick the gas, W changes the wall, P runs the chase.">
+    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag for straight runs with round corners; click a tube to switch it off or on; click the bare wall to knock on it. Arrow keys draw, Shift with arrows moves the pen, Enter finishes, Space switches the nearest tube, K knocks, Backspace undoes, C clears, 1 to 0 and M pick the gas, W changes the wall, P runs the chase.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Neon sign needs WebGL 2, which this browser has turned off.</p>
     </div>
@@ -73,7 +73,7 @@
         <div><dt>Drag</dt><dd>draw a tube</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a tube</dt><dd>switch</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the wall</dt><dd>knock</dd></div>
-        <div class="fine"><dt><kbd>Backspace</kbd></dt><dd>undo</dd></div>
+        <div class="fine"><dt><kbd>Shift</kbd> drag</dt><dd>straight runs</dd></div>
       </dl>
     </div>
   </main>
@@ -1692,13 +1692,51 @@ function local(e) {
   const r = rect || (rect = panel.getBoundingClientRect());
   return [e.clientX - r.left, e.clientY - r.top];
 }
-function beginDraft(x, y, pid) {
+function beginDraft(x, y, pid, snap = false) {
   draft = { raw: [x, y], ctrl: [[x, y]], arc: 0, pid, gas: gasPick(), count: 0, v: null, c: null };
+  if (snap) draft.snap = { at: [[x, y]], dir: null, prev: null, len: 0 };
   draftDirty = true;
   wake();
 }
+// A snapped stroke runs in one of eight directions.
+const OCT = Math.PI / 4;
+function snapDir(x, y) {
+  const a = Math.round(Math.atan2(y, x) / OCT) * OCT;
+  return [Math.cos(a), Math.sin(a)];
+}
+// The pointer pulls a straight run from the last corner.
+// A clear turn away from the run sets a new corner.
+function snapPoint(x, y) {
+  const s = draft.snap, a = s.at[s.at.length - 1], vx = x - a[0], vy = y - a[1];
+  // A short run still turns with the pointer.
+  if (!s.dir || s.len < 3 * R) {
+    if (!s.dir && Math.hypot(vx, vy) < 2 * R) return;
+    const d = snapDir(vx, vy);
+    // A run never folds straight back on the last one.
+    if (!s.prev || d[0] * s.prev[0] + d[1] * s.prev[1] > -0.9) s.dir = d;
+  }
+  const [dx, dy] = s.dir, along = vx * dx + vy * dy, off = Math.abs(vx * dy - vy * dx);
+  if (off > 2.5 * R && s.len >= 3 * R) {
+    s.at.push([a[0] + dx * s.len, a[1] + dy * s.len]);
+    s.prev = s.dir;
+    s.dir = null;
+    s.len = 0;
+    snapPoint(x, y);
+    return;
+  }
+  if (off < 1.25 * R) s.len = Math.max(0, along);
+  const pts = s.at.slice();
+  if (s.len > 1) pts.push([a[0] + dx * s.len, a[1] + dy * s.len]);
+  let arc = 0;
+  for (let i = 1; i < pts.length; i++) arc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  // Corners turn on a glass bend wider than the tube.
+  draft.ctrl = pts.length < 2 ? pts : bent(pts, 2.5 * R, Math.max(2, 0.5 * R));
+  draft.arc = arc;
+  draftDirty = true;
+}
 // Control points follow the raw path at a steady spacing.
 function addPoint(x, y) {
+  if (draft.snap) { snapPoint(x, y); return; }
   const r = draft.raw, n = r.length, step = Math.hypot(x - r[n - 2], y - r[n - 1]);
   if (step < 1.5) return;
   r.push(x, y);
@@ -1774,7 +1812,7 @@ panel.addEventListener('pointermove', e => {
     if (!press.moved) {
       if (Math.hypot(x - press.x, y - press.y) < (press.touch ? 9 : 5)) continue;
       press.moved = true;
-      beginDraft(press.x, press.y, press.id);
+      beginDraft(press.x, press.y, press.id, c.shiftKey);
     }
     if (draft && draft.pid === press.id) addPoint(x, y);
   }
