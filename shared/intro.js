@@ -62,13 +62,14 @@ export const TIMING = {
   subLag: 4,    // frames before the subtitle opens
   tagLag: 4,    // frames from the subtitle to the motto
   tagNlLag: 4,  // frames from the motto to its Dutch line
+  sndLag: 4,    // frames from the line above to the sound notice
   hold: 2300,   // ms from the start before the intro may clear
   wipe: 333,    // ms the column wipes off
   fade: 500,    // ms the glass fades away
 };
 
 // The sound notice for toys with sound: off until Tom picks a form.
-// glyph cuts headphones into the box; words adds a line; nudge pulses the speaker.
+// glyph and words make a quiet last line under the titles; nudge pulses the speaker.
 export const SOUND_NOTE = { glyph: false, words: null, nudge: false };
 
 // The phases the intro lab can pause on, in order.
@@ -132,19 +133,15 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     badge.append(emblem);
     if (info?.number) badge.dataset.num = `#${info.number}`;
   }
-  // A toy with sound marks its box with headphones and, if chosen, a line.
-  const box = badge || name;
-  if (info?.sound && soundNote.glyph) {
-    const snd = document.createElement('span');
+  // A toy with sound ends its titles with a quiet headphones line.
+  let snd = null;
+  if (info?.sound && (soundNote.glyph || soundNote.words)) {
+    snd = document.createElement('span');
     snd.className = 'intro-snd';
-    snd.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" fill="none" stroke="currentColor" stroke-width="2.6"/><rect x="2.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/><rect x="16.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/></svg>';
-    box.append(snd);
-  }
-  if (info?.sound && soundNote.words) {
-    const w = document.createElement('span');
-    w.className = 'intro-snd-words';
-    w.textContent = soundNote.words;
-    box.append(w);
+    const icon = soundNote.glyph ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" fill="none" stroke="currentColor" stroke-width="2.6"/><rect x="2.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/><rect x="16.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/></svg>' : '';
+    snd.innerHTML = icon + (soundNote.words ? `<span>${soundNote.words}</span>` : '');
+    text.append(snd);
+    snd.style.clipPath = 'inset(0 50% 0 50%)';
   }
   // A toy Tom signs off shows a tick cut into the box at size.
   const big = badge || name;
@@ -187,6 +184,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   if (sub) { await wait(T.subLag); last = unfurl(sub); }
   if (tag) { await wait(T.tagLag); last = unfurl(tag); }
   if (tagNl) { await wait(T.tagNlLag); last = unfurl(tagNl); }
+  if (snd) { await wait(T.sndLag); last = unfurl(snd); }
   await last;
   await gate('lines');
 
