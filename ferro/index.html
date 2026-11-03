@@ -223,23 +223,31 @@ const SIG2 = 0.42 ** 2, FC = 0.36, HOVER = 1, STRONG = 2;
 const CS2 = 3.2 ** 2, SIGL = 0.3, LEANMAX = 0.22;
 const mag = { x: 0, z: 0, present: false, pressed: false, locked: false, via: '' };
 const Fs = { x: 0, v: 0 };
-const E = { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 }, L = { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 };
+// E is the field envelope; it follows the magnet on a spring.
+// L is the window centre, always a node of the fixed world lattice.
+const E = { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 }, L = { x: 0, z: 0, i: 0, j: 0 };
+// Crowding radius in world units, squared.
+const CW2 = CS2 * LAM * LAM;
 let crowdNow = 0, idleAmt = 0, stirT = 0, tNow = 0, amax = 0;
 
 // One cell per lattice point, axial coordinates within K rings.
 const NC = 1 + 3 * K * (K + 1);
-const CU = new Float32Array(NC), CV = new Float32Array(NC), CR = new Float32Array(NC), CE = new Float32Array(NC);
+const CU = new Float32Array(NC), CV = new Float32Array(NC), CR = new Float32Array(NC);
+const CI = new Int16Array(NC), CJ = new Int16Array(NC), SRC = new Int16Array(NC);
 const CF = new Float32Array(NC), WA = new Float32Array(NC), WS = new Float32Array(NC), PH = new Float32Array(NC);
 const A = new Float32Array(NC), VA = new Float32Array(NC), SX = new Float32Array(NC), SZ = new Float32Array(NC);
 const VSX = new Float32Array(NC), VSZ = new Float32Array(NC), COFF = new Int32Array(NC), FORM = new Uint8Array(NC);
+// Each cell's crowded world position and crowding weight.
+const NX = new Float32Array(NC), NZ = new Float32Array(NC), CE = new Float32Array(NC);
 const CD = new Float32Array(KW * KW * 4), CIDX = new Int16Array(KW * KW).fill(-1);
 let nc = 0;
 for (let j = -K; j <= K; j++) for (let i = -K; i <= K; i++) {
   if (Math.abs(i + j) > K) continue;
+  CI[nc] = i;
+  CJ[nc] = j;
   CU[nc] = i + j / 2;
   CV[nc] = j * S3;
   CR[nc] = Math.hypot(CU[nc], CV[nc]);
-  CE[nc] = Math.exp(-(CR[nc] ** 2) / CS2);
   // Cells near the texture edge never rise.
   CF[nc] = smooth(7.6, 5.6, CR[nc]);
   COFF[nc] = ((j + K) * KW + i + K) * 4;
@@ -251,6 +259,43 @@ for (let j = -K; j <= K; j++) for (let i = -K; i <= K; i++) {
   nc++;
 }
 
+// Spikes stand on fixed world nodes; the window steps whole cells.
+// Cell state moves with the step, so no spike slides.
+const SHIFT = [[A, 0], [VA, 0], [SX, 0], [SZ, 0], [VSX, 0], [VSZ, 0], [FORM, 0], [NX, 0], [NZ, 0], [CE, 0],
+  [WA, () => jit(0.15)], [WS, () => jit(0.18)], [PH, () => Math.random() * TAU]];
+function anchor(x, z) {
+  const fj = z / (S3 * LAM), fi = x / LAM - 0.5 * fj, fk = -fi - fj;
+  let ri = Math.round(fi), rj = Math.round(fj);
+  const rk = Math.round(fk), di0 = Math.abs(ri - fi), dj0 = Math.abs(rj - fj), dk0 = Math.abs(rk - fk);
+  if (di0 > dj0 && di0 > dk0) ri = -rj - rk;
+  else if (dj0 > dk0) rj = -ri - rk;
+  const di = ri - L.i, dj = rj - L.j;
+  if (!di && !dj) return;
+  // The window holds until the envelope is well past the cell edge.
+  if (Math.hypot(x - L.x, z - L.z) < 0.62 * LAM) return;
+  for (let k = 0; k < nc; k++) {
+    const i = CI[k] + di, j = CJ[k] + dj;
+    SRC[k] = Math.abs(i) <= K && Math.abs(j) <= K ? CIDX[(j + K) * KW + i + K] : -1;
+  }
+  for (const [arr, fill] of SHIFT) {
+    const old = arr.slice();
+    for (let k = 0; k < nc; k++) arr[k] = SRC[k] >= 0 ? old[SRC[k]] : fill ? fill() : 0;
+  }
+  // SPT stores times; a new cell has never thrown.
+  const spt = SPT.slice();
+  for (let k = 0; k < nc; k++) SPT[k] = SRC[k] >= 0 ? spt[SRC[k]] : -9;
+  // Necks on a spike tip follow that spike to its new cell.
+  for (const br of bridges) for (const e of [br.a, br.b]) {
+    if (e.kind !== 'tip' || e.k < 0) continue;
+    const i = CI[e.k] - di, j = CJ[e.k] - dj;
+    e.k = Math.abs(i) <= K && Math.abs(j) <= K ? CIDX[(j + K) * KW + i + K] : -1;
+  }
+  L.i = ri;
+  L.j = rj;
+  L.x = (ri + rj / 2) * LAM;
+  L.z = rj * S3 * LAM;
+}
+
 function spring2(s, tx, tz, w, z, h) {
   s.ax = w * w * (tx - s.x) - 2 * z * w * s.vx;
   s.az = w * w * (tz - s.z) - 2 * z * w * s.vz;
@@ -260,20 +305,24 @@ function spring2(s, tx, tz, w, z, h) {
   s.z += s.vz * h;
 }
 // Spikes swell, sway and melt on their own springs.
-function cellsStep(h, F, crowd, atten, mx, mz, kx, kz) {
+function cellsStep(h, F, crowd, atten, mx, mz) {
   const wr = reduce ? 22 : 10, zr = reduce ? 1 : 0.32, wf = reduce ? 18 : 6.5, zf = reduce ? 1 : 0.8;
   const ws = reduce ? 20 : 13, zs = reduce ? 1 : 0.16;
   let busy = false, top = 0;
   for (let k = 0; k < nc; k++) {
-    const w = (1 - crowd * CE[k]) * LAM, x = L.x + CU[k] * w, z = L.z + CV[k] * w;
-    const dx = x - E.x, dz = z - E.z;
+    // A strong field packs the nodes toward the envelope centre.
+    const bx = L.x + CU[k] * LAM - E.x, bz = L.z + CV[k] * LAM - E.z, b2 = bx * bx + bz * bz;
+    const ce = Math.exp(-b2 / CW2), s = 1 - crowd * ce, dx = bx * s, dz = bz * s, x = E.x + dx, z = E.z + dz;
+    NX[k] = x;
+    NZ[k] = z;
+    CE[k] = ce;
     // The field falls off like a dipole's; spikes need a threshold.
     const f = F / (1 + (dx * dx + dz * dz) / SIG2) ** 1.5;
     let at = 0;
     if (f > FC) {
       at = A0 * ((f - FC) / (1 - FC)) ** 0.7 * atten * CF[k] * smooth(0.95, 0.74, Math.hypot(x, z));
-      // The idle ripple runs outward through the lattice.
-      if (idleAmt) at *= 1 + 0.1 * idleAmt * Math.sin(tNow * 2.3 - CR[k] * 1.1 + PH[k] * 0.35);
+      // The idle ripple runs outward from the envelope centre.
+      if (idleAmt) at *= 1 + 0.1 * idleAmt * Math.sin(tNow * 2.3 - (Math.sqrt(b2) / LAM) * 1.1 + PH[k] * 0.35);
     }
     const up = at > A[k], om = (up ? wr : wf) * WA[k], ze = up ? zr : zf;
     VA[k] += (om * om * (at - A[k]) - 2 * ze * om * VA[k]) * h;
@@ -290,10 +339,10 @@ function cellsStep(h, F, crowd, atten, mx, mz, kx, kz) {
     if (A[k] < 1e-4 && at === 0) {
       SX[k] = tx; SZ[k] = tz; VSX[k] = VSZ[k] = 0;
     } else {
-      // The lattice's acceleration swings the tips the other way.
+      // Each tip sways on its own spring as the lean target moves.
       const os = ws * WS[k];
-      VSX[k] += (os * os * (tx - SX[k]) - 2 * zs * os * VSX[k] - kx) * h;
-      VSZ[k] += (os * os * (tz - SZ[k]) - 2 * zs * os * VSZ[k] - kz) * h;
+      VSX[k] += (os * os * (tx - SX[k]) - 2 * zs * os * VSX[k]) * h;
+      VSZ[k] += (os * os * (tz - SZ[k]) - 2 * zs * os * VSZ[k]) * h;
       SX[k] += VSX[k] * h;
       SZ[k] += VSZ[k] * h;
       if (Math.abs(tx - SX[k]) + Math.abs(tz - SZ[k]) > 2e-3 || Math.abs(VSX[k]) + Math.abs(VSZ[k]) > 2e-2) busy = true;
@@ -417,14 +466,15 @@ function bulkAt(x, z) {
 function crownAt(x, z) {
   crownK = -1;
   if (amax < 1e-4) return 0;
-  const bu = (x - L.x) / LAM, bv = (z - L.z) / LAM;
-  let u = bu, v = bv;
-  // Two passes undo the crowding near the centre.
+  const px = x - E.x, pz = z - E.z;
+  let qx = px, qz = pz;
+  // Two passes undo the crowding near the envelope centre.
   for (let it = 0; it < 2; it++) {
-    const s = 1 - crowdNow * Math.exp(-(u * u + v * v) / CS2);
-    u = bu / s;
-    v = bv / s;
+    const s = 1 - crowdNow * Math.exp(-(qx * qx + qz * qz) / CW2);
+    qx = px / s;
+    qz = pz / s;
   }
+  const u = (E.x + qx - L.x) / LAM, v = (E.z + qz - L.z) / LAM;
   const fj = v / S3, fi = u - 0.5 * fj, fk = -fi - fj;
   let ri = Math.round(fi), rj = Math.round(fj);
   const rk = Math.round(fk), di = Math.abs(ri - fi), dj = Math.abs(rj - fj), dk = Math.abs(rk - fk);
@@ -441,7 +491,7 @@ function crownAt(x, z) {
 }
 // World position of a spike's tip.
 function tipOf(k) {
-  const w = (1 - crowdNow * CE[k]) * LAM, x = L.x + CU[k] * w, z = L.z + CV[k] * w, a = Math.max(0, A[k]);
+  const x = NX[k], z = NZ[k], a = Math.max(0, A[k]);
   let sx = SX[k], sz = SZ[k];
   const sl = Math.hypot(sx, sz);
   if (sl > 0.35) { sx *= 0.35 / sl; sz *= 0.35 / sl; }
@@ -632,6 +682,8 @@ function endRaw(e, out) {
     if (e.d.gone) return false;
     out[0] = e.d.x; out[1] = e.d.y; out[2] = e.d.z; out[3] = e.d.r;
   } else if (e.kind === 'tip') {
+    // The spike can leave the window; its neck then lets go.
+    if (e.k < 0) return false;
     const t = tipOf(e.k);
     out[0] = t[0]; out[1] = t[1] - 0.05; out[2] = t[2]; out[3] = 0.026;
   } else {
@@ -658,7 +710,7 @@ function snap(br, len, both) {
   // Each side recoils: beads wobble, a spike drops back down.
   for (const e of [br.a, br.b]) {
     if (e.kind === 'drop' && !e.d.gone) e.d.qv += 7;
-    if (e.kind === 'tip') { A[e.k] *= 0.6; VA[e.k] = -1.3; FORM[e.k] = 0; }
+    if (e.kind === 'tip' && e.k >= 0) { A[e.k] *= 0.6; VA[e.k] = -1.3; FORM[e.k] = 0; }
   }
   // A long neck leaves one tiny satellite bead behind.
   if (both && br.a.kind !== 'tip' && len > 0.08 && drops.length < NDROP) {
@@ -714,8 +766,8 @@ function step(dt) {
   if (mr > 1.02) { mx *= 1.02 / mr; mz *= 1.02 / mr; }
   // With nothing raised, the pattern jumps straight to the magnet.
   if (Fs.x < 0.02 && amax < 1e-3) {
-    E.x = L.x = mx; E.z = L.z = mz;
-    E.vx = E.vz = L.vx = L.vz = 0;
+    E.x = mx; E.z = mz;
+    E.vx = E.vz = 0;
   }
   if (reduce || !mag.present) idleAmt = 0;
   else {
@@ -724,23 +776,21 @@ function step(dt) {
     if (idleAmt < 0.01) idleAmt = 0;
   }
   const n = Math.max(1, Math.ceil(dt * 120 - 1e-6)), h = dt / n;
-  const wF = reduce ? 14 : 7.5, zF = reduce ? 1 : 0.5, kick = reduce ? 0.25 : 1;
-  const wE = reduce ? 24 : 15, zE = reduce ? 1 : 0.9, wL = reduce ? 18 : 6.5, zL = reduce ? 1 : 0.8;
+  const wF = reduce ? 14 : 7.5, zF = reduce ? 1 : 0.5;
+  const wE = reduce ? 24 : 15, zE = reduce ? 1 : 0.9;
   let busy = false;
   for (let s = 0; s < n; s++) {
     Fs.v += (wF * wF * (Ft - Fs.x) - 2 * zF * wF * Fs.v) * h;
     Fs.x += Fs.v * h;
-    // The envelope follows the magnet closely; the lattice lags behind.
+    // The envelope follows the magnet; spikes rise ahead and melt behind.
     spring2(E, mx, mz, wE, zE, h);
-    spring2(L, mx, mz, wL, zL, h);
-    const ex = L.x - E.x, ez = L.z - E.z, el = Math.hypot(ex, ez);
-    if (el > 0.3) { L.x = E.x + (ex * 0.3) / el; L.z = E.z + (ez * 0.3) / el; }
+    anchor(E.x, E.z);
     const F = Math.max(0, Fs.x);
     // A stronger field packs the spikes closer together.
     crowdNow = 0.2 * smooth(0.3, STRONG, F);
     // A fast magnet outruns the fluid, so its spikes sink.
     const sp = Math.hypot(E.vx, E.vz);
-    if (cellsStep(h, F, crowdNow, 1 / (1 + (sp / 2.2) ** 2), mx, mz, L.ax * kick, L.az * kick)) busy = true;
+    if (cellsStep(h, F, crowdNow, 1 / (1 + (sp / 2.2) ** 2), mx, mz)) busy = true;
   }
   // Beads hang under the envelope once the field passes hover strength.
   pullF = smooth(1.25, 1.85, Fs.x);
@@ -775,8 +825,7 @@ function step(dt) {
   hum(clamp(Fs.x / STRONG), clamp((Fs.x - HOVER) / (STRONG - HOVER)));
   return busy || keys.size > 0 || idleAmt > 0 || top > 1.2e-4 || (strong && spit.left > 0) ||
     Math.abs(Fs.x - Ft) > 1e-4 || Math.abs(Fs.v) > 1e-3 ||
-    Math.abs(E.x - mx) + Math.abs(E.z - mz) > 1e-4 || Math.abs(E.vx) + Math.abs(E.vz) > 1e-3 ||
-    Math.abs(L.x - mx) + Math.abs(L.z - mz) > 1e-4 || Math.abs(L.vx) + Math.abs(L.vz) > 1e-3;
+    Math.abs(E.x - mx) + Math.abs(E.z - mz) > 1e-4 || Math.abs(E.vx) + Math.abs(E.vz) > 1e-3;
 }
 
 /* ---------- rendering ---------- */
@@ -789,7 +838,7 @@ let ready = false, lowDpr = false;
 const VERT = /* glsl */ `
 uniform sampler2D uCells;
 uniform sampler2D uBulk;
-uniform vec2 uL;
+uniform vec2 uL, uC;
 uniform float uLam, uCrowd, uG, uRclip, uEps, uAmax;
 varying vec2 vXZ;
 const float S3 = 0.8660254;
@@ -819,7 +868,9 @@ float kern(float r, float sh) {
   return mix(b * b * b, cone, sh);
 }
 vec3 surf(vec2 u, out float hs) {
-  vec2 base = uL + u * (1.0 - uCrowd * exp(-dot(u, u) / CS2)) * uLam;
+  // A strong field packs the nodes toward the envelope centre.
+  vec2 base = uL + u * uLam - uC;
+  base = uC + base * (1.0 - uCrowd * exp(-dot(base, base) / (CS2 * uLam * uLam)));
   vec2 shear = vec2(0.0);
   hs = 0.0;
   if (uAmax > 0.0 && dot(u, u) < float((KC + 1) * (KC + 1))) {
@@ -995,6 +1046,7 @@ function draw() {
   cellTex.needsUpdate = true;
   bulkTex.needsUpdate = true;
   U.uL.value.set(L.x, L.z);
+  U.uC.value.set(E.x, E.z);
   U.uCrowd.value = crowdNow;
   U.uAmax.value = amax > 1e-5 ? amax : 0;
   drawDrops();
@@ -1330,7 +1382,7 @@ async function start() {
   bulkTex = new THREE.DataTexture(H, G, G, THREE.RedFormat, THREE.FloatType);
   for (const t of [cellTex, bulkTex]) { t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; }
   U = {
-    uCells: { value: cellTex }, uBulk: { value: bulkTex }, uL: { value: new THREE.Vector2() },
+    uCells: { value: cellTex }, uBulk: { value: bulkTex }, uL: { value: new THREE.Vector2() }, uC: { value: new THREE.Vector2() },
     uLam: { value: LAM }, uCrowd: { value: 0 }, uG: { value: G }, uRclip: { value: RIN + 0.02 },
     uEps: { value: 0.35 / MESH_N }, uAmax: { value: 0 }, uRin: { value: RIN + 0.003 },
   };
