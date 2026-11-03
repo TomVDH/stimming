@@ -211,7 +211,7 @@ const make = (kind, extra = {}) => ({
   kind, ...SPEC[kind], u: 0.5, v: 0.5, rot: 0, x: 0, y: 0, r: 0, g: {}, snap: null, z: 1, z0: 1, zp: 1, base: false, dying: false, ...extra,
 });
 let pieces = [make('source', { base: true }), make('prism', { side: BASE_SIDE, base: true })];
-let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, tall = false, ready = false, lowDpr = false, baseMoved = false, safeB = 0;
+let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeB = 0;
 
 function corners(p, hw, hh) {
   const c = Math.cos(p.rot), s = Math.sin(p.rot), v = new Float64Array(8);
@@ -1399,12 +1399,13 @@ function tick(x, pitch = 1) {
 }
 
 /* ---------- the scene: opening layout, adding and removing ---------- */
-// The opening scene: one beam rises into one prism and fans out.
+// The opening scene: the lamp sits left, the prism in the middle.
 // The beam meets the left face at minimum deviation.
+// The spectrum leaves to the right.
 function composition() {
-  const wide = !tall, phi = (wide ? -12 : 80) * D2R, R = (BASE_SIDE * S) / Math.sqrt(3);
-  const cx = W * (wide ? 0.43 : 0.56), cy = H * (wide ? 0.43 : 0.34);
-  const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = wide ? 0.32 * W : 0.24 * H;
+  const phi = 0, R = (BASE_SIDE * S) / Math.sqrt(3);
+  const cx = W * 0.5, cy = (H - safeB) * 0.5;
+  const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = 0.36 * W;
   const mx = (R / 2) * Math.cos((7 * Math.PI) / 6), my = (R / 2) * Math.sin((7 * Math.PI) / 6);
   const sx = mx - Math.cos(dir) * dist, sy = my - Math.sin(dir) * dist, cp = Math.cos(phi), sn = Math.sin(phi);
   const m = (SPEC.source.w * S) / 2 + 10;
@@ -1824,7 +1825,6 @@ function fit(force) {
   rect = null;
   const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt((fine ? 2e6 : 1.4e6) / (w * h)));
   const nw = Math.floor(w * p), nh = Math.floor(h * p);
-  tall = w / h < 1.2;
   if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
   measureBar();
   if (pristine() && !tween) applyLayout();
@@ -1858,7 +1858,9 @@ function boot() {
   sync();
   render();
   requestAnimationFrame(() => canvas.classList.add('on'));
-  new ResizeObserver(() => fit()).observe(panel);
+  // Resizes settle before the smoke and dust rebuild.
+  let fitT = 0;
+  new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fit, 140); }).observe(panel);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
 }
