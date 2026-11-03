@@ -52,10 +52,28 @@
 .picker .now.pop svg { animation: pick-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
 @keyframes pick-pop { from { transform: scale(0.4) rotate(-30deg); } }
 @media (pointer: coarse) { .picker .step { width: 40px; height: 38px; } }
+/* Settings sits at the right edge, just left of the (i). */
+.bar > .adder { position: relative; margin-left: auto; }
+.bar > .adder + .how-tip { margin-left: -18px; }
+/* Settings opens a tray above the bar, flush with its right edge. */
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group > span { white-space: nowrap; }
+.sets .group .choices { flex-wrap: nowrap; gap: 4px; }
+.sets .group .chip { padding: 4px 9px; }
 /* Cut mode aims with a crosshair. */
 :root[data-mode="cut"] .stage { cursor: crosshair; }
 @media (prefers-reduced-motion: reduce) {
-  .stage canvas, .picker, .picker .step { transition: none; }
+  .stage canvas, .picker, .picker .step, .add { transition: none; }
   .picker .now.pop svg { animation: none; }
 }
 </style>
@@ -81,9 +99,21 @@
         </div>
       </div>
       <div class="actions">
-        <button class="chip" id="pool" type="button" aria-keyshortcuts="P" aria-label="Pool: lane">Lane</button>
-        <button class="chip" id="night" type="button" aria-keyshortcuts="N" aria-label="Time: day">Day</button>
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C" aria-disabled="true">Clear</button>
+      </div>
+      <div class="adder" id="setter">
+        <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+        <div class="add sets" id="sets" role="group" aria-label="Settings">
+          <div class="group"><span>Pool</span><div class="choices" id="pools" role="group" aria-label="Pool" aria-keyshortcuts="P">
+            <button class="chip" type="button" data-value="lane" aria-pressed="true">Lap</button>
+            <button class="chip" type="button" data-value="plunge" aria-pressed="false">Round</button>
+            <button class="chip" type="button" data-value="lagoon" aria-pressed="false">Bean</button>
+          </div></div>
+          <div class="group"><span>Time</span><div class="choices" id="times" role="group" aria-label="Time" aria-keyshortcuts="N">
+            <button class="chip" type="button" data-value="day" aria-pressed="true">Day</button>
+            <button class="chip" type="button" data-value="night" aria-pressed="false">Night</button>
+          </div></div>
+        </div>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
@@ -109,10 +139,19 @@
 }
 </script>
 <script type="module">
-import { initPage, sound, audioKit, linFit } from '../shared/stim.js';
+import { initPage, sound, audioKit, linFit, choices } from '../shared/stim.js';
 initPage({ id: 'pool' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const nightB = document.getElementById('night'), clearB = document.getElementById('clear'), poolB = document.getElementById('pool');
+const clearB = document.getElementById('clear');
+// Settings holds the pool shape and the time of day.
+const poolPick = choices(document.getElementById('pools'), v => nextPool(v));
+const timePick = choices(document.getElementById('times'), v => setNight(v === 'night'));
+// Settings opens a tray; a press outside or Escape closes it.
+const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
+const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
+setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
+document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
@@ -196,9 +235,9 @@ const DISP = 0.025;
 // The ground is concrete, sandstone or lawn.
 // Fixed pools keep their own proportions; ar is depth over width.
 const POOLS = {
-  lane: { name: 'Lane', shape: 0, depth: 0.45, ar: 0, tiles: [[0.88, 0.045, 205], [0.44, 0.17, 262]], grout: [0.3, 0.06, 255], deck: [0.7, 0.012, 85], cope: [0.9, 0.012, 90], joint: [0.6, 0.012, 85] },
-  plunge: { name: 'Plunge', shape: 1, depth: 0.7, ar: 1, tiles: [[0.93, 0.015, 95], [0.3, 0.05, 265]], grout: [0.52, 0.03, 260], deck: [0.7, 0.045, 68], cope: [0.88, 0.022, 82], joint: [0.58, 0.04, 66] },
-  lagoon: { name: 'Lagoon', shape: 2, depth: 0.38, ar: 0.72, tiles: [[0.86, 0.09, 165], [0.56, 0.12, 178]], grout: [0.32, 0.06, 185], deck: [0.54, 0.1, 138], cope: [0.84, 0.03, 80], joint: [0.64, 0.03, 76] },
+  lane: { shape: 0, depth: 0.45, ar: 0, tiles: [[0.88, 0.045, 205], [0.44, 0.17, 262]], grout: [0.3, 0.06, 255], deck: [0.7, 0.012, 85], cope: [0.9, 0.012, 90], joint: [0.6, 0.012, 85] },
+  plunge: { shape: 1, depth: 0.7, ar: 1, tiles: [[0.93, 0.015, 95], [0.3, 0.05, 265]], grout: [0.52, 0.03, 260], deck: [0.7, 0.045, 68], cope: [0.88, 0.022, 82], joint: [0.58, 0.04, 66] },
+  lagoon: { shape: 2, depth: 0.38, ar: 0.72, tiles: [[0.86, 0.09, 165], [0.56, 0.12, 178]], grout: [0.32, 0.06, 185], deck: [0.54, 0.1, 138], cope: [0.84, 0.03, 80], joint: [0.64, 0.03, 76] },
 };
 const POOL_IDS = Object.keys(POOLS), POOL_KEY = 'stimming.pool.pool';
 let poolId = POOLS[store.get(POOL_KEY)] ? store.get(POOL_KEY) : 'lane', shape = POOLS[poolId].shape;
@@ -1878,8 +1917,7 @@ function setNight(v) {
   // Reduced motion switches at once.
   if (reduce) nightK = nightT;
   store.set(TIME_KEY, v ? 'night' : 'day');
-  nightB.textContent = v ? 'Night' : 'Day';
-  nightB.setAttribute('aria-label', `Time: ${v ? 'night' : 'day'}`);
+  timePick.set(v ? 'night' : 'day');
   document.documentElement.dataset.time = v ? 'night' : 'day';
   wake();
 }
@@ -2486,16 +2524,14 @@ function clearPool() {
   wake();
 }
 // A new pool empties the water and rebuilds the grids.
-function showPool() {
-  poolB.textContent = POOLS[poolId].name;
-  poolB.setAttribute('aria-label', `Pool: ${POOLS[poolId].name.toLowerCase()}`);
-}
-function nextPool() {
-  poolId = POOL_IDS[(POOL_IDS.indexOf(poolId) + 1) % POOL_IDS.length];
+// With no id, the next pool in the list comes up.
+function nextPool(id = POOL_IDS[(POOL_IDS.indexOf(poolId) + 1) % POOL_IDS.length]) {
+  if (id === poolId || !POOLS[id]) return;
+  poolId = id;
   store.set(POOL_KEY, poolId);
   shape = POOLS[poolId].shape;
   DEPTH = POOLS[poolId].depth;
-  showPool();
+  poolPick.set(poolId);
   if (!ready) return;
   objs.length = parts.length = later.length = 0;
   holds.clear();
@@ -2506,9 +2542,7 @@ function nextPool() {
   plop(0, 0.5);
   wake();
 }
-showPool();
-poolB.addEventListener('click', nextPool);
-nightB.addEventListener('click', () => setNight(!nightT));
+poolPick.set(poolId);
 clearB.addEventListener('click', () => { if (clearB.getAttribute('aria-disabled') !== 'true') clearPool(); });
 // Clear lights only while something is in the pool.
 let clearOn = false;
