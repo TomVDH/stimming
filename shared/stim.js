@@ -77,6 +77,31 @@ function mouseKeys() {
   });
 }
 
+/* ---------- how-to tip: the keys hide behind an (i) ---------- */
+// The (i) sits at the far right of the bar.
+// Hover or focus opens the keys; a tap toggles them.
+function howTip() {
+  const how = document.querySelector('.bar .how');
+  if (!how || how.closest('.how-tip')) return;
+  const tip = document.createElement('div'), btn = document.createElement('button');
+  tip.className = 'how-tip';
+  btn.className = 'how-btn';
+  btn.type = 'button';
+  btn.textContent = 'i';
+  btn.setAttribute('aria-label', 'How to play');
+  btn.setAttribute('aria-expanded', 'false');
+  how.id ||= 'how';
+  btn.setAttribute('aria-controls', how.id);
+  how.before(tip);
+  tip.append(btn, how);
+  const set = on => { tip.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!tip.classList.contains('is-open')));
+  tip.addEventListener('mouseenter', () => btn.setAttribute('aria-expanded', 'true'));
+  tip.addEventListener('mouseleave', () => { if (!tip.classList.contains('is-open')) btn.setAttribute('aria-expanded', 'false'); });
+  document.addEventListener('pointerdown', e => { if (!tip.contains(e.target)) set(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+
 /* ---------- fit: the stage fills the first screen above the bar ---------- */
 // --chrome is everything above the stage plus the bar under it.
 function fitStage() {
@@ -87,7 +112,8 @@ function fitStage() {
       // The how-to line stacks when it wraps under the controls.
       bar.classList.remove('is-stacked');
       const how = bar.querySelector('.how'), first = bar.firstElementChild;
-      if (how && first && how !== first && how.offsetTop >= first.offsetTop + first.offsetHeight) bar.classList.add('is-stacked');
+      const tipped = how?.closest('.how-tip');
+      if (how && !tipped && first && how !== first && how.offsetTop >= first.offsetTop + first.offsetHeight) bar.classList.add('is-stacked');
     }
     const s = stage.getBoundingClientRect();
     const below = bar ? bar.getBoundingClientRect().bottom - s.bottom : 0;
@@ -112,6 +138,7 @@ export function initPage({ id, silent = false, home = '../index.html' } = {}) {
   }
   document.documentElement.dataset.toy = id;
   mouseKeys();
+  howTip();
   fitStage();
   return { sound };
 }
