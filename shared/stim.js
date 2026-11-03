@@ -39,7 +39,7 @@ const MARK = [
 ];
 const SOUND_SVG = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/><path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/><path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/></svg>';
 function headerHTML(home) {
-  const letters = MARK.map(([ch, c, w, r, y]) => `<span style="--c: oklch(${c}); --w: ${w}; --r: ${r}deg; --y: ${y}em">${ch}</span>`).join('');
+  const letters = MARK.map(([ch, c, w, r, y], i) => `<span style="--i: ${i}; --c: oklch(${c}); --w: ${w}; --r: ${r}deg; --y: ${y}em">${ch}</span>`).join('');
   return `<a class="brand" href="${home}" aria-label="Back to Stimming">`
     + '<svg class="back" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6"/></svg>'
     + `<span class="mark" aria-hidden="true">${letters}</span></a>`
