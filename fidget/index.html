@@ -110,34 +110,13 @@
 .die.tumble svg { animation: tumble 0.6s cubic-bezier(0.3, 1.4, 0.5, 1); }
 @keyframes tumble { 0% { transform: rotate(0) scale(1); } 45% { transform: rotate(250deg) scale(1.25); } 100% { transform: rotate(360deg) scale(1); } }
 
-/* ---------- layouts by stage shape; these come last to win ---------- */
-/* Squarish: the big part and four small on top, then row, bands, two small. */
-@container stage (aspect-ratio < 1.42) {
-  .board {
-    grid-template-rows: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2.2fr) minmax(0, 1.8fr) minmax(0, 1.8fr) minmax(0, 3.4fr);
-    grid-template-areas:
-      "big big big big big big s1 s1 s1 s2 s2 s2"
-      "big big big big big big s3 s3 s3 s4 s4 s4"
-      "row row row row row row row row row row row row"
-      "band1 band1 band1 band1 band1 band1 band1 band1 band1 band1 band1 band1"
-      "band2 band2 band2 band2 band2 band2 band2 band2 band2 band2 band2 band2"
-      "s5 s5 s5 s5 s5 s5 s6 s6 s6 s6 s6 s6";
-  }
-}
-/* Tall: the big part beside two small, then row, bands and four small. */
-@container stage (aspect-ratio < 0.95) {
-  .board {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-template-rows: minmax(0, 115fr) minmax(0, 115fr) minmax(0, 70fr) minmax(0, 52fr) minmax(0, 52fr) minmax(0, 105fr);
-    grid-template-areas:
-      "big big big s1"
-      "big big big s2"
-      "row row row row"
-      "band1 band1 band1 band1"
-      "band2 band2 band2 band2"
-      "s3 s4 s5 s6";
-  }
-}
+/* ---------- layouts: the script picks one per roll and stage shape ---------- */
+/* Each plate keeps a name, so a new layout glides plates into place. */
+.s-big { view-transition-name: fb-big; } .s-row { view-transition-name: fb-row; }
+.s-band1 { view-transition-name: fb-band1; } .s-band2 { view-transition-name: fb-band2; }
+.s-s1 { view-transition-name: fb-s1; } .s-s2 { view-transition-name: fb-s2; } .s-s3 { view-transition-name: fb-s3; }
+.s-s4 { view-transition-name: fb-s4; } .s-s5 { view-transition-name: fb-s5; } .s-s6 { view-transition-name: fb-s6; }
+::view-transition-group(*) { animation-duration: 0.5s; animation-timing-function: cubic-bezier(0.3, 1.25, 0.5, 1); }
 @media (prefers-reduced-motion: reduce) {
   .cell > *, .die.tumble svg { transition: none; animation: none; }
 }
@@ -261,6 +240,62 @@ const store = {
   set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch { /* storage is optional */ } },
 };
 let current = settle(store.get() || DEFAULT);
+
+/* ---------- layouts: the die also reshuffles the bento ---------- */
+// Tokens: B big, R row, b1 and b2 bands, 1 to 6 small; ×n repeats a token.
+// Each layout is [columns, row weights, area rows].
+const LAYOUTS = {
+  wide: [
+    [12, [3, 2, 2, 4], ['B×4 R×8', 'B×4 b1×8', 'B×4 b2×8', '1×2 2×2 3×2 4×2 5×2 6×2']],
+    [12, [3, 2, 2, 4], ['R×8 B×4', 'b1×8 B×4', 'b2×8 B×4', '1×2 2×2 3×2 4×2 5×2 6×2']],
+    [12, [4, 3, 2, 2], ['1×2 2×2 3×2 4×2 5×2 6×2', 'B×4 R×8', 'B×4 b1×8', 'B×4 b2×8']],
+    [12, [3, 3, 2, 1.8], ['1×3 B×6 2×3', '3×3 B×6 4×3', '5×3 R×6 6×3', 'b1×6 b2×6']],
+    [12, [2, 2, 2.4, 4], ['b1×7 B×5', 'b2×7 B×5', 'R×7 B×5', '1×2 2×2 3×2 4×2 5×2 6×2']],
+  ],
+  square: [
+    [12, [3, 3, 2.2, 1.8, 1.8, 3.4], ['B×6 1×3 2×3', 'B×6 3×3 4×3', 'R×12', 'b1×12', 'b2×12', '5×6 6×6']],
+    [12, [3, 3, 1.8, 1.8, 2.2, 3.4], ['1×3 2×3 B×6', '3×3 4×3 B×6', 'b1×12', 'b2×12', 'R×12', '5×6 6×6']],
+    [12, [2.2, 3, 3, 1.8, 1.8, 3.4], ['R×12', '1×3 B×6 2×3', '3×3 B×6 4×3', 'b1×12', 'b2×12', '5×6 6×6']],
+    [12, [3.2, 2.2, 2.2, 2.2, 2.2, 1.8, 1.8], ['1×4 2×4 3×4', 'B×7 4×5', 'B×7 5×5', 'B×7 6×5', 'R×12', 'b1×12', 'b2×12']],
+  ],
+  tall: [
+    [4, [115, 115, 70, 52, 52, 105], ['B×3 1', 'B×3 2', 'R×4', 'b1×4', 'b2×4', '3 4 5 6']],
+    [4, [115, 115, 52, 52, 70, 105], ['1 B×3', '2 B×3', 'b1×4', 'b2×4', 'R×4', '3 4 5 6']],
+    [4, [105, 115, 115, 70, 52, 52], ['3 4 5 6', 'B×3 1', 'B×3 2', 'R×4', 'b1×4', 'b2×4']],
+    [4, [90, 120, 120, 70, 52, 52, 100], ['1×2 2×2', 'B×4', 'B×4', 'R×4', 'b1×4', 'b2×4', '3 4 5 6']],
+  ],
+};
+const NAME = { B: 'big', R: 'row', b1: 'band1', b2: 'band2' };
+const areaRow = r => r.split(' ').flatMap(t => {
+  const [k, n = 1] = t.split('×');
+  return Array(+n).fill(NAME[k] || `s${k}`);
+}).join(' ');
+const LKEY = 'stimming.fidget.layout';
+const stageEl = boardEl.parentElement;
+const shapeOf = ({ width: w, height: h }) => (w / h < 0.95 ? 'tall' : w / h < 1.42 ? 'square' : 'wide');
+let shape = shapeOf(stageEl.getBoundingClientRect());
+let layout = (() => { try { return +localStorage.getItem(LKEY) || 0; } catch { return 0; } })();
+function applyLayout() {
+  const list = LAYOUTS[shape], [cols, rows, areas] = list[layout % list.length];
+  Object.assign(boardEl.style, {
+    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+    gridTemplateRows: rows.map(r => `minmax(0, ${r}fr)`).join(' '),
+    gridTemplateAreas: areas.map(a => `"${areaRow(a)}"`).join(' '),
+  });
+}
+// A new layout differs from the current one at this stage shape.
+function nextLayout() {
+  const n = LAYOUTS[shape].length, now = layout % n;
+  let k = (Math.random() * n) | 0;
+  if (k === now) k = (k + 1) % n;
+  layout = k;
+  try { localStorage.setItem(LKEY, String(k)); } catch { /* storage is optional */ }
+}
+applyLayout();
+new ResizeObserver(([e]) => {
+  const s = shapeOf(e.contentRect);
+  if (s !== shape) { shape = s; applyLayout(); }
+}).observe(stageEl);
 fetchAll(current).then(() => cells.forEach((cell, i) => { if (current[i]) mount(cell, mods.get(current[i])); }));
 
 /* ---------- the die ---------- */
@@ -287,6 +322,7 @@ const rattle = () => snd.play('roll', 0.3, 0.5, (t, P, G) => {
   }
 });
 let rolling = false;
+const wait = ms => new Promise(r => setTimeout(r, ms));
 async function roll() {
   if (rolling) return;
   rolling = true;
@@ -295,23 +331,41 @@ async function roll() {
   void rollBtn.offsetWidth;
   rollBtn.classList.add('tumble');
   // The pips flicker while the die tumbles, then land.
-  let n = 0;
   const flick = setInterval(() => face((Math.random() * 6) | 0), 70);
   setTimeout(() => { clearInterval(flick); face((Math.random() * 6) | 0); }, reduce ? 0 : 520);
-  const next = deal(current), gap = reduce ? 0 : 45, out = reduce ? 0 : 150;
+  const next = deal(current), gap = reduce ? 0 : 35;
   // The wave starts once every dealt part has loaded.
   await fetchAll(next);
-  cells.forEach((cell, i) => setTimeout(() => {
-    cell.classList.add('out');
-    setTimeout(() => {
-      unmount(cell);
-      if (next[i]) mount(cell, mods.get(next[i]));
-      requestAnimationFrame(() => requestAnimationFrame(() => cell.classList.remove('out')));
-      if (++n === cells.length) { pruneLight(); rolling = false; }
-    }, out);
-  }, i * gap));
+  // Every plate empties in a wave.
+  cells.forEach((cell, i) => setTimeout(() => cell.classList.add('out'), i * gap));
+  await wait(cells.length * gap + (reduce ? 0 : 160));
+  // A new layout lands, and the new parts mount into it.
+  // The swap runs once, whichever path calls it first.
+  let swapped = false;
+  const swap = () => {
+    if (swapped) return;
+    swapped = true;
+    nextLayout();
+    applyLayout();
+    cells.forEach((cell, i) => { unmount(cell); if (next[i]) mount(cell, mods.get(next[i])); });
+  };
+  // The plates glide to their new places where the browser allows it.
+  // A hidden page never finishes the glide, so the wait is capped.
+  if (document.startViewTransition && !reduce) {
+    const vt = document.startViewTransition(swap);
+    // A skipped glide rejects these promises; the swap still runs.
+    vt.ready.catch(() => {});
+    vt.updateCallbackDone.catch(() => {});
+    await Promise.race([vt.finished.catch(() => {}), wait(700)]);
+  }
+  swap();
+  pruneLight();
+  // The new parts spring in, in a wave.
+  cells.forEach((cell, i) => setTimeout(() => cell.classList.remove('out'), i * gap));
+  await wait(cells.length * gap);
   current = next;
   store.set(next);
+  rolling = false;
 }
 rollBtn.addEventListener('click', roll);
 
