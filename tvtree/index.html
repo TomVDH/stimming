@@ -393,7 +393,7 @@ const TREE = [
   { pts: [[-0.6, 1.25, -0.06], [-0.69, 1.52, -0.12], [-0.64, 1.78, -0.14]], r: [0.04, 0.02], w: 1, curl: 1, from: 0.45 },
   { pts: [[0.74, 1.33, -0.06], [0.86, 1.6, -0.12], [0.8, 1.84, -0.14]], r: [0.04, 0.02], w: 2, curl: -1, from: 0.5 },
 ];
-const NW = 6, HREF = 1.8;
+const HREF = 1.8;
 // Sets: branch, place along it, cord length, kind, scale, resting turn.
 // Branch -1 marks a fork seat with its own wobble slot.
 const SETS = [
@@ -1094,22 +1094,20 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
 }`;
 const BG_FS = `
-uniform vec3 uTop, uMid, uLow, uGlow;
-uniform vec2 uC, uBase;
+uniform vec3 uTop, uMid, uLow;
+uniform vec2 uBase;
 uniform float uAspect, uGhost;
 uniform vec4 uBig, uView;
 varying vec2 vUv;
 ${LIB}
 ${BIG}
 void main() {
-  vec2 q = (vUv - uC) * vec2(uAspect, 1.0);
-  vec3 col = mix(uLow, uTop, smoothstep(-0.1, 1.0, vUv.y));
-  col = mix(col, uMid, exp(-dot(q, q) * 2.4));
-  col += uGlow * exp(-dot(q, q) * 3.5) * 0.3;
-  // TV light pools under the tree.
+  // A flat night: three bands of violet, no glow.
+  float y = vUv.y;
+  vec3 col = mix(uLow, uMid, smoothstep(0.0, 0.45, y));
+  col = mix(col, uTop, smoothstep(0.55, 1.0, y));
   // The trunk darkens its footprint.
   vec2 b = (vUv - uBase) * vec2(uAspect, 1.0);
-  col += uGlow * exp(-dot(b / vec2(0.5, 0.06), b / vec2(0.5, 0.06))) * 0.35;
   col *= 1.0 - 0.6 * exp(-dot(b / vec2(0.13, 0.022), b / vec2(0.13, 0.022)));
   // While the sets agree, their picture glows faintly behind the tree.
   if (uGhost > 0.001) {
@@ -1121,14 +1119,10 @@ void main() {
 }`;
 const FINAL_FS = `
 uniform sampler2D tDiffuse;
-uniform float uVig;
 varying vec2 vUv;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void main() {
-  vec3 c = texture2D(tDiffuse, vUv).rgb;
-  vec2 q = vUv - 0.5;
-  c *= 1.0 - uVig * dot(q, q) * 2.0;
-  gl_FragColor = vec4(c, 1.0);
+  gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
@@ -1311,7 +1305,6 @@ function physics(dt) {
     for (let k = 0; k < 3; k++) { s.v[k] = (s.n[k] - s.c[k]) / dt; s.c[k] = s.n[k]; }
   }
   for (const s of sets) if (!s.hang) for (let k = 0; k < 3; k++) { s.v[k] = (s.n[k] - s.c[k]) / dt; s.c[k] = s.n[k]; }
-  for (const r of plugs) stepPlug(r, dt);
   // Rabbit ears lag behind the set's jolts, then wobble back.
   for (const s of sets) {
     if (!s.ea.length) { s.pv[0] = s.v[0]; s.pv[1] = s.v[1]; s.pv[2] = s.v[2]; continue; }
@@ -1344,35 +1337,9 @@ function physics(dt) {
   }
 }
 
-/* ---------- unplugged cords dangle from the sitting sets ---------- */
-const plugs = [], PN = 9, PL = 0.042;
-function stepPlug(r, dt) {
-  const s = r.s, e = s.group.matrixWorld.elements, [lx, ly, lz] = r.at, p = r.p, q = r.q;
-  p[0] = e[0] * lx + e[4] * ly + e[8] * lz + e[12];
-  p[1] = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
-  p[2] = e[2] * lx + e[6] * ly + e[10] * lz + e[14];
-  const dmp = reduce ? 0.9 : 0.985;
-  for (let i = 1; i < PN; i++) {
-    const k = i * 3;
-    for (let a = 0; a < 3; a++) {
-      const v = (p[k + a] - q[k + a]) * dmp;
-      q[k + a] = p[k + a];
-      p[k + a] += v - (a === 1 ? G * dt * dt : 0);
-    }
-  }
-  // Links keep a fixed length.
-  // The cord stays in front of the wood.
-  for (let it = 0; it < 4; it++) for (let i = 0; i < PN - 1; i++) {
-    const a = i * 3, b = a + 3, dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2];
-    const l = Math.hypot(dx, dy, dz) || 1, f = (l - PL) / l;
-    if (i === 0) { p[b] -= dx * f; p[b + 1] -= dy * f; p[b + 2] -= dz * f; }
-    else { p[a] += dx * f * 0.5; p[a + 1] += dy * f * 0.5; p[a + 2] += dz * f * 0.5; p[b] -= dx * f * 0.5; p[b + 1] -= dy * f * 0.5; p[b + 2] -= dz * f * 0.5; }
-  }
-  for (let i = 1; i < PN; i++) p[i * 3 + 2] = Math.max(p[i * 3 + 2], s.anchor[2] + r.front);
-}
-
 /* ---------- screens: channels, static, power and the big picture ---------- */
-const party = { phase: 'idle', t: 0, wait: 26, kind: 0, clock: 0, order: [] };
+// The first big picture comes soon, so a new visitor sees it.
+const party = { phase: 'idle', t: 0, wait: 8, kind: 0, clock: 0, order: [] };
 // Channels run in order.
 // Now and then a channel is only snow.
 function nextChannel(ch) {
@@ -1491,7 +1458,7 @@ function stepParty(dt) {
 let THREE = null, RoundedBoxGeometry = null, mergeGeometries = null;
 let renderer = null, scene = null, camera = null, composer = null, canvas = null;
 let atlasRT = null, atlasScene = null, atlasCam = null, atlasMat = null, bgMat = null, treeMat = null, treeMesh = null;
-let mats = null, treeMeta = null, treeSegs = [], built = false, cordGeo = null, knotGeo = null, plugGeo = null;
+let mats = null, treeMeta = null, treeSegs = [], built = false, cordGeo = null, knotGeo = null;
 let ready = false, lowDpr = false, sized = false, visible = false, onScreen = false;
 let ray = null, ndc = null, tv3 = null, tq = null, tq2 = null, Y = null, plane = null, hitV = null, inv = null, eul = null;
 const FOV = 30, view = { A: 16 / 9, hS: 0.36, cx: 0, cy: 0 };
@@ -1557,10 +1524,6 @@ function placeRest(s) {
   s.seatP = [...a];
   s.seatV = [0, 0, 0];
   s.seatA = [0, 0, 0];
-  for (const r of plugs) if (r.s === s) {
-    for (let i = 0; i < PN; i++) { r.p[i * 3] = s.c[0] + r.at[0]; r.p[i * 3 + 1] = s.c[1] + r.at[1] - i * PL; r.p[i * 3 + 2] = s.c[2] + r.at[2]; }
-    r.q.set(r.p);
-  }
 }
 // Quiet steps let overlapping sets nudge apart before anyone looks.
 function settle(n) {
@@ -1578,7 +1541,6 @@ function makeSets() {
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
   SETS.forEach((def, i) => {
     const info = buildSet(def), [cL, cC, hueV] = SET_COLS[i % SET_COLS.length];
-    const nPlugs = plugs.length;
     const body = new THREE.MeshPhysicalMaterial({
       color: col3(linear(cL, cC, hueV)), roughness: 0.38, clearcoat: 0.7, clearcoatRoughness: 0.2, envMapIntensity: 0.45,
     });
@@ -1619,16 +1581,6 @@ function makeSets() {
       cord.frustumCulled = false;
       scene.add(cord, knot);
     }
-    if (def.b < 0) {
-      // A loose power cord hangs from the side, plug and all.
-      const at = [info.w * 0.5 - 0.04, info.low + 0.05, info.d * 0.32];
-      const r = { s: null, at, front: info.d * 0.42, p: new Float64Array(PN * 3), q: new Float64Array(PN * 3) };
-      r.links = new THREE.InstancedMesh(cordGeo, mats.cord, PN - 1);
-      r.links.frustumCulled = false;
-      r.plug = new THREE.Mesh(plugGeo, mats.dark);
-      scene.add(r.links, r.plug);
-      plugs.push(r);
-    }
     sets.push({
       i, def, hang: def.b >= 0, group, screen, sm, ring, cord, knot, ...info, rb: info.rc * 0.92,
       rest: [0, 0, 0], anchor: [0, 0, 0], along: 0, slot: 0, R: 1, up: [0, 1, 0],
@@ -1638,25 +1590,7 @@ function makeSets() {
       interf: 0, stat: 0, off: 0, power: true, sync: 0, syncOn: false, seed: R(), tOff: R() * 60, drag: null, look: [0, 0],
       earG, ea: earG.map(() => [0, 0, 0, 0]), pv: [0, 0, 0], pre: 0, hov: 0,
     });
-    if (plugs.length > nPlugs) plugs[nPlugs].s = sets[sets.length - 1];
   });
-}
-const pm4 = [];
-function placePlug(r) {
-  if (!pm4.length) pm4.push(new THREE.Matrix4(), v3(), v3(), new THREE.Quaternion());
-  const [M, P, S, Q] = pm4, p = r.p;
-  for (let i = 0; i < PN - 1; i++) {
-    const a = i * 3;
-    tv3.set(p[a + 3] - p[a], p[a + 4] - p[a + 1], p[a + 5] - p[a + 2]);
-    const L = Math.max(1e-4, tv3.length());
-    Q.setFromUnitVectors(Y, tv3.multiplyScalar(1 / L));
-    M.compose(P.set(p[a], p[a + 1], p[a + 2]), Q, S.set(1.15, L + 0.006, 1.15));
-    r.links.setMatrixAt(i, M);
-  }
-  r.links.instanceMatrix.needsUpdate = true;
-  const e = (PN - 1) * 3;
-  r.plug.position.set(p[e], p[e + 1], p[e + 2]);
-  r.plug.quaternion.copy(Q);
 }
 // Each set hangs along its cord, turned by its twist.
 function place(s) {
@@ -1712,7 +1646,6 @@ function upload() {
   const U = atlasMat.uniforms, A = view.A, hS = view.hS, TU = treeMat.uniforms, dbH = renderer.domElement.height;
   U.uTime.value = fxClock;
   const big = (x, y) => [((x - view.cx) * A * 0.5) / hS, ((y - view.cy) * 0.5) / hS];
-  let gr = 0, gg = 0, gb = 0;
   sets.forEach((s, i) => {
     const m = s.group.matrixWorld;
     U.uA.value[i].set(s.ch, s.seed, s.stat, s.roll - Math.round(s.roll));
@@ -1739,12 +1672,10 @@ function upload() {
     const w = TU.uTvC.value[i], P = TU.uTvP.value[i];
     w.set(lerp(L[0] * L[0], 0.7, sy) * lit + s.flash * 0.6, lerp(L[1] * L[1], 0.55, sy) * lit + s.flash * 0.6, lerp(L[2] * L[2], 0.4, sy) * lit + s.flash * 0.7);
     P.set(s.sx, s.sy, s.sz + 0.12).applyMatrix4(m);
-    gr += w.x; gg += w.y; gb += w.z;
   });
   const gx = clamp((gaze.x - view.cx) * A * 0.5 / hS * 0.8, -1, 1), gy = clamp(((gaze.y - view.cy) * 0.5) / hS * 0.8, -1, 1);
   U.uBig.value.set(party.kind, party.clock, gx, gy);
-  const n = sets.length, BU = bgMat.uniforms;
-  BU.uGlow.value.set(gr / n, gg / n, gb / n);
+  const BU = bgMat.uniforms;
   BU.uGhost.value = sets.reduce((m, s) => Math.max(m, s.sync), 0);
   BU.uBig.value.copy(U.uBig.value);
   BU.uView.value.set(view.cx, view.cy, hS, A);
@@ -1759,30 +1690,34 @@ function step(dt, now) {
   while (simAcc >= H && n < 8) { physics(H); simAcc -= H; n++; }
   if (n >= 8) simAcc = 0;
   shakeLoss();
-  let busy = !!held || !!enterT;
-  let snow = 0, lit = 0;
-  for (const r of plugs) placePlug(r);
+  // Busy keeps the loop alive; act marks a touch, a shake or a burst.
+  let act = !!held || !!enterT;
+  let busy = act, snow = 0, lit = 0;
   for (const s of sets) {
     place(s);
-    if (stepScreen(s, dt)) busy = true;
+    if (stepScreen(s, dt)) act = true;
     if (moving(s)) busy = true;
     if (s.power) { lit++; snow += s.lost > 0 ? 1 : s.interf * 0.5; }
   }
-  if (stepParty(dt)) busy = true;
-  if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) busy = true;
-  if (Math.abs(sway.p[0]) + Math.abs(sway.p[1]) + Math.abs(sway.v[0]) + Math.abs(sway.v[1]) > 3e-4) busy = true;
-  if (wob.some(W => Math.abs(W.v[0]) + Math.abs(W.v[1]) + Math.abs(W.v[2]) > 3e-4)) busy = true;
+  if (stepParty(dt)) act = true;
+  if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) {
+    busy = true;
+    if (now - pointerAt < 1500) act = true;
+  }
+  if (Math.abs(sway.p[0]) + Math.abs(sway.p[1]) + Math.abs(sway.v[0]) + Math.abs(sway.v[1]) > 3e-4) act = true;
+  if (wob.some(W => Math.abs(W.v[0]) + Math.abs(W.v[1]) + Math.abs(W.v[2]) > 3e-4)) act = true;
   for (const s of sets) {
     const h = (held && held.s === s && !held.drag && !held.long) || (enterT && !enterFired && kbd && sets[picked] === s);
     s.pre = h ? clamp((now - (held && held.s === s ? held.t0 : enterAt) - 140) / 380) : Math.max(0, s.pre - dt * 6);
     const ht = hover === s ? 1 : 0;
-    if (s.hov !== ht) { s.hov = ht > s.hov ? Math.min(1, s.hov + dt * 6) : Math.max(0, s.hov - dt * 4); busy = true; }
+    if (s.hov !== ht) { s.hov = ht > s.hov ? Math.min(1, s.hov + dt * 6) : Math.max(0, s.hov - dt * 4); act = true; }
   }
   stepGaze(dt, now);
   upload();
   const fast = sets.reduce((m, s) => Math.max(m, Math.hypot(s.v[0], s.v[1], s.v[2])), 0);
   humLevel(lit / sets.length, snow * 0.5, Math.max(Math.hypot(sway.v[0], sway.v[1]) * 0.6, (fast - 0.8) * 0.25), now);
-  return busy || (lit > 0 && !reduce);
+  lively = act || fast > 0.12;
+  return busy || act || (lit > 0 && !reduce);
 }
 function draw() {
   renderer.setRenderTarget(atlasRT);
@@ -1809,7 +1744,6 @@ function fit(w, h) {
   view.hS = ((top - low) * 0.5) / 2;
   const b = ndcOf(0, 0, 0);
   bgMat.uniforms.uAspect.value = A;
-  bgMat.uniforms.uC.value.set((c.x + 1) / 2, (c.y + 1) / 2);
   bgMat.uniforms.uBase.value.set((b.x + 1) / 2, (b.y + 1) / 2);
 }
 function onSize(w, h) {
@@ -1821,17 +1755,20 @@ function onSize(w, h) {
 }
 
 /* ---------- one loop: alive while a screen glows or anything moves ---------- */
-let raf = 0, last = 0, slow = 0, frames = 0, drawn = 0, simAcc = 0;
+let raf = 0, last = 0, slow = 0, frames = 0, drawn = 0, simAcc = 0, lively = true;
 function wake() {
+  lively = true;
   if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 function frame(now) {
   raf = 0;
   if (!visible) return;
+  // A calm tree steps at a broadcast pace of 24 frames a second.
+  if (!lively && now - last < 1000 / 24 - 2) { raf = requestAnimationFrame(frame); return; }
   const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 20);
   last = now;
   // Sustained slow frames drop the pixel ratio to 1.
-  if (!lowDpr && ++frames > 30) {
+  if (!lowDpr && lively && ++frames > 30) {
     slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
     if (slow > 40) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
@@ -2065,15 +2002,14 @@ function failed() {
   panel.querySelector('.fail').hidden = false;
 }
 async function start() {
-  let EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, RoomEnvironment;
+  let EffectComposer, RenderPass, ShaderPass, RoomEnvironment;
   try {
     THREE = await import('three');
-    [{ RoundedBoxGeometry }, { mergeGeometries }, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { ShaderPass }, { RoomEnvironment }] = await Promise.all([
+    [{ RoundedBoxGeometry }, { mergeGeometries }, { EffectComposer }, { RenderPass }, { ShaderPass }, { RoomEnvironment }] = await Promise.all([
       import('three/addons/geometries/RoundedBoxGeometry.js'),
       import('three/addons/utils/BufferGeometryUtils.js'),
       import('three/addons/postprocessing/EffectComposer.js'),
       import('three/addons/postprocessing/RenderPass.js'),
-      import('three/addons/postprocessing/UnrealBloomPass.js'),
       import('three/addons/postprocessing/ShaderPass.js'),
       import('three/addons/environments/RoomEnvironment.js'),
     ]);
@@ -2087,7 +2023,7 @@ async function start() {
     console.error(err);
     return failed();
   }
-  // The glow needs float render targets.
+  // The scene renders into a half-float target.
   if (!renderer.capabilities.isWebGL2 || (!renderer.extensions.has('EXT_color_buffer_float') && !renderer.extensions.has('EXT_color_buffer_half_float'))) {
     renderer.dispose();
     return failed();
@@ -2131,15 +2067,13 @@ async function start() {
   };
   cordGeo = new THREE.CylinderGeometry(0.0075, 0.0075, 1, 6, 1, true).translate(0, 0.5, 0);
   knotGeo = new THREE.SphereGeometry(0.022, 12, 8);
-  // The plug is a little block with two prongs.
-  plugGeo = mergeGeometries([new RoundedBoxGeometry(0.05, 0.07, 0.032, 2, 0.008).translate(0, 0.035, 0), new THREE.BoxGeometry(0.008, 0.035, 0.004).translate(-0.013, 0.085, 0), new THREE.BoxGeometry(0.008, 0.035, 0.004).translate(0.013, 0.085, 0)].map(g => (g.index ? g.toNonIndexed() : g)).map(g => { g.deleteAttribute('uv'); return g; }));
 
   const V = c => new THREE.Vector3(...c);
   bgMat = new THREE.ShaderMaterial({
     vertexShader: QUAD_VS, fragmentShader: BG_FS, depthTest: false, depthWrite: false,
     uniforms: {
-      uTop: { value: V(PAL.bgTop) }, uMid: { value: V(PAL.bgMid) }, uLow: { value: V(PAL.bgLow) }, uGlow: { value: v3() },
-      uC: { value: new THREE.Vector2(0.5, 0.5) }, uBase: { value: new THREE.Vector2(0.5, 0.05) }, uAspect: { value: 16 / 9 },
+      uTop: { value: V(PAL.bgTop) }, uMid: { value: V(PAL.bgMid) }, uLow: { value: V(PAL.bgLow) },
+      uBase: { value: new THREE.Vector2(0.5, 0.05) }, uAspect: { value: 16 / 9 },
       uGhost: { value: 0 }, uBig: { value: new THREE.Vector4() }, uView: { value: new THREE.Vector4(0, 0, 0.36, 16 / 9) },
     },
   });
@@ -2176,9 +2110,8 @@ async function start() {
   const rt = new THREE.WebGLRenderTarget(16, 9, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.62, 0.42, 1.0);
-  const fin = new ShaderPass({ uniforms: { tDiffuse: { value: null }, uVig: { value: 0.5 } }, vertexShader: FINAL_VS, fragmentShader: FINAL_FS });
-  composer.addPass(bloom);
+  // No bloom: the screens carry their own brightness.
+  const fin = new ShaderPass({ uniforms: { tDiffuse: { value: null } }, vertexShader: FINAL_VS, fragmentShader: FINAL_FS });
   composer.addPass(fin);
 
   panel.prepend(canvas);
@@ -2193,12 +2126,13 @@ async function start() {
   renderer.setRenderTarget(composer.readBuffer);
   await renderer.compileAsync(scene, camera);
   await renderer.compileAsync(atlasScene, atlasCam);
-  await renderer.compileAsync(pre([bloom.materialHighPassFilter, ...bloom.separableBlurMaterials, bloom.compositeMaterial, bloom.blendMaterial]), camera);
   renderer.setRenderTarget(null);
   await renderer.compileAsync(pre([fin.material]), camera);
   ready = true;
   step(0, performance.now());
   draw();
+  // The lit sets show at once, even before the loop runs.
+  canvas.classList.add('on');
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; vis(); }).observe(panel);
   document.addEventListener('visibilitychange', vis);
 }
