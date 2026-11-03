@@ -13,8 +13,8 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Chladni plate: the plate at full width under the shared header. */
-:root { --stage: oklch(0.15 0.025 272); }
+/* Chladni plate: a coloured steel plate, sand and a tuning rail. */
+:root { --stage: oklch(0.17 0.012 262); }
 .stage { cursor: ns-resize; }
 .stage.grip { cursor: grab; }
 .stage.gripping { cursor: grabbing; }
@@ -23,14 +23,21 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* On the dark plate the fail line keeps a pale tone. */
+/* On the dark stage the fail line keeps a pale tone. */
 .fail { color: oklch(0.74 0.02 285); cursor: default; }
-/* Each colour chip carries a small flat swatch. */
-.chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--sw); }
-.chip[data-hue="white"] { --sw: oklch(0.97 0.004 250); }
-.chip[data-hue="gold"] { --sw: oklch(0.84 0.15 82); }
-.chip[data-hue="ice"] { --sw: oklch(0.82 0.12 222); }
-@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+/* Each finish chip shows its plate and its sand, split diagonally. */
+.chip i { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, var(--pl) 50%, var(--sd) 50%); }
+.chip[data-hue="steel"] { --pl: oklch(0.4 0.018 250); --sd: oklch(0.92 0.035 86); }
+.chip[data-hue="cobalt"] { --pl: oklch(0.42 0.16 264); --sd: oklch(0.92 0.15 97); }
+.chip[data-hue="vermilion"] { --pl: oklch(0.6 0.2 33); --sd: oklch(0.19 0.015 30); }
+/* The live pitch sits above the rail in fixed-width figures. */
+.hz {
+  position: absolute; z-index: 1; margin: 0; pointer-events: none;
+  font: 500 12px/1 ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+  color: var(--muted); transition: color 0.3s ease;
+}
+.hz.on { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { .stage canvas, .hz { transition: none; } }
 </style>
 </head>
 <body>
@@ -41,25 +48,25 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A glowing plate covered in sand, seen at an angle: drag up or down, or slide the dot on the right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, Space scatters the sand, Enter tosses it and C changes its colour.">
+    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A coloured steel plate covered in sand, seen at an angle: drag up or down, or slide the cap on the right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, Space spreads the sand again, Enter tosses it and C changes the finish.">
       <canvas aria-hidden="true"></canvas>
+      <p class="hz" aria-hidden="true"></p>
       <p class="fail" hidden>Chladni plate needs WebGL 2 with float textures, which this browser lacks.</p>
     </div>
     <div class="bar">
       <div class="choices">
-        <button class="chip" type="button" data-hue="white" aria-pressed="true"><i></i>White</button>
-        <button class="chip" type="button" data-hue="gold" aria-pressed="false"><i></i>Gold</button>
-        <button class="chip" type="button" data-hue="ice" aria-pressed="false"><i></i>Ice</button>
+        <button class="chip" type="button" data-hue="steel" aria-pressed="true" aria-keyshortcuts="C"><i></i>Steel</button>
+        <button class="chip" type="button" data-hue="cobalt" aria-pressed="false" aria-keyshortcuts="C"><i></i>Cobalt</button>
+        <button class="chip" type="button" data-hue="vermilion" aria-pressed="false" aria-keyshortcuts="C"><i></i>Vermilion</button>
       </div>
       <div class="actions">
-        <button class="chip" id="scatter" type="button" aria-keyshortcuts="Space">Scatter</button>
+        <button class="chip" id="scatter" type="button" aria-keyshortcuts="Space">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag up or down</dt><dd>tune</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>toss sand</dd></div>
         <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>next pattern</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>scatter</dd></div>
-        <div class="fine"><dt><kbd>C</kbd></dt><dd>colour</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>reset sand</dd></div>
       </dl>
     </div>
   </main>
@@ -147,22 +154,32 @@ function linear(L, C, h, k = 1) {
   for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
   return c.map(v => clamp(v) * k);
 }
-// Each colour: four grain tones, a glow tint and a stage wash.
+// Each finish: plate, band, face, bolt, rail cap and four sand tones.
+// The second sand tone is the sand's body colour.
 const HUES = {
-  white: { g: [[0.99, 0.004, 250], [0.95, 0.012, 245], [0.9, 0.02, 235], [0.85, 0.03, 262]], glow: [0.84, 0.05, 240], wash: [0.55, 0.08, 255] },
-  gold: { g: [[0.95, 0.07, 98], [0.87, 0.15, 86], [0.79, 0.16, 70], [0.71, 0.16, 55]], glow: [0.76, 0.16, 68], wash: [0.5, 0.11, 60] },
-  ice: { g: [[0.96, 0.04, 205], [0.87, 0.11, 215], [0.78, 0.13, 232], [0.7, 0.15, 258]], glow: [0.76, 0.13, 232], wash: [0.48, 0.11, 245] },
+  steel: {
+    plate: [0.4, 0.018, 250], hi: [0.47, 0.022, 250], face: [0.27, 0.015, 255], nut: [0.62, 0.012, 250], cap: [0.92, 0.035, 86],
+    g: [[0.97, 0.02, 92], [0.92, 0.035, 86], [0.86, 0.045, 78], [0.78, 0.05, 70]],
+  },
+  cobalt: {
+    plate: [0.42, 0.16, 264], hi: [0.5, 0.16, 262], face: [0.29, 0.12, 266], nut: [0.74, 0.03, 250], cap: [0.92, 0.15, 97],
+    g: [[0.96, 0.11, 102], [0.92, 0.15, 97], [0.87, 0.17, 90], [0.8, 0.16, 82]],
+  },
+  vermilion: {
+    plate: [0.6, 0.2, 33], hi: [0.67, 0.19, 38], face: [0.42, 0.16, 30], nut: [0.84, 0.012, 60], cap: [0.66, 0.2, 35],
+    g: [[0.25, 0.02, 30], [0.19, 0.015, 30], [0.15, 0.012, 300], [0.31, 0.03, 40]],
+  },
 };
 const ORDER = Object.keys(HUES);
 const PALS = {};
 for (const k of ORDER) {
   const h = HUES[k];
-  PALS[k] = { g: new Float32Array(h.g.flatMap(c => linear(...c))), glow: linear(...h.glow), wash: linear(...h.wash) };
+  PALS[k] = {
+    g: new Float32Array(h.g.flatMap(c => linear(...c))), sand: linear(...h.g[1]),
+    plate: linear(...h.plate), hi: linear(...h.hi), face: linear(...h.face), nut: linear(...h.nut), cap: linear(...h.cap),
+  };
 }
-const STAGE = {
-  uStage: linear(0.15, 0.025, 272), uPlateC: linear(0.19, 0.045, 258),
-  uEdge: linear(0.62, 0.13, 248), uLine: linear(0.4, 0.03, 260), uHot: linear(0.99, 0.01, 250),
-};
+const STAGE = { uStage: linear(0.17, 0.012, 262), uSlot: linear(0.11, 0.01, 262), uNotch: linear(0.38, 0.015, 262) };
 
 /* ---------- the mode ladder ---------- */
 // Each rung: n, m, the sign between the terms, a MIDI note.
@@ -529,17 +546,6 @@ void main() {
   s += (texture(uSrc, uv + uDir * 3.2308).r + texture(uSrc, uv - uDir * 3.2308).r) * 0.0703;
   o = vec4(s);
 }`;
-// Four bilinear taps average a four-by-four block.
-const DOWN_FS = `#version 300 es
-precision highp float;
-uniform sampler2D uSrc;
-out vec4 o;
-void main() {
-  vec2 ts = 1.0 / vec2(textureSize(uSrc, 0)), uv = gl_FragCoord.xy * 4.0 * ts;
-  float s = texture(uSrc, uv - ts).r + texture(uSrc, uv + ts).r;
-  s += texture(uSrc, uv + vec2(ts.x, -ts.y)).r + texture(uSrc, uv + vec2(-ts.x, ts.y)).r;
-  o = vec4(0.25 * s);
-}`;
 // One grain seen through the tilted camera, shared by the dot and streak passes.
 const GRAIN = `
 precision highp float;
@@ -548,12 +554,12 @@ precision highp sampler2D;
 uniform sampler2D uA, uB;
 uniform mat4 uVP;
 uniform vec2 uRes;
-uniform float uRefW, uGain, uJit, uTau, uDrift, uFront, uFlash;
+uniform float uRefW, uJit, uTau, uDrift, uFront, uFlash;
 uniform uint uSeed;
 uniform vec3 uPa[4], uPb[4];
 ${FIELD}
 ${HASH}
-struct Grain { vec4 head, tail; vec3 col; float size; };
+struct Grain { vec4 head, tail; vec3 col; float size, w; };
 Grain grain(int n) {
   ivec2 TS = textureSize(uA, 0);
   // A stride spreads a partial draw over the whole plate.
@@ -576,60 +582,62 @@ Grain grain(int n) {
   g.tail = uVP * vec4(w - vel, 1.0);
   float near = uRefW / g.head.w, dist = length(A.xy - 0.5);
   int ti = r.y < 0.14 ? 0 : r.y < 0.6 ? 1 : r.y < 0.88 ? 2 : 3;
-  vec3 col = mix(uPa[ti], uPb[ti], clamp((uFront - dist) / 0.05, 0.0, 1.0)) * (0.7 + 0.6 * r.z);
-  // A bright crest rides the colour wave.
-  col *= 1.0 + 3.0 * uFlash * exp(-pow((dist - uFront) / 0.04, 2.0));
-  // Airborne grains rise toward the eye and twinkle.
-  float tw = rnd3(uvec3(uvec2(ip), uSeed / 3u + 11u)).x;
-  col *= 1.0 + min(A.z, 0.04) * 25.0 * (0.4 + 1.2 * tw) * (1.0 - smoothstep(0.05, 0.15, A.z));
-  // High falling sand is a faint dust until it lands.
-  col *= 1.0 - 0.6 * smoothstep(0.04, 0.25, A.z);
+  vec3 col = mix(uPa[ti], uPb[ti], clamp((uFront - dist) / 0.05, 0.0, 1.0)) * (0.88 + 0.24 * r.z);
+  // A pale crest rides the finish as it changes.
+  col = mix(col, vec3(1.0), 0.5 * uFlash * exp(-pow((dist - uFront) / 0.04, 2.0)));
+  // Airborne grains catch the light as they rise.
+  col *= 1.0 + min(A.z, 0.04) * 12.0 * (1.0 - smoothstep(0.05, 0.15, A.z));
+  g.col = col;
+  // High falling sand is a thin dust until it lands.
+  g.w = 1.0 - 0.7 * smoothstep(0.04, 0.25, A.z);
   // Near grains are more often two pixels wide; far grains shrink.
   g.size = (r.x < 0.3 * pow(near, 5.0) || A.z > 0.012) ? 2.0 : 1.0;
-  // Far rows pack tighter, so far grains dim a little.
-  g.col = col * uGain * near * near;
   return g;
 }`;
-// Grains: crisp square pixels of light.
+// Grains: crisp square pixels of sand, summed as coverage and colour.
 const DOT_VS = `#version 300 es
 ${GRAIN}
-out vec3 vCol;
+out vec4 vCol;
 void main() {
   Grain g = grain(gl_VertexID);
   gl_Position = g.head;
   gl_PointSize = g.size;
-  vCol = g.col * (g.size > 1.5 ? 0.45 : 1.0);
+  float w = g.w * (g.size > 1.5 ? 0.45 : 1.0);
+  vCol = vec4(g.col * w, w);
 }`;
 // Moving grains trail a one-pixel streak that fades behind them.
 const STREAK_VS = `#version 300 es
 ${GRAIN}
-out vec3 vCol;
+out vec4 vCol;
 void main() {
   Grain g = grain(gl_VertexID & ~1);
   float sl = length((g.head.xy / g.head.w - g.tail.xy / g.tail.w) * 0.5 * uRes);
-  vCol = vec3(0.0);
+  vCol = vec4(0.0);
   if (sl < 1.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   bool head = (gl_VertexID & 1) == 1;
   gl_Position = head ? g.head : g.tail;
-  if (head) vCol = g.col * 0.8 / (1.0 + 0.1 * sl);
+  float w = g.w * 0.6 / (1.0 + 0.1 * sl);
+  if (head) vCol = vec4(g.col * w, w);
 }`;
 const ADD_FS = `#version 300 es
 precision highp float;
-in vec3 vCol;
+in vec4 vCol;
 out vec4 o;
-void main() { o = vec4(vCol, 1.0); }`;
-// The stage: tilted plate, glow, grains and the frequency rail.
+void main() { o = vCol; }`;
+// The stage: plate, sand, bolt and the tuning rail.
 const COMP_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
-uniform sampler2D uHdr, uG0, uG1, uG2;
+uniform sampler2D uHdr, uG0;
 uniform mat4 uInv;
 uniform vec3 uEye;
-uniform vec2 uRes, uRung;
-uniform vec4 uRail, uDot;
+uniform vec2 uRes, uRung, uCap;
+uniform vec4 uRail;
 uniform float uTick[${K}];
-uniform float uFront, uLive, uPadK, uPr;
-uniform vec3 uGa, uGb, uWa, uWb, uStage, uPlateC, uEdge, uLine, uHot;
+uniform float uFront, uPadK, uPr, uCovK;
+uniform vec3 uStage, uSlot, uNotch, uCapC;
+uniform vec3 uPlA, uPlB, uHiA, uHiB, uFcA, uFcB, uSdA, uSdB, uNtA, uNtB;
+${FIELD}
 out vec4 o;
 const float PT = ${PLATE_T};
 float hash(vec2 p) {
@@ -641,11 +649,8 @@ vec3 srgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
   return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
-// Four offset taps smooth the bilinear creases of a coarse level.
-float soft(sampler2D t, vec2 uv) {
-  vec2 h = 0.5 / vec2(textureSize(t, 0));
-  return 0.25 * (texture(t, uv - h).r + texture(t, uv + h).r + texture(t, uv + vec2(h.x, -h.y)).r + texture(t, uv + vec2(-h.x, h.y)).r);
-}
+// Coverage of a signed distance in pixels, antialiased.
+float fill(float d) { return clamp(0.5 - d, 0.0, 1.0); }
 void main() {
   vec2 px = gl_FragCoord.xy, ndc = px / uRes * 2.0 - 1.0;
   float pr = uPr;
@@ -654,44 +659,61 @@ void main() {
   // The ray meets the plate's plane.
   float tp = -ro.z / rd.z, hit = step(0.0, tp);
   vec2 uv = (ro + rd * max(tp, 0.0)).xy + 0.5, tc = (uv - 0.5) * uPadK + 0.5;
-  float r = length(uv - 0.5), ft = clamp((uFront - r) / 0.05, 0.0, 1.0);
-  vec3 glow = mix(uGa, uGb, ft), wash = mix(uWa, uWb, ft);
+  // A new finish sweeps out from the centre.
+  float ft = clamp((uFront - length(uv - 0.5)) / 0.05, 0.0, 1.0);
+  vec3 plate = mix(uPlA, uPlB, ft), hi = mix(uHiA, uHiB, ft), face = mix(uFcA, uFcB, ft);
+  vec3 sand = mix(uSdA, uSdB, ft), nut = mix(uNtA, uNtB, ft);
   vec2 sv = px / uRes - 0.5;
-  vec3 col = uStage * (1.0 - 0.8 * dot(sv, sv));
-  col += wash * (0.012 + 0.03 * uLive) * exp(-r * r * 3.0) * hit;
-  // The plate: a deep square that glows softly inside its rim.
+  vec3 col = uStage * (1.0 - 0.6 * dot(sv, sv));
+  // The top: one flat colour, stepped into bands by the singing mode.
   vec2 q = abs(uv - 0.5) - 0.5;
   float sd = max(q.x, q.y), dpx = sd / max(fwidth(sd), 1e-6);
-  float inside = clamp(0.5 - dpx, 0.0, 1.0) * hit, ring = 1.0 + 0.8 * uLive;
-  vec3 plate = uPlateC * (1.0 + 0.25 * uLive) + uEdge * (0.024 * exp(min(sd, 0.0) / 0.09) + 0.04 * exp(min(sd, 0.0) / 0.013)) * ring;
-  col = mix(col, plate, inside);
-  col += uEdge * 0.022 * exp(-max(sd, 0.0) / 0.02) * (1.0 - inside) * hit * ring;
-  // The front edge: a thin dark band, lit along its top lip.
+  float inside = fill(dpx) * hit;
+  float lv = uAmp * abs(field(uv).x) * 3.2, lw = fwidth(lv);
+  float band = min(floor(lv) + smoothstep(1.0 - lw, 1.0, fract(lv)), 3.0);
+  vec3 top = mix(plate, hi, band / 3.0);
+  // A machined cut runs just inside the rim.
+  top = mix(top, face, 0.85 * fill(abs(dpx + 6.0 * pr) - 0.6 * pr));
+  // Piled sand: a solid body where it gathers, with a little relief.
+  float e = 2.0 / ${DS}.0, d0 = texture(uG0, tc).r;
+  float hgt = 1.0 - exp(-d0 * 0.25), hw = fwidth(hgt) + 1e-4;
+  float body = smoothstep(0.62 - hw, 0.62 + hw, hgt);
+  vec2 gr = vec2(texture(uG0, tc + vec2(e, 0.0)).r - texture(uG0, tc - vec2(e, 0.0)).r,
+    texture(uG0, tc + vec2(0.0, e)).r - texture(uG0, tc - vec2(0.0, e)).r);
+  float lit = dot(normalize(vec3(-gr * 0.08, 1.0)), vec3(-0.45, 0.55, 0.7)) / 0.7;
+  top = mix(top, sand * clamp(mix(1.0, lit, 0.45), 0.8, 1.15), body);
+  // The centre bolt: a washer, a hex nut and the stud's end.
+  vec2 c = uv - 0.5;
+  float cw = fwidth(c.x) + fwidth(c.y), r = length(c);
+  vec2 hq = abs(mat2(0.866, -0.5, 0.5, 0.866) * c);
+  float hx = max(hq.x * 0.8660254 + hq.y * 0.5, hq.y);
+  vec3 bolt = mix(face, nut, smoothstep(cw, -cw, hx - 0.03));
+  // Cut gaps outline the nut and hollow the stud.
+  bolt = mix(bolt, uSlot, max(smoothstep(cw, -cw, abs(hx - 0.033) - 0.0022), smoothstep(cw, -cw, r - 0.01)));
+  float wm = smoothstep(cw, -cw, r - 0.052);
+  top = mix(top, bolt, wm);
+  col = mix(col, top, inside);
+  // The front face: a darker band, lit along its top lip.
   float tf = (-0.5 - ro.y) / rd.y;
   vec3 fp = ro + rd * tf;
   float fz = fwidth(fp.z) + 1e-6, fx = fwidth(fp.x) + 1e-6;
-  float face = step(0.0, tf) * clamp(min(-fp.z, fp.z + PT) / fz + 0.5, 0.0, 1.0) * clamp((0.5 - abs(fp.x)) / fx + 0.5, 0.0, 1.0);
-  vec3 edge = uPlateC * 0.6 + uEdge * (0.025 + 0.12 * exp(clamp(fp.z, -PT, 0.0) / (PT * 0.3))) * ring;
-  col = mix(col, edge, face);
-  float d0 = texture(uG0, tc).r, d1 = soft(uG1, tc), d2 = soft(uG2, tc);
-  float rim = clamp(0.5 * pr + 0.5 - abs(dpx + 0.5 * pr), 0.0, 1.0) * hit;
-  col += (uEdge * 0.16 * ring + glow * 0.02 * d1) * rim;
-  // Piled sand blooms: tight around the lines, wide across the plate.
-  float spill = hit * (1.0 - face) * mix(0.55, 1.0, inside);
-  col += glow * (0.0022 * d0 * d0 / (1.0 + 0.016 * d0 * d0) + 0.014 * d1 + 0.009 * d2) * spill;
-  col += texelFetch(uHdr, ivec2(px), 0).rgb;
-  // The rail: a hairline, a tick per resonance and the glowing dot.
-  float ax = abs(px.x - uRail.x);
-  float cap = clamp(min(px.y - uRail.y, uRail.z - px.y) / (6.0 * pr) + 0.5, 0.0, 1.0);
-  col += uLine * clamp(0.5 * pr + 0.5 - ax, 0.0, 1.0) * cap * 0.55;
-  float kr = clamp(floor((px.y - uRung.x) / uRung.y + 0.5), 0.0, ${K - 1}.0), lit = uTick[int(kr)];
-  float tick = clamp(0.5 * pr + 0.5 - abs(px.y - (uRung.x + kr * uRung.y)), 0.0, 1.0);
-  tick *= clamp((4.0 + 3.0 * lit) * pr + 0.5 - ax, 0.0, 1.0);
-  col += tick * mix(uLine * 1.4, glow * 1.6 + uHot * 0.4, lit);
-  float dd = length(px - uRail.xw) / pr;
-  col += uHot * clamp(uDot.y - dd + 0.5, 0.0, 1.0) * (0.6 + 0.6 * uDot.x);
-  col += glow * (exp(-dd * dd / 50.0) * (0.12 + 0.55 * uDot.x) + exp(-dd * dd / 600.0) * 0.12 * uDot.x);
-  col = 1.0 - exp(-col);
+  float faceM = step(0.0, tf) * clamp(min(-fp.z, fp.z + PT) / fz + 0.5, 0.0, 1.0) * clamp((0.5 - abs(fp.x)) / fx + 0.5, 0.0, 1.0);
+  col = mix(col, mix(face, hi, clamp(1.0 + 0.8 * fp.z / fz, 0.0, 1.0)), faceM);
+  // Single grains speckle the plate and the air above it.
+  vec4 g = texelFetch(uHdr, ivec2(px), 0);
+  float cov = (1.0 - exp(-g.a * uCovK)) * (1.0 - max(body, wm) * inside);
+  col = mix(col, g.rgb / max(g.a, 1e-4), cov);
+  // The rail: a slot cut into the stage, a notch per resonance.
+  float ax = abs(px.x - uRail.x), dy = max(max(uRail.y - px.y, px.y - uRail.z), 0.0);
+  col = mix(col, uSlot, fill(length(vec2(ax, dy)) - 3.0 * pr));
+  float kr = clamp(floor((px.y - uRung.x) / uRung.y + 0.5), 0.0, ${K - 1}.0), on = uTick[int(kr)];
+  float notch = fill(abs(px.y - (uRung.x + kr * uRung.y)) - 0.75 * pr) * fill(ax - (6.0 + 3.0 * on) * pr);
+  col = mix(col, mix(uNotch, uCapC, clamp(on * 1.5, 0.0, 1.0)), notch);
+  // The cap: a solid accent block, split by one cut.
+  vec2 hs = vec2(13.0, 6.5) * pr * (1.0 + 0.12 * uCap.x), cq = abs(px - uRail.xw) - hs + 2.0 * pr;
+  float cap = fill(length(max(cq, 0.0)) + min(max(cq.x, cq.y), 0.0) - 2.0 * pr);
+  float cut = fill(abs(px.y - uRail.w) - 0.7 * pr) * fill(ax - hs.x + 4.0 * pr);
+  col = mix(col, mix(uCapC, uSlot, cut), cap);
   o = vec4(srgb(col) + (hash(px + 3.0) - 0.5) / 255.0, 1.0);
 }`;
 
@@ -748,7 +770,7 @@ async function initGL() {
   if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float unavailable');
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
-    sim: compile(TRI, SIM_FS), den: compile(DEN_VS, DEN_FS), blur: compile(TRI, BLUR_FS), down: compile(TRI, DOWN_FS),
+    sim: compile(TRI, SIM_FS), den: compile(DEN_VS, DEN_FS), blur: compile(TRI, BLUR_FS),
     dot: compile(DOT_VS, ADD_FS), streak: compile(STREAK_VS, ADD_FS), comp: compile(TRI, COMP_FS),
   };
   // Polling lets the driver link off the main thread.
@@ -772,10 +794,8 @@ async function initGL() {
   gl.uniform1i(P.den.u.uA, 0);
   gl.uniform1f(P.den.u.uW, (DS * PADK) ** 2 / N);
   gl.uniform1f(P.den.u.uPadK, PADK);
-  for (const q of [P.blur, P.down]) {
-    gl.useProgram(q.p);
-    gl.uniform1i(q.u.uSrc, 3);
-  }
+  gl.useProgram(P.blur.p);
+  gl.uniform1i(P.blur.u.uSrc, 3);
   for (const q of [P.dot, P.streak]) {
     gl.useProgram(q.p);
     gl.uniform1i(q.u.uA, 0);
@@ -785,8 +805,6 @@ async function initGL() {
   gl.useProgram(P.comp.p);
   gl.uniform1i(P.comp.u.uHdr, 4);
   gl.uniform1i(P.comp.u.uG0, 5);
-  gl.uniform1i(P.comp.u.uG1, 6);
-  gl.uniform1i(P.comp.u.uG2, 7);
   gl.uniform1f(P.comp.u.uPadK, PADK);
   setVec3s(P.comp, STAGE);
 
@@ -795,8 +813,8 @@ async function initGL() {
     const a = texture(gl.RGBA32F, TW, TH, gl.NEAREST), b = texture(gl.RGBA32F, TW, TH, gl.NEAREST);
     return { a, b, fb: framebuffer(a, b) };
   });
-  // A three-level pyramid turns sand density into bloom.
-  PY = { d0: target(DS), t0: target(DS), g0: target(DS), d1: target(DS / 4), t1: target(DS / 4), g1: target(DS / 4), d2: target(DS / 16), t2: target(DS / 16), g2: target(DS / 16) };
+  // A blurred density map gives piled sand its body and relief.
+  PY = { d0: target(DS), t0: target(DS), g0: target(DS) };
   hdr = null;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
@@ -817,7 +835,7 @@ function ensureHdr() {
 let s = START, sT = START, D = 0, holdUntil = 0, settleUntil = 0, frameNo = 1;
 let formed = 1, domK = START, gripping = false, gripSpeed = 0, freq = 196, near = 1;
 let tossQ = null, scatterQ = false;
-let hue = 'white', hueWas = 'white', wave = 1;
+let hue = 'steel', hueWas = 'steel', wave = 1;
 const F = { m0: [2, 4, 1, 1], m1: [3, 4, -1, 0], amp: 0, k: kOf(START) };
 const TICKS = new Float32Array(K);
 function tune() {
@@ -876,6 +894,12 @@ function seed() {
 }
 
 /* ---------- camera: the plate seen from above at an angle ---------- */
+// The inset bar covers the stage's foot, less its faded top.
+const bar = document.querySelector('.bar');
+function barInset() {
+  if (!bar || bar.classList.contains('bar--below')) return 0;
+  return Math.max(0, panel.getBoundingClientRect().bottom - bar.getBoundingClientRect().top - 28);
+}
 let W = 0, H = 0, pr = 1, cw = 0, ch = 0, lowDpr = false, drawN = N;
 let VP = null, INV = null, EYE = [0, -2, 2], refW = 1, plateA = 1;
 // The rail in CSS pixels, y down.
@@ -895,13 +919,14 @@ function camera() {
     const c = xf(pv, q), x = c[0] / c[3], y = c[1] / c[3];
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
-  // The plate fits left of the rail, centred when there is room.
-  const small = W < 560, my = small ? 22 : 34, mx = small ? 14 : 36;
+  // The plate fits left of the rail and above the inset bar.
+  // It sits centred when there is room.
+  const small = W < 560, my = small ? 22 : 34, mx = small ? 14 : 36, mb = my + barInset();
   L.railX = W - (small ? 22 : 34);
   const right = L.railX - (small ? 24 : 44);
-  const k = Math.min((2 * (right - mx) / W) / (x1 - x0), (2 - 4 * my / H) / (y1 - y0));
+  const k = Math.max(0.05, Math.min((2 * (right - mx) / W) / (x1 - x0), (2 - 2 * (my + mb) / H) / (y1 - y0)));
   const half = (k * (x1 - x0) * W) / 4, cx = Math.min(W / 2, right - half);
-  const ox = (2 * cx) / W - 1 - k * (x0 + x1) / 2, oy = -k * (y0 + y1) / 2;
+  const ox = (2 * cx) / W - 1 - k * (x0 + x1) / 2, oy = (mb - my) / H - k * (y0 + y1) / 2;
   VP = mul4([k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1, 0, ox, oy, 0, 1], pv);
   INV = inv4(VP);
   refW = xf(VP, [0, 0, 0])[3];
@@ -935,14 +960,7 @@ function blurTo(src, dst, dx, dy) {
   gl.uniform2f(P.blur.u.uDir, dx / src.n, dy / src.n);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
-function downTo(src, dst) {
-  gl.useProgram(P.down.p);
-  gl.bindTexture(gl.TEXTURE_2D, src.tex);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
-  gl.viewport(0, 0, dst.n, dst.n);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-}
-// The colour wave sweeps out from the centre.
+// The finish wave sweeps out from the centre.
 const front = () => (wave >= 1 ? 3 : lerp(-0.06, 1.3, wave));
 function render() {
   const sa = sim[cur].a, sb = sim[cur].b, py = PY;
@@ -964,23 +982,14 @@ function render() {
   gl.activeTexture(gl.TEXTURE3);
   blurTo(py.d0, py.t0, 1, 0);
   blurTo(py.t0, py.g0, 0, 1);
-  downTo(py.g0, py.d1);
-  // Two blurs per coarse level keep the kernel smooth and wide.
-  for (const [d, t, g] of [[py.d1, py.t1, py.g1], [py.d2, py.t2, py.g2]]) {
-    if (d === py.d2) downTo(py.g1, py.d2);
-    blurTo(d, t, 1, 0);
-    blurTo(t, g, 0, 1);
-    blurTo(g, t, 1, 0);
-    blurTo(t, g, 0, 1);
-  }
 
-  // Grains add their light into the float buffer.
+  // Grains sum their colour and coverage into the float buffer.
   ensureHdr();
   gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
   gl.viewport(0, 0, cw, ch);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND);
-  const fr = front(), gain = 0.24 * clamp((0.32 * plateA) / drawN, 0.6, 1.6);
+  const fr = front();
   // Every other grain streaks, so a pour stays airy.
   for (const [q, mode, count] of [[P.dot, gl.POINTS, drawN], [P.streak, gl.LINES, drawN]]) {
     gl.useProgram(q.p);
@@ -988,7 +997,6 @@ function render() {
     gl.uniformMatrix4fv(q.u.uVP, false, VP);
     gl.uniform1f(q.u.uRefW, refW);
     gl.uniform2f(q.u.uRes, cw, ch);
-    gl.uniform1f(q.u.uGain, gain);
     gl.uniform1f(q.u.uJit, reduce ? 0.003 : 0.006);
     gl.uniform1f(q.u.uTau, reduce ? 0.015 : 0.028);
     gl.uniform1f(q.u.uFront, fr);
@@ -1003,26 +1011,44 @@ function render() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, cw, ch);
   gl.useProgram(P.comp.p);
-  [hdr, py.g0, py.g1, py.g2].forEach((t, i) => {
+  [hdr, py.g0].forEach((t, i) => {
     gl.activeTexture(gl.TEXTURE4 + i);
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
   });
-  const u = P.comp.u, rungDY = ((L.y1 - L.y0) / (SMAX - SMIN)) * pr;
+  const u = P.comp.u, rungDY = ((L.y1 - L.y0) / (SMAX - SMIN)) * pr, A = PALS[hueWas], B = PALS[hue];
+  setField(P.comp);
   gl.uniform2f(u.uRes, cw, ch);
   gl.uniformMatrix4fv(u.uInv, false, INV);
   gl.uniform3fv(u.uEye, EYE);
   gl.uniform1f(u.uPr, pr);
   gl.uniform4f(u.uRail, L.railX * pr, (H - L.y1) * pr, (H - L.y0) * pr, (H - railY(s)) * pr);
   gl.uniform2f(u.uRung, (H - railY(0)) * pr, rungDY);
-  gl.uniform4f(u.uDot, clamp(0.15 + D * (0.35 + 0.65 * near) + (gripping ? 0.3 : 0), 0, 1.4), 3.2 + 1.3 * D + (gripping ? 1 : 0), 0, 0);
+  gl.uniform2f(u.uCap, gripping ? 1 : 0, D);
+  gl.uniform3fv(u.uCapC, A.cap.map((v, i) => lerp(v, B.cap[i], wave)));
   gl.uniform1fv(u.uTick, TICKS);
   gl.uniform1f(u.uFront, fr);
-  gl.uniform1f(u.uLive, D * (0.4 + 0.6 * near));
-  gl.uniform3fv(u.uGa, PALS[hueWas].glow);
-  gl.uniform3fv(u.uGb, PALS[hue].glow);
-  gl.uniform3fv(u.uWa, PALS[hueWas].wash);
-  gl.uniform3fv(u.uWb, PALS[hue].wash);
+  // Coverage scales so an even layer of sand covers about a third.
+  gl.uniform1f(u.uCovK, clamp((0.43 * plateA) / drawN, 0.2, 3));
+  for (const [k, key] of [['Pl', 'plate'], ['Hi', 'hi'], ['Fc', 'face'], ['Sd', 'sand'], ['Nt', 'nut']]) {
+    gl.uniform3fv(u[`u${k}A`], A[key]);
+    gl.uniform3fv(u[`u${k}B`], B[key]);
+  }
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  readout();
+}
+// The live pitch, redrawn only when it changes.
+const hzEl = panel.querySelector('.hz');
+let hzText = '', hzOn = null, hzPos = '';
+function readout() {
+  const t = `${Math.round(freq)} Hz`, on = D > 0.05 || gripping, pos = `${Math.max(6, L.y0 - 24)}|${Math.max(6, W - L.railX - 10)}`;
+  if (t !== hzText) { hzText = t; hzEl.textContent = t; }
+  if (on !== hzOn) { hzOn = on; hzEl.classList.toggle('on', on); }
+  if (pos !== hzPos) {
+    hzPos = pos;
+    const [top, right] = pos.split('|');
+    hzEl.style.top = `${top}px`;
+    hzEl.style.right = `${right}px`;
+  }
 }
 function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
@@ -1265,7 +1291,9 @@ async function boot() {
   ready = true;
   render();
   requestAnimationFrame(() => canvas.classList.add('on'));
-  new ResizeObserver(fit).observe(panel);
+  const ro = new ResizeObserver(fit);
+  ro.observe(panel);
+  if (bar) ro.observe(bar);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); else pause(); }).observe(panel);
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else wake(); });
 }
