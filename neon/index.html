@@ -41,6 +41,8 @@
 .gas-rail i.on { height: 16px; }
 .gas-rail i.peek:not(.on) { height: 12px; }
 /* Mix shows four hard stripes. */
+.gas-rail i.prism { background: linear-gradient(90deg, oklch(0.7 0.22 25), oklch(0.88 0.18 100), oklch(0.82 0.2 150), oklch(0.7 0.16 230), oklch(0.6 0.24 300)); }
+.gas-rail i.candy { background: repeating-linear-gradient(135deg, oklch(0.66 0.26 350) 0 2px, oklch(0.96 0.02 350) 2px 4px); }
 .gas-rail i.mix { background: linear-gradient(90deg, oklch(0.66 0.22 30) 0 25%, oklch(0.86 0.18 100) 0 50%, oklch(0.8 0.2 150) 0 75%, oklch(0.6 0.2 266) 0); }
 @media (pointer: coarse) {
   .gas { padding: 10px 16px; }
@@ -63,12 +65,12 @@
     </div>
     <div class="bar">
       <div class="choices">
-        <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="11" aria-valuenow="7" aria-valuetext="Blue"><span class="gas-rail" aria-hidden="true"></span></div>
+        <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="13" aria-valuenow="7" aria-valuetext="Blue"><span class="gas-rail" aria-hidden="true"></span></div>
         <button class="chip" id="wall" type="button" aria-label="Wall: Brick">Brick</button>
       </div>
       <div class="actions">
         <button class="chip" id="snap" type="button" aria-pressed="false">Snap</button>
-        <button class="chip" id="chase" type="button" aria-pressed="false">Chase</button>
+        <button class="chip" id="show" type="button" aria-pressed="false" aria-label="Show: off">Show</button>
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
       </div>
       <dl class="how" aria-label="How to play">
@@ -135,10 +137,13 @@ const GAS_SPEC = [
   ['Violet', 0.56, 0.26, 302, 1.15, 2.2],
   ['Pink', 0.64, 0.29, 350, 1.0, 0],
   ['White', 0.95, 0.035, 80, 0.55, 2.0],
+  // Two trick tubes: Prism runs a rainbow, Candy twists stripes.
+  ['Prism', 0.85, 0.05, 260, 0.75, 0, 1],
+  ['Candy', 0.64, 0.29, 350, 1.0, 0, 2],
 ];
 // Each gas is normalised to full strength, then balanced.
 const GAS = GAS_SPEC.map(([, L, C, h, k]) => { const c = linFit(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
-const WARM = GAS_SPEC.map(g => g[5]);
+const WARM = GAS_SPEC.map(g => g[5]), FX = GAS_SPEC.map(g => g[6] || 0);
 // Cold argon glows a dim violet.
 const COLD = (() => { const c = linFit(0.5, 0.22, 292), m = Math.max(...c); return c.map(v => (v / m) * 0.5); })();
 const MIX = GAS.length;
@@ -275,6 +280,20 @@ function thud(x) {
     drop(v, t0, 104 * jit(0.05), 66, 0.15 * g, 0.04);
     burst(v, t0, 'bandpass', 900, 0.9, 0.08 * g, 0.014);
   }
+}
+// Rave beats land on a soft kick.
+function kick() {
+  if (!voices()) return;
+  const v = take(0), t0 = kit.ac.currentTime + LEAD;
+  drop(v, t0, 150, 46, 0.18, 0.05);
+  burst(v, t0 + RBEAT / 2, 'highpass', 8000, 0.7, 0.03, 0.004);
+}
+// Thunder rolls in after the flash.
+function thunder(delay) {
+  if (!voices()) return;
+  const v = take(rand(-0.7, 0.7)), t0 = kit.ac.currentTime + delay;
+  burst(v, t0, 'lowpass', 170, 0.7, 0.5, 0.5);
+  drop(v, t0 + 0.05, 64, 30, 0.3, 0.3);
 }
 // Each lit tube buzzes: a mains sawtooth through a low filter.
 function humVoice(t) {
@@ -697,9 +716,77 @@ function setChase(on) {
       t.keep = true;
     }
   }
-  chaseBtn.setAttribute('aria-pressed', String(on));
   humSync();
   wake();
+}
+
+/* ---------- shows: Chase, Rave and Storm ---------- */
+const SHOWS = ['Show', 'Chase', 'Rave', 'Storm'], RBEAT = 0.5;
+const STORM = linFit(0.95, 0.04, 250);
+let show = 0, rave = null, hueShift = 0, lightDirty = true;
+const storm = { at: -1e9, timer: 0 };
+const light = { amb: AMB, key: KEY };
+function setShow(k) {
+  k = reduce || !ready ? 0 : (k + SHOWS.length) % SHOWS.length;
+  show = k;
+  setChase(k === 1);
+  rave = k === 2 ? { t0: performance.now() / 1000, k: -1, hue: rand(0, 360), at: -1e9, col: AMB } : null;
+  stormLater(k === 3 ? 0.8 : -1);
+  showBtn.textContent = SHOWS[k];
+  showBtn.setAttribute('aria-pressed', String(k > 0));
+  showBtn.setAttribute('aria-label', `Show: ${k ? SHOWS[k] : 'off'}`);
+  lightDirty = true;
+  wake();
+}
+// Rave pulses the room in a new hue each beat.
+// Storm throws lightning: two cold flashes, a power dip, thunder.
+// Flashes stay under three a second.
+function lights(now, dt) {
+  let amb = AMB, key = KEY, busy = false;
+  if (rave) {
+    const k = Math.floor((now - rave.t0) / RBEAT);
+    if (k !== rave.k) {
+      rave.k = k;
+      rave.hue = (rave.hue + rand(100, 240)) % 360;
+      rave.col = linFit(0.72, 0.22, rave.hue);
+      rave.at = now;
+      kick();
+    }
+    const p = Math.exp(-(now - rave.at) / 0.2);
+    amb = AMB.map((v, i) => v * (1 - 0.5 * p) + rave.col[i] * 0.5 * p);
+    key = KEY.map((v, i) => v * (1 - 0.6 * p) + rave.col[i] * 0.9 * p);
+    hueShift += dt * 0.6;
+    busy = true;
+  }
+  const age = now - storm.at;
+  if (age < 0.6) {
+    const f = age < 0.06 ? 1 : age < 0.11 ? 0.12 : age < 0.16 ? 0.75 : 0.75 * Math.exp(-(age - 0.16) / 0.08);
+    amb = amb.map((v, i) => v + STORM[i] * 1.3 * f);
+    key = key.map((v, i) => v + STORM[i] * 1.6 * f);
+    busy = true;
+  }
+  if (amb !== light.amb || key !== light.key || busy) { light.amb = amb; light.key = key; lightDirty = true; }
+  return busy;
+}
+function stormLater(sec) {
+  clearTimeout(storm.timer);
+  if (sec < 0) return;
+  storm.timer = setTimeout(() => {
+    if (show !== 3) return;
+    if (visible) {
+      const now = performance.now() / 1000;
+      storm.at = now;
+      // The flash browns out the sign for a blink.
+      for (const t of tubes) {
+        if (!t.on || t.seq) continue;
+        t.seq = [[now + 0.02, 0.3, 0], [now + 0.09, 1, 0], [now + 0.14, 0.45, 0], [now + 0.21, 1, 0]];
+        t.si = 0;
+      }
+      thunder(rand(0.35, 1.3));
+      wake();
+    }
+    stormLater(rand(3, 8));
+  }, sec * 1000);
 }
 
 /* ---------- WebGL ---------- */
@@ -1091,7 +1178,16 @@ precision highp float;
 precision highp sampler2D;
 ${LIGHT}
 uniform vec4 uGas[${MAXT}];
-uniform float uR, uRpx, uMode, uEmK;
+uniform float uR, uRpx, uMode, uEmK, uHue;
+uniform float uFx[${MAXT}];
+// OKLCH in, linear sRGB out, scaled to its brightest channel.
+vec3 hueLin(float L, float C, float h) {
+  float a = C * cos(h), b = C * sin(h);
+  vec3 q = vec3(L + 0.3963377774 * a + 0.2158037573 * b, L - 0.1055613458 * a - 0.0638541728 * b, L - 0.0894841775 * a - 1.291485548 * b);
+  q = q * q * q;
+  vec3 c = max(vec3(0.0), vec3(4.0767416621 * q.x - 3.3077115913 * q.y + 0.2309699292 * q.z, -1.2684380046 * q.x + 2.6097574011 * q.y - 0.3413193965 * q.z, -0.0041960863 * q.x - 0.7034186147 * q.y + 1.707614701 * q.z));
+  return c / max(max(c.r, c.g), max(c.b, 1e-4));
+}
 in vec2 vSA;
 in vec2 vT;
 in float vP;
@@ -1110,6 +1206,12 @@ void main() {
   float cov = 1.0 - smoothstep(rad - aw, rad + aw, rr);
   if (cov <= 0.002) discard;
   vec4 gas = uGas[vId];
+  vec3 gc = gas.rgb;
+  float fx = uFx[vId];
+  // Prism gas runs the rainbow along the tube.
+  if (fx > 0.5 && fx < 1.5) gc = hueLin(0.75, 0.2, a / (uR * 6.5) + uHue) * 0.9;
+  // Candy gas twists pink and white stripes round the tube.
+  else if (fx > 1.5) gc = mix(gas.rgb, vec3(0.62, 0.58, 0.55), smoothstep(-0.04, 0.04, abs(fract((a + s * uR * 1.8) / (uR * 7.0)) - 0.5) - 0.25));
   // Gas glows past a short dark space beyond each sleeve.
   float act = gas.w * smoothstep(cap1, cap1 + 1.6 * ck, e);
   // Blockout paint stops the light at a hard cut.
@@ -1118,7 +1220,7 @@ void main() {
   const float inner = 0.84;
   float chord = sqrt(max(0.0, inner * inner - s * s)) / inner;
   // Bright gas clips to a hot core with a little white.
-  vec3 em = gas.rgb * (0.5 + 1.2 * chord + 5.0 * pow(chord, 6.0)) + 0.6 * pow(chord, 18.0);
+  vec3 em = gc * (0.5 + 1.2 * chord + 5.0 * pow(chord, 6.0)) + 0.6 * pow(chord, 18.0);
   em *= act * uEmK;
   if (uMode > 0.5) { o = vec4(em, cov); return; }
   // The cross-section gives a screen-space normal; y points up.
@@ -1157,7 +1259,7 @@ void main() {
     // Black enamel keeps only the sheen of the glass.
     vec3 enamel = vec3(0.004) + uAmb * 0.04 * max(dot(N, uLamb), 0.0) + F * env * 0.7 + uKey * k1 * 0.9;
     col = mix(col, enamel, paint);
-    col += em + gas.rgb * act * uEmK * 0.3 * band;
+    col += em + gc * act * uEmK * 0.3 * band;
   }
   o = vec4(finish(col, fc), cov);
 }`;
@@ -1262,7 +1364,7 @@ let tubeVao = null, tubeBuf = null, tubeCap = 0, draftVao = null, draftBuf = nul
 let clipVao = null, clipBuf = null, clipCap = 0, draftClipVao = null, draftClipBuf = null, draftClipCap = 0;
 let penVao = null, penBuf = null, nClips = 0, nDraftClips = 0;
 let gbuf = null, E = null, D = [], U = [];
-const gasU = new Float32Array(MAXT * 4), shakeU = new Float32Array(MAXT * 2);
+const gasU = new Float32Array(MAXT * 4), fxU = new Float32Array(MAXT), shakeU = new Float32Array(MAXT * 2);
 
 function compile(vs, fs) {
   const sh = (type, src) => {
@@ -1331,7 +1433,7 @@ async function initGL() {
   P = progs;
   uni(P.wall, ['uRes', 'uRow', 'uDepth', 'uKind', 'uLamb', 'uC0', 'uC1', 'uC2', 'uC3', 'uC4']);
   uni(P.final, LIGHT_U);
-  uni(P.tube, [...LIGHT_U, 'uView', 'uShake', 'uGas', 'uR', 'uRpx', 'uMode', 'uEmK']);
+  uni(P.tube, [...LIGHT_U, 'uView', 'uShake', 'uGas', 'uFx', 'uHue', 'uR', 'uRpx', 'uMode', 'uEmK']);
   uni(P.clip, [...LIGHT_U, 'uView', 'uShake', 'uR', 'uSize', 'uRpx', 'uMode', 'uPen']);
   uni(P.down, ['uSrc', 'uTx', 'uDst']);
   uni(P.up, ['uSrc', 'uBase', 'uTx', 'uDst', 'uW', 'uK']);
@@ -1500,6 +1602,8 @@ function drawTubes(mode, rpx) {
   gl.uniform1f(P.tube.u.uMode, mode);
   gl.uniform1f(P.tube.u.uRpx, rpx);
   gl.uniform4fv(P.tube.u.uGas, gasU);
+  gl.uniform1fv(P.tube.u.uFx, fxU);
+  gl.uniform1f(P.tube.u.uHue, hueShift);
   gl.uniform2fv(P.tube.u.uShake, shakeU);
   gl.bindVertexArray(tubeVao);
   for (const t of tubes) gl.drawArrays(gl.TRIANGLE_STRIP, t.first, t.count);
@@ -1526,8 +1630,18 @@ function render() {
     const w = reduce || !dur ? 1 : clamp((now - t.struck) / dur), e = w * w * (3 - 2 * w);
     for (let c = 0; c < 3; c++) gasU[i * 4 + c] = lerp(COLD[c], g[c], e) * (0.4 + 0.6 * e);
     gasU[i * 4 + 3] = t.show;
+    fxU[i] = FX[t.gas];
   }
-  if (draft) gasU.set([...GAS[draft.gas], 0], tubes.length * 4);
+  if (draft) { gasU.set([...GAS[draft.gas], 0], tubes.length * 4); fxU[tubes.length] = FX[draft.gas]; }
+  // A show changes the room light; the programs hear of it once.
+  if (lightDirty) {
+    lightDirty = false;
+    for (const q of [P.final, P.tube, P.clip]) {
+      gl.useProgram(q.p);
+      gl.uniform3fv(q.u.uAmb, light.amb);
+      gl.uniform3fv(q.u.uKey, light.key);
+    }
+  }
 
   // Light and cover go to a half-size target.
   // Unit 6 lets go of it first.
@@ -1654,6 +1768,7 @@ function update(now, dt) {
     busy = true;
   });
   if (chase) { chaseStep(now); busy = true; }
+  if (lights(now, dt)) busy = true;
   // Held arrows steer the keyboard pen.
   if (pen.keys.size) {
     let dx = 0, dy = 0;
@@ -1959,7 +2074,8 @@ function undo() {
   wake();
 }
 function clearAll() {
-  setChase(false);
+  // Chase needs tubes; Rave and Storm play on.
+  if (show === 1) setShow(0);
   if (draft) cancelDraft();
   if (!tubes.length) return;
   if (tubes.some(t => t.lvl > 0)) click(0);
@@ -1968,11 +2084,11 @@ function clearAll() {
   humSync();
   wake();
 }
-/* ---------- the bar: gas rail, wall, chase, clear ---------- */
+/* ---------- the bar: gas rail, wall, snap, show, clear ---------- */
 const gasEl = document.getElementById('gas'), rail = gasEl.querySelector('.gas-rail');
-const wallBtn = document.getElementById('wall'), chaseBtn = document.getElementById('chase'), clearBtn = document.getElementById('clear');
+const wallBtn = document.getElementById('wall'), showBtn = document.getElementById('show'), clearBtn = document.getElementById('clear');
 const NAMES = [...GAS_SPEC.map(g => g[0]), 'Mix'];
-rail.innerHTML = GAS_SPEC.map(([, L, C, h]) => `<i style="--c: ${css([L, C * 0.92, h])}"></i>`).join('') + '<i class="mix"></i>';
+rail.innerHTML = GAS_SPEC.map(([, L, C, h, , , fx]) => (fx ? `<i class="${fx === 1 ? 'prism' : 'candy'}"></i>` : `<i style="--c: ${css([L, C * 0.92, h])}"></i>`)).join('') + '<i class="mix"></i>';
 const swatches = [...rail.children];
 let peek = -1;
 // The tooltip names a hovered swatch, then the pick.
@@ -2062,12 +2178,12 @@ const NARROW = matchMedia('(max-width: 560px)'), barEl = panel.nextElementSiblin
 const barPlace = () => barEl.classList.toggle('bar--below', NARROW.matches);
 NARROW.addEventListener?.('change', barPlace);
 barPlace();
-chaseBtn.addEventListener('click', () => setChase(!chase));
+showBtn.addEventListener('click', () => setShow(show + 1));
 clearBtn.addEventListener('click', clearAll);
 // Reduced motion stops the show and rests its chip.
 function motionPref() {
-  chaseBtn.setAttribute('aria-disabled', String(reduce));
-  if (reduce) setChase(false);
+  showBtn.setAttribute('aria-disabled', String(reduce));
+  if (reduce) setShow(0);
 }
 motionPref();
 const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -2116,7 +2232,7 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  [snapBtn, wallBtn, chaseBtn, clearBtn].forEach(c => { c.disabled = true; });
+  [snapBtn, wallBtn, showBtn, clearBtn].forEach(c => { c.disabled = true; });
   gasEl.setAttribute('aria-disabled', 'true');
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
