@@ -187,6 +187,7 @@
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>switches and keys</dd></div>
         <div><dt><span class="fine">Drag</span><span class="touch">Drag</span></dt><dd>dials, sliders and beads</dd></div>
         <div><dt>Flick</dt><dd>the dial and the wheel</dd></div>
+        <div><dt>Arm and latch</dt><dd>then a key launches</dd></div>
       </dl>
     </div>
   </main>
@@ -387,6 +388,13 @@ function rest(s, e = 1e-3) {
 const bodies = [];
 // Each control lists its Shuffle and Reset moves here.
 const moves = [];
+// An armed safety and a latched key prime the board.
+// A plain key then fires the launch.
+const board = {
+  armed: false, latched: false, firing: false, dial: null, fire: null,
+  get primed() { return this.armed && this.latched && !this.firing; },
+  set(k, v) { this[k] = v; this.dial?.prime(); },
+};
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const snd = (() => {
@@ -438,6 +446,20 @@ const snd = (() => {
     o.start(t); o.stop(t + d + 0.01);
     return o;
   }
+  // Noise through a band that climbs: a short whoosh.
+  function rise(t, f, f2, d, g) {
+    const ac = kit.ac, src = ac.createBufferSource(), flt = ac.createBiquadFilter(), amp = ac.createGain();
+    src.buffer = kit.noise;
+    flt.type = 'bandpass'; flt.Q.value = 2.2;
+    flt.frequency.setValueAtTime(f, t);
+    flt.frequency.exponentialRampToValueAtTime(f2, t + d);
+    amp.gain.setValueAtTime(1e-4, t);
+    amp.gain.exponentialRampToValueAtTime(Math.max(g, 2e-4), t + d * 0.85);
+    amp.gain.exponentialRampToValueAtTime(1e-4, t + d);
+    src.connect(flt); flt.connect(amp); amp.connect(kit.out);
+    src.start(t, 0);
+    src.stop(t + d + 0.01);
+  }
   // Busy moments soften each voice; the compressor catches the rest.
   function play(key, gap, dur, fn) {
     const t = claim(key, gap, dur);
@@ -478,6 +500,16 @@ const snd = (() => {
   const api = {
     nap,
     hush() { drones.forEach(d => d.stop()); },
+    // Launch: four rising notes over a climbing whoosh.
+    launch: () => play('launch', 0.3, 1, (t, P, G) => {
+      rise(t, 300, 4200, 0.4, 0.3 * G);
+      [440, 554.4, 659.3, 880].forEach((f, i) => {
+        const at = t + i * 0.09, end = i === 3;
+        hiss(at, 'bandpass', 3200 * P, 1.2, 0.004, 0.2 * G);
+        ring(at, f * P, f * P, end ? 0.6 : 0.16, 0.15 * G, 'triangle');
+        ring(at, 2 * f * P, 2 * f * P, end ? 0.4 : 0.1, 0.05 * G);
+      });
+    }),
     scrape: drone(0.8),
     // Dial detent: a 4 ms highpassed tick and a faint ping.
     dial: v => play('dial', 0.012, 0.04, (t, P, G) => {
@@ -631,7 +663,9 @@ bodies.push((() => {
   el('rect', { x: CX - 9, y: CX - 110, width: 18, height: 60, rx: 9, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.77, 0.14, 38])], [1, css([0.62, 0.16, 30])]]).url }, ind);
   void skirt;
 
-  const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', pr: S(), fl: new Float32Array(N), floor: 0, near: 0, pid: null, pu: 0, prev: 0, off: 0, trail: [], rect: null };
+  const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', pr: S(), fl: new Float32Array(N), floor: 0, near: 0, pid: null, pu: 0, prev: 0, off: 0, trail: [], rect: null, run: -1, rk: 0, r0: 0 };
+  // The launch run lights one tick every 18 ms.
+  const RUN = 0.018;
   // Drag follow, detent pull, spin friction, settle spring.
   const KD = 1600, CD = 68, AD = 70;
   const AS = 14, CF = 0.4, MU = 4.5, WCAP = 2.2;
@@ -658,6 +692,7 @@ bodies.push((() => {
         if (s.mode === 'spin') { s.mode = 'settle'; s.T = Math.round(s.th / STEP) * STEP; }
         if (s.mode !== 'rest') { s.th = s.T; s.w = 0; s.a = 0; }
         s.fl.fill(0);
+        s.run = -1;
         spring(s.pr, 700, 0.45, h);
         cross();
         click();
@@ -678,6 +713,13 @@ bodies.push((() => {
       s.th += s.w * h;
       cross();
       click();
+      // The run laps the ring once, clockwise from the indicator.
+      if (s.run >= 0) {
+        s.run += h;
+        const n = Math.min(N, Math.floor(s.run / RUN));
+        for (; s.rk < n; s.rk++) s.fl[mod(s.r0 + s.rk + 1, N)] = 1;
+        if (s.rk >= N) s.run = -1;
+      }
       const k = Math.exp(-6 * h);
       for (let i = 0; i < N; i++) if (s.fl[i]) s.fl[i] = s.fl[i] < 0.004 ? 0 : s.fl[i] * k;
       spring(s.pr, 700, 0.45, h);
@@ -693,7 +735,7 @@ bodies.push((() => {
         } else moving = true;
       }
       const lit = s.fl.some(v => v > 0), still = rest(s.pr);
-      return moving || lit || !still;
+      return moving || lit || !still || s.run >= 0;
     },
     draw() {
       const deg = mod(s.th * R2D, 360), r = `rotate(${f2(deg)} 200 200)`;
@@ -703,7 +745,9 @@ bodies.push((() => {
       set(top, 'transform', `translate(200 200) scale(${f3(1 - 0.03 * p)}) translate(-200 -200)`);
       cap.paint(p * 0.8);
       const cur = mod(Math.round(s.th / STEP), N);
-      for (let k = 0; k < N; k++) set(tl[k], 'opacity', f2(Math.max(s.fl[k], k === cur ? 0.55 : 0)));
+      // A primed board holds the whole ring faintly lit.
+      const base = board.primed ? 0.45 : 0;
+      for (let k = 0; k < N; k++) set(tl[k], 'opacity', f2(Math.max(s.fl[k], base, k === cur ? 0.55 : 0)));
       set(dialEl, 'aria-valuenow', s.mode === 'settle' || s.mode === 'rest' ? mod(Math.round(s.T / STEP), N) : cur);
     },
   };
@@ -782,6 +826,15 @@ bodies.push((() => {
       wake(body);
     },
   });
+  board.dial = {
+    // One woken frame redraws the ring.
+    prime() { wake(body); },
+    run() {
+      if (reduce) return;
+      s.r0 = mod(Math.round(s.th / STEP), N); s.run = 0; s.rk = 0;
+      wake(body);
+    },
+  };
   return body;
 })());
 
@@ -1018,7 +1071,12 @@ document.querySelectorAll('.key').forEach(btn => {
       if (pip) set(pip, 'fill', PIP(s.lk.x));
     },
   };
-  function press() { s.held = true; s.d.t = 1; snd.down(); wake(body); }
+  // Only a hand on a plain key fires a primed board.
+  function press(auto) {
+    s.held = true; s.d.t = 1; snd.down();
+    if (!auto && !latch && board.primed) board.fire();
+    wake(body);
+  }
   function release() {
     s.held = false;
     snd.up();
@@ -1027,6 +1085,7 @@ document.querySelectorAll('.key').forEach(btn => {
       s.lk.t = +s.locked;
       snd.latch(s.locked);
       btn.setAttribute('aria-pressed', String(s.locked));
+      board.set('latched', s.locked);
     }
     s.d.t = s.locked ? 0.6 : 0;
     wake(body);
@@ -1053,17 +1112,17 @@ document.querySelectorAll('.key').forEach(btn => {
   });
   btn.addEventListener('blur', () => { if (s.kb) { s.kb = false; release(); } });
   // Assistive tech clicks without key events; they get a short tap.
-  const tap = () => { if (s.held || s.kb || s.pid != null) return; press(); setTimeout(release, 120); };
+  const tap = auto => { if (s.held || s.kb || s.pid != null) return; press(auto); setTimeout(release, 120); };
   btn.addEventListener('click', e => {
     if (e.detail !== 0 || performance.now() - s.keyAt < 300) return;
-    tap();
+    tap(false);
   });
   moves.push({
     el: btn,
     // Shuffle taps about half the keys.
-    shuffle() { if (Math.random() < 0.5) tap(); },
+    shuffle() { if (Math.random() < 0.5) tap(true); },
     // Reset taps a latched key loose.
-    reset() { if (s.locked) tap(); },
+    reset() { if (s.locked) tap(true); },
   });
   bodies.push(body);
 });
@@ -1402,6 +1461,7 @@ bodies.push((() => {
     s.on = v; s.p.t = +v;
     snd.flip(v, true);
     armBtn.setAttribute('aria-checked', String(v));
+    board.set('armed', v);
   }
   function cover(open) {
     clearTimeout(s.tm);
@@ -1741,17 +1801,41 @@ bodies.push((() => {
 /* ---------- shuffle and reset ---------- */
 // Each move fires in a wave from left to right across the board.
 let wave = [];
-function sweep(kind) {
+// The return value is the wave's length in ms.
+function sweep(kind, skip) {
   wave.forEach(clearTimeout);
-  const list = moves.filter(m => m[kind]).map(m => {
+  const list = moves.filter(m => m[kind] && !skip?.has(m.el)).map(m => {
     const r = m.el.getBoundingClientRect();
     return { m, at: r.left + r.width / 2 + 0.35 * (r.top + r.height / 2) };
   }).sort((a, b) => a.at - b.at);
   const gap = reduce ? 25 : 55;
   wave = list.map(({ m }, i) => setTimeout(() => m[kind](), i * gap));
+  return list.length * gap;
 }
 document.getElementById('shuffle').addEventListener('click', () => sweep('shuffle'));
 document.getElementById('reset').addEventListener('click', () => sweep('reset'));
+
+/* ---------- launch ---------- */
+// The run laps the dial, then a shuffle wave crosses the board.
+// Spent, the board disarms: the switch drops, the latched key pops.
+const latchEl = document.querySelector('.key[aria-pressed]');
+const keep = new Set([...document.querySelectorAll('.key'), safeEl]);
+const moveOf = el => moves.find(m => m.el === el);
+let fuse = [];
+board.fire = () => {
+  board.firing = true;
+  board.dial.prime();
+  snd.launch();
+  board.dial.run();
+  fuse.forEach(clearTimeout);
+  fuse = [setTimeout(() => {
+    const t = sweep('shuffle', keep);
+    fuse.push(
+      setTimeout(() => moveOf(safeEl).reset(), t + 250),
+      setTimeout(() => { moveOf(latchEl).reset(); board.firing = false; board.dial.prime(); }, t + 520),
+    );
+  }, reduce ? 0 : 440)];
+};
 
 // Hidden, the loop pauses, so any scrape stops with it.
 document.addEventListener('visibilitychange', () => { if (document.hidden) snd.hush(); });
