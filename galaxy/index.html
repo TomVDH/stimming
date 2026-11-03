@@ -37,6 +37,11 @@
       <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
+      <div class="choices" id="streak" role="group" aria-label="Disk streaks">
+        <button class="chip" type="button" data-value="0" aria-pressed="false">Sharp</button>
+        <button class="chip" type="button" data-value="0.3" aria-pressed="true">Streak</button>
+        <button class="chip" type="button" data-value="0.9" aria-pressed="false">Smear</button>
+      </div>
       <div class="actions" id="ctl">
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
         <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
@@ -65,7 +70,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, choices } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -236,6 +241,7 @@ async function hasWebGPU() {
 function noWebGPU() {
   panel.querySelector('.fail').hidden = false;
   document.getElementById('ctl').hidden = true;
+  document.getElementById('streak').hidden = true;
   document.getElementById('snd').hidden = true;
 }
 
@@ -260,8 +266,8 @@ const EPS2 = 0.2, EPSW2 = 1, KILL2 = 70 * 70, DEAD = -1e9;
 // Flings: an opening burst, then a steady stream while held.
 const INIT = 2000, RATE = 12000, MAXF = Math.round(N / 14);
 const STEP = 1 / 120;
-// Streaks fade with this time constant, in seconds.
-const EXPOSE = 0.25;
+// The disk's streaks fade with this time constant, in seconds.
+let expose = 0.3;
 // Arms wind as log spirals, about 19 degrees of pitch.
 const WIND = 2.9;
 const FOV = 36, EL = (32 * Math.PI) / 180;
@@ -648,9 +654,11 @@ async function start() {
   const disk = new THREE.Sprite(diskMat);
   disk.count = DISK_N * TRAIL;
   disk.frustumCulled = false;
-  disk.renderOrder = 4;
   disk.visible = false;
-  scene.add(disk);
+  // The disk draws in its own pass, so only it streaks.
+  const diskScene = new THREE.Scene();
+  diskScene.background = new THREE.Color(0x000000);
+  diskScene.add(disk);
 
   // Jets: while the hole feeds hard, it fires along its axis.
   // The jet streams out steadily and fades toward its tip.
@@ -674,11 +682,13 @@ async function start() {
   const renderPipeline = new THREE.RenderPipeline(renderer);
   const scenePass = pass(scene, camera);
   const sceneColor = scenePass.getTextureNode('output');
-  // Long exposure: the last frame fades under this one, so motion streaks.
+  // Long exposure on the disk: its last frame fades under this one.
+  const diskPass = pass(diskScene, camera);
   const uDamp = uniform(0);
-  const exposure = TSL.nodeObject(new Exposure(TSL.convertToTexture(sceneColor), uDamp));
-  const glow = bloom(exposure, 0.45, 0.35, 0.4);
-  renderPipeline.outputNode = exposure.add(glow);
+  const exposure = TSL.nodeObject(new Exposure(diskPass.getTextureNode('output'), uDamp));
+  const lit = sceneColor.add(vec4(exposure.rgb, 0));
+  const glow = bloom(lit, 0.45, 0.35, 0.4);
+  renderPipeline.outputNode = lit.add(glow);
 
   /* ---------- camera: tilted toward the plane, drifting slowly ---------- */
   let dist = 30, az = 0;
@@ -1105,6 +1115,7 @@ async function start() {
     else if (e.key === 'c' || e.key === 'C') { if (!e.repeat) clearAll(); }
     else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) resetAll(); }
   });
+  choices(document.getElementById('streak'), v => { expose = Number(v); });
   document.getElementById('clear').addEventListener('click', clearAll);
   document.getElementById('reset').addEventListener('click', resetAll);
 
@@ -1116,7 +1127,7 @@ async function start() {
   syncWells();
   // The hole's sprites compile now, drawn at zero size.
   shadow.visible = disk.visible = jets.visible = true;
-  await scenePass.compileAsync(renderer);
+  await Promise.all([scenePass.compileAsync(renderer), diskPass.compileAsync(renderer)]);
   shadow.visible = disk.visible = jets.visible = false;
 
   canvas.setAttribute('aria-hidden', 'true');
@@ -1200,7 +1211,7 @@ async function start() {
     placeCamera(now / 1000);
     updateHole(dt);
     // Reduced motion draws each frame alone, with no streaks.
-    uDamp.value = reduce ? 0 : Math.exp(-dt / EXPOSE);
+    uDamp.value = reduce || !expose ? 0 : Math.exp(-dt / expose);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
       if (!w) { dot.s.visible = false; continue; }
