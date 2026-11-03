@@ -482,11 +482,7 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
         <a class="toy" id="tesseract" href="tesseract/index.html">
           <span class="obj">
             <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-              <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-                <path id="tess-links" stroke="oklch(0.72 0.12 240)" stroke-width="2.5"/>
-                <path id="tess-outer" stroke="oklch(0.86 0.1 190)" stroke-width="3.5"/>
-                <path id="tess-inner" stroke="oklch(0.62 0.16 290)" stroke-width="3"/>
-              </g>
+              <g id="tess-edges" fill="none" stroke-linecap="round"></g>
             </svg>
           </span>
           <span class="name">Tesseract</span>
@@ -1145,21 +1141,40 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     },
   };
 
-  const tess = { t: 0 }, tOuter = $('tess-outer'), tInner = $('tess-inner'), tLinks = $('tess-links');
-  const square = h => [[64 - h, 64 - h], [64 + h, 64 - h], [64 + h, 64 + h], [64 - h, 64 + h]];
-  const closed = s => 'M' + s.map(p => p.join(' ')).join('L') + 'Z';
-  // Outer and inner cubes trade places, like a turn through W.
+  // Tesseract: sixteen corners of a 4D cube, turned in the XW plane and projected twice.
+  const TV = Array.from({ length: 16 }, (_, k) => [0, 1, 2, 3].map(b => ((k >> b) & 1 ? 1 : -1)));
+  const TE = [];
+  TV.forEach((_, a) => [1, 2, 4, 8].forEach(bit => { if (!(a & bit)) TE.push([a, a | bit]); }));
+  const tLines = TE.map(() => el('line', {}, $('tess-edges')));
+  const tess = { a: 0.35 };
   const drawTess = () => {
-    const a = square(36 - 18 * tess.t), b = square(18 + 18 * tess.t);
-    tOuter.setAttribute('d', closed(a));
-    tInner.setAttribute('d', closed(b));
-    tLinks.setAttribute('d', a.map((p, k) => `M${p[0]} ${p[1]}L${b[k][0]} ${b[k][1]}`).join(''));
+    const c = Math.cos(tess.a), sn = Math.sin(tess.a), tilt = 0.5;
+    const P = TV.map(([x, y, z, w]) => {
+      // Turn in XW, then a fixed tilt in YZ shows the depth.
+      const x2 = x * c - w * sn, w2 = x * sn + w * c;
+      const y2 = y * Math.cos(tilt) - z * Math.sin(tilt), z2 = y * Math.sin(tilt) + z * Math.cos(tilt);
+      const k4 = 1 / (2.4 - w2), X = x2 * k4, Y = y2 * k4, Z = z2 * k4;
+      const k3 = 1 / (2.8 - Z * 0.9);
+      return [64 + X * k3 * 98, 64 + Y * k3 * 98, w2];
+    });
+    TE.forEach(([a, b], i) => {
+      const [x1, y1, wa] = P[a], [x2, y2, wb] = P[b], w = (wa + wb) / 2;
+      // Near edges in W run cyan and thick; far ones magenta and thin.
+      const t = (w + 1.42) / 2.84;
+      const l = tLines[i];
+      l.setAttribute('x1', x1.toFixed(1)); l.setAttribute('y1', y1.toFixed(1));
+      l.setAttribute('x2', x2.toFixed(1)); l.setAttribute('y2', y2.toFixed(1));
+      l.setAttribute('stroke', `oklch(${(0.66 + 0.2 * t).toFixed(3)} ${(0.2 - 0.06 * t).toFixed(3)} ${Math.round(340 - 145 * t)})`);
+      l.setAttribute('stroke-width', (1.6 + 2.6 * t).toFixed(2));
+    });
   };
   drawTess();
   toys.tesseract = {
-    play: () => loop({ yoyo: true, repeatDelay: 0.2 }).to(tess, { t: 1, duration: 1.1, ease: 'power2.inOut', onUpdate: drawTess }),
-    rest: () => gsap.to(tess, { t: 0, duration: 0.4, onUpdate: drawTess, overwrite: true }),
+    // A quarter turn in XW lands every corner on another, so the loop is seamless.
+    play: () => gsap.timeline({ repeat: -1 }).to(tess, { a: '+=' + Math.PI / 2, duration: 2.6, ease: 'none', onUpdate: drawTess }),
+    rest: () => gsap.to(tess, { a: 0.35 + Math.round((tess.a - 0.35) / (Math.PI / 2)) * (Math.PI / 2), duration: 0.4, onUpdate: drawTess, overwrite: true }),
   };
+
 
   const blade = $('soap-blade'), curl = $('soap-curl'), soapSlice = $('soap-slice');
   toys.soap = {
