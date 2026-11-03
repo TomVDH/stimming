@@ -1,0 +1,1536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Neon sign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the wall stage at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --wall: oklch(0.15 0.02 30);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The wall is 16:9, 4:5 on phones, and dark in both themes. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--wall);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  cursor: crosshair;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark stage the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+/* Each swatch shows its gas colour. */
+.sw { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Neon sign</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A brick wall at night. Drag to bend a neon tube; click a tube to switch it off or on. Arrow keys draw, Shift with arrows moves the pen, Enter finishes, Space switches the nearest tube, Backspace undoes, C clears, 1 to 5 pick the gas.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Neon sign needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" type="button" data-gas="0" aria-pressed="false" aria-keyshortcuts="1"><span class="sw" style="--c: oklch(0.64 0.23 31)" aria-hidden="true"></span>Red</button>
+        <button class="chip" type="button" data-gas="1" aria-pressed="true" aria-keyshortcuts="2"><span class="sw" style="--c: oklch(0.58 0.2 264)" aria-hidden="true"></span>Blue</button>
+        <button class="chip" type="button" data-gas="2" aria-pressed="false" aria-keyshortcuts="3"><span class="sw" style="--c: oklch(0.68 0.25 352)" aria-hidden="true"></span>Pink</button>
+        <button class="chip" type="button" data-gas="3" aria-pressed="false" aria-keyshortcuts="4"><span class="sw" style="--c: oklch(0.82 0.22 146)" aria-hidden="true"></span>Green</button>
+        <button class="chip" type="button" data-gas="4" aria-pressed="false" aria-keyshortcuts="5"><span class="sw" style="--c: oklch(0.95 0.03 85)" aria-hidden="true"></span>White</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>draw a tube</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a tube</dt><dd>switch</dd></div>
+        <div class="fine"><dt><kbd>Backspace</kbd></dt><dd>undo</dd></div>
+        <div class="fine"><dt><kbd>C</kbd></dt><dd>clear</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const scale = (c, k) => c.map(v => v * k);
+// Each gas is normalised to full strength, then balanced by eye.
+const GAS = [
+  [0.63, 0.26, 30, 1.0],
+  [0.52, 0.24, 266, 1.35],
+  [0.64, 0.29, 350, 1.0],
+  [0.84, 0.26, 148, 0.62],
+  [0.95, 0.035, 80, 0.55],
+].map(([L, C, h, k]) => { const c = linear(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
+const WALL = {
+  uB1: linear(0.43, 0.1, 33),
+  uB2: linear(0.37, 0.07, 42),
+  uB3: linear(0.5, 0.11, 52),
+  uB4: linear(0.29, 0.03, 30),
+  uMortar: linear(0.64, 0.014, 75),
+};
+const AMB = scale(linear(0.62, 0.07, 255), 0.22), KEY = scale(linear(0.9, 0.03, 245), 0.7);
+// The night light comes from the upper left; y points up.
+const LAMB = (() => { const v = [-0.35, 0.6, 0.72], n = Math.hypot(...v); return v.map(x => x / n); })();
+const LD = (() => { const n = Math.hypot(LAMB[0], LAMB[1]); return [LAMB[0] / n, LAMB[1] / n]; })();
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.neon.sound', MAXV = 16, MAXHUM = 6, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, humBus = null, askedAt = -1e9, voices = 0, restT = 0;
+const hums = new Map();
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.07 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    humBus = ac.createGain();
+    humBus.gain.value = 1;
+    humBus.connect(out);
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+  humSync();
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+// Once every tube is dark and still, the context sleeps.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !draft && !tubes.some(t => t.lvl > 0) && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'Backspace', 'c', 'C', '1', '2', '3', '4', '5']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place on the wall.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len, done) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => { fl.disconnect(); ng.disconnect(); done?.(); };
+  src.start(t, Math.random() * 0.9, len);
+}
+// A sine that falls in pitch and dies away.
+function tone(a, dst, t, f0, f1, g, tau, done) {
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + tau * 3);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, tau);
+  o.connect(og).connect(dst);
+  o.onended = () => { og.disconnect(); done?.(); };
+  o.start(t);
+  o.stop(t + tau * 7 + 0.01);
+}
+// Runs a group of nodes as one voice that frees its bus at the end.
+function voice(a, x, build) {
+  if (voices >= MAXV) return;
+  const dst = bus(a, x);
+  let left = 0;
+  voices++;
+  const done = () => { if (--left === 0) { voices--; dst.disconnect(); } };
+  build(dst, () => { left++; return done; });
+}
+// Ionising gas spits: a few tiny bright ticks.
+function crackle(t, k) {
+  const a = live();
+  if (!a || a.currentTime < t.crackAt) return;
+  t.crackAt = a.currentTime + 0.025;
+  const t0 = a.currentTime + LEAD, g = level() * k * jit(0.15);
+  voice(a, t.pan, (dst, hold) => {
+    for (let n = 2 + ((Math.random() * 4) | 0), i = 0; i < n; i++) {
+      burst(a, dst, t0 + Math.random() * 0.04, 'bandpass', rand(2200, 6000), 0.8, 0.13 * g * jit(0.3), rand(0.0012, 0.004), 0.03, hold());
+    }
+  });
+}
+// The transformer takes the load with a soft thump.
+function thump(t) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, g = level() * jit(0.08);
+  voice(a, t.pan, (dst, hold) => {
+    tone(a, dst, t0, 92 * jit(0.04), 70, 0.07 * g, 0.05, hold());
+    burst(a, dst, t0, 'lowpass', 900, 0.7, 0.03 * g, 0.02, 0.1, hold());
+  });
+}
+// A switch snaps: a bright tick over a small body.
+function click(x) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, g = level() * jit(0.08);
+  voice(a, x, (dst, hold) => {
+    burst(a, dst, t0, 'bandpass', 3300 * jit(0.05), 1.3, 0.2 * g, 0.0022, 0.02, hold());
+    tone(a, dst, t0, 1500 * jit(0.04), 780, 0.04 * g, 0.004, hold());
+    tone(a, dst, t0 + 0.004, 130 * jit(0.05), 90, 0.06 * g, 0.022, hold());
+  });
+}
+// The buzz: a mains sawtooth through a low filter, one per lit tube.
+function humVoice(t) {
+  const a = ac, o = a.createOscillator(), o2 = a.createOscillator(), g2 = a.createGain();
+  const lp = a.createBiquadFilter(), g = a.createGain(), dst = bus(a, t.pan);
+  dst.disconnect();
+  dst.connect(humBus);
+  o.type = 'sawtooth';
+  o.frequency.value = 120 * jit(0.012);
+  o2.type = 'square';
+  o2.frequency.value = o.frequency.value * 2 * jit(0.003);
+  g2.gain.value = 0.22;
+  lp.type = 'lowpass';
+  lp.frequency.value = 480 * jit(0.08);
+  lp.Q.value = 2.4;
+  g.gain.value = 0;
+  o.connect(lp);
+  o2.connect(g2).connect(lp);
+  lp.connect(g).connect(dst);
+  o.start();
+  o2.start();
+  return { o, o2, g2, lp, g, dst, last: 0, hot: -1 };
+}
+function humStop(v) {
+  const t = ac.currentTime;
+  v.g.gain.cancelScheduledValues(t);
+  v.g.gain.setTargetAtTime(0, t, 0.02);
+  v.o.stop(t + 0.25);
+  v.o2.stop(t + 0.25);
+  v.o.onended = () => [v.o2, v.g2, v.lp, v.g, v.dst].forEach(n => n.disconnect());
+}
+// Voices follow the most recent lit tubes; the sum is capped.
+function humSync() {
+  if (!ac || !humBus) return;
+  const lit = [];
+  for (let i = tubes.length - 1; i >= 0 && lit.length < MAXHUM; i--) if (tubes[i].lvl > 0.01 || tubes[i].seq) lit.push(tubes[i]);
+  for (const [t, v] of hums) if (!lit.includes(t)) { humStop(v); hums.delete(t); }
+  for (const t of lit) if (!hums.has(t)) hums.set(t, humVoice(t));
+  const now = ac.currentTime, n = hums.size;
+  humBus.gain.setTargetAtTime(Math.min(1, 1.6 / Math.sqrt(Math.max(1, n))), now, 0.1);
+  for (const [t, v] of hums) {
+    const hot = t.seq ? 1 : 0;
+    const g = 0.022 * Math.sqrt(clamp(t.len / 420, 0.4, 1.6)) * t.show * (hot ? 2.6 : 1);
+    if (Math.abs(g - v.last) > 0.0008) { v.g.gain.setTargetAtTime(g, now, 0.006); v.last = g; }
+    if (hot !== v.hot) { v.lp.frequency.setTargetAtTime(hot ? 2600 : 480, now, hot ? 0.01 : 0.15); v.hot = hot; }
+  }
+}
+function sfx(t, kind, v) {
+  if (kind === 1) crackle(t, 0.4 + 0.6 * v);
+  else if (kind === 2) { crackle(t, 1); thump(t); }
+  else if (kind === 3) click(t.pan);
+}
+
+/* ---------- tubes: control points in stage units, centred ---------- */
+const MAXT = 64;
+let W = 0, H = 0, S = 1, R = 7, ROW = 60, pr = 1, gasNow = 1;
+const tubes = [];
+let draft = null, staticDirty = true, draftDirty = false;
+
+// Centripetal Catmull-Rom through the control points, sampled densely.
+function catmull(P, step) {
+  const n = P.length, out = [];
+  if (n < 2) return n ? [P[0][0], P[0][1]] : out;
+  const ext = (a, b) => [2 * a[0] - b[0], 2 * a[1] - b[1]];
+  const k = (a, b) => Math.max(1e-3, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = i ? P[i - 1] : ext(P[0], P[1]), p1 = P[i], p2 = P[i + 1], p3 = i + 2 < n ? P[i + 2] : ext(P[n - 1], P[n - 2]);
+    const t1 = k(p0, p1), t2 = t1 + k(p1, p2), t3 = t2 + k(p2, p3);
+    const m = Math.max(1, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / step));
+    for (let j = 0; j < m; j++) {
+      const t = t1 + (t2 - t1) * (j / m);
+      for (let c = 0; c < 2; c++) {
+        const a1 = ((t1 - t) * p0[c] + t * p1[c]) / t1;
+        const a2 = ((t2 - t) * p1[c] + (t - t1) * p2[c]) / (t2 - t1);
+        const a3 = ((t3 - t) * p2[c] + (t - t2) * p3[c]) / (t3 - t2);
+        const b1 = ((t2 - t) * a1 + t * a2) / t2;
+        const b2 = ((t3 - t) * a2 + (t - t1) * a3) / (t3 - t1);
+        out.push(((t2 - t) * b1 + (t - t1) * b2) / (t2 - t1));
+      }
+    }
+  }
+  out.push(P[n - 1][0], P[n - 1][1]);
+  return out;
+}
+// Even spacing along the curve.
+function resample(d, step) {
+  const out = [d[0], d[1]];
+  let need = step, px = d[0], py = d[1];
+  for (let i = 2; i < d.length; i += 2) {
+    const x = d[i], y = d[i + 1];
+    let seg = Math.hypot(x - px, y - py);
+    while (seg >= need) {
+      const f = need / seg;
+      px += (x - px) * f;
+      py += (y - py) * f;
+      out.push(px, py);
+      seg -= need;
+      need = step;
+    }
+    need -= seg;
+    px = x;
+    py = y;
+  }
+  const n = out.length, lx = d[d.length - 2], ly = d[d.length - 1];
+  if (Math.hypot(lx - out[n - 2], ly - out[n - 1]) > step * 0.3) out.push(lx, ly);
+  else if (n > 2) { out[n - 2] = lx; out[n - 1] = ly; }
+  return out;
+}
+// Glass bends no tighter than a set radius; sharp turns relax.
+function relax(d, rho, step) {
+  const n = d.length / 2, cmin = Math.cos(Math.min(1.2, step / rho));
+  for (let it = 0; it < 48; it++) {
+    let moved = false;
+    for (let i = 1; i < n - 1; i++) {
+      const ax = d[2 * i] - d[2 * i - 2], ay = d[2 * i + 1] - d[2 * i - 1];
+      const bx = d[2 * i + 2] - d[2 * i], by = d[2 * i + 3] - d[2 * i + 1];
+      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+      if (!la || !lb || (ax * bx + ay * by) / (la * lb) >= cmin) continue;
+      d[2 * i] = lerp(d[2 * i], (d[2 * i - 2] + d[2 * i + 2]) / 2, 0.5);
+      d[2 * i + 1] = lerp(d[2 * i + 1], (d[2 * i - 1] + d[2 * i + 3]) / 2, 0.5);
+      moved = true;
+    }
+    if (!moved) break;
+  }
+}
+// Builds a tube's strip, clips and hit points from control points in CSS pixels.
+const FPV = 8;
+function shape(ctrl, id) {
+  const rp = R * pr, step = Math.max(1, 0.5 * rp);
+  const d = resample(catmull(ctrl.map(([x, y]) => [x * pr, y * pr]), step * 0.5), step);
+  relax(d, 1.3 * rp, step);
+  const n = d.length / 2, arc = new Float32Array(n);
+  for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.hypot(d[2 * i] - d[2 * i - 2], d[2 * i + 1] - d[2 * i - 1]);
+  const L = arc[n - 1];
+  const tan = i => {
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+    const x = d[2 * b] - d[2 * a], y = d[2 * b + 1] - d[2 * a + 1], l = Math.hypot(x, y) || 1;
+    return [x / l, y / l];
+  };
+  // The strip is wider than the glass, so sleeves and edges fit.
+  const E = 1.32 + 2 / rp, v = new Float32Array((n + 2) * 2 * FPV);
+  let o = 0;
+  const put = (x, y, tx, ty, al) => {
+    for (const s of [E, -E]) {
+      v[o++] = x - ty * s * rp; v[o++] = y + tx * s * rp; v[o++] = s; v[o++] = al;
+      v[o++] = tx; v[o++] = ty; v[o++] = id; v[o++] = L;
+    }
+  };
+  const ta = tan(0), tb = tan(n - 1), ex = 1.4 * rp;
+  put(d[0] - ta[0] * ex, d[1] - ta[1] * ex, ta[0], ta[1], -ex);
+  for (let i = 0; i < n; i++) { const t = tan(i); put(d[2 * i], d[2 * i + 1], t[0], t[1], arc[i]); }
+  put(d[2 * n - 2] + tb[0] * ex, d[2 * n - 1] + tb[1] * ex, tb[0], tb[1], L + ex);
+  // Standoff clips sit at even spacing, clear of the electrodes.
+  const at = [];
+  if (L < 11 * rp) at.push(L / 2);
+  else for (let k = Math.max(2, Math.round(L / (16 * rp)) + 1), i = 0; i < k; i++) at.push(4.8 * rp + (L - 9.6 * rp) * (i / (k - 1)));
+  const c = new Float32Array(at.length * 5);
+  let j = 0;
+  at.forEach((a, k) => {
+    while (j < n - 2 && arc[j + 1] < a) j++;
+    const f = clamp((a - arc[j]) / Math.max(1e-6, arc[j + 1] - arc[j])), t = tan(j);
+    c.set([lerp(d[2 * j], d[2 * j + 2], f), lerp(d[2 * j + 1], d[2 * j + 3], f), t[0], t[1], id], k * 5);
+  });
+  const hit = new Float32Array(d.length);
+  for (let i = 0; i < d.length; i++) hit[i] = d[i] / pr;
+  let cx = 0;
+  for (let i = 0; i < n; i++) cx += d[2 * i];
+  return { v, c, hit, len: L / pr, pan: (cx / n / pr / W) * 2 - 1 };
+}
+const toCss = ([u, v]) => [W / 2 + u * S, H / 2 + v * S];
+function makeTube(ctrlUnits, gas, on) {
+  return {
+    ctrl: ctrlUnits, gas, on, lvl: on ? 1 : 0, goal: on ? 1 : 0, show: on ? 1 : 0, seq: null, si: 0,
+    f1: rand(2.2, 4.5), f2: rand(6, 11), ph: rand(0, TAU), crackAt: 0, v: null, c: null, hit: null, len: 0, pan: 0, first: 0, count: 0,
+  };
+}
+function shapeTube(t, id) {
+  Object.assign(t, shape(t.ctrl.map(toCss), id));
+}
+// A small cursive squiggle greets the first view.
+function squiggle() {
+  const pts = [];
+  for (let i = 0; i <= 72; i++) {
+    const u = i / 72, w = TAU * 2.25 * u + 0.35;
+    pts.push([-0.21 + 0.42 * u - 0.052 * Math.sin(w), -0.03 - 0.07 * Math.cos(w) + 0.03 * u]);
+  }
+  return pts;
+}
+
+/* ---------- strike, flicker and switch ---------- */
+function strike(t, now, quick) {
+  t.on = true;
+  const seq = [];
+  let at = now + (quick ? 0.03 : 0.16);
+  const n = reduce ? 1 : quick ? 1 + ((Math.random() * 2) | 0) : 3 + ((Math.random() * 3) | 0);
+  for (let k = 0; k < n; k++) {
+    const v = rand(0.3, 0.9) * (0.45 + (0.55 * (k + 1)) / n);
+    seq.push([at, v, 1]);
+    at += rand(0.025, 0.08);
+    seq.push([at, rand(0, 0.08), 0]);
+    at += rand(0.05, 0.22) * (reduce ? 0.4 : 1);
+  }
+  seq.push([at, 1, 2]);
+  if (!reduce) seq.push([at + rand(0.05, 0.09), 0.8, 0], [at + 0.13, 1, 0]);
+  t.seq = seq;
+  t.si = 0;
+}
+function cut(t, now) {
+  t.on = false;
+  t.seq = reduce ? [[now, 0, 3]] : [[now, 0.32, 3], [now + 0.04, 0.9, 0], [now + 0.075, 0, 0]];
+  t.si = 0;
+}
+function toggle(t) {
+  const now = performance.now() / 1000;
+  if (t.on) cut(t, now);
+  else strike(t, now, true);
+  wake();
+}
+
+/* ---------- WebGL ---------- */
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const NOISE = `
+float hash12(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 hash22(vec2 p) { vec3 q = fract(p.xyx * vec3(0.1031, 0.103, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.07 + 13.7; a *= 0.5; }
+  return s / 0.9375;
+}`;
+// The wall's material, baked once per size: albedo, gloss, normal, height, shade.
+const WALLGEN_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform float uRow;
+uniform vec3 uB1, uB2, uB3, uB4, uMortar, uLamb;
+layout(location = 0) out vec4 oA;
+layout(location = 1) out vec4 oB;
+${NOISE}
+const float BW = 3.15, MORT = 0.12, DEPTH = 0.14;
+void cell(vec2 p, out vec2 id, out vec2 q) {
+  float row = floor(p.y);
+  float x = p.x + mod(row, 2.0) * 0.5 * BW + (hash12(vec2(row, 3.7)) - 0.5) * 0.24;
+  float col = floor(x / BW);
+  id = vec2(col, row);
+  q = vec2(x - (col + 0.5) * BW, p.y - row - 0.5);
+}
+float sdBox(vec2 q, vec2 b, float r) { vec2 d = abs(q) - b + r; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r; }
+// Brick faces stand near one; the mortar sinks near zero.
+float height(vec2 p, out vec2 id, out float face) {
+  vec2 q;
+  cell(p, id, q);
+  vec2 rn = hash22(id), rm = hash22(id + 17.3);
+  vec2 hb = vec2(BW * 0.5, 0.5) - MORT * 0.5 - vec2(rn.x * 0.035, rn.y * 0.02);
+  float d = sdBox(q - (rm - 0.5) * vec2(0.04, 0.025), hb, 0.04 + 0.07 * rn.y);
+  // Chips and worn corners roughen the outline.
+  d += (fbm(p * 4.3 + rn * 31.0) - 0.5) * 0.11;
+  face = smoothstep(0.0, 0.1, -d);
+  float tilt = dot(q, (rm - 0.5) * vec2(0.03, 0.09));
+  float surf = (fbm(p * 7.5 + rm * 23.0) - 0.5) * 0.16;
+  float pit = smoothstep(0.66, 0.92, vnoise(p * 19.0 + rn * 7.0));
+  float hb2 = 0.78 + 0.16 * rn.x + tilt + surf - 0.25 * pit;
+  float hm = 0.1 + (vnoise(p * 30.0) - 0.5) * 0.08 + (vnoise(p * 9.0) - 0.5) * 0.06;
+  return mix(hm, hb2, face);
+}
+void main() {
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRow + vec2(0.37, 0.21);
+  float e = 1.0 / uRow, face, f2;
+  vec2 id, id2;
+  float h = height(p, id, face);
+  float hx = height(p + vec2(e, 0.0), id2, f2), hy = height(p + vec2(0.0, e), id2, f2);
+  vec3 n = normalize(vec3(-(hx - h) / e * DEPTH, -(hy - h) / e * DEPTH, 1.0));
+  // The night light skims the relief; brick edges shade the joints.
+  vec2 ld = normalize(uLamb.xy);
+  float tanE = uLamb.z / length(uLamb.xy), occ = 0.0;
+  for (int i = 1; i <= 4; i++) {
+    float t = float(i * i) * 0.012;
+    occ = max(occ, (height(p + ld * t, id2, f2) - h) * DEPTH - t * tanE);
+  }
+  float vis = 1.0 - smoothstep(0.0, 0.03, occ) * 0.75;
+  float k = hash12(id + 11.3), k2 = hash12(id + 5.1);
+  vec3 b = mix(uB1, uB2, smoothstep(0.15, 0.7, k));
+  b = mix(b, uB3, step(0.86, k));
+  b = mix(b, uB4, step(0.92, k2));
+  b *= 0.72 + 0.56 * fbm(p * 2.6 + id * 1.7);
+  // Fired clay shows darker flecks.
+  b *= 1.0 - 0.35 * smoothstep(0.6, 0.85, vnoise(p * 23.0 + 4.0));
+  vec3 alb = mix(uMortar * (0.72 + 0.5 * vnoise(p * 17.0)), b, face);
+  // Grime gathers in broad patches and runs down in streaks.
+  alb *= mix(0.55, 1.05, fbm(p * 0.21 + 3.0)) * (0.85 + 0.25 * vnoise(vec2(p.x * 1.7, p.y * 0.08)));
+  float gloss = face * smoothstep(0.5, 0.72, fbm(p * 0.33 + 41.0)) * 0.9 + 0.05;
+  float ao = mix(0.5, 1.0, smoothstep(0.05, 0.75, h));
+  oA = vec4(alb, gloss);
+  oB = vec4(n.xy * 0.5 + 0.5, clamp(h, 0.0, 1.0), vis * ao);
+}`;
+// Shared lighting: the wall under night light and neon, then the camera.
+const LIGHT = `
+uniform sampler2D uGA, uGB, uGlow, uHalo;
+uniform vec2 uRes, uShOff;
+uniform vec3 uAmb, uLamb, uKey;
+uniform float uLift, uDepth, uWallK, uBloom, uHaloK, uPr, uExpo;
+${NOISE}
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+vec3 wallAt(vec2 fc) {
+  ivec2 top = ivec2(uRes) - 1, ip = clamp(ivec2(fc), ivec2(0), top);
+  vec4 A = texelFetch(uGA, ip, 0), B = texelFetch(uGB, ip, 0);
+  vec3 n = vec3(B.xy * 2.0 - 1.0, 0.0);
+  n.z = sqrt(max(0.0, 1.0 - dot(n.xy, n.xy)));
+  vec2 uv = (vec2(ip) + 0.5) / uRes;
+  // Night light falls from above; tubes and clips shade it.
+  float shade = clamp(texture(uHalo, uv + uShOff).a * 1.4, 0.0, 1.0);
+  vec3 col = uAmb * A.rgb * B.w * (0.55 + 0.6 * uv.y) * (0.25 + 0.95 * max(dot(n, uLamb), 0.0)) * (1.0 - 0.7 * shade);
+  // The glow gives the neon's strength; its slope points to the tubes.
+  vec2 tx = 1.0 / vec2(textureSize(uGlow, 0));
+  vec3 g = texture(uGlow, uv).rgb;
+  vec2 grad = vec2(
+    luma(texture(uGlow, uv + vec2(tx.x, 0.0)).rgb) - luma(texture(uGlow, uv - vec2(tx.x, 0.0)).rgb),
+    luma(texture(uGlow, uv + vec2(0.0, tx.y)).rgb) - luma(texture(uGlow, uv - vec2(0.0, tx.y)).rgb)) / (2.0 * tx * uRes);
+  vec2 gl = grad / (luma(g) + 1e-5);
+  float m = length(gl);
+  vec2 dir = gl / max(m, 1e-6);
+  vec3 L = normalize(vec3(dir, max(uLift * m, 0.05)));
+  float relief = clamp(max(dot(n, L), 0.0) / max(L.z, 0.2), 0.0, 3.0);
+  // Brick edges between the point and the tube cast short shadows.
+  float tanE = L.z / max(length(L.xy), 1e-3), occ = 0.0;
+  for (int i = 1; i <= 4; i++) {
+    float d = float(i * i) * 1.6 * uPr;
+    float hs = texelFetch(uGB, clamp(ip + ivec2(dir * d), ivec2(0), top), 0).z;
+    occ = max(occ, (hs - B.z) * uDepth - d * tanE);
+  }
+  float lit = 1.0 - 0.85 * smoothstep(0.0, 1.5 * uPr, occ);
+  vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+  float spec = A.a * pow(max(dot(n, H), 0.0), 36.0) * 0.6;
+  col += g * uWallK * (A.rgb * mix(1.0, relief, 0.9) * mix(0.7, 1.0, B.w) + spec) * lit;
+  return col;
+}
+// Polished metal mirrors the neon around it.
+vec3 metal(vec3 n, vec2 uv, float base) {
+  vec3 R = reflect(vec3(0.0, 0.0, -1.0), n);
+  vec3 env = texture(uGlow, uv + R.xy * 0.03).rgb * uWallK + texture(uHalo, uv + R.xy * 0.01).rgb * uWallK * 0.5;
+  float sp = pow(max(dot(R, uLamb), 0.0), 40.0);
+  return base * (env * 0.9 + uAmb * (0.3 + 0.7 * max(dot(n, uLamb), 0.0))) + uKey * sp * base * 1.5;
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+// Bloom, vignette, a soft shoulder, then display colour.
+vec3 finish(vec3 c, vec2 fc) {
+  vec2 uv = fc / uRes, v = uv - 0.5;
+  c += texture(uGlow, uv).rgb * uBloom + texture(uHalo, uv).rgb * uHaloK;
+  c *= 1.0 - 0.55 * dot(v, v);
+  c = 1.0 - exp(-c * uExpo);
+  return srgb(c) + (hash12(fc + 3.1) - 0.5) / 255.0;
+}`;
+const FINAL_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+${LIGHT}
+out vec4 o;
+void main() { o = vec4(finish(wallAt(gl_FragCoord.xy), gl_FragCoord.xy), 1.0); }`;
+const TUBE_VS = `#version 300 es
+layout(location = 0) in vec4 aA;
+layout(location = 1) in vec4 aB;
+uniform vec2 uView;
+out vec2 vSA;
+out vec2 vT;
+flat out int vId;
+flat out float vLen;
+void main() {
+  vSA = aA.zw;
+  vT = aB.xy;
+  vId = int(aB.z + 0.5);
+  vLen = aB.w;
+  gl_Position = vec4(aA.x / uView.x * 2.0 - 1.0, 1.0 - aA.y / uView.y * 2.0, 0.0, 1.0);
+}`;
+// Mode 0 shades glass, metal and gas; mode 1 writes light and cover only.
+const TUBE_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+${LIGHT}
+uniform vec4 uGas[${MAXT}];
+uniform float uR, uRpx, uMode, uEmK;
+in vec2 vSA;
+in vec2 vT;
+flat in int vId;
+flat in float vLen;
+out vec4 o;
+void main() {
+  float s = vSA.x, a = vSA.y;
+  float ck = clamp(vLen / (14.0 * uR), 0.45, 1.0);
+  float e0 = a / uR, e1 = (vLen - a) / uR, e = min(e0, e1);
+  float outward = e0 < e1 ? -1.0 : 1.0;
+  float cap0 = 0.35 * ck, cap1 = 2.7 * ck;
+  bool sleeve = e > cap0 && e < cap1;
+  vec2 q = vec2(max(-e, 0.0), s);
+  float rr = length(q), rad = sleeve ? 1.2 : 1.0, aw = 1.0 / uRpx;
+  float cov = 1.0 - smoothstep(rad - aw, rad + aw, rr);
+  if (cov <= 0.002) discard;
+  vec4 gas = uGas[vId];
+  // Gas glows past a short dark space beyond each sleeve.
+  float act = gas.w * smoothstep(cap1, cap1 + 1.6 * ck, e);
+  const float inner = 0.84;
+  float chord = sqrt(max(0.0, inner * inner - s * s)) / inner;
+  vec3 em = gas.rgb * (0.35 + 1.4 * chord) + mix(gas.rgb, vec3(1.0), 0.7) * pow(chord, 6.0) * 2.6;
+  em *= act * uEmK;
+  if (uMode > 0.5) { o = vec4(em, cov); return; }
+  // The cross-section gives a screen-space normal; y points up.
+  vec2 t = normalize(vec2(vT.x, -vT.y)), pp = vec2(-t.y, -t.x) * -1.0;
+  pp = vec2(-vT.y, -vT.x);
+  pp = normalize(pp);
+  vec2 nl = vec2(q.x * outward, s) / rad;
+  float nz = sqrt(max(0.0, 1.0 - dot(nl, nl)));
+  vec3 N = normalize(vec3(t * nl.x + pp * nl.y, nz));
+  vec2 fc = gl_FragCoord.xy, uv = fc / uRes;
+  vec3 R = reflect(vec3(0.0, 0.0, -1.0), N);
+  vec3 col;
+  if (sleeve) {
+    // Electrode sleeves are brushed steel with two rolled grooves.
+    float gr = exp(-pow((e - cap0 - 0.55 * ck) * 7.0, 2.0)) + exp(-pow((e - cap1 + 0.45 * ck) * 7.0, 2.0));
+    col = metal(N, uv, 0.42) * (1.0 - 0.6 * gr) * (0.45 + 0.55 * nz);
+  } else {
+    float F = 0.04 + 0.96 * pow(1.0 - nz, 5.0);
+    vec3 bg = wallAt(fc - N.xy * uR * 0.85);
+    vec3 tint = mix(vec3(1.0), gas.rgb / max(max(gas.r, gas.g), max(gas.b, 1e-3)), 0.25);
+    // The glass wall, seen edge-on, darkens and tints the rim.
+    float band = smoothstep(inner - 0.08, inner + 0.05, rr);
+    col = bg * tint * (1.0 - F) * mix(0.92, 0.5, band);
+    vec3 env = texture(uGlow, uv + R.xy * 0.04).rgb * uWallK * 0.5 + uAmb * 0.6;
+    float k1 = pow(max(dot(R, uLamb), 0.0), 140.0), k2 = pow(max(dot(R, normalize(uLamb * vec3(-1.0, -0.7, 1.0))), 0.0), 26.0);
+    col += F * env * 1.3 + uKey * (k1 * 1.6 + k2 * 0.1);
+    col += smoothstep(0.05, 0.0, abs(rr - inner)) * (env * 0.25 + uKey * 0.05);
+    // An electrode wire shows through the clear tip.
+    if (e < cap0 && e > -0.6 && abs(s) < 0.3) col = mix(col, metal(vec3(pp * s * 2.0, 0.8), uv, 0.25), 0.75);
+    col += em + gas.rgb * act * uEmK * 0.3 * band;
+  }
+  o = vec4(finish(col, fc), cov);
+}`;
+const CLIP_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aC;
+uniform vec2 uView;
+uniform float uR, uSize;
+out vec2 vL;
+flat out vec2 vT;
+void main() {
+  vec2 t = aC.zw, p = vec2(-t.y, t.x);
+  vL = aCorner * uSize;
+  vT = t;
+  vec2 pos = aC.xy + (t * vL.x + p * vL.y) * uR;
+  gl_Position = vec4(pos.x / uView.x * 2.0 - 1.0, 1.0 - pos.y / uView.y * 2.0, 0.0, 1.0);
+}`;
+// Mode 0 is the standoff base, 1 the strap, 2 shadow cover, 3 the pen ring.
+const CLIP_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+${LIGHT}
+uniform float uRpx, uMode;
+uniform vec4 uPen;
+in vec2 vL;
+flat in vec2 vT;
+out vec4 o;
+void main() {
+  vec2 l = vL, fc = gl_FragCoord.xy, uv = fc / uRes;
+  float aw = 1.0 / uRpx;
+  vec2 t = normalize(vec2(vT.x, -vT.y)), pp = normalize(vec2(-vT.y, -vT.x));
+  if (uMode > 2.5) {
+    float ring = (1.0 - smoothstep(0.07, 0.07 + aw * 1.5, abs(length(l) - 1.7))) * uPen.w;
+    if (ring <= 0.002) discard;
+    o = vec4(finish(uPen.rgb * 2.2 + wallAt(fc), fc), ring);
+    return;
+  }
+  float d = length(l), rb = 1.5;
+  float cov = 1.0 - smoothstep(rb - aw, rb + aw, d);
+  if (uMode > 1.5) { o = vec4(0.0, 0.0, 0.0, cov * 0.8); return; }
+  if (uMode < 0.5) {
+    if (cov <= 0.002) discard;
+    // A shallow dome with a rolled rim.
+    float rim = smoothstep(0.72, 0.96, d / rb);
+    vec2 nl = l / rb * mix(0.3, 1.5, rim);
+    vec3 n = normalize(vec3(t * nl.x + pp * nl.y, 1.0));
+    o = vec4(finish(metal(n, uv, 0.3) * (1.0 - 0.35 * rim), fc), cov);
+    return;
+  }
+  // The strap wraps over the tube, then drops to the base.
+  float hw = 0.22, ay = abs(l.y);
+  float c2 = (1.0 - smoothstep(hw - aw, hw + aw, abs(l.x))) * (1.0 - smoothstep(1.42 - aw, 1.42 + aw, ay));
+  if (c2 <= 0.002) discard;
+  float y = l.y / 1.07;
+  vec3 nl = ay < 1.07 ? vec3(0.0, y, sqrt(max(0.0, 1.0 - y * y))) : vec3(0.0, sign(l.y) * 0.85, 0.5);
+  nl.x = l.x / hw * 0.45;
+  vec3 n = normalize(vec3(t * nl.x + pp * nl.y, nl.z));
+  o = vec4(finish(metal(n, uv, 0.62), fc), c2);
+}`;
+// Dual-filter blur: each step halves the size, then steps back up.
+const DOWN_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uSrc;
+uniform vec2 uTx, uDst;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  vec4 s = texture(uSrc, uv) * 4.0;
+  s += texture(uSrc, uv - uTx) + texture(uSrc, uv + uTx);
+  s += texture(uSrc, uv + vec2(uTx.x, -uTx.y)) + texture(uSrc, uv - vec2(uTx.x, -uTx.y));
+  o = s / 8.0;
+}`;
+const UP_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uSrc, uBase;
+uniform vec2 uTx, uDst;
+uniform float uW, uK;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst, h = uTx;
+  vec4 s = texture(uSrc, uv + vec2(-2.0 * h.x, 0.0)) + texture(uSrc, uv + vec2(2.0 * h.x, 0.0));
+  s += texture(uSrc, uv + vec2(0.0, -2.0 * h.y)) + texture(uSrc, uv + vec2(0.0, 2.0 * h.y));
+  s += 2.0 * (texture(uSrc, uv + h) + texture(uSrc, uv - h) + texture(uSrc, uv + vec2(h.x, -h.y)) + texture(uSrc, uv + vec2(-h.x, h.y)));
+  o = s / 12.0 * uK + texture(uBase, uv) * uW;
+}`;
+
+const LIGHT_U = ['uGA', 'uGB', 'uGlow', 'uHalo', 'uRes', 'uShOff', 'uAmb', 'uLamb', 'uKey', 'uLift', 'uDepth', 'uWallK', 'uBloom', 'uHaloK', 'uPr', 'uExpo'];
+const LOOK = { uWallK: 0.9, uBloom: 0.045, uHaloK: 0.16, uExpo: 1.0, emit: 3.0 };
+const LEVELS = 6, UPW = [0.55, 0.75, 0.9, 1.0, 1.0, 1.0];
+
+let gl = null, P = null, emptyVao = null, quadBuf = null, ready = false;
+let tubeVao = null, tubeBuf = null, tubeCap = 0, draftVao = null, draftBuf = null, draftCap = 0;
+let clipVao = null, clipBuf = null, clipCap = 0, draftClipVao = null, draftClipBuf = null, draftClipCap = 0;
+let penVao = null, penBuf = null, nClips = 0, nDraftClips = 0;
+let gbuf = null, E = null, D = [], U = [];
+const gasU = new Float32Array(MAXT * 4);
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+function texParams(min) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, min);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+function target(w, h, fmt, filter, extra) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  texParams(filter);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  let tex2 = null;
+  if (extra) {
+    tex2 = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex2);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+    texParams(filter);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, tex2, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  }
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, tex2, fb, w, h };
+}
+function freeTarget(t) {
+  if (!t) return;
+  gl.deleteTexture(t.tex);
+  if (t.tex2) gl.deleteTexture(t.tex2);
+  gl.deleteFramebuffer(t.fb);
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float targets unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    wall: compile(TRI, WALLGEN_FS), final: compile(TRI, FINAL_FS), tube: compile(TUBE_VS, TUBE_FS),
+    clip: compile(CLIP_VS, CLIP_FS), down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  uni(P.wall, ['uRes', 'uRow', 'uLamb', ...Object.keys(WALL)]);
+  uni(P.final, LIGHT_U);
+  uni(P.tube, [...LIGHT_U, 'uView', 'uGas', 'uR', 'uRpx', 'uMode', 'uEmK']);
+  uni(P.clip, [...LIGHT_U, 'uView', 'uR', 'uSize', 'uRpx', 'uMode', 'uPen']);
+  uni(P.down, ['uSrc', 'uTx', 'uDst']);
+  uni(P.up, ['uSrc', 'uBase', 'uTx', 'uDst', 'uW', 'uK']);
+  gl.useProgram(P.wall.p);
+  for (const k in WALL) gl.uniform3fv(P.wall.u[k], WALL[k]);
+  gl.uniform3fv(P.wall.u.uLamb, LAMB);
+  for (const q of [P.final, P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    ['uGA', 'uGB', 'uGlow', 'uHalo'].forEach((n, i) => gl.uniform1i(q.u[n], i));
+    gl.uniform3fv(q.u.uAmb, AMB);
+    gl.uniform3fv(q.u.uLamb, LAMB);
+    gl.uniform3fv(q.u.uKey, KEY);
+    for (const k of ['uWallK', 'uBloom', 'uHaloK', 'uExpo']) gl.uniform1f(q.u[k], LOOK[k]);
+  }
+  gl.useProgram(P.tube.p);
+  gl.uniform1f(P.tube.u.uEmK, LOOK.emit);
+  gl.useProgram(P.down.p);
+  gl.uniform1i(P.down.u.uSrc, 4);
+  gl.useProgram(P.up.p);
+  gl.uniform1i(P.up.u.uSrc, 4);
+  gl.uniform1i(P.up.u.uBase, 5);
+
+  emptyVao = gl.createVertexArray();
+  quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const strip = buf => {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, FPV * 4, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, FPV * 4, 16);
+    return vao;
+  };
+  const inst = buf => {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 20, 0);
+    gl.vertexAttribDivisor(1, 1);
+    return vao;
+  };
+  tubeBuf = gl.createBuffer();
+  draftBuf = gl.createBuffer();
+  clipBuf = gl.createBuffer();
+  draftClipBuf = gl.createBuffer();
+  penBuf = gl.createBuffer();
+  tubeVao = strip(tubeBuf);
+  draftVao = strip(draftBuf);
+  clipVao = inst(clipBuf);
+  draftClipVao = inst(draftClipBuf);
+  penVao = inst(penBuf);
+  gl.bindVertexArray(null);
+  tubeCap = draftCap = clipCap = draftClipCap = 0;
+  staticDirty = true;
+  draftDirty = !!draft;
+}
+// Grows a buffer when needed, then writes the data.
+function upload(buf, data, cap) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  if (data.byteLength > cap) {
+    cap = Math.max(data.byteLength * 1.5, 4096) | 0;
+    gl.bufferData(gl.ARRAY_BUFFER, cap, gl.DYNAMIC_DRAW);
+  }
+  if (data.byteLength) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+  return cap;
+}
+function rebuildStatic() {
+  staticDirty = false;
+  let nv = 0, nc = 0;
+  for (const t of tubes) { nv += t.v.length; nc += t.c.length; }
+  const vv = new Float32Array(nv), cc = new Float32Array(nc);
+  let o = 0, k = 0;
+  for (const t of tubes) {
+    t.first = o / FPV;
+    t.count = t.v.length / FPV;
+    vv.set(t.v, o);
+    cc.set(t.c, k);
+    o += t.v.length;
+    k += t.c.length;
+  }
+  tubeCap = upload(tubeBuf, vv, tubeCap);
+  clipCap = upload(clipBuf, cc, clipCap);
+  nClips = nc / 5;
+}
+function rebuildDraft() {
+  draftDirty = false;
+  if (!draft || draft.ctrl.length < 2) { nDraftClips = 0; if (draft) draft.count = 0; return; }
+  Object.assign(draft, shape(draft.ctrl, tubes.length));
+  draft.count = draft.v.length / FPV;
+  draftCap = upload(draftBuf, draft.v, draftCap);
+  draftClipCap = upload(draftClipBuf, draft.c, draftClipCap);
+  nDraftClips = draft.c.length / 5;
+}
+// A fresh canvas gets a fresh wall and fresh glow targets.
+function allocTargets() {
+  [gbuf, E, ...D, ...U].forEach(freeTarget);
+  const cw = canvas.width, ch = canvas.height;
+  gbuf = target(cw, ch, gl.RGBA8, gl.NEAREST, true);
+  E = target(Math.ceil(cw / 2), Math.ceil(ch / 2), gl.RGBA16F, gl.LINEAR);
+  D = [];
+  U = [];
+  for (let i = 0, w = E.w, h = E.h; i < LEVELS; i++) {
+    w = Math.max(1, Math.ceil(w / 2));
+    h = Math.max(1, Math.ceil(h / 2));
+    D.push(target(w, h, gl.RGBA16F, gl.LINEAR));
+    U.push(i < LEVELS - 1 ? target(w, h, gl.RGBA16F, gl.LINEAR) : null);
+  }
+  U.pop();
+  // The wall bakes once per size.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, gbuf.fb);
+  gl.viewport(0, 0, cw, ch);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.wall.p);
+  gl.uniform2f(P.wall.u.uRes, cw, ch);
+  gl.uniform1f(P.wall.u.uRow, ROW * pr);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  [gbuf.tex, gbuf.tex2, U[0].tex, D[0].tex].forEach((tx, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, tx); });
+  gl.activeTexture(gl.TEXTURE0);
+  const rp = R * pr;
+  for (const q of [P.final, P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    gl.uniform2f(q.u.uRes, cw, ch);
+    gl.uniform2f(q.u.uShOff, (LD[0] * 2.9 * rp) / cw, (LD[1] * 2.9 * rp) / ch);
+    gl.uniform1f(q.u.uLift, 3 * rp);
+    gl.uniform1f(q.u.uDepth, 0.14 * ROW * pr);
+    gl.uniform1f(q.u.uPr, pr);
+  }
+  for (const q of [P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    gl.uniform2f(q.u.uView, cw, ch);
+    gl.uniform1f(q.u.uR, rp);
+  }
+}
+
+/* ---------- drawing ---------- */
+function drawTubes(mode, rpx) {
+  gl.useProgram(P.tube.p);
+  gl.uniform1f(P.tube.u.uMode, mode);
+  gl.uniform1f(P.tube.u.uRpx, rpx);
+  gl.uniform4fv(P.tube.u.uGas, gasU);
+  gl.bindVertexArray(tubeVao);
+  for (const t of tubes) gl.drawArrays(gl.TRIANGLE_STRIP, t.first, t.count);
+  if (draft && draft.count) {
+    gl.bindVertexArray(draftVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, draft.count);
+  }
+}
+function drawClips(mode, rpx, size) {
+  gl.useProgram(P.clip.p);
+  gl.uniform1f(P.clip.u.uMode, mode);
+  gl.uniform1f(P.clip.u.uRpx, rpx);
+  gl.uniform1f(P.clip.u.uSize, size);
+  if (nClips) { gl.bindVertexArray(clipVao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nClips); }
+  if (draft && nDraftClips) { gl.bindVertexArray(draftClipVao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nDraftClips); }
+}
+function render() {
+  const cw = canvas.width, ch = canvas.height, rp = R * pr;
+  for (let i = 0; i < tubes.length; i++) {
+    const t = tubes[i], g = GAS[t.gas];
+    gasU.set([g[0], g[1], g[2], t.show], i * 4);
+  }
+  if (draft) gasU.set([...GAS[draft.gas], 0], tubes.length * 4);
+
+  // Light and cover go to a half-size target.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, E.fb);
+  gl.viewport(0, 0, E.w, E.h);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  drawTubes(1, rp / 2);
+  drawClips(2, rp / 2, 1.6);
+  gl.disable(gl.BLEND);
+
+  // The glow pyramid: down to a blur, then back up with weights.
+  gl.bindVertexArray(emptyVao);
+  gl.activeTexture(gl.TEXTURE4);
+  gl.useProgram(P.down.p);
+  let src = E;
+  for (const d of D) {
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, d.fb);
+    gl.viewport(0, 0, d.w, d.h);
+    gl.uniform2f(P.down.u.uTx, 1 / src.w, 1 / src.h);
+    gl.uniform2f(P.down.u.uDst, d.w, d.h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    src = d;
+  }
+  gl.useProgram(P.up.p);
+  src = D[LEVELS - 1];
+  for (let i = LEVELS - 2; i >= 0; i--) {
+    const dst = U[i];
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, D[i].tex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0, 0, dst.w, dst.h);
+    gl.uniform2f(P.up.u.uTx, 0.5 / src.w, 0.5 / src.h);
+    gl.uniform2f(P.up.u.uDst, dst.w, dst.h);
+    gl.uniform1f(P.up.u.uW, UPW[i]);
+    gl.uniform1f(P.up.u.uK, i === LEVELS - 2 ? UPW[LEVELS - 1] : 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    src = dst;
+  }
+  gl.activeTexture(gl.TEXTURE0);
+
+  // The wall, then clips, glass and straps over it.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.useProgram(P.final.p);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  drawClips(0, rp, 1.6);
+  drawTubes(0, rp);
+  drawClips(1, rp, 1.6);
+  if (pen.a > 0.01) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, penBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([pen.x * pr, pen.y * pr, 1, 0, 0]), gl.DYNAMIC_DRAW);
+    gl.useProgram(P.clip.p);
+    const g = GAS[gasNow];
+    gl.uniform4f(P.clip.u.uPen, g[0], g[1], g[2], pen.a);
+    gl.uniform1f(P.clip.u.uMode, 3);
+    gl.uniform1f(P.clip.u.uRpx, rp);
+    gl.uniform1f(P.clip.u.uSize, 2.2);
+    gl.bindVertexArray(penVao);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 1);
+  }
+  gl.disable(gl.BLEND);
+}
+
+/* ---------- one loop: alive while tubes glow, at rest when dark ---------- */
+let raf = 0, last = 0, visible = false, onScreen = false, lowDpr = false, slow = 0, frames = 0, drawn = 0;
+const pen = { x: 0, y: 0, a: 0, seen: -1e9, keys: new Set(), shift: false };
+function update(now, dt) {
+  let busy = !!draft, lit = false;
+  for (const t of tubes) {
+    if (t.seq) {
+      while (t.si < t.seq.length && t.seq[t.si][0] <= now) {
+        const [, v, s] = t.seq[t.si++];
+        t.goal = v;
+        if (s) sfx(t, s, v);
+      }
+      if (t.si >= t.seq.length) { t.seq = null; t.goal = t.on ? 1 : 0; }
+      busy = true;
+    }
+    // Gas lights fast and fades with a short afterglow.
+    const tau = t.goal > t.lvl ? 0.01 : t.on || t.seq ? 0.018 : 0.11;
+    t.lvl = t.goal + (t.lvl - t.goal) * Math.exp(-dt / tau);
+    if (Math.abs(t.lvl - t.goal) < 1e-3) t.lvl = t.goal;
+    else busy = true;
+    let sh = 1;
+    if (t.lvl > 0) {
+      lit = true;
+      // The hum makes the gas shimmer a little.
+      if (!reduce) {
+        sh = 1 + 0.022 * Math.sin(TAU * t.f1 * now + t.ph) + 0.012 * Math.sin(TAU * t.f2 * now + 2 * t.ph) + 0.008 * Math.sin(TAU * 23.7 * now + t.ph);
+        // Now and then a tube dips for a blink.
+        if (t.on && !t.seq && Math.random() < dt / 16) { t.seq = [[now, 0.84, 0], [now + rand(0.03, 0.07), 1, 0]]; t.si = 0; }
+      }
+    }
+    t.show = t.lvl * sh;
+  }
+  if (lit && !reduce) busy = true;
+  // Held arrows steer the keyboard pen.
+  if (pen.keys.size) {
+    let dx = 0, dy = 0;
+    if (pen.keys.has('ArrowLeft')) dx--;
+    if (pen.keys.has('ArrowRight')) dx++;
+    if (pen.keys.has('ArrowUp')) dy--;
+    if (pen.keys.has('ArrowDown')) dy++;
+    const l = Math.hypot(dx, dy) || 1, v = 0.32 * S * dt;
+    pen.x = clamp(pen.x + (dx / l) * v, 2 * R, W - 2 * R);
+    pen.y = clamp(pen.y + (dy / l) * v, 2 * R, H - 2 * R);
+    pen.seen = now;
+    if (!pen.shift) {
+      if (!draft) beginDraft(pen.x, pen.y, 'kb');
+      if (draft.pid === 'kb') addPoint(pen.x, pen.y);
+    }
+    busy = true;
+  }
+  const want = now - pen.seen < 2.5 ? 1 : 0;
+  pen.a += (want - pen.a) * (1 - Math.exp(-dt / (want ? 0.05 : 0.4)));
+  if (Math.abs(pen.a - want) > 0.005) busy = true;
+  else pen.a = want;
+  if (pen.a > 0) busy = busy || want === 1;
+  return busy;
+}
+function frame(ms) {
+  raf = 0;
+  if (!visible) return;
+  const now = ms / 1000, raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 20);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr && ++frames > 30) {
+    slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { lowDpr = true; fit(); }
+  }
+  const busy = update(now, dt);
+  if (staticDirty) rebuildStatic();
+  if (draftDirty) rebuildDraft();
+  render();
+  humSync();
+  if (++drawn === 2) canvas.classList.add('on');
+  if (busy || drawn < 3) raf = requestAnimationFrame(frame);
+  else rest();
+}
+function wake() {
+  if (!visible || raf) return;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+// Off screen or hidden, the wall pauses and goes quiet.
+function sync() {
+  const v = ready && onScreen && !document.hidden;
+  if (v === visible) return;
+  visible = v;
+  if (v) {
+    wake();
+    if (soundOn && ac && ac.state !== 'running') audio();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+
+/* ---------- layout ---------- */
+function layout(w, h) {
+  const first = !W;
+  W = w;
+  H = h;
+  S = (w + h) / 2;
+  R = clamp(0.0078 * S, 4.5, 9.5);
+  ROW = clamp(S / 13.5, 24, 80);
+  if (first) { pen.x = w / 2; pen.y = h * 0.68; }
+  pen.x = clamp(pen.x, 0, w);
+  pen.y = clamp(pen.y, 0, h);
+}
+function reshape() {
+  tubes.forEach(shapeTube);
+  staticDirty = true;
+  draftDirty = !!draft;
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const cw = Math.round(w * p), ch = Math.round(h * p);
+  const sized = w !== W || h !== H;
+  if (sized) layout(w, h);
+  if (canvas.width === cw && canvas.height === ch && !sized) return;
+  canvas.width = cw;
+  canvas.height = ch;
+  pr = cw / w;
+  reshape();
+  if (!ready) return;
+  allocTargets();
+  // A resized canvas is blank until drawn, so draw now.
+  if (visible) { rebuildStatic(); rebuildDraft(); render(); wake(); }
+}
+
+/* ---------- input: drag draws, a click switches ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+function beginDraft(x, y, pid) {
+  draft = { raw: [x, y], ctrl: [[x, y]], arc: 0, pid, gas: gasNow, count: 0, v: null, c: null };
+  draftDirty = true;
+  wake();
+}
+// Control points follow the raw path at a steady spacing.
+function addPoint(x, y) {
+  const r = draft.raw, n = r.length, step = Math.hypot(x - r[n - 2], y - r[n - 1]);
+  if (step < 1.5) return;
+  r.push(x, y);
+  draft.arc += step;
+  const sp = Math.max(10, 2.6 * R), c = draft.ctrl;
+  let tail = c[c.length - 1];
+  if (c.length > 1 && !tail.fixed) c.pop();
+  tail = c[c.length - 1];
+  if (Math.hypot(x - tail[0], y - tail[1]) >= sp) {
+    const p = [x, y];
+    p.fixed = true;
+    c.push(p);
+    // Light smoothing settles the newest joints.
+    for (let i = Math.max(1, c.length - 4); i < c.length - 1; i++) {
+      c[i][0] = lerp(c[i][0], (c[i - 1][0] + c[i + 1][0]) / 2, 0.3);
+      c[i][1] = lerp(c[i][1], (c[i - 1][1] + c[i + 1][1]) / 2, 0.3);
+    }
+  } else c.push([x, y]);
+  draftDirty = true;
+  // A very long stroke strikes and a new tube carries on.
+  if (draft.arc > 3.2 * S) {
+    const pid = draft.pid;
+    endDraft();
+    beginDraft(x, y, pid);
+  }
+}
+function endDraft() {
+  const d = draft;
+  draft = null;
+  draftDirty = false;
+  if (!d || d.arc < 5 * R || d.ctrl.length < 2) return false;
+  if (tubes.length >= MAXT - 1) tubes.shift();
+  const t = makeTube(d.ctrl.map(([x, y]) => [(x - W / 2) / S, (y - H / 2) / S]), d.gas, false);
+  tubes.push(t);
+  tubes.forEach(shapeTube);
+  staticDirty = true;
+  strike(t, performance.now() / 1000, false);
+  wake();
+  return true;
+}
+function cancelDraft() {
+  draft = null;
+  draftDirty = false;
+  wake();
+}
+// The nearest tube within reach, or null.
+function pick(x, y, reach) {
+  let best = null, bd = reach * reach;
+  for (const t of tubes) {
+    const h = t.hit;
+    for (let i = 0; i < h.length; i += 2) {
+      const d = (h[i] - x) ** 2 + (h[i + 1] - y) ** 2;
+      if (d < bd) { bd = d; best = t; }
+    }
+  }
+  return best;
+}
+let press = null;
+panel.addEventListener('pointerdown', e => {
+  if (!ready || press || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  if (draft && draft.pid === 'kb') endDraft();
+  press = { id: e.pointerId, x, y, t: e.timeStamp, touch: e.pointerType !== 'mouse', moved: false };
+  pen.seen = -1e9;
+});
+panel.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const list = e.getCoalescedEvents?.() || [];
+  for (const c of list.length ? list : [e]) {
+    const [x, y] = local(c);
+    if (!press.moved) {
+      if (Math.hypot(x - press.x, y - press.y) < (press.touch ? 9 : 5)) continue;
+      press.moved = true;
+      beginDraft(press.x, press.y, press.id);
+    }
+    if (draft && draft.pid === press.id) addPoint(x, y);
+    else if (draft === null && press.moved) beginDraft(x, y, press.id);
+  }
+});
+function lift(e) {
+  if (!press || e.pointerId !== press.id) return;
+  const p = press;
+  press = null;
+  if (e.type === 'pointercancel') { if (draft && draft.pid === p.id) cancelDraft(); return; }
+  if (p.moved) { if (draft && draft.pid === p.id) endDraft(); return; }
+  const t = pick(p.x, p.y, R * 1.3 + (p.touch ? 12 : 5));
+  if (t) toggle(t);
+}
+panel.addEventListener('pointerup', lift);
+panel.addEventListener('pointercancel', lift);
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+function undo() {
+  if (draft) { cancelDraft(); return; }
+  const t = tubes.pop();
+  if (!t) return;
+  if (t.lvl > 0) click(t.pan);
+  staticDirty = true;
+  humSync();
+  wake();
+}
+function clearAll() {
+  if (draft) cancelDraft();
+  if (!tubes.length) return;
+  if (tubes.some(t => t.lvl > 0)) click(0);
+  tubes.length = 0;
+  staticDirty = true;
+  humSync();
+  wake();
+}
+const chips = [...document.querySelectorAll('[data-gas]')];
+function setGas(i) {
+  gasNow = i;
+  chips.forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.gas === i)));
+  if (draft) draft.gas = i;
+  wake();
+}
+chips.forEach(c => c.addEventListener('click', () => setGas(+c.dataset.gas)));
+const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const onButton = e.target.closest?.('button, a');
+  if (ARROWS.has(e.key)) {
+    e.preventDefault();
+    if (!ready) return;
+    pen.shift = e.shiftKey;
+    // Shift lifts the pen; a keyboard stroke ends first.
+    if (e.shiftKey && draft && draft.pid === 'kb') endDraft();
+    pen.keys.add(e.key);
+    pen.seen = performance.now() / 1000;
+    wake();
+  } else if (e.key === 'Enter') {
+    if (onButton) return;
+    e.preventDefault();
+    if (draft && draft.pid === 'kb') endDraft();
+  } else if (e.key === ' ') {
+    if (onButton) return;
+    e.preventDefault();
+    if (e.repeat || !ready) return;
+    pen.seen = performance.now() / 1000;
+    const t = pick(pen.x, pen.y, 1e6);
+    if (t) toggle(t);
+    else wake();
+  } else if (e.key === 'Backspace') {
+    e.preventDefault();
+    if (!e.repeat) undo();
+  } else if (e.key === 'c' || e.key === 'C') {
+    if (!e.repeat) clearAll();
+  } else if (e.key >= '1' && e.key <= '5') {
+    setGas(+e.key - 1);
+  }
+});
+addEventListener('keyup', e => {
+  pen.keys.delete(e.key);
+  if (e.key === 'Shift') pen.shift = false;
+});
+addEventListener('blur', () => pen.keys.clear());
+
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start: shaders link while the wall is laid out ---------- */
+function failed() {
+  ready = false;
+  sync();
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  chips.forEach(c => { c.disabled = true; });
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    allocTargets();
+    ready = true;
+    sync();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!W) {
+    layout(1160, 652);
+    canvas.width = 1160;
+    canvas.height = 652;
+  }
+  tubes.push(makeTube(squiggle(), 2, true));
+  reshape();
+  try { await initGL(); } catch (err) { console.error(err); failed(); return; }
+  allocTargets();
+  ready = true;
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
