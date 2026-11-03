@@ -35,7 +35,7 @@
   <header data-shell></header>
   <main>
     <div class="stage stage--pop field" id="field">
-      <canvas tabindex="0" role="application" aria-label="Bubble wrap. Arrow keys choose a bubble; Space or Enter pops it."></canvas>
+      <canvas tabindex="0" role="application" aria-label="Bubble wrap. Arrow keys choose a bubble; Space or Enter pops it. Hold Space on a big bubble to burst it."></canvas>
     </div>
     <div class="bar bar--below">
       <div class="actions">
@@ -45,8 +45,8 @@
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>pop</dd></div>
         <div><dt>Drag</dt><dd>sweep</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>choose</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>pop</dd></div>
+        <div><dt>Hold</dt><dd>burst a big one</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd> <kbd>Space</kbd></dt><dd>choose, pop</dd></div>
       </dl>
     </div>
   </main>
@@ -168,9 +168,19 @@ function hexSD(x, y, a) {
   px -= clamp(px, -0.577350269 * a, 0.577350269 * a); py -= a;
   return Math.hypot(px, py) * Math.sign(py);
 }
-// The same outline as points, then crinkled by a few sine waves.
+// A few sine waves crinkle an outline, as in crumpled film.
+function wobble(pts, rnd) {
+  const ph = [rnd() * TAU, rnd() * TAU, rnd() * TAU];
+  return pts.map(([x, y]) => {
+    const t = Math.atan2(y, x);
+    const m = 0.975 + 0.026 * Math.sin(5 * t + ph[0]) + 0.017 * Math.sin(11 * t + ph[1]) + 0.011 * Math.sin(19 * t + ph[2]);
+    return [x * m, y * m];
+  });
+}
+const outline = pts => { const p = new Path2D(); pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y))); p.closePath(); return p; };
+// The hex outline as points, then crinkled.
 function crinkle(r, cr, rnd) {
-  const pts = [], d = cr / Math.sin(PI / 3), c0 = r - d, ph = [rnd() * TAU, rnd() * TAU, rnd() * TAU];
+  const pts = [], d = cr / Math.sin(PI / 3), c0 = r - d;
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * TAU - PI / 2, a2 = a + PI / 3;
     for (let j = 0; j <= 4; j++) {
@@ -181,11 +191,62 @@ function crinkle(r, cr, rnd) {
     const nx = c0 * Math.cos(a2) + cr * Math.cos(a2 - PI / 6), ny = c0 * Math.sin(a2) + cr * Math.sin(a2 - PI / 6);
     for (let j = 1; j < 9; j++) pts.push([lerp(ex, nx, j / 9), lerp(ey, ny, j / 9)]);
   }
-  return pts.map(([x, y]) => {
-    const t = Math.atan2(y, x);
-    const m = 0.975 + 0.026 * Math.sin(5 * t + ph[0]) + 0.017 * Math.sin(11 * t + ph[1]) + 0.011 * Math.sin(19 * t + ph[2]);
-    return [x * m, y * m];
-  });
+  return wobble(pts, rnd);
+}
+
+/* ---------- jumbo: seven cells merged into one big dome ---------- */
+// The seven-hex flower outline, each edge moved in by t.
+// Outer corners and notches both move 2t / sqrt 3 along their bisectors.
+function flowerPts(R, t) {
+  const m = (2 * t) / SQ3, pts = [];
+  for (let k = 0; k < 6; k++) {
+    const a = (k * PI) / 3, cx = SQ3 * R * Math.cos(a), cy = SQ3 * R * Math.sin(a), n = a + PI / 6;
+    for (const b of [a - PI / 6, n]) pts.push([cx + (R - m) * Math.cos(b), cy + (R - m) * Math.sin(b)]);
+    pts.push([(2 * R - m) * Math.cos(n), (2 * R - m) * Math.sin(n)]);
+  }
+  return pts;
+}
+// Every third point is a notch; notches take a wider fillet.
+// A notch fillet of cr + gap keeps the gap even round a neighbour's corner.
+function roundPath(pts, cr, notch) {
+  const p = new Path2D(), n = pts.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const s = mid(pts[n - 1], pts[0]);
+  p.moveTo(s[0], s[1]);
+  for (let k = 0; k < n; k++) {
+    const a = pts[k], m = mid(a, pts[(k + 1) % n]);
+    p.arcTo(a[0], a[1], m[0], m[1], k % 3 === 2 ? notch : cr);
+  }
+  p.closePath();
+  return p;
+}
+// Signed distance to a polygon, negative inside.
+function polySD(px, py, v) {
+  let d = Infinity, s = 1;
+  for (let i = 0, j = v.length - 1; i < v.length; j = i++) {
+    const ex = v[j][0] - v[i][0], ey = v[j][1] - v[i][1], wx = px - v[i][0], wy = py - v[i][1];
+    const h = clamp((wx * ex + wy * ey) / (ex * ex + ey * ey)), bx = wx - ex * h, by = wy - ey * h;
+    d = Math.min(d, bx * bx + by * by);
+    const c1 = py >= v[i][1], c2 = py < v[j][1], c3 = ex * wy > ey * wx;
+    if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) s = -s;
+  }
+  return s * Math.sqrt(d);
+}
+// Two box passes each way soften the creases in a height map.
+function blur(h, n, rad) {
+  const t = new Float32Array(h.length), w = 2 * rad + 1;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < n; y++) {
+      const o = y * n;
+      let s = 0;
+      for (let x = -rad; x <= rad; x++) s += h[o + clamp(x, 0, n - 1)];
+      for (let x = 0; x < n; x++) { t[o + x] = s / w; s += h[o + Math.min(x + rad + 1, n - 1)] - h[o + Math.max(x - rad, 0)]; }
+    }
+    for (let x = 0; x < n; x++) {
+      let s = 0;
+      for (let y = -rad; y <= rad; y++) s += t[clamp(y, 0, n - 1) * n + x];
+      for (let y = 0; y < n; y++) { h[y * n + x] = s / w; s += t[Math.min(y + rad + 1, n - 1) * n + x] - t[Math.max(y - rad, 0) * n + x]; }
+    }
+  }
 }
 
 /* ---------- sprites: one atlas per palette, drawn once per size ---------- */
@@ -195,6 +256,9 @@ const atl = [document.createElement('canvas'), document.createElement('canvas')]
 const NB = 32, SHADE_SLOT = NB * 2, SLOTS = NB * 2 + 1;
 const pals = [[MINT, CYAN, BLUE], null], paints = [[], []];
 let SP = 0, SB = 0, sR = 0, ox = [], oy = [], spriteTimer = 0, cur = 0, LT = null;
+// Jumbo sprites: one canvas per colour bin, glossy then popped.
+const JF = 2.7, jat = [new Map(), new Map()];
+let SPJ = 0, SBJ = 0, LTJ = null, jPath = null, jShade = null;
 let lite = false, focusC = '#000', bgC = '#000';
 
 const gapOf = R => clamp(R * 0.075, 2.5, 4);
@@ -208,11 +272,10 @@ const box = (x, y, cx, cy, hw, hh, e) => clamp((hw - Math.abs(x - cx)) / e + 0.5
 // Every colour bin shares these terms; only the paint changes.
 function lightTerms(r0, cr, k) {
   const n = SP, m = n * n, ap = (r0 * SQ3) / 2 - cr;
-  const hgt = new Float32Array(m), dep = new Float32Array(m);
-  const T = { a: new Float32Array(m), u: new Float32Array(m), ao: new Float32Array(m), w: new Float32Array(m), s: new Float32Array(m), t: new Float32Array(m) };
+  const hgt = new Float32Array(m), dep = new Float32Array(m), A = new Float32Array(m);
   for (let py = 0, i = 0; py < n; py++) for (let px = 0; px < n; px++, i++) {
     const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k, sd = hexSD(x, y, ap) - cr;
-    T.a[i] = clamp(0.5 - sd * k);
+    A[i] = clamp(0.5 - sd * k);
     if (sd >= 0) continue;
     // A smooth hexagon norm has no creases from the corners.
     const q0 = Math.abs(x), q1 = Math.abs(0.5 * x + 0.866025404 * y), q2 = Math.abs(0.5 * x - 0.866025404 * y);
@@ -222,6 +285,35 @@ function lightTerms(r0, cr, k) {
     hgt[i] = k * r0 * (0.27 * (1 - (1 - e) ** 2.4) + 0.12 * Math.max(0, 1 - rho));
     dep[i] = -sd / r0;
   }
+  return litTerms(A, hgt, dep, n);
+}
+// Jumbo bump terms: the mask comes from the rounded path.
+// Depth comes from the sharp outline; a blur smooths its creases.
+function jumboTerms(r0, k) {
+  const n = SPJ, m = n * n, pts = flowerPts(R, gapOf(R) / 2), RJ = 2.5 * R;
+  const mc = document.createElement('canvas');
+  mc.width = mc.height = n;
+  const mx = mc.getContext('2d');
+  mx.setTransform(k, 0, 0, k, n / 2, n / 2);
+  mx.fill(jPath);
+  const md = mx.getImageData(0, 0, n, n).data;
+  const hgt = new Float32Array(m), dep = new Float32Array(m), A = new Float32Array(m);
+  for (let py = 0, i = 0; py < n; py++) for (let px = 0; px < n; px++, i++) {
+    A[i] = md[i * 4 + 3] / 255;
+    if (!A[i]) continue;
+    const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k, d = Math.max(0, -polySD(x, y, pts));
+    // Steep walls like the small cells, under a broad high crown.
+    const e = clamp(d / (0.6 * r0)), rho = (x * x + y * y) / (RJ * RJ);
+    hgt[i] = k * r0 * (0.3 * (1 - (1 - e) ** 2.4) + 0.65 * Math.max(0, 1 - rho));
+    dep[i] = d / r0;
+  }
+  blur(hgt, n, Math.max(1, Math.round(0.12 * r0 * k)));
+  return litTerms(A, hgt, dep, n);
+}
+// Light from a height map: normals, paint ramp, shade, gloss and glow.
+function litTerms(a, hgt, dep, n) {
+  const m = n * n;
+  const T = { a, u: new Float32Array(m), ao: new Float32Array(m), w: new Float32Array(m), s: new Float32Array(m), t: new Float32Array(m) };
   for (let py = 1; py < n - 1; py++) for (let px = 1, i = py * n + 1; px < n - 1; px++, i++) {
     if (!T.a[i]) continue;
     const [nx, ny, nz] = norm3((hgt[i - 1] - hgt[i + 1]) / 2, (hgt[i - n] - hgt[i + n]) / 2, 1);
@@ -241,9 +333,9 @@ function lightTerms(r0, cr, k) {
   return T;
 }
 // Glossy cell: the shared bump terms painted with one colour bin.
-function glossSprite(img, base) {
+function glossSprite(img, base, L = LT) {
   const s = skinOf(base), lo = linFit(s.low), mi = linFit(s.mid), hi = linFit(s.top), li = linFit(s.light), d = img.data;
-  const { a, u, ao, w, s: sp, t } = LT;
+  const { a, u, ao, w, s: sp, t } = L;
   for (let i = 0, j = 0; i < a.length; i++, j += 4) {
     if (!a[i]) { d[j + 3] = 0; continue; }
     const q = u[i], A = q < 0.5 ? lo : mi, B = q < 0.5 ? mi : hi, f = q < 0.5 ? 2 * q : 2 * q - 1, o = ao[i], W = w[i];
@@ -258,9 +350,16 @@ function glossSprite(img, base) {
 }
 // Popped cell: matte film, crinkled edge, a few soft folds.
 function flatSprite(ax, r, cr, base, rnd) {
-  const f = flatOf(base, lite), pts = crinkle(r * 0.97, cr, rnd), p = new Path2D();
-  pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y)));
-  p.closePath();
+  film(ax, outline(crinkle(r * 0.97, cr, rnd)), flatOf(base, lite), r, 3, rnd);
+}
+// Popped jumbo: the same film over the flower, with more folds.
+function flatJumbo(ax, base, rnd) {
+  const src = flowerPts(R, gapOf(R) / 2), pts = [];
+  // Each edge gets extra points, so the crinkle bends it.
+  src.forEach((a, k) => { const b = src[(k + 1) % src.length]; for (let j = 0; j < 4; j++) pts.push([lerp(a[0], b[0], j / 4) * 0.97, lerp(a[1], b[1], j / 4) * 0.97]); });
+  film(ax, outline(wobble(pts, rnd)), flatOf(base, lite), 2.4 * R, 6, rnd);
+}
+function film(ax, p, f, r, nf, rnd) {
   const g = ax.createLinearGradient(0, -r, 0, r);
   g.addColorStop(0, css([f[0] + 0.035, f[1], f[2] - 4])); g.addColorStop(1, css([f[0] - 0.04, f[1], f[2] + 4]));
   ax.fillStyle = g; ax.fill(p);
@@ -268,8 +367,8 @@ function flatSprite(ax, r, cr, base, rnd) {
   ax.clip(p);
   ax.lineCap = 'round';
   const a0 = rnd() * TAU;
-  for (let n = 0; n < 3; n++) {
-    const a = a0 + (n * TAU) / 3 + (rnd() - 0.5) * 0.9, len = r * (0.5 + rnd() * 0.35);
+  for (let n = 0; n < nf; n++) {
+    const a = a0 + (n * TAU) / nf + (rnd() - 0.5) * 0.9, len = r * (0.5 + rnd() * 0.35);
     const sx = (rnd() - 0.5) * 0.3 * r, sy = (rnd() - 0.5) * 0.3 * r, bend = (rnd() - 0.5) * 0.4 * r;
     const ex = sx + Math.cos(a) * len, ey = sy + Math.sin(a) * len;
     const mx = (sx + ex) / 2 - Math.sin(a) * bend, my = (sy + ey) / 2 + Math.cos(a) * bend;
@@ -307,15 +406,39 @@ function buildAtlas(idx) {
     paints[idx][i >> 1] = { mid: css(s.mid), top: css(s.top), low: css(s.low), light: css(s.light) };
   }
   ax.setTransform(1, 0, 0, 1, 0, 0);
+  buildJumbos(idx);
+}
+// Jumbo sprites exist only for the bins the jumbos use.
+function buildJumbos(idx) {
+  const ramp = rampOf(pals[idx]), k = dpr * 1.1;
+  jat[idx].clear();
+  for (const c of units) {
+    if (!c.J || jat[idx].has(c.b)) continue;
+    const jc = document.createElement('canvas'), jx = jc.getContext('2d'), base = ramp(c.b / (NB - 1));
+    jc.width = 2 * SPJ; jc.height = SPJ;
+    jx.putImageData(glossSprite(jx.createImageData(SPJ, SPJ), base, LTJ), 0, 0);
+    jx.setTransform(k, 0, 0, k, SPJ * 1.5, SPJ / 2);
+    flatJumbo(jx, base, rng(c.b * 104729 + 7));
+    jat[idx].set(c.b, jc);
+  }
 }
 function buildSprites() {
   sR = R;
-  const k = dpr * 1.1, r0 = R - gapOf(R) / SQ3;
+  const k = dpr * 1.1, g = gapOf(R), r0 = R - g / SQ3, c0 = r0 * 0.22;
   SB = 2 * R + 6; SP = Math.ceil(SB * k);
-  LT = lightTerms(r0, r0 * 0.22, k);
+  SBJ = 2 * JF * R + 6; SPJ = Math.ceil(SBJ * k);
+  LT = lightTerms(r0, c0, k);
+  jPath = roundPath(flowerPts(R, g / 2), c0, c0 + g);
+  LTJ = jumboTerms(r0, k);
+  // The jumbo press shade is one sprite for every palette.
+  jShade = document.createElement('canvas');
+  jShade.width = jShade.height = SPJ;
+  const sx = jShade.getContext('2d');
+  sx.setTransform(k, 0, 0, k, SPJ / 2, SPJ / 2);
+  shadeSprite(sx, jPath, 2.5 * R);
   buildAtlas(cur);
   // A sweep in progress keeps its old palette too.
-  if (pals[1 - cur] && cells.some(c => c.pa !== cur)) buildAtlas(1 - cur);
+  if (pals[1 - cur] && units.some(c => c.pa !== cur)) buildAtlas(1 - cur);
 }
 function tokens() {
   const st = getComputedStyle(document.documentElement);
@@ -325,8 +448,10 @@ function tokens() {
 }
 
 /* ---------- the field ---------- */
-let W = 0, H = 0, dpr = 1, R = 40, r = 37, cols = 0, rows = 0, ringP = null;
-let cells = [], events = [];
+let W = 0, H = 0, dpr = 1, R = 40, r = 37, cols = 0, rows = 0, ringP = null, jRing = null;
+// Cells is the grid; units are what draws and pops: small cells and jumbos.
+let cells = [], units = [], events = [];
+const own = c => c && (c.host || c);
 let fi = 0, wantX = null, ring = false, kPress = null, hover = null, hoverCell = null;
 const ptrs = new Map();
 
@@ -337,10 +462,33 @@ function makeCells() {
       i: out.length, row: i, col: j, x: 0, y: 0, b: 0,
       flip: Math.random() < 0.5 ? -1 : 1, rot: (Math.random() - 0.5) * 0.09,
       state: 0, s: 1, sv: 0, dx: 0, dy: 0, vx: 0, vy: 0, g: 1, p: 0, pT: 0,
-      popAt: -9, inAt: -9, due: Infinity, pa: cur,
+      popAt: -9, inAt: -9, due: Infinity, pa: cur, h0: -1, q: 0, nudge: 0,
     });
   }
   return out;
+}
+// Grid neighbours; odd rows sit half a cell to the right.
+function around(c) {
+  const { row: i, col: j } = c, d = i & 1 ? 0 : -1, out = [];
+  for (const [ii, jj] of [[i, j - 1], [i, j + 1], [i - 1, j + d], [i - 1, j + d + 1], [i + 1, j + d], [i + 1, j + d + 1]]) {
+    if (ii >= 0 && ii < rows && jj >= 0 && jj < cols) out.push(cells[ii * cols + jj]);
+  }
+  return out;
+}
+// A few jumbos swallow their six neighbours.
+// A ring of small cells always keeps two jumbos apart.
+function merge() {
+  const want = clamp(Math.floor(cells.length / 35), 2, 5), blocked = new Set();
+  let made = 0;
+  for (let n = 0; n < 400 && made < want && rows > 2 && cols > 2; n++) {
+    const c = cells[(1 + ((Math.random() * (rows - 2)) | 0)) * cols + 1 + ((Math.random() * (cols - 2)) | 0)];
+    const mem = around(c);
+    if (blocked.has(c) || mem.some(m => blocked.has(m))) continue;
+    c.J = true; c.mem = mem;
+    for (const m of mem) m.host = c;
+    for (const m of [c, ...mem]) { blocked.add(m); around(m).forEach(o => blocked.add(o)); }
+    made++;
+  }
 }
 // Cells sit centred; colour follows the field's diagonal.
 function place() {
@@ -357,7 +505,7 @@ function place() {
 }
 function centreCell() {
   let best = 0, bd = Infinity;
-  for (const c of cells) { const d = (c.x - W / 2) ** 2 + (c.y - H / 2) ** 2; if (d < bd) { bd = d; best = c.i; } }
+  for (const c of cells) { const d = (c.x - W / 2) ** 2 + (c.y - H / 2) ** 2; if (d < bd) { bd = d; best = own(c).i; } }
   return best;
 }
 function layout() {
@@ -372,16 +520,22 @@ function layout() {
   const nr = Math.max(2, Math.floor((h - 2 * pad - 2 * R) / (1.5 * R)) + 1);
   const fresh = nc !== cols || nr !== rows;
   if (fresh) {
+    for (const c of units) c.creak?.();
     cols = nc; rows = nr; cells = makeCells(); events = [];
+    merge();
+    units = cells.filter(c => !c.host);
     ptrs.forEach(q => (q.cell = null)); hoverCell = null; kPress = null;
   }
   place();
   if (fresh) { fi = centreCell(); wantX = null; }
-  r = R - gapOf(R) / SQ3;
+  const g = gapOf(R);
+  r = R - g / SQ3;
   ringP = hexPath(r + 3, r * 0.22 + 2);
+  jRing = roundPath(flowerPts(R, g / 2 - 2.6), r * 0.22 + 2, r * 0.22 + g - 2);
   // Resizing redraws old sprites scaled, then rebuilds once it settles.
+  // New jumbos may need bins the old sprites lack.
   if (!sR) buildSprites();
-  else if (Math.abs(R - sR) > 0.01 || dpr * 1.1 * SB > SP + 1 || dpr * 1.1 * SB < SP - 1) {
+  else if (fresh || Math.abs(R - sR) > 0.01 || dpr * 1.1 * SB > SP + 1 || dpr * 1.1 * SB < SP - 1) {
     clearTimeout(spriteTimer);
     spriteTimer = setTimeout(() => { buildSprites(); draw(); }, 140);
   }
@@ -401,11 +555,13 @@ function hit(x, y) {
       if (d < bd) { bd = d; best = c; }
     }
   }
-  return best;
+  return own(best);
 }
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const MAXV = 12, LEAD = 0.004;
+// A held squeeze charges fully in this many seconds.
+const HOLD = 0.45, HOLD_J = 1.1;
 // Space and Enter pop, so they count as gestures; arrow keys do not.
 const kit = audioKit({ keys: new Set([' ', 'Enter']) });
 let voices = 0, popNext = 0, bloopNext = 0;
@@ -497,6 +653,67 @@ function bloop() {
   o.stop(t + 0.24);
   track(o, og);
 }
+// Squeezing a jumbo: a rubbery creak that tightens as charge builds.
+// The result stops the creak.
+function creak() {
+  const a = kit.live();
+  if (!a) return null;
+  const t = a.currentTime + LEAD, f = tone();
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain(), lfo = a.createOscillator(), lg = a.createGain();
+  src.buffer = kit.noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 7;
+  bp.frequency.setValueAtTime(170 * f, t);
+  bp.frequency.exponentialRampToValueAtTime(760 * f, t + HOLD_J);
+  // A fast wobble in the gain makes the rubber judder.
+  lfo.frequency.setValueAtTime(13, t);
+  lfo.frequency.linearRampToValueAtTime(40, t + HOLD_J);
+  lg.gain.value = 0.06;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.08, t + 0.08);
+  g.gain.linearRampToValueAtTime(0.17, t + HOLD_J);
+  lfo.connect(lg).connect(g.gain);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(t, Math.random() * 0.5);
+  lfo.start(t);
+  voices++;
+  return () => {
+    const e = a.currentTime;
+    if (g.gain.cancelAndHoldAtTime) g.gain.cancelAndHoldAtTime(e); else g.gain.cancelScheduledValues(e);
+    g.gain.setTargetAtTime(0, e, 0.025);
+    src.onended = () => { voices--; [bp, g, lg].forEach(n => n.disconnect()); };
+    src.stop(e + 0.2);
+    lfo.stop(e + 0.2);
+  };
+}
+// A jumbo bursts: a low boom under a wide, dark crack.
+function boom() {
+  const a = kit.live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, f = tone();
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(120 * f, t);
+  o.frequency.exponentialRampToValueAtTime(42 * f, t + 0.25);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.75, t + 0.004);
+  og.gain.setTargetAtTime(0, t + 0.004, 0.11);
+  o.connect(og).connect(kit.out);
+  o.start(t);
+  o.stop(t + 0.8);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = kit.noise;
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(2600, t);
+  lp.frequency.exponentialRampToValueAtTime(300, t + 0.15);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(1.1, t + 0.001);
+  ng.gain.setTargetAtTime(0, t + 0.001, 0.035);
+  src.connect(lp).connect(ng).connect(kit.out);
+  src.start(t, Math.random() * 0.5, 0.4);
+  track(o, og);
+  track(src, lp, ng);
+}
 
 /* ---------- physics ---------- */
 // Springs per phase: k is stiffness, z is the damping ratio.
@@ -509,16 +726,26 @@ const SPR = {
 };
 const OK = 240, OC = 2 * 0.42 * Math.sqrt(OK);
 
-function pop(c, now, amp) {
+function pop(c, now, amp, force) {
   if (!c || c.state) return;
+  // A jumbo bursts only at full charge; anything less makes it wobble.
+  if (c.J && !force) {
+    if (!reduce && now > c.nudge) { c.nudge = now + 0.12; c.sv += 2.4; }
+    return;
+  }
   c.state = 1; c.popAt = now; c.due = now + 6 + Math.random() * 6;
-  popSound(c);
+  if (c.J) boom(); else popSound(c);
+  // The blast pops the ring of small cells round a jumbo.
+  if (c.J) for (const o of units) {
+    const d = Math.hypot(o.x - c.x, o.y - c.y);
+    if (!o.J && !o.state && d < R * 3.7) events.push({ at: now + (reduce ? 0 : 0.02 + d / (R * 30)), c: o, pop: 0.9 });
+  }
   if (reduce) return;
   c.sv += 7.5;
   burst(c, now, amp);
   // A ripple travels out and shoves the inflated cells it reaches.
-  const D = R * 4.4, v = R * 13;
-  for (const o of cells) {
+  const D = R * (c.J ? 9 : 4.4), v = R * 13;
+  for (const o of units) {
     if (o === c || o.state) continue;
     const ddx = o.x - c.x, ddy = o.y - c.y, d = Math.hypot(ddx, ddy);
     if (d > D) continue;
@@ -534,7 +761,7 @@ function inflate(c, now) {
 // Popped cells re-inflate in a wave from the centre.
 function refill(now) {
   const cx = W / 2, cy = H / 2, far = Math.hypot(cx, cy) || 1;
-  for (const c of cells) {
+  for (const c of units) {
     const ddx = c.x - cx, ddy = c.y - cy, d = Math.hypot(ddx, ddy) || 1;
     const at = now + (reduce ? 0 : (0.85 * d) / far);
     if (c.state) c.due = at;
@@ -552,7 +779,8 @@ function step(now, dt) {
   for (let n = events.length - 1; n >= 0; n--) {
     const e = events[n];
     if (e.at > now) continue;
-    if (e.swap != null) {
+    if (e.pop) pop(e.c, now, e.pop);
+    else if (e.swap != null) {
       // The new paint lands with a small hop.
       e.c.pa = e.swap;
       if (!e.c.state) { e.c.sv += 2.6; bloop(); }
@@ -560,31 +788,45 @@ function step(now, dt) {
     events[n] = events[events.length - 1];
     events.pop();
   }
-  for (const c of cells) c.pT = 0;
+  for (const c of units) c.pT = 0;
   for (const q of ptrs.values()) if (q.cell && !q.drag) q.cell.pT = 1;
   if (kPress) kPress.pT = 1;
+  // A held press charges; a full jumbo bursts while still held.
+  for (const c of units) {
+    if (c.pT && !c.state) { if (c.h0 < 0) c.h0 = now; c.q = clamp((now - c.h0) / (c.J ? HOLD_J : HOLD)); }
+    else { c.h0 = -1; c.q = 0; }
+    if (c.J && c.q >= 1) pop(c, now, 2, true);
+    if (c.J) {
+      const want = c.pT && !c.state;
+      if (want && !c.creak) c.creak = creak() || (() => {});
+      else if (!want && c.creak) { c.creak(); c.creak = null; }
+    }
+  }
   const down = ptrs.size > 0, presses = [];
-  for (const c of cells) if (!c.state && c.p > 0.01) presses.push(c);
+  for (const c of units) if (!c.state && c.p > 0.01) presses.push(c);
   const lim = R * 0.22, gDelay = reduce ? 0 : 0.045;
 
-  for (const c of cells) {
+  for (const c of units) {
     if (c.state && now >= c.due) inflate(c, now);
     const m = reduce ? SPR.calm : c.state ? (now - c.popAt < 0.6 ? SPR.burst : SPR.flat) : now - c.inAt < 1.8 ? SPR.swell : SPR.base;
     let sT, tx = 0, ty = 0;
     if (c.state) sT = 0.9 - 0.05 * c.p;
     else {
       const h = c === hoverCell && !down ? 1 : 0;
-      sT = 1 + 0.07 * h * (1 - c.p) + 0.045 * c.p;
-      // Neighbours lean away from the pointer and from pressed cells.
+      // A jumbo swells less on hover and press, and bulges more with charge.
+      sT = c.J ? 1 + 0.025 * h * (1 - c.p) + 0.02 * c.p + 0.13 * c.q : 1 + 0.07 * h * (1 - c.p) + 0.045 * c.p + 0.05 * c.q;
       if (!reduce) {
+        // A nearly full jumbo trembles.
+        if (c.J && c.q > 0.3) { const j = R * 0.06 * ((c.q - 0.3) / 0.7) ** 2; tx += j * Math.sin(now * 71); ty += j * Math.cos(now * 83); }
+        // Neighbours lean away from the pointer and from pressed cells.
         if (hover && c !== hoverCell) {
           const ddx = c.x - hover.x, ddy = c.y - hover.y, d = Math.hypot(ddx, ddy);
           if (d > 1 && d < R * 3.2) { const f = (R * 0.11 * Math.exp(-((d / (R * 1.6)) ** 2))) / d; tx += ddx * f; ty += ddy * f; }
         }
         for (const o of presses) {
           if (o === c) continue;
-          const ddx = c.x - o.x, ddy = c.y - o.y, d = Math.hypot(ddx, ddy);
-          if (d < R * 3.2) { const f = (R * 0.16 * o.p * Math.exp(-((d / (R * 1.5)) ** 2))) / d; tx += ddx * f; ty += ddy * f; }
+          const ddx = c.x - o.x, ddy = c.y - o.y, d = Math.hypot(ddx, ddy), w = o.J ? 3.2 : 1.5;
+          if (d < R * 2.2 * w) { const f = (R * 0.16 * o.p * (1 + 1.5 * o.q) * Math.exp(-((d / (R * w)) ** 2))) / d; tx += ddx * f; ty += ddy * f; }
         }
       }
     }
@@ -620,15 +862,15 @@ const SHARDS = [
 function burst(c, now, amp) {
   const pt = paints[c.pa][c.b];
   if (!pt) return;
-  const x = c.x + c.dx, y = c.y + c.dy;
-  rings.push({ x, y, t0: now, col: pt.top, amp });
-  // A busy sweep throws fewer shards per pop.
-  const n = bits.length > MAXBITS / 2 ? 3 : 5 + ((Math.random() * 3) | 0);
+  const x = c.x + c.dx, y = c.y + c.dy, big = c.J ? 1 : 0;
+  rings.push({ x, y, t0: now, col: pt.top, amp, path: big ? jRing : ringP, w: big ? 0.32 : 0.2, life: big ? 0.55 : RING_S });
+  // A busy sweep throws fewer shards per pop; a jumbo throws a fistful.
+  const n = big ? 18 + ((Math.random() * 6) | 0) : bits.length > MAXBITS / 2 ? 3 : 5 + ((Math.random() * 3) | 0);
   for (let k = 0; k < n; k++) {
-    const a = Math.random() * TAU, v = R * (5 + Math.random() * 8) * (0.7 + 0.5 * amp), o = R * 0.3 * Math.random(), q = Math.random();
+    const a = Math.random() * TAU, v = R * (5 + Math.random() * 8) * (0.7 + 0.5 * amp), o = R * (big ? 1.6 : 0.3) * Math.random(), q = Math.random();
     bits.push({
       x: x + Math.cos(a) * o, y: y + Math.sin(a) * o, vx: Math.cos(a) * v, vy: Math.sin(a) * v - R * 3,
-      a: Math.random() * TAU, va: (Math.random() - 0.5) * 26, s: R * (0.12 + Math.random() * 0.15),
+      a: Math.random() * TAU, va: (Math.random() - 0.5) * 26, s: R * (0.12 + Math.random() * 0.15) * (big ? 1.7 : 1),
       t0: now, life: 0.32 + Math.random() * 0.3, col: q < 0.3 ? pt.light : q < 0.65 ? pt.top : pt.low, sh: (Math.random() * 3) | 0,
     });
   }
@@ -643,7 +885,7 @@ function fly(now, dt) {
     b.vx *= drag; b.vy = b.vy * drag + g;
     b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va * dt;
   }
-  for (let n = rings.length - 1; n >= 0; n--) if (now - rings[n].t0 > RING_S) rings.splice(n, 1);
+  for (let n = rings.length - 1; n >= 0; n--) if (now - rings[n].t0 > rings[n].life) rings.splice(n, 1);
   return bits.length > 0 || rings.length > 0;
 }
 function drawBits() {
@@ -652,10 +894,10 @@ function drawBits() {
   ctx.globalAlpha = 1;
   // The ring is a hard hexagon outline that thins as it grows.
   for (const q of rings) {
-    const u = clamp((now - q.t0) / RING_S), sc = 1 + (0.35 + 0.4 * q.amp) * (1 - (1 - u) ** 3), lw = R * 0.2 * (1 - u) ** 1.5;
+    const u = clamp((now - q.t0) / q.life), sc = 1 + (0.35 + 0.4 * q.amp) * (1 - (1 - u) ** 3), lw = R * q.w * (1 - u) ** 1.5;
     if (lw < 0.25) continue;
     ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * q.x, dpr * q.y);
-    ctx.lineWidth = lw / sc; ctx.strokeStyle = q.col; ctx.stroke(ringP);
+    ctx.lineWidth = lw / sc; ctx.strokeStyle = q.col; ctx.stroke(q.path);
   }
   for (const b of bits) {
     const u = clamp((now - b.t0) / b.life), sc = b.s * (1 - u * u);
@@ -710,7 +952,7 @@ function roll() {
   const now = nowS();
   // A roll mid-sweep finishes the old sweep first.
   events = events.filter(e => e.swap == null);
-  for (const c of cells) c.pa = cur;
+  for (const c of units) c.pa = cur;
   const next = 1 - cur;
   pals[next] = freshPalette(pals[cur]);
   buildAtlas(next);
@@ -719,7 +961,7 @@ function roll() {
   while (n === face) n = (Math.random() * 6) | 0;
   showFace(n);
   rattle();
-  if (reduce) { for (const c of cells) c.pa = cur; draw(); return; }
+  if (reduce) { for (const c of units) c.pa = cur; draw(); return; }
   dieSvg.animate([
     { transform: 'rotate(-280deg) scale(0.5)' },
     { transform: 'rotate(16deg) scale(1.15)', offset: 0.7 },
@@ -727,20 +969,26 @@ function roll() {
   ], { duration: 520, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' });
   // The new paint floods out from the die's corner, bottom left.
   const far = Math.hypot(W, H) || 1;
-  for (const c of cells) events.push({ at: now + 0.03 + (0.8 * Math.hypot(c.x, H - c.y)) / far + Math.random() * 0.03, c, swap: cur });
+  for (const c of units) events.push({ at: now + 0.03 + (0.8 * Math.hypot(c.x, H - c.y)) / far + Math.random() * 0.03, c, swap: cur });
   wake();
 }
 die.addEventListener('click', roll);
 
 /* ---------- drawing ---------- */
-function blit(c, slot, a, sx, sy, rot, atlas = atl[c.pa]) {
+// A sprite is an image, its corner, its pixel size and its CSS size.
+function sprite(c, flat) {
+  if (!c.J) { const i = 2 * c.b + flat; return [atl[c.pa], ox[i], oy[i], SP, SB]; }
+  const J = jat[c.pa].get(c.b);
+  return J && [J, flat * SPJ, 0, SPJ, SBJ];
+}
+function blit(c, [img, x0, y0, sp, sb], a, sx, sy, rot) {
   const X = dpr * (c.x + c.dx), Y = dpr * (c.y + c.dy);
   if (rot) {
     const co = Math.cos(rot) * dpr, si = Math.sin(rot) * dpr;
     ctx.setTransform(sx * co, sx * si, -sy * si, sy * co, X, Y);
   } else ctx.setTransform(sx * dpr, 0, 0, sy * dpr, X, Y);
   ctx.globalAlpha = a;
-  ctx.drawImage(atlas, ox[slot], oy[slot], SP, SP, -SB / 2, -SB / 2, SB, SB);
+  ctx.drawImage(img, x0, y0, sp, sp, -sb / 2, -sb / 2, sb, sb);
 }
 function draw() {
   if (!cv.width || !sR) return;
@@ -749,26 +997,31 @@ function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
   const k = R / sR;
   // Flat film first, glossy domes over it, swollen cells on top.
-  for (const c of cells) if (c.g < 0.999) blit(c, 2 * c.b + 1, 1, c.s * k * c.flip, c.s * k, c.rot);
+  // A jumbo waiting on its sprite skips a frame or two.
+  for (const c of units) { const s = c.g < 0.999 && sprite(c, 1); if (s) blit(c, s, 1, c.s * k * c.flip, c.s * k, c.rot); }
   for (let pass = 0; pass < 2; pass++) {
-    for (const c of cells) {
+    for (const c of units) {
       if (c.g < 0.001 || (c.s >= 1.03) !== (pass === 1)) continue;
-      blit(c, 2 * c.b, c.g, c.s * k, c.s * k, 0);
+      const s = sprite(c, 0);
+      if (!s) continue;
+      blit(c, s, c.g, c.s * k, c.s * k, 0);
       if (c.p > 0.002) {
         ctx.globalCompositeOperation = 'multiply';
-        blit(c, SHADE_SLOT, c.p * c.g, c.s * k, c.s * k, 0, atl[cur]);
+        // A jumbo dents less, and its shade lifts as it grows taut.
+        const a = c.J ? 0.45 * (1 - 0.7 * c.q) : 1;
+        blit(c, c.J ? [jShade, 0, 0, SPJ, SBJ] : [atl[cur], ox[SHADE_SLOT], oy[SHADE_SLOT], SP, SB], a * c.p * c.g, c.s * k, c.s * k, 0);
         ctx.globalCompositeOperation = 'source-over';
       }
     }
   }
   drawBits();
-  const c = ring && cells[fi];
+  const c = ring && own(cells[fi]);
   if (c) {
-    const sc = c.s;
+    const sc = c.s, p = c.J ? jRing : ringP;
     ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * (c.x + c.dx), dpr * (c.y + c.dy));
     ctx.globalAlpha = 1;
-    ctx.lineWidth = 7 / sc; ctx.strokeStyle = bgC; ctx.stroke(ringP);
-    ctx.lineWidth = 3 / sc; ctx.strokeStyle = focusC; ctx.stroke(ringP);
+    ctx.lineWidth = 7 / sc; ctx.strokeStyle = bgC; ctx.stroke(p);
+    ctx.lineWidth = 3 / sc; ctx.strokeStyle = focusC; ctx.stroke(p);
   }
 }
 
@@ -788,7 +1041,7 @@ function frame(ms) {
   if (moving || events.length) { raf = requestAnimationFrame(frame); return; }
   // Idle: a timer wakes the loop for the next re-inflation.
   let next = Infinity;
-  for (const c of cells) if (c.state && c.due < next) next = c.due;
+  for (const c of units) if (c.state && c.due < next) next = c.due;
   if (next < Infinity) timer = setTimeout(wake, Math.max(0, (next - ms / 1000) * 1000) + 4);
   else rest();
 }
@@ -803,7 +1056,7 @@ cv.addEventListener('pointerdown', e => {
   try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   ptrs.set(e.pointerId, { x: q.x, y: q.y, sx: q.x, sy: q.y, cell: c, drag: false });
   if (c) { fi = c.i; wantX = null; }
-  if (c && !c.state) squeak();
+  if (c && !c.state && !c.J) squeak();
   ring = false;
   wake();
 });
@@ -825,7 +1078,8 @@ function release(e, ok) {
   const p = ptrs.get(e.pointerId);
   if (!p) return;
   ptrs.delete(e.pointerId);
-  if (ok && !p.drag && p.cell) { const q = local(e); if (hit(q.x, q.y) === p.cell) pop(p.cell, nowS(), 0.6); }
+  // A longer squeeze pops harder.
+  if (ok && !p.drag && p.cell) { const q = local(e); if (hit(q.x, q.y) === p.cell) pop(p.cell, nowS(), 0.6 + 0.9 * p.cell.q); }
   wake();
 }
 cv.addEventListener('pointerup', e => release(e, true));
@@ -836,8 +1090,13 @@ cv.addEventListener('pointerleave', e => {
   wake();
 });
 
-// Up and down keep a remembered x, so columns zigzag straight.
+// A move repeats until it leaves a jumbo or meets the edge.
 function move(key) {
+  const from = own(cells[fi]);
+  for (let n = 0; n < 3; n++) { const was = fi; move1(key); if (fi === was || own(cells[fi]) !== from) break; }
+}
+// Up and down keep a remembered x, so columns zigzag straight.
+function move1(key) {
   const c = cells[fi];
   if (key === 'ArrowLeft' || key === 'ArrowRight') {
     fi = c.row * cols + clamp(c.col + (key === 'ArrowLeft' ? -1 : 1), 0, cols - 1);
@@ -864,12 +1123,12 @@ cv.addEventListener('keydown', e => {
   } else if (e.key === ' ' || e.key === 'Enter') {
     e.preventDefault();
     ring = true;
-    if (!e.repeat) { kPress = cells[fi]; if (!kPress.state) squeak(); }
+    if (!e.repeat) { kPress = own(cells[fi]); if (!kPress.state && !kPress.J) squeak(); }
     wake();
   }
 });
 cv.addEventListener('keyup', e => {
-  if ((e.key === ' ' || e.key === 'Enter') && kPress) { pop(kPress, nowS(), 0.6); kPress = null; wake(); }
+  if ((e.key === ' ' || e.key === 'Enter') && kPress) { pop(kPress, nowS(), 0.6 + 0.9 * kPress.q); kPress = null; wake(); }
 });
 document.getElementById('reset').addEventListener('click', () => refill(nowS()));
 
@@ -884,7 +1143,7 @@ addEventListener('scroll', () => { if (hover) { hover = null; hoverCell = null; 
 
 // On arrival the sheet lies flat, then inflates from the centre.
 if (!reduce) {
-  for (const c of cells) { c.state = 1; c.g = 0; c.s = 0.9; }
+  for (const c of units) { c.state = 1; c.g = 0; c.s = 0.9; }
   draw();
   requestAnimationFrame(ms => refill(ms / 1000 + 0.15));
 }
