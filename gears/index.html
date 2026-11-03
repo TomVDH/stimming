@@ -130,38 +130,19 @@ function build() {
   circle(arm, 0, 0, 4.4 * m);
   shapes = { rs, rp, rr, c, sun, planet, ring, arm };
 }
-// Colour by role: the input glows brass, the follower steel, the held part sleeps.
+// Colour by role: the input runs hot orange, the follower cobalt, the held part graphite.
 const LOOK = {
-  input: ['oklch(0.92 0.11 88)', 'oklch(0.72 0.15 65)', 'oklch(0.48 0.12 45)'],
-  follow: ['oklch(0.93 0.025 230)', 'oklch(0.7 0.04 240)', 'oklch(0.42 0.045 255)'],
-  held: ['oklch(0.5 0.015 260)', 'oklch(0.36 0.015 262)', 'oklch(0.24 0.012 265)'],
-  planet: ['oklch(0.9 0.04 205)', 'oklch(0.66 0.06 215)', 'oklch(0.4 0.06 230)'],
+  input: ['oklch(0.78 0.18 52)', 'oklch(0.66 0.2 40)'],
+  follow: ['oklch(0.62 0.15 268)', 'oklch(0.5 0.16 272)'],
+  held: ['oklch(0.4 0.012 260)', 'oklch(0.32 0.012 262)'],
+  planet: ['oklch(0.86 0.12 195)', 'oklch(0.74 0.13 205)'],
 };
 const roleOf = part => (part === hold ? 'held' : part === INPUT[hold] ? 'input' : 'follow');
-// The light sits top left and stays put while the metal turns under it.
-function metal(path, x, y, r, [hi, mid, lo]) {
-  const base = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
-  base.addColorStop(0, hi); base.addColorStop(0.5, mid); base.addColorStop(1, lo);
-  ctx.fillStyle = base; ctx.fill(path, 'evenodd');
-  // Brushed sheen: two soft streaks along the light's axis.
-  ctx.save(); ctx.clip(path, 'evenodd');
-  const sheen = ctx.createConicGradient(-Math.PI / 4, x, y);
-  [[0, 0.22], [0.06, 0], [0.44, 0], [0.5, 0.14], [0.56, 0], [0.94, 0], [1, 0.22]].forEach(([o, a]) => sheen.addColorStop(o, `rgba(255,255,255,${a})`));
-  ctx.fillStyle = sheen; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
-  const lit = ctx.createRadialGradient(x - r * 0.35, y - r * 0.45, 0, x - r * 0.35, y - r * 0.45, r * 1.25);
-  lit.addColorStop(0, 'rgba(255,255,255,0.22)'); lit.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = lit; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
-  ctx.restore();
-  // A bevel: lit on the top-left edges, shaded on the bottom-right.
-  const edge = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
-  edge.addColorStop(0, 'rgba(255,255,255,0.55)'); edge.addColorStop(0.5, 'rgba(255,255,255,0.08)'); edge.addColorStop(1, 'rgba(0,0,0,0.45)');
-  ctx.lineWidth = Math.max(1, m * 0.28); ctx.lineJoin = 'round'; ctx.strokeStyle = edge; ctx.stroke(path);
-}
-// A machined groove: dark ring with a lit lip just inside it.
-function groove(x, y, r) {
-  ctx.lineWidth = Math.max(1, m * 0.22);
-  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
-  ctx.beginPath(); ctx.arc(x, y, r - ctx.lineWidth, Math.PI, TAU * 0.75); ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.stroke();
+// Flat brut fill: one colour, a slight shift from top to bottom, hard edges.
+function metal(path, x, y, r, [hi, lo]) {
+  const g = ctx.createLinearGradient(x, y - r, x, y + r);
+  g.addColorStop(0, hi); g.addColorStop(1, lo);
+  ctx.fillStyle = g; ctx.fill(path, 'evenodd');
 }
 const placed = (path, x, y, a) => { const p = new Path2D(); p.addPath(path, new DOMMatrix().translate(x, y).rotate((a * 180) / Math.PI)); return p; };
 function hex(x, y, r, a) {
@@ -177,16 +158,15 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   const ox = w / 2, oy = h / 2, { rs, rp, rr, c } = shapes;
+  // A quiet dot grid marks the floor.
+  ctx.fillStyle = 'oklch(0.3 0.02 262)';
+  const step = Math.max(14, m * 4);
+  for (let y = (oy % step) - step; y < h + step; y += step) for (let x = (ox % step) - step; x < w + step; x += step) ctx.fillRect(x - 0.75, y - 0.75, 1.5, 1.5);
   // A freshly held part shudders as its lock bites.
   const jolt = part => (shake.part === part && shake.t > 0 ? Math.sin(shake.t * 60) * shake.t * 0.6 * m : 0);
   // Ring with a bolt circle on its rim.
   const rx = ox + jolt('ring'), ry = oy;
   metal(placed(shapes.ring, rx, ry, st.ring), rx, ry, rr + 6 * m, LOOK[roleOf('ring')]);
-  groove(rx, ry, rr + 3.1 * m);
-  for (let k = 0; k < 12; k++) {
-    const [bx, by] = at(rr + 4.4 * m, st.ring + (k * TAU) / 12 + TAU / 24);
-    metal(hex(rx + bx, ry + by, 0.95 * m, st.ring + k), rx + bx, ry + by, 1 * m, ['oklch(0.82 0.01 250)', 'oklch(0.6 0.01 255)', 'oklch(0.38 0.01 260)']);
-  }
   // Arm under the planets, with a cap on each pin.
   const ax = ox + jolt('arm'), ay = oy;
   metal(placed(shapes.arm, ax, ay, st.arm), ax, ay, c + 2 * m, LOOK[roleOf('arm')]);
@@ -195,14 +175,10 @@ function draw() {
   for (let k = 0; k < PLANETS; k++) {
     const [px, py] = at(c, st.arm + (k * TAU) / PLANETS);
     metal(placed(shapes.planet, ax + px, ay + py, spin + (k * TAU) / PLANETS + Math.PI + TAU / ZP / 2), ax + px, ay + py, rp + m, LOOK.planet);
-    groove(ax + px, ay + py, rp * 0.82);
-    const pin = new Path2D(); circle(pin, ax + px, ay + py, 1.25 * m);
-    metal(pin, ax + px, ay + py, 1.3 * m, LOOK[roleOf('arm')]);
   }
   // Sun at the centre.
   const sx = ox + jolt('sun'), sy = oy;
   metal(placed(shapes.sun, sx, sy, st.sun), sx, sy, rs + m, LOOK[roleOf('sun')]);
-  groove(sx, sy, rs * 0.82);
 }
 
 /* ---------- sound ---------- */
