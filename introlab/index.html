@@ -133,7 +133,7 @@ const tune = saved.stamp === STAMP ? saved.tune || {} : {};
 const pauses = new Set(saved.pauses || []);
 const save = () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked }));
+    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked }));
   } catch (err) {}
 };
 
@@ -159,14 +159,21 @@ const T = () => ({ ...base(), ...(tune[varSel.value] || {}) });
 const noteSel = document.getElementById('snote'), nudgeBox = document.getElementById('nudge');
 noteSel.value = saved.note || 'glyph';
 nudgeBox.checked = saved.nudge ?? true;
-[noteSel, nudgeBox].forEach(el => el.addEventListener('change', () => save()));
+[noteSel, nudgeBox].forEach(el => el.addEventListener('change', () => { save(); replay(); }));
 const soundNote = () => {
   const [g, words] = noteSel.value === 'off' ? ['', ''] : noteSel.value.split('|');
   return { glyph: g === 'glyph', words: words || null, nudge: nudgeBox.checked };
 };
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
+const flashBox = document.getElementById('nameflash');
 replayBox.checked = saved.replay ?? true;
+loopBox.checked = !!saved.loop;
+flashBox.checked = !!saved.nameFlash;
 replayBox.addEventListener('change', save);
+loopBox.addEventListener('change', () => { save(); if (loopBox.checked && !playing) run(); });
+flashBox.addEventListener('change', () => { save(); replay(); });
+// Any change replays at once; a running intro gives way.
+const replay = () => { if (replayBox.checked) run(); };
 
 // One folding group per stage; each knob shows its value and marks a change.
 const rows = {};
@@ -194,9 +201,11 @@ for (const [group, list] of Object.entries(GROUPS)) {
       if (v === base()[k]) delete own[k]; else own[k] = v;
       paint(k);
       save();
+      if (POSE[k]) pose(POSE[k]);
     });
-    input.addEventListener('change', () => { if (replayBox.checked) run(); });
-    row.querySelector('label').addEventListener('dblclick', () => { delete tune[varSel.value]?.[k]; paint(k); save(); });
+    // Timing knobs replay on release; pose knobs already show live.
+    input.addEventListener('change', () => { if (!POSE[k]) replay(); });
+    row.querySelector('label').addEventListener('dblclick', () => { delete tune[varSel.value]?.[k]; paint(k); save(); POSE[k] ? pose(POSE[k]) : replay(); });
     rows[k] = row;
   }
 }
@@ -212,7 +221,7 @@ function paint(k) {
 const paintAll = () => Object.keys(RANGE).forEach(paint);
 paintAll();
 
-const pick = v => { varSel.value = v; paintAll(); save(); run(true); };
+const pick = v => { varSel.value = v; paintAll(); save(); run(); };
 varSel.addEventListener('change', () => pick(varSel.value));
 const ids = Object.keys(VARIETIES);
 const stepV = d => pick(ids[(ids.indexOf(varSel.value) + d + ids.length) % ids.length]);
@@ -313,18 +322,49 @@ const gate = ph => pauses.has(ph) ? new Promise(res => {
 }) : null;
 go.addEventListener('click', () => resume?.());
 
+// Size and place knobs pose the intro: it holds at their beat and follows the slider.
+const POSE = { popScale: 'pop', flashScale: 'flash', iconY: 'flash', restScale: 'lines', restY: 'lines' };
+let holdAt = null, held = null;
+// Sets the held beat's size and place from the current knobs.
+function applyPose() {
+  const t = T(), badge = document.querySelector('.intro-badge'), emblem = document.querySelector('.intro-emblem');
+  if (!held || !badge || !emblem) return;
+  if (held === 'pop') (flashBox.checked ? document.querySelector('.intro-text') : badge).style.transform = `scale(${t.popScale})`;
+  if (held === 'lines') {
+    // The move to rest holds its last frame; drop it so the knobs show.
+    for (const el of [emblem, badge]) for (const a of el.getAnimations()) {
+      const key = a.effect?.getKeyframes?.()[0] || {};
+      if ('translate' in key || '--emblem-k' in key) a.cancel();
+    }
+  }
+  const scale = held === 'lines' ? t.restScale : t.flashScale, y = held === 'lines' ? t.restY : t.iconY;
+  emblem.style.setProperty('--emblem-k', scale);
+  badge.style.translate = `0 ${y}vh`;
+}
+function pose(ph) {
+  if (held === ph) applyPose();
+  else if (holdAt !== ph) run({ hold: ph });
+}
+
 const toys = await fetch('../toys.json').then(r => r.json());
 for (const [id, t] of Object.entries(toys)) toySel.add(new Option(`${t.name}${t.number ? ` · ${t.number}` : ''}`, id));
 toySel.value = saved.toy && toys[saved.toy] ? saved.toy : 'morpher';
 doneBox.checked = !!saved.done;
-[toySel, doneBox].forEach(el => el.addEventListener('change', () => { save(); if (replayBox.checked) run(); }));
+[toySel, doneBox].forEach(el => el.addEventListener('change', () => { save(); replay(); }));
 
 // Each play builds a fresh intro block, as a toy page carries it.
-// A replay asked for mid-run starts once the current run ends.
-let playing = false, again = false;
-async function run(force) {
-  if (playing) { again = again || force === true || replayBox.checked; return; }
+// A new play replaces the running one at once.
+// The old run stops at its next beat and never resumes.
+let playing = false, gen = 0, loopTimer = 0;
+async function run({ hold = null } = {}) {
+  const my = ++gen;
+  clearTimeout(loopTimer);
   playing = true;
+  holdAt = hold;
+  held = null;
+  resume = null;
+  go.hidden = true;
+  took.textContent = hold ? `Holding at ${hold}…` : 'Playing…';
   document.querySelector('.intro')?.remove();
   const t = toys[toySel.value], root = document.createElement('div');
   root.className = 'intro';
@@ -334,13 +374,25 @@ async function run(force) {
   root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span>${subSpan}</div></div>`;
   document.body.prepend(root);
   const t0 = performance.now();
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}) }, gate, soundNote: soundNote(), variety: varSel.value, nameFlash: document.getElementById('nameflash').checked });
-  if (!pauses.size) took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})`;
+  // A replaced run waits here for good; the held beat waits for the next play.
+  const beat = ph => {
+    if (my !== gen) return new Promise(() => {});
+    if (ph === holdAt) {
+      held = ph;
+      applyPose();
+      took.textContent = `Held at ${ph}. Space plays.`;
+      return new Promise(() => {});
+    }
+    return gate(ph);
+  };
+  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}) }, gate: beat, soundNote: soundNote(), variety: varSel.value, nameFlash: flashBox.checked });
+  if (my !== gen) return;
   playing = false;
-  if (again) { again = false; run(); } else if (loopBox.checked) setTimeout(run, 600);
+  took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})${pauses.size ? ', with pauses' : ''}`;
+  if (loopBox.checked) loopTimer = setTimeout(() => { if (my === gen) run(); }, 600);
 }
-document.getElementById('play').addEventListener('click', () => run(true));
-document.getElementById('reset').addEventListener('click', () => { delete tune[varSel.value]; paintAll(); save(); });
+document.getElementById('play').addEventListener('click', () => run());
+document.getElementById('reset').addEventListener('click', () => { delete tune[varSel.value]; paintAll(); save(); held ? applyPose() : replay(); });
 // Copy gives the shipped table for the default, or a variety's timing line.
 document.getElementById('copy').addEventListener('click', async e => {
   const t = T(), v = varSel.value;
@@ -356,7 +408,7 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); stepV(e.key === 'ArrowLeft' ? -1 : 1); return; }
   if (e.key !== ' ') return;
   e.preventDefault();
-  resume ? resume() : run(true);
+  resume ? resume() : run();
 });
 run();
 </script>
