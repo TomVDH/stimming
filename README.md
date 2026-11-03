@@ -44,7 +44,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Music box | [musicbox/](musicbox/) | live draft, still being refined |
 | Murmuration | [flock/](flock/) | live draft, still being refined |
 | Dandelion | [dandelion/](dandelion/) | live draft, still being refined |
-| Coil, Gear train | | in progress; outlines on the menu |
+| Gear train | [gears/](gears/) | live draft, still being refined |
+| Coil | | in progress; outlines on the menu |
 
 ## Run locally
 
