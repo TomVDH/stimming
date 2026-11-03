@@ -36,8 +36,9 @@
 .adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
 @media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
 /* Settings opens a column of tweaks above the bar. */
-.add.sets { flex-direction: column; align-items: stretch; gap: 8px; min-width: 15em; padding: 10px; }
+.add.sets { flex-direction: column; align-items: stretch; gap: 8px; min-width: 18em; padding: 10px; }
 .sets .slider { justify-content: space-between; }
+.sets .slider span { white-space: nowrap; }
 .sets .chip { justify-content: space-between; }
 #setBtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .add .chip.icon svg .solid { fill: currentColor; stroke: none; }
@@ -79,7 +80,8 @@
         <div class="adder" id="setter">
           <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
           <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <label class="slider"><span>Streaks</span><input type="range" id="streak" min="0" max="1.2" step="0.05" value="0.3"></label>
+            <label class="slider"><span>Star streaks</span><input type="range" id="starStreak" min="0" max="1" step="0.05" value="0.15"></label>
+            <label class="slider"><span>Effect streaks</span><input type="range" id="streak" min="0" max="1.2" step="0.05" value="0.3"></label>
             <button class="chip" id="sweep" type="button" aria-pressed="false">Sound sweeps</button>
           </div>
         </div>
@@ -339,7 +341,7 @@ const MAG_M = 9, MAG_SWIRL = 2.2, MAG_COL = oklchLinear(0.72, 0.22, 330);
 // A wormhole is two pinned mouths; stars that enter one leave the other.
 const WORM_M = 5, WORM_R = 0.45, WORM_COL = oklchLinear(0.82, 0.12, 200);
 // A nebula births a cluster for NURSE_T sim seconds, then settles.
-const NEBULA_M = 10, NURSE_T = 3, NEBULA_COL = oklchLinear(0.62, 0.17, 330);
+const NEBULA_M = 10, NURSE_T = 3, NEBULA_COL = oklchLinear(0.62, 0.17, 330), GAS_N = 700;
 // A comet is light and fast; its tail points away from the heaviest body.
 const COMET_M = 1.5, COMET_COL = oklchLinear(0.95, 0.04, 220), TAIL_N = SMALL ? 768 : 1536, TAIL_L = 3.2;
 // A red giant swells for GIANT_FUSE, puffs a slow shell and leaves a white dwarf.
@@ -366,7 +368,8 @@ let running = false, ready = false, shown = !document.querySelector('.intro');
 curtain.then(() => { shown = true; });
 let renderer = null, camera = null;
 let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star', pace = PACE;
-let streak = Number(saved('streak') ?? 0.3), zoom = 1, zoomGoal = 1;
+// Streak lengths in seconds: stars and objects, then effects.
+let starStreak = Number(saved('starStreak') ?? 0.15), streak = Number(saved('streak') ?? 0.3), zoom = 1, zoomGoal = 1;
 const wells = [];
 
 async function start() {
@@ -469,6 +472,12 @@ async function start() {
   const uHoldVel = uniform(new THREE.Vector3());
   const uHoldT0 = uniform(0);
   const uHoldR = uniform(0.3);
+  // Shape of the held stream: 0 is a spinning hand cluster, 1 a nebula cloud.
+  const uHoldCloud = uniform(0);
+  // Nebula lobes: offsets in units of the cloud radius, fixed per nebula.
+  const LOBES = 5;
+  const uLobe = [];
+  for (let k = 0; k < LOBES; k++) uLobe.push(uniform(new THREE.Vector3()));
   const uSettle = uniform(0.1);
   const uArms = uniform(0.035);
 
@@ -542,9 +551,16 @@ async function start() {
       const spread = uHoldVel.length().mul(0.07).add(0.12);
       const g = vec3(gauss(H(3), H(4)), gauss(H(5), H(6)).mul(0.25), gauss(H(7), H(8))).mul(spread);
       const v = uHoldVel.add(tan.mul(r.mul(1.1))).add(g);
+      // In a nebula, stars are born in clumpy lobes of a 3D cloud, barely moving.
+      const lobe = H(9).mul(LOBES).floor();
+      let lo = uLobe[0];
+      for (let k = 1; k < LOBES; k++) lo = select(lobe.equal(float(k)), uLobe[k], lo);
+      const cOff = lo.add(vec3(gauss(H(10), H(11)), gauss(H(12), H(13)).mul(0.6), gauss(H(14), H(15))).mul(0.3)).mul(uHoldR);
+      const cV = uHoldVel.add(vec3(gauss(H(3), H(4)), gauss(H(5), H(6)).mul(0.5), gauss(H(7), H(8))).mul(0.18));
+      const cloud = uHoldCloud.greaterThan(0.5);
       const t = uHoldT0.add(max(rel.toFloat().sub(INIT), 0).div(RATE));
-      P.assign(vec4(uHoldPos.add(off), uHoldVel.length().add(1.4)));
-      V.assign(vec4(v, t));
+      P.assign(vec4(uHoldPos.add(select(cloud, cOff, off)), uHoldVel.length().add(1.4)));
+      V.assign(vec4(select(cloud, cV, v), t));
     }).ElseIf(born.greaterThanEqual(uClearT), () => {
       const p = P.xyz.toVar(), v = V.xyz.toVar();
       const acc = uFrame.toVar();
@@ -781,6 +797,28 @@ async function start() {
     beams.push(s);
   }
 
+  // Nebula gas: large dim puffs that hug the lobes and drift.
+  // uGas: xz centre, cloud radius, opacity.
+  const uGas = uniform(new THREE.Vector4());
+  const gasMat = spriteMat();
+  {
+    const gh = n => hash(instanceIndex.add(uint(n * 2833 + 5)));
+    const lobe = gh(1).mul(LOBES).floor();
+    let lo = uLobe[0];
+    for (let k = 1; k < LOBES; k++) lo = select(lobe.equal(float(k)), uLobe[k], lo);
+    const drift = vec3(sin(uTime.mul(0.3).add(gh(6).mul(TAU))), 0, cos(uTime.mul(0.23).add(gh(7).mul(TAU)))).mul(0.08);
+    const off = lo.add(vec3(gauss(gh(2), gh(3)), gauss(gh(4), gh(5)).mul(0.6), gauss(gh(8), gh(9))).mul(0.42)).add(drift);
+    gasMat.positionNode = lensOf(vec3(uGas.x, 0, uGas.y).add(off.mul(uGas.z))).p;
+    gasMat.scaleNode = uPx.mul(gh(10).mul(60).add(34));
+    const hue = mix(vec3(...oklchLinear(0.55, 0.2, 335)), vec3(...oklchLinear(0.6, 0.12, 200)), gh(11).pow(2));
+    gasMat.colorNode = dotOf(varying(hue.mul(0.2).mul(uGas.w)));
+  }
+  const gas = new THREE.Sprite(gasMat);
+  gas.count = GAS_N;
+  gas.frustumCulled = false;
+  gas.visible = false;
+  scene.add(gas);
+
   // Comet tails: dust streams out behind the head and fades.
   const tails = [];
   for (let k = 0; k < MAXW; k++) {
@@ -902,7 +940,10 @@ async function start() {
   const diskPass = pass(fxScene, camera);
   const uDamp = uniform(0);
   const exposure = TSL.nodeObject(new Exposure(diskPass.getTextureNode('output'), uDamp));
-  const lit = sceneColor.add(vec4(exposure.rgb, 0));
+  // Stars and objects keep their own, usually shorter, exposure.
+  const uDampStars = uniform(0);
+  const starExposure = TSL.nodeObject(new Exposure(sceneColor, uDampStars));
+  const lit = starExposure.add(vec4(exposure.rgb, 0));
   const glow = bloom(lit, 0.45, 0.35, 0.4);
   renderPipeline.outputNode = lit.add(glow);
 
@@ -1174,7 +1215,7 @@ async function start() {
   }
   // Collapse: a rush of air and a burst of feeding.
   // A supernova blows its shell and leaves a pulsar behind.
-  let blast = null;
+  let blast = null, gasFade = 0, gasX = 0, gasZ = 0;
   function shell(w, kind) {
     const S = SHELLS[kind];
     blast = { x: w.x, z: w.z, t0: simT, ...S };
@@ -1337,6 +1378,11 @@ async function start() {
   }
   // A nebula borrows the cluster stream until it is done.
   function nurse(w) {
+    for (const L of uLobe) {
+      const a = Math.random() * TAU, r = 0.25 + Math.random() * 0.55;
+      L.value.set(Math.cos(a) * r, (Math.random() - 0.5) * 0.5, Math.sin(a) * r);
+    }
+    uHoldCloud.value = 1;
     fling = { start: ring, count: INIT, t0: simT, x: w.x, z: w.z, vx: w.vx, vz: w.vz, releasing: false, nursery: w, max: Math.round(MAXF / 2) };
     uSalt.value = (Math.random() * 1e6) | 0;
     w.nursed = true;
@@ -1352,6 +1398,7 @@ async function start() {
     // A hand outranks a nebula: the nebula stops birthing.
     if (fling?.nursery) endNursery();
     if (fling) return;
+    uHoldCloud.value = 0;
     hold.kind = 'fling';
     fling = { start: ring, count: INIT, t0: simT, x: hold.x, z: hold.z, vx: 0, vz: 0, releasing: false };
     uSalt.value = (Math.random() * 1e6) | 0;
@@ -1478,7 +1525,7 @@ async function start() {
     uHoldPos.value.set(fling.x, 0, fling.z);
     uHoldVel.value.set(fling.vx, 0, fling.vz);
     uHoldT0.value = fling.t0;
-    uHoldR.value = 0.22 + 1.5 * Math.sqrt(fling.count / MAXF);
+    uHoldR.value = fling.nursery ? 2.2 : 0.22 + 1.5 * Math.sqrt(fling.count / MAXF);
   }
 
   /* ---------- keys and controls ---------- */
@@ -1492,7 +1539,7 @@ async function start() {
     else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) resetAll(); }
   });
   // The add tray opens on hover or tap and closes after a pick.
-  // A pick drops one object and sets what a click places.
+  // A pick only sets what a click on the sky places.
   // Each popover closes on a click elsewhere or on Escape.
   function popover(box, btn) {
     const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
@@ -1509,6 +1556,9 @@ async function start() {
   const streakIn = document.getElementById('streak');
   streakIn.value = String(streak);
   streakIn.addEventListener('input', () => { streak = Number(streakIn.value); save('streak', streakIn.value); });
+  const starIn = document.getElementById('starStreak');
+  starIn.value = String(starStreak);
+  starIn.addEventListener('input', () => { starStreak = Number(starIn.value); save('starStreak', starIn.value); });
   const sweepB = document.getElementById('sweep');
   sweepB.setAttribute('aria-pressed', String(sweeps));
   sweepB.addEventListener('click', () => {
@@ -1521,7 +1571,6 @@ async function start() {
     pick = b.dataset.kind;
     addBs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
     addName.textContent = b.title;
-    dropCentre();
     openTray(false);
     panel.focus({ preventScroll: true });
   }));
@@ -1541,11 +1590,13 @@ async function start() {
   shadow.visible = disk.visible = jets.visible = true;
   beams.forEach(b => { b.visible = true; });
   tails.forEach(t => { t.visible = true; });
+  gas.visible = true;
   shellFx.visible = true;
   await Promise.all([scenePass.compileAsync(renderer), diskPass.compileAsync(renderer)]);
   shadow.visible = disk.visible = jets.visible = false;
   beams.forEach(b => { b.visible = false; });
   tails.forEach(t => { t.visible = false; });
+  gas.visible = false;
   shellFx.visible = false;
 
   canvas.setAttribute('aria-hidden', 'true');
@@ -1617,6 +1668,12 @@ async function start() {
       renderer.compute(updatePass);
       simT += h;
     }
+    // The gas follows the nursing nebula and thins as its stars are born.
+    const nn = fling?.nursery;
+    gasFade += ((nn ? 1 - 0.6 * clamp((simT - fling.t0) / NURSE_T) : 0) - gasFade) * (1 - Math.exp(-dt / 0.8));
+    if (nn) { gasX = nn.x; gasZ = nn.z; }
+    gas.visible = gasFade > 0.01;
+    uGas.value.set(gasX, gasZ, 2.2, gasFade);
     for (const w of wells) {
       if (w.kind === 'nova' && simT >= w.fuse && !w.hole) explode(w);
       if (w.kind === 'giant' && simT >= w.fuse && !w.hole) shed(w);
@@ -1639,6 +1696,7 @@ async function start() {
     updateHole(dt);
     // Reduced motion draws each frame alone, with no streaks.
     uDamp.value = reduce || !streak ? 0 : Math.exp(-dt / streak);
+    uDampStars.value = reduce || !starStreak ? 0 : Math.exp(-dt / starStreak);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
       tails[k].visible = !!w && w.kind === 'comet' && w.vis > 0.01;
@@ -1669,10 +1727,9 @@ async function start() {
         dot.gain.value = 6 + 20 * w.flash;
       } else if (w.kind === 'nebula') {
         // The cloud thins as its stars are born.
-        const used = fling?.nursery === w ? clamp((simT - fling.t0) / NURSE_T) : 0;
-        dot.size.value = 130 * grow * (1 - 0.4 * used);
+        dot.size.value = 10 * grow;
         dot.col.value.setRGB(...w.col);
-        dot.gain.value = 1.4 * (1 - 0.7 * used);
+        dot.gain.value = 1.5;
       } else if (w.kind === 'comet') {
         dot.size.value = 7 * grow;
         dot.col.value.setRGB(...w.col);
