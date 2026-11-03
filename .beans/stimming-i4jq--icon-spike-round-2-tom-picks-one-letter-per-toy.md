@@ -1,10 +1,11 @@
 ---
 # stimming-i4jq
 title: 'Icon spike round 2: Tom picks one letter per toy'
-status: todo
+status: scrapped
 type: task
+priority: normal
 created_at: 2026-11-03T18:00:25Z
-updated_at: 2026-11-03T18:00:25Z
+updated_at: 2026-11-03T18:49:09Z
 parent: stimming-io49
 ---
 
@@ -15,3 +16,6 @@ Galleries icons/spike-1.html to spike-11.html, five rubrics A to E per toy (A Sh
 - [x] Index page linking all galleries: icons/spikes.html, every toy's Current and A to E emblems in one sheet
 - [ ] Tom picks a letter per toy
 - [ ] Install picked icons in index.html and emblems in shared/emblems
+
+## Reasons for Scrapping
+Tom, 2026-11-03: icon iteration moves to each toy's own chat, which Tom starts. The galleries and icons/colour.html stay as reference.

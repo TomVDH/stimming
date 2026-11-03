@@ -9,3 +9,5 @@ parent: stimming-io49
 ---
 
 Several toys were restyled (Fidget blueprint, Ferrofluid dish, Beach walker silhouette, Oscilloscope terminal). Redraw their menu icon and intro emblem to match.
+
+Tom, 2026-11-03: this work happens per toy, in each toy's own chat.

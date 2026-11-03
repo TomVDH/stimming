@@ -31,6 +31,9 @@ Read `README.md` for the toy list and the full rules.
 - Menu icons are inline SVG in an angular brut style: a hex, square or angled block with a hard offset shadow.
   A GSAP 3.13 timeline animates each icon on hover: `toys.<id> = { play, rest }`.
 - `icons/index.html` is an unlinked lab of old icon directions. The spheres are rejected.
+- Icon iteration happens per toy, in that toy's own chat. Tom starts those chats; do not iterate icons across toys here.
+  `icons/colour.html` shows every toy's directions (Current, A to E) at rest beside their hover transition.
+  The galleries are `icons/spike-1.html` to `spike-11.html`; emblems sit in `icons/spike/emblems/<id>-<a..e>.svg`.
 - `shared/stim.css` and `shared/stim.js` are the shared shell.
   `stim.js` exports `initPage({ id })`, `sound`, `audioKit`, `choices`, `fitCanvas`, `whenVisible`, `reduced` and the OKLCH helpers.
 - Toy page skeleton (the main seven use it):
@@ -124,6 +127,7 @@ Open <http://localhost:8000/>. All links are relative.
 
 ## Open items (only when Tom asks)
 
+- Icons and emblems: per toy, in each toy's own chat (Tom starts them).
 - Vignettes for the other six main toys.
 - Fine-tune pass: vary the purple stage tints per toy; Kaleidoscope zooms in too far; Glass and Coil stall on the first tap while audio starts.
 - Move selected Lab toys onto the toy view.
