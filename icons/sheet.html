@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon sheet</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* Icon sheet: every toy's directions in colour, one row per toy, to scrub and cut. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --focus: oklch(0.84 0.13 205);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --label: 168px;
+  --tile: 112px;
+  --gap: 8px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); }
+body { margin: 0; color: var(--fg); font: 500 13px/1.35 var(--sans); padding-inline: max(16px, env(safe-area-inset-left, 0px)); -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 40px 72px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+/* The bar sticks, so the controls stay in reach while scrubbing. */
+.bar {
+  position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px;
+  margin-inline: -16px; padding: 10px 16px; background: oklch(0.16 0.012 275 / 0.92); backdrop-filter: blur(8px);
+}
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 6px 11px; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer;
+  background: none; border: 1px solid var(--line); border-radius: 999px; -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip[aria-pressed="true"], .chip.armed { color: var(--fg); border-color: var(--fg); }
+.left { font-variant-numeric: tabular-nums; color: var(--muted); }
+.left b { color: var(--fg); font-weight: 700; }
+.how { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 0 auto; color: var(--muted); font-size: 12px; }
+.how div { display: flex; gap: 5px; align-items: baseline; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd { font: inherit; font-size: 11px; padding: 1px 5px 2px; border: 1px solid var(--line); border-radius: 5px; }
+@media (hover: none) { .how .fine { display: none; } }
+/* Column heads line up with the rows in the frames. */
+.cols { display: grid; grid-template-columns: var(--label) repeat(6, var(--tile)); gap: var(--gap); color: var(--muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.cols b { display: block; color: var(--fg); font-size: 15px; font-weight: 800; letter-spacing: 0; text-transform: none; }
+.narrow .cols { grid-template-columns: repeat(6, var(--tile)); }
+.narrow .cols > :first-child, .narrow .cols span span { display: none; }
+.frames { display: grid; }
+iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg); }
+@media (pointer: coarse) { .chip { padding: 9px 14px; } }
+@media (prefers-reduced-motion: reduce) { .chip { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Icon sheet</h1>
+  <div class="bar">
+    <div class="actions">
+      <button class="chip" id="hide" type="button" aria-pressed="false">Hide cut</button>
+      <button class="chip" id="all" type="button" aria-pressed="false">Play all</button>
+      <button class="chip" id="copy" type="button">Copy</button>
+      <button class="chip" id="reset" type="button">Reset</button>
+    </div>
+    <span class="left" id="left"></span>
+    <dl class="how">
+      <div><dt>Click</dt><dd>cut</dd></div>
+      <div class="fine"><dt><kbd>X</kbd></dt><dd>cut</dd></div>
+      <div class="fine"><dt><kbd>Z</kbd></dt><dd>undo</dd></div>
+      <div class="fine"><dt>Arrows</dt><dd>move</dd></div>
+    </dl>
+  </div>
+  <div class="cols" id="cols"></div>
+  <div class="frames" id="frames"></div>
+</div>
+<script type="module">
+// Each gallery and the toys it holds, in gallery order.
+const SPIKES = [
+  [1, ['chladni', 'walker', 'fire']],
+  [2, ['rain', 'tvtree', 'balloons']],
+  [3, ['morpher', 'pop']],
+  [4, ['neon', 'glass']],
+  [5, ['fidget', 'pendulum']],
+  [6, ['ferro', 'pool']],
+  [7, ['kaleido', 'soap']],
+  [8, ['prism', 'domino']],
+  [9, ['magnet', 'putty']],
+  [10, ['pins', 'scope']],
+  [11, ['galaxy']],
+];
+const ORDER = SPIKES.flatMap(([, ids]) => ids);
+const COLS = ['Current', 'A', 'B', 'C', 'D', 'E'];
+const RUB = { Current: '', A: 'Shaded object', B: 'Stencil cut-out', C: 'Single-weight line', D: 'Isometric block', E: 'Abstract mark' };
+const KEY = 'stimming.icons.cut';
+
+// Each gallery becomes rows: the toy's name, then its directions in fixed columns.
+const FRAME_CSS = `
+html, body { background: transparent !important; }
+body { margin: 0 !important; padding: 0 !important; overflow: hidden; }
+.wrap, #out, main { max-width: none !important; margin: 0 !important; padding: 0 !important; gap: 0 !important; display: block !important; }
+h1, .lede, .dir > header, .dir > .tag, .emb, .embs, .idea, .pick, .size { display: none !important; }
+section { display: grid !important; grid-template-columns: var(--label) repeat(6, var(--tile)) !important; gap: var(--gap) !important;
+  align-items: center; margin: 0 !important; padding: 8px 0 !important; border-top: 1px solid oklch(0.26 0.014 275); }
+section > h2 { grid-column: 1; grid-row: 1; margin: 0 !important; display: block !important;
+  font-size: 14px !important; font-weight: 650 !important; letter-spacing: 0 !important; text-transform: none !important; color: oklch(0.95 0.008 275) !important; }
+section > h2 small { display: none; }
+section > .row, section > .dirs { display: contents !important; }
+.dir[data-col="0"] { grid-column: 2; } .dir[data-col="1"] { grid-column: 3; } .dir[data-col="2"] { grid-column: 4; }
+.dir[data-col="3"] { grid-column: 5; } .dir[data-col="4"] { grid-column: 6; } .dir[data-col="5"] { grid-column: 7; }
+body.narrow .dir[data-col="0"] { grid-column: 1; } body.narrow .dir[data-col="1"] { grid-column: 2; } body.narrow .dir[data-col="2"] { grid-column: 3; }
+body.narrow .dir[data-col="3"] { grid-column: 4; } body.narrow .dir[data-col="4"] { grid-column: 5; } body.narrow .dir[data-col="5"] { grid-column: 6; }
+.dir { grid-row: 1; position: relative; display: block !important; padding: 0 !important; border: 0 !important; border-radius: 10px;
+  cursor: pointer; transition: opacity 0.2s ease, filter 0.2s ease; }
+.icons { display: block !important; }
+.t128, .t128 svg, .s128 { width: var(--tile) !important; height: var(--tile) !important; outline: none !important; }
+.t64, .icons > div:has(.s64) { position: absolute !important; visibility: hidden !important; pointer-events: none; }
+.dir.cut { opacity: 0.12; filter: grayscale(1); }
+body.hide .dir.cut { visibility: hidden; }
+.dir.pick { box-shadow: 0 0 0 2px oklch(0.85 0.14 85); }
+.dir.cur { box-shadow: 0 0 0 2px oklch(0.84 0.13 205); }
+body.narrow section { grid-template-columns: repeat(6, var(--tile)) !important; }
+body.narrow section > h2 { grid-column: 1 / -1; }
+body.narrow .dir { grid-row: 2; }
+@media (prefers-reduced-motion: reduce) { .dir { transition: none; } }
+`;
+
+const store = {
+  read() { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch { return new Set(); } },
+  write(s) { try { localStorage.setItem(KEY, JSON.stringify([...s])); } catch {} },
+};
+const cut = store.read();
+const undo = [];
+const cells = [];
+const docs = [];
+let cur = -1, hide = false, all = false;
+
+const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
+const nameOf = id => names[id]?.name ?? id;
+const $ = id => document.getElementById(id);
+$('cols').innerHTML = '<span></span>' + COLS.map(l => `<span><b>${l}</b><span>${RUB[l]}</span></span>`).join('');
+
+// The tile size fits six columns, with the name above them on phones.
+const layout = () => {
+  const w = $('frames').clientWidth, narrow = w < 640;
+  const label = narrow ? 0 : 168, gap = narrow ? 6 : 8;
+  const tile = Math.floor(Math.min(120, (w - label - gap * (narrow ? 5 : 6)) / 6));
+  for (const el of [document.documentElement, ...docs.map(d => d.documentElement)]) {
+    el.style.setProperty('--tile', `${tile}px`);
+    el.style.setProperty('--label', `${label}px`);
+    el.style.setProperty('--gap', `${gap}px`);
+  }
+  document.body.classList.toggle('narrow', narrow);
+  docs.forEach(d => d.body.classList.toggle('narrow', narrow));
+};
+
+// The keyboard path plays a tile's full transition; blur settles it.
+const play = (c, on) => {
+  if (!c) return;
+  const ev = on ? ['focus', 'focusin'] : ['blur', 'focusout'];
+  c.tile.dispatchEvent(new c.win.FocusEvent(ev[0]));
+  c.tile.dispatchEvent(new c.win.FocusEvent(ev[1], { bubbles: true }));
+};
+const live = c => !(hide && cut.has(c.key));
+
+const paint = () => {
+  for (const c of cells) {
+    c.card.classList.toggle('cut', cut.has(c.key));
+    c.card.classList.toggle('cur', cells[cur] === c);
+  }
+  // A row with one survivor shows it as the pick.
+  for (const id of ORDER) {
+    const row = cells.filter(c => c.toy === id), left = row.filter(c => !cut.has(c.key));
+    row.forEach(c => c.card.classList.toggle('pick', left.length === 1 && left[0] === c));
+  }
+  docs.forEach(d => d.body.classList.toggle('hide', hide));
+  const n = cells.filter(c => !cut.has(c.key)).length;
+  $('left').innerHTML = `<b>${n}</b> of ${cells.length} left`;
+  $('hide').setAttribute('aria-pressed', String(hide));
+  $('all').setAttribute('aria-pressed', String(all));
+};
+
+const goTo = (i, scroll = true) => {
+  if (i === cur || i < 0 || i >= cells.length) return;
+  if (!all) play(cells[cur], false);
+  cur = i;
+  play(cells[cur], true);
+  paint();
+  if (scroll) cells[cur].card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+};
+
+const toggle = (i, record = true) => {
+  const c = cells[i];
+  if (!c) return;
+  cut.has(c.key) ? cut.delete(c.key) : cut.add(c.key);
+  if (record) undo.push(i);
+  store.write(cut);
+  paint();
+};
+
+// Steps run in reading order; up and down keep the column where they can.
+const step = d => {
+  for (let i = cur + d; i >= 0 && i < cells.length; i += d) if (live(cells[i])) return goTo(i);
+};
+const vstep = d => {
+  const c = cells[cur], r = ORDER.indexOf(c?.toy ?? ORDER[0]), col = COLS.indexOf(c?.l ?? 'Current');
+  for (let k = r + d; k >= 0 && k < ORDER.length; k += d) {
+    const row = cells.map((x, i) => [x, i]).filter(([x]) => x.toy === ORDER[k] && live(x));
+    if (!row.length) continue;
+    row.sort((p, q) => Math.abs(COLS.indexOf(p[0].l) - col) - Math.abs(COLS.indexOf(q[0].l) - col));
+    return goTo(row[0][1]);
+  }
+};
+
+const onKey = e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'arrowright') step(1);
+  else if (k === 'arrowleft') step(-1);
+  else if (k === 'arrowdown') vstep(1);
+  else if (k === 'arrowup') vstep(-1);
+  else if (k === 'x' || k === 'delete' || k === 'backspace') {
+    if (cur < 0) return;
+    const was = cut.has(cells[cur].key);
+    toggle(cur);
+    // A cut moves on, so a row clears in a few presses.
+    if (!was) { const c = cur; step(1); if (cur === c) step(-1); }
+  } else if (k === 'z') { const i = undo.pop(); if (i !== undefined) { toggle(i, false); goTo(i); } }
+  else if (k === 'h') $('hide').click();
+  else if (k === 'p') $('all').click();
+  else return;
+  e.preventDefault();
+};
+addEventListener('keydown', onKey);
+
+$('hide').addEventListener('click', () => { hide = !hide; if (hide && cells[cur] && cut.has(cells[cur].key)) step(1); paint(); });
+$('all').addEventListener('click', () => {
+  all = !all;
+  cells.forEach(c => { if (c !== cells[cur]) play(c, all); });
+  paint();
+});
+$('copy').addEventListener('click', async () => {
+  const lines = ORDER.map(id => `${nameOf(id)}: ${cells.filter(c => c.toy === id && !cut.has(c.key)).map(c => c.l).join(', ') || 'none'}`);
+  const text = `Icon picks\n${lines.join('\n')}\n`;
+  try { await navigator.clipboard.writeText(text); } catch { prompt('Copy the picks', text); }
+  $('copy').textContent = 'Copied';
+  setTimeout(() => { $('copy').textContent = 'Copy'; }, 1400);
+});
+// Reset asks twice, so one stray click keeps the cuts.
+let armed = 0;
+$('reset').addEventListener('click', () => {
+  if (Date.now() - armed > 2500) {
+    armed = Date.now();
+    $('reset').classList.add('armed');
+    $('reset').textContent = 'Reset all?';
+    setTimeout(() => { $('reset').classList.remove('armed'); $('reset').textContent = 'Reset'; }, 2500);
+    return;
+  }
+  cut.clear(); undo.length = 0; store.write(cut); paint();
+});
+
+// Galleries load one at a time; the local server drops large bursts.
+const base = new URL('./', location.href).href;
+const frames = $('frames');
+for (const [n] of SPIKES) {
+  const src = await fetch(`spike-${n}.html`).then(r => r.text()).catch(() => '');
+  if (!src) continue;
+  const frame = document.createElement('iframe');
+  frame.title = `Spike ${n}`;
+  frame.setAttribute('scrolling', 'no');
+  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${base}">`).replace(/<\/head>/i, `<style>${FRAME_CSS}</style></head>`);
+  frames.append(frame);
+  await new Promise(r => frame.addEventListener('load', r, { once: true }));
+  const doc = frame.contentDocument, win = frame.contentWindow;
+  docs.push(doc);
+  layout();
+  for (const sec of doc.querySelectorAll('section')) {
+    const first = sec.querySelector('.dir');
+    const toy = sec.id?.replace(/^row-/, '') || (first?.id || first?.dataset.key || '').split('-')[0];
+    sec.querySelector('h2').textContent = nameOf(toy);
+    for (const card of sec.querySelectorAll('.dir')) {
+      const l = card.querySelector('b')?.textContent.trim();
+      const tile = card.querySelector('.t128, .s128');
+      if (!COLS.includes(l) || !tile) continue;
+      card.dataset.col = String(COLS.indexOf(l));
+      sec.dataset.toy = toy;
+      cells.push({ key: `${toy}-${l.toLowerCase()}`, toy, l, card, tile, win, frame });
+    }
+  }
+  // Cells sort into toy order, then column order.
+  cells.sort((p, q) => ORDER.indexOf(p.toy) - ORDER.indexOf(q.toy) || COLS.indexOf(p.l) - COLS.indexOf(q.l));
+  doc.addEventListener('keydown', onKey);
+  doc.addEventListener('click', e => {
+    const card = e.target.closest('.dir'), i = cells.findIndex(c => c.card === card);
+    if (i < 0) return;
+    goTo(i, false);
+    toggle(i);
+  });
+  // The frame ends at its last row; gallery footers stay out of view.
+  const rows = [...doc.querySelectorAll('section')];
+  const fit = () => { frame.style.height = `${Math.ceil(Math.max(0, ...rows.map(s => s.getBoundingClientRect().bottom)) + win.scrollY)}px`; };
+  new win.ResizeObserver(fit).observe(doc.body);
+  fit();
+  if (all) cells.filter(c => c.frame === frame).forEach(c => play(c, true));
+  paint();
+}
+addEventListener('resize', layout);
+</script>
+</body>
+</html>
