@@ -570,12 +570,16 @@ function step() {
 }
 
 /* ---------- the glass: forty pieces in two depths ---------- */
-// Jewel tones as OKLCH: ruby, amber, emerald, sapphire, amethyst, clear.
-const GEMS = [[0.55, 0.22, 22], [0.8, 0.165, 70], [0.64, 0.17, 158], [0.5, 0.2, 262], [0.56, 0.2, 312], [0.96, 0.016, 220]];
+// House glass as OKLCH: magenta, cyan, safety orange, cobalt.
+// Acid lime is the off-key accent, so it comes up rarely.
+const GEMS = [[0.6, 0.24, 338], [0.74, 0.14, 205], [0.7, 0.2, 45], [0.5, 0.21, 262], [0.9, 0.22, 125]];
+// Opaque ink pieces are stencils: light shows only through their cuts.
+const INK = css(0.15, 0.012, 275);
 // Back pieces are broad and paler; front pieces are small and deep.
 const PLAN = [
-  ['shard', 0, 10, 0.14, 0.2], ['clear', 0, 2, 0.15, 0.19], ['moon', 0, 4, 0.16, 0.2], ['bead', 0, 3, 0.11, 0.14],
+  ['shard', 0, 10, 0.14, 0.2], ['nut', 0, 2, 0.12, 0.15], ['moon', 0, 4, 0.16, 0.2], ['bead', 0, 3, 0.11, 0.14],
   ['bead', 1, 8, 0.085, 0.125], ['shard', 1, 6, 0.11, 0.16], ['rod', 1, 4, 0.17, 0.24], ['moon', 1, 2, 0.14, 0.165], ['seed', 1, 8, 0.04, 0.05],
+  ['plate', 1, 2, 0.13, 0.16],
 ];
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 let cell = null, cx = null;
@@ -742,13 +746,36 @@ function moon(g, r) {
   return b;
 }
 // With top set, the glass starts in the upper half and pours down.
+// A hex nut: a solid silhouette with a round bore.
+function nut(L, r) {
+  const pts = Array.from({ length: 6 }, (_, i) => [r * Math.cos((i * TAU) / 6), r * Math.sin((i * TAU) / 6)]);
+  const b = makeBody([poly(pts.flat())], L), path = pathOf(pts);
+  path.arc(0, 0, 0.46 * r, 0, TAU);
+  b.paint = () => { cx.fillStyle = INK; cx.fill(path, 'evenodd'); };
+  b.shine = () => {};
+  return b;
+}
+// A chamfered plate cut with one slot and two holes.
+function plate(L, hl) {
+  const hw = 0.42 * hl, c = 0.3 * hw;
+  const pts = [[hl - c, -hw], [hl, -hw + c], [hl, hw - c], [hl - c, hw], [-hl + c, hw], [-hl, hw - c], [-hl, -hw + c], [-hl + c, -hw]];
+  const b = makeBody([poly(pts.flat())], L), path = pathOf(pts), sr = 0.2 * hw, sl = 0.38 * hl;
+  path.moveTo(-sl, -sr); path.lineTo(sl, -sr); path.arc(sl, 0, sr, -Math.PI / 2, Math.PI / 2);
+  path.lineTo(-sl, sr); path.arc(-sl, 0, sr, Math.PI / 2, Math.PI * 1.5); path.closePath();
+  for (const x of [-0.78 * hl, 0.78 * hl]) { path.moveTo(x + 0.18 * hw, 0); path.arc(x, 0, 0.18 * hw, 0, TAU); }
+  b.paint = () => { cx.fillStyle = INK; cx.fill(path, 'evenodd'); };
+  b.shine = () => {};
+  return b;
+}
 function build(top = false) {
   bodies.length = 0;
-  const bags = [shuffle([0, 1, 2, 3, 4].flatMap(i => [i, i, i, i])), shuffle([...[0, 1, 2, 3, 4].flatMap(i => [i, i, i, i, i]), 5, 5, 5])];
+  const main = k => [0, 1, 2, 3].flatMap(i => Array(k).fill(i));
+  const bags = [shuffle([...main(4), 4]), shuffle([...main(6), 4, 4, 4, 4])];
   for (const [kind, L, n, lo, hi] of PLAN) {
     for (let i = 0; i < n; i++) {
-      const base = GEMS[kind === 'clear' ? 5 : bags[L].pop()];
-      const back = L === 0 && kind !== 'clear';
+      if (kind === 'nut' || kind === 'plate') { bodies.push((kind === 'nut' ? nut : plate)(L, rand(lo, hi))); continue; }
+      const base = GEMS[bags[L].pop()];
+      const back = L === 0;
       const g = [base[0] + rand(-0.03, 0.03) + (back ? 0.08 : 0), base[1] * rand(0.92, 1.05) * (back ? 0.8 : 1), base[2] + rand(-6, 6)];
       g.L = L;
       g.rimSoft = tone(g, -0.05);
