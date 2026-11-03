@@ -21,9 +21,31 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* Each swatch shows its gas colour. */
-.sw { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
-@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+/* The gas rail is one slider: solid swatches, then the gas name. */
+.gas {
+  display: inline-flex; align-items: center; gap: 10px; padding: 5px 13px 5px 8px; cursor: pointer;
+  font-size: 13px; color: var(--fg); border: 1px solid var(--line); border-radius: 999px;
+  touch-action: none; -webkit-tap-highlight-color: transparent; transition: border-color 0.2s ease;
+}
+.gas:hover { border-color: var(--muted); }
+.gas-rail { display: flex; align-items: center; gap: 3px; height: 18px; }
+.gas-rail i {
+  display: block; width: 9px; height: 10px; border-radius: 2px; background: var(--c);
+  transition: height 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* The chosen gas stands tall; a cut through it marks the pick. */
+.gas-rail i.on { width: 13px; height: 18px; -webkit-mask: linear-gradient(#000 0 0) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% 8px no-repeat; mask: linear-gradient(#000 0 0) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% 8px no-repeat; }
+.gas-rail i.peek:not(.on) { height: 14px; }
+.gas-name { min-width: 4.6em; }
+/* Mix shows four hard stripes. */
+.gas-rail i.mix { background: linear-gradient(90deg, oklch(0.66 0.22 30) 0 25%, oklch(0.86 0.18 100) 0 50%, oklch(0.8 0.2 150) 0 75%, oklch(0.6 0.2 266) 0); }
+.chip svg.wi { width: 15px; height: 15px; fill: currentColor; stroke: none; }
+@media (pointer: coarse) {
+  .gas { padding: 9px 16px 9px 12px; }
+  .gas-rail i { width: 12px; }
+  .gas-rail i.on { width: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .stage canvas, .gas-rail i { transition: none; } }
 </style>
 </head>
 <body>
@@ -34,23 +56,24 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A brick wall at night. Drag to bend a neon tube; click a tube to switch it off or on. Arrow keys draw, Shift with arrows moves the pen, Enter finishes, Space switches the nearest tube, Backspace undoes, C clears, 1 to 5 pick the gas.">
+    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; click a tube to switch it off or on; click the bare wall to knock on it. Arrow keys draw, Shift with arrows moves the pen, Enter finishes, Space switches the nearest tube, K knocks, Backspace undoes, C clears, 1 to 0 and M pick the gas, W changes the wall, P runs the chase.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Neon sign needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices">
-        <button class="chip" type="button" data-gas="0" aria-pressed="false" aria-keyshortcuts="1"><span class="sw" style="--c: oklch(0.64 0.23 31)" aria-hidden="true"></span>Red</button>
-        <button class="chip" type="button" data-gas="1" aria-pressed="true" aria-keyshortcuts="2"><span class="sw" style="--c: oklch(0.58 0.2 264)" aria-hidden="true"></span>Blue</button>
-        <button class="chip" type="button" data-gas="2" aria-pressed="false" aria-keyshortcuts="3"><span class="sw" style="--c: oklch(0.68 0.25 352)" aria-hidden="true"></span>Pink</button>
-        <button class="chip" type="button" data-gas="3" aria-pressed="false" aria-keyshortcuts="4"><span class="sw" style="--c: oklch(0.82 0.22 146)" aria-hidden="true"></span>Green</button>
-        <button class="chip" type="button" data-gas="4" aria-pressed="false" aria-keyshortcuts="5"><span class="sw" style="--c: oklch(0.95 0.03 85)" aria-hidden="true"></span>White</button>
+        <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="11" aria-valuenow="7" aria-valuetext="Blue" aria-keyshortcuts="1 2 3 4 5 6 7 8 9 0 M"><span class="gas-rail" aria-hidden="true"></span><span class="gas-name" aria-hidden="true">Blue</span></div>
+        <button class="chip" id="wall" type="button" aria-label="Wall: Brick" aria-keyshortcuts="W"><svg class="wi" viewBox="0 0 16 16" aria-hidden="true"></svg><span>Brick</span></button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="chase" type="button" aria-pressed="false" aria-keyshortcuts="P">Chase</button>
+        <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>draw a tube</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a tube</dt><dd>switch</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the wall</dt><dd>knock</dd></div>
         <div class="fine"><dt><kbd>Backspace</kbd></dt><dd>undo</dd></div>
-        <div class="fine"><dt><kbd>C</kbd></dt><dd>clear</dd></div>
       </dl>
     </div>
   </main>
@@ -63,7 +86,7 @@ initPage({ id: 'neon' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
-RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+RM.addEventListener?.('change', e => { reduce = e.matches; motionPref(); wake(); });
 const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -90,21 +113,37 @@ function linear(L, C, h) {
   return c.map(v => clamp(v));
 }
 const scale = (c, k) => c.map(v => v * k);
-// Each gas is normalised to full strength, then balanced by eye.
-const GAS = [
-  [0.63, 0.26, 30, 1.0],
-  [0.52, 0.24, 266, 1.35],
-  [0.64, 0.29, 350, 1.0],
-  [0.84, 0.26, 148, 0.62],
-  [0.95, 0.035, 80, 0.55],
-].map(([L, C, h, k]) => { const c = linear(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
-const WALL = {
-  uB1: linear(0.43, 0.1, 31),
-  uB2: linear(0.37, 0.07, 40),
-  uB3: linear(0.47, 0.1, 42),
-  uB4: linear(0.29, 0.03, 30),
-  uMortar: linear(0.57, 0.012, 70),
-};
+// Each gas: name, OKLCH, and a balance set by eye.
+// Pure neon burns red; the rest are argon and coated glass.
+const GAS_SPEC = [
+  ['Red', 0.63, 0.26, 30, 1.0],
+  ['Orange', 0.72, 0.22, 52, 0.85],
+  ['Gold', 0.82, 0.18, 82, 0.68],
+  ['Lemon', 0.9, 0.2, 108, 0.58],
+  ['Green', 0.84, 0.26, 148, 0.62],
+  ['Ice', 0.82, 0.15, 205, 0.72],
+  ['Blue', 0.52, 0.24, 266, 1.35],
+  ['Violet', 0.56, 0.26, 302, 1.15],
+  ['Pink', 0.64, 0.29, 350, 1.0],
+  ['White', 0.95, 0.035, 80, 0.55],
+];
+// Each gas is normalised to full strength, then balanced.
+const GAS = GAS_SPEC.map(([, L, C, h, k]) => { const c = linear(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
+const MIX = GAS.length;
+// Mix hops between far hues, so neighbours contrast.
+const MIX_ORDER = [0, 6, 3, 8, 5, 1, 7, 4, 9, 2];
+// Each wall: name, shader kind, relief depth, metal, five colours.
+const WALLS = [
+  { name: 'Brick', kind: 0, depth: 0.14, metal: 0, c: [linear(0.43, 0.1, 31), linear(0.37, 0.07, 40), linear(0.47, 0.1, 42), linear(0.29, 0.03, 30), linear(0.57, 0.012, 70)] },
+  { name: 'Steel', kind: 1, depth: 0.17, metal: 1, c: [linear(0.74, 0.008, 240), linear(0.47, 0.11, 48), linear(0.32, 0.07, 36), linear(0.6, 0.01, 240), [0, 0, 0]] },
+  { name: 'Concrete', kind: 2, depth: 0.11, metal: 0, c: [linear(0.6, 0.008, 250), linear(0.56, 0.016, 75), linear(0.4, 0.012, 235), linear(0.34, 0.01, 260), [0, 0, 0]] },
+];
+// Small stencil icons for the wall chip.
+const WALL_ICON = [
+  '<path d="M1 2h6v3H1zM8 2h7v3H8zM1 6h3v3H1zM5 6h6v3H5zM12 6h3v3h-3zM1 10h6v3H1zM8 10h7v3H8z"/>',
+  '<path d="M1 2h2v12H1zM5 2h2v12H5zM9 2h2v12H9zM13 2h2v12h-2z"/>',
+  '<path fill-rule="evenodd" d="M1 1h14v14H1zM3 6a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0zM10 6a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0zM1 10h14v1.2H1z"/>',
+];
 const AMB = scale(linear(0.62, 0.07, 255), 0.26), KEY = scale(linear(0.9, 0.03, 245), 0.7);
 // The night light comes from the upper left; y points up.
 const LAMB = (() => { const v = [-0.35, 0.6, 0.72], n = Math.hypot(...v); return v.map(x => x / n); })();
@@ -154,7 +193,7 @@ function rest() {
     if (!raf && !draft && !tubes.some(t => t.lvl > 0) && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'Backspace', 'c', 'C', '1', '2', '3', '4', '5']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'Backspace', 'c', 'C', 'k', 'K', 'p', 'P', 'w', 'W', 'm', 'M', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -230,14 +269,38 @@ function thump(t) {
   });
 }
 // A switch snaps: a bright tick over a small body.
-function click(x) {
+function click(x, k = 1) {
   const a = live();
   if (!a) return;
-  const t0 = a.currentTime + LEAD, g = level() * jit(0.08);
+  const t0 = a.currentTime + LEAD, g = level() * k * jit(0.08);
   voice(a, x, (dst, hold) => {
     burst(a, dst, t0, 'bandpass', 3300 * jit(0.05), 1.3, 0.2 * g, 0.0022, 0.02, hold());
     tone(a, dst, t0, 1500 * jit(0.04), 780, 0.04 * g, 0.004, hold());
     tone(a, dst, t0 + 0.004, 130 * jit(0.05), 90, 0.06 * g, 0.022, hold());
+  });
+}
+// A knuckle on the wall: each wall answers in its own voice.
+function thud(x) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, g = level() * jit(0.1), kind = WALLS[wallNow].kind;
+  voice(a, x, (dst, hold) => {
+    if (kind === 1) {
+      // The steel sheet booms and rings on a few loose partials.
+      tone(a, dst, t0, 74 * jit(0.05), 58, 0.16 * g, 0.09, hold());
+      for (const [f, k, tau] of [[187, 0.05, 0.16], [433, 0.035, 0.11], [761, 0.022, 0.08], [1290, 0.014, 0.05]]) {
+        tone(a, dst, t0 + 0.002, f * jit(0.03), f * 0.97, k * g, tau, hold());
+      }
+      burst(a, dst, t0, 'bandpass', 2400, 0.9, 0.05 * g, 0.012, 0.08, hold());
+    } else if (kind === 2) {
+      // Concrete swallows the blow: a dead, short knock.
+      tone(a, dst, t0, 120 * jit(0.05), 64, 0.14 * g, 0.022, hold());
+      burst(a, dst, t0, 'lowpass', 1700, 0.8, 0.08 * g, 0.007, 0.05, hold());
+    } else {
+      // Brick gives a dull thump with a gritty edge.
+      tone(a, dst, t0, 104 * jit(0.05), 66, 0.15 * g, 0.04, hold());
+      burst(a, dst, t0, 'bandpass', 900, 0.9, 0.08 * g, 0.014, 0.08, hold());
+    }
   });
 }
 // Each lit tube buzzes: a mains sawtooth through a low filter.
@@ -274,7 +337,8 @@ function humStop(v) {
 function humSync() {
   if (!ac || !humBus) return;
   const lit = [];
-  for (let i = tubes.length - 1; i >= 0 && lit.length < MAXHUM; i--) if (tubes[i].lvl > 0.01 || tubes[i].seq) lit.push(tubes[i]);
+  // A chase keeps its voices, so they do not churn each beat.
+  for (let i = tubes.length - 1; i >= 0 && lit.length < MAXHUM; i--) if (tubes[i].lvl > 0.01 || tubes[i].seq || (chase && tubes[i].keep)) lit.push(tubes[i]);
   for (const [t, v] of hums) if (!lit.includes(t)) { humStop(v); hums.delete(t); }
   for (const t of lit) if (!hums.has(t)) hums.set(t, humVoice(t));
   const now = ac.currentTime, n = hums.size;
@@ -294,8 +358,10 @@ function sfx(t, kind, v) {
 
 /* ---------- tubes: control points in stage units, centred ---------- */
 const MAXT = 64;
-let W = 0, H = 0, S = 1, R = 7, ROW = 60, pr = 1, gasNow = 1;
+let W = 0, H = 0, S = 1, R = 7, ROW = 60, pr = 1, gasNow = 6, mixAt = 0, wallNow = 0, chase = null;
 const tubes = [];
+// The gas a new tube takes; Mix walks its own order.
+const gasPick = () => (gasNow < MIX ? gasNow : MIX_ORDER[mixAt % MIX_ORDER.length]);
 let draft = null, staticDirty = true, draftDirty = false;
 
 // Centripetal Catmull-Rom through the control points, sampled densely.
@@ -411,7 +477,7 @@ function shape(ctrl, id) {
 const toCss = ([u, v]) => [W / 2 + u * S, H / 2 + v * S];
 function makeTube(ctrlUnits, gas, on) {
   return {
-    ctrl: ctrlUnits, gas, on, lvl: on ? 1 : 0, goal: on ? 1 : 0, show: on ? 1 : 0, seq: null, si: 0,
+    ctrl: ctrlUnits, gas, on, keep: true, lvl: on ? 1 : 0, goal: on ? 1 : 0, show: on ? 1 : 0, seq: null, si: 0,
     f1: rand(2.2, 4.5), f2: rand(6, 11), ph: rand(0, TAU), crackAt: 0, v: null, c: null, hit: null, len: 0, pan: 0, first: 0, count: 0,
   };
 }
@@ -453,8 +519,95 @@ function cut(t, now) {
 }
 function toggle(t) {
   const now = performance.now() / 1000;
+  // In a chase, a click takes a tube out of the show.
+  // A second click brings it back.
+  if (chase) t.keep = !t.on;
   if (t.on) cut(t, now);
   else strike(t, now, true);
+  wake();
+}
+
+/* ---------- knock: a rap on the wall jolts the tubes near it ---------- */
+function knock(x, y) {
+  const now = performance.now() / 1000;
+  thud((x / W) * 2 - 1);
+  for (const t of tubes) {
+    const h = t.hit;
+    let bd = Infinity;
+    for (let i = 0; i < h.length; i += 2) bd = Math.min(bd, (h[i] - x) ** 2 + (h[i + 1] - y) ** 2);
+    // Near tubes jump hard; far ones only shiver, a beat later.
+    const k = Math.exp(-Math.sqrt(bd) / (0.2 * S));
+    if (k < 0.12 || (!t.on && k < 0.45)) continue;
+    const seq = [];
+    let at = now + 0.012 + (1 - k) * 0.06;
+    for (let j = 0, n = reduce ? 1 : 1 + Math.round(k * 4); j < n; j++) {
+      if (t.on) {
+        seq.push([at, rand(0.04, 0.6) * (1 - 0.6 * k), j ? 0 : 1]);
+        at += rand(0.02, 0.06);
+        seq.push([at, 1, 0]);
+      } else {
+        // A dark tube close by catches a stray spark.
+        seq.push([at, rand(0.25, 0.7) * k, 1]);
+        at += rand(0.015, 0.04);
+        seq.push([at, 0, 0]);
+      }
+      at += rand(0.03, 0.12);
+    }
+    t.seq = seq;
+    t.si = 0;
+  }
+  wake();
+}
+
+/* ---------- chase: the sign runs its show, one beat at a time ---------- */
+const BEAT = 0.17;
+// One show: each tube alone, then filling up, then two slow flashes.
+// Flashes hold two beats, so they stay under three a second.
+function chaseOn(k, i, n) {
+  k %= 2 * n + 12;
+  if (k < n) return i === k;
+  if (k < 2 * n) return i <= k - n;
+  k -= 2 * n;
+  return k >= 8 || ((k >> 1) & 1) === 0;
+}
+function chaseStep(now) {
+  const k = Math.floor((now - chase.t0) / BEAT);
+  if (k === chase.k) return;
+  chase.k = k;
+  const cast = tubes.filter(t => t.keep);
+  let flips = 0, pan = 0;
+  cast.forEach((t, i) => {
+    const want = chaseOn(k, i, cast.length);
+    if (want === t.on) return;
+    t.on = want;
+    t.seq = null;
+    t.goal = want ? 1 : 0;
+    flips++;
+    pan += t.pan;
+  });
+  // One relay tick per beat that changes anything.
+  if (flips) click(pan / flips, 0.45);
+}
+function setChase(on) {
+  on = on && !reduce && ready;
+  if (!!chase === on) return;
+  const now = performance.now() / 1000;
+  if (on) {
+    // The show casts the lit tubes, or every tube if none glow.
+    const any = tubes.some(t => t.on);
+    tubes.forEach(t => { t.keep = any ? t.on : true; });
+    chase = { t0: now, k: -1 };
+  } else {
+    chase = null;
+    // The sign settles back to the tubes in the show.
+    for (const t of tubes) {
+      if (t.keep && !t.on) strike(t, now, true);
+      else if (!t.keep && t.on) cut(t, now);
+      t.keep = true;
+    }
+  }
+  chaseBtn.setAttribute('aria-pressed', String(on));
+  humSync();
   wake();
 }
 
@@ -477,16 +630,24 @@ float fbm(vec2 p) {
   for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.07 + 13.7; a *= 0.5; }
   return s / 0.9375;
 }`;
-// The wall's material, baked once per size: albedo, gloss, normal, height, shade.
+// The wall's material, baked once per size and kind.
+// It holds albedo, gloss, normal, height and shade.
 const WALLGEN_FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes;
-uniform float uRow;
-uniform vec3 uB1, uB2, uB3, uB4, uMortar, uLamb;
+uniform float uRow, uDepth;
+uniform int uKind;
+uniform vec3 uC0, uC1, uC2, uC3, uC4, uLamb;
 layout(location = 0) out vec4 oA;
 layout(location = 1) out vec4 oB;
 ${NOISE}
-const float BW = 3.15, MORT = 0.12, DEPTH = 0.14;
+const mat2 TURN = mat2(0.8, -0.6, 0.6, 0.8);
+float sdBox(vec2 q, vec2 b, float r) { vec2 d = abs(q) - b + r; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r; }
+// One inside a soft edge at distance w, zero outside.
+float band(float d, float w, float aa) { return 1.0 - smoothstep(w - aa, w + aa, d); }
+
+/* Brick: staggered courses in a sunken mortar bed. */
+const float BW = 3.15, MORT = 0.12;
 void cell(vec2 p, out vec2 id, out vec2 q) {
   float row = floor(p.y);
   float x = p.x + mod(row, 2.0) * 0.5 * BW + (hash12(vec2(row, 3.7)) - 0.5) * 0.24;
@@ -494,9 +655,8 @@ void cell(vec2 p, out vec2 id, out vec2 q) {
   id = vec2(col, row);
   q = vec2(x - (col + 0.5) * BW, p.y - row - 0.5);
 }
-float sdBox(vec2 q, vec2 b, float r) { vec2 d = abs(q) - b + r; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r; }
 // Brick faces stand near one; the mortar sinks near zero.
-float height(vec2 p, out vec2 id, out float face) {
+float brickH(vec2 p, out vec2 id, out float face) {
   vec2 q;
   cell(p, id, q);
   vec2 rn = hash22(id), rm = hash22(id + 17.3);
@@ -506,7 +666,7 @@ float height(vec2 p, out vec2 id, out float face) {
   d += (fbm(p * 4.3 + rn * 31.0) - 0.5) * 0.08;
   face = smoothstep(0.0, 0.1, -d);
   // A turned grid hides the noise lattice.
-  vec2 r = mat2(0.8, -0.6, 0.6, 0.8) * p;
+  vec2 r = TURN * p;
   float tilt = dot(q, (rm - 0.5) * vec2(0.03, 0.09));
   float surf = (fbm(r * 5.0 + rm * 23.0) - 0.5) * 0.1 + (vnoise(r * 16.0) - 0.5) * 0.035;
   float pit = smoothstep(0.78, 0.96, vnoise(r * 11.0 + rn * 7.0));
@@ -514,77 +674,185 @@ float height(vec2 p, out vec2 id, out float face) {
   float hm = 0.1 + (vnoise(r * 26.0) - 0.5) * 0.07 + (vnoise(r * 8.0) - 0.5) * 0.06;
   return mix(hm, hb2, face);
 }
+void brickMat(vec2 p, out vec3 alb, out float gloss) {
+  vec2 id;
+  float face;
+  brickH(p, id, face);
+  float k = hash12(id + 11.3), k2 = hash12(id + 5.1);
+  vec3 b = mix(uC0, uC1, smoothstep(0.15, 0.7, k));
+  b = mix(b, uC2, step(0.86, k));
+  b = mix(b, uC3, step(0.92, k2));
+  b *= 0.6 + 0.65 * fbm(p * 2.6 + id * 1.7);
+  // Fired clay shows darker flecks.
+  b *= 1.0 - 0.35 * smoothstep(0.6, 0.85, vnoise(p * 23.0 + 4.0));
+  alb = mix(uC4 * (0.72 + 0.5 * vnoise(p * 17.0)), b, face);
+  // Grime gathers in broad patches and runs down in streaks.
+  alb *= mix(0.55, 1.05, fbm(p * 0.21 + 3.0)) * (0.85 + 0.25 * vnoise(vec2(p.x * 1.7, p.y * 0.08)));
+  gloss = face * smoothstep(0.5, 0.72, fbm(p * 0.33 + 41.0)) * 0.9 + 0.05;
+}
+
+/* Corrugated steel: sine ridges, lapped sheets, screws on the rails. */
+const float CP = 0.44, SHW = 3.08, SHH = 4.6, PUR = 2.3;
+vec2 sheetOf(vec2 p) { return vec2(floor((p.x - 0.5 * CP) / SHW), floor(p.y / SHH)); }
+vec2 screwAt(vec2 p) { return vec2(floor(p.x / (2.0 * CP) + 0.5) * 2.0 * CP, (floor(p.y / PUR) + 0.5) * PUR); }
+float steelH(vec2 p) {
+  vec2 sh = sheetOf(p);
+  float c = 0.5 - 0.5 * cos(6.2831853 * p.x / CP);
+  // Alternate sheets lie on top, so each lap shows an edge.
+  float h = 0.3 + 0.52 * c + 0.05 * mod(sh.x + sh.y, 2.0);
+  // Old sheets wave and carry the odd dent.
+  vec2 r = TURN * p;
+  h += (fbm(r * 0.4 + sh * 7.3) - 0.5) * 0.18;
+  h -= 0.22 * smoothstep(0.72, 0.95, vnoise(r * 0.9 + sh * 3.1));
+  // A screw and its washer sit in every other trough.
+  float d = length(p - screwAt(p));
+  h += 0.1 * band(d, 0.085, 0.01) + 5.0 * sqrt(max(0.0, 0.0025 - d * d));
+  return h;
+}
+void steelMat(vec2 p, float h, out vec3 alb, out float gloss) {
+  vec2 sh = sheetOf(p);
+  // Zinc spangle: flakes of slightly different sheen.
+  vec2 g = p * 6.0, gi = floor(g), gf = fract(g);
+  float best = 9.0, flake = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 o = vec2(float(i), float(j)), r = o + hash22(gi + o) - gf;
+    float d = dot(r, r);
+    if (d < best) { best = d; flake = hash12(gi + o + 0.7); }
+  }
+  vec3 steel = mix(uC0, uC3, hash12(sh + 2.3)) * (0.84 + 0.26 * flake);
+  // Rust runs down from some screws and rings others.
+  vec2 sc = screwAt(p), dv = p - sc;
+  float rs = hash12(sc * 1.7 + 0.3);
+  float wob = (vnoise(vec2(p.y * 3.0, sc.x * 9.0)) - 0.5) * 0.08;
+  float wd = 0.03 + 0.05 * min(max(-dv.y, 0.0), 1.6);
+  float run = band(abs(dv.x + wob), wd, 0.02) * step(dv.y, 0.06) * exp(min(dv.y, 0.0) * mix(3.2, 0.6, rs)) * step(0.4, rs);
+  float ring = band(length(dv), 0.11, 0.04) * step(0.25, rs);
+  // Water sits on each lap; broad patches bloom here and there.
+  float lap = band(mod(p.y, SHH), 0.22, 0.12) * smoothstep(0.4, 0.7, fbm(p * vec2(1.6, 5.0) + 9.0));
+  float spot = smoothstep(0.6, 0.8, fbm(p * 0.42 + sh * 5.0 + 17.0));
+  float rust = clamp(max(max(run, ring), max(lap, spot)) * (0.55 + 0.7 * fbm(p * 7.0)), 0.0, 1.0);
+  alb = mix(steel, mix(uC1, uC2, fbm(p * 9.0 + 3.0)), rust);
+  // Grime streaks down the troughs.
+  alb *= mix(0.72, 1.0, smoothstep(0.3, 0.7, h)) * (0.82 + 0.3 * vnoise(vec2(p.x * 5.0, p.y * 0.18)));
+  // Sheet edges and laps show as dark cuts.
+  float ex = abs(fract((p.x - 0.5 * CP) / SHW + 0.5) - 0.5) * SHW;
+  float ey = abs(fract(p.y / SHH + 0.5) - 0.5) * SHH;
+  alb *= mix(0.3, 1.0, smoothstep(0.0, 0.03, min(ex, ey)));
+  gloss = mix(0.5 + 0.4 * flake, 0.07, rust);
+}
+
+/* Board-formed concrete: plank prints, fins, tie holes and bugholes. */
+const float BH = 1.15, TIE = 3.45, PW = 6.9;
+vec2 tieAt(vec2 p) { return (floor(p / TIE) + 0.5) * TIE; }
+float concH(vec2 p, out float hole) {
+  float b = floor(p.y / BH), fy = fract(p.y / BH);
+  // Formwork panels shift every third plank.
+  float px = (p.x + floor(b / 3.0) * 2.3) / PW;
+  float bs = hash12(vec2(b, floor(px)) + 4.1);
+  // Each plank sat a little proud or shy and cupped.
+  float h = 0.62 + (bs - 0.5) * 0.1 - 0.035 * sin(fy * 3.14159);
+  // Wood grain prints into the face along each plank.
+  vec2 w = vec2(p.x * 0.5 + bs * 40.0, p.y * 7.0);
+  w.y += (fbm(vec2(p.x * 0.3, b) + bs * 9.0) - 0.5) * 2.4;
+  h += (fbm(w) - 0.5) * 0.12 + (vnoise(vec2(p.x * 2.0, p.y * 26.0) + bs * 3.0) - 0.5) * 0.05;
+  // Grout leaks through each joint into a thin fin.
+  float dj = min(fy, 1.0 - fy) * BH;
+  h += 0.09 * band(dj, 0.025, 0.012) * (0.4 + 0.8 * vnoise(vec2(p.x * 5.0, b * 3.0)));
+  // Panel joints leave a narrow ridge.
+  float dp = abs(fract(px + 0.5) - 0.5) * PW;
+  h += 0.06 * band(dp, 0.02, 0.012);
+  // Bugholes are small pits where air was trapped.
+  vec2 bc = floor(p / 0.42), bf = fract(p / 0.42), bh = hash22(bc + 31.0);
+  float bug = step(bh.x, 0.2) * band(length(bf - 0.2 - 0.6 * hash22(bc + 5.0)) * 0.42, 0.015 + 0.035 * bh.y, 0.008);
+  h -= 0.3 * bug;
+  // A form tie leaves a cone-shaped hole.
+  float d = length(p - tieAt(p)), r = 0.11;
+  hole = band(d, r, 0.012);
+  return mix(h, 0.3 + 0.3 * d / r, hole);
+}
+void concMat(vec2 p, float h, float hole, out vec3 alb, out float gloss) {
+  float b = floor(p.y / BH);
+  vec3 c = mix(uC0, uC1, fbm(p * 0.6 + 5.0));
+  // Each plank takes its own tone.
+  c *= (0.9 + 0.18 * hash12(vec2(b, 8.0))) * (0.82 + 0.34 * fbm(p * 2.7 + 1.0));
+  // Sand and fine stone speckle the face.
+  c *= 0.88 + 0.24 * hash12(floor(p * 38.0));
+  // Rain stains run down from each tie hole.
+  vec2 tc = tieAt(p), dv = p - tc;
+  float wob = (vnoise(vec2(p.y * 2.0, tc.x)) - 0.5) * 0.2;
+  float st = band(abs(dv.x + wob), 0.08 + 0.09 * min(max(-dv.y, 0.0), 3.0), 0.06) * step(dv.y, 0.0) * exp(dv.y * 0.45);
+  c = mix(c, uC2, st * 0.65);
+  // Broad water marks drift down the wall.
+  c *= mix(0.72, 1.06, fbm(vec2(p.x * 0.8, p.y * 0.1) + 2.0));
+  alb = mix(c, uC3, hole * 0.6);
+  gloss = 0.05 + 0.12 * smoothstep(0.55, 0.85, fbm(p * 0.37 + 3.0));
+}
+
+float height(vec2 p) {
+  float hole;
+  vec2 id;
+  float face;
+  if (uKind == 1) return steelH(p);
+  if (uKind == 2) return concH(p, hole);
+  return brickH(p, id, face);
+}
 void main() {
   vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRow + vec2(0.37, 0.21);
-  float e = 1.0 / uRow, face, f2;
-  vec2 id, id2;
-  float h = height(p, id, face);
-  float hx = height(p + vec2(e, 0.0), id2, f2), hy = height(p + vec2(0.0, e), id2, f2);
-  vec3 n = normalize(vec3(-(hx - h) / e * DEPTH, -(hy - h) / e * DEPTH, 1.0));
-  // The night light skims the relief; brick edges shade the joints.
+  float e = 1.0 / uRow;
+  float h = height(p), hx = height(p + vec2(e, 0.0)), hy = height(p + vec2(0.0, e));
+  vec3 n = normalize(vec3(-(hx - h) / e * uDepth, -(hy - h) / e * uDepth, 1.0));
+  // The night light skims the relief; raised edges shade the hollows.
   vec2 ld = normalize(uLamb.xy);
   float tanE = uLamb.z / length(uLamb.xy), occ = 0.0;
   for (int i = 1; i <= 4; i++) {
     float t = float(i * i) * 0.012;
-    occ = max(occ, (height(p + ld * t, id2, f2) - h) * DEPTH - t * tanE);
+    occ = max(occ, (height(p + ld * t) - h) * uDepth - t * tanE);
   }
   float vis = 1.0 - smoothstep(0.0, 0.03, occ) * 0.75;
-  float k = hash12(id + 11.3), k2 = hash12(id + 5.1);
-  vec3 b = mix(uB1, uB2, smoothstep(0.15, 0.7, k));
-  b = mix(b, uB3, step(0.86, k));
-  b = mix(b, uB4, step(0.92, k2));
-  b *= 0.6 + 0.65 * fbm(p * 2.6 + id * 1.7);
-  // Fired clay shows darker flecks.
-  b *= 1.0 - 0.35 * smoothstep(0.6, 0.85, vnoise(p * 23.0 + 4.0));
-  vec3 alb = mix(uMortar * (0.72 + 0.5 * vnoise(p * 17.0)), b, face);
-  // Grime gathers in broad patches and runs down in streaks.
-  alb *= mix(0.55, 1.05, fbm(p * 0.21 + 3.0)) * (0.85 + 0.25 * vnoise(vec2(p.x * 1.7, p.y * 0.08)));
-  float gloss = face * smoothstep(0.5, 0.72, fbm(p * 0.33 + 41.0)) * 0.9 + 0.05;
+  vec3 alb;
+  float gloss, hole;
+  if (uKind == 1) steelMat(p, h, alb, gloss);
+  else if (uKind == 2) { concH(p, hole); concMat(p, h, hole, alb, gloss); }
+  else brickMat(p, alb, gloss);
   float ao = mix(0.5, 1.0, smoothstep(0.05, 0.75, h));
   oA = vec4(alb, gloss);
   oB = vec4(n.xy * 0.5 + 0.5, clamp(h, 0.0, 1.0), vis * ao);
 }`;
 // Shared lighting: the wall under night light and neon, then the camera.
 const LIGHT = `
-uniform sampler2D uGA, uGB, uGlow, uHalo;
+uniform sampler2D uGA, uGB, uGlow, uHalo, uEm;
 uniform vec2 uRes, uShOff;
 uniform vec3 uAmb, uLamb, uKey;
-uniform float uLift, uDepth, uWallK, uBloom, uHaloK, uPr, uExpo;
+uniform float uLift, uRefl, uMetal, uWallK, uBloom, uHaloK, uExpo;
 ${NOISE}
-float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 wallAt(vec2 fc) {
   ivec2 top = ivec2(uRes) - 1, ip = clamp(ivec2(fc), ivec2(0), top);
   vec4 A = texelFetch(uGA, ip, 0), B = texelFetch(uGB, ip, 0);
   vec3 n = vec3(B.xy * 2.0 - 1.0, 0.0);
   n.z = sqrt(max(0.0, 1.0 - dot(n.xy, n.xy)));
   vec2 uv = (vec2(ip) + 0.5) / uRes;
+  // Glossy parts of a metal wall are bare steel; rust stays matte.
+  float metal = uMetal * smoothstep(0.25, 0.5, A.a), rough = 1.0 - A.a;
+  vec3 dif = A.rgb * (1.0 - 0.9 * metal), F0 = mix(vec3(0.04), A.rgb, metal);
   // Night light falls from above; tubes and clips shade it.
-  float shade = clamp(texture(uHalo, uv + uShOff).a * 1.4, 0.0, 1.0);
-  vec3 col = uAmb * A.rgb * B.w * (0.55 + 0.6 * uv.y) * (0.25 + 0.95 * max(dot(n, uLamb), 0.0)) * (1.0 - 0.7 * shade);
-  // The glow gives the neon's strength; its slope points to the tubes.
-  vec2 tx = 1.0 / vec2(textureSize(uGlow, 0));
+  float sky = (0.55 + 0.6 * uv.y) * B.w * (1.0 - 0.7 * clamp(texture(uHalo, uv + uShOff).a * 1.4, 0.0, 1.0));
+  float ndl = max(dot(n, uLamb), 0.0);
+  vec3 col = uAmb * dif * sky * (0.25 + 0.95 * ndl);
+  vec3 H = normalize(uLamb + vec3(0.0, 0.0, 1.0));
+  float sp = pow(max(dot(n, H), 0.0), mix(90.0, 6.0, rough)) * mix(0.9, 0.08, rough);
+  col += F0 * sky * (uAmb * (0.4 + 1.5 * ndl) + uKey * sp);
+  // Neon light: glow sampled a little way along the slope.
+  // It shows how much a face turns toward the tubes.
+  // Each channel reads its own glow, so two colours light opposite slopes.
   vec3 g = texture(uGlow, uv).rgb;
-  vec2 grad = vec2(
-    luma(texture(uGlow, uv + vec2(tx.x, 0.0)).rgb) - luma(texture(uGlow, uv - vec2(tx.x, 0.0)).rgb),
-    luma(texture(uGlow, uv + vec2(0.0, tx.y)).rgb) - luma(texture(uGlow, uv - vec2(0.0, tx.y)).rgb)) / (2.0 * tx * uRes);
-  vec2 lg = grad / (luma(g) + 1e-5);
-  float m = length(lg);
-  vec2 dir = lg / max(m, 1e-6);
-  vec3 L = normalize(vec3(dir, max(uLift * m, 0.25)));
-  // Between tubes the light comes from both sides and loses its aim.
-  float aim = smoothstep(0.0, 1.0, m * uLift * 2.5);
-  float relief = mix(1.0, clamp(max(dot(n, L), 0.0) / L.z, 0.0, 2.6), aim);
-  // Brick edges between the point and the tube cast short shadows.
-  float tanE = L.z / max(length(L.xy), 1e-3), occ = 0.0;
-  for (int i = 1; i <= 4; i++) {
-    float d = float(i * i) * 1.6 * uPr;
-    float hs = texelFetch(uGB, clamp(ip + ivec2(dir * d), ivec2(0), top), 0).z;
-    occ = max(occ, (hs - B.z) * uDepth - d * tanE);
-  }
-  float lit = 1.0 - 0.85 * aim * smoothstep(0.0, 1.5 * uPr, occ);
-  vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
-  float spec = A.a * pow(max(dot(n, H), 0.0), 36.0) * 0.6;
-  col += g * uWallK * (A.rgb * relief * mix(0.7, 1.0, B.w) + spec * aim) * lit;
+  vec3 gb = texture(uGlow, uv + n.xy * uLift / uRes).rgb;
+  vec3 neon = clamp(g + (gb - g) * 2.2, g * 0.12, g * 3.0);
+  col += neon * uWallK * dif * mix(0.7, 1.0, B.w);
+  // Gloss and bare steel mirror the tubes, bent by the relief.
+  vec2 ro = n.xy * uRefl / uRes;
+  vec3 sharp = mix(texture(uHalo, uv + ro).rgb, texture(uEm, uv + ro).rgb, A.a);
+  vec3 refl = mix(texture(uGlow, uv + ro * 0.7).rgb, sharp, A.a * A.a);
+  col += refl * uWallK * F0 * A.a * 1.4 * mix(0.75, 1.0, B.w);
   return col;
 }
 // Polished metal mirrors the neon around it.
@@ -773,7 +1041,7 @@ void main() {
   o = s / 12.0 * uK + texture(uBase, uv) * uW;
 }`;
 
-const LIGHT_U = ['uGA', 'uGB', 'uGlow', 'uHalo', 'uRes', 'uShOff', 'uAmb', 'uLamb', 'uKey', 'uLift', 'uDepth', 'uWallK', 'uBloom', 'uHaloK', 'uPr', 'uExpo'];
+const LIGHT_U = ['uGA', 'uGB', 'uGlow', 'uHalo', 'uEm', 'uRes', 'uShOff', 'uAmb', 'uLamb', 'uKey', 'uLift', 'uRefl', 'uMetal', 'uWallK', 'uBloom', 'uHaloK', 'uExpo'];
 const LOOK = { uWallK: 1.0, uBloom: 0.05, uHaloK: 0.2, uExpo: 1.0, emit: 1.6 };
 const LEVELS = 6, UPW = [0.9, 0.95, 0.9, 0.7, 0.42, 0.22];
 
@@ -849,18 +1117,19 @@ async function initGL() {
     if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
   }
   P = progs;
-  uni(P.wall, ['uRes', 'uRow', 'uLamb', ...Object.keys(WALL)]);
+  uni(P.wall, ['uRes', 'uRow', 'uDepth', 'uKind', 'uLamb', 'uC0', 'uC1', 'uC2', 'uC3', 'uC4']);
   uni(P.final, LIGHT_U);
   uni(P.tube, [...LIGHT_U, 'uView', 'uGas', 'uR', 'uRpx', 'uMode', 'uEmK']);
   uni(P.clip, [...LIGHT_U, 'uView', 'uR', 'uSize', 'uRpx', 'uMode', 'uPen']);
   uni(P.down, ['uSrc', 'uTx', 'uDst']);
   uni(P.up, ['uSrc', 'uBase', 'uTx', 'uDst', 'uW', 'uK']);
   gl.useProgram(P.wall.p);
-  for (const k in WALL) gl.uniform3fv(P.wall.u[k], WALL[k]);
   gl.uniform3fv(P.wall.u.uLamb, LAMB);
   for (const q of [P.final, P.tube, P.clip]) {
     gl.useProgram(q.p);
     ['uGA', 'uGB', 'uGlow', 'uHalo'].forEach((n, i) => gl.uniform1i(q.u[n], i));
+    // The sharp emission sits on unit 6.
+    gl.uniform1i(q.u.uEm, 6);
     gl.uniform3fv(q.u.uAmb, AMB);
     gl.uniform3fv(q.u.uLamb, LAMB);
     gl.uniform3fv(q.u.uKey, KEY);
@@ -956,7 +1225,8 @@ function rebuildDraft() {
 function allocTargets() {
   [gbuf, E, ...D, ...U].forEach(freeTarget);
   const cw = canvas.width, ch = canvas.height;
-  gbuf = target(cw, ch, gl.RGBA8, gl.NEAREST, true);
+  // Half floats keep smooth normals free of banding.
+  gbuf = target(cw, ch, gl.RGBA16F, gl.NEAREST, true);
   E = target(Math.ceil(cw / 2), Math.ceil(ch / 2), gl.RGBA16F, gl.LINEAR);
   D = [];
   U = [];
@@ -967,15 +1237,7 @@ function allocTargets() {
     U.push(i < LEVELS - 1 ? target(w, h, gl.RGBA16F, gl.LINEAR) : null);
   }
   U.pop();
-  // The wall bakes once per size.
-  gl.bindFramebuffer(gl.FRAMEBUFFER, gbuf.fb);
-  gl.viewport(0, 0, cw, ch);
-  gl.disable(gl.BLEND);
-  gl.useProgram(P.wall.p);
-  gl.uniform2f(P.wall.u.uRes, cw, ch);
-  gl.uniform1f(P.wall.u.uRow, ROW * pr);
-  gl.bindVertexArray(emptyVao);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  bakeWall();
   [gbuf.tex, gbuf.tex2, U[0].tex, D[0].tex].forEach((tx, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, tx); });
   gl.activeTexture(gl.TEXTURE0);
   const rp = R * pr;
@@ -984,13 +1246,32 @@ function allocTargets() {
     gl.uniform2f(q.u.uRes, cw, ch);
     gl.uniform2f(q.u.uShOff, (LD[0] * 2.9 * rp) / cw, (LD[1] * 2.9 * rp) / ch);
     gl.uniform1f(q.u.uLift, 3 * rp);
-    gl.uniform1f(q.u.uDepth, 0.14 * ROW * pr);
-    gl.uniform1f(q.u.uPr, pr);
+    gl.uniform1f(q.u.uRefl, 6 * rp);
   }
   for (const q of [P.tube, P.clip]) {
     gl.useProgram(q.p);
     gl.uniform2f(q.u.uView, cw, ch);
     gl.uniform1f(q.u.uR, rp);
+  }
+}
+
+// The wall bakes once per size and once per kind.
+function bakeWall() {
+  const cw = canvas.width, ch = canvas.height, w = WALLS[wallNow];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, gbuf.fb);
+  gl.viewport(0, 0, cw, ch);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.wall.p);
+  gl.uniform2f(P.wall.u.uRes, cw, ch);
+  gl.uniform1f(P.wall.u.uRow, ROW * pr);
+  gl.uniform1i(P.wall.u.uKind, w.kind);
+  gl.uniform1f(P.wall.u.uDepth, w.depth);
+  w.c.forEach((c, i) => gl.uniform3fv(P.wall.u[`uC${i}`], c));
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  for (const q of [P.final, P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    gl.uniform1f(q.u.uMetal, w.metal);
   }
 }
 
@@ -1024,6 +1305,10 @@ function render() {
   if (draft) gasU.set([...GAS[draft.gas], 0], tubes.length * 4);
 
   // Light and cover go to a half-size target.
+  // Unit 6 lets go of it first.
+  // So no pass samples its own target.
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, E.fb);
   gl.viewport(0, 0, E.w, E.h);
   gl.clearColor(0, 0, 0, 0);
@@ -1066,6 +1351,8 @@ function render() {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     src = dst;
   }
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, E.tex);
   gl.activeTexture(gl.TEXTURE0);
 
   // The wall, then clips, glass and straps over it.
@@ -1083,7 +1370,7 @@ function render() {
     gl.bindBuffer(gl.ARRAY_BUFFER, penBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([pen.x * pr, pen.y * pr, 1, 0, 0]), gl.DYNAMIC_DRAW);
     gl.useProgram(P.clip.p);
-    const g = GAS[gasNow];
+    const g = GAS[gasPick()];
     gl.uniform4f(P.clip.u.uPen, g[0], g[1], g[2], pen.a);
     gl.uniform1f(P.clip.u.uMode, 3);
     gl.uniform1f(P.clip.u.uRpx, rp);
@@ -1127,6 +1414,7 @@ function update(now, dt) {
     t.show = t.lvl * sh;
   }
   if (lit && !reduce) busy = true;
+  if (chase) { chaseStep(now); busy = true; }
   // Held arrows steer the keyboard pen.
   if (pen.keys.size) {
     let dx = 0, dy = 0;
@@ -1235,7 +1523,7 @@ function local(e) {
   return [e.clientX - r.left, e.clientY - r.top];
 }
 function beginDraft(x, y, pid) {
-  draft = { raw: [x, y], ctrl: [[x, y]], arc: 0, pid, gas: gasNow, count: 0, v: null, c: null };
+  draft = { raw: [x, y], ctrl: [[x, y]], arc: 0, pid, gas: gasPick(), count: 0, v: null, c: null };
   draftDirty = true;
   wake();
 }
@@ -1275,6 +1563,7 @@ function endDraft() {
   if (tubes.length >= MAXT - 1) tubes.shift();
   const t = makeTube(d.ctrl.map(([x, y]) => [(x - W / 2) / S, (y - H / 2) / S]), d.gas, false);
   tubes.push(t);
+  if (gasNow === MIX) { mixAt++; paintGas(); }
   tubes.forEach(shapeTube);
   staticDirty = true;
   strike(t, performance.now() / 1000, false);
@@ -1328,6 +1617,7 @@ function lift(e) {
   if (p.moved) { if (draft && draft.pid === p.id) endDraft(); return; }
   const t = pick(p.x, p.y, R * 1.3 + (p.touch ? 12 : 5));
   if (t) toggle(t);
+  else knock(p.x, p.y);
 }
 panel.addEventListener('pointerup', lift);
 panel.addEventListener('pointercancel', lift);
@@ -1343,6 +1633,7 @@ function undo() {
   wake();
 }
 function clearAll() {
+  setChase(false);
   if (draft) cancelDraft();
   if (!tubes.length) return;
   if (tubes.some(t => t.lvl > 0)) click(0);
@@ -1351,14 +1642,97 @@ function clearAll() {
   humSync();
   wake();
 }
-const chips = [...document.querySelectorAll('[data-gas]')];
+/* ---------- the bar: gas rail, wall, chase, clear ---------- */
+const gasEl = document.getElementById('gas'), rail = gasEl.querySelector('.gas-rail'), gasName = gasEl.querySelector('.gas-name');
+const wallBtn = document.getElementById('wall'), chaseBtn = document.getElementById('chase'), clearBtn = document.getElementById('clear');
+const NAMES = [...GAS_SPEC.map(g => g[0]), 'Mix'];
+rail.innerHTML = GAS_SPEC.map(([, L, C, h]) => `<i style="--c: oklch(${L} ${(C * 0.92).toFixed(3)} ${h})"></i>`).join('') + '<i class="mix"></i>';
+const swatches = [...rail.children];
+let peek = -1;
+// The name follows a hovered swatch, then the pick.
+function paintGas() {
+  const shown = peek >= 0 ? peek : gasNow;
+  swatches.forEach((el, i) => { el.classList.toggle('on', i === gasNow); el.classList.toggle('peek', i === peek); });
+  gasName.textContent = shown === MIX && peek < 0 ? `Mix · ${NAMES[gasPick()]}` : NAMES[shown];
+  gasEl.setAttribute('aria-valuenow', String(gasNow + 1));
+  gasEl.setAttribute('aria-valuetext', NAMES[gasNow]);
+}
 function setGas(i) {
+  i = clamp(i, 0, MIX);
+  if (i === gasNow) return;
   gasNow = i;
-  chips.forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.gas === i)));
-  if (draft) draft.gas = i;
+  paintGas();
+  if (draft) draft.gas = gasPick();
+  pen.seen = performance.now() / 1000;
   wake();
 }
-chips.forEach(c => c.addEventListener('click', () => setGas(+c.dataset.gas)));
+// The swatch under a point on the rail.
+function swatchAt(x) {
+  let best = 0, bd = Infinity;
+  swatches.forEach((el, i) => {
+    const r = el.getBoundingClientRect(), d = Math.abs(x - (r.left + r.right) / 2);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+let railId = null;
+gasEl.addEventListener('pointerdown', e => {
+  if (gasEl.getAttribute('aria-disabled') === 'true' || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  railId = e.pointerId;
+  try { gasEl.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  setGas(swatchAt(e.clientX));
+});
+gasEl.addEventListener('pointermove', e => {
+  if (railId === e.pointerId) { setGas(swatchAt(e.clientX)); return; }
+  if (e.pointerType !== 'mouse' || !rail.contains(e.target)) { if (peek >= 0) { peek = -1; paintGas(); } return; }
+  const i = swatchAt(e.clientX);
+  if (i !== peek) { peek = i; paintGas(); }
+});
+const railUp = e => { if (railId === e.pointerId) railId = null; };
+gasEl.addEventListener('pointerup', railUp);
+gasEl.addEventListener('pointercancel', railUp);
+gasEl.addEventListener('pointerleave', () => { if (peek >= 0) { peek = -1; paintGas(); } });
+gasEl.addEventListener('keydown', e => {
+  const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key];
+  if (d) setGas(gasNow + d);
+  else if (e.key === 'Home') setGas(0);
+  else if (e.key === 'End') setGas(MIX);
+  else return;
+  // The pen ignores keys the rail has used.
+  e.preventDefault();
+});
+paintGas();
+
+function setWall(i) {
+  wallNow = (i + WALLS.length) % WALLS.length;
+  const w = WALLS[wallNow];
+  wallBtn.querySelector('span').textContent = w.name;
+  wallBtn.querySelector('svg').innerHTML = WALL_ICON[wallNow];
+  wallBtn.setAttribute('aria-label', `Wall: ${w.name}`);
+  if (!ready) return;
+  bakeWall();
+  // The swap dips the power for a blink.
+  const now = performance.now() / 1000;
+  let any = null;
+  for (const t of tubes) {
+    if (!t.on || t.seq) continue;
+    t.seq = reduce ? [[now, 0.6, 0], [now + 0.05, 1, 0]] : [[now, 0.1, 0], [now + 0.05, 0.7, 0], [now + 0.08, 0.2, 0], [now + 0.13, 1, 0]];
+    t.si = 0;
+    any = t;
+  }
+  if (any) thump(any);
+  wake();
+}
+setWall(0);
+wallBtn.addEventListener('click', () => setWall(wallNow + 1));
+chaseBtn.addEventListener('click', () => setChase(!chase));
+clearBtn.addEventListener('click', clearAll);
+// Reduced motion stops the show and rests its chip.
+function motionPref() {
+  chaseBtn.setAttribute('aria-disabled', String(reduce));
+  if (reduce) setChase(false);
+}
+motionPref();
 const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
@@ -1390,8 +1764,18 @@ addEventListener('keydown', e => {
     if (!e.repeat) undo();
   } else if (e.key === 'c' || e.key === 'C') {
     if (!e.repeat) clearAll();
-  } else if (e.key >= '1' && e.key <= '5') {
-    setGas(+e.key - 1);
+  } else if (e.key === 'k' || e.key === 'K') {
+    if (e.repeat || !ready) return;
+    pen.seen = performance.now() / 1000;
+    knock(pen.x, pen.y);
+  } else if (e.key === 'w' || e.key === 'W') {
+    if (!e.repeat) setWall(wallNow + 1);
+  } else if (e.key === 'p' || e.key === 'P') {
+    if (!e.repeat) setChase(!chase);
+  } else if (e.key === 'm' || e.key === 'M') {
+    setGas(MIX);
+  } else if (e.key >= '0' && e.key <= '9') {
+    setGas((+e.key + 9) % 10);
   }
 });
 addEventListener('keyup', e => {
@@ -1411,7 +1795,8 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  chips.forEach(c => { c.disabled = true; });
+  [wallBtn, chaseBtn, clearBtn].forEach(c => { c.disabled = true; });
+  gasEl.setAttribute('aria-disabled', 'true');
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
@@ -1430,7 +1815,7 @@ async function boot() {
     canvas.width = 1160;
     canvas.height = 652;
   }
-  tubes.push(makeTube(squiggle(), 2, true));
+  tubes.push(makeTube(squiggle(), 8, true));
   reshape();
   try { await initGL(); } catch (err) { console.error(err); failed(); return; }
   allocTargets();
