@@ -41,7 +41,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Neon sign | [neon/](neon/) | live, with sound |
 | Snow globe | [snow/](snow/) | live draft, still being refined |
 | Frost | [frost/](frost/) | live draft, still being refined |
-| Music box | [musicbox/](musicbox/) | live draft, still being refined |
+| Music box | [musicbox/](musicbox/) | live, with sound; Canvas 2D only |
 | Murmuration | [flock/](flock/) | live draft, still being refined |
 | Dandelion | [dandelion/](dandelion/) | live draft, still being refined |
 | Gear train | [gears/](gears/) | live draft, still being refined |
