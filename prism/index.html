@@ -23,7 +23,6 @@
 /* The light canvas adds onto the table under it. */
 .stage canvas.light { mix-blend-mode: plus-lighter; }
 /* The halo spills edge light onto the page around the stage. */
-body { overflow-x: clip; }
 .halo { position: absolute; left: 0; top: 0; pointer-events: none; }
 /* The add chips sit together as one strip. */
 /* Add opens a tray of pieces above the bar. */
@@ -124,7 +123,7 @@ body { overflow-x: clip; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { initPage, sound, oklchRgb, css as okCss } from '../shared/stim.js';
+import { initPage, sound, audioKit, oklchRgb, css as okCss } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -619,7 +618,9 @@ function develop(p) {
 /* ---------- canvases ---------- */
 const ctx = canvas.getContext('2d', { alpha: false });
 const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
-const [bgC, bgX] = mk(), [dustC, dX] = mk();
+const [dustC, dX] = mk(), bgC = document.createElement('canvas');
+// The table reads its pixels back once for grain, then becomes a bitmap.
+const bgX = bgC.getContext('2d', { willReadFrequently: true });
 // A soft round sprite per colour serves glints and edge light.
 const SPR = COL.map(c => {
   const [s, x] = mk();
@@ -802,11 +803,17 @@ function bleed() {
 const halo = document.querySelector('.halo'), hX = halo.getContext('2d');
 const HM = 84, HQ = 0.5;
 // The halo sits behind the stage and reaches HM pixels past it.
+// Its sides stop at the viewport, so the page never scrolls sideways.
+let hl = HM, hr = HM;
 function placeHalo() {
-  const w = W + 2 * HM, h = H + 2 * HM;
-  halo.style.transform = `translate(${panel.offsetLeft - HM}px, ${panel.offsetTop - HM}px)`;
+  const r = panel.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+  const l = Math.floor(clamp(r.left, 0, HM)), rr = Math.floor(clamp(vw - r.right, 0, HM));
+  const w = W + l + rr, h = H + 2 * HM;
+  halo.style.transform = `translate(${panel.offsetLeft - l}px, ${panel.offsetTop - HM}px)`;
   const cw2 = Math.ceil(w * HQ), ch2 = Math.ceil(h * HQ);
-  if (halo.width === cw2 && halo.height === ch2) return;
+  if (halo.width === cw2 && halo.height === ch2 && l === hl && rr === hr) return;
+  hl = l;
+  hr = rr;
   halo.style.width = `${w}px`;
   halo.style.height = `${h}px`;
   halo.width = cw2;
@@ -814,14 +821,14 @@ function placeHalo() {
   geomDirty = true;
 }
 function drawHalo() {
-  const k = halo.width / (W + 2 * HM);
+  const k = halo.width / (W + hl + hr);
   hX.setTransform(1, 0, 0, 1, 0, 0);
   hX.clearRect(0, 0, halo.width, halo.height);
   hX.globalCompositeOperation = 'lighter';
   for (let s = 0; s < 4; s++) {
     if (!STRIP[s].on) continue;
     const [tx, ty, ix, iy, ox, oy] = SIDE[s];
-    hX.setTransform(k * tx, k * ty, -k * ix, -k * iy, k * (HM + ox * W), k * (HM + oy * H));
+    hX.setTransform(k * tx, k * ty, -k * ix, -k * iy, k * (hl + ox * W), k * (HM + oy * H));
     hX.drawImage(STRIP[s].oc, 0, 0, s & 1 ? H : W, HM);
   }
 }
@@ -1648,143 +1655,83 @@ function placeDrop() {
   dropB.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
 }
 
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 10, LEAD = 0.004;
-let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tickNext = 0, restT = 0, toneT = 0, tone = null;
-const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
-const level = () => 1 / (1 + 0.08 * voices);
-
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.55;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    noise = ac.createBuffer(1, Math.round(ac.sampleRate * 0.1), ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    glassTone();
-  }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
-}
-// A context still waking queues sounds for a moment.
-function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
-}
-function track(src, ...tails) {
-  voices++;
-  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
-}
-// Once the table settles, the context sleeps until the next gesture.
-function rest() {
-  clearTimeout(restT);
-  if (!ac || ac.state !== 'running') return;
-  restT = setTimeout(() => {
-    if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
-  }, 1500);
-}
+/* ---------- sound: Tone.js voices on the shared audio kit ---------- */
+const LEAD = 0.004;
 const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace']);
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
+const kit = audioKit({ keys: GESTURE_KEYS });
+let V = null, T = null, toneLoad = null, tickNext = 0, toneT = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Once the table settles, the context sleeps until the next gesture.
+const rest = () => kit.rest(() => !raf && !ptrs.size);
+// The first live call starts the load; voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
+  });
+  return null;
 }
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
-
-// One sine with a beating octave shimmer sings while light moves.
-function glassTone() {
-  const a = ac, g = a.createGain(), lp = a.createBiquadFilter(), sh = a.createGain(), sp2 = a.createGain();
-  const pan = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
-  g.gain.value = 0;
-  lp.type = 'lowpass';
-  lp.frequency.value = 2000;
-  lp.Q.value = 0.3;
-  sh.gain.value = 0.2;
-  sp2.gain.value = 0;
-  const osc = (f, dst) => { const o = a.createOscillator(); o.frequency.value = f; o.connect(dst); o.start(); return o; };
-  const base = a.createGain(), depth = a.createGain();
-  base.gain.value = 1;
-  depth.gain.value = 0.08;
-  const o1 = osc(400, base), o2 = osc(801.6, sh), o3 = osc(798.7, sh), o4 = osc(1206, sp2);
+function buildVoices() {
+  // One sine with a beating octave shimmer sings while light moves.
+  const pan = new T.Panner(0).connect(kit.out), g = new T.Gain(0).connect(pan);
+  const lp = new T.Filter({ type: 'lowpass', frequency: 2000, Q: 0.3 }).connect(g);
+  const sh = new T.Gain(0.2).connect(lp), sp2 = new T.Gain(0).connect(lp);
+  const osc = (f, dst) => new T.Oscillator(f, 'sine').connect(dst).start();
+  const o1 = osc(400, lp), o2 = osc(801.6, sh), o3 = osc(798.7, sh), o4 = osc(1206, sp2);
   // A slow tremolo makes the shimmer breathe.
+  const depth = new T.Gain(0.08).connect(sh.gain);
   osc(5.2, depth);
-  depth.connect(sh.gain);
-  base.connect(lp);
-  sh.connect(lp);
-  sp2.connect(lp);
-  lp.connect(g);
-  g.connect(pan);
-  pan.connect(out);
-  tone = { g, lp, sh, sp2, pan, o1, o2, o3, o4, depth };
+  // A glass tick: a sine click and a short band of noise.
+  const tp = new T.Panner(0).connect(kit.out);
+  const click = new T.PolySynth(T.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.0015, decay: 0.045, sustain: 0, release: 0.02 } }).connect(tp);
+  click.maxPolyphony = 8;
+  click.volume.value = -21.6;
+  const nf = new T.Filter({ type: 'bandpass', frequency: 6500, Q: 1.4 }).connect(tp);
+  const nz = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.012, sustain: 0, release: 0.005 } }).connect(nf);
+  nz.volume.value = -24.4;
+  return { g, lp, sh, sp2, pan, o1, o2, o3, o4, depth, tp, click, nf, nz };
 }
 let moved = 0, movedAt = 0, moveX = 0;
 function voiceTrack() {
-  const a = live();
-  if (!a || !tone) return;
+  const v = voices();
+  if (!v) return;
   const now = performance.now(), dt = Math.max(0.016, (now - movedAt) / 1000);
   movedAt = now;
   const sp = clamp(spread / 0.55), speed = clamp(moved / dt / 1.6);
   moved = 0;
-  const f = 300 * 2 ** (1.25 * sp) * jit(0.004), t = a.currentTime, br = 0.15 + 0.85 * sp;
-  tone.o1.frequency.setTargetAtTime(f, t, 0.05);
-  tone.o2.frequency.setTargetAtTime(f * 2 + 1.6, t, 0.05);
-  tone.o3.frequency.setTargetAtTime(f * 2 - 1.3, t, 0.05);
-  tone.o4.frequency.setTargetAtTime(f * 3.01, t, 0.05);
-  tone.sh.gain.setTargetAtTime(0.1 + 0.3 * br, t, 0.08);
-  tone.depth.gain.setTargetAtTime(0.05 + 0.12 * br, t, 0.08);
-  tone.sp2.gain.setTargetAtTime(0.12 * br * br, t, 0.08);
-  tone.lp.frequency.setTargetAtTime(f * (2.5 + 7 * br), t, 0.08);
-  if (tone.pan.pan) tone.pan.pan.setTargetAtTime(clamp((moveX / W) * 2 - 1, -1, 1) * 0.5, t, 0.1);
-  tone.g.gain.setTargetAtTime((0.028 + 0.05 * speed) * level(), t, 0.05);
+  const f = 300 * 2 ** (1.25 * sp) * jit(0.004), t = kit.ac.currentTime, br = 0.15 + 0.85 * sp;
+  v.o1.frequency.setTargetAtTime(f, t, 0.05);
+  v.o2.frequency.setTargetAtTime(f * 2 + 1.6, t, 0.05);
+  v.o3.frequency.setTargetAtTime(f * 2 - 1.3, t, 0.05);
+  v.o4.frequency.setTargetAtTime(f * 3.01, t, 0.05);
+  v.sh.gain.setTargetAtTime(0.1 + 0.3 * br, t, 0.08);
+  v.depth.gain.setTargetAtTime(0.05 + 0.12 * br, t, 0.08);
+  v.sp2.gain.setTargetAtTime(0.12 * br * br, t, 0.08);
+  v.lp.frequency.setTargetAtTime(f * (2.5 + 7 * br), t, 0.08);
+  v.pan.pan.setTargetAtTime(clamp((moveX / W) * 2 - 1, -1, 1) * 0.5, t, 0.1);
+  v.g.gain.setTargetAtTime(0.028 + 0.05 * speed, t, 0.05);
   clearTimeout(toneT);
   toneT = setTimeout(hush, 110);
 }
 function hush() {
-  if (ac && tone) tone.g.gain.setTargetAtTime(0, ac.currentTime, 0.25);
+  if (V && kit.ac) V.g.gain.setTargetAtTime(0, kit.ac.currentTime, 0.25);
 }
 // A faint glass tick marks each 15 degree detent.
 // A lower tick marks a piece placed or taken away.
 function tick(x, pitch = 1) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const now = a.currentTime;
+  const v = voices();
+  if (!v) return;
+  const now = kit.ac.currentTime;
   if (now < tickNext) return;
   tickNext = now + 0.045;
-  const t = now + LEAD, p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
-  if (p.pan) p.pan.value = clamp((x / W) * 2 - 1, -1, 1) * 0.5;
-  p.connect(out);
-  const o = a.createOscillator(), g = a.createGain(), v = 0.05 * jit(0.06) * level() * (pitch < 1 ? 1.6 : 1);
-  o.frequency.value = 3300 * pitch * jit(0.04);
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(v, t + 0.0015);
-  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.045 / Math.sqrt(pitch));
-  o.connect(g);
-  g.connect(p);
-  o.start(t);
-  o.stop(t + 0.12);
-  track(o, g, p);
-  const n = a.createBufferSource(), f = a.createBiquadFilter(), ng = a.createGain();
-  n.buffer = noise;
-  f.type = 'bandpass';
-  f.frequency.value = 6500 * pitch * jit(0.05);
-  f.Q.value = 1.4;
-  ng.gain.setValueAtTime(v * 0.6, t);
-  ng.gain.exponentialRampToValueAtTime(1e-4, t + 0.012);
-  n.connect(f);
-  f.connect(ng);
-  ng.connect(p);
-  n.start(t, Math.random() * 0.05, 0.03);
-  track(n, f, ng);
+  const t = now + LEAD, vel = clamp(0.6 * jit(0.06) * (pitch < 1 ? 1.6 : 1));
+  v.tp.pan.setValueAtTime(clamp((x / W) * 2 - 1, -1, 1) * 0.5, t);
+  v.click.set({ envelope: { decay: 0.045 / Math.sqrt(pitch) } });
+  v.click.triggerAttackRelease(3300 * pitch * jit(0.04), 0.03, t, vel);
+  v.nf.frequency.setValueAtTime(6500 * pitch * jit(0.05), t);
+  v.nz.triggerAttackRelease(0.012, t, vel);
 }
 
 /* ---------- the scene: opening layout, adding and removing ---------- */
@@ -2228,10 +2175,8 @@ addBs.forEach(b => b.addEventListener('click', () => {
 }));
 clearB.addEventListener('click', clearAll);
 resetB.addEventListener('click', reset);
-sound.onChange(on => {
-  if (on) audio();
-  else if (ac) { hush(); ac.suspend()?.catch(() => {}); }
-});
+// The kit wakes and sleeps the context; a mute also stops the hum.
+sound.onChange(on => { if (!on) hush(); });
 
 /* ---------- size and start ---------- */
 // safeB is the strip of stage the inset bar covers.
