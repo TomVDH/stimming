@@ -39,6 +39,17 @@
 .adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
 @media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
 .add .chip.icon svg .solid { fill: currentColor; stroke: none; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* Settings opens a column of tweaks, held to the right edge. */
+.add.sets { left: auto; right: 0; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px; }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+.sets > .chip { justify-content: center; }
+#setBtn svg { stroke-linecap: round; }
+/* On a phone the four lights keep to one row. */
+@media (max-width: 420px) { #light { gap: 5px; } #light .chip { padding-inline: 10px; } }
 /* The remove button is a solid disc with a cut cross. */
 .drop {
   position: absolute; left: -13px; top: -13px; z-index: 1; width: 26px; height: 26px; padding: 0;
@@ -80,9 +91,15 @@
       <p class="fail" hidden>Prism needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices" id="light" role="group" aria-label="Light">
+        <button class="chip" type="button" data-value="-1" aria-pressed="true" title="White light"><span class="dot" style="--c: oklch(0.97 0.01 90)"></span>White</button>
+        <button class="chip" type="button" data-value="20" aria-pressed="false" title="Red laser"><span class="dot" style="--c: oklch(0.64 0.24 28)"></span>Red</button>
+        <button class="chip" type="button" data-value="10" aria-pressed="false" title="Green laser"><span class="dot" style="--c: oklch(0.82 0.24 142)"></span>Green</button>
+        <button class="chip" type="button" data-value="1" aria-pressed="false" title="Violet laser"><span class="dot" style="--c: oklch(0.58 0.24 300)"></span>Violet</button>
+      </div>
       <div class="actions">
         <div class="adder">
-        <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Add</button>
+        <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add" aria-label="Add a piece"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Piece</button>
         <div class="add" id="add" role="group" aria-label="Add a piece">
           <button class="chip icon" type="button" data-kind="prism" aria-label="Add a prism" title="Prism"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/></svg></button>
           <button class="chip icon" type="button" data-kind="lens" aria-label="Add a convex lens" title="Convex lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.4 2.2 2.4 10.2 0 12.4c-2.4-2.2-2.4-10.2 0-12.4z"/></svg></button>
@@ -93,17 +110,26 @@
           <button class="chip icon" type="button" data-kind="sensor" aria-label="Add a sensor pad" title="Sensor pad"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg></button>
         </div>
         </div>
-        <button class="chip" id="light" type="button" aria-label="Light: white">White</button>
-        <button class="chip" id="look" type="button" aria-label="Look: solid">Solid</button>
         <button class="chip" id="clear" type="button" aria-disabled="true">Clear</button>
-        <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
       </div>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Style</span><div class="choices" id="look" role="group" aria-label="Style">
+              <button class="chip" type="button" data-value="solid" aria-pressed="true">Solid</button>
+              <button class="chip" type="button" data-value="wire" aria-pressed="false">Wireframe</button>
+            </div></div>
+            <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
+          </div>
+        </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>move</dd></div>
         <div><dt><span class="fine"><kbd>Shift</kbd> drag</span><span class="touch">Two fingers</span></dt><dd>rotate</dd></div>
         <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>resize</dd></div>
         <div><dt><span class="fine"><kbd>Delete</kbd></span><span class="touch">Tap ×</span></dt><dd>remove</dd></div>
       </dl>
+      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Prism</h1><div class="vignette" hidden></div></section>
@@ -123,7 +149,7 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { initPage, sound, audioKit, oklchRgb, css as okCss } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices, oklchRgb, css as okCss } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -133,18 +159,9 @@ const panel = document.getElementById('stage'), canvas = panel.querySelector('ca
 const resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
 // The lamp shines white light or one laser line.
 // Each laser is one wavelength bin, so it never splits.
-const LIGHTS = [['White', -1], ['Red laser', 20], ['Green laser', 10], ['Violet laser', 1]];
-const lightB = document.getElementById('light'), lookB = document.getElementById('look');
-let lightAt = 0, wire = false;
+// Each light chip holds its bin; -1 is the full spectrum.
+let lightBin = -1, wire = false;
 try { wire = localStorage.getItem('stimming.prism.wire') === '1'; } catch (err) {}
-// One chip flips the look: solid or wireframe.
-const LOOKS = ['Solid', 'Wire'];
-function showLook() {
-  const name = LOOKS[wire ? 1 : 0];
-  lookB.textContent = name;
-  lookB.setAttribute('aria-label', `Look: ${name.toLowerCase()}`);
-}
-showLook();
 const addG = document.getElementById('add'), addBs = [...addG.querySelectorAll('.chip')];
 const dropB = panel.querySelector('.drop'), barEl = document.querySelector('.bar');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -479,7 +496,7 @@ function trace() {
   nSeg = nGl = nEd = nSH = sp = nFam = 0;
   fin.fill(NaN);
   const s = pieces[0];
-  const k0 = LIGHTS[lightAt][1];
+  const k0 = lightBin;
   push(s.g.ex, s.g.ey, Math.cos(s.rot), Math.sin(s.rot), k0, 1, 0, 0, 1, k0 < 0 ? -1 : nFam++, 0);
   while (sp > 0) {
     const o = --sp * SK;
@@ -2148,25 +2165,28 @@ addEventListener('keydown', e => {
     moveTo(p, p.x + arrow[0] * st, p.y + arrow[1] * st);
   } else setRot(p, p.rot + (k === 'e' ? 1 : -1) * (e.shiftKey ? 15 : 3) * D2R);
 });
-lightB.addEventListener('click', () => {
-  lightAt = (lightAt + 1) % LIGHTS.length;
-  lightB.textContent = LIGHTS[lightAt][0];
-  lightB.setAttribute('aria-label', `Light: ${LIGHTS[lightAt][0].toLowerCase()}`);
+choices(document.getElementById('light'), v => {
+  lightBin = +v;
   geomDirty = true;
   wake();
 });
-lookB.addEventListener('click', () => {
-  wire = !wire;
-  showLook();
+const look = choices(document.getElementById('look'), v => {
+  wire = v === 'wire';
   try { localStorage.setItem('stimming.prism.wire', wire ? '1' : '0'); } catch (err) {}
   wake();
 });
-// The add tray opens on hover or tap and closes after a pick.
-const adder = document.querySelector('.adder'), addBtn = document.getElementById('addBtn');
-const openTray = on => { adder.classList.toggle('is-open', on); addBtn.setAttribute('aria-expanded', String(on)); };
-addBtn.addEventListener('click', () => openTray(!adder.classList.contains('is-open')));
-document.addEventListener('pointerdown', e => { if (!adder.contains(e.target)) openTray(false); });
-addEventListener('keydown', e => { if (e.key === 'Escape') openTray(false); });
+look.set(wire ? 'wire' : 'solid');
+// Each tray opens on hover or tap and closes on a press elsewhere or Escape.
+function popover(box, btn) {
+  const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
+  return open;
+}
+// The piece tray also closes after a pick.
+const openTray = popover(document.querySelector('.adder'), document.getElementById('addBtn'));
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
 addBs.forEach(b => b.addEventListener('click', () => {
   if (b.getAttribute('aria-disabled') === 'true') return;
   addPiece(b.dataset.kind);
