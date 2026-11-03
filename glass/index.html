@@ -13,8 +13,8 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Glass: a dark pane on a dark table. */
-:root { --stage: oklch(0.21 0.008 265); }
+/* Glass: a pane in a frame before a night city. */
+:root { --stage: oklch(0.17 0.03 292); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
@@ -56,7 +56,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, oklchRgb } from '../shared/stim.js';
 initPage({ id: 'glass' });
 const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -520,7 +520,9 @@ function splitBig(polys, t, amax) {
 }
 
 /* ---------- shard bodies: rigid plates over a height field ---------- */
-const H = 1 / 240, REC = 4, CAP = 480, HS = 0.012, MU = 0.45;
+// Contacts are solved on velocity, with accumulated impulses.
+// A thin skin catches a contact one step before it touches.
+const H = 1 / 240, REC = 4, CAP = 480, HS = 0.012, MU = 0.5, ITER = 5, SKIN = 0.003, SLOP = 0.0006;
 let bodies = [], frames = [], sim = null, hf = null;
 // Floor bounds, set when the camera is fitted.
 let XB = 2, ZMAX = 0.6, Z0 = -0.4;
@@ -532,12 +534,31 @@ const qrot = (q, x, y, z, o, k = 0) => {
   o[k + 2] = z + 2 * (qx * cy - qy * cx);
   return o;
 };
-const tq = [0, 0, 0, 1], tv = [0, 0, 0], tw = [0, 0, 0];
-// World inverse inertia times a vector: rotate in, scale, rotate out.
+const tv = [0, 0, 0], kv = [0, 0, 0], pv = [0, 0, 0];
+// The world inverse inertia is R·diag(ii)·Rᵀ, built once per step.
+function inertia(b) {
+  const [x, y, z, w] = b.q, I = b.iw, d = b.ii;
+  const R = [
+    1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+    2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+    2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y),
+  ];
+  for (let i = 0; i < 3; i++) for (let j = i; j < 3; j++) {
+    I[3 * i + j] = I[3 * j + i] = R[3 * i] * d[0] * R[3 * j] + R[3 * i + 1] * d[1] * R[3 * j + 1] + R[3 * i + 2] * d[2] * R[3 * j + 2];
+  }
+}
 function iinv(b, x, y, z, o) {
-  tq[0] = -b.q[0]; tq[1] = -b.q[1]; tq[2] = -b.q[2]; tq[3] = b.q[3];
-  qrot(tq, x, y, z, tv);
-  return qrot(b.q, tv[0] * b.ii[0], tv[1] * b.ii[1], tv[2] * b.ii[2], o);
+  const I = b.iw;
+  o[0] = I[0] * x + I[1] * y + I[2] * z;
+  o[1] = I[3] * x + I[4] * y + I[5] * z;
+  o[2] = I[6] * x + I[7] * y + I[8] * z;
+  return o;
+}
+// Effective mass along n at arm r: 1/m + (r×n)·I⁻¹(r×n).
+function kOf(b, rx, ry, rz, nx, ny, nz) {
+  const cx = ry * nz - rz * ny, cy = rz * nx - rx * nz, cz = rx * ny - ry * nx;
+  iinv(b, cx, cy, cz, kv);
+  return b.im + cx * kv[0] + cy * kv[1] + cz * kv[2];
 }
 function hfInit() {
   const nx = Math.ceil((2 * XB) / HS), nz = Math.ceil((ZMAX - Z0) / HS);
@@ -548,9 +569,12 @@ function hfInit() {
     if (Math.abs(x) <= FW / 2 && Math.abs(z) <= FD / 2) hf.h[j * nx + i] = FB;
   }
 }
+const cellH = (i, j) => (i < 0 || j < 0 || i >= hf.nx || j >= hf.nz ? 0 : hf.h[j * hf.nx + i]);
+// Bilinear reads keep cell edges from rocking small shards.
 function ground(x, z) {
-  const i = Math.floor((x + XB) / HS), j = Math.floor((z - Z0) / HS);
-  return i < 0 || j < 0 || i >= hf.nx || j >= hf.nz ? 0 : hf.h[j * hf.nx + i];
+  const u = (x + XB) / HS - 0.5, w = (z - Z0) / HS - 0.5, i = Math.floor(u), j = Math.floor(w), fu = u - i, fw = w - j;
+  const a = cellH(i, j) + (cellH(i + 1, j) - cellH(i, j)) * fu, b = cellH(i, j + 1) + (cellH(i + 1, j + 1) - cellH(i, j + 1)) * fu;
+  return a + (b - a) * fw;
 }
 // A resting shard raises the floor under its outline.
 function stamp(b) {
@@ -581,30 +605,62 @@ function stamp(b) {
     if (y > hf.h[c]) hf.h[c] = Math.min(y, top + T);
   }
 }
-// One contact: a normal impulse with a little bounce, then friction.
-function impulse(b, px, py, pz, nx, ny, nz) {
-  const rx = px - b.p[0], ry = py - b.p[1], rz = pz - b.p[2], w = b.w, v = b.v;
-  let vx = v[0] + w[1] * rz - w[2] * ry, vy = v[1] + w[2] * rx - w[0] * rz, vz = v[2] + w[0] * ry - w[1] * rx;
-  const vn = vx * nx + vy * ny + vz * nz;
-  if (vn >= 0) return 0;
-  const k = cn => {
-    iinv(b, ry * cn[2] - rz * cn[1], rz * cn[0] - rx * cn[2], rx * cn[1] - ry * cn[0], tw);
-    return b.im + cn[0] * (tw[1] * rz - tw[2] * ry) + cn[1] * (tw[2] * rx - tw[0] * rz) + cn[2] * (tw[0] * ry - tw[1] * rx);
-  };
-  const apply = (jx, jy, jz) => {
-    v[0] += jx * b.im; v[1] += jy * b.im; v[2] += jz * b.im;
-    iinv(b, ry * jz - rz * jy, rz * jx - rx * jz, rx * jy - ry * jx, tw);
-    w[0] += tw[0]; w[1] += tw[1]; w[2] += tw[2];
-  };
-  const jn = (-(1 + (vn < -1.1 ? 0.28 : 0)) * vn) / k([nx, ny, nz]);
-  apply(nx * jn, ny * jn, nz * jn);
-  vx = v[0] + w[1] * rz - w[2] * ry; vy = v[1] + w[2] * rx - w[0] * rz; vz = v[2] + w[0] * ry - w[1] * rx;
-  const vd = vx * nx + vy * ny + vz * nz, tx = vx - nx * vd, ty = vy - ny * vd, tz = vz - nz * vd, ts = Math.hypot(tx, ty, tz);
-  if (ts > 1e-7) {
-    const t = [tx / ts, ty / ts, tz / ts], jt = Math.min(ts / k(t), MU * jn);
-    apply(-t[0] * jt, -t[1] * jt, -t[2] * jt);
+// A pool of contacts, refilled for each body each step.
+const CT = Array.from({ length: 96 }, () => ({ rx: 0, ry: 0, rz: 0, nx: 0, ny: 0, nz: 0, d: 0, kn: 1, kt: 1, tgt: 0, jn: 0, jx: 0, jy: 0, jz: 0 }));
+let nCT = 0;
+function contact(b, rx, ry, rz, nx, ny, nz, d) {
+  if (nCT >= CT.length) return;
+  const c = CT[nCT++];
+  c.rx = rx; c.ry = ry; c.rz = rz; c.nx = nx; c.ny = ny; c.nz = nz; c.d = d;
+  c.jn = c.jx = c.jy = c.jz = 0;
+  c.kn = kOf(b, rx, ry, rz, nx, ny, nz);
+}
+function pointVel(b, c) {
+  const v = b.v, w = b.w;
+  pv[0] = v[0] + w[1] * c.rz - w[2] * c.ry;
+  pv[1] = v[1] + w[2] * c.rx - w[0] * c.rz;
+  pv[2] = v[2] + w[0] * c.ry - w[1] * c.rx;
+  return pv[0] * c.nx + pv[1] * c.ny + pv[2] * c.nz;
+}
+function push(b, c, jx, jy, jz) {
+  const v = b.v, w = b.w;
+  v[0] += jx * b.im; v[1] += jy * b.im; v[2] += jz * b.im;
+  iinv(b, c.ry * jz - c.rz * jy, c.rz * jx - c.rx * jz, c.rx * jy - c.ry * jx, kv);
+  w[0] += kv[0]; w[1] += kv[1]; w[2] += kv[2];
+}
+// The solver returns the hardest landing speed, for the sound.
+function solve(b) {
+  let hit = 0;
+  for (let i = 0; i < nCT; i++) {
+    const c = CT[i], vn = pointVel(b, c);
+    // A gap may close this step, but no more.
+    c.tgt = c.d > 0 ? -c.d / H : 0;
+    // A hard landing bounces a little.
+    if (-vn * H >= c.d) {
+      hit = Math.max(hit, -vn);
+      if (vn < -1.1) c.tgt = -0.28 * vn;
+    }
+    const tx = pv[0] - c.nx * vn, ty = pv[1] - c.ny * vn, tz = pv[2] - c.nz * vn, ts = Math.hypot(tx, ty, tz);
+    c.kt = ts > 1e-6 ? kOf(b, c.rx, c.ry, c.rz, tx / ts, ty / ts, tz / ts) : c.kn;
   }
-  return -vn;
+  for (let it = 0; it < ITER; it++) {
+    for (let i = 0; i < nCT; i++) {
+      const c = CT[i];
+      let vn = pointVel(b, c);
+      const jn = Math.max(c.jn + (c.tgt - vn) / c.kn, 0), dj = jn - c.jn;
+      c.jn = jn;
+      if (dj) push(b, c, c.nx * dj, c.ny * dj, c.nz * dj);
+      // Friction cancels the slide, inside the cone.
+      vn = pointVel(b, c);
+      const ox = c.jx, oy = c.jy, oz = c.jz;
+      let ax = ox - (pv[0] - c.nx * vn) / c.kt, ay = oy - (pv[1] - c.ny * vn) / c.kt, az = oz - (pv[2] - c.nz * vn) / c.kt;
+      const lim = MU * c.jn, al = Math.hypot(ax, ay, az);
+      if (al > lim) { const k = lim / al; ax *= k; ay *= k; az *= k; }
+      c.jx = ax; c.jy = ay; c.jz = az;
+      push(b, c, ax - ox, ay - oy, az - oz);
+    }
+  }
+  return hit;
 }
 function substep() {
   const g = reduce ? 17 : 8.4, now = sim.t;
@@ -615,6 +671,32 @@ function substep() {
     if (now < b.rel) continue;
     const p = b.p, q = b.q, v = b.v, w = b.w;
     v[1] -= g * H;
+    inertia(b);
+    // Contacts: hull points near the floor or a wall.
+    // The skin grows with speed, so fast shards never sink in.
+    const skin = SKIN + (Math.hypot(v[0], v[1], v[2]) + Math.hypot(w[0], w[1], w[2]) * b.size) * H * 1.5;
+    const P = b.cp, n = P.length / 3;
+    let onFloor = false, py = 0, pxl = 0, pxr = 0, pzf = 0, pzb = 0;
+    nCT = 0;
+    for (let k = 0; k < n; k++) {
+      qrot(q, P[3 * k], P[3 * k + 1], P[3 * k + 2], tv);
+      const rx = tv[0], ry = tv[1], rz = tv[2], x = rx + p[0], y = ry + p[1], z = rz + p[2];
+      const d = y - ground(x, z);
+      if (d < skin) { contact(b, rx, ry, rz, 0, 1, 0, d); onFloor = true; py = Math.max(py, -d); }
+      if (x < -XB + skin) { contact(b, rx, ry, rz, 1, 0, 0, x + XB); pxl = Math.max(pxl, -XB - x); }
+      if (x > XB - skin) { contact(b, rx, ry, rz, -1, 0, 0, XB - x); pxr = Math.max(pxr, x - XB); }
+      if (z > ZMAX - skin) { contact(b, rx, ry, rz, 0, 0, -1, ZMAX - z); pzf = Math.max(pzf, z - ZMAX); }
+      if (z < Z0 + skin) { contact(b, rx, ry, rz, 0, 0, 1, z - Z0); pzb = Math.max(pzb, Z0 - z); }
+    }
+    const hit = nCT ? solve(b) : 0;
+    if (hit > 0.6 && now - b.hit > 0.05) { b.hit = now; tinkle(b.size, hit, p[0] / XB); }
+    // Contact damping: rocking dies quickly, slow shards settle.
+    if (onFloor) {
+      const s2 = v[0] ** 2 + v[1] ** 2 + v[2] ** 2, w2 = w[0] ** 2 + w[1] ** 2 + w[2] ** 2;
+      const kl = Math.exp(-(s2 < 0.04 ? 9 : 1.2) * H), ka = Math.exp(-(w2 < 4 ? 14 : 5) * H);
+      v[0] *= kl; v[1] *= kl; v[2] *= kl;
+      w[0] *= ka; w[1] *= ka; w[2] *= ka;
+    }
     p[0] += v[0] * H; p[1] += v[1] * H; p[2] += v[2] * H;
     // Spin advances the orientation, renormalised each step.
     const dx = 0.5 * H * (w[0] * q[3] + w[1] * q[2] - w[2] * q[1]), dy = 0.5 * H * (w[1] * q[3] + w[2] * q[0] - w[0] * q[2]);
@@ -622,26 +704,16 @@ function substep() {
     q[0] += dx; q[1] += dy; q[2] += dz; q[3] += dw;
     const ql = Math.hypot(q[0], q[1], q[2], q[3]);
     q[0] /= ql; q[1] /= ql; q[2] /= ql; q[3] /= ql;
-    let pen = 0, touch = false, hit = 0;
-    const P = b.cp, n = P.length / 3, wp = tv;
-    for (let k = 0; k < n; k++) {
-      qrot(q, P[3 * k], P[3 * k + 1], P[3 * k + 2], wp);
-      const x = wp[0] + p[0], y = wp[1] + p[1], z = wp[2] + p[2], gy = ground(x, z);
-      if (y < gy) { touch = true; pen = Math.max(pen, gy - y); hit = Math.max(hit, impulse(b, x, y, z, 0, 1, 0)); }
-      if (x < -XB) { impulse(b, x, y, z, 1, 0, 0); p[0] += (-XB - x) * 0.5; }
-      if (x > XB) { impulse(b, x, y, z, -1, 0, 0); p[0] -= (x - XB) * 0.5; }
-      if (z > ZMAX) { impulse(b, x, y, z, 0, 0, -1); p[2] -= (z - ZMAX) * 0.5; }
-      if (z < Z0) { impulse(b, x, y, z, 0, 0, 1); p[2] += (Z0 - z) * 0.5; }
-    }
-    if (pen) p[1] += Math.min(pen, 0.01) * 0.8;
-    if (hit > 0.6 && now - b.hit > 0.05) { b.hit = now; tinkle(b.size, hit, p[0] / XB); }
-    if (touch) {
-      v[0] *= 0.996; v[2] *= 0.996;
-      w[0] *= 0.985; w[1] *= 0.985; w[2] *= 0.985;
-    }
-    const still = touch && v[0] ** 2 + v[1] ** 2 + v[2] ** 2 < 0.0025 && w[0] ** 2 + w[1] ** 2 + w[2] ** 2 < 0.3;
-    b.still = still ? b.still + H : 0;
-    if (b.still > 0.15 || now - b.rel > 6) {
+    // Overlap eases out by position alone, so it adds no speed.
+    const ease = e => (e > SLOP ? Math.min(e - SLOP, 0.006) * 0.35 : 0);
+    p[1] += ease(py);
+    p[0] += ease(pxl) - ease(pxr);
+    p[2] += ease(pzb) - ease(pzf);
+    // A shard sleeps once it rests or has lain long enough.
+    const s2 = v[0] ** 2 + v[1] ** 2 + v[2] ** 2, w2 = w[0] ** 2 + w[1] ** 2 + w[2] ** 2;
+    b.still = onFloor && s2 < 0.006 && w2 < 0.6 ? b.still + H : 0;
+    if (onFloor) b.lain += H;
+    if (b.still > 0.1 || (b.lain > 2.2 && s2 < 0.09 && w2 < 2) || now - b.rel > 6) {
       b.sleep = true;
       v.fill(0);
       w.fill(0);
@@ -681,31 +753,52 @@ function stepSim(dt) {
 }
 
 /* ---------- shaders ---------- */
+const DITHER = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
 const GLASS_FS = `
 uniform mat4 projectionMatrix;
 uniform sampler2D tBack, tCrack;
 uniform samplerCube tEnv;
 uniform vec2 uRes, uTexel, uPane;
-uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine;
+uniform vec4 uBoxA, uBoxB;
+uniform vec3 uKey;
+uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine, uDisp, uBend;
 varying vec3 vWorld, vNormal;
 varying vec2 vPuv;
 varying float vSide, vFade;
+${DITHER}
+// A softbox panel with soft edges, cut by mullions into cells.
+float panel(vec2 q, vec4 b, float cols) {
+  vec2 d = abs(q - b.xy) - b.zw;
+  float m = 1.0 - smoothstep(-0.004, 0.004, max(d.x, d.y));
+  vec2 cell = 2.0 * b.zw / vec2(cols, 3.0);
+  vec2 f = (0.5 - abs(fract((q - b.xy + b.zw) / cell) - 0.5)) * cell;
+  return m * smoothstep(0.0022, 0.0042, min(f.x, f.y));
+}
+// Two softboxes hang behind the viewer.
+vec3 studio(vec3 R) {
+  vec2 q = R.xy / max(R.z, 0.05);
+  return uKey * smoothstep(0.05, 0.3, R.z) * (panel(q, uBoxA, 2.0) + 0.6 * panel(q, uBoxB, 1.0));
+}
 void main() {
-  vec3 N = normalize(vNormal);
-  if (!gl_FrontFacing) N = -N;
+  vec3 N0 = normalize(vNormal);
+  if (!gl_FrontFacing) N0 = -N0;
   vec3 V = normalize(cameraPosition - vWorld);
-  float cosT = clamp(dot(N, V), 0.0, 1.0);
   // Crack field: ridge in R, bright core in G, glint in B.
   vec3 ck = texture2D(tCrack, vPuv).rgb * uCrackK;
   vec2 cg = vec2(
     texture2D(tCrack, vPuv + vec2(uTexel.x, 0.0)).r - texture2D(tCrack, vPuv - vec2(uTexel.x, 0.0)).r,
     texture2D(tCrack, vPuv + vec2(0.0, uTexel.y)).r - texture2D(tCrack, vPuv - vec2(0.0, uTexel.y)).r) * uCrackK;
+  // Cracks tilt the surface beside them, so reflections break there.
+  vec3 N = normalize(N0 + vec3(cg * uBend * (1.0 - vSide), 0.0));
+  float cosT = clamp(dot(N, V), 0.0, 1.0);
   // Float glass is never quite flat.
   vec2 wav = vec2(sin(vPuv.y * 23.0 + vPuv.x * 5.0), sin(vPuv.x * 17.0 - vPuv.y * 7.0)) * 0.006;
-  vec3 Nv = normalize((viewMatrix * vec4(N, 0.0)).xyz);
+  vec3 Nv = normalize((viewMatrix * vec4(N0, 0.0)).xyz);
   vec2 suv = gl_FragCoord.xy / uRes;
   vec2 off = -(Nv.xy * (1.0 + vSide * 2.0) + wav) * uRefr + cg * 30.0 / uRes;
-  vec3 back = texture2D(tBack, suv + off).rgb;
+  // Dispersion: red bends least, blue bends most.
+  vec2 dsp = off * uDisp;
+  vec3 back = vec3(texture2D(tBack, suv + off - dsp).r, texture2D(tBack, suv + off).g, texture2D(tBack, suv + off + dsp).b);
   // Light through glass turns green with path length.
   // Side walls are the longest paths.
   float rim = min(min(vPuv.x, 1.0 - vPuv.x) * uPane.x, min(vPuv.y, 1.0 - vPuv.y) * uPane.y);
@@ -713,7 +806,7 @@ void main() {
   vec3 tint = exp(-vec3(0.07, 0.016, 0.05) * path);
   float F = max(0.04 + 0.96 * pow(1.0 - cosT, 5.0), vSide * 0.2);
   vec3 R = reflect(-V, N);
-  vec3 env = textureCube(tEnv, R).rgb * uEnvI;
+  vec3 env = textureCube(tEnv, R).rgb * uEnvI + studio(R);
   // Reflections aimed at the back wall pick up its colours.
   if (R.z < -0.02) {
     vec4 c = projectionMatrix * viewMatrix * vec4(vWorld + R * ((uWallZ - vWorld.z) / R.z), 1.0);
@@ -724,13 +817,16 @@ void main() {
   env *= mix(vec3(1.0), vec3(0.55, 1.0, 0.8), vSide);
   vec3 L = normalize(vec3(-0.45, 0.75, 0.5));
   float spec = pow(max(dot(N, normalize(L + V)), 0.0), 300.0) * 5.0;
-  // Crack cores are thin bright lines.
+  // Crack cores are thin bright lines with a faint rainbow.
   // Crack walls darken the glass beside them.
   float line = ck.g * (0.12 + 1.7 * ck.b * ck.b) * uLine * (1.0 - vSide);
-  vec3 col = back * tint * (1.0 - F) * (1.0 - 0.3 * ck.r * (1.0 - ck.g)) + env * F + spec + line * vec3(0.84, 1.0, 0.96);
+  vec3 iri = 0.62 + 0.38 * cos(6.2831853 * (vPuv.x * 1.7 + vPuv.y * 1.1 + Nv.x * 0.6) + vec3(0.0, 2.1, 4.2));
+  vec3 lineC = mix(vec3(0.84, 1.0, 0.96), iri, 0.45);
+  vec3 col = back * tint * (1.0 - F) * (1.0 - 0.42 * ck.r * (1.0 - ck.g)) + env * F + spec + line * lineC;
   gl_FragColor = vec4(col, uOpacity * vFade);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
+  gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
 }`;
 const PANE_VS = `
 uniform vec4 uFlex;
@@ -798,36 +894,103 @@ void main() {
   vW = w.xyz;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
-const DITHER = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
+// A night city far behind the pane, out of focus.
+const NBF = 44, NBN = 28, XS = 5.2, BWF = (2 * XS) / NBF, BWN = (2 * XS) / NBN;
 const WALL_FS = `
-uniform vec3 uTop, uLow, uCol[7];
-uniform vec4 uBlob[7];
+uniform vec3 uSkyTop, uSkyLow, uHaze, uFar, uNear, uWinA, uWinB;
+uniform float uFarR[${NBF}], uNearR[${NBN}];
 varying vec3 vW;
-${DITHER}
+const float BLUR = 0.06;
+float h21(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 15731.743); }
+float farAt(float i) { return uFarR[int(clamp(i, 0.0, ${NBF - 1}.0))]; }
+float nearAt(float i) { return uNearR[int(clamp(i, 0.0, ${NBN - 1}.0))]; }
+// One tower: a soft box from the ground to its roof.
+float tower(vec2 p, float l, float bw, float h) {
+  return smoothstep(-BLUR, BLUR, p.x - l) * smoothstep(-BLUR, BLUR, l + bw - p.x) * smoothstep(h + BLUR, h - BLUR, p.y);
+}
+// Neighbouring soft boxes sum to one across a shared edge.
+float skyF(vec2 p) {
+  float i = floor((p.x + ${XS.toFixed(2)}) / ${BWF.toFixed(5)}), m = 0.0;
+  for (int k = -1; k <= 1; k++) { float j = i + float(k); m += tower(p, -${XS.toFixed(2)} + j * ${BWF.toFixed(5)}, ${BWF.toFixed(5)}, farAt(j)); }
+  return min(m, 1.0);
+}
+float skyN(vec2 p) {
+  float i = floor((p.x + ${XS.toFixed(2)}) / ${BWN.toFixed(5)}), m = 0.0;
+  for (int k = -1; k <= 1; k++) { float j = i + float(k); m += tower(p, -${XS.toFixed(2)} + j * ${BWN.toFixed(5)}, ${BWN.toFixed(5)}, nearAt(j)); }
+  return min(m, 1.0);
+}
+// Lit windows: a hashed grid of soft cells, warm or cool.
+vec3 windows(vec2 p, vec2 cell, float seed, float bw) {
+  vec2 g = p / cell, id = floor(g), q = abs(fract(g) - 0.5) - vec2(0.24, 0.28);
+  float tower = floor((p.x + ${XS.toFixed(2)}) / bw);
+  float on = step(0.72, h21(id + seed)) * (0.35 + 0.65 * h21(id.yx + seed * 1.7));
+  float m = 1.0 - smoothstep(-0.32, 0.32, max(q.x, q.y));
+  return mix(uWinA, uWinB, step(0.6, h21(vec2(tower, seed)))) * on * m;
+}
 void main() {
-  // Out-of-focus discs over a calm vertical field.
-  vec3 col = mix(uLow, uTop, smoothstep(-0.4, 3.2, vW.y));
-  for (int i = 0; i < 7; i++) {
-    float d = length(vW.xy - uBlob[i].xy);
-    col = mix(col, uCol[i], smoothstep(uBlob[i].z, uBlob[i].z * 0.5, d) * uBlob[i].w);
-  }
+  float x = vW.x, y = vW.y;
+  // Sky: deep at the top, a sodium haze over the rooftops.
+  vec3 col = mix(uSkyLow, uSkyTop, smoothstep(0.6, 3.2, y));
+  col += uHaze * exp(-max(y - 0.4, 0.0) * 1.7);
+  col = mix(col, uFar + windows(vec2(x, y), vec2(0.06, 0.07), 3.0, ${BWF.toFixed(5)}) * 0.45, skyF(vW.xy));
+  col = mix(col, uNear + windows(vec2(x + 0.02, y), vec2(0.085, 0.1), 11.0, ${BWN.toFixed(5)}) * smoothstep(0.08, 0.3, y), skyN(vW.xy));
+  // Street glow rises off the road.
+  col += uHaze * 0.4 * exp(-max(y, 0.0) * 6.0);
   gl_FragColor = vec4(col, 1.0);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-  gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}`;
+// Bokeh: each light is a hexagonal aperture with an onion-ring cut.
+const BOKEH_VS = `
+attribute vec4 aA;
+attribute vec4 aB;
+attribute float aTw;
+uniform float uT;
+varying vec2 vQ;
+varying vec3 vCol;
+void main() {
+  float x = aA.x;
+  // Moving lights wrap around beyond the city's edges.
+  if (aB.w != 0.0) x = mod(aA.x + aB.w * uT + ${XS.toFixed(2)}, ${(2 * XS).toFixed(2)}) - ${XS.toFixed(2)};
+  float tw = 1.0 + aTw * (0.55 * sin(uT * 0.8 + aA.w) + 0.45 * sin(uT * 2.1 + aA.w * 2.7));
+  vCol = aB.rgb * max(tw, 0.0);
+  vQ = position.xy;
+  vec3 p = vec3(x + position.x * aA.z, aA.y + position.y * aA.z, ${(-1.5 + 0.02).toFixed(2)});
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+}`;
+const BOKEH_FS = `
+varying vec2 vQ;
+varying vec3 vCol;
+void main() {
+  // Six blades, turned slightly, set the disc's outline.
+  vec2 q = mat2(0.978, -0.208, 0.208, 0.978) * vQ * 1.06;
+  q = abs(q);
+  float d = max(q.x * 0.8660254 + q.y * 0.5, q.y);
+  float aa = fwidth(d) * 1.2;
+  float disc = 1.0 - smoothstep(0.9 - aa - 0.03, 0.9, d);
+  // A brighter rim and a faint inner cut: the lens's fingerprint.
+  float rim = 0.78 + 0.32 * smoothstep(0.45, 0.88, d);
+  float cut = 1.0 - 0.3 * exp(-pow((d - 0.66) / 0.03, 2.0));
+  gl_FragColor = vec4(vCol * disc * rim * cut, 1.0);
 }`;
 const FLOOR_FS = `
 uniform vec3 uBase, uPool, uSpill;
 uniform vec2 uPoolC;
 uniform float uPoolR, uWallZ;
 varying vec3 vW;
-${DITHER}
 void main() {
   // A soft pool of light lies where shards land.
-  // The wall's colour spills onto the floor near it.
+  // The city's glow spills onto the floor near the wall.
   vec2 q = (vW.xz - uPoolC) / vec2(uPoolR, uPoolR * 0.45);
   vec3 col = uBase + uPool * exp(-dot(q, q)) + uSpill * exp(-(vW.z - uWallZ) * 1.6);
   gl_FragColor = vec4(col, 1.0);
+}`;
+// The backdrop target is drawn once per frame behind everything.
+const BACK_VS = `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const BACK_FS = `
+uniform sampler2D tBack;
+uniform vec2 uRes;
+${DITHER}
+void main() {
+  gl_FragColor = vec4(texture2D(tBack, gl_FragCoord.xy / uRes).rgb, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
@@ -836,17 +999,48 @@ void main() {
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, built = false;
 let backRT = null, crackRT = null, crackScene = null, crackCam = null, crackMesh = null, crackMat = null;
-let wallMat = null, floorMat = null, frameG = null, frameMat = null, pane = null, paneMat = null;
+let wall = null, floor = null, wallMat = null, floorMat = null, frameG = null, frameMat = null, pane = null, paneMat = null;
+let bokeh = null, bokehMat = null, bgQuad = null, bgMat = null, backDirty = true;
 let shardMesh = null, shardMat = null, xfTex = null, mark = null;
 let ray = null, ndc = null, hitV = null, tmpV = null, paneP = null, floorP = null, dbs = null;
 const FOV = 28, MT = 0.055, WALLZ = -1.5, CAPS = 512, CLEAR = 0x121318;
-// Series hues as soft discs: x, y in frame units, radius, strength.
-const BLOBS = [
-  [-0.3, 0.74, 0.3, 0.8, '#d9a04e'], [0.2, 0.92, 0.22, 0.7, '#cf5d55'], [0.36, 0.38, 0.4, 0.72, '#7d4fc4'],
-  [-0.04, 0.2, 0.26, 0.7, '#2f9fae'], [-0.44, 0.14, 0.22, 0.75, '#4fae73'], [0.05, 0.6, 0.15, 0.6, '#3e6fcf'],
-  [0.3, 0.04, 0.12, 0.7, '#d9a04e'],
-];
 let lowDpr = false;
+
+/* ---------- the city: rooflines and lights, the same on every visit ---------- */
+// OKLCH in, linear light out, scaled by k.
+const lin = (L, C, h, k = 1) => oklchRgb(L, C, h).map(v => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4) * k);
+let cseed = 11;
+const crand = () => (cseed = (cseed * 16807) % 2147483647) / 2147483647;
+const cr = (a, b) => a + crand() * (b - a);
+function city() {
+  cseed = 11;
+  const far = [], near = [];
+  for (let i = 0; i < NBF; i++) far.push(0.62 + 0.95 * crand() ** 1.6 + (crand() < 0.08 ? 0.45 : 0));
+  for (let i = 0; i < NBN; i++) near.push(0.22 + 0.62 * crand() ** 1.4);
+  const nearAt = x => near[clamp(Math.floor((x + XS) / BWN), 0, NBN - 1)];
+  // Each light: x, y, radius, phase; colour, speed; twinkle.
+  const A = [], B = [], TW = [];
+  const add = (x, y, r, c, sp = 0, tw = 0) => { A.push(x, y, r, crand() * TAU); B.push(...c, sp); TW.push(tw); };
+  const head = lin(0.97, 0.03, 90, 0.5), tail = lin(0.62, 0.22, 25, 0.55), sodium = lin(0.8, 0.14, 68, 0.32);
+  const hues = [lin(0.8, 0.13, 70, 0.24), lin(0.92, 0.03, 250, 0.2), lin(0.8, 0.12, 195, 0.24), lin(0.7, 0.21, 340, 0.24), lin(0.64, 0.17, 300, 0.24), lin(0.95, 0.04, 85, 0.2)];
+  // Traffic: head lights run one way, tail lights the other.
+  for (let x = -XS; x < XS; x += cr(0.7, 1.5)) { const y = 0.075 + cr(-0.006, 0.006); add(x, y, 0.075, head, 0.42); add(x + 0.1, y, 0.075, head, 0.42); }
+  for (let x = -XS; x < XS; x += cr(0.8, 1.6)) { const y = 0.14; add(x, y, 0.065, tail, -0.33); add(x + 0.1, y, 0.065, tail, -0.33); }
+  for (let x = -XS; x < XS; x += cr(0.5, 1.1)) add(x, 0.21, 0.05, crand() < 0.5 ? head : tail, 0.19, 0.05);
+  // Street lamps: a sodium row above the road.
+  for (let x = -XS + cr(0, 0.4); x < XS; x += cr(0.62, 0.9)) add(x, 0.46 + cr(-0.03, 0.03), 0.14, sodium, 0, 0.03);
+  // City lights sit inside the near towers or just above them.
+  for (let i = 0; i < 56; i++) {
+    const x = cr(-XS, XS), top = Math.max(0.4, nearAt(x) + 0.35);
+    add(x, cr(0.3, top), cr(0.05, 0.13), hues[Math.floor(crand() * hues.length)], 0, crand() < 0.3 ? cr(0.15, 0.4) : cr(0, 0.08));
+  }
+  // Aviation lights blink on the five tallest towers.
+  [...far.keys()].sort((a, b) => far[b] - far[a]).slice(0, 5)
+    .forEach(i => add(-XS + (i + 0.5) * BWF, far[i] + 0.06, 0.045, lin(0.6, 0.23, 28, 0.7), 0, 0.95));
+  // A few huge, faint discs: lights close to the lens.
+  for (let i = 0; i < 7; i++) add(cr(-XS, XS), cr(0.4, 2.1), cr(0.28, 0.5), hues[i % hues.length].map(v => v * 0.35), cr(0.02, 0.05) * (crand() < 0.5 ? -1 : 1));
+  return { far, near, A, B, TW };
+}
 
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
 function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
@@ -889,6 +1083,12 @@ function fit(w, h) {
   Z0 = -0.5;
   floorMat.uniforms.uPoolC.value.set(0, (FD / 2 + ZMAX) / 2);
   floorMat.uniforms.uPoolR.value = FW * 0.42;
+  // Softbox reflections, in reflected slope units on the pane.
+  const cz = camera.position.z, box = (x, y, hw, hh) => [x / cz, (y - ey) / cz, hw / cz, hh / cz];
+  for (const m of [paneMat, shardMat]) {
+    m.uniforms.uBoxA.value.set(...box(-0.27 * PW, FH * 0.8, 0.075 * PW, 0.36 * FH));
+    m.uniforms.uBoxB.value.set(...box(0.33 * PW, FH * 0.86, 0.03 * PW, 0.3 * FH));
+  }
   hfInit();
 }
 // New frame, pane and backdrop for a new panel shape.
@@ -904,8 +1104,6 @@ function build() {
   bar(FW, FB, 0, FH - FB / 2);
   bar(FB, FH - 2 * FB, -FW / 2 + FB / 2, FH / 2);
   bar(FB, FH - 2 * FB, FW / 2 - FB / 2, FH / 2);
-  const r = Math.sqrt(FW * FH) * 0.78;
-  BLOBS.forEach(([u, v, s, k], i) => wallMat.uniforms.uBlob.value[i].set(u * FW * 1.25, v * FH * 1.2, s * r, k));
   Object.assign(crackCam, { left: -PW / 2, right: PW / 2, top: PH / 2, bottom: -PH / 2 });
   crackCam.updateProjectionMatrix();
   heal(true);
@@ -942,22 +1140,27 @@ function renderCracks() {
   renderer.setRenderTarget(null);
   renderer.setClearColor(CLEAR, 1);
 }
-// The backdrop never moves, so it is drawn once per size.
+// The backdrop goes to a target that the glass bends.
+// It redraws only while the city drifts or the size changes.
 function renderBack() {
   const vis = [pane.visible, shardMesh.visible, mark.visible];
-  pane.visible = shardMesh.visible = mark.visible = false;
+  pane.visible = shardMesh.visible = mark.visible = bgQuad.visible = false;
+  wall.visible = floor.visible = bokeh.visible = true;
   renderer.setRenderTarget(backRT);
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
+  wall.visible = floor.visible = bokeh.visible = false;
+  bgQuad.visible = true;
   [pane.visible, shardMesh.visible, mark.visible] = vis;
+  backDirty = false;
 }
 function onSize(w, h) {
   fit(w, h);
   renderer.getDrawingBufferSize(dbs);
   backRT.setSize(dbs.x, dbs.y);
-  for (const m of [paneMat, shardMat]) m.uniforms.uRes.value.copy(dbs);
+  for (const m of [paneMat, shardMat, bgMat]) m.uniforms.uRes.value.copy(dbs);
   const px = ((ndcOf(PW / 2, FH / 2, T / 2).x - ndcOf(-PW / 2, FH / 2, T / 2).x) / 2) * dbs.x;
-  const cw = Math.round(clamp(px, 256, 2048)), ch = Math.round((cw * PH) / PW);
+  const cw = Math.round(clamp(px, 256, 2560)), ch = Math.round((cw * PH) / PW);
   if (crackRT.width !== cw || crackRT.height !== ch) crackRT.setSize(cw, ch);
   for (const m of [paneMat, shardMat]) m.uniforms.uTexel.value.set(1 / cw, 1 / ch);
   ribbons();
@@ -1019,7 +1222,7 @@ function buildShards(polys) {
       p: [gx, FH / 2 + gy, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], im: 1 / m,
       ii: [1 / (m * (syy / area + T * T / 12)), 1 / (m * (sxx / area + T * T / 12)), 1 / (m * ((sxx + syy) / area))],
       cp: new Float32Array(cp), poly: pts.flat(), size: Math.sqrt(area), cx: gx, cy: gy, edge,
-      rel: 0, hit: -1, still: 0, sleep: false,
+      iw: new Float64Array(9), rel: 0, hit: -1, still: 0, lain: 0, sleep: false,
     });
   }
   const g = new THREE.BufferGeometry();
@@ -1185,9 +1388,14 @@ function heal(quiet) {
 }
 
 /* ---------- one loop, only while something moves ---------- */
-let raf = 0, last = 0, onScreen = true, slow = 0;
+let raf = 0, last = 0, onScreen = true, slow = 0, drift = 0, dClock = 0, liveUntil = 0;
 function wake() {
   if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+// Use sets the city drifting for a while.
+function stir() {
+  liveUntil = performance.now() + 9000;
+  wake();
 }
 function frame(ms) {
   raf = 0;
@@ -1204,11 +1412,22 @@ function frame(ms) {
   if (pending && cClock >= pending.at) shatter();
   if (flex.t < 0.7) { flex.t += dt; busy = true; }
   if (sim && sim.active && !rw) { stepSim(dt); upload(); busy = true; }
+  // The city drifts while in use, then eases to a stop.
+  const want = !reduce && ms < liveUntil ? 1 : 0;
+  if (want || drift > 0) {
+    drift += (want - drift) * (1 - Math.exp(-dt * (want ? 1.5 : 0.8)));
+    if (!want && drift < 0.01) drift = 0;
+    dClock += dt * drift;
+    bokehMat.uniforms.uT.value = dClock;
+    backDirty = true;
+    busy = true;
+  }
   draw();
   if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
   else rest();
 }
 function draw() {
+  if (backDirty) renderBack();
   if (crackDirty || cClock !== lastCT) { renderCracks(); lastCT = cClock; crackDirty = false; }
   const k = flex.t < 0.7 ? Math.cos(flex.t * TAU * 11) * Math.exp(-flex.t / 0.12) : 0;
   paneMat.uniforms.uFlex.value.set(flex.x, flex.y, flex.a * k, S * 0.3);
@@ -1239,6 +1458,7 @@ panel.addEventListener('pointerdown', e => {
   aim.x = p.x;
   aim.y = p.y;
   tap(p.x, p.y, e.pointerType === 'pen' && e.pressure > 0.85);
+  stir();
   clearTimeout(holdT);
   holdT = setTimeout(() => { if (ptr === e.pointerId) press(p.x, p.y); }, 480);
 });
@@ -1255,13 +1475,14 @@ addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   const k = e.key;
-  if (k === 'r' || k === 'R') { if (!e.repeat) rewind(); }
+  if (k === 'r' || k === 'R') { if (!e.repeat) { rewind(); stir(); } }
   else if (k === ' ') {
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
     if (e.repeat || !ready) return;
     kbd = true;
     tap(aim.x, aim.y);
+    stir();
     clearTimeout(spaceT);
     spaceT = setTimeout(() => press(aim.x, aim.y), 480);
     draw();
@@ -1276,13 +1497,13 @@ addEventListener('keydown', e => {
   }
 });
 addEventListener('keyup', e => { if (e.key === ' ') clearTimeout(spaceT); });
-rewindB.addEventListener('click', rewind);
+rewindB.addEventListener('click', () => { rewind(); stir(); });
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
 });
-new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) stir(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) stir(); });
 
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
@@ -1328,34 +1549,63 @@ async function start() {
   pm.dispose();
   await idle();
 
-  const CL = c => new THREE.Color(c);
+  const V3 = c => new THREE.Vector3(...c), town = city();
   wallMat = new THREE.ShaderMaterial({
     vertexShader: WORLD_VS, fragmentShader: WALL_FS,
-    uniforms: { uTop: { value: CL('#24273a') }, uLow: { value: CL('#121320') }, uCol: { value: BLOBS.map(b => CL(b[4])) }, uBlob: { value: BLOBS.map(() => new THREE.Vector4()) } },
+    uniforms: {
+      uSkyTop: { value: V3(lin(0.13, 0.035, 280)) }, uSkyLow: { value: V3(lin(0.21, 0.055, 300)) }, uHaze: { value: V3(lin(0.5, 0.11, 52, 0.7)) },
+      uFar: { value: V3(lin(0.2, 0.04, 292)) }, uNear: { value: V3(lin(0.125, 0.022, 282)) },
+      uWinA: { value: V3(lin(0.82, 0.12, 75, 0.36)) }, uWinB: { value: V3(lin(0.82, 0.07, 222, 0.3)) },
+      uFarR: { value: town.far }, uNearR: { value: town.near },
+    },
   });
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), wallMat);
+  wall = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), wallMat);
   wall.position.z = WALLZ;
   floorMat = new THREE.ShaderMaterial({
     vertexShader: WORLD_VS, fragmentShader: FLOOR_FS,
     uniforms: {
-      uBase: { value: CL('#101116') }, uPool: { value: CL('#2b2c35') }, uSpill: { value: CL('#2c2742') },
+      uBase: { value: V3(lin(0.15, 0.012, 280)) }, uPool: { value: V3(lin(0.27, 0.02, 285)) }, uSpill: { value: V3(lin(0.36, 0.08, 40, 0.8)) },
       uPoolC: { value: new THREE.Vector2() }, uPoolR: { value: 1 }, uWallZ: { value: WALLZ },
     },
   });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), floorMat);
+  floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = WALLZ + 200;
-  frameMat = new THREE.MeshStandardMaterial({ color: 0x34363e, metalness: 0.6, roughness: 0.36 });
+  // The city's lights: one instanced quad per light.
+  const quad = new THREE.PlaneGeometry(2, 2), bg = new THREE.InstancedBufferGeometry();
+  bg.setIndex(quad.index);
+  bg.setAttribute('position', quad.getAttribute('position'));
+  bg.setAttribute('aA', new THREE.InstancedBufferAttribute(new Float32Array(town.A), 4));
+  bg.setAttribute('aB', new THREE.InstancedBufferAttribute(new Float32Array(town.B), 4));
+  bg.setAttribute('aTw', new THREE.InstancedBufferAttribute(new Float32Array(town.TW), 1));
+  bg.instanceCount = town.TW.length;
+  bokehMat = new THREE.ShaderMaterial({
+    vertexShader: BOKEH_VS, fragmentShader: BOKEH_FS, uniforms: { uT: { value: 0 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  bokeh = new THREE.Mesh(bg, bokehMat);
+  bokeh.frustumCulled = false;
+  frameMat = new THREE.MeshStandardMaterial({ color: 0x2e3038, metalness: 0.7, roughness: 0.32 });
   frameG = new THREE.Group();
-  scene.add(wall, floor, frameG);
+  scene.add(wall, floor, bokeh, frameG);
 
   backRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  // The screen shows the backdrop target on one quad behind the glass.
+  bgMat = new THREE.ShaderMaterial({
+    vertexShader: BACK_VS, fragmentShader: BACK_FS, depthTest: false, depthWrite: false,
+    uniforms: { tBack: { value: backRT.texture }, uRes: { value: new THREE.Vector2(1, 1) } },
+  });
+  bgQuad = new THREE.Mesh(quad, bgMat);
+  bgQuad.frustumCulled = false;
+  bgQuad.renderOrder = -1;
+  scene.add(bgQuad);
   crackRT = new THREE.WebGLRenderTarget(256, 144, { depthBuffer: false });
   const glassU = () => ({
     tBack: { value: backRT.texture }, tCrack: { value: crackRT.texture }, tEnv: { value: cubeRT.texture },
     uRes: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1 / 256, 1 / 144) }, uPane: { value: new THREE.Vector2(PW, PH) },
-    uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.55 },
-    uWallZ: { value: WALLZ }, uLine: { value: 1 },
+    uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.4 },
+    uWallZ: { value: WALLZ }, uLine: { value: 1 }, uDisp: { value: 0.18 }, uBend: { value: 0.7 },
+    uBoxA: { value: new THREE.Vector4() }, uBoxB: { value: new THREE.Vector4() }, uKey: { value: V3(lin(0.97, 0.025, 80, 1.1)) },
   });
   paneMat = new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: { ...glassU(), uFlex: { value: new THREE.Vector4(0, 0, 0, 1) } } });
   pane = new THREE.Mesh(new THREE.BufferGeometry(), paneMat);
@@ -1365,6 +1615,8 @@ async function start() {
   shardMat.uniforms.uRefr.value = 0.07;
   shardMat.uniforms.uEdge.value = 0;
   shardMat.uniforms.uLine.value = 0.6;
+  shardMat.uniforms.uDisp.value = 0.12;
+  shardMat.uniforms.uBend.value = 0.25;
   // One stand-in triangle lets the shard shader compile up front.
   const stand = new THREE.BufferGeometry();
   stand.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.01, 0, 0, 0, 0.01, 0], 3));
@@ -1391,7 +1643,9 @@ async function start() {
   crackScene.add(crackMesh);
 
   panel.prepend(canvas);
-  fitRenderer(renderer, panel, 1.5, onSize, 1.4e6);
+  // The backdrop draws only into its target.
+  wall.visible = floor.visible = bokeh.visible = false;
+  fitRenderer(renderer, panel, 2, onSize, 2.4e6);
   // A panel with no size yet still gets a frame.
   if (!built) onSize(16, 9);
   await idle();
@@ -1402,6 +1656,7 @@ async function start() {
   renderCracks();
   ready = true;
   draw();
+  stir();
   requestAnimationFrame(() => canvas.classList.add('on'));
 }
 start().catch(err => { console.error(err); failed(); });
