@@ -362,7 +362,7 @@ const poolDist = (x, y) => x * pn[0] + (y - poolY) * pn[1];
 function makeBlob(o) {
   return Object.assign({
     x: 0, y: 0.5, z: 0, vx: 0, vy: 0, vz: 0, r: 0.04, rt: 0.04, s: 1, lean: 0, T: 0.5, lat: 0, hot: 0, u: 0, u0: 0,
-    state: 'free', sib: null, sibT: 0, fromPool: false, flash: 0, grab: null, top: false, body: null, tug: null, rejoin: false, id: nextId++,
+    state: 'free', sib: null, sibT: 0, fromPool: false, flash: 0, grab: null, top: false, body: null, tug: null, rejoin: false, into: null, id: nextId++,
   }, o);
 }
 // A mound sits on the pool and rises along its normal as it grows.
@@ -393,20 +393,13 @@ function remove(b) {
     if (o.body === b) { o.body = null; o.rejoin = false; }
   }
 }
-// The first blob keeps the mass, momentum and heat of both.
-function merge(a, b, k0 = 1) {
-  const ma = a.r ** 3, mb = b.r ** 3, m = ma + mb, k = mb / m;
-  const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
-  for (const p of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'T']) a[p] = lerp(a[p], b[p], k);
-  a.r = a.rt = Math.cbrt(m);
-  // The pair's axis becomes the new blob's stretch.
-  a.s = clamp(1 + (0.9 * (dy - dx)) / (a.r * 2), 0.8, 1.45);
-  a.flash = Math.max(a.flash, b.flash, 0.4);
-  a.fromPool = false;
-  if (b.grab && !a.grab) a.grab = b.grab;
-  if (a.tug === b) a.tug = null;
-  for (const g of grabs.values()) if (g.b === b) g.b = a;
-  remove(b);
+// The smaller blob drains into the larger, so a merge never snaps.
+function flowInto(a, b, k0 = 1) {
+  b.state = 'flow';
+  b.into = a;
+  b.body = null;
+  b.rejoin = false;
+  b.sib = null;
   gloop(a.r, false, k0);
 }
 // A stretched blob necks into two along its axis.
@@ -457,7 +450,7 @@ function fingers() {
 const NB = 220, BUF_N = 5;
 // Most boblets are tiny; a few run larger.
 const tiny = () => lerp(0.0032, 0.009, Math.random() ** 2);
-const BP = new Float32Array(NB * 3), BV = new Float32Array(NB * 3), BR = new Float32Array(NB), BT = new Float32Array(NB), BA = new Float32Array(NB);
+const BP = new Float32Array(NB * 3), BV = new Float32Array(NB * 3), BR = new Float32Array(NB), BT = new Float32Array(NB), BA = new Float32Array(NB), BS = new Float32Array(NB), BG = new Uint8Array(NB);
 const BUF = new Float32Array(NB * BUF_N);
 let nb = 0;
 function shed(x, y, z, vx, vy, vz, r, t) {
@@ -468,6 +461,8 @@ function shed(x, y, z, vx, vy, vz, r, t) {
   BR[i] = r;
   BT[i] = t;
   BA[i] = 0;
+  BS[i] = 0;
+  BG[i] = 0;
   gloop(0.006, true, 0.35);
   return true;
 }
@@ -479,6 +474,8 @@ function drop(i) {
   BR[i] = BR[l];
   BT[i] = BT[l];
   BA[i] = BA[l];
+  BS[i] = BS[l];
+  BG[i] = BG[l];
 }
 // A hard shake throws droplets off the blobs and the pool.
 function shedAll(h, facing) {
@@ -504,6 +501,11 @@ function stepBoblets(h, burn) {
     const j = i * 3, r = BR[i];
     let x = BP[j], y = BP[j + 1], z = BP[j + 2];
     BA[i] += h;
+    // A boblet swells out of the wax and shrinks away into it.
+    if (BG[i]) {
+      BS[i] -= h / 0.5;
+      if (BS[i] <= 0) { drop(i); continue; }
+    } else if (BS[i] < 1) BS[i] = Math.min(1, BS[i] + h / 0.35);
     const heatIn = burn * (0.38 * Math.exp(-Math.max(poolDist(x, y) - r, 0) / 0.05) + 0.012);
     const cool = 0.045 + 0.6 * sstep(0.68, 0.85, y);
     BT[i] = clamp(BT[i] + (heatIn * (1.1 - BT[i]) - cool * BT[i]) * 3 * h);
@@ -532,8 +534,9 @@ function stepBoblets(h, burn) {
     BP[j + 1] = y;
     BP[j + 2] = z;
     const sp = Math.hypot(BV[j], BV[j + 1], BV[j + 2]);
-    if (BA[i] > 0.8) {
-      if (poolDist(x, y) < r * 0.5) { poolV += r ** 3; drop(i); continue; }
+    // Its mass goes home at once; the drop only shrinks from then on.
+    if (BA[i] > 0.8 && !BG[i]) {
+      if (poolDist(x, y) < r * 0.5) { poolV += r ** 3; BG[i] = 1; continue; }
       let taken = false;
       for (const b of blobs) {
         if (b.state !== 'free' || b.tug || b.body) continue;
@@ -544,7 +547,7 @@ function stepBoblets(h, burn) {
           break;
         }
       }
-      if (taken) { drop(i); continue; }
+      if (taken) { BG[i] = 1; continue; }
     }
     mv = Math.max(mv, sp);
   }
@@ -630,6 +633,32 @@ function step(h) {
       act += 0.01;
       continue;
     }
+    if (b.state === 'flow') {
+      const A = b.into;
+      // A blob taken in hand stops receiving.
+      if (!blobs.includes(A) || A.state !== 'free' || A.tug || A.body) {
+        b.state = 'free';
+        b.into = null;
+      } else {
+        const nr = Math.max(0, b.r - h * 0.035), dm = b.r ** 3 - nr ** 3, k = dm / (A.r ** 3 + dm);
+        // The receiver takes each share of mass, momentum and heat.
+        for (const q of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'T']) A[q] = lerp(A[q], b[q], k);
+        A.r = A.rt = Math.cbrt(A.r ** 3 + dm);
+        b.r = nr;
+        const pull = 1 - Math.exp(-h * 2.6);
+        b.x += (A.x - b.x) * pull;
+        b.y += (A.y - b.y) * pull;
+        b.z += (A.z - b.z) * pull;
+        b.s += (1 - b.s) * pull;
+        A.flash = Math.max(A.flash, 0.2);
+        if (b.r < 0.006) {
+          A.r = A.rt = Math.cbrt(A.r ** 3 + b.r ** 3);
+          remove(b);
+        }
+        act += 0.01;
+        continue;
+      }
+    }
     if (b.state === 'sink') {
       // The pool swallows the blob slowly.
       const nr = Math.max(0, b.r - h * 0.028);
@@ -699,7 +728,8 @@ function step(h) {
     b.top = false;
     if (b.y + half(b) > TOP) { b.y = TOP - half(b); b.vy = Math.min(b.vy, 0); b.top = true; }
     if (b.y - half(b) < Y0 + 0.004) { b.y = Y0 + 0.004 + half(b); b.vy = Math.max(b.vy, 0); }
-    const pd = poolDist(b.x, b.y), floor = half(b) * 0.7;
+    // Resting wax sits up on the pool, not pressed into it.
+    const pd = poolDist(b.x, b.y), floor = half(b) * 1.05;
     if (pd < floor && b.body !== POOL) {
       const vn = b.vx * pn[0] + b.vy * pn[1];
       if (blobs.length > 7 && heat > 0.25 && !b.grab && !b.tug && !b.body && vn < 0 && !b.fromPool) {
@@ -741,6 +771,7 @@ function step(h) {
     }
   }
   // Touching blobs pull together and merge; siblings drift apart first.
+  const live = blobs.filter(b => b.state === 'free').length;
   outer: for (let i = 0; i < blobs.length; i++) {
     const a = blobs[i];
     if (a.state !== 'free') continue;
@@ -751,7 +782,7 @@ function step(h) {
       // A lobe and its body share a neck, so they never collide.
       const lobe = a.body === b ? a : b.body === a ? b : null;
       if (lobe) {
-        if (lobe.rejoin && d < sum * 0.6) { merge(lobe === a ? b : a, lobe, 0.6); break outer; }
+        if (lobe.rejoin && d < sum * 0.75) { flowInto(lobe === a ? b : a, lobe, 0.6); break outer; }
         continue;
       }
       const sib = a.sib === b || b.sib === a;
@@ -764,8 +795,13 @@ function step(h) {
       }
       // Free blobs merge only above seven; a carried blob merges down to six.
       const held = a.grab || b.grab, linked = a.tug || a.body || b.tug || b.body;
-      const canMerge = !linked && heat > 0.05 && blobs.length > (held ? MINB : 7);
-      if (canMerge && d < sum * 0.56) { merge(a, b); break outer; }
+      const canMerge = !linked && heat > 0.05 && live > (held ? MINB : 7);
+      // A carried blob receives; otherwise the larger one does.
+      if (canMerge && d < sum * 0.72 && !(a.grab && b.grab)) {
+        const big = a.grab || (!b.grab && a.r >= b.r) ? a : b;
+        flowInto(big, big === a ? b : a);
+        break outer;
+      }
       // A sleeping blob holds still; the other one moves.
       const ma = a.sleep ? 1e9 : a.r ** 3, mb = b.sleep ? 1e9 : b.r ** 3, wa = mb / (ma + mb), wb = ma / (ma + mb);
       if (canMerge && d < sum * 1.08) {
@@ -841,7 +877,7 @@ function inside(x, y, b) {
   const lim = Math.max(0, Math.sqrt(Math.max(0, (inR(y) - wide(b) - 0.006) ** 2 - b.z * b.z)));
   x = clamp(x, -lim, lim);
   if (b.body !== POOL) {
-    const pd = poolDist(x, y), fl = half(b) * 0.7;
+    const pd = poolDist(x, y), fl = half(b) * 1.05;
     if (pd < fl) { x += pn[0] * (fl - pd); y += pn[1] * (fl - pd); }
   }
   return [x, y];
@@ -1260,24 +1296,25 @@ void main() {
   vec2 uv = vec2(dot(v, uCx), dot(v, uCy)) / (z * uTan);
   gl_Position = vec4(uv.x * uRes.y / uRes.x, uv.y, 0.0, 1.0);
   vR = aP.w / (z * uTan) * 0.5 * uRes.y;
-  // A big blob between the eye and the boblet hides it.
+  // A boblet fades as a big blob passes in front of it.
   vec3 d = p - uCamL;
   float len = length(d);
   d /= len;
-  bool hid = false;
+  float vis = 1.0;
   for (int i = 0; i < ${MAXB}; i++) {
     if (i >= uN) break;
     vec3 oc = uB[i].xyz - uCamL;
     float R = max(uB[i].w, uE[i].x) * 0.9, t = dot(oc, d);
-    if (t > 0.0 && t < len && dot(oc, oc) - t * t < R * R) hid = true;
+    if (t <= 0.0 || t >= len) continue;
+    vis *= 1.0 - (1.0 - smoothstep(R * 0.8, R * 1.1, sqrt(max(dot(oc, oc) - t * t, 0.0)))) * smoothstep(0.0, R * 0.5, len - t);
   }
-  gl_PointSize = hid ? 0.0 : 2.0 * vR + 2.0;
+  gl_PointSize = 2.0 * vR + 2.0;
   // Liquid in front of the boblet tints and dims it.
   float r = prof(p.y), front = max(sqrt(max(r * r - p.x * p.x, 0.0)) - p.z, 0.0);
   vec3 tr = exp(-uAbs * front);
   float dist = length(p - vec3(0.0, 0.24, 0.0));
   vCol = mix(uCool, uHot, aT) * uLight * (0.5 + 1.0 / (1.0 + 4.0 * dist * dist)) * 1.7 * tr;
-  vA = 0.35 + 0.65 * (tr.r + tr.g + tr.b) / 3.0;
+  vA = vis * (0.35 + 0.65 * (tr.r + tr.g + tr.b) / 3.0);
   // The bulb sits down the lamp, so the light comes from there.
   vL = vec2(uRot.y, -uRot.x);
 }`;
@@ -1431,10 +1468,10 @@ function render() {
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   if (!nb) return;
-  // Boblets go on top, skipped where a big blob stands in front.
+  // Boblets go on top, fading where a big blob stands in front.
   for (let i = 0; i < nb; i++) {
     const o = i * BUF_N, j = i * 3;
-    BUF[o] = BP[j]; BUF[o + 1] = BP[j + 1]; BUF[o + 2] = BP[j + 2]; BUF[o + 3] = BR[i]; BUF[o + 4] = BT[i];
+    BUF[o] = BP[j]; BUF[o + 1] = BP[j + 1]; BUF[o + 2] = BP[j + 2]; BUF[o + 3] = BR[i] * BS[i] * BS[i] * (3 - 2 * BS[i]); BUF[o + 4] = BT[i];
   }
   const camL = toLamp(CAM.pos[0], CAM.pos[1]);
   gl.useProgram(bprog);
@@ -1542,7 +1579,7 @@ function pick(sx, sy) {
   if (!inGlass(lx, ly)) return onLamp(lx, ly) ? { kind: 'lift' } : { kind: 'tip', a: angleAt(sx, sy), acc: 0, th0: lamp.th };
   let best = null, bd = 1e9, bp = null;
   for (const b of blobs) {
-    if (b.state === 'sink' || b.grab || b.tug || b.body) continue;
+    if (b.state === 'sink' || b.state === 'flow' || b.grab || b.tug || b.body) continue;
     const p = lampAt(d, b.z), dd = Math.hypot(p[0] - b.x, p[1] - b.y) - Math.max(wide(b), half(b));
     if (dd < bd) { bd = dd; best = b; bp = p; }
   }
