@@ -15,6 +15,11 @@
 }
 .intro.is-live { animation: none; }
 
+/* Registered so the intro can animate them frame by frame. */
+@property --emblem-k { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --split { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
+@property --box-y { syntax: "<number>"; inherits: true; initial-value: 1; }
+
 /* One centred column: the emblem's box, a gap, then the name and subtitle. */
 .intro-mark { position: relative; display: grid; max-width: 100%; }
 .intro-text {
@@ -24,7 +29,18 @@
 }
 /* intro.js wraps the emblem in a badge; the badge's box is the flash. */
 .intro-badge { position: relative; display: grid; place-items: center; padding: clamp(14px, 2.2vw, 26px); margin-bottom: clamp(14px, 3vh, 36px); }
-.intro-badge::before { content: ""; position: absolute; inset: 0; background: #fff; opacity: var(--box, 0); }
+/* --split parts the box down the middle; --box-y drops it to a bar at its foot. */
+.intro-badge::before {
+  content: ""; position: absolute; inset: 0; opacity: var(--box, 0);
+  background: linear-gradient(90deg, #fff calc(50% - var(--split)), transparent 0 calc(50% + var(--split)), #fff 0);
+  transform: scaleY(var(--box-y)); transform-origin: 50% 100%;
+}
+/* Stamp: the landed box casts a hard offset shadow. */
+.intro-badge.is-stamp::before { box-shadow: 0.5em 0.5em 0 oklch(1 0 0 / 0.28); }
+/* Punch: outline rings that close in on the box. */
+.intro-ring { position: absolute; inset: 0; border: 0.2em solid #fff; pointer-events: none; }
+/* Scan: the white bar at the open edge of a line. */
+.intro-scan { position: absolute; left: 0; right: 0; top: 0; height: 0.14em; background: #fff; pointer-events: none; }
 .intro-badge.is-flash { color: var(--intro-bg); }
 /* The flash box carries the toy's number, cut out at its top left. */
 .intro-badge::after {
@@ -34,7 +50,7 @@
 }
 /* The emblem is the toy icon as a one-colour luminance mask. */
 .intro-emblem {
-  position: relative; display: block; width: clamp(90px, 13.75vw, 188px); aspect-ratio: 1;
+  position: relative; display: block; width: calc(clamp(90px, 13.75vw, 188px) * var(--emblem-k)); aspect-ratio: 1;
   background: currentColor;
   mask: var(--emblem) center / contain no-repeat; mask-mode: luminance;
 }
@@ -69,5 +85,12 @@
 
 @keyframes intro-failsafe { to { opacity: 0; visibility: hidden; } }
 
-/* Every title line wears the name font; the Dutch name, IPA and subtitle keep the detail font. */
-.intro-name, .intro-tag, .intro-snd, .intro-badge::after { font-family: var(--intro-display, inherit); }
+/* Font tokens: the name font dresses the name, number and sound line. */
+.intro-name, .intro-snd, .intro-badge::after { font-family: var(--intro-display, inherit); }
+/* The Dutch name and its IPA take their own font, else the detail font. */
+.intro-nl { font-family: var(--intro-nl, inherit); }
+/* The motto takes the subtitle font, else the name font. */
+.intro-tag { font-family: var(--intro-tag, var(--intro-display, inherit)); }
+.intro-sub { font-family: var(--intro-tag, inherit); }
+/* The motto's Dutch line follows the subtitle font unless it has its own. */
+.intro-tag--nl { font-family: var(--intro-tag-nl, var(--intro-tag, var(--intro-display, inherit))); }
