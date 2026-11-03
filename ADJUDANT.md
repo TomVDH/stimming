@@ -15,6 +15,17 @@ The register is `.claude/rules/adjudant-code.md`; it loads when a code file is r
 All vault writes go through adjudant, never by hand. Two densities. Documentation (brief, decisions, reference notes): ASD-STE100 at double density. Session logs and working notes: ASD-STE100 at regular density.
 STE governs the prose, not the format. Use markdown in full: tables, callouts, code, Mermaid diagrams. Never flatten a diagram into sentences.
 
+## Work items
+This repo tracks work in beans. Run `beans prime` and follow it.
+Find or create a bean before starting. Keep its checklist current. Commit the bean file with the code.
+Three types beyond Beans' five, all at the task level: `spike` (a question), `chore` (a bump or cleanup), `decision` (a chosen option). Create them with `beans query` and the `createBean` mutation.
+
+## Git practice
+Pull `--ff-only` first.
+A `feature` bean gets a worktree: `git worktree add .worktrees/<bean-id> -b feature/<bean-id>`. Merge by PR.
+A `task` or `bug` commits on `main`, or on its parent feature's branch when that feature is in progress.
+An `epic` gets no branch. The main checkout never leaves `main`.
+
 ## Partners
 Adjudant expects these; the session banner says which are here.
 - beans: work items and their checklists · hookify: drift-defense hooks from rule files
