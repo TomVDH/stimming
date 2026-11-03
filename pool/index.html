@@ -158,6 +158,10 @@ const SUN_DIR = norm3([-0.42, 1, -0.55]);
 // Still water keeps a faint frozen relief.
 // The relief keeps caustics on the floor.
 const AMP0 = 0.6, SWELL_T = 2.7;
+// The relief drifts gently forever, so the light on the floor keeps moving.
+// Reduced motion freezes it.
+const DRIFT = 1.5;
+let swellT = SWELL_T;
 // Dispersion is several times real water's, so the fringes show.
 const DISP = 0.025;
 /* ---------- pools: a shape, a depth and a palette each ---------- */
@@ -1536,6 +1540,7 @@ function render(dt) {
   if (simActive && !fence) probe();
   // Caustics add light into the floor map.
   gl.useProgram(P.caus.p);
+  gl.uniform1f(P.caus.u.uT, swellT);
   gl.uniform4fv(P.caus.u.uPA, PA);
   gl.uniform4fv(P.caus.u.uPB, PB);
   gl.uniform1i(P.caus.u.uNP, petals.length);
@@ -1562,6 +1567,7 @@ function render(dt) {
   gl.uniform2f(P.view.u.uRes, canvas.width, canvas.height);
   gl.uniform1f(P.view.u.uSeed, (clock * 61.7) % 97);
   gl.uniform1f(P.view.u.uNight, nk);
+  gl.uniform1f(P.view.u.uT, swellT);
   // The march runs only while the water stands tall.
   const hTop = simActive ? probeData[EI + 2] : 0;
   gl.uniform1f(P.view.u.uHmax, Math.max(cutGlow, hTop > 0.004 ? hTop * 1.5 + 0.002 : 0));
@@ -2159,13 +2165,18 @@ function wake() {
   lastDraw = performance.now();
   raf = requestAnimationFrame(frame);
 }
+let settled = true;
+const drifting = () => !reduce;
 function frame(now) {
   raf = 0;
   if (!running || !ready) return;
+  const lively = busy() || petalsMoving();
+  // A pool that only drifts draws at 30 fps.
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
   const raw = Math.max(0, (now - lastDraw) / 1000), dt = Math.min(raw, 1 / 20);
   lastDraw = now;
   // Sustained slow frames drop the pixel ratio, then the grid.
-  if (++busyN > 30) {
+  if (lively && ++busyN > 30) {
     slowN = raw > 0.024 ? slowN + 1 : Math.max(0, slowN - 1);
     if (slowN > 45) {
       slowN = 0;
@@ -2180,16 +2191,19 @@ function frame(now) {
   inFrame = false;
   // The canvas fades in once its first frame is up.
   if (++drawn === 1) requestAnimationFrame(() => canvas.classList.add('on'));
-  if (busy() || petalsMoving()) raf = requestAnimationFrame(frame);
-  else {
-    // Settled water draws nothing until the next touch.
+  const still = !busy() && !petalsMoving();
+  if (!still || drifting()) raf = requestAnimationFrame(frame);
+  // Once the action stops, the sound sleeps; only the drift goes on.
+  if (still && !settled) {
     busyN = 0;
     bedLevel(0);
     kit.rest(() => !busy());
   }
+  settled = still;
 }
 function step(dt) {
   clock += dt;
+  if (!reduce) swellT += dt * DRIFT;
   if (pollProbe()) energy = Math.sqrt(probeData[EI + 1]);
   if (nightK !== nightT) nightK = reduce ? nightT : nightT > nightK ? Math.min(nightT, nightK + dt / 0.8) : Math.max(nightT, nightK - dt / 0.8);
   runLater();
