@@ -33,7 +33,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--magnet table" id="table" tabindex="0" role="application" aria-label="Magnet balls on a table. Drag a ball to pull its chain. Hold the empty table to raise a magnet. Double-click a ball to flip its poles. F shows the field, R forms a ring, S scatters, arrow keys nudge the nearest cluster.">
+    <div class="stage stage--magnet table" id="table" tabindex="0" role="application" aria-label="Magnet balls on a table. Drag a ball to pull its chain. Hold the empty table to raise a magnet. Double-click a ball to flip its poles, or the bare table to blast. F shows the field, R forms a ring, H forms a hex sheet, S scatters, arrow keys nudge the nearest cluster.">
       <p class="fail" hidden>Magnet balls need WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -42,12 +42,13 @@
       </div>
       <div class="actions">
         <button class="chip" id="ring" type="button" aria-keyshortcuts="R">Ring</button>
+        <button class="chip" id="hex" type="button" aria-keyshortcuts="H">Hex</button>
         <button class="chip" id="scatter" type="button" aria-keyshortcuts="S">Scatter</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag a ball</dt><dd>pull its chain</dd></div>
         <div><dt>Hold the table</dt><dd>raise a magnet</dd></div>
-        <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span> a ball</dt><dd>flip its poles</dd></div>
+        <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span></dt><dd>flip a ball, blast the table</dd></div>
         <div class="fine"><dt><kbd>F</kbd></dt><dd>field</dd></div>
       </dl>
     </div>
@@ -147,7 +148,7 @@ function rest() {
     if (!raf && held < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['r', 'R', 's', 'S', 'f', 'F','ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+const GESTURE_KEYS = new Set(['r', 'R', 's', 'S', 'f', 'F', 'h', 'H', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -199,16 +200,42 @@ function tick(amp, pitch, at = 0) {
   track(o, og, og2, ng);
 }
 // A chain snapping shut: a quick zipper of ticks, rising slightly.
-function cascade(n) {
+function cascade(n, pitch = 1) {
   const a = live();
   if (!a) return;
   let at = 0.015, gap = 0.045;
   for (let k = 0; k < n; k++) {
-    tick(0.95 - k * 0.04, 1 + k * 0.022, at);
+    tick(0.95 - k * 0.04, pitch * (1 + k * 0.022), at);
     at += gap;
     gap = Math.max(0.01, gap * 0.8);
   }
   tickNext = a.currentTime + LEAD + at;
+}
+// The blast: a falling sine thump over a dark burst of noise.
+function boom() {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, g = level();
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(36, t + 0.28);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.55 * g, t + 0.004);
+  og.gain.setTargetAtTime(0, t + 0.004, 0.1);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.7);
+  track(o, og);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(2200, t);
+  lp.frequency.exponentialRampToValueAtTime(180, t + 0.22);
+  ng.gain.setValueAtTime(0.4 * g, t);
+  ng.gain.setTargetAtTime(0, t, 0.05);
+  src.connect(lp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.5, 0.4);
+  track(src, lp, ng);
 }
 // Fast rolling raises a low rumble; rest fades it out.
 function rumble(e) {
@@ -265,6 +292,15 @@ const wand = { on: false, x: 0, z: 0, fx: 0, fz: 0, tx: 0, tz: 0, a: -Math.PI / 
 const onWand = new Uint8Array(N);
 // A double tap on one ball flips it.
 let tapI = -1, tapT = -1e9, downT = 0;
+// A double click on the bare table blasts the balls outward.
+let blankT = -1e9, blankX = 0, blankZ = 0;
+const BLAST_R = 11, SHOCK_T = 0.9;
+const shock = { x: 0, z: 0, t: -1 };
+// Each snap flashes the field round its balls.
+const P = new Float32Array(N);
+// A hit faster than SMASH knocks the struck ball loose.
+// Magnetic pull alone closes at about 26, so only throws pass it.
+const SMASH = 32;
 
 function addBond(i, j) {
   bonded[i * N + j] = bonded[j * N + i] = 1;
@@ -484,12 +520,14 @@ function substep(k, n) {
     for (let p = 0; p < np; p += 2) {
       const i = pairs[p], j = pairs[p + 1], ij = i * N + j;
       if (bonded[ij] || simT - broke[ij] < COOL) continue;
-      // While a ring forms, only neighbours that have both arrived snap.
-      if (guide && ((guide.next[i] !== j && guide.next[j] !== i) || !arrived(i) || !arrived(j))) continue;
+      // While a shape forms, only balls that have both arrived snap.
+      // A ring bonds only its neighbours in order.
+      if (guide && ((!guide.any && guide.next[i] !== j && guide.next[j] !== i) || !arrived(i) || !arrived(j))) continue;
       const dx = X[j] - X[i], dz = Z[j] - Z[i], d2 = dx * dx + dz * dz;
       if (d2 > SNAP2) continue;
       const d = Math.sqrt(d2), v = ((UX[i] - UX[j]) * dx + (UZ[i] - UZ[j]) * dz) / d;
-      snap(i, j, v);
+      if (!guide && v > SMASH) smash(i, j, dx / d, dz / d, v);
+      else snap(i, j, v);
     }
   }
   simT += H;
@@ -498,11 +536,30 @@ const arrived = i => (X[i] - guide.tx[i]) ** 2 + (Z[i] - guide.tz[i]) ** 2 < 0.0
 function snap(i, j, v) {
   const loop = loud ? hops(i, j) : Infinity;
   addBond(i, j);
-  if (guide && bonds.length === N) guide = null;
+  if (guide && !guide.any && bonds.length === N) guide = null;
   if (!loud) return;
+  P[i] = Math.max(P[i], clamp(0.35 + v / 20));
+  P[j] = Math.max(P[j], P[i]);
   // A chain closing on itself zips shut with a cascade.
-  if (loop >= 5 && loop < Infinity) cascade(Math.min(12, 6 + (loop >> 3)));
+  // Long loops ring low; short loops ring high.
+  if (loop >= 5 && loop < Infinity) cascade(Math.min(12, 6 + (loop >> 3)), 1.45 - 0.75 * clamp((loop - 5) / 43));
   else tick(clamp(v / 14, 0.18, 1), 1);
+}
+// A hard hit cuts the struck ball's bonds and passes on the blow.
+// The struck ball can smash the next one, as a chain reaction.
+function smash(i, j, nx, nz, v) {
+  const fwd = Math.hypot(UX[i], UZ[i]) >= Math.hypot(UX[j], UZ[j]);
+  const a = fwd ? i : j, b = fwd ? j : i, s = fwd ? 1 : -1;
+  broke[i * N + j] = broke[j * N + i] = simT;
+  if (b === held) return;
+  for (let k = bonds.length - 1; k >= 0; k--) if (bonds[k].i === b || bonds[k].j === b) cutBond(k);
+  VX[b] += nx * s * v * 0.75;
+  VZ[b] += nz * s * v * 0.75;
+  if (a !== held) { VX[a] -= nx * s * v * 0.55; VZ[a] -= nz * s * v * 0.55; }
+  OM[b] += (Math.random() * 2 - 1) * 14;
+  if (!loud) return;
+  P[a] = P[b] = 1;
+  tick(1, 1.3);
 }
 // Ring: each ball eases toward its slot at a capped speed.
 function steer() {
@@ -606,8 +663,35 @@ function flip(i) {
     VX[i] -= (dx / d) * v * 0.3;
     VZ[i] -= (dz / d) * v * 0.3;
   }
+  P[i] = 1;
   tick(1, 0.6);
   tick(0.6, 0.45, 0.03);
+  wake();
+}
+// The blast cuts bonds near the click and throws balls outward.
+function blast(p) {
+  if (!ready) return;
+  guide = null;
+  for (let k = bonds.length - 1; k >= 0; k--) {
+    const b = bonds[k];
+    if (Math.hypot(X[b.i] - p.x, Z[b.i] - p.z) < BLAST_R || Math.hypot(X[b.j] - p.x, Z[b.j] - p.z) < BLAST_R) cutBond(k);
+  }
+  for (let i = 0; i < N; i++) {
+    if (i === held) continue;
+    const dx = X[i] - p.x, dz = Z[i] - p.z, d = Math.hypot(dx, dz) || 1;
+    if (d > BLAST_R) continue;
+    const v = (reduce ? 14 : 46) * (1 - d / BLAST_R) ** 0.7 + 4;
+    VX[i] += (dx / d) * v;
+    VZ[i] += (dz / d) * v;
+    OM[i] += (Math.random() * 2 - 1) * (reduce ? 3 : 18);
+    P[i] = 1;
+  }
+  shock.x = p.x;
+  shock.z = p.z;
+  shock.t = reduce ? -1 : 0;
+  // Nothing snaps for a moment, so the burst clears the centre.
+  flyUntil = Math.max(flyUntil, simT + 0.25);
+  boom();
   wake();
 }
 function fastest() {
@@ -727,6 +811,48 @@ function makeRing() {
   guide = g;
   wake();
 }
+// Hex: the balls pack into a flat hex sheet that grows from the middle.
+function makeHex() {
+  if (!ready) return;
+  drop();
+  cutAll();
+  flyUntil = driftFrom = driftUntil = 0;
+  // Lattice cells sit two radii apart; the N nearest the centre make the sheet.
+  const rot = Math.random() * (Math.PI / 3), c = Math.cos(rot), s = Math.sin(rot), cells = [];
+  for (let q = -7; q <= 7; q++) for (let r = -7; r <= 7; r++) {
+    const u = 2 * (q + r / 2), v = r * Math.sqrt(3);
+    cells.push([u * c - v * s, u * s + v * c]);
+  }
+  cells.sort((a, b) => a[0] ** 2 + a[1] ** 2 - b[0] ** 2 - b[1] ** 2 || Math.atan2(a[1], a[0]) - Math.atan2(b[1], b[0]));
+  cells.length = N;
+  let mx = 0, mz = 0, reach = 0;
+  for (let i = 0; i < N; i++) { mx += X[i]; mz += Z[i]; }
+  for (const [u, v] of cells) reach = Math.max(reach, Math.hypot(u, v));
+  // The sheet leans toward the balls but stays clear of the walls.
+  const lo = zLo + reach, hi = zHi - reach;
+  const cz = lo <= hi ? clamp((mz / N) * 0.4, lo, hi) : (zLo + zHi) / 2;
+  const [xa, xb] = xRange(cz);
+  const cx = xa + reach <= xb - reach ? clamp((mx / N) * 0.4, xa + reach, xb - reach) : (xa + xb) / 2;
+  const g = { tx: new Float64Array(N), tz: new Float64Array(N), start: new Float64Array(N), next: new Int16Array(N).fill(-1), end: 0, any: true };
+  const free = new Uint8Array(N), stagger = reduce ? 0.004 : 0.022;
+  // Outer cells pick first, so each takes the nearest ball still free.
+  for (let k = N - 1; k >= 0; k--) {
+    const x = cx + cells[k][0], z = cz + cells[k][1];
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < N; i++) {
+      const d2 = (X[i] - x) ** 2 + (Z[i] - z) ** 2;
+      if (!free[i] && d2 < bd) { bd = d2; best = i; }
+    }
+    free[best] = 1;
+    g.tx[best] = x;
+    g.tz[best] = z;
+    // Inner cells fill first, so the sheet grows outward.
+    g.start[best] = simT + k * stagger;
+  }
+  g.end = simT + N * stagger + (reduce ? 1.2 : 2.8);
+  guide = g;
+  wake();
+}
 // Rolling friction: a steady drag and a viscous part.
 // Reduced motion settles faster, except while a scatter is in flight.
 const friction = (fly = false) => (reduce && !fly ? [18, 3] : [10, 1.2]);
@@ -810,11 +936,12 @@ let lowDpr = false;
 // The ball shader calls it too, to mirror the table.
 const FIELD = /* glsl */ `
 uniform vec4 uB[${N}];
-uniform vec4 uWand;
+uniform vec4 uWand, uShock;
+uniform vec4 uP[${N / 4}];
 uniform vec3 uInk, uWarm, uCool;
 uniform float uStep, uHalf, uField;
 vec3 tableShade(vec2 p) {
-  float psi = 0.0, phi = 0.0, ao = 1.0;
+  float psi = 0.0, phi = 0.0, ao = 1.0, pk = 0.0;
   vec2 B = vec2(0.0);
   for (int i = 0; i < ${N}; i++) {
     vec4 b = uB[i];
@@ -826,6 +953,8 @@ vec3 tableShade(vec2 p) {
     phi += mr * q;
     B += (2.0 * mr * q * r - b.zw) * q;
     ao *= 1.0 - 0.5 * exp(-0.9 * d2);
+    // Four flash levels pack into each vec4.
+    pk = max(pk, uP[i / 4][i - (i / 4) * 4] * exp(-0.06 * d2));
   }
   // The magnet adds one strong dipole and its own contact shade.
   vec2 rw = p - uWand.xy;
@@ -839,19 +968,26 @@ vec3 tableShade(vec2 p) {
   float fw = max(fwidth(s), 1e-5);
   // Lines closer than a few pixels blend into a flat tone.
   float dense = smoothstep(0.2, 0.55, fw);
-  // Lines show only where the field is strong.
-  float strength = smoothstep(0.03, 0.3, length(B));
+  // The blast shock is a ring band that runs out across the table.
+  float sd = abs(length(p - uShock.xy) - uShock.z);
+  float wave = uShock.w * (1.0 - smoothstep(0.0, 2.5, sd));
+  // Lines show only where the field is strong; the shock shows weak field too.
+  float lb = length(B);
+  float strength = max(smoothstep(0.03, 0.3, lb), wave * smoothstep(0.001, 0.02, lb));
   // The magnet shows the field round it, even with the field hidden.
   float show = max(uField, wk * exp(-dw2 / 90.0));
+  float flash = max(pk, wave);
   float line = 1.0 - smoothstep(uHalf - 0.7, uHalf + 0.7, abs(fract(s) - 0.5) / fw);
-  line = mix(line, 0.45, dense) * strength * show;
+  line = mix(line, 0.45, dense) * strength;
   // Alternate flux tubes take a faint tint; lines hide their edges.
   float band = mix(step(0.5, fract(s * 0.5 + 0.25)), 0.5, dense) * strength * show;
   // Lines run warm near north poles and cool near south poles.
   float pol = phi / (abs(phi) + 0.03);
   vec3 lc = mix(uCool, uWarm, 0.5 + 0.5 * pol);
   vec3 c = mix(uInk, lc, 0.015 * band);
-  c = mix(c, lc, 0.13 * line);
+  c = mix(c, lc, min(1.0, 0.13 * show + 0.6 * flash) * line);
+  // A hard thin stroke marks the shock front.
+  c = mix(c, lc, 0.35 * uShock.w * (1.0 - smoothstep(0.12, 0.3, sd)));
   // The far table falls away into shade.
   c *= mix(1.0, 0.7, smoothstep(30.0, 90.0, length(p)));
   return c * ao;
@@ -918,6 +1054,9 @@ function draw() {
   balls.instanceMatrix.needsUpdate = true;
   const ms = wand.s;
   F.uWand.value.set(wand.x, wand.z, Math.cos(wand.a) * WM * ms, Math.sin(wand.a) * WM * ms);
+  // The shock front runs out fast and thins as it goes.
+  const st = shock.t / SHOCK_T;
+  F.uShock.value.set(shock.x, shock.z, 3 + 46 * st, shock.t < 0 ? 0 : (1 - st) ** 1.5);
   puck.visible = ms > 0.01;
   if (puck.visible) {
     // The puck rises out of the table; its local +x is north.
@@ -964,6 +1103,17 @@ function frame(ms) {
   // The field fades in and out over a third of a second.
   const ft = fieldOn ? 1 : 0, fv = F.uField.value;
   if (fv !== ft) F.uField.value = reduce ? ft : ft ? Math.min(1, fv + dt / 0.35) : Math.max(0, fv - dt / 0.35);
+  // Snap flashes fade in a fifth of a second.
+  const fade = Math.exp(-dt / 0.2);
+  let lit = 0;
+  for (let i = 0; i < N; i++) {
+    P[i] = P[i] > 0.01 ? P[i] * fade : 0;
+    lit += P[i];
+  }
+  if (shock.t >= 0) {
+    shock.t += dt;
+    if (shock.t > SHOCK_T || reduce) shock.t = -1;
+  }
   const turn = orient(dt);
   draw();
   let stuck = 0;
@@ -977,7 +1127,7 @@ function frame(ms) {
   }
   rumble(e / 160);
   const moving = held >= 0 || wand.on || guide || simT < flyUntil || simT < driftFrom || top > 0.03
-    || wand.s !== ws || F.uField.value !== ft || Math.abs(da) > 1e-3;
+    || wand.s !== ws || F.uField.value !== ft || Math.abs(da) > 1e-3 || lit > 0 || shock.t >= 0;
   if (moving) lastMove = simT;
   // Dipoles keep turning a moment after the balls stop.
   const busy = moving || (turn > 1e-3 && simT - lastMove < 2.5);
@@ -1015,7 +1165,10 @@ function raise(p, e) {
   tick(0.8, 0.42);
   wake();
 }
-function lower() {
+function lower(e) {
+  // A short, still press counts as a tap toward a blast.
+  const still = Math.hypot(wand.x - blankX, wand.z - blankZ) < 0.6;
+  blankT = e && still && e.timeStamp - downT < 250 ? e.timeStamp : -1e9;
   wand.on = false;
   onWand.fill(0);
   ptrId = -1;
@@ -1027,7 +1180,16 @@ panel.addEventListener('pointerdown', e => {
   const p = toTable(e);
   if (!p) return;
   const i = pick(p.x, p.z, e.pointerType === 'mouse' ? 1.5 : 2.6);
-  if (i < 0) return raise(p, e);
+  if (i < 0) {
+    if (e.timeStamp - blankT < 350 && Math.hypot(p.x - blankX, p.z - blankZ) < 3) {
+      blankT = -1e9;
+      return blast(p);
+    }
+    downT = e.timeStamp;
+    raise(p, e);
+    [blankX, blankZ] = [wand.x, wand.z];
+    return;
+  }
   if (i === tapI && e.timeStamp - tapT < 350) {
     tapI = -1;
     return flip(i);
@@ -1075,7 +1237,7 @@ panel.addEventListener('pointermove', e => {
 // Release keeps the pointer's last 90 ms of speed: a flick throws.
 function letGo(e, fling) {
   if (e.pointerId !== ptrId) return;
-  if (wand.on) return lower();
+  if (wand.on) return lower(e);
   if (held < 0) return;
   const i = held;
   drop();
@@ -1115,6 +1277,7 @@ addEventListener('keydown', e => {
   if (k === 'r' || k === 'R') { if (!e.repeat) makeRing(); }
   else if (k === 's' || k === 'S') { if (!e.repeat) scatter(); }
   else if (k === 'f' || k === 'F') { if (!e.repeat) setField(!fieldOn); }
+  else if (k === 'h' || k === 'H') { if (!e.repeat) makeHex(); }
   else if (ARROWS[k]) {
     e.preventDefault();
     if (document.activeElement === panel) kbd = panel.matches(':focus-visible');
@@ -1123,6 +1286,7 @@ addEventListener('keydown', e => {
 });
 document.getElementById('ring').addEventListener('click', makeRing);
 document.getElementById('scatter').addEventListener('click', scatter);
+document.getElementById('hex').addEventListener('click', makeHex);
 fieldBtn.addEventListener('click', () => setField(!fieldOn));
 sound.onChange(on => {
   if (on) audio();
@@ -1198,6 +1362,8 @@ async function start() {
     uStep: { value: 0.14 },
     uHalf: { value: 1 },
     uWand: { value: new THREE.Vector4() },
+    uShock: { value: new THREE.Vector4() },
+    uP: { value: P },
     uField: { value: fieldOn ? 1 : 0 },
   };
   // The table is unlit: its colour is the field itself.
