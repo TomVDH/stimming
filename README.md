@@ -29,7 +29,13 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Spinning top | [top/](top/) | live, with sound |
 | Soap cutting | [soap/](soap/) | live, with sound |
 | Rain on glass | [rain/](rain/) | live, with sound |
-| Plasma globe, Marbling, Caustic pool, Lava lamp, Kaleidoscope, Chladni plate, Prism | | in progress; outlines on the menu |
+| Plasma globe | [plasma/](plasma/) | live draft, still being refined |
+| Marbling | [marble/](marble/) | live draft, still being refined |
+| Caustic pool | [pool/](pool/) | live draft, still being refined |
+| Lava lamp | [lava/](lava/) | live draft, still being refined |
+| Kaleidoscope | [kaleido/](kaleido/) | live draft, still being refined |
+| Chladni plate | [chladni/](chladni/) | live draft, still being refined |
+| Prism | [prism/](prism/) | live draft, still being refined |
 
 ## Run locally
 
