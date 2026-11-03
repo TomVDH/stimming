@@ -38,7 +38,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
 | Split-flap | [flap/](flap/) | live, with sound |
 | Harmonograph | [harmono/](harmono/) | live, with sound; Canvas 2D only |
-| Neon sign | [neon/](neon/) | live, with sound |
+| Neon sign | [neon/](neon/) | done; signed off by Tom |
 | Snow globe | [snow/](snow/) | live, with sound |
 | Frost | [frost/](frost/) | live, with sound |
 | Music box | [musicbox/](musicbox/) | live, with sound; Canvas 2D only |
