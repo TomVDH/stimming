@@ -133,24 +133,61 @@ for (const [k, [lo, hi, step, unit]] of Object.entries(RANGE)) {
   input.addEventListener('input', () => { T[k] = +input.value; show(); save(); });
 }
 
-// Font candidates: the house face, stencils, grotesks and a mono for details.
-const FONTS = [
-  'Gabarito', 'Big Shoulders Stencil Display', 'Saira Stencil One', 'Stardos Stencil', 'Archivo Black',
-  'Anybody', 'Unbounded', 'Syne', 'Bricolage Grotesque', 'Space Grotesk', 'Familjen Grotesk',
-  'Instrument Sans', 'Schibsted Grotesk', 'JetBrains Mono', 'Space Mono', 'IBM Plex Mono',
-];
+// Font candidates by kind. Each entry: family, then its weights on Google Fonts.
+// Iosevka faces come from Fontsource on jsDelivr ('fs:' plus the package name).
+const FONTS = {
+  House: [['Gabarito', '400;500;600;700;800;900']],
+  Stencil: [['Big Shoulders Stencil Display', '400;600;700;800;900'], ['Saira Stencil One', '400'], ['Stardos Stencil', '400;700']],
+  Grotesque: [
+    ['Archivo Black', '400'], ['Archivo', '400;600;700;800;900'], ['Inter Tight', '400;600;700;800;900'], ['Manrope', '400;600;700;800'],
+    ['Hanken Grotesk', '400;600;700;800;900'], ['Onest', '400;600;700;800;900'], ['Geist', '400;600;700;800;900'],
+    ['Host Grotesk', '400;600;700;800'], ['Funnel Display', '400;600;700;800'], ['Albert Sans', '400;600;700;800;900'],
+    ['Space Grotesk', '400;600;700'], ['Familjen Grotesk', '400;600;700'], ['Schibsted Grotesk', '400;600;700;800;900'],
+    ['Instrument Sans', '400;600;700'], ['Bricolage Grotesque', '400;600;700;800'], ['Darker Grotesque', '400;600;700;800;900'],
+    ['Anybody', '400;600;700;800;900'], ['Unbounded', '400;600;700;800;900'], ['Syne', '400;600;700;800'], ['Sora', '400;600;700;800'],
+  ],
+  Humanist: [
+    ['Source Sans 3', '400;600;700;800;900'], ['Fira Sans', '400;600;700;800;900'], ['Alegreya Sans', '400;500;700;800;900'],
+    ['Commissioner', '400;600;700;800;900'], ['Figtree', '400;600;700;800;900'], ['Nunito Sans', '400;600;700;800;900'],
+    ['Red Hat Display', '400;600;700;800;900'], ['Atkinson Hyperlegible Next', '400;600;700;800'], ['Lexend', '400;600;700;800;900'],
+  ],
+  Serif: [
+    ['Fraunces', '400;600;700;800;900'], ['Instrument Serif', '400'], ['DM Serif Display', '400'], ['Playfair Display', '400;600;700;800;900'],
+    ['Newsreader', '400;600;700;800'], ['Young Serif', '400'], ['Gloock', '400'], ['Bodoni Moda', '400;600;700;800;900'],
+    ['Libre Caslon Display', '400'], ['Crimson Pro', '400;600;700;800;900'],
+  ],
+  Slab: [
+    ['fs:iosevka-curly-slab|Iosevka Curly Slab', ''], ['fs:iosevka-etoile|Iosevka Etoile', ''], ['Roboto Slab', '400;600;700;800;900'],
+    ['Zilla Slab', '400;600;700'], ['Alfa Slab One', '400'], ['Arvo', '400;700'],
+  ],
+  Mono: [
+    ['fs:iosevka|Iosevka', ''], ['fs:iosevka-aile|Iosevka Aile', ''], ['JetBrains Mono', '400;600;700;800'], ['Space Mono', '400;700'],
+    ['IBM Plex Mono', '400;600;700'], ['Geist Mono', '400;600;700;800'], ['DM Mono', '400;500'], ['Martian Mono', '400;600;700;800'],
+  ],
+};
+const familyOf = key => key.includes('|') ? key.split('|')[1] : key;
+const weightsOf = Object.fromEntries(Object.values(FONTS).flat().map(([k, w]) => [familyOf(k), [k, w]]));
 const loaded = new Set(['Gabarito']);
 function useFont(family, prop) {
-  if (!loaded.has(family)) {
+  if (!loaded.has(family) && weightsOf[family]) {
     loaded.add(family);
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}:wght@400;500;600;700;800;900&display=swap`;
-    document.head.append(link);
+    const [key, w] = weightsOf[family];
+    const add = href => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.append(l); };
+    if (key.startsWith('fs:')) {
+      const pkg = key.slice(3).split('|')[0];
+      for (const wt of [400, 700, 800]) add(`https://cdn.jsdelivr.net/npm/@fontsource/${pkg}@5.3.0/${wt}.css`);
+    } else add(`https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}:wght@${w}&display=swap`);
   }
   document.documentElement.style.setProperty(prop, `"${family}", system-ui, sans-serif`);
 }
-for (const sel of [fdSel, ftSel]) for (const f of FONTS) sel.add(new Option(f, f));
+for (const sel of [fdSel, ftSel]) {
+  for (const [kind, list] of Object.entries(FONTS)) {
+    const g = document.createElement('optgroup');
+    g.label = kind;
+    for (const [k] of list) g.append(new Option(familyOf(k), familyOf(k)));
+    sel.append(g);
+  }
+}
 fdSel.value = saved.fd || 'Gabarito';
 ftSel.value = saved.ft || 'Gabarito';
 useFont(fdSel.value, '--intro-display');
