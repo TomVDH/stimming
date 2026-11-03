@@ -273,7 +273,8 @@ function vaneShape() {
 /* ---------- streaks and prints ---------- */
 const streaks = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), len: 0.3 + Math.random() * 0.7, sp: 0.6 + Math.random() * 0.8 }));
 let prints = [];
-const PRINT_LIFE = 22;
+// Prints last long enough to leave a trail across the beach.
+const PRINT_LIFE = 45, PRINT_MAX = 900;
 
 /* ---------- sound ---------- */
 // Clicks at crank dead centre, a crunch per footfall, a breathy wind bed.
@@ -805,7 +806,7 @@ const sea = (() => {
 
   // Footprints lie flat on the sand and shrink as they fill in.
   const printGeo = new THREE.CircleGeometry(1, 14); printGeo.rotateX(-PI / 2);
-  const printMesh = new THREE.InstancedMesh(printGeo, new THREE.MeshBasicMaterial({ color: 0x0c0806, transparent: true, opacity: 0.45, depthWrite: false }), 420);
+  const printMesh = new THREE.InstancedMesh(printGeo, new THREE.MeshBasicMaterial({ color: 0x030100, transparent: true, opacity: 0.72, depthWrite: false }), PRINT_MAX);
   printMesh.frustumCulled = false;
   scene.add(printMesh);
 
@@ -939,9 +940,11 @@ const sea = (() => {
 
       let n = 0;
       for (const p of prints) {
-        if (n >= 420) break;
-        const r = 2.6 * (0.4 + 0.6 * p.life ** 0.7) * k;
-        _m.makeScale(r, 1, r * 0.55).setPosition(p.x * k, 0.00005, -1 + legZ(p) * k);
+        if (n >= PRINT_MAX) break;
+        // The low camera squashes the sand, so prints run deep across the rows.
+        // A fresh print is a dark oval; it fills in and shrinks with age.
+        const r = (0.35 + 0.65 * p.life ** 0.6) * k;
+        _m.makeScale(r * 6.5, 1, r * 8).setPosition(p.x * k, 0.00005, -1 + legZ(p) * k);
         printMesh.setMatrixAt(n++, _m);
       }
       printMesh.count = n; printMesh.instanceMatrix.needsUpdate = true;
@@ -1027,7 +1030,7 @@ function step(dt) {
     }
   }
   for (const p of prints) p.life -= dt / PRINT_LIFE;
-  if (prints.length > 420) prints.splice(0, prints.length - 420);
+  if (prints.length > PRINT_MAX) prints.splice(0, prints.length - PRINT_MAX);
   if (prints.length && prints[0].life <= 0) prints = prints.filter(p => p.life > 0);
 
   // The camera trails the walker.
