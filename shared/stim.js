@@ -48,6 +48,28 @@ function headerHTML(home) {
 
 // Call once per page, before the toy wires its audio.
 // A page with an empty <header data-shell> gets the shared header.
+/* ---------- fit: the stage fills the first screen above the bar ---------- */
+// --chrome is everything above the stage plus the bar under it.
+function fitStage() {
+  const stage = document.querySelector('.stage'), bar = document.querySelector('.bar');
+  if (!stage) return;
+  const fit = () => {
+    if (bar) {
+      // The how-to line stacks when it wraps under the controls.
+      bar.classList.remove('is-stacked');
+      const how = bar.querySelector('.how'), first = bar.firstElementChild;
+      if (how && first && how !== first && how.offsetTop >= first.offsetTop + first.offsetHeight) bar.classList.add('is-stacked');
+    }
+    const s = stage.getBoundingClientRect();
+    const below = bar ? bar.getBoundingClientRect().bottom - s.bottom : 0;
+    document.documentElement.style.setProperty('--chrome', `${Math.ceil(s.top + scrollY + below + 20)}px`);
+  };
+  const ro = new ResizeObserver(fit);
+  [document.querySelector('header'), bar].forEach(el => el && ro.observe(el));
+  addEventListener('resize', fit);
+  fit();
+}
+
 export function initPage({ id, silent = false, home = '../index.html' } = {}) {
   const shell = document.querySelector('header[data-shell]');
   if (shell && !shell.children.length) shell.innerHTML = headerHTML(home);
@@ -60,6 +82,7 @@ export function initPage({ id, silent = false, home = '../index.html' } = {}) {
     soundBtn.addEventListener('click', () => sound.toggle());
   }
   document.documentElement.dataset.toy = id;
+  fitStage();
   return { sound };
 }
 

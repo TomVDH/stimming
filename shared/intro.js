@@ -61,9 +61,8 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   // The subtitle folds down inside the box.
   if (fold) await play(fold, p => ({ transform: `rotateX(${(-90 * (1 - p)).toFixed(2)}deg)` }), 167, settle);
   await wait(2);
-  // The box cuts out bright and leaves the name in white.
+  // The box cuts out in one frame and leaves the name in white.
   text.style.opacity = 1;
-  await play(flash, p => ({ opacity: [1, 0.7, 0][Math.min(2, Math.floor(p * 3))] }), 3000 / FPS);
   flash.remove();
 
   await held;
