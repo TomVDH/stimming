@@ -1,0 +1,1044 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+/* Main sets no gap here, so the row sets its own. */
+.foot { margin-top: 14px; }
+</style>
+<title>Spinning top</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, then the table panel at full width. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --table: oklch(0.21 0.008 265);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; min-width: 0; }
+/* The table is 16:9, 4:5 on phones, and dark in both themes. */
+.table {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 132px));
+  border-radius: 18px; overflow: hidden; background: var(--table);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+}
+.table:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .table { aspect-ratio: 4 / 5; } }
+.table canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.table canvas.on { opacity: 1; }
+.table.held canvas { cursor: grabbing; }
+/* On the dark table the hint keeps the dark muted tone. */
+.hint {
+  position: absolute; left: 16px; bottom: 14px; margin: 0; pointer-events: none;
+  font-size: 13px; color: oklch(0.64 0.02 275); transition: opacity 0.6s ease;
+}
+.hint.gone { opacity: 0; }
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+@media (prefers-reduced-motion: reduce) { .home, .snd, .hint, .table canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Spinning top</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="table" id="table" tabindex="0" role="application" aria-keyshortcuts="Space ArrowUp ArrowDown ArrowLeft ArrowRight" aria-label="A spinning top on a table. Flick across the table to spin it; a click stands a fallen top back up. Space spins it, arrow keys nudge it.">
+      <p class="fail" hidden>The top needs WebGL, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <dl class="how" aria-label="How to play">
+        <div><dt>Flick</dt><dd>spin</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>stand it up</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>spin</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>nudge</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('table'), hint = panel.querySelector('.hint');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos((h * Math.PI) / 180), b = C * Math.sin((h * Math.PI) / 180);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+// The output stays linear, for the shader.
+function linFit([L, C, h]) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.top.sound', MAXV = 14, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tickNext = 0, clunkNext = 0, restT = 0;
+let hum = null, scr = null, humAt = [0, 0], scrAt = [0, 0];
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // The hum: a sine and a soft octave, pitched by spin.
+    const o1 = ac.createOscillator(), o2 = ac.createOscillator(), g2 = ac.createGain(), lp = ac.createBiquadFilter(), hg = ac.createGain();
+    o2.type = 'triangle';
+    g2.gain.value = 0.3;
+    lp.type = 'lowpass';
+    lp.frequency.value = 1100;
+    hg.gain.value = 0;
+    o1.connect(lp);
+    o2.connect(g2).connect(lp);
+    lp.connect(hg).connect(out);
+    o1.start();
+    o2.start();
+    hum = { o1: o1.frequency, o2: o2.frequency, g: hg.gain };
+    // The scratch: looped noise, bandpassed thin.
+    const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), sg = ac.createGain();
+    src.buffer = noise;
+    src.loop = true;
+    bp.type = 'bandpass';
+    bp.frequency.value = 2400;
+    bp.Q.value = 0.9;
+    sg.gain.value = 0;
+    src.connect(bp).connect(sg).connect(out);
+    src.start();
+    scr = { f: bp.frequency, g: sg.gain };
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the top settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ptrId < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Hum and scratch glide toward targets; tiny changes are skipped.
+function drone(hf, hg, sf, sg) {
+  if (!hum) return;
+  const a = live(), t = ac.currentTime;
+  if (!a) hg = sg = 0;
+  if (Math.abs(hg - humAt[1]) > 0.002 || Math.abs(hf - humAt[0]) > 1) {
+    humAt = [hf, hg];
+    hum.g.setTargetAtTime(hg, t, 0.08);
+    hum.o1.setTargetAtTime(hf, t, 0.05);
+    hum.o2.setTargetAtTime(hf * 2.003, t, 0.05);
+  }
+  if (Math.abs(sg - scrAt[1]) > 0.002 || Math.abs(sf - scrAt[0]) > 20) {
+    scrAt = [sf, sg];
+    scr.g.setTargetAtTime(sg, t, 0.06);
+    scr.f.setTargetAtTime(sf, t, 0.08);
+  }
+}
+// A wooden tap: a click, then a short ring.
+function tick(amp, pitch = 1) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, tickNext);
+  // A burst of taps thins to a rattle instead of a wall.
+  if (t - t0 > 0.05) return;
+  tickNext = t + 0.022 + Math.random() * 0.01;
+  const f = pitch * jit(0.06), g = level() * amp * jit(0.12);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 2800 * f;
+  bp.Q.value = 1.6;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.9 * g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, 0.003);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.03);
+  // Two inharmonic partials make the tap read as wood.
+  const o = a.createOscillator(), o2 = a.createOscillator(), og = a.createGain(), og2 = a.createGain();
+  o.frequency.value = 1150 * f;
+  o2.frequency.value = 1150 * f * 2.37;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.16 * g, t + 0.001);
+  og.gain.setTargetAtTime(0, t + 0.001, 0.012);
+  og2.gain.setValueAtTime(0, t);
+  og2.gain.linearRampToValueAtTime(0.06 * g, t + 0.001);
+  og2.gain.setTargetAtTime(0, t + 0.001, 0.006);
+  o.connect(og).connect(out);
+  o2.connect(og2).connect(out);
+  o.start(t);
+  o2.start(t);
+  o.stop(t + 0.09);
+  o2.stop(t + 0.09);
+  track(o, og, og2, ng);
+}
+// The fall: a low wooden clunk with a knock on top.
+function clunk(amp) {
+  const a = live();
+  if (!a || voices >= MAXV - 2 || a.currentTime < clunkNext) return;
+  const t = a.currentTime + LEAD, g = level() * amp * jit(0.08), f = jit(0.05);
+  clunkNext = t + 0.25;
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(175 * f, t);
+  o.frequency.exponentialRampToValueAtTime(105 * f, t + 0.14);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.55 * g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.003, 0.05);
+  o.connect(og).connect(out);
+  const k = a.createOscillator(), kg = a.createGain();
+  k.frequency.value = 540 * f;
+  kg.gain.setValueAtTime(0, t);
+  kg.gain.linearRampToValueAtTime(0.2 * g, t + 0.002);
+  kg.gain.setTargetAtTime(0, t + 0.002, 0.02);
+  k.connect(kg).connect(out);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.frequency.value = 1400;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.7 * g, t + 0.001);
+  ng.gain.setTargetAtTime(0, t + 0.001, 0.012);
+  src.connect(lp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.8, 0.1);
+  o.start(t);
+  k.start(t);
+  o.stop(t + 0.4);
+  k.stop(t + 0.2);
+  track(o, og, kg, ng);
+}
+
+/* ---------- the top: a lathe profile in cm, tip at y = 0 ---------- */
+// The steel tip ends in a ball of radius RHO.
+const RHO = 0.13;
+// Rim bead centre: radius RIM, height YR above the tip.
+const RIM = 2.7, YR = 3.1;
+function tipProfile() {
+  const p = [];
+  for (let k = 0; k <= 8; k++) { const t = (k / 8) * 1.35; p.push([RHO * Math.sin(t), RHO * (1 - Math.cos(t))]); }
+  p.push([0.27, 0.86], [0.33, 0.9], [0.335, 0.96], [0.33, 1.02], [0, 1.03]);
+  return p;
+}
+// Collar, flared cone, rim bead, dome, then the slim handle.
+function bodyProfile() {
+  const p = [[0, 0.92], [0.31, 0.92], [0.37, 0.97], [0.41, 1.06]], at = {};
+  at.cone = 3;
+  for (let k = 1; k <= 24; k++) { const s = k / 24; p.push([0.42 + (RIM - 0.42) * Math.sin((s * Math.PI) / 2) ** 1.1, 1.12 + (YR - 1.26) * s]); }
+  at.rim = p.length - 1;
+  for (let k = 1; k <= 12; k++) { const f = -Math.PI / 2 + (k / 12) * Math.PI; p.push([RIM + 0.14 * Math.cos(f), YR + 0.14 * Math.sin(f)]); }
+  at.dome = p.length - 1;
+  for (let k = 1; k <= 20; k++) { const s = (k / 20) * (Math.PI / 2); p.push([0.55 + (RIM - 0.55) * Math.cos(s), YR + 0.14 + 0.72 * Math.sin(s)]); }
+  at.neck = p.length - 1;
+  const y = YR + 0.86;
+  p.push([0.45, y + 0.06], [0.35, y + 0.14], [0.3, y + 0.24], [0.285, y + 0.58], [0.26, 6.2]);
+  at.knob = p.length - 1;
+  p.push([0.27, 6.32], [0.31, 6.42], [0.34, 6.55], [0.33, 6.68], [0.27, 6.78], [0.16, 6.86], [0, 6.89]);
+  return { p, at };
+}
+// Arc length at every vertex.
+function arcs(p) {
+  const s = [0];
+  for (let i = 1; i < p.length; i++) s.push(s[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  return s;
+}
+// Resample a polyline to even arc length, so uv.y is arc length.
+function even(p, n) {
+  const s = arcs(p), L = s[s.length - 1], o = [];
+  let j = 1;
+  for (let k = 0; k < n; k++) {
+    const t = (k / (n - 1)) * L;
+    while (j < p.length - 1 && s[j] < t) j++;
+    const u = (t - s[j - 1]) / (s[j] - s[j - 1] || 1);
+    o.push([lerp(p[j - 1][0], p[j][0], u), lerp(p[j - 1][1], p[j][1], u)]);
+  }
+  return o;
+}
+// Radius at height y, for a profile whose y only rises.
+function rAt(p, y) {
+  if (y <= p[0][1] || y >= p[p.length - 1][1]) return 0;
+  for (let i = 1; i < p.length; i++) if (p[i][1] >= y) { const a = p[i - 1], b = p[i]; return lerp(a[0], b[0], (y - a[1]) / (b[1] - a[1] || 1)); }
+  return 0;
+}
+// Centre of mass of the solid, sliced thin.
+function centre(tip, body) {
+  let m = 0, my = 0;
+  for (let y = 0.0025; y < 6.9; y += 0.005) {
+    const rt = rAt(tip, y), rb = rAt(body, y);
+    // Steel tip, maple body.
+    const dm = 7.8 * rt * rt + 0.7 * Math.max(0, rb * rb - rt * rt);
+    m += dm; my += dm * y;
+  }
+  // A brass ring sits inside the rim, so the top is heavy.
+  const mr = 1.6 * m, yr = YR - 0.15;
+  return (my + mr * yr) / (m + mr);
+}
+const TIP = tipProfile(), BODY = bodyProfile();
+const YC = centre(TIP, BODY.p);
+// The ring sets the inertia, per unit mass, in cm squared.
+const I1 = 3.2, I3 = 6;
+
+/* ---------- physics: rigid body on its tip, in cm and seconds ---------- */
+const G = 981, H = 1 / 3000;
+// Contact rings: lowest points of circles along the body.
+const RING = [];
+for (const [r, y] of even(BODY.p, 60)) if (r > 0.2) RING.push(r, y - YC);
+const NR = RING.length / 2;
+const P = {
+  // Penalty contact, Coulomb friction smoothed below EPS cm/s.
+  K: 3e5, ZETA: 0.32, MU: 0.3, MUR: 0.2, EPS: 0.6,
+  // Spin loss: a steady part and one growing with speed.
+  D0: 1.5, D1: 0.034,
+  // Above WR it rises toward TMIN; below, its lean grows.
+  WR: 150, BUP: 0.5, SAG: 0.03, SAGW: 60, SAG2: 0.07, TMIN: 0.012,
+  // Below WW it wobbles; near TLIE it rattles, then falls.
+  WW: 85, WWW: 25, AMAX: 0.05, WEND: 45, TLIE: 0.79, RZ: 0.06, KAP: 2, RATTLE: 1.4,
+  ROLL: 0.6, ROLL0: 1.2,
+};
+const CD = 2 * P.ZETA * Math.sqrt(P.K);
+const S = {
+  x: [0, YC, 0], v: [0, 0, 0], q: [1, 0, 0, 0], L: [0, 0, 0], t: 0,
+  w3: 0, tilt: 0, onTip: true, slip: 0, rim: 0, ph: 0, wob: 0, th: 0, hold: 0, free: false,
+};
+const W = [0, 0, 0], A = [0, 1, 0], F = [0, 0, 0], T = [0, 0, 0], tp = [0, 0, 0];
+const DR = [0, 0], hits = [], wasIn = new Uint8Array(NR + 1);
+let box = { x: 6, z0: -5, z1: 5 };
+
+function rot(q, x, y, z, o) {
+  const [qw, qx, qy, qz] = q;
+  const tx = 2 * (qy * z - qz * y), ty = 2 * (qz * x - qx * z), tz = 2 * (qx * y - qy * x);
+  o[0] = x + qw * tx + qy * tz - qz * ty;
+  o[1] = y + qw * ty + qz * tx - qx * tz;
+  o[2] = z + qw * tz + qx * ty - qy * tx;
+  return o;
+}
+// Symmetric inertia: omega follows from L and the axis exactly.
+function omega() {
+  rot(S.q, 0, 1, 0, A);
+  const La = S.L[0] * A[0] + S.L[1] * A[1] + S.L[2] * A[2], k = (1 / I3 - 1 / I1) * La;
+  for (let i = 0; i < 3; i++) W[i] = S.L[i] / I1 + k * A[i];
+  return La / I3;
+}
+// Turns q by omega over h, as an exact rotation.
+function turn(q, wx, wy, wz, h) {
+  const a = Math.hypot(wx, wy, wz) * h;
+  if (a < 1e-12) return;
+  const s = Math.sin(a / 2) / (a / h), c = Math.cos(a / 2);
+  const bx = wx * s, by = wy * s, bz = wz * s, [qw, qx, qy, qz] = q;
+  q[0] = c * qw - bx * qx - by * qy - bz * qz;
+  q[1] = c * qx + bx * qw + by * qz - bz * qy;
+  q[2] = c * qy - bx * qz + by * qw + bz * qx;
+  q[3] = c * qz + bx * qy - by * qx + bz * qw;
+  const n = Math.hypot(q[0], q[1], q[2], q[3]);
+  for (let i = 0; i < 4; i++) q[i] /= n;
+}
+// One contact point below the table: spring, damper, friction.
+function contact(px, py, pz, idx) {
+  const d = -py;
+  if (d <= 0) { wasIn[idx] = 0; return 0; }
+  const rx = px - S.x[0], ry = py - S.x[1], rz = pz - S.x[2];
+  let vx = S.v[0] + W[1] * rz - W[2] * ry, vz = S.v[2] + W[0] * ry - W[1] * rx;
+  const vy = S.v[1] + W[2] * rx - W[0] * rz;
+  // The tip's friction drags it toward the slow wander.
+  if (!idx) { vx -= DR[0]; vz -= DR[1]; }
+  if (!wasIn[idx]) { wasIn[idx] = 1; if (vy < -0.5) hits.push(idx, -vy); }
+  const N = Math.max(0, P.K * d - CD * vy);
+  // The steel tip grips more than the lacquered rim.
+  const vt = Math.hypot(vx, vz), f = ((idx ? P.MUR : P.MU) * N) / Math.sqrt(vt * vt + P.EPS * P.EPS);
+  const fx = -vx * f, fz = -vz * f;
+  F[0] += fx; F[1] += N; F[2] += fz;
+  T[0] += ry * fz - rz * N; T[1] += rz * fx - rx * fz; T[2] += rx * N - ry * fx;
+  if (!idx) S.slip = vt;
+  return N;
+}
+function substep(h) {
+  let w3 = omega();
+  F[0] = 0; F[1] = -G; F[2] = 0; T[0] = T[1] = T[2] = 0;
+  rot(S.q, 0, RHO - YC, 0, tp);
+  const nTip = contact(S.x[0] + tp[0], S.x[1] + tp[1] - RHO, S.x[2] + tp[2], 0);
+  const hx = -A[0] * A[1], hy = 1 - A[1] * A[1], hz = -A[2] * A[1], hl = Math.hypot(hx, hy, hz);
+  let nRim = 0;
+  for (let i = 0; i < NR; i++) {
+    const rr = RING[2 * i], yy = RING[2 * i + 1], cy = S.x[1] + A[1] * yy;
+    if (cy - rr * hl > 0.001) { wasIn[i + 1] = 0; continue; }
+    const k = hl > 1e-6 ? rr / hl : 0;
+    nRim += contact(S.x[0] + A[0] * yy - hx * k, cy - hy * k, S.x[2] + A[2] * yy - hz * k, i + 1);
+  }
+  S.onTip = nTip > 0 && nRim === 0;
+  S.rim = nRim;
+  const La = w3 * I3, aw3 = Math.abs(w3);
+  // Spin loss about the axis.
+  const loss = (P.D0 * Math.tanh(w3 / 3) + P.D1 * w3) * I3 * (reduce ? 1.8 : 1);
+  T[0] -= loss * A[0]; T[1] -= loss * A[1]; T[2] -= loss * A[2];
+  // Shaping, on the tip alone: rise, sag, wobble, rattle.
+  S.wob = 0;
+  if (!S.free && S.onTip) {
+    const ux = -A[0] * A[1], uy = 1 - A[1] * A[1], uz = -A[2] * A[1], s = Math.hypot(ux, uy, uz);
+    const th = Math.asin(Math.min(1, s));
+    let dth = 0;
+    if (aw3 > P.WR) dth = (P.TMIN - S.th) * P.BUP * Math.min(1, (aw3 - P.WR) / 30);
+    else dth = (P.SAG * Math.min(1, (P.WR - aw3) / P.SAGW) + P.SAG2 * clamp((P.WW - aw3) / 20)) * (reduce ? 0.6 : 1);
+    const top = P.TLIE - P.RZ;
+    if (S.th >= top && dth > 0) { dth = 0; S.hold += h; }
+    S.th = Math.min(top, S.th + dth * h);
+    // The wobble nods three times per precession turn.
+    const nu = (3 * G * YC) / (I3 * Math.max(aw3, 1));
+    S.ph += nu * h;
+    const amp = P.AMAX * clamp((P.WW - aw3) / P.WWW) * (reduce ? 0.3 : 1);
+    S.wob = amp;
+    const rate = P.KAP * (S.th + amp * Math.sin(S.ph) - th) + dth + amp * nu * Math.cos(S.ph);
+    if (s > 1e-5) {
+      const g = -(rate * La) / s;
+      T[0] += g * ux; T[1] += g * uy; T[2] += g * uz;
+    }
+    // Spun out, or rattled long enough: gravity takes over.
+    if (aw3 < P.WEND || S.hold > P.RATTLE) S.free = true;
+  }
+  if (nRim > 0) {
+    // Lying down, rolling drag has a viscous and a steady part.
+    const k = P.ROLL * (reduce ? 2 : 1) + P.ROLL0 / Math.max(Math.hypot(W[0], W[1], W[2]), 0.4);
+    for (let i = 0; i < 3; i++) T[i] -= k * I1 * W[i];
+    const kv = 1 + 4 / Math.max(Math.hypot(S.v[0], S.v[2]), 1);
+    F[0] -= kv * S.v[0]; F[2] -= kv * S.v[2];
+  }
+  // Soft table edges keep the top in view.
+  const ex = S.x[0] - clamp(S.x[0], -box.x, box.x), ez = S.x[2] - clamp(S.x[2], box.z0, box.z1);
+  if (ex) F[0] -= 60 * ex + 6 * S.v[0];
+  if (ez) F[2] -= 60 * ez + 6 * S.v[2];
+  for (let i = 0; i < 3; i++) { S.v[i] += F[i] * h; S.x[i] += S.v[i] * h; S.L[i] += T[i] * h; }
+  w3 = omega();
+  turn(S.q, W[0], W[1], W[2], h);
+  S.w3 = w3;
+  S.tilt = Math.acos(clamp(A[1], -1, 1));
+  S.t += h;
+}
+
+/* ---------- life cycle ---------- */
+// Modes: ready stands still, spin simulates, rest lies still.
+// The stand mode rights a fallen top.
+// The sign of omega sets the spin direction.
+let mode = 'ready', home = [0, 0], yaw = Math.random() * TAU, lying = 0, still = 0;
+let blendT = 0, standT = 0, standFrom = null, queued = 0, wanderA = Math.random() * TAU, wanderB = 0;
+let prevTilt = 0, rising = false, impact = 0, fellAt = -9;
+const WMAX = 260;
+
+function readyQ() { return [Math.cos(yaw / 2), 0, Math.sin(yaw / 2), 0]; }
+// Starts the simulation from the upright pose.
+function launch(w, dir) {
+  const lean = reduce ? 0.05 : 0.1, s = Math.sin(lean / 2);
+  // The lean tilts the yawed upright pose toward dir.
+  const l = [Math.cos(lean / 2), Math.sin(dir) * s, 0, -Math.cos(dir) * s], r = readyQ();
+  S.q = [
+    l[0] * r[0] - l[1] * r[1] - l[2] * r[2] - l[3] * r[3],
+    l[0] * r[1] + l[1] * r[0] + l[2] * r[3] - l[3] * r[2],
+    l[0] * r[2] - l[1] * r[3] + l[2] * r[0] + l[3] * r[1],
+    l[0] * r[3] + l[1] * r[2] - l[2] * r[1] + l[3] * r[0],
+  ];
+  rot(S.q, 0, 1, 0, A);
+  rot(S.q, 0, RHO - YC, 0, tp);
+  // The tip ball stays where it stood.
+  S.x = [home[0] - tp[0], RHO - tp[1] - 0.003, home[1] - tp[2]];
+  S.v = [0, 0, 0];
+  S.L = [A[0] * I3 * w, A[1] * I3 * w, A[2] * I3 * w];
+  S.th = lean; S.hold = 0; S.free = Math.abs(w) < P.WEND; S.ph = 0;
+  wasIn.fill(0);
+  hits.length = 0;
+  lying = still = 0;
+  mode = 'spin';
+  blendT = reduce ? 0 : 0.18;
+  hint?.classList.add('gone');
+}
+// Adds spin about the axis.
+// A top still on its tip starts its life over.
+function addSpin(dw) {
+  const w = clamp(S.w3 + dw, -WMAX, WMAX) - S.w3;
+  for (let i = 0; i < 3; i++) S.L[i] += I3 * w * A[i];
+  if (S.onTip && S.tilt < 0.6 && Math.abs(S.w3 + w) > P.WEND) { S.free = false; S.hold = 0; S.th = Math.min(S.th, S.tilt); }
+}
+// A push at rim height: the body moves and the axis kicks.
+function push(dx, dz, dv) {
+  const px = -dx * RIM + A[0] * (YR - YC), py = A[1] * (YR - YC), pz = -dz * RIM + A[2] * (YR - YC);
+  S.v[0] += dx * dv; S.v[2] += dz * dv;
+  S.L[0] += py * dz * dv; S.L[1] += pz * dx * dv - px * dz * dv; S.L[2] -= py * dx * dv;
+}
+function stand(then = 0) {
+  queued = then;
+  if (mode === 'ready') { if (then) launch(then, Math.random() * TAU); return; }
+  // It rights itself where the tip lies, a little toward the middle.
+  rot(S.q, 0, RHO - YC, 0, tp);
+  const tx = S.x[0] + tp[0], tz = S.x[2] + tp[2];
+  home = [clamp(tx * 0.5, -box.x * 0.6, box.x * 0.6), clamp(tz * 0.5, box.z0 * 0.6, box.z1 * 0.6)];
+  // Yaw keeps the painted pattern where it was.
+  const q = new THREE.Quaternion(S.q[1], S.q[2], S.q[3], S.q[0]);
+  const up = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(A[0], A[1], A[2]), new THREE.Vector3(0, 1, 0)).multiply(q);
+  yaw = 2 * Math.atan2(up.y, up.w);
+  standFrom = { x: [...S.x], q };
+  standT = 0;
+  mode = 'stand';
+  wake();
+}
+function nudge(dx, dz) {
+  if (!ready) return;
+  if (mode === 'stand') return;
+  if (mode === 'ready') { launch(0, Math.atan2(dz, dx)); S.free = true; }
+  else if (mode === 'rest') { mode = 'spin'; still = 0; }
+  push(dx, dz, mode === 'spin' && S.onTip && Math.abs(S.w3) > P.WEND ? 9 : 6);
+  wake();
+}
+function spinKey() {
+  if (!ready) return;
+  const w = 215 * (Math.random() < 0.5 ? -1 : 1);
+  if (mode === 'ready') launch(w, Math.random() * TAU);
+  else if (mode === 'spin' && !lying && S.tilt < 0.6) addSpin(Math.sign(S.w3 || 1) * 70);
+  else stand(w);
+  wake();
+}
+function flick(w, dir) {
+  if (mode === 'ready') launch(w, dir);
+  else if (mode === 'spin' && !lying && S.tilt < 0.6) addSpin(w * 0.7);
+  else if (mode !== 'stand') stand(w);
+  else queued = w;
+  wake();
+}
+
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, top = null, uni = null, tmp = null;
+let ready = false, lowDpr = false;
+const FOV = 28, EL = (27 * Math.PI) / 180, LOOK = 2.7;
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+// Where a screen point's ray meets the plane at height y.
+function onPlane(sx, sy, y) {
+  tmp.set(sx, sy, 0.5).unproject(camera).sub(camera.position);
+  const t = (y - camera.position.y) / tmp.y;
+  return [camera.position.x + tmp.x * t, camera.position.z + tmp.z * t];
+}
+// The camera backs off until the fallen top fits.
+// The soft table edges follow from the view.
+function fit(w, h) {
+  const asp = w / h, k = 2 * Math.tan((FOV * Math.PI) / 360);
+  camera.aspect = asp;
+  const d = Math.max(13.5, 14 / asp) / k;
+  camera.position.set(0, LOOK + d * Math.sin(EL), d * Math.cos(EL));
+  camera.lookAt(0, LOOK, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  const near = onPlane(0, -1, 0)[1], far = onPlane(0, 1, 6.9)[1], side = Math.abs(onPlane(1, 0, 2)[0]);
+  box = { x: Math.max(1, side - 3.8), z0: Math.min(-1, far + 1.2), z1: Math.max(1, near - 3.4) };
+}
+function pose() {
+  let x = S.x, q = S.q;
+  if (mode === 'ready') { q = readyQ(); x = [home[0], YC, home[1]]; }
+  top.position.set(x[0], x[1], x[2]);
+  top.quaternion.set(q[1], q[2], q[3], q[0]);
+  // A fresh launch eases out of the upright pose.
+  if (mode === 'spin' && blendT > 0) {
+    const e = 1 - blendT / 0.18, r = readyQ(), k = 1 - e * e * (3 - 2 * e);
+    top.quaternion.slerp(new THREE.Quaternion(r[1], r[2], r[3], r[0]), k);
+    top.position.lerp(tmp.set(home[0], YC, home[1]), k);
+  }
+  if (mode === 'stand') {
+    const u = clamp(standT / (reduce ? 0.25 : 0.55)), e = u * u * (3 - 2 * u), r = readyQ();
+    top.quaternion.copy(standFrom.q).slerp(new THREE.Quaternion(r[1], r[2], r[3], r[0]), e);
+    const lift = reduce ? 0 : Math.sin(Math.PI * u) * 1.1;
+    top.position.set(lerp(standFrom.x[0], home[0], e), lerp(standFrom.x[1], YC, e) + lift, lerp(standFrom.x[2], home[1], e));
+  }
+}
+function draw() {
+  pose();
+  renderer.render(scene, camera);
+}
+
+/* ---------- sound from motion ---------- */
+function listen(dt) {
+  const aw = Math.abs(S.w3), spinning = mode === 'spin' && !lying;
+  // Ticks: rim taps, then the clunk once it lies down.
+  for (let i = 0; i < hits.length; i += 2) {
+    const idx = hits[i], v = hits[i + 1];
+    impact = Math.max(impact, v);
+    if (lying) tick(clamp(v / 14, 0.1, 0.5), 0.8);
+    else if (idx) tick(clamp(v / 9, 0.25, 1), 1);
+    else if (v > 3) tick(clamp(v / 20, 0.1, 0.4), 1.3);
+  }
+  hits.length = 0;
+  impact *= Math.exp(-dt / 0.25);
+  // The wobbling tip clatters at each nod, faster as it slows.
+  if (spinning && S.onTip && S.wob > 0.01) {
+    const up = S.tilt > prevTilt;
+    if (rising && !up) tick(0.15 + 0.5 * (S.wob / P.AMAX), 1.35);
+    rising = up;
+  }
+  prevTilt = S.tilt;
+  let hf = 60, hg = 0, sf = 2400, sg = 0;
+  if (mode === 'spin') {
+    // The hum warbles as the lean swings toward and away from you.
+    const sway = (clamp(Math.sin(S.tilt) * 3) * A[2]) / Math.max(Math.hypot(A[0], A[2]), 1e-3);
+    const on = S.onTip ? 1 : 0.35;
+    hf = (60 + 0.8 * aw) * (1 + 0.03 * sway);
+    hg = 0.05 * clamp(aw / 150) ** 0.7 * on * (1 + 0.35 * sway);
+    sf = 1700 + 6 * aw + 140 * S.slip;
+    sg = S.onTip ? 0.03 * clamp(0.3 * clamp(aw / 200) + S.slip / 5) : 0.05 * clamp(Math.hypot(S.v[0], S.v[2]) / 15) * (lying ? 1 : 0.5);
+  }
+  drone(hf, hg, sf, sg);
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, acc = 0, onScreen = true, slow = 0, blur = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function wander(dt) {
+  // The tip drifts slowly along a bending course.
+  // Near the edges the drift turns it home.
+  if (S.free) { DR[0] = DR[1] = 0; return; }
+  const aw = Math.abs(S.w3), k = (reduce ? 0.35 : 1) * clamp((aw - 40) / 60);
+  wanderB += (Math.random() - 0.5) * 6 * dt - wanderB * 0.5 * dt;
+  wanderA += wanderB * dt;
+  const sp = 0.5 * k * (0.6 + 0.4 * Math.sin(S.t * 0.37));
+  DR[0] = Math.cos(wanderA) * sp - 0.8 * (S.x[0] - clamp(S.x[0], -box.x * 0.45, box.x * 0.45));
+  DR[1] = Math.sin(wanderA) * sp - 0.8 * (S.x[2] - clamp(S.x[2], box.z0 * 0.45, box.z1 * 0.45));
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  let moving = false;
+  if (mode === 'spin') {
+    wander(dt);
+    acc += dt;
+    const n = Math.min(120, Math.floor(acc / H));
+    acc = n === 120 ? 0 : acc - n * H;
+    for (let k = 0; k < n; k++) substep(H);
+    blendT = Math.max(0, blendT - dt);
+    // Lying: the rim has held the table for a moment.
+    const was = lying;
+    lying = S.rim > 0 && S.tilt > P.TLIE - 0.1 ? lying + dt : 0;
+    if (lying > 0.08 && was <= 0.08) {
+      S.free = true;
+      if (S.t - fellAt > 1) { fellAt = S.t; clunk(clamp(0.45 + impact / 14, 0.45, 1)); }
+    }
+    // Calm on its side, or calm for long anywhere: at rest.
+    const calm = Math.hypot(S.v[0], S.v[1], S.v[2]) < 0.25 && Math.hypot(W[0], W[1], W[2]) < 0.3;
+    still = calm && (S.rim > 0 || S.free) ? still + dt : 0;
+    if (still > (S.rim > 0 ? 0.4 : 1.5)) {
+      mode = 'rest';
+      S.v = [0, 0, 0];
+      S.L = [0, 0, 0];
+      S.w3 = 0;
+    } else moving = true;
+  } else if (mode === 'stand') {
+    standT += dt;
+    if (standT >= (reduce ? 0.25 : 0.55)) {
+      mode = 'ready';
+      if (queued) { const w = queued; queued = 0; launch(w, Math.random() * TAU); moving = true; }
+    } else moving = true;
+  }
+  // Spin blurs the painted segments into bands.
+  // The blur spans a 1/60 s exposure.
+  blur = mode === 'spin' ? Math.abs(S.w3) / 60 / TAU : 0;
+  uni.uBlur.value = blur;
+  draw();
+  listen(dt);
+  if (moving) {
+    if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  } else {
+    drone(60, 0, 2400, 0);
+    rest();
+  }
+}
+
+/* ---------- input: flick anywhere on the table ---------- */
+let ptrId = -1, trail = [], downAt = null;
+function screenOf(x, y, z) {
+  tmp.set(x, y, z).project(camera);
+  const r = panel.getBoundingClientRect();
+  return [r.left + ((tmp.x + 1) / 2) * r.width, r.top + ((1 - tmp.y) / 2) * r.height];
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || ptrId >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  ptrId = e.pointerId;
+  trail = [[e.timeStamp, e.clientX, e.clientY]];
+  downAt = [e.timeStamp, e.clientX, e.clientY];
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  panel.classList.add('held');
+});
+panel.addEventListener('pointermove', e => {
+  if (e.pointerId !== ptrId) return;
+  trail.push([e.timeStamp, e.clientX, e.clientY]);
+  if (trail.length > 12) trail.shift();
+});
+// Release keeps the pointer's last 90 ms of speed: a flick spins.
+function letGo(e, ok) {
+  if (e.pointerId !== ptrId) return;
+  ptrId = -1;
+  panel.classList.remove('held');
+  if (!ok) return;
+  const end = trail[trail.length - 1], moved = Math.hypot(e.clientX - downAt[1], e.clientY - downAt[2]);
+  if (moved < 8 && e.timeStamp - downAt[0] < 500) {
+    // A click stands a fallen top back up.
+    if (mode === 'rest' || (mode === 'spin' && (lying || S.free))) stand();
+    return;
+  }
+  if (!end || e.timeStamp - end[0] > 80) return;
+  const first = trail.find(s => end[0] - s[0] <= 90) || end, dt = (end[0] - first[0]) / 1000;
+  if (dt < 0.008) return;
+  const vx = (end[1] - first[1]) / dt, vy = (end[2] - first[2]) / dt, sp = Math.hypot(vx, vy);
+  const D = Math.min(panel.clientWidth, panel.clientHeight) || 1;
+  if (sp < 0.35 * D) return;
+  // Which side of the top the stroke passes sets the direction.
+  const c = mode === 'ready' ? screenOf(home[0], YC, home[1]) : screenOf(S.x[0], S.x[1], S.x[2]);
+  const mx = (first[1] + end[1]) / 2 - c[0], my = (first[2] + end[2]) / 2 - c[1];
+  const cross = mx * vy - my * vx;
+  const sign = Math.abs(cross) > 0.25 * Math.hypot(mx, my) * sp ? -Math.sign(cross) : Math.sign(vx) || 1;
+  flick(sign * clamp(50 + 60 * (sp / D), 60, WMAX), Math.atan2(vy, vx));
+}
+panel.addEventListener('pointerup', e => letGo(e, true));
+panel.addEventListener('pointercancel', e => letGo(e, false));
+panel.addEventListener('lostpointercapture', e => letGo(e, false));
+const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, button, a, [contenteditable]')) return;
+  if (e.key === ' ') { e.preventDefault(); if (!e.repeat) spinKey(); }
+  else if (ARROWS[e.key]) { e.preventDefault(); nudge(...ARROWS[e.key]); }
+});
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- paint: rings of segments that blur when spun ---------- */
+const NB = 12;
+const PAINT = `
+#define NB ${NB}
+uniform float uBlur, uLen;
+uniform vec4 uBand[NB];
+uniform vec3 uColA[NB], uColB[NB], uBase;
+varying vec2 vPat;
+// Running integral of a square wave, high on its second half.
+float sq(float x, float p) { return floor(x / p) * p * 0.5 + max(0.0, mod(x, p) - p * 0.5); }
+vec3 paint() {
+  float s = vPat.y * uLen, fs = fwidth(s) * 0.75 + 1e-4;
+  vec3 col = uBase;
+  for (int i = 0; i < NB; i++) {
+    vec4 b = uBand[i];
+    float cov = smoothstep(b.x - fs, b.x + fs, s) - smoothstep(b.y - fs, b.y + fs, s);
+    if (cov <= 0.0) continue;
+    vec3 c = uColA[i];
+    if (b.z > 0.5) {
+      // Box-filtered over the spin's sweep, so it never aliases.
+      float p = 2.0 / b.z, x = vPat.x + b.w * (s - b.x), w = max(uBlur, fwidth(x) * 1.2);
+      c = mix(uColA[i], uColB[i], (sq(x + w * 0.5, p) - sq(x - w * 0.5, p)) / w);
+    }
+    col = mix(col, c, cov);
+  }
+  return col;
+}
+`;
+function paintBands(sAt, len) {
+  // Series hues in OKLCH.
+  const fire = [0.58, 0.21, 28], amber = [0.72, 0.18, 55], yellow = [0.84, 0.16, 88], mint = [0.8, 0.15, 162];
+  const cyan = [0.7, 0.13, 210], blue = [0.52, 0.17, 260], violet = [0.5, 0.2, 295], magenta = [0.58, 0.22, 335];
+  const cream = [0.95, 0.03, 85], wood = [0.74, 0.085, 68], grain = [0.68, 0.09, 62];
+  const c0 = sAt.cone, c1 = sAt.rim, lc = c1 - c0, d0 = sAt.dome, ld = sAt.neck - d0, k0 = sAt.knob;
+  // Each band: from, to, segments, twist, colour A, colour B.
+  // Anything unbanded keeps the fire lacquer base.
+  const out = [
+    [0, c0, 36, 0, wood, grain],
+    [c0 + 0.3 * lc, c0 + 0.36 * lc, 24, 0, cream, amber],
+    [c0 + 0.6 * lc, c0 + 0.86 * lc, 12, 0, cyan, blue],
+    [c0 + 0.86 * lc, c0 + 0.91 * lc, 0, 0, cream, cream],
+    [c1, d0, 16, 0, amber, yellow],
+    [d0 + 0.12 * ld, d0 + 0.36 * ld, 10, 0.12, mint, cyan],
+    [d0 + 0.36 * ld, d0 + 0.42 * ld, 0, 0, cream, cream],
+    [d0 + 0.68 * ld, d0 + 0.84 * ld, 8, 0, violet, magenta],
+    [d0 + 0.84 * ld, k0 - 0.32, 36, 0, wood, grain],
+    [k0 - 0.32, k0 - 0.14, 0, 0, fire, fire],
+    [k0 - 0.14, len + 1, 36, 0, wood, grain],
+  ];
+  // Unused slots sit below the tip, where they paint nothing.
+  while (out.length < NB) out.push([-2, -1, 0, 0, fire, fire]);
+  return out;
+}
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+  if (hint) hint.hidden = true;
+}
+async function start() {
+  let RoomEnvironment;
+  try {
+    THREE = await import('three');
+    ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js'));
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const tableC = new THREE.Color().setRGB(...linFit([0.21, 0.008, 265]), THREE.LinearSRGBColorSpace);
+  renderer.setClearColor(tableC);
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 1, 500);
+  tmp = new THREE.Vector3();
+  await idle();
+
+  // A dim floor replaces the room's, so lower faces mirror the table.
+  const room = new RoomEnvironment();
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(80, 48), new THREE.MeshBasicMaterial({ color: 0x2a2c31 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.6;
+  room.add(floor);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(room, 0.03).texture;
+  room.dispose();
+  pm.dispose();
+  scene.environmentIntensity = 0.85;
+
+  const table = new THREE.Mesh(
+    new THREE.PlaneGeometry(900, 900),
+    new THREE.MeshStandardMaterial({ color: tableC, roughness: 0.95, metalness: 0, envMapIntensity: 0.4 }),
+  );
+  table.rotation.x = -Math.PI / 2;
+  table.receiveShadow = true;
+  scene.add(table);
+  // A soft lamp pools light mid-table and lays the top's shadow.
+  const lamp = new THREE.SpotLight(0xffffff, 2.6, 0, 0.42, 0.95, 0);
+  lamp.position.set(-17, 44, 12);
+  lamp.target.position.set(0, 0, 0);
+  lamp.castShadow = true;
+  lamp.shadow.mapSize.set(1024, 1024);
+  lamp.shadow.camera.near = 20;
+  lamp.shadow.camera.far = 90;
+  lamp.shadow.bias = -0.0004;
+  lamp.shadow.normalBias = 0.02;
+  scene.add(lamp, lamp.target);
+  await idle();
+
+  // The body is one lathe, painted in the shader.
+  // Its uv.y runs along the profile's arc length.
+  const small = Math.min(innerWidth, innerHeight) < 700, seg = small ? 72 : 96;
+  const prof = even(BODY.p, 160), arc = arcs(BODY.p), len = arc[arc.length - 1];
+  const sAt = {};
+  for (const k in BODY.at) sAt[k] = arc[BODY.at[k]];
+  const bands = paintBands(sAt, len);
+  const col = c => new THREE.Color().setRGB(...linFit(c), THREE.LinearSRGBColorSpace);
+  uni = {
+    uBlur: { value: 0 },
+    uLen: { value: len },
+    uBand: { value: bands.map(b => new THREE.Vector4(b[0], b[1], b[2], b[3])) },
+    uColA: { value: bands.map(b => col(b[4])) },
+    uColB: { value: bands.map(b => col(b[5])) },
+    uBase: { value: col([0.58, 0.21, 28]) },
+  };
+  const lacquer = new THREE.MeshPhysicalMaterial({ roughness: 0.34, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 });
+  lacquer.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, uni);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <uv_pars_vertex>', '#include <uv_pars_vertex>\nvarying vec2 vPat;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvPat = uv;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <uv_pars_fragment>', '#include <uv_pars_fragment>\n' + PAINT)
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = paint();');
+  };
+  const bodyG = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), seg);
+  bodyG.translate(0, -YC, 0);
+  // Polished steel at the tip.
+  const tipG = new THREE.LatheGeometry(TIP.map(([r, y]) => new THREE.Vector2(r, y)), small ? 32 : 48);
+  tipG.translate(0, -YC, 0);
+  const steel = new THREE.MeshStandardMaterial({ color: 0xe6e8ec, metalness: 1, roughness: 0.2, envMapIntensity: 2.4 });
+  top = new THREE.Group();
+  const body = new THREE.Mesh(bodyG, lacquer), tip = new THREE.Mesh(tipG, steel);
+  body.castShadow = tip.castShadow = true;
+  top.add(body, tip);
+  scene.add(top);
+
+  panel.prepend(canvas);
+  fitRenderer(renderer, panel, 1.5, (w, h) => {
+    fit(w, h);
+    if (ready) { draw(); wake(); }
+  }, 1.4e6);
+  if (!panel.clientWidth) fit(16, 9);
+  await idle();
+  // Async compile keeps the physical-material build off the main thread.
+  try { await renderer.compileAsync(scene, camera); } catch (err) { /* the first render compiles instead */ }
+  ready = true;
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
