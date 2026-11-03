@@ -184,12 +184,12 @@ const COL = {
   CloudSh: linear(0.42, 0.085, 314),
   Hill: linear(0.46, 0.075, 318),
   Water: linear(0.32, 0.065, 296),
-  ReedFar: linear(0.25, 0.05, 308),
+  ReedFar: linear(0.2, 0.045, 306),
   ReedNear: linear(0.13, 0.026, 296),
   Plume: linear(0.24, 0.045, 20),
   Rim: linear(0.82, 0.13, 60),
   Ink: linear(0.12, 0.022, 292),
-  InkFar: linear(0.36, 0.07, 318),
+  InkFar: linear(0.27, 0.06, 316),
   Star: linear(0.96, 0.03, 280),
 };
 
@@ -436,9 +436,9 @@ function soundTick(now) {
 // World units: the sky is two units tall at depth zero.
 // The camera sits at z = CZ and looks down negative z.
 // Bird state lives in TW-wide float textures.
-const TW = 128, ROWS_MAX = 144, CZ = 4, CELL = 0.07, GZ = 16, TX = 4, TY = 4, TAU_E = 0.2;
-const SPAN = 0.017, HAWK_Z = 0.35, KEY_SPEED = 1.1;
-let W = 0, H = 0, A = 16 / 9, pr = 1;
+const TW = 128, ROWS_MAX = 156, CZ = 4, CELL = 0.07, GZ = 16, TX = 4, TY = 4, TAU_E = 0.2;
+const SPAN = 0.0165, HAWK_Z = 0.35, KEY_SPEED = 1.1;
+let W = 0, H = 0, A = 16 / 9;
 let rows = 64, GX = 0, GY = 0, AW = 0, AH = 0, fieldA = 0;
 const GMIN = [0, 0, 0];
 
@@ -529,7 +529,8 @@ void main() {
 const UPDATE_FS = `${HEAD}
 uniform sampler2D uPos, uVel, uAux, uF0, uF1;
 ${FIELD}
-uniform float uDt, uTime, uA, uStretch, uWake, uRoostT;
+uniform float uDt, uTime, uA, uStretch, uRoostT;
+uniform vec2 uWake;
 uniform vec3 uM, uC0, uC1, uC2;
 uniform vec4 uHawk, uClap, uSeed, uRoost;
 uniform vec2 uOrigin;
@@ -538,8 +539,16 @@ layout(location = 0) out vec4 oPos;
 layout(location = 1) out vec4 oVel;
 layout(location = 2) out vec4 oAux;
 ${HASH}
-const float CZ = ${CZ}.0, RHO = 12.0, V0 = 0.55;
+const float CZ = ${CZ}.0, RHO = 18.0, V0 = 0.55;
 float dn(vec3 p) { return fs(uF0, p).w; }
+// A slow, divergence-free swirl stretches and folds the flock.
+vec3 mode(vec3 p, vec3 k, vec3 a, float w) { return cross(k, a) * sin(dot(k, p) + w); }
+vec3 flow(vec3 p, float t) {
+  return (mode(p, vec3(1.9, 0.7, 0.9), vec3(0.2, 1.0, -0.4), t * 0.17)
+    + mode(p, vec3(-1.1, 2.1, 0.6), vec3(0.9, 0.3, 0.6), t * 0.13 + 1.7)
+    + mode(p, vec3(0.6, -1.3, 2.4), vec3(1.0, -0.5, 0.2), t * 0.23 + 3.1)
+    + mode(p, vec3(2.6, -0.8, -1.2), vec3(-0.3, 0.8, 0.9), t * 0.19 + 4.6)) * 0.35;
+}
 vec3 grad(vec3 p, float h) {
   vec3 x = vec3(h, 0.0, 0.0), y = vec3(0.0, h, 0.0), z = vec3(0.0, 0.0, h);
   return vec3(dn(p + x) - dn(p - x), dn(p + y) - dn(p - y), dn(p + z) - dn(p - z)) / (2.0 * h);
@@ -553,9 +562,11 @@ void main() {
   float r1 = h01(id), r2 = h01(id ^ 0x5bd1e995u), r3 = h01(id * 3u + 0x27d4eb2du);
   if (landed > 0.5) {
     // Roosting birds wait in the reeds until the flock wakes.
-    if (uWake < 0.0 || uWake < r1 * 0.8) { oPos = P; oVel = V; oAux = X; return; }
+    // Take-off spreads outward from the roost's heart.
+    float dx = p.x - uWake.y;
+    if (uWake.x < 0.0 || uWake.x < 0.08 + 0.8 * abs(dx) + 0.3 * r1) { oPos = P; oVel = V; oAux = X; return; }
     landed = 0.0;
-    v = vec3((r2 - 0.5) * 0.8, 0.9 + 0.8 * r3, (r1 - 0.5) * 0.6);
+    v = vec3(sign(dx) * (0.1 + 0.35 * r2), 0.7 + 0.9 * r3, (r1 - 0.5) * 0.6);
     age = 0.0;
   }
   vec4 F = fs(uF0, p);
@@ -568,7 +579,7 @@ void main() {
   float e = exp(-age / ${TAU_E});
   float calm = 1.0 - 0.75 * e;
   vec3 a = vec3(0.0);
-  // Alignment, cohesion at a wide scale, separation at a narrow one.
+  // Birds align, gather at a wide scale and part at a narrow one.
   a += 3.2 * (vbar - v) * n / (n + 2.0);
   a += 0.16 * gW / (n + 4.0) * calm;
   a -= 0.22 * gN / RHO * (0.25 + smoothstep(0.5 * RHO, 1.6 * RHO, n));
@@ -577,26 +588,31 @@ void main() {
   vec3 T = mix(uM, C, uStretch * (0.4 + 0.6 * r2));
   vec3 dT = T - p;
   float dl = length(dT);
-  a += 0.9 * dT / max(dl, 1e-3) * min(dl, 1.2) * calm;
-  // A slow private wander breaks symmetry.
+  a += 0.7 * dT / max(dl, 1e-3) * min(dl, 1.2) * calm;
   float t = uTime;
+  vec3 u = flow(p, t);
+  a += 1.3 * (V0 * u / max(length(u), 0.35) - v) * calm;
+  // A slow private wander breaks symmetry.
   a += 0.3 * vec3(sin(t * 0.83 + r1 * 40.0), 0.7 * sin(t * 1.07 + r2 * 40.0), 0.8 * sin(t * 0.71 + r3 * 40.0));
   // Starlings prefer level flight.
-  a.y -= 0.5 * v.y;
+  a.y -= 0.25 * v.y;
   // Soft walls keep the flock in the frame.
   float k = CZ / (CZ - p.z);
   vec2 s = p.xy * k;
-  float wx = uA - 0.3, floorY = uRoost.w > 0.0 ? -3.0 : -0.24;
+  // Roosting birds peel off one by one and dive for the reeds.
+  float dive = uRoost.w > 0.0 ? smoothstep(1.5 + 7.0 * r1, 2.2 + 7.0 * r1, uRoostT) : 0.0;
+  float wx = uA - 0.3, low = smoothstep(0.02, -0.26, s.y) * (1.0 - dive);
   a.x -= 5.0 * (max(s.x - wx, 0.0) - max(-wx - s.x, 0.0));
   a.y -= 5.0 * max(s.y - 0.7, 0.0);
-  a.y += 5.0 * max(floorY - s.y, 0.0);
+  // Near the horizon, birds pull up out of their dive.
+  a.y += low * (2.5 + 4.0 * max(-v.y, 0.0) / V0);
   a.z -= 5.0 * (max(p.z - 0.38, 0.0) - max(-0.38 - p.z, 0.0));
   // Speed holds near cruise; alarm adds a burst.
   float v0 = V0 * (0.9 + 0.2 * r2) * (1.0 + 0.6 * e);
   a += 2.4 * (v0 - sp) * f;
   // Alarm spreads from neighbour to neighbour after a short delay.
   bool ready = age > 1.3;
-  bool trig = ready && al > 0.14 && h01(id ^ ih(uFrame)) < 1.0 - exp(-16.0 * dt);
+  bool trig = ready && al > 0.18 && h01(id ^ ih(uFrame)) < 1.0 - exp(-7.0 * dt);
   if (uHawk.w > 0.0) {
     vec2 dh = s - uHawk.xy;
     float rh = length(dh), q = max(1.0 - rh / uHawk.z, 0.0);
@@ -614,19 +630,21 @@ void main() {
       v.z += (r3 - 0.5) * uClap.w * q;
       trig = true;
     }
+    // The sound startles birds well beyond the burst.
+    trig = trig || (ready && rc < uClap.z * 2.2);
   }
   if (trig) age = 0.0;
   e = exp(-age / ${TAU_E});
   // Alarmed birds jink away from the source.
   vec2 aw = s - uOrigin;
   a.xy += 3.2 * e * aw / max(length(aw), 0.05);
-  // Roosting pulls the flock down into the reeds in a funnel.
-  if (uRoost.w > 0.0) {
+  // Divers swirl down a funnel into the reeds.
+  if (dive > 0.0) {
     vec3 dR = uRoost.xyz - p;
     float lr = length(dR);
     vec3 sw = normalize(cross(vec3(0.0, 1.0, 0.0), dR + vec3(1e-3, 0.0, 1e-3)));
-    a = mix(a, a * 0.35, uRoost.w);
-    a += uRoost.w * (2.8 + 6.0 * smoothstep(7.0, 10.0, uRoostT)) * (dR / max(lr, 1e-3) * min(lr, 1.0) + 0.6 * sw * smoothstep(0.1, 0.6, lr));
+    a = mix(a, a * 0.3, dive);
+    a += dive * (3.0 + 4.0 * smoothstep(8.5, 10.5, uRoostT)) * (dR / max(lr, 1e-3) * min(lr, 1.0) + 0.7 * sw * smoothstep(0.03, 0.4, length(dR.xz)));
     if (s.y < -0.62 || uRoostT > 11.5) { landed = 1.0; v = vec3(0.0); }
   }
   float am = length(a);
@@ -668,8 +686,8 @@ void main() {
   float ph, roll, e, op, haze, span, flap, nl, tl, sweep, br;
   if (i == uN) {
     p = uHP.xyz; v = uHV.xyz; ph = uHV.w; roll = uHR.x; flap = uHR.y;
-    e = 0.0; op = uHP.w * 1.5; haze = 0.0; span = uSpan * 3.4;
-    nl = 0.2; tl = 0.42; sweep = 0.3; br = 0.045;
+    e = 0.0; op = uHP.w * 1.5; haze = 0.0; span = uSpan * 5.5;
+    nl = 0.2; tl = 0.42; sweep = 0.3; br = 0.06;
   } else {
     ivec2 ij = ivec2(i % ${TW}, i / ${TW});
     vec4 X = texelFetch(uAux, ij, 0);
@@ -678,9 +696,11 @@ void main() {
     p = P.xyz; v = V.xyz; ph = P.w; roll = X.x;
     e = exp(-V.w / ${TAU_E});
     float r = h01(uint(i));
-    span = uSpan * (0.85 + 0.3 * r) * (1.0 + 0.25 * e);
-    op = 0.9 * (1.0 + 0.4 * e) * uFade;
-    haze = clamp(0.5 - p.z * 1.1, 0.0, 1.0);
+    // Alarmed birds bank hard and show their wings: the dark wave.
+    span = uSpan * (0.85 + 0.3 * r) * (1.0 + 0.4 * e);
+    op = 0.9 * (1.0 + 0.9 * e) * uFade;
+    roll += e * 1.1 * (roll < 0.0 ? -1.0 : 1.0);
+    haze = clamp(0.18 - p.z * 0.7, 0.0, 0.65);
     // Starlings mix bursts of flapping with short glides.
     flap = max(smoothstep(-0.5, 0.1, sin(uTime * (0.6 + 0.5 * r) + r * 40.0)), e);
     nl = 0.27; tl = 0.3; sweep = 0.13; br = 0.07;
@@ -688,7 +708,8 @@ void main() {
   if (op < 0.01) { gl_Position = vec4(2.0, 2.0, 0.0, 1.0); return; }
   float fl = length(v);
   vec3 f = fl > 1e-4 ? v / fl : vec3(1.0, 0.0, 0.0);
-  vec3 sd = cross(f, vec3(0.0, 1.0, 0.0));
+  // The hawk shows its whole outline; starlings fly level.
+  vec3 sd = cross(f, i == uN ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0));
   float sl = length(sd);
   sd = sl > 1e-3 ? sd / sl : vec3(0.0, 0.0, 1.0);
   vec3 up = cross(sd, f);
@@ -699,7 +720,7 @@ void main() {
   float k = CZ / (CZ - p.z), ppu = k * 0.5 * uRes.y;
   vec2 c = (p.xy * k / vec2(uA, 1.0) * 0.5 + 0.5) * uRes;
   // A low viewpoint shows a little of each wing's underside.
-  #define PR(o) (c + vec2((o).x, (o).y * 0.9 + (o).z * 0.43) * ppu)
+  #define PR(o) (c + vec2((o).x, (o).y * 0.83 + (o).z * 0.56) * ppu)
   vec2 pn = PR(f * span * nl), pt = PR(-f * span * tl);
   vec2 pf = PR(f * span * 0.07), pb = PR(-f * span * 0.13);
   vec2 pl = PR(lift - reach + back), pr = PR(lift + reach + back);
@@ -711,7 +732,7 @@ void main() {
   vP0 = vec4(pn, pt);
   vP1 = vec4(pf, pb);
   vP2 = vec4(pl, pr);
-  vK = vec3(rb, min(op, 1.0) * (i == uN ? 1.6 : 1.0), haze);
+  vK = vec3(rb, min(op, 2.0), haze);
 }`;
 const BIRD_FS = `${HEAD}
 in vec2 vPx;
@@ -738,7 +759,8 @@ void main() {
   if (cov < 0.004) discard;
   o = vec4(cov, cov * vK.z, 0.0, 0.0);
 }`;
-// Two numbers for sound: birds near the hawk, and the whole flock.
+// Pixel 0 sums birds near the hawk.
+// Pixel 1 sums the whole flock and its weighted screen position.
 const PROBE_FS = `${HEAD}
 uniform sampler2D uF0, uF1;
 ${FIELD}
@@ -760,10 +782,13 @@ void main() {
       }
     }
   } else {
+    ivec2 g = ivec2(uGf.xy);
     for (int y = 1; y < uAt.y; y += 3) {
       for (int x = 1; x < uAt.x; x += 3) {
-        r.x += texelFetch(uF0, ivec2(x, y), 0).w;
-        r.y += texelFetch(uF1, ivec2(x, y), 0).x;
+        float n = texelFetch(uF0, ivec2(x, y), 0).w;
+        ivec2 t = ivec2(x, y) / g, c = ivec2(x, y) - t * g;
+        vec3 p = uGMin + (vec3(c, float(t.x + t.y * ${TX})) + 0.5) * uCell;
+        r += vec4(n, texelFetch(uF1, ivec2(x, y), 0).x, n * p.xy * ${CZ}.0 / (${CZ}.0 - p.z));
       }
     }
     r *= 9.0;
@@ -833,9 +858,16 @@ float stars(vec2 q) {
   float r = length(f - (hash4(id).xy - 0.5) * 0.6);
   return smoothstep(0.2, 0.0, r) * (h - 0.986) / 0.014 * smoothstep(0.62, 0.95, q.y) * (0.75 + 0.25 * sin(uT * 2.0 + h * 900.0));
 }
-// The far tree line along the shore.
-float ridge(float x) {
-  return YH + 0.006 + 0.02 * noise(vec2(x * 2.3, 1.7)) + 0.011 * noise(vec2(x * 9.0, 4.1)) + 0.008 * smoothstep(0.3, 0.9, noise(vec2(x * 41.0, 2.2)));
+// Far hills, then a nearer tree line along the shore.
+float hills(float x) {
+  return YH + 0.008 + 0.032 * noise(vec2(x * 1.3, 7.0)) + 0.01 * noise(vec2(x * 4.1, 2.0));
+}
+float trees(float x) {
+  return YH + 0.002 + 0.005 * noise(vec2(x * 5.0, 1.0)) + 0.014 * smoothstep(0.35, 0.8, noise(vec2(x * 9.0, 4.0))) * (0.5 + 0.5 * noise(vec2(x * 70.0, 3.0)));
+}
+vec3 shore(vec2 q, vec3 c, vec3 haze, float px) {
+  c = mix(c, mix(uHill, haze, 0.38), clamp((hills(q.x) - q.y) / px + 0.5, 0.0, 1.0));
+  return mix(c, mix(uHill * 0.55, haze, 0.18 + 2.5 * max(0.0, YH + 0.012 - q.y)), clamp((trees(q.x) - q.y) / px + 0.5, 0.0, 1.0));
 }
 // Coverage of one reed layer, with its plumes and their backlit rims.
 float reeds(vec2 q, float L, float cw, float base, float tall, float px, out float pl, out float rim) {
@@ -845,12 +877,13 @@ float reeds(vec2 q, float L, float cw, float base, float tall, float px, out flo
   float cov = clamp((m - q.y) / px + 0.5, 0.0, 1.0);
   if (q.y > base + tall + 0.06 || cov >= 1.0) return cov;
   float ci = floor(q.x / cw), th = L > 1.5 ? 0.6 : 1.0;
-  for (int k = -2; k <= 2; k++) {
+  // Stems lean and plumes nod downwind, so most reach in from the left.
+  for (int k = -5; k <= 1; k++) {
     float c = ci + float(k);
     vec4 h = hash4(vec2(c, L * 37.0));
     float y0 = base - 0.03, top = base + tall * (0.25 + 0.75 * h.y), sp = top - y0;
     float gust = sin(uT * 0.8 - c * cw * 5.0) * 0.65 + sin(uT * 2.1 + h.x * 6.28) * 0.2;
-    float bend = ((h.z - 0.3) * 0.05 + uSway * gust * 0.011 * (0.5 + h.w)) * sp / 0.15;
+    float bend = ((h.z - 0.35) * 0.03 + uSway * gust * 0.01 * (0.5 + h.w)) * sp / 0.15;
     float xb = (c + 0.15 + 0.7 * h.x) * cw;
     float ty = clamp((q.y - y0) / sp, 0.0, 1.0);
     float w = (0.001 + 0.0008 * h.w) * (1.0 - 0.45 * ty) * th;
@@ -889,40 +922,43 @@ vec3 srgb(vec3 c) {
 void main() {
   vec2 fc = gl_FragCoord.xy, uv = fc / uRes, q = vec2(uv.x * uAsp, uv.y);
   float px = 1.0 / uRes.y;
-  vec3 col, land = mix(uHill, sky(vec2(q.x, YH + 0.02)), 0.3);
+  vec3 col, haze = sky(vec2(q.x, YH + 0.012));
   if (q.y >= YH) {
     col = clouds(q, sky(q));
     col += uStar * stars(q);
     // The evening star.
     vec2 vd = (q - vec2(uAsp * 0.21, 0.86)) / px;
     col += uStar * (1.4 * exp(-dot(vd, vd) * 0.35) + 0.05 * exp(-length(vd) * 0.25));
-    col = mix(col, land, clamp((ridge(q.x) - q.y) / px + 0.5, 0.0, 1.0));
+    col = shore(q, col, haze, px);
   } else {
     float dy = YH - q.y;
     float rip = (noise(vec2(q.x * 2.0, dy * 260.0 - uT * 0.8)) - 0.5) * (0.002 + dy * 0.05);
     vec2 m = vec2(q.x + rip, YH + dy);
     col = clouds(m, sky(m));
-    col = mix(col, land * 0.9, clamp((ridge(m.x) - m.y) / px + 0.5, 0.0, 1.0));
+    col = shore(m, col, haze, px) * vec3(0.92, 0.9, 0.95);
     // Mirrored birds darken the water.
     float rb = texture(uBirds, vec2(m.x / uAsp, m.y)).r;
     col *= mix(1.0, exp(-1.6 * rb), 0.8);
-    col = mix(col * 0.8, uWater, 0.16 + 0.5 * smoothstep(0.0, 0.1, dy));
+    col = mix(col * 0.66, uWater, 0.2 + 0.5 * smoothstep(0.0, 0.1, dy));
     // The sun lays a broken glitter path.
     float g = exp(-pow((q.x - uSunX) * 7.0, 2.0)) * smoothstep(0.55, 0.85, noise(vec2(q.x * 60.0, dy * 400.0 + uT * 1.5)));
     col += uSun * (g * 0.45 * (1.0 - smoothstep(0.0, 0.09, dy)) + 0.12 * exp(-dy * 900.0));
   }
   vec4 B = texelFetch(uBirds, ivec2(fc), 0);
   if (B.r > 1e-3) {
-    vec3 ink = mix(uInk, mix(uInkFar, col, 0.45), clamp(B.g / B.r, 0.0, 1.0));
-    col = mix(ink, col, exp(-2.3 * B.r));
+    vec3 ink = mix(uInk, mix(uInkFar, col, 0.3), clamp(B.g / B.r, 0.0, 1.0));
+    col = mix(ink, col, exp(-3.4 * B.r));
   }
   if (q.y < 0.36) {
     float pl, rim, sunK = 0.45 + 0.55 * exp(-pow((q.x - uSunX) * 1.4, 2.0));
-    float cb = reeds(q, 2.0, 0.0085, 0.195, 0.07, px, pl, rim);
-    vec3 far = mix(uReedFar, col, 0.15);
+    float cb = reeds(q, 2.0, 0.009, 0.182, 0.08, px, pl, rim);
+    vec3 far = mix(uReedFar, haze, 0.015 + 0.09 * smoothstep(0.13, 0.21, q.y)) * (0.9 + 0.2 * noise(vec2(q.x * 260.0, q.y * 9.0)));
     col = mix(col, far, cb);
     col = mix(col, mix(far * 1.3, uPlume * 1.6, 0.5) + uRim * rim * sunK * 0.55, pl);
-    float cf = reeds(q, 1.0, 0.017, 0.105, 0.15, px, pl, rim);
+    // Evening mist lies low over the far reeds and water.
+    float mist = exp(-pow((q.y - 0.215) / 0.035, 2.0)) * (0.5 + 0.5 * noise(vec2(q.x * 2.5 - uT * 0.015, 0.5)));
+    col = mix(col, haze * 0.9, mist * 0.07);
+    float cf = reeds(q, 1.0, 0.016, 0.075, 0.17, px, pl, rim);
     col = mix(col, uReedNear, cf);
     col = mix(col, uPlume + uRim * rim * sunK * 0.45, pl);
   }
@@ -934,7 +970,7 @@ void main() {
 let gl = null, P = null, vao = null, ready = false;
 let S = [], cur = 0, FA = null, FB = null, birdT = null, probeT = null, pbo = null, fence = null;
 const probeBuf = new Float32Array(8);
-const probe = { near: 0, alarmNear: 0, air: 1, alarm: 0 };
+const probe = { near: 0, alarmNear: 0, air: 1, alarm: 0, x: 0, y: 0.3 };
 
 function compile(vs, fs) {
   const sh = (type, src) => {
@@ -1021,10 +1057,7 @@ async function initGL() {
   });
   const pt = tex(2, 1, gl.RGBA32F, gl.NEAREST);
   probeT = { tex: pt, fb: target([pt]) };
-  pbo = gl.createBuffer();
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
-  gl.bufferData(gl.PIXEL_PACK_BUFFER, 32, gl.STREAM_READ);
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  pbo = null;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   fieldA = 0;
   birdT = null;
@@ -1087,7 +1120,7 @@ function seedFlock() {
 
 /* ---------- leaders, hawk, claps and the roost ---------- */
 let simT = 0, frameNo = 0, stretch = 0.5;
-const M = [0, 0.3, 0], LEAD3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+const M = [0, 0.3, 0], LEADERS = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
 // The main centre roams; three leaders circle it at a varying reach.
 function leaders(t) {
   const ax = Math.max(0.2, A - 0.6);
@@ -1096,7 +1129,7 @@ function leaders(t) {
   M[2] = 0.15 * Math.sin(t * 0.23 + 2);
   const r = 0.3 + 0.14 * Math.sin(t * 0.13);
   for (let k = 0; k < 3; k++) {
-    const g = t * (0.37 + 0.11 * k) + (k * TAU) / 3, L = LEAD3[k];
+    const g = t * (0.37 + 0.11 * k) + (k * TAU) / 3, L = LEADERS[k];
     L[0] = clamp(M[0] + Math.cos(g) * r * 1.5, -ax - 0.2, ax + 0.2);
     L[1] = clamp(M[1] + Math.sin(g * 1.3) * r * 0.6, -0.12, 0.62);
     L[2] = M[2] + Math.sin(g * 0.7) * r * 0.7;
@@ -1107,7 +1140,7 @@ function leaders(t) {
 const hawk = { x: 0, y: 0.2, vx: 0, vy: 0, tx: 0, ty: 0, on: false, a: 0, ph: 0, roll: 0, hx: 1, hy: 0, flap: 1, src: '' };
 const keys = new Set();
 let keyAt = 0, clapQ = null, origin = [0, 0], seedQ = null, nextSeed = 5;
-let lastInput = 0, roostT = -1, wakeT = -1, asleep = false;
+let lastInput = 0, roostT = -1, roostX = 0, wakeT = -1, asleep = false;
 const IDLE = () => (reduce ? 15000 : 40000);
 function hawkStep(dt, now) {
   if (keys.size) {
@@ -1146,7 +1179,7 @@ function hawkStep(dt, now) {
   hawk.ph = (hawk.ph + dt * (4 + 3 * hawk.flap)) % 1;
 }
 function clap(sx, sy) {
-  clapQ = [sx, sy, 0.62, 1.05];
+  clapQ = [sx, sy, 0.55, 0.85];
   origin = [sx, sy];
   swell = 1;
   clapSound(sx / A);
@@ -1155,21 +1188,22 @@ function clap(sx, sy) {
 function startRoost() {
   if (roostT >= 0) return;
   roostT = 0;
+  roostX = clamp(M[0], -A * 0.55, A * 0.55);
   wakeT = -1;
   hawk.on = false;
   roostB.textContent = 'Rise';
 }
 function wakeUp() {
   if (roostT < 0) return;
-  const landed = roostT > 6;
+  const many = roostT > 4;
   roostT = -1;
   asleep = false;
   roostB.textContent = 'Roost';
-  if (landed) {
-    wakeT = 0;
-    origin = [M[0], -0.7];
+  wakeT = 0;
+  if (many) {
+    origin = [roostX, -0.7];
     swell = 1;
-    rush(clamp(M[0] / A, -1, 1), 1, 1.6);
+    rush(clamp(roostX / A, -1, 1), 1, 1.8);
   }
 }
 // Any input resets the idle clock and wakes the flock.
@@ -1218,18 +1252,18 @@ function simStep(dt) {
   gl.uniform1f(U.uTime, simT);
   gl.uniform1f(U.uA, A);
   gl.uniform1f(U.uStretch, stretch);
-  gl.uniform1f(U.uWake, wakeT);
+  gl.uniform2f(U.uWake, wakeT, roostX);
   gl.uniform1f(U.uRoostT, roostT);
   gl.uniform3fv(U.uM, M);
-  gl.uniform3fv(U.uC0, LEAD3[0]);
-  gl.uniform3fv(U.uC1, LEAD3[1]);
-  gl.uniform3fv(U.uC2, LEAD3[2]);
+  gl.uniform3fv(U.uC0, LEADERS[0]);
+  gl.uniform3fv(U.uC1, LEADERS[1]);
+  gl.uniform3fv(U.uC2, LEADERS[2]);
   const hs = hawk.a * (0.6 + 0.4 * Math.min(Math.hypot(hawk.vx, hawk.vy) / 1.2, 1));
   gl.uniform4f(U.uHawk, hawk.x, hawk.y, 0.2 + 0.1 * Math.min(Math.hypot(hawk.vx, hawk.vy) / 1.5, 1), roostT >= 0 ? 0 : hs);
   gl.uniform4fv(U.uClap, clapQ || [0, 0, 1, 0]);
   gl.uniform4fv(U.uSeed, seedQ || [0, 0, 0, 0]);
-  const rk = roostT >= 0 ? clamp(roostT / 1.5) : 0;
-  gl.uniform4f(U.uRoost, clamp(M[0], -A * 0.5, A * 0.5), -0.78, 0, rk);
+  // The roost lies in the reeds below the gathered flock.
+  gl.uniform4f(U.uRoost, roostX, -0.88, 0, roostT >= 0 ? 1 : 0);
   gl.uniform2fv(U.uOrigin, origin);
   gl.uniform1ui(U.uFrame, frameNo++);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -1279,7 +1313,7 @@ function draw() {
 // The probe reads back two pixels without stalling the GPU.
 function readProbe() {
   if (fence) {
-    if (gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+    if (gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED) return;
     gl.deleteSync(fence);
     fence = null;
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
@@ -1290,6 +1324,7 @@ function readProbe() {
     probe.alarmNear = probeBuf[1] / Math.max(probeBuf[0], 1);
     probe.air = probeBuf[4] / n;
     probe.alarm = probeBuf[5] / n;
+    if (probeBuf[4] > 50) { probe.x = probeBuf[6] / probeBuf[4]; probe.y = probeBuf[7] / probeBuf[4]; }
     return;
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, probeT.fb);
@@ -1301,7 +1336,11 @@ function readProbe() {
   gl.uniform2f(P.probe.u.uHawk, hawk.x, hawk.y);
   gl.uniform2i(P.probe.u.uAt, AW, AH);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // A fresh buffer per read keeps Chrome's readback path quiet.
+  gl.deleteBuffer(pbo);
+  pbo = gl.createBuffer();
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.bufferData(gl.PIXEL_PACK_BUFFER, 32, gl.STREAM_READ);
   gl.readPixels(0, 0, 2, 1, gl.RGBA, gl.FLOAT, 0);
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -1315,17 +1354,24 @@ function tick(dt, now) {
   hawkStep(dt, now);
   if (roostT < 0 && now - lastInput > IDLE()) startRoost();
   if (roostT >= 0) roostT += dt;
-  if (wakeT >= 0 && (wakeT += sdt) > 1.5) wakeT = -1;
+  if (wakeT >= 0 && (wakeT += sdt) > 3) wakeT = -1;
   swell *= Math.exp(-dt * 1.5);
   // Now and then a bird startles by itself, and a wave runs.
   if (roostT < 0 && simT > nextSeed) {
-    const L = LEAD3[Math.floor(Math.random() * 3)];
+    const L = LEADERS[Math.floor(Math.random() * 3)];
     seedQ = [L[0], L[1], L[2], 0.16];
     origin = [L[0], L[1]];
     nextSeed = simT + rand(4, 9);
   }
   simT += sdt;
   leaders(simT);
+  // While roosting, the flock hangs over the roost, tight and low.
+  if (roostT >= 0) {
+    const k = clamp(roostT / 2);
+    M[0] = lerp(M[0], roostX, k);
+    M[1] = lerp(M[1], 0.18, k);
+    stretch *= 1 - k;
+  }
   drawT += sdt;
   simStep(sdt);
 }
@@ -1334,7 +1380,7 @@ function frame(now) {
   if (!running || !ready) return;
   const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 30);
   last = now;
-  // Sustained slow frames drop the pixel ratio, then half the flock.
+  // Sustained slow frames drop the pixel ratio, then halve the flock.
   if (++frames > 40) {
     slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
     if (slow > 45) {
@@ -1360,6 +1406,8 @@ function kick() {
   asleep = false;
   last = performance.now();
   raf = requestAnimationFrame(frame);
+  // A flock woken by a mere hover wakes the sleeping context too.
+  if (soundOn && ac && ac.state !== 'running') audio();
 }
 // Off screen or hidden, the flock pauses and goes quiet.
 function sync() {
@@ -1388,7 +1436,6 @@ function fit() {
     canvas.width = cw;
     canvas.height = ch;
   }
-  pr = cw / w;
   if (!ready) return;
   allocField();
   allocBirds();
@@ -1405,10 +1452,8 @@ function local(e) {
 }
 const toSky = (x, y) => [(x / W * 2 - 1) * A, 1 - (y / H) * 2];
 function aim(sx, sy, src) {
-  if (!hawk.on || hawk.a < 0.05) {
-    // The hawk swoops in from where it is, or appears in place.
-    if (hawk.a < 0.05) { hawk.x = sx; hawk.y = sy; hawk.vx = 0; hawk.vy = 0; }
-  }
+  // A visible hawk swoops over; a gone one appears in place.
+  if (hawk.a < 0.05) { hawk.x = sx; hawk.y = sy; hawk.vx = 0; hawk.vy = 0; }
   hawk.tx = sx;
   hawk.ty = sy;
   hawk.on = true;
@@ -1447,10 +1492,10 @@ panel.addEventListener('pointercancel', lift);
 panel.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && hawk.src === 'mouse') hawk.on = false; });
 panel.addEventListener('contextmenu', e => e.preventDefault());
 
-// Space claps under the hawk, or at the flock's heart.
+// Space claps under a nearby hawk, or else at the flock's heart.
 function spaceClap() {
-  if (hawk.on && hawk.a > 0.3) clap(hawk.x, hawk.y);
-  else clap(M[0], M[1]);
+  if (hawk.on && hawk.a > 0.3 && Math.hypot(hawk.x - probe.x, hawk.y - probe.y) < 0.6) clap(hawk.x, hawk.y);
+  else clap(probe.x + rand(-0.08, 0.08), probe.y + rand(-0.06, 0.06));
 }
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
@@ -1461,8 +1506,8 @@ addEventListener('keydown', e => {
     if (!keys.size && (!hawk.on || hawk.src !== 'key')) {
       // The keyboard hawk starts where it is, or above the flock.
       const seen = hawk.a > 0.3;
-      hawk.tx = seen ? hawk.x : M[0];
-      hawk.ty = seen ? hawk.y : Math.min(0.85, M[1] + 0.45);
+      hawk.tx = seen ? hawk.x : clamp(probe.x, -A + 0.1, A - 0.1);
+      hawk.ty = seen ? hawk.y : Math.min(0.85, probe.y + 0.4);
       if (!seen) { hawk.x = hawk.tx; hawk.y = hawk.ty; hawk.vx = 0; hawk.vy = 0; }
       hawk.on = true;
       hawk.src = 'key';
