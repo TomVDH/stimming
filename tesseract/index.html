@@ -195,25 +195,47 @@ function landed() {
   bell(392, 0.08);
   bell(587.3, 0.06, 0.09);
 }
-// The slice needle ticks as it passes a vertex level.
-// Pitch climbs a pentatonic scale from the far level up.
+// A short struck tone; tau sets how fast it dies.
+function ping(a, f, g, tau, type = 'triangle', at = 0) {
+  const t = a.currentTime + LEAD + at, o = a.createOscillator(), og = a.createGain();
+  o.type = type;
+  o.frequency.value = f;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, tau);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + tau * 8);
+  o.onended = () => og.disconnect();
+  loudAt = performance.now();
+}
+// Notes climb a pentatonic scale from G4.
 const PENTA = [0, 2, 4, 7, 9];
+const note = n => 392 * 2 ** ((PENTA[n % 5] + 12 * Math.floor(n / 5)) / 12);
+// The slice needle ticks as it passes a vertex level.
 let tickAt = -1e9;
 function tick(n) {
   const a = live(), now = performance.now();
   if (!a || now - tickAt < 40) return;
-  tickAt = loudAt = now;
-  const t = a.currentTime + LEAD, f = 392 * 2 ** ((PENTA[n % 5] + 12 * Math.floor(n / 5)) / 12);
-  const o = a.createOscillator(), og = a.createGain();
-  o.type = 'triangle';
-  o.frequency.value = f;
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.05, t + 0.002);
-  og.gain.setTargetAtTime(0, t + 0.002, 0.03);
-  o.connect(og).connect(out);
-  o.start(t);
-  o.stop(t + 0.25);
-  o.onended = () => og.disconnect();
+  tickAt = now;
+  ping(a, note(n), 0.05, 0.03);
+}
+// A vertex that passes through w = 0 plucks its own note.
+// Fast turns rattle like a freewheel; the limit keeps it sparse.
+let passAt = -1e9;
+function pass(k, speed) {
+  const a = live(), now = performance.now();
+  if (!a || now - passAt < 55) return;
+  passAt = now;
+  ping(a, note(5 + ((k * 7) % 10)), 0.022 + 0.018 * clamp(speed / 4), 0.045);
+}
+// A detent lands with a dry click and a low knock.
+function clack() {
+  const a = live();
+  if (!a) return;
+  chimeAt = performance.now();
+  ping(a, 2100, 0.018, 0.004, 'square');
+  ping(a, 150, 0.09, 0.025, 'sine');
 }
 // A quiet toy lets the context sleep until the next gesture.
 function nap() {
@@ -347,37 +369,53 @@ function slerp(a, b, t, o) {
 /* ---------- motion state ---------- */
 // Angular speeds in rad/s, by plane.
 const om = new Float64Array(6);
-// Idle drift: mostly through W, with a slow 3D yaw.
-const IDLE = [0, 0.024, 0, 0.11, 0, 0.045], IDLE_WAIT = 4000;
+// Idle drift: an isoclinic double turn, equal in XZ and YW.
+// The shape yaws and rolls through W at one rate, a steady self-everting loop.
+const IDLE = [0, 0.1, 0, 0, 0.1, 0], IDLE_WAIT = 4000;
+// A flick that slows near a square pose falls into it.
+// The score is about cos² of half the turn left; 0.97 is about 20°.
+const DETENT_SPEED = 0.35, DETENT_SCORE = 0.97;
 // An idle slice sweeps the full depth in W once every eight seconds.
 const SWEEP = (2 * Math.PI) / 8;
 // Depth runs from far (0) to near (1) in W; the ends stay clear of the tips.
 const DEP_LO = 0.02, DEP_HI = 0.98, DEP_AMP = (DEP_HI - DEP_LO) / 2;
 const ptrs = new Map();
 let shape = 0, mu = 0, snap = null, evert = null, flip = 1, idleAmt = 0, lastIn = -1e9, dirty = true;
-let slicing = false, cut = 0, phase = 0, dep = 0.5, depGoal = 0.5, railHeld = false, sweepAmt = 0;
+let slicing = false, cut = 0, phase = 0, dep = 0.5, depGoal = 0.5, railHeld = false, sweepAmt = 0, armed = false;
 let tapT = -1e9, tapX = 0, tapY = 0, downT = 0, downX = 0, downY = 0, moved = false;
 let cx = 0, cy = 0, trail = [];
 Object.assign(QL, HOME[0][0]);
 Object.assign(QR, HOME[0][1]);
 const touch = () => { lastIn = performance.now(); };
 
-// Double-click snaps to the nearest square pose with a spring.
-function snapHome() {
-  if (!ready) return;
-  const H = HOME[shape], tL = [0, 0, 0, 0], tR = [0, 0, 0, 0];
-  let best = -Infinity, bl = null, br = null;
+// The nearest square pose goes to NL and NR; the return is its score.
+const NL = [0, 0, 0, 1], NR = [0, 0, 0, 1], tL = [0, 0, 0, 0], tR = [0, 0, 0, 0];
+function nearest() {
+  const H = HOME[shape];
+  let best = -Infinity;
   for (const [gL, gR] of SYM) {
     qmul(H[0], gL, tL);
     qmul(gR, H[1], tR);
     const sc = dot4(QL, tL) * dot4(QR, tR);
-    if (sc > best) { best = sc; bl = tL.slice(); br = tR.slice(); }
+    if (sc > best) { best = sc; for (let i = 0; i < 4; i++) { NL[i] = tL[i]; NR[i] = tR[i]; } }
   }
   // Both halves flip together, so the turn stays the same.
-  if (dot4(QL, bl) < 0) for (let i = 0; i < 4; i++) { bl[i] = -bl[i]; br[i] = -br[i]; }
-  snap = { l0: QL.slice(), r0: QR.slice(), l1: bl, r1: br, s: 0, v: 0, rang: false };
+  if (dot4(QL, NL) < 0) for (let i = 0; i < 4; i++) { NL[i] = -NL[i]; NR[i] = -NR[i]; }
+  return best;
+}
+// A spring carries the shape into the pose in NL and NR.
+// A detent springs softer and starts with the spin's own speed.
+function snapTo(soft = false, v = 0) {
+  snap = { l0: QL.slice(), r0: QR.slice(), l1: NL.slice(), r1: NR.slice(), s: 0, v, rang: false, soft };
   evert = null;
+  armed = false;
   om.fill(0);
+}
+// Double-click snaps to the nearest square pose with a spring.
+function snapHome() {
+  if (!ready) return;
+  nearest();
+  snapTo();
   idleAmt = 0;
   touch();
   wake();
@@ -426,6 +464,18 @@ function step(dt) {
     const th = (om[p] + drift * IDLE[p]) * dt;
     if (th) { turn(p, th); any = true; }
   }
+  // A slow spin within reach of a square pose falls into it.
+  if (armed) {
+    const sp = Math.hypot(...om);
+    if (!sp || ptrs.size || snap || evert) armed = false;
+    else if (sp < DETENT_SPEED) {
+      const sc = nearest();
+      if (sc > DETENT_SCORE) {
+        const left = 2 * Math.acos(Math.sqrt(clamp(sc)));
+        snapTo(true, Math.min(4, sp / Math.max(left, 0.04)));
+      }
+    }
+  }
   if (evert) {
     evert.t = Math.min(evert.dur, evert.t + dt);
     const u = evert.t / evert.dur, th = evert.sign * Math.PI * ease5(u);
@@ -436,9 +486,10 @@ function step(dt) {
   }
   if (snap) {
     // A light underdamped spring; reduced motion lands critically damped.
-    const k = reduce ? 320 : 95, c = 2 * (reduce ? 1 : 0.58) * Math.sqrt(k);
+    // A detent lands firmer, with less bounce.
+    const k = reduce ? 320 : snap.soft ? 140 : 95, c = 2 * (reduce ? 1 : snap.soft ? 0.72 : 0.58) * Math.sqrt(k);
     for (let n = 0; n < 4; n++) { snap.v += (k * (1 - snap.s) - c * snap.v) * (dt / 4); snap.s += snap.v * (dt / 4); }
-    if (!snap.rang && snap.s > 0.96) { snap.rang = true; chime(); }
+    if (!snap.rang && snap.s > 0.96) { snap.rang = true; if (snap.soft) clack(); else chime(); }
     slerp(snap.l0, snap.l1, snap.s, QL);
     slerp(snap.r0, snap.r1, snap.s, QR);
     if (Math.abs(1 - snap.s) < 2e-4 && Math.abs(snap.v) < 2e-3) {
@@ -486,6 +537,7 @@ function step(dt) {
 // The 4D eye sits at w = 2, so nearer looks bigger.
 const D4 = 2, BOUND = 1.27;
 const P = new Float32Array(NV * 3), R4 = new Float64Array(NV * 3), Wv = new Float64Array(NV), Sv = new Float64Array(NV);
+const wSide = new Array(NV).fill(false);
 let rise = 0, apex = 0, grow = 0, fade = 1, grow16 = 0, sqA = 1, trA = 0, t16A = 0, m2e = 0, sliceH = 0, wLo = -1, wHi = 1;
 function project() {
   matrix();
@@ -519,6 +571,16 @@ function project() {
     Wv[k] = w;
     Sv[k] = s;
   }
+  // A shown vertex that changes side of w = 0 plucks its note.
+  // The idle drift stays silent, so the context can sleep.
+  const quiet = idleAmt > 0 || !sound.on;
+  let hit = -1;
+  for (let k = 0; k < NV; k++) {
+    const side = Wv[k] > 0;
+    if (side !== wSide[k] && !quiet && (k < 16 ? fade > 0.05 : mu > 0 && apex > 0.05)) hit = k;
+    wSide[k] = side;
+  }
+  if (hit >= 0) pass(hit, Math.hypot(...om) + (evert ? 2 : 0));
   // The slice level lies between the nearest and farthest points in W.
   wLo = Infinity; wHi = -Infinity;
   for (let k = 0; k < NV; k++) { if (Wv[k] < wLo) wLo = Wv[k]; if (Wv[k] > wHi) wHi = Wv[k]; }
@@ -943,6 +1005,7 @@ function letGo(e) {
     const span = Math.max(0.03, (end[0] - trail[0][0]) / 1000 + 1 / 60);
     for (const [, px, ax, py, ay] of trail) { om[px] += ax / span; om[py] += ay / span; }
     for (let p = 0; p < 6; p++) om[p] = clamp(om[p], -8, 8);
+    armed = om.some(Boolean);
   }
   trail = [];
   if (!moved && e.timeStamp - downT < 300) { tapT = e.timeStamp; tapX = downX; tapY = downY; }
@@ -967,6 +1030,7 @@ addEventListener('keydown', e => {
     if (dy) { const p = e.shiftKey ? 4 : 2; om[p] = clamp(om[p] + dy * kick, -cap, cap); }
     snap = null;
     evert = null;
+    armed = true;
     touch();
     wake();
   } else if ((k === ' ' || k === 'Enter') && e.target === stage) {
