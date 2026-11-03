@@ -1,0 +1,2003 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Balloon letters</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the stage at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --stage: oklch(0.17 0.04 292);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The stage is 16:9, 4:5 on phones, and always dark. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--stage);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* Touch typing goes through this field; nobody sees it. */
+.keys {
+  position: absolute; left: 50%; top: 40%; width: 1px; height: 1px; margin: 0; padding: 0;
+  font-size: 16px; color: transparent; background: transparent; border: 0; opacity: 0; pointer-events: none;
+}
+/* On the dark stage the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+/* Each swatch shows its foil. */
+.sw { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Balloon letters</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="Foil balloon letters float on a dark stage, saying HI. Type to inflate more; drag to bat them, rub one to squeak it and hold one to prick it, or use the arrow keys to bat, Backspace to prick and Enter to let them all go.">
+      <input class="keys" id="keys" type="text" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" aria-label="Letters to inflate">
+      <p class="fail" hidden>Balloon letters needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl" role="group" aria-label="Foil">
+        <button class="chip" type="button" data-foil="gold" aria-pressed="true"><span class="sw" style="--c: linear-gradient(135deg, oklch(0.95 0.08 95), oklch(0.8 0.15 80) 55%, oklch(0.6 0.12 70))" aria-hidden="true"></span>Gold</button>
+        <button class="chip" type="button" data-foil="silver" aria-pressed="false"><span class="sw" style="--c: linear-gradient(135deg, oklch(0.97 0.01 250), oklch(0.8 0.015 255) 55%, oklch(0.58 0.02 260))" aria-hidden="true"></span>Silver</button>
+        <button class="chip" type="button" data-foil="rose" aria-pressed="false"><span class="sw" style="--c: linear-gradient(135deg, oklch(0.93 0.06 20), oklch(0.78 0.12 15) 55%, oklch(0.58 0.12 10))" aria-hidden="true"></span>Rose</button>
+        <button class="chip" type="button" data-foil="holo" aria-pressed="false"><span class="sw" style="--c: conic-gradient(from 40deg, oklch(0.82 0.15 350), oklch(0.88 0.14 90), oklch(0.86 0.14 165), oklch(0.8 0.13 240), oklch(0.8 0.15 300), oklch(0.82 0.15 350))" aria-hidden="true"></span>Holo</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Type</dt><dd>inflate</dd></div>
+        <div><dt>Drag</dt><dd>bat it</dd></div>
+        <div><dt>Hold</dt><dd>prick</dd></div>
+        <div class="fine"><dt><kbd>Enter</kbd></dt><dd>let go</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('stage'), keysIn = document.getElementById('keys');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; poke(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// Party ribbons and confetti share one palette.
+const PARTY = [[0.7, 0.22, 352], [0.83, 0.14, 195], [0.9, 0.17, 102], [0.66, 0.2, 300], [0.78, 0.17, 52], [0.84, 0.18, 150]].map(c => linear(...c));
+const FOILS = {
+  gold: { col: [0.86, 0.135, 84], rough: 0.2, glow: [0.72, 0.16, 68], pitch: 1 },
+  silver: { col: [0.9, 0.014, 255], rough: 0.16, glow: [0.72, 0.06, 270], pitch: 1.12 },
+  rose: { col: [0.83, 0.1, 18], rough: 0.19, glow: [0.7, 0.16, 8], pitch: 0.94 },
+  holo: { col: [0.97, 0, 0], rough: 0.14, glow: [0.72, 0.15, 300], pitch: 1.2, holo: true },
+};
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.balloons.sound', MAXV = 24, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
+const gate = { infl: 0, bump: 0, pop: 0, creak: 0 };
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.06 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the stage settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !ptr.on && !sq.o && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+// Typing is a gesture, as are the toy's own keys.
+const toyKey = e => e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter' || e.key.startsWith('Arrow');
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && (!toyKey(e) || e.metaKey || e.ctrlKey || e.altKey))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place on the stage.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0008);
+  ng.gain.setTargetAtTime(0, t + 0.0008, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 0.8, len);
+}
+const osc = (a, type, f) => { const o = a.createOscillator(); o.type = type; o.frequency.value = f; return o; };
+const gainOf = (a, v) => { const g = a.createGain(); g.gain.value = v; return g; };
+function filt(a, type, f, q) {
+  const b = a.createBiquadFilter();
+  b.type = type;
+  b.frequency.value = f;
+  b.Q.value = q;
+  return b;
+}
+
+// Inflating: a rubbery buzz stretches upward, air rushes in, then a soft pomf.
+function inflateSound(x, k) {
+  const a = live();
+  if (!a || voices >= MAXV || a.currentTime < gate.infl) return;
+  gate.infl = a.currentTime + 0.05;
+  const t = a.currentTime + LEAD, g = level() * jit(0.08), d = bus(a, x), dur = (reduce ? 0.2 : 0.34) * jit(0.08);
+  const f0 = 118 * k * jit(0.05);
+  const o = osc(a, 'sawtooth', f0), bp = filt(a, 'bandpass', 520, 3.2), am = gainOf(a, 0.6), env = gainOf(a, 0);
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f0 * 2.3, t + dur * 0.78);
+  o.frequency.exponentialRampToValueAtTime(f0 * 3.4, t + dur);
+  bp.frequency.setValueAtTime(520, t);
+  bp.frequency.exponentialRampToValueAtTime(2100, t + dur);
+  // A quickening flutter makes the buzz sound like rubber.
+  const lfo = osc(a, 'triangle', 20), lg = gainOf(a, 0.4);
+  lfo.frequency.linearRampToValueAtTime(52, t + dur);
+  lfo.connect(lg).connect(am.gain);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.2 * g, t + 0.03);
+  env.gain.setValueAtTime(0.2 * g, t + dur * 0.72);
+  env.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(bp).connect(am).connect(env).connect(d);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+  lfo.start(t);
+  lfo.stop(t + dur + 0.02);
+  const src = a.createBufferSource(), nf = filt(a, 'bandpass', 900, 0.9), ng = gainOf(a, 0);
+  src.buffer = noise;
+  nf.frequency.setValueAtTime(800, t);
+  nf.frequency.exponentialRampToValueAtTime(3600, t + dur);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.1 * g, t + dur * 0.55);
+  ng.gain.linearRampToValueAtTime(0, t + dur);
+  src.connect(nf).connect(ng).connect(d);
+  src.start(t, Math.random() * 0.5, dur + 0.02);
+  const t2 = t + dur * 0.9, th = osc(a, 'sine', 210 * k), tg = gainOf(a, 0);
+  th.frequency.setValueAtTime(230 * k, t2);
+  th.frequency.exponentialRampToValueAtTime(105 * k, t2 + 0.09);
+  tg.gain.setValueAtTime(0, t2);
+  tg.gain.linearRampToValueAtTime(0.26 * g, t2 + 0.006);
+  tg.gain.setTargetAtTime(0, t2 + 0.006, 0.05);
+  th.connect(tg).connect(d);
+  th.start(t2);
+  th.stop(t2 + 0.4);
+  track(th, bp, am, env, lg, nf, ng, tg, d);
+}
+// Two balloons meeting: a short rubbery doonk.
+function bumpSound(x, v, k = 1) {
+  const a = live();
+  if (!a || voices >= MAXV || a.currentTime < gate.bump) return;
+  gate.bump = a.currentTime + 0.035;
+  const t = a.currentTime + LEAD, g = level() * clamp(v / 2.4, 0.07, 0.9) * jit(0.12), d = bus(a, x), f = 150 * k * jit(0.08);
+  const o = osc(a, 'sine', f), og = gainOf(a, 0), o2 = osc(a, 'sine', f * 2.76), og2 = gainOf(a, 0);
+  o.frequency.setValueAtTime(f * 1.45, t);
+  o.frequency.exponentialRampToValueAtTime(f, t + 0.045);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.55 * g, t + 0.004);
+  og.gain.setTargetAtTime(0, t + 0.004, 0.055);
+  og2.gain.setValueAtTime(0, t);
+  og2.gain.linearRampToValueAtTime(0.14 * g, t + 0.003);
+  og2.gain.setTargetAtTime(0, t + 0.003, 0.022);
+  o.connect(og).connect(d);
+  o2.connect(og2).connect(d);
+  burst(a, d, t, 'lowpass', 520, 0.7, 0.4 * g, 0.016, 0.08);
+  o.start(t);
+  o2.start(t);
+  o.stop(t + 0.4);
+  o2.stop(t + 0.2);
+  track(o, og, og2, d);
+}
+// A pop: a sharp bang, a low thud, then foil confetti rustling.
+function popSound(x, k = 1) {
+  const a = live();
+  if (!a || a.currentTime < gate.pop) return;
+  gate.pop = a.currentTime + 0.03;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, x);
+  burst(a, d, t, 'highpass', 700, 0.6, 1.5 * g, 0.012, 0.12);
+  burst(a, d, t, 'bandpass', 1900 * jit(0.15) * k, 0.8, 1.0 * g, 0.028, 0.25);
+  burst(a, d, t + 0.002, 'lowpass', 320, 0.8, 1.0 * g, 0.06, 0.3);
+  const o = osc(a, 'sine', 120 * k), og = gainOf(a, 0);
+  o.frequency.setValueAtTime(125 * k, t);
+  o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.85 * g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, 0.05);
+  o.connect(og).connect(d);
+  o.start(t);
+  o.stop(t + 0.45);
+  let at = t + 0.05;
+  for (let i = 0; i < 12; i++) {
+    at += rnd(0.025, 0.07);
+    burst(a, d, at, 'highpass', rnd(4500, 8500), 0.7, rnd(0.03, 0.09) * g * (1 - i / 14), 0.004, 0.02);
+  }
+  track(o, og, d);
+}
+// The zany option: a flapping raspberry that climbs as the air runs out.
+function raspberry(x, dur) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, end = t + dur, g = level(), d = bus(a, x);
+  const o = osc(a, 'sawtooth', 92);
+  const f = o.frequency;
+  f.setValueAtTime(92, t);
+  for (let tt = t + 0.06; tt < end - 0.16; tt += rnd(0.04, 0.09)) {
+    const k = (tt - t) / dur;
+    f.linearRampToValueAtTime((90 + 210 * k * k + 40 * k) * jit(0.16), tt);
+  }
+  f.linearRampToValueAtTime(330, end - 0.1);
+  f.exponentialRampToValueAtTime(64, end);
+  // A square flutter chops the buzz like flapping rubber lips.
+  const flap = osc(a, 'square', 23), fg = gainOf(a, 0.42), am = gainOf(a, 0.58);
+  flap.frequency.setValueAtTime(23, t);
+  flap.frequency.linearRampToValueAtTime(41, end);
+  flap.connect(fg).connect(am.gain);
+  const bp = filt(a, 'bandpass', 520, 1.3), lp = filt(a, 'lowpass', 2800, 0.6), env = gainOf(a, 0);
+  bp.frequency.setValueAtTime(480, t);
+  bp.frequency.linearRampToValueAtTime(1150, end);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.62 * g, t + 0.03);
+  env.gain.setValueAtTime(0.55 * g, end - 0.18);
+  env.gain.linearRampToValueAtTime(0.7 * g, end - 0.08);
+  env.gain.linearRampToValueAtTime(0, end);
+  o.connect(bp).connect(lp).connect(am).connect(env).connect(d);
+  const src = a.createBufferSource(), nf = filt(a, 'bandpass', 1500, 0.8), ng = gainOf(a, 0);
+  src.buffer = noise;
+  src.loop = true;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.07 * g, t + 0.05);
+  ng.gain.linearRampToValueAtTime(0, end);
+  src.connect(nf).connect(ng).connect(d);
+  o.start(t);
+  flap.start(t);
+  src.start(t);
+  o.stop(end + 0.02);
+  flap.stop(end + 0.02);
+  src.stop(end + 0.02);
+  track(o, bp, lp, am, fg, env, nf, ng, d);
+}
+// Letting go: a slide whistle up and away.
+function wheeSound() {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, 0), dur = reduce ? 0.6 : 1.1;
+  const o = osc(a, 'sine', 480), vib = osc(a, 'sine', 6.5), vg = gainOf(a, 9), env = gainOf(a, 0);
+  o.frequency.setValueAtTime(470, t);
+  o.frequency.exponentialRampToValueAtTime(1500, t + dur);
+  vib.connect(vg).connect(o.frequency);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.13 * g, t + 0.06);
+  env.gain.setValueAtTime(0.12 * g, t + dur * 0.7);
+  env.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(env).connect(d);
+  const src = a.createBufferSource(), nf = filt(a, 'bandpass', 2400, 1.2), ng = gainOf(a, 0);
+  src.buffer = noise;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.025 * g, t + 0.1);
+  ng.gain.linearRampToValueAtTime(0, t + dur);
+  src.connect(nf).connect(ng).connect(d);
+  o.start(t);
+  vib.start(t);
+  src.start(t, 0, dur + 0.02);
+  o.stop(t + dur + 0.02);
+  vib.stop(t + dur + 0.02);
+  track(o, vg, env, nf, ng, d);
+}
+// Pressing to prick: the rubber creaks tighter and higher.
+let creak = null;
+function creakStart(x) {
+  const a = live();
+  if (!a || creak || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, x);
+  const o = osc(a, 'sawtooth', 210), bp = filt(a, 'bandpass', 1100, 5), g = gainOf(a, 0), wob = osc(a, 'sine', 9), wg = gainOf(a, 6);
+  wob.connect(wg).connect(o.frequency);
+  o.connect(bp).connect(g).connect(d);
+  o.start(t);
+  wob.start(t);
+  creak = { o, wob, bp, g, d };
+  voices++;
+}
+function creakSet(k) {
+  if (!creak || !ac) return;
+  const t = ac.currentTime;
+  creak.o.frequency.setTargetAtTime(210 + 520 * k * k, t, 0.03);
+  creak.bp.frequency.setTargetAtTime(1100 + 1500 * k, t, 0.05);
+  creak.g.gain.setTargetAtTime(soundOn ? 0.09 * k * level() : 0, t, 0.04);
+}
+function creakStop() {
+  if (!creak) return;
+  const c = creak, t = ac.currentTime;
+  creak = null;
+  c.g.gain.setTargetAtTime(0, t, 0.015);
+  c.o.stop(t + 0.08);
+  c.wob.stop(t + 0.08);
+  c.o.onended = () => { voices--; [c.bp, c.g, c.d].forEach(n => n.disconnect()); };
+}
+// Rubbing: stick-slip chirps whose pitch follows the finger.
+const sq = { o: null, quiet: 0 };
+function squeak(e, speed, x) {
+  if (!sq.o) {
+    if (e < 0.03) return;
+    const a = live();
+    if (!a || voices >= MAXV) return;
+    const o = osc(a, 'sawtooth', 600), chop = osc(a, 'square', 11), cg = gainOf(a, 0.5), am = gainOf(a, 0.5);
+    const bp = filt(a, 'bandpass', 1600, 4.5), g = gainOf(a, 0), d = bus(a, x);
+    chop.connect(cg).connect(am.gain);
+    o.connect(bp).connect(am).connect(g).connect(d);
+    o.start();
+    chop.start();
+    Object.assign(sq, { o, chop, cg, am, bp, g, d, quiet: 0 });
+    voices++;
+  }
+  const t = ac.currentTime, s = clamp(speed / 5);
+  sq.o.frequency.setTargetAtTime((480 + 820 * s) * jit(0.07), t, 0.012);
+  sq.chop.frequency.setTargetAtTime(8 + 22 * s, t, 0.03);
+  sq.bp.frequency.setTargetAtTime(1300 + 1500 * s, t, 0.03);
+  sq.g.gain.setTargetAtTime(soundOn ? 0.17 * clamp(e) : 0, t, 0.02);
+  if (sq.d.pan) sq.d.pan.setTargetAtTime(clamp(x, -1, 1) * 0.6, t, 0.05);
+  sq.quiet = e > 0.03 ? 0 : sq.quiet + 1;
+  if (sq.quiet > 40) squeakStop();
+}
+function squeakStop() {
+  if (!sq.o) return;
+  const s = { ...sq }, t = ac.currentTime;
+  sq.o = null;
+  s.g.gain.setTargetAtTime(0, t, 0.01);
+  s.o.stop(t + 0.06);
+  s.chop.stop(t + 0.06);
+  s.o.onended = () => { voices--; [s.cg, s.am, s.bp, s.g, s.d].forEach(n => n.disconnect()); };
+}
+
+/* ---------- glyphs: raster, distance field, puffed mesh ---------- */
+const FONT = '"Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif';
+// Raster size, fattening stroke, field blur and mesh step, in raster pixels.
+const FPX = 200, FAT = 0.07, BLUR = 3.4, STEP = 2;
+// Seam width and thickness, puff and crimp pitch, in cap heights.
+const WF = 0.034, TF = 0.006, PUFF = 0.36, CRIMP = 0.024;
+const CHARS = /^[A-Z0-9!?&@#$%+=*'".,:;()\-]$/;
+const INF = 1e20;
+let capPx = 140, THREE = null;
+const glyphs = new Map();
+const rc = document.createElement('canvas'), rx = rc.getContext('2d', { willReadFrequently: true });
+
+// Felzenszwalb's squared distance transform along one line.
+function edt1d(g, off, stride, n, f, v, z) {
+  v[0] = 0;
+  z[0] = -INF;
+  z[1] = INF;
+  f[0] = g[off];
+  for (let q = 1, k = 0, s = 0; q < n; q++) {
+    f[q] = g[off + q * stride];
+    const q2 = q * q;
+    do {
+      const r = v[k];
+      s = (f[q] - f[r] + q2 - r * r) / (q - r) / 2;
+    } while (s <= z[k] && --k > -1);
+    k++;
+    v[k] = q;
+    z[k] = s;
+    z[k + 1] = INF;
+  }
+  for (let q = 0, k = 0; q < n; q++) {
+    while (z[k + 1] < q) k++;
+    const r = v[k], qr = q - r;
+    g[off + q * stride] = f[r] + qr * qr;
+  }
+}
+function edt(g, w, h) {
+  const n = Math.max(w, h), f = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  for (let x = 0; x < w; x++) edt1d(g, x, w, h, f, v, z);
+  for (let y = 0; y < h; y++) edt1d(g, y * w, 1, w, f, v, z);
+}
+function blur(src, w, h, sigma) {
+  const R = Math.ceil(sigma * 3), K = new Float32Array(2 * R + 1);
+  let s = 0;
+  for (let i = -R; i <= R; i++) s += K[i + R] = Math.exp(-(i * i) / (2 * sigma * sigma));
+  for (let i = 0; i < K.length; i++) K[i] /= s;
+  const tmp = new Float32Array(w * h), dst = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const o = y * w;
+    for (let x = 0; x < w; x++) {
+      let a = 0;
+      for (let i = -R; i <= R; i++) { const xx = x + i; a += K[i + R] * src[o + (xx < 0 ? 0 : xx >= w ? w - 1 : xx)]; }
+      tmp[o + x] = a;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let a = 0;
+      for (let i = -R; i <= R; i++) { const yy = y + i; a += K[i + R] * tmp[(yy < 0 ? 0 : yy >= h ? h - 1 : yy) * w + x]; }
+      dst[y * w + x] = a;
+    }
+  }
+  return dst;
+}
+// The field, in cap heights, at a point in the letter's own frame.
+function sdfAt(g, X, Y) {
+  let x = g.cx + X * capPx, y = g.cy - Y * capPx, extra = 0;
+  if (x < 1 || y < 1 || x > g.w - 2 || y > g.h - 2) {
+    const qx = clamp(x, 1, g.w - 2), qy = clamp(y, 1, g.h - 2);
+    extra = Math.hypot(x - qx, y - qy);
+    x = qx;
+    y = qy;
+  }
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, w = g.w, s = g.sd, k = j * w + i;
+  const a = s[k], b = s[k + 1], c = s[k + w], d = s[k + w + 1];
+  return (a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy - extra) / capPx;
+}
+// The field's slope points into the letter.
+function sdfGrad(g, X, Y) {
+  const e = 1.5 / capPx;
+  const gx = sdfAt(g, X + e, Y) - sdfAt(g, X - e, Y), gy = sdfAt(g, X, Y + e) - sdfAt(g, X, Y - e);
+  const l = Math.hypot(gx, gy) || 1;
+  return [gx / l, gy / l];
+}
+
+function buildGlyph(ch) {
+  const font = `600 ${FPX}px ${FONT}`;
+  rx.font = font;
+  const m = rx.measureText(ch);
+  const lw = FPX * FAT, pad = Math.ceil(lw / 2 + WF * capPx + BLUR * 3 + 8);
+  const bl = Math.ceil(m.actualBoundingBoxLeft), br = Math.ceil(m.actualBoundingBoxRight);
+  const ba = Math.ceil(m.actualBoundingBoxAscent), bd = Math.ceil(m.actualBoundingBoxDescent);
+  if (bl + br < 2 || ba + bd < 2) return null;
+  const w = bl + br + 2 * pad, h = ba + bd + 2 * pad, n = w * h;
+  rc.width = w;
+  rc.height = h;
+  rx.font = font;
+  rx.fillStyle = rx.strokeStyle = '#fff';
+  rx.lineJoin = 'round';
+  rx.lineWidth = lw;
+  const ox = pad + bl, oy = pad + ba;
+  rx.fillText(ch, ox, oy);
+  rx.strokeText(ch, ox, oy);
+  const img = rx.getImageData(0, 0, w, h).data;
+  // Signed distance with sub-pixel edges, positive inside.
+  const outer = new Float64Array(n), inner = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = img[4 * i + 3] / 255;
+    if (a > 0.999) { outer[i] = 0; inner[i] = INF; }
+    else if (a < 0.001) { outer[i] = INF; inner[i] = 0; }
+    else { const d = 0.5 - a; outer[i] = d > 0 ? d * d : 0; inner[i] = d < 0 ? d * d : 0; }
+  }
+  edt(outer, w, h);
+  edt(inner, w, h);
+  const raw = new Float32Array(n);
+  for (let i = 0; i < n; i++) raw[i] = Math.sqrt(inner[i]) - Math.sqrt(outer[i]);
+  // Blurring rounds the ridge along each stroke and softens corners.
+  const sd = blur(raw, w, h, BLUR);
+  let cnt = 0, cx = 0, cy = 0, smax = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = sd[y * w + x];
+    if (v > 0) { cnt++; cx += x; cy += y; if (v > smax) smax = v; }
+  }
+  if (!cnt) return null;
+  cx /= cnt;
+  cy /= cnt;
+
+  // Front surface: depth rises like sqrt(distance) from the seam.
+  const P = [], N = [], S = [], T = [], segs = [];
+  const vert = (X, Y, Z, nx, ny, nz, a, b, c) => { P.push(X, Y, Z); N.push(nx, ny, nz); S.push(a, b, c); return P.length / 3 - 1; };
+  const grad = (x, y) => [(sd[y * w + x + 1] - sd[y * w + x - 1]) * 0.5, (sd[(y + 1) * w + x] - sd[(y - 1) * w + x]) * 0.5];
+  function surf(x, y, v, gx, gy) {
+    const X = (x - cx) / capPx, Y = (cy - y) / capPx, d = Math.max(0, v) / capPx;
+    const lx = gx, ly = -gy, gl = Math.hypot(lx, ly) || 1, r = Math.sqrt(d);
+    const nz = (2 * r) / PUFF, nl = Math.hypot(lx, ly, nz) || 1;
+    return vert(X, Y, TF + PUFF * r, -lx / nl, -ly / nl, nz / nl, X - (d * lx) / gl, Y - (d * ly) / gl, d);
+  }
+  const G = STEP, gw = Math.floor((w - 1) / G) + 1, gh = Math.floor((h - 1) / G) + 1;
+  const val = (i, j) => sd[j * G * w + i * G];
+  const gid = new Int32Array(gw * gh).fill(-1), eh = new Int32Array(gw * gh).fill(-1), ev = new Int32Array(gw * gh).fill(-1);
+  const gridV = (i, j) => {
+    const k = j * gw + i;
+    if (gid[k] < 0) { const [gx, gy] = grad(i * G, j * G); gid[k] = surf(i * G, j * G, val(i, j), gx, gy); }
+    return gid[k];
+  };
+  // A seam vertex where the field crosses zero on a grid edge.
+  const edgeV = (i0, j0, i1, j1) => {
+    const arr = j0 === j1 ? eh : ev, k = j0 * gw + i0;
+    if (arr[k] >= 0) return arr[k];
+    const v0 = val(i0, j0), v1 = val(i1, j1), t = v0 / (v0 - v1);
+    const [ax, ay] = grad(i0 * G, j0 * G), [bx, by] = grad(i1 * G, j1 * G);
+    arr[k] = surf(lerp(i0, i1, t) * G, lerp(j0, j1, t) * G, 0, lerp(ax, bx, t), lerp(ay, by, t));
+    return arr[k];
+  };
+  const tri = (a, b, c) => {
+    const ar = (P[3 * b] - P[3 * a]) * (P[3 * c + 1] - P[3 * a + 1]) - (P[3 * c] - P[3 * a]) * (P[3 * b + 1] - P[3 * a + 1]);
+    if (Math.abs(ar) < 1e-12) return;
+    if (ar > 0) T.push(a, b, c); else T.push(a, c, b);
+  };
+  const CO = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  for (let j = 1; j < gh - 2; j++) for (let i = 1; i < gw - 2; i++) {
+    const v = [val(i, j), val(i + 1, j), val(i + 1, j + 1), val(i, j + 1)];
+    const ins = v.map(q => q > 0);
+    const mask = ins[0] | (ins[1] << 1) | (ins[2] << 2) | (ins[3] << 3);
+    if (!mask) continue;
+    const cv = k => gridV(i + CO[k][0], j + CO[k][1]);
+    const ce = k => {
+      const a = CO[k], b = CO[(k + 1) & 3], ia = i + a[0], ja = j + a[1], ib = i + b[0], jb = j + b[1];
+      return ia + ja < ib + jb ? edgeV(ia, ja, ib, jb) : edgeV(ib, jb, ia, ja);
+    };
+    if (mask === 15) { tri(cv(0), cv(1), cv(2)); tri(cv(0), cv(2), cv(3)); continue; }
+    if ((mask === 5 || mask === 10) && v[0] + v[1] + v[2] + v[3] <= 0) {
+      for (let k = 0; k < 4; k++) if (ins[k]) { const a = ce((k + 3) & 3), b = ce(k); tri(a, cv(k), b); segs.push(a, b); }
+      continue;
+    }
+    const poly = [], isE = [];
+    for (let k = 0; k < 4; k++) {
+      if (ins[k]) { poly.push(cv(k)); isE.push(false); }
+      if (ins[k] !== ins[(k + 1) & 3]) { poly.push(ce(k)); isE.push(true); }
+    }
+    for (let q = 1; q < poly.length - 1; q++) tri(poly[0], poly[q], poly[q + 1]);
+    for (let q = 0; q < poly.length; q++) { const r = (q + 1) % poly.length; if (isE[q] && isE[r]) segs.push(poly[q], poly[r]); }
+  }
+  const nf = P.length / 3;
+
+  // The seam: a crimped flange with a ridge, chained around each outline.
+  const nb = new Map();
+  const link = (a, b) => { if (a === b) return; if (!nb.has(a)) nb.set(a, []); if (!nb.has(b)) nb.set(b, []); nb.get(a).push(b); nb.get(b).push(a); };
+  for (let i = 0; i < segs.length; i += 2) link(segs[i], segs[i + 1]);
+  const seen = new Set(), loops = [];
+  for (const s0 of nb.keys()) {
+    if (seen.has(s0)) continue;
+    const loop = [s0];
+    seen.add(s0);
+    let prev = s0, cur = nb.get(s0)[0];
+    while (cur !== undefined && !seen.has(cur)) {
+      loop.push(cur);
+      seen.add(cur);
+      const l = nb.get(cur), nx = l[0] === prev ? l[1] : l[0];
+      prev = cur;
+      cur = nx;
+    }
+    if (loop.length >= 6) loops.push(loop);
+  }
+  const FP = [], FN = [], FS = [], FT = [];
+  const FU = [0, 0.38, 0.78, 1], FZ = [1, 1.75, 1.2, 0], FI = [-0.35, 0, 0.6];
+  const tri3 = (a, b, c) => {
+    const ux = FP[3 * b] - FP[3 * a], uy = FP[3 * b + 1] - FP[3 * a + 1], uz = FP[3 * b + 2] - FP[3 * a + 2];
+    const vx = FP[3 * c] - FP[3 * a], vy = FP[3 * c + 1] - FP[3 * a + 1], vz = FP[3 * c + 2] - FP[3 * a + 2];
+    const cx3 = uy * vz - uz * vy, cy3 = uz * vx - ux * vz, cz3 = ux * vy - uy * vx;
+    const sx = FN[3 * a] + FN[3 * b] + FN[3 * c], sy = FN[3 * a + 1] + FN[3 * b + 1] + FN[3 * c + 1], sz = FN[3 * a + 2] + FN[3 * b + 2] + FN[3 * c + 2];
+    if (cx3 * sx + cy3 * sy + cz3 * sz >= 0) FT.push(a, b, c); else FT.push(a, c, b);
+  };
+  for (const loop of loops) {
+    const K = loop.length, ox = new Float32Array(K), oy = new Float32Array(K), s = new Float32Array(K + 1);
+    for (let k = 0; k < K; k++) { ox[k] = N[3 * loop[k]]; oy[k] = N[3 * loop[k] + 1]; }
+    for (let it = 0; it < 2; it++) {
+      const ax = ox.slice(), ay = oy.slice();
+      for (let k = 0; k < K; k++) {
+        const p = (k + K - 1) % K, q = (k + 1) % K, x = ax[p] + 2 * ax[k] + ax[q], y = ay[p] + 2 * ay[k] + ay[q], l = Math.hypot(x, y) || 1;
+        ox[k] = x / l;
+        oy[k] = y / l;
+      }
+    }
+    for (let k = 1; k <= K; k++) {
+      const a = loop[k - 1], b = loop[k % K];
+      s[k] = s[k - 1] + Math.hypot(P[3 * b] - P[3 * a], P[3 * b + 1] - P[3 * a + 1]);
+    }
+    const len = s[K] || 1, nC = Math.max(6, Math.round(len / CRIMP)), base = FP.length / 3;
+    for (let k = 0; k <= K; k++) {
+      const v = loop[k % K], X = P[3 * v], Y = P[3 * v + 1], nx = ox[k % K], ny = oy[k % K], ph = (s[k] / len) * nC;
+      for (let r = 0; r < 7; r++) {
+        const q = r < 4 ? r : 6 - r, side = r < 4 ? 1 : -1, off = FU[q] * WF;
+        FP.push(X + nx * off, Y + ny * off, side * FZ[q] * TF);
+        if (q === 3) FN.push(nx, ny, 0);
+        else { const l = Math.hypot(FI[q], 1); FN.push((nx * FI[q]) / l, (ny * FI[q]) / l, side / l); }
+        FS.push(ph, FU[q], -1);
+      }
+    }
+    for (let k = 0; k < K; k++) for (let r = 0; r < 6; r++) {
+      const a = base + k * 7 + r, b = a + 7;
+      tri3(a, b, b + 1);
+      tri3(a, b + 1, a + 1);
+    }
+  }
+
+  // Front, mirrored back and seam become one geometry.
+  const nv = nf * 2 + FP.length / 3, pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), sea = new Float32Array(nv * 3);
+  pos.set(P);
+  nrm.set(N);
+  sea.set(S);
+  for (let i = 0; i < nf; i++) {
+    const o = (nf + i) * 3;
+    pos[o] = P[3 * i]; pos[o + 1] = P[3 * i + 1]; pos[o + 2] = -P[3 * i + 2];
+    nrm[o] = N[3 * i]; nrm[o + 1] = N[3 * i + 1]; nrm[o + 2] = -N[3 * i + 2];
+    sea[o] = S[3 * i]; sea[o + 1] = S[3 * i + 1]; sea[o + 2] = S[3 * i + 2];
+  }
+  pos.set(FP, nf * 6);
+  nrm.set(FN, nf * 6);
+  sea.set(FS, nf * 6);
+  const idx = new Uint32Array(T.length * 2 + FT.length);
+  idx.set(T);
+  for (let i = 0; i < T.length; i += 3) { idx[T.length + i] = T[i] + nf; idx[T.length + i + 1] = T[i + 2] + nf; idx[T.length + i + 2] = T[i + 1] + nf; }
+  for (let i = 0; i < FT.length; i++) idx[T.length * 2 + i] = FT[i] + nf * 2;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  geo.setAttribute('aSeam', new THREE.BufferAttribute(sea, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeBoundingSphere();
+
+  // Circles inside the letter stand in for it in collisions.
+  const circles = [], cov = new Uint8Array(n);
+  for (let c = 0; c < 22; c++) {
+    let best = -1, bv = smax * 0.3;
+    for (let y = 1; y < h - 1; y += 2) for (let x = 1; x < w - 1; x += 2) { const i = y * w + x; if (!cov[i] && sd[i] > bv) { bv = sd[i]; best = i; } }
+    if (best < 0) break;
+    const bx = best % w, by = (best / w) | 0, rr = bv * 1.2;
+    circles.push({ x: (bx - cx) / capPx, y: (cy - by) / capPx, r: bv / capPx });
+    for (let y = Math.max(0, Math.floor(by - rr)); y <= Math.min(h - 1, Math.ceil(by + rr)); y++) {
+      for (let x = Math.max(0, Math.floor(bx - rr)); x <= Math.min(w - 1, Math.ceil(bx + rr)); x++) if ((x - bx) ** 2 + (y - by) ** 2 < rr * rr) cov[y * w + x] = 1;
+    }
+  }
+  // Bounds include the seam; the string ties on near the bottom middle.
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, rad = 0, yb = 0;
+  const edge = -WF * capPx;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = sd[y * w + x];
+    if (v > edge) {
+      const X = (x - cx) / capPx, Y = (cy - y) / capPx;
+      if (X < minX) minX = X; if (X > maxX) maxX = X; if (Y < minY) minY = Y; if (Y > maxY) maxY = Y;
+      rad = Math.max(rad, Math.hypot(X, Y));
+    }
+    if (v > 0) yb = Math.max(yb, y);
+  }
+  let ax = cx, bestD = 1e9;
+  for (let y = yb - 3; y <= yb; y++) for (let x = 0; x < w; x++) if (sd[y * w + x] > 0 && Math.abs(x - cx) < bestD) { bestD = Math.abs(x - cx); ax = x; }
+  let ay = yb;
+  while (ay > 0 && sd[ay * w + ax] < 0.05 * capPx) ay--;
+  // Points on the skin seed confetti.
+  const pts = new Float32Array(240 * 3);
+  for (let i = 0; i < 240; i++) {
+    const v = Math.floor(Math.random() * nf), z = Math.random() < 0.5 ? 1 : -1;
+    pts[3 * i] = P[3 * v]; pts[3 * i + 1] = P[3 * v + 1]; pts[3 * i + 2] = P[3 * v + 2] * z;
+  }
+  return {
+    ch, geo, sd, w, h, cx, cy, circles, minX, maxX, minY, maxY, rad: rad + 0.02, pts,
+    base: (cy - oy) / capPx, anchor: [(ax - cx) / capPx, (cy - ay) / capPx],
+  };
+}
+function glyph(ch) {
+  if (!glyphs.has(ch)) {
+    let g = null;
+    try { g = buildGlyph(ch); } catch (err) { console.error(err); }
+    glyphs.set(ch, g);
+  }
+  return glyphs.get(ch);
+}
+
+/* ---------- shaders: foil skin over three's physical material ---------- */
+const NOISE = `
+float fHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float fNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(fHash(i), fHash(i + vec2(1.0, 0.0)), u.x), mix(fHash(i + vec2(0.0, 1.0)), fHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}`;
+const FOIL_VP = `
+attribute vec3 aSeam;
+uniform float uInfl, uCrumple;
+uniform vec4 uDent, uRip;
+varying vec3 vSeam;
+varying vec3 vObj;
+${NOISE}
+// Skin offset along the face's own outward axis, in cap heights.
+float fOff(vec2 p, float side) {
+  vec2 dd = p - uDent.xy, dr = p - uRip.xy;
+  float r = length(dr);
+  float o = -uDent.z * exp(-dot(dd, dd) / (uDent.w * uDent.w)) * step(0.0, side);
+  o += uRip.z * sin(r * 44.0 - uRip.w) * exp(-r * 7.0);
+  o += uCrumple * (fNoise(p * 8.0 + side * 3.7) - 0.5) * 0.07;
+  return o;
+}`;
+const FOIL_VN = `
+float fSide = position.z >= 0.0 ? 1.0 : -1.0;
+float fK = max(uInfl, 0.05);
+objectNormal = normalize(vec3(objectNormal.xy * fK, objectNormal.z));
+float fO = 0.0;
+if (uDent.z + abs(uRip.z) + uCrumple > 0.0) {
+  fO = fOff(position.xy, fSide);
+  vec2 fG = vec2(fOff(position.xy + vec2(0.005, 0.0), fSide) - fO, fOff(position.xy + vec2(0.0, 0.005), fSide) - fO) / 0.005;
+  objectNormal = normalize(objectNormal - abs(objectNormal.z) * vec3(fG, 0.0));
+}`;
+const FOIL_VB = `
+transformed.z = transformed.z * fK + fSide * fO;
+vSeam = aSeam;
+vObj = position;`;
+const FOIL_FP = `
+uniform float uSize, uCrinkle;
+varying vec3 vSeam;
+varying vec3 vObj;
+${NOISE}
+// Skin height: pleats by the seam, crinkles all over, crimps on the flange.
+float foilH(vec3 s, vec2 o, float crimp) {
+  if (s.z < -0.5) return 0.0016 * crimp * sin(6.2831853 * s.x);
+  float r = 1.0 - abs(fNoise(s.xy * 31.0) * 2.0 - 1.0);
+  float h = 0.0075 * exp(-s.z * 15.0) * r * r;
+  return h + uCrinkle * 0.0017 * (fNoise(o * 19.0) + 0.5 * fNoise(o * 47.0 + 7.3));
+}
+#ifdef HOLO
+vec3 holoTint(float t) { return 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.33, 0.67))); }
+#endif`;
+const FOIL_FN = `
+{
+  // Bump mapping from the skin height, with screen-space steps.
+  float crimp = clamp(1.6 - fwidth(vSeam.x) * 3.0, 0.0, 1.0);
+  vec3 sx = dFdx(vSeam), sy = dFdy(vSeam);
+  vec2 qx = dFdx(vObj.xy), qy = dFdy(vObj.xy);
+  float h0 = foilH(vSeam, vObj.xy, crimp);
+  float hx = (foilH(vSeam + sx, vObj.xy + qx, crimp) - h0) * uSize;
+  float hy = (foilH(vSeam + sy, vObj.xy + qy, crimp) - h0) * uSize;
+  vec3 fp = -vViewPosition, px = dFdx(fp), py = dFdy(fp);
+  vec3 r1 = cross(py, normal), r2 = cross(normal, px);
+  float det = dot(px, r1);
+  normal = normalize(abs(det) * normal - sign(det) * (hx * r1 + hy * r2));
+}
+#ifdef HOLO
+{
+  vec3 fv = normalize(vViewPosition);
+  float ht = dot(normal, fv) * 1.15 + normal.x * 0.55 - normal.y * 0.4 + (vObj.x + vObj.y) * 0.32;
+  diffuseColor.rgb = mix(vec3(1.0), holoTint(ht), 0.7);
+}
+#endif`;
+function foilCompile(shader) {
+  Object.assign(shader.uniforms, this.userData.u);
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\n' + FOIL_VP)
+    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n' + FOIL_VN)
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + FOIL_VB);
+  shader.fragmentShader = (this.userData.holo ? '#define HOLO\n' : '') + shader.fragmentShader
+    .replace('#include <common>', '#include <common>\n' + FOIL_FP)
+    .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + FOIL_FN);
+}
+const foilKey = () => 'balloon-foil', holoKey = () => 'balloon-holo';
+function foilUniforms() {
+  return {
+    uInfl: { value: 1 }, uCrumple: { value: 0 }, uSize: { value: 1 }, uCrinkle: { value: 1 },
+    uDent: { value: new THREE.Vector4(0, 0, 0, 0.1) }, uRip: { value: new THREE.Vector4(0, 0, 0, 0) },
+  };
+}
+function foilMat(kind, u) {
+  const f = FOILS[kind];
+  const m = new THREE.MeshPhysicalMaterial({ metalness: 1, roughness: f.rough, envMapIntensity: 1.25 });
+  m.color.setRGB(...linear(...f.col));
+  if (f.holo) {
+    m.iridescence = 1;
+    m.iridescenceIOR = 1.5;
+    m.iridescenceThicknessRange = [220, 760];
+  }
+  m.userData.u = u;
+  m.userData.holo = !!f.holo;
+  m.onBeforeCompile = foilCompile;
+  m.customProgramCacheKey = f.holo ? holoKey : foilKey;
+  return m;
+}
+
+const BG_VS = `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const BG_FS = `
+uniform vec2 uRes;
+uniform vec3 uTop, uLow, uHaze;
+uniform vec4 uGlow[24];
+uniform vec3 uGlowC[24];
+uniform int uN;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes, k = vec2(uRes.x / uRes.y, 1.0);
+  vec3 col = mix(uLow, uTop, smoothstep(0.0, 1.0, uv.y));
+  vec2 q = (uv - vec2(0.5, 0.64)) * k;
+  col += uHaze * exp(-dot(q, q) * 2.4);
+  // Foil throws a little coloured light onto the dark behind it.
+  for (int i = 0; i < 24; i++) {
+    if (i >= uN) break;
+    vec2 d = (uv - uGlow[i].xy) * k;
+    col += uGlowC[i] * uGlow[i].w * exp(-dot(d, d) / (uGlow[i].z * uGlow[i].z));
+  }
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}`;
+const FLASH_VS = `
+varying vec2 vUv;
+void main() { vUv = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const FLASH_FS = `
+uniform float uT;
+uniform vec3 uCol;
+varying vec2 vUv;
+void main() {
+  // A bright ring races out and fades; a star flickers at its heart.
+  float r = length(vUv), a = atan(vUv.y, vUv.x);
+  float ring = exp(-pow((r - uT * 0.9) * 9.0, 2.0)) * (1.0 - uT);
+  float star = exp(-r * 7.0) * (0.6 + 0.4 * pow(abs(cos(a * 4.0)), 8.0)) * (1.0 - uT) * (1.0 - uT);
+  gl_FragColor = vec4(uCol * (ring * 1.4 + star * 2.6), 1.0);
+}`;
+
+/* ---------- the stage: letters, strings, confetti ---------- */
+// World units: the stage is 2 tall at z = 0; SW is its width.
+let SW = 3.56, ambient = 1, lastPoke = 0, simT = 0;
+const letters = [], ropes = [];
+let word = [], foil = 'gold', LID = 0, ropeColor = 0;
+const SMAX = 0.92, GAP = 0.06, SPACE = 0.42, LINE = 1.5, MAXTOK = 24, ROPE_N = 18;
+
+function makeLetter(g) {
+  const u = foilUniforms(), mesh = new THREE.Mesh(g.geo, foilMat(foil, u));
+  mesh.visible = false;
+  scene.add(mesh);
+  const L = {
+    id: LID++, g, kind: foil, u, mesh, state: 'grow', t: 0, solid: true,
+    x: 0, y: 0, vx: 0, vy: 0, a: 0, va: 0, yaw: 0, vyaw: 0, pitch: 0, vpitch: 0,
+    size: 0.5, sizeT: 0.5, hx: 0, hy: 0, fx: 0, fy: 0, tq: 0, z: 0,
+    wob: 0, wobV: 0, rubE: 0, dent: 0, rip: 0, ripP: 0, infl: 1, grow: 0, kick: null,
+    ph: rnd(0, TAU), ph2: rnd(0, TAU), ph3: rnd(0, TAU), f: rnd(0.85, 1.15), lie: 0, floorT: 0,
+  };
+  letters.push(L);
+  return L;
+}
+function setFoil(L, kind) {
+  if (L.kind === kind) return;
+  const old = L.mesh.material;
+  L.mesh.material = foilMat(kind, L.u);
+  old.dispose();
+  L.kind = kind;
+}
+function removeLetter(L) {
+  L.state = 'gone';
+  scene.remove(L.mesh);
+  L.mesh.material.dispose();
+  const i = letters.indexOf(L);
+  if (i >= 0) letters.splice(i, 1);
+  if (L.rope) L.rope.dead = true;
+}
+// The letter's string tie point, in world units.
+function anchorOf(L) {
+  const c = Math.cos(L.a), s = Math.sin(L.a), [ax, ay] = L.g.anchor, k = L.size;
+  return [L.x + (ax * c - ay * s) * k, L.y + (ax * s + ay * c) * k];
+}
+function makeRope(L) {
+  const n = ROPE_N, [x0, y0] = anchorOf(L), seg = (0.62 * L.sizeT) / (n - 1);
+  const r = { L, n, seg, x: new Float32Array(n), y: new Float32Array(n), px: new Float32Array(n), py: new Float32Array(n), col: PARTY[ropeColor++ % PARTY.length], ph: rnd(0, TAU), dead: false, curl: rnd(2.6, 3.6) };
+  for (let i = 0; i < n; i++) { r.x[i] = r.px[i] = x0 + rnd(-0.002, 0.002); r.y[i] = r.py[i] = y0 - i * seg; }
+  ropes.push(r);
+  L.rope = r;
+  return r;
+}
+
+/* ---------- layout: the word sits in rows, as large as fits ---------- */
+const tokW = t => (t.space ? SPACE : t.g.maxX - t.g.minX);
+function rowW(r) { let w = 0; r.forEach((t, i) => { w += tokW(t) + (i ? GAP : 0); }); return w; }
+function trim(r) { while (r.length && r[0].space) r.shift(); while (r.length && r[r.length - 1].space) r.pop(); return r; }
+function rowsFor(limit) {
+  const rows = [[]];
+  for (const t of word) {
+    let row = rows[rows.length - 1];
+    if (row.length && !t.space && rowW([...row, t]) > limit) {
+      // Rows break after a space when they can.
+      let k = -1;
+      for (let i = row.length - 1; i >= 0; i--) if (row[i].space) { k = i; break; }
+      if (k >= 0) rows.push(row.splice(k + 1));
+      else rows.push([]);
+      row = rows[rows.length - 1];
+    }
+    row.push(t);
+  }
+  return rows.map(trim).filter(r => r.length);
+}
+function layout() {
+  if (!word.some(t => !t.space)) return;
+  let best = null;
+  const total = rowW(word);
+  for (let n = 1; n <= 4; n++) {
+    let lo = 0, hi = total + 0.01;
+    for (let it = 0; it < 22; it++) { const mid = (lo + hi) / 2; if (rowsFor(mid).length <= n) hi = mid; else lo = mid; }
+    const rows = rowsFor(hi), m = rows.length, wide = Math.max(...rows.map(rowW));
+    const s = Math.min(SMAX, (SW - 0.36) / wide, 1.72 / (m + (m - 1) * (LINE - 1) + 0.6));
+    if (!best || s > best.s * 1.05) best = { s, rows };
+  }
+  const { s, rows } = best, m = rows.length, yc = 0.14, span = (m - 1) * LINE * s;
+  rows.forEach((row, i) => {
+    let pen = (-rowW(row) * s) / 2;
+    const yb = yc - 0.5 * s + span / 2 - i * LINE * s;
+    row.forEach(t => {
+      if (!t.space) {
+        t.hx = pen - t.g.minX * s;
+        t.hy = yb - t.g.base * s;
+        t.sizeT = s;
+      }
+      pen += (tokW(t) + GAP) * s;
+    });
+  });
+}
+
+/* ---------- actions ---------- */
+function poke() { lastPoke = performance.now(); wake(); }
+const pan = x => x / (SW / 2);
+function typeChar(ch) {
+  if (!ready) return;
+  poke();
+  if (ch === ' ') {
+    if (word.length && !word[word.length - 1].space && word.length < MAXTOK) { word.push({ space: true }); layout(); }
+    return;
+  }
+  if (word.length >= MAXTOK || !CHARS.test(ch)) return;
+  const g = glyph(ch);
+  if (!g) return;
+  const L = makeLetter(g);
+  word.push(L);
+  layout();
+  L.size = L.sizeT;
+  L.x = L.hx;
+  L.y = L.hy - 0.12 * L.sizeT;
+  L.vy = 0.5;
+  L.grow = reduce ? 0.6 : 0;
+  makeRope(L);
+  inflateSound(pan(L.x), FOILS[L.kind].pitch * (0.9 + 0.25 * Math.random()) * Math.sqrt(0.7 / L.sizeT));
+}
+function lastLetter() { for (let i = word.length - 1; i >= 0; i--) if (!word[i].space) return word[i]; return null; }
+function backspace() {
+  poke();
+  const t = word[word.length - 1];
+  if (!t) return;
+  if (t.space) { word.pop(); layout(); return; }
+  const g = t.g, i = Math.floor(Math.random() * (g.pts.length / 3));
+  prick(t, g.pts[3 * i], g.pts[3 * i + 1]);
+}
+function prick(L, lx, ly) {
+  if (!['grow', 'float'].includes(L.state)) return;
+  const i = word.indexOf(L);
+  if (i >= 0) word.splice(i, 1);
+  // Spaces left dangling at the end go too.
+  while (word.length && word[word.length - 1].space) word.pop();
+  layout();
+  L.u.uDent.value.z = L.dent = 0;
+  if (Math.random() < 0.5) pop(L);
+  else deflate(L, lx, ly);
+  poke();
+}
+function pop(L) {
+  popSound(pan(L.x), Math.sqrt(0.7 / L.size));
+  confettiBurst(L);
+  flashAt(L.x, L.y, L.size, L.kind);
+  // The blast shoves the neighbours.
+  for (const o of letters) {
+    if (o === L || !o.solid) continue;
+    const dx = o.x - L.x, dy = o.y - L.y, d = Math.hypot(dx, dy) || 1, k = clamp(1 - d / (2.2 * L.size));
+    if (k <= 0) continue;
+    o.vx += (dx / d) * k * 2.2;
+    o.vy += (dy / d) * k * 2.2;
+    o.va += rnd(-3, 3) * k;
+    o.wobV += 3 * k;
+  }
+  if (L.rope) { const r = L.rope; r.L = null; r.dead = false; r.py[0] = r.y[0] - 0.01; L.rope = null; }
+  removeLetter(L);
+}
+function deflate(L, lx, ly) {
+  L.state = reduce ? 'limp' : 'zoom';
+  L.t = 0;
+  L.zDur = reduce ? 0.6 : rnd(1.7, 2.2);
+  // Air leaves through the hole, so the push points the other way.
+  const [gx, gy] = sdfGrad(L.g, lx, ly);
+  L.noz = [lx, ly, gx, gy];
+  L.lie = (Math.random() < 0.5 ? -1 : 1) * rnd(1.1, 1.6);
+  L.floorT = 0;
+  if (reduce) L.zDur = 0.01;
+  raspberry(pan(L.x), reduce ? 0.7 : L.zDur);
+}
+function letGo() {
+  poke();
+  const ls = word.filter(t => !t.space);
+  word = [];
+  if (!ls.length) return;
+  ls.forEach((L, i) => { L.state = 'away'; L.t = -i * 0.07 - Math.random() * 0.05; L.drift = rnd(-0.35, 0.35); });
+  wheeSound();
+}
+// Arrow keys bat the word; a quick reversal rubs it instead.
+let lastArrow = { k: '', t: 0 };
+const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+function gust(k) {
+  poke();
+  const d = ARROWS[k], now = performance.now(), p = ARROWS[lastArrow.k];
+  const rub = p && p[0] === -d[0] && p[1] === -d[1] && now - lastArrow.t < 360;
+  lastArrow = { k, t: now };
+  const ls = word.filter(t => !t.space && t.state === 'float');
+  ls.forEach((L, i) => {
+    if (rub) {
+      L.rubE = Math.min(1.2, L.rubE + 0.7);
+      L.wobV += (Math.random() < 0.5 ? -1 : 1) * 2.5;
+      L.ripP = 0;
+      L.ripX = rnd(-0.2, 0.2);
+      L.ripY = rnd(-0.2, 0.2);
+      L.rip = 0.012;
+      kbdRub = 1;
+    } else {
+      const order = d[0] > 0 ? i : d[0] < 0 ? ls.length - 1 - i : i;
+      L.kick = { at: simT + order * 0.045, vx: d[0] * rnd(1.3, 1.9) + rnd(-0.2, 0.2), vy: d[1] * rnd(1.3, 1.9) + rnd(-0.2, 0.2), va: rnd(-2.5, 2.5) };
+    }
+  });
+}
+let kbdRub = 0;
+function chooseFoil(kind) {
+  foil = kind;
+  chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.foil === kind)));
+  // The new foil sweeps across the word, letter by letter.
+  const ls = word.filter(t => !t.space);
+  ls.forEach((L, i) => { L.swap = { at: simT + i * 0.06, kind }; });
+  poke();
+}
+
+/* ---------- confetti and flashes ---------- */
+const CMAX = 900;
+let conf = null, flashes = [];
+function confettiBurst(L) {
+  const c = conf, g = L.g, k = L.size, cs = Math.cos(L.a), sn = Math.sin(L.a), n = reduce ? 70 : 160;
+  const base = linear(...FOILS[L.kind].col), col = new THREE.Color();
+  for (let i = 0; i < n && c.n < CMAX; i++) {
+    const j = c.n++, p = Math.floor(Math.random() * (g.pts.length / 3));
+    const lx = g.pts[3 * p], ly = g.pts[3 * p + 1], lz = g.pts[3 * p + 2];
+    const wx = L.x + (lx * cs - ly * sn) * k, wy = L.y + (lx * sn + ly * cs) * k, wz = lz * k;
+    const dx = wx - L.x, dy = wy - L.y, dl = Math.hypot(dx, dy) || 1, sp = rnd(0.8, 2.6) * (reduce ? 0.5 : 1);
+    c.p.set([wx, wy, wz], j * 3);
+    c.v.set([(dx / dl) * sp + L.vx * 0.3, (dy / dl) * sp + 0.5 + L.vy * 0.3, Math.sign(lz || 1) * rnd(0.2, 1.6)], j * 3);
+    const ax = rnd(-1, 1), ay = rnd(-1, 1), az = rnd(-1, 1), al = Math.hypot(ax, ay, az) || 1;
+    c.ax.set([ax / al, ay / al, az / al], j * 3);
+    c.ang[j] = rnd(0, TAU);
+    c.spin[j] = rnd(6, 18) * (Math.random() < 0.5 ? -1 : 1);
+    c.size[j] = rnd(0.016, 0.034) * (k / 0.8) * (Math.random() < 0.12 ? 1.8 : 1);
+    c.life[j] = rnd(2.2, 3.4);
+    c.ph[j] = rnd(0, TAU);
+    if (L.kind === 'holo') col.setRGB(...linear(0.86, 0.14, rnd(0, 360)));
+    else if (Math.random() < 0.25) col.setRGB(...PARTY[Math.floor(Math.random() * PARTY.length)]);
+    else col.setRGB(...base.map(v => v * rnd(0.85, 1.05)));
+    c.mesh.setColorAt(j, col);
+  }
+  c.mesh.instanceColor.needsUpdate = true;
+}
+function stepConfetti(dt) {
+  const c = conf, M = c.m, q = c.q, e = c.e, v3 = c.v3;
+  for (let j = 0; j < c.n; j++) {
+    c.life[j] -= dt;
+    const o = j * 3;
+    if (c.life[j] <= 0 || c.p[o + 1] < -1.4) {
+      // The last piece fills the gap.
+      const l = --c.n, lo = l * 3;
+      if (j !== l) {
+        for (const a of [c.p, c.v, c.ax]) { a[o] = a[lo]; a[o + 1] = a[lo + 1]; a[o + 2] = a[lo + 2]; }
+        for (const a of [c.ang, c.spin, c.size, c.life, c.ph]) a[j] = a[l];
+        c.mesh.getColorAt(l, c.tc);
+        c.mesh.setColorAt(j, c.tc);
+        c.mesh.instanceColor.needsUpdate = true;
+      }
+      j--;
+      continue;
+    }
+    // Foil flutters: heavy drag, a gentle fall and a side-to-side sway.
+    const dr = Math.exp(-2.4 * dt);
+    c.v[o] = c.v[o] * dr + Math.sin(simT * 6 + c.ph[j]) * 1.1 * dt;
+    c.v[o + 1] = c.v[o + 1] * dr - 2.1 * dt;
+    c.v[o + 2] = c.v[o + 2] * dr;
+    c.p[o] += c.v[o] * dt;
+    c.p[o + 1] += c.v[o + 1] * dt;
+    c.p[o + 2] += c.v[o + 2] * dt;
+    c.ang[j] += c.spin[j] * dt;
+    const s = c.size[j] * Math.min(1, c.life[j] / 0.5);
+    q.setFromAxisAngle(v3.set(c.ax[o], c.ax[o + 1], c.ax[o + 2]), c.ang[j]);
+    M.compose(e.set(c.p[o], c.p[o + 1], c.p[o + 2]), q, c.sc.set(s, s * 0.62, s));
+    c.mesh.setMatrixAt(j, M);
+  }
+  c.mesh.count = c.n;
+  c.mesh.instanceMatrix.needsUpdate = true;
+}
+function flashAt(x, y, size, kind) {
+  const f = flashes.find(q => q.t >= 1);
+  if (!f) return;
+  f.t = 0;
+  f.mesh.position.set(x, y, 0.3);
+  f.mesh.scale.setScalar(size * 2.6);
+  f.mesh.material.uniforms.uCol.value.setRGB(...linear(...FOILS[kind].glow));
+  f.mesh.visible = true;
+}
+
+/* ---------- physics: soft balloons on springs, verlet strings ---------- */
+const H = 1 / 120, KH = 7, CAIR = 1.7, CQ = 0.5, KR = 12, CR = 2.6, KC = 90, CC = 4, KW = 140, VMAX = 7;
+let acc = 0;
+const contactT = new Map();
+const inertia = L => (0.34 * L.size) ** 2;
+function force(L, px, py, fx, fy) {
+  L.fx += fx;
+  L.fy += fy;
+  L.tq += (px - L.x) * fy - (py - L.y) * fx;
+}
+// One letter's circles pushed out of another letter's field.
+function contacts(A, B) {
+  const ca = Math.cos(A.a), sa = Math.sin(A.a), cb = Math.cos(B.a), sb = Math.sin(B.a);
+  let hit = 0;
+  for (const c of A.g.circles) {
+    const wx = A.x + (c.x * ca - c.y * sa) * A.size, wy = A.y + (c.x * sa + c.y * ca) * A.size;
+    const rx = wx - B.x, ry = wy - B.y, lx = (rx * cb + ry * sb) / B.size, ly = (-rx * sb + ry * cb) / B.size;
+    const s = sdfAt(B.g, lx, ly), pen = (c.r + WF) * A.size + (s + WF) * B.size;
+    if (pen <= 0) continue;
+    const [gx, gy] = sdfGrad(B.g, lx, ly), nx = -(gx * cb - gy * sb), ny = -(gx * sb + gy * cb);
+    const px = wx - nx * c.r * A.size, py = wy - ny * c.r * A.size;
+    const vn = (A.vx - A.va * (py - A.y) - B.vx + B.va * (py - B.y)) * nx + (A.vy + A.va * (px - A.x) - B.vy - B.va * (px - B.x)) * ny;
+    const F = Math.max(0, KC * Math.min(pen, 0.2) - CC * vn);
+    force(A, px, py, nx * F, ny * F);
+    force(B, px, py, -nx * F, -ny * F);
+    hit = Math.max(hit, -vn);
+  }
+  return hit;
+}
+function collide() {
+  const act = letters.filter(L => L.solid);
+  for (let i = 0; i < act.length; i++) for (let j = i + 1; j < act.length; j++) {
+    const A = act[i], B = act[j], dx = B.x - A.x, dy = B.y - A.y, rr = A.g.rad * A.size + B.g.rad * B.size;
+    if (dx * dx + dy * dy > rr * rr) continue;
+    const v = Math.max(contacts(A, B), contacts(B, A));
+    if (v <= 0) continue;
+    const key = A.id * 4096 + B.id, last = contactT.get(key) ?? -1;
+    if (simT - last > 0.18 && v > 0.3) {
+      bumpSound(pan((A.x + B.x) / 2), v, Math.sqrt(0.7 / ((A.size + B.size) / 2)));
+      A.wobV += v * 0.6;
+      B.wobV -= v * 0.6;
+    }
+    contactT.set(key, simT);
+  }
+}
+// The stage edges are soft, bouncy walls; floating letters ignore the top.
+function walls(L) {
+  const c = Math.cos(L.a), s = Math.sin(L.a), hw = SW / 2 - 0.015, top = L.state === 'away' ? 99 : 0.985, bot = -0.985;
+  let hit = 0;
+  for (const q of L.g.circles) {
+    const wx = L.x + (q.x * c - q.y * s) * L.size, wy = L.y + (q.x * s + q.y * c) * L.size, r = (q.r + WF) * L.size;
+    const vx = L.vx - L.va * (wy - L.y), vy = L.vy + L.va * (wx - L.x);
+    let fx = 0, fy = 0;
+    if (wx + r > hw) { fx -= KW * (wx + r - hw) + 6 * Math.max(0, vx); hit = Math.max(hit, vx); }
+    if (wx - r < -hw) { fx += KW * (-hw - wx + r) - 6 * Math.min(0, vx); hit = Math.max(hit, -vx); }
+    if (wy + r > top) { fy -= KW * (wy + r - top) + 6 * Math.max(0, vy); hit = Math.max(hit, vy); }
+    if (wy - r < bot) {
+      fy += KW * (bot - wy + r) - 6 * Math.min(0, vy);
+      hit = Math.max(hit, -vy);
+      if (L.state === 'limp' || L.state === 'sink') { L.onFloor = true; fx -= 4 * vx; }
+    }
+    if (fx || fy) force(L, wx, wy, fx, fy);
+  }
+  if (hit > 0.45 && simT - (L.wallT || -1) > 0.2) bumpSound(pan(L.x), hit * 0.8, 0.85 * Math.sqrt(0.7 / L.size));
+  if (hit > 0) L.wallT = simT;
+}
+// The pointer is a paddle; letters it sweeps into get batted.
+function paddle(L, x, y, h) {
+  if (!L.solid || L.state === 'limp' || L.state === 'sink') return;
+  const c = Math.cos(L.a), s = Math.sin(L.a), rx = x - L.x, ry = y - L.y;
+  const lx = (rx * c + ry * s) / L.size, ly = (-rx * s + ry * c) / L.size;
+  if (Math.hypot(lx, ly) > L.g.rad + ptr.r / L.size) return;
+  const sd = sdfAt(L.g, lx, ly), pen = ptr.r + (sd + WF) * L.size;
+  if (pen <= 0) return;
+  let [gx, gy] = sdfGrad(L.g, lx, ly);
+  let nx = gx * c - gy * s, ny = gx * s + gy * c;
+  // Deep inside, the paddle pushes the way it moves.
+  if (sd > 0.04) { const v = Math.hypot(ptr.vx, ptr.vy) || 1; nx = ptr.vx / v; ny = ptr.vy / v; }
+  const px = x + nx * ptr.r, py = y + ny * ptr.r, arm = (px - L.x) * ny - (py - L.y) * nx;
+  const vcx = L.vx - L.va * (py - L.y), vcy = L.vy + L.va * (px - L.x);
+  const vrel = (ptr.vx - vcx) * nx + (ptr.vy - vcy) * ny;
+  if (vrel > 0) {
+    const j = (1.4 * vrel) / (1 + (arm * arm) / inertia(L));
+    L.vx += nx * j;
+    L.vy += ny * j;
+    L.va += (arm * j) / inertia(L);
+    L.vyaw += nx * j * 1.6;
+    L.wobV += j * 1.2;
+    if (j > 0.35 && simT - (L.batT || -1) > 0.15) bumpSound(pan(L.x), j * 1.1, Math.sqrt(0.7 / L.size));
+    L.batT = simT;
+  }
+  const push = Math.min(pen, 0.05) * 0.5;
+  L.x += nx * push;
+  L.y += ny * push;
+}
+function integrate(L, h) {
+  const am = reduce ? 0 : ambient;
+  let ax = L.fx, ay = L.fy, al = L.tq / inertia(L);
+  const sp = Math.hypot(L.vx, L.vy), drag = CAIR + CQ * sp;
+  if (L.kick && simT >= L.kick.at) { L.vx += L.kick.vx; L.vy += L.kick.vy; L.va += L.kick.va; L.wobV += 1.5; L.kick = null; }
+  if (L.swap && simT >= L.swap.at) { setFoil(L, L.swap.kind); L.wobV += 2.2; L.vyaw += rnd(-2, 2); L.swap = null; }
+  if (L.state === 'grow' || L.state === 'float') {
+    const bx = L.hx + am * 0.014 * Math.sin(simT * 0.73 * L.f + L.ph);
+    const by = L.hy + am * 0.032 * Math.sin(simT * 1.62 * L.f + L.ph2);
+    ax += KH * (bx - L.x) - drag * L.vx;
+    ay += KH * (by - L.y) - drag * L.vy;
+    al += -KR * (L.a - am * 0.05 * Math.sin(simT * 0.9 * L.f + L.ph3)) - CR * L.va;
+    L.size += (L.sizeT - L.size) * Math.min(1, h * 5);
+  } else if (L.state === 'zoom') {
+    const k = clamp(L.t / L.zDur), [nx0, ny0, gx, gy] = L.noz, c = Math.cos(L.a), s = Math.sin(L.a);
+    // The neck flaps, so the thrust wobbles.
+    const wob = Math.sin(L.t * 23) * 0.55 + Math.sin(L.t * 37 + 1) * 0.3, cw = Math.cos(wob), sw = Math.sin(wob);
+    const tx = gx * cw - gy * sw, ty = gx * sw + gy * cw, F = 11 * (1 - 0.55 * k);
+    const fx = (tx * c - ty * s) * F, fy = (tx * s + ty * c) * F;
+    const px = L.x + (nx0 * c - ny0 * s) * L.size, py = L.y + (nx0 * s + ny0 * c) * L.size;
+    ax += fx - 1.4 * L.vx;
+    ay += fy - 1.4 * L.vy - 1.2 * k;
+    al += ((px - L.x) * fy - (py - L.y) * fx) / inertia(L) * 0.55 - 0.8 * L.va;
+    L.infl = lerp(1, 0.14, sstep(0, 1, k));
+    L.size = L.sizeT * lerp(1, 0.74, k);
+    if (L.t >= L.zDur) { L.state = 'limp'; L.t = 0; }
+  } else if (L.state === 'limp' || L.state === 'sink') {
+    L.infl += (0.12 - L.infl) * Math.min(1, h * 3);
+    if (L.state === 'limp' && reduce) L.size += (L.sizeT * 0.74 - L.size) * Math.min(1, h * 4);
+    ax += -2.2 * L.vx;
+    ay += -1.9 - 2.2 * L.vy;
+    al += -4 * (L.a - L.lie) - 2.4 * L.va;
+    if (L.onFloor) L.floorT += h;
+    if (L.state === 'limp' && L.floorT > 2.6) { L.state = 'sink'; L.solid = false; }
+    if (L.state === 'sink') { ay = 0; L.vy = -0.28; L.vx *= 0.9; }
+  } else if (L.state === 'away') {
+    if (L.t > 0) ay += 1.5 + 0.6 * Math.min(1, L.t) - 0.9 * L.vy;
+    ax += L.drift * Math.sin(L.t * 1.3 + L.ph) * 0.6 - 0.9 * L.vx;
+    al += -3 * (L.a - 0.25 * Math.sin(L.t * 1.7 + L.ph2)) - 1.2 * L.va;
+  }
+  L.onFloor = false;
+  L.vx += ax * h;
+  L.vy += ay * h;
+  L.va += al * h;
+  const v = Math.hypot(L.vx, L.vy);
+  if (v > VMAX) { L.vx *= VMAX / v; L.vy *= VMAX / v; }
+  L.va = clamp(L.va, -16, 16);
+  L.x += L.vx * h;
+  L.y += L.vy * h;
+  L.a += L.va * h;
+  // Turning and tipping only show; they don't collide.
+  const yt = am * 0.2 * Math.sin(simT * 0.41 * L.f + L.ph2) + clamp(L.vx * 0.12, -0.5, 0.5);
+  L.vyaw += (10 * (yt - L.yaw) - 1.6 * L.vyaw) * h;
+  L.yaw += L.vyaw * h;
+  const pt = am * 0.07 * Math.sin(simT * 0.57 * L.f + L.ph) - clamp(L.vy * 0.1, -0.4, 0.4);
+  L.vpitch += (12 * (pt - L.pitch) - 2 * L.vpitch) * h;
+  L.pitch += L.vpitch * h;
+  L.wobV += (-1900 * L.wob - 7 * L.wobV) * h;
+  L.wob = clamp(L.wob + L.wobV * h, -0.25, 0.25);
+  L.t += h;
+}
+function stepRope(r, h) {
+  const n = r.n, x = r.x, y = r.y, px = r.px, py = r.py, g = 7 * h * h, am = reduce ? 0 : ambient;
+  const pinned = !!r.L;
+  for (let i = pinned ? 1 : 0; i < n; i++) {
+    const vx = (x[i] - px[i]) * 0.991, vy = (y[i] - py[i]) * 0.991;
+    px[i] = x[i];
+    py[i] = y[i];
+    x[i] += vx + am * 0.0000035 * i * Math.sin(simT * 1.1 + r.ph + i * 0.3);
+    y[i] += vy - g;
+  }
+  if (pinned) {
+    const [ax, ay] = anchorOf(r.L);
+    x[0] = ax;
+    y[0] = ay;
+    r.seg += ((0.62 * r.L.size) / (n - 1) - r.seg) * Math.min(1, h * 4);
+  }
+  for (let it = 0; it < 3; it++) {
+    for (let i = 0; i < n - 1; i++) {
+      const dx = x[i + 1] - x[i], dy = y[i + 1] - y[i], d = Math.hypot(dx, dy) || 1e-9, k = (d - r.seg) / d;
+      if (i === 0 && pinned) { x[1] -= dx * k; y[1] -= dy * k; }
+      else { x[i] += dx * k * 0.5; y[i] += dy * k * 0.5; x[i + 1] -= dx * k * 0.5; y[i + 1] -= dy * k * 0.5; }
+    }
+  }
+}
+function substep(h, f) {
+  simT += h;
+  for (const L of letters) { L.fx = 0; L.fy = 0; L.tq = 0; }
+  collide();
+  for (const L of letters) if (L.solid) walls(L);
+  if (ptr.on) {
+    const x = lerp(ptr.fx, ptr.x, f), y = lerp(ptr.fy, ptr.y, f);
+    if (ptr.mode === 'paddle') for (const L of letters) paddle(L, x, y, h);
+    else if (ptr.mode === 'touch' && ptr.L) hold(ptr.L, x, y);
+  }
+  for (const L of letters) integrate(L, h);
+  for (const r of ropes) stepRope(r, h);
+}
+
+/* ---------- rendering ---------- */
+let renderer = null, scene = null, camera = null, bgMat = null, ropeMesh = null, ready = false;
+const FOV = 32, CAMZ = 1 / Math.tan((FOV * Math.PI) / 360), CLEAR = 0x140f22, RSUB = 3;
+const ROPE_MAX = 48, RPTS = (ROPE_N - 1) * RSUB + 1;
+let lowDpr = false;
+
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(cap, onSize, budget) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+function onSize(w, h) {
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  SW = 2 * camera.aspect;
+  rect = null;
+  const db = renderer.getDrawingBufferSize(new THREE.Vector2());
+  bgMat.uniforms.uRes.value.copy(db);
+  layout();
+  if (ready) { draw(); wake(); }
+}
+
+// A party room for the foil to mirror: soft boxes, coloured strips, bulbs.
+function partyRoom() {
+  const env = new THREE.Scene(), C = (L, Cc, h, k = 1) => new THREE.Color().setRGB(...linear(L, Cc, h).map(v => v * k));
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(30, 48, 24), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: { uTop: { value: C(0.42, 0.08, 285) }, uMid: { value: C(0.26, 0.07, 320) }, uLow: { value: C(0.14, 0.04, 290) } },
+    vertexShader: `varying vec3 vD; void main() { vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec3 uTop, uMid, uLow; varying vec3 vD;
+      void main() { float y = vD.y; gl_FragColor = vec4(y > 0.0 ? mix(uMid, uTop, pow(y, 0.7)) : mix(uMid, uLow, pow(-y, 0.5)), 1.0); }`,
+  }));
+  env.add(sky);
+  const box = (w, h, x, y, z, col) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide }));
+    m.position.set(x, y, z);
+    m.lookAt(0, 0, 0);
+    env.add(m);
+  };
+  box(9, 5, -5, 9, 5, C(0.97, 0.03, 85, 5.5));
+  box(10, 3.5, 3, 1.5, 12, C(0.92, 0.03, 250, 1.7));
+  box(1.6, 12, -11, 0, 2, C(0.68, 0.24, 345, 4.2));
+  box(1.6, 12, 11, 1, -1, C(0.82, 0.14, 195, 4.2));
+  box(14, 14, 0, -10, 2, C(0.6, 0.15, 40, 0.75));
+  box(6, 2, 4, 7, -8, C(0.9, 0.1, 140, 2.2));
+  // Little bulbs make little sparkles.
+  const bulb = new THREE.SphereGeometry(0.28, 12, 8);
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * TAU + 0.3, e = rnd(-0.2, 0.75), r = 12;
+    const m = new THREE.Mesh(bulb, new THREE.MeshBasicMaterial({ color: C(0.82, 0.17, (i * 137) % 360, 9) }));
+    m.position.set(Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r);
+    env.add(m);
+  }
+  return env;
+}
+
+function drawRopes() {
+  const pos = ropeMesh.geometry.attributes.position, nrm = ropeMesh.geometry.attributes.normal, col = ropeMesh.geometry.attributes.color;
+  const P = pos.array, N = nrm.array, Cc = col.array, cx = [], cy = [];
+  let slot = 0;
+  for (const r of ropes) {
+    if (slot >= ROPE_MAX) break;
+    const n = r.n, w = 0.0105 * (r.L ? r.L.size / 0.8 : 1), base = slot * RPTS * 2;
+    // A smooth centreline through the verlet points.
+    for (let k = 0; k < RPTS; k++) {
+      const u = k / RSUB, i = Math.min(n - 2, Math.floor(u)), t = u - i;
+      const i0 = Math.max(0, i - 1), i2 = i + 1, i3 = Math.min(n - 1, i + 2), t2 = t * t, t3 = t2 * t;
+      const cr = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      cx[k] = cr(r.x[i0], r.x[i], r.x[i2], r.x[i3]);
+      cy[k] = cr(r.y[i0], r.y[i], r.y[i2], r.y[i3]);
+    }
+    for (let k = 0; k < RPTS; k++) {
+      const u = k / (RPTS - 1), a = Math.max(0, k - 1), b = Math.min(RPTS - 1, k + 1);
+      let tx = cx[b] - cx[a], ty = cy[b] - cy[a];
+      const tl = Math.hypot(tx, ty) || 1;
+      tx /= tl;
+      ty /= tl;
+      // The lower third curls into a corkscrew, like curling ribbon.
+      const cu = sstep(0.62, 0.75, u), ang = (u - 0.62) * r.curl * TAU * 2.6, R = 0.024 * cu * (r.L ? r.L.size / 0.8 : 1);
+      const ox = -ty * Math.cos(ang) * R, oy = tx * Math.cos(ang) * R, oz = Math.sin(ang) * R;
+      // The ribbon turns gently along its length.
+      const tw = 0.7 * Math.sin(u * 7 + r.ph) * (1 - cu), sx = -ty * Math.cos(tw), sy = tx * Math.cos(tw), sz = Math.sin(tw);
+      const wx = lerp(sx, tx, cu), wy = lerp(sy, ty, cu), wz = lerp(sz, 0, cu);
+      let nx = ty * wz, ny = -tx * wz, nz = tx * wy - ty * wx;
+      nx = lerp(nx, -ty * Math.cos(ang), cu);
+      ny = lerp(ny, tx * Math.cos(ang), cu);
+      nz = lerp(nz, Math.sin(ang), cu);
+      const nl = Math.hypot(nx, ny, nz) || 1, o = (base + k * 2) * 3, z = -0.03 + oz;
+      P[o] = cx[k] + ox + wx * w; P[o + 1] = cy[k] + oy + wy * w; P[o + 2] = z + wz * w;
+      P[o + 3] = cx[k] + ox - wx * w; P[o + 4] = cy[k] + oy - wy * w; P[o + 5] = z - wz * w;
+      for (let q = 0; q < 2; q++) { N[o + q * 3] = nx / nl; N[o + q * 3 + 1] = ny / nl; N[o + q * 3 + 2] = nz / nl; }
+      for (let q = 0; q < 6; q += 3) { Cc[o + q] = r.col[0]; Cc[o + q + 1] = r.col[1]; Cc[o + q + 2] = r.col[2]; }
+    }
+    slot++;
+  }
+  ropeMesh.geometry.setDrawRange(0, slot * (RPTS - 1) * 6);
+  pos.needsUpdate = nrm.needsUpdate = col.needsUpdate = true;
+  ropeMesh.visible = slot > 0;
+}
+const tmpV = { x: 0, y: 0 };
+function draw() {
+  const u = bgMat.uniforms;
+  let ng = 0;
+  for (const L of letters) {
+    const m = L.mesh, k = L.size * (L.state === 'grow' ? L.gs : 1);
+    m.visible = true;
+    m.position.set(L.x, L.y, L.z);
+    m.rotation.set(L.pitch, L.yaw, L.a);
+    m.scale.set(k * (1 + L.wob), k * (1 - 0.8 * L.wob), k * (1 + 0.4 * L.wob));
+    L.u.uSize.value = k;
+    L.u.uInfl.value = L.infl * (L.state === 'grow' ? L.gi : 1);
+    L.u.uCrumple.value = clamp((1 - L.infl) * 1.2);
+    L.u.uCrinkle.value = 1 + (1 - L.infl) * 3;
+    L.u.uRip.value.set(L.ripX || 0, L.ripY || 0, L.rip, L.ripP);
+    L.u.uDent.value.set(L.dentX || 0, L.dentY || 0, L.dent, 0.11);
+    if (ng < 24 && L.state !== 'sink') {
+      tmpV.x = 0.5 + L.x / SW;
+      tmpV.y = 0.5 + L.y / 2;
+      const gc = FOILS[L.kind].glow, hue = L.kind === 'holo' ? (simT * 40 + L.id * 70) % 360 : gc[2];
+      u.uGlow.value[ng].set(tmpV.x, tmpV.y - 0.04, 0.22 * L.size, 0.11 * k / Math.max(L.size, 1e-3));
+      u.uGlowC.value[ng].setRGB(...linear(gc[0], gc[1], hue));
+      ng++;
+    }
+  }
+  u.uN.value = ng;
+  drawRopes();
+  for (const f of flashes) if (f.t < 1) f.mesh.material.uniforms.uT.value = f.t;
+  renderer.render(scene, camera);
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  // Idle balloons slowly settle; any touch or key stirs them again.
+  const idleS = (performance.now() - lastPoke) / 1000, want = reduce || idleS > 22 ? 0 : 1;
+  ambient += (want - ambient) * Math.min(1, dt / (want > ambient ? 0.8 : 5));
+  if (ambient < 0.002 && want === 0) ambient = 0;
+  acc += dt;
+  const n = Math.min(4, Math.floor(acc / H));
+  acc -= n * H;
+  if (n === 4) acc = 0;
+  for (let k = 0; k < n; k++) substep(H, (k + 1) / n);
+  ptr.fx = ptr.x;
+  ptr.fy = ptr.y;
+  perFrame(dt);
+  draw();
+  if (busy() && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else { squeakStop(); rest(); }
+}
+function perFrame(dt) {
+  for (const L of [...letters]) {
+    if (L.state === 'grow') {
+      L.grow = Math.min(1, L.grow + dt / (reduce ? 0.25 : 0.55));
+      const g = L.grow;
+      // An elastic overshoot as the foil fills.
+      L.gs = 1 - Math.exp(-6 * g) * Math.cos(g * 11) * 0.75;
+      L.gi = sstep(0, 0.75, g);
+      if (g >= 1) { L.state = 'float'; L.wobV += 2.5; }
+    }
+    L.rubE *= Math.exp(-dt / 0.22);
+    L.rip *= Math.exp(-dt / 0.35);
+    if (L.rip < 1e-5) L.rip = 0;
+    L.ripP += dt * 26;
+    if (ptr.L !== L) L.dent *= Math.exp(-dt / 0.08);
+    if (L.dent < 1e-5) L.dent = 0;
+    if (L.state === 'away' && L.y - L.size * 1.6 > 1.15) removeLetter(L);
+    if (L.state === 'sink' && L.y + L.size * L.g.rad < -1.05) removeLetter(L);
+  }
+  for (let i = ropes.length - 1; i >= 0; i--) {
+    const r = ropes[i];
+    let top = -9;
+    for (let k = 0; k < r.n; k++) top = Math.max(top, r.y[k]);
+    if (r.dead || (!r.L && top < -1.2)) ropes.splice(i, 1);
+  }
+  for (const f of flashes) if (f.t < 1) { f.t = Math.min(1, f.t + dt / 0.32); f.mesh.visible = f.t < 1; }
+  stepConfetti(dt);
+  // Rubbing squeaks; the keyboard rub fades on its own.
+  kbdRub *= Math.exp(-dt / 0.18);
+  const rubL = ptr.on && ptr.mode === 'touch' ? ptr.L : null;
+  const e = Math.max(rubL ? rubL.rubE : 0, kbdRub);
+  if (e > 0.03 || sq.o) squeak(e, rubL ? ptr.speed : 3, rubL ? pan(rubL.x) : 0);
+  if (ptr.on && ptr.mode === 'touch' && ptr.L) pressTick(dt);
+}
+function busy() {
+  if (ptr.on || conf.n || flashes.some(f => f.t < 1) || kbdRub > 0.01) return true;
+  if (letters.length && ambient > 0) return true;
+  for (const L of letters) {
+    if (L.state !== 'float') return true;
+    if (Math.abs(L.vx) + Math.abs(L.vy) + Math.abs(L.va) > 0.002 || Math.abs(L.x - L.hx) + Math.abs(L.y - L.hy) > 0.0015) return true;
+    if (Math.abs(L.wobV) + Math.abs(L.vyaw) + Math.abs(L.vpitch) + Math.abs(L.yaw) > 0.004 || L.rip || L.dent || L.kick || L.swap) return true;
+    if (Math.abs(L.size - L.sizeT) > 0.001) return true;
+  }
+  for (const r of ropes) {
+    if (!r.L) return true;
+    for (let k = 1; k < r.n; k++) if (Math.abs(r.x[k] - r.px[k]) + Math.abs(r.y[k] - r.py[k]) > 0.00004) return true;
+  }
+  return false;
+}
+
+/* ---------- input ---------- */
+const ptr = { on: false, id: -1, mode: '', x: 0, y: 0, fx: 0, fy: 0, vx: 0, vy: 0, speed: 0, r: 0.05, L: null, lx: 0, ly: 0, dx: 0, dy: 0, still: 0, sx: 0, sy: 0, hist: [], moved: 0, pricked: false };
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function toWorld(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [((e.clientX - r.left) / r.width - 0.5) * SW, (0.5 - (e.clientY - r.top) / r.height) * 2];
+}
+// The letter under a point, by how deep the point sits inside it.
+function letterAt(x, y, slack) {
+  let best = null, bd = -1e9;
+  for (const L of letters) {
+    if (!['grow', 'float'].includes(L.state)) continue;
+    const c = Math.cos(L.a), s = Math.sin(L.a), rx = x - L.x, ry = y - L.y;
+    const lx = (rx * c + ry * s) / L.size, ly = (-rx * s + ry * c) / L.size;
+    if (Math.hypot(lx, ly) > L.g.rad + slack / L.size) continue;
+    const d = sdfAt(L.g, lx, ly) * L.size + WF * L.size + slack;
+    if (d > 0 && d > bd) { bd = d; best = { L, lx, ly }; }
+  }
+  return best;
+}
+const HOLD = 0.6, TOL = 0.028;
+panel.addEventListener('pointerdown', e => {
+  if (!ready || ptr.on || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = toWorld(e);
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  Object.assign(ptr, { on: true, id: e.pointerId, x, y, fx: x, fy: y, vx: 0, vy: 0, speed: 0, r: e.pointerType === 'mouse' ? 0.045 : 0.07, hist: [[x, y, e.timeStamp]], moved: 0, pricked: false, dx: x, dy: y, sx: x, sy: y, still: 0, L: null, tapped: false });
+  const hit = letterAt(x, y, ptr.r * 0.5);
+  if (hit) {
+    ptr.mode = 'touch';
+    ptr.L = hit.L;
+    ptr.lx = clamp(hit.lx, hit.L.g.minX, hit.L.g.maxX);
+    ptr.ly = clamp(hit.ly, hit.L.g.minY, hit.L.g.maxY);
+    hit.L.dentX = ptr.lx;
+    hit.L.dentY = ptr.ly;
+    hit.L.dent = 0.012;
+    hit.L.wobV -= 1.2;
+    bumpSound(pan(hit.L.x), 0.5, 1.25 * Math.sqrt(0.7 / hit.L.size));
+  } else ptr.mode = 'paddle';
+  poke();
+});
+panel.addEventListener('pointermove', e => {
+  if (e.pointerId !== ptr.id || !ptr.on) { if (e.pointerType === 'mouse' && ready) poke(); return; }
+  const list = e.getCoalescedEvents?.() || [];
+  for (const c of list.length ? list : [e]) {
+    const [x, y] = toWorld(c);
+    ptr.moved += Math.hypot(x - ptr.x, y - ptr.y);
+    ptr.x = x;
+    ptr.y = y;
+    ptr.hist.push([x, y, c.timeStamp]);
+  }
+  // Velocity over the last 60 ms.
+  const now = e.timeStamp;
+  while (ptr.hist.length > 2 && now - ptr.hist[0][2] > 60) ptr.hist.shift();
+  const [x0, y0, t0] = ptr.hist[0], dtp = Math.max(8, now - t0) / 1000;
+  ptr.vx = (ptr.x - x0) / dtp;
+  ptr.vy = (ptr.y - y0) / dtp;
+  ptr.speed = Math.hypot(ptr.vx, ptr.vy);
+  poke();
+});
+// Touching a letter: rub it, hold it to prick, or swipe to bat it away.
+function hold(L, x, y) {
+  if (!['grow', 'float'].includes(L.state)) { ptr.mode = 'paddle'; ptr.L = null; return; }
+  const c = Math.cos(L.a), s = Math.sin(L.a), k = L.size;
+  const qx = L.x + (ptr.lx * c - ptr.ly * s) * k, qy = L.y + (ptr.lx * s + ptr.ly * c) * k;
+  const vqx = L.vx - L.va * (qy - L.y), vqy = L.vy + L.va * (qx - L.x);
+  force(L, qx, qy, 26 * (x - qx) - 3 * vqx, 26 * (y - qy) - 3 * vqy);
+}
+function pressTick(dt) {
+  const L = ptr.L;
+  // Far from where it started, the touch becomes a swipe.
+  const far = Math.hypot(ptr.x - ptr.dx, ptr.y - ptr.dy);
+  if (far > 0.16 * L.size + 0.03) {
+    const c = Math.cos(L.a), s = Math.sin(L.a), k = L.size;
+    const qx = L.x + (ptr.lx * c - ptr.ly * s) * k, qy = L.y + (ptr.lx * s + ptr.ly * c) * k, arm = (qx - L.x) * ptr.vy - (qy - L.y) * ptr.vx;
+    L.vx += ptr.vx * 0.85;
+    L.vy += ptr.vy * 0.85;
+    L.va += clamp((arm * 0.6) / inertia(L), -8, 8);
+    L.vyaw += ptr.vx * 1.2;
+    L.wobV += 2;
+    if (ptr.speed > 0.6) bumpSound(pan(L.x), ptr.speed * 0.5, Math.sqrt(0.7 / L.size));
+    ptr.mode = 'paddle';
+    ptr.L = null;
+    creakStop();
+    return;
+  }
+  // Rubbing: quick moves in a small patch.
+  if (ptr.speed > 0.35) {
+    L.rubE = Math.min(1.2, L.rubE + ptr.speed * dt * 1.6);
+    L.wobV += (Math.random() - 0.5) * ptr.speed * 3;
+    L.ripX = ptr.lx;
+    L.ripY = ptr.ly;
+    L.rip = Math.min(0.016, L.rip + ptr.speed * dt * 0.02);
+  }
+  // Holding still dents the foil deeper until it gives.
+  if (Math.hypot(ptr.x - ptr.sx, ptr.y - ptr.sy) > TOL) { ptr.sx = ptr.x; ptr.sy = ptr.y; ptr.still = 0; }
+  else ptr.still += dt;
+  const k = clamp((ptr.still - 0.12) / (HOLD - 0.12));
+  L.dent = 0.012 + 0.07 * k * k;
+  if (k > 0.05) { creakStart(pan(L.x)); creakSet(k); }
+  else creakStop();
+  if (ptr.still >= HOLD) {
+    ptr.pricked = true;
+    creakStop();
+    const lx = ptr.lx, ly = ptr.ly;
+    ptr.mode = 'paddle';
+    ptr.L = null;
+    prick(L, lx, ly);
+  }
+}
+const lift = e => {
+  if (e.pointerId !== ptr.id || !ptr.on) return;
+  const L = ptr.mode === 'touch' ? ptr.L : null;
+  // A tap boops the letter away from the finger.
+  if (L && ptr.moved < 0.03 && !ptr.pricked) {
+    const [gx, gy] = sdfGrad(L.g, ptr.lx, ptr.ly), c = Math.cos(L.a), s = Math.sin(L.a);
+    L.vx += (gx * c - gy * s) * 0.5;
+    L.vy += (gx * s + gy * c) * 0.5 + 0.25;
+    L.va += ptr.lx * -1.5;
+    L.wobV += 2.5;
+  }
+  if (!L && ptr.mode === 'paddle' && ptr.moved < 0.03 && e.pointerType !== 'mouse' && e.type === 'pointerup') ptr.tapped = true;
+  ptr.on = false;
+  ptr.id = -1;
+  ptr.L = null;
+  ptr.mode = '';
+  creakStop();
+  poke();
+};
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+panel.addEventListener('contextmenu', e => e.preventDefault());
+// A tap on bare stage brings up the touch keyboard.
+panel.addEventListener('click', () => {
+  if (ptr.tapped && matchMedia('(pointer: coarse)').matches) keysIn.focus({ preventScroll: true });
+  ptr.tapped = false;
+});
+
+let bsT = 0;
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  const t = e.target, own = t === keysIn;
+  if (!own && t.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key, onButton = !own && t.closest?.('button, a');
+  if (k === 'Enter') {
+    if (onButton) return;
+    e.preventDefault();
+    if (!e.repeat) letGo();
+  } else if (k === 'Backspace' || k === 'Delete') {
+    e.preventDefault();
+    if (performance.now() - bsT > 130) { bsT = performance.now(); backspace(); }
+  } else if (ARROWS[k]) {
+    e.preventDefault();
+    if (!e.repeat) gust(k);
+  } else if (k === ' ') {
+    if (onButton) return;
+    e.preventDefault();
+    typeChar(' ');
+  } else if (k.length === 1) {
+    const ch = k.toUpperCase();
+    if (!CHARS.test(ch)) return;
+    e.preventDefault();
+    if (!e.repeat) typeChar(ch);
+  }
+});
+// Touch keyboards report through the hidden field instead.
+const SENT = ' ';
+keysIn.value = SENT;
+keysIn.addEventListener('input', e => {
+  const v = keysIn.value;
+  if (e.inputType?.startsWith('delete') || v.length < SENT.length) backspace();
+  else for (const ch of v.slice(SENT.length)) typeChar(ch.toUpperCase());
+  keysIn.value = SENT;
+});
+const chips = [...document.querySelectorAll('.chip[data-foil]')];
+chips.forEach(c => c.addEventListener('click', () => chooseFoil(c.dataset.foil)));
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else { squeakStop(); creakStop(); if (ac) ac.suspend()?.catch(() => {}); }
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: font, room, glyphs and shaders in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function fontReady() {
+  const link = document.querySelector('link[href*="Gabarito"]');
+  if (link && !link.sheet) await Promise.race([new Promise(r => link.addEventListener('load', r, { once: true })), wait(2500)]);
+  try { await Promise.race([document.fonts.load(`600 ${FPX}px Gabarito`), wait(2500)]); } catch (err) { /* the fallback face draws instead */ }
+}
+async function start() {
+  try {
+    THREE = await import('three');
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1;
+  renderer.setClearColor(CLEAR);
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.1, 50);
+  camera.position.set(0, 0, CAMZ);
+  const fontP = fontReady();
+  await idle();
+
+  const pm = new THREE.PMREMGenerator(renderer), room = partyRoom();
+  scene.environment = pm.fromScene(room, 0.02).texture;
+  room.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  pm.dispose();
+  await idle();
+
+  bgMat = new THREE.ShaderMaterial({
+    vertexShader: BG_VS, fragmentShader: BG_FS, depthTest: false, depthWrite: false,
+    uniforms: {
+      uRes: { value: new THREE.Vector2(1, 1) }, uN: { value: 0 },
+      uTop: { value: new THREE.Color().setRGB(...linear(0.2, 0.05, 292)) },
+      uLow: { value: new THREE.Color().setRGB(...linear(0.12, 0.035, 285)) },
+      uHaze: { value: new THREE.Color().setRGB(...linear(0.3, 0.09, 320)) },
+      uGlow: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
+      uGlowC: { value: Array.from({ length: 24 }, () => new THREE.Color()) },
+    },
+  });
+  const tri = new THREE.BufferGeometry();
+  tri.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+  const bg = new THREE.Mesh(tri, bgMat);
+  bg.frustumCulled = false;
+  bg.renderOrder = -10;
+  scene.add(bg);
+
+  // Strings: one ribbon mesh for all of them.
+  const rg = new THREE.BufferGeometry(), rv = ROPE_MAX * RPTS * 2, ri = [];
+  rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rv * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  rg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(rv * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  rg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(rv * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  for (let s = 0; s < ROPE_MAX; s++) for (let k = 0; k < RPTS - 1; k++) {
+    const a = (s * RPTS + k) * 2;
+    ri.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  rg.setIndex(ri);
+  ropeMesh = new THREE.Mesh(rg, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.3, side: THREE.DoubleSide, envMapIntensity: 1.1 }));
+  ropeMesh.frustumCulled = false;
+  scene.add(ropeMesh);
+
+  // Confetti: one instanced quad per scrap of foil.
+  const cm = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.28, side: THREE.DoubleSide, envMapIntensity: 1.3 }), CMAX);
+  cm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  cm.setColorAt(0, new THREE.Color(1, 1, 1));
+  cm.count = 0;
+  cm.frustumCulled = false;
+  scene.add(cm);
+  conf = {
+    mesh: cm, n: 0, p: new Float32Array(CMAX * 3), v: new Float32Array(CMAX * 3), ax: new Float32Array(CMAX * 3),
+    ang: new Float32Array(CMAX), spin: new Float32Array(CMAX), size: new Float32Array(CMAX), life: new Float32Array(CMAX), ph: new Float32Array(CMAX),
+    m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Vector3(), v3: new THREE.Vector3(), sc: new THREE.Vector3(), tc: new THREE.Color(),
+  };
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+      vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: { uT: { value: 1 }, uCol: { value: new THREE.Color() } },
+    }));
+    m.visible = false;
+    m.renderOrder = 5;
+    scene.add(m);
+    flashes.push({ mesh: m, t: 1 });
+  }
+  await fontP;
+  rx.font = `600 ${FPX}px ${FONT}`;
+  capPx = rx.measureText('H').actualBoundingBoxAscent || FPX * 0.7;
+  await idle();
+
+  panel.prepend(canvas);
+  fitRenderer(2, onSize, 1.4e6);
+  if (!panel.clientWidth) onSize(16, 9);
+  // HI arrives already inflated.
+  for (const ch of 'HI') {
+    const L = makeLetter(glyph(ch));
+    word.push(L);
+  }
+  layout();
+  for (const L of letters) {
+    Object.assign(L, { state: 'float', x: L.hx, y: L.hy, size: L.sizeT, grow: 1 });
+    makeRope(L);
+    for (let i = 0; i < 160; i++) stepRope(L.rope, H);
+  }
+  await idle();
+  // Every foil compiles before the first frame shows.
+  const spare = [];
+  for (const kind of Object.keys(FOILS)) {
+    const m = new THREE.Mesh(letters[0].g.geo, foilMat(kind, foilUniforms()));
+    m.position.set(0, -50, 0);
+    scene.add(m);
+    spare.push(m);
+  }
+  flashes.forEach(f => { f.mesh.visible = true; });
+  cm.count = 1;
+  await renderer.compileAsync(scene, camera);
+  for (const m of spare) { m.visible = false; }
+  flashes.forEach(f => { f.mesh.visible = false; });
+  cm.count = 0;
+  ready = true;
+  lastPoke = performance.now();
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  wake();
+  // The rest of the alphabet builds while nothing else is happening.
+  for (const ch of 'AEOSTNRLDUCMPBGYKWFHVJXQZ0123456789!?') {
+    await idle();
+    glyph(ch);
+  }
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
