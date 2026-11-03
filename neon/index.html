@@ -56,13 +56,14 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag for straight runs with round corners; click a tube to switch it off or on; click the bare wall to knock on it. Arrow keys draw, Shift with arrows moves the pen, Space ends a stroke or switches the nearest tube, Backspace undoes, C clears.">
+    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag, or Snap, for straight runs with round corners; click a tube to switch it off or on; click the bare wall to knock on it. Arrow keys draw, Shift with arrows moves the pen, Space ends a stroke or switches the nearest tube, Backspace undoes, C clears.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Neon sign needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices">
         <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="11" aria-valuenow="7" aria-valuetext="Blue"><span class="gas-rail" aria-hidden="true"></span><span class="gas-name" aria-hidden="true">Blue</span></div>
+        <button class="chip" id="snap" type="button" aria-pressed="false"><svg class="wi" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h3v8.5L8.5 6H15v3h-5.3L4 14.7V15H1z"/></svg><span>Snap</span></button>
         <button class="chip" id="wall" type="button" aria-label="Wall: Brick"><svg class="wi" viewBox="0 0 16 16" aria-hidden="true"></svg><span>Brick</span></button>
       </div>
       <div class="actions">
@@ -1699,37 +1700,53 @@ function local(e) {
 }
 function beginDraft(x, y, pid, snap = false) {
   draft = { raw: [x, y], ctrl: [[x, y]], arc: 0, pid, gas: gasPick(), count: 0, v: null, c: null };
-  if (snap) draft.snap = { at: [[x, y]], dir: null, prev: null, len: 0 };
+  if (snap) draft.snap = { at: [[x, y]], dir: -1, prev: -1, len: 0, last: [x, y], turn: null };
   draftDirty = true;
   wake();
 }
-// A snapped stroke runs in one of eight directions.
+// A snapped stroke runs in one of eight directions, 0 to 7.
 const OCT = Math.PI / 4;
-function snapDir(x, y) {
-  const a = Math.round(Math.atan2(y, x) / OCT) * OCT;
-  return [Math.cos(a), Math.sin(a)];
-}
+const octOf = (x, y) => (Math.round(Math.atan2(y, x) / OCT) + 8) % 8;
+const octVec = i => [Math.cos(i * OCT), Math.sin(i * OCT)];
 // The pointer pulls a straight run from the last corner.
-// A clear turn away from the run sets a new corner.
+// Recent motion in a new direction sets the next corner.
 function snapPoint(x, y) {
-  const s = draft.snap, a = s.at[s.at.length - 1], vx = x - a[0], vy = y - a[1];
+  const s = draft.snap;
+  let a = s.at[s.at.length - 1];
   // A short run still turns with the pointer.
-  if (!s.dir || s.len < 3 * R) {
-    if (!s.dir && Math.hypot(vx, vy) < 2 * R) return;
-    const d = snapDir(vx, vy);
+  if (s.dir < 0 || s.len < 3 * R) {
+    if (s.dir < 0 && Math.hypot(x - a[0], y - a[1]) < 2 * R) return;
+    const d = octOf(x - a[0], y - a[1]);
     // A run never folds straight back on the last one.
-    if (!s.prev || d[0] * s.prev[0] + d[1] * s.prev[1] > -0.9) s.dir = d;
+    if (s.prev < 0 || (d - s.prev + 8) % 8 !== 4) s.dir = d;
   }
-  const [dx, dy] = s.dir, along = vx * dx + vy * dy, off = Math.abs(vx * dy - vy * dx);
-  if (off > 2.5 * R && s.len >= 3 * R) {
-    s.at.push([a[0] + dx * s.len, a[1] + dy * s.len]);
-    s.prev = s.dir;
-    s.dir = null;
-    s.len = 0;
-    snapPoint(x, y);
-    return;
+  // Motion samples set apart show where the hand starts to turn.
+  const [lx, ly] = s.last, back = (s.dir + 4) % 8;
+  if (Math.hypot(x - lx, y - ly) >= 1.6 * R) {
+    const m = octOf(x - lx, y - ly);
+    if (!s.turn && m !== s.dir && m !== back) s.turn = [lx, ly];
+    s.last = [x, y];
   }
-  if (off < 1.25 * R) s.len = Math.max(0, along);
+  // A hand back on the run has not turned.
+  const [ux, uy] = octVec(s.dir), off = Math.abs((x - a[0]) * uy - (y - a[1]) * ux);
+  if (off < R) s.turn = null;
+  // The whole turn, not one sample, picks the new direction.
+  const td = s.turn ? octOf(x - s.turn[0], y - s.turn[1]) : -1;
+  // A turn held for a short way, clear of the run, sets a corner.
+  if (s.turn && td !== s.dir && td !== back && off >= 2 * R && Math.hypot(x - s.turn[0], y - s.turn[1]) >= 3 * R) {
+    const k = (s.turn[0] - a[0]) * ux + (s.turn[1] - a[1]) * uy;
+    if (k >= 2 * R) {
+      s.at.push((a = [a[0] + ux * k, a[1] + uy * k]));
+      s.prev = s.dir;
+      s.dir = td;
+    } else if (s.prev < 0 || (td - s.prev + 8) % 8 !== 4) {
+      // A turn close to the corner aims the run again instead.
+      s.dir = td;
+    }
+    s.turn = null;
+  }
+  const [dx, dy] = octVec(s.dir);
+  s.len = Math.max(0, (x - a[0]) * dx + (y - a[1]) * dy);
   const pts = s.at.slice();
   if (s.len > 1) pts.push([a[0] + dx * s.len, a[1] + dy * s.len]);
   let arc = 0;
@@ -1817,7 +1834,7 @@ panel.addEventListener('pointermove', e => {
     if (!press.moved) {
       if (Math.hypot(x - press.x, y - press.y) < (press.touch ? 9 : 5)) continue;
       press.moved = true;
-      beginDraft(press.x, press.y, press.id, c.shiftKey);
+      beginDraft(press.x, press.y, press.id, snapOn || c.shiftKey);
     }
     if (draft && draft.pid === press.id) addPoint(x, y);
   }
@@ -1937,6 +1954,13 @@ function setWall(i) {
   wake();
 }
 setWall(0);
+// Snap makes every drag run straight; touch has no Shift key.
+const snapBtn = document.getElementById('snap');
+let snapOn = false;
+snapBtn.addEventListener('click', () => {
+  snapOn = !snapOn;
+  snapBtn.setAttribute('aria-pressed', String(snapOn));
+});
 wallBtn.addEventListener('click', () => setWall(wallNow + 1));
 chaseBtn.addEventListener('click', () => setChase(!chase));
 clearBtn.addEventListener('click', clearAll);
@@ -1994,7 +2018,7 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  [wallBtn, chaseBtn, clearBtn].forEach(c => { c.disabled = true; });
+  [snapBtn, wallBtn, chaseBtn, clearBtn].forEach(c => { c.disabled = true; });
   gasEl.setAttribute('aria-disabled', 'true');
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
