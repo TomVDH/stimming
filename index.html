@@ -509,8 +509,9 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
         <a class="toy" id="pendulum" href="pendulum/index.html">
           <span class="obj">
             <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-              <line x1="18" y1="22" x2="110" y2="22" stroke="oklch(0.62 0.02 275)" stroke-width="4" stroke-linecap="round"/>
               <g id="pend-bobs"></g>
+              <rect x="12" y="13" width="104" height="8" rx="4" fill="url(#g-steel)"/>
+              <rect x="12" y="13" width="104" height="8" rx="4" fill="none" stroke="url(#rim)" stroke-width="1"/>
             </svg>
           </span>
           <span class="name">Pendulum wave</span>
@@ -1097,21 +1098,26 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
   const $ = id => document.getElementById(id);
   const loop = (o = {}) => gsap.timeline({ repeat: -1, ...o });
 
-  const bobs = [56, 61, 66, 71, 76].map((len, k) => {
-    const x = 30 + k * 17, g = el('g', {}, $('pend-bobs'));
-    el('line', { x1: x, y1: 22, x2: x, y2: 22 + len, stroke: 'oklch(0.62 0.02 275)', 'stroke-width': 1.5 }, g);
-    el('circle', { cx: x, cy: 22 + len, r: 7, style: `fill: oklch(0.74 0.16 ${20 + k * 70})` }, g);
-    return { g, x };
+  // Pendulum wave: seven bobs on rising lengths, swung so they realign every six seconds.
+  const PEND_T = 6;
+  const bobs = Array.from({ length: 7 }, (_, k) => {
+    const x = 22 + k * 14, len = 50 + k * 6.5, g = el('g', {}, $('pend-bobs'));
+    const grad = el('radialGradient', { id: `g-bob${k}`, cx: 0.35, cy: 0.3, r: 0.75 }, g);
+    el('stop', { offset: 0, 'stop-color': `oklch(0.95 0.06 ${30 + k * 48})` }, grad);
+    el('stop', { offset: 0.45, 'stop-color': `oklch(0.74 0.17 ${30 + k * 48})` }, grad);
+    el('stop', { offset: 1, 'stop-color': `oklch(0.45 0.13 ${30 + k * 48})` }, grad);
+    el('line', { x1: x, y1: 18, x2: x, y2: 18 + len, stroke: 'oklch(0.72 0.01 260)', 'stroke-width': 1.2 }, g);
+    el('circle', { cx: x, cy: 18 + len, r: 6.5, fill: `url(#g-bob${k})` }, g);
+    return { g, x, f: (8 + k) / PEND_T };
   });
+  const pend = { t: 0 };
+  const swing = () => bobs.forEach(b => gsap.set(b.g, { rotation: 22 * Math.cos(TAU * b.f * pend.t), svgOrigin: `${b.x} 18` }));
   toys.pendulum = {
-    // Each bob swings at its own period, so the row drifts out of step.
-    play() {
-      const t = gsap.timeline();
-      bobs.forEach((b, k) => t.fromTo(b.g, { rotation: -18 }, { rotation: 18, svgOrigin: `${b.x} 22`, duration: 0.5 + k * 0.06, ease: 'sine.inOut', repeat: -1, yoyo: true }, 0));
-      return t;
-    },
-    rest: () => bobs.forEach(b => gsap.to(b.g, { rotation: 0, svgOrigin: `${b.x} 22`, duration: 0.4, overwrite: true })),
+    // Every bob makes a whole number of swings in PEND_T, so the loop is seamless.
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(pend, { t: 0 }, { t: PEND_T, duration: PEND_T, ease: 'none', onUpdate: swing }),
+    rest: () => bobs.forEach(b => gsap.to(b.g, { rotation: 0, svgOrigin: `${b.x} 18`, duration: 0.5, ease: 'power2.out', overwrite: true })),
   };
+
 
   const strings = Array.from({ length: 6 }, (_, k) => {
     const x1 = 31 + k * 13, y1 = 27 + k * 2, x2 = 26 + k * 15, y2 = 104;
