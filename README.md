@@ -27,6 +27,7 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Spinning top | [top/](top/) | live, with sound |
 | Soap cutting | [soap/](soap/) | live, with sound |
 | Rain on glass | [rain/](rain/) | live, with sound |
+| Plasma globe, Marbling, Caustic pool, Lava lamp, Kaleidoscope, Chladni plate, Prism | | in progress; outlines on the menu |
 
 ## Run locally
 
