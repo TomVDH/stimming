@@ -282,13 +282,14 @@ function humLevel() {
   const v = soundOn ? (0.0075 + 0.012 * warm) * heat : 0;
   humG.gain.setTargetAtTime(v, ac.currentTime, 0.35);
 }
-// A warm low gloop; it rises on a pinch and falls on a merge.
+// A warm low gloop marks each pinch and merge.
+// It rises on a pinch and falls on a merge.
 function gloop(size, up) {
   const a = live();
   if (!a || voices >= MAXV) return;
   const t = a.currentTime + LEAD;
   if (t < gloopNext) return;
-  gloopNext = t + rand(0.07, 0.12);
+  gloopNext = t + rand(0.22, 0.4);
   const f = lerp(190, 82, clamp((size - 0.02) / 0.045)) * jit(0.06), g = 0.11 * level() * jit(0.08);
   const o = a.createOscillator(), o2 = a.createOscillator(), og = a.createGain(), o2g = a.createGain(), lp = a.createBiquadFilter();
   const [f0, f1, f2] = up ? [f * 0.78, f * 1.45, f * 1.3] : [f * 1.35, f * 0.95, f * 0.72];
@@ -318,7 +319,7 @@ function gloop(size, up) {
 const G = 0.36, T0 = 0.45, DRAG = 1.3, V0 = 6e-4;
 const IDLE = () => (reduce ? 25 : 150);
 let blobs = [], poolV = V0, pool = 0.322, heat = 1, warm = 0, spawnAcc = 0, simT = 0, idleT = 0, nextId = 1;
-let seeding = false, motion = 1;
+let seeding = false, motion = 1, coldT = 0;
 const poolLevel = () => clamp(0.322 + (poolV - V0) * 22, 0.306, 0.34);
 function makeBlob(o) {
   return Object.assign({ x: 0, y: 0.5, z: 0, vx: 0, vy: 0, vz: 0, r: 0.04, rt: 0.04, s: 1, lean: 0, T: 0.5, state: 'free', sib: null, sibT: 0, fromPool: false, flash: 0, grab: null, top: false, id: nextId++ }, o);
@@ -377,8 +378,11 @@ function split(b, dx, dy) {
 function step(h) {
   simT += h;
   const asleep = idleT > IDLE();
-  heat += ((asleep ? 0 : 1) - heat) * (1 - Math.exp(-h / (asleep ? 9 : 2.5)));
-  if (heat < 0.003 && asleep) heat = 0;
+  heat += ((asleep ? 0 : 1) - heat) * (1 - Math.exp(-h / (asleep ? 5 : 2.5)));
+  if (heat < 0.01 && asleep) heat = 0;
+  coldT = heat === 0 ? coldT + h : 0;
+  // Cooling wax grows sticky, so a cold pile stops sliding.
+  const stick = Math.exp(-h * 30 * (1 - Math.min(heat / 0.3, 1)));
   warm *= Math.exp(-h / 18);
   if (warm < 0.004) warm = 0;
   const burn = heat * (1 + 1.3 * warm);
@@ -414,6 +418,12 @@ function step(h) {
       act += 0.01;
       continue;
     }
+    act = Math.max(act, b.flash * 0.01);
+    // Cold, still wax sleeps until heat or a finger wakes it.
+    if (b.sleep) {
+      if (heat > 0 || b.grab) b.sleep = false;
+      else continue;
+    }
     const rho = Math.hypot(b.x, b.z), R = Math.max(inR(b.y), 0.02);
     // Wax heats over the bulb and cools under the cap.
     const gap = b.y - half(b) - pool;
@@ -444,7 +454,7 @@ function step(h) {
     // Speed stretches a blob along its path.
     const sp = Math.hypot(b.vx, b.vy) + 1e-6, e = clamp(sp * 3.4 * Math.sqrt(b.r / 0.04), 0, 0.72);
     const c2 = (b.vy * b.vy - b.vx * b.vx) / (sp * sp);
-    let sT = 1 + e * (c2 > 0 ? c2 : 0.45 * c2) + (b.r > 0.052 ? 0.35 : 0);
+    let sT = 1 + e * (c2 > 0 ? c2 : 0.45 * c2) + (b.r > 0.052 && heat > 0.3 ? 0.35 : 0);
     if (b.top) sT = 0.8;
     b.s += (sT - b.s) * (1 - Math.exp(-h * 1.6));
     const leanT = clamp(((2 * b.vx * b.vy) / (sp * sp)) * e * 1.1, -0.6, 0.6);
@@ -462,6 +472,8 @@ function step(h) {
       }
       b.y = floor;
       b.vy = Math.max(b.vy, 0);
+      b.vx *= stick;
+      b.vz *= stick;
     }
     // The glass walls hold the wax in.
     const lim = Math.max(0, inR(b.y) - wide(b) - 0.006), rr = Math.hypot(b.x, b.z);
@@ -473,14 +485,18 @@ function step(h) {
         const vr = (b.vx * b.x + b.vz * b.z) / lim;
         if (vr > 0) { b.vx -= (vr * b.x) / lim; b.vz -= (vr * b.z) / lim; }
       }
+      b.vy *= stick;
     }
     // A pool-born blob gloops as its neck pinches off.
     if (b.fromPool && b.y - half(b) > pool + KB * 0.6) {
       b.fromPool = false;
       if (!seeding) gloop(b.r, true);
     }
-    act = Math.max(act, Math.hypot(b.vx, b.vy, b.vz), Math.abs(sT - b.s) * 0.1, b.flash * 0.01);
-    if (b.s > (b.r > 0.052 ? 1.3 : 1.55) && b.r > 0.033 && b.sibT <= 0 && !b.grab && blobs.length < MAXB) {
+    const v = Math.hypot(b.vx, b.vy, b.vz);
+    act = Math.max(act, v, Math.abs(sT - b.s) * 0.1);
+    b.still = heat === 0 && !b.grab && v < 0.005 ? (b.still || 0) + h : 0;
+    if (b.still > 1 || (coldT > 20 && !b.grab)) { b.sleep = true; b.vx = b.vy = b.vz = 0; }
+    if (heat > 0.3 && b.s > (b.r > 0.052 ? 1.3 : 1.55) && b.r > 0.033 && b.sibT <= 0 && !b.grab && blobs.length < MAXB) {
       const l = Math.hypot(b.lean, 1);
       split(b, b.lean / l, 1 / l);
     }
@@ -491,7 +507,7 @@ function step(h) {
     if (a.state !== 'free') continue;
     for (let j = i + 1; j < blobs.length; j++) {
       const b = blobs[j];
-      if (b.state !== 'free') continue;
+      if (b.state !== 'free' || (a.sleep && b.sleep)) continue;
       const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz) || 1e-6, sum = size(a) + size(b);
       const sib = a.sib === b || b.sib === a;
       if (sib) {
@@ -504,7 +520,8 @@ function step(h) {
       // Free blobs merge only above seven; a held blob merges down to six.
       const held = a.grab || b.grab, canMerge = heat > 0.05 && blobs.length > (held ? MINB : 7);
       if (canMerge && d < sum * 0.56) { merge(a, b); j = blobs.length; continue; }
-      const ma = a.r ** 3, mb = b.r ** 3, wa = mb / (ma + mb), wb = ma / (ma + mb);
+      // A sleeping blob holds still; the other one moves.
+      const ma = a.sleep ? 1e9 : a.r ** 3, mb = b.sleep ? 1e9 : b.r ** 3, wa = mb / (ma + mb), wb = ma / (ma + mb);
       if (canMerge && d < sum * 1.08) {
         const f = (0.9 * (sum * 1.08 - d)) / sum;
         a.vx += (dx / d) * f * wa * 0.02; a.vy += (dy / d) * f * wa * 0.02; a.vz += (dz / d) * f * wa * 0.02;
@@ -519,6 +536,7 @@ function step(h) {
           a.vx += nx * rv * wa; a.vy += ny * rv * wa; a.vz += nz * rv * wa;
           b.vx -= nx * rv * wb; b.vy -= ny * rv * wb; b.vz -= nz * rv * wb;
         }
+        for (const o of [a, b]) { o.vx *= stick; o.vy *= stick; o.vz *= stick; }
       }
     }
   }
@@ -992,7 +1010,7 @@ function frame(now) {
     if (slow > 30) { scaleI++; slow = 0; fit(); }
   }
   idleT += dt;
-  const speed = reduce ? 0.4 : 1;
+  const speed = reduce ? 0.5 : 1;
   simulate(dt * speed);
   // The bulb's light follows its heat and the warm boost.
   const lt = (0.6 + 0.4 * heat) * (1 + 0.45 * warm);
@@ -1061,14 +1079,17 @@ panel.addEventListener('pointerdown', e => {
   // Near the pool and clear of blobs, a press draws out fresh wax.
   if (bd > 0.035 && blobs.length < MAXB && by > Y0 && by < pool + 0.07 && Math.abs(bx) < inR(pool) * 0.8) {
     best = spawn(bx * 0.9, 0);
-    best.r = 0.03;
-    poolV -= 0.03 ** 3 - 0.012 ** 3;
-    best.rt = 0.03;
     best.y = pool;
     best.T = 0.7;
-    best.state = 'free';
   }
   if (!best) return;
+  // A mound pulled from the pool comes away at a fair size.
+  if (best.state === 'grow') {
+    const r = Math.max(best.r, 0.034);
+    poolV -= r ** 3 - best.r ** 3;
+    best.r = best.rt = r;
+    best.state = 'free';
+  }
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   const [px, py] = onPlane(d, best.z);
   const g = { b: best, zp: best.z, ox: best.x - px, oy: best.y - py };

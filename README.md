@@ -32,7 +32,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Plasma globe | [plasma/](plasma/) | live, with sound |
 | Marbling | [marble/](marble/) | live draft, still being refined |
 | Caustic pool | [pool/](pool/) | live, with sound |
-| Lava lamp | [lava/](lava/) | live draft, still being refined |
+| Lava lamp | [lava/](lava/) | live, with sound |
 | Kaleidoscope | [kaleido/](kaleido/) | live, with sound |
 | Chladni plate | [chladni/](chladni/) | live, with sound |
 | Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
