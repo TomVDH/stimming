@@ -379,9 +379,9 @@ function fit() {
 // It sits small on the horizon, on the left third of the frame.
 function lens() {
   const v = sea ? viewK * viewK * (3 - 2 * viewK) : 0;
-  focal = lerp(focalClose, 1.25 * Math.max(w, h), v);
+  focal = lerp(focalClose, 1.6 * Math.max(w, h), v);
   horizonY = Math.round(lerp(horClose, h * 0.6, v));
-  depth = lerp(1, 2.6, v);
+  depth = lerp(1, 2.2, v);
   shift = lerp(0, w / 6, v);
   seaY = horizonY + Math.max(3, Math.round(h * 0.01));
   sunR = sunRClose * Math.max(0.75, focal / focalClose);
@@ -578,17 +578,18 @@ void main() {
       float back = -into;
       float aaG = 1.0 - smoothstep(0.1, 0.6, foot * 180.0);
       float grain = noise(p * vec2(240.0, 480.0)) * aaG;
-      float pool = smoothstep(0.56, 0.64, fbm(p * vec2(2.2, 4.5) + 3.0));
+      // Pools lie in long patches along the shore.
+      float pool = smoothstep(0.55, 0.6, fbm(p * vec2(1.4, 4.0) + 3.0));
       float film = exp(-back * 5.0);
       float aaR = 1.0 - smoothstep(0.2, 0.8, foot * 45.0 / 6.283);
       float rip = cos(z * 45.0 + (noise(p * vec2(3.0, 6.0)) + 0.5 * noise(p * vec2(11.0, 19.0))) * 12.0) * 0.025 * noise(p * vec2(4.0, 2.0)) * aaR * (1.0 - pool) * (1.0 - film);
       n = normalize(vec3(0.0, 1.0, rip));
-      wet = clamp(0.55 * smoothstep(0.4, 1.1, z) + pool + film, 0.0, 1.0);
+      wet = clamp(0.3 * smoothstep(0.4, 1.1, z) + pool + film, 0.0, 1.0);
       vec3 sand = vec3(0.3, 0.2, 0.15) * (0.75 + 0.5 * grain) * mix(1.0, 0.5, wet);
       sand *= vec3(0.32, 0.22, 0.26);
       float F = 0.02 + 0.98 * pow(1.0 - clamp(dot(-d, n), 0.0, 1.0), 5.0);
       // Pools are mirrors; open wet sand blurs the reflection.
-      col = mix(sand, reflectSky(d, n, mix(0.006, 0.0004, max(pool, film))), F * wet * 0.92);
+      col = mix(sand, reflectSky(d, n, mix(0.02, 0.0003, max(pool, film))), F * wet * 0.95);
     }
     // Far water fades into the horizon haze.
     vec3 hd = normalize(vec3(d.x, 0.0, d.z));
