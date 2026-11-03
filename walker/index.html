@@ -404,7 +404,7 @@ const TOD_KEYS = [
 // Two worlds sit off the day: the end of the world and an alien night.
 const WORLDS = {
   end: { zen: [0.03, 0.004, 0.002], low: [0.4, 0.055, 0.012], hor: [1.2, 0.22, 0.02], scat: [1, 0.3, 0.08], sunC: [1.7, 0.32, 0.05], sunE: [0.8, 0.07, 0.01], lit: [0.9, 0.18, 0.04], dark: [0.012, 0.004, 0.003], amb: 0, deep: [0.008, 0.002, 0.001], sand: [0.22, 0.07, 0.04], stars: 0, rise: 0.15, size: 2.6, light: [1, 0.28, 0.1], lightK: 4.5, sky: [0.3, 0.08, 0.05], skyK: 0.2, flare: [1, 0.3, 0.1], flareK: 0.55, cover: 0.08, end: 1, alien: 0, hole: 0, haze: 0.9, ray: 0 },
-  hole: { zen: [0.001, 0.001, 0.004], low: [0.004, 0.004, 0.009], hor: [0.035, 0.028, 0.04], scat: [0.3, 0.22, 0.15], sunC: [0, 0, 0], sunE: [0, 0, 0], lit: [0.08, 0.06, 0.06], dark: [0.002, 0.002, 0.004], amb: 0.1, deep: [0.001, 0.002, 0.004], sand: [0.04, 0.035, 0.04], stars: 1.6, rise: 2.4, size: 1.5, light: [1, 0.72, 0.45], lightK: 1.2, sky: [0.1, 0.08, 0.08], skyK: 0.15, flare: [1, 0.8, 0.6], flareK: 0, cover: 0, end: 0, alien: 0, hole: 1, haze: 0.5, ray: 0 },
+  hole: { zen: [0.001, 0.001, 0.004], low: [0.004, 0.004, 0.009], hor: [0.035, 0.028, 0.04], scat: [0.3, 0.22, 0.15], sunC: [0, 0, 0], sunE: [0, 0, 0], lit: [0.08, 0.06, 0.06], dark: [0.002, 0.002, 0.004], amb: 0.1, deep: [0.001, 0.002, 0.004], sand: [0.04, 0.035, 0.04], stars: 1.6, rise: 3.6, size: 0.75, light: [1, 0.72, 0.45], lightK: 1.2, sky: [0.1, 0.08, 0.08], skyK: 0.15, flare: [1, 0.8, 0.6], flareK: 0, cover: 0, end: 0, alien: 0, hole: 1, haze: 0.5, ray: 0 },
   alien: { zen: [0.004, 0.006, 0.022], low: [0.015, 0.05, 0.06], hor: [0.04, 0.24, 0.2], scat: [0.4, 1, 0.8], sunC: [0.9, 1.4, 1.2], sunE: [0.5, 0.9, 0.8], lit: [0.08, 0.26, 0.26], dark: [0.004, 0.008, 0.012], amb: 0.18, deep: [0.002, 0.01, 0.012], sand: [0.03, 0.08, 0.08], stars: 1.3, rise: 2.6, size: 0.7, light: [0.5, 1, 0.85], lightK: 0.9, sky: [0.1, 0.3, 0.3], skyK: 0.3, flare: [0.6, 1, 0.9], flareK: 0.5, cover: 0, end: 0, alien: 1, hole: 0, haze: 0.45, ray: 0 },
 };
 // Two looks blend key by key; numbers and colours both lerp.
@@ -532,7 +532,7 @@ const SEA_FS = `
 precision highp float;
 uniform vec2 uRes;
 uniform float uDpr, uHor, uF, uTime, uWind, uSunR;
-uniform vec3 uCamPos, uSD;
+uniform vec3 uCamPos, uSD, uLp;
 // Time of day: sky, sun, cloud, water and sand colours, and the star field.
 uniform vec3 uZen, uLow, uHorC, uScat, uSunC, uSunE, uCloudLit, uCloudDark, uDeep, uSandLit;
 uniform float uCloudAmb, uStars, uEnd, uAlien, uCover, uHole, uHaze, uRay;
@@ -574,6 +574,13 @@ vec3 skyBase(vec3 d, float a) {
   c += SUNC * (0.06 * exp(-A * 2.5) + (0.4 * exp(-A * 9.0) + 0.2 * exp(-A * 45.0)) * (1.0 - 0.9 * uHole));
   return c;
 }
+// The ring shadow: a broad band with the rings' own gaps, 0 outside it.
+// s runs across the band; 0 and 1 are its edges.
+float ringShade(float s) {
+  float inBand = smoothstep(0.0, 0.04, s) * (1.0 - smoothstep(0.96, 1.0, s));
+  float rr = mix(1.5, 2.4, clamp(s, 0.0, 1.0));
+  return inBand * (0.55 + 0.45 * sin(rr * 26.0)) * uAlien;
+}
 // The stratus deck: its colour and cover for a view ray.
 // The planet and its rings read it too, so cloud passes in front of them.
 vec4 deck(vec3 d, float a, float r, float disc, vec3 sun, bool withSun) {
@@ -595,6 +602,8 @@ vec4 deck(vec3 d, float a, float r, float disc, vec3 sun, bool withSun) {
   // Menace: thick cloud goes near black up high; thin edges burn red from below.
   under *= 1.0 - uEnd * 0.6 * smoothstep(0.2, 0.7, Ec) * smoothstep(0.45, 0.75, n);
   under += vec3(0.7, 0.08, 0.01) * uEnd * 0.35 * (1.0 - smoothstep(0.42, 0.62, n)) * smoothstep(0.34, 0.45, n);
+  // On the alien world the rings' shadow sweeps across the deck.
+  under *= 1.0 - 0.6 * ringShade((P.x * 0.22 - P.y * 0.06) * 1.6 + 0.35);
   // Thin cloud lets the disc shine through.
   if (withSun) under += sun * disc * (1.0 - smoothstep(0.42, 0.75, n)) * 0.85 * (1.0 - uHole);
   return vec4(under, cl);
@@ -624,23 +633,8 @@ vec3 sky(vec3 d, bool withSun) {
   c = mix(c, hazeC, hz);
   // The end of the world bathes the whole sky in a low red light.
   c += uEnd * vec3(0.09, 0.012, 0.0) * (0.6 + 0.4 * exp(-Eh * 2.0));
-  // The black hole sky: a shadow, a photon ring, a lensed halo and a tilted disc.
-  if (uHole > 0.0) {
-    vec3 hu = vec3(0.0, 1.0, 0.0), hr = normalize(cross(SD, hu)), hv = cross(hr, SD);
-    vec2 uv = vec2(dot(d - SD, hr), dot(d - SD, hv)) / r;
-    float rho = length(uv);
-    vec2 q = vec2(uv.x, uv.y - 0.12 * uv.x);
-    float inside = 1.0 - smoothstep(0.96, 1.0, rho);
-    float churn = 0.55 + 0.7 * fbm(vec2(q.x * 2.2 - uTime * 0.4, q.y * 18.0));
-    float band = exp(-pow(q.y / 0.11, 2.0)) * smoothstep(1.15, 1.5, abs(q.x)) * (1.0 - smoothstep(2.4, 3.4, abs(q.x))) * churn;
-    float halo = exp(-pow((length(vec2(uv.x, uv.y * 1.12)) - 1.42) / 0.16, 2.0)) * churn;
-    float photon = exp(-pow((rho - 1.05) / 0.025, 2.0));
-    // The side spinning toward us is brighter.
-    float dop = 1.0 + 0.75 * clamp(-q.x / 4.0, -1.0, 1.0);
-    vec3 hot = vec3(1.6, 1.05, 0.65);
-    c = mix(c, vec3(0.0), inside * uHole);
-    c += hot * uHole * ((halo * 0.9 + photon * 1.8) * (1.0 - inside) + band * dop * 1.5 * (1.0 - inside * step(0.0, q.y)));
-  }
+  // The black hole is three.js geometry; here the sky only goes black behind it.
+  if (uHole > 0.0) c = mix(c, vec3(0.0), uHole * (1.0 - smoothstep(r * 0.96, r * 1.0, a)));
   // The alien sky: a small second moon, a red giant, the corona and aurora curtains.
   // The ringed planet is a three.js mesh in front of this sky.
   if (uAlien > 0.0 && d.y > 0.0) {
@@ -813,6 +807,8 @@ void main() {
       // Alien pools and the swash film hold a soft glow.
       if (uAlien > 0.0) col += vec3(0.015, 0.16, 0.14) * uAlien * max(pool, film) * (0.5 + 0.5 * noise(p * vec2(9.0, 20.0)));
     }
+    // The rings' shadow crosses the beach and sea in a slanting band.
+    col *= 1.0 - 0.5 * ringShade((X * 0.3 + z * 0.55 - 0.15) / 1.3);
     // Far water fades into the horizon haze.
     vec3 hd = normalize(vec3(d.x, 0.0, d.z));
     vec3 hazeFar = mix(mix(uHorC, uScat, 0.3) * 0.8, vec3(0.42, 0.52, 0.72), uRay);
@@ -922,6 +918,7 @@ const sea = (() => {
     uZen: { value: new THREE.Vector3() }, uLow: { value: new THREE.Vector3() }, uHorC: { value: new THREE.Vector3() }, uScat: { value: new THREE.Vector3() },
     uSunC: { value: new THREE.Vector3() }, uSunE: { value: new THREE.Vector3() }, uCloudLit: { value: new THREE.Vector3() }, uCloudDark: { value: new THREE.Vector3() },
     uDeep: { value: new THREE.Vector3() }, uSandLit: { value: new THREE.Vector3() }, uCloudAmb: { value: 0 }, uStars: { value: 0 }, uEnd: { value: 0 }, uAlien: { value: 0 }, uCover: { value: 0 }, uHole: { value: 0 }, uHaze: { value: 0.5 }, uRay: { value: 0 },
+    uLp: { value: new THREE.Vector3(1, 0, 0) },
     uCamPos: { value: new THREE.Vector3() }, uSD: { value: new THREE.Vector3(0, 0, -1) }, uRot: { value: new THREE.Matrix3() },
   };
   const back = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
@@ -936,23 +933,29 @@ const sea = (() => {
   // The white star lights it; the sky's cloud deck passes in front of it.
   const SKY_LIB = SEA_FS.slice(0, SEA_FS.indexOf('void main() {'));
   const skyVS = 'varying vec3 vW, vO; varying vec3 vN; void main() { vO = position; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }';
+  // The planet is opaque and draws first; the ring then depth-tests against it.
   const planetMat = new THREE.ShaderMaterial({
-    uniforms: U, transparent: true, vertexShader: skyVS,
+    uniforms: U, vertexShader: skyVS,
     fragmentShader: SKY_LIB + `
 varying vec3 vW, vO, vN;
 void main() {
   FH = uRes.y / uDpr / uF; SD = uSD;
   vec3 d = normalize(vW - cameraPosition);
   vec3 n = normalize(vN);
-  float lit = max(dot(n, SD), 0.0);
-  float band = 0.5 + 0.5 * sin(vO.y * 11.0 + fbm(vO.xz * 3.0) * 3.0);
+  // The face is fully lit; only the far limb darkens.
+  float lit = smoothstep(-0.2, 0.9, dot(n, uLp));
+  // Soft latitude bands that fade out toward the poles, so no cap shows.
+  float lat = asin(clamp(vO.y, -1.0, 1.0));
+  float band = 0.5 + 0.5 * sin(lat * 9.0 + fbm(vec2(atan(vO.z, vO.x) * 2.0, lat * 6.0)) * 2.2);
+  band = mix(0.5, band, 0.7 * (1.0 - pow(abs(vO.y), 3.0)));
   // The star sits beyond the planet, so we see a crescent and a night side.
-  vec3 body = mix(vec3(0.35, 0.18, 0.45), vec3(0.85, 0.55, 0.4), band) * (0.07 + 1.2 * lit);
+  vec3 body = mix(vec3(0.4, 0.24, 0.45), vec3(0.75, 0.52, 0.42), band) * (0.1 + 0.95 * lit);
   // Its air glows at the rim, brightest on the side toward the star.
-  float rim = pow(1.0 - max(dot(n, -d), 0.0), 3.0);
-  body += vec3(0.25, 0.7, 0.6) * rim * (0.25 + 0.9 * max(dot(n, SD) + 0.4, 0.0));
+  // Only the very edge glows, faintly, so the face reads as one body.
+  float rim = pow(1.0 - max(dot(n, -d), 0.0), 28.0);
+  body += vec3(0.25, 0.7, 0.6) * rim * (0.08 + 0.5 * max(dot(n, uLp), 0.0));
   vec4 dk = deck(d, length(d - SD), uSunR, 0.0, vec3(0.0), false);
-  gl_FragColor = vec4(mix(body, dk.rgb, dk.a * 0.94), uAlien);
+  gl_FragColor = vec4(mix(body, dk.rgb, dk.a * 0.94), 1.0);
 }`,
   });
   const ringMat = new THREE.ShaderMaterial({
@@ -972,14 +975,94 @@ void main() {
 }`,
   });
   const planet = new THREE.Group(), tilt = new THREE.Group();
-  tilt.rotation.set(PI / 2 - 0.27, 0, -0.3, 'ZXY');
+  // The rings open only a little, so where they cross the planet they read as a band.
+  tilt.rotation.set(PI / 2 - 0.13, 0, -0.3, 'ZXY');
   const orb = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), planetMat);
   const ringMesh = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.4, 160, 1), ringMat);
   // The ring lies in the sphere's equator.
   orb.rotation.x = -PI / 2;
   tilt.add(orb, ringMesh); planet.add(tilt);
-  orb.renderOrder = ringMesh.renderOrder = -5;
+  orb.renderOrder = -6; ringMesh.renderOrder = -5;
   scene.add(planet);
+
+  // The supermassive black hole, ported from the Galaxy toy.
+  // A shadow with a hot rim, and a particle disc on Kepler orbits.
+  // Lensing bends the far side of the disc over the top of the hole.
+  const DISK_N = 16384, TRAIL = 7;
+  const HU = {
+    uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uW: { value: 1 }, uRot: { value: new THREE.Matrix3() },
+    uTime: U.uTime, uVis: { value: 0 }, uGain: { value: 1 }, uPxSize: { value: 2.4 }, uRingDir: { value: new THREE.Vector2(1, 0) },
+  };
+  const diskGeo = new THREE.BufferGeometry();
+  const ids = new Float32Array(DISK_N * TRAIL);
+  for (let i = 0; i < ids.length; i++) ids[i] = i;
+  diskGeo.setAttribute('aId', new THREE.BufferAttribute(ids, 1));
+  diskGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ids.length * 3), 3));
+  const diskMat = new THREE.ShaderMaterial({
+    uniforms: HU, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `
+attribute float aId;
+uniform vec3 uC; uniform float uR, uW, uTime, uVis, uGain, uPxSize; uniform mat3 uRot;
+varying vec3 vCol;
+const float TAU = 6.2831853, TRAIL = ${TRAIL}.0;
+const vec3 HOT = vec3(1.0, 0.86, 0.66), AMBER = vec3(1.0, 0.43, 0.11), EMBER = vec3(0.75, 0.1, 0.04), ICE = vec3(0.56, 0.74, 1.0);
+float h1(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.103, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+void main() {
+  float base = floor(aId / TRAIL), lag = aId - base * TRAIL;
+  // Radius in horizon units, with two cut gaps; inner orbits spin fastest.
+  float dr = mix(1.75, 6.4, pow(h1(base + 101.0), 1.7));
+  float gap = step(0.14, abs(dr - 3.0)) * step(0.1, abs(dr - 4.6));
+  float th = h1(base + 7450.0) * TAU + (uTime - lag * 0.08) * pow(dr, -1.5) * 2.4;
+  vec3 P = uC + uRot * (vec3(cos(th) * dr, (h1(base + 22.0) - 0.5) * dr * 0.06, sin(th) * dr) * uR);
+  // The point, carried along its sight line into the lens plane, then pushed out.
+  vec3 D = uC - cameraPosition; float dL = length(D);
+  vec3 rel = P - cameraPosition; float s = max(dot(rel, D) / dL, 1e-3);
+  float behind = max(s - dL, 0.0);
+  vec3 u = cameraPosition + rel * (dL / s) - uC; float ul = max(length(u), 1e-5);
+  float re2 = uW * behind / s, root = sqrt(ul * ul + re2 * 4.0), ul2 = (ul + root) * 0.5;
+  vec3 p = cameraPosition + (uC + u * (ul2 / ul) - cameraPosition) * (s / dL);
+  float mu = min((ul * ul + re2 * 2.0) / max(ul * root, 1e-6), 3.0);
+  bool hidden = behind > 0.0 && ul2 < uR;
+  // Doppler: the approaching side brightens and shifts toward blue.
+  vec3 toCam = normalize(cameraPosition - P);
+  float beta = dot(uRot * vec3(-sin(th), 0.0, cos(th)), toCam) * inversesqrt(dr) * 0.5;
+  float dop = 1.0 / (1.0 - beta);
+  float heat = smoothstep(1.75, 6.4, dr);
+  float tail = pow(1.0 - lag / TRAIL, 1.3) * 0.4;
+  float edgeFade = smoothstep(1.75, 2.15, dr) * (1.0 - smoothstep(3.4, 6.4, dr) * 0.95);
+  vec3 col = mix(mix(HOT * 1.05, AMBER, smoothstep(0.0, 0.55, heat)), EMBER, smoothstep(0.55, 1.0, heat));
+  float clump = pow(sin(h1(base + 7450.0) * TAU * 7.0 + dr * 5.0) * 0.5 + 0.5, 3.0) * 0.75 + 0.25;
+  vCol = mix(col, ICE * 1.4, clamp(beta * 1.6, 0.0, 0.6)) * pow(dop, 3.0) * clump * mu * uGain * tail * edgeFade * uVis;
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  gl_PointSize = (hidden || gap < 0.5 || uVis < 0.002) ? 0.0 : uPxSize * (1.0 - lag * 0.07);
+}`,
+    fragmentShader: `
+varying vec3 vCol;
+void main() { float d = length(gl_PointCoord - 0.5) * 2.0; float a = max(1.0 - d, 0.0); gl_FragColor = vec4(vCol * a * a, 1.0); }`,
+  });
+  const disk = new THREE.Points(diskGeo, diskMat);
+  disk.frustumCulled = false; disk.renderOrder = -3;
+  // The shadow: a black disc with a thin hot rim, brighter on the approaching side.
+  const SHADOW_K = 1.3;
+  const shadowMat = new THREE.ShaderMaterial({
+    uniforms: HU, transparent: true, depthTest: false, depthWrite: false,
+    vertexShader: 'varying vec2 vQ; void main() { vQ = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `
+uniform float uVis; uniform vec2 uRingDir;
+varying vec2 vQ;
+void main() {
+  vec2 q = vQ; float d = length(q);
+  float edge = 1.0 / ${SHADOW_K.toFixed(2)}, aa = 0.02, rimW = 0.08;
+  float inside = 1.0 - smoothstep(edge - aa, edge, d);
+  float rim = smoothstep(edge - aa, edge, d) * (1.0 - smoothstep(edge + rimW - aa, edge + rimW, d));
+  float beam = dot(q / max(d, 1e-4), uRingDir) * 0.7 + 1.0;
+  gl_FragColor = vec4(vec3(1.0, 0.86, 0.66) * beam * 2.6 * rim, min(inside + rim, 1.0) * uVis);
+}`,
+  });
+  const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), shadowMat);
+  shadowMesh.frustumCulled = false; shadowMesh.renderOrder = -4;
+  scene.add(shadowMesh, disk);
+  const diskM = new THREE.Matrix4();
 
   // Backlit tubes: dark faces, a warm rim where the low sun grazes them.
   const rodMat = new THREE.MeshStandardMaterial({ color: 0x0b0908, roughness: 0.42, metalness: 0.25 });
@@ -1208,13 +1291,31 @@ void main() {
       }
       printMesh.count = n; printMesh.instanceMatrix.needsUpdate = true;
       groundMesh.position.set(tx, 0, -1);
+      // The black hole sits thirty units out along the sun bearing.
+      disk.visible = shadowMesh.visible = look.hole > 0.01;
+      if (disk.visible) {
+        const shadowR = (sunR / focal) * 30, R = shadowR;
+        HU.uC.value.copy(camera.position).addScaledVector(sd, 30);
+        HU.uR.value = R; HU.uW.value = 29 * R; HU.uVis.value = look.hole;
+        // The camera sits about fourteen degrees above the disc.
+        diskM.makeRotationAxis(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -0.31);
+        HU.uRot.value.setFromMatrix4(diskM);
+        const rpx = sunR;
+        HU.uGain.value = clamp((160 * rpx * rpx) / DISK_N, 0.08, 2.5);
+        HU.uPxSize.value = 2.4 * renderer.getPixelRatio();
+        shadowMesh.position.copy(HU.uC.value);
+        shadowMesh.scale.setScalar(R * SHADOW_K);
+        shadowMesh.quaternion.copy(camera.quaternion);
+      }
       // The planet keeps its place in the sky, thirty units out along its bearing.
-      planet.visible = look.alien > 0.01;
+      planet.visible = look.alien > 0.5;
       if (planet.visible) {
         const PL = _v.copy(sd).addScaledVector(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -0.45 * h / focal).addScaledVector(_b.set(0, 1, 0), 0.36 * h / focal).normalize();
         planet.position.copy(camera.position).addScaledVector(PL, 30);
         planet.scale.setScalar((sunR / focal) * 3.4 * 30);
         planet.lookAt(camera.position);
+        // The face is lit mostly from our side, leaning toward the star: a full planet, no night cap.
+        U.uLp.value.copy(PL).negate().addScaledVector(_b.copy(sd).sub(PL), 0.6).normalize();
       }
 
       renderer.setRenderTarget(rt);
