@@ -13,23 +13,29 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Fidget board: a 70s appliance. A teak tray holds enamel and aluminium plates.
-   The controls are lit from the top left; the JS draws their shading. */
-:root { --stage: oklch(0.3 0.05 50); }
+/* Fidget board: a live blueprint. Each plate is a framed drawing sheet.
+   Parts are wireframes: paper fill, ink edge, dashed hidden edges, hatched when pressed. */
+:root {
+  --stage: oklch(0.22 0.06 258);
+  --ink: oklch(0.93 0.03 225); --faint: oklch(0.72 0.06 240); --hot: oklch(0.76 0.17 52);
+}
 /* The gap resolves to pixels on the board, so plates inherit one size. */
 @property --gap { syntax: "<length>"; inherits: true; initial-value: 8px; }
 
-/* ---------- the slab: plates fill the stage, cut apart by gaps ---------- */
+/* ---------- the sheet: a drafting grid under framed plates ---------- */
 .stage--fidget {
   container: stage / size;
-  /* Teak: stretched noise draws the grain over a warm ramp. */
+  --g1: oklch(0.8 0.06 235 / 0.06); --g2: oklch(0.8 0.06 235 / 0.12);
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='900'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0025 0.07' numOctaves='4' seed='11'/%3E%3CfeColorMatrix values='0 0 0 0 0.1 0 0 0 0 0.04 0 0 0 0 0.01 1.3 0 0 0 -0.45'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E") 0 0 / 900px 900px,
-    linear-gradient(175deg, oklch(0.47 0.085 55), oklch(0.36 0.07 48));
+    linear-gradient(var(--g2) 1px, transparent 1px) -1px -1px / 60px 60px,
+    linear-gradient(90deg, var(--g2) 1px, transparent 1px) -1px -1px / 60px 60px,
+    linear-gradient(var(--g1) 1px, transparent 1px) -1px -1px / 12px 12px,
+    linear-gradient(90deg, var(--g1) 1px, transparent 1px) -1px -1px / 12px 12px,
+    var(--stage);
 }
 .board {
   position: absolute; inset: 0; display: grid;
-  --gap: clamp(5px, 1.6cqmin, 14px);
+  --gap: clamp(6px, 1.8cqmin, 16px);
   --pad: calc(var(--gap) * 1.5);
   --gi: calc(var(--gap) * 1.2);
   padding: var(--gap); gap: var(--gap);
@@ -43,32 +49,35 @@
     "joy tog safe rock wheel";
 }
 
-/* ---------- plates: almond enamel, brushed aluminium, chocolate ---------- */
+/* ---------- plates: a hairline frame with crop marks at each corner ---------- */
 .cell {
   container-type: size; position: relative; display: grid; place-items: center;
   min-width: 0; min-height: 0;
-  /* Almond enamel is the default plate. */
-  background: linear-gradient(172deg, oklch(0.93 0.032 85), oklch(0.85 0.04 78));
-  box-shadow:
-    inset 0 1.5px 0 oklch(1 0 0 / 0.7), inset 0 -2px 0 oklch(0.55 0.05 60 / 0.45),
-    0 2px 0 oklch(0.2 0.04 45 / 0.5), 0 5px 10px oklch(0.15 0.04 45 / 0.35);
-  border-radius: max(6px, calc(18px - var(--gap)));
+  /* The top band holds the part tag and the readout. */
+  padding-top: 15px;
+  --c: var(--ink); --m: 9px;
+  background:
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--m) 1.5px, linear-gradient(var(--c), var(--c)) 0 0 / 1.5px var(--m),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--m) 1.5px, linear-gradient(var(--c), var(--c)) 100% 0 / 1.5px var(--m),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--m) 1.5px, linear-gradient(var(--c), var(--c)) 0 100% / 1.5px var(--m),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--m) 1.5px, linear-gradient(var(--c), var(--c)) 100% 100% / 1.5px var(--m),
+    oklch(0.24 0.06 258 / 0.7);
+  background-repeat: no-repeat;
+  outline: 1px solid oklch(0.85 0.05 230 / 0.2); outline-offset: -1px;
   /* The inner margin shrinks on thin panels. */
   --p: min(var(--pad), 8cqmin);
 }
-/* Brushed aluminium: fine streaks over a cool sheen. */
-.c-dial {
-  background:
-    repeating-linear-gradient(90deg, oklch(1 0 0 / 0.07) 0 1px, oklch(0 0 0 / 0.04) 1px 3px, transparent 3px 5px),
-    linear-gradient(165deg, oklch(0.9 0.006 85), oklch(0.74 0.01 80) 55%, oklch(0.82 0.008 85));
+/* Part tag on the left, live readout on the right. */
+.tag, .ro {
+  position: absolute; top: 4px; font-size: 9.5px; line-height: 1; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--faint); white-space: nowrap; pointer-events: none;
 }
-/* Chocolate panels carry the keys and the safety. */
-.c-keys, .c-safe {
-  background: linear-gradient(172deg, oklch(0.37 0.045 50), oklch(0.29 0.04 45));
-  box-shadow:
-    inset 0 1.5px 0 oklch(1 0 0 / 0.16), inset 0 -2px 0 oklch(0 0 0 / 0.3),
-    0 2px 0 oklch(0.2 0.04 45 / 0.5), 0 5px 10px oklch(0.15 0.04 45 / 0.35);
-}
+.tag { left: 8px; font-weight: 600; }
+.tag b { color: var(--ink); font-weight: 800; margin-right: 0.5em; }
+.ro { right: 8px; font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em; color: var(--ink); }
+.ro.hot { color: var(--hot); }
+/* Narrow plates keep the part number and drop the name. */
+@container (width < 190px) { .tag span { display: none; } }
 .c-dial { grid-area: dial; }
 .c-keys { grid-area: keys; }
 .c-fader { grid-area: fader; }
@@ -101,6 +110,8 @@
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
 }
 .ctl svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* Strokes hold one pixel width at any plate size. */
+.ctl svg :is(path, line, circle, rect, ellipse, polyline, polygon):not(pattern *) { vector-effect: non-scaling-stroke; }
 .ctl:focus-visible, .safety .hit:focus-visible { outline: 2px solid var(--focus); outline-offset: 5px; }
 .dial { --ar: 1; border-radius: 50%; cursor: grab; }
 .joy { --ar: 1; border-radius: 50%; cursor: grab; }
@@ -159,40 +170,40 @@
   <main>
     <div class="stage stage--fidget" role="group" aria-label="Fidget board">
       <div class="board">
-        <div class="cell c-dial"><div class="grp">
+        <div class="cell c-dial"><i class="tag" aria-hidden="true"><b>01</b><span>Dial</span></i><span class="ro" data-ro="dial" aria-hidden="true"></span><div class="grp">
           <div class="ctl dial" id="dial" tabindex="0" role="slider" aria-label="Dial" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"></div>
         </div></div>
-        <div class="cell c-keys"><div class="grp" role="group" aria-label="Keys">
+        <div class="cell c-keys"><i class="tag" aria-hidden="true"><b>02</b><span>Keys</span></i><span class="ro" data-ro="keys" aria-hidden="true"></span><div class="grp" role="group" aria-label="Keys">
           <button class="ctl key" type="button" aria-label="Key 1"></button>
           <button class="ctl key" type="button" aria-label="Key 2"></button>
           <button class="ctl key" type="button" aria-label="Key 3"></button>
           <button class="ctl key" type="button" aria-label="Latching key" aria-pressed="false"></button>
         </div></div>
-        <div class="cell c-fader">
+        <div class="cell c-fader"><i class="tag" aria-hidden="true"><b>03</b><span>Slider</span></i><span class="ro" data-ro="fader" aria-hidden="true"></span>
           <div class="ctl fader wide" id="fader" tabindex="0" role="slider" aria-label="Slider" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3"></div>
         </div>
-        <div class="cell c-abacus">
+        <div class="cell c-abacus"><i class="tag" aria-hidden="true"><b>04</b><span>Abacus</span></i><span class="ro" data-ro="abacus" aria-hidden="true"></span>
           <div class="ctl abacus wide" id="abacus" tabindex="0" role="slider" aria-label="Abacus" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"></div>
         </div>
-        <div class="cell c-joy"><div class="grp">
+        <div class="cell c-joy"><i class="tag" aria-hidden="true"><b>05</b><span>Stick</span></i><span class="ro" data-ro="joy" aria-hidden="true"></span><div class="grp">
           <div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick"></div>
         </div></div>
-        <div class="cell c-tog"><div class="grp" role="group" aria-label="Switches">
-          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Orange switch" data-c="orange"></button>
-          <button class="ctl toggle" type="button" role="switch" aria-checked="false" aria-label="Gold switch" data-c="gold"></button>
-          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Avocado switch" data-c="avocado"></button>
+        <div class="cell c-tog"><i class="tag" aria-hidden="true"><b>06</b><span>Switches</span></i><span class="ro" data-ro="tog" aria-hidden="true"></span><div class="grp" role="group" aria-label="Switches">
+          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Switch 1"></button>
+          <button class="ctl toggle" type="button" role="switch" aria-checked="false" aria-label="Switch 2"></button>
+          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Switch 3"></button>
         </div></div>
-        <div class="cell c-safe"><div class="grp">
+        <div class="cell c-safe"><i class="tag" aria-hidden="true"><b>07</b><span>Safety</span></i><span class="ro" data-ro="safe" aria-hidden="true"></span><div class="grp">
           <div class="ctl safety" id="safety" role="group" aria-label="Safety switch">
             <button class="hit" type="button" aria-label="Safety cover" aria-expanded="false" aria-controls="arm"></button>
             <button class="hit arm" id="arm" type="button" role="switch" aria-label="Armed switch" aria-checked="false" aria-disabled="true"></button>
           </div>
         </div></div>
-        <div class="cell c-rock"><div class="grp" role="group" aria-label="Rockers">
-          <button class="ctl rocker" type="button" role="switch" aria-checked="true" aria-label="Almond rocker" data-c="almond"></button>
-          <button class="ctl rocker" type="button" role="switch" aria-checked="false" aria-label="Orange rocker" data-c="orange"></button>
+        <div class="cell c-rock"><i class="tag" aria-hidden="true"><b>08</b><span>Rockers</span></i><span class="ro" data-ro="rock" aria-hidden="true"></span><div class="grp" role="group" aria-label="Rockers">
+          <button class="ctl rocker" type="button" role="switch" aria-checked="true" aria-label="Rocker 1"></button>
+          <button class="ctl rocker" type="button" role="switch" aria-checked="false" aria-label="Rocker 2"></button>
         </div></div>
-        <div class="cell c-wheel"><div class="grp">
+        <div class="cell c-wheel"><i class="tag" aria-hidden="true"><b>09</b><span>Wheel</span></i><span class="ro" data-ro="wheel" aria-hidden="true"></span><div class="grp">
           <div class="ctl wheel" id="wheel" tabindex="0" role="slider" aria-orientation="vertical" aria-label="Thumb wheel" aria-valuemin="0" aria-valuemax="19" aria-valuenow="0"></div>
         </div></div>
       </div>
@@ -238,50 +249,10 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > PI) d -= TAU; else if (d < -PI) d += TAU; return d; };
 const KEYS = [' ', 'Enter'];
 
-// Served locally, the home link opens the repo copy instead of the Artifact.
-if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
-  document.querySelectorAll('a[data-local]').forEach(a => { a.href = a.dataset.local; a.removeAttribute('target'); });
-}
-
-/* ---------- colour: OKLCH in, sRGB hex out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
-}
-const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
-function rgb([L, C, h]) {
-  let c = lin(L, C, h);
-  // Chroma shrinks until the colour fits sRGB.
-  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return [gam(c[0]), gam(c[1]), gam(c[2])];
-}
-const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
-const css = lch => { const [r, g, b] = rgb(lch); return '#' + hx(r) + hx(g) + hx(b); };
-function mixLch(A, B, t) {
-  const dh = (((B[2] - A[2]) % 360) + 540) % 360 - 180;
-  return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
-}
-// A ramp caches 32 steps between two colours.
-function ramp(A, B) {
-  const c = [];
-  return t => { const q = Math.round(clamp(t) * 32); return c[q] || (c[q] = css(mixLch(A, B, q / 32))); };
-}
-
-/* ---------- palette: a 70s kitchen ---------- */
-const C = {
-  almond: [0.94, 0.03, 85], orange: [0.68, 0.17, 48], gold: [0.8, 0.145, 82], avocado: [0.63, 0.11, 118],
-  brown: [0.36, 0.05, 50], cocoa: [0.27, 0.035, 45], tomato: [0.6, 0.18, 33],
-};
-const TICK = css([0.42, 0.04, 55]), AMBER = css([0.74, 0.17, 58]);
-
-/* ---------- svg helpers ---------- */
+/* ---------- drawing kit: a technical drawing in three inks ---------- */
+const INK = 'oklch(0.93 0.03 225)', FAINT = 'oklch(0.72 0.06 240)', HOT = 'oklch(0.76 0.17 52)';
+// Paper matches the plate, so a part hides what lies behind it.
+const PAPER = 'oklch(0.235 0.06 258)';
 function el(tag, attrs = {}, parent) {
   const e = document.createElementNS(NS, tag);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -294,88 +265,55 @@ function set(e, k, v) {
 }
 let ids = 0;
 const nid = p => `fb-${p}${++ids}`;
-// A gradient takes stops as [offset, colour, opacity].
-function grad(defs, type, attrs, stops) {
-  const id = nid('g'), g = el(type, { id, ...attrs }, defs);
-  const st = stops.map(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g));
-  return { url: `url(#${id})`, st };
-}
-const DOWN = { x1: 0, y1: 0, x2: 0, y2: 1 };
-// A soft blur casts contact shadows under raised parts.
-function blur(defs, sd) {
-  const id = nid('f'), f = el('filter', { id, x: '-60%', y: '-60%', width: '220%', height: '220%' }, defs);
-  el('feGaussianBlur', { stdDeviation: sd }, f);
+// Hatch tiles keep one pixel spacing at any plate size.
+const tiles = new Map();
+const fitTiles = new ResizeObserver(es => es.forEach(e => {
+  const svg = e.target, k = svg.viewBox.baseVal.height / Math.max(1, e.contentRect.height);
+  for (const t of tiles.get(svg)) {
+    const g = f3(t.gap * k);
+    set(t.p, 'width', g); set(t.p, 'height', g);
+    set(t.l, 'x1', f3(g / 2)); set(t.l, 'x2', f3(g / 2)); set(t.l, 'y2', g);
+    set(t.l, 'stroke-width', f3(t.w * k));
+  }
+}));
+function hatchIn(svg, col, gap, w) {
+  const id = nid('h'), p = el('pattern', { id, patternUnits: 'userSpaceOnUse', width: gap, height: gap, patternTransform: 'rotate(45)' }, svg.k.defs);
+  const l = el('line', { x1: gap / 2, y1: 0, x2: gap / 2, y2: gap, stroke: col, 'stroke-width': w }, p);
+  tiles.get(svg).push({ p, l, gap, w });
   return `url(#${id})`;
 }
-// Each svg shares one sheen, one rim and one lip gradient.
+// Each svg gets a hot hatch and an ink hatch.
 function svgIn(host, vb) {
   const svg = el('svg', { viewBox: vb, 'aria-hidden': 'true', focusable: 'false' }, host);
-  const defs = el('defs', {}, svg);
-  svg.k = {
-    defs,
-    sheen: grad(defs, 'radialGradient', { cx: 0.3, cy: 0.16, r: 0.9 }, [[0, '#fff', 0.55], [0.45, '#fff', 0.1], [1, '#fff', 0]]).url,
-    rim: grad(defs, 'linearGradient', DOWN, [[0, '#fff', 0.85], [0.28, '#fff', 0], [0.62, '#000', 0], [1, '#000', 0.4]]).url,
-    lip: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.75], [0.3, '#000', 0], [0.78, '#fff', 0], [1, '#fff', 0.13]]).url,
-  };
+  svg.k = { defs: el('defs', {}, svg) };
+  tiles.set(svg, []);
+  svg.k.hot = hatchIn(svg, HOT, 4.5, 1.2);
+  svg.k.ink = hatchIn(svg, INK, 5, 0.8);
+  fitTiles.observe(svg);
   return svg;
 }
-// A material gives top, middle and bottom tones, darker as it is pressed.
-function mat(lch, dk = 0.09) {
-  const c = [];
-  return t => {
-    const q = Math.round(clamp(t) * 24);
-    if (!c[q]) {
-      const d = (dk * q) / 24;
-      c[q] = [[0.07, 0.85], [0, 1], [-0.14, 1.05]].map(([dl, k]) => css([lch[0] + dl - d, lch[1] * k, lch[2]]));
-    }
-    return c[q];
+// A solid part: paper hides what lies behind; ink draws the edge.
+const part = (p, tag, a, w = 1.5, col = INK) => el(tag, { fill: PAPER, stroke: col, 'stroke-width': w, 'stroke-linejoin': 'round', ...a }, p);
+// A hidden edge: faint and dashed, as on a drawing.
+const hid = (p, tag, a) => el(tag, { fill: 'none', stroke: FAINT, 'stroke-width': 1, 'stroke-dasharray': '3 3', ...a }, p);
+const line = (p, a, w = 1.5, col = INK) => el('line', { stroke: col, 'stroke-width': w, 'stroke-linecap': 'round', ...a }, p);
+// A centre mark: a small cross in faint ink.
+function centre(p, x, y, r) {
+  line(p, { x1: x - r, y1: y, x2: x + r, y2: y }, 1, FAINT);
+  line(p, { x1: x, y1: y - r, x2: x, y2: y + r }, 1, FAINT);
+}
+// A hatch layer copies a shape; its opacity sets the strength.
+const shade = (p, tag, a, fill) => el(tag, { ...a, fill, stroke: 'none', opacity: 0 }, p);
+// A readout writes its text only when the text changes.
+function readout(id) {
+  const n = document.querySelector(`[data-ro="${id}"]`);
+  let t = null, h = null;
+  return (txt, hot = false) => {
+    if (txt !== t) { t = txt; n.textContent = txt; }
+    if (hot !== h) { h = hot; n.classList.toggle('hot', hot); }
   };
 }
-// Chrome: a bright top, a dark band, a light floor, darker as pressed.
-function chrome(dk = 0.06) {
-  const c = [];
-  return t => {
-    const q = Math.round(clamp(t) * 24);
-    if (!c[q]) { const d = (dk * q) / 24; c[q] = [0.97, 0.56, 0.86].map(L => css([L - d, 0.008, 80])); }
-    return c[q];
-  };
-}
-// A raised part: contact shadow, body gradient, sheen and a specular rim.
-// A cylinder runs its light across instead of down.
-function skin(svg, parent, tag, attrs, M, { rim = 2.5, shadow = null, sheen = true, cyl = false } = {}) {
-  const { defs } = svg.k, id = nid('s');
-  const shape = el(tag, { id, ...attrs }, defs);
-  const clip = el('clipPath', { id: id + 'c' }, defs);
-  el('use', { href: '#' + id }, clip);
-  const g = el('g', {}, parent);
-  const sh = shadow ? el('use', { href: '#' + id, fill: '#000', opacity: shadow.o ?? 0.5, filter: blur(defs, shadow.b), transform: `translate(0 ${shadow.y})` }, g) : null;
-  const base = cyl
-    ? grad(defs, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 0 }, [[0, '#fff'], [0.32, '#fff'], [1, '#fff']])
-    : grad(defs, 'linearGradient', DOWN, [[0, '#fff'], [0.5, '#fff'], [1, '#fff']]);
-  const order = cyl ? [1, 0, 2] : [0, 1, 2];
-  el('use', { href: '#' + id, fill: base.url }, g);
-  if (sheen) el('use', { href: '#' + id, fill: svg.k.sheen }, g);
-  el('use', { href: '#' + id, fill: 'none', stroke: svg.k.rim, 'stroke-width': rim * 2, 'clip-path': `url(#${id}c)` }, g);
-  const k = {
-    shape, g, sh,
-    paint(t) { const c = M(t); for (let i = 0; i < 3; i++) set(base.st[i], 'stop-color', c[order[i]]); },
-  };
-  k.paint(0);
-  return k;
-}
-// A recess: dark at the top where the edge shades it, a faint lip below.
-const WELL = mat([0.2, 0.03, 50]);
-function well(svg, parent, tag, attrs, { rim = 3 } = {}) {
-  const { defs } = svg.k, id = nid('w');
-  const shape = el(tag, { id, ...attrs }, defs);
-  const clip = el('clipPath', { id: id + 'c' }, defs);
-  el('use', { href: '#' + id }, clip);
-  const [, mid, low] = WELL(0);
-  const base = grad(defs, 'linearGradient', DOWN, [[0, low], [1, mid]]);
-  el('use', { href: '#' + id, fill: base.url }, parent);
-  el('use', { href: '#' + id, fill: 'none', stroke: svg.k.lip, 'stroke-width': rim * 2, 'clip-path': `url(#${id}c)` }, parent);
-  return shape;
-}
+const pad = (n, k = 2) => String(n).padStart(k, '0');
 
 /* ---------- physics loop ---------- */
 // One rAF loop runs only while some body is still moving.
@@ -420,7 +358,7 @@ const moves = [];
 const board = {
   armed: false, latched: false, firing: false, dial: null, fire: null,
   get primed() { return this.armed && this.latched && !this.firing; },
-  set(k, v) { this[k] = v; this.dial?.prime(); },
+  set(k, v) { this[k] = v; this.dial?.prime(); this.show?.(); },
 };
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
@@ -644,34 +582,46 @@ const snd = (() => {
 })();
 
 /* ---------- dial ---------- */
-// A chrome knurled skirt and a bakelite dished cap; the ticks light amber.
+// A knurled skirt and a dished cap in plan view; ticks light hot.
 const dialEl = document.getElementById('dial');
 bodies.push((() => {
-  const svg = svgIn(dialEl, '0 0 400 400'), defs = svg.k.defs;
+  const svg = svgIn(dialEl, '0 0 400 400');
   const CX = 200, N = 24, STEP = TAU / N;
   const at = (r, a) => [f2(CX + r * Math.sin(a)), f2(CX - r * Math.cos(a))];
-  const ticks = el('g', { stroke: TICK, 'stroke-linecap': 'round' }, svg), lit = el('g', { stroke: AMBER, 'stroke-linecap': 'round' }, svg), tl = [];
+  // Chain lines mark both axes, as on a drawing.
+  const chain = { 'stroke-dasharray': '14 4 2 4' };
+  el('line', { x1: CX, y1: 0, x2: CX, y2: 400, stroke: FAINT, 'stroke-width': 1, ...chain }, svg);
+  el('line', { x1: 0, y1: CX, x2: 400, y2: CX, stroke: FAINT, 'stroke-width': 1, ...chain }, svg);
+  const ticks = el('g', { stroke: INK, 'stroke-linecap': 'round' }, svg), lit = el('g', { stroke: HOT, 'stroke-linecap': 'round' }, svg), tl = [];
   for (let k = 0; k < N; k++) {
-    const [x1, y1] = at(k % 6 ? 180 : 171, k * STEP), [x2, y2] = at(194, k * STEP);
-    const a = { x1, y1, x2, y2, 'stroke-width': k % 6 ? 5 : 8 };
-    el('line', a, ticks);
-    tl.push(el('line', { ...a, opacity: 0 }, lit));
+    const [x1, y1] = at(k % 6 ? 180 : 170, k * STEP), [x2, y2] = at(194, k * STEP);
+    el('line', { x1, y1, x2, y2, 'stroke-width': k % 6 ? 1.2 : 2.2 }, ticks);
+    tl.push(el('line', { x1, y1, x2, y2, 'stroke-width': k % 6 ? 2.6 : 3.4, opacity: 0 }, lit));
   }
-  // The skirt's body stays lit from the top left; only its knurl turns.
-  const skirt = skin(svg, svg, 'circle', { cx: CX, cy: CX, r: 156 }, chrome(0.03), { rim: 3, shadow: { b: 9, y: 11, o: 0.55 } });
-  const knob = el('g', { stroke: css([0.38, 0.012, 75]), 'stroke-width': 3.2, 'stroke-linecap': 'round', opacity: 0.6 }, svg);
-  for (let k = 0; k < 60; k++) {
-    const [x1, y1] = at(139, (k / 60) * TAU), [x2, y2] = at(153, (k / 60) * TAU);
+  // The sweep arc measures the turn from zero.
+  const sweep = el('path', { fill: 'none', stroke: HOT, 'stroke-width': 2, 'stroke-linecap': 'round' }, svg);
+  // The skirt's back edge shows as a hidden line below it.
+  hid(svg, 'circle', { cx: CX, cy: CX + 14, r: 156 });
+  part(svg, 'circle', { cx: CX, cy: CX, r: 156 });
+  el('circle', { cx: CX, cy: CX, r: 134, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+  const knob = el('g', { stroke: INK, 'stroke-width': 1, opacity: 0.75 }, svg);
+  for (let k = 0; k < 72; k++) {
+    const [x1, y1] = at(138, (k / 72) * TAU), [x2, y2] = at(152, (k / 72) * TAU);
     el('line', { x1, y1, x2, y2 }, knob);
   }
   const top = el('g', {}, svg);
-  const cap = skin(svg, top, 'circle', { cx: CX, cy: CX, r: 120 }, mat(C.brown, 0.08), { rim: 2.5, shadow: { b: 5, y: 6, o: 0.45 } });
-  // The dish darkens at the top edge and catches light below.
-  el('circle', { cx: CX, cy: CX, r: 92, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.16], [0.55, '#000', 0], [1, '#fff', 0.5]]).url }, top);
+  // The cap's back edge rises into it as the cap sinks.
+  const back = hid(top, 'circle', { cx: CX, cy: CX + 8, r: 120 });
+  part(top, 'circle', { cx: CX, cy: CX, r: 120 }, 2);
+  const press = shade(top, 'circle', { cx: CX, cy: CX, r: 120 }, svg.k.ink);
+  el('circle', { cx: CX, cy: CX, r: 92, fill: 'none', stroke: INK, 'stroke-width': 1 }, top);
+  hid(top, 'circle', { cx: CX, cy: CX, r: 104 });
+  centre(top, CX, CX, 18);
+  // The pointer: a hot needle with an arrow tip.
   const ind = el('g', {}, top);
-  el('rect', { x: CX - 12, y: CX - 113, width: 24, height: 66, rx: 12, fill: css([0.18, 0.03, 45]), opacity: 0.5 }, ind);
-  el('rect', { x: CX - 9, y: CX - 110, width: 18, height: 60, rx: 9, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.77, 0.14, 38])], [1, css([0.62, 0.16, 30])]]).url }, ind);
-  void skirt;
+  line(ind, { x1: CX, y1: CX - 30, x2: CX, y2: CX - 100 }, 3, HOT);
+  el('path', { d: `M${CX - 10} ${CX - 96}L${CX} ${CX - 116}L${CX + 10} ${CX - 96}Z`, fill: HOT }, ind);
+  const ro = readout('dial');
 
   const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', pr: S(), fl: new Float32Array(N), floor: 0, near: 0, pid: null, pu: 0, prev: 0, off: 0, trail: [], rect: null, run: -1, rk: 0, r0: 0 };
   // The launch run lights one tick every 18 ms.
@@ -753,7 +703,12 @@ bodies.push((() => {
       set(ind, 'transform', r);
       const p = s.pr.x;
       set(top, 'transform', `translate(200 200) scale(${f3(1 - 0.03 * p)}) translate(-200 -200)`);
-      cap.paint(p * 0.8);
+      set(back, 'transform', `translate(0 ${f2(-6 * p)})`);
+      set(press, 'opacity', f3(0.5 * p));
+      // The arc runs clockwise from the top to the pointer.
+      if (deg < 0.5) set(sweep, 'd', '');
+      else { const [x, y] = at(166, deg * D2R); set(sweep, 'd', `M200 34A166 166 0 ${deg > 180 ? 1 : 0} 1 ${x} ${y}`); }
+      ro(`${pad(Math.round(deg) % 360, 3)}°`, board.primed);
       const cur = mod(Math.round(s.th / STEP), N);
       // A primed board holds the whole ring faintly lit.
       const base = board.primed ? 0.45 : 0;
@@ -849,34 +804,38 @@ bodies.push((() => {
 })());
 
 /* ---------- toggle switches ---------- */
-// A chrome bezel holds a sunk channel and a bakelite lever.
-// The channel lights in the switch colour below the lever.
-const BEZEL = chrome(0);
+// A capsule body holds a slot; the slot hatches hot below the lever.
+// A bank readout shows each switch as one bit.
+const bank = (id, n) => {
+  const ro = readout(id), b = Array(n).fill('0');
+  return (i, v) => { b[i] = v ? '1' : '0'; ro(b.join(' '), !b.includes('0')); };
+};
+const togBits = bank('tog', document.querySelectorAll('.toggle').length);
 // The lever travels 58 units; its centre sits at 91 when off.
 const TY = 91, TT = 58;
-document.querySelectorAll('.toggle').forEach(btn => {
-  const svg = svgIn(btn, '0 0 54 124'), defs = svg.k.defs, id = nid('t'), col = C[btn.dataset.c];
-  const tone = (dl, k = 1) => css([col[0] + dl, col[1] * k, col[2]]);
-  skin(svg, svg, 'rect', { width: 54, height: 124, rx: 27 }, BEZEL, { rim: 2, shadow: { b: 3, y: 4, o: 0.55 } });
-  well(svg, svg, 'rect', { x: 7, y: 7, width: 40, height: 110, rx: 20 }, { rim: 3.5 });
-  const clip = el('clipPath', { id }, defs);
+document.querySelectorAll('.toggle').forEach((btn, idx) => {
+  const svg = svgIn(btn, '0 0 54 124'), id = nid('t');
+  hid(svg, 'rect', { x: 0, y: 6, width: 54, height: 124, rx: 27 });
+  part(svg, 'rect', { x: 0.5, y: 0.5, width: 53, height: 123, rx: 26.5 });
+  const clip = el('clipPath', { id }, svg.k.defs);
   el('rect', { x: 10, y: 10, width: 34, height: 104, rx: 17 }, clip);
-  const cp = `url(#${id})`;
-  // A dark tint keeps the off channel from reading as a hole.
-  el('rect', { x: 10, y: 10, width: 34, height: 104, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(-0.5, 0.35)], [1, tone(-0.42, 0.45)]]).url, 'clip-path': cp }, svg);
-  const glow = el('g', { 'clip-path': cp }, svg);
-  const lit = el('rect', { x: 10, width: 34, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(0.08, 0.85)], [0.5, tone(0)], [1, tone(-0.14, 1.05)]]).url }, glow);
-  // A soft gloss strip runs down the lit channel.
-  const gloss = el('rect', { x: 15, width: 6, rx: 3, fill: '#fff', opacity: 0.22 }, glow);
+  const glow = el('g', { 'clip-path': `url(#${id})` }, svg);
+  const lit = el('rect', { x: 10, width: 34, fill: svg.k.hot }, glow);
+  el('rect', { x: 10, y: 10, width: 34, height: 104, rx: 17, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+  // A chain line runs down the slot's axis.
+  el('line', { x1: 27, y1: 4, x2: 27, y2: 120, stroke: FAINT, 'stroke-width': 1, 'stroke-dasharray': '8 3 2 3' }, svg);
   const lg = el('g', {}, svg);
-  const lever = skin(svg, lg, 'rect', { x: 10, width: 34, height: 44, rx: 17 }, mat(C.brown, 0.08), { rim: 2, shadow: { b: 3, y: 4, o: 0.6 } });
-  // A dished thumb rest with a pip in the switch colour.
-  el('ellipse', { cx: 27, cy: 22, rx: 10, ry: 13, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.2], [0.55, '#000', 0], [1, '#fff', 0.6]]).url }, lg);
-  el('circle', { cx: 27, cy: 22, r: 3.4, fill: tone(-0.04) }, lg);
-  el('circle', { cx: 27, cy: 22, r: 3.4, fill: 'none', stroke: '#000', 'stroke-opacity': 0.22, 'stroke-width': 1 }, lg);
+  const back = hid(lg, 'rect', { x: 10, y: 5, width: 34, height: 44, rx: 17 });
+  part(lg, 'rect', { x: 10, width: 34, height: 44, rx: 17 }, 1.6);
+  const press = shade(lg, 'rect', { x: 10, width: 34, height: 44, rx: 17 }, svg.k.ink);
+  el('circle', { cx: 27, cy: 22, r: 9, fill: 'none', stroke: INK, 'stroke-width': 1 }, lg);
+  centre(lg, 27, 22, 4);
+  const rim = el('rect', { x: 10, y: 10, width: 34, height: 104, rx: 17, fill: 'none', stroke: HOT, 'stroke-width': 1.5, opacity: 0 }, svg);
+  svg.insertBefore(rim, lg);
 
   const init = btn.getAttribute('aria-checked') === 'true';
   const s = { p: S(+init), pr: S(), on: init, pid: null, y0: 0, p0: 0, span: 1, drag: false };
+  togBits(idx, init);
   const body = {
     step(h) {
       // Free travel overshoots a little; a dragging finger damps it.
@@ -888,17 +847,17 @@ document.querySelectorAll('.toggle').forEach(btn => {
       const p = s.p.x, st = clamp(Math.abs(s.p.v) * 0.012, 0, 0.1), sc = 1 - 0.06 * s.pr.x, cy = TY - TT * p;
       // The lever stretches along its travel while moving fast.
       set(lg, 'transform', `translate(27 ${f2(cy)}) scale(${f3(sc * (1 - 0.5 * st))} ${f3(sc * (1 + st))}) translate(-27 -22)`);
-      // The colour fills the channel from the lever down.
-      const h = f2(Math.max(0, 114 - cy));
-      set(lit, 'y', f2(cy)); set(lit, 'height', h);
-      set(gloss, 'y', f2(cy + 22)); set(gloss, 'height', f2(Math.max(0, 114 - cy - 30)));
+      // The hatch fills the slot from the lever down.
+      set(lit, 'y', f2(cy)); set(lit, 'height', f2(Math.max(0, 114 - cy)));
       set(glow, 'opacity', f3(clamp(p)));
-      lever.paint(s.pr.x * 0.8);
+      set(rim, 'opacity', f3(clamp(p)));
+      set(back, 'transform', `translate(0 ${f2(-4 * s.pr.x)})`);
+      set(press, 'opacity', f3(0.6 * s.pr.x));
     },
   };
   function flip(v) {
     if (v !== s.on) snd.flip(v);
-    s.on = v; s.p.t = +v; btn.setAttribute('aria-checked', String(v)); wake(body);
+    s.on = v; s.p.t = +v; btn.setAttribute('aria-checked', String(v)); togBits(idx, v); wake(body);
   }
   btn.addEventListener('pointerdown', e => {
     if (s.pid != null || e.button > 0) return;
@@ -937,23 +896,35 @@ document.querySelectorAll('.toggle').forEach(btn => {
 });
 
 /* ---------- joystick ---------- */
-// A recessed gate, a rubber boot, an orange nub on a dark stem.
+// A round gate, a reach circle and a hot nub that leaves a trail.
 const joyEl = document.getElementById('joy');
 bodies.push((() => {
-  const svg = svgIn(joyEl, '0 0 200 200'), defs = svg.k.defs, R = 56;
-  well(svg, svg, 'circle', { cx: 100, cy: 100, r: 99 }, { rim: 6 });
-  const marks = el('g', { stroke: css([0.62, 0.04, 70]), 'stroke-width': 3, 'stroke-linecap': 'round' }, svg);
-  for (let k = 0; k < 12; k++) {
-    const a = (k / 12) * TAU, c = Math.cos(a), sn = Math.sin(a);
-    el('line', { x1: f2(100 + 84 * sn), y1: f2(100 - 84 * c), x2: f2(100 + 91 * sn), y2: f2(100 - 91 * c) }, marks);
+  const svg = svgIn(joyEl, '0 0 200 200'), R = 56;
+  part(svg, 'circle', { cx: 100, cy: 100, r: 98 });
+  el('circle', { cx: 100, cy: 100, r: 94, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+  const chain = { stroke: FAINT, 'stroke-width': 1, 'stroke-dasharray': '10 3 2 3' };
+  el('line', { x1: 100, y1: 6, x2: 100, y2: 194, ...chain }, svg);
+  el('line', { x1: 6, y1: 100, x2: 194, y2: 100, ...chain }, svg);
+  // The dashed circle marks how far the nub's centre can reach.
+  hid(svg, 'circle', { cx: 100, cy: 100, r: R });
+  const marks = el('g', { stroke: INK, 'stroke-width': 1.2, 'stroke-linecap': 'round' }, svg);
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 24) * TAU, c = Math.cos(a), sn = Math.sin(a), r0 = k % 2 ? 88 : 83;
+    el('line', { x1: f2(100 + r0 * sn), y1: f2(100 - r0 * c), x2: f2(100 + 92 * sn), y2: f2(100 - 92 * c) }, marks);
   }
-  // The boot is a soft dome; the stem leans out of it.
-  el('circle', { cx: 100, cy: 100, r: 30, fill: grad(defs, 'radialGradient', { cx: 0.4, cy: 0.35, r: 0.7 }, [[0, css([0.36, 0.035, 50])], [1, css([0.17, 0.025, 45])]]).url }, svg);
-  const stem = el('line', { x1: 100, y1: 100, x2: 100, y2: 100, stroke: css([0.26, 0.03, 45]), 'stroke-width': 20, 'stroke-linecap': 'round' }, svg);
+  // The trail keeps the last sixteen nub centres.
+  const TRAIL = 16, path = [];
+  const trail = el('polyline', { fill: 'none', stroke: HOT, 'stroke-width': 1.2, 'stroke-linejoin': 'round', opacity: 0.85 }, svg);
+  hid(svg, 'circle', { cx: 100, cy: 100, r: 30 });
+  const stem = line(svg, { x1: 100, y1: 100, x2: 100, y2: 100 }, 1, INK);
   const ng = el('g', {}, svg);
-  const nub = skin(svg, ng, 'circle', { cx: 100, cy: 100, r: 40 }, mat(C.orange, 0.1), { rim: 3, shadow: { b: 6, y: 8, o: 0.6 } });
-  // A shallow thumb dish sits in the top of the nub.
-  el('circle', { cx: 100, cy: 100, r: 22, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.22], [0.6, '#000', 0], [1, '#fff', 0.35]]).url }, ng);
+  const back = hid(ng, 'circle', { cx: 100, cy: 108, r: 40 });
+  part(ng, 'circle', { cx: 100, cy: 100, r: 40 }, 2, HOT);
+  const press = shade(ng, 'circle', { cx: 100, cy: 100, r: 40 }, svg.k.hot);
+  el('circle', { cx: 100, cy: 100, r: 22, fill: 'none', stroke: INK, 'stroke-width': 1 }, ng);
+  centre(ng, 100, 100, 8);
+  const ro = readout('joy');
+  const sg = v => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(2);
   const s = { x: S(), y: S(), pr: S(), pid: null, ox: 0, oy: 0, keys: 0, rect: null };
   const body = {
     step(h) {
@@ -971,13 +942,23 @@ bodies.push((() => {
       }
       spring(s.pr, 900, 0.55, h);
     },
-    busy() { const a = rest(s.x, 0.05), b = rest(s.y, 0.05), c = rest(s.pr); return !(a && b && c); },
+    busy() {
+      const still = rest(s.x, 0.05) & rest(s.y, 0.05) & rest(s.pr);
+      // At rest the trail clears.
+      if (still) path.length = 0;
+      return !still;
+    },
     draw() {
       const x = s.x.x, y = s.y.x, sc = 1 - 0.06 * s.pr.x;
       set(stem, 'x2', f2(100 + x));
       set(stem, 'y2', f2(100 + y));
       set(ng, 'transform', `translate(${f2(100 + x)} ${f2(100 + y)}) scale(${f3(sc)}) translate(-100 -100)`);
-      nub.paint(s.pr.x * 0.8);
+      set(back, 'transform', `translate(0 ${f2(-5 * s.pr.x)})`);
+      set(press, 'opacity', f3(0.7 * s.pr.x));
+      path.push(`${f2(100 + x)},${f2(100 + y)}`);
+      if (path.length > TRAIL) path.shift();
+      set(trail, 'points', path.join(' '));
+      ro(`X${sg(x / R)} Y${sg(-y / R)}`, Math.hypot(x, y) > R - 1);
     },
   };
   function aim(x, y) {
@@ -1057,18 +1038,27 @@ bodies.push((() => {
 })());
 
 /* ---------- keycaps ---------- */
-// Almond caps with a dished top; the latching key is orange with a pip.
+// Each cap is a frustum: a fixed base, a top face that sinks on press.
+// The latching key carries a lock pip that fills hot.
+let strokes = 0;
+const keysRo = readout('keys');
+const keysShow = () => keysRo(board.primed ? 'PRIMED' : board.latched ? 'LATCHED' : pad(strokes, 4), board.primed);
 document.querySelectorAll('.key').forEach(btn => {
-  const latch = btn.hasAttribute('aria-pressed'), col = latch ? C.orange : C.almond;
-  const svg = svgIn(btn, '0 0 100 100'), defs = svg.k.defs;
-  // The skirt is the cap's side, a shade down from its top.
-  const skirt = skin(svg, svg, 'rect', { x: 2, y: 4, width: 96, height: 94, rx: 20 }, mat([col[0] - 0.2, col[1] * 1.1, col[2]], 0.05), { rim: 2, sheen: false, shadow: { b: 4, y: 6, o: 0.6 } });
+  const latch = btn.hasAttribute('aria-pressed');
+  const svg = svgIn(btn, '0 0 100 100');
+  part(svg, 'rect', { x: 4, y: 10, width: 92, height: 86, rx: 12 });
+  // Corner edges join the top face to the base.
+  const BC = [[7.5, 13.5], [92.5, 13.5], [92.5, 92.5], [7.5, 92.5]];
+  const edges = BC.map(([x, y]) => line(svg, { x1: x, y1: y, x2: x, y2: y }, 1, INK));
   const tg = el('g', {}, svg);
-  const top = skin(svg, tg, 'rect', { x: 10, y: 4, width: 80, height: 72, rx: 16 }, mat(col, 0.12), { rim: 2.5 });
-  el('rect', { x: 18, y: 11, width: 64, height: 58, rx: 13, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.09], [0.5, '#000', 0], [1, '#fff', 0.35]]).url }, tg);
-  const pip = latch ? el('circle', { cx: 50, cy: 20, r: 5.5 }, tg) : null;
-  if (pip) el('circle', { cx: 50, cy: 20, r: 5.5, fill: 'none', stroke: '#000', 'stroke-opacity': 0.25, 'stroke-width': 1.5 }, tg);
-  const PIP = ramp([0.45, 0.07, 55], [0.95, 0.13, 92]);
+  part(tg, 'rect', { x: 14, y: 4, width: 72, height: 68, rx: 9 }, 1.6, latch ? HOT : INK);
+  const dent = shade(tg, 'rect', { x: 14, y: 4, width: 72, height: 68, rx: 9 }, svg.k.ink);
+  const lock = latch ? shade(tg, 'rect', { x: 14, y: 4, width: 72, height: 68, rx: 9 }, svg.k.hot) : null;
+  hid(tg, 'rect', { x: 24, y: 14, width: 52, height: 48, rx: 6 });
+  centre(tg, 50, 38, 6);
+  const pip = latch ? el('circle', { cx: 50, cy: 15, r: 4.5, fill: HOT, 'fill-opacity': 0, stroke: HOT, 'stroke-width': 1.2 }, tg) : null;
+  // Top face corners, in the face's own frame.
+  const TC = [[16.6, 6.6], [83.4, 6.6], [83.4, 69.4], [16.6, 69.4]];
   const s = { d: S(), lk: S(), held: false, locked: false, pid: null, kb: false, keyAt: 0 };
   const body = {
     step(h) {
@@ -1081,21 +1071,22 @@ document.querySelectorAll('.key').forEach(btn => {
     busy() { const a = rest(s.d), b = rest(s.lk); return !(a && b); },
     draw() {
       const d = s.d.x, sq = clamp(s.d.v / 16, -1, 1), sc = 1 - 0.05 * clamp(d, -0.3, 1);
-      // The top sinks toward the board and squashes with its speed.
-      set(skirt.shape, 'y', f2(4 + 6 * d));
-      set(skirt.shape, 'height', f2(94 - 6 * d));
-      // Pressed, the cap nears the panel and its shadow tightens.
-      set(skirt.sh, 'opacity', f3(0.6 - 0.3 * clamp(d)));
-      set(skirt.sh, 'transform', `translate(0 ${f2(6 - 4 * clamp(d))})`);
-      set(tg, 'transform', `translate(50 ${f2(40 + 8 * d)}) scale(${f3(sc * (1 + 0.07 * sq))} ${f3(sc * (1 - 0.09 * sq))}) translate(-50 -40)`);
-      top.paint(d * 0.9);
-      skirt.paint(d * 0.5);
-      if (pip) set(pip, 'fill', PIP(s.lk.x));
+      // The top face sinks toward the base and squashes with its speed.
+      const ty = 40 + 10 * d, kx = sc * (1 + 0.07 * sq), ky = sc * (1 - 0.09 * sq);
+      set(tg, 'transform', `translate(50 ${f2(ty)}) scale(${f3(kx)} ${f3(ky)}) translate(-50 -40)`);
+      // Each corner edge follows its top corner.
+      for (let i = 0; i < 4; i++) {
+        set(edges[i], 'x2', f2(50 + (TC[i][0] - 50) * kx));
+        set(edges[i], 'y2', f2(ty + (TC[i][1] - 40) * ky));
+      }
+      set(dent, 'opacity', f3(0.55 * clamp(d)));
+      if (lock) { set(lock, 'opacity', f3(0.6 * s.lk.x)); set(pip, 'fill-opacity', f3(s.lk.x)); }
     },
   };
   // Only a hand on a plain key fires a primed board.
   function press(auto) {
     s.held = true; s.d.t = 1; snd.down();
+    strokes = (strokes + 1) % 10000; keysShow();
     if (!auto && !latch && board.primed) board.fire();
     wake(body);
   }
@@ -1149,20 +1140,27 @@ document.querySelectorAll('.key').forEach(btn => {
   bodies.push(body);
 });
 
+board.show = keysShow;
+keysShow();
+
 /* ---------- slider ---------- */
-// The track runs the panel's length; the chrome thumb has five notches.
+// The track runs the plate's length; it hatches hot up to the thumb.
 const faderEl = document.getElementById('fader');
 bodies.push((() => {
   const VH = 110, svg = svgIn(faderEl, `0 0 600 ${VH}`);
-  const track = well(svg, svg, 'rect', { x: 8, y: 37, width: 584, height: 18, rx: 9 }, { rim: 3 });
-  const base = el('g', { stroke: TICK, 'stroke-width': 5, 'stroke-linecap': 'round' }, svg);
-  const lit = el('g', { stroke: AMBER, 'stroke-width': 5, 'stroke-linecap': 'round' }, svg);
-  const ticks = [0, 1, 2, 3, 4].map(() => [el('line', { y1: 96, y2: 106 }, base), el('line', { y1: 96, y2: 106, opacity: 0 }, lit)]);
+  const track = part(svg, 'rect', { x: 8, y: 37, width: 584, height: 18, rx: 9 }, 1.2);
+  const level = el('rect', { x: 11, y: 40, height: 12, rx: 6, fill: svg.k.hot }, svg);
+  const axis = el('line', { x1: 8, y1: 46, y2: 46, stroke: FAINT, 'stroke-width': 1, 'stroke-dasharray': '14 4 2 4' }, svg);
+  const base = el('g', { stroke: INK, 'stroke-width': 1.4, 'stroke-linecap': 'round' }, svg);
+  const lit = el('g', { stroke: HOT, 'stroke-width': 2.6, 'stroke-linecap': 'round' }, svg);
+  const ticks = [0, 1, 2, 3, 4].map(() => [el('line', { y1: 94, y2: 106 }, base), el('line', { y1: 94, y2: 106, opacity: 0 }, lit)]);
   const tg = el('g', {}, svg);
-  const thumb = skin(svg, tg, 'rect', { y: 8, width: 50, height: 76, rx: 12 }, chrome(0.08), { rim: 2.5, shadow: { b: 4, y: 6, o: 0.5 } });
-  // A groove across the cap marks its centre.
-  el('rect', { x: 22.5, y: 20, width: 5, height: 52, rx: 2.5, fill: css([0.6, 0.02, 80]) }, tg);
-  el('rect', { x: 27.5, y: 20, width: 1.5, height: 52, rx: 0.75, fill: '#fff', opacity: 0.7 }, tg);
+  const back = hid(tg, 'rect', { y: 14, width: 50, height: 76, rx: 6 });
+  part(tg, 'rect', { y: 8, width: 50, height: 76, rx: 6 }, 1.6);
+  const press = shade(tg, 'rect', { y: 8, width: 50, height: 76, rx: 6 }, svg.k.ink);
+  line(tg, { x1: 25, y1: 16, x2: 25, y2: 76 }, 1.4, HOT);
+  for (const x of [13, 37]) line(tg, { x1: x, y1: 22, x2: x, y2: 70 }, 1, FAINT);
+  const ro = readout('fader');
   let VW = 600, SP = 132.5, XS = [];
   const s = { x: S(), n: 2, tk: 2, pr: S(), pid: null, off: 0, grab: false, drag: false, rect: null };
   // The viewBox follows the element, so notches spread with the plate.
@@ -1172,6 +1170,7 @@ bodies.push((() => {
     svg.setAttribute('viewBox', `0 0 ${VW} ${VH}`);
     SP = (VW - 70) / 4; XS = [0, 1, 2, 3, 4].map(i => 35 + i * SP);
     set(track, 'x', 8); set(track, 'width', VW - 16);
+    set(axis, 'x2', VW - 8);
     ticks.forEach(([b, l], i) => { for (const m of [b, l]) { set(m, 'x1', f2(XS[i])); set(m, 'x2', f2(XS[i])); } });
     s.x.x = s.x.t = XS[s.n]; s.x.v = 0; s.tk = s.n;
     body.draw();
@@ -1199,7 +1198,10 @@ bodies.push((() => {
       // Moving, the thumb scrapes faintly along its track.
       snd.scrape.set(0.035 * clamp(sp / 2400), 900 + 0.3 * sp);
       set(tg, 'transform', `translate(${f2(x)} 46) scale(${f3(sc * (1 + st))} ${f3(sc * (1 - 0.5 * st))}) translate(-25 -46)`);
-      thumb.paint(s.pr.x * 0.8);
+      set(level, 'width', f2(Math.max(0, x - 11)));
+      set(back, 'transform', `translate(0 ${f2(-5 * s.pr.x)})`);
+      set(press, 'opacity', f3(0.55 * s.pr.x));
+      ro(`${clamp(Math.round((x - XS[0]) / SP), 0, 4) + 1}/5`);
       // Notches light as the thumb nears them.
       ticks.forEach(([, m], i) => {
         const o = clamp(1 - Math.abs(x - XS[i]) / (SP / 2));
@@ -1260,23 +1262,28 @@ bodies.push((() => {
 })());
 
 /* ---------- abacus ---------- */
-// Five glossy beads on a chrome rod between two chrome posts.
+// Five bicone beads on a rod between two posts.
+// Beads right of the centre line count, and hatch hot.
 const abEl = document.getElementById('abacus');
 bodies.push((() => {
-  const VH = 100, svg = svgIn(abEl, `0 0 600 ${VH}`), defs = svg.k.defs;
+  const VH = 100, svg = svgIn(abEl, `0 0 600 ${VH}`);
   const HW = 25, MU = 1500, E = 0.42;
-  // The rod is a thin cylinder: lit along its top, dark beneath.
-  const rod = el('rect', { y: 46.5, height: 7, rx: 3.5, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.62, 0.01, 80])], [0.35, css([0.97, 0.006, 85])], [1, css([0.42, 0.012, 70])]]).url }, svg);
-  const posts = { o: 0.5, b: 3, y: 4 }, PM = chrome(0);
-  const postL = skin(svg, svg, 'rect', { x: 2, y: 8, width: 12, height: 84, rx: 6 }, PM, { rim: 2, shadow: posts });
-  const postR = skin(svg, svg, 'rect', { y: 8, width: 12, height: 84, rx: 6 }, PM, { rim: 2, shadow: posts });
-  void postL;
+  const rod = [47, 53].map(y => line(svg, { x1: 8, y1: y, y2: y }, 1, INK));
+  const mid = hid(svg, 'line', { y1: 2, y2: 98 });
+  part(svg, 'rect', { x: 2, y: 8, width: 12, height: 84, rx: 3 });
+  const postR = part(svg, 'rect', { y: 8, width: 12, height: 84, rx: 3 });
   // Beads are bicones seen side on: pointed rims, flat bores.
   const BEAD = 'M-25-5C-25-13-9-38 0-38S25-13 25-5V5C25 13 9 38 0 38S-25 13-25 5Z';
-  const beads = ['orange', 'gold', 'avocado', 'brown', 'almond'].map(k => {
+  const beads = [0, 1, 2, 3, 4].map(() => {
     const g = el('g', {}, svg);
-    return { g, sk: skin(svg, g, 'path', { d: BEAD }, mat(C[k], 0.1), { rim: 2.5, shadow: { b: 3.5, y: 5, o: 0.55 } }) };
+    const edge = part(g, 'path', { d: BEAD }, 1.4);
+    const hot = shade(g, 'path', { d: BEAD }, svg.k.hot);
+    const press = shade(g, 'path', { d: BEAD }, svg.k.ink);
+    hid(g, 'line', { x1: -25, y1: 0, x2: 25, y2: 0 });
+    line(g, { x1: 0, y1: -38, x2: 0, y2: 38 }, 1, FAINT);
+    return { g, edge, hot, press };
   });
+  const ro = readout('abacus');
   let VW = 600, L = 16, R = 584, MID = 300;
   const x = new Float64Array(5), v = new Float64Array(5);
   const lo = i => L + HW + i * 2 * HW, hi = i => R - HW - (4 - i) * 2 * HW;
@@ -1289,8 +1296,9 @@ bodies.push((() => {
     if (r.width > 0 && r.height > 0) VW = Math.max(340, Math.round((VH * r.width) / r.height));
     svg.setAttribute('viewBox', `0 0 ${VW} ${VH}`);
     L = 16; R = VW - 16; MID = VW / 2;
-    set(rod, 'x', 8); set(rod, 'width', VW - 16);
-    set(postR.shape, 'x', VW - 14);
+    rod.forEach(r => set(r, 'x2', VW - 8));
+    set(mid, 'x1', MID); set(mid, 'x2', MID);
+    set(postR, 'x', VW - 14);
     const ns = hi(0) - lo(0);
     for (let i = 0; i < 5; i++) { x[i] = lo(i) + clamp(f[i]) * ns; if (i !== s.di) v[i] = 0; }
     if (s.di >= 0) s.T = clamp(s.T, lo(s.di), hi(s.di));
@@ -1345,10 +1353,14 @@ bodies.push((() => {
       beads.forEach((b, i) => {
         const sc = i === s.di ? 1 - 0.04 * s.pr.x : 1;
         set(b.g, 'transform', `translate(${f2(x[i])} 50) scale(${f3(sc)})`);
-        b.sk.paint(i === s.di ? s.pr.x * 0.7 : 0);
-        if (x[i] > MID) n++;
+        const on = x[i] > MID;
+        set(b.hot, 'opacity', on ? 0.65 : 0);
+        set(b.edge, 'stroke', on ? HOT : INK);
+        set(b.press, 'opacity', i === s.di ? f3(0.55 * s.pr.x) : 0);
+        if (on) n++;
       });
       if (n !== s.n) { s.n = n; abEl.setAttribute('aria-valuenow', String(n)); }
+      ro(`${n}/5`, n === 5);
     },
   };
   const local = e => ((e.clientX - s.rect.left) / s.rect.width) * VW;
@@ -1423,35 +1435,52 @@ bodies.push((() => {
 })());
 
 /* ---------- safety switch ---------- */
-// A striped cocoa mount, a tinted tomato cover, an almond lever under it.
+// A hazard-banded mount, a hinged cover, a lever in a slot beneath.
+// Shut, the cover shows the lever as a hidden dashed outline.
 const safeEl = document.getElementById('safety');
 bodies.push((() => {
   const VW = 100, VH = 156, HY = 19, svg = svgIn(safeEl, `0 0 ${VW} ${VH}`), defs = svg.k.defs;
   const [coverBtn, armBtn] = safeEl.querySelectorAll('button');
-  const mount = skin(svg, svg, 'rect', { width: VW, height: VH, rx: 16 }, mat(C.cocoa, 0), { rim: 2.5, shadow: { b: 5, y: 7, o: 0.55 } });
-  // Gold hazard stripes run round the mount, under its rim light.
+  part(svg, 'rect', { x: 0.5, y: 0.5, width: VW - 1, height: VH - 1, rx: 8 });
+  // Hazard bands run round the mount as hot outlines.
   const frame = el('clipPath', { id: nid('c') }, defs);
-  el('rect', { x: 4, y: 4, width: VW - 8, height: VH - 8, rx: 12 }, frame);
+  el('rect', { x: 4, y: 4, width: VW - 8, height: VH - 8, rx: 5 }, frame);
   let stripes = '';
   for (let k = 0; k < VW + VH + 16; k += 16) stripes += `M${k} 0h8l-${VH} ${VH}h-8Z`;
-  el('path', { d: stripes, fill: css(C.gold), opacity: 0.85, 'clip-path': `url(#${frame.id})` }, svg);
-  void mount;
-  well(svg, svg, 'rect', { x: 32, y: 38, width: 36, height: 102, rx: 18 }, { rim: 3.5 });
+  el('path', { d: stripes, fill: 'none', stroke: HOT, 'stroke-width': 1, opacity: 0.75, 'clip-path': `url(#${frame.id})` }, svg);
+  el('rect', { x: 4, y: 4, width: VW - 8, height: VH - 8, rx: 5, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+  part(svg, 'rect', { x: 32, y: 38, width: 36, height: 102, rx: 18 }, 1.2);
   const slot = el('clipPath', { id: nid('c') }, defs);
   el('rect', { x: 36, y: 42, width: 28, height: 94, rx: 14 }, slot);
-  el('rect', { x: 36, y: 42, width: 28, height: 94, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.2, 0.06, 28])], [1, css([0.26, 0.08, 28])]]).url, 'clip-path': `url(#${slot.id})` }, svg);
-  const glow = el('rect', { x: 36, width: 28, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.7, 0.17, 30])], [1, css([0.5, 0.18, 26])]]).url, 'clip-path': `url(#${slot.id})` }, svg);
+  el('rect', { x: 36, y: 42, width: 28, height: 94, rx: 14, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+  const glow = el('rect', { x: 36, width: 28, fill: svg.k.hot, 'clip-path': `url(#${slot.id})` }, svg);
+  const lever = g => {
+    part(g, 'rect', { x: 37, width: 26, height: 34, rx: 13 }, 1.5);
+    centre(g, 50, 17, 4);
+  };
   const lg = el('g', {}, svg);
-  const lever = skin(svg, lg, 'rect', { x: 37, width: 26, height: 34, rx: 13 }, mat(C.almond, 0.12), { rim: 2, shadow: { b: 2.5, y: 3.5, o: 0.55 } });
-  // The same dished thumb rest as the toggles, with a red pip.
-  el('ellipse', { cx: 50, cy: 17, rx: 7.5, ry: 10, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.2], [0.55, '#000', 0], [1, '#fff', 0.6]]).url }, lg);
-  el('circle', { cx: 50, cy: 17, r: 2.6, fill: css([0.6, 0.17, 28]) }, lg);
-  // The cover is tinted plastic, so the lever shows through faintly.
-  const cg = el('g', { opacity: 0.88 }, svg);
-  const lid = skin(svg, cg, 'rect', { x: 10, y: 20, width: 80, height: 124, rx: 15 }, mat(C.tomato, 0.16), { rim: 3, shadow: { b: 4, y: 5, o: 0.5 } });
-  el('rect', { x: 26, y: 132, width: 48, height: 6, rx: 3, fill: css([0.46, 0.15, 24]) }, cg);
-  skin(svg, svg, 'rect', { x: 5, y: 10, width: 90, height: 18, rx: 9 }, chrome(0), { rim: 2, shadow: { b: 2.5, y: 3, o: 0.5 } });
-  for (const cx of [19, 81]) el('circle', { cx, cy: HY, r: 3.2, fill: css([0.45, 0.01, 80]) }, svg);
+  const back = hid(lg, 'rect', { x: 37, y: 4, width: 26, height: 34, rx: 13 });
+  lever(lg);
+  const press = shade(lg, 'rect', { x: 37, width: 26, height: 34, rx: 13 }, svg.k.ink);
+  // The cover: a guard plate with a warning mark and a lip.
+  const cg = el('g', {}, svg);
+  part(cg, 'rect', { x: 10, y: 20, width: 80, height: 124, rx: 8 }, 1.6);
+  const under = shade(cg, 'rect', { x: 10, y: 20, width: 80, height: 124, rx: 8 }, svg.k.ink);
+  el('rect', { x: 15, y: 25, width: 70, height: 114, rx: 5, fill: 'none', stroke: INK, 'stroke-width': 1 }, cg);
+  el('path', { d: 'M50 58L64 84H36Z', fill: 'none', stroke: HOT, 'stroke-width': 1.4, 'stroke-linejoin': 'round' }, cg);
+  line(cg, { x1: 50, y1: 67, x2: 50, y2: 75 }, 1.6, HOT);
+  el('circle', { cx: 50, cy: 79.5, r: 1.1, fill: HOT }, cg);
+  part(cg, 'rect', { x: 26, y: 132, width: 48, height: 6, rx: 2 }, 1.2);
+  // The hidden lever rides above the cover, dashed.
+  const ghost = el('g', { opacity: 0 }, svg);
+  hid(ghost, 'rect', { x: 37, width: 26, height: 34, rx: 13 });
+  // The hinge bar and its two screws.
+  part(svg, 'rect', { x: 5, y: 10, width: 90, height: 18, rx: 4 }, 1.4);
+  for (const cx of [19, 81]) {
+    el('circle', { cx, cy: HY, r: 3.6, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+    line(svg, { x1: cx - 2.4, y1: HY - 2.4, x2: cx + 2.4, y2: HY + 2.4 }, 1, INK);
+  }
+  const ro = readout('safe');
   const s = { c: S(), p: S(), pr: S(), open: false, on: false, tm: 0, pid: null };
   const body = {
     step(h) {
@@ -1473,13 +1502,18 @@ bodies.push((() => {
       // The cover turns about the hinge; past upright, its underside shows.
       const k = Math.cos(s.c.x * 98 * D2R);
       set(cg, 'transform', `translate(0 ${HY}) scale(1 ${f3(k)}) translate(0 ${-HY})`);
-      lid.paint(k >= 0 ? 0.5 * (1 - k) : 0.8 - 0.2 * k);
+      set(under, 'opacity', k < 0 ? f3(-0.6 * k) : 0);
+      set(ghost, 'opacity', f3(clamp(k) ** 2));
       const p = s.p.x, sc = 1 - 0.06 * s.pr.x, cy = 117 - 56 * p;
-      set(lg, 'transform', `translate(50 ${f2(cy)}) scale(${f3(sc)}) translate(-50 -17)`);
+      const tf = `translate(50 ${f2(cy)}) scale(${f3(sc)}) translate(-50 -17)`;
+      set(lg, 'transform', tf);
+      set(ghost, 'transform', tf);
+      set(back, 'transform', `translate(0 ${f2(-3 * s.pr.x)})`);
+      set(press, 'opacity', f3(0.55 * s.pr.x));
       set(glow, 'y', f2(cy));
       set(glow, 'height', f2(Math.max(0, 136 - cy)));
       set(glow, 'opacity', f3(clamp(p)));
-      lever.paint(s.pr.x * 0.8);
+      ro(s.on ? 'ARMED' : s.open ? 'OPEN' : 'SAFE', s.on);
     },
   };
   function arm(v) {
@@ -1556,28 +1590,31 @@ bodies.push((() => {
 })());
 
 /* ---------- rocker switches ---------- */
-// Two-part paddles in recessed wells; the pressed half sinks and darkens.
-document.querySelectorAll('.rocker').forEach(btn => {
-  const svg = svgIn(btn, '0 0 64 104'), M = mat(C[btn.dataset.c], 0.16);
-  // The same raised bezel as the toggles frames the well.
-  skin(svg, svg, 'rect', { width: 64, height: 104, rx: 16 }, BEZEL, { rim: 2, shadow: { b: 3, y: 4, o: 0.55 } });
-  well(svg, svg, 'rect', { x: 5, y: 5, width: 54, height: 94, rx: 12 }, { rim: 3.5 });
+// Two-part paddles in a framed well; the pressed half sinks and hatches.
+// The I half hatches hot, the O half hatches in ink.
+const rockBits = bank('rock', document.querySelectorAll('.rocker').length);
+document.querySelectorAll('.rocker').forEach((btn, idx) => {
+  const svg = svgIn(btn, '0 0 64 104');
+  hid(svg, 'rect', { x: 0, y: 5, width: 64, height: 104, rx: 8 });
+  part(svg, 'rect', { x: 0.5, y: 0.5, width: 63, height: 103, rx: 8 });
+  el('rect', { x: 5, y: 5, width: 54, height: 94, rx: 6, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+  const TOP = 'M9 52V17A8 8 0 0 1 17 9H47A8 8 0 0 1 55 17V52Z', BOT = 'M9 52H55V87A8 8 0 0 1 47 95H17A8 8 0 0 1 9 87Z';
   const tg = el('g', {}, svg), bg = el('g', {}, svg);
-  const top = skin(svg, tg, 'path', { d: 'M9 52V19A10 10 0 0 1 19 9H45A10 10 0 0 1 55 19V52Z' }, M, { rim: 2, shadow: { b: 2.5, y: 3, o: 0.45 } });
-  const bot = skin(svg, bg, 'path', { d: 'M9 52H55V85A10 10 0 0 1 45 95H19A10 10 0 0 1 9 85Z' }, M, { rim: 2 });
-  // I and O are engraved: a dark cut over a lit lower edge.
-  const cut = (a, g) => {
-    el(a[0], { ...a[1], fill: 'none', stroke: '#fff', 'stroke-opacity': 0.35, 'stroke-width': 2.6, 'stroke-linecap': 'round', transform: 'translate(0 1)' }, g);
-    el(a[0], { ...a[1], fill: 'none', stroke: '#000', 'stroke-opacity': 0.4, 'stroke-width': 2.6, 'stroke-linecap': 'round' }, g);
-  };
+  part(tg, 'path', { d: TOP }, 1.4);
+  const topOn = shade(tg, 'path', { d: TOP }, svg.k.hot);
+  part(bg, 'path', { d: BOT }, 1.4);
+  const botOn = shade(bg, 'path', { d: BOT }, svg.k.ink);
   // The marks ride their halves unscaled, so the O stays round.
   // Both half centres shift by -d / 2.
   const mk = el('g', {}, svg);
-  cut(['line', { x1: 32, y1: 22, x2: 32, y2: 34 }], mk);
-  cut(['circle', { cx: 32, cy: 74, r: 6 }], mk);
-  const seam = el('line', { x1: 9, x2: 55, stroke: '#000', 'stroke-opacity': 0.3, 'stroke-width': 1.2 }, svg);
+  line(mk, { x1: 32, y1: 22, x2: 32, y2: 34 }, 1.8, INK);
+  el('circle', { cx: 32, cy: 74, r: 6, fill: 'none', stroke: INK, 'stroke-width': 1.8 }, mk);
+  // A chain line marks the pivot axis.
+  el('line', { x1: -4, y1: 52, x2: 68, y2: 52, stroke: FAINT, 'stroke-width': 1, 'stroke-dasharray': '8 3 2 3' }, svg);
+  const seam = line(svg, { x1: 9, x2: 55 }, 1.2, INK);
   const init = btn.getAttribute('aria-checked') === 'true';
   const s = { r: S(init ? 1 : -1), pr: S(), on: init, side: 1, pid: null };
+  rockBits(idx, init);
   const body = {
     step(h) {
       spring(s.r, 1500, 0.5, h);
@@ -1593,14 +1630,15 @@ document.querySelectorAll('.rocker').forEach(btn => {
       set(bg, 'transform', `translate(0 95) scale(1 ${f3((43 + d) / 43)}) translate(0 -95)`);
       set(seam, 'y1', f2(52 - d)); set(seam, 'y2', f2(52 - d));
       set(mk, 'transform', `translate(0 ${f2(-d / 2)})`);
-      top.paint(clamp(0.9 * r));
-      bot.paint(clamp(-0.9 * r));
+      set(topOn, 'opacity', f3(0.7 * clamp(r)));
+      set(botOn, 'opacity', f3(0.55 * clamp(-r)));
     },
   };
   function rock(v) {
     s.side = v ? 1 : -1;
     if (v === s.on) { snd.dead(); wake(body); return; }
     s.on = v; s.r.t = s.side;
+    rockBits(idx, v);
     snd.rock(v);
     btn.setAttribute('aria-checked', String(v));
     wake(body);
@@ -1629,17 +1667,19 @@ document.querySelectorAll('.rocker').forEach(btn => {
 });
 
 /* ---------- thumb wheel ---------- */
-// A gold drum in a recessed slot; its ribs crowd toward the edges.
+// A ribbed drum in a slot, side on; its ribs crowd toward the edges.
+// One hot rib marks the zero.
 const wheelEl = document.getElementById('wheel');
 bodies.push((() => {
-  const svg = svgIn(wheelEl, '0 0 60 180'), defs = svg.k.defs;
-  const N = 20, STEP = TAU / N, CY = 90, RR = 80, m = C.gold;
-  well(svg, svg, 'rect', { width: 60, height: 180, rx: 15 }, { rim: 4 });
-  // The drum's axis is level, so its light falls top to bottom.
-  const tone = (dl, k = 1) => css([m[0] + dl, m[1] * k, m[2]]);
-  el('rect', { x: 9, y: 9, width: 42, height: 162, rx: 9, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(-0.3, 0.7)], [0.2, tone(-0.06)], [0.42, tone(0.09, 0.6)], [0.64, tone(0)], [1, tone(-0.34, 0.7)]]).url }, svg);
-  const g = el('g', { stroke: tone(-0.34), 'stroke-linecap': 'round' }, svg), ribs = [];
-  for (let k = 0; k < N; k++) ribs.push(el('line', { x1: 13, x2: 47 }, g));
+  const svg = svgIn(wheelEl, '0 0 60 180');
+  const N = 20, STEP = TAU / N, CY = 90, RR = 80;
+  hid(svg, 'rect', { x: 0, y: 6, width: 60, height: 180, rx: 8 });
+  part(svg, 'rect', { x: 0.5, y: 0.5, width: 59, height: 179, rx: 8 });
+  part(svg, 'rect', { x: 9, y: 9, width: 42, height: 162, rx: 4 }, 1.2);
+  el('line', { x1: 30, y1: 2, x2: 30, y2: 178, stroke: FAINT, 'stroke-width': 1, 'stroke-dasharray': '8 3 2 3' }, svg);
+  const g = el('g', { stroke: INK, 'stroke-linecap': 'round' }, svg), ribs = [];
+  for (let k = 0; k < N; k++) ribs.push(el('line', { x1: 13, x2: 47, stroke: k ? INK : HOT }, g));
+  const ro = readout('wheel');
   const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', near: 0, pid: null, y0: 0, t0: 0, k: 0, trail: [] };
   // Drag follow, rib detents, flick friction, settle spring.
   const KD = 1500, CD = 70, AD = 50, AS = 30, CF = 1.6, MU = 9, WCAP = 3, KS = 600, CS = 26;
@@ -1685,10 +1725,11 @@ bodies.push((() => {
         // Ribs crowd and thin toward the drum's edges.
         const y = f2(CY + RR * Math.sin(a));
         set(rib, 'y1', y); set(rib, 'y2', y);
-        set(rib, 'stroke-width', f2(0.8 + 3 * c)); set(rib, 'opacity', f2(0.85 * Math.min(1, 1.6 * c)));
+        set(rib, 'stroke-width', f2((k ? 0.5 : 1.2) + 1.4 * c)); set(rib, 'opacity', f2(Math.min(1, 1.6 * c)));
       }
       const T = s.mode === 'settle' || s.mode === 'rest' ? s.T : s.th;
       set(wheelEl, 'aria-valuenow', mod(-Math.round(T / STEP), N));
+      ro(pad(mod(-Math.round(T / STEP), N)));
     },
   };
   wheelEl.addEventListener('pointerdown', e => {
@@ -1782,7 +1823,7 @@ const moveOf = el => moves.find(m => m.el === el);
 let fuse = [];
 board.fire = () => {
   board.firing = true;
-  board.dial.prime();
+  board.dial.prime(); board.show();
   snd.launch();
   board.dial.run();
   fuse.forEach(clearTimeout);
@@ -1790,7 +1831,7 @@ board.fire = () => {
     const t = sweep('shuffle', keep);
     fuse.push(
       setTimeout(() => moveOf(safeEl).reset(), t + 250),
-      setTimeout(() => { moveOf(latchEl).reset(); board.firing = false; board.dial.prime(); }, t + 520),
+      setTimeout(() => { moveOf(latchEl).reset(); board.firing = false; board.dial.prime(); board.show(); }, t + 520),
     );
   }, reduce ? 0 : 440)];
 };
