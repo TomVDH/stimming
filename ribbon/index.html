@@ -182,15 +182,15 @@ function linear(L, C, h) {
 // The back face is deeper and turned a little round the hue wheel.
 const PALS = {
   sunset: {
-    stops: [[0.52, 0.2, 345], [0.63, 0.22, 375], [0.73, 0.19, 405], [0.83, 0.16, 432], [0.91, 0.14, 458]],
+    stops: [[0.5, 0.2, 345], [0.62, 0.22, 374], [0.72, 0.2, 402], [0.8, 0.17, 428], [0.86, 0.16, 452]],
     turn: 14, iri: 0.25, bg: [[0.2, 0.034, 338], [0.148, 0.022, 322], [0.1, 0.012, 300]],
   },
   ocean: {
-    stops: [[0.44, 0.17, 282], [0.56, 0.18, 258], [0.68, 0.15, 228], [0.8, 0.13, 196], [0.9, 0.11, 168]],
+    stops: [[0.42, 0.18, 284], [0.54, 0.18, 260], [0.66, 0.15, 230], [0.76, 0.14, 198], [0.83, 0.14, 170]],
     turn: -16, iri: 0.25, bg: [[0.2, 0.034, 248], [0.148, 0.022, 254], [0.1, 0.012, 266]],
   },
   prism: {
-    stops: [[0.65, 0.23, 22], [0.84, 0.17, 92], [0.82, 0.19, 152], [0.69, 0.16, 238], [0.6, 0.23, 318]],
+    stops: [[0.63, 0.23, 22], [0.82, 0.17, 88], [0.8, 0.2, 150], [0.66, 0.16, 238], [0.58, 0.24, 318]],
     turn: 40, iri: 1, bg: [[0.2, 0.028, 296], [0.148, 0.018, 290], [0.1, 0.01, 280]],
   },
 };
@@ -206,9 +206,10 @@ function bake(pal, row) {
   }
 }
 const bgOf = pal => pal.bg.map(c => linear(...c));
-const KEY = unit([-0.45, 0.78, 0.55]), RIM = unit([0.78, 0.2, -0.6]);
-const KEYC = linear(0.98, 0.025, 85).map(v => v * 2.5), RIMC = linear(0.86, 0.08, 248).map(v => v * 1.5);
-const SKYC = linear(0.62, 0.05, 285).map(v => v * 0.55), GNDC = linear(0.42, 0.05, 25).map(v => v * 0.32);
+const KEY = unit([-0.45, 0.78, 0.55]), RIM = unit([0.78, 0.2, -0.6]), FILL = unit([0.6, -0.45, 0.66]);
+const FILLC = linear(0.88, 0.04, 330).map(v => v * 0.6);
+const KEYC = linear(0.98, 0.025, 85).map(v => v * 2.9), RIMC = linear(0.92, 0.04, 300).map(v => v * 1.5);
+const SKYC = linear(0.62, 0.05, 285).map(v => v * 0.46), GNDC = linear(0.42, 0.05, 25).map(v => v * 0.28);
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const SKEY = 'stimming.ribbon.sound', MAXV = 14, LEAD = 0.004;
@@ -394,14 +395,17 @@ function shimmer() {
 
 /* ---------- the ribbon: a centre line with a twisting frame ---------- */
 // Units: the stage's shorter half-side spans one unit.
-const N = 360, NV = N + 1, LEN = 4.2, SEG = LEN / N, WID = 0.086, ITER = 3, SD = 0.9;
+const N = 330, NV = N + 1, LEN = 3.3, SEG = LEN / N, WID = 0.12, ITER = 3, SD = 1;
 // Air drag is strong face-on, weaker edge-on and weakest lengthwise.
-const CN = 5.5, CNQ = 3.5, CW = 1.1, CT = 0.22;
-// Bending, in-plane stiffness, twist alignment, twist stiffness and twist damping.
-const KB = 0.05, KH = 0.22, KC = 0.16, CE2 = (SEG * SEG / 0.45) ** 2, KT = 0.5, TD = 6, OMAX = 40;
+const CN = 3.6, CNQ = 2.2, CW = 0.8, CT = 0.2;
+// Bending, in-plane stiffness, bend alignment, twist stiffness, spin sharing, spin damping.
+const KB = 0.3, KH = 0.25, KC = 0.03, CE2 = ((9 * SEG * SEG) / 0.45) ** 2, KS = 40, KW = 6, TD = 6, OMAX = 40;
+// Velocity sharing, air torque on the twist and the pull toward the viewer.
+const KV = 0.25, KA = 3, KF = 0.012, KP = 6;
 const X = new Float64Array(NV * 3), Vl = new Float64Array(NV * 3), Pr = new Float64Array(NV * 3), Fx = new Float64Array(NV * 3);
 const Wf = new Float64Array(NV * 3), Tg = new Float64Array(NV * 3), To = new Float64Array(NV * 3);
-const Om = new Float64Array(NV), Ac = new Float64Array(NV), Sx = new Float64Array(NV);
+const Om = new Float64Array(NV), Sx = new Float64Array(NV);
+const TB = new Float64Array(NV), TR = new Float64Array(NV), Tw = new Float64Array(NV), Dl = new Float64Array(NV);
 const Wind = new Float64Array(NV * 3), Glow = new Float32Array(NV);
 for (let i = 0; i < NV; i++) Sx[i] = i * SEG;
 let hx = 16 / 9, hy = 1, clock = 0;
@@ -486,13 +490,32 @@ function bend(rev) {
 }
 
 // Steering and wind settings for one frame.
-const env = { grav: 1.5, coil: 0, cx: 0, cy: 0, cz: 0, ax: 0, ay: 0, az: 1, spin: 1, tn: 1.5 };
+const env = { grav: 1.5, coil: 0, cx: 0, cy: 0, cz: 0, ax: 0, ay: 0, az: 1, spin: 1, tn: 1.5, front: 0, ph: 0, pull: 0, damp: 0 };
+// The spiral: each point's radius, depth along the axis and angle behind the head.
+const Rs = new Float64Array(NV), Hs = new Float64Array(NV), Phi = new Float64Array(NV);
+let spiralR = 0;
+function spiral(rmax) {
+  if (Math.abs(rmax - spiralR) < 0.01) return;
+  spiralR = rmax;
+  // A tighter spiral stacks its turns in depth, like a spring.
+  const deep = 0.3 + (0.55 - rmax) * 3;
+  let phi = 0;
+  for (let i = 0; i < NV; i++) {
+    const u = Sx[i] / LEN;
+    Rs[i] = 0.075 + (rmax - 0.075) * u ** 0.8;
+    Hs[i] = -deep * u;
+    if (i) {
+      const dr = Rs[i] - Rs[i - 1], dh = Hs[i] - Hs[i - 1];
+      phi += Math.sqrt(Math.max(0, SEG * SEG - dr * dr - dh * dh)) / (0.5 * (Rs[i] + Rs[i - 1]));
+    }
+    Phi[i] = phi;
+  }
+}
 const waves = [];
 
 function substep(h, px, py, pz) {
-  const { grav, coil, cx, cy, cz, ax, ay, az } = env;
-  const kc = coil > 0.002 ? 1 - Math.exp(-h * 7 * coil) : 0;
-  const bx = hx + 0.35, by = hy + 0.45;
+  const { grav, coil, cx, cy, cz, ax, ay, az, front, ph, pull } = env, om = OMG * env.spin, kp = pull * h;
+  const kc = coil > 0.002 ? 1 - Math.exp(-h * 7 * coil) : 0, wall = 90 * h, brake = 1 - 8 * h, still = 1 - env.damp * h;
   for (let i = 1; i < NV; i++) {
     const o = i * 3;
     let vx = Vl[o], vy = Vl[o + 1], vz = Vl[o + 2];
@@ -502,40 +525,32 @@ function substep(h, px, py, pz) {
     const vt = rx * tx + ry * ty + rz * tz, vw = rx * wx + ry * wy + rz * wz, vn = rx * nx + ry * ny + rz * nz;
     // Each part of the drag decays implicitly, so it never overshoots.
     const dn = vn * (1 - 1 / (1 + h * (CN + CNQ * Math.abs(vn)))), dw = vw * (1 - 1 / (1 + h * CW)), dt = vt * (1 - 1 / (1 + h * CT));
-    vx -= dn * nx + dw * wx + dt * tx;
-    vy -= dn * ny + dw * wy + dt * ty + grav * h;
-    vz -= dn * nz + dw * wz + dt * tz;
-    if (kc) {
-      // Holding still: a vortex winds the silk round the pointer.
-      const qx = X[o] - cx, qy = X[o + 1] - cy, qz = X[o + 2] - cz, ha = qx * ax + qy * ay + qz * az;
-      let ux = qx - ha * ax, uy = qy - ha * ay, uz = qz - ha * az;
-      const rl = Math.hypot(ux, uy, uz) || 1e-6;
-      ux /= rl; uy /= rl; uz /= rl;
-      const u = Sx[i] / LEN, R = 0.09 + 0.6 * u ** 0.8, H = -0.85 * u;
-      const ex = ay * uz - az * uy, ey = az * ux - ax * uz, ez = ax * uy - ay * ux;
-      const vtan = (4.6 - 2.2 * u) * env.spin * R, vr = (R - rl) * 5, va = (H - ha) * 4;
-      vx += (ex * vtan + ux * vr + ax * va - vx) * kc;
-      vy += (ey * vtan + uy * vr + ay * va - vy) * kc;
-      vz += (ez * vtan + uz * vr + az * va - vz) * kc;
+    // Idle silk floats: a weak pull holds it near the middle of the stage.
+    vx -= dn * nx + dw * wx + dt * tx + kp * X[o];
+    vy -= dn * ny + dw * wy + dt * ty + grav * h + kp * (X[o + 1] - 0.05);
+    vz -= dn * nz + dw * wz + dt * tz + kp * X[o + 2];
+    // Holding still: each point is drawn to its place on a turning spiral.
+    const kq = kc && kc * sstep(0, 0.6, front - Sx[i]);
+    if (kq) {
+      const th = ph - Phi[i], c = Math.cos(th), s = Math.sin(th), r = Rs[i], d = Hs[i];
+      const ux = c * e1[0] + s * e2[0], uy = c * e1[1] + s * e2[1], uz = c * e1[2] + s * e2[2];
+      const qx = c * e2[0] - s * e1[0], qy = c * e2[1] - s * e1[1], qz = c * e2[2] - s * e1[2];
+      const dx = cx + r * ux + d * ax - X[o], dy = cy + r * uy + d * ay - X[o + 1], dz = cz + r * uz + d * az - X[o + 2];
+      // The pull is capped, so far points sweep in instead of snapping.
+      const pull = KP * Math.min(1, 2.6 / (KP * Math.hypot(dx, dy, dz) + 1e-9)), vt = om * r;
+      vx += (qx * vt + dx * pull - vx) * kq;
+      vy += (qy * vt + dy * pull - vy) * kq;
+      vz += (qz * vt + dz * pull - vz) * kq;
     }
-    // Soft walls of air keep the silk near the stage.
-    const x = X[o], y = X[o + 1], z = X[o + 2];
-    if (x > bx) vx -= (x - bx) * 30 * h; else if (x < -bx) vx -= (x + bx) * 30 * h;
-    if (y > by) vy -= (y - by) * 30 * h; else if (y < -by) vy -= (y + by) * 30 * h;
-    if (z > 1.7) vz -= (z - 1.7) * 30 * h; else if (z < -2.2) vz -= (z + 2.2) * 30 * h;
+    // Soft walls of air at the frame's edges keep the silk in view.
+    const x = X[o], y = X[o + 1], z = X[o + 2], k = CAMZ / (CAMZ - z), sx = (x * k) / hx, sy = (y * k) / hy;
+    // Outside, the push grows with depth and outward speed bleeds away.
+    if (sx > 1) { vx -= (sx - 1) * hx * wall; if (vx > 0) vx *= brake; } else if (sx < -1) { vx -= (sx + 1) * hx * wall; if (vx < 0) vx *= brake; }
+    if (sy > 1) { vy -= (sy - 1) * hy * wall; if (vy > 0) vy *= brake; } else if (sy < -1) { vy -= (sy + 1) * hy * wall; if (vy < 0) vy *= brake; }
+    if (z > 1.5) vz -= (z - 1.5) * wall; else if (z < -2) vz -= (z + 2) * wall;
+    vx *= still; vy *= still; vz *= still;
     Vl[o] = vx; Vl[o + 1] = vy; Vl[o + 2] = vz;
     Pr[o] = x + vx * h; Pr[o + 1] = y + vy * h; Pr[o + 2] = z + vz * h;
-  }
-  // A flick sends a bulge down the silk.
-  for (const wv of waves) {
-    const i0 = Math.max(1, Math.floor((wv.s - 0.6) / SEG)), i1 = Math.min(N, Math.ceil((wv.s + 0.6) / SEG));
-    for (let i = i0; i <= i1; i++) {
-      const o = i * 3, e = (Sx[i] - wv.s) / 0.2, g = Math.exp(-e * e) * wv.k * 26 * h;
-      const d = wv.dx * Tg[o] + wv.dy * Tg[o + 1] + wv.dz * Tg[o + 2];
-      Pr[o] += (wv.dx - d * Tg[o]) * g * h;
-      Pr[o + 1] += (wv.dy - d * Tg[o + 1]) * g * h;
-      Pr[o + 2] += (wv.dz - d * Tg[o + 2]) * g * h;
-    }
   }
   Pr[0] = px; Pr[1] = py; Pr[2] = pz;
   for (let it = 0; it < ITER; it++) bend(it & 1);
@@ -558,24 +573,70 @@ function substep(h, px, py, pz) {
     X[o] = Pr[o]; X[o + 1] = Pr[o + 1]; X[o + 2] = Pr[o + 2];
   }
   X[0] = px; X[1] = py; X[2] = pz;
+  // Neighbours share velocity, which calms ripples a few segments long.
+  for (let i = 1; i < N; i++) {
+    const o = i * 3;
+    Fx[o] = Vl[o - 3] + Vl[o + 3] - 2 * Vl[o];
+    Fx[o + 1] = Vl[o - 2] + Vl[o + 4] - 2 * Vl[o + 1];
+    Fx[o + 2] = Vl[o - 1] + Vl[o + 5] - 2 * Vl[o + 2];
+  }
+  for (let i = 1; i < N; i++) {
+    const o = i * 3;
+    Vl[o] += KV * 0.5 * Fx[o];
+    Vl[o + 1] += KV * 0.5 * Fx[o + 1];
+    Vl[o + 2] += KV * 0.5 * Fx[o + 2];
+  }
   To.set(Tg);
   tangents(X, Tg);
   for (let i = 0; i < NV; i++) carry(i);
   twist(h);
 }
 
-// The frame turns with inertia, toward easy bends, and evens out.
+// Solves (1 + 2k) x[j] - k (x[j - 1] + x[j + 1]) = r[j] with free ends.
+// One stable pass smooths a field along the whole ribbon.
+function smooth(r, x, k) {
+  let m = 1 + k;
+  TB[0] = -k / m;
+  TR[0] = r[0] / m;
+  for (let j = 1; j < NV; j++) {
+    m = (j === N ? 1 + k : 1 + 2 * k) + k * TB[j - 1];
+    TB[j] = -k / m;
+    TR[j] = (r[j] + k * TR[j - 1]) / m;
+  }
+  x[N] = TR[N];
+  for (let j = N - 1; j >= 0; j--) x[j] = TR[j] - TB[j] * x[j + 1];
+}
+
+// The frame spins with the air, leans toward easy bends, and evens out.
 function twist(h) {
-  const tn = env.tn * h, ph = clock;
+  // While coiling, the air settles and the face turns to the viewer.
+  const tn = env.tn * h, ph = clock, ka = KA * h * (1 - env.coil), kf = KF * (1 + 3 * env.coil);
   for (let i = 0; i < NV; i++) {
     // Slow travelling twists keep the silk turning.
-    Om[i] += tn * (Math.sin(1.3 * Sx[i] - 0.9 * ph) + 0.7 * Math.sin(3.1 * Sx[i] + 1.4 * ph + 1));
-    const a = Om[i] * h;
-    Ac[i] = a;
-    if (a) spin(i, a);
+    const o = i * 3, s = Sx[i];
+    let tq = tn * (Math.sin(1.3 * s - 0.9 * ph) + 0.7 * Math.sin(3.1 * s + 1.4 * ph + 1));
+    // Moving air turns the silk broadside, so fast strokes flutter.
+    const tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
+    const nx = ty * wz - tz * wy, ny = tz * wx - tx * wz, nz = tx * wy - ty * wx;
+    const rx = Vl[o] - Wind[o], ry = Vl[o + 1] - Wind[o + 1], rz = Vl[o + 2] - Wind[o + 2];
+    tq -= ka * (rx * nx + ry * ny + rz * nz) * (rx * wx + ry * wy + rz * wz);
+    Om[i] += tq;
   }
-  for (let i = 1; i < N; i++) {
-    const a = (i - 1) * 3, o = i * 3, b = o + 3;
+  // Neighbours share their spin, so the silk turns in long, smooth runs.
+  smooth(Om, Om, KW);
+  const damp = Math.exp(-h * TD);
+  for (let i = 0; i < NV; i++) {
+    Om[i] = clamp(Om[i] * damp, -OMAX, OMAX);
+    spin(i, Om[i] * h);
+    // A gentle pull turns the face toward the viewer.
+    const o = i * 3, tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
+    const nx = ty * wz - tz * wy, ny = tz * wx - tx * wz, nz = tx * wy - ty * wx;
+    const ex = -X[o], ey = -X[o + 1], ez = CAMZ - X[o + 2];
+    spin(i, (-kf * (ex * nx + ey * ny + ez * nz) * (ex * wx + ey * wy + ez * wz)) / (ex * ex + ey * ey + ez * ez));
+  }
+  // The bend is read three segments wide, so small ripples do not count.
+  for (let i = 3; i < N - 2; i++) {
+    const a = (i - 3) * 3, o = i * 3, b = o + 9;
     const bx = X[a] + X[b] - 2 * X[o], by = X[a + 1] + X[b + 1] - 2 * X[o + 1], bz = X[a + 2] + X[b + 2] - 2 * X[o + 2];
     const tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
     const nx = ty * wz - tz * wy, ny = tz * wx - tx * wz, nz = tx * wy - ty * wx;
@@ -585,49 +646,43 @@ function twist(h) {
     const ang = Math.abs(bn) > 1e-12 ? -Math.atan(bw / bn) : bw > 0 ? -Math.PI / 2 : Math.PI / 2;
     spin(i, ang * KC * (m2 / (m2 + CE2)));
   }
-  for (let it = 0; it < 2; it++) {
-    for (let k = 0; k < N; k++) {
-      const i = it & 1 ? N - 1 - k : k, c = twistAt(i) * KT * 0.5;
-      spin(i, c);
-      Ac[i] += c;
-      spin(i + 1, -c);
-      Ac[i + 1] -= c;
-    }
-  }
-  const damp = Math.exp(-h * TD), ih = 1 / h;
-  for (let i = 0; i < NV; i++) Om[i] = clamp(Ac[i] * ih * damp, -OMAX, OMAX);
+  // One implicit solve spreads each twist along the length.
+  for (let j = 0; j < N; j++) Tw[j] = twistAt(j);
+  for (let j = 0; j <= N; j++) Dl[j] = KS * ((j < N ? Tw[j] : 0) - (j > 0 ? Tw[j - 1] : 0));
+  smooth(Dl, Dl, KS);
+  for (let j = 0; j <= N; j++) spin(j, Dl[j]);
 }
 
-// Wind: a slow swirling flow that is free of sources and sinks.
-function windField(t, amp) {
-  if (!amp) { Wind.fill(0); return; }
+// Wind: a slow swirling flow plus a mean breeze (bx, by).
+function windField(t, amp, bx, by) {
+  if (!amp && !bx && !by) { Wind.fill(0); return; }
   const k = 1.3;
   for (let i = 0; i < NV; i++) {
     const o = i * 3, x = X[o] * k, y = X[o + 1] * k, z = X[o + 2] * k;
-    Wind[o] = amp * (0.9 * Math.sin(z + 0.31 * t) + 0.6 * Math.cos(y + 0.17 * t));
-    Wind[o + 1] = amp * (0.7 * Math.sin(x + 0.23 * t) + 0.9 * Math.cos(z - 0.13 * t) + 0.25);
+    Wind[o] = bx + amp * (0.9 * Math.sin(z + 0.31 * t) + 0.6 * Math.cos(y + 0.17 * t));
+    Wind[o + 1] = by + amp * (0.7 * Math.sin(x + 0.23 * t) + 0.9 * Math.cos(z - 0.13 * t));
     Wind[o + 2] = amp * (0.6 * Math.sin(y - 0.29 * t) + 0.7 * Math.cos(x + 0.11 * t));
   }
 }
 
-// Lays the ribbon in a loose curve with a few twists.
+// Lays the ribbon along the path its head has just drifted.
 function seed() {
-  const h0 = [0, 0, 0];
+  const h0 = [0, 0, 0], p = [0, 0, 0];
   drift(clock, h0);
-  for (let i = 0; i < NV; i++) {
-    const s = Sx[i], o = i * 3;
-    X[o] = h0[0] + 0.7 * Math.sin(s * 0.8);
-    X[o + 1] = h0[1] - 0.32 * s + 0.2 * Math.sin(s * 1.9);
-    X[o + 2] = h0[2] + 0.25 * Math.cos(s * 1.1) - 0.25 - 0.1 * s;
-    Vl[o] = Vl[o + 1] = Vl[o + 2] = 0;
-    Om[i] = 0;
+  X[0] = h0[0]; X[1] = h0[1]; X[2] = h0[2];
+  for (let i = 1, t = clock; i < NV; ) {
+    t -= 0.004;
+    drift(t, p);
+    const q = (i - 1) * 3, d = Math.hypot(p[0] - X[q], p[1] - X[q + 1], p[2] - X[q + 2]);
+    if (d < SEG) continue;
+    const o = i * 3, k = SEG / d;
+    X[o] = X[q] + (p[0] - X[q]) * k;
+    X[o + 1] = X[q + 1] + (p[1] - X[q + 1]) * k;
+    X[o + 2] = X[q + 2] + (p[2] - X[q + 2]) * k;
+    i++;
   }
-  // The first pass makes every segment its true length.
-  for (let i = 1; i < NV; i++) {
-    const o = i * 3, q = o - 3, dx = X[o] - X[q], dy = X[o + 1] - X[q + 1], dz = X[o + 2] - X[q + 2];
-    const k = SEG / (Math.hypot(dx, dy, dz) || 1);
-    X[o] = X[q] + dx * k; X[o + 1] = X[q + 1] + dy * k; X[o + 2] = X[q + 2] + dz * k;
-  }
+  Vl.fill(0);
+  Om.fill(0);
   tangents(X, Tg);
   To.set(Tg);
   const w = unit([-Tg[1], Tg[0], 0]);
@@ -654,9 +709,9 @@ const lead = { on: false, src: 'mouse', id: -1, down: false, nx: 0, ny: 0 };
 const kb = { on: false, x: 0, y: 0, vx: 0, vy: 0, at: -1e9 };
 const held = new Map();
 const ARROWS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
-const FLO_8 = 2.7, FLO_S = 2.5, FLO_T = FLO_8 + FLO_S, V_FLICK = 5.2, DASH = 5.6, KB_HOLD = 8;
-let idleT = 99, stillT = 0, coilK = 0, coilPh = 0, softT = 0, cS = 0, flo = null;
-let armed = false, fPeak = 0, fT = 0, tipFlash = 0, tipSp = 0;
+const FLO_8 = 2.7, FLO_S = 2.5, FLO_T = FLO_8 + FLO_S, V_FLICK = 5.2, DASH = 5.6, KB_HOLD = 8, OMG = 3.6;
+let idleT = 99, stillT = 0, coilK = 0, coilT = 0, coilPh = 0, softT = 0, cS = 0, flo = null;
+let armed = false, fPeak = 0, fT = 0, lastLaunch = -9, tipFlash = 0, tipSp = 0, calmT = 0;
 const fDir = [0, 0, 0];
 
 // The head rides a shallow dome, nearer in the middle.
@@ -670,11 +725,11 @@ function toNdc(p) {
   const k = CAMZ / (CAMZ - p[2]);
   return [clamp((p[0] * k) / hx, -0.9, 0.9), clamp((p[1] * k) / hy, -0.88, 0.88)];
 }
-// Idle: the stick wanders on a slow, wide figure.
+// Idle: the stick traces a slow, wide figure and the silk follows.
 function drift(t, o) {
-  o[0] = 0.5 * hx * Math.sin(0.21 * t + 0.6);
-  o[1] = 0.16 + 0.3 * hy * Math.sin(0.29 * t + 1.3);
-  o[2] = 0.15 + 0.3 * Math.sin(0.17 * t + 2.1);
+  o[0] = 0.58 * hx * Math.sin(0.2 * t - 0.3);
+  o[1] = 0.02 + 0.3 * hy * Math.sin(0.33 * t + 0.24);
+  o[2] = 0.1 + 0.3 * Math.sin(0.17 * t + 2.1);
 }
 // The flourish: a figure of eight, then an opening spiral.
 function floPath(t, o) {
@@ -692,7 +747,7 @@ function floPath(t, o) {
 }
 // The coil's axis leans toward the viewer and wanders slowly.
 function coilAxis(t) {
-  const al = 0.72 + 0.12 * Math.sin(t * 0.21), be = 1.9 + 0.5 * Math.sin(t * 0.13);
+  const al = 0.5 + 0.1 * Math.sin(t * 0.21), be = 1.9 + 0.5 * Math.sin(t * 0.13);
   axis[0] = Math.sin(al) * Math.cos(be);
   axis[1] = Math.sin(al) * Math.sin(be);
   axis[2] = Math.cos(al);
@@ -772,12 +827,15 @@ function control(dt) {
   const leading = !flo && (lead.on || kb.on);
   stillT = leading && cS < 0.25 ? stillT + dt : 0;
   const want = stillT > 0.4 ? 1 : 0;
-  coilK += (want - coilK) * (1 - Math.exp(-dt * (want ? 1.2 : 7)));
+  coilK += (want - coilK) * (1 - Math.exp(-dt * (want ? 1.6 : 7)));
+  // The winding runs from the head toward the tip.
+  coilT = want ? coilT + dt : 0;
+  env.front = coilT * 3;
   goal.set(centre);
   if (coilK > 0.002) {
     coilAxis(clock);
-    coilPh += dt * 5 * env.spin;
-    const r = 0.07 * coilK, c = Math.cos(coilPh), s = Math.sin(coilPh);
+    coilPh += dt * OMG * env.spin;
+    const r = 0.075 * coilK, c = Math.cos(coilPh), s = Math.sin(coilPh);
     for (let a = 0; a < 3; a++) goal[a] += r * (c * e1[a] + s * e2[a]);
   }
   head0.set(head);
@@ -791,11 +849,12 @@ function control(dt) {
     for (let a = 0; a < 3; a++) fDir[a] = headV[a] / s;
   } else if (armed) {
     fT += dt;
-    if (s < 0.45 * fPeak) { launch(fPeak); armed = false; }
+    if (s < 0.45 * fPeak) { if (clock - lastLaunch > 0.3) launch(fPeak); armed = false; }
     else if (fT > 0.35) armed = false;
   }
 }
 function launch(peak) {
+  lastLaunch = clock;
   const k = clamp((peak - V_FLICK) / 8 + 0.4, 0.4, 1);
   if (waves.length >= 3) waves.shift();
   waves.push({ s: 0, k, dx: fDir[0], dy: fDir[1], dz: fDir[2], cracked: false });
@@ -813,7 +872,7 @@ function cancelFlourish() {
 }
 
 /* ---------- sparks: the crack's flash and glints ---------- */
-const SPMAX = 48, sparks = [], SPD = new Float32Array(SPMAX * 8);
+const SPMAX = 64, sparks = [], SPD = new Float32Array(SPMAX * 8);
 let palName = 'sunset', dye = 2, bgFrom = bgOf(PALS.sunset), bgTo = bgFrom;
 const tipColour = () => [...PALD.subarray((GN - 1) * 4, (GN - 1) * 4 + 3)];
 function snap(wv) {
@@ -825,11 +884,12 @@ function snap(wv) {
   }
   tipFlash = Math.max(tipFlash, k);
   const c = tipColour(), x = X[o], y = X[o + 1], z = X[o + 2];
-  sparks.push({ x, y, z, vx: 0, vy: 0, vz: 0, age: 0, life: 0.22, size: 0.3 + 0.2 * k, c: c.map(v => v * 0.6 + 0.5), flash: true });
-  for (let j = 0, n = Math.round(8 + 10 * k); j < n && sparks.length < SPMAX; j++) {
-    const d = unit([Tg[o] + rnd(-0.9, 0.9), Tg[o + 1] + rnd(-0.9, 0.9), Tg[o + 2] + rnd(-0.9, 0.9)]), sp = rnd(0.5, 2) * (0.6 + 0.6 * k);
-    const m = rnd(0.3, 0.85);
-    sparks.push({ x, y, z, vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, age: 0, life: rnd(0.35, 0.8), size: rnd(0.02, 0.05), c: c.map(v => lerp(v, 1, m)) });
+  // A white flash, a ring of air and glints in the tip's colour.
+  sparks.push({ x, y, z, vx: 0, vy: 0, vz: 0, age: 0, life: 0.2, size: 0.42 + 0.25 * k, c: c.map(v => v * 0.5 + 0.7), kind: 1, ph: 0 });
+  sparks.push({ x, y, z, vx: 0, vy: 0, vz: 0, age: 0, life: 0.34, size: 0.5 + 0.3 * k, c: c.map(v => v * 0.8 + 0.25), kind: 2, ph: 0 });
+  for (let j = 0, n = Math.round(14 + 14 * k); j < n && sparks.length < SPMAX; j++) {
+    const d = unit([Tg[o] + rnd(-1, 1), Tg[o + 1] + rnd(-1, 1), Tg[o + 2] + rnd(-1, 1)]), sp = rnd(0.6, 2.6) * (0.6 + 0.6 * k);
+    sparks.push({ x, y, z, vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, age: 0, life: rnd(0.45, 1), size: rnd(0.05, 0.11), c: c.map(v => lerp(v, 1, rnd(0.25, 0.7))), kind: 0, ph: rnd(0, TAU) });
   }
   crackSound(k, x / hx);
 }
@@ -848,12 +908,20 @@ function stepSparks(dt) {
 function step(dt) {
   clock += dt;
   const idleK = lead.on || kb.on || flo ? 0 : sstep(0, 3, idleT);
-  env.grav = lerp(1.5, 0.7, idleK);
+  env.grav = lerp(0.65, 0.1, idleK);
+  env.pull = 0.12 * idleK;
+  // Reduced motion lets idle silk settle within a few seconds.
+  env.damp = reduce ? 1.6 * idleK : 0;
   env.spin = reduce ? 0.5 : 1;
-  env.tn = reduce ? 0 : lerp(1.2, 4, idleK);
-  windField(clock, reduce ? 0 : lerp(0.1, 0.42, idleK));
+  env.tn = reduce ? 0 : lerp(2.5, 4, idleK);
+  // Idle, a breeze blows from the stick across the middle, veering slowly.
+  const ba = Math.atan2(0.05 - head[1], -head[0]) + 0.8 * Math.sin(clock * 0.11), bs = reduce ? 0 : 0.36 * idleK;
+  windField(clock, reduce ? 0 : lerp(0.08, 0.16, idleK), bs * Math.cos(ba), bs * Math.sin(ba));
   control(dt);
   env.coil = coilK;
+  // Near an edge the spiral draws in tighter, so it stays in view.
+  spiral(clamp(Math.min(hx - Math.abs(centre[0]), hy - Math.abs(centre[1])) * 0.92, 0.3, 0.55));
+  env.ph = coilPh;
   env.cx = centre[0]; env.cy = centre[1]; env.cz = centre[2];
   env.ax = axis[0]; env.ay = axis[1]; env.az = axis[2];
   const n = clamp(Math.round(dt * 240), 2, lowDpr ? 4 : 6), h = dt / n;
@@ -884,7 +952,9 @@ function step(dt) {
   for (let i = 1; i < NV; i += 6) ke += Vl[i * 3] ** 2 + Vl[i * 3 + 1] ** 2 + Vl[i * 3 + 2] ** 2;
   tipSp += (sp - tipSp) * (1 - Math.exp(-dt / 0.05));
   if (sw) swishTo(tipSp, X[N * 3] / hx);
-  return lead.down || !!flo || coilK > 0.01 || waves.length > 0 || sparks.length > 0 || dye < 1.3 || held.size > 0 || ke / 60 > 4e-4 || Math.hypot(headV[0], headV[1]) > 0.01;
+  const calm = !lead.down && !flo && coilK < 0.01 && !waves.length && !sparks.length && dye >= 1.3 && !held.size && ke / 60 < 1e-3 && Math.hypot(headV[0], headV[1]) < 0.01;
+  calmT = calm ? calmT + dt : 0;
+  return calmT < 0.5;
 }
 
 /* ---------- WebGL ---------- */
@@ -926,10 +996,10 @@ uniform sampler2D uData;
 uniform mat4 uVP;
 uniform int uM, uStep;
 uniform float uHalf, uLen, uWid, uArea;
-uniform vec3 uKey;
+uniform vec3 uKey, uEye;
 out vec3 vPos, vT, vW, vOcc;
 out vec2 vUV;
-out float vGlow;
+out float vGlow, vOv;
 vec4 at(int i, int r) { return texelFetch(uData, ivec2(clamp(i, 0, ${NV - 1}), r), 0); }
 void main() {
   int i = gl_VertexID >> 1;
@@ -942,7 +1012,10 @@ void main() {
   // The neck narrows into the stick; the tail tapers to a point.
   float hw = uHalf * mix(0.5, 1.0, smoothstep(0.0, 0.03, u)) * mix(0.1, 1.0, smoothstep(1.0, 0.955, u));
   vec3 pos = p.xyz + w * (side * hw);
-  float aoP = 0.0, aoN = 0.0, sh = 1.0;
+  float aoP = 0.0, aoN = 0.0, sh = 1.0, ov = 0.0;
+  vec3 e = pos - uEye;
+  float el = length(e);
+  e /= el;
   for (int j = 0; j < 128; j++) {
     if (j >= uM) break;
     vec4 q = at(j * uStep + (uStep >> 1), 0);
@@ -958,8 +1031,16 @@ void main() {
       float r = length(d - uKey * a);
       sh *= 1.0 - 0.42 * (1.0 - smoothstep(0.25 * uWid, 0.6 * uWid + 0.16 * a, r));
     }
+    // A fold in front casts a soft halo on the silk behind it.
+    vec3 g = q.xyz - uEye;
+    float al = dot(g, e), gap = el - al;
+    if (gap > 0.0) {
+      float r = length(g - e * al);
+      ov = max(ov, (1.0 - smoothstep(0.3 * uWid, uWid * (0.8 + 2.5 * gap), r)) * (1.0 - exp(-gap * 7.0)));
+    }
   }
   vOcc = vec3(aoP, aoN, sh);
+  vOv = ov;
   vPos = pos;
   vT = t;
   vW = w;
@@ -972,9 +1053,9 @@ const RIB_FS = `#version 300 es
 precision highp float;
 in vec3 vPos, vT, vW, vOcc;
 in vec2 vUV;
-in float vGlow;
+in float vGlow, vOv;
 uniform sampler2D uPal;
-uniform vec3 uEye, uKey, uKeyC, uRim, uRimC, uSky, uGnd;
+uniform vec3 uEye, uKey, uKeyC, uRim, uRimC, uFill, uFillC, uSky, uGnd;
 uniform float uDye, uIri;
 out vec4 o;
 ${COMMON}
@@ -987,9 +1068,11 @@ vec3 shine(vec3 L, vec3 C, vec3 N, vec3 V, vec3 T, vec3 W, vec3 alb, float NdV) 
   if (NdL > 0.0) {
     vec3 H = normalize(L + V);
     float ht = dot(H, T), hb = dot(H, W), hn = max(dot(H, N), 0.05);
-    float s1 = exp(-(ht * ht / 0.0196 + hb * hb / 0.25) / (hn * hn)) * sqrt(NdL / max(NdV, 0.2));
+    float s1 = exp(-(ht * ht / 0.04 + hb * hb / 0.25) / (hn * hn)) * sqrt(NdL / max(NdV, 0.35));
     float s2 = exp(-(ht * ht / 0.16 + hb * hb / 0.64) / (hn * hn)) * NdL;
-    c += mix(alb, vec3(1.0), 0.45) * s1 * 0.95 + alb * s2 * 0.35;
+    // Highlights glow in the dye's own hue rather than grey.
+    vec3 lum = alb / max(max(alb.r, alb.g), max(alb.b, 1e-3));
+    c += mix(lum, vec3(1.0), 0.3) * s1 * 1.2 + lum * alb * s2 * 0.7;
   }
   return c * C;
 }
@@ -1001,8 +1084,8 @@ void main() {
   float face = dot(N, V) >= 0.0 ? 1.0 : -1.0;
   N *= face;
   float x = vUV.y * 2.0 - 1.0;
-  // A gentle cup across the width tilts the normal near the edges.
-  vec3 Nc = normalize(N + W * (x * 0.32 * face));
+  // A slight cup across the width tilts the normal near the edges.
+  vec3 Nc = normalize(N + W * (x * 0.12 * face));
   float NdV = max(dot(Nc, V), 0.0);
   // Iridescence slides the gradient with the viewing angle.
   float u = clamp(vUV.x + uIri * (1.0 - NdV) * 0.22, 0.0, 1.0);
@@ -1012,9 +1095,10 @@ void main() {
   vec3 col = alb * mix(uGnd, uSky, Nc.y * 0.5 + 0.5) * ao;
   col += shine(uKey, uKeyC * vOcc.z, Nc, V, T, W, alb, NdV) * mix(1.0, ao, 0.5);
   col += shine(uRim, uRimC, Nc, V, T, W, alb, NdV) * ao;
+  col += shine(uFill, uFillC, Nc, V, T, W, alb, NdV) * ao;
   // Silk glows softly at grazing angles.
   col += alb * pow(1.0 - NdV, 3.0) * 0.4 * (uSky + 0.25 * uKeyC) * ao;
-  col *= mix(1.0, 0.8, smoothstep(0.86, 1.0, abs(x)));
+  col *= mix(1.0, 0.8, smoothstep(0.86, 1.0, abs(x))) * (1.0 - 0.55 * vOv);
   col += (alb * 1.4 + 0.22) * vGlow;
   o = vec4(srgb(knee(col)) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
@@ -1024,23 +1108,28 @@ layout(location = 1) in vec4 aC;
 uniform mat4 uVP;
 uniform float uPx;
 out vec4 vC;
+out float vRing;
 void main() {
   vec4 c = uVP * vec4(aP.xyz, 1.0);
   gl_Position = c;
-  gl_PointSize = clamp(aP.w * uPx / c.w, 1.0, 256.0);
+  gl_PointSize = clamp(abs(aP.w) * uPx / c.w, 1.0, 400.0);
   vC = aC;
+  vRing = step(aP.w, 0.0);
 }`;
-// A spark is a soft dot with a four-point glint.
+// A spark is a soft dot with a four-point glint; the ring is a thin halo.
 const SP_FS = `#version 300 es
 precision highp float;
 in vec4 vC;
+in float vRing;
 out vec4 o;
 ${COMMON}
 void main() {
   vec2 q = gl_PointCoord * 2.0 - 1.0;
   float r = length(q);
-  float a = (exp(-r * r * 7.0) + 0.5 * exp(-abs(q.x * q.y) * 60.0) * (1.0 - smoothstep(0.2, 1.0, r))) * vC.a;
-  o = vec4(srgb(vC.rgb) * a, 1.0);
+  if (r > 1.0) discard;
+  float blob = exp(-r * r * 7.0) + 0.6 * exp(-abs(q.x * q.y) * 60.0) * (1.0 - smoothstep(0.2, 1.0, r));
+  float ring = exp(-pow((r - 0.8) / 0.07, 2.0)) + 0.25 * exp(-pow((r - 0.62) / 0.16, 2.0));
+  o = vec4(srgb(vC.rgb) * mix(blob, ring, vRing) * vC.a, 1.0);
 }`;
 
 let gl = null, P = null, vao = null, spVao = null, spBuf = null, dataTex = null, palTex = null;
@@ -1075,7 +1164,7 @@ async function initGL() {
   }
   P = progs;
   uni(P.bg, ['uRes', 'uC0', 'uC1', 'uC2']);
-  uni(P.rib, ['uData', 'uVP', 'uM', 'uStep', 'uHalf', 'uLen', 'uWid', 'uArea', 'uKey', 'uPal', 'uEye', 'uKeyC', 'uRim', 'uRimC', 'uSky', 'uGnd', 'uDye', 'uIri']);
+  uni(P.rib, ['uData', 'uVP', 'uM', 'uStep', 'uHalf', 'uLen', 'uWid', 'uArea', 'uKey', 'uPal', 'uEye', 'uKeyC', 'uRim', 'uRimC', 'uFill', 'uFillC', 'uSky', 'uGnd', 'uDye', 'uIri']);
   uni(P.sp, ['uVP', 'uPx']);
   gl.useProgram(P.rib.p);
   gl.uniform1i(P.rib.u.uData, 0);
@@ -1090,6 +1179,8 @@ async function initGL() {
   gl.uniform3fv(P.rib.u.uKeyC, KEYC);
   gl.uniform3fv(P.rib.u.uRim, RIM);
   gl.uniform3fv(P.rib.u.uRimC, RIMC);
+  gl.uniform3fv(P.rib.u.uFill, FILL);
+  gl.uniform3fv(P.rib.u.uFillC, FILLC);
   gl.uniform3fv(P.rib.u.uSky, SKYC);
   gl.uniform3fv(P.rib.u.uGnd, GNDC);
   gl.uniform3f(P.rib.u.uEye, 0, 0, CAMZ);
@@ -1155,12 +1246,38 @@ function fit() {
   if (ready && visible) render();
 }
 
-function render() {
+// The flick's wave is drawn over the physics: a bulge and one full turn.
+function pack() {
   for (let i = 0; i < NV; i++) {
     const o = i * 3, p = i * 4, q = (NV + i) * 4;
-    TEXD[p] = X[o]; TEXD[p + 1] = X[o + 1]; TEXD[p + 2] = X[o + 2]; TEXD[p + 3] = Sx[i];
-    TEXD[q] = Wf[o]; TEXD[q + 1] = Wf[o + 1]; TEXD[q + 2] = Wf[o + 2]; TEXD[q + 3] = Glow[i];
+    let x = X[o], y = X[o + 1], z = X[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
+    if (waves.length) {
+      const tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2];
+      let ang = 0;
+      for (const wv of waves) {
+        const e = (Sx[i] - wv.s) / 0.24;
+        if (e > -4 && e < 4) {
+          const g = 0.11 * wv.k * Math.exp(-e * e), d = wv.dx * tx + wv.dy * ty + wv.dz * tz;
+          x += (wv.dx - d * tx) * g;
+          y += (wv.dy - d * ty) * g;
+          z += (wv.dz - d * tz) * g;
+        }
+        ang += TAU * sstep(-1, 1, -e * 0.8);
+      }
+      ang %= TAU;
+      if (ang) {
+        const c = Math.cos(ang), s = Math.sin(ang), nx = ty * wz - tz * wy, ny = tz * wx - tx * wz, nz = tx * wy - ty * wx;
+        wx = wx * c + nx * s;
+        wy = wy * c + ny * s;
+        wz = wz * c + nz * s;
+      }
+    }
+    TEXD[p] = x; TEXD[p + 1] = y; TEXD[p + 2] = z; TEXD[p + 3] = Sx[i];
+    TEXD[q] = wx; TEXD[q + 1] = wy; TEXD[q + 2] = wz; TEXD[q + 3] = Glow[i];
   }
+}
+function render() {
+  pack();
   const cw = canvas.width, ch = canvas.height;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, cw, ch);
@@ -1190,8 +1307,11 @@ function render() {
   if (sparks.length) {
     let o = 0;
     for (const s of sparks) {
-      const t = 1 - s.age / s.life, a = s.flash ? t * t * t : t * t;
-      SPD.set([s.x, s.y, s.z, s.size * (s.flash ? 0.6 + 0.4 * t : 1), s.c[0], s.c[1], s.c[2], a], o);
+      const t = 1 - s.age / s.life;
+      // A negative size marks the ring, which grows as it fades.
+      const size = s.kind === 2 ? -s.size * (0.25 + 0.75 * Math.sqrt(1 - t)) : s.size * (s.kind === 1 ? 0.5 + 0.5 * t : 1);
+      const a = s.kind === 1 ? t * t * t : s.kind === 2 ? t * t * 0.8 : t * t * (0.7 + 0.3 * Math.sin(s.age * 38 + s.ph));
+      SPD.set([s.x, s.y, s.z, size, s.c[0], s.c[1], s.c[2], a], o);
       o += 8;
     }
     gl.bindVertexArray(spVao);
@@ -1322,8 +1442,13 @@ addEventListener('keyup', e => {
   held.delete(e.key);
   // A quick tap dashes and stops, so the ribbon cracks.
   if (performance.now() - t0 < 200) {
-    kb.vx += (ARROWS[e.key][0] * DASH) / hx;
-    kb.vy += (ARROWS[e.key][1] * DASH) / hy;
+    const d = ARROWS[e.key];
+    kb.vx += (d[0] * DASH) / hx;
+    kb.vy += (d[1] * DASH) / hy;
+    fDir[0] = d[0];
+    fDir[1] = d[1];
+    fDir[2] = 0;
+    launch(V_FLICK + 4);
   }
   kb.at = clock;
   wake();
@@ -1384,7 +1509,7 @@ async function boot() {
   await idle();
   seed();
   // A few seconds of drifting have already run.
-  for (let k = 0; k < 90; k++) step(1 / 60);
+  for (let k = 0; k < 180; k++) step(1 / 60);
   try { await gate; } catch (err) { console.error(err); failed(); return; }
   ready = true;
   new ResizeObserver(fit).observe(panel);

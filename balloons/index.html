@@ -299,8 +299,8 @@ function inflateSound(x, k) {
   lfo.frequency.linearRampToValueAtTime(52, t + dur);
   lfo.connect(lg).connect(am.gain);
   env.gain.setValueAtTime(0, t);
-  env.gain.linearRampToValueAtTime(0.2 * g, t + 0.03);
-  env.gain.setValueAtTime(0.2 * g, t + dur * 0.72);
+  env.gain.linearRampToValueAtTime(0.5 * g, t + 0.03);
+  env.gain.setValueAtTime(0.5 * g, t + dur * 0.72);
   env.gain.linearRampToValueAtTime(0, t + dur);
   o.connect(bp).connect(am).connect(env).connect(d);
   o.start(t);
@@ -312,7 +312,7 @@ function inflateSound(x, k) {
   nf.frequency.setValueAtTime(800, t);
   nf.frequency.exponentialRampToValueAtTime(3600, t + dur);
   ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(0.1 * g, t + dur * 0.55);
+  ng.gain.linearRampToValueAtTime(0.16 * g, t + dur * 0.55);
   ng.gain.linearRampToValueAtTime(0, t + dur);
   src.connect(nf).connect(ng).connect(d);
   src.start(t, Math.random() * 0.5, dur + 0.02);
@@ -320,7 +320,7 @@ function inflateSound(x, k) {
   th.frequency.setValueAtTime(230 * k, t2);
   th.frequency.exponentialRampToValueAtTime(105 * k, t2 + 0.09);
   tg.gain.setValueAtTime(0, t2);
-  tg.gain.linearRampToValueAtTime(0.26 * g, t2 + 0.006);
+  tg.gain.linearRampToValueAtTime(0.4 * g, t2 + 0.006);
   tg.gain.setTargetAtTime(0, t2 + 0.006, 0.05);
   th.connect(tg).connect(d);
   th.start(t2);
@@ -429,8 +429,8 @@ function wheeSound() {
   o.frequency.exponentialRampToValueAtTime(1500, t + dur);
   vib.connect(vg).connect(o.frequency);
   env.gain.setValueAtTime(0, t);
-  env.gain.linearRampToValueAtTime(0.13 * g, t + 0.06);
-  env.gain.setValueAtTime(0.12 * g, t + dur * 0.7);
+  env.gain.linearRampToValueAtTime(0.26 * g, t + 0.06);
+  env.gain.setValueAtTime(0.24 * g, t + dur * 0.7);
   env.gain.linearRampToValueAtTime(0, t + dur);
   o.connect(env).connect(d);
   const src = a.createBufferSource(), nf = filt(a, 'bandpass', 2400, 1.2), ng = gainOf(a, 0);
@@ -445,6 +445,23 @@ function wheeSound() {
   o.stop(t + dur + 0.02);
   vib.stop(t + dur + 0.02);
   track(o, vg, env, nf, ng, d);
+}
+// A gust: a soft rush of air sweeping across.
+function whoosh(x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, x * 0.5), dur = 0.32;
+  const src = a.createBufferSource(), bp = filt(a, 'bandpass', 700, 1.1), ng = gainOf(a, 0);
+  src.buffer = noise;
+  bp.frequency.setValueAtTime(500, t);
+  bp.frequency.exponentialRampToValueAtTime(1700, t + dur * 0.4);
+  bp.frequency.exponentialRampToValueAtTime(700, t + dur);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.32 * g, t + dur * 0.35);
+  ng.gain.linearRampToValueAtTime(0, t + dur);
+  src.connect(bp).connect(ng).connect(d);
+  src.start(t, Math.random() * 0.5, dur + 0.02);
+  track(src, bp, ng, d);
 }
 // Pressing to prick: the rubber creaks tighter and higher.
 let creak = null;
@@ -496,7 +513,7 @@ function squeak(e, speed, x) {
   sq.o.frequency.setTargetAtTime((480 + 820 * s) * jit(0.07), t, 0.012);
   sq.chop.frequency.setTargetAtTime(8 + 22 * s, t, 0.03);
   sq.bp.frequency.setTargetAtTime(1300 + 1500 * s, t, 0.03);
-  sq.g.gain.setTargetAtTime(soundOn ? 0.17 * clamp(e) : 0, t, 0.02);
+  sq.g.gain.setTargetAtTime(soundOn ? 0.36 * clamp(e) : 0, t, 0.02);
   if (sq.d.pan) sq.d.pan.setTargetAtTime(clamp(x, -1, 1) * 0.6, t, 0.05);
   sq.quiet = e > 0.03 ? 0 : sq.quiet + 1;
   if (sq.quiet > 40) squeakStop();
@@ -806,10 +823,20 @@ function buildGlyph(ch) {
     }
     if (v > 0) yb = Math.max(yb, y);
   }
-  let ax = cx, bestD = 1e9;
-  for (let y = yb - 3; y <= yb; y++) for (let x = 0; x < w; x++) if (sd[y * w + x] > 0 && Math.abs(x - cx) < bestD) { bestD = Math.abs(x - cx); ax = x; }
+  // The tie point sits mid-stroke on the foot nearest the middle.
+  let ax = Math.round(cx), bestD = 1e9;
+  const ry = Math.round(yb - 0.07 * capPx);
+  for (let x = 0, run = -1; x < w; x++) {
+    const inside = sd[ry * w + x] > 0;
+    if (inside && run < 0) run = x;
+    if (!inside && run >= 0) {
+      const mid = Math.round((run + x - 1) / 2);
+      if (Math.abs(mid - cx) < bestD) { bestD = Math.abs(mid - cx); ax = mid; }
+      run = -1;
+    }
+  }
   let ay = yb;
-  while (ay > 0 && sd[ay * w + ax] < 0.05 * capPx) ay--;
+  while (ay > 0 && sd[ay * w + ax] < 0.04 * capPx) ay--;
   // Points on the skin seed confetti.
   const pts = new Float32Array(240 * 3);
   for (let i = 0; i < 240; i++) {
@@ -850,7 +877,7 @@ float fOff(vec2 p, float side) {
   float r = length(dr);
   float o = -uDent.z * exp(-dot(dd, dd) / (uDent.w * uDent.w)) * step(0.0, side);
   o += uRip.z * sin(r * 44.0 - uRip.w) * exp(-r * 7.0);
-  o += uCrumple * (fNoise(p * 8.0 + side * 3.7) - 0.5) * 0.07;
+  o += uCrumple * (1.0 - abs(fNoise(p * 6.5 + side * 3.7) * 2.0 - 1.0) - 0.55) * 0.07;
   return o;
 }`;
 const FOIL_VN = `
@@ -868,16 +895,20 @@ transformed.z = transformed.z * fK + fSide * fO;
 vSeam = aSeam;
 vObj = position;`;
 const FOIL_FP = `
-uniform float uSize, uCrinkle;
+uniform float uSize, uCrinkle, uCrumple;
 varying vec3 vSeam;
 varying vec3 vObj;
 ${NOISE}
+float fRidge(vec2 p) { return 1.0 - abs(fNoise(p) * 2.0 - 1.0); }
 // Skin height: pleats by the seam, crinkles all over, crimps on the flange.
+// A deflated skin adds sharp creases.
 float foilH(vec3 s, vec2 o, float crimp) {
   if (s.z < -0.5) return 0.0016 * crimp * sin(6.2831853 * s.x);
-  float r = 1.0 - abs(fNoise(s.xy * 31.0) * 2.0 - 1.0);
-  float h = 0.0075 * exp(-s.z * 15.0) * r * r;
-  return h + uCrinkle * 0.0017 * (fNoise(o * 19.0) + 0.5 * fNoise(o * 47.0 + 7.3));
+  float r = fRidge(s.xy * 31.0);
+  float h = 0.0065 * exp(-s.z * 26.0) * r * r;
+  h += uCrinkle * 0.0009 * (fNoise(o * 17.0) + 0.5 * fNoise(o * 43.0 + 7.3));
+  if (uCrumple > 0.0) h += uCrumple * 0.005 * (pow(fRidge(o * 9.0), 3.0) + 0.6 * pow(fRidge(o * 21.0 + 3.1), 3.0));
+  return h;
 }
 #ifdef HOLO
 vec3 holoTint(float t) { return 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.33, 0.67))); }
@@ -940,7 +971,8 @@ const BG_VS = `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 const BG_FS = `
 uniform vec2 uRes;
 uniform vec3 uTop, uLow, uHaze;
-uniform vec4 uGlow[24];
+uniform vec4 uGlow[24], uBokeh[8];
+uniform vec3 uBokehC[8];
 uniform vec3 uGlowC[24];
 uniform int uN;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -949,6 +981,11 @@ void main() {
   vec3 col = mix(uLow, uTop, smoothstep(0.0, 1.0, uv.y));
   vec2 q = (uv - vec2(0.5, 0.64)) * k;
   col += uHaze * exp(-dot(q, q) * 2.4);
+  // Party lights far behind, thrown out of focus.
+  for (int i = 0; i < 8; i++) {
+    float d = length((uv - uBokeh[i].xy) * k), r = uBokeh[i].z;
+    col += uBokehC[i] * uBokeh[i].w * smoothstep(r, r * 0.9, d) * (0.7 + 0.3 * smoothstep(r * 0.5, r, d));
+  }
   // Foil throws a little coloured light onto the dark behind it.
   for (int i = 0; i < 24; i++) {
     if (i >= uN) break;
@@ -960,6 +997,25 @@ void main() {
   #include <colorspace_fragment>
   gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
 }`;
+// Bokeh discs: place in stage fractions, radius, strength, colour.
+const BOKEH = [
+  [0.08, 0.86, 0.07, 0.06, [0.75, 0.16, 350]], [0.22, 0.95, 0.045, 0.05, [0.85, 0.14, 85]], [0.9, 0.82, 0.08, 0.05, [0.8, 0.13, 200]],
+  [0.74, 0.97, 0.05, 0.05, [0.72, 0.16, 300]], [0.95, 0.22, 0.06, 0.04, [0.82, 0.15, 60]], [0.04, 0.2, 0.05, 0.04, [0.78, 0.13, 180]],
+  [0.5, 1.02, 0.06, 0.04, [0.8, 0.15, 20]], [0.62, 0.08, 0.045, 0.03, [0.75, 0.15, 320]],
+];
+const STAR_VS = `
+varying vec2 vUv;
+void main() { vUv = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`;
+const STAR_FS = `
+uniform vec3 uCol;
+varying vec2 vUv;
+void main() {
+  // Four thin rays and a soft core: a cartoon twinkle.
+  vec2 p = abs(vUv);
+  float rays = max(0.0, 1.0 - p.x * 10.0 - p.y * 1.05) + max(0.0, 1.0 - p.y * 10.0 - p.x * 1.05);
+  float core = exp(-dot(vUv, vUv) * 28.0);
+  gl_FragColor = vec4(uCol * (rays + core * 1.4), 1.0);
+}`;
 const FLASH_VS = `
 varying vec2 vUv;
 void main() { vUv = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -970,9 +1026,10 @@ varying vec2 vUv;
 void main() {
   // A bright ring races out and fades; a star flickers at its heart.
   float r = length(vUv), a = atan(vUv.y, vUv.x);
-  float ring = exp(-pow((r - uT * 0.9) * 9.0, 2.0)) * (1.0 - uT);
-  float star = exp(-r * 7.0) * (0.6 + 0.4 * pow(abs(cos(a * 4.0)), 8.0)) * (1.0 - uT) * (1.0 - uT);
-  gl_FragColor = vec4(uCol * (ring * 1.4 + star * 2.6), 1.0);
+  float f = 1.0 - uT, ring = exp(-pow((r - 0.15 - uT * 0.8) * 16.0, 2.0)) * f * f;
+  float rays = pow(abs(cos(a * 4.0 + 0.4)), 14.0) * exp(-r * 6.0) + exp(-r * 16.0);
+  vec3 hot = mix(uCol, vec3(1.0), 0.6);
+  gl_FragColor = vec4(hot * rays * f * f * f * 1.8 + uCol * ring * 0.9, 1.0);
 }`;
 
 /* ---------- the stage: letters, strings, confetti ---------- */
@@ -980,7 +1037,7 @@ void main() {
 let SW = 3.56, ambient = 1, lastPoke = 0, simT = 0;
 const letters = [], ropes = [];
 let word = [], foil = 'gold', LID = 0, ropeColor = 0;
-const SMAX = 0.92, GAP = 0.06, SPACE = 0.42, LINE = 1.5, MAXTOK = 24, ROPE_N = 18;
+const SMAX = 0.92, GAP = 0.085, SPACE = 0.42, LINE = 1.5, MAXTOK = 24, ROPE_N = 18;
 
 function makeLetter(g) {
   const u = foilUniforms(), mesh = new THREE.Mesh(g.geo, foilMat(foil, u));
@@ -989,8 +1046,8 @@ function makeLetter(g) {
   const L = {
     id: LID++, g, kind: foil, u, mesh, state: 'grow', t: 0, solid: true,
     x: 0, y: 0, vx: 0, vy: 0, a: 0, va: 0, yaw: 0, vyaw: 0, pitch: 0, vpitch: 0,
-    size: 0.5, sizeT: 0.5, hx: 0, hy: 0, fx: 0, fy: 0, tq: 0, z: 0,
-    wob: 0, wobV: 0, rubE: 0, dent: 0, rip: 0, ripP: 0, infl: 1, grow: 0, kick: null,
+    size: 0.5, sizeT: 0.5, k: 0.5, hx: 0, hy: 0, fx: 0, fy: 0, tq: 0, z: 0,
+    wob: 0, wobV: 0, rubE: 0, dent: 0, rip: 0, ripP: 0, infl: 1, grow: 0, gs: 0.3, gi: 0, kick: null,
     ph: rnd(0, TAU), ph2: rnd(0, TAU), ph3: rnd(0, TAU), f: rnd(0.85, 1.15), lie: 0, floorT: 0,
   };
   letters.push(L);
@@ -1013,11 +1070,17 @@ function removeLetter(L) {
 }
 // The letter's string tie point, in world units.
 function anchorOf(L) {
-  const c = Math.cos(L.a), s = Math.sin(L.a), [ax, ay] = L.g.anchor, k = L.size;
-  return [L.x + (ax * c - ay * s) * k, L.y + (ax * s + ay * c) * k];
+  const c = Math.cos(L.a), s = Math.sin(L.a), [ax, ay] = L.g.anchor, k = L.k;
+  const lx = ax * k * (1 + L.wob), ly = ay * k * (1 - 0.8 * L.wob), x = lx * c - ly * s, y = lx * s + ly * c;
+  return [L.x + x * Math.cos(L.yaw), L.y + y * Math.cos(L.pitch) + x * Math.sin(L.yaw) * Math.sin(L.pitch)];
+}
+// Strings hang most of the way to the floor, within reason.
+function ropeLen(L) {
+  const room = L.hy + (L.g.anchor[1] - 0.04) * L.sizeT + 0.94;
+  return clamp(room * 0.86, 0.45 * L.sizeT, 1.15 * L.sizeT);
 }
 function makeRope(L) {
-  const n = ROPE_N, [x0, y0] = anchorOf(L), seg = (0.62 * L.sizeT) / (n - 1);
+  const n = ROPE_N, [x0, y0] = anchorOf(L), seg = ropeLen(L) / (n - 1);
   const r = { L, n, seg, x: new Float32Array(n), y: new Float32Array(n), px: new Float32Array(n), py: new Float32Array(n), col: PARTY[ropeColor++ % PARTY.length], ph: rnd(0, TAU), dead: false, curl: rnd(2.6, 3.6) };
   for (let i = 0; i < n; i++) { r.x[i] = r.px[i] = x0 + rnd(-0.002, 0.002); r.y[i] = r.py[i] = y0 - i * seg; }
   ropes.push(r);
@@ -1065,6 +1128,8 @@ function layout() {
         t.hx = pen - t.g.minX * s;
         t.hy = yb - t.g.base * s;
         t.sizeT = s;
+        // A long move home glides through the others.
+        if (Math.hypot(t.hx - t.x, t.hy - t.y) > 0.3 * s) t.transit = true;
       }
       pen += (tokW(t) + GAP) * s;
     });
@@ -1088,6 +1153,7 @@ function typeChar(ch) {
   word.push(L);
   layout();
   L.size = L.sizeT;
+  L.k = L.size * L.gs;
   L.x = L.hx;
   L.y = L.hy - 0.12 * L.sizeT;
   L.vy = 0.5;
@@ -1112,7 +1178,7 @@ function prick(L, lx, ly) {
   while (word.length && word[word.length - 1].space) word.pop();
   layout();
   L.u.uDent.value.z = L.dent = 0;
-  if (Math.random() < 0.5) pop(L);
+  if (coin !== null ? coin : Math.random() < 0.5) pop(L);
   else deflate(L, lx, ly);
   poke();
 }
@@ -1137,9 +1203,13 @@ function deflate(L, lx, ly) {
   L.state = reduce ? 'limp' : 'zoom';
   L.t = 0;
   L.zDur = reduce ? 0.6 : rnd(1.7, 2.2);
-  // Air leaves through the hole, so the push points the other way.
-  const [gx, gy] = sdfGrad(L.g, lx, ly);
-  L.noz = [lx, ly, gx, gy];
+  // Air leaves through the hole, so the first push points the other way.
+  const [gx, gy] = sdfGrad(L.g, lx, ly), c = Math.cos(L.a), s = Math.sin(L.a);
+  L.hd = Math.atan2(gx * s + gy * c, gx * c - gy * s) + rnd(-0.4, 0.4);
+  L.turn = 0;
+  L.turnW = 0;
+  L.turnT = 0;
+  L.spin = rnd(3, 6) * (Math.random() < 0.5 ? -1 : 1);
   L.lie = (Math.random() < 0.5 ? -1 : 1) * rnd(1.1, 1.6);
   L.floorT = 0;
   if (reduce) L.zDur = 0.01;
@@ -1150,7 +1220,7 @@ function letGo() {
   const ls = word.filter(t => !t.space);
   word = [];
   if (!ls.length) return;
-  ls.forEach((L, i) => { L.state = 'away'; L.t = -i * 0.07 - Math.random() * 0.05; L.drift = rnd(-0.35, 0.35); });
+  ls.forEach((L, i) => { L.state = 'away'; L.t = -i * 0.07 - Math.random() * 0.05; L.drift = rnd(-0.35, 0.35); sparkle(L, 2); });
   wheeSound();
 }
 // Arrow keys bat the word; a quick reversal rubs it instead.
@@ -1162,6 +1232,7 @@ function gust(k) {
   const rub = p && p[0] === -d[0] && p[1] === -d[1] && now - lastArrow.t < 360;
   lastArrow = { k, t: now };
   const ls = word.filter(t => !t.space && t.state === 'float');
+  if (!rub && ls.length) whoosh(d[0]);
   ls.forEach((L, i) => {
     if (rub) {
       L.rubE = Math.min(1.2, L.rubE + 0.7);
@@ -1177,7 +1248,7 @@ function gust(k) {
     }
   });
 }
-let kbdRub = 0;
+let kbdRub = 0, coin = null;
 function chooseFoil(kind) {
   foil = kind;
   chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.foil === kind)));
@@ -1189,9 +1260,34 @@ function chooseFoil(kind) {
 
 /* ---------- confetti and flashes ---------- */
 const CMAX = 900;
-let conf = null, flashes = [];
+let conf = null, flashes = [], stars = null;
+const SMX = 64;
+// Twinkles ride on the letter's front skin for a moment.
+function sparkle(L, n) {
+  const g = L.g, m = g.pts.length / 3;
+  for (let i = 0, tries = 0; i < (reduce ? Math.min(n, 2) : n) && tries < n * 6 && stars.items.length < SMX; tries++) {
+    const j = Math.floor(Math.random() * m);
+    if (g.pts[3 * j + 2] < 0.05) continue;
+    stars.items.push({ L, x: g.pts[3 * j], y: g.pts[3 * j + 1], z: g.pts[3 * j + 2], t: -i * 0.07 - Math.random() * 0.06, life: rnd(0.4, 0.62), s: rnd(0.15, 0.26), r: rnd(0, TAU) });
+    i++;
+  }
+}
+function stepStars(dt) {
+  const it = stars.items, M = conf.m, q = conf.q, e = conf.e, v3 = conf.v3, sc = conf.sc;
+  let n = 0;
+  for (let i = it.length - 1; i >= 0; i--) { it[i].t += dt; if (it[i].t > it[i].life || it[i].L.state === 'gone') it.splice(i, 1); }
+  for (const p of it) {
+    if (p.t < 0) continue;
+    const L = p.L, c = Math.cos(L.a), s = Math.sin(L.a), k = L.k, f = p.t / p.life, z = Math.sin(Math.PI * f) * p.s * L.size;
+    q.setFromAxisAngle(v3.set(0, 0, 1), p.r + f * 1.8);
+    M.compose(e.set(L.x + (p.x * c - p.y * s) * k, L.y + (p.x * s + p.y * c) * k, (p.z * L.infl + 0.03) * k), q, sc.set(z, z, z));
+    stars.mesh.setMatrixAt(n++, M);
+  }
+  stars.mesh.count = n;
+  stars.mesh.instanceMatrix.needsUpdate = true;
+}
 function confettiBurst(L) {
-  const c = conf, g = L.g, k = L.size, cs = Math.cos(L.a), sn = Math.sin(L.a), n = reduce ? 70 : 160;
+  const c = conf, g = L.g, k = L.size, cs = Math.cos(L.a), sn = Math.sin(L.a), n = reduce ? 90 : 220;
   const base = linear(...FOILS[L.kind].col), col = new THREE.Color();
   for (let i = 0; i < n && c.n < CMAX; i++) {
     const j = c.n++, p = Math.floor(Math.random() * (g.pts.length / 3));
@@ -1199,12 +1295,13 @@ function confettiBurst(L) {
     const wx = L.x + (lx * cs - ly * sn) * k, wy = L.y + (lx * sn + ly * cs) * k, wz = lz * k;
     const dx = wx - L.x, dy = wy - L.y, dl = Math.hypot(dx, dy) || 1, sp = rnd(0.8, 2.6) * (reduce ? 0.5 : 1);
     c.p.set([wx, wy, wz], j * 3);
-    c.v.set([(dx / dl) * sp + L.vx * 0.3, (dy / dl) * sp + 0.5 + L.vy * 0.3, Math.sign(lz || 1) * rnd(0.2, 1.6)], j * 3);
+    const ra = rnd(0, TAU), rs = rnd(0, 1.3);
+    c.v.set([(dx / dl) * sp + Math.cos(ra) * rs + L.vx * 0.3, (dy / dl) * sp + Math.sin(ra) * rs + 0.6 + L.vy * 0.3, Math.sign(lz || 1) * rnd(0.2, 1.6)], j * 3);
     const ax = rnd(-1, 1), ay = rnd(-1, 1), az = rnd(-1, 1), al = Math.hypot(ax, ay, az) || 1;
     c.ax.set([ax / al, ay / al, az / al], j * 3);
     c.ang[j] = rnd(0, TAU);
     c.spin[j] = rnd(6, 18) * (Math.random() < 0.5 ? -1 : 1);
-    c.size[j] = rnd(0.016, 0.034) * (k / 0.8) * (Math.random() < 0.12 ? 1.8 : 1);
+    c.size[j] = rnd(0.02, 0.042) * (k / 0.8) * (Math.random() < 0.12 ? 1.7 : 1);
     c.life[j] = rnd(2.2, 3.4);
     c.ph[j] = rnd(0, TAU);
     if (L.kind === 'holo') col.setRGB(...linear(0.86, 0.14, rnd(0, 360)));
@@ -1254,50 +1351,73 @@ function flashAt(x, y, size, kind) {
   if (!f) return;
   f.t = 0;
   f.mesh.position.set(x, y, 0.3);
-  f.mesh.scale.setScalar(size * 2.6);
+  f.mesh.scale.setScalar(size * 1.7);
   f.mesh.material.uniforms.uCol.value.setRGB(...linear(...FOILS[kind].glow));
   f.mesh.visible = true;
 }
 
 /* ---------- physics: soft balloons on springs, verlet strings ---------- */
-const H = 1 / 120, KH = 7, CAIR = 1.7, CQ = 0.5, KR = 12, CR = 2.6, KC = 90, CC = 4, KW = 140, VMAX = 7;
+const H = 1 / 120, KH = 8, CAIR = 1.7, CQ = 0.5, KR = 12, CR = 2.6, KC = 90, CC = 4, KW = 140, VMAX = 7;
 let acc = 0;
-const contactT = new Map();
-const inertia = L => (0.34 * L.size) ** 2;
+const contactT = new Map(), ghost = new Set();
+const inertia = L => (0.34 * L.k) ** 2;
 function force(L, px, py, fx, fy) {
   L.fx += fx;
   L.fy += fy;
   L.tq += (px - L.x) * fy - (py - L.y) * fx;
 }
-// One letter's circles pushed out of another letter's field.
-function contacts(A, B) {
+// One letter's circles against another letter's field.
+// Overlaps pool into one soft contact, so many circles never stack up.
+const pool = { w: 0, x: 0, y: 0, nx: 0, ny: 0, pen: 0 };
+function contacts(A, B, sign) {
   const ca = Math.cos(A.a), sa = Math.sin(A.a), cb = Math.cos(B.a), sb = Math.sin(B.a);
-  let hit = 0;
   for (const c of A.g.circles) {
-    const wx = A.x + (c.x * ca - c.y * sa) * A.size, wy = A.y + (c.x * sa + c.y * ca) * A.size;
-    const rx = wx - B.x, ry = wy - B.y, lx = (rx * cb + ry * sb) / B.size, ly = (-rx * sb + ry * cb) / B.size;
-    const s = sdfAt(B.g, lx, ly), pen = (c.r + WF) * A.size + (s + WF) * B.size;
+    const wx = A.x + (c.x * ca - c.y * sa) * A.k, wy = A.y + (c.x * sa + c.y * ca) * A.k;
+    const rx = wx - B.x, ry = wy - B.y, lx = (rx * cb + ry * sb) / B.k, ly = (-rx * sb + ry * cb) / B.k;
+    const s = sdfAt(B.g, lx, ly), pen = (c.r + WF) * A.k + (s + WF) * B.k;
     if (pen <= 0) continue;
     const [gx, gy] = sdfGrad(B.g, lx, ly), nx = -(gx * cb - gy * sb), ny = -(gx * sb + gy * cb);
-    const px = wx - nx * c.r * A.size, py = wy - ny * c.r * A.size;
-    const vn = (A.vx - A.va * (py - A.y) - B.vx + B.va * (py - B.y)) * nx + (A.vy + A.va * (px - A.x) - B.vy - B.va * (px - B.x)) * ny;
-    const F = Math.max(0, KC * Math.min(pen, 0.2) - CC * vn);
-    force(A, px, py, nx * F, ny * F);
-    force(B, px, py, -nx * F, -ny * F);
-    hit = Math.max(hit, -vn);
+    pool.w += pen;
+    pool.x += (wx - nx * c.r * A.k) * pen;
+    pool.y += (wy - ny * c.r * A.k) * pen;
+    pool.nx += nx * sign * pen;
+    pool.ny += ny * sign * pen;
+    pool.pen = Math.max(pool.pen, pen);
   }
-  return hit;
 }
 function collide() {
-  const act = letters.filter(L => L.solid);
+  const act = letters.filter(L => L.solid && !L.transit);
   for (let i = 0; i < act.length; i++) for (let j = i + 1; j < act.length; j++) {
-    const A = act[i], B = act[j], dx = B.x - A.x, dy = B.y - A.y, rr = A.g.rad * A.size + B.g.rad * B.size;
-    if (dx * dx + dy * dy > rr * rr) continue;
-    const v = Math.max(contacts(A, B), contacts(B, A));
-    if (v <= 0) continue;
-    const key = A.id * 4096 + B.id, last = contactT.get(key) ?? -1;
+    const A = act[i], B = act[j], dx = B.x - A.x, dy = B.y - A.y, rr = A.g.rad * A.k + B.g.rad * B.k;
+    const key = A.id * 4096 + B.id;
+    if (dx * dx + dy * dy > rr * rr) { ghost.delete(key); continue; }
+    pool.w = pool.x = pool.y = pool.nx = pool.ny = pool.pen = 0;
+    contacts(A, B, 1);
+    contacts(B, A, -1);
+    if (!pool.w) { ghost.delete(key); continue; }
+    // Deeply tangled balloons squish past each other until they part.
+    const kmin = Math.min(A.k, B.k);
+    if (ghost.has(key) && pool.pen < 0.03 * kmin) ghost.delete(key);
+    if (ghost.has(key) || pool.pen > 0.11 * kmin) { ghost.add(key); continue; }
+    // The pooled normal points from B toward A.
+    const px = pool.x / pool.w, py = pool.y / pool.w, nl = Math.hypot(pool.nx, pool.ny) || 1, nx = pool.nx / nl, ny = pool.ny / nl;
+    // Two letters whose homes lie through each other swap places freely.
+    if (A.state === 'float' && B.state === 'float' && (A.hx - A.x) * nx + (A.hy - A.y) * ny < -0.06 && (B.hx - B.x) * nx + (B.hy - B.y) * ny > 0.06) { ghost.add(key); continue; }
+    const vn = (A.vx - A.va * (py - A.y) - B.vx + B.va * (py - B.y)) * nx + (A.vy + A.va * (px - A.x) - B.vy - B.va * (px - B.x)) * ny;
+    // Closing contacts bounce at once; resting ones lean on a soft spring.
+    if (vn < 0) {
+      const ia = inertia(A), ib = inertia(B), ra = (px - A.x) * ny - (py - A.y) * nx, rb = (px - B.x) * ny - (py - B.y) * nx;
+      const jn = (-1.45 * vn) / (2 + (ra * ra) / ia + (rb * rb) / ib);
+      A.vx += nx * jn; A.vy += ny * jn; A.va += (ra * jn) / ia;
+      B.vx -= nx * jn; B.vy -= ny * jn; B.va -= (rb * jn) / ib;
+    }
+    const F = KC * Math.min(pool.pen, 0.08);
+    force(A, px, py, nx * F, ny * F);
+    force(B, px, py, -nx * F, -ny * F);
+    const v = -vn;
+    const last = contactT.get(key) ?? -1;
     if (simT - last > 0.18 && v > 0.3) {
-      bumpSound(pan((A.x + B.x) / 2), v, Math.sqrt(0.7 / ((A.size + B.size) / 2)));
+      bumpSound(pan(px), v, Math.sqrt(0.7 / ((A.k + B.k) / 2)));
       A.wobV += v * 0.6;
       B.wobV -= v * 0.6;
     }
@@ -1309,7 +1429,7 @@ function walls(L) {
   const c = Math.cos(L.a), s = Math.sin(L.a), hw = SW / 2 - 0.015, top = L.state === 'away' ? 99 : 0.985, bot = -0.985;
   let hit = 0;
   for (const q of L.g.circles) {
-    const wx = L.x + (q.x * c - q.y * s) * L.size, wy = L.y + (q.x * s + q.y * c) * L.size, r = (q.r + WF) * L.size;
+    const wx = L.x + (q.x * c - q.y * s) * L.k, wy = L.y + (q.x * s + q.y * c) * L.k, r = (q.r + WF) * L.k;
     const vx = L.vx - L.va * (wy - L.y), vy = L.vy + L.va * (wx - L.x);
     let fx = 0, fy = 0;
     if (wx + r > hw) { fx -= KW * (wx + r - hw) + 6 * Math.max(0, vx); hit = Math.max(hit, vx); }
@@ -1329,9 +1449,9 @@ function walls(L) {
 function paddle(L, x, y, h) {
   if (!L.solid || L.state === 'limp' || L.state === 'sink') return;
   const c = Math.cos(L.a), s = Math.sin(L.a), rx = x - L.x, ry = y - L.y;
-  const lx = (rx * c + ry * s) / L.size, ly = (-rx * s + ry * c) / L.size;
-  if (Math.hypot(lx, ly) > L.g.rad + ptr.r / L.size) return;
-  const sd = sdfAt(L.g, lx, ly), pen = ptr.r + (sd + WF) * L.size;
+  const lx = (rx * c + ry * s) / L.k, ly = (-rx * s + ry * c) / L.k;
+  if (Math.hypot(lx, ly) > L.g.rad + ptr.r / L.k) return;
+  const sd = sdfAt(L.g, lx, ly), pen = ptr.r + (sd + WF) * L.k;
   if (pen <= 0) return;
   let [gx, gy] = sdfGrad(L.g, lx, ly);
   let nx = gx * c - gy * s, ny = gx * s + gy * c;
@@ -1345,7 +1465,7 @@ function paddle(L, x, y, h) {
     L.vx += nx * j;
     L.vy += ny * j;
     L.va += (arm * j) / inertia(L);
-    L.vyaw += nx * j * 1.6;
+    L.vyaw += nx * j * 0.45;
     L.wobV += j * 1.2;
     if (j > 0.35 && simT - (L.batT || -1) > 0.15) bumpSound(pan(L.x), j * 1.1, Math.sqrt(0.7 / L.size));
     L.batT = simT;
@@ -1357,42 +1477,57 @@ function paddle(L, x, y, h) {
 function integrate(L, h) {
   const am = reduce ? 0 : ambient;
   let ax = L.fx, ay = L.fy, al = L.tq / inertia(L);
-  const sp = Math.hypot(L.vx, L.vy), drag = CAIR + CQ * sp;
-  if (L.kick && simT >= L.kick.at) { L.vx += L.kick.vx; L.vy += L.kick.vy; L.va += L.kick.va; L.wobV += 1.5; L.kick = null; }
-  if (L.swap && simT >= L.swap.at) { setFoil(L, L.swap.kind); L.wobV += 2.2; L.vyaw += rnd(-2, 2); L.swap = null; }
+  // Reduced motion damps everything harder, so it settles sooner.
+  const sp = Math.hypot(L.vx, L.vy), drag = (CAIR + CQ * sp) * (reduce ? 2.4 : 1);
+  if (L.kick && simT >= L.kick.at) {
+    L.vx += L.kick.vx; L.vy += L.kick.vy; L.va += L.kick.va; L.wobV += 1.5; L.kick = null;
+    bumpSound(pan(L.x), 0.9, Math.sqrt(0.7 / L.size));
+  }
+  if (L.swap && simT >= L.swap.at) { setFoil(L, L.swap.kind); L.wobV += 2.2; L.vyaw += rnd(-2, 2); L.swap = null; sparkle(L, 3); }
   if (L.state === 'grow' || L.state === 'float') {
     const bx = L.hx + am * 0.014 * Math.sin(simT * 0.73 * L.f + L.ph);
     const by = L.hy + am * 0.032 * Math.sin(simT * 1.62 * L.f + L.ph2);
+    if (L.transit && Math.hypot(L.hx - L.x, L.hy - L.y) < 0.12 * L.sizeT) L.transit = false;
     ax += KH * (bx - L.x) - drag * L.vx;
     ay += KH * (by - L.y) - drag * L.vy;
-    al += -KR * (L.a - am * 0.05 * Math.sin(simT * 0.9 * L.f + L.ph3)) - CR * L.va;
+    al += -KR * (L.a - am * 0.05 * Math.sin(simT * 0.9 * L.f + L.ph3)) - CR * (reduce ? 2.4 : 1) * L.va;
     L.size += (L.sizeT - L.size) * Math.min(1, h * 5);
+    // Upright is the nearest whole turn.
+    if (L.a > Math.PI) L.a -= TAU;
+    if (L.a < -Math.PI) L.a += TAU;
   } else if (L.state === 'zoom') {
-    const k = clamp(L.t / L.zDur), [nx0, ny0, gx, gy] = L.noz, c = Math.cos(L.a), s = Math.sin(L.a);
-    // The neck flaps, so the thrust wobbles.
-    const wob = Math.sin(L.t * 23) * 0.55 + Math.sin(L.t * 37 + 1) * 0.3, cw = Math.cos(wob), sw = Math.sin(wob);
-    const tx = gx * cw - gy * sw, ty = gx * sw + gy * cw, F = 11 * (1 - 0.55 * k);
-    const fx = (tx * c - ty * s) * F, fy = (tx * s + ty * c) * F;
-    const px = L.x + (nx0 * c - ny0 * s) * L.size, py = L.y + (nx0 * s + ny0 * c) * L.size;
-    ax += fx - 1.4 * L.vx;
-    ay += fy - 1.4 * L.vy - 1.2 * k;
-    al += ((px - L.x) * fy - (py - L.y) * fx) / inertia(L) * 0.55 - 0.8 * L.va;
+    const k = clamp(L.t / L.zDur);
+    // The flapping neck jerks the heading about, so the flight loops and zigzags.
+    if (simT > L.turnT) { L.turnW = rnd(-1, 1) * (Math.random() < 0.3 ? 15 : 9); L.turnT = simT + rnd(0.1, 0.32); }
+    L.turn += (L.turnW - L.turn) * Math.min(1, h * 12);
+    L.hd += L.turn * h;
+    // Near the edges it veers back toward the middle.
+    if (Math.abs(L.x) > SW / 2 - 0.45 || Math.abs(L.y) > 0.62) {
+      const d = Math.atan2(-L.y, -L.x) - L.hd;
+      L.hd += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, h * 7);
+    }
+    const sp = lerp(3.4, 1.5, k);
+    ax += 7 * (Math.cos(L.hd) * sp - L.vx);
+    ay += 7 * (Math.sin(L.hd) * sp - L.vy) - 0.8 * k;
+    al += 9 * (L.turn * 0.9 + L.spin - L.va);
     L.infl = lerp(1, 0.14, sstep(0, 1, k));
     L.size = L.sizeT * lerp(1, 0.74, k);
-    if (L.t >= L.zDur) { L.state = 'limp'; L.t = 0; }
+    if (L.t >= L.zDur) { L.state = 'limp'; L.t = 0; L.lie += TAU * Math.round((L.a - L.lie) / TAU); }
   } else if (L.state === 'limp' || L.state === 'sink') {
     L.infl += (0.12 - L.infl) * Math.min(1, h * 3);
     if (L.state === 'limp' && reduce) L.size += (L.sizeT * 0.74 - L.size) * Math.min(1, h * 4);
     ax += -2.2 * L.vx;
     ay += -1.9 - 2.2 * L.vy;
     al += -4 * (L.a - L.lie) - 2.4 * L.va;
-    if (L.onFloor) L.floorT += h;
-    if (L.state === 'limp' && L.floorT > 2.6) { L.state = 'sink'; L.solid = false; }
-    if (L.state === 'sink') { ay = 0; L.vy = -0.28; L.vx *= 0.9; }
+    // Once it lies still for a moment, the limp foil slides away.
+    if (L.onFloor || sp < 0.08) L.floorT += h;
+    if (L.state === 'limp' && (L.floorT > 1.8 || L.t > 7)) { L.state = 'sink'; L.solid = false; }
+    if (L.state === 'sink') { ay = 0; L.vy = -0.4; L.vx *= 0.9; }
   } else if (L.state === 'away') {
-    if (L.t > 0) ay += 1.5 + 0.6 * Math.min(1, L.t) - 0.9 * L.vy;
-    ax += L.drift * Math.sin(L.t * 1.3 + L.ph) * 0.6 - 0.9 * L.vx;
-    al += -3 * (L.a - 0.25 * Math.sin(L.t * 1.7 + L.ph2)) - 1.2 * L.va;
+    // Let go, each letter rises, swaying on its own breeze.
+    if (L.t > 0) ay += 0.75 + 0.55 * Math.min(1, L.t / 1.2) - 1.0 * L.vy;
+    ax += L.drift * Math.sin(L.t * 1.4 + L.ph) * 1.1 - 0.9 * L.vx;
+    al += -3 * (L.a - 0.3 * Math.sin(L.t * 1.6 + L.ph2)) - 1.2 * L.va;
   }
   L.onFloor = false;
   L.vx += ax * h;
@@ -1406,8 +1541,8 @@ function integrate(L, h) {
   L.a += L.va * h;
   // Turning and tipping only show; they don't collide.
   const yt = am * 0.2 * Math.sin(simT * 0.41 * L.f + L.ph2) + clamp(L.vx * 0.12, -0.5, 0.5);
-  L.vyaw += (10 * (yt - L.yaw) - 1.6 * L.vyaw) * h;
-  L.yaw += L.vyaw * h;
+  L.vyaw += (10 * (yt - L.yaw) - 2.2 * L.vyaw) * h;
+  L.yaw = clamp(L.yaw + L.vyaw * h, -0.75, 0.75);
   const pt = am * 0.07 * Math.sin(simT * 0.57 * L.f + L.ph) - clamp(L.vy * 0.1, -0.4, 0.4);
   L.vpitch += (12 * (pt - L.pitch) - 2 * L.vpitch) * h;
   L.pitch += L.vpitch * h;
@@ -1416,10 +1551,10 @@ function integrate(L, h) {
   L.t += h;
 }
 function stepRope(r, h) {
-  const n = r.n, x = r.x, y = r.y, px = r.px, py = r.py, g = 7 * h * h, am = reduce ? 0 : ambient;
+  const n = r.n, x = r.x, y = r.y, px = r.px, py = r.py, g = 7 * h * h, am = reduce ? 0 : ambient, damp = reduce ? 0.975 : 0.991;
   const pinned = !!r.L;
   for (let i = pinned ? 1 : 0; i < n; i++) {
-    const vx = (x[i] - px[i]) * 0.991, vy = (y[i] - py[i]) * 0.991;
+    const vx = (x[i] - px[i]) * damp, vy = (y[i] - py[i]) * damp;
     px[i] = x[i];
     py[i] = y[i];
     x[i] += vx + am * 0.0000035 * i * Math.sin(simT * 1.1 + r.ph + i * 0.3);
@@ -1429,7 +1564,7 @@ function stepRope(r, h) {
     const [ax, ay] = anchorOf(r.L);
     x[0] = ax;
     y[0] = ay;
-    r.seg += ((0.62 * r.L.size) / (n - 1) - r.seg) * Math.min(1, h * 4);
+    r.seg += (ropeLen(r.L) / (n - 1) - r.seg) * Math.min(1, h * 4);
   }
   for (let it = 0; it < 3; it++) {
     for (let i = 0; i < n - 1; i++) {
@@ -1441,7 +1576,7 @@ function stepRope(r, h) {
 }
 function substep(h, f) {
   simT += h;
-  for (const L of letters) { L.fx = 0; L.fy = 0; L.tq = 0; }
+  for (const L of letters) { L.fx = 0; L.fy = 0; L.tq = 0; L.k = L.size * (L.state === 'grow' ? L.gs : 1); }
   collide();
   for (const L of letters) if (L.solid) walls(L);
   if (ptr.on) {
@@ -1501,11 +1636,11 @@ function partyRoom() {
     env.add(m);
   };
   box(9, 5, -5, 9, 5, C(0.97, 0.03, 85, 5.5));
-  box(10, 3.5, 3, 1.5, 12, C(0.92, 0.03, 250, 1.7));
-  box(1.6, 12, -11, 0, 2, C(0.68, 0.24, 345, 4.2));
-  box(1.6, 12, 11, 1, -1, C(0.82, 0.14, 195, 4.2));
-  box(14, 14, 0, -10, 2, C(0.6, 0.15, 40, 0.75));
-  box(6, 2, 4, 7, -8, C(0.9, 0.1, 140, 2.2));
+  box(14, 5, 2, 2.5, 12, C(0.95, 0.02, 80, 2.4));
+  box(1.6, 12, -11, 0, 2, C(0.78, 0.15, 350, 3.4));
+  box(1.6, 12, 11, 1, -1, C(0.78, 0.12, 280, 3.4));
+  box(14, 14, 0, -10, 2, C(0.42, 0.06, 30, 0.6));
+  box(6, 2, 4, 7, -8, C(0.92, 0.06, 60, 2.2));
   // Little bulbs make little sparkles.
   const bulb = new THREE.SphereGeometry(0.28, 12, 8);
   for (let i = 0; i < 26; i++) {
@@ -1571,16 +1706,18 @@ function draw() {
     m.rotation.set(L.pitch, L.yaw, L.a);
     m.scale.set(k * (1 + L.wob), k * (1 - 0.8 * L.wob), k * (1 + 0.4 * L.wob));
     L.u.uSize.value = k;
-    L.u.uInfl.value = L.infl * (L.state === 'grow' ? L.gi : 1);
-    L.u.uCrumple.value = clamp((1 - L.infl) * 1.2);
-    L.u.uCrinkle.value = 1 + (1 - L.infl) * 3;
+    // An unfilled skin is flat and crinkled.
+    const fill = L.infl * (L.state === 'grow' ? L.gi : 1);
+    L.u.uInfl.value = fill;
+    L.u.uCrumple.value = clamp((1 - fill) * 1.2) * (L.state === 'grow' ? 0.6 : 1);
+    L.u.uCrinkle.value = 2 - fill;
     L.u.uRip.value.set(L.ripX || 0, L.ripY || 0, L.rip, L.ripP);
-    L.u.uDent.value.set(L.dentX || 0, L.dentY || 0, L.dent, 0.11);
+    L.u.uDent.value.set(L.dentX || 0, L.dentY || 0, L.dent, 0.14);
     if (ng < 24 && L.state !== 'sink') {
       tmpV.x = 0.5 + L.x / SW;
       tmpV.y = 0.5 + L.y / 2;
       const gc = FOILS[L.kind].glow, hue = L.kind === 'holo' ? (simT * 40 + L.id * 70) % 360 : gc[2];
-      u.uGlow.value[ng].set(tmpV.x, tmpV.y - 0.04, 0.22 * L.size, 0.11 * k / Math.max(L.size, 1e-3));
+      u.uGlow.value[ng].set(tmpV.x, tmpV.y - 0.04, 0.22 * L.size, (0.11 * k * (0.25 + 0.75 * L.infl)) / Math.max(L.size, 1e-3));
       u.uGlowC.value[ng].setRGB(...linear(gc[0], gc[1], hue));
       ng++;
     }
@@ -1606,9 +1743,9 @@ function frame(ms) {
     if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
   // Idle balloons slowly settle; any touch or key stirs them again.
-  const idleS = (performance.now() - lastPoke) / 1000, want = reduce || idleS > 22 ? 0 : 1;
-  ambient += (want - ambient) * Math.min(1, dt / (want > ambient ? 0.8 : 5));
-  if (ambient < 0.002 && want === 0) ambient = 0;
+  const idleS = (performance.now() - lastPoke) / 1000, want = idleS > 20 ? 0 : 1;
+  ambient += (want - ambient) * Math.min(1, dt / (want > ambient ? 0.8 : 2.5));
+  if (reduce || (ambient < 0.002 && want === 0)) ambient = 0;
   acc += dt;
   const n = Math.min(4, Math.floor(acc / H));
   acc -= n * H;
@@ -1624,12 +1761,17 @@ function frame(ms) {
 function perFrame(dt) {
   for (const L of [...letters]) {
     if (L.state === 'grow') {
-      L.grow = Math.min(1, L.grow + dt / (reduce ? 0.25 : 0.55));
+      L.grow = Math.min(1, L.grow + dt / (reduce ? 0.25 : 0.7));
       const g = L.grow;
-      // An elastic overshoot as the foil fills.
-      L.gs = 1 - Math.exp(-6 * g) * Math.cos(g * 11) * 0.75;
-      L.gi = sstep(0, 0.75, g);
-      if (g >= 1) { L.state = 'float'; L.wobV += 2.5; }
+      // An elastic overshoot as the foil fills; depth lags the outline.
+      L.gs = 1 - 0.68 * Math.exp(-4.5 * g) * Math.cos(g * 8);
+      L.gi = sstep(0.05, 0.8, g);
+      if (g >= 1) { L.state = 'float'; L.wobV += 2.5; sparkle(L, 5); }
+    }
+    // Rubbing shakes the foil like jelly at its own wobble rate.
+    if (L.rubE > 0.02) {
+      L.wobV += L.rubE * 70 * Math.sin(simT * 44) * dt;
+      L.va += L.rubE * 9 * Math.sin(simT * 19) * dt;
     }
     L.rubE *= Math.exp(-dt / 0.22);
     L.rip *= Math.exp(-dt / 0.35);
@@ -1646,8 +1788,9 @@ function perFrame(dt) {
     for (let k = 0; k < r.n; k++) top = Math.max(top, r.y[k]);
     if (r.dead || (!r.L && top < -1.2)) ropes.splice(i, 1);
   }
-  for (const f of flashes) if (f.t < 1) { f.t = Math.min(1, f.t + dt / 0.32); f.mesh.visible = f.t < 1; }
+  for (const f of flashes) if (f.t < 1) { f.t = Math.min(1, f.t + dt / 0.24); f.mesh.visible = f.t < 1; }
   stepConfetti(dt);
+  stepStars(dt);
   // Rubbing squeaks; the keyboard rub fades on its own.
   kbdRub *= Math.exp(-dt / 0.18);
   const rubL = ptr.on && ptr.mode === 'touch' ? ptr.L : null;
@@ -1656,11 +1799,11 @@ function perFrame(dt) {
   if (ptr.on && ptr.mode === 'touch' && ptr.L) pressTick(dt);
 }
 function busy() {
-  if (ptr.on || conf.n || flashes.some(f => f.t < 1) || kbdRub > 0.01) return true;
+  if (ptr.on || conf.n || stars.items.length || flashes.some(f => f.t < 1) || kbdRub > 0.01) return true;
   if (letters.length && ambient > 0) return true;
   for (const L of letters) {
     if (L.state !== 'float') return true;
-    if (Math.abs(L.vx) + Math.abs(L.vy) + Math.abs(L.va) > 0.002 || Math.abs(L.x - L.hx) + Math.abs(L.y - L.hy) > 0.0015) return true;
+    if (Math.abs(L.vx) + Math.abs(L.vy) + Math.abs(L.va) > 0.006 || Math.abs(L.x - L.hx) + Math.abs(L.y - L.hy) > 0.02) return true;
     if (Math.abs(L.wobV) + Math.abs(L.vyaw) + Math.abs(L.vpitch) + Math.abs(L.yaw) > 0.004 || L.rip || L.dent || L.kick || L.swap) return true;
     if (Math.abs(L.size - L.sizeT) > 0.001) return true;
   }
@@ -1685,9 +1828,9 @@ function letterAt(x, y, slack) {
   for (const L of letters) {
     if (!['grow', 'float'].includes(L.state)) continue;
     const c = Math.cos(L.a), s = Math.sin(L.a), rx = x - L.x, ry = y - L.y;
-    const lx = (rx * c + ry * s) / L.size, ly = (-rx * s + ry * c) / L.size;
-    if (Math.hypot(lx, ly) > L.g.rad + slack / L.size) continue;
-    const d = sdfAt(L.g, lx, ly) * L.size + WF * L.size + slack;
+    const lx = (rx * c + ry * s) / L.k, ly = (-rx * s + ry * c) / L.k;
+    if (Math.hypot(lx, ly) > L.g.rad + slack / L.k) continue;
+    const d = sdfAt(L.g, lx, ly) * L.k + WF * L.k + slack;
     if (d > 0 && d > bd) { bd = d; best = { L, lx, ly }; }
   }
   return best;
@@ -1706,7 +1849,7 @@ panel.addEventListener('pointerdown', e => {
     ptr.ly = clamp(hit.ly, hit.L.g.minY, hit.L.g.maxY);
     hit.L.dentX = ptr.lx;
     hit.L.dentY = ptr.ly;
-    hit.L.dent = 0.012;
+    hit.L.dent = 0.018;
     hit.L.wobV -= 1.2;
     bumpSound(pan(hit.L.x), 0.5, 1.25 * Math.sqrt(0.7 / hit.L.size));
   } else ptr.mode = 'paddle';
@@ -1734,7 +1877,7 @@ panel.addEventListener('pointermove', e => {
 // Touching a letter: rub it, hold it to prick, or swipe to bat it away.
 function hold(L, x, y) {
   if (!['grow', 'float'].includes(L.state)) { ptr.mode = 'paddle'; ptr.L = null; return; }
-  const c = Math.cos(L.a), s = Math.sin(L.a), k = L.size;
+  const c = Math.cos(L.a), s = Math.sin(L.a), k = L.k;
   const qx = L.x + (ptr.lx * c - ptr.ly * s) * k, qy = L.y + (ptr.lx * s + ptr.ly * c) * k;
   const vqx = L.vx - L.va * (qy - L.y), vqy = L.vy + L.va * (qx - L.x);
   force(L, qx, qy, 26 * (x - qx) - 3 * vqx, 26 * (y - qy) - 3 * vqy);
@@ -1744,12 +1887,12 @@ function pressTick(dt) {
   // Far from where it started, the touch becomes a swipe.
   const far = Math.hypot(ptr.x - ptr.dx, ptr.y - ptr.dy);
   if (far > 0.16 * L.size + 0.03) {
-    const c = Math.cos(L.a), s = Math.sin(L.a), k = L.size;
+    const c = Math.cos(L.a), s = Math.sin(L.a), k = L.k;
     const qx = L.x + (ptr.lx * c - ptr.ly * s) * k, qy = L.y + (ptr.lx * s + ptr.ly * c) * k, arm = (qx - L.x) * ptr.vy - (qy - L.y) * ptr.vx;
     L.vx += ptr.vx * 0.85;
     L.vy += ptr.vy * 0.85;
     L.va += clamp((arm * 0.6) / inertia(L), -8, 8);
-    L.vyaw += ptr.vx * 1.2;
+    L.vyaw += clamp(ptr.vx * 0.3, -2, 2);
     L.wobV += 2;
     if (ptr.speed > 0.6) bumpSound(pan(L.x), ptr.speed * 0.5, Math.sqrt(0.7 / L.size));
     ptr.mode = 'paddle';
@@ -1760,16 +1903,17 @@ function pressTick(dt) {
   // Rubbing: quick moves in a small patch.
   if (ptr.speed > 0.35) {
     L.rubE = Math.min(1.2, L.rubE + ptr.speed * dt * 1.6);
-    L.wobV += (Math.random() - 0.5) * ptr.speed * 3;
     L.ripX = ptr.lx;
     L.ripY = ptr.ly;
-    L.rip = Math.min(0.016, L.rip + ptr.speed * dt * 0.02);
+    L.rip = Math.min(0.024, L.rip + ptr.speed * dt * 0.03);
   }
   // Holding still dents the foil deeper until it gives.
   if (Math.hypot(ptr.x - ptr.sx, ptr.y - ptr.sy) > TOL) { ptr.sx = ptr.x; ptr.sy = ptr.y; ptr.still = 0; }
   else ptr.still += dt;
   const k = clamp((ptr.still - 0.12) / (HOLD - 0.12));
-  L.dent = 0.012 + 0.07 * k * k;
+  L.dent = 0.018 + 0.1 * k * Math.sqrt(k);
+  // Near the limit the foil trembles.
+  if (k > 0.45) { L.wobV += rnd(-1, 1) * 0.9 * k; L.va += rnd(-1, 1) * 0.5 * k; }
   if (k > 0.05) { creakStart(pan(L.x)); creakSet(k); }
   else creakStop();
   if (ptr.still >= HOLD) {
@@ -1845,11 +1989,14 @@ keysIn.addEventListener('input', e => {
   keysIn.value = SENT;
 });
 const chips = [...document.querySelectorAll('.chip[data-foil]')];
-chips.forEach(c => c.addEventListener('click', () => chooseFoil(c.dataset.foil)));
+// A mouse or touch click hands the keys back to the stage for typing.
+const backToStage = e => { if (e.detail > 0) panel.focus({ preventScroll: true }); };
+chips.forEach(c => c.addEventListener('click', e => { chooseFoil(c.dataset.foil); backToStage(e); }));
 const sndB = document.getElementById('snd');
 const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
 showSound();
-sndB.addEventListener('click', () => {
+sndB.addEventListener('click', e => {
+  backToStage(e);
   soundOn = !soundOn;
   showSound();
   try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
@@ -1907,6 +2054,8 @@ async function start() {
       uHaze: { value: new THREE.Color().setRGB(...linear(0.3, 0.09, 320)) },
       uGlow: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
       uGlowC: { value: Array.from({ length: 24 }, () => new THREE.Color()) },
+      uBokeh: { value: BOKEH.map(b => new THREE.Vector4(b[0], b[1], b[2], b[3])) },
+      uBokehC: { value: BOKEH.map(b => new THREE.Color().setRGB(...linear(...b[4]))) },
     },
   });
   const tri = new THREE.BufferGeometry();
@@ -1931,7 +2080,12 @@ async function start() {
   scene.add(ropeMesh);
 
   // Confetti: one instanced quad per scrap of foil.
-  const cm = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.28, side: THREE.DoubleSide, envMapIntensity: 1.3 }), CMAX);
+  const cmat = new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.3, side: THREE.DoubleSide, envMapIntensity: 1.4 });
+  // Scraps keep a little of their own colour when they face away from the light.
+  cmat.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * 0.28;');
+  };
+  const cm = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), cmat, CMAX);
   cm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   cm.setColorAt(0, new THREE.Color(1, 1, 1));
   cm.count = 0;
@@ -1942,6 +2096,16 @@ async function start() {
     ang: new Float32Array(CMAX), spin: new Float32Array(CMAX), size: new Float32Array(CMAX), life: new Float32Array(CMAX), ph: new Float32Array(CMAX),
     m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Vector3(), v3: new THREE.Vector3(), sc: new THREE.Vector3(), tc: new THREE.Color(),
   };
+  const sm = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+    vertexShader: STAR_VS, fragmentShader: STAR_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uCol: { value: new THREE.Color().setRGB(...linear(0.97, 0.05, 85).map(v => v * 1.6)) } },
+  }), SMX);
+  sm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  sm.count = 0;
+  sm.frustumCulled = false;
+  sm.renderOrder = 6;
+  scene.add(sm);
+  stars = { mesh: sm, items: [] };
   for (let i = 0; i < 3; i++) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
       vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -1967,7 +2131,7 @@ async function start() {
   }
   layout();
   for (const L of letters) {
-    Object.assign(L, { state: 'float', x: L.hx, y: L.hy, size: L.sizeT, grow: 1 });
+    Object.assign(L, { state: 'float', x: L.hx, y: L.hy, size: L.sizeT, k: L.sizeT, grow: 1, gs: 1, gi: 1 });
     makeRope(L);
     for (let i = 0; i < 160; i++) stepRope(L.rope, H);
   }
@@ -1981,11 +2145,13 @@ async function start() {
     spare.push(m);
   }
   flashes.forEach(f => { f.mesh.visible = true; });
+  stars.mesh.count = 1;
   cm.count = 1;
   await renderer.compileAsync(scene, camera);
   for (const m of spare) { m.visible = false; }
   flashes.forEach(f => { f.mesh.visible = false; });
   cm.count = 0;
+  stars.mesh.count = 0;
   ready = true;
   lastPoke = performance.now();
   draw();
@@ -1998,6 +2164,7 @@ async function start() {
   }
 }
 start().catch(err => { console.error(err); failed(); });
+if (location.search.includes('qa')) window.qa = { set coin(v) { coin = v; }, build: ch => { const t = performance.now(); buildGlyph(ch); return performance.now() - t; }, ghost, letters, ropes, ptr, get word() { return word; }, get raf() { return raf; }, get ambient() { return ambient; }, get voices() { return voices; }, get ac() { return ac; }, get out() { return out; }, get conf() { return conf.n; } };
 </script>
 </body>
 </html>
