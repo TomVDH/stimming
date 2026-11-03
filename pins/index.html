@@ -32,11 +32,12 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--pins board" id="board" tabindex="0" role="application" aria-label="Pin screen. Press and drag to push pins forward; hold to push deeper. Arrow keys move the press point, Space presses, S shakes the pins flat.">
+    <div class="stage stage--pins board" id="board" tabindex="0" role="application" aria-label="Pin screen. Press and drag to push pins; hold to push deeper. Arrow keys move the press point, Space presses, F flips the board, S shakes the pins flat.">
       <p class="fail" hidden>Pin art needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="actions">
+        <button class="chip" id="flip" type="button" aria-keyshortcuts="F">Flip</button>
         <button class="chip" id="shake" type="button" aria-keyshortcuts="S">Shake</button>
       </div>
       <dl class="how" aria-label="How to play">
@@ -148,7 +149,7 @@ function rest() {
     if (!raf && !brushes.size && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['s', 'S', ' ', 'Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const GESTURE_KEYS = new Set(['s', 'S', 'f', 'F', ' ', 'Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -189,22 +190,54 @@ function clatter(n, vmax, vsum, dt) {
     grain(a, clack, (0.05 + 0.45 * q ** 1.3) * boost, t0 + Math.random() * dt, 1.25 - 0.3 * q);
   }
 }
-// A shake: a dull knock of the frame, then a bright sizzle.
-function rattle(span) {
-  const a = live();
-  if (!a) return;
-  const t = a.currentTime + LEAD;
+// A dull knock of the frame.
+function knock(a, t, amp) {
   const k = a.createBufferSource(), lp = a.createBiquadFilter(), kg = a.createGain();
   k.buffer = noise;
   lp.type = 'lowpass';
   lp.frequency.value = 170;
   lp.Q.value = 1.2;
   kg.gain.setValueAtTime(0, t);
-  kg.gain.linearRampToValueAtTime(0.9 * level(), t + 0.004);
+  kg.gain.linearRampToValueAtTime(amp * level(), t + 0.004);
   kg.gain.setTargetAtTime(0, t + 0.004, 0.035);
   k.connect(lp).connect(kg).connect(out);
   k.start(t, Math.random() * 0.5, 0.25);
   track(k, lp, kg);
+}
+// A turn: air swept past the frame, rising, then falling.
+function whoosh(span) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD;
+  const s = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
+  s.buffer = noise;
+  s.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(260, t);
+  bp.frequency.exponentialRampToValueAtTime(1500, t + span * 0.5);
+  bp.frequency.exponentialRampToValueAtTime(380, t + span);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.3 * level(), t + span * 0.5);
+  g.gain.linearRampToValueAtTime(0, t + span);
+  s.connect(bp).connect(g).connect(out);
+  s.start(t, Math.random() * 0.5);
+  s.stop(t + span + 0.05);
+  track(s, bp, g);
+}
+// A landing: the frame knocks and every loose pin clacks once.
+function thud() {
+  const a = live();
+  if (!a) return;
+  knock(a, a.currentTime + LEAD, 1.1);
+  clatter(40, 26, 40 * 16, 0.05);
+}
+// A shake: a dull knock of the frame, then a bright sizzle.
+function rattle(span) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD;
+  knock(a, t, 0.9);
   // The sizzle brightens as the wave crosses the board.
   const s = a.createBufferSource(), bp = a.createBiquadFilter(), sg = a.createGain();
   s.buffer = noise;
@@ -235,6 +268,9 @@ const H = new Float32Array(MAXN), V = new Float32Array(MAXN), T = new Float32Arr
 const SH = new Float32Array(MAXN * 2).fill(1);
 const NB = new Int16Array(MAXN * 6), due = new Float64Array(MAXN), mode = new Uint8Array(MAXN), act = new Uint8Array(MAXN);
 const SPRING = 0, FALL = 1, WAIT_FALL = 2, FADE = 3, WAIT_RISE = 4;
+// Side 1 is the back: pins pushed out at the front sink in here.
+const uSide = { value: 0 };
+const disp = i => (uSide.value ? HMAX - H[i] : H[i]);
 
 // Even rows sit a quarter pitch left, odd rows a quarter right.
 const shift = r => (r & 1 ? 0.25 : -0.25);
@@ -276,15 +312,17 @@ function build(nc, nr) {
   place();
 }
 // Neighbours standing proud shade a pin and the foot of its shaft.
+// A flipped board reads every pin from the back.
 function shade() {
+  const f = uSide.value ? -1 : 1, o = uSide.value ? HMAX : 0;
   for (let i = 0; i < N; i++) {
     let occ = 0, sum = 0, n = 0;
     for (let k = i * 6, e = k + 6; k < e; k++) {
       const j = NB[k];
       if (j < 0) continue;
-      const d = H[j] - H[i] - 0.15;
+      const d = f * (H[j] - H[i]) - 0.15;
       if (d > 0) occ += d;
-      sum += H[j];
+      sum += o + f * H[j];
       n++;
     }
     SH[i * 2] = Math.max(0.34, 1 / (1 + 0.11 * occ));
@@ -453,9 +491,59 @@ function shake() {
   wake();
 }
 
+/* ---------- flip: the board turns over to show its back ---------- */
+// Pins pushed out on one face sink in on the other.
+const FLIP_S = 1.05;
+let flipT = -1, flipDir = 1, swapped = false;
+// Ease in and out, with a small wind-up and a small overshoot.
+function swing(t) {
+  const c = 1.1 * 1.525;
+  return t < 0.5 ? ((2 * t) ** 2 * ((c + 1) * 2 * t - c)) / 2 : ((2 * t - 2) ** 2 * ((c + 1) * (2 * t - 2) + c) + 2) / 2;
+}
+function flipBoard() {
+  if (!ready || flipT >= 0) return;
+  brushes.clear();
+  if (reduce) { turn(); thud(); draw(); wake(); return; }
+  flipT = 0;
+  swapped = false;
+  flipDir = -flipDir;
+  backs(true);
+  whoosh(FLIP_S);
+  wake();
+}
+// The mirror shows the other face; heights now read from the back.
+function turn() {
+  uSide.value = 1 - uSide.value;
+  board.scale.x = uSide.value ? -1 : 1;
+  shade();
+  hAttr.needsUpdate = sAttr.needsUpdate = true;
+  // The aim point keeps its place on screen.
+  kb.x = -kb.x;
+}
+// Edge on, the face swaps for its mirror image.
+function spin(dt) {
+  if (flipT < 0) return;
+  flipT = Math.min(1, flipT + dt / FLIP_S);
+  const a = Math.PI * swing(flipT);
+  if (!swapped && a >= Math.PI / 2) { turn(); swapped = true; }
+  board.rotation.y = flipDir * (swapped ? a - Math.PI : a);
+  // The board backs away while it turns; the near edge stays visible.
+  board.position.z = -0.85 * halfW * Math.abs(Math.sin(a));
+  if (flipT < 1) return;
+  flipT = -1;
+  board.rotation.y = 0;
+  board.position.z = 0;
+  backs(false);
+  // The landing rattles the frame.
+  joltAt = simT;
+  thud();
+}
+
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, board = null, mark = null;
-let shafts = null, heads = null, hAttr = null, sAttr = null, frameMesh = null, plate = null;
+let shafts = null, heads = null, shaftsB = null, headsB = null, hAttr = null, sAttr = null, frameMesh = null, plate = null;
+// Back pins show only while the board turns.
+const backs = on => { shaftsB.visible = headsB.visible = on; };
 let ray = null, ndc = null, tmp = null, ready = false, kbd = false;
 // The camera looks down 24 degrees onto the upright board.
 const EL = (24 * Math.PI) / 180, FOV = 26;
@@ -492,15 +580,16 @@ function place() {
   const M = shafts.instanceMatrix.array;
   for (let i = 0; i < N; i++) { M[i * 16 + 12] = PX[i]; M[i * 16 + 13] = PY[i]; }
   shafts.instanceMatrix.needsUpdate = true;
-  shafts.count = heads.count = N;
+  shafts.count = heads.count = shaftsB.count = headsB.count = N;
   hAttr.needsUpdate = sAttr.needsUpdate = true;
   const iw = halfW + MARGIN, ih = halfH + MARGIN, shape = rounded(new THREE.Shape(), iw + BORDER, ih + BORDER, 1.5);
   // The bevel narrows the hole, so it starts a bevel wider.
   shape.holes.push(rounded(new THREE.Path(), iw + BEV, ih + BEV, 0.6));
+  // The frame is equally deep on both faces of the plate.
   const g = new THREE.ExtrudeGeometry(shape, {
-    depth: LIP + 0.6 - 2 * BEV, bevelEnabled: true, bevelThickness: BEV, bevelSize: BEV, bevelSegments: 3, curveSegments: 10,
+    depth: 2 * LIP - 2 * BEV, bevelEnabled: true, bevelThickness: BEV, bevelSize: BEV, bevelSegments: 3, curveSegments: 10,
   });
-  g.translate(0, 0, BEV - 0.6);
+  g.translate(0, 0, BEV - LIP);
   frameMesh.geometry.dispose();
   frameMesh.geometry = g;
   plate.geometry.dispose();
@@ -532,7 +621,7 @@ function fit(w, h) {
   camera.updateProjectionMatrix();
   const fw = halfW + MARGIN + BORDER + BEV, fh = halfH + MARGIN + BORDER + BEV, pts = [];
   for (const sx of [-1, 1]) {
-    for (const sy of [-1, 1]) for (const z of [-0.6, LIP]) pts.push(new THREE.Vector3(sx * fw, sy * fh, z));
+    for (const sy of [-1, 1]) for (const z of [-LIP, LIP]) pts.push(new THREE.Vector3(sx * fw, sy * fh, z));
     pts.push(new THREE.Vector3(sx * halfW, -halfH, L0 + HMAX + HEAD_Z));
   }
   let d = 150, ty = 0;
@@ -561,7 +650,7 @@ function draw(dirty = true) {
   mark.visible = kbd;
   if (kbd) {
     const j = nearest(kb.x, kb.y);
-    mark.position.set(kb.x, kb.y, L0 + HEAD_Z + 0.3 + (j >= 0 ? H[j] : 0));
+    mark.position.set(kb.x, kb.y, L0 + HEAD_Z + 0.3 + (j >= 0 ? disp(j) : 0));
     mark.scale.setScalar(brushes.has('key') ? 0.86 : 1);
   }
   renderer.render(scene, camera);
@@ -583,6 +672,7 @@ function frame(ms) {
     if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
   steer(dt);
+  spin(dt);
   sculpt(dt);
   HP.set(H.subarray(0, N));
   acc += dt;
@@ -602,7 +692,7 @@ function frame(ms) {
   shimmer(movers, movers && dt ? sp / movers / dt : 0, dt);
   clatter(impN, impMax, impSum, dt);
   draw(dirty);
-  const busy = awake || brushes.size || kb.keys.size || simT - joltAt < 0.6;
+  const busy = awake || brushes.size || kb.keys.size || simT - joltAt < 0.6 || flipT >= 0;
   quiet = busy ? 0 : quiet + 1;
   if (quiet < 4) {
     if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
@@ -621,24 +711,24 @@ function rayAt(e) {
   ray.setFromCamera(ndc, camera);
   return ray.ray;
 }
-// Where a ray meets the plate.
+// Where a ray meets the plate, in the board's own terms.
 function onPlate(rr) {
   const o = rr.origin, d = rr.direction, t = -o.z / d.z;
-  return [o.x + d.x * t - board.position.x, o.y + d.y * t];
+  return [(o.x + d.x * t - board.position.x) * board.scale.x, o.y + d.y * t];
 }
 // Where a ray first touches the pin heads, marching down from the top.
 function onPins(rr) {
   const o = rr.origin, d = rr.direction, top = L0 + HMAX + HEAD_Z + 0.5;
   for (let k = 0; k <= 48; k++) {
-    const z = top * (1 - k / 48), t = (z - o.z) / d.z, x = o.x + d.x * t - board.position.x, y = o.y + d.y * t;
+    const z = top * (1 - k / 48), t = (z - o.z) / d.z, x = (o.x + d.x * t - board.position.x) * board.scale.x, y = o.y + d.y * t;
     const j = nearest(x, y);
-    if (j >= 0 && z <= L0 + HEAD_Z + H[j]) return [x, y];
+    if (j >= 0 && z <= L0 + HEAD_Z + disp(j)) return [x, y];
   }
   return onPlate(rr);
 }
 // The press lands on the pin you see, then follows the pointer without drifting.
 panel.addEventListener('pointerdown', e => {
-  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready || flipT >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
   const rr = rayAt(e), [px, py] = onPlate(rr), [sx, sy] = onPins(rr);
   const b = press(e.pointerId, sx, sy, force(e), e.pointerType === 'touch' ? R_TOUCH : R_MOUSE);
   b.ox = sx - px;
@@ -663,8 +753,9 @@ panel.addEventListener('contextmenu', e => e.preventDefault());
 // Keyboard: a press point steered by arrows, Space pushes.
 const kb = { x: 0, y: 0, keys: new Map() };
 const DIRS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+// Arrows follow the screen, so the mirrored back turns x around.
 function moveKb(dx, dy) {
-  kb.x = clamp(kb.x + dx, -halfW, halfW);
+  kb.x = clamp(kb.x + dx * (board ? board.scale.x : 1), -halfW, halfW);
   kb.y = clamp(kb.y + dy, -halfH, halfH);
   const b = brushes.get('key');
   if (b) { b.x = kb.x; b.y = kb.y; }
@@ -698,7 +789,7 @@ panel.addEventListener('keydown', e => {
   } else if (k === ' ') {
     e.preventDefault();
     kbd = true;
-    if (!e.repeat && !brushes.has('key')) press('key', kb.x, kb.y, 1, R_MOUSE);
+    if (!e.repeat && !brushes.has('key') && flipT < 0) press('key', kb.x, kb.y, 1, R_MOUSE);
     wake();
   }
 });
@@ -710,8 +801,10 @@ addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   if ((e.key === 's' || e.key === 'S') && !e.repeat) shake();
+  if ((e.key === 'f' || e.key === 'F') && !e.repeat) flipBoard();
 });
 document.getElementById('shake').addEventListener('click', shake);
+document.getElementById('flip').addEventListener('click', flipBoard);
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -724,29 +817,43 @@ function failed() {
   panel.querySelector('.fail').hidden = false;
 }
 // Nearer pins catch more of the front lamp.
-const LAMP = 'mix(0.7, 1.14, smoothstep(0.0, 5.0, pinH))';
+const LAMP = 'mix(0.7, 1.14, smoothstep(0.0, 5.0, pinP))';
+// pinP is how far a pin stands out of the face in view.
+// Back pins stand out by the rest of their travel.
+const pinP = back => `float pinP = ${back ? `mix(${HMAX.toFixed(1)} - pinH, pinH, uSide)` : `mix(pinH, ${HMAX.toFixed(1)} - pinH, uSide)`};`;
+const ATTRS = 'uniform float uSide;\nattribute float pinH;\nattribute vec2 pinS;\n';
 // Shafts stretch from the plate to the head; pinH is the push.
-function patchShaft(s) {
-  s.vertexShader = 'attribute float pinH;\nattribute vec2 pinS;\nvarying vec2 vS;\nvarying float vZ;\n' + s.vertexShader.replace(
+const patchShaft = back => s => {
+  s.uniforms.uSide = uSide;
+  s.vertexShader = ATTRS + 'varying vec2 vS;\nvarying float vZ;\n' + s.vertexShader.replace(
     '#include <begin_vertex>',
-    `#include <begin_vertex>\ntransformed.z *= ${(L0 + 0.06).toFixed(3)} + pinH;\nvS = vec2(pinS.x * ${LAMP}, pinS.y);\nvZ = transformed.z;`,
+    `#include <begin_vertex>\n${pinP(back)}\ntransformed.z *= ${(L0 + 0.06).toFixed(3)} + pinP;\n`
+      + (back ? 'vS = vec2(0.8, -100.0);' : `vS = vec2(pinS.x * ${LAMP}, pinS.y);`) + '\nvZ = transformed.z;',
   );
   // Shaft feet below the neighbours' heads sit in shadow.
   s.fragmentShader = 'varying vec2 vS;\nvarying float vZ;\n' + s.fragmentShader.replace(
     '#include <opaque_fragment>',
     'outgoingLight *= vS.x * mix(0.2, 1.0, smoothstep(vS.y - 1.6, vS.y + 0.5, vZ));\n#include <opaque_fragment>',
   );
-}
-// Heads ride on top of the shaft.
-function patchHead(s) {
-  s.vertexShader = 'attribute float pinH;\nattribute vec2 pinS;\nvarying float vAO;\n' + s.vertexShader.replace(
+};
+// Front heads ride on the shaft; back heads hang below the plate.
+const patchHead = back => s => {
+  s.uniforms.uSide = uSide;
+  s.vertexShader = ATTRS + 'varying float vAO;\n' + s.vertexShader.replace(
     '#include <begin_vertex>',
-    `#include <begin_vertex>\ntransformed.z += ${L0.toFixed(3)} + pinH;\nvAO = pinS.x * ${LAMP};`,
+    `#include <begin_vertex>\n${pinP(back)}\ntransformed.z ${back ? '-=' : '+='} ${L0.toFixed(3)} + pinP;\nvAO = ${back ? '0.8' : `pinS.x * ${LAMP}`};`,
   );
   s.fragmentShader = 'varying float vAO;\n' + s.fragmentShader.replace(
     '#include <opaque_fragment>',
     'outgoingLight *= vAO;\n#include <opaque_fragment>',
   );
+};
+// A copy mirrored through the plate, with its winding put right.
+function mirrorZ(g) {
+  g = g.clone().scale(1, 1, -1);
+  const ix = g.index.array;
+  for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; }
+  return g;
 }
 async function start() {
   let RoomEnvironment;
@@ -809,19 +916,26 @@ async function start() {
   const prof = [[0.1, -0.04], [0.44, -0.04], [0.45, -0.01], [0.45, 0.02]];
   for (let k = 1; k <= 6; k++) { const a = (k / 6) * (Math.PI / 2); prof.push([0.44 * Math.cos(a), 0.03 + (HEAD_Z - 0.03) * Math.sin(a)]); }
   const headGeo = new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), small ? 12 : 18).rotateX(Math.PI / 2);
+  // The back pins are mirror copies; they show only mid-turn.
+  const shaftGeoB = mirrorZ(shaftGeo), headGeoB = mirrorZ(headGeo);
   hAttr = new THREE.InstancedBufferAttribute(H, 1).setUsage(THREE.DynamicDrawUsage);
   sAttr = new THREE.InstancedBufferAttribute(SH, 2).setUsage(THREE.DynamicDrawUsage);
-  for (const g of [shaftGeo, headGeo]) { g.setAttribute('pinH', hAttr); g.setAttribute('pinS', sAttr); }
-  const steel = new THREE.MeshStandardMaterial({ color: 0xb4b8bf, metalness: 1, roughness: 0.36 });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xe6e8ec, metalness: 1, roughness: 0.09 });
-  steel.onBeforeCompile = patchShaft;
-  chrome.onBeforeCompile = patchHead;
-  shafts = new THREE.InstancedMesh(shaftGeo, steel, MAXN);
-  heads = new THREE.InstancedMesh(headGeo, chrome, MAXN);
-  // Both meshes share one set of grid spots.
-  heads.instanceMatrix = shafts.instanceMatrix;
-  for (const m of [shafts, heads]) m.frustumCulled = false;
-  board.add(shafts, heads);
+  for (const g of [shaftGeo, headGeo, shaftGeoB, headGeoB]) { g.setAttribute('pinH', hAttr); g.setAttribute('pinS', sAttr); }
+  const metal = (color, roughness, patch, key) => {
+    const m = new THREE.MeshStandardMaterial({ color, metalness: 1, roughness });
+    m.onBeforeCompile = patch;
+    // Each variant needs its own program.
+    m.customProgramCacheKey = () => key;
+    return m;
+  };
+  shafts = new THREE.InstancedMesh(shaftGeo, metal(0xb4b8bf, 0.36, patchShaft(false), 'shaft'), MAXN);
+  heads = new THREE.InstancedMesh(headGeo, metal(0xe6e8ec, 0.09, patchHead(false), 'head'), MAXN);
+  shaftsB = new THREE.InstancedMesh(shaftGeoB, metal(0xb4b8bf, 0.36, patchShaft(true), 'shaft-back'), MAXN);
+  headsB = new THREE.InstancedMesh(headGeoB, metal(0xe6e8ec, 0.09, patchHead(true), 'head-back'), MAXN);
+  // All four meshes share one set of grid spots.
+  heads.instanceMatrix = shaftsB.instanceMatrix = headsB.instanceMatrix = shafts.instanceMatrix;
+  for (const m of [shafts, heads, shaftsB, headsB]) m.frustumCulled = false;
+  board.add(shafts, heads, shaftsB, headsB);
   // The keyboard aim ring keeps the dark-theme focus colour on the board.
   mark = new THREE.Mesh(
     new THREE.RingGeometry(R_MOUSE - 0.22, R_MOUSE, 64),
@@ -842,7 +956,10 @@ async function start() {
   await idle();
   intro();
   // Async compile keeps the shader build off the main thread.
+  // The back pins compile now, so the first flip does not stall.
+  backs(true);
   await renderer.compileAsync(scene, camera);
+  backs(false);
   ready = true;
   draw();
   requestAnimationFrame(() => { canvas.classList.add('on'); wake(); });
