@@ -68,7 +68,7 @@ h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-sp
 .snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
 @media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
 main { display: grid; gap: 14px; min-width: 0; }
-/* The wall is 16:9, 4:5 on phones, and dark in both themes. */
+/* The wall is 16:9, and 4:5 on phones. */
 .stage {
   position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
   border-radius: 18px; overflow: hidden; background: var(--wall);
@@ -184,13 +184,13 @@ const GAS = [
   [0.95, 0.035, 80, 0.55],
 ].map(([L, C, h, k]) => { const c = linear(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
 const WALL = {
-  uB1: linear(0.43, 0.1, 33),
-  uB2: linear(0.37, 0.07, 42),
-  uB3: linear(0.5, 0.11, 52),
+  uB1: linear(0.43, 0.1, 31),
+  uB2: linear(0.37, 0.07, 40),
+  uB3: linear(0.47, 0.1, 42),
   uB4: linear(0.29, 0.03, 30),
-  uMortar: linear(0.64, 0.014, 75),
+  uMortar: linear(0.57, 0.012, 70),
 };
-const AMB = scale(linear(0.62, 0.07, 255), 0.22), KEY = scale(linear(0.9, 0.03, 245), 0.7);
+const AMB = scale(linear(0.62, 0.07, 255), 0.26), KEY = scale(linear(0.9, 0.03, 245), 0.7);
 // The night light comes from the upper left; y points up.
 const LAMB = (() => { const v = [-0.35, 0.6, 0.72], n = Math.hypot(...v); return v.map(x => x / n); })();
 const LD = (() => { const n = Math.hypot(LAMB[0], LAMB[1]); return [LAMB[0] / n, LAMB[1] / n]; })();
@@ -285,7 +285,7 @@ function tone(a, dst, t, f0, f1, g, tau, done) {
   o.start(t);
   o.stop(t + tau * 7 + 0.01);
 }
-// Runs a group of nodes as one voice that frees its bus at the end.
+// One voice frees its bus when its last node ends.
 function voice(a, x, build) {
   if (voices >= MAXV) return;
   const dst = bus(a, x);
@@ -327,7 +327,7 @@ function click(x) {
     tone(a, dst, t0 + 0.004, 130 * jit(0.05), 90, 0.06 * g, 0.022, hold());
   });
 }
-// The buzz: a mains sawtooth through a low filter, one per lit tube.
+// Each lit tube buzzes: a mains sawtooth through a low filter.
 function humVoice(t) {
   const a = ac, o = a.createOscillator(), o2 = a.createOscillator(), g2 = a.createGain();
   const lp = a.createBiquadFilter(), g = a.createGain(), dst = bus(a, t.pan);
@@ -368,7 +368,7 @@ function humSync() {
   humBus.gain.setTargetAtTime(Math.min(1, 1.6 / Math.sqrt(Math.max(1, n))), now, 0.1);
   for (const [t, v] of hums) {
     const hot = t.seq ? 1 : 0;
-    const g = 0.022 * Math.sqrt(clamp(t.len / 420, 0.4, 1.6)) * t.show * (hot ? 2.6 : 1);
+    const g = 0.028 * Math.sqrt(clamp(t.len / 420, 0.4, 1.6)) * t.show * (hot ? 2.6 : 1);
     if (Math.abs(g - v.last) > 0.0008) { v.g.gain.setTargetAtTime(g, now, 0.006); v.last = g; }
     if (hot !== v.hot) { v.lp.frequency.setTargetAtTime(hot ? 2600 : 480, now, hot ? 0.01 : 0.15); v.hot = hot; }
   }
@@ -451,7 +451,7 @@ function relax(d, rho, step) {
     if (!moved) break;
   }
 }
-// Builds a tube's strip, clips and hit points from control points in CSS pixels.
+// Builds a tube's strip, clips and hit points from CSS-pixel control points.
 const FPV = 8;
 function shape(ctrl, id) {
   const rp = R * pr, step = Math.max(1, 0.5 * rp);
@@ -590,13 +590,15 @@ float height(vec2 p, out vec2 id, out float face) {
   vec2 hb = vec2(BW * 0.5, 0.5) - MORT * 0.5 - vec2(rn.x * 0.035, rn.y * 0.02);
   float d = sdBox(q - (rm - 0.5) * vec2(0.04, 0.025), hb, 0.04 + 0.07 * rn.y);
   // Chips and worn corners roughen the outline.
-  d += (fbm(p * 4.3 + rn * 31.0) - 0.5) * 0.11;
+  d += (fbm(p * 4.3 + rn * 31.0) - 0.5) * 0.08;
   face = smoothstep(0.0, 0.1, -d);
+  // A turned grid hides the noise lattice.
+  vec2 r = mat2(0.8, -0.6, 0.6, 0.8) * p;
   float tilt = dot(q, (rm - 0.5) * vec2(0.03, 0.09));
-  float surf = (fbm(p * 7.5 + rm * 23.0) - 0.5) * 0.16;
-  float pit = smoothstep(0.66, 0.92, vnoise(p * 19.0 + rn * 7.0));
-  float hb2 = 0.78 + 0.16 * rn.x + tilt + surf - 0.25 * pit;
-  float hm = 0.1 + (vnoise(p * 30.0) - 0.5) * 0.08 + (vnoise(p * 9.0) - 0.5) * 0.06;
+  float surf = (fbm(r * 5.0 + rm * 23.0) - 0.5) * 0.1 + (vnoise(r * 16.0) - 0.5) * 0.035;
+  float pit = smoothstep(0.78, 0.96, vnoise(r * 11.0 + rn * 7.0));
+  float hb2 = 0.78 + 0.16 * rn.x + tilt + surf - 0.1 * pit;
+  float hm = 0.1 + (vnoise(r * 26.0) - 0.5) * 0.07 + (vnoise(r * 8.0) - 0.5) * 0.06;
   return mix(hm, hb2, face);
 }
 void main() {
@@ -618,7 +620,7 @@ void main() {
   vec3 b = mix(uB1, uB2, smoothstep(0.15, 0.7, k));
   b = mix(b, uB3, step(0.86, k));
   b = mix(b, uB4, step(0.92, k2));
-  b *= 0.72 + 0.56 * fbm(p * 2.6 + id * 1.7);
+  b *= 0.6 + 0.65 * fbm(p * 2.6 + id * 1.7);
   // Fired clay shows darker flecks.
   b *= 1.0 - 0.35 * smoothstep(0.6, 0.85, vnoise(p * 23.0 + 4.0));
   vec3 alb = mix(uMortar * (0.72 + 0.5 * vnoise(p * 17.0)), b, face);
@@ -652,11 +654,13 @@ vec3 wallAt(vec2 fc) {
   vec2 grad = vec2(
     luma(texture(uGlow, uv + vec2(tx.x, 0.0)).rgb) - luma(texture(uGlow, uv - vec2(tx.x, 0.0)).rgb),
     luma(texture(uGlow, uv + vec2(0.0, tx.y)).rgb) - luma(texture(uGlow, uv - vec2(0.0, tx.y)).rgb)) / (2.0 * tx * uRes);
-  vec2 gl = grad / (luma(g) + 1e-5);
-  float m = length(gl);
-  vec2 dir = gl / max(m, 1e-6);
-  vec3 L = normalize(vec3(dir, max(uLift * m, 0.05)));
-  float relief = clamp(max(dot(n, L), 0.0) / max(L.z, 0.2), 0.0, 3.0);
+  vec2 lg = grad / (luma(g) + 1e-5);
+  float m = length(lg);
+  vec2 dir = lg / max(m, 1e-6);
+  vec3 L = normalize(vec3(dir, max(uLift * m, 0.25)));
+  // Between tubes the light comes from both sides and loses its aim.
+  float aim = smoothstep(0.0, 1.0, m * uLift * 2.5);
+  float relief = mix(1.0, clamp(max(dot(n, L), 0.0) / L.z, 0.0, 2.6), aim);
   // Brick edges between the point and the tube cast short shadows.
   float tanE = L.z / max(length(L.xy), 1e-3), occ = 0.0;
   for (int i = 1; i <= 4; i++) {
@@ -664,10 +668,10 @@ vec3 wallAt(vec2 fc) {
     float hs = texelFetch(uGB, clamp(ip + ivec2(dir * d), ivec2(0), top), 0).z;
     occ = max(occ, (hs - B.z) * uDepth - d * tanE);
   }
-  float lit = 1.0 - 0.85 * smoothstep(0.0, 1.5 * uPr, occ);
+  float lit = 1.0 - 0.85 * aim * smoothstep(0.0, 1.5 * uPr, occ);
   vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
   float spec = A.a * pow(max(dot(n, H), 0.0), 36.0) * 0.6;
-  col += g * uWallK * (A.rgb * mix(1.0, relief, 0.9) * mix(0.7, 1.0, B.w) + spec) * lit;
+  col += g * uWallK * (A.rgb * relief * mix(0.7, 1.0, B.w) + spec * aim) * lit;
   return col;
 }
 // Polished metal mirrors the neon around it.
@@ -685,7 +689,7 @@ vec3 srgb(vec3 c) {
 vec3 finish(vec3 c, vec2 fc) {
   vec2 uv = fc / uRes, v = uv - 0.5;
   c += texture(uGlow, uv).rgb * uBloom + texture(uHalo, uv).rgb * uHaloK;
-  c *= 1.0 - 0.55 * dot(v, v);
+  c *= 1.0 - 0.8 * dot(v, v);
   c = 1.0 - exp(-c * uExpo);
   return srgb(c) + (hash12(fc + 3.1) - 0.5) / 255.0;
 }`;
@@ -710,7 +714,7 @@ void main() {
   vLen = aB.w;
   gl_Position = vec4(aA.x / uView.x * 2.0 - 1.0, 1.0 - aA.y / uView.y * 2.0, 0.0, 1.0);
 }`;
-// Mode 0 shades glass, metal and gas; mode 1 writes light and cover only.
+// Mode 0 shades the tube; mode 1 writes only light and cover.
 const TUBE_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
@@ -738,13 +742,12 @@ void main() {
   float act = gas.w * smoothstep(cap1, cap1 + 1.6 * ck, e);
   const float inner = 0.84;
   float chord = sqrt(max(0.0, inner * inner - s * s)) / inner;
-  vec3 em = gas.rgb * (0.35 + 1.4 * chord) + mix(gas.rgb, vec3(1.0), 0.7) * pow(chord, 6.0) * 2.6;
+  // Bright gas clips to a hot core with a little white.
+  vec3 em = gas.rgb * (0.5 + 1.2 * chord + 5.0 * pow(chord, 6.0)) + 0.6 * pow(chord, 18.0);
   em *= act * uEmK;
   if (uMode > 0.5) { o = vec4(em, cov); return; }
   // The cross-section gives a screen-space normal; y points up.
-  vec2 t = normalize(vec2(vT.x, -vT.y)), pp = vec2(-t.y, -t.x) * -1.0;
-  pp = vec2(-vT.y, -vT.x);
-  pp = normalize(pp);
+  vec2 t = normalize(vec2(vT.x, -vT.y)), pp = normalize(vec2(-vT.y, -vT.x));
   vec2 nl = vec2(q.x * outward, s) / rad;
   float nz = sqrt(max(0.0, 1.0 - dot(nl, nl)));
   vec3 N = normalize(vec3(t * nl.x + pp * nl.y, nz));
@@ -758,16 +761,16 @@ void main() {
   } else {
     float F = 0.04 + 0.96 * pow(1.0 - nz, 5.0);
     vec3 bg = wallAt(fc - N.xy * uR * 0.85);
-    vec3 tint = mix(vec3(1.0), gas.rgb / max(max(gas.r, gas.g), max(gas.b, 1e-3)), 0.25);
+    vec3 tint = mix(vec3(1.0), gas.rgb / max(max(gas.r, gas.g), max(gas.b, 1e-3)), 0.12);
     // The glass wall, seen edge-on, darkens and tints the rim.
     float band = smoothstep(inner - 0.08, inner + 0.05, rr);
-    col = bg * tint * (1.0 - F) * mix(0.92, 0.5, band);
-    vec3 env = texture(uGlow, uv + R.xy * 0.04).rgb * uWallK * 0.5 + uAmb * 0.6;
+    col = bg * tint * (1.0 - F) * mix(0.96, 0.62, band);
+    vec3 env = texture(uGlow, uv + R.xy * 0.04).rgb * uWallK * 0.5 + uKey * 0.06;
     float k1 = pow(max(dot(R, uLamb), 0.0), 140.0), k2 = pow(max(dot(R, normalize(uLamb * vec3(-1.0, -0.7, 1.0))), 0.0), 26.0);
     col += F * env * 1.3 + uKey * (k1 * 1.6 + k2 * 0.1);
     col += smoothstep(0.05, 0.0, abs(rr - inner)) * (env * 0.25 + uKey * 0.05);
     // An electrode wire shows through the clear tip.
-    if (e < cap0 && e > -0.6 && abs(s) < 0.3) col = mix(col, metal(vec3(pp * s * 2.0, 0.8), uv, 0.25), 0.75);
+    if (e < cap0 && e > -0.6 && abs(s) < 0.3) col = mix(col, metal(normalize(vec3(pp * s * 2.0, 0.8)), uv, 0.25), 0.75);
     col += em + gas.rgb * act * uEmK * 0.3 * band;
   }
   o = vec4(finish(col, fc), cov);
@@ -786,7 +789,7 @@ void main() {
   vec2 pos = aC.xy + (t * vL.x + p * vL.y) * uR;
   gl_Position = vec4(pos.x / uView.x * 2.0 - 1.0, 1.0 - pos.y / uView.y * 2.0, 0.0, 1.0);
 }`;
-// Mode 0 is the standoff base, 1 the strap, 2 shadow cover, 3 the pen ring.
+// Modes: standoff base, strap, shadow cover, pen ring.
 const CLIP_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
@@ -858,8 +861,8 @@ void main() {
 }`;
 
 const LIGHT_U = ['uGA', 'uGB', 'uGlow', 'uHalo', 'uRes', 'uShOff', 'uAmb', 'uLamb', 'uKey', 'uLift', 'uDepth', 'uWallK', 'uBloom', 'uHaloK', 'uPr', 'uExpo'];
-const LOOK = { uWallK: 0.9, uBloom: 0.045, uHaloK: 0.16, uExpo: 1.0, emit: 3.0 };
-const LEVELS = 6, UPW = [0.55, 0.75, 0.9, 1.0, 1.0, 1.0];
+const LOOK = { uWallK: 1.0, uBloom: 0.05, uHaloK: 0.2, uExpo: 1.0, emit: 1.6 };
+const LEVELS = 6, UPW = [0.9, 0.95, 0.9, 0.7, 0.42, 0.22];
 
 let gl = null, P = null, emptyVao = null, quadBuf = null, ready = false;
 let tubeVao = null, tubeBuf = null, tubeCap = 0, draftVao = null, draftBuf = null, draftCap = 0;
@@ -1194,9 +1197,9 @@ function update(now, dt) {
       busy = true;
     }
     // Gas lights fast and fades with a short afterglow.
-    const tau = t.goal > t.lvl ? 0.01 : t.on || t.seq ? 0.018 : 0.11;
+    const tau = t.goal > t.lvl ? 0.01 : t.on || t.seq ? 0.018 : 0.05;
     t.lvl = t.goal + (t.lvl - t.goal) * Math.exp(-dt / tau);
-    if (Math.abs(t.lvl - t.goal) < 1e-3) t.lvl = t.goal;
+    if (Math.abs(t.lvl - t.goal) < 2e-3) t.lvl = t.goal;
     else busy = true;
     let sh = 1;
     if (t.lvl > 0) {
@@ -1251,8 +1254,9 @@ function frame(ms) {
   render();
   humSync();
   if (++drawn === 2) canvas.classList.add('on');
-  if (busy || drawn < 3) raf = requestAnimationFrame(frame);
-  else rest();
+  // Input during the frame may have queued the next one already.
+  if ((busy || drawn < 3) && !raf) raf = requestAnimationFrame(frame);
+  else if (!raf) rest();
 }
 function wake() {
   if (!visible || raf) return;
@@ -1401,7 +1405,6 @@ panel.addEventListener('pointermove', e => {
       beginDraft(press.x, press.y, press.id);
     }
     if (draft && draft.pid === press.id) addPoint(x, y);
-    else if (draft === null && press.moved) beginDraft(x, y, press.id);
   }
 });
 function lift(e) {
