@@ -37,13 +37,14 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Chladni plate | [chladni/](chladni/) | live, with sound |
 | Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
 | Split-flap | [flap/](flap/) | live, with sound |
-| Harmonograph | [harmono/](harmono/) | live draft, still being refined |
+| Harmonograph | [harmono/](harmono/) | live, with sound; Canvas 2D only |
 | Neon sign | [neon/](neon/) | live draft, still being refined |
 | Snow globe | [snow/](snow/) | live draft, still being refined |
 | Frost | [frost/](frost/) | live draft, still being refined |
 | Music box | [musicbox/](musicbox/) | live draft, still being refined |
 | Murmuration | [flock/](flock/) | live draft, still being refined |
-| Coil, Gear train, Dandelion | | in progress; outlines on the menu |
+| Dandelion | [dandelion/](dandelion/) | live draft, still being refined |
+| Coil, Gear train | | in progress; outlines on the menu |
 
 ## Run locally
 
