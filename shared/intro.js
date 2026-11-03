@@ -20,7 +20,6 @@ const bezier = (x1, y1, x2, y2) => t => {
   return at(y1, y2, s);
 };
 const linear = t => t;
-const snap = bezier(0.2, 0.9, 0.1, 1);
 const accel = bezier(0.7, 0, 0.84, 0);
 const settle = bezier(0.16, 1, 0.3, 1);
 
@@ -49,14 +48,12 @@ export async function intro({ ready = Promise.resolve(), min = 1200 } = {}) {
     return;
   }
 
-  // The slab snaps open, holds, then drops away to leave the white name.
+  // The viewport flashes white, holds, then drops away to leave the white name.
   await wait(3);
-  await play(flash, p => ({ transform: `scaleY(${p})` }), 125, snap);
-  await wait(4);
+  flash.style.opacity = 1;
+  await wait(5);
   text.style.opacity = 1;
   await play(flash, p => ({ opacity: [1, 0.2, 0.9, 0][Math.min(3, Math.floor(p * 4))] }), 4000 / FPS);
-  // The name tightens once the slab has gone.
-  play(text, p => ({ letterSpacing: `${(0.02 - 0.06 * p).toFixed(4)}em` }), 900, snap);
 
   await held;
 
