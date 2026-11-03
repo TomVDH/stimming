@@ -47,6 +47,17 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
     return;
   }
 
+  // The rule and its segment bar join the name before the flash copy.
+  const rule = document.createElement('div');
+  rule.className = 'intro-rule';
+  rule.innerHTML = '<b></b><span>' + '<i></i>'.repeat(12) + '</span>';
+  text.append(rule);
+  const segs = [...rule.querySelectorAll('i')];
+  const frame = document.createElement('div');
+  frame.className = 'intro-frame';
+  frame.innerHTML = '<i></i>'.repeat(4);
+  root.prepend(frame);
+
   // The flash copy is the name in a white box.
   const flash = text.cloneNode(true);
   flash.className = 'intro-flash';
@@ -57,6 +68,7 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   // The box flashes on at full white over the dark glass.
   await wait(3);
   flash.style.opacity = 1;
+  frame.style.opacity = 1;
   await wait(1);
   // The subtitle folds down inside the box.
   if (fold) await play(fold, p => ({ transform: `rotateX(${(-90 * (1 - p)).toFixed(2)}deg)` }), 167, settle);
@@ -66,9 +78,19 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   await play(flash, p => ({ opacity: [1, 0.7, 0][Math.min(2, Math.floor(p * 3))] }), 3000 / FPS);
   flash.remove();
 
-  await held;
+  // The hairline draws out, then a segment lights every second frame.
+  // The last three wait for the toy to be ready.
+  await play(rule.querySelector('b'), p => ({ transform: `scaleX(${p.toFixed(3)})` }), 250, settle);
+  let primed = false;
+  held.then(() => (primed = true));
+  for (let k = 0; k < segs.length; k++) {
+    while (k >= segs.length - 3 && !primed) await wait(1);
+    segs[k].classList.add('on');
+    await wait(2);
+  }
 
   // The name wipes off, then the glass fades away whole.
+  play(frame, p => ({ opacity: 1 - p }), 333);
   await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
   await play(root, p => ({ opacity: 1 - p }), 500, settle);
   root.remove();
