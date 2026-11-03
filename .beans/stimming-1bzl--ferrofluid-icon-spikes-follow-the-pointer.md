@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-03T22:10:49Z
-updated_at: 2026-11-03T22:15:17Z
+updated_at: 2026-11-03T22:18:31Z
 parent: stimming-2pgq
 ---
 
@@ -25,3 +25,5 @@ The Ferrofluid menu icon now treats the pointer as a magnet.
 - The metal sheen turns to face the pointer.
 - A keyboard focus has no pointer, so a magnet circles the crown.
 - The rest shape is the same as before, and the ticker stops at rest.
+
+Tom tried the icon and kept it. `icons/picks.json` no longer marks Ferrofluid for a redo.
