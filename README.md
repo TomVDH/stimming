@@ -48,7 +48,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Coil | [coil/](coil/) | live, with sound |
 | Googly eyes | [eyes/](eyes/) | live draft, still being refined |
 | Ribbon | [ribbon/](ribbon/) | live draft, still being refined |
-| TV tree, Orbits, Balloon letters | | in progress; outlines on the menu |
+| Balloon letters | [balloons/](balloons/) | live draft, still being refined |
+| TV tree, Orbits | | in progress; outlines on the menu |
 
 ## Run locally
 
