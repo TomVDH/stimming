@@ -22,6 +22,9 @@
 .stage canvas.on { opacity: 1; }
 .stage.grab canvas { cursor: grab; }
 .stage.held canvas { cursor: grabbing; }
+/* The release chip shows the pattern it lifts next. */
+.chip .pat { width: 20px; height: 12px; fill: currentColor; flex: none; }
+.choices .chip { min-width: 2.7em; justify-content: center; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
@@ -33,16 +36,22 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--pendulum" id="stage" tabindex="0" role="application" aria-label="Pendulum wave. Drag across the strings to lift balls. Space releases them all, Escape stops them.">
+    <div class="stage stage--pendulum" id="stage" tabindex="0" role="application" aria-label="Pendulum wave. Drag a ball to swing it, or drag across the strings to lift a row. Space releases the row, Escape stops it.">
       <p class="fail" hidden>Pendulum wave needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices" id="count" role="group" aria-label="Pendulums">
+        <button class="chip" type="button" data-value="12" aria-pressed="false" aria-label="12 pendulums">12</button>
+        <button class="chip" type="button" data-value="20" aria-pressed="true" aria-label="20 pendulums">20</button>
+        <button class="chip" type="button" data-value="32" aria-pressed="false" aria-label="32 pendulums">32</button>
+      </div>
       <div class="actions">
-        <button class="chip" id="release" type="button" aria-keyshortcuts="Space">Release</button>
+        <button class="chip" id="release" type="button" aria-keyshortcuts="Space"><svg class="pat" viewBox="0 0 20 12" aria-hidden="true"></svg>Release</button>
         <button class="chip" id="stop" type="button" aria-keyshortcuts="Escape">Stop</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag across</dt><dd>lift the balls</dd></div>
+        <div><dt>Drag a ball</dt><dd>swing it</dd></div>
+        <div><dt>Drag across</dt><dd>lift a row</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>release</dd></div>
         <div class="fine"><dt><kbd>Esc</kbd></dt><dd>stop</dd></div>
       </dl>
@@ -58,30 +67,38 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange } from '../shared/stim.js';
 initPage({ id: 'pendulum' });
 const panel = document.getElementById('stage');
-const RM = matchMedia('(prefers-reduced-motion: reduce)');
-let reduce = RM.matches;
+let reduce = reduced();
+onReducedChange(on => { reduce = on; });
 const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+// Storage is optional; private windows can refuse it.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (err) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
+};
+const COUNT_KEY = 'stimming.pendulum.count';
 
-/* ---------- the machine: lengths tuned to one 60 second cycle ---------- */
+/* ---------- the machine: each count has its own tuned rig ---------- */
 // Pendulum n swings K + n times per CYCLE seconds.
-const N = 20, K = 48, CYCLE = 60;
+// GAP spaces the row; BALL is the bob radius in scene units.
+// The longest string is 1 and swings in about 1.2 seconds.
+const RIGS = {
+  12: { K: 20, CYCLE: 24, GAP: 0.2, BALL: 0.068 },
+  20: { K: 34, CYCLE: 40, GAP: 0.16, BALL: 0.058 },
+  32: { K: 54, CYCLE: 64, GAP: 0.116, BALL: 0.046 },
+};
+const NMAX = 32;
 // Gentle air drag; 0 keeps every later cycle exact too.
 const DAMP = 0.012;
 const H = 1 / 240;
-// Scene units: the longest string is 1; balls hang GAP apart.
-const GAP = 0.16, BALL = 0.058, VEE = 0.05, ROD = 0.014;
-const LEN = new Float64Array(N), ZP = new Float64Array(N), OM = new Float64Array(N), OM2 = new Float64Array(N);
-const TH = new Float64Array(N), VE = new Float64Array(N), AIM = new Float64Array(N), HOLD = new Uint8Array(N);
-// Small-angle period grows with the root of length.
-for (let n = 0; n < N; n++) {
-  LEN[n] = (K / (K + n)) ** 2;
-  ZP[n] = ((N - 1) / 2 - n) * GAP;
-}
+const ROD = 0.016;
+const LEN = new Float64Array(NMAX), ZP = new Float64Array(NMAX), OM = new Float64Array(NMAX), OM2 = new Float64Array(NMAX);
+const TH = new Float64Array(NMAX), VE = new Float64Array(NMAX), AIM = new Float64Array(NMAX), HOLD = new Uint8Array(NMAX);
+let N = 0, rig = RIGS[20], vee = 0.05;
 // Held balls ride springs: 1 is the hand, 2 the lift.
 const HAND_K = 150, HAND_C = 2 * 0.85 * Math.sqrt(HAND_K), LIFT_K = 60, LIFT_C = 2 * Math.sqrt(LIFT_K);
 const swing = () => (reduce ? 0.16 : 0.36);
@@ -94,18 +111,16 @@ function agm(a, b) {
 }
 // Wide swings run slow by 1 / agm(1, cos(A / 2)).
 // Drag shrinks the swing, so the first cycle averages that slowdown.
-// The first realignment then lands at exactly 60 s.
-function tune() {
+// The first realignment then lands at exactly one CYCLE.
+function slowFor(A) {
   let pace = 0;
-  for (let k = 0; k < 64; k++) pace += agm(1, Math.cos((swing() * Math.exp((-DAMP * CYCLE * (k + 0.5)) / 128)) / 2)) / 64;
-  const slow = 1 / pace;
-  for (let n = 0; n < N; n++) {
-    OM[n] = ((TAU * (K + n)) / CYCLE) * slow;
-    OM2[n] = OM[n] * OM[n];
-  }
+  for (let k = 0; k < 64; k++) pace += agm(1, Math.cos((A * Math.exp((-DAMP * rig.CYCLE * (k + 0.5)) / 128)) / 2)) / 64;
+  return 1 / pace;
 }
-tune();
-RM.addEventListener?.('change', e => { reduce = e.matches; tune(); });
+function tuneOne(n, A) {
+  OM[n] = ((TAU * (rig.K + n)) / rig.CYCLE) * slowFor(Math.abs(A));
+  OM2[n] = OM[n] * OM[n];
+}
 
 function acc(n, th, v, brake) {
   if (HOLD[n] === 1) return HAND_K * (AIM[n] - th) - HAND_C * v;
@@ -124,7 +139,7 @@ function step(h, at, hits) {
     const v4 = v + h * a3, a4 = acc(n, th + h * v3, v4, brake);
     TH[n] = th + (h / 6) * (v + 2 * v2 + 2 * v3 + v4);
     VE[n] = v + (h / 6) * (a1 + 2 * a2 + 2 * a3 + a4);
-    // Passing the bottom left to right knocks once per swing.
+    // Passing the bottom left to right strikes once per swing.
     if (!HOLD[n] && th < 0 && TH[n] >= 0 && VE[n] > 0) {
       const amp = 2 * Math.asin(Math.min(1, VE[n] / (2 * OM[n])));
       if (amp > 0.02) hits.push({ n, at: at + (h * -th) / (TH[n] - th), amp });
@@ -152,21 +167,50 @@ function coherence() {
   return k >= N - 2 ? Math.hypot(sx, sy) / k : 0;
 }
 
+/* ---------- release patterns ---------- */
+// Each pattern maps pendulum n of c to a lift from -1 to 1.
+const PATS = [
+  ['line', () => 1],
+  ['ramp', (n, c) => 1 - (2 * n) / (c - 1)],
+  ['zip', n => (n % 2 ? -1 : 1)],
+  ['wave', (n, c) => Math.cos((TAU * n) / (c - 1))],
+];
+let pat = 0;
+const relBtn = document.getElementById('release');
+// The chip glyph draws the next pattern as seven solid bars.
+function showPattern() {
+  const [name, f] = PATS[pat];
+  let bars = '';
+  for (let i = 0; i < 7; i++) {
+    const v = f(i, 7), h = Math.max(1, Math.abs(v) * 5);
+    bars += `<rect x="${i * 3}" y="${(v >= 0 ? 6 - h : 6).toFixed(2)}" width="2" height="${h.toFixed(2)}"/>`;
+  }
+  relBtn.querySelector('.pat').innerHTML = bars;
+  relBtn.setAttribute('aria-label', `Release, ${name} pattern`);
+}
+showPattern();
+
 /* ---------- commands ---------- */
-// Release: all balls rise to one angle, then let go together.
+// Release: the row rises to the pattern, then lets go together.
 function release() {
-  if (!ready) return;
+  if (!ready || phase) return;
   endDrag();
   stopAt = -1;
-  const a = swing();
-  for (let n = 0; n < N; n++) { HOLD[n] = 2; AIM[n] = a; }
+  const a = swing(), f = PATS[pat][1];
+  for (let n = 0; n < N; n++) { HOLD[n] = 2; AIM[n] = a * f(n, N); }
   goAt = simT + (reduce ? 0.8 : 1.05);
+  pat = (pat + 1) % PATS.length;
+  showPattern();
   wake();
 }
 function letGo() {
-  const a = swing();
   goAt = -1;
-  for (let n = 0; n < N; n++) { TH[n] = a; VE[n] = 0; HOLD[n] = 0; }
+  for (let n = 0; n < N; n++) {
+    TH[n] = AIM[n];
+    VE[n] = 0;
+    HOLD[n] = 0;
+    tuneOne(n, AIM[n]);
+  }
   // The first realignment is a full cycle away.
   armed = false;
   rPrev = 1;
@@ -181,104 +225,116 @@ function stop() {
   wake();
 }
 
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 16, LEAD = 0.004;
-let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0, tokens = 8, tokenAt = 0;
+/* ---------- sound: tuned bars, a room and a drone ---------- */
+const kit = audioKit({ gain: 0.6, keys: new Set([' ', 'Enter']), noiseSeconds: 1, sleepMs: 4000 });
+// D major pentatonic from D3: long strings sit low.
+const ROOT = 146.83, STEPS = [0, 2, 4, 7, 9];
+const PITCH = new Float64Array(NMAX), PAN = new Float64Array(NMAX);
+const MAXV = 40, LEAD = 0.006;
+let rigA = null, voices = 0, tokens = 8, tokenAt = 0, humAt = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
-const level = () => 1 / (1 + 0.08 * voices);
-// Major pentatonic from G3: shorter strings sit higher.
-const STEPS = [0, 2, 4, 7, 9];
-const PITCH = Array.from({ length: N }, (_, n) => 196 * 2 ** ((12 * Math.floor(n / 5) + STEPS[n % 5]) / 12));
 
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.55;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    // One second of white noise feeds every burst.
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+// A stereo room: noise that darkens and dies over the tail.
+function room(a, sec) {
+  const len = Math.round(a.sampleRate * sec), pre = Math.round(a.sampleRate * 0.012);
+  const buf = a.createBuffer(2, len, a.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = pre; i < len; i++) {
+      const t = i / len;
+      lp += (0.6 - 0.48 * t) * (Math.random() * 2 - 1 - lp);
+      d[i] = lp * (1 - t) ** 3;
+    }
   }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+  return buf;
 }
-// A context still waking queues sounds for a moment.
-function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+// The bus builds once: a dry path, a reverb send and the drone.
+function bus() {
+  if (rigA) return rigA;
+  const a = kit.ac;
+  const dry = a.createGain(), wet = a.createGain(), verb = a.createConvolver();
+  dry.connect(kit.out);
+  verb.buffer = room(a, 2.6);
+  wet.gain.value = 0.3;
+  wet.connect(verb).connect(kit.out);
+  // The drone swells while the row moves as one.
+  const pad = a.createGain(), lp = a.createBiquadFilter();
+  pad.gain.value = 0;
+  lp.type = 'lowpass';
+  lp.frequency.value = 760;
+  lp.Q.value = 0.4;
+  lp.connect(pad);
+  pad.connect(dry);
+  pad.connect(wet);
+  for (const [r, cents] of [[1, -6], [1, 6], [1.5, 0], [2, -3]]) {
+    const o = a.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = ROOT * r;
+    o.detune.value = cents;
+    o.connect(lp);
+    o.start();
+  }
+  rigA = { dry, wet, pad };
+  return rigA;
 }
 function track(src, ...tails) {
   voices++;
-  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+  src.onended = () => { voices--; tails.forEach(t => t.disconnect()); };
 }
-// Once the row rests, the context sleeps until the next gesture.
-function rest() {
-  clearTimeout(restT);
-  if (!ac || ac.state !== 'running') return;
-  restT = setTimeout(() => {
-    if (!raf && ptr < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
-  }, 3000);
-}
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && e.key !== ' ' && e.key !== 'Enter')) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
-}
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
-
-// A wooden knock: a short noise strike over a damped, hollow tone.
-function knock(n, amp, at) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD + at, f = PITCH[n] * jit(0.004);
-  // High notes are quieter, so the row sounds even.
-  const g = level() * amp * (330 / f) ** 0.3 * jit(0.1);
-  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
-  src.buffer = noise;
-  bp.type = 'bandpass';
-  bp.frequency.value = Math.min(5200, f * 2.6);
-  bp.Q.value = 1.4;
-  ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(0.05 * g, t + 0.0005);
-  ng.gain.setTargetAtTime(0, t + 0.0005, 0.002);
-  src.connect(bp).connect(ng).connect(out);
-  src.start(t, Math.random() * 0.9, 0.03);
-  // The body dips in pitch as it is struck, like a woodblock.
-  const o = a.createOscillator(), og = a.createGain(), o2 = a.createOscillator(), og2 = a.createGain();
-  const tau = 0.028 * (330 / f) ** 0.35;
-  o.frequency.setValueAtTime(f * 1.025, t);
-  o.frequency.exponentialRampToValueAtTime(f, t + 0.012);
+// A tuned bar: a sine, its fourth partial and a mallet tick.
+// Soft strikes swell in slowly and skip the tick, like a pluck.
+function chime(n, amp, at = 0, soft = false) {
+  const a = kit.live();
+  if (!a || voices >= MAXV || !(amp > 0)) return;
+  const R = bus();
+  const t = a.currentTime + LEAD + Math.max(0, at), f = PITCH[n] * jit(0.002);
+  // High notes sit quieter, so the row sounds even.
+  const g = (0.07 * amp * (300 / f) ** 0.25) / Math.sqrt(N / 12) / (1 + 0.03 * voices);
+  const tau = 0.32 * (300 / f) ** 0.4, att = soft ? 0.014 : 0.0015, end = t + att + tau * 4.6;
+  const pan = a.createStereoPanner();
+  pan.pan.value = PAN[n];
+  pan.connect(R.dry);
+  pan.connect(R.wet);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.value = f;
   og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.075 * g, t + 0.0015);
-  og.gain.setTargetAtTime(0, t + 0.0015, tau);
-  o2.frequency.value = f * 2.76;
+  og.gain.linearRampToValueAtTime(g, t + att);
+  og.gain.setTargetAtTime(0, t + att, tau);
+  o.connect(og).connect(pan);
+  // The fourth partial gives the bar its woody ring.
+  const o2 = a.createOscillator(), og2 = a.createGain();
+  o2.frequency.value = f * 3.93;
   og2.gain.setValueAtTime(0, t);
-  og2.gain.linearRampToValueAtTime(0.018 * g, t + 0.001);
-  og2.gain.setTargetAtTime(0, t + 0.001, tau * 0.35);
-  o.connect(og).connect(out);
-  o2.connect(og2).connect(out);
+  og2.gain.linearRampToValueAtTime(g * (soft ? 0.08 : 0.28) * Math.min(1, amp + 0.3), t + att);
+  og2.gain.setTargetAtTime(0, t + att, tau * 0.16);
+  o2.connect(og2).connect(pan);
   o.start(t);
   o2.start(t);
-  o.stop(t + 0.3);
-  o2.stop(t + 0.3);
-  track(o, og, og2, ng);
+  o.stop(end);
+  o2.stop(end);
+  const tails = [og, og2, pan];
+  if (!soft && kit.noise) {
+    const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+    src.buffer = kit.noise;
+    bp.type = 'bandpass';
+    bp.frequency.value = Math.min(6000, f * 5);
+    bp.Q.value = 1.2;
+    ng.gain.setValueAtTime(0, t);
+    ng.gain.linearRampToValueAtTime(g * 0.35, t + 0.0006);
+    ng.gain.setTargetAtTime(0, t + 0.0006, 0.003);
+    src.connect(bp).connect(ng).connect(pan);
+    src.start(t, Math.random() * 0.9, 0.03);
+    tails.push(bp, ng);
+  }
+  track(o, ...tails);
 }
 // Bottom passes from one frame, replayed with their own timing.
-function knocks(list) {
-  const a = live();
+function chimes(list) {
+  const a = kit.live();
   if (!a || !list.length) return;
-  // A bucket refills 30 knocks a second, so crowds thin out.
-  tokens = Math.min(8, tokens + (a.currentTime - tokenAt) * 30);
+  // A bucket refills 22 strikes a second, so crowds thin out.
+  tokens = Math.min(8, tokens + (a.currentTime - tokenAt) * 22);
   tokenAt = a.currentTime;
   list.sort((p, q) => p.at - q.at);
   for (let i = 0; i < list.length;) {
@@ -288,22 +344,24 @@ function knocks(list) {
     const k = j - i, take = Math.min(4, k), g = 1 / Math.sqrt(take);
     for (let m = 0; m < take && tokens >= 1; m++, tokens--) {
       const c = list[i + Math.floor(((m + 0.5) * k) / take)];
-      knock(c.n, clamp(c.amp / 0.36) ** 0.7 * g, c.at);
+      chime(c.n, clamp(c.amp / 0.36) ** 0.7 * g, c.at);
     }
     i = j;
   }
 }
 // A small bell rings when the whole row lines up again.
 function bell() {
-  const a = live();
+  const a = kit.live();
   if (!a) return;
-  const t = a.currentTime + LEAD, f = 784, end = t + 6;
-  const bus = a.createGain();
-  bus.gain.value = 0.05;
-  bus.connect(out);
+  const R = bus();
+  const t = a.currentTime + LEAD, f = ROOT * 4, end = t + 6;
+  const tone = a.createGain();
+  tone.gain.value = 0.05;
+  tone.connect(R.dry);
+  tone.connect(R.wet);
   // Partials: ratio, level, decay; a detuned twin makes it shimmer.
   const parts = [[1, 1, 1.5], [1.0028, 0.55, 1.8], [2, 0.32, 0.8], [3.01, 0.18, 0.45], [4.17, 0.09, 0.3], [5.43, 0.05, 0.2]];
-  const tails = [bus];
+  const tails = [tone];
   let first = null;
   for (const [r, lv, tau] of parts) {
     const o = a.createOscillator(), og = a.createGain();
@@ -311,13 +369,22 @@ function bell() {
     og.gain.setValueAtTime(0, t);
     og.gain.linearRampToValueAtTime(lv, t + 0.004);
     og.gain.setTargetAtTime(0, t + 0.004, tau);
-    o.connect(og).connect(bus);
+    o.connect(og).connect(tone);
     o.start(t);
     o.stop(end);
     tails.push(og);
     first = first || o;
   }
   track(first, ...tails);
+}
+// The drone follows coherence r and the mean swing a.
+function hum(r, a) {
+  const ac = kit.ac;
+  if (!rigA || !ac || ac.state !== 'running') return;
+  const target = 0.03 * r ** 3 * clamp(a / 0.25);
+  if (target === humAt || (target > 0 && Math.abs(target - humAt) < 0.001)) return;
+  humAt = target;
+  rigA.pad.gain.setTargetAtTime(target, ac.currentTime, 0.35);
 }
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
@@ -350,17 +417,201 @@ function rainbow(t) {
   return [0, 1, 2].map(k => cr(p[0][k], p[1][k], p[2][k], p[3][k], f));
 }
 
+/* ---------- trails: stencil afterimages in each swing plane ---------- */
+// Each bob drags a flat band along its arc.
+// The band is cut into dashes that narrow and darken with age.
+const HIST = 60, BANDS = 5, SPAN = 0.5, CUT = 0.3;
+const TRAIL_VS = /* glsl */ `
+uniform float uNow, uGrow, uW, uSpan;
+attribute vec3 aP;
+varying float vAge, vOff, vN;
+// position holds angle, sample time and side; aP holds length, z and index.
+void main() {
+  vAge = (uNow - position.y) / uSpan;
+  vN = aP.z;
+  vOff = position.z * uW;
+  float r = aP.x * uGrow + vOff;
+  // Newer samples sit a hair nearer the camera, so folds never fight.
+  float z = aP.y + 0.004 * (1.0 - clamp(vAge, 0.0, 1.0));
+  vec3 p = vec3(r * sin(position.x), -r * cos(position.x), z);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}`;
+const TRAIL_FS = /* glsl */ `
+uniform sampler2D uBands;
+uniform float uW;
+varying float vAge, vOff, vN;
+const float B = ${BANDS.toFixed(1)}, CUT = ${CUT.toFixed(2)};
+void main() {
+  float b = vAge * B, k = floor(b), f = b - k;
+  // Derivatives come before any discard.
+  float ew = max(fwidth(vOff), 1e-5), eb = max(fwidth(b), 1e-5);
+  if (vAge < 0.0 || vAge >= 1.0) discard;
+  // Older dashes step narrower.
+  float w = uW * (1.0 - 0.6 * k / (B - 1.0));
+  float a = clamp((w - abs(vOff)) / ew + 0.5, 0.0, 1.0)
+          * clamp(min(f, 1.0 - CUT - f) / eb + 0.5, 0.0, 1.0);
+  if (a <= 0.0) discard;
+  vec3 c = texelFetch(uBands, ivec2(int(k), int(vN + 0.5)), 0).rgb;
+  gl_FragColor = vec4(c, a);
+  #include <colorspace_fragment>
+}`;
+
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, balls = null, strings = null, M = null, S = null;
+let THREE = null, renderer = null, scene = null, camera = null, balls = null, strings = null, bar = null, M = null, S = null;
+let trails = null, TP = null, BT = null, bandTex = null;
 let ray = null, ndc = null, tmp = null, look = null, ready = false, lowDpr = false, pw = 1, ph = 1;
-// The camera sits past the long end, off-axis, under the bar.
+// The camera sits past the long end, off-axis, above the bar.
 // Wide and tall panels each get their own yaw and lens.
 const YAW = [0.4, 0.14], FOV = [28, 40], EYE = -0.06, AIM0 = [0, -0.76, 0];
-let yaw = YAW[0];
+const barEl = document.querySelector('.bar');
+let yaw = YAW[0], yLo = -0.8, yHi = 0.8;
 let frame0 = [];
 
+// A lacquered bead: a sphere with a cut groove, a flat top and a neck.
+// Each strip keeps its own normals, so the cut edges stay crisp.
+// Strip points are radius, height, normal radius, normal height, shade.
+function bead(seg) {
+  const G = 0.16, IN = 0.8, TOP = 1.2, NECK = 0.17, g0 = Math.asin(G), t0 = (66 * Math.PI) / 180;
+  const arc = (a0, a1, k, s) => Array.from({ length: k + 1 }, (_, i) => {
+    const a = a0 + ((a1 - a0) * i) / k;
+    return [Math.cos(a), Math.sin(a), Math.cos(a), Math.sin(a), s];
+  });
+  const ce = Math.cos(g0), rt = Math.cos(t0), yt = Math.sin(t0);
+  const strips = [
+    arc(-Math.PI / 2, -g0, 16, 1),
+    [[ce, -G, 0, 1, 0.3], [IN, -G, 0, 1, 0.3]],
+    [[IN, -G, 1, 0, 0.16], [IN, G, 1, 0, 0.16]],
+    [[IN, G, 0, -1, 0.3], [ce, G, 0, -1, 0.3]],
+    arc(g0, t0, 12, 1),
+    [[rt, yt, 0, 1, 0.85], [NECK, yt, 0, 1, 0.85]],
+    [[NECK, yt, 1, 0, 0.4], [NECK, TOP, 1, 0, 0.4]],
+    [[NECK, TOP, 0, 1, 0.4], [0, TOP, 0, 1, 0.4]],
+  ];
+  const pos = [], nor = [], col = [], idx = [];
+  for (const strip of strips) {
+    const base = pos.length / 3, P = strip.length;
+    for (let i = 0; i <= seg; i++) {
+      const a = (TAU * i) / seg, s = Math.sin(a), c = Math.cos(a);
+      for (const [r, y, nr, ny, k] of strip) {
+        pos.push(r * s, y, r * c);
+        nor.push(nr * s, ny, nr * c);
+        col.push(k, k, k);
+      }
+    }
+    // Profiles run bottom to top, so these faces wind outward.
+    for (let i = 0; i < seg; i++) {
+      for (let j = 0; j < P - 1; j++) {
+        const a = base + i * P + j, b = a + P;
+        idx.push(a, b, a + 1, b + 1, a + 1, b);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return g;
+}
+// The trail mesh holds HIST samples per pendulum, two vertices each.
+// Indices run far row to near row and old to new.
+// Depth then sorts the dashes; blending only softens their edges.
+function makeTrails() {
+  TP = new Float32Array(NMAX * HIST * 6);
+  const TA = new Float32Array(NMAX * HIST * 6), idx = new Uint16Array(NMAX * (HIST - 1) * 6);
+  let q = 0;
+  for (let n = NMAX - 1; n >= 0; n--) {
+    for (let i = HIST - 2; i >= 0; i--) {
+      const a = (n * HIST + i) * 2;
+      idx.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], q);
+      q += 6;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(TP, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aP', new THREE.BufferAttribute(TA, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  BT = new Float32Array(BANDS * NMAX * 4);
+  bandTex = new THREE.DataTexture(BT, BANDS, NMAX, THREE.RGBAFormat, THREE.FloatType);
+  bandTex.minFilter = bandTex.magFilter = THREE.NearestFilter;
+  bandTex.needsUpdate = true;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uNow: { value: 0 }, uGrow: { value: 0 }, uW: { value: 0.05 }, uSpan: { value: SPAN }, uBands: { value: bandTex } },
+    vertexShader: TRAIL_VS,
+    fragmentShader: TRAIL_FS,
+    side: THREE.DoubleSide,
+    transparent: true,
+    toneMapped: false,
+  });
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+// New samples enter at slot 0; older ones shift one slot along.
+// Each row's last sample spills into the next row's slot 0.
+// The fresh write then replaces it, and the side values keep their order.
+function push() {
+  TP.copyWithin(6, 0, N * HIST * 6 - 6);
+  for (let n = 0; n < N; n++) {
+    const o = n * HIST * 6;
+    TP[o] = TP[o + 3] = TH[n];
+    TP[o + 1] = TP[o + 4] = simT;
+  }
+}
+// Bob and dash colours: each dash is darker and a little cooler.
+function paint() {
+  const col = new THREE.Color();
+  for (let n = 0; n < N; n++) {
+    const [L, C, h] = rainbow(n / (N - 1));
+    balls.setColorAt(n, col.setRGB(...linear([L, C, h])));
+    for (let k = 0; k < BANDS; k++) BT.set([...linear([L - 0.04 - 0.085 * k, C * (1 - 0.1 * k), h - 5 * k]), 1], (n * BANDS + k) * 4);
+  }
+  balls.instanceColor.needsUpdate = true;
+  bandTex.needsUpdate = true;
+}
+
+// Sets up a count: lengths, tuning, notes and the scene.
+function build(c) {
+  N = c;
+  rig = RIGS[c];
+  vee = rig.GAP * 0.32;
+  const D = Math.min(N, 15);
+  for (let n = 0; n < NMAX; n++) { TH[n] = VE[n] = AIM[n] = 0; HOLD[n] = 0; }
+  for (let n = 0; n < N; n++) {
+    LEN[n] = (rig.K / (rig.K + n)) ** 2;
+    ZP[n] = ((N - 1) / 2 - n) * rig.GAP;
+    tuneOne(n, swing());
+    const d = Math.round((n * (D - 1)) / (N - 1));
+    PITCH[n] = ROOT * 2 ** ((12 * Math.floor(d / 5) + STEPS[d % 5]) / 12);
+    PAN[n] = ((2 * n) / (N - 1) - 1) * 0.6;
+  }
+  goAt = stopAt = -1;
+  armed = false;
+  rPrev = 0;
+  if (!balls) return;
+  balls.count = N;
+  for (let n = 0; n < NMAX; n++) M.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], n * 16);
+  paint();
+  strings.geometry.setDrawRange(0, N * 4);
+  // Trail history starts long expired, at rest.
+  const g = trails.geometry, TA = g.attributes.aP.array;
+  for (let n = 0; n < N; n++) {
+    for (let i = 0; i < HIST * 2; i++) {
+      const v = (n * HIST * 2 + i) * 3;
+      TA[v] = LEN[n]; TA[v + 1] = ZP[n]; TA[v + 2] = n;
+      TP[v] = 0; TP[v + 1] = -1e4; TP[v + 2] = i % 2 ? 1 : -1;
+    }
+  }
+  g.attributes.aP.needsUpdate = true;
+  g.attributes.position.needsUpdate = true;
+  g.setDrawRange((NMAX - N) * (HIST - 1) * 6, N * (HIST - 1) * 6);
+  bar.scale.z = (N - 1) * rig.GAP + 0.24;
+  frame0 = framePoints();
+  fit(pw, ph);
+}
+
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
-function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
+function fitRenderer(cap, onSize, budget = Infinity) {
   const apply = () => {
     const w = panel.clientWidth, h = panel.clientHeight;
     if (!w || !h) return;
@@ -368,17 +619,20 @@ function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
     renderer.setSize(w, h, false);
     onSize(w, h);
   };
-  new ResizeObserver(apply).observe(panel);
+  const ro = new ResizeObserver(apply);
+  ro.observe(panel);
+  if (barEl) ro.observe(barEl);
   addEventListener('perf-low', apply);
   apply();
 }
 // Points that must stay in view: bar ends and every ball's swing.
 function framePoints() {
-  const pts = [[0, ROD, ZP[0] + 0.1], [0, ROD, ZP[N - 1] - 0.1]];
+  const b = rig.BALL * 1.25, half = ((N - 1) / 2) * rig.GAP + 0.12;
+  const pts = [[0, ROD * 2, half], [0, ROD * 2, -half]];
   const s = Math.sin(0.42), c = Math.cos(0.42);
   for (let n = 0; n < N; n++) {
     const L = LEN[n];
-    pts.push([L * s + BALL, -L * c, ZP[n]], [-L * s - BALL, -L * c, ZP[n]], [0, -L - BALL, ZP[n]]);
+    pts.push([L * s + b, -L * c, ZP[n]], [-L * s - b, -L * c, ZP[n]], [0, -L - b, ZP[n]]);
   }
   return pts.map(p => new THREE.Vector3(...p));
 }
@@ -397,9 +651,9 @@ function place(d, box) {
     box[0] = Math.min(box[0], tmp.x); box[2] = Math.max(box[2], tmp.x);
     box[1] = Math.min(box[1], tmp.y); box[3] = Math.max(box[3], tmp.y);
   }
-  return (box[2] - box[0]) / 2 <= 0.88 && (box[3] - box[1]) / 2 <= 0.8;
+  return (box[2] - box[0]) / 2 <= 0.88 && box[3] - box[1] <= yHi - yLo;
 }
-// Back off until the row fits; a lens shift centres it.
+// Back off until the row fits; a lens shift centres it above the bar.
 function fit(w, h) {
   pw = w;
   ph = h;
@@ -408,6 +662,10 @@ function fit(w, h) {
   camera.fov = FOV[+tall];
   yaw = YAW[+tall];
   camera.updateProjectionMatrix();
+  // The inset bar covers the stage foot, so the row sits above it.
+  const res = barEl && !barEl.classList.contains('bar--below') ? Math.max(0, barEl.offsetHeight - 40) : 0;
+  yHi = 0.88;
+  yLo = Math.min(0.2, -0.9 + (2 * res) / Math.max(h, 1));
   look.set(...AIM0);
   const box = [0, 0, 0, 0];
   let lo = 0.5, hi = 40;
@@ -418,37 +676,77 @@ function fit(w, h) {
   place(hi, box);
   const e = camera.projectionMatrix.elements;
   e[8] += (box[0] + box[2]) / 2;
-  e[9] += (box[1] + box[3]) / 2;
+  e[9] += (box[1] + box[3]) / 2 - (yLo + yHi) / 2;
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 }
 function ballAt(n, v) {
-  return v.set(LEN[n] * Math.sin(TH[n]), -LEN[n] * Math.cos(TH[n]), ZP[n]);
+  const L = LEN[n] * grow;
+  return v.set(L * Math.sin(TH[n]), -L * Math.cos(TH[n]), ZP[n]);
 }
-function draw() {
+function draw(fresh) {
+  const pop = clamp(grow * 1.6), s = Math.max(1e-5, rig.BALL * pop);
   for (let n = 0; n < N; n++) {
-    const x = LEN[n] * Math.sin(TH[n]), y = -LEN[n] * Math.cos(TH[n]), z = ZP[n], o = n * 16, q = n * 12;
+    const sn = Math.sin(TH[n]), c = Math.cos(TH[n]), L = LEN[n] * grow;
+    const x = L * sn, y = -L * c, z = ZP[n], o = n * 16, q = n * 12;
+    // The bead turns with its string and scales to its rig.
+    M[o] = s * c; M[o + 1] = s * sn; M[o + 4] = -s * sn; M[o + 5] = s * c; M[o + 10] = s;
     M[o + 12] = x; M[o + 13] = y; M[o + 14] = z;
-    // Two strings in a V keep each ball in its own plane.
-    S[q] = 0; S[q + 1] = 0; S[q + 2] = z + VEE; S[q + 3] = x; S[q + 4] = y; S[q + 5] = z;
-    S[q + 6] = 0; S[q + 7] = 0; S[q + 8] = z - VEE; S[q + 9] = x; S[q + 10] = y; S[q + 11] = z;
+    // Two strings in a V meet at the tip of the neck.
+    const tx = x - sn * s * 1.2, ty = y + c * s * 1.2;
+    S[q] = 0; S[q + 1] = 0; S[q + 2] = z + vee; S[q + 3] = tx; S[q + 4] = ty; S[q + 5] = z;
+    S[q + 6] = 0; S[q + 7] = 0; S[q + 8] = z - vee; S[q + 9] = tx; S[q + 10] = ty; S[q + 11] = z;
   }
   balls.instanceMatrix.needsUpdate = true;
   strings.geometry.attributes.position.needsUpdate = true;
+  if (fresh) trails.geometry.attributes.position.needsUpdate = true;
+  const u = trails.material.uniforms;
+  u.uNow.value = simT;
+  u.uGrow.value = grow;
+  u.uW.value = rig.BALL * 0.95 * pop;
   renderer.render(scene, camera);
 }
-function tokensOfTheme() {
-  const lite = (getComputedStyle(document.documentElement).colorScheme || '').includes('light');
-  if (!strings) return;
-  strings.material.color.setRGB(...linear(lite ? [0.42, 0.015, 272] : [0.8, 0.012, 272]));
-  strings.material.opacity = lite ? 0.75 : 0.6;
-  if (ready) draw();
+
+/* ---------- counts: the row retracts, then the new row drops in ---------- */
+let grow = 0, phase = 0, phaseT = 0, from = 0, nextN = 20, dropped = false;
+const backOut = u => { const v = u - 1; return 1 + v * v * (2.9 * v + 1.9); };
+function drop() {
+  dropped = true;
+  phase = 2;
+  phaseT = 0;
+  // Each new bob rings as it lands, long strings first.
+  if (kit.live()) for (let n = 0; n < N; n++) chime(n, 0.4, 0.18 + (n * 0.5) / N, true);
+  wake();
+}
+function tween(dt) {
+  phaseT += dt;
+  if (phase === 1) {
+    const u = clamp(phaseT / (reduce ? 0.12 : 0.3));
+    grow = from * (1 - u * u * u);
+    if (u >= 1) { build(nextN); drop(); }
+  } else {
+    const u = clamp(phaseT / (reduce ? 0.2 : 0.9));
+    grow = reduce ? 1 - (1 - u) ** 3 : backOut(u);
+    if (u >= 1) { grow = 1; phase = 0; }
+  }
+}
+function setCount(c) {
+  if (!RIGS[c]) return;
+  store.set(COUNT_KEY, String(c));
+  nextN = c;
+  if (!ready || (c === N && phase !== 1)) return;
+  endDrag();
+  goAt = stopAt = -1;
+  HOLD.fill(0);
+  if (phase === 1) return;
+  if (grow > 0.001) { phase = 1; phaseT = 0; from = grow; wake(); }
+  else { build(c); drop(); }
 }
 
 /* ---------- one loop, only while something moves ---------- */
-let raf = 0, last = 0, onScreen = true, slow = 0, armed = false, rPrev = 0;
+let raf = 0, last = 0, onScreen = true, slow = 0, armed = false, rPrev = 0, sub = 0, quietAt = -1e9;
 const hits = [];
 function wake() {
-  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  if (!raf && ready && onScreen) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 function frame(ms) {
   raf = 0;
@@ -459,13 +757,17 @@ function frame(ms) {
     slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
     if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
+  if (phase) tween(dt);
   const steps = Math.ceil(dt / H - 1e-6), h = steps ? dt / steps : 0;
   hits.length = 0;
+  let fresh = false;
   for (let k = 0; k < steps; k++) {
     step(h, k * h, hits);
     if (goAt >= 0 && simT >= goAt - 1e-9) letGo();
+    // Trails sample every second step, 120 times a second.
+    if (++sub >= 2) { sub = 0; push(); fresh = true; }
   }
-  knocks(hits);
+  chimes(hits);
   // The bell rings at the peak of a return to full coherence.
   const r = coherence();
   if (Number.isNaN(r)) rPrev = 0;
@@ -474,23 +776,30 @@ function frame(ms) {
     if (armed && rPrev > 0.97 && r < rPrev) { armed = false; bell(); }
     rPrev = r;
   }
-  let busy = ptr >= 0 || goAt >= 0, moving = false;
+  let busy = ptr >= 0 || goAt >= 0 || phase > 0, moving = false, sum = 0;
   for (let n = 0; n < N; n++) {
     if (HOLD[n]) { busy = true; continue; }
     // Swings under a pixel come to rest.
-    if (Math.hypot(TH[n], VE[n] / OM[n]) < 0.0015) TH[n] = VE[n] = 0;
-    else moving = true;
+    const a = Math.hypot(TH[n], VE[n] / OM[n]);
+    if (a < 0.0015) TH[n] = VE[n] = 0;
+    else { moving = true; sum += a; }
   }
   if (!moving) stopAt = -1;
-  draw();
-  if (busy || moving) {
-    if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
-  } else rest();
+  if (busy || moving) quietAt = simT;
+  hum(Number.isNaN(r) ? 0 : r, sum / N);
+  draw(fresh);
+  // The loop runs on until the last dash has faded.
+  if (busy || moving || simT - quietAt < SPAN) {
+    if (onScreen) raf = requestAnimationFrame(frame);
+  } else {
+    hum(0, 0);
+    kit.rest(() => !raf && ptr < 0);
+  }
 }
 
 /* ---------- input ---------- */
 let ptr = -1, solo = false, px0 = 0, py0 = 0;
-const A2 = [0, 0], B2 = [0, 0], V3 = { x: 0, y: 0, z: 0 };
+const A2 = [0, 0], B2 = [0, 0], V3 = { x: 0, y: 0 };
 function local(e) {
   const r = panel.getBoundingClientRect();
   return [e.clientX - r.left, e.clientY - r.top];
@@ -503,7 +812,7 @@ function screen(v, o) {
 }
 // A ball's radius on screen, in panel pixels.
 function radiusPx(v) {
-  return (BALL / camera.position.distanceTo(v)) * (ph / 2 / Math.tan((camera.fov * Math.PI) / 360));
+  return (rig.BALL / camera.position.distanceTo(v)) * (ph / 2 / Math.tan((camera.fov * Math.PI) / 360));
 }
 // The nearest ball under the pointer, or -1.
 function pick(x, y) {
@@ -526,6 +835,7 @@ function segDist(x, y, ax, ay, bx, by) {
   return Math.hypot(x - ax - t * dx, y - ay - t * dy);
 }
 // Sweeping catches every pendulum whose string the pointer crosses.
+// Each caught string plucks its note, so a sweep strums the row.
 function sweep(x0, y0, x1, y1) {
   const v = new THREE.Vector3();
   for (let n = 0; n < N; n++) {
@@ -536,7 +846,10 @@ function sweep(x0, y0, x1, y1) {
     const bx = bx0 + ((bx0 - ax) / l) * rp, by = by0 + ((by0 - ay) / l) * rp;
     const crossed = side(x0, y0, x1, y1, ax, ay) * side(x0, y0, x1, y1, bx, by) <= 0
       && side(ax, ay, bx, by, x0, y0) * side(ax, ay, bx, by, x1, y1) <= 0;
-    if (crossed || segDist(x1, y1, ax, ay, bx, by) < Math.max(4, rp * 0.6)) grab(n);
+    if (crossed || segDist(x1, y1, ax, ay, bx, by) < Math.max(4, rp * 0.6)) {
+      grab(n);
+      chime(n, 0.5, 0, true);
+    }
   }
 }
 // Held balls aim at the pointer's ray where it meets their plane.
@@ -567,14 +880,14 @@ function endDrag() {
   wake();
 }
 panel.addEventListener('pointerdown', e => {
-  if (!ready || ptr >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready || phase || ptr >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
   // Grabbing cancels a lift or a stop in progress.
   if (goAt >= 0) { goAt = -1; HOLD.fill(0); }
   stopAt = -1;
   const [x, y] = local(e), i = pick(x, y);
   ptr = e.pointerId;
   solo = i >= 0;
-  if (solo) grab(i);
+  if (solo) { grab(i); chime(i, 0.3, 0, true); }
   else sweep(x, y, x, y);
   aimAll(x, y);
   px0 = x;
@@ -594,7 +907,7 @@ panel.addEventListener('pointermove', e => {
     wake();
     return;
   }
-  if (e.pointerType === 'touch' || ptr >= 0) return;
+  if (e.pointerType === 'touch' || ptr >= 0 || phase) return;
   panel.classList.toggle('grab', pick(x, y) >= 0);
 });
 const letPtr = e => { if (e.pointerId === ptr) endDrag(); };
@@ -613,20 +926,27 @@ addEventListener('keydown', e => {
     if (!e.repeat) release();
   }
 });
-document.getElementById('release').addEventListener('click', release);
+relBtn.addEventListener('click', release);
 document.getElementById('stop').addEventListener('click', stop);
-sound.onChange(on => {
-  if (on) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
-});
-new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
-matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', tokensOfTheme);
-new MutationObserver(tokensOfTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+const saved = +store.get(COUNT_KEY);
+nextN = RIGS[saved] ? saved : 20;
+const picker = choices(document.getElementById('count'), v => setCount(+v));
+picker.set(String(nextN));
+whenVisible(panel, on => { onScreen = on; if (on) wake(); });
 
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
+}
+// The row drops in once the intro card has gone.
+function introGone() {
+  return new Promise(r => {
+    const el = document.querySelector('.intro');
+    if (!el || !el.parentNode) return r();
+    const mo = new MutationObserver(() => { if (!el.isConnected) { mo.disconnect(); r(); } });
+    mo.observe(el.parentNode, { childList: true });
+    setTimeout(() => { mo.disconnect(); r(); }, 6000);
+  });
 }
 async function start() {
   let RoomEnvironment;
@@ -653,66 +973,75 @@ async function start() {
   ndc = new THREE.Vector2();
   tmp = new THREE.Vector3();
   look = new THREE.Vector3();
-  frame0 = framePoints();
   await idle();
 
   const pm = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment();
   scene.environment = pm.fromScene(room, 0.04).texture;
-  scene.environmentIntensity = 0.7;
+  scene.environmentIntensity = 0.6;
   room.dispose();
   pm.dispose();
-  // A key light from upper left gives each ball one crisp highlight.
+  // A warm key from upper left gives each bead one crisp highlight.
   const key = new THREE.DirectionalLight(0xffffff, 2.4);
+  key.color.setRGB(...linear([0.97, 0.03, 75]));
   key.position.set(-2.5, 3, 3.5);
-  scene.add(key);
+  // A cool rim from the far end cuts each bead's outline.
+  const rim = new THREE.DirectionalLight(0xffffff, 1.6);
+  rim.color.setRGB(...linear([0.8, 0.12, 255]));
+  rim.position.set(2.5, 1.2, -4);
+  scene.add(key, rim);
 
-  // The bar: brushed steel, a little past both end balls.
-  const span = ZP[0] - ZP[N - 1] + 0.2;
-  const bar = new THREE.Mesh(
-    new THREE.CapsuleGeometry(ROD, span, 6, 20),
-    new THREE.MeshStandardMaterial({ color: 0xd4d6db, metalness: 1, roughness: 0.3 }),
+  // The beam: a square steel rail, scaled to the row.
+  bar = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({ color: 0xd4d6db, metalness: 1, roughness: 0.32 }),
   );
-  bar.rotation.x = Math.PI / 2;
+  bar.scale.set(0.044, ROD * 2, 1);
+  bar.position.y = ROD;
   scene.add(bar);
 
-  // Lacquered balls: a clear coat over the rainbow.
+  // Lacquered beads: a clear coat over the rainbow.
   const small = Math.min(innerWidth, innerHeight) < 700;
   balls = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(BALL, small ? 36 : 48, small ? 24 : 32),
-    new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04 }),
-    N,
+    bead(small ? 32 : 48),
+    new THREE.MeshPhysicalMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.24, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05 }),
+    NMAX,
   );
   balls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   balls.frustumCulled = false;
   M = balls.instanceMatrix.array;
-  const col = new THREE.Color();
-  for (let n = 0; n < N; n++) {
-    M.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], n * 16);
-    balls.setColorAt(n, col.setRGB(...linear(rainbow(n / (N - 1)))));
-  }
+  balls.setColorAt(0, new THREE.Color(1, 1, 1));
   scene.add(balls);
 
   const sg = new THREE.BufferGeometry();
-  S = new Float32Array(N * 12);
+  S = new Float32Array(NMAX * 12);
   sg.setAttribute('position', new THREE.BufferAttribute(S, 3).setUsage(THREE.DynamicDrawUsage));
-  strings = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ transparent: true, depthWrite: false }));
+  strings = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false }));
+  strings.material.color.setRGB(...linear([0.8, 0.012, 272]));
   strings.frustumCulled = false;
+  strings.renderOrder = 1;
   scene.add(strings);
-  tokensOfTheme();
 
+  trails = makeTrails();
+  scene.add(trails);
+
+  build(nextN);
   panel.prepend(canvas);
-  fitRenderer(renderer, panel, 1.5, (w, h) => {
+  fitRenderer(2, (w, h) => {
     fit(w, h);
-    if (ready) draw();
-  }, 1.4e6);
-  if (!pw || pw === 1) fit(16, 9);
+    if (ready) draw(false);
+  }, 2.2e6);
+  if (pw === 1) fit(16, 9);
   await idle();
   // Async compile keeps the physical-material build off the main thread.
   await renderer.compileAsync(scene, camera);
   ready = true;
-  draw();
+  draw(false);
   requestAnimationFrame(() => canvas.classList.add('on'));
+  // A count picked during the intro builds that row first.
+  if (nextN !== N) build(nextN);
+  await introGone();
+  if (!dropped) drop();
 }
 start().catch(err => { console.error(err); failed(); });
 </script>
