@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Harmonograph</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the desk panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --desk: oklch(0.24 0.05 215);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The desk is 16:9, 4:5 on phones, and peacock leather in both themes. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--desk);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark desk the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.7 0.02 230);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+/* Each swatch shows its ink. */
+.sw { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Harmonograph</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A harmonograph: two brass pendulums move a pen over a sheet of paper. Drag a bob aside and let go to draw; Space releases a random swing, arrow keys pull the bobs, N slides in a new sheet.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Harmonograph needs canvas drawing, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <div class="ctl" role="group" aria-label="Ink">
+          <button class="chip" type="button" data-ink="0" aria-pressed="true"><span class="sw" style="--c: oklch(0.4 0.17 272)" aria-hidden="true"></span>Indigo</button>
+          <button class="chip" type="button" data-ink="1" aria-pressed="false"><span class="sw" style="--c: oklch(0.62 0.2 33)" aria-hidden="true"></span>Vermilion</button>
+          <button class="chip" type="button" data-ink="2" aria-pressed="false"><span class="sw" style="--c: oklch(0.55 0.11 195)" aria-hidden="true"></span>Teal</button>
+          <button class="chip" type="button" data-ink="3" aria-pressed="false"><span class="sw" style="--c: oklch(0.38 0.012 255)" aria-hidden="true"></span>Graphite</button>
+        </div>
+        <button class="chip" id="sheet" type="button" aria-keyshortcuts="N">New sheet</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag a bob</dt><dd>pull</dd></div>
+        <div><dt>Let go</dt><dd>draw</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>random swing</dd></div>
+        <div class="fine"><dt><kbd>N</kbd></dt><dd>new sheet</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const sign = () => (Math.random() < 0.5 ? -1 : 1);
+const easeIO = t => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const easeOut = t => 1 - (1 - t) ** 3;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h); return c; };
+// Seeded random keeps the paper the same across resizes.
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const hash2 = (x, y) => {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+function vnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(ix, iy), hash2(ix + 1, iy), sx), lerp(hash2(ix, iy + 1), hash2(ix + 1, iy + 1), sx), sy);
+}
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function rgb(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => { v = clamp(v); return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055)); });
+}
+const css = (L, C, h, a = 1) => { const [r, g, b] = rgb(L, C, h); return `rgb(${r} ${g} ${b} / ${a})`; };
+const INKS = [[0.4, 0.17, 272], [0.62, 0.2, 33], [0.55, 0.11, 195], [0.38, 0.012, 255]].map(([L, C, h]) => {
+  const c = rgb(L, C, h), w = rgb(L - 0.08, C * 1.1, h);
+  return {
+    at: a => `rgb(${c[0]} ${c[1]} ${c[2]} / ${a.toFixed(3)})`,
+    wet: a => `rgb(${w[0]} ${w[1]} ${w[2]} / ${a.toFixed(3)})`,
+    pool: [css(L - 0.2, C * 0.8, h), css(L - 0.06, C, h), css(L + 0.1, C * 0.9, h)],
+    lacq: [css(0.2, C * 0.45, h), css(0.34, C * 0.6, h), css(0.62, C * 0.4, h)],
+  };
+});
+const BRASS = [css(0.36, 0.06, 70), css(0.93, 0.09, 92), css(0.82, 0.13, 86), css(0.6, 0.11, 76), css(0.4, 0.07, 66), css(0.3, 0.05, 60)];
+const STEEL = [css(0.42, 0.01, 250), css(0.9, 0.01, 250), css(0.55, 0.012, 250)];
+const CREAM = css(0.95, 0.03, 86);
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.harmono.sound', MAXV = 16, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
+let scratch = null, swish = [], tickAt = 0, grabAt = 0, tokAt = 0, tapAt = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.003; comp.release.value = 0.15;
+    out = ac.createGain();
+    out.gain.value = 0.6;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // Two seconds of white noise feed every voice.
+    noise = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    beds();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function pan(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// Looping noise beds: the pen scratch and one swish per pendulum.
+function bed(type, f, q, x) {
+  const src = ac.createBufferSource(), hp = ac.createBiquadFilter(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  hp.type = 'highpass';
+  hp.frequency.value = type === 'scratch' ? 900 : 140;
+  bp.type = type === 'scratch' ? 'bandpass' : 'lowpass';
+  bp.frequency.value = f;
+  bp.Q.value = q;
+  g.gain.value = 0;
+  const p = pan(ac, x);
+  src.connect(hp).connect(bp).connect(g).connect(p);
+  src.start(0, Math.random() * 1.5);
+  return { g, f: bp.frequency, p: p.pan || null };
+}
+function beds() {
+  scratch = bed('scratch', 2600, 0.8, 0);
+  swish = [bed('swish', 500, 0.5, -0.8), bed('swish', 500, 0.5, 0.8)];
+}
+function hush() {
+  if (!ac || !scratch) return;
+  const t = ac.currentTime;
+  [scratch, ...swish].forEach(v => v.g.gain.setTargetAtTime(0, t, 0.04));
+}
+// Once the pen rests, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  hush();
+  restT = setTimeout(() => {
+    if (!raf && !grabs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set([' ', 'n', 'N', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// A short sine with an optional glide.
+function tone(a, x, t, f, g, tau, f1 = f) {
+  const o = a.createOscillator(), og = a.createGain(), p = pan(a, x);
+  o.frequency.setValueAtTime(f, t);
+  if (f1 !== f) o.frequency.exponentialRampToValueAtTime(f1, t + tau * 2.5);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.003, tau);
+  o.connect(og).connect(p);
+  o.start(t);
+  o.stop(t + tau * 8 + 0.02);
+  track(o, og, p);
+}
+// A noise burst through one filter; it tidies itself up.
+function hiss(a, x, t, type, f, q, g, tau, len, f1 = f, att = 0.0006) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain(), p = pan(a, x);
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.setValueAtTime(f, t);
+  if (f1 !== f) fl.frequency.exponentialRampToValueAtTime(f1, t + len);
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + att);
+  ng.gain.setTargetAtTime(0, t + att, tau);
+  src.connect(fl).connect(ng).connect(p);
+  src.start(t, Math.random() * 1.2, len);
+  track(src, fl, ng, p);
+}
+const sx = x => (W ? (x / W) * 2 - 1 : 0);
+// Grabbing a bob: a small brass tick.
+function sfxGrab(x) {
+  const a = live(), now = performance.now();
+  if (!a || voices > MAXV || now - grabAt < 60) return;
+  grabAt = now;
+  const t = a.currentTime + LEAD, l = level();
+  tone(a, sx(x), t, 1850 * jit(0.04), 0.03 * l, 0.03);
+  tone(a, sx(x), t, 2930 * jit(0.04), 0.016 * l, 0.018);
+  hiss(a, sx(x), t, 'highpass', 4200, 0.7, 0.025 * l * jit(0.1), 0.004, 0.03);
+}
+// Letting go: a soft wooden tock as the pendulum swings free.
+function sfxLetGo(x) {
+  const a = live(), now = performance.now();
+  if (!a || voices > MAXV || now - tokAt < 70) return;
+  tokAt = now;
+  const t = a.currentTime + LEAD, l = level();
+  tone(a, sx(x), t, 230 * jit(0.04), 0.07 * l, 0.045, 150);
+  hiss(a, sx(x), t, 'lowpass', 900, 0.7, 0.05 * l * jit(0.1), 0.012, 0.06);
+}
+// The nib meets the paper.
+function sfxTap(x) {
+  const a = live(), now = performance.now();
+  if (!a || voices > MAXV || now - tapAt < 90) return;
+  tapAt = now;
+  const t = a.currentTime + LEAD, l = level();
+  hiss(a, sx(x), t, 'bandpass', 3000 * jit(0.05), 1.1, 0.07 * l, 0.006, 0.04);
+  tone(a, sx(x), t, 320 * jit(0.05), 0.035 * l, 0.02, 220);
+}
+// One fibre catches the nib.
+function sfxTick(x, v) {
+  const a = live(), now = performance.now();
+  if (!a || voices > MAXV - 4 || now - tickAt < 16) return;
+  tickAt = now;
+  hiss(a, sx(x), a.currentTime + LEAD, 'highpass', 3600 * jit(0.15), 0.9, (0.008 + 0.014 * v) * level() * jit(0.3), 0.0025, 0.02);
+}
+// A fresh sheet slides across the leather.
+function sfxSheet() {
+  const a = live();
+  if (!a || voices > MAXV) return;
+  const t = a.currentTime + LEAD, d = reduce ? 0.2 : 0.75;
+  hiss(a, 0.5, t, 'bandpass', 900, 0.6, 0.07 * jit(0.08), d * 0.45, d + 0.3, 2400, d * 0.3);
+  hiss(a, 0, t + d * 0.9, 'lowpass', 520, 0.7, 0.05 * jit(0.1), 0.03, 0.12);
+}
+// A new ink drips into the well.
+function sfxInk() {
+  const a = live();
+  if (!a || voices > MAXV) return;
+  const t = a.currentTime + LEAD, x = W ? sx(L.well.x) : -0.6;
+  tone(a, x, t, 520 * jit(0.04), 0.04, 0.05, 900);
+  tone(a, x, t + 0.05, 1250 * jit(0.04), 0.012, 0.03);
+}
+// The beds follow the pen speed and the bob speeds.
+function voice(dt, touching) {
+  const a = live();
+  if (!a || !scratch) return;
+  const t = a.currentTime, sv = touching ? clamp(pen.sp / 7) : 0;
+  scratch.g.gain.setTargetAtTime(0.09 * sv ** 0.75 * jit(0.22), t, 0.03);
+  scratch.f.setTargetAtTime((1400 + 2800 * sv) * jit(0.06), t, 0.04);
+  if (scratch.p) scratch.p.setTargetAtTime(clamp(sx(penX()), -1, 1) * 0.5, t, 0.08);
+  // Paper fibres click under a fast nib.
+  if (touching && Math.random() < pen.sp * 2.4 * dt) sfxTick(penX(), sv);
+  P.forEach((p, k) => {
+    const u = clamp(Math.abs(vel(p)) / p.w, 0, 1.2);
+    swish[k].g.gain.setTargetAtTime(0.05 * u * u, t, 0.06);
+    swish[k].f.setTargetAtTime(380 + 900 * u, t, 0.06);
+  });
+}
+
+/* ---------- the mechanism: two lateral pendulums and a rotary table ---------- */
+// The faster pendulum swings at about 1.2 Hz.
+const OMEGA = 7.6, PEN_MIN = 0.03, REST = 0.015;
+const RATIOS = [[2, 3], [3, 4], [1, 2], [3, 2], [4, 3], [2, 1], [3, 5], [1, 1], [5, 4]];
+let ri = Math.floor(Math.random() * RATIOS.length);
+const mkPend = () => ({ a: 0, ph: 0, w: OMEGA, d: 0.1, held: false, hp: 0, hv: 0, tgt: 0, off: 0, key: 0, bob: 0.5, bobT: 0.5, lf: 0 });
+const P = [mkPend(), mkPend()];
+const rot = { a: 0, ph: 0, w: OMEGA, d: 0.12, dir: 1 };
+const table = { ang: 0, rate: 0 };
+const pos = p => (p.held ? p.hp : p.a * Math.sin(p.ph));
+const vel = p => (p.held ? p.hv : p.a * (p.w * Math.cos(p.ph) - p.d * Math.sin(p.ph)));
+const amp = p => (p.held ? Math.abs(p.hp) : p.a);
+const energy = () => amp(P[0]) + amp(P[1]) + rot.a;
+// Position and velocity set the amplitude and phase of a damped swing.
+function setState(p, x, v) {
+  let c = (v + p.d * x) / p.w;
+  const cm = Math.sqrt(Math.max(0, 1.15 * 1.15 - x * x));
+  c = clamp(c, -cm, cm);
+  p.a = Math.hypot(x, c);
+  p.ph = Math.atan2(x, c);
+}
+// A longer pendulum has its weight lower on the rod.
+function tune(p, w, d) {
+  const x = pos(p), v = vel(p);
+  p.w = w;
+  p.d = d;
+  p.bobT = clamp((OMEGA - w) / (OMEGA * 0.5));
+  if (!p.held) setState(p, x, v);
+}
+// Ratios near small integers, slightly detuned, make the figures precess.
+function newRatio() {
+  ri = (ri + 1 + (Math.random() < 0.3 ? 1 : 0)) % RATIOS.length;
+  const [nx, ny] = RATIOS[ri], m = Math.max(nx, ny), det = sign() * rnd(0.004, 0.011);
+  tune(P[0], ((OMEGA * nx) / m) * (1 - det / 2), rnd(0.085, 0.13));
+  tune(P[1], ((OMEGA * ny) / m) * (1 + det / 2), rnd(0.085, 0.13));
+}
+// A resting partner gets a push, so every release draws a figure.
+function push(q) {
+  const A = rnd(0.5, 0.85);
+  let ph = Math.asin(clamp(pos(q) / A, -1, 1));
+  if (Math.random() < 0.5) ph = Math.PI - ph;
+  q.a = A;
+  q.ph = ph;
+}
+function startLayer(k) {
+  if (k >= 0 && !P[1 - k].held && P[1 - k].a < 0.4) push(P[1 - k]);
+  rot.a = rnd(0.05, 0.13);
+  rot.ph = rnd(0, TAU);
+  rot.dir = sign();
+  rot.w = P[Math.random() < 0.5 ? 0 : 1].w * (1 + rnd(-0.012, 0.012));
+  rot.d = rnd(0.1, 0.16);
+  table.rate = sign() * rnd(0.02, 0.05);
+  drawing = true;
+}
+function advance(h, E) {
+  for (const p of P) {
+    if (p.held) continue;
+    p.ph += p.w * h;
+    p.a *= Math.exp(-p.d * h);
+  }
+  rot.ph += rot.w * h;
+  rot.a *= Math.exp(-rot.d * h);
+  // The table turns slowly while the swing has energy.
+  table.ang += table.rate * h * clamp(E / 0.4);
+}
+// The pen sits where the pendulums and the turning table put it.
+const q = { x: 0, y: 0 };
+function penAt(o) {
+  const x = pos(P[0]) + rot.a * Math.sin(rot.ph), y = -pos(P[1]) + rot.a * Math.cos(rot.ph) * rot.dir;
+  const c = Math.cos(table.ang), s = Math.sin(table.ang);
+  o.x = c * x - s * y;
+  o.y = s * x + c * y;
+  return o;
+}
+
+/* ---------- layout and cached surfaces ---------- */
+let W = 0, H = 0, pr = 1, lowDpr = false, ctx = null, ready = false;
+const L = {};
+let bgC = null, paperTex = null, shadowC = null, sheet = null, sheetG = null, wetC = null, wetG = null;
+function layout() {
+  const port = W / H < 1.1;
+  L.port = port;
+  if (!port) {
+    const sw = clamp(W * 0.155, 96, 200), m = Math.max(16, H * 0.045);
+    L.paper = { x: sw, y: m, w: W - 2 * sw, h: H - 2 * m };
+    L.k = clamp(sw / 170, 0.6, 1.15);
+    const py = H * 0.085, len = H * 0.58, th = Math.min(0.34, Math.asin(Math.min(0.9, (sw * 0.34) / len)));
+    L.pend = [{ px: sw / 2, py, len, th }, { px: W - sw / 2, py, len, th }];
+    const r = Math.min(sw * 0.21, H * 0.065);
+    L.well = { x: sw / 2, y: H - m - r * 1.25, r };
+    L.dial = { x: W - sw / 2, y: H - m - r * 1.25, r };
+  } else {
+    const m = Math.max(16, W * 0.05), ph = H * 0.62;
+    L.paper = { x: m, y: m, w: W - 2 * m, h: ph };
+    L.k = clamp(W / 560, 0.5, 1);
+    const py = m + ph + H * 0.045, len = (H - py) * 0.6, th = Math.min(0.5, Math.asin(Math.min(0.9, (W * 0.085) / len)));
+    L.pend = [{ px: W * 0.15, py, len, th }, { px: W * 0.85, py, len, th }];
+    const r = Math.min(W * 0.07, (H - py) * 0.3);
+    L.well = { x: W * 0.39, y: py + (H - py) * 0.46, r };
+    L.dial = { x: W * 0.61, y: py + (H - py) * 0.46, r };
+  }
+  L.R = 0.29 * Math.min(L.paper.w, L.paper.h);
+  L.wB = clamp(L.R / 150, 0.7, 1.25);
+  L.bw = 30 * L.k;
+  L.bh = 40 * L.k;
+  L.pad = 30;
+}
+// The leather desk: lamp pool, mottle, grain and a gilt rule.
+function makeDesk() {
+  const c = mk(Math.round(W * pr), Math.round(H * pr)), g = c.getContext('2d');
+  const cw = c.width, ch = c.height, R = rng(31);
+  let gr = g.createRadialGradient(cw * 0.42, ch * 0.36, 0, cw * 0.42, ch * 0.36, Math.hypot(cw, ch) * 0.62);
+  gr.addColorStop(0, css(0.36, 0.07, 200));
+  gr.addColorStop(0.55, css(0.26, 0.06, 212));
+  gr.addColorStop(1, css(0.15, 0.04, 232));
+  g.fillStyle = gr;
+  g.fillRect(0, 0, cw, ch);
+  // Mottle gives the leather its uneven dye.
+  const mw = 72, mh = Math.max(8, Math.round((72 * ch) / cw)), m = mk(mw, mh), mg = m.getContext('2d'), id = mg.createImageData(mw, mh);
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+    const n = vnoise(x * 0.16 + 40, y * 0.16 + 9) * 0.6 + vnoise(x * 0.45 + 3, y * 0.45 + 70) * 0.4, i = (y * mw + x) * 4;
+    id.data[i] = 10; id.data[i + 1] = 30; id.data[i + 2] = 40; id.data[i + 3] = n * n * 120;
+  }
+  mg.putImageData(id, 0, 0);
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(m, 0, 0, cw, ch);
+  g.fillStyle = g.createPattern(grain(R, 0.22, 0.05, [5, 20, 28], [170, 220, 220]), 'repeat');
+  g.fillRect(0, 0, cw, ch);
+  // The edges fall into shadow.
+  gr = g.createRadialGradient(cw * 0.45, ch * 0.42, Math.min(cw, ch) * 0.3, cw * 0.45, ch * 0.42, Math.hypot(cw, ch) * 0.6);
+  gr.addColorStop(0, 'rgb(0 0 0 / 0)');
+  gr.addColorStop(1, 'rgb(2 6 12 / 0.5)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, cw, ch);
+  g.setTransform(pr, 0, 0, pr, 0, 0);
+  // A gilt rule runs round the desk.
+  const gi = L.port ? 7 : 9, gold = g.createLinearGradient(0, 0, W, H);
+  gold.addColorStop(0, css(0.82, 0.12, 88, 0.75));
+  gold.addColorStop(0.5, css(0.6, 0.1, 78, 0.5));
+  gold.addColorStop(1, css(0.75, 0.12, 85, 0.65));
+  g.strokeStyle = gold;
+  g.lineWidth = 1.2;
+  g.beginPath(); g.roundRect(gi, gi, W - 2 * gi, H - 2 * gi, 12); g.stroke();
+  g.lineWidth = 0.6;
+  g.beginPath(); g.roundRect(gi + 4, gi + 4, W - 2 * gi - 8, H - 2 * gi - 8, 9); g.stroke();
+  L.pend.forEach(Q => bracket(g, Q));
+  return c;
+}
+// One pivot bracket and its swing scale.
+function bracket(g, Q) {
+  const s = L.k, bw = 46 * s, bh = 7 * s;
+  g.save();
+  g.shadowColor = 'rgb(0 6 12 / 0.55)';
+  g.shadowBlur = 8 * s * pr;
+  g.shadowOffsetX = 3 * s * pr;
+  g.shadowOffsetY = 5 * s * pr;
+  const rail = g.createLinearGradient(0, Q.py - bh * 1.6, 0, Q.py);
+  rail.addColorStop(0, BRASS[1]);
+  rail.addColorStop(0.35, BRASS[2]);
+  rail.addColorStop(1, BRASS[4]);
+  g.fillStyle = rail;
+  g.beginPath(); g.roundRect(Q.px - bw / 2, Q.py - bh * 1.7, bw, bh, 2 * s); g.fill();
+  g.beginPath();
+  g.moveTo(Q.px - 8 * s, Q.py - bh * 0.7);
+  g.lineTo(Q.px + 8 * s, Q.py - bh * 0.7);
+  g.lineTo(Q.px + 4 * s, Q.py + 2 * s);
+  g.lineTo(Q.px - 4 * s, Q.py + 2 * s);
+  g.closePath();
+  g.fill();
+  g.restore();
+  // Two screw heads hold the rail.
+  [-1, 1].forEach(d => {
+    const x = Q.px + d * bw * 0.36, y = Q.py - bh * 1.2;
+    g.fillStyle = BRASS[4];
+    g.beginPath(); g.arc(x, y, 1.9 * s, 0, TAU); g.fill();
+    g.strokeStyle = BRASS[1];
+    g.lineWidth = 0.6 * s;
+    g.beginPath(); g.moveTo(x - 1.3 * s, y - 0.6 * s); g.lineTo(x + 1.3 * s, y + 0.6 * s); g.stroke();
+  });
+  // The swing scale: fine gilt ticks on an arc.
+  const ra = Q.len + L.bh * 0.5 + 12 * s, span = Q.th * 1.15;
+  g.strokeStyle = css(0.8, 0.11, 86, 0.42);
+  g.lineWidth = 0.8;
+  g.beginPath(); g.arc(Q.px, Q.py, ra, Math.PI / 2 - span, Math.PI / 2 + span); g.stroke();
+  for (let i = -6; i <= 6; i++) {
+    const a = Math.PI / 2 + (i / 6) * span, l = (i === 0 ? 7 : i % 3 === 0 ? 5 : 3) * s;
+    g.beginPath();
+    g.moveTo(Q.px + Math.cos(a) * ra, Q.py + Math.sin(a) * ra);
+    g.lineTo(Q.px + Math.cos(a) * (ra + l), Q.py + Math.sin(a) * (ra + l));
+    g.stroke();
+  }
+}
+// A tiling grain of light and dark specks.
+function grain(R, dark, light, dc, lc) {
+  const n = 192, t = mk(n, n), g = t.getContext('2d'), id = g.createImageData(n, n), d = id.data;
+  for (let i = 0; i < n * n; i++) {
+    const v = R(), o = i * 4, k = v < 0.5 ? dc : lc;
+    d[o] = k[0]; d[o + 1] = k[1]; d[o + 2] = k[2];
+    d[o + 3] = (v < 0.5 ? (0.5 - v) * 2 * dark : (v - 0.5) * 2 * light) * 255;
+  }
+  g.putImageData(id, 0, 0);
+  return t;
+}
+// Cream paper: lamp falloff, cloudy formation, grain and fibres.
+function makePaper() {
+  const c = mk(Math.round(L.paper.w * pr), Math.round(L.paper.h * pr)), g = c.getContext('2d');
+  const cw = c.width, ch = c.height, R = rng(7);
+  let gr = g.createRadialGradient(cw * 0.36, ch * 0.28, 0, cw * 0.36, ch * 0.28, Math.hypot(cw, ch) * 0.8);
+  gr.addColorStop(0, css(0.975, 0.024, 90));
+  gr.addColorStop(0.55, css(0.95, 0.032, 85));
+  gr.addColorStop(1, css(0.9, 0.04, 78));
+  g.fillStyle = gr;
+  g.fillRect(0, 0, cw, ch);
+  const mw = 64, mh = Math.max(8, Math.round((64 * ch) / cw)), m = mk(mw, mh), mg = m.getContext('2d'), id = mg.createImageData(mw, mh);
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+    const n = vnoise(x * 0.2 + 3, y * 0.2 + 7) * 0.6 + vnoise(x * 0.55 + 11, y * 0.55 + 2) * 0.4, i = (y * mw + x) * 4;
+    id.data[i] = 150; id.data[i + 1] = 120; id.data[i + 2] = 70; id.data[i + 3] = n * n * 46;
+  }
+  mg.putImageData(id, 0, 0);
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(m, 0, 0, cw, ch);
+  const pat = g.createPattern(grain(R, 0.07, 0.12, [110, 90, 60], [255, 254, 246]), 'repeat');
+  pat.setTransform?.(new DOMMatrix().scale(Math.max(1, pr * 0.75)));
+  g.fillStyle = pat;
+  g.fillRect(0, 0, cw, ch);
+  // Fibres: many short curls, mostly pale, a few dark or blue.
+  const paths = [new Path2D(), new Path2D(), new Path2D()], n = Math.round((cw * ch) / (420 * pr));
+  for (let i = 0; i < n; i++) {
+    const x = R() * cw, y = R() * ch, a = R() * TAU, l = (3 + R() * R() * 24) * pr, b = (R() - 0.5) * l * 0.7;
+    const dx = Math.cos(a) * l, dy = Math.sin(a) * l, r = R(), p = paths[r < 0.66 ? 0 : r < 0.97 ? 1 : 2];
+    p.moveTo(x, y);
+    p.quadraticCurveTo(x + dx / 2 - (dy / l) * b, y + dy / 2 + (dx / l) * b, x + dx, y + dy);
+  }
+  g.lineCap = 'round';
+  g.lineWidth = 0.75 * pr; g.strokeStyle = 'rgb(255 253 244 / 0.6)'; g.stroke(paths[0]);
+  g.lineWidth = 0.5 * pr; g.strokeStyle = css(0.55, 0.05, 70, 0.18); g.stroke(paths[1]);
+  g.lineWidth = 0.6 * pr; g.strokeStyle = css(0.6, 0.1, 255, 0.22); g.stroke(paths[2]);
+  // The cut edge catches the lamp.
+  g.strokeStyle = css(0.72, 0.04, 75, 0.45);
+  g.lineWidth = pr;
+  g.strokeRect(pr / 2, pr / 2, cw - pr, ch - pr);
+  g.strokeStyle = 'rgb(255 255 250 / 0.5)';
+  g.strokeRect(pr * 1.5, pr * 1.5, cw - pr * 3, ch - pr * 3);
+  return c;
+}
+// The sheet's soft shadow, drawn once and moved with the sheet.
+function makeShadow() {
+  const pd = L.pad, c = mk(Math.round((L.paper.w + 2 * pd) * pr), Math.round((L.paper.h + 2 * pd) * pr)), g = c.getContext('2d');
+  g.setTransform(pr, 0, 0, pr, 0, 0);
+  const far = 5000;
+  g.fillStyle = '#000';
+  g.shadowOffsetX = far * pr;
+  g.shadowColor = 'rgb(0 4 10 / 0.5)';
+  g.shadowBlur = 16 * pr;
+  g.fillRect(pd - far, pd, L.paper.w, L.paper.h);
+  g.shadowColor = 'rgb(0 4 10 / 0.4)';
+  g.shadowBlur = 3 * pr;
+  g.fillRect(pd - far, pd, L.paper.w, L.paper.h);
+  return c;
+}
+function makeSheet() {
+  const c = mk(paperTex.width, paperTex.height), g = c.getContext('2d');
+  g.drawImage(paperTex, 0, 0);
+  g.setTransform(pr, 0, 0, pr, 0, 0);
+  g.globalCompositeOperation = 'multiply';
+  g.lineCap = 'butt';
+  g.lineJoin = 'round';
+  return { c, g };
+}
+
+/* ---------- ink: width and darkness follow the pen speed ---------- */
+let inkI = 0, drawing = false, hist = [], histN = 0, wetT = 9, wetLive = false, quiet = false;
+const HIST_MAX = 1.6e6;
+// A slow pen lays a wide, dark line.
+const slowness = v => 1 / (1 + (v / 2.4) ** 2);
+function strokeRun(g, pts, s, ci, live) {
+  const path = new Path2D(), R = L.R, ox = L.paper.w / 2, oy = L.paper.h / 2;
+  path.moveTo(ox + pts[0] * R, oy + pts[1] * R);
+  for (let i = 2; i < pts.length; i += 2) path.lineTo(ox + pts[i] * R, oy + pts[i + 1] * R);
+  const w = L.wB * (0.7 + 1.0 * s), al = 0.36 + 0.56 * s, ink = INKS[ci];
+  // A faint wide pass bleeds into the fibres.
+  g.lineWidth = w * 2.8;
+  g.strokeStyle = ink.at(al * 0.07);
+  g.stroke(path);
+  g.lineWidth = w;
+  g.strokeStyle = ink.at(al);
+  g.stroke(path);
+  if (!live) return;
+  if (!quiet) {
+    wetG.lineWidth = w * 1.2;
+    wetG.strokeStyle = ink.wet(0.55);
+    wetG.stroke(path);
+    wetT = 0;
+    wetLive = true;
+  }
+  record({ ci, s, pts: Float32Array.from(pts) }, pts.length);
+}
+function blot(g, x, y, ci, live) {
+  const R = L.R, r = L.wB * 1.5;
+  g.fillStyle = INKS[ci].at(0.7);
+  g.beginPath(); g.arc(L.paper.w / 2 + x * R, L.paper.h / 2 + y * R, r, 0, TAU); g.fill();
+  if (!live) return;
+  if (!quiet) {
+    wetG.fillStyle = INKS[ci].wet(0.5);
+    wetG.beginPath(); wetG.arc(L.paper.w / 2 + x * R, L.paper.h / 2 + y * R, r * 1.3, 0, TAU); wetG.fill();
+    wetT = 0;
+    wetLive = true;
+  }
+  record({ ci, x, y }, 3);
+}
+function record(o, n) {
+  if (histN + n > HIST_MAX) return;
+  histN += n;
+  hist.push(o);
+}
+// A resize redraws every stroke at the new scale.
+function replay() {
+  for (const h of hist) {
+    if (h.pts) strokeRun(sheetG, h.pts, h.s, h.ci, false);
+    else blot(sheetG, h.x, h.y, h.ci, false);
+  }
+}
+let run = [], runSum = 0, runN = 0, inkOn = false, lx = 0, ly = 0, vS = -1;
+function inkPoint(x, y, h) {
+  if (!inkOn) {
+    inkOn = true;
+    run = [x, y];
+    runSum = runN = 0;
+    lx = x; ly = y; vS = -1;
+    return;
+  }
+  const v = Math.hypot(x - lx, y - ly) / h;
+  vS = vS < 0 ? v : lerp(vS, v, 0.3);
+  const s = slowness(vS);
+  if (runN && Math.abs(s - runSum / runN) > 0.06) inkStroke();
+  run.push(x, y);
+  runSum += s;
+  runN++;
+  lx = x; ly = y;
+}
+function inkStroke() {
+  if (runN) strokeRun(sheetG, run, runSum / runN, inkI, true);
+  const n = run.length;
+  run = n ? [run[n - 2], run[n - 1]] : [];
+  runSum = runN = 0;
+}
+function inkUp() {
+  if (inkOn) inkStroke();
+  inkOn = false;
+}
+
+/* ---------- simulation step ---------- */
+const pen = { x: 0, y: 0, lift: 1, sp: 0, touch: false };
+let auto = null, slide = null, wellT = 1, wellFrom = 0;
+const penX = () => L.paper.x + L.paper.w / 2 + pen.x * L.R;
+const penY = () => L.paper.y + L.paper.h / 2 + pen.y * L.R;
+const bobX = k => L.pend[k].px + Math.sin(pos(P[k]) * L.pend[k].th) * L.pend[k].len;
+function step(dt, offline = false) {
+  let busy = false;
+  // Held bobs follow the hand, easing so they never jump.
+  for (const p of P) {
+    if (!p.held) continue;
+    busy = true;
+    if (p.key) p.tgt = clamp(p.tgt + p.key * dt * 1.4, -0.95, 0.95);
+    const prev = p.hp;
+    p.hp = lerp(p.hp, p.tgt, 1 - Math.exp(-dt * 26));
+    p.hv = lerp(p.hv, (p.hp - prev) / Math.max(dt, 1e-3), 0.4);
+  }
+  if (auto) { busy = true; stepAuto(dt); }
+  for (const p of P) {
+    const d = p.bobT - p.bob, lt = p.held ? 1 : 0;
+    if (Math.abs(d) > 1e-3) { p.bob += reduce ? d : d * (1 - Math.exp(-dt * 6)); busy = true; } else p.bob = p.bobT;
+    if (p.lf !== lt) { p.lf = clamp(p.lf + Math.sign(lt - p.lf) * dt * 8); busy = true; }
+  }
+  const held = P[0].held || P[1].held || !!auto;
+  const E = energy();
+  if (drawing && !held && E < PEN_MIN) drawing = false;
+  const want = drawing && !held && !slide, lt = want ? 0 : 1;
+  if (pen.lift !== lt) {
+    pen.lift = offline ? lt : clamp(pen.lift + Math.sign(lt - pen.lift) * dt * (reduce ? 20 : 7));
+    busy = true;
+  }
+  const touch = want && pen.lift < 0.08;
+  if (touch !== pen.touch) {
+    pen.touch = touch;
+    if (touch) {
+      penAt(q);
+      blot(sheetG, q.x, q.y, inkI, true);
+      if (!offline) sfxTap(penX());
+    } else inkUp();
+  }
+  if (E > REST || held) {
+    busy = true;
+    const n = clamp(Math.ceil((pen.sp * L.R * dt) / 1.2), 1, 64), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      advance(h, E);
+      if (touch) { penAt(q); inkPoint(q.x, q.y, h); }
+    }
+    if (touch) inkStroke();
+  } else if (E > 0) {
+    P.forEach(p => { p.a = 0; });
+    rot.a = 0;
+  }
+  penAt(q);
+  pen.sp = dt > 0 ? Math.hypot(q.x - pen.x, q.y - pen.y) / dt : 0;
+  pen.x = q.x;
+  pen.y = q.y;
+  if (offline) return busy;
+  if (slide) {
+    busy = true;
+    slide.t += dt / slide.dur;
+    if (slide.t >= 1) slide = null;
+  }
+  if (wetLive) {
+    busy = true;
+    wetT += dt;
+    if (wetT > 2.2) {
+      wetG.setTransform(1, 0, 0, 1, 0, 0);
+      wetG.clearRect(0, 0, wetC.width, wetC.height);
+      wetG.setTransform(pr, 0, 0, pr, 0, 0);
+      wetLive = false;
+    } else {
+      // Fresh ink dries back to its settled tone.
+      wetG.globalCompositeOperation = 'destination-out';
+      wetG.fillStyle = `rgb(0 0 0 / ${(1 - Math.exp(-dt / 0.45)).toFixed(4)})`;
+      wetG.fillRect(0, 0, L.paper.w, L.paper.h);
+      wetG.globalCompositeOperation = 'source-over';
+    }
+  }
+  if (wellT < 1) { wellT = Math.min(1, wellT + dt / (reduce ? 0.2 : 0.9)); busy = true; }
+  return busy;
+}
+
+/* ---------- gestures: grab, pull, let go ---------- */
+function grab(k) {
+  const p = P[k];
+  if (!P[0].held && !P[1].held) newRatio();
+  p.held = true;
+  p.hp = p.tgt = pos(p);
+  p.hv = 0;
+  p.key = 0;
+  sfxGrab(bobX(k));
+}
+function letGo(k, fling) {
+  const p = P[k];
+  if (!p.held) return;
+  p.held = false;
+  p.key = 0;
+  setState(p, p.hp, fling ? clamp(p.hv, -1.2 * p.w, 1.2 * p.w) : 0);
+  sfxLetGo(bobX(k));
+  if (!P[0].held && !P[1].held && !auto) startLayer(k);
+}
+// Space: an unseen hand pulls both bobs aside and lets go in turn.
+function randomSwing() {
+  if (!ready || grabs.size || auto) return;
+  P.forEach(p => { if (p.held) letGo(P.indexOf(p), false); });
+  newRatio();
+  const first = Math.random() < 0.5 ? 0 : 1;
+  auto = { t: 0, pull: reduce ? 0.18 : 0.42, gap: rnd(0.08, 0.55), first, x0: [pos(P[0]), pos(P[1])], to: [sign() * rnd(0.6, 0.95), sign() * rnd(0.55, 0.95)], rel: [false, false] };
+  P.forEach(p => { p.held = true; p.hp = p.tgt = pos(p); p.hv = 0; p.key = 0; });
+  sfxGrab(W / 2);
+  wake();
+}
+function stepAuto(dt) {
+  const A = auto;
+  A.t += dt;
+  const e = easeIO(clamp(A.t / A.pull));
+  for (let k = 0; k < 2; k++) {
+    if (A.rel[k]) continue;
+    P[k].tgt = lerp(A.x0[k], A.to[k], e);
+    const at = A.pull + 0.1 + (k === A.first ? 0 : A.gap);
+    if (A.t >= at) {
+      A.rel[k] = true;
+      P[k].hp = P[k].tgt;
+      P[k].held = false;
+      setState(P[k], P[k].hp, 0);
+      sfxLetGo(bobX(k));
+    }
+  }
+  if (A.rel[0] && A.rel[1]) { auto = null; startLayer(-1); }
+}
+function newSheet() {
+  if (!ready) return;
+  inkUp();
+  const old = sheet;
+  sheet = makeSheet();
+  sheetG = sheet.g;
+  hist = [];
+  histN = 0;
+  wetG.setTransform(1, 0, 0, 1, 0, 0);
+  wetG.clearRect(0, 0, wetC.width, wetC.height);
+  wetG.setTransform(pr, 0, 0, pr, 0, 0);
+  wetLive = false;
+  slide = { t: 0, dur: reduce ? 0.22 : 0.9, old, rot: sign() * rnd(0.012, 0.03) };
+  pen.touch = false;
+  sfxSheet();
+  wake();
+}
+function setInk(i) {
+  if (i === inkI) return;
+  if (inkOn) inkStroke();
+  wellFrom = inkI;
+  inkI = i;
+  wellT = 0;
+  chips.forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.ink === i)));
+  sfxInk();
+  wake();
+}
+
+/* ---------- drawing the scene ---------- */
+function draw() {
+  const g = ctx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.drawImage(bgC, 0, 0);
+  g.setTransform(pr, 0, 0, pr, 0, 0);
+  if (slide) {
+    const t = slide.t;
+    if (reduce) {
+      drawSheet(g, slide.old, 0, 0, 1);
+      drawSheet(g, sheet, 0, 0, easeOut(t));
+    } else {
+      const e1 = easeIO(clamp(t / 0.8)), e2 = easeOut(clamp((t - 0.12) / 0.88));
+      drawSheet(g, slide.old, -e1 * (L.paper.x + L.paper.w + L.pad * 2), -slide.rot * 0.6 * e1, 1);
+      drawSheet(g, sheet, (1 - e2) * (W - L.paper.x + L.pad * 2), slide.rot * (1 - e2), 1);
+    }
+  } else drawSheet(g, sheet, 0, 0, 1);
+  drawPend(g, 0);
+  drawPend(g, 1);
+  drawWell(g);
+  drawDial(g);
+  drawPen(g);
+}
+function drawSheet(g, S, dx, ang, alpha) {
+  const { x, y, w, h } = L.paper, pd = L.pad;
+  g.save();
+  g.globalAlpha = alpha;
+  g.translate(x + w / 2 + dx, y + h / 2);
+  if (ang) g.rotate(ang);
+  g.drawImage(shadowC, -w / 2 - pd + 3, -h / 2 - pd + 6, w + 2 * pd, h + 2 * pd);
+  g.drawImage(S.c, -w / 2, -h / 2, w, h);
+  if (S === sheet && wetLive) {
+    g.globalCompositeOperation = 'multiply';
+    g.drawImage(wetC, -w / 2, -h / 2, w, h);
+  }
+  g.restore();
+}
+const grads = new Map();
+// Gradients live in local space, so one object serves every frame.
+function lg(key, x0, y0, x1, y1, stops) {
+  let gr = grads.get(key);
+  if (!gr) {
+    gr = ctx.createLinearGradient(x0, y0, x1, y1);
+    stops.forEach(([o, c]) => gr.addColorStop(o, c));
+    grads.set(key, gr);
+  }
+  return gr;
+}
+function drawPend(g, k) {
+  const Q = L.pend[k], p = P[k], s = L.k, bw = L.bw, bh = L.bh;
+  const th = clamp(pos(p), -1.2, 1.2) * Q.th, by = Q.len * (0.74 + 0.26 * p.bob), end = Q.len + bh * 0.5 + 3 * s, lf = p.lf;
+  g.save();
+  g.translate(Q.px, Q.py);
+  // The shadow falls down and to the right; a held bob lifts.
+  g.save();
+  g.shadowColor = 'rgb(0 6 12 / 0.5)';
+  g.shadowBlur = (6 + 8 * lf) * s * pr;
+  g.shadowOffsetX = (4 + 5 * lf) * s * pr;
+  g.shadowOffsetY = (7 + 7 * lf) * s * pr;
+  g.rotate(-th);
+  g.fillStyle = BRASS[5];
+  g.fillRect(-1.4 * s, 0, 2.8 * s, end);
+  g.beginPath(); g.roundRect(-bw / 2, by - bh / 2, bw, bh, 3 * s); g.fill();
+  g.restore();
+  g.rotate(-th);
+  g.fillStyle = lg('rod' + k, -1.6 * s, 0, 1.6 * s, 0, [[0, STEEL[0]], [0.4, STEEL[1]], [1, STEEL[2]]]);
+  g.fillRect(-1.6 * s, 0, 3.2 * s, end);
+  // The bob: a turned brass cylinder.
+  g.fillStyle = lg('bob' + k, -bw / 2, 0, bw / 2, 0, [[0, BRASS[0]], [0.15, BRASS[1]], [0.3, BRASS[2]], [0.62, BRASS[3]], [0.88, BRASS[4]], [1, BRASS[5]]]);
+  g.beginPath(); g.roundRect(-bw / 2, by - bh / 2, bw, bh, 3 * s); g.fill();
+  // Machined grooves catch light under a dark line.
+  for (const f of [-0.3, 0.3]) {
+    const y = by + f * bh;
+    g.fillStyle = 'rgb(40 24 4 / 0.45)';
+    g.fillRect(-bw / 2, y - 0.7 * s, bw, 0.9 * s);
+    g.fillStyle = 'rgb(255 240 190 / 0.35)';
+    g.fillRect(-bw / 2, y + 0.3 * s, bw, 0.6 * s);
+  }
+  g.fillStyle = 'rgb(255 250 225 / 0.7)';
+  g.fillRect(-bw * 0.37, by - bh / 2 + 3 * s, 1.6 * s, bh - 6 * s);
+  // A held bob warms in the lamp.
+  if (lf > 0) {
+    g.fillStyle = `rgb(255 220 150 / ${0.16 * lf})`;
+    g.beginPath(); g.roundRect(-bw / 2, by - bh / 2, bw, bh, 3 * s); g.fill();
+  }
+  // A collar nut clamps the bob to the rod.
+  g.fillStyle = lg('nut' + k, -4 * s, 0, 4 * s, 0, [[0, BRASS[4]], [0.3, BRASS[1]], [1, BRASS[5]]]);
+  g.fillRect(-3.5 * s, by - bh / 2 - 4 * s, 7 * s, 4 * s);
+  g.restore();
+  // The pivot hub sits over the rod.
+  g.fillStyle = BRASS[2];
+  g.beginPath(); g.arc(Q.px, Q.py, 3.4 * s, 0, TAU); g.fill();
+  g.fillStyle = BRASS[5];
+  g.beginPath(); g.arc(Q.px, Q.py, 1.3 * s, 0, TAU); g.fill();
+  // Ink-coloured marks track the fading swing on the scale.
+  const a = clamp(amp(p), 0, 1.15) * Q.th, ra = Q.len + L.bh * 0.5 + 12 * s;
+  if (a > 0.002) {
+    g.fillStyle = INKS[inkI].at(0.9);
+    for (const d of [-1, 1]) {
+      const an = Math.PI / 2 - d * a, cx = Q.px + Math.cos(an) * (ra - 3 * s), cy = Q.py + Math.sin(an) * (ra - 3 * s);
+      g.beginPath(); g.arc(cx, cy, 1.8 * s, 0, TAU); g.fill();
+    }
+  }
+}
+function drawWell(g) {
+  const { x, y, r } = L.well, s = L.k;
+  g.save();
+  g.shadowColor = 'rgb(0 6 12 / 0.55)';
+  g.shadowBlur = 10 * s * pr;
+  g.shadowOffsetX = 4 * s * pr;
+  g.shadowOffsetY = 7 * s * pr;
+  g.fillStyle = 'rgb(30 60 70 / 0.6)';
+  g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  g.restore();
+  // Thick glass: bright rim, clear body.
+  let gr = g.createRadialGradient(x - r * 0.25, y - r * 0.3, r * 0.1, x, y, r);
+  gr.addColorStop(0, 'rgb(230 250 250 / 0.28)');
+  gr.addColorStop(0.75, 'rgb(150 200 210 / 0.16)');
+  gr.addColorStop(0.93, 'rgb(240 255 255 / 0.55)');
+  gr.addColorStop(1, 'rgb(120 170 180 / 0.5)');
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  // A brass collar holds the ink.
+  g.fillStyle = lg('collar', x - r, y - r, x + r, y + r, [[0, BRASS[1]], [0.45, BRASS[3]], [1, BRASS[5]]]);
+  g.beginPath(); g.arc(x, y, r * 0.66, 0, TAU); g.fill();
+  const pool = (ink, al) => {
+    const pg = g.createRadialGradient(x + r * 0.1, y + r * 0.12, 0, x, y, r * 0.56);
+    pg.addColorStop(0, ink.pool[0]);
+    pg.addColorStop(0.75, ink.pool[1]);
+    pg.addColorStop(1, ink.pool[2]);
+    g.globalAlpha = al;
+    g.fillStyle = pg;
+    g.beginPath(); g.arc(x, y, r * 0.56, 0, TAU); g.fill();
+    g.globalAlpha = 1;
+  };
+  if (wellT < 1) pool(INKS[wellFrom], 1);
+  pool(INKS[inkI], wellT < 1 ? easeOut(wellT) : 1);
+  // A dropped ink sends rings across the pool.
+  if (wellT < 1) {
+    g.lineWidth = 1.2 * s;
+    for (let i = 0; i < 3; i++) {
+      const t = wellT * 1.4 - i * 0.18;
+      if (t <= 0 || t >= 1) continue;
+      g.strokeStyle = `rgb(255 255 255 / ${0.4 * (1 - t)})`;
+      g.beginPath(); g.arc(x, y, r * 0.54 * t, 0, TAU); g.stroke();
+    }
+  }
+  g.fillStyle = 'rgb(255 255 255 / 0.6)';
+  g.beginPath(); g.ellipse(x - r * 0.24, y - r * 0.26, r * 0.17, r * 0.07, -0.7, 0, TAU); g.fill();
+  g.fillStyle = 'rgb(255 255 255 / 0.35)';
+  g.beginPath(); g.ellipse(x + r * 0.55, y + r * 0.5, r * 0.18, r * 0.05, -0.75, 0, TAU); g.fill();
+}
+function drawDial(g) {
+  const { x, y, r } = L.dial, s = L.k;
+  g.save();
+  g.shadowColor = 'rgb(0 6 12 / 0.55)';
+  g.shadowBlur = 10 * s * pr;
+  g.shadowOffsetX = 4 * s * pr;
+  g.shadowOffsetY = 7 * s * pr;
+  g.fillStyle = lg('bezel', x - r, y - r, x + r, y + r, [[0, BRASS[1]], [0.35, BRASS[2]], [0.7, BRASS[4]], [1, BRASS[5]]]);
+  g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  g.restore();
+  g.fillStyle = lg('bezel2', x + r, y + r, x - r, y - r, [[0, BRASS[1]], [0.5, BRASS[3]], [1, BRASS[5]]]);
+  g.beginPath(); g.arc(x, y, r * 0.88, 0, TAU); g.fill();
+  // The face turns with the table.
+  g.fillStyle = CREAM;
+  g.beginPath(); g.arc(x, y, r * 0.8, 0, TAU); g.fill();
+  g.save();
+  g.translate(x, y);
+  g.rotate(table.ang);
+  g.strokeStyle = 'rgb(60 50 30 / 0.55)';
+  g.lineWidth = 0.8 * s;
+  g.beginPath();
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * TAU, l = i % 6 === 0 ? 0.62 : 0.7;
+    g.moveTo(Math.cos(a) * r * l, Math.sin(a) * r * l);
+    g.lineTo(Math.cos(a) * r * 0.76, Math.sin(a) * r * 0.76);
+  }
+  g.stroke();
+  g.strokeStyle = INKS[inkI].at(0.95);
+  g.lineWidth = 1.6 * s;
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -r * 0.74); g.stroke();
+  g.restore();
+  // The orbit dot shows the rotary swing.
+  const k = (r * 0.42) / 0.13, gx = rot.a * Math.sin(rot.ph) * k, gy = rot.a * Math.cos(rot.ph) * rot.dir * k;
+  g.fillStyle = BRASS[3];
+  g.beginPath(); g.arc(x + gx, y + gy, 2.6 * s, 0, TAU); g.fill();
+  g.fillStyle = BRASS[1];
+  g.beginPath(); g.arc(x + gx - 0.7 * s, y + gy - 0.7 * s, 1 * s, 0, TAU); g.fill();
+  // A fixed brass pointer marks the top.
+  g.fillStyle = BRASS[2];
+  g.beginPath();
+  g.moveTo(x, y - r * 0.8);
+  g.lineTo(x - 3 * s, y - r * 0.97);
+  g.lineTo(x + 3 * s, y - r * 0.97);
+  g.closePath();
+  g.fill();
+  g.fillStyle = 'rgb(255 255 255 / 0.25)';
+  g.beginPath(); g.ellipse(x - r * 0.3, y - r * 0.35, r * 0.28, r * 0.1, -0.7, 0, TAU); g.fill();
+}
+// The pen leans up and to the right; lifted, it rises off the paper.
+function drawPen(g) {
+  const s = L.k, lift = pen.lift, ink = INKS[inkI], len = 64 * s;
+  const px = clamp(penX(), L.paper.x + 2, L.paper.x + L.paper.w - 2), py = clamp(penY(), L.paper.y + 2, L.paper.y + L.paper.h - 2);
+  const body = () => {
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(13 * s, -2.8 * s);
+    g.lineTo(22 * s, -3.6 * s);
+    g.lineTo(len, -4.3 * s);
+    g.arc(len, 0, 4.3 * s, -Math.PI / 2, Math.PI / 2);
+    g.lineTo(22 * s, 3.6 * s);
+    g.lineTo(13 * s, 2.8 * s);
+    g.closePath();
+  };
+  g.save();
+  g.translate(px - 2 * lift * s, py - 4 * lift * s);
+  g.rotate(-0.95);
+  g.save();
+  g.shadowColor = `rgb(40 25 5 / ${0.42 - 0.17 * lift})`;
+  g.shadowBlur = (2 + 8 * lift) * s * pr;
+  g.shadowOffsetX = (3 + 10 * lift) * s * pr;
+  g.shadowOffsetY = (4 + 12 * lift) * s * pr;
+  g.fillStyle = ink.lacq[0];
+  body();
+  g.fill();
+  g.restore();
+  g.fillStyle = lg('lacq' + inkI, 0, -4.3 * s, 0, 4.3 * s, [[0, ink.lacq[1]], [0.3, ink.lacq[2]], [0.55, ink.lacq[1]], [1, ink.lacq[0]]]);
+  body();
+  g.fill();
+  // A gold nib with its slit.
+  g.fillStyle = lg('nib', 0, -3 * s, 0, 3 * s, [[0, BRASS[2]], [0.35, BRASS[1]], [1, BRASS[4]]]);
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(14 * s, -3 * s);
+  g.lineTo(14 * s, 3 * s);
+  g.closePath();
+  g.fill();
+  g.strokeStyle = 'rgb(40 25 5 / 0.7)';
+  g.lineWidth = 0.6 * s;
+  g.beginPath(); g.moveTo(1.5 * s, 0); g.lineTo(9 * s, 0); g.stroke();
+  g.fillStyle = BRASS[1];
+  g.fillRect(21 * s, -3.8 * s, 3 * s, 7.6 * s);
+  g.restore();
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; fit(); }
+  }
+  const busy = step(dt);
+  draw();
+  voice(dt, pen.touch);
+  if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else rest();
+}
+
+/* ---------- input ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+// Which bob a point reaches: its column, or close to the bob itself.
+function hitBob(x, y) {
+  for (let k = 0; k < 2; k++) {
+    const Q = L.pend[k], ang = pos(P[k]) * Q.th, by = Q.len * (0.74 + 0.26 * P[k].bob);
+    const bx = Q.px + Math.sin(ang) * by, byy = Q.py + Math.cos(ang) * by;
+    if (Math.hypot(x - bx, y - byy) < Math.max(36, L.bh)) return k;
+  }
+  if (L.port) {
+    if (y < L.pend[0].py - 10) return -1;
+    if (x < (L.pend[0].px + L.well.x) / 2) return 0;
+    if (x > (L.pend[1].px + L.dial.x) / 2) return 1;
+    return -1;
+  }
+  if (y < L.pend[0].py - 10 || y > L.well.y - L.well.r * 1.3) return -1;
+  if (x < L.paper.x) return 0;
+  if (x > L.paper.x + L.paper.w) return 1;
+  return -1;
+}
+const onWell = (x, y) => Math.hypot(x - L.well.x, y - L.well.y) < L.well.r * 1.15;
+function aimAt(k, x, y) {
+  const Q = L.pend[k], p = P[k];
+  const a = Math.atan2(x - Q.px, Math.max(8, y - Q.py)) / Q.th;
+  return clamp(a + p.off, -1.1, 1.1);
+}
+const grabs = new Map();
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  if (onWell(x, y)) { setInk((inkI + 1) % INKS.length); return; }
+  const k = hitBob(x, y);
+  if (k < 0 || P[k].held) return;
+  if (auto) return;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  grabs.set(e.pointerId, k);
+  grab(k);
+  const Q = L.pend[k];
+  P[k].off = 0;
+  P[k].off = P[k].hp - clamp(Math.atan2(x - Q.px, Math.max(8, y - Q.py)) / Q.th, -1.1, 1.1);
+  P[k].tgt = aimAt(k, x, y);
+  panel.style.cursor = 'grabbing';
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const k = grabs.get(e.pointerId);
+  if (k === undefined) {
+    if (e.pointerType === 'mouse' && ready && !grabs.size) {
+      const [x, y] = local(e);
+      panel.style.cursor = onWell(x, y) ? 'pointer' : hitBob(x, y) >= 0 ? 'grab' : '';
+    }
+    return;
+  }
+  const [x, y] = local(e);
+  P[k].tgt = aimAt(k, x, y);
+  wake();
+});
+const lift = e => {
+  const k = grabs.get(e.pointerId);
+  if (k === undefined) return;
+  grabs.delete(e.pointerId);
+  letGo(k, e.type === 'pointerup');
+  panel.style.cursor = grabs.size ? 'grabbing' : 'grab';
+  wake();
+};
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+panel.addEventListener('contextmenu', e => e.preventDefault());
+// Arrow keys pull the bobs; the pen follows the arrow.
+const ARROWS = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [1, 1], ArrowDown: [1, -1] };
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const key = e.key;
+  if (key === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat) randomSwing();
+  } else if (key === 'n' || key === 'N') {
+    if (!e.repeat) newSheet();
+  } else if (ARROWS[key]) {
+    e.preventDefault();
+    if (e.repeat || !ready || auto) return;
+    const [k, d] = ARROWS[key], p = P[k];
+    if (p.held && !p.key) return;
+    if (!p.held) grab(k);
+    p.key = d;
+    wake();
+  }
+});
+addEventListener('keyup', e => {
+  const a = ARROWS[e.key];
+  if (a && P[a[0]].key === a[1]) { letGo(a[0], false); wake(); }
+});
+addEventListener('blur', () => { P.forEach((p, k) => { if (p.key) letGo(k, false); }); wake(); });
+
+const chips = [...document.querySelectorAll('[data-ink]')];
+chips.forEach(c => c.addEventListener('click', () => setInk(+c.dataset.ink)));
+const sheetB = document.getElementById('sheet');
+sheetB.addEventListener('click', newSheet);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) { hush(); ac.suspend()?.catch(() => {}); }
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- sizing ---------- */
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return false;
+  const npr = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  if (w === W && h === H && npr === pr && bgC) return true;
+  W = w;
+  H = h;
+  pr = npr;
+  canvas.width = Math.round(w * pr);
+  canvas.height = Math.round(h * pr);
+  rect = null;
+  grads.clear();
+  inkUp();
+  slide = null;
+  layout();
+  bgC = makeDesk();
+  paperTex = makePaper();
+  shadowC = makeShadow();
+  sheet = makeSheet();
+  sheetG = sheet.g;
+  replay();
+  wetC = mk(paperTex.width, paperTex.height);
+  wetG = wetC.getContext('2d');
+  wetG.setTransform(pr, 0, 0, pr, 0, 0);
+  wetG.lineCap = 'butt';
+  wetG.lineJoin = 'round';
+  wetLive = false;
+  pen.touch = false;
+  if (ready) draw();
+  return true;
+}
+// Reduced motion starts with a finished figure instead of a live one.
+function predraw() {
+  newRatio();
+  P[0].a = rnd(0.65, 0.9);
+  P[0].ph = Math.PI / 2;
+  P[1].a = rnd(0.6, 0.9);
+  P[1].ph = Math.PI / 2 + rnd(0.4, 1.3);
+  startLayer(-1);
+  quiet = true;
+  for (let i = 0; i < 5000 && drawing; i++) step(1 / 60, true);
+  inkUp();
+  quiet = false;
+  P.forEach(p => { p.a = 0; });
+  rot.a = 0;
+  drawing = false;
+  pen.touch = false;
+  pen.lift = 1;
+  penAt(q);
+  pen.x = q.x;
+  pen.y = q.y;
+}
+
+/* ---------- start ---------- */
+function failed() {
+  ready = false;
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  [...chips, sheetB].forEach(b => { b.disabled = true; });
+}
+async function boot() {
+  await idle();
+  try { ctx = canvas.getContext('2d', { alpha: false }); } catch (err) { ctx = null; }
+  if (!ctx || typeof ctx.roundRect !== 'function') return failed();
+  if (!fit()) {
+    W = 1160; H = 652; pr = 1;
+    canvas.width = W; canvas.height = H;
+    layout();
+    bgC = makeDesk(); paperTex = makePaper(); shadowC = makeShadow();
+    sheet = makeSheet(); sheetG = sheet.g;
+    wetC = mk(paperTex.width, paperTex.height); wetG = wetC.getContext('2d'); wetG.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  ready = true;
+  if (reduce) predraw();
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  let fitT = 0;
+  new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(() => { if (fit()) wake(); }, 80); }).observe(panel);
+  if (!reduce) setTimeout(randomSwing, 700);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
