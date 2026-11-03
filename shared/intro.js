@@ -11,12 +11,12 @@ function toyId(path = location.pathname) {
   return parts[parts.length - 1] || '';
 }
 // One short fetch; a slow or missing file gives null.
-async function entry() {
+async function entry(id = toyId()) {
   try {
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 400);
     const res = await fetch(TOYS, { signal: ctl.signal });
     clearTimeout(t);
-    return res.ok ? (await res.json())[toyId()] || null : null;
+    return res.ok ? (await res.json())[id] || null : null;
   } catch (err) {
     return null;
   }
@@ -51,14 +51,32 @@ const play = (el, frame, ms, ease = linear) => {
   return el.animate(keys, { duration: (n * 1000) / FPS, easing: `steps(${n}, jump-end)`, fill: 'forwards' }).finished;
 };
 
-// ready is a promise; the intro holds at least min ms before it clears.
-export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
+// Every beat of the intro, in frames at 30 fps or in milliseconds.
+// The intro lab at /introlab/ edits a copy of this table live.
+export const TIMING = {
+  lead: 3,      // frames of glass before the flash
+  pop: 2,       // frames the flash fills the eye
+  flash: 7,     // frames the box holds after the pop
+  unfurl: 333,  // ms each line takes to open
+  nlLag: 2,     // frames between the name and the Dutch line
+  subLag: 4,    // frames before the subtitle opens
+  hold: 2300,   // ms from the start before the intro may clear
+  tickPop: 2,   // frames the tick pops large
+  tickHold: 8,  // frames the tick flash holds
+  wipe: 333,    // ms the column wipes off
+  fade: 500,    // ms the glass fades away
+};
+
+// ready is a promise; the intro holds at least T.hold ms before it clears.
+// id and done let the intro lab play any toy; pages leave them out.
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
+  const T = { ...TIMING, ...timing };
   root.classList.add('is-live');
   const text = root.querySelector('.intro-text');
-  const held = Promise.all([ready, wait(frames(min))]);
-  const info = await entry(), nameEl = text.querySelector('.intro-name');
+  const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
+  const info = await entry(id), nameEl = text.querySelector('.intro-name');
   let nl = null;
   if (info && nameEl) {
     nameEl.textContent = info.name;
@@ -101,40 +119,40 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   }
   // The name and subtitle start closed at their centre line.
   const closed = 'inset(0 50% 0 50%)';
-  const unfurl = el => play(el, p => ({ clipPath: `inset(0 ${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}%)` }), 333, settle);
+  const unfurl = el => play(el, p => ({ clipPath: `inset(0 ${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}%)` }), T.unfurl, settle);
   if (badge) name.style.clipPath = closed;
   if (nl) nl.style.clipPath = closed;
   if (sub) sub.style.clipPath = closed;
 
   // The box flashes on in one frame and holds.
-  await wait(3);
+  await wait(T.lead);
   if (badge) { badge.classList.add('is-flash'); badge.style.setProperty('--box', 1); } else name.classList.add('is-flash');
   // For two frames the flash fills the eye, then it snaps to its place.
   const big = badge || name;
   big.style.transform = 'scale(2.6)';
   text.style.opacity = 1;
-  await wait(2);
+  await wait(T.pop);
   big.style.transform = '';
-  await wait(7);
+  await wait(T.flash);
   // The box cuts out; the emblem stays, white, and the words unfurl beneath it.
   if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
   if (badge) unfurl(name);
-  if (nl) { await wait(2); unfurl(nl); }
-  if (sub) { await wait(4); await unfurl(sub); }
+  if (nl) { await wait(T.nlLag); unfurl(nl); }
+  if (sub) { await wait(T.subLag); await unfurl(sub); }
 
   await held;
 
   // A toy Tom signs off carries data-done; its last flash shows a tick.
-  if ('done' in root.dataset) await tickOff(big, badge, name);
+  if (done ?? 'done' in root.dataset) await tickOff(big, badge, name, T);
 
   // The column wipes off, then the glass fades away whole.
-  await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
-  await play(root, p => ({ opacity: 1 - p }), 500, settle);
+  await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), T.wipe, accel);
+  await play(root, p => ({ opacity: 1 - p }), T.fade, settle);
   root.remove();
 }
 
 // The last flash ticks the toy off beside its mark.
-async function tickOff(big, badge, name) {
+async function tickOff(big, badge, name, T) {
   const tick = document.createElement('span');
   tick.className = 'intro-tick';
   tick.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.5l5.5 5.5L20.5 6" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="square"/></svg>';
@@ -142,8 +160,8 @@ async function tickOff(big, badge, name) {
   if (badge) { badge.classList.add('is-flash'); badge.style.setProperty('--box', 1); } else name.classList.add('is-flash');
   tick.style.opacity = 1;
   tick.style.transform = 'scale(1.5)';
-  await wait(2);
+  await wait(T.tickPop);
   tick.style.transform = '';
-  await wait(8);
+  await wait(T.tickHold);
   if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
 }

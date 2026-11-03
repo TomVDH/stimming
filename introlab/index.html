@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<title>Intro lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Intro lab: replay the toy intro and tune each beat live. */
+:root {
+  --bg: oklch(0.16 0.012 275); --fg: oklch(0.95 0.008 275); --muted: oklch(0.62 0.02 275);
+  --line: oklch(0.3 0.015 275); --sans: "Gabarito", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans); }
+/* A busy backdrop shows what the glass blurs. */
+.backdrop {
+  position: fixed; inset: 0; z-index: 0;
+  background:
+    radial-gradient(40% 50% at 30% 40%, oklch(0.62 0.18 30) 0, transparent 70%),
+    radial-gradient(35% 45% at 70% 60%, oklch(0.6 0.16 250) 0, transparent 70%),
+    radial-gradient(25% 30% at 55% 25%, oklch(0.8 0.15 95) 0, transparent 70%),
+    var(--bg);
+}
+.panel {
+  position: fixed; right: 16px; top: 16px; bottom: 16px; z-index: 200; width: min(340px, calc(100vw - 32px));
+  overflow: auto; padding: 16px; display: grid; align-content: start; gap: 12px;
+  background: oklch(0.14 0.012 275 / 0.92); border: 1px solid var(--line); border-radius: 16px;
+}
+.panel h1 { margin: 0; font-size: 18px; font-weight: 800; }
+.panel p { margin: 0; color: var(--muted); font-size: 12px; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; }
+.row label { color: var(--muted); }
+.row output { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
+.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--fg); }
+select, button {
+  font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--fg); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.check { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+@media (max-width: 640px) { .panel { top: auto; height: 48svh; } }
+/* The intro plays in the space beside the panel. */
+@media (min-width: 641px) { .intro { right: 372px; } }
+@media (max-width: 640px) { .intro { bottom: 48svh; } }
+</style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+<aside class="panel" aria-label="Intro lab">
+  <h1>Intro lab</h1>
+  <p>Tune each beat, then Play. Copy gives the table to paste into <code>shared/intro.js</code>.</p>
+  <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
+  <label class="check"><input type="checkbox" id="done"> Signed off (tick)</label>
+  <label class="check"><input type="checkbox" id="loop"> Loop</label>
+  <div id="knobs"></div>
+  <div class="actions">
+    <button type="button" id="play">Play</button>
+    <button type="button" id="reset">Defaults</button>
+    <button type="button" id="copy">Copy table</button>
+  </div>
+</aside>
+
+<script type="module">
+import { intro, TIMING } from '../shared/intro.js';
+
+// Each beat gets a slider: frames step by 1, milliseconds by 10.
+const RANGE = {
+  lead: [0, 20, 1, 'f'], pop: [0, 10, 1, 'f'], flash: [0, 30, 1, 'f'], unfurl: [50, 1500, 10, 'ms'],
+  nlLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'], hold: [500, 6000, 50, 'ms'],
+  tickPop: [0, 10, 1, 'f'], tickHold: [0, 30, 1, 'f'], wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'],
+};
+const KEY = 'stimming.introlab';
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (err) { return {}; } };
+const saved = load();
+const T = { ...TIMING, ...(saved.timing || {}) };
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ timing: T, toy: toySel.value, done: doneBox.checked })); } catch (err) {} };
+
+const knobs = document.getElementById('knobs'), toySel = document.getElementById('toy');
+const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop');
+for (const [k, [lo, hi, step, unit]] of Object.entries(RANGE)) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<label for="k-${k}">${k}</label><output id="o-${k}"></output><input type="range" id="k-${k}" min="${lo}" max="${hi}" step="${step}">`;
+  knobs.append(row);
+  const input = row.querySelector('input'), out = row.querySelector('output');
+  const show = () => { out.textContent = unit === 'f' ? `${T[k]} f · ${Math.round((T[k] * 1000) / 30)} ms` : `${T[k]} ms`; };
+  input.value = T[k];
+  show();
+  input.addEventListener('input', () => { T[k] = +input.value; show(); save(); });
+}
+
+const toys = await fetch('../toys.json').then(r => r.json());
+for (const [id, t] of Object.entries(toys)) toySel.add(new Option(`${t.name}${t.number ? ` · ${t.number}` : ''}`, id));
+toySel.value = saved.toy && toys[saved.toy] ? saved.toy : 'morpher';
+doneBox.checked = !!saved.done;
+[toySel, doneBox].forEach(el => el.addEventListener('change', save));
+
+// Each play builds a fresh intro block, as a toy page carries it.
+let playing = false;
+async function run() {
+  if (playing) return;
+  playing = true;
+  document.querySelector('.intro')?.remove();
+  const t = toys[toySel.value], root = document.createElement('div');
+  root.className = 'intro';
+  root.setAttribute('aria-hidden', 'true');
+  const emblem = t.emblem ? '<span class="intro-emblem"></span>' : '';
+  root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span><span class="intro-sub"></span></div></div>`;
+  document.body.prepend(root);
+  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...T } });
+  playing = false;
+  if (loopBox.checked) setTimeout(run, 600);
+}
+document.getElementById('play').addEventListener('click', run);
+document.getElementById('reset').addEventListener('click', () => {
+  Object.assign(T, TIMING);
+  for (const k of Object.keys(RANGE)) { const i = document.getElementById(`k-${k}`); i.value = T[k]; i.dispatchEvent(new Event('input')); }
+});
+document.getElementById('copy').addEventListener('click', async e => {
+  const text = `export const TIMING = ${JSON.stringify(T, null, 2).replace(/"(\w+)":/g, '$1:')};`;
+  try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied'; } catch (err) { e.target.textContent = 'Copy failed'; }
+  setTimeout(() => { e.target.textContent = 'Copy table'; }, 1200);
+});
+addEventListener('keydown', e => { if (e.key === ' ' && !e.target.closest('input, select, button')) { e.preventDefault(); run(); } });
+run();
+</script>
+</body>
+</html>
