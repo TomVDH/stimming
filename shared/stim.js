@@ -63,7 +63,8 @@ function mouseKeys() {
     while (walk.nextNode()) if (!walk.currentNode.parentElement.closest('.touch, kbd')) hits.push(walk.currentNode);
     hits.forEach(node => {
       const m = node.data.match(/\b(click|drag|hold)\b/i);
-      if (!m) return;
+      // "Hold still" asks for no movement, so it stays a word.
+      if (!m || /^\s*still\b/i.test(node.data.slice(m.index + m[0].length))) return;
       const word = m[1].toLowerCase();
       const key = document.createElement('kbd');
       key.className = 'mouse';
