@@ -792,6 +792,9 @@ const backs = on => { shaftsB.visible = headsB.visible = on; };
 let ray = null, ndc = null, tmp = null, ready = false, kbd = false;
 // The camera looks down 24 degrees onto the upright board.
 const EL = (24 * Math.PI) / 180, FOV = 26;
+// The rig keeps the fitted view; the cursor wobbles it, the wheel backs it off.
+const rig = { d: 150, ty: 0, yaw: 0, pitch: 0, zoom: 1, tyaw: 0, tpitch: 0, tzoom: 1 };
+const WOBBLE_YAW = 0.07, WOBBLE_PITCH = 0.045, ZOOM_MAX = 1.3;
 let lowDpr = false;
 
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
@@ -858,8 +861,9 @@ function place() {
   notches.count = n;
   notches.instanceMatrix.needsUpdate = true;
 }
-function aimCam(d, ty) {
-  camera.position.set(0, ty + d * Math.sin(EL), d * Math.cos(EL));
+function aimCam(d, ty, yaw = 0, pitch = 0) {
+  const el = EL + pitch;
+  camera.position.set(d * Math.cos(el) * Math.sin(yaw), ty + d * Math.sin(el), d * Math.cos(el) * Math.cos(yaw));
   camera.lookAt(0, ty, 0);
   camera.updateMatrixWorld();
 }
@@ -905,10 +909,24 @@ function fit(w, h) {
     const [, , y0, y1] = bounds(pts);
     ty += (((y0 + y1) / 2 - mid) * d * Math.tan((FOV * Math.PI) / 360)) / Math.cos(EL);
   }
-  aimCam(d, ty);
+  rig.d = d;
+  rig.ty = ty;
+  pose();
   camera.near = Math.max(1, d - 90);
-  camera.far = d + 90;
+  camera.far = d * ZOOM_MAX + 90;
   camera.updateProjectionMatrix();
+}
+const pose = () => aimCam(rig.d * rig.zoom, rig.ty, rig.yaw, rig.pitch);
+// The rig eases toward its targets; true while it still moves.
+function ease(dt) {
+  const k = 1 - Math.exp(-dt / 0.16);
+  const gap = Math.abs(rig.tyaw - rig.yaw) + Math.abs(rig.tpitch - rig.pitch) + Math.abs(rig.tzoom - rig.zoom);
+  if (gap < 1e-4) return false;
+  rig.yaw += (rig.tyaw - rig.yaw) * k;
+  rig.pitch += (rig.tpitch - rig.pitch) * k;
+  rig.zoom += (rig.tzoom - rig.zoom) * k;
+  pose();
+  return true;
 }
 function draw(dirty = true) {
   if (dirty) hAttr.needsUpdate = sAttr.needsUpdate = true;
@@ -938,6 +956,7 @@ function frame(ms) {
     if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
   steer(dt);
+  const swaying = ease(dt);
   spin(dt);
   sculpt(dt);
   HP.set(H.subarray(0, N));
@@ -958,7 +977,7 @@ function frame(ms) {
   shimmer(movers, movers && dt ? sp / movers / dt : 0, dt);
   clatter(impN, impMax, impSum, dt);
   draw(dirty);
-  const busy = awake || brushes.size || kb.keys.size || simT - joltAt < 0.6 || flipT >= 0;
+  const busy = swaying || awake || brushes.size || kb.keys.size || simT - joltAt < 0.6 || flipT >= 0;
   quiet = busy ? 0 : quiet + 1;
   if (quiet < 4) {
     if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
@@ -1011,6 +1030,24 @@ panel.addEventListener('pointermove', e => {
   wake();
 });
 function lift(e) { if (brushes.delete(e.pointerId)) wake(); }
+// A mouse over the board sways the camera a little; a press holds it still.
+panel.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse' || reduce || brushes.size || !ready) return;
+  const r = panel.getBoundingClientRect();
+  rig.tyaw = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1) * WOBBLE_YAW;
+  rig.tpitch = clamp(1 - ((e.clientY - r.top) / r.height) * 2, -1, 1) * WOBBLE_PITCH;
+  wake();
+});
+panel.addEventListener('pointerleave', () => { rig.tyaw = rig.tpitch = 0; wake(); });
+// Wheel or pinch backs the camera off; at a limit the page scrolls on.
+panel.addEventListener('wheel', e => {
+  if (!ready) return;
+  const z = clamp(rig.tzoom * Math.exp(e.deltaY * (e.ctrlKey ? 0.006 : 0.0015)), 1, ZOOM_MAX);
+  if (Math.abs(z - rig.tzoom) < 1e-4) return;
+  e.preventDefault();
+  rig.tzoom = z;
+  wake();
+}, { passive: false });
 panel.addEventListener('pointerup', lift);
 panel.addEventListener('pointercancel', lift);
 panel.addEventListener('lostpointercapture', lift);
@@ -1205,7 +1242,8 @@ async function start() {
   room.dispose();
   pm.dispose();
   // The key light sits up and left in front; nearer pins catch more.
-  const key = new THREE.SpotLight(0xfff4e8, 3000, 0, 0.75, 0.9, 1.6);
+  scene.environmentIntensity = 0.72;
+  const key = new THREE.SpotLight(0xfff4e8, 1700, 0, 0.75, 0.9, 1.6);
   key.position.set(-28, 52, 64);
   scene.add(key, key.target);
   await idle();
