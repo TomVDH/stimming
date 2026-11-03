@@ -31,16 +31,21 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--glass" id="stage" tabindex="0" role="application" aria-label="A pane of glass in a frame. Tap to crack it; keep tapping or hold to shatter it. Space taps, arrow keys move the tap point, R rewinds.">
+    <div class="stage stage--glass" id="stage" tabindex="0" role="application" aria-label="A pane of glass in a frame. Tap to crack it; keep tapping or hold to break it. Space taps, arrow keys move the tap point, R rewinds.">
       <p class="fail" hidden>Glass needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices" id="kind" role="group" aria-label="Glass">
+        <button class="chip" type="button" data-value="annealed" aria-pressed="true">Annealed</button>
+        <button class="chip" type="button" data-value="tempered" aria-pressed="false">Tempered</button>
+        <button class="chip" type="button" data-value="laminated" aria-pressed="false">Laminated</button>
+      </div>
       <div class="actions">
         <button class="chip" id="rewind" type="button" aria-keyshortcuts="R" aria-disabled="true">Rewind</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>crack</dd></div>
-        <div><dt>Hold</dt><dd>shatter</dd></div>
+        <div><dt>Hold</dt><dd id="hold-dd">shatter</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>tap</dd></div>
         <div class="fine"><dt><kbd>R</kbd></dt><dd>rewind</dd></div>
       </dl>
@@ -56,8 +61,12 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, oklchRgb } from '../shared/stim.js';
+import { initPage, sound, oklchRgb, choices } from '../shared/stim.js';
 initPage({ id: 'glass' });
+// Three glasses: each breaks its own way.
+const KINDS = ['annealed', 'tempered', 'laminated'];
+let glass = 'annealed';
+try { const v = localStorage.getItem('stimming.glass.kind'); if (KINDS.includes(v)) glass = v; } catch (err) { /* storage is optional */ }
 const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -112,11 +121,17 @@ function rest() {
   }, 1500);
 }
 const GESTURE_KEYS = new Set(['r', 'R', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+// The work runs after the next frame paints.
+const afterPaint = fn => requestAnimationFrame(() => setTimeout(fn, 0));
+// The first sound waits one frame, so the crack draws first.
+const sfx = fn => (ac ? fn() : afterPaint(fn));
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
   if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
+  // Building the context is slow, so a press defers it.
+  if (!ac && (e.type === 'pointerdown' || e.type === 'keydown')) afterPaint(audio);
+  else audio();
 }
 // Touchend is the gesture iOS needs.
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
@@ -169,17 +184,70 @@ function partials(a, dst, t, f0, ratios, gains, decays, g, swell = 0) {
 }
 const RING = [1, 1.593, 2.135, 2.917, 4.15], RING_G = [0.07, 0.05, 0.04, 0.028, 0.02], RING_D = [0.42, 0.28, 0.2, 0.12, 0.07];
 
+// Each glass voices a crack: pitch, ring length, knock and snap.
+// Tempered rings high and long; the laminate's interlayer deadens it.
+const VOICE = {
+  annealed: { f: 1, ring: 1, knock: 1, snap: 1 },
+  tempered: { f: 1.45, ring: 1.5, knock: 0.5, snap: 0.9 },
+  laminated: { f: 0.78, ring: 0.28, knock: 1.4, snap: 0.75 },
+};
 // A crack: a sharp snap, a dull knock and a glassy ring.
 // Ticks follow the crack as it runs.
-function crackSound(x, hard, ticks) {
+function crackSound(x, hard, ticks, kind = glass) {
   const a = live();
   if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD, g = level() * (hard ? 1 : 0.78), d = bus(a, x), k = hard ? 1.35 : 1;
-  burst(a, d, t, 'bandpass', 3400 * jit(0.1), 0.8, 1.1 * g, hard ? 0.009 : 0.006, 0.08);
-  burst(a, d, t, 'highpass', 7000, 0.7, 0.6 * g, 0.0025, 0.03);
-  burst(a, d, t, 'lowpass', hard ? 240 : 380, 0.9, (hard ? 0.9 : 0.45) * g, 0.03, 0.2);
-  const [o, gs] = partials(a, d, t + 0.001, (hard ? 1500 : 2100) * jit(0.12), RING, RING_G, RING_D.map(v => v * k), g);
+  const V = VOICE[kind], t = a.currentTime + LEAD, g = level() * (hard ? 1 : 0.78), d = bus(a, x), k = (hard ? 1.35 : 1) * V.ring;
+  burst(a, d, t, 'bandpass', 3400 * V.f * jit(0.1), 0.8, 1.1 * g * V.snap, hard ? 0.009 : 0.006, 0.08);
+  burst(a, d, t, 'highpass', 7000, 0.7, 0.6 * g * V.snap, 0.0025, 0.03);
+  burst(a, d, t, 'lowpass', hard ? 240 : 380, 0.9, (hard ? 0.9 : 0.45) * g * V.knock, 0.03, 0.2);
+  const [o, gs] = partials(a, d, t + 0.001, (hard ? 1500 : 2100) * V.f * jit(0.12), RING, RING_G, RING_D.map(v => v * k), g);
   ticks.forEach((dt, i) => burst(a, d, t + dt, 'highpass', rnd(5200, 8200), 0.8, (0.3 - i * 0.016) * g * jit(0.3), 0.0015, 0.02));
+  track(o, ...gs, d);
+}
+// Tempered glass crazes: one bang, then a crackle runs across the pane.
+function crazeSound(x, dur) {
+  crackSound(x, true, [], 'tempered');
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, x);
+  burst(a, d, t + 0.003, 'bandpass', 5200, 0.5, 0.7 * g, dur * 0.5, dur + 0.1);
+  for (let i = 0; i < 40; i++) {
+    burst(a, d, t + dur * (i / 40) ** 0.7 + Math.random() * 0.01, 'highpass', rnd(4800, 9000), 0.8, rnd(0.08, 0.22) * g, 0.0012, 0.015);
+  }
+  setTimeout(() => d.disconnect(), (dur + 0.6) * 1000);
+}
+// The dice pour out: a gritty hiss under a falling patter.
+function pourSound(dur) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, 0);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(6200, t);
+  bp.frequency.exponentialRampToValueAtTime(3000, t + dur);
+  bp.Q.value = 0.7;
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.16 * g, t + 0.12);
+  ng.gain.setTargetAtTime(0, t + 0.3, dur / 3);
+  src.connect(bp).connect(ng).connect(d);
+  src.start(t);
+  src.stop(t + dur * 1.6);
+  for (let i = 0; i < 36; i++) {
+    burst(a, d, t + dur * Math.random() ** 1.4, 'highpass', rnd(5000, 9000), 0.8, rnd(0.05, 0.16) * g, 0.0015, 0.02);
+  }
+  track(src, bp, ng, d);
+}
+// The laminate stretches: a dry crunch and a low creak.
+function popSound(x, k) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level() * (0.55 + 0.25 * k), d = bus(a, x);
+  burst(a, d, t, 'highpass', rnd(5600, 8000), 0.8, 0.4 * g, 0.0015, 0.02);
+  burst(a, d, t, 'bandpass', rnd(800, 1100), 4, 0.8 * g, 0.03, 0.12);
+  burst(a, d, t + 0.004, 'lowpass', 170 + 40 * k, 1.2, 0.8 * g, 0.05, 0.25);
+  const [o, gs] = partials(a, d, t + 0.001, 1500 * jit(0.1), RING, RING_G.map(v => v * 0.6), RING_D.map(v => v * 0.22), g);
   track(o, ...gs, d);
 }
 // Shards landing: a tiny tick and a short high ring.
@@ -250,7 +318,7 @@ function unzipSound(dur) {
 
 /* ---------- cracks: line segments in pane coordinates, y up ---------- */
 // The frame is FH tall; its width follows the panel's shape.
-const FH = 2, FB = 0.05, FD = 0.08, T = 0.026, GLOW = 0.25;
+const FH = 2, FB = 0.05, FD = 0.08, T = 0.026, GLOW = 0.05;
 let FW = 3.6, PW = FW - 2 * FB, PH = FH - 2 * FB, S = PH;
 // Each segment: ends, birth times on the crack clock, width and glint.
 const segs = [], tips = [];
@@ -333,59 +401,194 @@ function onRadial(pts, cx, cy, r) {
   }
   return null;
 }
-// A web: radial cracks with branches, linked by ring cracks.
-function web(cx, cy, hard) {
-  const t0 = cClock, T1 = (hard ? 0.3 : 0.55) * (reduce ? 0.5 : 1);
-  const rate = d => T1 * (d / S) ** 0.8;
-  const n = hard ? 11 + Math.floor(Math.random() * 4) : 7 + Math.floor(Math.random() * 5);
-  const a0 = Math.random() * TAU, rads = [], branches = [];
+// One ring of a web: arcs between neighbouring radials at radius r.
+// The arcs sag slightly inward and stop at any crack.
+function ringAt(cx, cy, rads, r, skip, w) {
+  const n = rads.length;
   for (let k = 0; k < n; k++) {
-    const ang = a0 + (k + rnd(-0.3, 0.3)) * (TAU / n);
-    const len = S * (hard ? rnd(0.9, 1.7) : rnd(0.14, 0.42) * (Math.random() < 0.3 ? 2.2 : 1));
-    const r = grow(cx, cy, ang, len, t0, rate, 1, 0.3, branches);
-    rads.push(r.pts);
-    if (r.open) tips.push([r.x, r.y, r.dir]);
-  }
-  for (const [x, y, dir, len, tb] of branches) {
-    const r = grow(x, y, dir, len, tb, d => rate(d) * 0.8 + 0, 0.8, 0.3, null);
-    if (r.open) tips.push([r.x, r.y, r.dir]);
-  }
-  // Rings sit at roughly geometric radii and sag slightly inward.
-  const r1 = S * rnd(0.03, 0.05), gr = rnd(1.55, 1.85), m = hard ? 5 : 2 + Math.floor(Math.random() * 3);
-  for (let j = 0; j < m; j++) {
-    const r = r1 * gr ** j;
-    for (let k = 0; k < n; k++) {
-      if (Math.random() < 0.12 + 0.08 * j) continue;
-      let A = onRadial(rads[k], cx, cy, r), B = onRadial(rads[(k + 1) % n], cx, cy, r);
-      if (!A || !B) continue;
-      if (Math.random() < 0.5) [A, B] = [B, A];
-      const aa = Math.atan2(A[1] - cy, A[0] - cx);
-      let ab = Math.atan2(B[1] - cy, B[0] - cx) - aa;
-      ab -= Math.round(ab / TAU) * TAU;
-      if (Math.abs(ab) > 1.6) continue;
-      let x = A[0], y = A[1], t = Math.max(A[2], B[2]) + rnd(0.01, 0.05);
-      const parts = 3;
-      for (let p = 1; p <= parts; p++) {
-        const sag = p < parts ? r * rnd(0.92, 0.98) : 0;
-        const qx = p < parts ? cx + Math.cos(aa + (ab * p) / parts) * sag : B[0];
-        const qy = p < parts ? cy + Math.sin(aa + (ab * p) / parts) * sag : B[1];
-        const [f, hit] = firstHit(x, y, qx, qy);
-        const ex = lerp(x, qx, f), ey = lerp(y, qy, f), dt = Math.hypot(ex - x, ey - y) / (S * 2.2);
-        if (dt > 0) addSeg(x, y, ex, ey, t, t + dt, 0.7);
-        x = ex;
-        y = ey;
-        t += dt;
-        if (hit) break;
-      }
+    if (Math.random() < skip) continue;
+    let A = onRadial(rads[k], cx, cy, r), B = onRadial(rads[(k + 1) % n], cx, cy, r);
+    if (!A || !B) continue;
+    if (Math.random() < 0.5) [A, B] = [B, A];
+    const aa = Math.atan2(A[1] - cy, A[0] - cx);
+    let ab = Math.atan2(B[1] - cy, B[0] - cx) - aa;
+    ab -= Math.round(ab / TAU) * TAU;
+    if (Math.abs(ab) > 1.6) continue;
+    let x = A[0], y = A[1], t = Math.max(A[2], B[2]) + rnd(0.01, 0.05);
+    const parts = 3;
+    for (let p = 1; p <= parts; p++) {
+      const sag = p < parts ? r * rnd(0.92, 0.98) : 0;
+      const qx = p < parts ? cx + Math.cos(aa + (ab * p) / parts) * sag : B[0];
+      const qy = p < parts ? cy + Math.sin(aa + (ab * p) / parts) * sag : B[1];
+      const [f, hit] = firstHit(x, y, qx, qy);
+      const ex = lerp(x, qx, f), ey = lerp(y, qy, f), dt = Math.hypot(ex - x, ey - y) / (S * 2.2);
+      if (dt > 0) addSeg(x, y, ex, ey, t, t + dt, w);
+      x = ex;
+      y = ey;
+      t += dt;
+      if (hit) break;
     }
   }
+}
+// Web shapes per glass: radial count, reach, rings and run time.
+// Tempered shows only a small bruise until it crazes.
+// The laminate's web is dense, with many close rings.
+const WEB = {
+  annealed: hard => ({
+    n: hard ? 11 + Math.floor(Math.random() * 4) : 7 + Math.floor(Math.random() * 5),
+    len: () => S * (hard ? rnd(0.9, 1.7) : rnd(0.14, 0.42) * (Math.random() < 0.3 ? 2.2 : 1)),
+    r1: S * rnd(0.03, 0.05), gr: rnd(1.55, 1.85), m: hard ? 5 : 2 + Math.floor(Math.random() * 3),
+    skip: j => 0.12 + 0.08 * j, T1: hard ? 0.3 : 0.55, wander: 0.3, branch: true,
+  }),
+  tempered: () => ({
+    n: 4 + Math.floor(Math.random() * 3), len: () => S * rnd(0.014, 0.045),
+    r1: S * rnd(0.008, 0.012), gr: 1.7, m: 1, skip: () => 0.3, T1: 0.12, wander: 0.5, branch: false,
+  }),
+  laminated: hard => ({
+    n: (hard ? 20 : 14) + Math.floor(Math.random() * 6),
+    len: () => S * rnd(0.26, 0.6) * (Math.random() < 0.3 ? 1.6 : 1),
+    r1: S * rnd(0.018, 0.028), gr: rnd(1.36, 1.5), m: hard ? 8 : 5 + Math.floor(Math.random() * 3),
+    skip: j => 0.04 + 0.05 * j, T1: 0.5, wander: 0.36, branch: true,
+  }),
+};
+// A web: radial cracks with branches, linked by ring cracks.
+function web(cx, cy, hard) {
+  const W = WEB[glass](hard), t0 = cClock, T1 = W.T1 * (reduce ? 0.5 : 1);
+  const rate = d => T1 * (d / S) ** 0.8;
+  const n = W.n, a0 = Math.random() * TAU, rads = [], branches = W.branch ? [] : null;
+  for (let k = 0; k < n; k++) {
+    const ang = a0 + (k + rnd(-0.3, 0.3)) * (TAU / n);
+    const r = grow(cx, cy, ang, W.len(), t0, rate, 1, W.wander, branches);
+    rads.push(r.pts);
+    if (r.open && glass !== 'tempered') tips.push([r.x, r.y, r.dir]);
+  }
+  for (const [x, y, dir, len, tb] of branches || []) {
+    const r = grow(x, y, dir, len, tb, d => rate(d) * 0.8, 0.8, 0.3, null);
+    if (r.open) tips.push([r.x, r.y, r.dir]);
+  }
+  // Rings sit at roughly geometric radii.
+  for (let j = 0; j < W.m; j++) ringAt(cx, cy, rads, W.r1 * W.gr ** j, W.skip(j), 0.7);
   let end = t0;
   for (const s of segs) if (s.tb > end) end = s.tb;
   growEnd = Math.max(growEnd, end);
   // The crack's run ticks as it goes, quicker near the start.
   const ticks = [];
   for (let i = 0; i < 12; i++) ticks.push(rate(S * 0.5 * ((i + 1) / 12) ** 1.5) * rnd(0.85, 1.15));
-  return { x: cx, y: cy, end, ticks };
+  return { x: cx, y: cy, end, ticks, rNext: W.r1 * W.gr ** W.m };
+}
+// Tempered glass crazes at once into small dice.
+// Dice are Voronoi cells of a jittered grid of seeds.
+// A crack wave runs out from the impact over every cell edge.
+// Seeds clump into blocks; each block falls as one body.
+function craze(cx, cy, t0, cap) {
+  const n0 = cap < CAPS ? 900 : 1500, c = Math.sqrt((PW * PH) / n0);
+  const nx = Math.max(4, Math.round(PW / c)), ny = Math.max(4, Math.round(PH / c)), cw = PW / nx, ch = PH / ny;
+  const hx = PW / 2, hy = PH / 2, N = nx * ny, SX = new Float64Array(N), SY = new Float64Array(N);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    SX[j * nx + i] = -hx + (i + 0.5 + rnd(-0.42, 0.42)) * cw;
+    SY[j * nx + i] = -hy + (j + 0.5 + rnd(-0.42, 0.42)) * ch;
+  }
+  // Points closer than TOL are one vertex, so neighbours share corners.
+  const TOL = 1e-7, CELL = 1e-6, grid = new Map(), VX = [], VY = [];
+  const vid = (x, y) => {
+    const gx = Math.round(x / CELL), gy = Math.round(y / CELL);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const g = grid.get((gx + a) * 4e7 + gy + b);
+      if (g) for (const v of g) if (Math.abs(VX[v] - x) < TOL && Math.abs(VY[v] - y) < TOL) return v;
+    }
+    const v = VX.length, key = gx * 4e7 + gy;
+    VX.push(x);
+    VY.push(y);
+    if (grid.has(key)) grid.get(key).push(v); else grid.set(key, [v]);
+    return v;
+  };
+  // Keep the part of polygon P where a·x + b·y ≤ k.
+  const clip = (P, a, b, k) => {
+    const out = [];
+    for (let i = 0; i < P.length; i++) {
+      const p = P[i], q = P[(i + 1) % P.length], d1 = a * p[0] + b * p[1] - k, d2 = a * q[0] + b * q[1] - k;
+      if (d1 <= 0) out.push(p);
+      if ((d1 < 0 && d2 > 0) || (d1 > 0 && d2 < 0)) { const f = d1 / (d1 - d2); out.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); }
+    }
+    return out;
+  };
+  // Each cell: a box, cut by the bisector to each near seed.
+  const cellV = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const k = j * nx + i, px = SX[k], py = SY[k];
+    const x0 = Math.max(-hx, px - 2.5 * cw), x1 = Math.min(hx, px + 2.5 * cw), y0 = Math.max(-hy, py - 2.5 * ch), y1 = Math.min(hy, py + 2.5 * ch);
+    let P = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    for (let b = Math.max(0, j - 2); b <= Math.min(ny - 1, j + 2); b++) for (let a = Math.max(0, i - 2); a <= Math.min(nx - 1, i + 2); a++) {
+      const m = b * nx + a;
+      if (m === k) continue;
+      P = clip(P, SX[m] - px, SY[m] - py, (SX[m] ** 2 + SY[m] ** 2 - px * px - py * py) / 2);
+    }
+    const ids = [];
+    for (const [x, y] of P) { const v = vid(x, y); if (ids[ids.length - 1] !== v) ids.push(v); }
+    while (ids.length > 1 && ids[0] === ids[ids.length - 1]) ids.pop();
+    cellV.push(ids);
+  }
+  // Cracks run along every cell edge inside the pane.
+  const far = Math.max(...[[-hx, -hy], [hx, -hy], [-hx, hy], [hx, hy]].map(([x, y]) => Math.hypot(x - cx, y - cy)));
+  const waveT = reduce ? 0.1 : 0.26, speed = far / waveT;
+  const tAt = (x, y) => t0 + Math.hypot(x - cx, y - cy) / speed;
+  const onRim = (u, v) => (Math.abs(VX[u] - VX[v]) < TOL && Math.abs(Math.abs(VX[u]) - hx) < TOL) || (Math.abs(VY[u] - VY[v]) < TOL && Math.abs(Math.abs(VY[u]) - hy) < TOL);
+  const drawn = new Set(), first = segs.length;
+  cellV.forEach((ids, k) => {
+    for (let e = 0; e < ids.length; e++) {
+      const u = ids[e], v = ids[(e + 1) % ids.length], key = u < v ? u * 1e6 + v : v * 1e6 + u;
+      if (drawn.has(key) || onRim(u, v)) continue;
+      drawn.add(key);
+      addSeg(VX[u], VY[u], VX[v], VY[v], tAt(VX[u], VY[u]), tAt(VX[v], VY[v]), 0);
+    }
+    // Near the impact each die splits again, into wedges.
+    if (Math.hypot(SX[k] - cx, SY[k] - cy) < S * 0.12) {
+      for (const u of ids) addSeg(SX[k], SY[k], VX[u], VY[u], tAt(SX[k], SY[k]), tAt(VX[u], VY[u]), 0);
+    }
+  });
+  // The fine net glints less than a running crack.
+  for (let i = first; i < segs.length; i++) segs[i].g *= 0.5;
+  // The outline of a set of cells: edges that no neighbour cancels.
+  const outline = list => {
+    const dir = new Map();
+    for (const k of list) {
+      const ids = cellV[k];
+      for (let e = 0; e < ids.length; e++) {
+        const u = ids[e], v = ids[(e + 1) % ids.length];
+        if (dir.has(v * 1e6 + u)) dir.delete(v * 1e6 + u); else dir.set(u * 1e6 + v, [u, v]);
+      }
+    }
+    const next = new Map();
+    for (const [u, v] of dir.values()) { if (next.has(u)) return null; next.set(u, v); }
+    const start = next.keys().next().value, p = [];
+    let u = start;
+    do { p.push(VX[u], VY[u]); u = next.get(u); } while (u !== undefined && u !== start && p.length <= 2 * next.size);
+    return u === start && p.length === 2 * next.size ? p : null;
+  };
+  const cellPoly = k => cellV[k].flatMap(v => [VX[v], VY[v]]);
+  // Blocks tile the seed grid: single dice near the impact, bigger far off.
+  const own = new Uint8Array(N);
+  let polys = [];
+  for (let bias = 0; bias < 4; bias++) {
+    own.fill(0);
+    polys = [];
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      if (own[j * nx + i]) continue;
+      const d = Math.hypot(SX[j * nx + i] - cx, SY[j * nx + i] - cy) / S;
+      const mx = 1 + Math.min(2 + bias, Math.floor(d * 3.2 + bias + Math.random() * 1.2));
+      let w = Math.min(nx - i, 1 + Math.floor(Math.random() * mx)), h = Math.min(ny - j, 1 + Math.floor(Math.random() * mx));
+      const free = (w2, h2) => { for (let b = j; b < j + h2; b++) for (let a = i; a < i + w2; a++) if (own[b * nx + a]) return false; return true; };
+      while (w > 1 && !free(w, 1)) w--;
+      while (h > 1 && !free(w, h)) h--;
+      const list = [];
+      for (let b = j; b < j + h; b++) for (let a = i; a < i + w; a++) { own[b * nx + a] = 1; list.push(b * nx + a); }
+      const p = list.length > 1 ? outline(list) : null;
+      // A block whose outline will not close falls as single dice.
+      if (p) polys.push(p); else for (const k of list) polys.push(cellPoly(k));
+    }
+    if (polys.length <= cap) break;
+  }
+  return { polys, end: t0 + waveT };
 }
 // At the burst, every open end runs to the next crack.
 function extend(t) {
@@ -760,8 +963,8 @@ uniform sampler2D tBack, tCrack;
 uniform samplerCube tEnv;
 uniform vec2 uRes, uTexel, uPane;
 uniform vec4 uBoxA, uBoxB;
-uniform vec3 uKey;
-uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine, uDisp, uBend;
+uniform vec3 uKey, uAbs;
+uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine, uDisp, uBend, uQuench;
 varying vec3 vWorld, vNormal;
 varying vec2 vPuv;
 varying float vSide, vFade;
@@ -783,7 +986,7 @@ void main() {
   vec3 N0 = normalize(vNormal);
   if (!gl_FrontFacing) N0 = -N0;
   vec3 V = normalize(cameraPosition - vWorld);
-  // Crack field: ridge in R, bright core in G, glint in B.
+  // Crack field: ridge in R, cut gap in G, lit edge in B.
   vec3 ck = texture2D(tCrack, vPuv).rgb * uCrackK;
   vec2 cg = vec2(
     texture2D(tCrack, vPuv + vec2(uTexel.x, 0.0)).r - texture2D(tCrack, vPuv - vec2(uTexel.x, 0.0)).r,
@@ -803,7 +1006,7 @@ void main() {
   // Side walls are the longest paths.
   float rim = min(min(vPuv.x, 1.0 - vPuv.x) * uPane.x, min(vPuv.y, 1.0 - vPuv.y) * uPane.y);
   float path = mix(1.0 / max(cosT, 0.2), 20.0, vSide) + ck.r * 5.0 + uEdge * 14.0 * smoothstep(0.035, 0.0, rim);
-  vec3 tint = exp(-vec3(0.07, 0.016, 0.05) * path);
+  vec3 tint = exp(-uAbs * path);
   float F = max(0.04 + 0.96 * pow(1.0 - cosT, 5.0), vSide * 0.2);
   vec3 R = reflect(-V, N);
   vec3 env = textureCube(tEnv, R).rgb * uEnvI + studio(R);
@@ -815,14 +1018,16 @@ void main() {
     env = mix(env, texture2D(tBack, clamp(ruv, 0.0, 1.0)).rgb * 1.15, k);
   }
   env *= mix(vec3(1.0), vec3(0.55, 1.0, 0.8), vSide);
+  // Tempering leaves a lattice of quench marks, seen only in reflections.
+  vec2 qm = vPuv * uPane / 0.26;
+  float spots = smoothstep(0.35, 0.8, abs(sin(qm.x * 3.14159) * sin(qm.y * 3.14159)));
+  env *= 1.0 - 0.4 * uQuench * spots;
   vec3 L = normalize(vec3(-0.45, 0.75, 0.5));
   float spec = pow(max(dot(N, normalize(L + V)), 0.0), 300.0) * 5.0;
-  // Crack cores are thin bright lines with a faint rainbow.
+  // Cracks are hard dark cut gaps with one lit edge.
   // Crack walls darken the glass beside them.
-  float line = ck.g * (0.12 + 1.7 * ck.b * ck.b) * uLine * (1.0 - vSide);
-  vec3 iri = 0.62 + 0.38 * cos(6.2831853 * (vPuv.x * 1.7 + vPuv.y * 1.1 + Nv.x * 0.6) + vec3(0.0, 2.1, 4.2));
-  vec3 lineC = mix(vec3(0.84, 1.0, 0.96), iri, 0.45);
-  vec3 col = back * tint * (1.0 - F) * (1.0 - 0.42 * ck.r * (1.0 - ck.g)) + env * F + spec + line * lineC;
+  float face = uLine * (1.0 - vSide), gap = ck.g * face, lit = ck.b * face;
+  vec3 col = (back * tint * (1.0 - F) * (1.0 - 0.35 * ck.r * (1.0 - ck.g)) + env * F + spec) * (1.0 - 0.93 * gap) + lit * vec3(0.9, 1.0, 0.96) * 1.5;
   gl_FragColor = vec4(col, uOpacity * vFade);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -830,7 +1035,9 @@ void main() {
 }`;
 const PANE_VS = `
 uniform vec4 uFlex;
+uniform vec4 uDent[8];
 uniform vec2 uPane;
+uniform float uSag;
 varying vec3 vWorld, vNormal;
 varying vec2 vPuv;
 varying float vSide, vFade;
@@ -839,9 +1046,22 @@ void main() {
   // The dent's slope bends the light.
   vec3 p = position;
   vec2 d = p.xy - uFlex.xy;
-  float s2 = uFlex.w * uFlex.w, g = uFlex.z * exp(-dot(d, d) / s2);
-  p.z += g;
-  vec3 n = normalize(vec3(2.0 * g * d / s2, 1.0));
+  float s2 = uFlex.w * uFlex.w, g = uFlex.z * exp(-dot(d, d) / s2), z = g;
+  vec2 grad = -2.0 * g * d / s2;
+  // A broken laminate keeps a dent where it was struck.
+  for (int i = 0; i < 8; i++) {
+    vec4 D = uDent[i];
+    vec2 e = p.xy - D.xy;
+    float r2 = D.w * D.w, h = D.z * exp(-dot(e, e) / r2);
+    z += h;
+    grad -= 2.0 * h * e / r2;
+  }
+  // It also bows between the frame bars.
+  vec2 u = 2.0 * p.xy / uPane, b = 1.0 - u * u;
+  z += uSag * b.x * b.y;
+  grad += uSag * vec2(-4.0 * u.x / uPane.x * b.y, -4.0 * u.y / uPane.y * b.x);
+  p.z += z;
+  vec3 n = normalize(vec3(-grad, 1.0));
   vPuv = position.xy / uPane + 0.5;
   vec4 w = modelMatrix * vec4(p, 1.0);
   vWorld = w.xyz;
@@ -881,11 +1101,13 @@ uniform float uTime;
 varying float vCross, vT, vCore, vGlint;
 void main() {
   if (vT > uTime) discard;
-  float a = abs(vCross), ridge = (1.0 - a) * (1.0 - a);
-  float core = 1.0 - smoothstep(vCore, vCore * 2.4, a);
-  // The running tip flares, then cools.
-  float tip = exp((vT - uTime) * 14.0);
-  gl_FragColor = vec4(ridge, core, core * clamp(vGlint + tip, 0.0, 1.0), 1.0);
+  float a = abs(vCross), ridge = (1.0 - a) * (1.0 - a), aa = 0.5 * fwidth(vCross);
+  // A hard gap sits on the centre line.
+  float gap = 1.0 - smoothstep(vCore - aa, vCore + aa, a);
+  // One edge catches the light: the side the glint's sign names.
+  float s = vCross * sign(vGlint);
+  float lit = smoothstep(vCore - aa, vCore + aa, s) * (1.0 - smoothstep(vCore * 1.75 - aa, vCore * 1.75 + aa, s));
+  gl_FragColor = vec4(ridge, gap, lit * abs(vGlint), 1.0);
 }`;
 const WORLD_VS = `
 varying vec3 vW;
@@ -982,6 +1204,20 @@ void main() {
   vec2 q = (vW.xz - uPoolC) / vec2(uPoolR, uPoolR * 0.45);
   vec3 col = uBase + uPool * exp(-dot(q, q)) + uSpill * exp(-(vW.z - uWallZ) * 1.6);
   gl_FragColor = vec4(col, 1.0);
+}`;
+// The frame is a flat stencil: one face tone, one depth tone.
+const FRAME_VS = `
+varying float vFront;
+void main() {
+  vFront = step(0.5, normal.z);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+const FRAME_FS = `
+uniform vec3 uFace, uSide;
+varying float vFront;
+void main() {
+  gl_FragColor = vec4(mix(uSide, uFace, vFront), 1.0);
+  #include <colorspace_fragment>
 }`;
 // The backdrop target is drawn once per frame behind everything.
 const BACK_VS = `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
@@ -1095,7 +1331,7 @@ function fit(w, h) {
 function build() {
   built = true;
   pane.geometry.dispose();
-  pane.geometry = new THREE.PlaneGeometry(PW, PH, 96, 56).translate(0, 0, T / 2);
+  pane.geometry = new THREE.PlaneGeometry(PW, PH, 160, 90).translate(0, 0, T / 2);
   pane.position.set(0, FH / 2, 0);
   for (const m of [paneMat, shardMat]) m.uniforms.uPane.value.set(PW, PH);
   while (frameG.children.length) { const c = frameG.children.pop(); c.geometry.dispose(); }
@@ -1115,12 +1351,14 @@ function ribbons() {
   if (!n) info.fill(1e9);
   for (let i = 0; i < n; i++) {
     const s = segs[i], dx = s.bx - s.ax, dy = s.by - s.ay, l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
-    const hw = tex * (2 + 6 * s.w), core = (0.55 * tex * (0.6 + 0.4 * s.w)) / hw, ex = hw * 0.35;
+    const hw = tex * (3 + 6 * s.w), core = (tex * (0.85 + 0.9 * s.w)) / hw, ex = hw * 0.35;
     const c = [[s.ax - ux * ex, s.ay - uy * ex, s.ta], [s.bx + ux * ex, s.by + uy * ex, s.tb]];
+    // The wall that faces away from the light catches it.
+    const litSide = -uy * L2X + ux * L2Y < 0 ? 1 : -1;
     for (let k = 0; k < 4; k++) {
       const [x, y, t] = c[k >> 1], side = k & 1 ? -1 : 1;
       pos.set([x - uy * hw * side, y + ux * hw * side, 0], (i * 4 + k) * 3);
-      info.set([side, t, core, s.g * (0.55 + 0.45 * s.w)], (i * 4 + k) * 4);
+      info.set([side, t, core, litSide * s.g * (0.55 + 0.45 * s.w)], (i * 4 + k) * 4);
     }
     idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 1, i * 4 + 3, i * 4 + 2], i * 6);
   }
@@ -1169,12 +1407,12 @@ function onSize(w, h) {
 }
 
 /* ---------- shards from faces ---------- */
-function buildShards(polys) {
+function buildShards(polys, cap = CAPS) {
   bodies = [];
   const P = [], Nn = [], U = [], SID = [], SIDE = [], I = [];
   polys.sort((a, b) => polyArea(b) - polyArea(a));
   for (const poly of polys) {
-    if (bodies.length >= CAPS) break;
+    if (bodies.length >= cap) break;
     const area = polyArea(poly), n0 = poly.length / 2;
     let gx = 0, gy = 0;
     for (let i = 0; i < n0; i++) {
@@ -1247,19 +1485,42 @@ function upload(fade = 1) {
 
 /* ---------- the pane: whole, cracked, shattered, rewinding ---------- */
 let state = 'whole', pending = null, rw = null, crackDirty = true, lastCT = NaN;
-let ready = false, kbd = false;
+let ready = false, kbd = false, bulge = null, sag = 0, sagGoal = 0, bendK = 1;
 const aim = { x: 0, y: 0 }, flex = { x: 0, y: 0, a: 0, t: 9 };
-const rewindB = document.getElementById('rewind');
+// Dents in the laminate: place, depth now, depth wanted, radius.
+const dents = Array.from({ length: 8 }, () => ({ x: 0, y: 0, sink: 0, goal: 0, r: 1 }));
+const DMAX = 0.16;
+const rewindB = document.getElementById('rewind'), holdDD = document.getElementById('hold-dd');
 const showChip = () => rewindB.setAttribute('aria-disabled', String(state === 'whole' && !rw));
 function flexAt(x, y, a) { flex.x = x; flex.y = y; flex.a = a * (reduce ? 0.4 : 1); flex.t = 0; }
+// Small screens drop to fewer shards.
+const capNow = () => (panel.clientWidth < 640 ? 320 : CAPS);
+// A blow deepens the nearest dent, or starts a new one.
+function dentAt(x, y, sink, r) {
+  let k = dents.findIndex(D => D.goal > 0 && Math.hypot(D.x - x, D.y - y) < D.r * 0.6);
+  if (k < 0) {
+    k = 0;
+    dents.forEach((D, i) => { if (D.goal < dents[k].goal) k = i; });
+    Object.assign(dents[k], { x, y, sink: 0, goal: 0, r });
+  }
+  const D = dents[k];
+  D.goal = Math.min(DMAX, D.goal + sink);
+  D.r = Math.max(D.r, r);
+  return k;
+}
 
 function tap(x, y, hard = false) {
   if (!ready || rw || pending || state === 'shattered') return;
-  const w = web(x, y, hard);
+  const w = web(x, y, hard), kind = glass;
+  lastWeb = w;
   state = 'cracked';
-  damage += hard ? limit : 1;
-  flexAt(x, y, hard ? -0.02 : -0.012);
-  crackSound(x / (PW / 2), hard, w.ticks);
+  if (kind === 'laminated') {
+    // The interlayer holds: each blow dents it, and the pane bows more.
+    dentAt(x, y, hard ? 0.045 : 0.022, S * 0.14);
+    sagGoal = Math.min(0.05, sagGoal + 0.006);
+  } else damage += hard ? limit : 1;
+  flexAt(x, y, kind === 'tempered' ? -0.008 : hard ? -0.02 : -0.012);
+  sfx(() => crackSound(x / (PW / 2), hard, w.ticks, kind));
   // Enough damage and the pane goes once this crack has run.
   if (damage >= limit) pending = { at: w.end, x, y };
   ribbons();
@@ -1267,13 +1528,53 @@ function tap(x, y, hard = false) {
   wake();
 }
 // Holding on: the pane gives way where it was struck.
+// The laminate does not give way; it bulges under the finger.
 function press(x, y) {
   if (!ready || rw || pending || state !== 'cracked') return;
-  pending = { at: cClock, x, y };
+  if (glass === 'laminated') {
+    if (lastWeb) bulge = { x, y, k: dentAt(x, y, 0, S * 0.14), web: lastWeb, acc: 0.24, pops: 0 };
+  } else pending = { at: cClock, x, y };
   wake();
+}
+function release() { bulge = null; }
+// A ring torn in the stretched laminate, with short spokes inside it.
+// It crosses older cracks, since both glass layers break.
+function freeRing(cx, cy, r, r0, t) {
+  const n = Math.max(10, Math.round((TAU * r) / (S * 0.04))), a0 = Math.random() * TAU, P = [];
+  for (let k = 0; k < n; k++) {
+    const a = a0 + ((k + rnd(-0.25, 0.25)) * TAU) / n, rr = r * rnd(0.94, 1.05);
+    P.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+  }
+  const hx = PW / 2 - 1e-3, hy = PH / 2 - 1e-3, inside = ([x, y]) => Math.abs(x) < hx && Math.abs(y) < hy;
+  for (let k = 0; k < n; k++) {
+    const A = P[k], B = P[(k + 1) % n], ta = t + rnd(0, 0.04);
+    if (Math.random() < 0.1 || !inside(A) || !inside(B)) continue;
+    addSeg(A[0], A[1], B[0], B[1], ta, ta + Math.hypot(B[0] - A[0], B[1] - A[1]) / (S * 2.2), 0.6);
+    if (Math.random() < 0.35) {
+      const a = Math.atan2(A[1] - cy, A[0] - cx), ia = [cx + Math.cos(a) * r0, cy + Math.sin(a) * r0];
+      if (inside(ia)) addSeg(ia[0], ia[1], A[0], A[1], t, t + (r - r0) / (S * 2.2), 0.45);
+    }
+  }
+}
+// While held, the dent sinks and widens; rings pop out around it.
+function stepBulge(dt) {
+  const D = dents[bulge.k], W = bulge.web, rMax = S * 0.45;
+  D.goal = Math.min(DMAX, D.goal + 0.075 * dt);
+  D.r = Math.min(S * 0.3, D.r + S * 0.1 * dt);
+  bulge.acc += dt;
+  if (bulge.acc > 0.3 && W.rNext < rMax) {
+    bulge.acc = 0;
+    freeRing(bulge.x, bulge.y, W.rNext, W.rNext / 1.18, cClock);
+    W.rNext *= 1.18;
+    growEnd = Math.max(growEnd, cClock + 0.12);
+    ribbons();
+    popSound(bulge.x / (PW / 2), Math.min(1, bulge.pops++ / 5));
+  }
+  if (D.goal >= DMAX && W.rNext >= rMax) bulge = null;
 }
 // The burst runs over a few frames so no single frame stalls.
 function shatter() {
+  if (glass === 'tempered') return burstTempered();
   const p = pending, t = cClock;
   try {
     if (!p.stage) {
@@ -1295,7 +1596,7 @@ function shatter() {
       return;
     }
     pending = null;
-    if (!buildShards(p.polys)) throw new Error('No shards');
+    if (!buildShards(p.polys, capNow())) throw new Error('No shards');
   } catch (err) {
     console.error(err);
     pending = null;
@@ -1309,6 +1610,49 @@ function shatter() {
     b.v = [(dx / d) * (0.1 + 0.4 * near), (dy / d) * 0.3 * near + 0.1, rnd(0.35, 0.9) + 0.7 * near];
     b.w = [rnd(1.5, 4.5) * small, rnd(-2, 2) * small, rnd(-2.5, 2.5) * small];
   }
+  drop();
+}
+// Tempered: the craze runs, the pane hangs a beat, then pours out.
+function burstTempered() {
+  const p = pending, t = cClock;
+  try {
+    if (!p.stage) {
+      for (const s of segs) { s.ta = Math.min(s.ta, t); s.tb = Math.min(s.tb, t); }
+      const cz = craze(p.x, p.y, t, capNow());
+      p.polys = cz.polys;
+      p.drop = cz.end + (reduce ? 0.15 : 0.4);
+      growEnd = Math.max(growEnd, p.drop);
+      ribbons();
+      crazeSound(p.x / (PW / 2), cz.end - t);
+      flexAt(p.x, p.y, -0.006);
+      p.stage = 1;
+      return;
+    }
+    if (p.stage === 1) {
+      // Bodies build while the crazed pane still hangs.
+      if (!buildShards(p.polys, capNow())) throw new Error('No shards');
+      p.stage = 2;
+      return;
+    }
+    if (t < p.drop) return;
+    pending = null;
+  } catch (err) {
+    console.error(err);
+    pending = null;
+    return;
+  }
+  // The pane pours from the bottom up, like a curtain dropping.
+  for (const b of bodies) {
+    const up = (b.cy + PH / 2) / PH, d = Math.hypot(b.cx - p.x, b.cy - p.y) / S;
+    b.rel = (0.02 + 0.55 * up + 0.06 * d + Math.random() * 0.06) * (reduce ? 0.5 : 1);
+    b.v = [rnd(-0.08, 0.08), rnd(-0.25, 0), rnd(0.08, 0.45)];
+    b.w = [rnd(-5, 5), rnd(-5, 5), rnd(-5, 5)];
+  }
+  pourSound(1.4);
+  drop();
+}
+// The pane gives way to its shards.
+function drop() {
   frames = [];
   sim = { t: 0, acc: 0, steps: 0, active: true };
   record();
@@ -1322,7 +1666,7 @@ function rewind() {
   if (!ready || rw || state === 'whole') return;
   clearTimeout(holdT);
   clearTimeout(spaceT);
-  pending = null;
+  pending = bulge = null;
   if (reduce) {
     // Reduced motion crossfades the broken pane to the whole one.
     rw = { phase: 'fade', t: 0 };
@@ -1339,7 +1683,7 @@ function rewind() {
 }
 function unzip() {
   const dur = clamp(cClock * 0.45, 0.35, 1);
-  rw = { phase: 'B', rate: cClock / dur };
+  rw = { phase: 'B', rate: cClock / dur, c0: cClock };
   unzipSound(dur);
 }
 // Time runs backwards: shards replay their fall, then cracks close.
@@ -1358,12 +1702,14 @@ function stepRewind(dt) {
     unzip();
   } else if (rw.phase === 'B') {
     cClock = Math.max(0, cClock - dt * rw.rate);
+    // Dents and bow flatten as the cracks close.
+    bendK = rw.c0 > 0 ? cClock / rw.c0 : 0;
     if (cClock <= 0) heal();
   } else {
     rw.t += dt;
     const k = Math.min(1, rw.t / 0.35);
     if (state === 'shattered') { shardMat.uniforms.uOpacity.value = 1 - k; paneMat.uniforms.uOpacity.value = k; }
-    else paneMat.uniforms.uCrackK.value = 1 - k;
+    else { paneMat.uniforms.uCrackK.value = 1 - k; bendK = 1 - k; }
     if (k >= 1) heal();
   }
 }
@@ -1374,8 +1720,12 @@ function heal(quiet) {
   cClock = 0;
   growEnd = -1;
   damage = 0;
-  limit = 5 + (Math.random() < 0.5 ? 1 : 0);
-  pending = rw = sim = null;
+  // Tempered glass takes a few blows; which one breaks it is luck.
+  limit = glass === 'laminated' ? Infinity : glass === 'tempered' ? 3 + Math.floor(Math.random() * 3) : 5 + (Math.random() < 0.5 ? 1 : 0);
+  pending = rw = sim = bulge = lastWeb = null;
+  for (const D of dents) { D.sink = D.goal = 0; D.r = 1; }
+  sag = sagGoal = 0;
+  bendK = 1;
   bodies = [];
   frames = [];
   state = 'whole';
@@ -1386,6 +1736,35 @@ function heal(quiet) {
   if (!quiet) flexAt(0, 0, 0.004);
   showChip();
 }
+// A new glass: a fresh pane, its own frame colour and voice.
+const LOOK = {
+  annealed: { face: [0.44, 0.075, 165], side: [0.3, 0.05, 165], abs: [0.07, 0.016, 0.05], quench: 0, hold: 'shatter' },
+  tempered: { face: [0.46, 0.1, 250], side: [0.31, 0.07, 250], abs: [0.07, 0.02, 0.04], quench: 1, hold: 'burst' },
+  laminated: { face: [0.66, 0.12, 72], side: [0.47, 0.09, 64], abs: [0.03, 0.035, 0.1], quench: 0, hold: 'bulge' },
+};
+// Ring: frequency in Hz, decay in seconds.
+const RINGF = { annealed: [11, 0.12], tempered: [14, 0.2], laminated: [7, 0.05] };
+function applyLook() {
+  const L = LOOK[glass];
+  holdDD.textContent = L.hold;
+  if (!frameMat) return;
+  frameMat.uniforms.uFace.value.set(...lin(...L.face));
+  frameMat.uniforms.uSide.value.set(...lin(...L.side));
+  for (const m of [paneMat, shardMat]) { m.uniforms.uAbs.value.set(...L.abs); m.uniforms.uQuench.value = L.quench; }
+  backDirty = true;
+}
+function setGlass(v) {
+  if (!KINDS.includes(v)) return;
+  glass = v;
+  try { localStorage.setItem('stimming.glass.kind', v); } catch (err) { /* storage is optional */ }
+  applyLook();
+  if (!ready) return;
+  clearTimeout(holdT);
+  clearTimeout(spaceT);
+  heal();
+  draw();
+  wake();
+}
 
 /* ---------- one loop, only while something moves ---------- */
 let raf = 0, last = 0, onScreen = true, slow = 0, drift = 0, dClock = 0, liveUntil = 0;
@@ -1394,7 +1773,7 @@ function wake() {
 }
 // Use sets the city drifting for a while.
 function stir() {
-  liveUntil = performance.now() + 9000;
+  liveUntil = performance.now() + 3000;
   wake();
 }
 function frame(ms) {
@@ -1412,6 +1791,11 @@ function frame(ms) {
   if (pending && cClock >= pending.at) shatter();
   if (flex.t < 0.7) { flex.t += dt; busy = true; }
   if (sim && sim.active && !rw) { stepSim(dt); upload(); busy = true; }
+  if (bulge && !rw) { stepBulge(dt); busy = true; }
+  // Dents and the bow ease toward their goals.
+  const ez = reduce ? 1 : 1 - Math.exp(-dt * 9);
+  for (const D of dents) if (Math.abs(D.goal - D.sink) > 1e-5) { D.sink += (D.goal - D.sink) * ez; busy = true; }
+  if (Math.abs(sagGoal - sag) > 1e-5) { sag += (sagGoal - sag) * (reduce ? 1 : ez * 0.4); busy = true; }
   // The city drifts while in use, then eases to a stop.
   const want = !reduce && ms < liveUntil ? 1 : 0;
   if (want || drift > 0) {
@@ -1429,8 +1813,12 @@ function frame(ms) {
 function draw() {
   if (backDirty) renderBack();
   if (crackDirty || cClock !== lastCT) { renderCracks(); lastCT = cClock; crackDirty = false; }
-  const k = flex.t < 0.7 ? Math.cos(flex.t * TAU * 11) * Math.exp(-flex.t / 0.12) : 0;
+  const [hz, tau] = RINGF[glass], k = flex.t < 0.7 ? Math.cos(flex.t * TAU * hz) * Math.exp(-flex.t / tau) : 0;
   paneMat.uniforms.uFlex.value.set(flex.x, flex.y, flex.a * k, S * 0.3);
+  // Dents sink away from the viewer.
+  const U = paneMat.uniforms.uDent.value;
+  dents.forEach((D, i) => U[i].set(D.x, D.y, -D.sink * bendK, D.r));
+  paneMat.uniforms.uSag.value = -sag * bendK;
   mark.visible = kbd && state !== 'shattered' && !rw;
   if (mark.visible) mark.position.set(aim.x, FH / 2 + aim.y, T / 2 + 0.004);
   renderer.render(scene, camera);
@@ -1465,7 +1853,7 @@ panel.addEventListener('pointerdown', e => {
 panel.addEventListener('pointermove', e => {
   if (e.pointerId === ptr && Math.hypot(e.clientX - downX, e.clientY - downY) > 14) clearTimeout(holdT);
 });
-const lift = e => { if (e.pointerId === ptr) { ptr = -1; clearTimeout(holdT); } };
+const lift = e => { if (e.pointerId === ptr) { ptr = -1; clearTimeout(holdT); release(); } };
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
 // The aim ring shows only for keyboard use.
 panel.addEventListener('focus', () => { kbd = panel.matches(':focus-visible'); if (ready) draw(); });
@@ -1496,8 +1884,10 @@ addEventListener('keydown', e => {
     draw();
   }
 });
-addEventListener('keyup', e => { if (e.key === ' ') clearTimeout(spaceT); });
+addEventListener('keyup', e => { if (e.key === ' ') { clearTimeout(spaceT); release(); } });
 rewindB.addEventListener('click', () => { rewind(); stir(); });
+choices(document.getElementById('kind'), v => { setGlass(v); stir(); }).set(glass);
+applyLook();
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1585,7 +1975,10 @@ async function start() {
   });
   bokeh = new THREE.Mesh(bg, bokehMat);
   bokeh.frustumCulled = false;
-  frameMat = new THREE.MeshStandardMaterial({ color: 0x2e3038, metalness: 0.7, roughness: 0.32 });
+  frameMat = new THREE.ShaderMaterial({
+    vertexShader: FRAME_VS, fragmentShader: FRAME_FS,
+    uniforms: { uFace: { value: new THREE.Vector3() }, uSide: { value: new THREE.Vector3() } },
+  });
   frameG = new THREE.Group();
   scene.add(wall, floor, bokeh, frameG);
 
@@ -1605,9 +1998,13 @@ async function start() {
     uRes: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1 / 256, 1 / 144) }, uPane: { value: new THREE.Vector2(PW, PH) },
     uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.4 },
     uWallZ: { value: WALLZ }, uLine: { value: 1 }, uDisp: { value: 0.18 }, uBend: { value: 0.7 },
+    uAbs: { value: new THREE.Vector3(0.07, 0.016, 0.05) }, uQuench: { value: 0 },
     uBoxA: { value: new THREE.Vector4() }, uBoxB: { value: new THREE.Vector4() }, uKey: { value: V3(lin(0.97, 0.025, 80, 1.1)) },
   });
-  paneMat = new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: { ...glassU(), uFlex: { value: new THREE.Vector4(0, 0, 0, 1) } } });
+  paneMat = new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: {
+    ...glassU(), uFlex: { value: new THREE.Vector4(0, 0, 0, 1) }, uSag: { value: 0 },
+    uDent: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 1)) },
+  } });
   pane = new THREE.Mesh(new THREE.BufferGeometry(), paneMat);
   xfTex = new THREE.DataTexture(new Float32Array(CAPS * 8), CAPS * 2, 1, THREE.RGBAFormat, THREE.FloatType);
   xfTex.needsUpdate = true;
@@ -1653,6 +2050,7 @@ async function start() {
   // Async compile keeps the shader builds off the main thread.
   await renderer.compileAsync(scene, camera);
   shardMesh.visible = false;
+  applyLook();
   renderCracks();
   ready = true;
   draw();
