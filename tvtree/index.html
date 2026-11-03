@@ -94,10 +94,10 @@ function linear(L, C, h) {
   return c.map(v => clamp(v));
 }
 const PAL = {
-  bark: linear(0.3, 0.075, 20), barkTip: linear(0.46, 0.1, 38), barkRim: linear(0.62, 0.12, 300),
+  bark: linear(0.27, 0.08, 318), barkTip: linear(0.38, 0.1, 330), barkRim: linear(0.62, 0.12, 300),
   leaf: linear(0.42, 0.1, 168), leafLit: linear(0.62, 0.13, 150),
   cream: linear(0.8, 0.04, 85), dark: linear(0.2, 0.012, 270), cord: linear(0.17, 0.01, 280),
-  bgTop: linear(0.17, 0.035, 290), bgMid: linear(0.215, 0.05, 300), bgLow: linear(0.12, 0.025, 280),
+  bgTop: linear(0.095, 0.03, 288), bgMid: linear(0.13, 0.04, 298), bgLow: linear(0.075, 0.02, 280),
   key: linear(0.95, 0.04, 75), rim: linear(0.78, 0.1, 290), sky: linear(0.42, 0.05, 280), ground: linear(0.18, 0.03, 330),
 };
 // Cheerful set colours as lightness, chroma and hue.
@@ -429,25 +429,195 @@ function curlPoints(curve, sense, R) {
   return pts;
 }
 
-// A tapered tube with rounded tips and flared roots.
-// aInfo holds wobble slot, along, colour mix and cavity shade.
+// One smooth surface for the whole tree.
+// Each strand is a run of samples: position, radius and shading data.
+// Strands are tapered capsules; a smooth union joins them with fillets.
+// Surface nets mesh the field; normals follow its gradient.
+function treeSurface(strands, h = 0.012, K = 0.1) {
+  const band = 2.5 * h, near = band + K * 0.25, FAR = 1;
+  // Flat segment arrays keep the field fast.
+  let n = 0;
+  for (const st of strands) n += st.S.length - 1;
+  const AX = new Float64Array(n), AY = new Float64Array(n), AZ = new Float64Array(n);
+  const DX = new Float64Array(n), DY = new Float64Array(n), DZ = new Float64Array(n), L2 = new Float64Array(n);
+  const RA = new Float64Array(n), RD = new Float64Array(n), SI = new Int32Array(n);
+  const ALA = new Float64Array(n), ALD = new Float64Array(n), MXA = new Float64Array(n), MXD = new Float64Array(n), FA = new Float64Array(n), FD = new Float64Array(n);
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  let k = 0;
+  strands.forEach((st, si) => {
+    for (let i = 0; i + 1 < st.S.length; i++, k++) {
+      const a = st.S[i], b = st.S[i + 1];
+      AX[k] = a.x; AY[k] = a.y; AZ[k] = a.z;
+      DX[k] = b.x - a.x; DY[k] = b.y - a.y; DZ[k] = b.z - a.z;
+      L2[k] = Math.max(1e-12, DX[k] * DX[k] + DY[k] * DY[k] + DZ[k] * DZ[k]);
+      RA[k] = a.r; RD[k] = b.r - a.r; SI[k] = si;
+      ALA[k] = a.along; ALD[k] = b.along - a.along;
+      MXA[k] = a.mix; MXD[k] = b.mix - a.mix;
+      FA[k] = a.f; FD[k] = b.f - a.f;
+      const r = Math.max(a.r, b.r) + near + 2 * h;
+      for (const [p, q] of [[a, b]]) {
+        lo[0] = Math.min(lo[0], p.x - r, q.x - r); hi[0] = Math.max(hi[0], p.x + r, q.x + r);
+        lo[1] = Math.min(lo[1], p.y - r, q.y - r); hi[1] = Math.max(hi[1], p.y + r, q.y + r);
+        lo[2] = Math.min(lo[2], p.z - r, q.z - r); hi[2] = Math.max(hi[2], p.z + r, q.z + r);
+      }
+    }
+  });
+  // Coarse bins list the segments near each region.
+  const B = 0.08, bo = lo, bn = [0, 1, 2].map(a => Math.ceil((hi[a] - lo[a]) / B) + 1);
+  const bins = new Array(bn[0] * bn[1] * bn[2]);
+  for (let s = 0; s < n; s++) {
+    const r = Math.max(RA[s], RA[s] + RD[s]) + near + K;
+    const x0 = Math.min(AX[s], AX[s] + DX[s]) - r, x1 = Math.max(AX[s], AX[s] + DX[s]) + r;
+    const y0 = Math.min(AY[s], AY[s] + DY[s]) - r, y1 = Math.max(AY[s], AY[s] + DY[s]) + r;
+    const z0 = Math.min(AZ[s], AZ[s] + DZ[s]) - r, z1 = Math.max(AZ[s], AZ[s] + DZ[s]) + r;
+    for (let bz = Math.max(0, Math.floor((z0 - bo[2]) / B)); bz <= Math.min(bn[2] - 1, Math.floor((z1 - bo[2]) / B)); bz++)
+      for (let by = Math.max(0, Math.floor((y0 - bo[1]) / B)); by <= Math.min(bn[1] - 1, Math.floor((y1 - bo[1]) / B)); by++)
+        for (let bx = Math.max(0, Math.floor((x0 - bo[0]) / B)); bx <= Math.min(bn[0] - 1, Math.floor((x1 - bo[0]) / B)); bx++) {
+          const id = (bz * bn[1] + by) * bn[0] + bx;
+          (bins[id] || (bins[id] = [])).push(s);
+        }
+  }
+  // The field: each strand is a hard union, strands join with a smooth union.
+  const best = new Float64Array(strands.length).fill(Infinity), bestK = new Int32Array(strands.length), bestT = new Float64Array(strands.length);
+  const touched = [];
+  const attr = [0, 0, 0, 0];
+  function field(x, y, z, want) {
+    const bx = Math.floor((x - bo[0]) / B), by = Math.floor((y - bo[1]) / B), bz = Math.floor((z - bo[2]) / B);
+    if (bx < 0 || by < 0 || bz < 0 || bx >= bn[0] || by >= bn[1] || bz >= bn[2]) return FAR;
+    const list = bins[(bz * bn[1] + by) * bn[0] + bx];
+    if (!list) return FAR;
+    touched.length = 0;
+    for (let j = 0; j < list.length; j++) {
+      const s = list[j], px = x - AX[s], py = y - AY[s], pz = z - AZ[s];
+      let t = (px * DX[s] + py * DY[s] + pz * DZ[s]) / L2[s];
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = px - DX[s] * t, qy = py - DY[s] * t, qz = pz - DZ[s] * t;
+      const d = Math.sqrt(qx * qx + qy * qy + qz * qz) - (RA[s] + RD[s] * t), o = SI[s];
+      if (d < best[o]) {
+        if (best[o] === Infinity) touched.push(o);
+        best[o] = d; bestK[o] = s; bestT[o] = t;
+      }
+    }
+    if (!touched.length) return FAR;
+    let d = Infinity, dmin = Infinity, own = touched[0];
+    for (const o of touched) {
+      const e = best[o];
+      if (d === Infinity) d = e;
+      else { const g = Math.max(K - Math.abs(d - e), 0) / K; d = Math.min(d, e) - g * g * K * 0.25; }
+      if (e < dmin) { dmin = e; own = o; }
+    }
+    if (want) {
+      // The nearest strand owns the wobble; colour blends across the joint.
+      const s = bestK[own], t = bestT[own];
+      attr[0] = strands[own].slot;
+      attr[1] = ALA[s] + ALD[s] * t;
+      attr[3] = FA[s] + FD[s] * t;
+      let mw = 0, mv = 0;
+      for (const o of touched) {
+        const w = Math.exp(-(best[o] - dmin) / 0.03), q = bestK[o];
+        mw += w; mv += w * (MXA[q] + MXD[q] * bestT[o]);
+      }
+      attr[2] = mv / mw;
+    }
+    for (const o of touched) best[o] = Infinity;
+    return d;
+  }
+  // The grid lives in sparse blocks of eight cubed.
+  const ox = lo[0], oy = lo[1], oz = lo[2];
+  const nx = Math.ceil((hi[0] - lo[0]) / h) + 2, ny = Math.ceil((hi[1] - lo[1]) / h) + 2, nz = Math.ceil((hi[2] - lo[2]) / h) + 2;
+  const nbx = (nx >> 3) + 1, nby = (ny >> 3) + 1, blocks = new Map();
+  const bkey = (x, y, z) => ((z >> 3) * nby + (y >> 3)) * nbx + (x >> 3);
+  const loc = (x, y, z) => ((z & 7) << 6) | ((y & 7) << 3) | (x & 7);
+  const get = (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) return NaN;
+    const b = blocks.get(bkey(x, y, z));
+    return b ? b[loc(x, y, z)] : NaN;
+  };
+  // Blocks far from the surface are skipped or filled whole.
+  const cand = new Set(), S8 = 8 * h, R8 = 7 * h * 0.87 + h;
+  for (let s = 0; s < n; s++) {
+    const r = Math.max(RA[s], RA[s] + RD[s]) + near;
+    const i0 = Math.max(0, Math.floor((Math.min(AX[s], AX[s] + DX[s]) - r - ox) / S8)), i1 = Math.min(nbx - 1, Math.floor((Math.max(AX[s], AX[s] + DX[s]) + r - ox) / S8));
+    const j0 = Math.max(0, Math.floor((Math.min(AY[s], AY[s] + DY[s]) - r - oy) / S8)), j1 = Math.min(nby - 1, Math.floor((Math.max(AY[s], AY[s] + DY[s]) + r - oy) / S8));
+    const k0 = Math.max(0, Math.floor((Math.min(AZ[s], AZ[s] + DZ[s]) - r - oz) / S8)), k1 = Math.floor((Math.max(AZ[s], AZ[s] + DZ[s]) + r - oz) / S8);
+    for (let bz = k0; bz <= k1; bz++) for (let by = j0; by <= j1; by++) for (let bx = i0; bx <= i1; bx++) cand.add((bz * nby + by) * nbx + bx);
+  }
+  for (const key of cand) {
+    const bx = key % nbx, by = Math.floor(key / nbx) % nby, bz = Math.floor(key / (nbx * nby));
+    const dc = field(ox + (bx * 8 + 3.5) * h, oy + (by * 8 + 3.5) * h, oz + (bz * 8 + 3.5) * h, false);
+    if (dc > R8) continue;
+    const b = new Float32Array(512);
+    if (dc < -R8) { b.fill(-band * 2); blocks.set(key, b); continue; }
+    for (let l = 0; l < 512; l++) {
+      const ix = bx * 8 + (l & 7), iy = by * 8 + ((l >> 3) & 7), iz = bz * 8 + (l >> 6);
+      b[l] = field(ox + ix * h, oy + iy * h, oz + iz * h, false);
+    }
+    blocks.set(key, b);
+  }
+  // One vertex per cell that the surface crosses.
+  const P = [], N = [], INFO = [], I = [], cells = new Map();
+  const val = (x, y, z) => { const v = get(x, y, z); return v !== v ? band * 2 : Math.min(v, band * 2); };
+  const C = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+  const E = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+  const cv = new Float64Array(8), eps = h * 0.5;
+  function vertex(cx, cy, cz) {
+    const key = cx + nx * (cy + ny * cz);
+    let id = cells.get(key);
+    if (id !== undefined) return id;
+    for (let c = 0; c < 8; c++) cv[c] = val(cx + C[c][0], cy + C[c][1], cz + C[c][2]);
+    let sx = 0, sy = 0, sz = 0, m = 0;
+    for (const [a, b] of E) {
+      if ((cv[a] < 0) === (cv[b] < 0)) continue;
+      const t = cv[a] / (cv[a] - cv[b]);
+      sx += C[a][0] + (C[b][0] - C[a][0]) * t; sy += C[a][1] + (C[b][1] - C[a][1]) * t; sz += C[a][2] + (C[b][2] - C[a][2]) * t;
+      m++;
+    }
+    if (!m) { sx = sy = sz = 0.5; m = 1; }
+    const x = ox + (cx + sx / m) * h, y = oy + (cy + sy / m) * h, z = oz + (cz + sz / m) * h;
+    const gx = field(x + eps, y, z) - field(x - eps, y, z), gy = field(x, y + eps, z) - field(x, y - eps, z), gz = field(x, y, z + eps) - field(x, y, z - eps);
+    const gl = Math.hypot(gx, gy, gz) || 1;
+    field(x, y, z, true);
+    id = P.length / 3;
+    P.push(x, y, z);
+    N.push(gx / gl, gy / gl, gz / gl);
+    INFO.push(attr[0], attr[1], attr[2], attr[3]);
+    cells.set(key, id);
+    return id;
+  }
+  // Each crossed grid edge makes a quad from its four cells.
+  const AXS = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (const [key, b] of blocks) {
+    const bx = (key % nbx) << 3, by = (Math.floor(key / nbx) % nby) << 3, bz = Math.floor(key / (nbx * nby)) << 3;
+    for (let l = 0; l < 512; l++) {
+      const v = b[l];
+      if (!(v < 0)) continue;
+      const ix = bx + (l & 7), iy = by + ((l >> 3) & 7), iz = bz + (l >> 6);
+      for (let a = 0; a < 3; a++) for (const dir of [1, -1]) {
+        const e = AXS[a], w = val(ix + e[0] * dir, iy + e[1] * dir, iz + e[2] * dir);
+        if (w < 0) continue;
+        const mx = dir > 0 ? ix : ix - e[0], my = dir > 0 ? iy : iy - e[1], mz = dir > 0 ? iz : iz - e[2];
+        const u = AXS[(a + 1) % 3], q = AXS[(a + 2) % 3];
+        const at = (du, dq) => vertex(mx - u[0] * du - q[0] * dq, my - u[1] * du - q[1] * dq, mz - u[2] * du - q[2] * dq);
+        const v0 = at(0, 0), v1 = at(1, 0), v2 = at(1, 1), v3 = at(0, 1);
+        I.push(v0, v1, v2, v0, v2, v3);
+      }
+    }
+  }
+  return { P, N, INFO, I };
+}
+
+// Each branch becomes a strand of samples along its curve.
+// aInfo holds wobble slot, along, colour mix and the place along the branch.
+const meshCache = new Map();
 function treeGeometry() {
-  const P = [], N = [], I = [], INFO = [], RADIAL = 16;
-  const meta = [];
+  const meta = [], strands = [];
   TREE.forEach((br, bi) => {
     const main = branchCurve(br), mainLen = main.getLength();
     let pts = main.getSpacedPoints(Math.max(8, Math.ceil(mainLen / 0.05)));
-    let curlLen = 0;
-    if (br.curl) {
-      const c = curlPoints(main, br.curl, 0.085 * Math.max(KX, 0.85));
-      curlLen = c.reduce((s, p, i) => s + p.distanceTo(i ? c[i - 1] : pts[pts.length - 1]), 0);
-      pts = pts.concat(c);
-    }
+    if (br.curl) pts = pts.concat(curlPoints(main, br.curl, 0.085 * Math.max(KX, 0.85)));
     const full = new THREE.CatmullRomCurve3(pts, false, 'centripetal'), len = full.getLength();
-    const n = Math.max(16, Math.ceil(len / 0.03)), frames = full.computeFrenetFrames(n, false);
     const along0 = br.from || 0;
     meta.push({ main, mainLen, len, along0 });
-    const base = P.length / 3;
     const radius = f => {
       let r = lerp(br.r[0], br.r[1], Math.pow(f, 0.85));
       if (bi === 0) r += 0.11 * Math.exp(-f * 16) + 0.03 * Math.exp(-f * 5);
@@ -455,30 +625,27 @@ function treeGeometry() {
       const tip = clamp((1 - f) * len / (br.r[1] * 1.4));
       return r * Math.sqrt(1 - (1 - tip) * (1 - tip));
     };
+    const n = Math.max(12, Math.ceil(len / 0.035)), S = [];
     for (let i = 0; i <= n; i++) {
-      const f = i / n, p = full.getPointAt(f), Nn = frames.normals[i], B = frames.binormals[i];
-      const r = Math.max(radius(f), 0.0015), along = along0 + (1 - along0) * f;
-      // The trunk swells into roots at the stage floor.
-      for (let j = 0; j <= RADIAL; j++) {
-        const a = (j / RADIAL) * TAU, ca = Math.cos(a), sa = Math.sin(a);
-        let rr = r;
-        if (bi === 0 && f < 0.12) rr *= 1 + 0.28 * Math.pow(Math.max(0, Math.cos(a * 3 + 0.4)), 2) * (1 - f / 0.12);
-        const nx = Nn.x * ca + B.x * sa, ny = Nn.y * ca + B.y * sa, nz = Nn.z * ca + B.z * sa;
-        P.push(p.x + nx * rr, p.y + ny * rr, p.z + nz * rr);
-        N.push(nx, ny, nz);
-        INFO.push(br.w, bi === 0 ? 0 : along, bi === 0 ? f * 0.55 : 0.4 + 0.6 * f, f);
-      }
-      if (i < n) for (let j = 0; j < RADIAL; j++) {
-        const a = base + i * (RADIAL + 1) + j, b = a + RADIAL + 1;
-        I.push(a, b, a + 1, b, b + 1, a + 1);
-      }
+      const f = i / n, p = full.getPointAt(f);
+      S.push({ x: p.x, y: p.y, z: p.z, r: Math.max(radius(f), 0.002), along: bi ? along0 + (1 - along0) * f : 0, mix: bi ? 0.4 + 0.6 * f : f * 0.55, f });
     }
+    // The trunk runs on below the stage floor.
+    if (!bi) S.unshift({ ...S[0], y: S[0].y - 0.6 });
+    strands.push({ slot: br.w, S });
   });
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
-  g.setAttribute('aInfo', new THREE.Float32BufferAttribute(INFO, 4));
-  g.setIndex(I);
+  // A stage shape builds its mesh once.
+  const key = KX + ',' + KY;
+  let g = meshCache.get(key);
+  if (!g) {
+    const m = treeSurface(strands);
+    g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(m.P, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(m.N, 3));
+    g.setAttribute('aInfo', new THREE.Float32BufferAttribute(m.INFO, 4));
+    g.setIndex(m.I);
+    meshCache.set(key, g);
+  }
   return { g, meta };
 }
 
@@ -1419,7 +1586,9 @@ function stepParty(dt) {
   party.clock += dt;
   const lit = sets.filter(s => s.power);
   if (party.phase === 'idle') {
-    if (held || lit.length < 4 || party.t < party.wait) return false;
+    if (held || lit.length < 4 || party.t < party.wait || watch.on) return false;
+    // Now and then the sets turn into eyes instead.
+    if (Math.random() < 0.3) { party.t = 0; party.wait = rnd(30, 48); startWatch(); return false; }
     party.phase = 'gather';
     party.t = 0;
     party.kind = (party.kind + 1 + Math.floor(Math.random() * 3)) % 4;
@@ -1454,11 +1623,36 @@ function stepParty(dt) {
   return party.phase !== 'idle';
 }
 
+// The watchers: every lit set becomes an eye that follows the pointer.
+// A wave from the trunk turns them; a later wave turns them back.
+const watch = { on: false, t: 0, order: [] };
+function startWatch() {
+  if (watch.on || party.phase !== 'idle') return;
+  const lit = sets.filter(s => s.power && s.lost === 0);
+  if (lit.length < 3) return;
+  watch.on = true;
+  watch.t = 0;
+  watch.order = lit.map(s => ({ s, at: Math.hypot(s.c[0], s.c[1] - 1.6 * KY) * 0.2 + Math.random() * 0.06, was: s.ch, in: false, out: false }));
+  hiss(0, 0.45, 0.6);
+  wake();
+}
+function stepWatch(dt) {
+  if (!watch.on) return false;
+  watch.t += dt;
+  for (const e of watch.order) {
+    if (!e.in && watch.t >= e.at) { e.in = true; if (e.s.power) changeChannel(e.s, 7); }
+    // A set the user retuned keeps its new channel.
+    if (!e.out && watch.t >= 6.5 + e.at) { e.out = true; if (e.s.power && (e.s.ch === 7 || e.s.next === 7)) changeChannel(e.s, e.was); }
+  }
+  if (watch.order.every(e => e.out)) watch.on = false;
+  return watch.on;
+}
+
 /* ---------- rendering ---------- */
 let THREE = null, RoundedBoxGeometry = null, mergeGeometries = null;
 let renderer = null, scene = null, camera = null, composer = null, canvas = null;
 let atlasRT = null, atlasScene = null, atlasCam = null, atlasMat = null, bgMat = null, treeMat = null, treeMesh = null;
-let mats = null, treeMeta = null, treeSegs = [], built = false, cordGeo = null, knotGeo = null;
+let mats = null, treeMeta = null, treeSegs = [], built = false, cordGeo = null;
 let ready = false, lowDpr = false, sized = false, visible = false, onScreen = false;
 let ray = null, ndc = null, tv3 = null, tq = null, tq2 = null, Y = null, plane = null, hitV = null, inv = null, eul = null;
 const FOV = 30, view = { A: 16 / 9, hS: 0.36, cx: 0, cy: 0 };
@@ -1484,7 +1678,6 @@ function build() {
   built = true;
   const { g, meta } = treeGeometry();
   treeMeta = meta;
-  treeMesh.geometry.dispose();
   treeMesh.geometry = g;
   treeSegs = [];
   TREE.forEach((br, bi) => {
@@ -1506,7 +1699,12 @@ function placeRest(s) {
   if (s.hang) {
     const m = treeMeta[def.b], br = TREE[def.b], p = m.main.getPointAt(def.t), f = (def.t * m.mainLen) / m.len;
     const r = lerp(br.r[0], br.r[1], Math.pow(f, 0.85));
-    s.rest = [p.x, p.y - r * 0.8, p.z];
+    // A steel ring wraps the branch; the cord drops from its lowest point.
+    s.hookR = r + 0.011;
+    s.rest = [p.x, p.y - s.hookR, p.z];
+    s.knot.geometry.dispose();
+    s.knot.geometry = new THREE.TorusGeometry(s.hookR, 0.007, 8, 28);
+    s.knot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), m.main.getTangentAt(def.t));
     s.along = m.along0 + (1 - m.along0) * f;
     s.slot = br.w;
     s.R = def.L + s.attach;
@@ -1542,7 +1740,8 @@ function makeSets() {
   SETS.forEach((def, i) => {
     const info = buildSet(def), [cL, cC, hueV] = SET_COLS[i % SET_COLS.length];
     const body = new THREE.MeshPhysicalMaterial({
-      color: col3(linear(cL, cC, hueV)), roughness: 0.38, clearcoat: 0.7, clearcoatRoughness: 0.2, envMapIntensity: 0.45,
+      // Cases sit darker than the screens, so the pictures lead.
+      color: col3(linear(cL * 0.78, cC * 0.85, hueV)), roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.3, envMapIntensity: 0.35,
     });
     const group = new THREE.Group();
     // The bezel is a deep shade of the body colour.
@@ -1577,7 +1776,7 @@ function makeSets() {
     let cord = null, knot = null;
     if (def.b >= 0) {
       cord = new THREE.Mesh(cordGeo, mats.cord);
-      knot = new THREE.Mesh(knotGeo, mats.cord);
+      knot = new THREE.Mesh(new THREE.BufferGeometry(), mats.cord);
       cord.frustumCulled = false;
       scene.add(cord, knot);
     }
@@ -1617,7 +1816,7 @@ function place(s) {
     s.cord.position.set(px, py, pz);
     s.cord.quaternion.setFromUnitVectors(Y, tv3.multiplyScalar(1 / L));
     s.cord.scale.set(1, L + 0.01, 1);
-    s.knot.position.set(a[0], a[1], a[2]);
+    s.knot.position.set(a[0], a[1] + s.hookR, a[2]);
   }
 }
 const moving = s => s.ea.some(e => Math.abs(e[2]) + Math.abs(e[3]) > 0.01) || (s.hang
@@ -1700,6 +1899,7 @@ function step(dt, now) {
     if (s.power) { lit++; snow += s.lost > 0 ? 1 : s.interf * 0.5; }
   }
   if (stepParty(dt)) act = true;
+  if (stepWatch(dt)) act = true;
   if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) {
     busy = true;
     if (now - pointerAt < 1500) act = true;
@@ -1795,7 +1995,7 @@ function vis() {
 
 /* ---------- input ---------- */
 let held = null, kbd = false, picked = -1, holdT = 0, enterT = 0, enterAt = 0, enterFired = false, shakeDir = 1;
-let pointerIn = false, pointerAt = -1e9, hover = null;
+let pointerIn = false, pointerAt = -1e9, hover = null, taps = [];
 const pointer = { x: 0, y: 0 };
 function toNdc(e) {
   const r = panel.getBoundingClientRect();
@@ -1907,7 +2107,14 @@ function lift(e) {
   } else {
     sway.tgt = null;
     // A tap on the wood gives the tree a small knock.
-    if (!held.drag && e.type === 'pointerup') { sway.v[0] += rnd(-0.5, 0.5); sway.v[1] += rnd(-0.3, 0.3); }
+    // Three quick taps wake the watchers.
+    if (!held.drag && e.type === 'pointerup') {
+      sway.v[0] += rnd(-0.5, 0.5);
+      sway.v[1] += rnd(-0.3, 0.3);
+      const now = performance.now();
+      taps = taps.filter(t => now - t < 1200).concat(now);
+      if (taps.length >= 3) { taps = []; startWatch(); }
+    }
   }
   held = null;
   panel.classList.remove('held');
@@ -2062,11 +2269,11 @@ async function start() {
     trim: new THREE.MeshStandardMaterial({ color: col3(PAL.cream), roughness: 0.45, envMapIntensity: 0.35 }),
     metal: new THREE.MeshStandardMaterial({ color: 0xb8bcc8, metalness: 1, roughness: 0.3, envMapIntensity: 0.55 }),
     dark: new THREE.MeshStandardMaterial({ color: col3(PAL.dark), roughness: 0.5, envMapIntensity: 0.5 }),
-    cord: new THREE.MeshStandardMaterial({ color: col3(PAL.cord), roughness: 0.55, envMapIntensity: 0.4 }),
+    // Cords and hooks are dull steel.
+    cord: new THREE.MeshStandardMaterial({ color: col3(linear(0.44, 0.015, 280)), metalness: 0.6, roughness: 0.42, envMapIntensity: 0.5 }),
     ring: new THREE.MeshBasicMaterial({ color: col3(linear(0.84, 0.13, 205)), depthTest: false, transparent: true }),
   };
-  cordGeo = new THREE.CylinderGeometry(0.0075, 0.0075, 1, 6, 1, true).translate(0, 0.5, 0);
-  knotGeo = new THREE.SphereGeometry(0.022, 12, 8);
+  cordGeo = new THREE.CylinderGeometry(0.0055, 0.0055, 1, 6, 1, true).translate(0, 0.5, 0);
 
   const V = c => new THREE.Vector3(...c);
   bgMat = new THREE.ShaderMaterial({
@@ -2081,7 +2288,7 @@ async function start() {
   bg.frustumCulled = false;
   bg.renderOrder = -10;
   treeMat = new THREE.ShaderMaterial({
-    vertexShader: TREE_VS, fragmentShader: TREE_FS,
+    vertexShader: TREE_VS, fragmentShader: TREE_FS, side: THREE.DoubleSide,
     uniforms: {
       uSway: { value: new THREE.Vector2() }, uWob: { value: Array.from({ length: 8 }, v3) },
       uBark: { value: V(PAL.bark) }, uTip: { value: V(PAL.barkTip) }, uRim: { value: V(PAL.barkRim) }, uKey: { value: V(PAL.key) },
