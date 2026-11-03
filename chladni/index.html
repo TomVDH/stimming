@@ -128,7 +128,7 @@ main { display: grid; gap: 14px; min-width: 0; }
     </div>
   </header>
   <main>
-    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A glowing plate covered in sand: drag up or down, or slide the dot on the right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, Space scatters the sand, Enter tosses it and C changes its colour.">
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A glowing plate covered in sand, seen at an angle: drag up or down, or slide the dot on the right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, Space scatters the sand, Enter tosses it and C changes its colour.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Chladni plate needs WebGL 2 with float textures, which this browser lacks.</p>
     </div>
@@ -161,6 +161,55 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
 const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+/* ---------- vectors and matrices, column-major ---------- */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = a => mul3(a, 1 / Math.hypot(...a));
+function persp(fovy, asp, n, f) {
+  const t = 1 / Math.tan(fovy / 2), nf = 1 / (n - f);
+  return [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) * nf, -1, 0, 0, 2 * f * n * nf, 0];
+}
+function lookAt(e, c, up) {
+  const z = unit(sub(e, c)), x = unit(cross(up, z)), y = cross(z, x);
+  return [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1];
+}
+function mul4(a, b) {
+  const o = new Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+      o[c * 4 + r] = s;
+    }
+  }
+  return o;
+}
+function inv4(a) {
+  const [a00, a01, a02, a03, a10, a11, a12, a13, a20, a21, a22, a23, a30, a31, a32, a33] = a;
+  const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10;
+  const b03 = a01 * a12 - a02 * a11, b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+  const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, b08 = a20 * a33 - a23 * a30;
+  const b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+  const d = 1 / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06);
+  return [
+    (a11 * b11 - a12 * b10 + a13 * b09) * d, (a02 * b10 - a01 * b11 - a03 * b09) * d,
+    (a31 * b05 - a32 * b04 + a33 * b03) * d, (a22 * b04 - a21 * b05 - a23 * b03) * d,
+    (a12 * b08 - a10 * b11 - a13 * b07) * d, (a00 * b11 - a02 * b08 + a03 * b07) * d,
+    (a32 * b02 - a30 * b05 - a33 * b01) * d, (a20 * b05 - a22 * b02 + a23 * b01) * d,
+    (a10 * b10 - a11 * b08 + a13 * b06) * d, (a01 * b08 - a00 * b10 - a03 * b06) * d,
+    (a30 * b04 - a31 * b02 + a33 * b00) * d, (a21 * b02 - a20 * b04 - a23 * b00) * d,
+    (a11 * b07 - a10 * b09 - a12 * b06) * d, (a00 * b09 - a01 * b07 + a02 * b06) * d,
+    (a31 * b01 - a30 * b03 - a32 * b00) * d, (a20 * b03 - a21 * b01 + a22 * b00) * d,
+  ];
+}
+const xf = (m, [x, y, z]) => [
+  m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13],
+  m[2] * x + m[6] * y + m[10] * z + m[14], m[3] * x + m[7] * y + m[11] * z + m[15],
+];
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
 function lin(L, C, h) {
@@ -428,7 +477,7 @@ function chime(f) {
 }
 
 /* ---------- WebGL: grains live in float textures ---------- */
-const TW = 512, TH = 400, N = TW * TH, DS = 512, PAD = 0.2, PADK = 1 / (1 + 2 * PAD), PERSP = 0.65;
+const TW = 512, TH = 400, N = TW * TH, DS = 512, PAD = 0.2, PADK = 1 / (1 + 2 * PAD), PLATE_T = 0.022;
 const TRI = `#version 300 es
 void main() {
   vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
@@ -538,12 +587,12 @@ const DEN_VS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 uniform sampler2D uA;
-uniform float uW, uPersp, uPadK;
+uniform float uW, uPadK;
 out float vW;
 void main() {
   int W = textureSize(uA, 0).x;
   vec4 A = texelFetch(uA, ivec2(gl_VertexID % W, gl_VertexID / W), 0);
-  gl_Position = vec4((A.xy - 0.5) * (1.0 + A.z * uPersp) * uPadK * 2.0, 0.0, 1.0);
+  gl_Position = vec4((A.xy - 0.5) * uPadK * 2.0, 0.0, 1.0);
   gl_PointSize = 1.0;
   vW = uW;
 }`;
@@ -575,20 +624,20 @@ void main() {
   s += texture(uSrc, uv + vec2(ts.x, -ts.y)).r + texture(uSrc, uv + vec2(-ts.x, ts.y)).r;
   o = vec4(0.25 * s);
 }`;
-// One grain seen from straight above, shared by the dot and streak passes.
+// One grain seen through the tilted camera, shared by the dot and streak passes.
 const GRAIN = `
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 uniform sampler2D uA, uB;
-uniform vec4 uPlate;
+uniform mat4 uVP;
 uniform vec2 uRes;
-uniform float uGain, uJit, uPersp, uTau, uDrift, uFront, uFlash;
+uniform float uRefW, uGain, uJit, uTau, uDrift, uFront, uFlash;
 uniform uint uSeed;
 uniform vec3 uPa[4], uPb[4];
 ${FIELD}
 ${HASH}
-struct Grain { vec2 c, st; vec3 col; float size; };
+struct Grain { vec4 head, tail; vec3 col; float size; };
 Grain grain(int n) {
   ivec2 TS = textureSize(uA, 0);
   // A stride spreads a partial draw over the whole plate.
@@ -600,26 +649,29 @@ Grain grain(int n) {
   vec3 f = field(A.xy);
   float a = uAmp * abs(f.x), k = max(uK, 1.0);
   // Shaken grains buzz in place.
-  vec2 j = rnd3(uvec3(uvec2(ip), uSeed)).xy - 0.5;
-  float zoom = 1.0 + A.z * uPersp;
-  vec2 rel = A.xy - 0.5 + j * a * uJit;
+  vec3 j = rnd3(uvec3(uvec2(ip), uSeed)) - 0.5;
+  vec3 w = vec3(A.xy - 0.5 + j.xy * a * uJit, A.z + (j.z + 0.5) * a * uJit * 0.5);
+  // Motion: hops, the drift toward the lines and the climb.
+  vec3 vel = vec3(v - uDrift * uAmp * f.x * f.yz / (k * k), A.w) * uTau;
+  float vl = length(vel);
+  if (vl > 0.02) vel *= 0.02 / vl;
   Grain g;
-  g.c = uPlate.xy + rel * zoom * uPlate.z;
-  // Screen motion: hops, drift toward the lines and the rise toward the eye.
-  vec2 vel = (v - uDrift * uAmp * f.x * f.yz / (k * k)) * zoom + rel * uPersp * A.w;
-  g.st = vel * uTau * uPlate.z;
-  float sl = length(g.st), cap = 0.03 * uPlate.z;
-  if (sl > cap) g.st *= cap / sl;
-  float dist = length(A.xy - 0.5);
+  g.head = uVP * vec4(w, 1.0);
+  g.tail = uVP * vec4(w - vel, 1.0);
+  float near = uRefW / g.head.w, dist = length(A.xy - 0.5);
   int ti = r.y < 0.14 ? 0 : r.y < 0.6 ? 1 : r.y < 0.88 ? 2 : 3;
   vec3 col = mix(uPa[ti], uPb[ti], clamp((uFront - dist) / 0.05, 0.0, 1.0)) * (0.7 + 0.6 * r.z);
   // A bright crest rides the colour wave.
   col *= 1.0 + 3.0 * uFlash * exp(-pow((dist - uFront) / 0.04, 2.0));
   // Airborne grains rise toward the eye and twinkle.
   float tw = rnd3(uvec3(uvec2(ip), uSeed / 3u + 11u)).x;
-  col *= 1.0 + min(A.z, 0.04) * 25.0 * (0.4 + 1.2 * tw);
-  g.size = (r.x < 0.25 || A.z > 0.012) ? 2.0 : 1.0;
-  g.col = col * uGain;
+  col *= 1.0 + min(A.z, 0.04) * 25.0 * (0.4 + 1.2 * tw) * (1.0 - smoothstep(0.05, 0.15, A.z));
+  // High falling sand is a faint dust until it lands.
+  col *= 1.0 - 0.6 * smoothstep(0.04, 0.25, A.z);
+  // Near grains are more often two pixels wide; far grains shrink.
+  g.size = (r.x < 0.3 * pow(near, 5.0) || A.z > 0.012) ? 2.0 : 1.0;
+  // Far rows pack tighter, so far grains dim a little.
+  g.col = col * uGain * near * near;
   return g;
 }`;
 // Grains: crisp square pixels of light.
@@ -628,7 +680,7 @@ ${GRAIN}
 out vec3 vCol;
 void main() {
   Grain g = grain(gl_VertexID);
-  gl_Position = vec4(g.c / uRes * 2.0 - 1.0, 0.0, 1.0);
+  gl_Position = g.head;
   gl_PointSize = g.size;
   vCol = g.col * (g.size > 1.5 ? 0.45 : 1.0);
 }`;
@@ -637,30 +689,33 @@ const STREAK_VS = `#version 300 es
 ${GRAIN}
 out vec3 vCol;
 void main() {
-  Grain g = grain(gl_VertexID >> 1);
-  float sl = length(g.st);
+  Grain g = grain(gl_VertexID & ~1);
+  float sl = length((g.head.xy / g.head.w - g.tail.xy / g.tail.w) * 0.5 * uRes);
   vCol = vec3(0.0);
   if (sl < 1.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   bool head = (gl_VertexID & 1) == 1;
-  gl_Position = vec4((head ? g.c : g.c - g.st) / uRes * 2.0 - 1.0, 0.0, 1.0);
-  if (head) vCol = g.col * 0.9 / (1.0 + 0.06 * sl);
+  gl_Position = head ? g.head : g.tail;
+  if (head) vCol = g.col * 0.8 / (1.0 + 0.1 * sl);
 }`;
 const ADD_FS = `#version 300 es
 precision highp float;
 in vec3 vCol;
 out vec4 o;
 void main() { o = vec4(vCol, 1.0); }`;
-// The stage: plate, glow, grains and the frequency rail.
+// The stage: tilted plate, glow, grains and the frequency rail.
 const COMP_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 uniform sampler2D uHdr, uG0, uG1, uG2;
+uniform mat4 uInv;
+uniform vec3 uEye;
 uniform vec2 uRes, uRung;
-uniform vec4 uPlate, uRail, uDot;
+uniform vec4 uRail, uDot;
 uniform float uTick[${K}];
-uniform float uFront, uLive, uPadK;
+uniform float uFront, uLive, uPadK, uPr;
 uniform vec3 uGa, uGb, uWa, uWb, uStage, uPlateC, uEdge, uLine, uHot;
 out vec4 o;
+const float PT = ${PLATE_T};
 float hash(vec2 p) {
   vec3 q = fract(p.xyx * 0.1031);
   q += dot(q, q.yzx + 33.33);
@@ -676,26 +731,38 @@ float soft(sampler2D t, vec2 uv) {
   return 0.25 * (texture(t, uv - h).r + texture(t, uv + h).r + texture(t, uv + vec2(h.x, -h.y)).r + texture(t, uv + vec2(-h.x, h.y)).r);
 }
 void main() {
-  vec2 px = gl_FragCoord.xy;
-  float pr = uPlate.w;
-  vec2 uv = (px - uPlate.xy) / uPlate.z + 0.5, tc = (uv - 0.5) * uPadK + 0.5;
+  vec2 px = gl_FragCoord.xy, ndc = px / uRes * 2.0 - 1.0;
+  float pr = uPr;
+  vec4 a = uInv * vec4(ndc, -1.0, 1.0), b = uInv * vec4(ndc, 1.0, 1.0);
+  vec3 ro = uEye, rd = normalize(b.xyz / b.w - a.xyz / a.w);
+  // The ray meets the plate's plane.
+  float tp = -ro.z / rd.z, hit = step(0.0, tp);
+  vec2 uv = (ro + rd * max(tp, 0.0)).xy + 0.5, tc = (uv - 0.5) * uPadK + 0.5;
   float r = length(uv - 0.5), ft = clamp((uFront - r) / 0.05, 0.0, 1.0);
   vec3 glow = mix(uGa, uGb, ft), wash = mix(uWa, uWb, ft);
   vec2 sv = px / uRes - 0.5;
   vec3 col = uStage * (1.0 - 0.8 * dot(sv, sv));
-  col += wash * (0.012 + 0.03 * uLive) * exp(-r * r * 3.0);
+  col += wash * (0.012 + 0.03 * uLive) * exp(-r * r * 3.0) * hit;
   // The plate: a deep square that glows softly inside its rim.
   vec2 q = abs(uv - 0.5) - 0.5;
-  float sd = max(q.x, q.y) * uPlate.z / pr, inside = clamp(0.5 - sd * pr, 0.0, 1.0);
-  float ring = 1.0 + 0.8 * uLive;
-  vec3 plate = uPlateC * (1.0 + 0.25 * uLive) + uEdge * (0.024 * exp(sd / 56.0) + 0.04 * exp(sd / 8.0)) * ring;
+  float sd = max(q.x, q.y), dpx = sd / max(fwidth(sd), 1e-6);
+  float inside = clamp(0.5 - dpx, 0.0, 1.0) * hit, ring = 1.0 + 0.8 * uLive;
+  vec3 plate = uPlateC * (1.0 + 0.25 * uLive) + uEdge * (0.024 * exp(min(sd, 0.0) / 0.09) + 0.04 * exp(min(sd, 0.0) / 0.013)) * ring;
   col = mix(col, plate, inside);
-  col += uEdge * 0.022 * exp(-max(sd, 0.0) / 12.0) * (1.0 - inside) * ring;
+  col += uEdge * 0.022 * exp(-max(sd, 0.0) / 0.02) * (1.0 - inside) * hit * ring;
+  // The front edge: a thin dark band, lit along its top lip.
+  float tf = (-0.5 - ro.y) / rd.y;
+  vec3 fp = ro + rd * tf;
+  float fz = fwidth(fp.z) + 1e-6, fx = fwidth(fp.x) + 1e-6;
+  float face = step(0.0, tf) * clamp(min(-fp.z, fp.z + PT) / fz + 0.5, 0.0, 1.0) * clamp((0.5 - abs(fp.x)) / fx + 0.5, 0.0, 1.0);
+  vec3 edge = uPlateC * 0.6 + uEdge * (0.025 + 0.12 * exp(clamp(fp.z, -PT, 0.0) / (PT * 0.3))) * ring;
+  col = mix(col, edge, face);
   float d0 = texture(uG0, tc).r, d1 = soft(uG1, tc), d2 = soft(uG2, tc);
-  float rim = clamp(0.5 * pr + 0.5 - abs(sd * pr + 0.5 * pr), 0.0, 1.0);
+  float rim = clamp(0.5 * pr + 0.5 - abs(dpx + 0.5 * pr), 0.0, 1.0) * hit;
   col += (uEdge * 0.16 * ring + glow * 0.02 * d1) * rim;
-  // Piled sand blooms: tight around the lines, wide across the stage.
-  col += glow * (0.0022 * d0 * d0 / (1.0 + 0.016 * d0 * d0) + 0.014 * d1 + 0.009 * d2);
+  // Piled sand blooms: tight around the lines, wide across the plate.
+  float spill = hit * (1.0 - face) * mix(0.55, 1.0, inside);
+  col += glow * (0.0022 * d0 * d0 / (1.0 + 0.016 * d0 * d0) + 0.014 * d1 + 0.009 * d2) * spill;
   col += texelFetch(uHdr, ivec2(px), 0).rgb;
   // The rail: a hairline, a tick per resonance and the glowing dot.
   float ax = abs(px.x - uRail.x);
@@ -788,7 +855,6 @@ async function initGL() {
   gl.useProgram(P.den.p);
   gl.uniform1i(P.den.u.uA, 0);
   gl.uniform1f(P.den.u.uW, (DS * PADK) ** 2 / N);
-  gl.uniform1f(P.den.u.uPersp, PERSP);
   gl.uniform1f(P.den.u.uPadK, PADK);
   for (const q of [P.blur, P.down]) {
     gl.useProgram(q.p);
@@ -798,7 +864,6 @@ async function initGL() {
     gl.useProgram(q.p);
     gl.uniform1i(q.u.uA, 0);
     gl.uniform1i(q.u.uB, 1);
-    gl.uniform1f(q.u.uPersp, PERSP);
     gl.uniform1f(q.u.uDrift, 6);
   }
   gl.useProgram(P.comp.p);
@@ -894,26 +959,55 @@ function seed() {
   tune();
 }
 
-/* ---------- layout: the plate seen straight on, the rail at the right ---------- */
+/* ---------- camera: the plate seen from above at an angle ---------- */
 let W = 0, H = 0, pr = 1, cw = 0, ch = 0, lowDpr = false, drawN = N;
-// CSS pixels, y down.
-const L = { cx: 0, cy: 0, side: 1, railX: 0, y0: 0, y1: 0 };
-function layout() {
-  const small = W < 560, my = small ? 22 : 36, mx = small ? 14 : 36;
+let VP = null, INV = null, EYE = [0, -2, 2], refW = 1, plateA = 1;
+// The rail in CSS pixels, y down.
+const L = { railX: 0, y0: 0, y1: 0 };
+// World to device pixels, y up.
+function toDevice(p) {
+  const c = xf(VP, p);
+  return [(c[0] / c[3] * 0.5 + 0.5) * cw, (c[1] / c[3] * 0.5 + 0.5) * ch, c[3]];
+}
+function camera() {
+  const A = cw / ch, tilt = lerp(20, 50, sstep(0.75, 1.78, A)) * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
+  EYE = [0, tgt[1] - dist * Math.sin(tilt), tgt[2] + dist * Math.cos(tilt)];
+  const pv = mul4(persp(28 * D2R, A, 0.1, 30), lookAt(EYE, tgt, [0, 0, 1]));
+  const pts = [[-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0], [-0.5, -0.5, -PLATE_T], [0.5, -0.5, -PLATE_T]];
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const q of pts) {
+    const c = xf(pv, q), x = c[0] / c[3], y = c[1] / c[3];
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  // The plate fits left of the rail, centred when there is room.
+  const small = W < 560, my = small ? 22 : 34, mx = small ? 14 : 36;
   L.railX = W - (small ? 22 : 34);
   const right = L.railX - (small ? 24 : 44);
-  L.side = Math.max(60, Math.min(H - 2 * my, right - mx));
-  L.cx = Math.min(W / 2, right - L.side / 2);
-  L.cy = H / 2;
-  L.y0 = L.cy - L.side / 2;
-  L.y1 = L.cy + L.side / 2;
+  const k = Math.min((2 * (right - mx) / W) / (x1 - x0), (2 - 4 * my / H) / (y1 - y0));
+  const half = (k * (x1 - x0) * W) / 4, cx = Math.min(W / 2, right - half);
+  const ox = (2 * cx) / W - 1 - k * (x0 + x1) / 2, oy = -k * (y0 + y1) / 2;
+  VP = mul4([k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1, 0, ox, oy, 0, 1], pv);
+  INV = inv4(VP);
+  refW = xf(VP, [0, 0, 0])[3];
+  L.y0 = ((1 - (k * y1 + oy)) / 2) * H;
+  L.y1 = ((1 - (k * y0 + oy)) / 2) * H;
+  // The projected top face sets the grain brightness.
+  const c4 = pts.slice(0, 4).map(toDevice);
+  plateA = Math.abs(c4.reduce((s, c, i) => { const d = c4[(i + 1) % 4]; return s + c[0] * d[1] - d[0] * c[1]; }, 0)) / 2;
+  const l = toDevice([-0.5, 0, 0]), r = toDevice([0.5, 0, 0]), plateW = Math.hypot(r[0] - l[0], r[1] - l[1]) / pr;
   // Small plates draw only a share of the grains.
-  drawN = Math.round(N * clamp((L.side / 470) ** 2, 0.45, 1) * (lowDpr ? 0.7 : 1));
+  drawN = Math.round(N * clamp((plateW / 520) ** 2, 0.45, 1) * (lowDpr ? 0.7 : 1));
 }
 const railY = v => L.y1 - ((v - SMIN) / (SMAX - SMIN)) * (L.y1 - L.y0);
 const railS = y => SMIN + ((L.y1 - y) / (L.y1 - L.y0)) * (SMAX - SMIN);
-// CSS pixels to plate units, from the bottom-left corner.
-const toPlate = (x, y) => [(x - L.cx) / L.side + 0.5, (L.cy - y) / L.side + 0.5];
+// CSS pixels to plate units, from the front-left corner.
+function toPlate(x, y) {
+  const nx = (x / W) * 2 - 1, ny = 1 - (y / H) * 2;
+  const a = xf(INV, [nx, ny, -1]), b = xf(INV, [nx, ny, 1]);
+  const p0 = [a[0] / a[3], a[1] / a[3], a[2] / a[3]], d = sub([b[0] / b[3], b[1] / b[3], b[2] / b[3]], p0);
+  const t = -p0[2] / d[2];
+  return [p0[0] + d[0] * t + 0.5, p0[1] + d[1] * t + 0.5];
+}
 const onRail = (x, y) => Math.abs(x - L.railX) < 24 && y > L.y0 - 18 && y < L.y1 + 18;
 
 /* ---------- drawing ---------- */
@@ -970,16 +1064,17 @@ function render() {
   gl.viewport(0, 0, cw, ch);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND);
-  const sideD = L.side * pr, cx = L.cx * pr, cy = (H - L.cy) * pr, fr = front();
-  const gain = 0.24 * clamp((0.32 * sideD * sideD) / drawN, 0.6, 1.6);
-  for (const [q, mode, count] of [[P.dot, gl.POINTS, drawN], [P.streak, gl.LINES, drawN * 2]]) {
+  const fr = front(), gain = 0.24 * clamp((0.32 * plateA) / drawN, 0.6, 1.6);
+  // Every other grain streaks, so a pour stays airy.
+  for (const [q, mode, count] of [[P.dot, gl.POINTS, drawN], [P.streak, gl.LINES, drawN]]) {
     gl.useProgram(q.p);
     setField(q);
-    gl.uniform4f(q.u.uPlate, cx, cy, sideD, pr);
+    gl.uniformMatrix4fv(q.u.uVP, false, VP);
+    gl.uniform1f(q.u.uRefW, refW);
     gl.uniform2f(q.u.uRes, cw, ch);
     gl.uniform1f(q.u.uGain, gain);
     gl.uniform1f(q.u.uJit, reduce ? 0.003 : 0.006);
-    gl.uniform1f(q.u.uTau, reduce ? 0.02 : 0.04);
+    gl.uniform1f(q.u.uTau, reduce ? 0.015 : 0.028);
     gl.uniform1f(q.u.uFront, fr);
     gl.uniform1f(q.u.uFlash, reduce ? 0 : 1 - wave);
     gl.uniform1ui(q.u.uSeed, frameNo);
@@ -998,7 +1093,9 @@ function render() {
   });
   const u = P.comp.u, rungDY = ((L.y1 - L.y0) / (SMAX - SMIN)) * pr;
   gl.uniform2f(u.uRes, cw, ch);
-  gl.uniform4f(u.uPlate, cx, cy, sideD, pr);
+  gl.uniformMatrix4fv(u.uInv, false, INV);
+  gl.uniform3fv(u.uEye, EYE);
+  gl.uniform1f(u.uPr, pr);
   gl.uniform4f(u.uRail, L.railX * pr, (H - L.y1) * pr, (H - L.y0) * pr, (H - railY(s)) * pr);
   gl.uniform2f(u.uRung, (H - railY(0)) * pr, rungDY);
   gl.uniform4f(u.uDot, clamp(0.15 + D * (0.35 + 0.65 * near) + (gripping ? 0.3 : 0), 0, 1.4), 3.2 + 1.3 * D + (gripping ? 1 : 0), 0, 0);
@@ -1026,7 +1123,7 @@ function fit() {
   cw = nw;
   ch = nh;
   pr = nw / w;
-  layout();
+  camera();
   // A resized canvas is blank until drawn, so draw now.
   if (ready) render();
 }
@@ -1066,7 +1163,7 @@ function advance(dt, now) {
   formed = Math.min(1, formed + dt * F.amp * 0.55);
   const steps = clamp(Math.round(dt * 60), 1, 3);
   for (let i = 0; i < steps; i++) {
-    if (scatterQ) { scatterQ = false; simStep(dt / steps, reduce ? 0.12 : 0.5); continue; }
+    if (scatterQ) { scatterQ = false; simStep(dt / steps, reduce ? 0.12 : 0.32); continue; }
     simStep(dt / steps);
   }
   if (wave < 1) wave = Math.min(1, wave + dt / (reduce ? 0.25 : 1.3));
@@ -1250,7 +1347,7 @@ async function boot() {
   fit();
   if (!W) {
     W = 1160; H = 652; cw = canvas.width = 1160; ch = canvas.height = 652; pr = 1;
-    layout();
+    camera();
   }
   try { await initGL(); } catch (err) { console.error(err); failed(); return; }
   await idle();
