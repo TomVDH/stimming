@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Split-flap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the board panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --housing: oklch(0.175 0.014 262);
+  --ink: oklch(0.93 0.03 84);
+  --amber: oklch(0.82 0.15 72);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The board housing is 16:9, 4:5 on phones, and matte dark. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; cursor: pointer;
+  background:
+    radial-gradient(90% 60% at 50% -12%, oklch(0.34 0.045 70 / 0.42), transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, oklch(0.2 0.016 262), var(--housing) 55%, oklch(0.145 0.012 262));
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.board { position: absolute; inset: 0; opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1); }
+.board.on { opacity: 1; }
+/* Each row sits in a recessed rail with a lit lower lip. */
+.rail {
+  position: absolute; border-radius: 6px;
+  background: linear-gradient(to bottom, oklch(0.095 0.01 262), oklch(0.125 0.012 262));
+  border-top: 1px solid oklch(0.07 0.008 262); border-bottom: 1px solid oklch(0.3 0.016 262 / 0.75);
+}
+.m { position: absolute; contain: layout size style; }
+/* Axle pins show through the split at both sides. */
+.m::before {
+  content: ""; position: absolute; left: -2px; right: -2px; top: calc(50% - var(--pin) / 2); height: var(--pin);
+  background: linear-gradient(90deg, oklch(0.38 0.012 262) 0 3px, transparent 3px calc(100% - 3px), oklch(0.38 0.012 262) calc(100% - 3px));
+  border-radius: 1px;
+}
+.h { position: absolute; left: 0; right: 0; height: var(--hh); overflow: hidden; color: var(--ink); }
+.u {
+  top: 0; border-radius: var(--rr) var(--rr) 1px 1px;
+  background: linear-gradient(to bottom, oklch(0.31 0.01 70) 0 1px, oklch(0.255 0.009 70) 1px, oklch(0.222 0.008 70));
+}
+.d {
+  bottom: 0; border-radius: 1px 1px var(--rr) var(--rr);
+  background: linear-gradient(to bottom, oklch(0.215 0.008 70), oklch(0.18 0.008 70) calc(100% - 1px), oklch(0.13 0.008 70) calc(100% - 1px));
+}
+.h span {
+  position: absolute; left: 0; right: 0; height: var(--mh); text-align: center;
+  font: 600 var(--fs)/var(--mh) var(--sans); transform: translateY(var(--fy));
+}
+.u span { top: 0; }
+.d span { bottom: 0; }
+.h i { position: absolute; inset: 0; background: oklch(0.06 0.01 262); opacity: 0; }
+/* The leaf is one flap: front upper half, back lower half. */
+.f { visibility: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.u.f { transform-origin: 50% calc(100% + var(--sg) / 2); }
+.d.f { transform-origin: 50% calc(var(--sg) / -2); }
+.cur {
+  position: absolute; border-radius: 2px; background: var(--amber);
+  animation: blink 1.06s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+@media (hover: none) { .cur { display: none; } }
+/* A soft overhead light falls across the board. */
+.glare {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(70% 55% at 50% 0%, oklch(0.95 0.04 80 / 0.07), transparent 70%),
+    radial-gradient(120% 100% at 50% 45%, transparent 55%, oklch(0.08 0.01 262 / 0.55));
+}
+/* On the dark housing the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .board { transition: none; } .cur { animation: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Split-flap</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A split-flap departure board. Type to write at the cursor, with Enter for a new row, Backspace to erase and arrows to move; click or drag across flaps to flip them, Shift with an arrow flips as it moves, and Space shuffles to the next departures.">
+      <div class="board" aria-hidden="true"></div>
+      <div class="glare" aria-hidden="true"></div>
+      <p class="fail" hidden>Split-flap needs CSS 3D transforms, which this browser lacks.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="shuffle" type="button" aria-keyshortcuts="Space">Shuffle</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a flap</dt><dd>flip</dd></div>
+        <div><dt>Drag</dt><dd>cascade</dd></div>
+        <div class="fine"><dt>Type</dt><dd>write</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>shuffle</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const stage = document.getElementById('stage'), board = stage.querySelector('.board');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+
+/* ---------- the drum: characters, then colour tiles ---------- */
+const GLYPHS = [' ', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', '.', ':', '-', '/', "'", '!', '?', '&'];
+// Lower-case letters in preset text stand for colour tiles.
+const TILE_KEYS = 'roygbv';
+const TILE_HUE = [[0.63, 0.19, 27], [0.74, 0.16, 58], [0.86, 0.15, 96], [0.7, 0.15, 155], [0.64, 0.14, 248], [0.6, 0.16, 305]];
+const T0 = GLYPHS.length, N = T0 + TILE_KEYS.length;
+const IDX = new Map(GLYPHS.map((g, i) => [g, i]));
+[...TILE_KEYS].forEach((k, i) => IDX.set(k, T0 + i));
+const ok = (l, c, h) => `oklch(${l} ${c} ${h})`;
+// Each tile has a lit upper half and a shaded lower half.
+const TILE_BG = TILE_HUE.map(([l, c, h]) => [
+  `linear-gradient(to bottom, ${ok(l + 0.07, c * 0.8, h)} 0 1px, ${ok(l + 0.02, c, h)} 1px, ${ok(l - 0.02, c, h)})`,
+  `linear-gradient(to bottom, ${ok(l - 0.06, c, h)}, ${ok(l - 0.1, c * 0.95, h)} calc(100% - 1px), ${ok(l - 0.2, c * 0.8, h)} calc(100% - 1px))`,
+]);
+const code = ch => IDX.get(ch) ?? 0;
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.flap.sound', POOL = 24, LEAD = 0.006, PER_FRAME = 7;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, bus = null, askedAt = -1e9, restT = 0, clicks = [], voices = [];
+
+// A click: a bright tick, a plastic ping and a small knock.
+// Some clicks carry a second tick as the flap settles.
+function clickBuffer(a) {
+  const sr = a.sampleRate, len = Math.floor(sr * 0.05), b = a.createBuffer(1, len, sr), d = b.getChannelData(0);
+  const f1 = rnd(2400, 3900), f2 = f1 * rnd(1.8, 2.5), fk = rnd(260, 460), t2 = rnd(0.004, 0.011), k2 = Math.random() < 0.6 ? rnd(0.12, 0.35) : 0;
+  let prev = 0, peak = 0;
+  for (let i = 0; i < len; i++) {
+    const t = i / sr, w = Math.random() * 2 - 1, hp = w - prev;
+    prev = w;
+    let s = hp * 0.5 * Math.exp(-t / 0.0011)
+      + Math.sin(TAU * f1 * t) * 0.3 * Math.exp(-t / 0.003)
+      + Math.sin(TAU * f2 * t) * 0.14 * Math.exp(-t / 0.0017)
+      + Math.sin(TAU * fk * t) * 0.26 * Math.exp(-t / 0.007) * (1 - Math.exp(-t / 0.0005));
+    if (k2 && t > t2) s += hp * k2 * Math.exp(-(t - t2) / 0.0007);
+    d[i] = s;
+    peak = Math.max(peak, Math.abs(s));
+  }
+  const fade = Math.floor(sr * 0.004);
+  for (let i = 0; i < len; i++) d[i] *= (0.9 / peak) * Math.min(1, (len - i) / fade);
+  return b;
+}
+// A short room tail glues many clicks into one clatter.
+function roomTail(a) {
+  const sr = a.sampleRate, len = Math.floor(sr * 0.22), b = a.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    for (let i = 0; i < len; i++) { const t = i / sr; d[i] = (Math.random() * 2 - 1) * Math.exp(-t / 0.04) * Math.min(1, t / 0.003); }
+  }
+  return b;
+}
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 5;
+    comp.attack.value = 0.002; comp.release.value = 0.1;
+    const out = ac.createGain();
+    out.gain.value = 0.6;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    bus = ac.createGain();
+    const conv = ac.createConvolver(), wet = ac.createGain();
+    conv.buffer = roomTail(ac);
+    wet.gain.value = 0.16;
+    bus.connect(out);
+    bus.connect(conv).connect(wet).connect(out);
+    clicks = Array.from({ length: 14 }, () => clickBuffer(ac));
+    // A fixed pool of voices caps the clatter.
+    voices = Array.from({ length: POOL }, () => {
+      const g = ac.createGain(), p = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
+      g.connect(p).connect(bus);
+      return { g, p, until: 0 };
+    });
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+// Once the board rests, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !drag && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+function unlock(e) {
+  if (!soundOn) return;
+  if (e.type === 'keydown' && e.key.length !== 1 && !['Enter', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Landed flaps this frame, spread over the frame as a clatter.
+const landC = [], landF = [];
+function clatter(dt) {
+  const n = landC.length, a = live();
+  if (!n || !a) return;
+  const play = Math.min(n, PER_FRAME), t0 = a.currentTime + LEAD;
+  // Busy frames drop clicks and lift the rest a little.
+  const g0 = 0.34 * Math.min(1.7, (n / play) ** 0.3);
+  for (let k = 0; k < play; k++) {
+    const i = n > play ? Math.floor(Math.random() * n) : k, fin = landF[i];
+    const t = t0 + Math.random() * dt;
+    const v = voices.find(o => o.until <= t);
+    if (!v) break;
+    v.until = t + 0.055;
+    const src = a.createBufferSource();
+    src.buffer = clicks[Math.floor(Math.random() * clicks.length)];
+    src.playbackRate.value = jit(0.06) * (fin ? 0.86 : 1);
+    v.g.gain.setValueAtTime(g0 * jit(0.22) * (fin ? 1.3 : 1), t);
+    if (v.p.pan) v.p.pan.setValueAtTime(clamp(landC[i] / Math.max(1, cols - 1), 0, 1) * 1.1 - 0.55, t);
+    src.connect(v.g);
+    src.onended = () => src.disconnect();
+    src.start(t);
+  }
+}
+
+/* ---------- modules ---------- */
+const MOD_HTML = '<div class="h u"><span></span><i></i></div><div class="h d"><span></span><i></i></div><div class="h u f"><span></span><i></i></div><div class="h d f"><span></span><i></i></div>';
+function face(el, up) {
+  return { el, sp: el.firstChild, sh: el.lastChild, up, i: -1, o: 0 };
+}
+function paint(f, i) {
+  if (f.i === i) return;
+  f.i = i;
+  if (i >= T0) {
+    f.sp.textContent = '';
+    f.el.style.background = TILE_BG[i - T0][f.up ? 0 : 1];
+  } else {
+    f.sp.textContent = GLYPHS[i];
+    f.el.style.background = '';
+  }
+}
+function shade(f, o) {
+  o = Math.round(o * 100) / 100;
+  if (f.o !== o) { f.o = o; f.sh.style.opacity = o; }
+}
+function makeModule(r, c) {
+  const el = document.createElement('div');
+  el.className = 'm';
+  el.innerHTML = MOD_HTML;
+  const [u, d, fu, fd] = el.children;
+  const m = {
+    el, r, c, u: face(u, true), d: face(d, false), fu: face(fu, true), fd: face(fd, false),
+    cur: 0, next: 0, target: 0, state: 0, t0: 0, dur: 0, wait: 0, speed: rnd(0.93, 1.07),
+  };
+  paint(m.u, 0);
+  paint(m.d, 0);
+  return m;
+}
+const leaf = (m, on) => {
+  m.fu.el.style.visibility = m.fd.el.style.visibility = on ? 'visible' : 'hidden';
+  if (!on) m.fu.el.style.transform = m.fd.el.style.transform = '';
+};
+// The upper flap falls over the hinge onto the lower half.
+function startFlip(m, t) {
+  const rem = (m.target - m.cur + N) % N;
+  m.next = reduce ? m.target : (m.cur + 1) % N;
+  paint(m.u, m.next);
+  paint(m.fu, m.cur);
+  paint(m.fd, m.next);
+  if (m.state !== 1) leaf(m, true);
+  m.dur = reduce ? 0.13 : (rem > 8 ? 0.04 : rem > 1 ? 0.056 : 0.085) * m.speed;
+  m.t0 = t;
+  m.state = 1;
+}
+// Gravity: the flap leaves slowly and lands fast.
+function pose(m, p) {
+  const a = 180 * (0.14 * p + 0.86 * p * p);
+  m.fu.el.style.transform = `rotateX(${-a}deg)`;
+  m.fd.el.style.transform = `rotateX(${180 - a}deg)`;
+  shade(m.fu, 0.7 * clamp(a / 90) ** 1.4);
+  shade(m.fd, 0.62 * (1 - clamp((a - 90) / 90)) ** 1.3);
+  shade(m.u, 0.42 * (1 - clamp(a / 110)));
+  shade(m.d, 0.38 * clamp((a - 70) / 110));
+}
+const BOUNCE = 0.16;
+function step(m) {
+  if (m.state === 0) {
+    if (clock < m.wait) return;
+    if (m.cur === m.target) { active.delete(m); return; }
+    startFlip(m, clock);
+  }
+  if (m.state === 2 && m.cur !== m.target) startFlip(m, clock);
+  if (m.state === 1) {
+    let p = (clock - m.t0) / m.dur;
+    while (p >= 1) {
+      const t1 = m.t0 + m.dur;
+      m.cur = m.next;
+      paint(m.d, m.cur);
+      shade(m.u, 0);
+      shade(m.d, 0);
+      landC.push(m.c);
+      landF.push(m.cur === m.target);
+      if (m.cur === m.target) {
+        m.state = 2;
+        m.t0 = t1;
+        m.fu.el.style.visibility = 'hidden';
+        break;
+      }
+      startFlip(m, t1);
+      p = (clock - m.t0) / m.dur;
+    }
+    if (m.state === 1) pose(m, p);
+  }
+  if (m.state === 2) {
+    // The flap bounces once off its stop, then rests.
+    const tau = clock - m.t0;
+    if (tau >= BOUNCE || reduce) {
+      leaf(m, false);
+      shade(m.fd, 0);
+      m.state = 0;
+      active.delete(m);
+      return;
+    }
+    const b = 13 * Math.exp(-tau / 0.035) * Math.abs(Math.sin((Math.PI * tau) / 0.05));
+    m.fd.el.style.transform = `rotateX(${b}deg)`;
+    shade(m.fd, b / 90);
+  }
+}
+function snap(m, i) {
+  m.cur = m.next = m.target = i;
+  m.state = 0;
+  paint(m.u, i);
+  paint(m.d, i);
+  shade(m.u, 0);
+  shade(m.d, 0);
+  leaf(m, false);
+  active.delete(m);
+}
+function kick(m) {
+  active.add(m);
+  wake();
+}
+function setTarget(m, i, delay = 0) {
+  if (m.target === i && m.cur === i) return;
+  m.target = i;
+  if (m.state === 0) m.wait = clock + delay;
+  kick(m);
+}
+// A spin adds flips but never a whole turn.
+function spin(m, k) {
+  const rem = (m.target - m.cur + N) % N;
+  m.target = (m.cur + Math.min(N - 1, rem + k)) % N;
+  if (m.state === 0) m.wait = 0;
+  kick(m);
+}
+
+/* ---------- departures: fictional trains, real cities ---------- */
+let seed = (Date.now() % 100000) | 1;
+const rng = () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const CITIES = ['LISBON', 'BERLIN', 'MADRID', 'VIENNA', 'PRAGUE', 'ZURICH', 'MILAN', 'OSLO', 'ROME', 'LYON', 'GENEVA', 'MUNICH', 'BRUSSELS', 'ANTWERP', 'BUDAPEST', 'WARSAW', 'KRAKOW', 'PORTO', 'NAPLES', 'VENICE', 'BOLOGNA', 'HAMBURG', 'COLOGNE', 'LEIPZIG', 'DRESDEN', 'SALZBURG', 'BASEL', 'BERN', 'BORDEAUX', 'NANTES', 'LILLE', 'PARIS', 'FLORENCE', 'VERONA', 'TURIN', 'GHENT', 'BRUGES', 'UTRECHT', 'MALMO', 'ZAGREB', 'DIJON', 'BILBAO', 'NICE', 'AACHEN', 'LUCERNE', 'GRAZ', 'LIEGE', 'SEVILLE'];
+for (let i = CITIES.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [CITIES[i], CITIES[j]] = [CITIES[j], CITIES[i]]; }
+// Train kinds: prefix, digits and the colour tile they carry.
+const KINDS = [['IC', 1, 'r'], ['EC', 1, 'v'], ['R', 2, 'g'], ['S', 2, 'b'], ['', 3, 'o'], ['RE', 1, 'y']];
+const two = n => String(n).padStart(2, '0');
+const hhmm = d => `${two(d.getHours())}:${two(d.getMinutes())}`;
+let cityI = 0, nextMin = 0, deps = [];
+function departures(n) {
+  const now = Math.floor(Date.now() / 60000);
+  if (nextMin < now + 1 || nextMin > now + 720) nextMin = now + 2 + Math.floor(rng() * 4);
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const [p, dg, col] = KINDS[Math.floor(rng() * KINDS.length)];
+    const no = p + String(Math.floor(rng() * 10 ** dg)).padStart(dg, '0');
+    out.push({ t: hhmm(new Date(nextMin * 60000)), city: CITIES[cityI++ % CITIES.length], no, col });
+    nextMin += 2 + Math.floor(rng() * 9);
+  }
+  return out;
+}
+// Wide boards use one row per train; narrow boards use two.
+const wide = () => cols >= 16;
+const depCount = () => (wide() ? rows - 1 : Math.floor((rows - 1) / 2));
+const header = () => (wide() ? 'DEPARTURES' : 'DEP').padEnd(cols - 5) + hhmm(new Date());
+function pageText() {
+  const lines = [header()];
+  if (wide()) {
+    for (const d of deps) lines.push(d.t + d.col + d.city.padEnd(8) + ' ' + d.no.padStart(3));
+  } else {
+    if ((rows - 1) % 2) lines.push('');
+    for (const d of deps) lines.push(d.t + ' ' + d.no.padStart(4), d.col + ' ' + d.city);
+  }
+  return lines.map(l => l.padEnd(cols).slice(0, cols));
+}
+
+/* ---------- board layout ---------- */
+let cols = 0, rows = 0, mods = [], rails = [], geo = null, rowOwned = [], curR = 1, curC = 0, shown = false;
+const active = new Set(), queue = [];
+const cursor = document.createElement('div');
+cursor.className = 'cur';
+function build(C, R) {
+  cols = C;
+  rows = R;
+  board.textContent = '';
+  active.clear();
+  queue.length = 0;
+  rails = Array.from({ length: R }, () => {
+    const el = document.createElement('div');
+    el.className = 'rail';
+    board.append(el);
+    return el;
+  });
+  mods = [];
+  for (let r = 0; r < R; r++) {
+    const row = [];
+    for (let c = 0; c < C; c++) {
+      const m = makeModule(r, c);
+      board.append(m.el);
+      row.push(m);
+    }
+    mods.push(row);
+  }
+  board.append(cursor);
+  rowOwned = new Array(R).fill(false);
+  curR = Math.min(curR, R - 1);
+  curC = Math.min(curC, C - 1);
+}
+function layout() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  if (!W || !H) return;
+  const narrow = W / H < 1.2, C = narrow ? 10 : 18, A = 0.68, GX = 0.1, GY = narrow ? 0.15 : 0.17;
+  const pad = clamp(Math.min(W, H) * 0.06, 14, 44);
+  let h = (W - 2 * pad) / (C + (C - 1) * GX) / A;
+  const R = narrow ? Math.max(3, Math.floor((H - 2 * pad + h * GY) / (h * (1 + GY)))) : 6;
+  h = Math.floor(Math.min(h, (H - 2 * pad) / (R + (R - 1) * GY)));
+  const w = Math.round(h * A), gx = Math.max(2, Math.round(w * GX)), gy = Math.max(4, Math.round(h * GY));
+  const BW = C * w + (C - 1) * gx, BH = R * h + (R - 1) * gy;
+  const bx = Math.round((W - BW) / 2), by = Math.round((H - BH) / 2);
+  const rebuilt = C !== cols || R !== rows;
+  if (rebuilt) build(C, R);
+  geo = { w, h, gx, gy, bx, by };
+  // Halves are equal; the hairline split takes the remainder.
+  const half = Math.round((h - Math.max(1, h * 0.022)) / 2), sg = h - 2 * half;
+  const s = board.style;
+  s.setProperty('--mh', h + 'px');
+  s.setProperty('--hh', half + 'px');
+  s.setProperty('--sg', sg + 'px');
+  s.setProperty('--fs', Math.round(h * 0.64) + 'px');
+  s.setProperty('--rr', Math.max(2, Math.round(h * 0.05)) + 'px');
+  s.setProperty('--pin', Math.max(3, Math.round(h * 0.09)) + 'px');
+  // One eye for the whole board gives every flap the right perspective.
+  const ex = W / 2, ey = by + BH * 0.42, pz = Math.round(BH * 1.6);
+  for (let r = 0; r < R; r++) {
+    const top = by + r * (h + gy), rs = rails[r].style;
+    rs.left = bx - Math.round(gx * 1.2) + 'px';
+    rs.width = BW + 2 * Math.round(gx * 1.2) + 'px';
+    rs.top = top - Math.round(gy * 0.3) + 'px';
+    rs.height = h + 2 * Math.round(gy * 0.3) + 'px';
+    for (let c = 0; c < C; c++) {
+      const left = bx + c * (w + gx), ms = mods[r][c].el.style;
+      ms.left = left + 'px';
+      ms.top = top + 'px';
+      ms.width = w + 'px';
+      ms.height = h + 'px';
+      ms.perspective = pz + 'px';
+      ms.perspectiveOrigin = `${ex - left}px ${ey - top}px`;
+    }
+  }
+  const cs = cursor.style;
+  cs.width = Math.round(w * 0.7) + 'px';
+  cs.height = Math.max(2, Math.round(h * 0.035)) + 'px';
+  placeCursor();
+  if (rebuilt && shown) {
+    while (deps.length < depCount()) deps.push(...departures(1));
+    pageText().forEach((l, r) => [...l].forEach((ch, c) => snap(mods[r][c], code(ch))));
+  }
+}
+function placeCursor() {
+  if (!geo) return;
+  const { w, h, gx, gy, bx, by } = geo;
+  cursor.style.left = bx + curC * (w + gx) + Math.round(w * 0.15) + 'px';
+  cursor.style.top = by + curR * (h + gy) + h + Math.round(gy * 0.42) + 'px';
+  // Moving restarts the blink so the cursor shows at once.
+  cursor.style.animation = 'none';
+  void cursor.offsetWidth;
+  cursor.style.animation = '';
+}
+// Caps sit centred on the split, whatever the font metrics.
+async function fitFont() {
+  try { await document.fonts.load('600 100px Gabarito'); } catch (err) { return; }
+  const g = document.createElement('canvas').getContext('2d');
+  g.font = '600 100px Gabarito';
+  const t = g.measureText('H');
+  if (!t.fontBoundingBoxAscent) return;
+  board.style.setProperty('--fy', ((t.actualBoundingBoxAscent / 2 - (t.fontBoundingBoxAscent - t.fontBoundingBoxDescent) / 2) / 100).toFixed(4) + 'em');
+}
+
+/* ---------- presets ---------- */
+function show(animate) {
+  deps = departures(depCount());
+  rowOwned.fill(false);
+  const text = pageText();
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const m = mods[r][c], i = code(text[r][c]);
+    if (!animate) snap(m, i);
+    // The new page sweeps in left to right, with a little scatter.
+    else setTarget(m, i, reduce ? rnd(0, 0.12) : c * 0.024 + r * 0.045 + rnd(0, 0.09));
+  }
+  shown = true;
+}
+function shuffle() {
+  typing = false;
+  show(true);
+}
+// The clock row turns over on the minute.
+function tick() {
+  if (shown && !rowOwned[0]) [...header()].forEach((ch, c) => setTarget(mods[0][c], code(ch), reduce ? 0 : c * 0.03));
+  setTimeout(tick, 60000 - (Date.now() % 60000) + 40);
+}
+
+/* ---------- loop ---------- */
+let raf = 0, last = 0, clock = 0, onScreen = true;
+function wake() {
+  if (!raf && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const dt = Math.min(Math.max(0, (ms - last) / 1000), 1 / 30);
+  last = ms;
+  clock += dt;
+  for (let k = queue.length - 1; k >= 0; k--) {
+    if (queue[k].at > clock) continue;
+    const q = queue[k];
+    queue.splice(k, 1);
+    spin(q.m, q.k);
+  }
+  landC.length = landF.length = 0;
+  for (const m of active) step(m);
+  clatter(dt);
+  if ((active.size || queue.length) && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else rest();
+}
+
+/* ---------- input ---------- */
+let drag = null, typing = false, typedAt = 0;
+function cellAt(x, y, loose) {
+  if (!geo) return null;
+  const { w, h, gx, gy, bx, by } = geo;
+  const fx = (x - bx + (loose ? gx / 2 : 0)) / (w + gx), fy = (y - by + (loose ? gy / 2 : 0)) / (h + gy);
+  const c = Math.floor(fx), r = Math.floor(fy);
+  if (c < 0 || r < 0 || c >= cols || r >= rows) return null;
+  if (!loose && ((fx - c) * (w + gx) > w || (fy - r) * (h + gy) > h)) return null;
+  return mods[r][c];
+}
+// A crossed flap spins; the rows beside it ripple a moment later.
+function cascade(m, k) {
+  spin(m, k);
+  for (const [dr, f, at] of [[-1, 0.45, 0.06], [1, 0.45, 0.06], [-2, 0.18, 0.12], [2, 0.18, 0.12]]) {
+    const r = m.r + dr, kk = Math.round(k * f);
+    if (r >= 0 && r < rows && kk > 0) queue.push({ at: clock + at, m: mods[r][m.c], k: kk });
+  }
+}
+function local(e) {
+  const b = stage.getBoundingClientRect();
+  return [e.clientX - b.left, e.clientY - b.top];
+}
+stage.addEventListener('pointerdown', e => {
+  if (drag || !geo || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e), m = cellAt(x, y, false);
+  drag = { id: e.pointerId, x, y, t: e.timeStamp, m, v: 0 };
+  try { stage.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  typing = false;
+  if (m) {
+    spin(m, 1);
+    curR = m.r;
+    curC = m.c;
+    placeCursor();
+  }
+});
+stage.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const [x, y] = local(e), dx = x - drag.x, dy = y - drag.y, dist = Math.hypot(dx, dy);
+  if (dist < 1) return;
+  const pitch = geo.w + geo.gx, dtm = Math.max(4, e.timeStamp - drag.t);
+  // Speed in flaps per second sets how far each crossed flap spins.
+  drag.v = drag.v * 0.5 + 0.5 * (dist / pitch / (dtm / 1000));
+  const k = Math.round(clamp(2 + drag.v * 0.32, 2, 18));
+  const steps = Math.ceil(dist / (pitch * 0.25));
+  for (let i = 1; i <= steps; i++) {
+    const m = cellAt(drag.x + (dx * i) / steps, drag.y + (dy * i) / steps, true);
+    if (m && m !== drag.m) { drag.m = m; cascade(m, k); }
+  }
+  drag.x = x;
+  drag.y = y;
+  drag.t = e.timeStamp;
+});
+const lift = e => { if (drag && e.pointerId === drag.id) { drag = null; if (!raf) rest(); } };
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, lift));
+
+function moveCursor(dr, dc, flip) {
+  curC += dc;
+  if (curC >= cols) { curC = 0; curR++; }
+  if (curC < 0) { curC = cols - 1; curR--; }
+  curR = (curR + dr + rows) % rows;
+  placeCursor();
+  if (flip) spin(mods[curR][curC], 1);
+}
+function write(ch) {
+  const m = mods[curR][curC];
+  setTarget(m, code(ch));
+  rowOwned[curR] = true;
+  typing = true;
+  typedAt = performance.now();
+  moveCursor(0, 1, false);
+}
+const ARROWS = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !geo) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key, onCtl = e.target.closest?.('button, a');
+  if (k === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (onCtl) return;
+    e.preventDefault();
+    // Mid-word, Space writes a blank; otherwise it shuffles.
+    if (typing && performance.now() - typedAt < 3000) write(' ');
+    else if (!e.repeat) shuffle();
+  } else if (k === 'Enter') {
+    if (onCtl) return;
+    e.preventDefault();
+    typing = true;
+    typedAt = performance.now();
+    curC = 0;
+    moveCursor(1, 0, false);
+  } else if (k === 'Backspace') {
+    e.preventDefault();
+    typing = true;
+    typedAt = performance.now();
+    moveCursor(0, -1, false);
+    setTarget(mods[curR][curC], 0);
+    rowOwned[curR] = true;
+  } else if (k === 'Delete') {
+    e.preventDefault();
+    setTarget(mods[curR][curC], 0);
+    rowOwned[curR] = true;
+  } else if (k === 'Escape') {
+    typing = false;
+  } else if (ARROWS[k]) {
+    e.preventDefault();
+    if (typing) typedAt = performance.now();
+    moveCursor(ARROWS[k][0], ARROWS[k][1], e.shiftKey);
+  } else if (k.length === 1 && IDX.has(k.toUpperCase())) {
+    e.preventDefault();
+    write(k.toUpperCase());
+  }
+});
+document.getElementById('shuffle').addEventListener('click', shuffle);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen && active.size) wake(); }).observe(stage);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && active.size) wake(); });
+
+/* ---------- start ---------- */
+if (!CSS.supports?.('transform', 'rotateX(1deg)') || !CSS.supports?.('perspective', '10px')) {
+  stage.querySelector('.fail').hidden = false;
+} else {
+  layout();
+  new ResizeObserver(() => layout()).observe(stage);
+  requestAnimationFrame(() => board.classList.add('on'));
+  // The first page flips in once the font is ready.
+  Promise.race([fitFont(), new Promise(r => setTimeout(r, 900))]).then(() => {
+    show(!reduce);
+    tick();
+  });
+}
+</script>
+</body>
+</html>
