@@ -20,27 +20,28 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* The soap rail is one slider: small bars, then the soap's name. */
+/* The soap picker is one slider: small soap swatches, then the name. */
 .soaps {
-  display: inline-flex; align-items: center; gap: 10px; padding: 5px 13px 5px 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 10px; padding: 5px 13px 5px 9px; cursor: pointer;
   font-size: 13px; color: var(--fg); border: 1px solid var(--line); border-radius: 999px;
   touch-action: none; -webkit-tap-highlight-color: transparent; transition: border-color 0.2s ease;
 }
 .soaps:hover { border-color: var(--muted); }
 .soaps[aria-disabled="true"] { opacity: 0.45; cursor: default; }
-.soap-rail { display: flex; align-items: center; gap: 4px; height: 18px; }
+.soap-rail { display: flex; align-items: center; gap: 6px; height: 20px; }
+/* Each swatch is a tiny bar of that soap; a ring marks the pick. */
 .soap-rail i {
-  display: block; width: 12px; height: 9px; border-radius: 3px; background: var(--c);
-  transition: height 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: block; width: 13px; height: 13px; border-radius: 4px; background: var(--c);
+  outline: 2px solid transparent; outline-offset: 2px;
+  transition: outline-color 0.2s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-/* The chosen soap stands tall with a cut across it. */
-.soap-rail i.on { width: 15px; height: 18px; -webkit-mask: linear-gradient(#000 0 0) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% 8px no-repeat; mask: linear-gradient(#000 0 0) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% 8px no-repeat; }
-.soap-rail i.peek:not(.on) { height: 13px; }
-.soap-name { min-width: 4.6em; }
+.soap-rail i.on { outline-color: var(--fg); }
+.soap-rail i.peek:not(.on) { transform: scale(1.18); }
+.soap-name { min-width: 4.4em; }
 @media (pointer: coarse) {
-  .soaps { padding: 9px 16px 9px 12px; }
-  .soap-rail i { width: 15px; }
-  .soap-rail i.on { width: 18px; }
+  .soaps { padding: 9px 16px 9px 13px; }
+  .soap-rail { gap: 9px; }
+  .soap-rail i { width: 16px; height: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .stage canvas, .soap-rail i { transition: none; } }
 </style>
@@ -53,7 +54,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line previews each cut. Drag across the soap to score it; swipe in from outside to slice right through; fallen pieces cut too. Space makes the next cut, N brings a new bar, 1 to 7 pick the soap.">
+    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line previews each cut. Drag across the soap to score it; drag in from the mat to slice right through; fallen pieces cut too. Space makes the next cut, B blows the shavings away, N brings a new bar, 1 to 7 pick the soap.">
       <p class="fail" hidden>Soap cutting needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -62,12 +63,13 @@
       </div>
       <div class="actions">
         <button class="chip" id="fresh" type="button" aria-keyshortcuts="N">New bar</button>
+        <button class="chip" id="blow" type="button" aria-keyshortcuts="B">Blow</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag on the soap</dt><dd>score it</dd></div>
-        <div><dt>Swipe in from outside</dt><dd>slice through</dd></div>
+        <div><dt>Drag</dt><dd>score</dd></div>
+        <div><dt>Drag in from the mat</dt><dd>slice</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>next cut</dd></div>
-        <div class="fine"><dt><kbd>N</kbd></dt><dd>new bar</dd></div>
+        <div class="fine"><dt><kbd>B</kbd></dt><dd>blow</dd></div>
       </dl>
     </div>
   </main>
@@ -117,15 +119,16 @@ function rgb([L, C, h]) {
 // mode: 0 plain, 1 three layers, 2 marbled swirl.
 // speck: share of tiny cells that hold a fleck, and their size.
 // trans: light through thin parts; chalk: a pale outer skin.
-// clear: a clear soap glows where thin and deepens where thick.
+// clear: a cloudy soap glows where thin and deepens where thick.
+// glass: a truly clear soap; glow: the soft light at its edges.
 const SOAPS = [
   { name: 'Mint', a: [0.83, 0.135, 160], sub: [0.6, 0.2, 160], rough: 0.62, spec: 0.5, sheen: 0.45, trans: 1.6, wrap: 0.6, chalk: 0.08, mode: 0, ink: [0.3, 0.07, 165] },
-  { name: 'Amber', a: [0.74, 0.16, 70], sub: [0.48, 0.19, 42], rough: 0.16, spec: 1, sheen: 0.1, trans: 4.4, wrap: 0.9, chalk: 0, clear: 1, mode: 0, speck: [0.03, 2], sp: [0.88, 0.09, 80], ink: [0.27, 0.06, 50] },
-  { name: 'Charcoal', a: [0.31, 0.008, 260], sub: [0.24, 0.012, 260], rough: 0.74, spec: 0.45, sheen: 0.35, trans: 0.25, wrap: 0.3, chalk: 0.04, mode: 0, speck: [0.05, 4.2], sp: [0.86, 0.03, 90], ink: [0.9, 0.05, 95] },
+  { name: 'Amber', a: [0.78, 0.16, 74], sub: [0.72, 0.17, 66], rough: 0.1, spec: 1, sheen: 0.05, trans: 2.4, wrap: 0.9, chalk: 0, glass: 0.88, wax: 0.6, glow: 0.5, mode: 0, speck: [0.03, 2], sp: [0.88, 0.09, 80], ink: [0.27, 0.06, 50] },
+  { name: 'Charcoal', a: [0.31, 0.008, 260], sub: [0.24, 0.012, 260], rough: 0.74, spec: 0.45, sheen: 0.35, trans: 0.25, wrap: 0.3, chalk: 0.04, glow: 0.08, mode: 0, speck: [0.05, 4.2], sp: [0.86, 0.03, 90], ink: [0.9, 0.05, 95] },
   { name: 'Oat', a: [0.87, 0.045, 85], sub: [0.68, 0.08, 70], rough: 0.7, spec: 0.4, sheen: 0.5, trans: 1.3, wrap: 0.6, chalk: 0.06, mode: 0, speck: [0.15, 1.5], sp: [0.5, 0.07, 60], ink: [0.32, 0.06, 60] },
   { name: 'Layers', a: [0.93, 0.02, 90], b: [0.76, 0.13, 8], c: [0.6, 0.17, 300], sub: [0.62, 0.15, 340], rough: 0.55, spec: 0.5, sheen: 0.4, trans: 1.5, wrap: 0.6, chalk: 0.05, mode: 1, ink: [0.25, 0.06, 300] },
   { name: 'Swirl', a: [0.84, 0.065, 300], b: [0.55, 0.16, 306], c: [0.95, 0.02, 300], sub: [0.55, 0.14, 300], rough: 0.5, spec: 0.55, sheen: 0.4, trans: 1.7, wrap: 0.6, chalk: 0.05, mode: 2, ink: [0.25, 0.06, 300] },
-  { name: 'Citrus', a: [0.87, 0.17, 98], sub: [0.68, 0.18, 70], rough: 0.3, spec: 0.8, sheen: 0.2, trans: 3.2, wrap: 0.8, chalk: 0.02, clear: 0.55, mode: 0, speck: [0.08, 2.4], sp: [0.68, 0.17, 52], ink: [0.3, 0.07, 60] },
+  { name: 'Citrus', a: [0.87, 0.17, 98], sub: [0.68, 0.18, 70], rough: 0.3, spec: 0.8, sheen: 0.2, trans: 3.2, wrap: 0.8, chalk: 0.02, clear: 0.55, glow: 0.5, mode: 0, speck: [0.08, 2.4], sp: [0.68, 0.17, 52], ink: [0.3, 0.07, 60] },
 ];
 const css = ([L, C, h]) => `oklch(${L} ${C} ${h})`;
 // The rail swatch hints at each soap's pattern.
@@ -198,7 +201,7 @@ function rest() {
     if (!raf && !stroke && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set([' ', 'n', 'N', 'Enter']);
+const GESTURE_KEYS = new Set([' ', 'n', 'N', 'b', 'B', 'Enter', '1', '2', '3', '4', '5', '6', '7']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -283,6 +286,37 @@ function thunk(s, big) {
   src.start(t, Math.random() * 0.8, 0.12);
   track(o, og, ng, lp);
 }
+// The gust: breathy noise that swells, sweeps left to right, then fades.
+function gustSound() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = reduce ? 0.5 : GUST_DUR;
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), hp = a.createBiquadFilter(), ng = a.createGain(), air = a.createGain();
+  const pan = a.createStereoPanner ? a.createStereoPanner() : null;
+  src.buffer = noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(320, t);
+  bp.frequency.exponentialRampToValueAtTime(1300, t + d * 0.35);
+  bp.frequency.exponentialRampToValueAtTime(420, t + d);
+  hp.type = 'highpass';
+  hp.frequency.value = 3200;
+  air.gain.value = 0.25;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.32, t + d * 0.3);
+  ng.gain.setTargetAtTime(0, t + d * 0.45, d * 0.2);
+  src.connect(bp).connect(ng);
+  src.connect(hp).connect(air).connect(ng);
+  if (pan) {
+    pan.pan.setValueAtTime(-0.7, t);
+    pan.pan.linearRampToValueAtTime(0.7, t + d);
+    ng.connect(pan).connect(out);
+  } else ng.connect(out);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + d * 1.6);
+  track(src, ng, bp, hp, air, ...(pan ? [pan] : []));
+}
 // The sweep: a soft brush of filtered noise.
 function whoosh() {
   const a = live();
@@ -321,7 +355,8 @@ const bond = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
 // The face each score came in from.
 const scoredFrom = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
 const scorePlanes = [new Set(), new Set(), new Set()];
-const SCORE = 3;
+// A score is a fixed two cells deep; only a slice cuts through.
+const SCORE = 2;
 const co = [0, 0, 0];
 const at3 = () => co[0] + SY * co[1] + SZ * co[2];
 let pieces = [], bar = null;
@@ -443,6 +478,18 @@ function severedNear(a, b, lu, lv, ch) {
   }
   return best;
 }
+// Smooth 3D value noise, zero to one.
+function hash3(x, y, z) {
+  let h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) & 0xffff) / 0xffff;
+}
+function noise3(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const s = t => t * t * (3 - 2 * t), u = s(x - xi), v = s(y - yi), w = s(z - zi);
+  const c = (i, j, k) => hash3(xi + i, yi + j, zi + k);
+  return lerp(lerp(lerp(c(0, 0, 0), c(1, 0, 0), u), lerp(c(0, 1, 0), c(1, 1, 0), u), v), lerp(lerp(c(0, 0, 1), c(1, 0, 1), u), lerp(c(0, 1, 1), c(1, 1, 1), u), v), w);
+}
 // Points past the rounded skin slide onto it.
 // Axes set in lock stay put.
 // nrm, when given, gets the skin normal.
@@ -477,12 +524,18 @@ function lattice(L, ch) {
   let x = lx / S - OX, y = ly / S, z = lz / S - OZ;
   // Points on cut planes stay on their plane.
   SK[0] = x; SK[1] = y; SK[2] = z;
-  skin(SK, (cm & 3 ? 1 : 0) | (cm & 12 ? 2 : 0) | (cm & 48 ? 4 : 0), null);
+  const edge = skin(SK, (cm & 3 ? 1 : 0) | (cm & 12 ? 2 : 0) | (cm & 48 ? 4 : 0), null);
   x = SK[0]; y = SK[1]; z = SK[2];
-  // Thickness inward sets how much light shines through.
   let nx = 0, ny = 0, nz = 0;
   for (let d = 0; d < 6; d++) if (all & (1 << d)) { nx += NRM[d][0]; ny += NRM[d][1]; nz += NRM[d][2]; }
   const nl = Math.hypot(nx, ny, nz);
+  // The old skin is worn: shallow dips, a little deeper on the edges.
+  // Cut faces stay flat and fresh.
+  if (!cm && nl > 0) {
+    const w = (edge ? 0.05 : 0.02) * noise3(x * 0.6, y * 0.6, z * 0.6) ** 2;
+    x -= (nx / nl) * w; y -= (ny / nl) * w; z -= (nz / nl) * w;
+  }
+  // Thickness inward sets how much light shines through.
   let thick = 9;
   if (nl > 0) {
     const ix = -nx / nl, iy = -ny / nl, iz = -nz / nl;
@@ -612,7 +665,7 @@ const awake = [];
 const GRAV = 700, SUBH = 1 / 360, MU_S = 0.75, MU_K = 0.5;
 // Mat size in world units, then in cells.
 // Its top is y = 0.
-const BW = 72, BD = 48, BT = 1.6, BWc = BW / K, BDc = BD / K, BTc = BT / K;
+const BW = 40, BD = 26, BT = 0.5, BWc = BW / K, BDc = BD / K, BTc = BT / K;
 const HT = 4096, hStart = new Int32Array(HT + 1), hList = new Int32Array(PMAX);
 const hashOf = (x, y, z) => (Math.imul(x, 92837111) ^ Math.imul(y, 689287499) ^ Math.imul(z, 283923481)) & (HT - 1);
 const RM9 = new Float64Array(9);
@@ -695,6 +748,7 @@ function arm(pc, f, loose, parent = null) {
   mesh.matrixAutoUpdate = false;
   stage.add(mesh);
   pc.mesh = mesh;
+  if (pc.ncell >= 12) addBlob(pc);
   place(pc);
   wakePiece(pc);
 }
@@ -705,6 +759,7 @@ function retire(pc) {
   pc.cells = [];
   pc.mesh.removeFromParent();
   pc.mesh.geometry.dispose();
+  if (pc.blob) { pc.blob.removeFromParent(); pc.blob.material.dispose(); pc.blob = null; }
   const i = awake.indexOf(pc);
   if (i >= 0) awake.splice(i, 1);
   pc.awake = false;
@@ -884,9 +939,15 @@ function substep(h) {
   for (const pc of awake) {
     if (pc.kin) { tip(pc, h); continue; }
     // A nearly still piece is damped hard, so piles stop jittering.
-    const dk = pc.slow ? 1 - 9 * h : damp;
+    const dk = pc.slow && !pc.wind ? 1 - 9 * h : damp;
+    // The gust pushes high particles harder, so crumbs tumble.
+    const wa = (pc.wind || 0) * 1300 * h, wl = (pc.wind || 0) * 520 * h, cy = pc.c[1];
     for (let p = pc.start, e = p + pc.n; p < e; p++) {
       VY[p] -= GRAV * h;
+      if (wa) {
+        const k = 1 + 0.6 * (PY[p] - cy);
+        VX[p] += GUST_DIR[0] * wa * k; VZ[p] += GUST_DIR[1] * wa * k; VY[p] += wl;
+      }
       VX[p] *= dk; VY[p] *= dk; VZ[p] *= dk;
       QX[p] = PX[p]; QY[p] = PY[p]; QZ[p] = PZ[p];
       PX[p] += VX[p] * h; PY[p] += VY[p] * h; PZ[p] += VZ[p] * h;
@@ -929,12 +990,14 @@ function place(pc) {
     0, 0, 0, 1,
   );
   pc.mesh.matrixWorldNeedsUpdate = true;
+  placeBlob(pc);
 }
 function physics(dt) {
   if (!awake.length) return false;
   // A frame with no time passed has nothing to step.
   if (dt < 1e-4) return true;
   const n = Math.min(16, Math.max(1, Math.ceil(dt / SUBH - 0.01)));
+  for (const pc of awake) pc.wind = gust && pc.blow ? windAt(pc.c[0], pc.c[2]) * pc.gk : 0;
   for (let s = 0; s < n; s++) substep(dt / n);
   const t = nowS();
   for (let k = awake.length - 1; k >= 0; k--) {
@@ -956,8 +1019,10 @@ function physics(dt) {
       else crumb(clamp(pc.impact / (60 * TS)) * 0.75, 0, pc.ncell > 20 ? 0.85 : 1.15);
     }
     pc.impact = 0;
+    // A blown crumb leaves once it is well past the mat's edge.
+    if (pc.blow && offMat(pc.c[0], pc.c[2], gust ? 10 : 1) && (!gust || pc.c[1] < 0)) { retire(pc); continue; }
     // Reduced motion settles pieces sooner.
-    if (!pc.kin && (pc.still > (reduce ? 6 : 14) || pc.age > (reduce ? 3 : 6))) {
+    if (!pc.kin && !pc.wind && (pc.still > (reduce ? 6 : 14) || pc.age > (reduce ? 3 : 6))) {
       pc.awake = false;
       pc.slow = false;
       pc.lc = pc.lq = null;
@@ -1050,7 +1115,7 @@ function split(st) {
   });
   measure();
   for (const [npc, f, loose] of made) arm(npc, f, loose, onBoard ? null : pc);
-  if (onBoard) rebuild(bar);
+  if (onBoard) { rebuild(bar); placeBlob(bar); }
   // Pieces near the cut, or stacked off the board, may lose support.
   const near = made.map(m => m[0].c);
   for (const o of pieces) {
@@ -1209,6 +1274,15 @@ function updateShavings(dt) {
     if (sh.growing || sh.rest) continue;
     busy = true;
     const p = sh.mesh.position, v = sh.v;
+    // A gust lifts and tumbles the curl across the mat.
+    const wnd = sh.blow ? windAt(p.x, p.z) * sh.gk : 0;
+    if (wnd) {
+      v.x += GUST_DIR[0] * 900 * wnd * dt;
+      v.z += GUST_DIR[1] * 900 * wnd * dt;
+      v.y += 420 * wnd * dt * (0.7 + 0.6 * Math.sin(sh.seed + p.x * 0.7));
+      sh.ang += 14 * wnd * dt * sh.gk;
+    }
+    if (sh.blow && (offMat(p.x, p.z, gust ? 10 : 1) || p.y > 80)) { dropShaving(sh); continue; }
     v.y -= 340 * dt;
     v.multiplyScalar(Math.exp(-0.8 * dt));
     p.addScaledVector(v, dt);
@@ -1230,7 +1304,7 @@ function updateShavings(dt) {
     if (grounded && Math.hypot(rdx, rdz) > 0.3) sh.w = (v.x * rdx + v.z * rdz) / sh.Rout;
     sh.ang += sh.w * dt;
     sh.mesh.quaternion.setFromAxisAngle(sh.axis, sh.ang);
-    if (grounded && v.lengthSq() < 0.1 * TS * TS) { if (++sh.calm > 8) { sh.rest = true; v.set(0, 0, 0); } }
+    if (grounded && !wnd && v.lengthSq() < 0.1 * TS * TS) { if (++sh.calm > 8) { sh.rest = true; v.set(0, 0, 0); } }
     else sh.calm = 0;
   }
   return busy;
@@ -1304,7 +1378,7 @@ let stroke = null, queued = 0, planAt = 0;
 function makeStroke(kind) {
   return {
     kind, pc: bar, box, outside: false, a: -1, sg: 0, F: 0, t: -1, p: -1, c: 0, lo: 0, hi: -1, s: 0, s0: 0, smin: 1e9, smax: -1e9,
-    pts: [], ray: null, cols: new Uint8Array(64), surf: new Int8Array(64).fill(127), done: false, dead: false,
+    pts: [], ray: null, cols: new Uint8Array(64), worn: new Uint8Array(64), surf: new Int8Array(64).fill(127), done: false, dead: false,
     mode: '', shave: null, gap: 0.45, moved: 0, speed: 0, dirT: 1, id: -1, front: null,
   };
 }
@@ -1397,26 +1471,31 @@ function scoreColumn(st, i) {
 function push(st, s) {
   if (st.dead) return;
   s = clamp(s, st.lo - 7.5, st.hi + 9);
-  const ds = s - st.s;
+  const s0 = st.s, ds = s - s0, lo0 = st.smin, hi0 = st.smax;
   st.s = s;
   if (Math.abs(ds) > 0.02) st.dirT = ds > 0 ? 1 : -1;
   if (s < st.smin) st.smin = s;
   if (s > st.smax) st.smax = s;
   if (st.done) return;
   const inside = s > st.lo - 0.05 && s < st.hi + 1.05;
-  if (inside) st.moved += Math.abs(ds);
   // The blade scores each column it has passed.
+  // A column scored before only lets the blade ride its groove.
   let changed = false;
   for (let i = st.lo; i <= st.hi; i++) {
     if (st.cols[i] || st.smin > i + 0.5 || st.smax < i + 0.5) continue;
     st.cols[i] = 1;
     if (scoreColumn(st, i)) changed = true;
+    else st.worn[i] = 1;
   }
   if (changed) { dirty.add(st.pc); scorePlanes[st.p].add(st.c); }
+  // Fresh travel is new ground beyond this stroke's reach, on unscored soap.
+  let fresh = s > hi0 ? s - Math.max(s0, hi0) : s < lo0 ? Math.min(s0, lo0) - s : 0;
+  if (st.worn[clamp(Math.floor(s), 0, 63)]) fresh = 0;
+  if (inside) st.moved += fresh > 0 ? Math.abs(ds) : Math.abs(ds) * 0.3;
   // A swipe in from outside, clean across, cuts right through.
   const thru = st.kind === 'auto' ? st.mode === 'through' : st.outside;
   if (thru && st.smin <= st.lo + 0.35 && st.smax >= st.hi + 0.65) { through(st); return; }
-  shaveAlong(st, ds, inside);
+  shaveAlong(st, ds, inside, Math.max(0, fresh));
 }
 function through(st) {
   st.done = true;
@@ -1430,16 +1509,17 @@ function through(st) {
   if (st.shave) { loose(st.shave); st.shave = null; }
   split(st);
 }
-function shaveAlong(st, ds, inside) {
+// Only fresh travel peels a curl; a pass along an old groove makes none.
+function shaveAlong(st, ds, inside, fresh) {
   if (!ds) return;
   const dir = ds > 0 ? 1 : -1;
-  if (st.shave && (st.shave.dir !== dir || !inside)) { loose(st.shave); st.shave = null; st.gap = rnd(0.6, 1.5); }
-  if (!inside) return;
-  st.gap -= Math.abs(ds);
+  if (st.shave && (st.shave.dir !== dir || !inside || !fresh)) { loose(st.shave); st.shave = null; st.gap = rnd(0.6, 1.5); }
+  if (!inside || !fresh) return;
+  st.gap -= fresh;
   if (!st.shave && st.gap <= 0 && st.s > st.lo + 0.45 && st.s < st.hi + 0.55) st.shave = curlStart(st, dir);
   const sh = st.shave;
   if (!sh) return;
-  sh.L += Math.abs(ds) * 0.9;
+  sh.L += fresh * 0.9;
   edgePoint(st, sh.O, sh.Or);
   shapeCurl(sh);
   if (sh.L >= sh.Lmax) { loose(sh); st.shave = null; st.gap = rnd(0.75, 2.4); }
@@ -1555,12 +1635,23 @@ function soapMaterial(v, side) {
   const [L, C, h] = v.a, sp = v.speck || [0, 1];
   const m = new THREE.MeshPhysicalMaterial({
     color: 0xffffff, roughness: v.rough, metalness: 0, specularIntensity: v.spec,
-    sheen: v.sheen, sheenRoughness: 0.55, sheenColor: col([Math.min(0.97, L + 0.12), C * 0.45, h]), side,
+    sheen: v.sheen, sheenRoughness: 0.6, sheenColor: col([Math.min(0.97, L + 0.1), C * 0.4, h]),
+    // A thin waxy coat gives the broad, soft sheen.
+    clearcoat: v.wax ?? 0.3, clearcoatRoughness: 0.42, side,
   });
+  // Glycerin is truly clear; light through it takes the soap's tint.
+  if (v.glass) {
+    m.transmission = v.glass;
+    m.thickness = 7;
+    m.ior = 1.47;
+    m.attenuationColor = col(v.sub);
+    m.attenuationDistance = 9;
+  }
   const u = {
-    uSub: { value: col(v.sub) }, uWrap: { value: v.wrap }, uTrans: { value: v.trans }, uCutRough: { value: Math.min(v.rough, 0.3) },
+    uSub: { value: col(v.sub) }, uWrap: { value: v.wrap }, uTrans: { value: v.trans }, uCutRough: { value: Math.min(v.rough * 0.55, 0.3) },
     uA: { value: col(v.a) }, uB: { value: col(v.b || v.a) }, uC: { value: col(v.c || v.a) }, uSpeck: { value: col(v.sp || v.a) },
-    uSpeckK: { value: new THREE.Vector2(sp[0], sp[1]) }, uMode: { value: v.mode }, uChalk: { value: v.chalk }, uClear: { value: v.clear || 0 },
+    uSpeckK: { value: new THREE.Vector2(sp[0], sp[1]) }, uMode: { value: v.mode }, uChalk: { value: v.chalk },
+    uClear: { value: v.clear || 0 }, uGlow: { value: v.glow ?? 0.35 },
   };
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u);
@@ -1570,10 +1661,12 @@ function soapMaterial(v, side) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n' + SOAP_PARS)
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + SOAP_COLOR)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n\troughnessFactor = mix( roughnessFactor, uCutRough, vSoap.x );')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n\troughnessFactor = mix( roughnessFactor * ( 0.9 + 0.25 * soapM ), uCutRough, vSoap.x );')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + SOAP_RIM)
+      .replace('#include <transmission_fragment>', THREE.ShaderChunk.transmission_fragment.replace('material.thickness = thickness;', 'material.thickness = thickness * ( 1.0 - 0.85 * vSoap.y );'))
       .replace('#include <lights_fragment_begin>', soapLights());
   };
-  m.customProgramCacheKey = () => 'soap';
+  m.customProgramCacheKey = () => (v.glass ? 'soap-glass' : 'soap');
   return m;
 }
 // vSoap: x fresh cut, y thinness, z groove shading.
@@ -1591,6 +1684,7 @@ uniform vec2 uSpeckK;
 uniform float uMode;
 uniform float uChalk;
 uniform float uClear;
+uniform float uGlow;
 varying vec3 vSoap;
 varying vec3 vRest;
 float soapHash( vec3 p ) {
@@ -1641,15 +1735,21 @@ vec3 soapScatter( vec3 L, vec3 lit, vec3 raw, vec3 N, vec3 V, vec3 base ) {
 	return col * RECIPROCAL_PI;
 }
 `;
-// The outer skin is a little chalky.
-// Cut faces show the true colour.
+// The old skin is dull and mottled; a fresh cut is clean and brighter.
 // Grooves sink to a deeper tone.
 const SOAP_COLOR = `
 	vec3 soapC = soapBase( vRest );
-	diffuseColor.rgb = mix( mix( soapC, vec3( 1.0 ), uChalk ), soapC, vSoap.x );
+	float soapM = soapNoise( vRest * 1.3 + 5.0 );
+	vec3 soapSkin = mix( soapC, vec3( 1.0 ), uChalk ) * ( 0.9 + 0.07 * soapM );
+	diffuseColor.rgb = mix( soapSkin, soapC * 1.08, vSoap.x );
 	diffuseColor.rgb *= mix( mix( uSub, vec3( 0.55 ), 0.35 ), vec3( 1.0 ), vSoap.z );
 	// A clear soap deepens toward its sub tone where light travels far.
 	diffuseColor.rgb = mix( diffuseColor.rgb, mix( uSub * 0.7, diffuseColor.rgb * 1.15, smoothstep( 0.0, 0.6, vSoap.y ) ), uClear );
+`;
+// Light scattered inside glows softly at grazing edges and thin parts.
+const SOAP_RIM = `
+	float soapNV = saturate( dot( normal, normalize( vViewPosition ) ) );
+	totalEmissiveRadiance += uSub * pow( 1.0 - soapNV, 3.0 ) * ( 0.25 + vSoap.y ) * uGlow;
 `;
 // Wrap light and light through thin parts join each direct light.
 function soapLights() {
@@ -1659,85 +1759,131 @@ function soapLights() {
     .replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight );\n\t\tsoapRaw = directLight.color;')
     .split(call).join(call + '\n\t\treflectedLight.directDiffuse += soapScatter( directLight.direction, directLight.color, soapRaw, geometryNormal, geometryViewDir, material.diffuseColor );');
 }
-// A cobalt rubber cutting mat with a printed grid, drawn once.
-const MAT = [0.34, 0.075, 258];
-function matTexture() {
-  const W = 2048, H = Math.round((W * BD) / BW), u = W / BW;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d');
-  const ink = (L, C, h, a = 1) => { const v = rgb([L, C, h]); return `rgba(${(v[0] * 255) | 0},${(v[1] * 255) | 0},${(v[2] * 255) | 0},${a})`; };
-  g.fillStyle = ink(...MAT);
-  g.fillRect(0, 0, W, H);
-  // Matte rubber mottles finely.
-  for (let k = 0; k < 9000; k++) {
-    const s = 1 + Math.random() * 3;
-    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.045)';
-    g.fillRect(Math.random() * W, Math.random() * H, s, s);
+// A self-healing cutting mat in deep green-grey.
+// Its print is drawn in the shader, so lines stay crisp at any distance.
+const MAT = [0.31, 0.03, 165], MAT_LINE = [0.74, 0.035, 160], MAT_SCAR = [0.42, 0.025, 165];
+const MAT_PARS = `
+uniform vec3 uBase;
+uniform vec3 uLine;
+uniform vec3 uScar;
+uniform vec2 uHalf;
+varying vec2 vMat;
+float matHash( vec2 p ) {
+	vec3 q = fract( p.xyx * 0.1031 );
+	q += dot( q, q.yzx + 33.33 );
+	return fract( ( q.x + q.y ) * q.z );
+}
+float matNoise( vec2 p ) {
+	vec2 i = floor( p ), f = fract( p );
+	f = f * f * ( 3.0 - 2.0 * f );
+	return mix( mix( matHash( i ), matHash( i + vec2( 1.0, 0.0 ) ), f.x ), mix( matHash( i + vec2( 0.0, 1.0 ) ), matHash( i + vec2( 1.0 ) ), f.x ), f.y );
+}
+// Lines w wide every step units, antialiased by their size on screen.
+// A grid finer than a few pixels fades, so it never shimmers.
+float matGrid( vec2 p, float step, float w ) {
+	vec2 q = p / step, fw = max( fwidth( q ), vec2( 1e-5 ) );
+	vec2 d = abs( fract( q + 0.5 ) - 0.5 ), hw = vec2( 0.5 * w / step );
+	vec2 l = 1.0 - smoothstep( hw - fw, hw + fw, d );
+	return max( l.x, l.y ) * ( 1.0 - smoothstep( 0.08, 0.3, max( fw.x, fw.y ) ) );
+}
+// One short tick mark per unit along a margin band.
+float matTicks( float along, float across, float edge ) {
+	float fa = max( fwidth( along ), 1e-5 ), fc = max( fwidth( across ), 1e-5 );
+	float len = mod( floor( along + 0.5 ), 5.0 ) < 0.5 ? 0.7 : 0.35;
+	float line = 1.0 - smoothstep( 0.035 - fa, 0.035 + fa, abs( fract( along + 0.5 ) - 0.5 ) );
+	float band = smoothstep( edge - len - fc, edge - len + fc, across ) * ( 1.0 - smoothstep( edge - fc, edge + fc, across ) );
+	return line * band * ( 1.0 - smoothstep( 0.1, 0.3, fa ) );
+}
+vec3 matColor( vec2 p ) {
+	vec2 a = abs( p );
+	// The rubber mottles faintly.
+	vec3 c = uBase * ( 0.94 + 0.08 * matNoise( p * 0.9 ) + 0.04 * matNoise( p * 7.0 ) );
+	// Old knife scars run straight and have mostly healed.
+	vec2 cell = floor( p / 3.0 ), f = p - cell * 3.0;
+	if ( matHash( cell + 7.1 ) < 0.45 ) {
+		vec2 A = vec2( matHash( cell + 1.3 ), matHash( cell + 2.9 ) ) * 3.0;
+		float ang = floor( matHash( cell + 4.7 ) * 4.0 ) * 0.785398 + ( matHash( cell + 5.3 ) - 0.5 ) * 0.2;
+		vec2 dir = vec2( cos( ang ), sin( ang ) ), rel = f - A;
+		float half_ = 0.4 + matHash( cell + 6.1 );
+		float d = length( rel - dir * clamp( dot( rel, dir ), - half_, half_ ) );
+		float fd = max( fwidth( d ), 1e-5 );
+		c = mix( c, uScar, ( 1.0 - smoothstep( 0.012, 0.012 + 1.5 * fd, d ) ) * 0.4 );
+	}
+	// The print sits inside a margin with a thin border.
+	float m = max( a.x - ( uHalf.x - 1.2 ), a.y - ( uHalf.y - 1.2 ) ), fm = max( fwidth( m ), 1e-5 );
+	float inner = 1.0 - smoothstep( - fm, fm, m );
+	float border = 1.0 - smoothstep( 0.03 - fm, 0.03 + fm, abs( m ) );
+	float g = max( matGrid( p, 1.0, 0.03 ) * 0.45, matGrid( p, 5.0, 0.06 ) ) * inner;
+	// Ruler ticks run along the far and left margins.
+	float t = max( matTicks( p.x, - p.y, uHalf.y - 1.2 + 0.75 ), matTicks( p.y, - p.x, uHalf.x - 1.2 + 0.75 ) );
+	return mix( c, uLine, clamp( g + border * 0.8 + t * 0.8, 0.0, 1.0 ) * 0.5 );
+}
+`;
+function matMaterials() {
+  const lin = c => new THREE.Color().setRGB(...rgb(c), THREE.SRGBColorSpace);
+  const top = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
+  const u = { uBase: { value: lin(MAT) }, uLine: { value: lin(MAT_LINE) }, uScar: { value: lin(MAT_SCAR) }, uHalf: { value: new THREE.Vector2(BW / 2, BD / 2) } };
+  top.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vMat;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvMat = position.xz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + MAT_PARS)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.rgb = matColor( vMat );');
+  };
+  top.customProgramCacheKey = () => 'mat';
+  const edge = new THREE.MeshStandardMaterial({ color: lin([MAT[0] - 0.06, MAT[1], MAT[2]]), roughness: 0.92, metalness: 0 });
+  return { top, edge };
+}
+// A soft dark pad under each piece grounds it on the mat.
+let blobTex = null, blobGeo = null;
+function blobTexture() {
+  const n = 64, c = document.createElement('canvas');
+  c.width = c.height = n;
+  const g = c.getContext('2d'), img = g.createImageData(n, n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const x = Math.abs((i + 0.5) / n * 2 - 1), y = Math.abs((j + 0.5) / n * 2 - 1);
+    const d = Math.hypot(Math.max(x - 0.5, 0), Math.max(y - 0.5, 0)) / 0.5, a = (1 - clamp(d)) ** 2;
+    const o = (j * n + i) * 4;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = 255;
+    img.data[o + 3] = Math.round(a * 255);
   }
-  // Old knife marks have mostly healed.
-  g.lineCap = 'round';
-  for (let k = 0; k < 80; k++) {
-    const x = Math.random() * W, y = Math.random() * H, l = (0.04 + Math.random() * 0.16) * W;
-    const a = Math.random() < 0.7 ? (Math.round(Math.random() * 8) * Math.PI) / 4 : Math.random() * TAU;
-    g.strokeStyle = `rgba(0,0,0,${0.07 + Math.random() * 0.09})`;
-    g.lineWidth = 1 + Math.random() * 1.2;
-    g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
-    g.stroke();
-  }
-  // The grid has a line every two units.
-  // A heavy line falls every ten units.
-  const m = 3 * u, X0 = m, X1 = W - m, Y0 = m, Y1 = H - m, cx = W / 2, cy = H / 2;
-  for (let k = -40; k <= 40; k += 2) {
-    const major = k % 10 === 0;
-    g.strokeStyle = major ? ink(0.86, 0.06, 228, 0.55) : ink(0.8, 0.07, 235, 0.26);
-    g.lineWidth = major ? 3.5 : 2;
-    const x = cx + k * u, y = cy + k * u;
-    if (x > X0 && x < X1) { g.beginPath(); g.moveTo(x, Y0); g.lineTo(x, Y1); g.stroke(); }
-    if (y > Y0 && y < Y1) { g.beginPath(); g.moveTo(X0, y); g.lineTo(X1, y); g.stroke(); }
-  }
-  // Angle guides in a hard orange.
-  g.save();
-  g.beginPath();
-  g.rect(X0, Y0, X1 - X0, Y1 - Y0);
-  g.clip();
-  g.strokeStyle = ink(0.76, 0.16, 55, 0.6);
-  g.lineWidth = 3;
-  for (const a of [45, 60]) {
-    const t = Math.tan((a * Math.PI) / 180);
-    g.beginPath();
-    g.moveTo(X0, Y1);
-    g.lineTo(X0 + (Y1 - Y0) / t, Y0);
-    g.stroke();
-  }
-  g.restore();
-  // Ruler ticks and numbers run along the top and left margins.
-  g.fillStyle = ink(0.88, 0.05, 228, 0.8);
-  g.font = `600 ${Math.round(u * 1.1)}px Gabarito, "Avenir Next", system-ui, sans-serif`;
-  g.textAlign = 'center';
-  g.textBaseline = 'bottom';
-  for (let k = -34; k <= 34; k++) {
-    const x = cx + k * u;
-    if (x < X0 || x > X1) continue;
-    const len = k % 10 === 0 ? 1.4 : k % 5 === 0 ? 0.9 : 0.45;
-    g.fillRect(x - 1.5, Y0 - len * u, 3, len * u);
-    if (k % 10 === 0) g.fillText(String((k + 30) / 10), x, Y0 - 1.6 * u);
-  }
-  g.textAlign = 'right';
-  g.textBaseline = 'middle';
-  for (let k = -22; k <= 22; k++) {
-    const y = cy + k * u;
-    if (y < Y0 || y > Y1) continue;
-    const len = k % 10 === 0 ? 1.4 : k % 5 === 0 ? 0.9 : 0.45;
-    g.fillRect(X0 - len * u, y - 1.5, len * u, 3);
-  }
+  g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return tex;
+}
+function addBlob(pc) {
+  const m = new THREE.Mesh(blobGeo, new THREE.MeshBasicMaterial({
+    color: 0x000000, map: blobTex, transparent: true, depthWrite: false, toneMapped: false,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+  }));
+  m.rotation.x = -Math.PI / 2;
+  m.renderOrder = 1;
+  m.userData.blob = true;
+  stage.add(m);
+  pc.blob = m;
+}
+// The pad spans the piece's footprint and fades as the piece lifts.
+function placeBlob(pc) {
+  const b = pc.blob;
+  if (!b) return;
+  let x0, x1, z0, z1, y0;
+  if (pc === bar) {
+    x0 = box.lo[0] - OX; x1 = box.hi[0] + 1 - OX; z0 = box.lo[2] - OZ; z1 = box.hi[2] + 1 - OZ; y0 = 0;
+  } else {
+    x0 = z0 = y0 = Infinity; x1 = z1 = -Infinity;
+    for (let p = pc.start + pc.ncell, e = pc.start + pc.n; p < e; p++) {
+      x0 = Math.min(x0, PX[p]); x1 = Math.max(x1, PX[p]);
+      z0 = Math.min(z0, PZ[p]); z1 = Math.max(z1, PZ[p]);
+      y0 = Math.min(y0, PY[p]);
+    }
+  }
+  b.position.set((x0 + x1) / 2, 0.05, (z0 + z1) / 2);
+  b.scale.set(x1 - x0 + 2.5, z1 - z0 + 2.5, 1);
+  b.material.opacity = 0.55 * clamp(1 - y0 / 4);
+  b.visible = b.material.opacity > 0.01;
 }
 function bladeGeometry() {
   const s = new THREE.Shape();
@@ -2009,6 +2155,48 @@ function setHover(x, y) {
   if (previewKey(previewWant()) !== pvKey) wake();
 }
 
+/* ---------- blow: a gust clears shavings and crumbs off the mat ---------- */
+// The gust front sweeps across the mat; things move once it reaches them.
+let gust = null;
+const GUST_DUR = 1.5, GUST_DIR = (() => { const l = Math.hypot(0.94, 0.34); return [0.94 / l, -0.34 / l]; })();
+// Wind strength at a stage point now, zero to one.
+function windAt(x, z) {
+  if (!gust) return 0;
+  const u = (nowS() - gust.t0) / GUST_DUR;
+  if (u >= 1) return 0;
+  const front = -45 + 140 * u, d = x * GUST_DIR[0] + z * GUST_DIR[1];
+  return clamp((front - d) / 10) * (1 - clamp((u - 0.7) / 0.3));
+}
+const offMat = (x, z, pad) => Math.abs(x) > BWc / 2 + pad || Math.abs(z) > BDc / 2 + pad;
+// Pieces too small to cut count as crumbs; bigger pieces stay put.
+const isCrumb = pc => pc !== bar && !pc.dead && !pc.frozen && pc.ncell < CUT_MIN;
+function blow() {
+  if (!ready || sweep) return;
+  gustSound();
+  const crumbs = pieces.filter(isCrumb), flakes = shavings.filter(sh => !sh.growing && !sh.fade);
+  if (reduce) {
+    // Reduced motion lets them vanish without the flight.
+    for (const sh of flakes) sh.fade = 1;
+    for (const pc of crumbs) retire(pc);
+    wake();
+    return;
+  }
+  gust = { t0: nowS() };
+  for (const pc of crumbs) {
+    pc.blow = true;
+    pc.age = 0;
+    pc.gk = rnd(0.7, 1.3);
+    if (!pc.kin) wakePiece(pc);
+  }
+  for (const sh of flakes) {
+    sh.blow = true;
+    sh.rest = false;
+    sh.calm = 0;
+    sh.gk = rnd(0.7, 1.4);
+  }
+  wake();
+}
+
 /* ---------- a new bar: sweep the board, slide the next one in ---------- */
 let barSoap = -1;
 function resetBar() {
@@ -2033,6 +2221,8 @@ function resetBar() {
   bar.mesh = new THREE.Mesh(buildGeometry(0, bar.cells, false), barMat);
   bar.mesh.castShadow = bar.mesh.receiveShadow = true;
   stage.add(bar.mesh);
+  addBlob(bar);
+  placeBlob(bar);
 }
 function makeStage() {
   stage = new THREE.Group();
@@ -2045,6 +2235,7 @@ function newBar(first = false) {
   if (stroke) endStroke();
   queued = 0;
   hover = null;
+  gust = null;
   const old = first ? null : stage, mats = [barMat, shaveMat];
   for (const pc of pieces) pc.frozen = true;
   makeStage();
@@ -2069,7 +2260,7 @@ function updateSweep(now) {
   if (u >= 1) {
     stage.position.x = 0;
     if (sweep.old) {
-      sweep.old.traverse(o => o.geometry?.dispose());
+      sweep.old.traverse(o => { o.geometry?.dispose(); if (o.userData.blob) o.material.dispose(); });
       sweep.old.removeFromParent();
       for (const m of sweep.mats) m.dispose();
     }
@@ -2095,6 +2286,7 @@ function frame(ms) {
     if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
   let busy = updateAuto(nowS());
+  if (gust) { busy = true; if (nowS() - gust.t0 > GUST_DUR) gust = null; }
   // The scrape follows the blade's speed through the soap.
   const st = stroke;
   if (st) {
@@ -2241,9 +2433,11 @@ addEventListener('keydown', e => {
   if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea')) return;
   if (e.key === ' ') { e.preventDefault(); if (!e.repeat) nextCut(); }
   else if (e.key === 'n' || e.key === 'N') { if (!e.repeat) newBar(); }
+  else if (e.key === 'b' || e.key === 'B') { if (!e.repeat) blow(); }
   else if (e.key >= '1' && e.key <= String(SOAPS.length)) setSoap(+e.key - 1);
 });
 document.getElementById('fresh').addEventListener('click', () => newBar());
+document.getElementById('blow').addEventListener('click', () => blow());
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -2255,6 +2449,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) wake
 function failed() {
   panel.querySelector('.fail').hidden = false;
   document.getElementById('fresh').disabled = true;
+  document.getElementById('blow').disabled = true;
   soapsEl.setAttribute('aria-disabled', 'true');
 }
 async function start() {
@@ -2315,10 +2510,10 @@ async function start() {
   table.receiveShadow = true;
   scene.add(table);
   // The print covers the mat's top; its edges stay plain rubber.
-  const matGeo = new RoundedBoxGeometry(BW, BT, BD, 3, 0.5);
-  const top = new THREE.MeshStandardMaterial({ map: matTexture(), roughness: 0.86, metalness: 0 });
-  const edge = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...rgb([MAT[0] - 0.05, MAT[1], MAT[2]]), THREE.SRGBColorSpace), roughness: 0.9, metalness: 0 });
+  const matGeo = new RoundedBoxGeometry(BW, BT, BD, 2, 0.2), { top, edge } = matMaterials();
   const boardMesh = new THREE.Mesh(matGeo, matGeo.groups.length === 6 ? [edge, edge, top, edge, edge, edge] : top);
+  blobTex = blobTexture();
+  blobGeo = new THREE.PlaneGeometry(1, 1);
   boardMesh.position.y = -BT / 2;
   boardMesh.receiveShadow = boardMesh.castShadow = true;
   scene.add(boardMesh);
