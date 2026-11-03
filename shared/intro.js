@@ -58,6 +58,8 @@ const keys = (el, list) => {
 };
 const pct = v => `${(100 * v).toFixed(2)}%`;
 
+// The lines, in order: main title, translation, subtitle, subtitle translation, audio notice, classic notice.
+// Lab toys also carry a lab tag under the translation.
 // Every beat of the shipped intro (Snap), in frames at 30 fps or in milliseconds.
 // The intro lab at /introlab/ edits a copy of this table live.
 export const TIMING = {
@@ -74,7 +76,8 @@ export const TIMING = {
   subLag: 3,      // frames before the subtitle opens
   tagLag: 3,      // frames from the subtitle to the motto
   tagNlLag: 3,    // frames from the motto to its Dutch line
-  sndLag: 3,      // frames from the line above to the sound notice
+  sndLag: 3,      // frames from the line above to the audio notice
+  clsLag: 3,      // frames from the line above to the classic notice
   hold: 2300,     // ms from the start before a fixed-hold variety clears
   readBase: 350,  // ms of reading time after the last line opens
   readPer: 12,    // ms more reading time per motto character
@@ -95,7 +98,7 @@ export const VARIETIES = {
   // Snap runs 20% longer than the base table, every beat in proportion.
   snap: {
     label: 'Snap', group: 'Default', read: true,
-    timing: { lead: 3, pop: 3, flash: 11, unfurl: 290, nlLag: 4, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, readBase: 420, readPer: 15, readCap: 1560, wipe: 300, fade: 460 },
+    timing: { lead: 3, pop: 3, flash: 11, unfurl: 290, nlLag: 4, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, clsLag: 4, readBase: 420, readPer: 15, readCap: 1560, wipe: 300, fade: 460 },
   },
   stamp: {
     label: 'Stamp: the box lands hard, lines stamp in', group: 'New',
@@ -273,11 +276,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
   }
 
-  // A classic build says so, one line under the names.
+  // A classic build says so in the last line.
   let cls = null;
   if (classic && nameEl) {
     cls = Object.assign(document.createElement('span'), { className: 'intro-classic', textContent: '< CLASSIC >' });
-    (nl || nameEl).after(cls);
+    text.append(cls);
   }
 
   if (RM.matches) {
@@ -296,7 +299,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   let num = null;
   if (info?.number && numAt !== 'box') {
     num = Object.assign(document.createElement('span'), { className: 'intro-num', textContent: `#${info.number}` });
-    if (numAt === 'bottom') root.append(num); else (cls || nl || name).after(num);
+    if (numAt === 'bottom') root.append(num); else (nl || name).after(num);
   }
   // The emblem sits in a badge whose white box is the flash.
   let badge = null;
@@ -318,6 +321,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     const icon = soundNote.glyph ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" fill="none" stroke="currentColor" stroke-width="2.6"/><rect x="2.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/><rect x="16.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/></svg>' : '';
     snd.innerHTML = icon + (soundNote.words ? `<span>${soundNote.words}</span>` : '');
     text.append(snd);
+    if (cls) text.append(cls);
   }
   // A toy Tom signs off shows a tick cut into the box at size.
   const big = badge || name;
@@ -329,9 +333,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     big.append(tick);
   }
   // Each line starts closed in the variety's own way, then opens on its beat.
-  const lines = [badge ? name : null, nl, cls, numAt === 'subs' ? num : null, sub,
-    text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
-  const lags = [0, T.nlLag, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
+  const lines = [badge ? name : null, nl, numAt === 'subs' ? num : null, sub,
+    text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, cls, numAt === 'bottom' ? num : null];
+  const lags = [0, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.clsLag, T.sndLag];
   const R = REVEAL[V.reveal] || REVEAL.unfurl;
   lines.forEach(el => { if (el) Object.assign(el.style, R.shut); });
   // A try-out: the name can share the flash, boxed and blown up with the mark.

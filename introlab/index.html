@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=10">
+<link rel="stylesheet" href="../shared/intro.css?v=11">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -91,8 +91,8 @@ button:hover { border-color: var(--fg); }
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
   <label class="check"><input type="checkbox" id="replay"> Replay on change</label>
   <label class="check"><input type="checkbox" id="nameflash"> Name in flash (try-out)</label>
-  <label class="check"><input type="checkbox" id="classic"> Classic build</label>
-  <div class="row"><label for="snote">Sound notice</label><select id="snote">
+  <label class="check"><input type="checkbox" id="classic"> Classic notice</label>
+  <div class="row"><label for="snote">Audio notice</label><select id="snote">
     <option value="off">Off</option>
     <option value="glyph">Headphones</option>
     <option value="glyph|Ears on">Headphones + Ears on</option>
@@ -108,11 +108,11 @@ button:hover { border-color: var(--fg); }
   </select></div>
   <label class="check"><input type="checkbox" id="nudge"> Pulse the speaker after the intro <button type="button" id="snd" aria-pressed="false" aria-label="Sound off" class="spk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l4 6M21 9l-4 6" stroke="currentColor" stroke-width="2"/></svg></button></label>
   <details class="group" id="fonts" open><summary>Fonts</summary><div class="rows">
-    <div class="row"><label for="fd">Name</label><select id="fd"></select></div>
-    <div class="row"><label for="fn">Dutch name</label><select id="fn"></select></div>
+    <div class="row"><label for="fd">Main title</label><select id="fd"></select></div>
+    <div class="row"><label for="fn">Translation</label><select id="fn"></select></div>
     <div class="row"><label for="fs">Subtitle</label><select id="fs"></select></div>
-    <label class="check"><input type="checkbox" id="fsame"> Dutch subtitle in the same font</label>
-    <div class="row"><label for="fsn">Dutch subtitle</label><select id="fsn"></select></div>
+    <label class="check"><input type="checkbox" id="fsame"> Subtitle translation in the same font</label>
+    <div class="row"><label for="fsn">Subtitle translation</label><select id="fsn"></select></div>
   </div></details>
   <div id="knobs"></div>
   <p>Pause at</p>
@@ -127,15 +127,23 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=10';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=11';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
   Flash: { lead: [0, 20, 1, 'f'], pop: [0, 10, 1, 'f'], popScale: [1, 5, 0.1, 'x'], flash: [0, 30, 1, 'f'] },
   Icon: { flashScale: [0.4, 2.5, 0.05, 'x'], iconY: [-30, 30, 0.5, 'vh'], restScale: [0.4, 2.5, 0.05, 'x'], restY: [-30, 30, 0.5, 'vh'] },
-  Lines: { unfurl: [50, 1500, 10, 'ms'], nlLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], sndLag: [0, 15, 1, 'f'] },
+  Lines: { unfurl: [50, 1500, 10, 'ms'], nlLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], sndLag: [0, 15, 1, 'f'], clsLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'] },
   Hold: { readBase: [0, 3000, 50, 'ms'], readPer: [0, 60, 1, 'ms'], readCap: [0, 5000, 50, 'ms'], hold: [500, 6000, 50, 'ms'] },
   Exit: { wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'] },
+};
+// Knobs read in plain words; the lines go by their names.
+const LABEL = {
+  lead: 'Lead-in', pop: 'Pop', popScale: 'Pop size', flash: 'Flash hold',
+  flashScale: 'Icon size in flash', iconY: 'Icon Y in flash', restScale: 'Icon size at rest', restY: 'Icon Y at rest',
+  unfurl: 'Line reveal', nlLag: 'Translation delay', tagLag: 'Subtitle delay', tagNlLag: 'Subtitle translation delay',
+  sndLag: 'Audio notice delay', clsLag: 'Classic notice delay', subLag: 'Lab tag delay',
+  readBase: 'Read base', readPer: 'Read per character', readCap: 'Read cap', hold: 'Fixed hold', wipe: 'Exit', fade: 'Fade',
 };
 const RANGE = Object.assign({}, ...Object.values(GROUPS));
 const KEY = 'stimming.introlab';
@@ -213,7 +221,7 @@ for (const [group, list] of Object.entries(GROUPS)) {
   for (const [k, [lo, hi, step]] of Object.entries(list)) {
     const row = document.createElement('div');
     row.className = 'row';
-    row.innerHTML = `<label for="k-${k}" title="Double-click to reset">${k}</label><output></output><input type="range" id="k-${k}" min="${lo}" max="${hi}" step="${step}">`;
+    row.innerHTML = `<label for="k-${k}" title="Double-click to reset">${LABEL[k] || k}</label><output></output><input type="range" id="k-${k}" min="${lo}" max="${hi}" step="${step}">`;
     det.querySelector('.rows').append(row);
     const input = row.querySelector('input');
     input.addEventListener('input', () => {
@@ -427,7 +435,7 @@ let runStart = 0, tlTotal = 1;
 function beats() {
   const t = T(), v = V(), info = toys[toySel.value] || {};
   const note = soundNote(), hasSnd = !!info.sound && (note.glyph || !!note.words);
-  const lines = [[!!info.emblem, 0], [!!info.nl, t.nlLag], [classicBox.checked, t.nlLag], [!!info.number && numSel.value === 'subs', t.nlLag], [!!info.sub, t.subLag], [!!info.tag, t.tagLag], [!!info.tagNl, t.tagNlLag], [hasSnd, t.sndLag], [!!info.number && numSel.value === 'bottom', t.sndLag]].filter(([on]) => on);
+  const lines = [[!!info.emblem, 0], [!!info.nl, t.nlLag], [!!info.number && numSel.value === 'subs', t.nlLag], [!!info.sub, t.subLag], [!!info.tag, t.tagLag], [!!info.tagNl, t.tagNlLag], [hasSnd, t.sndLag], [classicBox.checked, t.clsLag], [!!info.number && numSel.value === 'bottom', t.sndLag]].filter(([on]) => on);
   const lags = lines.slice(1).reduce((a, [, lag]) => a + F(lag), 0);
   const open = { type: F(Math.min(20, Math.max(4, (info.tagNl || info.tag || info.name || '').length))), stamp: F(3), glitch: F(4), cut: F(1) }[v.reveal] ?? t.unfurl;
   const seg = {};
