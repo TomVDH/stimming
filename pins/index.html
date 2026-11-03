@@ -271,15 +271,8 @@ const H = new Float32Array(MAXN), V = new Float32Array(MAXN), T = new Float32Arr
 // B holds relief from the hand and the brushes.
 // X holds relief from the typed letters.
 const B = new Float32Array(MAXN), X = new Float32Array(MAXN);
-// Per pin for the shader: occlusion, neighbours' mean head height, shadow line.
-const SH = new Float32Array(MAXN * 3);
-// The key light sits up and left in front of the board.
-const KEY = [-28, 52, 64];
-// Shadows march SH_K steps of SH_STEP pitches toward the key light.
-const SH_K = 10, SH_STEP = 0.75, SH_DARK = 0.66;
-const KEY_RUN = Math.hypot(KEY[0], KEY[1]), KEY_RISE = (KEY[2] / KEY_RUN) * SH_STEP;
-// The pin under each step, for the front, then the back.
-const CAST = new Int16Array(MAXN * SH_K * 2);
+// Per pin for the shader: occlusion, then neighbours' mean head height.
+const SH = new Float32Array(MAXN * 2).fill(1);
 const NB = new Int16Array(MAXN * 6), due = new Float64Array(MAXN), mode = new Uint8Array(MAXN), act = new Uint8Array(MAXN);
 const SPRING = 0, FALL = 1, WAIT_FALL = 2, FADE = 3, WAIT_RISE = 4;
 // Side 1 is the back: pins pushed out at the front sink in here.
@@ -322,13 +315,6 @@ function build(nc, nr) {
       NB[k + 2 + s] = rr >= 0 && rr < nr && cc >= 0 && cc < nc ? rr * nc + cc : -1;
     }
   }
-  // The back is mirrored, so its light comes from the right.
-  for (let s = 0; s < 2; s++) {
-    const lx = ((s ? -1 : 1) * KEY[0] * SH_STEP) / KEY_RUN, ly = (KEY[1] * SH_STEP) / KEY_RUN;
-    for (let i = 0; i < N; i++) {
-      for (let k = 0; k < SH_K; k++) CAST[(s * N + i) * SH_K + k] = nearest(PX[i] + lx * (k + 1), PY[i] + ly * (k + 1));
-    }
-  }
   // The word sets again to fit the new grid.
   if (word || ground || relief) {
     ink();
@@ -340,7 +326,7 @@ function build(nc, nr) {
 // Neighbours standing proud shade a pin and the foot of its shaft.
 // A flipped board reads every pin from the back.
 function shade() {
-  const f = uSide.value ? -1 : 1, o = uSide.value ? HMAX : 0, top = L0 + HEAD_Z + o, base = uSide.value * N * SH_K;
+  const f = uSide.value ? -1 : 1, o = uSide.value ? HMAX : 0;
   for (let i = 0; i < N; i++) {
     let occ = 0, sum = 0, n = 0;
     for (let k = i * 6, e = k + 6; k < e; k++) {
@@ -351,16 +337,8 @@ function shade() {
       sum += o + f * H[j];
       n++;
     }
-    // The shadow line is the highest blocker, lowered by the light's rise.
-    // Steps off the board meet the frame lip.
-    let line = -9;
-    for (let k = 0, c = base + i * SH_K; k < SH_K; k++, c++) {
-      const j = CAST[c], t = (j < 0 ? LIP : top + f * H[j]) - (k + 1) * KEY_RISE;
-      if (t > line) line = t;
-    }
-    SH[i * 3] = Math.max(0.34, 1 / (1 + 0.11 * occ));
-    SH[i * 3 + 1] = L0 + sum / n;
-    SH[i * 3 + 2] = line;
+    SH[i * 2] = Math.max(0.34, 1 / (1 + 0.11 * occ));
+    SH[i * 2 + 1] = L0 + sum / n;
   }
 }
 
@@ -1123,21 +1101,19 @@ const LAMP = 'mix(0.7, 1.14, smoothstep(0.0, 5.0, pinP))';
 // pinP is how far a pin stands out of the face in view.
 // Back pins stand out by the rest of their travel.
 const pinP = back => `float pinP = ${back ? `mix(${HMAX.toFixed(1)} - pinH, pinH, uSide)` : `mix(pinH, ${HMAX.toFixed(1)} - pinH, uSide)`};`;
-const ATTRS = 'uniform float uSide;\nattribute float pinH;\nattribute vec3 pinS;\n';
-// Below the shadow line, the key light does not reach.
-const CAST_LIT = `mix(${SH_DARK.toFixed(2)}, 1.0, smoothstep(-0.5, 0.3, `;
+const ATTRS = 'uniform float uSide;\nattribute float pinH;\nattribute vec2 pinS;\n';
 // Shafts stretch from the plate to the head; pinH is the push.
 const patchShaft = back => s => {
   s.uniforms.uSide = uSide;
-  s.vertexShader = ATTRS + 'varying vec3 vS;\nvarying float vZ;\n' + s.vertexShader.replace(
+  s.vertexShader = ATTRS + 'varying vec2 vS;\nvarying float vZ;\n' + s.vertexShader.replace(
     '#include <begin_vertex>',
     `#include <begin_vertex>\n${pinP(back)}\ntransformed.z *= ${(L0 + 0.06).toFixed(3)} + pinP;\n`
-      + (back ? 'vS = vec3(0.8, -100.0, -100.0);' : `vS = vec3(pinS.x * ${LAMP}, pinS.yz);`) + '\nvZ = transformed.z;',
+      + (back ? 'vS = vec2(0.8, -100.0);' : `vS = vec2(pinS.x * ${LAMP}, pinS.y);`) + '\nvZ = transformed.z;',
   );
   // Shaft feet below the neighbours' heads sit in shadow.
-  s.fragmentShader = 'varying vec3 vS;\nvarying float vZ;\n' + s.fragmentShader.replace(
+  s.fragmentShader = 'varying vec2 vS;\nvarying float vZ;\n' + s.fragmentShader.replace(
     '#include <opaque_fragment>',
-    `outgoingLight *= vS.x * mix(0.2, 1.0, smoothstep(vS.y - 1.6, vS.y + 0.5, vZ)) * ${CAST_LIT}vZ - vS.z));\n#include <opaque_fragment>`,
+    'outgoingLight *= vS.x * mix(0.2, 1.0, smoothstep(vS.y - 1.6, vS.y + 0.5, vZ));\n#include <opaque_fragment>',
   );
 };
 // Front heads ride on the shaft; back heads hang below the plate.
@@ -1145,7 +1121,7 @@ const patchHead = back => s => {
   s.uniforms.uSide = uSide;
   s.vertexShader = ATTRS + 'varying float vAO;\n' + s.vertexShader.replace(
     '#include <begin_vertex>',
-    `#include <begin_vertex>\n${pinP(back)}\ntransformed.z ${back ? '-=' : '+='} ${L0.toFixed(3)} + pinP;\nvAO = ${back ? '0.8' : `pinS.x * ${LAMP} * ${CAST_LIT}transformed.z - pinS.z))`};`,
+    `#include <begin_vertex>\n${pinP(back)}\ntransformed.z ${back ? '-=' : '+='} ${L0.toFixed(3)} + pinP;\nvAO = ${back ? '0.8' : `pinS.x * ${LAMP}`};`,
   );
   s.fragmentShader = 'varying float vAO;\n' + s.fragmentShader.replace(
     '#include <opaque_fragment>',
@@ -1197,7 +1173,7 @@ async function start() {
   pm.dispose();
   // The key light sits up and left in front; nearer pins catch more.
   const key = new THREE.SpotLight(0xfff4e8, 3000, 0, 0.75, 0.9, 1.6);
-  key.position.set(...KEY);
+  key.position.set(-28, 52, 64);
   scene.add(key, key.target);
   await idle();
 
@@ -1228,7 +1204,7 @@ async function start() {
   // The back pins are mirror copies; they show only mid-turn.
   const shaftGeoB = mirrorZ(shaftGeo), headGeoB = mirrorZ(headGeo);
   hAttr = new THREE.InstancedBufferAttribute(H, 1).setUsage(THREE.DynamicDrawUsage);
-  sAttr = new THREE.InstancedBufferAttribute(SH, 3).setUsage(THREE.DynamicDrawUsage);
+  sAttr = new THREE.InstancedBufferAttribute(SH, 2).setUsage(THREE.DynamicDrawUsage);
   for (const g of [shaftGeo, headGeo, shaftGeoB, headGeoB]) { g.setAttribute('pinH', hAttr); g.setAttribute('pinS', sAttr); }
   const metal = (color, roughness, patch, key) => {
     const m = new THREE.MeshStandardMaterial({ color, metalness: 1, roughness });
