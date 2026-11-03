@@ -709,33 +709,54 @@ void main() {
   // The ray leaves the level camera; uRot turns it into the world.
   vec3 d = normalize(uRot * vec3((px.x - cx) / uF, (uHor - px.y) / uF, -1.0));
   vec3 col;
-  // Near the black hole, a long wall of water stands on the far horizon.
-  float wall = 0.0, ax = atan(d.x, -d.z) / FH;
+  // Near the black hole, supermassive waves stand on the far horizon.
+  float wall = 0.0, wallB = 0.0, ax = atan(d.x, -d.z) / FH;
   vec3 hazeW = mix(mix(uHorC, uScat, 0.3) * 0.8, vec3(0.42, 0.52, 0.72), uRay);
   if (uHole > 0.0 && d.y >= 0.0) {
-    // One long wall of water spans most of the horizon, its crest uneven.
-    float s = ax + 0.1 - uTime * 0.006;
-    float sw = smoothstep(-1.1, -0.55, s) * (1.0 - smoothstep(0.75, 1.25, s));
-    sw *= 0.72 + 0.18 * sin(s * 4.0 + 1.3) + 0.1 * sin(s * 9.0);
-    // The crest is ragged where it breaks.
-    wall = uHole * FH * (0.12 * sw + 0.004 * sw * noise(vec2(ax * 60.0, uTime * 0.3)));
+    // The back wall spans the whole horizon and heaves slowly.
+    float s = ax + 0.1 - uTime * 0.012;
+    // Folded sines give sharp tips, so the crests read as water, not hills.
+    // The skew leans each crest forward, as on a breaking wave.
+    float xa = s * 1.9 + 0.6; xa += 0.38 * sin(2.0 * xa);
+    float sw = (0.25 + 0.6 * pow(1.0 - abs(sin(xa)), 1.6) + 0.15 * pow(1.0 - abs(sin(s * 5.3 + uTime * 0.04)), 2.0)) * (0.88 + 0.12 * sin(uTime * 0.12));
+    // A nearer, lower set rolls the other way.
+    float s2 = ax + uTime * 0.02;
+    float xb = s2 * 2.7; xb -= 0.38 * sin(2.0 * xb);
+    float sb = 0.25 + 0.75 * pow(1.0 - abs(sin(xb)), 1.8);
+    // The waves dip under the hole, so the black sphere stays clear.
+    float off = (ax - atan(SD.x, -SD.z) / FH) / 0.4;
+    float dip = 1.0 - 0.62 * exp(-off * off);
+    // Crests are ragged where they break.
+    float rag = 0.012 * noise(vec2(ax * 40.0, uTime * 0.3)) + 0.004 * noise(vec2(ax * 140.0, uTime * 0.6));
+    wall = uHole * FH * dip * (0.3 * sw + rag);
+    wallB = uHole * FH * dip * (0.13 * sb + rag * 0.6);
+    wall = max(wall, wallB);
   }
   if (d.y >= wall) {
+#ifdef WAVE_ONLY
+    discard;
+#endif
     col = sky(d, true);
     // Spray hangs as mist just above a crest.
-    if (wall > 0.0) col = mix(col, hazeW * 1.1, uHole * 0.45 * exp(-(d.y - wall) / (FH * 0.012)) * smoothstep(0.0, FH * 0.02, wall));
+    if (wall > 0.0) col = mix(col, hazeW * 1.1, uHole * 0.6 * exp(-(d.y - wall) / (FH * 0.03)) * smoothstep(FH * 0.04, FH * 0.16, wall));
   } else if (d.y >= 0.0) {
     // The wave face: dark water that mirrors the sky above it.
-    float h01 = clamp(d.y / max(wall, 1e-4), 0.0, 1.0);
-    vec3 face = mix(uDeep * 1.5, sky(normalize(vec3(d.x, (1.0 - h01) * 0.12 * FH + 0.01 * FH, d.z)), false) * 0.55, 0.35 + 0.5 * h01);
-    // Long wave lines run across the face.
-    face *= 0.85 + 0.3 * smoothstep(0.4, 0.8, noise(vec2(ax * 6.0, h01 * 26.0 - uTime * 0.4)));
-    // Foam streaks run down the face; the crest is white water.
-    face += vec3(0.5, 0.48, 0.5) * 0.12 * smoothstep(0.6, 0.9, noise(vec2(ax * 35.0, h01 * 3.0 - uTime * 0.2))) * h01;
-    face += vec3(0.75, 0.72, 0.72) * 0.45 * exp(-(1.0 - h01) * 14.0) * (0.5 + 0.5 * noise(vec2(ax * 80.0, 1.0)));
-    // The far wave sits deep in the horizon haze.
-    col = mix(face, hazeW, clamp(uHaze * 0.45, 0.0, 0.5));
+    bool front = d.y < wallB;
+    float h01 = clamp(d.y / max(front ? wallB : wall, 1e-4), 0.0, 1.0);
+    vec3 face = mix(uDeep * 1.5, sky(normalize(vec3(d.x, (1.0 - h01) * 0.12 * FH + 0.01 * FH, d.z)), false) * 0.3, 0.12 + 0.4 * h01 * h01);
+    if (front) face *= 0.55;
+    // Long swell lines run across the face, parallel to the crest.
+    face *= 0.65 + 0.8 * smoothstep(0.35, 0.8, noise(vec2(ax * 2.5 + h01 * 1.5, h01 * 42.0 - uTime * 0.6)));
+    // The crest is a thin line of white water.
+    face += vec3(0.8, 0.77, 0.75) * 0.5 * exp(-(1.0 - h01) * 34.0) * (0.45 + 0.55 * noise(vec2(ax * 80.0, 1.0)));
+    // The disc lights the faces nearest the hole in warm light.
+    face += vec3(1.0, 0.58, 0.25) * 0.22 * exp(-length(d - SD) / FH * 2.6) * h01 * h01;
+    // The foot of each wave melts into the far water.
+    col = mix(face, hazeW * 0.5, exp(-h01 * 7.0) * (front ? 0.8 : 0.0));
   } else {
+#ifdef WAVE_ONLY
+    discard;
+#endif
     // The ray meets the beach plane at distance t.
     float t = min(uCamPos.y / -d.y, 900.0);
     vec3 W = uCamPos + d * t;
@@ -768,7 +789,7 @@ void main() {
         fr *= 1.9; amp *= 0.7;
       }
       // The hole's tide adds long, heavy swells.
-      g += uHole * vec2(0.03 * sin(X * 0.7), 0.22 * cos(z * 0.9 - uTime * 0.35)) * (1.0 - smoothstep(0.3, 1.0, foot * 0.9));
+      g += uHole * vec2(0.04 * sin(X * 0.7), 0.32 * cos(z * 0.9 - uTime * 0.35)) * (1.0 - smoothstep(0.3, 1.0, foot * 0.9));
       // The thin swash sheet lies almost flat.
       float sheet = smoothstep(0.0, 0.5, into);
       g *= sheet; sig2 *= sheet;
@@ -1039,7 +1060,7 @@ void main() {
   // Lensing bends the far side of the disc over the top of the hole.
   const DISK_N = 32768, TRAIL = 7;
   const HU = {
-    uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uW: { value: 1 }, uShadow: { value: 1 }, uRot: { value: new THREE.Matrix3() },
+    uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uW: { value: 1 }, uShadow: { value: 1 }, uHorN: { value: 0 }, uRot: { value: new THREE.Matrix3() },
     uTime: U.uTime, uVis: { value: 0 }, uGain: { value: 1 }, uPxSize: { value: 2.4 }, uRingDir: { value: new THREE.Vector2(1, 0) },
   };
   const diskGeo = new THREE.BufferGeometry();
@@ -1051,8 +1072,9 @@ void main() {
     uniforms: HU, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: `
 attribute float aId;
-uniform vec3 uC; uniform float uR, uW, uShadow, uTime, uVis, uGain, uPxSize; uniform mat3 uRot;
+uniform vec3 uC; uniform float uHorN; uniform float uR, uW, uShadow, uTime, uVis, uGain, uPxSize; uniform mat3 uRot;
 varying vec3 vCol;
+varying float vY;
 const float TAU = 6.2831853, TRAIL = ${TRAIL}.0;
 const vec3 HOT = vec3(1.0, 0.86, 0.66), AMBER = vec3(1.0, 0.43, 0.11), EMBER = vec3(0.75, 0.1, 0.04), ICE = vec3(0.56, 0.74, 1.0);
 float h1(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.103, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -1084,11 +1106,14 @@ void main() {
   float clump = pow(sin(h1(base + 7450.0) * TAU * 7.0 + dr * 5.0) * 0.5 + 0.5, 3.0) * 0.75 + 0.25;
   vCol = mix(col, ICE * 1.4, clamp(beta * 1.6, 0.0, 0.6)) * pow(dop, 3.0) * clump * mu * uGain * tail * edgeFade * uVis;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  vY = gl_Position.y / gl_Position.w;
   gl_PointSize = (hidden || gap < 0.5 || uVis < 0.002) ? 0.0 : uPxSize * (1.0 - lag * 0.07);
 }`,
     fragmentShader: `
+uniform float uHorN;
 varying vec3 vCol;
-void main() { float d = length(gl_PointCoord - 0.5) * 2.0; float a = max(1.0 - d, 0.0); gl_FragColor = vec4(vCol * a * a, 1.0); }`,
+varying float vY;
+void main() { if (vY < uHorN) discard; float d = length(gl_PointCoord - 0.5) * 2.0; float a = max(1.0 - d, 0.0); gl_FragColor = vec4(vCol * a * a, 1.0); }`,
   });
   const disk = new THREE.Points(diskGeo, diskMat);
   disk.frustumCulled = false; disk.renderOrder = -3;
@@ -1096,13 +1121,14 @@ void main() { float d = length(gl_PointCoord - 0.5) * 2.0; float a = max(1.0 - d
   // Rays bend along Schwarzschild geodesics; the disc is Novikov-Thorne with Doppler beaming.
   // The disc's whole footprint and the shadow block the sky behind them.
   const ehMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: U.uTime, uVis: HU.uVis },
+    uniforms: { uTime: U.uTime, uVis: HU.uVis, uHorN: HU.uHorN },
     transparent: true, depthTest: false, depthWrite: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-    vertexShader: 'varying vec2 vQ; void main() { vQ = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    vertexShader: 'varying vec2 vQ; varying float vY; void main() { vQ = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); vY = gl_Position.y / gl_Position.w; }',
     fragmentShader: `
-uniform float uTime, uVis;
+uniform float uTime, uVis, uHorN;
 varying vec2 vQ;
+varying float vY;
 const float PI = 3.14159265359, RS = 1.0, ISCO = 3.0, DISK_IN = 2.2, DISK_OUT = 14.0;
 float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float gNoise(vec2 p) {
@@ -1143,6 +1169,8 @@ vec4 shadeDisk(vec3 hit, vec3 vel, float time, out vec3 fill) {
   return vec4(col, clamp(I * 1.3, 0.0, 0.96));
 }
 void main() {
+  // The hole sets behind the sea.
+  if (vY < uHorN) discard;
   // The quad's corners map to the shader's view; the edge fades to our sky.
   vec2 uv = vQ * 0.55;
   float camR = 28.0, orbit = uTime * 0.055 * 0.3, tilt = 0.25;
@@ -1200,6 +1228,15 @@ void main() {
   const ehMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), ehMat);
   ehMesh.frustumCulled = false; ehMesh.renderOrder = -4;
   scene.add(ehMesh, disk);
+  // The same shader redraws only the waves, in front of the hole and behind the walker.
+  const waveMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: U, transparent: true,
+    // The written depth makes the post pass veil the waves only lightly.
+    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.999, 1.0); }',
+    fragmentShader: '#define WAVE_ONLY\n' + SEA_FS,
+  }));
+  waveMesh.frustumCulled = false; waveMesh.renderOrder = -2;
+  scene.add(waveMesh);
   // A twin in its own scene renders the mask without lights or shadows.
   const ehMask = new THREE.Mesh(ehMesh.geometry, ehMat);
   ehMask.frustumCulled = false;
@@ -1447,7 +1484,7 @@ void main() {
       printMesh.count = n; printMesh.instanceMatrix.needsUpdate = true;
       groundMesh.position.set(tx, 0, -1);
       // The black hole sits thirty units out along the sun bearing.
-      disk.visible = ehMesh.visible = look.hole > 0.01;
+      disk.visible = ehMesh.visible = waveMesh.visible = look.hole > 0.01;
       if (disk.visible) {
         // The quad spans about six tenths of the frame height each side of the hole.
         const S = 0.5 * (h / focal) * 30 * mood.size, RSw = S / 15.4;
@@ -1456,7 +1493,7 @@ void main() {
         // Galaxy's particles sparkle over the traced disc, at its tilt and size.
         const R = 1.5 * RSw;
         HU.uR.value = R; HU.uW.value = 29 * R; HU.uVis.value = look.hole;
-        HU.uShadow.value = 0.18 * S;
+        HU.uShadow.value = 0.18 * S; HU.uHorN.value = 1 - (2 * horizonY) / h;
         // The near side tilts below the hole, as on the traced disc.
         diskM.makeRotationAxis(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), 0.25);
         HU.uRot.value.setFromMatrix4(diskM);
