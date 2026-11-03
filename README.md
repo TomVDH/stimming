@@ -46,7 +46,7 @@ Publish `index.html` to the Artifact link above with every toy page passed as a 
 ## Conventions
 
 - Libraries load from cdnjs or jsDelivr, pinned to exact versions.
-- Colours are OKLCH tokens, with dark and light themes.
+- Colours are OKLCH tokens. Every page is dark only for now.
 - Animation runs on one loop and holds 30 fps or better; idle pages do no per-frame work.
 - Visible text is names, control labels and the how-to line only: no blurbs, taglines or eyebrow labels.
 - Every toy ends with one quiet how-to line (`dl.how`): gesture, then result. Keys show on mouse devices only.
