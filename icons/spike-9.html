@@ -448,189 +448,251 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     },
   });
 
-  // A: a lump of putty; the pointer presses a dent and the dent warms.
+  // A: an open tin of putty from above; the pointer presses a warm thumbprint.
   {
-    const BASE = 104, W0 = 50, H0 = 76;
-    const REST = { px: 78, d: 7, heat: 0.55 };
-    const top = (st, x) => {
-      const w = W0 * (1 + 0.1 * (st.d / 26)), h = H0 - st.d * 0.3, q = (x - 64) / w;
-      const dome = BASE - h * Math.pow(Math.max(0, 1 - q * q), 0.42);
-      return Math.min(BASE - 5, dome + st.d * Math.exp(-(((x - st.px) / 12) ** 2)) * Math.pow(Math.max(0, 1 - q * q), 0.3));
-    };
-    const lumpD = st => {
-      const w = W0 * (1 + 0.1 * (st.d / 26)), pts = [];
-      for (let s = 0; s <= 64; s++) { const x = 64 - w + (2 * w * s) / 64; pts.push([x, top(st, x)]); }
-      return 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+    const RX = 50, RY = 25, CY = 50, DEPTH = 17, L = 64 - RX, R = 64 + RX;
+    // The putty mounds above the rim: a dark base and a lit top.
+    const PX = 45, PY = 22, PC = CY - 4;
+    const REST = { px: 74, py: 50, d: 0.7, heat: 0.8 };
+    const SIDE = `M${L} ${CY}V${CY + DEPTH}A${RX} ${RY} 0 0 0 ${R} ${CY + DEPTH}V${CY}A${RX} ${RY} 0 0 1 ${L} ${CY}Z`;
+    const FRONT = `M${L} ${CY}A${RX} ${RY} 0 0 0 ${R} ${CY}`;
+    const ring = (a, b) => `M${f(-a)} 0a${f(a)} ${f(b)} 0 1 0 ${f(2 * a)} 0a${f(a)} ${f(b)} 0 1 0 ${f(-2 * a)} 0`;
+    // The print stays inside the putty top.
+    const inside = (x, y) => {
+      const dx = (x - 64) / (PX - 14), dy = (y - PC) / (PY - 8), k = Math.hypot(dx, dy);
+      return k > 1 ? [64 + (x - 64) / k, PC + (y - PC) / k] : [x, y];
     };
     DIRS.push({
       toy: 'putty', l: 'A',
       art(svg, u) {
         svg.innerHTML = `
-          <clipPath id="${u}c"><path class="cl"/></clipPath>
-          <path class="body" fill="url(#p-body)"/>
+          <linearGradient id="${u}m" gradientUnits="userSpaceOnUse" x1="${L}" y1="0" x2="${R}" y2="0">
+            <stop offset="0" style="stop-color: oklch(0.42 0.02 275)"/><stop offset="0.15" style="stop-color: oklch(0.88 0.015 260)"/>
+            <stop offset="0.32" style="stop-color: oklch(0.64 0.02 268)"/><stop offset="0.72" style="stop-color: oklch(0.5 0.02 272)"/>
+            <stop offset="0.9" style="stop-color: oklch(0.76 0.015 262)"/><stop offset="1" style="stop-color: oklch(0.4 0.02 275)"/>
+          </linearGradient>
+          <linearGradient id="${u}w" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" style="stop-color: oklch(0.3 0.02 275)"/><stop offset="0.5" style="stop-color: oklch(0.55 0.02 268)"/>
+          </linearGradient>
+          <radialGradient id="${u}p" cx="0.36" cy="0.3" r="0.8">
+            <stop offset="0" style="stop-color: oklch(0.66 0.16 305)"/><stop offset="1" style="stop-color: oklch(0.38 0.15 293)"/>
+          </radialGradient>
+          <linearGradient id="${u}d" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" style="stop-color: oklch(0.36 0.14 310)" stop-opacity="0.45"/><stop offset="1" stop-color="#fff" stop-opacity="0.5"/>
+          </linearGradient>
+          <clipPath id="${u}c"><ellipse cx="64" cy="${PC}" rx="${PX}" ry="${PY}"/></clipPath>
+          <path d="${SIDE}" fill="url(#${u}m)"/>
+          <ellipse cx="64" cy="${CY}" rx="${RX}" ry="${RY}" fill="url(#${u}w)"/>
+          <ellipse cx="64" cy="${CY}" rx="${RX - 2}" ry="${RY - 2}" style="fill: oklch(0.38 0.14 293)"/>
           <g clip-path="url(#${u}c)">
-            <ellipse class="hot" rx="24" ry="17" fill="url(#p-warm)"/>
+            <ellipse cx="64" cy="${PC}" rx="${PX}" ry="${PY}" fill="url(#${u}p)"/>
+            <ellipse cx="44" cy="${PC - 5}" rx="15" ry="7" fill="url(#p-warm)" opacity="0.35"/>
+            <ellipse class="hot" rx="26" ry="13" fill="url(#p-warm)"/>
+            <ellipse cx="64" cy="${PC}" rx="${PX}" ry="${PY}" fill="url(#lit)" opacity="0.6"/>
+            <g class="dent"><ellipse class="dn" fill="url(#${u}d)"/><path class="ridge" fill="none" style="stroke: oklch(0.96 0.04 70)" stroke-width="0.9" opacity="0.75"/></g>
           </g>
-          <path class="shine" fill="url(#lit)" opacity="0.7"/>
-          <path class="rimline" fill="none" stroke="url(#rim)" stroke-width="1.4"/>`;
-        const body = svg.querySelector('.body'), cl = svg.querySelector('.cl'), hot = svg.querySelector('.hot'), rim = svg.querySelector('.rimline'), shine = svg.querySelector('.shine');
+          <path d="${FRONT}" fill="none" style="stroke: oklch(0.9 0.012 260)" stroke-width="2.6"/>
+          <ellipse cx="64" cy="${PC}" rx="${PX}" ry="${PY}" fill="none" stroke="url(#rim)" stroke-width="1.2"/>`;
+        const q = s => svg.querySelector(s);
+        const hot = q('.hot'), dent = q('.dent'), dn = q('.dn'), ridge = q('.ridge');
         const st = { ...REST };
         const draw = () => {
-          const d = lumpD(st);
-          body.setAttribute('d', d); cl.setAttribute('d', d); rim.setAttribute('d', d); shine.setAttribute('d', d);
-          hot.setAttribute('cx', f(st.px)); hot.setAttribute('cy', f(top(st, st.px) + 5));
-          hot.setAttribute('opacity', f(st.heat));
+          const a = 8 + 5 * st.d, b = 4 + 2.4 * st.d;
+          hot.setAttribute('cx', f(st.px)); hot.setAttribute('cy', f(st.py)); hot.setAttribute('opacity', f(st.heat));
+          dent.setAttribute('transform', `translate(${f(st.px)} ${f(st.py)})`);
+          dent.setAttribute('opacity', f(clamp(st.d * 1.4, 0, 1)));
+          dn.setAttribute('rx', f(a)); dn.setAttribute('ry', f(b));
+          ridge.setAttribute('d', ring(a * 0.66, b * 0.6) + ring(a * 0.33, b * 0.3));
         };
         draw();
-        const press = p => gsap.to(st, { px: clamp(p[0], 30, 98), d: clamp((p[1] - 22) * 0.48, 5, 26), heat: 1, duration: 0.35, ease: 'power3.out', overwrite: true, onUpdate: draw });
+        const press = p => { const [x, y] = inside(p[0], p[1]); gsap.to(st, { px: x, py: y, d: 1, heat: 1, duration: 0.35, ease: 'power3.out', overwrite: true, onUpdate: draw }); };
+        let demo = null;
         return {
-          enter: p => press(p || [52, 78]),
+          enter(p) {
+            if (p) return press(p);
+            gsap.to(st, { d: 1, heat: 1, duration: 0.35, onUpdate: draw });
+            demo = gsap.fromTo(st, { px: REST.px, py: REST.py }, { px: 50, py: 50, duration: 1.2, ease: 'sine.inOut', repeat: -1, yoyo: true, onUpdate: draw });
+          },
           move: p => p && press(p),
           leave() {
+            demo?.kill(); demo = null;
             gsap.killTweensOf(st);
-            gsap.to(st, { px: REST.px, d: REST.d, duration: 1, ease: 'elastic.out(1, 0.4)', onUpdate: draw });
+            gsap.to(st, { px: REST.px, py: REST.py, d: REST.d, duration: 1, ease: 'elastic.out(1, 0.4)', onUpdate: draw });
             gsap.to(st, { heat: REST.heat, duration: 1.6, ease: 'power1.out', onUpdate: draw });
           },
         };
       },
       emblem: emb(`
-        <path d="${lumpD(REST)}" fill="#fff"/>
-        <ellipse cx="${REST.px}" cy="${f(top(REST, REST.px) + 4)}" rx="11" ry="5" fill="#000"/>
-        <path d="M30 70C32 56 40 46 50 42" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/>
-        <rect x="8" y="109" width="112" height="6" rx="3" fill="#fff"/>
+        <path d="${SIDE}" fill="#fff"/>
+        <ellipse cx="64" cy="${CY}" rx="${RX}" ry="${RY}" fill="#fff"/>
+        <path d="${FRONT}" fill="none" stroke="#000" stroke-width="3"/>
+        <ellipse cx="64" cy="${PC}" rx="${PX}" ry="${PY}" fill="none" stroke="#000" stroke-width="3"/>
+        <ellipse cx="${REST.px}" cy="${REST.py}" rx="13" ry="6.5" fill="#000"/>
       `),
     });
   }
 
-  // B: a slab with a warm handprint cut in; on hover it cools, then warms from the palm.
+  // B: a stencil slab cut by a warm groove; hover cools it, then reheats.
   {
-    const FINGERS = [[50, 60, 48, 27, 11], [62, 58, 62, 20, 11.5], [74, 60, 76, 25, 11], [85, 65, 90, 38, 9.5], [50, 88, 34, 66, 12]];
-    const PALM = { x: 46, y: 54, w: 46, h: 48, rx: 16 };
-    const hand = (fill, grow) => FINGERS.map(([x1, y1, x2, y2, w]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${fill}" stroke-width="${w + grow}" stroke-linecap="round"/>`).join('') +
-      `<rect x="${PALM.x - grow / 2}" y="${PALM.y - grow / 2}" width="${PALM.w + grow}" height="${PALM.h + grow}" rx="${PALM.rx + grow / 2}" fill="${fill}"/>`;
+    const SWOOSH = 'M16 112C26 62 48 50 62 60C76 70 100 66 106 12';
+    const WIDTH = [21, 12, 4.5];
+    // Stencil bridges cross the groove at a quarter, half and three quarters.
+    const BRIDGES = '0 24 3.4 22 3.4 22 3.4 200';
+    // A squircle keeps the slab soft at the corners.
+    const squircle = (cx, cy, r) => poly(Array.from({ length: 96 }, (_, s) => {
+      const a = (s / 96) * TAU, c = Math.cos(a), si = Math.sin(a);
+      return [cx + r * Math.sign(c) * Math.sqrt(Math.abs(c)), cy + r * Math.sign(si) * Math.sqrt(Math.abs(si))];
+    }));
+    const SLAB = squircle(60, 60, 48);
     DIRS.push({
       toy: 'putty', l: 'B',
       art(svg, u) {
         svg.innerHTML = `
-          <clipPath id="${u}c"><circle class="reach" cx="70" cy="84" r="74"/></clipPath>
-          <rect x="11" y="11" width="106" height="106" rx="16" fill="url(#p-slab)"/>
-          <rect x="11" y="11" width="106" height="106" rx="16" fill="url(#lit)"/>
-          ${hand(BG, 5)}
-          ${hand('oklch(0.44 0.15 298)', 0)}
-          <g class="warmh" clip-path="url(#${u}c)">${hand('url(#p-hand)', 0)}</g>`;
-        const W = svg.querySelector('.warmh'), reach = svg.querySelector('.reach');
+          <clipPath id="${u}c"><path d="${SLAB}"/></clipPath>
+          <mask id="${u}k" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+            <path class="mk" d="${SWOOSH}" pathLength="1" stroke-dasharray="1 1" fill="none" stroke="#fff" stroke-width="32" stroke-linecap="round"/>
+          </mask>
+          <path d="${squircle(66, 66, 48)}" style="fill: oklch(0.28 0.1 292)"/>
+          <path d="${SLAB}" style="fill: oklch(0.52 0.17 302)"/>
+          <g clip-path="url(#${u}c)">
+            <path d="${SWOOSH}" fill="none" style="stroke: oklch(0.3 0.12 292)" stroke-width="27" stroke-linecap="round"/>
+            <g mask="url(#${u}k)">
+              <path class="band" d="${SWOOSH}" fill="none" style="stroke: oklch(0.62 0.21 330)" stroke-width="${WIDTH[0]}" stroke-linecap="round"/>
+              <path class="band" d="${SWOOSH}" fill="none" style="stroke: oklch(0.75 0.19 356)" stroke-width="${WIDTH[1]}" stroke-linecap="round"/>
+              <path class="band" d="${SWOOSH}" fill="none" style="stroke: oklch(0.91 0.08 65)" stroke-width="${WIDTH[2]}" stroke-linecap="round"/>
+            </g>
+            <path d="${SWOOSH}" pathLength="100" stroke-dasharray="${BRIDGES}" fill="none" style="stroke: oklch(0.52 0.17 302)" stroke-width="30"/>
+          </g>`;
+        const bands = [...svg.querySelectorAll('.band')], mk = svg.querySelector('.mk');
+        // Cooling steps down the bands: the cream core goes first.
+        const cool = tl => tl
+          .to(bands[2], { attr: { 'stroke-width': 0 }, duration: 0.4, ease: 'power1.in' })
+          .to(bands[1], { attr: { 'stroke-width': 0 }, duration: 0.6, ease: 'power1.in' }, 0.2)
+          .to(bands[0], { opacity: 0.35, duration: 0.9, ease: 'power1.in' }, 0.3);
+        const heat = () => bands.forEach((b, i) => gsap.set(b, { attr: { 'stroke-width': WIDTH[i] }, opacity: 1 }));
         return hoverLoop(
-          () => gsap.timeline({ repeat: -1, repeatDelay: 0.5 })
-            .to(W, { opacity: 0, duration: 1.1, ease: 'power1.in' })
-            .set(reach, { attr: { r: 0 } }, '+=0.2')
-            .set(W, { opacity: 1 })
-            .to(reach, { attr: { r: 74 }, duration: 0.9, ease: 'power2.out' }),
-          () => { gsap.to(W, { opacity: 1, duration: 0.4, overwrite: true }); gsap.to(reach, { attr: { r: 74 }, duration: 0.4, overwrite: true }); });
+          () => cool(gsap.timeline({ repeat: -1, repeatDelay: 0.3 }))
+            .set(mk, { attr: { 'stroke-dashoffset': 1 } }, '+=0.25')
+            .call(heat)
+            .to(mk, { attr: { 'stroke-dashoffset': 0 }, duration: 0.9, ease: 'power2.inOut' }),
+          () => { gsap.killTweensOf([...bands, mk]); heat(); gsap.to(mk, { attr: { 'stroke-dashoffset': 0 }, duration: 0.3 }); });
       },
       emblem: emb(`
-        <rect x="11" y="11" width="106" height="106" rx="16" fill="#fff"/>
-        ${hand('#000', 0)}
+        <clipPath id="c"><path d="${SLAB}"/></clipPath>
+        <path d="${SLAB}" fill="#fff"/>
+        <g clip-path="url(#c)">
+          <path d="${SWOOSH}" fill="none" stroke="#000" stroke-width="22" stroke-linecap="round"/>
+          <path d="${SWOOSH}" pathLength="100" stroke-dasharray="${BRIDGES}" fill="none" stroke="#fff" stroke-width="30"/>
+        </g>
       `),
     });
   }
 
-  // C: putty in one line; hover pulls it into a neck that springs back.
+  // C: a handprint in isotherms; hover lets the heat spread and fade.
   {
+    // Each part is a segment with a heat width and an optional strength.
+    const PARTS = [
+      [55, 82, 69, 83, 13], [40, 36, 51, 69, 7.5], [57, 26, 60, 67, 7.8], [74, 30, 69, 68, 7.5],
+      [90, 46, 77, 73, 6.8], [30, 66, 47, 86, 7.6], [62, 96, 63, 116, 9, 0.6],
+    ];
+    const LEVELS = [0.12, 0.32, 0.58, 0.85];
+    const N = 96, S = 128 / N;
+    // Spread s widens each part and lowers its peak, as heat diffuses.
     const field = s => {
-      const a = 19 + s * 13, n = 10 - s * 3.2;
-      const B = [[64 - a, 64, 18.5], [64 + a, 64, 18.5], [64 - a / 2, 64, n], [64, 64, n * 0.92], [64 + a / 2, 64, n]];
-      return (x, y) => { let v = 0; for (const [bx, by, br] of B) v += (br * br) / ((x - bx) ** 2 + (y - by) ** 2 + 1e-3); return v; };
+      const v = new Float32Array((N + 1) * (N + 1));
+      for (const [ax, ay, bx, by, sg, amp = 1] of PARTS) {
+        const w = sg * sg + s, a = (amp * sg * sg) / w, dx = bx - ax, dy = by - ay, ll = dx * dx + dy * dy;
+        for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+          const px = i * S - ax, py = j * S - ay, t = clamp((px * dx + py * dy) / ll, 0, 1), ex = px - t * dx, ey = py - t * dy;
+          v[j * (N + 1) + i] += a * Math.exp(-(ex * ex + ey * ey) / w);
+        }
+      }
+      return (x, y) => v[Math.round(y / S) * (N + 1) + Math.round(x / S)];
     };
-    const lines = s => { const F = field(s); return contour(F, 0, 20, 128, 108, 96, 66, 1) + contour(F, 0, 20, 128, 108, 96, 66, 1.9); };
+    const isos = (s, lv) => { const F = field(s); return lv.map(l => contour(F, 0, 0, 128, 128, N, N, l)); };
     DIRS.push({
       toy: 'putty', l: 'C',
-      art(svg, u) {
-        svg.innerHTML = `
-          <linearGradient id="${u}g" gradientUnits="userSpaceOnUse" x1="6" y1="0" x2="122" y2="0">
-            <stop offset="0" style="stop-color: oklch(0.7 0.14 305)"/><stop class="mid" offset="0.5"/><stop offset="1" style="stop-color: oklch(0.7 0.14 305)"/>
-          </linearGradient>
-          <path class="ln" fill="none" stroke="url(#${u}g)" stroke-width="1.8" stroke-linecap="round"/>`;
-        const ln = svg.querySelector('.ln'), mid = svg.querySelector('.mid');
+      art(svg) {
+        const g = el('g', {}, svg);
+        const P = LEVELS.map((_, k) => el('path', { fill: 'none', stroke: warm(0.12 + (k / (LEVELS.length - 1)) * 0.88), 'stroke-width': 1.8, 'stroke-linecap': 'round' }, g));
         const st = { s: 0 };
-        const draw = () => { ln.setAttribute('d', lines(st.s)); mid.setAttribute('style', `stop-color: ${warm(0.2 + st.s * 0.8)}`); };
+        const draw = () => isos(st.s, LEVELS).forEach((d, k) => P[k].setAttribute('d', d));
         draw();
         return hoverLoop(
-          () => gsap.timeline({ repeat: -1, repeatDelay: 0.35, onUpdate: draw })
-            .fromTo(st, { s: 0 }, { s: 1, duration: 1, ease: 'power2.inOut' })
-            .to(st, { s: 0, duration: 0.9, ease: 'elastic.out(1, 0.35)' }, '+=0.15'),
-          () => gsap.to(st, { s: 0, duration: 0.45, ease: 'power2.out', overwrite: true, onUpdate: draw }));
+          () => gsap.timeline({ repeat: -1, repeatDelay: 0.3 })
+            .to(st, { s: 170, duration: 2.4, ease: 'power1.out', onUpdate: draw })
+            .to(g, { opacity: 0, duration: 0.4 }, '-=0.5')
+            .call(() => { st.s = 0; draw(); })
+            .to(g, { opacity: 1, duration: 0.25 }),
+          () => { gsap.killTweensOf([st, g]); gsap.to(g, { opacity: 1, duration: 0.3 }); gsap.to(st, { s: 0, duration: 0.5, ease: 'power2.out', onUpdate: draw }); });
       },
-      emblem: emb(`<path d="${lines(0)}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>`),
+      emblem: emb(isos(0, [0.12, 0.8]).map(d => `<path d="${d}" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>`).join('\n')),
     });
   }
 
-  // D: an isometric putty slab; the pointer drags a warm trail over its top.
+  // D: an isometric putty cube; three finger grooves warm its top and drip.
   {
-    const O = [64, 24], U = [43.3, 25], V = [-43.3, 25], H = 30;
+    const O = [64, 18], U = [43.3, 25], V = [-43.3, 25], H = 50;
     const at = (u, v) => [O[0] + U[0] * u + V[0] * v, O[1] + U[1] * u + V[1] * v];
     const dn = p => [p[0], p[1] + H];
     const T0 = at(0, 0), T1 = at(1, 0), T2 = at(1, 1), T3 = at(0, 1);
-    const MTX = `matrix(${U[0] / 100} ${U[1] / 100} ${V[0] / 100} ${V[1] / 100} ${O[0]} ${O[1]})`;
-    // The inverse map takes a viewBox point back to the top face.
-    const det = U[0] * V[1] - V[0] * U[1];
-    const uv = p => { const x = p[0] - O[0], y = p[1] - O[1]; return [((x * V[1] - V[0] * y) / det) * 100, ((U[0] * y - x * U[1]) / det) * 100]; };
-    const SMEAR = 'M22 30C40 22 52 48 62 54C74 62 82 50 80 74';
+    const TOP = `matrix(${U[0] / 100} ${U[1] / 100} ${V[0] / 100} ${V[1] / 100} ${O[0]} ${O[1]})`;
+    // The left face maps u along its top edge and h straight down.
+    const LEFT = `matrix(${U[0] / 100} ${U[1] / 100} 0 1 ${f(T3[0])} ${f(T3[1])})`;
+    const GU = [30, 50, 70], DRIP = [18, 26, 13];
+    const groove = u => `M${u} 4C${u + 7} 36 ${u - 7} 66 ${u} 106`;
+    const EDGES = `M${f(T3[0])} ${f(T3[1])}L${f(T2[0])} ${f(T2[1])}L${f(T1[0])} ${f(T1[1])}M${f(T2[0])} ${f(T2[1])}V${f(T2[1] + H)}`;
+    const BANDS = [['oklch(0.62 0.21 330)', 13], ['oklch(0.75 0.19 356)', 8], ['oklch(0.91 0.08 65)', 3]];
     DIRS.push({
       toy: 'putty', l: 'D',
       art(svg, u) {
         svg.innerHTML = `
-          <clipPath id="${u}c"><rect x="0" y="0" width="100" height="100"/></clipPath>
+          <linearGradient id="${u}d" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" style="stop-color: oklch(0.91 0.08 65)"/><stop offset="0.3" style="stop-color: oklch(0.75 0.19 356)"/>
+            <stop offset="0.7" style="stop-color: oklch(0.62 0.21 330)"/><stop offset="1" style="stop-color: oklch(0.5 0.18 310)" stop-opacity="0"/>
+          </linearGradient>
+          <clipPath id="${u}t"><rect x="0" y="0" width="100" height="100"/></clipPath>
+          <clipPath id="${u}l"><rect x="0" y="0" width="100" height="${H}"/></clipPath>
+          <mask id="${u}k" maskUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120">
+            ${GU.map(g => `<path class="mk" d="${groove(g)}" pathLength="1" stroke-dasharray="1 1" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round"/>`).join('')}
+          </mask>
           <path d="${poly([T3, T2, dn(T2), dn(T3)])}" style="fill: oklch(0.42 0.15 298)"/>
           <path d="${poly([T2, T1, dn(T1), dn(T2)])}" style="fill: oklch(0.32 0.12 292)"/>
           <path d="${poly([T0, T1, T2, T3])}" fill="url(#p-slab)"/>
-          <g transform="${MTX}" clip-path="url(#${u}c)">
-            <g class="rest">
-              <path d="${SMEAR}" fill="none" stroke="oklch(0.62 0.21 330)" stroke-width="22" stroke-linecap="round"/>
-              <path d="${SMEAR}" fill="none" stroke="oklch(0.75 0.19 356)" stroke-width="13" stroke-linecap="round"/>
-              <path d="${SMEAR}" fill="none" stroke="oklch(0.91 0.08 65)" stroke-width="5" stroke-linecap="round"/>
-            </g>
-            <g class="live"></g>
+          <g transform="${LEFT}" clip-path="url(#${u}l)">
+            ${GU.map((g, i) => `<rect class="drip" x="${g - 6.5}" y="-7" width="13" height="${DRIP[i] + 7}" rx="6.5" fill="url(#${u}d)"/>`).join('')}
           </g>
-          <path d="M${f(T3[0])} ${f(T3[1])}L${f(T2[0])} ${f(T2[1])}L${f(T1[0])} ${f(T1[1])}M${f(T2[0])} ${f(T2[1])}V${f(T2[1] + H)}" fill="none" stroke="${BG}" stroke-width="1.6" stroke-linejoin="round"/>`;
-        const rest = svg.querySelector('.rest'), live = svg.querySelector('.live');
-        let last = null;
-        // A print is three flat heat bands that cool from the core out.
-        const print = (x, y) => {
-          const g = el('g', { transform: `translate(${f(x)} ${f(y)})` }, live);
-          const c = [['oklch(0.62 0.21 330)', 11], ['oklch(0.75 0.19 356)', 6.5], ['oklch(0.91 0.08 65)', 2.5]].map(([fill, r]) => el('circle', { r, fill }, g));
-          gsap.timeline({ onComplete: () => g.remove() })
-            .to(c[2], { attr: { r: 0 }, duration: 0.5, ease: 'power1.in' }, 0.15)
-            .to(c[1], { attr: { r: 0 }, duration: 1, ease: 'power1.in' }, 0.2)
-            .to(c[0], { attr: { r: 0 }, duration: 1.6, ease: 'power1.in' }, 0.25);
+          <g transform="${TOP}" clip-path="url(#${u}t)">
+            ${GU.map(g => `<path d="${groove(g)}" transform="translate(-1.6 0)" fill="none" style="stroke: oklch(0.3 0.12 292)" stroke-width="15" stroke-linecap="round"/>`).join('')}
+            <g mask="url(#${u}k)">
+              ${BANDS.map(([c, w], b) => GU.map(g => `<path class="band b${b}" d="${groove(g)}" fill="none" style="stroke: ${c}" stroke-width="${w}" stroke-linecap="round"/>`).join('')).join('')}
+            </g>
+          </g>
+          <path d="${EDGES}" fill="none" stroke="${BG}" stroke-width="1.6" stroke-linejoin="round"/>`;
+        const all = s => [...svg.querySelectorAll(s)];
+        const mk = all('.mk'), drips = all('.drip'), B = BANDS.map((_, b) => all(`.b${b}`));
+        const heat = () => {
+          BANDS.forEach(([, w], b) => gsap.set(B[b], { attr: { 'stroke-width': w }, opacity: 1 }));
+          drips.forEach((d, i) => gsap.set(d, { attr: { height: DRIP[i] + 7 } }));
         };
-        const stroke = q => {
-          if (q[0] < 4 || q[0] > 96 || q[1] < 4 || q[1] > 96) { last = null; return; }
-          if (!last) { print(...q); last = q; return; }
-          const d = Math.hypot(q[0] - last[0], q[1] - last[1]);
-          if (d < 3) return;
-          const n = Math.min(12, Math.ceil(d / 3));
-          for (let k = 1; k <= n; k++) print(lerp(last[0], q[0], k / n), lerp(last[1], q[1], k / n));
-          last = q;
-        };
-        let demo = null;
-        return {
-          enter(p) {
-            gsap.to(rest, { opacity: 0, duration: 1.2, ease: 'power1.in', overwrite: true });
-            last = null;
-            if (p) stroke(uv(p));
-            else {
-              const o = { t: 0 };
-              demo = gsap.to(o, { t: 1, duration: 1.4, ease: 'none', repeat: -1, repeatDelay: 0.5, onRepeat: () => (last = null), onUpdate: () => stroke([14 + o.t * 72, 50 + 30 * Math.sin(o.t * TAU)]) });
-            }
-          },
-          move: p => p && stroke(uv(p)),
-          leave() { demo?.kill(); demo = null; last = null; gsap.to(rest, { opacity: 1, duration: 0.8, delay: 0.9, ease: 'power1.out', overwrite: true }); },
-        };
+        return hoverLoop(
+          () => gsap.timeline({ repeat: -1, repeatDelay: 0.3 })
+            .to(B[2], { attr: { 'stroke-width': 0 }, duration: 0.4, ease: 'power1.in' })
+            .to(B[1], { attr: { 'stroke-width': 0 }, duration: 0.6, ease: 'power1.in' }, 0.2)
+            .to(B[0], { opacity: 0.35, duration: 0.9, ease: 'power1.in' }, 0.3)
+            .to(drips, { attr: { height: 0 }, duration: 0.8, ease: 'power1.in' }, 0.2)
+            .set(mk, { attr: { 'stroke-dashoffset': 1 } }, '+=0.25')
+            .call(() => { heat(); gsap.set(drips, { attr: { height: 0 } }); })
+            .to(mk, { attr: { 'stroke-dashoffset': 0 }, duration: 0.55, ease: 'power2.in', stagger: 0.12 })
+            .to(drips, { attr: { height: i => DRIP[i] + 7 }, duration: 0.5, ease: 'power2.out', stagger: 0.12 }, '-=0.3'),
+          () => { gsap.killTweensOf([...mk, ...drips, ...B.flat()]); heat(); gsap.set(mk, { attr: { 'stroke-dashoffset': 0 } }); });
       },
       emblem: emb(`
+        <clipPath id="t"><rect x="0" y="0" width="100" height="100"/></clipPath>
         <path d="${poly([T0, T1, dn(T1), dn(T2), dn(T3), T3])}" fill="#fff"/>
-        <path d="M${f(T3[0])} ${f(T3[1])}L${f(T2[0])} ${f(T2[1])}L${f(T1[0])} ${f(T1[1])}M${f(T2[0])} ${f(T2[1])}V${f(T2[1] + H)}" fill="none" stroke="#000" stroke-width="2.6" stroke-linejoin="round"/>
-        <g transform="${MTX}"><path d="${SMEAR}" fill="none" stroke="#000" stroke-width="20" stroke-linecap="round"/></g>
+        <path d="${EDGES}" fill="none" stroke="#000" stroke-width="2.6" stroke-linejoin="round"/>
+        <g transform="${TOP}" clip-path="url(#t)">${GU.map(g => `<path d="${groove(g)}" fill="none" stroke="#000" stroke-width="14" stroke-linecap="round"/>`).join('')}</g>
+        <g transform="${LEFT}">${GU.map((g, i) => `<rect x="${g - 6.5}" y="-7" width="13" height="${DRIP[i] + 7}" rx="6.5" fill="#000"/>`).join('')}</g>
       `),
     });
   }
