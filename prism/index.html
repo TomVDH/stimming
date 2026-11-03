@@ -20,6 +20,8 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
+/* The light canvas adds onto the table under it. */
+.stage canvas.light { mix-blend-mode: plus-lighter; }
 /* The halo spills edge light onto the page around the stage. */
 body { overflow-x: clip; }
 .halo { position: absolute; left: 0; top: 0; pointer-events: none; }
@@ -72,9 +74,11 @@ body { overflow-x: clip; }
     <canvas class="halo" aria-hidden="true"></canvas>
     <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the bar. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Scroll or pinch to resize a piece. Tab picks a piece, arrow keys move it, Q and E turn it, minus and plus resize it, Delete removes it, Escape lets go.">
       <canvas aria-hidden="true"></canvas>
+      <canvas class="light" aria-hidden="true"></canvas>
+      <canvas class="over" aria-hidden="true"></canvas>
       <button class="drop" type="button" tabindex="-1" aria-label="Remove" hidden><svg viewBox="0 0 26 26" aria-hidden="true"><circle class="disc" cx="13" cy="13" r="12"/><path class="cut" d="M9 9l8 8M17 9l-8 8"/></svg></button>
       <div class="pips" aria-hidden="true"></div>
-      <p class="fail" hidden>Prism needs canvas drawing, which this browser has turned off.</p>
+      <p class="fail" hidden>Prism needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="actions">
@@ -115,20 +119,16 @@ playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'prism' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
-// Fine haze trades frame time for full-resolution smoke and bloom.
-const HAZE_KEY = 'stimming.prism.haze';
-let fine = false;
-try { fine = localStorage.getItem(HAZE_KEY) === '1'; } catch (err) {}
 // The lamp shines white light or one laser line.
 // Each laser is one wavelength bin, so it never splits.
 const LIGHTS = [['White', -1], ['Red laser', 20], ['Green laser', 10], ['Violet laser', 1]];
 const lightB = document.getElementById('light'), lookB = document.getElementById('look');
 let lightAt = 0, wire = false;
 try { wire = localStorage.getItem('stimming.prism.wire') === '1'; } catch (err) {}
-// One chip cycles the look: solid, solid with fine haze, wireframe.
-const LOOKS = ['Solid', 'Hazy', 'Wire'];
+// One chip flips the look: solid or wireframe.
+const LOOKS = ['Solid', 'Wire'];
 function showLook() {
-  const name = LOOKS[wire ? 2 : fine ? 1 : 0];
+  const name = LOOKS[wire ? 1 : 0];
   lookB.textContent = name;
   lookB.setAttribute('aria-label', `Look: ${name.toLowerCase()}`);
 }
@@ -622,10 +622,7 @@ function develop(p) {
 /* ---------- canvases ---------- */
 const ctx = canvas.getContext('2d', { alpha: false });
 const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
-const [bgC, bgX] = mk(), [hzC, hzX] = mk(), [dustC, dX] = mk();
-// The glow runs at half resolution.
-// A mip chain blurs the glow into bloom.
-const MIP = [0, 1, 2, 3].map(() => { const [c, x] = mk(); return { c, x }; });
+const [bgC, bgX] = mk(), [dustC, dX] = mk();
 // A soft round sprite per colour serves glints and edge light.
 const SPR = COL.map(c => {
   const [s, x] = mk();
@@ -638,27 +635,8 @@ const SPR = COL.map(c => {
 });
 // Bitmaps stay on the GPU, so each sprite uploads once.
 SPR.forEach((s, i) => window.createImageBitmap?.(s).then(b => { SPR[i] = b; }, () => {}));
-// Each colour gets a stroke style per alpha step and medium.
-const NB = 12, STY = { glow: [], mid: [], core: [] }, SHEET = [], SHEETG = [];
-for (let ci = 0; ci <= NK; ci++) {
-  // One ray of colour carries a slice of white, so it draws fainter.
-  const w = ci === WHITE ? [0.5, 0.3, 1] : [0.12, 0.08, 0.32];
-  for (const k of ['glow', 'mid', 'core']) STY[k][ci] = [];
-  for (let b = 0; b <= NB; b++) for (let ins = 0; ins < 2; ins++) {
-    const a = b / NB, j = b * 2 + ins, g = ins ? 1.5 : 1;
-    STY.glow[ci][j] = `rgba(${COL[ci].join(',')},${clamp(a * w[0] * g)})`;
-    STY.mid[ci][j] = `rgba(${COL[ci].join(',')},${clamp(a * w[1] * g)})`;
-    // Faint rays lose their hard core and read as haze.
-    STY.core[ci][j] = `rgba(${CORE[ci].join(',')},${clamp(a * w[2] * sstep(0.1, 0.5, a))})`;
-  }
-}
-for (let k = 0; k < NK - 1; k++) {
-  const c = COL[k].map((v, i) => Math.round((v + COL[k + 1][i]) / 2)).join(',');
-  for (let b = 0; b <= NB; b++) {
-    SHEET[k * (NB + 1) + b] = `rgba(${c},${(b / NB) * 0.42})`;
-    SHEETG[k * (NB + 1) + b] = `rgba(${c},${(b / NB) * 0.35})`;
-  }
-}
+// A sheet takes the mean colour of its two wavelengths.
+const SHC = Array.from({ length: NK - 1 }, (_, k) => COL[k].map((v, i) => (v + COL[k + 1][i]) / 510));
 const TINT = [css(0.66, 0.08, 212, 0.16), css(0.5, 0.07, 232, 0.09), css(0.4, 0.08, 262, 0.13)];
 const RIMIN = css(0.72, 0.09, 215, 0.03);
 const FOC = a => `rgba(${rgb(0.84, 0.13, 205).join(',')},${a})`;
@@ -736,16 +714,13 @@ function buildDust() {
   c.fillRect(0, 0, w, h);
   c.globalCompositeOperation = 'source-over';
 }
-// Static layers become bitmaps once they are built.
-let bgB = null, dustB = null, bakeN = 0;
+// The table becomes a bitmap once it is built.
+let bgB = null, bakeN = 0;
 function bake() {
   const n = ++bakeN;
   bgB?.close?.();
-  dustB?.close?.();
-  bgB = dustB = null;
-  if (!window.createImageBitmap) return;
-  createImageBitmap(bgC).then(b => { if (n === bakeN) bgB = b; else b.close?.(); }, () => {});
-  createImageBitmap(dustC).then(b => { if (n === bakeN) dustB = b; else b.close?.(); }, () => {});
+  bgB = null;
+  window.createImageBitmap?.(bgC).then(b => { if (n === bakeN) bgB = b; else b.close?.(); }, () => {});
 }
 
 /* ---------- edge light: a soft bleed where light meets the frame ---------- */
@@ -856,22 +831,23 @@ function drawHalo() {
 const SIDE = [[1, 0, 0, 1, 0, 0], [0, 1, -1, 0, 1, 0], [1, 0, 0, -1, 0, 1], [0, 1, 1, 0, 0, 0]];
 
 /* ---------- drawing ---------- */
-const buckets = new Map(), sheets = new Map(), groups = new Map();
-function bucketize() {
-  buckets.clear();
+// Each beam segment packs into one instance: ends, colour, core, flags.
+// Flags hold 1 inside glass plus 2 for white light.
+const INST = new Float32Array(MAXS * 12), SHV = new Float32Array(MAXS * 30), groups = new Map();
+let nInst = 0, nShv = 0;
+function pack() {
+  nInst = 0;
   for (let i = 0; i < nSeg; i++) {
-    const o = i * SG, b = Math.round(SEG[o + 5] ** 0.8 * NB);
-    if (!b) continue;
-    const key = ((SEG[o + 4] + 1) * (NB + 1) + b) * 2 + SEG[o + 6];
-    let p = buckets.get(key);
-    if (!p) buckets.set(key, (p = new Path2D()));
-    p.moveTo(SEG[o], SEG[o + 1]);
-    p.lineTo(SEG[o + 2], SEG[o + 3]);
+    const o = i * SG, a = SEG[o + 5] ** 0.8;
+    if (a < 0.04) continue;
+    const k = SEG[o + 4], ci = k < 0 ? WHITE : k, col = COL[ci], core = CORE[ci], q = nInst++ * 12;
+    INST[q] = SEG[o]; INST[q + 1] = SEG[o + 1]; INST[q + 2] = SEG[o + 2]; INST[q + 3] = SEG[o + 3];
+    INST[q + 4] = col[0] / 255; INST[q + 5] = col[1] / 255; INST[q + 6] = col[2] / 255; INST[q + 7] = a;
+    INST[q + 8] = core[0] / 255; INST[q + 9] = core[1] / 255; INST[q + 10] = core[2] / 255;
+    INST[q + 11] = SEG[o + 6] + (k < 0 ? 2 : 0);
   }
   // Neighbouring wavelengths on the same path bound a sheet of colour.
-  sheets.clear();
   groups.clear();
-  const ws = clamp(S / 600, 0.75, 1.25);
   for (let i = 0; i < nSeg; i++) {
     const o = i * SG, k = SEG[o + 4];
     if (k < 0) continue;
@@ -880,36 +856,320 @@ function bucketize() {
     if (!g) groups.set(key, (g = new Int32Array(NK).fill(-1)));
     g[k] = i;
   }
+  const ws = clamp(S / 600, 0.75, 1.25);
+  nShv = 0;
   for (const g of groups.values()) for (let k = 0; k < NK - 1; k++) {
     const a = g[k] * SG, b = g[k + 1] * SG;
     if (a < 0 || b < 0 || SEG[a + 9] !== SEG[b + 9]) continue;
     // Brightness follows energy density, so widening fans fade.
     const w = (Math.hypot(SEG[a] - SEG[b], SEG[a + 1] - SEG[b + 1]) + Math.hypot(SEG[a + 2] - SEG[b + 2], SEG[a + 3] - SEG[b + 3])) / 2;
-    const I = (SEG[a + 5] + SEG[b + 5]) / 2, bin = Math.round((1 - Math.exp((-6 * ws * I) / Math.max(1, w))) * Math.min(1, I / 0.3) ** 0.6 * NB);
-    if (!bin) continue;
-    const key = k * (NB + 1) + bin;
-    let p = sheets.get(key);
-    if (!p) sheets.set(key, (p = new Path2D()));
-    p.moveTo(SEG[a], SEG[a + 1]);
-    p.lineTo(SEG[a + 2], SEG[a + 3]);
-    p.lineTo(SEG[b + 2], SEG[b + 3]);
-    p.lineTo(SEG[b], SEG[b + 1]);
-    p.closePath();
+    const I = (SEG[a + 5] + SEG[b + 5]) / 2, v = (1 - Math.exp((-6 * ws * I) / Math.max(1, w))) * Math.min(1, I / 0.3) ** 0.6;
+    if (v < 0.04 || nShv >= MAXS * 6) continue;
+    const c = SHC[k];
+    for (const j of [a, a + 2, b + 2, a, b + 2, b]) {
+      const q = nShv++ * 5;
+      SHV[q] = SEG[j]; SHV[q + 1] = SEG[j + 1];
+      SHV[q + 2] = c[0] * v; SHV[q + 3] = c[1] * v; SHV[q + 4] = c[2] * v;
+    }
+  }
+  if (!G) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, G.ib);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, INST, 0, nInst * 12);
+  gl.bindBuffer(gl.ARRAY_BUFFER, G.sb);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, SHV, 0, nShv * 5);
+  lightDirty = true;
+}
+
+/* ---------- light: WebGL2 draws beams, glow, bloom and haze ---------- */
+const glc = panel.querySelector('canvas.light'), overC = panel.querySelector('canvas.over');
+const over = overC.getContext('2d');
+const gl = glc.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false });
+let G = null, lightDirty = true;
+// A segment is a quad around its line, with room for caps.
+const VS_SEG = `#version 300 es
+layout(location = 0) in vec2 aC;
+layout(location = 1) in vec4 aSeg;
+layout(location = 2) in vec4 aCol;
+layout(location = 3) in vec4 aCore;
+uniform vec2 uRes;
+uniform float uHalf;
+out vec2 vP;
+flat out float vLen;
+flat out vec4 vCol, vCore;
+void main() {
+  vec2 d = aSeg.zw - aSeg.xy;
+  float L = length(d);
+  vec2 t = L > 1e-4 ? d / L : vec2(1.0, 0.0), n = vec2(-t.y, t.x);
+  float s = mix(-uHalf, L + uHalf, aC.x), q = aC.y * uHalf;
+  vP = vec2(s, q);
+  vLen = L;
+  vCol = aCol;
+  vCore = aCore;
+  vec2 p = (aSeg.xy + t * s + n * q) / uRes * 2.0 - 1.0;
+  gl_Position = vec4(p.x, -p.y, 0.0, 1.0);
+}`;
+// Mode 0 draws the mid line and the hot core; mode 1 draws the glow.
+const FS_SEG = `#version 300 es
+precision highp float;
+in vec2 vP;
+flat in float vLen;
+flat in vec4 vCol, vCore;
+uniform int uMode;
+uniform float uWs, uPr;
+out vec4 o;
+float cover(float w, float d) { return clamp((0.5 * w - d) * uPr + 0.5, 0.0, 1.0); }
+void main() {
+  float s = vP.x, d = vP.y;
+  float e = s < 0.0 ? length(vec2(s, d)) : s > vLen ? length(vec2(s - vLen, d)) : abs(d);
+  float a = vCol.a, wt = step(1.5, vCore.a), g = 1.0 + 0.5 * (vCore.a - 2.0 * wt);
+  vec3 c;
+  if (uMode == 0) {
+    float mid = clamp(a * mix(0.08, 0.3, wt) * g, 0.0, 1.0) * cover(3.6 * uWs, e);
+    float core = clamp(a * mix(0.32, 1.0, wt) * smoothstep(0.1, 0.5, a), 0.0, 1.0) * cover(1.25 * uWs, e);
+    c = vCol.rgb * mid + vCore.rgb * core;
+  } else {
+    float r = 4.0 * uWs;
+    c = vCol.rgb * clamp(a * mix(0.12, 0.5, wt) * g, 0.0, 1.0) * (1.0 - smoothstep(r - 2.0, r + 2.0, e));
+  }
+  o = vec4(c, 0.0);
+}`;
+const VS_SHEET = `#version 300 es
+layout(location = 0) in vec2 aP;
+layout(location = 1) in vec3 aC;
+uniform vec2 uRes;
+out vec3 vC;
+void main() {
+  vC = aC;
+  vec2 p = aP / uRes * 2.0 - 1.0;
+  gl_Position = vec4(p.x, -p.y, 0.0, 1.0);
+}`;
+const FS_SHEET = `#version 300 es
+precision highp float;
+in vec3 vC;
+uniform float uK;
+out vec4 o;
+void main() { o = vec4(vC * uK, 0.0); }`;
+// One triangle covers the screen.
+const VS_FULL = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
+  vUv = p * 0.5 + 0.5;
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+// Each mip halves the last with a five-tap filter.
+const FS_DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uT;
+uniform vec2 uTx;
+out vec4 o;
+void main() {
+  vec3 s = texture(uT, vUv).rgb * 4.0;
+  s += texture(uT, vUv - uTx).rgb + texture(uT, vUv + uTx).rgb;
+  s += texture(uT, vUv + vec2(uTx.x, -uTx.y)).rgb + texture(uT, vUv - vec2(uTx.x, -uTx.y)).rgb;
+  o = vec4(s / 8.0, 0.0);
+}`;
+// A tent filter folds each small mip back into the next.
+const FS_UP = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uT;
+uniform vec2 uTx;
+uniform float uK;
+out vec4 o;
+void main() {
+  vec2 h = uTx;
+  vec3 s = texture(uT, vUv + vec2(-2.0 * h.x, 0.0)).rgb + texture(uT, vUv + vec2(2.0 * h.x, 0.0)).rgb;
+  s += texture(uT, vUv + vec2(0.0, -2.0 * h.y)).rgb + texture(uT, vUv + vec2(0.0, 2.0 * h.y)).rgb;
+  s += 2.0 * (texture(uT, vUv + h).rgb + texture(uT, vUv - h).rgb);
+  s += 2.0 * (texture(uT, vUv + vec2(h.x, -h.y)).rgb + texture(uT, vUv + vec2(-h.x, h.y)).rgb);
+  o = vec4(s / 12.0 * uK, 0.0);
+}`;
+// Lines, glow, bloom and dust-lit haze add up.
+// The page blend adds the light onto the table.
+const FS_COMP = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uL, uG, uB, uD;
+out vec4 o;
+void main() {
+  vec3 g = texture(uG, vUv).rgb;
+  vec3 c = texture(uL, vUv).rgb + g * 0.42 + texture(uB, vUv).rgb * 0.5 + g * texture(uD, vUv).rgb;
+  c = min(c, vec3(1.0));
+  o = vec4(c, max(c.r, max(c.g, c.b)));
+}`;
+function shader(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+  return sh;
+}
+function program(vs, fs) {
+  const pg = gl.createProgram();
+  gl.attachShader(pg, shader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(pg, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(pg);
+  if (!gl.getProgramParameter(pg, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pg));
+  const u = {};
+  for (let i = 0, n = gl.getProgramParameter(pg, gl.ACTIVE_UNIFORMS); i < n; i++) {
+    const name = gl.getActiveUniform(pg, i).name;
+    u[name] = gl.getUniformLocation(pg, name);
+  }
+  return { pg, u };
+}
+function initGL() {
+  if (!gl) return false;
+  try {
+    // Half floats keep bright overlaps from clipping before the end.
+    G = { half: !!gl.getExtension('EXT_color_buffer_float'), t: [] };
+    G.seg = program(VS_SEG, FS_SEG);
+    G.sheet = program(VS_SHEET, FS_SHEET);
+    G.down = program(VS_FULL, FS_DOWN);
+    G.up = program(VS_FULL, FS_UP);
+    G.comp = program(VS_FULL, FS_COMP);
+    G.segV = gl.createVertexArray();
+    gl.bindVertexArray(G.segV);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, -1, 1, -1, 0, 1, 1, 1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    G.ib = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, G.ib);
+    gl.bufferData(gl.ARRAY_BUFFER, INST.byteLength, gl.DYNAMIC_DRAW);
+    for (let i = 1; i <= 3; i++) {
+      gl.enableVertexAttribArray(i);
+      gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 48, (i - 1) * 16);
+      gl.vertexAttribDivisor(i, 1);
+    }
+    G.shV = gl.createVertexArray();
+    gl.bindVertexArray(G.shV);
+    G.sb = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, G.sb);
+    gl.bufferData(gl.ARRAY_BUFFER, SHV.byteLength, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 20, 8);
+    G.fullV = gl.createVertexArray();
+    gl.bindVertexArray(null);
+    G.dust = gl.createTexture();
+    return true;
+  } catch (err) {
+    console.warn(err);
+    G = null;
+    return false;
   }
 }
-function fillSheets(c, set) {
-  for (const [key, path] of sheets) {
-    c.fillStyle = set[key];
-    c.fill(path);
-  }
+function texParams() {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
-function strokeAll(c, set) {
-  for (const [key, path] of buckets) {
-    const j = key % ((NB + 1) * 2), k = (key - j) / ((NB + 1) * 2) - 1;
-    c.strokeStyle = set[k < 0 ? WHITE : k][j];
-    c.stroke(path);
-  }
+function target(w, h) {
+  const t = gl.createTexture(), f = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, G.half ? gl.RGBA16F : gl.RGBA8, w, h, 0, gl.RGBA, G.half ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
+  texParams();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  return { t, f, w, h };
 }
+// Targets: lines at full size, glow at half, then four bloom mips.
+function sizeGL() {
+  if (!G) return;
+  glc.width = cw;
+  glc.height = ch;
+  G.t.forEach(x => { gl.deleteTexture(x.t); gl.deleteFramebuffer(x.f); });
+  G.t = [1, 2, 4, 8, 16, 32].map(d => target(Math.max(1, Math.ceil(cw / d)), Math.max(1, Math.ceil(ch / d))));
+  gl.bindTexture(gl.TEXTURE_2D, G.dust);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, dustC);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  texParams();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  lightDirty = true;
+}
+function bindTex(unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+}
+function drawLight() {
+  const [L, Gw, ...D] = G.t, ws = clamp(S / 600, 0.75, 1.25);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.clearColor(0, 0, 0, 0);
+  for (const [tg, mode, k] of [[L, 0, 0.42], [Gw, 1, 0.35]]) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, tg.f);
+    gl.viewport(0, 0, tg.w, tg.h);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (nShv) {
+      gl.useProgram(G.sheet.pg);
+      gl.uniform2f(G.sheet.u.uRes, W, H);
+      gl.uniform1f(G.sheet.u.uK, k);
+      gl.bindVertexArray(G.shV);
+      gl.drawArrays(gl.TRIANGLES, 0, nShv);
+    }
+    if (nInst) {
+      const u = G.seg.u;
+      gl.useProgram(G.seg.pg);
+      gl.uniform2f(u.uRes, W, H);
+      gl.uniform1f(u.uHalf, mode ? 4 * ws + 3 : 1.8 * ws + 1.5);
+      gl.uniform1i(u.uMode, mode);
+      gl.uniform1f(u.uWs, ws);
+      gl.uniform1f(u.uPr, tg.w / W);
+      gl.bindVertexArray(G.segV);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nInst);
+    }
+  }
+  gl.bindVertexArray(G.fullV);
+  gl.disable(gl.BLEND);
+  gl.useProgram(G.down.pg);
+  gl.uniform1i(G.down.u.uT, 0);
+  let src = Gw;
+  for (const d of D) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, d.f);
+    gl.viewport(0, 0, d.w, d.h);
+    bindTex(0, src.t);
+    gl.uniform2f(G.down.u.uTx, 1 / src.w, 1 / src.h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    src = d;
+  }
+  // The small mips fold back as wide bloom.
+  gl.enable(gl.BLEND);
+  gl.useProgram(G.up.pg);
+  gl.uniform1i(G.up.u.uT, 0);
+  gl.uniform1f(G.up.u.uK, 0.7);
+  for (let i = D.length - 1; i > 0; i--) {
+    const sm = D[i], d = D[i - 1];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, d.f);
+    gl.viewport(0, 0, d.w, d.h);
+    bindTex(0, sm.t);
+    gl.uniform2f(G.up.u.uTx, 0.5 / sm.w, 0.5 / sm.h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.disable(gl.BLEND);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  const u = G.comp.u;
+  gl.useProgram(G.comp.pg);
+  [L.t, Gw.t, D[0].t, G.dust].forEach((t, i) => bindTex(i, t));
+  gl.uniform1i(u.uL, 0);
+  gl.uniform1i(u.uG, 1);
+  gl.uniform1i(u.uB, 2);
+  gl.uniform1i(u.uD, 3);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindVertexArray(null);
+}
+glc.addEventListener('webglcontextlost', e => { e.preventDefault(); G = null; });
+glc.addEventListener('webglcontextrestored', () => {
+  if (!initGL()) return;
+  sizeGL();
+  geomDirty = true;
+  wake();
+});
 function glassPath(c, p) {
   const g = p.g;
   c.beginPath();
@@ -1164,7 +1424,7 @@ function rrect(q, x, y, w, h, [a, b, c, d]) {
 }
 // The lamp is a shaded housing with fins and a bright bezel.
 function drawSource(p) {
-  const c = ctx, g = p.g, hw = g.hw, hh = g.hh, co = Math.cos(p.rot), si = Math.sin(p.rot);
+  const c = over, g = p.g, hw = g.hw, hh = g.hh, co = Math.cos(p.rot), si = Math.sin(p.rot);
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
   c.setTransform(pr * co, pr * si, -pr * si, pr * co, pr * p.x, pr * p.y);
@@ -1239,7 +1499,7 @@ function pipAt(p) {
 }
 function drawPip(p) {
   if (!p.pc) return;
-  const c = ctx, g = p.g, [x, y, rp] = pipAt(p);
+  const c = over, g = p.g, [x, y, rp] = pipAt(p);
   if (rp < 4) return;
   c.setTransform(pr, 0, 0, pr, 0, 0);
   c.globalCompositeOperation = 'source-over';
@@ -1303,7 +1563,7 @@ function drawPip(p) {
 const ringR = p => p.r + Math.max(12, 0.045 * S);
 const knobA = p => (p.kind === 'source' ? p.rot + Math.PI : p.rot - Math.PI / 2);
 function ring(p) {
-  const c = ctx, R = ringR(p), A = ringA;
+  const c = over, R = ringR(p), A = ringA;
   c.setTransform(pr, 0, 0, pr, 0, 0);
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
@@ -1332,65 +1592,12 @@ function ring(p) {
   c.arc(kx, ky, coarse ? 11 : 8.5, 0, TAU);
   c.stroke();
 }
-function beams() {
-  const c = ctx, ws = clamp(S / 600, 0.75, 1.25), g0 = MIP[0];
-  // The near glow runs at half resolution.
-  const gx = g0.x;
-  gx.setTransform(1, 0, 0, 1, 0, 0);
-  gx.globalCompositeOperation = 'source-over';
-  gx.globalAlpha = 1;
-  gx.fillStyle = '#000';
-  gx.fillRect(0, 0, g0.c.width, g0.c.height);
-  gx.setTransform(g0.c.width / W, 0, 0, g0.c.height / H, 0, 0);
-  gx.globalCompositeOperation = 'lighter';
-  gx.lineCap = gx.lineJoin = 'round';
-  gx.lineWidth = 8 * ws;
-  strokeAll(gx, STY.glow);
-  fillSheets(gx, SHEETG);
-  // Each mip halves the last.
-  // The small mips fold back as wide bloom.
-  for (let m = 1; m < MIP.length; m++) {
-    const d = MIP[m];
-    d.x.globalCompositeOperation = 'copy';
-    d.x.globalAlpha = 1;
-    d.x.imageSmoothingQuality = 'high';
-    d.x.drawImage(MIP[m - 1].c, 0, 0, d.c.width, d.c.height);
-  }
-  for (let m = MIP.length - 1; m > 1; m--) {
-    const d = MIP[m - 1];
-    d.x.globalCompositeOperation = 'lighter';
-    d.x.globalAlpha = 0.7;
-    d.x.drawImage(MIP[m].c, 0, 0, d.c.width, d.c.height);
-  }
-  // Smoke and motes at full resolution scatter the glow.
-  hzX.globalCompositeOperation = 'copy';
-  hzX.globalAlpha = 1;
-  hzX.imageSmoothingQuality = 'high';
-  hzX.drawImage(g0.c, 0, 0, hzC.width, hzC.height);
-  hzX.globalCompositeOperation = 'multiply';
-  hzX.drawImage(dustB || dustC, 0, 0);
-  // The glow and bloom join the haze, so one full-size pass remains.
-  hzX.globalCompositeOperation = 'lighter';
-  hzX.globalAlpha = 0.42;
-  hzX.drawImage(g0.c, 0, 0, hzC.width, hzC.height);
-  hzX.globalAlpha = 0.5;
-  hzX.drawImage(MIP[1].c, 0, 0, hzC.width, hzC.height);
-  hzX.globalAlpha = 1;
-  c.setTransform(1, 0, 0, 1, 0, 0);
+// Edge strips and small glints add onto the table under the light.
+function edgeLight() {
+  const c = ctx, dep = EDEP * S;
   c.globalCompositeOperation = 'lighter';
-  c.imageSmoothingEnabled = true;
-  c.imageSmoothingQuality = 'high';
   c.globalAlpha = 1;
-  c.drawImage(hzC, 0, 0, cw, ch);
-  c.setTransform(pr, 0, 0, pr, 0, 0);
-  c.lineCap = c.lineJoin = 'round';
-  fillSheets(c, SHEET);
-  c.lineWidth = 3.6 * ws;
-  strokeAll(c, STY.mid);
-  c.lineWidth = 1.25 * ws;
-  strokeAll(c, STY.core);
-  // Light that reaches the rim bleeds inward from a bright line.
-  const dep = EDEP * S;
+  c.imageSmoothingEnabled = true;
   for (let s = 0; s < 4; s++) {
     if (!STRIP[s].on) continue;
     const [tx, ty, ix, iy, ox, oy] = SIDE[s];
@@ -1447,7 +1654,7 @@ function render() {
     trace();
     expose();
     for (const p of pieces) if (p.kind === 'sensor') develop(p);
-    bucketize();
+    pack();
     bleed();
     geomDirty = false;
     voiceTrack();
@@ -1460,9 +1667,13 @@ function render() {
   if (wire) dotGrid(c);
   c.setTransform(pr, 0, 0, pr, 0, 0);
   for (let i = 1; i < n; i++) drawBody(pieces[i], i);
-  beams();
   c.setTransform(pr, 0, 0, pr, 0, 0);
   for (let i = 1; i < n; i++) rims(pieces[i]);
+  edgeLight();
+  if (G && lightDirty) { drawLight(); lightDirty = false; }
+  // The lamp, pictures and ring sit over the light.
+  over.setTransform(1, 0, 0, 1, 0, 0);
+  over.clearRect(0, 0, cw, ch);
   drawSource(pieces[0]);
   for (let i = 1; i < n; i++) if (pieces[i].kind === 'sensor') drawPip(pieces[i]);
   placeGlass();
@@ -1861,8 +2072,7 @@ let raf = 0, last = 0, onScreen = true;
 function wake() {
   if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
-// Long gaps between close frames step quality down.
-// Fine haze goes first, then the pixel ratio.
+// Long gaps between close frames drop the pixel ratio.
 let gapAvg = 16, lastDraw = 0;
 function watch(ms) {
   const gap = ms - lastDraw;
@@ -1872,8 +2082,8 @@ function watch(ms) {
   if (gapAvg < 26 || ++slowN < 24) return;
   slowN = 0;
   gapAvg = 16;
-  if (fine) { fine = false; showLook(); fit(true); }
-  else { lowDpr = true; fit(); }
+  lowDpr = true;
+  fit();
 }
 function frame(ms) {
   raf = 0;
@@ -2059,15 +2269,10 @@ lightB.addEventListener('click', () => {
   wake();
 });
 lookB.addEventListener('click', () => {
-  const next = ((wire ? 2 : fine ? 1 : 0) + 1) % LOOKS.length, wasFine = fine;
-  wire = next === 2;
-  fine = next === 1;
+  wire = !wire;
   showLook();
-  try {
-    localStorage.setItem('stimming.prism.wire', wire ? '1' : '0');
-    localStorage.setItem(HAZE_KEY, fine ? '1' : '0');
-  } catch (err) {}
-  if (fine !== wasFine) { lowDpr = false; slowN = 0; gapAvg = 16; fit(true); } else wake();
+  try { localStorage.setItem('stimming.prism.wire', wire ? '1' : '0'); } catch (err) {}
+  wake();
 });
 // The add tray opens on hover or tap and closes after a pick.
 const adder = document.querySelector('.adder'), addBtn = document.getElementById('addBtn');
@@ -2098,43 +2303,38 @@ function fit(force) {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt((fine ? 2e6 : 1.4e6) / (w * h)));
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(2.2e6 / (w * h)));
   const nw = Math.floor(w * p), nh = Math.floor(h * p);
   if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
   measureBar();
   placeHalo();
   if (pristine() && !tween) applyLayout();
   if (force === true || nw !== cw || nh !== ch || !bgC.width) {
-    cw = canvas.width = bgC.width = nw;
-    ch = canvas.height = bgC.height = nh;
-    // Plain haze runs smoke at half size and glow at a third.
-    const hz = fine ? 1 : 2;
-    hzC.width = dustC.width = Math.ceil(nw / hz);
-    hzC.height = dustC.height = Math.ceil(nh / hz);
+    cw = canvas.width = bgC.width = overC.width = nw;
+    ch = canvas.height = bgC.height = overC.height = nh;
+    // Smoke runs at half size; the light blurs it anyway.
+    dustC.width = Math.ceil(nw / 2);
+    dustC.height = Math.ceil(nh / 2);
     pr = cw / W;
-    MIP.forEach((m, i) => {
-      const f = (fine ? 2 : 3) * 2 ** i;
-      m.c.width = Math.ceil(cw / f);
-      m.c.height = Math.ceil(ch / f);
-    });
     buildTable();
     buildDust();
     bake();
+    sizeGL();
   } else pr = cw / W;
   if (ready) render();
 }
 function failed() {
   panel.querySelector('.fail').hidden = false;
-  canvas.hidden = true;
+  panel.querySelectorAll('canvas').forEach(c => { c.hidden = true; });
   [resetB, clearB, ...addBs].forEach(b => b.setAttribute('aria-disabled', 'true'));
 }
 function boot() {
-  if (!ctx || !ctx.createRadialGradient) return failed();
+  if (!ctx || !ctx.createRadialGradient || !initGL()) return failed();
   fit();
   ready = true;
   sync();
   render();
-  requestAnimationFrame(() => canvas.classList.add('on'));
+  requestAnimationFrame(() => panel.querySelectorAll('canvas').forEach(c => c.classList.add('on')));
   // Resizes settle before the smoke and dust rebuild.
   let fitT = 0;
   new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fit, 140); }).observe(panel);
