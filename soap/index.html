@@ -54,7 +54,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line previews each cut. Drag across the soap to score it; drag in from the mat to slice right through; fallen pieces cut too. Space makes the next cut, B blows the shavings away, N brings a new bar, 1 to 7 pick the soap.">
+    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line previews each cut. Drag across the soap to score it; drag in from the mat to slice right through; fallen pieces cut too. Press a scored grid on top to pop its cubes loose; hold to spread the crack. Space makes the next cut, Enter pops the grid, B blows the shavings away, N brings a new bar, 1 to 7 pick the soap.">
       <p class="fail" hidden>Soap cutting needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -68,8 +68,8 @@
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>score</dd></div>
         <div><dt>Drag in from the mat</dt><dd>slice</dd></div>
+        <div><dt>Press the grid</dt><dd>pop</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>next cut</dd></div>
-        <div class="fine"><dt><kbd>B</kbd></dt><dd>blow</dd></div>
       </dl>
     </div>
   </main>
@@ -121,14 +121,15 @@ function rgb([L, C, h]) {
 // trans: light through thin parts; chalk: a pale outer skin.
 // clear: a cloudy soap glows where thin and deepens where thick.
 // glass: a truly clear soap; glow: the soft light at its edges.
+// hard: how the soap cracks, 0 wet squelch to 1 dry crunch.
 const SOAPS = [
-  { name: 'Mint', a: [0.83, 0.135, 160], sub: [0.6, 0.2, 160], rough: 0.62, spec: 0.5, sheen: 0.45, trans: 1.6, wrap: 0.6, chalk: 0.08, mode: 0, ink: [0.3, 0.07, 165] },
-  { name: 'Amber', a: [0.78, 0.16, 74], sub: [0.72, 0.17, 66], rough: 0.1, spec: 1, sheen: 0.05, trans: 2.4, wrap: 0.9, chalk: 0, glass: 0.88, wax: 0.6, glow: 0.5, mode: 0, speck: [0.03, 2], sp: [0.88, 0.09, 80], ink: [0.27, 0.06, 50] },
-  { name: 'Charcoal', a: [0.31, 0.008, 260], sub: [0.24, 0.012, 260], rough: 0.74, spec: 0.45, sheen: 0.35, trans: 0.25, wrap: 0.3, chalk: 0.04, glow: 0.08, mode: 0, speck: [0.05, 4.2], sp: [0.86, 0.03, 90], ink: [0.9, 0.05, 95] },
-  { name: 'Oat', a: [0.87, 0.045, 85], sub: [0.68, 0.08, 70], rough: 0.7, spec: 0.4, sheen: 0.5, trans: 1.3, wrap: 0.6, chalk: 0.06, mode: 0, speck: [0.15, 1.5], sp: [0.5, 0.07, 60], ink: [0.32, 0.06, 60] },
-  { name: 'Layers', a: [0.93, 0.02, 90], b: [0.76, 0.13, 8], c: [0.6, 0.17, 300], sub: [0.62, 0.15, 340], rough: 0.55, spec: 0.5, sheen: 0.4, trans: 1.5, wrap: 0.6, chalk: 0.05, mode: 1, ink: [0.25, 0.06, 300] },
-  { name: 'Swirl', a: [0.84, 0.065, 300], b: [0.55, 0.16, 306], c: [0.95, 0.02, 300], sub: [0.55, 0.14, 300], rough: 0.5, spec: 0.55, sheen: 0.4, trans: 1.7, wrap: 0.6, chalk: 0.05, mode: 2, ink: [0.25, 0.06, 300] },
-  { name: 'Citrus', a: [0.87, 0.17, 98], sub: [0.68, 0.18, 70], rough: 0.3, spec: 0.8, sheen: 0.2, trans: 3.2, wrap: 0.8, chalk: 0.02, clear: 0.55, glow: 0.5, mode: 0, speck: [0.08, 2.4], sp: [0.68, 0.17, 52], ink: [0.3, 0.07, 60] },
+  { name: 'Mint', hard: 0.6, a: [0.83, 0.135, 160], sub: [0.6, 0.2, 160], rough: 0.62, spec: 0.5, sheen: 0.45, trans: 1.6, wrap: 0.6, chalk: 0.08, mode: 0, ink: [0.3, 0.07, 165] },
+  { name: 'Amber', hard: 0.05, a: [0.78, 0.16, 74], sub: [0.72, 0.17, 66], rough: 0.1, spec: 1, sheen: 0.05, trans: 2.4, wrap: 0.9, chalk: 0, glass: 0.88, wax: 0.6, glow: 0.5, mode: 0, speck: [0.03, 2], sp: [0.88, 0.09, 80], ink: [0.27, 0.06, 50] },
+  { name: 'Charcoal', hard: 1, a: [0.31, 0.008, 260], sub: [0.24, 0.012, 260], rough: 0.74, spec: 0.45, sheen: 0.35, trans: 0.25, wrap: 0.3, chalk: 0.04, glow: 0.08, mode: 0, speck: [0.05, 4.2], sp: [0.86, 0.03, 90], ink: [0.9, 0.05, 95] },
+  { name: 'Oat', hard: 0.9, a: [0.87, 0.045, 85], sub: [0.68, 0.08, 70], rough: 0.7, spec: 0.4, sheen: 0.5, trans: 1.3, wrap: 0.6, chalk: 0.06, mode: 0, speck: [0.15, 1.5], sp: [0.5, 0.07, 60], ink: [0.32, 0.06, 60] },
+  { name: 'Layers', hard: 0.6, a: [0.93, 0.02, 90], b: [0.76, 0.13, 8], c: [0.6, 0.17, 300], sub: [0.62, 0.15, 340], rough: 0.55, spec: 0.5, sheen: 0.4, trans: 1.5, wrap: 0.6, chalk: 0.05, mode: 1, ink: [0.25, 0.06, 300] },
+  { name: 'Swirl', hard: 0.55, a: [0.84, 0.065, 300], b: [0.55, 0.16, 306], c: [0.95, 0.02, 300], sub: [0.55, 0.14, 300], rough: 0.5, spec: 0.55, sheen: 0.4, trans: 1.7, wrap: 0.6, chalk: 0.05, mode: 2, ink: [0.25, 0.06, 300] },
+  { name: 'Citrus', hard: 0.3, a: [0.87, 0.17, 98], sub: [0.68, 0.18, 70], rough: 0.3, spec: 0.8, sheen: 0.2, trans: 3.2, wrap: 0.8, chalk: 0.02, clear: 0.55, glow: 0.5, mode: 0, speck: [0.08, 2.4], sp: [0.68, 0.17, 52], ink: [0.3, 0.07, 60] },
 ];
 const css = ([L, C, h]) => `oklch(${L} ${C} ${h})`;
 // The rail swatch hints at each soap's pattern.
@@ -256,6 +257,44 @@ function crumble(n) {
     at += rnd(0.008, 0.03);
   }
   tickNext = a.currentTime + LEAD + at;
+}
+// The soap's own hardness, 0 wet to 1 dry.
+const hardness = () => SOAPS[Math.max(0, barSoap)].hard;
+// A cube cracking free: one noise burst, then grit.
+// Hard soaps snap bright and gritty; soft soaps squelch low.
+function crunch(amp, at = 0) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const hd = hardness(), t = a.currentTime + LEAD + at, g = level() * amp * jit(0.15);
+  const f = lerp(620, 2300, hd) * jit(0.15);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.Q.value = lerp(0.9, 1.5, hd);
+  // A soft soap's pitch falls, so it sounds wet.
+  bp.frequency.setValueAtTime(f * lerp(1.9, 1, hd), t);
+  bp.frequency.exponentialRampToValueAtTime(f * lerp(0.5, 0.9, hd), t + 0.07);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.75 * g, t + 0.0015);
+  ng.gain.setTargetAtTime(0, t + 0.0015, lerp(0.035, 0.011, hd));
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.8, 0.2);
+  track(src, ng, bp);
+  const n = Math.round(1 + 5 * hd);
+  let dt = 0.004;
+  for (let k = 0; k < n; k++) {
+    crumb(amp * (0.6 - k * 0.06), at + dt, rnd(0.8, 1.35));
+    dt += rnd(0.004, 0.016);
+  }
+}
+// Pressure on the grid: fine high ticks as the scores give.
+function creak(n) {
+  const hd = hardness();
+  let at = 0.002;
+  for (let k = 0; k < n; k++) {
+    crumb(lerp(0.12, 0.38, hd), at, rnd(1.2, 1.8) * lerp(0.6, 1, hd));
+    at += rnd(0.006, 0.02);
+  }
 }
 // Landing: a soft low knock and a dull slap on the mat.
 function thunk(s, big) {
@@ -765,7 +804,7 @@ function retire(pc) {
   pc.awake = false;
 }
 function wakePiece(pc) {
-  if (pc.awake || pc === bar || pc.frozen || pc.dead) return;
+  if (pc.awake || pc === bar || pc.frozen || pc.dead || pc.held) return;
   pc.awake = true;
   pc.still = 0;
   pc.age = 0;
@@ -1016,6 +1055,8 @@ function physics(dt) {
     if (pc.impact > 12 * TS && t - pc.snd > 0.09) {
       pc.snd = t;
       if (pc.ncell >= 80) thunk(pc.impact / (95 * TS), pc.ncell >= 200);
+      // A popped cube crunches on its first two landings.
+      else if (pc.pops > 0) { pc.pops--; crunch(clamp(pc.impact / (70 * TS)) * 0.5); }
       else crumb(clamp(pc.impact / (60 * TS)) * 0.75, 0, pc.ncell > 20 ? 0.85 : 1.15);
     }
     pc.impact = 0;
@@ -1353,7 +1394,7 @@ function bounds(pc) {
 // Resting pieces big enough to cut, the bar first.
 const CUT_MIN = 40;
 function cuttable() {
-  return pieces.filter(pc => (pc === bar ? pc.cells.length > 0 : !pc.dead && !pc.frozen && !pc.awake && !pc.kin && pc.ncell >= CUT_MIN));
+  return pieces.filter(pc => (pc === bar ? pc.cells.length > 0 : !pc.dead && !pc.frozen && !pc.held && !pc.awake && !pc.kin && pc.ncell >= CUT_MIN));
 }
 // The nearest piece a stage ray meets, with its face.
 function hitAny(rs) {
@@ -1549,6 +1590,7 @@ const PLAN = [
   ['top', 0, 3, 0], ['top', 0, 6, 0], ['top', 0, 9, 0], ['top', 0, 12, 0],
   ['top', 2, 21, 1], ['top', 2, 18, 1], ['top', 2, 15, 1],
   ['top', 2, 12, 0], ['top', 2, 9, 0], ['top', 2, 6, 0], ['top', 2, 3, 0],
+  ['press'],
   ['front', 0, 9, 1],
   ['top', 2, 12, 1], ['top', 2, 8, 1], ['top', 2, 3, 1],
 ];
@@ -1575,6 +1617,12 @@ function planNext(consume) {
   for (let i = planAt; i < PLAN.length; i++) {
     const [face, t, c, thru] = PLAN[i], a = face === 'top' ? 1 : 2, p = 3 - a - t;
     if (consume) planAt = i + 1;
+    // The press step pops the scored grid, if one is there.
+    if (face === 'press') {
+      const rings = gridPlan();
+      if (rings) return { press: rings };
+      continue;
+    }
     if (c < box.lo[p] + 1 || c > box.hi[p]) continue;
     const st = aim(bar, a, 1, t, p, c, thru);
     if (st) return st;
@@ -1593,10 +1641,11 @@ function planNext(consume) {
   return null;
 }
 function nextCut() {
-  if (!ready || sweep) return;
+  if (!ready || sweep || press) return;
   if (stroke) { if (stroke.kind === 'auto') queued = 1; return; }
   const st = planNext(true);
   if (!st) { newBar(); return; }
+  if (st.press) { startPress(st.press, 'auto'); return; }
   st.from = st.s = st.s0 = st.lo - 3.75;
   st.to = st.hi + 5.25;
   st.t0 = nowS();
@@ -1620,6 +1669,249 @@ function finishAuto() {
   push(stroke, stroke.to);
   endStroke();
   queued = 0;
+}
+
+/* ---------- press: a scored grid pops its cubes loose ---------- */
+// A tile is one scored cube in the bar's top two layers.
+// Scores close it on every side; whole soap holds it below.
+// A press sinks the tile; holding spreads the crack ring by ring.
+// Letting go pops each sunk cube up and out, in a wave.
+const TILE_MAX = 96, TILES_MAX = 64, SINK = 0.45, HOLD = 0.16, RING_DT = 0.22;
+const tMark = new Int32Array(NC), tHas = new Int32Array(NC), inTile = new Uint8Array(NC);
+const ZERO = { nx: 0, ny: 0, nz: 0, push: 0, wx: 0, wy: 0, wz: 0, fx: 0, fy: 0, fz: 0 };
+let tStamp = 0, tileOk = false, press = null;
+// How far a bar cell sits under its column's top.
+const depthOf = id => colTop[COORD[0][id] + NX * COORD[2][id]] - 1 - COORD[1][id];
+// The bond from a cell to its neighbour at step s along axis a.
+const bondTo = (id, a, s) => (s > 0 ? bond[a][id] : bond[a][id - STRIDE[a]]);
+// Floods the cells of one tile from a seed.
+// tileOk tells if they make a closed, scored cube.
+function floodTile(seed, tag) {
+  tileOk = false;
+  if (owner[seed] !== bar.id || depthOf(seed) >= SCORE || COORD[1][seed] === 0) return [];
+  const tile = [seed];
+  tMark[seed] = tag;
+  for (let h = 0; h < tile.length; h++) {
+    const c = tile[h];
+    // A tile on the mat has nothing to crack free from.
+    if (COORD[1][c] === 0) return tile;
+    for (let a = 0; a < 3; a++) for (let s = -1; s <= 1; s += 2) {
+      const k = COORD[a][c] + s;
+      if (k < 0 || k >= DIM[a]) continue;
+      const n = c + s * STRIDE[a];
+      if (tMark[n] === tag || owner[n] !== bar.id || bondTo(c, a, s) || depthOf(n) >= SCORE) continue;
+      tMark[n] = tag;
+      tile.push(n);
+      if (tile.length > TILE_MAX) return tile;
+    }
+  }
+  // Each side neighbour must lie across a score.
+  let scored = false;
+  for (const c of tile) for (let a = 0; a < 3; a += 2) for (let s = -1; s <= 1; s += 2) {
+    const k = COORD[a][c] + s;
+    if (k < 0 || k >= DIM[a]) continue;
+    const n = c + s * STRIDE[a];
+    if (owner[n] !== bar.id || tMark[n] === tag) continue;
+    if (!bondTo(c, a, s)) return tile;
+    scored = true;
+  }
+  tileOk = scored;
+  return tile;
+}
+// The pressed tile, then rings of scored tiles around it.
+// Null when the press lands on no closed cube.
+function pressPlan(seed) {
+  const plan = ++tStamp, first = floodTile(seed, ++tStamp);
+  if (!tileOk) return null;
+  for (const id of first) tHas[id] = plan;
+  const rings = [[first]];
+  let count = 1;
+  for (let r = 0; r < rings.length && count < TILES_MAX; r++) {
+    const next = [];
+    for (const tile of rings[r]) for (const c of tile) for (let a = 0; a < 3; a += 2) for (let s = -1; s <= 1; s += 2) {
+      const k = COORD[a][c] + s;
+      if (k < 0 || k >= DIM[a] || count >= TILES_MAX) continue;
+      const n = c + s * STRIDE[a];
+      if (owner[n] !== bar.id || Math.abs(tHas[n]) === plan || !bondTo(c, a, s) || depthOf(n) >= SCORE) continue;
+      const t = floodTile(n, ++tStamp);
+      // A failed flood marks its cells, so no seed retries them.
+      for (const id of t) tHas[id] = tileOk ? plan : -plan;
+      if (tileOk) { next.push(t); count++; }
+    }
+    if (next.length) rings.push(next);
+  }
+  return rings;
+}
+// The bar's top cell under a point on its top face.
+function seedAt(q, F) {
+  const i = Math.floor(q[0]), k = Math.floor(q[2]);
+  if (i < 0 || i >= NX || k < 0 || k >= NZ || F < 1 || F > NY) return -1;
+  const id = i + SY * (F - 1) + SZ * k;
+  return owner[id] === bar.id ? id : -1;
+}
+// For keys: the pressable cube nearest the bar's middle.
+function gridPlan() {
+  if (!bar?.cells.length) return null;
+  const cx = (box.lo[0] + box.hi[0] + 1) / 2, cz = (box.lo[2] + box.hi[2] + 1) / 2, cols = [];
+  for (let i = box.lo[0]; i <= box.hi[0]; i++) for (let k = box.lo[2]; k <= box.hi[2]; k++) {
+    if (colTop[i + NX * k]) cols.push([(i + 0.5 - cx) ** 2 + (k + 0.5 - cz) ** 2, i + SY * (colTop[i + NX * k] - 1) + SZ * k]);
+  }
+  cols.sort((x, y) => x[0] - y[0]);
+  for (const [, id] of cols) {
+    const rings = owner[id] === bar.id ? pressPlan(id) : null;
+    if (rings) return rings;
+  }
+  return null;
+}
+// Frees tiles from the bar and holds each where it sat.
+function carve(tiles, ring, now) {
+  const hd = hardness(), held = [];
+  for (const t of tiles) for (const id of t) inTile[id] = 1;
+  // Hard soaps chip a corner crumb off some cubes.
+  for (const t of tiles) {
+    if (t.length < 8 || Math.random() > hd * 0.55) continue;
+    const sx = Math.random() < 0.5 ? -1 : 1, sz = Math.random() < 0.5 ? -1 : 1;
+    let c = -1, best = -1e9;
+    for (const id of t) {
+      if (depthOf(id)) continue;
+      const v = sx * COORD[0][id] + sz * COORD[2][id];
+      if (v > best) { best = v; c = id; }
+    }
+    if (c < 0) continue;
+    for (let a = 0; a < 3; a++) for (let s = -1; s <= 1; s += 2) {
+      const k = COORD[a][c] + s;
+      if (k >= 0 && k < DIM[a] && inTile[c + s * STRIDE[a]]) bond[a][s > 0 ? c : c - STRIDE[a]] = 3;
+    }
+  }
+  // The soap under each cube lets go.
+  for (const t of tiles) for (const id of t) {
+    const n = id - SY;
+    if (owner[n] === bar.id && !inTile[n]) bond[1][n] = 2;
+  }
+  const comps = groups(bar.cells), isTile = comps.map(cs => inTile[cs[0]]);
+  for (const t of tiles) for (const id of t) inTile[id] = 0;
+  // The part standing widest stays the bar.
+  let keep = -1, best = -1;
+  comps.forEach((cs, k) => {
+    if (isTile[k]) return;
+    let foot = 0;
+    for (const id of cs) if (COORD[1][id] === 0) foot++;
+    const sc = foot * 65536 + cs.length;
+    if (sc > best) { best = sc; keep = k; }
+  });
+  if (keep < 0) return held;
+  bar.cells = comps[keep];
+  const made = [];
+  comps.forEach((cs, k) => {
+    if (k === keep) return;
+    const pc = spawn(cs);
+    if (isTile[k]) pc.held = { ring, base: null, sink: 0, to: SINK * (ring ? 0.7 : 1) * (reduce ? 0.5 : 1), t: now, at: 0, chip: cs.length < 4 };
+    made.push(pc);
+  });
+  measure();
+  for (const pc of made) {
+    arm(pc, ZERO, false);
+    if (pc.held) { pc.held.base = pc.c.slice(); held.push(pc); }
+  }
+  rebuild(bar);
+  placeBlob(bar);
+  return held;
+}
+// The next ring of tiles sinks under the press.
+function sinkRing(now) {
+  const pr = press, r = pr.ring + 1;
+  if (r >= pr.rings.length) return;
+  const tiles = pr.rings[r].filter(t => t.every(id => owner[id] === bar.id));
+  let need = 0;
+  for (const t of tiles) need += t.length + 30;
+  if (!tiles.length || pN + need > PMAX) { pr.rings.length = r; return; }
+  pr.ring = r;
+  const got = carve(tiles, r, now);
+  pr.held.push(...got);
+  if (!pr.center) {
+    const c = [0, 0, 0];
+    for (const pc of got) for (let i = 0; i < 3; i++) c[i] += pc.held.base[i] / got.length;
+    pr.center = c;
+  }
+  creak(Math.min(9, 2 + tiles.length * 2));
+}
+// mode: tap pops one cube, hold spreads until release, auto spreads it all.
+function startPress(rings, mode) {
+  const now = nowS();
+  press = { rings, mode, ring: -1, next: now, go: mode === 'tap', goAt: now + 0.07, sched: false, held: [], center: null, rung: -1 };
+  sinkRing(now);
+  if (press.ring < 0) { press = null; return; }
+  press.next = now + (mode === 'auto' ? 0.09 : RING_DT);
+  hover = null;
+  wake();
+}
+// One cube jumps free: up, out from the press, tumbling outward.
+function pop(pc, pr) {
+  const h = pc.held, c = pc.c, k = reduce ? 0.3 : 1;
+  pc.held = null;
+  c[0] = h.base[0]; c[1] = h.base[1]; c[2] = h.base[2];
+  let rx = c[0] - pr.center[0], rz = c[2] - pr.center[2];
+  const rl = Math.hypot(rx, rz);
+  if (rl < 0.5) { const a = rnd(0, TAU); rx = Math.cos(a); rz = Math.sin(a); } else { rx /= rl; rz /= rl; }
+  // Speeds are cells per physics second; 85 lifts about five cells.
+  const up = k * (h.chip ? rnd(70, 100) : h.ring ? rnd(55, 72) * Math.max(0.7, 1 - 0.07 * h.ring) : rnd(80, 94));
+  const out = k * (h.chip ? rnd(18, 34) : h.ring ? rnd(13, 26) : rnd(3, 8));
+  const spin = k * (h.chip ? rnd(18, 34) : rnd(9, 18));
+  const wx = rz * spin + rnd(-2, 2) * k, wy = rnd(-3, 3) * k, wz = -rx * spin + rnd(-2, 2) * k;
+  for (let p = pc.start, e = p + pc.n; p < e; p++) {
+    const sx = PX[p] - c[0], sy = PY[p] - c[1], sz = PZ[p] - c[2];
+    VX[p] = rx * out + (wy * sz - wz * sy);
+    VY[p] = up + (wz * sx - wx * sz);
+    VZ[p] = rz * out + (wx * sy - wy * sx);
+  }
+  pc.pops = 2;
+  place(pc);
+  wakePiece(pc);
+  // Each ring cracks with one crunch, louder for more cubes.
+  if (h.ring > pr.rung) {
+    pr.rung = h.ring;
+    const n = pr.rings[h.ring].length;
+    crunch(Math.min(1, 0.62 + 0.08 * n));
+    if (n > 3) crunch(0.45, rnd(0.015, 0.03));
+  }
+}
+function updatePress(now, dt) {
+  const pr = press;
+  if (!pr) return false;
+  if (!pr.go) {
+    // The crack spreads one ring at a time.
+    if (now >= pr.next && pr.ring < pr.rings.length - 1) {
+      sinkRing(now);
+      pr.next = now + (pr.mode === 'auto' ? 0.09 : RING_DT);
+    }
+    if (pr.mode === 'auto' && pr.ring >= pr.rings.length - 1 && now >= pr.next) { pr.go = true; pr.goAt = now; }
+  }
+  // Release starts the pops from the middle out.
+  if (pr.go && !pr.sched && now >= pr.goAt) {
+    pr.sched = true;
+    for (const pc of pr.held) if (pc.held) pc.held.at = now + pc.held.ring * (reduce ? 0.02 : 0.045) + rnd(0, 0.02);
+  }
+  const e = 1 - Math.exp(-dt * 30);
+  let left = 0;
+  for (const pc of pr.held) {
+    const h = pc.held;
+    if (!h || pc.dead || pc.frozen) continue;
+    if (pr.sched && now >= h.at) { pop(pc, pr); continue; }
+    left++;
+    h.sink += (h.to - h.sink) * e;
+    // Held cubes shiver, more the longer they wait.
+    const amp = reduce || pr.sched ? 0 : Math.min(0.05, 0.012 + 0.03 * (now - h.t));
+    pc.c[0] = h.base[0] + rnd(-amp, amp);
+    pc.c[1] = h.base[1] - h.sink;
+    pc.c[2] = h.base[2] + rnd(-amp, amp);
+    place(pc);
+  }
+  if (pr.sched && !left) {
+    press = null;
+    // Shavings on the bar may now fall into the holes.
+    for (const sh of shavings) if (!sh.growing) sh.rest = false;
+  }
+  return true;
 }
 
 /* ---------- three.js ---------- */
@@ -2036,7 +2328,7 @@ const INK = [0, 0, 0];
 // What to show now: a stroke's line or a hover cross.
 // With keyboard focus, it shows the next Space cut.
 function previewWant() {
-  if (!ready || sweep) return null;
+  if (!ready || sweep || press) return null;
   const st = stroke;
   if (st) {
     if (st.dead || st.done || st.a < 0 || st.kind === 'peek') return null;
@@ -2046,7 +2338,7 @@ function previewWant() {
   if (hover) return crossAt(hover.pc, hover.a, hover.sg, hover.F, hover.q);
   if (kbFocus) {
     const n = planNext(false);
-    if (n) return [{ pc: n.pc, a: n.a, sg: n.sg, F: n.F, t: n.t, p: n.p, c: n.c, thru: n.mode === 'through', faint: true }];
+    if (n && !n.press) return [{ pc: n.pc, a: n.a, sg: n.sg, F: n.F, t: n.t, p: n.p, c: n.c, thru: n.mode === 'through', faint: true }];
   }
   return null;
 }
@@ -2152,6 +2444,13 @@ function setHover(x, y) {
     if (q) h = { pc: hit.pc, a: hit.hit.a, sg: hit.hit.sg, F: hit.hit.F, q };
   }
   hover = h;
+  // A pressable cube shows a hand.
+  let can = false;
+  if (h && !press && h.pc === bar && h.a === 1 && h.sg > 0) {
+    const id = seedAt(h.q, h.F);
+    if (id >= 0) { floodTile(id, ++tStamp); can = tileOk; }
+  }
+  if (renderer) renderer.domElement.style.cursor = can ? 'pointer' : '';
   if (previewKey(previewWant()) !== pvKey) wake();
 }
 
@@ -2169,7 +2468,7 @@ function windAt(x, z) {
 }
 const offMat = (x, z, pad) => Math.abs(x) > BWc / 2 + pad || Math.abs(z) > BDc / 2 + pad;
 // Pieces too small to cut count as crumbs; bigger pieces stay put.
-const isCrumb = pc => pc !== bar && !pc.dead && !pc.frozen && pc.ncell < CUT_MIN;
+const isCrumb = pc => pc !== bar && !pc.dead && !pc.frozen && !pc.held && pc.ncell < CUT_MIN;
 function blow() {
   if (!ready || sweep) return;
   gustSound();
@@ -2236,6 +2535,7 @@ function newBar(first = false) {
   queued = 0;
   hover = null;
   gust = null;
+  press = null;
   const old = first ? null : stage, mats = [barMat, shaveMat];
   for (const pc of pieces) pc.frozen = true;
   makeStage();
@@ -2299,7 +2599,15 @@ function frame(ms) {
     scrape(st.done || st.dead ? 0 : st.speed * K);
     if (st.speed > 4.5 && !st.done && Math.random() < st.speed * K * dt * 0.3) crumb(rnd(0.08, 0.22), 0, rnd(1, 1.6));
     if (st.speed > 0) busy = true;
+    // A still hold on a scored cube becomes a press.
+    if (st.press && !press && nowS() - st.press.t0 > HOLD) {
+      startPress(st.press.rings, 'hold');
+      st.press = null;
+      st.dead = st.held = true;
+    }
+    if (st.press) busy = true;
   }
+  if (updatePress(nowS(), dt)) busy = true;
   if (physics(dt * TS)) busy = true;
   if (updateShavings(dt * TS)) busy = true;
   if (updateBlade(dt)) busy = true;
@@ -2316,7 +2624,7 @@ function frame(ms) {
 
 /* ---------- input ---------- */
 panel.addEventListener('pointerdown', e => {
-  if (!ready || sweep || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready || sweep || press || (e.pointerType === 'mouse' && e.button !== 0)) return;
   if (stroke) { if (stroke.kind !== 'auto') return; finishAuto(); }
   hover = null;
   const rs = rayAt(e.clientX, e.clientY), h = hitAny(rs), st = makeStroke('user');
@@ -2329,6 +2637,9 @@ panel.addEventListener('pointerdown', e => {
     bindFace(st, h.hit, null);
     const q = onPlane(h.r, st.a, st.F);
     if (q) st.pts.push(q);
+    // A press on a scored cube of the bar's top may pop it.
+    const id = q && h.pc === bar && st.a === 1 && st.sg > 0 ? seedAt(q, st.F) : -1, rings = id >= 0 ? pressPlan(id) : null;
+    if (rings) st.press = { rings, x: e.clientX, y: e.clientY, t0: nowS() };
   }
   stroke = st;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
@@ -2338,6 +2649,8 @@ panel.addEventListener('pointermove', e => {
   const st = stroke;
   if (!st) { if (e.pointerType === 'mouse') setHover(e.clientX, e.clientY); return; }
   if (st.kind !== 'user' || e.pointerId !== st.id) return;
+  // A real move turns a press into a drag.
+  if (st.press && Math.hypot(e.clientX - st.press.x, e.clientY - st.press.y) > 9) st.press = null;
   const list = e.getCoalescedEvents?.() || [];
   for (const c of list.length ? list : [e]) {
     const rs = rayAt(c.clientX, c.clientY);
@@ -2365,8 +2678,13 @@ function enter(st, rs, x, y) {
   }
   st.ray = rs;
 }
+// A tap on a scored cube pops it; a held press lets go.
 function release(e) {
-  if (stroke?.kind === 'user' && e.pointerId === stroke.id) endStroke();
+  const st = stroke;
+  if (st?.kind !== 'user' || e.pointerId !== st.id) return;
+  if (st.press && !press && st.t < 0) startPress(st.press.rings, 'tap');
+  else if (st.held && press?.mode === 'hold') { press.go = true; press.goAt = nowS(); }
+  endStroke();
 }
 panel.addEventListener('pointerup', release);
 panel.addEventListener('pointercancel', release);
@@ -2434,6 +2752,11 @@ addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); if (!e.repeat) nextCut(); }
   else if (e.key === 'n' || e.key === 'N') { if (!e.repeat) newBar(); }
   else if (e.key === 'b' || e.key === 'B') { if (!e.repeat) blow(); }
+  else if (e.key === 'Enter') {
+    // Enter pops the whole grid from its middle.
+    const rings = !e.repeat && !press && !sweep && !stroke ? gridPlan() : null;
+    if (rings) startPress(rings, 'auto');
+  }
   else if (e.key >= '1' && e.key <= String(SOAPS.length)) setSoap(+e.key - 1);
 });
 document.getElementById('fresh').addEventListener('click', () => newBar());
