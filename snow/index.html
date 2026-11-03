@@ -1,0 +1,1299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Snow globe</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the studio stage at full width, the how-to line. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --studio: oklch(0.15 0.035 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The studio is 16:9, 4:5 on phones, and dark in both themes. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--studio); cursor: grab;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage.held { cursor: grabbing; }
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark stage the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+@media (prefers-reduced-motion: reduce) { .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Snow globe</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A snow globe on a walnut base. Drag to shake it, or flick it for a big shake. Space shakes it and the arrow keys tilt it.">
+      <p class="fail" hidden>Snow globe needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>shake</dd></div>
+        <div><dt>Flick</dt><dd>big shake</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>shake</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>tilt</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('stage');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// A soft limit: linear near zero, never past m.
+const soft = (v, m) => m * Math.tanh(v / m);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const hash2 = (x, y) => {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+// Value noise that repeats every p cells along x.
+function pnoise(x, y, p) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = ((ix % p) + p) % p, b = (a + 1) % p;
+  return lerp(lerp(hash2(a, iy), hash2(b, iy), sx), lerp(hash2(a, iy + 1), hash2(b, iy + 1), sx), sy);
+}
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const enc = v => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.snow.sound', MAXV = 22, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0, slosh = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.06 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // Three seconds of white noise feed the slosh and every burst.
+    noise = ac.createBuffer(1, ac.sampleRate * 3, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    sloshInit();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the globe rests, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ptr < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place in the globe.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.002);
+  ng.gain.setTargetAtTime(0, t + 0.002, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 2.5, len);
+}
+// Inharmonic partials ring like struck glass.
+function partials(a, dst, t, f0, ratios, gains, decays, g) {
+  const gs = [];
+  let first = null;
+  ratios.forEach((r, k) => {
+    const o = a.createOscillator(), og = a.createGain();
+    o.frequency.value = f0 * r * jit(0.004);
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(gains[k] * g, t + 0.002);
+    og.gain.setTargetAtTime(0, t + 0.002, decays[k]);
+    o.connect(og).connect(dst);
+    o.start(t);
+    o.stop(t + decays[k] * 6 + 0.01);
+    gs.push(og);
+    if (!first) first = o;
+  });
+  return [first, gs];
+}
+// The liquid: one looped noise through a low band and a glassy ring.
+function sloshInit() {
+  const a = ac, src = a.createBufferSource();
+  src.buffer = noise;
+  src.loop = true;
+  const lo = a.createBiquadFilter(), hi = a.createBiquadFilter(), gl = a.createGain(), gh = a.createGain();
+  lo.type = 'bandpass'; lo.frequency.value = 400; lo.Q.value = 0.8;
+  hi.type = 'bandpass'; hi.frequency.value = 2400; hi.Q.value = 11;
+  gl.gain.value = gh.gain.value = 0;
+  src.connect(lo).connect(gl).connect(out);
+  src.connect(hi).connect(gh).connect(out);
+  src.start();
+  slosh = { lo, hi, gl, gh, wob: 0, k: 0 };
+}
+// Loudness and brightness follow the liquid's motion.
+function sloshSet(k, dt) {
+  if (!slosh) return;
+  const t = ac.currentTime, on = soundOn && ac.state === 'running';
+  k = on ? clamp(k) : 0;
+  if (k === 0 && slosh.k === 0) return;
+  slosh.k = k;
+  slosh.wob = clamp(slosh.wob * 0.92 + (Math.random() - 0.5) * dt * 26, -1, 1);
+  slosh.gl.gain.setTargetAtTime(0.5 * k * k, t, 0.05);
+  slosh.lo.frequency.setTargetAtTime(240 + 680 * k * (1 + 0.3 * slosh.wob), t, 0.04);
+  slosh.gh.gain.setTargetAtTime(0.05 * k * (0.6 + 0.4 * Math.abs(slosh.wob)), t, 0.08);
+  slosh.hi.frequency.setTargetAtTime(2100 + 1100 * k + 300 * slosh.wob, t, 0.1);
+}
+let knockAt = 0, bubbleAt = 0, tinkAt = 0;
+// A jolt: water thuds against glass, and the glass rings low.
+function knock(x, k) {
+  const a = live(), now = performance.now();
+  if (!a || voices >= MAXV || now - knockAt < 120) return;
+  knockAt = now;
+  const t = a.currentTime + LEAD, g = level() * clamp(k, 0.15, 1) * jit(0.08), d = bus(a, x);
+  burst(a, d, t, 'lowpass', 260 * jit(0.1), 0.8, 0.9 * g, 0.045, 0.25);
+  burst(a, d, t, 'bandpass', 900 * jit(0.15), 1.2, 0.25 * g, 0.03, 0.15);
+  const [o, gs] = partials(a, d, t + 0.003, 1180 * jit(0.08), [1, 2.32, 3.91], [0.05, 0.026, 0.012], [0.16, 0.08, 0.04], g);
+  track(o, ...gs, d);
+}
+// A bubble: a short sine that glides up.
+function bubble(x, k) {
+  const a = live(), now = performance.now();
+  if (!a || voices >= MAXV || now - bubbleAt < 55) return;
+  bubbleAt = now;
+  const t = a.currentTime + LEAD, f = rnd(360, 1100), d = bus(a, x);
+  const o = a.createOscillator(), g = a.createGain();
+  o.frequency.setValueAtTime(f, t);
+  o.frequency.exponentialRampToValueAtTime(f * rnd(1.6, 2.3), t + 0.07);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.07 * clamp(k, 0.2, 1) * level() * jit(0.2), t + 0.005);
+  g.gain.setTargetAtTime(0, t + 0.012, 0.024);
+  o.connect(g).connect(d);
+  o.start(t);
+  o.stop(t + 0.16);
+  track(o, g, d);
+}
+// Glitter: a faint, very high ping.
+function tinkle(x, k) {
+  const a = live(), now = performance.now();
+  if (!a || voices >= MAXV || now - tinkAt < 45) return;
+  tinkAt = now;
+  const t = a.currentTime + LEAD, d = bus(a, x);
+  const [o, gs] = partials(a, d, t, rnd(5200, 9400), [1, 1.47, 2.11], [0.035, 0.02, 0.01], [0.06, 0.035, 0.02], level() * clamp(k, 0.2, 1) * jit(0.3));
+  track(o, ...gs, d);
+}
+
+/* ---------- the globe's shape, in dome radii ---------- */
+// The floor inside is y = 0; the dome's centre sits at CY.
+const CY = 0.55, R_IN = 0.965, LIM = R_IN - 0.016, BASE_H = 0.5, BASE_R = 1.11, HUB = BASE_H + CY;
+const CAB = { x: 0.14, z: 0.1, a: -0.45, y: 0, W: 0.3, D: 0.26, EH: 0.17, RH: 0.29 };
+const TREES = [
+  { x: -0.44, z: -0.2, h: 0.8, r: 0.25, s: 1.3 },
+  { x: -0.25, z: 0.38, h: 0.44, r: 0.16, s: 2.1 },
+  { x: 0.5, z: -0.3, h: 0.6, r: 0.2, s: 3.7 },
+];
+function hill0(x, z) {
+  const h = 0.05 + 0.26 * Math.exp(-((x + 0.2) ** 2 + (z + 0.3) ** 2) / 0.3)
+    + 0.1 * Math.exp(-((x - 0.45) ** 2 + (z + 0.25) ** 2) / 0.09)
+    + 0.012 * Math.sin(x * 8.3 + 1.1) * Math.sin(z * 6.7 - 0.5);
+  return h * (1 - 0.55 * sstep(0.5, 0.85, Math.hypot(x, z)));
+}
+CAB.y = hill0(CAB.x, CAB.z);
+// Cabin space: x across the gable, z out of the front.
+function toCab(x, z) {
+  const dx = x - CAB.x, dz = z - CAB.z, c = Math.cos(CAB.a), s = Math.sin(CAB.a);
+  return [dx * c - dz * s, dx * s + dz * c];
+}
+// The hill flattens into a pad under the cabin.
+function hillH(x, z) {
+  const [lx, lz] = toCab(x, z);
+  const d = Math.max(Math.abs(lx) / (CAB.W / 2 + 0.04), Math.abs(lz) / (CAB.D / 2 + 0.04));
+  return lerp(hill0(x, z), CAB.y, sstep(1.6, 1.0, d));
+}
+// Each tree is a trunk and four drooping tiers.
+function tiers(T) {
+  const trunk = 0.02 + 0.07 * (T.h / 0.8), span = T.h - trunk, out = [];
+  for (let i = 0; i < 4; i++) out.push({ yb: trunk + i * 0.2 * span, h: 0.4 * span * (1 - 0.1 * i), rb: T.r * (1 - 0.2 * i), lip: 0.018 * T.r / 0.25 });
+  return { trunk, list: out };
+}
+// Height of a tier's outer face at radius r from its axis.
+const tierY = (t, r) => t.lip + (t.h - t.lip) * Math.max(0, 1 - r / (0.96 * t.rb)) ** 1.1;
+TREES.forEach(T => { T.y = hillH(T.x, T.z) - 0.012; T.t = tiers(T); });
+
+/* ---------- top surfaces: where snow comes to rest ---------- */
+const HN = 128, HX = 0.98, HC = (2 * HX) / (HN - 1);
+const HM = new Float32Array(HN * HN), NYM = new Float32Array(HN * HN), GXM = new Float32Array(HN * HN), GZM = new Float32Array(HN * HN);
+function topAt(x, z) {
+  let y = hillH(x, z);
+  for (const T of TREES) {
+    const r = Math.hypot(x - T.x, z - T.z);
+    for (const t of T.t.list) if (r < t.rb) y = Math.max(y, T.y + t.yb + tierY(t, r));
+  }
+  const [lx, lz] = toCab(x, z);
+  if (Math.abs(lx) < CAB.W / 2 + 0.045 && Math.abs(lz) < CAB.D / 2 + 0.04) y = Math.max(y, CAB.y + CAB.RH + 0.078 - Math.abs(lx) * 0.8);
+  if (Math.abs(lx - 0.075) < 0.032 && Math.abs(lz + 0.05) < 0.032) y = Math.max(y, CAB.y + 0.366);
+  return y;
+}
+function buildTops() {
+  for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) HM[j * HN + i] = topAt(-HX + i * HC, -HX + j * HC);
+  for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) {
+    const k = j * HN + i, i0 = Math.max(0, i - 1), i1 = Math.min(HN - 1, i + 1), j0 = Math.max(0, j - 1), j1 = Math.min(HN - 1, j + 1);
+    const gx = (HM[j * HN + i1] - HM[j * HN + i0]) / ((i1 - i0) * HC), gz = (HM[j1 * HN + i] - HM[j0 * HN + i]) / ((j1 - j0) * HC);
+    GXM[k] = gx;
+    GZM[k] = gz;
+    NYM[k] = 1 / Math.sqrt(1 + gx * gx + gz * gz);
+  }
+}
+function hAt(x, z) {
+  const fx = clamp((x + HX) / HC, 0, HN - 1.001), fz = clamp((z + HX) / HC, 0, HN - 1.001);
+  const ix = fx | 0, iz = fz | 0, tx = fx - ix, tz = fz - iz, k = iz * HN + ix;
+  return (HM[k] * (1 - tx) + HM[k + 1] * tx) * (1 - tz) + (HM[k + HN] * (1 - tx) + HM[k + HN + 1] * tx) * tz;
+}
+const cellOf = (x, z) => Math.round(clamp((z + HX) / HC, 0, HN - 1)) * HN + Math.round(clamp((x + HX) / HC, 0, HN - 1));
+// Fallen flakes pile up a little, cell by cell.
+const PN = 64, PC = (2 * HX) / PN, PDY = 0.0032, PMAX = 14;
+const PILE = new Uint16Array(PN * PN);
+const pileOf = (x, z) => clamp(Math.floor((z + HX) / PC), 0, PN - 1) * PN + clamp(Math.floor((x + HX) / PC), 0, PN - 1);
+
+/* ---------- the liquid: curl noise, swirl and slosh ---------- */
+// A divergence-free field on a periodic grid, from random waves.
+const GN = 32, GM = GN - 1, CURL = new Float32Array(GN * GN * GN * 3);
+function buildCurl() {
+  const R = rng(20261102), modes = [];
+  for (let c = 0; c < 3; c++) for (let m = 0; m < 7; m++) {
+    let k;
+    do { k = [0, 1, 2].map(() => Math.round(R() * 6 - 3)); } while (!k[0] && !k[1] && !k[2]);
+    modes.push({ c, k, a: 1 / Math.hypot(...k) ** 1.2, p: R() * TAU });
+  }
+  let sum = 0;
+  for (let z = 0; z < GN; z++) for (let y = 0; y < GN; y++) for (let x = 0; x < GN; x++) {
+    // Partial derivatives of the potential: d[c][j] = dPsi_c / dx_j.
+    const d = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (const { c, k, a, p } of modes) {
+      const w = a * TAU * Math.cos(TAU * (k[0] * x + k[1] * y + k[2] * z) / GN + p);
+      d[c][0] += w * k[0]; d[c][1] += w * k[1]; d[c][2] += w * k[2];
+    }
+    const o = ((z * GN + y) * GN + x) * 3;
+    CURL[o] = d[2][1] - d[1][2];
+    CURL[o + 1] = d[0][2] - d[2][0];
+    CURL[o + 2] = d[1][0] - d[0][1];
+    sum += CURL[o] ** 2 + CURL[o + 1] ** 2 + CURL[o + 2] ** 2;
+  }
+  const k = 1 / Math.sqrt(sum / (GN * GN * GN));
+  for (let i = 0; i < CURL.length; i++) CURL[i] *= k;
+}
+// Trilinear sample, scaled by amp and added into U.
+const U = new Float32Array(3);
+function curlAdd(x, y, z, amp) {
+  x *= GN; y *= GN; z *= GN;
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz;
+  const x0 = ix & GM, x1 = (ix + 1) & GM, y0 = (iy & GM) * GN, y1 = ((iy + 1) & GM) * GN, z0 = (iz & GM) * GN * GN, z1 = ((iz + 1) & GM) * GN * GN;
+  const a = (z0 + y0 + x0) * 3, b = (z0 + y0 + x1) * 3, c = (z0 + y1 + x0) * 3, d = (z0 + y1 + x1) * 3;
+  const e = (z1 + y0 + x0) * 3, f = (z1 + y0 + x1) * 3, g = (z1 + y1 + x0) * 3, h = (z1 + y1 + x1) * 3;
+  const gx = 1 - fx, gy = 1 - fy, gz = 1 - fz;
+  const wa = gx * gy * gz * amp, wb = fx * gy * gz * amp, wc = gx * fy * gz * amp, wd = fx * fy * gz * amp;
+  const we = gx * gy * fz * amp, wf = fx * gy * fz * amp, wg = gx * fy * fz * amp, wh = fx * fy * fz * amp;
+  for (let k = 0; k < 3; k++) {
+    U[k] += CURL[a + k] * wa + CURL[b + k] * wb + CURL[c + k] * wc + CURL[d + k] * wd
+      + CURL[e + k] * we + CURL[f + k] * wf + CURL[g + k] * wg + CURL[h + k] * wh;
+  }
+}
+// E: turbulence energy. S: bulk slosh. W: swirl. D: field drift.
+const LQ = { E: 0, S: [0, 0, 0], W: [0, 0, 0], D: [0.13, 0.41, 0.77] };
+const TURB = 1.05, FQ = 0.42, FQ2 = 0.97;
+// Liquid velocity at a point in globe space, written into U.
+function flow(px, py, pz, octaves) {
+  const rx = px, ry = py - CY, rz = pz, E = LQ.E, D = LQ.D, S = LQ.S, W = LQ.W;
+  U[0] = W[1] * rz - W[2] * ry + S[0];
+  U[1] = W[2] * rx - W[0] * rz + S[1];
+  U[2] = W[0] * ry - W[1] * rx + S[2];
+  if (E > 0.002) {
+    curlAdd(rx * FQ + D[0], ry * FQ + D[1], rz * FQ + D[2], TURB * E);
+    if (octaves > 1) curlAdd(rx * FQ2 - D[2], ry * FQ2 + D[0], rz * FQ2 - D[1], TURB * E * 0.45);
+  }
+  // Near the glass the liquid runs along it, not into it.
+  const rr = Math.sqrt(rx * rx + ry * ry + rz * rz) || 1, un = (U[0] * rx + U[1] * ry + U[2] * rz) / rr;
+  if (un > 0) {
+    const w = sstep(0.55, 0.95, rr) * un / rr;
+    U[0] -= w * rx; U[1] -= w * ry; U[2] -= w * rz;
+  }
+}
+
+/* ---------- flakes ---------- */
+const NS = 4000, NG = 180, N = NS + NG;
+const P = new Float32Array(N * 3), V = new Float32Array(N * 3), O = new Float32Array(N * 2), SPIN = new Float32Array(N * 2);
+const SEED = new Float32Array(N * 4), WS = new Float32Array(N), TH = new Float32Array(N), AGE = new Float32Array(N);
+const FREE = new Uint8Array(N), PCELL = new Int32Array(N);
+const GLOC = [0, -1, 0];
+let moving = 0, glitterMoving = 0;
+// A flake comes to rest on the surface below it.
+function settle(i, x, z) {
+  const k = cellOf(x, z), pc = pileOf(x, z);
+  const n = PILE[pc];
+  if (n < PMAX) PILE[pc] = n + 1;
+  PCELL[i] = pc;
+  P[i * 3] = x;
+  P[i * 3 + 1] = hAt(x, z) + n * PDY + SEED[i * 4] * 0.4;
+  P[i * 3 + 2] = z;
+  V[i * 3] = V[i * 3 + 1] = V[i * 3 + 2] = 0;
+  // It lies along the surface, a little askew.
+  O[i * 2] = Math.acos(NYM[k]) + rnd(-0.4, 0.4);
+  O[i * 2 + 1] = Math.atan2(-GZM[k], -GXM[k]) + rnd(-0.3, 0.3);
+  FREE[i] = 0;
+  AGE[i] = 0;
+}
+function seedFlakes() {
+  for (let i = 0; i < N; i++) {
+    const glit = i >= NS;
+    const big = !glit && Math.random() < 0.05;
+    SEED[i * 4] = glit ? rnd(0.02, 0.03) : big ? rnd(0.028, 0.04) : rnd(0.013, 0.024);
+    SEED[i * 4 + 1] = glit ? 1 : 0;
+    SEED[i * 4 + 2] = Math.random();
+    SEED[i * 4 + 3] = Math.random();
+    WS[i] = glit ? rnd(0.12, 0.19) : rnd(0.07, 0.14) * (big ? 1.4 : 1);
+    TH[i] = glit ? rnd(0.08, 0.3) : rnd(0.12, 0.5);
+    SPIN[i * 2] = rnd(2, 7) * (Math.random() < 0.5 ? -1 : 1) * (glit ? 1.6 : 1);
+    SPIN[i * 2 + 1] = rnd(-3, 3);
+    // Snow falls evenly over the floor, then slides off steep faces.
+    let x, z;
+    for (let tries = 0; tries < 50; tries++) {
+      const r = 0.8 * Math.sqrt(Math.random()), a = Math.random() * TAU;
+      x = r * Math.cos(a);
+      z = r * Math.sin(a);
+      if (Math.hypot(x, hAt(x, z) + 0.03 - CY, z) < LIM - 0.02) break;
+    }
+    for (let s = 0; s < 60; s++) {
+      const k = cellOf(x, z);
+      if (NYM[k] > 0.6) break;
+      const g = Math.hypot(GXM[k], GZM[k]) || 1;
+      x -= (GXM[k] / g) * 0.01;
+      z -= (GZM[k] / g) * 0.01;
+    }
+    settle(i, x, z);
+  }
+}
+function stepFlakes(dt) {
+  const kr = 1 - Math.exp(-dt * 6), ws = reduce ? 1.8 : 1;
+  const stir = LQ.E > 0.03 || Math.hypot(...LQ.S) > 0.06 || Math.hypot(...LQ.W) > 0.12;
+  const [gx, gy, gz] = GLOC;
+  moving = 0;
+  glitterMoving = 0;
+  for (let i = 0; i < N; i++) {
+    const j = i * 3;
+    let px = P[j], py = P[j + 1], pz = P[j + 2];
+    if (!FREE[i]) {
+      if (!stir) continue;
+      // Exposed flakes feel more of the flow.
+      flow(px, py, pz, 1);
+      const q = Math.hypot(U[0], U[1], U[2]) * (0.7 + 0.6 * clamp(py / 0.6)), th = TH[i];
+      if (q < th || Math.random() > (q - th) / (0.5 * th) * dt * 10) continue;
+      FREE[i] = 1;
+      if (PILE[PCELL[i]] > 0) PILE[PCELL[i]]--;
+      V[j] = U[0]; V[j + 1] = U[1] + 0.05; V[j + 2] = U[2];
+      AGE[i] = 0;
+    }
+    moving++;
+    if (i >= NS) glitterMoving++;
+    flow(px, py, pz, 2);
+    const w = WS[i] * ws * (AGE[i] > 30 ? 3 : 1);
+    V[j] += (U[0] + gx * w - V[j]) * kr;
+    V[j + 1] += (U[1] + gy * w - V[j + 1]) * kr;
+    V[j + 2] += (U[2] + gz * w - V[j + 2]) * kr;
+    px += V[j] * dt; py += V[j + 1] * dt; pz += V[j + 2] * dt;
+    AGE[i] += dt;
+    // Tumbling quickens with speed.
+    const sp = Math.hypot(V[j], V[j + 1], V[j + 2]);
+    O[i * 2] += SPIN[i * 2] * dt * (0.35 + 2.5 * sp);
+    O[i * 2 + 1] += SPIN[i * 2 + 1] * dt * (0.35 + 2.5 * sp);
+    // The glass holds every flake in.
+    const rx = px, ry = py - CY, rz = pz, rr = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    if (rr > LIM) {
+      const k = LIM / rr;
+      px = rx * k; py = ry * k + CY; pz = rz * k;
+      const vn = (V[j] * rx + V[j + 1] * ry + V[j + 2] * rz) / rr;
+      if (vn > 0) { V[j] -= (vn * rx) / rr; V[j + 1] -= (vn * ry) / rr; V[j + 2] -= (vn * rz) / rr; }
+    }
+    const hy = hAt(px, pz) + PILE[pileOf(px, pz)] * PDY + SEED[i * 4] * 0.4;
+    if (py < hy) {
+      py = hy;
+      const k = cellOf(px, pz);
+      const fl = Math.hypot(U[0], U[1], U[2]);
+      if (NYM[k] < 0.6) {
+        // Steep faces shed snow downhill.
+        const g = Math.hypot(GXM[k], GZM[k]) || 1;
+        V[j] = V[j] * 0.5 - (GXM[k] / g) * 0.25;
+        V[j + 2] = V[j + 2] * 0.5 - (GZM[k] / g) * 0.25;
+        if (V[j + 1] < 0) V[j + 1] = 0;
+      } else if (fl < TH[i] * 0.9 + 0.03) {
+        settle(i, px, pz);
+        moving--;
+        if (i >= NS) glitterMoving--;
+        continue;
+      } else if (V[j + 1] < 0) V[j + 1] *= -0.2;
+    }
+    P[j] = px; P[j + 1] = py; P[j + 2] = pz;
+  }
+}
+
+/* ---------- the globe in the hand: springs ---------- */
+// x, y: offset from rest. rz, rx: tilt. tx, ty: where the hand wants it.
+const G = { x: 0, y: 0, vx: 0, vy: 0, rz: 0, wz: 0, rx: 0, wx: 0, tx: 0, ty: 0, ax: 0, ay: 0, az: 0, arx: 0, lift: 0 };
+const held = new Set();
+let shakeT = 0, shakeAge = 0, maxX = 0.4, lastAm = 0;
+function stepGlobe(dt) {
+  const m = reduce ? 0.55 : 1;
+  let tx = ptr >= 0 ? G.tx : 0, ty = ptr >= 0 ? G.ty : 0;
+  if (shakeT > 0) {
+    shakeAge += dt;
+    shakeT -= dt;
+    const env = sstep(0, 0.08, shakeAge) * sstep(0, 0.25, shakeT);
+    tx += 0.28 * m * Math.sin(TAU * 3.4 * shakeAge) * env;
+    ty += 0.05 * m * (1 - Math.cos(TAU * 6.8 * shakeAge)) * env;
+  }
+  const k = 240, c = 2 * Math.sqrt(k) * 0.4;
+  G.ax = k * (tx - G.x) - c * G.vx;
+  G.ay = k * (ty - G.y) - c * G.vy;
+  G.vx += G.ax * dt; G.x += G.vx * dt;
+  G.vy += G.ay * dt; G.y += G.vy * dt;
+  // The table stops the base; a hard landing knocks.
+  if (G.y < 0) {
+    if (G.vy < -0.8) { knock(G.x / 2, -G.vy / 4); LQ.E = Math.min(1.7, LQ.E - G.vy * 0.08); LQ.S[1] += G.vy * 0.3; }
+    G.y = 0;
+    if (G.vy < 0) G.vy *= -0.15;
+  }
+  const kz = (held.has('ArrowLeft') ? 1 : 0) - (held.has('ArrowRight') ? 1 : 0);
+  const kx = (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0);
+  const rzT = soft(G.vx * 0.13, 0.42) * m + kz * 0.24 * m, rxT = soft(G.vy * 0.04, 0.12) * m + kx * 0.2 * m;
+  const kt = 150, ct = 2 * Math.sqrt(kt) * 0.3;
+  G.az = kt * (rzT - G.rz) - ct * G.wz;
+  G.arx = kt * (rxT - G.rx) - ct * G.wx;
+  G.wz += G.az * dt; G.rz += G.wz * dt;
+  G.wx += G.arx * dt; G.rx += G.wx * dt;
+  // Tipped, it rocks on the rim of its base.
+  G.lift = BASE_R * Math.sin(Math.min(0.6, Math.hypot(G.rz, G.rx)));
+  const still = Math.abs(G.x - tx) + Math.abs(G.y - ty) + Math.abs(G.vx) + Math.abs(G.vy) + Math.abs(G.rz - rzT) + Math.abs(G.wz) + Math.abs(G.rx - rxT) + Math.abs(G.wx);
+  return still > 2e-4 || shakeT > 0;
+}
+// Jolts and turns stir the liquid; it calms over a few seconds.
+function stepLiquid(dt) {
+  const m = reduce ? 0.6 : 1;
+  // The liquid lags the glass: it feels the globe's acceleration reversed.
+  const ax = G.ax - G.az * HUB, ay = G.ay, az = G.arx * HUB;
+  const am = Math.hypot(ax, ay, az);
+  const E0 = LQ.E;
+  LQ.E += 0.018 * am * dt * m * Math.max(0, 1 - LQ.E / 1.7);
+  LQ.E *= Math.exp(-dt / (reduce ? 1.4 : 2.4));
+  const dS = Math.exp(-dt / 0.45), dW = Math.exp(-dt / 2.2), S = LQ.S, W = LQ.W;
+  S[0] = (S[0] - 0.2 * ax * dt * m) * dS;
+  S[1] = (S[1] - 0.2 * ay * dt * m) * dS;
+  S[2] = (S[2] - 0.2 * az * dt * m) * dS;
+  // Side jolts roll the liquid; circling stirs a whirl.
+  const circ = (G.vx * ay - G.vy * ax) * 0.02;
+  W[0] = (W[0] - az * 0.15 * dt * m - G.arx * 0.4 * dt * m) * dW;
+  W[1] = (W[1] + circ * 0.6 * dt * m) * dW;
+  W[2] = (W[2] + ax * 0.15 * dt * m + circ * dt * m - G.az * 0.4 * dt * m) * dW;
+  const wl = Math.hypot(...W);
+  if (wl > 3.5) for (let k = 0; k < 3; k++) W[k] *= 3.5 / wl;
+  const sl = Math.hypot(...S);
+  if (sl > 1.6) for (let k = 0; k < 3; k++) S[k] *= 1.6 / sl;
+  const r = dt * (0.05 + 0.3 * LQ.E);
+  LQ.D[0] += r * 0.37; LQ.D[1] += r * 0.53; LQ.D[2] -= r * 0.29;
+  if (LQ.E < 0.002) LQ.E = 0;
+  // A sharp jolt thuds; a stirred liquid bubbles.
+  if (am > 55 && am > lastAm * 1.05 && LQ.E - E0 > -1) knock(G.x / 2, am / 260);
+  lastAm = am;
+  if (Math.random() < LQ.E * dt * 5) bubble(rnd(-0.5, 0.5), LQ.E);
+  return LQ.E > 0 || sl > 0.004 || wl > 0.01;
+}
+// A flick or a fling: a burst of energy in its direction.
+function bigShake(dx, dy, k) {
+  const m = reduce ? 0.6 : 1;
+  G.vx += dx * (2.4 + 3 * k) * m;
+  G.vy += Math.max(0, dy) * (1.4 + 2 * k) * m;
+  G.wz += -dx * (2 + 2 * k) * m;
+  LQ.E = Math.min(1.7, LQ.E + (0.7 + 0.5 * k) * m);
+  LQ.S[0] -= dx * 1.2 * m;
+  LQ.S[1] -= dy * 1.2 * m;
+  LQ.W[1] += rnd(-1.6, 1.6) * m;
+  LQ.W[2] -= dx * 1.4 * m;
+  knock(dx * 0.5, 0.6 + 0.4 * k);
+  bubble(dx * 0.4, 1);
+  wake();
+}
+
+/* ---------- shaders ---------- */
+const FLAKE_VS = `
+attribute vec2 aOri;
+attribute vec4 aSeed;
+uniform float uPx;
+uniform vec3 uKeyD, uKeyC, uRimD, uRimC, uAmb, uLampP, uLampC;
+varying vec3 vCol, vShape;
+vec3 iri(float t) { return 0.6 + 0.4 * cos(6.2832 * (t + vec3(0.0, 0.33, 0.67))); }
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  // A flake is a tiny disc; aOri is its normal's tilt and turn.
+  vec3 n = normalize(mat3(modelMatrix) * vec3(sin(aOri.x) * cos(aOri.y), cos(aOri.x), sin(aOri.x) * sin(aOri.y)));
+  vec3 V = normalize(cameraPosition - w.xyz);
+  float nv = dot(n, V);
+  if (nv < 0.0) { n = -n; nv = -nv; }
+  float glit = aSeed.y;
+  vec3 alb = mix(vec3(0.93, 0.96, 1.0), mix(iri(aSeed.z + nv * 0.7), vec3(1.0, 0.8, 0.45), 0.25), glit);
+  float kd = 0.35 + 0.65 * abs(dot(n, uKeyD));
+  // Thin flakes glow with light from behind.
+  float back = pow(max(dot(-V, uRimD), 0.0), 2.0) * 0.7 + 0.3 * abs(dot(n, uRimD));
+  vec3 lp = uLampP - w.xyz;
+  vec3 lamp = uLampC / (1.0 + 90.0 * dot(lp, lp));
+  vec3 c = alb * (uAmb + uKeyC * kd + uRimC * back * 0.6 + lamp);
+  float sp = pow(max(dot(n, normalize(uKeyD + V)), 0.0), mix(60.0, 110.0, glit));
+  float rs = pow(max(dot(n, normalize(uRimD + V)), 0.0), 40.0);
+  c += (uKeyC * sp * mix(3.0, 16.0, glit) + uRimC * rs * mix(1.0, 5.0, glit)) * mix(vec3(1.0), alb, glit);
+  vCol = c;
+  vec4 mv = viewMatrix * w;
+  gl_Position = projectionMatrix * mv;
+  float s = aSeed.x * uPx / -mv.z;
+  gl_PointSize = max(s, 1.6);
+  // The disc foreshortens across its normal.
+  vec3 vn = mat3(viewMatrix) * n;
+  float l = length(vn.xy);
+  vShape = vec3(l > 1e-3 ? vn.xy / l : vec2(1.0, 0.0), max(abs(vn.z), mix(0.75, 0.3, smoothstep(2.0, 7.0, s))));
+}`;
+const FLAKE_FS = `
+varying vec3 vCol, vShape;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  q.y = -q.y;
+  float a = dot(q, vShape.xy) / vShape.z, b = dot(q, vec2(-vShape.y, vShape.x)), r = a * a + b * b;
+  if (r > 1.0) discard;
+  gl_FragColor = vec4(vCol, smoothstep(1.0, 0.45, r));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+const WORLD_VS = `
+varying vec3 vW;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const DITHER = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
+// One curved sweep: floor into wall, lit like a small studio.
+const SWEEP_FS = `
+uniform vec3 uBase, uWall, uPool, uHalo, uCool, uCaustic;
+uniform vec3 uGlobe;
+uniform vec2 uSh;
+varying vec3 vW;
+${DITHER}
+void main() {
+  float floorK = 1.0 - smoothstep(0.0, 0.6, vW.y);
+  vec3 col = mix(uWall, uBase, floorK);
+  col = mix(col, uWall * 0.7, smoothstep(5.0, 14.0, vW.y));
+  // A warm pool of key light lies on the floor.
+  vec2 pq = (vW.xz - vec2(-0.5, 0.6)) / vec2(3.4, 2.3);
+  col += uPool * exp(-dot(pq, pq)) * floorK;
+  // A violet halo glows on the wall behind the globe.
+  vec2 hq = (vW.xy - vec2(0.3, 2.0)) / vec2(4.6, 3.4);
+  col += uHalo * exp(-dot(hq, hq)) * smoothstep(-2.5, -6.0, vW.z);
+  // The rim light spills cool on the right.
+  vec2 cq = (vec2(vW.x, vW.y + vW.z * 0.4) - vec2(5.5, 1.5)) / vec2(4.0, 5.0);
+  col += uCool * exp(-dot(cq, cq));
+  if (vW.y < 0.05) {
+    vec2 p = vW.xz - uGlobe.xy;
+    float lift = uGlobe.z, d = length(p);
+    // Contact shade hugs the base and fades as it lifts.
+    float ao = exp(-max(d - 1.06, 0.0) * 7.0 / (1.0 + lift * 5.0)) * (1.0 - smoothstep(0.0, 0.5, lift) * 0.6);
+    // The cast shadow runs from the base away from the key light.
+    vec2 b = uSh * (1.05 + lift);
+    float h = clamp(dot(p, b) / dot(b, b), 0.0, 1.0);
+    float sd = length(p - b * h);
+    float sh = 1.0 - smoothstep(0.55, 1.35 + lift * 0.6, sd);
+    col *= 1.0 - 0.8 * max(ao * 0.85, sh * 0.62);
+    // The water ball focuses key light into a warm spot.
+    vec2 ca = normalize(uSh), cp = p - uSh * (1.2 + lift);
+    vec2 cr = vec2(dot(cp, ca), dot(cp, vec2(-ca.y, ca.x))) / vec2(0.5, 0.26);
+    col += uCaustic * exp(-dot(cr, cr)) / (1.0 + lift * 4.0);
+  }
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor.rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}`;
+const RIM_VS = `
+varying vec3 vN, vW;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
+  vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+// The dome's edge: a faint fresnel rim, warm toward the key light.
+const RIM_FS = `
+uniform vec3 uCool, uWarm, uKeyD;
+uniform float uK;
+varying vec3 vN, vW;
+void main() {
+  vec3 V = normalize(cameraPosition - vW), N = normalize(vN);
+  float f = pow(1.0 - abs(dot(N, V)), 3.5);
+  vec3 c = mix(uCool, uWarm, smoothstep(-0.3, 0.6, dot(N, uKeyD))) * f * uK;
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
+/* ---------- rendering ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, composer = null, bloom = null;
+let rig = null, globe = null, flakeGeo = null, flakeMat = null, sweepMat = null, key = null, lamp = null;
+let ready = false, lowDpr = false, wpp = 0.004, camDist = 8;
+const FOV = 26, AIM = new Float32Array([0, 1.0, 0]), ELEV = 11 * D2R;
+const KEY_D = [-0.62, 0.66, 0.42], RIM_D = [0.74, 0.32, -0.6];
+let tq = null, tv = null, tw = null;
+
+function col(L, C, h, k = 1) {
+  const c = linear(L, C, h);
+  return new THREE.Color().setRGB(c[0] * k, c[1] * k, c[2] * k, THREE.LinearSRGBColorSpace);
+}
+// A turned base reads its grain from a tiled walnut texture.
+function walnut() {
+  const W = 512, H = 256, cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d'), img = g.createImageData(W, H), d = img.data;
+  const C = [linear(0.25, 0.045, 45), linear(0.35, 0.062, 52), linear(0.47, 0.08, 62)];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const u = x / W, v = y / H;
+    const warp = pnoise(u * 8, v * 3, 8) * 0.9 + pnoise(u * 24, v * 9, 24) * 0.3;
+    const band = (0.5 + 0.5 * Math.sin((u * 34 + warp * 2.4) * TAU)) ** 2.4;
+    const fig = pnoise(u * 64, v * 30, 64), pore = pnoise(u * 256, v * 5, 256);
+    const t = clamp(0.62 + 0.45 * (pnoise(u * 5, v * 2, 5) - 0.5) - 0.5 * band + 0.25 * (fig - 0.5) - (pore > 0.78 ? 0.18 : 0));
+    const c = t < 0.5 ? C[0].map((a, k) => lerp(a, C[1][k], t * 2)) : C[1].map((a, k) => lerp(a, C[2][k], (t - 0.5) * 2));
+    const o = (y * W + x) * 4;
+    d[o] = enc(c[0]); d[o + 1] = enc(c[1]); d[o + 2] = enc(c[2]); d[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+// The studio the glass and brass reflect: dark, two softboxes, a ceiling.
+function studio(pm) {
+  const s = new THREE.Scene();
+  s.add(new THREE.Mesh(new THREE.SphereGeometry(40, 32, 16), new THREE.MeshBasicMaterial({ color: col(0.13, 0.035, 275), side: THREE.BackSide })));
+  const box = (w, h, c, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }));
+    m.position.set(x, y, z);
+    m.lookAt(0, 1, 0);
+    s.add(m);
+  };
+  box(8, 6, col(0.9, 0.07, 70, 8), KEY_D[0] * 18, KEY_D[1] * 18, KEY_D[2] * 18);
+  box(2.4, 14, col(0.85, 0.1, 235, 7), RIM_D[0] * 18, RIM_D[1] * 18 + 2, RIM_D[2] * 18);
+  box(10, 10, col(0.8, 0.02, 260, 0.7), 0, 22, 0);
+  box(30, 4, col(0.45, 0.12, 300, 1.2), 0, 4, -24);
+  const tex = pm.fromScene(s, 0.02).texture;
+  s.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  return tex;
+}
+function sweepGeo() {
+  const prof = [];
+  for (let z = 16; z > -3; z -= 0.5) prof.push([z, 0]);
+  for (let i = 0; i <= 16; i++) { const a = (i / 16) * (Math.PI / 2); prof.push([-3 - Math.sin(a) * 4, 4 - Math.cos(a) * 4]); }
+  for (let y = 7; y <= 34; y += 3) prof.push([-7, y]);
+  const nx = 40, X = 44, pos = [], idx = [];
+  for (const [z, y] of prof) for (let i = 0; i <= nx; i++) pos.push(-X + (2 * X * i) / nx, y, z);
+  for (let j = 0; j < prof.length - 1; j++) for (let i = 0; i < nx; i++) {
+    const a = j * (nx + 1) + i, b = a + nx + 1;
+    idx.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
+}
+// The base: a lathe profile with a bead, a cove and an ogee foot.
+function baseGeo() {
+  const pr = [[0, -0.035], [0.6, -0.035], [0.86, -0.04], [0.895, -0.06], [0.912, -0.09], [0.905, -0.12], [0.888, -0.15],
+    [0.9, -0.19], [0.95, -0.25], [1.02, -0.33], [1.075, -0.395], [1.1, -0.425], [1.112, -0.455], [1.105, -0.482], [1.085, -0.497], [1.04, -0.5], [0, -0.5]];
+  const curve = new THREE.SplineCurve(pr.map(([r, y]) => new THREE.Vector2(r, y)));
+  const pts = curve.getPoints(110).map(p => new THREE.Vector2(Math.max(0, p.x), p.y)).reverse();
+  return new THREE.LatheGeometry(pts, 128);
+}
+// The brass band hugs the foot of the glass.
+function collarGeo() {
+  const pr = [[0.874, 0.074], [0.888, 0.082], [0.906, 0.072], [0.919, 0.044], [0.923, 0.0], [0.92, -0.028], [0.905, -0.046], [0.885, -0.05]];
+  const curve = new THREE.SplineCurve(pr.map(([r, y]) => new THREE.Vector2(r, y)));
+  return new THREE.LatheGeometry(curve.getPoints(40).reverse(), 128);
+}
+function hillGeo() {
+  const rings = 52, segs = 168, R = 0.84, pos = [], idx = [];
+  pos.push(0, hillH(0, 0), 0);
+  for (let j = 1; j <= rings; j++) {
+    const r = R * (j / rings) ** 0.85;
+    for (let i = 0; i < segs; i++) {
+      const a = (i / segs) * TAU, x = r * Math.cos(a), z = r * Math.sin(a);
+      pos.push(x, hillH(x, z) - (j === rings ? 0.02 : 0), z);
+    }
+  }
+  for (let i = 0; i < segs; i++) idx.push(0, 1 + ((i + 1) % segs), 1 + i);
+  for (let j = 1; j < rings; j++) for (let i = 0; i < segs; i++) {
+    const a = 1 + (j - 1) * segs + i, b = 1 + (j - 1) * segs + ((i + 1) % segs), c = a + segs, d = b + segs;
+    idx.push(a, b, c, b, d, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+// A tier: underside, rounded lip, then the drooping cone to its tip.
+function tierGeo(t, seed, green, dark, snow) {
+  const pts = [new THREE.Vector2(t.rb * 0.38, t.lip * 2.6), new THREE.Vector2(t.rb * 0.86, t.lip * 0.3), new THREE.Vector2(t.rb, t.lip * 0.45), new THREE.Vector2(t.rb * 0.985, t.lip * 1.1)];
+  for (let i = 0; i <= 16; i++) {
+    const r = 0.96 * t.rb * (1 - i / 16);
+    pts.push(new THREE.Vector2(r, tierY(t, r)));
+  }
+  const g = new THREE.LatheGeometry(pts, 44), p = g.attributes.position, nrm = g.attributes.normal, c = [];
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
+    // Snow caps the top of each tier with a wavy, drippy edge.
+    const line = 0.5 + 0.11 * Math.sin(a * 6 + seed) + 0.05 * Math.sin(a * 13 + seed * 2.3);
+    const k = nrm.getY(i) > 0.2 ? sstep(line - 0.05, line + 0.05, y / t.h) : 0;
+    const base = nrm.getY(i) < 0 ? dark : green;
+    c.push(lerp(base.r, snow.r, k), lerp(base.g, snow.g, k), lerp(base.b, snow.b, k));
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+  return g;
+}
+function cabin(M) {
+  const R = THREE, g = new R.Group(), { W, D, EH, RH } = CAB;
+  const add = (geo, mat, x, y, z, rz = 0, ry = 0) => {
+    const m = new R.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.set(0, ry, rz);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+  const shape = new R.Shape([new R.Vector2(-W / 2, 0), new R.Vector2(W / 2, 0), new R.Vector2(W / 2, EH), new R.Vector2(0, RH), new R.Vector2(-W / 2, EH)]);
+  const body = new R.ExtrudeGeometry(shape, { depth: D - 0.02, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 3, curveSegments: 1 });
+  body.translate(0, 0, -(D - 0.02) / 2);
+  add(body, M.wall, 0, 0, 0);
+  // Two roof slabs, each under a thick, soft blanket of snow.
+  const a = Math.atan2(RH - EH, W / 2), ux = Math.cos(a), uy = Math.sin(a), ov = 0.05, t = 0.022, len = Math.hypot(W / 2, RH - EH) + ov;
+  for (const s of [-1, 1]) {
+    const mx = (s * W) / 4, my = (EH + RH) / 2, nx = s * uy, ny = ux;
+    const cx = mx + (s * ux * ov) / 2 + nx * (t / 2 + 0.006), cy = my - (uy * ov) / 2 + ny * (t / 2 + 0.006);
+    add(new RoundedBox(len, t, D + 0.07, 2, 0.008), M.roof, cx, cy, 0, -s * a);
+    add(new RoundedBox(len - 0.01, 0.036, D + 0.06, 3, 0.016), M.snow, cx + nx * 0.026, cy + ny * 0.026, 0, -s * a);
+  }
+  const ridge = add(new R.CapsuleGeometry(0.021, D + 0.02, 4, 12), M.snow, 0, RH + 0.058, 0);
+  ridge.rotation.x = Math.PI / 2;
+  add(new RoundedBox(0.05, 0.14, 0.05, 2, 0.008), M.stone, 0.075, RH - 0.02, -0.05);
+  add(new RoundedBox(0.066, 0.026, 0.066, 2, 0.012), M.snow, 0.075, RH + 0.062, -0.05);
+  add(new RoundedBox(0.062, 0.115, 0.014, 2, 0.006), M.door, 0.07, 0.057, D / 2 + 0.004);
+  // Windows: a cream frame round four glowing panes.
+  const pane = new R.PlaneGeometry(0.029, 0.029);
+  const win = (x, y, z, ry) => {
+    const f = add(new RoundedBox(0.086, 0.086, 0.012, 2, 0.005), M.frame, x, y, z, 0, ry);
+    f.castShadow = false;
+    for (const [px, py] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const m = new R.Mesh(pane, M.glow);
+      m.position.set(px * 0.0175, py * 0.0175, 0.0065);
+      f.add(m);
+    }
+  };
+  win(-0.065, 0.098, D / 2 + 0.005, 0);
+  win(W / 2 + 0.005, 0.098, 0.0, Math.PI / 2);
+  const attic = add(new R.CircleGeometry(0.02, 20), M.glow, 0, 0.215, D / 2 + 0.011);
+  attic.castShadow = false;
+  // The lamp inside spills warm light onto the snow.
+  lamp = new R.PointLight(col(0.86, 0.13, 68), 0.5, 1.4, 2);
+  lamp.position.set(-0.03, 0.11, D / 2 + 0.1);
+  g.add(lamp);
+  return g;
+}
+let RoundedBox = null;
+function build(env) {
+  const R = THREE;
+  scene.environment = env;
+  const sweep = new R.Mesh(sweepGeo(), (sweepMat = new R.ShaderMaterial({
+    vertexShader: WORLD_VS, fragmentShader: SWEEP_FS, side: R.DoubleSide,
+    uniforms: {
+      uBase: { value: col(0.15, 0.03, 272) }, uWall: { value: col(0.14, 0.045, 280) },
+      uPool: { value: col(0.5, 0.09, 58, 0.32) }, uHalo: { value: col(0.42, 0.15, 305, 0.55) },
+      uCool: { value: col(0.5, 0.11, 232, 0.22) }, uCaustic: { value: col(0.9, 0.11, 75, 0.55) },
+      uGlobe: { value: new R.Vector3() }, uSh: { value: new R.Vector2(-KEY_D[0] / KEY_D[1], -KEY_D[2] / KEY_D[1]) },
+    },
+  })));
+  scene.add(sweep);
+
+  // Lights: a warm key, a cool rim, a soft sky fill.
+  key = new R.DirectionalLight(col(0.93, 0.06, 72), 2.8);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  Object.assign(key.shadow.camera, { left: -1.3, right: 1.3, top: 1.3, bottom: -1.3, near: 1, far: 16 });
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.012;
+  const rim = new R.DirectionalLight(col(0.84, 0.11, 238), 3.2);
+  rim.position.set(...RIM_D);
+  const hemi = new R.HemisphereLight(col(0.62, 0.07, 255), col(0.3, 0.05, 40), 0.55);
+  scene.add(key, key.target, rim, hemi);
+
+  rig = new R.Group();
+  globe = new R.Group();
+  globe.position.y = BASE_H;
+  rig.add(globe);
+  scene.add(rig);
+
+  const wood = new R.MeshPhysicalMaterial({ map: walnut(), roughness: 0.5, clearcoat: 1, clearcoatRoughness: 0.09, envMapIntensity: 1.2 });
+  const brass = new R.MeshStandardMaterial({ color: col(0.8, 0.12, 82), metalness: 1, roughness: 0.24, envMapIntensity: 1.4 });
+  const base = new R.Mesh(baseGeo(), wood);
+  const collar = new R.Mesh(collarGeo(), brass);
+  base.castShadow = collar.castShadow = true;
+  globe.add(base, collar);
+
+  // The winter scene inside the glass.
+  const snow = new R.MeshStandardMaterial({ color: col(0.93, 0.018, 245), roughness: 0.82, envMapIntensity: 0.6 });
+  const hill = new R.Mesh(hillGeo(), snow);
+  hill.receiveShadow = true;
+  globe.add(hill);
+  const treeMat = new R.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, envMapIntensity: 0.6 });
+  const bark = new R.MeshStandardMaterial({ color: col(0.34, 0.06, 48), roughness: 0.9 });
+  const green = col(0.44, 0.1, 160), dark = col(0.3, 0.07, 170), white = col(0.95, 0.015, 245);
+  for (const T of TREES) {
+    const tg = new R.Group();
+    tg.position.set(T.x, T.y, T.z);
+    tg.rotation.y = T.s;
+    const trunk = new R.Mesh(new R.CylinderGeometry(0.026 * T.r / 0.2, 0.034 * T.r / 0.2, T.t.trunk + 0.05, 12), bark);
+    trunk.position.y = (T.t.trunk + 0.05) / 2 - 0.01;
+    tg.add(trunk);
+    T.t.list.forEach((t, i) => {
+      const m = new R.Mesh(tierGeo(t, T.s * 3 + i * 1.7, green, dark, white), treeMat);
+      m.position.y = t.yb;
+      tg.add(m);
+    });
+    tg.traverse(o => { o.castShadow = o.receiveShadow = true; });
+    globe.add(tg);
+  }
+  const cab = cabin({
+    wall: new R.MeshStandardMaterial({ color: col(0.5, 0.14, 33), roughness: 0.72 }),
+    roof: new R.MeshStandardMaterial({ color: col(0.36, 0.06, 40), roughness: 0.8 }),
+    snow,
+    stone: new R.MeshStandardMaterial({ color: col(0.5, 0.02, 50), roughness: 0.9 }),
+    door: new R.MeshStandardMaterial({ color: col(0.3, 0.06, 45), roughness: 0.8 }),
+    frame: new R.MeshStandardMaterial({ color: col(0.88, 0.03, 85), roughness: 0.6 }),
+    glow: new R.MeshBasicMaterial({ color: col(0.86, 0.14, 70, 5) }),
+  });
+  cab.position.set(CAB.x, CAB.y - 0.008, CAB.z);
+  cab.rotation.y = CAB.a;
+  globe.add(cab);
+
+  // The flakes: one point each, shaded by hand.
+  flakeGeo = new R.BufferGeometry();
+  flakeGeo.setAttribute('position', new R.BufferAttribute(P, 3).setUsage(R.DynamicDrawUsage));
+  flakeGeo.setAttribute('aOri', new R.BufferAttribute(O, 2).setUsage(R.DynamicDrawUsage));
+  flakeGeo.setAttribute('aSeed', new R.BufferAttribute(SEED, 4));
+  const amb = col(0.5, 0.05, 255, 0.55);
+  flakeMat = new R.ShaderMaterial({
+    vertexShader: FLAKE_VS, fragmentShader: FLAKE_FS, alphaToCoverage: true,
+    uniforms: {
+      uPx: { value: 400 }, uKeyD: { value: new R.Vector3(...KEY_D).normalize() }, uKeyC: { value: key.color.clone().multiplyScalar(key.intensity / Math.PI) },
+      uRimD: { value: new R.Vector3(...RIM_D).normalize() }, uRimC: { value: rim.color.clone().multiplyScalar(rim.intensity / Math.PI) },
+      uAmb: { value: new R.Vector3(amb.r, amb.g, amb.b) }, uLampP: { value: new R.Vector3() }, uLampC: { value: col(0.86, 0.13, 68, 0.9) },
+    },
+  });
+  const pts = new R.Points(flakeGeo, flakeMat);
+  pts.frustumCulled = false;
+  globe.add(pts);
+
+  // The dome: real refraction through a thick, clear shell.
+  const dome = new R.Mesh(new R.SphereGeometry(1, 128, 96, 0, TAU, 0, Math.acos(-CY)), new R.MeshPhysicalMaterial({
+    color: 0xffffff, metalness: 0, roughness: 0.03, transmission: 1, ior: 1.45, thickness: 1.0, dispersion: 0.35,
+    specularIntensity: 1, envMapIntensity: 0.7, attenuationColor: col(0.93, 0.035, 205), attenuationDistance: 4,
+  }));
+  dome.position.y = CY;
+  const shell = new R.Mesh(new R.SphereGeometry(1.004, 96, 64, 0, TAU, 0, Math.acos(-CY / 1.004)), new R.ShaderMaterial({
+    vertexShader: RIM_VS, fragmentShader: RIM_FS, transparent: true, depthWrite: false, blending: R.AdditiveBlending,
+    uniforms: { uCool: { value: col(0.8, 0.1, 230) }, uWarm: { value: col(0.88, 0.08, 70) }, uKeyD: { value: new R.Vector3(...KEY_D).normalize() }, uK: { value: 0.45 } },
+  }));
+  shell.position.y = CY;
+  globe.add(dome, shell);
+}
+
+// The camera frames the globe with room for it to move.
+function fit(w, h) {
+  const A = w / h, t = Math.tan((FOV * D2R) / 2);
+  const halfH = Math.max(1.3, 1.5 / A);
+  camDist = halfH / t;
+  camera.aspect = A;
+  camera.position.set(AIM[0], AIM[1] + Math.sin(ELEV) * camDist, Math.cos(ELEV) * camDist);
+  camera.lookAt(AIM[0], AIM[1], AIM[2]);
+  camera.updateProjectionMatrix();
+  maxX = Math.max(0.15, halfH * A - BASE_R - 0.08);
+  wpp = (2 * halfH) / h;
+  const db = renderer.getDrawingBufferSize(tv);
+  flakeMat.uniforms.uPx.value = (db.y * camera.projectionMatrix.elements[5]) / 2;
+}
+function resize() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  const pr = Math.min(devicePixelRatio, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  renderer.setPixelRatio(pr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(pr);
+  composer.setSize(w, h);
+  fit(w, h);
+  if (ready) draw();
+}
+// Pose the globe, aim the key light at it, then draw.
+function draw() {
+  rig.position.set(G.x, G.y + G.lift, 0);
+  rig.rotation.set(G.rx, 0, G.rz);
+  rig.updateMatrixWorld();
+  tw.set(0, HUB, 0);
+  rig.localToWorld(tw);
+  key.target.position.copy(tw);
+  key.position.set(tw.x + KEY_D[0] * 8, tw.y + KEY_D[1] * 8, tw.z + KEY_D[2] * 8);
+  key.target.updateMatrixWorld();
+  lamp.getWorldPosition(flakeMat.uniforms.uLampP.value);
+  sweepMat.uniforms.uGlobe.value.set(G.x, 0, G.y + G.lift);
+  // Gravity, seen from inside the tilted globe.
+  tq.setFromEuler(rig.rotation).invert();
+  tv.set(0, -1, 0).applyQuaternion(tq);
+  GLOC[0] = tv.x; GLOC[1] = tv.y; GLOC[2] = tv.z;
+  composer.render();
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio, then the bloom.
+  slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+  if (slow > 24) {
+    slow = 0;
+    if (!lowDpr) { lowDpr = true; resize(); } else bloom.enabled = false;
+  }
+  let busy = stepGlobe(dt);
+  busy = stepLiquid(dt) || busy;
+  stepFlakes(dt);
+  if (moving) {
+    flakeGeo.attributes.position.needsUpdate = true;
+    flakeGeo.attributes.aOri.needsUpdate = true;
+    busy = true;
+    if (glitterMoving && Math.random() < (glitterMoving / NG) * (0.2 + LQ.E) * dt * 9) tinkle(rnd(-0.6, 0.6), 0.4 + LQ.E);
+  }
+  sloshSet(Math.hypot(...LQ.S) * 0.55 + LQ.E * 0.35 + Math.hypot(...LQ.W) * 0.06, dt);
+  draw();
+  if ((busy || ptr >= 0) && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else { sloshSet(0, dt); rest(); }
+}
+
+/* ---------- input ---------- */
+let ptr = -1, down = null, trail = [];
+panel.addEventListener('pointerdown', e => {
+  if (!ready || ptr >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  ptr = e.pointerId;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  panel.classList.add('held');
+  down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0 };
+  trail = [[e.clientX, e.clientY, down.t]];
+  G.tx = G.x;
+  G.ty = G.y;
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  if (e.pointerId !== ptr) return;
+  const now = performance.now();
+  trail.push([e.clientX, e.clientY, now]);
+  while (trail.length > 2 && now - trail[0][2] > 110) trail.shift();
+  const dx = e.clientX - down.x, dy = e.clientY - down.y;
+  down.moved = Math.max(down.moved, Math.hypot(dx, dy));
+  // The globe follows the hand, softly limited to the stage.
+  G.tx = soft(dx * wpp * 0.85, maxX);
+  G.ty = clamp(soft(-dy * wpp * 0.85, 0.3), 0, 0.3);
+  wake();
+});
+function lift(e) {
+  if (e.pointerId !== ptr) return;
+  ptr = -1;
+  panel.classList.remove('held');
+  const now = performance.now(), a = trail[0], b = trail[trail.length - 1];
+  const span = Math.max(16, b[2] - a[2]), h = panel.clientHeight || 1;
+  // Speed in stage heights per second.
+  const vx = (b[0] - a[0]) / span * 1000 / h, vy = -(b[1] - a[1]) / span * 1000 / h, v = Math.hypot(vx, vy);
+  if (e.type === 'pointerup' && v > 2.2 && now - b[2] < 80 && down.moved > 18) bigShake(vx / v, vy / v, clamp((v - 2.2) / 4));
+  else if (e.type === 'pointerup' && down.moved < 6 && now - down.t < 350) {
+    // A tap gives the globe a little hop.
+    G.vy += reduce ? 0.7 : 1.3;
+    LQ.E = Math.min(1.7, LQ.E + 0.12);
+  }
+  wake();
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === ' ') {
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!ready) return;
+    // Holding Space keeps the shake going.
+    if (shakeT <= 0) shakeAge = 0;
+    shakeT = Math.max(shakeT, e.repeat ? 0.4 : 0.95);
+    wake();
+  } else if (ARROWS.has(k)) {
+    e.preventDefault();
+    held.add(k);
+    wake();
+  }
+});
+addEventListener('keyup', e => { if (held.delete(e.key)) wake(); });
+addEventListener('blur', () => { held.clear(); wake(); });
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) { sloshSet(0, 0); ac.suspend()?.catch(() => {}); }
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function start() {
+  let RoomEnvironment, EffectComposer, RenderPass, UnrealBloomPass, OutputPass;
+  try {
+    THREE = await import('three');
+    [{ RoundedBoxGeometry: RoundedBox }, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      import('three/addons/geometries/RoundedBoxGeometry.js'),
+      import('three/addons/postprocessing/EffectComposer.js'),
+      import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'),
+      import('three/addons/postprocessing/OutputPass.js'),
+    ]);
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  const ext = renderer.extensions;
+  if (!ext.has('EXT_color_buffer_float') && !ext.has('EXT_color_buffer_half_float')) { renderer.dispose(); return failed(); }
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.1, 100);
+  tq = new THREE.Quaternion();
+  tv = new THREE.Vector3();
+  tw = new THREE.Vector3();
+  await idle();
+
+  buildTops();
+  buildCurl();
+  seedFlakes();
+  await idle();
+  const pm = new THREE.PMREMGenerator(renderer);
+  const env = studio(pm);
+  pm.dispose();
+  await idle();
+  build(env);
+  await idle();
+
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  composer = new EffectComposer(renderer, rt);
+  composer.addPass(new RenderPass(scene, camera));
+  bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.55, 0.9);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
+  panel.prepend(canvas);
+  new ResizeObserver(resize).observe(panel);
+  addEventListener('perf-low', resize);
+  resize();
+  await idle();
+  // Async compile keeps the shader builds off the main thread.
+  await renderer.compileAsync(scene, camera);
+  ready = true;
+  draw();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
