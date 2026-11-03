@@ -572,37 +572,22 @@ async function start() {
   stars.frustumCulled = false;
   scene.add(stars);
 
-  // Each well is a stencil mark: a hot dot inside a notched ring.
-  // One notch is cut per merged well; six notches mean the next merge collapses.
-  const NOTCH_W = TAU / HOLE_WELLS;
-  // Marks draw in their own pass, clear of streaks and bloom.
-  // Red carries the lit parts, green the coverage.
-  const markScene = new THREE.Scene();
-  markScene.background = new THREE.Color(0x000000);
+  // Each well is a small hot nucleus that blooms.
   const wellDots = [];
   for (let k = 0; k < MAXW; k++) {
-    const size = uniform(0), fade = uniform(0), cuts = uniform(0);
+    const size = uniform(0);
     const m = spriteMat();
     m.scaleNode = size.mul(uPx);
     m.colorNode = Fn(() => {
-      const q = uv().sub(0.5).mul(2);
-      const d = q.length();
-      // One pixel, in units of the mark's radius.
-      const aa = float(2.5).div(size.max(1));
-      const inR = r => float(1).sub(smoothstep(float(r).sub(aa), float(r), d));
-      // Slot 0 sits at the top; slots fill clockwise.
-      const a = atan(q.x, q.y).div(NOTCH_W);
-      const slot = TSL.mod(TSL.floor(a.add(0.5)).add(HOLE_WELLS), HOLE_WELLS);
-      const arc = fract(a.add(0.5)).sub(0.5).abs().mul(NOTCH_W).mul(d);
-      const cut = float(1).sub(smoothstep(float(0.16).sub(aa), float(0.16), arc)).mul(step(slot.add(0.5), cuts));
-      const lit = inR(0.26).add(inR(0.78).sub(inR(0.46)).mul(float(1).sub(cut)));
-      return vec4(lit.mul(fade), inR(1).mul(fade), 0, 1);
+      const d = uv().sub(0.5).length().mul(2);
+      return vec4(1.0, 0.86, 0.66, 1).mul(vec4(5, 5, 5, exp(d.mul(d).mul(-6)).mul(float(1).sub(d).max(0))));
     })();
     const s = new THREE.Sprite(m);
     s.frustumCulled = false;
+    s.renderOrder = 2;
     s.visible = false;
-    markScene.add(s);
-    wellDots.push({ s, size, fade, cuts });
+    scene.add(s);
+    wellDots.push({ s, size });
   }
 
   /* ---------- the hole: shadow, photon ring, disk and jets ---------- */
@@ -693,8 +678,7 @@ async function start() {
   const uDamp = uniform(0);
   const exposure = TSL.nodeObject(new Exposure(TSL.convertToTexture(sceneColor), uDamp));
   const glow = bloom(exposure, 0.45, 0.35, 0.4);
-  const marks = pass(markScene, camera).getTextureNode('output');
-  renderPipeline.outputNode = mix(exposure.add(glow), vec4(HOT.mul(marks.r.mul(2.4)), 1), marks.g.min(1));
+  renderPipeline.outputNode = exposure.add(glow);
 
   /* ---------- camera: tilted toward the plane, drifting slowly ---------- */
   let dist = 30, az = 0;
@@ -1225,9 +1209,7 @@ async function start() {
       w.pulse *= Math.exp(-dt / 0.3);
       dot.s.visible = w.vis > 0.01;
       dot.s.position.set(w.x, 0, w.z);
-      dot.size.value = (28 + 6 * Math.sqrt(w.m / SEED_M)) * (0.6 + 0.4 * w.vis) * (1 + 0.35 * w.pulse + (w.held ? 0.15 : 0));
-      dot.fade.value = w.vis;
-      dot.cuts.value = Math.min(HOLE_WELLS, w.n - 1);
+      dot.size.value = (7 + 5 * Math.sqrt(w.m / SEED_M)) * w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
     }
     renderPipeline.render();
     sample(now);
