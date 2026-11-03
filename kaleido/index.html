@@ -309,9 +309,9 @@ function tick(sp) {
 /* ---------- physics: circles and convex polygons in a turning drum ---------- */
 // Units are drum radii; y runs up; gravity pulls down the screen.
 const DT = 1 / 120, GRAV = 7, MARGIN = 0.012, SLOP = 0.003, BETA = 0.22, ITER = 8, PITER = 3;
-const MU = 0.3, MU_WALL = 0.55, E = 0.3, E_WALL = 0.22, BOUNCE = 0.35, WALL = 63;
+const MU = 0.26, MU_WALL = 0.45, E = 0.3, E_WALL = 0.22, BOUNCE = 0.35, WALL = 63;
 const bodies = [], contacts = [];
-let nC = 0, simT = 0, spinW = 0, asleep = false, restClock = 0, holdN = 0;
+let nC = 0, simT = 0, spinW = 0, drumW = 0, asleep = false, restClock = 0, holdN = 0;
 const warm = new Map();
 let wPn = new Float64Array(512), wPt = new Float64Array(512);
 // One manifold buffer: up to two points.
@@ -433,7 +433,7 @@ function maxSep(a, b) {
   SEP = best;
   return be;
 }
-// Separating axes find the reference face; the incident edge is clipped to it.
+// Separating axes pick a reference face; its sides clip the incident edge.
 function polyPoly(a, b) {
   const ea = maxSep(a, b), sa = SEP;
   if (sa > MARGIN) return 0;
@@ -525,13 +525,15 @@ function rel(c) {
   const A = c.A, B = c.B;
   let vx, vy;
   if (B) { vx = B.vx - B.w * c.by; vy = B.vy + B.w * c.bx; }
-  else { vx = -spinW * c.py; vy = spinW * c.px; }
+  else { vx = -drumW * c.py; vy = drumW * c.px; }
   RX = vx - (A.vx - A.w * c.ay);
   RY = vy - (A.vy + A.w * c.ax);
 }
 function step() {
   const n = bodies.length;
   simT += DT;
+  // The drum slips past a brisk turn, so glass tumbles, never pins.
+  drumW = clamp(spinW, -2.2, 2.2);
   for (const b of bodies) pose(b);
   nC = 0;
   for (let i = 0; i < n; i++) {
@@ -613,9 +615,9 @@ function step() {
     // A piece that escapes the drum returns inside it.
     const d = Math.hypot(b.x, b.y);
     if (!(d < 1)) {
-      const k = d === d ? 0.9 / d : 0;
-      b.x *= k; b.y *= k; b.vx = b.vy = b.w = 0;
-      if (b.a !== b.a) b.a = 0;
+      if (d === d) { b.x *= 0.9 / d; b.y *= 0.9 / d; }
+      else { b.x = 0; b.y = -0.5; b.a = 0; }
+      b.vx = b.vy = b.w = 0;
     }
     v2 = Math.max(v2, b.vx * b.vx + b.vy * b.vy);
     w2 = Math.max(w2, b.w * b.w);
@@ -627,7 +629,7 @@ function step() {
   // Near rest, extra damping lets the pile settle quickly.
   if (still && v2 < 0.012 && w2 < 0.12) for (const b of bodies) { b.vx *= 0.96; b.vy *= 0.96; b.w *= 0.94; }
   restClock = still && v2 < 0.0009 && w2 < 0.03 ? restClock + DT : 0;
-  // Every half second, pieces that only tremble in place also count as still.
+  // Pieces that barely move for half a second count as still.
   if (++holdN >= 60) {
     holdN = 0;
     let drift = 0;
@@ -654,13 +656,40 @@ function step() {
 const GEMS = [[0.55, 0.22, 22], [0.8, 0.165, 70], [0.64, 0.17, 158], [0.5, 0.2, 262], [0.56, 0.2, 312], [0.96, 0.016, 220]];
 // Back pieces are broad and paler; front pieces are small and deep.
 const PLAN = [
-  ['shard', 0, 6, 0.24, 0.31], ['clear', 0, 2, 0.25, 0.29], ['moon', 0, 3, 0.27, 0.31], ['bead', 0, 2, 0.17, 0.2],
-  ['bead', 1, 7, 0.085, 0.13], ['shard', 1, 6, 0.11, 0.16], ['rod', 1, 4, 0.17, 0.24], ['moon', 1, 2, 0.14, 0.17], ['seed', 1, 8, 0.04, 0.05],
+  ['shard', 0, 7, 0.23, 0.3], ['clear', 0, 2, 0.24, 0.28], ['moon', 0, 3, 0.26, 0.3], ['bead', 0, 2, 0.16, 0.2],
+  ['bead', 1, 8, 0.085, 0.125], ['shard', 1, 6, 0.11, 0.16], ['rod', 1, 4, 0.17, 0.24], ['moon', 1, 2, 0.14, 0.165], ['seed', 1, 8, 0.04, 0.05],
 ];
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 let cell = null, cx = null;
 const tone = (g, dL, kC = 1) => css(g[0] + dL, g[1] * kC, g[2]);
 const WHITE = a => `rgba(255,255,255,${a})`;
+let GRAIN = null;
+// A soft cloudy tile gives each piece the mottle of real glass.
+function grainTile() {
+  const N = 96, t = document.createElement('canvas'), P = 6, Q = 24;
+  t.width = t.height = N;
+  const g = t.getContext('2d'), img = g.createImageData(N, N);
+  const h1 = Float32Array.from({ length: P * P }, Math.random), h2 = Float32Array.from({ length: Q * Q }, Math.random);
+  const vn = (h, n, x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const at = (i, j) => h[(j % n) * n + (i % n)];
+    return lerp(lerp(at(ix, iy), at(ix + 1, iy), sx), lerp(at(ix, iy + 1), at(ix + 1, iy + 1), sx), sy);
+  };
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const v = 0.65 * vn(h1, P, (x / N) * P, (y / N) * P) + 0.35 * vn(h2, Q, (x / N) * Q, (y / N) * Q), i = (y * N + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255 * (0.84 + 0.16 * v);
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return cx.createPattern(t, 'repeat');
+}
+// Each piece shows its own patch of the tile.
+function mottle(b, path, rule = 'nonzero') {
+  b.gm = new DOMMatrix().translate(rand(-1, 1), rand(-1, 1)).rotate(rand(0, 360)).scale(0.32 / 96);
+  return () => { GRAIN.setTransform(b.gm); cx.fillStyle = GRAIN; cx.fill(path, rule); };
+}
 
 function hull(p) {
   p.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -696,10 +725,11 @@ function bead(g, r) {
   path.arc(0, 0, r, 0, TAU);
   // A backlit sphere is a lens: bright core, deep body, dark rim.
   const gr = cx.createRadialGradient(0, 0, 0, 0, 0, r);
-  [[0, 0.3, 0.3], [0.3, 0.14, 0.75], [0.62, 0, 1], [0.84, -0.17, 1], [0.95, -0.3, 0.9], [1, -0.22, 0.8]].forEach(([o, dL, kC]) => gr.addColorStop(o, tone(g, dL, kC)));
-  const hi = cx.createRadialGradient(-0.16 * r, 0.2 * r, 0, -0.16 * r, 0.2 * r, 0.46 * r);
-  hi.addColorStop(0, WHITE(0.6)); hi.addColorStop(1, WHITE(0));
-  b.paint = () => { cx.fillStyle = gr; cx.fill(path); };
+  [[0, 0.3, 0.3], [0.32, 0.13, 0.8], [0.68, 0, 1], [0.87, -0.12, 1], [0.96, -0.22, 0.95], [1, -0.12, 0.85]].forEach(([o, dL, kC]) => gr.addColorStop(o, tone(g, dL, kC)));
+  const hi = cx.createRadialGradient(-0.14 * r, 0.18 * r, 0, -0.14 * r, 0.18 * r, 0.38 * r);
+  hi.addColorStop(0, WHITE(0.5)); hi.addColorStop(1, WHITE(0));
+  const grain = mottle(b, path);
+  b.paint = () => { cx.fillStyle = gr; cx.fill(path); grain(); };
   b.shine = () => { cx.fillStyle = hi; cx.fill(path); };
   return b;
 }
@@ -724,7 +754,7 @@ function shard(g, r) {
   }
   const pts = hull(raw), b = makeBody([poly(pts.flat())], g.L), path = pathOf(pts);
   // Facets fan out from a point near the middle.
-  const hub = [rand(-0.14, 0.14) * r, rand(-0.14, 0.14) * r * ex];
+  const hub = [rand(-0.14, 0.14) * r, rand(-0.14, 0.14) * r * ex], grain = mottle(b, path);
   const facets = pts.map((p, i) => [pathOf([hub, p, pts[(i + 1) % pts.length]]), tone(g, rand(-0.05, 0.1), rand(0.8, 1.1))]);
   const glints = shuffle(pts.map((_, i) => i)).slice(0, 2).map(i => {
     const p = pts[i], q = pts[(i + 1) % pts.length], k = 0.07;
@@ -732,7 +762,8 @@ function shard(g, r) {
   });
   b.paint = () => {
     for (const [f, c] of facets) { cx.fillStyle = c; cx.fill(f); }
-    rims(path, g, 0.06, 0.022);
+    grain();
+    rims(path, g, 0.05, 0.012);
   };
   b.shine = () => {
     cx.strokeStyle = WHITE(0.42); cx.lineWidth = 0.008; cx.lineCap = 'round';
@@ -753,7 +784,8 @@ function rod(g, hl) {
   // A cylinder focuses a bright line down its middle.
   const gr = cx.createLinearGradient(0, -hw, 0, hw);
   [[0, -0.3, 1], [0.2, -0.05, 1], [0.42, 0.18, 0.6], [0.5, 0.3, 0.35], [0.58, 0.18, 0.6], [0.8, -0.05, 1], [1, -0.3, 1]].forEach(([o, dL, kC]) => gr.addColorStop(o, tone(g, dL, kC)));
-  b.paint = () => { cx.fillStyle = gr; cx.fill(path); };
+  const grain = mottle(b, path);
+  b.paint = () => { cx.fillStyle = gr; cx.fill(path); grain(); };
   b.shine = () => {
     cx.beginPath(); cx.moveTo(-a, 0.18 * hw); cx.lineTo(a, 0.18 * hw);
     cx.strokeStyle = WHITE(0.4); cx.lineWidth = 0.28 * hw; cx.lineCap = 'round'; cx.stroke();
@@ -783,7 +815,8 @@ function moon(g, r) {
   path.closePath();
   const gr = cx.createRadialGradient(d, 0, r2, d, 0, r + d);
   [[0, -0.26, 1], [0.1, -0.04, 1], [0.38, 0.14, 0.7], [0.72, 0, 1], [0.92, -0.16, 1], [1, -0.28, 1]].forEach(([o, dL, kC]) => gr.addColorStop(o, tone(g, dL, kC)));
-  b.paint = () => { cx.fillStyle = gr; cx.fill(path); rims(path, g, 0.04, 0.016); };
+  const grain = mottle(b, path);
+  b.paint = () => { cx.fillStyle = gr; cx.fill(path); grain(); rims(path, g, 0.04, 0.01); };
   b.shine = () => {
     cx.beginPath(); cx.arc(0, 0, r - 0.035, Math.PI * 0.62, Math.PI * 1.05);
     cx.strokeStyle = WHITE(0.34); cx.lineWidth = 0.009; cx.lineCap = 'round'; cx.stroke();
@@ -799,8 +832,8 @@ function build() {
       const back = L === 0 && kind !== 'clear';
       const g = [base[0] + rand(-0.03, 0.03) + (back ? 0.08 : 0), base[1] * rand(0.92, 1.05) * (back ? 0.8 : 1), base[2] + rand(-6, 6)];
       g.L = L;
-      g.rimSoft = tone(g, -0.08);
-      g.rimHard = tone(g, -0.3, 0.9);
+      g.rimSoft = tone(g, -0.05);
+      g.rimHard = tone(g, -0.24, 0.95);
       const r = rand(lo, hi);
       const b = kind === 'bead' ? bead(g, r) : kind === 'seed' ? seed(g, r) : kind === 'rod' ? rod(g, r) : kind === 'moon' ? moon(g, r) : shard(g, r);
       bodies.push(b);
@@ -852,6 +885,7 @@ precision highp float;
 uniform sampler2D uCell;
 uniform vec3 uView, uStage, uLight;
 uniform vec2 uN;
+uniform vec2 uApex;
 uniform float uTheta, uRho, uMix, uLod;
 out vec4 o;
 const float TAU = 6.28318531;
@@ -874,15 +908,18 @@ vec3 kaleido(vec2 q, float r, float n) {
   float k = floor(b / w), f = mod(b, 2.0 * w);
   f = f > w ? 2.0 * w - f : f;
   float a = f + uTheta;
-  vec2 s = vec2(cos(a), sin(a)) * r * uRho;
+  vec2 v = vec2(cos(a), sin(a)) * r * uRho, s = uApex + v;
   // Red bends least and blue most, more toward the rim.
-  float ca = 0.018 * r * r;
-  vec3 c = vec3(cell(s * (1.0 + ca), uLod).r, cell(s, uLod).g, cell(s * (1.0 - ca), uLod).b);
+  float ca = 0.012 * r * r;
+  vec3 c = vec3(cell(s + v * ca, uLod).r, cell(s, uLod).g, cell(s - v * ca, uLod).b);
   // The frosted diffuser turns with the barrel.
   vec2 d = mat2(cos(uTheta), -sin(uTheta), sin(uTheta), cos(uTheta)) * s;
   float frost = 0.91 + 0.07 * vnoise(d * 5.0) + 0.03 * vnoise(d * 23.0 + 7.0);
   vec3 light = uLight * frost * (1.1 - 0.2 * dot(s, s));
-  vec3 col = c * light;
+  // Glass edges brighten on one side and shade the other.
+  vec2 o = vec2(0.6, 0.8) * 5.0 / float(textureSize(uCell, 0).x);
+  float bev = dot(cell(s + o, uLod) - cell(s - o, uLod), vec3(0.3, 0.55, 0.15));
+  vec3 col = c * light * (1.0 + 0.45 * clamp(bev, -0.6, 0.6));
   // Bright openings bleed light over the dark rims.
   vec3 g = cell(s, uLod + 4.0);
   col += light * max(g - 0.45, 0.0) * 0.5;
@@ -905,13 +942,8 @@ void main() {
     k = 1.0 - exp(-k * 1.25);
     // The lens fades softly to dark at its rim.
     float e = smoothstep(0.4, 1.0, r);
-    k *= 1.0 - 0.96 * e * e;
-    col = mix(uStage * 0.6, k, clamp((1.0 - r) * uView.z, 0.0, 1.0));
-  } else {
-    // A faint spill of light rings the eyepiece.
-    vec3 avg = cell(vec2(0.0), 12.0) * uLight;
-    col += avg * 0.035 * exp(-(r - 1.0) * 14.0);
-    col = mix(uStage * 0.6, col, clamp((r - 1.0) * uView.z * 0.5, 0.0, 1.0));
+    k *= 1.0 - 0.985 * e * e;
+    col = mix(uStage, k, clamp((1.0 - r) * uView.z, 0.0, 1.0));
   }
   o = vec4(srgb(col) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
@@ -938,7 +970,7 @@ async function initGL() {
   // Polling lets the driver link off the main thread.
   if (par) while (!gl.isContextLost() && !gl.getProgramParameter(prog.p, par.COMPLETION_STATUS_KHR)) await nextFrame();
   if (!gl.getProgramParameter(prog.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(prog.f) || gl.getShaderInfoLog(prog.v) || gl.getProgramInfoLog(prog.p) || 'link failed');
-  for (const n of ['uCell', 'uView', 'uStage', 'uLight', 'uN', 'uTheta', 'uRho', 'uMix', 'uLod']) U[n] = gl.getUniformLocation(prog.p, n);
+  for (const n of ['uCell', 'uView', 'uStage', 'uLight', 'uN', 'uApex', 'uTheta', 'uRho', 'uMix', 'uLod']) U[n] = gl.getUniformLocation(prog.p, n);
   gl.useProgram(prog.p);
   gl.uniform1i(U.uCell, 0);
   gl.uniform3fv(U.uStage, STAGE);
@@ -968,7 +1000,15 @@ function upload() {
 }
 
 /* ---------- layout ---------- */
-const RHO = 0.9;
+// The mirrors look toward the heap and never past the wall.
+const RHO = 0.6, REACH = 0.36, APEX = [0, -REACH], AIM = [0, -REACH];
+function aimApex() {
+  let sx = 0, sy = 0, sm = 0;
+  for (const b of bodies) { const m = 1 / b.im; sx += b.x * m; sy += b.y * m; sm += m; }
+  const d = Math.hypot(sx, sy) || 1;
+  AIM[0] = (sx / d) * REACH;
+  AIM[1] = (sy / d) * REACH;
+}
 let W = 0, H = 0, RV = 1, pr = 1, cellDirty = true, rect = null;
 function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
@@ -1000,6 +1040,7 @@ function render() {
   gl.uniform2f(U.uN, nOld, nNew);
   gl.uniform1f(U.uTheta, theta);
   gl.uniform1f(U.uRho, RHO);
+  gl.uniform2fv(U.uApex, APEX);
   const m = mixT * mixT * (3 - 2 * mixT);
   gl.uniform1f(U.uMix, m);
   gl.uniform1f(U.uLod, Math.max(0, Math.log2((cell.width * 0.5 * RHO) / (RV * pr))));
@@ -1033,7 +1074,9 @@ function frame(now) {
     for (const v of held.values()) dir += v;
     if (dir) spin += (clamp(dir, -1, 1) * (reduce ? 1.3 : 2.3) - spin) * (1 - Math.exp(-dt / 0.2));
     else {
-      spin *= Math.exp(-dt / (reduce ? 0.45 : 1.6));
+      // Air drag and a little bearing friction slow the barrel.
+      spin *= Math.exp(-dt / (reduce ? 0.4 : 1.1));
+      spin -= Math.sign(spin) * Math.min(Math.abs(spin), 0.3 * dt);
       if (Math.abs(spin) < 0.02) spin = 0;
     }
     turn += spin * dt;
@@ -1053,9 +1096,14 @@ function frame(now) {
     cellDirty = true;
   }
   if (mixT < 1) mixT = Math.min(1, mixT + dt / 0.5);
+  // The apex drifts slowly after the heap's centre.
+  if (!asleep) aimApex();
+  const ka = 1 - Math.exp(-dt / 0.6), gap = Math.hypot(AIM[0] - APEX[0], AIM[1] - APEX[1]);
+  APEX[0] += (AIM[0] - APEX[0]) * ka;
+  APEX[1] += (AIM[1] - APEX[1]) * ka;
   render();
   if (frames === 2) canvas.classList.add('on');
-  const busy = !asleep || spin !== 0 || spinW !== 0 || turnQ !== 0 || held.size > 0 || mixT < 1;
+  const busy = !asleep || spin !== 0 || spinW !== 0 || turnQ !== 0 || held.size > 0 || mixT < 1 || gap > 2e-4;
   if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
   else rest();
 }
@@ -1067,7 +1115,7 @@ function local(e) {
   const r = rect || (rect = panel.getBoundingClientRect());
   return [e.clientX - r.left - W / 2, r.top + H / 2 - e.clientY];
 }
-// Near the centre a sideways drag turns the barrel like its top edge.
+// Near the centre, a sideways drag turns the barrel's top edge.
 function turnBy(x, y, dx, dy) {
   const r2 = x * x + y * y, rmin = 0.35 * RV, k = Math.min(1, Math.sqrt(r2) / rmin);
   return (x * dy - y * dx) / Math.max(r2, rmin * rmin) - ((1 - k) * dx) / rmin;
@@ -1098,7 +1146,7 @@ panel.addEventListener('pointermove', e => {
 const lift = e => {
   if (!drag || e.pointerId !== drag.id) return;
   const fresh = e.timeStamp - drag.last < 90 && Math.abs(drag.est) > 0.3;
-  spin = fresh ? clamp(drag.est, -9, 9) : 0;
+  spin = fresh ? clamp(drag.est, -7, 7) : 0;
   drag = null;
   panel.classList.remove('held');
   wake();
@@ -1185,6 +1233,7 @@ async function boot() {
   cell = document.createElement('canvas');
   cell.width = cell.height = 512;
   cx = cell.getContext('2d', { alpha: false });
+  GRAIN = grainTile();
   await idle();
   build();
   fit();
@@ -1199,6 +1248,9 @@ async function boot() {
   // The first view looks down into the heap.
   const intro = reduce ? 0 : 0.9;
   theta = -Math.PI / 2 - Math.PI / nNew - intro * 1.6;
+  aimApex();
+  APEX[0] = AIM[0];
+  APEX[1] = AIM[1];
   ready = true;
   cellDirty = true;
   fit();
@@ -1209,7 +1261,6 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
   spin = intro;
   wake();
-  window.__dbg = { cell, bodies, contacts, get nC() { return nC; }, get theta() { return theta; }, get asleep() { return asleep; }, get spin() { return spin; } }; // DEBUG
 }
 if (document.readyState === 'complete') boot();
 else addEventListener('load', boot, { once: true });

@@ -33,7 +33,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Marbling | [marble/](marble/) | live draft, still being refined |
 | Caustic pool | [pool/](pool/) | live, with sound |
 | Lava lamp | [lava/](lava/) | live draft, still being refined |
-| Kaleidoscope | [kaleido/](kaleido/) | live draft, still being refined |
+| Kaleidoscope | [kaleido/](kaleido/) | live, with sound |
 | Chladni plate | [chladni/](chladni/) | live, with sound |
 | Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
 | Snow globe, Murmuration, Coil, Frost, Gear train, Harmonograph, Split-flap, Dandelion, Music box, Neon sign | | in progress; outlines on the menu |
