@@ -823,13 +823,33 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
 }`;
 /* ---------- lens and grade ---------- */
+// The haze pass marches each pixel toward the hole at quarter size.
+// Pixels inside the shadow see only shadow, so the hole stays black.
+const HAZE_FS = `
+uniform sampler2D tColor;
+uniform vec2 uHole;
+varying vec2 vUv;
+const int STEPS = 28;
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main() {
+  float start = hash(gl_FragCoord.xy);
+  vec3 sum = vec3(0.0);
+  for (int i = 0; i < STEPS; i++) {
+    // Steps bunch toward the hole, where the light is, to cut grain.
+    float left = 1.0 - (float(i) + start) / float(STEPS);
+    vec3 s = texture2D(tColor, mix(uHole, vUv, left * left)).rgb;
+    sum += min(max(s - 0.6, 0.0), vec3(3.0)) * left * 2.0;
+  }
+  gl_FragColor = vec4(sum / float(STEPS), 1.0);
+}`;
 // The post pass adds the sun flare, then grades the whole frame.
 // The flare follows Buoy Business: haze, orb, streak and warm ghosts.
 // Depth taps round the sun hide it where the walker covers it.
 const POST_FS = `
-uniform sampler2D tColor, tDepth;
+uniform sampler2D tColor, tDepth, tHaze;
 uniform vec2 uSun;
 uniform float uAspect, uGain, uBand, uHard;
+uniform vec2 uHazeR;
 uniform vec3 uFlareCol;
 varying vec2 vUv;
 const float RING = 0.012;
@@ -866,11 +886,19 @@ void main() {
   for (int i = 0; i < 4; i++) {
     vec2 g = (vUv - (uSun + toC * gs[i].x)) * vec2(uAspect, 1.0);
     float gr = sqrt(dot(g, g)) / gs[i].y;
-    // Hard ghosts are crisp discs with a brighter rim.
-    float ghost = mix(exp(-gr * gr), (1.0 - smoothstep(0.92, 1.0, gr)) * (0.35 + 0.65 * smoothstep(0.6, 0.95, gr)), uHard);
-    add += mix(col, col * ORANGE, 0.4) * ghost * gs[i].z * mix(0.12, 0.2, uHard);
+    // The black hole has no glass ghosts; its light scatters as haze.
+    add += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs[i].z * 0.12 * (1.0 - uHard);
   }
   add *= cover * uGain;
+  // A ring of taps melts the haze pass's grain into fuzz.
+  if (uHard > 0.01) {
+    vec3 haze = texture2D(tHaze, vUv).rgb;
+    for (int k = 0; k < 8; k++) {
+      float a = float(k) * 0.7854;
+      haze += texture2D(tHaze, vUv + vec2(cos(a), sin(a)) * uHazeR).rgb;
+    }
+    add += haze / 9.0 * 1.6 * uHard * uGain;
+  }
   // Haze sits lighter on the near walker than on the far sky.
   add *= texture2D(tDepth, vUv).r > 0.9999 ? 1.0 : 0.3;
   // Screen blend: the flare washes the frame instead of clipping it.
@@ -1251,18 +1279,25 @@ void main() {
   // The scene renders to a target; the post pass reads its colour and depth.
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType });
   rt.depthTexture = new THREE.DepthTexture(1, 1);
-  const postU = { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 }, uGain: { value: 1 }, uFlareCol: { value: new THREE.Vector3(1, 0.73, 0.49) }, uBand: { value: 0 }, uHard: { value: 0 } };
+  // The black hole's haze renders small, so it stays soft and cheap.
+  const hazeRt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
+  const postU = { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, tHaze: { value: hazeRt.texture }, uHazeR: { value: new THREE.Vector2() }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 }, uGain: { value: 1 }, uFlareCol: { value: new THREE.Vector3(1, 0.73, 0.49) }, uBand: { value: 0 }, uHard: { value: 0 } };
   // three's bloom spreads the sun, the horizon glow and the glitter.
   // It adds onto the scene target before the flare and grade pass.
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.75, 0.86);
   const postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-    uniforms: postU, depthTest: false, depthWrite: false,
-    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: POST_FS,
-  }));
-  postQuad.frustumCulled = false;
-  postScene.add(postQuad);
+  const screenQuad = (uniforms, fragmentShader) => {
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+      uniforms, fragmentShader, depthTest: false, depthWrite: false,
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    }));
+    quad.frustumCulled = false;
+    return quad;
+  };
+  postScene.add(screenQuad(postU, POST_FS));
+  const hazeScene = new THREE.Scene();
+  const hazeU = { tColor: postU.tColor, uHole: { value: new THREE.Vector2(0.5, 0.5) } };
+  hazeScene.add(screenQuad(hazeU, HAZE_FS));
 
   const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3(), _s = new THREE.Vector3();
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3();
@@ -1290,6 +1325,8 @@ void main() {
       const W = Math.round(w * pr), H = Math.round(h * pr);
       U.uRes.value.set(W, H); U.uDpr.value = W / w;
       rt.setSize(W, H);
+      hazeRt.setSize(Math.ceil(W / 4), Math.ceil(H / 4));
+      postU.uHazeR.value.set(10 / W, 10 / H);
       postU.uAspect.value = w / h;
       bloom.setSize(W, H);
       this.lens();
@@ -1402,6 +1439,8 @@ void main() {
         _b.copy(HU.uC.value).addScaledVector(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -0.42 * S)
           .addScaledVector(_a.set(0, 1, 0).applyQuaternion(camera.quaternion), -0.1 * S).project(camera);
         postU.uSun.value.lerp(new THREE.Vector2((_b.x + 1) / 2, (_b.y + 1) / 2), look.hole);
+        _b.copy(HU.uC.value).project(camera);
+        hazeU.uHole.value.set((_b.x + 1) / 2, (_b.y + 1) / 2);
       }
       // The planet keeps its place in the sky, thirty units out along its bearing.
       planet.visible = look.alien > 0.5;
@@ -1418,6 +1457,7 @@ void main() {
       renderer.render(scene, camera);
       bloom.strength = 0.7 * flareGain * (0.4 + 0.6 * look.flareK) * (1 - 0.6 * look.hole);
       bloom.render(renderer, null, rt, 0, false);
+      if (look.hole > 0.01) { renderer.setRenderTarget(hazeRt); renderer.render(hazeScene, postCam); }
       renderer.setRenderTarget(null);
       renderer.render(postScene, postCam);
     },
