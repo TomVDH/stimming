@@ -39,6 +39,7 @@ Read `README.md` for the toy list and the full rules.
   3. `section.about` with `h1.display` and a `.vignette`.
 - Glass uses the shell but keeps its old header. Other Lab toys keep their own inline shell until Tom picks them.
 - `morpher/lab.html` is the old full Morphset page, `noindex`.
+- `shared/names.js` holds each toy's Dutch (Flemish) name and IPA. The menu and the intro show it under the English name. Tom sets the words.
 - A toy Tom signs off gets `data-done` on its `.intro` div (its intro flashes a tick) and on its menu `<li>` (it moves to the ticked shelf up top). Only Tom bestows it.
 
 ## Running

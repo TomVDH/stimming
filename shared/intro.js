@@ -1,6 +1,8 @@
 // Stimming intro: emblem in a flash box, the name unfurls, hold until ready, clear.
 // Toy pages import it as '../shared/intro.js'. No dependencies.
 
+import { NL, toyId } from './names.js';
+
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 
 /* ---------- 30 fps timing ---------- */
@@ -37,6 +39,15 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   root.classList.add('is-live');
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min))]);
+  // The Dutch name and its IPA sit under the English name.
+  const nlName = NL[toyId()], nameEl = text.querySelector('.intro-name');
+  let nl = null;
+  if (nlName && nameEl) {
+    nl = document.createElement('span');
+    nl.className = 'intro-nl';
+    nl.innerHTML = `${nlName[0]} <span class="ipa">/${nlName[1]}/</span>`;
+    nameEl.after(nl);
+  }
 
   if (RM.matches) {
     // Reduced motion: no flash, the name fades in and out.
@@ -61,6 +72,7 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   const closed = 'inset(0 50% 0 50%)';
   const unfurl = el => play(el, p => ({ clipPath: `inset(0 ${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}%)` }), 333, settle);
   if (badge) name.style.clipPath = closed;
+  if (nl) nl.style.clipPath = closed;
   if (sub) sub.style.clipPath = closed;
 
   // The box flashes on in one frame and holds.
@@ -76,6 +88,7 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   // The box cuts out; the emblem stays, white, and the words unfurl beneath it.
   if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
   if (badge) unfurl(name);
+  if (nl) { await wait(2); unfurl(nl); }
   if (sub) { await wait(4); await unfurl(sub); }
 
   await held;
