@@ -278,7 +278,7 @@ const nid = p => `fb-${p}${++ids}`;
 function grad(defs, type, attrs, stops) {
   const id = nid('g'), g = el(type, { id, ...attrs }, defs);
   const st = stops.map(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g));
-  return { url: `url(#${id})`, st };
+  return { url: `url(#${id})`, st, g };
 }
 const DOWN = { x1: 0, y1: 0, x2: 0, y2: 1 };
 // A soft blur casts contact shadows under raised parts.
@@ -287,16 +287,18 @@ function blur(defs, sd) {
   el('feGaussianBlur', { stdDeviation: sd }, f);
   return `url(#${id})`;
 }
+// The board shares one light; these lists hold every part it touches.
+const LIGHT = { sheens: [], rims: [], shadows: [] };
 // Each svg shares one sheen, one rim and one lip gradient.
 function svgIn(host, vb) {
   const svg = el('svg', { viewBox: vb, 'aria-hidden': 'true', focusable: 'false' }, host);
   const defs = el('defs', {}, svg);
-  svg.k = {
-    defs,
-    sheen: grad(defs, 'radialGradient', { cx: 0.3, cy: 0.16, r: 0.9 }, [[0, '#fff', 0.55], [0.45, '#fff', 0.1], [1, '#fff', 0]]).url,
-    rim: grad(defs, 'linearGradient', DOWN, [[0, '#fff', 0.85], [0.28, '#fff', 0], [0.62, '#000', 0], [1, '#000', 0.4]]).url,
-    lip: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.75], [0.3, '#000', 0], [0.78, '#fff', 0], [1, '#fff', 0.13]]).url,
-  };
+  const sheen = grad(defs, 'radialGradient', { cx: 0.3, cy: 0.16, r: 0.9 }, [[0, '#fff', 0.55], [0.45, '#fff', 0.1], [1, '#fff', 0]]);
+  const rim = grad(defs, 'linearGradient', DOWN, [[0, '#fff', 0.85], [0.28, '#fff', 0], [0.62, '#000', 0], [1, '#000', 0.4]]);
+  const lip = grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.75], [0.3, '#000', 0], [0.78, '#fff', 0], [1, '#fff', 0.13]]);
+  LIGHT.sheens.push(sheen.g);
+  LIGHT.rims.push(rim.g, lip.g);
+  svg.k = { defs, sheen: sheen.url, rim: rim.url, lip: lip.url };
   return svg;
 }
 // A material gives top, middle and bottom tones, darker as it is pressed.
@@ -320,6 +322,7 @@ function skin(svg, parent, tag, attrs, M, { rim = 2.5, shadow = null, sheen = tr
   el('use', { href: '#' + id }, clip);
   const g = el('g', {}, parent);
   const sh = shadow ? el('use', { href: '#' + id, fill: '#000', opacity: shadow.o ?? 0.5, filter: blur(defs, shadow.b), transform: `translate(0 ${shadow.y})` }, g) : null;
+  if (sh) LIGHT.shadows.push([sh, shadow.y]);
   const base = cyl
     ? grad(defs, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 0 }, [[0, '#fff'], [0.32, '#fff'], [1, '#fff']])
     : grad(defs, 'linearGradient', DOWN, [[0, '#fff'], [0.5, '#fff'], [1, '#fff']]);
@@ -346,6 +349,17 @@ function well(svg, parent, tag, attrs, { rim = 3 } = {}) {
   el('use', { href: '#' + id, fill: base.url }, parent);
   el('use', { href: '#' + id, fill: 'none', stroke: svg.k.lip, 'stroke-width': rim * 2, 'clip-path': `url(#${id}c)` }, parent);
   return shape;
+}
+
+// The stick steers the light: highlights follow it, shadows swing away.
+// Shadows move by x and y, so part transforms stay their own.
+const LIGHT0 = Math.atan2(0.16 - 0.5, 0.3 - 0.5);
+function shine(nx, ny) {
+  const cx = 0.3 + 0.38 * nx, cy = 0.16 + 0.38 * ny;
+  const sx = f3(cx), sy = f3(cy), rot = `rotate(${f2((Math.atan2(cy - 0.5, cx - 0.5) - LIGHT0) * R2D)} 0.5 0.5)`;
+  LIGHT.sheens.forEach(g => { set(g, 'cx', sx); set(g, 'cy', sy); });
+  LIGHT.rims.forEach(g => set(g, 'gradientTransform', rot));
+  LIGHT.shadows.forEach(([sh, y]) => { set(sh, 'x', f2(-1.2 * nx * y)); set(sh, 'y', f2(-1.2 * ny * y)); });
 }
 
 /* ---------- physics loop ---------- */
@@ -949,6 +963,7 @@ bodies.push((() => {
       set(stem, 'y2', f2(100 + y));
       set(ng, 'transform', `translate(${f2(100 + x)} ${f2(100 + y)}) scale(${f3(sc)}) translate(-100 -100)`);
       nub.paint(s.pr.x * 0.8);
+      shine(x / R, y / R);
     },
   };
   function aim(x, y) {
