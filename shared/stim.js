@@ -54,33 +54,25 @@ function headerHTML(home) {
 /* ---------- legacy: the pre-port page, one tap away ---------- */
 // A toy that moved to the library set keeps its old page as legacy.html.
 // toys.json flags it with legacy: true.
-// The header then shows a switch between Fresh and Classic.
+// The header then offers Classic; the classic page offers Fresh.
 function legacyLink() {
   const tools = document.querySelector('header[data-shell] .tools');
   if (!tools) return;
   const onLegacy = /\/legacy\.html$/.test(location.pathname);
-  const link = (href, label) => {
+  const add = (href, label, title) => {
     const a = document.createElement('a');
-    a.className = 'ver';
+    a.className = 'ver ver--build';
     a.href = href;
     a.textContent = label;
-    return a;
+    a.title = title;
+    tools.prepend(a);
   };
-  // Both builds show; the flash box marks the current one.
-  const addSwitch = () => {
-    const nav = document.createElement('nav'), fresh = link('index.html', 'Fresh'), classic = link('legacy.html', 'Classic');
-    nav.className = 'vers';
-    nav.setAttribute('aria-label', 'Version');
-    (onLegacy ? classic : fresh).setAttribute('aria-current', 'page');
-    nav.append(fresh, classic);
-    tools.prepend(nav);
-  };
-  if (onLegacy) { addSwitch(); document.documentElement.dataset.legacy = ''; return; }
+  if (onLegacy) { add('index.html', 'Fresh', 'Back to the fresh version'); document.documentElement.dataset.legacy = ''; return; }
   // toys.json marks which toys keep a legacy page, so no page probes for one.
   const id = location.pathname.split('/').filter(Boolean).filter(p => !p.endsWith('.html')).pop();
   fetch(new URL('../toys.json', import.meta.url))
     .then(r => r.json())
-    .then(toys => { if (toys[id]?.legacy) addSwitch(); })
+    .then(toys => { if (toys[id]?.legacy) add('legacy.html', 'Classic', 'The classic build of this toy'); })
     .catch(() => {});
 }
 
