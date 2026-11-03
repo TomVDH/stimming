@@ -1197,18 +1197,24 @@ void main() {
   film *= film;
   vec3 Fr = mix(vec3(F), 0.04 + 0.32 * film, uDich), Ft = mix(vec3(1.0 - F), 1.0 - 0.42 * film, uDich);
   vec3 col = (back * tint * Ft * (1.0 - 0.35 * ck.r * (1.0 - ck.g)) + (env + uDich * 0.04) * Fr + spec) * (1.0 - 0.93 * gap) + lit * vec3(0.9, 1.0, 0.96) * 1.5;
-  // The muzzle flash: a reflected star, a warm wash, and cracks that catch it.
+  // The muzzle flash is a point light, shaded on the glass.
+  // Two GGX lobes: a broad bright sheen and a hot core inside it.
   if (uFlash.w > 0.0) {
-    vec3 fd = normalize(uFlash.xyz - vWorld);
-    float c = dot(R, fd);
-    vec3 bx = normalize(cross(fd, vec3(0.0, 1.0, 0.0))), by = cross(bx, fd);
-    vec2 u = vec2(dot(R, bx), dot(R, by)) / max(c, 0.05) / uFlashS.x;
-    float r = length(u), ang = atan(u.y, u.x) + uFlashS.y, ra = fwidth(r);
-    float core = 1.0 - smoothstep(0.38 - ra, 0.38 + ra, r);
-    float ray = 1.0 - smoothstep(-ra, ra, r - (0.38 + 0.62 * pow(abs(cos(ang * 3.0)), 12.0)));
-    float star = step(0.0, c) * max(core, ray * 0.7);
+    vec3 Lf = uFlash.xyz - vWorld;
+    float df2 = dot(Lf, Lf);
+    Lf *= inversesqrt(df2);
+    vec3 Hf = normalize(Lf + V);
+    float nh = max(dot(N, Hf), 0.0), nl = max(dot(N, Lf), 0.0), vh = max(dot(V, Hf), 0.0);
+    float nh2 = nh * nh, a1 = 0.025, a2 = 0.0015;
+    float d1 = a1 / (3.14159 * pow(nh2 * (a1 - 1.0) + 1.0, 2.0));
+    float d2 = a2 / (3.14159 * pow(nh2 * (a2 - 1.0) + 1.0, 2.0));
+    float fs = 0.04 + 0.96 * pow(1.0 - vh, 5.0);
+    // Dichroic glass throws the flash back in its film colour.
+    vec3 ftint = mix(vec3(1.0), 0.3 + 1.6 * film, uDich);
     vec3 fc = uFlashC * uFlash.w;
-    col += fc * (star * 22.0 * max(Fr.g, 0.05) + 0.022 * (1.0 - gap)) * (1.0 - vSide * 0.5) + fc * lit * 3.0;
+    col += fc * ftint * (d1 + 0.25 * d2) * fs * nl * 25.0 / df2 * (1.0 - vSide * 0.4);
+    // The glass warms a little, and crack edges flare.
+    col += fc * (0.01 * (1.0 - gap) + lit * 3.0);
   }
   gl_FragColor = vec4(col, uOpacity * vFade * (1.0 - smoothstep(0.3, 0.7, hole)));
   #include <tonemapping_fragment>
