@@ -12,9 +12,21 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
 <style>
-/* Lava lamp: a lamp in a dark room under the shared header. */
-:root { --stage: oklch(0.14 0.012 30); }
+/* Lava lamp: a soft clay lamp floating in the dark. */
+:root { --stage: oklch(0.13 0.02 30); }
 .stage--lava { cursor: grab; }
 .stage--lava.held { cursor: grabbing; }
 /* Each swatch shows the wax over its liquid. */
@@ -35,21 +47,24 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Drag a blob to pull it through the liquid, or tap the base to warm the bulb. Space warms the bulb; arrow keys nudge the nearest blob.">
+    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp. Drag a blob to pull it apart, hold the liquid to warm it, drag around the lamp to tip it. Arrow keys tip it, F flips it, Space warms the bulb.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Lava lamp needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices" role="group" aria-label="Colours">
-        <button class="chip" type="button" data-pal="classic" aria-pressed="true"><span class="sw" style="--w: oklch(0.82 0.16 70); --l: oklch(0.5 0.2 25)" aria-hidden="true"></span>Classic</button>
-        <button class="chip" type="button" data-pal="violet" aria-pressed="false"><span class="sw" style="--w: oklch(0.8 0.15 350); --l: oklch(0.45 0.2 305)" aria-hidden="true"></span>Violet</button>
-        <button class="chip" type="button" data-pal="sea" aria-pressed="false"><span class="sw" style="--w: oklch(0.82 0.13 182); --l: oklch(0.38 0.15 260)" aria-hidden="true"></span>Sea</button>
+        <button class="chip" type="button" data-value="classic" aria-pressed="true"><span class="sw" style="--w: oklch(0.82 0.16 70); --l: oklch(0.5 0.2 25)" aria-hidden="true"></span>Classic</button>
+        <button class="chip" type="button" data-value="violet" aria-pressed="false"><span class="sw" style="--w: oklch(0.8 0.15 350); --l: oklch(0.45 0.2 305)" aria-hidden="true"></span>Violet</button>
+        <button class="chip" type="button" data-value="sea" aria-pressed="false"><span class="sw" style="--w: oklch(0.82 0.13 182); --l: oklch(0.38 0.15 260)" aria-hidden="true"></span>Sea</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="flip" type="button" aria-keyshortcuts="F">Flip</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag a blob</dt><dd>pull it</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the base</dt><dd>warm it</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>warm</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>nudge</dd></div>
+        <div><dt>Drag a blob</dt><dd>pull it apart</dd></div>
+        <div><dt>Hold the liquid</dt><dd>warm it</dd></div>
+        <div><dt>Drag the lamp</dt><dd>tip it</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd> <kbd>F</kbd></dt><dd>tip, flip</dd></div>
       </dl>
     </div>
   </main>
@@ -57,13 +72,13 @@
 </div>
 
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { gsap } from 'gsap';
+import { initPage, sound, audioKit, choices, reduced, onReducedChange, linFit } from '../shared/stim.js';
 initPage({ id: 'lava' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const RM = matchMedia('(prefers-reduced-motion: reduce)');
-let reduce = RM.matches;
-RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
-const TAU = Math.PI * 2, D2R = Math.PI / 180;
+let reduce = reduced();
+onReducedChange(v => { reduce = v; wake(); });
+const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -72,177 +87,172 @@ const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestId
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
-}
-// Chroma shrinks until the colour fits sRGB.
-function linear(L, C, h) {
-  let c = lin(L, C, h);
-  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return c.map(v => clamp(v));
-}
-// Hot and cool wax, the liquid's glow, and its see-through tint.
-function palette(hot, cool, liq, tint) {
-  const H = linear(...hot), Q = linear(...cool), Lq = linear(...liq), T = linear(...tint);
-  const abs = T.map(v => -Math.log(Math.max(v, 0.002)) * 2.2);
+// Hot and cool wax, liquid glow, liquid tint, clay body, backdrop.
+function palette(hot, cool, liq, tint, body, bg) {
+  const H = linFit(...hot), T = linFit(...tint), Lq = linFit(...liq);
+  const abs = T.map(v => -Math.log(Math.max(v, 0.002)) * 1.7);
   const glow = Lq.map((v, i) => v * 0.75 + H[i] * 0.3);
-  return [...H, ...Q, ...Lq, ...abs, ...glow];
+  return [...H, ...linFit(...cool), ...Lq, ...abs, ...glow, ...linFit(...body), ...linFit(...bg)];
 }
 const PALS = {
-  classic: palette([0.84, 0.19, 78], [0.64, 0.22, 44], [0.5, 0.21, 27], [0.62, 0.21, 30]),
-  violet: palette([0.82, 0.15, 352], [0.62, 0.22, 356], [0.42, 0.2, 304], [0.54, 0.21, 302]),
-  sea: palette([0.86, 0.15, 172], [0.68, 0.14, 190], [0.38, 0.15, 258], [0.5, 0.16, 254]),
+  classic: palette([0.84, 0.19, 78], [0.64, 0.22, 44], [0.5, 0.21, 27], [0.64, 0.2, 30], [0.34, 0.08, 18], [0.17, 0.03, 30]),
+  violet: palette([0.82, 0.15, 352], [0.62, 0.22, 356], [0.42, 0.2, 304], [0.56, 0.2, 302], [0.33, 0.08, 300], [0.16, 0.03, 300]),
+  sea: palette([0.86, 0.15, 172], [0.68, 0.14, 190], [0.38, 0.15, 258], [0.52, 0.15, 254], [0.35, 0.06, 236], [0.16, 0.03, 250]),
 };
 let palName = 'classic';
 const pal = Float32Array.from(PALS.classic);
 
-/* ---------- the lamp: units are lamp heights, y runs up ---------- */
+/* ---------- the lamp: units are lamp heights, y runs up the lamp ---------- */
 // The glass runs from Y0 to Y1; TH is its wall.
-const Y0 = 0.28, Y1 = 0.885, TH = 0.0045, KB = 0.034, MAXB = 12, MINB = 6;
-// The glass profile: two cones with a rounded shoulder.
+const Y0 = 0.27, Y1 = 0.865, TH = 0.004, KB = 0.036, MAXB = 12, MINB = 6, MAXG = 4;
+// The glass profile: a wide bulb, then a long taper, with a soft shoulder.
 function prof(y) {
-  const l1 = 0.08 + (y - 0.28) * 0.353, l2 = 0.14 - (y - 0.45) * 0.1885;
-  const h = clamp(0.5 + (0.5 * (l2 - l1)) / 0.05);
-  return lerp(l2, l1, h) - 0.05 * h * (1 - h);
+  const l1 = 0.118 + (y - Y0) * 0.62, l2 = 0.212 - (y - 0.43) * 0.24;
+  const h = clamp(0.5 + (0.5 * (l2 - l1)) / 0.07);
+  return lerp(l2, l1, h) - 0.07 * h * (1 - h);
 }
 const inR = y => prof(y) - TH;
-const TOP = Y1 - TH - 0.002;
-const CAM = { pos: [0, 0.6, 2.5], at: [0, 0.482, 0], tan: 0.232 };
+const TOP = Y1 - TH - 0.003;
+// The lamp turns about its middle; the camera looks at that point.
+const PIV = 0.5;
+const CAM = { pos: [0, 0.6, 2.6], at: [0, PIV, 0] };
 const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm3 = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
 const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const CZ = norm3(sub3(CAM.at, CAM.pos)), CX = norm3(cross3(CZ, [0, 1, 0])), CY = cross3(CX, CZ);
+let tanF = 0.23;
+// The key light comes from the upper left, in front.
+const KEY = norm3([-0.5, 0.72, 0.6]);
 
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 8, LEAD = 0.004;
-let ac = null, out = null, askedAt = -1e9, voices = 0, gloopNext = 0, humG = null;
+/* ---------- the lamp's pose: tipped by hand, flipped by GSAP ---------- */
+// th is the angle; w is the turn rate; rest is where it settles.
+const lamp = { th: 0, w: 0, rest: 0, grab: null, tw: null, prev: 0 };
+// World up and the pool's surface normal, both in the lamp frame.
+let up = [0, 1], pn = [0, 1], pa = 0, pw = 0;
+function lampStep(h) {
+  if (!lamp.tw) {
+    if (lamp.grab !== null) lamp.w += ((lamp.grab - lamp.th) * 140 - lamp.w * 18) * h;
+    // A released lamp rocks back to rest, upright or upside down.
+    else lamp.w += ((lamp.rest - lamp.th) * 26 - lamp.w * 3.4) * h;
+    lamp.th += lamp.w * h;
+    if (lamp.grab === null && Math.abs(lamp.rest - lamp.th) < 1e-4 && Math.abs(lamp.w) < 1e-3) { lamp.th = lamp.rest; lamp.w = 0; }
+  }
+  up = [Math.sin(lamp.th), Math.cos(lamp.th)];
+  // The pool surface leans toward level, then sloshes.
+  const a = Math.atan2(up[0], up[1]), aa = Math.abs(a);
+  const target = Math.sign(a) * Math.min(0.7, 0.75 * Math.min(aa, Math.PI - aa));
+  pw += ((target - pa) * 34 - pw * 3) * h;
+  pa += pw * h;
+  pn = [Math.sin(pa), Math.cos(pa)];
+}
+
+/* ---------- sound: Tone.js voices on the shared audio kit ---------- */
+const LEAD = 0.004;
+const kit = audioKit({ keys: new Set([' ', 'Enter', 'f', 'F', 'ArrowLeft', 'ArrowRight']) });
+let T = null, V = null, toneLoad = null, gloopNext = 0, humAt = 0, creakL = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
-const level = () => 1 / (1 + 0.12 * voices);
-
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.55;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    hum();
-  }
-  // Off screen or at rest, the lamp stays silent.
-  if (!running) { ac.suspend()?.catch(() => {}); return; }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
-}
-// A context still waking queues sounds for a moment.
-function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
-}
-function track(src, ...tails) {
-  voices++;
-  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
-}
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
-}
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
-
-// The bulb hums at twice the mains rate, low and faint.
-function hum() {
-  const mix = ac.createGain(), lp = ac.createBiquadFilter(), wob = ac.createGain();
-  humG = ac.createGain();
-  humG.gain.value = 0;
-  lp.type = 'lowpass';
-  lp.frequency.value = 340;
-  lp.Q.value = 0.6;
-  wob.gain.value = 1;
-  [[100, 1, 'sine'], [100.35, 0.5, 'sine'], [200, 0.32, 'sine'], [300, 0.08, 'triangle']].forEach(([f, g, type]) => {
-    const o = ac.createOscillator(), og = ac.createGain();
-    o.type = type;
-    o.frequency.value = f;
-    og.gain.value = g;
-    o.connect(og).connect(mix);
-    o.start();
+// The first live call loads Tone; the voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
   });
-  // A slow swell keeps the hum alive.
-  const lfo = ac.createOscillator(), lg = ac.createGain();
-  lfo.frequency.value = 0.13;
-  lg.gain.value = 0.18;
-  lfo.connect(lg).connect(wob.gain);
-  lfo.start();
-  mix.connect(lp).connect(wob).connect(humG).connect(out);
-  humLevel();
+  return null;
 }
-function humLevel() {
-  if (!humG) return;
-  const v = sound.on ? (0.0075 + 0.012 * warm) * heat : 0;
-  humG.gain.setTargetAtTime(v, ac.currentTime, 0.35);
-}
-// A warm low gloop marks each pinch and merge.
-// It rises on a pinch and falls on a merge.
-function gloop(size, up) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD;
-  if (t < gloopNext) return;
-  gloopNext = t + rand(0.22, 0.4);
-  const f = lerp(190, 82, clamp((size - 0.02) / 0.045)) * jit(0.06), g = 0.11 * level() * jit(0.08);
-  const o = a.createOscillator(), o2 = a.createOscillator(), og = a.createGain(), o2g = a.createGain(), lp = a.createBiquadFilter();
-  const [f0, f1, f2] = up ? [f * 0.78, f * 1.45, f * 1.3] : [f * 1.35, f * 0.95, f * 0.72];
-  for (const [osc, k] of [[o, 1], [o2, 2.4]]) {
-    osc.frequency.setValueAtTime(f0 * k, t);
-    osc.frequency.exponentialRampToValueAtTime(f1 * k, t + 0.07);
-    osc.frequency.exponentialRampToValueAtTime(f2 * k, t + 0.26);
+function buildVoices() {
+  // The bulb hums at twice the mains rate, low and faint.
+  const hum = new T.Gain(0).connect(kit.out);
+  const hlp = new T.Filter({ type: 'lowpass', frequency: 340, Q: 0.6 }).connect(hum);
+  for (const [f, db, type] of [[100, -6, 'sine'], [100.35, -12, 'sine'], [200, -16, 'sine'], [300, -28, 'triangle']]) {
+    new T.Oscillator({ frequency: f, type, volume: db }).connect(hlp).start();
   }
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(g, t + 0.014);
-  og.gain.setTargetAtTime(0, t + 0.04, 0.075);
-  o2g.gain.value = 0.22;
-  lp.type = 'lowpass';
-  lp.frequency.value = 620;
-  lp.Q.value = 1.1;
-  o.connect(og);
-  o2.connect(o2g).connect(og);
-  og.connect(lp).connect(out);
-  o.start(t);
-  o2.start(t);
-  o.stop(t + 0.55);
-  o2.stop(t + 0.55);
-  track(o, og, o2g, lp);
+  // A stretching neck creaks: trembling noise in a narrow band.
+  const creak = new T.Gain(0).connect(kit.out);
+  const trem = new T.Tremolo({ frequency: 19, depth: 0.75 }).connect(creak).start();
+  const cf = new T.Filter({ type: 'bandpass', Q: 7, frequency: 240 }).connect(trem);
+  new T.Noise('pink').connect(cf).start();
+  // A turning lamp sloshes: brown noise through a moving lowpass.
+  const slosh = new T.Gain(0).connect(kit.out);
+  const sf = new T.Filter({ type: 'lowpass', frequency: 260, Q: 3 }).connect(slosh);
+  new T.Noise('brown').connect(sf).start();
+  // Gloops: sine voices with a pitch slide, taken in turn.
+  const gl = new T.Filter({ type: 'lowpass', frequency: 640, Q: 1.1 }).connect(kit.out);
+  const gloops = Array.from({ length: 4 }, () => new T.Synth({
+    oscillator: { partials: [1, 0.18] }, envelope: { attack: 0.014, decay: 0.24, sustain: 0, release: 0.1 }, volume: -8,
+  }).connect(gl));
+  return { hum, creak, cf, slosh, sf, gloops, gi: 0 };
+}
+// A warm low gloop marks each pinch, tear and merge.
+// It rises on a pinch and falls on a merge.
+function gloop(size, rise, k = 1) {
+  if (seeding || !sound.on) return;
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime + LEAD;
+  if (t < gloopNext) return;
+  gloopNext = t + rand(0.16, 0.3);
+  const f = lerp(190, 78, clamp((size - 0.02) / 0.04)) * jit(0.06);
+  const [f0, f1, f2] = rise ? [f * 0.78, f * 1.45, f * 1.3] : [f * 1.35, f * 0.95, f * 0.72];
+  const s = v.gloops[v.gi++ % v.gloops.length];
+  s.triggerAttackRelease(f0, 0.1, t, clamp(0.75 * k * jit(0.08)));
+  s.frequency.setValueAtTime(f0, t);
+  s.frequency.exponentialRampToValueAtTime(f1, t + 0.07);
+  s.frequency.exponentialRampToValueAtTime(f2, t + 0.26);
+}
+// Creak, slosh and hum follow the lamp each frame.
+function soundFrame(now, dt) {
+  if (!sound.on) return;
+  const v = voices();
+  if (!v) return;
+  let c = 0;
+  for (const b of blobs) {
+    if (!b.body || b.rejoin) continue;
+    c = Math.max(c, b.u * clamp((Math.abs(b.u - b.u0) / Math.max(dt, 1e-3)) * 1.5));
+    b.u0 = b.u;
+  }
+  creakL += (c - creakL) * (1 - Math.exp(-dt / 0.05));
+  v.creak.gain.rampTo(0.2 * creakL, 0.05);
+  v.cf.frequency.rampTo(200 + 260 * creakL, 0.05);
+  const sl = clamp(Math.abs(lamp.w) / 5 + Math.abs(pw) / 4);
+  v.slosh.gain.rampTo(0.55 * sl, 0.08);
+  v.sf.frequency.rampTo(180 + 420 * sl, 0.08);
+  if (now - humAt > 250) {
+    humAt = now;
+    v.hum.gain.rampTo((0.015 + 0.024 * warm + 0.012 * fingers()) * heat, 0.35);
+  }
 }
 
-/* ---------- the wax: blobs, a pool, heat and drag ---------- */
-const G = 0.36, T0 = 0.45, DRAG = 1.3, V0 = 6e-4;
+/* ---------- the wax: blobs, a pool, heat and hands ---------- */
+const G = 0.38, T0 = 0.45, DRAG = 1.3, V0 = 9e-4;
 const IDLE = () => (reduce ? 25 : 150);
-let blobs = [], poolV = V0, pool = 0.322, heat = 1, warm = 0, spawnAcc = 0, simT = 0, idleT = 0, nextId = 1;
+// A lobe pulled from the pool hangs on this marker.
+const POOL = { pool: true };
+let blobs = [], poolV = V0, poolY = 0.325, heat = 1, warm = 0, spawnAcc = 0, simT = 0, idleT = 0, nextId = 1;
 let seeding = false, motion = 1, coldT = 0;
-const poolLevel = () => clamp(0.322 + (poolV - V0) * 22, 0.306, 0.34);
+const poolLevel = () => clamp(0.325 + (poolV - V0) * 14, 0.305, 0.35);
+// Height above the pool surface, along its normal.
+const poolDist = (x, y) => x * pn[0] + (y - poolY) * pn[1];
 function makeBlob(o) {
-  return Object.assign({ x: 0, y: 0.5, z: 0, vx: 0, vy: 0, vz: 0, r: 0.04, rt: 0.04, s: 1, lean: 0, T: 0.5, state: 'free', sib: null, sibT: 0, fromPool: false, flash: 0, grab: null, top: false, id: nextId++ }, o);
+  return Object.assign({
+    x: 0, y: 0.5, z: 0, vx: 0, vy: 0, vz: 0, r: 0.04, rt: 0.04, s: 1, lean: 0, T: 0.5, lat: 0, hot: 0, u: 0, u0: 0,
+    state: 'free', sib: null, sibT: 0, fromPool: false, flash: 0, grab: null, top: false, body: null, tug: null, rejoin: false, id: nextId++,
+  }, o);
+}
+// A mound sits on the pool and rises along its normal as it grows.
+function placeMound(b, k) {
+  const o = -b.r * 0.55 + b.r * 0.8 * k;
+  b.x = b.lat * pn[1] + pn[0] * o;
+  b.y = poolY - b.lat * pn[0] + pn[1] * o;
 }
 // A fresh mound swells out of the pool.
-function spawn(x, z) {
+function spawn(lat, z) {
   if (blobs.length >= MAXB) return null;
-  const a = rand(0, TAU), rr = Math.sqrt(Math.random()) * inR(pool) * 0.55;
-  const b = makeBlob({ x: x ?? Math.cos(a) * rr, z: z ?? Math.sin(a) * rr, y: pool - 0.008, r: 0.012, rt: rand(0.027, 0.047), T: 0.62, state: 'grow', fromPool: true });
+  const a = rand(0, TAU), rr = Math.sqrt(Math.random()) * inR(poolY) * 0.55;
+  const b = makeBlob({ lat: lat ?? Math.cos(a) * rr, z: z ?? Math.sin(a) * rr, r: 0.014, rt: rand(0.032, 0.052), T: 0.62, state: 'grow', fromPool: true });
+  placeMound(b, 0);
   poolV -= b.r ** 3;
   blobs.push(b);
   return b;
@@ -253,23 +263,27 @@ const size = b => (wide(b) + half(b)) / 2;
 function remove(b) {
   const i = blobs.indexOf(b);
   if (i >= 0) blobs.splice(i, 1);
-  for (const o of blobs) if (o.sib === b) o.sib = null;
+  for (const o of blobs) {
+    if (o.sib === b) o.sib = null;
+    if (o.tug === b) o.tug = null;
+    if (o.body === b) { o.body = null; o.rejoin = false; }
+  }
 }
 // The first blob keeps the mass, momentum and heat of both.
-function merge(a, b) {
+function merge(a, b, k0 = 1) {
   const ma = a.r ** 3, mb = b.r ** 3, m = ma + mb, k = mb / m;
-  const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y), d = Math.hypot(dx, dy) || 1;
+  const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
   for (const p of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'T']) a[p] = lerp(a[p], b[p], k);
   a.r = a.rt = Math.cbrt(m);
   // The pair's axis becomes the new blob's stretch.
-  a.s = clamp(1 + (0.9 * d * (dy - dx)) / d / (a.r * 2), 0.8, 1.45);
+  a.s = clamp(1 + (0.9 * (dy - dx)) / (a.r * 2), 0.8, 1.45);
   a.flash = Math.max(a.flash, b.flash, 0.4);
   a.fromPool = false;
   if (b.grab && !a.grab) a.grab = b.grab;
+  if (a.tug === b) a.tug = null;
   for (const g of grabs.values()) if (g.b === b) g.b = a;
-  if (focus === b) focus = a;
   remove(b);
-  if (!seeding) gloop(a.r, false);
+  gloop(a.r, false, k0);
 }
 // A stretched blob necks into two along its axis.
 function split(b, dx, dy) {
@@ -289,6 +303,31 @@ function split(b, dx, dy) {
   b.sibT = c.sibT = 4;
   blobs.push(c);
 }
+// A neck snaps: the lobe stays on the finger, the body springs back.
+function tear(g) {
+  const L = g.b, B = L.body;
+  L.body = null;
+  L.rejoin = false;
+  L.flash = 1;
+  if (B && B !== POOL) {
+    B.tug = null;
+    const dx = B.x - L.x, dy = B.y - L.y, d = Math.hypot(dx, dy) || 1;
+    B.vx += (dx / d) * 0.12;
+    B.vy += (dy / d) * 0.12;
+    B.sib = L;
+    L.sib = B;
+    B.sibT = L.sibT = 1.2;
+  }
+  L.fromPool = false;
+  g.kind = 'carry';
+  gloop(L.r, true, 1.3);
+}
+// Total finger heat, for the light and the hum.
+function fingers() {
+  let s = 0;
+  for (const g of grabs.values()) if (g.kind === 'heat') s += g.s;
+  return s;
+}
 function step(h) {
   simT += h;
   const asleep = idleT > IDLE();
@@ -300,24 +339,72 @@ function step(h) {
   warm *= Math.exp(-h / 18);
   if (warm < 0.004) warm = 0;
   const burn = heat * (1 + 1.3 * warm);
-  pool = poolLevel();
-  let act = Math.abs((asleep ? 0 : 1) - heat) + warm;
-  if (heat > 0.3 && blobs.length < MAXB && poolV > 1.2e-4) {
+  lampStep(h);
+  poolY = poolLevel();
+  const turning = Math.abs(lamp.w) > 0.02 || Math.abs(pw) > 0.02;
+  let act = Math.abs((asleep ? 0 : 1) - heat) + warm + Math.abs(lamp.w) + Math.abs(pw) + Math.abs(lamp.rest - lamp.th) + (lamp.tw ? 1 : 0);
+  // The pool feeds new wax only while it faces up.
+  const facing = up[1] > 0.4;
+  if (facing && heat > 0.3 && blobs.length < MAXB && poolV > 1.5e-4) {
     spawnAcc += h * burn * (blobs.length < 8 ? 0.45 : 0.1);
     if (spawnAcc >= 1) { spawnAcc = 0; spawn(); }
+  }
+  for (const g of grabs.values()) {
+    if (g.kind === 'heat') {
+      g.s = Math.min(1, g.s + h * 2.5);
+      act += 0.01;
+      // A finger near the pool raises a mound under it.
+      if (facing && poolDist(g.x, g.y) < 0.1 && blobs.length < MAXB && poolV > 1.5e-4) {
+        g.acc += h * g.s * 0.9;
+        if (g.acc >= 1) {
+          g.acc = 0;
+          const lim = inR(poolY) * 0.6;
+          spawn(clamp(g.x * pn[1] - (g.y - poolY) * pn[0], -lim, lim), 0);
+        }
+      }
+    } else if (g.kind === 'blob') {
+      const L = g.b, B = L.body;
+      if (!B || !blobs.includes(B)) { g.kind = 'carry'; L.body = null; continue; }
+      // The lobe takes more of the mass the further it stretches.
+      const d = Math.hypot(L.x - B.x, L.y - B.y, L.z - B.z), u = clamp(d / L.tearD), f = lerp(0.22, 0.5, u);
+      L.r = L.rt = Math.cbrt(f * L.M);
+      B.r = B.rt = Math.cbrt((1 - f) * L.M);
+      if (d > L.tearD) tear(g);
+    } else if (g.kind === 'pool') {
+      const L = g.b;
+      // Held over the pool, the lobe draws more wax out.
+      if (L.r < 0.05 && poolV > 1.5e-4) {
+        const nr = Math.min(0.05, L.r + h * 0.03);
+        poolV -= nr ** 3 - L.r ** 3;
+        L.r = L.rt = nr;
+      }
+      L.T = Math.min(1, L.T + h * 0.3);
+      L.tearD = 0.04 + 1.5 * L.r;
+      if (poolDist(L.x, L.y) > L.tearD) tear(g);
+    }
   }
   for (const b of [...blobs]) {
     b.flash = Math.max(0, b.flash - h * 1.6);
     b.sibT = Math.max(0, b.sibT - h);
+    // Finger heat warms the wax and draws it in.
+    let fh = 0, fx = 0, fy = 0;
+    for (const g of grabs.values()) {
+      if (g.kind !== 'heat') continue;
+      const dx = g.x - b.x, dy = g.y - b.y, d = Math.hypot(dx, dy, b.z * 0.5) + 1e-6, e = g.s * Math.exp(-Math.max(d - size(b), 0) / 0.06);
+      fh += e;
+      fx += (dx / d) * 0.08 * e;
+      fy += (dy / d) * 0.08 * e;
+    }
+    b.hot += (Math.min(fh, 1.2) - b.hot) * (1 - Math.exp(-h * 2.5));
     if (b.state === 'grow') {
-      const nr = Math.min(b.rt, b.r + h * 0.011 * (1 + warm) * Math.max(heat, 0.3));
+      const nr = Math.min(b.rt, b.r + h * 0.012 * (1 + warm + 2 * fh) * Math.max(heat, 0.3));
       poolV -= nr ** 3 - b.r ** 3;
       b.r = nr;
-      const k = (b.r - 0.012) / (b.rt - 0.012);
-      b.T = Math.min(1, b.T + h * 0.08 * Math.max(burn, 0.2));
-      b.y = pool - b.r * 0.55 + b.r * 0.8 * k;
-      b.vy = 0;
-      if ((k >= 1 && b.T > 0.58) || b.grab) { b.state = 'free'; b.vy = 0.004; }
+      const k = (b.r - 0.014) / (b.rt - 0.014);
+      b.T = Math.min(1, b.T + h * 0.08 * Math.max(burn, 0.2) + h * fh * 0.5);
+      placeMound(b, k);
+      b.vx = b.vy = 0;
+      if ((k >= 1 && b.T > 0.58) || b.grab || !facing) { b.state = 'free'; b.vx = pn[0] * 0.004; b.vy = pn[1] * 0.004; }
       act += 0.01;
       continue;
     }
@@ -326,38 +413,49 @@ function step(h) {
       const nr = Math.max(0, b.r - h * 0.028);
       poolV += b.r ** 3 - nr ** 3;
       b.r = nr;
-      b.y += (pool - b.r * 0.4 - b.y) * (1 - Math.exp(-h * 3));
+      const go = (-b.r * 0.4 - poolDist(b.x, b.y)) * (1 - Math.exp(-h * 3));
+      b.x += pn[0] * go;
+      b.y += pn[1] * go;
       b.s += (0.85 - b.s) * (1 - Math.exp(-h * 2));
-      if (b.r < 0.007) { poolV += b.r ** 3; remove(b); }
+      if (b.r < 0.008) { poolV += b.r ** 3; remove(b); }
       act += 0.01;
       continue;
     }
     act = Math.max(act, b.flash * 0.01);
-    // Cold, still wax sleeps until heat or a finger wakes it.
+    // Cold, still wax sleeps until heat, a finger or a tip wakes it.
     if (b.sleep) {
-      if (heat > 0 || b.grab) b.sleep = false;
+      if (heat > 0 || b.grab || fh > 0.01 || turning) b.sleep = false;
       else continue;
     }
     const rho = Math.hypot(b.x, b.z), R = Math.max(inR(b.y), 0.02);
     // Wax heats over the bulb and cools under the cap.
-    const gap = b.y - half(b) - pool;
-    const heatIn = burn * (0.38 * Math.exp(-Math.max(gap, 0) / 0.045) + 0.012);
-    const cool = 0.045 + 0.6 * sstep(0.7, 0.87, b.y + half(b) * 0.5);
+    const gap = poolDist(b.x, b.y) - half(b);
+    const heatIn = burn * (0.38 * Math.exp(-Math.max(gap, 0) / 0.05) + 0.012) + 1.4 * fh;
+    const cool = 0.045 + 0.6 * sstep(0.68, 0.85, b.y + half(b) * 0.5);
     b.T = clamp(b.T + (heatIn * (1.1 - b.T) - cool * b.T) * Math.pow(0.04 / b.r, 0.7) * h);
     const buoy = G * (b.T - T0);
-    // The liquid rises in the middle and sinks by the glass.
-    const up = 0.028 * heat * (1 - 2 * (rho / R) ** 2), sw = 0.012 * heat;
-    const ux = sw * Math.sin(simT * 0.21 + b.id * 1.7 + b.y * 9), uz = sw * Math.cos(simT * 0.17 + b.id * 2.3 + b.y * 7);
+    // The liquid rises over the bulb and sinks by the glass.
+    const plume = 0.028 * heat * (1 - 2 * (rho / R) ** 2), sw = 0.012 * heat;
+    // A turning lamp leaves the syrup behind for a moment.
+    const ux = plume * up[0] + sw * Math.sin(simT * 0.21 + b.id * 1.7 + b.y * 9) + lamp.w * (b.y - PIV) * 0.35;
+    const uy = plume * up[1] - lamp.w * b.x * 0.35, uz = sw * Math.cos(simT * 0.17 + b.id * 2.3 + b.y * 7);
     const kd = DRAG * Math.pow(0.04 / b.r, 1.2);
-    let ax = (ux - b.vx) * kd, ay = (up - b.vy) * kd + buoy, az = (uz - b.vz) * kd;
+    let ax = (ux - b.vx) * kd + buoy * up[0] + fx, ay = (uy - b.vy) * kd + buoy * up[1] + fy, az = (uz - b.vz) * kd;
     if (b.grab) {
       // The finger pulls through syrup: a soft spring, heavy damping.
-      const g = b.grab;
-      ax += (g.x - b.x) * 24 - b.vx * 6;
-      ay += (g.y - b.y) * 24 - b.vy * 6 - buoy * 0.8;
+      // A lobe stays close to the finger, so a yank can tear it.
+      const g = b.grab, [k, c] = b.body ? [60, 11] : [24, 6];
+      ax += (g.x - b.x) * k - b.vx * c - buoy * up[0] * 0.8;
+      ay += (g.y - b.y) * k - b.vy * c - buoy * up[1] * 0.8;
       az += (g.z - b.z) * 6 - b.vz * 3;
-      const pull = Math.hypot(g.x - b.x, g.y - b.y);
-      if (pull > 3 * b.r && b.r > 0.03 && b.sibT <= 0) split(b, (g.x - b.x) / pull, (g.y - b.y) / pull);
+    }
+    // A body trails its lobe; a released lobe flows home.
+    const P = b.tug || (b.rejoin && b.body !== POOL ? b.body : null);
+    if (P) {
+      const [k, c] = b.tug ? [26, 6] : [36, 7];
+      ax += (P.x - b.x) * k - b.vx * c;
+      ay += (P.y - b.y) * k - b.vy * c;
+      az += (P.z - b.z) * 8 - b.vz * 3;
     }
     b.vx += ax * h;
     b.vy += ay * h;
@@ -368,7 +466,7 @@ function step(h) {
     // Speed stretches a blob along its path.
     const sp = Math.hypot(b.vx, b.vy) + 1e-6, e = clamp(sp * 3.4 * Math.sqrt(b.r / 0.04), 0, 0.72);
     const c2 = (b.vy * b.vy - b.vx * b.vx) / (sp * sp);
-    let sT = 1 + e * (c2 > 0 ? c2 : 0.45 * c2) + (b.r > 0.052 && heat > 0.3 ? 0.35 : 0);
+    let sT = 1 + e * (c2 > 0 ? c2 : 0.45 * c2) + (b.r > 0.056 && heat > 0.3 ? 0.35 : 0);
     if (b.top) sT = 0.8;
     b.s += (sT - b.s) * (1 - Math.exp(-h * 1.6));
     const leanT = clamp(((2 * b.vx * b.vy) / (sp * sp)) * e * 1.1, -0.6, 0.6);
@@ -376,16 +474,18 @@ function step(h) {
     // The cap stops a riser; the pool takes or holds a sinker.
     b.top = false;
     if (b.y + half(b) > TOP) { b.y = TOP - half(b); b.vy = Math.min(b.vy, 0); b.top = true; }
-    const floor = pool + half(b) * 0.7;
-    if (b.y < floor) {
-      if (blobs.length > 7 && heat > 0.25 && !b.grab && b.vy < 0 && !b.fromPool) {
+    if (b.y - half(b) < Y0 + 0.004) { b.y = Y0 + 0.004 + half(b); b.vy = Math.max(b.vy, 0); }
+    const pd = poolDist(b.x, b.y), floor = half(b) * 0.7;
+    if (pd < floor && b.body !== POOL) {
+      const vn = b.vx * pn[0] + b.vy * pn[1];
+      if (blobs.length > 7 && heat > 0.25 && !b.grab && !b.tug && !b.body && vn < 0 && !b.fromPool) {
         b.state = 'sink';
-        if (focus === b) focus = null;
-        if (!seeding) gloop(b.r, false);
+        gloop(b.r, false);
         continue;
       }
-      b.y = floor;
-      b.vy = Math.max(b.vy, 0);
+      b.x += pn[0] * (floor - pd);
+      b.y += pn[1] * (floor - pd);
+      if (vn < 0) { b.vx -= pn[0] * vn; b.vy -= pn[1] * vn; }
       b.vx *= stick;
       b.vz *= stick;
     }
@@ -402,38 +502,46 @@ function step(h) {
       b.vy *= stick;
     }
     // A pool-born blob gloops as its neck pinches off.
-    if (b.fromPool && b.y - half(b) > pool + KB * 0.6) {
+    if (b.fromPool && poolDist(b.x, b.y) - half(b) > KB * 0.6) {
       b.fromPool = false;
-      if (!seeding) gloop(b.r, true);
+      gloop(b.r, true);
     }
     const v = Math.hypot(b.vx, b.vy, b.vz);
     act = Math.max(act, v, Math.abs(sT - b.s) * 0.1);
-    b.still = heat === 0 && !b.grab && v < 0.005 ? (b.still || 0) + h : 0;
-    if (b.still > 1 || (coldT > 20 && !b.grab)) { b.sleep = true; b.vx = b.vy = b.vz = 0; }
-    if (heat > 0.3 && b.s > (b.r > 0.052 ? 1.3 : 1.55) && b.r > 0.033 && b.sibT <= 0 && !b.grab && blobs.length < MAXB) {
+    b.still = heat === 0 && !b.grab && v < 0.005 && !turning ? (b.still || 0) + h : 0;
+    if (b.still > 1 || (coldT > 20 && !b.grab && !turning)) { b.sleep = true; b.vx = b.vy = b.vz = 0; }
+    const linked = b.grab || b.tug || b.body;
+    if (heat > 0.3 && b.s > (b.r > 0.056 ? 1.3 : 1.55) && b.r > 0.036 && b.sibT <= 0 && !linked && blobs.length < MAXB) {
       const l = Math.hypot(b.lean, 1);
       split(b, b.lean / l, 1 / l);
     }
   }
   // Touching blobs pull together and merge; siblings drift apart first.
-  for (let i = 0; i < blobs.length; i++) {
+  outer: for (let i = 0; i < blobs.length; i++) {
     const a = blobs[i];
     if (a.state !== 'free') continue;
     for (let j = i + 1; j < blobs.length; j++) {
       const b = blobs[j];
       if (b.state !== 'free' || (a.sleep && b.sleep)) continue;
       const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz) || 1e-6, sum = size(a) + size(b);
+      // A lobe and its body share a neck, so they never collide.
+      const lobe = a.body === b ? a : b.body === a ? b : null;
+      if (lobe) {
+        if (lobe.rejoin && d < sum * 0.6) { merge(lobe === a ? b : a, lobe, 0.6); break outer; }
+        continue;
+      }
       const sib = a.sib === b || b.sib === a;
       if (sib) {
         if (d > sum + KB * 0.5) {
           a.sib = b.sib = null;
-          if (!seeding) gloop(Math.min(a.r, b.r), true);
+          gloop(Math.min(a.r, b.r), true);
         }
         if (a.sibT > 0 || b.sibT > 0) continue;
       }
-      // Free blobs merge only above seven; a held blob merges down to six.
-      const held = a.grab || b.grab, canMerge = heat > 0.05 && blobs.length > (held ? MINB : 7);
-      if (canMerge && d < sum * 0.56) { merge(a, b); j = blobs.length; continue; }
+      // Free blobs merge only above seven; a carried blob merges down to six.
+      const held = a.grab || b.grab, linked = a.tug || a.body || b.tug || b.body;
+      const canMerge = !linked && heat > 0.05 && blobs.length > (held ? MINB : 7);
+      if (canMerge && d < sum * 0.56) { merge(a, b); break outer; }
       // A sleeping blob holds still; the other one moves.
       const ma = a.sleep ? 1e9 : a.r ** 3, mb = b.sleep ? 1e9 : b.r ** 3, wa = mb / (ma + mb), wb = ma / (ma + mb);
       if (canMerge && d < sum * 1.08) {
@@ -458,9 +566,9 @@ function step(h) {
 }
 function seed() {
   seeding = true;
-  const spots = [[0.37, 0.92], [0.46, 0.82], [0.55, 0.62], [0.67, 0.4], [0.77, 0.3], [0.84, 0.15], [0.62, 0.72], [0.5, 0.3]];
+  const spots = [[0.4, 0.92], [0.48, 0.82], [0.56, 0.62], [0.66, 0.4], [0.75, 0.3], [0.8, 0.15], [0.6, 0.72], [0.5, 0.3]];
   for (const [y, T] of spots) {
-    const r = rand(0.027, 0.045), a = rand(0, TAU), rr = Math.sqrt(Math.random()) * Math.max(0, inR(y) - r) * 0.8;
+    const r = rand(0.032, 0.05), a = rand(0, TAU), rr = Math.sqrt(Math.random()) * Math.max(0, inR(y) - r) * 0.8;
     blobs.push(makeBlob({ x: Math.cos(a) * rr, y, z: Math.sin(a) * rr * 0.8, r, rt: r, T, vy: (T - T0) * 0.1 }));
   }
   // Some seconds of flow have already run.
@@ -485,28 +593,28 @@ function local(e) {
 // The camera ray through a stage point, in CSS pixels.
 function rayAt(px, py) {
   const u = (px - W / 2) / (H / 2), v = (H / 2 - py) / (H / 2);
-  return norm3([0, 1, 2].map(i => CZ[i] + (u * CX[i] + v * CY[i]) * CAM.tan));
+  return norm3([0, 1, 2].map(i => CZ[i] + (u * CX[i] + v * CY[i]) * tanF));
 }
-function onPlane(d, z) {
+// Where a ray meets the plane at depth z, in the lamp frame.
+function lampAt(d, z) {
   const t = (z - CAM.pos[2]) / d[2];
-  return [CAM.pos[0] + d[0] * t, CAM.pos[1] + d[1] * t];
+  const qx = CAM.pos[0] + d[0] * t, qy = CAM.pos[1] + d[1] * t - PIV, c = Math.cos(lamp.th), s = Math.sin(lamp.th);
+  return [c * qx + s * qy, -s * qx + c * qy + PIV];
 }
-// Targets stay inside the glass.
+// Targets stay inside the glass and out of the pool.
 function inside(x, y, b) {
-  const yy = clamp(y, pool + half(b) * 0.7, TOP - half(b));
-  const lim = Math.max(0, Math.sqrt(Math.max(0, (inR(yy) - wide(b) - 0.006) ** 2 - b.z * b.z)));
-  return [clamp(x, -lim, lim), yy];
-}
-let focus = null, focusAt = [0, 0.56];
-function nearest(x, y) {
-  let best = null, bd = 1e9;
-  for (const b of blobs) {
-    if (b.state === 'sink') continue;
-    const d = Math.hypot(b.x - x, b.y - y) - b.r;
-    if (d < bd) { bd = d; best = b; }
+  y = clamp(y, Y0 + half(b), TOP - half(b));
+  const lim = Math.max(0, Math.sqrt(Math.max(0, (inR(y) - wide(b) - 0.006) ** 2 - b.z * b.z)));
+  x = clamp(x, -lim, lim);
+  if (b.body !== POOL) {
+    const pd = poolDist(x, y), fl = half(b) * 0.7;
+    if (pd < fl) { x += pn[0] * (fl - pd); y += pn[1] * (fl - pd); }
   }
-  return best;
+  return [x, y];
 }
+const inGlass = (x, y) => y > Y0 + 0.004 && y < TOP && Math.abs(x) < inR(y);
+// The screen angle of a point around the lamp's middle.
+const angleAt = (px, py) => Math.atan2(H / 2 - py, px - W / 2);
 
 /* ---------- WebGL ---------- */
 const TRI = `#version 300 es
@@ -516,45 +624,45 @@ void main() {
 }`;
 const FS = `#version 300 es
 precision highp float;
-uniform vec2 uRes;
-uniform vec3 uRo, uCx, uCy, uCz;
-uniform float uTan, uPix, uTime, uPool, uLight, uHeat;
-uniform int uN;
+uniform vec2 uRes, uRot, uUp, uGlowAt;
+uniform vec3 uRo, uCx, uCy, uCz, uPool, uKey;
+uniform float uTan, uPix, uTime, uLight, uHeat;
+uniform int uN, uNN, uNH;
 uniform vec4 uB[${MAXB}];
 uniform vec4 uE[${MAXB}];
-uniform vec3 uHot, uCool, uLiq, uAbs, uGlow;
+uniform vec4 uNa[${MAXG}];
+uniform vec4 uNb[${MAXG}];
+uniform vec4 uH[${MAXG}];
+uniform vec3 uHot, uCool, uLiq, uAbs, uGlow, uBody, uBg;
 out vec4 o;
 #define Y0 ${Y0}
 #define Y1 ${Y1}
 #define TH ${TH}
 #define KB ${KB}
-#define WZ 1.15
-const vec3 AMB = vec3(0.004, 0.0045, 0.006);
+#define PIV ${PIV}
+const vec3 WARM = vec3(1.0, 0.97, 0.93);
 
 float hash(vec2 p) {
   vec3 q = fract(p.xyx * 0.1031);
   q += dot(q, q.yzx + 33.33);
   return fract((q.x + q.y) * q.z);
 }
-float hash1(float x) { return fract(sin(x * 127.1) * 43758.5453); }
-float noise1(float x) {
-  float i = floor(x), f = fract(x);
-  return mix(hash1(i), hash1(i + 1.0), f * f * (3.0 - 2.0 * f));
-}
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
-}
 float smin(float a, float b, float k) {
   float h = max(k - abs(a - b), 0.0) / k;
   return min(a, b) - h * h * k * 0.25;
 }
-// The glass profile: radius and slope at a height.
+// World to lamp frame: the lamp turns about its middle.
+vec3 toLamp(vec3 p) {
+  vec2 q = p.xy - vec2(0.0, PIV);
+  return vec3(uRot.x * q.x + uRot.y * q.y, -uRot.y * q.x + uRot.x * q.y + PIV, p.z);
+}
+vec3 turn(vec3 d) { return vec3(uRot.x * d.x + uRot.y * d.y, -uRot.y * d.x + uRot.x * d.y, d.z); }
+
+/* The lamp: a clay base and cap round a wide glass. */
 vec2 prof(float y) {
-  float l1 = 0.08 + (y - 0.28) * 0.353, l2 = 0.14 - (y - 0.45) * 0.1885;
-  float h = clamp(0.5 + 0.5 * (l2 - l1) / 0.05, 0.0, 1.0);
-  return vec2(mix(l2, l1, h) - 0.05 * h * (1.0 - h), mix(-0.1885, 0.353, h));
+  float l1 = 0.118 + (y - Y0) * 0.62, l2 = 0.212 - (y - 0.43) * 0.24;
+  float h = clamp(0.5 + 0.5 * (l2 - l1) / 0.07, 0.0, 1.0);
+  return vec2(mix(l2, l1, h) - 0.07 * h * (1.0 - h), mix(-0.24, 0.62, h));
 }
 float sdGlass(vec3 p, float inset) {
   vec2 r = prof(p.y);
@@ -573,31 +681,35 @@ float sdCyl(vec3 p, float r, float h) {
   vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h);
   return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
 }
-float sdMetal(vec3 p) {
-  float body = sdCone(p - vec3(0.0, 0.138, 0.0), 0.124, 0.142, 0.078) - 0.006;
-  float foot = sdCyl(p - vec3(0.0, 0.009, 0.0), 0.15, 0.007) - 0.002;
-  float collar = sdCyl(p - vec3(0.0, 0.279, 0.0), 0.083, 0.008) - 0.003;
-  float cap = sdCone(p - vec3(0.0, 0.94, 0.0), 0.055, 0.062, 0.033) - 0.005;
-  float rim = sdCyl(p - vec3(0.0, 0.884, 0.0), 0.066, 0.005) - 0.002;
-  return min(min(body, foot), min(collar, min(cap, rim)));
+float sdBody(vec3 p) {
+  float base = sdCone(p - vec3(0.0, 0.128, 0.0), 0.116, 0.2, 0.118) - 0.012;
+  float collar = sdCyl(p - vec3(0.0, 0.262, 0.0), 0.118, 0.007) - 0.006;
+  float cap = sdCone(p - vec3(0.0, 0.93, 0.0), 0.058, 0.104, 0.064) - 0.012;
+  return min(smin(base, collar, 0.02), cap);
 }
-float sdLamp(vec3 p) { return min(sdMetal(p), sdGlass(p, 0.0)); }
+float sdLamp(vec3 p) { return min(sdBody(p), sdGlass(p, 0.0)); }
 vec3 nGlass(vec3 p, float inset) {
   const vec2 e = vec2(0.0007, -0.0007);
   return normalize(e.xyy * sdGlass(p + e.xyy, inset) + e.yyx * sdGlass(p + e.yyx, inset) + e.yxy * sdGlass(p + e.yxy, inset) + e.xxx * sdGlass(p + e.xxx, inset));
 }
-vec3 nMetal(vec3 p) {
-  const vec2 e = vec2(0.0006, -0.0006);
-  return normalize(e.xyy * sdMetal(p + e.xyy) + e.yyx * sdMetal(p + e.yyx) + e.yxy * sdMetal(p + e.yxy) + e.xxx * sdMetal(p + e.xxx));
+vec3 nBody(vec3 p) {
+  const vec2 e = vec2(0.0008, -0.0008);
+  return normalize(e.xyy * sdBody(p + e.xyy) + e.yyx * sdBody(p + e.yyx) + e.yxy * sdBody(p + e.yxy) + e.xxx * sdBody(p + e.xxx));
 }
 
-/* The wax: a smooth union of the pool and the blobs. */
+/* The wax: a smooth union of the pool, the blobs and the necks. */
 float sdEll(vec3 p, vec3 r) {
   float k0 = length(p / r), k1 = max(length(p / (r * r)), 1e-6);
   return k0 * (k0 - 1.0) / k1;
 }
 float poolD(vec3 p) {
-  return p.y - uPool - 0.0024 * uHeat * sin(p.x * 70.0 + uTime * 0.6) * sin(p.z * 63.0 - uTime * 0.45);
+  return dot(p.xy, uPool.xy) - uPool.z - 0.003 * uHeat * sin(p.x * 60.0 + uTime * 0.6) * sin(p.z * 55.0 - uTime * 0.45);
+}
+// A neck pinches thinnest in its middle as it stretches.
+float neck(vec3 p, vec4 a, vec4 b) {
+  vec3 pa = p - a.xyz, ba = b.xyz - a.xyz;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  return length(pa - ba * h) - a.w * (1.0 - 0.55 * b.w * sin(3.14159 * h));
 }
 float wax(vec3 p) {
   float d = poolD(p);
@@ -609,6 +721,10 @@ float wax(vec3 p) {
     if (length(q) - max(b.w, e.x) * (1.0 + abs(e.y)) > d + KB) continue;
     q.x -= e.y * q.y;
     d = smin(d, sdEll(q, vec3(b.w, e.x, b.w)), KB);
+  }
+  for (int i = 0; i < ${MAXG}; i++) {
+    if (i >= uNN) break;
+    d = smin(d, neck(p, uNa[i], uNb[i]), KB * 0.8);
   }
   return d;
 }
@@ -631,80 +747,26 @@ vec3 nWax(vec3 p) {
   const vec2 e = vec2(0.0012, -0.0012);
   return normalize(e.xyy * wax(p + e.xyy) + e.yyx * wax(p + e.yyx) + e.yxy * wax(p + e.yxy) + e.xxx * wax(p + e.xxx));
 }
-
-/* The room: a back wall, a desk, and the lamp's own light. */
-// Light leaving the glass at a height: strongest over the bulb.
-vec3 emit(float y) {
-  return uGlow * uLight * (0.22 + 1.7 * exp(-(y - Y0) * 2.8));
-}
-vec3 lampLight(vec3 P, vec3 N, bool desk) {
-  vec3 sum = vec3(0.0);
-  vec2 dir = normalize(P.xz + vec2(1e-5, 0.0));
-  float rho = length(P.xz);
-  for (int i = 0; i < 4; i++) {
-    float y = 0.33 + 0.15 * float(i), er = prof(y).x * 0.7;
-    vec3 E = vec3(dir.x * er, y, dir.y * er), L = E - P;
-    float d2 = dot(L, L);
-    float c = max(dot(N, L * inversesqrt(d2)), 0.0);
-    // On the desk, the base hides the glass near it.
-    float sh = desk ? smoothstep(-0.015, 0.05, min(rho - 0.15, rho + (er - rho) * 0.28 / y - 0.083)) : 1.0;
-    sum += emit(y) * c * sh / (d2 + 0.03);
+// Each finger glows where it touches the liquid.
+float fingers(vec3 p) {
+  float s = 0.0;
+  for (int i = 0; i < ${MAXG}; i++) {
+    if (i >= uNH) break;
+    vec3 d = p - uH[i].xyz;
+    float q = dot(d, d);
+    // A wide warm halo round a small hot core.
+    s += uH[i].w * (exp(-q * 260.0) + 1.6 * exp(-q * 2600.0));
   }
-  return sum * 0.15;
-}
-// Where a ray passes the lamp's axis, it may see the lamp.
-vec4 seeLamp(vec3 P, vec3 d, float blur) {
-  float dd = dot(d.xz, d.xz);
-  if (dd < 1e-5) return vec4(0.0);
-  float t = -dot(P.xz, d.xz) / dd;
-  if (t <= 0.0) return vec4(0.0);
-  vec3 Q = P + d * t;
-  if (Q.y < 0.0 || Q.y > 1.0) return vec4(0.0);
-  float R;
-  vec3 c;
-  if (Q.y < Y0) { R = 0.152 - 0.24 * Q.y; c = vec3(0.02) + emit(Y0) * 0.06; }
-  else if (Q.y < Y1) { R = prof(Q.y).x; c = emit(Q.y) * 1.3 + uHot * uLight * 0.5 * exp(-(Q.y - uPool) * 30.0) * step(0.0, Q.y - Y0); }
-  else { R = 0.068 - 0.29 * (Q.y - Y1); c = vec3(0.015); }
-  float b = blur * t + 0.003;
-  return vec4(c, smoothstep(R + b, R - b, length(Q.xz)));
-}
-vec3 env(vec3 r, float rough) {
-  float az = atan(r.x, r.z);
-  float w1 = mix(0.05, 0.2, rough), w2 = mix(0.03, 0.15, rough);
-  float v = smoothstep(-0.5, 0.05, r.y) * smoothstep(0.98, 0.5, r.y);
-  float b1 = exp(-pow((az + 0.62) / w1, 2.0)) * 0.05 / w1;
-  float b2 = exp(-pow((az - 0.82) / w2, 2.0)) * 0.03 / w2 * 0.35;
-  return vec3(1.0, 0.96, 0.9) * (b1 + b2) * v * 10.0;
-}
-vec3 wallCol(vec3 P) {
-  vec3 c = vec3(0.2, 0.19, 0.185) * (lampLight(P, vec3(0.0, 0.0, 1.0), false) + AMB);
-  // The glow pools behind the lamp and fades toward the corners.
-  c *= 0.35 + 0.9 * exp(-dot(P.xy - vec2(0.0, 0.5), P.xy - vec2(0.0, 0.5)) * 0.9);
-  return c * (1.0 - 0.5 * exp(-P.y * 7.0)) * (0.96 + 0.08 * vnoise(P.xy * 40.0));
-}
-vec3 deskCol(vec3 P, vec3 rd) {
-  // Dark wood: fine grain running across the desk.
-  float grain = vnoise(vec2(P.x * 3.0, P.z * 90.0 + vnoise(P.xz * 6.0) * 4.0));
-  vec3 alb = vec3(0.085, 0.06, 0.045) * (0.8 + 0.4 * grain);
-  vec3 c = alb * (lampLight(P, vec3(0.0, 1.0, 0.0), true) + AMB);
-  float rho = length(P.xz);
-  c *= mix(0.3, 1.0, smoothstep(0.15, 0.3, rho));
-  c *= 1.0 - 0.45 * exp(-(P.z + WZ) * 7.0);
-  // The lacquer mirrors the lamp, softly.
-  vec4 m = seeLamp(P, vec3(rd.x, -rd.y, rd.z), 0.05 + 0.04 * grain);
-  float fr = 0.05 + 0.5 * pow(1.0 - abs(rd.y), 5.0);
-  return c + m.rgb * m.a * fr;
-}
-vec3 room(vec3 ro, vec3 rd) {
-  float tf = rd.y < -1e-4 ? -ro.y / rd.y : 1e9;
-  float tw = rd.z < -1e-4 ? (-WZ - ro.z) / rd.z : 1e9;
-  if (tf < tw) return deskCol(ro + rd * tf, rd);
-  if (tw < 1e8) return wallCol(ro + rd * tw);
-  // Behind the viewer the room is dark, tinted by the lamp.
-  return AMB + emit(0.5) * 0.03 * (1.0 - 0.5 * rd.y);
+  return s;
 }
 
-/* Wax: lit from the bulb below, glowing through its thin parts. */
+/* Light: the bulb under the glass, the fingers, and one soft key. */
+vec3 emit(float y) { return uGlow * uLight * (0.22 + 1.7 * exp(-(y - Y0) * 2.8)); }
+vec3 backdrop(vec2 uv) {
+  vec2 d = uv - uGlowAt;
+  float g = exp(-dot(d, d) * 2.0);
+  return uBg * (0.45 + 0.75 * g) + uGlow * uLight * 0.06 * g;
+}
 vec3 shadeWax(vec3 p, vec3 rd, vec3 n) {
   vec2 m = waxMat(p);
   vec3 alb = mix(uCool, uHot, m.x);
@@ -717,27 +779,34 @@ vec3 shadeWax(vec3 p, vec3 rd, vec3 n) {
   float wrap = clamp((dot(n, L) + 0.6) / 1.6, 0.0, 1.0);
   float thin = 0.0;
   for (int k = 1; k <= 3; k++) {
-    float h = 0.018 * float(k);
+    float h = 0.02 * float(k);
     thin += clamp((h + wax(p - n * h)) / h, 0.0, 2.0);
   }
   float I = uLight * fall * (0.2 + 0.8 * wrap * wrap + 0.2 * thin);
+  // Fingers light the wax near them.
+  for (int i = 0; i < ${MAXG}; i++) {
+    if (i >= uNH) break;
+    vec3 F = uH[i].xyz - p;
+    float f2 = dot(F, F);
+    I += uH[i].w * 0.5 * clamp((dot(n, F * inversesqrt(f2 + 1e-6)) + 0.5) / 1.5, 0.0, 1.0) / (1.0 + 90.0 * f2);
+  }
   float c = clamp(dot(n, -rd), 0.0, 1.0);
   // Thick middles glow hot; edges and tops stay deep.
   vec3 col = alb * tint * I * 2.4 + uHot * tint * min(I * I, 1.0) * 0.5 * c;
   col *= 0.6 + 0.4 * c;
   col += uCool * tint * uLight * 0.08 * thin;
-  col += env(reflect(rd, n), 0.3) * (0.01 + 0.1 * pow(1.0 - c, 4.0)) * tint;
+  col += WARM * pow(clamp(dot(reflect(rd, n), uKey), 0.0, 1.0), 14.0) * 0.12 * tint;
   return col * (1.0 + 0.55 * m.y);
 }
 // The liquid: tinted, lit from below, glowing round the wax.
-vec3 liquid(vec3 ro, vec3 rd, float tc) {
+vec3 liquid(vec3 ro, vec3 rd, float tc, vec3 bgc) {
   if (wax(ro) < 0.0) return shadeWax(ro, rd, normalize(vec3(ro.x, 0.0, ro.z) + vec3(0.0, 0.0, 1e-4)));
   vec3 T = vec3(1.0), S = vec3(0.0), p = ro;
   // The nearest miss of the wax, kept to soften its edge.
   vec3 bT = vec3(1.0), bS = vec3(0.0);
   float t = 0.0, bq = 1e9, bt = 0.0;
   int hit = 0;
-  for (int i = 0; i < 90; i++) {
+  for (int i = 0; i < 84; i++) {
     p = ro + rd * t;
     float dw = wax(p), dl = -sdGlass(p, TH);
     float q = dw / (uPix * (tc + t));
@@ -749,9 +818,9 @@ vec3 liquid(vec3 ro, vec3 rd, float tc) {
       break;
     }
     if (dl < 0.001 && t > 0.004) { hit = 2; break; }
-    float h = min(min(max(dw, 0.0008), max(dl, 0.002)), 0.022);
-    float lift = exp(-max(p.y - Y0, 0.0) * 4.5), beam = exp(-dot(p.xz, p.xz) * 110.0);
-    vec3 sc = uLiq * (0.45 + 4.2 * lift * (0.6 + 0.6 * beam)) + uHot * exp(-dw * 40.0) * (0.25 + 2.4 * lift);
+    float h = min(min(max(dw, 0.0008), max(dl, 0.002)), 0.024);
+    float lift = exp(-max(p.y - Y0, 0.0) * 4.5), beam = exp(-dot(p.xz, p.xz) * 60.0);
+    vec3 sc = uLiq * (0.45 + 4.2 * lift * (0.6 + 0.6 * beam)) + uHot * exp(-dw * 40.0) * (0.25 + 2.4 * lift) + uHot * 10.0 * fingers(p);
     S += T * sc * (uLight * h);
     T *= exp(-uAbs * h);
     t += h;
@@ -759,10 +828,7 @@ vec3 liquid(vec3 ro, vec3 rd, float tc) {
   vec3 back;
   if (hit == 1) back = shadeWax(p, rd, nWax(p));
   else {
-    vec3 n = nGlass(p, TH);
-    vec3 r2 = refract(rd, -n, 1.12);
-    if (dot(r2, r2) < 0.5) r2 = reflect(rd, -n);
-    back = room(p, r2) * 0.9 + env(reflect(rd, -n), 0.15) * 0.05;
+    back = bgc * 0.8 + emit(p.y) * 0.05;
     if (bq < 1.0) {
       vec3 pb = ro + rd * bt;
       return mix(S + T * back, bS + bT * shadeWax(pb, rd, nWax(pb)), clamp(1.0 - bq, 0.0, 1.0));
@@ -770,48 +836,52 @@ vec3 liquid(vec3 ro, vec3 rd, float tc) {
   }
   return S + T * back;
 }
-vec3 shadeGlass(vec3 p, vec3 rd, float tc) {
+// Glass: soft broad highlights from one box light, no room to mirror.
+vec3 shadeGlass(vec3 p, vec3 rd, float tc, vec3 bgc) {
   vec3 n = nGlass(p, 0.0);
   float c = clamp(dot(-rd, n), 0.0, 1.0);
   float F = 0.04 + 0.96 * pow(1.0 - c, 5.0);
-  vec3 r = reflect(rd, n);
-  vec3 refl = env(r, 0.0) + room(p, r);
-  vec3 r1 = refract(rd, n, 1.0 / 1.12);
-  vec3 inner = liquid(p + r1 * (TH / max(dot(r1, -n), 0.25) + 0.002), r1, tc);
+  vec3 r1 = refract(rd, n, 1.0 / 1.08);
+  vec3 inner = liquid(p + r1 * (TH / max(dot(r1, -n), 0.25) + 0.002), r1, tc, bgc);
   // The glass edge thickens toward the silhouette.
-  inner *= mix(1.0, 0.6, pow(1.0 - c, 3.0));
-  return mix(inner, refl, F);
+  inner *= mix(1.0, 0.7, pow(1.0 - c, 3.0));
+  float k = dot(reflect(rd, n), uKey);
+  vec3 refl = WARM * smoothstep(0.7, 0.97, k) * 0.9 + emit(p.y) * 0.08 + uBg * 0.5;
+  return mix(inner, refl, F) + WARM * smoothstep(0.9, 0.99, k) * 0.22;
 }
-// Brushed metal: fine rings spread the highlights up and down.
-vec3 shadeMetal(vec3 p, vec3 rd) {
-  vec3 n = nMetal(p);
-  float az = atan(p.x, p.z);
-  float ln = noise1(p.y * 1300.0 + noise1(az * 9.0) * 3.0) * 0.55 + noise1(p.y * 3100.0 + 17.0) * 0.45;
-  vec3 nb = normalize(n + vec3(0.0, (ln - 0.5) * 0.09, 0.0));
-  vec3 r = reflect(rd, nb);
-  float c = clamp(dot(-rd, nb), 0.0, 1.0);
-  vec3 F0 = vec3(0.72, 0.7, 0.68);
-  vec3 F = F0 + (1.0 - F0) * pow(1.0 - c, 5.0);
-  vec3 q = p + n * 0.003;
-  vec3 refl = env(r, 0.55) + room(q, r);
-  vec4 v = seeLamp(q, r, 0.04);
-  refl = mix(refl, v.rgb, v.a);
-  return F * refl * (0.8 + 0.4 * ln) + F0 * lampLight(q, n, false) * 0.3;
+// Clay: matte, wrapped light, lit warm by the glass above it.
+vec3 shadeBody(vec3 p, vec3 rd) {
+  vec3 n = nBody(p);
+  float dif = clamp(dot(n, uKey) * 0.7 + 0.3, 0.0, 1.0);
+  float sky = 0.55 + 0.45 * dot(n.xy, uUp);
+  float c = clamp(dot(-rd, n), 0.0, 1.0);
+  float rim = pow(1.0 - c, 3.0);
+  // The bulb lights the collar and the base top through the glass.
+  float lo = exp(-abs(p.y - Y0) * 16.0) * smoothstep(-0.3, 0.6, n.y);
+  float hi = exp(-abs(p.y - Y1) * 20.0) * smoothstep(-0.3, 0.6, -n.y);
+  float ao = mix(0.5, 1.0, smoothstep(0.0, 0.04, sdGlass(p, 0.0)));
+  vec3 col = uBody * (0.16 * sky + 0.95 * dif * dif) * ao;
+  col += uBody * uGlow * uLight * (lo * 3.0 + hi * 1.5) + uGlow * uLight * (lo * 0.22 + hi * 0.08);
+  col += rim * (uBody * 0.5 + uGlow * uLight * 0.2) * 0.6;
+  col += WARM * pow(clamp(dot(reflect(rd, n), uKey), 0.0, 1.0), 10.0) * 0.06;
+  return col;
 }
 vec2 cyl(vec3 ro, vec3 rd, float r, float y0, float y1) {
   float a = dot(rd.xz, rd.xz), b = dot(ro.xz, rd.xz), c = dot(ro.xz, ro.xz) - r * r, h = b * b - a * c;
   if (h < 0.0) return vec2(1.0, -1.0);
   h = sqrt(h);
-  float ta = (y0 - ro.y) / rd.y, tb = (y1 - ro.y) / rd.y;
+  float dy = abs(rd.y) < 1e-5 ? 1e-5 : rd.y;
+  float ta = (y0 - ro.y) / dy, tb = (y1 - ro.y) / dy;
   return vec2(max(max((-b - h) / a, min(ta, tb)), 0.0), min((-b + h) / a, max(ta, tb)));
 }
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c) { return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / (0.5 * uRes.y);
-  vec3 ro = uRo, rd = normalize(uCz + uTan * (uv.x * uCx + uv.y * uCy));
-  vec3 col = room(ro, rd);
-  vec2 tb = cyl(ro, rd, 0.17, -0.01, 1.01);
+  vec3 rw = normalize(uCz + uTan * (uv.x * uCx + uv.y * uCy));
+  vec3 bgc = backdrop(uv), col = bgc;
+  vec3 ro = toLamp(uRo), rd = turn(rw);
+  vec2 tb = cyl(ro, rd, 0.226, -0.005, 1.005);
   if (tb.x < tb.y) {
     float t = tb.x, best = 1e9, bt = 0.0;
     bool hit = false;
@@ -827,17 +897,20 @@ void main() {
     if (a > 0.0) {
       if (!hit) t = bt;
       vec3 p = ro + rd * t;
-      vec3 lc = sdGlass(p, 0.0) < sdMetal(p) ? shadeGlass(p, rd, t) : shadeMetal(p, rd);
+      vec3 lc = sdGlass(p, 0.0) < sdBody(p) ? shadeGlass(p, rd, t, bgc) : shadeBody(p, rd);
       col = mix(col, lc, a);
     }
   }
   vec2 v = gl_FragCoord.xy / uRes - 0.5;
-  col = aces(col * 1.05) * (1.0 - 0.28 * dot(v, v));
+  col = aces(col * 1.05) * (1.0 - 0.3 * dot(v, v));
   o = vec4(srgb(col) + (hash(gl_FragCoord.xy + fract(uTime) * 61.0) - 0.5) / 255.0, 1.0);
 }`;
 
 let gl = null, prog = null, U = {}, vao = null, ready = false;
 const UB = new Float32Array(4 * MAXB), UE = new Float32Array(4 * MAXB);
+const UNA = new Float32Array(4 * MAXG), UNB = new Float32Array(4 * MAXG), UH = new Float32Array(4 * MAXG);
+const UNIFORMS = ['uRes', 'uRot', 'uUp', 'uGlowAt', 'uRo', 'uCx', 'uCy', 'uCz', 'uPool', 'uKey', 'uTan', 'uPix', 'uTime', 'uLight', 'uHeat',
+  'uN', 'uNN', 'uNH', 'uB', 'uE', 'uNa', 'uNb', 'uH', 'uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow', 'uBody', 'uBg'];
 async function initGL() {
   gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
   if (!gl) throw new Error('WebGL 2 unavailable');
@@ -856,13 +929,12 @@ async function initGL() {
   if (par) while (!gl.isContextLost() && !gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR)) await nextFrame();
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(f) || gl.getShaderInfoLog(v) || gl.getProgramInfoLog(p) || 'link failed');
   prog = p;
-  for (const n of ['uRes', 'uRo', 'uCx', 'uCy', 'uCz', 'uTan', 'uPix', 'uTime', 'uPool', 'uLight', 'uHeat', 'uN', 'uB', 'uE', 'uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow']) U[n] = gl.getUniformLocation(p, n);
+  for (const n of UNIFORMS) U[n] = gl.getUniformLocation(p, n);
   gl.useProgram(p);
-  gl.uniform3fv(U.uRo, CAM.pos);
   gl.uniform3fv(U.uCx, CX);
   gl.uniform3fv(U.uCy, CY);
   gl.uniform3fv(U.uCz, CZ);
-  gl.uniform1f(U.uTan, CAM.tan);
+  gl.uniform3fv(U.uRo, CAM.pos);
   vao = gl.createVertexArray();
 }
 
@@ -876,6 +948,8 @@ function fit() {
   W = w;
   H = h;
   rect = null;
+  // The lamp fills the height; narrow stages pull the camera back.
+  tanF = Math.max(0.6, 0.42 / (w / h)) / Math.hypot(...sub3(CAM.pos, CAM.at));
   const p = Math.min(devicePixelRatio || 1, 2, Math.sqrt(1.4e6 / (w * h))) * SCALES[scaleI];
   const cw = Math.max(1, Math.round(w * p)), ch = Math.max(1, Math.round(h * p));
   if (canvas.width !== cw || canvas.height !== ch) {
@@ -884,35 +958,68 @@ function fit() {
   }
   if (ready) render();
 }
+// A lamp-frame point on the stage, as shader uv.
+function project(x, y) {
+  const c = Math.cos(lamp.th), s = Math.sin(lamp.th), qx = x, qy = y - PIV;
+  const v = sub3([c * qx - s * qy, s * qx + c * qy + PIV, 0], CAM.pos), z = dot3(v, CZ);
+  return [dot3(v, CX) / z / tanF, dot3(v, CY) / z / tanF];
+}
 function render() {
   const cw = canvas.width, ch = canvas.height, n = Math.min(MAXB, blobs.length);
+  let nn = 0, nh = 0;
   for (let i = 0; i < n; i++) {
-    const b = blobs[i];
-    UB[i * 4] = b.x; UB[i * 4 + 1] = b.y; UB[i * 4 + 2] = b.z; UB[i * 4 + 3] = wide(b);
-    UE[i * 4] = half(b); UE[i * 4 + 1] = b.lean; UE[i * 4 + 2] = b.T; UE[i * 4 + 3] = b.flash;
+    const b = blobs[i], sw = 1 + 0.12 * b.hot;
+    UB[i * 4] = b.x; UB[i * 4 + 1] = b.y; UB[i * 4 + 2] = b.z; UB[i * 4 + 3] = wide(b) * sw;
+    UE[i * 4] = half(b) * sw; UE[i * 4 + 1] = b.lean; UE[i * 4 + 2] = b.T; UE[i * 4 + 3] = b.flash;
+    // A lobe hangs on its body, or on the pool, by a neck.
+    if (!b.body || nn >= MAXG) continue;
+    let ax, ay, az, d, ra;
+    if (b.body === POOL) {
+      const pd = poolDist(b.x, b.y) + 0.012;
+      ax = b.x - pn[0] * pd; ay = b.y - pn[1] * pd; az = b.z; d = pd; ra = b.r;
+    } else {
+      const B = b.body;
+      ax = B.x; ay = B.y; az = B.z; d = Math.hypot(b.x - ax, b.y - ay, b.z - az); ra = Math.min(B.r, b.r);
+    }
+    b.u = clamp(d / b.tearD);
+    UNA[nn * 4] = ax; UNA[nn * 4 + 1] = ay; UNA[nn * 4 + 2] = az; UNA[nn * 4 + 3] = ra * 0.75 * (1 - b.u) ** 0.6 + 0.004;
+    UNB[nn * 4] = b.x; UNB[nn * 4 + 1] = b.y; UNB[nn * 4 + 2] = b.z; UNB[nn * 4 + 3] = b.u;
+    nn++;
   }
+  for (const g of grabs.values()) {
+    if (g.kind !== 'heat' || nh >= MAXG) continue;
+    UH[nh * 4] = g.x; UH[nh * 4 + 1] = g.y; UH[nh * 4 + 2] = 0; UH[nh * 4 + 3] = g.s;
+    nh++;
+  }
+  const c = Math.cos(lamp.th), s = Math.sin(lamp.th);
   gl.viewport(0, 0, cw, ch);
   gl.useProgram(prog);
   gl.uniform2f(U.uRes, cw, ch);
-  gl.uniform1f(U.uPix, (2 * CAM.tan) / ch);
+  gl.uniform2f(U.uRot, c, s);
+  gl.uniform2f(U.uUp, s, c);
+  gl.uniform2fv(U.uGlowAt, project(0, 0.55));
+  gl.uniform3f(U.uKey, c * KEY[0] + s * KEY[1], -s * KEY[0] + c * KEY[1], KEY[2]);
+  gl.uniform3f(U.uPool, pn[0], pn[1], poolY * pn[1]);
+  gl.uniform1f(U.uTan, tanF);
+  gl.uniform1f(U.uPix, (2 * tanF) / ch);
   gl.uniform1f(U.uTime, simT % 1000);
-  gl.uniform1f(U.uPool, pool);
   gl.uniform1f(U.uLight, light);
   gl.uniform1f(U.uHeat, heat);
   gl.uniform1i(U.uN, n);
+  gl.uniform1i(U.uNN, nn);
+  gl.uniform1i(U.uNH, nh);
   gl.uniform4fv(U.uB, UB);
   gl.uniform4fv(U.uE, UE);
-  gl.uniform3fv(U.uHot, pal.subarray(0, 3));
-  gl.uniform3fv(U.uCool, pal.subarray(3, 6));
-  gl.uniform3fv(U.uLiq, pal.subarray(6, 9));
-  gl.uniform3fv(U.uAbs, pal.subarray(9, 12));
-  gl.uniform3fv(U.uGlow, pal.subarray(12, 15));
+  gl.uniform4fv(U.uNa, UNA);
+  gl.uniform4fv(U.uNb, UNB);
+  gl.uniform4fv(U.uH, UH);
+  ['uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow', 'uBody', 'uBg'].forEach((k, i) => gl.uniform3fv(U[k], pal.subarray(i * 3, i * 3 + 3)));
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
-/* ---------- one loop, running while the wax moves ---------- */
-let raf = 0, last = 0, running = false, onScreen = false, resting = false, frames = 0, slow = 0, humAt = 0;
+/* ---------- one loop, running while anything moves ---------- */
+let raf = 0, last = 0, running = false, onScreen = false, resting = false, frames = 0, slow = 0;
 function frame(now) {
   raf = 0;
   if (!running) return;
@@ -924,10 +1031,13 @@ function frame(now) {
     if (slow > 30) { scaleI++; slow = 0; fit(); }
   }
   idleT += dt;
-  const speed = reduce ? 0.5 : 1;
-  simulate(dt * speed);
-  // The bulb's light follows its heat and the warm boost.
-  const lt = (0.6 + 0.4 * heat) * (1 + 0.45 * warm);
+  // GSAP drives the angle during a flip; its rate feeds the slosh.
+  if (lamp.tw) lamp.w = dt > 0 ? (lamp.th - lamp.prev) / dt : 0;
+  lamp.prev = lamp.th;
+  for (const g of grabs.values()) retarget(g);
+  simulate(dt * (reduce ? 0.5 : 1));
+  // The bulb's light follows its heat, the warm boost and the fingers.
+  const lt = (0.6 + 0.4 * heat) * (1 + 0.45 * warm) + 0.12 * fingers();
   light += (lt - light) * (1 - Math.exp(-dt / 0.25));
   const tp = PALS[palName];
   let dp = 0;
@@ -935,11 +1045,11 @@ function frame(now) {
     pal[i] += (tp[i] - pal[i]) * (1 - Math.exp(-dt / (reduce ? 0.08 : 0.28)));
     dp = Math.max(dp, Math.abs(tp[i] - pal[i]));
   }
-  if (now - humAt > 250) { humAt = now; humLevel(); }
   render();
+  soundFrame(now, dt);
   if (frames === 2) canvas.classList.add('on');
-  // At rest the loop stops and the context sleeps.
-  if (heat === 0 && warm === 0 && motion < 0.0015 && dp < 1e-3 && Math.abs(lt - light) < 1e-3 && !grabs.size) {
+  // At rest the loop stops and the sound sleeps.
+  if (heat === 0 && warm === 0 && motion < 0.0015 && dp < 1e-3 && Math.abs(lt - light) < 1e-3 && !grabs.size && !lamp.tw) {
     resting = true;
     sync();
     return;
@@ -953,11 +1063,10 @@ function sync() {
   if (run) {
     last = performance.now();
     raf = requestAnimationFrame(frame);
-    if (sound.on && ac && ac.state !== 'running') audio();
   } else {
     cancelAnimationFrame(raf);
     raf = 0;
-    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+    kit.rest(() => !running);
   }
 }
 // Any touch wakes a resting lamp.
@@ -969,87 +1078,160 @@ function wake() {
 }
 
 /* ---------- input ---------- */
+// One gesture per pointer: blob, pool, carry, heat or tip.
 const grabs = new Map();
+// The lamp turns under a held pointer, so targets follow each frame.
+function retarget(g) {
+  if (g.kind === 'tip') return;
+  const d = rayAt(g.sx, g.sy);
+  if (g.kind === 'heat') {
+    let [x, y] = lampAt(d, 0);
+    y = clamp(y, Y0 + 0.01, TOP - 0.01);
+    const lim = inR(y) * 0.9;
+    g.x = clamp(x, -lim, lim);
+    g.y = y;
+    return;
+  }
+  const b = g.b, [px, py] = lampAt(d, g.zp), [tx, ty] = inside(px + g.ox, py + g.oy, b);
+  b.grab = { x: tx, y: ty, z: g.zp * 0.6 };
+}
 function warmUp() {
   warm = Math.min(1, warm + 0.55);
   heat = Math.max(heat, 0.35);
   spawnAcc += 0.6;
-  for (const b of blobs) if (b.y - half(b) < pool + 0.05) b.T = clamp(b.T + 0.12);
+  for (const b of blobs) if (poolDist(b.x, b.y) - half(b) < 0.05) b.T = clamp(b.T + 0.12);
   wake();
-  humLevel();
+}
+// The pointer picks a blob, the pool, the liquid or the lamp.
+function pick(sx, sy) {
+  const d = rayAt(sx, sy), [lx, ly] = lampAt(d, 0);
+  if (!inGlass(lx, ly)) return { kind: 'tip', a: angleAt(sx, sy), acc: 0, th0: lamp.th };
+  let best = null, bd = 1e9, bp = null;
+  for (const b of blobs) {
+    if (b.state === 'sink' || b.grab || b.tug || b.body) continue;
+    const p = lampAt(d, b.z), dd = Math.hypot(p[0] - b.x, p[1] - b.y) - Math.max(wide(b), half(b));
+    if (dd < bd) { bd = dd; best = b; bp = p; }
+  }
+  if (best && bd < 0.02) {
+    const b = best;
+    // A mound pulled from the pool comes away at a fair size.
+    if (b.state === 'grow') {
+      const r = Math.max(b.r, 0.03);
+      poolV -= r ** 3 - b.r ** 3;
+      b.r = b.rt = r;
+      b.state = 'free';
+    }
+    b.sleep = false;
+    b.flash = 1;
+    const g = { kind: 'carry', b, zp: b.z, ox: b.x - bp[0], oy: b.y - bp[1] };
+    // Big blobs grow a lobe on the finger; small ones just follow.
+    if (b.r >= 0.027 && blobs.length < MAXB) {
+      const M = b.r ** 3, L = makeBlob({ x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, r: Math.cbrt(0.22 * M), T: b.T, body: b, M, tearD: 1.6 * b.r + 0.035, flash: 1 });
+      L.rt = L.r;
+      b.r = b.rt = Math.cbrt(0.78 * M);
+      b.tug = L;
+      blobs.push(L);
+      Object.assign(g, { kind: 'blob', b: L });
+    }
+    return g;
+  }
+  // A press at the pool draws a lobe of wax out of it.
+  if (poolDist(lx, ly) < 0.03 && blobs.length < MAXB && poolV > 1.5e-4) {
+    const pd = poolDist(lx, ly) - 0.004;
+    const L = makeBlob({ x: lx - pn[0] * pd, y: ly - pn[1] * pd, z: 0, r: 0.016, rt: 0.016, T: 0.75, body: POOL, tearD: 0.064, flash: 1 });
+    poolV -= L.r ** 3;
+    blobs.push(L);
+    return { kind: 'pool', b: L, zp: 0, ox: L.x - lx, oy: L.y - ly };
+  }
+  return { kind: 'heat', x: lx, y: ly, s: 0, acc: 0 };
 }
 panel.addEventListener('pointerdown', e => {
   if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
   wake();
-  const [x, y] = local(e), d = rayAt(x, y), [bx, by] = onPlane(d, 0);
-  // The metal base is the bulb's switch.
-  if (by > -0.02 && by < 0.29 && Math.abs(bx) < 0.17 - by * 0.25) { warmUp(); return; }
-  let best = null, bd = 1e9;
-  for (const b of blobs) {
-    if (b.state === 'sink') continue;
-    const [px, py] = onPlane(d, b.z), dd = Math.hypot(px - b.x, py - b.y) - b.r;
-    if (dd < bd) { bd = dd; best = b; }
-  }
-  // Near the pool and clear of blobs, a press draws out fresh wax.
-  if (bd > 0.035 && blobs.length < MAXB && by > Y0 && by < pool + 0.07 && Math.abs(bx) < inR(pool) * 0.8) {
-    best = spawn(bx * 0.9, 0);
-    best.y = pool;
-    best.T = 0.7;
-  }
-  if (!best) return;
-  // A mound pulled from the pool comes away at a fair size.
-  if (best.state === 'grow') {
-    const r = Math.max(best.r, 0.034);
-    poolV -= r ** 3 - best.r ** 3;
-    best.r = best.rt = r;
-    best.state = 'free';
+  const [sx, sy] = local(e), g = pick(sx, sy);
+  g.sx = sx;
+  g.sy = sy;
+  if (g.kind === 'tip') {
+    // A hand on the lamp stops a flip and takes over.
+    for (const o of grabs.values()) if (o.kind === 'tip') return;
+    if (lamp.tw) { lamp.tw.kill(); lamp.tw = null; g.th0 = lamp.th; }
+    lamp.grab = lamp.th;
   }
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  const [px, py] = onPlane(d, best.z);
-  const g = { b: best, zp: best.z, ox: best.x - px, oy: best.y - py };
   grabs.set(e.pointerId, g);
-  best.grab = { x: best.x, y: best.y, z: best.z };
-  best.flash = 1;
-  focus = best;
-  panel.classList.add('held');
+  retarget(g);
+  if (g.kind !== 'heat') panel.classList.add('held');
 });
 panel.addEventListener('pointermove', e => {
   const g = grabs.get(e.pointerId);
   if (!g) return;
   idleT = 0;
-  const [x, y] = local(e), [px, py] = onPlane(rayAt(x, y), g.zp), b = g.b;
-  if (!blobs.includes(b)) return;
-  const [tx, ty] = inside(px + g.ox, py + g.oy, b);
-  b.grab = { x: tx, y: ty, z: g.zp * 0.6 };
-  b.flash = Math.max(b.flash, 0.5);
+  const [sx, sy] = local(e);
+  g.sx = sx;
+  g.sy = sy;
+  if (g.kind === 'tip') {
+    // Near the middle the angle is noise, so it holds.
+    if (Math.hypot(sx - W / 2, sy - H / 2) < 30) return;
+    const a = angleAt(sx, sy);
+    g.acc += Math.atan2(Math.sin(a - g.a), Math.cos(a - g.a));
+    g.a = a;
+    lamp.grab = g.th0 + g.acc;
+    return;
+  }
+  retarget(g);
 });
 function lift(e) {
   const g = grabs.get(e.pointerId);
   if (!g) return;
   grabs.delete(e.pointerId);
-  g.b.grab = null;
-  if (!grabs.size) panel.classList.remove('held');
+  if (g.kind === 'tip') {
+    lamp.grab = null;
+    lamp.rest = Math.round(lamp.th / Math.PI) * Math.PI;
+  } else if (g.kind !== 'heat') {
+    const L = g.b;
+    L.grab = null;
+    if (g.kind === 'blob' && L.body) { L.body.tug = null; L.rejoin = true; }
+    if (g.kind === 'pool' && L.body) {
+      L.body = null;
+      // A short pull sinks back; a long one floats free.
+      if (poolDist(L.x, L.y) < L.tearD * 0.6) L.state = 'sink';
+      else L.T = Math.max(L.T, 0.8);
+    }
+  }
+  if (![...grabs.values()].some(o => o.kind !== 'heat')) panel.classList.remove('held');
 }
 panel.addEventListener('pointerup', lift);
 panel.addEventListener('pointercancel', lift);
 panel.addEventListener('contextmenu', e => e.preventDefault());
 
-const DIRS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+// Flip turns the lamp over; the wax settles the other way.
+function flip() {
+  if (!ready) return;
+  wake();
+  if (lamp.tw) return;
+  for (const [id, g] of grabs) if (g.kind === 'tip') grabs.delete(id);
+  lamp.grab = null;
+  lamp.rest = Math.round(lamp.th / Math.PI) * Math.PI + Math.PI;
+  lamp.w = 0;
+  lamp.prev = lamp.th;
+  lamp.tw = gsap.to(lamp, {
+    th: lamp.rest, duration: reduce ? 0.4 : 1.15, ease: reduce ? 'power2.inOut' : 'back.inOut(1.3)',
+    onComplete: () => { lamp.tw = null; lamp.w = 0; },
+  });
+}
+document.getElementById('flip').addEventListener('click', flip);
+
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  if (DIRS[e.key]) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    // Chip groups keep their own arrows.
+    if (e.target.closest?.('.choices')) return;
     e.preventDefault();
     wake();
-    // The same blob takes each nudge until it merges or sinks.
-    if (!focus || !blobs.includes(focus) || focus.state === 'sink') focus = nearest(...focusAt);
-    if (!focus) return;
-    const [dx, dy] = DIRS[e.key];
-    if (focus.state === 'grow') focus.state = 'free';
-    focus.vx += dx * 0.13;
-    focus.vy += dy * 0.13;
-    focus.flash = 1;
-    focusAt = [focus.x, focus.y];
+    if (!lamp.tw) lamp.w += e.key === 'ArrowLeft' ? 2.4 : -2.4;
+  } else if (e.key === 'f' || e.key === 'F') {
+    if (!e.repeat) flip();
   } else if (e.key === ' ') {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
@@ -1058,17 +1240,8 @@ addEventListener('keydown', e => {
   }
 });
 
-const chips = [...document.querySelectorAll('[data-pal]')];
-chips.forEach(c => c.addEventListener('click', () => {
-  palName = c.dataset.pal;
-  chips.forEach(o => o.setAttribute('aria-pressed', String(o === c)));
-  wake();
-}));
-sound.onChange(on => {
-  humLevel();
-  if (on) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
-});
+choices(document.querySelector('.choices'), v => { palName = v; wake(); });
+sound.onChange(on => { if (on) wake(); });
 
 /* ---------- start: the shader links while the wax is seeded ---------- */
 function failed() {
@@ -1076,7 +1249,7 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  chips.forEach(c => { c.disabled = true; });
+  document.querySelectorAll('.bar .chip').forEach(c => { c.disabled = true; });
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
