@@ -34,8 +34,9 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Caustic pool | [pool/](pool/) | live draft, still being refined |
 | Lava lamp | [lava/](lava/) | live draft, still being refined |
 | Kaleidoscope | [kaleido/](kaleido/) | live draft, still being refined |
-| Chladni plate | [chladni/](chladni/) | live draft, still being refined |
-| Prism | [prism/](prism/) | live draft, still being refined |
+| Chladni plate | [chladni/](chladni/) | live, with sound |
+| Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
+| Snow globe, Murmuration, Coil, Frost, Gear train, Harmonograph, Split-flap, Dandelion, Music box, Neon sign | | in progress; outlines on the menu |
 
 ## Run locally
 
