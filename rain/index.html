@@ -43,6 +43,7 @@
         <button class="chip" type="button" data-value="rain" aria-pressed="true">Rain</button>
         <button class="chip" type="button" data-value="storm" aria-pressed="false">Storm</button>
       </div>
+      <label class="slider"><span>Wind</span><input type="range" id="wind" min="0" max="1" step="0.01" value="0"></label>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>wipe the fog</dd></div>
         <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>wipe a stripe</dd></div>
@@ -184,7 +185,7 @@ function buildScene(A) {
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const MAXV = 12, LEAD = 0.004;
 let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, dripNext = 0;
-let amb = null, bedF = null, patG = null, sq = null, sqNext = 0;
+let amb = null, bedF = null, patG = null, windG = null, windF = null, sq = null, sqNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Busy moments soften each voice; the compressor catches the rest.
 const level = () => 1 / (1 + 0.08 * voices);
@@ -291,6 +292,12 @@ function ambience() {
   loop(bed, 1, 0).connect(filter('highpass', 140, 0.5)).connect(lp).connect(bedG).connect(amb);
   loop(bed, 1.37, 2.1).connect(filter('bandpass', 5600, 0.55)).connect(hissG).connect(amb);
   loop(pat, 1, 0).connect(filter('highpass', 1100, 0.5)).connect(patG).connect(amb);
+  // Wind: slowed noise through a band that climbs with the slider.
+  // It skips the rain's level, so every weather hears the same wind.
+  const wb = filter('bandpass', 280, 0.7);
+  windG = gain(0);
+  windF = wb.frequency;
+  loop(bed, 0.6, 1.3).connect(wb).connect(windG).connect(out);
   // Slow sine swells keep the rain from sounding like a loop.
   const lfo = (f, depth, param) => {
     const o = ac.createOscillator();
@@ -302,6 +309,7 @@ function ambience() {
   lfo(0.11, 320, lp.frequency);
   lfo(0.049, 0.14, patG.gain);
   lfo(0.083, 0.025, hissG.gain);
+  lfo(0.09, 90, windF);
   rainLevel(true);
 }
 // Heavier rain is louder and brighter.
@@ -311,6 +319,8 @@ function rainLevel(fade) {
   amb.gain.setTargetAtTime(k, t, fade ? 0.9 : 0.4);
   bedF.setTargetAtTime(wx.bed, t, 0.5);
   patG.gain.setTargetAtTime(wx.pat, t, 0.5);
+  windG.gain.setTargetAtTime(0.9 * windGoal ** 1.5, t, 0.4);
+  windF.setTargetAtTime(280 + 620 * windGoal, t, 0.5);
 }
 // A sawtooth through a narrow band: the glass's squeak.
 function squeaker() {
@@ -390,7 +400,7 @@ function drip(x, size) {
 /* ---------- the glass: drops in CSS pixels, fog on a coarse grid ---------- */
 // A drop's radius is half its bitmap's size.
 // Water fills the middle 0.43 of that radius.
-const MAX_DROPS = 1200, REF = 1160 * 652, VIS = 0.43;
+const MAX_DROPS = 1600, REF = 1160 * 652, VIS = 0.43;
 // The rainfall follows a reference model with its own radius unit.
 // RK turns one of its radius pixels into ours; speeds stay in pixels.
 let W = 0, H = 0, S = 1, RK = 0.73, R_MIN = 15, R_MAX = 36, G = 42, area = 1, pr = 1;
@@ -401,6 +411,14 @@ const WEATHER = {
   storm: { rain: 72, mist: 560, gain: 1, bed: 2300, pat: 0.7 },
 };
 let drops = [], born = [], wx = WEATHER.rain, rainAcc = 0, mistAcc = 0;
+// Wind runs from still air to a side window at speed.
+// At full wind the path tilts 1.28 radians, nearly level.
+const WIND_TILT = 1.28, UPWIND = 0.35;
+let wind = 0, windGoal = 0, windT = 0;
+// The airflow bends across the glass and shifts, so paths arc.
+const flowAt = (x, y) => wind * (WIND_TILT + 0.55 * (2 * vnoise(x / (260 * S), y / (260 * S) + windT * 0.22) - 1));
+// Wind lowers the top speed, so paths stay watchable.
+const topSpeed = () => (40 - 24 * wind) * S;
 // Queued instances, six floats each, in device pixels.
 const mistQ = [], eraseQ = [];
 const rates = () => {
@@ -410,12 +428,12 @@ const rates = () => {
 // A new drop checks once for drops it lands on.
 function makeDrop(o) {
   if (drops.length + born.length >= MAX_DROPS) return null;
-  return Object.assign({ x: 0, y: 0, r: R_MIN, sx: 0, sy: 0, m: 0, mx: 0, last: 0, next: 0, parent: null, dead: false, shrink: 0, ran: false, fresh: true }, o);
+  return Object.assign({ x: 0, y: 0, r: R_MIN, sx: 0, sy: 0, m: 0, mx: 0, last: 0, next: 0, parent: null, dead: false, shrink: 0, ran: false, fresh: true, leg: 0, jag: 0, bias: rand(-1, 1), rot: 0, lean: 0 }, o);
 }
 // Sprite quads cover the bitmap's middle, where the water is.
 function stamp(q, x, y, r, sx = 0, sy = 0) {
   const h = 0.78 * r * (1 + sy) * pr;
-  q.push(x * pr, y * pr, 0.52 * r * (1 + sx) * pr, 1, h, h);
+  q.push(x * pr, y * pr, 0.52 * r * (1 + sx) * pr, 0, h, h);
 }
 const sprayR = () => 1.8 + 2.4 * Math.random() ** 2;
 function burst(n) {
@@ -441,7 +459,7 @@ function merge(a, b) {
   // It jogs toward the drop it swallows, and speeds up.
   a.mx += (b.x - a.x) * 0.1;
   a.sx = a.sy = 0;
-  a.m = Math.max(b.m, Math.min(40 * S, a.m + (a.r / RK) * 0.05 * S + S));
+  a.m = Math.max(b.m, Math.min(topSpeed(), a.m + (a.r / RK) * 0.05 * S + S));
   b.dead = true;
   if (moving && a.r > R_MAX * 0.5 && Math.random() < 0.3) drip(a.x / W, (a.r - R_MIN) / (R_MAX - R_MIN));
 }
@@ -460,16 +478,22 @@ function collide(d) {
   }
 }
 // One step of the rain, in sixtieths of a second.
-// Speeds are pixels per sixtieth; d.r / RK is a radius in model units.
+// Speeds are pixels per sixtieth; d.r / RK is a model radius.
 function step(dt) {
   const ts = dt * 60, slow = reduce ? 0.55 : 1, rt = rates();
+  // The slider's wind arrives gradually, and gusts come and go.
+  windT += dt;
+  wind += (windGoal - wind) * (1 - 0.97 ** ts);
+  const gust = wind * (0.7 + 0.6 * vnoise(windT * 0.4, 3.7)), loose = 20 - 11 * wind;
   born.length = 0;
-  rainAcc += rt.rain * area * dt;
+  // Rain also lands upwind, so the near edge stays wet.
+  const reach = UPWIND * wind;
+  rainAcc += rt.rain * area * (1 + reach) * dt;
   while (rainAcc >= 1) {
     rainAcc--;
     // Fresh drops land splayed wide and already sliding a little.
     const r = R_MIN + (R_MAX - R_MIN) * Math.random() ** 3;
-    const d = makeDrop({ x: Math.random() * W, y: H * rand(-0.1, 0.95), r, m: S * (1 + (r / RK - 20) * 0.1 + rand(0, 2)), sx: 1.5, sy: 1.5 });
+    const d = makeDrop({ x: W * rand(-reach, 1), y: H * rand(-0.1, 0.95), r, m: S * (1 + (r / RK - 20) * 0.1 + rand(0, 2)), sx: 1.5, sy: 1.5 });
     if (d) born.push(d);
   }
   mistAcc += rt.mist * area * dt;
@@ -492,16 +516,16 @@ function step(dt) {
   for (const d of drops) {
     if (d.dead) continue;
     const rr = d.r / RK;
-    // Bigger drops break loose more often, and harder.
-    if (rr > 20 && Math.random() < (rr - 20) * (0.1 / 30) * ts) d.m += rand(0, (rr / 50) * 4) * S;
-    // Small drops sometimes start to dry up.
-    if (rr <= 20 && Math.random() < 0.05 * ts) d.shrink += 0.01 * RK;
+    // Bigger drops break loose more often, and harder; wind frees smaller ones.
+    if (rr > loose && Math.random() < (rr - loose) * (0.1 / 30) * ts * (1 + 2.5 * gust)) d.m = Math.max(d.m, Math.min(topSpeed(), d.m + rand(0, (rr / 50) * 4) * S * (1 + 1.2 * gust)));
+    // Small drops sometimes start to dry up, sooner in the wind.
+    if (rr <= 20 && Math.random() < 0.05 * ts * (1 + 2 * wind)) d.shrink += 0.01 * RK;
     d.r -= d.shrink * ts;
     if (d.r < 1.5) { d.dead = true; continue; }
     // A sliding drop sheds a smaller one, more often as it speeds up.
     d.last += d.m * ts;
     if (d.m > 0 && d.last > d.next) {
-      const t = makeDrop({ x: d.x + rand(-1, 1) * d.r * 0.1, y: d.y - d.r * 0.01, r: d.r * rand(0.25, 0.35), sy: (d.m / S) * 0.1, parent: d });
+      const t = makeDrop({ x: d.x + rand(-1, 1) * d.r * 0.1, y: d.y - d.r * 0.01, r: d.r * rand(0.25, 0.35), sy: (d.m / S) * 0.1, parent: d, rot: d.rot });
       if (t) {
         born.push(t);
         d.r *= 0.97 ** ts;
@@ -512,31 +536,51 @@ function step(dt) {
     d.sx *= 0.4 ** ts;
     d.sy *= 0.7 ** ts;
     if (d.m > 0) {
-      const dy = d.m * ts * slow, dx = d.mx * ts * slow;
-      // Fast drops move in short hops, so they clear and meet all in their path.
-      const n = Math.max(1, Math.ceil(dy / Math.max(2, VIS * d.r)));
+      let a = 0;
+      if (wind > 0.002) {
+        // Pinned by grit, the drop changes course in short jagged legs.
+        d.leg -= d.m * ts;
+        if (d.leg <= 0) {
+          d.leg = rand(14, 46) * S;
+          d.jag = rand(-0.6, 0.6);
+        }
+        // Fast drops ride the wind; slow ones sag, so paths arc.
+        const ride = 0.5 + 0.5 * Math.min(1, d.m / (9 * S));
+        a = (flowAt(d.x, d.y) + d.bias * 0.2 * wind) * ride + (d.jag * wind) / (1 + d.m / (30 * S));
+      }
+      const ds = d.m * ts * slow, sa = Math.sin(a), ca = Math.cos(a), dx = ds * sa + d.mx * ts * slow, dy = ds * ca;
+      // The drop turns its head along the path and grows a tail.
+      d.rot = lerp(d.rot, -a, 1 - 0.7 ** ts);
+      d.lean = lerp(d.lean, wind * Math.min(1, d.m / (10 * S)), 1 - 0.8 ** ts);
+      // Fast drops hop in short steps, and meet all in their path.
+      const n = Math.max(1, Math.ceil(ds / Math.max(2, VIS * d.r)));
       for (let k = 0; k < n && !d.dead; k++) {
         d.y += dy / n;
         d.x += dx / n;
         // Its lane is cleared of spray and fog.
         const v = VIS * d.r;
-        eraseQ.push(d.x * pr, d.y * pr, v * 0.85 * pr, 1, v * 1.4 * pr, v * 0.9 * pr);
-        if (d.m > S) fogCut(d.x, d.y - v * 0.4, v * 1.1, Math.min(0.4, (0.045 * d.m) / S) * ts);
+        eraseQ.push(d.x * pr, d.y * pr, v * 0.85 * pr, d.rot, v * 1.4 * pr, v * 0.9 * pr);
+        if (d.m > S) fogCut(d.x - sa * v * 0.4, d.y - ca * v * 0.4, v * 1.1, Math.min(0.4, (0.045 * d.m) / S) * ts);
         collide(d);
       }
       if (d.dead) continue;
-      if (d.y > H + d.r || d.x < -d.r || d.x > W + d.r) { d.dead = true; continue; }
+      // Drops upwind of the glass may still blow onto it.
+      if (d.y > H + d.r || d.y < -0.2 * H || d.x < -W * UPWIND - d.r || d.x > W + d.r) { d.dead = true; continue; }
       if (!d.ran && d.m > 2.5 * S && d.r > R_MAX * 0.55) {
         d.ran = true;
-        if (Math.random() < 0.35) drip(d.x / W, (d.r - R_MIN) / (R_MAX - R_MIN));
+        if (Math.random() < 0.35) drip(clamp(d.x / W), (d.r - R_MIN) / (R_MAX - R_MIN));
       }
     } else {
       d.ran = false;
+      // A resting drop leans a little with the wind.
+      d.rot = lerp(d.rot, -0.3 * WIND_TILT * wind, 1 - 0.9 ** ts);
+      d.lean = lerp(d.lean, 0, 1 - 0.9 ** ts);
       if (d.fresh) collide(d);
     }
     d.fresh = false;
     // Momentum bleeds away, fastest while the drop is slow.
-    d.m = Math.max(0, d.m - S * Math.max(1, 10 - d.m / S) * 0.1 * ts);
+    // Wind brakes a fast drop harder, so it stops and starts.
+    d.m = Math.max(0, d.m - S * Math.max(1 + 1.5 * wind, 10 - d.m / S) * 0.1 * ts);
     d.mx *= 0.7 ** ts;
   }
   let n = 0;
@@ -607,7 +651,7 @@ function fogStep(dt) {
 const brush = type => clamp(Math.sqrt(W * H) * 0.036, 20, 36) * (type === 'touch' ? 1.2 : 1);
 function wipeAt(x, y, R) {
   fogCut(x, y, R, 0.55);
-  eraseQ.push(x * pr, y * pr, R * pr, 1, R * pr, R * pr);
+  eraseQ.push(x * pr, y * pr, R * pr, 0, R * pr, R * pr);
   for (const d of drops) {
     if (d.dead) continue;
     const v = VIS * d.r, dx = d.x - x, dy = d.y - y, dist = Math.hypot(dx, dy), edge = R + v * 0.6;
@@ -756,13 +800,14 @@ layout(location = 2) in vec2 aB;
 uniform vec2 uRes;
 out vec2 vOff;
 flat out vec3 vR;
-flat out float vH;
+flat out vec2 vTurn;
 void main() {
   vec2 off = vec2(aCorner.x * aA.z, aCorner.y < 0.0 ? -aB.x : aB.y) + sign(aCorner) * 0.75;
   vOff = off;
   vR = vec3(aA.z, aB.x, aB.y);
-  vH = aA.w;
-  vec2 p = aA.xy + off;
+  // The fourth value turns the sprite, in radians.
+  vTurn = vec2(cos(aA.w), sin(aA.w));
+  vec2 p = aA.xy + vec2(vTurn.x * off.x - vTurn.y * off.y, vTurn.y * off.x + vTurn.x * off.y);
   gl_Position = vec4(p.x / uRes.x * 2.0 - 1.0, 1.0 - p.y / uRes.y * 2.0, 0.0, 1.0);
 }`;
 const DROP_FS = `#version 300 es
@@ -772,14 +817,21 @@ uniform int uMode;
 uniform float uAmt;
 in vec2 vOff;
 flat in vec3 vR;
-flat in float vH;
+flat in vec2 vTurn;
 out vec4 o;
 void main() {
   vec2 q = vec2(vOff.x / vR.x, vOff.y / (vOff.y < 0.0 ? vR.y : vR.z));
   // Mode 0 stamps the drop bitmap's middle, already premultiplied.
-  if (uMode == 0) { o = texture(uDrop, 0.5 + q * 0.26); return; }
+  if (uMode == 0) {
+    vec4 t = texture(uDrop, 0.5 + q * 0.26);
+    // The lens offset turns too: green holds x, red holds y.
+    vec2 f = t.gr - 0.5 * t.a;
+    vec2 g = vec2(vTurn.x * f.x - vTurn.y * f.y, vTurn.y * f.x + vTurn.x * f.y);
+    o = vec4(g.y + 0.5 * t.a, g.x + 0.5 * t.a, t.b, t.a);
+    return;
+  }
   if (uMode == 2) { o = vec4(0.0, 0.0, 0.0, uAmt); return; }
-  o = vec4(0.0, 0.0, 0.0, vH * smoothstep(1.0, 0.5, dot(q, q)));
+  o = vec4(0.0, 0.0, 0.0, smoothstep(1.0, 0.5, dot(q, q)));
 }`;
 const COMP_FS = `#version 300 es
 precision highp float;
@@ -1076,7 +1128,7 @@ function render(now, dt = 0) {
   const decay = decayAcc >= 0.5;
   if (decay) {
     decayAcc = 0;
-    inst.set([cw / 2, ch / 2, cw, 1, ch, ch], o);
+    inst.set([cw / 2, ch / 2, cw, 0, ch, ch], o);
     o += 6;
   }
   const db = o / 6;
@@ -1087,8 +1139,9 @@ function render(now, dt = 0) {
     inst[o++] = d.x * pr;
     inst[o++] = d.y * pr;
     inst[o++] = 0.52 * d.r * (1 + d.sx) * pr;
-    inst[o++] = 1;
-    inst[o++] = h;
+    inst[o++] = d.rot;
+    // A drop in the wind draws a tail behind it.
+    inst[o++] = h * (1 + 0.8 * d.lean);
     inst[o++] = h;
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
@@ -1216,6 +1269,8 @@ const nextWeather = () => {
   const keys = Object.keys(WEATHER);
   weather.set(keys[(keys.indexOf(weather.value) + 1) % keys.length], true);
 };
+const windIn = document.getElementById('wind');
+windIn.addEventListener('input', () => { windGoal = +windIn.value; rainLevel(); });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
@@ -1241,6 +1296,7 @@ function failed() {
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
   wxGroup.querySelectorAll('.chip').forEach(b => { b.disabled = true; });
+  windIn.disabled = true;
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
