@@ -25,6 +25,8 @@
 .stage canvas.on { opacity: 1; }
 /* Each chip carries a small solid stencil of its thing. */
 .chip .ic { width: 15px; height: 15px; flex: none; fill: currentColor; }
+/* Cut mode aims with a crosshair. */
+:root[data-mode="cut"] .stage { cursor: crosshair; }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
@@ -36,15 +38,15 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. Tap to drop a ball, an anvil or a kettlebell, or drag and let go to throw it. Space tosses one in, N switches day and night, R toggles rain and C clears the pool.">
+    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. In Throw, tap to drop a ball, an anvil or a kettlebell, or drag and let go to throw it. In Cut, press and drag to dig a trench through the water. Drag the deck to turn the view. Space tosses one in, N switches day and night, R toggles rain and C clears the pool.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Caustic pool needs WebGL 2 with float textures, which this browser lacks.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="things" role="group" aria-label="What to throw">
-        <button class="chip" type="button" data-value="ball" aria-pressed="true" aria-keyshortcuts="1"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/></svg>Ball</button>
-        <button class="chip" type="button" data-value="anvil" aria-pressed="false" aria-keyshortcuts="2"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/></svg>Anvil</button>
-        <button class="chip" type="button" data-value="bell" aria-pressed="false" aria-keyshortcuts="3"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/></svg>Kettlebell</button>
+      <div class="choices" id="tools" role="group" aria-label="What a press does">
+        <button class="chip" type="button" data-value="cut" aria-pressed="false" aria-keyshortcuts="X"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 6.5h4.6L8 11.2l2.4-4.7H15V14H1Z"/><path d="M7.2 1.5h1.6v6.2L8 9.3l-.8-1.6Z"/></svg>Cut</button>
+        <!-- A second press on Throw steps to the next thing. -->
+        <button class="chip" type="button" data-value="throw" id="throw" aria-pressed="true" aria-keyshortcuts="1 2 3"><svg class="ic" data-thing="ball" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/></svg><svg class="ic" data-thing="anvil" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/></svg><svg class="ic" data-thing="bell" viewBox="0 0 16 16" aria-hidden="true" hidden><path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/></svg><span id="thing-name">Ball</span></button>
       </div>
       <div class="actions">
         <button class="chip" id="night" type="button" aria-keyshortcuts="N" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.2 1.6a6.6 6.6 0 1 0 4.4 9.9A5.4 5.4 0 0 1 10.2 1.6Z"/></svg>Night</button>
@@ -52,8 +54,8 @@
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
-        <div><dt><span class="fine">Drag</span><span class="touch">Flick</span></dt><dd>throw</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>toss</dd></div>
+        <div><dt><span class="fine">Drag</span><span class="touch">Flick</span></dt><dd>throw, or cut</dd></div>
+        <div><dt><span class="fine">Drag</span><span class="touch">Drag</span> the deck</dt><dd>turn</dd></div>
         <div class="fine"><dt><kbd>R</kbd></dt><dd>rain</dd></div>
       </dl>
     </div>
@@ -242,7 +244,7 @@ const WAVES = [[14, 0.15, 0.036], [79, 0.115, 0.03], [141, 0.17, 0.04], [205, 0.
 
 /* ---------- sound: synthesised through the shell's audio kit ---------- */
 const MAXV = 16, LEAD = 0.004;
-const GESTURE_KEYS = new Set([' ', 'Enter', 'r', 'R', 'n', 'N', 'c', 'C', '1', '2', '3', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const GESTURE_KEYS = new Set([' ', 'Enter', 'r', 'R', 'n', 'N', 'c', 'C', 'x', 'X', '1', '2', '3', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const kit = audioKit({ gain: 0.55, keys: GESTURE_KEYS });
 let voices = 0, plopNext = 0, tickNext = 0, slapNext = 0, gurgleNext = 0, lapG = null, patG = null;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
@@ -627,9 +629,14 @@ void main() {
 // One wave step: neighbours pull each cell.
 // Viscosity smooths the velocity field, so fine ripples die first.
 // Clamped edges reflect waves like walls.
+// Each cutter holds a hole open and heaps a rim ahead of its motion.
 const SIM_FS = `${HEAD}
 uniform sampler2D uSim;
 uniform float uDamp;
+uniform vec4 uPool;
+uniform vec4 uCut[4];
+uniform vec2 uCutV[4];
+uniform int uNC;
 out vec4 o;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy), m = textureSize(uSim, 0) - 1;
@@ -639,7 +646,19 @@ void main() {
          + texelFetch(uSim, clamp(p + ivec2(0, 1), ivec2(0), m), 0).xy
          + texelFetch(uSim, clamp(p - ivec2(0, 1), ivec2(0), m), 0).xy;
   float v = (c.y + (s.x * 0.25 - c.x) * ${C2.toFixed(3)} + (s.y * 0.25 - c.y) * ${NU.toFixed(3)}) * uDamp;
-  o = vec4((c.x + v) * 0.99985, v, c.zw);
+  float h = (c.x + v) * 0.99985;
+  vec2 w = (gl_FragCoord.xy / vec2(textureSize(uSim, 0)) * 2.0 - 1.0) * uPool.xy;
+  for (int i = 0; i < uNC; i++) {
+    vec4 C = uCut[i];
+    float r = C.z, hole = 1.0 - smoothstep(0.45 * r, r, length(w - C.xy));
+    float dr = (length(w - C.xy - uCutV[i] * 0.06) - 1.25 * r) / (0.4 * r);
+    float rim = exp(-dr * dr);
+    // The hole pulls hard; the rim only leans, so water still flows.
+    float k = hole * 0.45 + rim * 0.06;
+    h += (C.w * (0.25 * rim - hole) - h) * k;
+    v *= 1.0 - k;
+  }
+  o = vec4(h, v, c.zw);
 }`;
 // Slopes go into B and A for the light passes.
 const GRAD_FS = `${HEAD}
@@ -752,7 +771,7 @@ uniform sampler2D uSim, uCaus;
 uniform vec2 uRes, uTan;
 uniform vec3 uCam, uFwd, uRight, uUp, uSun, uRl;
 uniform vec4 uPool;
-uniform float uT, uAmp, uTile, uSeed, uNight;
+uniform float uT, uAmp, uTile, uSeed, uNight, uHmax;
 ${PETAL_U}
 ${OBJ_U}
 out vec4 o;
@@ -955,9 +974,27 @@ void main() {
   vec3 Nd = xw ? vec3(-sign(rd.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(rd.z));
   vec3 dry = tiles(vec2(xw ? Pd.z + PH.y : Pd.x + PH.x, Pd.y + D), 1.0) * (gSun * max(dot(Nd, uSun), 0.0) + gAmb + WGLOW * gLamp * 0.35);
 
-  // Ripples, the frozen relief and each floater's meniscus tilt the surface.
+  // Tall waves and cut holes march the ray onto the true surface.
   vec2 wp = clamp(W.xz, -PH, PH);
+  float hS = 0.0;
+  if (uHmax > 0.0015) {
+    float ta = (uHmax - uCam.y) / rd.y, tb = (-uHmax - uCam.y) / rd.y, tp = ta, dp = uHmax;
+    for (int i = 1; i <= 20; i++) {
+      float t = mix(ta, tb, float(i) / 20.0);
+      vec3 X = uCam + rd * t;
+      float dd = X.y - texture(uSim, clamp(X.xz, -PH, PH) / PH * 0.5 + 0.5).x;
+      if (dd < 0.0) {
+        t = mix(tp, t, dp / (dp - dd));
+        wp = clamp((uCam + rd * t).xz, -PH, PH);
+        break;
+      }
+      tp = t;
+      dp = dd;
+    }
+  }
+  // Ripples, the frozen relief and each floater's meniscus tilt the surface.
   vec4 s = texture(uSim, wp / PH * 0.5 + 0.5);
+  hS = s.x;
   int k;
   vec2 q;
   float ps = petals(wp, k, q);
@@ -971,10 +1008,10 @@ void main() {
 
   // Below, the ray meets the floor or a wall.
   vec3 tr = refract(rd, n, 0.75);
-  float tf = -D / tr.y;
+  float tf = (-D - hS) / tr.y;
   float ux = max(sdiv(sign(tr.x) * PH.x - wp.x, tr.x), 0.0), uz = max(sdiv(sign(tr.z) * PH.y - wp.y, tr.z), 0.0);
   float th = min(tf, min(ux, uz));
-  vec3 S0 = vec3(wp.x, 0.0, wp.y), P = S0 + tr * th;
+  vec3 S0 = vec3(wp.x, hS, wp.y), P = S0 + tr * th;
   vec3 N;
   vec2 fq;
   float face, ao;
@@ -1019,6 +1056,9 @@ void main() {
     if (ui >= 0) under = mix(under, shadeObj(ui, S0 + tr * tu, tr) * exp(-SIG * tu) + scat * (1.0 - exp(-SIGS * tu)), ua);
   }
   vec3 water = mix(under, refl, F);
+  // Water torn steep turns to a hard band of foam.
+  float foam = smoothstep(1.15, 1.35, length(s.zw));
+  water = mix(water, TW * (gSun * 0.45 + gAmb * 1.4 + WGLOW * gLamp * 0.8), foam * 0.85);
   float cov = k < 0 ? 0.0 : clamp(-ps / max(fwidth(ps), 1e-6) + 0.5, 0.0, 1.0);
   water = mix(water, petalColor(n), cov);
 
@@ -1276,6 +1316,12 @@ function simulate(dt) {
   const n = Math.min(4, Math.floor(simAcc));
   simAcc -= n;
   if (simAcc > 1) simAcc = 0;
+  gl.useProgram(P.sim.p);
+  gl.uniform1i(P.sim.u.uNC, nCut);
+  if (nCut) {
+    gl.uniform4fv(P.sim.u.uCut, CUT);
+    gl.uniform2fv(P.sim.u.uCutV, CUTV);
+  }
   for (let i = 0; i < n; i++) simPass(P.sim);
   simPass(P.grad);
 }
@@ -1384,6 +1430,9 @@ function render(dt) {
   gl.uniform2f(P.view.u.uRes, canvas.width, canvas.height);
   gl.uniform1f(P.view.u.uSeed, (clock * 61.7) % 97);
   gl.uniform1f(P.view.u.uNight, nk);
+  // The march runs only while the water stands tall.
+  const hTop = simActive ? probeData[EI + 2] : 0;
+  gl.uniform1f(P.view.u.uHmax, Math.max(cutGlow, hTop > 0.004 ? hTop * 1.5 + 0.002 : 0));
   gl.uniform4fv(P.view.u.uPA, PA);
   gl.uniform4fv(P.view.u.uPB, PB);
   gl.uniform1i(P.view.u.uNP, petals.length);
@@ -1515,25 +1564,91 @@ function raindrop() {
   addDrop(x, z, 0.014, -0.0042 * rand(0.6, 1.3));
   if (Math.random() < 0.55) tick(pan(x, z));
 }
-// A finger stroke: water piles ahead and drops behind.
-const FR = 0.03, PUSH = 0.0032;
-function drag(ax, az, bx, bz, dts) {
-  const len = Math.hypot(bx - ax, bz - az);
-  if (len < 1e-4) return;
-  const n = Math.min(24, Math.ceil(len / (FR * 0.5)));
-  for (let i = 0; i < n; i++) {
-    segQ.push(lerp(ax, bx, i / n), lerp(az, bz, i / n), lerp(ax, bx, (i + 1) / n), lerp(az, bz, (i + 1) / n), Math.max(FR, 3 * CELL), PUSH * STR);
-  }
+/* ---------- cutting: a press opens a hole, a drag ploughs a trench ---------- */
+// Radius and depth are world units; the pool is 0.45 deep.
+const CUT_R = 0.055, CUT_D = 0.085, NCUT = 4;
+const cutters = new Map(), CUT = new Float32Array(NCUT * 4), CUTV = new Float32Array(NCUT * 2);
+let nCut = 0, cutGlow = 0, swishG = null, swishF = null;
+function startCut(id, x, z) {
+  if (cutters.size >= NCUT) return;
+  cutters.set(id, { x: inX(x), z: inZ(z), tx: x, tz: z, vx: 0, vz: 0, k: 0, sp: 0 });
+  plop(pan(x, z), 0.75);
   poke();
-  const vx = (bx - ax) / dts, vz = (bz - az) / dts;
-  for (const p of petals) {
-    const ex = bx - ax, ez = bz - az, t = clamp(((p.x - ax) * ex + (p.z - az) * ez) / (len * len));
-    const cx = p.x - (ax + ex * t), cz = p.z - (az + ez * t), d = Math.hypot(cx, cz), R = 0.07 + p.L;
-    if (d >= R) continue;
-    const w = (1 - d / R) ** 2;
-    p.vx += (vx - p.vx) * w * 0.5;
-    p.vz += (vz - p.vz) * w * 0.5;
-    p.w += (cx * vz - cz * vx) * w * 20;
+}
+// The hole collapses: a gulp, a rebound and a few bubbles.
+function endCut(id) {
+  const c = cutters.get(id);
+  if (!c) return;
+  cutters.delete(id);
+  plop(pan(c.x, c.z), 0.95);
+  for (let i = 0; i < 6; i++) bubble(c.x + rand(-0.03, 0.03), -rand(0.02, 0.09), c.z + rand(-0.03, 0.03), rand(0.004, 0.009));
+  poke();
+}
+// The trench hiss: band noise that brightens and swells with speed.
+function swish(a) {
+  const src = a.createBufferSource(), bp = a.createBiquadFilter();
+  src.buffer = kit.noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 1.1;
+  bp.frequency.value = 500;
+  swishG = a.createGain();
+  swishG.gain.value = 0;
+  src.connect(bp).connect(swishG).connect(kit.out);
+  src.start();
+  swishF = bp.frequency;
+}
+function stepCuts(dt) {
+  let fast = 0;
+  nCut = 0;
+  for (const c of cutters.values()) {
+    const ox = c.x, oz = c.z;
+    // The blade lags the finger a touch, so quick strokes stay smooth.
+    const f = 1 - Math.exp(-dt * 40);
+    c.x = inX(lerp(c.x, c.tx, f));
+    c.z = inZ(lerp(c.z, c.tz, f));
+    const vx = dt > 0 ? (c.x - ox) / dt : 0, vz = dt > 0 ? (c.z - oz) / dt : 0;
+    c.vx = lerp(c.vx, vx, 0.3);
+    c.vz = lerp(c.vz, vz, 0.3);
+    c.sp = Math.hypot(c.vx, c.vz);
+    c.k = Math.min(1, c.k + dt / (reduce ? 0.05 : 0.14));
+    fast = Math.max(fast, c.sp);
+    const vs = Math.min(1, 0.6 / Math.max(c.sp, 1e-3)), r = CUT_R * petalScale;
+    CUT.set([c.x, c.z, r, CUT_D * c.k], nCut * 4);
+    CUTV.set([c.vx * vs, c.vz * vs], nCut * 2);
+    nCut++;
+    // A fast blade throws spray off both cheeks of the trench.
+    if (c.sp > 0.35 && !reduce) {
+      const n = Math.min(6, Math.floor(c.sp * dt * 90 + Math.random()));
+      const ux = c.vx / c.sp, uz = c.vz / c.sp;
+      for (let i = 0; i < n; i++) {
+        const side = Math.random() < 0.5 ? -1 : 1, out = rand(0.25, 0.55) * Math.min(c.sp, 2);
+        spray(c.x + ux * r * 0.8 - uz * side * r * 0.9, c.z + uz * r * 0.8 + ux * side * r * 0.9,
+          -uz * side * out + ux * c.sp * 0.25, rand(0.35, 0.8) * Math.min(c.sp, 1.6), ux * side * out + uz * c.sp * 0.25, rand(0.003, 0.007));
+      }
+      if (Math.random() < dt * c.sp * 6) bubble(c.x - ux * r, -rand(0.01, 0.06), c.z - uz * r, rand(0.003, 0.007));
+    }
+    // The blade shoves floaters and floating things aside.
+    for (const p of [...petals, ...objs.filter(o => o.K.float && o.f > 0)]) {
+      const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz) || 1e-3, R = r * 1.6 + (p.L || waterline(p));
+      if (d >= R) continue;
+      const w = (1 - d / R) ** 2;
+      p.vx += ((dx / d) * 1.2 + c.vx * 0.6 - p.vx * 0.5) * w;
+      p.vz += ((dz / d) * 1.2 + c.vz * 0.6 - p.vz * 0.5) * w;
+      if (p.w != null && !p.K) p.w += (dx * c.vz - dz * c.vx) * w * 40;
+    }
+  }
+  if (nCut) { cutGlow = CUT_D * 1.35; poke(); }
+  else cutGlow *= Math.exp(-dt / 1.2);
+  // The hiss follows the fastest blade.
+  const a = live();
+  if (a) {
+    if (!swishG && nCut) swish(a);
+    if (swishG) {
+      const e = nCut ? clamp(fast / 1.6) : 0;
+      swishG.gain.setTargetAtTime(0.16 * e * e + (nCut ? 0.012 : 0), a.currentTime, 0.05);
+      swishF.setTargetAtTime(380 + 1500 * e, a.currentTime, 0.06);
+    }
   }
 }
 /* ---------- orbit: the view turns around the pool ---------- */
@@ -1578,10 +1693,30 @@ const KIND = {
   anvil: { type: 1, size: 1.15, bound: 0.16, rho: 7.8, vol: 1.0e-3, lo: 0.056, hi: 0.048, foot: 0.12, float: false },
   bell: { type: 2, size: 1.15, bound: 0.1, rho: 7.2, vol: 5.4e-4, lo: 0.04, hi: 0.092, foot: 0.058, float: false },
 };
-const THING_KEY = 'stimming.pool.thing';
+const THING_KEY = 'stimming.pool.thing', MODE_KEY = 'stimming.pool.mode', THINGS = ['ball', 'anvil', 'bell'];
+const NAMES = { ball: 'Ball', anvil: 'Anvil', bell: 'Kettlebell' };
 let thing = KIND[store.get(THING_KEY)] ? store.get(THING_KEY) : 'ball', objMoving = false;
-const picker = choices(document.getElementById('things'), v => { thing = v; store.set(THING_KEY, v); });
-picker.set(thing);
+let mode = store.get(MODE_KEY) === 'cut' ? 'cut' : 'throw';
+const throwB = document.getElementById('throw');
+function setThing(v) {
+  thing = v;
+  store.set(THING_KEY, v);
+  throwB.querySelectorAll('[data-thing]').forEach(el => { el.hidden = el.dataset.thing !== v; });
+  document.getElementById('thing-name').textContent = NAMES[v];
+}
+function setMode(v) {
+  mode = v;
+  store.set(MODE_KEY, v);
+  document.documentElement.dataset.mode = v;
+}
+// A press on Throw while it is chosen steps to the next thing.
+throwB.addEventListener('click', () => {
+  if (mode === 'throw') setThing(THINGS[(THINGS.indexOf(thing) + 1) % THINGS.length]);
+});
+const picker = choices(document.getElementById('tools'), setMode);
+setThing(thing);
+setMode(mode);
+picker.set(mode);
 
 /* quaternions: [w, x, y, z] */
 const qmul = (a, b) => [
@@ -1879,7 +2014,7 @@ function stepParts(dt) {
 /* ---------- one loop: it runs only while something moves ---------- */
 let raf = 0, inFrame = false, running = false, onScreen = false, lastDraw = 0, drawn = 0, slowN = 0, busyN = 0, lowDpr = false, quiet = 0;
 let W = 0, H = 0;
-const busy = () => simActive || raining || objMoving || holds.size > 0 || parts.length > 0 || turn || spin !== 0 || later.length > 0
+const busy = () => simActive || raining || objMoving || holds.size > 0 || parts.length > 0 || turn || spin !== 0 || cutters.size > 0 || later.length > 0
   || dropQ.length > 0 || segQ.length > 0 || nightK !== nightT;
 function wake() {
   // A frame in progress schedules its own successor.
@@ -1926,6 +2061,7 @@ function step(dt) {
     while (rainAcc >= 1) { rainAcc--; raindrop(); }
   }
   stepSpin(dt);
+  stepCuts(dt);
   stepObjs(dt);
   stepParts(dt);
   stepPetals(dt);
@@ -2000,6 +2136,11 @@ panel.addEventListener('pointerdown', e => {
     return;
   }
   if (e.button !== 0) return;
+  if (mode === 'cut') {
+    const [x, z] = planeAt(...local(e), 0);
+    startCut(e.pointerId, x, z);
+    return;
+  }
   const [x, z] = planeAt(...local(e), HOV), R = KIND[thing].foot * KIND[thing].size * petalScale;
   const o = makeObj(thing, clamp(x, -PX + R, PX - R), clamp(z, -PZ + R, PZ - R));
   o.held = e.pointerId;
@@ -2020,6 +2161,11 @@ panel.addEventListener('pointermove', e => {
     turn.y = e.clientY;
     turn.t = e.timeStamp;
     aim();
+    return;
+  }
+  const ct = cutters.get(e.pointerId);
+  if (ct) {
+    [ct.tx, ct.tz] = planeAt(...local(e), 0);
     return;
   }
   const o = holds.get(e.pointerId);
@@ -2043,6 +2189,7 @@ function letGo(e, fling) {
     wake();
     return;
   }
+  if (cutters.has(e.pointerId)) { endCut(e.pointerId); return; }
   const o = holds.get(e.pointerId);
   if (!o) return;
   holds.delete(e.pointerId);
@@ -2081,12 +2228,13 @@ addEventListener('keydown', e => {
   if (k === 'r' || k === 'R') { if (!e.repeat) setRain(!raining); }
   else if (k === 'n' || k === 'N') { if (!e.repeat) setNight(!nightT); }
   else if (k === 'c' || k === 'C') { if (!e.repeat) clearPool(); }
-  else if (KEYS[k]) { thing = KEYS[k]; picker.set(thing); store.set(THING_KEY, thing); }
+  else if (KEYS[k]) { setThing(KEYS[k]); setMode('throw'); picker.set('throw'); }
+  else if (k === 'x' || k === 'X') { setMode('cut'); picker.set('cut'); }
   else if (k === ' ') {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
-    if (!e.repeat && ready) toss();
+    if (!e.repeat && ready) { if (mode !== 'throw') { setMode('throw'); picker.set('throw'); } toss(); }
   } else if (k.startsWith('Arrow')) {
     // Arrows turn and tilt the view a step.
     e.preventDefault();
