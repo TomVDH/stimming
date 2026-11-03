@@ -68,6 +68,17 @@ a.toy { cursor: pointer; }
 a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .obj { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
 .obj svg { width: 70%; height: 70%; overflow: visible; }
+/* Each toy arrives through grainy blur as it scrolls into view. */
+.js-reveal .toy:not(.is-in) { opacity: 0; filter: blur(14px); }
+.js-reveal .toy { transition: opacity 0.5s steps(15, end), filter 0.6s steps(18, end); transition-delay: var(--d, 0s); }
+.js-reveal .toy .obj::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E");
+  -webkit-mask: radial-gradient(closest-side, #000 35%, transparent); mask: radial-gradient(closest-side, #000 35%, transparent);
+  opacity: 0.55; transition: opacity 0.8s steps(24, end); transition-delay: calc(var(--d, 0s) + 0.15s);
+}
+.js-reveal .toy.is-in .obj::after { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .js-reveal .toy:not(.is-in) { opacity: 1; filter: none; } .js-reveal .toy .obj::after { display: none; } }
 .name { font-size: 15px; letter-spacing: -0.01em; }
 /* Signed-off toys sit apart up top. */
 main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); border-bottom: 1px solid oklch(0.3 0.015 275); }
@@ -573,6 +584,26 @@ main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); borde
         </a>
       </li>
     </ul>
+    <script>
+      // Toys fade in through grain as they enter the view, a few frames apart.
+      (() => {
+        if (!('IntersectionObserver' in window)) return;
+        document.documentElement.classList.add('js-reveal');
+        let batch = 0, batchT = 0;
+        const io = new IntersectionObserver(entries => {
+          entries.forEach(e => {
+            if (!e.isIntersecting) return;
+            clearTimeout(batchT);
+            e.target.style.setProperty('--d', `${(batch++ % 12) * 0.06}s`);
+            e.target.classList.add('is-in');
+            io.unobserve(e.target);
+          });
+          batchT = setTimeout(() => { batch = 0; }, 120);
+        }, { rootMargin: '0px 0px -6% 0px' });
+        const watch = () => document.querySelectorAll('.toy').forEach(t => io.observe(t));
+        document.readyState === 'loading' ? addEventListener('DOMContentLoaded', watch) : watch();
+      })();
+    </script>
     <script>
       // The main shelf deals its toys in a fresh order on every load.
       // Toys Tom signed off (data-done) sit apart on their own shelf up top.
