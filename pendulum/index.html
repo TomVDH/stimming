@@ -24,6 +24,10 @@
 .stage.held canvas { cursor: grabbing; }
 /* The release chip shows the pattern it lifts next. */
 .chip .pat { width: 20px; height: 12px; fill: currentColor; flex: none; }
+#release.is-stop .pat { display: none; }
+/* The iso chip draws a solid cube with cut edges. */
+.chip .cube { width: 14px; height: 14px; flex: none; fill: currentColor; }
+.chip .cube .cut { fill: none; stroke: var(--bg); stroke-width: 1.4; }
 .choices .chip { min-width: 2.7em; justify-content: center; font-variant-numeric: tabular-nums; }
 /* The warp readout: a solid tag that shows while time runs fast. */
 .warp {
@@ -57,8 +61,8 @@
         <button class="chip" type="button" data-value="32" aria-pressed="false" aria-label="32 pendulums">32</button>
       </div>
       <div class="actions">
-        <button class="chip" id="release" type="button" aria-keyshortcuts="Space"><svg class="pat" viewBox="0 0 20 12" aria-hidden="true"></svg>Release</button>
-        <button class="chip" id="stop" type="button" aria-keyshortcuts="Escape">Stop</button>
+        <button class="chip" id="release" type="button" aria-keyshortcuts="Space"><svg class="pat" viewBox="0 0 20 12" aria-hidden="true"></svg><span class="lbl">Release</span></button>
+        <button class="chip" id="view" type="button" aria-pressed="false" aria-keyshortcuts="V" aria-label="Isometric view"><svg class="cube" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1l6 3.5v5L7 13 1 9.5v-5z"/><path class="cut" d="M7 7l6-3.5M7 7L1 3.5M7 7v6"/></svg>Iso</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag a ball</dt><dd>swing it</dd></div>
@@ -416,17 +420,16 @@ function linear([L, C, h]) {
   for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.92), h);
   return c.map(v => clamp(v));
 }
-// Each rig runs one two-hue ramp, long string first.
-// 12 runs orange to ink blue, 20 lime to cobalt, 32 hot pink to butter.
-const RAMPS = {
-  12: [[0.76, 0.17, 55], [0.5, 0.2, 268]],
-  20: [[0.9, 0.19, 122], [0.5, 0.21, 266]],
-  32: [[0.68, 0.23, 355], [0.92, 0.15, 96]],
-};
-// Hue takes the short way round; lightness and chroma blend straight.
-function ramp(t) {
-  const [a, b] = RAMPS[N], dh = ((b[2] - a[2] + 540) % 360) - 180;
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + dh * t];
+// Series hues, red through magenta, on one smooth curve.
+const HUES = [
+  [0.64, 0.2, 26], [0.74, 0.17, 52], [0.85, 0.16, 90], [0.8, 0.17, 148],
+  [0.78, 0.13, 202], [0.64, 0.16, 252], [0.6, 0.2, 292], [0.67, 0.21, 328],
+];
+const cr = (a, b, c, d, t) => b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
+function rainbow(t) {
+  const u = t * (HUES.length - 1), i = Math.min(HUES.length - 2, Math.floor(u)), f = u - i;
+  const p = [HUES[Math.max(0, i - 1)], HUES[i], HUES[i + 1], HUES[Math.min(HUES.length - 1, i + 2)]];
+  return [0, 1, 2].map(k => cr(p[0][k], p[1][k], p[2][k], p[3][k], f));
 }
 
 /* ---------- trails: stencil afterimages in each swing plane ---------- */
@@ -498,7 +501,7 @@ const STRING_PX = 1.6;
 const FW = 0.064, FT = 0.009, WEB = 0.014, BH = 0.05;
 
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, balls = null, strings = null, bar = null, M = null, SP = null, SO = null;
+let THREE = null, renderer = null, scene = null, camera = null, persp = null, iso = null, balls = null, strings = null, bar = null, M = null, SP = null, SO = null;
 let trails = null, TP = null, BT = null, bandTex = null;
 let ray = null, ndc = null, tmp = null, look = null, ready = false, lowDpr = false, pw = 1, ph = 1;
 // The camera sits past the long end, off-axis, above the bar.
@@ -662,7 +665,7 @@ function push() {
 function paint() {
   const col = new THREE.Color();
   for (let n = 0; n < N; n++) {
-    const [L, C, h] = ramp(n / (N - 1));
+    const [L, C, h] = rainbow(n / (N - 1));
     balls.setColorAt(n, col.setRGB(...linear([L, C, h])));
     for (let k = 0; k < BANDS; k++) BT.set([...linear([L - 0.04 - 0.085 * k, C * (1 - 0.1 * k), h - 5 * k]), 1], (n * BANDS + k) * 4);
   }
@@ -739,34 +742,39 @@ function framePoints() {
 // Places the camera at distance d; returns the row's screen box.
 function place(d, box) {
   const k = d / Math.hypot(yaw, 1);
-  camera.position.set(look.x + yaw * k, EYE, look.z + k);
-  camera.lookAt(look);
-  camera.updateMatrixWorld();
+  persp.position.set(look.x + yaw * k, EYE, look.z + k);
+  persp.lookAt(look);
+  persp.updateMatrixWorld();
   box[0] = box[1] = Infinity;
   box[2] = box[3] = -Infinity;
   for (const p of frame0) {
-    tmp.copy(p).applyMatrix4(camera.matrixWorldInverse);
+    tmp.copy(p).applyMatrix4(persp.matrixWorldInverse);
     if (tmp.z > -0.1) return false;
-    tmp.applyMatrix4(camera.projectionMatrix);
+    tmp.applyMatrix4(persp.projectionMatrix);
     box[0] = Math.min(box[0], tmp.x); box[2] = Math.max(box[2], tmp.x);
     box[1] = Math.min(box[1], tmp.y); box[3] = Math.max(box[3], tmp.y);
   }
   return (box[2] - box[0]) / 2 <= 0.88 && box[3] - box[1] <= yHi - yLo;
 }
-// Back off until the row fits; a lens shift centres it above the bar.
+// Both views fit the row into the same screen box.
 function fit(w, h) {
   pw = w;
   ph = h;
-  camera.aspect = w / h;
-  const tall = w / h < 1;
-  camera.fov = FOV[+tall];
-  yaw = YAW[+tall];
-  camera.updateProjectionMatrix();
   // The inset bar covers the stage foot, so the row sits above it.
   const res = barEl && !barEl.classList.contains('bar--below') ? Math.max(0, barEl.offsetHeight - 40) : 0;
   yHi = 0.88;
   yLo = Math.min(0.2, -0.9 + (2 * res) / Math.max(h, 1));
   look.set(...AIM0);
+  fitPersp(w, h);
+  fitIso(w / h);
+}
+// Back off until the row fits; a lens shift centres it above the bar.
+function fitPersp(w, h) {
+  persp.aspect = w / h;
+  const tall = w / h < 1;
+  persp.fov = FOV[+tall];
+  yaw = YAW[+tall];
+  persp.updateProjectionMatrix();
   const box = [0, 0, 0, 0];
   let lo = 0.5, hi = 40;
   for (let k = 0; k < 36; k++) {
@@ -774,10 +782,28 @@ function fit(w, h) {
     if (place(d, box)) hi = d; else lo = d;
   }
   place(hi, box);
-  const e = camera.projectionMatrix.elements;
+  const e = persp.projectionMatrix.elements;
   e[8] += (box[0] + box[2]) / 2;
   e[9] += (box[1] + box[3]) / 2 - (yLo + yHi) / 2;
-  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  persp.projectionMatrixInverse.copy(persp.projectionMatrix).invert();
+}
+// The iso view looks down the cube diagonal, with no perspective.
+// Its frame scales so the row's box fills the same screen box.
+function fitIso(a) {
+  iso.position.set(look.x + 10, look.y + 10, look.z + 10);
+  iso.lookAt(look);
+  iso.updateMatrixWorld();
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of frame0) {
+    tmp.copy(p).applyMatrix4(iso.matrixWorldInverse);
+    x0 = Math.min(x0, tmp.x); x1 = Math.max(x1, tmp.x);
+    y0 = Math.min(y0, tmp.y); y1 = Math.max(y1, tmp.y);
+  }
+  const sy = Math.max((x1 - x0) / 1.76 / a, (y1 - y0) / (yHi - yLo)), sx = sy * a;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2 - ((yLo + yHi) / 2) * sy;
+  iso.left = cx - sx; iso.right = cx + sx;
+  iso.top = cy + sy; iso.bottom = cy - sy;
+  iso.updateProjectionMatrix();
 }
 function ballAt(n, v) {
   const L = LEN[n] * grow;
@@ -915,12 +941,14 @@ function frame(ms) {
   if (busy || moving) quietAt = simT;
   hum(Number.isNaN(r) ? 0 : r, sum / N);
   showWarp(moving ? warp : 1);
+  showStop(moving && goAt < 0 && stopAt < 0);
   draw(fresh);
   // The loop runs on until the last dash has faded.
   if (busy || moving || simT - quietAt < SPAN) {
     if (onScreen) raf = requestAnimationFrame(frame);
   } else {
     warp = 1;
+    showStop(false);
     hum(0, 0);
     kit.rest(() => !raf && ptr < 0);
   }
@@ -941,6 +969,7 @@ function screen(v, o) {
 }
 // A ball's radius on screen, in panel pixels.
 function radiusPx(v) {
+  if (camera === iso) return (rig.BALL * ph) / (iso.top - iso.bottom);
   return (rig.BALL / camera.position.distanceTo(v)) * (ph / 2 / Math.tan((camera.fov * Math.PI) / 360));
 }
 // The nearest ball under the pointer, or -1.
@@ -1050,6 +1079,7 @@ addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   if (e.key === 'Shift') { shiftHeld = true; wake(); }
   else if (e.key === 'Escape') stop();
+  else if (e.key === 'v' || e.key === 'V') setView(!isoOn);
   else if (e.key === ' ') {
     // A focused button keeps Space for itself.
     if (e.target.closest?.('button, a')) return;
@@ -1059,8 +1089,32 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { if (e.key === 'Shift') shiftHeld = false; });
 addEventListener('blur', () => { shiftHeld = false; });
-relBtn.addEventListener('click', release);
-document.getElementById('stop').addEventListener('click', stop);
+// The release chip reads Stop while the row swings.
+let stopMode = false;
+const relLbl = relBtn.querySelector('.lbl');
+function showStop(on) {
+  if (on === stopMode) return;
+  stopMode = on;
+  relBtn.classList.toggle('is-stop', on);
+  relLbl.textContent = on ? 'Stop' : 'Release';
+  relBtn.setAttribute('aria-keyshortcuts', on ? 'Escape' : 'Space');
+  if (on) relBtn.setAttribute('aria-label', 'Stop');
+  else showPattern();
+}
+relBtn.addEventListener('click', () => (stopMode ? stop() : release()));
+// The view chip swaps the swinging camera for a fixed iso view.
+const VIEW_KEY = 'stimming.pendulum.view', viewBtn = document.getElementById('view');
+let isoOn = store.get(VIEW_KEY) === 'iso';
+function setView(on) {
+  isoOn = on;
+  store.set(VIEW_KEY, on ? 'iso' : 'persp');
+  viewBtn.setAttribute('aria-pressed', String(on));
+  if (!persp) return;
+  camera = on ? iso : persp;
+  if (ready) draw(false);
+}
+viewBtn.setAttribute('aria-pressed', String(isoOn));
+viewBtn.addEventListener('click', () => setView(!isoOn));
 const saved = +store.get(COUNT_KEY);
 nextN = RIGS[saved] ? saved : 20;
 const picker = choices(document.getElementById('count'), v => setCount(+v));
@@ -1120,7 +1174,9 @@ async function start() {
   const canvas = renderer.domElement;
   canvas.setAttribute('aria-hidden', 'true');
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.05, 60);
+  persp = new THREE.PerspectiveCamera(30, 16 / 9, 0.05, 60);
+  iso = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 40);
+  camera = isoOn ? iso : persp;
   ray = new THREE.Raycaster();
   ndc = new THREE.Vector2();
   tmp = new THREE.Vector3();
@@ -1146,7 +1202,7 @@ async function start() {
   bar = makeBeam();
   scene.add(bar);
 
-  // Lacquered beads: a clear coat over the ramp.
+  // Lacquered beads: a clear coat over the rainbow.
   const small = Math.min(innerWidth, innerHeight) < 700;
   balls = new THREE.InstancedMesh(
     bead(small ? 32 : 48),
