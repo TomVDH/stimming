@@ -23,9 +23,6 @@
 /* The wand stands in for the mouse pointer. */
 @media (pointer: fine) { .stage canvas { cursor: none; } }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
-/* Blow is held, so a long press must not select or open a menu. */
-#blow { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-#blow.is-held { color: var(--fg); border-color: var(--fg); }
 </style>
 </head>
 <body>
@@ -40,15 +37,12 @@
       <p class="fail" hidden>Bubble wand needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="actions">
-        <button class="chip" id="blow" type="button" aria-keyshortcuts="Space" title="Hold to blow a stream">Blow</button>
-        <button class="chip" id="clear" type="button" aria-keyshortcuts="P" title="Pop them all">Clear</button>
-      </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Sweep slowly</dt><dd>one big bubble</dd></div>
         <div><dt>Sweep fast</dt><dd>a spray</dd></div>
         <div><dt>Poke a bubble</dt><dd>pop it</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd> <kbd>P</kbd></dt><dd>blow, clear</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>blow a stream</dd></div>
+        <div class="fine"><dt><kbd>P</kbd></dt><dd>pop them all</dd></div>
       </dl>
     </div>
   </main>
@@ -393,7 +387,7 @@ function spawn(x, y, r, vx, vy, seed = Math.random()) {
   const b = {
     id: nextId++, x, y, r, vx, vy, age: 0, life: 8 + Math.random() * 7, seed,
     w: [0, 0, 0, 0], wv: [0, 0, 0, 0], pop: -1, popDur: 0, tear: 0, popAt: Infinity,
-    merge: null, fed: false, fresh: true, dead: false, fade: 1,
+    merge: null, fed: false, fresh: true, dead: false,
   };
   bubbles.push(b);
   return b;
@@ -495,14 +489,10 @@ function stepBubbles(dt) {
     const dw = Math.hypot(b.x - wand.x, b.y - wand.y);
     // A new bubble ignores the ring until it has drifted clear.
     if (b.fresh && dw > b.r + R0 * 0.95) b.fresh = false;
-    // At the top edge a bubble drifts out and fades instead of popping.
-    b.fade = 1 - smooth(H - b.r, H + 0.3 * b.r, b.y);
-    if (!b.fade) { cull(i); continue; }
-    if (b.fade < 1) continue;
     const e = b.r * 0.94;
     if (simT >= b.popAt || b.age > b.life) startPop(b);
-    else if (b.age > 0.1 && (b.x < e || b.x > W - e || b.y < e)) {
-      startPop(b, b.y < e ? -Math.PI / 2 : b.x < e ? Math.PI : 0);
+    else if (b.age > 0.1 && (b.x < e || b.x > W - e || b.y < e || b.y > H - e)) {
+      startPop(b, b.y > H - e ? Math.PI / 2 : b.y < e ? -Math.PI / 2 : b.x < e ? Math.PI : 0);
     } else if (lw && !b.fresh && dw < b.r + R0 * 0.78) startPop(b, Math.atan2(wand.y - b.y, wand.x - b.x));
   }
   collide(dt);
@@ -517,10 +507,10 @@ function collide(dt) {
   const n = bubbles.length;
   for (let i = 0; i < n; i++) {
     const a = bubbles[i];
-    if (a.pop >= 0 || a.merge || a.fed || a.fade < 1) continue;
+    if (a.pop >= 0 || a.merge || a.fed) continue;
     for (let j = i + 1; j < n; j++) {
       const b = bubbles[j];
-      if (b.pop >= 0 || b.merge || b.fed || b.fade < 1) continue;
+      if (b.pop >= 0 || b.merge || b.fed) continue;
       const dx = b.x - a.x, dy = b.y - a.y, sum = a.r + b.r, d2 = dx * dx + dy * dy;
       if (d2 >= sum * sum * 1.1) continue;
       const d = Math.sqrt(d2) || 1e-3, nx = dx / d, ny = dy / d;
@@ -712,11 +702,8 @@ varying vec3 vN;
 varying vec3 vO;
 varying vec4 vF;
 varying float vR;
-varying float vFade;
 void main() {
   vec3 p = position;
-  // The z slot carries fade, not depth.
-  vFade = aPos.z;
   float x = p.x, y = p.y;
   // Stretch and three-lobed modes, as polynomials on the sphere.
   float g = aWob.x * (x * x - y * y) + aWob.y * 2.0 * x * y + aWob.z * (x * x * x - 3.0 * x * y * y) + aWob.w * (3.0 * x * x * y - y * y * y);
@@ -739,7 +726,6 @@ varying vec3 vN;
 varying vec3 vO;
 varying vec4 vF;
 varying float vR;
-varying float vFade;
 void main() {
   vec3 o = normalize(vO);
   vec3 n = normalize(vN);
@@ -759,7 +745,7 @@ void main() {
   col.rgb *= 1.0 + 1.6 * flash;
   col += vec4(1.3, 1.2, 1.05, 0.6) * edge * (1.0 - 0.5 * vF.z);
   col.a = min(col.a, 1.0);
-  gl_FragColor = col * aa * vFade;
+  gl_FragColor = col * aa;
 }
 `;
 const FORM_VS = /* glsl */ `
@@ -937,15 +923,14 @@ function filmLut() {
   return t;
 }
 // Disc layout in panel fractions: x, y, radius by short side, strength.
-// Warm discs are coral; amber on blue reads as mud.
 const DISCS = [
-  [0.8, 0.7, 0.25, 0.1, [0.72, 0.12, 205]],
+  [0.8, 0.7, 0.3, 0.1, [0.72, 0.12, 205]],
   [0.14, 0.82, 0.2, 0.09, [0.62, 0.17, 330]],
-  [0.92, 0.18, 0.16, 0.11, [0.78, 0.13, 28]],
-  [0.36, 0.14, 0.2, 0.065, [0.75, 0.11, 165]],
-  [0.56, 0.48, 0.32, 0.04, [0.6, 0.13, 290]],
+  [0.92, 0.18, 0.16, 0.1, [0.78, 0.12, 75]],
+  [0.36, 0.14, 0.24, 0.065, [0.75, 0.11, 165]],
+  [0.56, 0.48, 0.38, 0.04, [0.6, 0.13, 290]],
   [0.28, 0.5, 0.08, 0.1, [0.72, 0.12, 205]],
-  [0.66, 0.92, 0.1, 0.09, [0.78, 0.13, 28]],
+  [0.66, 0.92, 0.1, 0.08, [0.78, 0.12, 75]],
   [0.06, 0.34, 0.12, 0.07, [0.62, 0.15, 315]],
 ];
 
@@ -994,7 +979,7 @@ function draw() {
   for (const l of lods) l.n = 0;
   for (const b of bubbles) {
     const l = lods[b.r < cut ? 0 : 1], o = l.n++ * 4, P = l.p.array, Wb = l.w.array, F = l.f.array;
-    P[o] = b.x; P[o + 1] = b.y; P[o + 2] = b.fade; P[o + 3] = Math.max(0, b.r);
+    P[o] = b.x; P[o + 1] = b.y; P[o + 2] = 0; P[o + 3] = Math.max(0, b.r);
     Wb[o] = b.w[0]; Wb[o + 1] = b.w[1]; Wb[o + 2] = b.w[2]; Wb[o + 3] = b.w[3];
     F[o] = b.seed; F[o + 1] = clamp(b.age / b.life); F[o + 2] = b.pop >= 0 ? Math.max(0.001, b.pop) : 0; F[o + 3] = b.tear;
   }
@@ -1165,20 +1150,6 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { if (e.key === ' ') blowEnd(); });
 addEventListener('blur', blowEnd);
-// Holding the Blow chip breathes a stream, as Space does.
-const blowB = document.getElementById('blow'), clearB = document.getElementById('clear');
-blowB.addEventListener('pointerdown', e => {
-  if (e.button > 0) return;
-  try { blowB.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  blowB.classList.add('is-held');
-  blowStart();
-});
-const blowUp = () => { blowB.classList.remove('is-held'); blowEnd(); };
-['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => blowB.addEventListener(t, blowUp));
-blowB.addEventListener('contextmenu', e => e.preventDefault());
-// A keyboard press on the chip gives one short puff.
-blowB.addEventListener('click', e => { if (!e.detail) { blowStart(); blowEnd(); } });
-clearB.addEventListener('click', popAll);
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1189,7 +1160,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) wake
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
-  blowB.disabled = clearB.disabled = true;
 }
 // Premultiplied, unsorted, depth-free: the films add light.
 function filmMaterial(vs, fs, uniforms, extra = {}) {
