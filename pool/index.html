@@ -23,11 +23,36 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* Each chip carries a small solid stencil of its thing. */
-.chip .ic { width: 15px; height: 15px; flex: none; fill: currentColor; }
+/* The picker is one pill: back, the current tool, forward. */
+.picker {
+  display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px;
+  transition: border-color 0.2s ease;
+}
+.picker.on { border-color: var(--fg); }
+.picker .step {
+  display: grid; place-items: center; width: 30px; height: 30px; padding: 0; cursor: pointer;
+  color: var(--muted); background: none; border: 0; border-radius: 999px; -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.picker .step:hover { color: var(--fg); }
+.picker .step:active { transform: scale(0.84); transition-duration: 0.08s; }
+.picker .step svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.picker .now {
+  display: inline-flex; align-items: center; gap: 7px; min-width: 7.4em; padding: 0 2px;
+  font-size: 13px; color: var(--fg);
+}
+/* Each tool shows as a small solid stencil. */
+.picker .now svg { width: 15px; height: 15px; flex: none; fill: currentColor; }
+/* A new tool pops into the picker. */
+.picker .now.pop svg { animation: pick-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes pick-pop { from { transform: scale(0.4) rotate(-30deg); } }
+@media (pointer: coarse) { .picker .step { width: 40px; height: 38px; } }
 /* Cut mode aims with a crosshair. */
 :root[data-mode="cut"] .stage { cursor: crosshair; }
-@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .stage canvas, .picker, .picker .step { transition: none; }
+  .picker .now.pop svg { animation: none; }
+}
 </style>
 </head>
 <body>
@@ -43,15 +68,17 @@
       <p class="fail" hidden>Caustic pool needs WebGL 2 with float textures, which this browser lacks.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="tools" role="group" aria-label="What a press does">
-        <button class="chip" type="button" data-value="cut" aria-pressed="false" aria-keyshortcuts="X"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 6.5h4.6L8 11.2l2.4-4.7H15V14H1Z"/><path d="M7.2 1.5h1.6v6.2L8 9.3l-.8-1.6Z"/></svg>Cut</button>
-        <!-- A second press on Throw steps to the next thing. -->
-        <button class="chip" type="button" data-value="throw" id="throw" aria-pressed="true" aria-keyshortcuts="1 2 3"><svg class="ic" data-thing="ball" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/></svg><svg class="ic" data-thing="anvil" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/></svg><svg class="ic" data-thing="bell" viewBox="0 0 16 16" aria-hidden="true" hidden><path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/></svg><span id="thing-name">Ball</span></button>
+      <div class="choices">
+        <div class="picker on" id="picker" role="group" aria-label="What a press does">
+          <button class="step" id="prev" type="button" aria-label="Previous tool"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
+          <span class="now" id="now" aria-live="polite"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"></svg><span>Ball</span></span>
+          <button class="step" id="next" type="button" aria-label="Next tool"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button>
+        </div>
       </div>
       <div class="actions">
-        <button class="chip" id="pool" type="button" aria-keyshortcuts="P" aria-label="Pool: Lane, press for the next pool"><svg class="ic" data-pool="lane" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M1.5 3h13v10h-13Zm5 2.6v4.8h3V5.6Z"/></svg><svg class="ic" data-pool="plunge" viewBox="0 0 16 16" aria-hidden="true" hidden><path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm0 4a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg><svg class="ic" data-pool="lagoon" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M4.6 2.4c2 0 3 1.6 4.4 1.6s2.2-1 3.6-.6c2 .6 2.6 3.4 1.6 5.8-1 2.6-3.6 4.6-6.6 4.6-3.6 0-6.2-2.2-6.2-5.6 0-3.4 1.4-5.8 3.2-5.8Z"/></svg><span id="pool-name">Lane</span></button>
-        <button class="chip" id="night" type="button" aria-keyshortcuts="N" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.2 1.6a6.6 6.6 0 1 0 4.4 9.9A5.4 5.4 0 0 1 10.2 1.6Z"/></svg>Night</button>
-        <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
+        <button class="chip" id="pool" type="button" aria-keyshortcuts="P" aria-label="Pool: lane">Lane</button>
+        <button class="chip" id="night" type="button" aria-keyshortcuts="N" aria-label="Time: day">Day</button>
+        <button class="chip" id="clear" type="button" aria-keyshortcuts="C" aria-disabled="true">Clear</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
@@ -65,7 +92,7 @@
 </div>
 
 <script type="module">
-import { initPage, sound, audioKit, choices } from '../shared/stim.js';
+import { initPage, sound, audioKit } from '../shared/stim.js';
 initPage({ id: 'pool' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const nightB = document.getElementById('night'), clearB = document.getElementById('clear'), poolB = document.getElementById('pool');
@@ -1819,7 +1846,8 @@ function setNight(v) {
   // Reduced motion switches at once.
   if (reduce) nightK = nightT;
   store.set(TIME_KEY, v ? 'night' : 'day');
-  nightB.setAttribute('aria-pressed', String(!!v));
+  nightB.textContent = v ? 'Night' : 'Day';
+  nightB.setAttribute('aria-label', `Time: ${v ? 'night' : 'day'}`);
   document.documentElement.dataset.time = v ? 'night' : 'day';
   wake();
 }
@@ -1832,30 +1860,37 @@ const KIND = {
   anvil: { type: 1, size: 1.15, bound: 0.16, rho: 7.8, vol: 1.0e-3, lo: 0.056, hi: 0.048, foot: 0.12, float: false },
   bell: { type: 2, size: 1.15, bound: 0.1, rho: 7.2, vol: 5.4e-4, lo: 0.04, hi: 0.092, foot: 0.058, float: false },
 };
-const THING_KEY = 'stimming.pool.thing', MODE_KEY = 'stimming.pool.mode', THINGS = ['ball', 'anvil', 'bell'];
-const NAMES = { ball: 'Ball', anvil: 'Anvil', bell: 'Kettlebell' };
+const THING_KEY = 'stimming.pool.thing', MODE_KEY = 'stimming.pool.mode';
+// The picker steps through the three things, then Cut.
+const TOOLS = [
+  ['ball', 'Ball', '<path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/>'],
+  ['anvil', 'Anvil', '<path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/>'],
+  ['bell', 'Kettlebell', '<path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/>'],
+  ['cut', 'Cut', '<path d="M1 6.5h4.6L8 11.2l2.4-4.7H15V14H1Z"/><path d="M7.2 1.5h1.6v6.2L8 9.3l-.8-1.6Z"/>'],
+];
 let thing = KIND[store.get(THING_KEY)] ? store.get(THING_KEY) : 'ball', objMoving = false;
 let mode = store.get(MODE_KEY) === 'cut' ? 'cut' : 'throw';
-const throwB = document.getElementById('throw');
-function setThing(v) {
-  thing = v;
-  store.set(THING_KEY, v);
-  throwB.querySelectorAll('[data-thing]').forEach(el => el.toggleAttribute('hidden', el.dataset.thing !== v));
-  document.getElementById('thing-name').textContent = NAMES[v];
+const nowEl = document.getElementById('now');
+// Picks a thing to throw, or 'cut'.
+function setTool(v, pop = true) {
+  mode = v === 'cut' ? 'cut' : 'throw';
+  if (mode === 'throw') { thing = v; store.set(THING_KEY, v); }
+  store.set(MODE_KEY, mode);
+  document.documentElement.dataset.mode = mode;
+  const [, name, svg] = TOOLS.find(t => t[0] === v);
+  nowEl.querySelector('svg').innerHTML = svg;
+  nowEl.querySelector('span').textContent = name;
+  nowEl.classList.remove('pop');
+  if (pop && !reduce) { void nowEl.offsetWidth; nowEl.classList.add('pop'); }
 }
-function setMode(v) {
-  mode = v;
-  store.set(MODE_KEY, v);
-  document.documentElement.dataset.mode = v;
+const toolNow = () => (mode === 'cut' ? 'cut' : thing);
+function stepTool(d) {
+  const i = TOOLS.findIndex(t => t[0] === toolNow());
+  setTool(TOOLS[(i + d + TOOLS.length) % TOOLS.length][0]);
 }
-// A press on Throw while it is chosen steps to the next thing.
-throwB.addEventListener('click', () => {
-  if (mode === 'throw') setThing(THINGS[(THINGS.indexOf(thing) + 1) % THINGS.length]);
-});
-const picker = choices(document.getElementById('tools'), setMode);
-setThing(thing);
-setMode(mode);
-picker.set(mode);
+document.getElementById('prev').addEventListener('click', () => stepTool(-1));
+document.getElementById('next').addEventListener('click', () => stepTool(1));
+setTool(toolNow(), false);
 
 /* quaternions: [w, x, y, z] */
 const qmul = (a, b) => [
@@ -2213,6 +2248,7 @@ function step(dt) {
   }
   stepSpin(dt);
   stepCuts(dt);
+  syncClear();
   stepObjs(dt);
   stepParts(dt);
   stepPetals(dt);
@@ -2410,14 +2446,13 @@ function toss() {
 }
 function clearPool() {
   objs.forEach(retire);
+  syncClear();
   wake();
 }
 // A new pool empties the water and rebuilds the grids.
 function showPool() {
-  // SVG has no hidden property, so the attribute is set directly.
-  poolB.querySelectorAll('[data-pool]').forEach(el => el.toggleAttribute('hidden', el.dataset.pool !== poolId));
-  document.getElementById('pool-name').textContent = POOLS[poolId].name;
-  poolB.setAttribute('aria-label', `Pool: ${POOLS[poolId].name}, press for the next pool`);
+  poolB.textContent = POOLS[poolId].name;
+  poolB.setAttribute('aria-label', `Pool: ${POOLS[poolId].name.toLowerCase()}`);
 }
 function nextPool() {
   poolId = POOL_IDS[(POOL_IDS.indexOf(poolId) + 1) % POOL_IDS.length];
@@ -2438,7 +2473,13 @@ function nextPool() {
 showPool();
 poolB.addEventListener('click', nextPool);
 nightB.addEventListener('click', () => setNight(!nightT));
-clearB.addEventListener('click', clearPool);
+clearB.addEventListener('click', () => { if (clearB.getAttribute('aria-disabled') !== 'true') clearPool(); });
+// Clear lights only while something is in the pool.
+let clearOn = false;
+function syncClear() {
+  const on = objs.some(o => !o.dying);
+  if (on !== clearOn) { clearOn = on; clearB.setAttribute('aria-disabled', String(!on)); }
+}
 const KEYS = { 1: 'ball', 2: 'anvil', 3: 'bell' };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
@@ -2447,14 +2488,14 @@ addEventListener('keydown', e => {
   if (k === 'r' || k === 'R') { if (!e.repeat) setRain(!raining); }
   else if (k === 'n' || k === 'N') { if (!e.repeat) setNight(!nightT); }
   else if (k === 'c' || k === 'C') { if (!e.repeat) clearPool(); }
-  else if (KEYS[k]) { setThing(KEYS[k]); setMode('throw'); picker.set('throw'); }
-  else if (k === 'x' || k === 'X') { setMode('cut'); picker.set('cut'); }
+  else if (KEYS[k]) setTool(KEYS[k]);
+  else if (k === 'x' || k === 'X') setTool('cut');
   else if (k === 'p' || k === 'P') { if (!e.repeat) nextPool(); }
   else if (k === ' ') {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
-    if (!e.repeat && ready) { if (mode !== 'throw') { setMode('throw'); picker.set('throw'); } toss(); }
+    if (!e.repeat && ready) { if (mode !== 'throw') setTool(thing); toss(); }
   } else if (k.startsWith('Arrow')) {
     // Arrows turn and tilt the view a step.
     e.preventDefault();
@@ -2473,7 +2514,7 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  document.querySelectorAll('.bar .chip').forEach(b => { b.disabled = true; });
+  document.querySelectorAll('.bar button').forEach(b => { b.disabled = true; });
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; fence = null; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
