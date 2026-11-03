@@ -90,7 +90,7 @@ const CHORDS = [[38, 45, 50, 54, 57, 61, 64, 69]];
 const AMP = [0.08, 0.055, 0.045, 0.038, 0.032, 0.024, 0.019, 0.016];
 const layers = [];
 // The star count writes these targets twice a second.
-const mixAt = { level: new Float32Array(8), pan: new Float32Array(8), feed: 0, jet: 0 };
+const mixAt = { level: new Float32Array(8) };
 let chordAt = 0, droneLfo = null;
 
 function audio() {
@@ -122,13 +122,10 @@ function makeLayer(k) {
   const g = ac.createGain(), lp = ac.createBiquadFilter();
   g.gain.value = 0;
   lp.type = 'lowpass';
-  lp.frequency.value = 280;
+  lp.frequency.value = k ? 900 : 600;
   lp.Q.value = 0.4;
   droneLfo.connect(lp.frequency);
-  let bus = out;
-  const pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
-  if (pan) { pan.connect(out); bus = pan; }
-  lp.connect(g).connect(bus);
+  lp.connect(g).connect(out);
   const f = mtof(CHORDS[chordAt][k]);
   for (const sgn of [-1, 1]) {
     const o = ac.createOscillator();
@@ -138,19 +135,16 @@ function makeLayer(k) {
     o.connect(lp);
     o.start();
   }
-  return { g, lp, pan, bus };
+  return { g, lp };
 }
 // Layers glide toward the targets in mixAt.
-function mixLayers(tau = 1.1) {
+function mixLayers(tau = 3) {
   if (!ac || ac.state !== 'running' || !layers.length) return;
   const t = ac.currentTime, on = sound.on && running;
+  // Each voice is simply on or off, so the drone never sweeps.
   layers.forEach((L, k) => {
-    const lv = on ? mixAt.level[k] : 0;
-    // A feeding hole swells the bass.
-    const amp = AMP[k] * lv * (k ? 1 : 1 + 0.5 * mixAt.feed);
-    L.g.gain.setTargetAtTime(amp, t, tau);
-    L.lp.frequency.setTargetAtTime(240 + 900 * lv + (k ? 0 : 400 * mixAt.feed), t, 1.6);
-    L.pan?.pan.setTargetAtTime(mixAt.pan[k], t, 0.6);
+    const lit = on && mixAt.level[k] > 0.15 ? 1 : 0;
+    L.g.gain.setTargetAtTime(AMP[k] * lit, t, tau);
   });
 }
 // A context still waking queues sounds for a moment.
@@ -250,7 +244,7 @@ const SEED_M = 26, TAP_M = 18, MAX_M = 240;
 const BH_M = 48, HOLE_R = 0.2, LENS = 0.3, SHADOW_K = 1.3, DISK_TILT = (-18 * Math.PI) / 180;
 // Near a hole, stars spiral in and feed it.
 const HOLE_REACH = 6, INFLOW = 0.3, EAT = 160 / N;
-const DISK_N = SMALL ? 16384 : 32768, DISK_SPIN = 2.4, DISK_PX = 2.4;
+const DISK_N = SMALL ? 16384 : 32768, DISK_SPIN = 2.4, DISK_PX = 2.4, TRAIL = 7, TRAIL_DT = 0.08;
 const JET_N = SMALL ? 4096 : 8192, JET_RATE = 0.45;
 const EPS2 = 0.2, EPSW2 = 1, KILL2 = 70 * 70, DEAD = -1e9;
 // Flings: an opening burst, then a steady stream while held.
@@ -592,10 +586,13 @@ async function start() {
   // The disk: particles on Kepler orbits, inner ones fastest.
   // Radius is in horizon units, with two cut gaps.
   const diskMat = spriteMat();
-  const dh = k => hash(instanceIndex.add(uint(k * 7349 + 101)));
+  // Each particle draws TRAIL copies back along its orbit as a streak.
+  const dBase = instanceIndex.div(uint(TRAIL));
+  const lag = float(instanceIndex.sub(dBase.mul(uint(TRAIL))));
+  const dh = k => hash(dBase.add(uint(k * 7349 + 101)));
   const dr = mix(float(1.75), float(6.4), dh(1).pow(1.7));
   const gap = step(0.14, dr.sub(3.0).abs()).mul(step(0.1, dr.sub(4.6).abs()));
-  const dth = dh(2).mul(TAU).add(uTime.mul(dr.pow(-1.5).mul(DISK_SPIN)));
+  const dth = dh(2).mul(TAU).add(uTime.sub(lag.mul(TRAIL_DT)).mul(dr.pow(-1.5).mul(DISK_SPIN)));
   const drw = dr.mul(uHoleR);
   const dP = uHole.xyz.add(uDiskRot.mul(vec3(cos(dth).mul(drw), dh(3).sub(0.5).mul(drw).mul(0.06), sin(dth).mul(drw))));
   const diskLens = lensOf(dP);
@@ -603,20 +600,25 @@ async function start() {
   // Any point that lands in the shadow hides.
   const hidden = diskLens.behind.greaterThan(0).and(diskLens.ul2.lessThan(uHoleR));
   diskMat.positionNode = diskLens.p;
-  diskMat.scaleNode = select(hidden.or(gap.lessThan(0.5)).or(uHoleVis.lessThan(0.002)), float(0), uPx.mul(DISK_PX));
+  diskMat.scaleNode = select(hidden.or(gap.lessThan(0.5)).or(uHoleVis.lessThan(0.002)), float(0), uPx.mul(DISK_PX).mul(float(1).sub(lag.mul(0.07))));
   // Doppler: the approaching side brightens and shifts toward blue.
   const toCam = cameraPosition.sub(dP).normalize();
   const beta = uDiskRot.mul(vec3(sin(dth).negate(), 0, cos(dth))).dot(toCam).mul(inverseSqrt(dr).mul(0.5));
   const dop = float(1).div(float(1).sub(beta));
   const heat = smoothstep(1.75, 6.4, dr);
+  // The streak dims toward its tail.
+  // The disk fades at its inner lip and its outer rim.
+  const tail = float(1).sub(lag.div(TRAIL)).pow(1.3).mul(0.4);
+  const edgeFade = smoothstep(1.75, 2.15, dr).mul(float(1).sub(smoothstep(3.4, 6.4, dr).mul(0.95)));
   const diskBase = mix(mix(HOT.mul(1.05), AMBER, smoothstep(0, 0.55, heat)), EMBER, smoothstep(0.55, 1, heat));
   // Clumps belong to the gas, so shear winds them into streaks.
   const clump = sin(dh(2).mul(TAU * 7).add(dr.mul(5))).mul(0.5).add(0.5).pow(3).mul(0.75).add(0.25);
   const diskCol = varying(mix(diskBase, ICE.mul(1.4), beta.mul(1.6).clamp(0, 0.6))
-    .mul(dop.pow(3)).mul(clump).mul(diskLens.mu).mul(uFeed.mul(1.4).add(0.45)).mul(uHoleVis).mul(uDiskGain));
+    .mul(dop.pow(3)).mul(clump).mul(diskLens.mu).mul(uFeed.mul(1.4).add(0.45)).mul(uHoleVis).mul(uDiskGain)
+    .mul(tail).mul(edgeFade));
   diskMat.colorNode = dotOf(diskCol);
   const disk = new THREE.Sprite(diskMat);
-  disk.count = DISK_N;
+  disk.count = DISK_N * TRAIL;
   disk.frustumCulled = false;
   disk.renderOrder = 4;
   disk.visible = false;
@@ -1125,12 +1127,9 @@ async function start() {
       const w = ranked[k];
       if (!w) { mixAt.level[k] = 0; continue; }
       mixAt.level[k] = Math.sqrt(clamp(w.bound / (N * 0.22)));
-      mixAt.pan[k] = clamp(tmp.set(w.x, 0, w.z).project(camera).x * 0.8, -0.8, 0.8);
     }
     // A hole always sounds its bass.
     if (holeWell && ranked[0] === holeWell) mixAt.level[0] = Math.max(mixAt.level[0], 0.45);
-    mixAt.feed = feed;
-    mixAt.jet = jet;
     mixLayers();
   }
 
