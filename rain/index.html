@@ -1,0 +1,1340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Rain on glass</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the window panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --glass: oklch(0.25 0.045 290);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The window is 16:9, 4:5 on phones, and dusk in both themes. */
+.pane {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  max-height: max(320px, calc(100vh - 176px)); max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--glass);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.pane:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .pane { aspect-ratio: 4 / 5; } }
+.pane canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pane canvas.on { opacity: 1; }
+/* On the dusk glass the line keeps a pale tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.74 0.02 285);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .pane canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Rain on glass</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="pane" id="pane" tabindex="0" role="application" aria-label="A rainy window at dusk. Drag to wipe the fog. Arrow keys wipe a stripe; Space makes the rain heavier or lighter.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Rain on glass needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="heavy" type="button" aria-keyshortcuts="Space">Heavier</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>wipe the fog</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>wipe a stripe</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>heavier or lighter</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('pane'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; rainLevel(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+// Seeded random keeps the street the same across resizes.
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const hash2 = (x, y) => {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+function vnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(ix, iy), hash2(ix + 1, iy), sx), lerp(hash2(ix, iy + 1), hash2(ix + 1, iy + 1), sx), sy);
+}
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const SKY = {
+  uSkyTop: linear(0.27, 0.06, 272),
+  uSkyMid: linear(0.38, 0.075, 298),
+  uGlow: linear(0.54, 0.085, 42),
+  uBldg: linear(0.2, 0.03, 285),
+  uStreet: linear(0.15, 0.02, 280),
+  uSheen: linear(0.34, 0.055, 330),
+};
+const HAZE = linear(0.5, 0.022, 285);
+const LIT = {
+  lamp: linear(0.84, 0.13, 72), warm: linear(0.86, 0.1, 85), cool: linear(0.88, 0.04, 235),
+  head: linear(0.96, 0.035, 95), tail: linear(0.62, 0.2, 27), teal: linear(0.8, 0.12, 195),
+  rose: linear(0.68, 0.19, 350), blue: linear(0.66, 0.15, 262), go: linear(0.84, 0.16, 158),
+};
+
+/* ---------- the street behind the glass ---------- */
+// Units are panel heights; y runs down; the street starts at YS.
+const BW = 0.085, NB = 40, YS = 0.62;
+const roofs = new Float32Array(NB);
+let lightData = new Float32Array(0), nLights = 0, sceneA = 0;
+function buildScene(A) {
+  sceneA = A;
+  const R = rng(20261102);
+  for (let i = 0; i < NB; i++) {
+    const h = R();
+    roofs[i] = 0.26 + 0.18 * h * h - (R() < 0.18 ? 0.07 : 0);
+  }
+  const L = [];
+  // Twelve floats per light: place, size, phase, colour, rate, drift, flicker, stretch.
+  const put = (x, y, rad, col, k, amp, v = 0, tall = 1) => {
+    L.push(x, y, rad, R() * TAU, col[0] * k, col[1] * k, col[2] * k, 0.4 + R() * 1.1, v, amp, tall, 0);
+  };
+  // The wet street mirrors each light as a dim upright streak.
+  const mirror = (x, y, rad, col, k, amp, v = 0) => put(x, YS + (YS - y) * 0.45 + 0.05, rad * 0.9, col, k * 0.16, amp * 1.6, v, 2.2);
+  const nb = Math.min(NB, Math.ceil(A / BW));
+  for (let n = Math.round(20 * A), i = 0; i < n; i++) {
+    const b = Math.floor(R() * nb), x = (b + 0.15 + 0.7 * R()) * BW;
+    const y = roofs[b] + 0.03 + R() * Math.max(0.02, YS - roofs[b] - 0.08);
+    put(x, y, 0.009 + R() * 0.012, R() < 0.75 ? LIT.warm : LIT.cool, 0.05 + 0.32 * R() ** 2, 0.05);
+  }
+  // Far lights crowd the end of the street.
+  for (let n = Math.round(12 * A), i = 0; i < n; i++) {
+    put(R() * A, YS - 0.06 + R() * 0.05, 0.007 + R() * 0.008, R() < 0.6 ? LIT.lamp : LIT.cool, 0.3 + R() * 0.4, 0.12);
+  }
+  // Street lamps recede from the near left to the far right.
+  for (let n = Math.round(3 + 2 * A), i = 0; i < n; i++) {
+    const t = (i + 0.15 + 0.7 * R()) / n, x = A * (0.02 + 0.96 * t), y = 0.24 + 0.2 * t + (R() - 0.5) * 0.06;
+    const rad = (0.058 - 0.022 * t) * (0.8 + 0.4 * R()), k = (1.15 - 0.55 * t) * (0.75 + 0.3 * R());
+    put(x, y, rad, LIT.lamp, k, 0.04);
+    mirror(x, y, rad, LIT.lamp, k, 0.04);
+  }
+  // Shopfronts glow at street level in cool and rose light.
+  const signs = [LIT.teal, LIT.rose, LIT.blue, LIT.teal, LIT.warm, LIT.rose];
+  for (let n = Math.round(1 + 2.6 * A), i = 0; i < n; i++) {
+    const x = A * ((i + 0.2 + 0.6 * R()) / n), y = 0.47 + R() * 0.1, rad = 0.026 + R() * 0.026, k = 0.3 + R() * 0.35;
+    put(x, y, rad, signs[i % signs.length], k, 0.09);
+    mirror(x, y, rad, signs[i % signs.length], k, 0.09);
+  }
+  put(A * 0.63, 0.42, 0.026, LIT.go, 0.75, 0.03);
+  mirror(A * 0.63, 0.42, 0.026, LIT.go, 0.75, 0.03);
+  // Cars drift slowly: headlights one way, tail lights the other.
+  for (let lane = 0; lane < 2; lane++) {
+    const head = lane === 1, y0 = head ? 0.735 : 0.665;
+    for (let n = Math.round(1.4 + 1.3 * A), i = 0; i < n; i++) {
+      const x = (A + 0.5) * ((i + R() * 0.7) / n) - 0.25, y = y0 + (R() - 0.5) * 0.02;
+      const rad = head ? 0.038 + R() * 0.012 : 0.03 + R() * 0.01, gap = 2.3 * rad;
+      const v = (head ? -1 : 1) * (0.02 + R() * 0.025), k = head ? 1 : 0.7, col = head ? LIT.head : LIT.tail;
+      for (const dx of [0, gap]) {
+        put(x + dx, y, rad, col, k, 0.03, v);
+        put(x + dx, y + 0.085, rad * 0.85, col, k * 0.18, 0.06, v, 2.4);
+      }
+    }
+  }
+  lightData = new Float32Array(L);
+  nLights = L.length / 12;
+  if (P) uploadLights();
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.rain.sound', MAXV = 12, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, dripNext = 0;
+let amb = null, bedF = null, patG = null, sq = null, sqNext = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    ambience();
+    squeaker();
+  }
+  // Off screen, the rain stays silent until the window returns.
+  if (!running) { ac.suspend()?.catch(() => {}); return; }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Scales a buffer channel to a target loudness.
+function norm(d, rms) {
+  let s = 0;
+  for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+  const k = rms / Math.sqrt(s / d.length || 1);
+  for (let i = 0; i < d.length; i++) d[i] *= k;
+}
+// The rain bed: pink noise, a high hiss and a sparse patter.
+function ambience() {
+  const sr = ac.sampleRate;
+  const bed = ac.createBuffer(2, Math.round(sr * 5.3), sr);
+  for (let c = 0; c < 2; c++) {
+    const d = bed.getChannelData(c);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < d.length; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.099046;
+      b1 = 0.963 * b1 + w * 0.2965164;
+      b2 = 0.57 * b2 + w * 1.0526913;
+      d[i] = b0 + b1 + b2 + w * 0.1848;
+    }
+    norm(d, 0.25);
+  }
+  // Patter: drops striking the glass, each a tiny damped ring.
+  const pat = ac.createBuffer(2, Math.round(sr * 7.1), sr);
+  const PL = pat.getChannelData(0), PR = pat.getChannelData(1);
+  for (let n = Math.round(7.1 * 60), k = 0; k < n; k++) {
+    const len = Math.round(sr * rand(0.003, 0.011)), at = Math.floor(Math.random() * (PL.length - len));
+    const amp = 0.04 + 0.6 * Math.random() ** 3, pan = Math.random(), f = (TAU * rand(2000, 6500)) / sr, dec = 5 / len;
+    for (let i = 0; i < len; i++) {
+      const v = amp * Math.sin(f * i) * Math.exp(-i * dec) * (0.7 + 0.3 * (Math.random() * 2 - 1));
+      PL[at + i] += v * (1 - pan);
+      PR[at + i] += v * pan;
+    }
+  }
+  amb = ac.createGain();
+  amb.gain.value = 0;
+  amb.connect(out);
+  const loop = (buf, rate, off) => {
+    const s = ac.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.playbackRate.value = rate;
+    s.start(0, off);
+    return s;
+  };
+  const filter = (type, f, q) => {
+    const b = ac.createBiquadFilter();
+    b.type = type;
+    b.frequency.value = f;
+    b.Q.value = q;
+    return b;
+  };
+  const gain = v => { const g = ac.createGain(); g.gain.value = v; return g; };
+  const lp = filter('lowpass', 1500, 0.4), bedG = gain(0.42), hissG = gain(0.07);
+  patG = gain(0.45);
+  bedF = lp.frequency;
+  loop(bed, 1, 0).connect(filter('highpass', 140, 0.5)).connect(lp).connect(bedG).connect(amb);
+  loop(bed, 1.37, 2.1).connect(filter('bandpass', 5600, 0.55)).connect(hissG).connect(amb);
+  loop(pat, 1, 0).connect(filter('highpass', 1100, 0.5)).connect(patG).connect(amb);
+  // Slow sine swells keep the rain from sounding like a loop.
+  const lfo = (f, depth, param) => {
+    const o = ac.createOscillator();
+    o.frequency.value = f;
+    o.connect(gain(depth)).connect(param);
+    o.start();
+  };
+  lfo(0.067, 0.1, bedG.gain);
+  lfo(0.11, 320, lp.frequency);
+  lfo(0.049, 0.14, patG.gain);
+  lfo(0.083, 0.025, hissG.gain);
+  rainLevel(true);
+}
+// Heavier rain is louder and brighter.
+function rainLevel(fade) {
+  if (!amb) return;
+  const t = ac.currentTime, k = (heavy ? 1 : 0.62) * (reduce ? 0.8 : 1);
+  amb.gain.setTargetAtTime(k, t, fade ? 0.9 : 0.4);
+  bedF.setTargetAtTime(heavy ? 2300 : 1500, t, 0.5);
+  patG.gain.setTargetAtTime(heavy ? 0.7 : 0.45, t, 0.5);
+}
+// A sawtooth through a narrow band: the glass's squeak.
+function squeaker() {
+  const o = ac.createOscillator(), v = ac.createOscillator(), vg = ac.createGain();
+  const bp = ac.createBiquadFilter(), g = ac.createGain();
+  o.type = 'sawtooth';
+  o.frequency.value = 900;
+  v.frequency.value = 7;
+  vg.gain.value = 14;
+  v.connect(vg).connect(o.frequency);
+  bp.type = 'bandpass';
+  bp.frequency.value = 1800;
+  bp.Q.value = 6;
+  g.gain.value = 0;
+  o.connect(bp).connect(g).connect(out);
+  o.start();
+  v.start();
+  sq = { o, bp, g };
+}
+// Glass squeaks in short chirps while the finger keeps moving.
+function squeak(speed) {
+  const a = live();
+  if (!a || !sq) return;
+  const t = a.currentTime + LEAD;
+  if (t < sqNext || speed < 160) return;
+  if (Math.random() > 0.3) { sqNext = t + 0.05; return; }
+  const dur = rand(0.07, 0.24), f = rand(620, 1000) * (1 + Math.min(speed, 2400) / 4000);
+  const amp = 0.028 * Math.min(1, speed / 900);
+  const fq = sq.o.frequency, gg = sq.g.gain;
+  fq.cancelScheduledValues(t);
+  fq.setValueAtTime(f, t);
+  fq.linearRampToValueAtTime(f * jit(0.1) * 1.06, t + dur);
+  sq.bp.frequency.setValueAtTime(f * 2.1, t);
+  gg.cancelScheduledValues(t);
+  gg.setValueAtTime(0, t);
+  gg.linearRampToValueAtTime(amp, t + 0.02);
+  gg.setValueAtTime(amp, t + dur);
+  gg.linearRampToValueAtTime(0, t + dur + 0.04);
+  sqNext = t + dur + rand(0.12, 0.55);
+}
+// A running drop ticks: a rising plink over a tiny click.
+function drip(x, size) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < dripNext) return;
+  dripNext = t + rand(0.08, 0.28);
+  const f = (1 - 0.35 * size) * jit(0.12), g = level() * (0.45 + 0.55 * size) * jit(0.15);
+  let end = out, pan = null;
+  if (a.createStereoPanner) {
+    pan = a.createStereoPanner();
+    pan.pan.value = clamp(x * 1.6 - 0.8, -0.8, 0.8);
+    pan.connect(out);
+    end = pan;
+  }
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(1100 * f, t);
+  o.frequency.exponentialRampToValueAtTime(2100 * f, t + 0.03);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.06 * g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, 0.016);
+  o.connect(og).connect(end);
+  o.start(t);
+  o.stop(t + 0.12);
+  const src = a.createBufferSource(), hp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  hp.type = 'highpass';
+  hp.frequency.value = 2600;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.08 * g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, 0.002);
+  src.connect(hp).connect(ng).connect(end);
+  src.start(t, Math.random() * 0.9, 0.02);
+  track(o, og, ng, ...(pan ? [pan] : []));
+}
+
+/* ---------- the glass: drops in CSS pixels, fog on a coarse grid ---------- */
+// A drop's radius is half its bitmap's size.
+// Water fills the middle 0.43 of that radius.
+const MAX_DROPS = 1200, REF = 1160 * 652, VIS = 0.43;
+let W = 0, H = 0, S = 1, R_MIN = 10, R_MAX = 40, G = 46, area = 1, pr = 1;
+let drops = [], born = [], heavy = false, rainAcc = 0, mistAcc = 0;
+// Queued instances, six floats each, in device pixels.
+const mistQ = [], eraseQ = [];
+const rates = () => {
+  const k = reduce ? 0.45 : 1;
+  return heavy ? { rain: 44 * k, mist: 520 * k } : { rain: 16 * k, mist: 220 * k };
+};
+function makeDrop(o) {
+  if (drops.length + born.length >= MAX_DROPS) return null;
+  // Surface tension varies a little from drop to drop.
+  return Object.assign({ x: 0, y: 0, r: R_MIN, sx: 0, sy: 0, m: 0, sl: 0, last: 0, tension: rand(0.7, 1.5), parent: null, dead: false, shrink: 0, ran: false }, o);
+}
+// Sprite quads cover the bitmap's middle, where the water is.
+function stamp(q, x, y, r, sx = 0, sy = 0) {
+  const h = 0.78 * r * (1 + sy) * pr;
+  q.push(x * pr, y * pr, 0.52 * r * (1 + sx) * pr, 1, h, h);
+}
+const sprayR = () => 1.8 + 2.4 * Math.random() ** 2;
+function burst(n) {
+  for (let i = 0; i < n; i++) stamp(mistQ, Math.random() * W, Math.random() * H, sprayR());
+}
+
+// Collisions look up neighbours on a coarse grid.
+let gcols = 0, grows = 0;
+const grid = [];
+const gx = x => clamp(Math.floor(x / G) + 1, 0, gcols - 1), gy = y => clamp(Math.floor(y / G) + 1, 0, grows - 1);
+function buildGrid() {
+  gcols = Math.ceil(W / G) + 3;
+  grows = Math.ceil(H / G) + 3;
+  const n = gcols * grows;
+  while (grid.length < n) grid.push([]);
+  for (let i = 0; i < n; i++) grid[i].length = 0;
+  for (const d of drops) if (!d.dead) grid[gy(d.y) * gcols + gx(d.x)].push(d);
+}
+// The larger drop takes most of the other's water and a push.
+function merge(a, b) {
+  const moving = a.m > S || b.m > S;
+  a.r = Math.min(R_MAX, Math.sqrt(a.r * a.r + 0.8 * b.r * b.r));
+  a.m += 1.5 * S;
+  a.sx = Math.max(a.sx, 0.25);
+  a.sy = Math.max(a.sy, 0.15);
+  b.dead = true;
+  if (moving && a.r > R_MAX * 0.5 && Math.random() < 0.3) drip(a.x / W, (a.r - R_MIN) / (R_MAX - R_MIN));
+}
+function collide(d) {
+  const cx = gx(d.x), cy = gy(d.y);
+  for (let j = Math.max(0, cy - 1); j <= Math.min(grows - 1, cy + 1); j++) {
+    for (let i = Math.max(0, cx - 1); i <= Math.min(gcols - 1, cx + 1); i++) {
+      for (const o of grid[j * gcols + i]) {
+        if (o === d || o.dead || o.parent === d || d.parent === o) continue;
+        const dx = o.x - d.x, dy = o.y - d.y, lim = (d.r + o.r) * 0.45;
+        if (dx * dx + dy * dy >= lim * lim) continue;
+        if (d.r >= o.r) merge(d, o);
+        else { merge(o, d); return; }
+      }
+    }
+  }
+}
+// One step of the rain, in sixtieths of a second.
+function step(dt) {
+  const ts = dt * 60, slow = reduce ? 0.55 : 1, rt = rates(), stick = 14 * S;
+  born.length = 0;
+  rainAcc += rt.rain * area * dt;
+  while (rainAcc >= 1) {
+    rainAcc--;
+    // Fresh drops land splayed wide, then pull in.
+    const d = makeDrop({ x: Math.random() * W, y: H * rand(-0.05, 0.95), r: R_MIN + (R_MAX - R_MIN) * Math.random() ** 3, sx: 1.5, sy: 1.5 });
+    if (d) born.push(d);
+  }
+  mistAcc += rt.mist * area * dt;
+  while (mistAcc >= 1) { mistAcc--; stamp(mistQ, Math.random() * W, Math.random() * H, sprayR()); }
+  buildGrid();
+  for (const d of drops) {
+    if (d.dead) continue;
+    // Bigger drops, and slicker glass, break loose more often.
+    if (d.r > stick && Math.random() < ((d.r - stick) / 100) * ts * 0.5 / d.tension) d.m += rand(0.5, 2.5) * S;
+    // Small drops, and resting mid-size ones, sometimes start to dry up.
+    if (d.r <= R_MIN * 1.6 && Math.random() < (d.r <= R_MIN ? 0.02 : d.m > 0.3 * S ? 0 : 0.006) * ts) d.shrink += 0.004 * S;
+    d.r -= d.shrink * ts;
+    if (d.r < 1.5) { d.dead = true; continue; }
+    d.sx *= 0.4 ** ts;
+    d.sy *= 0.7 ** ts;
+    d.m *= 0.95 ** ts;
+    // Below a small speed the drop clings in place.
+    if (d.m > 0.3 * S) {
+      // The path wanders: a slope that drifts at random.
+      d.sl = clamp((d.sl + rand(-1, 1) * 0.1 * ts) * 0.98 ** ts, -0.42, 0.42);
+      const dy = d.m * ts * slow;
+      d.y += dy;
+      d.x += d.sl * Math.min(d.m, 4 * S) * ts * slow;
+      if (d.y > H + d.r || d.x < -d.r || d.x > W + d.r) { d.dead = true; continue; }
+      // A sliding drop sheds a smaller one every so often.
+      d.last += dy;
+      if (d.m > 0.5 * S && d.last > 20 * S) {
+        const t = makeDrop({ x: d.x + rand(-1, 1) * d.r * 0.1, y: d.y - d.r * 0.01, r: d.r * rand(0.25, 0.42), sy: d.m * 0.1, parent: d });
+        if (t) {
+          born.push(t);
+          d.r *= 0.97;
+          d.last = 0;
+        }
+      }
+      // Its lane is cleared of spray and fog.
+      const v = VIS * d.r;
+      eraseQ.push(d.x * pr, d.y * pr, v * 0.85 * pr, 1, v * 1.4 * pr, v * 0.9 * pr);
+      if (d.m > S) fogCut(d.x, d.y - v * 0.4, v * 1.1, Math.min(0.4, (0.045 * d.m) / S) * ts);
+      if (!d.ran && d.m > 2.5 * S && d.r > R_MAX * 0.55) {
+        d.ran = true;
+        if (Math.random() < 0.35) drip(d.x / W, (d.r - R_MIN) / (R_MAX - R_MIN));
+      }
+    } else d.ran = false;
+    collide(d);
+  }
+  let n = 0;
+  for (const d of drops) if (!d.dead) drops[n++] = d;
+  drops.length = n;
+  for (const d of born) drops.push(d);
+}
+
+/* ---------- fog: one value per cell, misting back over time ---------- */
+const FC = 4, FOG_TIME = 28;
+let FW = 0, FH = 0, fog = new Float32Array(0), fogRate = new Float32Array(0), fogBytes = new Uint8Array(0);
+let fogLive = true, fogDirty = true;
+function regridFog(w, h) {
+  const ow = FW, oh = FH, old = fog;
+  FW = Math.max(8, Math.round(w / FC));
+  FH = Math.max(8, Math.round(h / FC));
+  fog = new Float32Array(FW * FH);
+  fogRate = new Float32Array(FW * FH);
+  fogBytes = new Uint8Array(FW * FH);
+  for (let j = 0; j < FH; j++) {
+    for (let i = 0; i < FW; i++) {
+      const k = j * FW + i;
+      // Fog returns in patches, not as one even sheet.
+      fogRate[k] = 0.62 + 0.76 * vnoise(((i + 0.5) * w) / FW / 70, ((j + 0.5) * h) / FH / 70);
+      if (!ow) { fog[k] = 1; continue; }
+      const x = clamp(((i + 0.5) / FW) * ow - 0.5, 0, ow - 1), y = clamp(((j + 0.5) / FH) * oh - 0.5, 0, oh - 1);
+      const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(ow - 1, x0 + 1), y1 = Math.min(oh - 1, y0 + 1);
+      fog[k] = lerp(lerp(old[y0 * ow + x0], old[y0 * ow + x1], x - x0), lerp(old[y1 * ow + x0], old[y1 * ow + x1], x - x0), y - y0);
+    }
+  }
+  fogLive = fogDirty = true;
+  if (fogTex) {
+    gl.bindTexture(gl.TEXTURE_2D, fogTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, FW, FH, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+  }
+}
+// Thins the fog under a soft round brush, in CSS pixels.
+function fogCut(x, y, rad, k) {
+  if (!FW) return;
+  k = Math.min(k, 0.95);
+  const cw = W / FW, ch = H / FH, gx = x / cw - 0.5, gy = y / ch - 0.5, rx = rad / cw, ry = rad / ch;
+  const x0 = Math.max(0, Math.ceil(gx - rx)), x1 = Math.min(FW - 1, Math.floor(gx + rx));
+  const y0 = Math.max(0, Math.ceil(gy - ry)), y1 = Math.min(FH - 1, Math.floor(gy + ry));
+  for (let j = y0; j <= y1; j++) {
+    const dy = (j - gy) / ry;
+    for (let i = x0; i <= x1; i++) {
+      const dx = (i - gx) / rx, d2 = dx * dx + dy * dy;
+      if (d2 >= 1) continue;
+      fog[j * FW + i] *= 1 - k * (1 - sstep(0.45, 1, Math.sqrt(d2)));
+    }
+  }
+  fogLive = true;
+}
+function fogStep(dt) {
+  if (!fogLive) return;
+  const k = dt / FOG_TIME;
+  let open = false;
+  for (let i = 0; i < fog.length; i++) {
+    let f = fog[i];
+    if (f < 1) { f = Math.min(1, f + k * fogRate[i]); fog[i] = f; open = true; }
+    fogBytes[i] = f * 255 + 0.5;
+  }
+  fogLive = open;
+  fogDirty = true;
+}
+
+/* ---------- wiping ---------- */
+const brush = type => clamp(Math.sqrt(W * H) * 0.036, 20, 36) * (type === 'touch' ? 1.2 : 1);
+function wipeAt(x, y, R) {
+  fogCut(x, y, R, 0.55);
+  eraseQ.push(x * pr, y * pr, R * pr, 1, R * pr, R * pr);
+  for (const d of drops) {
+    if (d.dead) continue;
+    const v = VIS * d.r, dx = d.x - x, dy = d.y - y, dist = Math.hypot(dx, dy), edge = R + v * 0.6;
+    if (dist >= edge) continue;
+    if (dist < R * 0.75 || v < 2) { d.dead = true; continue; }
+    // Water at the stroke's edge is shoved aside.
+    const k = edge / (dist || 1);
+    d.x = x + dx * k;
+    d.y = y + dy * k;
+  }
+}
+function wipeSeg(x0, y0, x1, y1, R) {
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (R * 0.3)));
+  for (let k = 1; k <= n; k++) wipeAt(lerp(x0, x1, k / n), lerp(y0, y1, k / n), R);
+}
+// Arrow keys sweep stripes outward from the middle.
+const sweeps = [], lanes = { h: 0, v: 0 };
+function laneAt(n, span, R) {
+  const gap = 1.7 * R, most = Math.max(0, Math.floor((span / 2 - R * 0.6) / gap)), i = n % (2 * most + 1);
+  return span / 2 + (i === 0 ? 0 : i % 2 ? (i + 1) / 2 : -i / 2) * gap;
+}
+function sweep(key) {
+  if (!W) return;
+  const R = brush() * 1.15, horiz = key === 'ArrowLeft' || key === 'ArrowRight';
+  const dir = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1;
+  const lane = horiz ? laneAt(lanes.h++, H, R) : laneAt(lanes.v++, W, R);
+  sweeps.push({ horiz, dir, lane, R, t: 0, dur: 0.6, bow: rand(-0.35, 0.35) * R, px: null, py: null });
+}
+function stepSweeps(dt) {
+  for (let i = sweeps.length - 1; i >= 0; i--) {
+    const s = sweeps[i];
+    s.t = Math.min(1, s.t + dt / s.dur);
+    const e = s.t < 0.5 ? 2 * s.t * s.t : 1 - (2 - 2 * s.t) ** 2 / 2;
+    const span = s.horiz ? W : H, a = -s.R + (span + 2 * s.R) * (s.dir > 0 ? e : 1 - e);
+    // A hand's stroke bows a little.
+    const b = s.lane + Math.sin(e * Math.PI) * s.bow;
+    const x = s.horiz ? a : b, y = s.horiz ? b : a;
+    if (s.px != null) {
+      wipeSeg(s.px, s.py, x, y, s.R);
+      squeak(Math.hypot(x - s.px, y - s.py) / Math.max(dt, 1e-3));
+    }
+    s.px = x;
+    s.py = y;
+    if (s.t >= 1) sweeps.splice(i, 1);
+  }
+}
+
+/* ---------- layout ---------- */
+function layoutGlass(w, h) {
+  const oW = W, oH = H, oS = S;
+  W = w;
+  H = h;
+  S = clamp(Math.sqrt(w * h) / 870, 0.62, 1.2);
+  R_MIN = 10 * S;
+  R_MAX = 40 * S;
+  G = 1.1 * R_MAX + 2;
+  area = (w * h) / REF;
+  // Drops keep their place on the glass, in proportion.
+  if (oW) for (const d of drops) { d.x *= w / oW; d.y *= h / oH; d.r *= S / oS; }
+  regridFog(w, h);
+  if (Math.abs(w / h - sceneA) > 0.004) buildScene(w / h);
+}
+function seedGlass() {
+  drops = [];
+  for (let n = Math.round(240 * area), i = 0; i < n; i++) {
+    const r = R_MIN * 0.5 + (R_MAX * 0.75 - R_MIN * 0.5) * Math.random() ** 3;
+    drops.push(makeDrop({ x: Math.random() * W, y: Math.random() * H, r }));
+  }
+  // A few seconds of rain have already run.
+  for (let k = 0; k < 150; k++) step(1 / 60);
+}
+
+/* ---------- WebGL ---------- */
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// Sky, skyline and street, softened by uBlur.
+const BG_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform float uA, uBlur;
+uniform float uRoof[${NB}];
+uniform vec3 uSkyTop, uSkyMid, uGlow, uBldg, uStreet, uSheen;
+out vec4 o;
+float roofAt(float i) { return uRoof[int(clamp(i, 0.0, ${NB - 1}.0))]; }
+// Neighbouring roofs blend across each block edge.
+float roof(float x, float w) {
+  float f = x / ${BW}, i = floor(f), t = f - i;
+  if (t < 0.5) return mix(roofAt(i - 1.0), roofAt(i), smoothstep(-w, w, t));
+  return mix(roofAt(i), roofAt(i + 1.0), smoothstep(-w, w, t - 1.0));
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float x = uv.x * uA, y = 1.0 - uv.y, b = uBlur + 0.004;
+  vec3 sky = mix(uSkyTop, uSkyMid, smoothstep(0.0, 0.4, y));
+  sky = mix(sky, uGlow, smoothstep(0.16, 0.6, y));
+  float r = roof(x, min(b / ${BW}, 0.5));
+  vec3 col = mix(sky, uBldg * (0.85 + 0.6 * clamp(y - r, 0.0, 0.4)), smoothstep(r - b, r + b, y));
+  vec3 street = mix(uSheen, uStreet, smoothstep(${YS}, 0.95, y));
+  col = mix(col, street, smoothstep(${YS} - b, ${YS} + b, y));
+  o = vec4(col, 1.0);
+}`;
+const BOKEH_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec4 aB;
+layout(location = 3) in vec3 aC;
+uniform float uA, uT, uBlur;
+out vec2 vQ;
+out vec3 vCol;
+void main() {
+  float x = aA.x;
+  // Drifting lights wrap around beyond the panel's edges.
+  if (aC.x != 0.0) x = mod(aA.x + aC.x * uT + 0.3, uA + 0.6) - 0.3;
+  float r = aA.z * (1.0 + 1.1 * uBlur) + 0.035 * uBlur;
+  float s = 1.0 + aC.y * (0.6 * sin(uT * aB.w + aA.w) + 0.4 * sin(uT * aB.w * 2.37 + aA.w * 3.1));
+  vCol = aB.rgb * s * mix(1.0, 2.2 * aA.z * aA.z / (r * r), uBlur);
+  vQ = aCorner;
+  vec2 p = vec2(x, aA.y) + aCorner * r * vec2(1.0, aC.z);
+  gl_Position = vec4(p.x / uA * 2.0 - 1.0, 1.0 - 2.0 * p.y, 0.0, 1.0);
+}`;
+const BOKEH_FS = `#version 300 es
+precision highp float;
+uniform float uBlur;
+in vec2 vQ;
+in vec3 vCol;
+out vec4 o;
+void main() {
+  float d = length(vQ);
+  if (d >= 1.0) discard;
+  // A defocused light is a soft disc with a slightly brighter rim.
+  float disc = smoothstep(1.0, 0.8, d) * (0.74 + 0.26 * smoothstep(0.45, 0.9, d)) * (0.95 - 0.07 * vQ.y);
+  float soft = exp(-3.2 * d * d) * smoothstep(1.0, 0.7, d);
+  o = vec4(vCol * mix(disc, soft, uBlur), 1.0);
+}`;
+// Drops and spray stamp a water map; erasers wipe it away.
+const DROP_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec2 aB;
+uniform vec2 uRes;
+out vec2 vOff;
+flat out vec3 vR;
+flat out float vH;
+void main() {
+  vec2 off = vec2(aCorner.x * aA.z, aCorner.y < 0.0 ? -aB.x : aB.y) + sign(aCorner) * 0.75;
+  vOff = off;
+  vR = vec3(aA.z, aB.x, aB.y);
+  vH = aA.w;
+  vec2 p = aA.xy + off;
+  gl_Position = vec4(p.x / uRes.x * 2.0 - 1.0, 1.0 - p.y / uRes.y * 2.0, 0.0, 1.0);
+}`;
+const DROP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uDrop;
+uniform int uMode;
+uniform float uAmt;
+in vec2 vOff;
+flat in vec3 vR;
+flat in float vH;
+out vec4 o;
+void main() {
+  vec2 q = vec2(vOff.x / vR.x, vOff.y / (vOff.y < 0.0 ? vR.y : vR.z));
+  // Mode 0 stamps the drop bitmap's middle, already premultiplied.
+  if (uMode == 0) { o = texture(uDrop, 0.5 + q * 0.26); return; }
+  if (uMode == 2) { o = vec4(0.0, 0.0, 0.0, uAmt); return; }
+  o = vec4(0.0, 0.0, 0.0, vH * smoothstep(1.0, 0.5, dot(q, q)));
+}`;
+const COMP_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uSharp, uSoft, uWet, uMist, uFog;
+uniform vec2 uRes;
+uniform float uPull, uPr;
+uniform vec3 uHaze;
+out vec4 o;
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+vec3 knee(vec3 c) { return mix(c, 0.8 + 0.2 * (1.0 - exp(-(c - 0.8) * 5.0)), step(0.8, c)); }
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+void main() {
+  vec2 fc = gl_FragCoord.xy, uv = fc / uRes, cp = fc / uPr;
+  ivec2 ip = ivec2(fc);
+  // Condensation is uneven: broad patches and a fine grain.
+  float f = texture(uFog, vec2(uv.x, 1.0 - uv.y)).r;
+  float patchy = 0.6 * vnoise(cp * 0.011) + 0.4 * vnoise(cp * 0.045);
+  float fd = clamp(f * (0.84 + 0.26 * patchy), 0.0, 1.0);
+  vec3 sharp = textureLod(uSharp, uv, 0.0).rgb, soft = texture(uSoft, uv).rgb;
+  vec3 col = mix(sharp, soft, smoothstep(0.0, 0.5, fd));
+  // Fog lifts the darks toward a pale haze.
+  col = mix(col, col * 0.62 + uHaze * (0.94 + 0.12 * hash(floor(cp * 0.8))), 0.85 * smoothstep(0.05, 1.0, fd));
+  // Drops lie over the spray; both layers are premultiplied.
+  vec4 dw = texelFetch(uWet, ip, 0), w = dw + texelFetch(uMist, ip, 0) * (1.0 - dw.a);
+  vec3 wv = w.rgb / max(w.a, 1e-3);
+  // G and R hold the offset from the drop's centre.
+  // B holds the drop's depth.
+  vec2 off = (vec2(wv.g, wv.r) - 0.5) * 2.0 * step(0.004, w.a);
+  vec3 lens = texture(uSharp, uv + off * uPull * (1.0 + wv.b) / uRes).rgb * 1.4;
+  // In drop coordinates the rim sits near one.
+  vec2 q = vec2(off.x, -off.y) * 5.0;
+  float rho = length(q);
+  lens *= 1.0 + 0.6 * smoothstep(0.15, 0.85, -q.y) * (1.0 - smoothstep(0.8, 1.0, rho));
+  lens *= 1.0 - 0.6 * smoothstep(0.6, 1.02, rho);
+  // A small hot highlight sits up and to the left.
+  vec2 hq = q - vec2(-0.3, 0.42);
+  lens += exp(-dot(hq, hq) * 38.0) * vec3(1.0, 0.95, 0.88) * 1.1;
+  col = mix(col, lens, clamp(w.a * 4.0 - 1.0, 0.0, 1.0));
+  vec2 v = uv - 0.5;
+  col *= 1.0 - 0.35 * dot(v, v);
+  o = vec4(srgb(knee(col)) + (hash(fc + 7.0) - 0.5) / 255.0, 1.0);
+}`;
+
+// The drop bitmap: offset in R and G, depth in B.
+// Its alpha is the drop's mask.
+function dropBitmap() {
+  const N = 256, c = N / 2, px = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const dx = (x + 0.5 - c) / c;
+      let dy = (y + 0.5 - c) / c;
+      // A slight teardrop bias, fuller above.
+      dy *= 1 + dy * 0.15;
+      const d = Math.hypot(dx, dy);
+      if (d > 1) continue;
+      const a = Math.max(0, 1 - (d / 0.45) ** 6), i = (y * N + x) * 4;
+      // Stored premultiplied, so mipmaps and blending stay clean.
+      px[i] = Math.round((dy * 60 + 128) * a);
+      px[i + 1] = Math.round((dx * 60 + 128) * a);
+      px[i + 2] = Math.round(Math.sqrt(1 - d * d) * 255 * a);
+      px[i + 3] = Math.round(a * 255);
+    }
+  }
+  return px;
+}
+
+let gl = null, FLOAT = false, P = null, emptyVao = null, bokehVao = null, dropVao = null;
+let quadBuf = null, lightBuf = null, instBuf = null, instCap = 0, fogTex = null, dropTex = null;
+let sharp = null, soft = null, mist = null, wet = null, ready = false;
+let inst = new Float32Array(6 * 4096);
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  // Float targets keep bright lights from clipping.
+  if (gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float')) {
+    const t = gl.createTexture(), fb = gl.createFramebuffer();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, 4, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    FLOAT = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    gl.deleteTexture(t);
+  }
+  const progs = { bg: compile(TRI, BG_FS), bokeh: compile(BOKEH_VS, BOKEH_FS), drop: compile(DROP_VS, DROP_FS), comp: compile(TRI, COMP_FS) };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  uni(P.bg, ['uRes', 'uA', 'uBlur', 'uRoof', ...Object.keys(SKY)]);
+  uni(P.bokeh, ['uA', 'uT', 'uBlur']);
+  uni(P.drop, ['uRes', 'uMode', 'uAmt', 'uDrop']);
+  uni(P.comp, ['uSharp', 'uSoft', 'uWet', 'uMist', 'uFog', 'uRes', 'uPull', 'uPr', 'uHaze']);
+  gl.useProgram(P.bg.p);
+  for (const k in SKY) gl.uniform3fv(P.bg.u[k], SKY[k]);
+  gl.useProgram(P.comp.p);
+  ['uSharp', 'uSoft', 'uWet', 'uMist', 'uFog'].forEach((n, i) => gl.uniform1i(P.comp.u[n], i));
+  gl.uniform3fv(P.comp.u.uHaze, HAZE);
+  gl.useProgram(P.drop.p);
+  gl.uniform1i(P.drop.u.uDrop, 5);
+  dropTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE5);
+  gl.bindTexture(gl.TEXTURE_2D, dropTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, dropBitmap());
+  gl.generateMipmap(gl.TEXTURE_2D);
+  texParams(gl.LINEAR_MIPMAP_LINEAR);
+  gl.activeTexture(gl.TEXTURE0);
+
+  emptyVao = gl.createVertexArray();
+  quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const corner = () => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  };
+  bokehVao = gl.createVertexArray();
+  gl.bindVertexArray(bokehVao);
+  corner();
+  lightBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, lightBuf);
+  [[1, 4, 0], [2, 4, 16], [3, 3, 32]].forEach(([loc, n, off]) => {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 48, off);
+    gl.vertexAttribDivisor(loc, 1);
+  });
+  dropVao = gl.createVertexArray();
+  gl.bindVertexArray(dropVao);
+  corner();
+  instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  instCap = inst.length;
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  [[1, 4, 0], [2, 2, 16]].forEach(([loc, n, off]) => {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 24, off);
+    gl.vertexAttribDivisor(loc, 1);
+  });
+  gl.bindVertexArray(null);
+
+  fogTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, fogTex);
+  texParams(gl.LINEAR);
+  if (FW) gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, FW, FH, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+  fogDirty = true;
+  if (nLights) uploadLights();
+}
+function texParams(min) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, min === gl.NEAREST ? gl.NEAREST : gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+function uploadLights() {
+  gl.bindBuffer(gl.ARRAY_BUFFER, lightBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, lightData, gl.STATIC_DRAW);
+  gl.useProgram(P.bg.p);
+  gl.uniform1fv(P.bg.u.uRoof, roofs);
+}
+function target(w, h, fmt, filter, mips) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, mips ? Math.floor(Math.log2(Math.max(w, h))) + 1 : 1, fmt, w, h);
+  texParams(filter);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+function freeTarget(t) {
+  if (!t) return;
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fb);
+}
+// A fresh canvas gets fresh targets and a fresh mist.
+function allocTargets() {
+  [sharp, soft, mist, wet].forEach(freeTarget);
+  const cw = canvas.width, ch = canvas.height, hdr = FLOAT ? gl.RGBA16F : gl.RGBA8;
+  sharp = target(Math.ceil(cw / 2), Math.ceil(ch / 2), hdr, gl.LINEAR_MIPMAP_LINEAR, true);
+  soft = target(Math.ceil(cw / 4), Math.ceil(ch / 4), hdr, gl.LINEAR);
+  mist = target(cw, ch, gl.RGBA8, gl.NEAREST);
+  wet = target(cw, ch, gl.RGBA8, gl.NEAREST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  mistQ.length = 0;
+  burst(Math.round(6000 * area));
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 1.5, Math.sqrt(1.4e6 / (w * h)));
+  const cw = Math.round(w * p), ch = Math.round(h * p);
+  if (w !== W || h !== H) layoutGlass(w, h);
+  if (canvas.width === cw && canvas.height === ch) return;
+  canvas.width = cw;
+  canvas.height = ch;
+  // Old queued stamps were in the old pixel scale.
+  pr = cw / w;
+  eraseQ.length = 0;
+  if (!ready) return;
+  allocTargets();
+  // A resized canvas is blank until drawn, so draw now.
+  if (running) render(performance.now());
+}
+
+/* ---------- drawing ---------- */
+function backdrop(t, blur, time) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+  gl.viewport(0, 0, t.w, t.h);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.bg.p);
+  gl.uniform2f(P.bg.u.uRes, t.w, t.h);
+  gl.uniform1f(P.bg.u.uA, sceneA);
+  gl.uniform1f(P.bg.u.uBlur, blur ? 0.09 : 0.026);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P.bokeh.p);
+  gl.uniform1f(P.bokeh.u.uA, sceneA);
+  gl.uniform1f(P.bokeh.u.uT, time);
+  gl.uniform1f(P.bokeh.u.uBlur, blur);
+  gl.bindVertexArray(bokehVao);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nLights);
+}
+function dropAttribs(base) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 24, base * 24);
+  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 24, base * 24 + 16);
+}
+function drawRange(mode, base, n) {
+  if (!n) return;
+  gl.uniform1i(P.drop.u.uMode, mode);
+  dropAttribs(base);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+}
+let decayAcc = 0;
+function render(now, dt = 0) {
+  const cw = canvas.width, ch = canvas.height;
+  const time = ((now / 1000) % 5000) * (reduce ? 0.5 : 1);
+  backdrop(sharp, 0, time);
+  gl.bindTexture(gl.TEXTURE_2D, sharp.tex);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  backdrop(soft, 1, time);
+
+  // One buffer holds mist, erasers, the decay sheet and drops.
+  const nm = mistQ.length / 6, ne = eraseQ.length / 6;
+  const need = (nm + ne + drops.length + 1) * 6;
+  if (inst.length < need) inst = new Float32Array(Math.ceil(need * 1.5));
+  inst.set(mistQ, 0);
+  inst.set(eraseQ, nm * 6);
+  let o = (nm + ne) * 6;
+  decayAcc += dt;
+  // Old mist slowly dries, so the glass never saturates.
+  const decay = decayAcc >= 0.5;
+  if (decay) {
+    decayAcc = 0;
+    inst.set([cw / 2, ch / 2, cw, 1, ch, ch], o);
+    o += 6;
+  }
+  const db = o / 6;
+  for (const d of drops) {
+    if (d.dead) continue;
+    // Spread widens a drop, and stretches it taller.
+    const h = 0.78 * d.r * (1 + d.sy) * pr;
+    inst[o++] = d.x * pr;
+    inst[o++] = d.y * pr;
+    inst[o++] = 0.52 * d.r * (1 + d.sx) * pr;
+    inst[o++] = 1;
+    inst[o++] = h;
+    inst[o++] = h;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  if (inst.length > instCap) { instCap = inst.length; gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW); }
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, o);
+  const nd = o / 6 - db;
+  mistQ.length = 0;
+  eraseQ.length = 0;
+
+  gl.useProgram(P.drop.p);
+  gl.uniform2f(P.drop.u.uRes, cw, ch);
+  gl.bindVertexArray(dropVao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, mist.fb);
+  gl.viewport(0, 0, cw, ch);
+  // Spray lands over the mist; moving drops cut it away.
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  drawRange(0, 0, nm);
+  gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+  drawRange(1, nm, ne);
+  if (decay) { gl.uniform1f(P.drop.u.uAmt, 0.016); drawRange(2, nm + ne, 1); }
+  // Drops are stamped fresh each frame.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, wet.fb);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  drawRange(0, db, nd);
+  gl.disable(gl.BLEND);
+
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D, fogTex);
+  if (fogDirty) {
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FW, FH, gl.RED, gl.UNSIGNED_BYTE, fogBytes);
+    fogDirty = false;
+  }
+  [sharp, soft, wet, mist].forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t.tex); });
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.useProgram(P.comp.p);
+  gl.uniform2f(P.comp.u.uRes, cw, ch);
+  gl.uniform1f(P.comp.u.uPull, 0.2 * cw);
+  gl.uniform1f(P.comp.u.uPr, pr);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ---------- one loop, running while the window is in view ---------- */
+let raf = 0, last = 0, running = false, onScreen = false, lowDpr = false, slow = 0, frames = 0;
+function frame(now) {
+  raf = 0;
+  if (!running || !ready) return;
+  const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 20);
+  last = now;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr && ++frames > 30) {
+    slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { lowDpr = true; fit(); }
+  }
+  step(dt);
+  stepSweeps(dt);
+  fogStep(dt);
+  render(now, dt);
+  if (frames === 2) canvas.classList.add('on');
+  raf = requestAnimationFrame(frame);
+}
+// Off screen or hidden, the rain pauses and goes quiet.
+function sync() {
+  const run = ready && onScreen && !document.hidden;
+  if (run === running) return;
+  running = run;
+  if (run) {
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+    if (soundOn && ac && ac.state !== 'running') audio();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+
+/* ---------- input ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+const strokes = new Map();
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const R = brush(e.pointerType);
+  strokes.set(e.pointerId, { x, y, t: e.timeStamp, R, v: 0 });
+  wipeAt(x, y, R);
+});
+panel.addEventListener('pointermove', e => {
+  const s = strokes.get(e.pointerId);
+  if (!s) return;
+  const list = e.getCoalescedEvents?.() || [];
+  for (const c of list.length ? list : [e]) {
+    const [x, y] = local(c), gap = Math.hypot(x - s.x, y - s.y);
+    if (gap < 0.5) continue;
+    wipeSeg(s.x, s.y, x, y, s.R);
+    s.v = lerp(s.v, (gap / Math.max(4, c.timeStamp - s.t)) * 1000, 0.35);
+    s.x = x;
+    s.y = y;
+    s.t = c.timeStamp;
+  }
+  squeak(s.v);
+});
+const lift = e => strokes.delete(e.pointerId);
+panel.addEventListener('pointerup', lift);
+panel.addEventListener('pointercancel', lift);
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+const heavyB = document.getElementById('heavy');
+function setHeavy(v) {
+  heavy = v;
+  heavyB.textContent = heavy ? 'Lighter' : 'Heavier';
+  rainLevel();
+}
+heavyB.addEventListener('click', () => setHeavy(!heavy));
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    if (ready) sweep(e.key);
+  } else if (e.key === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat) setHeavy(!heavy);
+  }
+});
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start: shaders link while the glass is seeded ---------- */
+function failed() {
+  ready = false;
+  sync();
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  heavyB.disabled = true;
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    allocTargets();
+    ready = true;
+    sync();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!W) {
+    layoutGlass(1160, 652);
+    canvas.width = 1160;
+    canvas.height = 652;
+  }
+  const gate = initGL();
+  gate.catch(() => {});
+  await idle();
+  seedGlass();
+  try { await gate; } catch (err) { console.error(err); failed(); return; }
+  ready = true;
+  allocTargets();
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
