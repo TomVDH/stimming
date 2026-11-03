@@ -82,6 +82,8 @@ main { display: grid; gap: 14px; min-width: 0; }
 }
 .stage svg.on { opacity: 1; }
 .stage.over { cursor: grab; }
+/* Slow machines drop the sheen and turning rings. */
+.stage svg.lo .fx { display: none; }
 .stage.held { cursor: grabbing; }
 /* On the dark stage the line keeps the dark muted tone. */
 .fail {
@@ -311,7 +313,7 @@ function clack(x) {
   const [o, og] = ping(a, d, t, 150 * jit(0.04), g * 0.6, 0.03, 0.75);
   track(o, og, d);
 }
-// A gear seating on its peg: a low knock and a click of teeth.
+// A seated gear gives a low knock and a click of teeth.
 function seat(x, size) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -392,7 +394,7 @@ function geometry(N) {
   return { N, r, rb, ra, rf, psi, half, pitch: TAU / N };
 }
 // The outline, inset by c along its normal for the bevel face.
-// An involute offset along its normal stays an involute of the same base.
+// Offsetting an involute along its normal gives another involute.
 function outlinePath(G, c) {
   const { N, rb, pitch } = G;
   const ra = G.ra - c, rf = G.rf + c, sh = c / rb, fr = 0.3 * MOD;
@@ -435,7 +437,7 @@ function chaikin(pts, n) {
 }
 const poly = pts => 'M' + pts.map(p => f2(p[0]) + ' ' + f2(p[1])).join('L') + 'Z';
 const circ = (x, y, R) => `M${f2(x + R)} ${f2(y)}A${f2(R)} ${f2(R)} 0 1 0 ${f2(x - R)} ${f2(y)}A${f2(R)} ${f2(R)} 0 1 0 ${f2(x + R)} ${f2(y)}Z`;
-// Cutouts grow by c, so the face around them steps back by c.
+// Cutouts grow by c, so the face steps back by c.
 function cutouts(S, c) {
   const o = [];
   if (S.kind === 'spokes') {
@@ -459,7 +461,8 @@ function cutouts(S, c) {
   }
   return o;
 }
-// Brass wheels get curved crossings; steel gets bored holes; acrylic a few pins.
+// Brass wheels get curved crossings; steel gets bored holes.
+// Acrylic gets a few small holes.
 function webSpec(N, mat, driver) {
   const r = (MOD * N) / 2, rf = r - 1.25 * MOD;
   const rr = rf - Math.max(1.15 * MOD, 0.1 * r), rh = clamp(0.16 * r + 11, 21, 36);
@@ -474,7 +477,8 @@ function webSpec(N, mat, driver) {
   const n = N >= 24 ? 6 : 3, rc = (rh + rr) / 2 + 2;
   return { kind: 'holes', n, rc, hr: Math.min((rr - rh) * 0.2, 9), rot: 0.5, rr, rh };
 }
-// The radius under a point that moves around the teeth, gap centre at 0.
+// This gives the outline radius at a tooth phase.
+// The gap centre is at phase 0.
 function profileOf(G) {
   const tab = new Float32Array(65), hra = G.half(G.ra), hroot = G.psi;
   for (let i = 0; i <= 64; i++) {
@@ -494,9 +498,9 @@ function profileOf(G) {
 /* ---------- materials: light is fixed in the room, so gradients counter-rotate ---------- */
 const MATS = {
   brass: {
-    face: [[0, 'oklch(0.93 0.085 94)'], [0.26, 'oklch(0.84 0.125 86)'], [0.47, 'oklch(0.72 0.13 76)'], [0.53, 'oklch(0.6 0.115 68)'], [0.78, 'oklch(0.7 0.125 76)'], [1, 'oklch(0.5 0.1 62)']],
+    face: [[0, 'oklch(0.95 0.075 96)'], [0.2, 'oklch(0.87 0.12 88)'], [0.42, 'oklch(0.75 0.14 78)'], [0.5, 'oklch(0.55 0.12 62)'], [0.6, 'oklch(0.66 0.13 72)'], [0.8, 'oklch(0.82 0.125 84)'], [1, 'oklch(0.48 0.1 60)']],
     bevel: [[0, 'oklch(0.99 0.04 98)'], [0.4, 'oklch(0.88 0.11 90)'], [0.6, 'oklch(0.55 0.1 66)'], [1, 'oklch(0.34 0.07 56)']],
-    sheen: 'oklch(0.99 0.05 96)', sheenA: 0.5, web: 'oklch(0.25 0.06 60 / 0.3)', blur: 'oklch(0.74 0.12 80)', dens: 1,
+    sheen: 'oklch(0.99 0.04 98)', sheenA: 0.62, web: 'oklch(0.25 0.06 60 / 0.3)', blur: 'oklch(0.74 0.12 80)', dens: 1,
   },
   steel: {
     face: [[0, 'oklch(0.64 0.13 238)'], [0.28, 'oklch(0.47 0.16 256)'], [0.5, 'oklch(0.36 0.15 266)'], [0.56, 'oklch(0.29 0.12 272)'], [0.8, 'oklch(0.38 0.15 292)'], [1, 'oklch(0.22 0.08 268)']],
@@ -530,7 +534,7 @@ const DRIVER_PEG = [-5, -6];
 // Preset gears in chain order from the driver: teeth, column, row.
 const PRESET = [[36, -6, 5], [13, 2, 7], [34, 7, 1], [15, 5, -7]];
 const PAWL = { i: 5, j: -7, beta: 0, D: 165, L: 115, side: 1 };
-const SEAT = 0.12, LOCK = 0.07, WEDGE = 0.24;
+const SEAT = 0, LOCK = 0.08, FALL = 2600;
 
 /* ---------- layout: board and tray share one world ---------- */
 let VW = 1600, VH = 900, wideLayout = true, ready = false;
@@ -580,7 +584,7 @@ function drawBoard() {
   const d = el('defs', {}, s);
   const bw = B.x1 - B.x0, bh = B.y1 - B.y0;
   grad(d, 'bdBase', 'l', { x1: 0, y1: 0, x2: 0.35, y2: 1 }, [[0, 'oklch(0.25 0.032 262)'], [0.55, 'oklch(0.2 0.028 266)'], [1, 'oklch(0.16 0.024 270)']]);
-  grad(d, 'bdWarm', 'r', { cx: 0.2, cy: 0.08, r: 0.78 }, [[0, 'oklch(0.56 0.08 66 / 0.3)'], [0.45, 'oklch(0.42 0.06 52 / 0.1)'], [1, 'oklch(0.3 0.04 40 / 0)']]);
+  grad(d, 'bdWarm', 'r', { cx: 0.2, cy: 0.08, r: 0.78 }, [[0, 'oklch(0.6 0.09 66 / 0.36)'], [0.4, 'oklch(0.45 0.07 54 / 0.14)'], [1, 'oklch(0.3 0.04 40 / 0)']]);
   grad(d, 'bdCool', 'r', { cx: 0.92, cy: 1.02, r: 0.7 }, [[0, 'oklch(0.5 0.12 240 / 0.24)'], [1, 'oklch(0.4 0.1 240 / 0)']]);
   grad(d, 'bdVig', 'r', { cx: 0.5, cy: 0.45, r: 0.78 }, [[0.55, 'oklch(0.08 0.02 270 / 0)'], [1, 'oklch(0.07 0.02 270 / 0.6)']]);
   grad(d, 'chamf', 'l', { x1: 0, y1: 0, x2: 1, y2: 1 }, [[0, 'oklch(0.11 0.02 265)'], [0.55, 'oklch(0.2 0.03 262)'], [1, 'oklch(0.46 0.045 252)']]);
@@ -619,11 +623,11 @@ function drawBoard() {
     tk += `M${f2(dx + R0 * c)} ${f2(dy + R0 * sn)}L${f2(dx + (R0 + len) * c)} ${f2(dy + (R0 + len) * sn)}`;
     tl += `M${f2(dx + R0 * c + 0.8)} ${f2(dy + R0 * sn + 0.8)}L${f2(dx + (R0 + len) * c + 0.8)} ${f2(dy + (R0 + len) * sn + 0.8)}`;
   }
-  el('path', { d: tl, stroke: 'oklch(0.5 0.05 70 / 0.55)', 'stroke-width': 1.1, fill: 'none' }, s);
-  el('path', { d: tk, stroke: 'oklch(0.09 0.02 268 / 0.9)', 'stroke-width': 1.1, fill: 'none' }, s);
+  el('path', { d: tl, stroke: 'oklch(0.62 0.08 76 / 0.6)', 'stroke-width': 1.2, fill: 'none' }, s);
+  el('path', { d: tk, stroke: 'oklch(0.08 0.02 268 / 0.95)', 'stroke-width': 1.2, fill: 'none' }, s);
   el('circle', { cx: f2(dx), cy: f2(dy), r: f2(R0 - 3), fill: 'none', stroke: 'oklch(0.09 0.02 268 / 0.7)', 'stroke-width': 1 }, s);
   el('circle', { cx: f2(dx + 0.8), cy: f2(dy + 0.8), r: f2(R0 - 3), fill: 'none', stroke: 'oklch(0.48 0.05 70 / 0.35)', 'stroke-width': 1 }, s);
-  // The pawl's stop pin and spring post are screwed to the board.
+  // The pawl's pivot socket and spring post sit in the board.
   const [px, py] = pegXY(PAWL.i, PAWL.j), b = (PAWL.beta * Math.PI) / 180;
   pawlQ = [px + PAWL.D * Math.cos(b), py + PAWL.D * Math.sin(b)];
   el('circle', { cx: f2(pawlQ[0]), cy: f2(pawlQ[1]), r: 24, fill: 'url(#chamf)' }, s);
@@ -631,7 +635,7 @@ function drawBoard() {
   const post = springPost();
   el('circle', { cx: f2(post[0]), cy: f2(post[1]), r: 7, fill: 'url(#chamf)' }, s);
   el('circle', { cx: f2(post[0]), cy: f2(post[1]), r: 5, fill: 'url(#pin)' }, s);
-  // A brass rail divides the board from the tray.
+  // The tray is lined with felt and has one pocket per gear.
   grad(d, 'felt', 'r', { cx: wideLayout ? 0.2 : 0.15, cy: 0.12, r: 1.1 }, [[0, 'oklch(0.3 0.085 334)'], [0.6, 'oklch(0.22 0.075 330)'], [1, 'oklch(0.16 0.06 326)']]);
   grad(d, 'pocket', 'l', { x1: 0, y1: 0, x2: 1, y2: 1 }, [[0, 'oklch(0.08 0.03 330)'], [0.6, 'oklch(0.18 0.06 330)'], [1, 'oklch(0.42 0.1 335)']]);
   grad(d, 'rail', 'l', wideLayout ? { x1: 0, y1: 0, x2: 1, y2: 0 } : { x1: 0, y1: 0, x2: 0, y2: 1 }, [[0, 'oklch(0.42 0.07 62)'], [0.35, 'oklch(0.93 0.08 92)'], [0.6, 'oklch(0.72 0.12 78)'], [1, 'oklch(0.36 0.07 58)']]);
@@ -654,6 +658,7 @@ function drawBoard() {
     el('circle', { cx: f2(x), cy: f2(y), r: f2(R + 2), fill: 'url(#pocket)' }, s);
     el('circle', { cx: f2(x), cy: f2(y), r: f2(R), fill: 'oklch(0.14 0.05 330)' }, s);
   });
+  // A brass rail divides the board from the tray.
   if (wideLayout) el('rect', { x: f2(T.x0 - 5), y: 0, width: 10, height: f2(VH), fill: 'url(#rail)' }, s);
   else el('rect', { x: 0, y: f2(T.y0 - 5), width: f2(VW), height: 10, fill: 'url(#rail)' }, s);
   el('rect', { x: 0, y: 0, width: f2(VW), height: f2(VH), fill: 'url(#bdVig)' }, s);
@@ -669,7 +674,7 @@ let driver = null, theta = 0, omega = 0, jam = false, Ieff = 1, meshCount = 0, e
 const fdefs = el('defs', {}, fgSvg);
 const trayLayer = el('g', {}, fgSvg), boardLayer = el('g', {}, fgSvg), pawlLayer = el('g', {}, fgSvg);
 const ghostLayer = el('g', {}, fgSvg), dragLayer = el('g', {}, fgSvg);
-// Shared fixed-light gradients for hubs, caps and the crank knob.
+// Hubs, caps and the knob share fixed-light gradients.
 for (const [k, M] of Object.entries(MATS)) {
   if (ACRYLIC(k)) continue;
   grad(fdefs, 'hubB-' + k, 'l', { x1: 0, y1: 0, x2: 1, y2: 1 }, M.bevel);
@@ -701,15 +706,15 @@ function buildGear(g) {
   const face = oc + cc.join('');
   el('path', { d: o0 + oc, 'fill-rule': 'evenodd', fill: `url(#${id}b)` }, rot);
   el('path', { d: face, 'fill-rule': 'evenodd', fill: `url(#${id}f)` }, rot);
-  // The web steps down inside the rim, so it sits a shade darker.
+  // The web steps down inside the rim and sits darker.
   el('path', { d: circ(0, 0, S.rr) + circ(0, 0, S.rh) + cc.join(''), 'fill-rule': 'evenodd', fill: M.web }, rot);
-  el('path', { d: face, 'fill-rule': 'evenodd', fill: `url(#${id}s)` }, rot);
+  el('path', { d: face, 'fill-rule': 'evenodd', fill: `url(#${id}s)`, class: 'fx' }, rot);
   el('circle', { r: f2(S.rr), fill: 'none', stroke: `url(#${id}h)`, 'stroke-width': 2.2 }, rot);
   c0.forEach((p, k) => el('path', { d: p + cc[k], 'fill-rule': 'evenodd', fill: `url(#${id}h)` }, rot));
   // Fine turning rings catch the light around the rim.
   const rim = (S.rr + G.rf) / 2;
-  el('circle', { r: f2(rim), fill: 'none', stroke: 'oklch(1 0 0 / 0.08)', 'stroke-width': 0.8 }, rot);
-  el('circle', { r: f2(rim + 2.6), fill: 'none', stroke: 'oklch(0 0 0 / 0.1)', 'stroke-width': 0.8 }, rot);
+  el('circle', { r: f2(rim), fill: 'none', stroke: 'oklch(1 0 0 / 0.08)', 'stroke-width': 0.8, class: 'fx' }, rot);
+  el('circle', { r: f2(rim + 2.6), fill: 'none', stroke: 'oklch(0 0 0 / 0.1)', 'stroke-width': 0.8, class: 'fx' }, rot);
   const fix = el('g', {}, root);
   // Fast teeth fade into a soft band instead of strobing.
   g.blurEl = el('circle', { r: f2((G.ra + G.rf) / 2), fill: 'none', stroke: M.blur, 'stroke-width': f2(G.ra - G.rf), opacity: 0 }, fix);
@@ -721,17 +726,19 @@ function buildGear(g) {
   el('circle', { r: f2(rh * 0.66), fill: 'none', stroke: 'oklch(0.2 0.04 60 / 0.35)', 'stroke-width': 1 }, fix);
   el('circle', { r: f2(rh * 0.66 + 1), fill: 'none', stroke: 'oklch(1 0 0 / 0.18)', 'stroke-width': 0.8 }, fix);
   if (g.driver) {
-    // The crank arm turns with the driver; its knob spins free on a pin.
+    // The crank arm turns with the driver.
+    // Its knob spins free on a pin.
     const arm = el('g', {}, root), L = G.r * 0.62;
     g.aT = xf(arm, 'transform', 'rotate(0)').getItem(0);
     el('path', { d: `M0 -15 C${f2(L * 0.4)} -13 ${f2(L * 0.7)} -11 ${f2(L)} -12 A12 12 0 0 1 ${f2(L)} 12 C${f2(L * 0.7)} 11 ${f2(L * 0.4)} 13 0 15 A15 15 0 0 1 0 -15Z`, fill: 'url(#arm)', stroke: 'oklch(0.2 0.03 260 / 0.55)', 'stroke-width': 1 }, arm);
     const knob = el('g', {}, root);
     g.kT = xf(knob, 'transform', 'translate(0 0)').getItem(0);
     g.kL = L;
-    el('circle', { r: 19, fill: 'url(#knobRim)' }, knob);
-    el('circle', { r: 16.4, fill: 'url(#knob)' }, knob);
-    el('ellipse', { cx: -5, cy: -6, rx: 6.5, ry: 4, fill: 'oklch(1 0 0 / 0.32)', transform: 'rotate(-35 -5 -6)' }, knob);
-    el('circle', { r: 4.2, fill: 'url(#hubB-brass)' }, knob);
+    el('circle', { r: 24, fill: 'url(#knobRim)' }, knob);
+    el('circle', { r: 21, fill: 'url(#knob)' }, knob);
+    el('ellipse', { cx: -6.5, cy: -7.5, rx: 8, ry: 4.6, fill: 'oklch(1 0 0 / 0.3)', transform: 'rotate(-38 -6.5 -7.5)' }, knob);
+    el('circle', { r: 5.6, fill: 'url(#hubB-brass)' }, knob);
+    el('circle', { r: 4, fill: 'url(#hubF-brass)' }, knob);
     el('circle', { r: 13, fill: 'url(#hubB-steel)' }, root);
     el('circle', { r: 10.5, fill: 'url(#cap)' }, root);
   } else {
@@ -742,7 +749,8 @@ function buildGear(g) {
   g.px = g.py = g.ps = g.pa = NaN;
 }
 
-// I grows with radius to the fourth; acrylic is a third as dense.
+// Inertia grows with radius to the fourth power.
+// Acrylic is a third as dense.
 const inertia = g => MATS[g.mat].dens * (g.G.N / 30) ** 4;
 function makeGears() {
   SET.forEach(([N, mat], k) => {
@@ -767,7 +775,8 @@ function relation(a, ax, ay, b) {
   if (gap >= MESH_LO && gap <= MESH_HI) return 1;
   return d < a.G.ra + b.G.ra + CLEAR ? -1 : 0;
 }
-// Ratios spread from the driver; an odd loop of meshes locks the train.
+// Ratios spread out from the driver.
+// An odd loop of meshes locks the train.
 function rebuild() {
   for (const g of gears) g.a = angleOf(g);
   const on = mounted();
@@ -800,7 +809,7 @@ function rebuild() {
   if (jam) omega = 0;
   pawlSync();
 }
-// The angle that puts b's gap where a's tooth points, nearest to now.
+// Returns the nearest angle that puts b's gap on a's tooth.
 function meshAngle(b, bx, by, a) {
   const gam = Math.atan2(by - a.y, bx - a.x), uA = ((gam - angleOf(a)) * N_(a)) / TAU;
   const target = gam + Math.PI - ((0.5 - uA) * TAU) / N_(b), p = TAU / N_(b), cur = b.a;
@@ -860,18 +869,19 @@ const RHO_REST = PAWL.D - PAWL.L + 16;
 function pawlSync() {
   const g = gears.find(h => h.peg && h.peg[0] === PAWL.i && h.peg[1] === PAWL.j);
   pawl.gear = g && g.G.ra > RHO_REST + 2 ? g : null;
-  if (!pawl.gear) return;
+  if (!pawl.gear) { pawl.rho = RHO_REST - 4; return; }
   const [px, py] = pawlPeg(), pose = pawlPose(g.G.ra);
   pawl.ref = Math.atan2(pose.ty - py, pose.tx - px);
   const tg = [-Math.sin(pawl.ref), Math.cos(pawl.ref)], ax = pose.tx - pawlQ[0], ay = pose.ty - pawlQ[1];
   pawl.free = tg[0] * ax + tg[1] * ay > 0 ? 1 : -1;
   pawl.seat = Math.floor(pawlX(angleOf(g)) - SEAT);
+  pawl.rho = pawlTarget();
 }
 const pawlX = a => (pawl.free * (a - pawl.ref) * N_(pawl.gear)) / TAU + 0.5;
 
 /* ---------- turning the train ---------- */
 let blocked = false;
-// Turns the driver by d, as far as the pawl and any jam allow.
+// The pawl and any jam limit how far the driver turns.
 function turn(d) {
   blocked = false;
   if (!d) return 0;
@@ -890,13 +900,13 @@ function turn(d) {
   return d;
 }
 const W_MAX = 16, KEY_W = 3.4;
-let keyDir = 0, handT = -1e9;
+let keyDir = 0;
 function stepDriver(dt) {
   const hand = [...ptrs.values()].some(p => p.mode === 'crank');
   if (hand) {
-    const p = [...ptrs.values()].find(q => q.mode === 'crank');
-    omega = handOmega(p, performance.now());
-    return true;
+    const p = [...ptrs.values()].find(q => q.mode === 'crank'), now = performance.now();
+    omega = handOmega(p, now);
+    return !!omega || now - p.hist[p.hist.length - 1][0] < 150;
   }
   if (keyDir) omega += (keyDir * KEY_W - omega) * Math.min(1, dt * 7);
   else if (omega) {
@@ -905,7 +915,7 @@ function stepDriver(dt) {
     omega = Math.sign(nw) === Math.sign(omega) ? nw : 0;
   }
   if (omega) {
-    const want = omega * dt, got = turn(want);
+    turn(omega * dt);
     if (blocked) {
       if (Math.abs(omega) > 0.4 || keyDir) clack(driver.x);
       omega = 0;
@@ -974,7 +984,7 @@ function stepAnims(dt) {
   }
   return busy;
 }
-// The driver stays on top of the board so its crank is never covered.
+// The driver stays on top, so nothing covers its crank.
 function place(g, layer) {
   if (g.root.parentNode === layer) return;
   if (layer === boardLayer && !g.driver && driver.root.parentNode === boardLayer) boardLayer.insertBefore(g.root, driver.root);
@@ -1011,28 +1021,40 @@ let pawlEls = null;
 function buildPawl() {
   pawlLayer.replaceChildren();
   const L = PAWL.L;
-  const spring = el('path', { fill: 'none', stroke: 'oklch(0.86 0.04 85)', 'stroke-width': 2, 'stroke-linecap': 'round' }, pawlLayer);
+  const spring = el('path', { fill: 'none', stroke: 'oklch(0.88 0.03 240)', 'stroke-width': 2.6, 'stroke-linecap': 'round' }, pawlLayer);
   const arm = el('g', {}, pawlLayer);
   const at = xf(arm, 'transform', 'translate(0 0) rotate(0)');
-  // A blued blade with a polished edge and a hooked tip.
-  const blade = `M-13 -2 C-12 -14 8 -16 ${L * 0.35} -12 C${L * 0.62} -9 ${L - 18} -8 ${L - 4} -3 L${L + 1} 0 L${L - 12} 6 C${L * 0.6} 9 ${L * 0.3} 12 4 14 C-8 15 -14 8 -13 -2Z`;
-  el('path', { d: blade, fill: 'url(#pawlB)' }, arm);
-  el('path', { d: blade, fill: 'url(#pawlF)', transform: `translate(${L * 0.06} 0.4) scale(0.93 0.8)` }, arm);
-  el('circle', { r: 14, fill: 'url(#hubB-brass)' }, pawlLayer).setAttribute('cx', f2(pawlQ[0]));
-  const screw = pawlLayer.lastChild;
-  screw.setAttribute('cy', f2(pawlQ[1]));
+  // The blade is blued, with a polished edge and a hooked tip.
+  const blade = `M-19 0C-19 -15 2 -19 ${f2(L * 0.38)} -14C${f2(L * 0.7)} -10 ${L - 14} -7 ${L} 0L${L - 15} 6C${f2(L * 0.66)} 10 ${f2(L * 0.3)} 17 4 19C-9 20 -19 13 -19 0Z`;
+  el('path', { d: blade, fill: 'url(#pawlF)', stroke: 'url(#pawlB)', 'stroke-width': 2.4, 'stroke-linejoin': 'round' }, arm);
+  el('path', { d: `M-6 -9C${f2(L * 0.3)} -12 ${f2(L * 0.62)} -8 ${L - 18} -3`, fill: 'none', stroke: 'oklch(0.9 0.08 220 / 0.55)', 'stroke-width': 1.6, 'stroke-linecap': 'round' }, arm);
+  el('circle', { cx: f2(pawlQ[0]), cy: f2(pawlQ[1]), r: 14, fill: 'url(#hubB-brass)' }, pawlLayer);
   el('circle', { cx: f2(pawlQ[0]), cy: f2(pawlQ[1]), r: 11.5, fill: 'url(#hubF-brass)' }, pawlLayer);
   el('path', { d: `M${f2(pawlQ[0] - 8)} ${f2(pawlQ[1] + 3)}L${f2(pawlQ[0] + 8)} ${f2(pawlQ[1] - 3)}`, stroke: 'oklch(0.3 0.06 60)', 'stroke-width': 2.4, 'stroke-linecap': 'round' }, pawlLayer);
   pawlEls = { spring, tr: at.getItem(0), rt: at.getItem(1), last: NaN };
 }
+// The tip rides the true outline.
+// Between teeth, its spring pulls it down.
+function pawlTarget() {
+  const P = pawl.gear;
+  if (!P || P.held) return RHO_REST - 4;
+  const [px, py] = pawlPeg(), a = angleOf(P) + P.snap;
+  let rho = P.G.ra;
+  for (let k = 0; k < 3; k++) {
+    const q = pawlPose(rho), phi = Math.atan2(q.ty - py, q.tx - px);
+    rho = P.prof((pawl.free * (a - phi) * N_(P)) / TAU + 0.5);
+  }
+  return rho;
+}
+function stepPawl(dt) {
+  const t = pawlTarget();
+  if (t >= pawl.rho || !pawl.gear) { pawl.rho = t; return false; }
+  pawl.rho = Math.max(t, pawl.rho - FALL * dt);
+  return true;
+}
 function drawPawl() {
   if (!pawlEls) return;
-  let rho = RHO_REST - 4;
-  const P = pawl.gear;
-  if (P && !P.held) {
-    const x = pawlX(angleOf(P) + P.snap);
-    rho = Math.max(P.prof(x), P.prof(x - WEDGE));
-  }
+  const rho = pawl.rho || RHO_REST - 4;
   if (rho === pawlEls.last) return;
   pawlEls.last = rho;
   const pose = pawlPose(rho), deg = pose.ang * R2D;
@@ -1060,7 +1082,8 @@ function drawGhost() {
 }
 
 /* ---------- placing gears ---------- */
-// A peg is valid when the gear fits the board, clears its neighbours and the pawl.
+// A valid peg keeps the gear on the board.
+// The gear must also clear its neighbours and the pawl.
 function evalPeg(g, i, j) {
   if (!inWindow(i, j)) return null;
   const [x, y] = pegXY(i, j), ra = g.G.ra;
@@ -1087,16 +1110,17 @@ function pawlBlocks(g, i, j, x, y) {
   const p = pawlPose(occ ? occ.G.ra : RHO_REST - 4);
   return segDist(x, y, pawlQ[0], pawlQ[1], p.tx, p.ty) < ra + 9;
 }
+// Meshing pegs pull from farther away than plain ones.
 function bestPeg(g, x, y) {
-  const i0 = Math.round((x - B.cx) / GRID), j0 = Math.round((y - B.cy) / GRID), RAD = 48;
+  const i0 = Math.round((x - B.cx) / GRID), j0 = Math.round((y - B.cy) / GRID);
   let best = null, bs = Infinity, near = null, nd = Infinity;
-  for (let i = i0 - 2; i <= i0 + 2; i++) for (let j = j0 - 2; j <= j0 + 2; j++) {
+  for (let i = i0 - 3; i <= i0 + 3; i++) for (let j = j0 - 3; j <= j0 + 3; j++) {
     const [px, py] = pegXY(i, j), d = Math.hypot(px - x, py - y);
-    if (d > RAD) continue;
+    if (d > 84) continue;
     if (d < nd && inWindow(i, j)) { nd = d; near = [px, py]; }
     const c = evalPeg(g, i, j);
-    if (!c) continue;
-    const sc = d - (c.drive ? 34 : 0) - (c.mesh ? 16 : 0);
+    if (!c || d > (c.mesh ? 84 : 46)) continue;
+    const sc = d - (c.drive ? 40 : 0) - (c.mesh ? 26 : 0);
     if (sc < bs) { bs = sc; best = c; }
   }
   return { best, near };
@@ -1123,7 +1147,7 @@ function toTray(g, dur = 0.42) {
   place(g, dragLayer);
   slide(g, x, y, trayScale, dur, easeOut, () => place(g, trayLayer));
 }
-// Enter, or a tap on a tray gear: find the best peg on the train.
+// Enter or a tray tap puts a gear on the best peg.
 function autoPlace(g) {
   let best = null, bs = Infinity;
   for (let i = -B.ni; i <= B.ni; i++) for (let j = -B.nj; j <= B.nj; j++) {
@@ -1143,17 +1167,23 @@ function nudge(g) {
 }
 
 /* ---------- the loop: runs only while something moves ---------- */
-let raf = 0, last = 0, onScreen = true, frames = 0;
+let raf = 0, last = 0, onScreen = true, frames = 0, slow = 0, lowFx = false;
 function wake() {
   if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 function frame(ms) {
   raf = 0;
-  const dt = Math.min(Math.max(0, (ms - last) / 1000), 1 / 30);
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
   last = ms;
+  // Sustained slow frames drop the finishing layers.
+  if (!lowFx && frames > 30) {
+    slow = raw > 0.026 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { lowFx = true; fgSvg.classList.add('lo'); }
+  }
   let busy = stepDriver(dt);
   busy = stepDrag(dt) || busy;
   busy = stepAnims(dt) || busy;
+  busy = stepPawl(dt) || busy;
   teethTick();
   render();
   const hand = [...ptrs.values()].some(p => p.mode === 'crank') || keyDir;
@@ -1239,7 +1269,7 @@ function startDrag(p) {
   place(g, dragLayer);
   lift(g.dx);
 }
-// The dragged gear finds the best peg near it and leans toward it.
+// The dragged gear finds the best nearby peg and leans toward it.
 function aim(p) {
   const g = p.g, k = g.ds / p.s0, cx = p.x + p.off[0] * k, cy = p.y + p.off[1] * k;
   p.cx0 = cx; p.cy0 = cy;
@@ -1259,7 +1289,7 @@ function stepDrag(dt) {
     if (Math.abs(ts - g.ds) > 0.001) busy = true;
     const k = g.ds / p.s0;
     let x = p.x + p.off[0] * k, y = p.y + p.off[1] * k;
-    // A meshing peg pulls the gear a little and turns its teeth to suit.
+    // A meshing peg pulls the gear and turns its teeth to suit.
     if (p.target) {
       const pull = p.target.mesh ? 0.3 : 0.15;
       x = lerp(x, p.target.x, pull);
@@ -1278,7 +1308,6 @@ function stepDrag(dt) {
       g.dy = lerp(g.dy, y, Math.min(1, dt * 30));
       busy = true;
     }
-    if (p.target || omega) busy = true;
   }
   return busy;
 }
@@ -1398,7 +1427,6 @@ sndB.addEventListener('click', () => {
 /* ---------- start ---------- */
 // A layout change keeps every gear whose peg still fits.
 function relayout() {
-  const was = wideLayout;
   layout();
   drawBoard();
   buildPawl();
@@ -1418,7 +1446,6 @@ function relayout() {
   }
   pawlEls.last = NaN;
   render();
-  return was !== wideLayout;
 }
 function boot() {
   if (!window.SVGSVGElement || !fgSvg.createSVGTransform) {

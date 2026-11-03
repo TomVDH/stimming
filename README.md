@@ -44,7 +44,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Music box | [musicbox/](musicbox/) | live, with sound; Canvas 2D only |
 | Murmuration | [flock/](flock/) | live draft, still being refined |
 | Dandelion | [dandelion/](dandelion/) | live, with sound |
-| Gear train | [gears/](gears/) | live draft, still being refined |
+| Gear train | [gears/](gears/) | live, with sound; SVG only |
 | Coil | | in progress; outlines on the menu |
 
 ## Run locally
