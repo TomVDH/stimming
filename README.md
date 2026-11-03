@@ -40,7 +40,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Harmonograph | [harmono/](harmono/) | live draft, still being refined |
 | Neon sign | [neon/](neon/) | live draft, still being refined |
 | Snow globe | [snow/](snow/) | live draft, still being refined |
-| Murmuration, Coil, Frost, Gear train, Dandelion, Music box | | in progress; outlines on the menu |
+| Frost | [frost/](frost/) | live draft, still being refined |
+| Murmuration, Coil, Gear train, Dandelion, Music box | | in progress; outlines on the menu |
 
 ## Run locally
 
