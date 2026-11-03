@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TV tree channels</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<style>
+/* The contact sheet: every channel in a grid, drawn live by one canvas. */
+.sheet {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 14px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+}
+.sheet li { display: grid; gap: 6px; }
+.screen {
+  aspect-ratio: 4 / 3;
+  background: oklch(0.12 0.01 280);
+}
+.label { display: flex; gap: 8px; align-items: baseline; font-size: 0.9rem; color: var(--fg); }
+.label b { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-weight: 500; opacity: 0.55; }
+.sheet-title { margin: 8px 0 18px; }
+#tv { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <h1 class="display sheet-title">Channels</h1>
+    <ol class="sheet" id="sheet"></ol>
+  </main>
+</div>
+<canvas id="tv" aria-hidden="true"></canvas>
+
+<script type="module">
+import { initPage, reduced } from '../shared/stim.js';
+import { LIB, BIG, CHANNELS, NAMES } from './channels.js';
+initPage({ id: 'tvtree', silent: true, home: './index.html' });
+
+// One cell per channel: a screen and its number and name.
+const sheet = document.getElementById('sheet');
+const cells = NAMES.map((name, ch) => {
+  const li = document.createElement('li');
+  li.innerHTML = `<div class="screen" role="img" aria-label="Channel ${ch}: ${name}"></div><div class="label"><b>${String(ch).padStart(2, '0')}</b>${name}</div>`;
+  sheet.append(li);
+  return { ch, el: li.firstElementChild, seed: (ch * 0.618) % 1 };
+});
+
+const canvas = document.getElementById('tv');
+const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, antialias: false });
+if (!gl) throw new Error('The contact sheet needs WebGL 2.');
+
+// The channel shader, as the tree's atlas draws it, one tile per draw.
+const VS = `#version 300 es
+void main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+precision highp int;
+out vec4 fragColor;
+uniform float uTime, uSeed;
+uniform int uCh;
+uniform vec4 uRect;
+uniform vec2 uLook;
+${LIB}
+${BIG}
+${CHANNELS}
+void main() {
+  vec2 uv = (gl_FragCoord.xy - uRect.xy) / uRect.zw;
+  vec3 col = clamp(channel(uCh, uv, uTime, uSeed, uLook), 0.0, 1.0);
+  // The tree shows its screens through an sRGB output.
+  fragColor = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+}`;
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
+gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const U = n => gl.getUniformLocation(prog, n);
+const uTime = U('uTime'), uSeed = U('uSeed'), uCh = U('uCh'), uRect = U('uRect'), uLook = U('uLook');
+gl.bindVertexArray(gl.createVertexArray());
+
+// The pointer steers the eyes and the cat.
+const look = [0, 0];
+addEventListener('pointermove', e => { look[0] = (e.clientX / innerWidth) * 2 - 1; look[1] = 1 - (e.clientY / innerHeight) * 2; });
+
+let dpr = 1;
+function fit() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  canvas.width = Math.round(innerWidth * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+}
+addEventListener('resize', () => { fit(); draw(performance.now()); });
+fit();
+
+// Only cells on screen draw; the rest cost nothing.
+function draw(now) {
+  const t = now / 1000, H = canvas.height;
+  gl.disable(gl.SCISSOR_TEST);
+  gl.viewport(0, 0, canvas.width, H);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.uniform1f(uTime, t);
+  gl.uniform2f(uLook, look[0], look[1]);
+  for (const c of cells) {
+    const r = c.el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight || r.width < 2) continue;
+    const x = Math.round(r.left * dpr), y = Math.round(H - r.bottom * dpr), w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+    gl.viewport(x, y, w, h);
+    gl.scissor(x, y, w, h);
+    gl.uniform4f(uRect, x, y, w, h);
+    gl.uniform1i(uCh, c.ch);
+    gl.uniform1f(uSeed, c.seed);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+}
+
+// The sheet plays at a broadcast pace; reduced motion shows stills.
+let raf = 0, last = 0;
+function frame(now) {
+  raf = 0;
+  if (document.hidden) return;
+  if (now - last > 1000 / 24 - 2) { last = now; draw(now); }
+  if (!reduced()) raf = requestAnimationFrame(frame);
+}
+const wake = () => { if (!raf) raf = requestAnimationFrame(frame); };
+addEventListener('scroll', () => { if (reduced()) draw(performance.now()); else wake(); }, { passive: true });
+document.addEventListener('visibilitychange', wake);
+wake();
+</script>
+</body>
+</html>
