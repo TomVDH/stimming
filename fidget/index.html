@@ -13,25 +13,17 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Fidget board: a riso print on black stock.
-   Three spot inks overprint; tints are halftone dots; each ink sits off register. */
-:root {
-  --stage: oklch(0.15 0.008 60);
-  --blue: oklch(0.64 0.16 252); --pink: oklch(0.7 0.25 0); --yellow: oklch(0.9 0.18 102);
-}
+/* Fidget board: a dark tray of soft panels, one control group per panel.
+   The controls are lit from the top left; the JS draws their shading. */
+:root { --stage: oklch(0.15 0.012 275); }
 /* The gap resolves to pixels on the board, so plates inherit one size. */
 @property --gap { syntax: "<length>"; inherits: true; initial-value: 8px; }
 
-/* ---------- the stock: black paper with pale fibres ---------- */
-.stage--fidget {
-  container: stage / size;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.6 0 0 0 0 0.58 0 0 0 0 0.52 16 0 0 0 -12.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E") 0 0 / 320px 320px,
-    var(--stage);
-}
+/* ---------- the slab: plates fill the stage, cut apart by gaps ---------- */
+.stage--fidget { container: stage / size; }
 .board {
   position: absolute; inset: 0; display: grid;
-  --gap: clamp(6px, 1.8cqmin, 16px);
+  --gap: clamp(5px, 1.6cqmin, 14px);
   --pad: calc(var(--gap) * 1.5);
   --gi: calc(var(--gap) * 1.2);
   padding: var(--gap); gap: var(--gap);
@@ -45,37 +37,26 @@
     "joy tog safe rock wheel";
 }
 
-/* ---------- plates: a pale blue halftone block per control group ---------- */
+/* ---------- panels: each sits a little proud of the tray ---------- */
 .cell {
   container-type: size; position: relative; display: grid; place-items: center;
   min-width: 0; min-height: 0;
-  /* The top band holds the part tag and the readout. */
-  padding-top: 16px;
-  background: radial-gradient(circle, oklch(0.64 0.16 252 / 0.32) 0.8px, transparent 1.2px) 0 0 / 5px 5px;
-  border-radius: 4px;
+  background: linear-gradient(170deg, oklch(0.275 0.022 var(--hue)), oklch(0.215 0.018 var(--hue)));
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.08), inset 0 -1px 0 oklch(0 0 0 / 0.35);
+  border-radius: max(6px, calc(20px - var(--gap)));
   /* The inner margin shrinks on thin panels. */
   --p: min(var(--pad), 8cqmin);
+  --hue: 270;
 }
-/* Tag and readout print as type, the tag doubled off register. */
-.tag, .ro {
-  position: absolute; top: 4px; font-size: 10px; line-height: 1; letter-spacing: 0.06em;
-  text-transform: uppercase; white-space: nowrap; pointer-events: none; font-style: normal;
-}
-.tag { left: 8px; font-weight: 900; color: var(--pink); text-shadow: 1.2px 0.9px 0 oklch(0.9 0.18 102 / 0.75); }
-.tag b { color: var(--yellow); font-weight: 900; margin-right: 0.45em; text-shadow: none; }
-.ro { right: 8px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 700; color: var(--yellow); }
-.ro.hot { color: var(--pink); }
-/* Narrow plates keep the part number and drop the name. */
-@container (width < 190px) { .tag span { display: none; } }
-.c-dial { grid-area: dial; }
-.c-keys { grid-area: keys; }
-.c-fader { grid-area: fader; }
-.c-abacus { grid-area: abacus; }
-.c-joy { grid-area: joy; }
-.c-tog { grid-area: tog; }
-.c-safe { grid-area: safe; }
-.c-rock { grid-area: rock; }
-.c-wheel { grid-area: wheel; }
+.c-dial { grid-area: dial; --hue: 255; }
+.c-keys { grid-area: keys; --hue: 280; }
+.c-fader { grid-area: fader; --hue: 265; }
+.c-abacus { grid-area: abacus; --hue: 250; }
+.c-joy { grid-area: joy; --hue: 285; }
+.c-tog { grid-area: tog; --hue: 260; }
+.c-safe { grid-area: safe; --hue: 275; }
+.c-rock { grid-area: rock; --hue: 290; }
+.c-wheel { grid-area: wheel; --hue: 245; }
 
 /* A group fits its plate: one row of items, all one height. */
 .grp {
@@ -157,40 +138,40 @@
   <main>
     <div class="stage stage--fidget" role="group" aria-label="Fidget board">
       <div class="board">
-        <div class="cell c-dial"><i class="tag" aria-hidden="true"><b>01</b><span>Dial</span></i><span class="ro" data-ro="dial" aria-hidden="true"></span><div class="grp">
+        <div class="cell c-dial"><div class="grp">
           <div class="ctl dial" id="dial" tabindex="0" role="slider" aria-label="Dial" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"></div>
         </div></div>
-        <div class="cell c-keys"><i class="tag" aria-hidden="true"><b>02</b><span>Keys</span></i><span class="ro" data-ro="keys" aria-hidden="true"></span><div class="grp" role="group" aria-label="Keys">
+        <div class="cell c-keys"><div class="grp" role="group" aria-label="Keys">
           <button class="ctl key" type="button" aria-label="Key 1"></button>
           <button class="ctl key" type="button" aria-label="Key 2"></button>
           <button class="ctl key" type="button" aria-label="Key 3"></button>
           <button class="ctl key" type="button" aria-label="Latching key" aria-pressed="false"></button>
         </div></div>
-        <div class="cell c-fader"><i class="tag" aria-hidden="true"><b>03</b><span>Slider</span></i><span class="ro" data-ro="fader" aria-hidden="true"></span>
+        <div class="cell c-fader">
           <div class="ctl fader wide" id="fader" tabindex="0" role="slider" aria-label="Slider" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3"></div>
         </div>
-        <div class="cell c-abacus"><i class="tag" aria-hidden="true"><b>04</b><span>Abacus</span></i><span class="ro" data-ro="abacus" aria-hidden="true"></span>
+        <div class="cell c-abacus">
           <div class="ctl abacus wide" id="abacus" tabindex="0" role="slider" aria-label="Abacus" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"></div>
         </div>
-        <div class="cell c-joy"><i class="tag" aria-hidden="true"><b>05</b><span>Stick</span></i><span class="ro" data-ro="joy" aria-hidden="true"></span><div class="grp">
+        <div class="cell c-joy"><div class="grp">
           <div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick"></div>
         </div></div>
-        <div class="cell c-tog"><i class="tag" aria-hidden="true"><b>06</b><span>Switches</span></i><span class="ro" data-ro="tog" aria-hidden="true"></span><div class="grp" role="group" aria-label="Switches">
-          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Switch 1"></button>
-          <button class="ctl toggle" type="button" role="switch" aria-checked="false" aria-label="Switch 2"></button>
-          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Switch 3"></button>
+        <div class="cell c-tog"><div class="grp" role="group" aria-label="Switches">
+          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Coral switch" data-c="coral"></button>
+          <button class="ctl toggle" type="button" role="switch" aria-checked="false" aria-label="Blue switch" data-c="sky"></button>
+          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Mint switch" data-c="mint"></button>
         </div></div>
-        <div class="cell c-safe"><i class="tag" aria-hidden="true"><b>07</b><span>Safety</span></i><span class="ro" data-ro="safe" aria-hidden="true"></span><div class="grp">
+        <div class="cell c-safe"><div class="grp">
           <div class="ctl safety" id="safety" role="group" aria-label="Safety switch">
             <button class="hit" type="button" aria-label="Safety cover" aria-expanded="false" aria-controls="arm"></button>
             <button class="hit arm" id="arm" type="button" role="switch" aria-label="Armed switch" aria-checked="false" aria-disabled="true"></button>
           </div>
         </div></div>
-        <div class="cell c-rock"><i class="tag" aria-hidden="true"><b>08</b><span>Rockers</span></i><span class="ro" data-ro="rock" aria-hidden="true"></span><div class="grp" role="group" aria-label="Rockers">
-          <button class="ctl rocker" type="button" role="switch" aria-checked="true" aria-label="Rocker 1"></button>
-          <button class="ctl rocker" type="button" role="switch" aria-checked="false" aria-label="Rocker 2"></button>
+        <div class="cell c-rock"><div class="grp" role="group" aria-label="Rockers">
+          <button class="ctl rocker" type="button" role="switch" aria-checked="true" aria-label="Cream rocker" data-c="cream"></button>
+          <button class="ctl rocker" type="button" role="switch" aria-checked="false" aria-label="Coral rocker" data-c="coral"></button>
         </div></div>
-        <div class="cell c-wheel"><i class="tag" aria-hidden="true"><b>09</b><span>Wheel</span></i><span class="ro" data-ro="wheel" aria-hidden="true"></span><div class="grp">
+        <div class="cell c-wheel"><div class="grp">
           <div class="ctl wheel" id="wheel" tabindex="0" role="slider" aria-orientation="vertical" aria-label="Thumb wheel" aria-valuemin="0" aria-valuemax="19" aria-valuenow="0"></div>
         </div></div>
       </div>
@@ -236,12 +217,51 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > PI) d -= TAU; else if (d < -PI) d += TAU; return d; };
 const KEYS = [' ', 'Enter'];
 
-/* ---------- print kit: three spot inks on black stock ---------- */
-const INK = { blue: 'oklch(0.64 0.16 252)', pink: 'oklch(0.7 0.25 0)', yellow: 'oklch(0.9 0.18 102)' };
-// Each ink has its own screen angle, as on a real press.
-const ANGLE = { blue: 15, pink: 75, yellow: 45 };
-// A halftone cell is 6 px wide at any plate size.
-const CELL = 6;
+// Served locally, the home link opens the repo copy instead of the Artifact.
+if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  document.querySelectorAll('a[data-local]').forEach(a => { a.href = a.dataset.local; a.removeAttribute('target'); });
+}
+
+/* ---------- colour: OKLCH in, sRGB hex out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+const css = lch => { const [r, g, b] = rgb(lch); return '#' + hx(r) + hx(g) + hx(b); };
+function mixLch(A, B, t) {
+  const dh = (((B[2] - A[2]) % 360) + 540) % 360 - 180;
+  return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
+}
+// A ramp caches 32 steps between two colours.
+function ramp(A, B) {
+  const c = [];
+  return t => { const q = Math.round(clamp(t) * 32); return c[q] || (c[q] = css(mixLch(A, B, q / 32))); };
+}
+
+/* ---------- palette: fresh, mid-chroma, lit for a dark tray ---------- */
+const C = {
+  cream: [0.95, 0.018, 85], coral: [0.71, 0.155, 33], sky: [0.74, 0.115, 238], mint: [0.85, 0.115, 168],
+  butter: [0.9, 0.12, 95], lilac: [0.77, 0.1, 302], navy: [0.36, 0.035, 265], steel: [0.8, 0.012, 255],
+  red: [0.63, 0.18, 26], ink: [0.17, 0.014, 275],
+};
+const TICK = css([0.46, 0.02, 268]), BUTTER = css(C.butter);
+
+/* ---------- svg helpers ---------- */
 function el(tag, attrs = {}, parent) {
   const e = document.createElementNS(NS, tag);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -254,77 +274,79 @@ function set(e, k, v) {
 }
 let ids = 0;
 const nid = p => `fb-${p}${++ids}`;
-// Each svg lists fixes that run when its pixel scale changes.
-const fixes = new Map();
-const fitPrint = new ResizeObserver(es => es.forEach(e => {
-  const svg = e.target, k = svg.viewBox.baseVal.height / Math.max(1, e.contentRect.height);
-  fixes.get(svg).forEach(fn => fn(k));
-}));
-// A halftone tint: one dot per cell; pct is the ink cover.
-function tint(svg, ink, pct) {
-  if (pct >= 1) return INK[ink];
-  const key = ink + pct, c = svg.k.tints;
-  if (c[key]) return c[key];
-  const id = nid('t'), pat = el('pattern', { id, patternUnits: 'userSpaceOnUse', width: CELL, height: CELL, patternTransform: `rotate(${ANGLE[ink]})` }, svg.k.defs);
-  const dot = el('circle', { fill: INK[ink] }, pat), r = Math.sqrt(pct / PI);
-  fixes.get(svg).push(k => {
-    const g = f3(CELL * k);
-    set(pat, 'width', g); set(pat, 'height', g);
-    set(dot, 'cx', f3(g / 2)); set(dot, 'cy', f3(g / 2)); set(dot, 'r', f3(g * r));
-  });
-  return (c[key] = `url(#${id})`);
+// A gradient takes stops as [offset, colour, opacity].
+function grad(defs, type, attrs, stops) {
+  const id = nid('g'), g = el(type, { id, ...attrs }, defs);
+  const st = stops.map(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g));
+  return { url: `url(#${id})`, st };
 }
-// Three ink layers overprint by screen; each sits a little off register.
+const DOWN = { x1: 0, y1: 0, x2: 0, y2: 1 };
+// A soft blur casts contact shadows under raised parts.
+function blur(defs, sd) {
+  const id = nid('f'), f = el('filter', { id, x: '-60%', y: '-60%', width: '220%', height: '220%' }, defs);
+  el('feGaussianBlur', { stdDeviation: sd }, f);
+  return `url(#${id})`;
+}
+// Each svg shares one sheen, one rim and one lip gradient.
 function svgIn(host, vb) {
   const svg = el('svg', { viewBox: vb, 'aria-hidden': 'true', focusable: 'false' }, host);
   const defs = el('defs', {}, svg);
-  svg.k = { defs, tints: {} };
-  fixes.set(svg, []);
-  // Grain: noise roughens each edge and knocks out a few specks.
-  const id = nid('f'), f = el('filter', { id, x: '-4%', y: '-4%', width: '108%', height: '108%' }, defs);
-  const turb = el('feTurbulence', { type: 'fractalNoise', baseFrequency: 0.6, numOctaves: 2, seed: ids % 89, result: 'n' }, f);
-  const disp = el('feDisplacementMap', { in: 'SourceGraphic', in2: 'n', scale: 1.5, xChannelSelector: 'R', yChannelSelector: 'G', result: 'd' }, f);
-  el('feColorMatrix', { in: 'n', type: 'matrix', values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 0 -2.7', result: 'm' }, f);
-  el('feComposite', { in: 'd', in2: 'm', operator: 'in' }, f);
-  fixes.get(svg).push(k => { set(turb, 'baseFrequency', f3(0.5 / k)); set(disp, 'scale', f3(0.9 * k)); });
-  svg.L = {};
-  for (const ink of ['blue', 'pink', 'yellow']) {
-    const g = el('g', { filter: `url(#${id})`, style: 'mix-blend-mode: screen' }, svg);
-    const dx = ink === 'blue' ? 0 : rnd(-1.4, 1.4), dy = ink === 'blue' ? 0 : rnd(-1.4, 1.4);
-    svg.L[ink] = el('g', {}, g);
-    fixes.get(svg).push(k => set(g, 'transform', `translate(${f3(dx * k)} ${f3(dy * k)})`));
-  }
-  fitPrint.observe(svg);
+  svg.k = {
+    defs,
+    sheen: grad(defs, 'radialGradient', { cx: 0.3, cy: 0.16, r: 0.9 }, [[0, '#fff', 0.55], [0.45, '#fff', 0.1], [1, '#fff', 0]]).url,
+    rim: grad(defs, 'linearGradient', DOWN, [[0, '#fff', 0.85], [0.28, '#fff', 0], [0.62, '#000', 0], [1, '#000', 0.4]]).url,
+    lip: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.75], [0.3, '#000', 0], [0.78, '#fff', 0], [1, '#fff', 0.13]]).url,
+  };
   return svg;
 }
-// A rounded rectangle as a path, so cut-outs can use even-odd fill.
-const rr = (x, y, w, h, r) => `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
-// A group in every ink, so a moving part moves in each.
-function grp(svg) {
-  const g = {};
-  for (const k in svg.L) g[k] = el('g', {}, svg.L[k]);
-  g.tf = t => { for (const k in svg.L) set(g[k], 'transform', t); };
-  return g;
-}
-// A lit body: a tint for the whole shape, solid ink where light falls.
-// The solid is the shape clipped by a copy shifted toward the light.
-function inked(svg, parent, tag, a, ink, { base = 0.45, dx = -4, dy = -4 } = {}) {
-  el(tag, { ...a, fill: tint(svg, ink, base) }, parent);
-  const id = nid('c'), cp = el('clipPath', { id }, svg.k.defs);
-  el(tag, { ...a, transform: `translate(${dx} ${dy})` }, cp);
-  return el(tag, { ...a, fill: INK[ink], 'clip-path': `url(#${id})` }, parent);
-}
-const stroke = (ink, w, more = {}) => ({ fill: 'none', stroke: INK[ink], 'stroke-width': w, 'stroke-linecap': 'round', ...more });
-// A readout writes its text only when the text changes.
-function readout(id) {
-  const n = document.querySelector(`[data-ro="${id}"]`);
-  let t = null, h = null;
-  return (txt, hot = false) => {
-    if (txt !== t) { t = txt; n.textContent = txt; }
-    if (hot !== h) { h = hot; n.classList.toggle('hot', hot); }
+// A material gives top, middle and bottom tones, darker as it is pressed.
+function mat(lch, dk = 0.09) {
+  const c = [];
+  return t => {
+    const q = Math.round(clamp(t) * 24);
+    if (!c[q]) {
+      const d = (dk * q) / 24;
+      c[q] = [[0.07, 0.85], [0, 1], [-0.14, 1.05]].map(([dl, k]) => css([lch[0] + dl - d, lch[1] * k, lch[2]]));
+    }
+    return c[q];
   };
 }
-const pad = (n, k = 2) => String(n).padStart(k, '0');
+// A raised part: contact shadow, body gradient, sheen and a specular rim.
+// A cylinder runs its light across instead of down.
+function skin(svg, parent, tag, attrs, M, { rim = 2.5, shadow = null, sheen = true, cyl = false } = {}) {
+  const { defs } = svg.k, id = nid('s');
+  const shape = el(tag, { id, ...attrs }, defs);
+  const clip = el('clipPath', { id: id + 'c' }, defs);
+  el('use', { href: '#' + id }, clip);
+  const g = el('g', {}, parent);
+  const sh = shadow ? el('use', { href: '#' + id, fill: '#000', opacity: shadow.o ?? 0.5, filter: blur(defs, shadow.b), transform: `translate(0 ${shadow.y})` }, g) : null;
+  const base = cyl
+    ? grad(defs, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 0 }, [[0, '#fff'], [0.32, '#fff'], [1, '#fff']])
+    : grad(defs, 'linearGradient', DOWN, [[0, '#fff'], [0.5, '#fff'], [1, '#fff']]);
+  const order = cyl ? [1, 0, 2] : [0, 1, 2];
+  el('use', { href: '#' + id, fill: base.url }, g);
+  if (sheen) el('use', { href: '#' + id, fill: svg.k.sheen }, g);
+  el('use', { href: '#' + id, fill: 'none', stroke: svg.k.rim, 'stroke-width': rim * 2, 'clip-path': `url(#${id}c)` }, g);
+  const k = {
+    shape, g, sh,
+    paint(t) { const c = M(t); for (let i = 0; i < 3; i++) set(base.st[i], 'stop-color', c[order[i]]); },
+  };
+  k.paint(0);
+  return k;
+}
+// A recess: dark at the top where the edge shades it, a faint lip below.
+const WELL = mat([0.16, 0.014, 275]);
+function well(svg, parent, tag, attrs, { rim = 3 } = {}) {
+  const { defs } = svg.k, id = nid('w');
+  const shape = el(tag, { id, ...attrs }, defs);
+  const clip = el('clipPath', { id: id + 'c' }, defs);
+  el('use', { href: '#' + id }, clip);
+  const [, mid, low] = WELL(0);
+  const base = grad(defs, 'linearGradient', DOWN, [[0, low], [1, mid]]);
+  el('use', { href: '#' + id, fill: base.url }, parent);
+  el('use', { href: '#' + id, fill: 'none', stroke: svg.k.lip, 'stroke-width': rim * 2, 'clip-path': `url(#${id}c)` }, parent);
+  return shape;
+}
 
 /* ---------- physics loop ---------- */
 // One rAF loop runs only while some body is still moving.
@@ -369,7 +391,7 @@ const moves = [];
 const board = {
   armed: false, latched: false, firing: false, dial: null, fire: null,
   get primed() { return this.armed && this.latched && !this.firing; },
-  set(k, v) { this[k] = v; this.dial?.prime(); this.show?.(); },
+  set(k, v) { this[k] = v; this.dial?.prime(); },
 };
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
@@ -593,36 +615,34 @@ const snd = (() => {
 })();
 
 /* ---------- dial ---------- */
-// A knurled blue skirt and a lit pink cap; ticks light yellow.
+// A navy knurled skirt and a cream dished cap; the ticks light butter.
 const dialEl = document.getElementById('dial');
 bodies.push((() => {
-  const svg = svgIn(dialEl, '0 0 400 400'), { blue: B, pink: P, yellow: Y } = svg.L;
+  const svg = svgIn(dialEl, '0 0 400 400'), defs = svg.k.defs;
   const CX = 200, N = 24, STEP = TAU / N;
   const at = (r, a) => [f2(CX + r * Math.sin(a)), f2(CX - r * Math.cos(a))];
-  el('circle', { cx: CX, cy: CX, r: 198, fill: tint(svg, 'blue', 0.14) }, B);
-  const ticks = el('g', stroke('blue', 1), B), lit = el('g', stroke('yellow', 1), Y), tl = [];
+  const ticks = el('g', { stroke: TICK, 'stroke-linecap': 'round' }, svg), lit = el('g', { stroke: BUTTER, 'stroke-linecap': 'round' }, svg), tl = [];
   for (let k = 0; k < N; k++) {
-    const [x1, y1] = at(k % 6 ? 178 : 168, k * STEP), [x2, y2] = at(194, k * STEP);
-    el('line', { x1, y1, x2, y2, 'stroke-width': k % 6 ? 6 : 11 }, ticks);
-    tl.push(el('line', { x1, y1, x2, y2, 'stroke-width': k % 6 ? 9 : 13, opacity: 0 }, lit));
+    const [x1, y1] = at(k % 6 ? 180 : 171, k * STEP), [x2, y2] = at(194, k * STEP);
+    const a = { x1, y1, x2, y2, 'stroke-width': k % 6 ? 5 : 8 };
+    el('line', a, ticks);
+    tl.push(el('line', { ...a, opacity: 0 }, lit));
   }
-  // The sweep arc measures the turn from zero.
-  const sweep = el('path', stroke('yellow', 7), Y);
-  inked(svg, B, 'circle', { cx: CX, cy: CX, r: 156 }, 'blue', { base: 0.4, dx: -10, dy: -10 });
-  // The knurl overprints in pink, so the turn shows on the blue skirt.
-  const knob = el('g', stroke('pink', 3), svg.L.pink);
+  // The skirt's body stays lit from the top left; only its knurl turns.
+  const skirt = skin(svg, svg, 'circle', { cx: CX, cy: CX, r: 156 }, mat(C.navy, 0.04), { rim: 3, shadow: { b: 9, y: 11, o: 0.6 } });
+  const knob = el('g', { stroke: css([0.22, 0.03, 265]), 'stroke-width': 3.2, 'stroke-linecap': 'round', opacity: 0.75 }, svg);
   for (let k = 0; k < 60; k++) {
-    const [x1, y1] = at(137, (k / 60) * TAU), [x2, y2] = at(153, (k / 60) * TAU);
+    const [x1, y1] = at(139, (k / 60) * TAU), [x2, y2] = at(153, (k / 60) * TAU);
     el('line', { x1, y1, x2, y2 }, knob);
   }
-  const top = grp(svg);
-  const cap = inked(svg, top.pink, 'circle', { cx: CX, cy: CX, r: 120 }, 'pink', { base: 0.5, dx: -14, dy: -14 });
-  // The dish rim and the needle overprint in yellow.
-  el('circle', { cx: CX, cy: CX, r: 92, ...stroke('yellow', 3.5) }, top.yellow);
-  el('circle', { cx: CX, cy: CX, r: 9, fill: INK.blue }, top.blue);
-  const ind = el('g', {}, top.yellow);
-  el('line', { x1: CX, y1: CX - 34, x2: CX, y2: CX - 104, ...stroke('yellow', 16) }, ind);
-  const ro = readout('dial');
+  const top = el('g', {}, svg);
+  const cap = skin(svg, top, 'circle', { cx: CX, cy: CX, r: 120 }, mat(C.cream, 0.12), { rim: 2.5, shadow: { b: 5, y: 6, o: 0.45 } });
+  // The dish darkens at the top edge and catches light below.
+  el('circle', { cx: CX, cy: CX, r: 92, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.16], [0.55, '#000', 0], [1, '#fff', 0.5]]).url }, top);
+  const ind = el('g', {}, top);
+  el('rect', { x: CX - 12, y: CX - 113, width: 24, height: 66, rx: 12, fill: css([0.5, 0.05, 265]), opacity: 0.35 }, ind);
+  el('rect', { x: CX - 9, y: CX - 110, width: 18, height: 60, rx: 9, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.77, 0.14, 38])], [1, css([0.62, 0.16, 30])]]).url }, ind);
+  void skirt;
 
   const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', pr: S(), fl: new Float32Array(N), floor: 0, near: 0, pid: null, pu: 0, prev: 0, off: 0, trail: [], rect: null, run: -1, rk: 0, r0: 0 };
   // The launch run lights one tick every 18 ms.
@@ -703,13 +723,8 @@ bodies.push((() => {
       set(knob, 'transform', r);
       set(ind, 'transform', r);
       const p = s.pr.x;
-      top.tf(`translate(200 200) scale(${f3(1 - 0.03 * p)}) translate(-200 -200)`);
-      // Pressed, the lit ink thins and the cap reads darker.
-      set(cap, 'opacity', f3(1 - 0.5 * p));
-      // The arc runs clockwise from the top to the pointer.
-      if (deg < 0.5) set(sweep, 'd', '');
-      else { const [x, y] = at(166, deg * D2R); set(sweep, 'd', `M200 34A166 166 0 ${deg > 180 ? 1 : 0} 1 ${x} ${y}`); }
-      ro(`${pad(Math.round(deg) % 360, 3)}°`, board.primed);
+      set(top, 'transform', `translate(200 200) scale(${f3(1 - 0.03 * p)}) translate(-200 -200)`);
+      cap.paint(p * 0.8);
       const cur = mod(Math.round(s.th / STEP), N);
       // A primed board holds the whole ring faintly lit.
       const base = board.primed ? 0.45 : 0;
@@ -805,31 +820,34 @@ bodies.push((() => {
 })());
 
 /* ---------- toggle switches ---------- */
-// A blue capsule with a cut slot; yellow fills the slot below a pink lever.
-// A bank readout shows each switch as one bit.
-const bank = (id, n) => {
-  const ro = readout(id), b = Array(n).fill('0');
-  return (i, v) => { b[i] = v ? '1' : '0'; ro(b.join(' '), !b.includes('0')); };
-};
-const togBits = bank('tog', document.querySelectorAll('.toggle').length);
+// A raised bezel holds a sunk channel.
+// The channel lights in the switch colour below the lever.
+const BEZEL = mat([0.33, 0.03, 268], 0);
 // The lever travels 58 units; its centre sits at 91 when off.
 const TY = 91, TT = 58;
-document.querySelectorAll('.toggle').forEach((btn, idx) => {
-  const svg = svgIn(btn, '0 0 54 124'), { blue: B, yellow: Y } = svg.L, id = nid('t');
-  el('path', { d: rr(0, 0, 54, 124, 27) + rr(10, 10, 34, 104, 17), 'fill-rule': 'evenodd', fill: tint(svg, 'blue', 0.6) }, B);
-  el('path', { d: rr(0, 0, 54, 124, 27), ...stroke('blue', 2) }, B);
-  const clip = el('clipPath', { id }, svg.k.defs);
+document.querySelectorAll('.toggle').forEach(btn => {
+  const svg = svgIn(btn, '0 0 54 124'), defs = svg.k.defs, id = nid('t'), col = C[btn.dataset.c];
+  const tone = (dl, k = 1) => css([col[0] + dl, col[1] * k, col[2]]);
+  skin(svg, svg, 'rect', { width: 54, height: 124, rx: 27 }, BEZEL, { rim: 2, shadow: { b: 3, y: 4, o: 0.55 } });
+  well(svg, svg, 'rect', { x: 7, y: 7, width: 40, height: 110, rx: 20 }, { rim: 3.5 });
+  const clip = el('clipPath', { id }, defs);
   el('rect', { x: 10, y: 10, width: 34, height: 104, rx: 17 }, clip);
-  const lit = el('rect', { x: 10, width: 34, fill: tint(svg, 'yellow', 0.7), 'clip-path': `url(#${id})` }, Y);
-  const glow = lit;
-  const lg = grp(svg);
-  const lever = inked(svg, lg.pink, 'rect', { x: 10, width: 34, height: 44, rx: 17 }, 'pink', { base: 0.5, dx: -3, dy: -4 });
-  el('circle', { cx: 27, cy: 22, r: 9, ...stroke('yellow', 2.2) }, lg.yellow);
-  el('circle', { cx: 27, cy: 22, r: 2.6, fill: INK.blue }, lg.blue);
+  const cp = `url(#${id})`;
+  // A dark tint keeps the off channel from reading as a hole.
+  el('rect', { x: 10, y: 10, width: 34, height: 104, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(-0.5, 0.35)], [1, tone(-0.42, 0.45)]]).url, 'clip-path': cp }, svg);
+  const glow = el('g', { 'clip-path': cp }, svg);
+  const lit = el('rect', { x: 10, width: 34, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(0.08, 0.85)], [0.5, tone(0)], [1, tone(-0.14, 1.05)]]).url }, glow);
+  // A soft gloss strip runs down the lit channel.
+  const gloss = el('rect', { x: 15, width: 6, rx: 3, fill: '#fff', opacity: 0.22 }, glow);
+  const lg = el('g', {}, svg);
+  const lever = skin(svg, lg, 'rect', { x: 10, width: 34, height: 44, rx: 17 }, mat(C.cream, 0.12), { rim: 2, shadow: { b: 3, y: 4, o: 0.6 } });
+  // A dished thumb rest with a pip in the switch colour.
+  el('ellipse', { cx: 27, cy: 22, rx: 10, ry: 13, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.2], [0.55, '#000', 0], [1, '#fff', 0.6]]).url }, lg);
+  el('circle', { cx: 27, cy: 22, r: 3.4, fill: tone(-0.04) }, lg);
+  el('circle', { cx: 27, cy: 22, r: 3.4, fill: 'none', stroke: '#000', 'stroke-opacity': 0.22, 'stroke-width': 1 }, lg);
 
   const init = btn.getAttribute('aria-checked') === 'true';
   const s = { p: S(+init), pr: S(), on: init, pid: null, y0: 0, p0: 0, span: 1, drag: false };
-  togBits(idx, init);
   const body = {
     step(h) {
       // Free travel overshoots a little; a dragging finger damps it.
@@ -840,16 +858,18 @@ document.querySelectorAll('.toggle').forEach((btn, idx) => {
     draw() {
       const p = s.p.x, st = clamp(Math.abs(s.p.v) * 0.012, 0, 0.1), sc = 1 - 0.06 * s.pr.x, cy = TY - TT * p;
       // The lever stretches along its travel while moving fast.
-      lg.tf(`translate(27 ${f2(cy)}) scale(${f3(sc * (1 - 0.5 * st))} ${f3(sc * (1 + st))}) translate(-27 -22)`);
-      // Yellow fills the slot from the lever down.
-      set(lit, 'y', f2(cy)); set(lit, 'height', f2(Math.max(0, 114 - cy)));
+      set(lg, 'transform', `translate(27 ${f2(cy)}) scale(${f3(sc * (1 - 0.5 * st))} ${f3(sc * (1 + st))}) translate(-27 -22)`);
+      // The colour fills the channel from the lever down.
+      const h = f2(Math.max(0, 114 - cy));
+      set(lit, 'y', f2(cy)); set(lit, 'height', h);
+      set(gloss, 'y', f2(cy + 22)); set(gloss, 'height', f2(Math.max(0, 114 - cy - 30)));
       set(glow, 'opacity', f3(clamp(p)));
-      set(lever, 'opacity', f3(1 - 0.5 * s.pr.x));
+      lever.paint(s.pr.x * 0.8);
     },
   };
   function flip(v) {
     if (v !== s.on) snd.flip(v);
-    s.on = v; s.p.t = +v; btn.setAttribute('aria-checked', String(v)); togBits(idx, v); wake(body);
+    s.on = v; s.p.t = +v; btn.setAttribute('aria-checked', String(v)); wake(body);
   }
   btn.addEventListener('pointerdown', e => {
     if (s.pid != null || e.button > 0) return;
@@ -888,27 +908,23 @@ document.querySelectorAll('.toggle').forEach((btn, idx) => {
 });
 
 /* ---------- joystick ---------- */
-// A blue gate, a pink nub, and a yellow trail where the nub has been.
+// A recessed gate, a rubber boot, a coral nub on a dark stem.
 const joyEl = document.getElementById('joy');
 bodies.push((() => {
-  const svg = svgIn(joyEl, '0 0 200 200'), { blue: B, yellow: Y } = svg.L, R = 56;
-  el('circle', { cx: 100, cy: 100, r: 98, fill: tint(svg, 'blue', 0.3) }, B);
-  el('circle', { cx: 100, cy: 100, r: R, ...stroke('blue', 2.5, { 'stroke-dasharray': '5 7' }) }, B);
-  const marks = el('g', stroke('blue', 3.5), B);
+  const svg = svgIn(joyEl, '0 0 200 200'), defs = svg.k.defs, R = 56;
+  well(svg, svg, 'circle', { cx: 100, cy: 100, r: 99 }, { rim: 6 });
+  const marks = el('g', { stroke: TICK, 'stroke-width': 3, 'stroke-linecap': 'round' }, svg);
   for (let k = 0; k < 12; k++) {
     const a = (k / 12) * TAU, c = Math.cos(a), sn = Math.sin(a);
-    el('line', { x1: f2(100 + 82 * sn), y1: f2(100 - 82 * c), x2: f2(100 + 93 * sn), y2: f2(100 - 93 * c) }, marks);
+    el('line', { x1: f2(100 + 84 * sn), y1: f2(100 - 84 * c), x2: f2(100 + 91 * sn), y2: f2(100 - 91 * c) }, marks);
   }
-  // The trail keeps the last sixteen nub centres.
-  const TRAIL = 16, path = [];
-  const trail = el('polyline', { ...stroke('yellow', 6), 'stroke-linejoin': 'round', opacity: 0.9 }, Y);
-  el('circle', { cx: 100, cy: 100, r: 30, fill: tint(svg, 'blue', 0.65) }, B);
-  const ng = grp(svg);
-  const nub = inked(svg, ng.pink, 'circle', { cx: 100, cy: 100, r: 40 }, 'pink', { base: 0.5, dx: -7, dy: -7 });
-  el('circle', { cx: 100, cy: 100, r: 22, ...stroke('yellow', 3) }, ng.yellow);
-  el('circle', { cx: 100, cy: 100, r: 5, fill: INK.blue }, ng.blue);
-  const ro = readout('joy');
-  const sg = v => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(2);
+  // The boot is a soft dome; the stem leans out of it.
+  el('circle', { cx: 100, cy: 100, r: 30, fill: grad(defs, 'radialGradient', { cx: 0.4, cy: 0.35, r: 0.7 }, [[0, css([0.36, 0.02, 270])], [1, css([0.18, 0.015, 270])]]).url }, svg);
+  const stem = el('line', { x1: 100, y1: 100, x2: 100, y2: 100, stroke: css([0.27, 0.015, 270]), 'stroke-width': 20, 'stroke-linecap': 'round' }, svg);
+  const ng = el('g', {}, svg);
+  const nub = skin(svg, ng, 'circle', { cx: 100, cy: 100, r: 40 }, mat(C.coral, 0.1), { rim: 3, shadow: { b: 6, y: 8, o: 0.6 } });
+  // A shallow thumb dish sits in the top of the nub.
+  el('circle', { cx: 100, cy: 100, r: 22, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.22], [0.6, '#000', 0], [1, '#fff', 0.35]]).url }, ng);
   const s = { x: S(), y: S(), pr: S(), pid: null, ox: 0, oy: 0, keys: 0, rect: null };
   const body = {
     step(h) {
@@ -926,20 +942,13 @@ bodies.push((() => {
       }
       spring(s.pr, 900, 0.55, h);
     },
-    busy() {
-      const still = rest(s.x, 0.05) & rest(s.y, 0.05) & rest(s.pr);
-      // At rest the trail clears.
-      if (still) path.length = 0;
-      return !still;
-    },
+    busy() { const a = rest(s.x, 0.05), b = rest(s.y, 0.05), c = rest(s.pr); return !(a && b && c); },
     draw() {
       const x = s.x.x, y = s.y.x, sc = 1 - 0.06 * s.pr.x;
-      ng.tf(`translate(${f2(100 + x)} ${f2(100 + y)}) scale(${f3(sc)}) translate(-100 -100)`);
-      set(nub, 'opacity', f3(1 - 0.5 * s.pr.x));
-      path.push(`${f2(100 + x)},${f2(100 + y)}`);
-      if (path.length > TRAIL) path.shift();
-      set(trail, 'points', path.join(' '));
-      ro(`X${sg(x / R)} Y${sg(-y / R)}`, Math.hypot(x, y) > R - 1);
+      set(stem, 'x2', f2(100 + x));
+      set(stem, 'y2', f2(100 + y));
+      set(ng, 'transform', `translate(${f2(100 + x)} ${f2(100 + y)}) scale(${f3(sc)}) translate(-100 -100)`);
+      nub.paint(s.pr.x * 0.8);
     },
   };
   function aim(x, y) {
@@ -1019,20 +1028,18 @@ bodies.push((() => {
 })());
 
 /* ---------- keycaps ---------- */
-// Each cap: a blue skirt and a lit top that sinks on press.
-// Plain tops print pink; the latching top prints yellow with a pink pip.
-let strokes = 0;
-const keysRo = readout('keys');
-const keysShow = () => keysRo(board.primed ? 'PRIMED' : board.latched ? 'LATCHED' : pad(strokes, 4), board.primed);
+// Cream caps with a dished top; the latching key is mint with a pip.
 document.querySelectorAll('.key').forEach(btn => {
-  const latch = btn.hasAttribute('aria-pressed'), ink = latch ? 'yellow' : 'pink';
-  const svg = svgIn(btn, '0 0 100 100');
-  el('rect', { x: 4, y: 10, width: 92, height: 86, rx: 12, fill: tint(svg, 'blue', 0.55) }, svg.L.blue);
-  const tg = grp(svg);
-  const face = inked(svg, tg[ink], 'rect', { x: 14, y: 4, width: 72, height: 68, rx: 9 }, ink, { base: 0.5, dx: -5, dy: -5 });
-  // The dish overprints in blue.
-  el('rect', { x: 24, y: 14, width: 52, height: 48, rx: 7, fill: tint(svg, 'blue', 0.3) }, tg.blue);
-  const pip = latch ? el('circle', { cx: 50, cy: 15, r: 5.5, fill: INK.pink, opacity: 0 }, tg.pink) : null;
+  const latch = btn.hasAttribute('aria-pressed'), col = latch ? C.mint : C.cream;
+  const svg = svgIn(btn, '0 0 100 100'), defs = svg.k.defs;
+  // The skirt is the cap's side, a shade down from its top.
+  const skirt = skin(svg, svg, 'rect', { x: 2, y: 4, width: 96, height: 94, rx: 20 }, mat([col[0] - 0.2, col[1] * 1.1, col[2]], 0.05), { rim: 2, sheen: false, shadow: { b: 4, y: 6, o: 0.6 } });
+  const tg = el('g', {}, svg);
+  const top = skin(svg, tg, 'rect', { x: 10, y: 4, width: 80, height: 72, rx: 16 }, mat(col, 0.12), { rim: 2.5 });
+  el('rect', { x: 18, y: 11, width: 64, height: 58, rx: 13, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.09], [0.5, '#000', 0], [1, '#fff', 0.35]]).url }, tg);
+  const pip = latch ? el('circle', { cx: 50, cy: 20, r: 5.5 }, tg) : null;
+  if (pip) el('circle', { cx: 50, cy: 20, r: 5.5, fill: 'none', stroke: '#000', 'stroke-opacity': 0.25, 'stroke-width': 1.5 }, tg);
+  const PIP = ramp([0.52, 0.08, 168], [0.97, 0.06, 140]);
   const s = { d: S(), lk: S(), held: false, locked: false, pid: null, kb: false, keyAt: 0 };
   const body = {
     step(h) {
@@ -1045,17 +1052,21 @@ document.querySelectorAll('.key').forEach(btn => {
     busy() { const a = rest(s.d), b = rest(s.lk); return !(a && b); },
     draw() {
       const d = s.d.x, sq = clamp(s.d.v / 16, -1, 1), sc = 1 - 0.05 * clamp(d, -0.3, 1);
-      // The top face sinks toward the base and squashes with its speed.
-      const ty = 40 + 10 * d, kx = sc * (1 + 0.07 * sq), ky = sc * (1 - 0.09 * sq);
-      tg.tf(`translate(50 ${f2(ty)}) scale(${f3(kx)} ${f3(ky)}) translate(-50 -40)`);
-      set(face, 'opacity', f3(1 - 0.5 * clamp(d)));
-      if (pip) set(pip, 'opacity', f3(s.lk.x));
+      // The top sinks toward the board and squashes with its speed.
+      set(skirt.shape, 'y', f2(4 + 6 * d));
+      set(skirt.shape, 'height', f2(94 - 6 * d));
+      // Pressed, the cap nears the panel and its shadow tightens.
+      set(skirt.sh, 'opacity', f3(0.6 - 0.3 * clamp(d)));
+      set(skirt.sh, 'transform', `translate(0 ${f2(6 - 4 * clamp(d))})`);
+      set(tg, 'transform', `translate(50 ${f2(40 + 8 * d)}) scale(${f3(sc * (1 + 0.07 * sq))} ${f3(sc * (1 - 0.09 * sq))}) translate(-50 -40)`);
+      top.paint(d * 0.9);
+      skirt.paint(d * 0.5);
+      if (pip) set(pip, 'fill', PIP(s.lk.x));
     },
   };
   // Only a hand on a plain key fires a primed board.
   function press(auto) {
     s.held = true; s.d.t = 1; snd.down();
-    strokes = (strokes + 1) % 10000; keysShow();
     if (!auto && !latch && board.primed) board.fire();
     wake(body);
   }
@@ -1109,23 +1120,20 @@ document.querySelectorAll('.key').forEach(btn => {
   bodies.push(body);
 });
 
-board.show = keysShow;
-keysShow();
-
 /* ---------- slider ---------- */
-// A blue track, a yellow level up to a lit pink thumb.
+// The track runs the panel's length; the cream thumb has five notches.
 const faderEl = document.getElementById('fader');
 bodies.push((() => {
-  const VH = 110, svg = svgIn(faderEl, `0 0 600 ${VH}`), { blue: B, yellow: Y } = svg.L;
-  const track = el('rect', { x: 8, y: 37, width: 584, height: 18, rx: 9, fill: tint(svg, 'blue', 0.5) }, B);
-  const level = el('rect', { x: 11, y: 40, height: 12, rx: 6, fill: tint(svg, 'yellow', 0.75) }, Y);
-  const base = el('g', stroke('blue', 5), B);
-  const lit = el('g', stroke('yellow', 7), Y);
-  const ticks = [0, 1, 2, 3, 4].map(() => [el('line', { y1: 94, y2: 106 }, base), el('line', { y1: 94, y2: 106, opacity: 0 }, lit)]);
-  const tg = grp(svg);
-  const thumb = inked(svg, tg.pink, 'rect', { y: 8, width: 50, height: 76, rx: 9 }, 'pink', { base: 0.5, dx: -4, dy: -5 });
-  for (const x of [15, 25, 35]) el('line', { x1: x, y1: 20, x2: x, y2: 72, ...stroke('blue', 3.5) }, tg.blue);
-  const ro = readout('fader');
+  const VH = 110, svg = svgIn(faderEl, `0 0 600 ${VH}`);
+  const track = well(svg, svg, 'rect', { x: 8, y: 37, width: 584, height: 18, rx: 9 }, { rim: 3 });
+  const base = el('g', { stroke: TICK, 'stroke-width': 5, 'stroke-linecap': 'round' }, svg);
+  const lit = el('g', { stroke: BUTTER, 'stroke-width': 5, 'stroke-linecap': 'round' }, svg);
+  const ticks = [0, 1, 2, 3, 4].map(() => [el('line', { y1: 96, y2: 106 }, base), el('line', { y1: 96, y2: 106, opacity: 0 }, lit)]);
+  const tg = el('g', {}, svg);
+  const thumb = skin(svg, tg, 'rect', { y: 8, width: 50, height: 76, rx: 12 }, mat(C.cream, 0.12), { rim: 2.5, shadow: { b: 4, y: 6, o: 0.6 } });
+  // A groove across the cap marks its centre.
+  el('rect', { x: 22.5, y: 20, width: 5, height: 52, rx: 2.5, fill: css([0.6, 0.02, 80]) }, tg);
+  el('rect', { x: 27.5, y: 20, width: 1.5, height: 52, rx: 0.75, fill: '#fff', opacity: 0.7 }, tg);
   let VW = 600, SP = 132.5, XS = [];
   const s = { x: S(), n: 2, tk: 2, pr: S(), pid: null, off: 0, grab: false, drag: false, rect: null };
   // The viewBox follows the element, so notches spread with the plate.
@@ -1161,10 +1169,8 @@ bodies.push((() => {
       const st = clamp(sp / 2400, 0, 0.08), sc = 1 - 0.05 * s.pr.x;
       // Moving, the thumb scrapes faintly along its track.
       snd.scrape.set(0.035 * clamp(sp / 2400), 900 + 0.3 * sp);
-      tg.tf(`translate(${f2(x)} 46) scale(${f3(sc * (1 + st))} ${f3(sc * (1 - 0.5 * st))}) translate(-25 -46)`);
-      set(level, 'width', f2(Math.max(0, x - 11)));
-      set(thumb, 'opacity', f3(1 - 0.5 * s.pr.x));
-      ro(`${clamp(Math.round((x - XS[0]) / SP), 0, 4) + 1}/5`);
+      set(tg, 'transform', `translate(${f2(x)} 46) scale(${f3(sc * (1 + st))} ${f3(sc * (1 - 0.5 * st))}) translate(-25 -46)`);
+      thumb.paint(s.pr.x * 0.8);
       // Notches light as the thumb nears them.
       ticks.forEach(([, m], i) => {
         const o = clamp(1 - Math.abs(x - XS[i]) / (SP / 2));
@@ -1225,23 +1231,23 @@ bodies.push((() => {
 })());
 
 /* ---------- abacus ---------- */
-// Five bicone beads on a blue rod between two blue posts.
-// Beads right of the yellow mark count, and print solid.
+// Five glossy beads on a steel rod between two steel posts.
 const abEl = document.getElementById('abacus');
 bodies.push((() => {
-  const VH = 100, svg = svgIn(abEl, `0 0 600 ${VH}`), { blue: B, yellow: Y } = svg.L;
+  const VH = 100, svg = svgIn(abEl, `0 0 600 ${VH}`), defs = svg.k.defs;
   const HW = 25, MU = 1500, E = 0.42;
-  const rod = el('rect', { x: 8, y: 46, width: 584, height: 8, rx: 4, fill: INK.blue }, B);
-  const mid = el('line', { y1: 4, y2: 96, ...stroke('yellow', 2.5, { 'stroke-dasharray': '4 6' }) }, Y);
-  el('rect', { x: 2, y: 8, width: 12, height: 84, rx: 4, fill: INK.blue }, B);
-  const postR = el('rect', { y: 8, width: 12, height: 84, rx: 4, fill: INK.blue }, B);
+  // The rod is a thin cylinder: lit along its top, dark beneath.
+  const rod = el('rect', { y: 46.5, height: 7, rx: 3.5, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.62, 0.012, 255])], [0.35, css([0.96, 0.008, 255])], [1, css([0.42, 0.015, 260])]]).url }, svg);
+  const posts = { o: 0.5, b: 3, y: 4 }, PM = mat(C.steel, 0);
+  const postL = skin(svg, svg, 'rect', { x: 2, y: 8, width: 12, height: 84, rx: 6 }, PM, { rim: 2, shadow: posts });
+  const postR = skin(svg, svg, 'rect', { y: 8, width: 12, height: 84, rx: 6 }, PM, { rim: 2, shadow: posts });
+  void postL;
   // Beads are bicones seen side on: pointed rims, flat bores.
   const BEAD = 'M-25-5C-25-13-9-38 0-38S25-13 25-5V5C25 13 9 38 0 38S-25 13-25 5Z';
-  const beads = ['pink', 'yellow', 'pink', 'yellow', 'pink'].map(ink => {
-    const g = el('g', {}, svg.L[ink]);
-    return { g, solid: inked(svg, g, 'path', { d: BEAD }, ink, { base: 0.4, dx: -5, dy: -6 }) };
+  const beads = ['coral', 'butter', 'mint', 'sky', 'lilac'].map(k => {
+    const g = el('g', {}, svg);
+    return { g, sk: skin(svg, g, 'path', { d: BEAD }, mat(C[k], 0.1), { rim: 2.5, shadow: { b: 3.5, y: 5, o: 0.55 } }) };
   });
-  const ro = readout('abacus');
   let VW = 600, L = 16, R = 584, MID = 300;
   const x = new Float64Array(5), v = new Float64Array(5);
   const lo = i => L + HW + i * 2 * HW, hi = i => R - HW - (4 - i) * 2 * HW;
@@ -1254,9 +1260,8 @@ bodies.push((() => {
     if (r.width > 0 && r.height > 0) VW = Math.max(340, Math.round((VH * r.width) / r.height));
     svg.setAttribute('viewBox', `0 0 ${VW} ${VH}`);
     L = 16; R = VW - 16; MID = VW / 2;
-    set(rod, 'width', VW - 16);
-    set(mid, 'x1', MID); set(mid, 'x2', MID);
-    set(postR, 'x', VW - 14);
+    set(rod, 'x', 8); set(rod, 'width', VW - 16);
+    set(postR.shape, 'x', VW - 14);
     const ns = hi(0) - lo(0);
     for (let i = 0; i < 5; i++) { x[i] = lo(i) + clamp(f[i]) * ns; if (i !== s.di) v[i] = 0; }
     if (s.di >= 0) s.T = clamp(s.T, lo(s.di), hi(s.di));
@@ -1311,12 +1316,10 @@ bodies.push((() => {
       beads.forEach((b, i) => {
         const sc = i === s.di ? 1 - 0.04 * s.pr.x : 1;
         set(b.g, 'transform', `translate(${f2(x[i])} 50) scale(${f3(sc)})`);
-        const on = x[i] > MID;
-        set(b.solid, 'opacity', on ? 1 : 0);
-        if (on) n++;
+        b.sk.paint(i === s.di ? s.pr.x * 0.7 : 0);
+        if (x[i] > MID) n++;
       });
       if (n !== s.n) { s.n = n; abEl.setAttribute('aria-valuenow', String(n)); }
-      ro(`${n}/5`, n === 5);
     },
   };
   const local = e => ((e.clientX - s.rect.left) / s.rect.width) * VW;
@@ -1391,36 +1394,35 @@ bodies.push((() => {
 })());
 
 /* ---------- safety switch ---------- */
-// A blue mount with yellow hazard bands, a slot, a yellow lever.
-// A translucent pink cover prints over it, so the lever shows through.
+// A striped navy mount, a tinted red cover, a cream lever under it.
 const safeEl = document.getElementById('safety');
 bodies.push((() => {
-  const VW = 100, VH = 156, HY = 19, svg = svgIn(safeEl, `0 0 ${VW} ${VH}`), { blue: B, pink: P, yellow: Y } = svg.L, defs = svg.k.defs;
+  const VW = 100, VH = 156, HY = 19, svg = svgIn(safeEl, `0 0 ${VW} ${VH}`), defs = svg.k.defs;
   const [coverBtn, armBtn] = safeEl.querySelectorAll('button');
-  el('path', { d: rr(0, 0, VW, VH, 8) + rr(32, 38, 36, 102, 18), 'fill-rule': 'evenodd', fill: tint(svg, 'blue', 0.5) }, B);
-  // Hazard bands print only in the frame round the cover.
-  const band = el('clipPath', { id: nid('c') }, defs);
-  el('path', { d: rr(4, 4, VW - 8, VH - 8, 5) + rr(12, 30, 76, 116, 6), 'clip-rule': 'evenodd' }, band);
+  const mount = skin(svg, svg, 'rect', { width: VW, height: VH, rx: 16 }, mat(C.navy, 0), { rim: 2.5, shadow: { b: 5, y: 7, o: 0.55 } });
+  // Butter hazard stripes run round the mount, under its rim light.
+  const frame = el('clipPath', { id: nid('c') }, defs);
+  el('rect', { x: 4, y: 4, width: VW - 8, height: VH - 8, rx: 12 }, frame);
   let stripes = '';
   for (let k = 0; k < VW + VH + 16; k += 16) stripes += `M${k} 0h8l-${VH} ${VH}h-8Z`;
-  el('path', { d: stripes, fill: INK.yellow, 'clip-path': `url(#${band.id})` }, Y);
+  el('path', { d: stripes, fill: BUTTER, opacity: 0.85, 'clip-path': `url(#${frame.id})` }, svg);
+  void mount;
+  well(svg, svg, 'rect', { x: 32, y: 38, width: 36, height: 102, rx: 18 }, { rim: 3.5 });
   const slot = el('clipPath', { id: nid('c') }, defs);
-  el('rect', { x: 32, y: 38, width: 36, height: 102, rx: 18 }, slot);
-  const glow = el('rect', { x: 32, width: 36, fill: tint(svg, 'pink', 0.7), 'clip-path': `url(#${slot.id})` }, P);
-  const lg = grp(svg);
-  const lever = inked(svg, lg.yellow, 'rect', { x: 37, width: 26, height: 34, rx: 13 }, 'yellow', { base: 0.5, dx: -3, dy: -3 });
-  el('circle', { cx: 50, cy: 17, r: 3, fill: INK.blue }, lg.blue);
-  // The cover: a light pink tint, a solid rim, a yellow warning mark.
-  const cg = grp(svg);
-  el('rect', { x: 10, y: 20, width: 80, height: 124, rx: 8, fill: tint(svg, 'pink', 0.3) }, cg.pink);
-  const under = el('rect', { x: 10, y: 20, width: 80, height: 124, rx: 8, fill: INK.pink, opacity: 0 }, cg.pink);
-  el('rect', { x: 12, y: 22, width: 76, height: 120, rx: 7, ...stroke('pink', 4) }, cg.pink);
-  el('path', { d: 'M50 58L65 85H35Z', ...stroke('yellow', 4, { 'stroke-linejoin': 'round' }) }, cg.yellow);
-  el('rect', { x: 26, y: 132, width: 48, height: 7, rx: 3, fill: INK.pink }, cg.pink);
-  // The hinge bar and its two screws.
-  el('rect', { x: 5, y: 10, width: 90, height: 18, rx: 4, fill: INK.blue }, B);
-  for (const cx of [19, 81]) el('circle', { cx, cy: HY, r: 3.6, fill: INK.yellow }, Y);
-  const ro = readout('safe');
+  el('rect', { x: 36, y: 42, width: 28, height: 94, rx: 14 }, slot);
+  el('rect', { x: 36, y: 42, width: 28, height: 94, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.2, 0.06, 28])], [1, css([0.26, 0.08, 28])]]).url, 'clip-path': `url(#${slot.id})` }, svg);
+  const glow = el('rect', { x: 36, width: 28, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.7, 0.17, 30])], [1, css([0.5, 0.18, 26])]]).url, 'clip-path': `url(#${slot.id})` }, svg);
+  const lg = el('g', {}, svg);
+  const lever = skin(svg, lg, 'rect', { x: 37, width: 26, height: 34, rx: 13 }, mat(C.cream, 0.12), { rim: 2, shadow: { b: 2.5, y: 3.5, o: 0.55 } });
+  // The same dished thumb rest as the toggles, with a red pip.
+  el('ellipse', { cx: 50, cy: 17, rx: 7.5, ry: 10, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.2], [0.55, '#000', 0], [1, '#fff', 0.6]]).url }, lg);
+  el('circle', { cx: 50, cy: 17, r: 2.6, fill: css([0.6, 0.17, 28]) }, lg);
+  // The cover is tinted plastic, so the lever shows through faintly.
+  const cg = el('g', { opacity: 0.88 }, svg);
+  const lid = skin(svg, cg, 'rect', { x: 10, y: 20, width: 80, height: 124, rx: 15 }, mat(C.red, 0.16), { rim: 3, shadow: { b: 4, y: 5, o: 0.5 } });
+  el('rect', { x: 26, y: 132, width: 48, height: 6, rx: 3, fill: css([0.46, 0.15, 24]) }, cg);
+  skin(svg, svg, 'rect', { x: 5, y: 10, width: 90, height: 18, rx: 9 }, mat(C.steel, 0), { rim: 2, shadow: { b: 2.5, y: 3, o: 0.5 } });
+  for (const cx of [19, 81]) el('circle', { cx, cy: HY, r: 3.2, fill: css([0.45, 0.012, 255]) }, svg);
   const s = { c: S(), p: S(), pr: S(), open: false, on: false, tm: 0, pid: null };
   const body = {
     step(h) {
@@ -1441,16 +1443,14 @@ bodies.push((() => {
     draw() {
       // The cover turns about the hinge; past upright, its underside shows.
       const k = Math.cos(s.c.x * 98 * D2R);
-      cg.tf(`translate(0 ${HY}) scale(1 ${f3(k)}) translate(0 ${-HY})`);
-      set(under, 'opacity', k < 0 ? f3(-0.7 * k) : 0);
+      set(cg, 'transform', `translate(0 ${HY}) scale(1 ${f3(k)}) translate(0 ${-HY})`);
+      lid.paint(k >= 0 ? 0.5 * (1 - k) : 0.8 - 0.2 * k);
       const p = s.p.x, sc = 1 - 0.06 * s.pr.x, cy = 117 - 56 * p;
-      const tf = `translate(50 ${f2(cy)}) scale(${f3(sc)}) translate(-50 -17)`;
-      lg.tf(tf);
-      set(lever, 'opacity', f3(1 - 0.5 * s.pr.x));
+      set(lg, 'transform', `translate(50 ${f2(cy)}) scale(${f3(sc)}) translate(-50 -17)`);
       set(glow, 'y', f2(cy));
       set(glow, 'height', f2(Math.max(0, 136 - cy)));
       set(glow, 'opacity', f3(clamp(p)));
-      ro(s.on ? 'ARMED' : s.open ? 'OPEN' : 'SAFE', s.on);
+      lever.paint(s.pr.x * 0.8);
     },
   };
   function arm(v) {
@@ -1527,25 +1527,28 @@ bodies.push((() => {
 })());
 
 /* ---------- rocker switches ---------- */
-// Two-part paddles in a blue bezel; the pressed half sinks and dims.
-// The first rocker prints pink, the second yellow; marks overprint blue.
-const rockBits = bank('rock', document.querySelectorAll('.rocker').length);
-document.querySelectorAll('.rocker').forEach((btn, idx) => {
-  const svg = svgIn(btn, '0 0 64 104'), B = svg.L.blue, ink = idx ? 'yellow' : 'pink';
-  el('path', { d: rr(0, 0, 64, 104, 8) + rr(6, 6, 52, 92, 5), 'fill-rule': 'evenodd', fill: tint(svg, 'blue', 0.6) }, B);
-  const TOP = 'M9 52V17A8 8 0 0 1 17 9H47A8 8 0 0 1 55 17V52Z', BOT = 'M9 52H55V87A8 8 0 0 1 47 95H17A8 8 0 0 1 9 87Z';
-  const tg = el('g', {}, svg.L[ink]), bg = el('g', {}, svg.L[ink]);
-  const topOn = inked(svg, tg, 'path', { d: TOP }, ink, { base: 0.45, dx: -3, dy: -3 });
-  const botOn = inked(svg, bg, 'path', { d: BOT }, ink, { base: 0.45, dx: -3, dy: -3 });
+// Two-part paddles in recessed wells; the pressed half sinks and darkens.
+document.querySelectorAll('.rocker').forEach(btn => {
+  const svg = svgIn(btn, '0 0 64 104'), M = mat(C[btn.dataset.c], 0.16);
+  // The same raised bezel as the toggles frames the well.
+  skin(svg, svg, 'rect', { width: 64, height: 104, rx: 16 }, BEZEL, { rim: 2, shadow: { b: 3, y: 4, o: 0.55 } });
+  well(svg, svg, 'rect', { x: 5, y: 5, width: 54, height: 94, rx: 12 }, { rim: 3.5 });
+  const tg = el('g', {}, svg), bg = el('g', {}, svg);
+  const top = skin(svg, tg, 'path', { d: 'M9 52V19A10 10 0 0 1 19 9H45A10 10 0 0 1 55 19V52Z' }, M, { rim: 2, shadow: { b: 2.5, y: 3, o: 0.45 } });
+  const bot = skin(svg, bg, 'path', { d: 'M9 52H55V85A10 10 0 0 1 45 95H19A10 10 0 0 1 9 85Z' }, M, { rim: 2 });
+  // I and O are engraved: a dark cut over a lit lower edge.
+  const cut = (a, g) => {
+    el(a[0], { ...a[1], fill: 'none', stroke: '#fff', 'stroke-opacity': 0.35, 'stroke-width': 2.6, 'stroke-linecap': 'round', transform: 'translate(0 1)' }, g);
+    el(a[0], { ...a[1], fill: 'none', stroke: '#000', 'stroke-opacity': 0.4, 'stroke-width': 2.6, 'stroke-linecap': 'round' }, g);
+  };
   // The marks ride their halves unscaled, so the O stays round.
   // Both half centres shift by -d / 2.
-  const mk = el('g', {}, B);
-  el('line', { x1: 32, y1: 22, x2: 32, y2: 34, ...stroke('blue', 4.5) }, mk);
-  el('circle', { cx: 32, cy: 74, r: 6, ...stroke('blue', 4) }, mk);
-  const seam = el('line', { x1: 9, x2: 55, ...stroke('blue', 2) }, B);
+  const mk = el('g', {}, svg);
+  cut(['line', { x1: 32, y1: 22, x2: 32, y2: 34 }], mk);
+  cut(['circle', { cx: 32, cy: 74, r: 6 }], mk);
+  const seam = el('line', { x1: 9, x2: 55, stroke: '#000', 'stroke-opacity': 0.3, 'stroke-width': 1.2 }, svg);
   const init = btn.getAttribute('aria-checked') === 'true';
   const s = { r: S(init ? 1 : -1), pr: S(), on: init, side: 1, pid: null };
-  rockBits(idx, init);
   const body = {
     step(h) {
       spring(s.r, 1500, 0.5, h);
@@ -1561,15 +1564,14 @@ document.querySelectorAll('.rocker').forEach((btn, idx) => {
       set(bg, 'transform', `translate(0 95) scale(1 ${f3((43 + d) / 43)}) translate(0 -95)`);
       set(seam, 'y1', f2(52 - d)); set(seam, 'y2', f2(52 - d));
       set(mk, 'transform', `translate(0 ${f2(-d / 2)})`);
-      set(topOn, 'opacity', f3(1 - 0.6 * clamp(r)));
-      set(botOn, 'opacity', f3(1 - 0.6 * clamp(-r)));
+      top.paint(clamp(0.9 * r));
+      bot.paint(clamp(-0.9 * r));
     },
   };
   function rock(v) {
     s.side = v ? 1 : -1;
     if (v === s.on) { snd.dead(); wake(body); return; }
     s.on = v; s.r.t = s.side;
-    rockBits(idx, v);
     snd.rock(v);
     btn.setAttribute('aria-checked', String(v));
     wake(body);
@@ -1598,19 +1600,17 @@ document.querySelectorAll('.rocker').forEach((btn, idx) => {
 });
 
 /* ---------- thumb wheel ---------- */
-// A yellow drum in a blue frame, side on; blue ribs crowd to the edges.
-// One pink rib marks the zero.
+// A mint drum in a recessed slot; its ribs crowd toward the edges.
 const wheelEl = document.getElementById('wheel');
 bodies.push((() => {
-  const svg = svgIn(wheelEl, '0 0 60 180'), { blue: B, yellow: Y } = svg.L;
-  const N = 20, STEP = TAU / N, CY = 90, RR = 80;
-  el('path', { d: rr(0, 0, 60, 180, 8) + rr(9, 9, 42, 162, 4), 'fill-rule': 'evenodd', fill: tint(svg, 'blue', 0.6) }, B);
-  // The drum is lit across its middle and falls off to a tint.
-  el('rect', { x: 9, y: 9, width: 42, height: 162, rx: 4, fill: tint(svg, 'yellow', 0.4) }, Y);
-  el('rect', { x: 9, y: 58, width: 42, height: 64, fill: INK.yellow }, Y);
-  const ribs = [];
-  for (let k = 0; k < N; k++) ribs.push(el('line', { x1: 13, x2: 47, ...stroke(k ? 'blue' : 'pink', 2) }, k ? B : svg.L.pink));
-  const ro = readout('wheel');
+  const svg = svgIn(wheelEl, '0 0 60 180'), defs = svg.k.defs;
+  const N = 20, STEP = TAU / N, CY = 90, RR = 80, m = C.mint;
+  well(svg, svg, 'rect', { width: 60, height: 180, rx: 15 }, { rim: 4 });
+  // The drum's axis is level, so its light falls top to bottom.
+  const tone = (dl, k = 1) => css([m[0] + dl, m[1] * k, m[2]]);
+  el('rect', { x: 9, y: 9, width: 42, height: 162, rx: 9, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(-0.3, 0.7)], [0.2, tone(-0.06)], [0.42, tone(0.09, 0.6)], [0.64, tone(0)], [1, tone(-0.34, 0.7)]]).url }, svg);
+  const g = el('g', { stroke: tone(-0.34), 'stroke-linecap': 'round' }, svg), ribs = [];
+  for (let k = 0; k < N; k++) ribs.push(el('line', { x1: 13, x2: 47 }, g));
   const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', near: 0, pid: null, y0: 0, t0: 0, k: 0, trail: [] };
   // Drag follow, rib detents, flick friction, settle spring.
   const KD = 1500, CD = 70, AD = 50, AS = 30, CF = 1.6, MU = 9, WCAP = 3, KS = 600, CS = 26;
@@ -1656,11 +1656,10 @@ bodies.push((() => {
         // Ribs crowd and thin toward the drum's edges.
         const y = f2(CY + RR * Math.sin(a));
         set(rib, 'y1', y); set(rib, 'y2', y);
-        set(rib, 'stroke-width', f2((k ? 1 : 2.4) + 2.6 * c)); set(rib, 'opacity', f2(Math.min(1, 1.6 * c)));
+        set(rib, 'stroke-width', f2(0.8 + 3 * c)); set(rib, 'opacity', f2(0.85 * Math.min(1, 1.6 * c)));
       }
       const T = s.mode === 'settle' || s.mode === 'rest' ? s.T : s.th;
       set(wheelEl, 'aria-valuenow', mod(-Math.round(T / STEP), N));
-      ro(pad(mod(-Math.round(T / STEP), N)));
     },
   };
   wheelEl.addEventListener('pointerdown', e => {
@@ -1754,7 +1753,7 @@ const moveOf = el => moves.find(m => m.el === el);
 let fuse = [];
 board.fire = () => {
   board.firing = true;
-  board.dial.prime(); board.show();
+  board.dial.prime();
   snd.launch();
   board.dial.run();
   fuse.forEach(clearTimeout);
@@ -1762,7 +1761,7 @@ board.fire = () => {
     const t = sweep('shuffle', keep);
     fuse.push(
       setTimeout(() => moveOf(safeEl).reset(), t + 250),
-      setTimeout(() => { moveOf(latchEl).reset(); board.firing = false; board.dial.prime(); board.show(); }, t + 520),
+      setTimeout(() => { moveOf(latchEl).reset(); board.firing = false; board.dial.prime(); }, t + 520),
     );
   }, reduce ? 0 : 440)];
 };

@@ -334,14 +334,14 @@ const PACE = 0.7;
 const BIN_D = 1.6;
 // A supernova burns this long, in sim seconds, then blows its shell.
 // The shell runs at BLAST_V and fades out by BLAST_T.
-const NOVA_FUSE = 3, BLAST_V = 5, BLAST_T = 3, BLAST_A = 25;
+const NOVA_FUSE = 3, BLAST_V = 5, BLAST_T = 3, BLAST_A = 14;
 const WHITE_COL = oklchLinear(0.95, 0.05, 300);
 // A magnetar's field drags nearby stars round it.
 const MAG_M = 9, MAG_SWIRL = 2.2, MAG_COL = oklchLinear(0.72, 0.22, 330);
 // A wormhole is two pinned mouths; stars that enter one leave the other.
 const WORM_M = 5, WORM_R = 0.45, WORM_COL = oklchLinear(0.82, 0.12, 200);
 // A nebula births a cluster for NURSE_T sim seconds, then settles.
-const NEBULA_M = 10, NURSE_T = 3, NEBULA_COL = oklchLinear(0.62, 0.17, 330), GAS_N = 700;
+const NEBULA_M = 10, NURSE_T = 3, NEBULA_COL = oklchLinear(0.62, 0.17, 330);
 // A comet is light and fast; its tail points away from the heaviest body.
 const COMET_M = 1.5, COMET_COL = oklchLinear(0.95, 0.04, 220), TAIL_N = SMALL ? 768 : 1536, TAIL_L = 3.2;
 // A red giant swells for GIANT_FUSE, puffs a slow shell and leaves a white dwarf.
@@ -375,16 +375,17 @@ const wells = [];
 async function start() {
   if (!(await hasWebGPU())) return noWebGPU();
 
-  const [THREE, TSL, { bloom }, { default: AfterImageNode }] = await Promise.all([
+  const [THREE, TSL, { bloom }, { default: AfterImageNode }, { snoise }] = await Promise.all([
     import('three/webgpu'),
     import('three/tsl'),
     import('three/addons/tsl/display/BloomNode.js'),
     import('three/addons/tsl/display/AfterImageNode.js'),
+    import('three/addons/tsl/math/curlNoise.js'),
   ]);
   const {
     Fn, If, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select, uv, smoothstep,
     mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, pass, max, atan,
-    fract, step, cameraPosition,
+    fract, step, cameraPosition, positionWorld, interleavedGradientNoise, screenCoordinate, frameId, min, Loop,
   } = TSL;
 
   // The stock after-image cuts trails at a hard threshold.
@@ -661,7 +662,7 @@ async function start() {
       // Heavier wells hold a wider reach.
       const e = P.w.mul(P.w).mul(0.5).sub(bestM.mul(inverseSqrt(bestR2.add(EPS2))));
       const reach = bestM.div(SEED_M).max(1).pow(0.67).mul(5.3);
-      If(bestR2.lessThan(reach).and(e.lessThan(0)).and(bestK.greaterThan(uint(0))), () => {
+      If(bestR2.lessThan(reach.mul(reach)).and(e.lessThan(0)).and(bestK.greaterThan(uint(0))), () => {
         atomicAdd(counter.element(0), uint(1));
         atomicAdd(counter.element(bestK), uint(1));
       });
@@ -797,25 +798,48 @@ async function start() {
     beams.push(s);
   }
 
-  // Nebula gas: large dim puffs that hug the lobes and drift.
+  // Nebula gas: a raymarched smoke volume, like Fire's smoke.
+  // It glows magenta and teal and its dust absorbs the stars behind.
   // uGas: xz centre, cloud radius, opacity.
-  const uGas = uniform(new THREE.Vector4());
-  const gasMat = spriteMat();
-  {
-    const gh = n => hash(instanceIndex.add(uint(n * 2833 + 5)));
-    const lobe = gh(1).mul(LOBES).floor();
-    let lo = uLobe[0];
-    for (let k = 1; k < LOBES; k++) lo = select(lobe.equal(float(k)), uLobe[k], lo);
-    const drift = vec3(sin(uTime.mul(0.3).add(gh(6).mul(TAU))), 0, cos(uTime.mul(0.23).add(gh(7).mul(TAU)))).mul(0.08);
-    const off = lo.add(vec3(gauss(gh(2), gh(3)), gauss(gh(4), gh(5)).mul(0.6), gauss(gh(8), gh(9))).mul(0.42)).add(drift);
-    gasMat.positionNode = lensOf(vec3(uGas.x, 0, uGas.y).add(off.mul(uGas.z))).p;
-    gasMat.scaleNode = uPx.mul(gh(10).mul(60).add(34));
-    const hue = mix(vec3(...oklchLinear(0.55, 0.2, 335)), vec3(...oklchLinear(0.6, 0.12, 200)), gh(11).pow(2));
-    gasMat.colorNode = dotOf(varying(hue.mul(0.2).mul(uGas.w)));
-  }
-  const gas = new THREE.Sprite(gasMat);
-  gas.count = GAS_N;
+  const uGas = uniform(new THREE.Vector4()), uGasSeed = uniform(new THREE.Vector3());
+  const GAS_STEPS = 22, GAS_H = 0.45;
+  const MAGENTA = vec3(...oklchLinear(0.6, 0.22, 335)), TEAL = vec3(...oklchLinear(0.66, 0.13, 195));
+  const gasMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, premultipliedAlpha: true });
+  gasMat.colorNode = Fn(() => {
+    const R = uGas.z, C = vec3(uGas.x, 0, uGas.y), B = vec3(R, R.mul(GAS_H), R);
+    const ro = cameraPosition, rd = positionWorld.sub(cameraPosition).normalize();
+    // Slab test: where the view ray enters and leaves the cloud's box.
+    const inv = vec3(1).div(rd);
+    const ta = C.sub(B).sub(ro).mul(inv), tb = C.add(B).sub(ro).mul(inv);
+    const lo3 = min(ta, tb), hi3 = max(ta, tb);
+    const tn = max(max(lo3.x, lo3.y), lo3.z).max(0), tf = min(min(hi3.x, hi3.y), hi3.z);
+    const dt = tf.sub(tn).max(0).div(GAS_STEPS);
+    // A dither per pixel and frame hides the step banding.
+    const jit = fract(interleavedGradientNoise(screenCoordinate).add(float(frameId).mul(0.618034)));
+    const T = float(1).toVar(), col = vec3(0).toVar();
+    const drift = vec3(0, uTime.mul(0.05), uTime.mul(0.02));
+    // A GPU loop keeps the shader small, so it compiles fast.
+    Loop(GAS_STEPS, ({ i }) => {
+      const q = ro.add(rd.mul(tn.add(dt.mul(jit.add(float(i)))))).sub(C).div(R);
+      // The lobes where stars are born carry the bulk of the gas.
+      let base = float(0);
+      for (const L of uLobe) { const d = q.sub(L); base = base.add(exp(d.dot(d).mul(-5.5))); }
+      // Warped noise turns the bulk into wisps, as in Fire's smoke.
+      const w = snoise(q.mul(1.4).add(uGasSeed));
+      const n = snoise(q.mul(3).add(vec3(w.mul(0.9))).add(drift).add(uGasSeed)).mul(0.65)
+        .add(snoise(q.mul(7).add(uGasSeed.mul(1.7))).mul(0.3));
+      const dens = base.mul(n.add(0.4)).sub(0.18).max(0).mul(uGas.w);
+      const k = dt.div(R);
+      // Mostly magenta, with teal pockets; the lobe hearts glow hottest.
+      const hue = mix(MAGENTA, TEAL, smoothstep(0.15, 0.7, w));
+      col.addAssign(hue.mul(dens).mul(T).mul(k).mul(base.mul(0.8).add(0.5)).mul(3));
+      T.mulAssign(exp(dens.mul(k).mul(-4.5)));
+    });
+    return vec4(col, float(1).sub(T));
+  })();
+  const gas = new THREE.Mesh(new THREE.BoxGeometry(2, 2 * GAS_H, 2), gasMat);
   gas.frustumCulled = false;
+  gas.renderOrder = 5;
   gas.visible = false;
   scene.add(gas);
 
@@ -1071,6 +1095,9 @@ async function start() {
       keep.fuse = heavy.fuse;
       keep.nursed = a.nursed || b.nursed;
       keep.pulse = 1;
+      // A nebula's stream and gas follow it into the merger.
+      if (fling?.nursery === gone) fling.nursery = keep;
+      if (gasBody === gone) gasBody = keep;
       wells.splice(wells.indexOf(gone), 1);
       if (keep.hole && !was) holeBorn(keep);
       return merge();
@@ -1099,7 +1126,10 @@ async function start() {
   function room() {
     // A hole never lets go of its stars.
     const lit = wells.filter(w => w.mt > 0 && !w.held && !w.hole).sort((a, b) => a.born - b.born);
-    if (wells.filter(w => w.mt > 0).length >= CAP && lit.length) lit[0].mt = 0;
+    if (wells.filter(w => w.mt > 0).length >= CAP && lit.length) {
+      lit[0].mt = 0;
+      if (lit[0].link) lit[0].link.mt = 0;
+    }
     while (wells.length >= MAXW) {
       const k = wells.findIndex(w => w.mt === 0);
       if (k < 0) return false;
@@ -1108,9 +1138,15 @@ async function start() {
     return true;
   }
   function place(w) {
-    if (!room()) return;
+    if (!room()) return false;
     w.pulse = 1;
     wells.push(w);
+    return true;
+  }
+  // A pair needs two slots; a lone half is taken back out.
+  function placePair(a, b) {
+    if (!place(a)) return;
+    if (!place(b)) wells.splice(wells.indexOf(a), 1);
   }
   const starType = () => STAR_TYPES[(Math.random() * STAR_TYPES.length) | 0];
   function addWell(x, z) {
@@ -1136,8 +1172,7 @@ async function start() {
     const a = makeWell(x, z, 0, 0, 0, WORM_M, 'worm', WORM_COL), b = makeWell(bx, bz, 0, 0, 0, WORM_M, 'worm', WORM_COL);
     a.link = b;
     b.link = a;
-    place(a);
-    place(b);
+    placePair(a, b);
   }
   // Two stars circle their shared centre while the pair orbits the sky.
   function addBinary(x, z) {
@@ -1147,8 +1182,8 @@ async function start() {
     const r1 = (BIN_D * m2) / M, r2 = (BIN_D * m1) / M, f = BIN_D / (BIN_D * BIN_D + EPSW2) ** 1.5;
     const v1 = Math.sqrt(m2 * resp(m1) * f * r1), v2 = Math.sqrt(m1 * resp(m2) * f * r2);
     // Both start at full mass, so the pair holds from the first step.
-    place(makeWell(x + ux * r1, z + uz * r1, vx - uz * v1, vz + ux * v1, m1, m1, 'star', t1.col));
-    place(makeWell(x - ux * r2, z - uz * r2, vx + uz * v2, vz - ux * v2, m2, m2, 'star', t2.col));
+    placePair(makeWell(x + ux * r1, z + uz * r1, vx - uz * v1, vz + ux * v1, m1, m1, 'star', t1.col),
+      makeWell(x - ux * r2, z - uz * r2, vx + uz * v2, vz - ux * v2, m2, m2, 'star', t2.col));
   }
   // Space drops a well mid-panel, or beside whatever already sits there.
   function dropCentre() {
@@ -1191,7 +1226,7 @@ async function start() {
     let sun = null;
     for (const w of wells) if (w.kind !== 'comet' && w.mt > 0 && !pinned(w) && (!sun || w.m > sun.m)) sun = w;
     for (let k = 0; k < MAXW; k++) {
-      const w = wells[k], on = w && w.kind === 'comet' && w.mt > 0;
+      const w = wells[k], on = w && w.kind === 'comet' && !w.hole && w.mt > 0;
       if (on) {
         let dx = sun ? w.x - sun.x : -w.vx, dz = sun ? w.z - sun.z : -w.vz;
         const l = Math.hypot(dx, dz) || 1;
@@ -1215,7 +1250,7 @@ async function start() {
   }
   // Collapse: a rush of air and a burst of feeding.
   // A supernova blows its shell and leaves a pulsar behind.
-  let blast = null, gasFade = 0, gasX = 0, gasZ = 0;
+  let blast = null, gasFade = 0, gasX = 0, gasZ = 0, gasBody = null;
   function shell(w, kind) {
     const S = SHELLS[kind];
     blast = { x: w.x, z: w.z, t0: simT, ...S };
@@ -1310,6 +1345,8 @@ async function start() {
     holeVis = feed = feedGoal = jet = 0;
     blast = null;
     fling = null;
+    gasBody = null;
+    gasFade = 0;
     renderer.compute(seedPass);
   }
 
@@ -1330,10 +1367,14 @@ async function start() {
     for (const w of wells) if (w.mt > 0 && !pinned(w) && (!keep || w.mt > keep.mt)) keep = w;
     for (const w of wells) if (w !== keep) w.mt = 0;
     if (keep) {
-      if (!keep.hole) keep.mt = SEED_M;
+      // The survivor becomes a plain well, so no fuse fires late.
+      if (!keep.hole) Object.assign(keep, { mt: SEED_M, kind: 'well', col: null, fuse: undefined, link: null });
       keep.vx *= 0.3;
       keep.vz *= 0.3;
-    } else wells.push(makeWell(0, 0, 0, 0, 0, SEED_M));
+    } else {
+      for (let k = wells.length - 1; k >= 0; k--) if (wells[k].mt === 0) wells.splice(k, 1);
+      wells.push(makeWell(0, 0, 0, 0, 0, SEED_M));
+    }
   }
   // Reset brings back the colliding pair.
   function resetAll() {
@@ -1383,13 +1424,14 @@ async function start() {
       L.value.set(Math.cos(a) * r, (Math.random() - 0.5) * 0.5, Math.sin(a) * r);
     }
     uHoldCloud.value = 1;
+    uGasSeed.value.set(Math.random() * 50, Math.random() * 50, Math.random() * 50);
     fling = { start: ring, count: INIT, t0: simT, x: w.x, z: w.z, vx: w.vx, vz: w.vz, releasing: false, nursery: w, max: Math.round(MAXF / 2) };
     uSalt.value = (Math.random() * 1e6) | 0;
     w.nursed = true;
   }
   function endNursery() {
     const n = fling.nursery;
-    if (n) n.kind = 'well';
+    if (n?.kind === 'nebula') n.kind = 'well';
     ring = (fling.start + fling.count) % N;
     fling = null;
     uHeldCount.value = 0;
@@ -1510,7 +1552,10 @@ async function start() {
         fling.z = n.z;
         fling.vx = n.vx;
         fling.vz = n.vz;
-        if (simT - fling.t0 > NURSE_T || n.mt === 0) { fling.releasing = true; n.kind = 'well'; }
+        if (simT - fling.t0 > NURSE_T || n.mt === 0) {
+          fling.releasing = true;
+          if (n.kind === 'nebula') n.kind = 'well';
+        }
       }
       if (hold && hold.kind === 'fling') {
         fling.x = hold.x;
@@ -1659,6 +1704,8 @@ async function start() {
     // Behind the intro, the seeded pair holds still.
     const simDt = shown || hold ? dt * pace * (reduce ? 0.5 : 1) : 0;
     const n = simDt > 0 ? Math.max(1, Math.min(4, Math.ceil(simDt / STEP - 1e-6))) : 0, h = n ? simDt / n : 0;
+    // Pruning first keeps each slot k matched to its uniforms all frame.
+    prune();
     updateHold(now);
     for (let s = 0; s < n; s++) {
       for (let q = 0; q < 3; q++) stepWells(h / 3);
@@ -1668,12 +1715,15 @@ async function start() {
       renderer.compute(updatePass);
       simT += h;
     }
-    // The gas follows the nursing nebula and thins as its stars are born.
+    // The gas follows its nebula, then thins slowly round the young cluster.
     const nn = fling?.nursery;
-    gasFade += ((nn ? 1 - 0.6 * clamp((simT - fling.t0) / NURSE_T) : 0) - gasFade) * (1 - Math.exp(-dt / 0.8));
-    if (nn) { gasX = nn.x; gasZ = nn.z; }
+    if (nn) gasBody = nn;
+    gasFade += ((nn ? 1 : 0) - gasFade) * (1 - Math.exp(-dt / (nn ? 0.8 : 7)));
+    if (gasBody && gasBody.mt > 0) { gasX = gasBody.x; gasZ = gasBody.z; }
     gas.visible = gasFade > 0.01;
     uGas.value.set(gasX, gasZ, 2.2, gasFade);
+    gas.position.set(gasX, 0, gasZ);
+    gas.scale.setScalar(2.2);
     for (const w of wells) {
       if (w.kind === 'nova' && simT >= w.fuse && !w.hole) explode(w);
       if (w.kind === 'giant' && simT >= w.fuse && !w.hole) shed(w);
@@ -1689,7 +1739,6 @@ async function start() {
       uHeldCount.value = 0;
     }
     uTime.value = simT;
-    prune();
     if (!reduce && simDt > 0) az += dt * 0.016;
     zoom += (zoomGoal - zoom) * (reduce ? 1 : 1 - Math.exp(-dt / 0.18));
     placeCamera(now / 1000);
@@ -1699,7 +1748,7 @@ async function start() {
     uDampStars.value = reduce || !starStreak ? 0 : Math.exp(-dt / starStreak);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
-      tails[k].visible = !!w && w.kind === 'comet' && w.vis > 0.01;
+      tails[k].visible = !!w && w.kind === 'comet' && !w.hole && w.vis > 0.01;
       if (!w) { dot.s.visible = beams[k].visible = false; continue; }
       // The hole shows its shadow instead of a nucleus.
       w.vis += ((w.mt > 0 && w !== holeWell ? 1 : 0) - w.vis) * (1 - Math.exp(-dt / 0.22));
@@ -1709,46 +1758,48 @@ async function start() {
       const grow = w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
       beams[k].visible = w.kind === 'pulsar' && !w.hole && w.vis > 0.01;
       w.flash = (w.flash || 0) * Math.exp(-dt / 0.4);
-      if (w.kind === 'star' || w.kind === 'nova') {
+      // A hole that is not the main one draws as a plain well core.
+      const look = w.hole ? 'well' : w.kind;
+      if (look === 'star' || look === 'nova') {
         // A supernova swells and shudders as its fuse burns down.
-        const due = w.kind === 'nova' ? clamp(1 - (w.fuse - simT) / NOVA_FUSE) : 0;
+        const due = look === 'nova' ? clamp(1 - (w.fuse - simT) / NOVA_FUSE) : 0;
         dot.size.value = (18 + 8 * Math.sqrt(w.m / SEED_M)) * grow * (1 + due * (0.3 + 0.12 * Math.sin(simT * 14)));
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 4 + 4 * due;
-      } else if (w.kind === 'giant') {
+      } else if (look === 'giant') {
         // A red giant swells and throbs slowly before it sheds.
         const due = clamp(1 - (w.fuse - simT) / GIANT_FUSE);
         dot.size.value = (42 + 22 * due) * grow * (1 + 0.06 * due * Math.sin(simT * 3));
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 3 + 2 * due;
-      } else if (w.kind === 'dwarf') {
+      } else if (look === 'dwarf') {
         dot.size.value = 7 * grow * (1 + 3 * w.flash);
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 6 + 20 * w.flash;
-      } else if (w.kind === 'nebula') {
+      } else if (look === 'nebula') {
         // The cloud thins as its stars are born.
         dot.size.value = 10 * grow;
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 1.5;
-      } else if (w.kind === 'comet') {
+      } else if (look === 'comet') {
         dot.size.value = 7 * grow;
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 5;
-      } else if (w.kind === 'magnetar') {
+      } else if (look === 'magnetar') {
         // A magnetar flares in sharp bursts as its crust quakes.
         const quake = Math.max(0, Math.sin(simT * 2.3 + w.ph) * Math.sin(simT * 0.7 + w.th)) ** 16;
         dot.size.value = 9 * grow * (1 + 1.5 * quake);
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 4 + 24 * quake;
-      } else if (w.kind === 'worm') {
+      } else if (look === 'worm') {
         dot.size.value = 15 * grow * (1 + 0.08 * Math.sin(simT * 3 + w.ph));
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 3;
-      } else if (w.kind === 'white') {
+      } else if (look === 'white') {
         dot.size.value = 16 * grow;
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 5;
-      } else if (w.kind === 'pulsar') {
+      } else if (look === 'pulsar') {
         // The core flashes as a beam sweeps past the camera.
         const face = Math.abs(Math.cos(w.th) * Math.sin(az) + Math.sin(w.th) * Math.cos(az));
         dot.size.value = 6 * grow * (1 + 4 * w.flash);
