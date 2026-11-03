@@ -121,7 +121,7 @@ main { display: grid; gap: 14px; min-width: 0; }
     </div>
   </header>
   <main>
-    <div class="stage" id="stage" tabindex="0" role="application" aria-label="An optical table with a white light, two prisms, a lens and a mirror. Drag a piece to move it; drag its ring or Shift-drag to turn it. Tab picks a piece, arrow keys move it, Q and E turn it.">
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="An optical table with a white light, two prisms, a lens and a mirror. Drag a piece to move it, drag its ring or Shift-drag to turn it; Tab picks a piece, arrow keys move it, Q and E turn it.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Prism needs canvas drawing, which this browser has turned off.</p>
     </div>
@@ -195,7 +195,8 @@ const NK = 24, L0 = 0.405, L1 = 0.69, CA = 1.5, CB = 0.028;
 const LAM = Float64Array.from({ length: NK }, (_, k) => L0 + ((L1 - L0) * k) / (NK - 1));
 const NI = LAM.map(l => CA + CB / (l * l));
 const NW = CA + CB / 0.55 ** 2;
-// COL holds each wavelength's sRGB colour; the last entry is white.
+// COL holds one sRGB colour per wavelength.
+// The last entry is white.
 const COL = [], CORE = [];
 {
   const g = (x, m, s1, s2) => { const t = (x - m) / (x < m ? s1 : s2); return Math.exp(-0.5 * t * t); };
@@ -381,7 +382,8 @@ function fresnel(n1, n2, ci) {
   const rs = (n1 * ci - n2 * ct) / (n1 * ci + n2 * ct), rp = (n2 * ci - n1 * ct) / (n2 * ci + n1 * ct);
   return 0.5 * (rs * rs + rp * rp);
 }
-// Snell's law with Fresnel loss; past the critical angle, light reflects fully.
+// Light refracts by Snell's law and loses a Fresnel share.
+// Past the critical angle, light reflects fully.
 function bend(hx, hy, dx, dy, nx, ny, ci, enter, k, I, d, prim, part, fam, sig, code) {
   const n = NI[k], eta = enter ? 1 / n : n, st2 = eta * eta * (1 - ci * ci);
   const rx = dx + 2 * ci * nx, ry = dy + 2 * ci * ny;
@@ -458,12 +460,12 @@ const SPR = COL.map(c => {
   x.fillRect(0, 0, 64, 64);
   return s;
 });
-// Stroke styles per colour, alpha step and medium.
+// Each colour gets a stroke style per alpha step and medium.
 const NB = 12, STY = { glow: [], mid: [], core: [] }, SHEET = [], SHEETG = [];
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 for (let ci = 0; ci <= NK; ci++) {
   // One ray of colour carries a slice of white, so it draws fainter.
-  const w = ci === WHITE ? [0.5, 0.3, 1] : [0.12, 0.08, 0.4];
+  const w = ci === WHITE ? [0.5, 0.3, 1] : [0.12, 0.08, 0.32];
   for (const k of ['glow', 'mid', 'core']) STY[k][ci] = [];
   for (let b = 0; b <= NB; b++) for (let ins = 0; ins < 2; ins++) {
     const a = b / NB, j = b * 2 + ins, g = ins ? 1.5 : 1;
@@ -481,7 +483,7 @@ for (let k = 0; k < NK - 1; k++) {
   }
 }
 const TINT = [css(0.66, 0.08, 212, 0.16), css(0.5, 0.07, 232, 0.09), css(0.4, 0.08, 262, 0.13)];
-const RIMIN = css(0.72, 0.09, 215, 0.035);
+const RIMIN = css(0.72, 0.09, 215, 0.03);
 const FOC = a => `rgba(${rgb(0.84, 0.13, 205).join(',')},${a})`;
 const EDGE = rgb(0.95, 0.045, 205);
 const edge = a => `rgba(${EDGE.join(',')},${a})`;
@@ -496,7 +498,7 @@ function buildTable() {
   g.addColorStop(1, css(0.105, 0.03, 268));
   c.fillStyle = g;
   c.fillRect(0, 0, w, h);
-  // A faint grid is etched into the top, centred on the table.
+  // A faint etched grid centres on the table.
   const step = S / 14, px = 1 / pr, ox = (W / 2) % step, oy = (H / 2) % step;
   const snap = v => (Math.round(v * pr) + 0.5) / pr;
   c.setTransform(pr, 0, 0, pr, 0, 0);
@@ -554,7 +556,7 @@ function buildDust() {
   c.globalCompositeOperation = 'source-over';
   c.imageSmoothingEnabled = true;
   c.drawImage(t, 0, 0, w, h);
-  const R = rng(20261102), n = Math.round((w * h) / 70), sz = Math.max(1, w / W);
+  const R = rng(20261102), n = Math.round((w * h) / 120), sz = Math.max(1, w / W);
   c.globalCompositeOperation = 'lighter';
   for (let b = 0; b < 6; b++) {
     const v = Math.round(255 * (0.18 + 0.16 * b));
@@ -660,8 +662,8 @@ function body(p, i) {
   c.clip();
   c.globalCompositeOperation = 'lighter';
   c.strokeStyle = RIMIN;
-  for (const w of [0.09, 0.055, 0.025]) {
-    c.lineWidth = w * S;
+  for (const w of [0.34, 0.2, 0.09]) {
+    c.lineWidth = w * p.r * (p.kind === 'lens' ? 0.8 : 1);
     c.stroke();
   }
   const big = 0.17 * S;
@@ -745,13 +747,22 @@ function rims(p) {
   c.stroke();
   c.restore();
 }
+// Corner radii run clockwise from the top left.
+function rrect(q, x, y, w, h, [a, b, c, d]) {
+  q.moveTo(x + a, y);
+  q.arcTo(x + w, y, x + w, y + h, b);
+  q.arcTo(x + w, y + h, x, y + h, c);
+  q.arcTo(x, y + h, x, y, d);
+  q.arcTo(x, y, x + w, y, a);
+  q.closePath();
+}
 function drawSource(p) {
   const c = ctx, g = p.g, hw = g.hw, hh = g.hh, co = Math.cos(p.rot), si = Math.sin(p.rot);
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
   c.setTransform(pr * co, pr * si, -pr * si, pr * co, pr * p.x, pr * p.y);
   const rr = hh * 0.42, path = new Path2D();
-  path.roundRect(-hw, -hh, hw * 2, hh * 2, rr);
+  rrect(path, -hw, -hh, hw * 2, hh * 2, [rr, rr, rr, rr]);
   const gr = c.createLinearGradient(0, -hh, 0, hh);
   gr.addColorStop(0, css(0.4, 0.02, 255));
   gr.addColorStop(0.18, css(0.29, 0.018, 260));
@@ -759,7 +770,7 @@ function drawSource(p) {
   gr.addColorStop(1, css(0.13, 0.012, 266));
   c.fillStyle = gr;
   c.fill(path);
-  // Fins at the back and a bezel at the front.
+  // The housing has fins at the back and a bezel at the front.
   c.lineWidth = 1;
   c.strokeStyle = css(0.1, 0.012, 266, 0.9);
   c.beginPath();
@@ -774,9 +785,9 @@ function drawSource(p) {
   bz.addColorStop(0.5, css(0.36, 0.02, 255));
   bz.addColorStop(1, css(0.22, 0.02, 262));
   c.fillStyle = bz;
-  c.beginPath();
-  c.roundRect(hw * 0.5, -hh, hw * 0.5, hh * 2, [0, rr, rr, 0]);
-  c.fill();
+  const bez = new Path2D();
+  rrect(bez, hw * 0.5, -hh, hw * 0.5, hh * 2, [0, rr, rr, 0]);
+  c.fill(bez);
   c.strokeStyle = css(0.82, 0.03, 235, 0.3);
   c.stroke(path);
   c.fillStyle = css(0.12, 0.01, 265);
@@ -830,7 +841,7 @@ function ring(p) {
 }
 function beams() {
   const c = ctx, ws = clamp(S / 600, 0.75, 1.25);
-  // Glow buffer at a third of the resolution.
+  // The glow buffer runs at a third of the resolution.
   gX.setTransform(1, 0, 0, 1, 0, 0);
   gX.globalCompositeOperation = 'source-over';
   gX.fillStyle = '#000';
@@ -850,7 +861,7 @@ function beams() {
   hzX.drawImage(dustC, 0, 0);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'lighter';
-  c.globalAlpha = 1;
+  c.globalAlpha = 0.75;
   c.drawImage(hzC, 0, 0, cw, ch);
   c.globalAlpha = 0.55;
   c.drawImage(glowC, 0, 0, cw, ch);
@@ -865,17 +876,17 @@ function beams() {
   c.lineWidth = 1.25 * ws;
   strokeAll(c, STY.core);
   // Light that reaches the rim paints a soft band there.
-  const lb = 0.034 * S, db = 0.15 * S, dc = 0.012 * S;
+  const lb = 0.13 * S, db = 0.07 * S, lc = 0.075 * S, dc = 0.007 * S;
   for (let n = 0; n < nEd; n++) {
     const o = n * 5, k = EDG[o + 3], a = EDG[o + 4] ** 0.8 * (k < 0 ? 1 : 0.28);
     if (a < 0.015) continue;
     const s = EDG[o + 2], x = EDG[o], y = EDG[o + 1], spr = SPR[k < 0 ? WHITE : k];
     const tx = s & 1 ? 0 : 1, ty = s & 1 ? 1 : 0, ix = s === 3 ? 1 : s === 1 ? -1 : 0, iy = s === 0 ? 1 : s === 2 ? -1 : 0;
     c.setTransform(pr * tx, pr * ty, pr * ix, pr * iy, pr * x, pr * y);
-    c.globalAlpha = a * 0.3;
+    c.globalAlpha = clamp(a * 0.5);
     c.drawImage(spr, -lb, -db, lb * 2, db * 2);
-    c.globalAlpha = a * 0.85;
-    c.drawImage(spr, -lb * 0.7, -dc, lb * 1.4, dc * 2);
+    c.globalAlpha = clamp(a * 2.2);
+    c.drawImage(spr, -lc, -dc, lc * 2, dc * 2);
   }
   c.setTransform(pr, 0, 0, pr, 0, 0);
   const r0 = 0.02 * S;
@@ -1281,7 +1292,7 @@ function fit() {
   if (!w || !h) return;
   rect = null;
   const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
-  const nw = Math.round(w * p), nh = Math.round(h * p), t = w / h < 1.2;
+  const nw = Math.floor(w * p), nh = Math.floor(h * p), t = w / h < 1.2;
   if (t !== tall) { tall = t; if (pristine) applyLayout(); }
   if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
   if (nw !== cw || nh !== ch || !bgC.width) {
