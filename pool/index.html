@@ -13,8 +13,9 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Caustic pool: sunlit water seen from above. */
+/* Caustic pool: thick water seen from above, by day or by night. */
 :root { --stage: oklch(0.5 0.08 215); }
+:root[data-time="night"] { --stage: oklch(0.22 0.05 232); }
 /* On the water the fail line keeps a pale tone. */
 .fail { color: oklch(0.92 0.02 210); }
 .stage canvas {
@@ -22,6 +23,8 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
+/* Each chip carries a small solid stencil of its thing. */
+.chip .ic { width: 15px; height: 15px; flex: none; fill: currentColor; }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
@@ -33,18 +36,24 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A sunlit pool seen from above. Tap to drop a stone and drag to trail a finger through the water. Space splashes, R toggles rain, and arrow keys draw a wake.">
+    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. Tap to drop a ball, an anvil or a kettlebell, or drag and let go to throw it. Space tosses one in, N switches day and night, R toggles rain and C clears the pool.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Caustic pool needs WebGL 2 with float textures, which this browser lacks.</p>
     </div>
     <div class="bar">
+      <div class="choices" id="things" role="group" aria-label="What to throw">
+        <button class="chip" type="button" data-value="ball" aria-pressed="true" aria-keyshortcuts="1"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/></svg>Ball</button>
+        <button class="chip" type="button" data-value="anvil" aria-pressed="false" aria-keyshortcuts="2"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/></svg>Anvil</button>
+        <button class="chip" type="button" data-value="bell" aria-pressed="false" aria-keyshortcuts="3"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/></svg>Kettlebell</button>
+      </div>
       <div class="actions">
-        <button class="chip" id="rain" type="button" aria-keyshortcuts="R" aria-pressed="false">Rain</button>
+        <button class="chip" id="night" type="button" aria-keyshortcuts="N" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.2 1.6a6.6 6.6 0 1 0 4.4 9.9A5.4 5.4 0 0 1 10.2 1.6Z"/></svg>Night</button>
+        <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
-        <div><dt>Drag</dt><dd>wake</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>splash</dd></div>
+        <div><dt><span class="fine">Drag</span><span class="touch">Flick</span></dt><dd>throw</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>toss</dd></div>
         <div class="fine"><dt><kbd>R</kbd></dt><dd>rain</dd></div>
       </dl>
     </div>
@@ -53,10 +62,10 @@
 </div>
 
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices } from '../shared/stim.js';
 initPage({ id: 'pool' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const rainB = document.getElementById('rain');
+const nightB = document.getElementById('night'), clearB = document.getElementById('clear');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
@@ -73,6 +82,11 @@ const rng = s => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 const norm3 = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+// Storage is optional; private windows can refuse it.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (err) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
+};
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
 function lin(L, C, h) {
@@ -113,15 +127,42 @@ const PAL = {
   PKB: linear(0.66, 0.17, 352),
   LF: linear(0.56, 0.15, 142),
   LF2: linear(0.74, 0.16, 120),
+  // Night: a cool moon, a deep sky and two warm-white pool lamps.
+  MOON: mul(linear(0.86, 0.035, 245), 0.24),
+  AMBN: mul(linear(0.5, 0.06, 262), 0.06),
+  NZEN: linear(0.12, 0.035, 270),
+  NHOR: linear(0.25, 0.05, 248),
+  MOONH: linear(0.5, 0.04, 240),
+  STAR: mul(linear(0.97, 0.03, 85), 9),
+  LAMPC: mul(linear(0.9, 0.11, 192), 3.4),
+  WGLOW: mul(linear(0.62, 0.13, 200), 0.95),
+  LENS: linear(0.88, 0.015, 220),
+  RIMC: linear(0.74, 0.01, 250),
+  // A beach ball: coral, white, cobalt, sun yellow and teal.
+  BAR: linear(0.64, 0.21, 30),
+  BAW: linear(0.96, 0.01, 95),
+  BAB: linear(0.5, 0.19, 262),
+  BAY: linear(0.88, 0.17, 95),
+  BAT: linear(0.72, 0.13, 182),
+  // Cast iron, a ground steel face and an orange enamel bell.
+  IRON: linear(0.26, 0.012, 255),
+  STEEL: linear(0.6, 0.014, 245),
+  BELL: linear(0.7, 0.19, 45),
 };
 const f5 = v => v.toFixed(5);
 const v3 = c => `vec3(${c.map(f5).join(', ')})`;
 
 /* ---------- the pool: world units, y up, z toward the viewer ---------- */
-const TILT = 27 * D2R, FOVY = 22 * D2R, PX = 1, HD = 0.045, DEPTH = 0.45, RIM = 0.075, WAVE_C = 0.62;
-let PZ = 0.62, NX = 256, NZ = 144, CELL = 2 / 256, SIMN = 256, aspect = 0, TILE = 2 / 28, SIM_HZ = 115, damp = 0.996;
+const TILT = 27 * D2R, FOVY = 22 * D2R, PX = 1, HD = 0.045, DEPTH = 0.45, RIM = 0.075, WAVE_C = 0.5;
+// Thick water: waves step slower, damp harder and lose fine detail first.
+const C2 = 1.5, NU = 0.16, DAMP_RATE = 1.1, CELL_SPEED = Math.sqrt(C2 / 4);
+let PZ = 0.62, NX = 256, NZ = 144, CELL = 2 / 256, SIMN = 256, aspect = 0, TILE = 2 / 28, SIM_HZ = 105, damp = 0.99;
 // The sun stands high over the far left corner.
+// At night the moon takes its place.
 const SUN_DIR = norm3([-0.42, 1, -0.55]);
+// Still water keeps a faint frozen relief.
+// The relief keeps caustics on the floor.
+const AMP0 = 0.6, SWELL_T = 2.7;
 function refract(I, N, eta) {
   const d = N[0] * I[0] + N[1] * I[1] + N[2] * I[2], k = 1 - eta * eta * (1 - d * d);
   return I.map((v, i) => v * eta - N[i] * (eta * d + Math.sqrt(k)));
@@ -155,7 +196,7 @@ function fitCam(A, pz) {
   place(A, dist, tz);
   return { w: -n[0], h: (f[1] - n[1]) / 2 };
 }
-const petals = [];
+const petals = [], objs = [];
 let petalScale = 1;
 function layoutPool(A) {
   aspect = A;
@@ -170,8 +211,8 @@ function layoutPool(A) {
   NZ = Math.round((SIMN * pz) / long);
   PZ = (PX * NZ) / NX;
   CELL = (2 * PX) / NX;
-  SIM_HZ = WAVE_C / (0.689 * CELL);
-  damp = Math.exp(-0.42 / SIM_HZ);
+  SIM_HZ = WAVE_C / (CELL_SPEED * CELL);
+  damp = Math.exp(-DAMP_RATE / SIM_HZ);
   TILE = (2 * PX) / Math.round((2 * PX) / 0.072);
   petalScale = PZ > PX ? 1.3 : 1;
   fitCam(A, PZ);
@@ -180,83 +221,44 @@ function layoutPool(A) {
     p.L = p.L0 * petalScale;
     p.Wd = p.W0 * petalScale;
   }
+  for (const o of objs) o.z = clamp((o.z * PZ) / oz, -PZ + 0.1, PZ - 0.1);
 }
 
-/* ---------- the swell: a few slow crossing waves ---------- */
+/* ---------- the frozen relief: a few long, shallow crossing waves ---------- */
 const WAVES = [[14, 0.15, 0.036], [79, 0.115, 0.03], [141, 0.17, 0.04], [205, 0.13, 0.033], [262, 0.1, 0.027], [326, 0.16, 0.038]]
   .map(([deg, lam, c], i) => {
     const k = TAU / lam;
     return { dx: Math.cos(deg * D2R), dz: Math.sin(deg * D2R), k, w: k * c, amp: 2.1 / (k * k), ph: i * 2.399 };
   });
-function swellGrad(x, z, t) {
-  let gx = 0, gz = 0;
-  for (const v of WAVES) {
-    const c = v.amp * v.k * Math.cos(v.k * (v.dx * x + v.dz * z) - v.w * t + v.ph);
-    gx += c * v.dx;
-    gz += c * v.dz;
-  }
-  return [gx, gz];
-}
 
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 14, LEAD = 0.004;
-let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, plopNext = 0, tickNext = 0, slapNext = 0;
-let lapG = null, patG = null, swG = null, swF = null;
+/* ---------- sound: synthesised through the shell's audio kit ---------- */
+const MAXV = 16, LEAD = 0.004;
+const GESTURE_KEYS = new Set([' ', 'Enter', 'r', 'R', 'n', 'N', 'c', 'C', '1', '2', '3', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const kit = audioKit({ gain: 0.55, keys: GESTURE_KEYS });
+let voices = 0, plopNext = 0, tickNext = 0, slapNext = 0, gurgleNext = 0, lapG = null, patG = null;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Busy moments soften each voice; the compressor catches the rest.
 const level = () => 1 / (1 + 0.07 * voices);
-
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.55;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    // One second of white noise feeds every burst.
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    bed();
-  }
-  // Off screen, the pool stays silent until it returns.
-  if (!running) { ac.suspend()?.catch(() => {}); return; }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
-}
-// A context still waking queues sounds for a moment.
+// The beds start with the first live context.
 function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+  const a = kit.live();
+  if (a && !lapG) bed(a);
+  return a;
 }
 function track(src, ...tails) {
   voices++;
   src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
 }
-const GESTURE_KEYS = new Set(['r', 'R', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
-}
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
-
 // Each voice pans with its place on the water.
 function bus(a, x) {
   const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
   if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.7;
-  p.connect(out);
+  p.connect(kit.out);
   return p;
 }
 function burst(a, dst, t, type, f, q, g, tau, len) {
   const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
-  src.buffer = noise;
+  src.buffer = kit.noise;
   fl.type = type;
   fl.frequency.value = f;
   fl.Q.value = q;
@@ -265,8 +267,21 @@ function burst(a, dst, t, type, f, q, g, tau, len) {
   ng.gain.setTargetAtTime(0, t + 0.004, tau);
   src.connect(fl).connect(ng).connect(dst);
   src.onended = () => { fl.disconnect(); ng.disconnect(); };
-  src.start(t, Math.random() * 0.4, len);
+  src.start(t, Math.random() * 0.3, len);
   return fl;
+}
+function tone(a, dst, t, f0, f1, ramp, g, tau, len, type = 'sine') {
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + ramp);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.004);
+  og.gain.setTargetAtTime(0, t + 0.006, tau);
+  o.connect(og).connect(dst);
+  o.start(t);
+  o.stop(t + len);
+  return { o, og };
 }
 // A plop: a bubble's rising ring, with spray for bigger drops.
 // Bigger drops ring lower and longer.
@@ -277,30 +292,25 @@ function plop(x, s) {
   if (t < plopNext && s < 0.9) return;
   plopNext = t + 0.035;
   const g = level() * lerp(0.45, 1, s) * jit(0.12), d = bus(a, x);
-  const f0 = lerp(1150, 280, s) * jit(0.07), o = a.createOscillator(), og = a.createGain();
-  o.frequency.setValueAtTime(f0, t);
-  o.frequency.exponentialRampToValueAtTime(f0 * lerp(2.3, 1.7, s), t + lerp(0.045, 0.1, s));
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.34 * g, t + 0.004);
-  og.gain.setTargetAtTime(0, t + 0.006, lerp(0.024, 0.065, s));
-  o.connect(og).connect(d);
-  o.start(t);
-  o.stop(t + 0.5);
+  const f0 = lerp(1150, 280, s) * jit(0.07);
+  const { o, og } = tone(a, d, t, f0, f0 * lerp(2.3, 1.7, s), lerp(0.045, 0.1, s), 0.34 * g, lerp(0.024, 0.065, s), 0.5);
   if (s > 0.3) burst(a, d, t, 'bandpass', lerp(2600, 1300, s) * jit(0.1), 0.8, 0.07 * g * s, 0.03 + 0.08 * s, 0.5);
-  if (s > 0.8) {
-    // A heavy splash adds a low thump.
-    const th = a.createOscillator(), tg = a.createGain();
-    th.frequency.setValueAtTime(130 * jit(0.05), t);
-    th.frequency.exponentialRampToValueAtTime(55, t + 0.15);
-    tg.gain.setValueAtTime(0, t);
-    tg.gain.linearRampToValueAtTime(0.3 * g, t + 0.006);
-    tg.gain.setTargetAtTime(0, t + 0.01, 0.06);
-    th.connect(tg).connect(d);
-    th.start(t);
-    th.stop(t + 0.5);
-    th.onended = () => tg.disconnect();
-  }
   track(o, og, d);
+}
+// A heavy thing: a wash, a deep thump and one big bubble.
+// The size of the sploosh follows the splash power.
+function sploosh(x, S) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, k = clamp(S / 1.5), g = level() * lerp(0.6, 1.1, k), d = bus(a, x);
+  const fl = burst(a, d, t, 'lowpass', 2800 * jit(0.08), 0.7, 0.5 * g, 0.12 + 0.16 * k, 0.7);
+  fl.frequency.setValueAtTime(2800 * jit(0.08), t);
+  fl.frequency.exponentialRampToValueAtTime(lerp(520, 300, k), t + 0.3 + 0.25 * k);
+  const th = tone(a, d, t, lerp(130, 80, k) * jit(0.05), 36, 0.3, 0.62 * g, 0.08 + 0.05 * k, 0.7);
+  th.o.onended = () => th.og.disconnect();
+  const f0 = lerp(380, 170, k) * jit(0.06);
+  const bb = tone(a, d, t + 0.05 + 0.04 * k, f0, f0 * 1.9, 0.16, 0.22 * g, 0.06, 0.5);
+  track(bb.o, bb.og, d);
 }
 // A raindrop or a falling droplet: a tiny high plink.
 function tick(x, s = Math.random()) {
@@ -309,17 +319,46 @@ function tick(x, s = Math.random()) {
   const t = a.currentTime + LEAD;
   if (t < tickNext) return;
   tickNext = t + rand(0.035, 0.09);
-  const g = level() * lerp(0.3, 0.6, s) * jit(0.2), d = bus(a, x);
-  const f = lerp(2700, 1500, s) * jit(0.08), o = a.createOscillator(), og = a.createGain();
-  o.frequency.setValueAtTime(f, t);
-  o.frequency.exponentialRampToValueAtTime(f * 1.8, t + 0.025);
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.07 * g, t + 0.002);
-  og.gain.setTargetAtTime(0, t + 0.003, 0.012);
-  o.connect(og).connect(d);
-  o.start(t);
-  o.stop(t + 0.12);
+  const g = level() * lerp(0.3, 0.6, s) * jit(0.2), d = bus(a, x), f = lerp(2700, 1500, s) * jit(0.08);
+  const { o, og } = tone(a, d, t, f, f * 1.8, 0.025, 0.07 * g, 0.012, 0.12);
   track(o, og, d);
+}
+// A bubble lets go under water: a short low chirp.
+function gurgle(x, s = Math.random()) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < gurgleNext) return;
+  gurgleNext = t + rand(0.045, 0.12);
+  const g = level() * jit(0.25), d = bus(a, x), f = lerp(820, 300, s) * jit(0.12);
+  const { o, og } = tone(a, d, t, f, f * lerp(1.7, 1.4, s), lerp(0.04, 0.07, s), 0.13 * g, lerp(0.018, 0.04, s), 0.25);
+  track(o, og, d);
+}
+// Iron meets tile under water: a muffled ring over a thud.
+// Each shape rings with its own inharmonic partials.
+const RINGS = {
+  1: { f: 420, p: [[1, 1, 0.45], [2.41, 0.62, 0.3], [3.93, 0.42, 0.2], [5.62, 0.28, 0.13]] },
+  2: { f: 300, p: [[1, 1, 0.3], [2.72, 0.5, 0.17], [5.18, 0.3, 0.1]] },
+};
+function clank(x, v, type) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, e = clamp(v / 0.5, 0.15, 1), g = level() * e, d = bus(a, x);
+  const lp = a.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 1400 + 1000 * e;
+  lp.Q.value = 0.6;
+  lp.connect(d);
+  const R = RINGS[type] || RINGS[1];
+  let first = null;
+  R.p.forEach(([r, amp, tau]) => {
+    const f = R.f * r * jit(0.012), v0 = tone(a, lp, t, f, f * 0.995, 0.3, 0.2 * amp * g, tau, tau * 7, 'triangle');
+    if (first) v0.o.onended = () => v0.og.disconnect();
+    else first = v0;
+  });
+  const th = tone(a, d, t, 110, 42, 0.12, 0.45 * g, 0.05, 0.4);
+  th.o.onended = () => th.og.disconnect();
+  track(first.o, first.og, lp, d);
 }
 // Water slaps a wall: a short wash sweeping down.
 function slap(x, e) {
@@ -327,10 +366,10 @@ function slap(x, e) {
   if (!a || voices >= MAXV) return;
   const t = a.currentTime + LEAD;
   if (t < slapNext) return;
-  slapNext = t + rand(0.25, 0.7);
-  const d = bus(a, x), fl = burst(a, d, t, 'bandpass', 900 * jit(0.15), 1.4, 0.09 * e * level() * jit(0.2), 0.07, 0.4);
-  fl.frequency.setValueAtTime(950 * jit(0.1), t);
-  fl.frequency.exponentialRampToValueAtTime(280, t + 0.16);
+  slapNext = t + rand(0.3, 0.8);
+  const d = bus(a, x), fl = burst(a, d, t, 'bandpass', 800 * jit(0.15), 1.4, 0.08 * e * level() * jit(0.2), 0.08, 0.4);
+  fl.frequency.setValueAtTime(820 * jit(0.1), t);
+  fl.frequency.exponentialRampToValueAtTime(240, t + 0.18);
   setTimeout(() => d.disconnect(), 700);
 }
 function norm(d, rms) {
@@ -339,9 +378,9 @@ function norm(d, rms) {
   const k = rms / Math.sqrt(s / d.length || 1);
   for (let i = 0; i < d.length; i++) d[i] *= k;
 }
-// Three quiet beds: lapping, rain hiss and the finger's swish.
-function bed() {
-  const sr = ac.sampleRate, len = Math.round(sr * 5.3), brown = ac.createBuffer(2, len, sr);
+// Two quiet beds: slow lapping and rain hiss.
+function bed(a) {
+  const sr = a.sampleRate, len = Math.round(sr * 5.3), brown = a.createBuffer(2, len, sr);
   for (let c = 0; c < 2; c++) {
     const d = brown.getChannelData(c);
     let b = 0;
@@ -349,7 +388,7 @@ function bed() {
     norm(d, 0.25);
   }
   const loop = (buf, rate, off) => {
-    const s = ac.createBufferSource();
+    const s = a.createBufferSource();
     s.buffer = buf;
     s.loop = true;
     s.playbackRate.value = rate;
@@ -357,52 +396,49 @@ function bed() {
     return s;
   };
   const filter = (type, f, q) => {
-    const b = ac.createBiquadFilter();
+    const b = a.createBiquadFilter();
     b.type = type;
     b.frequency.value = f;
     b.Q.value = q;
     return b;
   };
-  const gain = v => { const g = ac.createGain(); g.gain.value = v; return g; };
+  const gain = v => { const g = a.createGain(); g.gain.value = v; return g; };
   const lfo = (f, depth, param) => {
-    const o = ac.createOscillator();
+    const o = a.createOscillator();
     o.frequency.value = f;
     o.connect(gain(depth)).connect(param);
     o.start();
   };
-  const lapBand = filter('bandpass', 420, 0.9), lapAm = gain(0.65);
+  // Thick water laps low and slow.
+  const lapBand = filter('bandpass', 340, 0.9), lapAm = gain(0.65);
   lapG = gain(0);
-  loop(brown, 1, 0).connect(lapBand).connect(filter('lowpass', 1100, 0.5)).connect(lapAm).connect(lapG).connect(out);
-  // Slow wobbles turn the noise into lapping.
-  lfo(0.23, 170, lapBand.frequency);
-  lfo(0.61, 0.32, lapAm.gain);
-  lfo(0.37, 0.2, lapAm.gain);
+  loop(brown, 0.85, 0).connect(lapBand).connect(filter('lowpass', 900, 0.5)).connect(lapAm).connect(lapG).connect(kit.out);
+  lfo(0.17, 120, lapBand.frequency);
+  lfo(0.43, 0.32, lapAm.gain);
   patG = gain(0);
-  loop(noise, 0.9, 0.3).connect(filter('highpass', 3200, 0.6)).connect(patG).connect(out);
-  swG = gain(0);
-  swF = filter('bandpass', 800, 0.8);
-  loop(noise, 1.1, 0.6).connect(swF).connect(swG).connect(out);
+  loop(kit.noise, 0.9, 0.3).connect(filter('highpass', 3200, 0.6)).connect(patG).connect(kit.out);
 }
-function bedLevel(e, finger) {
-  if (!lapG || !live()) return;
-  const t = ac.currentTime;
+function bedLevel(e) {
+  const a = live();
+  if (!a || !lapG) return;
+  const t = a.currentTime;
   lapG.gain.setTargetAtTime(clamp(e * 5, 0, 0.45), t, 0.25);
   patG.gain.setTargetAtTime(raining ? 0.03 : 0, t, 0.5);
-  swG.gain.setTargetAtTime(clamp(finger * 0.08, 0, 0.14), t, 0.06);
-  swF.frequency.setTargetAtTime(600 + 450 * clamp(finger, 0, 2), t, 0.1);
 }
 
 /* ---------- shaders ---------- */
-const NPM = 8;
+const NPM = 8, NOB = 10;
 const CONSTS = `
 ${Object.entries(PAL).map(([k, c]) => `const vec3 ${k} = ${v3(c)};`).join('\n')}
 const vec3 SIG = vec3(0.85, 0.19, 0.11), SIGS = vec3(0.45);
 const vec3 PETAL_T = vec3(0.55, 0.3, 0.36), LEAF_T = vec3(0.12, 0.2, 0.06);
-const float BAND = 0.1, WLH = 0.075, GW = 0.06, COPE_W = 0.07, MEN = 0.06, MEN_L = 0.02, VSW = 0.55, EXPO = 0.8;`;
+const float BAND = 0.1, WLH = 0.075, GW = 0.06, COPE_W = 0.07, MEN = 0.06, MEN_L = 0.02, VSW = 0.55, EXPO = 0.8, EXPON = 1.0;
+const float LAMPX = 0.0, LAMPY = -0.19, LENS_E = 2.6, BALL_R = 0.058;
+const int NPM = ${NPM}, NOB = ${NOB};`;
 const SWELL = `
 const vec4 WV[6] = vec4[6](${WAVES.map(v => `vec4(${f5(v.dx)}, ${f5(v.dz)}, ${f5(v.k)}, ${f5(v.w)})`).join(', ')});
 const vec2 WA[6] = vec2[6](${WAVES.map(v => `vec2(${f5(v.amp)}, ${f5(v.ph)})`).join(', ')});
-// Height and slope of the ambient swell.
+// Height and slope of the frozen relief.
 vec3 swell(vec2 p) {
   vec3 s = vec3(0.0);
   for (int i = 0; i < 6; i++) {
@@ -455,6 +491,111 @@ vec2 meniscus(vec2 p, int k, float s) {
   float x = s / MEN_L;
   return -MEN * x * exp(1.0 - x) * n;
 }`;
+// Thrown things: a ball, an anvil and a kettlebell as distance fields.
+// A holds centre and scale; B holds shape and bound radius.
+// R turns local points into world points.
+const OBJ_U = `uniform vec4 uOA[${NOB}], uOB[${NOB}];
+uniform mat3 uOR[${NOB}];
+uniform int uNO;`;
+const OBJ_FN = `
+float sdBox(vec3 p, vec3 b, float r) {
+  vec3 q = abs(p) - b + r;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
+}
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+// An anvil: foot, waist, flat face and a horn toward +x.
+// Two holes cut the face: a square one and a round one.
+float sdAnvil(vec3 p) {
+  float foot = sdBox(p - vec3(0.0, -0.046, 0.0), vec3(0.06, 0.01, 0.042), 0.003);
+  float waist = sdBox(p - vec3(0.0, -0.012, 0.0), vec3(0.034, 0.026, 0.022), 0.004);
+  float face = sdBox(p - vec3(-0.006, 0.031, 0.0), vec3(0.068, 0.017, 0.034), 0.003);
+  vec3 h = p - vec3(0.055, 0.0, 0.0);
+  float t = clamp(h.x / 0.095, 0.0, 1.0);
+  float horn = (length(vec2(h.y - mix(0.03, 0.04, t), h.z)) - mix(0.03, 0.002, t)) * 0.92;
+  horn = max(horn, max(-h.x, h.x - 0.095));
+  horn = max(horn, p.y - 0.048);
+  float d = smin(smin(foot, waist, 0.008), face, 0.006);
+  d = smin(d, horn, 0.005);
+  d = max(d, -sdBox(p - vec3(-0.05, 0.04, 0.0), vec3(0.0065, 0.02, 0.0065), 0.0));
+  d = max(d, -max(length(p.xz - vec2(-0.03, 0.0)) - 0.0045, 0.014 - p.y));
+  return d;
+}
+// A kettlebell: a ball with a flat base and an arched handle.
+float sdBell(vec3 p) {
+  float body = max(length(p) - 0.05, -p.y - 0.04);
+  vec3 q = p - vec3(0.0, 0.05, 0.0);
+  float handle = length(vec2(length(q.xy) - 0.034, q.z)) - 0.0085;
+  return smin(body, handle, 0.01);
+}
+vec3 objLocal(int i, vec3 p) { return ((p - uOA[i].xyz) * uOR[i]) / uOA[i].w; }
+float objSd(int i, vec3 p) {
+  vec3 lp = objLocal(i, p);
+  float ty = uOB[i].x, d;
+  if (ty < 0.5) d = length(lp) - BALL_R;
+  else if (ty < 1.5) d = sdAnvil(lp);
+  else d = sdBell(lp);
+  return d * uOA[i].w;
+}
+vec3 objNormal(int i, vec3 p) {
+  const vec2 k = vec2(1.0, -1.0);
+  const float e = 0.0005;
+  return normalize(k.xyy * objSd(i, p + k.xyy * e) + k.yyx * objSd(i, p + k.yyx * e)
+    + k.yxy * objSd(i, p + k.yxy * e) + k.xxx * objSd(i, p + k.xxx * e));
+}
+// Marches each object inside its bound sphere and keeps the nearest.
+// cov is the pixel coverage, so silhouettes stay smooth.
+float traceObjs(vec3 ro, vec3 rd, float tmax, float pa, float t0, out int id, out float cov) {
+  float best = tmax;
+  id = -1;
+  cov = 0.0;
+  for (int i = 0; i < uNO; i++) {
+    vec4 A = uOA[i];
+    if (A.w < 0.01) continue;
+    float br = uOB[i].y * A.w;
+    vec3 oc = ro - A.xyz;
+    float b = dot(oc, rd), h = b * b - dot(oc, oc) + br * br;
+    if (h <= 0.0) continue;
+    h = sqrt(h);
+    float t = max(-b - h, 0.0), t1 = min(-b + h, best), c = 0.0, tc = t;
+    for (int k = 0; k < 80; k++) {
+      if (t > t1) break;
+      float d = objSd(i, ro + rd * t), px = pa * (t0 + t);
+      float e = 1.0 - d / px;
+      if (e > c) { c = e; tc = t; }
+      if (d < 0.25 * px) { c = 1.0; tc = t; break; }
+      t += max(d * 0.85, 0.2 * px);
+    }
+    c = clamp(c, 0.0, 1.0);
+    if (c > 0.0 && tc < best) { best = tc; id = i; cov = c; }
+  }
+  return best;
+}
+// Soft shadow: the ray grazes objects and darkens by its nearest pass.
+float shadowObjs(vec3 ro, vec3 rd, float tmax, float k) {
+  float res = 1.0;
+  for (int i = 0; i < uNO; i++) {
+    vec4 A = uOA[i];
+    if (A.w < 0.01) continue;
+    float br = uOB[i].y * A.w;
+    vec3 oc = ro - A.xyz;
+    float b = dot(oc, rd), h = b * b - dot(oc, oc) + br * br;
+    if (h <= 0.0) continue;
+    h = sqrt(h);
+    float t = max(-b - h, 0.002), t1 = min(-b + h, tmax);
+    for (int s = 0; s < 40; s++) {
+      if (t > t1) break;
+      float d = objSd(i, ro + rd * t);
+      res = min(res, k * d / t);
+      if (res < 0.001) return 0.0;
+      t += clamp(d, 0.002, 0.04);
+    }
+  }
+  res = clamp(res, 0.0, 1.0);
+  return res * res * (3.0 - 2.0 * res);
+}`;
 const NOISE = `
 float hash(vec2 p) {
   vec3 q = fract(p.xyx * 0.1031);
@@ -466,6 +607,9 @@ float vnoise(vec2 p) {
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }`;
+const TONE = `
+vec3 aces(vec3 x) { return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }`;
 const HEAD = `#version 300 es
 precision highp float;
 precision highp int;
@@ -476,6 +620,7 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 // One wave step: neighbours pull each cell.
+// Viscosity smooths the velocity field, so fine ripples die first.
 // Clamped edges reflect waves like walls.
 const SIM_FS = `${HEAD}
 uniform sampler2D uSim;
@@ -484,11 +629,11 @@ out vec4 o;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy), m = textureSize(uSim, 0) - 1;
   vec4 c = texelFetch(uSim, p, 0);
-  float s = texelFetch(uSim, clamp(p + ivec2(1, 0), ivec2(0), m), 0).x
-          + texelFetch(uSim, clamp(p - ivec2(1, 0), ivec2(0), m), 0).x
-          + texelFetch(uSim, clamp(p + ivec2(0, 1), ivec2(0), m), 0).x
-          + texelFetch(uSim, clamp(p - ivec2(0, 1), ivec2(0), m), 0).x;
-  float v = (c.y + (s * 0.25 - c.x) * 1.9) * uDamp;
+  vec2 s = texelFetch(uSim, clamp(p + ivec2(1, 0), ivec2(0), m), 0).xy
+         + texelFetch(uSim, clamp(p - ivec2(1, 0), ivec2(0), m), 0).xy
+         + texelFetch(uSim, clamp(p + ivec2(0, 1), ivec2(0), m), 0).xy
+         + texelFetch(uSim, clamp(p - ivec2(0, 1), ivec2(0), m), 0).xy;
+  float v = (c.y + (s.x * 0.25 - c.x) * ${C2.toFixed(3)} + (s.y * 0.25 - c.y) * ${NU.toFixed(3)}) * uDamp;
   o = vec4((c.x + v) * 0.99985, v, c.zw);
 }`;
 // Slopes go into B and A for the light passes.
@@ -526,17 +671,18 @@ void main() {
   for (int i = 0; i < uNS; i++) c.x += uSegK[i].y * (bump(w - uSeg[i].zw, uSegK[i].x) - bump(w - uSeg[i].xy, uSegK[i].x));
   o = c;
 }`;
-// Each petal's pixel reads the water under that petal.
+// Each petal's pixel and each object's pixel read the water under it.
 // The last pixel sums the wave energy.
 const PROBE_FS = `${HEAD}
 uniform sampler2D uSim;
 uniform vec4 uPool;
-uniform vec4 uPA[${NPM}];
-uniform int uNP;
+uniform vec4 uPA[${NPM}], uOA[${NOB}];
+uniform int uNP, uNO;
 out vec4 o;
 void main() {
   int i = int(gl_FragCoord.x);
-  if (i < uNP) { o = texture(uSim, uPA[i].xy / uPool.xy * 0.5 + 0.5); return; }
+  if (i < ${NPM}) { o = i < uNP ? texture(uSim, uPA[i].xy / uPool.xy * 0.5 + 0.5) : vec4(0.0); return; }
+  if (i < ${NPM + NOB}) { int j = i - ${NPM}; o = j < uNO ? texture(uSim, uOA[j].xz / uPool.xy * 0.5 + 0.5) : vec4(0.0); return; }
   vec2 n = vec2(textureSize(uSim, 0));
   vec3 e = vec3(0.0);
   for (int y = 0; y < 32; y++) {
@@ -594,29 +740,45 @@ void main() {
   o = vec4(vTint * min(a0 / max(a1, 1e-14), 12.0), 1.0);
 }`;
 // The view: one ray per pixel through deck, wall, water and tile.
+// The ray also meets the thrown things.
 const VIEW_FS = `${HEAD}
 uniform sampler2D uSim, uCaus;
 uniform vec2 uRes, uTan;
 uniform vec3 uCam, uFwd, uUp, uSun, uRl;
 uniform vec4 uPool;
-uniform float uT, uAmp, uTile, uSeed;
+uniform float uT, uAmp, uTile, uSeed, uNight;
 ${PETAL_U}
+${OBJ_U}
 out vec4 o;
 ${CONSTS}
+// Day and night set these once per pixel.
+vec3 gSun, gAmb;
+float gLamp;
 ${NOISE}
 ${SWELL}
 ${PETAL_FN}
+${OBJ_FN}
+${TONE}
 float sdiv(float a, float b) { return a / (abs(b) < 1e-6 ? 1e-6 : b); }
+float lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 float joint(float x, float w) {
   float d = abs(fract(x) - 0.5), fw = fwidth(x);
   return smoothstep(0.5 - w - fw, 0.5 - w + fw, d);
 }
-// A warm sky: peach at the horizon, clear blue overhead.
+// Day: peach at the horizon and clear blue overhead.
+// Night: deep blue, a moon halo and a few stars.
 vec3 sky(vec3 d) {
-  vec3 c = mix(HOR, ZEN, pow(clamp(d.y, 0.0, 1.0), 0.55));
-  return c + HALO * pow(max(dot(d, uSun), 0.0), 7.0) * 0.5;
+  float up = pow(clamp(d.y, 0.0, 1.0), 0.55);
+  vec3 day = mix(HOR, ZEN, up) + HALO * pow(max(dot(d, uSun), 0.0), 7.0) * 0.5;
+  if (uNight < 0.001) return day;
+  vec3 night = mix(NHOR, NZEN, up) + MOONH * pow(max(dot(d, uSun), 0.0), 24.0);
+  vec2 sp = d.xz / max(d.y, 0.08) * 60.0, id = floor(sp), f = fract(sp) - 0.5;
+  vec2 jt = vec2(hash(id + 3.1), hash(id + 7.7)) - 0.5;
+  float h = hash(id + 41.0);
+  night += STAR * step(0.972, h) * (0.4 + 1.6 * fract(h * 37.0)) * (1.0 - smoothstep(0.05, 0.11, length(f - jt * 0.6)));
+  return mix(day, night, uNight);
 }
-// Glazed tiles: face 0 is the floor and face 1 is a wall.
+// Glazed tiles: face 0 is the floor, face 1 a wall.
 vec3 tiles(vec2 fq, float face) {
   vec2 g = fq / uTile, id = floor(g), f = fract(g), fw = fwidth(g);
   vec2 cen = (id + 0.5) * uTile;
@@ -640,6 +802,7 @@ vec3 tiles(vec2 fq, float face) {
   return mix(res, avg, smoothstep(0.35, 0.8, max(fw.x, fw.y)));
 }
 // Pale travertine: coping stones round the edge, slabs beyond.
+// At night the lit water washes the coping nearest it.
 vec3 deck(vec3 Q, float e) {
   vec2 p = Q.xz;
   float n = 0.6 * vnoise(p * 6.0) + 0.4 * vnoise(p * 21.0);
@@ -653,13 +816,104 @@ vec3 deck(vec3 Q, float e) {
   c *= 1.0 - 0.3 * max(max(jc, jd), jr);
   // The rounded nose falls away toward the water.
   float nose = smoothstep(0.0, 0.03, e);
-  return c * (SUN * uSun.y * mix(0.35, 1.0, nose) + AMB * 0.8);
+  return c * (gSun * uSun.y * mix(0.35, 1.0, nose) + gAmb * 0.8 + WGLOW * gLamp * 0.22 * exp(-max(e, 0.0) / 0.07));
 }
 vec3 caustic(vec2 cp) {
   vec2 uv = cp / uPool.xy * 0.5 + 0.5;
   // The wall's shadow edge has a narrow penumbra.
   vec2 m = clamp((0.5 - abs(uv - 0.5)) * uPool.xy * 2.0 / 0.012, 0.0, 1.0);
   return texture(uCaus, uv).rgb * m.x * m.y;
+}
+// Sun or moon light reaches P under water, then air above.
+// Objects on either leg cast the shadow.
+float sunShadow(vec3 P) {
+  vec3 L = -uRl;
+  float ts = max(-P.y, 0.0) / L.y;
+  float s = shadowObjs(P, L, ts, 7.0);
+  if (s < 0.01) return 0.0;
+  return s * shadowObjs(P + L * ts, uSun, 1.2, 14.0);
+}
+// Two lamps sit in the end walls and face into the pool.
+float lampFall(vec3 P, float sz, out vec3 L, out float d) {
+  vec3 v = vec3(LAMPX, LAMPY, sz * uPool.y) - P;
+  d = length(v);
+  L = v / max(d, 1e-4);
+  float r = 0.16 + 0.24 * max(uPool.x, uPool.y);
+  // The far lamp shows; the near one is a dimmer fill.
+  return smoothstep(-0.1, 0.65, sz * L.z) / (1.0 + d * d / (r * r)) * (sz < 0.0 ? 1.0 : 0.55);
+}
+float lampGlow(vec3 P) {
+  vec3 L;
+  float d;
+  return lampFall(P, -1.0, L, d) + lampFall(P, 1.0, L, d);
+}
+// Lamp light breaks on the ripples, so caustics glow on tile.
+vec3 lampLight(vec3 P, vec3 N, float cz) {
+  if (gLamp < 0.001) return vec3(0.0);
+  vec3 L1, L2;
+  float d1, d2;
+  float a1 = lampFall(P, -1.0, L1, d1), a2 = lampFall(P, 1.0, L2, d2);
+  float l1 = a1 * (0.2 + 0.8 * max(dot(N, L1), 0.0)), l2 = a2 * (0.2 + 0.8 * max(dot(N, L2), 0.0));
+  // The nearer lamp casts the object shadows.
+  if (uNO > 0) {
+    if (a1 >= a2) l1 *= shadowObjs(P, L1, d1 - 0.06, 8.0);
+    else l2 *= shadowObjs(P, L2, d2 - 0.06, 8.0);
+  }
+  return LAMPC * gLamp * (l1 + l2) * mix(1.0, cz * 1.15, 0.8);
+}
+// Paint and finish for each thing, from its local point and normal.
+vec3 objMat(int i, vec3 lp, vec3 ln, out float gloss, out float spec) {
+  float ty = uOB[i].x;
+  if (ty < 0.5) {
+    // A beach ball: six painted gores and two white caps.
+    vec3 u = lp / BALL_R;
+    float a = (atan(u.z, u.x) / 6.2831853 + 0.5) * 6.0, id = floor(a);
+    vec3 c = id < 1.0 ? BAR : id < 2.0 ? BAW : id < 3.0 ? BAB : id < 4.0 ? BAY : id < 5.0 ? BAW : BAT;
+    float cap = smoothstep(0.885, 0.9, abs(u.y));
+    float cut = 1.0 - smoothstep(0.006, 0.014, abs(abs(u.y) - 0.872));
+    c = mix(c, BAW, cap) * (1.0 - 0.7 * cut);
+    gloss = 70.0;
+    spec = 0.45;
+    return c;
+  }
+  if (ty < 1.5) {
+    // Cast iron, with the face and horn top ground to bright steel.
+    float face = step(0.0465, lp.y) * smoothstep(0.75, 0.95, ln.y);
+    gloss = mix(22.0, 160.0, face);
+    spec = mix(0.25, 1.1, face);
+    return mix(IRON, STEEL, face);
+  }
+  // Orange enamel on the bell, bare iron on the handle and base.
+  float bare = max(step(0.0515, length(lp)) * step(0.02, lp.y), step(lp.y, -0.0392));
+  float groove = 1.0 - smoothstep(0.0012, 0.0026, abs(lp.y + 0.006));
+  gloss = mix(60.0, 26.0, bare);
+  spec = mix(0.5, 0.3, bare);
+  return mix(BELL, IRON, max(bare, groove * 0.85));
+}
+// Above the water a thing takes sun or moon and sky.
+// Below it takes caustics, lamp light and the water's tint.
+vec3 shadeObj(int i, vec3 P, vec3 rd) {
+  vec3 N = objNormal(i, P);
+  vec3 lp = objLocal(i, P), ln = N * uOR[i];
+  float gloss, spec;
+  vec3 alb = objMat(i, lp, ln, gloss, spec), h = reflect(rd, N), c;
+  float fr = 0.04 + 0.96 * pow(1.0 - clamp(dot(-rd, N), 0.0, 1.0), 5.0);
+  if (P.y >= 0.0) {
+    float sh = shadowObjs(P + N * 0.003, uSun, 2.0, 12.0);
+    vec3 below = WGLOW * gLamp * 0.7 * max(-N.y, 0.0) + LAMPC * gLamp * 0.03;
+    c = alb * (gSun * max(dot(N, uSun), 0.0) * sh + gAmb * (0.55 + 0.45 * N.y) + below);
+    c += spec * (gSun * pow(max(dot(h, uSun), 0.0), gloss) * sh * (gloss + 8.0) / 40.0 + sky(h) * fr * 0.5);
+  } else {
+    float depth = -P.y;
+    vec2 cp = P.xz - P.y * uRl.xz / uRl.y;
+    vec3 cz = caustic(cp);
+    float sh = sunShadow(P + N * 0.003), fall = exp(-SIG.g * depth / -uRl.y);
+    vec3 sunL = cz * gSun * max(dot(N, -uRl), 0.0) * exp(-SIG * depth / -uRl.y) * sh;
+    vec3 ambL = gAmb * (0.55 + 0.45 * N.y) * exp(-SIG * (depth * 1.2 + 0.1));
+    c = alb * (sunL + ambL + lampLight(P + N * 0.003, N, lum(cz)));
+    c += spec * 0.6 * gSun * pow(max(dot(h, -uRl), 0.0), gloss) * (gloss + 8.0) / 40.0 * lum(cz) * fall * sh;
+  }
+  return c;
 }
 vec3 petalColor(int k, vec2 q, float ps, vec3 n, vec3 rd) {
   vec4 A = uPA[k], B = uPB[k];
@@ -677,34 +931,37 @@ vec3 petalColor(int k, vec2 q, float ps, vec3 n, vec3 rd) {
   // The petal cups slightly and tilts with the water.
   vec2 side = vec2(-A.w, A.z) * q.y;
   vec3 pn = normalize(mix(vec3(0.0, 1.0, 0.0), n, 0.6) + vec3(side.x, 0.0, side.y) * 0.35);
-  vec3 lit = c * (SUN * (0.75 * max(dot(pn, uSun), 0.0) + 0.16) + AMB);
-  lit += SUN * 0.1 * pow(max(dot(reflect(rd, pn), uSun), 0.0), 60.0);
+  vec3 lit = c * (gSun * (0.75 * max(dot(pn, uSun), 0.0) + 0.16) + gAmb + WGLOW * gLamp * 0.3);
+  lit += gSun * 0.1 * pow(max(dot(reflect(rd, pn), uSun), 0.0), 60.0);
   return lit * (1.0 - 0.18 * smoothstep(-0.006 * B.y / 0.04, 0.0, ps));
 }
-vec3 aces(vec3 x) { return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
-vec3 srgb(vec3 c) { return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
+  gSun = mix(SUN, MOON, uNight);
+  gAmb = mix(AMB, AMBN, uNight);
+  gLamp = uNight;
   vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0, PH = uPool.xy;
   vec3 rd = normalize(uFwd + vec3(ndc.x * uTan.x, 0.0, 0.0) + ndc.y * uTan.y * uUp);
-  float D = uPool.z, HD = uPool.w;
+  float D = uPool.z, HD = uPool.w, pa = 2.0 * uTan.y / uRes.y;
 
   // The ray meets the deck plane at the pool's open top.
-  vec3 Q = uCam + rd * ((HD - uCam.y) / rd.y);
+  float tQ = (HD - uCam.y) / rd.y;
+  vec3 Q = uCam + rd * tQ;
   float eq = max(abs(Q.x) - PH.x, abs(Q.z) - PH.y);
   float mDeck = clamp(eq / max(fwidth(eq), 1e-6) + 0.5, 0.0, 1.0);
   vec3 deckC = deck(Q, eq);
 
   // Above the water the ray can meet a dry wall.
-  vec3 W = uCam + rd * (-uCam.y / rd.y);
+  float t0 = -uCam.y / rd.y;
+  vec3 W = uCam + rd * t0;
   float ew = max(abs(W.x) - PH.x, abs(W.z) - PH.y);
   float mDry = clamp(ew / max(fwidth(ew), 1e-6) + 0.5, 0.0, 1.0);
   float tx = sdiv(sign(rd.x) * PH.x - Q.x, rd.x), tz = sdiv(sign(rd.z) * PH.y - Q.z, rd.z);
   vec3 Pd = Q + rd * max(min(tx, tz), 0.0);
   bool xw = tx < tz;
   vec3 Nd = xw ? vec3(-sign(rd.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(rd.z));
-  vec3 dry = tiles(vec2(xw ? Pd.z + PH.y : Pd.x + PH.x, Pd.y + D), 1.0) * (SUN * max(dot(Nd, uSun), 0.0) + AMB);
+  vec3 dry = tiles(vec2(xw ? Pd.z + PH.y : Pd.x + PH.x, Pd.y + D), 1.0) * (gSun * max(dot(Nd, uSun), 0.0) + gAmb + WGLOW * gLamp * 0.35);
 
-  // Ripples, swell and each petal's meniscus tilt the surface.
+  // Ripples, the frozen relief and each petal's meniscus tilt the surface.
   vec2 wp = clamp(W.xz, -PH, PH);
   vec4 s = texture(uSim, wp / PH * 0.5 + 0.5);
   int k;
@@ -716,14 +973,14 @@ void main() {
   vec3 rf = reflect(rd, n);
   rf.y = abs(rf.y);
   float sd = max(dot(rf, uSun), 0.0);
-  vec3 refl = sky(rf) + SUN * (pow(sd, 2600.0) * 320.0 + pow(sd, 180.0) * 5.0);
+  vec3 refl = sky(rf) + gSun * (pow(sd, 2600.0) * 320.0 + pow(sd, 180.0) * 5.0);
 
   // Below, the ray meets the floor or a wall.
   vec3 tr = refract(rd, n, 0.75);
   float tf = -D / tr.y;
   float ux = max(sdiv(sign(tr.x) * PH.x - wp.x, tr.x), 0.0), uz = max(sdiv(sign(tr.z) * PH.y - wp.y, tr.z), 0.0);
   float th = min(tf, min(ux, uz));
-  vec3 P = vec3(wp.x, 0.0, wp.y) + tr * th;
+  vec3 S0 = vec3(wp.x, 0.0, wp.y), P = S0 + tr * th;
   vec3 N;
   vec2 fq;
   float face, ao;
@@ -739,32 +996,109 @@ void main() {
     ao = mix(0.5, 1.0, smoothstep(0.0, 0.3, P.y + D));
   }
   vec3 alb = tiles(fq, face);
+  // A lamp lens with a steel ring sits in the far wall.
+  float onFar = face * step(0.5, N.z), lr = length(vec2(P.x - LAMPX, P.y - LAMPY));
+  float ring = onFar * (1.0 - smoothstep(0.052, 0.056, lr)), lens = onFar * (1.0 - smoothstep(0.038, 0.042, lr));
+  alb = mix(mix(alb, RIMC, ring), LENS, lens);
   float depth = max(-P.y, 0.0);
   vec2 cp = P.xz - P.y * uRl.xz / uRl.y;
+  vec3 cz = caustic(cp);
   // Petal shadows blur with depth.
   int k2;
   vec2 q2;
   float soft = 0.006 + 0.05 * depth;
   float sh = 1.0 - 0.5 * smoothstep(soft, -0.3 * soft, petals(cp, k2, q2));
-  vec3 sunL = caustic(cp) * SUN * max(dot(N, -uRl), 0.0) * exp(-SIG * depth / -uRl.y);
-  vec3 ambL = AMB * ao * sh * exp(-SIG * (depth * 1.2 + 0.1));
-  vec3 under = alb * (sunL + ambL) * exp(-SIG * th) + SCAT * (1.0 - exp(-SIGS * th));
+  float osh = uNO > 0 ? sunShadow(P + N * 0.002) : 1.0;
+  vec3 sunL = cz * gSun * max(dot(N, -uRl), 0.0) * exp(-SIG * depth / -uRl.y) * osh;
+  vec3 ambL = gAmb * ao * sh * exp(-SIG * (depth * 1.2 + 0.1));
+  vec3 lampL = lampLight(P + N * 0.002, N, lum(cz)) * mix(1.0, ao, 0.6) * sh;
+  vec3 emit = LAMPC * LENS_E * gLamp * lens * (0.8 + 0.2 * cos(lr * 150.0));
+  // By day sunlit water scatters blue.
+// By night the lamps light the water from within.
+  vec3 scat = mix(SCAT, WGLOW * lampGlow(S0 + tr * th * 0.5), uNight);
+  vec3 under = (alb * (sunL + ambL + lampL) + emit) * exp(-SIG * th) + scat * (1.0 - exp(-SIGS * th));
+  // Sunk and floating things show through the bent surface.
+  if (uNO > 0) {
+    int ui;
+    float ua;
+    float tu = traceObjs(S0, tr, th, pa, t0, ui, ua);
+    if (ui >= 0) under = mix(under, shadeObj(ui, S0 + tr * tu, tr) * exp(-SIG * tu) + scat * (1.0 - exp(-SIGS * tu)), ua);
+  }
   vec3 water = mix(under, refl, F);
   float cov = k < 0 ? 0.0 : clamp(-ps / max(fwidth(ps), 1e-6) + 0.5, 0.0, 1.0);
   water = mix(water, petalColor(max(k, 0), q, ps, n, rd), cov);
 
   vec3 col = mix(mix(water, dry, mDry), deckC, mDeck);
-  col = aces(col * EXPO);
+  // Things in the air sit in front of all of it.
+  if (uNO > 0) {
+    float tEnd = mDeck > 0.5 ? tQ : mDry > 0.5 ? tQ + max(min(tx, tz), 0.0) : t0;
+    int oi;
+    float oa;
+    float to = traceObjs(uCam, rd, tEnd, pa, 0.0, oi, oa);
+    if (oi >= 0) col = mix(col, shadeObj(oi, uCam + rd * to, rd), oa);
+  }
+  col = aces(col * mix(EXPO, EXPON, uNight));
   o = vec4(srgb(col) + (hash(gl_FragCoord.xy + uSeed) - 0.5) / 255.0, 1.0);
+}`;
+// Spray and bubbles draw as round points over the view.
+// Under water a point looks shallower through the surface.
+const PART_VS = `${HEAD}
+in vec4 aP;
+in vec2 aK;
+uniform vec3 uCam, uFwd, uUp;
+uniform vec2 uRes, uTan;
+out float vK, vA;
+void main() {
+  vec3 p = aP.xyz;
+  if (p.y < 0.0) p.y *= 0.75;
+  vec3 d = p - uCam;
+  float zc = dot(d, uFwd);
+  gl_Position = vec4(d.x / (zc * uTan.x), dot(d, uUp) / (zc * uTan.y), 0.0, 1.0);
+  gl_PointSize = max(aP.w * uRes.y / (zc * uTan.y), 1.5);
+  vK = aK.x;
+  vA = aK.y;
+}`;
+const PART_FS = `${HEAD}
+in float vK, vA;
+uniform float uNight;
+out vec4 o;
+${CONSTS}
+${TONE}
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  q.y = -q.y;
+  float r = length(q);
+  if (r > 1.0) discard;
+  vec3 c;
+  float a;
+  if (vK < 0.5) {
+    // A droplet: lit on its upper side, darker toward the rim.
+    vec3 nq = vec3(q, sqrt(max(1.0 - r * r, 0.0)));
+    float lit = 0.55 + 0.45 * max(dot(nq, normalize(vec3(-0.45, 0.55, 0.7))), 0.0);
+    c = TW * mix(SUN * 0.34 + AMB, MOON * 0.6 + WGLOW * 0.55 + AMBN, uNight) * lit;
+    a = 1.0 - smoothstep(0.72, 1.0, r);
+  } else {
+    // A bubble: a thin bright rim and one hard highlight.
+    vec3 w = mix(SCAT * 2.4 + AMB * 0.5, WGLOW * 1.6 + LAMPC * 0.2, uNight);
+    float rim = smoothstep(0.58, 0.84, r) * (1.0 - smoothstep(0.88, 1.0, r));
+    float hl = 1.0 - smoothstep(0.14, 0.24, length(q - vec2(-0.3, 0.32)));
+    c = w * (0.7 + 0.8 * rim) + TW * hl * mix(1.2, 0.8, uNight);
+    a = max(rim * 0.75, hl) + 0.08;
+  }
+  a *= vA;
+  o = vec4(srgb(aces(c * mix(EXPO, EXPON, uNight))) * a, a);
 }`;
 
 /* ---------- WebGL ---------- */
-let gl = null, P = null, SIMFMT = 0, vaoEmpty = null, vaoCaus = null, idxBuf = null, nIdx = 0, pbo = null, fence = null;
+let gl = null, P = null, SIMFMT = 0, vaoEmpty = null, vaoCaus = null, vaoPart = null, partBuf = null, idxBuf = null, nIdx = 0, pbo = null, fence = null;
 let sim = [null, null], cur = 0, caus = null, probeT = null, ready = false, simActive = false, simAcc = 0;
-const probeData = new Float32Array((NPM + 1) * 4);
+const PW = NPM + NOB + 1, EI = (NPM + NOB) * 4;
+const probeData = new Float32Array(PW * 4);
 const PA = new Float32Array(NPM * 4), PB = new Float32Array(NPM * 4);
+const OA = new Float32Array(NOB * 4), OB = new Float32Array(NOB * 4), OR = new Float32Array(NOB * 9);
+const MAXP = 900, PBUF = new Float32Array(MAXP * 6);
 
-function compile(vs, fs) {
+function compile(vs, fs, attrs = []) {
   const sh = (type, src) => {
     const s = gl.createShader(type);
     gl.shaderSource(s, src);
@@ -774,6 +1108,7 @@ function compile(vs, fs) {
   const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
   gl.attachShader(p, v);
   gl.attachShader(p, f);
+  attrs.forEach((n, i) => gl.bindAttribLocation(p, i, n));
   gl.linkProgram(p);
   return { p, v, f, u: {} };
 }
@@ -823,6 +1158,7 @@ async function initGL() {
   const progs = {
     sim: compile(TRI, SIM_FS), grad: compile(TRI, GRAD_FS), dist: compile(TRI, DIST_FS),
     probe: compile(TRI, PROBE_FS), caus: compile(CAUS_VS, CAUS_FS), view: compile(TRI, VIEW_FS),
+    part: compile(PART_VS, PART_FS, ['aP', 'aK']),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -840,7 +1176,19 @@ async function initGL() {
   vaoCaus = gl.createVertexArray();
   idxBuf = gl.createBuffer();
   pbo = gl.createBuffer();
-  probeT = target(NPM + 1, 1, gl.RGBA32F, gl.NEAREST);
+  probeT = target(PW, 1, gl.RGBA32F, gl.NEAREST);
+  // Spray and bubbles stream through one buffer: position, size, kind, alpha.
+  vaoPart = gl.createVertexArray();
+  partBuf = gl.createBuffer();
+  gl.bindVertexArray(vaoPart);
+  gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, PBUF.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16);
+  gl.bindVertexArray(null);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
   fence = null;
 }
 function setU(pr, name, type, ...v) {
@@ -880,6 +1228,8 @@ function allocPool() {
     setU(pr, 'uTile', '1f', TILE);
     setU(pr, 'uSim', '1i', 0);
     setU(pr, 'uCaus', '1i', 1);
+    setU(pr, 'uT', '1f', SWELL_T);
+    setU(pr, 'uAmp', '1f', AMP0);
   }
   camUniforms();
   simActive = false;
@@ -887,11 +1237,13 @@ function allocPool() {
   probeData.fill(0);
 }
 function camUniforms() {
-  gl.useProgram(P.view.p);
-  setU(P.view, 'uCam', '3fv', cam.p);
-  setU(P.view, 'uFwd', '3fv', cam.f);
-  setU(P.view, 'uUp', '3fv', cam.u);
-  setU(P.view, 'uTan', '2f', cam.tx, cam.ty);
+  for (const pr of [P.view, P.part]) {
+    gl.useProgram(pr.p);
+    setU(pr, 'uCam', '3fv', cam.p);
+    setU(pr, 'uFwd', '3fv', cam.f);
+    setU(pr, 'uUp', '3fv', cam.u);
+    setU(pr, 'uTan', '2f', cam.tx, cam.ty);
+  }
 }
 function simPass(pr) {
   const dst = sim[cur ^ 1];
@@ -948,6 +1300,8 @@ function probe() {
   gl.useProgram(P.probe.p);
   gl.uniform4fv(P.probe.u.uPA, PA);
   gl.uniform1i(P.probe.u.uNP, petals.length);
+  gl.uniform4fv(P.probe.u.uOA, OA);
+  gl.uniform1i(P.probe.u.uNO, nObj);
   gl.bindFramebuffer(gl.FRAMEBUFFER, probeT.fb);
   gl.viewport(0, 0, probeT.w, 1);
   gl.activeTexture(gl.TEXTURE0);
@@ -979,15 +1333,36 @@ function packPetals() {
     PB[i * 4] = p.L; PB[i * 4 + 1] = p.Wd; PB[i * 4 + 2] = p.type; PB[i * 4 + 3] = p.hue;
   });
 }
+// Each thing packs its centre, scale, shape and rotation.
+let nObj = 0;
+const backOut = t => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
+function packObjs() {
+  nObj = Math.min(objs.length, NOB);
+  for (let i = 0; i < nObj; i++) {
+    const o = objs[i], K = o.K, sc = o.s * backOut(o.grow) * (o.dying ? Math.max(0, o.die) ** 1.5 : 1);
+    OA.set([o.x, o.y, o.z, Math.max(sc, 0.001)], i * 4);
+    OB.set([K.type, K.bound, 0, 0], i * 4);
+    qmat(o.q, OR, i * 9);
+  }
+}
+function packParts() {
+  const n = Math.min(parts.length, MAXP);
+  for (let i = 0; i < n; i++) {
+    const p = parts[i], j = i * 6;
+    PBUF[j] = p.x; PBUF[j + 1] = p.y; PBUF[j + 2] = p.z; PBUF[j + 3] = p.r;
+    PBUF[j + 4] = p.kind;
+    PBUF[j + 5] = Math.min(1, p.age / 0.04) * (p.kind ? 0.9 : 1);
+  }
+  return n;
+}
+const ease = t => t * t * (3 - 2 * t);
 function render(dt) {
   packPetals();
+  packObjs();
   if (simActive) simulate(dt);
   if (simActive && !fence) probe();
-  const amp = 1;
   // Caustics add light into the floor map.
   gl.useProgram(P.caus.p);
-  gl.uniform1f(P.caus.u.uT, swellT);
-  gl.uniform1f(P.caus.u.uAmp, amp);
   gl.uniform4fv(P.caus.u.uPA, PA);
   gl.uniform4fv(P.caus.u.uPB, PB);
   gl.uniform1i(P.caus.u.uNP, petals.length);
@@ -1003,14 +1378,18 @@ function render(dt) {
   gl.bindVertexArray(vaoCaus);
   gl.drawElements(gl.TRIANGLES, nIdx, gl.UNSIGNED_INT, 0);
   gl.disable(gl.BLEND);
+  const nk = ease(nightK);
   gl.useProgram(P.view.p);
   gl.uniform2f(P.view.u.uRes, canvas.width, canvas.height);
-  gl.uniform1f(P.view.u.uT, swellT);
-  gl.uniform1f(P.view.u.uAmp, amp);
   gl.uniform1f(P.view.u.uSeed, (clock * 61.7) % 97);
+  gl.uniform1f(P.view.u.uNight, nk);
   gl.uniform4fv(P.view.u.uPA, PA);
   gl.uniform4fv(P.view.u.uPB, PB);
   gl.uniform1i(P.view.u.uNP, petals.length);
+  gl.uniform4fv(P.view.u.uOA, OA);
+  gl.uniform4fv(P.view.u.uOB, OB);
+  gl.uniformMatrix3fv(P.view.u.uOR, false, OR);
+  gl.uniform1i(P.view.u.uNO, nObj);
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, caus.tex);
   gl.activeTexture(gl.TEXTURE0);
@@ -1019,6 +1398,22 @@ function render(dt) {
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.bindVertexArray(vaoEmpty);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // Spray and bubbles blend over the finished view.
+  const np = packParts();
+  if (np) {
+    gl.useProgram(P.part.p);
+    gl.uniform2f(P.part.u.uRes, canvas.width, canvas.height);
+    gl.uniform1f(P.part.u.uNight, nk);
+    gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, PBUF, 0, np * 6);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(vaoPart);
+    gl.drawArrays(gl.POINTS, 0, np);
+    gl.disable(gl.BLEND);
+  }
+  gl.bindVertexArray(null);
 }
 
 /* ---------- petals and leaves ---------- */
@@ -1038,43 +1433,46 @@ function seedPetals() {
 }
 const SLOPE_G = 2.2;
 function stepPetals(dt) {
-  const brz = reduce ? 0 : 1;
   petals.forEach((p, i) => {
-    const sg = swellGrad(p.x, p.z, swellT), gx = probeData[i * 4 + 2] + 0.3 * sg[0], gz = probeData[i * 4 + 3] + 0.3 * sg[1];
-    // Petals slide down wave slopes and drift on a faint breeze.
-    let ax = -SLOPE_G * gx + brz * 0.007 * Math.sin(0.11 * clock + p.z * 1.7 + p.seed);
-    let az = -SLOPE_G * gz + brz * 0.007 * Math.cos(0.09 * clock + p.x * 1.3 + p.seed * 2);
+    // Petals slide down ripple slopes; still water holds them still.
+    let ax = -SLOPE_G * probeData[i * 4 + 2], az = -SLOPE_G * probeData[i * 4 + 3];
     // Walls push back softly.
     const mx = PX - 0.06 - p.L, mz = PZ - 0.06 - p.L;
     if (Math.abs(p.x) > mx) ax -= 40 * (p.x - Math.sign(p.x) * mx);
     if (Math.abs(p.z) > mz) az -= 40 * (p.z - Math.sign(p.z) * mz);
     p.vx += ax * dt;
     p.vz += az * dt;
-    const k = Math.exp(-1.3 * dt), sp = Math.hypot(p.vx, p.vz);
+    // Thick water drags them to a stop sooner.
+    const k = Math.exp(-2.2 * dt), sp = Math.hypot(p.vx, p.vz);
     p.vx *= k * (sp > 1 ? 1 / sp : 1);
     p.vz *= k * (sp > 1 ? 1 / sp : 1);
     p.x += p.vx * dt;
     p.z += p.vz * dt;
-    p.w = (p.w + brz * 0.03 * Math.sin(0.07 * clock + p.seed) * dt) * Math.exp(-1.5 * dt);
+    p.w *= Math.exp(-2.5 * dt);
     p.a += p.w * dt;
   });
-  // Petals nudge each other apart.
+  // Petals nudge each other apart, and floating things push them aside.
+  const push = (a, bx, bz, lim, mb) => {
+    const dx = a.x - bx, dz = a.z - bz, d = Math.hypot(dx, dz) || 1e-4;
+    if (d >= lim) return;
+    const k = ((lim - d) / d) * mb * Math.min(1, dt * 20);
+    a.x += dx * k;
+    a.z += dz * k;
+  };
   for (let i = 0; i < petals.length; i++) {
     for (let j = i + 1; j < petals.length; j++) {
-      const a = petals[i], b = petals[j], dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) || 1e-4;
-      const lim = (a.L + b.L) * 0.9;
-      if (d >= lim) continue;
-      const push = ((lim - d) / d) * 0.5 * Math.min(1, dt * 20);
-      a.x -= dx * push; a.z -= dz * push;
-      b.x += dx * push; b.z += dz * push;
+      const a = petals[i], b = petals[j], lim = (a.L + b.L) * 0.9, ax = a.x, az = a.z;
+      push(a, b.x, b.z, lim, 0.5);
+      push(b, ax, az, lim, 0.5);
     }
+    for (const o of objs) if (o.K.float && o.f > 0) push(petals[i], o.x, o.z, waterline(o) + petals[i].L * 0.7, 1);
   }
 }
 const petalsMoving = () => petals.some(p => Math.hypot(p.vx, p.vz) > 0.003 || Math.abs(p.w) > 0.02);
 
 /* ---------- disturbances ---------- */
 const later = [];
-let clock = 0, swellT = 0, lastPoke = 0, raining = false, rainAcc = 0, finger = 0, energy = 0;
+let clock = 0, lastPoke = 0, raining = false, rainAcc = 0, energy = 0;
 const after = (s, fn) => later.push({ at: clock + s, fn });
 function runLater() {
   for (let i = later.length - 1; i >= 0; i--) {
@@ -1091,46 +1489,25 @@ function poke() {
 }
 const STR = 3;
 const inX = x => clamp(x, -PX + 0.01, PX - 0.01), inZ = z => clamp(z, -PZ + 0.01, PZ - 0.01);
+// Thick water cannot hold a ripple finer than a few cells.
 function addDrop(x, z, r, s) {
-  dropQ.push(inX(x), inZ(z), Math.max(r, 2.2 * CELL), s * STR);
+  dropQ.push(inX(x), inZ(z), Math.max(r, 3 * CELL), s * STR);
   poke();
 }
-// The ring reaches each petal and shoves it outward.
+// The ring reaches each petal and floating thing and shoves it outward.
 function kick(x, z, power) {
-  for (const p of petals) {
+  for (const p of [...petals, ...objs.filter(o => o.K.float)]) {
     const dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz) || 1e-3;
-    const m = (power * Math.exp(-d / 0.5)) / (0.12 + d);
+    if (d < 0.02) continue;
+    const m = (power * Math.exp(-d / 0.5)) / (0.12 + d) * (p.K ? 0.6 : 1);
     after(d / WAVE_C, () => {
       p.vx += (dx / d) * m;
       p.vz += (dz / d) * m;
-      p.w += (Math.random() - 0.5) * m * 8;
+      if (p.w != null && !p.K) p.w += (Math.random() - 0.5) * m * 8;
     });
   }
 }
 const pan = x => x / PX;
-function stone(x, z, s) {
-  const r = lerp(0.024, 0.042, s), st = lerp(0.006, 0.014, s);
-  addDrop(x, z, r, -st);
-  // The water rebounds into a small jet.
-  after(0.07 + 0.05 * s, () => addDrop(x, z, r * 0.45, st * 0.5));
-  kick(x, z, 0.02 + 0.03 * s);
-  plop(pan(x), s);
-}
-function splash() {
-  const x = rand(-0.7, 0.7) * PX, z = rand(-0.65, 0.65) * PZ;
-  addDrop(x, z, 0.085, -0.025);
-  after(0.11, () => addDrop(x, z, 0.035, 0.018));
-  // Thrown droplets land in a ring.
-  for (let n = 5 + ((Math.random() * 4) | 0), i = 0; i < n; i++) {
-    const a = rand(0, TAU), d = rand(0.12, 0.34), t = rand(0.22, 0.62);
-    after(t, () => {
-      addDrop(x + Math.cos(a) * d, z + Math.sin(a) * d, 0.016, -0.005 * rand(0.6, 1.2));
-      tick(pan(x + Math.cos(a) * d), rand(0.4, 0.9));
-    });
-  }
-  kick(x, z, 0.09);
-  plop(pan(x), 1);
-}
 function raindrop() {
   const x = rand(-1, 1) * PX, z = rand(-1, 1) * PZ;
   addDrop(x, z, 0.014, -0.0042 * rand(0.6, 1.3));
@@ -1143,11 +1520,10 @@ function drag(ax, az, bx, bz, dts) {
   if (len < 1e-4) return;
   const n = Math.min(24, Math.ceil(len / (FR * 0.5)));
   for (let i = 0; i < n; i++) {
-    segQ.push(lerp(ax, bx, i / n), lerp(az, bz, i / n), lerp(ax, bx, (i + 1) / n), lerp(az, bz, (i + 1) / n), FR, PUSH * STR);
+    segQ.push(lerp(ax, bx, i / n), lerp(az, bz, i / n), lerp(ax, bx, (i + 1) / n), lerp(az, bz, (i + 1) / n), Math.max(FR, 3 * CELL), PUSH * STR);
   }
   poke();
   const vx = (bx - ax) / dts, vz = (bz - az) / dts;
-  finger = lerp(finger, len / dts, 0.35);
   for (const p of petals) {
     const ex = bx - ax, ez = bz - az, t = clamp(((p.x - ax) * ex + (p.z - az) * ez) / (len * len));
     const cx = p.x - (ax + ex * t), cz = p.z - (az + ez * t), d = Math.hypot(cx, cz), R = 0.07 + p.L;
@@ -1165,7 +1541,7 @@ function sweep(key) {
   const horiz = key === 'ArrowLeft' || key === 'ArrowRight';
   const dir = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1;
   const lane = LANES[laneN++ % LANES.length] * ((horiz ? PZ : PX) - 0.1);
-  sweeps.push({ horiz, dir, lane, t: 0, dur: 1.1, bow: rand(-0.12, 0.12), px: null, pz: null });
+  sweeps.push({ horiz, dir, lane, t: 0, dur: 1.3, bow: rand(-0.12, 0.12), px: null, pz: null });
   plop(0, 0.15);
   wake();
 }
@@ -1184,14 +1560,333 @@ function stepSweeps(dt) {
 }
 function setRain(v) {
   raining = v;
-  rainB.setAttribute('aria-pressed', String(v));
   if (v) wake();
 }
 
-/* ---------- one loop: full rate while busy, half rate while calm ---------- */
+/* ---------- day and night ---------- */
+const TIME_KEY = 'stimming.pool.time';
+let nightT = store.get(TIME_KEY) === 'night' ? 1 : 0, nightK = nightT;
+function setNight(v) {
+  nightT = v ? 1 : 0;
+  // Reduced motion switches at once.
+  if (reduce) nightK = nightT;
+  store.set(TIME_KEY, v ? 'night' : 'day');
+  nightB.setAttribute('aria-pressed', String(!!v));
+  document.documentElement.dataset.time = v ? 'night' : 'day';
+  wake();
+}
+
+/* ---------- thrown things ---------- */
+// Sizes are world units; density is relative to the water.
+const G = 4.5, HOV = 0.3, CAP = 8, E_REF = 0.016, KD = 0.32;
+const KIND = {
+  ball: { type: 0, size: 1, bound: 0.062, rho: 0.3, vol: (4 / 3) * Math.PI * 0.058 ** 3, lo: 0.058, hi: 0.058, foot: 0.058, float: true },
+  anvil: { type: 1, size: 1.15, bound: 0.16, rho: 7.8, vol: 1.0e-3, lo: 0.056, hi: 0.048, foot: 0.12, float: false },
+  bell: { type: 2, size: 1.15, bound: 0.1, rho: 7.2, vol: 5.4e-4, lo: 0.04, hi: 0.092, foot: 0.058, float: false },
+};
+const THING_KEY = 'stimming.pool.thing';
+let thing = KIND[store.get(THING_KEY)] ? store.get(THING_KEY) : 'ball', objMoving = false;
+const picker = choices(document.getElementById('things'), v => { thing = v; store.set(THING_KEY, v); });
+picker.set(thing);
+
+/* quaternions: [w, x, y, z] */
+const qmul = (a, b) => [
+  a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+  a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+  a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+  a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+];
+const qaxis = (ax, a) => { const s = Math.sin(a / 2); return [Math.cos(a / 2), ax[0] * s, ax[1] * s, ax[2] * s]; };
+function qint(q, w, dt) {
+  const d = qmul([0, w[0], w[1], w[2]], q);
+  for (let i = 0; i < 4; i++) q[i] += 0.5 * dt * d[i];
+  const l = Math.hypot(...q);
+  for (let i = 0; i < 4; i++) q[i] /= l;
+}
+// The matrix goes out column by column for GLSL.
+function qmat(q, out, o) {
+  const [w, x, y, z] = q;
+  out[o] = 1 - 2 * (y * y + z * z); out[o + 1] = 2 * (x * y + w * z); out[o + 2] = 2 * (x * z - w * y);
+  out[o + 3] = 2 * (x * y - w * z); out[o + 4] = 1 - 2 * (x * x + z * z); out[o + 5] = 2 * (y * z + w * x);
+  out[o + 6] = 2 * (x * z + w * y); out[o + 7] = 2 * (y * z - w * x); out[o + 8] = 1 - 2 * (x * x + y * y);
+}
+const upOf = ([w, x, y, z]) => [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)];
+// A ball's waterline circle; other things use their footprint.
+function waterline(o) {
+  const s = o.s;
+  if (!o.K.float) return o.K.foot * s * 0.8;
+  const r = 0.058 * s;
+  return Math.sqrt(Math.max(r * r - o.y * o.y, (r * 0.4) ** 2));
+}
+// Tall phone pools draw things a little larger, like the petals.
+function makeObj(kind, x, z) {
+  const yaw = rand(0, TAU);
+  return {
+    K: KIND[kind], s: KIND[kind].size * petalScale, x, y: HOV, z, vx: 0, vy: 0, vz: 0, q: qaxis([0, 1, 0], yaw), w: [0, 0, 0], yaw,
+    held: null, tx: x, tz: z, hist: [], wet: false, f: 0, vsub: 0, floor: false,
+    grow: 0, die: 1, dying: false, bub: 0, gurg: 0, born: clock,
+  };
+}
+function retire(o) {
+  if (o.dying) return;
+  o.dying = true;
+  // A sunk thing lets go of its last air as it goes.
+  if (o.y < -0.05) {
+    for (let i = 0; i < 6; i++) bubble(o.x + rand(-0.03, 0.03), o.y + rand(0, 0.04), o.z + rand(-0.03, 0.03), rand(0.004, 0.009));
+    gurgle(pan(o.x), 0.7);
+  }
+}
+// Over the cap, the oldest thing sinks away.
+function addObj(o) {
+  const alive = objs.filter(p => !p.dying);
+  if (alive.length >= CAP) retire(alive.find(p => p.held == null) || alive[0]);
+  while (objs.length >= NOB) objs.splice(Math.max(0, objs.findIndex(p => p.dying)), 1);
+  objs.push(o);
+  wake();
+}
+function release(o, vx, vz) {
+  const K = o.K, sp = Math.hypot(vx, vz);
+  o.held = null;
+  o.vx = vx;
+  o.vz = vz;
+  // A real flick lobs the thing up a little.
+  o.vy = sp > 0.5 ? Math.min(0.9, sp * 0.3) : 0;
+  const tum = K.float ? 3 : 0.3 + sp * 1.2;
+  o.w = [rand(-1, 1) * tum, rand(-1, 1) * tum * 0.6, rand(-1, 1) * tum];
+  wake();
+}
+function holdStep(o, dt) {
+  const R = o.K.foot * o.s;
+  const tx = clamp(o.tx, -PX + R, PX - R), tz = clamp(o.tz, -PZ + R, PZ - R);
+  const k = 1 - Math.exp(-28 * dt), nx = o.x + (tx - o.x) * k, nz = o.z + (tz - o.z) * k;
+  if (dt > 0) {
+    o.vx = lerp(o.vx, (nx - o.x) / dt, 0.4);
+    o.vz = lerp(o.vz, (nz - o.z) / dt, 0.4);
+  }
+  o.x = nx;
+  o.z = nz;
+  o.y = HOV + 0.006 * Math.sin(clock * 5 + o.born);
+  o.vy = 0;
+  // The held thing leans into its motion; a ball spins slowly.
+  const sp = Math.hypot(o.vx, o.vz), lean = Math.min(0.45, sp * 0.16);
+  if (o.K.float) o.yaw += dt * 0.8;
+  o.q = qmul(sp > 1e-4 ? qaxis([o.vz / sp, 0, -o.vx / sp], lean) : [1, 0, 0, 0], qaxis([0, 1, 0], o.yaw));
+}
+// The splash scales with the energy the thing brings in.
+function impact(o) {
+  const K = o.K, s = o.s, m = K.rho * K.vol * s ** 3, v = Math.hypot(o.vx, o.vy, o.vz);
+  const S = clamp((0.5 * m * v * v / E_REF) ** 0.35, 0.06, 1.5);
+  splash(o.x, o.z, S, K.foot * s * (K.float ? 1 : 0.6), o);
+}
+function splash(x, z, S, r, o) {
+  const k = S / 1.5;
+  // A crater opens, then the water rebounds into a jet.
+  addDrop(x, z, lerp(0.045, 0.14, k), -lerp(0.003, 0.02, k));
+  after(lerp(0.1, 0.22, k), () => {
+    addDrop(x, z, lerp(0.025, 0.055, k), lerp(0.002, 0.011, k));
+    column(x, z, S);
+  });
+  // The crown throws droplets out and up.
+  const n = Math.round(6 + 80 * k);
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, TAU), rr = r * rand(0.7, 1.1), out = rand(0.2, 0.85) * (0.45 + k), up = rand(0.5, 1.5) * (0.6 + 0.9 * k);
+    spray(x + Math.cos(a) * rr, z + Math.sin(a) * rr, Math.cos(a) * out + o.vx * 0.25, up, Math.sin(a) * out + o.vz * 0.25, rand(0.003, 0.008) * (0.8 + 0.6 * k));
+  }
+  // Air dragged under comes back up as bubbles.
+  const nb = Math.round(3 + 30 * k);
+  for (let i = 0; i < nb; i++) bubble(x + rand(-r, r), -rand(0.01, 0.06 + 0.12 * k), z + rand(-r, r), rand(0.003, 0.011));
+  kick(x, z, 0.025 + 0.1 * k);
+  if (S < 0.55) plop(pan(x), clamp(lerp(0.3, 1, S / 0.55)));
+  else sploosh(pan(x), S);
+}
+// The rebound jet: a narrow column of heavier drops.
+function column(x, z, S) {
+  const k = S / 1.5, n = Math.round(2 + 46 * k * k);
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, TAU), out = rand(0, 0.16);
+    spray(x + rand(-0.01, 0.01), z + rand(-0.01, 0.01), Math.cos(a) * out, rand(0.7, 1.05) * (0.8 + 1.6 * k), Math.sin(a) * out, rand(0.004, 0.011) * (0.8 + 0.5 * k));
+  }
+}
+// Iron lands on tile: the floor puffs out a few bubbles.
+function landed(o, v) {
+  const n = Math.round(3 + 8 * clamp(v / 0.5));
+  for (let i = 0; i < n; i++) bubble(o.x + rand(-0.05, 0.05), -DEPTH + 0.02, o.z + rand(-0.05, 0.05), rand(0.003, 0.007));
+}
+function stepObjs(dt) {
+  objMoving = false;
+  for (let i = objs.length - 1; i >= 0; i--) {
+    const o = objs[i], K = o.K, s = o.s;
+    o.grow = Math.min(1, o.grow + dt / 0.22);
+    if (o.grow < 1) objMoving = true;
+    if (o.dying) {
+      o.die -= dt / 0.45;
+      objMoving = true;
+      if (o.die <= 0) { objs.splice(i, 1); continue; }
+    }
+    if (o.held != null) { holdStep(o, dt); objMoving = true; continue; }
+    // The probe lags a frame or two; the heights are tiny.
+    const pi = (NPM + i) * 4, hw = simActive && i < NOB ? probeData[pi] : 0;
+    const gx = simActive && i < NOB ? probeData[pi + 2] : 0, gz = simActive && i < NOB ? probeData[pi + 3] : 0;
+    let f;
+    // A ball floats on level water.
+// Its own dent must not sink it.
+    if (K.float) {
+      const r = 0.058 * s, h = clamp(-(o.y - r), 0, 2 * r);
+      f = (h * h * (3 * r - h)) / (4 * r * r * r);
+    } else f = clamp((hw - (o.y - K.lo * s)) / ((K.lo + K.hi) * s), 0, 1);
+    if (f > 0 && !o.wet) { o.wet = true; impact(o); }
+    else if (f === 0 && o.wet && o.y - K.lo * s > hw + 0.02) o.wet = false;
+    o.f = f;
+    // Displaced water leaves as a ring.
+    const vsub = f * K.vol * s ** 3, dV = vsub - o.vsub;
+    o.vsub = vsub;
+    if (Math.abs(dV) > 4e-7 && !o.dying) {
+      const R = Math.max(waterline(o) * 1.3, 3 * CELL);
+      dropQ.push(inX(o.x), inZ(o.z), R, (-dV / (0.934 * R * R)) * KD);
+      poke();
+    }
+    // Gravity, buoyancy and thick-water drag.
+    const sp = Math.hypot(o.vx, o.vy, o.vz);
+    const ay = -G + (G * f) / K.rho;
+    const dragV = f * (K.float ? 8 + 4 * sp : 2.5 + 13 * sp), dragH = f * (K.float ? 2 + 2 * sp : 2.5 + 13 * sp);
+    o.vy = (o.vy + ay * dt) * Math.exp(-dragV * dt);
+    const ax = K.float ? -2.2 * gx * f : 0, az = K.float ? -2.2 * gz * f : 0;
+    o.vx = (o.vx + ax * dt) * Math.exp(-dragH * dt);
+    o.vz = (o.vz + az * dt) * Math.exp(-dragH * dt);
+    if (o.floor) { const kf = Math.exp(-7 * dt); o.vx *= kf; o.vz *= kf; }
+    o.x += o.vx * dt;
+    o.y += o.vy * dt;
+    o.z += o.vz * dt;
+    // Heavy things come to rest on the floor, upright.
+    if (!K.float) {
+      const u = upOf(o.q), lo = K.lo * s * Math.abs(u[1]) + K.foot * s * 0.7 * Math.sqrt(Math.max(0, 1 - u[1] * u[1]));
+      const yf = -DEPTH + lo;
+      if (o.y <= yf) {
+        o.y = yf;
+        if (o.vy < -0.1) { clank(pan(o.x), -o.vy, K.type); landed(o, -o.vy); o.vy *= -0.12; }
+        else o.vy = Math.max(o.vy, 0);
+        o.floor = true;
+      } else if (o.y > yf + 0.004) o.floor = false;
+    }
+    // Walls keep everything inside the pool.
+    const R = K.foot * s, mx = PX - R, mz = PZ - R;
+    if (Math.abs(o.x) > mx) { o.x = Math.sign(o.x) * mx; o.vx *= -0.35; }
+    if (Math.abs(o.z) > mz) { o.z = Math.sign(o.z) * mz; o.vz *= -0.35; }
+    // Water damps spin, a ball rolls with its drift, iron stands up.
+    const w = o.w;
+    if (f > 0) {
+      const kw = Math.exp(-(K.float ? 2.5 : 5) * f * dt);
+      w[0] *= kw; w[1] *= kw; w[2] *= kw;
+      if (K.float) {
+        const r = 0.058 * s, m = 1 - Math.exp(-3 * dt);
+        w[0] += (o.vz / r - w[0]) * m;
+        w[2] += (-o.vx / r - w[2]) * m;
+      } else {
+        const u = upOf(o.q), kr = o.floor ? 90 : 30;
+        w[0] += -u[2] * kr * dt;
+        w[2] += u[0] * kr * dt;
+      }
+    }
+    if (o.floor) { const kw = Math.exp(-10 * dt); w[0] *= kw; w[1] *= kw; w[2] *= kw; }
+    qint(o.q, w, dt);
+    // A sinking thing trails bubbles and gurgles.
+    if (!K.float && o.y < -0.03 && !o.floor && !o.dying) {
+      const rate = clamp(-o.vy / 0.4, 0, 1.5);
+      o.bub += dt * 36 * rate;
+      while (o.bub >= 1) {
+        o.bub--;
+        bubble(o.x + rand(-0.03, 0.03), o.y + K.hi * s * rand(0.2, 1), o.z + rand(-0.03, 0.03), rand(0.0025, 0.008));
+      }
+      o.gurg -= dt;
+      if (rate > 0.25 && o.gurg <= 0) { o.gurg = rand(0.08, 0.22); gurgle(pan(o.x), rand(0.3, 0.9)); }
+    }
+    const still = Math.hypot(o.vx, o.vy, o.vz) < 0.004 && Math.hypot(...w) < 0.03;
+    if (!still || (!K.float && !o.floor) || (K.float && f === 0)) objMoving = true;
+  }
+  // Things push each other apart where they overlap.
+  for (let i = 0; i < objs.length; i++) {
+    for (let j = i + 1; j < objs.length; j++) {
+      const a = objs[i], b = objs[j];
+      if (a.held != null || b.held != null || a.dying || b.dying) continue;
+      const ra = a.K.foot * a.s, rb = b.K.foot * b.s;
+      const ha = (a.K.lo + a.K.hi) * a.s, hb = (b.K.lo + b.K.hi) * b.s;
+      if (Math.abs(a.y - b.y) > (ha + hb) * 0.5) continue;
+      const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) || 1e-4, lim = (ra + rb) * 0.85;
+      if (d >= lim) continue;
+      const nx = dx / d, nz = dz / d, k = (lim - d) * 0.5;
+      a.x -= nx * k; a.z -= nz * k;
+      b.x += nx * k; b.z += nz * k;
+      const rv = (b.vx - a.vx) * nx + (b.vz - a.vz) * nz;
+      if (rv < 0) {
+        a.vx += nx * rv * 0.6; a.vz += nz * rv * 0.6;
+        b.vx -= nx * rv * 0.6; b.vz -= nz * rv * 0.6;
+      }
+      objMoving = true;
+    }
+  }
+}
+
+/* ---------- spray and bubbles ---------- */
+const parts = [];
+function spray(x, z, vx, vy, vz, r) {
+  if (parts.length >= MAXP) parts.shift();
+  parts.push({ kind: 0, x, y: 0.004, z, vx, vy, vz, r, age: 0, seed: 0 });
+}
+function bubble(x, y, z, r) {
+  if (parts.length >= MAXP) parts.shift();
+  parts.push({ kind: 1, x, y: Math.max(y, -DEPTH + r), z, vx: rand(-0.05, 0.05), vy: 0, vz: rand(-0.05, 0.05), r, r0: r, age: 0, seed: rand(0, TAU) });
+}
+function stepParts(dt) {
+  let drops = 0;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.age += dt;
+    if (p.kind === 0) {
+      p.vy -= G * dt;
+      const k = Math.exp(-0.5 * dt);
+      p.vx *= k;
+      p.vz *= k;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      if (Math.abs(p.x) > PX) { p.x = Math.sign(p.x) * PX; p.vx *= -0.3; }
+      if (Math.abs(p.z) > PZ) { p.z = Math.sign(p.z) * PZ; p.vz *= -0.3; }
+      // A droplet falls back: a tiny ring and sometimes a plink.
+      if (p.y < 0 && p.vy < 0) {
+        if (drops < 10 && Math.random() < 0.5) { dropQ.push(inX(p.x), inZ(p.z), Math.max(p.r * 3, 3 * CELL), -0.0016 * STR * (p.r / 0.007)); drops++; }
+        if (Math.random() < 0.12) tick(pan(p.x), rand(0.3, 0.9));
+        parts.splice(i, 1);
+        continue;
+      }
+    } else {
+      // A bubble rises at a speed set by its size.
+// It wobbles as it goes.
+      const rise = 0.14 + p.r * 16;
+      p.vy += (rise - p.vy) * (1 - Math.exp(-5 * dt));
+      const k = Math.exp(-3 * dt);
+      p.vx *= k;
+      p.vz *= k;
+      p.x += (p.vx + Math.sin(p.age * 9 + p.seed) * 0.03) * dt;
+      p.y += p.vy * dt;
+      p.z += (p.vz + Math.cos(p.age * 7 + p.seed) * 0.03) * dt;
+      p.r = Math.min(p.r * (1 + 0.12 * dt), p.r0 * 1.35);
+      if (p.y > -p.r) {
+        if (drops < 10 && Math.random() < 0.6) { dropQ.push(inX(p.x), inZ(p.z), 3 * CELL, 0.001 * STR); drops++; }
+        if (Math.random() < 0.18) gurgle(pan(p.x), clamp(p.r / 0.011));
+        parts.splice(i, 1);
+        continue;
+      }
+    }
+    if (p.age > 7) parts.splice(i, 1);
+  }
+  if (drops) poke();
+}
+
+/* ---------- one loop: it runs only while something moves ---------- */
 let raf = 0, inFrame = false, running = false, onScreen = false, lastDraw = 0, drawn = 0, slowN = 0, busyN = 0, lowDpr = false, quiet = 0;
 let W = 0, H = 0;
-const busy = () => simActive || fingers.size > 0 || sweeps.length > 0 || raining || later.length > 0 || dropQ.length > 0 || segQ.length > 0;
+const busy = () => simActive || raining || objMoving || holds.size > 0 || parts.length > 0 || sweeps.length > 0 || later.length > 0
+  || dropQ.length > 0 || segQ.length > 0 || nightK !== nightT;
 function wake() {
   // A frame in progress schedules its own successor.
   if (!running || !ready || raf || inFrame) return;
@@ -1201,13 +1896,10 @@ function wake() {
 function frame(now) {
   raf = 0;
   if (!running || !ready) return;
-  const b = busy(), ambient = !reduce;
-  // A calm pool redraws at thirty frames a second.
-  if (!b && ambient && now - lastDraw < 30) { raf = requestAnimationFrame(frame); return; }
   const raw = Math.max(0, (now - lastDraw) / 1000), dt = Math.min(raw, 1 / 20);
   lastDraw = now;
   // Sustained slow frames drop the pixel ratio, then the grid.
-  if (b && ++busyN > 30) {
+  if (++busyN > 30) {
     slowN = raw > 0.024 ? slowN + 1 : Math.max(0, slowN - 1);
     if (slowN > 45) {
       slowN = 0;
@@ -1222,27 +1914,33 @@ function frame(now) {
   inFrame = false;
   // The canvas fades in once its first frame is up.
   if (++drawn === 1) requestAnimationFrame(() => canvas.classList.add('on'));
-  if (busy() || ambient || petalsMoving()) raf = requestAnimationFrame(frame);
-  else bedLevel(0, 0);
+  if (busy() || petalsMoving()) raf = requestAnimationFrame(frame);
+  else {
+    // Settled water draws nothing until the next touch.
+    busyN = 0;
+    bedLevel(0);
+    kit.rest(() => !busy());
+  }
 }
 function step(dt) {
   clock += dt;
-  if (!reduce) swellT += dt;
-  if (pollProbe()) energy = Math.sqrt(probeData[NPM * 4 + 1]);
+  if (pollProbe()) energy = Math.sqrt(probeData[EI + 1]);
+  if (nightK !== nightT) nightK = reduce ? nightT : nightT > nightK ? Math.min(nightT, nightK + dt / 0.8) : Math.max(nightT, nightK - dt / 0.8);
   runLater();
   if (raining) {
     rainAcc += dt * (reduce ? 6 : 10);
     while (rainAcc >= 1) { rainAcc--; raindrop(); }
   }
   stepSweeps(dt);
+  stepObjs(dt);
+  stepParts(dt);
   stepPetals(dt);
-  finger *= Math.exp(-6 * dt);
   // Lively water slaps the walls now and then.
   if (simActive && energy > 0.03 && Math.random() < dt * clamp(energy * 10, 0, 3)) slap(rand(-0.8, 0.8), clamp(energy * 3, 0.2, 1));
-  bedLevel(simActive ? energy : 0, finger);
+  bedLevel(simActive ? energy : 0);
   // Quiet water for a moment means the ripples have died.
   if (simActive && clock - lastPoke > 0.8 && !dropQ.length && !segQ.length) {
-    quiet = energy < 0.005 && probeData[NPM * 4 + 2] < 0.0008 ? quiet + dt : 0;
+    quiet = energy < 0.005 && probeData[EI + 2] < 0.0008 ? quiet + dt : 0;
     if (quiet > 0.5) { settle(); quiet = 0; energy = 0; }
   }
 }
@@ -1253,11 +1951,11 @@ function sync() {
   running = run;
   if (run) {
     wake();
-    if (sound.on && ac && ac.state !== 'running') audio();
+    if (sound.on && kit.ac && kit.ac.state !== 'running') kit.wake();
   } else {
     cancelAnimationFrame(raf);
     raf = 0;
-    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+    if (kit.ac && kit.ac.state === 'running') kit.ac.suspend()?.catch(() => {});
   }
 }
 function fit() {
@@ -1284,67 +1982,99 @@ function local(e) {
   const r = rect || (rect = panel.getBoundingClientRect());
   return [e.clientX - r.left, e.clientY - r.top];
 }
-// A stage point lands on the water plane, or on the deck.
-function toWater(px, py) {
+// A stage point lands on a level plane at height y.
+function planeAt(px, py, y) {
   const nx = (px / W) * 2 - 1, ny = 1 - (py / H) * 2;
   const d = [nx * cam.tx, cam.f[1] + ny * cam.ty * cam.u[1], cam.f[2] + ny * cam.ty * cam.u[2]];
-  const tq = (HD - cam.p[1]) / d[1], t0 = -cam.p[1] / d[1];
-  const qx = cam.p[0] + d[0] * tq, qz = cam.p[2] + d[2] * tq;
-  return { x: inX(cam.p[0] + d[0] * t0), z: inZ(cam.p[2] + d[2] * t0), inside: Math.abs(qx) < PX + 0.01 && Math.abs(qz) < PZ + 0.01 };
+  const t = (y - cam.p[1]) / d[1];
+  return [cam.p[0] + d[0] * t, cam.p[2] + d[2] * t];
 }
-const fingers = new Map();
+// Each pointer holds one thing over the water until it lets go.
+const holds = new Map();
 panel.addEventListener('pointerdown', e => {
   if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  const w = toWater(...local(e));
-  fingers.set(e.pointerId, { x: w.x, z: w.z, in: w.inside, t: e.timeStamp });
-  if (w.inside) stone(w.x, w.z, rand(0.35, 0.6));
-  wake();
+  const [x, z] = planeAt(...local(e), HOV), R = KIND[thing].foot * KIND[thing].size * petalScale;
+  const o = makeObj(thing, clamp(x, -PX + R, PX - R), clamp(z, -PZ + R, PZ - R));
+  o.held = e.pointerId;
+  o.tx = x;
+  o.tz = z;
+  o.hist = [{ x, z, t: e.timeStamp }];
+  holds.set(e.pointerId, o);
+  addObj(o);
 });
 panel.addEventListener('pointermove', e => {
-  const f = fingers.get(e.pointerId);
-  if (!f) return;
+  const o = holds.get(e.pointerId);
+  if (!o) return;
   const list = e.getCoalescedEvents?.() || [];
   for (const c of list.length ? list : [e]) {
-    const w = toWater(...local(c));
-    if (f.in && w.inside) drag(f.x, f.z, w.x, w.z, Math.max(0.004, (c.timeStamp - f.t) / 1000));
-    f.in = w.inside;
-    f.x = w.x;
-    f.z = w.z;
-    f.t = c.timeStamp;
+    const [x, z] = planeAt(...local(c), HOV);
+    o.tx = x;
+    o.tz = z;
+    o.hist.push({ x, z, t: c.timeStamp });
   }
+  while (o.hist.length > 2 && o.hist[o.hist.length - 1].t - o.hist[0].t > 100) o.hist.shift();
 });
-const lift = e => fingers.delete(e.pointerId);
-['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+// The last tenth of a second of motion sets the throw.
+function letGo(e, fling) {
+  const o = holds.get(e.pointerId);
+  if (!o) return;
+  holds.delete(e.pointerId);
+  let vx = 0, vz = 0;
+  const h = o.hist, a = h[0], b = h[h.length - 1], dts = (b.t - a.t) / 1000;
+  if (fling && dts > 0.012 && e.timeStamp - b.t < 80) {
+    vx = (b.x - a.x) / dts;
+    vz = (b.z - a.z) / dts;
+    const sp = Math.hypot(vx, vz), cap = 3.2;
+    if (sp < 0.3) vx = vz = 0;
+    else if (sp > cap) { vx *= cap / sp; vz *= cap / sp; }
+  }
+  release(o, vx, vz);
+}
+panel.addEventListener('pointerup', e => letGo(e, true));
+['pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, e => letGo(e, false)));
 panel.addEventListener('contextmenu', e => e.preventDefault());
-rainB.addEventListener('click', () => setRain(!raining));
+// Space tosses the chosen thing in at a random spot.
+function toss() {
+  const R = KIND[thing].foot * KIND[thing].size * petalScale;
+  const o = makeObj(thing, rand(-1, 1) * (PX - R - 0.1), rand(-1, 1) * (PZ - R - 0.1));
+  addObj(o);
+  release(o, rand(-0.5, 0.5), rand(-0.4, 0.4));
+}
+function clearPool() {
+  objs.forEach(retire);
+  wake();
+}
+nightB.addEventListener('click', () => setNight(!nightT));
+clearB.addEventListener('click', clearPool);
+const KEYS = { 1: 'ball', 2: 'anvil', 3: 'bell' };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   const k = e.key;
   if (k === 'r' || k === 'R') { if (!e.repeat) setRain(!raining); }
+  else if (k === 'n' || k === 'N') { if (!e.repeat) setNight(!nightT); }
+  else if (k === 'c' || k === 'C') { if (!e.repeat) clearPool(); }
+  else if (KEYS[k]) { thing = KEYS[k]; picker.set(thing); store.set(THING_KEY, thing); }
   else if (k === ' ') {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
-    if (!e.repeat && ready) splash();
+    if (!e.repeat && ready) toss();
   } else if (k.startsWith('Arrow')) {
     e.preventDefault();
     if (ready && !e.repeat) sweep(k);
   }
 });
-sound.onChange(on => {
-  if (on) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
-});
 
 /* ---------- start: shaders link while the page settles ---------- */
+setNight(nightT);
 function failed() {
   ready = false;
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  rainB.disabled = true;
+  document.querySelectorAll('.bar .chip').forEach(b => { b.disabled = true; });
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; fence = null; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
