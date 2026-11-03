@@ -31,7 +31,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D - =" aria-label="A dish of ferrofluid. The pointer holds a magnet above it; scrolling sets the field strength, and holding charges the field and lifts drops up to it. Arrow keys move the magnet, minus and equals set the strength, Space toggles a full field, Escape lifts it away, D lets a drop fall.">
+    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D - =" aria-label="A dish of ferrofluid. The pointer holds a faint glow above it, which acts as a magnet; scrolling sets the field strength, and holding charges the field and lifts drops up to it. Arrow keys move the glow, minus and equals set the strength, Space toggles a full field, Escape lifts it away, D lets a drop fall.">
       <p class="fail" hidden>Ferrofluid needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -39,8 +39,8 @@
         <button class="chip" id="drip" type="button" aria-keyshortcuts="D">Drip</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div class="fine"><dt>Hover</dt><dd>move the magnet</dd></div>
-        <div class="touch"><dt>Drag</dt><dd>move the magnet</dd></div>
+        <div class="fine"><dt>Hover</dt><dd>move the glow</dd></div>
+        <div class="touch"><dt>Drag</dt><dd>move the glow</dd></div>
         <div class="fine"><dt>Scroll</dt><dd>field strength</dd></div>
         <div><dt>Hold</dt><dd>charge, lift drops</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>full field</dd></div>
@@ -442,17 +442,16 @@ function simulate(dt) {
 const GRAV = 5.5, YA = 0.62, KP = 18;
 // Each unit of field brings the magnet this much closer.
 const DIP = 0.07;
-// The magnet: a hex bar, inradius and height.
+// Beads gather under the glow in this radius and height.
 const MR = 0.068, MH = 0.14;
 // Bead cap, beads per press, thrown size, drip size.
 const NDROP = 16, SPITS = 4, RSPIT = 0.046, RDRIP = 0.07;
 const drops = [], SPT = new Float32Array(NC).fill(-9);
 const spit = { left: 0, next: 0, was: false };
-// pullY is the magnet's underside; beads cling just below it.
+// pullY is the glow's underside; beads cling just below it.
 let pullX = 0, pullY = YA, pullZ = 0, pullF = 0, crownK = -1;
-// Lift raises the magnet out of frame.
-// Lean tips the magnet toward its motion.
-const lift = { x: 2.6, v: 0 }, lean = { x: 0, z: 0, vx: 0, vz: 0 };
+// Lift raises the glow out of frame.
+const lift = { x: 2.6, v: 0 };
 // The magnet hovers lower near the rim.
 // It hovers lowest near the back rim.
 function hoverY(x, z) {
@@ -558,7 +557,7 @@ function dropsStep(dt) {
       d.y += d.vy * h;
       d.z += d.vz * h;
       d.free -= h;
-      // The magnet's underside stops a bead from passing up through it.
+      // A bead stops just under the glow and hangs there.
       if (lift.x < 0.5 && d.y > pullY - 0.8 * d.r && d.y < pullY + MH && Math.hypot(d.x - pullX, d.z - pullZ) < MR + 0.5 * d.r) {
         d.y = pullY - 0.8 * d.r;
         if (d.vy > 0) { d.qv -= d.vy * 3; d.vy = 0; }
@@ -614,7 +613,7 @@ function dropsStep(dt) {
     else if (d.cling && d.pull < 0.3) {
       d.cling = false;
       const ox = clamp(d.x - pullX, -0.035, 0.035), oz = clamp(d.z - pullZ, -0.035, 0.035);
-      bridge({ kind: 'mag', ox, oz, r: Math.min(0.055, d.r * 0.8) }, { kind: 'drop', d }, 0.5, 0.2);
+      bridge({ kind: 'mag', ox, oz, r: 0.014 }, { kind: 'drop', d }, 0.5, 0.2);
     }
   }
   // Falling beads land on the pool or a spike and rejoin the fluid.
@@ -653,7 +652,7 @@ function drip() {
     const d = addDrop(pullX, pullY - r * 0.9, pullZ, 0, -0.1, 0, r, 0.7);
     if (!d) return;
     d.qv = -3;
-    bridge({ kind: 'mag', ox: 0, oz: 0, r: Math.min(0.055, r * 0.8) }, { kind: 'drop', d }, 0.55, 0.2);
+    bridge({ kind: 'mag', ox: 0, oz: 0, r: 0.014 }, { kind: 'drop', d }, 0.55, 0.2);
     wake();
     return;
   }
@@ -807,12 +806,6 @@ function step(dt) {
   const wl = reduce ? 16 : 8, zl = reduce ? 1 : 0.85;
   lift.v += (wl * wl * ((mag.present ? (1 - reach) * 1.8 : 2.6) - lift.x) - 2 * zl * wl * lift.v) * dt;
   lift.x += lift.v * dt;
-  // The magnet tips toward its motion and sways back when it stops.
-  const wn = 11, zn = reduce ? 1 : 0.32, lt = reduce ? 0 : 0.085;
-  lean.vx += (wn * wn * (clamp(E.vx * lt, -0.2, 0.2) - lean.x) - 2 * zn * wn * lean.vx) * dt;
-  lean.vz += (wn * wn * (clamp(E.vz * lt, -0.2, 0.2) - lean.z) - 2 * zn * wn * lean.vz) * dt;
-  lean.x += lean.vx * dt;
-  lean.z += lean.vz * dt;
   pullX = E.x;
   pullZ = E.z;
   // A stronger field means a closer magnet.
@@ -828,7 +821,7 @@ function step(dt) {
   }
   if (dropsStep(dt)) busy = true;
   if (bridgesStep(dt)) busy = true;
-  if (Math.abs(lift.v) > 1e-3 || Math.abs(lean.vx) + Math.abs(lean.vz) + Math.abs(lean.x) + Math.abs(lean.z) > 1e-3) busy = true;
+  if (Math.abs(lift.v) > 1e-3) busy = true;
   pressure(Math.max(0, Fs.x));
   const top = simulate(dt);
   hum(clamp(Fs.x / STRONG), clamp((Fs.x - HOVER) / (STRONG - HOVER)));
@@ -839,7 +832,7 @@ function step(dt) {
 
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, U = null, cellTex = null, bulkTex = null, dropMesh = null;
-let magnet = null, neckMesh = null, NA = null, NB2 = null, NN = null;
+let glow = null, neckMesh = null, NA = null, NB2 = null, NN = null;
 let ray = null, plane = null, ndc = null, hitV = null, tmp = null;
 let ready = false, lowDpr = false;
 
@@ -1059,15 +1052,20 @@ function draw() {
   U.uCrowd.value = crowdNow;
   U.uAmax.value = amax > 1e-5 ? amax : 0;
   drawDrops();
-  drawMagnet();
+  drawGlow();
   drawNecks();
   renderer.render(scene, camera);
 }
-// The magnet pivots on its underside, which the beads cling to.
-function drawMagnet() {
-  magnet.visible = lift.x < 2.4;
-  magnet.position.set(pullX, pullY, pullZ);
-  magnet.rotation.set(lean.z, 0, -lean.x);
+// The glow brightens and swells with the field.
+// It fades as it lifts away.
+function drawGlow() {
+  const s = clamp(Fs.x / STRONG), fade = clamp(1 - lift.x / 1.2);
+  glow.sprite.visible = fade > 0.01;
+  glow.sprite.position.set(pullX, pullY + 0.03, pullZ);
+  glow.sprite.scale.setScalar(0.3 + 0.16 * s);
+  glow.sprite.material.opacity = (0.22 + 0.4 * s) * fade;
+  glow.light.position.set(pullX + LT.off[0], pullY + LT.off[1], pullZ + LT.off[2]);
+  glow.light.intensity = LT.i * (0.3 + s) * fade;
 }
 function drawNecks() {
   let n = 0;
@@ -1252,55 +1250,32 @@ sound.onChange(on => {
 new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
 
-/* ---------- the magnet: a hex bar, red north under blue south ---------- */
-const POLE_N = [0.6, 0.21, 27], POLE_S = [0.56, 0.17, 256], CUT = [0.17, 0.012, 270];
-const css = c => `rgb(${oklchRgb(...c).map(v => Math.round(v * 255)).join(' ')})`;
-// One pole's side: flat colour, a cut letter on the front face.
-function poleSkin(c, letter) {
+/* ---------- the glow: a faint light where the magnet acts ---------- */
+// Two studio panels carry these warm and cool hues into the streaks.
+const WARM = [0.6, 0.21, 27], COOL = [0.56, 0.17, 256];
+const GLOW = [0.86, 0.09, 215];
+// The light sits a little in front of the glow, toward the camera.
+// The flanks that face the camera then reflect it.
+const LT = { off: [0, -0.1, 0.45], i: 10 };
+function buildGlow() {
   const cv = document.createElement('canvas');
-  cv.width = 768;
-  cv.height = 128;
-  const g = cv.getContext('2d');
-  g.fillStyle = css(c);
-  g.fillRect(0, 0, 768, 128);
-  g.fillStyle = css(CUT);
-  g.font = '900 104px Gabarito, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  // The front face spans u 0 to 1/6.
-  g.fillText(letter, 64, 70);
-  const t = new THREE.CanvasTexture(cv);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-async function buildMagnet() {
-  // The letters wait briefly for the display font.
-  await Promise.race([document.fonts.load('900 104px Gabarito'), new Promise(r => setTimeout(r, 1500))]).catch(() => {});
-  const grp = new THREE.Group(), rc = MR / Math.cos(Math.PI / 6), gap = 0.012, ch = 0.01;
-  const half = (MH - gap) / 2, start = -Math.PI / 6;
-  const mat = (c, map = null) => new THREE.MeshStandardMaterial({
-    color: map ? 0xffffff : new THREE.Color().setRGB(...oklchRgb(...c), THREE.SRGBColorSpace),
-    map, roughness: 0.5, metalness: 0, envMapIntensity: 0.8, flatShading: true,
-  });
-  const add = (geo, m, y) => { const o = new THREE.Mesh(geo, m); o.position.y = y; grp.add(o); };
-  for (const [c, letter, y0, cap] of [[POLE_N, 'N', 0, -1], [POLE_S, 'S', half + gap, 1]]) {
-    const plain = mat(c), skin = mat(c, poleSkin(c, letter));
-    // The side wall, with a chamfer at the outer end.
-    const yw = cap < 0 ? y0 + ch : y0;
-    add(new THREE.CylinderGeometry(rc, rc, half - ch, 6, 1, true, start), skin, yw + (half - ch) / 2);
-    const rIn = rc - ch * 1.6, yc = cap < 0 ? y0 + ch / 2 : y0 + half - ch / 2;
-    add(cap < 0
-      ? new THREE.CylinderGeometry(rc, rIn, ch, 6, 1, true, start)
-      : new THREE.CylinderGeometry(rIn, rc, ch, 6, 1, true, start), plain, yc);
-    // The end cap closes the pole.
-    const disc = new THREE.CircleGeometry(rIn, 6, start + Math.PI / 2);
-    disc.rotateX(cap < 0 ? Math.PI / 2 : -Math.PI / 2);
-    add(disc, plain, cap < 0 ? y0 : y0 + half);
-  }
-  // A cut gap splits the two poles.
-  add(new THREE.CylinderGeometry(rc * 0.82, rc * 0.82, gap + 0.002, 6, 1, false, start), mat(CUT), half + gap / 2);
-  return grp;
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  // The falloff is soft and has no edge.
+  for (const [t, a] of [[0, 1], [0.12, 0.6], [0.3, 0.2], [0.55, 0.06], [1, 0]]) gr.addColorStop(t, `rgba(255 255 255 / ${a})`);
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 128, 128);
+  const col = new THREE.Color().setRGB(...oklchRgb(...GLOW), THREE.SRGBColorSpace);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(cv), color: col, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false,
+  }));
+  sprite.renderOrder = 2;
+  sprite.visible = false;
+  // The light gives every spike a highlight in the glow's hue.
+  // Its short reach keeps the table and rim dark.
+  const light = new THREE.PointLight(col, 0, 1.3, 2);
+  return { sprite, light };
 }
 
 /* ---------- start: WebGL setup in idle slices ---------- */
@@ -1349,7 +1324,7 @@ async function start() {
     else if (o.position.x > 10) o.material.color.setScalar(4);
     else if (o.position.z < -10) o.visible = false;
   });
-  const glow = (w, h, d, v, x, y, z, ry = 0) => {
+  const panelBox = (w, h, d, v, x, y, z, ry = 0) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial());
     m.material.color.setScalar(v);
     m.position.set(x, y, z);
@@ -1359,17 +1334,17 @@ async function start() {
   // Long strips behind the dish draw a line across the mirror.
   // One sits in view from each camera height.
   // Each strip sits at one camera elevation: 32 or 45 degrees.
-  glow(26, 0.2, 0.2, 4, 0, 11.1, -17.8);
-  glow(30, 0.26, 0.26, 4, 0, 18.4, -18.4);
+  panelBox(26, 0.2, 0.2, 4, 0, 11.1, -17.8);
+  panelBox(30, 0.26, 0.26, 4, 0, 18.4, -18.4);
   // Low panels light the steep flanks, not the flat pool.
   for (let k = 0; k < 9; k++) {
     const a = (k / 9) * TAU + 0.2;
-    glow(2.2, 3.2, 0.1, k % 3 ? 4 : 6.5, Math.sin(a) * 12.5, 1.9, Math.cos(a) * 12.5, a);
+    panelBox(2.2, 3.2, 0.1, k % 3 ? 4 : 6.5, Math.sin(a) * 12.5, 1.9, Math.cos(a) * 12.5, a);
   }
   // Two panels carry the pole colours into the spike streaks.
   room.children.slice(-9).forEach((m, k) => {
-    if (k === 2) m.material.color.setRGB(...oklchRgb(...POLE_N), THREE.SRGBColorSpace).multiplyScalar(6);
-    if (k === 7) m.material.color.setRGB(...oklchRgb(...POLE_S), THREE.SRGBColorSpace).multiplyScalar(6);
+    if (k === 2) m.material.color.setRGB(...oklchRgb(...WARM), THREE.SRGBColorSpace).multiplyScalar(6);
+    if (k === 7) m.material.color.setRGB(...oklchRgb(...COOL), THREE.SRGBColorSpace).multiplyScalar(6);
   });
   // No extra blur: bright panels would bloom across the mirror.
   const pm = new THREE.PMREMGenerator(renderer);
@@ -1471,8 +1446,8 @@ async function start() {
   neckMesh.frustumCulled = false;
   neckMesh.count = 0;
   scene.add(neckMesh);
-  magnet = await buildMagnet();
-  scene.add(magnet);
+  glow = buildGlow();
+  scene.add(glow.sprite, glow.light);
 
   panel.prepend(canvas);
   fitRenderer(renderer, panel, 1.5, (w, h) => {
