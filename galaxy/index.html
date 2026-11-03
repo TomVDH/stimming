@@ -35,12 +35,6 @@
 }
 .adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
 @media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-/* Settings opens a column of tweaks above the bar. */
-.add.sets { flex-direction: column; align-items: stretch; gap: 8px; min-width: 18em; padding: 10px; }
-.sets .slider { justify-content: space-between; }
-.sets .slider span { white-space: nowrap; }
-.sets .chip { justify-content: space-between; }
-#setBtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .add .chip.icon svg .solid { fill: currentColor; stroke: none; }
 /* Objects sit four to a row. */
 #add { display: grid; grid-template-columns: repeat(4, auto); }
@@ -82,14 +76,6 @@
           </div>
         </div>
         <label class="slider"><span>Gravity</span><input type="range" id="grav" min="0.3" max="1.2" step="0.05" value="0.3"></label>
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <label class="slider"><span>Star streaks</span><input type="range" id="starStreak" min="0" max="1" step="0.05" value="0.15"></label>
-            <label class="slider"><span>Effect streaks</span><input type="range" id="streak" min="0" max="1.2" step="0.05" value="0.3"></label>
-            <button class="chip" id="sweep" type="button" aria-pressed="false">Sound sweeps</button>
-          </div>
-        </div>
       </div>
       <div class="actions" id="ctl">
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
@@ -147,11 +133,6 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 // Only the drone sounds: one voice per cluster.
 let ac = null, out = null, askedAt = -1e9, restT = 0;
 const mtof = m => 440 * 2 ** ((m - 69) / 12);
-// Settings persist per browser; storage is optional.
-const saved = k => { try { return localStorage.getItem(`stimming.galaxy.${k}`); } catch (err) { return null; } };
-const save = (k, v) => { try { localStorage.setItem(`stimming.galaxy.${k}`, v); } catch (err) { /* storage is optional */ } };
-// Sweeps move the drone's and the hole chord's lowpass; they start off.
-let sweeps = saved('sweeps') === '1';
 
 // The drone is one D chord, root first.
 // Each cluster rank adds one voice, heaviest on the root.
@@ -160,7 +141,6 @@ const AMP = [0.08, 0.055, 0.045, 0.038, 0.032, 0.024, 0.019, 0.016];
 const layers = [];
 // The star count writes these targets twice a second.
 const mixAt = { level: new Float32Array(8) };
-let droneLfo = null;
 
 function audio() {
   if (!ac) {
@@ -174,26 +154,18 @@ function audio() {
     out.gain.value = 0.55;
     out.connect(comp);
     comp.connect(ac.destination);
-    // One slow wave breathes every voice's lowpass.
-    const lfo = ac.createOscillator();
-    droneLfo = ac.createGain();
-    lfo.frequency.value = 0.06;
-    droneLfo.gain.value = sweeps ? 70 : 0;
-    lfo.connect(droneLfo);
-    lfo.start();
     for (let k = 0; k < 8; k++) layers.push(makeLayer(k));
   }
   if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.then(() => mixLayers()).catch(() => {}); }
 }
 // One drone voice per cluster rank, silent until stars bind.
-// Each voice is a detuned pair under a breathing lowpass.
+// Each voice is a detuned pair under a fixed lowpass.
 function makeLayer(k) {
   const g = ac.createGain(), lp = ac.createBiquadFilter();
   g.gain.value = 0;
   lp.type = 'lowpass';
   lp.frequency.value = k ? 900 : 600;
   lp.Q.value = 0.4;
-  droneLfo.connect(lp.frequency);
   lp.connect(g).connect(out);
   const f = mtof(DRONE[k]);
   for (const sgn of [-1, 1]) {
@@ -226,12 +198,8 @@ function holeChord() {
   const t0 = a.currentTime + 0.05, lp = a.createBiquadFilter(), bus = a.createGain();
   lp.type = 'lowpass';
   lp.Q.value = 0.4;
-  // Without sweeps the chord's filter holds still.
-  lp.frequency.setValueAtTime(sweeps ? 260 : 1100, t0);
-  if (sweeps) {
-    lp.frequency.linearRampToValueAtTime(1400, t0 + 3);
-    lp.frequency.setTargetAtTime(300, t0 + 5.5, 2);
-  }
+  // The chord's filter holds still: no sweeps.
+  lp.frequency.setValueAtTime(1100, t0);
   bus.gain.value = 1;
   lp.connect(bus).connect(out);
   HOLE_CHORD.forEach((m, k) => {
@@ -387,7 +355,8 @@ let renderer = null, camera = null;
 let clockT = 0;
 let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star', pace = PACE;
 // Streak lengths in seconds: stars and objects, then effects.
-let starStreak = Number(saved('starStreak') ?? 0.15), streak = Number(saved('streak') ?? 0.3), zoom = 1, zoomGoal = 1;
+const STAR_STREAK = 0.18, FX_STREAK = 0.18;
+let zoom = 1, zoomGoal = 1;
 const wells = [];
 
 async function start() {
@@ -1217,9 +1186,9 @@ async function start() {
 
   /* ---------- wells: a few heavy points, simulated on the CPU ---------- */
   // Centring follows the heavy wells, gently, and moves the whole frame.
-  const K_C = 0.12, C_C = 0.7, GAMMA = 0.5, MERGE_R = 0.6;
+  const K_C = 0.12, C_C = 0.7, GAMMA = 1.3, MERGE_R = 0.9;
   // Heavy wells answer pulls slowly, so cores hold their place.
-  const INERT = 30, DRAG = 0.05, RAMP = 0.7;
+  const INERT = 30, DRAG = 0.14, RAMP = 0.7;
   const resp = m => 1 / (1 + m / INERT);
   let frameX = 0, frameZ = 0;
   // Kind is star, pulsar or well; a well is dark mass with a hot core.
@@ -1288,7 +1257,7 @@ async function start() {
       if (a.mt <= 0 || b.mt <= 0 || pinned(a) || pinned(b)) continue;
       const dx = b.x - a.x, dz = b.z - a.z;
       const reach = MERGE_R + 1.5 * ((a.hole ? holeRadius(a.m) : 0) + (b.hole ? holeRadius(b.m) : 0));
-      const fast = a.hole || b.hole ? 10 : 6;
+      const fast = a.hole || b.hole ? 12 : 8;
       if (dx * dx + dz * dz > reach * reach || Math.hypot(a.vx - b.vx, a.vz - b.vz) > fast) continue;
       const keep = b.held ? b : a, gone = keep === a ? b : a, M = a.m + b.m || 1;
       if (!keep.held) {
@@ -1329,14 +1298,15 @@ async function start() {
     }
   }
   // A new well gets a slightly slow circular orbit round the others.
-  function orbitVel(x, z, m) {
+  // Slow is the share of circular speed; a dark well starts slow, so it sinks.
+  function orbitVel(x, z, m, slow = 0.85) {
     let M = 0, cx = 0, cz = 0, vx = 0, vz = 0;
     for (const w of wells) if (w.mt > 0 && !pinned(w)) { M += w.mt; cx += w.mt * w.x; cz += w.mt * w.z; vx += w.mt * w.vx; vz += w.mt * w.vz; }
     if (!M) return [0, 0];
     cx /= M; cz /= M; vx /= M; vz /= M;
     const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz);
     if (r < 0.5) return [vx, vz];
-    const v = 0.85 * Math.sqrt((resp(m) * (M + m * 0.5) * r * r) / (r * r + EPSW2) ** 1.5);
+    const v = slow * Math.sqrt((resp(m) * (M + m * 0.5) * r * r) / (r * r + EPSW2) ** 1.5);
     return [vx - (dz / r) * v, vz + (dx / r) * v];
   }
   // At the cap, the oldest object lets go; a full list refuses.
@@ -1376,7 +1346,7 @@ async function start() {
       star: type.m, nova: NOVA_M, pulsar: PULSAR_M, white: WHITE_M, magnetar: MAG_M, nebula: NEBULA_M, comet: COMET_M,
       giant: GIANT_M, globe: GLOBE_M, kilo: KILO_M, grb: GRB_M, string: 0.5, dark: DARK_M,
     }[pick] ?? TAP_M;
-    let [vx, vz] = pick === 'white' || pick === 'string' ? [0, 0] : orbitVel(x, z, m);
+    let [vx, vz] = pick === 'white' || pick === 'string' ? [0, 0] : orbitVel(x, z, m, pick === 'well' ? 0.55 : 0.85);
     // A comet runs fast, on a long and narrow orbit.
     if (pick === 'comet') { vx *= 1.45; vz *= 1.45; }
     const col = {
@@ -1854,22 +1824,6 @@ async function start() {
   const adder = document.querySelector('.adder'), addBtn = document.getElementById('addBtn');
   const addName = document.getElementById('addName'), addBs = [...document.querySelectorAll('#add .chip')];
   const openTray = popover(adder, addBtn);
-  popover(document.getElementById('setter'), document.getElementById('setBtn'));
-  // Streaks set how long effects linger; zero turns them off.
-  const streakIn = document.getElementById('streak');
-  streakIn.value = String(streak);
-  streakIn.addEventListener('input', () => { streak = Number(streakIn.value); save('streak', streakIn.value); });
-  const starIn = document.getElementById('starStreak');
-  starIn.value = String(starStreak);
-  starIn.addEventListener('input', () => { starStreak = Number(starIn.value); save('starStreak', starIn.value); });
-  const sweepB = document.getElementById('sweep');
-  sweepB.setAttribute('aria-pressed', String(sweeps));
-  sweepB.addEventListener('click', () => {
-    sweeps = !sweeps;
-    sweepB.setAttribute('aria-pressed', String(sweeps));
-    save('sweeps', sweeps ? '1' : '0');
-    if (droneLfo) droneLfo.gain.value = sweeps ? 70 : 0;
-  });
   addBs.forEach(b => b.addEventListener('click', () => {
     pick = b.dataset.kind;
     addBs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
@@ -2024,8 +1978,8 @@ async function start() {
     placeCamera(now / 1000);
     updateHole(dt);
     // Reduced motion draws each frame alone, with no streaks.
-    uDamp.value = reduce || !streak ? 0 : Math.exp(-dt / streak);
-    uDampStars.value = reduce || !starStreak ? 0 : Math.exp(-dt / starStreak);
+    uDamp.value = reduce ? 0 : Math.exp(-dt / FX_STREAK);
+    uDampStars.value = reduce ? 0 : Math.exp(-dt / STAR_STREAK);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
       tails[k].visible = !!w && w.kind === 'comet' && !w.hole && w.vis > 0.01;
