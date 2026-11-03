@@ -80,7 +80,17 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
 
   await held;
 
-  // The last flash ticks the toy off beside its mark.
+  // A toy Tom signs off carries data-done; its last flash shows a tick.
+  if ('done' in root.dataset) await tickOff(big, badge, name);
+
+  // The column wipes off, then the glass fades away whole.
+  await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
+  await play(root, p => ({ opacity: 1 - p }), 500, settle);
+  root.remove();
+}
+
+// The last flash ticks the toy off beside its mark.
+async function tickOff(big, badge, name) {
   const tick = document.createElement('span');
   tick.className = 'intro-tick';
   tick.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.5l5.5 5.5L20.5 6" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="square"/></svg>';
@@ -92,9 +102,4 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   tick.style.transform = '';
   await wait(8);
   if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
-
-  // The column wipes off, then the glass fades away whole.
-  await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
-  await play(root, p => ({ opacity: 1 - p }), 500, settle);
-  root.remove();
 }
