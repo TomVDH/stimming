@@ -37,7 +37,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Chladni plate | [chladni/](chladni/) | live, with sound |
 | Prism | [prism/](prism/) | live, with sound; Canvas 2D only |
 | Split-flap | [flap/](flap/) | live draft, still being refined |
-| Snow globe, Murmuration, Coil, Frost, Gear train, Harmonograph, Dandelion, Music box, Neon sign | | in progress; outlines on the menu |
+| Harmonograph | [harmono/](harmono/) | live draft, still being refined |
+| Snow globe, Murmuration, Coil, Frost, Gear train, Dandelion, Music box, Neon sign | | in progress; outlines on the menu |
 
 ## Run locally
 
