@@ -262,6 +262,8 @@ const MAXN = 2600, TARGET = 2000, ROW = Math.sqrt(3) / 2;
 const HMAX = 7, L0 = 0.3, HEAD_Z = 0.22;
 // The frame: inner margin, border width, front lip.
 const MARGIN = 0.8, BORDER = 2.1, LIP = 1, BEV = 0.2;
+// Notch slot width and cap; the frame colour as OKLCH.
+const NOTCH_W = 0.16, NOTCH_MAX = 160, FRAME_OKLCH = [0.7, 0.19, 45];
 let cols = 0, rows = 0, N = 0, halfW = 0, halfH = 0;
 const PX = new Float32Array(MAXN), PY = new Float32Array(MAXN);
 const H = new Float32Array(MAXN), V = new Float32Array(MAXN), T = new Float32Array(MAXN), HP = new Float32Array(MAXN);
@@ -705,7 +707,7 @@ function spin(dt) {
 
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, board = null, mark = null;
-let shafts = null, heads = null, shaftsB = null, headsB = null, hAttr = null, sAttr = null, frameMesh = null, plate = null;
+let shafts = null, heads = null, shaftsB = null, headsB = null, hAttr = null, sAttr = null, frameMesh = null, plate = null, notches = null;
 // Back pins show only while the board turns.
 const backs = on => { shaftsB.visible = headsB.visible = on; };
 let ray = null, ndc = null, tmp = null, ready = false, kbd = false;
@@ -758,6 +760,24 @@ function place() {
   frameMesh.geometry = g;
   plate.geometry.dispose();
   plate.geometry = new THREE.PlaneGeometry(2 * iw + 0.6, 2 * ih + 0.6);
+  // Ruler notches cut the lip every 5 pins; every 10th runs long.
+  // Each slot passes through the frame, so both faces show it.
+  const m = new THREE.Matrix4(), at = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  let n = 0;
+  const cut = (x, y, w, h) => { if (n < NOTCH_MAX) notches.setMatrixAt(n++, m.compose(at.set(x, y, 0), q, sc.set(w, h, 2 * LIP + 0.006))); };
+  const len = k => (k % 2 ? 0.7 : 1.25);
+  for (let k = -Math.floor(halfW / 5); 5 * k <= halfW; k++) {
+    const y = ih + BEV + len(k) / 2;
+    cut(5 * k, y, NOTCH_W, len(k));
+    cut(5 * k, -y, NOTCH_W, len(k));
+  }
+  for (let k = -Math.floor(halfH / (5 * ROW)); 5 * k * ROW <= halfH; k++) {
+    const x = iw + BEV + len(k) / 2;
+    cut(x, 5 * k * ROW, len(k), NOTCH_W);
+    cut(-x, 5 * k * ROW, len(k), NOTCH_W);
+  }
+  notches.count = n;
+  notches.instanceMatrix.needsUpdate = true;
 }
 function aimCam(d, ty) {
   camera.position.set(0, ty + d * Math.sin(EL), d * Math.cos(EL));
@@ -788,6 +808,9 @@ function fit(w, h) {
     for (const sy of [-1, 1]) for (const z of [-LIP, LIP]) pts.push(new THREE.Vector3(sx * fw, sy * fh, z));
     pts.push(new THREE.Vector3(sx * halfW, -halfH, L0 + HMAX + HEAD_Z));
   }
+  // The frame clears the inset bar, so its blur never smears the orange.
+  const bar = panel.nextElementSibling, padN = bar && !bar.classList.contains('bar--below') ? (2 * Math.max(0, bar.offsetHeight - 30)) / h : 0;
+  const span = 1.88 - padN, mid = (padN - 0.06) / 2;
   let d = 150, ty = 0;
   for (let it = 0; it < 4; it++) {
     let lo = 20, hi = 3000;
@@ -795,13 +818,13 @@ function fit(w, h) {
       d = (lo + hi) / 2;
       aimCam(d, ty);
       const [x0, x1, y0, y1] = bounds(pts);
-      if (Math.max(-x0, x1) <= 0.95 && y1 - y0 <= 1.86) hi = d; else lo = d;
+      if (Math.max(-x0, x1) <= 0.95 && y1 - y0 <= span) hi = d; else lo = d;
     }
     d = hi;
     aimCam(d, ty);
     // Recentre: an NDC offset becomes a shift along the board.
     const [, , y0, y1] = bounds(pts);
-    ty += (((y0 + y1) / 2) * d * Math.tan((FOV * Math.PI) / 360)) / Math.cos(EL);
+    ty += (((y0 + y1) / 2 - mid) * d * Math.tan((FOV * Math.PI) / 360)) / Math.cos(EL);
   }
   aimCam(d, ty);
   camera.near = Math.max(1, d - 90);
@@ -1091,11 +1114,16 @@ async function start() {
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshStandardMaterial({ color: 0x0e1013, metalness: 0.3, roughness: 0.78 }),
   );
+  // The frame is a jig powder-coated in safety orange.
+  const [or, og, ob] = oklchRgb(...FRAME_OKLCH);
   frameMesh = new THREE.Mesh(
     new THREE.BufferGeometry(),
-    new THREE.MeshStandardMaterial({ color: 0x30343b, metalness: 0.45, roughness: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(or, og, ob, THREE.SRGBColorSpace), metalness: 0.05, roughness: 0.55 }),
   );
-  board.add(plate, frameMesh);
+  // Notches are cut gaps, so they show the dark of the slot.
+  notches = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x0b0c0f }), NOTCH_MAX);
+  notches.frustumCulled = false;
+  board.add(plate, frameMesh, notches);
 
   // Slim brushed-steel shafts, one unit long before stretching.
   const small = Math.min(innerWidth, innerHeight) < 700;
