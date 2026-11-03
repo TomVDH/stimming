@@ -60,7 +60,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--morpher" id="stage" tabindex="0" role="application" aria-label="A shape that melts from one form into the next. Click to drop a blob, drag to throw one. Arrow keys move the aim, Space drops a blob there, C clears the blobs.">
+    <div class="stage stage--morpher" id="stage" tabindex="0" role="application" aria-label="A shape that melts from one form into the next. Click to drop a blob, drag to throw one, drag the shape to stretch it. Arrow keys move the aim, Space drops a blob there, C clears the blobs.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Morpher needs WebGL, which this browser has turned off.</p>
     </div>
@@ -80,7 +80,7 @@
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
         <div><dt>Drag</dt><dd>throw</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>drop</dd></div>
+        <div><dt>Drag the shape</dt><dd>stretch</dd></div>
         <div class="fine"><dt><kbd>C</kbd></dt><dd>clear</dd></div>
       </dl>
     </div>
@@ -199,7 +199,7 @@ const FRAG = /* glsl */ `
 precision highp float;
 uniform vec2 uRes, uVel, uSq;
 uniform float uTime, uK, uTw;
-uniform vec4 uPip;
+uniform vec4 uPip, uPull;
 uniform vec3 uPC, uSA, uSB;
 uniform vec4 uW[5];
 uniform vec4 uBl[32], uBc[32];
@@ -383,8 +383,17 @@ vec3 toLin(vec3 lab) {
 void main() {
   float px = 1.0 / min(uRes.x, uRes.y);
   vec2 p = (gl_FragCoord.xy - 0.5 * uRes) * px;
+  // A grab pulls a narrow band of the field toward the pointer.
+  // The band lengthens with the pull, so the warp never folds.
+  vec2 pw = p;
+  float pl = length(uPull.xy);
+  if (pl > 1e-4) {
+    vec2 u = uPull.xy / pl, r = p - uPull.zw;
+    float ra = dot(r, u) / max(0.15, pl * 0.95), rp = dot(r, vec2(-u.y, u.x)) / 0.12;
+    pw -= uPull.xy * exp(-ra * ra - rp * rp);
+  }
   // The shape twists mid-morph and squashes like jelly.
-  vec2 q = rot(uTw) * p / uSq;
+  vec2 q = rot(uTw) * pw / uSq;
   float dS = field(q) * min(uSq.x, uSq.y);
   // The pip stretches toward its spring tail; blobs and trail fuse with it.
   float kb = uK * 0.7;
@@ -438,6 +447,10 @@ W[0] = 1;
 const jel = { s: 0, v: 0 };
 const ptr = { x: 0, y: 0, vx: 0, vy: 0, t: 0, on: false, w: 0 };
 const tail = { x: 0, y: 0, vx: 0, vy: 0 };
+// A press on the shape grabs it at (x, y); the pull springs toward the pointer.
+const GRAB_R = 0.3, PULL_MAX = 0.42;
+const grab = { x: 0, y: 0, on: false };
+const pull = { x: 0, y: 0, vx: 0, vy: 0 };
 const chain = Array.from({ length: 8 }, () => ({ x: 0, y: 0 }));
 const drops = [];
 // Pairs of blobs that touch; each new touch makes both blobs boing.
@@ -569,19 +582,26 @@ stage.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   kbd = false;
   track(e);
-  down = { x: ptr.x, y: ptr.y };
+  // A press near the shape's middle grabs the shape, not a blob.
+  const hit = ready && Math.hypot(ptr.x, ptr.y) < GRAB_R;
+  down = { x: ptr.x, y: ptr.y, grab: hit };
+  if (hit) { grab.x = ptr.x; grab.y = ptr.y; grab.on = true; wakeToy(); }
   try { stage.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
 });
 stage.addEventListener('pointerup', e => {
   if (!down) return;
   // A drag throws the blob with the pointer's velocity; a click just drops it.
   const thrown = Math.hypot(ptr.x - down.x, ptr.y - down.y) > 0.02;
-  if (thrown) drop(ptr.x, ptr.y, ptr.vx, ptr.vy);
+  grab.on = false;
+  // A released stretch snaps back and jiggles; a tap on the shape still drops.
+  if (down.grab && thrown) kick(Math.hypot(pull.x, pull.y) * 1.6);
+  else if (thrown) drop(ptr.x, ptr.y, ptr.vx, ptr.vy);
   else drop(ptr.x, ptr.y, 0, 0);
   down = null;
   if (e.pointerType === 'touch') ptr.on = false;
+  wakeToy();
 });
-stage.addEventListener('pointercancel', () => { down = null; ptr.on = false; wakeToy(); });
+stage.addEventListener('pointercancel', () => { down = null; grab.on = false; ptr.on = false; wakeToy(); });
 stage.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !down) { ptr.on = false; wakeToy(); } });
 
 // Keys: the pip becomes an aim point that the arrows move.
@@ -629,16 +649,29 @@ addEventListener('keydown', e => {
 function step(dt) {
   // A still pointer sends no events, so its speed decays here.
   if (performance.now() - ptr.t > 50) { const k = Math.exp(-dt * 20); ptr.vx *= k; ptr.vy *= k; }
-  const wT = ptr.on ? 1 : 0;
+  // The pip hides while a grab holds the shape.
+  const wT = ptr.on && !grab.on ? 1 : 0;
   ptr.w += (wT - ptr.w) * (1 - Math.exp(-dt * 12));
   if (Math.abs(ptr.w - wT) < 1e-3) ptr.w = wT;
-  // The tail, weight and jelly springs run in small fixed steps.
+  // The pull target eases off toward PULL_MAX, like stiff rubber.
+  let gx = 0, gy = 0;
+  if (grab.on) {
+    gx = ptr.x - grab.x; gy = ptr.y - grab.y;
+    const gl = Math.hypot(gx, gy);
+    if (gl > 1e-6) { const f = (PULL_MAX * Math.tanh(gl / PULL_MAX)) / gl; gx *= f; gy *= f; }
+  }
+  // Held, the pull follows closely; released, it wobbles home.
+  const pk = grab.on ? 320 : 150, pd = grab.on ? 30 : 7;
+  // The tail, pull, weight and jelly springs run in small fixed steps.
   const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
   for (let s = 0; s < steps; s++) {
     tail.vx += (260 * (ptr.x - tail.x) - 32 * tail.vx) * h;
     tail.vy += (260 * (ptr.y - tail.y) - 32 * tail.vy) * h;
     tail.x += tail.vx * h; tail.y += tail.vy * h;
     if (reduce) continue;
+    pull.vx += (pk * (gx - pull.x) - pd * pull.vx) * h;
+    pull.vy += (pk * (gy - pull.y) - pd * pull.vy) * h;
+    pull.x += pull.vx * h; pull.y += pull.vy * h;
     for (let i = 0; i < NS; i++) {
       if (!W[i] && !V[i] && i !== tgt) continue;
       V[i] += (OM * OM * ((i === tgt ? 1 : 0) - W[i]) - 2 * ZETA * OM * V[i]) * h;
@@ -654,6 +687,10 @@ function step(dt) {
     if (reduce || (Math.abs(goal - W[i]) < 1e-4 && Math.abs(V[i]) < 1e-3)) { W[i] = goal; V[i] = 0; } else morphing = true;
   }
   if (reduce || (Math.abs(jel.s) < 1e-4 && Math.abs(jel.v) < 1e-3)) jel.s = jel.v = 0;
+  // A settled pull snaps to its target; reduced motion skips the spring.
+  const pulling = Math.abs(gx - pull.x) + Math.abs(gy - pull.y) > 1e-4 || Math.abs(pull.vx) + Math.abs(pull.vy) > 1e-3;
+  if (reduce || !pulling) { pull.x = gx; pull.y = gy; pull.vx = pull.vy = 0; }
+  U.uPull.value.set(pull.x, pull.y, grab.x + pull.x, grab.y + pull.y);
   let sx = reduce ? 0 : ptr.x - tail.x, sy = reduce ? 0 : ptr.y - tail.y;
   const sl = Math.hypot(sx, sy);
   if (sl > 0.16) { sx *= 0.16 / sl; sy *= 0.16 / sl; }
@@ -726,7 +763,7 @@ function step(dt) {
 
   // Settled: no cycle, no blobs, form home, jelly still.
   // The pip also rests or is gone.
-  if (cycling || drops.length || morphing || jel.s || jel.v || ptr.w !== wT) return true;
+  if (cycling || drops.length || morphing || jel.s || jel.v || ptr.w !== wT || (pulling && !reduce)) return true;
   if (ptr.w === 0) return false;
   const last = chain[TRAIL - 1];
   return Math.abs(ptr.x - tail.x) + Math.abs(ptr.y - tail.y) > 1e-4 || Math.abs(tail.vx) + Math.abs(tail.vy) > 1e-3 ||
@@ -886,7 +923,7 @@ async function start() {
   U = {
     uRes: { value: new THREE.Vector2(1, 1) }, uVel: { value: new THREE.Vector2() }, uSq: { value: new THREE.Vector2(1, 1) },
     uTime: { value: 0 }, uK: { value: +blendI.value }, uTw: { value: 0 },
-    uPip: { value: new THREE.Vector4(0, 0, PIP, 0) }, uPC: { value: new THREE.Vector3() },
+    uPip: { value: new THREE.Vector4(0, 0, PIP, 0) }, uPull: { value: new THREE.Vector4() }, uPC: { value: new THREE.Vector3() },
     uSA: { value: new THREE.Vector3() }, uSB: { value: new THREE.Vector3() }, uW: { value: uw },
     uBl: { value: bl }, uBc: { value: bc }, uN: { value: 0 },
   };
