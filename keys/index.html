@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Keycaps</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Keycaps: a slab of oversized switches, one switch feel per row. */
+:root { --stage: oklch(0.19 0.012 270); }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/keys.svg)"></span><span class="intro-name">Keycaps</span><span class="intro-sub">Stimming No. 17</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--keys" id="stage" tabindex="0" role="application" aria-label="A slab of big mechanical keys in four rows: clicky, tactile, linear and silent. Press a key, drag across a row to roll it, or type on your own keyboard to press the matching key.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Keycaps needs canvas drawing, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" role="group" aria-label="Colourway">
+        <button class="chip" type="button" data-value="signal" aria-pressed="true">Signal</button>
+        <button class="chip" type="button" data-value="ink" aria-pressed="false">Ink</button>
+        <button class="chip" type="button" data-value="candy" aria-pressed="false">Candy</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="shuffle" type="button">Shuffle</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Click</dt><dd>press</dd></div>
+        <div><dt>Drag</dt><dd>roll</dd></div>
+        <div class="fine"><dt>Type</dt><dd>press</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Keycaps</h1><div class="vignette" hidden></div></section>
+</div>
+
+<script type="module">
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+</script>
+<script type="module">
+import { initPage, audioKit, choices, fitCanvas, reduced } from '../shared/stim.js';
+initPage({ id: 'keys' });
+
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const ctx = canvas.getContext('2d');
+if (!ctx) { stage.querySelector('.fail').hidden = false; throw new Error('no canvas'); }
+
+/* ---------- board ---------- */
+// One switch feel per row, top to bottom.
+const ROWS = ['clicky', 'tactile', 'linear', 'silent'];
+// Your own keyboard's rows map onto the slab's rows.
+const TYPE_ROWS = ['1234567890-=', 'qwertyuiop[]', "asdfghjkl;'\\", 'zxcvbnm,./'];
+// Each colourway gives a cap and a darker skirt per row, plus one accent key.
+const WAYS = {
+  signal: [['oklch(0.72 0.19 45)', 'oklch(0.5 0.15 40)'], ['oklch(0.9 0.02 90)', 'oklch(0.68 0.02 90)'], ['oklch(0.42 0.02 265)', 'oklch(0.28 0.02 265)'], ['oklch(0.3 0.015 265)', 'oklch(0.2 0.012 265)'], 'oklch(0.86 0.17 128)'],
+  ink: [['oklch(0.55 0.15 265)', 'oklch(0.36 0.12 268)'], ['oklch(0.86 0.06 230)', 'oklch(0.62 0.07 235)'], ['oklch(0.34 0.08 265)', 'oklch(0.22 0.06 268)'], ['oklch(0.24 0.04 268)', 'oklch(0.16 0.03 270)'], 'oklch(0.72 0.19 30)'],
+  candy: [['oklch(0.8 0.13 350)', 'oklch(0.6 0.16 345)'], ['oklch(0.9 0.11 95)', 'oklch(0.72 0.13 85)'], ['oklch(0.8 0.1 200)', 'oklch(0.6 0.11 210)'], ['oklch(0.76 0.1 300)', 'oklch(0.56 0.13 300)'], 'oklch(0.97 0.02 90)'],
+};
+let way = 'signal';
+// Stencil marks cut into the caps instead of legends.
+const MARKS = ['dot', 'bar', 'ring', 'tri', 'none', 'none', 'dot', 'none', 'bar', 'none', 'ring', 'none'];
+let keys = [], u = 60, ox = 0, oy = 0, cols = 10;
+function layout() {
+  const { w, h } = size;
+  cols = Math.max(6, Math.min(12, Math.floor(w / 92)));
+  // Keys fill the stage, leaving room under the last row for the inset bar.
+  u = Math.min((w - 40) / cols, (h - 110) / ROWS.length);
+  ox = (w - u * cols) / 2; oy = Math.max(24, (h - 90 - u * ROWS.length) / 2);
+  const old = keys;
+  keys = [];
+  ROWS.forEach((type, r) => {
+    for (let c = 0; c < cols; c++) {
+      const prev = old.find(k => k.r === r && k.c === c);
+      keys.push(prev || { r, c, type, p: 0, v: 0, held: 0, mark: MARKS[(c * 5 + r * 3) % MARKS.length], accent: (r * 7 + c * 3) % 11 === 4 });
+    }
+  });
+}
+
+/* ---------- drawing ---------- */
+let size = { w: 1, h: 1, dpr: 1 };
+function fit() { size = fitCanvas(canvas, { maxDpr: 2, budget: 2.6e6 }); layout(); draw(); }
+function capPath(x, y, w, h, r) { const p = new Path2D(); p.roundRect(x, y, w, h, r); return p; }
+function mark(kind, cx, cy, s) {
+  ctx.fillStyle = 'oklch(0.16 0.012 275 / 0.85)';
+  ctx.strokeStyle = 'oklch(0.16 0.012 275 / 0.85)';
+  ctx.lineWidth = s * 0.16;
+  ctx.beginPath();
+  if (kind === 'dot') { ctx.arc(cx, cy, s * 0.13, 0, Math.PI * 2); ctx.fill(); }
+  else if (kind === 'bar') { ctx.roundRect(cx - s * 0.24, cy - s * 0.06, s * 0.48, s * 0.12, s * 0.06); ctx.fill(); }
+  else if (kind === 'ring') { ctx.arc(cx, cy, s * 0.17, 0, Math.PI * 2); ctx.stroke(); }
+  else if (kind === 'tri') { ctx.moveTo(cx, cy - s * 0.18); ctx.lineTo(cx + s * 0.18, cy + s * 0.13); ctx.lineTo(cx - s * 0.18, cy + s * 0.13); ctx.closePath(); ctx.fill(); }
+}
+function draw() {
+  const { w, h, dpr } = size;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const W = WAYS[way], gap = u * 0.08, travel = u * 0.1, skirt = u * 0.16;
+  for (const k of keys) {
+    const x = ox + k.c * u + gap / 2, y = oy + k.r * u + gap / 2, s = u - gap;
+    const [cap, side] = k.accent ? [W[4], 'oklch(0.3 0.02 265)'] : W[k.r];
+    const dy = k.p * travel;
+    // The skirt sits under the cap; it shortens as the cap goes down.
+    ctx.fillStyle = 'oklch(0.12 0.01 270)';
+    ctx.fill(capPath(x, y + skirt, s, s - skirt * 0.6, s * 0.14));
+    ctx.fillStyle = side;
+    ctx.fill(capPath(x, y + dy, s, s - dy + skirt * (1 - k.p) * 0.4, s * 0.14));
+    // The top face: a slightly smaller dish, darker while pressed.
+    const inset = s * 0.12, top = capPath(x + inset, y + dy + inset * 0.6, s - inset * 2, s - inset * 2.2, s * 0.1);
+    const g = ctx.createLinearGradient(x, y + dy, x, y + dy + s);
+    g.addColorStop(0, cap); g.addColorStop(1, side);
+    ctx.fillStyle = g; ctx.fill(top);
+    ctx.fillStyle = `rgba(255,255,255,${0.14 * (1 - k.p)})`; ctx.fill(top);
+    ctx.fillStyle = `rgba(0,0,0,${0.18 * k.p})`; ctx.fill(top);
+    if (k.mark !== 'none') mark(k.mark, x + s / 2, y + dy + s * 0.45, s);
+  }
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.55 });
+// A short filtered noise hit; the switch type sets its colour.
+function hit(freq, q, peak, len, type = 'bandpass') {
+  const ac = kit.live(); if (!ac || !kit.noise) return;
+  const src = ac.createBufferSource(); src.buffer = kit.noise;
+  const f = ac.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.value = freq;
+  const g = ac.createGain(), t = ac.currentTime;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(f); f.connect(g); g.connect(kit.out);
+  src.start(t, Math.random() * 0.6, len + 0.03);
+}
+function thock(freq, peak, len) {
+  const ac = kit.live(); if (!ac) return;
+  const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+  o.type = 'sine'; o.frequency.setValueAtTime(freq * 1.6, t); o.frequency.exponentialRampToValueAtTime(freq, t + 0.03);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(g); g.connect(kit.out); o.start(t); o.stop(t + len + 0.02);
+}
+// Each row has its own down and up sound; a little pitch spread keeps it alive.
+const SOUND = {
+  clicky: [k => { hit(4200, 5, 0.6, 0.03); hit(2600, 3, 0.35, 0.05); thock(260 + k.c * 4, 0.25, 0.06); }, () => hit(5200, 6, 0.4, 0.025)],
+  tactile: [k => { thock(150 + k.c * 3, 0.55, 0.11); hit(900, 2, 0.3, 0.07, 'lowpass'); }, () => hit(1800, 3, 0.15, 0.04)],
+  linear: [k => { thock(190 + k.c * 3, 0.4, 0.08); hit(1400, 1.5, 0.22, 0.05, 'lowpass'); }, () => hit(2200, 2, 0.12, 0.03)],
+  silent: [k => thock(120 + k.c * 2, 0.3, 0.07), () => {}],
+};
+function down(k) { if (k.held++) return; SOUND[k.type][0](k); wake(); }
+function up(k) { if (!k.held) return; k.held = Math.max(0, k.held - 1); if (!k.held) { SOUND[k.type][1](k); wake(); } }
+
+/* ---------- motion ---------- */
+// Each cap rides a stiff spring toward fully down or fully up.
+let raf = 0, prevT = 0;
+function frame(t) {
+  const dt = Math.min(0.033, (t - (prevT || t)) / 1000);
+  prevT = t;
+  let moving = false;
+  for (const k of keys) {
+    const target = k.held ? 1 : 0;
+    if (reduced()) { k.p = target; k.v = 0; continue; }
+    k.v += ((target - k.p) * 900 - k.v * 26) * dt;
+    k.p += k.v * dt;
+    // The cap bottoms out hard and never rises above its rest.
+    if (k.p > 1) { k.p = 1; k.v = 0; }
+    if (k.p < -0.12) { k.p = -0.12; k.v *= -0.3; }
+    if (Math.abs(target - k.p) > 0.002 || Math.abs(k.v) > 0.02) moving = true;
+  }
+  draw();
+  if (moving) raf = requestAnimationFrame(frame);
+  else { raf = 0; prevT = 0; kit.rest(() => !raf && !keys.some(k => k.held)); }
+}
+const wake = () => { if (!raf) raf = requestAnimationFrame(frame); };
+
+/* ---------- input ---------- */
+const keyAt = e => {
+  const r = canvas.getBoundingClientRect(), x = e.clientX - r.left - ox, y = e.clientY - r.top - oy;
+  const c = Math.floor(x / u), row = Math.floor(y / u);
+  return keys.find(k => k.c === c && k.r === row) || null;
+};
+// Each pointer holds one key; dragging rolls from key to key.
+const pointers = new Map();
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  const k = keyAt(e);
+  pointers.set(e.pointerId, k);
+  if (k) down(k);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  const was = pointers.get(e.pointerId), k = keyAt(e);
+  if (k === was) return;
+  if (was) up(was);
+  if (k) down(k);
+  pointers.set(e.pointerId, k);
+});
+const release = e => { const k = pointers.get(e.pointerId); if (k) up(k); pointers.delete(e.pointerId); };
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+// Typing presses the key in the same place on the slab.
+const typed = e => {
+  const ch = e.key.length === 1 ? e.key.toLowerCase() : null;
+  if (!ch) return null;
+  for (let r = 0; r < TYPE_ROWS.length; r++) {
+    const c = TYPE_ROWS[r].indexOf(ch);
+    if (c >= 0 && c < cols) return keys.find(k => k.r === r && k.c === c);
+  }
+  return null;
+};
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('button')) return;
+  const k = typed(e); if (!k) return;
+  e.preventDefault();
+  if (!e.repeat) down(k);
+});
+addEventListener('keyup', e => { const k = typed(e); if (k) up(k); });
+
+choices(document.querySelector('.choices'), v => { way = v; draw(); });
+// Shuffle moves the accent keys and stencil marks around.
+document.getElementById('shuffle').addEventListener('click', () => {
+  keys.forEach(k => { k.accent = Math.random() < 0.09; k.mark = MARKS[Math.floor(Math.random() * MARKS.length)]; });
+  draw();
+});
+
+new ResizeObserver(fit).observe(stage);
+fit();
+</script>
+</body>
+</html>
