@@ -70,7 +70,7 @@ Open <http://localhost:8000/>. All links are relative.
 
 ## Conventions
 
-- Dark only. Colours are OKLCH tokens. The font is Gabarito.
+- Dark only. Colours are OKLCH tokens. The font is Gabarito; menu toy labels use the self-hosted Iosevka Term Slab in caps.
 - Libraries: Tom picked one set. Add no other library without Tom.
 
   | Role | Library |
