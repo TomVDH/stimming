@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=12">
+<link rel="stylesheet" href="../shared/intro.css?v=15">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -88,6 +88,7 @@ button:hover { border-color: var(--fg); }
   <div class="tl" id="tl" aria-label="Timeline"><div class="tl-total" id="tl-total"></div><div class="tl-bar" id="tl-bar"></div><div class="tl-keys" id="tl-keys"></div></div>
   <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
   <label class="check"><input type="checkbox" id="done"> Signed off (tick)</label>
+  <label class="check"><input type="checkbox" id="static"> Static: hold every line on screen</label>
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
   <label class="check"><input type="checkbox" id="replay"> Replay on change</label>
   <label class="check"><input type="checkbox" id="nameflash"> Name in flash (try-out)</label>
@@ -127,13 +128,14 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=12';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=15';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
   Flash: { lead: [0, 20, 1, 'f'], pop: [0, 10, 1, 'f'], popScale: [1, 5, 0.1, 'x'], flash: [0, 30, 1, 'f'] },
   Icon: { flashScale: [0.4, 2.5, 0.05, 'x'], iconY: [-30, 30, 0.5, 'vh'], restScale: [0.4, 2.5, 0.05, 'x'], restY: [-30, 30, 0.5, 'vh'] },
   Lines: { unfurl: [50, 1500, 10, 'ms'], clsLag: [0, 15, 1, 'f'], nlLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], sndLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'] },
+  'Line Y': { clsY: [-25, 25, 0.25, 'vh'], nameY: [-25, 25, 0.25, 'vh'], nlY: [-25, 25, 0.25, 'vh'], tagY: [-25, 25, 0.25, 'vh'], tagNlY: [-25, 25, 0.25, 'vh'], sndY: [-25, 25, 0.25, 'vh'] },
   Hold: { readBase: [0, 3000, 50, 'ms'], readPer: [0, 60, 1, 'ms'], readCap: [0, 5000, 50, 'ms'], hold: [500, 6000, 50, 'ms'] },
   Exit: { wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'] },
 };
@@ -142,6 +144,7 @@ const LABEL = {
   lead: 'Lead-in', pop: 'Pop', popScale: 'Pop size', flash: 'Flash hold',
   flashScale: 'Icon size in flash', iconY: 'Icon Y in flash', restScale: 'Icon size at rest', restY: 'Icon Y at rest',
   unfurl: 'Line reveal', nlLag: 'Translation delay', tagLag: 'Subtitle delay', tagNlLag: 'Subtitle translation delay',
+  clsY: 'Classic notice Y', nameY: 'Main title Y', nlY: 'Translation Y', tagY: 'Subtitle Y', tagNlY: 'Subtitle translation Y', sndY: 'Audio notice Y',
   sndLag: 'Audio notice delay', clsLag: 'Classic notice delay', subLag: 'Lab tag delay',
   readBase: 'Read base', readPer: 'Read per character', readCap: 'Read cap', hold: 'Fixed hold', wipe: 'Exit', fade: 'Fade',
 };
@@ -158,7 +161,7 @@ let tlReady = false;
 const save = () => {
   if (tlReady) drawTL();
   try {
-    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, numAt: numSel.value }));
+    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, isStatic: staticBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, numAt: numSel.value }));
   } catch (err) {}
 };
 
@@ -189,6 +192,9 @@ const soundNote = () => {
   const [g, words] = noteSel.value === 'off' ? ['', ''] : noteSel.value.split('|');
   return { glyph: g === 'glyph', words: words || null, nudge: nudgeBox.checked };
 };
+const staticBox = document.getElementById('static');
+staticBox.checked = !!saved.isStatic;
+staticBox.addEventListener('change', () => { save(); run(); });
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
 const flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat'), classicBox = document.getElementById('classic');
 classicBox.addEventListener('change', () => { save(); replay(); });
@@ -214,7 +220,7 @@ const fmt = (k, v) => {
 for (const [group, list] of Object.entries(GROUPS)) {
   const det = document.createElement('details');
   det.className = 'group';
-  det.open = (saved.open ?? ['Icon']).includes(group);
+  det.open = (saved.open ?? ['Icon', 'Line Y']).includes(group);
   det.innerHTML = `<summary>${group}</summary><div class="rows"></div>`;
   det.addEventListener('toggle', () => { saved.open = [...knobs.querySelectorAll('details[open] summary')].map(s => s.textContent); try { localStorage.setItem(KEY, JSON.stringify({ ...load(), open: saved.open })); } catch (err) {} });
   knobs.append(det);
@@ -351,7 +357,11 @@ const gate = ph => pauses.has(ph) ? new Promise(res => {
 go.addEventListener('click', () => resume?.());
 
 // Size and place knobs pose the intro: it holds at their beat and follows the slider.
-const POSE = { popScale: 'pop', flashScale: 'flash', iconY: 'flash', restScale: 'lines', restY: 'lines' };
+const POSE = { popScale: 'pop', flashScale: 'flash', iconY: 'flash', restScale: 'lines', restY: 'lines', clsY: 'lines', nameY: 'lines', nlY: 'lines', tagY: 'lines', tagNlY: 'lines', sndY: 'lines' };
+const LINE_Y = { clsY: '.intro-classic', nameY: '.intro-name', nlY: '.intro-nl', tagY: '.intro-tag:not(.intro-tag--nl)', tagNlY: '.intro-tag--nl', sndY: '.intro-snd' };
+// Static mode runs the beats at once and fills every line.
+const FAST = { lead: 0, pop: 0, flash: 0, unfurl: 50, clsLag: 0, nlLag: 0, subLag: 0, tagLag: 0, tagNlLag: 0, sndLag: 0 };
+const FILL = { nl: 'Vertaling', ipa: 'vərˈtaːlɪŋ', tag: 'Subtitle line', tagNl: 'Subtitle translation line', sound: true };
 let holdAt = null, held = null;
 // Sets the held beat's size and place from the current knobs.
 function applyPose() {
@@ -366,10 +376,12 @@ function applyPose() {
     }
   }
   const scale = held === 'lines' ? t.restScale : t.flashScale, y = held === 'lines' ? t.restY : t.iconY;
-  // The flash stages keep the box's centring offset; the lines beat has none.
-  const dy = held === 'lines' ? '0px' : 'var(--dy, 0px)';
-  emblem.style.setProperty('--emblem-k', scale);
-  badge.style.translate = `0 calc(${dy} + ${y}vh)`;
+  badge.style.setProperty('--emblem-k', scale);
+  badge.style.translate = `0 ${y}vh`;
+  if (held === 'lines') for (const [k, sel] of Object.entries(LINE_Y)) {
+    const el = document.querySelector(sel);
+    if (el) el.style.translate = t[k] ? `0 ${t[k]}vh` : '';
+  }
 }
 function pose(ph) {
   if (held === ph) applyPose();
@@ -388,6 +400,8 @@ tlReady = true;
 // The old run stops at its next beat and never resumes.
 let playing = false, gen = 0, loopTimer = 0;
 async function run({ hold = null } = {}) {
+  const still = staticBox.checked;
+  hold ||= still ? 'lines' : null;
   const my = ++gen;
   clearTimeout(loopTimer);
   playing = true;
@@ -419,7 +433,7 @@ async function run({ hold = null } = {}) {
     }
     return gate(ph);
   };
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}) }, gate: beat, soundNote: soundNote(), variety: varSel.value, nameFlash: flashBox.checked, classic: classicBox.checked });
+  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, classic: still || classicBox.checked, fill: still ? FILL : null });
   if (my !== gen) return;
   playing = false;
   took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})${pauses.size ? ', with pauses' : ''}`;

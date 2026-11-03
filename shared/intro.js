@@ -58,7 +58,7 @@ const keys = (el, list) => {
 };
 const pct = v => `${(100 * v).toFixed(2)}%`;
 
-// The lines, in order: main title, classic notice, translation, subtitle, subtitle translation, audio notice.
+// The lines, in order: classic notice, main title, translation, subtitle, subtitle translation, audio notice.
 // Lab toys also carry a lab tag under the translation.
 // Every beat of the shipped intro (Snap), in frames at 30 fps or in milliseconds.
 // The intro lab at /introlab/ edits a copy of this table live.
@@ -77,7 +77,13 @@ export const TIMING = {
   tagLag: 3,      // frames from the subtitle to the motto
   tagNlLag: 3,    // frames from the motto to its Dutch line
   sndLag: 3,      // frames from the line above to the audio notice
-  clsLag: 3,      // frames from the line above to the classic notice
+  clsLag: 3,      // frames from the classic notice to the main title
+  clsY: 0,        // vh the classic notice moves down
+  nameY: 0,       // vh the main title moves down
+  nlY: 0,         // vh the translation moves down
+  tagY: 0,        // vh the subtitle moves down
+  tagNlY: 0,      // vh the subtitle translation moves down
+  sndY: 0,        // vh the audio notice moves down
   hold: 2300,     // ms from the start before a fixed-hold variety clears
   readBase: 350,  // ms of reading time after the last line opens
   readPer: 12,    // ms more reading time per motto character
@@ -239,7 +245,7 @@ const REVEAL = {
 // ready is a promise; a fixed-hold variety holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
-export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, classic = /\/legacy\.html$/.test(location.pathname) } = {}) {
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, classic = /\/legacy\.html$/.test(location.pathname), fill = null } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
@@ -249,6 +255,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
   const info = await entry(id), nameEl = text.querySelector('.intro-name');
+  // The lab's Static mode fills lines a toy lacks, so every line shows.
+  if (fill && info) for (const k of Object.keys(fill)) info[k] ||= fill[k];
   let nl = null;
   if (info && nameEl) {
     nameEl.textContent = info.name;
@@ -276,11 +284,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
   }
 
-  // A classic build says so right under the main title.
+  // A classic build says so below the emblem, above the main title.
   let cls = null;
   if (classic && nameEl) {
     cls = Object.assign(document.createElement('span'), { className: 'intro-classic', textContent: '< CLASSIC >' });
-    nameEl.after(cls);
+    nameEl.before(cls);
   }
 
   if (RM.matches) {
@@ -310,7 +318,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     badge.append(emblem);
     if (info?.number && numAt === 'box') badge.dataset.num = `#${info.number}`;
     // The emblem takes its flash size and place before it shows.
-    emblem.style.setProperty('--emblem-k', T.flashScale);
+    badge.style.setProperty('--emblem-k', T.flashScale);
     badge.style.translate = `0 ${T.iconY}vh`;
   }
   // A toy with sound ends its titles with a quiet headphones line.
@@ -332,20 +340,25 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     big.append(tick);
   }
   // Each line starts closed in the variety's own way, then opens on its beat.
-  const lines = [badge ? name : null, cls, nl, numAt === 'subs' ? num : null, sub,
+  const lines = [cls, badge ? name : null, nl, numAt === 'subs' ? num : null, sub,
     text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
   const lags = [0, T.clsLag, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
   const R = REVEAL[V.reveal] || REVEAL.unfurl;
   lines.forEach(el => { if (el) Object.assign(el.style, R.shut); });
-  // The flash stages sit dead centre in the page.
-  // The hidden lines still take layout, so the box measures its own offset.
-  let dy = 0;
+  // Each line can sit higher or lower than its place in the column.
+  [[cls, T.clsY], [name, T.nameY], [nl, T.nlY], [text.querySelector('.intro-tag:not(.intro-tag--nl)'), T.tagY], [text.querySelector('.intro-tag--nl'), T.tagNlY], [snd, T.sndY]]
+    .forEach(([el, y]) => { if (el && y) el.style.translate = `0 ${y}vh`; });
+  // The icon's centre is the origin: dead centre in the page at every stage.
+  // The copy hangs below it and never pushes it; long copy shrinks to fit.
   if (badge && !nameFlash) {
     badge.style.translate = 'none';
-    const r = root.getBoundingClientRect(), b = badge.getBoundingClientRect();
-    dy = Math.round(r.top + r.height / 2 - (b.top + b.height / 2));
-    badge.style.setProperty('--dy', `${dy}px`);
-    badge.style.translate = `0 calc(${dy}px + ${T.iconY}vh)`;
+    const r = root.getBoundingClientRect(), mid = r.top + r.height / 2;
+    const fit = () => { const b = badge.getBoundingClientRect(); return [b.top + b.height / 2, text.getBoundingClientRect().bottom]; };
+    let [c, end] = fit();
+    const room = r.height / 2 - 24, need = end - c;
+    if (need > room) { text.style.setProperty('--copy-k', Math.max(0.6, room / need).toFixed(3)); [c] = fit(); }
+    text.style.translate = `0 ${Math.round(mid - c)}px`;
+    badge.style.translate = `0 ${T.iconY}vh`;
   }
   // A try-out: the name can share the flash, boxed and blown up with the mark.
   const both = nameFlash && badge;
@@ -405,9 +418,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   } else box(false);
   if (both) box(false);
   // The emblem moves to its rest size and place as the lines open.
-  if (badge && (dy || T.flashScale !== T.restScale || T.iconY !== T.restY)) {
-    play(emblem, p => ({ '--emblem-k': (T.flashScale + (T.restScale - T.flashScale) * p).toFixed(3) }), T.unfurl, settle);
-    play(badge, p => ({ translate: `0 calc(${(dy * (1 - p)).toFixed(1)}px + ${(T.iconY + (T.restY - T.iconY) * p).toFixed(2)}vh)` }), T.unfurl, settle);
+  if (badge && (T.flashScale !== T.restScale || T.iconY !== T.restY)) {
+    play(badge, p => ({ '--emblem-k': (T.flashScale + (T.restScale - T.flashScale) * p).toFixed(3) }), T.unfurl, settle);
+    play(badge, p => ({ translate: `0 ${(T.iconY + (T.restY - T.iconY) * p).toFixed(2)}vh` }), T.unfurl, settle);
   }
   // Each line opens a beat after the one above; the last one is awaited.
   let last = null, first = true;
