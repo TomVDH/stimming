@@ -85,13 +85,19 @@
 </div>
 
 <script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
 </script>
 <script type="module">
-import { initPage, sound, oklchRgb, choices } from '../shared/stim.js';
+import { initPage, audioKit, choices, linFit } from '../shared/stim.js';
 initPage({ id: 'glass' });
 // Three glasses: each breaks its own way.
 const KINDS = ['annealed', 'tempered', 'laminated', 'armored', 'reeded', 'dichroic', 'shuttle', 'stained', 'rice'];
@@ -113,65 +119,32 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 
-/* ---------- sound: synthesised, started by the first gesture ---------- */
+/* ---------- sound: the shared kit owns the context; Tone.js plays the shot ---------- */
 const MAXV = 24, LEAD = 0.004;
-let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tinkNext = 0, restT = 0;
+let out = null, noise = null, voices = 0, tinkNext = 0, Tone = null;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Busy moments soften each voice; the compressor catches the rest.
 const level = () => 1 / (1 + 0.06 * voices);
-
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.55;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    // One second of white noise feeds every burst.
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  }
-  loadShot(ac);
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
-}
-// A context still waking queues sounds for a moment.
+const GESTURE_KEYS = new Set(['r', 'R', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', '1', '2', '3']);
+const kit = audioKit({ keys: GESTURE_KEYS });
+// A live context, or null while muted; the first call loads Tone and the shot.
 function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+  const a = kit.live();
+  if (!a) return null;
+  out = kit.out;
+  noise = kit.noise;
+  if (!Tone) loadTone();
+  return a;
 }
 function track(src, ...tails) {
   voices++;
   src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
 }
 // Once the pane settles, the context sleeps until the next gesture.
-function rest() {
-  clearTimeout(restT);
-  if (!ac || ac.state !== 'running') return;
-  restT = setTimeout(() => {
-    if (!raf && ptr < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
-  }, 1500);
-}
-const GESTURE_KEYS = new Set(['r', 'R', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
-// The work runs after the next frame paints.
-const afterPaint = fn => requestAnimationFrame(() => setTimeout(fn, 0));
+const rest = () => kit.rest(() => !raf && ptr < 0);
 // The first sound waits one frame, so the crack draws first.
-const sfx = fn => (ac ? fn() : afterPaint(fn));
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  // Building the context is slow, so a press defers it.
-  if (!ac && (e.type === 'pointerdown' || e.type === 'keydown')) afterPaint(audio);
-  else audio();
-}
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+const afterPaint = fn => requestAnimationFrame(() => setTimeout(fn, 0));
+const sfx = fn => (kit.ac ? fn() : afterPaint(fn));
 
 // Each voice pans with its place on the pane.
 function bus(a, x) {
@@ -328,49 +301,32 @@ function shatterSound(x) {
   if (first) track(first, ...all, d);
   else setTimeout(() => d.disconnect(), 800);
 }
-// A room for the gun: a short stereo tail, built once.
-let hall = null, drive = null;
-function roomBus(a) {
-  if (hall && hall.context === a) return hall;
-  const len = Math.round(a.sampleRate * 1.3), ir = a.createBuffer(2, len, a.sampleRate);
-  for (let c = 0; c < 2; c++) {
-    const d = ir.getChannelData(c);
-    let lp = 0;
-    // Noise that dies away and darkens as it goes.
-    for (let i = 0; i < len; i++) {
-      const t = i / a.sampleRate, k = 0.35 + 0.6 * Math.exp(-t * 6);
-      lp += (Math.random() * 2 - 1 - lp) * k;
-      d[i] = lp * Math.exp(-t * 4.2) * (i < 90 ? i / 90 : 1);
-    }
-  }
-  hall = a.createConvolver();
-  hall.buffer = ir;
-  const g = a.createGain();
-  g.gain.value = 0.42;
-  hall.connect(g).connect(out);
-  // A soft clipper gives the shot its punch.
-  drive = new Float32Array(1024).map((_, i) => Math.tanh(((i / 1023) * 2 - 1) * 3.2) / Math.tanh(3.2));
-  return hall;
-}
-// A recorded pistol shot, trimmed and compressed, loads with the sound.
-let shotBuf = null, shotAsked = false;
-function loadShot(a) {
-  if (shotAsked) return;
-  shotAsked = true;
-  fetch('gunshot.wav').then(r => r.arrayBuffer()).then(b => a.decodeAudioData(b)).then(buf => { shotBuf = buf; }).catch(() => { shotAsked = false; });
+// A soft clipper gives the synthesised shot its punch.
+const drive = new Float32Array(1024).map((_, i) => Math.tanh(((i / 1023) * 2 - 1) * 3.2) / Math.tanh(3.2));
+// Tone.js gives the gun a room and plays the recorded shot.
+let room = null, shotBuf = null, toneAsked = false;
+function loadTone() {
+  if (toneAsked) return;
+  toneAsked = true;
+  kit.tone().then(T => {
+    if (!T) { toneAsked = false; return; }
+    Tone = T;
+    room = new T.Gain(0.3).connect(new T.Reverb({ decay: 1.3, preDelay: 0.006, wet: 1 }).connect(kit.out));
+    shotBuf = new T.ToneAudioBuffer('gunshot.wav');
+  }).catch(() => { toneAsked = false; });
 }
 // A shot: the recording, pitched a touch for variety, then the casing.
 function gunSound(x, auto = false) {
   const a = live();
   if (!a) return;
-  if (shotBuf) return playShot(a, x, auto);
+  if (shotBuf?.loaded) return playShot(a, x, auto);
   if (voices >= MAXV - 2) return;
-  const t = a.currentTime + LEAD, g = level() * (auto ? 0.8 : 1), d = bus(a, x), rv = roomBus(a);
+  const t = a.currentTime + LEAD, g = level() * (auto ? 0.8 : 1), d = bus(a, x);
   const sh = a.createWaveShaper(), pre = a.createGain();
   sh.curve = drive;
   pre.gain.value = 1.6;
   pre.connect(sh).connect(d);
-  sh.connect(rv);
+  if (room) Tone.connect(sh, room);
   burst(a, pre, t, 'highpass', 5000, 0.7, 0.9 * g, 0.0012, 0.01);
   burst(a, pre, t + 0.0008, 'bandpass', 2600 * jit(0.08), 0.6, 1.4 * g, 0.009, 0.05);
   burst(a, pre, t + 0.001, 'lowpass', 900, 0.7, 1.1 * g, 0.035, 0.2);
@@ -398,24 +354,14 @@ function gunSound(x, auto = false) {
 // Shots skip the voice count, so full auto never goes quiet.
 let lastShot = null;
 function playShot(a, x, auto) {
-  const t = a.currentTime + LEAD, g = auto ? 0.8 : 1, d = bus(a, x * 0.5);
-  if (lastShot) {
-    const { src, sg } = lastShot;
-    sg.gain.cancelScheduledValues(t);
-    sg.gain.setValueAtTime(sg.gain.value, t);
-    sg.gain.linearRampToValueAtTime(0, t + 0.03);
-    try { src.stop(t + 0.035); } catch (err) { /* already stopped */ }
-  }
-  const src = a.createBufferSource(), sg = a.createGain();
-  src.buffer = shotBuf;
-  src.playbackRate.value = rnd(0.95, 1.05);
-  sg.gain.setValueAtTime(1.15 * g, t);
-  src.connect(sg).connect(d);
-  src.start(t);
-  const me = { src, sg };
-  lastShot = me;
-  src.onended = () => { sg.disconnect(); d.disconnect(); if (lastShot === me) lastShot = null; };
-  if (voices < MAXV - 4) casing(a, x, t, g, auto);
+  const t = a.currentTime + LEAD, pan = new Tone.Panner(clamp(x * 0.5, -1, 1) * 0.6).connect(kit.out);
+  lastShot?.stop(t);
+  const p = new Tone.Player({ url: shotBuf, fadeOut: 0.03, playbackRate: rnd(0.95, 1.05), volume: auto ? -0.7 : 1.2 }).connect(pan);
+  p.connect(room);
+  p.onstop = () => { if (lastShot === p) lastShot = null; setTimeout(() => { p.dispose(); pan.dispose(); }, 100); };
+  p.start(t);
+  lastShot = p;
+  if (voices < MAXV - 4) casing(a, x, t, auto ? 0.8 : 1, auto);
 }
 // The brass casing lands a moment later and rings twice.
 function casing(a, x, t, g, auto) {
@@ -1681,7 +1627,7 @@ let flashMesh = null, flashCore = null, flashLight = null, flash = null, flashT 
 
 /* ---------- the city: rooflines and lights, the same on every visit ---------- */
 // OKLCH in, linear light out, scaled by k.
-const lin = (L, C, h, k = 1) => oklchRgb(L, C, h).map(v => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4) * k);
+const lin = (L, C, h, k = 1) => linFit(L, C, h).map(v => v * k);
 let cseed = 11;
 const crand = () => (cseed = (cseed * 16807) % 2147483647) / 2147483647;
 const cr = (a, b) => a + crand() * (b - a);
@@ -2711,10 +2657,6 @@ const glassPick = choices(glassTray, v => { setGlass(v); openTray(false); stir()
 rewindB.addEventListener('click', () => { rewind(); stir(); });
 glassPick.set(glass);
 applyLook();
-sound.onChange(on => {
-  if (on) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
-});
 new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) stir(); }).observe(panel);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) stir(); });
 
