@@ -13,9 +13,14 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Oscilloscope: a flat stencil grid; the drawing is the sound. */
-:root { --stage: oklch(0.14 0.01 265); }
+/* Oscilloscope: a flat stencil face on a live phosphor screen. */
+:root { --stage: oklch(0.13 0.01 265); }
 .stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
+/* The knot ratio sits in the top left corner in the phosphor colour. */
+.ratio {
+  position: absolute; left: 18px; top: 14px; margin: 0; pointer-events: none;
+  font: 800 clamp(26px, 4vw, 44px)/1 var(--sans); letter-spacing: -0.02em; color: var(--ink, var(--fg));
+}
 /* The pitch readout is a live number, so it is monospace. */
 .slider output {
   min-width: 6ch; color: var(--fg); text-align: right;
@@ -27,10 +32,10 @@
   .bar .slider { flex: 1 1 100%; }
   .bar .slider input { flex: 1; width: auto; min-width: 0; }
 }
-.vignette figure svg { background: oklch(0.14 0.01 265); }
+.vignette figure svg { background: oklch(0.13 0.01 265); }
 .vignette figure .grid { stroke: oklch(0.26 0.014 265); stroke-width: 1; fill: none; }
 .vignette figure .axis { stroke: oklch(0.36 0.016 265); stroke-width: 3; fill: none; }
-.vignette figure .trace { stroke: oklch(0.9 0.21 128); stroke-width: 4; fill: none; stroke-linejoin: round; }
+.vignette figure .trace { stroke: oklch(0.9 0.2 145); stroke-width: 4; fill: none; stroke-linejoin: round; }
 .vignette figure .wave { stroke: var(--muted); stroke-width: 2; fill: none; stroke-linejoin: round; }
 .vignette figure text { fill: var(--muted); font: 700 13px var(--sans); }
 </style>
@@ -43,8 +48,10 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope in X–Y mode. In Pen mode, drag to draw a shape; the beam plays it as a stereo tone, left channel across and right channel up. In Knot mode, drag to pick a ratio of two sine waves. Up and down arrows change the pitch, S shuffles, C clears, P changes the ink.">
+    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope in X–Y mode. In Pen mode, drag to draw a shape; the beam plays it as a stereo tone, left channel across and right channel up. In Knot mode, drag to pick a ratio of two sine waves. Up and down arrows change the pitch, S shuffles, C clears, P changes the phosphor.">
       <canvas aria-hidden="true"></canvas>
+      <p class="ratio" id="ratio" aria-hidden="true" hidden></p>
+      <p class="fail" hidden>Oscilloscope needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices">
@@ -60,7 +67,7 @@
         <div><dt>Drag</dt><dd>draw, or tie a knot</dd></div>
         <div class="fine"><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>pitch</dd></div>
         <div class="fine"><dt><kbd>S</kbd></dt><dd>shuffle</dd></div>
-        <div class="fine"><dt><kbd>P</kbd></dt><dd>ink</dd></div>
+        <div class="fine"><dt><kbd>P</kbd></dt><dd>phosphor</dd></div>
       </dl>
     </div>
   </main>
@@ -70,7 +77,7 @@
       <div>
         <h2>Two channels, one beam</h2>
         <p>In X–Y mode an oscilloscope stops drawing time. The left channel pushes the beam across and the right channel pushes it up, so a stereo signal draws a shape. A circle is two sine waves a quarter turn apart.</p>
-        <p>In <em>Pen</em>, your stroke is the signal: the beam runs it out and back, and a closed loop just goes round. <em>Pitch</em> sets the laps per second, and sharp corners sound sharp. In <em>Knot</em>, two pure tones tie the shape; their ratio picks the knot, and a slight detune rolls it.</p>
+        <p>In <em>Pen</em>, your stroke is the signal: the beam runs it out and back, and a closed loop just goes round. <em>Pitch</em> sets the laps per second. The phosphor burns hardest where the beam slows, so corners flare. In <em>Knot</em>, two pure tones tie the shape; their ratio picks the knot, and a slight detune rolls it.</p>
       </div>
       <figure>
         <svg id="figure" viewBox="0 0 400 300" role="img" aria-label="A three to two Lissajous knot on a grid. Under it the left channel plots as a wave that sets the horizontal position; to its left the right channel plots as a wave that sets the vertical position."></svg>
@@ -87,7 +94,7 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 <script type="module">
-import { initPage, sound, audioKit, choices, whenVisible, reduced, onReducedChange, fitCanvas } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices, whenVisible, reduced, onReducedChange, fitCanvas, oklchLinear } from '../shared/stim.js';
 initPage({ id: 'scope' });
 
 const TAU = Math.PI * 2;
@@ -95,25 +102,31 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const now = () => performance.now() / 1000;
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
-const bar = document.querySelector('.bar');
-const ctx = canvas.getContext('2d');
+const bar = document.querySelector('.bar'), ratioEl = document.getElementById('ratio');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
+if (!gl) fail();
+// Half floats keep the afterglow smooth; bytes are the fallback.
+const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
 
 /* ---------- signal space ---------- */
 // The face is ten by ten divisions; five divisions are full scale.
 const N = 1024;
 const FADE = 0.04;
+// The beam steps at this rate, sample by sample.
+const SR = 48000;
 // The knot rolls once per DRIFT_T seconds.
-const DRIFT_T = 5;
+const DRIFT_T = 12;
 const KNOT_AMP = 4.2;
 
 /* ---------- shapes: lists of [x, y] in divisions ---------- */
-function poly(n, r, rot = Math.PI / 2) {
-  return Array.from({ length: n }, (_, i) => { const a = rot + i * TAU / n; return [r * Math.cos(a), r * Math.sin(a)]; });
+function poly(n, rot = Math.PI / 2) {
+  return Array.from({ length: n }, (_, i) => { const a = rot + i * TAU / n; return [Math.cos(a), Math.sin(a)]; });
 }
 function curve(n, fn) { return Array.from({ length: n }, (_, i) => fn(TAU * i / n)); }
 const PRESETS = [
   // A five-point star.
-  () => ({ pts: poly(10, 1).map((p, i) => [p[0] * (i % 2 ? 1.7 : 4.3), p[1] * (i % 2 ? 1.7 : 4.3) - 0.3]), closed: true }),
+  () => ({ pts: poly(10).map((p, i) => [p[0] * (i % 2 ? 1.7 : 4.3), p[1] * (i % 2 ? 1.7 : 4.3) - 0.3]), closed: true }),
   // A heart.
   () => ({ pts: curve(240, u => [0.24 * 16 * Math.sin(u) ** 3, 0.23 * (13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u)) + 0.6]), closed: true }),
   // A lightning bolt, played out and back.
@@ -151,13 +164,35 @@ function resample(pts, n, closed) {
     const a = pts[j], b = pts[(j + 1) % m], t = clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9));
     out[2 * k] = a[0] + (b[0] - a[0]) * t; out[2 * k + 1] = a[1] + (b[1] - a[1]) * t;
   }
-  return out;
+  return { loop: out, perim: total };
 }
 const pathLen = pts => pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
+// The beam slows through each turn, so corners and stroke ends burn bright.
+// DWELL is the extra path, in divisions, spent per radian of turn.
+const DWELL = 0.45;
+function retime({ loop, perim }) {
+  const n = loop.length / 2, ds = perim / n, turn = new Float32Array(n), cum = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    const h = (i + n - 1) % n, j = (i + 1) % n;
+    const a = Math.atan2(loop[2 * i + 1] - loop[2 * h + 1], loop[2 * i] - loop[2 * h]);
+    const b = Math.atan2(loop[2 * j + 1] - loop[2 * i + 1], loop[2 * j] - loop[2 * i]);
+    turn[i] = Math.abs(((b - a + 3 * Math.PI) % TAU) - Math.PI);
+  }
+  for (let i = 0; i < n; i++) cum[i + 1] = cum[i] + ds + DWELL * (turn[i] + turn[(i + 1) % n]) / 2;
+  const out = new Float32Array(N * 2), total = cum[n];
+  let j = 0;
+  for (let k = 0; k < N; k++) {
+    const at = (k / N) * total;
+    while (j < n - 1 && cum[j + 1] < at) j++;
+    const t = clamp((at - cum[j]) / Math.max(cum[j + 1] - cum[j], 1e-9)), j2 = (j + 1) % n;
+    out[2 * k] = loop[2 * j] + (loop[2 * j2] - loop[2 * j]) * t; out[2 * k + 1] = loop[2 * j + 1] + (loop[2 * j2 + 1] - loop[2 * j + 1]) * t;
+  }
+  return { loop: out, perim };
+}
 // An open stroke plays out and back; a closed one goes round.
 function makePen(pts, closed) {
   const path = closed ? pts : pts.concat(pts.slice(1, -1).reverse());
-  return { pts, closed, loop: resample(path, N, true) };
+  return { pts, closed, ...retime(resample(path, 2 * N, true)) };
 }
 // A stroke closes when its end comes back near its start.
 function fromStroke(pts) {
@@ -165,12 +200,19 @@ function fromStroke(pts) {
   const closed = pts.length > 3 && gap < Math.max(0.5, 0.12 * pathLen(pts));
   return makePen(closed && gap < 0.2 ? pts.slice(0, -1) : pts, closed);
 }
-function knotPts(k, psi, n = 720) {
-  return curve(n, u => [KNOT_AMP * Math.sin(k.a * u), KNOT_AMP * Math.sin(k.b * u + psi)]);
+// The knot path length over one base cycle, in divisions.
+function knotPerim(k) {
+  let s = 0, px = 0, py = 0;
+  for (let i = 0; i <= 2000; i++) {
+    const u = TAU * i / 2000, x = KNOT_AMP * Math.sin(k.a * u), y = KNOT_AMP * Math.sin(k.b * u + Math.PI / 4);
+    if (i) s += Math.hypot(x - px, y - py);
+    px = x; py = y;
+  }
+  return s;
 }
 
 /* ---------- state ---------- */
-let mode = 'pen', presetIdx = 0, pitch = 110, ink = 0;
+let mode = 'pen', presetIdx = 0, pitch = 110, phos = 0;
 let pen = (({ pts, closed }) => makePen(pts, closed))(PRESETS[0]());
 let knot = { a: 3, b: 2 }, knotT0 = now();
 const drifting = () => mode === 'knot' && !!knot && !reduced();
@@ -245,148 +287,445 @@ function sync() {
   src.start(at);
   voice = { src, gain, pitch: s.pitch };
 }
-function changed() { dirty = true; sync(); }
 function silence() {
   if (voice && kit.ac) fade(voice, kit.ac.currentTime);
   voice = null; dirty = true;
 }
-sound.onChange(on => { if (on) changed(); else silence(); });
+sound.onChange(on => { if (on) { dirty = true; sync(); } else silence(); });
 // The first gesture wakes the context; the voice joins once it runs.
 ['pointerup', 'keydown'].forEach(type => addEventListener(type, () => setTimeout(sync, 0), { passive: true }));
 
-/* ---------- inks ---------- */
-// Each ink is a beam tone, then two flat afterimage tones.
-const INKS = [[0.9, 0.21, 128], [0.75, 0.2, 42], [0.72, 0.24, 350], [0.94, 0.02, 250]].map(([L, C, h]) => [
-  `oklch(${L} ${C} ${h})`, `oklch(${(L * 0.6).toFixed(3)} ${(C * 0.7).toFixed(3)} ${h})`, `oklch(${(L * 0.38).toFixed(3)} ${(C * 0.45).toFixed(3)} ${h})`,
-]);
+/* ---------- the beam's signal ---------- */
+// Traces crossfade like the voices; each one knows its own shape.
+let traces = [];
+const weight = (v, t) => clamp((t - v.born) / FADE) * (v.dieAt ? clamp(1 - (t - v.dieAt) / FADE) : 1);
+// Every change of shape goes through here: the beam and the voice follow.
+function changed({ first = false } = {}) {
+  const t = now();
+  traces.forEach(v => { if (!v.dieAt) v.dieAt = t; });
+  const born = first ? t - FADE : t;
+  if (mode === 'pen' && pen) traces.push({ kind: 'pen', loop: pen.loop, perim: pen.perim, born, dieAt: 0 });
+  if (mode === 'knot' && knot) traces.push({ kind: 'knot', a: knot.a, b: knot.b, perim: knotPerim(knot), born, dieAt: 0 });
+  ratioEl.hidden = mode !== 'knot' || !knot;
+  if (knot) ratioEl.textContent = `${knot.a}:${knot.b}`;
+  dirty = true; sync();
+  poke();
+}
+
+/* ---------- phosphors ---------- */
+// Flash and glow colours, fast and slow decay, the slow share and gains.
+const lin = c => oklchLinear(...c).map(x => Math.max(0, x));
+const PHOS = [
+  { css: 'oklch(0.9 0.2 145)', flash: lin([0.9, 0.21, 145]), glow: lin([0.6, 0.17, 150]), tf: 0.045, ts: 0.4, slow: 0.12, gain: [1, 0.9, 0.34] },
+  { css: 'oklch(0.86 0.17 105)', flash: lin([0.88, 0.1, 250]), glow: lin([0.8, 0.17, 105]), tf: 0.03, ts: 1.5, slow: 0.05, gain: [0.9, 0.7, 0.3] },
+  { css: 'oklch(0.84 0.16 68)', flash: lin([0.86, 0.15, 72]), glow: lin([0.6, 0.17, 52]), tf: 0.05, ts: 0.35, slow: 0.12, gain: [1, 0.9, 0.34] },
+  { css: 'oklch(0.94 0.03 240)', flash: lin([0.95, 0.03, 240]), glow: lin([0.62, 0.09, 258]), tf: 0.05, ts: 0.28, slow: 0.1, gain: [1, 0.9, 0.3] },
+];
+const BG = lin([0.13, 0.01, 265]), THIN = lin([0.2, 0.012, 265]), BARS = lin([0.32, 0.016, 265]), BRACKET = lin([0.62, 0.02, 265]);
+
+/* ---------- shaders ---------- */
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+// Afterglow: each channel fades at its own rate.
+const DECAY = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uDecay; uniform float uEps;
+void main() { o = vec4(max(texture(uSrc, vUv).rg * uDecay - uEps, 0.0), 0.0, 1.0); }`;
+// One quad per sample step; it covers the segment plus the beam's spread.
+const BEAM_VS = `#version 300 es
+in vec2 aCorner; in vec4 aSeg; in float aE;
+uniform vec2 uRes; uniform float uSigma;
+out vec2 vP; flat out vec4 vSeg; flat out float vE;
+void main() {
+  vec2 a = aSeg.xy, b = aSeg.zw, d = b - a;
+  float l = length(d);
+  vec2 u = l > 1e-4 ? d / l : vec2(1.0, 0.0), n = vec2(-u.y, u.x);
+  float r = uSigma * 3.5;
+  vec2 p = (aCorner.x < 0.0 ? a - u * r : b + u * r) + n * aCorner.y * r;
+  vP = p; vSeg = aSeg; vE = aE;
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// A gaussian spot swept along the segment: the exposure integrates exactly.
+// A short segment holds the same energy, so slow beams burn brighter.
+const BEAM_FS = `#version 300 es
+precision highp float;
+in vec2 vP; flat in vec4 vSeg; flat in float vE;
+uniform float uSigma; uniform vec2 uW;
+out vec4 o;
+float erf1(float x) {
+  float s = sign(x); x = abs(x);
+  float t = 1.0 + x * (0.278393 + x * (0.230389 + x * (0.000972 + x * 0.078108)));
+  t *= t; t *= t;
+  return s - s / t;
+}
+void main() {
+  vec2 a = vSeg.xy, d = vSeg.zw - a;
+  float l = length(d);
+  vec2 u = l > 1e-4 ? d / l : vec2(1.0, 0.0);
+  float len = max(l, 0.05 * uSigma);
+  vec2 w = vP - a;
+  float s = dot(w, u), perp2 = max(dot(w, w) - s * s, 0.0);
+  float k = 0.70710678 / uSigma;
+  float along = erf1((len - s) * k) + erf1(s * k);
+  float e = vE / len * exp(-perp2 / (2.0 * uSigma * uSigma)) * along / (5.0132565 * uSigma);
+  o = vec4(e * uW, 0.0, 0.0);
+}`;
+// Four bilinear taps average a four by four block.
+const DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+void main() {
+  vec2 s = texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rg
+         + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rg;
+  o = vec4(s * 0.25, 0.0, 1.0);
+}`;
+const BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uDir;
+void main() {
+  vec2 s = texture(uSrc, vUv).rg * 0.227027;
+  s += (texture(uSrc, vUv + uDir * 1.384615).rg + texture(uSrc, vUv - uDir * 1.384615).rg) * 0.316216;
+  s += (texture(uSrc, vUv + uDir * 3.230769).rg + texture(uSrc, vUv - uDir * 3.230769).rg) * 0.070270;
+  o = vec4(s, 0.0, 1.0);
+}`;
+// The screen: a flat stencil face, then the phosphor through mask and scanlines.
+const SCREEN = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D uAccum, uBloom;
+uniform vec2 uRes, uC;
+uniform float uDiv, uDpr, uTime;
+uniform vec3 uFlash, uGlow, uGain, uBg, uThin, uBars, uBracket;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+// Coverage of the band lo..hi, antialiased over one pixel.
+float band(float x, float lo, float hi) { return clamp(x - lo + 0.5, 0.0, 1.0) * clamp(hi - x + 0.5, 0.0, 1.0); }
+vec3 phosphor(vec2 uv) {
+  vec2 e = texture(uAccum, uv).rg;
+  float a = 1.0 - exp(-e.r * uGain.x), b = 1.0 - exp(-e.g * uGain.y);
+  float hot = 1.0 - exp(-e.r * uGain.x * 0.08);
+  return uFlash * a + uGlow * b + vec3(0.9, 0.95, 1.0) * hot * hot * 0.9;
+}
+void main() {
+  vec2 p = gl_FragCoord.xy, d = p - uC, q = abs(d);
+  float e5 = 5.0 * uDiv;
+
+  // Stencil face: thin lines, cut axis bars, corner brackets.
+  vec2 g = d / uDiv;
+  vec2 fd = abs(fract(g + 0.5) - 0.5) * uDiv;
+  float thin = max(band(fd.x, -0.5 * uDpr, 0.5 * uDpr), band(fd.y, -0.5 * uDpr, 0.5 * uDpr));
+  float t = clamp(uDiv * 0.08, 3.0 * uDpr, 6.0 * uDpr), gap = max(3.0 * uDpr, t);
+  float hb = band(d.y, -0.5 * t, 0.5 * t) * band(q.x, -1.0, e5) * clamp(fd.x - 0.5 * gap + 0.5, 0.0, 1.0);
+  float vb = band(d.x, -0.5 * t, 0.5 * t) * band(q.y, -1.0, e5) * clamp(fd.y - 0.5 * gap + 0.5, 0.0, 1.0);
+  float arm = uDiv * 0.55, bt = clamp(uDiv * 0.1, 3.0 * uDpr, 6.0 * uDpr);
+  float br = max(band(q.x, e5 - arm, e5) * band(q.y, e5 - bt, e5), band(q.x, e5 - bt, e5) * band(q.y, e5 - arm, e5));
+  vec3 col = mix(uBg, uThin, thin);
+  col = mix(col, uBars, max(hb, vb));
+  col = mix(col, uBracket, br);
+
+  // Misconvergence splits the beam a little, more so away from centre.
+  vec2 uv = p / uRes;
+  vec2 ca = (vec2(0.8 * uDpr, 0.0) + d * 0.0035) / uRes;
+  vec3 beam = vec3(phosphor(uv + ca).r, phosphor(uv).g, phosphor(uv - ca).b);
+
+  // Aperture grille: red, green and blue stripes, one device pixel each.
+  float m = floor(mod(p.x / max(1.0, floor(uDpr + 0.5)), 3.0));
+  vec3 grille = vec3(m == 0.0, m == 1.0, m == 2.0) * 0.75 + 0.42;
+  // Scanlines swell where the beam is bright.
+  float lum = clamp(dot(beam, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
+  float sy = fract(p.y / (3.0 * uDpr)) - 0.5, sw = mix(0.2, 0.5, lum);
+  float scan = exp(-sy * sy / (sw * sw)) * 1.55;
+  beam *= grille * scan;
+
+  vec2 bl = texture(uBloom, uv).rg;
+  vec3 halo = (uFlash * (1.0 - exp(-bl.r * uGain.x)) + uGlow * (1.0 - exp(-bl.g * uGain.y))) * uGain.z;
+  // Unlit phosphor shows the grille faintly over the whole face.
+  col *= mix(vec3(1.0), grille, 0.18);
+  col += beam + halo;
+  col += (hash(p + fract(uTime) * 61.0) - 0.5) * 0.006;
+  col = pow(max(col, 0.0), vec3(1.0 / 2.2));
+  o = vec4(col, 1.0);
+}`;
+const SCREEN_VS = `#version 300 es
+in vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const P = {
+  decay: program(QUAD_VS, DECAY, ['aPos']),
+  beam: program(BEAM_VS, BEAM_FS, ['aCorner', 'aSeg', 'aE']),
+  down: program(QUAD_VS, DOWN, ['aPos']),
+  blur: program(QUAD_VS, BLUR, ['aPos']),
+  screen: program(SCREEN_VS, SCREEN, ['aPos']),
+};
+
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// Segment data: a then b in pixels, then energy.
+const MAXSEG = 9000;
+const inst = new Float32Array(MAXSEG * 5);
+const beamVao = gl.createVertexArray();
+gl.bindVertexArray(beamVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const instBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1);
+gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 20, 0);
+gl.vertexAttribDivisor(1, 1);
+gl.enableVertexAttribArray(2);
+gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 20, 16);
+gl.vertexAttribDivisor(2, 1);
+gl.bindVertexArray(null);
+
+/* ---------- targets ---------- */
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
 
 /* ---------- layout ---------- */
-// The face is square and sits above the inset bar; the grid runs full bleed.
-let W = 1, H = 1, dpr = 1, cx = 0, cy = 0, div = 1, line = 4;
-const grid = document.createElement('canvas'), gctx = grid.getContext('2d');
+// The face is square and sits above the inset bar; the screen runs full bleed.
+// Face geometry is in device pixels, y up.
+let acc = [], blm = [], ai = 0, dpr = 1, CX = 0, CY = 0, DIV = 1, K = 1, sigma = 1;
+let cssC = [0, 0], cssDiv = 1;
 function layout() {
-  const f = fitCanvas(canvas, { budget: 2.6e6 });
-  W = f.w; H = f.h; dpr = f.dpr;
-  const m = clamp(Math.min(W, H) * 0.05, 14, 40);
+  const { w, h, dpr: d, W, H } = fitCanvas(canvas, { budget: 2.6e6 });
+  dpr = W / w;
+  const m = clamp(Math.min(w, h) * 0.05, 14, 40);
   const reserve = bar.getBoundingClientRect().height;
-  const availH = H - reserve - m, size = Math.max(60, Math.min(W - 2 * m, availH - m));
-  div = size / 10; line = clamp(div * 0.14, 4, 9);
-  cx = W / 2; cy = m + (availH - m) / 2 + m / 2;
-  paintGrid();
-  draw(now());
-}
-// The grid is one stencil plate: thin lines, cut axis bars, corner brackets.
-function paintGrid() {
-  grid.width = canvas.width; grid.height = canvas.height;
-  const g = gctx;
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = 'oklch(0.14 0.01 265)'; g.fillRect(0, 0, W, H);
-  g.fillStyle = 'oklch(0.215 0.012 265)';
-  const nx = Math.ceil(cx / div) + 1, ny = Math.ceil(Math.max(cy, H - cy) / div) + 1;
-  for (let i = -nx; i <= nx; i++) g.fillRect(Math.round(cx + i * div) - 0.5, 0, 1, H);
-  for (let j = -ny; j <= ny; j++) g.fillRect(0, Math.round(cy + j * div) - 0.5, W, 1);
-  // The centre axes are thick bars, cut through at every division.
-  const t = clamp(div * 0.08, 3, 6), gap = Math.max(3, t);
-  g.fillStyle = 'oklch(0.33 0.016 265)';
-  for (let i = -5; i < 5; i++) {
-    const a = cx + i * div + gap / 2, b = cx + (i + 1) * div - gap / 2;
-    g.fillRect(a, cy - t / 2, b - a, t);
-    const c = cy + i * div + gap / 2, d = cy + (i + 1) * div - gap / 2;
-    g.fillRect(cx - t / 2, c, t, d - c);
-  }
-  // Brackets mark the corners of full scale.
-  const arm = div * 0.55, bt = clamp(div * 0.1, 3, 6), e = 5 * div;
-  g.fillStyle = 'oklch(0.6 0.02 265)';
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
-    const x = cx + sx * e, y = cy + sy * e;
-    g.fillRect(sx < 0 ? x : x - arm, sy < 0 ? y : y - bt, arm, bt);
-    g.fillRect(sx < 0 ? x : x - bt, sy < 0 ? y : y - arm, bt, arm);
-  }
+  const availH = h - reserve - m, size = Math.max(60, Math.min(w - 2 * m, availH - m));
+  cssDiv = size / 10;
+  cssC = [w / 2, m + (availH - m) / 2 + m / 2];
+  CX = cssC[0] * dpr; CY = (h - cssC[1]) * dpr; DIV = cssDiv * dpr;
+  // The phosphor layer covers the whole screen, within a budget.
+  K = Math.min(1, Math.sqrt(1.6e6 / (W * H)));
+  const AW = Math.max(16, Math.round(W * K)), AH = Math.max(16, Math.round(H * K));
+  K = AW / W;
+  sigma = 1.5 * dpr * K * clamp(cssDiv / 70, 0.85, 1.35);
+  [...acc, ...blm].forEach(drop);
+  acc = [target(AW, AH), target(AW, AH)];
+  const BW = Math.max(4, Math.round(AW / 4)), BH = Math.max(4, Math.round(AH / 4));
+  blm = [target(BW, BH), target(BW, BH)];
+  ai = 0;
+  // The beam restarts in the new pixel space, so no stray streak shows.
+  if (raf) { tS = now(); sample(ph, tS); last = [pt[0], pt[1]]; return; }
+  if (visible) settle();
 }
 
-/* ---------- drawing ---------- */
-// Afterimages step down in flat tones, then drop.
-const ECHO = [0.11, 0.24];
-let echoes = [], lastSnap = 0;
-function pushEcho(pts, closed) {
-  if (!pts || reduced()) return;
-  echoes.push({ pts, closed, t: now() });
-  if (echoes.length > 12) echoes.shift();
+/* ---------- passes ---------- */
+function decayPass(dt) {
+  const ph = PHOS[phos], src = acc[ai], dst = acc[1 - ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(P.decay.u.uSrc, 0);
+  gl.uniform2f(P.decay.u.uDecay, Math.exp(-dt / ph.tf), Math.exp(-dt / ph.ts));
+  gl.uniform1f(P.decay.u.uEps, FLOAT ? 0 : 0.6 / 255);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ai = 1 - ai;
 }
-function trace(pts, closed, color, flat = false) {
-  const n = flat ? pts.length / 2 : pts.length;
-  if (n < 2) return;
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const x = flat ? pts[2 * i] : pts[i][0], y = flat ? pts[2 * i + 1] : pts[i][1];
-    const px = cx + x * div, py = cy - y * div;
-    if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
-  }
-  if (closed) ctx.closePath();
-  ctx.strokeStyle = color;
-  ctx.stroke();
+function beamPass(count, wf, ws) {
+  if (!count) return;
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.beam.p); gl.bindVertexArray(beamVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, count * 5);
+  gl.uniform2f(P.beam.u.uRes, dst.w, dst.h);
+  gl.uniform1f(P.beam.u.uSigma, sigma);
+  gl.uniform2f(P.beam.u.uW, wf, ws);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+  gl.disable(gl.BLEND);
 }
-// The ratio picker splits the face into five by five cells.
-const cellOf = p => [1 + clamp(Math.floor((p[0] + 5) / 2), 0, 4), 1 + clamp(Math.floor((p[1] + 5) / 2), 0, 4)];
-let stroke = null, picking = false;
-function draw(t) {
-  const tones = INKS[ink];
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(grid, 0, 0);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.lineWidth = line; ctx.lineJoin = 'miter'; ctx.miterLimit = 3; ctx.lineCap = 'square';
-  if (mode === 'knot' && knot && picking) {
-    // The picked cell shows as a flat block under the knot.
-    ctx.fillStyle = 'oklch(0.2 0.014 265)';
-    ctx.fillRect(cx + (-5 + 2 * (knot.a - 1)) * div, cy - (-5 + 2 * knot.b) * div, 2 * div, 2 * div);
+function quadPass(prog, dst, src, set) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(prog.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(prog.u.uSrc, 0);
+  set(prog.u);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function present(t) {
+  const src = acc[ai];
+  quadPass(P.down, blm[0], src, u => gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h));
+  // Two blur rounds, the second wider, keep hot spots round.
+  for (const s of [1, 2.2]) {
+    quadPass(P.blur, blm[1], blm[0], u => gl.uniform2f(u.uDir, s / blm[0].w, 0));
+    quadPass(P.blur, blm[0], blm[1], u => gl.uniform2f(u.uDir, 0, s / blm[0].h));
   }
-  echoes = echoes.filter(e => t - e.t < ECHO[1]);
-  for (const e of echoes) trace(e.pts, e.closed, t - e.t < ECHO[0] ? tones[1] : tones[2]);
-  if (mode === 'pen') {
-    if (stroke) trace(stroke, false, tones[0]);
-    else if (pen) trace(pen.pts, pen.closed, tones[0]);
-  } else if (knot) {
-    const psi = psiAt(t);
-    if (drifting() && t - lastSnap > 0.09) { lastSnap = t; pushEcho(knotPts(knot, psi, 360), true); }
-    ctx.lineJoin = 'round';
-    trace(knotPts(knot, psi), true, tones[0]);
-    // The ratio reads in the top left corner of the stage.
-    ctx.fillStyle = tones[0];
-    ctx.font = `800 ${Math.round(clamp(div * 0.9, 26, 44))}px Gabarito, system-ui, sans-serif`;
-    ctx.textBaseline = 'top';
-    ctx.fillText(`${knot.a}:${knot.b}`, 18, 16);
+  const ph = PHOS[phos], u = P.screen.u;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex);
+  gl.uniform1i(u.uAccum, 0); gl.uniform1i(u.uBloom, 1);
+  gl.uniform2f(u.uRes, canvas.width, canvas.height);
+  gl.uniform2f(u.uC, CX, CY);
+  gl.uniform1f(u.uDiv, DIV); gl.uniform1f(u.uDpr, dpr); gl.uniform1f(u.uTime, t);
+  gl.uniform3fv(u.uFlash, ph.flash); gl.uniform3fv(u.uGlow, ph.glow); gl.uniform3fv(u.uGain, ph.gain);
+  gl.uniform3fv(u.uBg, BG); gl.uniform3fv(u.uThin, THIN); gl.uniform3fv(u.uBars, BARS); gl.uniform3fv(u.uBracket, BRACKET);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/* ---------- the beam reads the traces ---------- */
+// Exposure per unit of line stays steady across shapes and pitches.
+const IK = 1.2, IDOT = 300;
+const pt = [0, 0];
+// ph counts laps at the pitch; it wraps at a multiple of every knot cycle.
+let ph = 0;
+// Chop mode: each block of 64 steps shows one trace, picked by weight.
+// The beam blanks while it jumps between traces.
+// No trace, or a fading one, leaves the spot parked at centre.
+let sn = 0, shown = null;
+function sample(phase, t) {
+  const r = (Math.floor(sn++ / 64) * 0.6180339887) % 1;
+  let total = 0;
+  for (const v of traces) total += weight(v, t);
+  let pick = null, run = 0;
+  for (const v of traces) {
+    run += weight(v, t) / Math.max(1, total);
+    if (r < run) { pick = v; break; }
   }
+  let x = 0, y = 0, I;
+  if (pick?.kind === 'pen') {
+    const f = (phase % 1) * N, i = f | 0, q = f - i, j = i + 1 === N ? 0 : i + 1, L = pick.loop;
+    x = L[2 * i] + (L[2 * j] - L[2 * i]) * q; y = L[2 * i + 1] + (L[2 * j + 1] - L[2 * i + 1]) * q;
+    I = IK * sigma * Math.max(pick.perim * DIV * K, 20) * pitch;
+  } else if (pick) {
+    const top = Math.max(pick.a, pick.b), u = TAU * phase / top;
+    x = KNOT_AMP * Math.sin(pick.a * u); y = KNOT_AMP * Math.sin(pick.b * u + psiAt(t));
+    I = IK * sigma * Math.max(pick.perim * DIV * K, 20) * pitch / top;
+  } else I = IDOT * sigma * sigma;
+  pt[0] = (CX + clamp(x, -5, 5) * DIV) * K;
+  pt[1] = (CY + clamp(y, -5, 5) * DIV) * K;
+  const blank = pick !== shown;
+  shown = pick;
+  return blank ? 0 : I;
+}
+
+let tS = 0, last = [0, 0];
+function sweep(t) {
+  if (t - tS > 0.1) { tS = t - 0.1; sample(ph, tS); last = [pt[0], pt[1]]; }
+  const n = Math.min(MAXSEG, Math.floor((t - tS) * SR)), step = pitch / SR;
+  for (let k = 0; k < n; k++) {
+    ph += step;
+    if (ph >= 3600) ph -= 3600;
+    const e = sample(ph, tS + (k + 1) / SR) / SR, o = k * 5;
+    inst[o] = last[0]; inst[o + 1] = last[1]; inst[o + 2] = pt[0]; inst[o + 3] = pt[1]; inst[o + 4] = e;
+    last[0] = pt[0]; last[1] = pt[1];
+  }
+  tS += n / SR;
+  return n;
+}
+
+// At rest the face shows the steady glow of one full lap.
+function settle() {
+  clearAcc();
+  const P0 = PHOS[phos], dtF = 1 / 60, ss = tau => dtF / (1 - Math.exp(-dtF / tau));
+  const v = traces.find(x => !x.dieAt), t = now();
+  if (v) {
+    const top = v.kind === 'knot' ? Math.max(v.a, v.b) : 1, laps = pitch / top;
+    const n = Math.min(MAXSEG, Math.ceil(SR / laps)), step = top / n;
+    let p = ph;
+    sample(p, t); let a = [pt[0], pt[1]];
+    for (let k = 0; k < n; k++) {
+      p += step;
+      const e = sample(p, t) / SR, o = k * 5;
+      inst[o] = a[0]; inst[o + 1] = a[1]; inst[o + 2] = pt[0]; inst[o + 3] = pt[1]; inst[o + 4] = e * (SR / laps) / n;
+      a = [pt[0], pt[1]];
+    }
+    beamPass(n, laps * ss(P0.tf), laps * P0.slow * ss(P0.ts));
+  } else {
+    const e = sample(ph, t);
+    inst.set([pt[0], pt[1], pt[0], pt[1], e], 0);
+    beamPass(1, ss(P0.tf), P0.slow * ss(P0.ts));
+  }
+  present(t);
 }
 
 /* ---------- loop ---------- */
-// The loop runs only while something moves; a calm knot draws at 30 fps.
-const IDLE = 8;
-let raf = 0, lastFrame = 0, lastInput = 0, sliding = false;
+// A still shape settles after a short spell; a calm knot draws at 30 fps.
+const IDLE = 8, STILL = 2.5;
+let raf = 0, lastFrame = 0, lastInput = 0, stroke = null, picking = false, sliding = false;
 function frame() {
   raf = 0;
-  const t = now(), calm = !stroke && !picking && !sliding && t - lastInput >= IDLE;
+  const t = now(), busy = stroke || picking || sliding;
+  const calm = !busy && t - lastInput >= IDLE;
   if (calm && drifting() && t - lastFrame < 1 / 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = clamp(t - lastFrame, 0, 0.25);
   lastFrame = t;
-  draw(t);
-  if (visible && (stroke || picking || sliding || echoes.length || drifting())) raf = requestAnimationFrame(frame);
+  traces = traces.filter(v => !v.dieAt || t < v.dieAt + FADE);
+  const n = sweep(t), P0 = PHOS[phos];
+  decayPass(dt);
+  beamPass(n, 1, P0.slow);
+  present(t);
+  if (!visible) return;
+  if (busy || drifting() || traces.length > 1 || t - lastInput < STILL) raf = requestAnimationFrame(frame);
+  else settle();
 }
-function poke() { lastInput = now(); if (!raf && visible) raf = requestAnimationFrame(frame); }
+function poke() {
+  lastInput = now();
+  if (raf || !visible || !acc.length) return;
+  const t = now();
+  lastFrame = t; tS = t; sample(ph, t); last = [pt[0], pt[1]];
+  raf = requestAnimationFrame(frame);
+}
 whenVisible(stage, v => {
   visible = v;
-  if (v) { if (kit.ac) kit.wake(); changed(); poke(); }
+  if (v) { if (kit.ac) kit.wake(); dirty = true; sync(); poke(); }
   else { cancelAnimationFrame(raf); raf = 0; silence(); kit.ac?.suspend()?.catch(() => {}); }
 });
 
 /* ---------- pointer ---------- */
 function toDiv(e) {
   const r = canvas.getBoundingClientRect();
-  return [clamp((e.clientX - r.left - cx) / div, -5, 5), clamp((cy - (e.clientY - r.top)) / div, -5, 5)];
+  return [clamp((e.clientX - r.left - cssC[0]) / cssDiv, -5, 5), clamp((cssC[1] - (e.clientY - r.top)) / cssDiv, -5, 5)];
 }
+const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+// The ratio picker splits the face into five by five cells.
+// A ratio such as 4:2 ties the same knot as 2:1.
 function pick(p) {
-  // A ratio such as 4:2 ties the same knot as 2:1.
-  const [ca, cb] = cellOf(p), g = gcd(ca, cb), a = ca / g, b = cb / g;
+  const ca = 1 + clamp(Math.floor((p[0] + 5) / 2), 0, 4), cb = 1 + clamp(Math.floor((p[1] + 5) / 2), 0, 4);
+  const g = gcd(ca, cb), a = ca / g, b = cb / g;
   if (knot && knot.a === a && knot.b === b) return;
-  if (knot) pushEcho(knotPts(knot, psiAt(now()), 360), true);
   knot = { a, b };
   changed();
 }
@@ -395,10 +734,8 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   canvas.setPointerCapture(e.pointerId);
   const p = toDiv(e);
-  if (mode === 'pen') {
-    if (pen) pushEcho(pen.pts, pen.closed);
-    before = pen; stroke = [p]; strokeLen = 0; lastBuild = 0;
-  } else { picking = true; pick(p); }
+  if (mode === 'pen') { before = pen; stroke = [p]; strokeLen = 0; lastBuild = 0; }
+  else { picking = true; pick(p); }
   poke();
 });
 canvas.addEventListener('pointermove', e => {
@@ -438,7 +775,7 @@ function setPitch(f) {
   if (voice && kit.ac) voice.src.playbackRate.setValueAtTime(pitch / voice.pitch, kit.ac.currentTime);
   sliding = true;
   clearTimeout(pitchT);
-  pitchT = setTimeout(() => { sliding = false; changed(); }, 160);
+  pitchT = setTimeout(() => { sliding = false; dirty = true; sync(); poke(); }, 160);
   poke();
 }
 pitchIn.addEventListener('input', () => setPitch(toHz(+pitchIn.value)));
@@ -447,18 +784,13 @@ function stepPitch(dir) {
   pitchIn.value = String(Math.round(1000 * Math.log10(f / 40)));
   setPitch(f);
 }
-// The old figure steps out as the new mode comes in.
 choices(document.querySelector('.bar .choices'), v => {
   if (v === mode) return;
-  if (mode === 'pen' && pen) pushEcho(pen.pts, pen.closed);
-  if (mode === 'knot' && knot) pushEcho(knotPts(knot, psiAt(now()), 360), true);
   mode = v; knotT0 = now();
-  changed(); poke();
+  changed();
 });
-const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 function shuffle() {
   if (mode === 'pen') {
-    if (pen) pushEcho(pen.pts, pen.closed);
     let k = presetIdx;
     while (k === presetIdx) k = Math.floor(Math.random() * PRESETS.length);
     presetIdx = k;
@@ -468,17 +800,19 @@ function shuffle() {
     const pairs = [];
     for (let a = 1; a <= 5; a++) for (let b = 1; b <= 5; b++) if (gcd(a, b) === 1 && !(knot && knot.a === a && knot.b === b)) pairs.push([a, b]);
     const [a, b] = pairs[Math.floor(Math.random() * pairs.length)];
-    if (knot) pushEcho(knotPts(knot, psiAt(now()), 360), true);
     knot = { a, b };
   }
-  changed(); poke();
+  changed();
 }
 function clear() {
-  if (mode === 'pen') { if (pen) pushEcho(pen.pts, pen.closed); pen = null; }
-  else { if (knot) pushEcho(knotPts(knot, psiAt(now()), 360), true); knot = null; }
-  changed(); poke();
+  if (mode === 'pen') pen = null; else knot = null;
+  changed();
 }
-function nextInk() { ink = (ink + 1) % INKS.length; poke(); }
+function nextPhosphor() {
+  phos = (phos + 1) % PHOS.length;
+  stage.style.setProperty('--ink', PHOS[phos].css);
+  poke();
+}
 document.getElementById('shuffle').addEventListener('click', shuffle);
 document.getElementById('clear').addEventListener('click', clear);
 addEventListener('keydown', e => {
@@ -488,31 +822,32 @@ addEventListener('keydown', e => {
   if ((k === 'arrowup' || k === 'arrowdown') && document.activeElement === stage) { e.preventDefault(); stepPitch(k === 'arrowup' ? 1 : -1); }
   else if (k === 's') shuffle();
   else if (k === 'c') clear();
-  else if (k === 'p') nextInk();
+  else if (k === 'p') nextPhosphor();
 });
-onReducedChange(() => { echoes = []; changed(); poke(); });
+onReducedChange(() => changed());
 
 /* ---------- start ---------- */
+stage.style.setProperty('--ink', PHOS[phos].css);
 new ResizeObserver(layout).observe(stage);
 new ResizeObserver(layout).observe(bar);
-document.fonts.ready.then(() => draw(now()));
 layout();
+changed({ first: true });
 
 /* ---------- the vignette figure ---------- */
 // Box centre 250,112; one division is 24 units.
 (function figure() {
   const svg = document.getElementById('figure'), f = n => n.toFixed(1);
-  let grid = '', knot = '', left = '', below = '';
+  let grid = '', path = '', left = '', below = '';
   for (let i = 1; i < 10; i++) grid += `M${130 + i * 24} 16V208`;
   for (let i = 1; i < 8; i++) grid += `M130 ${16 + i * 24}H370`;
   for (let i = 0; i <= 160; i++) {
     const u = TAU * i / 160, x = Math.sin(3 * u + 0.5), y = Math.sin(2 * u), c = i ? 'L' : 'M';
-    knot += `${c}${f(250 + x * 96)} ${f(112 - y * 80)}`;
+    path += `${c}${f(250 + x * 96)} ${f(112 - y * 80)}`;
     left += `${c}${f(112 - (i / 160) * 92)} ${f(112 - y * 80)}`;
     below += `${c}${f(250 + x * 96)} ${f(224 + (i / 160) * 66)}`;
   }
   svg.innerHTML = `<path class="grid" d="${grid}"/><path class="axis" d="M130 112H370M250 16V208"/>`
-    + `<path class="wave" d="${left}"/><path class="wave" d="${below}"/><path class="trace" d="${knot}"/>`
+    + `<path class="wave" d="${left}"/><path class="wave" d="${below}"/><path class="trace" d="${path}"/>`
     + `<text x="20" y="226">R</text><text x="378" y="292">L</text>`;
 })();
 </script>
