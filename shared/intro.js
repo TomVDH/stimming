@@ -60,6 +60,8 @@ export const TIMING = {
   unfurl: 333,  // ms each line takes to open
   nlLag: 2,     // frames between the name and the Dutch line
   subLag: 4,    // frames before the subtitle opens
+  tagLag: 4,    // frames from the subtitle to the motto
+  tagNlLag: 4,  // frames from the motto to its Dutch line
   hold: 2300,   // ms from the start before the intro may clear
   tickPop: 2,   // frames the tick pops large
   tickHold: 8,  // frames the tick flash holds
@@ -89,6 +91,10 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
       nameEl.before(emb);
     }
     if (info.emblem) emb.style.setProperty('--emblem', `url(${new URL(info.emblem, TOYS).href})`);
+    // The motto and its Dutch line follow the subtitle.
+    const after = subEl || nameEl, hasTag = !!text.querySelector('.intro-tag');
+    if (info.tagNl && !hasTag) after.after(Object.assign(document.createElement('span'), { className: 'intro-tag intro-tag--nl', lang: 'nl', textContent: info.tagNl }));
+    if (info.tag && !hasTag) after.after(Object.assign(document.createElement('span'), { className: 'intro-tag', lang: 'en', textContent: info.tag }));
     // The Dutch name and its IPA sit under the English name.
     if (info.nl) {
       nl = document.createElement('span');
@@ -116,6 +122,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     badge.className = 'intro-badge';
     emblem.before(badge);
     badge.append(emblem);
+    if (info?.number) badge.dataset.num = `#${info.number}`;
   }
   // The name and subtitle start closed at their centre line.
   const closed = 'inset(0 50% 0 50%)';
@@ -123,6 +130,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   if (badge) name.style.clipPath = closed;
   if (nl) nl.style.clipPath = closed;
   if (sub) sub.style.clipPath = closed;
+  const [tag, tagNl] = [text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl')];
+  [tag, tagNl].forEach(el => { if (el) el.style.clipPath = closed; });
 
   // The box flashes on in one frame and holds.
   await wait(T.lead);
@@ -138,7 +147,12 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
   if (badge) unfurl(name);
   if (nl) { await wait(T.nlLag); unfurl(nl); }
-  if (sub) { await wait(T.subLag); await unfurl(sub); }
+  // Each line opens a beat after the one above; the last one is awaited.
+  let last = null;
+  if (sub) { await wait(T.subLag); last = unfurl(sub); }
+  if (tag) { await wait(T.tagLag); last = unfurl(tag); }
+  if (tagNl) { await wait(T.tagNlLag); last = unfurl(tagNl); }
+  await last;
 
   await held;
 
