@@ -62,6 +62,8 @@ button:hover { border-color: var(--fg); }
 <aside class="panel" aria-label="Intro lab">
   <h1>Intro lab</h1>
   <p>Tune each beat, then Play. Copy gives the table to paste into <code>shared/intro.js</code>.</p>
+  <div class="row"><label for="variety">Variety</label><select id="variety"></select></div>
+  <p id="took">Run time: –</p>
   <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
   <label class="check"><input type="checkbox" id="done"> Signed off (tick)</label>
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
@@ -89,7 +91,7 @@ button:hover { border-color: var(--fg); }
 </aside>
 
 <script type="module">
-import { intro, TIMING, PHASES } from '../shared/intro.js';
+import { intro, TIMING, PHASES, VARIETIES } from '../shared/intro.js';
 
 // Each beat gets a slider: frames step by 1, milliseconds by 10.
 const RANGE = {
@@ -106,12 +108,17 @@ const T = { ...TIMING, ...(saved.base === BASE ? saved.timing || {} : {}) };
 const pauses = new Set(saved.pauses || []);
 const save = () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ base: BASE, timing: T, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fd: fdSel.value, ft: ftSel.value, note: noteSel.value, nudge: nudgeBox.checked }));
+    localStorage.setItem(KEY, JSON.stringify({ base: BASE, timing: T, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fd: fdSel.value, ft: ftSel.value, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value }));
   } catch (err) {}
 };
 
 const knobs = document.getElementById('knobs'), toySel = document.getElementById('toy');
 const fdSel = document.getElementById('fd'), ftSel = document.getElementById('ft');
+// Varieties: Classic is the shipped intro; the others are proposals.
+const varSel = document.getElementById('variety'), took = document.getElementById('took');
+for (const [k, v] of Object.entries(VARIETIES)) varSel.add(new Option(v.label, k));
+varSel.value = VARIETIES[saved.variety] ? saved.variety : 'classic';
+varSel.addEventListener('change', () => { save(); run(); });
 const noteSel = document.getElementById('snote'), nudgeBox = document.getElementById('nudge');
 noteSel.value = saved.note || 'glyph';
 nudgeBox.checked = saved.nudge ?? true;
@@ -231,7 +238,11 @@ async function run() {
   const subSpan = t.sub ? '<span class="intro-sub"></span>' : '';
   root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span>${subSpan}</div></div>`;
   document.body.prepend(root);
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...T }, gate, soundNote: soundNote() });
+  const t0 = performance.now();
+  // Classic takes the tuned table; other varieties keep their own timing.
+  const timing = varSel.value === 'classic' ? { ...T } : {};
+  await intro({ id: toySel.value, done: doneBox.checked, timing, gate, soundNote: soundNote(), variety: varSel.value });
+  if (!pauses.size) took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${VARIETIES[varSel.value].label.split(':')[0]}, ${toys[toySel.value].name})`;
   playing = false;
   if (loopBox.checked) setTimeout(run, 600);
 }

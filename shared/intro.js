@@ -72,16 +72,49 @@ export const TIMING = {
 // glyph and words make a quiet last line under the titles; nudge pulses the speaker.
 export const SOUND_NOTE = { glyph: false, words: null, nudge: false };
 
+// Intro varieties for the lab. Classic is the shipped intro and stays as it is.
+// Each variety may change the timing, how lines open, the flash and the exit.
+// read: [base ms, ms per motto character, cap ms] of reading time after the lines.
+export const VARIETIES = {
+  classic: { label: 'Classic' },
+  snap: {
+    label: 'Snap: tight and punchy',
+    timing: { lead: 2, pop: 2, flash: 9, unfurl: 240, nlLag: 3, subLag: 3, tagLag: 3, tagNlLag: 3, sndLag: 3, wipe: 250, fade: 380 },
+    read: [350, 12, 1300],
+  },
+  type: {
+    label: 'Type: lines are typed, then erased',
+    timing: { lead: 3, pop: 2, flash: 10, nlLag: 2, subLag: 2, tagLag: 2, tagNlLag: 2, sndLag: 2, wipe: 260, fade: 420 },
+    reveal: 'type', exit: 'erase', read: [400, 12, 1300],
+  },
+  lift: {
+    label: 'Lift: lines rise in, then sink away',
+    timing: { lead: 3, pop: 2, flash: 11, unfurl: 300, nlLag: 3, subLag: 3, tagLag: 3, tagNlLag: 3, sndLag: 3, wipe: 280, fade: 450 },
+    reveal: 'lift', exit: 'drop', read: [400, 12, 1300],
+  },
+  strobe: {
+    label: 'Strobe: the box blinks, lines cut in hard',
+    timing: { lead: 2, pop: 2, flash: 8, nlLag: 4, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, fade: 300 },
+    flash: 'strobe', reveal: 'cut', exit: 'cut', read: [450, 12, 1300],
+  },
+  shutter: {
+    label: 'Shutter: slits open, a tube switches off',
+    timing: { lead: 3, pop: 2, flash: 11, unfurl: 280, nlLag: 3, subLag: 3, tagLag: 3, tagNlLag: 3, sndLag: 3, wipe: 300, fade: 380 },
+    reveal: 'slit', exit: 'crt', read: [400, 12, 1300],
+  },
+};
+
 // The phases the intro lab can pause on, in order.
 export const PHASES = ['glass', 'pop', 'flash', 'lines', 'hold', 'wipe'];
 
 // ready is a promise; the intro holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
-export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE } = {}) {
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = 'classic' } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
-  const T = { ...TIMING, ...timing };
+  const V = VARIETIES[variety] || VARIETIES.classic;
+  const T = { ...TIMING, ...(V.timing || {}), ...timing };
   root.classList.add('is-live');
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
@@ -152,19 +185,43 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     tick.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.5l5.5 5.5L20.5 6" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="square"/></svg>';
     big.append(tick);
   }
-  // The name and subtitle start closed at their centre line.
-  const closed = 'inset(0 50% 0 50%)';
-  const unfurl = el => play(el, p => ({ clipPath: `inset(0 ${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}%)` }), T.unfurl, settle);
-  if (badge) name.style.clipPath = closed;
-  if (nl) nl.style.clipPath = closed;
-  if (sub) sub.style.clipPath = closed;
-  const [tag, tagNl] = [text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl')];
-  [tag, tagNl].forEach(el => { if (el) el.style.clipPath = closed; });
+  // Each line starts closed in the variety's own way, then opens on its beat.
+  const lines = [badge ? name : null, nl, sub,
+    text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd];
+  const lags = [0, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag];
+  const shut = { unfurl: 'inset(0 50% 0 50%)', type: 'inset(0 100% 0 0)', lift: 'inset(0 0 100% 0)', cut: 'inset(0 0 100% 0)', slit: 'inset(50% 0 50% 0)' };
+  const how = V.reveal || 'unfurl';
+  lines.forEach(el => { if (el) el.style.clipPath = shut[how]; });
+  if (how === 'lift') lines.forEach(el => { if (el) el.style.transform = 'translateY(0.6em)'; });
+  const open = el => {
+    if (how === 'type') {
+      // Typing steps one frame per character, up to two thirds of a second.
+      const n = Math.min(20, Math.max(4, el.textContent.length));
+      return play(el, p => ({ clipPath: `inset(0 ${(100 * (1 - p)).toFixed(2)}% 0 0)` }), (n * 1000) / FPS);
+    }
+    if (how === 'lift') return play(el, p => ({ clipPath: `inset(0 0 ${(100 * (1 - p)).toFixed(2)}% 0)`, transform: `translateY(${(0.6 * (1 - p)).toFixed(3)}em)` }), T.unfurl, settle);
+    if (how === 'slit') return play(el, p => ({ clipPath: `inset(${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}% 0)` }), T.unfurl, settle);
+    if (how === 'cut') {
+      // A hard cut: the line appears inverted for one frame, then settles.
+      el.style.clipPath = 'none';
+      el.style.background = '#fff';
+      el.style.color = 'var(--intro-bg)';
+      return wait(1).then(() => { el.style.background = ''; el.style.color = ''; });
+    }
+    return play(el, p => ({ clipPath: `inset(0 ${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}%)` }), T.unfurl, settle);
+  };
+  const box = on => {
+    if (badge) { badge.classList.toggle('is-flash', on); badge.style.setProperty('--box', on ? 1 : 0); } else name.classList.toggle('is-flash', on);
+  };
 
-  // The box flashes on in one frame and holds.
+  // The box flashes on and holds.
   await wait(T.lead);
   await gate('glass');
-  if (badge) { badge.classList.add('is-flash'); badge.style.setProperty('--box', 1); } else name.classList.add('is-flash');
+  if (V.flash === 'strobe') {
+    // Strobe: two short blinks before the box lands.
+    for (let k = 0; k < 2; k++) { box(true); text.style.opacity = 1; await wait(1); box(false); await wait(1); }
+  }
+  box(true);
   // For a few frames the flash fills the eye, then it snaps to its place.
   big.style.transform = 'scale(2.6)';
   text.style.opacity = 1;
@@ -174,25 +231,52 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   if (tick) tick.style.opacity = 1;
   await wait(T.flash);
   await gate('flash');
-  // The box cuts out; the emblem stays, white, and the words unfurl beneath it.
+  // The box cuts out; the emblem stays, white, and the lines open beneath it.
   if (tick) tick.remove();
-  if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
-  if (badge) unfurl(name);
-  if (nl) { await wait(T.nlLag); unfurl(nl); }
+  box(false);
   // Each line opens a beat after the one above; the last one is awaited.
-  let last = null;
-  if (sub) { await wait(T.subLag); last = unfurl(sub); }
-  if (tag) { await wait(T.tagLag); last = unfurl(tag); }
-  if (tagNl) { await wait(T.tagNlLag); last = unfurl(tagNl); }
-  if (snd) { await wait(T.sndLag); last = unfurl(snd); }
+  let last = null, first = true;
+  for (let k = 0; k < lines.length; k++) {
+    if (!lines[k]) continue;
+    if (!first) await wait(lags[k]);
+    first = false;
+    last = open(lines[k]);
+  }
   await last;
   await gate('lines');
 
-  await held;
+  // Classic holds to a fixed time; the others hold for reading time.
+  if (V.read) {
+    const chars = [info?.tag, info?.tagNl].join('').length, [base, per, cap] = V.read;
+    await Promise.all([ready, wait(frames(Math.min(cap, base + per * chars)))]);
+  } else await held;
   await gate('hold');
 
-  // The column wipes off, then the glass fades away whole.
-  await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), T.wipe, accel);
+  // Each variety leaves its own way, then the glass fades away whole.
+  const shown = lines.filter(Boolean).reverse();
+  const exit = V.exit || 'wipe';
+  if (exit === 'wipe') await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), T.wipe, accel);
+  if (exit === 'erase') {
+    // Lines erase right to left, bottom first, a frame apart.
+    let end = null;
+    for (const el of [...shown, badge].filter(Boolean)) { end = play(el, p => ({ clipPath: `inset(0 ${(100 * p).toFixed(2)}% 0 0)` }), T.wipe, accel); await wait(1); }
+    await end;
+  }
+  if (exit === 'drop') {
+    let end = null;
+    for (const el of [...shown, badge].filter(Boolean)) {
+      end = play(el, p => ({ clipPath: `inset(${(100 * p).toFixed(2)}% 0 0 0)`, transform: `translateY(${(0.6 * p).toFixed(3)}em)` }), T.wipe, accel);
+      await wait(1);
+    }
+    await end;
+  }
+  if (exit === 'cut') { box(true); await wait(1); text.style.opacity = 0; }
+  if (exit === 'crt') {
+    // The column collapses to a line, then the line shrinks to a dot.
+    text.style.transformOrigin = '50% 50%';
+    await play(text, p => ({ transform: `scaleY(${Math.max(0.01, 1 - p).toFixed(3)})` }), T.wipe * 0.6, accel);
+    await play(text, p => ({ transform: `scale(${(1 - p).toFixed(3)}, 0.01)` }), T.wipe * 0.4, accel);
+  }
   await gate('wipe');
   await play(root, p => ({ opacity: 1 - p }), T.fade, settle);
   // The speaker button pulses once if sound is still off.
