@@ -44,9 +44,10 @@ main { width: 100%; }
   max-width: 980px; margin: 0 auto; padding: 0; list-style: none;
 }
 .shelf > li { width: clamp(96px, 26vw, 150px); }
-/* The six main toys sit in one row; the rest wait folded in the Lab. */
+/* The main toys sit on the shelf; the rest wait folded in the Lab. */
 main { display: grid; justify-items: center; gap: clamp(28px, 5vw, 56px); }
-main > .shelf { max-width: 1220px; }
+/* The main shelf holds six toys a row at most and wraps on smaller screens. */
+main > .shelf { max-width: calc(6 * 150px + 5 * 28px); }
 .lab { width: 100%; max-width: 980px; display: grid; gap: clamp(24px, 4vw, 40px); }
 .lab summary {
   list-style: none; justify-self: center; display: inline-flex; align-items: center; gap: 6px;
@@ -536,7 +537,46 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
           <span class="name">Heat putty</span>
         </a>
       </li>
+      <li>
+        <a class="toy" id="scope" href="scope/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-scope" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.42 0.02 160)"/><stop offset="1" stop-color="oklch(0.24 0.015 160)"/></linearGradient>
+              <rect x="10" y="14" width="108" height="100" rx="20" fill="url(#g-scope)"/>
+              <rect x="10" y="14" width="108" height="100" rx="20" fill="url(#lit)"/>
+              <rect x="19" y="23" width="90" height="82" rx="13" fill="oklch(0.17 0.03 155)"/>
+              <path d="M28 64H100M64 30V98" stroke="oklch(0.45 0.06 150)" stroke-width="1" stroke-dasharray="2 4"/>
+              <!-- The trace is a 3:2 Lissajous; its phase drifts on hover. -->
+              <path id="scope-trace" fill="none" stroke="oklch(0.88 0.2 145)" stroke-width="3.6" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="name">Oscilloscope</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="walker" href="walker/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-walker" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.95 0.03 80)"/><stop offset="1" stop-color="oklch(0.78 0.04 70)"/></linearGradient>
+              <path d="M64 54V14" stroke="oklch(0.78 0.04 70)" stroke-width="4" stroke-linecap="round"/>
+              <path d="M68 16C88 22 92 40 68 50Z" fill="oklch(0.72 0.14 40)"/>
+              <rect x="18" y="50" width="94" height="10" rx="5" fill="url(#g-walker)"/>
+              <!-- Legs step on a flat-bottomed foot path while hovered. -->
+              <g id="walker-legs" fill="none" stroke="url(#g-walker)" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"></g>
+            </svg>
+          </span>
+          <span class="name">Beach walker</span>
+        </a>
+      </li>
     </ul>
+    <script>
+      // The main shelf deals its toys in a fresh order on every load.
+      (() => {
+        const shelf = document.querySelector('main > .shelf'), items = [...shelf.children];
+        for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+        shelf.append(...items);
+      })();
+    </script>
     <details class="lab">
       <summary>Lab<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></summary>
       <ul class="shelf" aria-label="Lab">
@@ -1026,6 +1066,37 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       .set('#putty-trail', { strokeDashoffset: 1, opacity: 1 })
       .to('#putty-trail', { strokeDashoffset: 0, duration: 1.1, ease: 'power1.inOut' }),
     rest: () => gsap.to('#putty-trail', { strokeDashoffset: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+
+  // Oscilloscope: a 3:2 Lissajous trace; hover drifts its phase one full turn.
+  const scopeTrace = document.getElementById('scope-trace'), scopeState = { p: 0.6 };
+  const drawScope = () => {
+    let d = '';
+    for (let i = 0; i <= 160; i++) {
+      const t = (i / 160) * Math.PI * 2;
+      d += `${i ? 'L' : 'M'}${(64 + 33 * Math.sin(3 * t + scopeState.p)).toFixed(1)} ${(64 + 30 * Math.sin(2 * t)).toFixed(1)}`;
+    }
+    scopeTrace.setAttribute('d', d + 'Z');
+  };
+  drawScope();
+  toys.scope = {
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(scopeState, { p: 0.6 }, { p: 0.6 + Math.PI * 2, duration: 4, ease: 'none', onUpdate: drawScope }),
+    rest: () => gsap.to(scopeState, { p: 0.6, duration: 0.4, onUpdate: drawScope, overwrite: true }),
+  };
+
+  // Beach walker: four legs; each foot rides a flat-bottomed loop.
+  const legG = document.getElementById('walker-legs'), legs = [30, 52, 74, 96].map(() => el('path', {}, legG));
+  const walkState = { a: 0 };
+  const drawWalk = () => legs.forEach((leg, k) => {
+    const hx = [30, 52, 74, 96][k], th = walkState.a + k * 1.7;
+    const fx = hx - 6 + 10 * Math.cos(th), fy = 104 - Math.max(0, 8 * Math.sin(th));
+    const kx = (hx + fx) / 2 - 9, ky = (60 + fy) / 2;
+    leg.setAttribute('d', `M${hx} 56L${kx.toFixed(1)} ${ky.toFixed(1)}L${fx.toFixed(1)} ${fy.toFixed(1)}L${hx + 10} 62`);
+  });
+  drawWalk();
+  toys.walker = {
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(walkState, { a: 0 }, { a: Math.PI * 2, duration: 1.4, ease: 'none', onUpdate: drawWalk }),
+    rest: () => gsap.to(walkState, { a: 0, duration: 0.4, onUpdate: drawWalk, overwrite: true }),
   };
 
   // Zen sand: grooves ring the stone; on hover each groove travels out one step.
