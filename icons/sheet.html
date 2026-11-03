@@ -65,9 +65,12 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
 <div class="wrap">
   <h1>Icon sheet</h1>
   <div class="bar">
+    <div class="actions" role="group" aria-label="Show">
+      <button class="chip" id="rest" type="button" aria-pressed="true">Rest</button>
+      <button class="chip" id="all" type="button" aria-pressed="false">Transition</button>
+    </div>
     <div class="actions">
       <button class="chip" id="hide" type="button" aria-pressed="false">Hide cut</button>
-      <button class="chip" id="all" type="button" aria-pressed="false">Play all</button>
       <button class="chip" id="copy" type="button">Copy</button>
       <button class="chip" id="reset" type="button">Reset</button>
     </div>
@@ -77,6 +80,7 @@ iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg
       <div class="fine"><dt><kbd>X</kbd></dt><dd>cut</dd></div>
       <div class="fine"><dt><kbd>Z</kbd></dt><dd>undo</dd></div>
       <div class="fine"><dt>Arrows</dt><dd>move</dd></div>
+      <div class="fine"><dt><kbd>T</kbd></dt><dd>transition</dd></div>
     </dl>
   </div>
   <div class="cols" id="cols"></div>
@@ -186,6 +190,7 @@ const paint = () => {
   $('left').innerHTML = `<b>${n}</b> of ${cells.length} left`;
   $('hide').setAttribute('aria-pressed', String(hide));
   $('all').setAttribute('aria-pressed', String(all));
+  $('rest').setAttribute('aria-pressed', String(!all));
 };
 
 const goTo = (i, scroll = true) => {
@@ -235,18 +240,22 @@ const onKey = e => {
     if (!was) { const c = cur; step(1); if (cur === c) step(-1); }
   } else if (k === 'z') { const i = undo.pop(); if (i !== undefined) { toggle(i, false); goTo(i); } }
   else if (k === 'h') $('hide').click();
-  else if (k === 'p') $('all').click();
+  else if (k === 't' || k === 'p') show(!all);
   else return;
   e.preventDefault();
 };
 addEventListener('keydown', onKey);
 
 $('hide').addEventListener('click', () => { hide = !hide; if (hide && cells[cur] && cut.has(cells[cur].key)) step(1); paint(); });
-$('all').addEventListener('click', () => {
-  all = !all;
+// Rest shows every icon still; Transition plays every hover at once.
+const show = on => {
+  if (on === all) return;
+  all = on;
   cells.forEach(c => { if (c !== cells[cur]) play(c, all); });
   paint();
-});
+};
+$('rest').addEventListener('click', () => show(false));
+$('all').addEventListener('click', () => show(true));
 $('copy').addEventListener('click', async () => {
   const lines = ORDER.map(id => `${nameOf(id)}: ${cells.filter(c => c.toy === id && !cut.has(c.key)).map(c => c.l).join(', ') || 'none'}`);
   const text = `Icon picks\n${lines.join('\n')}\n`;

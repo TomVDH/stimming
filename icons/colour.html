@@ -17,14 +17,24 @@ html, body { background: var(--bg); }
 body { margin: 0; color: var(--fg); font: 500 13px/1.35 "Gabarito", system-ui, sans-serif; padding-inline: max(16px, env(safe-area-inset-left, 0px)); -webkit-font-smoothing: antialiased; }
 .wrap { max-width: 1040px; margin: 0 auto; padding-block: 40px 72px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
-.key { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.show { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; padding-block: 10px; background: oklch(0.16 0.012 275 / 0.92); }
+.show button {
+  padding: 6px 11px; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer;
+  background: none; border: 1px solid oklch(0.26 0.014 275); border-radius: 999px; -webkit-tap-highlight-color: transparent;
+}
+.show button:hover { color: var(--fg); }
+.show button[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
 iframe { display: block; width: 100%; height: 0; border: 0; background: var(--bg); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Icon sets</h1>
-  <span class="key">Rest · Hover</span>
+  <div class="show" role="group" aria-label="Show" id="show">
+    <button type="button" data-v="both" aria-pressed="true">Both</button>
+    <button type="button" data-v="rest" aria-pressed="false">Rest</button>
+    <button type="button" data-v="trans" aria-pressed="false">Transition</button>
+  </div>
   <div id="frames"></div>
 </div>
 <script type="module">
@@ -43,7 +53,18 @@ section > h2 small { display: none; }
 .icons { gap: 14px !important; align-items: center !important; }
 .t64, .t64 svg, .s64 { width: 128px !important; height: 128px !important; }
 .t64, .s64 { pointer-events: none; }
+body.rest .t64, body.rest .icons > div:has(.s64) { display: none !important; }
+body.trans .t128, body.trans .icons > div:has(.s128) { display: none !important; }
 `;
+// Both, Rest or Transition; the choice applies to every gallery.
+let view = 'both';
+const docs = [];
+const setView = v => {
+  view = v;
+  document.querySelectorAll('#show button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+  docs.forEach(d => { d.body.classList.toggle('rest', v === 'rest'); d.body.classList.toggle('trans', v === 'trans'); });
+};
+document.getElementById('show').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });
 const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
 const base = new URL('./', location.href).href;
 const box = document.getElementById('frames');
@@ -58,6 +79,8 @@ for (let n = 1; n <= SPIKES; n++) {
   box.append(frame);
   await new Promise(r => frame.addEventListener('load', r, { once: true }));
   const doc = frame.contentDocument, win = frame.contentWindow;
+  docs.push(doc);
+  setView(view);
   const rows = [...doc.querySelectorAll('section')];
   for (const sec of rows) {
     const first = sec.querySelector('.dir');
