@@ -119,7 +119,7 @@ main { display: grid; gap: 14px; min-width: 0; }
     </div>
   </header>
   <main>
-    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A rainbow coil spring on three wooden steps. Drag an end to stretch it, or drop it over the edge and it walks down the stairs. Space nudges it into a walk, the up arrow stretches it, and R resets it.">
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A rainbow coil spring on three steps. Drag an end to stretch it, or drop it over the edge and it walks down the stairs. Space nudges it into a walk, the up arrow stretches it, and R resets it.">
       <p class="fail" hidden>Coil needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="foot">
@@ -148,9 +148,8 @@ const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
-const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
-const lerp = (a, b, t) => a + (b - a) * t;
 const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
@@ -204,6 +203,8 @@ function rest() {
 const GESTURE_KEYS = new Set(['r', 'R', ' ', 'ArrowUp', 'Enter']);
 function unlock(e) {
   if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // The sound toggle wakes or sleeps the context itself.
+  if (e.target instanceof Element && e.target.closest('#snd')) return;
   // A touch counts as a gesture only once the finger lifts.
   if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
   audio();
@@ -258,7 +259,7 @@ function clack(v, x, at = 0) {
   const [o, og] = tone(a, d, t, 'triangle', 1250 * jit(0.14), 0.16 * g, 0.009);
   track(o, og, d);
 }
-// The coil landing on wood: a rounder, lower knock.
+// The coil landing on a step: a rounder, lower knock.
 function knock(v, x) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -325,7 +326,8 @@ const AD = new Float64Array(9 * N), AU = new Float64Array(9 * N), RB = new Float
 const AD0 = new Float64Array(9 * N), AU0 = new Float64Array(9 * N), RB0 = new Float64Array(3 * N);
 const CP = new Float64Array(9 * N), DP = new Float64Array(3 * N), M3 = new Float64Array(9), T3 = new Float64Array(9);
 // Contacts between neighbouring turns, two sides per gap.
-// Each has a gap axis, edge levers, a target speed, its old speed, a state and a push.
+// Each holds a gap axis, edge levers and a target speed.
+// It also holds its old speed, its state and its push.
 const NG = 2 * (N - 1);
 const GN = new Float64Array(2 * NG), GL = new Float64Array(4 * NG), GB = new Float64Array(NG), GV = new Float64Array(NG);
 const GON = new Uint8Array(NG), GF = new Float64Array(NG);
@@ -338,12 +340,14 @@ const grip = { i: -1, x: 0, y: 0 };
 // Impacts since the last frame, for the sound.
 const hits = { ring: 0, ringN: 0, ringX: 0, step: 0, stepN: 0, stepX: 0 };
 
-// Region 0 is the top tread, 3 the floor, 4 behind the stairs.
+// Region 0 is the top tread and region 3 the floor.
+// Region 4 lies behind the stairs.
 const region = x => (x < BACK ? 4 : x < NOSE[0] ? 0 : x < NOSE[1] ? 1 : x < NOSE[2] ? 2 : 3);
 const levelOf = k => (k > 3 ? 0 : LEVEL[k]);
 const levelAt = x => levelOf(region(x));
 
-// Adds Gp' E Gq to a 3x3 block, where G maps a ring's motion to a point's.
+// Adds Gp' E Gq to a 3x3 block.
+// G maps a ring's motion to the motion of one point.
 // The point moves by (p1, p2) per unit turn of its ring.
 function addGEG(o, base, p1, p2, q1, q2, e11, e12, e22, sg) {
   const e = e11 * q1 + e12 * q2, f = e12 * q1 + e22 * q2;
@@ -352,8 +356,9 @@ function addGEG(o, base, p1, p2, q1, q2, e11, e12, e22, sg) {
   o[base + 6] += sg * (p1 * e11 + p2 * e12); o[base + 7] += sg * (p1 * e12 + p2 * e22); o[base + 8] += sg * (p1 * e + p2 * f);
 }
 
-// Shear between rings i and j along t, with gradients for both rings.
-// L is half the gap, the lever by which a turn of either ring shears it.
+// Shear between rings i and j along t, with gradients for both.
+// L is half the gap.
+// A turn of either ring shears the gap by L per radian.
 const GI = new Float64Array(3), GJ = new Float64Array(3);
 function shear(i, j, tx, ty, d, vd, L, pa1, pa2, pb1, pb2, h) {
   const k = P.ksh, c = P.csh;
@@ -373,7 +378,7 @@ function shear(i, j, tx, ty, d, vd, L, pa1, pa2, pb1, pb2, h) {
 }
 
 // Builds the linearly implicit step without contacts.
-// The system is (M - hD - h^2 K) dv = h (f + h K v).
+// It solves for the speed change in one implicit step.
 function assemble(h) {
   const { ks, cs, kb, cb, air } = P, h2 = h * h;
   AD0.fill(0); AU0.fill(0);
@@ -453,7 +458,8 @@ function addTouch(i, rx, ry, nx, ny, d, h) {
   TV[k] = (VX[i] - W[i] * ry) * nx + (VY[i] + W[i] * rx) * ny;
   TON[k] = d < 0.00002 ? 1 : 0;
 }
-// Finds stair contacts: box corners near a tread, and noses in a ring.
+// Finds stair contacts: box corners near a tread.
+// It also finds step noses inside a ring.
 function gatherTouches(h) {
   nT = 0;
   for (let i = 0; i < N; i++) {
@@ -523,7 +529,8 @@ function solveChain() {
 }
 
 // Contacts are stiff dampers that hold each touching speed at its target.
-// A contact switches on where it would be broken and off where it would pull.
+// A contact switches on where the step would break it.
+// It switches off where it would pull.
 function solveStep(h) {
   const sp = P.stiff, e = h * sp;
   for (let pass = 0; pass < 5; pass++) {
@@ -569,7 +576,8 @@ function solveStep(h) {
   }
 }
 
-// Friction stops sliding at each stair contact, up to mu times the push.
+// Friction stops sliding at each stair contact.
+// It is at most mu times the push.
 function rub(h) {
   const mu = P.mu;
   for (let k = 0; k < nT; k++) {
@@ -584,7 +592,8 @@ function rub(h) {
   }
 }
 
-// Pushes ring b along n at a point with lever (p1, p2); ring a goes back.
+// Pushes ring b along n at a point with lever (p1, p2).
+// Ring a moves the other way.
 // The previous pose moves too, so speeds stay.
 function shove(a, pa1, pa2, b, pb1, pb2, nx, ny, C) {
   const ka = pa1 * nx + pa2 * ny, kb = pb1 * nx + pb2 * ny;
@@ -740,31 +749,6 @@ void coilPoint() {
   coilPos = vec3(q.xy, 0.0) + (${RMID.toFixed(4)} + aSec.x) * e + aSec.y * n;
   coilNrm = normalize(aSec.z * e + aSec.w * n);
 }`;
-// Varnished wood: growth rings around logs that run along the steps.
-const WOOD_FS = `
-uniform vec3 uWoodA, uWoodB, uWoodC;
-varying vec3 vWP;
-float woodK;
-float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + 1.0), u.x), u.y);
-}
-vec3 woodColor(vec3 p) {
-  vec2 q = p.xy - vec2(0.09, -0.55);
-  float wob = (vnoise(vec2(p.z * 6.0, length(q) * 36.0)) - 0.5) * 0.007 + (vnoise(p.xy * 70.0 + p.z * 3.0) - 0.5) * 0.0015;
-  float r = length(q) + wob;
-  float ring = fract(r * 118.0 + 0.35 * vnoise(vec2(r * 9.0, p.z * 2.0)));
-  float late = smoothstep(0.5, 0.82, ring) * smoothstep(1.0, 0.88, ring);
-  // Pores run along the grain as fine dark streaks.
-  float pore = vnoise(vec2(p.z * 16.0 + r * 40.0, r * 3400.0));
-  float blot = vnoise(vec2(p.z * 8.0, r * 22.0));
-  float plank = hash21(vec2(floor(p.x / ${TREAD.toFixed(3)} + 20.0), 3.0));
-  woodK = late;
-  vec3 c = mix(uWoodA, uWoodB, 0.5 * late + 0.3 * blot);
-  c = mix(c, uWoodC, 0.35 * pore * pore * pore);
-  return c * mix(0.9, 1.08, plank);
-}`;
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, canvas = null;
 let ringTex = null, ringData = null, coilMesh = null, sun = null;
@@ -832,26 +816,14 @@ function coilMaterials() {
   };
   return [mat, depth];
 }
-function woodMaterial(RoundedBoxGeometry) {
-  const mat = new THREE.MeshPhysicalMaterial({ roughness: 0.5, metalness: 0, clearcoat: 0.45, clearcoatRoughness: 0.32 });
-  const W = [linear(0.62, 0.09, 64), linear(0.45, 0.085, 48), linear(0.34, 0.065, 40)];
-  mat.onBeforeCompile = sh => {
-    sh.uniforms.uWoodA = { value: new THREE.Vector3(...W[0]) };
-    sh.uniforms.uWoodB = { value: new THREE.Vector3(...W[1]) };
-    sh.uniforms.uWoodC = { value: new THREE.Vector3(...W[2]) };
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + WOOD_FS)
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = woodColor(vWP);')
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.42, 0.66, woodK);');
-  };
+// The steps are plain matte blocks in one soft colour.
+function steps(RoundedBoxGeometry) {
+  const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(...linear(0.5, 0.05, 276)), roughness: 0.86, metalness: 0 });
   const group = new THREE.Group();
-  // Three solid steps; the top one runs back out of view.
+  // Three steps; the top one runs back out of view.
   const blocks = [[BACK, NOSE[0], LEVEL[0]], [NOSE[0], NOSE[1], LEVEL[1]], [NOSE[1], NOSE[2], LEVEL[2]]];
   for (const [x0, x1, top] of blocks) {
-    const m = new THREE.Mesh(new RoundedBoxGeometry(x1 - x0, top, WIDE, 3, 0.0035), mat);
+    const m = new THREE.Mesh(new RoundedBoxGeometry(x1 - x0, top, WIDE, 3, 0.003), mat);
     m.position.set((x0 + x1) / 2, top / 2, 0);
     m.castShadow = m.receiveShadow = true;
     group.add(m);
@@ -859,7 +831,7 @@ function woodMaterial(RoundedBoxGeometry) {
   return group;
 }
 
-// A photo sweep: the floor curves up into a wall behind the stairs.
+// A photo sweep: the floor curves up into a back wall.
 function sweep() {
   const prof = [[2.5, 0, 0, 1], [-0.3, 0, 0, 1]], R = 0.5;
   for (let k = 1; k <= 18; k++) {
@@ -943,12 +915,12 @@ function coilLength() {
   for (let i = 1; i < N; i++) s += Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]);
   return s;
 }
-// The end that sits higher is the one a hand would pick up.
+// A hand picks up the end that sits higher.
 function ends() {
   if (Math.abs(Y[N - 1] - Y[0]) < 0.03) return X[0] < X[N - 1] ? [0, N - 1] : [N - 1, 0];
   return Y[N - 1] > Y[0] ? [N - 1, 0] : [0, N - 1];
 }
-// Lifts the top end over the next edge and sets it down beyond.
+// Lifts the top end over the next edge and sets it down.
 function nudge() {
   if (!ready || drag) return;
   const [top, base] = ends();
@@ -961,7 +933,7 @@ function nudge() {
   hand = { i: top, t: 0, dur: 0.8, hold: 0.1, px: [X[top], X[top], lx, lx], py: [Y[top], up, up, ly + 2 * THK] };
   wake();
 }
-// The up arrow plucks the top end upward and lets it snap back.
+// The up arrow lifts the top end and lets it snap back.
 function pluck() {
   if (!ready || drag) return;
   const [top] = ends();
@@ -1035,7 +1007,7 @@ function toPlane(cx, cy) {
   ray.setFromCamera(ndc, camera);
   return ray.ray.intersectPlane(plane, hitV) ? { x: hitV.x, y: hitV.y } : null;
 }
-// The nearer end of the coil, if the point is on or near the coil.
+// Returns the nearer end when the point is near the coil.
 function pick(p, touch) {
   let near = Infinity;
   for (let i = 0; i < N; i += 3) near = Math.min(near, Math.hypot(X[i] - p.x, Y[i] - p.y));
@@ -1140,7 +1112,7 @@ async function start() {
   plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
   await idle();
 
-  // Soft studio light: a room for reflections, a warm key, a cool rim.
+  // Soft studio light: room reflections, a warm key and a cool rim.
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environmentIntensity = 0.45;
@@ -1163,7 +1135,7 @@ async function start() {
 
   const studio = new THREE.Mesh(sweep(), new THREE.MeshStandardMaterial({ color: C3(linear(0.3, 0.03, 285)), roughness: 0.9 }));
   studio.receiveShadow = true;
-  // Coloured lamps wash the sweep: rose on the left, teal on the right.
+  // Coloured lamps wash the sweep: rose left, blue right.
   const lamp = (c, k, x, y, z, tx, ty) => {
     const l = new THREE.SpotLight(C3(c), k, 0, 0.55, 1, 1.6);
     l.position.set(x, y, z);
@@ -1172,7 +1144,7 @@ async function start() {
   };
   lamp(linear(0.66, 0.2, 345), 7, -0.5, 0.75, 0.5, -0.45, 0.35);
   lamp(linear(0.72, 0.15, 210), 6, 0.95, 0.7, 0.5, 0.8, 0.2);
-  scene.add(studio, woodMaterial(RoundedBoxGeometry));
+  scene.add(studio, steps(RoundedBoxGeometry));
 
   ringData = new Float32Array(N * 4);
   ringTex = new THREE.DataTexture(ringData, N, 1, THREE.RGBAFormat, THREE.FloatType);
