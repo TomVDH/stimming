@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ripple tank</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Ripple tank: a shallow tank of dark water with caustic light on its floor. */
+:root { --stage: oklch(0.14 0.03 245); }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/ripple.svg)"></span><span class="intro-name">Ripple tank</span><span class="intro-sub">Stimming No. 18</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--ripple" id="stage" tabindex="0" role="application" aria-label="A shallow tank of water. Tap to drop a pebble, drag to run a finger through it. Twin adds two pulsing sources; Slit adds a wall with two gaps. Space drops a pebble in the middle.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Ripple tank needs WebGL 2 with float textures, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" role="group" aria-label="Sources">
+        <button class="chip" type="button" data-value="drops" aria-pressed="true">Drops</button>
+        <button class="chip" type="button" data-value="twin" aria-pressed="false">Twin</button>
+        <button class="chip" type="button" data-value="slit" aria-pressed="false">Slit</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="calm" type="button">Clear</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Click</dt><dd>drop</dd></div>
+        <div><dt>Drag</dt><dd>wake</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>drop</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Ripple tank</h1><div class="vignette" hidden></div></section>
+</div>
+
+<script type="module">
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+</script>
+<script type="module">
+import { initPage, audioKit, choices, whenVisible, reduced } from '../shared/stim.js';
+initPage({ id: 'ripple' });
+
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false });
+const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) fail();
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------- shaders ---------- */
+const VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+// R is the height now, G the height a step ago.
+const SIM = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uState; uniform vec2 uTexel; uniform vec3 uDrop; uniform float uMode, uTime, uAspect;
+// Walls: a bar with two gaps in Slit mode.
+float wall(vec2 p) {
+  if (uMode != 2.0) return 0.0;
+  float bar = step(abs(p.x - 0.42), 0.006);
+  float gaps = step(abs(abs(p.y - 0.5) - 0.11), 0.035);
+  return bar * (1.0 - gaps);
+}
+void main() {
+  vec4 s = texture(uState, vUv);
+  float h = s.r, prev = s.g;
+  float lap = texture(uState, vUv + vec2(uTexel.x, 0)).r + texture(uState, vUv - vec2(uTexel.x, 0)).r
+            + texture(uState, vUv + vec2(0, uTexel.y)).r + texture(uState, vUv - vec2(0, uTexel.y)).r - 4.0 * h;
+  float next = (2.0 * h - prev + 0.48 * lap) * 0.9965;
+  // A pebble or finger adds a soft dent.
+  vec2 d = (vUv - uDrop.xy) * vec2(uAspect, 1.0);
+  next += uDrop.z * exp(-dot(d, d) / 0.00012);
+  // Twin sources pulse in step; Slit drives a plane wave from the left.
+  if (uMode == 1.0) {
+    for (int i = 0; i < 2; i++) {
+      vec2 q = (vUv - vec2(0.5, i == 0 ? 0.38 : 0.62)) * vec2(uAspect, 1.0);
+      next += 0.05 * sin(uTime * 7.0) * exp(-dot(q, q) / 0.00008);
+    }
+  }
+  if (uMode == 2.0 && vUv.x < 0.02) next = 0.4 * sin(uTime * 6.0);
+  next *= 1.0 - wall(vUv);
+  // The tank's rim absorbs, so waves do not ring forever.
+  float edge = smoothstep(0.0, 0.015, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)));
+  o = vec4(next * mix(0.9, 1.0, edge), h, 0.0, 1.0);
+}`;
+// Light bends through the surface onto the floor; curvature focuses caustics.
+const VIEW = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uState; uniform vec2 uTexel; uniform float uMode, uAspect;
+float H(vec2 p) { return texture(uState, p).r; }
+void main() {
+  float hx = H(vUv + vec2(uTexel.x, 0)) - H(vUv - vec2(uTexel.x, 0));
+  float hy = H(vUv + vec2(0, uTexel.y)) - H(vUv - vec2(0, uTexel.y));
+  vec3 n = normalize(vec3(-hx * 6.0, -hy * 6.0, 1.0));
+  float lap = H(vUv + vec2(uTexel.x, 0)) + H(vUv - vec2(uTexel.x, 0)) + H(vUv + vec2(0, uTexel.y)) + H(vUv - vec2(0, uTexel.y)) - 4.0 * H(vUv);
+  // The floor: deep ink with faint stencil bands, seen through the bent surface.
+  vec2 f = vUv + n.xy * 0.035;
+  float bands = 0.5 + 0.5 * smoothstep(0.46, 0.5, abs(fract(f.y * 6.0 * 1.0) - 0.5));
+  vec3 floorCol = mix(vec3(0.02, 0.05, 0.09), vec3(0.03, 0.08, 0.13), bands);
+  float caustic = clamp(-lap * 26.0, 0.0, 1.6);
+  vec3 col = floorCol + vec3(0.25, 0.85, 0.9) * caustic * 0.55 + vec3(0.8, 1.0, 0.75) * pow(caustic, 3.0) * 0.12;
+  // A cool sky glints off the slopes.
+  float spec = pow(max(dot(n, normalize(vec3(-0.4, 0.5, 1.0))), 0.0), 220.0);
+  col += vec3(0.85, 0.95, 1.0) * spec * 0.6;
+  // The Slit wall reads as a solid stencil bar.
+  if (uMode == 2.0) {
+    float bar = step(abs(vUv.x - 0.42), 0.006) * (1.0 - step(abs(abs(vUv.y - 0.5) - 0.11), 0.035));
+    col = mix(col, vec3(0.62, 0.66, 0.72), bar);
+  }
+  o = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+}`;
+function program(fs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]].forEach(([t, src]) => {
+    const sh = gl.createShader(t); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  gl.bindAttribLocation(p, 0, 'aPos'); gl.linkProgram(p);
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+const sim = program(SIM), view = program(VIEW);
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+/* ---------- state textures ---------- */
+let W = 2, Hh = 2, targets = [], flip = 0, aspect = 1;
+function makeTarget() {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, W, Hh, 0, gl.RG, gl.HALF_FLOAT, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb };
+}
+function fit() {
+  const r = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+  canvas.width = Math.max(2, Math.round(r.width * dpr)); canvas.height = Math.max(2, Math.round(r.height * dpr));
+  aspect = r.width / Math.max(1, r.height);
+  // The simulation grid stays near 300 cells on the long side.
+  const n = 300;
+  W = aspect >= 1 ? n : Math.round(n * aspect); Hh = aspect >= 1 ? Math.round(n / aspect) : n;
+  targets.forEach(t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); });
+  targets = [makeTarget(), makeTarget()];
+  wake();
+}
+
+/* ---------- stepping ---------- */
+let mode = 'drops', drop = [0, 0, 0], t0 = performance.now();
+const MODE = { drops: 0, twin: 1, slit: 2 };
+function step(time) {
+  const src = targets[flip], dst = targets[1 - flip];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+  gl.viewport(0, 0, W, Hh);
+  gl.useProgram(sim.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(sim.u.uState, 0);
+  gl.uniform2f(sim.u.uTexel, 1 / W, 1 / Hh);
+  gl.uniform3f(sim.u.uDrop, ...drop);
+  gl.uniform1f(sim.u.uMode, MODE[mode]);
+  gl.uniform1f(sim.u.uTime, time);
+  gl.uniform1f(sim.u.uAspect, aspect);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  flip = 1 - flip;
+  drop[2] = 0;
+}
+function render() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(view.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets[flip].tex);
+  gl.uniform1i(view.u.uState, 0);
+  gl.uniform2f(view.u.uTexel, 1 / W, 1 / Hh);
+  gl.uniform1f(view.u.uMode, MODE[mode]);
+  gl.uniform1f(view.u.uAspect, aspect);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ---------- sound ---------- */
+// A plip: a sine that drops in pitch with a breath of noise.
+const kit = audioKit({ gain: 0.5, keys: new Set([' ']) });
+let lastPlip = 0;
+function plip(strength) {
+  const ac = kit.live(); if (!ac) return;
+  const now = performance.now(); if (now - lastPlip < 45) return; lastPlip = now;
+  const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime, f = 700 + Math.random() * 500;
+  o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.45, t + 0.12);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25 * strength, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  o.connect(g); g.connect(kit.out); o.start(t); o.stop(t + 0.2);
+}
+
+/* ---------- loop ---------- */
+// The tank runs while waves move; in Drops it sleeps a while after the last touch.
+let raf = 0, lastInput = 0, visible = true;
+function frame(now) {
+  const time = (now - t0) / 1000;
+  step(time); step(time + 0.008);
+  render();
+  const busy = mode !== 'drops' || now - lastInput < 9000;
+  if (visible && busy && !reduced()) raf = requestAnimationFrame(frame);
+  else { raf = 0; kit.rest(() => !raf); }
+}
+function wake() { lastInput = performance.now(); if (!raf) raf = requestAnimationFrame(frame); }
+whenVisible(stage, v => { visible = v; if (v) wake(); });
+
+/* ---------- input ---------- */
+const at = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height]; };
+let dragging = false, last = null;
+function poke([x, y], s) { drop = [x, y, s]; wake(); }
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId); dragging = true; last = at(e);
+  poke(last, -0.9); plip(1);
+  if (reduced()) { step((performance.now() - t0) / 1000); render(); }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const p = at(e), d = Math.hypot(p[0] - last[0], p[1] - last[1]);
+  // A moving finger leaves a wake: small dents along its path.
+  if (d > 0.006) { poke(p, -Math.min(0.5, d * 18)); last = p; if (d > 0.03) plip(0.4); }
+});
+const lift = () => { dragging = false; };
+canvas.addEventListener('pointerup', lift);
+canvas.addEventListener('pointercancel', lift);
+stage.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); poke([0.5, 0.5], -1); plip(1); } });
+
+choices(document.querySelector('.choices'), v => { mode = v; wake(); });
+document.getElementById('calm').addEventListener('click', () => { targets.forEach(t => { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.clear(gl.COLOR_BUFFER_BIT); }); wake(); });
+
+new ResizeObserver(fit).observe(stage);
+fit();
+</script>
+</body>
+</html>

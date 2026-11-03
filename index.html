@@ -518,6 +518,20 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
           <span class="name">Keycaps</span>
         </a>
       </li>
+      <li>
+        <a class="toy" id="ripple" href="ripple/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-ripple" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.86 0.12 195)"/><stop offset="1" stop-color="oklch(0.58 0.13 225)"/></linearGradient>
+              <clipPath id="ripple-clip"><rect x="12" y="12" width="104" height="104" rx="10"/></clipPath>
+              <rect x="12" y="12" width="104" height="104" rx="10" fill="url(#g-ripple)"/>
+              <!-- Rings are stencil cuts spreading from two drops. -->
+              <g id="ripple-rings" clip-path="url(#ripple-clip)" fill="none" style="stroke: var(--bg)" stroke-width="3.2"></g>
+            </svg>
+          </span>
+          <span class="name">Ripple tank</span>
+        </a>
+      </li>
     </ul>
     <details class="lab">
       <summary>Lab<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></summary>
@@ -1007,6 +1021,15 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 
   // Lab toys have a looping timeline while active and a way back to rest.
   const toys = {};
+
+  // Ripple tank: rings spread from two drops; one step out per loop is seamless.
+  const rippleRings = [[48, 54], [86, 82]].flatMap(([x, y]) => Array.from({ length: 6 }, (_, k) => ({ el: el('circle', { cx: x, cy: y, r: 8 + k * 11 }, document.getElementById('ripple-rings')), k })));
+  const rippleState = { o: 0 };
+  const drawRipple = () => rippleRings.forEach(({ el: c, k }) => c.setAttribute('r', (8 + k * 11 + rippleState.o).toFixed(2)));
+  toys.ripple = {
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(rippleState, { o: 0 }, { o: 11, duration: 1, ease: 'none', onUpdate: drawRipple }),
+    rest: () => gsap.to(rippleState, { o: 0, duration: 0.3, onUpdate: drawRipple, overwrite: true }),
+  };
 
   // Keycaps: the caps press down in a diagonal wave and spring back.
   toys.keys = {
