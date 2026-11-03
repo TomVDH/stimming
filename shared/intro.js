@@ -66,10 +66,6 @@ export const TIMING = {
   lead: 2,        // frames of glass before the flash
   pop: 2,         // frames the flash fills the eye
   popScale: 3.4,  // how far the blown-up flash fills the eye
-  flashScale: 1,  // emblem size while the box holds, times its normal size
-  iconY: 0,       // vh the emblem moves down while the box holds
-  restScale: 1,   // emblem size once the lines open
-  restY: 0,       // vh the emblem moves down once the lines open
   flash: 9,       // frames the box holds at size after the pop
   unfurl: 240,    // ms each line takes to open
   nlLag: 3,       // frames between the name and the Dutch line
@@ -78,6 +74,14 @@ export const TIMING = {
   tagNlLag: 3,    // frames from the motto to its Dutch line
   sndLag: 3,      // frames from the line above to the audio notice
   clsLag: 3,      // frames from the classic notice to the main title
+  logoK: 1,       // logo size, times its responsive size
+  nameK: 1,       // main title size, times its responsive size
+  nlK: 1,         // translation size, times the copy size
+  tagK: 1,        // subtitle size, times the copy size
+  tagNlK: 1,      // subtitle translation size, times the copy size
+  sndK: 1,        // audio notice size, times the copy size
+  clsK: 1,        // classic notice size, times the copy size
+  gapK: 1,        // vertical space between the lines, times its responsive size
   clsY: 0,        // vh the classic notice moves down
   nameY: 0,       // vh the main title moves down
   nlY: 0,         // vh the translation moves down
@@ -172,8 +176,9 @@ const scanBar = el => {
 // How each line starts hidden, and how it opens.
 const REVEAL = {
   unfurl: {
-    shut: { clipPath: 'inset(0 50% 0 50%)' },
-    open: (el, T) => play(el, p => ({ clipPath: `inset(0 ${pct((1 - p) / 2)} 0 ${pct((1 - p) / 2)})` }), T.unfurl, settle),
+    // The clip opens sideways only; its overhang keeps every glyph whole.
+    shut: { clipPath: 'inset(-0.4em 50% -0.4em 50%)' },
+    open: (el, T) => play(el, p => ({ clipPath: `inset(-0.4em calc(${pct((1 - p) / 2)} - 0.2em) -0.4em calc(${pct((1 - p) / 2)} - 0.2em))` }), T.unfurl, settle),
   },
   type: {
     shut: { clipPath: 'inset(0 100% 0 0)' },
@@ -241,6 +246,29 @@ const REVEAL = {
     },
   },
 };
+
+// The size knobs, as the CSS variables they set.
+const SIZES = { logoK: '--logo-k', nameK: '--name-k', nlK: '--nl-k', tagK: '--tag-k', tagNlK: '--tagnl-k', sndK: '--snd-k', clsK: '--cls-k', gapK: '--gap-k' };
+
+// Sets the sizes, then shrinks the copy until every line fits on screen.
+export function fitIntro(root, T) {
+  const text = root.querySelector('.intro-text');
+  if (!text) return;
+  for (const [k, name] of Object.entries(SIZES)) root.style.setProperty(name, T[k] ?? 1);
+  text.style.removeProperty('--copy-k');
+  const badge = root.dataset.layout ? null : text.querySelector('.intro-badge');
+  let k = 1;
+  for (let i = 0; i < 4; i++) {
+    const r = root.getBoundingClientRect(), t = text.getBoundingClientRect();
+    const top = badge ? badge.getBoundingClientRect().bottom : t.top;
+    const tall = (r.bottom - 24 - top) / (t.bottom - top);
+    // A word wider than its box overflows; the title then shrinks too.
+    const wide = Math.min(1, ...[...text.children].map(el => el.clientWidth && el.scrollWidth > el.clientWidth ? el.clientWidth / el.scrollWidth : 1));
+    if (tall >= 1 && wide >= 1) break;
+    k = Math.max(0.4, k * Math.min(tall, wide));
+    text.style.setProperty('--copy-k', k.toFixed(3));
+  }
+}
 
 // ready is a promise; a fixed-hold variety holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
@@ -317,9 +345,6 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     emblem.before(badge);
     badge.append(emblem);
     if (info?.number && numAt === 'box') badge.dataset.num = `#${info.number}`;
-    // The emblem takes its flash size and place before it shows.
-    badge.style.setProperty('--emblem-k', T.flashScale);
-    badge.style.translate = `0 ${T.iconY}vh`;
   }
   // A toy with sound ends its titles with a quiet headphones line.
   let snd = null;
@@ -349,11 +374,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   [[cls, T.clsY], [name, T.nameY], [nl, T.nlY], [text.querySelector('.intro-tag:not(.intro-tag--nl)'), T.tagY], [text.querySelector('.intro-tag--nl'), T.tagNlY], [snd, T.sndY]]
     .forEach(([el, y]) => { if (el && y) el.style.translate = `0 ${y}vh`; });
   // The logo never moves: CSS pins it to one point on the screen.
-  // The copy under it shrinks to fit, so it stays on screen.
-  if (badge) {
-    const top = badge.getBoundingClientRect().bottom, room = root.getBoundingClientRect().bottom - 24 - top, need = text.getBoundingClientRect().bottom - top;
-    if (need > room) text.style.setProperty('--copy-k', Math.max(0.7, room / need).toFixed(3));
-  }
+  fitIntro(root, T);
+  document.fonts?.ready.then(() => fitIntro(root, T));
   // A try-out: the name can share the flash, boxed and blown up with the mark.
   const both = nameFlash && badge;
   const box = on => {
@@ -413,11 +435,6 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     play(badge, p => ({ '--box-y': (1 - 0.95 * p).toFixed(3) }), 160, accel).then(() => wait(2)).then(() => { badge.style.setProperty('--box', 0); badge.style.setProperty('--box-y', 1); });
   } else box(false);
   if (both) box(false);
-  // The emblem moves to its rest size and place as the lines open.
-  if (badge && (T.flashScale !== T.restScale || T.iconY !== T.restY)) {
-    play(badge, p => ({ '--emblem-k': (T.flashScale + (T.restScale - T.flashScale) * p).toFixed(3) }), T.unfurl, settle);
-    play(badge, p => ({ translate: `0 ${(T.iconY + (T.restY - T.iconY) * p).toFixed(2)}vh` }), T.unfurl, settle);
-  }
   // Each line opens a beat after the one above; the last one is awaited.
   let last = null, first = true;
   for (let k = 0; k < lines.length; k++) {
