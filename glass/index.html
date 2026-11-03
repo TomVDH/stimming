@@ -318,7 +318,7 @@ function unzipSound(dur) {
 
 /* ---------- cracks: line segments in pane coordinates, y up ---------- */
 // The frame is FH tall; its width follows the panel's shape.
-const FH = 2, FB = 0.05, FD = 0.08, T = 0.026, GLOW = 0.05;
+const FH = 2, FB = 0.07, FD = 0.08, T = 0.026, GLOW = 0.05;
 let FW = 3.6, PW = FW - 2 * FB, PH = FH - 2 * FB, S = PH;
 // Each segment: ends, birth times on the crack clock, width and glint.
 const segs = [], tips = [];
@@ -1117,47 +1117,72 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 // A night city far behind the pane, out of focus.
-const NBF = 44, NBN = 28, XS = 5.2, BWF = (2 * XS) / NBF, BWN = (2 * XS) / NBN;
+// Three tower rows: far, middle and near. Farther rows blur more.
+const NBF = 44, NBM = 34, NBN = 24, XS = 5.2, BWF = (2 * XS) / NBF, BWM = (2 * XS) / NBM, BWN = (2 * XS) / NBN;
+const f5 = v => v.toFixed(5);
+// One tower row as a mask; neighbouring soft boxes sum to one.
+const ROW = (name, arr, n, bw, blur, seed) => `
+float ${name}(vec2 p) {
+  float i = floor((p.x + ${f5(XS)}) / ${f5(bw)}), m = 0.0;
+  for (int k = -1; k <= 1; k++) {
+    float j = i + float(k);
+    m += tower(p, -${f5(XS)} + j * ${f5(bw)}, ${f5(bw)}, ${arr}[int(clamp(j, 0.0, ${n - 1}.0))], ${f5(blur)}, j + ${seed}.0);
+  }
+  return min(m, 1.0);
+}`;
 const WALL_FS = `
-uniform vec3 uSkyTop, uSkyLow, uHaze, uFar, uNear, uWinA, uWinB;
-uniform float uFarR[${NBF}], uNearR[${NBN}];
+uniform vec3 uSkyTop, uSkyLow, uHaze, uFar, uMid, uNear, uWinA, uWinB, uWinC;
+uniform float uFarR[${NBF}], uMidR[${NBM}], uNearR[${NBN}];
 varying vec3 vW;
-const float BLUR = 0.06;
 float h21(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 15731.743); }
-float farAt(float i) { return uFarR[int(clamp(i, 0.0, ${NBF - 1}.0))]; }
-float nearAt(float i) { return uNearR[int(clamp(i, 0.0, ${NBN - 1}.0))]; }
-// One tower: a soft box from the ground to its roof.
-float tower(vec2 p, float l, float bw, float h) {
-  return smoothstep(-BLUR, BLUR, p.x - l) * smoothstep(-BLUR, BLUR, l + bw - p.x) * smoothstep(h + BLUR, h - BLUR, p.y);
+float vn(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + 1.0), f.x), f.y);
 }
-// Neighbouring soft boxes sum to one across a shared edge.
-float skyF(vec2 p) {
-  float i = floor((p.x + ${XS.toFixed(2)}) / ${BWF.toFixed(5)}), m = 0.0;
-  for (int k = -1; k <= 1; k++) { float j = i + float(k); m += tower(p, -${XS.toFixed(2)} + j * ${BWF.toFixed(5)}, ${BWF.toFixed(5)}, farAt(j)); }
-  return min(m, 1.0);
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+  return s;
 }
-float skyN(vec2 p) {
-  float i = floor((p.x + ${XS.toFixed(2)}) / ${BWN.toFixed(5)}), m = 0.0;
-  for (int k = -1; k <= 1; k++) { float j = i + float(k); m += tower(p, -${XS.toFixed(2)} + j * ${BWN.toFixed(5)}, ${BWN.toFixed(5)}, nearAt(j)); }
-  return min(m, 1.0);
+// One tower: a soft box. Some towers step in near the roof.
+float tower(vec2 p, float l, float bw, float h, float blur, float seed) {
+  float set = step(0.55, h21(vec2(seed, 7.0)));
+  float cut = h - set * (0.07 + 0.16 * h21(vec2(seed, 3.0)));
+  float ins = set * bw * (0.14 + 0.14 * h21(vec2(seed, 5.0)));
+  float base = smoothstep(-blur, blur, p.x - l) * smoothstep(-blur, blur, l + bw - p.x);
+  float crown = smoothstep(-blur, blur, p.x - l - ins) * smoothstep(-blur, blur, l + bw - ins - p.x);
+  return mix(crown, base, smoothstep(cut + blur, cut - blur, p.y)) * smoothstep(h + blur, h - blur, p.y);
 }
-// Lit windows: a hashed grid of soft cells, warm or cool.
+${ROW('rowF', 'uFarR', NBF, BWF, 0.075, 0)}
+${ROW('rowM', 'uMidR', NBM, BWM, 0.06, 100)}
+${ROW('rowN', 'uNearR', NBN, BWN, 0.045, 200)}
+// Homes light single windows; offices light whole floors.
 vec3 windows(vec2 p, vec2 cell, float seed, float bw) {
-  vec2 g = p / cell, id = floor(g), q = abs(fract(g) - 0.5) - vec2(0.24, 0.28);
-  float tower = floor((p.x + ${XS.toFixed(2)}) / bw);
-  float on = step(0.72, h21(id + seed)) * (0.35 + 0.65 * h21(id.yx + seed * 1.7));
-  float m = 1.0 - smoothstep(-0.32, 0.32, max(q.x, q.y));
-  return mix(uWinA, uWinB, step(0.6, h21(vec2(tower, seed)))) * on * m;
+  float tw = floor((p.x + ${f5(XS)}) / bw);
+  vec2 g = p / cell, id = floor(g), q = abs(fract(g) - 0.5);
+  float office = step(0.62, h21(vec2(tw, seed + 2.0)));
+  float home = step(0.72, h21(id + seed)) * (1.0 - smoothstep(-0.3, 0.3, max(q.x - 0.24, q.y - 0.28)));
+  float flr = step(0.55, h21(vec2(tw, id.y) + seed)) * (1.0 - smoothstep(-0.26, 0.26, q.y - 0.2));
+  float on = mix(home, flr * 0.7, office) * (0.4 + 0.6 * h21(id.yx + seed * 1.7));
+  float k = h21(vec2(tw, seed));
+  return (k < 0.55 ? uWinA : k < 0.86 ? uWinB : uWinC) * on;
 }
 void main() {
   float x = vW.x, y = vW.y;
   // Sky: deep at the top, a sodium haze over the rooftops.
-  vec3 col = mix(uSkyLow, uSkyTop, smoothstep(0.6, 3.2, y));
-  col += uHaze * exp(-max(y - 0.4, 0.0) * 1.7);
-  col = mix(col, uFar + windows(vec2(x, y), vec2(0.06, 0.07), 3.0, ${BWF.toFixed(5)}) * 0.45, skyF(vW.xy));
-  col = mix(col, uNear + windows(vec2(x + 0.02, y), vec2(0.085, 0.1), 11.0, ${BWN.toFixed(5)}) * smoothstep(0.08, 0.3, y), skyN(vW.xy));
+  vec3 col = mix(uSkyLow, uSkyTop, smoothstep(0.5, 3.4, y));
+  // A low cloud deck catches the city's glow from below.
+  float deck = smoothstep(0.48, 0.8, fbm(vec2(x * 0.42 + 3.1, y * 1.4))) * smoothstep(3.6, 1.7, y) * smoothstep(0.9, 1.9, y);
+  col += uHaze * (0.85 * exp(-max(y - 0.35, 0.0) * 1.6) + 0.2 * deck);
+  // Far towers sink into the haze; each nearer row is darker and sharper.
+  col = mix(col, mix(uFar, col, 0.3) + windows(vec2(x, y), vec2(0.055, 0.065), 3.0, ${f5(BWF)}) * 0.28, rowF(vW.xy));
+  col += uHaze * 0.22 * exp(-max(y - 0.15, 0.0) * 2.6);
+  col = mix(col, uMid + windows(vec2(x + 0.013, y), vec2(0.07, 0.082), 7.0, ${f5(BWM)}) * 0.5, rowM(vW.xy));
+  col += uHaze * 0.1 * exp(-max(y, 0.0) * 4.0);
+  col = mix(col, uNear + windows(vec2(x + 0.02, y), vec2(0.09, 0.105), 11.0, ${f5(BWN)}) * 0.8 * smoothstep(0.08, 0.3, y), rowN(vW.xy));
   // Street glow rises off the road.
-  col += uHaze * 0.4 * exp(-max(y, 0.0) * 6.0);
+  col += uHaze * 0.32 * exp(-max(y, 0.0) * 6.0);
   gl_FragColor = vec4(col, 1.0);
 }`;
 // Bokeh: each light is a hexagonal aperture with an onion-ring cut.
@@ -1166,7 +1191,7 @@ attribute vec4 aA;
 attribute vec4 aB;
 attribute float aTw;
 uniform float uT;
-varying vec2 vQ;
+varying vec2 vQ, vEye;
 varying vec3 vCol;
 void main() {
   float x = aA.x;
@@ -1175,11 +1200,13 @@ void main() {
   float tw = 1.0 + aTw * (0.55 * sin(uT * 0.8 + aA.w) + 0.45 * sin(uT * 2.1 + aA.w * 2.7));
   vCol = aB.rgb * max(tw, 0.0);
   vQ = position.xy;
+  vec4 c = projectionMatrix * viewMatrix * vec4(x, aA.y, ${(-1.5 + 0.02).toFixed(2)}, 1.0);
+  vEye = c.xy / c.w;
   vec3 p = vec3(x + position.x * aA.z, aA.y + position.y * aA.z, ${(-1.5 + 0.02).toFixed(2)});
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 const BOKEH_FS = `
-varying vec2 vQ;
+varying vec2 vQ, vEye;
 varying vec3 vCol;
 void main() {
   // Six blades, turned slightly, set the disc's outline.
@@ -1188,10 +1215,14 @@ void main() {
   float d = max(q.x * 0.8660254 + q.y * 0.5, q.y);
   float aa = fwidth(d) * 1.2;
   float disc = 1.0 - smoothstep(0.9 - aa - 0.03, 0.9, d);
-  // A brighter rim and a faint inner cut: the lens's fingerprint.
-  float rim = 0.78 + 0.32 * smoothstep(0.45, 0.88, d);
-  float cut = 1.0 - 0.3 * exp(-pow((d - 0.66) / 0.03, 2.0));
-  gl_FragColor = vec4(vCol * disc * rim * cut, 1.0);
+  // Off-axis discs clip to a cat's eye, as the lens barrel cuts them.
+  float e = length(vQ * 0.94 + vEye * 0.34), ea = fwidth(e) * 1.2;
+  disc *= 1.0 - smoothstep(0.98 - ea - 0.02, 0.98, e);
+  // A soft rim, a faint inner cut and a slight colour fringe at the edge.
+  float rim = 0.84 + 0.22 * smoothstep(0.5, 0.88, d);
+  float cut = 1.0 - 0.22 * exp(-pow((d - 0.66) / 0.03, 2.0));
+  vec3 fringe = mix(vec3(1.0), vec3(1.06, 0.95, 1.05), smoothstep(0.72, 0.9, d));
+  gl_FragColor = vec4(vCol * fringe * disc * rim * cut, 1.0);
 }`;
 const FLOOR_FS = `
 uniform vec3 uBase, uPool, uSpill;
@@ -1205,20 +1236,33 @@ void main() {
   vec3 col = uBase + uPool * exp(-dot(q, q)) + uSpill * exp(-(vW.z - uWallZ) * 1.6);
   gl_FragColor = vec4(col, 1.0);
 }`;
-// The frame is a flat stencil: one face tone, one depth tone.
-const FRAME_VS = `
-varying float vFront;
-void main() {
-  vFront = step(0.5, normal.z);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-const FRAME_FS = `
-uniform vec3 uFace, uSide;
-varying float vFront;
-void main() {
-  gl_FragColor = vec4(mix(uSide, uFace, vFront), 1.0);
-  #include <colorspace_fragment>
-}`;
+// The frame is powder-coated steel: mitred corners and a fine grain.
+// The seam constant is half the difference of width and height.
+function frameShader(m, seam) {
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uSeam = seam;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLoc;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLoc;\nuniform float uSeam;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+  // Mitre joints run from each inner corner to the outer one.
+  float sd = abs(abs(vLoc.x) - abs(vLoc.y) - uSeam);
+  float seamK = mix(0.12, 1.0, smoothstep(0.0, fwidth(sd) * 1.5 + 0.0004, sd - 0.0006));`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  // Orange peel: the coat's roughness varies in a fine grain.
+  roughnessFactor = clamp(roughnessFactor * (0.82 + 0.36 * fract(sin(dot(floor(vLoc.xy * 320.0), vec2(12.9898, 78.233))) * 43758.5453)), 0.05, 1.0);`)
+      .replace('#include <opaque_fragment>', 'outgoingLight *= seamK;\n#include <opaque_fragment>');
+  };
+}
+// A ring with a bevel: outer and inner half sizes, depth and bevel.
+function ringGeo(ox, oy, ix, iy, depth, bev) {
+  const s = new THREE.Shape([[-ox, -oy], [ox, -oy], [ox, oy], [-ox, oy]].map(([x, y]) => new THREE.Vector2(x, y)));
+  s.holes.push(new THREE.Path([[-ix, -iy], [-ix, iy], [ix, iy], [ix, -iy]].map(([x, y]) => new THREE.Vector2(x, y))));
+  const g = new THREE.ExtrudeGeometry(s, { depth: depth - 2 * bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 3, curveSegments: 1 });
+  return g.translate(0, 0, -depth / 2 + bev);
+}
 // The backdrop target is drawn once per frame behind everything.
 const BACK_VS = `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 const BACK_FS = `
@@ -1235,7 +1279,9 @@ void main() {
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, built = false;
 let backRT = null, crackRT = null, crackScene = null, crackCam = null, crackMesh = null, crackMat = null;
-let wall = null, floor = null, wallMat = null, floorMat = null, frameG = null, frameMat = null, pane = null, paneMat = null;
+let wall = null, floor = null, wallMat = null, floorMat = null, frameG = null, frameMat = null, beadMat = null, pane = null, paneMat = null;
+// The bead's width on the pane; the seam uniform is shared.
+const BEAD = 0.014, seamU = { value: 0 };
 let bokeh = null, bokehMat = null, bgQuad = null, bgMat = null, backDirty = true;
 let shardMesh = null, shardMat = null, xfTex = null, mark = null;
 let ray = null, ndc = null, hitV = null, tmpV = null, paneP = null, floorP = null, dbs = null;
@@ -1250,32 +1296,34 @@ const crand = () => (cseed = (cseed * 16807) % 2147483647) / 2147483647;
 const cr = (a, b) => a + crand() * (b - a);
 function city() {
   cseed = 11;
-  const far = [], near = [];
-  for (let i = 0; i < NBF; i++) far.push(0.62 + 0.95 * crand() ** 1.6 + (crand() < 0.08 ? 0.45 : 0));
-  for (let i = 0; i < NBN; i++) near.push(0.22 + 0.62 * crand() ** 1.4);
+  const far = [], mid = [], near = [];
+  for (let i = 0; i < NBF; i++) far.push(0.7 + 0.95 * crand() ** 1.6 + (crand() < 0.08 ? 0.45 : 0));
+  for (let i = 0; i < NBM; i++) mid.push(0.42 + 0.7 * crand() ** 1.5);
+  for (let i = 0; i < NBN; i++) near.push(0.2 + 0.5 * crand() ** 1.4);
   const nearAt = x => near[clamp(Math.floor((x + XS) / BWN), 0, NBN - 1)];
   // Each light: x, y, radius, phase; colour, speed; twinkle.
   const A = [], B = [], TW = [];
   const add = (x, y, r, c, sp = 0, tw = 0) => { A.push(x, y, r, crand() * TAU); B.push(...c, sp); TW.push(tw); };
-  const head = lin(0.97, 0.03, 90, 0.5), tail = lin(0.62, 0.22, 25, 0.55), sodium = lin(0.8, 0.14, 68, 0.32);
-  const hues = [lin(0.8, 0.13, 70, 0.24), lin(0.92, 0.03, 250, 0.2), lin(0.8, 0.12, 195, 0.24), lin(0.7, 0.21, 340, 0.24), lin(0.64, 0.17, 300, 0.24), lin(0.95, 0.04, 85, 0.2)];
+  const head = lin(0.96, 0.025, 90, 0.36), tail = lin(0.6, 0.17, 27, 0.4), sodium = lin(0.8, 0.11, 68, 0.22);
+  // A quiet palette: warm and cool whites, amber, one muted teal.
+  const hues = [lin(0.82, 0.08, 72, 0.12), lin(0.92, 0.02, 250, 0.11), lin(0.8, 0.045, 200, 0.1), lin(0.94, 0.03, 85, 0.12), lin(0.74, 0.06, 40, 0.1)];
   // Traffic: head lights run one way, tail lights the other.
-  for (let x = -XS; x < XS; x += cr(0.7, 1.5)) { const y = 0.075 + cr(-0.006, 0.006); add(x, y, 0.075, head, 0.42); add(x + 0.1, y, 0.075, head, 0.42); }
-  for (let x = -XS; x < XS; x += cr(0.8, 1.6)) { const y = 0.14; add(x, y, 0.065, tail, -0.33); add(x + 0.1, y, 0.065, tail, -0.33); }
-  for (let x = -XS; x < XS; x += cr(0.5, 1.1)) add(x, 0.21, 0.05, crand() < 0.5 ? head : tail, 0.19, 0.05);
+  for (let x = -XS; x < XS; x += cr(0.7, 1.5)) { const y = 0.075 + cr(-0.006, 0.006); add(x, y, 0.06, head, 0.42); add(x + 0.09, y, 0.06, head, 0.42); }
+  for (let x = -XS; x < XS; x += cr(0.8, 1.6)) { const y = 0.14; add(x, y, 0.05, tail, -0.33); add(x + 0.09, y, 0.05, tail, -0.33); }
+  for (let x = -XS; x < XS; x += cr(0.5, 1.1)) add(x, 0.21, 0.04, crand() < 0.5 ? head : tail, 0.19, 0.05);
   // Street lamps: a sodium row above the road.
-  for (let x = -XS + cr(0, 0.4); x < XS; x += cr(0.62, 0.9)) add(x, 0.46 + cr(-0.03, 0.03), 0.14, sodium, 0, 0.03);
+  for (let x = -XS + cr(0, 0.4); x < XS; x += cr(0.62, 0.9)) add(x, 0.46 + cr(-0.03, 0.03), 0.11, sodium, 0, 0.03);
   // City lights sit inside the near towers or just above them.
-  for (let i = 0; i < 56; i++) {
+  for (let i = 0; i < 36; i++) {
     const x = cr(-XS, XS), top = Math.max(0.4, nearAt(x) + 0.35);
-    add(x, cr(0.3, top), cr(0.05, 0.13), hues[Math.floor(crand() * hues.length)], 0, crand() < 0.3 ? cr(0.15, 0.4) : cr(0, 0.08));
+    add(x, cr(0.3, top), cr(0.035, 0.09), hues[Math.floor(crand() * hues.length)], 0, crand() < 0.3 ? cr(0.1, 0.3) : cr(0, 0.06));
   }
   // Aviation lights blink on the five tallest towers.
   [...far.keys()].sort((a, b) => far[b] - far[a]).slice(0, 5)
-    .forEach(i => add(-XS + (i + 0.5) * BWF, far[i] + 0.06, 0.045, lin(0.6, 0.23, 28, 0.7), 0, 0.95));
+    .forEach(i => add(-XS + (i + 0.5) * BWF, far[i] + 0.05, 0.035, lin(0.6, 0.2, 28, 0.45), 0, 0.95));
   // A few huge, faint discs: lights close to the lens.
-  for (let i = 0; i < 7; i++) add(cr(-XS, XS), cr(0.4, 2.1), cr(0.28, 0.5), hues[i % hues.length].map(v => v * 0.35), cr(0.02, 0.05) * (crand() < 0.5 ? -1 : 1));
-  return { far, near, A, B, TW };
+  for (let i = 0; i < 4; i++) add(cr(-XS, XS), cr(0.5, 2), cr(0.26, 0.42), hues[i % hues.length].map(v => v * 0.2), cr(0.02, 0.05) * (crand() < 0.5 ? -1 : 1));
+  return { far, mid, near, A, B, TW };
 }
 
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
@@ -1335,11 +1383,14 @@ function build() {
   pane.position.set(0, FH / 2, 0);
   for (const m of [paneMat, shardMat]) m.uniforms.uPane.value.set(PW, PH);
   while (frameG.children.length) { const c = frameG.children.pop(); c.geometry.dispose(); }
-  const bar = (w, h, x, y) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, FD), frameMat); m.position.set(x, y, 0); frameG.add(m); };
-  bar(FW, FB, 0, FB / 2);
-  bar(FW, FB, 0, FH - FB / 2);
-  bar(FB, FH - 2 * FB, -FW / 2 + FB / 2, FH / 2);
-  bar(FB, FH - 2 * FB, FW / 2 - FB / 2, FH / 2);
+  // The frame's lip overlaps the pane by its bevel.
+  const fb = 0.005, frame = new THREE.Mesh(ringGeo(FW / 2 - fb, FH / 2 - fb, PW / 2 + fb, PH / 2 + fb, FD, fb), frameMat);
+  // A glazing bead holds the pane, set back inside the frame.
+  const bead = new THREE.Mesh(ringGeo(PW / 2 + 0.002, PH / 2 + 0.002, PW / 2 - BEAD, PH / 2 - BEAD, 0.013, 0.003), beadMat);
+  frame.position.set(0, FH / 2, 0);
+  bead.position.set(0, FH / 2, T / 2 + 0.0075);
+  frameG.add(frame, bead);
+  seamU.value = (FW - FH) / 2;
   Object.assign(crackCam, { left: -PW / 2, right: PW / 2, top: PH / 2, bottom: -PH / 2 });
   crackCam.updateProjectionMatrix();
   heal(true);
@@ -1738,9 +1789,9 @@ function heal(quiet) {
 }
 // A new glass: a fresh pane, its own frame colour and voice.
 const LOOK = {
-  annealed: { face: [0.44, 0.075, 165], side: [0.3, 0.05, 165], abs: [0.07, 0.016, 0.05], quench: 0, hold: 'shatter' },
-  tempered: { face: [0.46, 0.1, 250], side: [0.31, 0.07, 250], abs: [0.07, 0.02, 0.04], quench: 1, hold: 'burst' },
-  laminated: { face: [0.66, 0.12, 72], side: [0.47, 0.09, 64], abs: [0.03, 0.035, 0.1], quench: 0, hold: 'bulge' },
+  annealed: { face: [0.42, 0.035, 170], side: [0.3, 0.025, 170], abs: [0.07, 0.016, 0.05], quench: 0, hold: 'shatter' },
+  tempered: { face: [0.42, 0.04, 255], side: [0.3, 0.03, 255], abs: [0.07, 0.02, 0.04], quench: 1, hold: 'burst' },
+  laminated: { face: [0.52, 0.055, 75], side: [0.38, 0.04, 70], abs: [0.03, 0.035, 0.1], quench: 0, hold: 'bulge' },
 };
 // Ring: frequency in Hz, decay in seconds.
 const RINGF = { annealed: [11, 0.12], tempered: [14, 0.2], laminated: [7, 0.05] };
@@ -1748,8 +1799,8 @@ function applyLook() {
   const L = LOOK[glass];
   holdDD.textContent = L.hold;
   if (!frameMat) return;
-  frameMat.uniforms.uFace.value.set(...lin(...L.face));
-  frameMat.uniforms.uSide.value.set(...lin(...L.side));
+  frameMat.color.setRGB(...lin(...L.face));
+  beadMat.color.setRGB(...lin(...L.side));
   for (const m of [paneMat, shardMat]) { m.uniforms.uAbs.value.set(...L.abs); m.uniforms.uQuench.value = L.quench; }
   backDirty = true;
 }
@@ -1832,7 +1883,7 @@ function toPane(e) {
   ray.setFromCamera(ndc, camera);
   if (!ray.ray.intersectPlane(paneP, hitV)) return null;
   const x = hitV.x, y = hitV.y - FH / 2;
-  return Math.abs(x) < PW / 2 - 0.005 && Math.abs(y) < PH / 2 - 0.005 ? { x, y } : null;
+  return Math.abs(x) < PW / 2 - BEAD && Math.abs(y) < PH / 2 - BEAD ? { x, y } : null;
 }
 panel.addEventListener('pointerdown', e => {
   if (!ready || ptr >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
@@ -1943,10 +1994,10 @@ async function start() {
   wallMat = new THREE.ShaderMaterial({
     vertexShader: WORLD_VS, fragmentShader: WALL_FS,
     uniforms: {
-      uSkyTop: { value: V3(lin(0.13, 0.035, 280)) }, uSkyLow: { value: V3(lin(0.21, 0.055, 300)) }, uHaze: { value: V3(lin(0.5, 0.11, 52, 0.7)) },
-      uFar: { value: V3(lin(0.2, 0.04, 292)) }, uNear: { value: V3(lin(0.125, 0.022, 282)) },
-      uWinA: { value: V3(lin(0.82, 0.12, 75, 0.36)) }, uWinB: { value: V3(lin(0.82, 0.07, 222, 0.3)) },
-      uFarR: { value: town.far }, uNearR: { value: town.near },
+      uSkyTop: { value: V3(lin(0.12, 0.024, 272)) }, uSkyLow: { value: V3(lin(0.2, 0.035, 292)) }, uHaze: { value: V3(lin(0.5, 0.075, 58, 0.6)) },
+      uFar: { value: V3(lin(0.21, 0.03, 285)) }, uMid: { value: V3(lin(0.16, 0.024, 282)) }, uNear: { value: V3(lin(0.115, 0.016, 278)) },
+      uWinA: { value: V3(lin(0.84, 0.09, 75, 0.32)) }, uWinB: { value: V3(lin(0.86, 0.04, 222, 0.26)) }, uWinC: { value: V3(lin(0.9, 0.02, 100, 0.3)) },
+      uFarR: { value: town.far }, uMidR: { value: town.mid }, uNearR: { value: town.near },
     },
   });
   wall = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), wallMat);
@@ -1975,12 +2026,17 @@ async function start() {
   });
   bokeh = new THREE.Mesh(bg, bokehMat);
   bokeh.frustumCulled = false;
-  frameMat = new THREE.ShaderMaterial({
-    vertexShader: FRAME_VS, fragmentShader: FRAME_FS,
-    uniforms: { uFace: { value: new THREE.Vector3() }, uSide: { value: new THREE.Vector3() } },
-  });
+  frameMat = new THREE.MeshPhysicalMaterial({ roughness: 0.46, clearcoat: 0.4, clearcoatRoughness: 0.32, envMapIntensity: 0.8 });
+  beadMat = new THREE.MeshPhysicalMaterial({ roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.4, envMapIntensity: 0.7 });
+  frameShader(frameMat, seamU);
+  frameShader(beadMat, seamU);
   frameG = new THREE.Group();
-  scene.add(wall, floor, bokeh, frameG);
+  // A key light from the upper left; the city glow rims the frame from behind.
+  const key = new THREE.DirectionalLight(new THREE.Color(...lin(0.97, 0.02, 85)), 1.7);
+  key.position.set(-0.45, 0.75, 0.5);
+  const back = new THREE.DirectionalLight(new THREE.Color(...lin(0.8, 0.09, 60)), 0.9);
+  back.position.set(0.25, 0.35, -1);
+  scene.add(wall, floor, bokeh, frameG, key, back);
 
   backRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   // The screen shows the backdrop target on one quad behind the glass.
@@ -1999,7 +2055,7 @@ async function start() {
     uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.4 },
     uWallZ: { value: WALLZ }, uLine: { value: 1 }, uDisp: { value: 0.18 }, uBend: { value: 0.7 },
     uAbs: { value: new THREE.Vector3(0.07, 0.016, 0.05) }, uQuench: { value: 0 },
-    uBoxA: { value: new THREE.Vector4() }, uBoxB: { value: new THREE.Vector4() }, uKey: { value: V3(lin(0.97, 0.025, 80, 1.1)) },
+    uBoxA: { value: new THREE.Vector4() }, uBoxB: { value: new THREE.Vector4() }, uKey: { value: V3(lin(0.97, 0.025, 80, 0.6)) },
   });
   paneMat = new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: {
     ...glassU(), uFlex: { value: new THREE.Vector4(0, 0, 0, 1) }, uSag: { value: 0 },
