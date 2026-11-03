@@ -404,7 +404,7 @@ const TOD_KEYS = [
 // Two worlds sit off the day: the end of the world and an alien night.
 const WORLDS = {
   end: { zen: [0.03, 0.004, 0.002], low: [0.4, 0.055, 0.012], hor: [1.2, 0.22, 0.02], scat: [1, 0.3, 0.08], sunC: [1.7, 0.32, 0.05], sunE: [0.8, 0.07, 0.01], lit: [0.9, 0.18, 0.04], dark: [0.012, 0.004, 0.003], amb: 0, deep: [0.008, 0.002, 0.001], sand: [0.22, 0.07, 0.04], stars: 0, rise: 0.15, size: 2.6, light: [1, 0.28, 0.1], lightK: 4.5, sky: [0.3, 0.08, 0.05], skyK: 0.2, flare: [1, 0.3, 0.1], flareK: 0.55, cover: 0.08, end: 1, alien: 0, hole: 0, haze: 0.9, ray: 0 },
-  hole: { zen: [0.001, 0.001, 0.004], low: [0.004, 0.004, 0.009], hor: [0.035, 0.028, 0.04], scat: [0.3, 0.22, 0.15], sunC: [0, 0, 0], sunE: [0, 0, 0], lit: [0.08, 0.06, 0.06], dark: [0.002, 0.002, 0.004], amb: 0.1, deep: [0.001, 0.002, 0.004], sand: [0.04, 0.035, 0.04], stars: 1.6, rise: 3.6, size: 1.0, light: [1, 0.72, 0.45], lightK: 1.2, sky: [0.1, 0.08, 0.08], skyK: 0.15, flare: [1, 0.86, 0.72], flareK: 0.9, cover: 0, end: 0, alien: 0, hole: 1, haze: 0.5, ray: 0 },
+  hole: { zen: [0.001, 0.001, 0.004], low: [0.004, 0.004, 0.009], hor: [0.035, 0.028, 0.04], scat: [0.3, 0.22, 0.15], sunC: [0, 0, 0], sunE: [0, 0, 0], lit: [0.08, 0.06, 0.06], dark: [0.002, 0.002, 0.004], amb: 0.1, deep: [0.001, 0.002, 0.004], sand: [0.04, 0.035, 0.04], stars: 1.6, rise: 2.2, size: 1.0, light: [1, 0.72, 0.45], lightK: 1.2, sky: [0.1, 0.08, 0.08], skyK: 0.15, flare: [1, 0.86, 0.72], flareK: 0.9, cover: 0, end: 0, alien: 0, hole: 1, haze: 0.5, ray: 0 },
   alien: { zen: [0.004, 0.006, 0.022], low: [0.015, 0.05, 0.06], hor: [0.04, 0.24, 0.2], scat: [0.4, 1, 0.8], sunC: [0.9, 1.4, 1.2], sunE: [0.5, 0.9, 0.8], lit: [0.08, 0.26, 0.26], dark: [0.004, 0.008, 0.012], amb: 0.18, deep: [0.002, 0.01, 0.012], sand: [0.03, 0.08, 0.08], stars: 1.3, rise: 2.6, size: 0.7, light: [0.5, 1, 0.85], lightK: 0.9, sky: [0.1, 0.3, 0.3], skyK: 0.3, flare: [0.6, 1, 0.9], flareK: 0.5, cover: 0, end: 0, alien: 1, hole: 0, haze: 0.45, ray: 0 },
 };
 // Two looks blend key by key; numbers and colours both lerp.
@@ -633,8 +633,7 @@ vec3 sky(vec3 d, bool withSun) {
   c = mix(c, hazeC, hz);
   // The end of the world bathes the whole sky in a low red light.
   c += uEnd * vec3(0.09, 0.012, 0.0) * (0.6 + 0.4 * exp(-Eh * 2.0));
-  // The black hole is three.js geometry; here the sky only goes black behind it.
-  if (uHole > 0.0) c = mix(c, vec3(0.0), uHole * (1.0 - smoothstep(r * 0.96, r * 1.0, a)));
+  // The black hole is drawn by its own ray-traced quad over this sky.
   // The alien sky: a small second moon, a red giant, the corona and aurora curtains.
   // The ringed planet is a three.js mesh in front of this sky.
   if (uAlien > 0.0 && d.y > 0.0) {
@@ -1053,26 +1052,104 @@ void main() { float d = length(gl_PointCoord - 0.5) * 2.0; float a = max(1.0 - d
   });
   const disk = new THREE.Points(diskGeo, diskMat);
   disk.frustumCulled = false; disk.renderOrder = -3;
-  // The shadow: a black disc with a thin hot rim, brighter on the approaching side.
-  const SHADOW_K = 1.3;
-  const shadowMat = new THREE.ShaderMaterial({
-    uniforms: HU, transparent: true, depthTest: false, depthWrite: false,
+  // The hole itself: Tom's Event Horizon shader, ray traced on a quad that faces us.
+  // Rays bend along Schwarzschild geodesics; the disc is Novikov-Thorne with Doppler beaming.
+  // Escaped rays leave our sky showing; the shadow is solid black.
+  const ehMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uVis: HU.uVis },
+    transparent: true, depthTest: false, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     vertexShader: 'varying vec2 vQ; void main() { vQ = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `
-uniform float uVis; uniform vec2 uRingDir;
+uniform float uTime, uVis;
 varying vec2 vQ;
+const float PI = 3.14159265359, RS = 1.0, ISCO = 3.0, DISK_IN = 2.2, DISK_OUT = 14.0;
+float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float gNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5; mat2 rot = mat2(0.866, 0.5, -0.5, 0.866);
+  for (int i = 0; i < 4; i++) { v += a * gNoise(p); p = rot * p * 2.03 + vec2(47.0, 13.0); a *= 0.49; }
+  return v;
+}
+vec3 bbColor(float t) {
+  t = clamp(t, 0.0, 2.5);
+  vec3 c = mix(vec3(1.0, 0.18, 0.0), vec3(1.0, 0.55, 0.12), smoothstep(0.0, 0.3, t));
+  c = mix(c, vec3(1.0, 0.93, 0.82), smoothstep(0.3, 0.8, t));
+  return mix(c, vec3(0.65, 0.82, 1.0), smoothstep(0.8, 1.8, t));
+}
+vec4 shadeDisk(vec3 hit, vec3 vel, float time) {
+  float r = length(hit.xz);
+  if (r < DISK_IN * 0.5 || r > DISK_OUT * 1.05) return vec4(0.0);
+  float tProfile = pow(ISCO / r, 0.75) * pow(max(0.001, 1.0 - sqrt(ISCO / r)), 0.25) * sqrt(max(0.01, 1.0 - RS / r));
+  float lr = log2(max(r, 0.1));
+  float omega = max(sqrt(0.5 * RS / (r * r * r)), 0.04) * 10.0, rotAngle = time * omega;
+  float ca = cos(rotAngle), sa = sin(rotAngle);
+  vec2 rotXZ = vec2(hit.x * ca - hit.z * sa, hit.x * sa + hit.z * ca);
+  float turb = 0.25 + 0.75 * fbm(rotXZ * 1.2 + vec2(lr * 3.0));
+  turb *= 0.7 + 0.3 * gNoise(rotXZ * 3.5 + vec2(100.0 + time * 0.15, time * 0.105));
+  float ring1 = sin(r * 10.0 + rotAngle * r * 0.3) * 0.5 + 0.5, ring2 = sin(r * 20.0 - rotAngle * r * 0.15) * 0.5 + 0.5;
+  turb *= 0.5 + 0.5 * (ring1 * 0.55 + ring2 * 0.45);
+  float orbSpeed = sqrt(0.5 * RS / max(r, DISK_IN));
+  float dop = max(0.15, 1.0 + 2.0 * dot(normalize(vel), normalize(vec3(-hit.z, 0.0, hit.x))) * orbSpeed);
+  float I = tProfile * turb * 6.0;
+  I *= smoothstep(DISK_IN * 0.7, DISK_IN * 1.2, r) * (0.35 + 0.65 * smoothstep(ISCO * 0.85, ISCO * 1.2, r)) * (1.0 - smoothstep(DISK_OUT * 0.55, DISK_OUT, r));
+  vec3 col = bbColor(tProfile * pow(dop, 1.8) * 1.2) * I * dop * dop * dop;
+  return vec4(col, clamp(I * 1.3, 0.0, 0.96));
+}
 void main() {
-  vec2 q = vQ; float d = length(q);
-  float edge = 1.0 / ${SHADOW_K.toFixed(2)}, aa = 0.015, rimW = 0.03;
-  float inside = 1.0 - smoothstep(edge - aa, edge, d);
-  float rim = smoothstep(edge - aa, edge, d) * (1.0 - smoothstep(edge + rimW - aa, edge + rimW, d));
-  float beam = dot(q / max(d, 1e-4), uRingDir) * 0.7 + 1.0;
-  gl_FragColor = vec4(vec3(1.0, 0.78, 0.5) * beam * 1.8 * rim, min(inside + rim, 1.0) * uVis);
+  // The quad's corners map to the shader's view; the edge fades to our sky.
+  vec2 uv = vQ * 0.55;
+  float camR = 28.0, orbit = uTime * 0.055 * 0.3, tilt = 0.25;
+  vec3 eye = vec3(camR * cos(orbit) * cos(tilt), camR * sin(tilt), camR * sin(orbit) * cos(tilt));
+  vec3 fwd = normalize(-eye), rt = normalize(cross(fwd, vec3(0.0, 1.0, 0.0))), up = cross(rt, fwd);
+  vec3 pos = eye, vel = normalize(fwd + uv.x * rt + uv.y * up);
+  vec3 Lv = cross(pos, vel); float gravCoeff = -1.5 * RS * dot(Lv, Lv);
+  vec4 acc4 = vec4(0.0); vec3 glow = vec3(0.0); bool absorbed = false; int crossings = 0; float minR = 1000.0;
+  for (int i = 0; i < 200; i++) {
+    float r = length(pos), h = 0.16 * clamp(r - 0.4 * RS, 0.06, 3.5);
+    vec3 a = (gravCoeff / (r * r * r * r * r)) * pos;
+    vec3 p1 = pos + vel * h + 0.5 * a * h * h;
+    float r1 = length(p1);
+    vec3 a1 = (gravCoeff / (r1 * r1 * r1 * r1 * r1)) * p1;
+    vec3 v1 = vel + 0.5 * (a + a1) * h;
+    minR = min(minR, r1);
+    if (pos.y * p1.y < 0.0 && acc4.a < 0.97) {
+      vec4 dc = shadeDisk(mix(pos, p1, pos.y / (pos.y - p1.y)), vel, uTime * 0.3);
+      if (crossings >= 2) dc *= 0.15;
+      acc4.rgb += dc.rgb * dc.a * (1.0 - acc4.a); acc4.a += dc.a * (1.0 - acc4.a);
+      glow += dc.rgb * 0.04 * max(dot(dc.rgb, vec3(0.3, 0.5, 0.2)) * dc.a - 0.3, 0.0);
+      crossings++;
+    }
+    if (r1 < 6.0) {
+      float pd = abs(r1 - 1.5 * RS);
+      glow += vec3(0.8, 0.6, 0.35) * (1.0 / (1.0 + pd * pd * 20.0)) * h * 0.001 / max(r1 * r1, 0.2);
+      glow += vec3(0.5, 0.25, 0.08) * max(exp(-(r1 - RS) * 3.5) * h * 0.003, 0.0);
+    }
+    if (r1 < RS * 0.35) { absorbed = true; break; }
+    if (r1 > 25.0 && r1 > r) break;
+    if (r1 > 55.0) break;
+    pos = p1; vel = v1;
+  }
+  vec3 col = acc4.rgb;
+  float ringDist = abs(minR - 1.5 * RS);
+  col.r += exp(-(ringDist + 0.08) * (ringDist + 0.08) * 35.0) * 0.03;
+  col.b += exp(-(ringDist - 0.08) * (ringDist - 0.08) * 35.0) * 0.035;
+  col += glow;
+  // Its own filmic curve, then back to linear light for our grade.
+  col *= 1.4;
+  col = (col * (col + 0.0245786) - 0.000090537) / (col * (0.983729 * col + 0.4329510) + 0.238081);
+  col = pow(clamp(col, 0.0, 1.0), vec3(2.0));
+  float alpha = absorbed ? 1.0 : clamp(acc4.a, 0.0, 1.0);
+  float edge = 1.0 - smoothstep(0.8, 1.0, max(abs(vQ.x), abs(vQ.y)));
+  gl_FragColor = vec4(col, alpha) * edge * uVis;
 }`,
   });
-  const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), shadowMat);
-  shadowMesh.frustumCulled = false; shadowMesh.renderOrder = -4;
-  scene.add(shadowMesh, disk);
+  const ehMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), ehMat);
+  ehMesh.frustumCulled = false; ehMesh.renderOrder = -4;
+  scene.add(ehMesh, disk);
   const diskM = new THREE.Matrix4();
 
   // Backlit tubes: dark faces, a warm rim where the low sun grazes them.
@@ -1303,24 +1380,22 @@ void main() {
       printMesh.count = n; printMesh.instanceMatrix.needsUpdate = true;
       groundMesh.position.set(tx, 0, -1);
       // The black hole sits thirty units out along the sun bearing.
-      disk.visible = shadowMesh.visible = look.hole > 0.01;
+      disk.visible = ehMesh.visible = look.hole > 0.01;
       if (disk.visible) {
-        const shadowR = (sunR / focal) * 30, R = shadowR;
+        // The quad spans about six tenths of the frame height each side of the hole.
+        const S = 0.5 * (h / focal) * 30 * mood.size, RSw = S / 15.4;
         HU.uC.value.copy(camera.position).addScaledVector(sd, 30);
+        ehMesh.position.copy(HU.uC.value); ehMesh.scale.setScalar(S); ehMesh.quaternion.copy(camera.quaternion);
+        // Galaxy's particles sparkle over the traced disc, at its tilt and size.
+        const R = 1.5 * RSw;
         HU.uR.value = R; HU.uW.value = 29 * R; HU.uVis.value = look.hole;
-        // The camera sits just above the disc, nearly edge on, as in the classic view.
-        diskM.makeRotationAxis(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -0.13);
+        diskM.makeRotationAxis(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -0.25);
         HU.uRot.value.setFromMatrix4(diskM);
-        const rpx = sunR;
-        HU.uGain.value = clamp((160 * rpx * rpx) / DISK_N, 0.08, 2.5);
-        HU.uPxSize.value = 1.7 * renderer.getPixelRatio();
-        shadowMesh.position.copy(HU.uC.value);
-        shadowMesh.scale.setScalar(R * SHADOW_K);
-        shadowMesh.quaternion.copy(camera.quaternion);
-        // The flare springs from the disc's bright approaching side, not the shadow.
-        // That point lies on the near side, below the shadow, so the streak misses it.
-        _b.copy(HU.uC.value).addScaledVector(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -2.1 * R)
-          .addScaledVector(_a.set(0, 1, 0).applyQuaternion(camera.quaternion), -1.25 * R).project(camera);
+        HU.uGain.value = 0.35 * clamp((160 * sunR * sunR) / DISK_N, 0.08, 2.5);
+        HU.uPxSize.value = 1.5 * renderer.getPixelRatio();
+        // The flare springs from the disc's near side, below the shadow, so the streak misses it.
+        _b.copy(HU.uC.value).addScaledVector(_a.set(1, 0, 0).applyQuaternion(camera.quaternion), -0.42 * S)
+          .addScaledVector(_a.set(0, 1, 0).applyQuaternion(camera.quaternion), -0.1 * S).project(camera);
         postU.uSun.value.lerp(new THREE.Vector2((_b.x + 1) / 2, (_b.y + 1) / 2), look.hole);
       }
       // The planet keeps its place in the sky, thirty units out along its bearing.
