@@ -266,6 +266,14 @@ function clunk(x) {
   const [o, og] = tone(a, d, t, 165 * jit(0.05), 72, 0.08, 0.42 * g);
   track(o, og, d);
 }
+// Each extra set on one channel rings a step higher.
+function matchTone(x, n) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, x), f = [523.25, 659.25, 783.99][Math.min(n, 4) - 2];
+  const [o, og] = tone(a, d, t, f, f * 1.003, 0.32, 0.09 * g, 'triangle');
+  track(o, og, d);
+}
 // Static is band-limited noise with a quick swell and soft tail.
 function hiss(x, dur, k = 1) {
   const a = live();
@@ -406,7 +414,8 @@ const SETS = [
   { b: 4, t: 0.84, L: 0.2, kind: 'classic', s: 0.92, yaw: -0.22 },
   { b: 4, t: 0.47, L: 0.18, kind: 'orb', s: 0.9, yaw: -0.05 },
   { b: 5, t: 1.0, L: 0.2, kind: 'cube', s: 0.85, yaw: -0.12 },
-  { b: -1, seat: [0.02, 1.73, 0.08], w: 0, al: 0, kind: 'cabinet', s: 1.0, yaw: 0.0 },
+  // The big set is wedged in the V between the two upper branches.
+  { b: -1, seat: [0.02, 1.73, 0.04], wedge: [3, 4], w: 0, al: 0, kind: 'cabinet', s: 1.0, yaw: 0.0 },
   { b: -1, seat: [-0.46, 1.27, 0.06], w: 1, al: 0.3, kind: 'wide', s: 0.8, yaw: 0.16 },
 ];
 // The stage shape decides how wide the tree spreads.
@@ -776,7 +785,7 @@ function buildSet(def) {
   } else if (def.kind === 'orb') {
     knob(0, sy - sh / 2 - 0.042 * s, 0.016);
   }
-  if (def.kind === 'cabinet') {
+  if (def.kind === 'cabinet' && !def.wedge) {
     // Splayed legs lift the cabinet off its fork.
     for (const [lx, lz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
       const L = 0.12 * s, g = new THREE.CylinderGeometry(0.012 * s, 0.008 * s, L, 10);
@@ -786,7 +795,7 @@ function buildSet(def) {
       add('dark', g, lx * (w / 2 - 0.06 * s), -h / 2 + 0.01, lz * (d / 2 - 0.06 * s));
     }
     low = -h / 2 - 0.115 * s;
-  } else if (def.b < 0) {
+  } else if (def.b < 0 && !def.wedge) {
     for (const lx of [-1, 1]) add('dark', new RoundedBoxGeometry(0.08 * s, 0.03 * s, d * 0.7, 2, 0.012 * s), lx * (w / 2 - 0.07 * s), -h / 2 - 0.012 * s, 0);
     low = -h / 2 - 0.027 * s;
   }
@@ -1513,8 +1522,9 @@ function nextChannel(ch) {
   if (ch !== SNOW && Math.random() < 0.1) return SNOW;
   return ch === SNOW ? Math.floor(Math.random() * SNOW) : (ch + 1) % SNOW;
 }
-function changeChannel(s, to = -1) {
+function changeChannel(s, to = -1, hand = true) {
   if (!s.power) return powerSet(s, true);
+  s.hand = hand;
   s.next = to >= 0 ? to : nextChannel(s.next >= 0 ? s.next : s.ch);
   s.burstLen = reduce ? 0.12 : rnd(0.26, 0.36);
   s.burst = s.burstLen;
@@ -1546,7 +1556,11 @@ function powerSet(s, on) {
 function stepScreen(s, dt) {
   const was = s.burst;
   if (s.burst > 0) s.burst = Math.max(0, s.burst - dt);
-  if (s.next >= 0 && s.burst <= s.burstLen * 0.45) { s.ch = s.next; s.next = -1; }
+  if (s.next >= 0 && s.burst <= s.burstLen * 0.45) {
+    s.ch = s.next;
+    s.next = -1;
+    if (s.hand) { s.hand = false; matchCheck(s); }
+  }
   if (was > 0 && s.burst === 0) s.burstLen = 0;
   s.roll += s.rollV * dt;
   s.rollV *= Math.exp(-dt * 5);
@@ -1579,6 +1593,27 @@ function shakeLoss() {
     if (!quiet) hiss(panOf(s), 0.22, 0.45);
   }
 }
+// Every lit set tunes to one big picture in a wave from the trunk.
+function startParty(kind) {
+  party.phase = 'gather';
+  party.t = 0;
+  party.kind = kind;
+  party.clock = 0;
+  party.order = sets.filter(s => s.power).map(s => [s, Math.hypot(s.c[0], s.c[1] - 1.6 * KY) * 0.22 + Math.random() * 0.08]);
+  syncSound(6.4);
+  hiss(0, 0.5, 0.7);
+}
+// Each channel calls up the big picture closest to it.
+// Eye: the giant eye. Bounce and ocean: the sun. Bars and card: the bars.
+const BIG_OF = [3, 1, 1, 2, 2, 3, 2, 0, 2, 2, 2];
+// Four sets tuned by hand to one channel start the big picture at once.
+// Two or three ring a rising tone, so the goal shows itself.
+function matchCheck(s) {
+  if (s.ch === SNOW || party.phase !== 'idle' || watch.on) return;
+  const n = sets.filter(o => o.power && o.ch === s.ch && o.next < 0 && o.lost === 0).length;
+  if (n >= 4) startParty(BIG_OF[s.ch]);
+  else if (n >= 2) matchTone(panOf(s), n);
+}
 // Now and then every set tunes to one big picture.
 function stepParty(dt) {
   if (reduce && party.phase === 'idle') return false;
@@ -1589,14 +1624,7 @@ function stepParty(dt) {
     if (held || lit.length < 4 || party.t < party.wait || watch.on) return false;
     // Now and then the sets turn into eyes instead.
     if (Math.random() < 0.3) { party.t = 0; party.wait = rnd(30, 48); startWatch(); return false; }
-    party.phase = 'gather';
-    party.t = 0;
-    party.kind = (party.kind + 1 + Math.floor(Math.random() * 3)) % 4;
-    party.clock = 0;
-    // The wave spreads out from the trunk.
-    party.order = lit.map(s => [s, Math.hypot(s.c[0], s.c[1] - 1.6 * KY) * 0.22 + Math.random() * 0.08]);
-    syncSound(6.4);
-    hiss(0, 0.5, 0.7);
+    startParty((party.kind + 1 + Math.floor(Math.random() * 3)) % 4);
   }
   if (party.phase === 'gather') {
     for (const [s, at] of party.order) if (!s.syncOn && party.t >= at && s.power && s.lost === 0) {
@@ -1640,9 +1668,9 @@ function stepWatch(dt) {
   if (!watch.on) return false;
   watch.t += dt;
   for (const e of watch.order) {
-    if (!e.in && watch.t >= e.at) { e.in = true; if (e.s.power) changeChannel(e.s, 7); }
+    if (!e.in && watch.t >= e.at) { e.in = true; if (e.s.power) changeChannel(e.s, 7, false); }
     // A set the user retuned keeps its new channel.
-    if (!e.out && watch.t >= 6.5 + e.at) { e.out = true; if (e.s.power && (e.s.ch === 7 || e.s.next === 7)) changeChannel(e.s, e.was); }
+    if (!e.out && watch.t >= 6.5 + e.at) { e.out = true; if (e.s.power && (e.s.ch === 7 || e.s.next === 7)) changeChannel(e.s, e.was, false); }
   }
   if (watch.order.every(e => e.out)) watch.on = false;
   return watch.on;
@@ -1709,7 +1737,7 @@ function placeRest(s) {
     s.slot = br.w;
     s.R = def.L + s.attach;
   } else {
-    s.rest = [def.seat[0] * KX, def.seat[1] * KY, def.seat[2]];
+    s.rest = def.wedge ? wedgeSeat(s) : [def.seat[0] * KX, def.seat[1] * KY, def.seat[2]];
     s.along = def.al || 0;
     s.slot = def.w || 0;
   }
@@ -1722,6 +1750,32 @@ function placeRest(s) {
   s.seatP = [...a];
   s.seatV = [0, 0, 0];
   s.seatA = [0, 0, 0];
+}
+// A wedged set sits where the V opens as wide as the set.
+// Its lower corners then rest on both branches.
+function wedgeSeat(s) {
+  const side = s.def.wedge.map(i => {
+    const m = treeMeta[i], br = TREE[i], pts = [];
+    for (let j = 0; j <= 80; j++) {
+      const t = j / 80, p = m.main.getPointAt(t);
+      pts.push([p.x, p.y, lerp(br.r[0], br.r[1], Math.pow((t * m.mainLen) / m.len, 0.85))]);
+    }
+    return pts;
+  });
+  // Each branch's inner edge at a height, from its samples.
+  const edge = (pts, y, sgn) => {
+    for (let j = 1; j < pts.length; j++) {
+      const [x0, y0, r0] = pts[j - 1], [x1, y1, r1] = pts[j];
+      if ((y0 - y) * (y1 - y) <= 0 && y1 !== y0) { const u = (y - y0) / (y1 - y0); return lerp(x0, x1, u) + sgn * lerp(r0, r1, u); }
+    }
+    return null;
+  };
+  const [L, R] = side[0][side[0].length - 1][0] < side[1][side[1].length - 1][0] ? side : [side[1], side[0]];
+  for (let y = Math.max(L[0][1], R[0][1]); y < 3; y += 0.005) {
+    const xl = edge(L, y, 1), xr = edge(R, y, -1);
+    if (xl !== null && xr !== null && xr - xl >= s.w * 0.97) return [(xl + xr) / 2, y - 0.015, s.def.seat[2]];
+  }
+  return [s.def.seat[0] * KX, s.def.seat[1] * KY, s.def.seat[2]];
 }
 // Quiet steps let overlapping sets nudge apart before anyone looks.
 function settle(n) {
