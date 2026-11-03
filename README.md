@@ -49,7 +49,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Googly eyes | [eyes/](eyes/) | live, with sound |
 | Ribbon | [ribbon/](ribbon/) | live draft, still being refined |
 | Balloon letters | [balloons/](balloons/) | live draft, still being refined |
-| TV tree, Orbits | | in progress; outlines on the menu |
+| TV tree | [tvtree/](tvtree/) | live draft, still being refined |
+| Orbits | | in progress; outlines on the menu |
 
 ## Run locally
 
