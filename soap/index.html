@@ -20,7 +20,29 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+/* The soap rail is one slider: small bars, then the soap's name. */
+.soaps {
+  display: inline-flex; align-items: center; gap: 10px; padding: 5px 13px 5px 8px; cursor: pointer;
+  font-size: 13px; color: var(--fg); border: 1px solid var(--line); border-radius: 999px;
+  touch-action: none; -webkit-tap-highlight-color: transparent; transition: border-color 0.2s ease;
+}
+.soaps:hover { border-color: var(--muted); }
+.soaps[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.soap-rail { display: flex; align-items: center; gap: 4px; height: 18px; }
+.soap-rail i {
+  display: block; width: 12px; height: 9px; border-radius: 3px; background: var(--c);
+  transition: height 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* The chosen soap stands tall with a cut across it. */
+.soap-rail i.on { width: 15px; height: 18px; -webkit-mask: linear-gradient(#000 0 0) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% 8px no-repeat; mask: linear-gradient(#000 0 0) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% 8px no-repeat; }
+.soap-rail i.peek:not(.on) { height: 13px; }
+.soap-name { min-width: 4.6em; }
+@media (pointer: coarse) {
+  .soaps { padding: 9px 16px 9px 12px; }
+  .soap-rail i { width: 15px; }
+  .soap-rail i.on { width: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .stage canvas, .soap-rail i { transition: none; } }
 </style>
 </head>
 <body>
@@ -31,10 +53,13 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting board. Drag across the soap to score it; swipe in from outside to slice right through. Space makes the next cut, N brings a new bar.">
+    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line previews each cut. Drag across the soap to score it; swipe in from outside to slice right through; fallen pieces cut too. Space makes the next cut, N brings a new bar, 1 to 7 pick the soap.">
       <p class="fail" hidden>Soap cutting needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices">
+        <div class="soaps" id="soaps" tabindex="0" role="slider" aria-label="Soap" aria-valuemin="1" aria-valuemax="7" aria-valuenow="1" aria-valuetext="Mint" aria-keyshortcuts="1 2 3 4 5 6 7"><span class="soap-rail" aria-hidden="true"></span><span class="soap-name" aria-hidden="true">Mint</span></div>
+      </div>
       <div class="actions">
         <button class="chip" id="fresh" type="button" aria-keyshortcuts="N">New bar</button>
       </div>
@@ -88,9 +113,29 @@ function rgb([L, C, h]) {
   for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
   return [gam(c[0]), gam(c[1]), gam(c[2])];
 }
-// Series hues: fire, amber, lemon, mint, cyan, blue, violet, magenta.
-const HUES = [28, 52, 84, 160, 206, 258, 292, 330];
-let hueAt = Math.floor(Math.random() * HUES.length) - 1;
+// Each soap: colours, finish, light and inner pattern, all OKLCH.
+// mode: 0 plain, 1 three layers, 2 marbled swirl.
+// speck: share of tiny cells that hold a fleck, and their size.
+// trans: light through thin parts; chalk: a pale outer skin.
+// clear: a clear soap glows where thin and deepens where thick.
+const SOAPS = [
+  { name: 'Mint', a: [0.83, 0.135, 160], sub: [0.6, 0.2, 160], rough: 0.62, spec: 0.5, sheen: 0.45, trans: 1.6, wrap: 0.6, chalk: 0.08, mode: 0, ink: [0.3, 0.07, 165] },
+  { name: 'Amber', a: [0.74, 0.16, 70], sub: [0.48, 0.19, 42], rough: 0.16, spec: 1, sheen: 0.1, trans: 4.4, wrap: 0.9, chalk: 0, clear: 1, mode: 0, speck: [0.03, 2], sp: [0.88, 0.09, 80], ink: [0.27, 0.06, 50] },
+  { name: 'Charcoal', a: [0.31, 0.008, 260], sub: [0.24, 0.012, 260], rough: 0.74, spec: 0.45, sheen: 0.35, trans: 0.25, wrap: 0.3, chalk: 0.04, mode: 0, speck: [0.05, 4.2], sp: [0.86, 0.03, 90], ink: [0.9, 0.05, 95] },
+  { name: 'Oat', a: [0.87, 0.045, 85], sub: [0.68, 0.08, 70], rough: 0.7, spec: 0.4, sheen: 0.5, trans: 1.3, wrap: 0.6, chalk: 0.06, mode: 0, speck: [0.15, 1.5], sp: [0.5, 0.07, 60], ink: [0.32, 0.06, 60] },
+  { name: 'Layers', a: [0.93, 0.02, 90], b: [0.76, 0.13, 8], c: [0.6, 0.17, 300], sub: [0.62, 0.15, 340], rough: 0.55, spec: 0.5, sheen: 0.4, trans: 1.5, wrap: 0.6, chalk: 0.05, mode: 1, ink: [0.25, 0.06, 300] },
+  { name: 'Swirl', a: [0.84, 0.065, 300], b: [0.55, 0.16, 306], c: [0.95, 0.02, 300], sub: [0.55, 0.14, 300], rough: 0.5, spec: 0.55, sheen: 0.4, trans: 1.7, wrap: 0.6, chalk: 0.05, mode: 2, ink: [0.25, 0.06, 300] },
+  { name: 'Citrus', a: [0.87, 0.17, 98], sub: [0.68, 0.18, 70], rough: 0.3, spec: 0.8, sheen: 0.2, trans: 3.2, wrap: 0.8, chalk: 0.02, clear: 0.55, mode: 0, speck: [0.08, 2.4], sp: [0.68, 0.17, 52], ink: [0.3, 0.07, 60] },
+];
+const css = ([L, C, h]) => `oklch(${L} ${C} ${h})`;
+// The rail swatch hints at each soap's pattern.
+function swatchCss(v) {
+  if (v.mode === 1) return `linear-gradient(${css(v.c)} 0 33%, ${css(v.a)} 0 66%, ${css(v.b)} 0)`;
+  if (v.mode === 2) return `repeating-linear-gradient(135deg, ${css(v.a)} 0 3px, ${css(v.b)} 0 5px)`;
+  if (v.speck) return `radial-gradient(circle at 30% 40%, ${css(v.sp)} 0 1.2px, transparent 1.6px), radial-gradient(circle at 72% 65%, ${css(v.sp)} 0 1.2px, transparent 1.6px), ${css(v.a)}`;
+  return css(v.a);
+}
+let soapAt = Math.floor(Math.random() * SOAPS.length);
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const MAXV = 16, LEAD = 0.004;
@@ -209,7 +254,7 @@ function crumble(n) {
   }
   tickNext = a.currentTime + LEAD + at;
 }
-// Landing: a soft low knock with a dull slap on the wood.
+// Landing: a soft low knock and a dull slap on the mat.
 function thunk(s, big) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -229,7 +274,7 @@ function thunk(s, big) {
   const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
   src.buffer = noise;
   lp.type = 'lowpass';
-  lp.frequency.value = 950 * f;
+  lp.frequency.value = 680 * f;
   lp.Q.value = 0.7;
   ng.gain.setValueAtTime(0, t);
   ng.gain.linearRampToValueAtTime(0.5 * g, t + 0.002);
@@ -256,7 +301,13 @@ function whoosh() {
 }
 
 /* ---------- the bar: a grid of soap cells ---------- */
-const NX = 16, NY = 8, NZ = 10, NC = NX * NY * NZ, SY = NX, SZ = NX * NY;
+// One cell is two thirds of a world unit, about four millimetres.
+// The stage group scales cells to the world.
+const K = 2 / 3;
+// Physics time runs TS times faster, so falls keep their real pace.
+// Speeds in cells grow by TS for the same reason.
+const TS = 1 / Math.sqrt(K);
+const NX = 24, NY = 12, NZ = 15, NC = NX * NY * NZ, SY = NX, SZ = NX * NY;
 const OX = NX / 2, OZ = NZ / 2;
 const DIM = [NX, NY, NZ], STRIDE = [1, SY, SZ];
 const COORD = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
@@ -270,10 +321,10 @@ const bond = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
 // The face each score came in from.
 const scoredFrom = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
 const scorePlanes = [new Set(), new Set(), new Set()];
-const SCORE = 2;
+const SCORE = 3;
 const co = [0, 0, 0];
 const at3 = () => co[0] + SY * co[1] + SZ * co[2];
-let pieces = [], bar = null, staticDirty = false;
+let pieces = [], bar = null;
 // Bounds of the bar on the board, and each column's height.
 const box = { lo: [0, 0, 0], hi: [NX - 1, NY - 1, NZ - 1] };
 const colTop = new Int8Array(NX * NZ);
@@ -364,10 +415,10 @@ function crumbleCells(cells) {
 
 /* ---------- surface: a smooth skin with crisp cuts ---------- */
 // Each cell face is split S x S, so edges can round.
-const S = 4, LX = NX * S + 1, LY = NY * S + 1, LXY = LX * LY, NL = LXY * (NZ * S + 1), LM = [1, LX, LXY];
+const S = 3, LX = NX * S + 1, LY = NY * S + 1, LXY = LX * LY, NL = LXY * (NZ * S + 1), LM = [1, LX, LXY];
 // The bar's skin is a rounded box.
 // RAD is its edge radius in cells.
-const RAD = 1.5, GD = 0.08, HX = OX - RAD, HY = NY / 2 - RAD, HZ = OZ - RAD;
+const RAD = 2.25, GD = 0.12, HX = OX - RAD, HY = NY / 2 - RAD, HZ = OZ - RAD;
 const lGen = new Int32Array(NL), lDone = new Int32Array(NL), lMask = new Uint16Array(NL);
 const lPos = new Float32Array(NL * 3), lThin = new Float32Array(NL), lAo = new Float32Array(NL);
 const vGen = new Int32Array(NL * 7), vAt = new Int32Array(NL * 7);
@@ -392,38 +443,55 @@ function severedNear(a, b, lu, lv, ch) {
   }
   return best;
 }
+// Points past the rounded skin slide onto it.
+// Axes set in lock stay put.
+// nrm, when given, gets the skin normal.
+const SK = [0, 0, 0];
+function skin(P, lock, nrm) {
+  let x = P[0], y = P[1], z = P[2], moved = false;
+  for (let it = 0; it < 6; it++) {
+    const py = y - NY / 2;
+    const qx = Math.max(Math.abs(x) - HX, 0), qy = Math.max(Math.abs(py) - HY, 0), qz = Math.max(Math.abs(z) - HZ, 0);
+    const len = Math.hypot(qx, qy, qz), sd = len - RAD;
+    if (sd <= 1e-4) break;
+    const gx = lock & 1 ? 0 : (qx / len) * Math.sign(x), gy = lock & 2 ? 0 : (qy / len) * Math.sign(py), gz = lock & 4 ? 0 : (qz / len) * Math.sign(z);
+    const g2 = gx * gx + gy * gy + gz * gz;
+    if (g2 < 1e-6) break;
+    x -= (gx * sd) / g2; y -= (gy * sd) / g2; z -= (gz * sd) / g2;
+    moved = true;
+  }
+  P[0] = x; P[1] = y; P[2] = z;
+  if (nrm && moved) {
+    const py = y - NY / 2;
+    const qx = Math.max(Math.abs(x) - HX, 0) * Math.sign(x), qy = Math.max(Math.abs(py) - HY, 0) * Math.sign(py), qz = Math.max(Math.abs(z) - HZ, 0) * Math.sign(z);
+    const l = Math.hypot(qx, qy, qz);
+    if (l > 1e-6) { nrm[0] = qx / l; nrm[1] = qy / l; nrm[2] = qz / l; }
+  }
+  return moved;
+}
 // Position, thinness and shading of one lattice point.
 function lattice(L, ch) {
   lDone[L] = gen;
   const lx = L % LX, ly = ((L / LX) | 0) % LY, lz = (L / LXY) | 0;
   const mask = lMask[L], cm = mask >> 6, all = (mask | cm) & 63;
   let x = lx / S - OX, y = ly / S, z = lz / S - OZ;
-  // Points past the rounded skin slide onto it.
   // Points on cut planes stay on their plane.
-  const fx = cm & 3, fy = cm & 12, fz = cm & 48;
-  for (let it = 0; it < 6; it++) {
-    const py = y - NY / 2;
-    const qx = Math.max(Math.abs(x) - HX, 0), qy = Math.max(Math.abs(py) - HY, 0), qz = Math.max(Math.abs(z) - HZ, 0);
-    const len = Math.hypot(qx, qy, qz), sd = len - RAD;
-    if (sd <= 1e-4) break;
-    const gx = fx ? 0 : (qx / len) * Math.sign(x), gy = fy ? 0 : (qy / len) * Math.sign(py), gz = fz ? 0 : (qz / len) * Math.sign(z);
-    const g2 = gx * gx + gy * gy + gz * gz;
-    if (g2 < 1e-6) break;
-    x -= (gx * sd) / g2; y -= (gy * sd) / g2; z -= (gz * sd) / g2;
-  }
+  SK[0] = x; SK[1] = y; SK[2] = z;
+  skin(SK, (cm & 3 ? 1 : 0) | (cm & 12 ? 2 : 0) | (cm & 48 ? 4 : 0), null);
+  x = SK[0]; y = SK[1]; z = SK[2];
   // Thickness inward sets how much light shines through.
   let nx = 0, ny = 0, nz = 0;
   for (let d = 0; d < 6; d++) if (all & (1 << d)) { nx += NRM[d][0]; ny += NRM[d][1]; nz += NRM[d][2]; }
   const nl = Math.hypot(nx, ny, nz);
-  let thick = 6;
+  let thick = 9;
   if (nl > 0) {
     const ix = -nx / nl, iy = -ny / nl, iz = -nz / nl;
-    for (let t = 0.5; t < 6; t += 0.5) {
+    for (let t = 0.5; t < 9; t += 0.5) {
       const ci = Math.floor(x + OX + ix * t), cj = Math.floor(y + iy * t), ck = Math.floor(z + OZ + iz * t);
       if (ci < 0 || ci >= NX || cj < 0 || cj >= NY || ck < 0 || ck >= NZ || owner[ci + SY * cj + SZ * ck] !== ch) { thick = t; break; }
     }
   }
-  lThin[L] = Math.exp(-thick / 2.2);
+  lThin[L] = Math.exp(-thick / 3.3);
   // Cut edges get a soft bevel.
   // Scores get a dark hairline groove.
   const lc = [lx, ly, lz];
@@ -521,13 +589,15 @@ function buildGeometry(ch, cells, bottom) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   g.setAttribute('aSoap', new THREE.BufferAttribute(vSoap.slice(0, nv * 3), 3));
+  // Pieces sit in the bar's frame, so rest is the position.
+  g.setAttribute('aRest', g.attributes.position);
   g.setIndex(new THREE.BufferAttribute(nv < 65536 ? Uint16Array.from(vIdx.subarray(0, ni)) : vIdx.slice(0, ni), 1));
   g.computeBoundingSphere();
   return g;
 }
 
 /* ---------- pieces: particles held rigid by shape matching ---------- */
-const PMAX = 24000;
+const PMAX = 60000;
 const PX = new Float32Array(PMAX), PY = new Float32Array(PMAX), PZ = new Float32Array(PMAX);
 const QX = new Float32Array(PMAX), QY = new Float32Array(PMAX), QZ = new Float32Array(PMAX);
 const VX = new Float32Array(PMAX), VY = new Float32Array(PMAX), VZ = new Float32Array(PMAX);
@@ -538,11 +608,11 @@ const PR = new Float32Array(PMAX), PO = new Int32Array(PMAX);
 const PS = new Uint8Array(PMAX), PT = new Uint8Array(PMAX);
 let pN = 0;
 const awake = [];
-// Units are cells, about six millimetres each.
-// Gravity runs a little slower than real.
+// Units are cells; gravity runs a little slower than real.
 const GRAV = 700, SUBH = 1 / 360, MU_S = 0.75, MU_K = 0.5;
-// Board size in cells; its top is y = 0.
-const BW = 72, BD = 48, BT = 2.4;
+// Mat size in world units, then in cells.
+// Its top is y = 0.
+const BW = 72, BD = 48, BT = 1.6, BWc = BW / K, BDc = BD / K, BTc = BT / K;
 const HT = 4096, hStart = new Int32Array(HT + 1), hList = new Int32Array(PMAX);
 const hashOf = (x, y, z) => (Math.imul(x, 92837111) ^ Math.imul(y, 689287499) ^ Math.imul(z, 283923481)) & (HT - 1);
 const RM9 = new Float64Array(9);
@@ -554,13 +624,14 @@ function rot(w, x, y, z) {
   return r;
 }
 function spawn(cells) {
-  const pc = { id: pieces.length, cells, mesh: null, start: 0, n: 0, ncell: cells.length, q: [1, 0, 0, 0], c0: [0, 0, 0], c: [0, 0, 0], awake: false, still: 0, age: 0, impact: 0, snd: -1 };
+  const pc = { id: pieces.length, cells, mesh: null, start: 0, n: 0, ncell: cells.length, q: [1, 0, 0, 0], c0: [0, 0, 0], c: [0, 0, 0], awake: false, dead: false, still: 0, age: 0, impact: 0, snd: -1 };
   pieces.push(pc);
   for (const id of cells) owner[id] = pc.id;
   return pc;
 }
 // Particles at cell centres, plus the extreme corners for the board.
-function arm(pc, f, loose) {
+// A child of a moved piece starts in its parent's pose.
+function arm(pc, f, loose, parent = null) {
   pc.start = pN;
   for (const c of pc.cells) {
     const p = pN++;
@@ -586,16 +657,31 @@ function arm(pc, f, loose) {
   cx /= pc.n; cy /= pc.n; cz /= pc.n;
   pc.c0 = [cx, cy, cz];
   pc.c = [cx, cy, cz];
+  for (let p = pc.start; p < pN; p++) { RX[p] = PX[p] - cx; RY[p] = PY[p] - cy; RZ[p] = PZ[p] - cz; }
+  if (parent) {
+    const r = rot(...parent.q).slice(), o = parent.c0, c = parent.c;
+    for (let p = pc.start; p < pN; p++) {
+      const x = PX[p] - o[0], y = PY[p] - o[1], z = PZ[p] - o[2];
+      PX[p] = c[0] + r[0] * x + r[1] * y + r[2] * z;
+      PY[p] = c[1] + r[3] * x + r[4] * y + r[5] * z;
+      PZ[p] = c[2] + r[6] * x + r[7] * y + r[8] * z;
+    }
+    const x = cx - o[0], y = cy - o[1], z = cz - o[2];
+    pc.q = parent.q.slice();
+    pc.c = [c[0] + r[0] * x + r[1] * y + r[2] * z, c[1] + r[3] * x + r[4] * y + r[5] * z, c[2] + r[6] * x + r[7] * y + r[8] * z];
+    [cx, cy, cz] = pc.c;
+  }
   // Crumbs get their own little jolt and spin.
-  const k = reduce ? 0.4 : 1;
+  // Physics time runs fast.
+  // So speeds grow by TS and spins shrink by TS.
+  const k = reduce ? 0.4 : 1, kv = k * TS, kw = k / TS;
   let jx = 0, jy = 0, jz = 0, wx = 0, wy = 0, wz = 0;
   if (loose) {
-    jx = rnd(-2.5, 2.5) * k; jy = rnd(2, 6) * k; jz = rnd(-2.5, 2.5) * k;
-    wx = rnd(-6, 6) * k; wy = rnd(-3, 3) * k; wz = rnd(-6, 6) * k;
+    jx = rnd(-2.5, 2.5) * kv; jy = rnd(2, 6) * kv; jz = rnd(-2.5, 2.5) * kv;
+    wx = rnd(-6, 6) * kw; wy = rnd(-3, 3) * kw; wz = rnd(-6, 6) * kw;
   }
   for (let p = pc.start; p < pN; p++) {
     const x = PX[p], y = PY[p], z = PZ[p];
-    RX[p] = x - cx; RY[p] = y - cy; RZ[p] = z - cz;
     QX[p] = x; QY[p] = y; QZ[p] = z;
     const rx = x - f.fx, ry = y - f.fy, rz = z - f.fz, sx = x - cx, sy = y - cy, sz = z - cz;
     VX[p] = f.nx * f.push + (f.wy * rz - f.wz * ry) + jx + (wy * sz - wz * sy);
@@ -609,10 +695,22 @@ function arm(pc, f, loose) {
   mesh.matrixAutoUpdate = false;
   stage.add(mesh);
   pc.mesh = mesh;
+  place(pc);
   wakePiece(pc);
 }
+// A piece cut apart hands its cells on and leaves the board.
+function retire(pc) {
+  pc.dead = true;
+  pc.ncell = pc.n = 0;
+  pc.cells = [];
+  pc.mesh.removeFromParent();
+  pc.mesh.geometry.dispose();
+  const i = awake.indexOf(pc);
+  if (i >= 0) awake.splice(i, 1);
+  pc.awake = false;
+}
 function wakePiece(pc) {
-  if (pc.awake || pc === bar || pc.frozen) return;
+  if (pc.awake || pc === bar || pc.frozen || pc.dead) return;
   pc.awake = true;
   pc.still = 0;
   pc.age = 0;
@@ -644,11 +742,11 @@ function rub(p, nx, ny, nz, pen, wa, q, wb) {
   if (q >= 0) { PX[q] += tx * k * wb; PY[q] += ty * k * wb; PZ[q] += tz * k * wb; }
 }
 function board(p, pc, first) {
-  const x = PX[p], z = PZ[p], floor = Math.abs(x) < BW / 2 && Math.abs(z) < BD / 2 ? 0 : -BT;
+  const x = PX[p], z = PZ[p], floor = Math.abs(x) < BWc / 2 && Math.abs(z) < BDc / 2 ? 0 : -BTc;
   const pen = floor + PR[p] - PY[p];
   if (pen <= 0) { if (first) PT[p] = 0; return; }
   if (first) {
-    if (!PT[p] && VY[p] < -10) pc.impact = Math.max(pc.impact, -VY[p]);
+    if (!PT[p] && VY[p] < -10 * TS) pc.impact = Math.max(pc.impact, -VY[p]);
     PT[p] = 1;
   }
   PY[p] += pen;
@@ -702,8 +800,8 @@ function contacts(first) {
         dx /= d; dy /= d; dz /= d;
         if (first) {
           const vn = (VX[p] - VX[q]) * dx + (VY[p] - VY[q]) * dy + (VZ[p] - VZ[q]) * dz;
-          if (vn < -20) pc.impact = Math.max(pc.impact, -vn * 0.6);
-          if (!o.awake && vn < -9) wakePiece(o);
+          if (vn < -20 * TS) pc.impact = Math.max(pc.impact, -vn * 0.6);
+          if (!o.awake && vn < -9 * TS) wakePiece(o);
         }
         // Lighter pieces give way more.
         const wa = o.awake && !o.kin ? o.ncell / (o.ncell + pc.ncell) : 1, wb = 1 - wa;
@@ -763,7 +861,7 @@ function tip(pc, h) {
     // Flat on its face: one small bounce, then it rests.
     k.th = Math.PI / 2;
     pc.impact = Math.max(pc.impact, k.w * k.tall * (k.bounced ? 0.5 : 1));
-    if (!k.bounced && k.w > 2 && !reduce) { k.w *= -0.2; k.bounced = true; }
+    if (!k.bounced && k.w > 2 * TS && !reduce) { k.w *= -0.2; k.bounced = true; }
     else pc.soft = true;
   }
   const s = Math.sin(k.th / 2), q = pc.q, F = k.foot, o = pc.c0;
@@ -816,7 +914,8 @@ function substep(h) {
     for (let p = pc.start, e = p + pc.n; p < e; p++) {
       let vx = (PX[p] - QX[p]) * ih * keep, vy = (PY[p] - QY[p]) * ih * keep, vz = (PZ[p] - QZ[p]) * ih * keep;
       const s2 = vx * vx + vy * vy + vz * vz;
-      if (s2 > 160 * 160) { const k = 160 / Math.sqrt(s2); vx *= k; vy *= k; vz *= k; }
+      const cap = 160 * TS;
+      if (s2 > cap * cap) { const k = cap / Math.sqrt(s2); vx *= k; vy *= k; vz *= k; }
       VX[p] = vx; VY[p] = vy; VZ[p] = vz;
     }
   }
@@ -835,7 +934,7 @@ function physics(dt) {
   if (!awake.length) return false;
   // A frame with no time passed has nothing to step.
   if (dt < 1e-4) return true;
-  const n = Math.min(12, Math.max(1, Math.ceil(dt / SUBH - 0.01)));
+  const n = Math.min(16, Math.max(1, Math.ceil(dt / SUBH - 0.01)));
   for (let s = 0; s < n; s++) substep(dt / n);
   const t = nowS();
   for (let k = awake.length - 1; k >= 0; k--) {
@@ -847,18 +946,18 @@ function physics(dt) {
     const turn = (2 * Math.acos(Math.min(1, Math.abs(lq[0] * q[0] + lq[1] * q[1] + lq[2] * q[2] + lq[3] * q[3])))) / dt;
     for (let i = 0; i < 4; i++) { lq[i] = q[i]; if (i < 3) lc[i] = c[i]; }
     const motion = lin + 3 * turn;
-    pc.still = motion < 0.7 ? pc.still + 1 : 0;
-    pc.slow = motion < 3;
+    pc.still = motion < 0.7 * TS ? pc.still + 1 : 0;
+    pc.slow = motion < 3 * TS;
     place(pc);
     // Landings: slabs thunk, crumbs tick.
-    if (pc.impact > 12 && t - pc.snd > 0.09) {
+    if (pc.impact > 12 * TS && t - pc.snd > 0.09) {
       pc.snd = t;
-      if (pc.ncell >= 24) thunk(pc.impact / 95, pc.ncell >= 60);
-      else crumb(clamp(pc.impact / 60) * 0.75, 0, pc.ncell > 6 ? 0.85 : 1.15);
+      if (pc.ncell >= 80) thunk(pc.impact / (95 * TS), pc.ncell >= 200);
+      else crumb(clamp(pc.impact / (60 * TS)) * 0.75, 0, pc.ncell > 20 ? 0.85 : 1.15);
     }
     pc.impact = 0;
     // Reduced motion settles pieces sooner.
-    if (!pc.kin && (pc.still > (reduce ? 6 : 14) || pc.age > (reduce ? 2.5 : 5))) {
+    if (!pc.kin && (pc.still > (reduce ? 6 : 14) || pc.age > (reduce ? 3 : 6))) {
       pc.awake = false;
       pc.slow = false;
       pc.lc = pc.lq = null;
@@ -880,6 +979,8 @@ function launchField(cells, st) {
   for (let a = 0; a < 3; a++) m[a] /= cells.length;
   const k = reduce ? 0.6 : 1;
   const f = { nx: 0, ny: 0, nz: 0, push: 0, wx: 0, wy: 0, wz: 0, fx: m[0] - OX, fy: m[1], fz: m[2] - OZ };
+  // A moved piece just eases apart along the cut.
+  if (st.pc !== bar) return nudge(m, st);
   if (st.p !== 1) {
     const a = st.p, side = m[a] > st.c ? 1 : -1, n = [0, 0, 0];
     n[a] = side;
@@ -888,7 +989,7 @@ function launchField(cells, st) {
     foot[a] = side > 0 ? hi[a] + 1 : lo[a];
     f.fx = foot[0] - OX; f.fy = foot[1]; f.fz = foot[2] - OZ;
     f.nx = n[0]; f.nz = n[2];
-    f.push = tips ? 1.5 : 4 * k;
+    f.push = (tips ? 1.5 : 4 * k) * TS;
     // Spin from the energy that lifts the centre over the foot.
     const hc = m[1] - lo[1], rc = Math.hypot(hc, Math.abs(foot[a] - m[a]));
     const need = Math.sqrt(2 * GRAV * (rc - hc)) / rc, spin = tips ? need * rnd(1.25, 1.45) : need * 0.35 * k;
@@ -903,86 +1004,116 @@ function launchField(cells, st) {
     }
   } else {
     // Under a horizontal cut, pieces skid on with the blade.
-    f.push = rnd(12, 20) * k;
+    f.push = rnd(12, 20) * k * TS;
     if (st.t === 0) f.nx = st.dirT; else f.nz = st.dirT;
     f.ny = 0.15;
   }
   return f;
 }
+// A moved piece's halves ease apart along the cut normal.
+function nudge(m, st) {
+  const n = [0, 0, 0], w = [0, 0, 0];
+  n[st.p] = m[st.p] > st.c ? 1 : -1;
+  dirToStage(st.pc, n, w);
+  return { nx: w[0], ny: w[1] + 0.3, nz: w[2], push: (reduce ? 1.2 : 2.5) * TS, wx: 0, wy: 0, wz: 0, fx: 0, fy: 0, fz: 0 };
+}
 function split(st) {
-  const comps = groups(bar.cells);
-  if (comps.length < 2) { staticDirty = true; return; }
-  // The part standing widest on the board stays put.
+  const pc = st.pc, onBoard = pc === bar, comps = groups(pc.cells);
+  if (comps.length < 2) { dirty.add(pc); return; }
+  // On the board, the part standing widest stays put.
+  // Elsewhere the largest part barely moves.
   let keep = 0, best = -1;
   comps.forEach((cs, k) => {
     let foot = 0;
-    for (const id of cs) if (COORD[1][id] === 0) foot++;
-    const sc = foot * 4096 + cs.length;
+    if (onBoard) for (const id of cs) if (COORD[1][id] === 0) foot++;
+    const sc = foot * 65536 + cs.length;
     if (sc > best) { best = sc; keep = k; }
   });
-  bar.cells = comps[keep];
-  const made = [];
+  // Particles run out after many cuts.
+  // Then the cut waits for a new bar.
+  if (!onBoard && pN + pc.cells.length + 8 * (comps.length + 8) > PMAX) { dirty.add(pc); return; }
+  const made = [], flat = st.p === 1;
+  if (onBoard) bar.cells = comps[keep];
+  else retire(pc);
   comps.forEach((cs, k) => {
-    if (k === keep) return;
-    // The base tips on its own foot.
-    const whole = launchField(cs, st), parts = crumbleCells(cs), flat = st.p === 1;
+    if (onBoard && k === keep) return;
+    const whole = launchField(cs, st), parts = crumbleCells(cs);
+    if (!onBoard && k === keep) whole.push *= 0.2;
     // Crumbs ride half the slab's swing, so they pile close by.
-    const ride = flat ? whole : { ...whole, push: whole.push * 0.5, wx: whole.wx * 0.5, wz: whole.wz * 0.5 };
+    const ride = flat || !onBoard ? whole : { ...whole, push: whole.push * 0.5, wx: whole.wx * 0.5, wz: whole.wz * 0.5 };
     let low = 99;
     for (const id of cs) low = Math.min(low, COORD[1][id]);
     for (const part of parts) {
-      const base = parts.length === 1 || part.some(id => COORD[1][id] === low);
-      made.push([spawn(part), base && !flat ? launchField(part, st) : ride, flat || !base]);
+      const base = parts.length === 1 || (onBoard ? part.some(id => COORD[1][id] === low) : part.length * 2 > cs.length);
+      made.push([spawn(part), base && !flat && onBoard ? launchField(part, st) : ride, (flat && onBoard) || !base]);
     }
   });
   measure();
-  for (const [pc, f, loose] of made) arm(pc, f, loose);
-  rebuildStatic();
+  for (const [npc, f, loose] of made) arm(npc, f, loose, onBoard ? null : pc);
+  if (onBoard) rebuild(bar);
   // Pieces near the cut, or stacked off the board, may lose support.
-  const near = made.map(m => m[0].c0);
-  for (const pc of pieces) {
-    if (pc.c && (pc.c[1] > 2.2 || near.some(c => Math.abs(c[0] - pc.c[0]) + Math.abs(c[2] - pc.c[2]) < 9))) wakePiece(pc);
+  const near = made.map(m => m[0].c);
+  for (const o of pieces) {
+    if (o.dead || !o.cells.length) continue;
+    if (o.c && (o.c[1] > 3.3 || near.some(c => Math.abs(c[0] - o.c[0]) + Math.abs(c[2] - o.c[2]) < 13.5))) wakePiece(o);
   }
   for (const sh of shavings) if (!sh.growing) sh.rest = false;
   const crumbs = made.filter(m => m[2]).length;
   crumb(0.9, 0, 0.8);
   if (crumbs) crumble(Math.min(14, 3 + crumbs * 2));
 }
-function rebuildStatic() {
-  const g = buildGeometry(bar.id, bar.cells, false);
-  bar.mesh.geometry.dispose();
-  bar.mesh.geometry = g;
-  staticDirty = false;
+// Scored pieces rebuild their skin a few times a second.
+const dirty = new Set();
+function rebuild(pc) {
+  dirty.delete(pc);
+  if (pc.dead || !pc.mesh) return;
+  const g = buildGeometry(pc.id, pc.cells, pc !== bar);
+  pc.mesh.geometry.dispose();
+  pc.mesh.geometry = g;
+}
+function rebuildDirty() {
+  for (const pc of [...dirty]) rebuild(pc);
 }
 
-/* ---------- shavings: ribbons that roll up ahead of the blade ---------- */
-const SH_M = 56;
+/* ---------- shavings: thick curls that roll up ahead of the blade ---------- */
+// Each ring of a curl has eight points.
+// They go round a thin, cupped section.
+const SH_M = 72, SH_R = 8, SH_C = [-1, -0.45, 0.45, 1];
 let shavings = [];
 function shavingGeometry() {
-  const g = new THREE.BufferGeometry(), n = SH_M * 3;
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
-  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  const g = new THREE.BufferGeometry(), n = SH_M * SH_R;
+  const dyn = () => new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  g.setAttribute('position', dyn());
+  g.setAttribute('normal', dyn());
+  g.setAttribute('aRest', dyn());
+  // Shavings read as fresh cut, thin and clean.
   const soap = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) { soap[i * 3] = 0.6; soap[i * 3 + 1] = 1; soap[i * 3 + 2] = 1; }
+  for (let i = 0; i < n; i++) { soap[i * 3] = 0.7; soap[i * 3 + 1] = 1; soap[i * 3 + 2] = 1; }
   g.setAttribute('aSoap', new THREE.BufferAttribute(soap, 3));
   const idx = [];
-  for (let k = 0; k < SH_M - 1; k++) for (let c = 0; c < 2; c++) {
-    const a = k * 3 + c, b = a + 1, d = a + 3, e = a + 4;
-    idx.push(a, d, b, b, d, e);
+  for (let k = 0; k < SH_M - 1; k++) for (let j = 0; j < SH_R; j++) {
+    const a = k * SH_R + j, b = k * SH_R + ((j + 1) % SH_R), c = a + SH_R, d = b + SH_R;
+    idx.push(a, c, b, b, c, d);
   }
   g.setIndex(idx);
   return g;
 }
 function curlStart(st, dir) {
-  const T = [0, 0, 0], N = [0, 0, 0];
-  T[st.t] = dir;
-  N[st.a] = st.sg;
-  const W = [T[1] * N[2] - T[2] * N[1], T[2] * N[0] - T[0] * N[2], T[0] * N[1] - T[1] * N[0]];
+  const Tl = [0, 0, 0], Nl = [0, 0, 0];
+  Tl[st.t] = dir;
+  Nl[st.a] = st.sg;
+  const Wl = [Tl[1] * Nl[2] - Tl[2] * Nl[1], Tl[2] * Nl[0] - Tl[0] * Nl[2], Tl[0] * Nl[1] - Tl[1] * Nl[0]];
+  const T = dirToStage(st.pc, Tl, [0, 0, 0]), N = dirToStage(st.pc, Nl, [0, 0, 0]), W = dirToStage(st.pc, Wl, [0, 0, 0]);
   const geo = shavingGeometry(), mesh = new THREE.Mesh(geo, shaveMat);
-  mesh.castShadow = mesh.receiveShadow = true;
+  // A sliver this thin would speckle with its own shadow.
+  mesh.castShadow = true;
   mesh.frustumCulled = false;
   stage.add(mesh);
-  const sh = { mesh, geo, dir, T, N, W, O: [0, 0, 0], L: 0, Lmax: rnd(4.5, 8.5), R: rnd(0.4, 0.56), Wd: rnd(1.25, 1.9), seed: rnd(0, TAU), side: rnd(-0.25, 0.25), growing: true, rest: false, fade: 0, calm: 0, cx: 0, cy: 0, Rout: 0.5 };
+  const sh = {
+    mesh, geo, dir, T, N, W, Tl, Nl, Wl, O: [0, 0, 0], Or: [0, 0, 0], L: 0,
+    Lmax: rnd(7, 13), R: rnd(0.6, 0.85), Wd: rnd(1.9, 2.8), th: rnd(0.16, 0.24), cup: rnd(0.07, 0.15), drift: rnd(-0.4, 0.4),
+    seed: rnd(0, TAU), side: rnd(-0.35, 0.35), growing: true, rest: false, fade: 0, calm: 0, cx: 0, cy: 0, Rout: 0.8,
+  };
   shavings.push(sh);
   // Old shavings make room.
   if (shavings.length > 46) {
@@ -991,43 +1122,57 @@ function curlStart(st, dir) {
   }
   return sh;
 }
-// Rises up the blade, then rolls into a tightening coil.
+// Rises up the blade, then rolls into a coil.
+// The coil winds tighter toward its free end.
 function shapeCurl(sh) {
-  const pos = sh.geo.attributes.position.array;
-  const L = Math.max(sh.L, 0.05), R = sh.R * (1 + 0.06 * Math.min(L, 7)), cx = R + 0.04, cy = R * 0.88, tail = cy;
-  const [Ox, Oy, Oz] = sh.O, T = sh.T, N = sh.N, W = sh.W, cup = 0.05 * sh.Wd;
+  const g = sh.geo, pos = g.attributes.position.array, rest = g.attributes.aRest.array;
+  const L = Math.max(sh.L, 0.05), R = sh.R * (1 + 0.04 * Math.min(L, 10)), cx = R + 0.05, cy = R * 0.9, tail = cy;
+  const [Ox, Oy, Oz] = sh.O, T = sh.T, N = sh.N, W = sh.W, Tl = sh.Tl, Nl = sh.Nl, Wl = sh.Wl, Or = sh.Or, ht = sh.th * 0.5;
   for (let k = 0; k < SH_M; k++) {
     const s = (L * k) / (SH_M - 1);
-    let u, v, nu, nv;
-    if (s <= tail) { u = 0.04 * (s / tail); v = s; nu = -1; nv = 0; }
+    let u, v, nu, nv, turn = 0;
+    if (s <= tail) { u = 0.05 * (s / tail); v = s; nu = -1; nv = 0; }
     else {
-      const th = (s - tail) / (R * 0.95), r = R * (1 - (0.12 * th) / TAU), ph = Math.PI - th;
+      const th = (s - tail) / (R * 0.9);
+      turn = th / TAU;
+      const r = R * Math.max(0.3, 1 - 0.2 * turn), ph = Math.PI - th;
       nu = Math.cos(ph); nv = Math.sin(ph);
       u = cx + r * nu; v = cy + r * nv;
     }
-    const tip = clamp((L - s) / 1.4), hw = sh.Wd * 0.5 * (0.6 + 0.4 * tip * (2 - tip)) * (1 + 0.07 * Math.sin(s * 5.1 + sh.seed));
-    for (let c = -1; c <= 1; c++) {
-      const off = (1 - c * c) * cup, uu = u + nu * off, vv = v + nv * off, ww = c * hw, o = (k * 3 + c + 1) * 3;
+    // The free end tapers; the edges tear a little.
+    const tip = clamp((L - s) / 1.8), foot = clamp(s / 0.6);
+    const hw = sh.Wd * 0.5 * (0.55 + 0.45 * tip * (2 - tip)) * (0.85 + 0.15 * foot);
+    const drift = sh.drift * turn, back = -(L - s) * 1.05;
+    for (let j = 0; j < SH_R; j++) {
+      const top = j < 4, c = top ? SH_C[j] : SH_C[7 - j], edge = Math.abs(c) === 1;
+      const rag = edge ? 1 + 0.09 * Math.sin(s * 6.3 + sh.seed + (c > 0 ? 0 : 2.1)) + 0.05 * Math.sin(s * 17.1 + sh.seed * 3) : 1;
+      const ww = c * hw * rag + drift + sh.side;
+      // The section cups; its edges thin so it reads as one sliver.
+      const off = (1 - c * c) * sh.cup + (top ? ht : -ht) * (edge ? 0.45 : 1);
+      const uu = u + nu * off, vv = v + nv * off, o = (k * SH_R + j) * 3;
       pos[o] = Ox + T[0] * uu + N[0] * vv + W[0] * ww;
       pos[o + 1] = Oy + T[1] * uu + N[1] * vv + W[1] * ww;
       pos[o + 2] = Oz + T[2] * uu + N[2] * vv + W[2] * ww;
+      // Rest is where this soap sat before the blade lifted it.
+      for (let i = 0; i < 3; i++) rest[o + i] = Or[i] + Tl[i] * back + Wl[i] * (c * hw + sh.side) - Nl[i] * 0.25;
     }
   }
-  sh.geo.attributes.position.needsUpdate = true;
-  sh.geo.computeVertexNormals();
-  sh.cx = cx; sh.cy = cy; sh.Rout = R;
+  g.attributes.position.needsUpdate = true;
+  g.attributes.aRest.needsUpdate = true;
+  g.computeVertexNormals();
+  sh.cx = cx; sh.cy = cy; sh.Rout = R + ht;
 }
 // A finished curl lets go and rolls away.
 function loose(sh) {
   sh.growing = false;
-  if (sh.L < 1.4) return dropShaving(sh);
+  if (sh.L < 2.1) return dropShaving(sh);
   const T = sh.T, N = sh.N, W = sh.W;
   const C = [0, 1, 2].map(i => sh.O[i] + T[i] * sh.cx + N[i] * sh.cy);
   const pos = sh.geo.attributes.position.array;
   for (let i = 0; i < pos.length; i += 3) { pos[i] -= C[0]; pos[i + 1] -= C[1]; pos[i + 2] -= C[2]; }
   sh.geo.attributes.position.needsUpdate = true;
   sh.mesh.position.set(C[0], C[1], C[2]);
-  const k = reduce ? 0.5 : 1;
+  const k = (reduce ? 0.5 : 1) * TS;
   sh.v = new THREE.Vector3(T[0], T[1], T[2]).multiplyScalar(rnd(3, 6) * k)
     .add(new THREE.Vector3(N[0], N[1], N[2]).multiplyScalar(rnd(1, 2.6) * k))
     .add(new THREE.Vector3(W[0], W[1], W[2]).multiplyScalar(rnd(-1.2, 1.2) * k));
@@ -1045,7 +1190,7 @@ function dropShaving(sh) {
 }
 // The board, or the top of the bar where it stands.
 function groundAt(x, z) {
-  let g = Math.abs(x) < BW / 2 && Math.abs(z) < BD / 2 ? 0 : -BT;
+  let g = Math.abs(x) < BWc / 2 && Math.abs(z) < BDc / 2 ? 0 : -BTc;
   const i = Math.floor(x + OX), k = Math.floor(z + OZ);
   if (i >= 0 && i < NX && k >= 0 && k < NZ) g = Math.max(g, colTop[i + NX * k]);
   return g;
@@ -1072,8 +1217,8 @@ function updateShavings(dt) {
     if (low < g) {
       p.y = g + sh.reach;
       grounded = true;
-      if (v.y < -3) {
-        if (v.y < -16) crumb(clamp(-v.y / 140) * 0.22, 0, 1.7);
+      if (v.y < -3 * TS) {
+        if (v.y < -16 * TS) crumb(clamp(-v.y / (140 * TS)) * 0.22, 0, 1.7);
         v.y *= -0.2;
       } else v.y = 0;
       const f = Math.exp(-(reduce ? 10 : 3.5) * dt);
@@ -1085,31 +1230,94 @@ function updateShavings(dt) {
     if (grounded && Math.hypot(rdx, rdz) > 0.3) sh.w = (v.x * rdx + v.z * rdz) / sh.Rout;
     sh.ang += sh.w * dt;
     sh.mesh.quaternion.setFromAxisAngle(sh.axis, sh.ang);
-    if (grounded && v.lengthSq() < 0.1) { if (++sh.calm > 8) { sh.rest = true; v.set(0, 0, 0); } }
+    if (grounded && v.lengthSq() < 0.1 * TS * TS) { if (++sh.calm > 8) { sh.rest = true; v.set(0, 0, 0); } }
     else sh.calm = 0;
   }
   return busy;
+}
+
+/* ---------- frames: each piece maps grid cells to the stage ---------- */
+// Grid coordinates are the bar's original cell indices.
+// The bar never moves; other pieces carry a turn and a shift.
+function toStage(pc, g, out) {
+  const x = g[0] - OX, y = g[1], z = g[2] - OZ;
+  if (pc === bar) { out[0] = x; out[1] = y; out[2] = z; return out; }
+  const r = rot(...pc.q), o = pc.c0, c = pc.c, dx = x - o[0], dy = y - o[1], dz = z - o[2];
+  out[0] = c[0] + r[0] * dx + r[1] * dy + r[2] * dz;
+  out[1] = c[1] + r[3] * dx + r[4] * dy + r[5] * dz;
+  out[2] = c[2] + r[6] * dx + r[7] * dy + r[8] * dz;
+  return out;
+}
+function dirToStage(pc, v, out) {
+  if (pc === bar) { out[0] = v[0]; out[1] = v[1]; out[2] = v[2]; return out; }
+  const r = rot(...pc.q), x = v[0], y = v[1], z = v[2];
+  out[0] = r[0] * x + r[1] * y + r[2] * z;
+  out[1] = r[3] * x + r[4] * y + r[5] * z;
+  out[2] = r[6] * x + r[7] * y + r[8] * z;
+  return out;
+}
+// A stage ray in a piece's grid coordinates.
+function rayIn(rs, pc) {
+  if (pc === bar) return { o: [rs.o[0] + OX, rs.o[1], rs.o[2] + OZ], d: rs.d };
+  const r = rot(...pc.q), c = pc.c, o0 = pc.c0, d = rs.d;
+  const dx = rs.o[0] - c[0], dy = rs.o[1] - c[1], dz = rs.o[2] - c[2];
+  return {
+    o: [r[0] * dx + r[3] * dy + r[6] * dz + o0[0] + OX, r[1] * dx + r[4] * dy + r[7] * dz + o0[1], r[2] * dx + r[5] * dy + r[8] * dz + o0[2] + OZ],
+    d: [r[0] * d[0] + r[3] * d[1] + r[6] * d[2], r[1] * d[0] + r[4] * d[1] + r[7] * d[2], r[2] * d[0] + r[5] * d[1] + r[8] * d[2]],
+  };
+}
+function bounds(pc) {
+  if (pc === bar) return box;
+  const lo = [99, 99, 99], hi = [-1, -1, -1];
+  for (const id of pc.cells) for (let a = 0; a < 3; a++) {
+    const c = COORD[a][id];
+    if (c < lo[a]) lo[a] = c;
+    if (c > hi[a]) hi[a] = c;
+  }
+  return { lo, hi };
+}
+// Resting pieces big enough to cut, the bar first.
+const CUT_MIN = 40;
+function cuttable() {
+  return pieces.filter(pc => (pc === bar ? pc.cells.length > 0 : !pc.dead && !pc.frozen && !pc.awake && !pc.kin && pc.ncell >= CUT_MIN));
+}
+// The nearest piece a stage ray meets, with its face.
+function hitAny(rs) {
+  let best = null;
+  for (const pc of cuttable()) {
+    const r = rayIn(rs, pc), h = voxelHit(r, pc);
+    if (h && (!best || h.t < best.hit.t)) best = { pc, hit: h, r };
+  }
+  return best;
+}
+// The grid axis that points up now, if the piece lies square.
+function upAxis(pc) {
+  if (pc === bar) return [1, 1];
+  const r = rot(...pc.q), up = [r[3], r[4], r[5]];
+  let a = 0;
+  for (let i = 1; i < 3; i++) if (Math.abs(up[i]) > Math.abs(up[a])) a = i;
+  return Math.abs(up[a]) > 0.85 ? [a, Math.sign(up[a])] : null;
 }
 
 /* ---------- strokes: score as you drag, slice when you swipe through ---------- */
 let stroke = null, queued = 0, planAt = 0;
 function makeStroke(kind) {
   return {
-    kind, outside: false, a: -1, sg: 0, F: 0, t: -1, p: -1, c: 0, lo: 0, hi: -1, s: 0, s0: 0, smin: 1e9, smax: -1e9,
-    pts: [], ray: null, cols: new Uint8Array(32), surf: new Int8Array(32).fill(127), done: false, dead: false,
-    mode: '', shave: null, gap: 0.3, moved: 0, speed: 0, dirT: 1, id: -1, front: null,
+    kind, pc: bar, box, outside: false, a: -1, sg: 0, F: 0, t: -1, p: -1, c: 0, lo: 0, hi: -1, s: 0, s0: 0, smin: 1e9, smax: -1e9,
+    pts: [], ray: null, cols: new Uint8Array(64), surf: new Int8Array(64).fill(127), done: false, dead: false,
+    mode: '', shave: null, gap: 0.45, moved: 0, speed: 0, dirT: 1, id: -1, front: null,
   };
 }
 function bindFace(st, hit, prev) {
   st.a = hit.a;
   st.sg = hit.sg;
   st.F = hit.F;
-  if (prev) { const q = onPlane(prev, st.a, st.F); if (q) st.pts.push(q); }
+  if (prev) { const q = onPlane(rayIn(prev, st.pc), st.a, st.F); if (q) st.pts.push(q); }
 }
-// The bar's span along the stroke, beside plane c.
+// The piece's span along the stroke, beside plane c.
 function span(st) {
   let lo = 99, hi = -1;
-  for (const id of bar.cells) {
+  for (const id of st.pc.cells) {
     const cp = COORD[st.p][id];
     if (cp !== st.c - 1 && cp !== st.c) continue;
     const ct = COORD[st.t][id];
@@ -1119,30 +1327,34 @@ function span(st) {
   st.lo = lo;
   st.hi = hi;
 }
+// The nearest cell plane, pulled onto an earlier score nearby.
+// Returns -1 when the piece is one cell thin.
+function snapPlane(bx, p, ref) {
+  if (bx.lo[p] + 1 > bx.hi[p]) return -1;
+  let c = Math.round(ref), near = 1.2;
+  for (const k of scorePlanes[p]) if (Math.abs(ref - k) < near) { near = Math.abs(ref - k); c = k; }
+  return clamp(c, bx.lo[p] + 1, bx.hi[p]);
+}
 // The axis locks to the stroke's main direction.
 // The line snaps to the grid.
 function settle(st) {
   const p0 = st.pts[0], p1 = st.pts[st.pts.length - 1], u = (st.a + 1) % 3, v = (st.a + 2) % 3;
   const du = p1[u] - p0[u], dv = p1[v] - p0[v];
-  if (Math.hypot(du, dv) < (st.outside ? 0.3 : 0.7)) return false;
+  if (Math.hypot(du, dv) < (st.outside ? 0.45 : 1.05)) return false;
   st.t = Math.abs(du) >= Math.abs(dv) ? u : v;
   st.p = st.t === u ? v : u;
   st.dirT = (st.t === u ? du : dv) >= 0 ? 1 : -1;
-  const ref = (st.outside ? p1 : p0)[st.p];
-  let c = Math.round(ref);
-  // An earlier score nearby pulls the line onto it.
-  let near = 0.8;
-  for (const k of scorePlanes[st.p]) if (Math.abs(ref - k) < near) { near = Math.abs(ref - k); c = k; }
-  st.c = clamp(c, box.lo[st.p] + 1, box.hi[st.p]);
+  st.c = snapPlane(st.box, st.p, (st.outside ? p1 : p0)[st.p]);
+  if (st.c < 0) { st.dead = true; return true; }
   span(st);
-  if (st.lo > st.hi || box.lo[st.p] + 1 > box.hi[st.p]) { st.dead = true; return true; }
+  if (st.lo > st.hi) { st.dead = true; return true; }
   st.s = st.s0 = p0[st.t];
   for (const q of st.pts) { st.smin = Math.min(st.smin, q[st.t]); st.smax = Math.max(st.smax, q[st.t]); }
   return true;
 }
-function follow(st, r) {
+function follow(st, rs) {
   if (st.a < 0 || st.dead) return;
-  const q = onPlane(r, st.a, st.F);
+  const q = onPlane(rayIn(rs, st.pc), st.a, st.F);
   if (!q) return;
   if (st.t < 0) {
     st.pts.push(q);
@@ -1161,12 +1373,12 @@ function surfAt(st, i) {
     co[st.p] = st.c - 1;
     const lo = at3();
     co[st.p] = st.c;
-    if (owner[lo] === bar.id || owner[at3()] === bar.id) { if (st.sg > 0) top = m; else if (top < 0) top = m; }
+    if (owner[lo] === st.pc.id || owner[at3()] === st.pc.id) { if (st.sg > 0) top = m; else if (top < 0) top = m; }
   }
   return (st.surf[i] = top < 0 ? st.F : st.sg > 0 ? top + 1 : top);
 }
 function scoreColumn(st, i) {
-  const a = st.a, p = st.p, top = surfAt(st, i) - (st.sg > 0 ? 1 : 0);
+  const a = st.a, p = st.p, top = surfAt(st, i) - (st.sg > 0 ? 1 : 0), id = st.pc.id;
   let any = false;
   co[st.t] = i;
   for (let k = 0; k < SCORE; k++) {
@@ -1175,7 +1387,7 @@ function scoreColumn(st, i) {
     co[a] = m;
     co[p] = st.c - 1;
     const lo = at3();
-    if (owner[lo] !== bar.id || owner[lo + STRIDE[p]] !== bar.id || bond[p][lo]) continue;
+    if (owner[lo] !== id || owner[lo + STRIDE[p]] !== id || bond[p][lo]) continue;
     bond[p][lo] = 1;
     scoredFrom[p][lo] = a * 2 + (st.sg > 0 ? 0 : 1);
     any = true;
@@ -1184,7 +1396,7 @@ function scoreColumn(st, i) {
 }
 function push(st, s) {
   if (st.dead) return;
-  s = clamp(s, st.lo - 5, st.hi + 6);
+  s = clamp(s, st.lo - 7.5, st.hi + 9);
   const ds = s - st.s;
   st.s = s;
   if (Math.abs(ds) > 0.02) st.dirT = ds > 0 ? 1 : -1;
@@ -1200,7 +1412,7 @@ function push(st, s) {
     st.cols[i] = 1;
     if (scoreColumn(st, i)) changed = true;
   }
-  if (changed) { staticDirty = true; scorePlanes[st.p].add(st.c); }
+  if (changed) { dirty.add(st.pc); scorePlanes[st.p].add(st.c); }
   // A swipe in from outside, clean across, cuts right through.
   const thru = st.kind === 'auto' ? st.mode === 'through' : st.outside;
   if (thru && st.smin <= st.lo + 0.35 && st.smax >= st.hi + 0.65) { through(st); return; }
@@ -1208,40 +1420,39 @@ function push(st, s) {
 }
 function through(st) {
   st.done = true;
-  for (const id of bar.cells) {
-    if (COORD[st.p][id] !== st.c - 1) continue;
-    if (owner[id + STRIDE[st.p]] === bar.id) bond[st.p][id] = 2;
+  const id = st.pc.id;
+  for (const c of st.pc.cells) {
+    if (COORD[st.p][c] !== st.c - 1) continue;
+    if (owner[c + STRIDE[st.p]] === id) bond[st.p][c] = 2;
   }
-  const f = surfAt(st, Math.floor(st.s));
-  bl.to = Math.min(4.6, st.sg > 0 ? f - box.lo[st.a] : box.hi[st.a] + 1 - f);
+  const f = surfAt(st, Math.floor(st.s)), bx = st.box;
+  bl.to = Math.min(4.6 / K, st.sg > 0 ? f - bx.lo[st.a] : bx.hi[st.a] + 1 - f);
   if (st.shave) { loose(st.shave); st.shave = null; }
   split(st);
 }
 function shaveAlong(st, ds, inside) {
   if (!ds) return;
   const dir = ds > 0 ? 1 : -1;
-  if (st.shave && (st.shave.dir !== dir || !inside)) { loose(st.shave); st.shave = null; st.gap = rnd(0.4, 1); }
+  if (st.shave && (st.shave.dir !== dir || !inside)) { loose(st.shave); st.shave = null; st.gap = rnd(0.6, 1.5); }
   if (!inside) return;
   st.gap -= Math.abs(ds);
-  if (!st.shave && st.gap <= 0 && st.s > st.lo + 0.3 && st.s < st.hi + 0.7) st.shave = curlStart(st, dir);
+  if (!st.shave && st.gap <= 0 && st.s > st.lo + 0.45 && st.s < st.hi + 0.55) st.shave = curlStart(st, dir);
   const sh = st.shave;
   if (!sh) return;
   sh.L += Math.abs(ds) * 0.9;
-  edgePoint(st, sh.O);
-  for (let i = 0; i < 3; i++) sh.O[i] += sh.W[i] * sh.side;
+  edgePoint(st, sh.O, sh.Or);
   shapeCurl(sh);
-  if (sh.L >= sh.Lmax) { loose(sh); st.shave = null; st.gap = rnd(0.5, 1.6); }
+  if (sh.L >= sh.Lmax) { loose(sh); st.shave = null; st.gap = rnd(0.75, 2.4); }
 }
-// Where the blade meets the soap, in world units.
-function edgePoint(st, outP) {
-  const e = [0, 0, 0];
-  e[st.t] = clamp(st.s, st.lo - 1.2, st.hi + 2.2);
-  e[st.p] = st.c;
-  e[st.a] = surfAt(st, Math.floor(st.s));
-  outP[0] = e[0] - OX;
-  outP[1] = e[1];
-  outP[2] = e[2] - OZ;
-  return outP;
+// Where the blade meets the soap, on the stage.
+// rest, when given, gets the same point in the bar's frame.
+const EP = [0, 0, 0];
+function edgePoint(st, out, rest) {
+  EP[st.t] = clamp(st.s, st.lo - 1.8, st.hi + 3.3);
+  EP[st.p] = st.c;
+  EP[st.a] = surfAt(st, Math.floor(st.s));
+  if (rest) { rest[0] = EP[0] - OX; rest[1] = EP[1]; rest[2] = EP[2] - OZ; }
+  return toStage(st.pc, EP, out);
 }
 function endStroke() {
   const st = stroke;
@@ -1255,36 +1466,63 @@ function endStroke() {
 /* ---------- the preset path for Space ---------- */
 // Face, stroke axis, line, and whether it cuts through.
 const PLAN = [
-  ['top', 0, 2, 0], ['top', 0, 4, 0], ['top', 0, 6, 0], ['top', 0, 8, 0],
-  ['top', 2, 14, 1], ['top', 2, 12, 1], ['top', 2, 10, 1],
-  ['top', 2, 8, 0], ['top', 2, 6, 0], ['top', 2, 4, 0], ['top', 2, 2, 0],
-  ['front', 0, 6, 1],
-  ['top', 2, 8, 1], ['top', 2, 5, 1], ['top', 2, 2, 1],
+  ['top', 0, 3, 0], ['top', 0, 6, 0], ['top', 0, 9, 0], ['top', 0, 12, 0],
+  ['top', 2, 21, 1], ['top', 2, 18, 1], ['top', 2, 15, 1],
+  ['top', 2, 12, 0], ['top', 2, 9, 0], ['top', 2, 6, 0], ['top', 2, 3, 0],
+  ['front', 0, 9, 1],
+  ['top', 2, 12, 1], ['top', 2, 8, 1], ['top', 2, 3, 1],
 ];
+// An auto stroke on a piece.
+// Null when the line misses the piece.
+function aim(pc, a, sg, t, p, c, thru) {
+  const st = makeStroke('auto'), bx = bounds(pc);
+  st.pc = pc;
+  st.box = bx;
+  st.a = a;
+  st.sg = sg;
+  st.F = sg > 0 ? bx.hi[a] + 1 : bx.lo[a];
+  st.t = t;
+  st.p = p;
+  st.c = c;
+  span(st);
+  if (st.lo > st.hi) return null;
+  st.mode = thru ? 'through' : 'score';
+  return st;
+}
+// The plan on the bar comes first.
+// Then Space halves the biggest resting piece.
+function planNext(consume) {
+  for (let i = planAt; i < PLAN.length; i++) {
+    const [face, t, c, thru] = PLAN[i], a = face === 'top' ? 1 : 2, p = 3 - a - t;
+    if (consume) planAt = i + 1;
+    if (c < box.lo[p] + 1 || c > box.hi[p]) continue;
+    const st = aim(bar, a, 1, t, p, c, thru);
+    if (st) return st;
+  }
+  const list = cuttable().sort((x, y) => y.cells.length - x.cells.length);
+  for (const pc of list) {
+    const up = upAxis(pc);
+    if (!up) continue;
+    const bx = bounds(pc), [a, sg] = up, u = (a + 1) % 3, v = (a + 2) % 3;
+    // The cut crosses the piece's longest side.
+    const p = bx.hi[u] - bx.lo[u] >= bx.hi[v] - bx.lo[v] ? u : v;
+    if (bx.hi[p] - bx.lo[p] < 3) continue;
+    const st = aim(pc, a, sg, 3 - a - p, p, Math.round((bx.lo[p] + bx.hi[p] + 1) / 2), 1);
+    if (st) return st;
+  }
+  return null;
+}
 function nextCut() {
   if (!ready || sweep) return;
   if (stroke) { if (stroke.kind === 'auto') queued = 1; return; }
-  while (planAt < PLAN.length) {
-    const [face, t, c, thru] = PLAN[planAt++], st = makeStroke('auto');
-    st.a = face === 'top' ? 1 : 2;
-    st.sg = 1;
-    st.F = box.hi[st.a] + 1;
-    st.t = t;
-    st.p = 3 - st.a - t;
-    if (c < box.lo[st.p] + 1 || c > box.hi[st.p]) continue;
-    st.c = c;
-    span(st);
-    if (st.lo > st.hi) continue;
-    st.mode = thru ? 'through' : 'score';
-    st.from = st.s = st.s0 = st.lo - 2.5;
-    st.to = st.hi + 3.5;
-    st.t0 = nowS();
-    st.dur = (reduce ? 0.2 : 0.4) + (st.hi - st.lo + 1) * (reduce ? 0.012 : 0.032);
-    stroke = st;
-    wake();
-    return;
-  }
-  newBar();
+  const st = planNext(true);
+  if (!st) { newBar(); return; }
+  st.from = st.s = st.s0 = st.lo - 3.75;
+  st.to = st.hi + 5.25;
+  st.t0 = nowS();
+  st.dur = (reduce ? 0.2 : 0.4) + (st.hi - st.lo + 1) * (reduce ? 0.008 : 0.022);
+  stroke = st;
+  wake();
 }
 function updateAuto(now) {
   const st = stroke;
@@ -1312,18 +1550,23 @@ const bl = { on: 0, depth: SCORE, to: SCORE, pos: [0, 0, 0], X: [1, 0, 0], Y: [0
 const EL = 34 * D2R, AZ = 26 * D2R, FOV = 30, SW = 70;
 let tgt = null;
 
-function soapMaterial(h, side) {
+function soapMaterial(v, side) {
   const col = c => new THREE.Color().setRGB(...rgb(c), THREE.SRGBColorSpace);
+  const [L, C, h] = v.a, sp = v.speck || [0, 1];
   const m = new THREE.MeshPhysicalMaterial({
-    color: col([0.83, 0.135, h]), roughness: 0.62, metalness: 0, specularIntensity: 0.5,
-    sheen: 0.45, sheenRoughness: 0.55, sheenColor: col([0.95, 0.06, h]), side,
+    color: 0xffffff, roughness: v.rough, metalness: 0, specularIntensity: v.spec,
+    sheen: v.sheen, sheenRoughness: 0.55, sheenColor: col([Math.min(0.97, L + 0.12), C * 0.45, h]), side,
   });
-  const u = { uSub: { value: col([0.6, 0.2, h]) }, uWrap: { value: 0.6 }, uTrans: { value: 1.6 }, uCutRough: { value: 0.3 } };
+  const u = {
+    uSub: { value: col(v.sub) }, uWrap: { value: v.wrap }, uTrans: { value: v.trans }, uCutRough: { value: Math.min(v.rough, 0.3) },
+    uA: { value: col(v.a) }, uB: { value: col(v.b || v.a) }, uC: { value: col(v.c || v.a) }, uSpeck: { value: col(v.sp || v.a) },
+    uSpeckK: { value: new THREE.Vector2(sp[0], sp[1]) }, uMode: { value: v.mode }, uChalk: { value: v.chalk }, uClear: { value: v.clear || 0 },
+  };
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 aSoap;\nvarying vec3 vSoap;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvSoap = aSoap;');
+      .replace('#include <common>', '#include <common>\nattribute vec3 aSoap;\nattribute vec3 aRest;\nvarying vec3 vSoap;\nvarying vec3 vRest;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvSoap = aSoap;\n\tvRest = aRest;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n' + SOAP_PARS)
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + SOAP_COLOR)
@@ -1334,27 +1577,79 @@ function soapMaterial(h, side) {
   return m;
 }
 // vSoap: x fresh cut, y thinness, z groove shading.
+// vRest: the point's place in the bar before any cut.
 const SOAP_PARS = `
 uniform vec3 uSub;
 uniform float uWrap;
 uniform float uTrans;
 uniform float uCutRough;
+uniform vec3 uA;
+uniform vec3 uB;
+uniform vec3 uC;
+uniform vec3 uSpeck;
+uniform vec2 uSpeckK;
+uniform float uMode;
+uniform float uChalk;
+uniform float uClear;
 varying vec3 vSoap;
+varying vec3 vRest;
+float soapHash( vec3 p ) {
+	p = fract( p * vec3( 0.1031, 0.1030, 0.0973 ) );
+	p += dot( p, p.yxz + 33.33 );
+	return fract( ( p.x + p.y ) * p.z );
+}
+float soapNoise( vec3 p ) {
+	vec3 i = floor( p ), f = fract( p );
+	f = f * f * ( 3.0 - 2.0 * f );
+	float a = mix( mix( soapHash( i ), soapHash( i + vec3( 1.0, 0.0, 0.0 ) ), f.x ), mix( soapHash( i + vec3( 0.0, 1.0, 0.0 ) ), soapHash( i + vec3( 1.0, 1.0, 0.0 ) ), f.x ), f.y );
+	float b = mix( mix( soapHash( i + vec3( 0.0, 0.0, 1.0 ) ), soapHash( i + vec3( 1.0, 0.0, 1.0 ) ), f.x ), mix( soapHash( i + vec3( 0.0, 1.0, 1.0 ) ), soapHash( i + vec3( 1.0 ) ), f.x ), f.y );
+	return mix( a, b, f.z );
+}
+// The soap's own colour at a point in the bar.
+vec3 soapBase( vec3 r ) {
+	vec3 c = uA;
+	if ( uMode > 1.5 ) {
+		// Marbling: bands folded by noise run through the bar.
+		float w = r.x * 0.22 + r.z * 0.12 + r.y * 0.1 + 2.4 * soapNoise( r * 0.12 ) + 0.7 * soapNoise( r * 0.36 + 7.0 );
+		float b = sin( w * 3.1 );
+		c = mix( uA, uB, smoothstep( 0.35, 0.75, b ) );
+		c = mix( c, uC, smoothstep( 0.7, 0.95, - b ) * 0.8 );
+	} else if ( uMode > 0.5 ) {
+		// Three poured layers with slightly wavy seams.
+		float y = r.y / ${NY}.0 + 0.03 * ( soapNoise( vec3( r.x * 0.15, 0.0, r.z * 0.15 ) + 3.0 ) - 0.5 );
+		c = mix( uB, uA, smoothstep( 0.325, 0.345, y ) );
+		c = mix( c, uC, smoothstep( 0.66, 0.68, y ) );
+	}
+	// Flecks sit in tiny cells all through the bar.
+	if ( uSpeckK.x > 0.0 ) {
+		vec3 g = r * uSpeckK.y, gi = floor( g );
+		vec3 j = vec3( soapHash( gi + 1.7 ), soapHash( gi + 4.3 ), soapHash( gi + 9.1 ) );
+		float d = length( fract( g ) - 0.25 - 0.5 * j );
+		float on = step( 1.0 - uSpeckK.x, soapHash( gi ) );
+		c = mix( c, uSpeck, on * ( 1.0 - smoothstep( 0.14, 0.24, d ) ) );
+	}
+	return c;
+}
 vec3 soapScatter( vec3 L, vec3 lit, vec3 raw, vec3 N, vec3 V, vec3 base ) {
 	float ndl = dot( N, L );
 	float wrap = max( 0.0, ( ndl + uWrap ) / ( 1.0 + uWrap ) ) - max( 0.0, ndl );
 	vec3 col = lit * wrap * mix( base, uSub, 0.55 );
 	vec3 H = normalize( L + N * 0.4 );
-	float tr = pow( saturate( dot( V, - H ) ), 3.0 ) * vSoap.y * uTrans;
+	// Clear soaps pass some light even where they are thick.
+	float tr = pow( saturate( dot( V, - H ) ), 3.0 ) * ( vSoap.y + 0.04 * uTrans ) * uTrans;
 	col += raw * tr * mix( base, uSub, 0.4 );
 	return col * RECIPROCAL_PI;
 }
 `;
-// The outer skin is a touch chalky.
+// The outer skin is a little chalky.
+// Cut faces show the true colour.
 // Grooves sink to a deeper tone.
 const SOAP_COLOR = `
-	diffuseColor.rgb = mix( mix( diffuseColor.rgb, vec3( 1.0 ), 0.08 ), diffuseColor.rgb, vSoap.x );
+	vec3 soapC = soapBase( vRest );
+	diffuseColor.rgb = mix( mix( soapC, vec3( 1.0 ), uChalk ), soapC, vSoap.x );
 	diffuseColor.rgb *= mix( mix( uSub, vec3( 0.55 ), 0.35 ), vec3( 1.0 ), vSoap.z );
+	// A clear soap deepens toward its sub tone where light travels far.
+	diffuseColor.rgb = mix( diffuseColor.rgb, mix( uSub * 0.7, diffuseColor.rgb * 1.15, smoothstep( 0.0, 0.6, vSoap.y ) ), uClear );
 `;
 // Wrap light and light through thin parts join each direct light.
 function soapLights() {
@@ -1364,39 +1659,80 @@ function soapLights() {
     .replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight );\n\t\tsoapRaw = directLight.color;')
     .split(call).join(call + '\n\t\treflectedLight.directDiffuse += soapScatter( directLight.direction, directLight.color, soapRaw, geometryNormal, geometryViewDir, material.diffuseColor );');
 }
-// Oiled oak, drawn once into a canvas.
-function woodTexture() {
+// A cobalt rubber cutting mat with a printed grid, drawn once.
+const MAT = [0.34, 0.075, 258];
+function matTexture() {
+  const W = 2048, H = Math.round((W * BD) / BW), u = W / BW;
   const c = document.createElement('canvas');
-  c.width = 1024;
-  c.height = 512;
+  c.width = W;
+  c.height = H;
   const g = c.getContext('2d');
-  g.fillStyle = '#a98460';
-  g.fillRect(0, 0, 1024, 512);
-  for (let k = 0; k < 16; k++) {
-    const y = Math.random() * 512, h = 18 + Math.random() * 70, tone = Math.random() < 0.5 ? '255,232,200' : '86,48,22';
-    const grd = g.createLinearGradient(0, y - h, 0, y + h);
-    grd.addColorStop(0, `rgba(${tone},0)`);
-    grd.addColorStop(0.5, `rgba(${tone},${0.05 + Math.random() * 0.09})`);
-    grd.addColorStop(1, `rgba(${tone},0)`);
-    g.fillStyle = grd;
-    g.fillRect(0, y - h, 1024, 2 * h);
+  const ink = (L, C, h, a = 1) => { const v = rgb([L, C, h]); return `rgba(${(v[0] * 255) | 0},${(v[1] * 255) | 0},${(v[2] * 255) | 0},${a})`; };
+  g.fillStyle = ink(...MAT);
+  g.fillRect(0, 0, W, H);
+  // Matte rubber mottles finely.
+  for (let k = 0; k < 9000; k++) {
+    const s = 1 + Math.random() * 3;
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.045)';
+    g.fillRect(Math.random() * W, Math.random() * H, s, s);
   }
-  // Fine grain lines wander gently along the board.
-  for (let k = 0; k < 240; k++) {
-    const y = Math.random() * 512, amp = 1.5 + Math.random() * 5, fr = ((0.5 + Math.random() * 2) * TAU) / 1024, ph = Math.random() * TAU;
-    g.strokeStyle = `rgba(78,42,18,${0.04 + Math.random() * 0.13})`;
-    g.lineWidth = 0.6 + Math.random() * 1.5;
+  // Old knife marks have mostly healed.
+  g.lineCap = 'round';
+  for (let k = 0; k < 80; k++) {
+    const x = Math.random() * W, y = Math.random() * H, l = (0.04 + Math.random() * 0.16) * W;
+    const a = Math.random() < 0.7 ? (Math.round(Math.random() * 8) * Math.PI) / 4 : Math.random() * TAU;
+    g.strokeStyle = `rgba(0,0,0,${0.07 + Math.random() * 0.09})`;
+    g.lineWidth = 1 + Math.random() * 1.2;
     g.beginPath();
-    for (let x = 0; x <= 1024; x += 16) {
-      const yy = y + amp * Math.sin(x * fr + ph) + 2.5 * Math.sin(x * fr * 2.7 + ph * 1.3);
-      if (x) g.lineTo(x, yy); else g.moveTo(x, yy);
-    }
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
     g.stroke();
   }
-  // Short flecks of ray figure.
-  for (let k = 0; k < 160; k++) {
-    g.fillStyle = `rgba(255,236,206,${0.04 + Math.random() * 0.08})`;
-    g.fillRect(Math.random() * 1024, Math.random() * 512, 6 + Math.random() * 22, 1 + Math.random() * 1.5);
+  // The grid has a line every two units.
+  // A heavy line falls every ten units.
+  const m = 3 * u, X0 = m, X1 = W - m, Y0 = m, Y1 = H - m, cx = W / 2, cy = H / 2;
+  for (let k = -40; k <= 40; k += 2) {
+    const major = k % 10 === 0;
+    g.strokeStyle = major ? ink(0.86, 0.06, 228, 0.55) : ink(0.8, 0.07, 235, 0.26);
+    g.lineWidth = major ? 3.5 : 2;
+    const x = cx + k * u, y = cy + k * u;
+    if (x > X0 && x < X1) { g.beginPath(); g.moveTo(x, Y0); g.lineTo(x, Y1); g.stroke(); }
+    if (y > Y0 && y < Y1) { g.beginPath(); g.moveTo(X0, y); g.lineTo(X1, y); g.stroke(); }
+  }
+  // Angle guides in a hard orange.
+  g.save();
+  g.beginPath();
+  g.rect(X0, Y0, X1 - X0, Y1 - Y0);
+  g.clip();
+  g.strokeStyle = ink(0.76, 0.16, 55, 0.6);
+  g.lineWidth = 3;
+  for (const a of [45, 60]) {
+    const t = Math.tan((a * Math.PI) / 180);
+    g.beginPath();
+    g.moveTo(X0, Y1);
+    g.lineTo(X0 + (Y1 - Y0) / t, Y0);
+    g.stroke();
+  }
+  g.restore();
+  // Ruler ticks and numbers run along the top and left margins.
+  g.fillStyle = ink(0.88, 0.05, 228, 0.8);
+  g.font = `600 ${Math.round(u * 1.1)}px Gabarito, "Avenir Next", system-ui, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'bottom';
+  for (let k = -34; k <= 34; k++) {
+    const x = cx + k * u;
+    if (x < X0 || x > X1) continue;
+    const len = k % 10 === 0 ? 1.4 : k % 5 === 0 ? 0.9 : 0.45;
+    g.fillRect(x - 1.5, Y0 - len * u, 3, len * u);
+    if (k % 10 === 0) g.fillText(String((k + 30) / 10), x, Y0 - 1.6 * u);
+  }
+  g.textAlign = 'right';
+  g.textBaseline = 'middle';
+  for (let k = -22; k <= 22; k++) {
+    const y = cy + k * u;
+    if (y < Y0 || y > Y1) continue;
+    const len = k % 10 === 0 ? 1.4 : k % 5 === 0 ? 0.9 : 0.45;
+    g.fillRect(X0 - len * u, y - 1.5, len * u, 3);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -1458,13 +1794,13 @@ function fitRenderer(cap, onSize, budget) {
   addEventListener('perf-low', apply);
   apply();
 }
-// A ray from a screen point, in bar cell coordinates.
+// A ray from a screen point, in the stage's cell units.
 function rayAt(cx, cy) {
   const r = panel.getBoundingClientRect();
   ndc.set(((cx - r.left) / r.width) * 2 - 1, 1 - ((cy - r.top) / r.height) * 2);
   ray.setFromCamera(ndc, camera);
-  const o = ray.ray.origin, d = ray.ray.direction;
-  return { o: [o.x + OX, o.y, o.z + OZ], d: [d.x, d.y, d.z] };
+  const o = ray.ray.origin, d = ray.ray.direction, sp = stage.position;
+  return { o: [(o.x - sp.x) / K, (o.y - sp.y) / K, (o.z - sp.z) / K], d: [d.x, d.y, d.z] };
 }
 function onPlane(r, a, F) {
   const d = r.d[a];
@@ -1473,8 +1809,9 @@ function onPlane(r, a, F) {
   if (t <= 0) return null;
   return [r.o[0] + r.d[0] * t, r.o[1] + r.d[1] * t, r.o[2] + r.d[2] * t];
 }
-// Walks along the ray to the bar's first cell.
-function voxelHit(r) {
+// Walks along the ray to the piece's first cell.
+// t is how far along the ray the hit lies.
+function voxelHit(r, pc) {
   const o = r.o, d = r.d;
   let t0 = 0, t1 = Infinity, ax = -1;
   for (let a = 0; a < 3; a++) {
@@ -1492,14 +1829,15 @@ function voxelHit(r) {
     tMax[a] = Math.abs(d[a]) < 1e-9 ? Infinity : ((d[a] > 0 ? ci[a] + 1 : ci[a]) - o[a]) / d[a];
     tDel[a] = Math.abs(d[a]) < 1e-9 ? Infinity : Math.abs(1 / d[a]);
   }
-  let last = ax;
-  for (let guard = 0; guard < 64; guard++) {
-    if (owner[ci[0] + SY * ci[1] + SZ * ci[2]] === bar.id) {
+  let last = ax, tc = t0;
+  for (let guard = 0; guard < 128; guard++) {
+    if (owner[ci[0] + SY * ci[1] + SZ * ci[2]] === pc.id) {
       const sg = -step[last];
-      return { a: last, sg, F: sg > 0 ? ci[last] + 1 : ci[last] };
+      return { a: last, sg, F: sg > 0 ? ci[last] + 1 : ci[last], t: tc };
     }
     const m = tMax[0] < tMax[1] ? (tMax[0] < tMax[2] ? 0 : 2) : tMax[1] < tMax[2] ? 1 : 2;
     if (tMax[m] > t1) return null;
+    tc = tMax[m];
     ci[m] += step[m];
     if (ci[m] < 0 || ci[m] >= DIM[m]) return null;
     last = m;
@@ -1509,6 +1847,8 @@ function voxelHit(r) {
 }
 
 /* ---------- the blade ---------- */
+// The blade lives in the world.
+// Its pose follows the piece it cuts.
 function updateBlade(dt) {
   const st = stroke, show = !!(st && st.t >= 0 && !st.dead);
   if (show) {
@@ -1517,10 +1857,11 @@ function updateBlade(dt) {
     if (!st.done) bl.to = SCORE;
     bl.depth += (bl.to - bl.depth) * (1 - Math.exp(-dt * 28));
     edgePoint(st, bl.pos);
-    bl.X = [0, 0, 0];
-    bl.X[st.t] = st.dirT;
-    bl.Y = [0, 0, 0];
-    bl.Y[st.a] = st.sg;
+    const x = [0, 0, 0], y = [0, 0, 0];
+    x[st.t] = st.dirT;
+    y[st.a] = st.sg;
+    dirToStage(st.pc, x, bl.X);
+    dirToStage(st.pc, y, bl.Y);
   } else {
     if (bl.on <= 0) { blade.visible = false; return false; }
     bl.on = Math.max(0, bl.on - dt / 0.14);
@@ -1529,7 +1870,8 @@ function updateBlade(dt) {
   // The blade leans a little, the way a hand holds it.
   const cr = Math.cos(0.14), sr = Math.sin(0.14);
   const Y = [0, 1, 2].map(i => N[i] * cr + B[i] * sr), Z = [0, 1, 2].map(i => B[i] * cr - N[i] * sr);
-  const lift = (1 - bl.on) * 3.2 - bl.depth, p = bl.pos;
+  const lift = (1 - bl.on) * 3.2 - bl.depth * K, sp = stage.position;
+  const p = [sp.x + bl.pos[0] * K, sp.y + bl.pos[1] * K, sp.z + bl.pos[2] * K];
   blade.matrix.set(
     X[0], Y[0], Z[0], p[0] + Y[0] * lift,
     X[1], Y[1], Z[1], p[1] + Y[1] * lift,
@@ -1541,42 +1883,178 @@ function updateBlade(dt) {
   return (bl.on > 0 && bl.on < 1) || Math.abs(bl.to - bl.depth) > 0.02;
 }
 
+/* ---------- preview: a line shows where each cut will land ---------- */
+// Scores draw dashed; slices draw solid and drop down both ends.
+let pv = null, pvMat = null, pvKey = '', hover = null, kbFocus = false;
+const INK = [0, 0, 0];
+// What to show now: a stroke's line or a hover cross.
+// With keyboard focus, it shows the next Space cut.
+function previewWant() {
+  if (!ready || sweep) return null;
+  const st = stroke;
+  if (st) {
+    if (st.dead || st.done || st.a < 0 || st.kind === 'peek') return null;
+    if (st.t < 0) return st.pts.length ? crossAt(st.pc, st.a, st.sg, st.F, st.pts[0]) : null;
+    return [{ pc: st.pc, a: st.a, sg: st.sg, F: st.F, t: st.t, p: st.p, c: st.c, thru: st.kind === 'auto' ? st.mode === 'through' : st.outside, faint: false }];
+  }
+  if (hover) return crossAt(hover.pc, hover.a, hover.sg, hover.F, hover.q);
+  if (kbFocus) {
+    const n = planNext(false);
+    if (n) return [{ pc: n.pc, a: n.a, sg: n.sg, F: n.F, t: n.t, p: n.p, c: n.c, thru: n.mode === 'through', faint: true }];
+  }
+  return null;
+}
+// Both lines a press here could cut, one per drag direction.
+function crossAt(pc, a, sg, F, q) {
+  const bx = bounds(pc), out = [];
+  for (const p of [(a + 1) % 3, (a + 2) % 3]) {
+    const c = snapPlane(bx, p, q[p]);
+    if (c >= 0) out.push({ pc, a, sg, F, t: 3 - a - p, p, c, thru: false, faint: true });
+  }
+  return out.length ? out : null;
+}
+const previewKey = want => (want ? want.map(w => [w.pc.id, w.pc.cells.length, w.a, w.sg, w.t, w.p, w.c, w.thru, w.faint].join(':')).join('|') : '');
+// The line's segments in grid coordinates, each with its outward axis.
+function cutPath(cfg) {
+  const st = makeStroke('peek'), segs = [];
+  Object.assign(st, { pc: cfg.pc, box: bounds(cfg.pc), a: cfg.a, sg: cfg.sg, F: cfg.F, t: cfg.t, p: cfg.p, c: cfg.c });
+  span(st);
+  if (st.lo > st.hi) return segs;
+  const { a, t, sg, box: bx } = st;
+  const pt = (tv, av) => { const P = [0, 0, 0]; P[t] = tv; P[a] = av; P[st.p] = st.c; return P; };
+  const up = [0, 0, 0], lo = [0, 0, 0], hi = [0, 0, 0];
+  up[a] = sg; lo[t] = -1; hi[t] = 1;
+  let prev = null;
+  for (let i = st.lo; i <= st.hi; i++) {
+    const f = surfAt(st, i);
+    if (prev !== null && prev !== f) segs.push([pt(i, prev), pt(i, f), up]);
+    segs.push([pt(i, f), pt(i + 1, f), up]);
+    prev = f;
+  }
+  const f0 = surfAt(st, st.lo), f1 = surfAt(st, st.hi), far = sg > 0 ? bx.lo[a] : bx.hi[a] + 1;
+  const d0 = cfg.thru ? far : f0 - sg * SCORE, d1 = cfg.thru ? far : f1 - sg * SCORE;
+  segs.unshift([pt(st.lo, d0), pt(st.lo, f0), lo]);
+  segs.push([pt(st.hi + 1, f1), pt(st.hi + 1, d1), hi]);
+  return segs;
+}
+// Flat ink strips laid on the skin, hugging its rounded edges.
+const PV_W = 0.26, PV_DASH = 0.8, PV_GAP = 0.5, PV_STEP = 0.3, PV_LIFT = 0.07;
+function previewGeometry(list) {
+  const pos = [], col = [], idx = [], P = [0, 0, 0], n = [0, 0, 0];
+  const corner = (A, B, f, side, cfg, out, alpha) => {
+    for (let i = 0; i < 3; i++) P[i] = A[i] + (B[i] - A[i]) * f;
+    P[cfg.p] += side;
+    P[0] -= OX; P[2] -= OZ;
+    n[0] = out[0]; n[1] = out[1]; n[2] = out[2];
+    skin(P, 1 << cfg.p, n);
+    pos.push(P[0] + n[0] * PV_LIFT, P[1] + n[1] * PV_LIFT, P[2] + n[2] * PV_LIFT);
+    col.push(INK[0], INK[1], INK[2], alpha);
+  };
+  for (const cfg of list) {
+    const w = (cfg.faint ? 0.6 : 1) * PV_W * 0.5, alpha = cfg.faint ? 0.6 : 0.95, period = PV_DASH + PV_GAP;
+    let run = 0;
+    for (const [A, B, out] of cutPath(cfg)) {
+      const len = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]);
+      let s = 0;
+      while (s < len - 1e-6) {
+        // Each step ends at a dash edge or a short stride.
+        // A minimum step stops a stall on tiny slivers.
+        const ph = run % period, dash = cfg.thru || ph < PV_DASH - 1e-4;
+        const room = cfg.thru ? PV_STEP : dash ? Math.min(PV_STEP, PV_DASH - ph) : period - ph;
+        const e = Math.min(len, s + Math.max(room, 1e-3));
+        if (dash) {
+          const b = pos.length / 3;
+          corner(A, B, s / len, -w, cfg, out, alpha);
+          corner(A, B, s / len, w, cfg, out, alpha);
+          corner(A, B, e / len, -w, cfg, out, alpha);
+          corner(A, B, e / len, w, cfg, out, alpha);
+          idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+        }
+        run += e - s;
+        s = e;
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(idx);
+  return g;
+}
+function updatePreview() {
+  const want = previewWant(), key = previewKey(want);
+  if (key !== pvKey) {
+    pvKey = key;
+    pv.geometry.dispose();
+    pv.geometry = want ? previewGeometry(want) : new THREE.BufferGeometry();
+  }
+  pv.visible = !!want;
+  if (!want) return;
+  // The ink rides on its piece, inside the stage.
+  stage.updateMatrix();
+  const pc = want[0].pc;
+  if (pc === bar) pv.matrix.copy(stage.matrix);
+  else pv.matrix.multiplyMatrices(stage.matrix, pc.mesh.matrix);
+  pv.matrixWorldNeedsUpdate = true;
+}
+// The pointer's hover shows a cross; it repaints only on change.
+function setHover(x, y) {
+  let h = null;
+  if (ready && !sweep && x !== null) {
+    const hit = hitAny(rayAt(x, y));
+    const q = hit && onPlane(hit.r, hit.hit.a, hit.hit.F);
+    if (q) h = { pc: hit.pc, a: hit.hit.a, sg: hit.hit.sg, F: hit.hit.F, q };
+  }
+  hover = h;
+  if (previewKey(previewWant()) !== pvKey) wake();
+}
+
 /* ---------- a new bar: sweep the board, slide the next one in ---------- */
+let barSoap = -1;
 function resetBar() {
   owner.fill(0);
   for (const b of bond) b.fill(0);
   for (const s of scorePlanes) s.clear();
+  dirty.clear();
   pN = 0;
   awake.length = 0;
   planAt = 0;
-  hueAt = (hueAt + 1) % HUES.length;
-  barMat = soapMaterial(HUES[hueAt], THREE.FrontSide);
-  shaveMat = soapMaterial(HUES[hueAt], THREE.DoubleSide);
-  bar = { id: 0, cells: Array.from({ length: NC }, (_, i) => i), mesh: null, frozen: false };
+  barSoap = soapAt;
+  const v = SOAPS[soapAt];
+  barMat = soapMaterial(v, THREE.FrontSide);
+  shaveMat = soapMaterial(v, THREE.DoubleSide);
+  const ink = new THREE.Color().setRGB(...rgb(v.ink), THREE.SRGBColorSpace);
+  INK[0] = ink.r; INK[1] = ink.g; INK[2] = ink.b;
+  pvKey = '-';
+  bar = { id: 0, cells: Array.from({ length: NC }, (_, i) => i), mesh: null, frozen: false, dead: false, q: [1, 0, 0, 0], c: [0, 0, 0], c0: [0, 0, 0] };
   pieces = [bar];
   shavings = [];
   measure();
   bar.mesh = new THREE.Mesh(buildGeometry(0, bar.cells, false), barMat);
   bar.mesh.castShadow = bar.mesh.receiveShadow = true;
   stage.add(bar.mesh);
-  staticDirty = false;
+}
+function makeStage() {
+  stage = new THREE.Group();
+  stage.scale.setScalar(K);
+  scene.add(stage);
 }
 function newBar(first = false) {
   if (!ready || sweep) return;
   if (stroke?.kind === 'auto') finishAuto();
   if (stroke) endStroke();
   queued = 0;
+  hover = null;
   const old = first ? null : stage, mats = [barMat, shaveMat];
   for (const pc of pieces) pc.frozen = true;
-  stage = new THREE.Group();
-  scene.add(stage);
+  makeStage();
   resetBar();
   stage.position.x = reduce && !first ? 0 : SW;
   sweep = { t0: nowS(), old, mats: first ? [] : mats, dur: reduce ? 0.35 : first ? 0.9 : 1.1, inAt: first ? 0 : reduce ? 0 : 0.32 };
   if (!first) whoosh();
   wake();
 }
-const outCubic = u => 1 - (1 - u) ** 3, outBack = u => 1 + 2.2 * (u - 1) ** 3 + 1.2 * (u - 1) ** 2;
+const outBack = u => 1 + 2.2 * (u - 1) ** 3 + 1.2 * (u - 1) ** 2;
 function updateSweep(now) {
   if (!sweep) return false;
   const u = clamp((now - sweep.t0) / sweep.dur);
@@ -1596,6 +2074,8 @@ function updateSweep(now) {
       for (const m of sweep.mats) m.dispose();
     }
     sweep = null;
+    // A soap picked mid-sweep arrives next.
+    if (barSoap !== soapAt) newBar();
   }
   return true;
 }
@@ -1618,21 +2098,24 @@ function frame(ms) {
   // The scrape follows the blade's speed through the soap.
   const st = stroke;
   if (st) {
+    // A piece knocked loose mid-stroke drops the stroke.
+    if (st.pc !== bar && !st.done && (st.pc.awake || st.pc.dead)) st.dead = true;
     const inst = st.moved / Math.max(dt, 1 / 240);
     st.moved = 0;
     st.speed += (inst - st.speed) * (inst > st.speed ? 0.5 : 0.25);
     if (st.speed < 0.05) st.speed = 0;
-    scrape(st.done ? 0 : st.speed);
-    if (st.speed > 3 && !st.done && Math.random() < st.speed * dt * 0.3) crumb(rnd(0.08, 0.22), 0, rnd(1, 1.6));
+    scrape(st.done || st.dead ? 0 : st.speed * K);
+    if (st.speed > 4.5 && !st.done && Math.random() < st.speed * K * dt * 0.3) crumb(rnd(0.08, 0.22), 0, rnd(1, 1.6));
     if (st.speed > 0) busy = true;
   }
-  if (physics(dt)) busy = true;
-  if (updateShavings(dt)) busy = true;
+  if (physics(dt * TS)) busy = true;
+  if (updateShavings(dt * TS)) busy = true;
   if (updateBlade(dt)) busy = true;
   if (updateSweep(nowS())) busy = true;
   // Scores show up as the blade passes, a few times a second.
-  if (staticDirty && (!stroke || now - builtAt > 0.07)) { rebuildStatic(); builtAt = now; }
-  if (staticDirty) busy = true;
+  if (dirty.size && (!stroke || now - builtAt > 0.07)) { rebuildDirty(); builtAt = now; }
+  if (dirty.size) busy = true;
+  updatePreview();
   renderer.render(scene, camera);
   // A wake in this frame may have queued the next one.
   if (busy && onScreen && !document.hidden) { if (!raf) raf = requestAnimationFrame(frame); }
@@ -1643,13 +2126,16 @@ function frame(ms) {
 panel.addEventListener('pointerdown', e => {
   if (!ready || sweep || (e.pointerType === 'mouse' && e.button !== 0)) return;
   if (stroke) { if (stroke.kind !== 'auto') return; finishAuto(); }
-  const r = rayAt(e.clientX, e.clientY), hit = voxelHit(r), st = makeStroke('user');
+  hover = null;
+  const rs = rayAt(e.clientX, e.clientY), h = hitAny(rs), st = makeStroke('user');
   st.id = e.pointerId;
-  st.outside = !hit;
-  st.ray = r;
-  if (hit) {
-    bindFace(st, hit, null);
-    const q = onPlane(r, st.a, st.F);
+  st.outside = !h;
+  st.ray = rs;
+  if (h) {
+    st.pc = h.pc;
+    st.box = bounds(h.pc);
+    bindFace(st, h.hit, null);
+    const q = onPlane(h.r, st.a, st.F);
     if (q) st.pts.push(q);
   }
   stroke = st;
@@ -1658,29 +2144,34 @@ panel.addEventListener('pointerdown', e => {
 });
 panel.addEventListener('pointermove', e => {
   const st = stroke;
-  if (!st || st.kind !== 'user' || e.pointerId !== st.id) return;
+  if (!st) { if (e.pointerType === 'mouse') setHover(e.clientX, e.clientY); return; }
+  if (st.kind !== 'user' || e.pointerId !== st.id) return;
   const list = e.getCoalescedEvents?.() || [];
   for (const c of list.length ? list : [e]) {
-    const r = rayAt(c.clientX, c.clientY);
-    if (st.a < 0) { enter(st, r, c.clientX, c.clientY); if (st.a < 0) continue; }
-    follow(st, r);
+    const rs = rayAt(c.clientX, c.clientY);
+    if (st.a < 0) { enter(st, rs, c.clientX, c.clientY); if (st.a < 0) continue; }
+    follow(st, rs);
   }
   wake();
 });
-// A swipe from outside binds to the top as it crosses.
-// It takes the front face only after a real drag along it.
-function enter(st, r, x, y) {
-  const top = box.hi[1] + 1, q = onPlane(r, 1, top);
-  if (q && q[0] >= box.lo[0] && q[0] <= box.hi[0] + 1 && q[2] >= box.lo[2] && q[2] <= box.hi[2] + 1) {
-    bindFace(st, { a: 1, sg: 1, F: top }, st.ray);
-  } else {
-    const hit = voxelHit(r);
-    if (hit && hit.a === 2 && hit.sg > 0) {
-      if (!st.front) st.front = { ray: st.ray, x, y };
-      if (Math.hypot(x - st.front.x, y - st.front.y) > 28) bindFace(st, hit, st.front.ray);
+panel.addEventListener('pointerleave', e => { if (!stroke && e.pointerType === 'mouse') setHover(null, null); });
+// A swipe from outside binds to the first piece it crosses.
+// A top face binds at once.
+// A side face binds after a real drag along it.
+function enter(st, rs, x, y) {
+  const h = hitAny(rs);
+  if (h) {
+    const n = [0, 0, 0];
+    n[h.hit.a] = h.hit.sg;
+    dirToStage(h.pc, n, n);
+    const bind = from => { st.pc = h.pc; st.box = bounds(h.pc); bindFace(st, h.hit, from); };
+    if (n[1] > 0.7) bind(st.ray);
+    else {
+      if (!st.front || st.front.pc !== h.pc || st.front.a !== h.hit.a) st.front = { ray: st.ray, x, y, pc: h.pc, a: h.hit.a };
+      if (Math.hypot(x - st.front.x, y - st.front.y) > 28) bind(st.front.ray);
     }
   }
-  st.ray = r;
+  st.ray = rs;
 }
 function release(e) {
   if (stroke?.kind === 'user' && e.pointerId === stroke.id) endStroke();
@@ -1688,12 +2179,69 @@ function release(e) {
 panel.addEventListener('pointerup', release);
 panel.addEventListener('pointercancel', release);
 panel.addEventListener('lostpointercapture', release);
+// Keyboard focus shows where Space will cut next.
+panel.addEventListener('focus', () => { kbFocus = panel.matches(':focus-visible'); wake(); });
+panel.addEventListener('blur', () => { kbFocus = false; wake(); });
+
+/* ---------- the soap rail ---------- */
+const soapsEl = document.getElementById('soaps'), soapRail = soapsEl.querySelector('.soap-rail'), soapName = soapsEl.querySelector('.soap-name');
+soapRail.innerHTML = SOAPS.map(v => `<i style="--c: ${swatchCss(v)}"></i>`).join('');
+const soapSw = [...soapRail.children];
+let soapPeek = -1, soapId = null;
+function paintSoaps() {
+  soapSw.forEach((el, i) => { el.classList.toggle('on', i === soapAt); el.classList.toggle('peek', i === soapPeek); });
+  soapName.textContent = SOAPS[soapPeek >= 0 ? soapPeek : soapAt].name;
+  soapsEl.setAttribute('aria-valuenow', String(soapAt + 1));
+  soapsEl.setAttribute('aria-valuetext', SOAPS[soapAt].name);
+}
+// A new pick slides a fresh bar of that soap in.
+function setSoap(i) {
+  i = clamp(i, 0, SOAPS.length - 1);
+  if (i === soapAt) return;
+  soapAt = i;
+  paintSoaps();
+  newBar();
+}
+function soapAtX(x) {
+  let best = 0, bd = Infinity;
+  soapSw.forEach((el, i) => {
+    const r = el.getBoundingClientRect(), d = Math.abs(x - (r.left + r.right) / 2);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+soapsEl.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  soapId = e.pointerId;
+  try { soapsEl.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  setSoap(soapAtX(e.clientX));
+});
+soapsEl.addEventListener('pointermove', e => {
+  if (soapId === e.pointerId) { setSoap(soapAtX(e.clientX)); return; }
+  const i = e.pointerType === 'mouse' && soapRail.contains(e.target) ? soapAtX(e.clientX) : -1;
+  if (i !== soapPeek) { soapPeek = i; paintSoaps(); }
+});
+const soapUp = e => { if (soapId === e.pointerId) soapId = null; };
+soapsEl.addEventListener('pointerup', soapUp);
+soapsEl.addEventListener('pointercancel', soapUp);
+soapsEl.addEventListener('pointerleave', () => { if (soapPeek >= 0) { soapPeek = -1; paintSoaps(); } });
+soapsEl.addEventListener('keydown', e => {
+  const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key];
+  if (d) setSoap(soapAt + d);
+  else if (e.key === 'Home') setSoap(0);
+  else if (e.key === 'End') setSoap(SOAPS.length - 1);
+  else return;
+  e.preventDefault();
+});
+paintSoaps();
+
 addEventListener('keydown', e => {
   if (!ready || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   // Buttons and links keep their own keys.
   if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea')) return;
   if (e.key === ' ') { e.preventDefault(); if (!e.repeat) nextCut(); }
   else if (e.key === 'n' || e.key === 'N') { if (!e.repeat) newBar(); }
+  else if (e.key >= '1' && e.key <= String(SOAPS.length)) setSoap(+e.key - 1);
 });
 document.getElementById('fresh').addEventListener('click', () => newBar());
 sound.onChange(on => {
@@ -1706,6 +2254,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) wake
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
+  document.getElementById('fresh').disabled = true;
+  soapsEl.setAttribute('aria-disabled', 'true');
 }
 async function start() {
   let RoomEnvironment, RoundedBoxGeometry;
@@ -1758,16 +2308,17 @@ async function start() {
   key.shadow.normalBias = 0.05;
   scene.add(key, key.target);
   // The panel itself is the table.
-  // Only the board's shadow is drawn on it.
+  // Only the mat's shadow is drawn on it.
   const table = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.ShadowMaterial({ opacity: 0.45 }));
   table.rotation.x = -Math.PI / 2;
   table.position.y = -BT;
   table.receiveShadow = true;
   scene.add(table);
-  const boardMesh = new THREE.Mesh(
-    new RoundedBoxGeometry(BW, BT, BD, 4, 0.9),
-    new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.68, metalness: 0 }),
-  );
+  // The print covers the mat's top; its edges stay plain rubber.
+  const matGeo = new RoundedBoxGeometry(BW, BT, BD, 3, 0.5);
+  const top = new THREE.MeshStandardMaterial({ map: matTexture(), roughness: 0.86, metalness: 0 });
+  const edge = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...rgb([MAT[0] - 0.05, MAT[1], MAT[2]]), THREE.SRGBColorSpace), roughness: 0.9, metalness: 0 });
+  const boardMesh = new THREE.Mesh(matGeo, matGeo.groups.length === 6 ? [edge, edge, top, edge, edge, edge] : top);
   boardMesh.position.y = -BT / 2;
   boardMesh.receiveShadow = boardMesh.castShadow = true;
   scene.add(boardMesh);
@@ -1775,8 +2326,17 @@ async function start() {
   blade.castShadow = true;
   blade.matrixAutoUpdate = false;
   scene.add(blade);
-  stage = new THREE.Group();
-  scene.add(stage);
+  pvMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  });
+  pv = new THREE.Mesh(new THREE.BufferGeometry(), pvMat);
+  pv.matrixAutoUpdate = false;
+  pv.renderOrder = 2;
+  pv.visible = false;
+  pv.frustumCulled = false;
+  scene.add(pv);
+  makeStage();
   await idle();
   resetBar();
   stage.position.x = reduce ? 0 : SW;
