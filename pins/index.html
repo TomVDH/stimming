@@ -32,19 +32,19 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--pins board" id="board" tabindex="0" role="application" aria-label="Pin screen. Press and drag to push pins; hold to push deeper. Arrow keys move the press point, Space presses, F flips the board, S shakes the pins flat.">
+    <div class="stage stage--pins board" id="board" tabindex="0" role="application" aria-label="Pin screen. Press and drag to push pins; hold to push deeper. Type a word to press its letters from behind; Backspace lifts the last letter. Arrow keys move the press point, Space presses, Enter flips the board, Escape shakes the pins flat.">
       <p class="fail" hidden>Pin art needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="actions">
-        <button class="chip" id="flip" type="button" aria-keyshortcuts="F">Flip</button>
-        <button class="chip" id="shake" type="button" aria-keyshortcuts="S">Shake</button>
+        <button class="chip" id="flip" type="button" aria-keyshortcuts="Enter">Flip</button>
+        <button class="chip" id="shake" type="button" aria-keyshortcuts="Escape">Shake</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>push pins</dd></div>
-        <div><dt>Hold</dt><dd>push deeper</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>press</dd></div>
-        <div class="fine"><dt><kbd>S</kbd></dt><dd>shake flat</dd></div>
+        <div><dt>Drag</dt><dd>push, hold deeper</dd></div>
+        <div class="fine"><dt>Type</dt><dd>press a word</dd></div>
+        <div class="fine"><dt><kbd>Enter</kbd></dt><dd>flip</dd></div>
+        <div class="fine"><dt><kbd>Esc</kbd></dt><dd>shake flat</dd></div>
       </dl>
     </div>
   </main>
@@ -61,7 +61,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, sound, reduced, onReducedChange, oklchRgb } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
@@ -149,9 +149,10 @@ function rest() {
     if (!raf && !brushes.size && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['s', 'S', 'f', 'F', ' ', 'Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+// Typed characters count as gestures, as do these named keys.
+const GESTURE_KEYS = new Set(['Enter', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  if (!sound.on || (e.type === 'keydown' && e.key.length !== 1 && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
   if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
   audio();
@@ -264,6 +265,9 @@ const MARGIN = 0.8, BORDER = 2.1, LIP = 1, BEV = 0.2;
 let cols = 0, rows = 0, N = 0, halfW = 0, halfH = 0;
 const PX = new Float32Array(MAXN), PY = new Float32Array(MAXN);
 const H = new Float32Array(MAXN), V = new Float32Array(MAXN), T = new Float32Array(MAXN), HP = new Float32Array(MAXN);
+// B holds relief from the hand and the brushes.
+// X holds relief from the typed letters.
+const B = new Float32Array(MAXN), X = new Float32Array(MAXN);
 // Per pin for the shader: occlusion, then neighbours' mean head height.
 const SH = new Float32Array(MAXN * 2).fill(1);
 const NB = new Int16Array(MAXN * 6), due = new Float64Array(MAXN), mode = new Uint8Array(MAXN), act = new Uint8Array(MAXN);
@@ -283,8 +287,8 @@ function nearestIn(x, y, nc, nr) {
 }
 const nearest = (x, y) => nearestIn(x, y, cols, rows);
 function build(nc, nr) {
-  // Old targets carry over by position.
-  const oc = cols, or = rows, old = N ? T.slice(0, N) : null;
+  // Old hand and brush relief carries over by position.
+  const oc = cols, or = rows, old = N ? B.slice(0, N) : null;
   cols = nc; rows = nr; N = nc * nr;
   halfW = (nc - 1) / 2 + 0.25;
   halfH = ((nr - 1) * ROW) / 2;
@@ -293,8 +297,8 @@ function build(nc, nr) {
     PX[i] = c - (nc - 1) / 2 + shift(r);
     PY[i] = halfH - r * ROW;
     const j = old ? nearestIn(PX[i], PY[i], oc, or) : -1;
-    T[i] = H[i] = j >= 0 ? old[j] : 0;
-    V[i] = 0;
+    T[i] = H[i] = B[i] = j >= 0 ? old[j] : 0;
+    X[i] = V[i] = 0;
     mode[i] = SPRING;
     act[i] = 0;
   }
@@ -307,6 +311,11 @@ function build(nc, nr) {
       const rr = r + (s < 2 ? -1 : 1), cc = c + o + (s & 1);
       NB[k + 2 + s] = rr >= 0 && rr < nr && cc >= 0 && cc < nc ? rr * nc + cc : -1;
     }
+  }
+  // The word sets again to fit the new grid.
+  if (word || ground) {
+    ink();
+    for (let i = 0; i < N; i++) T[i] = H[i] = target(i);
   }
   shade();
   place();
@@ -366,7 +375,7 @@ function seedHand() {
   for (let i = 0; i < N; i++) {
     const x = PX[i] - cx, y = PY[i] - cy, h = hand((x * co + y * si) / s, (y * co - x * si) / s);
     // A hair of jitter keeps the print from looking machined.
-    T[i] = h > 0.02 ? Math.min(HMAX, h + (Math.random() - 0.5) * 0.08) : 0;
+    T[i] = B[i] = h > 0.02 ? Math.min(HMAX, h + (Math.random() - 0.5) * 0.08) : 0;
   }
 }
 // Pins rise into the print from the wrist up.
@@ -442,7 +451,7 @@ function sculpt(dt) {
     stamp(b);
   }
 }
-// A capsule from the last point to this one; pins never move back.
+// A capsule from the last point to this one; brush relief never moves back.
 function stamp(b) {
   const { x, y, lx, ly, r, d } = b, ex = x - lx, ey = y - ly, l2 = ex * ex + ey * ey || 1e-9, r2 = r * r;
   const r0 = Math.max(0, Math.floor((halfH - Math.max(y, ly) - r) / ROW));
@@ -455,6 +464,8 @@ function stamp(b) {
       const qx = px - ex * t, qy = py - ey * t, q = (qx * qx + qy * qy) / r2;
       if (q >= 1) continue;
       const h = Math.min(HMAX, d * (1 - q) * (1 - q));
+      if (h <= B[i]) continue;
+      B[i] = h;
       if (h > T[i] + 1e-3) { T[i] = h; mode[i] = SPRING; act[i] = 1; }
     }
   }
@@ -472,8 +483,10 @@ const jolt = () => {
 function shake() {
   if (!ready) return;
   flip = -flip;
+  word = '';
+  ground = 0;
   for (let i = 0; i < N; i++) {
-    T[i] = 0;
+    T[i] = B[i] = X[i] = 0;
     if (reduce) {
       // Reduced motion: the relief fades flat, with no wave.
       if (H[i] > 0) { mode[i] = FADE; act[i] = 1; }
@@ -490,6 +503,135 @@ function shake() {
   rattle(reduce ? 0.25 : 0.6);
   wake();
 }
+
+/* ---------- type: a word in Gabarito, pressed in from behind ---------- */
+// Letters stand TEXT_D pitches out of the face.
+// The ink canvas has PPU pixels per pin pitch.
+const TEXT_D = 4.4, PPU = 10, WORD_MAX = 14, FONT = '900 100px Gabarito, sans-serif';
+// Lines sit this many ems apart.
+const PITCH = 0.98;
+// Letters, digits and a few marks press; space stays the brush key.
+const GLYPH = /^[\p{L}\p{N}!?&@#$%*+=.,:;'"/()<>-]$/u;
+let word = '', wordSide = 0, ground = 0, inkCv = null, inkCx = null;
+// A front word pushes letters out of a flat face.
+// A back word first pushes the field to mid travel.
+// Its letters then press out of the back from the front.
+const target = i => Math.max(B[i], wordSide ? ground - X[i] : X[i]);
+// A fixed hair of jitter per pin, so retyping does not twitch the face.
+const grit = i => ((Math.imul(i + 1, 2654435761) >>> 0) / 4294967296 - 0.5) * 0.07;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// Equal runs of letters per line; the count with the biggest type wins.
+function setting(text, wl, hl, cap) {
+  inkCx.font = FONT;
+  const capA = inkCx.measureText('H').actualBoundingBoxAscent;
+  let best = null;
+  for (let k = 1; k <= Math.min(3, text.length); k++) {
+    const n = Math.ceil(text.length / k), lines = [];
+    for (let s = 0; s < text.length; s += n) lines.push(text.slice(s, s + n));
+    if (lines.length !== k) continue;
+    const m = lines.map(l => inkCx.measureText(l));
+    const w = Math.max(...m.map(q => q.actualBoundingBoxLeft + q.actualBoundingBoxRight));
+    const asc = Math.max(capA, m[0].actualBoundingBoxAscent), desc = Math.max(0, m[k - 1].actualBoundingBoxDescent);
+    const h = asc + desc + (k - 1) * PITCH * 100;
+    const sc = Math.min(wl / w, hl / h, cap / capA);
+    // An extra line must earn a clearly bigger size.
+    if (!best || sc > best.sc * 1.04) best = { sc, lines, m, asc, h };
+  }
+  return best;
+}
+// Draw the word, then read its ink as height under each pin.
+function ink() {
+  X.fill(0, 0, N);
+  if (!word) return;
+  const pad = 1, W = Math.ceil((2 * halfW + 2 * pad) * PPU), Hc = Math.ceil((2 * halfH + 2 * pad) * PPU);
+  if (!inkCv) { inkCv = document.createElement('canvas'); inkCx = inkCv.getContext('2d', { willReadFrequently: true }); }
+  if (inkCv.width !== W || inkCv.height !== Hc) { inkCv.width = W; inkCv.height = Hc; }
+  inkCx.clearRect(0, 0, W, Hc);
+  const bw = 2 * halfW * PPU, bh = 2 * halfH * PPU;
+  // One line keeps its capitals under 62 percent of the board.
+  const L = setting(word, 0.9 * bw, 0.86 * bh, 0.62 * bh);
+  if (!L) return;
+  const { sc, lines, m, asc, h } = L;
+  inkCx.save();
+  inkCx.translate(W / 2, Hc / 2);
+  inkCx.scale(sc, sc);
+  inkCx.font = FONT;
+  inkCx.fillStyle = '#fff';
+  inkCx.textBaseline = 'alphabetic';
+  inkCx.textAlign = 'left';
+  lines.forEach((l, k) => {
+    const q = m[k];
+    inkCx.fillText(l, -(q.actualBoundingBoxRight - q.actualBoundingBoxLeft) / 2, -h / 2 + asc + k * PITCH * 100);
+  });
+  inkCx.restore();
+  const px = inkCx.getImageData(0, 0, W, Hc).data;
+  const at = (x, y) => {
+    const cx = x | 0, cy = y | 0;
+    return cx < 0 || cy < 0 || cx >= W || cy >= Hc ? 0 : px[(cy * W + cx) * 4 + 3];
+  };
+  // Seven taps over a pin head give soft shoulders on each stroke.
+  const r = 0.36 * PPU, tap = [[0, 0]];
+  for (let k = 0; k < 6; k++) tap.push([r * Math.cos((k * TAU) / 6), r * Math.sin((k * TAU) / 6)]);
+  // The back reads mirrored, so a word typed there samples flipped.
+  const f = wordSide ? -1 : 1;
+  for (let i = 0; i < N; i++) {
+    const cx = (f * PX[i] + halfW + pad) * PPU, cy = (halfH + pad - PY[i]) * PPU;
+    let a = 0;
+    for (const [dx, dy] of tap) a += at(cx + dx, cy + dy);
+    const v = smooth(0.1, 0.75, a / (7 * 255));
+    X[i] = v > 0.01 ? Math.min(HMAX, v * TEXT_D + grit(i)) : 0;
+  }
+}
+// Letter pins press out in a wave from below.
+// Pins with nothing behind them drop back.
+function setWord(next) {
+  word = next;
+  ink();
+  const lo = halfH, span = 2 * halfH;
+  for (let i = 0; i < N; i++) {
+    const t = target(i);
+    if (Math.abs(t - T[i]) < 1e-3) continue;
+    // Toward the viewer means out of the face in view.
+    const out = wordSide ? t < T[i] : t > T[i], letter = X[i] > 0.05;
+    T[i] = t;
+    act[i] = 1;
+    if (reduce) mode[i] = SPRING;
+    else if (out && letter && Math.abs(V[i]) < 0.5) {
+      mode[i] = WAIT_RISE;
+      V[i] = 0;
+      due[i] = simT + 0.02 + (0.14 * (PY[i] + lo)) / span + Math.random() * 0.035;
+    } else if (!out && t === 0 && H[i] > 0.4) {
+      // A pin with nothing behind it falls back and clacks.
+      mode[i] = FALL;
+      V[i] = Math.min(V[i], 0);
+    } else mode[i] = SPRING;
+  }
+  wake();
+}
+// The first letter of a word clears the board for it.
+function typeKey(ch) {
+  if (!ready || flipT >= 0) return;
+  if (!word || wordSide !== uSide.value) {
+    wordSide = uSide.value;
+    ground = wordSide ? TEXT_D : 0;
+    word = '';
+    B.fill(0, 0, N);
+    for (const b of brushes.values()) b.d = 0.6;
+  } else if (word.length >= WORD_MAX) return;
+  setWord(word + ch);
+  stampSound();
+}
+function backKey() {
+  if (!ready || flipT >= 0 || !word || wordSide !== uSide.value) return;
+  setWord(word.slice(0, -1));
+}
+// A letter lands as a dull push on the back of the frame.
+function stampSound() {
+  const a = live();
+  if (a) knock(a, a.currentTime + LEAD, 0.55);
+}
+// A late font sets the word again in Gabarito.
+document.fonts?.load(FONT).then(() => { if (word && ready) setWord(word); }).catch(() => {});
 
 /* ---------- flip: the board turns over to show its back ---------- */
 // Pins pushed out on one face sink in on the other.
@@ -797,11 +939,27 @@ panel.addEventListener('keyup', e => {
   if (DIRS[e.key]) { kb.keys.delete(e.key); wake(); }
   else if (e.key === ' ' && brushes.delete('key')) wake();
 });
+// Typing presses letters; Enter flips; Escape shakes flat.
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  if ((e.key === 's' || e.key === 'S') && !e.repeat) shake();
-  if ((e.key === 'f' || e.key === 'F') && !e.repeat) flipBoard();
+  const t = e.target;
+  if (t.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === 'Escape') {
+    // Escape inside the how-to tip only closes the tip.
+    if (!e.repeat && !t.closest?.('.how-tip')) shake();
+  } else if (k === 'Enter') {
+    // A focused button or link keeps its own Enter.
+    if (t.closest?.('button, a, summary')) return;
+    e.preventDefault();
+    if (!e.repeat) flipBoard();
+  } else if (k === 'Backspace') {
+    e.preventDefault();
+    backKey();
+  } else if (GLYPH.test(k)) {
+    e.preventDefault();
+    typeKey(k);
+  }
 });
 document.getElementById('shake').addEventListener('click', shake);
 document.getElementById('flip').addEventListener('click', flipBoard);
@@ -813,6 +971,12 @@ new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) w
 document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
 
 /* ---------- start: WebGL setup in idle slices ---------- */
+// Reads the --focus token as OKLCH; a fixed cyan backs it up.
+function focusRgb() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--focus');
+  const m = v.match(/oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)/);
+  return m ? oklchRgb(parseFloat(m[1]) / (m[2] ? 100 : 1), +m[3], +m[4]) : oklchRgb(0.84, 0.13, 205);
+}
 function failed() {
   panel.querySelector('.fail').hidden = false;
 }
@@ -936,10 +1100,14 @@ async function start() {
   heads.instanceMatrix = shaftsB.instanceMatrix = headsB.instanceMatrix = shafts.instanceMatrix;
   for (const m of [shafts, heads, shaftsB, headsB]) m.frustumCulled = false;
   board.add(shafts, heads, shaftsB, headsB);
-  // The keyboard aim ring keeps the dark-theme focus colour on the board.
+  // The keyboard aim ring takes the --focus token colour.
+  const [fr, fg, fb] = focusRgb();
   mark = new THREE.Mesh(
     new THREE.RingGeometry(R_MOUSE - 0.22, R_MOUSE, 64),
-    new THREE.MeshBasicMaterial({ color: 0x40e2f3, toneMapped: false, depthTest: false, depthWrite: false, transparent: true }),
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color().setRGB(fr, fg, fb, THREE.SRGBColorSpace),
+      toneMapped: false, depthTest: false, depthWrite: false, transparent: true,
+    }),
   );
   mark.renderOrder = 2;
   mark.visible = false;
