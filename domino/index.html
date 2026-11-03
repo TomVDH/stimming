@@ -46,6 +46,7 @@
     </div>
     <div class="bar">
       <div class="choices">
+        <button class="chip" id="rows" type="button" aria-label="Rows per stroke: 1">1 row</button>
         <button class="chip" id="iso" type="button" aria-pressed="false" aria-keyshortcuts="I">Iso</button>
       </div>
       <div class="actions">
@@ -126,7 +127,7 @@ function rainbow(u) {
 /* ---------- page ---------- */
 const panel = document.getElementById('table'), canvas = panel.querySelector('canvas');
 const hint = panel.querySelector('.hint'), resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
-const isoB = document.getElementById('iso');
+const isoB = document.getElementById('iso'), rowsB = document.getElementById('rows');
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 // The kit wakes on the first gesture (Space or Enter from the keyboard) and follows the header toggle.
@@ -277,7 +278,7 @@ function crash(s) {
 /* ---------- tiles ---------- */
 // One unit is a tile's height.
 // Tiles are 1 x 0.5 x 0.16 units.
-const H = 1, W = 0.5, T = 0.16, PITCH = 0.55, MAX = 400, LEASH = 0.24;
+const H = 1, W = 0.5, T = 0.16, PITCH = 0.55, MAX = 1600, LEASH = 0.24;
 // A turn per tile stays well under what drops the chain.
 const TURN = 30 * D2R, FAN = 6, LOOK = 0.8, SMOOTH = 0.7;
 // A blocked pitch may hop further; the top still reaches at 0.94.
@@ -304,6 +305,11 @@ const STILL = new Uint8Array(MAX), ACT = new Uint8Array(MAX), RANK = new Int32Ar
 const MS = new Int32Array(MAX), STAMP = new Uint32Array(MAX), CANDS = new Array(MAX).fill(null);
 // Each tile remembers its stroke and its place in that stroke.
 const SID = new Int32Array(MAX), SEQ = new Int32Array(MAX);
+// Parallel rows of one stroke share a group and start together.
+const GRP = new Int32Array(MAX);
+// Rows per stroke, and the spacing between rows.
+const ROWS = [1, 3, 5], LANE = 0.85;
+let rows = 1;
 // ST: 0 standing, 1 falling, 2 down, 3 standing back up.
 let n = 0, rank = 0, stamp = 0, nextHue = 0, lastBorn = -1e9, clearing = 0, strokes = 0;
 const active = [];
@@ -479,6 +485,14 @@ function tip(i, sg) {
   if (ST[i] !== 0) return;
   RUN[i] = 0;
   start(i, sg, TAP);
+  // A row's first tile tips the first tiles of its sibling rows.
+  if (SEQ[i] === 0) {
+    for (let j = 0; j < n; j++) {
+      if (j === i || GRP[j] !== GRP[i] || SEQ[j] !== 0 || ST[j] !== 0) continue;
+      RUN[j] = 0;
+      start(j, pushDir(j), TAP);
+    }
+  }
   tick(0.7);
   syncChips();
   wake();
@@ -615,7 +629,7 @@ function addTile(x, z, ax, az, hue, born, p) {
   const i = n++;
   PX[i] = x; PZ[i] = z; AX[i] = ax; AZ[i] = az; HUE[i] = hue; BORN[i] = born;
   TH[i] = 0; OM[i] = 0; ST[i] = 0; SG[i] = 1; LAND[i] = 0; CL[i] = 0; ACT[i] = 0; CANDS[i] = null; RUN[i] = 0;
-  SID[i] = p.id; SEQ[i] = p.seq++;
+  SID[i] = p.id; SEQ[i] = p.seq++; GRP[i] = p.grp || p.id;
   lastBorn = Math.max(lastBorn, born);
   gridAdd(i);
   mesh.setColorAt(i, col.setRGB(...rgb(rainbow(hue / PER)), THREE.SRGBColorSpace));
@@ -810,6 +824,7 @@ function begin(p) {
   // A stroke from a standing tile continues a chain, so it counts as long.
   if (a >= 0) { p.lx = PX[a]; p.lz = PZ[a]; p.hue = HUE[a] + 1; p.last = a; p.len = TLEN; uncrown(a); }
   else { p.lx = p.q.x; p.lz = p.q.z; p.hue = nextHue; p.last = -1; p.len = 0; }
+  p.hue0 = p.hue; p.rows = rows; p.lanes = null; p.grp = 0;
   p.pts = [[p.lx, p.lz, 0]];
   p.bx = p.lx; p.bz = p.lz;
 }
@@ -821,12 +836,47 @@ function brush(p, x, z) {
   p.bx += dx * k; p.bz += dz * k;
   addPoint(p, p.bx, p.bz);
   advance(p, false);
+  lanes(p, false);
 }
 function finish(p, x, z) {
   addPoint(p, x, z);
   advance(p, true);
+  lanes(p, true);
   crown(p);
   if (p.tile < 0) nextHue = p.hue;
+}
+// Side rows follow the stroke at a fixed offset, each with its own cart.
+// They start once the stroke shows a direction.
+function lanes(p, final) {
+  if (p.tile >= 0 || p.rows < 2) return;
+  const P = p.pts, end = pathEnd(p);
+  if (!p.lanes) {
+    if (end < 0.4 && !final) return;
+    const a = P[0], b = pathAt(p, Math.min(0.4, end)), l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (l < 0.1) return;
+    p.lanes = [];
+    p.grp = p.id;
+    for (let r = 1; r < p.rows; r++) {
+      // Rows alternate either side of the stroke: +1, -1, +2, -2.
+      const off = (r % 2 ? 1 : -1) * Math.ceil(r / 2) * LANE;
+      const q = { preset: false, tile: -1, off, done: 1, q: { x: a[0] - ((b[1] - a[1]) / l) * off, z: a[1] + ((b[0] - a[0]) / l) * off } };
+      begin(q);
+      q.grp = p.id; q.hue = p.hue0;
+      p.lanes.push(q);
+    }
+    // Tiles laid before the rows began join the group too.
+    for (let i = 0; i < n; i++) if (SID[i] === p.id) GRP[i] = p.id;
+  }
+  // Each new stroke point moves out along the local normal.
+  for (const q of p.lanes) {
+    for (let k = q.done; k < P.length; k++) {
+      const c = P[k], b = pathAt(p, Math.max(0, c[2] - 0.5)), dx = c[0] - b[0], dz = c[1] - b[1], l = Math.hypot(dx, dz);
+      if (l < 1e-6) continue;
+      addPoint(q, c[0] - (dz / l) * q.off, c[1] + (dx / l) * q.off);
+    }
+    q.done = P.length;
+    advance(q, final);
+  }
 }
 // The opening run: an S across the table's long side.
 // Its tail stops short, so the tower fits past it.
@@ -1668,6 +1718,16 @@ addEventListener('keydown', e => {
 });
 resetB.addEventListener('click', reset);
 isoB.addEventListener('click', () => setView(!lensTo));
+// The Rows chip cycles 1, 3 and 5 parallel rows per stroke.
+function setRows(r, save = true) {
+  rows = ROWS.includes(r) ? r : 1;
+  rowsB.textContent = rows === 1 ? '1 row' : `${rows} rows`;
+  rowsB.setAttribute('aria-label', `Rows per stroke: ${rows}`);
+  rowsB.setAttribute('aria-pressed', String(rows > 1));
+  if (save) try { localStorage.setItem('stimming.domino.rows', String(rows)); } catch (err) { /* storage is optional */ }
+}
+rowsB.addEventListener('click', () => setRows(ROWS[(ROWS.indexOf(rows) + 1) % ROWS.length]));
+try { setRows(+localStorage.getItem('stimming.domino.rows'), false); } catch (err) { setRows(1, false); }
 clearB.addEventListener('click', clearAll);
 
 /* ---------- tile finish ---------- */
