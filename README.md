@@ -47,7 +47,6 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Gear train | [gears/](gears/) | live, with sound; SVG only |
 | Coil | [coil/](coil/) | live, with sound |
 | Googly eyes | [eyes/](eyes/) | live, with sound |
-| Ribbon | [ribbon/](ribbon/) | live, with sound; WebGL2 |
 | Balloon letters | [balloons/](balloons/) | live, with sound |
 | TV tree | [tvtree/](tvtree/) | live, with sound; 155 channels, contact sheet at [tvtree/channels.html](tvtree/channels.html) |
 | Orbits | [orbits/](orbits/) | live, with sound |
