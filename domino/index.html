@@ -230,14 +230,24 @@ function tick(s = 1) {
 /* ---------- tiles ---------- */
 // One unit is a tile's height.
 // Tiles are 1 x 0.5 x 0.16 units.
-const H = 1, W = 0.5, T = 0.16, PITCH = 0.55, MAX = 400, GAP = 0.45, LEASH = 0.3;
-// Sharper turns than this would drop the chain.
-const TURN = 36 * (Math.PI / 180), SEEK = 0.08;
+const H = 1, W = 0.5, T = 0.16, PITCH = 0.55, MAX = 400, LEASH = 0.24;
+// A turn per tile stays well under what drops the chain.
+const TURN = 30 * D2R, FAN = 6, LOOK = 0.8, SMOOTH = 0.7;
+// A blocked pitch may hop further; the top still reaches at 0.94.
+// Failing that, a short step creeps up for the next hop.
+const HOPS = [PITCH, 0.7, 0.82, 0.94, 0.47, 0.4];
+// Clearance between tiles, and the widest offset that still knocks squarely.
+// Slack keeps a safety margin around the contact test.
+const MARGIN = 0.05, CLEAN = 0.36, SLACK = 0.06;
+// After a stall, the next chain starts at least this far away.
+const BREAK = 1.6;
 // Gravity in tile heights per second squared, a ten-centimetre tile.
 const G = 98, K = (3 * G) / (2 * Math.hypot(H, T)), PHI = Math.atan2(T, H);
 // Impact hands on most of the spin; leaning tiles push the next.
 const C = 0.85, B = 0.6, WMIN = 1, TAP = 2.2, SUB = 1 / 240;
 const SPAWN = 0.2, DROP = 0.18;
+// The cut bar's half width on each broad face.
+const BAR = 0.012;
 
 const PX = new Float32Array(MAX), PZ = new Float32Array(MAX), AX = new Float32Array(MAX), AZ = new Float32Array(MAX);
 const TH = new Float64Array(MAX), OM = new Float64Array(MAX), PUSH = new Float64Array(MAX), PREV = new Float64Array(MAX);
@@ -245,8 +255,10 @@ const BORN = new Float64Array(MAX), RISE0 = new Float64Array(MAX), RISET = new F
 const SG = new Int8Array(MAX), ST = new Uint8Array(MAX), LAND = new Uint8Array(MAX), CL = new Uint8Array(MAX);
 const STILL = new Uint8Array(MAX), ACT = new Uint8Array(MAX), RANK = new Int32Array(MAX), RUN = new Int32Array(MAX);
 const MS = new Int32Array(MAX), STAMP = new Uint32Array(MAX), CANDS = new Array(MAX).fill(null);
+// Each tile remembers its stroke and its place in that stroke.
+const SID = new Int32Array(MAX), SEQ = new Int32Array(MAX);
 // ST: 0 standing, 1 falling, 2 down, 3 standing back up.
-let n = 0, rank = 0, stamp = 0, nextHue = 0, lastBorn = -1e9, clearing = 0;
+let n = 0, rank = 0, stamp = 0, nextHue = 0, lastBorn = -1e9, clearing = 0, strokes = 0;
 const active = [];
 
 // A one-unit grid finds neighbours without scanning every tile.
@@ -469,24 +481,89 @@ function syncChips() {
 }
 
 /* ---------- laying tiles ---------- */
-function blocked(x, z) {
-  let hitAny = false;
-  near(x, z, H + GAP, j => {
-    if (hitAny || j >= n) return;
-    let ex = PX[j], ez = PZ[j];
-    // A tile that is down covers the table out to its top.
-    if (ST[j] !== 0 && TH[j] > 0.05) {
-      const r = H * Math.sin(Math.min(TH[j], HALF));
-      ex += AX[j] * SG[j] * r; ez += AZ[j] * SG[j] * r;
-    }
-    if (distSeg(x, z, PX[j], PZ[j], ex, ez) < GAP) hitAny = true;
-  });
-  return hitAny;
+// A stroke steers like a cart, one pitch per tile.
+// Each step turns by a capped angle.
+// Every tile lands where its predecessor's top reaches it squarely.
+// Sharp corners in the drawn path become curves the chain can follow.
+
+// Separating-axis test for two rectangles on the table.
+// Each rectangle has a centre, a unit axis, and two half sizes.
+function overlap(ax, az, ux, uz, al, aw, bx, bz, vx, vz, bl, bw) {
+  const dx = bx - ax, dz = bz - az;
+  for (let k = 0; k < 4; k++) {
+    const nx = k === 0 ? ux : k === 1 ? -uz : k === 2 ? vx : -vz;
+    const nz = k === 0 ? uz : k === 1 ? ux : k === 2 ? vz : vx;
+    const ra = al * Math.abs(ux * nx + uz * nz) + aw * Math.abs(uz * nx - ux * nz);
+    const rb = bl * Math.abs(vx * nx + vz * nz) + bw * Math.abs(vz * nx - vx * nz);
+    if (Math.abs(dx * nx + dz * nz) > ra + rb) return false;
+  }
+  return true;
 }
-function addTile(x, z, ax, az, hue, born) {
+// A footprint: the tile's base, or out to its leaning top.
+function foot(j) {
+  const th = Math.abs(TH[j]);
+  if (ST[j] === 0 || th < 0.05) return [PX[j], PZ[j], T / 2];
+  const r = (H * Math.sin(Math.min(th, HALF))) / 2, s = TH[j] < 0 ? -SG[j] : SG[j];
+  return [PX[j] + AX[j] * s * r, PZ[j] + AZ[j] * s * r, r + T / 2];
+}
+// True when falling tile i would test contact with tile j.
+// It mirrors candOf; slack widens it as a safety margin.
+function sees(ix, iz, fx, fz, jx, jz, jax, jaz, sj, slack) {
+  const rx = jx - ix, rz = jz - iz, a = rx * fx + rz * fz;
+  if (a <= 0.02 || Math.abs(fx * rz - fz * rx) > W * 0.8 + slack) return false;
+  const cj = jax * fx + jaz * fz, s = sj || (cj >= 0 ? 1 : -1);
+  return a - T / 2 - (s * cj * T) / 2 - (W / 4) * Math.abs(jax * fz - jaz * fx) <= H * 0.96 + slack;
+}
+// How a's fall, either way, meets tile b.
+// 0 misses, 1 knocks it squarely, 2 meets it badly.
+// A square knock lands in a's fall path, near its centre line.
+// A clip lands in the path but off the line.
+// The falling tile passes through it.
+// A phantom sits where the contact test looks but never touches.
+function meet(ax, az, ux, uz, bx, bz, vx, vz) {
+  const lat = Math.abs((bz - az) * ux - (bx - ax) * uz);
+  const path = overlap(ax, az, ux, uz, H + T / 2, W / 2, bx, bz, vx, vz, T / 2, W / 2);
+  const looked = sees(ax, az, ux, uz, bx, bz, vx, vz, 0, 0) || sees(ax, az, -ux, -uz, bx, bz, vx, vz, 0, 0);
+  if (path && looked && lat <= CLEAN) return 1;
+  const close = sees(ax, az, ux, uz, bx, bz, vx, vz, 0, SLACK) || sees(ax, az, -ux, -uz, bx, bz, vx, vz, 0, SLACK);
+  return path || close ? 2 : 0;
+}
+// A spot is free when the tile fits there.
+// Every neighbour must be knocked squarely or missed.
+// Two skipped tiles let a laid tile be tested again.
+function free(x, z, ax, az, p, skipA = -1, skipB = -1) {
+  let ok = true;
+  near(x, z, H + W + 0.2, j => {
+    if (!ok || j >= n || j === p.last || j === skipA || j === skipB) return;
+    const [fx, fz, fl] = foot(j);
+    if (overlap(x, z, ax, az, T / 2 + MARGIN, W / 2 + MARGIN, fx, fz, AX[j], AZ[j], fl, W / 2)) { ok = false; return; }
+    if (ST[j] !== 0) return;
+    const own = SID[j] === p.id, rx = x - PX[j], rz = z - PZ[j], a = rx * AX[j] + rz * AZ[j];
+    // The stroke's recent tiles curve away by construction.
+    // A doubling cart must not land between a tile and its successor.
+    if (own && p.seq - SEQ[j] <= 3) {
+      if (Math.abs(a) < 0.75 && Math.abs(rz * AX[j] - rx * AZ[j]) < W) ok = false;
+      return;
+    }
+    // Another chain's tile may fall either way, so both paths count.
+    if (!own) {
+      if (meet(PX[j], PZ[j], AX[j], AZ[j], x, z, ax, az) === 2 || meet(x, z, ax, az, PX[j], PZ[j], AX[j], AZ[j]) === 2) ok = false;
+      return;
+    }
+    // An earlier pass falls forward and lies down before this tile moves.
+    // It must not touch this tile.
+    // A shortcut would topple the run out of order.
+    if (a > 0 && (sees(PX[j], PZ[j], AX[j], AZ[j], x, z, ax, az, 0, SLACK) || overlap(PX[j], PZ[j], AX[j], AZ[j], H + T / 2, W / 2, x, z, ax, az, T / 2, W / 2))) { ok = false; return; }
+    // Falling head-on onto an earlier pass would stop this tile dead.
+    if (AX[j] * ax + AZ[j] * az < -0.25 && sees(x, z, ax, az, PX[j], PZ[j], AX[j], AZ[j], 1, SLACK)) ok = false;
+  });
+  return ok;
+}
+function addTile(x, z, ax, az, hue, born, p) {
   const i = n++;
   PX[i] = x; PZ[i] = z; AX[i] = ax; AZ[i] = az; HUE[i] = hue; BORN[i] = born;
   TH[i] = 0; OM[i] = 0; ST[i] = 0; SG[i] = 1; LAND[i] = 0; CL[i] = 0; ACT[i] = 0; CANDS[i] = null; RUN[i] = 0;
+  SID[i] = p.id; SEQ[i] = p.seq++;
   lastBorn = Math.max(lastBorn, born);
   gridAdd(i);
   mesh.setColorAt(i, col.setRGB(...rgb(rainbow(hue / PER)), THREE.SRGBColorSpace));
@@ -500,82 +577,200 @@ function addTile(x, z, ax, az, hue, born) {
   }
   return i;
 }
-function place(p, x, z, dx, dz, first) {
-  const prev = p.last;
-  // A turn past the limit is eased into a wider curve.
-  if (prev >= 0 && p.hasIn && !p.seek) {
-    const ang = Math.atan2(p.inX * dz - p.inZ * dx, p.inX * dx + p.inZ * dz);
-    if (Math.abs(ang) > TURN) {
-      const c = Math.cos(Math.sign(ang) * TURN), s = Math.sin(Math.sign(ang) * TURN);
-      dx = p.inX * c - p.inZ * s; dz = p.inX * s + p.inZ * c;
-      x = p.lx + dx * PITCH; z = p.lz + dz * PITCH;
-    }
-  }
-  p.lx = x; p.lz = z; p.last = -1;
-  if (n >= MAX) return;
-  // At a crossing, the next free spot is sought in small steps.
-  if (blocked(x, z)) { p.seek = true; return; }
-  p.seek = false;
-  const i = addTile(x, z, dx, dz, p.hue++, p.preset ? p.t0 + p.count++ * p.dt : reduce ? -1e9 : nowS());
-  // Each tile turns to the curve's tangent once its next neighbour lands.
-  if (prev >= 0 && prev === p.mine && ST[prev] === 0) {
-    let ex = dx, ez = dz;
-    if (p.hasIn) { ex += p.inX; ez += p.inZ; const l = Math.hypot(ex, ez) || 1; ex /= l; ez /= l; }
-    AX[prev] = ex; AZ[prev] = ez;
-  }
-  p.inX = dx; p.inZ = dz; p.hasIn = !first; p.last = p.mine = i;
-  if (!p.preset) { tick(0.6); hint?.classList.add('gone'); }
+
+/* ---------- the stroke's path ---------- */
+// Points carry their arc length, so the cart can look ahead.
+function addPoint(p, x, z) {
+  const P = p.pts, a = P[P.length - 1], d = Math.hypot(x - a[0], z - a[1]);
+  if (d >= 0.03) P.push([x, z, a[2] + d]);
 }
-// Each tile lands exactly one pitch from the last.
-function walk(p, ax, az, bx, bz) {
-  if (p.pending) {
-    const d = Math.hypot(bx - p.lx, bz - p.lz);
-    if (d < 0.12) return;
-    p.pending = false;
-    place(p, p.lx, p.lz, (bx - p.lx) / d, (bz - p.lz) / d, true);
+const pathEnd = p => p.pts[p.pts.length - 1][2];
+// The first point index at or before an arc length.
+function seg(p, s) {
+  const P = p.pts;
+  let lo = 0, hi = P.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][2] <= s) lo = m; else hi = m; }
+  return lo;
+}
+function pathAt(p, s) {
+  const P = p.pts, last = P.length - 1;
+  if (s <= 0 || !last) return [P[0][0], P[0][1]];
+  if (s >= P[last][2]) return [P[last][0], P[last][1]];
+  const k = seg(p, s), a = P[k], b = P[k + 1], u = (s - a[2]) / (b[2] - a[2] || 1);
+  return [lerp(a[0], b[0], u), lerp(a[1], b[1], u)];
+}
+// The path, averaged over a window.
+// Wiggles tighter than a turn melt away.
+function smoothAt(p, s) {
+  let x = 0, z = 0, w = 0;
+  for (let k = -4; k <= 4; k++) {
+    const q = pathAt(p, s + (k * SMOOTH) / 4), g = 5 - Math.abs(k);
+    x += q[0] * g; z += q[1] * g; w += g;
   }
-  const dx = bx - ax, dz = bz - az, dd = dx * dx + dz * dz;
-  if (dd < 1e-10) return;
-  let u = 0, chase = 0;
-  for (let guard = 0; guard < 400; guard++) {
-    const mx = ax + dx * u - p.lx, mz = az + dz * u - p.lz, step = p.seek ? SEEK : PITCH;
-    const b = mx * dx + mz * dz, c = mx * mx + mz * mz - step * step, disc = b * b - dd * c;
-    const s = disc < 0 ? -1 : c <= 0 ? (-b + Math.sqrt(disc)) / dd : (-b - Math.sqrt(disc)) / dd;
-    if (s < 0 || u + s > 1) {
-      const l = Math.hypot(bx - p.lx, bz - p.lz);
-      // A seek always moves on along the path.
-      if (p.seek) {
-        if (l > SEEK) { const k = Math.sqrt(dd); place(p, bx, bz, dx / k, dz / k, false); }
-        return;
-      }
-      // A capped turn can leave the path.
-      // The next tiles steer back to it.
-      if (l < PITCH * 1.05 || ++chase > 3) return;
-      place(p, p.lx + ((bx - p.lx) / l) * PITCH, p.lz + ((bz - p.lz) / l) * PITCH, (bx - p.lx) / l, (bz - p.lz) / l, false);
-      continue;
+  return [x / w, z / w];
+}
+// The arc length nearest a point, searched a short way ahead.
+// Progress never runs backwards.
+function along(p, x, z) {
+  const P = p.pts;
+  let best = p.s, bd = Infinity;
+  for (let k = seg(p, Math.max(0, p.s - 0.05)) + 1; k < P.length; k++) {
+    const a = P[k - 1], b = P[k];
+    if (a[2] > p.s + 1.8) break;
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = dx * dx + dz * dz;
+    const u = l ? clamp(((x - a[0]) * dx + (z - a[1]) * dz) / l) : 0;
+    const d = Math.hypot(a[0] + dx * u - x, a[1] + dz * u - z);
+    if (d < bd) { bd = d; best = lerp(a[2], b[2], u); }
+  }
+  return Math.max(p.s, best);
+}
+
+/* ---------- the cart ---------- */
+const rot = (hx, hz, a) => [hx * Math.cos(a) - hz * Math.sin(a), hx * Math.sin(a) + hz * Math.cos(a)];
+function lay(p, x, z, hx, hz) {
+  const prev = p.last;
+  const born = p.preset ? p.t0 + p.count++ * p.dt : reduce ? -1e9 : nowS();
+  const i = addTile(x, z, hx, hz, p.hue++, born, p);
+  // The predecessor turns to the curve's tangent, halfway between its two steps.
+  // The turned tile must pass the same test.
+  // Else it turns half, or keeps its step direction.
+  if (prev >= 0 && SID[prev] === p.id && ST[prev] === 0) {
+    const keep = p.seq;
+    p.last = p.prev2; p.seq = SEQ[prev];
+    for (const k of [1, 0.5]) {
+      const ex = p.hx + hx * k, ez = p.hz + hz * k, l = Math.hypot(ex, ez) || 1;
+      if (free(PX[prev], PZ[prev], ex / l, ez / l, p, prev, i)) { AX[prev] = ex / l; AZ[prev] = ez / l; break; }
     }
-    u += s;
-    const qx = ax + dx * u, qz = az + dz * u, l = Math.hypot(qx - p.lx, qz - p.lz) || 1;
-    place(p, qx, qz, (qx - p.lx) / l, (qz - p.lz) / l, false);
+    p.seq = keep;
+  }
+  p.lx = x; p.lz = z; p.hx = hx; p.hz = hz; p.prev2 = prev; p.last = i; p.has = true;
+  if (!p.preset) tick(0.6);
+}
+// One step tries the wanted turn first, then its nearest neighbours.
+// A blocked pitch may hop a little further, still within reach.
+function step(p, want) {
+  const base = clamp(want, -TURN, TURN), fan = [base];
+  for (let k = 1; k <= 2 * FAN; k++) {
+    const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (TURN / FAN);
+    if (Math.abs(a) <= TURN + 1e-9) fan.push(a);
+  }
+  // The stroke's own predecessor turns to the bisector; another chain's tile cannot.
+  const wide = p.last >= 0 && SID[p.last] === p.id;
+  let spare = null;
+  for (const d of HOPS) {
+    for (const a of fan) {
+      // Off another chain, a hop keeps to gentle turns.
+      if (!wide && d !== PITCH && Math.abs(a) > TURN / 2) continue;
+      const [hx, hz] = rot(p.hx, p.hz, a), x = p.lx + hx * d, z = p.lz + hz * d;
+      if (!free(x, z, hx, hz, p)) continue;
+      // A spot with a way on beats a dead end.
+      if (open(p, x, z, hx, hz)) { lay(p, x, z, hx, hz); return true; }
+      spare = spare || [x, z, hx, hz];
+    }
+  }
+  if (spare) { lay(p, ...spare); return true; }
+  return false;
+}
+// True when some next step from a spot stays free.
+function open(p, x, z, hx, hz) {
+  const keep = p.last;
+  p.last = -1; p.seq++;
+  let ok = false;
+  for (let k = 0; k <= 2 * FAN && !ok; k++) {
+    const [qx, qz] = rot(hx, hz, ((k - FAN) * TURN) / FAN);
+    for (const d of HOPS) if (free(x + qx * d, z + qz * d, qx, qz, p)) { ok = true; break; }
+  }
+  p.last = keep; p.seq--;
+  return ok;
+}
+// True when another chain's standing tile would knock this spot squarely.
+function knocked(x, z, ax, az, p) {
+  let hit = false;
+  near(x, z, H + W, j => {
+    if (hit || j >= n || ST[j] !== 0 || SID[j] === p.id) return;
+    const rx = x - PX[j], rz = z - PZ[j], a = Math.abs(rx * AX[j] + rz * AZ[j]);
+    if (a <= 0.02 || a >= H + 0.12 || Math.abs(rz * AX[j] - rx * AZ[j]) > CLEAN) return;
+    hit = overlap(PX[j], PZ[j], AX[j], AZ[j], H + T / 2, W / 2, x, z, ax, az, T / 2, W / 2);
+  });
+  return hit;
+}
+// With no tile to follow, a new chain starts.
+// It starts at the next free spot on the path.
+// After a stall, the stroke resumes past a clear gap.
+// The break then reads as a break.
+// A spot that another chain knocks may start sooner.
+function head(p, final) {
+  for (let guard = 0; guard < 400; guard++) {
+    const end = pathEnd(p);
+    if (!final && end - p.s < 0.35) return false;
+    const a = pathAt(p, p.s), b = pathAt(p, Math.min(p.s + 0.35, end));
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz);
+    if (l < 0.1) return false;
+    const clear = !p.stall || Math.hypot(a[0] - p.stall[0], a[1] - p.stall[1]) >= BREAK;
+    if (free(a[0], a[1], dx / l, dz / l, p) && (clear || knocked(a[0], a[1], dx / l, dz / l, p))) {
+      p.hx = dx / l; p.hz = dz / l; p.stall = null;
+      lay(p, a[0], a[1], dx / l, dz / l);
+      p.s = along(p, a[0], a[1]);
+      return true;
+    }
+    p.s += 0.06;
+    if (p.s > end) return false;
+  }
+  return false;
+}
+// A stall ends this chain where it stands.
+function lift(p) {
+  p.stall = [p.lx, p.lz];
+  p.last = p.prev2 = -1; p.has = false; p.stuck = 0; p.push = 0;
+}
+// The cart chases a smoothed point a little ahead on the path.
+// While drawing, it waits until the path leads by that much.
+// On release, it runs on to the end point.
+function advance(p, final) {
+  for (let guard = 0; guard < 600 && n < MAX; guard++) {
+    const end = pathEnd(p), ep = p.pts[p.pts.length - 1];
+    if (p.last < 0) { if (!head(p, final)) return; continue; }
+    if (!p.has) {
+      // A stroke from a standing tile leaves along that tile's axis.
+      if (!final && end < 0.45) return;
+      const b = pathAt(p, Math.min(0.45, end)), dx = b[0] - p.lx, dz = b[1] - p.lz;
+      if (Math.hypot(dx, dz) < 0.1) return;
+      const sg = AX[p.last] * dx + AZ[p.last] * dz >= 0 ? 1 : -1;
+      p.hx = AX[p.last] * sg; p.hz = AZ[p.last] * sg; p.has = true;
+    }
+    if (final ? Math.hypot(ep[0] - p.lx, ep[1] - p.lz) < PITCH * 0.8 : end - p.s < LOOK + SMOOTH) return;
+    const t = smoothAt(p, Math.min(p.s + LOOK + p.push, end));
+    const dx = t[0] - p.lx, dz = t[1] - p.lz, dl = Math.hypot(dx, dz);
+    if (dl < 1e-6) { if (final) return; p.s = Math.min(end, p.s + 0.1); continue; }
+    const want = Math.atan2((p.hx * dz - p.hz * dx) / dl, (p.hx * dx + p.hz * dz) / dl);
+    if (!step(p, want)) { lift(p); continue; }
+    const s1 = along(p, p.lx, p.lz);
+    // A cart circling its target looks further ahead until it breaks free.
+    if (s1 > p.s + 0.08) { p.stuck = 0; p.push = 0; } else { p.stuck++; p.push = Math.min(2, p.push + 0.25); }
+    p.s = s1;
+    if (p.stuck > (final ? 4 : 12)) { if (final) return; lift(p); }
   }
 }
 function begin(p) {
   const a = p.tile;
-  p.last = a; p.mine = -1; p.pending = a < 0; p.hasIn = false; p.seek = false;
-  if (a >= 0) { p.lx = PX[a]; p.lz = PZ[a]; p.hue = HUE[a] + 1; }
-  else { p.lx = p.q.x; p.lz = p.q.z; p.hue = nextHue; }
+  p.id = ++strokes; p.seq = 0; p.s = 0; p.stuck = 0; p.push = 0; p.has = false; p.stall = null; p.prev2 = -1;
+  if (a >= 0) { p.lx = PX[a]; p.lz = PZ[a]; p.hue = HUE[a] + 1; p.last = a; }
+  else { p.lx = p.q.x; p.lz = p.q.z; p.hue = nextHue; p.last = -1; }
+  p.pts = [[p.lx, p.lz, 0]];
   p.bx = p.lx; p.bz = p.lz;
 }
 // A lazy brush on a short leash smooths the pointer path.
 function brush(p, x, z) {
   const dx = x - p.bx, dz = z - p.bz, d = Math.hypot(dx, dz);
   if (d <= LEASH) return;
-  const k = (d - LEASH) / d, nx = p.bx + dx * k, nz = p.bz + dz * k;
-  walk(p, p.bx, p.bz, nx, nz);
-  p.bx = nx; p.bz = nz;
+  const k = (d - LEASH) / d;
+  p.bx += dx * k; p.bz += dz * k;
+  addPoint(p, p.bx, p.bz);
+  advance(p, false);
 }
 function finish(p, x, z) {
-  walk(p, p.bx, p.bz, x, z);
+  addPoint(p, x, z);
+  advance(p, true);
   if (p.tile < 0) nextHue = p.hue;
 }
 // The opening run: an S across the table's long side.
@@ -594,7 +789,8 @@ function preset(t0) {
   const p = { preset: true, t0, dt: reduce ? 0 : 0.022, count: 0, tile: -1, q: { x: pts[0][0], z: pts[0][1] } };
   if (reduce) p.t0 = -1e9;
   begin(p);
-  for (let k = 1; k < pts.length; k++) walk(p, pts[k - 1][0], pts[k - 1][1], pts[k][0], pts[k][1]);
+  for (let k = 1; k < pts.length; k++) addPoint(p, pts[k][0], pts[k][1]);
+  advance(p, true);
   nextHue = p.hue;
 }
 
@@ -604,7 +800,7 @@ const cam = { pitch: 55 * D2R, dist: 20, tx: 0, tz: 0 };
 const PITCH0 = 55 * D2R, PITCH_IN = 67 * D2R, FOV = 30;
 // The key light sits up and left, on the camera's side.
 const SUN = [-0.55, 1.15, 0.5];
-let D0 = 20, span = 16, bounds = { x0: -6, x1: 6, z0: -4, z1: 4 }, intro = 0, budget = 1.4e6;
+let D0 = 20, span = 16, bounds = { x0: -6, x1: 6, z0: -4, z1: 4 }, intro = 0, budget = 2.2e6;
 
 function placeCamera() {
   camera.position.set(cam.tx, cam.dist * Math.sin(cam.pitch), cam.tz + cam.dist * Math.cos(cam.pitch));
@@ -652,7 +848,7 @@ function layout() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(budget / (w * h))));
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2, Math.sqrt(budget / (w * h))));
   renderer.setSize(w, h, false);
   const asp = w / h;
   camera.aspect = asp;
@@ -839,6 +1035,31 @@ addEventListener('keydown', e => {
 resetB.addEventListener('click', reset);
 clearB.addEventListener('click', clearAll);
 
+/* ---------- tile finish ---------- */
+// Broad faces carry full colour; the narrow edges sit a shade deeper.
+// A cut bar splits each face in two; there are no pips.
+// The bar is matte and dark, a gap and not paint.
+function carve(mat) {
+  const f = x => x.toFixed(4);
+  mat.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLocal;\nvarying vec3 vLN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLocal = position;\nvLN = normal;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLocal;\nvarying vec3 vLN;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float face = smoothstep(0.6, 0.92, abs(vLN.x));
+        float fy = max(fwidth(vLocal.y), 1e-4), fz = max(fwidth(vLocal.z), 1e-4);
+        float groove = (1.0 - smoothstep(${f(BAR)} - fy, ${f(BAR)} + fy, abs(vLocal.y)))
+          * (1.0 - smoothstep(${f(W / 2 - 0.075)} - fz, ${f(W / 2 - 0.075)} + fz, abs(vLocal.z))) * face;
+        diffuseColor.rgb *= mix(0.72, 1.0, face);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.012, 0.01, 0.016), groove);`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.9, groove);')
+      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\nmaterial.clearcoat *= 1.0 - groove;');
+  };
+  mat.customProgramCacheKey = () => 'domino-carved';
+}
+
 /* ---------- start ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
@@ -886,8 +1107,9 @@ async function init() {
   floor.rotation.x = -HALF;
   floor.receiveShadow = true;
   scene.add(floor);
-  const mat = new THREE.MeshPhysicalMaterial({ roughness: 0.38, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.06 });
-  mesh = new THREE.InstancedMesh(new RoundedBoxGeometry(T, H, W, 2, 0.035), mat, MAX);
+  const mat = new THREE.MeshPhysicalMaterial({ roughness: 0.34, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 });
+  carve(mat);
+  mesh = new THREE.InstancedMesh(new RoundedBoxGeometry(T, H, W, 4, 0.03), mat, MAX);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   col = new THREE.Color(1, 1, 1);
   mesh.setColorAt(0, col);
