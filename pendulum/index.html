@@ -25,7 +25,17 @@
 /* The release chip shows the pattern it lifts next. */
 .chip .pat { width: 20px; height: 12px; fill: currentColor; flex: none; }
 .choices .chip { min-width: 2.7em; justify-content: center; font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+/* The warp readout: a solid tag that shows while time runs fast. */
+.warp {
+  position: absolute; top: 14px; left: 14px; z-index: 1; display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px 4px 8px; border-radius: 5px; background: var(--fg); color: var(--stage);
+  font: 800 14px/1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  pointer-events: none; opacity: 0; transform: translateY(-4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.warp.on { opacity: 1; transform: none; }
+.warp svg { width: 13px; height: 10px; fill: currentColor; }
+@media (prefers-reduced-motion: reduce) { .stage canvas, .warp { transition: none; } }
 </style>
 </head>
 <body>
@@ -36,7 +46,8 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--pendulum" id="stage" tabindex="0" role="application" aria-label="Pendulum wave. Drag a ball to swing it, or drag across the strings to lift a row. Space releases the row, Escape stops it.">
+    <div class="stage stage--pendulum" id="stage" tabindex="0" role="application" aria-label="Pendulum wave. Drag a ball to swing it, or drag across the strings to lift a row. Hold the stage or Shift to rush time. Space releases the row, Escape stops it.">
+      <span class="warp" id="warp" aria-hidden="true"><svg viewBox="0 0 14 10"><path d="M0 0l7 5-7 5zM7 0l7 5-7 5z"/></svg>1×</span>
       <p class="fail" hidden>Pendulum wave needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -52,8 +63,8 @@
       <dl class="how" aria-label="How to play">
         <div><dt>Drag a ball</dt><dd>swing it</dd></div>
         <div><dt>Drag across</dt><dd>lift a row</dd></div>
+        <div><dt>Hold <span class="fine">or <kbd>Shift</kbd></span></dt><dd>rush time</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>release</dd></div>
-        <div class="fine"><dt><kbd>Esc</kbd></dt><dd>stop</dd></div>
       </dl>
     </div>
   </main>
@@ -128,7 +139,8 @@ function acc(n, th, v, brake) {
   return -OM2[n] * Math.sin(th) - (DAMP + brake * OM[n]) * v;
 }
 // One RK4 step for every pendulum; bottom passes are logged.
-function step(h, at, hits) {
+// rt is the real time one step takes, so strikes keep their timing.
+function step(h, at, hits, rt) {
   // Stop ramps the brake up to critical damping.
   const brake = stopAt < 0 ? 0 : 2 * clamp((simT - stopAt) / 0.35);
   for (let n = 0; n < N; n++) {
@@ -142,7 +154,7 @@ function step(h, at, hits) {
     // Passing the bottom left to right strikes once per swing.
     if (!HOLD[n] && th < 0 && TH[n] >= 0 && VE[n] > 0) {
       const amp = 2 * Math.asin(Math.min(1, VE[n] / (2 * OM[n])));
-      if (amp > 0.02) hits.push({ n, at: at + (h * -th) / (TH[n] - th), amp });
+      if (amp > 0.02) hits.push({ n, at: at + (rt * -th) / (TH[n] - th), amp });
     }
   }
   simT += h;
@@ -745,6 +757,31 @@ function setCount(c) {
 /* ---------- one loop, only while something moves ---------- */
 let raf = 0, last = 0, onScreen = true, slow = 0, armed = false, rPrev = 0, sub = 0, quietAt = -1e9;
 const hits = [];
+
+/* ---------- time warp: hold to rush the row ---------- */
+// Hold on empty stage, or hold Shift, to run time fast.
+// The warp brakes back to real time as the row lines up.
+const WARP_DELAY = 120;
+let warp = 1, shiftHeld = false, pressAt = 0, warpShown = '';
+const warpMax = () => (reduce ? 3 : 6);
+const warpEl = document.getElementById('warp');
+function warpTo(dt) {
+  const hand = ptr >= 0 && !solo && performance.now() - pressAt > WARP_DELAY;
+  // A caught string, a lift or a stop holds time at its real pace.
+  const on = (shiftHeld || hand) && goAt < 0 && stopAt < 0 && !HOLD.some(Boolean);
+  const target = on ? 1 + (warpMax() - 1) * clamp((0.9 - Math.max(0, rPrev)) / 0.4) : 1;
+  // Warp builds slowly and drops fast.
+  warp += (target - warp) * (1 - Math.exp(-dt / (target > warp ? 0.4 : 0.08)));
+  if (Math.abs(warp - target) < 0.005) warp = target;
+}
+// The readout writes only when its rounded value changes.
+function showWarp(w) {
+  const t = w > 1.05 ? `${w.toFixed(1)}×` : '';
+  if (t === warpShown) return;
+  warpShown = t;
+  warpEl.classList.toggle('on', !!t);
+  if (t) warpEl.lastChild.data = t;
+}
 function wake() {
   if (!raf && ready && onScreen) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
@@ -758,11 +795,12 @@ function frame(ms) {
     if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
   }
   if (phase) tween(dt);
-  const steps = Math.ceil(dt / H - 1e-6), h = steps ? dt / steps : 0;
+  warpTo(dt);
+  const sd = dt * warp, steps = Math.ceil(sd / H - 1e-6), h = steps ? sd / steps : 0, rt = h / warp;
   hits.length = 0;
   let fresh = false;
   for (let k = 0; k < steps; k++) {
-    step(h, k * h, hits);
+    step(h, k * rt, hits, rt);
     if (goAt >= 0 && simT >= goAt - 1e-9) letGo();
     // Trails sample every second step, 120 times a second.
     if (++sub >= 2) { sub = 0; push(); fresh = true; }
@@ -787,11 +825,13 @@ function frame(ms) {
   if (!moving) stopAt = -1;
   if (busy || moving) quietAt = simT;
   hum(Number.isNaN(r) ? 0 : r, sum / N);
+  showWarp(moving ? warp : 1);
   draw(fresh);
   // The loop runs on until the last dash has faded.
   if (busy || moving || simT - quietAt < SPAN) {
     if (onScreen) raf = requestAnimationFrame(frame);
   } else {
+    warp = 1;
     hum(0, 0);
     kit.rest(() => !raf && ptr < 0);
   }
@@ -886,6 +926,7 @@ panel.addEventListener('pointerdown', e => {
   stopAt = -1;
   const [x, y] = local(e), i = pick(x, y);
   ptr = e.pointerId;
+  pressAt = performance.now();
   solo = i >= 0;
   if (solo) { grab(i); chime(i, 0.3, 0, true); }
   else sweep(x, y, x, y);
@@ -918,7 +959,8 @@ panel.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') pan
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  if (e.key === 'Escape') stop();
+  if (e.key === 'Shift') { shiftHeld = true; wake(); }
+  else if (e.key === 'Escape') stop();
   else if (e.key === ' ') {
     // A focused button keeps Space for itself.
     if (e.target.closest?.('button, a')) return;
@@ -926,6 +968,8 @@ addEventListener('keydown', e => {
     if (!e.repeat) release();
   }
 });
+addEventListener('keyup', e => { if (e.key === 'Shift') shiftHeld = false; });
+addEventListener('blur', () => { shiftHeld = false; });
 relBtn.addEventListener('click', release);
 document.getElementById('stop').addEventListener('click', stop);
 const saved = +store.get(COUNT_KEY);
