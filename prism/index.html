@@ -54,7 +54,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the bar. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Tab picks a piece, arrow keys move it, Q and E turn it, Delete removes it, Escape lets go.">
+    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the bar. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Scroll or pinch to resize a piece. Tab picks a piece, arrow keys move it, Q and E turn it, minus and plus resize it, Delete removes it, Escape lets go.">
       <canvas aria-hidden="true"></canvas>
       <button class="drop" type="button" tabindex="-1" aria-label="Remove" hidden><svg viewBox="0 0 26 26" aria-hidden="true"><circle class="disc" cx="13" cy="13" r="12"/><path class="cut" d="M9 9l8 8M17 9l-8 8"/></svg></button>
       <div class="pips" aria-hidden="true"></div>
@@ -71,6 +71,8 @@
           <button class="chip icon" type="button" data-kind="concave" aria-label="Add a concave mirror" title="Concave mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg></button>
           <button class="chip icon" type="button" data-kind="sensor" aria-label="Add a sensor pad" title="Sensor pad"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg></button>
         </div>
+        <button class="chip" id="light" type="button" aria-label="Light: white">White</button>
+        <button class="chip" id="wire" type="button" aria-pressed="false">Wireframe</button>
         <button class="chip" id="haze" type="button" aria-pressed="false" title="Fine haze">Fine haze</button>
         <button class="chip" id="clear" type="button" aria-disabled="true">Clear</button>
         <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
@@ -78,7 +80,7 @@
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>move</dd></div>
         <div><dt><span class="fine"><kbd>Shift</kbd> drag</span><span class="touch">Two fingers</span></dt><dd>rotate</dd></div>
-        <div class="fine"><dt><kbd>Q</kbd> and <kbd>E</kbd></dt><dd>rotate</dd></div>
+        <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>resize</dd></div>
         <div><dt><span class="fine"><kbd>Delete</kbd></span><span class="touch">Tap ×</span></dt><dd>remove</dd></div>
       </dl>
     </div>
@@ -100,6 +102,13 @@ const hazeB = document.getElementById('haze'), HAZE_KEY = 'stimming.prism.haze';
 let fine = false;
 try { fine = localStorage.getItem(HAZE_KEY) === '1'; } catch (err) {}
 hazeB.setAttribute('aria-pressed', String(fine));
+// The lamp shines white light or one laser line.
+// Each laser is one wavelength bin, so it never splits.
+const LIGHTS = [['White', -1], ['Red laser', 20], ['Green laser', 10], ['Violet laser', 1]];
+const lightB = document.getElementById('light'), wireB = document.getElementById('wire');
+let lightAt = 0, wire = false;
+try { wire = localStorage.getItem('stimming.prism.wire') === '1'; } catch (err) {}
+wireB.setAttribute('aria-pressed', String(wire));
 const addG = document.getElementById('add'), addBs = [...addG.querySelectorAll('.chip')];
 const dropB = panel.querySelector('.drop'), barEl = document.querySelector('.bar');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -195,7 +204,7 @@ const WHITE = NK, WLIN = [1, 1, 1];
 /* ---------- the pieces ---------- */
 // Sizes are fractions of S, the short side of the table.
 const SPEC = {
-  source: { w: 0.17, h: 0.078 },
+  source: { w: 0.11, h: 0.05 },
   prism: { side: 0.2 },
   lens: { a: 0.12, t: 0.08 },
   dlens: { a: 0.12, tc: 0.016, rl: 0.2 },
@@ -208,7 +217,7 @@ const NAMES = { prism: 'prism', lens: 'convex lens', dlens: 'concave lens', mirr
 const BASE_SIDE = 0.3, MAXADD = 10, BEAM = 0.028;
 const curved = p => p.kind === 'convex' || p.kind === 'concave';
 const make = (kind, extra = {}) => ({
-  kind, ...SPEC[kind], u: 0.5, v: 0.5, rot: 0, x: 0, y: 0, r: 0, g: {}, snap: null, z: 1, z0: 1, zp: 1, base: false, dying: false, ...extra,
+  kind, ...SPEC[kind], u: 0.5, v: 0.5, rot: 0, k: 1, x: 0, y: 0, r: 0, g: {}, snap: null, z: 1, z0: 1, zp: 1, base: false, dying: false, ...extra,
 });
 let pieces = [make('source', { base: true }), make('prism', { side: BASE_SIDE, base: true })];
 let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeB = 0;
@@ -240,7 +249,7 @@ function normals(v) {
 function build(p) {
   p.x = p.u * W;
   p.y = p.v * H;
-  const g = p.g, c = Math.cos(p.rot), s = Math.sin(p.rot), Sz = S * Math.max(0.02, p.z);
+  const g = p.g, c = Math.cos(p.rot), s = Math.sin(p.rot), Sz = S * Math.max(0.02, p.z) * p.k;
   if (p.kind === 'source') {
     g.hw = (p.w * S) / 2;
     g.hh = (p.h * S) / 2;
@@ -450,7 +459,8 @@ function trace() {
   nSeg = nGl = nEd = nSH = sp = nFam = 0;
   fin.fill(NaN);
   const s = pieces[0];
-  push(s.g.ex, s.g.ey, Math.cos(s.rot), Math.sin(s.rot), -1, 1, 0, 0, 1, -1, 0);
+  const k0 = LIGHTS[lightAt][1];
+  push(s.g.ex, s.g.ey, Math.cos(s.rot), Math.sin(s.rot), k0, 1, 0, 0, 1, k0 < 0 ? -1 : nFam++, 0);
   while (sp > 0) {
     const o = --sp * SK;
     const ox = STK[o], oy = STK[o + 1], dx = STK[o + 2], dy = STK[o + 3], k = STK[o + 4], I = STK[o + 5];
@@ -851,9 +861,59 @@ function padBody(p) {
   c.fillRect(L - cap, -hh, cap, 2 * hh);
   c.setTransform(pr, 0, 0, pr, 0, 0);
 }
+// Wireframe draws each piece as thin outlines with vertex marks.
+const WIRE = css(0.9, 0.04, 235, 0.85), WIRE_DIM = css(0.9, 0.04, 235, 0.28);
+function outline(c, p) {
+  const g = p.g;
+  if (curved(p)) {
+    c.beginPath();
+    c.arc(g.cx, g.cy, g.R, g.A - g.al, g.A + g.al);
+    c.arc(g.cx, g.cy, g.Rb, g.A + g.al, g.A - g.al, true);
+    c.closePath();
+  } else glassPath(c, p);
+}
+function marks(c, xs) {
+  c.fillStyle = WIRE;
+  for (let j = 0; j < xs.length; j += 2) c.fillRect(xs[j] - 2, xs[j + 1] - 2, 4, 4);
+}
+function wireBody(p) {
+  const c = ctx, g = p.g;
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
+  c.lineWidth = 1.25;
+  c.lineJoin = 'miter';
+  c.strokeStyle = p.kind === 'sensor' ? TONE.sens : WIRE;
+  outline(c, p);
+  c.stroke();
+  // Lenses and curved mirrors show their axis as a dashed line.
+  if (p.kind === 'lens' || p.kind === 'dlens' || curved(p)) {
+    const ux = curved(p) ? g.axx : Math.cos(p.rot), uy = curved(p) ? g.axy : Math.sin(p.rot), L = p.r * 1.7;
+    c.strokeStyle = WIRE_DIM;
+    c.lineWidth = 1;
+    c.setLineDash([3, 5]);
+    c.beginPath();
+    c.moveTo(p.x - ux * L, p.y - uy * L);
+    c.lineTo(p.x + ux * L, p.y + uy * L);
+    c.stroke();
+    c.setLineDash([]);
+  }
+  if (p.kind === 'prism') {
+    // An inset copy gives the glass its depth.
+    const v = g.v, ins = 0.8;
+    c.strokeStyle = WIRE_DIM;
+    c.beginPath();
+    for (let e = 0; e < 3; e++) c.lineTo(p.x + (v[2 * e] - p.x) * ins, p.y + (v[2 * e + 1] - p.y) * ins);
+    c.closePath();
+    c.stroke();
+    marks(c, v);
+  } else if (g.v) marks(c, g.v);
+  else marks(c, [p.x, p.y]);
+}
 function drawBody(p, i) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
+  if (wire) return wireBody(p);
   if (p.kind === 'prism' || p.kind === 'lens' || p.kind === 'dlens') glassBody(p, i);
   else if (p.kind === 'mirror') mirrorBody(p);
   else if (p.kind === 'sensor') padBody(p);
@@ -876,6 +936,7 @@ function chrome(p, half, path) {
 }
 function rims(p) {
   const c = ctx, g = p.g;
+  if (wire && p.kind !== 'sensor') return;
   c.globalCompositeOperation = 'lighter';
   c.globalAlpha = 1;
   c.lineCap = 'round';
@@ -960,6 +1021,20 @@ function drawSource(p) {
   c.setTransform(pr * co, pr * si, -pr * si, pr * co, pr * p.x, pr * p.y);
   const rr = hh * 0.42, path = new Path2D();
   rrect(path, -hw, -hh, hw * 2, hh * 2, [rr, rr, rr, rr]);
+  if (wire) {
+    // The wire lamp is its outline, fins, bezel and lens.
+    c.lineWidth = 1.25 / pr;
+    c.strokeStyle = WIRE;
+    c.stroke(path);
+    c.beginPath();
+    for (let i = 0; i < 4; i++) { const x = -hw * (0.78 - i * 0.14); c.moveTo(x, -hh * 0.62); c.lineTo(x, hh * 0.62); }
+    c.moveTo(hw * 0.5, -hh);
+    c.lineTo(hw * 0.5, hh);
+    c.stroke();
+    c.beginPath();
+    c.ellipse(hw * 0.97, 0, hh * 0.16, hh * 0.5, 0, 0, TAU);
+    c.stroke();
+  } else {
   const gr = c.createLinearGradient(0, -hh, 0, hh);
   gr.addColorStop(0, css(0.4, 0.02, 255));
   gr.addColorStop(0.18, css(0.29, 0.018, 260));
@@ -995,6 +1070,7 @@ function drawSource(p) {
   c.beginPath();
   c.ellipse(hw * 0.98, 0, hh * 0.09, hh * 0.32, 0, 0, TAU);
   c.fill();
+  }
   // The aperture glows where the beam leaves.
   c.globalCompositeOperation = 'lighter';
   c.setTransform(pr, 0, 0, pr, 0, 0);
@@ -1203,6 +1279,20 @@ function placeGlass() {
     el.style.setProperty('--hole', `${((rp + 3) / R) * 100}%`);
   });
 }
+// The wire table carries a faint dot grid.
+let gridPat = null, gridPr = 0;
+function dotGrid(c) {
+  if (!gridPat || gridPr !== pr) {
+    const [t, tx] = mk(), step = Math.round(28 * pr), d = Math.max(1, Math.round(pr));
+    t.width = t.height = step;
+    tx.fillStyle = css(0.9, 0.03, 240, 0.13);
+    tx.fillRect(0, 0, d, d);
+    gridPat = c.createPattern(t, 'repeat');
+    gridPr = pr;
+  }
+  c.fillStyle = gridPat;
+  c.fillRect(0, 0, cw, ch);
+}
 let geomDirty = true, cost = 0, slowN = 0;
 function render() {
   const t0 = performance.now();
@@ -1220,6 +1310,7 @@ function render() {
   c.globalCompositeOperation = 'copy';
   c.globalAlpha = 1;
   c.drawImage(bgC, 0, 0);
+  if (wire) dotGrid(c);
   c.setTransform(pr, 0, 0, pr, 0, 0);
   for (let i = 1; i < n; i++) drawBody(pieces[i], i);
   beams();
@@ -1419,7 +1510,7 @@ function applyLayout() {
   const [a, b] = composition(), src = pieces[0], pz = basePrism();
   [src.u, src.v, src.rot] = a;
   src.snap = null;
-  if (pz) { [pz.u, pz.v, pz.rot] = b; pz.snap = null; }
+  if (pz) { [pz.u, pz.v, pz.rot] = b; pz.snap = null; pz.k = 1; }
   geomDirty = true;
 }
 function sync() {
@@ -1555,6 +1646,14 @@ function setRot(p, raw) {
   const d = Math.abs(r - p.rot);
   p.rot = r;
   turning();
+  changed(p, d);
+}
+// Pieces scale between half and double size; the lamp keeps its size.
+function setSize(p, k) {
+  if (p.kind === 'source') return;
+  const nk = clamp(k, 0.5, 2.2), d = Math.abs(nk - p.k) * 0.2;
+  if (!d) return;
+  p.k = nk;
   changed(p, d);
 }
 function moveTo(p, x, y) {
@@ -1694,7 +1793,7 @@ function startTwist() {
   if (i < 0) return;
   select(i);
   const p = pieces[i];
-  twist = { i, raw: p.rot, aPrev: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: p.x, py: p.y };
+  twist = { i, raw: p.rot, aPrev: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: p.x, py: p.y, d0: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), k0: p.k };
   turning();
 }
 panel.addEventListener('pointerdown', e => {
@@ -1730,6 +1829,8 @@ panel.addEventListener('pointermove', e => {
     twist.aPrev = ang;
     moveTo(p, twist.px + (a.x + b.x) / 2 - twist.mx, twist.py + (a.y + b.y) / 2 - twist.my);
     setRot(p, twist.raw);
+    // The pinch spread scales the piece.
+    setSize(p, twist.k0 * Math.hypot(b.x - a.x, b.y - a.y) / twist.d0);
     return;
   }
   if (!drag || drag.id !== e.pointerId) return;
@@ -1776,21 +1877,45 @@ panel.addEventListener('keydown', e => {
   select(next);
 });
 panel.addEventListener('blur', e => { if (!ptrs.size && !panel.contains(e.relatedTarget)) select(-1); });
+// The wheel over a piece resizes it.
+panel.addEventListener('wheel', e => {
+  if (!ready) return;
+  const [x, y] = at(e), i = pick(x, y, 6);
+  if (i <= 0) return;
+  e.preventDefault();
+  if (sel !== i) select(i);
+  setSize(pieces[i], pieces[i].k * Math.exp(-clamp(e.deltaY, -60, 60) * 0.004));
+}, { passive: false });
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], button, a')) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel > 0) { e.preventDefault(); remove(sel); return; }
   const k = e.key.toLowerCase(), arrow = ARROWS[e.key];
-  if (!arrow && k !== 'q' && k !== 'e' && e.key !== 'Escape') return;
+  const grow = e.key === '+' || e.key === '=' ? 1 : e.key === '-' || e.key === '_' ? -1 : 0;
+  if (!arrow && !grow && k !== 'q' && k !== 'e' && e.key !== 'Escape') return;
   if (e.key === 'Escape') { select(-1); return; }
   e.preventDefault();
   if (sel < 0) select(0);
   const p = pieces[sel];
-  if (arrow) {
+  if (grow) setSize(p, p.k * (grow > 0 ? 1.08 : 1 / 1.08));
+  else if (arrow) {
     const st = (e.shiftKey ? 0.06 : 0.015) * S;
     moveTo(p, p.x + arrow[0] * st, p.y + arrow[1] * st);
   } else setRot(p, p.rot + (k === 'e' ? 1 : -1) * (e.shiftKey ? 15 : 3) * D2R);
+});
+lightB.addEventListener('click', () => {
+  lightAt = (lightAt + 1) % LIGHTS.length;
+  lightB.textContent = LIGHTS[lightAt][0];
+  lightB.setAttribute('aria-label', `Light: ${LIGHTS[lightAt][0].toLowerCase()}`);
+  geomDirty = true;
+  wake();
+});
+wireB.addEventListener('click', () => {
+  wire = !wire;
+  wireB.setAttribute('aria-pressed', String(wire));
+  try { localStorage.setItem('stimming.prism.wire', wire ? '1' : '0'); } catch (err) {}
+  wake();
 });
 hazeB.addEventListener('click', () => {
   fine = !fine;
