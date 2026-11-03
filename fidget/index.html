@@ -27,17 +27,17 @@
   --pad: calc(var(--gap) * 1.5);
   --gi: calc(var(--gap) * 1.2);
   padding: var(--gap); gap: var(--gap);
-  /* Wide: the dial leads; bands to its right; a bank of switches below. */
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr) minmax(0, 3fr) minmax(0, 6fr) minmax(0, 4fr);
+  /* Wide: the big part leads; the row and bands to its right; six small below. */
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-rows: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) minmax(0, 4fr);
   grid-template-areas:
-    "dial dial keys keys keys"
-    "dial dial fader fader fader"
-    "dial dial abacus abacus abacus"
-    "joy tog safe rock wheel";
+    "big big big big row row row row row row row row"
+    "big big big big band1 band1 band1 band1 band1 band1 band1 band1"
+    "big big big big band2 band2 band2 band2 band2 band2 band2 band2"
+    "s1 s1 s2 s2 s3 s3 s4 s4 s5 s5 s6 s6";
 }
 
-/* ---------- panels: each sits a little proud of the tray ---------- */
+/* ---------- slots: each sits a little proud of the tray ---------- */
 .cell {
   container-type: size; position: relative; display: grid; place-items: center;
   min-width: 0; min-height: 0;
@@ -48,15 +48,19 @@
   --p: min(var(--pad), 8cqmin);
   --hue: 270;
 }
-.c-dial { grid-area: dial; --hue: 255; }
-.c-keys { grid-area: keys; --hue: 280; }
-.c-fader { grid-area: fader; --hue: 265; }
-.c-abacus { grid-area: abacus; --hue: 250; }
-.c-joy { grid-area: joy; --hue: 285; }
-.c-tog { grid-area: tog; --hue: 260; }
-.c-safe { grid-area: safe; --hue: 275; }
-.c-rock { grid-area: rock; --hue: 290; }
-.c-wheel { grid-area: wheel; --hue: 245; }
+.s-big { grid-area: big; --hue: 255; }
+.s-row { grid-area: row; --hue: 280; }
+.s-band1 { grid-area: band1; --hue: 265; }
+.s-band2 { grid-area: band2; --hue: 250; }
+.s-s1 { grid-area: s1; --hue: 285; }
+.s-s2 { grid-area: s2; --hue: 260; }
+.s-s3 { grid-area: s3; --hue: 275; }
+.s-s4 { grid-area: s4; --hue: 290; }
+.s-s5 { grid-area: s5; --hue: 245; }
+.s-s6 { grid-area: s6; --hue: 270; }
+/* A rolled part shrinks out, then springs in. */
+.cell > * { transition: opacity 0.14s ease-out, transform 0.32s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.cell.out > * { opacity: 0; transform: scale(0.82); transition-duration: 0.14s; }
 
 /* A group fits its plate: one row of items, all one height. */
 .grp {
@@ -65,11 +69,12 @@
   --h: min((100cqh - 2 * var(--p) - (var(--rows) - 1) * var(--gi)) / var(--rows), (100cqw - 2 * var(--p) - (var(--n) - 1) * var(--gi)) / var(--sr));
 }
 .grp > .ctl { height: var(--h); width: auto; aspect-ratio: var(--ar); }
-.c-keys .grp { --n: 4; --sr: 4; }
-.c-tog .grp { --n: 3; --sr: 1.3065; }
-.c-safe .grp { --sr: 0.641; }
-.c-rock .grp { --n: 2; --sr: 1.2308; }
-.c-wheel .grp { --sr: 0.3333; }
+/* Each part sets its item count and summed aspect for the fit. */
+.p-keys .grp { --n: 4; --sr: 4; }
+.p-tog .grp { --n: 3; --sr: 1.3065; }
+.p-safe .grp { --sr: 0.641; }
+.p-rock .grp { --n: 2; --sr: 1.2308; }
+.p-wheel .grp { --sr: 0.3333; }
 /* The bands stretch to their plate; their tracks follow the length. */
 .wide { width: calc(100cqw - 2 * var(--p)); height: calc(100cqh - 2 * var(--p)); }
 
@@ -97,34 +102,44 @@
 }
 .safety .arm { inset: 25.6% 34% 11.5%; border-radius: 999px; }
 
+/* ---------- the die: its pips change as it tumbles ---------- */
+.die { display: inline-flex; align-items: center; gap: 0.45em; }
+.die svg { width: 1.25em; height: 1.25em; overflow: visible; }
+.die rect { fill: none; stroke: currentColor; stroke-width: 1.7; }
+.die circle { fill: currentColor; }
+.die.tumble svg { animation: tumble 0.6s cubic-bezier(0.3, 1.4, 0.5, 1); }
+@keyframes tumble { 0% { transform: rotate(0) scale(1); } 45% { transform: rotate(250deg) scale(1.25); } 100% { transform: rotate(360deg) scale(1); } }
+
 /* ---------- layouts by stage shape; these come last to win ---------- */
-/* Squarish: the dial, safety and keys on top, both bands, then the bank. */
+/* Squarish: the big part and four small on top, then row, bands, two small. */
 @container stage (aspect-ratio < 1.42) {
   .board {
-    grid-template-columns: repeat(13, minmax(0, 1fr));
-    grid-template-rows: minmax(0, 6fr) minmax(0, 2fr) minmax(0, 2fr) minmax(0, 4.4fr);
+    grid-template-rows: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2.2fr) minmax(0, 1.8fr) minmax(0, 1.8fr) minmax(0, 3.4fr);
     grid-template-areas:
-      "dial dial dial dial dial safe safe safe keys keys keys keys keys"
-      "fader fader fader fader fader fader fader fader fader fader fader fader fader"
-      "abacus abacus abacus abacus abacus abacus abacus abacus abacus abacus abacus abacus abacus"
-      "joy joy joy tog tog tog tog rock rock rock rock wheel wheel";
+      "big big big big big big s1 s1 s1 s2 s2 s2"
+      "big big big big big big s3 s3 s3 s4 s4 s4"
+      "row row row row row row row row row row row row"
+      "band1 band1 band1 band1 band1 band1 band1 band1 band1 band1 band1 band1"
+      "band2 band2 band2 band2 band2 band2 band2 band2 band2 band2 band2 band2"
+      "s5 s5 s5 s5 s5 s5 s6 s6 s6 s6 s6 s6";
   }
-  .c-keys .grp { --rows: 2; --n: 2; --sr: 2; grid-auto-flow: row; grid-template-columns: repeat(2, auto); }
 }
-/* Tall: the dial beside the stick and safety, bands stacked, the bank last. */
+/* Tall: the big part beside two small, then row, bands and four small. */
 @container stage (aspect-ratio < 0.95) {
   .board {
-    grid-template-columns: minmax(0, 75fr) minmax(0, 66fr) minmax(0, 66fr) minmax(0, 126fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: minmax(0, 115fr) minmax(0, 115fr) minmax(0, 70fr) minmax(0, 52fr) minmax(0, 52fr) minmax(0, 105fr);
     grid-template-areas:
-      "dial dial dial joy"
-      "dial dial dial safe"
-      "keys keys keys keys"
-      "fader fader fader fader"
-      "abacus abacus abacus abacus"
-      "wheel tog tog rock";
+      "big big big s1"
+      "big big big s2"
+      "row row row row"
+      "band1 band1 band1 band1"
+      "band2 band2 band2 band2"
+      "s3 s4 s5 s6";
   }
-  .c-keys .grp { --rows: 1; --n: 4; --sr: 4; grid-auto-flow: column; grid-template-columns: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell > *, .die.tumble svg { transition: none; animation: none; }
 }
 </style>
 </head>
@@ -137,54 +152,18 @@
   <header data-shell></header>
   <main>
     <div class="stage stage--fidget" role="group" aria-label="Fidget board">
-      <div class="board">
-        <div class="cell c-dial"><div class="grp">
-          <div class="ctl dial" id="dial" tabindex="0" role="slider" aria-label="Dial" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"></div>
-        </div></div>
-        <div class="cell c-keys"><div class="grp" role="group" aria-label="Keys">
-          <button class="ctl key" type="button" aria-label="Key 1"></button>
-          <button class="ctl key" type="button" aria-label="Key 2"></button>
-          <button class="ctl key" type="button" aria-label="Key 3"></button>
-          <button class="ctl key" type="button" aria-label="Latching key" aria-pressed="false"></button>
-        </div></div>
-        <div class="cell c-fader">
-          <div class="ctl fader wide" id="fader" tabindex="0" role="slider" aria-label="Slider" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3"></div>
-        </div>
-        <div class="cell c-abacus">
-          <div class="ctl abacus wide" id="abacus" tabindex="0" role="slider" aria-label="Abacus" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"></div>
-        </div>
-        <div class="cell c-joy"><div class="grp">
-          <div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick"></div>
-        </div></div>
-        <div class="cell c-tog"><div class="grp" role="group" aria-label="Switches">
-          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Coral switch" data-c="coral"></button>
-          <button class="ctl toggle" type="button" role="switch" aria-checked="false" aria-label="Blue switch" data-c="sky"></button>
-          <button class="ctl toggle" type="button" role="switch" aria-checked="true" aria-label="Mint switch" data-c="mint"></button>
-        </div></div>
-        <div class="cell c-safe"><div class="grp">
-          <div class="ctl safety" id="safety" role="group" aria-label="Safety switch">
-            <button class="hit" type="button" aria-label="Safety cover" aria-expanded="false" aria-controls="arm"></button>
-            <button class="hit arm" id="arm" type="button" role="switch" aria-label="Armed switch" aria-checked="false" aria-disabled="true"></button>
-          </div>
-        </div></div>
-        <div class="cell c-rock"><div class="grp" role="group" aria-label="Rockers">
-          <button class="ctl rocker" type="button" role="switch" aria-checked="true" aria-label="Cream rocker" data-c="cream"></button>
-          <button class="ctl rocker" type="button" role="switch" aria-checked="false" aria-label="Coral rocker" data-c="coral"></button>
-        </div></div>
-        <div class="cell c-wheel"><div class="grp">
-          <div class="ctl wheel" id="wheel" tabindex="0" role="slider" aria-orientation="vertical" aria-label="Thumb wheel" aria-valuemin="0" aria-valuemax="19" aria-valuenow="0"></div>
-        </div></div>
-      </div>
+      <div class="board" id="board"></div>
     </div>
     <div class="bar bar--below">
       <div class="actions">
+        <button class="chip die" id="roll" type="button" aria-label="Roll new controls"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5"/><g class="pips"></g></svg><span>Roll</span></button>
         <button class="chip" id="shuffle" type="button">Shuffle</button>
         <button class="chip" id="reset" type="button">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>switches and keys</dd></div>
-        <div><dt><span class="fine">Drag</span><span class="touch">Drag</span></dt><dd>dials, sliders and beads</dd></div>
-        <div><dt>Flick</dt><dd>the dial and the wheel</dd></div>
+        <div><dt>Drag</dt><dd>dials, sliders and beads</dd></div>
+        <div><dt>Roll</dt><dd>deals new controls</dd></div>
         <div><dt>Arm and latch</dt><dd>then a key launches</dd></div>
       </dl>
     </div>
@@ -196,1551 +175,137 @@
 </div>
 
 <script type="module">
-import { initPage, sound, audioKit } from '../shared/stim.js';
+import { initPage } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+import { board, snd, reduce, sleep, pruneLight, rnd } from './kit.js';
+import PARTS from './parts/index.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'fidget' });
 
-const NS = 'http://www.w3.org/2000/svg';
-const RM = matchMedia('(prefers-reduced-motion: reduce)');
-let reduce = RM.matches;
-RM.addEventListener?.('change', e => { reduce = e.matches; });
-const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, R2D = 180 / PI;
-const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
-const lerp = (a, b, t) => a + (b - a) * t;
-const mod = (a, n) => ((a % n) + n) % n;
-const f2 = v => Math.round(v * 100) / 100;
-const f3 = v => Math.round(v * 1000) / 1000;
-const rnd = (a, b) => a + Math.random() * (b - a);
-const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > PI) d -= TAU; else if (d < -PI) d += TAU; return d; };
-const KEYS = [' ', 'Enter'];
+/* ---------- bento: ten slots, one part in each ---------- */
+const SLOTS = [['big', 'big'], ['row', 'row'], ['band1', 'band'], ['band2', 'band'], ...[1, 2, 3, 4, 5, 6].map(n => [`s${n}`, 'small'])];
+const boardEl = document.getElementById('board');
+const cells = SLOTS.map(([name, kind]) => {
+  const c = document.createElement('div');
+  c.className = `cell s-${name}`;
+  c.dataset.kind = kind;
+  boardEl.append(c);
+  return c;
+});
+const byId = new Map(PARTS.map(p => [p.id, p]));
+const mounted = new Map(), styled = new Set();
+function mount(cell, part) {
+  // A part's own styles load once, on its first mount.
+  if (part.css && !styled.has(part.id)) {
+    styled.add(part.id);
+    const st = document.createElement('style');
+    st.textContent = part.css;
+    document.head.append(st);
+  }
+  cell.classList.add('p-' + part.id);
+  const inst = part.mount(cell);
+  mounted.set(cell, { part, inst });
+  inst.bodies.forEach(b => b.draw());
+}
+function unmount(cell) {
+  const m = mounted.get(cell);
+  if (!m) return;
+  m.inst.destroy?.();
+  m.inst.bodies.forEach(sleep);
+  cell.classList.remove('p-' + m.part.id);
+  cell.replaceChildren();
+  mounted.delete(cell);
+}
+const allMoves = () => [...mounted.values()].flatMap(m => m.inst.moves);
 
-// Served locally, the home link opens the repo copy instead of the Artifact.
-if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
-  document.querySelectorAll('a[data-local]').forEach(a => { a.href = a.dataset.local; a.removeAttribute('target'); });
+/* ---------- deals: which part sits in which slot ---------- */
+const DEFAULT = ['dial', 'keys', 'fader', 'abacus', 'joy', 'tog', 'safe', 'rock', 'wheel', 'arcade'];
+const KEY = 'stimming.fidget.deal';
+const shuffled = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+// A slot keeps a given id only if it fits and is not used twice.
+// Empty slots then take the first free part of their kind.
+function settle(ids) {
+  const used = new Set(), out = SLOTS.map(([, kind], i) => {
+    const p = byId.get(ids?.[i]);
+    if (p && p.slot === kind && !used.has(p.id)) { used.add(p.id); return p.id; }
+    return null;
+  });
+  return out.map((id, i) => {
+    if (id) return id;
+    const p = PARTS.find(q => q.slot === SLOTS[i][1] && !used.has(q.id));
+    if (p) used.add(p.id);
+    return p ? p.id : null;
+  });
 }
-
-/* ---------- colour: OKLCH in, sRGB hex out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
+// A roll deals fresh parts; each slot avoids the part it just held.
+function deal(prev) {
+  const pools = {};
+  shuffled([...PARTS]).forEach(p => (pools[p.slot] ||= []).push(p.id));
+  return SLOTS.map(([, kind], i) => {
+    const pool = pools[kind] || [];
+    let j = pool.findIndex(id => id !== prev[i]);
+    if (j < 0) j = 0;
+    return pool.length ? pool.splice(j, 1)[0] : null;
+  });
 }
-const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
-function rgb([L, C, h]) {
-  let c = lin(L, C, h);
-  // Chroma shrinks until the colour fits sRGB.
-  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return [gam(c[0]), gam(c[1]), gam(c[2])];
-}
-const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
-const css = lch => { const [r, g, b] = rgb(lch); return '#' + hx(r) + hx(g) + hx(b); };
-function mixLch(A, B, t) {
-  const dh = (((B[2] - A[2]) % 360) + 540) % 360 - 180;
-  return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
-}
-// A ramp caches 32 steps between two colours.
-function ramp(A, B) {
-  const c = [];
-  return t => { const q = Math.round(clamp(t) * 32); return c[q] || (c[q] = css(mixLch(A, B, q / 32))); };
-}
-
-/* ---------- palette: fresh, mid-chroma, lit for a dark tray ---------- */
-const C = {
-  cream: [0.95, 0.018, 85], coral: [0.71, 0.155, 33], sky: [0.74, 0.115, 238], mint: [0.85, 0.115, 168],
-  butter: [0.9, 0.12, 95], lilac: [0.77, 0.1, 302], navy: [0.36, 0.035, 265], steel: [0.8, 0.012, 255],
-  red: [0.63, 0.18, 26], ink: [0.17, 0.014, 275],
+const store = {
+  get() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } },
+  set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch { /* storage is optional */ } },
 };
-const TICK = css([0.46, 0.02, 268]), BUTTER = css(C.butter);
+let current = settle(store.get() || DEFAULT);
+cells.forEach((cell, i) => { if (current[i]) mount(cell, byId.get(current[i])); });
 
-/* ---------- svg helpers ---------- */
-function el(tag, attrs = {}, parent) {
-  const e = document.createElementNS(NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  if (parent) parent.appendChild(e);
-  return e;
+/* ---------- the die ---------- */
+const rollBtn = document.getElementById('roll'), pips = rollBtn.querySelector('.pips');
+const P = { c: 12, l: 7.5, r: 16.5 };
+const FACES = [
+  [[P.c, P.c]],
+  [[P.l, P.l], [P.r, P.r]],
+  [[P.l, P.l], [P.c, P.c], [P.r, P.r]],
+  [[P.l, P.l], [P.r, P.l], [P.l, P.r], [P.r, P.r]],
+  [[P.l, P.l], [P.r, P.l], [P.c, P.c], [P.l, P.r], [P.r, P.r]],
+  [[P.l, P.l], [P.r, P.l], [P.l, P.c], [P.r, P.c], [P.l, P.r], [P.r, P.r]],
+];
+function face(n) {
+  pips.innerHTML = FACES[n].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.9"/>`).join('');
 }
-function set(e, k, v) {
-  const c = e.__c || (e.__c = {});
-  if (c[k] !== v) { c[k] = v; e.setAttribute(k, v); }
-}
-let ids = 0;
-const nid = p => `fb-${p}${++ids}`;
-// A gradient takes stops as [offset, colour, opacity].
-function grad(defs, type, attrs, stops) {
-  const id = nid('g'), g = el(type, { id, ...attrs }, defs);
-  const st = stops.map(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g));
-  return { url: `url(#${id})`, st, g };
-}
-const DOWN = { x1: 0, y1: 0, x2: 0, y2: 1 };
-// A soft blur casts contact shadows under raised parts.
-function blur(defs, sd) {
-  const id = nid('f'), f = el('filter', { id, x: '-60%', y: '-60%', width: '220%', height: '220%' }, defs);
-  el('feGaussianBlur', { stdDeviation: sd }, f);
-  return `url(#${id})`;
-}
-// The board shares one light; these lists hold every part it touches.
-const LIGHT = { sheens: [], rims: [], shadows: [] };
-// Each svg shares one sheen, one rim and one lip gradient.
-function svgIn(host, vb) {
-  const svg = el('svg', { viewBox: vb, 'aria-hidden': 'true', focusable: 'false' }, host);
-  const defs = el('defs', {}, svg);
-  const sheen = grad(defs, 'radialGradient', { cx: 0.3, cy: 0.16, r: 0.9 }, [[0, '#fff', 0.55], [0.45, '#fff', 0.1], [1, '#fff', 0]]);
-  const rim = grad(defs, 'linearGradient', DOWN, [[0, '#fff', 0.85], [0.28, '#fff', 0], [0.62, '#000', 0], [1, '#000', 0.4]]);
-  const lip = grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.75], [0.3, '#000', 0], [0.78, '#fff', 0], [1, '#fff', 0.13]]);
-  LIGHT.sheens.push(sheen.g);
-  LIGHT.rims.push(rim.g, lip.g);
-  svg.k = { defs, sheen: sheen.url, rim: rim.url, lip: lip.url };
-  return svg;
-}
-// A material gives top, middle and bottom tones, darker as it is pressed.
-function mat(lch, dk = 0.09) {
-  const c = [];
-  return t => {
-    const q = Math.round(clamp(t) * 24);
-    if (!c[q]) {
-      const d = (dk * q) / 24;
-      c[q] = [[0.07, 0.85], [0, 1], [-0.14, 1.05]].map(([dl, k]) => css([lch[0] + dl - d, lch[1] * k, lch[2]]));
-    }
-    return c[q];
-  };
-}
-// A raised part: contact shadow, body gradient, sheen and a specular rim.
-// A cylinder runs its light across instead of down.
-function skin(svg, parent, tag, attrs, M, { rim = 2.5, shadow = null, sheen = true, cyl = false } = {}) {
-  const { defs } = svg.k, id = nid('s');
-  const shape = el(tag, { id, ...attrs }, defs);
-  const clip = el('clipPath', { id: id + 'c' }, defs);
-  el('use', { href: '#' + id }, clip);
-  const g = el('g', {}, parent);
-  const sh = shadow ? el('use', { href: '#' + id, fill: '#000', opacity: shadow.o ?? 0.5, filter: blur(defs, shadow.b), transform: `translate(0 ${shadow.y})` }, g) : null;
-  if (sh) LIGHT.shadows.push([sh, shadow.y]);
-  const base = cyl
-    ? grad(defs, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 0 }, [[0, '#fff'], [0.32, '#fff'], [1, '#fff']])
-    : grad(defs, 'linearGradient', DOWN, [[0, '#fff'], [0.5, '#fff'], [1, '#fff']]);
-  const order = cyl ? [1, 0, 2] : [0, 1, 2];
-  el('use', { href: '#' + id, fill: base.url }, g);
-  if (sheen) el('use', { href: '#' + id, fill: svg.k.sheen }, g);
-  el('use', { href: '#' + id, fill: 'none', stroke: svg.k.rim, 'stroke-width': rim * 2, 'clip-path': `url(#${id}c)` }, g);
-  const k = {
-    shape, g, sh,
-    paint(t) { const c = M(t); for (let i = 0; i < 3; i++) set(base.st[i], 'stop-color', c[order[i]]); },
-  };
-  k.paint(0);
-  return k;
-}
-// A recess: dark at the top where the edge shades it, a faint lip below.
-const WELL = mat([0.16, 0.014, 275]);
-function well(svg, parent, tag, attrs, { rim = 3 } = {}) {
-  const { defs } = svg.k, id = nid('w');
-  const shape = el(tag, { id, ...attrs }, defs);
-  const clip = el('clipPath', { id: id + 'c' }, defs);
-  el('use', { href: '#' + id }, clip);
-  const [, mid, low] = WELL(0);
-  const base = grad(defs, 'linearGradient', DOWN, [[0, low], [1, mid]]);
-  el('use', { href: '#' + id, fill: base.url }, parent);
-  el('use', { href: '#' + id, fill: 'none', stroke: svg.k.lip, 'stroke-width': rim * 2, 'clip-path': `url(#${id}c)` }, parent);
-  return shape;
-}
-
-// The stick steers the light: highlights follow it, shadows swing away.
-// Shadows move by x and y, so part transforms stay their own.
-const LIGHT0 = Math.atan2(0.16 - 0.5, 0.3 - 0.5);
-function shine(nx, ny) {
-  const cx = 0.3 + 0.38 * nx, cy = 0.16 + 0.38 * ny;
-  const sx = f3(cx), sy = f3(cy), rot = `rotate(${f2((Math.atan2(cy - 0.5, cx - 0.5) - LIGHT0) * R2D)} 0.5 0.5)`;
-  LIGHT.sheens.forEach(g => { set(g, 'cx', sx); set(g, 'cy', sy); });
-  LIGHT.rims.forEach(g => set(g, 'gradientTransform', rot));
-  LIGHT.shadows.forEach(([sh, y]) => { set(sh, 'x', f2(-1.2 * nx * y)); set(sh, 'y', f2(-1.2 * ny * y)); });
-}
-
-/* ---------- physics loop ---------- */
-// One rAF loop runs only while some body is still moving.
-const live = new Set();
-let raf = 0, last = 0;
-function wake(b) {
-  live.add(b);
-  if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
-}
-function frame(now) {
-  const dt = clamp((now - last) / 1000, 0, 0.05);
-  last = now;
-  // Substeps at 120 Hz keep stiff springs stable.
-  const n = Math.max(1, Math.ceil(dt * 120)), h = dt / n;
-  for (const b of live) {
-    for (let i = 0; i < n; i++) b.step(h);
-    b.draw();
-    if (!b.busy()) { b.draw(); live.delete(b); }
+face(4);
+// The rattle: a handful of quick clacks on a tray.
+const rattle = () => snd.play('roll', 0.3, 0.5, (t, P, G) => {
+  for (let k = 0; k < 5; k++) {
+    const at = t + k * 0.055 + Math.random() * 0.02, g = G * (1 - k * 0.15);
+    snd.hiss(at, 'bandpass', rnd(1800, 3200) * P, 2, 0.012, 0.32 * g);
+    snd.ring(at, rnd(700, 1100) * P, rnd(650, 1000) * P, 0.03, 0.07 * g);
   }
-  raf = live.size ? requestAnimationFrame(frame) : 0;
-  // A still board lets the audio context sleep.
-  if (!raf) snd.nap();
-}
-const S = (x = 0) => ({ x, v: 0, t: x });
-// Semi-implicit Euler: velocity first, then position.
-function spring(s, k, z, h) {
-  if (reduce) { s.x = s.t; s.v = 0; return; }
-  s.v += (k * (s.t - s.x) - 2 * z * Math.sqrt(k) * s.v) * h;
-  s.x += s.v * h;
-}
-// A spring close enough to its target snaps there and stops.
-function rest(s, e = 1e-3) {
-  if (Math.abs(s.t - s.x) > e || Math.abs(s.v) > e * 20) return false;
-  s.x = s.t; s.v = 0;
-  return true;
-}
-const bodies = [];
-// Each control lists its Shuffle and Reset moves here.
-const moves = [];
-// An armed safety and a latched key prime the board.
-// A plain key then fires the launch.
-const board = {
-  armed: false, latched: false, firing: false, dial: null, fire: null,
-  get primed() { return this.armed && this.latched && !this.firing; },
-  set(k, v) { this[k] = v; this.dial?.prime(); },
-};
-
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const snd = (() => {
-  const MAXV = 12;
-  const GO = new Set([' ', 'Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End']);
-  // The shell kit owns the context, the compressor and the noise.
-  const kit = audioKit({ gain: 0.6, keys: GO, noiseSeconds: 0.5, sleepMs: 2000 });
-  const ends = [], last = Object.create(null), drones = new Set();
-  // Pitch wanders 4% and gain 10%, so repeats never match.
-  const jit = x => 1 + (Math.random() * 2 - 1) * x;
-  // Once the board is still, the context sleeps until the next gesture.
-  const nap = () => kit.rest(() => !raf && !drones.size);
-  // Each voice is rate limited by name, then capped at twelve.
-  function claim(key, gap, dur) {
-    const a = kit.live();
-    if (!a) return -1;
-    const now = performance.now();
-    if (now - (last[key] || -1e9) < gap * 1000) return -1;
-    last[key] = now;
-    const t = a.currentTime;
-    for (let i = ends.length - 1; i >= 0; i--) if (ends[i] <= t) ends.splice(i, 1);
-    if (ends.length >= MAXV) return -1;
-    ends.push(t + dur);
-    nap();
-    return t;
-  }
-  // Filtered noise with a sharp attack and an exponential tail.
-  function hiss(t, type, f, q, d, g) {
-    const ac = kit.ac, src = ac.createBufferSource(), flt = ac.createBiquadFilter(), amp = ac.createGain();
-    src.buffer = kit.noise;
-    flt.type = type; flt.frequency.value = f; flt.Q.value = q;
-    amp.gain.setValueAtTime(1e-4, t);
-    amp.gain.exponentialRampToValueAtTime(Math.max(g, 2e-4), t + 0.0006);
-    amp.gain.exponentialRampToValueAtTime(1e-4, t + d);
-    src.connect(flt); flt.connect(amp); amp.connect(kit.out);
-    src.start(t, Math.random() * 0.35);
-    src.stop(t + d + 0.005);
-  }
-  // A pitched body that bends as it decays.
-  function ring(t, f, f2, d, g, type = 'sine') {
-    const ac = kit.ac, o = ac.createOscillator(), amp = ac.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(f, t);
-    if (f2 !== f) o.frequency.exponentialRampToValueAtTime(f2, t + d);
-    amp.gain.setValueAtTime(1e-4, t);
-    amp.gain.exponentialRampToValueAtTime(Math.max(g, 2e-4), t + 0.002);
-    amp.gain.exponentialRampToValueAtTime(1e-4, t + d);
-    o.connect(amp); amp.connect(kit.out);
-    o.start(t); o.stop(t + d + 0.01);
-    return o;
-  }
-  // Noise through a band that climbs: a short whoosh.
-  function rise(t, f, f2, d, g) {
-    const ac = kit.ac, src = ac.createBufferSource(), flt = ac.createBiquadFilter(), amp = ac.createGain();
-    src.buffer = kit.noise;
-    flt.type = 'bandpass'; flt.Q.value = 2.2;
-    flt.frequency.setValueAtTime(f, t);
-    flt.frequency.exponentialRampToValueAtTime(f2, t + d);
-    amp.gain.setValueAtTime(1e-4, t);
-    amp.gain.exponentialRampToValueAtTime(Math.max(g, 2e-4), t + d * 0.85);
-    amp.gain.exponentialRampToValueAtTime(1e-4, t + d);
-    src.connect(flt); flt.connect(amp); amp.connect(kit.out);
-    src.start(t, 0);
-    src.stop(t + d + 0.01);
-  }
-  // Busy moments soften each voice; the compressor catches the rest.
-  function play(key, gap, dur, fn) {
-    const t = claim(key, gap, dur);
-    if (t >= 0) fn(t, jit(0.04), jit(0.1) / (1 + 0.06 * ends.length));
-  }
-  // A looping noise bed whose level and colour follow motion.
-  function drone(q) {
-    let src = null, flt = null, amp = null;
-    const d = {
-      set(g, f) {
-        const a = g > 0.002 ? kit.live() : null;
-        if (!a) { if (src) d.stop(); return; }
-        const t = a.currentTime;
-        if (!src) {
-          src = a.createBufferSource(); src.buffer = kit.noise; src.loop = true;
-          flt = a.createBiquadFilter(); flt.type = 'bandpass'; flt.Q.value = q; flt.frequency.value = f;
-          amp = a.createGain(); amp.gain.value = 0;
-          src.connect(flt); flt.connect(amp); amp.connect(kit.out);
-          src.start(t, Math.random() * 0.35);
-          drones.add(d);
-        }
-        amp.gain.setTargetAtTime(g, t, 0.04);
-        flt.frequency.setTargetAtTime(f, t, 0.04);
-      },
-      stop() {
-        if (!src) return;
-        const t = kit.ac.currentTime;
-        amp.gain.setTargetAtTime(0, t, 0.03);
-        src.stop(t + 0.2);
-        src = null;
-        drones.delete(d);
-        nap();
-      },
-    };
-    return d;
-  }
-
-  const api = {
-    nap,
-    hush() { drones.forEach(d => d.stop()); },
-    // Launch: four rising notes over a climbing whoosh.
-    launch: () => play('launch', 0.3, 1, (t, P, G) => {
-      rise(t, 300, 4200, 0.4, 0.3 * G);
-      [440, 554.4, 659.3, 880].forEach((f, i) => {
-        const at = t + i * 0.09, end = i === 3;
-        hiss(at, 'bandpass', 3200 * P, 1.2, 0.004, 0.2 * G);
-        ring(at, f * P, f * P, end ? 0.6 : 0.16, 0.15 * G, 'triangle');
-        ring(at, 2 * f * P, 2 * f * P, end ? 0.4 : 0.1, 0.05 * G);
-      });
-    }),
-    scrape: drone(0.8),
-    // Dial detent: a 4 ms highpassed tick and a faint ping.
-    dial: v => play('dial', 0.012, 0.04, (t, P, G) => {
-      G *= 0.35 + 0.65 * v;
-      hiss(t, 'highpass', 3600 * P, 0.8, 0.004, 0.42 * G);
-      ring(t, 2400 * P, 2360 * P, 0.03, 0.035 * G);
-    }),
-    // Thumb wheel rib: drier and lower than the dial.
-    rib: v => play('rib', 0.016, 0.03, (t, P, G) => {
-      G *= 0.35 + 0.65 * v;
-      hiss(t, 'bandpass', 2700 * P, 1.6, 0.005, 0.5 * G);
-      ring(t, 1300 * P, 1220 * P, 0.016, 0.03 * G);
-    }),
-    // Toggle: the lever lifts, then snaps over 25 ms later.
-    flip: (up, heavy) => play('flip', 0.015, 0.09, (t, P, G) => {
-      const k = (up ? 1.05 : 0.95) * (heavy ? 0.82 : 1) * P;
-      hiss(t, 'bandpass', 3300 * k, 1.4, 0.006, 0.14 * G);
-      hiss(t + 0.025, 'bandpass', 4100 * k, 1.1, 0.012, 0.5 * G);
-      ring(t + 0.025, 150 * k, 100 * k, 0.05, (heavy ? 0.42 : 0.34) * G);
-    }),
-    // Keycap down: a deep thock.
-    down: () => play('down', 0.015, 0.1, (t, P, G) => {
-      hiss(t, 'lowpass', 800 * P, 0.9, 0.035, 0.6 * G);
-      hiss(t, 'bandpass', 2000 * P, 1.2, 0.003, 0.12 * G);
-      ring(t, 90 * P, 70 * P, 0.08, 0.5 * G);
-    }),
-    // Keycap up: a lighter, higher click.
-    up: () => play('up', 0.015, 0.04, (t, P, G) => {
-      hiss(t, 'bandpass', 2600 * P, 1.3, 0.01, 0.2 * G);
-      ring(t, 240 * P, 190 * P, 0.025, 0.08 * G);
-    }),
-    // The latch catches with a small metallic tick.
-    latch: lock => play('latch', 0.015, 0.07, (t, P, G) => {
-      const k = (lock ? 1 : 0.84) * P;
-      hiss(t + 0.012, 'highpass', 6000 * k, 0.7, 0.003, 0.22 * G);
-      ring(t + 0.012, 3150 * k, 3120 * k, 0.045, 0.05 * G);
-      ring(t + 0.012, 4730 * k, 4700 * k, 0.03, 0.03 * G);
-    }),
-    // Slider notch: a soft tick.
-    notch: v => play('notch', 0.03, 0.03, (t, P, G) => {
-      G *= 0.5 + 0.5 * v;
-      hiss(t, 'bandpass', 1800 * P, 2, 0.006, 0.16 * G);
-      ring(t, 700 * P, 640 * P, 0.016, 0.04 * G);
-    }),
-    // Joystick home: a quiet spring, its pitch wobbling down.
-    boing: m => play('boing', 0.12, 0.42, (t, P, G) => {
-      const ac = kit.ac, o = ring(t, 320 * P, 150 * P, 0.4, 0.1 * G * m);
-      const lfo = ac.createOscillator(), depth = ac.createGain();
-      lfo.frequency.value = 17 * P;
-      depth.gain.setValueAtTime(45 * P, t);
-      depth.gain.exponentialRampToValueAtTime(2, t + 0.38);
-      lfo.connect(depth); depth.connect(o.frequency);
-      lfo.start(t); lfo.stop(t + 0.41);
-    }),
-    // The nub knocks the gate rim.
-    rim: v => play('rim', 0.05, 0.03, (t, P, G) => {
-      hiss(t, 'bandpass', 1500 * P, 1.5, 0.008, 0.18 * G * v);
-      ring(t, 400 * P, 320 * P, 0.02, 0.06 * G * v);
-    }),
-    // Safety cover: an unlatch click and a short spring ring.
-    lift: () => play('lift', 0.03, 0.16, (t, P, G) => {
-      hiss(t, 'bandpass', 3600 * P, 1.6, 0.005, 0.22 * G);
-      ring(t + 0.004, 1250 * P, 1180 * P, 0.14, 0.022 * G);
-      ring(t + 0.004, 1873 * P, 1800 * P, 0.09, 0.012 * G);
-    }),
-    // The cover slams onto its seat.
-    shut: v => play('shut', 0.035, 0.08, (t, P, G) => {
-      G *= v;
-      hiss(t, 'bandpass', 2500 * P, 1, 0.016, 0.6 * G);
-      ring(t, 125 * P, 80 * P, 0.06, 0.45 * G);
-    }),
-    // A closed cover blocks the switch: a dull knock.
-    block: () => play('block', 0.05, 0.05, (t, P, G) => {
-      hiss(t, 'lowpass', 700 * P, 1, 0.025, 0.35 * G);
-      ring(t, 110 * P, 90 * P, 0.04, 0.2 * G);
-    }),
-    // Rocker: a soft first stage, then the heavier rock over.
-    rock: up => play('rock', 0.015, 0.1, (t, P, G) => {
-      const k = (up ? 1.04 : 0.96) * P;
-      hiss(t, 'bandpass', 2200 * k, 1.3, 0.006, 0.15 * G);
-      hiss(t + 0.03, 'bandpass', 1700 * k, 1, 0.014, 0.5 * G);
-      ring(t + 0.03, 120 * k, 85 * k, 0.055, 0.4 * G);
-    }),
-    // Pressing the side already down: a muted tap.
-    dead: () => play('dead', 0.03, 0.03, (t, P, G) => {
-      hiss(t, 'lowpass', 1200 * P, 0.8, 0.012, 0.16 * G);
-    }),
-    // Abacus beads: a wooden clack, louder when faster.
-    clack: v => play('clack', 0.012, 0.05, (t, P, G) => {
-      G *= 0.25 + 0.75 * v;
-      hiss(t, 'bandpass', 1900 * P, 2.2, 0.01, 0.42 * G);
-      ring(t, 1150 * P, 1130 * P, 0.035, 0.09 * G);
-      ring(t, 2620 * P, 2600 * P, 0.02, 0.05 * G);
-    }),
-    // A bead knocks the frame: lower and duller.
-    knock: v => play('knock', 0.03, 0.06, (t, P, G) => {
-      G *= 0.25 + 0.75 * v;
-      hiss(t, 'lowpass', 1300 * P, 1, 0.018, 0.4 * G);
-      ring(t, 420 * P, 380 * P, 0.045, 0.12 * G);
-    }),
-  };
-  // Sound on answers with a key click; off hushes the scrape.
-  sound.onChange(on => { if (on) api.up(); else api.hush(); });
-  return api;
-})();
-
-/* ---------- dial ---------- */
-// A navy knurled skirt and a cream dished cap; the ticks light butter.
-const dialEl = document.getElementById('dial');
-bodies.push((() => {
-  const svg = svgIn(dialEl, '0 0 400 400'), defs = svg.k.defs;
-  const CX = 200, N = 24, STEP = TAU / N;
-  const at = (r, a) => [f2(CX + r * Math.sin(a)), f2(CX - r * Math.cos(a))];
-  const ticks = el('g', { stroke: TICK, 'stroke-linecap': 'round' }, svg), lit = el('g', { stroke: BUTTER, 'stroke-linecap': 'round' }, svg), tl = [];
-  for (let k = 0; k < N; k++) {
-    const [x1, y1] = at(k % 6 ? 180 : 171, k * STEP), [x2, y2] = at(194, k * STEP);
-    const a = { x1, y1, x2, y2, 'stroke-width': k % 6 ? 5 : 8 };
-    el('line', a, ticks);
-    tl.push(el('line', { ...a, opacity: 0 }, lit));
-  }
-  // The skirt's body stays lit from the top left; only its knurl turns.
-  const skirt = skin(svg, svg, 'circle', { cx: CX, cy: CX, r: 156 }, mat(C.navy, 0.04), { rim: 3, shadow: { b: 9, y: 11, o: 0.6 } });
-  const knob = el('g', { stroke: css([0.22, 0.03, 265]), 'stroke-width': 3.2, 'stroke-linecap': 'round', opacity: 0.75 }, svg);
-  for (let k = 0; k < 60; k++) {
-    const [x1, y1] = at(139, (k / 60) * TAU), [x2, y2] = at(153, (k / 60) * TAU);
-    el('line', { x1, y1, x2, y2 }, knob);
-  }
-  const top = el('g', {}, svg);
-  const cap = skin(svg, top, 'circle', { cx: CX, cy: CX, r: 120 }, mat(C.cream, 0.12), { rim: 2.5, shadow: { b: 5, y: 6, o: 0.45 } });
-  // The dish darkens at the top edge and catches light below.
-  el('circle', { cx: CX, cy: CX, r: 92, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.16], [0.55, '#000', 0], [1, '#fff', 0.5]]).url }, top);
-  const ind = el('g', {}, top);
-  el('rect', { x: CX - 12, y: CX - 113, width: 24, height: 66, rx: 12, fill: css([0.5, 0.05, 265]), opacity: 0.35 }, ind);
-  el('rect', { x: CX - 9, y: CX - 110, width: 18, height: 60, rx: 9, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.77, 0.14, 38])], [1, css([0.62, 0.16, 30])]]).url }, ind);
-  void skirt;
-
-  const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', pr: S(), fl: new Float32Array(N), floor: 0, near: 0, pid: null, pu: 0, prev: 0, off: 0, trail: [], rect: null, run: -1, rk: 0, r0: 0 };
-  // The launch run lights one tick every 18 ms.
-  const RUN = 0.018;
-  // Drag follow, detent pull, spin friction, settle spring.
-  const KD = 1600, CD = 68, AD = 70;
-  const AS = 14, CF = 0.4, MU = 4.5, WCAP = 2.2;
-  const KS = 520, CS = 23;
-
-  function cross() {
-    const f = Math.floor(s.th / STEP + 1e-6);
-    if (f === s.floor) return;
-    // Each detent the indicator passes lights its tick.
-    if (!reduce && (s.mode === 'drag' || Math.abs(s.w) > 0.3)) {
-      const lo = Math.min(f, s.floor), hi = Math.min(Math.max(f, s.floor), lo + N);
-      for (let k = lo + 1; k <= hi; k++) s.fl[mod(k, N)] = 1;
-    }
-    s.floor = f;
-  }
-  function click() {
-    // Each ridge between detents clicks as the knob rolls over it.
-    const r = Math.round(s.th / STEP);
-    if (r !== s.near) { s.near = r; snd.dial(clamp(Math.abs(s.w) / 24)); }
-  }
-  const body = {
-    step(h) {
-      if (reduce) {
-        if (s.mode === 'spin') { s.mode = 'settle'; s.T = Math.round(s.th / STEP) * STEP; }
-        if (s.mode !== 'rest') { s.th = s.T; s.w = 0; s.a = 0; }
-        s.fl.fill(0);
-        s.run = -1;
-        spring(s.pr, 700, 0.45, h);
-        cross();
-        click();
-        return;
-      }
-      let a = 0;
-      if (s.mode === 'drag') a = KD * (s.T - s.th) - CD * s.w - AD * Math.sin(N * s.th);
-      else if (s.mode === 'spin') {
-        // Friction drains the flick; detents ripple its speed.
-        a = -AS * Math.sin(N * s.th) - CF * s.w - MU * Math.sign(s.w);
-        if (Math.abs(s.w) < WCAP) {
-          s.mode = 'settle';
-          s.T = (s.w > 0 ? Math.ceil(s.th / STEP) : Math.floor(s.th / STEP)) * STEP;
-        }
-      } else if (s.mode === 'settle') a = KS * (s.T - s.th) - CS * s.w;
-      s.a = a;
-      s.w += a * h;
-      s.th += s.w * h;
-      cross();
-      click();
-      // The run laps the ring once, clockwise from the indicator.
-      if (s.run >= 0) {
-        s.run += h;
-        const n = Math.min(N, Math.floor(s.run / RUN));
-        for (; s.rk < n; s.rk++) s.fl[mod(s.r0 + s.rk + 1, N)] = 1;
-        if (s.rk >= N) s.run = -1;
-      }
-      const k = Math.exp(-6 * h);
-      for (let i = 0; i < N; i++) if (s.fl[i]) s.fl[i] = s.fl[i] < 0.004 ? 0 : s.fl[i] * k;
-      spring(s.pr, 700, 0.45, h);
-    },
-    busy() {
-      let moving = s.mode === 'spin';
-      if (s.mode === 'drag') moving = Math.abs(s.w) > 1e-3 || Math.abs(s.a) > 1e-2;
-      else if (s.mode === 'settle') {
-        if (Math.abs(s.T - s.th) < 2e-4 && Math.abs(s.w) < 2e-3) {
-          // At rest the angle folds back into one turn.
-          const k = mod(Math.round(s.T / STEP), N);
-          s.th = s.T = k * STEP; s.w = 0; s.mode = 'rest'; s.floor = s.near = k;
-        } else moving = true;
-      }
-      const lit = s.fl.some(v => v > 0), still = rest(s.pr);
-      return moving || lit || !still || s.run >= 0;
-    },
-    draw() {
-      const deg = mod(s.th * R2D, 360), r = `rotate(${f2(deg)} 200 200)`;
-      set(knob, 'transform', r);
-      set(ind, 'transform', r);
-      const p = s.pr.x;
-      set(top, 'transform', `translate(200 200) scale(${f3(1 - 0.03 * p)}) translate(-200 -200)`);
-      cap.paint(p * 0.8);
-      const cur = mod(Math.round(s.th / STEP), N);
-      // A primed board holds the whole ring faintly lit.
-      const base = board.primed ? 0.45 : 0;
-      for (let k = 0; k < N; k++) set(tl[k], 'opacity', f2(Math.max(s.fl[k], base, k === cur ? 0.55 : 0)));
-      set(dialEl, 'aria-valuenow', s.mode === 'settle' || s.mode === 'rest' ? mod(Math.round(s.T / STEP), N) : cur);
-    },
-  };
-
-  function polar(e) {
-    const r = s.rect, dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    return [Math.atan2(dx, -dy), Math.hypot(dx, dy) / (r.width / 2)];
-  }
-  dialEl.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { dialEl.setPointerCapture(e.pointerId); } catch {}
-    s.rect = dialEl.getBoundingClientRect();
-    const [a] = polar(e);
-    // The grab point stays under the finger as the knob turns.
-    s.prev = s.pu = a; s.off = s.th - a; s.T = s.th;
-    s.mode = 'drag'; s.trail = [[e.timeStamp, a]];
-    s.pr.t = 1; dialEl.classList.add('held');
-    wake(body);
-  });
-  dialEl.addEventListener('pointermove', e => {
-    if (e.pointerId !== s.pid) return;
-    const [a, d] = polar(e);
-    if (d < 0.1) return;
-    s.pu += angDiff(a, s.prev); s.prev = a;
-    s.T = s.pu + s.off;
-    s.trail.push([e.timeStamp, s.pu]);
-    while (s.trail.length > 2 && e.timeStamp - s.trail[0][0] > 120) s.trail.shift();
-    wake(body);
-  });
-  function end(e) {
-    if (e.pointerId !== s.pid) return;
-    s.pid = null; s.pr.t = 0; dialEl.classList.remove('held');
-    // Pointer speed over the last 100 ms decides flick or snap.
-    const t = e.timeStamp, q = s.trail.filter(p => t - p[0] < 100);
-    let w = 0;
-    if (q.length > 1 && t - q[q.length - 1][0] < 50) {
-      const dt = (q[q.length - 1][0] - q[0][0]) / 1000;
-      if (dt > 0.008) w = (q[q.length - 1][1] - q[0][1]) / dt;
-    }
-    if (!reduce && Math.abs(w) > 5) { s.mode = 'spin'; s.w = clamp(w, -45, 45); }
-    else { s.mode = 'settle'; s.T = Math.round((reduce ? s.T : s.th) / STEP) * STEP; }
-    wake(body);
-  }
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => dialEl.addEventListener(t, end));
-  dialEl.addEventListener('keydown', e => {
-    if (s.pid != null) return;
-    const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 6, PageDown: -6 }[e.key];
-    const base = s.mode === 'settle' ? s.T : Math.round(s.th / STEP) * STEP;
-    if (d) { s.mode = 'settle'; s.T = base + d * STEP; }
-    else if (e.key === 'Home') { s.mode = 'settle'; s.T = Math.round(s.th / TAU) * TAU; }
-    else if (KEYS.includes(e.key)) {
-      // Space flicks the knob; Shift flicks it backwards.
-      const dir = e.shiftKey ? -1 : 1;
-      if (reduce) { s.mode = 'settle'; s.T = base + dir * STEP; }
-      else { s.mode = 'spin'; s.w = clamp(s.w + dir * 14, -45, 45); }
-    } else return;
-    e.preventDefault();
-    if (s.mode === 'settle') set(dialEl, 'aria-valuenow', mod(Math.round(s.T / STEP), N));
-    wake(body);
-  });
-  moves.push({
-    el: dialEl,
-    // Shuffle flicks the knob; reduced motion steps it instead.
-    shuffle() {
-      if (s.pid != null) return;
-      const dir = Math.random() < 0.5 ? -1 : 1;
-      if (reduce) { s.mode = 'settle'; s.T = Math.round(s.th / STEP) * STEP + dir * Math.round(rnd(3, 11)) * STEP; }
-      else { s.mode = 'spin'; s.w = dir * rnd(16, 34); }
-      wake(body);
-    },
-    // Reset turns the indicator back to the top.
-    reset() {
-      if (s.pid != null) return;
-      s.mode = 'settle'; s.T = Math.round(s.th / TAU) * TAU;
-      wake(body);
-    },
-  });
-  board.dial = {
-    // One woken frame redraws the ring.
-    prime() { wake(body); },
-    run() {
-      if (reduce) return;
-      s.r0 = mod(Math.round(s.th / STEP), N); s.run = 0; s.rk = 0;
-      wake(body);
-    },
-  };
-  return body;
-})());
-
-/* ---------- toggle switches ---------- */
-// A raised bezel holds a sunk channel.
-// The channel lights in the switch colour below the lever.
-const BEZEL = mat([0.33, 0.03, 268], 0);
-// The lever travels 58 units; its centre sits at 91 when off.
-const TY = 91, TT = 58;
-document.querySelectorAll('.toggle').forEach(btn => {
-  const svg = svgIn(btn, '0 0 54 124'), defs = svg.k.defs, id = nid('t'), col = C[btn.dataset.c];
-  const tone = (dl, k = 1) => css([col[0] + dl, col[1] * k, col[2]]);
-  skin(svg, svg, 'rect', { width: 54, height: 124, rx: 27 }, BEZEL, { rim: 2, shadow: { b: 3, y: 4, o: 0.55 } });
-  well(svg, svg, 'rect', { x: 7, y: 7, width: 40, height: 110, rx: 20 }, { rim: 3.5 });
-  const clip = el('clipPath', { id }, defs);
-  el('rect', { x: 10, y: 10, width: 34, height: 104, rx: 17 }, clip);
-  const cp = `url(#${id})`;
-  // A dark tint keeps the off channel from reading as a hole.
-  el('rect', { x: 10, y: 10, width: 34, height: 104, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(-0.5, 0.35)], [1, tone(-0.42, 0.45)]]).url, 'clip-path': cp }, svg);
-  const glow = el('g', { 'clip-path': cp }, svg);
-  const lit = el('rect', { x: 10, width: 34, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(0.08, 0.85)], [0.5, tone(0)], [1, tone(-0.14, 1.05)]]).url }, glow);
-  // A soft gloss strip runs down the lit channel.
-  const gloss = el('rect', { x: 15, width: 6, rx: 3, fill: '#fff', opacity: 0.22 }, glow);
-  const lg = el('g', {}, svg);
-  const lever = skin(svg, lg, 'rect', { x: 10, width: 34, height: 44, rx: 17 }, mat(C.cream, 0.12), { rim: 2, shadow: { b: 3, y: 4, o: 0.6 } });
-  // A dished thumb rest with a pip in the switch colour.
-  el('ellipse', { cx: 27, cy: 22, rx: 10, ry: 13, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.2], [0.55, '#000', 0], [1, '#fff', 0.6]]).url }, lg);
-  el('circle', { cx: 27, cy: 22, r: 3.4, fill: tone(-0.04) }, lg);
-  el('circle', { cx: 27, cy: 22, r: 3.4, fill: 'none', stroke: '#000', 'stroke-opacity': 0.22, 'stroke-width': 1 }, lg);
-
-  const init = btn.getAttribute('aria-checked') === 'true';
-  const s = { p: S(+init), pr: S(), on: init, pid: null, y0: 0, p0: 0, span: 1, drag: false };
-  const body = {
-    step(h) {
-      // Free travel overshoots a little; a dragging finger damps it.
-      spring(s.p, s.drag ? 1400 : 600, s.drag ? 0.9 : 0.55, h);
-      spring(s.pr, 900, 0.6, h);
-    },
-    busy() { const a = rest(s.p), b = rest(s.pr); return !(a && b); },
-    draw() {
-      const p = s.p.x, st = clamp(Math.abs(s.p.v) * 0.012, 0, 0.1), sc = 1 - 0.06 * s.pr.x, cy = TY - TT * p;
-      // The lever stretches along its travel while moving fast.
-      set(lg, 'transform', `translate(27 ${f2(cy)}) scale(${f3(sc * (1 - 0.5 * st))} ${f3(sc * (1 + st))}) translate(-27 -22)`);
-      // The colour fills the channel from the lever down.
-      const h = f2(Math.max(0, 114 - cy));
-      set(lit, 'y', f2(cy)); set(lit, 'height', h);
-      set(gloss, 'y', f2(cy + 22)); set(gloss, 'height', f2(Math.max(0, 114 - cy - 30)));
-      set(glow, 'opacity', f3(clamp(p)));
-      lever.paint(s.pr.x * 0.8);
-    },
-  };
-  function flip(v) {
-    if (v !== s.on) snd.flip(v);
-    s.on = v; s.p.t = +v; btn.setAttribute('aria-checked', String(v)); wake(body);
-  }
-  btn.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { btn.setPointerCapture(e.pointerId); } catch {}
-    s.y0 = e.clientY; s.p0 = s.p.x; s.drag = false;
-    s.span = (btn.getBoundingClientRect().height * TT) / 124;
-    s.pr.t = 1;
-    wake(body);
-  });
-  btn.addEventListener('pointermove', e => {
-    if (e.pointerId !== s.pid) return;
-    const dy = e.clientY - s.y0;
-    if (!s.drag && Math.abs(dy) > 5) s.drag = true;
-    if (s.drag) { s.p.t = clamp(s.p0 - dy / s.span); wake(body); }
-  });
-  const up = e => {
-    if (e.pointerId !== s.pid) return;
-    s.pid = null; s.pr.t = 0;
-    if (s.drag) { s.drag = false; flip(s.p.x + s.p.v * 0.05 > 0.5); }
-    else if (e.type === 'pointerup') flip(!s.on);
-    else wake(body);
-  };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, up));
-  // Keyboard clicks arrive with detail 0; pointer taps are handled above.
-  btn.addEventListener('click', e => { if (e.detail === 0) { s.pr.v = 10; flip(!s.on); } });
-  btn.addEventListener('keydown', e => {
-    const v = e.key === 'ArrowUp' ? true : e.key === 'ArrowDown' ? false : null;
-    if (v === null) return;
-    e.preventDefault();
-    if (v !== s.on) { s.pr.v = 10; flip(v); }
-  });
-  const to = v => { if (s.pid == null && v !== s.on) { s.pr.v = 10; flip(v); } };
-  moves.push({ el: btn, shuffle: () => to(Math.random() < 0.5), reset: () => to(init) });
-  bodies.push(body);
 });
-
-/* ---------- joystick ---------- */
-// A recessed gate, a rubber boot, a coral nub on a dark stem.
-const joyEl = document.getElementById('joy');
-bodies.push((() => {
-  const svg = svgIn(joyEl, '0 0 200 200'), defs = svg.k.defs, R = 56;
-  well(svg, svg, 'circle', { cx: 100, cy: 100, r: 99 }, { rim: 6 });
-  const marks = el('g', { stroke: TICK, 'stroke-width': 3, 'stroke-linecap': 'round' }, svg);
-  for (let k = 0; k < 12; k++) {
-    const a = (k / 12) * TAU, c = Math.cos(a), sn = Math.sin(a);
-    el('line', { x1: f2(100 + 84 * sn), y1: f2(100 - 84 * c), x2: f2(100 + 91 * sn), y2: f2(100 - 91 * c) }, marks);
-  }
-  // The boot is a soft dome; the stem leans out of it.
-  el('circle', { cx: 100, cy: 100, r: 30, fill: grad(defs, 'radialGradient', { cx: 0.4, cy: 0.35, r: 0.7 }, [[0, css([0.36, 0.02, 270])], [1, css([0.18, 0.015, 270])]]).url }, svg);
-  const stem = el('line', { x1: 100, y1: 100, x2: 100, y2: 100, stroke: css([0.27, 0.015, 270]), 'stroke-width': 20, 'stroke-linecap': 'round' }, svg);
-  const ng = el('g', {}, svg);
-  const nub = skin(svg, ng, 'circle', { cx: 100, cy: 100, r: 40 }, mat(C.coral, 0.1), { rim: 3, shadow: { b: 6, y: 8, o: 0.6 } });
-  // A shallow thumb dish sits in the top of the nub.
-  el('circle', { cx: 100, cy: 100, r: 22, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.22], [0.6, '#000', 0], [1, '#fff', 0.35]]).url }, ng);
-  const s = { x: S(), y: S(), pr: S(), pid: null, ox: 0, oy: 0, keys: 0, rect: null };
-  const body = {
-    step(h) {
-      // Held, the nub tracks firmly; let go, it wobbles home.
-      const k = s.pid != null ? 1500 : s.keys ? 700 : 240, z = s.pid != null ? 0.85 : s.keys ? 0.7 : 0.16;
-      spring(s.x, k, z, h);
-      spring(s.y, k, z, h);
-      const m = Math.hypot(s.x.x, s.y.x);
-      if (m > R) {
-        // The gate rim stops the nub and returns part of its speed.
-        const nx = s.x.x / m, ny = s.y.x / m, vn = s.x.v * nx + s.y.v * ny;
-        s.x.x = nx * R; s.y.x = ny * R;
-        if (vn > 160) snd.rim(clamp(vn / 700));
-        if (vn > 0) { s.x.v -= 1.5 * vn * nx; s.y.v -= 1.5 * vn * ny; }
-      }
-      spring(s.pr, 900, 0.55, h);
-    },
-    busy() { const a = rest(s.x, 0.05), b = rest(s.y, 0.05), c = rest(s.pr); return !(a && b && c); },
-    draw() {
-      const x = s.x.x, y = s.y.x, sc = 1 - 0.06 * s.pr.x;
-      set(stem, 'x2', f2(100 + x));
-      set(stem, 'y2', f2(100 + y));
-      set(ng, 'transform', `translate(${f2(100 + x)} ${f2(100 + y)}) scale(${f3(sc)}) translate(-100 -100)`);
-      nub.paint(s.pr.x * 0.8);
-      shine(x / R, y / R);
-    },
-  };
-  function aim(x, y) {
-    const m = Math.hypot(x, y), k = m > R ? R / m : 1;
-    s.x.t = x * k; s.y.t = y * k;
-    wake(body);
-  }
-  const local = e => {
-    const r = s.rect;
-    return [((e.clientX - r.left) / r.width) * 200 - 100, ((e.clientY - r.top) / r.height) * 200 - 100];
-  };
-  joyEl.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { joyEl.setPointerCapture(e.pointerId); } catch {}
-    s.rect = joyEl.getBoundingClientRect();
-    const [qx, qy] = local(e), onNub = Math.hypot(qx - s.x.x, qy - s.y.x) < 44;
-    s.ox = onNub ? s.x.x - qx : 0; s.oy = onNub ? s.y.x - qy : 0;
-    s.pr.t = 1; joyEl.classList.add('held');
-    aim(qx + s.ox, qy + s.oy);
-  });
-  joyEl.addEventListener('pointermove', e => {
-    if (e.pointerId !== s.pid) return;
-    const [qx, qy] = local(e);
-    aim(qx + s.ox, qy + s.oy);
-  });
-  // Let go off centre, the spring sings as the nub swings home.
-  const boing = () => { const m = Math.hypot(s.x.x, s.y.x) / R; if (m > 0.2) snd.boing(m); };
-  const up = e => {
-    if (e.pointerId !== s.pid) return;
-    s.pid = null; s.pr.t = 0; joyEl.classList.remove('held');
-    if (!held.size) boing();
-    steer();
-  };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => joyEl.addEventListener(t, up));
-  const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }, held = new Set();
-  function steer() {
-    let dx = 0, dy = 0;
-    held.forEach(k => { dx += dirs[k][0]; dy += dirs[k][1]; });
-    const m = Math.hypot(dx, dy) || 1;
-    s.keys = held.size;
-    aim((dx / m) * R, (dy / m) * R);
-  }
-  joyEl.addEventListener('keydown', e => {
-    if (dirs[e.key]) {
-      e.preventDefault();
-      if (!held.has(e.key) && s.pid == null) { held.add(e.key); steer(); }
-    } else if (KEYS.includes(e.key)) {
-      e.preventDefault();
-      s.pr.t = 1; wake(body);
-    }
-  });
-  joyEl.addEventListener('keyup', e => {
-    if (held.delete(e.key)) {
-      if (s.pid != null) return;
-      if (!held.size) boing();
-      steer();
-    }
-    else if (KEYS.includes(e.key)) { s.pr.t = 0; wake(body); }
-  });
-  joyEl.addEventListener('blur', () => {
-    held.clear(); s.pr.t = 0;
-    if (s.pid == null) steer();
-  });
-  moves.push({
-    el: joyEl,
-    // Shuffle kicks the nub at the rim; it knocks, then swings home.
-    shuffle() {
-      if (s.pid != null || held.size || reduce) return;
-      const a = rnd(0, TAU), v = rnd(900, 1300);
-      s.x.v += v * Math.cos(a); s.y.v += v * Math.sin(a);
-      snd.boing(0.8);
-      wake(body);
-    },
-  });
-  return body;
-})());
-
-/* ---------- keycaps ---------- */
-// Cream caps with a dished top; the latching key is mint with a pip.
-document.querySelectorAll('.key').forEach(btn => {
-  const latch = btn.hasAttribute('aria-pressed'), col = latch ? C.mint : C.cream;
-  const svg = svgIn(btn, '0 0 100 100'), defs = svg.k.defs;
-  // The skirt is the cap's side, a shade down from its top.
-  const skirt = skin(svg, svg, 'rect', { x: 2, y: 4, width: 96, height: 94, rx: 20 }, mat([col[0] - 0.2, col[1] * 1.1, col[2]], 0.05), { rim: 2, sheen: false, shadow: { b: 4, y: 6, o: 0.6 } });
-  const tg = el('g', {}, svg);
-  const top = skin(svg, tg, 'rect', { x: 10, y: 4, width: 80, height: 72, rx: 16 }, mat(col, 0.12), { rim: 2.5 });
-  el('rect', { x: 18, y: 11, width: 64, height: 58, rx: 13, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.09], [0.5, '#000', 0], [1, '#fff', 0.35]]).url }, tg);
-  const pip = latch ? el('circle', { cx: 50, cy: 20, r: 5.5 }, tg) : null;
-  if (pip) el('circle', { cx: 50, cy: 20, r: 5.5, fill: 'none', stroke: '#000', 'stroke-opacity': 0.25, 'stroke-width': 1.5 }, tg);
-  const PIP = ramp([0.52, 0.08, 168], [0.97, 0.06, 140]);
-  const s = { d: S(), lk: S(), held: false, locked: false, pid: null, kb: false, keyAt: 0 };
-  const body = {
-    step(h) {
-      // Fast firm downstroke, bouncy return, a softer catch when latched.
-      if (s.held) spring(s.d, 1800, 0.7, h);
-      else if (s.locked) spring(s.d, 900, 0.45, h);
-      else spring(s.d, 650, 0.32, h);
-      spring(s.lk, 400, 0.8, h);
-    },
-    busy() { const a = rest(s.d), b = rest(s.lk); return !(a && b); },
-    draw() {
-      const d = s.d.x, sq = clamp(s.d.v / 16, -1, 1), sc = 1 - 0.05 * clamp(d, -0.3, 1);
-      // The top sinks toward the board and squashes with its speed.
-      set(skirt.shape, 'y', f2(4 + 6 * d));
-      set(skirt.shape, 'height', f2(94 - 6 * d));
-      // Pressed, the cap nears the panel and its shadow tightens.
-      set(skirt.sh, 'opacity', f3(0.6 - 0.3 * clamp(d)));
-      set(skirt.sh, 'transform', `translate(0 ${f2(6 - 4 * clamp(d))})`);
-      set(tg, 'transform', `translate(50 ${f2(40 + 8 * d)}) scale(${f3(sc * (1 + 0.07 * sq))} ${f3(sc * (1 - 0.09 * sq))}) translate(-50 -40)`);
-      top.paint(d * 0.9);
-      skirt.paint(d * 0.5);
-      if (pip) set(pip, 'fill', PIP(s.lk.x));
-    },
-  };
-  // Only a hand on a plain key fires a primed board.
-  function press(auto) {
-    s.held = true; s.d.t = 1; snd.down();
-    if (!auto && !latch && board.primed) board.fire();
-    wake(body);
-  }
-  function release() {
-    s.held = false;
-    snd.up();
-    if (latch) {
-      s.locked = !s.locked;
-      s.lk.t = +s.locked;
-      snd.latch(s.locked);
-      btn.setAttribute('aria-pressed', String(s.locked));
-      board.set('latched', s.locked);
-    }
-    s.d.t = s.locked ? 0.6 : 0;
-    wake(body);
-  }
-  btn.addEventListener('pointerdown', e => {
-    if (s.pid != null || s.kb || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { btn.setPointerCapture(e.pointerId); } catch {}
-    press();
-  });
-  const up = e => { if (e.pointerId === s.pid) { s.pid = null; release(); } };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, up));
-  // Keys hold down for as long as Space or Enter is held.
-  btn.addEventListener('keydown', e => {
-    if (!KEYS.includes(e.key)) return;
-    e.preventDefault();
-    if (!e.repeat && !s.kb && s.pid == null) { s.kb = true; press(); }
-  });
-  btn.addEventListener('keyup', e => {
-    if (!KEYS.includes(e.key) || !s.kb) return;
-    e.preventDefault();
-    s.kb = false; s.keyAt = performance.now();
-    release();
-  });
-  btn.addEventListener('blur', () => { if (s.kb) { s.kb = false; release(); } });
-  // Assistive tech clicks without key events; they get a short tap.
-  const tap = auto => { if (s.held || s.kb || s.pid != null) return; press(auto); setTimeout(release, 120); };
-  btn.addEventListener('click', e => {
-    if (e.detail !== 0 || performance.now() - s.keyAt < 300) return;
-    tap(false);
-  });
-  moves.push({
-    el: btn,
-    // Shuffle taps about half the keys.
-    shuffle() { if (Math.random() < 0.5) tap(true); },
-    // Reset taps a latched key loose.
-    reset() { if (s.locked) tap(true); },
-  });
-  bodies.push(body);
-});
-
-/* ---------- slider ---------- */
-// The track runs the panel's length; the cream thumb has five notches.
-const faderEl = document.getElementById('fader');
-bodies.push((() => {
-  const VH = 110, svg = svgIn(faderEl, `0 0 600 ${VH}`);
-  const track = well(svg, svg, 'rect', { x: 8, y: 37, width: 584, height: 18, rx: 9 }, { rim: 3 });
-  const base = el('g', { stroke: TICK, 'stroke-width': 5, 'stroke-linecap': 'round' }, svg);
-  const lit = el('g', { stroke: BUTTER, 'stroke-width': 5, 'stroke-linecap': 'round' }, svg);
-  const ticks = [0, 1, 2, 3, 4].map(() => [el('line', { y1: 96, y2: 106 }, base), el('line', { y1: 96, y2: 106, opacity: 0 }, lit)]);
-  const tg = el('g', {}, svg);
-  const thumb = skin(svg, tg, 'rect', { y: 8, width: 50, height: 76, rx: 12 }, mat(C.cream, 0.12), { rim: 2.5, shadow: { b: 4, y: 6, o: 0.6 } });
-  // A groove across the cap marks its centre.
-  el('rect', { x: 22.5, y: 20, width: 5, height: 52, rx: 2.5, fill: css([0.6, 0.02, 80]) }, tg);
-  el('rect', { x: 27.5, y: 20, width: 1.5, height: 52, rx: 0.75, fill: '#fff', opacity: 0.7 }, tg);
-  let VW = 600, SP = 132.5, XS = [];
-  const s = { x: S(), n: 2, tk: 2, pr: S(), pid: null, off: 0, grab: false, drag: false, rect: null };
-  // The viewBox follows the element, so notches spread with the plate.
-  function fit() {
-    const r = faderEl.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) VW = Math.max(320, Math.round((VH * r.width) / r.height));
-    svg.setAttribute('viewBox', `0 0 ${VW} ${VH}`);
-    SP = (VW - 70) / 4; XS = [0, 1, 2, 3, 4].map(i => 35 + i * SP);
-    set(track, 'x', 8); set(track, 'width', VW - 16);
-    ticks.forEach(([b, l], i) => { for (const m of [b, l]) { set(m, 'x1', f2(XS[i])); set(m, 'x2', f2(XS[i])); } });
-    s.x.x = s.x.t = XS[s.n]; s.x.v = 0; s.tk = s.n;
-    body.draw();
-  }
-  const body = {
-    step(h) {
-      // A soft spring under the finger makes the thumb feel heavy.
-      if (s.drag) spring(s.x, 170, 0.72, h);
-      else spring(s.x, 300, 0.5, h);
-      // End stops knock the thumb back.
-      const p = s.x;
-      if (p.x < XS[0] - 10) { p.x = XS[0] - 10; if (p.v < 0) p.v *= -0.35; }
-      else if (p.x > XS[4] + 10) { p.x = XS[4] + 10; if (p.v > 0) p.v *= -0.35; }
-      // A notch ticks once on arrival, then rearms once left.
-      const i = clamp(Math.round((p.x - XS[0]) / SP), 0, 4);
-      if (Math.abs(p.x - XS[i]) < 4) { if (s.tk !== i) { s.tk = i; snd.notch(clamp(Math.abs(p.v) / (13.6 * SP))); } }
-      else if (s.tk >= 0 && Math.abs(p.x - XS[s.tk]) > 24) s.tk = -1;
-      spring(s.pr, 900, 0.6, h);
-    },
-    busy() { const a = rest(s.x, 0.04), b = rest(s.pr); return !(a && b); },
-    draw() {
-      // Speeds count in notch spacings, so feel holds at any length.
-      const x = s.x.x, sp = (Math.abs(s.x.v) * 110) / SP;
-      const st = clamp(sp / 2400, 0, 0.08), sc = 1 - 0.05 * s.pr.x;
-      // Moving, the thumb scrapes faintly along its track.
-      snd.scrape.set(0.035 * clamp(sp / 2400), 900 + 0.3 * sp);
-      set(tg, 'transform', `translate(${f2(x)} 46) scale(${f3(sc * (1 + st))} ${f3(sc * (1 - 0.5 * st))}) translate(-25 -46)`);
-      thumb.paint(s.pr.x * 0.8);
-      // Notches light as the thumb nears them.
-      ticks.forEach(([, m], i) => {
-        const o = clamp(1 - Math.abs(x - XS[i]) / (SP / 2));
-        set(m, 'opacity', f3(o * o * (3 - 2 * o)));
-      });
-    },
-  };
-  function go(n) {
-    s.n = n; s.x.t = XS[n]; s.drag = false;
-    faderEl.setAttribute('aria-valuenow', String(n + 1));
-    wake(body);
-  }
-  const local = e => ((e.clientX - s.rect.left) / s.rect.width) * VW;
-  faderEl.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { faderEl.setPointerCapture(e.pointerId); } catch {}
-    s.rect = faderEl.getBoundingClientRect();
-    const q = local(e);
-    // Grabbing the thumb keeps its offset; the track pulls it over.
-    s.grab = Math.abs(q - s.x.x) < 34;
-    s.off = s.grab ? s.x.x - q : 0;
-    s.drag = true; s.x.t = clamp(q + s.off, XS[0], XS[4]);
-    s.pr.t = 1; faderEl.classList.add('held');
-    wake(body);
-  });
-  faderEl.addEventListener('pointermove', e => {
-    if (e.pointerId !== s.pid) return;
-    s.x.t = clamp(local(e) + s.off, XS[0], XS[4]);
-    wake(body);
-  });
-  const up = e => {
-    if (e.pointerId !== s.pid) return;
-    s.pid = null; s.pr.t = 0; faderEl.classList.remove('held');
-    // A held thumb lands where it is heading; a track tap, where tapped.
-    const aim = s.grab ? s.x.x + s.x.v * 0.12 : s.x.t;
-    go(clamp(Math.round((aim - XS[0]) / SP), 0, 4));
-  };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => faderEl.addEventListener(t, up));
-  faderEl.addEventListener('keydown', e => {
-    const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 1, PageDown: -1 }[e.key];
-    let n;
-    if (d) n = s.n + d;
-    else if (e.key === 'Home') n = 0;
-    else if (e.key === 'End') n = 4;
-    else return;
-    e.preventDefault();
-    if (s.pid == null) go(clamp(n, 0, 4));
-  });
-  moves.push({
-    el: faderEl,
-    shuffle() { if (s.pid == null) go(mod(s.n + 1 + Math.floor(Math.random() * 4), 5)); },
-    reset() { if (s.pid == null && s.n !== 2) go(2); },
-  });
-  fit();
-  new ResizeObserver(fit).observe(faderEl);
-  return body;
-})());
-
-/* ---------- abacus ---------- */
-// Five glossy beads on a steel rod between two steel posts.
-const abEl = document.getElementById('abacus');
-bodies.push((() => {
-  const VH = 100, svg = svgIn(abEl, `0 0 600 ${VH}`), defs = svg.k.defs;
-  const HW = 25, MU = 1500, E = 0.42;
-  // The rod is a thin cylinder: lit along its top, dark beneath.
-  const rod = el('rect', { y: 46.5, height: 7, rx: 3.5, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.62, 0.012, 255])], [0.35, css([0.96, 0.008, 255])], [1, css([0.42, 0.015, 260])]]).url }, svg);
-  const posts = { o: 0.5, b: 3, y: 4 }, PM = mat(C.steel, 0);
-  const postL = skin(svg, svg, 'rect', { x: 2, y: 8, width: 12, height: 84, rx: 6 }, PM, { rim: 2, shadow: posts });
-  const postR = skin(svg, svg, 'rect', { y: 8, width: 12, height: 84, rx: 6 }, PM, { rim: 2, shadow: posts });
-  void postL;
-  // Beads are bicones seen side on: pointed rims, flat bores.
-  const BEAD = 'M-25-5C-25-13-9-38 0-38S25-13 25-5V5C25 13 9 38 0 38S-25 13-25 5Z';
-  const beads = ['coral', 'butter', 'mint', 'sky', 'lilac'].map(k => {
-    const g = el('g', {}, svg);
-    return { g, sk: skin(svg, g, 'path', { d: BEAD }, mat(C[k], 0.1), { rim: 2.5, shadow: { b: 3.5, y: 5, o: 0.55 } }) };
-  });
-  let VW = 600, L = 16, R = 584, MID = 300;
-  const x = new Float64Array(5), v = new Float64Array(5);
-  const lo = i => L + HW + i * 2 * HW, hi = i => R - HW - (4 - i) * 2 * HW;
-  for (let i = 0; i < 5; i++) x[i] = lo(i);
-  const s = { di: -1, T: 0, off: 0, pid: null, rect: null, pr: S(), n: 0 };
-  // The rod follows the plate; each bead keeps its share of the travel.
-  function fit() {
-    const r = abEl.getBoundingClientRect();
-    const span = hi(0) - lo(0), f = Array.from(x, (xi, i) => (span > 0 ? (xi - lo(i)) / span : 0));
-    if (r.width > 0 && r.height > 0) VW = Math.max(340, Math.round((VH * r.width) / r.height));
-    svg.setAttribute('viewBox', `0 0 ${VW} ${VH}`);
-    L = 16; R = VW - 16; MID = VW / 2;
-    set(rod, 'x', 8); set(rod, 'width', VW - 16);
-    set(postR.shape, 'x', VW - 14);
-    const ns = hi(0) - lo(0);
-    for (let i = 0; i < 5; i++) { x[i] = lo(i) + clamp(f[i]) * ns; if (i !== s.di) v[i] = 0; }
-    if (s.di >= 0) s.T = clamp(s.T, lo(s.di), hi(s.di));
-    body.draw();
-  }
-  function contact() {
-    // The frame posts stop the end beads with a duller knock.
-    if (x[0] < L + HW) { if (v[0] < -40) snd.knock(clamp(-v[0] / 1400)); x[0] = L + HW; if (v[0] < 0) v[0] *= -0.3; }
-    if (x[4] > R - HW) { if (v[4] > 40) snd.knock(clamp(v[4] / 1400)); x[4] = R - HW; if (v[4] > 0) v[4] *= -0.3; }
-    for (let i = 0; i < 4; i++) {
-      const j = i + 1, p = x[i] + 2 * HW - x[j];
-      if (p <= 0) continue;
-      if (i === s.di) x[j] += p;
-      else if (j === s.di) x[i] -= p;
-      else { x[i] -= p / 2; x[j] += p / 2; }
-      const rv = v[i] - v[j];
-      if (rv <= 0) continue;
-      if (rv > 40) snd.clack(clamp(rv / 1400));
-      // Equal beads trade speed; a held bead acts as a wall.
-      if (i === s.di) v[j] = v[i] + E * rv;
-      else if (j === s.di) v[i] = v[j] - E * rv;
-      else { const m = (v[i] + v[j]) / 2, d = (E * rv) / 2; v[i] = m - d; v[j] = m + d; }
-    }
-  }
-  const body = {
-    step(h) {
-      for (let i = 0; i < 5; i++) {
-        if (i === s.di) {
-          if (reduce) { x[i] = s.T; v[i] = 0; }
-          else { v[i] += (1100 * (s.T - x[i]) - 60 * v[i]) * h; x[i] += v[i] * h; }
-        } else if (v[i]) {
-          // Rod friction is constant: beads glide, then stop dead.
-          const dv = MU * h;
-          v[i] = Math.abs(v[i]) <= dv ? 0 : v[i] - Math.sign(v[i]) * dv;
-          x[i] += v[i] * h;
-        }
-      }
-      for (let k = 0; k < 4; k++) contact();
-      spring(s.pr, 900, 0.6, h);
-    },
-    busy() {
-      let m = false;
-      for (let i = 0; i < 5; i++) if (i !== s.di && v[i]) m = true;
-      if (s.di >= 0) {
-        if (Math.abs(x[s.di] - s.T) > 0.05 || Math.abs(v[s.di]) > 0.5) m = true;
-        else v[s.di] = 0;
-      }
-      return m || !rest(s.pr);
-    },
-    draw() {
-      let n = 0;
-      beads.forEach((b, i) => {
-        const sc = i === s.di ? 1 - 0.04 * s.pr.x : 1;
-        set(b.g, 'transform', `translate(${f2(x[i])} 50) scale(${f3(sc)})`);
-        b.sk.paint(i === s.di ? s.pr.x * 0.7 : 0);
-        if (x[i] > MID) n++;
-      });
-      if (n !== s.n) { s.n = n; abEl.setAttribute('aria-valuenow', String(n)); }
-    },
-  };
-  const local = e => ((e.clientX - s.rect.left) / s.rect.width) * VW;
-  abEl.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.rect = abEl.getBoundingClientRect();
-    const q = local(e);
-    let i = -1, best = HW + 14;
-    for (let k = 0; k < 5; k++) { const d = Math.abs(x[k] - q); if (d < best) { best = d; i = k; } }
-    if (i < 0) return;
-    s.pid = e.pointerId;
-    try { abEl.setPointerCapture(e.pointerId); } catch {}
-    // The grabbed bead keeps its offset and its neighbours' room.
-    s.di = i; s.off = x[i] - q; s.T = clamp(q + s.off, lo(i), hi(i));
-    s.pr.t = 1; abEl.classList.add('held');
-    wake(body);
-  });
-  abEl.addEventListener('pointermove', e => {
-    if (e.pointerId !== s.pid) return;
-    s.T = clamp(local(e) + s.off, lo(s.di), hi(s.di));
-    wake(body);
-  });
-  const up = e => {
-    if (e.pointerId !== s.pid) return;
-    s.pid = null; s.pr.t = 0; abEl.classList.remove('held');
-    // Let go mid-swipe, the bead keeps gliding.
-    const i = s.di;
-    s.di = -1;
-    v[i] = reduce ? 0 : clamp(v[i], -2600, 2600);
-    wake(body);
-  };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => abEl.addEventListener(t, up));
-  // A flick just hard enough to reach the slot, then knock.
-  function send(i, to) {
-    const d = to - x[i];
-    if (Math.abs(d) < 1) return;
-    if (reduce) {
-      x[i] = to; v[i] = 0;
-      for (let k = 0; k < 4; k++) contact();
-      snd.clack(0.5);
-    } else v[i] = Math.sign(d) * Math.sqrt(2 * MU * Math.abs(d)) * 1.1;
-  }
-  const count = () => { let n = 0; for (let i = 0; i < 5; i++) if (x[i] > MID) n++; return n; };
-  // The right-hand beads are always the last n.
-  function settleTo(n) {
-    for (let i = 0; i < 5; i++) {
-      const right = i >= 5 - n;
-      if (right && x[i] <= MID) send(i, hi(i));
-      else if (!right && x[i] > MID) send(i, lo(i));
-    }
-    wake(body);
-  }
-  abEl.addEventListener('keydown', e => {
-    if (s.pid != null) return;
-    const n = count(), k = e.key;
-    if ((k === 'ArrowRight' || k === 'ArrowUp' || k === 'PageUp') && n < 5) send(4 - n, hi(4 - n));
-    else if ((k === 'ArrowLeft' || k === 'ArrowDown' || k === 'PageDown') && n > 0) send(5 - n, lo(5 - n));
-    else if (k === 'Home') { for (let i = 0; i < 5; i++) if (x[i] > MID) send(i, lo(i)); }
-    else if (k === 'End') { for (let i = 0; i < 5; i++) if (x[i] <= MID) send(i, hi(i)); }
-    else if (!/^Arrow|^Page/.test(k)) return;
-    e.preventDefault();
-    wake(body);
-  });
-  moves.push({
-    el: abEl,
-    shuffle() { if (s.pid == null) settleTo(mod(count() + 1 + Math.floor(Math.random() * 5), 6)); },
-    reset() { if (s.pid == null) settleTo(0); },
-  });
-  fit();
-  new ResizeObserver(fit).observe(abEl);
-  return body;
-})());
-
-/* ---------- safety switch ---------- */
-// A striped navy mount, a tinted red cover, a cream lever under it.
-const safeEl = document.getElementById('safety');
-bodies.push((() => {
-  const VW = 100, VH = 156, HY = 19, svg = svgIn(safeEl, `0 0 ${VW} ${VH}`), defs = svg.k.defs;
-  const [coverBtn, armBtn] = safeEl.querySelectorAll('button');
-  const mount = skin(svg, svg, 'rect', { width: VW, height: VH, rx: 16 }, mat(C.navy, 0), { rim: 2.5, shadow: { b: 5, y: 7, o: 0.55 } });
-  // Butter hazard stripes run round the mount, under its rim light.
-  const frame = el('clipPath', { id: nid('c') }, defs);
-  el('rect', { x: 4, y: 4, width: VW - 8, height: VH - 8, rx: 12 }, frame);
-  let stripes = '';
-  for (let k = 0; k < VW + VH + 16; k += 16) stripes += `M${k} 0h8l-${VH} ${VH}h-8Z`;
-  el('path', { d: stripes, fill: BUTTER, opacity: 0.85, 'clip-path': `url(#${frame.id})` }, svg);
-  void mount;
-  well(svg, svg, 'rect', { x: 32, y: 38, width: 36, height: 102, rx: 18 }, { rim: 3.5 });
-  const slot = el('clipPath', { id: nid('c') }, defs);
-  el('rect', { x: 36, y: 42, width: 28, height: 94, rx: 14 }, slot);
-  el('rect', { x: 36, y: 42, width: 28, height: 94, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.2, 0.06, 28])], [1, css([0.26, 0.08, 28])]]).url, 'clip-path': `url(#${slot.id})` }, svg);
-  const glow = el('rect', { x: 36, width: 28, fill: grad(defs, 'linearGradient', DOWN, [[0, css([0.7, 0.17, 30])], [1, css([0.5, 0.18, 26])]]).url, 'clip-path': `url(#${slot.id})` }, svg);
-  const lg = el('g', {}, svg);
-  const lever = skin(svg, lg, 'rect', { x: 37, width: 26, height: 34, rx: 13 }, mat(C.cream, 0.12), { rim: 2, shadow: { b: 2.5, y: 3.5, o: 0.55 } });
-  // The same dished thumb rest as the toggles, with a red pip.
-  el('ellipse', { cx: 50, cy: 17, rx: 7.5, ry: 10, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.2], [0.55, '#000', 0], [1, '#fff', 0.6]]).url }, lg);
-  el('circle', { cx: 50, cy: 17, r: 2.6, fill: css([0.6, 0.17, 28]) }, lg);
-  // The cover is tinted plastic, so the lever shows through faintly.
-  const cg = el('g', { opacity: 0.88 }, svg);
-  const lid = skin(svg, cg, 'rect', { x: 10, y: 20, width: 80, height: 124, rx: 15 }, mat(C.red, 0.16), { rim: 3, shadow: { b: 4, y: 5, o: 0.5 } });
-  el('rect', { x: 26, y: 132, width: 48, height: 6, rx: 3, fill: css([0.46, 0.15, 24]) }, cg);
-  skin(svg, svg, 'rect', { x: 5, y: 10, width: 90, height: 18, rx: 9 }, mat(C.steel, 0), { rim: 2, shadow: { b: 2.5, y: 3, o: 0.5 } });
-  for (const cx of [19, 81]) el('circle', { cx, cy: HY, r: 3.2, fill: css([0.45, 0.012, 255]) }, svg);
-  const s = { c: S(), p: S(), pr: S(), open: false, on: false, tm: 0, pid: null };
-  const body = {
-    step(h) {
-      // Open, a loose spring flips the cover up; shut, a firm one.
-      spring(s.c, s.open ? 260 : 620, s.open ? 0.3 : 0.5, h);
-      // The seat stops a falling cover with a clack.
-      if (s.c.x < 0) {
-        if (s.c.v < -1) snd.shut(clamp(-s.c.v / 14));
-        s.c.x = 0;
-        if (s.c.v < 0) s.c.v *= -0.25;
-      }
-      // The hinge stop catches an overswing.
-      if (s.c.x > 1.1) { s.c.x = 1.1; if (s.c.v > 0) s.c.v *= -0.3; }
-      spring(s.p, 900, 0.55, h);
-      spring(s.pr, 900, 0.6, h);
-    },
-    busy() { const a = rest(s.c), b = rest(s.p), c = rest(s.pr); return !(a && b && c); },
-    draw() {
-      // The cover turns about the hinge; past upright, its underside shows.
-      const k = Math.cos(s.c.x * 98 * D2R);
-      set(cg, 'transform', `translate(0 ${HY}) scale(1 ${f3(k)}) translate(0 ${-HY})`);
-      lid.paint(k >= 0 ? 0.5 * (1 - k) : 0.8 - 0.2 * k);
-      const p = s.p.x, sc = 1 - 0.06 * s.pr.x, cy = 117 - 56 * p;
-      set(lg, 'transform', `translate(50 ${f2(cy)}) scale(${f3(sc)}) translate(-50 -17)`);
-      set(glow, 'y', f2(cy));
-      set(glow, 'height', f2(Math.max(0, 136 - cy)));
-      set(glow, 'opacity', f3(clamp(p)));
-      lever.paint(s.pr.x * 0.8);
-    },
-  };
-  function arm(v) {
-    s.on = v; s.p.t = +v;
-    snd.flip(v, true);
-    armBtn.setAttribute('aria-checked', String(v));
-    board.set('armed', v);
-  }
-  function cover(open) {
-    clearTimeout(s.tm);
-    if (open === s.open) return;
-    // Shutting the cover pushes a live switch off.
-    if (!open && s.on) arm(false);
-    s.open = open; s.c.t = +open;
-    if (open) snd.lift();
-    else if (reduce) snd.shut(1);
-    coverBtn.setAttribute('aria-expanded', String(open));
-    armBtn.setAttribute('aria-disabled', String(!open));
-    wake(body);
-  }
-  function toggle(v) {
-    if (v === s.on) return;
-    arm(v);
-    // Switched off, the cover is let go and snaps shut.
-    if (!v) s.tm = setTimeout(() => cover(false), reduce ? 0 : 170);
-    wake(body);
-  }
-  function blocked() {
-    snd.block();
-    // The shut cover rattles on its seat.
-    if (!reduce) { s.c.v = 2.4; wake(body); }
-  }
-  safeEl.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { safeEl.setPointerCapture(e.pointerId); } catch {}
-    const r = safeEl.getBoundingClientRect(), y = ((e.clientY - r.top) / r.height) * VH;
-    // Shut, a tap lifts the cover; open, the hinge shuts it and the rest flips.
-    if (!s.open) cover(true);
-    else if (y < 30) cover(false);
-    else { s.pr.t = 1; toggle(!s.on); }
-  });
-  const up = e => { if (e.pointerId === s.pid) { s.pid = null; s.pr.t = 0; wake(body); } };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => safeEl.addEventListener(t, up));
-  coverBtn.addEventListener('click', () => cover(!s.open));
-  armBtn.addEventListener('click', () => {
-    if (!s.open) blocked();
-    else { s.pr.v = 10; toggle(!s.on); }
-  });
-  armBtn.addEventListener('keydown', e => {
-    const v = e.key === 'ArrowUp' ? true : e.key === 'ArrowDown' ? false : null;
-    if (v === null) return;
-    e.preventDefault();
-    if (!s.open) blocked();
-    else if (v !== s.on) { s.pr.v = 10; toggle(v); }
-  });
-  moves.push({
-    el: safeEl,
-    // Shuffle lifts the cover, and sometimes arms the switch too.
-    shuffle() {
-      if (s.pid != null) return;
-      const r = Math.random();
-      if (!s.open) { cover(true); if (r < 0.5) s.tm = setTimeout(() => { s.pr.v = 10; toggle(true); }, reduce ? 0 : 260); }
-      else if (s.on || r < 0.5) { if (s.on) toggle(false); else cover(false); }
-      else { s.pr.v = 10; toggle(true); }
-    },
-    reset() {
-      if (s.pid != null) return;
-      if (s.on) toggle(false);
-      else cover(false);
-    },
-  });
-  return body;
-})());
-
-/* ---------- rocker switches ---------- */
-// Two-part paddles in recessed wells; the pressed half sinks and darkens.
-document.querySelectorAll('.rocker').forEach(btn => {
-  const svg = svgIn(btn, '0 0 64 104'), M = mat(C[btn.dataset.c], 0.16);
-  // The same raised bezel as the toggles frames the well.
-  skin(svg, svg, 'rect', { width: 64, height: 104, rx: 16 }, BEZEL, { rim: 2, shadow: { b: 3, y: 4, o: 0.55 } });
-  well(svg, svg, 'rect', { x: 5, y: 5, width: 54, height: 94, rx: 12 }, { rim: 3.5 });
-  const tg = el('g', {}, svg), bg = el('g', {}, svg);
-  const top = skin(svg, tg, 'path', { d: 'M9 52V19A10 10 0 0 1 19 9H45A10 10 0 0 1 55 19V52Z' }, M, { rim: 2, shadow: { b: 2.5, y: 3, o: 0.45 } });
-  const bot = skin(svg, bg, 'path', { d: 'M9 52H55V85A10 10 0 0 1 45 95H19A10 10 0 0 1 9 85Z' }, M, { rim: 2 });
-  // I and O are engraved: a dark cut over a lit lower edge.
-  const cut = (a, g) => {
-    el(a[0], { ...a[1], fill: 'none', stroke: '#fff', 'stroke-opacity': 0.35, 'stroke-width': 2.6, 'stroke-linecap': 'round', transform: 'translate(0 1)' }, g);
-    el(a[0], { ...a[1], fill: 'none', stroke: '#000', 'stroke-opacity': 0.4, 'stroke-width': 2.6, 'stroke-linecap': 'round' }, g);
-  };
-  // The marks ride their halves unscaled, so the O stays round.
-  // Both half centres shift by -d / 2.
-  const mk = el('g', {}, svg);
-  cut(['line', { x1: 32, y1: 22, x2: 32, y2: 34 }], mk);
-  cut(['circle', { cx: 32, cy: 74, r: 6 }], mk);
-  const seam = el('line', { x1: 9, x2: 55, stroke: '#000', 'stroke-opacity': 0.3, 'stroke-width': 1.2 }, svg);
-  const init = btn.getAttribute('aria-checked') === 'true';
-  const s = { r: S(init ? 1 : -1), pr: S(), on: init, side: 1, pid: null };
-  const body = {
-    step(h) {
-      spring(s.r, 1500, 0.5, h);
-      // End stops catch the paddle as it rocks over.
-      if (Math.abs(s.r.x) > 1) { s.r.x = Math.sign(s.r.x); if (s.r.x * s.r.v > 0) s.r.v *= -0.25; }
-      spring(s.pr, 900, 0.6, h);
-    },
-    busy() { const a = rest(s.r), b = rest(s.pr); return !(a && b); },
-    draw() {
-      const r = s.r.x, d = 6 * r + 1.5 * s.pr.x * s.side;
-      // The pressed half sinks and shortens; the other half rises.
-      set(tg, 'transform', `translate(0 9) scale(1 ${f3((43 - d) / 43)}) translate(0 -9)`);
-      set(bg, 'transform', `translate(0 95) scale(1 ${f3((43 + d) / 43)}) translate(0 -95)`);
-      set(seam, 'y1', f2(52 - d)); set(seam, 'y2', f2(52 - d));
-      set(mk, 'transform', `translate(0 ${f2(-d / 2)})`);
-      top.paint(clamp(0.9 * r));
-      bot.paint(clamp(-0.9 * r));
-    },
-  };
-  function rock(v) {
-    s.side = v ? 1 : -1;
-    if (v === s.on) { snd.dead(); wake(body); return; }
-    s.on = v; s.r.t = s.side;
-    snd.rock(v);
-    btn.setAttribute('aria-checked', String(v));
-    wake(body);
-  }
-  btn.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { btn.setPointerCapture(e.pointerId); } catch {}
-    // The half under the finger is the half that goes down.
-    const r = btn.getBoundingClientRect();
-    s.pr.t = 1;
-    rock(e.clientY - r.top < r.height / 2);
-  });
-  const up = e => { if (e.pointerId === s.pid) { s.pid = null; s.pr.t = 0; wake(body); } };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, up));
-  btn.addEventListener('click', e => { if (e.detail === 0) { s.pr.v = 8; rock(!s.on); } });
-  btn.addEventListener('keydown', e => {
-    const v = e.key === 'ArrowUp' ? true : e.key === 'ArrowDown' ? false : null;
-    if (v === null) return;
-    e.preventDefault();
-    s.pr.v = 8; rock(v);
-  });
-  const to = v => { if (s.pid == null && v !== s.on) { s.pr.v = 8; rock(v); } };
-  moves.push({ el: btn, shuffle: () => to(Math.random() < 0.5), reset: () => to(init) });
-  bodies.push(body);
-});
-
-/* ---------- thumb wheel ---------- */
-// A mint drum in a recessed slot; its ribs crowd toward the edges.
-const wheelEl = document.getElementById('wheel');
-bodies.push((() => {
-  const svg = svgIn(wheelEl, '0 0 60 180'), defs = svg.k.defs;
-  const N = 20, STEP = TAU / N, CY = 90, RR = 80, m = C.mint;
-  well(svg, svg, 'rect', { width: 60, height: 180, rx: 15 }, { rim: 4 });
-  // The drum's axis is level, so its light falls top to bottom.
-  const tone = (dl, k = 1) => css([m[0] + dl, m[1] * k, m[2]]);
-  el('rect', { x: 9, y: 9, width: 42, height: 162, rx: 9, fill: grad(defs, 'linearGradient', DOWN, [[0, tone(-0.3, 0.7)], [0.2, tone(-0.06)], [0.42, tone(0.09, 0.6)], [0.64, tone(0)], [1, tone(-0.34, 0.7)]]).url }, svg);
-  const g = el('g', { stroke: tone(-0.34), 'stroke-linecap': 'round' }, svg), ribs = [];
-  for (let k = 0; k < N; k++) ribs.push(el('line', { x1: 13, x2: 47 }, g));
-  const s = { th: 0, w: 0, a: 0, T: 0, mode: 'rest', near: 0, pid: null, y0: 0, t0: 0, k: 0, trail: [] };
-  // Drag follow, rib detents, flick friction, settle spring.
-  const KD = 1500, CD = 70, AD = 50, AS = 30, CF = 1.6, MU = 9, WCAP = 3, KS = 600, CS = 26;
-  const body = {
-    step(h) {
-      if (reduce) {
-        if (s.mode === 'spin') { s.mode = 'settle'; s.T = Math.round(s.th / STEP) * STEP; }
-        if (s.mode !== 'rest') { s.th = s.T; s.w = 0; s.a = 0; }
-      } else {
-        let a = 0;
-        if (s.mode === 'drag') a = KD * (s.T - s.th) - CD * s.w - AD * Math.sin(N * s.th);
-        else if (s.mode === 'spin') {
-          // A light drum: friction drains a flick fast.
-          a = -AS * Math.sin(N * s.th) - CF * s.w - MU * Math.sign(s.w);
-          if (Math.abs(s.w) < WCAP) {
-            s.mode = 'settle';
-            s.T = (s.w > 0 ? Math.ceil(s.th / STEP) : Math.floor(s.th / STEP)) * STEP;
-          }
-        } else if (s.mode === 'settle') a = KS * (s.T - s.th) - CS * s.w;
-        s.a = a;
-        s.w += a * h;
-        s.th += s.w * h;
-      }
-      // Each rib that rolls past the slot edge ticks.
-      const r = Math.round(s.th / STEP);
-      if (r !== s.near) { s.near = r; snd.rib(clamp(Math.abs(s.w) / 20)); }
-    },
-    busy() {
-      if (s.mode === 'drag') return Math.abs(s.w) > 1e-3 || Math.abs(s.a) > 1e-2;
-      if (s.mode === 'spin') return true;
-      if (s.mode === 'settle') {
-        if (Math.abs(s.T - s.th) > 2e-4 || Math.abs(s.w) > 2e-3) return true;
-        // At rest the angle folds back into one turn.
-        const k = mod(Math.round(s.T / STEP), N);
-        s.th = s.T = k * STEP; s.w = 0; s.mode = 'rest'; s.near = k;
-      }
-      return false;
-    },
-    draw() {
-      for (let k = 0; k < N; k++) {
-        const a = s.th + k * STEP, c = Math.cos(a), rib = ribs[k];
-        if (c < 0.05) { set(rib, 'opacity', 0); continue; }
-        // Ribs crowd and thin toward the drum's edges.
-        const y = f2(CY + RR * Math.sin(a));
-        set(rib, 'y1', y); set(rib, 'y2', y);
-        set(rib, 'stroke-width', f2(0.8 + 3 * c)); set(rib, 'opacity', f2(0.85 * Math.min(1, 1.6 * c)));
-      }
-      const T = s.mode === 'settle' || s.mode === 'rest' ? s.T : s.th;
-      set(wheelEl, 'aria-valuenow', mod(-Math.round(T / STEP), N));
-    },
-  };
-  wheelEl.addEventListener('pointerdown', e => {
-    if (s.pid != null || e.button > 0) return;
-    s.pid = e.pointerId;
-    try { wheelEl.setPointerCapture(e.pointerId); } catch {}
-    // The drum surface moves with the finger.
-    s.k = 180 / wheelEl.getBoundingClientRect().height / RR;
-    s.y0 = e.clientY; s.t0 = s.T = s.th;
-    s.mode = 'drag'; s.trail = [[e.timeStamp, s.th]];
-    wheelEl.classList.add('held');
-    wake(body);
-  });
-  wheelEl.addEventListener('pointermove', e => {
-    if (e.pointerId !== s.pid) return;
-    s.T = s.t0 + (e.clientY - s.y0) * s.k;
-    s.trail.push([e.timeStamp, s.T]);
-    while (s.trail.length > 2 && e.timeStamp - s.trail[0][0] > 120) s.trail.shift();
-    wake(body);
-  });
-  function end(e) {
-    if (e.pointerId !== s.pid) return;
-    s.pid = null; wheelEl.classList.remove('held');
-    const t = e.timeStamp, q = s.trail.filter(p => t - p[0] < 100);
-    let w = 0;
-    if (q.length > 1 && t - q[q.length - 1][0] < 50) {
-      const dt = (q[q.length - 1][0] - q[0][0]) / 1000;
-      if (dt > 0.008) w = (q[q.length - 1][1] - q[0][1]) / dt;
-    }
-    if (!reduce && Math.abs(w) > 4) { s.mode = 'spin'; s.w = clamp(w, -40, 40); }
-    else { s.mode = 'settle'; s.T = Math.round((reduce ? s.T : s.th) / STEP) * STEP; }
-    wake(body);
-  }
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => wheelEl.addEventListener(t, end));
-  // Up rolls the drum away from you and counts up.
-  wheelEl.addEventListener('keydown', e => {
-    if (s.pid != null) return;
-    const d = { ArrowUp: -1, ArrowRight: -1, ArrowDown: 1, ArrowLeft: 1, PageUp: -5, PageDown: 5 }[e.key];
-    const base = s.mode === 'settle' ? s.T : Math.round(s.th / STEP) * STEP;
-    if (d) { s.mode = 'settle'; s.T = base + d * STEP; }
-    else if (e.key === 'Home') { s.mode = 'settle'; s.T = Math.round(s.th / TAU) * TAU; }
-    else if (KEYS.includes(e.key)) {
-      const dir = e.shiftKey ? 1 : -1;
-      if (reduce) { s.mode = 'settle'; s.T = base + dir * STEP; }
-      else { s.mode = 'spin'; s.w = clamp(s.w + dir * 16, -40, 40); }
-    } else return;
-    e.preventDefault();
-    wake(body);
-  });
-  moves.push({
-    el: wheelEl,
-    shuffle() {
-      if (s.pid != null) return;
-      const dir = Math.random() < 0.5 ? -1 : 1;
-      if (reduce) { s.mode = 'settle'; s.T = Math.round(s.th / STEP) * STEP + dir * Math.round(rnd(3, 9)) * STEP; }
-      else { s.mode = 'spin'; s.w = dir * rnd(18, 34); }
-      wake(body);
-    },
-    reset() {
-      if (s.pid != null) return;
-      s.mode = 'settle'; s.T = Math.round(s.th / TAU) * TAU;
-      wake(body);
-    },
-  });
-  return body;
-})());
+let rolling = false;
+function roll() {
+  if (rolling) return;
+  rolling = true;
+  rattle();
+  rollBtn.classList.remove('tumble');
+  void rollBtn.offsetWidth;
+  rollBtn.classList.add('tumble');
+  // The pips flicker while the die tumbles, then land.
+  let n = 0;
+  const flick = setInterval(() => face((Math.random() * 6) | 0), 70);
+  setTimeout(() => { clearInterval(flick); face((Math.random() * 6) | 0); }, reduce ? 0 : 520);
+  const next = deal(current), gap = reduce ? 0 : 45, out = reduce ? 0 : 150;
+  cells.forEach((cell, i) => setTimeout(() => {
+    cell.classList.add('out');
+    setTimeout(() => {
+      unmount(cell);
+      if (next[i]) mount(cell, byId.get(next[i]));
+      requestAnimationFrame(() => requestAnimationFrame(() => cell.classList.remove('out')));
+      if (++n === cells.length) { pruneLight(); rolling = false; }
+    }, out);
+  }, i * gap));
+  current = next;
+  store.set(next);
+}
+rollBtn.addEventListener('click', roll);
 
 /* ---------- shuffle and reset ---------- */
 // Each move fires in a wave from left to right across the board.
@@ -1748,7 +313,7 @@ let wave = [];
 // The return value is the wave's length in ms.
 function sweep(kind, skip) {
   wave.forEach(clearTimeout);
-  const list = moves.filter(m => m[kind] && !skip?.has(m.el)).map(m => {
+  const list = allMoves().filter(m => m[kind] && !skip?.has(m.el)).map(m => {
     const r = m.el.getBoundingClientRect();
     return { m, at: r.left + r.width / 2 + 0.35 * (r.top + r.height / 2) };
   }).sort((a, b) => a.at - b.at);
@@ -1762,29 +327,31 @@ document.getElementById('reset').addEventListener('click', () => sweep('reset'))
 /* ---------- launch ---------- */
 // The run laps the dial, then a shuffle wave crosses the board.
 // Spent, the board disarms: the switch drops, the latched key pops.
-const latchEl = document.querySelector('.key[aria-pressed]');
-const keep = new Set([...document.querySelectorAll('.key'), safeEl]);
-const moveOf = el => moves.find(m => m.el === el);
+const moveOf = el => allMoves().find(m => m.el === el);
 let fuse = [];
 board.fire = () => {
+  if (!board.keys || !board.safety) return;
   board.firing = true;
-  board.dial.prime();
+  board.dial?.prime();
   snd.launch();
-  board.dial.run();
+  board.dial?.run();
+  const keep = new Set([...board.keys.els, board.safety.el]);
   fuse.forEach(clearTimeout);
   fuse = [setTimeout(() => {
     const t = sweep('shuffle', keep);
     fuse.push(
-      setTimeout(() => moveOf(safeEl).reset(), t + 250),
-      setTimeout(() => { moveOf(latchEl).reset(); board.firing = false; board.dial.prime(); }, t + 520),
+      setTimeout(() => { if (board.safety) moveOf(board.safety.el)?.reset(); }, t + 250),
+      setTimeout(() => {
+        if (board.keys) moveOf(board.keys.latch)?.reset();
+        board.firing = false;
+        board.dial?.prime();
+      }, t + 520),
     );
   }, reduce ? 0 : 440)];
 };
 
 // Hidden, the loop pauses, so any scrape stops with it.
 document.addEventListener('visibilitychange', () => { if (document.hidden) snd.hush(); });
-
-bodies.forEach(b => b.draw());
 </script>
 </body>
 </html>
