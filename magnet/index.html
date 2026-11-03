@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
 /* Magnet balls: the table at full width under the shared header. */
-:root { --stage: oklch(0.21 0.008 265); }
+:root { --stage: oklch(0.185 0.014 268); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
@@ -59,7 +59,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, oklchLinear } from '../shared/stim.js';
 initPage({ id: 'magnet' });
 const panel = document.getElementById('table');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -221,6 +221,10 @@ const bonds = [], walls = [];
 let np = 0, simT = 0, loud = false, zLo = -10, zHi = 10;
 let held = -1, hx = 0, hz = 0, fromX = 0, fromZ = 0;
 let guide = null, flyUntil = 0, driftFrom = 0, driftUntil = 0;
+// Each ball is a dipole lying on the table, at angle TH.
+const TH = new Float64Array(N), MX = new Float64Array(N), MZ = new Float64Array(N);
+const BX = new Float64Array(N), BZ = new Float64Array(N);
+let lastMove = 0;
 
 function addBond(i, j) {
   bonded[i * N + j] = bonded[j * N + i] = 1;
@@ -457,6 +461,37 @@ function settle() {
   VX.fill(0);
   VZ.fill(0);
 }
+// Each ball turns its dipole toward the field of the others.
+// Chains settle head to tail; closed rings circulate.
+function orient(dt) {
+  for (let i = 0; i < N; i++) { MX[i] = Math.cos(TH[i]); MZ[i] = Math.sin(TH[i]); BX[i] = BZ[i] = 0; }
+  for (let i = 0; i < N - 1; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const rx = X[i] - X[j], rz = Z[i] - Z[j], r2 = rx * rx + rz * rz;
+      if (r2 > 100 || r2 < 1e-6) continue;
+      const i3 = 1 / (r2 * Math.sqrt(r2));
+      // The formula is even in r: one offset serves both balls.
+      const mj = (3 * (MX[j] * rx + MZ[j] * rz)) / r2, mi = (3 * (MX[i] * rx + MZ[i] * rz)) / r2;
+      BX[i] += (mj * rx - MX[j]) * i3;
+      BZ[i] += (mj * rz - MZ[j]) * i3;
+      BX[j] += (mi * rx - MX[i]) * i3;
+      BZ[j] += (mi * rz - MZ[i]) * i3;
+    }
+  }
+  const k = 1 - Math.exp(-(reduce ? 30 : 14) * dt);
+  let top = 0;
+  for (let i = 0; i < N; i++) {
+    const b = Math.hypot(BX[i], BZ[i]);
+    if (b < 1e-4) continue;
+    let d = Math.atan2(BZ[i], BX[i]) - TH[i];
+    d -= TAU * Math.round(d / TAU);
+    // A weak field turns a ball slowly.
+    const step = d * k * Math.min(1, b / 0.06);
+    TH[i] += step;
+    if (Math.abs(step) > top) top = Math.abs(step);
+  }
+  return top;
+}
 function fastest() {
   let top = 0;
   for (let i = 0; i < N; i++) top = Math.max(top, Math.hypot(VX[i], VZ[i]));
@@ -523,6 +558,9 @@ function seed() {
     if ((X[j] - X[i]) ** 2 + (Z[j] - Z[i]) ** 2 < SNAP2) addBond(i, j);
   }
   settle();
+  // Dipoles start at random and relax before the first frame.
+  for (let i = 0; i < N; i++) TH[i] = Math.random() * TAU;
+  for (let k = 0; k < 300; k++) orient(1 / 30);
 }
 
 /* ---------- commands ---------- */
@@ -629,12 +667,54 @@ function nudge(dx, dz) {
 }
 
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, balls = null, mark = null, M = null;
+let THREE = null, renderer = null, scene = null, camera = null, balls = null, mark = null, M = null, F = null;
 let ray = null, plane = null, ndc = null, hitV = null, tmp = null;
 let ready = false, kbd = false, aim = -1, hoverPt = null, ptrId = -1, trail = [], gx = 0, gz = 0;
 // The camera looks down at 56 degrees; margins keep spheres in frame.
 const EL = (56 * Math.PI) / 180, SIDE = 1.1, NEAR = 1.3, FAR = 1.1 + 1 / Math.tan(EL);
 let lowDpr = false;
+
+// The table at a point: flux bands, field lines and contact shade.
+// Lines are contours of the stream function of planar dipoles.
+// The ball shader calls it too, to mirror the table.
+const FIELD = /* glsl */ `
+uniform vec4 uB[${N}];
+uniform vec3 uInk, uWarm, uCool;
+uniform float uStep, uHalf;
+vec3 tableShade(vec2 p) {
+  float psi = 0.0, phi = 0.0, ao = 1.0;
+  vec2 B = vec2(0.0);
+  for (int i = 0; i < ${N}; i++) {
+    vec4 b = uB[i];
+    vec2 r = p - b.xy;
+    float d2 = dot(r, r);
+    float q = 1.0 / max(d2, 0.6);
+    float mr = dot(b.zw, r);
+    psi += (b.z * r.y - b.w * r.x) * q;
+    phi += mr * q;
+    B += (2.0 * mr * q * r - b.zw) * q;
+    ao *= 1.0 - 0.5 * exp(-0.9 * d2);
+  }
+  float s = psi / uStep;
+  float fw = max(fwidth(s), 1e-5);
+  // Lines closer than a few pixels blend into a flat tone.
+  float dense = smoothstep(0.2, 0.55, fw);
+  // Weak far field fades the lines out.
+  float strength = smoothstep(0.003, 0.03, length(B));
+  float line = 1.0 - smoothstep(uHalf - 0.7, uHalf + 0.7, abs(fract(s) - 0.5) / fw);
+  line = mix(line, 0.45, dense) * strength;
+  // Alternate flux tubes take a faint tint; lines hide their edges.
+  float band = mix(step(0.5, fract(s * 0.5 + 0.25)), 0.5, dense) * strength;
+  // Lines run warm near north poles and cool near south poles.
+  float pol = phi / (abs(phi) + 0.03);
+  vec3 lc = mix(uCool, uWarm, 0.5 + 0.5 * pol);
+  vec3 c = mix(uInk, lc, 0.07 * band);
+  c = mix(c, lc, 0.9 * line);
+  // The far table falls away into shade.
+  c *= mix(1.0, 0.7, smoothstep(30.0, 90.0, length(p)));
+  return c * ao;
+}
+`;
 
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
 function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
@@ -685,7 +765,14 @@ function fit(w, h) {
   zHi = c[0][1] - NEAR;
 }
 function draw() {
-  for (let i = 0; i < N; i++) { M[i * 16 + 12] = X[i]; M[i * 16 + 14] = Z[i]; }
+  const B4 = F.uB.value;
+  for (let i = 0; i < N; i++) {
+    // Each ball turns about the vertical, so its local +x is its north.
+    const o = i * 16, c = Math.cos(TH[i]), s = Math.sin(TH[i]);
+    M[o] = c; M[o + 2] = s; M[o + 8] = -s; M[o + 10] = c;
+    M[o + 12] = X[i]; M[o + 14] = Z[i];
+    B4[i].set(X[i], Z[i], c, s);
+  }
   balls.instanceMatrix.needsUpdate = true;
   mark.visible = kbd && aim >= 0;
   if (mark.visible) mark.position.set(X[aim], 0.012, Z[aim]);
@@ -715,6 +802,7 @@ function frame(ms) {
   loud = true;
   for (let k = 0; k < n; k++) substep(k, n);
   if (guide && simT > guide.end) guide = null;
+  const turn = orient(dt);
   draw();
   let e = 0, top = 0;
   for (let i = 0; i < N; i++) {
@@ -723,7 +811,10 @@ function frame(ms) {
     if (i !== held && s > 5) e += s - 5;
   }
   rumble(e / 160);
-  const busy = held >= 0 || guide || simT < flyUntil || simT < driftFrom || top > 0.03;
+  const moving = held >= 0 || guide || simT < flyUntil || simT < driftFrom || top > 0.03;
+  if (moving) lastMove = simT;
+  // Dipoles keep turning a moment after the balls stop.
+  const busy = moving || (turn > 1e-3 && simT - lastMove < 2.5);
   quiet = busy ? 0 : quiet + 1;
   if (quiet < 12) {
     if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
@@ -849,7 +940,7 @@ async function start() {
     return failed();
   }
   renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.setClearColor(0x16181c);
+  renderer.setClearColor(0x15161c);
   const canvas = renderer.domElement;
   canvas.setAttribute('aria-hidden', 'true');
   scene = new THREE.Scene();
@@ -861,20 +952,63 @@ async function start() {
   tmp = new THREE.Vector3();
   await idle();
 
-  // A dim floor replaces the room's, so lower halves mirror the table.
+  // A grey studio: mid walls, bright panels, a black floor.
+  // The ball shader draws the table into each lower half itself.
   const room = new RoomEnvironment();
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(80, 48), new THREE.MeshBasicMaterial({ color: 0x2a2c31 }));
+  room.traverse(o => {
+    if (!o.isMesh || !o.material.isMeshStandardMaterial) return;
+    o.material.color.setScalar(0.3);
+    // The clutter boxes would break up the highlights.
+    if (o.material.side !== THREE.BackSide) o.visible = false;
+  });
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(80, 48), new THREE.MeshBasicMaterial({ color: 0x000000 }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.6;
   room.add(floor);
+  // A long strip overhead draws one streak across every ball.
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(26, 0.35, 0.35), new THREE.MeshBasicMaterial());
+  strip.material.color.setScalar(6);
+  strip.position.set(0, 22, -5);
+  room.add(strip);
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(room, 0.03).texture;
   room.dispose();
   pm.dispose();
 
+  // Colours are OKLCH, passed to the shaders as linear sRGB.
+  const lin = (L, C, h) => new THREE.Vector3(...oklchLinear(L, C, h).map(v => clamp(v)));
+  F = {
+    uB: { value: Array.from({ length: N }, () => new THREE.Vector4()) },
+    uInk: { value: lin(0.185, 0.014, 268) },
+    uWarm: { value: lin(0.76, 0.16, 45) },
+    uCool: { value: lin(0.72, 0.15, 262) },
+    uNorth: { value: lin(0.86, 0.1, 55) },
+    uSouth: { value: lin(0.84, 0.09, 258) },
+    uStep: { value: 0.14 },
+    uHalf: { value: 1 },
+  };
+  // The table is unlit: its colour is the field itself.
   const table = new THREE.Mesh(
     new THREE.PlaneGeometry(900, 900),
-    new THREE.MeshStandardMaterial({ color: 0x16181c, roughness: 0.94, metalness: 0, envMapIntensity: 0.5 }),
+    new THREE.ShaderMaterial({
+      uniforms: F,
+      vertexShader: /* glsl */ `
+varying vec2 vXZ;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vXZ = wp.xz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`,
+      fragmentShader: /* glsl */ `
+${FIELD}
+varying vec2 vXZ;
+void main() {
+  gl_FragColor = vec4(tableShade(vXZ), 1.0);
+  #include <colorspace_fragment>
+  // A little noise hides banding in the dark tones.
+  gl_FragColor.rgb += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
+}`,
+    }),
   );
   table.rotation.x = -Math.PI / 2;
   scene.add(table);
@@ -884,13 +1018,46 @@ async function start() {
   lamp.target.position.set(0, 0, 2);
   scene.add(lamp, lamp.target);
 
-  // Polished chrome: full metal, low roughness, lit by the room.
+  // Anodised metal: a warm north half, a cool south half, a cut equator.
   const small = Math.min(innerWidth, innerHeight) < 700;
-  balls = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(1, small ? 36 : 48, small ? 24 : 32),
-    new THREE.MeshPhysicalMaterial({ color: 0xe4e5e8, metalness: 1, roughness: 0.14 }),
-    N,
-  );
+  const ballMat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, metalness: 1, roughness: 0.13, clearcoat: 0.35, clearcoatRoughness: 0.06,
+  });
+  ballMat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, F);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLocal;\nvarying vec3 vWPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLocal = position;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+vec4 wPos = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+wPos = instanceMatrix * wPos;
+#endif
+vWPos = (modelMatrix * wPos).xyz;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vLocal;
+varying vec3 vWPos;
+uniform vec3 uNorth, uSouth;
+${FIELD}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+float poleSide = vLocal.x, poleW = fwidth(poleSide);
+diffuseColor.rgb = mix(uSouth, uNorth, smoothstep(-poleW, poleW, poleSide));
+// A dark groove cuts the ball at its equator.
+float groove = 1.0 - smoothstep(0.045, 0.045 + 1.5 * poleW, abs(poleSide));
+diffuseColor.rgb *= 1.0 - 0.92 * groove;`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.55, groove);')
+      .replace('#include <opaque_fragment>', `{
+  // Below the horizon each ball mirrors the drawn table, lines and all.
+  vec3 wN = inverseTransformDirection(normal, viewMatrix);
+  vec3 Rw = reflect(normalize(vWPos - cameraPosition), wN);
+  vec2 hit = vWPos.xz + Rw.xz * (-vWPos.y / min(Rw.y, -1e-3));
+  outgoingLight += tableShade(hit) * material.specularColor * smoothstep(0.0, -0.1, Rw.y);
+}
+#include <opaque_fragment>`);
+  };
+  ballMat.customProgramCacheKey = () => 'magnet-ball';
+  balls = new THREE.InstancedMesh(new THREE.SphereGeometry(1, small ? 40 : 64, small ? 28 : 44), ballMat, N);
   balls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   balls.frustumCulled = false;
   M = balls.instanceMatrix.array;
@@ -903,10 +1070,12 @@ async function start() {
   scene.add(mark);
 
   panel.prepend(canvas);
-  fitRenderer(renderer, panel, 1.5, (w, h) => {
+  fitRenderer(renderer, panel, 2, (w, h) => {
+    // Field lines keep one width in CSS pixels.
+    F.uHalf.value = 0.8 * renderer.getPixelRatio();
     fit(w, h);
     if (ready) { draw(); wake(); }
-  }, 1.4e6);
+  }, 2e6);
   // A panel with no size yet still gets walls.
   if (!walls.length) fit(16, 9);
   await idle();
