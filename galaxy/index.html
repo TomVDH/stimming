@@ -41,6 +41,8 @@
 .sets .chip { justify-content: space-between; }
 #setBtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .add .chip.icon svg .solid { fill: currentColor; stroke: none; }
+/* Objects sit four to a row. */
+#add { display: grid; grid-template-columns: repeat(4, auto); }
 @media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 </style>
 </head>
@@ -52,7 +54,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole, magnetar, wormhole or dark well. Hold to grow a star cluster and drag to throw it. Drag an object to move it. Scroll or pinch to zoom. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
+    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole, magnetar, wormhole, nebula, comet, red giant or dark well. Hold to grow a star cluster and drag to throw it. Drag an object to move it. Scroll or pinch to zoom. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
       <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
@@ -67,6 +69,9 @@
             <button class="chip icon" type="button" data-kind="white" aria-pressed="false" aria-label="Add a white hole" title="White hole"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.4v2.4M8 12.2v2.4M1.4 8h2.4M12.2 8h2.4M6.6 2.8L8 1.4l1.4 1.4M6.6 13.2L8 14.6l1.4-1.4M2.8 6.6L1.4 8l1.4 1.4M13.2 6.6L14.6 8l-1.4 1.4"/></svg></button>
             <button class="chip icon" type="button" data-kind="magnetar" aria-pressed="false" aria-label="Add a magnetar" title="Magnetar"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="2"/><path d="M8 5.5c3.6-3 6.8 1 4.6 3.4M8 10.5c-3.6 3-6.8-1-4.6-3.4"/></svg></button>
             <button class="chip icon" type="button" data-kind="worm" aria-pressed="false" aria-label="Add a wormhole" title="Wormhole"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.6" cy="11.6" r="2.2"/><circle cx="12.4" cy="4.4" r="2.2"/><path d="M5.4 10.2c2.4-0.4 3.8-1.8 5.2-4.4" stroke-dasharray="1.2 1.6"/></svg></button>
+            <button class="chip icon" type="button" data-kind="nebula" aria-pressed="false" aria-label="Add a nebula" title="Nebula"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.6 12c-2-0.2-2.4-3-0.6-3.6-0.2-2.8 3.2-3.8 4.6-1.8 1.2-2.6 5.4-1.6 4.8 1.4 2.2 0.4 2 3.8-0.2 4z"/><circle class="solid" cx="6.4" cy="9.8" r="0.9"/><circle class="solid" cx="10" cy="8.8" r="0.7"/></svg></button>
+            <button class="chip icon" type="button" data-kind="comet" aria-pressed="false" aria-label="Add a comet" title="Comet"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="11.6" cy="4.4" r="2.2"/><path d="M9.8 6.2L2 14M10.8 7.6L5.4 13M8.4 5.2L3 10.6"/></svg></button>
+            <button class="chip icon" type="button" data-kind="giant" aria-pressed="false" aria-label="Add a red giant" title="Red giant"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="8" cy="8" r="4.6"/><circle cx="8" cy="8" r="6.8" stroke-dasharray="1.4 1.6"/></svg></button>
             <button class="chip icon" type="button" data-kind="well" aria-pressed="false" aria-label="Add a dark well" title="Dark well"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3.2"/><circle class="solid" cx="8" cy="8" r="1"/></svg></button>
           </div>
         </div>
@@ -333,6 +338,18 @@ const WHITE_COL = oklchLinear(0.95, 0.05, 300);
 const MAG_M = 9, MAG_SWIRL = 2.2, MAG_COL = oklchLinear(0.72, 0.22, 330);
 // A wormhole is two pinned mouths; stars that enter one leave the other.
 const WORM_M = 5, WORM_R = 0.45, WORM_COL = oklchLinear(0.82, 0.12, 200);
+// A nebula births a cluster for NURSE_T sim seconds, then settles.
+const NEBULA_M = 10, NURSE_T = 3, NEBULA_COL = oklchLinear(0.62, 0.17, 330);
+// A comet is light and fast; its tail points away from the heaviest body.
+const COMET_M = 1.5, COMET_COL = oklchLinear(0.95, 0.04, 220), TAIL_N = SMALL ? 768 : 1536, TAIL_L = 3.2;
+// A red giant swells for GIANT_FUSE, puffs a slow shell and leaves a white dwarf.
+const GIANT_M = 14, GIANT_FUSE = 6, DWARF_M = 6;
+const GIANT_COL = oklchLinear(0.68, 0.18, 35), DWARF_COL = oklchLinear(0.96, 0.03, 250);
+// Each shell kind: speed, push, length, and its hot and cool colours.
+const SHELLS = {
+  nova: { v: BLAST_V, a: BLAST_A, t: BLAST_T, hot: [3, 2.58, 1.98], cool: [1.2, 0.16, 0.064] },
+  giant: { v: 1.8, a: 5, t: 5.5, hot: oklchLinear(0.8, 0.13, 190).map(c => c * 2.4), cool: oklchLinear(0.55, 0.16, 300).map(c => c * 1.4) },
+};
 // White holes and wormholes stay put and never merge.
 const pinned = w => w.kind === 'white' || w.kind === 'worm';
 // Zoom scales the camera distance within these bounds.
@@ -426,7 +443,14 @@ async function start() {
   // The wormhole: both mouths' xz, and whether it is open.
   const uWorm = uniform(new THREE.Vector4()), uWormOn = uniform(0);
   // The supernova shell: xz centre, radius, push strength.
-  const uBlast = uniform(new THREE.Vector4()), uBlastAge = uniform(0);
+  const uBlast = uniform(new THREE.Vector4()), uBlastAge = uniform(0), uBlastLen = uniform(BLAST_T);
+  const uShellHot = uniform(new THREE.Color(...SHELLS.nova.hot)), uShellCool = uniform(new THREE.Color(...SHELLS.nova.cool));
+  // Comet tails: xz position, then the tail direction.
+  const uTail = [], uTailOn = [];
+  for (let k = 0; k < MAXW; k++) {
+    uTail.push(uniform(new THREE.Vector4()));
+    uTailOn.push(uniform(0));
+  }
   // Beam weight at p: a narrow cone along both beams.
   const beamAt = (k, p) => {
     const P = uPul[k];
@@ -757,14 +781,35 @@ async function start() {
     beams.push(s);
   }
 
+  // Comet tails: dust streams out behind the head and fades.
+  const tails = [];
+  for (let k = 0; k < MAXW; k++) {
+    const m = spriteMat();
+    const T = uTail[k];
+    const th = n => hash(instanceIndex.add(uint(n * 6151 + k * 389 + 7)));
+    const tt = fract(th(1).add(uTime.mul(0.9)));
+    const jit = gauss(th(2), th(3)).mul(tt.mul(0.35).add(0.02));
+    const at = vec3(T.x, 0, T.y).add(vec3(T.z, 0, T.w).mul(tt.mul(TAIL_L))).add(vec3(T.w.negate(), 0, T.z).mul(jit))
+      .add(vec3(0, gauss(th(4), th(5)).mul(tt.mul(0.08)), 0));
+    m.positionNode = lensOf(at).p;
+    m.scaleNode = uPx.mul(1.8);
+    m.colorNode = dotOf(varying(mix(vec3(1), ICE, tt).mul(1.4).mul(float(1).sub(tt).pow(2)).mul(uTailOn[k])));
+    const s = new THREE.Sprite(m);
+    s.count = TAIL_N;
+    s.frustumCulled = false;
+    s.visible = false;
+    scene.add(s);
+    tails.push(s);
+  }
+
   // The supernova shell: a ring of hot gas that cools as it spreads.
   const shellMat = spriteMat();
   const sh = n => hash(instanceIndex.add(uint(n * 3967 + 71)));
   const sa = sh(1).mul(TAU), sr = uBlast.z.add(gauss(sh(2), sh(3)).mul(uBlast.z.mul(0.04).add(0.12)));
   shellMat.positionNode = vec3(uBlast.x.add(cos(sa).mul(sr)), gauss(sh(4), sh(5)).mul(0.12), uBlast.y.add(sin(sa).mul(sr)));
   shellMat.scaleNode = uPx.mul(2.2);
-  const age = uBlastAge.div(BLAST_T).clamp(0, 1);
-  shellMat.colorNode = dotOf(varying(mix(HOT.mul(3), EMBER.mul(1.6), age).mul(float(1).sub(age).pow(1.5))));
+  const age = uBlastAge.div(uBlastLen).clamp(0, 1);
+  shellMat.colorNode = dotOf(varying(mix(uShellHot, uShellCool, age).mul(float(1).sub(age).pow(1.5))));
   const shellFx = new THREE.Sprite(shellMat);
   shellFx.count = SHELL_N;
   shellFx.frustumCulled = false;
@@ -983,6 +1028,7 @@ async function start() {
       keep.col = heavy.col;
       keep.th = heavy.th;
       keep.fuse = heavy.fuse;
+      keep.nursed = a.nursed || b.nursed;
       keep.pulse = 1;
       wells.splice(wells.indexOf(gone), 1);
       if (keep.hole && !was) holeBorn(keep);
@@ -1030,11 +1076,14 @@ async function start() {
     if (pick === 'binary') return addBinary(x, z);
     if (pick === 'worm') return addWorm(x, z);
     const type = starType();
-    const m = { star: type.m, nova: NOVA_M, pulsar: PULSAR_M, white: WHITE_M, magnetar: MAG_M }[pick] ?? TAP_M;
-    const [vx, vz] = pick === 'white' ? [0, 0] : orbitVel(x, z, m);
-    const col = { star: type.col, nova: STAR_TYPES[0].col, white: WHITE_COL, magnetar: MAG_COL }[pick] ?? null;
+    const m = { star: type.m, nova: NOVA_M, pulsar: PULSAR_M, white: WHITE_M, magnetar: MAG_M, nebula: NEBULA_M, comet: COMET_M, giant: GIANT_M }[pick] ?? TAP_M;
+    let [vx, vz] = pick === 'white' ? [0, 0] : orbitVel(x, z, m);
+    // A comet runs fast, on a long and narrow orbit.
+    if (pick === 'comet') { vx *= 1.45; vz *= 1.45; }
+    const col = { star: type.col, nova: STAR_TYPES[0].col, white: WHITE_COL, magnetar: MAG_COL, nebula: NEBULA_COL, comet: COMET_COL, giant: GIANT_COL }[pick] ?? null;
     const w = makeWell(x, z, vx, vz, 0, m, pick, col);
     if (pick === 'nova') w.fuse = simT + NOVA_FUSE;
+    if (pick === 'giant') w.fuse = simT + GIANT_FUSE;
     place(w);
   }
   // One wormhole at a time: a new pair closes the old one.
@@ -1085,8 +1134,8 @@ async function start() {
     }
     uFrame.value.set(frameX, 0, frameZ);
     const bt = blast ? simT - blast.t0 : 0;
-    if (blast && bt > BLAST_T) blast = null;
-    if (blast) uBlast.value.set(blast.x, blast.z, BLAST_V * bt, BLAST_A * Math.exp(-bt / 1.2));
+    if (blast && bt > blast.t) blast = null;
+    if (blast) uBlast.value.set(blast.x, blast.z, blast.v * bt, blast.a * Math.exp(-bt / (blast.t * 0.4)));
     else uBlast.value.w = 0;
     uBlastAge.value = bt;
     for (let k = 0; k < MAXW; k++) {
@@ -1096,6 +1145,18 @@ async function start() {
       const mag = w && w.kind === 'magnetar' && !w.hole && w.mt > 0;
       if (mag) uMag[k].value.set(w.x, w.z, MAG_SWIRL * w.vis);
       else uMag[k].value.z = 0;
+    }
+    // A comet's tail points away from the heaviest other body.
+    let sun = null;
+    for (const w of wells) if (w.kind !== 'comet' && w.mt > 0 && !pinned(w) && (!sun || w.m > sun.m)) sun = w;
+    for (let k = 0; k < MAXW; k++) {
+      const w = wells[k], on = w && w.kind === 'comet' && w.mt > 0;
+      if (on) {
+        let dx = sun ? w.x - sun.x : -w.vx, dz = sun ? w.z - sun.z : -w.vz;
+        const l = Math.hypot(dx, dz) || 1;
+        uTail[k].value.set(w.x, w.z, dx / l, dz / l);
+      }
+      uTailOn[k].value = on ? w.vis : 0;
     }
     const mouth = wells.find(w => w.kind === 'worm' && w.mt > 0 && w.link?.mt > 0);
     if (mouth) uWorm.value.set(mouth.x, mouth.z, mouth.link.x, mouth.link.z);
@@ -1114,12 +1175,27 @@ async function start() {
   // Collapse: a rush of air and a burst of feeding.
   // A supernova blows its shell and leaves a pulsar behind.
   let blast = null;
+  function shell(w, kind) {
+    const S = SHELLS[kind];
+    blast = { x: w.x, z: w.z, t0: simT, ...S };
+    uShellHot.value.setRGB(...S.hot);
+    uShellCool.value.setRGB(...S.cool);
+    uBlastLen.value = S.t;
+  }
   function explode(w) {
     w.kind = 'pulsar';
     w.mt = PULSAR_M;
     w.col = null;
     w.flash = 1;
-    blast = { x: w.x, z: w.z, t0: simT };
+    shell(w, 'nova');
+  }
+  // A red giant puffs off its envelope and leaves a white dwarf.
+  function shed(w) {
+    w.kind = 'dwarf';
+    w.mt = DWARF_M;
+    w.col = DWARF_COL;
+    w.flash = 0.5;
+    shell(w, 'giant');
   }
   function holeBorn(w) {
     w.pulse = 1;
@@ -1192,6 +1268,7 @@ async function start() {
     holeWell = null;
     holeVis = feed = feedGoal = jet = 0;
     blast = null;
+    fling = null;
     renderer.compute(seedPass);
   }
 
@@ -1258,7 +1335,22 @@ async function start() {
     const k = s > 1e-6 ? (top * Math.tanh((s * 0.55) / top)) / s : 0;
     return [vx * k, vz * k];
   }
+  // A nebula borrows the cluster stream until it is done.
+  function nurse(w) {
+    fling = { start: ring, count: INIT, t0: simT, x: w.x, z: w.z, vx: w.vx, vz: w.vz, releasing: false, nursery: w, max: Math.round(MAXF / 2) };
+    uSalt.value = (Math.random() * 1e6) | 0;
+    w.nursed = true;
+  }
+  function endNursery() {
+    const n = fling.nursery;
+    if (n) n.kind = 'well';
+    ring = (fling.start + fling.count) % N;
+    fling = null;
+    uHeldCount.value = 0;
+  }
   function startFling() {
+    // A hand outranks a nebula: the nebula stops birthing.
+    if (fling?.nursery) endNursery();
     if (fling) return;
     hold.kind = 'fling';
     fling = { start: ring, count: INIT, t0: simT, x: hold.x, z: hold.z, vx: 0, vz: 0, releasing: false };
@@ -1364,7 +1456,15 @@ async function start() {
     }
     if (!fling) return;
     if (!fling.releasing) {
-      fling.count = Math.min(MAXF, INIT + Math.floor((simT - fling.t0) * RATE));
+      fling.count = Math.min(fling.max ?? MAXF, INIT + Math.floor((simT - fling.t0) * RATE));
+      const n = fling.nursery;
+      if (n) {
+        fling.x = n.x;
+        fling.z = n.z;
+        fling.vx = n.vx;
+        fling.vz = n.vz;
+        if (simT - fling.t0 > NURSE_T || n.mt === 0) { fling.releasing = true; n.kind = 'well'; }
+      }
       if (hold && hold.kind === 'fling') {
         fling.x = hold.x;
         fling.z = hold.z;
@@ -1440,10 +1540,12 @@ async function start() {
   // The hole's sprites compile now, drawn at zero size.
   shadow.visible = disk.visible = jets.visible = true;
   beams.forEach(b => { b.visible = true; });
+  tails.forEach(t => { t.visible = true; });
   shellFx.visible = true;
   await Promise.all([scenePass.compileAsync(renderer), diskPass.compileAsync(renderer)]);
   shadow.visible = disk.visible = jets.visible = false;
   beams.forEach(b => { b.visible = false; });
+  tails.forEach(t => { t.visible = false; });
   shellFx.visible = false;
 
   canvas.setAttribute('aria-hidden', 'true');
@@ -1515,7 +1617,13 @@ async function start() {
       renderer.compute(updatePass);
       simT += h;
     }
-    for (const w of wells) if (w.kind === 'nova' && simT >= w.fuse && !w.hole) explode(w);
+    for (const w of wells) {
+      if (w.kind === 'nova' && simT >= w.fuse && !w.hole) explode(w);
+      if (w.kind === 'giant' && simT >= w.fuse && !w.hole) shed(w);
+      if (w.kind === 'nebula' && !w.nursed && !fling && w.mt > 0) nurse(w);
+      // A nebula cut short by a hand or a reset settles as a cluster core.
+      if (w.kind === 'nebula' && w.nursed && fling?.nursery !== w) w.kind = 'well';
+    }
     shellFx.visible = !!blast;
     // The ring moves past a released cluster's slots.
     if (fling && fling.releasing) {
@@ -1533,6 +1641,7 @@ async function start() {
     uDamp.value = reduce || !streak ? 0 : Math.exp(-dt / streak);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
+      tails[k].visible = !!w && w.kind === 'comet' && w.vis > 0.01;
       if (!w) { dot.s.visible = beams[k].visible = false; continue; }
       // The hole shows its shadow instead of a nucleus.
       w.vis += ((w.mt > 0 && w !== holeWell ? 1 : 0) - w.vis) * (1 - Math.exp(-dt / 0.22));
@@ -1548,6 +1657,26 @@ async function start() {
         dot.size.value = (18 + 8 * Math.sqrt(w.m / SEED_M)) * grow * (1 + due * (0.3 + 0.12 * Math.sin(simT * 14)));
         dot.col.value.setRGB(...w.col);
         dot.gain.value = 4 + 4 * due;
+      } else if (w.kind === 'giant') {
+        // A red giant swells and throbs slowly before it sheds.
+        const due = clamp(1 - (w.fuse - simT) / GIANT_FUSE);
+        dot.size.value = (42 + 22 * due) * grow * (1 + 0.06 * due * Math.sin(simT * 3));
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 3 + 2 * due;
+      } else if (w.kind === 'dwarf') {
+        dot.size.value = 7 * grow * (1 + 3 * w.flash);
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 6 + 20 * w.flash;
+      } else if (w.kind === 'nebula') {
+        // The cloud thins as its stars are born.
+        const used = fling?.nursery === w ? clamp((simT - fling.t0) / NURSE_T) : 0;
+        dot.size.value = 130 * grow * (1 - 0.4 * used);
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 1.4 * (1 - 0.7 * used);
+      } else if (w.kind === 'comet') {
+        dot.size.value = 7 * grow;
+        dot.col.value.setRGB(...w.col);
+        dot.gain.value = 5;
       } else if (w.kind === 'magnetar') {
         // A magnetar flares in sharp bursts as its crust quakes.
         const quake = Math.max(0, Math.sin(simT * 2.3 + w.ph) * Math.sin(simT * 0.7 + w.th)) ** 16;
