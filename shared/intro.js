@@ -85,8 +85,8 @@ export const TIMING = {
   clsY: 0,        // vh the classic notice moves down
   nameY: 0,       // vh the main title moves down
   nlY: 0,         // vh the translation moves down
-  tagY: 0,        // vh the subtitle moves down
-  tagNlY: 0,      // vh the subtitle translation moves down
+  tagY: -14,      // vh the subtitle moves down
+  tagNlY: -14,    // vh the subtitle translation moves down
   sndY: 0,        // vh the audio notice moves down
   hold: 2300,     // ms from the start before a fixed-hold variety clears
   readBase: 350,  // ms of reading time after the last line opens
@@ -96,9 +96,9 @@ export const TIMING = {
   fade: 380,      // ms the glass fades away
 };
 
-// The sound notice for toys with sound: off until Tom picks a form.
-// glyph and words make a quiet last line under the titles; nudge pulses the speaker.
-export const SOUND_NOTE = { glyph: false, words: null, nudge: false };
+// The sound notice for toys with sound: a headphones glyph and three words.
+// glyph and words make the quiet line at the foot; nudge pulses the speaker.
+export const SOUND_NOTE = { glyph: true, words: 'Best with sound', nudge: false };
 
 // Classic ships for now. The others are proposals for the intro lab.
 // Each variety may change the timing, the flash, how the box leaves, how lines open and the exit.
@@ -263,7 +263,9 @@ export function fitIntro(root, T) {
     const r = root.getBoundingClientRect(), t = text.getBoundingClientRect();
     const top = badge ? badge.getBoundingClientRect().bottom : t.top;
     const last = foot ? foot.previousElementSibling : text.lastElementChild;
-    const limit = foot ? foot.getBoundingClientRect().top - 16 : r.bottom - 24;
+    // The subtitle's Y knob can lift it above the foot, so it sets the limit.
+    const lifted = foot?.querySelector('.intro-tag') || foot;
+    const limit = foot ? Math.min(foot.getBoundingClientRect().top, lifted.getBoundingClientRect().top) - 16 : r.bottom - 24;
     const tall = Math.max(0.1, limit - top) / Math.max(1, last.getBoundingClientRect().bottom - top);
     // A word wider than its box overflows; the title then shrinks too.
     const wide = Math.min(1, ...[...text.children, ...(foot?.children || [])].map(el => el.clientWidth && el.scrollWidth > el.clientWidth ? el.clientWidth / el.scrollWidth : 1));
@@ -276,7 +278,7 @@ export function fitIntro(root, T) {
 // ready is a promise; a fixed-hold variety holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
-export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, classic = /\/legacy\.html$/.test(location.pathname), fill = null } = {}) {
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, textFlash = false, classic = false, fill = null } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
@@ -315,11 +317,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
   }
 
-  // A classic build says so below the emblem, above the main title.
+  // The classic notice sits under the main title; it stays off for now.
   let cls = null;
   if (classic && nameEl) {
     cls = Object.assign(document.createElement('span'), { className: 'intro-classic', textContent: '< CLASSIC >' });
-    nameEl.before(cls);
+    nameEl.after(cls);
   }
 
   if (RM.matches) {
@@ -372,20 +374,20 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     const make = (tag, className) => Object.assign(document.createElement(tag), { className });
     const foot = make('div', 'intro-foot'), notes = make('div', 'intro-notes'), left = make('span', 'intro-notes-l');
     foot.append(...text.querySelectorAll('.intro-tag'));
-    left.append(...[num, cls].filter(Boolean));
+    if (num) left.append(num);
     notes.append(left, ...(snd ? [snd] : []));
     foot.append(notes);
     text.append(foot);
   }
   // Each line starts closed in the variety's own way, then opens on its beat.
-  const lines = [cls, badge ? name : null, nl, numAt === 'subs' ? num : null, sub,
+  const lines = [badge ? name : null, cls, nl, numAt === 'subs' ? num : null, sub,
     text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
   const lags = [0, T.clsLag, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
   const R = REVEAL[V.reveal] || REVEAL.unfurl;
   lines.forEach(el => { if (el) Object.assign(el.style, R.shut); });
   // Each line can sit higher or lower than its place in the column.
   [[cls, T.clsY], [name, T.nameY], [nl, T.nlY], [text.querySelector('.intro-tag:not(.intro-tag--nl)'), T.tagY], [text.querySelector('.intro-tag--nl'), T.tagNlY], [snd, T.sndY]]
-    .forEach(([el, y]) => { if (el && y) el.style.translate = `0 ${y}vh`; });
+    .forEach(([el, y]) => { if (el && y) el.style.translate = `0 ${y}cqh`; });
   // The logo never moves: CSS pins it to one point on the screen.
   fitIntro(root, T);
   document.fonts?.ready.then(() => fitIntro(root, T));
@@ -434,7 +436,13 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     const steps = [7, -5, 3, -2, 0];
     for (const x of steps) { blow.style.transform = x ? `translateX(${x}px)` : ''; await wait(1); }
     await wait(Math.max(0, T.flash - steps.length));
-  } else await wait(T.flash);
+  } else {
+    // The text flash wipes every line in as a box while the logo's box holds.
+    const flashLines = textFlash ? lines.filter(Boolean) : [];
+    const wipe = { ...T, unfurl: Math.min(T.unfurl, (T.flash * 1000) / FPS) };
+    flashLines.forEach(el => { el.classList.add('is-wipe'); R.open(el, wipe); });
+    await wait(T.flash);
+  }
   await gate('flash');
   // The box leaves; the emblem stays, white, and the lines open beneath it.
   if (tick) tick.remove();
@@ -448,10 +456,12 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     play(badge, p => ({ '--box-y': (1 - 0.95 * p).toFixed(3) }), 160, accel).then(() => wait(2)).then(() => { badge.style.setProperty('--box', 0); badge.style.setProperty('--box-y', 1); });
   } else box(false);
   if (both) box(false);
+  // After a text flash the lines drop their boxes as the logo drops its box.
+  lines.forEach(el => el?.classList.remove('is-wipe'));
   // Each line opens a beat after the one above; the last one is awaited.
   let last = null, first = true;
   for (let k = 0; k < lines.length; k++) {
-    if (!lines[k]) continue;
+    if (!lines[k] || (textFlash && V.flash !== 'jitter')) continue;
     if (!first) await wait(lags[k]);
     first = false;
     last = R.open(lines[k], T);

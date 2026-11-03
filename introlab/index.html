@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=21">
+<link rel="stylesheet" href="../shared/intro.css?v=23">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -92,6 +92,7 @@ button:hover { border-color: var(--fg); }
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
   <label class="check"><input type="checkbox" id="replay"> Replay on change</label>
   <label class="check"><input type="checkbox" id="nameflash"> Name in flash (try-out)</label>
+  <label class="check"><input type="checkbox" id="textflash"> Text flash: lines wipe in as boxes with the flash</label>
   <label class="check"><input type="checkbox" id="classic"> Classic notice</label>
   <div class="row"><label for="snote">Audio notice</label><select id="snote">
     <option value="off">Off</option>
@@ -128,7 +129,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, fitIntro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=21';
+import { intro, fitIntro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=23';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -161,7 +162,7 @@ let tlReady = false;
 const save = () => {
   if (tlReady) drawTL();
   try {
-    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, isStatic: staticBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, numAt: numSel.value }));
+    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, isStatic: staticBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, textFlash: textBox.checked, numAt: numSel.value }));
   } catch (err) {}
 };
 
@@ -196,16 +197,18 @@ const staticBox = document.getElementById('static');
 staticBox.checked = !!saved.isStatic;
 staticBox.addEventListener('change', () => { save(); run(); });
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
-const flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat'), classicBox = document.getElementById('classic');
+const textBox = document.getElementById('textflash'), flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat'), classicBox = document.getElementById('classic');
 classicBox.addEventListener('change', () => { save(); replay(); });
 numSel.value = ['subs', 'bottom'].includes(saved.numAt) ? saved.numAt : '';
 numSel.addEventListener('change', () => { save(); replay(); });
 replayBox.checked = saved.replay ?? true;
 loopBox.checked = !!saved.loop;
 flashBox.checked = !!saved.nameFlash;
+textBox.checked = !!saved.textFlash;
 replayBox.addEventListener('change', save);
 loopBox.addEventListener('change', () => { save(); if (loopBox.checked && !playing) run(); });
 flashBox.addEventListener('change', () => { save(); replay(); });
+textBox.addEventListener('change', () => { save(); replay(); });
 // Any change replays at once; a running intro gives way.
 const replay = () => { if (replayBox.checked) run(); };
 
@@ -376,7 +379,7 @@ function applyPose() {
     fitIntro(document.querySelector('.intro'), t);
     for (const [k, sel] of Object.entries(LINE_Y)) {
       const el = document.querySelector(sel);
-      if (el) el.style.translate = t[k] ? `0 ${t[k]}vh` : '';
+      if (el) el.style.translate = t[k] ? `0 ${t[k]}cqh` : '';
     }
   }
 }
@@ -431,7 +434,7 @@ async function run({ hold = null } = {}) {
     }
     return gate(ph);
   };
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, classic: still || classicBox.checked, fill: still ? FILL : null });
+  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, textFlash: textBox.checked, classic: still || classicBox.checked, fill: still ? FILL : null });
   if (my !== gen) return;
   playing = false;
   took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})${pauses.size ? ', with pauses' : ''}`;
