@@ -22,6 +22,34 @@
 .stage canvas.on { opacity: 1; }
 .stage.held canvas { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+
+/* ---------- the slice rail: depth in W, a notch for each vertex level ---------- */
+/* Top is near in W, bottom is far. */
+.stage--tesseract {
+  --rail: oklch(0.38 0.02 275);
+  --cut: oklch(0.86 0.15 72);
+}
+.rail {
+  position: absolute; z-index: 1; right: 6px; top: 22px; bottom: 76px; width: 52px;
+  cursor: ns-resize; touch-action: none; -webkit-tap-highlight-color: transparent;
+  opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+}
+.rail.on { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
+.rail:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
+.rail .track { position: absolute; top: 0; bottom: 0; right: 18px; width: 2px; background: var(--rail); }
+.rail .notch {
+  position: absolute; right: 0; top: 0; height: 2px; width: var(--len, 10px); margin-top: -1px;
+  background: var(--rail); transition: background-color 0.15s ease;
+}
+.rail .notch.hot { background: var(--cut); }
+/* The needle is a solid bar with a cut gap where it crosses the track. */
+.rail .needle {
+  position: absolute; right: -12px; top: 0; width: 34px; height: 5px; margin-top: -2.5px;
+  background: var(--cut); pointer-events: none;
+  -webkit-mask: linear-gradient(to left, #000 0 9px, transparent 9px 17px, #000 17px);
+  mask: linear-gradient(to left, #000 0 9px, transparent 9px 17px, #000 17px);
+}
+@media (prefers-reduced-motion: reduce) { .rail, .rail.on { transition: none; } }
 </style>
 </head>
 <body>
@@ -32,8 +60,11 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--tesseract" id="stage" tabindex="0" role="application" aria-label="Tesseract, a four-dimensional cube. Drag to turn it; Shift-drag or a two-finger drag turns it through the fourth dimension. Arrow keys turn it, Shift with arrows through the fourth dimension. Double-click or Space sets it square again. I turns it inside out; S shows a sweeping 3D slice.">
+    <div class="stage stage--tesseract" id="stage" tabindex="0" role="application" aria-label="Tesseract, a four-dimensional cube. Drag to turn it; Shift-drag or a two-finger drag turns it through the fourth dimension. Arrow keys turn it, Shift with arrows through the fourth dimension. Double-click or Space sets it square again. I turns it inside out; S shows a 3D slice, and the rail or the wheel sets its depth.">
       <p class="fail" hidden>Tesseract needs WebGL, which this browser has turned off.</p>
+      <div class="rail" id="rail" role="slider" tabindex="-1" aria-orientation="vertical" aria-label="Slice depth" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+        <div class="track"><span class="needle"></span></div>
+      </div>
     </div>
     <div class="bar">
       <div class="choices" role="group" aria-label="Shape">
@@ -50,7 +81,7 @@
         <div class="fine"><dt><kbd>Shift</kbd> drag</dt><dd>fourth dimension</dd></div>
         <div class="touch"><dt>Two fingers</dt><dd>fourth dimension</dd></div>
         <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span></dt><dd>square up</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>turn</dd></div>
+        <div><dt>Drag the rail</dt><dd>slice depth</dd></div>
       </dl>
     </div>
   </main>
@@ -123,7 +154,7 @@ function live() {
   if (!sound.on || !ac || ac.state === 'closed') return null;
   return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'i', 'I', 's', 'S']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', ' ', 'Enter', 'i', 'I', 's', 'S']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -163,6 +194,26 @@ function landed() {
   chimeAt = performance.now();
   bell(392, 0.08);
   bell(587.3, 0.06, 0.09);
+}
+// The slice needle ticks as it passes a vertex level.
+// Pitch climbs a pentatonic scale from the far level up.
+const PENTA = [0, 2, 4, 7, 9];
+let tickAt = -1e9;
+function tick(n) {
+  const a = live(), now = performance.now();
+  if (!a || now - tickAt < 40) return;
+  tickAt = loudAt = now;
+  const t = a.currentTime + LEAD, f = 392 * 2 ** ((PENTA[n % 5] + 12 * Math.floor(n / 5)) / 12);
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = 'triangle';
+  o.frequency.value = f;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.05, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, 0.03);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.25);
+  o.onended = () => og.disconnect();
 }
 // A quiet toy lets the context sleep until the next gesture.
 function nap() {
@@ -298,11 +349,13 @@ function slerp(a, b, t, o) {
 const om = new Float64Array(6);
 // Idle drift: mostly through W, with a slow 3D yaw.
 const IDLE = [0, 0.024, 0, 0.11, 0, 0.045], IDLE_WAIT = 4000;
-// A slice sweeps the full depth in W once every eight seconds.
+// An idle slice sweeps the full depth in W once every eight seconds.
 const SWEEP = (2 * Math.PI) / 8;
+// Depth runs from far (0) to near (1) in W; the ends stay clear of the tips.
+const DEP_LO = 0.02, DEP_HI = 0.98, DEP_AMP = (DEP_HI - DEP_LO) / 2;
 const ptrs = new Map();
 let shape = 0, mu = 0, snap = null, evert = null, flip = 1, idleAmt = 0, lastIn = -1e9, dirty = true;
-let slicing = false, cut = 0, phase = 0;
+let slicing = false, cut = 0, phase = 0, dep = 0.5, depGoal = 0.5, railHeld = false, sweepAmt = 0;
 let tapT = -1e9, tapX = 0, tapY = 0, downT = 0, downX = 0, downY = 0, moved = false;
 let cx = 0, cy = 0, trail = [];
 Object.assign(QL, HOME[0][0]);
@@ -351,7 +404,10 @@ function setSlice(on) {
   slicing = on;
   sliceB.setAttribute('aria-pressed', String(on));
   // A new slice starts at the middle depth.
-  if (on && cut === 0) phase = 0;
+  if (on && cut === 0) dep = depGoal = 0.5;
+  rail.classList.toggle('on', on);
+  rail.tabIndex = on ? 0 : -1;
+  if (!on && document.activeElement === rail) stage.focus();
   touch();
   wake();
 }
@@ -359,8 +415,10 @@ function setSlice(on) {
 function step(dt) {
   const now = performance.now();
   let any = false;
-  const want = !reduce && !ptrs.size && !snap && !evert && now - lastIn > IDLE_WAIT;
+  const want = !reduce && !ptrs.size && !railHeld && !snap && !evert && now - lastIn > IDLE_WAIT;
   idleAmt = want ? Math.min(1, idleAmt + dt * 0.4) : Math.max(0, idleAmt - dt * 3);
+  // The sweep stops at once on input, so the depth stays put.
+  sweepAmt = want ? Math.min(1, sweepAmt + dt * 0.4) : 0;
   // Friction is gentle; reduced motion stops sooner.
   const fr = Math.exp(-(reduce ? 5 : 1.1) * dt), drift = ease(idleAmt);
   for (let p = 0; p < 6; p++) {
@@ -401,9 +459,24 @@ function step(dt) {
     cut = cut < goal ? Math.min(goal, cut + d) : Math.max(goal, cut - d);
     any = true;
   }
-  // Reduced motion holds the slice at the middle depth.
-  if (slicing && !reduce) { phase += dt * SWEEP; any = true; }
-  else if (reduce) phase = 0;
+  // The user sets the depth; the sweep takes over only when idle.
+  // Reduced motion never sweeps, so sweepAmt stays at zero.
+  if (slicing) {
+    const sw = ease(sweepAmt);
+    if (sw > 0) {
+      phase += dt * SWEEP * sw;
+      dep = depGoal = 0.5 + DEP_AMP * Math.sin(phase);
+      any = true;
+    } else {
+      if (dep !== depGoal) {
+        dep += (depGoal - dep) * (1 - Math.exp(-dt * (reduce ? 60 : 22)));
+        if (Math.abs(depGoal - dep) < 1e-4) dep = depGoal;
+        any = true;
+      }
+      // The phase follows the depth, so the sweep resumes from here.
+      phase = Math.asin(clamp((dep - 0.5) / DEP_AMP, -1, 1));
+    }
+  }
   norm4(QL);
   norm4(QR);
   return any;
@@ -413,7 +486,7 @@ function step(dt) {
 // The 4D eye sits at w = 2, so nearer looks bigger.
 const D4 = 2, BOUND = 1.27;
 const P = new Float32Array(NV * 3), R4 = new Float64Array(NV * 3), Wv = new Float64Array(NV), Sv = new Float64Array(NV);
-let rise = 0, apex = 0, grow = 0, fade = 1, grow16 = 0, sqA = 1, trA = 0, t16A = 0, m2e = 0, sliceH = 0;
+let rise = 0, apex = 0, grow = 0, fade = 1, grow16 = 0, sqA = 1, trA = 0, t16A = 0, m2e = 0, sliceH = 0, wLo = -1, wHi = 1;
 function project() {
   matrix();
   // First morph: apexes rise from the cell centres into the 24-cell.
@@ -446,14 +519,14 @@ function project() {
     Wv[k] = w;
     Sv[k] = s;
   }
-  // The slice level sweeps between the nearest and farthest points in W.
-  let lo = Infinity, hi = -Infinity;
-  for (let k = 0; k < NV; k++) { if (Wv[k] < lo) lo = Wv[k]; if (Wv[k] > hi) hi = Wv[k]; }
-  sliceH = lerp(lo, hi, 0.5 + 0.47 * Math.sin(phase));
+  // The slice level lies between the nearest and farthest points in W.
+  wLo = Infinity; wHi = -Infinity;
+  for (let k = 0; k < NV; k++) { if (Wv[k] < wLo) wLo = Wv[k]; if (Wv[k] > wHi) wHi = Wv[k]; }
+  sliceH = lerp(wLo, wHi, dep);
 }
 
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, ready = false, lowDpr = false;
+let THREE = null, renderer = null, scene = null, camera = null, ready = false, lowDpr = false, pxW = 0.005;
 let tubes = null, balls = null, panes = null, slice = null, ramp = null, dim = null, paneU = null, sliceU = null;
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
 function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
@@ -474,6 +547,8 @@ function fit(w, h) {
   const v = (camera.fov * D2R) / 2, half = Math.min(v, Math.atan(Math.tan(v) * camera.aspect));
   const d = BOUND / Math.sin(Math.atan(Math.tan(half) * 0.94));
   camera.position.set(0, 0, d);
+  // One CSS pixel at the object's distance, in world units.
+  pxW = (2 * d * Math.tan(v)) / h;
   camera.near = Math.max(0.1, d - 4);
   camera.far = d + 4;
   camera.lookAt(0, 0, 0);
@@ -521,6 +596,7 @@ function draw() {
   dim.value = 1 - 0.62 * ease(cut);
   drawPanes();
   drawSlice();
+  drawRail();
   renderer.render(scene, camera);
 }
 // Faint panes sort back to front each frame.
@@ -565,10 +641,17 @@ function drawPanes() {
 // Each solid piece cut at w = h gives one flat polygon.
 // The polygons tile the cut, a solid in ordinary 3D space.
 // Cut points lie on the drawn edges, inside the wire.
-const NCELL = Math.max(PYR.length, TET.length);
+// A seam between two polygons that meet at an angle opens a gap.
+// Flat seams stay shut, so each cell of the shape reads as one stencil.
+const NCELL = Math.max(PYR.length, TET.length), NK = NV * NV;
+const GAP_PX = 3;
 const sliceP = new Float32Array(NCELL * 12 * 3), sliceN = new Float32Array(NCELL * 12 * 3);
-const cutP = new Float64Array(NCELL * 8 * 3), cutN = new Uint8Array(NCELL);
-const ord = [0, 0, 0, 0, 0, 0, 0, 0], ang = new Float64Array(8);
+const cutP = new Float64Array(NCELL * 8 * 3), cutK = new Int32Array(NCELL * 8), cutN = new Uint8Array(NCELL);
+const polyN = new Float64Array(NCELL * 3), polyC = new Float64Array(NCELL * 3), polyB = new Float64Array(NCELL * 6);
+const polyX = new Float64Array(NCELL * 16), polyK = new Uint8Array(NCELL), mate = new Int16Array(NCELL * 8);
+const seam = new Map();
+const ord = [0, 0, 0, 0, 0, 0, 0, 0], ang = new Float64Array(8), inX = new Float64Array(8), inY = new Float64Array(8);
+const eNx = new Float64Array(8), eNy = new Float64Array(8), eD = new Float64Array(8);
 function drawSlice() {
   const g = slice.geometry;
   slice.visible = cut > 0.002;
@@ -577,6 +660,7 @@ function drawSlice() {
   const cells = mu > 1 ? TET : PYR, h = sliceH, s = D4 / (D4 - h);
   let gx = 0, gy = 0, gz = 0, gn = 0;
   // Pass one: cut points per piece, and their mean, which lies inside.
+  // Each cut point keeps the key of the edge it lies on.
   for (let c = 0; c < cells.length; c++) {
     const E = cells[c], o = c * 24;
     let k = 0;
@@ -591,6 +675,7 @@ function drawSlice() {
       for (let q = 0; q < k && !dup; q++) dup = Math.abs(cutP[o + q * 3] - x) + Math.abs(cutP[o + q * 3 + 1] - y) + Math.abs(cutP[o + q * 3 + 2] - z) < 1e-7;
       if (dup) continue;
       cutP[o + k * 3] = x; cutP[o + k * 3 + 1] = y; cutP[o + k * 3 + 2] = z;
+      cutK[c * 8 + k] = i < j ? i * NV + j : j * NV + i;
       gx += x; gy += y; gz += z; gn++;
       k++;
     }
@@ -599,9 +684,12 @@ function drawSlice() {
   let m = 0;
   if (gn) {
     gx /= gn; gy /= gn; gz /= gn;
-    // Pass two: each polygon in turn order, wound to face outward.
+    seam.clear();
+    mate.fill(-1);
+    // Pass two: each polygon in turn order about its outward normal.
     for (let c = 0; c < cells.length; c++) {
       const k = cutN[c], o = c * 24;
+      polyK[c] = 0;
       if (k < 3) continue;
       let px = 0, py = 0, pz = 0;
       for (let q = 0; q < k; q++) { px += cutP[o + q * 3]; py += cutP[o + q * 3 + 1]; pz += cutP[o + q * 3 + 2]; }
@@ -617,6 +705,8 @@ function drawSlice() {
       if (best < 1e-14 || ul < 1e-9) continue;
       const nl = Math.sqrt(best);
       nx /= nl; ny /= nl; nz /= nl;
+      // The normal points away from the middle of the solid.
+      if (nx * (px - gx) + ny * (py - gy) + nz * (pz - gz) < 0) { nx = -nx; ny = -ny; nz = -nz; }
       const ex = ux / ul, ey = uy / ul, ez = uz / ul;
       const fx = ny * ez - nz * ey, fy = nz * ex - nx * ez, fz = nx * ey - ny * ex;
       for (let q = 0; q < k; q++) {
@@ -630,13 +720,57 @@ function drawSlice() {
         while (r >= 0 && ang[ord[r]] > ang[v]) { ord[r + 1] = ord[r]; r--; }
         ord[r + 1] = v;
       }
-      // Turn order runs counterclockwise about n; an inward n reverses both.
-      const inward = nx * (px - gx) + ny * (py - gy) + nz * (pz - gz) < 0;
-      if (inward) { nx = -nx; ny = -ny; nz = -nz; }
+      polyK[c] = k;
+      polyN[c * 3] = nx; polyN[c * 3 + 1] = ny; polyN[c * 3 + 2] = nz;
+      polyC[c * 3] = px; polyC[c * 3 + 1] = py; polyC[c * 3 + 2] = pz;
+      polyB[c * 6] = ex; polyB[c * 6 + 1] = ey; polyB[c * 6 + 2] = ez;
+      polyB[c * 6 + 3] = fx; polyB[c * 6 + 4] = fy; polyB[c * 6 + 5] = fz;
+      for (let r = 0; r < k; r++) {
+        const v = ord[r], vx = cutP[o + v * 3] - px, vy = cutP[o + v * 3 + 1] - py, vz = cutP[o + v * 3 + 2] - pz;
+        polyX[(c * 8 + r) * 2] = vx * ex + vy * ey + vz * ez;
+        polyX[(c * 8 + r) * 2 + 1] = vx * fx + vy * fy + vz * fz;
+        // Two polygons that share both edge keys share this seam.
+        const a = cutK[c * 8 + v], b = cutK[c * 8 + ord[(r + 1) % k]];
+        if (a === b) continue;
+        const key = a < b ? a * NK + b : b * NK + a, other = seam.get(key);
+        if (other === undefined) seam.set(key, c * 8 + r);
+        else { mate[other] = c; mate[c * 8 + r] = other >> 3; }
+      }
+    }
+    // Pass three: each edge moves inward by its gap, then the polygon fans out.
+    const G = GAP_PX * pxW;
+    for (let c = 0; c < cells.length; c++) {
+      const k = polyK[c];
+      if (!k) continue;
+      const nx = polyN[c * 3], ny = polyN[c * 3 + 1], nz = polyN[c * 3 + 2], X = c * 16;
+      for (let r = 0; r < k; r++) {
+        const r2 = (r + 1) % k;
+        const dx = polyX[X + r2 * 2] - polyX[X + r * 2], dy = polyX[X + r2 * 2 + 1] - polyX[X + r * 2 + 1];
+        const l = Math.hypot(dx, dy) || 1;
+        eNx[r] = -dy / l; eNy[r] = dx / l;
+        const p = mate[c * 8 + r];
+        // A crease of about five degrees or more opens the seam fully.
+        const dn = p < 0 ? -1 : nx * polyN[p * 3] + ny * polyN[p * 3 + 1] + nz * polyN[p * 3 + 2];
+        eD[r] = G * ease(clamp((1 - dn) / 0.004));
+      }
+      for (let r = 0; r < k; r++) {
+        const r0 = (r + k - 1) % k, x = polyX[X + r * 2], y = polyX[X + r * 2 + 1];
+        const det = eNx[r0] * eNy[r] - eNy[r0] * eNx[r];
+        let ox, oy;
+        if (Math.abs(det) < 0.05) { const d = Math.max(eD[r0], eD[r]); ox = eNx[r] * d; oy = eNy[r] * d; }
+        else { ox = (eD[r0] * eNy[r] - eNy[r0] * eD[r]) / det; oy = (eNx[r0] * eD[r] - eD[r0] * eNx[r]) / det; }
+        // A small polygon shrinks toward its middle but never turns over.
+        const ol = Math.hypot(ox, oy), cap = 0.45 * Math.hypot(x, y);
+        if (ol > cap) { ox *= cap / ol; oy *= cap / ol; }
+        inX[r] = x + ox; inY[r] = y + oy;
+      }
+      const px = polyC[c * 3], py = polyC[c * 3 + 1], pz = polyC[c * 3 + 2], B = c * 6;
       for (let q = 1; q < k - 1; q++) {
-        const tri = inward ? [ord[0], ord[q + 1], ord[q]] : [ord[0], ord[q], ord[q + 1]];
-        for (const v of tri) {
-          sliceP[m * 3] = cutP[o + v * 3]; sliceP[m * 3 + 1] = cutP[o + v * 3 + 1]; sliceP[m * 3 + 2] = cutP[o + v * 3 + 2];
+        for (let t = 0; t < 3; t++) {
+          const v = t === 0 ? 0 : q + t - 1, a = inX[v], b = inY[v];
+          sliceP[m * 3] = px + polyB[B] * a + polyB[B + 3] * b;
+          sliceP[m * 3 + 1] = py + polyB[B + 1] * a + polyB[B + 4] * b;
+          sliceP[m * 3 + 2] = pz + polyB[B + 2] * a + polyB[B + 5] * b;
           sliceN[m * 3] = nx; sliceN[m * 3 + 1] = ny; sliceN[m * 3 + 2] = nz;
           m++;
         }
@@ -645,6 +779,53 @@ function drawSlice() {
   }
   g.setDrawRange(0, m);
   g.attributes.position.needsUpdate = g.attributes.normal.needsUpdate = true;
+}
+
+/* ---------- the rail: a notch for each vertex level in W ---------- */
+const rail = document.getElementById('rail'), railTrack = rail.querySelector('.track'), needle = rail.querySelector('.needle');
+const notches = Array.from({ length: NV }, () => {
+  const n = document.createElement('span');
+  n.className = 'notch';
+  n.hidden = true;
+  railTrack.append(n);
+  return n;
+});
+const lvU = new Float64Array(NV), lvN = new Uint8Array(NV), lvTmp = new Float64Array(NV);
+let nLv = 0, shownDep = -1, railDep = -1;
+function drawRail() {
+  if (cut <= 0.002) { railDep = -1; return; }
+  // A level gathers the shown vertices that share one depth in W.
+  const span = wHi - wLo || 1;
+  let n = 0;
+  for (let k = 0; k < NV; k++) {
+    if (k < 16 ? fade < 0.05 : mu === 0 || apex < 0.05) continue;
+    lvTmp[n++] = (Wv[k] - wLo) / span;
+  }
+  const vals = lvTmp.subarray(0, n).sort();
+  nLv = 0;
+  for (let q = 0; q < n; q++) {
+    if (nLv && vals[q] - lvU[nLv - 1] < 0.006) { lvN[nLv - 1]++; continue; }
+    lvU[nLv] = vals[q];
+    lvN[nLv++] = 1;
+  }
+  for (let q = 0; q < NV; q++) {
+    const el = notches[q];
+    if (q >= nLv) { el.hidden = true; continue; }
+    el.hidden = false;
+    el.style.top = `${((1 - lvU[q]) * 100).toFixed(2)}%`;
+    // More vertices on one level make a longer notch.
+    el.style.setProperty('--len', `${Math.min(30, 8 + 3 * lvN[q])}px`);
+    el.classList.toggle('hot', Math.abs(lvU[q] - dep) < 0.012);
+  }
+  needle.style.top = `${((1 - dep) * 100).toFixed(2)}%`;
+  // Only a depth the user moves ticks as it passes a level.
+  if (railDep >= 0 && sweepAmt === 0 && railDep !== dep) {
+    const a = Math.min(railDep, dep), b = Math.max(railDep, dep);
+    for (let q = 0; q < nLv; q++) if (lvU[q] > a && lvU[q] <= b) { tick(q); break; }
+  }
+  railDep = dep;
+  const v = Math.round(dep * 100);
+  if (v !== shownDep) { shownDep = v; rail.setAttribute('aria-valuenow', String(v)); }
 }
 
 /* ---------- theme ---------- */
@@ -659,8 +840,8 @@ function cssRGB(str) {
 // Far in W fades toward the stage; near in W stands out.
 // Wire and panes share this ramp: colour always means depth in W.
 const RAMP = [[0.52, 0.17, 292], [0.74, 0.14, 236], [0.93, 0.09, 178]];
-// The slice is one hot colour in three flat tones.
-const CUT = [[0.86, 0.15, 72], [0.73, 0.19, 46], [0.55, 0.18, 30]];
+// The slice is one hot colour in three flat tones, and a dark inside.
+const CUT = [[0.86, 0.15, 72], [0.73, 0.19, 46], [0.55, 0.18, 30], [0.27, 0.07, 28]];
 function theme() {
   if (!renderer) return;
   const [r, g, b] = cssRGB(getComputedStyle(stage).backgroundColor);
@@ -669,7 +850,7 @@ function theme() {
     ramp[i].value.setRGB(...linRGB(c));
     paneU[`uP${i}`].value.setRGB(...srgb(c));
   });
-  ['uLit', 'uSide', 'uShade'].forEach((u, i) => sliceU[u].value.setRGB(...srgb(CUT[i])));
+  ['uLit', 'uSide', 'uShade', 'uIn'].forEach((u, i) => sliceU[u].value.setRGB(...srgb(CUT[i])));
   // Stacked panes add up, so each stays faint.
   paneU.uAlpha.value = 0.1;
   paneU.uRim.value = 0.22;
@@ -695,7 +876,7 @@ function frame(ms) {
   if (dirty) { draw(); dirty = false; }
   nap();
   const busy = ptrs.size || snap || evert || mu !== shape || idleAmt > 0 || om.some(Boolean)
-    || cut !== (slicing ? 1 : 0) || (slicing && !reduce);
+    || cut !== (slicing ? 1 : 0) || dep !== depGoal || railHeld;
   if (busy) {
     if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
     return;
@@ -794,6 +975,50 @@ addEventListener('keydown', e => {
   } else if ((k === 'i' || k === 'I') && !e.repeat) insideOut();
   else if ((k === 's' || k === 'S') && !e.repeat && ready) setSlice(!slicing);
 });
+// The rail and the wheel set the slice depth.
+const railU = e => {
+  const r = railTrack.getBoundingClientRect();
+  return clamp(1 - (e.clientY - r.top) / r.height, DEP_LO, DEP_HI);
+};
+function setDepth(u) {
+  depGoal = clamp(u, DEP_LO, DEP_HI);
+  sweepAmt = 0;
+  touch();
+  wake();
+}
+rail.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  if (!slicing || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  try { rail.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  railHeld = true;
+  setDepth(railU(e));
+});
+rail.addEventListener('pointermove', e => { if (railHeld) setDepth(railU(e)); });
+const railUp = () => { if (!railHeld) return; railHeld = false; touch(); wake(); };
+rail.addEventListener('pointerup', railUp);
+rail.addEventListener('pointercancel', railUp);
+rail.addEventListener('lostpointercapture', railUp);
+// Up is near in W; Page keys jump to the next vertex level.
+rail.addEventListener('keydown', e => {
+  const k = e.key;
+  let u = null;
+  if (k === 'ArrowUp' || k === 'ArrowRight') u = depGoal + (e.shiftKey ? 0.1 : 0.02);
+  else if (k === 'ArrowDown' || k === 'ArrowLeft') u = depGoal - (e.shiftKey ? 0.1 : 0.02);
+  else if (k === 'Home') u = DEP_HI;
+  else if (k === 'End') u = DEP_LO;
+  else if (k === 'PageUp') { u = DEP_HI; for (let q = 0; q < nLv; q++) if (lvU[q] > depGoal + 0.013) { u = lvU[q]; break; } }
+  else if (k === 'PageDown') { u = DEP_LO; for (let q = nLv - 1; q >= 0; q--) if (lvU[q] < depGoal - 0.013) { u = lvU[q]; break; } }
+  if (u === null) return;
+  e.preventDefault();
+  e.stopPropagation();
+  setDepth(u);
+});
+stage.addEventListener('wheel', e => {
+  if (!slicing || !ready) return;
+  e.preventDefault();
+  const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  setDepth(depGoal - px * 0.0015);
+}, { passive: false });
 const sliceB = document.getElementById('slice');
 choices(document.querySelector('.bar .choices'), v => setShape(Number(v)));
 document.getElementById('evert').addEventListener('click', insideOut);
@@ -917,16 +1142,19 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
 }`;
 // The slice is a stencil: each face takes one flat tone.
+// Through a cut gap the hollow inside shows one dark tone.
 const SLICE_FS = `
 uniform vec3 uKey;
 uniform vec3 uLit;
 uniform vec3 uSide;
 uniform vec3 uShade;
+uniform vec3 uIn;
 uniform float uAmt;
 varying vec3 vN;
 void main() {
   float d = dot(normalize(vN), uKey);
   vec3 c = d > 0.45 ? uLit : d > -0.15 ? uSide : uShade;
+  if (!gl_FrontFacing) c = uIn;
   gl_FragColor = vec4(c * uAmt, uAmt);
 }`;
 async function start() {
@@ -999,6 +1227,7 @@ async function start() {
   sliceU = {
     uKey: { value: keyDir }, uAmt: { value: 0 },
     uLit: { value: new THREE.Color() }, uSide: { value: new THREE.Color() }, uShade: { value: new THREE.Color() },
+    uIn: { value: new THREE.Color() },
   };
   const sg = new THREE.BufferGeometry();
   sg.setAttribute('position', new THREE.BufferAttribute(sliceP, 3).setUsage(THREE.DynamicDrawUsage));
