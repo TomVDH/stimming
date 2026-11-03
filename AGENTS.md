@@ -50,7 +50,7 @@ Read `README.md` for the toy list and the full rules.
   Publish all three TV tree files with the page.
 - `<id>/legacy.html` keeps an older build of a toy (`noindex`), reached from the header's Classic pill: today Pop field (CPU-lit), Heat putty, Caustic pool, Prism, Glass and Neon sign.
 - `toys.json` (root) is the one source for each toy's name, number, intro subtitle, emblem, Dutch (Flemish) name and IPA. The intro reads it (the menu shows English names only); each page's own intro text is only the fallback. It also holds an optional motto (`tag`, `tagNl`) that the intro shows under the subtitle; numbered toys show `#N` in the flash box. Tom sets the Dutch words and mottos. Add a new toy here.
-- Version tag (bottom right of the menu, `<<0.N>>`; the codename sits in its tooltip); the tagline sits under the title: `v0.N` steps once per signed-off toy; its codename is that toy's Dutch name from `toys.json`. Now v0.3 "Knalveld".
+- Version tag (`0.N` beside the onnozelaer mark in the footer, shown on hover; the codename sits in its tooltip); the tagline sits under the title: `v0.N` steps once per signed-off toy; its codename is that toy's Dutch name from `toys.json`. Now v0.3 "Knalveld".
 - The intro (`shared/intro.js`) ships the Snap variety: `TIMING` is its table, `DEFAULT_VARIETY` names it. The other varieties in `VARIETIES` are proposals. `introlab/` tunes any variety live (`?v=<variety>`), with icon size and Y per step and four font slots.
 - A toy Tom signs off gets `data-done` on its `.intro` div (its intro flashes a tick) and on its menu `<li>` (it moves to the signed-off shelf up top). Only Tom bestows it.
 
