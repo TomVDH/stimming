@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Zipper</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, then the zipper panel at full width. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --table: oklch(0.21 0.008 265);
+  --cloth: oklch(0.54 0.18 264);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; min-width: 0; }
+/* The panel is 16:9, and 4:5 on phones. */
+/* The cloth looks the same in both themes. */
+.panel {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 150px));
+  border-radius: 18px; overflow: hidden; background: var(--cloth);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+}
+@media (max-width: 640px) { .panel { aspect-ratio: 4 / 5; } }
+.panel:focus-visible { outline-offset: 3px; }
+.panel canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab;
+  opacity: 0; transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.panel canvas.on { opacity: 1; }
+.panel.held canvas { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .home, .snd, .panel canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Zipper</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="panel" id="panel" tabindex="0" role="slider" aria-label="Zipper" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Closed">
+      <canvas aria-hidden="true"></canvas>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > PI) d -= TAU; else if (d < -PI) d += TAU; return d; };
+
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+const hx = v => ((v * 255 + 0.5) | 0).toString(16).padStart(2, '0');
+function css(lch, a) {
+  const [r, g, b] = rgb(lch);
+  return a == null ? '#' + hx(r) + hx(g) + hx(b) : `rgba(${(r * 255) | 0},${(g * 255) | 0},${(b * 255) | 0},${a})`;
+}
+
+/* ---------- palettes ---------- */
+// Glossy parts: three gradient stops, then the light.
+const pal = (a, b, c, l) => ({ s: [css(a), css(b), css(c)], l0: css(l, 0.85), l1: css(l, 0) });
+const AMBER = pal([0.89, 0.13, 88], [0.77, 0.16, 68], [0.64, 0.17, 48], [0.97, 0.05, 95]);
+const CHROME = pal([0.97, 0.004, 260], [0.8, 0.01, 262], [0.55, 0.016, 266], [1, 0, 0]);
+// Cloth is cobalt; the tape a shade deeper; the lining mint.
+const CLOTH = [[0.63, 0.16, 258], [0.54, 0.18, 264], [0.43, 0.17, 270]].map(c => css(c));
+const TAPE = [[0.5, 0.16, 261], [0.45, 0.165, 265], [0.37, 0.15, 270]].map(c => css(c));
+const LINING = [[0.93, 0.08, 166], [0.86, 0.11, 184], [0.76, 0.12, 204]].map(c => css(c));
+const RIM0 = 'rgba(255,255,255,0.62)', RIM1 = 'rgba(255,255,255,0)';
+const THREAD = css([0.85, 0.07, 255], 0.9), RIB = css([0.28, 0.12, 270], 0.32), HAIR = css([0.26, 0.1, 270], 0.42);
+const EDGE_LIT = 'rgba(255,255,255,0.42)', EDGE_DIM = css([0.24, 0.1, 270], 0.62);
+const SEAM = css([0.6, 0.1, 200], 0.55), PUFF = css([1, 0, 0], 0.32), PUFF0 = css([1, 0, 0], 0), DIP = css([0.5, 0.1, 214], 0.16);
+// Light falls from the top left of the screen.
+const LS = [-0.6, -0.8];
+
+// Glossy fill: base gradient, top-left light, thin clipped rim.
+function gloss(c, path, box, P_, L, rim, rule = 'nonzero') {
+  const cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2, r = Math.hypot(box[2], box[3]) / 2;
+  const x0 = cx + L[0] * r, y0 = cy + L[1] * r, x1 = cx - L[0] * r, y1 = cy - L[1] * r;
+  const g = c.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, P_.s[0]); g.addColorStop(0.55, P_.s[1]); g.addColorStop(1, P_.s[2]);
+  c.fillStyle = g;
+  c.fill(path, rule);
+  const lx = cx + L[0] * 0.6 * r, ly = cy + L[1] * 0.6 * r, l = c.createRadialGradient(lx, ly, 0, lx, ly, 1.15 * r);
+  l.addColorStop(0, P_.l0); l.addColorStop(1, P_.l1);
+  c.fillStyle = l;
+  c.fill(path, rule);
+  c.save();
+  c.clip(path, rule);
+  const e = c.createLinearGradient(x0, y0, x1, y1);
+  e.addColorStop(0, RIM0); e.addColorStop(0.5, RIM1);
+  c.strokeStyle = e;
+  c.lineWidth = rim;
+  c.stroke(path);
+  c.restore();
+}
+function roundRect(p, x, y, w, h, r) {
+  p.moveTo(x + r, y);
+  p.arcTo(x + w, y, x + w, y + h, r);
+  p.arcTo(x + w, y + h, x, y + h, r);
+  p.arcTo(x, y + h, x, y, r);
+  p.arcTo(x, y, x + w, y, r);
+  p.closePath();
+}
+
+/* ---------- geometry: a local frame along the track ---------- */
+// u runs along the track; y runs across it.
+const panel = document.getElementById('panel'), cv = panel.querySelector('canvas'), ctx = cv.getContext('2d');
+const base = document.createElement('canvas'), lining = document.createElement('canvas');
+let W = 0, H = 0, dpr = 1, lowDpr = false, port = false, th = 0, co = 1, si = 0, Ll = LS;
+let P = 40, cb = 0, hh = 0, tb = 0, slen = 0, wm = 0, lt = 0, Amax = 0, asym = 0;
+let Ltot = 0, ext = 0, uTop = 0, uBot = 0, sMin = 0, sMax = 0, travel = 0, ox0 = 0, oy0 = 0;
+let nN = 0, du = 1, NU, wT, wB, vT, vB, FT, FB, GT, GB, XS, YS;
+let nT = 0, TU, TS, TR, RR, RV, OO, OV;
+let toothT = null, toothB = null, sliderS = null, stopsS = null, boxS = null, tabPath = null, tabBox = null, bandG = null;
+let ready = false, ariaP = -1;
+
+/* ---------- state ---------- */
+let s = 0, v = 0, vLast = 0, acc = 0;
+let drag = null, keyDir = 0, keyName = '';
+let psi = PI / 2, psiV = 0;
+// Reduced motion arrives part open and still.
+const f0 = reduce ? 0.36 : 0;
+
+const L2S = (u, y) => [ox0 + u * co - y * si, oy0 + u * si + y * co];
+const local = c => c.setTransform(dpr * co, dpr * si, -dpr * si, dpr * co, dpr * ox0, dpr * oy0);
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.zipper.sound', MAXV = 14, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tickNext = 0, clunkAt = -1, restT = 0;
+let whooshG = null, whooshF = null, whooshAt = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // The cloth whoosh loops underneath, silent until the tapes move.
+    const src = ac.createBufferSource(), hp = ac.createBiquadFilter(), lp = ac.createBiquadFilter();
+    src.buffer = noise;
+    src.loop = true;
+    hp.type = 'highpass';
+    hp.frequency.value = 220;
+    lp.type = 'lowpass';
+    lp.frequency.value = 700;
+    lp.Q.value = 0.5;
+    whooshG = ac.createGain();
+    whooshG.gain.value = 0;
+    src.connect(hp).connect(lp).connect(whooshG).connect(out);
+    src.start();
+    whooshF = lp.frequency;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the zipper settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !drag && !keyDir && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// One tooth: a tiny plastic tick whose pitch rises with speed.
+function tick(sp, closing) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, tickNext);
+  // A fast run thins to a buzz instead of a wall.
+  if (t - t0 > 0.03) return;
+  tickNext = t + 0.006 * jit(0.25);
+  const f = (0.8 + 0.7 * sp) * (closing ? 1.08 : 0.93) * jit(0.05), g = level() * (0.4 + 0.6 * sp) * jit(0.15);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 3000 * f;
+  bp.Q.value = 1.6;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.7 * g, t + 0.0004);
+  ng.gain.setTargetAtTime(0, t + 0.0004, 0.0018);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.02);
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = 'triangle';
+  o.frequency.value = 1500 * f;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.08 * g, t + 0.0008);
+  og.gain.setTargetAtTime(0, t + 0.0008, 0.004);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.03);
+  track(o, og, ng);
+}
+// End stop: a low thud, a dull knock, a metal clack.
+function clunk(amp, open) {
+  const a = live();
+  if (!a) return;
+  const t = a.currentTime + LEAD;
+  if (t - clunkAt < 0.07) return;
+  clunkAt = t;
+  const f = (open ? 0.9 : 1.06) * jit(0.04), g = level() * amp * jit(0.08);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(150 * f, t);
+  o.frequency.exponentialRampToValueAtTime(58 * f, t + 0.12);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.6 * g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.003, 0.05);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.32);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.frequency.value = 1300 * f;
+  lp.Q.value = 0.8;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.9 * g, t + 0.001);
+  ng.gain.setTargetAtTime(0, t + 0.001, 0.014);
+  src.connect(lp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.8, 0.1);
+  // Two inharmonic partials make the clack read as metal.
+  const m1 = a.createOscillator(), m2 = a.createOscillator(), mg = a.createGain(), mg2 = a.createGain();
+  m1.frequency.value = 1240 * f;
+  m2.frequency.value = 1240 * f * 1.47;
+  mg.gain.setValueAtTime(0, t);
+  mg.gain.linearRampToValueAtTime(0.07 * g, t + 0.001);
+  mg.gain.setTargetAtTime(0, t + 0.001, 0.025);
+  mg2.gain.setValueAtTime(0, t);
+  mg2.gain.linearRampToValueAtTime(0.04 * g, t + 0.001);
+  mg2.gain.setTargetAtTime(0, t + 0.001, 0.015);
+  m1.connect(mg).connect(out);
+  m2.connect(mg2).connect(out);
+  m1.start(t);
+  m2.start(t);
+  m1.stop(t + 0.16);
+  m2.stop(t + 0.16);
+  track(o, og, ng, mg, mg2);
+}
+// Moving tapes raise a soft whoosh; rest fades it out.
+function whoosh(e) {
+  if (!whooshG) return;
+  const a = live(), val = a ? clamp(e) : 0;
+  if (Math.abs(val - whooshAt) < 0.01) return;
+  whooshAt = val;
+  whooshG.gain.setTargetAtTime(0.13 * val ** 1.2, ac.currentTime, 0.06);
+  whooshF.setTargetAtTime(600 + 1600 * val, ac.currentTime, 0.08);
+}
+
+/* ---------- parts, painted once per size ---------- */
+function sprite(x0, y0, w, h, paint) {
+  const k = dpr, c = document.createElement('canvas');
+  c.width = Math.ceil(w * k) + 2;
+  c.height = Math.ceil(h * k) + 2;
+  const g = c.getContext('2d');
+  g.setTransform(k, 0, 0, k, -x0 * k + 1, -y0 * k + 1);
+  paint(g);
+  return { c, x: x0 - 1 / k, y: y0 - 1 / k, w: c.width / k, h: c.height / k };
+}
+const blit = S => ctx.drawImage(S.c, S.x, S.y, S.w, S.h);
+
+// A moulded tooth: narrow neck in the tape, round head beyond.
+function tooth(dir) {
+  const a = 0.22 * P, b = 0.25 * P, r1 = 0.1 * P, p = new Path2D(), Y = y => y * dir;
+  p.moveTo(-a, Y(-cb + r1));
+  p.quadraticCurveTo(-a, Y(-cb), -a + r1, Y(-cb));
+  p.lineTo(a - r1, Y(-cb));
+  p.quadraticCurveTo(a, Y(-cb), a, Y(-cb + r1));
+  p.lineTo(a, Y(-0.02 * P));
+  p.lineTo(b, Y(0.06 * P));
+  p.lineTo(b, Y(hh - b));
+  p.arc(0, Y(hh - b), b, 0, PI, dir < 0);
+  p.lineTo(-b, Y(0.06 * P));
+  p.lineTo(-a, Y(-0.02 * P));
+  p.closePath();
+  const box = [-b, dir > 0 ? -cb : -hh, 2 * b, cb + hh];
+  return sprite(box[0] - 2, box[1] - 2, box[2] + 4, box[3] + 4, g => {
+    gloss(g, p, box, AMBER, Ll, Math.max(2, 0.07 * P));
+    // The head carries a moulded hollow, dark on its lit side.
+    const cy = Y(hh - b), d = g.createLinearGradient(Ll[0] * b, cy + Ll[1] * b, -Ll[0] * b, cy - Ll[1] * b);
+    d.addColorStop(0, css([0.5, 0.15, 45], 0.45));
+    d.addColorStop(1, css([1, 0, 0], 0.4));
+    g.fillStyle = d;
+    g.beginPath();
+    g.ellipse(0, cy, 0.48 * b, 0.36 * b, 0, 0, TAU);
+    g.fill();
+  });
+}
+// Slider: a tapered body, wide at the mouth, with a raised lug.
+function slider() {
+  const x0 = -slen / 2, x1 = slen / 2, ym = 1.18 * P, ye = 0.76 * P, rc = 0.34 * P, re = 0.28 * P, p = new Path2D();
+  p.moveTo(x0, -ym + rc);
+  p.quadraticCurveTo(x0, -ym, x0 + rc, -ym);
+  p.quadraticCurveTo(-0.2 * P, -ym, x1 - re, -ye);
+  p.quadraticCurveTo(x1, -ye, x1, -ye + re);
+  p.lineTo(x1, ye - re);
+  p.quadraticCurveTo(x1, ye, x1 - re, ye);
+  p.quadraticCurveTo(-0.2 * P, ym, x0 + rc, ym);
+  p.quadraticCurveTo(x0, ym, x0, ym - rc);
+  p.lineTo(x0, 0.36 * P);
+  p.quadraticCurveTo(x0 + 0.26 * P, 0, x0, -0.36 * P);
+  p.closePath();
+  const lug = new Path2D(), lb = [-0.66 * P, -0.3 * P, 1.32 * P, 0.6 * P];
+  roundRect(lug, ...lb, 0.28 * P);
+  return sprite(x0 - 2, -ym - 2, slen + 4, 2 * ym + 4, g => {
+    gloss(g, p, [x0, -ym, slen, 2 * ym], CHROME, Ll, Math.max(2.4, 0.08 * P));
+    g.strokeStyle = css([0.4, 0.015, 266], 0.35);
+    g.lineWidth = 1;
+    g.stroke(lug);
+    gloss(g, lug, lb, CHROME, Ll, Math.max(2, 0.06 * P));
+  });
+}
+// Top stops clamp each tape; the box closes the far end.
+function stops() {
+  const a = new Path2D(), b = new Path2D(), ba = [-0.6 * P, -0.64 * P, 0.6 * P, 0.56 * P], bb = [-0.6 * P, 0.08 * P, 0.6 * P, 0.56 * P];
+  roundRect(a, ...ba, 0.14 * P);
+  roundRect(b, ...bb, 0.14 * P);
+  return sprite(-0.6 * P - 2, -0.64 * P - 2, 0.6 * P + 4, 1.28 * P + 4, g => {
+    gloss(g, a, ba, CHROME, Ll, 2);
+    gloss(g, b, bb, CHROME, Ll, 2);
+  });
+}
+function box() {
+  const p = new Path2D(), bx = [0, -0.7 * P, 0.9 * P, 1.4 * P];
+  roundRect(p, ...bx, 0.22 * P);
+  return sprite(-2, -0.7 * P - 2, 0.9 * P + 4, 1.4 * P + 4, g => {
+    gloss(g, p, bx, CHROME, Ll, 2.2);
+    // A pressed seam runs across the box.
+    g.lineWidth = 1;
+    g.strokeStyle = css([0.45, 0.015, 266], 0.5);
+    g.beginPath(); g.moveTo(0.45 * P, -0.5 * P); g.lineTo(0.45 * P, 0.5 * P); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.5)';
+    g.beginPath(); g.moveTo(0.45 * P + 1, -0.5 * P); g.lineTo(0.45 * P + 1, 0.5 * P); g.stroke();
+  });
+}
+// The pull: a ring round the lug, then a slotted plate.
+function tab() {
+  const rr = 0.42 * P, we = 0.6 * P, cr = 0.3 * P, p = new Path2D();
+  p.moveTo(0, -rr);
+  p.lineTo(0.72 * P, -rr);
+  p.quadraticCurveTo(1.12 * P, -rr, 1.34 * P, -we);
+  p.lineTo(lt - cr, -we);
+  p.quadraticCurveTo(lt, -we, lt, -we + cr);
+  p.lineTo(lt, we - cr);
+  p.quadraticCurveTo(lt, we, lt - cr, we);
+  p.lineTo(1.34 * P, we);
+  p.quadraticCurveTo(1.12 * P, rr, 0.72 * P, rr);
+  p.lineTo(0, rr);
+  p.arc(0, 0, rr, PI / 2, 1.5 * PI);
+  p.closePath();
+  // The ring hole and the end slot show what lies beneath.
+  const hr = 0.19 * P;
+  p.moveTo(hr, 0);
+  p.ellipse(0, 0, hr, 0.15 * P, 0, 0, TAU);
+  p.closePath();
+  const xa = lt - 1.2 * P, xb = lt - 0.42 * P, r = 0.13 * P;
+  p.moveTo(xa, -r);
+  p.lineTo(xb, -r);
+  p.arc(xb, 0, r, -PI / 2, PI / 2);
+  p.lineTo(xa, r);
+  p.arc(xa, 0, r, PI / 2, 1.5 * PI);
+  p.closePath();
+  tabPath = p;
+  tabBox = [-rr, -we, lt + rr, 2 * we];
+}
+// A fine twill weave: one tile of light and dark diagonals.
+function twill() {
+  const t = document.createElement('canvas'), n = 6, g = t.getContext('2d');
+  t.width = t.height = n;
+  g.lineWidth = 1;
+  g.strokeStyle = 'rgba(255,255,255,0.055)';
+  g.beginPath();
+  for (const o of [-n, 0, n]) { g.moveTo(o, n); g.lineTo(o + n, 0); }
+  g.stroke();
+  g.strokeStyle = css([0.2, 0.1, 270], 0.09);
+  g.beginPath();
+  for (const o of [-n / 2, n / 2]) { g.moveTo(o, n); g.lineTo(o + n, 0); }
+  g.stroke();
+  return t;
+}
+// The cloth fills the panel, lit from the top left.
+function buildBase() {
+  base.width = cv.width;
+  base.height = cv.height;
+  const b = base.getContext('2d'), R = Math.hypot(W, H) / 2, cx = W / 2, cy = H / 2;
+  b.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const g = b.createLinearGradient(cx + LS[0] * R, cy + LS[1] * R, cx - LS[0] * R, cy - LS[1] * R);
+  g.addColorStop(0, CLOTH[0]); g.addColorStop(0.55, CLOTH[1]); g.addColorStop(1, CLOTH[2]);
+  b.fillStyle = g;
+  b.fillRect(0, 0, W, H);
+  // Matte cloth takes only a faint pool of light.
+  const lx = cx + LS[0] * 0.6 * R, ly = cy + LS[1] * 0.6 * R, l = b.createRadialGradient(lx, ly, 0, lx, ly, 1.2 * R);
+  l.addColorStop(0, css([0.9, 0.06, 250], 0.2));
+  l.addColorStop(1, css([0.9, 0.06, 250], 0));
+  b.fillStyle = l;
+  b.fillRect(0, 0, W, H);
+  b.setTransform(1, 0, 0, 1, 0, 0);
+  b.fillStyle = b.createPattern(twill(), 'repeat');
+  b.fillRect(0, 0, base.width, base.height);
+}
+// The lining is quilted mint: puffed diamonds, stitched on both diagonals.
+function buildLining() {
+  lining.width = cv.width;
+  lining.height = cv.height;
+  const b = lining.getContext('2d'), R = Math.hypot(W, H) / 2, cx = W / 2, cy = H / 2;
+  b.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const g = b.createLinearGradient(cx + LS[0] * R, cy + LS[1] * R, cx - LS[0] * R, cy - LS[1] * R);
+  g.addColorStop(0, LINING[0]); g.addColorStop(0.55, LINING[1]); g.addColorStop(1, LINING[2]);
+  b.fillStyle = g;
+  b.fillRect(0, 0, W, H);
+  const qx = 2.3 * P, qy = 1.6 * P, k = qx / qy;
+  for (let j = -1; j <= H / (qy / 2) + 1; j++) {
+    for (let i = -1; i <= W / qx + 1; i++) {
+      const x = i * qx + (j & 1) * (qx / 2), y = (j * qy) / 2;
+      const r = b.createRadialGradient(x - qx * 0.14, y - qy * 0.16, 0, x, y, qx * 0.56);
+      r.addColorStop(0, PUFF); r.addColorStop(0.5, PUFF0); r.addColorStop(1, DIP);
+      b.fillStyle = r;
+      b.beginPath();
+      b.moveTo(x - qx / 2, y); b.lineTo(x, y - qy / 2); b.lineTo(x + qx / 2, y); b.lineTo(x, y + qy / 2);
+      b.closePath();
+      b.fill();
+    }
+  }
+  b.strokeStyle = SEAM;
+  b.lineWidth = Math.max(1, 0.045 * P);
+  b.lineCap = 'round';
+  b.setLineDash([0.3 * P, 0.2 * P]);
+  b.beginPath();
+  for (let c = qx / 2 - qx; c <= W + k * H + qx; c += qx) { b.moveTo(c + k * qy, -qy); b.lineTo(c - k * (H + qy), H + qy); }
+  for (let c = qx / 2 - k * H - qx; c <= W + qx; c += qx) { b.moveTo(c - k * qy, -qy); b.lineTo(c + k * (H + qy), H + qy); }
+  b.stroke();
+}
+
+/* ---------- layout ---------- */
+function layout() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  const d = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(3e6 / (w * h)));
+  if (ready && w === W && h === H && d === dpr) return;
+  const frac = travel > 0 ? clamp((s - sMin) / travel) : f0;
+  W = w; H = h; dpr = d;
+  cv.width = Math.round(w * d);
+  cv.height = Math.round(h * d);
+  // Wide panels run the track across, tall ones down; both lean slightly.
+  port = h > w;
+  th = (port ? 84 : -6) * D2R;
+  co = Math.cos(th);
+  si = Math.sin(th);
+  Ll = [LS[0] * co + LS[1] * si, -LS[0] * si + LS[1] * co];
+  // Gravity sags the lower tape a little more.
+  asym = 0.1 * co;
+  Ltot = port ? h / si : w / co;
+  const dc = port ? w : h;
+  P = Math.min(clamp(dc * 0.072, 20, 44), Ltot / 16);
+  cb = 0.58 * P; hh = 0.4 * P; tb = 0.72 * P; slen = 3 * P; wm = 0.5 * P; lt = 3.2 * P;
+  Amax = 0.21 * dc;
+  ext = 3 * P;
+  const m0 = Math.max(1.1 * P, 0.05 * Ltot);
+  // A tall track leaves room for the pull below the box.
+  const m1 = port ? Math.max(m0, lt - slen / 2 + 0.6 * P) : m0;
+  uTop = m0 + 0.6 * P;
+  uBot = Ltot - m1 - 0.9 * P;
+  sMin = uTop + slen / 2;
+  sMax = uBot - slen / 2;
+  travel = sMax - sMin;
+  ox0 = w / 2 - (co * Ltot) / 2;
+  oy0 = h / 2 - (si * Ltot) / 2;
+  // Cloth nodes sit about half a tooth apart.
+  nN = Math.max(8, Math.round((uBot - uTop) / (P / 2)) + 1);
+  du = (uBot - uTop) / (nN - 1);
+  NU = new Float64Array(nN);
+  for (let i = 0; i < nN; i++) NU[i] = uTop + i * du;
+  wT = new Float64Array(nN); wB = new Float64Array(nN); vT = new Float64Array(nN); vB = new Float64Array(nN);
+  FT = new Float64Array(nN); FB = new Float64Array(nN); GT = new Float64Array(nN); GB = new Float64Array(nN);
+  XS = new Float64Array(nN + 2); YS = new Float64Array(nN + 2);
+  // Teeth alternate sides, half a pitch apart.
+  const tu = [], ts = [];
+  for (let u = uTop + 0.35 * P; u <= uBot - 0.3 * P; u += P / 2) { tu.push(u); ts.push(ts.length & 1 ? 1 : -1); }
+  nT = tu.length;
+  TU = Float64Array.from(tu); TS = Int8Array.from(ts); TR = new Int8Array(nT);
+  RR = new Float64Array(nT); RV = new Float64Array(nT); OO = new Float64Array(nT); OV = new Float64Array(nT);
+  s = sMin + frac * travel;
+  v = vLast = acc = 0;
+  if (drag) drag.target = s;
+  calm();
+  toothT = tooth(1); toothB = tooth(-1); sliderS = slider(); stopsS = stops(); boxS = box(); tab();
+  const R = Math.hypot(w, h) / 2;
+  bandG = ctx.createLinearGradient(Ltot / 2 + Ll[0] * R, Ll[1] * R, Ltot / 2 - Ll[0] * R, -Ll[1] * R);
+  bandG.addColorStop(0, TAPE[0]); bandG.addColorStop(0.55, TAPE[1]); bandG.addColorStop(1, TAPE[2]);
+  buildBase();
+  buildLining();
+  panel.setAttribute('aria-orientation', port ? 'vertical' : 'horizontal');
+  ready = true;
+  draw();
+}
+
+/* ---------- the opening ---------- */
+// Half-gap at u: a sagging lens from the stops to the mouth.
+function targetW(u) {
+  if (u <= uTop) return 0;
+  const mouth = s - slen / 2, l = mouth - uTop;
+  if (u < mouth) {
+    const x = (u - uTop) / l, A = Math.min(Amax, 0.3 * l);
+    return A * Math.sin(PI * x) + wm * x * x * x;
+  }
+  // Inside the slider the rows converge to the throat.
+  const z = s + 0.15 * slen;
+  return u < z ? (wm * (z - u)) / (z - mouth) : 0;
+}
+// Cloth by the slider and the stops is held stiffly.
+const sway = () => (reduce ? { k: 240, z: 0.95 } : { k: 70, z: 0.24 });
+const KH = 2600, KC = 700, CC = 13;
+const stiff = (u, k, mouth) => k + (KH - k) * Math.min(1, Math.exp((u - mouth) / (1.5 * P)) + Math.exp((uTop - u) / (0.7 * P)));
+const region = u => (u < s - slen / 2 ? 0 : u <= s + slen / 2 ? 1 : 2);
+
+// Relaxes the cloth to rest and seats the teeth.
+function calm() {
+  const { k } = sway(), mouth = s - slen / 2, z = s + 0.15 * slen;
+  for (let i = 0; i < nN; i++) {
+    const t = NU[i] >= z ? 0 : targetW(NU[i]);
+    wT[i] = t * (1 - asym); wB[i] = t * (1 + asym); vT[i] = vB[i] = 0;
+  }
+  for (let it = 0; it < 240; it++) {
+    for (let i = 1; i < nN - 1; i++) {
+      const u = NU[i];
+      if (u >= mouth) break;
+      const K = stiff(u, k, mouth), t = targetW(u);
+      wT[i] = (K * t * (1 - asym) + KC * (wT[i - 1] + wT[i + 1])) / (K + 2 * KC);
+      wB[i] = (K * t * (1 + asym) + KC * (wB[i - 1] + wB[i + 1])) / (K + 2 * KC);
+    }
+  }
+  for (let j = 0; j < nT; j++) { TR[j] = region(TU[j]); RR[j] = RV[j] = OO[j] = OV[j] = 0; }
+}
+function wAt(arr, u) {
+  if (u <= uTop || u >= uBot) return 0;
+  const f = (u - uTop) / du, i = Math.min(nN - 2, f | 0);
+  return arr[i] + (arr[i + 1] - arr[i]) * (f - i);
+}
+
+/* ---------- physics, in fixed substeps ---------- */
+const HS = 1 / 240, VISC = 1.2;
+function stepSlider(h) {
+  if (drag) {
+    // A stiff spring under the finger keeps the slider heavy.
+    v += (900 * (drag.target - s) - 60 * v) * h;
+  } else if (keyDir) {
+    v += (keyDir * 0.55 * travel - v) * Math.min(1, 9 * h);
+  } else if (v) {
+    // Friction: a steady drag plus a little viscosity.
+    const nv = Math.max(0, Math.abs(v) - travel * h) * (1 - VISC * h);
+    v = v < 0 ? -nv : nv;
+  }
+  v = clamp(v, -4 * travel, 4 * travel);
+  s += v * h;
+  if (s < sMin) endStop(sMin, -1);
+  else if (s > sMax) endStop(sMax, 1);
+  acc = (v - vLast) / h;
+  vLast = v;
+}
+// Contact speed sets the thunk and the jolt through the cloth.
+function endStop(at, dir) {
+  s = at;
+  const sp = v * dir;
+  if (sp <= 0) return;
+  if (sp > 0.05 * travel) {
+    clunk(clamp(sp / (1.4 * travel), 0.12, 1), dir > 0);
+    if (dir > 0) jolt(sp);
+  }
+  // Only a free slider bounces; a held one rests on the stop.
+  v = drag || keyDir ? 0 : -v * 0.16;
+}
+function jolt(sp) {
+  const mouth = s - slen / 2, l = mouth - uTop, amp = Math.min(sp, travel) * (reduce ? 0.06 : 0.22);
+  if (l < P) return;
+  for (let i = 1; i < nN && NU[i] < mouth; i++) {
+    const q = Math.sin((PI * (NU[i] - uTop)) / l);
+    vT[i] += 0.8 * amp * q;
+    vB[i] += amp * q;
+  }
+}
+// Forces all read the same old state, so no mode gains energy.
+function stepCloth(h) {
+  const { k, z } = sway(), mouth = s - slen / 2, zEnd = s + 0.15 * slen, a1 = 1 - asym, a2 = 1 + asym;
+  for (let i = 0; i < nN; i++) {
+    const u = NU[i];
+    if (i === 0 || i === nN - 1 || u >= zEnd) { FT[i] = FB[i] = -1e9; continue; }
+    const t = targetW(u);
+    if (u >= mouth) { FT[i] = FB[i] = -1e9; GT[i] = t * a1; GB[i] = t * a2; continue; }
+    const K = stiff(u, k, mouth), C = 2 * z * Math.sqrt(K);
+    FT[i] = K * (t * a1 - wT[i]) + KC * (wT[i - 1] + wT[i + 1] - 2 * wT[i]) - C * vT[i] + CC * (vT[i - 1] + vT[i + 1] - 2 * vT[i]);
+    FB[i] = K * (t * a2 - wB[i]) + KC * (wB[i - 1] + wB[i + 1] - 2 * wB[i]) - C * vB[i] + CC * (vB[i - 1] + vB[i + 1] - 2 * vB[i]);
+  }
+  for (let i = 0; i < nN; i++) {
+    if (FT[i] === -1e9) {
+      const held = NU[i] >= mouth && NU[i] < zEnd && i > 0 && i < nN - 1;
+      wT[i] = held ? GT[i] : 0; wB[i] = held ? GB[i] : 0; vT[i] = vB[i] = 0;
+      continue;
+    }
+    vT[i] += FT[i] * h;
+    vB[i] += FB[i] * h;
+    wT[i] += vT[i] * h;
+    wB[i] += vB[i] * h;
+    // The edges never cross the centre line.
+    if (wT[i] < 0) { wT[i] = 0; if (vT[i] < 0) vT[i] = 0; }
+    if (wB[i] < 0) { wB[i] = 0; if (vB[i] < 0) vB[i] = 0; }
+  }
+}
+// A tooth leaving the slider tilts, then snaps into its slot.
+function stepTeeth(h) {
+  const mouth = s - slen / 2, exit = s + slen / 2, hy = 0.04 * P, m = v < 0 ? -1 : 1;
+  const sp = clamp((2 * Math.abs(v)) / P / 110), K = 2600, C = 2 * (reduce ? 1 : 0.3) * Math.sqrt(K);
+  for (let j = 0; j < nT; j++) {
+    const u = TU[j], was = TR[j];
+    let reg = region(u);
+    // A small band at each boundary stops chatter.
+    if (reg !== was && (Math.abs(u - exit) < hy || Math.abs(u - mouth) < hy)) reg = was;
+    if (reg !== was) {
+      TR[j] = reg;
+      const sg = TS[j];
+      if (reg === 2) { RR[j] = sg * m * 24; OO[j] = 0.28 * P; RV[j] = OV[j] = 0; tick(sp, true); }
+      else if (was === 2) { RR[j] = OO[j] = RV[j] = OV[j] = 0; tick(sp, false); }
+      else if (reg === 0) { RR[j] = sg * m * 12; OO[j] = -0.14 * P; RV[j] = OV[j] = 0; }
+    }
+    if (RR[j] || OO[j] || RV[j] || OV[j]) {
+      RV[j] += (-K * RR[j] - C * RV[j]) * h;
+      RR[j] += RV[j] * h;
+      OV[j] += (-K * OO[j] - C * OV[j]) * h;
+      OO[j] += OV[j] * h;
+      if (Math.abs(RR[j]) < 0.05 && Math.abs(RV[j]) < 2 && Math.abs(OO[j]) < 0.02 && Math.abs(OV[j]) < 1) RR[j] = RV[j] = OO[j] = OV[j] = 0;
+    }
+  }
+}
+// The pull is a pendulum hung from the slider's lug.
+const HINGE = 1;
+function stepTab(h) {
+  const LP = 0.55 * lt, w0 = reduce ? 6 : 7, G = w0 * w0 * LP, ak = reduce ? 0.4 : 1;
+  // The slider's acceleration swings it, as a moving pivot does.
+  const gx = -acc * co * ak, gy = G - acc * si * ak;
+  let a = (Math.cos(psi) * gy - Math.sin(psi) * gx) / LP - (reduce ? 7 : 2.2) * psiV;
+  if (drag && drag.steer != null) a += 420 * angDiff(drag.steer, psi) - 30 * psiV;
+  psiV = clamp(psiV + a * h, -16, 16);
+  // Hinge friction stops the last small swings.
+  psiV = psiV < 0 ? Math.min(0, psiV + HINGE * h) : Math.max(0, psiV - HINGE * h);
+  psi += psiV * h;
+  let dev = angDiff(psi, PI / 2);
+  const lim = 150 * D2R;
+  if (Math.abs(dev) > lim) { dev = Math.sign(dev) * lim; psiV *= -0.3; }
+  psi = PI / 2 + dev;
+}
+function step(h) {
+  stepSlider(h);
+  stepCloth(h);
+  stepTeeth(h);
+  stepTab(h);
+}
+// Launch speed that coasts d and still meets the stop at va.
+function launch(d, va) {
+  const mu = travel, c = VISC;
+  const dist = (a, b) => (a - b) / c - (mu / (c * c)) * Math.log((mu + c * a) / (mu + c * b));
+  let lo = va, hi = 4 * travel;
+  for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (dist(mid, va) < d) lo = mid; else hi = mid; }
+  return lo;
+}
+
+/* ---------- drawing ---------- */
+// Traces XS/YS as a smooth curve through the midpoints.
+function curve(c, n, rev, move) {
+  const ix = i => (rev ? n - 1 - i : i), i0 = ix(0), e = ix(n - 1);
+  if (move) c.moveTo(XS[i0], YS[i0]); else c.lineTo(XS[i0], YS[i0]);
+  for (let i = 1; i < n - 1; i++) {
+    const a = ix(i), b = ix(i + 1);
+    c.quadraticCurveTo(XS[a], YS[a], (XS[a] + XS[b]) / 2, (YS[a] + YS[b]) / 2);
+  }
+  c.lineTo(XS[e], YS[e]);
+}
+// One tape edge, offset outward, across the whole panel.
+function edge(arr, sg, off) {
+  XS[0] = -ext; YS[0] = sg * off;
+  for (let i = 0; i < nN; i++) { XS[i + 1] = NU[i]; YS[i + 1] = sg * (arr[i] + off); }
+  XS[nN + 1] = Ltot + ext; YS[nN + 1] = sg * off;
+  return nN + 2;
+}
+function line(c, arr, sg, off, style, width) {
+  c.beginPath();
+  curve(c, edge(arr, sg, off), false, true);
+  c.strokeStyle = style;
+  c.lineWidth = width;
+  c.stroke();
+}
+function tape(c, arr, sg) {
+  c.beginPath();
+  curve(c, edge(arr, sg, cb + tb), false, true);
+  curve(c, edge(arr, sg, 0), true, false);
+  c.closePath();
+  c.fillStyle = bandG;
+  c.fill();
+  line(c, arr, sg, cb + tb * 0.38, RIB, 1);
+  c.setLineDash([0.34 * P, 0.2 * P]);
+  c.lineCap = 'round';
+  line(c, arr, sg, cb + tb * 0.74, THREAD, Math.max(1.2, 0.05 * P));
+  c.setLineDash([]);
+  c.lineCap = 'butt';
+  line(c, arr, sg, cb + tb, HAIR, 1);
+  // The inner edge catches light on the side that faces it.
+  const lit = sg * si * LS[0] - sg * co * LS[1] > 0;
+  line(c, arr, sg, 0, lit ? EDGE_LIT : EDGE_DIM, 1.5);
+}
+// Device-pixel box around a local rectangle, clipped to the canvas.
+function devBox(u0, u1, y0, y1) {
+  let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+  for (const [u, y] of [[u0, y0], [u1, y0], [u0, y1], [u1, y1]]) {
+    const [X, Y] = L2S(u, y);
+    xa = Math.min(xa, X); xb = Math.max(xb, X); ya = Math.min(ya, Y); yb = Math.max(yb, Y);
+  }
+  const a = Math.max(0, Math.floor(xa * dpr) - 2), b = Math.max(0, Math.floor(ya * dpr) - 2);
+  const w = Math.min(cv.width, Math.ceil(xb * dpr) + 2) - a, h = Math.min(cv.height, Math.ceil(yb * dpr) + 2) - b;
+  return w > 0 && h > 0 ? [a, b, w, h] : null;
+}
+function draw() {
+  if (!ready) return;
+  const c = ctx, z = s + 0.15 * slen;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = 1;
+  c.drawImage(base, 0, 0);
+  // The opening shows the lining underneath.
+  let mT = 0, mB = 0, li = 0;
+  for (let i = 0; i < nN && NU[i] < z; i++) { mT = Math.max(mT, wT[i]); mB = Math.max(mB, wB[i]); li = i; }
+  if (mT + mB > 0.3) {
+    local(c);
+    c.save();
+    c.beginPath();
+    let n = 0;
+    for (let i = 0; i <= li; i++) { XS[n] = NU[i]; YS[n++] = -wT[i]; }
+    XS[n] = z; YS[n++] = 0;
+    curve(c, n, false, true);
+    n = 0;
+    for (let i = 0; i <= li; i++) { XS[n] = NU[i]; YS[n++] = wB[i]; }
+    XS[n] = z; YS[n++] = 0;
+    curve(c, n, true, false);
+    c.closePath();
+    c.clip();
+    const bb = devBox(uTop, z, -mT - 2, mB + 2);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    if (bb) c.drawImage(lining, bb[0], bb[1], bb[2], bb[3], bb[0], bb[1], bb[2], bb[3]);
+    c.restore();
+  }
+  local(c);
+  tape(c, wT, -1);
+  tape(c, wB, 1);
+  // Past the teeth, the two tapes meet in a seam.
+  c.beginPath();
+  c.moveTo(-ext, 0); c.lineTo(uTop - 0.6 * P, 0);
+  c.moveTo(uBot + 0.9 * P, 0); c.lineTo(Ltot + ext, 0);
+  c.strokeStyle = HAIR;
+  c.lineWidth = 1.2;
+  c.stroke();
+  c.translate(uTop, 0);
+  blit(stopsS);
+  local(c);
+  c.translate(uBot, 0);
+  blit(boxS);
+  for (let j = 0; j < nT; j++) {
+    const u = TU[j], sg = TS[j];
+    let y = 0, a = 0;
+    if (TR[j] !== 2) {
+      const arr = sg < 0 ? wT : wB;
+      y = sg * wAt(arr, u);
+      a = Math.atan((sg * (wAt(arr, u + du) - wAt(arr, u - du))) / (2 * du));
+    }
+    y += sg * OO[j];
+    a += RR[j] * D2R;
+    const A = th + a, ca = Math.cos(A) * dpr, sa = Math.sin(A) * dpr;
+    c.setTransform(ca, sa, -sa, ca, (ox0 + u * co - y * si) * dpr, (oy0 + u * si + y * co) * dpr);
+    blit(sg < 0 ? toothT : toothB);
+  }
+  local(c);
+  c.translate(s, 0);
+  blit(sliderS);
+  // The pull is lit in screen space as it turns.
+  const [px, py] = L2S(s, 0), cp = Math.cos(psi), sp = Math.sin(psi);
+  c.setTransform(cp * dpr, sp * dpr, -sp * dpr, cp * dpr, px * dpr, py * dpr);
+  gloss(c, tabPath, tabBox, CHROME, [LS[0] * cp + LS[1] * sp, -LS[0] * sp + LS[1] * cp], Math.max(2.4, 0.08 * P), 'evenodd');
+}
+function aria() {
+  const p = travel > 0 ? Math.round((100 * (s - sMin)) / travel) : 0;
+  if (p === ariaP) return;
+  ariaP = p;
+  panel.setAttribute('aria-valuenow', String(p));
+  panel.setAttribute('aria-valuetext', p === 0 ? 'Closed' : p === 100 ? 'Open' : p + '% open');
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, accT = 0, quiet = 0, onScreen = true, slow = 0;
+function wake() {
+  quiet = 0;
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function busy() {
+  if (drag || keyDir || Math.abs(v) > 0.5) return true;
+  // Friction may hold the pull a hair off plumb.
+  if (Math.abs(psiV) > 0.03 || Math.abs(angDiff(psi, PI / 2)) > HINGE / (reduce ? 36 : 49) + 0.005) return true;
+  for (let j = 0; j < nT; j++) if (RR[j] || OO[j]) return true;
+  for (let i = 1; i < nN - 1; i++) if (Math.abs(vT[i]) + Math.abs(vB[i]) > 0.6) return true;
+  return false;
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 24) { lowDpr = true; layout(); }
+  }
+  // While held, the pull points at a distant finger.
+  if (drag) {
+    const [px, py] = L2S(s, 0), dx = drag.X - px, dy = drag.Y - py;
+    drag.steer = Math.hypot(dx, dy) > 0.45 * lt ? Math.atan2(dy, dx) : null;
+  }
+  accT += dt;
+  const n = Math.min(8, Math.floor(accT / HS));
+  accT = n === 8 ? 0 : accT - n * HS;
+  for (let k = 0; k < n; k++) step(HS);
+  draw();
+  aria();
+  let e = 0;
+  for (let i = 1; i < nN - 1; i++) e += Math.abs(vT[i]) + Math.abs(vB[i]);
+  whoosh(e / (2 * nN) / (7 * P) + Math.abs(v) / (6 * travel));
+  quiet = busy() ? 0 : quiet + 1;
+  if (quiet < 4) {
+    if (onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  } else {
+    v = vLast = acc = psiV = 0;
+    vT.fill(0);
+    vB.fill(0);
+    whoosh(0);
+    rest();
+  }
+}
+
+/* ---------- input ---------- */
+function pt(e) {
+  const r = cv.getBoundingClientRect();
+  const X = ((e.clientX - r.left) * W) / r.width, Y = ((e.clientY - r.top) * H) / r.height;
+  const dx = X - ox0, dy = Y - oy0;
+  return { X, Y, u: dx * co + dy * si };
+}
+function segDist(x, y, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay, t = clamp(((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1));
+  return Math.hypot(x - ax - vx * t, y - ay - vy * t);
+}
+cv.addEventListener('pointerdown', e => {
+  if (!ready || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const p = pt(e), [sx, sy] = L2S(s, 0);
+  const ex = sx + lt * Math.cos(psi), ey = sy + lt * Math.sin(psi), k = e.pointerType === 'mouse' ? 1 : 1.35;
+  // The slider and its pull keep their grip; elsewhere pulls it over.
+  const onIt = Math.hypot(p.X - sx, p.Y - sy) < 1.7 * P * k || segDist(p.X, p.Y, sx, sy, ex, ey) < 0.75 * P * k;
+  drag = { id: e.pointerId, off: onIt ? s - p.u : 0, target: 0, X: p.X, Y: p.Y, steer: null, trail: [[e.timeStamp, p.u]] };
+  drag.target = clamp(p.u + drag.off, sMin - P, sMax + P);
+  keyDir = 0;
+  keyName = '';
+  try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  panel.classList.add('held');
+  wake();
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const p = pt(e);
+  drag.target = clamp(p.u + drag.off, sMin - P, sMax + P);
+  drag.X = p.X;
+  drag.Y = p.Y;
+  drag.trail.push([e.timeStamp, p.u]);
+  if (drag.trail.length > 12) drag.trail.shift();
+  wake();
+});
+// Release keeps the pointer's last 100 ms of speed: a flick throws.
+function letGo(e, fling) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const tr = drag.trail, end = tr[tr.length - 1];
+  drag = null;
+  panel.classList.remove('held');
+  if (fling && e.timeStamp - end[0] < 80) {
+    const first = tr.find(q => end[0] - q[0] <= 100) || end, dt = (end[0] - first[0]) / 1000;
+    if (dt > 0.008) v = clamp((end[1] - first[1]) / dt, -4 * travel, 4 * travel);
+  }
+  wake();
+}
+cv.addEventListener('pointerup', e => letGo(e, true));
+cv.addEventListener('pointercancel', e => letGo(e, false));
+cv.addEventListener('lostpointercapture', e => letGo(e, true));
+
+// Space runs the slider to whichever end is farther.
+function run(open) {
+  if (!ready || drag) return;
+  if (open == null) open = s - sMin < travel / 2;
+  keyDir = 0;
+  keyName = '';
+  const d = open ? sMax - s : s - sMin;
+  if (d < 1) return;
+  v = (open ? 1 : -1) * launch(d, 0.42 * travel);
+  wake();
+}
+const DIRS = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+addEventListener('keydown', e => {
+  if (!ready || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target !== panel && e.target !== document.body && e.target !== document.documentElement) return;
+  const d = DIRS[e.key];
+  if (d) {
+    e.preventDefault();
+    if (keyName !== e.key && !drag) {
+      keyDir = d;
+      keyName = e.key;
+      // A tap still moves the slider a tooth or two.
+      if (v * d < 0.2 * travel) v = 0.2 * travel * d;
+      wake();
+    }
+  } else if (e.key === ' ' || e.key === 'Home' || e.key === 'End') {
+    e.preventDefault();
+    if (!e.repeat) run(e.key === ' ' ? null : e.key === 'End');
+  }
+});
+addEventListener('keyup', e => {
+  if (e.key !== keyName) return;
+  keyDir = 0;
+  keyName = '';
+  wake();
+});
+addEventListener('blur', () => { keyDir = 0; keyName = ''; });
+
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { keyDir = 0; keyName = ''; } else wake();
+});
+
+/* ---------- start ---------- */
+layout();
+new ResizeObserver(() => { const was = ready; layout(); if (was) wake(); }).observe(panel);
+requestAnimationFrame(() => cv.classList.add('on'));
+// On arrival the slider glides a third of the way open.
+if (!reduce) {
+  setTimeout(() => {
+    if (ready && !drag && !keyDir && s - sMin < 1) { v = launch(0.36 * travel, 0); wake(); }
+  }, 450);
+}
+})();
+</script>
+</body>
+</html>
