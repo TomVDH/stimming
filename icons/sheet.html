@@ -157,6 +157,47 @@ const docs = [];
 let cur = -1, hide = false, view = 'icon';
 
 const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
+// The menu's own icon fills Current where a gallery has none.
+// The menu renders off screen first, because its script draws some icons.
+// Its shared gradients come along under ids of their own.
+const menuFrame = Object.assign(document.createElement('iframe'), { src: '../index.html', title: 'Menu', tabIndex: -1 });
+menuFrame.setAttribute('aria-hidden', 'true');
+menuFrame.style.cssText = 'position: absolute; left: -10000px; top: 0; width: 1280px; height: 900px; visibility: hidden;';
+document.body.append(menuFrame);
+await new Promise(r => { menuFrame.addEventListener('load', r, { once: true }); setTimeout(r, 6000); });
+await new Promise(r => setTimeout(r, 900));
+const menu = menuFrame.contentDocument;
+function menuIcon(id) {
+  const svg = menu?.querySelector(`a.toy#${id} svg`);
+  if (!svg) return '';
+  const own = svg.cloneNode(true), seen = new Set();
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const take = el => {
+    for (const [, ref] of el.outerHTML.matchAll(/(?:url\(#|href="#)([\w-]+)/g)) {
+      if (seen.has(ref) || own.querySelector(`[id="${ref}"]`)) continue;
+      const d = menu.getElementById(ref);
+      if (!d) continue;
+      seen.add(ref);
+      const c = d.cloneNode(true);
+      defs.append(c);
+      take(c);
+    }
+  };
+  take(own);
+  own.prepend(defs);
+  let html = own.outerHTML;
+  for (const ref of seen) html = html.replaceAll(`#${ref})`, `#m-${id}-${ref})`).replaceAll(`"#${ref}"`, `"#m-${id}-${ref}"`).replaceAll(`id="${ref}"`, `id="m-${id}-${ref}"`);
+  return html;
+}
+// A Current card built from the menu icon and the shipped emblem.
+function addCurrent(doc, sec, toy) {
+  const emb = names[toy]?.emblem ? `../${names[toy].emblem}` : '';
+  const mask = emb ? `<i style="display: block; width: 72px; aspect-ratio: 1; background: currentColor; mask: url(${emb}) center / contain no-repeat; mask-mode: luminance"></i>` : '';
+  const card = doc.createElement('article');
+  card.className = 'dir';
+  card.innerHTML = `<header><b>Current</b></header><div class="icons"><div class="tile t128">${menuIcon(toy)}</div></div>` + (emb ? `<div class="emb"><div class="flash">${mask}</div><div class="glass">${mask}</div></div>` : '');
+  (sec.querySelector('.row, .dirs') || sec).prepend(card);
+}
 const nameOf = id => names[id]?.name ?? id;
 const $ = id => document.getElementById(id);
 $('cols').innerHTML = '<span></span>' + COLS.map((l, i) => `${i === 1 ? '<span></span>' : ''}<span><b>${l}</b><span>${RUB[l]}</span></span>`).join('');
@@ -315,6 +356,7 @@ for (const [n] of SPIKES) {
     const first = sec.querySelector('.dir');
     const toy = sec.id?.replace(/^row-/, '') || (first?.id || first?.dataset.key || '').split('-')[0];
     sec.querySelector('h2').textContent = nameOf(toy);
+    if (![...sec.querySelectorAll('.dir b')].some(b => b.textContent.trim() === 'Current')) addCurrent(doc, sec, toy);
     for (const card of sec.querySelectorAll('.dir')) {
       const l = card.querySelector('b')?.textContent.trim();
       const tile = card.querySelector('.t128, .s128');
@@ -342,6 +384,7 @@ for (const [n] of SPIKES) {
   doc.body.classList.toggle('both', view === 'both');
   paint();
 }
+menuFrame.remove();
 addEventListener('resize', layout);
 </script>
 </body>
