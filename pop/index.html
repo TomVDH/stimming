@@ -1031,7 +1031,6 @@ function pop(c, now, amp, force) {
     const d = Math.hypot(o.x - c.x, o.y - c.y);
     if (!o.J && !o.state && d < R * 3.7) events.push({ at: now + (reduce ? 0 : 0.02 + d / (R * 30)), c: o, pop: 0.9 });
   }
-  addWave(c.x + c.dx, c.y + c.dy, c.J);
   if (reduce) return;
   c.sv += 7.5;
   burst(c, now, amp);
@@ -1140,7 +1139,7 @@ function step(now, dt) {
   const lk = reduce ? 1 : 1 - Math.exp(-7 * dt);
   light.x += (lightT.x - light.x) * lk; light.y += (lightT.y - light.y) * lk;
   const lit = Math.abs(lightT.x - light.x) + Math.abs(lightT.y - light.y) > 0.5;
-  return fly(now, dt) || moving || lit || ageWaves(now);
+  return fly(now, dt) || moving || lit;
 }
 
 /* ---------- burst: shards and a ring leave every pop ---------- */
@@ -1820,58 +1819,12 @@ function putDome(L, c, sb, sk, sh) {
   A.aLo.set(sk[0], v); A.aMi.set(sk[1], v); A.aHi.set(sk[2], v); A.aLi.set(sk[3], v);
   A.aMisc[u] = sh; A.aMisc[u + 1] = c.p; A.aMisc[u + 2] = c.seed; A.aMisc[u + 3] = sk[4];
 }
-// Post effects: a shockwave ripple bends the sheet, then a faint bloom.
+// Post effect: a faint bloom on the hottest highlights.
 // The sheet renders opaque on the stage colour, so the passes keep no alpha.
-const MAXW = 6, waves = [];
-const ShockShader = {
-  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uWaves: { value: Array.from({ length: MAXW }, () => new THREE.Vector4()) } },
-  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: `
-uniform sampler2D tDiffuse;
-uniform vec2 uRes;
-uniform vec4 uWaves[${MAXW}];
-varying vec2 vUv;
-void main() {
-  vec2 px = vUv * uRes, off = vec2(0.0);
-  // Each wave is a ring: centre, radius and push, in CSS pixels.
-  for (int i = 0; i < ${MAXW}; i++) {
-    vec4 w = uWaves[i];
-    if (w.w <= 0.0) continue;
-    vec2 d = px - w.xy;
-    float r = length(d), band = exp(-pow((r - w.z) / 16.0, 2.0));
-    off += d / max(r, 1e-3) * band * w.w;
-  }
-  gl_FragColor = texture2D(tDiffuse, vUv - off / uRes);
-}`,
-};
-const composer = new EffectComposer(gl);
-const shock = new ShaderPass(ShockShader), bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.35, 0.96);
+const composer = new EffectComposer(gl), bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.35, 0.96);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(shock);
 composer.addPass(bloom);
 composer.addPass(new ShaderPass(CopyShader));
-// A pop sends a ring across the sheet; a jumbo sends a strong one.
-function addWave(x, y, big) {
-  if (reduce) return;
-  waves.push({ x, y, t0: nowS(), life: big ? 0.75 : 0.35, amp: big ? 11 : 2.2, v: R * (big ? 16 : 11) });
-  if (waves.length > MAXW) waves.shift();
-}
-// Waves age out; the result says if any still move.
-function ageWaves(now) {
-  for (let i = waves.length - 1; i >= 0; i--) if (now - waves[i].t0 > waves[i].life) waves.splice(i, 1);
-  return waves.length > 0;
-}
-function setWaves(now) {
-  const U = shock.uniforms;
-  U.uRes.value.set(W, H);
-  U.uWaves.value.forEach((v, i) => {
-    const w = waves[i];
-    if (!w) { v.set(0, 0, 0, 0); return; }
-    const u = (now - w.t0) / w.life;
-    // The ring's y flips: render targets count up from the bottom.
-    v.set(w.x, H - w.y, w.v * (now - w.t0), w.amp * (1 - u) ** 2);
-  });
-}
 function glSize(w, h, d) {
   gl.setPixelRatio(d);
   gl.setSize(w, h, false);
@@ -1901,7 +1854,6 @@ function drawCells() {
       a.clearUpdateRanges(); a.addUpdateRange(0, L.n * n); a.needsUpdate = true;
     }
   }
-  setWaves(nowS());
   composer.render();
 }
 // The wipe front's radius, or zero once it has passed.
