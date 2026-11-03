@@ -24,7 +24,7 @@
 .stage canvas.on { opacity: 1; }
 .stage canvas.tip { cursor: pointer; }
 .stage canvas.turn { cursor: grabbing; }
-/* The add tray and the picture tray open above the bar. */
+/* The add, picture and Settings trays open above the bar. */
 .adder { position: relative; }
 .add {
   position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; gap: 6px; padding: 8px;
@@ -40,8 +40,17 @@
 .add .chip.icon svg .solid { fill: currentColor; stroke: none; }
 /* Tools sit four to a row. */
 #add { display: grid; grid-template-columns: repeat(4, auto); }
-.add.sets { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px; }
-.sets .choices { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; }
+.add.col { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px; }
+.pick .choices { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; }
+#picBtn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+/* Settings and the (i) close the bar on the right. */
+.bar-end { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.bar-end .how-tip { margin-left: 0; }
+/* The Settings tray hangs from the right edge. */
+#sets { left: auto; right: 0; }
+#setBtn svg { stroke-linecap: round; }
+/* Narrow bars put Iso and Settings on one row, the actions under it. */
+@media (max-width: 520px) { .bar-end { order: 1; } .bar .actions { order: 2; } }
 @media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 .hint {
   position: absolute; left: 16px; bottom: 14px; margin: 0; pointer-events: none;
@@ -65,6 +74,9 @@
     </div>
     <div class="bar">
       <div class="choices">
+        <button class="chip" id="iso" type="button" aria-pressed="false" aria-keyshortcuts="I">Iso</button>
+      </div>
+      <div class="actions">
         <div class="adder" id="adder">
           <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span id="addName">Line</span></button>
           <div class="add" id="add" role="group" aria-label="What a drag makes">
@@ -78,10 +90,9 @@
             <button class="chip icon" type="button" data-tool="ball" aria-pressed="false" aria-label="Steel ball" title="Steel ball"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="10.4" cy="8" r="3.8"/><path d="M1.5 5.6h3.4M1 8h3M1.5 10.4h3.4"/></svg></button>
           </div>
         </div>
-        <button class="chip" id="iso" type="button" aria-pressed="false" aria-keyshortcuts="I">Iso</button>
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Field picture" title="Field picture"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.2"/><path d="M2.4 11.6l3.6-4 3 3 2-2 2.8 3"/><circle cx="11" cy="6" r="1.1"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Field picture">
+        <div class="adder" id="picker">
+          <button class="chip" id="picBtn" type="button" aria-expanded="false" aria-controls="pictures" title="Field picture"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.2"/><path d="M2.4 11.6l3.6-4 3 3 2-2 2.8 3"/><circle cx="11" cy="6" r="1.1"/></svg>Picture</button>
+          <div class="add col pick" id="pictures" role="group" aria-label="Field picture">
             <div class="choices" id="pics" role="group" aria-label="Picture">
               <button class="chip" type="button" data-value="mix" aria-pressed="true">Mix</button>
               <button class="chip" type="button" data-value="grin" aria-pressed="false">Grin</button>
@@ -94,17 +105,22 @@
             <input type="file" id="file" accept="image/*" hidden>
           </div>
         </div>
-      </div>
-      <div class="actions">
-        <button class="chip" id="reset" type="button" aria-keyshortcuts="R" disabled>Reset</button>
         <button class="chip" id="clear" type="button" disabled>Clear</button>
       </div>
+      <div class="bar-end">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add col" id="sets" role="group" aria-label="Settings">
+            <button class="chip" id="reset" type="button" aria-keyshortcuts="R" disabled>Reset</button>
+          </div>
+        </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd id="drag-how">lay tiles</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>tip a tile</dd></div>
         <div><dt><span class="fine">Right-drag</span><span class="touch">Two fingers</span></dt><dd>turn the table</dd></div>
         <div class="fine"><dt><kbd>R</kbd></dt><dd>reset</dd></div>
       </dl>
+      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -2053,7 +2069,6 @@ addEventListener('keydown', e => {
     wake();
   }
 });
-resetB.addEventListener('click', reset);
 isoB.addEventListener('click', () => setView(!lensTo));
 /* ---------- trays ---------- */
 // The add tray picks what a drag makes.
@@ -2075,7 +2090,10 @@ function popover(box, btn) {
 }
 const toolBs = [...document.querySelectorAll('#add .chip')], addName = document.getElementById('addName');
 const openTray = popover(document.getElementById('adder'), document.getElementById('addBtn'));
+const openPics = popover(document.getElementById('picker'), document.getElementById('picBtn'));
 const openSets = popover(document.getElementById('setter'), document.getElementById('setBtn'));
+// Reset lives in Settings; the tray closes once it runs.
+resetB.addEventListener('click', () => { reset(); openSets(false); });
 function setTool(t) {
   tool = TOOLS[t] ? t : 'line';
   rows = TOOLS[tool].rows || 1;
@@ -2111,7 +2129,7 @@ function loadOwn(src, pickIt, keep) {
     g.drawImage(img, 0, 0, w, h);
     own = { data: g.getImageData(0, 0, w, h).data, w, h };
     if (keep) save('own', cv.toDataURL('image/png'));
-    if (pickIt) { picture = 'own'; pics.set('own'); save('picture', 'own'); openSets(false); }
+    if (pickIt) { picture = 'own'; pics.set('own'); save('picture', 'own'); openPics(false); }
     if (src.startsWith('blob:')) URL.revokeObjectURL(src);
   };
   img.onerror = () => pics.set(picture);
