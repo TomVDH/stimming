@@ -187,7 +187,7 @@ const PAL = {
   tree: linear(0.25, 0.055, 118), treeLit: linear(0.44, 0.1, 100), meadow: linear(0.37, 0.1, 132),
   meadowLit: linear(0.64, 0.15, 104), deep: linear(0.21, 0.05, 145), sun: linear(0.97, 0.07, 84),
   sunLight: linear(0.95, 0.09, 78, 3.2), sky: linear(0.72, 0.07, 75, 0.2),
-  achene: linear(0.36, 0.06, 55), acheneLit: linear(0.78, 0.15, 65),
+  achene: linear(0.42, 0.07, 58), acheneLit: linear(0.8, 0.15, 66),
   bract: linear(0.36, 0.09, 136), bractLit: linear(0.72, 0.16, 120), bractEdge: linear(0.52, 0.1, 115),
   stem: linear(0.5, 0.11, 128), stemLit: linear(0.85, 0.15, 112),
   pod: linear(0.8, 0.06, 82), pit: linear(0.45, 0.06, 60),
@@ -290,7 +290,7 @@ function breathSound(k, x) {
   breathV.lp.frequency.setTargetAtTime(1000 + 2400 * s, t, 0.08);
   if (breathV.pan.pan) breathV.pan.pan.setTargetAtTime(clamp(x, -1, 1) * 0.45, t, 0.12);
 }
-// Seeds letting go: a puff of high air and a few soft bells.
+// Released seeds make a puff of high air and soft bells.
 const SHIM = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2, 9 / 4, 5 / 2];
 function shimmer(n, x) {
   const a = live();
@@ -339,7 +339,7 @@ function noiseD(x, y, z, o) {
   o[2] = dy * (k2 + k5 * uz + k4 * ux + k7 * uz * ux);
   o[3] = dz * (k3 + k6 * ux + k5 * uy + k7 * ux * uy);
 }
-// Curl of a noise potential: swirling air that neither piles up nor thins.
+// The curl of a noise potential swirls without piling up.
 const nA = [0, 0, 0, 0], nB = [0, 0, 0, 0], nC = [0, 0, 0, 0];
 function curlAt(x, y, z, t, o) {
   const X = x * 1.7 - t * 0.11, Y = y * 1.7, Z = z * 1.7 + t * 0.08;
@@ -360,7 +360,7 @@ const FOV = 32, TANH = Math.tan((FOV / 2) * D2R), GA = Math.PI * (3 - Math.sqrt(
 const BREEZE = [0.085, 0.004, -0.01], VS = 0.045, TAU_D = 0.16, WMAX = 2.4;
 const view = { A: 16 / 9, halfH: 0.42, D: 1.46, H: [0, 0, 0], sun: [0, 0, -1] };
 
-// A rotation from +z onto the unit axis a, then a turn s about a.
+// Rotate +z onto axis a, then turn by s about a.
 function seedQuat(ax, ay, az, s, o, k) {
   let qx = -ay, qy = ax, qw = 1 + az;
   if (qw < 1e-5) { qx = 1; qy = 0; qw = 0; }
@@ -396,7 +396,7 @@ function sow() {
     const loose = Math.random();
     slots[i] = {
       d: [dx, dy, dz], fd: [(dx * 0.1) / fl, 1 / fl, (dz * 0.1) / fl], fb: [dx * R0 * 0.5, R0 * 0.55, dz * R0 * 0.5],
-      thr: 0.25 + 2.2 * (1 - loose) ** 1.5, stress: 0, spin: rnd(0, TAU), rand: Math.random(),
+      thr: 0.25 + 1.75 * (1 - loose) ** 1.5, stress: 0, spin: rnd(0, TAU), rand: Math.random(),
       bend: [0, 0, 0], delay: 0.06 + 0.28 * (1 - dy) * 0.5 + rnd(0, 0.06),
       open: 1, bk: 1, alpha: 1, wb: [0, 0, 0], wa: [0, 1, 0],
       p: [0, 0, 0], v: [0, 0, 0], a: [0, 1, 0], w: [0, 0, 0], spinV: 0, age: 0,
@@ -407,7 +407,7 @@ function sow() {
 
 /* ---------- gusts: puffs of air that travel, spread and fade ---------- */
 const puffs = [];
-// Each puff carries the breath of one emit interval, so rates do not matter.
+// Each puff carries one emit interval of breath.
 function puff(x, y, z, ux, uy, uz, wx, wy, wz, r, gr, life, every) {
   if (puffs.length >= 80) puffs.shift();
   const k = every / 0.1;
@@ -505,6 +505,7 @@ function step(dt) {
 
   // The stem springs back from the gust.
   gustAt(hp[0], hp[1], hp[2], gw);
+  const shake = Math.hypot(gw[0], gw[1], gw[2]) * clamp(1 - attached / N / 0.2) ** 2;
   const catchK = (0.35 + 0.65 * (attached / N)) * (reduce ? 0.4 : 1);
   for (let k = 0; k < 3; k++) {
     swayV[k] += (gw[k] * 0.55 * catchK - 48 * sway[k] - 3.4 * swayV[k]) * dt;
@@ -541,13 +542,16 @@ function step(dt) {
   if (Math.abs(nod - nodT) > 1e-4) busy = true;
   headFrame();
   bractMat.uniforms.uClose.value = close;
-  pod.scale.set(1, flat, 1);
+  // In the bud the receptacle shrinks inside the bracts.
+  const pw = lerp(0.7, 1, (flat - 0.6) / 0.4);
+  pod.scale.set(pw, flat, pw);
   headG.position.set(hp[0], hp[1], hp[2]);
   headG.quaternion.set(hq[0], hq[1], hq[2], hq[3]);
 
   ni = 0;
   const canGo = phase === 'full' || phase === 'blown';
-  const looseK = 0.75 + 0.25 * (attached / N);
+  // The last few seeds stand exposed and come away easily.
+  const looseK = Math.min(0.75 + 0.25 * (attached / N), 0.35 + 4 * (attached / N));
   for (let i = 0; i < N; i++) {
     const s = slots[i];
     if (!s) continue;
@@ -585,7 +589,8 @@ function step(dt) {
     s.wb[0] = bx; s.wb[1] = by; s.wb[2] = bz;
     s.wa[0] = fx; s.wa[1] = fy; s.wa[2] = fz;
     if (canGo) {
-      const f = g * (0.75 + (0.25 * Math.abs(along)) / (g + 1e-6));
+      // Wind on the parachute, plus a bare head shaking in the gust.
+      const f = g * (0.75 + (0.25 * Math.abs(along)) / (g + 1e-6)) + 0.3 * shake;
       s.stress += (f - s.stress) * (1 - Math.exp(-dt / 0.1));
       if (s.stress > s.thr * looseK) { detach(i); continue; }
     }
@@ -621,8 +626,8 @@ function step(dt) {
     // Seeds leave once they clear the frame.
     const depth = view.D - p[2];
     const sx = p[0] / (depth * TANH * A), sy = p[1] / (depth * TANH);
-    if (depth < 0.2 || Math.abs(sx) > 1.3 || Math.abs(sy) > 1.35 || s.age > 40) { fliers.splice(i, 1); continue; }
-    const fade = Math.min(1, s.age / 0.05) * clamp((40 - s.age) / 2);
+    if (depth < 0.2 || depth > view.D + 3 || Math.abs(sx) > 1.3 || Math.abs(sy) > 1.35 || s.age > 30) { fliers.splice(i, 1); continue; }
+    const fade = Math.min(1, s.age / 0.05) * clamp((30 - s.age) / 2) * clamp((view.D + 3 - depth) / 0.8);
     put(p[0] - a[0] * REACH, p[1] - a[1] * REACH, p[2] - a[2] * REACH, 1, a[0], a[1], a[2], s.spin, 1, fade, s.rand, 1);
   }
   if (fliers.length) busy = true;
@@ -657,7 +662,7 @@ function emit(dt) {
     if (sp > 0.3) {
       // A drag blows along its own path, as hard as it moves.
       pin.hold = Math.max(0, pin.hold - dt * 2.5);
-      const s = Math.min(2.8, sp * 1.05), ux = pin.vx / sp, uy = pin.vy / sp;
+      const s = Math.min(2.4, sp * 0.72), ux = pin.vx / sp, uy = pin.vy / sp;
       target = s;
       if (pin.emit <= 0) {
         pin.emit = 1 / 45;
@@ -666,17 +671,19 @@ function emit(dt) {
     } else {
       // Holding still builds a stronger gust toward the head.
       pin.hold += dt;
-      const h = 1 - Math.exp(-pin.hold / 1.4), s = 0.2 + 1.3 * h;
+      const h = 1 - Math.exp(-pin.hold / 1.8), s = 0.15 + 1.2 * h;
       let dx = hp[0] - pin.x, dy = hp[1] - pin.y, dz = -0.35;
       const dl = Math.hypot(dx, dy);
-      if (dl < 0.07) { dx = 0.1; dy = 0.3; dz = -1; }
+      if (dl < 0.07) { dx = 0.25; dy = 0.45; dz = -0.7; }
       else { dx /= dl; dy /= dl; }
       const l = Math.hypot(dx, dy, dz);
       dx /= l; dy /= l; dz /= l;
       target = s;
       if (pin.emit <= 0) {
         pin.emit = 1 / 30;
-        puff(pin.x, pin.y, 0.06, dx * (0.6 + 0.7 * h), dy * (0.6 + 0.7 * h), dz * 0.4, dx * s, dy * s + 0.14 * s, dz * s, 0.11 + 0.06 * h, 0.3, 0.7, 1 / 30);
+        // Puffs start upstream, so each one passes through the press point.
+        const jx = rnd(-0.04, 0.04), jy = rnd(-0.04, 0.04), sp2 = 0.6 + 0.7 * h;
+        puff(pin.x - dx * 0.18 + jx, pin.y - dy * 0.18 + jy, 0.04 - dz * 0.18, dx * sp2, dy * sp2, dz * sp2, dx * s, dy * s + 0.14 * s, dz * s, 0.13 + 0.08 * h, 0.3, 0.7, 1 / 30);
       }
     }
     breathX = pin.x;
@@ -777,7 +784,8 @@ varying vec3 vCol;
 varying float vA, vD, vW;
 ${QROT}
 void main() {
-  // position: x runs along the fibre, y is the side, z marks the beak.
+  // Position x runs along the fibre; y is the side.
+  // Position z marks the beak.
   float s = position.x, side = position.y, beak = position.z;
   float open = iA.w, bk = iC.x;
   float top = ${AL} + ${BL} * bk;
@@ -786,7 +794,7 @@ void main() {
     lp = vec3(0.0, 0.0, ${AL} + s * ${BL} * bk);
     lt = vec3(0.0, 0.0, 1.0);
   } else {
-    // Each filament is an arc that opens from the axis like an umbrella.
+    // Each filament is an arc that opens like an umbrella.
     float th = mix(0.05, aF.y, open), k = aF.w * open, L = aF.z * mix(0.8, 1.0, open);
     k = abs(k) < 1e-3 ? 1e-3 : k;
     float a1 = th + k * s;
@@ -800,7 +808,8 @@ void main() {
   vec3 c = cross(mat3(viewMatrix) * wt, mv.xyz);
   float cl = length(c);
   vec3 perp = cl > 1e-9 ? c / cl : vec3(1.0, 0.0, 0.0);
-  // Widths in pixels: a fibre is thinner than a pixel, so it fades instead.
+  // Widths are in pixels.
+  // A fibre thinner than a pixel fades instead.
   float depth = -mv.z, pix = depth * uPx;
   float phys = (beak > 0.5 ? 0.0012 : 0.00052 * (1.0 - 0.45 * s)) / pix;
   float coc = uCoc * max(abs(depth - uFocus) / depth - 0.06, 0.0);
@@ -818,7 +827,8 @@ void main() {
   float sc = (0.3 * pow(fwd, 4.0) + 1.2 * exp(-cone * cone * 5.0) * fwd * fwd) * rimK * (0.7 + 0.6 * s * s);
   vec3 alb = beak > 0.5 ? vec3(0.9, 0.78, 0.6) : vec3(1.0, 0.96, 0.88);
   vCol = alb * (uSky * 0.6 + uSunCol * sc * uGain);
-  vA = iC.y * min(phys / w, 1.0) * uAlpha * (beak > 0.5 ? 1.4 : 1.0);
+  // A folded tuft packs many fibres together, so each one dims.
+  vA = iC.y * min(phys / w, 1.0) * uAlpha * (beak > 0.5 ? 1.4 : 1.0) * mix(0.25, 1.0, open);
 }`;
 const FIBER_FS = `
 varying vec3 vCol;
@@ -904,7 +914,7 @@ void main() {
   vec2 cs = vec2(cos(aB.x), sin(aB.x));
   vec3 radial = vec3(cs.x, 0.0, cs.y), tang = vec3(-cs.y, 0.0, cs.x);
   vec3 T = radial * sin(a1) + vec3(0.0, cos(a1), 0.0), N = normalize(cross(T, tang));
-  float w = aB.z * pow(1.0 - s, 0.7) * (0.7 + 0.3 * sin(3.14159 * s));
+  float w = aB.z * (1.0 + 1.1 * c * inner) * pow(1.0 - s, 0.7) * (0.7 + 0.3 * sin(3.14159 * s));
   vec3 p = vec3(0.0, ${-R0 * 0.5}, 0.0) + radial * (${R0 * 0.78} + rho) + vec3(0.0, y, 0.0) + tang * u * w - N * u * u * w * 0.35;
   vS = s; vU = u;
   vN = normalize(mat3(modelMatrix) * N);
@@ -1009,7 +1019,7 @@ function acheneGeo() {
   const pts = [];
   for (let j = 0; j <= 12; j++) {
     const t = j / 12;
-    pts.push(new THREE.Vector2(0.0008 + 0.0034 * Math.sin(Math.PI * t ** 0.8) ** 0.9, t * AL));
+    pts.push(new THREE.Vector2(0.0007 + 0.0025 * Math.sin(Math.PI * t ** 0.8) ** 0.9, t * AL));
   }
   const lathe = new THREE.LatheGeometry(pts, 10).rotateX(Math.PI / 2);
   const g = new THREE.InstancedBufferGeometry();

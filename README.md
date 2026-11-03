@@ -43,7 +43,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Frost | [frost/](frost/) | live draft, still being refined |
 | Music box | [musicbox/](musicbox/) | live, with sound; Canvas 2D only |
 | Murmuration | [flock/](flock/) | live draft, still being refined |
-| Dandelion | [dandelion/](dandelion/) | live draft, still being refined |
+| Dandelion | [dandelion/](dandelion/) | live, with sound |
 | Gear train | [gears/](gears/) | live draft, still being refined |
 | Coil | | in progress; outlines on the menu |
 
