@@ -159,6 +159,8 @@ const SUN_DIR = norm3([-0.42, 1, -0.55]);
 // Still water keeps a faint frozen relief.
 // The relief keeps caustics on the floor.
 const AMP0 = 0.6, SWELL_T = 2.7;
+// Dispersion is several times real water's, so the fringes show.
+const DISP = 0.025;
 function refract(I, N, eta) {
   const d = N[0] * I[0] + N[1] * I[1] + N[2] * I[2], k = 1 - eta * eta * (1 - d * d);
   return I.map((v, i) => v * eta - N[i] * (eta * d + Math.sqrt(k)));
@@ -688,12 +690,13 @@ void main() {
 }`;
 // Caustics: each surface vertex follows its refracted sun ray down.
 // The floor gathers light where the ray grid bunches up.
+// Each colour bends by its own index, so bright lines fringe.
 const CAUS_VS = `${HEAD}
 uniform sampler2D uSim;
 uniform ivec2 uN;
 uniform vec4 uPool;
 uniform vec3 uSun, uRl;
-uniform float uT, uAmp;
+uniform float uT, uAmp, uEta;
 ${PETAL_U}
 out vec2 vOld, vNew;
 out vec3 vTint;
@@ -710,7 +713,7 @@ void main() {
   vec2 q;
   float ps = petals(p, k, q);
   vec2 g = clamp(s.zw + sw.yz + meniscus(p, k, ps), -2.0, 2.0);
-  vec3 r = refract(-uSun, normalize(vec3(-g.x, 1.0, -g.y)), 0.75);
+  vec3 r = refract(-uSun, normalize(vec3(-g.x, 1.0, -g.y)), uEta);
   float h = s.x + sw.x;
   vec3 f = vec3(p.x, h, p.y) + r * ((-uPool.z - h) / r.y);
   // A floor point maps back along calm-water light to the surface.
@@ -729,7 +732,7 @@ out vec4 o;
 void main() {
   vec2 ax = dFdx(vOld), ay = dFdy(vOld), bx = dFdx(vNew), by = dFdy(vNew);
   float a0 = abs(ax.x * ay.y - ax.y * ay.x), a1 = abs(bx.x * by.y - bx.y * by.x);
-  o = vec4(vTint * min(a0 / max(a1, 1e-14), 12.0), 1.0);
+  o = vec4(vTint * min(a0 / max(a1, 1e-14), 18.0), 1.0);
 }`;
 // The view: one ray per pixel through deck, wall, water and tile.
 // The ray also meets the thrown things.
@@ -1356,7 +1359,13 @@ function render(dt) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, sim[cur].tex);
   gl.bindVertexArray(vaoCaus);
-  gl.drawElements(gl.TRIANGLES, nIdx, gl.UNSIGNED_INT, 0);
+  // One draw per channel: red bends least, blue most.
+  for (let c = 0; c < 3; c++) {
+    gl.colorMask(c === 0, c === 1, c === 2, false);
+    gl.uniform1f(P.caus.u.uEta, 0.75 + (1 - c) * DISP);
+    gl.drawElements(gl.TRIANGLES, nIdx, gl.UNSIGNED_INT, 0);
+  }
+  gl.colorMask(true, true, true, true);
   gl.disable(gl.BLEND);
   const nk = ease(nightK);
   gl.useProgram(P.view.p);
