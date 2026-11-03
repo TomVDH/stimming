@@ -13,14 +13,29 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Prism: an optical table at full width under the shared header. */
-:root { --stage: oklch(0.15 0.03 264); }
+/* Prism: one beam and one prism on a black table, at full width. */
+:root { --stage: oklch(0.1 0.008 272); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+/* The add chips sit together as one strip. */
+.add { display: flex; flex-wrap: wrap; gap: 6px; }
+.add .chip.icon svg .solid { fill: currentColor; stroke: none; }
+/* The remove button is a solid disc with a cut cross. */
+.drop {
+  position: absolute; left: -13px; top: -13px; z-index: 1; width: 26px; height: 26px; padding: 0;
+  color: var(--fg); background: none; border: 0; border-radius: 50%; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.15s ease;
+}
+.drop:hover { color: oklch(0.72 0.19 28); }
+.drop svg { display: block; width: 100%; height: 100%; animation: drop-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.drop .disc { fill: currentColor; }
+.drop .cut { fill: none; stroke: var(--stage); stroke-width: 2.6; stroke-linecap: square; }
+@keyframes drop-in { from { transform: scale(0.3); } to { transform: none; } }
+@media (pointer: coarse) { .drop { left: -18px; top: -18px; width: 36px; height: 36px; } }
+@media (prefers-reduced-motion: reduce) { .stage canvas, .drop { transition: none; } .drop svg { animation: none; } }
 </style>
 </head>
 <body>
@@ -31,19 +46,29 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="An optical table with a white light, two prisms, a lens and a mirror. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Tab picks a piece, arrow keys move it, Q and E turn it, Escape lets go.">
+    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the bar. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Tab picks a piece, arrow keys move it, Q and E turn it, Delete removes it, Escape lets go.">
       <canvas aria-hidden="true"></canvas>
+      <button class="drop" type="button" tabindex="-1" aria-label="Remove" hidden><svg viewBox="0 0 26 26" aria-hidden="true"><circle class="disc" cx="13" cy="13" r="12"/><path class="cut" d="M9 9l8 8M17 9l-8 8"/></svg></button>
       <p class="fail" hidden>Prism needs canvas drawing, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="actions">
+        <div class="add" id="add" role="group" aria-label="Add a piece">
+          <button class="chip icon" type="button" data-kind="prism" aria-label="Add a prism" title="Prism"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/></svg></button>
+          <button class="chip icon" type="button" data-kind="lens" aria-label="Add a lens" title="Lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.4 2.2 2.4 10.2 0 12.4c-2.4-2.2-2.4-10.2 0-12.4z"/></svg></button>
+          <button class="chip icon" type="button" data-kind="mirror" aria-label="Add a flat mirror" title="Mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="6.9" y="1.5" width="2.2" height="13" rx="0.5" transform="rotate(35 8 8)"/></svg></button>
+          <button class="chip icon" type="button" data-kind="convex" aria-label="Add a convex mirror" title="Convex mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg></button>
+          <button class="chip icon" type="button" data-kind="concave" aria-label="Add a concave mirror" title="Concave mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg></button>
+          <button class="chip icon" type="button" data-kind="sensor" aria-label="Add a sensor pad" title="Sensor pad"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg></button>
+        </div>
+        <button class="chip" id="clear" type="button" aria-disabled="true">Clear</button>
         <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>move</dd></div>
         <div><dt><span class="fine"><kbd>Shift</kbd> drag</span><span class="touch">Two fingers</span></dt><dd>rotate</dd></div>
         <div class="fine"><dt><kbd>Q</kbd> and <kbd>E</kbd></dt><dd>rotate</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>move</dd></div>
+        <div><dt><span class="fine"><kbd>Delete</kbd></span><span class="touch">Tap ×</span></dt><dd>remove</dd></div>
       </dl>
     </div>
   </main>
@@ -58,7 +83,9 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'prism' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const resetB = document.getElementById('reset');
+const resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
+const addG = document.getElementById('add'), addBs = [...addG.querySelectorAll('.chip')];
+const dropB = panel.querySelector('.drop'), barEl = document.querySelector('.bar');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
@@ -66,6 +93,7 @@ const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 // Seeded random keeps the dust the same across resizes.
 const rng = s => () => {
   s = (s + 0x6d2b79f5) | 0;
@@ -82,6 +110,11 @@ function vnoise(x, y) {
   const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
   const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
   return lerp(lerp(hash2(ix, iy), hash2(ix + 1, iy), sx), lerp(hash2(ix, iy + 1), hash2(ix + 1, iy + 1), sx), sy);
+}
+function fbm(x, y, o) {
+  let v = 0, a = 0.5, f = 1;
+  for (let i = 0; i < o; i++) { v += a * vnoise(x * f + i * 17.3, y * f - i * 9.1); f *= 2.03; a *= 0.5; }
+  return v / (1 - 0.5 ** o);
 }
 
 /* ---------- colour: OKLCH in, sRGB strings out ---------- */
@@ -113,7 +146,9 @@ const NI = LAM.map(l => CA + CB / (l * l));
 const NW = CA + CB / 0.55 ** 2;
 // COL holds one sRGB colour per wavelength.
 // The last entry is white.
-const COL = [], CORE = [];
+// LINC holds linear light per wavelength.
+// Each LINC channel sums to one.
+const COL = [], CORE = [], LINC = [];
 {
   const g = (x, m, s1, s2) => { const t = (x - m) / (x < m ? s1 : s2); return Math.exp(-0.5 * t * t); };
   const raw = [], sum = [0, 0, 0];
@@ -131,6 +166,7 @@ const COL = [], CORE = [];
   let top = 0;
   for (const c of raw) for (let i = 0; i < 3; i++) top = Math.max(top, (c[i] *= m / sum[i]));
   for (const c of raw) {
+    LINC.push(c.map(v => v / m));
     const e = c.map(v => enc((v / top) ** 0.8));
     const hi = Math.max(...e), lift = 0.55 + 0.45 * hi;
     COL.push(e.map(v => Math.round((v / hi) * lift * 255)));
@@ -138,25 +174,27 @@ const COL = [], CORE = [];
   COL.push([255, 255, 255]);
   for (const c of COL) CORE.push(c.map(v => Math.round(lerp(v, 255, 0.4))));
 }
-const WHITE = NK;
+const WHITE = NK, WLIN = [1, 1, 1];
 
 /* ---------- the pieces ---------- */
 // Sizes are fractions of S, the short side of the table.
-const pieces = [
-  { kind: 'source', w: 0.15, h: 0.07 },
-  { kind: 'prism', side: 0.27 },
-  { kind: 'lens', a: 0.13, t: 0.085 },
-  { kind: 'mirror', len: 0.26, th: 0.02 },
-  { kind: 'prism', side: 0.17 },
-].map(p => ({ ...p, u: 0.5, v: 0.5, rot: 0, x: 0, y: 0, r: 0, g: {}, snap: null }));
-const DRAW = [1, 2, 3, 4, 0];
-const PICK = [0, 4, 3, 2, 1];
-// Each row holds u, v and the angle in degrees.
-const LAYOUT = {
-  wide: [[0.082, 0.587, -21], [0.3, 0.5, 0], [0.473, 0.577, 29.6], [0.764, 0.816, -45.7], [0.661, 0.455, 50]],
-  tall: [[0.219, 0.773, -33], [0.525, 0.592, 109.3], [0.539, 0.367, -83], [0.588, 0.08, 170.5], [0.883, 0.56, 83.5]],
+const SPEC = {
+  source: { w: 0.17, h: 0.078 },
+  prism: { side: 0.2 },
+  lens: { a: 0.12, t: 0.08 },
+  mirror: { len: 0.24, th: 0.02 },
+  convex: { a: 0.12, rc: 0.34, th: 0.024 },
+  concave: { a: 0.12, rc: 0.34, th: 0.024 },
+  sensor: { len: 0.2, th: 0.028 },
 };
-let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, tall = false, pristine = true, ready = false, lowDpr = false;
+const NAMES = { prism: 'prism', lens: 'lens', mirror: 'flat mirror', convex: 'convex mirror', concave: 'concave mirror', sensor: 'sensor pad' };
+const BASE_SIDE = 0.3, MAXADD = 10, BEAM = 0.028;
+const curved = p => p.kind === 'convex' || p.kind === 'concave';
+const make = (kind, extra = {}) => ({
+  kind, ...SPEC[kind], u: 0.5, v: 0.5, rot: 0, x: 0, y: 0, r: 0, g: {}, snap: null, z: 1, z0: 1, zp: 1, base: false, dying: false, ...extra,
+});
+let pieces = [make('source', { base: true }), make('prism', { side: BASE_SIDE, base: true })];
+let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, tall = false, ready = false, lowDpr = false, baseMoved = false, safeB = 0;
 
 function corners(p, hw, hh) {
   const c = Math.cos(p.rot), s = Math.sin(p.rot), v = new Float64Array(8);
@@ -180,10 +218,12 @@ function normals(v) {
   }
   return out;
 }
+// Local -y is the front of mirrors and pads.
+// The knob sits on the front.
 function build(p) {
   p.x = p.u * W;
   p.y = p.v * H;
-  const g = p.g, c = Math.cos(p.rot), s = Math.sin(p.rot);
+  const g = p.g, c = Math.cos(p.rot), s = Math.sin(p.rot), Sz = S * Math.max(0.02, p.z);
   if (p.kind === 'source') {
     g.hw = (p.w * S) / 2;
     g.hh = (p.h * S) / 2;
@@ -193,7 +233,7 @@ function build(p) {
     g.ey = p.y + s * (g.hw + 0.5);
     p.r = Math.hypot(g.hw, g.hh);
   } else if (p.kind === 'prism') {
-    const R = (p.side * S) / Math.sqrt(3);
+    const R = (p.side * Sz) / Math.sqrt(3);
     g.v = new Float64Array(6);
     for (let i = 0; i < 3; i++) {
       const a = p.rot - Math.PI / 2 + (i * TAU) / 3;
@@ -204,7 +244,7 @@ function build(p) {
     p.r = R;
   } else if (p.kind === 'lens') {
     // The lens is the overlap of two discs of radius R.
-    const a = p.a * S, T = p.t * S, R = (a * a + (T * T) / 4) / T, off = R - T / 2;
+    const a = p.a * Sz, T = p.t * Sz, R = (a * a + (T * T) / 4) / T, off = R - T / 2;
     g.R = R;
     g.al = Math.asin(a / R);
     g.ax = p.x + c * off;
@@ -212,20 +252,38 @@ function build(p) {
     g.bx = p.x - c * off;
     g.by = p.y - s * off;
     p.r = a;
+  } else if (curved(p)) {
+    // A curved mirror is a circular arc with a backing.
+    const a = p.a * Sz, R = p.rc * Sz, th = Math.max(3, p.th * Sz), cav = p.kind === 'concave' ? 1 : -1;
+    const nfx = s, nfy = -c;
+    g.R = R;
+    g.th = th;
+    g.al = Math.asin(Math.min(0.95, a / R));
+    g.cosA = Math.cos(g.al);
+    g.cx = p.x + nfx * R * cav;
+    g.cy = p.y + nfy * R * cav;
+    g.axx = -nfx * cav;
+    g.axy = -nfy * cav;
+    g.A = Math.atan2(g.axy, g.axx);
+    g.Rb = R + th * cav;
+    p.r = Math.hypot(a, R * (1 - g.cosA) + th);
   } else {
-    g.L = (p.len * S) / 2;
-    g.th = Math.max(3, p.th * S);
+    g.L = (p.len * Sz) / 2;
+    g.th = Math.max(3, p.th * Sz);
     g.v = corners(p, g.L, g.th / 2);
     g.n = normals(g.v);
     p.r = Math.hypot(g.L, g.th / 2);
+    // The beam width in pad units sets the size of a lit spot.
+    if (p.kind === 'sensor') g.s0 = (BEAM * S) / 2.4 / g.L;
   }
 }
 
 /* ---------- ray tracing ---------- */
-const EPS = 1e-4, IMIN = 0.012, MAXD = 48, MAXS = 6000, SK = 11, SG = 10;
+const EPS = 1e-4, IMIN = 0.012, MAXD = 48, MAXS = 6000, SK = 11, SG = 10, SHK = 7, MAXH = 4000;
 const STK = new Float64Array(SK * 2048), SEG = new Float64Array(MAXS * SG), GLI = new Float32Array(3000 * 5), EDG = new Float32Array(1500 * 5);
+const SH = new Float64Array(MAXH * SHK), GAP = new Float32Array(MAXH);
 const fin = new Float64Array(NK);
-let sp = 0, nSeg = 0, nGl = 0, nEd = 0, nFam = 0, spread = 0, hT = 0, hNX = 0, hNY = 0, hI = -1, hS = 0, eSide = 0;
+let sp = 0, nSeg = 0, nGl = 0, nEd = 0, nSH = 0, nFam = 0, spread = 0, hT = 0, hNX = 0, hNY = 0, hI = -1, hS = 0, eSide = 0;
 // A ray's signature hashes every surface event along its path.
 const mix = (s, c) => (Math.imul(s ^ Math.imul(c + 1, 0x9e3779b1), 0x85ebca6b) ^ (s >>> 15)) >>> 0;
 function push(x, y, dx, dy, k, I, d, ins, prim, fam, sig) {
@@ -269,6 +327,18 @@ function circHit(cx, cy, R, qx, qy, i, f, ox, oy, dx, dy) {
   arcHit(-b - q, cx, cy, R, qx, qy, i, f, ox, oy, dx, dy);
   arcHit(-b + q, cx, cy, R, qx, qy, i, f, ox, oy, dx, dy);
 }
+// An arc hit counts only inside the arc's angular span.
+function spanHit(cx, cy, R, axx, axy, cosA, i, f, ox, oy, dx, dy) {
+  const fx = ox - cx, fy = oy - cy, b = fx * dx + fy * dy, disc = b * b - (fx * fx + fy * fy - R * R);
+  if (disc <= 0) return;
+  const q = Math.sqrt(disc);
+  let t = -b - q;
+  for (let n = 0; n < 2; n++, t = -b + q) {
+    if (t <= EPS || t >= hT) continue;
+    const nx = (ox + t * dx - cx) / R, ny = (oy + t * dy - cy) / R;
+    if (nx * axx + ny * axy >= cosA) { hT = t; hNX = nx; hNY = ny; hI = i; hS = f; return; }
+  }
+}
 function nearest(ox, oy, dx, dy) {
   hT = Infinity;
   hI = -1;
@@ -280,6 +350,9 @@ function nearest(ox, oy, dx, dy) {
     if (p.kind === 'lens') {
       circHit(g.ax, g.ay, g.R, g.bx, g.by, i, 0, ox, oy, dx, dy);
       circHit(g.bx, g.by, g.R, g.ax, g.ay, i, 1, ox, oy, dx, dy);
+    } else if (curved(p)) {
+      spanHit(g.cx, g.cy, g.R, g.axx, g.axy, g.cosA, i, 0, ox, oy, dx, dy);
+      spanHit(g.cx, g.cy, g.Rb, g.axx, g.axy, g.cosA, i, 1, ox, oy, dx, dy);
     } else polyHit(g.v, g.n, i, ox, oy, dx, dy);
   }
 }
@@ -316,7 +389,7 @@ function bend(hx, hy, dx, dy, nx, ny, ci, enter, k, I, d, prim, part, fam, sig, 
   if (part && I * R > IMIN) push(hx, hy, rx, ry, k, I * R, d + 1, enter ? 0 : 1, 0, fam, mix(sig, code + 1));
 }
 function trace() {
-  nSeg = nGl = nEd = sp = nFam = 0;
+  nSeg = nGl = nEd = nSH = sp = nFam = 0;
   fin.fill(NaN);
   const s = pieces[0];
   push(s.g.ex, s.g.ey, Math.cos(s.rot), Math.sin(s.rot), -1, 1, 0, 0, 1, -1, 0);
@@ -339,10 +412,31 @@ function trace() {
     seg(ox, oy, hx, hy, k, I, ins, fam, sig, hI * 8 + hS);
     if (nSeg >= MAXS || d >= MAXD) continue;
     if (p.kind === 'source') { glint(hx, hy, k, I * 0.5, hI); continue; }
+    if (p.kind === 'sensor') {
+      // The front face records where light lands.
+      // The other faces absorb light.
+      if (hS === 0 && nSH < MAXH) {
+        const h = nSH++ * SHK;
+        SH[h] = hI;
+        SH[h + 1] = ((hx - p.x) * Math.cos(p.rot) + (hy - p.y) * Math.sin(p.rot)) / p.g.L;
+        SH[h + 2] = k; SH[h + 3] = I; SH[h + 4] = Math.abs(dx * hNX + dy * hNY); SH[h + 5] = fam; SH[h + 6] = sig;
+      }
+      continue;
+    }
     if (p.kind === 'mirror') {
       const dn = dx * hNX + dy * hNY;
       glint(hx, hy, k, I, hI);
       push(hx, hy, dx - 2 * dn * hNX, dy - 2 * dn * hNY, k, I * 0.94, d + 1, ins, prim, fam, mix(sig, code + 3));
+      continue;
+    }
+    if (curved(p)) {
+      // Only the silvered face reflects.
+      // The backing absorbs light.
+      const dn = dx * hNX + dy * hNY;
+      if (hS === 0 && (p.kind === 'concave' ? dn > 0 : dn < 0)) {
+        glint(hx, hy, k, I, hI);
+        push(hx, hy, dx - 2 * dn * hNX, dy - 2 * dn * hNY, k, I * 0.94, d + 1, ins, prim, fam, mix(sig, code + 3));
+      }
       continue;
     }
     let nx = hNX, ny = hNY, ci = -(dx * nx + dy * ny);
@@ -362,23 +456,96 @@ function trace() {
   spread = Number.isNaN(a) || Number.isNaN(b) ? 0 : Math.abs(wrapA(a - b));
 }
 
+/* ---------- sensor pads: exposure along the face ---------- */
+// Bins span the pad and a margin.
+// The picture is square.
+const NBIN = 160, SPAN = 1.3, BINW = (2 * SPAN) / NBIN, GAIN = 2.4, LMAX = 8;
+const PROF = new Float32Array(NBIN);
+// The table maps exposure to an encoded, saturating level.
+const LUT = new Uint8ClampedArray(2048);
+for (let i = 0; i < 2048; i++) LUT[i] = Math.round(enc(1 - Math.exp((-i / 2047) * LMAX)) * 255);
+function expose() {
+  for (const p of pieces) if (p.kind === 'sensor') (p.acc ||= new Float32Array(NBIN * 3)).fill(0);
+  if (!nSH) return;
+  // Neighbouring wavelengths on one path spread to meet each other.
+  const grp = new Map();
+  GAP.fill(0, 0, nSH);
+  for (let h = 0; h < nSH; h++) {
+    const o = h * SHK;
+    if (SH[o + 2] < 0) continue;
+    const key = `${SH[o]}:${SH[o + 5]}:${SH[o + 6]}`;
+    let g = grp.get(key);
+    if (!g) grp.set(key, (g = new Int32Array(NK).fill(-1)));
+    g[SH[o + 2]] = h;
+  }
+  for (const g of grp.values()) for (let k = 0; k < NK; k++) {
+    const h = g[k];
+    if (h < 0) continue;
+    const s = SH[h * SHK + 1];
+    let sum = 0, n = 0;
+    if (k > 0 && g[k - 1] >= 0) { sum += Math.abs(s - SH[g[k - 1] * SHK + 1]); n++; }
+    if (k < NK - 1 && g[k + 1] >= 0) { sum += Math.abs(s - SH[g[k + 1] * SHK + 1]); n++; }
+    GAP[h] = n ? sum / n : 0;
+  }
+  // Each hit lays a Gaussian.
+  // Slant widens the Gaussian and keeps its energy.
+  for (let h = 0; h < nSH; h++) {
+    const o = h * SHK, p = pieces[SH[o]], k = SH[o + 2], acc = p.acc, s0 = p.g.s0;
+    const sd = Math.hypot(s0 / Math.max(0.12, SH[o + 4]), GAP[h] * 0.6), amp = (SH[o + 3] * s0) / sd;
+    const w = k < 0 ? WLIN : LINC[k], c = (SH[o + 1] + SPAN) / BINW - 0.5, rad = (3 * sd) / BINW, inv = BINW / sd;
+    const lo = Math.max(0, Math.ceil(c - rad)), hi = Math.min(NBIN - 1, Math.floor(c + rad));
+    for (let b = lo; b <= hi; b++) {
+      const t = (b - c) * inv, e = amp * Math.exp(-0.5 * t * t);
+      acc[3 * b] += e * w[0];
+      acc[3 * b + 1] += e * w[1];
+      acc[3 * b + 2] += e * w[2];
+    }
+  }
+}
+// The picture shows the pad face head-on.
+// Slant stretches the round beam spot.
+function develop(p) {
+  if (!p.pc) {
+    p.pc = document.createElement('canvas');
+    p.pc.width = p.pc.height = NBIN;
+    p.px = p.pc.getContext('2d');
+    p.img = p.px.createImageData(NBIN, NBIN);
+    for (let i = 3; i < p.img.data.length; i += 4) p.img.data[i] = 255;
+  }
+  const acc = p.acc, d = p.img.data, s0 = p.g.s0, q = 2047 / LMAX;
+  for (let r = 0; r < NBIN; r++) { const v = ((r + 0.5) * BINW - SPAN) / s0; PROF[r] = Math.exp(-0.5 * v * v) * GAIN * q; }
+  for (let r = 0; r < NBIN; r++) {
+    const f = PROF[r];
+    let o = r * NBIN * 4;
+    for (let b = 0; b < NBIN; b++, o += 4) {
+      if (f < 0.05) { d[o] = d[o + 1] = d[o + 2] = 0; continue; }
+      d[o] = LUT[Math.min(2047, (acc[3 * b] * f) | 0)];
+      d[o + 1] = LUT[Math.min(2047, (acc[3 * b + 1] * f) | 0)];
+      d[o + 2] = LUT[Math.min(2047, (acc[3 * b + 2] * f) | 0)];
+    }
+  }
+  p.px.putImageData(p.img, 0, 0);
+}
+
 /* ---------- canvases ---------- */
 const ctx = canvas.getContext('2d', { alpha: false });
 const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
-const [bgC, bgX] = mk(), [glowC, gX] = mk(), [glow2C, g2X] = mk(), [hzC, hzX] = mk(), [dustC, dX] = mk();
+const [bgC, bgX] = mk(), [hzC, hzX] = mk(), [dustC, dX] = mk();
+// The glow runs at half resolution.
+// A mip chain blurs the glow into bloom.
+const MIP = [0, 1, 2, 3].map(() => { const [c, x] = mk(); return { c, x }; });
 // A soft round sprite per colour serves glints and edge light.
 const SPR = COL.map(c => {
   const [s, x] = mk();
-  s.width = s.height = 64;
-  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
-  for (let i = 0; i <= 8; i++) g.addColorStop(i / 8, `rgba(${c.join(',')},${Math.exp(-((i / 8) ** 2) * 5.5) * (1 - i / 8)})`);
+  s.width = s.height = 128;
+  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  for (let i = 0; i <= 16; i++) g.addColorStop(i / 16, `rgba(${c.join(',')},${Math.exp(-((i / 16) ** 2) * 5.5) * (1 - i / 16)})`);
   x.fillStyle = g;
-  x.fillRect(0, 0, 64, 64);
+  x.fillRect(0, 0, 128, 128);
   return s;
 });
 // Each colour gets a stroke style per alpha step and medium.
 const NB = 12, STY = { glow: [], mid: [], core: [] }, SHEET = [], SHEETG = [];
-const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 for (let ci = 0; ci <= NK; ci++) {
   // One ray of colour carries a slice of white, so it draws fainter.
   const w = ci === WHITE ? [0.5, 0.3, 1] : [0.12, 0.08, 0.32];
@@ -404,84 +571,75 @@ const FOC = a => `rgba(${rgb(0.84, 0.13, 205).join(',')},${a})`;
 const EDGE = rgb(0.95, 0.045, 205);
 const edge = a => `rgba(${EDGE.join(',')},${a})`;
 const LDX = -0.6, LDY = -0.8;
+// Stencil tones: flat fills, two values per part.
+const TONE = {
+  body: css(0.27, 0.014, 266), bodyLit: css(0.4, 0.016, 262),
+  barrel: css(0.19, 0.012, 266), barrelLit: css(0.32, 0.014, 262),
+  collar: css(0.7, 0.17, 45), led: css(0.84, 0.16, 75), dark: css(0.1, 0.008, 270),
+  lensRim: css(0.13, 0.01, 268), lensHot: css(0.99, 0.02, 95), lensWarm: css(0.9, 0.08, 80),
+  concave: css(0.44, 0.1, 330), convex: css(0.46, 0.08, 200), face: css(0.92, 0.012, 235),
+  pad: css(0.3, 0.012, 266), padFace: css(0.15, 0.01, 270), sens: css(0.87, 0.18, 128),
+  pipBg: css(0.09, 0.006, 270), pipCard: css(0.17, 0.01, 268), pipLine: css(0.25, 0.012, 268),
+};
 
+// The table is black, with a faint pool of light.
 function buildTable() {
   const c = bgX, w = cw, h = ch;
   c.setTransform(1, 0, 0, 1, 0, 0);
-  const g = c.createRadialGradient(w * 0.46, h * 0.4, 0, w * 0.5, h * 0.5, Math.hypot(w, h) * 0.6);
-  g.addColorStop(0, css(0.215, 0.042, 262));
-  g.addColorStop(0.5, css(0.17, 0.038, 264));
-  g.addColorStop(1, css(0.105, 0.03, 268));
+  const g = c.createRadialGradient(w * 0.44, h * 0.42, 0, w * 0.5, h * 0.5, Math.hypot(w, h) * 0.62);
+  g.addColorStop(0, css(0.155, 0.012, 272));
+  g.addColorStop(0.5, css(0.115, 0.009, 272));
+  g.addColorStop(1, css(0.07, 0.006, 272));
   c.fillStyle = g;
   c.fillRect(0, 0, w, h);
-  // A faint etched grid centres on the table.
-  const step = S / 14, px = 1 / pr, ox = (W / 2) % step, oy = (H / 2) % step;
-  const snap = v => (Math.round(v * pr) + 0.5) / pr;
-  c.setTransform(pr, 0, 0, pr, 0, 0);
-  c.lineWidth = px;
-  for (let pass = 0; pass < 2; pass++) {
-    c.strokeStyle = pass ? css(0.5, 0.05, 245, 0.07) : css(0.05, 0.02, 265, 0.5);
-    c.beginPath();
-    for (let x = ox; x < W; x += step) { const X = snap(x) + pass * px; c.moveTo(X, 0); c.lineTo(X, H); }
-    for (let y = oy; y < H; y += step) { const Y = snap(y) + pass * px; c.moveTo(0, Y); c.lineTo(W, Y); }
-    c.stroke();
-  }
-  // Threaded holes sit on every second crossing.
-  c.fillStyle = css(0.06, 0.02, 265, 0.7);
-  c.beginPath();
-  for (let x = ox; x < W; x += step * 2) for (let y = oy; y < H; y += step * 2) { c.moveTo(x + 2.2, y); c.arc(x, y, 2.2, 0, TAU); }
-  c.fill();
-  c.strokeStyle = css(0.6, 0.05, 240, 0.12);
-  c.beginPath();
-  for (let x = ox; x < W; x += step * 2) for (let y = oy; y < H; y += step * 2) { c.moveTo(x + 2.4, y + 0.6); c.arc(x, y + 0.6, 2.4, 0.15 * Math.PI, 0.85 * Math.PI); }
-  c.stroke();
-  // A soft satin sheen crosses the table.
-  const sh = c.createLinearGradient(0, 0, W, H);
-  sh.addColorStop(0, 'rgba(120,150,255,0)');
-  sh.addColorStop(0.42, 'rgba(120,150,255,0.035)');
-  sh.addColorStop(0.6, 'rgba(120,150,255,0)');
-  c.fillStyle = sh;
-  c.fillRect(0, 0, W, H);
-  // The rim catches a thin line of light.
-  c.strokeStyle = css(0.7, 0.05, 235, 0.08);
-  c.strokeRect(px / 2, px / 2, W - px, H - px);
   // Grain hides gradient banding.
-  c.setTransform(1, 0, 0, 1, 0, 0);
   const img = c.getImageData(0, 0, w, h), d = img.data;
   for (let i = 0; i < d.length; i += 4) {
-    const n = (Math.random() - 0.5) * 3.2;
+    const n = (Math.random() - 0.5) * 2.6;
     d[i] += n; d[i + 1] += n; d[i + 2] += n;
   }
   c.putImageData(img, 0, 0);
 }
-// Dust motes and a thin haze show where light passes.
+// Smoke and dust motes at full resolution show where light passes.
 function buildDust() {
-  const w = dustC.width, h = dustC.height, c = dX;
-  const [t, tx] = mk(), tw = 48, th = Math.max(8, Math.round((48 * h) / w));
+  const w = dustC.width, h = dustC.height, c = dX, q = 4;
+  const [t, tx] = mk(), tw = Math.ceil(w / q), th = Math.ceil(h / q);
   t.width = tw;
   t.height = th;
-  const img = tx.createImageData(tw, th);
+  const img = tx.createImageData(tw, th), sc = q / (pr * 0.2 * S);
   for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
-    const n = 0.6 * vnoise(x / 7, y / 7) + 0.4 * vnoise(x / 3 + 9, y / 3 + 4), v = Math.round(255 * (0.1 + 0.32 * n * n));
-    const o = (y * tw + x) * 4;
+    // Warped noise draws slow wisps of smoke.
+    const X = x * sc, Y = y * sc;
+    const wx = fbm(X * 0.7 + 3.1, Y * 0.7, 3), wy = fbm(X * 0.7 - 5.2, Y * 0.7 + 1.7, 3);
+    const n = fbm(X + 1.8 * wx, Y * 1.5 + 1.8 * wy, 4), s = sstep(0.3, 0.8, n);
+    const v = Math.round(255 * (0.08 + 0.5 * s * s + 0.06 * n)), o = (y * tw + x) * 4;
     img.data[o] = img.data[o + 1] = img.data[o + 2] = v;
     img.data[o + 3] = 255;
   }
   tx.putImageData(img, 0, 0);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
   c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = 'high';
   c.drawImage(t, 0, 0, w, h);
-  const R = rng(20261102), n = Math.round((w * h) / 120), sz = Math.max(1, w / W);
+  const R = rng(20261103), area = (w * h) / (pr * pr), sz = Math.max(1, pr * 0.9);
   c.globalCompositeOperation = 'lighter';
   for (let b = 0; b < 6; b++) {
-    const v = Math.round(255 * (0.18 + 0.16 * b));
+    const v = Math.round(255 * (0.16 + 0.15 * b));
     c.fillStyle = `rgb(${v},${v},${v})`;
-    for (let i = 0; i < n / (1 + b * 1.6); i++) {
-      const s = (R() < 0.2 ? 1.6 : 1) * sz;
+    for (let i = 0; i < area / 240 / (1 + b * 1.6); i++) {
+      const s = (R() < 0.2 ? 1.7 : 1) * sz;
       c.fillRect(R() * w, R() * h, s, s);
     }
   }
+  // A few large motes sit out of focus.
+  for (let i = 0; i < area / 9000; i++) {
+    const r = (2 + 7 * R() ** 2) * pr;
+    c.globalAlpha = 0.12 + 0.22 * R();
+    c.drawImage(SPR[WHITE], R() * w - r, R() * h - r, r * 2, r * 2);
+  }
+  c.globalAlpha = 1;
 }
 
 /* ---------- drawing ---------- */
@@ -551,23 +709,13 @@ function glassPath(c, p) {
   }
   c.closePath();
 }
-function body(p, i) {
-  const c = ctx, g = p.g;
-  c.globalCompositeOperation = 'source-over';
-  c.globalAlpha = 1;
-  if (p.kind === 'mirror') {
-    const nx = -Math.sin(p.rot), ny = Math.cos(p.rot), t = g.th / 2;
-    const gr = c.createLinearGradient(p.x - nx * t, p.y - ny * t, p.x + nx * t, p.y + ny * t);
-    gr.addColorStop(0, css(0.4, 0.02, 255));
-    gr.addColorStop(0.28, css(0.8, 0.025, 240));
-    gr.addColorStop(0.5, css(0.97, 0.012, 225));
-    gr.addColorStop(0.72, css(0.7, 0.025, 245));
-    gr.addColorStop(1, css(0.3, 0.025, 258));
-    glassPath(c, p);
-    c.fillStyle = gr;
-    c.fill();
-    return;
-  }
+// The local frame puts the piece at the origin, turned with it.
+function local(p) {
+  const co = Math.cos(p.rot), si = Math.sin(p.rot);
+  ctx.setTransform(pr * co, pr * si, -pr * si, pr * co, pr * p.x, pr * p.y);
+}
+function glassBody(p, i) {
+  const c = ctx;
   glassPath(c, p);
   const r = p.r, gr = c.createLinearGradient(p.x - r * 0.6, p.y - r * 0.8, p.x + r * 0.6, p.y + r * 0.8);
   TINT.forEach((t, j) => gr.addColorStop(j / 2, t));
@@ -593,24 +741,95 @@ function body(p, i) {
   }
   c.restore();
 }
+function mirrorBody(p) {
+  const c = ctx, g = p.g, nx = -Math.sin(p.rot), ny = Math.cos(p.rot), t = g.th / 2;
+  const gr = c.createLinearGradient(p.x - nx * t, p.y - ny * t, p.x + nx * t, p.y + ny * t);
+  gr.addColorStop(0, css(0.4, 0.02, 255));
+  gr.addColorStop(0.28, css(0.8, 0.025, 240));
+  gr.addColorStop(0.5, css(0.97, 0.012, 225));
+  gr.addColorStop(0.72, css(0.7, 0.025, 245));
+  gr.addColorStop(1, css(0.3, 0.025, 258));
+  glassPath(c, p);
+  c.fillStyle = gr;
+  c.fill();
+}
+// A curved mirror has four backing ribs and a silver face.
+function arcBody(p) {
+  const c = ctx, g = p.g, n = 4, gap = Math.min(0.08, 3 / g.R), len = (2 * g.al - gap * (n - 1)) / n;
+  c.fillStyle = TONE[p.kind];
+  c.beginPath();
+  for (let j = 0; j < n; j++) {
+    const a0 = g.A - g.al + j * (len + gap), a1 = a0 + len;
+    c.moveTo(g.cx + Math.cos(a0) * g.R, g.cy + Math.sin(a0) * g.R);
+    c.arc(g.cx, g.cy, g.R, a0, a1);
+    c.arc(g.cx, g.cy, g.Rb, a1, a0, true);
+    c.closePath();
+  }
+  c.fill();
+  c.strokeStyle = TONE.face;
+  c.lineWidth = Math.max(1.8, 0.004 * S);
+  c.lineCap = 'butt';
+  c.beginPath();
+  c.arc(g.cx, g.cy, g.R, g.A - g.al, g.A + g.al);
+  c.stroke();
+}
+// A sensor pad: a slab, a dark sensing face, lime end caps.
+function padBody(p) {
+  const c = ctx, g = p.g, L = g.L, hh = g.th / 2, cap = L * 0.1;
+  local(p);
+  const slab = new Path2D();
+  slab.rect(-L, -hh, 2 * L, 2 * hh);
+  // Three slots cut through the back of the slab.
+  for (let j = -1; j <= 1; j++) slab.rect(j * L * 0.4 - L * 0.03, hh * 0.25, L * 0.06, hh * 0.45);
+  c.fillStyle = TONE.pad;
+  c.fill(slab, 'evenodd');
+  c.fillStyle = TONE.padFace;
+  c.fillRect(-L + cap, -hh, 2 * (L - cap), hh * 0.9);
+  c.fillStyle = TONE.sens;
+  c.fillRect(-L, -hh, cap, 2 * hh);
+  c.fillRect(L - cap, -hh, cap, 2 * hh);
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+}
+function drawBody(p, i) {
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  if (p.kind === 'prism' || p.kind === 'lens') glassBody(p, i);
+  else if (p.kind === 'mirror') mirrorBody(p);
+  else if (p.kind === 'sensor') padBody(p);
+  else arcBody(p);
+}
+// Two bright faces and a travelling glint make the chrome read.
+function chrome(p, half, path) {
+  const c = ctx, ux = Math.cos(p.rot), uy = Math.sin(p.rot);
+  const gr = c.createLinearGradient(p.x - ux * half, p.y - uy * half, p.x + ux * half, p.y + uy * half);
+  const k = clamp(0.5 - 0.35 * (ux * LDX + uy * LDY));
+  gr.addColorStop(0, 'rgba(255,255,255,0.05)');
+  gr.addColorStop(clamp(k - 0.18), 'rgba(255,255,255,0.08)');
+  gr.addColorStop(k, 'rgba(255,255,255,0.5)');
+  gr.addColorStop(clamp(k + 0.18), 'rgba(255,255,255,0.08)');
+  gr.addColorStop(1, 'rgba(255,255,255,0.05)');
+  c.lineWidth = 1;
+  c.strokeStyle = gr;
+  path();
+  c.stroke();
+}
 function rims(p) {
   const c = ctx, g = p.g;
   c.globalCompositeOperation = 'lighter';
   c.globalAlpha = 1;
   c.lineCap = 'round';
-  if (p.kind === 'mirror') {
-    // Two bright faces and a travelling glint make the chrome read.
-    const ux = Math.cos(p.rot), uy = Math.sin(p.rot), gr = c.createLinearGradient(p.x - ux * g.L, p.y - uy * g.L, p.x + ux * g.L, p.y + uy * g.L);
-    const k = clamp(0.5 - 0.35 * (ux * LDX + uy * LDY));
-    gr.addColorStop(0, 'rgba(255,255,255,0.05)');
-    gr.addColorStop(clamp(k - 0.18), 'rgba(255,255,255,0.08)');
-    gr.addColorStop(k, 'rgba(255,255,255,0.5)');
-    gr.addColorStop(clamp(k + 0.18), 'rgba(255,255,255,0.08)');
-    gr.addColorStop(1, 'rgba(255,255,255,0.05)');
-    c.lineWidth = 1;
-    c.strokeStyle = gr;
-    glassPath(c, p);
-    c.stroke();
+  if (p.kind === 'mirror') { chrome(p, g.L, () => glassPath(c, p)); return; }
+  if (curved(p)) {
+    chrome(p, p.r, () => { c.beginPath(); c.arc(g.cx, g.cy, g.R, g.A - g.al, g.A + g.al); });
+    return;
+  }
+  if (p.kind === 'sensor') {
+    // The face shows its exposure as a strip of light.
+    if (!p.pc) return;
+    local(p);
+    c.imageSmoothingEnabled = true;
+    c.drawImage(p.pc, (NBIN / 2) * (1 - 1 / SPAN), NBIN / 2, NBIN / SPAN, 1, -g.L, -g.th / 2, 2 * g.L, g.th * 0.45);
+    c.setTransform(pr, 0, 0, pr, 0, 0);
     return;
   }
   if (p.kind === 'prism') {
@@ -625,14 +844,14 @@ function rims(p) {
       c.stroke();
     }
     // An inset outline gives the glass its thickness.
-    const ins = 1 - (0.028 * S) / (p.r / 2);
+    const ins = Math.max(0.3, 1 - (0.028 * S) / (p.r / 2));
     c.strokeStyle = edge(0.06);
     c.lineWidth = 1;
     c.beginPath();
     for (let e = 0; e < 3; e++) c.lineTo(p.x + (v[2 * e] - p.x) * ins, p.y + (v[2 * e + 1] - p.y) * ins);
     c.closePath();
     c.stroke();
-    const r = 0.016 * S;
+    const r = 0.016 * S * p.z;
     for (let e = 0; e < 3; e++) {
       const vx = v[2 * e] - p.x, vy = v[2 * e + 1] - p.y, lam = Math.max(0, -(vx * LDX + vy * LDY) / p.r);
       c.globalAlpha = 0.25 + 0.5 * (1 - lam);
@@ -672,62 +891,151 @@ function rrect(q, x, y, w, h, [a, b, c, d]) {
   q.arcTo(x, y, x + w, y, a);
   q.closePath();
 }
+// Each stencil part gets a flat fill and a lit band.
+function part(path, base, lit, up, hh) {
+  const c = ctx;
+  c.fillStyle = base;
+  c.fill(path, 'evenodd');
+  c.save();
+  c.clip(path, 'evenodd');
+  c.fillStyle = lit;
+  c.fillRect(-1e4, up > 0 ? hh * 0.22 : -2e4, 2e4, 2e4 - hh * 0.22);
+  c.restore();
+}
+// The lamp has a finned body, a collar, a barrel and a lens.
 function drawSource(p) {
-  const c = ctx, g = p.g, hw = g.hw, hh = g.hh, co = Math.cos(p.rot), si = Math.sin(p.rot);
+  const c = ctx, g = p.g, hw = g.hw, hh = g.hh;
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
-  c.setTransform(pr * co, pr * si, -pr * si, pr * co, pr * p.x, pr * p.y);
-  const rr = hh * 0.42, path = new Path2D();
-  rrect(path, -hw, -hh, hw * 2, hh * 2, [rr, rr, rr, rr]);
-  const gr = c.createLinearGradient(0, -hh, 0, hh);
-  gr.addColorStop(0, css(0.4, 0.02, 255));
-  gr.addColorStop(0.18, css(0.29, 0.018, 260));
-  gr.addColorStop(0.7, css(0.19, 0.015, 264));
-  gr.addColorStop(1, css(0.13, 0.012, 266));
-  c.fillStyle = gr;
-  c.fill(path);
-  // The housing has fins at the back and a bezel at the front.
-  c.lineWidth = 1;
-  c.strokeStyle = css(0.1, 0.012, 266, 0.9);
+  local(p);
+  const up = -Math.sin(p.rot) * LDX + Math.cos(p.rot) * LDY > 0 ? 1 : -1;
+  const xb = hw * 0.3, xn = hw * 0.46, xg = hw * 0.76, rr = hh * 0.34;
+  // Cooling fins cut clean through the body.
+  const body = new Path2D();
+  rrect(body, -hw, -hh, xb + hw, hh * 2, [rr, 0, 0, rr]);
+  for (let i = 0; i < 6; i++) body.rect(-hw * (0.84 - i * 0.13), -hh * 0.64, hw * 0.055, hh * 1.28);
+  part(body, TONE.body, TONE.bodyLit, up, hh);
+  // A status lamp sits in a cut ring.
+  c.fillStyle = TONE.dark;
   c.beginPath();
-  for (let i = 0; i < 4; i++) { const x = -hw * (0.78 - i * 0.14); c.moveTo(x, -hh * 0.62); c.lineTo(x, hh * 0.62); }
-  c.stroke();
-  c.strokeStyle = css(0.5, 0.02, 250, 0.35);
-  c.beginPath();
-  for (let i = 0; i < 4; i++) { const x = -hw * (0.78 - i * 0.14) + 1; c.moveTo(x, -hh * 0.62); c.lineTo(x, hh * 0.62); }
-  c.stroke();
-  const bz = c.createLinearGradient(0, -hh, 0, hh);
-  bz.addColorStop(0, css(0.62, 0.02, 245));
-  bz.addColorStop(0.5, css(0.36, 0.02, 255));
-  bz.addColorStop(1, css(0.22, 0.02, 262));
-  c.fillStyle = bz;
-  const bez = new Path2D();
-  rrect(bez, hw * 0.5, -hh, hw * 0.5, hh * 2, [0, rr, rr, 0]);
-  c.fill(bez);
-  c.strokeStyle = css(0.82, 0.03, 235, 0.3);
-  c.stroke(path);
-  c.fillStyle = css(0.12, 0.01, 265);
-  c.beginPath();
-  c.ellipse(hw * 0.97, 0, hh * 0.16, hh * 0.5, 0, 0, TAU);
+  c.arc(hw * 0.08, 0, hh * 0.24, 0, TAU);
   c.fill();
-  c.fillStyle = css(0.98, 0.02, 95);
+  c.fillStyle = TONE.led;
   c.beginPath();
-  c.ellipse(hw * 0.98, 0, hh * 0.09, hh * 0.32, 0, 0, TAU);
+  c.arc(hw * 0.08, 0, hh * 0.13, 0, TAU);
   c.fill();
-  // The aperture glows where the beam leaves.
+  c.fillStyle = TONE.collar;
+  c.fillRect(xb, -hh * 0.76, xn - xb, hh * 1.52);
+  // A groove cuts the barrel in two.
+  const barrel = new Path2D();
+  barrel.rect(xn, -hh * 0.9, xg - xn, hh * 1.8);
+  rrect(barrel, xg + hw * 0.035, -hh * 0.9, hw - xg - hw * 0.035, hh * 1.8, [0, rr * 0.6, rr * 0.6, 0]);
+  part(barrel, TONE.barrel, TONE.barrelLit, up, hh);
+  c.fillStyle = TONE.lensRim;
+  c.beginPath();
+  c.ellipse(hw, 0, hh * 0.2, hh * 0.76, 0, 0, TAU);
+  c.fill();
+  const lg = c.createRadialGradient(hw, 0, 0, hw, 0, hh * 0.6);
+  lg.addColorStop(0, TONE.lensHot);
+  lg.addColorStop(0.6, TONE.lensHot);
+  lg.addColorStop(1, TONE.lensWarm);
+  c.fillStyle = lg;
+  c.beginPath();
+  c.ellipse(hw, 0, hh * 0.12, hh * 0.6, 0, 0, TAU);
+  c.fill();
+  // Light spills forward from the lens as a soft cone.
   c.globalCompositeOperation = 'lighter';
+  const Lc = 0.24 * S, wc = 0.05 * S;
+  c.globalAlpha = 0.32;
+  c.drawImage(SPR[WHITE], hw - Lc * 0.3, -wc, Lc, wc * 2);
+  c.globalAlpha = 0.45;
+  c.drawImage(SPR[WHITE], hw - 0.007 * S, -0.1 * S, 0.014 * S, 0.2 * S);
   c.setTransform(pr, 0, 0, pr, 0, 0);
-  for (const [r, a] of [[0.045, 0.9], [0.13, 0.22]]) {
+  for (const [r, a] of [[0.04, 0.95], [0.12, 0.26], [0.26, 0.08]]) {
     const R = r * S;
     c.globalAlpha = a;
     c.drawImage(SPR[WHITE], g.ex - R, g.ey - R, R * 2, R * 2);
   }
   c.globalAlpha = 1;
 }
+// The picture sits behind the pad, or wherever it fits best.
+function pipAt(p) {
+  const g = p.g, rp = clamp(0.12 * S, 54, 92) * Math.min(1, p.z), nfx = Math.sin(p.rot), nfy = -Math.cos(p.rot);
+  const ux = Math.cos(p.rot), uy = Math.sin(p.rot), off = g.th / 2 + 18 + rp, offL = g.L + 18 + rp;
+  const lo = rp + 8, hiX = W - rp - 8, hiY = Math.max(lo, H - safeB - rp - 4);
+  let best = null, bd = Infinity;
+  for (const [dx, dy, o] of [[-nfx, -nfy, off], [ux, uy, offL], [-ux, -uy, offL], [nfx, nfy, off]]) {
+    const x = p.x + dx * o, y = p.y + dy * o, cx = clamp(x, lo, hiX), cy = clamp(y, lo, hiY), d = Math.hypot(cx - x, cy - y);
+    if (d < bd - 4) { bd = d; best = [cx, cy]; }
+  }
+  return [best[0], best[1], rp];
+}
+function drawPip(p) {
+  if (!p.pc) return;
+  const c = ctx, g = p.g, [x, y, rp] = pipAt(p);
+  if (rp < 4) return;
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
+  // A lime lead joins the pad to its picture.
+  const dx = x - p.x, dy = y - p.y, d = Math.hypot(dx, dy);
+  if (d > rp + g.th) {
+    c.strokeStyle = TONE.sens;
+    c.lineWidth = 2;
+    c.lineCap = 'butt';
+    c.beginPath();
+    c.moveTo(p.x + (dx / d) * g.th * 0.6, p.y + (dy / d) * g.th * 0.6);
+    c.lineTo(x - (dx / d) * (rp + 6), y - (dy / d) * (rp + 6));
+    c.stroke();
+  }
+  c.fillStyle = TONE.pipBg;
+  c.beginPath();
+  c.arc(x, y, rp, 0, TAU);
+  c.fill();
+  // The card fills the span of the pad.
+  // The reticle is cut into the card.
+  const k = rp / SPAN, cx = x - k, cy = y - 0.72 * k;
+  c.fillStyle = TONE.pipCard;
+  c.fillRect(cx, cy, 2 * k, 1.44 * k);
+  c.save();
+  c.beginPath();
+  c.rect(cx, cy, 2 * k, 1.44 * k);
+  c.clip();
+  c.strokeStyle = TONE.pipLine;
+  c.lineWidth = 1;
+  c.beginPath();
+  const gap = rp * 0.1;
+  c.moveTo(cx, y); c.lineTo(x - gap, y); c.moveTo(x + gap, y); c.lineTo(cx + 2 * k, y);
+  c.moveTo(x, cy); c.lineTo(x, y - gap); c.moveTo(x, y + gap); c.lineTo(x, cy + 1.44 * k);
+  for (let j = -4; j <= 4; j++) { if (!j) continue; const tx = x + (j / 5) * k; c.moveTo(tx, y - 3); c.lineTo(tx, y + 3); }
+  c.stroke();
+  // Exposure adds light.
+  // A wider copy is the scatter off the card.
+  c.globalCompositeOperation = 'lighter';
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(p.pc, x - rp, y - rp, rp * 2, rp * 2);
+  c.globalAlpha = 0.22;
+  c.drawImage(p.pc, x - rp * 1.25, y - rp * 1.25, rp * 2.5, rp * 2.5);
+  c.restore();
+  // The frame is a lime band with four cuts.
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
+  c.strokeStyle = TONE.sens;
+  c.lineWidth = 4;
+  const cut = 6 / rp;
+  for (let j = 0; j < 4; j++) {
+    const a = (j * Math.PI) / 2 - Math.PI / 4;
+    c.beginPath();
+    c.arc(x, y, rp + 2, a + cut, a + Math.PI / 2 - cut);
+    c.stroke();
+  }
+}
 const ringR = p => p.r + Math.max(12, 0.045 * S);
 const knobA = p => (p.kind === 'source' ? p.rot + Math.PI : p.rot - Math.PI / 2);
 function ring(p) {
   const c = ctx, R = ringR(p), A = ringA;
+  c.setTransform(pr, 0, 0, pr, 0, 0);
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
   c.lineWidth = 1;
@@ -756,33 +1064,52 @@ function ring(p) {
   c.stroke();
 }
 function beams() {
-  const c = ctx, ws = clamp(S / 600, 0.75, 1.25);
-  // The glow buffer runs at a third of the resolution.
-  gX.setTransform(1, 0, 0, 1, 0, 0);
-  gX.globalCompositeOperation = 'source-over';
-  gX.fillStyle = '#000';
-  gX.fillRect(0, 0, glowC.width, glowC.height);
-  gX.setTransform(glowC.width / W, 0, 0, glowC.height / H, 0, 0);
-  gX.globalCompositeOperation = 'lighter';
-  gX.lineCap = gX.lineJoin = 'round';
-  gX.lineWidth = 9 * ws;
-  strokeAll(gX, STY.glow);
-  fillSheets(gX, SHEETG);
-  g2X.globalCompositeOperation = 'copy';
-  g2X.drawImage(glowC, 0, 0, glow2C.width, glow2C.height);
-  // Dust scatters the glow into motes.
+  const c = ctx, ws = clamp(S / 600, 0.75, 1.25), g0 = MIP[0];
+  // The near glow runs at half resolution.
+  const gx = g0.x;
+  gx.setTransform(1, 0, 0, 1, 0, 0);
+  gx.globalCompositeOperation = 'source-over';
+  gx.globalAlpha = 1;
+  gx.fillStyle = '#000';
+  gx.fillRect(0, 0, g0.c.width, g0.c.height);
+  gx.setTransform(g0.c.width / W, 0, 0, g0.c.height / H, 0, 0);
+  gx.globalCompositeOperation = 'lighter';
+  gx.lineCap = gx.lineJoin = 'round';
+  gx.lineWidth = 8 * ws;
+  strokeAll(gx, STY.glow);
+  fillSheets(gx, SHEETG);
+  // Each mip halves the last.
+  // The small mips fold back as wide bloom.
+  for (let m = 1; m < MIP.length; m++) {
+    const d = MIP[m];
+    d.x.globalCompositeOperation = 'copy';
+    d.x.globalAlpha = 1;
+    d.x.imageSmoothingQuality = 'high';
+    d.x.drawImage(MIP[m - 1].c, 0, 0, d.c.width, d.c.height);
+  }
+  for (let m = MIP.length - 1; m > 1; m--) {
+    const d = MIP[m - 1];
+    d.x.globalCompositeOperation = 'lighter';
+    d.x.globalAlpha = 0.7;
+    d.x.drawImage(MIP[m].c, 0, 0, d.c.width, d.c.height);
+  }
+  // Smoke and motes at full resolution scatter the glow.
   hzX.globalCompositeOperation = 'copy';
-  hzX.drawImage(glowC, 0, 0, hzC.width, hzC.height);
+  hzX.globalAlpha = 1;
+  hzX.imageSmoothingQuality = 'high';
+  hzX.drawImage(g0.c, 0, 0, hzC.width, hzC.height);
   hzX.globalCompositeOperation = 'multiply';
   hzX.drawImage(dustC, 0, 0);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'lighter';
-  c.globalAlpha = 0.75;
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = 'high';
+  c.globalAlpha = 0.72;
   c.drawImage(hzC, 0, 0, cw, ch);
-  c.globalAlpha = 0.55;
-  c.drawImage(glowC, 0, 0, cw, ch);
-  c.globalAlpha = 0.7;
-  c.drawImage(glow2C, 0, 0, cw, ch);
+  c.globalAlpha = 0.42;
+  c.drawImage(g0.c, 0, 0, cw, ch);
+  c.globalAlpha = 0.5;
+  c.drawImage(MIP[1].c, 0, 0, cw, ch);
   c.globalAlpha = 1;
   c.setTransform(pr, 0, 0, pr, 0, 0);
   c.lineCap = c.lineJoin = 'round';
@@ -821,25 +1148,53 @@ function render() {
   if (geomDirty) {
     pieces.forEach(build);
     trace();
+    expose();
+    for (const p of pieces) if (p.kind === 'sensor') develop(p);
     bucketize();
     geomDirty = false;
     voiceTrack();
   }
-  const c = ctx;
+  const c = ctx, n = pieces.length;
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'copy';
   c.globalAlpha = 1;
   c.drawImage(bgC, 0, 0);
   c.setTransform(pr, 0, 0, pr, 0, 0);
-  for (const i of DRAW) if (i) body(pieces[i], i);
+  for (let i = 1; i < n; i++) drawBody(pieces[i], i);
   beams();
   c.setTransform(pr, 0, 0, pr, 0, 0);
-  for (const i of DRAW) if (i) rims(pieces[i]);
+  for (let i = 1; i < n; i++) rims(pieces[i]);
   drawSource(pieces[0]);
+  for (let i = 1; i < n; i++) if (pieces[i].kind === 'sensor') drawPip(pieces[i]);
   if (sel >= 0 && ringA > 0) ring(pieces[sel]);
+  placeDrop();
   // Slow frames drop the pixel ratio to 1.
   cost = lerp(cost, performance.now() - t0, 0.2);
   if (!lowDpr && cost > 14 && ++slowN > 20) { lowDpr = true; requestAnimationFrame(fit); }
+}
+
+/* ---------- the remove button ---------- */
+// It rides the selection ring at a diagonal clear of the knob.
+const SLOTS = [-Math.PI / 4, (-3 * Math.PI) / 4, Math.PI / 4, (3 * Math.PI) / 4];
+let dropOn = false, dropFor = null;
+function placeDrop() {
+  const p = sel >= 0 ? pieces[sel] : null, show = !!p && p.kind !== 'source' && !p.dying && ringA > 0.3;
+  if (show !== dropOn) { dropOn = show; dropB.hidden = !show; }
+  if (!show) return;
+  if (dropFor !== p) {
+    dropFor = p;
+    dropB.setAttribute('aria-label', `Remove the ${NAMES[p.kind]}`);
+    dropB.title = `Remove the ${NAMES[p.kind]}`;
+  }
+  const R = ringR(p), ka = knobA(p);
+  const at = j => [p.x + Math.cos(SLOTS[j]) * R, p.y + Math.sin(SLOTS[j]) * R];
+  const ok = j => { const [x, y] = at(j); return x > 16 && x < W - 16 && y > 16 && y < H - 16 && Math.abs(wrapA(SLOTS[j] - ka)) > 0.5; };
+  if (p.slot === undefined || !ok(p.slot)) {
+    p.slot = 0;
+    for (let j = 0; j < 4; j++) if (ok(j)) { p.slot = j; break; }
+  }
+  const [x, y] = at(p.slot);
+  dropB.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
 }
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
@@ -885,7 +1240,7 @@ function rest() {
     if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -947,7 +1302,8 @@ function hush() {
   if (ac && tone) tone.g.gain.setTargetAtTime(0, ac.currentTime, 0.25);
 }
 // A faint glass tick marks each 15 degree detent.
-function tick(x) {
+// A lower tick marks a piece placed or taken away.
+function tick(x, pitch = 1) {
   const a = live();
   if (!a || voices >= MAXV) return;
   const now = a.currentTime;
@@ -956,20 +1312,20 @@ function tick(x) {
   const t = now + LEAD, p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
   if (p.pan) p.pan.value = clamp((x / W) * 2 - 1, -1, 1) * 0.5;
   p.connect(out);
-  const o = a.createOscillator(), g = a.createGain(), v = 0.05 * jit(0.06) * level();
-  o.frequency.value = 3300 * jit(0.04);
+  const o = a.createOscillator(), g = a.createGain(), v = 0.05 * jit(0.06) * level() * (pitch < 1 ? 1.6 : 1);
+  o.frequency.value = 3300 * pitch * jit(0.04);
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(v, t + 0.0015);
-  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.045);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.045 / Math.sqrt(pitch));
   o.connect(g);
   g.connect(p);
   o.start(t);
-  o.stop(t + 0.06);
+  o.stop(t + 0.12);
   track(o, g, p);
   const n = a.createBufferSource(), f = a.createBiquadFilter(), ng = a.createGain();
   n.buffer = noise;
   f.type = 'bandpass';
-  f.frequency.value = 6500 * jit(0.05);
+  f.frequency.value = 6500 * pitch * jit(0.05);
   f.Q.value = 1.4;
   ng.gain.setValueAtTime(v * 0.6, t);
   ng.gain.exponentialRampToValueAtTime(1e-4, t + 0.012);
@@ -980,13 +1336,152 @@ function tick(x) {
   track(n, f, ng);
 }
 
+/* ---------- the scene: opening layout, adding and removing ---------- */
+// The opening scene: one beam rises into one prism and fans out.
+// The beam meets the left face at minimum deviation.
+function composition() {
+  const wide = !tall, phi = (wide ? -12 : 80) * D2R, R = (BASE_SIDE * S) / Math.sqrt(3);
+  const cx = W * (wide ? 0.43 : 0.56), cy = H * (wide ? 0.43 : 0.34);
+  const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = wide ? 0.32 * W : 0.24 * H;
+  const mx = (R / 2) * Math.cos((7 * Math.PI) / 6), my = (R / 2) * Math.sin((7 * Math.PI) / 6);
+  const sx = mx - Math.cos(dir) * dist, sy = my - Math.sin(dir) * dist, cp = Math.cos(phi), sn = Math.sin(phi);
+  const m = (SPEC.source.w * S) / 2 + 10;
+  const X = clamp(cx + sx * cp - sy * sn, m, W - m), Y = clamp(cy + sx * sn + sy * cp, m, H - m);
+  return [[X / W, Y / H, dir + phi], [cx / W, cy / H, phi]];
+}
+const basePrism = () => pieces.find(p => p.base && p.kind === 'prism' && !p.dying);
+const liveAdded = () => pieces.reduce((n, p) => n + (!p.base && !p.dying ? 1 : 0), 0);
+const pristine = () => !baseMoved && !!basePrism() && !liveAdded();
+function applyLayout() {
+  const [a, b] = composition(), src = pieces[0], pz = basePrism();
+  [src.u, src.v, src.rot] = a;
+  src.snap = null;
+  if (pz) { [pz.u, pz.v, pz.rot] = b; pz.snap = null; }
+  geomDirty = true;
+}
+function sync() {
+  const n = liveAdded();
+  resetB.setAttribute('aria-disabled', String(pristine() && !tween));
+  clearB.setAttribute('aria-disabled', String(!n));
+  addBs.forEach(b => b.setAttribute('aria-disabled', String(n >= MAXADD)));
+}
+const backOut = t => { const u = t - 1; return 1 + 2.5 * u * u * u + 1.5 * u * u; };
+// A new piece drops into the light, turned to meet it.
+function spot(kind) {
+  const tmp = make(kind);
+  tmp.u = tmp.v = 0.5;
+  build(tmp);
+  const rr = tmp.r, m = rr + 0.03 * S, cx = W / 2, cy = (H - safeB) / 2;
+  const free = (x, y) => x > m && x < W - m && y > m && y < H - safeB - rr * 0.5
+    && pieces.every(q => q.dying || Math.hypot(q.x - x, q.y - y) > q.r + rr + 0.04 * S);
+  const cands = [];
+  // The lamp's own beam stays clear while it feeds a piece.
+  for (let i = SEG[9] < 1000 ? 1 : 0; i < nSeg; i++) {
+    const o = i * SG, I = SEG[o + 5], k = SEG[o + 4], len = Math.hypot(SEG[o + 2] - SEG[o], SEG[o + 3] - SEG[o + 1]);
+    if (I < 0.12 || len < 2.2 * rr) continue;
+    const mid = k < 0 ? 1.3 : 1 - Math.abs(k - (NK - 1) / 2) / NK;
+    cands.push([len * I * mid * (SEG[o + 9] >= 1000 ? 2 : 1), i]);
+  }
+  cands.sort((a, b) => b[0] - a[0]);
+  // Sensors sit far down the light, so later pieces fit in front.
+  const ts = kind === 'sensor' ? [0.72, 0.62, 0.82, 0.5] : [0.45, 0.35, 0.58, 0.28, 0.7];
+  for (const [, i] of cands.slice(0, 40)) {
+    const o = i * SG, dx = SEG[o + 2] - SEG[o], dy = SEG[o + 3] - SEG[o + 1];
+    for (const t of ts) {
+      const x = SEG[o] + dx * t, y = SEG[o + 1] + dy * t;
+      if (free(x, y)) return [x, y, aim(kind, Math.atan2(dy, dx), x, y, cx, cy)];
+    }
+  }
+  const R = rng((Math.random() * 1e9) | 0);
+  for (let n = 0; n < 60; n++) {
+    const x = m + R() * (W - 2 * m), y = m + R() * Math.max(1, H - safeB - 2 * m);
+    if (free(x, y)) return [x, y, R() * TAU];
+  }
+  return [cx, cy, 0];
+}
+// Each kind turns so its output heads toward the open table.
+function aim(kind, th, x, y, cx, cy) {
+  const tx = cx - x, ty = cy - y, toward = a => Math.cos(a) * tx + Math.sin(a) * ty;
+  const pickA = (a, b, outA, outB) => (toward(outA) >= toward(outB) ? a : b);
+  if (kind === 'sensor') return th - Math.PI / 2;
+  if (kind === 'lens') return th;
+  if (kind === 'mirror') return pickA(th + Math.PI / 4, th - Math.PI / 4, th + Math.PI / 2, th - Math.PI / 2);
+  if (kind === 'prism') return pickA(th + 0.4, th + Math.PI - 0.4, th + 0.8, th - 0.8);
+  const tilt = 0.45;
+  return pickA(th - Math.PI / 2 + tilt, th - Math.PI / 2 - tilt, th + Math.PI + 2 * tilt, th + Math.PI - 2 * tilt);
+}
+function addPiece(kind) {
+  if (!ready || liveAdded() >= MAXADD) return;
+  measureBar();
+  const p = make(kind), [x, y, rot] = spot(kind);
+  p.u = x / W;
+  p.v = y / H;
+  p.rot = rot;
+  p.z = reduce ? 1 : 0.02;
+  p.zp = reduce ? 1 : 0;
+  pieces.push(p);
+  select(pieces.length - 1);
+  geomDirty = true;
+  moveX = x;
+  tick(x, 0.55);
+  sync();
+  wake();
+}
+function kill(p) {
+  if (p.dying || p.kind === 'source') return;
+  p.dying = true;
+  p.z0 = p.z;
+  p.zp = reduce ? 1 : 0;
+  geomDirty = true;
+  tick(p.x, 0.42);
+}
+function remove(i) {
+  const p = pieces[i];
+  if (!p || p.kind === 'source' || p.dying) return;
+  if (sel === i) select(-1);
+  kill(p);
+  sync();
+  wake();
+}
+// Pieces grow in with a small overshoot and shrink out.
+function stepPop(dt) {
+  let busy = false;
+  for (const p of pieces) {
+    if (p.zp >= 1) continue;
+    p.zp = Math.min(1, p.zp + dt / (p.dying ? 0.2 : 0.38));
+    p.z = p.dying ? Math.max(0.02, p.z0 * (1 - p.zp * p.zp)) : backOut(p.zp);
+    busy = true;
+  }
+  if (busy) geomDirty = true;
+  if (pieces.some(p => p.dying && p.zp >= 1)) sweep();
+  return busy;
+}
+// Gone pieces leave the list.
+// Held indices follow their pieces.
+function sweep() {
+  const sp = sel >= 0 ? pieces[sel] : null, dp = drag ? pieces[drag.i] : null, tp = twist ? pieces[twist.i] : null;
+  pieces = pieces.filter(p => !(p.dying && p.zp >= 1));
+  sel = sp ? pieces.indexOf(sp) : -1;
+  if (drag && (drag.i = pieces.indexOf(dp)) < 0) drag = null;
+  if (twist && (twist.i = pieces.indexOf(tp)) < 0) twist = null;
+  geomDirty = true;
+  sync();
+}
+function clearAll() {
+  if (!ready || !liveAdded()) return;
+  select(-1);
+  pieces.forEach(p => { if (!p.base) kill(p); });
+  sync();
+  wake();
+}
+
 /* ---------- motion: placing, turning, detents ---------- */
 const SNAP = 15 * D2R, DET = 1.6 * D2R;
 function changed(p, amt) {
   geomDirty = true;
   moved += amt;
   moveX = p.x;
-  if (pristine) { pristine = false; showChip(); }
+  if (p.base && !baseMoved) { baseMoved = true; sync(); }
   wake();
 }
 function setRot(p, raw) {
@@ -1016,32 +1511,40 @@ function select(i) {
   turnA = 0;
   wake();
 }
-function showChip() { resetB.setAttribute('aria-disabled', String(pristine)); }
-function applyLayout() {
-  LAYOUT[tall ? 'tall' : 'wide'].forEach(([u, v, a], i) => { const p = pieces[i]; p.u = u; p.v = v; p.rot = a * D2R; p.snap = null; });
-  geomDirty = true;
-}
 function reset() {
-  if (pristine || !ready) return;
-  const to = LAYOUT[tall ? 'tall' : 'wide'];
-  tween = { t: 0, dur: reduce ? 0.2 : 0.8, from: pieces.map(p => [p.u, p.v, p.rot]), to };
+  if (!ready || (pristine() && !tween)) return;
   select(-1);
+  pieces.forEach(p => { if (!p.base) kill(p); });
+  const [a, b] = composition();
+  let pz = basePrism();
+  if (!pz) {
+    // A removed base prism grows back in its place.
+    pz = make('prism', { side: BASE_SIDE, base: true });
+    [pz.u, pz.v, pz.rot] = b;
+    pz.z = reduce ? 1 : 0.02;
+    pz.zp = reduce ? 1 : 0;
+    pieces.splice(1, 0, pz);
+    drag = twist = null;
+  }
+  const src = pieces[0];
+  tween = { t: 0, dur: reduce ? 0.2 : 0.8, items: [[src, [src.u, src.v, src.rot], a], [pz, [pz.u, pz.v, pz.rot], b]] };
+  sync();
   wake();
 }
 function stepTween(dt) {
   tween.t = Math.min(1, tween.t + dt / tween.dur);
   const e = 1 - (1 - tween.t) ** 3;
-  pieces.forEach((p, i) => {
-    const [u, v, r] = tween.from[i], [U, V, A] = tween.to[i], px = p.x;
+  for (const [p, [u, v, r], [U, V, A]] of tween.items) {
+    const px = p.x;
     p.u = lerp(u, U, e);
     p.v = lerp(v, V, e);
-    p.rot = r + wrapA(A * D2R - r) * e;
+    p.rot = r + wrapA(A - r) * e;
     p.snap = null;
     moved += Math.abs(p.u * W - px) / S;
-  });
+  }
   moveX = W / 2;
   geomDirty = true;
-  if (tween.t >= 1) { tween = null; pristine = true; showChip(); }
+  if (tween.t >= 1) { tween = null; baseMoved = false; sync(); }
 }
 
 /* ---------- one loop, only while something moves ---------- */
@@ -1055,6 +1558,7 @@ function frame(ms) {
   last = ms;
   let busy = false;
   if (tween) { stepTween(dt); busy = true; }
+  if (stepPop(dt)) busy = true;
   if (sel >= 0 && ringA < 1) { ringA = reduce ? 1 : Math.min(1, ringA + dt / 0.18); busy = true; }
   const want = performance.now() < turnUntil ? 1 : 0;
   if (turnA !== want) { turnA = reduce ? want : clamp(turnA + (want ? dt / 0.12 : -dt / 0.35)); busy = true; }
@@ -1067,19 +1571,27 @@ function frame(ms) {
 /* ---------- input ---------- */
 let rect = null;
 addEventListener('scroll', () => { rect = null; }, { passive: true });
-function local(e) {
+function at(e) {
   const r = rect || (rect = panel.getBoundingClientRect());
   return [((e.clientX - r.left) * W) / r.width, ((e.clientY - r.top) * H) / r.height];
 }
 function inside(p, x, y, pad) {
   const g = p.g;
   if (p.kind === 'lens') return Math.hypot(x - g.ax, y - g.ay) < g.R + pad && Math.hypot(x - g.bx, y - g.by) < g.R + pad;
-  const n = g.n, v = g.v, extra = p.kind === 'mirror' ? Math.max(0, 9 - g.th / 2) : 0;
+  if (curved(p)) {
+    const d = Math.hypot(x - g.cx, y - g.cy), e = pad + 5;
+    if (d < Math.min(g.R, g.Rb) - e || d > Math.max(g.R, g.Rb) + e) return false;
+    return ((x - g.cx) * g.axx + (y - g.cy) * g.axy) / d >= Math.cos(g.al + e / g.R);
+  }
+  const n = g.n, v = g.v, extra = p.kind === 'mirror' || p.kind === 'sensor' ? Math.max(0, 9 - g.th / 2) : 0;
   for (let e = 0; e < v.length / 2; e++) if ((x - v[2 * e]) * n[2 * e] + (y - v[2 * e + 1]) * n[2 * e + 1] > pad + extra) return false;
   return true;
 }
+// The lamp draws on top, so it picks first.
+// The newest piece picks next.
 function pick(x, y, pad) {
-  for (const i of PICK) if (inside(pieces[i], x, y, pad)) return i;
+  if (inside(pieces[0], x, y, pad)) return 0;
+  for (let i = pieces.length - 1; i > 0; i--) if (!pieces[i].dying && inside(pieces[i], x, y, pad)) return i;
   return -1;
 }
 const onRing = (p, x, y, band) => Math.abs(Math.hypot(x - p.x, y - p.y) - ringR(p)) < band;
@@ -1105,7 +1617,7 @@ function startTwist() {
 panel.addEventListener('pointerdown', e => {
   if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  const [x, y] = local(e);
+  const [x, y] = at(e);
   ptrs.set(e.pointerId, { x, y, x0: x, y0: y });
   coarse = e.pointerType !== 'mouse';
   if (ptrs.size === 2) { tapDown = null; startTwist(); return; }
@@ -1122,12 +1634,12 @@ panel.addEventListener('pointermove', e => {
   const q = ptrs.get(e.pointerId);
   if (!q) {
     // A mouse hover shows what can be grabbed.
-    if (e.pointerType !== 'mouse' || !ready) return;
-    const [x, y] = local(e), hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
+    if (e.pointerType !== 'mouse' || !ready || e.target === dropB || dropB.contains(e.target)) return;
+    const [x, y] = at(e), hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
     panel.style.cursor = hot ? 'grab' : '';
     return;
   }
-  [q.x, q.y] = local(e);
+  [q.x, q.y] = at(e);
   if (twist) {
     if (ptrs.size < 2) return;
     const [a, b] = [...ptrs.values()], p = pieces[twist.i], ang = Math.atan2(b.y - a.y, b.x - a.x);
@@ -1164,6 +1676,14 @@ function lift(e) {
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
 panel.addEventListener('contextmenu', e => e.preventDefault());
+// The remove button keeps its press away from the table.
+dropB.addEventListener('pointerdown', e => e.stopPropagation());
+dropB.addEventListener('mousedown', e => e.preventDefault());
+dropB.addEventListener('click', e => {
+  e.stopPropagation();
+  remove(sel);
+  panel.focus({ preventScroll: true });
+});
 panel.addEventListener('keydown', e => {
   if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready) return;
   // Tab walks the pieces, then lets focus leave the table.
@@ -1172,11 +1692,12 @@ panel.addEventListener('keydown', e => {
   e.preventDefault();
   select(next);
 });
-panel.addEventListener('blur', () => { if (!ptrs.size) select(-1); });
+panel.addEventListener('blur', e => { if (!ptrs.size && !panel.contains(e.relatedTarget)) select(-1); });
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], button, a')) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sel > 0) { e.preventDefault(); remove(sel); return; }
   const k = e.key.toLowerCase(), arrow = ARROWS[e.key];
   if (!arrow && k !== 'q' && k !== 'e' && e.key !== 'Escape') return;
   if (e.key === 'Escape') { select(-1); return; }
@@ -1188,6 +1709,12 @@ addEventListener('keydown', e => {
     moveTo(p, p.x + arrow[0] * st, p.y + arrow[1] * st);
   } else setRot(p, p.rot + (k === 'e' ? 1 : -1) * (e.shiftKey ? 15 : 3) * D2R);
 });
+addBs.forEach(b => b.addEventListener('click', () => {
+  if (b.getAttribute('aria-disabled') === 'true') return;
+  addPiece(b.dataset.kind);
+  panel.focus({ preventScroll: true });
+}));
+clearB.addEventListener('click', clearAll);
 resetB.addEventListener('click', reset);
 sound.onChange(on => {
   if (on) audio();
@@ -1195,24 +1722,30 @@ sound.onChange(on => {
 });
 
 /* ---------- size and start ---------- */
+// safeB is the strip of stage the inset bar covers.
+function measureBar() {
+  const first = barEl?.firstElementChild;
+  safeB = first ? clamp(panel.getBoundingClientRect().bottom - first.getBoundingClientRect().top, 0, H * 0.4) : 0;
+}
 function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
-  const nw = Math.floor(w * p), nh = Math.floor(h * p), t = w / h < 1.2;
-  if (t !== tall) { tall = t; if (pristine) applyLayout(); }
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(2e6 / (w * h)));
+  const nw = Math.floor(w * p), nh = Math.floor(h * p);
+  tall = w / h < 1.2;
   if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
+  measureBar();
+  if (pristine() && !tween) applyLayout();
   if (nw !== cw || nh !== ch || !bgC.width) {
-    cw = canvas.width = bgC.width = nw;
-    ch = canvas.height = bgC.height = nh;
+    cw = canvas.width = bgC.width = hzC.width = dustC.width = nw;
+    ch = canvas.height = bgC.height = hzC.height = dustC.height = nh;
     pr = cw / W;
-    glowC.width = Math.ceil(cw / 3);
-    glowC.height = Math.ceil(ch / 3);
-    glow2C.width = Math.ceil(glowC.width / 2);
-    glow2C.height = Math.ceil(glowC.height / 2);
-    hzC.width = dustC.width = Math.ceil(cw / 2);
-    hzC.height = dustC.height = Math.ceil(ch / 2);
+    MIP.forEach((m, i) => {
+      const f = 2 ** (i + 1);
+      m.c.width = Math.ceil(cw / f);
+      m.c.height = Math.ceil(ch / f);
+    });
     buildTable();
     buildDust();
   } else pr = cw / W;
@@ -1221,14 +1754,13 @@ function fit() {
 function failed() {
   panel.querySelector('.fail').hidden = false;
   canvas.hidden = true;
-  resetB.setAttribute('aria-disabled', 'true');
+  [resetB, clearB, ...addBs].forEach(b => b.setAttribute('aria-disabled', 'true'));
 }
 function boot() {
   if (!ctx || !ctx.createRadialGradient) return failed();
-  tall = panel.clientWidth / Math.max(1, panel.clientHeight) < 1.2;
-  applyLayout();
   fit();
   ready = true;
+  sync();
   render();
   requestAnimationFrame(() => canvas.classList.add('on'));
   new ResizeObserver(() => fit()).observe(panel);
