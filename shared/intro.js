@@ -54,16 +54,16 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   const fold = flash.querySelector('.intro-sub');
   if (fold) fold.style.transform = 'rotateX(-90deg)';
 
-  // The box flashes on over the frosted glass.
+  // The box flashes on at full white over the dark glass.
   await wait(3);
   flash.style.opacity = 1;
-  await wait(2);
+  await wait(1);
   // The subtitle folds down inside the box.
-  if (fold) await play(fold, p => ({ transform: `rotateX(${(-90 * (1 - p)).toFixed(2)}deg)` }), 250, settle);
-  await wait(8);
-  // The box flickers out and leaves the name in white.
+  if (fold) await play(fold, p => ({ transform: `rotateX(${(-90 * (1 - p)).toFixed(2)}deg)` }), 167, settle);
+  await wait(2);
+  // The box cuts out bright and leaves the name in white.
   text.style.opacity = 1;
-  await play(flash, p => ({ opacity: [1, 0.2, 0.9, 0][Math.min(3, Math.floor(p * 4))] }), 4000 / FPS);
+  await play(flash, p => ({ opacity: [1, 0.7, 0][Math.min(2, Math.floor(p * 3))] }), 3000 / FPS);
   flash.remove();
 
   await held;
