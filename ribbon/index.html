@@ -156,7 +156,7 @@ const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestId
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const unit = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
 
-// Loop and readiness flags; the sound code reads them too.
+// The sound code also reads these loop and readiness flags.
 let raf = 0, last = 0, visible = false, onScreen = false, ready = false, lowDpr = false;
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
@@ -178,8 +178,8 @@ function linear(L, C, h) {
   return c.map(v => clamp(v));
 }
 // Five stops run from the stick end to the tip.
-// Hues are unwrapped, so each gradient turns the intended way.
-// The back face is deeper and turned a little round the hue wheel.
+// Unwrapped hues make each gradient turn the intended way.
+// The back face is deeper and sits further round the hue wheel.
 const PALS = {
   sunset: {
     stops: [[0.5, 0.2, 345], [0.62, 0.22, 374], [0.72, 0.2, 402], [0.8, 0.17, 428], [0.86, 0.16, 452]],
@@ -195,7 +195,7 @@ const PALS = {
   },
 };
 const GN = 256, PALD = new Float32Array(GN * 4 * 4);
-// Rows 0 and 1 hold the new front and back; rows 2 and 3 the old.
+// New dye fills the first two rows; old dye the last two.
 function bake(pal, row) {
   for (let k = 0; k < GN; k++) {
     const u = (k / (GN - 1)) * 4, i = Math.min(3, Math.floor(u)), f = u - i;
@@ -208,7 +208,7 @@ function bake(pal, row) {
 const bgOf = pal => pal.bg.map(c => linear(...c));
 const KEY = unit([-0.45, 0.78, 0.55]), RIM = unit([0.78, 0.2, -0.6]), FILL = unit([0.6, -0.45, 0.66]);
 const FILLC = linear(0.88, 0.04, 330).map(v => v * 0.6);
-const KEYC = linear(0.98, 0.025, 85).map(v => v * 2.9), RIMC = linear(0.92, 0.04, 300).map(v => v * 1.5);
+const KEYC = linear(0.98, 0.025, 85).map(v => v * 2.1), RIMC = linear(0.92, 0.04, 300).map(v => v * 1.5);
 const SKYC = linear(0.62, 0.05, 285).map(v => v * 0.46), GNDC = linear(0.42, 0.05, 25).map(v => v * 0.28);
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
@@ -293,7 +293,7 @@ function burst(a, dst, t, type, f, q, g, tau, len) {
   src.onended = () => ng.disconnect();
   src.start(t, Math.random() * 0.8, len);
 }
-// The swish: soft noise in two bands, with a flutter, follows the tip.
+// The swish is soft fluttering noise that follows the tip.
 function swishVoice() {
   const sr = ac.sampleRate, buf = ac.createBuffer(1, Math.round(sr * 2.7), sr), d = buf.getChannelData(0);
   // Pink noise sounds softer than white, like cloth through air.
@@ -303,7 +303,7 @@ function swishVoice() {
     b0 = 0.99765 * b0 + w * 0.099046;
     b1 = 0.963 * b1 + w * 0.2965164;
     b2 = 0.57 * b2 + w * 1.0526913;
-    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.22;
+    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.3;
   }
   const loop = (rate, off) => {
     const s = ac.createBufferSource();
@@ -334,20 +334,29 @@ function swishVoice() {
   lfo.start();
   sw = { bp, lp, g, g2, lfo, depth, pan };
 }
+// The swish drops to silence at once, so a wake starts quiet.
+function hush() {
+  if (!sw) return;
+  const t = ac.currentTime;
+  for (const p of [sw.g.gain, sw.g2.gain]) {
+    p.cancelScheduledValues(t);
+    p.setValueAtTime(0, t);
+  }
+}
 // Level and brightness follow the tip's speed.
 function swishTo(sp, x) {
   if (!sw) return;
-  const t = ac.currentTime, on = soundOn && ac.state === 'running' && visible;
-  const k = sstep(0.7, 9, sp);
-  sw.g.gain.setTargetAtTime(on ? 0.34 * k ** 1.5 * jit(0.04) : 0, t, 0.045);
+  const t = ac.currentTime, on = soundOn && visible;
+  const k = sstep(0.3, 7, sp);
+  sw.g.gain.setTargetAtTime(on ? 0.5 * k ** 1.3 * jit(0.04) : 0, t, 0.045);
   sw.bp.frequency.setTargetAtTime((380 + 2600 * k) * jit(0.03), t, 0.06);
   sw.lp.frequency.setTargetAtTime(1300 + 6500 * k, t, 0.06);
-  sw.g2.gain.setTargetAtTime(on ? 0.11 * sstep(4, 14, sp) ** 2 : 0, t, 0.05);
+  sw.g2.gain.setTargetAtTime(on ? 0.12 * sstep(3, 12, sp) ** 2 : 0, t, 0.05);
   sw.lfo.frequency.setTargetAtTime(7 + 21 * k, t, 0.12);
   sw.depth.gain.setTargetAtTime(0.42 * k, t, 0.12);
   if (sw.pan.pan) sw.pan.pan.setTargetAtTime(clamp(x, -1, 1) * 0.6, t, 0.1);
 }
-// The crack: a soft snap, a papery flap and a low thump.
+// The crack is a soft snap, a papery flap and a thump.
 function crackSound(k, x) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -356,13 +365,13 @@ function crackSound(k, x) {
   crackNext = t + 0.12;
   const g = level() * (0.55 + 0.45 * k) * jit(0.06), d = bus(a, x);
   burst(a, d, t, 'bandpass', 2300 * jit(0.07), 0.9, 0.95 * g, 0.009, 0.06);
-  burst(a, d, t, 'highpass', 6200 * jit(0.05), 0.7, 0.45 * g, 0.0022, 0.02);
+  burst(a, d, t, 'highpass', 6200 * jit(0.05), 0.7, 0.32 * g, 0.0022, 0.02);
   burst(a, d, t + 0.011, 'bandpass', 1250 * jit(0.08), 1.1, 0.32 * g, 0.022, 0.09);
   const o = a.createOscillator(), og = a.createGain();
   o.frequency.setValueAtTime(150 * jit(0.05), t);
   o.frequency.exponentialRampToValueAtTime(62, t + 0.08);
   og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(0.3 * g, t + 0.003);
+  og.gain.linearRampToValueAtTime(0.4 * g, t + 0.003);
   og.gain.setTargetAtTime(0, t + 0.003, 0.035);
   o.connect(og).connect(d);
   o.start(t);
@@ -385,7 +394,7 @@ function shimmer() {
   bp.frequency.setValueAtTime(900 * jit(0.05), t);
   bp.frequency.exponentialRampToValueAtTime(5200 * jit(0.05), t + 0.6);
   ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(0.1 * g, t + 0.18);
+  ng.gain.linearRampToValueAtTime(0.3 * g, t + 0.18);
   ng.gain.setTargetAtTime(0, t + 0.22, 0.13);
   src.connect(bp).connect(ng).connect(d);
   src.start(t);
@@ -398,9 +407,9 @@ function shimmer() {
 const N = 330, NV = N + 1, LEN = 3.3, SEG = LEN / N, WID = 0.12, ITER = 3, SD = 1;
 // Air drag is strong face-on, weaker edge-on and weakest lengthwise.
 const CN = 3.6, CNQ = 2.2, CW = 0.8, CT = 0.2;
-// Bending, in-plane stiffness, bend alignment, twist stiffness, spin sharing, spin damping.
+// These constants tune bending, twisting and spin.
 const KB = 0.3, KH = 0.25, KC = 0.03, CE2 = ((9 * SEG * SEG) / 0.45) ** 2, KS = 40, KW = 6, TD = 6, OMAX = 40;
-// Velocity sharing, air torque on the twist and the pull toward the viewer.
+// These tune velocity sharing, air torque, face pull and spiral pull.
 const KV = 0.25, KA = 3, KF = 0.012, KP = 6;
 const X = new Float64Array(NV * 3), Vl = new Float64Array(NV * 3), Pr = new Float64Array(NV * 3), Fx = new Float64Array(NV * 3);
 const Wf = new Float64Array(NV * 3), Tg = new Float64Array(NV * 3), To = new Float64Array(NV * 3);
@@ -420,7 +429,7 @@ function tangents(P, T) {
     T[i * 3 + 2] = z / l;
   }
 }
-// Carries frame i from the old tangent to the new one without spin.
+// This carries frame i to its new tangent without spin.
 function carry(i) {
   const o = i * 3, ax = To[o], ay = To[o + 1], az = To[o + 2], bx = Tg[o], by = Tg[o + 1], bz = Tg[o + 2];
   let wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
@@ -448,7 +457,7 @@ function carry(i) {
   Wf[o + 1] = wy / l;
   Wf[o + 2] = wz / l;
 }
-// Turns frame i about its tangent.
+// This turns frame i about its tangent.
 function spin(i, a) {
   const o = i * 3, tx = Tg[o], ty = Tg[o + 1], tz = Tg[o + 2], wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2];
   const c = Math.cos(a), s = Math.sin(a);
@@ -456,7 +465,7 @@ function spin(i, a) {
   Wf[o + 1] = wy * c + (tz * wx - tx * wz) * s;
   Wf[o + 2] = wz * c + (tx * wy - ty * wx) * s;
 }
-// The twist from frame i to frame i + 1, in radians.
+// This returns the twist from frame i to frame i + 1.
 function twistAt(i) {
   const o = i * 3, p = o + 3;
   const ax = Tg[o], ay = Tg[o + 1], az = Tg[o + 2], bx = Tg[p], by = Tg[p + 1], bz = Tg[p + 2];
@@ -473,7 +482,7 @@ function twistAt(i) {
   return Math.atan2(cx * bx + cy * by + cz * bz, ux * wx + uy * wy + uz * wz);
 }
 
-// Gauss-Seidel bending on the predicted positions.
+// Gauss-Seidel passes bend the predicted positions.
 // The in-plane part is stiffer, so the silk bends flat-wise.
 function bend(rev) {
   for (let k = 1; k < N; k++) {
@@ -481,7 +490,7 @@ function bend(rev) {
     const bx = Pr[a] + Pr[b] - 2 * Pr[o], by = Pr[a + 1] + Pr[b + 1] - 2 * Pr[o + 1], bz = Pr[a + 2] + Pr[b + 2] - 2 * Pr[o + 2];
     const wx = Wf[o], wy = Wf[o + 1], wz = Wf[o + 2], hc = (bx * wx + by * wy + bz * wz) * KH;
     const cx = bx * KB + wx * hc, cy = by * KB + wy * hc, cz = bz * KB + wz * hc;
-    // The head is held, so it takes no share.
+    // The pointer holds the head, so it takes no share.
     const ma = i === 1 ? 0 : 1, den = ma + 5, fa = ma / den, fb = 1 / den, fo = 2 / den;
     Pr[a] -= cx * fa; Pr[a + 1] -= cy * fa; Pr[a + 2] -= cz * fa;
     Pr[b] -= cx * fb; Pr[b + 1] -= cy * fb; Pr[b + 2] -= cz * fb;
@@ -489,9 +498,9 @@ function bend(rev) {
   }
 }
 
-// Steering and wind settings for one frame.
+// Each frame sets the steering and wind values here.
 const env = { grav: 1.5, coil: 0, cx: 0, cy: 0, cz: 0, ax: 0, ay: 0, az: 1, spin: 1, tn: 1.5, front: 0, ph: 0, pull: 0, damp: 0 };
-// The spiral: each point's radius, depth along the axis and angle behind the head.
+// The spiral gives each point a radius, a depth and an angle.
 const Rs = new Float64Array(NV), Hs = new Float64Array(NV), Phi = new Float64Array(NV);
 let spiralR = 0;
 function spiral(rmax) {
@@ -524,25 +533,25 @@ function substep(h, px, py, pz) {
     const rx = vx - Wind[o], ry = vy - Wind[o + 1], rz = vz - Wind[o + 2];
     const vt = rx * tx + ry * ty + rz * tz, vw = rx * wx + ry * wy + rz * wz, vn = rx * nx + ry * ny + rz * nz;
     // Each part of the drag decays implicitly, so it never overshoots.
-    const dn = vn * (1 - 1 / (1 + h * (CN + CNQ * Math.abs(vn)))), dw = vw * (1 - 1 / (1 + h * CW)), dt = vt * (1 - 1 / (1 + h * CT));
-    // Idle silk floats: a weak pull holds it near the middle of the stage.
-    vx -= dn * nx + dw * wx + dt * tx + kp * X[o];
-    vy -= dn * ny + dw * wy + dt * ty + grav * h + kp * (X[o + 1] - 0.05);
-    vz -= dn * nz + dw * wz + dt * tz + kp * X[o + 2];
-    // Holding still: each point is drawn to its place on a turning spiral.
+    const dn = vn * (1 - 1 / (1 + h * (CN + CNQ * Math.abs(vn)))), dw = vw * (1 - 1 / (1 + h * CW)), dl = vt * (1 - 1 / (1 + h * CT));
+    // Idle silk floats; a weak pull holds it near the middle.
+    vx -= dn * nx + dw * wx + dl * tx + kp * X[o];
+    vy -= dn * ny + dw * wy + dl * ty + grav * h + kp * (X[o + 1] - 0.05);
+    vz -= dn * nz + dw * wz + dl * tz + kp * X[o + 2];
+    // Holding still, a turning spiral draws each point to its place.
     const kq = kc && kc * sstep(0, 0.6, front - Sx[i]);
     if (kq) {
       const th = ph - Phi[i], c = Math.cos(th), s = Math.sin(th), r = Rs[i], d = Hs[i];
       const ux = c * e1[0] + s * e2[0], uy = c * e1[1] + s * e2[1], uz = c * e1[2] + s * e2[2];
       const qx = c * e2[0] - s * e1[0], qy = c * e2[1] - s * e1[1], qz = c * e2[2] - s * e1[2];
       const dx = cx + r * ux + d * ax - X[o], dy = cy + r * uy + d * ay - X[o + 1], dz = cz + r * uz + d * az - X[o + 2];
-      // The pull is capped, so far points sweep in instead of snapping.
-      const pull = KP * Math.min(1, 2.6 / (KP * Math.hypot(dx, dy, dz) + 1e-9)), vt = om * r;
-      vx += (qx * vt + dx * pull - vx) * kq;
-      vy += (qy * vt + dy * pull - vy) * kq;
-      vz += (qz * vt + dz * pull - vz) * kq;
+      // A cap on the pull makes far points sweep in, not snap.
+      const pk = KP * Math.min(1, 2.6 / (KP * Math.hypot(dx, dy, dz) + 1e-9)), vr = om * r;
+      vx += (qx * vr + dx * pk - vx) * kq;
+      vy += (qy * vr + dy * pk - vy) * kq;
+      vz += (qz * vr + dz * pk - vz) * kq;
     }
-    // Soft walls of air at the frame's edges keep the silk in view.
+    // Soft walls of air at the edges keep the silk in view.
     const x = X[o], y = X[o + 1], z = X[o + 2], k = CAMZ / (CAMZ - z), sx = (x * k) / hx, sy = (y * k) / hy;
     // Outside, the push grows with depth and outward speed bleeds away.
     if (sx > 1) { vx -= (sx - 1) * hx * wall; if (vx > 0) vx *= brake; } else if (sx < -1) { vx -= (sx + 1) * hx * wall; if (vx < 0) vx *= brake; }
@@ -592,7 +601,7 @@ function substep(h, px, py, pz) {
   twist(h);
 }
 
-// Solves (1 + 2k) x[j] - k (x[j - 1] + x[j + 1]) = r[j] with free ends.
+// This solves one implicit diffusion step with free ends.
 // One stable pass smooths a field along the whole ribbon.
 function smooth(r, x, k) {
   let m = 1 + k;
@@ -607,7 +616,7 @@ function smooth(r, x, k) {
   for (let j = N - 1; j >= 0; j--) x[j] = TR[j] - TB[j] * x[j + 1];
 }
 
-// The frame spins with the air, leans toward easy bends, and evens out.
+// The frame spins with the air, leans into bends and evens out.
 function twist(h) {
   // While coiling, the air settles and the face turns to the viewer.
   const tn = env.tn * h, ph = clock, ka = KA * h * (1 - env.coil), kf = KF * (1 + 3 * env.coil);
@@ -634,7 +643,7 @@ function twist(h) {
     const ex = -X[o], ey = -X[o + 1], ez = CAMZ - X[o + 2];
     spin(i, (-kf * (ex * nx + ey * ny + ez * nz) * (ex * wx + ey * wy + ez * wz)) / (ex * ex + ey * ey + ez * ez));
   }
-  // The bend is read three segments wide, so small ripples do not count.
+  // The bend spans three segments, so small ripples do not count.
   for (let i = 3; i < N - 2; i++) {
     const a = (i - 3) * 3, o = i * 3, b = o + 9;
     const bx = X[a] + X[b] - 2 * X[o], by = X[a + 1] + X[b + 1] - 2 * X[o + 1], bz = X[a + 2] + X[b + 2] - 2 * X[o + 2];
@@ -653,7 +662,7 @@ function twist(h) {
   for (let j = 0; j <= N; j++) spin(j, Dl[j]);
 }
 
-// Wind: a slow swirling flow plus a mean breeze (bx, by).
+// The wind is a slow swirl plus a steady breeze (bx, by).
 function windField(t, amp, bx, by) {
   if (!amp && !bx && !by) { Wind.fill(0); return; }
   const k = 1.3;
@@ -665,7 +674,7 @@ function windField(t, amp, bx, by) {
   }
 }
 
-// Lays the ribbon along the path its head has just drifted.
+// This lays the ribbon along its head's recent path.
 function seed() {
   const h0 = [0, 0, 0], p = [0, 0, 0];
   drift(clock, h0);
@@ -709,7 +718,7 @@ const lead = { on: false, src: 'mouse', id: -1, down: false, nx: 0, ny: 0 };
 const kb = { on: false, x: 0, y: 0, vx: 0, vy: 0, at: -1e9 };
 const held = new Map();
 const ARROWS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
-const FLO_8 = 2.7, FLO_S = 2.5, FLO_T = FLO_8 + FLO_S, V_FLICK = 5.2, DASH = 5.6, KB_HOLD = 8, OMG = 3.6;
+const FLO_8 = 2.7, FLO_S = 2.5, FLO_T = FLO_8 + FLO_S, V_FLICK = 4, DASH = 5.6, KB_HOLD = 8, OMG = 3.6;
 let idleT = 99, stillT = 0, coilK = 0, coilT = 0, coilPh = 0, softT = 0, cS = 0, flo = null;
 let armed = false, fPeak = 0, fT = 0, lastLaunch = -9, tipFlash = 0, tipSp = 0, calmT = 0;
 const fDir = [0, 0, 0];
@@ -731,7 +740,7 @@ function drift(t, o) {
   o[1] = 0.02 + 0.3 * hy * Math.sin(0.33 * t + 0.24);
   o[2] = 0.1 + 0.3 * Math.sin(0.17 * t + 2.1);
 }
-// The flourish: a figure of eight, then an opening spiral.
+// The flourish draws a figure of eight, then an opening spiral.
 function floPath(t, o) {
   if (t < FLO_8) {
     const u = t / FLO_8, th = TAU * (0.6 * u + 0.4 * (0.5 - 0.5 * Math.cos(Math.PI * u)));
@@ -755,8 +764,8 @@ function coilAxis(t) {
   const l = Math.hypot(x, y) || 1;
   x /= l; y /= l;
   e1[0] = x; e1[1] = y; e1[2] = 0;
-  e2[0] = axis[1] * 0 - axis[2] * y;
-  e2[1] = axis[2] * x - axis[0] * 0;
+  e2[0] = -axis[2] * y;
+  e2[1] = axis[2] * x;
   e2[2] = axis[0] * y - axis[1] * x;
 }
 // Keys push a cursor that glides and stops.
@@ -874,7 +883,8 @@ function cancelFlourish() {
 /* ---------- sparks: the crack's flash and glints ---------- */
 const SPMAX = 64, sparks = [], SPD = new Float32Array(SPMAX * 8);
 let palName = 'sunset', dye = 2, bgFrom = bgOf(PALS.sunset), bgTo = bgFrom;
-const tipColour = () => [...PALD.subarray((GN - 1) * 4, (GN - 1) * 4 + 3)];
+// This reads the front dye at u along the silk.
+const dyeAt = u => { const k = Math.round(clamp(u) * (GN - 1)) * 4; return [PALD[k], PALD[k + 1], PALD[k + 2]]; };
 function snap(wv) {
   const o = N * 3, k = wv.k;
   // The tip lashes outward along its own line.
@@ -883,13 +893,15 @@ function snap(wv) {
     Vl[p] += Tg[p] * g; Vl[p + 1] += Tg[p + 1] * g; Vl[p + 2] += Tg[p + 2] * g;
   }
   tipFlash = Math.max(tipFlash, k);
-  const c = tipColour(), x = X[o], y = X[o + 1], z = X[o + 2];
-  // A white flash, a ring of air and glints in the tip's colour.
+  const c = dyeAt(1), x = X[o], y = X[o + 1], z = X[o + 2];
+  // A flash and a ring of air burst from the tip.
   sparks.push({ x, y, z, vx: 0, vy: 0, vz: 0, age: 0, life: 0.2, size: 0.42 + 0.25 * k, c: c.map(v => v * 0.5 + 0.7), kind: 1, ph: 0 });
   sparks.push({ x, y, z, vx: 0, vy: 0, vz: 0, age: 0, life: 0.34, size: 0.5 + 0.3 * k, c: c.map(v => v * 0.8 + 0.25), kind: 2, ph: 0 });
   for (let j = 0, n = Math.round(14 + 14 * k); j < n && sparks.length < SPMAX; j++) {
     const d = unit([Tg[o] + rnd(-1, 1), Tg[o + 1] + rnd(-1, 1), Tg[o + 2] + rnd(-1, 1)]), sp = rnd(0.6, 2.6) * (0.6 + 0.6 * k);
-    sparks.push({ x, y, z, vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, age: 0, life: rnd(0.45, 1), size: rnd(0.05, 0.11), c: c.map(v => lerp(v, 1, rnd(0.25, 0.7))), kind: 0, ph: rnd(0, TAU) });
+    // Glints take colours from all along the silk, like confetti.
+    const g = dyeAt(Math.random()).map(v => lerp(v, 1, rnd(0.1, 0.45)) * 1.4);
+    sparks.push({ x, y, z, vx: d[0] * sp, vy: d[1] * sp, vz: d[2] * sp, age: 0, life: rnd(0.45, 1), size: rnd(0.05, 0.11), c: g, kind: 0, ph: rnd(0, TAU) });
   }
   crackSound(k, x / hx);
 }
@@ -908,9 +920,9 @@ function stepSparks(dt) {
 function step(dt) {
   clock += dt;
   const idleK = lead.on || kb.on || flo ? 0 : sstep(0, 3, idleT);
-  env.grav = lerp(0.65, 0.1, idleK);
-  env.pull = 0.12 * idleK;
-  // Reduced motion lets idle silk settle within a few seconds.
+  // Reduced motion leaves idle silk weightless, so it glides to a stop.
+  env.grav = lerp(0.65, reduce ? 0 : 0.1, idleK);
+  env.pull = reduce ? 0 : 0.12 * idleK;
   env.damp = reduce ? 1.6 * idleK : 0;
   env.spin = reduce ? 0.5 : 1;
   env.tn = reduce ? 0 : lerp(2.5, 4, idleK);
@@ -919,7 +931,7 @@ function step(dt) {
   windField(clock, reduce ? 0 : lerp(0.08, 0.16, idleK), bs * Math.cos(ba), bs * Math.sin(ba));
   control(dt);
   env.coil = coilK;
-  // Near an edge the spiral draws in tighter, so it stays in view.
+  // Near an edge the spiral draws tighter to stay in view.
   spiral(clamp(Math.min(hx - Math.abs(centre[0]), hy - Math.abs(centre[1])) * 0.92, 0.3, 0.55));
   env.ph = coilPh;
   env.cx = centre[0]; env.cy = centre[1]; env.cz = centre[2];
@@ -951,7 +963,8 @@ function step(dt) {
   for (let i = N - 14; i <= N; i++) sp = Math.max(sp, Math.hypot(Vl[i * 3], Vl[i * 3 + 1], Vl[i * 3 + 2]));
   for (let i = 1; i < NV; i += 6) ke += Vl[i * 3] ** 2 + Vl[i * 3 + 1] ** 2 + Vl[i * 3 + 2] ** 2;
   tipSp += (sp - tipSp) * (1 - Math.exp(-dt / 0.05));
-  if (sw) swishTo(tipSp, X[N * 3] / hx);
+  // A sleeping context gets no updates, so automation events never pile up.
+  if (sw && ac.state === 'running') swishTo(tipSp, X[N * 3] / hx);
   const calm = !lead.down && !flo && coilK < 0.01 && !waves.length && !sparks.length && dye >= 1.3 && !held.size && ke / 60 < 1e-3 && Math.hypot(headV[0], headV[1]) < 0.01;
   calmT = calm ? calmT + dt : 0;
   return calmT < 0.5;
@@ -973,7 +986,7 @@ vec3 srgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
   return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }`;
-// The stage: a dark radial gradient tinted by the palette.
+// The stage is a dark radial gradient tinted by the palette.
 const BG_FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes;
@@ -987,7 +1000,7 @@ void main() {
   col = mix(col, uC2, smoothstep(0.5, 1.25, r));
   o = vec4(srgb(col) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
-// The strip is built from the data texture by vertex number.
+// Each vertex number picks its point from the data texture.
 // Coarse samples along the ribbon give occlusion and soft shadow.
 const RIB_VS = `#version 300 es
 precision highp float;
@@ -1031,7 +1044,7 @@ void main() {
       float r = length(d - uKey * a);
       sh *= 1.0 - 0.42 * (1.0 - smoothstep(0.25 * uWid, 0.6 * uWid + 0.16 * a, r));
     }
-    // A fold in front casts a soft halo on the silk behind it.
+    // A fold in front casts a soft halo on silk behind.
     vec3 g = q.xyz - uEye;
     float al = dot(g, e), gap = el - al;
     if (gap > 0.0) {
@@ -1048,7 +1061,7 @@ void main() {
   vGlow = f.w;
   gl_Position = uVP * vec4(pos, 1.0);
 }`;
-// Silk: wrapped diffuse, dyed light through the back, anisotropic sheen.
+// Silk takes diffuse light, glows dyed from behind, and shines anisotropically.
 const RIB_FS = `#version 300 es
 precision highp float;
 in vec3 vPos, vT, vW, vOcc;
@@ -1059,9 +1072,15 @@ uniform vec3 uEye, uKey, uKeyC, uRim, uRimC, uFill, uFillC, uSky, uGnd;
 uniform float uDye, uIri;
 out vec4 o;
 ${COMMON}
-vec3 knee(vec3 c) { return mix(c, 0.8 + 0.2 * (1.0 - exp(-(c - 0.8) * 5.0)), step(0.8, c)); }
+// Bright light keeps its hue; only the brightest bleaches toward white.
+vec3 tone(vec3 c) {
+  float m = max(max(c.r, c.g), c.b);
+  if (m <= 0.75) return c;
+  float k = 0.75 + 0.25 * (1.0 - exp(-(m - 0.75) * 4.0));
+  return mix(c * (k / m), vec3(k), clamp((m - 1.7) * 0.3, 0.0, 0.6));
+}
 vec3 pal(float u, float row) { return texture(uPal, vec2(u, (row + 0.5) / 4.0)).rgb; }
-// One light: lit side, light through the silk, and a satin highlight.
+// Each light adds a lit side, a glow through, and sheen.
 vec3 shine(vec3 L, vec3 C, vec3 N, vec3 V, vec3 T, vec3 W, vec3 alb, float NdV) {
   float NdL = dot(N, L);
   vec3 c = alb * max(NdL, 0.0) * 0.9 + alb * alb * max(-NdL, 0.0) * 0.6;
@@ -1072,7 +1091,7 @@ vec3 shine(vec3 L, vec3 C, vec3 N, vec3 V, vec3 T, vec3 W, vec3 alb, float NdV) 
     float s2 = exp(-(ht * ht / 0.16 + hb * hb / 0.64) / (hn * hn)) * NdL;
     // Highlights glow in the dye's own hue rather than grey.
     vec3 lum = alb / max(max(alb.r, alb.g), max(alb.b, 1e-3));
-    c += mix(lum, vec3(1.0), 0.3) * s1 * 1.2 + lum * alb * s2 * 0.7;
+    c += mix(lum, vec3(1.0), 0.3) * s1 + lum * alb * s2 * 0.7;
   }
   return c * C;
 }
@@ -1100,7 +1119,7 @@ void main() {
   col += alb * pow(1.0 - NdV, 3.0) * 0.4 * (uSky + 0.25 * uKeyC) * ao;
   col *= mix(1.0, 0.8, smoothstep(0.86, 1.0, abs(x))) * (1.0 - 0.55 * vOv);
   col += (alb * 1.4 + 0.22) * vGlow;
-  o = vec4(srgb(knee(col)) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+  o = vec4(srgb(tone(col)) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
 const SP_VS = `#version 300 es
 layout(location = 0) in vec4 aP;
@@ -1116,7 +1135,7 @@ void main() {
   vC = aC;
   vRing = step(aP.w, 0.0);
 }`;
-// A spark is a soft dot with a four-point glint; the ring is a thin halo.
+// A spark is a soft dot with a four-point glint.
 const SP_FS = `#version 300 es
 precision highp float;
 in vec4 vC;
@@ -1246,7 +1265,7 @@ function fit() {
   if (ready && visible) render();
 }
 
-// The flick's wave is drawn over the physics: a bulge and one full turn.
+// The drawn wave adds a bulge and one full turn.
 function pack() {
   for (let i = 0; i < NV; i++) {
     const o = i * 3, p = i * 4, q = (NV + i) * 4;
@@ -1350,7 +1369,7 @@ function frame(now) {
   const busy = step(dt);
   render();
   if (++drawn === 2) canvas.classList.add('on');
-  // Reduced motion stills the wind, so the loop rests once the silk settles.
+  // Reduced motion stills the wind, so the loop rests when calm.
   if (!reduce || busy || drawn < 3) raf = requestAnimationFrame(frame);
   else rest();
 }
@@ -1363,7 +1382,10 @@ function sync() {
   else {
     cancelAnimationFrame(raf);
     raf = 0;
-    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+    if (ac && ac.state === 'running') {
+      hush();
+      ac.suspend()?.catch(() => {});
+    }
   }
 }
 
@@ -1463,7 +1485,7 @@ function setPal(name) {
   bgTo = bgOf(PALS[name]);
   palName = name;
   chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.pal === name)));
-  // The old colours move down two rows; the new ones flow in from the stick.
+  // Old colours move down; new ones flow in from the stick.
   PALD.copyWithin(GN * 2 * 4, 0, GN * 2 * 4);
   bake(PALS[name], 0);
   uploadPal();
@@ -1480,7 +1502,10 @@ sndB.addEventListener('click', () => {
   showSound();
   try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
   if (soundOn) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
+  else if (ac) {
+    hush();
+    ac.suspend()?.catch(() => {});
+  }
 });
 
 /* ---------- start: shaders link while the ribbon settles ---------- */
@@ -1508,8 +1533,11 @@ async function boot() {
   gate.catch(() => {});
   await idle();
   seed();
-  // A few seconds of drifting have already run.
-  for (let k = 0; k < 180; k++) step(1 / 60);
+  // Two seconds of drifting run in idle slices before the first frame.
+  for (let c = 0; c < 4; c++) {
+    for (let k = 0; k < 30; k++) step(1 / 60);
+    await idle();
+  }
   try { await gate; } catch (err) { console.error(err); failed(); return; }
   ready = true;
   new ResizeObserver(fit).observe(panel);
