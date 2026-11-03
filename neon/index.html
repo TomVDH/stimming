@@ -445,7 +445,8 @@ function relax(d, rho, step) {
   }
 }
 // Builds a tube's strip, clips and hit points from CSS-pixel control points.
-const FPV = 8;
+// The ninth float holds the blockout paint distance along the arc.
+const FPV = 9;
 function shape(ctrl, id) {
   const rp = R * pr, step = Math.max(1, 0.5 * rp);
   const d = resample(catmull(ctrl.map(([x, y]) => [x * pr, y * pr]), step * 0.5), step);
@@ -464,7 +465,7 @@ function shape(ctrl, id) {
   const put = (x, y, tx, ty, al) => {
     for (const s of [E, -E]) {
       v[o++] = x - ty * s * rp; v[o++] = y + tx * s * rp; v[o++] = s; v[o++] = al;
-      v[o++] = tx; v[o++] = ty; v[o++] = id; v[o++] = L;
+      v[o++] = tx; v[o++] = ty; v[o++] = id; v[o++] = L; v[o++] = -1e4;
     }
   };
   const ta = tan(0), tb = tan(n - 1), ex = 1.4 * rp;
@@ -486,7 +487,69 @@ function shape(ctrl, id) {
   for (let i = 0; i < d.length; i++) hit[i] = d[i] / pr;
   let cx = 0;
   for (let i = 0; i < n; i++) cx += d[2 * i];
-  return { v, c, hit, len: L / pr, pan: (cx / n / pr / W) * 2 - 1 };
+  return { v, c, hit, arc, len: L / pr, pan: (cx / n / pr / W) * 2 - 1 };
+}
+// Where tubes cross, the lower glass takes black paint.
+// A later tube, or a later run of one tube, lies on top.
+function blockout() {
+  const G = 2 * R, rp = R * pr, cells = new Map(), spans = tubes.map(() => []);
+  const key = (x, y) => (Math.floor(x / G) + 2048) * 8192 + Math.floor(y / G) + 2048;
+  // Each segment goes into every grid cell its box touches.
+  tubes.forEach((t, a) => {
+    const h = t.hit;
+    for (let i = 0; i + 3 < h.length; i += 2) {
+      const x0 = Math.min(h[i], h[i + 2]), x1 = Math.max(h[i], h[i + 2]);
+      const y0 = Math.min(h[i + 1], h[i + 3]), y1 = Math.max(h[i + 1], h[i + 3]);
+      for (let x = Math.floor(x0 / G); x <= Math.floor(x1 / G); x++) {
+        for (let y = Math.floor(y0 / G); y <= Math.floor(y1 / G); y++) {
+          const k = key(x * G, y * G);
+          let list = cells.get(k);
+          if (!list) cells.set(k, (list = []));
+          list.push(a, i);
+        }
+      }
+    }
+  });
+  // Lists keep tube order, so the first entry of a pair lies under.
+  for (const [k, list] of cells) {
+    for (let m = 0; m < list.length; m += 2) {
+      for (let q = m + 2; q < list.length; q += 2) {
+        const A = tubes[list[m]], B = tubes[list[q]], i = list[m + 1], j = list[q + 1];
+        // Neighbour segments on one tube touch but do not cross.
+        if (A === B && Math.abs(A.arc[i / 2] - A.arc[j / 2]) < 4 * rp) continue;
+        const ha = A.hit, hb = B.hit;
+        const rx = ha[i + 2] - ha[i], ry = ha[i + 3] - ha[i + 1], sx = hb[j + 2] - hb[j], sy = hb[j + 3] - hb[j + 1];
+        const den = rx * sy - ry * sx;
+        if (!den) continue;
+        const qx = hb[j] - ha[i], qy = hb[j + 1] - ha[i + 1];
+        const t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
+        if (t < 0 || t >= 1 || u < 0 || u >= 1) continue;
+        // Only the cell that holds the crossing counts it.
+        if (key(ha[i] + rx * t, ha[i + 1] + ry * t) !== k) continue;
+        // A shallow crossing hides a longer run of the lower tube.
+        const sin = Math.abs(den) / (Math.hypot(rx, ry) * Math.hypot(sx, sy));
+        const c = A.arc[i / 2] + (A.arc[i / 2 + 1] - A.arc[i / 2]) * t, half = rp * (1 / Math.max(sin, 0.35) + 1.1);
+        spans[list[m]].push([c - half, c + half]);
+      }
+    }
+  }
+  tubes.forEach((t, a) => paintSpans(t.v, spans[a]));
+}
+// Each vertex gets its signed arc distance into the nearest paint span.
+function paintSpans(v, spans) {
+  spans.sort((p, q) => p[0] - q[0]);
+  const m = [];
+  for (const s of spans) {
+    const l = m[m.length - 1];
+    if (l && s[0] <= l[1]) l[1] = Math.max(l[1], s[1]);
+    else m.push([s[0], s[1]]);
+  }
+  for (let o = 0; o < v.length; o += FPV) {
+    const a = v[o + 3];
+    let d = -1e4;
+    for (const [s, e] of m) d = Math.max(d, Math.min(a - s, e - a));
+    v[o + 8] = d;
+  }
 }
 const toCss = ([u, v]) => [W / 2 + u * S, H / 2 + v * S];
 function makeTube(ctrlUnits, gas, on) {
@@ -954,13 +1017,16 @@ void main() { o = vec4(finish(wallAt(gl_FragCoord.xy), gl_FragCoord.xy), 1.0); }
 const TUBE_VS = `#version 300 es
 layout(location = 0) in vec4 aA;
 layout(location = 1) in vec4 aB;
+layout(location = 2) in float aP;
 uniform vec2 uView;
 out vec2 vSA;
 out vec2 vT;
+out float vP;
 flat out int vId;
 flat out float vLen;
 void main() {
   vSA = aA.zw;
+  vP = aP;
   vT = aB.xy;
   vId = int(aB.z + 0.5);
   vLen = aB.w;
@@ -975,6 +1041,7 @@ uniform vec4 uGas[${MAXT}];
 uniform float uR, uRpx, uMode, uEmK;
 in vec2 vSA;
 in vec2 vT;
+in float vP;
 flat in int vId;
 flat in float vLen;
 out vec4 o;
@@ -992,6 +1059,9 @@ void main() {
   vec4 gas = uGas[vId];
   // Gas glows past a short dark space beyond each sleeve.
   float act = gas.w * smoothstep(cap1, cap1 + 1.6 * ck, e);
+  // Blockout paint stops the light at a hard cut.
+  float paint = sleeve ? 0.0 : clamp(vP + 0.5, 0.0, 1.0);
+  act *= 1.0 - paint;
   const float inner = 0.84;
   float chord = sqrt(max(0.0, inner * inner - s * s)) / inner;
   // Bright gas clips to a hot core with a little white.
@@ -1023,6 +1093,9 @@ void main() {
     col += smoothstep(0.05, 0.0, abs(rr - inner)) * (env * 0.25 + uKey * 0.05);
     // An electrode wire shows through the clear tip.
     if (e < cap0 && e > -0.6 && abs(s) < 0.3) col = mix(col, metal(normalize(vec3(pp * s * 2.0, 0.8)), uv, 0.25), 0.75);
+    // Black enamel keeps only the sheen of the glass.
+    vec3 enamel = vec3(0.004) + uAmb * 0.04 * max(dot(N, uLamb), 0.0) + F * env * 0.7 + uKey * k1 * 0.9;
+    col = mix(col, enamel, paint);
     col += em + gas.rgb * act * uEmK * 0.3 * band;
   }
   o = vec4(finish(col, fc), cov);
@@ -1226,6 +1299,8 @@ async function initGL() {
     gl.vertexAttribPointer(0, 4, gl.FLOAT, false, FPV * 4, 0);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribPointer(1, 4, gl.FLOAT, false, FPV * 4, 16);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, FPV * 4, 32);
     return vao;
   };
   const inst = buf => {
@@ -1267,6 +1342,7 @@ function upload(buf, data, cap) {
 }
 function rebuildStatic() {
   staticDirty = false;
+  blockout();
   let nv = 0, nc = 0;
   for (const t of tubes) { nv += t.v.length; nc += t.c.length; }
   const vv = new Float32Array(nv), cc = new Float32Array(nc);
