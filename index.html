@@ -69,6 +69,13 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .obj { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
 .obj svg { width: 70%; height: 70%; overflow: visible; }
 .name { font-size: 15px; letter-spacing: -0.01em; }
+/* Signed-off toys sit apart up top, each name ticked. */
+main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); border-bottom: 1px solid oklch(0.3 0.015 275); }
+.shelf--done .name::after {
+  content: ""; display: inline-block; width: 0.8em; height: 0.8em; margin-left: 0.4em; vertical-align: -0.05em;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3.5 12.5l5.5 5.5L20.5 6' fill='none' stroke='%23000' stroke-width='4' stroke-linecap='square'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 .toy:not(a) .name { color: var(--muted); }
 .sketch { fill: none; stroke: var(--sketch); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Planned toys draw as outlines until they ship. */
@@ -286,7 +293,7 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
   <h1 class="title" id="title"><span class="sr">Stimming</span><span aria-hidden="true"><span class="l" style="--c: oklch(0.8 0.15 62); --w: 800">S</span><span class="l" style="--c: oklch(0.72 0.2 318); --w: 500">t</span><span class="l" style="--c: oklch(0.8 0.12 195); --w: 900">i</span><span class="l" style="--c: oklch(0.7 0.19 32); --w: 600">m</span><span class="l" style="--c: oklch(0.72 0.14 255); --w: 700">m</span><span class="l" style="--c: oklch(0.82 0.11 345); --w: 400">i</span><span class="l" style="--c: oklch(0.86 0.15 100); --w: 800">n</span><span class="l" style="--c: oklch(0.78 0.16 150); --w: 600">g</span></span></h1>
   <main>
     <ul class="shelf" aria-label="Toys">
-      <li>
+      <li data-done>
         <a class="toy" id="morpher" href="morpher/index.html">
           <span class="obj">
             <svg class="flat" viewBox="0 0 128 128" aria-hidden="true">
@@ -583,10 +590,18 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     </ul>
     <script>
       // The main shelf deals its toys in a fresh order on every load.
+      // Toys Tom signed off (data-done) sit apart on their own shelf up top.
       (() => {
         const shelf = document.querySelector('main > .shelf'), items = [...shelf.children];
         for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-        shelf.append(...items);
+        const done = items.filter(li => li.hasAttribute('data-done'));
+        shelf.append(...items.filter(li => !done.includes(li)));
+        if (!done.length) return;
+        const top = document.createElement('ul');
+        top.className = 'shelf shelf--done';
+        top.setAttribute('aria-label', 'Signed off');
+        top.append(...done);
+        shelf.before(top);
       })();
     </script>
     <details class="lab">
