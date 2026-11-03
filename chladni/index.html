@@ -35,6 +35,8 @@
   position: absolute; z-index: 1; margin: 0; pointer-events: none;
   font: 500 12px/1 ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
   color: var(--muted); transition: color 0.3s ease;
+  /* The second line names the mode pair. */
+  white-space: pre; text-align: right; line-height: 1.5;
 }
 .hz.on { color: var(--fg); }
 @media (prefers-reduced-motion: reduce) { .stage canvas, .hz { transition: none; } }
@@ -48,7 +50,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A coloured steel plate covered in sand, seen at an angle: drag up or down, or slide the cap on the right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, Space spreads the sand again, Enter tosses it and C changes the finish.">
+    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A coloured steel plate covered in sand, seen at an angle: drag up or down, or slide the cap on the right edge, to tune it, drag the centre bolt to move the drive point, and tap to toss sand. Arrow keys step between patterns, Space spreads the sand again, Enter tosses it and C changes the finish.">
       <canvas aria-hidden="true"></canvas>
       <p class="hz" aria-hidden="true"></p>
       <p class="fail" hidden>Chladni plate needs WebGL 2 with float textures, which this browser lacks.</p>
@@ -64,9 +66,9 @@
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag up or down</dt><dd>tune</dd></div>
+        <div><dt>Drag the bolt</dt><dd>morph</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>toss sand</dd></div>
         <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>next pattern</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>reset sand</dd></div>
       </dl>
     </div>
   </main>
@@ -183,10 +185,11 @@ const STAGE = { uStage: linear(0.17, 0.012, 262), uSlot: linear(0.11, 0.01, 262)
 
 /* ---------- the mode ladder ---------- */
 // Each rung: n, m, the sign between the terms, a MIDI note.
+// The sign sets the figure where both terms vanish at the bolt.
 // The notes walk a D minor pentatonic scale.
 const LADDER = [
   [1, 2, 1, 50], [2, 3, -1, 53], [2, 4, 1, 55], [3, 4, -1, 57], [2, 5, -1, 60], [3, 5, 1, 62], [2, 6, 1, 65],
-  [3, 6, -1, 67], [4, 6, 1, 69], [4, 7, -1, 72], [5, 7, 1, 74], [4, 8, -1, 77], [6, 8, 1, 79],
+  [3, 6, -1, 67], [4, 6, 1, 69], [4, 7, -1, 72], [5, 7, 1, 74], [4, 8, 1, 77], [6, 8, 1, 79],
 ];
 const K = LADDER.length, START = 2, WIDTH = 0.42, DETENT = 0.8, SMIN = -0.45, SMAX = K - 0.55;
 const kOf = i => Math.PI * Math.sqrt((LADDER[i][0] ** 2 + LADDER[i][1] ** 2) / 2);
@@ -425,20 +428,21 @@ uvec3 pcg3(uvec3 v) {
   return v;
 }
 vec3 rnd3(uvec3 v) { return vec3(pcg3(v)) * (1.0 / 4294967296.0); }`;
-// The plate's shape: two modes blended by their response.
-// Each mode holds n, m, the sign and the weight.
+// The plate's shape: two degenerate pairs blended by their response.
+// Each pair holds n, m and the weights of (n, m) and (m, n).
+// The drive point sets those weights, so the bolt picks the figure.
 const FIELD = `
 uniform vec4 uM0, uM1;
 uniform float uAmp, uK;
 vec3 phi(vec4 M, vec2 p) {
   vec2 a = M.x * 3.14159265 * p, b = M.y * 3.14159265 * p;
   vec2 ca = cos(a), sa = sin(a), cb = cos(b), sb = sin(b);
-  float u = ca.x * cb.y + M.z * cb.x * ca.y;
-  float gx = -M.x * sa.x * cb.y - M.z * M.y * sb.x * ca.y;
-  float gy = -M.y * ca.x * sb.y - M.z * M.x * cb.x * sa.y;
+  float u = M.z * ca.x * cb.y + M.w * cb.x * ca.y;
+  float gx = -M.z * M.x * sa.x * cb.y - M.w * M.y * sb.x * ca.y;
+  float gy = -M.z * M.y * ca.x * sb.y - M.w * M.x * cb.x * sa.y;
   return 0.5 * vec3(u, 3.14159265 * gx, 3.14159265 * gy);
 }
-vec3 field(vec2 p) { return uM0.w * phi(uM0, p) + uM1.w * phi(uM1, p); }`;
+vec3 field(vec2 p) { return phi(uM0, p) + phi(uM1, p); }`;
 const SIM_FS = `#version 300 es
 precision highp float;
 precision highp int;
@@ -447,6 +451,7 @@ uniform sampler2D uA, uB;
 uniform uint uFrame;
 uniform float uDt, uG, uTh, uHop, uKick, uDrift, uCreep, uSpread, uScatter, uFallH;
 uniform vec4 uToss;
+uniform vec3 uBolt;
 ${FIELD}
 ${HASH}
 layout(location = 0) out vec4 oA;
@@ -508,6 +513,14 @@ void main() {
   // A steady restlessness gives the lines their width.
   vec3 r3 = rnd3(uvec3(uvec2(ip) + 31u, uFrame + 101u));
   p += (r3.xy - 0.5) * 2.0 * uAmp * uSpread * sqrt(10.0 / k) * sqrt(uDt);
+  // The bolt's washer pushes low grains aside, so a dragged bolt ploughs.
+  vec2 bd = p - uBolt.xy;
+  float bl = length(bd);
+  if (h < 0.01 && bl < uBolt.z) {
+    vec2 bdir = bl > 1e-4 ? bd / bl : vec2(cos(6.2831853 * r3.z), sin(6.2831853 * r3.z));
+    p = uBolt.xy + bdir * uBolt.z;
+    v *= 0.5;
+  }
   if (p.x < LIM) { p.x = 2.0 * LIM - p.x; v.x = abs(v.x) * 0.4; }
   if (p.x > 1.0 - LIM) { p.x = 2.0 * (1.0 - LIM) - p.x; v.x = -abs(v.x) * 0.4; }
   if (p.y < LIM) { p.y = 2.0 * LIM - p.y; v.y = abs(v.y) * 0.4; }
@@ -631,7 +644,7 @@ precision highp sampler2D;
 uniform sampler2D uHdr, uG0;
 uniform mat4 uInv;
 uniform vec3 uEye;
-uniform vec2 uRes, uRung, uCap;
+uniform vec2 uRes, uRung, uCap, uBoltP;
 uniform vec4 uRail;
 uniform float uTick[${K}];
 uniform float uFront, uPadK, uPr, uCovK;
@@ -682,8 +695,9 @@ void main() {
     texture(uG0, tc + vec2(0.0, e)).r - texture(uG0, tc - vec2(0.0, e)).r);
   float lit = dot(normalize(vec3(-gr * 0.08, 1.0)), vec3(-0.45, 0.55, 0.7)) / 0.7;
   top = mix(top, sand * clamp(mix(1.0, lit, 0.45), 0.8, 1.15), body);
-  // The centre bolt: a washer, a hex nut and the stud's end.
-  vec2 c = uv - 0.5;
+  // The bolt: a washer, a hex nut and the stud's end.
+  // It sits at the drive point.
+  vec2 c = uv - uBoltP;
   float cw = fwidth(c.x) + fwidth(c.y), r = length(c);
   vec2 hq = abs(mat2(0.866, -0.5, 0.5, 0.866) * c);
   float hx = max(hq.x * 0.8660254 + hq.y * 0.5, hq.y);
@@ -834,18 +848,30 @@ function ensureHdr() {
 // D is the drive, from zero to one.
 let s = START, sT = START, D = 0, holdUntil = 0, settleUntil = 0, frameNo = 1;
 let formed = 1, domK = START, gripping = false, gripSpeed = 0, freq = 196, near = 1;
-let tossQ = null, scatterQ = false;
+let tossQ = null, scatterQ = false, bolting = false;
 let hue = 'steel', hueWas = 'steel', wave = 1;
-const F = { m0: [2, 4, 1, 1], m1: [3, 4, -1, 0], amp: 0, k: kOf(START) };
+const F = { m0: [2, 4, 1, 1], m1: [3, 4, 0, 0], amp: 0, k: kOf(START) };
 const TICKS = new Float32Array(K);
+// The bolt is the drive point, in plate units.
+const BOLT_R = 0.052, BOLT_LIM = 0.075;
+const DRV = { x: 0.5, y: 0.5 };
+// A small bias keeps the rung's figure where both terms vanish.
+const BIAS = 0.1;
+// Each term rings in proportion to its shape at the bolt.
+function pairOf(k, w) {
+  const [n, m, sg] = LADDER[k], cx = Math.PI * DRV.x, cy = Math.PI * DRV.y;
+  const a = Math.cos(n * cx) * Math.cos(m * cy) + BIAS, b = Math.cos(m * cx) * Math.cos(n * cy) + BIAS * sg;
+  const g = (Math.SQRT2 * w) / (Math.hypot(a, b) || 1);
+  return [n, m, a * g, b * g];
+}
 function tune() {
   const st = semis(s), k0 = clamp(Math.floor(s), 0, K - 2), k1 = k0 + 1;
   const r0 = resp(st, k0), r1 = resp(st, k1), sum = r0 + r1 + 1e-6;
-  F.m0 = [...LADDER[k0].slice(0, 3), r0 / sum];
-  F.m1 = [...LADDER[k1].slice(0, 3), r1 / sum];
+  F.m0 = pairOf(k0, r0 / sum);
+  F.m1 = pairOf(k1, r1 / sum);
   F.k = (r0 * kOf(k0) + r1 * kOf(k1)) / sum;
   near = Math.min(1, Math.max(r0, r1));
-  F.amp = D * Math.min(1, sum) ** 1.3 * (gripping ? 1 : 0.94);
+  F.amp = D * Math.min(1, sum) ** 1.3 * (gripping || bolting ? 1 : 0.94);
   freq = 440 * 2 ** ((st - 69) / 12);
   const dom = r0 >= r1 ? k0 : k1;
   if (dom !== domK) { domK = dom; formed *= 0.35; }
@@ -867,6 +893,7 @@ function simStep(dt, fallH = -1) {
   gl.uniform1f(q.u.uScatter, fallH >= 0 ? 1 : 0);
   gl.uniform1f(q.u.uFallH, Math.max(0, fallH));
   gl.uniform4fv(q.u.uToss, tossQ || [0, 0, 0, 1]);
+  gl.uniform3f(q.u.uBolt, DRV.x, DRV.y, BOLT_R + 0.004);
   tossQ = null;
   gl.bindFramebuffer(gl.FRAMEBUFFER, sim[1 - cur].fb);
   gl.viewport(0, 0, TW, TH);
@@ -903,7 +930,7 @@ function barInset() {
 let W = 0, H = 0, pr = 1, cw = 0, ch = 0, lowDpr = false, drawN = N;
 let VP = null, INV = null, EYE = [0, -2, 2], refW = 1, plateA = 1;
 // The rail in CSS pixels, y down.
-const L = { railX: 0, y0: 0, y1: 0 };
+const L = { railX: 0, y0: 0, y1: 0, plateW: 400 };
 // World to device pixels, y up.
 function toDevice(p) {
   const c = xf(VP, p);
@@ -936,6 +963,7 @@ function camera() {
   const c4 = pts.slice(0, 4).map(toDevice);
   plateA = Math.abs(c4.reduce((s, c, i) => { const d = c4[(i + 1) % 4]; return s + c[0] * d[1] - d[0] * c[1]; }, 0)) / 2;
   const l = toDevice([-0.5, 0, 0]), r = toDevice([0.5, 0, 0]), plateW = Math.hypot(r[0] - l[0], r[1] - l[1]) / pr;
+  L.plateW = plateW;
   // Small plates draw only a share of the grains.
   drawN = Math.round(N * clamp((plateW / 520) ** 2, 0.45, 1) * (lowDpr ? 0.7 : 1));
 }
@@ -950,6 +978,11 @@ function toPlate(x, y) {
   return [p0[0] + d[0] * t + 0.5, p0[1] + d[1] * t + 0.5];
 }
 const onRail = (x, y) => Math.abs(x - L.railX) < 24 && y > L.y0 - 18 && y < L.y1 + 18;
+// A press on the washer, plus finger slack, takes the bolt.
+function onBolt(x, y) {
+  const [u, v] = toPlate(x, y);
+  return Math.hypot(u - DRV.x, v - DRV.y) < BOLT_R + 16 / Math.max(L.plateW, 1);
+}
 
 /* ---------- drawing ---------- */
 function blurTo(src, dst, dx, dy) {
@@ -1024,6 +1057,7 @@ function render() {
   gl.uniform4f(u.uRail, L.railX * pr, (H - L.y1) * pr, (H - L.y0) * pr, (H - railY(s)) * pr);
   gl.uniform2f(u.uRung, (H - railY(0)) * pr, rungDY);
   gl.uniform2f(u.uCap, gripping ? 1 : 0, D);
+  gl.uniform2f(u.uBoltP, DRV.x, DRV.y);
   gl.uniform3fv(u.uCapC, A.cap.map((v, i) => lerp(v, B.cap[i], wave)));
   gl.uniform1fv(u.uTick, TICKS);
   gl.uniform1f(u.uFront, fr);
@@ -1036,11 +1070,12 @@ function render() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   readout();
 }
-// The live pitch, redrawn only when it changes.
+// The live pitch and mode pair, redrawn only when they change.
 const hzEl = panel.querySelector('.hz');
 let hzText = '', hzOn = null, hzPos = '';
 function readout() {
-  const t = `${Math.round(freq)} Hz`, on = D > 0.05 || gripping, pos = `${Math.max(6, L.y0 - 24)}|${Math.max(6, W - L.railX - 10)}`;
+  const [n, m] = LADDER[domK], t = `${Math.round(freq)} Hz\n${n}\u00b7${m}`;
+  const on = D > 0.05 || gripping, pos = `${Math.max(6, L.y0 - 40)}|${Math.max(6, W - L.railX - 10)}`;
   if (t !== hzText) { hzText = t; hzEl.textContent = t; }
   if (on !== hzOn) { hzOn = on; hzEl.classList.toggle('on', on); }
   if (pos !== hzPos) {
@@ -1093,8 +1128,9 @@ function frame(now) {
   }
 }
 function advance(dt, now) {
-  const tuning = !!(tuner && (tuner.moved || tuner.grip));
-  const driving = tuning || now < holdUntil;
+  const tuning = !!(tuner && !tuner.bolt && (tuner.moved || tuner.grip));
+  // A held bolt drives the plate.
+  const driving = tuning || bolting || now < holdUntil;
   if (!tuning) s += (sT - s) * (1 - Math.exp(-dt * 8));
   if (Math.abs(sT - s) < 1e-3) s = sT;
   const goal = driving ? 1 : 0;
@@ -1112,9 +1148,11 @@ function advance(dt, now) {
   gripSpeed *= Math.exp(-dt * 6);
   const lvl = sound.on ? 0.22 * D * (0.16 + 0.84 * near ** 1.5) : 0;
   const hiss = sound.on ? 0.11 * Math.min(1, F.amp * 1.3) * (0.2 + 0.8 * (1 - formed)) : 0;
-  const rosin = sound.on && gripping ? 0.03 * D * Math.min(1, gripSpeed / 700) : 0;
+  // A moving grip rasps; a dragged bolt grinds a little quieter.
+  const rasp = gripping ? 0.03 : bolting ? 0.02 : 0;
+  const rosin = sound.on && rasp ? rasp * D * Math.min(1, gripSpeed / 700) : 0;
   sing(freq, lvl, gripping ? 0.42 : 0.14, gripping ? 6 : 1.5, rosin, hiss);
-  return tuning || D > 0 || s !== sT || now < settleUntil || scatterQ || !!tossQ || wave < 1;
+  return tuning || bolting || D > 0 || s !== sT || now < settleUntil || scatterQ || !!tossQ || wave < 1;
 }
 
 /* ---------- actions ---------- */
@@ -1123,7 +1161,9 @@ function stepRung(dir) {
   holdUntil = performance.now() + (reduce ? 2600 : 4000);
   wake();
 }
+// Reset spreads fresh sand and sends the bolt back to the centre.
 function scatter() {
+  DRV.x = DRV.y = 0.5;
   scatterQ = true;
   formed = 0;
   settleUntil = performance.now() + 2200;
@@ -1159,21 +1199,35 @@ function local(e) {
 const ptrs = new Map();
 function cursor(grip) {
   panel.classList.toggle('grip', grip);
-  panel.classList.toggle('gripping', !!(tuner && tuner.grip));
+  panel.classList.toggle('gripping', !!(tuner && (tuner.grip || tuner.bolt)));
+}
+// The bolt stays on the plate, its washer inside the rim.
+function placeBolt(u, v) {
+  DRV.x = clamp(u, BOLT_LIM, 1 - BOLT_LIM);
+  DRV.y = clamp(v, BOLT_LIM, 1 - BOLT_LIM);
 }
 panel.addEventListener('pointerdown', e => {
   if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
   const [x, y] = local(e);
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  const p = { x0: x, y0: y, y, t0: e.timeStamp, t: e.timeStamp, grip: onRail(x, y), moved: false, off: 0 };
+  const grip = onRail(x, y), bolt = !grip && onBolt(x, y);
+  const p = { x0: x, y0: y, x, y, t0: e.timeStamp, t: e.timeStamp, grip, bolt, moved: false, off: 0, bo: [0, 0] };
   // A grab near the dot keeps its offset, so the dot does not jump.
   if (p.grip && Math.abs(y - railY(s)) < 22) p.off = y - railY(s);
+  // A grab on the bolt keeps its offset too.
+  if (p.bolt) {
+    const [u, v] = toPlate(x, y);
+    p.bo = [u - DRV.x, v - DRV.y];
+  }
   ptrs.set(e.pointerId, p);
   if (!tuner) {
     tuner = p;
     gripping = p.grip;
+    bolting = p.bolt;
+    // A held bolt rings the nearest resonance.
+    if (p.bolt) sT = clamp(Math.round(s), 0, K - 1);
   }
-  cursor(p.grip);
+  cursor(p.grip || p.bolt);
   wake();
 });
 panel.addEventListener('pointermove', e => {
@@ -1181,17 +1235,24 @@ panel.addEventListener('pointermove', e => {
   if (!p) {
     if (e.pointerType === 'mouse' && ready && !ptrs.size) {
       const [x, y] = local(e);
-      cursor(onRail(x, y));
+      cursor(onRail(x, y) || onBolt(x, y));
     }
     return;
   }
   const list = e.getCoalescedEvents?.() || [];
   for (const c of list.length ? list : [e]) {
-    const [x, y] = local(c), dy = y - p.y;
+    const [x, y] = local(c), dx = x - p.x, dy = y - p.y;
+    p.x = x;
     p.y = y;
-    if (!p.moved && Math.hypot(x - p.x0, y - p.y0) > 6) p.moved = true;
+    if (!p.moved && Math.hypot(x - p.x0, y - p.y0) > (p.bolt ? 3 : 6)) p.moved = true;
     if (p !== tuner || !p.moved) continue;
-    if (p.grip) {
+    if (p.bolt) {
+      // The bolt follows the finger, and the figure follows the bolt.
+      const [u, v] = toPlate(x, y);
+      placeBolt(u - p.bo[0], v - p.bo[1]);
+      gripSpeed = lerp(gripSpeed, Math.hypot(dx, dy) / Math.max(4, c.timeStamp - p.t) * 1000, 0.3);
+      settleUntil = Math.max(settleUntil, performance.now() + 1500);
+    } else if (p.grip) {
       // The dot follows the finger along the rail.
       s = sT = clamp(railS(y - p.off), SMIN, SMAX);
       gripSpeed = lerp(gripSpeed, Math.abs(dy) / Math.max(4, c.timeStamp - p.t) * 1000, 0.3);
@@ -1212,14 +1273,18 @@ function lift(e) {
     // A tap on the rail glides to the nearest resonance and rings it.
     sT = clamp(Math.round(railS(p.y0 - p.off)), 0, K - 1);
     holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 2600 : 4000));
+  } else if (tap && p.bolt) {
+    // A tap on the bolt strikes it, and the plate rings.
+    holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 2600 : 4000));
   } else if (tap) {
     const [u, v] = toPlate(p.x0, p.y0);
     if (u > -0.06 && u < 1.06 && v > -0.06 && v < 1.06) toss(clamp(u, 0.01, 0.99), clamp(v, 0.01, 0.99));
   }
   if (p === tuner) {
-    if (p.moved || p.grip) holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 600 : 1400));
+    if (p.moved || p.grip || p.bolt) holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 600 : 1400));
     tuner = null;
     gripping = false;
+    bolting = false;
   }
   cursor(false);
   wake();
@@ -1296,6 +1361,23 @@ async function boot() {
   if (bar) ro.observe(bar);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); else pause(); }).observe(panel);
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else wake(); });
+  await introGone();
+  ringOpen();
+}
+// The intro covers the stage; the plate waits until it leaves.
+function introGone() {
+  const el = document.querySelector('.intro');
+  if (!el || !el.isConnected) return Promise.resolve();
+  return new Promise(r => {
+    const mo = new MutationObserver(() => { if (!el.isConnected) { mo.disconnect(); r(); } });
+    mo.observe(el.parentNode, { childList: true });
+  });
+}
+// The page opens on a ringing plate: the figure hums, then settles.
+function ringOpen() {
+  if (!ready || reduce || tuner) return;
+  holdUntil = Math.max(holdUntil, performance.now() + 2800);
+  wake();
 }
 if (document.readyState === 'complete') boot();
 else addEventListener('load', boot, { once: true });
