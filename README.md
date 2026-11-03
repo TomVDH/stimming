@@ -10,7 +10,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 |---|---|---|
 | Morpher | [morpher/](morpher/) | done; silent; renamed from Morphset |
 | Fidget board | [fidget/](fidget/) | live, with sound |
-| Pop field | [pop/](pop/) | three.js: per-pixel lit domes with a pointer light; `legacy.html` keeps the CPU-lit build |
+| Pop field | [pop/](pop/) | done; signed off by Tom. three.js: per-pixel lit domes, pointer light, shockwave ripple; `legacy.html` keeps the CPU-lit build |
 | Zen sand | [sand/](sand/) | live |
 | Fire | [fire/](fire/) | live, WebGPU only; port of the three.js volume fire example |
 | Slime | [slime/](slime/) | live, with sound |
