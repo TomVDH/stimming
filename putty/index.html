@@ -49,6 +49,18 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Heat putty</h1><div class="vignette" hidden></div></section>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
@@ -56,7 +68,7 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 <script type="module">
-import { initPage, audioKit, choices, whenVisible, reduced, fitCanvas, oklchLinear } from '../shared/stim.js';
+import { initPage, audioKit, choices, whenVisible, reduced, fitCanvas, linFit } from '../shared/stim.js';
 initPage({ id: 'putty' });
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
@@ -314,16 +326,10 @@ const PUTTY = [
   { cold: [0.48, 0.1, 210], hot: [0.9, 0.19, 115], hue: 215 },
   { cold: [0.22, 0.012, 280], hot: [0.74, 0.17, 55], hue: 280 },
 ];
-// Chroma shrinks until the colour fits linear sRGB.
-function lin([L, C, h]) {
-  let c = C, v = oklchLinear(L, c, h);
-  while (c > 0 && v.some(x => x < 0 || x > 1)) { c -= 0.005; v = oklchLinear(L, Math.max(c, 0), h); }
-  return v.map(x => Math.min(1, Math.max(0, x)));
-}
 let pal = null;
 function setPutty(i) {
   const P = PUTTY[i];
-  pal = { cold: lin(P.cold), hot: lin(P.hot), table: lin([0.19, 0.035, P.hue]), shade: lin([0.125, 0.03, P.hue]) };
+  pal = { cold: linFit(P.cold), hot: linFit(P.hot), table: linFit([0.19, 0.035, P.hue]), shade: linFit([0.125, 0.03, P.hue]) };
   // The stage behind the canvas takes the same table colour.
   stage.style.setProperty('--stage', `oklch(0.19 0.035 ${P.hue})`);
 }
@@ -458,47 +464,54 @@ function render() {
 }
 
 /* ---------- sound ---------- */
-const kit = audioKit({ gain: 0.45 });
+// Tone runs on the kit's context and output, so mute and sleep still hold.
+const kit = audioKit({ gain: 0.45, noiseSeconds: 0 });
+let V = null, T = null, toneLoad = null;
+// The first live call starts the load; voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
+  });
+  return null;
+}
+function buildVoices() {
+  // A press gives a short noise burst through a resonant low pass.
+  const sqf = new T.Filter({ type: 'lowpass', Q: 6, frequency: 300 }).connect(kit.out);
+  const sq = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.05, decay: 0.22, sustain: 0, release: 0.02 }, volume: -9 }).connect(sqf);
+  // The handprint gives a slower, darker squelch over a soft thump.
+  const slf = new T.Filter({ type: 'lowpass', Q: 9, frequency: 900 }).connect(kit.out);
+  const sl = new T.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.08, decay: 0.5, sustain: 0, release: 0.05 }, volume: -6 }).connect(slf);
+  const thump = new T.MembraneSynth({ pitchDecay: 0.3, octaves: 1, envelope: { attack: 0.02, decay: 0.33, sustain: 0, release: 0.05 }, volume: -10 }).connect(kit.out);
+  // The rub bed runs all the time at zero gain; drag speed opens it.
+  const rg = new T.Gain(0).connect(kit.out);
+  const rf = new T.Filter({ type: 'bandpass', Q: 1.4, frequency: 300 }).connect(rg);
+  new T.Noise('white').connect(rf).start();
+  return { sq, sqf, sl, slf, thump, rg, rf };
+}
 // A soft squish when the putty is pressed.
 function squish() {
-  const ac = kit.live(); if (!ac || !kit.noise) return;
-  const src = ac.createBufferSource(); src.buffer = kit.noise;
-  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 6;
-  const g = ac.createGain(), t = ac.currentTime;
-  f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(1400, t + 0.15);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-  src.connect(f); f.connect(g); g.connect(kit.out); src.start(t, Math.random() * 0.5, 0.3);
+  const v = voices(); if (!v) return;
+  const t = T.now();
+  v.sqf.frequency.cancelScheduledValues(t).setValueAtTime(300, t).exponentialRampToValueAtTime(1400, t + 0.15);
+  v.sq.triggerAttackRelease(0.28, t);
 }
 // The handprint gives a deep, slow squelch and a soft thump.
 function squelch() {
-  const ac = kit.live(); if (!ac || !kit.noise) return;
-  const t = ac.currentTime;
-  const src = ac.createBufferSource(); src.buffer = kit.noise;
-  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 9;
-  f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(160, t + 0.5);
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.45, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-  src.connect(f); f.connect(g); g.connect(kit.out); src.start(t, Math.random() * 0.3, 0.65);
-  const o = ac.createOscillator(), og = ac.createGain();
-  o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.3);
-  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.3, t + 0.02); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-  o.connect(og); og.connect(kit.out); o.start(t); o.stop(t + 0.4);
+  const v = voices(); if (!v) return;
+  const t = T.now();
+  v.slf.frequency.cancelScheduledValues(t).setValueAtTime(900, t).exponentialRampToValueAtTime(160, t + 0.5);
+  v.sl.triggerAttackRelease(0.6, t);
+  v.thump.triggerAttackRelease(55, 0.35, t);
 }
 // A rub bed of filtered noise follows the drag speed.
-let rub = null;
-function rubTo(v) {
-  if (!rub) {
-    if (v <= 0) return;
-    const ac = kit.live(); if (!ac || !kit.noise) return;
-    const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
-    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.4; f.frequency.value = 300;
-    const g = ac.createGain(); g.gain.value = 0;
-    src.connect(f); f.connect(g); g.connect(kit.out); src.start();
-    rub = { f, g };
-  }
-  const t = kit.ac.currentTime;
-  rub.g.gain.setTargetAtTime(v * 0.2, t, 0.05);
-  rub.f.frequency.setTargetAtTime(240 + v * 760, t, 0.08);
+function rubTo(s) {
+  const v = s > 0 ? voices() : V;
+  if (!v) return;
+  v.rg.gain.rampTo(s * 0.2, 0.05);
+  v.rf.frequency.rampTo(240 + s * 760, 0.08);
 }
 
 /* ---------- loop ---------- */
