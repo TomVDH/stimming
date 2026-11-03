@@ -30,7 +30,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Soap cutting | [soap/](soap/) | live, with sound |
 | Rain on glass | [rain/](rain/) | live, with sound |
 | Plasma globe | [plasma/](plasma/) | live, with sound |
-| Marbling | [marble/](marble/) | live draft, still being refined |
+| Marbling | [marble/](marble/) | live, with sound |
 | Caustic pool | [pool/](pool/) | live, with sound |
 | Lava lamp | [lava/](lava/) | live, with sound |
 | Kaleidoscope | [kaleido/](kaleido/) | live, with sound |

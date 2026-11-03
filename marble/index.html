@@ -336,6 +336,8 @@ function rustle(dur, amp, f) {
 /* ---------- the tray: units of tray height, y up ---------- */
 const MAXD = 8, MAXR = 6, MAXT = 4, MAXS = 6, JACOBI = 24;
 // A tap lays this much ink; holding adds more each second.
+// Tines grip the water loosely, so ink slips past and folds.
+const GRIP = 0.4;
 const TAP_R = 0.07, FLUX = 0.05, AMAX = PI * 0.36 * 0.36, SPREAD = 0.1, SETTLE = 2.2;
 let TA = 16 / 9;
 const drops = [], ripples = [], ghosts = [], strokes = [];
@@ -361,7 +363,7 @@ function stepDrops(dt) {
     d.prev = d.A;
     if (d.held) d.T = Math.min(AMAX, d.T + FLUX * dt);
     d.A += (d.T - d.A) * k;
-    if (!d.held && d.T - d.A < 2e-6) d.A = d.T;
+    if (!d.held && d.T - d.A < 0.005 * d.T) d.A = d.T;
   }
 }
 function stepRipples(dt) {
@@ -416,7 +418,7 @@ function strokeAt(s) {
 /* ---------- the print: paper down, soak, turn over, hold, lift ---------- */
 const PHASES = () => (reduce
   ? { down: 0.25, wet: 0.35, rest: 0.15, flip: 0.45, hold: 1.6, away: 0.3 }
-  : { down: 0.6, wet: 0.7, rest: 0.3, flip: 1.05, hold: 1.7, away: 0.7 });
+  : { down: 0.75, wet: 0.7, rest: 0.3, flip: 1.05, hold: 1.7, away: 0.7 });
 function startPrint() {
   if (!ready || sheet) return;
   const T = PHASES();
@@ -438,11 +440,13 @@ function stepSheet(dt) {
   if (!S) return;
   S.t += dt;
   const { T, at } = S, t = S.t;
-  S.c = 1; S.s = 0; S.wet = 0; S.op = 1; S.h = 0;
+  S.c = 1; S.s = 0; S.wet = 0; S.op = 1; S.h = 0; S.dx = 0;
   if (t < at.wet) {
     const u = t / T.down;
+    // The sheet glides in from the upper right as it comes down.
     S.h = reduce ? 0 : (1 - u) ** 2;
-    S.op = sstep(0, reduce ? 1 : 0.45, u);
+    S.dx = S.h;
+    S.op = sstep(0, reduce ? 1 : 0.7, u);
   } else if (!S.took) { S.took = true; takePrint(); }
   if (t >= at.wet) S.wet = sstep(0, 1, (t - at.wet) / T.wet);
   if (t >= at.flip && t < at.hold) {
@@ -460,6 +464,8 @@ function stepSheet(dt) {
     if (S.cue < 2) { S.cue = 2; rustle(0.5, 0.3, 1800); }
     S.h = reduce ? 0.1 : 0.1 + 0.9 * u * u;
     S.op = 1 - sstep(reduce ? 0 : 0.25, 1, u);
+    // A skim across the tray clears the ink the paper missed.
+    skim(lerp(-0.1, TA + 0.1, u));
   }
   if (t >= S.end) { sheet = null; chips(); }
 }
@@ -500,6 +506,16 @@ void main() {
   vec2 q = vUv * uMap.xy + uMap.zw;
   o = q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 ? vec4(0.0) : texture(uSrc, q);
 }`;
+// The paper lifts the ink it covers; a skim later clears the rest.
+const SKIM_FS = HEAD + `
+uniform sampler2D uSrc;
+uniform float uA, uSweep;
+void main() {
+  vec2 S = vec2(uA, 1.0), p = vUv * S, d = abs(p - 0.5 * S) - (0.5 * S - 0.045);
+  float under = 1.0 - smoothstep(-0.002, 0.002, max(d.x, d.y));
+  float swept = 1.0 - smoothstep(uSweep - 0.05, uSweep, p.x);
+  o = texture(uSrc, vUv) * (1.0 - max(under, swept));
+}`;
 // Styli and tines drag the water around them toward their own speed.
 const FORCE_FS = HEAD + `
 uniform sampler2D uVel;
@@ -525,7 +541,7 @@ void main() {
     float t = (fract(along / uCombB.x - uCombB.y) - 0.5) * uCombB.x;
     float m = mov - clamp(mov, min(uComb.y, uComb.z), max(uComb.y, uComb.z));
     float d = length(vec2(m, t)) / uCombB.w;
-    v = mix(v, ax ? vec2(uCombB.z, 0.0) : vec2(0.0, uCombB.z), uK * exp(-d * d));
+    v = mix(v, ax ? vec2(uCombB.z, 0.0) : vec2(0.0, uCombB.z), uK * uComb.w * exp(-d * d));
   }
   o = vec4(v, 0.0, 1.0);
 }`;
@@ -579,6 +595,26 @@ void main() {
   float B = texelFetch(uP, c - ivec2(0, 1), 0).x, T = texelFetch(uP, c + ivec2(0, 1), 0).x;
   o = vec4(texelFetch(uVel, c, 0).xy - 0.5 * vec2((R - L) / uH.x, (T - B) / uH.y), 0.0, 1.0);
 }`;
+const CUBIC = `
+// Catmull-Rom from nine bilinear taps: far less smear than one.
+vec4 cubic(sampler2D t, vec2 q) {
+  vec2 sz = vec2(textureSize(t, 0)), s = q / vec2(uA, 1.0) * sz, t1 = floor(s - 0.5) + 0.5, f = s - t1;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f), w12 = w1 + w2;
+  vec2 p0 = (t1 - 1.0) / sz, p3 = (t1 + 2.0) / sz, p12 = (t1 + w2 / w12) / sz;
+  return (texture(t, vec2(p0.x, p0.y)) * w0.x + texture(t, vec2(p12.x, p0.y)) * w12.x + texture(t, vec2(p3.x, p0.y)) * w3.x) * w0.y
+    + (texture(t, vec2(p0.x, p12.y)) * w0.x + texture(t, vec2(p12.x, p12.y)) * w12.x + texture(t, vec2(p3.x, p12.y)) * w3.x) * w12.y
+    + (texture(t, vec2(p0.x, p3.y)) * w0.x + texture(t, vec2(p12.x, p3.y)) * w12.x + texture(t, vec2(p3.x, p3.y)) * w3.x) * w3.y;
+}
+// The four texels around a point bound any value read there.
+void bounds(sampler2D t, vec2 q, out vec4 lo, out vec4 hi) {
+  ivec2 m = textureSize(t, 0) - 1, i = ivec2(floor(q / vec2(uA, 1.0) * vec2(m + 1) - 0.5));
+  vec4 a = texelFetch(t, clamp(i, ivec2(0), m), 0), b = texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), m), 0);
+  vec4 c = texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), m), 0), d = texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), m), 0);
+  lo = min(min(a, b), min(c, d));
+  hi = max(max(a, b), max(c, d));
+}
+`;
 // A spreading drop maps old ink outward, keeping every area.
 // Old radius d moves to sqrt(d² + rb² - ra²).
 const DROPS = `
@@ -588,6 +624,7 @@ uniform int uN;
 uniform float uE, uA, uDt;
 uniform sampler2D uVel;
 ${NOISE}
+${CUBIC}
 vec2 unpush(vec2 q, out vec4 over, out float keep) {
   over = vec4(0.0);
   keep = 1.0;
@@ -614,24 +651,6 @@ vec2 push(vec2 q) {
   }
   return q;
 }
-// Catmull-Rom from nine bilinear taps: far less smear than one.
-vec4 cubic(sampler2D t, vec2 q) {
-  vec2 sz = vec2(textureSize(t, 0)), s = q / vec2(uA, 1.0) * sz, t1 = floor(s - 0.5) + 0.5, f = s - t1;
-  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
-  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f), w12 = w1 + w2;
-  vec2 p0 = (t1 - 1.0) / sz, p3 = (t1 + 2.0) / sz, p12 = (t1 + w2 / w12) / sz;
-  return (texture(t, vec2(p0.x, p0.y)) * w0.x + texture(t, vec2(p12.x, p0.y)) * w12.x + texture(t, vec2(p3.x, p0.y)) * w3.x) * w0.y
-    + (texture(t, vec2(p0.x, p12.y)) * w0.x + texture(t, vec2(p12.x, p12.y)) * w12.x + texture(t, vec2(p3.x, p12.y)) * w3.x) * w12.y
-    + (texture(t, vec2(p0.x, p3.y)) * w0.x + texture(t, vec2(p12.x, p3.y)) * w12.x + texture(t, vec2(p3.x, p3.y)) * w3.x) * w3.y;
-}
-// The four texels around a point bound any value read there.
-void bounds(sampler2D t, vec2 q, out vec4 lo, out vec4 hi) {
-  ivec2 m = textureSize(t, 0) - 1, i = ivec2(floor(q / vec2(uA, 1.0) * vec2(m + 1) - 0.5));
-  vec4 a = texelFetch(t, clamp(i, ivec2(0), m), 0), b = texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), m), 0);
-  vec4 c = texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), m), 0), d = texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), m), 0);
-  lo = min(min(a, b), min(c, d));
-  hi = max(max(a, b), max(c, d));
-}
 vec2 vel(vec2 q) { return texture(uVel, q / vec2(uA, 1.0)).xy; }
 vec2 back(vec2 q) { return q - uDt * vel(q - 0.5 * uDt * vel(q)); }
 vec2 fwd(vec2 q) { return q + uDt * vel(q + 0.5 * uDt * vel(q)); }
@@ -642,13 +661,17 @@ uniform sampler2D uDye;
 void main() {
   vec4 over, lo, hi;
   float keep;
-  vec2 q = unpush(vUv * vec2(uA, 1.0), over, keep);
+  vec2 p = vUv * vec2(uA, 1.0), q = unpush(p, over, keep);
   if (keep < 1e-4) { o = over; return; }
   q = back(q);
+  // Ink that barely moves stays put, exactly.
+  vec2 m = (q - p) * float(textureSize(uDye, 0).y);
+  if (dot(m, m) < 4e-4) { o = over + keep * texelFetch(uDye, ivec2(gl_FragCoord.xy), 0); return; }
   bounds(uDye, q, lo, hi);
   o = over + keep * clamp(cubic(uDye, q), lo, hi);
 }`;
 // Step two: trace forward, halve the error, clamp to the source cell.
+// Slow ink skips the correction, which would only add grain.
 const DYE_B_FS = HEAD + DROPS + `
 uniform sampler2D uDye, uPred;
 void main() {
@@ -656,11 +679,61 @@ void main() {
   vec4 pred = texelFetch(uPred, c, 0), over, lo, hi;
   float keep;
   vec2 p = vUv * vec2(uA, 1.0), q = back(unpush(p, over, keep));
-  if (keep < 0.999) { o = pred; return; }
+  float m = length(q - p) * float(textureSize(uDye, 0).y), w = smoothstep(0.15, 0.6, m);
+  if (keep < 0.999 || w <= 0.0) { o = pred; return; }
   bounds(uDye, q, lo, hi);
-  o = clamp(pred + 0.5 * (texelFetch(uDye, c, 0) - cubic(uPred, push(fwd(p)))), lo, hi);
+  o = clamp(pred + 0.5 * w * (texelFetch(uDye, c, 0) - cubic(uPred, push(fwd(p)))), lo, hi);
 }`;
-const COMP_FS = HEAD + `
+// The two most different of four samples are the inks meeting here.
+const PAIR = `
+float pair(vec4 l, vec4 r, vec4 b, vec4 t, out vec4 P0, out vec4 P1) {
+  float best = dot(l - r, l - r), k;
+  P0 = l; P1 = r;
+  k = dot(b - t, b - t); if (k > best) { best = k; P0 = b; P1 = t; }
+  k = dot(l - t, l - t); if (k > best) { best = k; P0 = l; P1 = t; }
+  k = dot(l - b, l - b); if (k > best) { best = k; P0 = l; P1 = b; }
+  k = dot(r - t, r - t); if (k > best) { best = k; P0 = r; P1 = t; }
+  k = dot(r - b, r - b); if (k > best) { best = k; P0 = r; P1 = b; }
+  return best;
+}`;
+// Each fresh copy pulls wide, soft edges back toward their two inks.
+// Edges already narrow are left alone, so they never turn jagged.
+const STEEP_FS = HEAD + PAIR + `
+uniform sampler2D uSrc;
+float at(vec4 v, vec4 P0, vec4 P1, float best) { return dot(v - P0, P1 - P0) / best; }
+void main() {
+  vec2 tx = 1.0 / vec2(textureSize(uSrc, 0)), x = vec2(tx.x, 0.0), y = vec2(0.0, tx.y);
+  vec4 c = texture(uSrc, vUv), P0, P1;
+  float best = pair(texture(uSrc, vUv - 3.0 * x), texture(uSrc, vUv + 3.0 * x), texture(uSrc, vUv - 3.0 * y), texture(uSrc, vUv + 3.0 * y), P0, P1);
+  if (best > 0.02) {
+    float f = clamp(at(c, P0, P1, best), 0.0, 1.0);
+    float sx = abs(at(texture(uSrc, vUv + 1.5 * x), P0, P1, best) - at(texture(uSrc, vUv - 1.5 * x), P0, P1, best));
+    float sy = abs(at(texture(uSrc, vUv + 1.5 * y), P0, P1, best) - at(texture(uSrc, vUv - 1.5 * y), P0, P1, best));
+    c += 0.5 * smoothstep(0.95, 0.6, max(sx, sy)) * (smoothstep(0.0, 1.0, f) - f) * (P1 - P0);
+  }
+  o = c;
+}`;
+// Moving water without new drops: track where each pixel's ink came from.
+// Ink is read once from a still copy, so edges stay sharp.
+const MAP_FS = HEAD + `
+uniform sampler2D uMap, uVel;
+uniform float uA, uDt;
+vec2 vel(vec2 q) { return texture(uVel, q / vec2(uA, 1.0)).xy; }
+void main() {
+  vec2 S = vec2(uA, 1.0), p = vUv * S, q = p - uDt * vel(p - 0.5 * uDt * vel(p));
+  o = vec4(q - p + texture(uMap, q / S).xy, 0.0, 1.0);
+}`;
+const WARP_FS = HEAD + `
+uniform sampler2D uDye, uMap;
+uniform float uA;
+${CUBIC}
+void main() {
+  vec2 q = vUv * vec2(uA, 1.0) + texture(uMap, vUv).xy;
+  vec4 lo, hi;
+  bounds(uDye, q, lo, hi);
+  o = clamp(cubic(uDye, q), lo, hi);
+}`;
+const COMP_FS = HEAD + PAIR + `
 uniform sampler2D uDye, uVel, uPrint;
 uniform vec2 uRes, uTexel;
 uniform float uA, uPr, uRad;
@@ -670,7 +743,7 @@ uniform int uNRip, uNTip;
 uniform vec4 uRake, uRakeB;
 uniform vec4 uTip[${MAXT}];
 uniform vec4 uSheet;
-uniform float uWet;
+uniform vec3 uSheet2;
 ${NOISE}
 float fbm(vec2 p) { return 0.55 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 7.1) + 0.15 * vnoise(p * 4.1 + 2.3); }
 float box(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
@@ -683,7 +756,7 @@ vec3 srgb(vec3 c) {
   return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
 // The rake: a wooden bar trailing a row of steel tines.
-// In rake space x runs with the motion and y along the bar.
+// In rake space, x follows the motion and y the bar.
 vec2 rakeSpace(vec2 p) { return uRake.x < 0.5 ? vec2(p.x - uRake.y, p.y) : vec2(p.y - uRake.y, p.x); }
 float rakeTine(vec2 q) {
   float t = (fract(q.y / uRakeB.x - uRakeB.y) - 0.5) * uRakeB.x;
@@ -710,19 +783,26 @@ void main() {
   }
   n += 0.02 * texture(uVel, uv).xy;
   vec2 su = uv - n * 0.004 / S;
-  vec4 c = texture(uDye, su);
-  vec4 l = texture(uDye, su - vec2(uTexel.x, 0.0)), r = texture(uDye, su + vec2(uTexel.x, 0.0));
-  vec4 b = texture(uDye, su - vec2(0.0, uTexel.y)), t = texture(uDye, su + vec2(0.0, uTexel.y));
+  vec4 c = texture(uDye, su), P0, P1;
+  vec4 l = texture(uDye, su - vec2(1.5 * uTexel.x, 0.0)), r = texture(uDye, su + vec2(1.5 * uTexel.x, 0.0));
+  vec4 b = texture(uDye, su - vec2(0.0, 1.5 * uTexel.y)), t = texture(uDye, su + vec2(0.0, 1.5 * uTexel.y));
+  // Edges show steeper than stored.
+  float best = pair(l, r, b, t, P0, P1), edge = 0.0, both = 0.0, hue = 0.0;
+  if (best > 0.02) {
+    float f = clamp(dot(c - P0, P1 - P0) / best, 0.0, 1.0), g = smoothstep(0.12, 0.88, f);
+    c += (g - f) * (P1 - P0);
+    edge = 4.0 * g * (1.0 - g);
+    both = smoothstep(0.6, 0.9, min(P0.a, P1.a));
+    hue = smoothstep(0.03, 0.15, length(P1.rgb - P0.rgb));
+  }
   // The size is pale and faintly clouded.
   vec3 water = uCream * (0.955 + 0.07 * fbm(p * 2.3 + 3.1) + 0.02 * vnoise(p * 40.0));
   vec3 ink = c.rgb / max(c.a, 1e-3);
   vec3 col = mix(water, ink, clamp(c.a, 0.0, 1.0));
   // Where two inks meet, a fine pale vein parts them.
-  float both = min(min(l.a, r.a), min(b.a, t.a));
-  float gc = length(r.rgb - l.rgb) + length(t.rgb - b.rgb);
-  col = mix(col, water, 0.32 * smoothstep(0.12, 0.5, gc) * both);
-  // Ink edges on open water darken slightly, like a dried rim.
-  col *= 1.0 - 0.09 * smoothstep(0.15, 0.8, length(vec2(r.a - l.a, t.a - b.a)));
+  col = mix(col, water, 0.42 * edge * both * hue);
+  // Ink edges on open water darken a little, like a dried rim.
+  col *= 1.0 - 0.14 * edge * (1.0 - both);
   // Soft light from the upper left, falling off to the corners.
   vec2 cp = (p - mid) / S.y;
   col *= 1.03 + 0.07 * dot(cp, vec2(-0.6, 0.8)) - 0.14 * pow(length((uv - 0.5) * 1.3), 3.0);
@@ -732,8 +812,8 @@ void main() {
   col += 0.2 * pow(clamp(slope, 0.0, 1.0), 2.0);
   // A window above the tray reflects as a broad soft sheen.
   vec2 R = cp / 1.6 + 1.6 * n;
-  float win = 1.0 - smoothstep(0.0, 0.17, box(R - vec2(-0.22, 0.16), vec2(0.16, 0.08)));
-  col += vec3(1.0, 0.985, 0.95) * 0.085 * win;
+  float win = 1.0 - smoothstep(0.0, 0.12, box(R - vec2(-0.22, 0.16), vec2(0.16, 0.08)));
+  col += vec3(1.0, 0.985, 0.95) * 0.035 * win;
 
   // The rake, its shadow and the dimples its tines press in.
   if (uRake.z > 0.0) {
@@ -741,12 +821,14 @@ void main() {
     float sh = min(rakeTine(qs), rakeBar(qs));
     col *= 1.0 - 0.26 * uRake.z * (1.0 - smoothstep(-0.003, 0.009, sh));
     float tt = (fract(q.y / uRakeB.x - uRakeB.y) - 0.5) * uRakeB.x, dt = length(vec2(q.x, tt));
-    col *= 1.0 - 0.16 * uRake.z * exp(-dt * dt / 4e-5);
-    col += 0.07 * uRake.z * exp(-pow((dt - 0.0075) / 0.0018, 2.0));
-    float tn = rakeTine(q);
-    col = mix(col, uSteel * (0.7 + 0.5 * smoothstep(0.002, -0.002, tn + 0.001)), uRake.z * smoothstep(px, -px, tn));
-    float br = rakeBar(q), across = (q.x - uRake.w * 0.032) / 0.0062;
-    vec3 wood = uWood * (0.78 + 0.32 * smoothstep(0.6, -0.8, across * sign(uRake.w)) + 0.08 * vnoise(vec2(q.y * 90.0, across * 3.0)));
+    col *= 1.0 - 0.3 * uRake.z * exp(-dt * dt / 2.5e-5);
+    col += 0.12 * uRake.z * exp(-pow((dt - 0.0068) / 0.0016, 2.0));
+    // Round steel catches a bright line down its middle.
+    float tn = rakeTine(q), cy = sqrt(clamp(-tn / 0.0021, 0.0, 1.0));
+    col = mix(col, uSteel * (0.35 + 0.65 * cy) + 0.45 * pow(cy, 10.0), uRake.z * smoothstep(px, -px, tn));
+    float br = rakeBar(q), across = (q.x - uRake.w * 0.032) / 0.0062, cb = sqrt(max(0.0, 1.0 - across * across));
+    vec3 wood = uWood * (0.45 + 0.65 * cb + 0.12 * vnoise(vec2(q.y * 140.0, across * 2.0)))
+      + 0.14 * pow(max(0.0, 1.0 - 2.5 * abs(across + 0.35 * sign(uRake.w))), 2.0);
     col = mix(col, wood, uRake.z * smoothstep(px, -px, br));
   }
   // Each stylus: a shadow, a dimple and a steel needle.
@@ -755,10 +837,10 @@ void main() {
     vec2 q = p - uTip[i].xy;
     float a = uTip[i].z, dn = length(q);
     col *= 1.0 - 0.24 * a * (1.0 - smoothstep(-0.002, 0.008, needle(q - vec2(0.012, -0.014))));
-    col *= 1.0 - 0.18 * a * exp(-dn * dn / 5e-5);
-    col += 0.06 * a * exp(-pow((dn - 0.008) / 0.002, 2.0));
-    float nd = needle(q);
-    col = mix(col, uSteel * (0.72 + 0.45 * smoothstep(0.0015, -0.0015, nd + 0.0008)), a * smoothstep(px, -px, nd));
+    col *= 1.0 - 0.3 * a * exp(-dn * dn / 3e-5);
+    col += 0.12 * a * exp(-pow((dn - 0.0075) / 0.0018, 2.0));
+    float nd = needle(q), cy = sqrt(clamp(-nd / 0.0019, 0.0, 1.0));
+    col = mix(col, uSteel * (0.35 + 0.65 * cy) + 0.45 * pow(cy, 10.0), a * smoothstep(px, -px, nd));
   }
   // The tray wall shades the water's edge; a meniscus catches light.
   vec2 css = fc / uPr, hc = 0.5 * uRes / uPr;
@@ -773,9 +855,10 @@ void main() {
     float sc = 1.0 + 0.14 * h, wx = max(abs(cs), 1e-4) * hs.x * sc;
     vec2 so = vec2(0.018, -0.026) * (0.2 + 2.6 * h);
     float bl = 0.004 + 0.07 * h;
-    float sd = box(p - mid - so, vec2(wx, hs.y * sc));
+    vec2 mc = mid + vec2(0.16, 0.2) * uSheet2.y;
+    float sd = box(p - mc - so, vec2(wx, hs.y * sc));
     col *= 1.0 - op * (0.14 + 0.2 * h) * (1.0 - smoothstep(-bl, bl, sd));
-    vec2 X = p - mid;
+    vec2 X = p - mc;
     float lx = X.x / (cs < 0.0 ? -wx : wx), pz = 1.0 + 0.16 * lx * sn, ly = X.y / (hs.y * sc * pz);
     float edge = max((abs(lx) - 1.0) * wx, (abs(ly) - 1.0) * hs.y * sc * pz);
     float cov = op * (1.0 - smoothstep(-px, px, edge));
@@ -786,7 +869,7 @@ void main() {
       if (cs >= 0.0) {
         // Wet ink shows faintly through the back as the paper soaks.
         vec4 s = paperInk(pu, 3.0);
-        float wet = 1.0 - smoothstep(-0.12, 0.0, lx - (2.3 * uWet - 1.15) + 0.06 * vnoise(vec2(ly * 6.0, 1.0)));
+        float wet = 1.0 - smoothstep(-0.12, 0.0, lx - (2.3 * uSheet2.x - 1.15) + 0.06 * vnoise(vec2(ly * 6.0, 1.0)));
         pc = mix(paper, s.rgb / max(s.a, 1e-3), 0.24 * s.a * wet) * (1.0 - 0.05 * wet);
       } else {
         // The print side: ink taken into the paper's grain.
@@ -802,8 +885,8 @@ void main() {
 }`;
 
 let gl = null, P = null, vao = null, ready = false, FMT = null;
-let dye = null, pred = null, base = null, vel = null, pres = null, div = null, printT = null;
-let DW = 0, DH = 0, SW = 0, SH = 0, quality = 0;
+let dye = null, pred = null, base = null, disp = null, vel = null, pres = null, div = null, printT = null;
+let DW = 0, DH = 0, SW = 0, SH = 0, quality = 0, BAKE = 0.2;
 // Quality steps shrink the ink grid and then the canvas.
 const DS = [1, 0.78, 0.6], QS = [1, 0.9, 0.75];
 
@@ -847,10 +930,14 @@ async function initGL() {
   if (!renderable(gl.RGBA16F)) throw new Error('RGBA16F is not renderable');
   // Narrow formats save bandwidth where the driver allows them.
   FMT = { ink: gl.RGBA16F, vel: renderable(gl.RG16F) ? gl.RG16F : gl.RGBA16F, one: renderable(gl.R16F) ? gl.R16F : gl.RGBA16F };
+  // Full floats hold the flow map exactly; halves need rebaking sooner.
+  const f32 = gl.getExtension('OES_texture_float_linear') && renderable(gl.RG32F);
+  FMT.map = f32 ? gl.RG32F : FMT.vel;
+  BAKE = f32 ? 0.15 : 0.1;
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     copy: compile(TRI, COPY_FS), force: compile(TRI, FORCE_FS), adv: compile(TRI, ADV_FS), div: compile(TRI, DIV_FS),
-    jac: compile(TRI, JAC_FS), grad: compile(TRI, GRAD_FS), dyeA: compile(TRI, DYE_A_FS), dyeB: compile(TRI, DYE_B_FS), comp: compile(TRI, COMP_FS),
+    jac: compile(TRI, JAC_FS), grad: compile(TRI, GRAD_FS), dyeA: compile(TRI, DYE_A_FS), dyeB: compile(TRI, DYE_B_FS), map: compile(TRI, MAP_FS), skim: compile(TRI, SKIM_FS), warp: compile(TRI, WARP_FS), steep: compile(TRI, STEEP_FS), comp: compile(TRI, COMP_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -868,7 +955,7 @@ async function initGL() {
   vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   gl.disable(gl.BLEND);
-  dye = pred = base = vel = pres = div = printT = null;
+  dye = pred = base = disp = vel = pres = div = printT = null;
   DW = DH = SW = SH = 0;
 }
 function target(w, h, fmt) {
@@ -916,7 +1003,9 @@ function copy(src, dst, map = [1, 1, 0, 0]) {
   gl.uniform4fv(P.copy.u.uMap, map);
   draw(dst);
 }
-// Grids follow the tray's shape; ink keeps its place, cropped to fit.
+// Grids follow the tray's shape.
+// Small changes stretch the ink.
+// Big changes crop the ink or enlarge it to cover.
 function alloc(A, ch) {
   const dh = Math.round(Math.min(ch, Math.sqrt(1.1e6 / A)) * DS[quality]), dw = Math.round(dh * A);
   const sh = clamp(Math.round(dh / 2.8), 80, 300), sw = Math.round(sh * A);
@@ -924,19 +1013,38 @@ function alloc(A, ch) {
   TA = A;
   if (dw !== DW || dh !== DH) {
     const nd = pair(dw, dh, FMT.ink);
-    if (dye) copy(dye.r, nd.r, [A / oA, 1, -(A - oA) / (2 * oA), 0]);
+    const k = A / oA, near = k > 0.8 && k < 1.25;
+    if (dye) {
+      copy(dye.r, nd.r, near ? [1, 1, 0, 0] : k < 1 ? [k, 1, (1 - k) / 2, 0] : [1, 1 / k, 0, 0.5 - 0.5 / k]);
+      // Enlarged ink has soft edges; a few steepening passes restore them.
+      for (let i = 0; i < (k > 1.25 ? 6 : 0); i++) {
+        gl.useProgram(P.steep.p);
+        bind(P.steep, 'uSrc', 0, nd.r);
+        draw(nd.w);
+        nd.swap();
+      }
+    }
     free(dye);
     free(pred);
     free(base);
+    free(disp);
     dye = nd;
     pred = target(dw, dh, FMT.ink);
     base = target(dw, dh, FMT.ink);
-    still = false;
+    disp = pair(dw, dh, FMT.map);
+    mode = '';
     DW = dw;
     DH = dh;
-    // Live drops and ripples shift with the crop.
-    const dx = (A - oA) / 2;
-    for (const o of [...drops, ...ripples]) o.x += dx;
+    // Live drops and ripples move with the ink.
+    for (const o of [...drops, ...ripples]) {
+      if (near) o.x *= k;
+      else if (k < 1) o.x += (A - oA) / 2;
+      else {
+        o.x *= k;
+        o.y = 0.5 + (o.y - 0.5) * k;
+        if (o.T) { o.T *= k * k; o.A *= k * k; o.prev *= k * k; }
+      }
+    }
   }
   if (sw !== SW || sh !== SH) {
     free(vel);
@@ -965,7 +1073,7 @@ function simStep(dt) {
     gl.uniform4fv(f.u.uSeg, segA);
     gl.uniform4fv(f.u.uSegV, segV);
     if (comb) {
-      gl.uniform4f(f.u.uComb, comb.axis, comb.prev, comb.pos, 1);
+      gl.uniform4f(f.u.uComb, comb.axis, comb.prev, comb.pos, GRIP);
       gl.uniform4f(f.u.uCombB, comb.sp, comb.phase, comb.v, 0.0085);
     } else gl.uniform4f(f.u.uComb, 0, 0, 0, 0);
     draw(vel.w);
@@ -1021,8 +1129,10 @@ function dropUniforms(list, dt, still) {
     gl.uniform1f(q.u.uDt, dt);
   }
 }
-// While the water moves, ink is carried one frame at a time.
+// Moving water with growing drops: ink is carried frame by frame.
+let mode = '', bakeT = 0;
 function dyeStep(dt, list = drops) {
+  mode = 'step';
   dropUniforms(list, dt, false);
   gl.useProgram(P.dyeA.p);
   bind(P.dyeA, 'uDye', 0, dye.r);
@@ -1037,10 +1147,9 @@ function dyeStep(dt, list = drops) {
 }
 // In still water, growing drops redraw from one fixed copy.
 // Each drop then resamples the ink once, not once per frame.
-let still = false;
 function dyeStill() {
-  if (!still) {
-    still = true;
+  if (mode !== 'still') {
+    mode = 'still';
     copy(dye.r, base);
     for (const d of drops) d.a0 = d.prev;
   }
@@ -1051,38 +1160,65 @@ function dyeStill() {
   draw(dye.w);
   dye.swap();
 }
+// The flow map restarts from a fresh copy now and then.
+function dyeFlow(dt) {
+  bakeT -= dt;
+  if (mode !== 'map' || bakeT <= 0) {
+    mode = 'map';
+    bakeT = BAKE;
+    gl.useProgram(P.steep.p);
+    bind(P.steep, 'uSrc', 0, dye.r);
+    draw(base);
+    wipe(disp.r);
+  }
+  gl.useProgram(P.map.p);
+  bind(P.map, 'uMap', 0, disp.r);
+  bind(P.map, 'uVel', 1, vel.r);
+  gl.uniform1f(P.map.u.uA, TA);
+  gl.uniform1f(P.map.u.uDt, dt);
+  draw(disp.w);
+  disp.swap();
+  gl.useProgram(P.warp.p);
+  bind(P.warp, 'uDye', 0, base);
+  bind(P.warp, 'uMap', 1, disp.r);
+  gl.uniform1f(P.warp.u.uA, TA);
+  draw(dye.w);
+  dye.swap();
+}
 // The paper takes the ink; the tray is left as fresh water.
+function skim(x) {
+  gl.useProgram(P.skim.p);
+  bind(P.skim, 'uSrc', 0, dye.r);
+  gl.uniform1f(P.skim.u.uA, TA);
+  gl.uniform1f(P.skim.u.uSweep, x);
+  draw(dye.w);
+  dye.swap();
+}
 function takePrint() {
   if (!printT || printT.w !== DW || printT.h !== DH) { free(printT); printT = target(DW, DH, FMT.ink); }
   copy(dye.r, printT);
-  [dye.r, dye.w, vel.r, vel.w, pres.r, pres.w].forEach(wipe);
+  skim(-1);
+  [vel.r, vel.w, pres.r, pres.w].forEach(wipe);
   drops.length = 0;
   ripples.length = 0;
   flowT = 0;
-  still = false;
+  mode = '';
 }
-// The opening tray: rings dropped in turn round seven centres.
+// The opening tray: rings dropped in turn round a few centres.
+// Batches of drops compose exactly.
+// The ink is then read only a few times.
 function seed() {
-  const R = rng(1102);
-  const pts = [];
+  const R = rng(1102), pts = [], list = [];
   for (let tries = 0; pts.length < Math.round(4 * TA + 1) && tries < 400; tries++) {
     const x = (0.12 + 0.76 * R()) * TA, y = 0.14 + 0.72 * R();
     if (pts.every(q => Math.hypot(q[0] - x, q[1] - y) > 0.3)) pts.push([x, y, 3 + Math.floor(R() * 4)]);
   }
-  const one = [];
+  const put = (x, y, r) => list.push({ x, y, col: nextInk(R), seed: R() * 97, prev: 0, A: PI * r * r });
   for (let round = 0; round < 6; round++) {
-    for (const q of pts) {
-      if (round >= q[2]) continue;
-      const r = (round ? 0.04 + 0.03 * R() : 0.06 + 0.03 * R());
-      one[0] = { x: q[0] + (R() - 0.5) * 0.01, y: q[1] + (R() - 0.5) * 0.01, col: nextInk(R), seed: R() * 97, prev: 0, A: PI * r * r };
-      dyeStep(0, one);
-    }
+    for (const q of pts) if (round < q[2]) put(q[0] + (R() - 0.5) * 0.01, q[1] + (R() - 0.5) * 0.01, round ? 0.04 + 0.03 * R() : 0.06 + 0.03 * R());
   }
-  for (let i = 0; i < Math.round(9 * TA); i++) {
-    const r = 0.015 + 0.02 * R();
-    one[0] = { x: R() * TA, y: R(), col: nextInk(R), seed: R() * 97, prev: 0, A: PI * r * r };
-    dyeStep(0, one);
-  }
+  for (let i = 0; i < Math.round(9 * TA); i++) put(R() * TA, R(), 0.015 + 0.02 * R());
+  for (let i = 0; i < list.length; i += MAXD) dyeStep(0, list.slice(i, i + MAXD));
 }
 
 /* ---------- drawing ---------- */
@@ -1116,7 +1252,7 @@ function render() {
   gl.uniform4f(c.u.uRakeB, comb ? comb.sp : 1, comb ? comb.phase : 0, 0, 0);
   if (sheet) gl.uniform4f(c.u.uSheet, sheet.h, sheet.c, sheet.s, sheet.op);
   else gl.uniform4f(c.u.uSheet, 0, 1, 0, 0);
-  gl.uniform1f(c.u.uWet, sheet ? sheet.wet : 0);
+  gl.uniform3f(c.u.uSheet2, sheet ? sheet.wet : 0, sheet ? sheet.dx : 0, 0);
   draw(null);
 }
 
@@ -1152,7 +1288,7 @@ panel.addEventListener('pointermove', e => {
     s.py = s.y0;
   } else if (s.mode === 'drop' && far > s.slop * 2.5) {
     // Dragging out of a growing drop stops it and starts a swirl.
-    s.drop.held = false;
+    if (s.drop) s.drop.held = false;
     s.drop = null;
     s.mode = 'stir';
     s.px = s.x;
@@ -1279,10 +1415,17 @@ function frame(now) {
     flowT -= dt;
     if (flowT <= 0) [vel.r, vel.w, pres.r, pres.w].forEach(wipe);
   }
-  if (flowing) { still = false; dyeStep(dt); }
+  if (flowing && drops.length) dyeStep(dt);
+  else if (flowing) dyeFlow(dt);
   else if (drops.length) dyeStill();
-  else still = false;
-  for (let i = drops.length - 1; i >= 0; i--) if (!drops[i].held && drops[i].A === drops[i].T) drops.splice(i, 1);
+  else mode = '';
+  // A finished drop leaves the list.
+  // Still water then takes a fresh copy.
+  for (let i = drops.length - 1; i >= 0; i--) {
+    if (drops[i].held || drops[i].A !== drops[i].T) continue;
+    drops.splice(i, 1);
+    if (mode === 'still') mode = '';
+  }
   stepRipples(dt);
   render();
   canvas.classList.add('on');
