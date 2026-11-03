@@ -33,19 +33,22 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--magnet table" id="table" tabindex="0" role="application" aria-label="Magnet balls on a table. Drag a ball to pull its chain. R forms a ring, S scatters, arrow keys nudge the nearest cluster.">
+    <div class="stage stage--magnet table" id="table" tabindex="0" role="application" aria-label="Magnet balls on a table. Drag a ball to pull its chain. Hold the empty table to raise a magnet. Double-click a ball to flip its poles. F shows the field, R forms a ring, S scatters, arrow keys nudge the nearest cluster.">
       <p class="fail" hidden>Magnet balls need WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices">
+        <button class="chip" id="field" type="button" aria-pressed="true" aria-keyshortcuts="F">Field</button>
+      </div>
       <div class="actions">
         <button class="chip" id="ring" type="button" aria-keyshortcuts="R">Ring</button>
         <button class="chip" id="scatter" type="button" aria-keyshortcuts="S">Scatter</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag a ball</dt><dd>pull its chain</dd></div>
-        <div class="fine"><dt><kbd>R</kbd></dt><dd>ring</dd></div>
-        <div class="fine"><dt><kbd>S</kbd></dt><dd>scatter</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>nudge</dd></div>
+        <div><dt>Hold the table</dt><dd>raise a magnet</dd></div>
+        <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span> a ball</dt><dd>flip its poles</dd></div>
+        <div class="fine"><dt><kbd>F</kbd></dt><dd>field</dd></div>
       </dl>
     </div>
   </main>
@@ -73,7 +76,7 @@ const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestId
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const MAXV = 16, LEAD = 0.004;
 let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tickNext = 0, restT = 0;
-let roll = null, rollF = null, rollAt = 0;
+let roll = null, rollF = null, rollAt = 0, hum = null, humF = null, humAt = 0, humN = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Busy moments soften each voice; the compressor catches the rest.
 const level = () => 1 / (1 + 0.08 * voices);
@@ -108,6 +111,22 @@ function audio() {
     src.connect(lp).connect(hp).connect(roll).connect(out);
     src.start();
     rollF = lp.frequency;
+    // The magnet hums low while it is up.
+    const h1 = ac.createOscillator(), h2 = ac.createOscillator(), hl = ac.createBiquadFilter();
+    h1.type = 'triangle';
+    h1.frequency.value = 55;
+    h2.type = 'sine';
+    h2.frequency.value = 110.6;
+    hl.type = 'lowpass';
+    hl.frequency.value = 420;
+    hum = ac.createGain();
+    hum.gain.value = 0;
+    h1.connect(hl);
+    h2.connect(hl);
+    hl.connect(hum).connect(out);
+    h1.start();
+    h2.start();
+    humF = [h1.frequency, h2.frequency];
   }
   if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
 }
@@ -128,7 +147,7 @@ function rest() {
     if (!raf && held < 0 && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['r', 'R', 's', 'S', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+const GESTURE_KEYS = new Set(['r', 'R', 's', 'S', 'f', 'F','ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -200,6 +219,18 @@ function rumble(e) {
   roll.gain.setTargetAtTime(v * 0.12, ac.currentTime, 0.07);
   rollF.setTargetAtTime(150 + 300 * v, ac.currentTime, 0.1);
 }
+// The hum swells with the magnet and rises as it gathers balls.
+function drone(s, n) {
+  if (!hum) return;
+  const v = live() ? s : 0;
+  if (Math.abs(v - humAt) < 0.01 && n === humN) return;
+  humAt = v;
+  humN = n;
+  hum.gain.setTargetAtTime(v * 0.07, ac.currentTime, 0.06);
+  const f = 55 * 2 ** (Math.min(n, 24) / 48);
+  humF[0].setTargetAtTime(f, ac.currentTime, 0.15);
+  humF[1].setTargetAtTime(f * 2.011, ac.currentTime, 0.15);
+}
 
 /* ---------- physics: 2D on the table, in ball radii ---------- */
 const N = 48, H = 1 / 240, ITER = 3;
@@ -224,7 +255,16 @@ let guide = null, flyUntil = 0, driftFrom = 0, driftUntil = 0;
 // Each ball is a dipole lying on the table, at angle TH.
 const TH = new Float64Array(N), MX = new Float64Array(N), MZ = new Float64Array(N);
 const BX = new Float64Array(N), BZ = new Float64Array(N);
+// Dipoles carry spin, so they overshoot and wobble.
+const OM = new Float64Array(N);
 let lastMove = 0;
+// The magnet: a hex puck raised under a held pointer.
+// WR is its contact radius; it pulls out to WREACH.
+const WR = 2.5, WREACH = 17, WPULL = 520, WM = 4;
+const wand = { on: false, x: 0, z: 0, fx: 0, fz: 0, tx: 0, tz: 0, a: -Math.PI / 2, ta: -Math.PI / 2, s: 0, n: 0 };
+const onWand = new Uint8Array(N);
+// A double tap on one ball flips it.
+let tapI = -1, tapT = -1e9, downT = 0;
 
 function addBond(i, j) {
   bonded[i * N + j] = bonded[j * N + i] = 1;
@@ -318,6 +358,29 @@ function bondPass() {
     X[j] -= dx * s * W[j]; Z[j] -= dz * s * W[j];
   }
 }
+// The puck is fixed: balls slide round it and never pass through.
+function wandPass() {
+  for (let i = 0; i < N; i++) {
+    if (i === held) continue;
+    let dx = X[i] - wand.x, dz = Z[i] - wand.z, d = Math.hypot(dx, dz);
+    if (d >= WR) continue;
+    if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
+    X[i] = wand.x + (dx / d) * WR;
+    Z[i] = wand.z + (dz / d) * WR;
+  }
+}
+// The magnet pulls hard up close and fades out at its reach.
+function wandPull() {
+  const k = wand.s;
+  for (let i = 0; i < N; i++) {
+    if (i === held) continue;
+    const dx = wand.x - X[i], dz = wand.z - Z[i], d = Math.hypot(dx, dz);
+    if (d > WREACH || d < 1e-6) continue;
+    const a = (WPULL * k * Math.min(1, (WR / d) ** 2) * clamp((WREACH - d) / 5)) / d;
+    AX[i] += dx * a;
+    AZ[i] += dz * a;
+  }
+}
 function contactPass() {
   for (let p = 0; p < np; p += 2) {
     const i = pairs[p], j = pairs[p + 1], w = W[i] + W[j];
@@ -353,6 +416,13 @@ function substep(k, n) {
   }
   if (drift) driftPull(mu);
   if (guide) steer();
+  if (wand.on) {
+    // The puck follows the pointer across the frame's substeps.
+    const t = (k + 1) / n;
+    wand.x = lerp(wand.fx, wand.tx, t);
+    wand.z = lerp(wand.fz, wand.tz, t);
+    wandPull();
+  }
   for (let i = 0; i < N; i++) {
     PX[i] = X[i];
     PZ[i] = Z[i];
@@ -375,7 +445,18 @@ function substep(k, n) {
     Z[i] += vz * H;
   }
   for (const b of bonds) b.l = 0;
-  for (let it = 0; it < ITER; it++) { bondPass(); wallPass(); contactPass(); }
+  for (let it = 0; it < ITER; it++) { bondPass(); wallPass(); contactPass(); if (wand.on) wandPass(); }
+  if (wand.on && loud) {
+    // A ball landing on the puck clicks.
+    for (let i = 0; i < N; i++) {
+      const d = Math.hypot(X[i] - wand.x, Z[i] - wand.z), touch = d < WR + 0.02;
+      if (touch && !onWand[i]) {
+        const v = (UX[i] * (wand.x - X[i]) + UZ[i] * (wand.z - Z[i])) / (d || 1);
+        tick(clamp(v / 14, 0.15, 1), 0.82);
+      }
+      onWand[i] = touch;
+    }
+  }
   for (let i = 0; i < N; i++) {
     let vx = (X[i] - PX[i]) / H, vz = (Z[i] - PZ[i]) / H;
     if (i !== held) {
@@ -478,19 +559,56 @@ function orient(dt) {
       BZ[j] += (mi * rz - MZ[i]) * i3;
     }
   }
-  const k = 1 - Math.exp(-(reduce ? 30 : 14) * dt);
+  if (wand.s > 0) {
+    // The magnet is one strong dipole at the puck.
+    const mx = Math.cos(wand.a) * WM * wand.s, mz = Math.sin(wand.a) * WM * wand.s;
+    for (let i = 0; i < N; i++) {
+      const rx = X[i] - wand.x, rz = Z[i] - wand.z, r2 = Math.max(6, rx * rx + rz * rz);
+      if (r2 > 400) continue;
+      const i3 = 1 / (r2 * Math.sqrt(r2)), m = (3 * (mx * rx + mz * rz)) / r2;
+      BX[i] += (m * rx - mx) * i3;
+      BZ[i] += (m * rz - mz) * i3;
+    }
+  }
+  // Torque is a damped spring; reduced motion damps it fully.
+  const K = 260, C = reduce ? 2 * Math.sqrt(K) : 9, sub = Math.max(1, Math.ceil(dt / (1 / 120)));
+  const h = dt / sub;
   let top = 0;
   for (let i = 0; i < N; i++) {
     const b = Math.hypot(BX[i], BZ[i]);
-    if (b < 1e-4) continue;
-    let d = Math.atan2(BZ[i], BX[i]) - TH[i];
-    d -= TAU * Math.round(d / TAU);
-    // A weak field turns a ball slowly.
-    const step = d * k * Math.min(1, b / 0.06);
-    TH[i] += step;
-    if (Math.abs(step) > top) top = Math.abs(step);
+    const g = b < 1e-4 ? 0 : K * Math.min(1, b / 0.06), ang = g ? Math.atan2(BZ[i], BX[i]) : 0;
+    const th0 = TH[i];
+    for (let s = 0; s < sub; s++) {
+      OM[i] += (g * Math.sin(ang - TH[i]) - C * OM[i]) * h;
+      TH[i] += OM[i] * h;
+    }
+    const step = Math.abs(TH[i] - th0);
+    if (step > top) top = step;
   }
   return top;
+}
+// A flipped ball repels its neighbours, then whips round to realign.
+function flip(i) {
+  if (!ready) return;
+  guide = null;
+  TH[i] += Math.PI;
+  // A pure half turn balances; a kick decides the way round.
+  OM[i] = (Math.random() < 0.5 ? -1 : 1) * (reduce ? 2 : 9);
+  for (let k = bonds.length - 1; k >= 0; k--) if (bonds[k].i === i || bonds[k].j === i) cutBond(k);
+  for (let j = 0; j < N; j++) {
+    if (j === i || j === held) continue;
+    const dx = X[j] - X[i], dz = Z[j] - Z[i], d = Math.hypot(dx, dz);
+    if (d > 4.5) continue;
+    // Like poles face each other, so close neighbours spring away.
+    const v = (reduce ? 4 : 11) * (1 - (d - 2) / 2.5);
+    VX[j] += (dx / d) * v;
+    VZ[j] += (dz / d) * v;
+    VX[i] -= (dx / d) * v * 0.3;
+    VZ[i] -= (dz / d) * v * 0.3;
+  }
+  tick(1, 0.6);
+  tick(0.6, 0.45, 0.03);
+  wake();
 }
 function fastest() {
   let top = 0;
@@ -561,10 +679,12 @@ function seed() {
   // Dipoles start at random and relax before the first frame.
   for (let i = 0; i < N; i++) TH[i] = Math.random() * TAU;
   for (let k = 0; k < 300; k++) orient(1 / 30);
+  OM.fill(0);
 }
 
 /* ---------- commands ---------- */
 function drop() {
+  if (wand.on) lower();
   if (held < 0) return;
   W[held] = 1;
   VX[held] = VZ[held] = 0;
@@ -667,7 +787,18 @@ function nudge(dx, dz) {
 }
 
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, balls = null, mark = null, M = null, F = null;
+let THREE = null, renderer = null, scene = null, camera = null, balls = null, mark = null, puck = null, M = null, F = null;
+// The field view is remembered between visits.
+const FIELD_KEY = 'stimming.magnet.field', fieldBtn = document.getElementById('field');
+let fieldOn = true;
+try { fieldOn = localStorage.getItem(FIELD_KEY) !== '0'; } catch (err) { /* storage is optional */ }
+fieldBtn.setAttribute('aria-pressed', String(fieldOn));
+function setField(on) {
+  fieldOn = on;
+  fieldBtn.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem(FIELD_KEY, on ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  wake();
+}
 let ray = null, plane = null, ndc = null, hitV = null, tmp = null;
 let ready = false, kbd = false, aim = -1, hoverPt = null, ptrId = -1, trail = [], gx = 0, gz = 0;
 // The camera looks down at 56 degrees; margins keep spheres in frame.
@@ -679,8 +810,9 @@ let lowDpr = false;
 // The ball shader calls it too, to mirror the table.
 const FIELD = /* glsl */ `
 uniform vec4 uB[${N}];
+uniform vec4 uWand;
 uniform vec3 uInk, uWarm, uCool;
-uniform float uStep, uHalf;
+uniform float uStep, uHalf, uField;
 vec3 tableShade(vec2 p) {
   float psi = 0.0, phi = 0.0, ao = 1.0;
   vec2 B = vec2(0.0);
@@ -695,21 +827,31 @@ vec3 tableShade(vec2 p) {
     B += (2.0 * mr * q * r - b.zw) * q;
     ao *= 1.0 - 0.5 * exp(-0.9 * d2);
   }
+  // The magnet adds one strong dipole and its own contact shade.
+  vec2 rw = p - uWand.xy;
+  float dw2 = dot(rw, rw), qw = 1.0 / max(dw2, 2.0), mw = dot(uWand.zw, rw);
+  psi += (uWand.z * rw.y - uWand.w * rw.x) * qw;
+  phi += mw * qw;
+  B += (2.0 * mw * qw * rw - uWand.zw) * qw;
+  float wk = length(uWand.zw) / ${WM.toFixed(1)};
+  ao *= 1.0 - 0.6 * wk * exp(-0.5 * max(dw2 - 2.25, 0.0));
   float s = psi / uStep;
   float fw = max(fwidth(s), 1e-5);
   // Lines closer than a few pixels blend into a flat tone.
   float dense = smoothstep(0.2, 0.55, fw);
-  // Weak far field fades the lines out.
-  float strength = smoothstep(0.003, 0.03, length(B));
+  // Lines show only where the field is strong.
+  float strength = smoothstep(0.03, 0.3, length(B));
+  // The magnet shows the field round it, even with the field hidden.
+  float show = max(uField, wk * exp(-dw2 / 90.0));
   float line = 1.0 - smoothstep(uHalf - 0.7, uHalf + 0.7, abs(fract(s) - 0.5) / fw);
-  line = mix(line, 0.45, dense) * strength;
+  line = mix(line, 0.45, dense) * strength * show;
   // Alternate flux tubes take a faint tint; lines hide their edges.
-  float band = mix(step(0.5, fract(s * 0.5 + 0.25)), 0.5, dense) * strength;
+  float band = mix(step(0.5, fract(s * 0.5 + 0.25)), 0.5, dense) * strength * show;
   // Lines run warm near north poles and cool near south poles.
   float pol = phi / (abs(phi) + 0.03);
   vec3 lc = mix(uCool, uWarm, 0.5 + 0.5 * pol);
-  vec3 c = mix(uInk, lc, 0.07 * band);
-  c = mix(c, lc, 0.9 * line);
+  vec3 c = mix(uInk, lc, 0.015 * band);
+  c = mix(c, lc, 0.13 * line);
   // The far table falls away into shade.
   c *= mix(1.0, 0.7, smoothstep(30.0, 90.0, length(p)));
   return c * ao;
@@ -774,6 +916,15 @@ function draw() {
     B4[i].set(X[i], Z[i], c, s);
   }
   balls.instanceMatrix.needsUpdate = true;
+  const ms = wand.s;
+  F.uWand.value.set(wand.x, wand.z, Math.cos(wand.a) * WM * ms, Math.sin(wand.a) * WM * ms);
+  puck.visible = ms > 0.01;
+  if (puck.visible) {
+    // The puck rises out of the table; its local +x is north.
+    puck.position.set(wand.x, 1.4 * ms, wand.z);
+    puck.scale.setScalar(ms);
+    puck.rotation.y = -wand.a;
+  }
   mark.visible = kbd && aim >= 0;
   if (mark.visible) mark.position.set(X[aim], 0.012, Z[aim]);
   renderer.render(scene, camera);
@@ -798,12 +949,26 @@ function frame(ms) {
   const n = Math.min(8, Math.floor(acc / H));
   acc = n === 8 ? 0 : acc - n * H;
   if (held >= 0) { fromX = X[held]; fromZ = Z[held]; }
+  if (wand.on) { wand.fx = wand.x; wand.fz = wand.z; }
   if (simT < driftUntil) clusters();
   loud = true;
   for (let k = 0; k < n; k++) substep(k, n);
   if (guide && simT > guide.end) guide = null;
+  // The puck rises fast and sinks faster.
+  const ws = wand.on ? 1 : 0;
+  if (wand.s !== ws) wand.s = reduce ? ws : ws ? Math.min(1, wand.s + dt / 0.18) : Math.max(0, wand.s - dt / 0.12);
+  // North swings round to lead the sweep.
+  let da = wand.ta - wand.a;
+  da -= TAU * Math.round(da / TAU);
+  wand.a += da * (reduce ? 1 : 1 - Math.exp(-7 * dt));
+  // The field fades in and out over a third of a second.
+  const ft = fieldOn ? 1 : 0, fv = F.uField.value;
+  if (fv !== ft) F.uField.value = reduce ? ft : ft ? Math.min(1, fv + dt / 0.35) : Math.max(0, fv - dt / 0.35);
   const turn = orient(dt);
   draw();
+  let stuck = 0;
+  for (let i = 0; i < N; i++) stuck += onWand[i];
+  drone(wand.s, stuck);
   let e = 0, top = 0;
   for (let i = 0; i < N; i++) {
     const s = Math.hypot(VX[i], VZ[i]);
@@ -811,7 +976,8 @@ function frame(ms) {
     if (i !== held && s > 5) e += s - 5;
   }
   rumble(e / 160);
-  const moving = held >= 0 || guide || simT < flyUntil || simT < driftFrom || top > 0.03;
+  const moving = held >= 0 || wand.on || guide || simT < flyUntil || simT < driftFrom || top > 0.03
+    || wand.s !== ws || F.uField.value !== ft || Math.abs(da) > 1e-3;
   if (moving) lastMove = simT;
   // Dipoles keep turning a moment after the balls stop.
   const busy = moving || (turn > 1e-3 && simT - lastMove < 2.5);
@@ -835,12 +1001,38 @@ function toTable(e) {
   ray.setFromCamera(ndc, camera);
   return ray.ray.intersectPlane(plane, hitV) ? { x: hitV.x, z: hitV.z } : null;
 }
+// Pressing the empty table raises the magnet under the pointer.
+function raise(p, e) {
+  guide = null;
+  [wand.x, wand.z] = inside(p.x, p.z);
+  wand.fx = wand.tx = wand.lx = wand.x;
+  wand.fz = wand.tz = wand.lz = wand.z;
+  if (wand.s < 0.01) wand.a = wand.ta = -Math.PI / 2;
+  wand.on = true;
+  ptrId = e.pointerId;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  panel.classList.add('held');
+  tick(0.8, 0.42);
+  wake();
+}
+function lower() {
+  wand.on = false;
+  onWand.fill(0);
+  ptrId = -1;
+  panel.classList.remove('held');
+  wake();
+}
 panel.addEventListener('pointerdown', e => {
-  if (!ready || held >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready || held >= 0 || wand.on || (e.pointerType === 'mouse' && e.button !== 0)) return;
   const p = toTable(e);
   if (!p) return;
   const i = pick(p.x, p.z, e.pointerType === 'mouse' ? 1.5 : 2.6);
-  if (i < 0) return;
+  if (i < 0) return raise(p, e);
+  if (i === tapI && e.timeStamp - tapT < 350) {
+    tapI = -1;
+    return flip(i);
+  }
+  downT = e.timeStamp;
   guide = null;
   held = aim = i;
   W[i] = 0;
@@ -858,6 +1050,17 @@ panel.addEventListener('pointermove', e => {
   if (!ready) return;
   const p = toTable(e);
   if (!p) return;
+  if (wand.on && e.pointerId === ptrId) {
+    [wand.tx, wand.tz] = inside(p.x, p.z);
+    const dx = wand.tx - wand.lx, dz = wand.tz - wand.lz;
+    if (dx * dx + dz * dz > 0.25) {
+      wand.ta = Math.atan2(dz, dx);
+      wand.lx = wand.tx;
+      wand.lz = wand.tz;
+    }
+    wake();
+    return;
+  }
   if (held >= 0 && e.pointerId === ptrId) {
     [hx, hz] = inside(p.x + gx, p.z + gz);
     trail.push([e.timeStamp, hx, hz]);
@@ -871,10 +1074,16 @@ panel.addEventListener('pointermove', e => {
 });
 // Release keeps the pointer's last 90 ms of speed: a flick throws.
 function letGo(e, fling) {
-  if (held < 0 || e.pointerId !== ptrId) return;
+  if (e.pointerId !== ptrId) return;
+  if (wand.on) return lower();
+  if (held < 0) return;
   const i = held;
   drop();
   const end = trail[trail.length - 1];
+  // A short, still press counts as a tap toward a flip.
+  const still = end && Math.hypot(end[1] - trail[0][1], end[2] - trail[0][2]) < 0.6;
+  if (still && e.timeStamp - downT < 300) { tapI = i; tapT = e.timeStamp; }
+  else tapI = -1;
   if (fling && end && e.timeStamp - end[0] < 80) {
     const first = trail.find(s => end[0] - s[0] <= 90) || end, dt = (end[0] - first[0]) / 1000;
     if (dt > 0.008) {
@@ -905,6 +1114,7 @@ addEventListener('keydown', e => {
   const k = e.key;
   if (k === 'r' || k === 'R') { if (!e.repeat) makeRing(); }
   else if (k === 's' || k === 'S') { if (!e.repeat) scatter(); }
+  else if (k === 'f' || k === 'F') { if (!e.repeat) setField(!fieldOn); }
   else if (ARROWS[k]) {
     e.preventDefault();
     if (document.activeElement === panel) kbd = panel.matches(':focus-visible');
@@ -913,6 +1123,7 @@ addEventListener('keydown', e => {
 });
 document.getElementById('ring').addEventListener('click', makeRing);
 document.getElementById('scatter').addEventListener('click', scatter);
+fieldBtn.addEventListener('click', () => setField(!fieldOn));
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -986,6 +1197,8 @@ async function start() {
     uSouth: { value: lin(0.84, 0.09, 258) },
     uStep: { value: 0.14 },
     uHalf: { value: 1 },
+    uWand: { value: new THREE.Vector4() },
+    uField: { value: fieldOn ? 1 : 0 },
   };
   // The table is unlit: its colour is the field itself.
   const table = new THREE.Mesh(
@@ -1063,6 +1276,40 @@ diffuseColor.rgb *= 1.0 - 0.92 * groove;`)
   M = balls.instanceMatrix.array;
   for (let i = 0; i < N; i++) M.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1], i * 16);
   scene.add(balls);
+  // The magnet is a flat-shaded hex puck, split north and south.
+  puck = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.5, 1.5, 2.8, 6),
+    new THREE.ShaderMaterial({
+      // The puck takes deeper pole colours than the bright balls.
+      uniforms: { uNorth: { value: lin(0.66, 0.2, 38) }, uSouth: { value: lin(0.56, 0.18, 262) } },
+      vertexShader: /* glsl */ `
+varying vec3 vL;
+varying vec3 vW;
+void main() {
+  vL = position;
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vW = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`,
+      fragmentShader: /* glsl */ `
+uniform vec3 uNorth, uSouth;
+varying vec3 vL;
+varying vec3 vW;
+void main() {
+  vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
+  float w = fwidth(vL.x);
+  vec3 c = mix(uSouth, uNorth, smoothstep(-w, w, vL.x));
+  // A black cut splits the poles, as on the balls.
+  c *= 1.0 - 0.92 * (1.0 - smoothstep(0.07, 0.07 + 1.5 * w, abs(vL.x)));
+  // The top is lit flat; each side face takes its own step of shade.
+  c *= abs(n.y) > 0.5 ? 0.95 : 0.42 + 0.22 * abs(n.x);
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+}`,
+    }),
+  );
+  puck.visible = false;
+  scene.add(puck);
   // The keyboard aim ring keeps the dark-theme focus colour on the table.
   mark = new THREE.Mesh(new THREE.RingGeometry(1.36, 1.5, 48), new THREE.MeshBasicMaterial({ color: 0x40e2f3, toneMapped: false }));
   mark.rotation.x = -Math.PI / 2;
