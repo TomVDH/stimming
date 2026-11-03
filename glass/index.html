@@ -21,7 +21,22 @@
 }
 .stage canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
-#tool svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+#tools .chip svg, .picker .chip svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.picker .chip svg .solid { fill: currentColor; stroke: none; }
+/* The glass button opens a tray of panes above the bar. */
+.picker { position: relative; }
+.tray {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: grid; grid-template-columns: repeat(3, auto); gap: 6px; padding: 8px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.picker.is-open .tray { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .picker:hover .tray { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+@media (max-width: 520px) { .tray { grid-template-columns: repeat(2, auto); } }
+@media (prefers-reduced-motion: reduce) { .tray { transition: none; transform: none; } }
 </style>
 </head>
 <body>
@@ -32,17 +47,27 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--glass" id="stage" tabindex="0" role="application" aria-label="A pane of glass in a frame. Pick a hammer, a gun or a brick, then tap the pane to use it; hold for more. Space uses the tool, arrow keys aim, 1, 2 and 3 pick tools, R rewinds.">
+    <div class="stage stage--glass" id="stage" tabindex="0" role="application" aria-label="A pane of glass in a frame. Pick a glass and a tool: a hammer, a gun or a brick. Tap the pane to use it; hold for more. Space uses the tool, arrow keys aim, 1, 2 and 3 pick tools, R rewinds.">
       <p class="fail" hidden>Glass needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="kind" role="group" aria-label="Glass">
-        <button class="chip" type="button" data-value="annealed" aria-pressed="true">Annealed</button>
-        <button class="chip" type="button" data-value="tempered" aria-pressed="false">Tempered</button>
-        <button class="chip" type="button" data-value="laminated" aria-pressed="false">Laminated</button>
+      <div class="choices" id="tools" role="group" aria-label="Tool">
+        <button class="chip" type="button" data-value="hammer" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.2 2.6l4.2 4.2-2.2 2.2-4.2-4.2z"/><path d="M8.1 6.9L2.6 12.4l1 1 5.5-5.5"/></svg>Hammer</button>
+        <button class="chip" type="button" data-value="gun" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="M8 1.5v3.5M8 11v3.5M1.5 8h3.5M11 8h3.5"/></svg>Gun</button>
+        <button class="chip" type="button" data-value="brick" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 4.8h12.4v6.4H1.8z"/><path d="M1.8 8h12.4M6 4.8V8M10 8v3.2"/></svg>Brick</button>
       </div>
       <div class="actions">
-        <button class="chip" id="tool" type="button" aria-keyshortcuts="1 2 3"></button>
+        <div class="picker">
+          <button class="chip" id="glassBtn" type="button" aria-expanded="false" aria-controls="glasses"></button>
+          <div class="tray" id="glasses" role="group" aria-label="Glass">
+            <button class="chip" type="button" data-value="annealed" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path d="M5.2 9.6l4.4-4.4"/></svg>Annealed</button>
+            <button class="chip" type="button" data-value="tempered" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><circle class="solid" cx="5.8" cy="5.8" r="1"/><circle class="solid" cx="10.2" cy="5.8" r="1"/><circle class="solid" cx="5.8" cy="10.2" r="1"/><circle class="solid" cx="10.2" cy="10.2" r="1"/></svg>Tempered</button>
+            <button class="chip" type="button" data-value="laminated" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="4.2"/><rect x="2.5" y="8.8" width="11" height="4.2"/></svg>Laminated</button>
+            <button class="chip" type="button" data-value="armored" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4"/><rect x="4.6" y="4.6" width="6.8" height="6.8"/></svg>Armored</button>
+            <button class="chip" type="button" data-value="reeded" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path d="M5.3 2.5v11M8 2.5v11M10.7 2.5v11"/></svg>Reeded</button>
+            <button class="chip" type="button" data-value="dichroic" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path class="solid" d="M2.5 13.5L13.5 2.5v11z"/></svg>Dichroic</button>
+          </div>
+        </div>
         <button class="chip" id="rewind" type="button" aria-keyshortcuts="R" aria-disabled="true">Rewind</button>
       </div>
       <dl class="how" aria-label="How to play">
@@ -66,8 +91,11 @@
 import { initPage, sound, oklchRgb, choices } from '../shared/stim.js';
 initPage({ id: 'glass' });
 // Three glasses: each breaks its own way.
-const KINDS = ['annealed', 'tempered', 'laminated'];
+const KINDS = ['annealed', 'tempered', 'laminated', 'armored', 'reeded', 'dichroic'];
+// Each glass breaks like one of four: reeded and dichroic break as annealed.
+const MODE = { annealed: 'annealed', tempered: 'tempered', laminated: 'laminated', armored: 'armored', reeded: 'annealed', dichroic: 'annealed' };
 let glass = 'annealed';
+const mode = () => MODE[glass];
 try { const v = localStorage.getItem('stimming.glass.kind'); if (KINDS.includes(v)) glass = v; } catch (err) { /* storage is optional */ }
 const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -192,10 +220,11 @@ const VOICE = {
   annealed: { f: 1, ring: 1, knock: 1, snap: 1 },
   tempered: { f: 1.45, ring: 1.5, knock: 0.5, snap: 0.9 },
   laminated: { f: 0.78, ring: 0.28, knock: 1.4, snap: 0.75 },
+  armored: { f: 0.62, ring: 0.2, knock: 1.8, snap: 0.55 },
 };
 // A crack: a sharp snap, a dull knock and a glassy ring.
 // Ticks follow the crack as it runs.
-function crackSound(x, hard, ticks, kind = glass) {
+function crackSound(x, hard, ticks, kind = mode()) {
   const a = live();
   if (!a || voices >= MAXV) return;
   const V = VOICE[kind], t = a.currentTime + LEAD, g = level() * (hard ? 1 : 0.78), d = bus(a, x), k = (hard ? 1.35 : 1) * V.ring;
@@ -284,24 +313,84 @@ function shatterSound(x) {
   if (first) track(first, ...all, d);
   else setTimeout(() => d.disconnect(), 800);
 }
-// A shot: a hard crack, a low punch and a short room tail.
-function gunSound(x) {
+// A room for the gun: a short stereo tail, built once.
+let hall = null, drive = null;
+function roomBus(a) {
+  if (hall && hall.context === a) return hall;
+  const len = Math.round(a.sampleRate * 1.3), ir = a.createBuffer(2, len, a.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    let lp = 0;
+    // Noise that dies away and darkens as it goes.
+    for (let i = 0; i < len; i++) {
+      const t = i / a.sampleRate, k = 0.35 + 0.6 * Math.exp(-t * 6);
+      lp += (Math.random() * 2 - 1 - lp) * k;
+      d[i] = lp * Math.exp(-t * 4.2) * (i < 90 ? i / 90 : 1);
+    }
+  }
+  hall = a.createConvolver();
+  hall.buffer = ir;
+  const g = a.createGain();
+  g.gain.value = 0.42;
+  hall.connect(g).connect(out);
+  // A soft clipper gives the shot its punch.
+  drive = new Float32Array(1024).map((_, i) => Math.tanh(((i / 1023) * 2 - 1) * 3.2) / Math.tanh(3.2));
+  return hall;
+}
+// A shot: a click, a supersonic crack, a clipped boom, then the room.
+function gunSound(x, auto = false) {
+  const a = live();
+  if (!a || voices >= MAXV - 2) return;
+  const t = a.currentTime + LEAD, g = level() * (auto ? 0.8 : 1), d = bus(a, x), rv = roomBus(a);
+  const sh = a.createWaveShaper(), pre = a.createGain();
+  sh.curve = drive;
+  pre.gain.value = 1.6;
+  pre.connect(sh).connect(d);
+  sh.connect(rv);
+  burst(a, pre, t, 'highpass', 5000, 0.7, 0.9 * g, 0.0012, 0.01);
+  burst(a, pre, t + 0.0008, 'bandpass', 2600 * jit(0.08), 0.6, 1.4 * g, 0.009, 0.05);
+  burst(a, pre, t + 0.001, 'lowpass', 900, 0.7, 1.1 * g, 0.035, 0.2);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(170 * jit(0.06), t);
+  o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(1.3 * g, t + 0.003);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.connect(og).connect(pre);
+  o.start(t);
+  o.stop(t + 0.24);
+  track(o, og, pre, sh, d);
+  // The brass casing lands a moment later and rings twice.
+  if (!auto || Math.random() < 0.3) {
+    const tc = t + rnd(0.32, 0.48), dc = bus(a, clamp(x + 0.5, -1, 1));
+    for (const [dt, k] of [[0, 1], [rnd(0.07, 0.11), 0.45]]) {
+      const [oc, gs] = partials(a, dc, tc + dt, 4300 * jit(0.05), [1, 1.52, 2.36], [0.05, 0.035, 0.02], [0.09, 0.06, 0.04], g * k);
+      track(oc, ...gs);
+    }
+    setTimeout(() => dc.disconnect(), 1200);
+  }
+}
+// A round glancing off armored glass whines away.
+function ricochetSound(x) {
   const a = live();
   if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD, g = level(), d = bus(a, x);
-  burst(a, d, t, 'highpass', 1800, 0.6, 1.1 * g, 0.012, 0.06);
-  burst(a, d, t, 'lowpass', 160, 0.8, 1.2 * g, 0.05, 0.25);
-  burst(a, d, t + 0.004, 'bandpass', 700, 0.7, 0.3 * g, 0.16, 0.6);
-  const o = a.createOscillator(), og = a.createGain();
-  o.frequency.setValueAtTime(120, t);
-  o.frequency.exponentialRampToValueAtTime(38, t + 0.12);
+  const t = a.currentTime + LEAD + 0.01, g = level(), d = bus(a, x * 0.5 + rnd(-0.3, 0.3));
+  const o = a.createOscillator(), og = a.createGain(), lfo = a.createOscillator(), lg = a.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(rnd(2600, 3400), t);
+  o.frequency.exponentialRampToValueAtTime(rnd(700, 1000), t + 0.38);
+  lfo.frequency.value = rnd(28, 40);
+  lg.gain.value = 60;
+  lfo.connect(lg).connect(o.frequency);
   og.gain.setValueAtTime(0.0001, t);
-  og.gain.exponentialRampToValueAtTime(0.55 * g, t + 0.004);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  og.gain.exponentialRampToValueAtTime(0.09 * g, t + 0.02);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
   o.connect(og).connect(d);
   o.start(t);
-  o.stop(t + 0.2);
-  track(o, og, d);
+  lfo.start(t);
+  o.stop(t + 0.45);
+  lfo.stop(t + 0.45);
+  track(o, og, lg, d);
 }
 // A thrown brick: air rushing past, loudest as it arrives.
 function swishSound(dur) {
@@ -494,6 +583,11 @@ const WEB = {
     n: 4 + Math.floor(Math.random() * 3), len: () => S * rnd(0.014, 0.045),
     r1: S * rnd(0.008, 0.012), gr: 1.7, m: 1, skip: () => 0.3, T1: 0.12, wander: 0.5, branch: false,
   }),
+  // Armored glass only bruises: a tight bullseye of short cracks.
+  armored: hard => ({
+    n: (hard ? 10 : 7) + Math.floor(Math.random() * 4), len: () => S * rnd(0.015, hard ? 0.06 : 0.035),
+    r1: S * rnd(0.008, 0.012), gr: 1.45, m: hard ? 4 : 3, skip: () => 0.15, T1: 0.14, wander: 0.4, branch: false,
+  }),
   laminated: hard => ({
     n: (hard ? 20 : 14) + Math.floor(Math.random() * 6),
     len: () => S * rnd(0.26, 0.6) * (Math.random() < 0.3 ? 1.6 : 1),
@@ -503,14 +597,14 @@ const WEB = {
 };
 // A web: radial cracks with branches, linked by ring cracks.
 function web(cx, cy, hard) {
-  const W = WEB[glass](hard), t0 = cClock, T1 = W.T1 * (reduce ? 0.5 : 1);
+  const W = WEB[mode()](hard), t0 = cClock, T1 = W.T1 * (reduce ? 0.5 : 1);
   const rate = d => T1 * (d / S) ** 0.8;
   const n = W.n, a0 = Math.random() * TAU, rads = [], branches = W.branch ? [] : null;
   for (let k = 0; k < n; k++) {
     const ang = a0 + (k + rnd(-0.3, 0.3)) * (TAU / n);
     const r = grow(cx, cy, ang, W.len(), t0, rate, 1, W.wander, branches);
     rads.push(r.pts);
-    if (r.open && glass !== 'tempered') tips.push([r.x, r.y, r.dir]);
+    if (r.open && mode() !== 'tempered' && mode() !== 'armored') tips.push([r.x, r.y, r.dir]);
   }
   for (const [x, y, dir, len, tb] of branches || []) {
     const r = grow(x, y, dir, len, tb, d => rate(d) * 0.8, 0.8, 0.3, null);
@@ -1017,8 +1111,10 @@ uniform sampler2D tBack, tCrack;
 uniform samplerCube tEnv;
 uniform vec2 uRes, uTexel, uPane;
 uniform vec4 uBoxA, uBoxB;
-uniform vec3 uKey, uAbs;
-uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine, uDisp, uBend, uQuench;
+uniform vec3 uKey, uAbs, uFlashC;
+uniform vec4 uFlash;
+uniform vec2 uFlashS;
+uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine, uDisp, uBend, uQuench, uReed, uDich, uArmor;
 varying vec3 vWorld, vNormal;
 varying vec2 vPuv;
 varying float vSide, vFade;
@@ -1047,25 +1143,31 @@ void main() {
   vec2 cg = vec2(
     texture2D(tCrack, vPuv + vec2(uTexel.x, 0.0)).r - texture2D(tCrack, vPuv - vec2(uTexel.x, 0.0)).r,
     texture2D(tCrack, vPuv + vec2(0.0, uTexel.y)).r - texture2D(tCrack, vPuv - vec2(0.0, uTexel.y)).r) * uCrackK;
+  // Reeded glass: vertical flutes, each a shallow half cylinder.
+  float fl = (fract(vPuv.x * uPane.x / 0.055) - 0.5) * uReed * (1.0 - vSide);
   // Cracks tilt the surface beside them, so reflections break there.
-  vec3 N = normalize(N0 + vec3(cg * uBend * (1.0 - vSide), 0.0));
+  vec3 N = normalize(N0 + vec3(cg * uBend * (1.0 - vSide) + vec2(fl * 1.6, 0.0), 0.0));
   float cosT = clamp(dot(N, V), 0.0, 1.0);
   // Float glass is never quite flat.
   vec2 wav = vec2(sin(vPuv.y * 23.0 + vPuv.x * 5.0), sin(vPuv.x * 17.0 - vPuv.y * 7.0)) * 0.006;
   vec3 Nv = normalize((viewMatrix * vec4(N0, 0.0)).xyz);
   vec2 suv = gl_FragCoord.xy / uRes;
   vec2 off = -(Nv.xy * (1.0 + vSide * 2.0) + wav) * uRefr + cg * 30.0 / uRes;
+  // Each flute bends the city sideways and repeats it.
+  off.x -= fl * 0.05;
   // Dispersion: red bends least, blue bends most.
   vec2 dsp = off * uDisp;
   vec3 back = vec3(texture2D(tBack, suv + off - dsp).r, texture2D(tBack, suv + off).g, texture2D(tBack, suv + off + dsp).b);
   // Light through glass turns green with path length.
   // Side walls are the longest paths.
   float rim = min(min(vPuv.x, 1.0 - vPuv.x) * uPane.x, min(vPuv.y, 1.0 - vPuv.y) * uPane.y);
-  float path = mix(1.0 / max(cosT, 0.2), 20.0, vSide) + ck.r * 5.0 + uEdge * 14.0 * smoothstep(0.035, 0.0, rim);
+  float path = mix(1.0 / max(cosT, 0.2), 20.0, vSide) + ck.r * 5.0 + uEdge * 14.0 * smoothstep(mix(0.035, 0.1, uArmor), 0.0, rim) + uArmor * 1.6;
   vec3 tint = exp(-uAbs * path);
   float F = max(0.04 + 0.96 * pow(1.0 - cosT, 5.0), vSide * 0.2);
   vec3 R = reflect(-V, N);
   vec3 env = textureCube(tEnv, R).rgb * uEnvI + studio(R);
+  // Armored glass is many layers: each inner face adds a faint ghost.
+  env += uArmor * 0.45 * studio(R + vec3(0.0, 0.012, 0.0));
   // Reflections aimed at the back wall pick up its colours.
   if (R.z < -0.02) {
     vec4 c = projectionMatrix * viewMatrix * vec4(vWorld + R * ((uWallZ - vWorld.z) / R.z), 1.0);
@@ -1083,7 +1185,27 @@ void main() {
   // Cracks are hard dark cut gaps with one lit edge.
   // Crack walls darken the glass beside them.
   float face = uLine * (1.0 - vSide), gap = ck.g * face, lit = ck.b * face;
-  vec3 col = (back * tint * (1.0 - F) * (1.0 - 0.35 * ck.r * (1.0 - ck.g)) + env * F + spec) * (1.0 - 0.93 * gap) + lit * vec3(0.9, 1.0, 0.96) * 1.5;
+  // Dichroic: a thin film reflects one colour and passes the rest.
+  // A thick film turns colour quickly with angle: dents and shards shimmer.
+  float sinT = sqrt(max(0.0, 1.0 - cosT * cosT)) / 1.45, cosTt = sqrt(1.0 - sinT * sinT);
+  float dnm = 840.0 + 120.0 * (0.5 + 0.5 * sin(vPuv.x * 3.1 + vPuv.y * 1.7 + 0.8));
+  vec3 film = sin(6.2832 * 1.45 * dnm * cosTt / vec3(640.0, 540.0, 450.0));
+  film *= film;
+  vec3 Fr = mix(vec3(F), 0.04 + 0.32 * film, uDich), Ft = mix(vec3(1.0 - F), 1.0 - 0.42 * film, uDich);
+  vec3 col = (back * tint * Ft * (1.0 - 0.35 * ck.r * (1.0 - ck.g)) + (env + uDich * 0.04) * Fr + spec) * (1.0 - 0.93 * gap) + lit * vec3(0.9, 1.0, 0.96) * 1.5;
+  // The muzzle flash: a reflected star, a warm wash, and cracks that catch it.
+  if (uFlash.w > 0.0) {
+    vec3 fd = normalize(uFlash.xyz - vWorld);
+    float c = dot(R, fd);
+    vec3 bx = normalize(cross(fd, vec3(0.0, 1.0, 0.0))), by = cross(bx, fd);
+    vec2 u = vec2(dot(R, bx), dot(R, by)) / max(c, 0.05) / uFlashS.x;
+    float r = length(u), ang = atan(u.y, u.x) + uFlashS.y, ra = fwidth(r);
+    float core = 1.0 - smoothstep(0.38 - ra, 0.38 + ra, r);
+    float ray = 1.0 - smoothstep(-ra, ra, r - (0.38 + 0.62 * pow(abs(cos(ang * 3.0)), 12.0)));
+    float star = step(0.0, c) * max(core, ray * 0.7);
+    vec3 fc = uFlashC * uFlash.w;
+    col += fc * (star * 22.0 * max(Fr.g, 0.05) + 0.022 * (1.0 - gap)) * (1.0 - vSide * 0.5) + fc * lit * 3.0;
+  }
   gl_FragColor = vec4(col, uOpacity * vFade * (1.0 - smoothstep(0.3, 0.7, hole)));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -1165,22 +1287,45 @@ void main() {
   float lit = smoothstep(vCore - aa, vCore + aa, s) * (1.0 - smoothstep(vCore * 1.75 - aa, vCore * 1.75 + aa, s));
   gl_FragColor = vec4(ridge, gap, lit * abs(vGlint), 0.0);
 }`;
+// The muzzle flash: hard stencil rays around a round core.
+const FLASH_VS = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+const FLASH_FS = `
+uniform float uTurn;
+uniform vec3 uCore, uRay;
+varying vec2 vUv;
+void main() {
+  vec2 q = vUv * 2.0 - 1.0;
+  float r = length(q), a = atan(q.y, q.x) + uTurn, aa = fwidth(r);
+  float rays = 1.0 - smoothstep(-aa, aa, r - (0.28 + 0.72 * pow(abs(cos(a * 3.0)), 10.0)));
+  float fine = 1.0 - smoothstep(-aa, aa, r - (0.2 + 0.46 * pow(abs(cos(a * 3.0 + 0.52)), 18.0)));
+  float core = 1.0 - smoothstep(0.26 - aa, 0.26 + aa, r);
+  float m = max(rays, fine);
+  if (m < 0.01) discard;
+  gl_FragColor = vec4(mix(uRay, uCore, core), m);
+  #include <colorspace_fragment>
+}`;
 // Bullet holes: an open hole in a frosted cone of crushed glass.
 // Alpha marks the hole; the glass there is gone.
 const HOLE_VS = `
 attribute vec4 aHole;
 varying vec2 vQ;
-varying float vT, vSeed;
+varying float vT, vSeed, vStuck;
 void main() {
   vQ = position.xy;
   vT = aHole.w;
   vSeed = fract(aHole.x * 13.7 + aHole.y * 7.3);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(aHole.xy + position.xy * aHole.z * 3.4, 0.0, 1.0);
+  vStuck = step(aHole.z, 0.0);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(aHole.xy + position.xy * abs(aHole.z) * 3.4, 0.0, 1.0);
 }`;
 const HOLE_FS = `
 uniform float uTime;
 varying vec2 vQ;
-varying float vT, vSeed;
+varying float vT, vSeed, vStuck;
 void main() {
   if (vT > uTime) discard;
   float d = length(vQ) * 3.4, a = atan(vQ.y, vQ.x), aa = fwidth(d);
@@ -1195,6 +1340,13 @@ void main() {
   // The cone's frost faces the light on one side.
   float lit = 0.6 + 0.4 * dot(normalize(vQ + 1e-5), vec2(-0.6, 0.8));
   float frost = cone * lit * mix(0.26, 0.08, smoothstep(hr, cr, d));
+  // A stuck round: no hole, a dark lead splat with a bright rim.
+  if (vStuck > 0.5) {
+    float splat = hole;
+    frost = (cone + splat) * lit * mix(0.36, 0.12, smoothstep(hr, cr, d)) * (1.0 - splat * 0.7);
+    gl_FragColor = vec4(cone * 0.9 + splat, max(lip, splat * 0.85), frost, 0.0);
+    return;
+  }
   gl_FragColor = vec4(cone * 0.8, lip, frost, hole);
 }`;
 const WORLD_VS = `
@@ -1375,6 +1527,9 @@ let shardMesh = null, shardMat = null, xfTex = null, mark = null;
 let ray = null, ndc = null, hitV = null, tmpV = null, paneP = null, floorP = null, dbs = null;
 const FOV = 28, MT = 0.055, WALLZ = -1.5, CAPS = 512, CLEAR = 0x121318;
 let lowDpr = false;
+// The muzzle flash: world place and strength; angular size and turn.
+const flashU = { value: null }, flashS = { value: null };
+let flashMesh = null, flashLight = null, flash = null;
 
 /* ---------- the city: rooflines and lights, the same on every visit ---------- */
 // OKLCH in, linear light out, scaled by k.
@@ -1521,8 +1676,8 @@ function renderCracks() {
 // The backdrop goes to a target that the glass bends.
 // It redraws only while the city drifts or the size changes.
 function renderBack() {
-  const vis = [pane.visible, shardMesh.visible, mark.visible, brickMesh.visible];
-  pane.visible = shardMesh.visible = mark.visible = bgQuad.visible = false;
+  const vis = [pane.visible, shardMesh.visible, mark.visible, brickMesh.visible, flashMesh.visible];
+  pane.visible = shardMesh.visible = mark.visible = bgQuad.visible = flashMesh.visible = false;
   // A brick in front of the glass must not show again through it.
   brickMesh.visible = !!brick && brick.p[2] < -0.02;
   wall.visible = floor.visible = bokeh.visible = true;
@@ -1531,7 +1686,7 @@ function renderBack() {
   renderer.setRenderTarget(null);
   wall.visible = floor.visible = bokeh.visible = false;
   bgQuad.visible = true;
-  [pane.visible, shardMesh.visible, mark.visible, brickMesh.visible] = vis;
+  [pane.visible, shardMesh.visible, mark.visible, brickMesh.visible, flashMesh.visible] = vis;
   backDirty = false;
 }
 function onSize(w, h) {
@@ -1653,15 +1808,17 @@ function dentAt(x, y, sink, r) {
 
 function tap(x, y, hard = false) {
   if (!ready || rw || pending || state === 'shattered') return;
-  const w = web(x, y, hard), kind = glass;
+  const w = web(x, y, hard), kind = mode();
   lastWeb = w;
   state = 'cracked';
-  if (kind === 'laminated') {
+  if (kind === 'armored') {
+    // Armored glass takes the blow and holds.
+  } else if (kind === 'laminated') {
     // The interlayer holds: each blow dents it, and the pane bows more.
     dentAt(x, y, hard ? 0.045 : 0.022, S * 0.14);
     sagGoal = Math.min(0.05, sagGoal + 0.006);
   } else damage += hard ? limit : 1;
-  flexAt(x, y, kind === 'tempered' ? -0.008 : hard ? -0.02 : -0.012);
+  flexAt(x, y, kind === 'tempered' || kind === 'armored' ? -0.006 : hard ? -0.02 : -0.012);
   sfx(() => crackSound(x / (PW / 2), hard, w.ticks, kind));
   // Enough damage and the pane goes once this crack has run.
   if (damage >= limit) pending = { at: w.end, x, y };
@@ -1672,8 +1829,8 @@ function tap(x, y, hard = false) {
 // Holding on: the pane gives way where it was struck.
 // The laminate does not give way; it bulges under the finger.
 function press(x, y) {
-  if (!ready || rw || pending || state !== 'cracked') return;
-  if (glass === 'laminated') {
+  if (!ready || rw || pending || state !== 'cracked' || mode() === 'armored') return;
+  if (mode() === 'laminated') {
     if (lastWeb) bulge = { x, y, k: dentAt(x, y, 0, S * 0.14), web: lastWeb, acc: 0.24, pops: 0 };
   } else pending = { at: cClock, x, y };
   wake();
@@ -1716,7 +1873,7 @@ function stepBulge(dt) {
 }
 // The burst runs over a few frames so no single frame stalls.
 function shatter() {
-  if (glass === 'tempered') return burstTempered();
+  if (mode() === 'tempered') return burstTempered();
   const p = pending, t = cClock;
   try {
     if (!p.stage) {
@@ -1873,7 +2030,7 @@ function heal(quiet) {
   growEnd = -1;
   damage = 0;
   // Tempered glass takes a few blows; which one breaks it is luck.
-  limit = glass === 'laminated' ? Infinity : glass === 'tempered' ? 3 + Math.floor(Math.random() * 3) : 5 + (Math.random() < 0.5 ? 1 : 0);
+  limit = mode() === 'laminated' || mode() === 'armored' ? Infinity : mode() === 'tempered' ? 3 + Math.floor(Math.random() * 3) : 5 + (Math.random() < 0.5 ? 1 : 0);
   pending = rw = sim = bulge = lastWeb = null;
   removeBrick();
   if (holeMesh) { holeN = 0; holeMesh.geometry.instanceCount = 0; }
@@ -1895,16 +2052,34 @@ const LOOK = {
   annealed: { face: [0.42, 0.035, 170], side: [0.3, 0.025, 170], abs: [0.07, 0.016, 0.05], quench: 0, hold: 'shatter' },
   tempered: { face: [0.42, 0.04, 255], side: [0.3, 0.03, 255], abs: [0.07, 0.02, 0.04], quench: 1, hold: 'burst' },
   laminated: { face: [0.52, 0.055, 75], side: [0.38, 0.04, 70], abs: [0.03, 0.035, 0.1], quench: 0, hold: 'bulge' },
+  armored: { face: [0.3, 0.012, 250], side: [0.23, 0.01, 250], abs: [0.16, 0.035, 0.1], quench: 0, armor: 1, hold: 'pound' },
+  reeded: { face: [0.46, 0.04, 58], side: [0.34, 0.03, 58], abs: [0.06, 0.02, 0.045], quench: 0, reed: 1, hold: 'shatter' },
+  dichroic: { face: [0.22, 0.008, 280], side: [0.18, 0.008, 280], abs: [0.02, 0.02, 0.02], quench: 0, dich: 1, hold: 'shatter' },
 };
 // Ring: frequency in Hz, decay in seconds.
-const RINGF = { annealed: [11, 0.12], tempered: [14, 0.2], laminated: [7, 0.05] };
+const RINGF = { annealed: [11, 0.12], tempered: [14, 0.2], laminated: [7, 0.05], armored: [18, 0.06], reeded: [11, 0.12], dichroic: [12, 0.14] };
+// The glass button shows the glass in use.
+function showGlass() {
+  const b = document.querySelector(`#glasses [data-value="${glass}"]`);
+  const btn = document.getElementById('glassBtn');
+  btn.innerHTML = b.innerHTML;
+  btn.setAttribute('aria-label', `Glass: ${b.textContent}. Pick another.`);
+}
 function applyLook() {
   const L = LOOK[glass];
   applyTool();
+  showGlass();
   if (!frameMat) return;
   frameMat.color.setRGB(...lin(...L.face));
   beadMat.color.setRGB(...lin(...L.side));
-  for (const m of [paneMat, shardMat]) { m.uniforms.uAbs.value.set(...L.abs); m.uniforms.uQuench.value = L.quench; }
+  for (const m of [paneMat, shardMat]) {
+    const u = m.uniforms;
+    u.uAbs.value.set(...L.abs);
+    u.uQuench.value = L.quench;
+    u.uReed.value = L.reed || 0;
+    u.uDich.value = L.dich || 0;
+    u.uArmor.value = L.armor || 0;
+  }
   backDirty = true;
 }
 function setGlass(v) {
@@ -1928,58 +2103,85 @@ const TOOLS = {
 const TOOL_KEYS = ['hammer', 'gun', 'brick'];
 let tool = 'hammer';
 try { const v = localStorage.getItem('stimming.glass.tool'); if (TOOLS[v]) tool = v; } catch (err) { /* storage is optional */ }
-const toolB = document.getElementById('tool'), clickDD = document.getElementById('click-dd');
+const clickDD = document.getElementById('click-dd');
+const toolPick = choices(document.getElementById('tools'), v => setTool(v));
 function applyTool() {
   const T0 = TOOLS[tool];
-  toolB.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${T0.svg}</svg>${T0.name}`;
-  toolB.setAttribute('aria-label', `Tool: ${T0.name}. Press to switch.`);
+  toolPick.set(tool);
   clickDD.textContent = T0.click;
   holdDD.textContent = T0.hold || LOOK[glass].hold;
 }
 function setTool(v) {
-  if (!TOOLS[v] || v === tool) return;
+  if (!TOOLS[v]) return;
+  if (v !== tool) endUse();
   tool = v;
   try { localStorage.setItem('stimming.glass.tool', v); } catch (err) { /* storage is optional */ }
-  endUse();
   applyTool();
 }
 
 // Bullet holes: place, radius and birth time, drawn into the crack field.
 const HOLES = 128;
 let holeN = 0, holeMesh = null;
-function addHole(x, y, t) {
+// A stuck round has a negative radius.
+function addHole(x, y, t, stuck = false) {
   if (holeN >= HOLES) return;
   const a = holeMesh.geometry.getAttribute('aHole');
-  a.setXYZW(holeN++, x, y, S * rnd(0.007, 0.0095), t);
+  a.setXYZW(holeN++, x, y, S * rnd(0.007, 0.0095) * (stuck ? -1.3 : 1), t);
   a.needsUpdate = true;
   holeMesh.geometry.instanceCount = holeN;
   crackDirty = true;
 }
 // A shot's web: short radials and a ring or two close in.
 function shotWeb(x, y) {
-  const t0 = cClock, lam = glass === 'laminated', n = (lam ? 9 : 5) + Math.floor(Math.random() * 4), a0 = Math.random() * TAU, rads = [];
+  const t0 = cClock, m = mode(), lam = m === 'laminated', arm = m === 'armored', a0 = Math.random() * TAU, rads = [];
+  const n = (lam ? 9 : arm ? 12 : 5) + Math.floor(Math.random() * 4);
   const rate = d => 0.18 * (d / S) ** 0.8;
   for (let k = 0; k < n; k++) {
-    const r = grow(x, y, a0 + (k + rnd(-0.3, 0.3)) * (TAU / n), S * rnd(0.03, lam ? 0.1 : 0.17) * (Math.random() < 0.2 ? 2 : 1), t0, rate, 0.8, 0.35, null);
+    const len = S * (arm ? rnd(0.02, 0.05) : rnd(0.03, lam ? 0.1 : 0.17) * (Math.random() < 0.2 ? 2 : 1));
+    const r = grow(x, y, a0 + (k + rnd(-0.3, 0.3)) * (TAU / n), len, t0, rate, 0.8, 0.35, null);
     rads.push(r.pts);
-    if (r.open && !lam) tips.push([r.x, r.y, r.dir]);
+    if (r.open && !lam && !arm) tips.push([r.x, r.y, r.dir]);
   }
-  const r1 = S * 0.022;
-  for (let j = 0; j < (lam ? 3 : 1); j++) ringAt(x, y, rads, r1 * 1.6 ** j, 0.25, 0.6);
+  // Armored glass rings up in a tight bullseye.
+  const r1 = S * (arm ? 0.012 : 0.022), gr = arm ? 1.38 : 1.6;
+  for (let j = 0; j < (lam ? 3 : arm ? 4 : 1); j++) ringAt(x, y, rads, r1 * gr ** j, 0.2, 0.6);
   let end = t0;
   for (const s of segs) if (s.tb > end) end = s.tb;
   growEnd = Math.max(growEnd, end);
-  return { x, y, end, ticks: [0.004, 0.009, 0.016, 0.026], rNext: r1 * 1.6 ** 3 };
+  return { x, y, end, ticks: [0.004, 0.009, 0.016, 0.026], rNext: r1 * gr ** 3 };
 }
-function shoot(x, y) {
+// The flash sits on the line from the eye to the aim point.
+function muzzle(x, y) {
+  const c = camera.position, px = x - c.x, py = FH / 2 + y - c.y, pz = T / 2 - c.z, l = Math.hypot(px, py, pz), k = 1 / l;
+  flash = { t: 0, x: c.x + px * k, y: c.y + py * k, z: c.z + pz * k, s: 0.075 * rnd(0.85, 1.15) };
+  flashMesh.position.set(flash.x, flash.y, flash.z);
+  flashMesh.material.uniforms.uTurn.value = rnd(0, TAU);
+  flashS.value.y = rnd(0, TAU);
+  flashLight.position.set(flash.x, flash.y, flash.z);
+}
+function stepFlash(dt) {
+  flash.t += dt;
+  // Two frames full, two at half size, then dark.
+  const w = flash.t < 0.035 ? 1 : flash.t < 0.07 ? 0.5 : 0;
+  flashU.value.set(flash.x, flash.y, flash.z, w * (reduce ? 0.4 : 1));
+  flashMesh.visible = w > 0 && !reduce;
+  flashMesh.scale.setScalar(flash.s * (w < 1 ? 0.7 : 1));
+  flashLight.intensity = 34 * w * (reduce ? 0.4 : 1);
+  if (!w) flash = null;
+}
+function shoot(x, y, auto = false) {
   if (!ready || rw) return;
-  sfx(() => gunSound(x / (PW / 2)));
+  muzzle(x, y);
+  wake();
+  sfx(() => gunSound(x / (PW / 2), auto));
   // A shattered pane or one already giving way only hears the shot.
   if (state === 'shattered' || pending) return;
-  const kind = glass;
-  addHole(x, y, cClock);
+  const kind = mode();
+  // Armored glass stops the round: a crater with the bullet in it.
+  addHole(x, y, cClock, kind === 'armored');
   state = 'cracked';
   flexAt(x, y, -0.006);
+  if (kind === 'armored') sfx(() => { if (Math.random() < 0.35) ricochetSound(x / (PW / 2)); });
   if (kind === 'tempered') {
     // One bullet is enough: the stress lets go all at once.
     pending = { at: cClock, x, y };
@@ -2032,11 +2234,19 @@ function throwBrick(x, y, power) {
 }
 // The brick meets the pane: each glass answers in its own way.
 function strike(x, y) {
-  const b = brick, k = b.power, kind = glass, v = b.v;
+  const b = brick, k = b.power, kind = mode(), v = b.v;
   sfx(() => thudSound(x / (PW / 2), 0.7 + 0.5 * k));
   if (pending) { pending.push = k; b.v = v.map(c => c * 0.4); return; }
   state = 'cracked';
-  if (kind === 'laminated') {
+  if (kind === 'armored') {
+    // The brick bounces off a small bruise.
+    const w = web(x, y, false);
+    lastWeb = w;
+    flexAt(x, y, -0.01);
+    sfx(() => crackSound(x / (PW / 2), false, w.ticks, kind));
+    b.v = [v[0] * 0.35, v[1] * 0.3, -v[2] * 0.2];
+    b.w = b.w.map(c => -c * 0.7);
+  } else if (kind === 'laminated') {
     // The interlayer catches the brick; it drops in front of the pane.
     const w = web(x, y, true);
     lastWeb = w;
@@ -2107,14 +2317,16 @@ function beginUse(at, hard) {
   using = { at, t0: performance.now() };
   if (tool === 'hammer') {
     tap(at.x, at.y, hard);
-    holdT2 = setTimeout(() => press(at.x, at.y), 480);
+    // On armored glass a held hammer pounds on, four blows a second.
+    const pound = () => { if (!using || mode() !== 'armored') return; tap(at.x, at.y, true); holdT2 = setTimeout(pound, 250); };
+    holdT2 = setTimeout(() => (mode() === 'armored' ? pound() : press(at.x, at.y)), 480);
   } else if (tool === 'gun') {
     shoot(at.x, at.y);
     // Held, the gun fires on, about ten rounds a second.
     const auto = () => {
       if (!using) return;
       const sp = S * 0.012;
-      shoot(clamp(at.x + rnd(-sp, sp), -PW / 2 + BEAD, PW / 2 - BEAD), clamp(at.y + rnd(-sp, sp), -PH / 2 + BEAD, PH / 2 - BEAD));
+      shoot(clamp(at.x + rnd(-sp, sp), -PW / 2 + BEAD, PW / 2 - BEAD), clamp(at.y + rnd(-sp, sp), -PH / 2 + BEAD, PH / 2 - BEAD), true);
       holdT2 = setTimeout(auto, 95);
     };
     holdT2 = setTimeout(auto, 260);
@@ -2159,6 +2371,7 @@ function frame(ms) {
   if (bulge && !rw) { stepBulge(dt); busy = true; }
   if (brick && !brick.sleep && !rw) { stepBrick(dt); busy = true; }
   if (using && using.wind) busy = true;
+  if (flash) { stepFlash(dt); busy = true; }
   // Dents and the bow ease toward their goals.
   const ez = reduce ? 1 : 1 - Math.exp(-dt * 9);
   for (const D of dents) if (Math.abs(D.goal - D.sink) > 1e-5) { D.sink += (D.goal - D.sink) * ez; busy = true; }
@@ -2261,9 +2474,15 @@ addEventListener('keydown', e => {
   }
 });
 addEventListener('keyup', e => { if (e.key === ' ' && spaceDown) { spaceDown = false; endUse(); } });
-toolB.addEventListener('click', () => setTool(TOOL_KEYS[(TOOL_KEYS.indexOf(tool) + 1) % 3]));
+// The glass tray opens on hover or tap and closes after a pick.
+const picker = document.querySelector('.picker'), glassBtn = document.getElementById('glassBtn'), glassTray = document.getElementById('glasses');
+const openTray = on => { picker.classList.toggle('is-open', on); glassBtn.setAttribute('aria-expanded', String(on)); };
+glassBtn.addEventListener('click', () => openTray(!picker.classList.contains('is-open')));
+document.addEventListener('pointerdown', e => { if (!picker.contains(e.target)) openTray(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape') openTray(false); });
+const glassPick = choices(glassTray, v => { setGlass(v); openTray(false); stir(); });
 rewindB.addEventListener('click', () => { rewind(); stir(); });
-choices(document.getElementById('kind'), v => { setGlass(v); stir(); }).set(glass);
+glassPick.set(glass);
 applyLook();
 sound.onChange(on => {
   if (on) audio();
@@ -2376,12 +2595,15 @@ async function start() {
   bgQuad.renderOrder = -1;
   scene.add(bgQuad);
   crackRT = new THREE.WebGLRenderTarget(256, 144, { depthBuffer: false });
+  flashU.value = new THREE.Vector4(0, 0, 0, 0);
+  flashS.value = new THREE.Vector2(0.02, 0);
   const glassU = () => ({
     tBack: { value: backRT.texture }, tCrack: { value: crackRT.texture }, tEnv: { value: cubeRT.texture },
     uRes: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1 / 256, 1 / 144) }, uPane: { value: new THREE.Vector2(PW, PH) },
     uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.4 },
     uWallZ: { value: WALLZ }, uLine: { value: 1 }, uDisp: { value: 0.18 }, uBend: { value: 0.7 },
-    uAbs: { value: new THREE.Vector3(0.07, 0.016, 0.05) }, uQuench: { value: 0 },
+    uAbs: { value: new THREE.Vector3(0.07, 0.016, 0.05) }, uQuench: { value: 0 }, uReed: { value: 0 }, uDich: { value: 0 }, uArmor: { value: 0 },
+    uFlash: flashU, uFlashS: flashS, uFlashC: { value: V3(lin(0.92, 0.13, 78, 1)) },
     uBoxA: { value: new THREE.Vector4() }, uBoxB: { value: new THREE.Vector4() }, uKey: { value: V3(lin(0.97, 0.025, 80, 0.6)) },
   });
   paneMat = new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: GLASS_FS, transparent: true, uniforms: {
@@ -2442,7 +2664,15 @@ async function start() {
   };
   brickMesh = new THREE.Mesh(new RoundedBoxGeometry(BX, BY, BZ, 2, 0.008), brickMat);
   brickMesh.visible = false;
-  scene.add(brickMesh);
+  // The flash sits between the eye and the pane and lights the frame.
+  flashMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+    vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthTest: false, depthWrite: false,
+    uniforms: { uTurn: { value: 0 }, uCore: { value: new THREE.Color(...lin(0.98, 0.05, 98)) }, uRay: { value: new THREE.Color(...lin(0.78, 0.17, 58)) } },
+  }));
+  flashMesh.renderOrder = 3;
+  flashMesh.visible = false;
+  flashLight = new THREE.PointLight(new THREE.Color(...lin(0.9, 0.12, 75)), 0, 0, 2);
+  scene.add(brickMesh, flashMesh, flashLight);
 
   panel.prepend(canvas);
   // The backdrop draws only into its target.
@@ -2451,11 +2681,11 @@ async function start() {
   // A panel with no size yet still gets a frame.
   if (!built) onSize(16, 9);
   await idle();
-  shardMesh.visible = brickMesh.visible = true;
+  shardMesh.visible = brickMesh.visible = flashMesh.visible = true;
   // Async compile keeps the shader builds off the main thread.
   await renderer.compileAsync(scene, camera);
   await renderer.compileAsync(crackScene, crackCam);
-  shardMesh.visible = brickMesh.visible = false;
+  shardMesh.visible = brickMesh.visible = flashMesh.visible = false;
   applyLook();
   renderCracks();
   ready = true;
