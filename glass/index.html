@@ -1440,23 +1440,41 @@ void main() {
   vUv = uv;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
+// A globular fireball: a hot core and soft offset lobes; no hard edge anywhere.
 const FLASH_FS = `
-uniform float uTurn, uK;
+uniform float uK, uSeed;
 uniform vec3 uCore, uRay;
+varying vec2 vUv;
+float h(float n) { return fract(sin(n) * 43758.5453); }
+void main() {
+  vec2 q = vUv * 2.0 - 1.0;
+  float r = length(q);
+  float core = exp(-r * r * 22.0), g = 0.0;
+  for (int i = 0; i < 7; i++) {
+    float f = float(i) + uSeed;
+    vec2 c = vec2(h(f * 1.7) - 0.5, h(f * 3.1) - 0.5) * 0.9;
+    g += exp(-dot(q - c, q - c) * (14.0 + 22.0 * h(f * 5.3))) * (0.12 + 0.22 * h(f * 7.9));
+  }
+  // Out-of-focus spokes, barely there.
+  float a = atan(q.y, q.x) + uSeed * 6.28;
+  float spokes = pow(abs(cos(a * 2.5)), 4.0) * exp(-r * 3.5) * 0.45;
+  float m = (core * 1.2 + g + spokes + exp(-r * r * 3.0) * 0.12) * (1.0 - smoothstep(0.6, 1.0, r));
+  vec3 col = mix(uRay, uCore, min(1.0, core * 1.3)) * m * uK;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+// Lens flare parts: soft discs, soft rings and a long horizontal streak.
+const GHOST_FS = `
+uniform vec3 uCol;
+uniform float uKind, uK;
 varying vec2 vUv;
 void main() {
   vec2 q = vUv * 2.0 - 1.0;
-  float r = length(q), a = atan(q.y, q.x) + uTurn;
-  // Out of focus at the lens: a clear six-point star with blurred edges.
-  float star = 1.0 - smoothstep(-0.1, 0.1, r - (0.22 + 0.62 * pow(abs(cos(a * 3.0)), 8.0)));
-  float fine = 1.0 - smoothstep(-0.08, 0.08, r - (0.16 + 0.4 * pow(abs(cos(a * 3.0 + 0.52)), 14.0)));
-  float core = exp(-r * r * 18.0);
-  float haze = exp(-r * r * 4.0) * 0.22;
-  float m = (core + 0.75 * star * (1.0 - 0.6 * r) + 0.4 * fine + haze) * (1.0 - smoothstep(0.75, 1.0, r));
-  if (m < 0.002) discard;
-  // Far brighter than white, so the bloom spreads it.
-  vec3 col = mix(uRay, uCore, core) * m * uK;
-  gl_FragColor = vec4(col, 1.0);
+  float r = length(q), m;
+  if (uKind > 1.5) m = exp(-q.y * q.y * 90.0) * exp(-q.x * q.x * 2.2);
+  else if (uKind > 0.5) m = exp(-pow((r - 0.72) / 0.13, 2.0)) * 0.8 + exp(-r * r * 4.0) * 0.12;
+  else m = exp(-pow(r / 0.78, 6.0)) * 0.55 + exp(-r * r * 3.0) * 0.45;
+  m *= 1.0 - smoothstep(0.82, 1.0, uKind > 1.5 ? abs(q.x) : r);
+  gl_FragColor = vec4(uCol * m * uK, 1.0);
 }`;
 // Bullet holes: an open hole in a frosted cone of crushed glass.
 // Alpha marks the hole; the glass there is gone.
@@ -1678,7 +1696,13 @@ const FOV = 28, MT = 0.055, WALLZ = -1.5, CAPS = 512, CLEAR = 0x121318;
 let lowDpr = false, composer = null, bloom = null;
 // The muzzle flash: world place and strength; angular size and turn.
 const flashU = { value: null }, flashS = { value: null };
-let flashMesh = null, flashLight = null, flash = null, flashT = 0;
+let flashMesh = null, flashCore = null, flashLight = null, flash = null, flashT = 0;
+// Flare ghosts: place on the flash-to-centre line, size, kind, colour.
+// Kind 0 is a soft disc, 1 a soft ring, 2 the horizontal streak.
+const FLARE = [
+  [1, 1.6, 2, [0.8, 0.09, 75, 0.5]], [0.62, 0.05, 0, [0.75, 0.08, 200, 0.22]], [0.35, 0.025, 1, [0.8, 0.1, 80, 0.3]],
+  [-0.15, 0.07, 0, [0.7, 0.1, 300, 0.12]], [-0.45, 0.035, 0, [0.8, 0.08, 150, 0.18]], [-0.8, 0.11, 1, [0.75, 0.09, 40, 0.16]],
+];
 
 /* ---------- the city: rooflines and lights, the same on every visit ---------- */
 // OKLCH in, linear light out, scaled by k.
@@ -2369,10 +2393,20 @@ function muzzle(x, y) {
   // A timer clears the flash even if frames stop.
   clearTimeout(flashT);
   flashT = setTimeout(endFlash, 150);
-  flashMesh.position.set(flash.x, flash.y, flash.z);
-  flashMesh.material.uniforms.uTurn.value = rnd(0, TAU);
-  flashS.value.y = rnd(0, TAU);
+  flashCore.position.set(flash.x, flash.y, flash.z);
+  flashCore.material.uniforms.uSeed.value = rnd(0, 1);
   flashLight.position.set(flash.x, flash.y, flash.z);
+  // Ghosts float just in front of the lens, along the line through the centre.
+  tmpV.set(flash.x, flash.y, flash.z).project(camera);
+  const fx = tmpV.x, fy = tmpV.y, view = 2 * 0.3 * Math.tan((FOV * Math.PI) / 360);
+  flashMesh.children.forEach(m => {
+    if (m === flashCore) return;
+    const { k, sz } = m.userData;
+    tmpV.set(fx * k, fy * k, 0.5).unproject(camera).sub(c).normalize().multiplyScalar(0.3).add(c);
+    m.position.copy(tmpV);
+    // The streak is long and thin; the rest are round.
+    m.scale.set(view * sz, view * sz * (m.material.uniforms.uKind.value > 1.5 ? 0.06 : 1), 1);
+  });
 }
 // The flash runs on the clock: 45 ms full, 40 ms at half size, then dark.
 function stepFlash() {
@@ -2380,8 +2414,8 @@ function stepFlash() {
   if (!w) return endFlash(false);
   flashU.value.set(flash.x, flash.y, flash.z, w * (reduce ? 0.4 : 1));
   flashMesh.visible = !reduce;
-  flashMesh.scale.setScalar(flash.s * (w < 1 ? 0.8 : 1));
-  flashMesh.material.uniforms.uK.value = w;
+  flashCore.scale.setScalar(flash.s * (w < 1 ? 0.85 : 1));
+  flashMesh.children.forEach(m => { m.material.uniforms.uK.value = w; });
   // The lens hazes over while the flash lasts.
   bloom.strength = 0.6 + 0.5 * w * (reduce ? 0.3 : 1);
   flashLight.intensity = 34 * w * (reduce ? 0.4 : 1);
@@ -2901,11 +2935,24 @@ async function start() {
   brickMesh = new THREE.Mesh(new RoundedBoxGeometry(BX, BY, BZ, 2, 0.008), brickMat);
   brickMesh.visible = false;
   // The flash sits between the eye and the pane and lights the frame.
-  flashMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
-    vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: { uTurn: { value: 0 }, uK: { value: 1 }, uCore: { value: new THREE.Color(...lin(0.98, 0.07, 98, 5.5)) }, uRay: { value: new THREE.Color(...lin(0.86, 0.19, 86, 1.5)) } },
+  const add = { transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending };
+  const plane = new THREE.PlaneGeometry(1, 1);
+  flashCore = new THREE.Mesh(plane, new THREE.ShaderMaterial({
+    vertexShader: FLASH_VS, fragmentShader: FLASH_FS, ...add,
+    uniforms: { uSeed: { value: 0 }, uK: { value: 1 }, uCore: { value: new THREE.Color(...lin(0.98, 0.07, 98, 4)) }, uRay: { value: new THREE.Color(...lin(0.8, 0.17, 68, 1.3)) } },
   }));
-  flashMesh.renderOrder = 3;
+  flashMesh = new THREE.Group();
+  flashMesh.add(flashCore);
+  // Ghosts sit on the line from the flash through the centre: place, size, kind, colour.
+  for (const [k, sz, kind, c] of FLARE) {
+    const m = new THREE.Mesh(plane, new THREE.ShaderMaterial({
+      vertexShader: FLASH_VS, fragmentShader: GHOST_FS, ...add,
+      uniforms: { uCol: { value: new THREE.Color(...lin(...c)) }, uKind: { value: kind }, uK: { value: 1 } },
+    }));
+    m.userData = { k, sz };
+    flashMesh.add(m);
+  }
+  flashMesh.children.forEach(m => { m.renderOrder = 3; m.frustumCulled = false; });
   flashMesh.visible = false;
   flashLight = new THREE.PointLight(new THREE.Color(...lin(0.96, 0.03, 80)), 0, 0, 2);
   scene.add(brickMesh, flashMesh, flashLight);
