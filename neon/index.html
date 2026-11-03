@@ -56,17 +56,17 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag for straight runs with round corners; click a tube to switch it off or on; click the bare wall to knock on it. Arrow keys draw, Shift with arrows moves the pen, Enter finishes, Space switches the nearest tube, K knocks, Backspace undoes, C clears, 1 to 0 and M pick the gas, W changes the wall, P runs the chase.">
+    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag for straight runs with round corners; click a tube to switch it off or on; click the bare wall to knock on it. Arrow keys draw, Shift with arrows moves the pen, Space ends a stroke or switches the nearest tube, Backspace undoes, C clears.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Neon sign needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices">
-        <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="11" aria-valuenow="7" aria-valuetext="Blue" aria-keyshortcuts="1 2 3 4 5 6 7 8 9 0 M"><span class="gas-rail" aria-hidden="true"></span><span class="gas-name" aria-hidden="true">Blue</span></div>
-        <button class="chip" id="wall" type="button" aria-label="Wall: Brick" aria-keyshortcuts="W"><svg class="wi" viewBox="0 0 16 16" aria-hidden="true"></svg><span>Brick</span></button>
+        <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="11" aria-valuenow="7" aria-valuetext="Blue"><span class="gas-rail" aria-hidden="true"></span><span class="gas-name" aria-hidden="true">Blue</span></div>
+        <button class="chip" id="wall" type="button" aria-label="Wall: Brick"><svg class="wi" viewBox="0 0 16 16" aria-hidden="true"></svg><span>Brick</span></button>
       </div>
       <div class="actions">
-        <button class="chip" id="chase" type="button" aria-pressed="false" aria-keyshortcuts="P">Chase</button>
+        <button class="chip" id="chase" type="button" aria-pressed="false">Chase</button>
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
       </div>
       <dl class="how" aria-label="How to play">
@@ -207,7 +207,7 @@ function rest() {
     if (!raf && !draft && !tubes.some(t => t.lvl > 0) && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'Backspace', 'c', 'C', 'k', 'K', 'p', 'P', 'w', 'W', 'm', 'M', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Backspace', 'c', 'C']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -371,7 +371,8 @@ function sfx(t, kind, v) {
 }
 
 /* ---------- tubes: control points in stage units, centred ---------- */
-const MAXT = 64;
+// Two dozen tubes keep a sign legible and the glow passes cheap.
+const MAXT = 24;
 let W = 0, H = 0, S = 1, R = 7, ROW = 60, pr = 1, gasNow = 6, mixAt = 0, wallNow = 0, chase = null;
 const tubes = [];
 // The gas a new tube takes; Mix walks its own order.
@@ -1129,9 +1130,13 @@ void main() {
   float aw = 1.0 / uRpx;
   vec2 t = normalize(vec2(vT.x, -vT.y)), pp = normalize(vec2(-vT.y, -vT.x));
   if (uMode > 2.5) {
-    float ring = (1.0 - smoothstep(0.07, 0.07 + aw * 1.5, abs(length(l) - 1.7))) * uPen.w;
-    if (ring <= 0.002) discard;
-    o = vec4(finish(uPen.rgb * 2.2 + wallAt(fc), fc), ring);
+    // The pen is a flat stencil cross; a gap cuts its centre.
+    vec2 m = abs(l);
+    float hw = 1.5 * aw, arm = 1.0 - smoothstep(3.0 - aw, 3.0 + aw, max(m.x, m.y));
+    float bar = max(1.0 - smoothstep(hw - aw, hw + aw, m.y), 1.0 - smoothstep(hw - aw, hw + aw, m.x));
+    float cross = bar * arm * smoothstep(1.0 - aw, 1.0 + aw, max(m.x, m.y)) * uPen.w;
+    if (cross <= 0.002) discard;
+    o = vec4(srgb(uPen.rgb / max(max(uPen.r, uPen.g), max(uPen.b, 1e-3))), cross);
     return;
   }
   float d = length(l), rb = 1.5;
@@ -1525,7 +1530,7 @@ function render() {
     gl.uniform4f(P.clip.u.uPen, g[0], g[1], g[2], pen.a);
     gl.uniform1f(P.clip.u.uMode, 3);
     gl.uniform1f(P.clip.u.uRpx, rp);
-    gl.uniform1f(P.clip.u.uSize, 2.2);
+    gl.uniform1f(P.clip.u.uSize, 3.2);
     gl.bindVertexArray(penVao);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 1);
   }
@@ -1955,15 +1960,13 @@ addEventListener('keydown', e => {
     pen.keys.add(e.key);
     pen.seen = performance.now() / 1000;
     wake();
-  } else if (e.key === 'Enter') {
-    if (onButton) return;
-    e.preventDefault();
-    if (draft && draft.pid === 'kb') endDraft();
   } else if (e.key === ' ') {
     if (onButton) return;
     e.preventDefault();
     if (e.repeat || !ready) return;
     pen.seen = performance.now() / 1000;
+    // Space ends a keyboard stroke, or else switches the nearest tube.
+    if (draft && draft.pid === 'kb') { endDraft(); return; }
     const t = pick(pen.x, pen.y, 1e6);
     if (t) toggle(t);
     else wake();
@@ -1972,18 +1975,6 @@ addEventListener('keydown', e => {
     if (!e.repeat) undo();
   } else if (e.key === 'c' || e.key === 'C') {
     if (!e.repeat) clearAll();
-  } else if (e.key === 'k' || e.key === 'K') {
-    if (e.repeat || !ready) return;
-    pen.seen = performance.now() / 1000;
-    knock(pen.x, pen.y);
-  } else if (e.key === 'w' || e.key === 'W') {
-    if (!e.repeat) setWall(wallNow + 1);
-  } else if (e.key === 'p' || e.key === 'P') {
-    if (!e.repeat) setChase(!chase);
-  } else if (e.key === 'm' || e.key === 'M') {
-    setGas(MIX);
-  } else if (e.key >= '0' && e.key <= '9') {
-    setGas((+e.key + 9) % 10);
   }
 });
 addEventListener('keyup', e => {
