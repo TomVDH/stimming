@@ -21,7 +21,7 @@ const rattle = v => snd.play('chain-rattle', 0.08, 0.12, (t, P, G) => {
 
 export default {
   id: 'chain', slot: 'small',
-  css: `.p-chain .grp { --sr: 0.7; } .p-chain .pchain { --ar: 140 / 200; border-radius: 14px; cursor: grab; }`,
+  css: `.p-chain .grp { --sr: 0.8933; } .p-chain .pchain { --ar: 134 / 150; border-radius: 14px; cursor: grab; }`,
   mount(cell) {
     cell.insertAdjacentHTML('beforeend', MARKUP);
     const bodies = [], moves = [];
@@ -29,10 +29,12 @@ export default {
     // A bulb hangs on the right.
     const btn = cell.querySelector('.pchain');
     bodies.push((() => {
-      const svg = svgIn(btn, '0 0 140 200'), defs = svg.k.defs;
+      // The view crops close to the parts at rest.
+      // A deep pull overflows a little at the bottom.
+      const VH = 150, svg = svgIn(btn, `3 2 134 ${VH}`), defs = svg.k.defs;
       // The chain hangs from (AX, AY).
       // A full pull stretches it TR more.
-      const AX = 44, AY = 30, L0 = 100, TR = 24, NB = 14;
+      const AX = 44, AY = 30, L0 = 84, TR = 20, NB = 14;
       const cream = css(C.cream);
       el('line', { x1: 100, y1: 24, x2: 100, y2: 60, stroke: css([0.25, 0.02, 270]), 'stroke-width': 2.5 }, svg);
       // The glow is two cream discs whose opacity follows the switch.
@@ -119,7 +121,7 @@ export default {
         if (s.pid != null || e.button > 0) return;
         s.pid = e.pointerId;
         try { btn.setPointerCapture(e.pointerId); } catch {}
-        s.k = 200 / btn.getBoundingClientRect().height;
+        s.k = VH / btn.getBoundingClientRect().height;
         s.x0 = e.clientX; s.y0 = e.clientY; s.l0 = s.l.x;
         // A hand on the drop stops its swing.
         s.drag = true; s.moved = false; s.auto = false; s.ph.t = s.ph.x;

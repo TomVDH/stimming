@@ -13,7 +13,7 @@ const snap = up => snd.play('switchbank', 0.04, 0.09, (t, P, G) => {
 
 export default {
   id: 'switchbank', slot: 'row',
-  css: `.p-switchbank .grp { --n: 4; --sr: 3; } .p-switchbank .lsw { --ar: 90 / 120; border-radius: 12px; }`,
+  css: `.p-switchbank .grp { --n: 4; --sr: 3; width: calc(100cqw - 2 * var(--p)); justify-content: space-evenly; } .p-switchbank .lsw { --ar: 90 / 120; border-radius: 12px; }`,
   mount(cell) {
     cell.insertAdjacentHTML('beforeend', MARKUP);
     const bodies = [], moves = [];
@@ -21,7 +21,8 @@ export default {
     // The lever pivots at SY and its tip travels L either way.
     const SY = 82, L = 17, SPAN = 2 * L;
     const GLASS = ramp([0.36, 0.02, 270], C.butter), WIRE = ramp([0.62, 0.01, 260], [0.6, 0.17, 45]);
-    const steel = mat(C.steel, 0), ivory = mat([0.91, 0.03, 82], 0.12);
+    // A caramel lever stands out against the cream plate.
+    const steel = mat(C.steel, 0), lev = mat([0.76, 0.075, 62], 0.1);
     cell.querySelectorAll('.lsw').forEach(btn => {
       const svg = svgIn(btn, '0 0 90 120'), defs = svg.k.defs;
       // A short stem joins the socket to the plate.
@@ -32,8 +33,10 @@ export default {
         skin(svg, svg, 'circle', { cx: 45, cy: y, r: 3.6 }, steel, { rim: 1, sheen: false, shadow: { b: 0.8, y: 1, o: 0.45 } });
         el('line', { x1: 42.4, y1: y, x2: 47.6, y2: y, stroke: css([0.42, 0.015, 258]), 'stroke-width': 1.1, transform: `rotate(${Math.round(Math.random() * 180)} 45 ${y})` }, svg);
       });
+      // A navy bezel frames the dark slot.
+      skin(svg, svg, 'rect', { x: 35, y: SY - 16, width: 20, height: 32, rx: 5 }, mat(C.navy, 0), { rim: 1.5, sheen: false });
       well(svg, svg, 'rect', { x: 38, y: SY - 13, width: 14, height: 26, rx: 3.5 }, { rim: 2 });
-      const lever = skin(svg, svg, 'rect', { x: 39, y: SY - 6, width: 12, height: 12, rx: 6 }, ivory, { rim: 1.5, shadow: { b: 1.6, y: 2.5, o: 0.6 } });
+      const lever = skin(svg, svg, 'rect', { x: 39, y: SY - 6, width: 12, height: 12, rx: 6 }, lev, { rim: 1.5, shadow: { b: 1.6, y: 2.5, o: 0.6 } });
       // A bright cap marks the lever's end.
       const tip = el('ellipse', { cx: 45, rx: 4, ry: 2.6, fill: '#fff', opacity: 0.6 }, svg);
       // The bulb pops a little as it comes on.

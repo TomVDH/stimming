@@ -162,7 +162,7 @@ export default {
           });
           // The stylus scratches faintly while it draws.
           const sp = Math.hypot(s.x.v, s.y.v);
-          scratch.set(0.05 * clamp(sp / 300) ** 0.7, 3000 + 2 * sp);
+          scratch.set(0.1 * clamp(sp / 300) ** 0.7, 3000 + 2 * sp);
           set(knobEls[0], 'aria-valuenow', Math.round(((x - X0) / (X1 - X0)) * 100));
           set(knobEls[1], 'aria-valuenow', Math.round(((Y1 - y) / (Y1 - Y0)) * 100));
         },

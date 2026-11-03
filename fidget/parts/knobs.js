@@ -89,7 +89,7 @@ export default {
           set(knobEl, 'aria-valuenow', Math.round(clamp(s.mode === 'sweep' ? s.v.t : v) * 100));
           speeds[i] = Math.abs(s.v.v);
           const sp = clamp(Math.max(...speeds) / 2);
-          grit.set(0.03 * sp, 1800 + 1600 * sp);
+          grit.set(0.06 * sp, 1800 + 1600 * sp);
         },
       };
       // A sweep turns the knob smoothly to a value.

@@ -33,14 +33,15 @@ const drop = () => snd.play('toaster-drop', 0.1, 0.1, (t, P, G) => {
 
 export default {
   id: 'toaster', slot: 'small',
-  css: `.p-toaster .grp { --sr: 0.9; } .p-toaster .toaster { --ar: 180 / 200; border-radius: 22%; }`,
+  css: `.p-toaster .grp { --sr: 0.9556; } .p-toaster .toaster { --ar: 172 / 180; border-radius: 22%; }`,
   mount(cell) {
     cell.insertAdjacentHTML('beforeend', MARKUP);
     const bodies = [], moves = [];
     // A chrome toaster: two slots on top, a coral lever on the right end.
     const btn = cell.querySelector('.toaster');
     bodies.push((() => {
-      const svg = svgIn(btn, '0 0 180 200'), defs = svg.k.defs;
+      // The view crops close to the toaster; a pop flies out over the top.
+      const VX = 8, VY = 18, VW = 172, VH = 180, svg = svgIn(btn, `${VX} ${VY} ${VW} ${VH}`), defs = svg.k.defs;
       // Toast tops sit at UP when out and hide below DN when in.
       // The lever travels LT units down its track.
       const UP = 34, DN = 92, LY = 118, LT = 48, CLIP = 86, X0 = [31, 87];
@@ -156,7 +157,7 @@ export default {
         drop(); label();
         wake(body);
       }
-      const local = e => [((e.clientX - s.rect.left) / s.rect.width) * 180, ((e.clientY - s.rect.top) / s.rect.height) * 200];
+      const local = e => [VX + ((e.clientX - s.rect.left) / s.rect.width) * VW, VY + ((e.clientY - s.rect.top) / s.rect.height) * VH];
       btn.addEventListener('pointerdown', e => {
         if (s.pid != null || e.button > 0) return;
         s.pid = e.pointerId;
@@ -172,7 +173,7 @@ export default {
         if (e.pointerId !== s.pid) return;
         const dy = e.clientY - s.y0;
         if (Math.abs(dy) > 4) s.moved = true;
-        if (s.how === 'lever') { s.lv.t = clamp(s.l0 + dy / ((s.rect.height * LT) / 200)); wake(body); }
+        if (s.how === 'lever') { s.lv.t = clamp(s.l0 + dy / ((s.rect.height * LT) / VH)); wake(body); }
       });
       const up = e => {
         if (e.pointerId !== s.pid) return;

@@ -132,7 +132,7 @@ export default {
       // Clashing turns shimmer: a bright tick and two thin metal rings.
       function tick(g) {
         snd.play('slinky', 0.025, 0.06, (t, P, G) => {
-          G *= g;
+          G *= 1.8 * g;
           snd.hiss(t, 'highpass', 6800 * P, 0.7, 0.004, 0.14 * G);
           snd.ring(t, rnd(3000, 3800) * P, 3000 * P, 0.05, 0.03 * G);
           snd.ring(t, rnd(5000, 5800) * P, 5000 * P, 0.035, 0.02 * G);

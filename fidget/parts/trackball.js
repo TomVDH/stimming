@@ -124,7 +124,7 @@ export default {
           ball.paint(p * 0.5);
           // The rumble follows the rolling speed.
           const sp = s.drag ? s.dsp : Math.hypot(s.wx, s.wy);
-          rumble.set(0.12 * clamp(sp / 9), 70 + 22 * Math.min(sp, 14));
+          rumble.set(0.24 * clamp(sp / 9), 70 + 22 * Math.min(sp, 14));
         },
       };
 

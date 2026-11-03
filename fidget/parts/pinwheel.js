@@ -111,7 +111,7 @@ export default {
           });
           // The breeze rises in level and colour with speed.
           const g = clamp(w / 40);
-          breeze.set(0.035 * g * Math.sqrt(g), 450 + 1500 * g);
+          breeze.set(0.05 * g * Math.sqrt(g), 450 + 1500 * g);
           const rps = Math.round((w / TAU) * 2) / 2;
           const val = rps ? `${rps} turns a second` : 'Still';
           if (val !== s.val) { s.val = val; pwEl.setAttribute('aria-valuenow', String(Math.min(8, rps))); pwEl.setAttribute('aria-valuetext', val); }

@@ -22,15 +22,16 @@ const bloop = () => snd.play('bloop', 0.2, 0.14, (t, P, G) => {
 
 export default {
   id: 'squish', slot: 'small',
-  css: `.p-squish .grp { --sr: 1; }
-.p-squish .squish { --ar: 1; border-radius: 50%; }`,
+  css: `.p-squish .grp { --sr: 1.2208; }
+.p-squish .squish { --ar: 188 / 154; border-radius: 50%; }`,
   mount(cell) {
     cell.insertAdjacentHTML('beforeend', MARKUP);
     const bodies = [], moves = [];
     // A coral foam dome sits in a cream ring.
     const btn = cell.querySelector('.squish');
     bodies.push((() => {
-      const svg = svgIn(btn, '0 0 200 200'), defs = svg.k.defs, XC = 100, YB = 150, W0 = 60, H0 = 100;
+      // The view crops close to the ring; a full squash still fits.
+      const svg = svgIn(btn, '6 44 188 154'), defs = svg.k.defs, XC = 100, YB = 150, W0 = 60, H0 = 100;
       skin(svg, svg, 'ellipse', { cx: XC, cy: 152, rx: 92, ry: 38 }, mat(C.cream, 0.08), { rim: 2.5, shadow: { b: 6, y: 7, o: 0.6 } });
       well(svg, svg, 'ellipse', { cx: XC, cy: 150, rx: 68, ry: 26 }, { rim: 3 });
       const dome = skin(svg, svg, 'path', {}, mat(C.coral, 0.12), { rim: 2.5, shadow: { b: 5, y: 6, o: 0.5 } });

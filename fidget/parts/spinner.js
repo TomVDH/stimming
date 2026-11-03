@@ -14,7 +14,8 @@ export default {
     const spEl = cell.querySelector('#spinner');
     const whir = snd.drone(4.5);
     bodies.push((() => {
-      const svg = svgIn(spEl, '0 0 400 400'), defs = svg.k.defs;
+      // The view crops to the body; lobe tips may overflow a little.
+      const svg = svgIn(spEl, '38 38 324 324'), defs = svg.k.defs;
       // Lobe centre distance, lobe radius, waist fillet radius.
       const CX = 200, D = 108, RL = 64, RC = 36;
       // The fillet circle touches both neighbouring lobes.
@@ -106,7 +107,7 @@ export default {
           cap.paint(p * 0.8);
           // The whir rises in pitch and level with speed.
           const g = clamp(w / 45);
-          whir.set(0.05 * g * Math.sqrt(g), 160 + 26 * w);
+          whir.set(0.13 * g * Math.sqrt(g), 160 + 26 * w);
           const rps = Math.round((w / TAU) * 2) / 2;
           const val = rps ? `${rps} turns a second` : 'Still';
           if (val !== s.val) { s.val = val; spEl.setAttribute('aria-valuenow', String(Math.min(12, rps))); spEl.setAttribute('aria-valuetext', val); }
