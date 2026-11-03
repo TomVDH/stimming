@@ -14,7 +14,8 @@
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
 /* Tesseract: the stage at full width under the shared header. */
-:root { --stage: oklch(0.2 0.013 275); }
+/* A deep ink field; the purple shell stage is too close to the far ramp. */
+:root { --stage: oklch(0.19 0.045 250); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
@@ -589,7 +590,7 @@ function project() {
 
 /* ---------- rendering ---------- */
 let THREE = null, renderer = null, scene = null, camera = null, ready = false, lowDpr = false, pxW = 0.005;
-let tubes = null, balls = null, panes = null, slice = null, ramp = null, dim = null, paneU = null, sliceU = null;
+let tubes = null, balls = null, panes = null, slice = null, wireU = null, dim = null, paneU = null, sliceU = null;
 // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
 function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
   const apply = () => {
@@ -617,8 +618,9 @@ function fit(w, h) {
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
-// Thickness follows the 4D perspective, gently; the 16-cell's few edges run thicker.
-const radius = k => lerp(lerp(0.031, 0.025, rise), 0.032, m2e) * Sv[k] ** 0.7;
+// Thickness follows the 4D perspective hard: the near cell is fat, the far one thin.
+// The 16-cell's few edges run thicker.
+const radius = k => lerp(lerp(0.027, 0.022, rise), 0.028, m2e) * Sv[k] ** 1.6;
 const tw = k => clamp((Wv[k] + 1) / 2);
 
 // Panes: squares, then 24-cell triangles, then 16-cell triangles, flat-shaded and sorted.
@@ -899,18 +901,20 @@ function cssRGB(str) {
   const d = probe.getImageData(0, 0, 1, 1).data;
   return [d[0] / 255, d[1] / 255, d[2] / 255];
 }
-// Far in W fades toward the stage; near in W stands out.
+// Far in W sinks toward the ink stage; near in W stands out.
 // Wire and panes share this ramp: colour always means depth in W.
-const RAMP = [[0.52, 0.17, 292], [0.74, 0.14, 236], [0.93, 0.09, 178]];
+const RAMP = [[0.5, 0.16, 300], [0.72, 0.14, 222], [0.92, 0.12, 165]];
+// Each wire band shifts the ramp: lit is lighter, shade is much darker.
+const BAND = { L: [0.06, 0.7], S: [-0.08, 1], D: [-0.32, 0.95] };
 // The slice is one hot colour in three flat tones, and a dark inside.
 const CUT = [[0.86, 0.15, 72], [0.73, 0.19, 46], [0.55, 0.18, 30], [0.27, 0.07, 28]];
 function theme() {
   if (!renderer) return;
   const [r, g, b] = cssRGB(getComputedStyle(stage).backgroundColor);
   renderer.setClearColor(new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace));
-  RAMP.forEach((c, i) => {
-    ramp[i].value.setRGB(...linRGB(c));
-    paneU[`uP${i}`].value.setRGB(...srgb(c));
+  RAMP.forEach(([L, C, h], i) => {
+    for (const [b, [dl, dc]] of Object.entries(BAND)) wireU[`u${b}${i}`].value.setRGB(...srgb([clamp(L + dl, 0, 0.97), C * dc, h]));
+    paneU[`uP${i}`].value.setRGB(...srgb([L, C, h]));
   });
   ['uLit', 'uSide', 'uShade', 'uIn'].forEach((u, i) => sliceU[u].value.setRGB(...srgb(CUT[i])));
   // Stacked panes add up, so each stays faint.
@@ -1099,38 +1103,52 @@ function failed() {
   stage.querySelector('.fail').hidden = false;
 }
 // Tubes and balls take their place and size from instance attributes.
-function patch(mat, kind) {
-  mat.onBeforeCompile = sh => {
-    sh.uniforms.uRamp0 = ramp[0];
-    sh.uniforms.uRamp1 = ramp[1];
-    sh.uniforms.uRamp2 = ramp[2];
-    sh.uniforms.uDim = dim;
-    const head = kind === 'tube'
-      ? 'attribute vec4 aA;\nattribute vec4 aB;\nattribute vec2 aT;\nvarying float vT;'
-      : 'attribute vec4 aS;\nattribute float aW;\nvarying float vT;';
-    const normal = kind === 'tube'
-      ? `vec3 ax = aB.xyz - aA.xyz;
-        ax /= max(length(ax), 1e-6);
-        vec3 e1 = normalize(cross(abs(ax.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), ax));
-        vec3 e2 = cross(e1, ax);
-        float h = position.y + 0.5;
-        vec3 objectNormal = e1 * normal.x + e2 * normal.z;`
-      : 'vec3 objectNormal = normal;';
-    const place = kind === 'tube'
-      ? `vec3 transformed = mix(aA.xyz, aB.xyz, h) + (e1 * position.x + e2 * position.z) * mix(aA.w, aB.w, h);
-        vT = mix(aT.x, aT.y, h);`
-      : 'vec3 transformed = position * aS.w + aS.xyz;\nvT = aW;';
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\n' + head)
-      .replace('#include <beginnormal_vertex>', normal)
-      .replace('#include <begin_vertex>', place);
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uRamp0;\nuniform vec3 uRamp1;\nuniform vec3 uRamp2;\nuniform float uDim;\nvarying float vT;')
-      .replace('#include <color_fragment>', 'diffuseColor.rgb = uDim * (vT < 0.5 ? mix(uRamp0, uRamp1, vT * 2.0) : mix(uRamp1, uRamp2, vT * 2.0 - 1.0));');
-  };
-  mat.customProgramCacheKey = () => 'tesseract-' + kind;
-  return mat;
-}
+// TUBE picks the tube body; without it the mesh is a ball.
+const WIRE_VS = `
+#ifdef TUBE
+attribute vec4 aA;
+attribute vec4 aB;
+attribute vec2 aT;
+#else
+attribute vec4 aS;
+attribute float aW;
+#endif
+varying vec3 vN;
+varying float vT;
+void main() {
+#ifdef TUBE
+  vec3 ax = aB.xyz - aA.xyz;
+  ax /= max(length(ax), 1e-6);
+  vec3 e1 = normalize(cross(abs(ax.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), ax));
+  vec3 e2 = cross(e1, ax);
+  float h = position.y + 0.5;
+  vec3 p = mix(aA.xyz, aB.xyz, h) + (e1 * position.x + e2 * position.z) * mix(aA.w, aB.w, h);
+  vN = e1 * normal.x + e2 * normal.z;
+  vT = mix(aT.x, aT.y, h);
+#else
+  vec3 p = position * aS.w + aS.xyz;
+  vN = normal;
+  vT = aW;
+#endif
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+}`;
+// The wire takes the slice's language: three flat bands, no gloss.
+// Each band has its own depth ramp; the band edge is antialiased.
+const WIRE_FS = `
+uniform vec3 uKey;
+uniform float uDim;
+uniform vec3 uL0; uniform vec3 uL1; uniform vec3 uL2;
+uniform vec3 uS0; uniform vec3 uS1; uniform vec3 uS2;
+uniform vec3 uD0; uniform vec3 uD1; uniform vec3 uD2;
+varying vec3 vN;
+varying float vT;
+vec3 ramp(vec3 a, vec3 b, vec3 c) { return vT < 0.5 ? mix(a, b, vT * 2.0) : mix(b, c, vT * 2.0 - 1.0); }
+void main() {
+  float d = dot(normalize(vN), uKey), fw = fwidth(d);
+  float lit = smoothstep(0.45 - fw, 0.45 + fw, d), side = smoothstep(-0.15 - fw, -0.15 + fw, d);
+  vec3 c = mix(ramp(uD0, uD1, uD2), mix(ramp(uS0, uS1, uS2), ramp(uL0, uL1, uL2), lit), side);
+  gl_FragColor = vec4(c * uDim, 1.0);
+}`;
 function instanced(base, attrs) {
   const g = new THREE.InstancedBufferGeometry();
   g.setIndex(base.index);
@@ -1141,27 +1159,6 @@ function instanced(base, attrs) {
   }
   g.instanceCount = 0;
   return g;
-}
-// A clean studio for reflections: three soft boxes in a dark dome.
-// Big, smooth highlights replace the busy room, so turning never sparkles.
-function studio() {
-  const env = new THREE.Scene(), parts = [];
-  const add = (geo, color, side, x = 0, y = 0, z = 0) => {
-    const mat = new THREE.MeshBasicMaterial({ color, side });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y, z);
-    if (x || y || z) mesh.lookAt(0, 0, 0);
-    env.add(mesh);
-    parts.push(geo, mat);
-  };
-  add(new THREE.SphereGeometry(30, 32, 16), new THREE.Color().setRGB(0.014, 0.013, 0.022), THREE.BackSide);
-  // The key box sits up and left, behind the viewer.
-  add(new THREE.PlaneGeometry(16, 10), new THREE.Color().setScalar(5), THREE.DoubleSide, -9, 14, 12);
-  // A tall strip on the right draws a rim down every tube.
-  add(new THREE.PlaneGeometry(3, 22), new THREE.Color().setRGB(2.2, 2.3, 2.6), THREE.DoubleSide, 16, 2, -6);
-  // A faint, cool floor bounce lifts the undersides.
-  add(new THREE.PlaneGeometry(26, 8), new THREE.Color().setRGB(0.32, 0.36, 0.5), THREE.DoubleSide, 0, -16, 4);
-  return { env, dispose: () => parts.forEach(p => p.dispose()) };
 }
 const PANE_VS = `
 attribute float wt;
@@ -1176,7 +1173,6 @@ void main() {
 }`;
 // Glass: a faint tint of the depth ramp, firmer at grazing angles.
 const PANE_FS = `
-uniform vec3 uKey;
 uniform vec3 uMix;
 uniform float uAlpha;
 uniform float uRim;
@@ -1195,9 +1191,8 @@ void main() {
   if (nv < 0.0) { n = -n; nv = -nv; }
   float f = pow(1.0 - nv, 4.0);
   float a = m * (uAlpha + uRim * f);
-  float sp = pow(max(dot(n, normalize(uKey + v)), 0.0), 240.0) * 0.3;
   vec3 c = vW < 0.5 ? mix(uP0, uP1, vW * 2.0) : mix(uP1, uP2, vW * 2.0 - 1.0);
-  gl_FragColor = vec4(c * a + m * sp * vec3(1.0, 0.99, 0.97), a);
+  gl_FragColor = vec4(c * a, a);
 }`;
 const SLICE_VS = `
 varying vec3 vN;
@@ -1234,41 +1229,30 @@ async function start() {
     console.error(err);
     return failed();
   }
-  renderer.toneMapping = THREE.NeutralToneMapping;
   const canvas = renderer.domElement;
   canvas.setAttribute('aria-hidden', 'true');
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 50);
   await idle();
 
-  const pm = new THREE.PMREMGenerator(renderer), room = studio();
-  scene.environment = pm.fromScene(room.env, 0.03).texture;
-  room.dispose();
-  pm.dispose();
-  scene.environmentIntensity = 0.9;
   // The key light sits up and to the left, behind the viewer.
-  const key = new THREE.DirectionalLight(0xffffff, 1.6);
-  key.position.set(-2.4, 4, 3.2);
-  scene.add(key);
-  const keyDir = new THREE.Vector3().copy(key.position).normalize();
-
-  ramp = [0, 1, 2].map(() => ({ value: new THREE.Color() }));
+  const keyDir = new THREE.Vector3(-2.4, 4, 3.2).normalize();
   dim = { value: 1 };
-  // Lacquered tubes: a clear coat, rough enough not to glint.
-  const lacquer = () => new THREE.MeshPhysicalMaterial({ roughness: 0.32, metalness: 0.04, clearcoat: 1, clearcoatRoughness: 0.11 });
+  wireU = { uKey: { value: keyDir }, uDim: dim };
+  for (const b of 'LSD') for (let i = 0; i < 3; i++) wireU[`u${b}${i}`] = { value: new THREE.Color() };
+  const wire = defines => new THREE.ShaderMaterial({ uniforms: wireU, vertexShader: WIRE_VS, fragmentShader: WIRE_FS, defines });
   const small = Math.min(innerWidth, innerHeight) < 700;
   tubes = new THREE.Mesh(
     instanced(new THREE.CylinderGeometry(1, 1, 1, small ? 20 : 30, 1, true), [['aA', 4, NE], ['aB', 4, NE], ['aT', 2, NE]]),
-    patch(lacquer(), 'tube'),
+    wire({ TUBE: '' }),
   );
   balls = new THREE.Mesh(
     instanced(new THREE.SphereGeometry(1, small ? 28 : 40, small ? 18 : 26), [['aS', 4, NV], ['aW', 1, NV]]),
-    patch(lacquer(), 'ball'),
+    wire({}),
   );
   tubes.frustumCulled = balls.frustumCulled = false;
 
   paneU = {
-    uKey: { value: keyDir },
     uMix: { value: new THREE.Vector3(1, 0, 0) },
     uAlpha: { value: 0.1 }, uRim: { value: 0.22 },
     uP0: { value: new THREE.Color() }, uP1: { value: new THREE.Color() }, uP2: { value: new THREE.Color() },
@@ -1314,7 +1298,7 @@ async function start() {
   }, 2.4e6);
   if (!camera.position.z) fit(16, 9);
   await idle();
-  // Async compile keeps the physical-material build off the main thread.
+  // Async compile keeps the shader build off the main thread.
   await renderer.compileAsync(scene, camera);
   ready = true;
   draw();
