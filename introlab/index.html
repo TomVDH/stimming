@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=9">
+<link rel="stylesheet" href="../shared/intro.css?v=10">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -91,6 +91,7 @@ button:hover { border-color: var(--fg); }
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
   <label class="check"><input type="checkbox" id="replay"> Replay on change</label>
   <label class="check"><input type="checkbox" id="nameflash"> Name in flash (try-out)</label>
+  <label class="check"><input type="checkbox" id="classic"> Classic build</label>
   <div class="row"><label for="snote">Sound notice</label><select id="snote">
     <option value="off">Off</option>
     <option value="glyph">Headphones</option>
@@ -126,7 +127,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=9';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=10';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -181,7 +182,8 @@ const soundNote = () => {
   return { glyph: g === 'glyph', words: words || null, nudge: nudgeBox.checked };
 };
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
-const flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat');
+const flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat'), classicBox = document.getElementById('classic');
+classicBox.addEventListener('change', () => { save(); replay(); });
 numSel.value = ['subs', 'bottom'].includes(saved.numAt) ? saved.numAt : '';
 numSel.addEventListener('change', () => { save(); replay(); });
 replayBox.checked = saved.replay ?? true;
@@ -407,7 +409,7 @@ async function run({ hold = null } = {}) {
     }
     return gate(ph);
   };
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}) }, gate: beat, soundNote: soundNote(), variety: varSel.value, nameFlash: flashBox.checked });
+  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}) }, gate: beat, soundNote: soundNote(), variety: varSel.value, nameFlash: flashBox.checked, classic: classicBox.checked });
   if (my !== gen) return;
   playing = false;
   took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})${pauses.size ? ', with pauses' : ''}`;
@@ -425,7 +427,7 @@ let runStart = 0, tlTotal = 1;
 function beats() {
   const t = T(), v = V(), info = toys[toySel.value] || {};
   const note = soundNote(), hasSnd = !!info.sound && (note.glyph || !!note.words);
-  const lines = [[!!info.emblem, 0], [!!info.nl, t.nlLag], [!!info.number && numSel.value === 'subs', t.nlLag], [!!info.sub, t.subLag], [!!info.tag, t.tagLag], [!!info.tagNl, t.tagNlLag], [hasSnd, t.sndLag], [!!info.number && numSel.value === 'bottom', t.sndLag]].filter(([on]) => on);
+  const lines = [[!!info.emblem, 0], [!!info.nl, t.nlLag], [classicBox.checked, t.nlLag], [!!info.number && numSel.value === 'subs', t.nlLag], [!!info.sub, t.subLag], [!!info.tag, t.tagLag], [!!info.tagNl, t.tagNlLag], [hasSnd, t.sndLag], [!!info.number && numSel.value === 'bottom', t.sndLag]].filter(([on]) => on);
   const lags = lines.slice(1).reduce((a, [, lag]) => a + F(lag), 0);
   const open = { type: F(Math.min(20, Math.max(4, (info.tagNl || info.tag || info.name || '').length))), stamp: F(3), glitch: F(4), cut: F(1) }[v.reveal] ?? t.unfurl;
   const seg = {};

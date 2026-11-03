@@ -236,7 +236,7 @@ const REVEAL = {
 // ready is a promise; a fixed-hold variety holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
-export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false } = {}) {
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, classic = /\/legacy\.html$/.test(location.pathname) } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
@@ -273,6 +273,13 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
   }
 
+  // A classic build says so, one line under the names.
+  let cls = null;
+  if (classic && nameEl) {
+    cls = Object.assign(document.createElement('span'), { className: 'intro-classic', textContent: '< CLASSIC >' });
+    (nl || nameEl).after(cls);
+  }
+
   if (RM.matches) {
     // Reduced motion: no flash, the name fades in and out.
     await play(text, p => ({ opacity: p }), 300);
@@ -289,7 +296,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   let num = null;
   if (info?.number && numAt !== 'box') {
     num = Object.assign(document.createElement('span'), { className: 'intro-num', textContent: `#${info.number}` });
-    if (numAt === 'bottom') root.append(num); else (nl || name).after(num);
+    if (numAt === 'bottom') root.append(num); else (cls || nl || name).after(num);
   }
   // The emblem sits in a badge whose white box is the flash.
   let badge = null;
@@ -322,9 +329,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     big.append(tick);
   }
   // Each line starts closed in the variety's own way, then opens on its beat.
-  const lines = [badge ? name : null, nl, numAt === 'subs' ? num : null, sub,
+  const lines = [badge ? name : null, nl, cls, numAt === 'subs' ? num : null, sub,
     text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
-  const lags = [0, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
+  const lags = [0, T.nlLag, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
   const R = REVEAL[V.reveal] || REVEAL.unfurl;
   lines.forEach(el => { if (el) Object.assign(el.style, R.shut); });
   // A try-out: the name can share the flash, boxed and blown up with the mark.
