@@ -90,17 +90,17 @@ const mtof = m => 440 * 2 ** ((m - 69) / 12);
 // Four chords in D major share one key.
 // Each chord holds eight voices, bass first, one per cluster rank.
 const CHORDS = [
-  [38, 50, 57, 62, 66, 69, 73, 76],
-  [35, 47, 54, 62, 66, 69, 71, 74],
-  [31, 43, 54, 62, 66, 69, 71, 73],
-  [33, 45, 52, 61, 64, 66, 69, 76],
+  [50, 57, 62, 66, 69, 73, 76, 78],
+  [47, 54, 59, 62, 66, 69, 71, 74],
+  [43, 50, 54, 59, 62, 66, 69, 73],
+  [45, 52, 57, 61, 64, 66, 69, 76],
 ];
 // The chord moves every four bars, on one shared grid.
 const BPM = 76, SIX = 60 / BPM / 4, BEAT_HZ = BPM / 60;
-const AMP = [0.13, 0.075, 0.06, 0.05, 0.042, 0.036, 0.03, 0.026];
+const AMP = [0.085, 0.07, 0.062, 0.055, 0.048, 0.042, 0.036, 0.032];
 // Each upper layer plucks on its own Euclidean rhythm.
 const euclid = (p, r) => Array.from({ length: 16 }, (_, i) => ((i + r) * p) % 16 < p);
-const RHYTHM = [null, euclid(3, 0), euclid(5, 2), euclid(2, 5), euclid(7, 1), euclid(3, 7), euclid(4, 3), euclid(5, 9)];
+const RHYTHM = [euclid(2, 0), euclid(3, 0), euclid(5, 2), euclid(2, 5), euclid(7, 1), euclid(3, 7), euclid(4, 3), euclid(5, 9)];
 const layers = [];
 // The star count writes these targets twice a second.
 const mixAt = { level: new Float32Array(8), pan: new Float32Array(8), rate: new Float32Array(8).fill(0.6), feed: 0, jet: 0 };
@@ -152,10 +152,8 @@ function makeLayer(k) {
   const pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
   if (pan) { pan.connect(out); bus = pan; }
   lp.connect(g).connect(bus);
-  // The bass is pure; upper layers carry a thin buzz.
-  const parts = k
-    ? [['triangle', -6, 1], ['triangle', 6, 0.8], ['sawtooth', 0, 0.12]]
-    : [['sine', 0, 1], ['sine', 1200, 0.22]];
+  // Each voice is a detuned pair with a fifth above it.
+  const parts = [['triangle', -7, 1], ['sawtooth', 7, 0.28], ['sine', 702, 0.32], ['sine', 1200, k ? 0.12 : 0.3]];
   const f = mtof(CHORDS[chordAt][k]);
   const oscs = parts.map(([type, cents, amp]) => {
     const o = ac.createOscillator(), og = ac.createGain();
@@ -182,14 +180,15 @@ function mixLayers(tau = 1.1) {
   layers.forEach((L, k) => {
     const lv = on ? mixAt.level[k] : 0;
     // A feeding hole swells the bass.
-    const amp = AMP[k] * lv * (k ? 1 : 1 + 1.2 * mixAt.feed);
+    const amp = AMP[k] * lv * (k ? 1 : 1 + 0.5 * mixAt.feed);
     L.g.gain.setTargetAtTime(amp, t, tau);
-    L.depth.gain.setTargetAtTime(amp * 0.35, t, tau);
+    // A deep tremolo makes each cluster breathe at its orbit beat.
+    L.depth.gain.setTargetAtTime(amp * 0.7, t, tau);
     L.trem.frequency.setTargetAtTime(mixAt.rate[k], t, 0.5);
-    L.lp.frequency.setTargetAtTime(220 + 1500 * lv + (k ? 0 : 500 * mixAt.feed), t, 1.4);
+    L.lp.frequency.setTargetAtTime(700 + 2600 * lv + (k ? 0 : 900 * mixAt.feed), t, 1.4);
     L.pan?.pan.setTargetAtTime(mixAt.pan[k], t, 0.6);
   });
-  roar.gain.setTargetAtTime(on ? 0.2 * mixAt.feed : 0, t, tau * 0.7);
+  roar.gain.setTargetAtTime(on ? 0.07 * mixAt.feed : 0, t, tau * 0.7);
   hiss.gain.setTargetAtTime(on ? 0.05 * mixAt.jet : 0, t, tau * 0.7);
 }
 function glide(ch, t) {
@@ -221,10 +220,10 @@ function sequence() {
     const s = seqStep++;
     const ch = Math.floor(s / 64) % CHORDS.length;
     if (s % 64 === 0) glide(ch, seqT);
-    for (let k = 1; k < 8; k++) {
+    for (let k = 0; k < 8; k++) {
       const lv = mixAt.level[k];
       if (lv < 0.12 || !RHYTHM[k][s % 16]) continue;
-      const note = CHORDS[ch][3 + ((k + (s >> 2)) % 5)] + 12;
+      const note = CHORDS[ch][(k + (s >> 2)) % 8] + 12;
       pluck(mtof(note), lv, layers[k].bus, seqT);
     }
     seqT += SIX;
@@ -1262,7 +1261,7 @@ async function start() {
       mixAt.rate[k] = BEAT_HZ * 2 ** clamp(Math.round(Math.log2(hz / BEAT_HZ)), -2, 1);
     }
     // A hole always sounds its bass.
-    if (holeWell && ranked[0] === holeWell) mixAt.level[0] = Math.max(mixAt.level[0], 0.6);
+    if (holeWell && ranked[0] === holeWell) mixAt.level[0] = Math.max(mixAt.level[0], 0.45);
     mixAt.feed = feed;
     mixAt.jet = jet;
     mixLayers();
