@@ -13,56 +13,55 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Fidget board: a dark tray of soft panels, one control group per panel.
+/* Fidget board: five controls straight on the stage, no panels.
    The controls are lit from the top left; the JS draws their shading. */
 :root { --stage: oklch(0.15 0.012 275); }
-/* The gap resolves to pixels on the board, so plates inherit one size. */
+/* The gap resolves to pixels on the board, so cells inherit one size. */
 @property --gap { syntax: "<length>"; inherits: true; initial-value: 8px; }
 
-/* ---------- the slab: plates fill the stage, cut apart by gaps ---------- */
+/* ---------- the board: the big dial leads, the cluster sits to its right ---------- */
 .stage--fidget { container: stage / size; }
 .board {
   position: absolute; inset: 0; display: grid;
-  --gap: clamp(5px, 1.6cqmin, 14px);
+  --gap: clamp(6px, 1.8cqmin, 16px);
   --pad: calc(var(--gap) * 1.5);
-  --gi: calc(var(--gap) * 1.2);
-  padding: var(--gap); gap: var(--gap);
-  /* Wide: the big part leads; the row and bands to its right; six small below. */
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) minmax(0, 4fr);
+  --gi: calc(var(--gap) * 1.6);
+  padding: clamp(12px, 4cqmin, 48px); column-gap: clamp(16px, 5cqw, 72px); row-gap: var(--gap);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.57fr) minmax(0, 0.43fr);
+  grid-template-rows: minmax(0, 3fr) minmax(0, 2.2fr) minmax(0, 1.4fr);
   grid-template-areas:
-    "big big big big row row row row row row row row"
-    "big big big big band1 band1 band1 band1 band1 band1 band1 band1"
-    "big big big big band2 band2 band2 band2 band2 band2 band2 band2"
-    "s1 s1 s2 s2 s3 s3 s4 s4 s5 s5 s6 s6";
+    "dial tog joy"
+    "dial keys keys"
+    "dial fader fader";
+}
+/* A narrow stage stacks the dial over the cluster. */
+@container stage (aspect-ratio < 1.15) {
+  .board {
+    column-gap: var(--gap);
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 4fr) minmax(0, 2.2fr) minmax(0, 1.6fr) minmax(0, 1.1fr);
+    grid-template-areas:
+      "dial dial"
+      "tog joy"
+      "keys keys"
+      "fader fader";
+  }
 }
 
-/* ---------- slots: each sits a little proud of the tray ---------- */
+/* ---------- cells: one part each, sized by the cell ---------- */
 .cell {
   container-type: size; position: relative; display: grid; place-items: center;
   min-width: 0; min-height: 0;
-  background: linear-gradient(170deg, oklch(0.275 0.022 var(--hue)), oklch(0.215 0.018 var(--hue)));
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.08), inset 0 -1px 0 oklch(0 0 0 / 0.35);
-  border-radius: max(6px, calc(20px - var(--gap)));
-  /* The inner margin shrinks on thin panels. */
+  /* The inner margin shrinks on thin cells. */
   --p: min(var(--pad), 8cqmin);
-  --hue: 270;
 }
-.s-big { grid-area: big; --hue: 255; }
-.s-row { grid-area: row; --hue: 280; }
-.s-band1 { grid-area: band1; --hue: 265; }
-.s-band2 { grid-area: band2; --hue: 250; }
-.s-s1 { grid-area: s1; --hue: 285; }
-.s-s2 { grid-area: s2; --hue: 260; }
-.s-s3 { grid-area: s3; --hue: 275; }
-.s-s4 { grid-area: s4; --hue: 290; }
-.s-s5 { grid-area: s5; --hue: 245; }
-.s-s6 { grid-area: s6; --hue: 270; }
-/* A rolled part shrinks out, then springs in. */
-.cell > * { transition: opacity 0.14s ease-out, transform 0.32s cubic-bezier(0.3, 1.6, 0.5, 1); }
-.cell.out > * { opacity: 0; transform: scale(0.82); transition-duration: 0.14s; }
+.s-dial { grid-area: dial; }
+.s-tog { grid-area: tog; }
+.s-joy { grid-area: joy; }
+.s-keys { grid-area: keys; }
+.s-fader { grid-area: fader; }
 
-/* A group fits its plate: one row of items, all one height. */
+/* A group fits its cell: one row of items, all one height. */
 .grp {
   display: grid; grid-auto-flow: column; align-items: center; justify-content: center; gap: var(--gi);
   --rows: 1; --n: 1; --sr: 1;
@@ -72,10 +71,7 @@
 /* Each part sets its item count and summed aspect for the fit. */
 .p-keys .grp { --n: 4; --sr: 4; }
 .p-tog .grp { --n: 3; --sr: 1.3065; }
-.p-safe .grp { --sr: 0.641; }
-.p-rock .grp { --n: 2; --sr: 1.2308; }
-.p-wheel .grp { --sr: 0.3333; }
-/* The bands stretch to their plate; their tracks follow the length. */
+/* The slider stretches to its cell; its track follows the length. */
 .wide { width: calc(100cqw - 2 * var(--p)); height: calc(100cqh - 2 * var(--p)); }
 
 /* ---------- controls ---------- */
@@ -85,41 +81,13 @@
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
 }
 .ctl svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.ctl:focus-visible, .safety .hit:focus-visible { outline: 2px solid var(--focus); outline-offset: 5px; }
+.ctl:focus-visible { outline: 2px solid var(--focus); outline-offset: 5px; }
 .dial { --ar: 1; border-radius: 50%; cursor: grab; }
 .joy { --ar: 1; border-radius: 50%; cursor: grab; }
 .key { --ar: 1; border-radius: 20%; }
 .toggle { --ar: 54 / 124; border-radius: 999px; }
-.safety { --ar: 100 / 156; border-radius: 14px; }
-.rocker { --ar: 64 / 104; border-radius: 14px; }
-.wheel { --ar: 60 / 180; border-radius: 14px; cursor: grab; }
-.fader, .abacus { border-radius: 10px; cursor: grab; }
+.fader { border-radius: 10px; cursor: grab; }
 .held { cursor: grabbing; }
-/* The safety's buttons only carry focus; the face takes the pointer. */
-.safety .hit {
-  position: absolute; inset: 0; margin: 0; padding: 0; border: 0; background: none;
-  border-radius: inherit; pointer-events: none;
-}
-.safety .arm { inset: 25.6% 34% 11.5%; border-radius: 999px; }
-
-/* ---------- the die: its pips change as it tumbles ---------- */
-.die { display: inline-flex; align-items: center; gap: 0.45em; }
-.die svg { width: 1.25em; height: 1.25em; overflow: visible; }
-.die rect { fill: none; stroke: currentColor; stroke-width: 1.7; }
-.die circle { fill: currentColor; }
-.die.tumble svg { animation: tumble 0.6s cubic-bezier(0.3, 1.4, 0.5, 1); }
-@keyframes tumble { 0% { transform: rotate(0) scale(1); } 45% { transform: rotate(250deg) scale(1.25); } 100% { transform: rotate(360deg) scale(1); } }
-
-/* ---------- layouts: the script picks one per roll and stage shape ---------- */
-/* Each plate keeps a name, so a new layout glides plates into place. */
-.s-big { view-transition-name: fb-big; } .s-row { view-transition-name: fb-row; }
-.s-band1 { view-transition-name: fb-band1; } .s-band2 { view-transition-name: fb-band2; }
-.s-s1 { view-transition-name: fb-s1; } .s-s2 { view-transition-name: fb-s2; } .s-s3 { view-transition-name: fb-s3; }
-.s-s4 { view-transition-name: fb-s4; } .s-s5 { view-transition-name: fb-s5; } .s-s6 { view-transition-name: fb-s6; }
-::view-transition-group(*) { animation-duration: 0.5s; animation-timing-function: cubic-bezier(0.3, 1.25, 0.5, 1); }
-@media (prefers-reduced-motion: reduce) {
-  .cell > *, .die.tumble svg { transition: none; animation: none; }
-}
 </style>
 </head>
 <body>
@@ -135,15 +103,14 @@
     </div>
     <div class="bar bar--below">
       <div class="actions">
-        <button class="chip die" id="roll" type="button" aria-label="Roll new controls"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5"/><g class="pips"></g></svg><span>Roll</span></button>
         <button class="chip" id="shuffle" type="button">Shuffle</button>
         <button class="chip" id="reset" type="button">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>switches and keys</dd></div>
-        <div><dt>Drag</dt><dd>dials, sliders and beads</dd></div>
-        <div><dt>Roll</dt><dd>deals new controls</dd></div>
-        <div><dt>Arm and latch</dt><dd>then a key launches</dd></div>
+        <div><dt>Drag</dt><dd>the dial and the slider</dd></div>
+        <div><dt>Flick</dt><dd>the dial spins</dd></div>
+        <div><dt>Push the stick</dt><dd>the light moves</dd></div>
       </dl>
     </div>
   </main>
@@ -156,261 +123,52 @@
 <script type="module">
 import { initPage } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import { board, snd, reduce, sleep, pruneLight, rnd } from './kit.js';
+import { snd, reduce } from './kit.js';
 import PARTS from './parts/index.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'fidget' });
 
-/* ---------- bento: ten slots, one part in each ---------- */
-const SLOTS = [['big', 'big'], ['row', 'row'], ['band1', 'band'], ['band2', 'band'], ...[1, 2, 3, 4, 5, 6].map(n => [`s${n}`, 'small'])];
+/* ---------- the board: one cell per part ---------- */
+// The registry in parts/ holds every part; the board mounts these five.
+// Add a part here and give its cell a grid area to grow the board.
+const BOARD = ['dial', 'tog', 'joy', 'keys', 'fader'];
 const boardEl = document.getElementById('board');
-const cells = SLOTS.map(([name, kind]) => {
-  const c = document.createElement('div');
-  c.className = `cell s-${name}`;
-  c.dataset.kind = kind;
-  boardEl.append(c);
-  return c;
-});
 const byId = new Map(PARTS.map(p => [p.id, p]));
-const mounted = new Map(), styled = new Set(), mods = new Map();
+const mounted = [];
 // Modules load one at a time; a small local server drops bursts.
-async function fetchAll(ids) {
-  for (const id of ids) {
-    if (id && !mods.has(id)) mods.set(id, (await byId.get(id).load()).default);
-  }
-}
-function mount(cell, part) {
-  // A part's own styles load once, on its first mount.
-  if (part.css && !styled.has(part.id)) {
-    styled.add(part.id);
+for (const id of BOARD) {
+  const part = (await byId.get(id).load()).default;
+  const cell = document.createElement('div');
+  cell.className = `cell s-${id} p-${id}`;
+  boardEl.append(cell);
+  // A part's own styles load once, with the part.
+  if (part.css) {
     const st = document.createElement('style');
     st.textContent = part.css;
     document.head.append(st);
   }
-  cell.classList.add('p-' + part.id);
   const inst = part.mount(cell);
-  mounted.set(cell, { part, inst });
   inst.bodies.forEach(b => b.draw());
+  mounted.push(inst);
 }
-function unmount(cell) {
-  const m = mounted.get(cell);
-  if (!m) return;
-  m.inst.destroy?.();
-  m.inst.bodies.forEach(sleep);
-  cell.classList.remove('p-' + m.part.id);
-  cell.replaceChildren();
-  mounted.delete(cell);
-}
-const allMoves = () => [...mounted.values()].flatMap(m => m.inst.moves);
-
-/* ---------- deals: which part sits in which slot ---------- */
-const DEFAULT = ['dial', 'keys', 'fader', 'abacus', 'joy', 'tog', 'safe', 'rock', 'wheel', 'arcade'];
-const KEY = 'stimming.fidget.deal';
-const shuffled = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-// A slot keeps a given id only if it fits and is not used twice.
-// Empty slots then take the first free part of their kind.
-function settle(ids) {
-  const used = new Set(), out = SLOTS.map(([, kind], i) => {
-    const p = byId.get(ids?.[i]);
-    if (p && p.slot === kind && !used.has(p.id)) { used.add(p.id); return p.id; }
-    return null;
-  });
-  return out.map((id, i) => {
-    if (id) return id;
-    const p = PARTS.find(q => q.slot === SLOTS[i][1] && !used.has(q.id));
-    if (p) used.add(p.id);
-    return p ? p.id : null;
-  });
-}
-// A roll deals fresh parts; each slot avoids the part it just held.
-function deal(prev) {
-  const pools = {};
-  shuffled([...PARTS]).forEach(p => (pools[p.slot] ||= []).push(p.id));
-  return SLOTS.map(([, kind], i) => {
-    const pool = pools[kind] || [];
-    let j = pool.findIndex(id => id !== prev[i]);
-    if (j < 0) j = 0;
-    return pool.length ? pool.splice(j, 1)[0] : null;
-  });
-}
-const store = {
-  get() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } },
-  set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch { /* storage is optional */ } },
-};
-let current = settle(store.get() || DEFAULT);
-
-/* ---------- layouts: the die also reshuffles the bento ---------- */
-// Tokens: B big, R row, b1 and b2 bands, 1 to 6 small; ×n repeats a token.
-// Each layout is [columns, row weights, area rows].
-const LAYOUTS = {
-  wide: [
-    [12, [3, 2, 2, 4], ['B×4 R×8', 'B×4 b1×8', 'B×4 b2×8', '1×2 2×2 3×2 4×2 5×2 6×2']],
-    [12, [3, 2, 2, 4], ['R×8 B×4', 'b1×8 B×4', 'b2×8 B×4', '1×2 2×2 3×2 4×2 5×2 6×2']],
-    [12, [4, 3, 2, 2], ['1×2 2×2 3×2 4×2 5×2 6×2', 'B×4 R×8', 'B×4 b1×8', 'B×4 b2×8']],
-    [12, [3, 3, 2, 1.8], ['1×3 B×6 2×3', '3×3 B×6 4×3', '5×3 R×6 6×3', 'b1×6 b2×6']],
-    [12, [2, 2, 2.4, 4], ['b1×7 B×5', 'b2×7 B×5', 'R×7 B×5', '1×2 2×2 3×2 4×2 5×2 6×2']],
-  ],
-  square: [
-    [12, [3, 3, 2.2, 1.8, 1.8, 3.4], ['B×6 1×3 2×3', 'B×6 3×3 4×3', 'R×12', 'b1×12', 'b2×12', '5×6 6×6']],
-    [12, [3, 3, 1.8, 1.8, 2.2, 3.4], ['1×3 2×3 B×6', '3×3 4×3 B×6', 'b1×12', 'b2×12', 'R×12', '5×6 6×6']],
-    [12, [2.2, 3, 3, 1.8, 1.8, 3.4], ['R×12', '1×3 B×6 2×3', '3×3 B×6 4×3', 'b1×12', 'b2×12', '5×6 6×6']],
-    [12, [3.2, 2.2, 2.2, 2.2, 2.2, 1.8, 1.8], ['1×4 2×4 3×4', 'B×7 4×5', 'B×7 5×5', 'B×7 6×5', 'R×12', 'b1×12', 'b2×12']],
-  ],
-  tall: [
-    [4, [115, 115, 70, 52, 52, 105], ['B×3 1', 'B×3 2', 'R×4', 'b1×4', 'b2×4', '3 4 5 6']],
-    [4, [115, 115, 52, 52, 70, 105], ['1 B×3', '2 B×3', 'b1×4', 'b2×4', 'R×4', '3 4 5 6']],
-    [4, [105, 115, 115, 70, 52, 52], ['3 4 5 6', 'B×3 1', 'B×3 2', 'R×4', 'b1×4', 'b2×4']],
-    [4, [90, 120, 120, 70, 52, 52, 100], ['1×2 2×2', 'B×4', 'B×4', 'R×4', 'b1×4', 'b2×4', '3 4 5 6']],
-  ],
-};
-const NAME = { B: 'big', R: 'row', b1: 'band1', b2: 'band2' };
-const areaRow = r => r.split(' ').flatMap(t => {
-  const [k, n = 1] = t.split('×');
-  return Array(+n).fill(NAME[k] || `s${k}`);
-}).join(' ');
-const LKEY = 'stimming.fidget.layout';
-const stageEl = boardEl.parentElement;
-const shapeOf = ({ width: w, height: h }) => (w / h < 0.95 ? 'tall' : w / h < 1.42 ? 'square' : 'wide');
-let shape = shapeOf(stageEl.getBoundingClientRect());
-let layout = (() => { try { return +localStorage.getItem(LKEY) || 0; } catch { return 0; } })();
-function applyLayout() {
-  const list = LAYOUTS[shape], [cols, rows, areas] = list[layout % list.length];
-  Object.assign(boardEl.style, {
-    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-    gridTemplateRows: rows.map(r => `minmax(0, ${r}fr)`).join(' '),
-    gridTemplateAreas: areas.map(a => `"${areaRow(a)}"`).join(' '),
-  });
-}
-// A new layout differs from the current one at this stage shape.
-function nextLayout() {
-  const n = LAYOUTS[shape].length, now = layout % n;
-  let k = (Math.random() * n) | 0;
-  if (k === now) k = (k + 1) % n;
-  layout = k;
-  try { localStorage.setItem(LKEY, String(k)); } catch { /* storage is optional */ }
-}
-applyLayout();
-new ResizeObserver(([e]) => {
-  const s = shapeOf(e.contentRect);
-  if (s !== shape) { shape = s; applyLayout(); }
-}).observe(stageEl);
-fetchAll(current).then(() => cells.forEach((cell, i) => { if (current[i]) mount(cell, mods.get(current[i])); }));
-
-/* ---------- the die ---------- */
-const rollBtn = document.getElementById('roll'), pips = rollBtn.querySelector('.pips');
-const P = { c: 12, l: 7.5, r: 16.5 };
-const FACES = [
-  [[P.c, P.c]],
-  [[P.l, P.l], [P.r, P.r]],
-  [[P.l, P.l], [P.c, P.c], [P.r, P.r]],
-  [[P.l, P.l], [P.r, P.l], [P.l, P.r], [P.r, P.r]],
-  [[P.l, P.l], [P.r, P.l], [P.c, P.c], [P.l, P.r], [P.r, P.r]],
-  [[P.l, P.l], [P.r, P.l], [P.l, P.c], [P.r, P.c], [P.l, P.r], [P.r, P.r]],
-];
-function face(n) {
-  pips.innerHTML = FACES[n].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.9"/>`).join('');
-}
-face(4);
-// The rattle: a handful of quick clacks on a tray.
-const rattle = () => snd.play('roll', 0.3, 0.5, (t, P, G) => {
-  for (let k = 0; k < 5; k++) {
-    const at = t + k * 0.055 + Math.random() * 0.02, g = G * (1 - k * 0.15);
-    snd.hiss(at, 'bandpass', rnd(1800, 3200) * P, 2, 0.012, 0.32 * g);
-    snd.ring(at, rnd(700, 1100) * P, rnd(650, 1000) * P, 0.03, 0.07 * g);
-  }
-});
-let rolling = false;
-const wait = ms => new Promise(r => setTimeout(r, ms));
-async function roll() {
-  if (rolling) return;
-  rolling = true;
-  rattle();
-  rollBtn.classList.remove('tumble');
-  void rollBtn.offsetWidth;
-  rollBtn.classList.add('tumble');
-  // The pips flicker while the die tumbles, then land.
-  const flick = setInterval(() => face((Math.random() * 6) | 0), 70);
-  setTimeout(() => { clearInterval(flick); face((Math.random() * 6) | 0); }, reduce ? 0 : 520);
-  const next = deal(current), gap = reduce ? 0 : 35;
-  // The wave starts once every dealt part has loaded.
-  await fetchAll(next);
-  // Every plate empties in a wave.
-  cells.forEach((cell, i) => setTimeout(() => cell.classList.add('out'), i * gap));
-  await wait(cells.length * gap + (reduce ? 0 : 160));
-  // A new layout lands, and the new parts mount into it.
-  // The swap runs once, whichever path calls it first.
-  let swapped = false;
-  const swap = () => {
-    if (swapped) return;
-    swapped = true;
-    nextLayout();
-    applyLayout();
-    cells.forEach((cell, i) => { unmount(cell); if (next[i]) mount(cell, mods.get(next[i])); });
-  };
-  // The plates glide to their new places where the browser allows it.
-  // A hidden page never finishes the glide, so the wait is capped.
-  if (document.startViewTransition && !reduce) {
-    const vt = document.startViewTransition(swap);
-    // A skipped glide rejects these promises; the swap still runs.
-    vt.ready.catch(() => {});
-    vt.updateCallbackDone.catch(() => {});
-    await Promise.race([vt.finished.catch(() => {}), wait(700)]);
-  }
-  swap();
-  pruneLight();
-  // The new parts spring in, in a wave.
-  cells.forEach((cell, i) => setTimeout(() => cell.classList.remove('out'), i * gap));
-  await wait(cells.length * gap);
-  current = next;
-  store.set(next);
-  rolling = false;
-}
-rollBtn.addEventListener('click', roll);
+const allMoves = () => mounted.flatMap(m => m.moves);
 
 /* ---------- shuffle and reset ---------- */
 // Each move fires in a wave from left to right across the board.
 let wave = [];
-// The return value is the wave's length in ms.
-function sweep(kind, skip) {
+function sweep(kind) {
   wave.forEach(clearTimeout);
-  const list = allMoves().filter(m => m[kind] && !skip?.has(m.el)).map(m => {
+  const list = allMoves().filter(m => m[kind]).map(m => {
     const r = m.el.getBoundingClientRect();
     return { m, at: r.left + r.width / 2 + 0.35 * (r.top + r.height / 2) };
   }).sort((a, b) => a.at - b.at);
   const gap = reduce ? 25 : 55;
   wave = list.map(({ m }, i) => setTimeout(() => m[kind](), i * gap));
-  return list.length * gap;
 }
 document.getElementById('shuffle').addEventListener('click', () => sweep('shuffle'));
 document.getElementById('reset').addEventListener('click', () => sweep('reset'));
-
-/* ---------- launch ---------- */
-// The run laps the dial, then a shuffle wave crosses the board.
-// Spent, the board disarms: the switch drops, the latched key pops.
-const moveOf = el => allMoves().find(m => m.el === el);
-let fuse = [];
-board.fire = () => {
-  if (!board.keys || !board.safety) return;
-  board.firing = true;
-  board.dial?.prime();
-  snd.launch();
-  board.dial?.run();
-  const keep = new Set([...board.keys.els, board.safety.el]);
-  fuse.forEach(clearTimeout);
-  fuse = [setTimeout(() => {
-    const t = sweep('shuffle', keep);
-    fuse.push(
-      setTimeout(() => { if (board.safety) moveOf(board.safety.el)?.reset(); }, t + 250),
-      setTimeout(() => {
-        if (board.keys) moveOf(board.keys.latch)?.reset();
-        board.firing = false;
-        board.dial?.prime();
-      }, t + 520),
-    );
-  }, reduce ? 0 : 440)];
-};
 
 // Hidden, the loop pauses, so any scrape stops with it.
 document.addEventListener('visibilitychange', () => { if (document.hidden) snd.hush(); });
