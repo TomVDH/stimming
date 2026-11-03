@@ -22,6 +22,8 @@
 }
 /* The focus ring is drawn around the focused cell instead. */
 .field canvas:focus-visible { outline: none; }
+/* The die is a solid face with its pips cut out. */
+.chip.icon svg.die { fill: currentColor; stroke: none; }
 </style>
 </head>
 <body>
@@ -35,8 +37,9 @@
     <div class="stage stage--pop field" id="field">
       <canvas tabindex="0" role="application" aria-label="Bubble wrap. Arrow keys choose a bubble; Space or Enter pops it."></canvas>
     </div>
-    <div class="bar">
+    <div class="bar bar--below">
       <div class="actions">
+        <button class="chip icon" id="roll" type="button" aria-label="Shuffle colours" title="Shuffle colours"><svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d=""/></svg></button>
         <button class="chip" id="reset" type="button">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
@@ -98,16 +101,35 @@ function mixLch(A, B, t, raw) {
   return [lerp(A[0], B[0], t), lerp(A[1], B[1], t), A[2] + dh * t];
 }
 
-// The field runs mint, through cyan, to blue on one smooth curve.
+// A palette is three OKLCH stops: light, middle, deep.
+// The first field runs mint, through cyan, to blue.
 const MINT = [0.9, 0.11, 165], CYAN = [0.79, 0.125, 205], BLUE = [0.6, 0.14, 250];
-const PULL = CYAN.map((v, k) => 2 * v - (MINT[k] + BLUE[k]) / 2);
-const fieldAt = t => mixLch(mixLch(MINT, PULL, t, true), mixLch(PULL, BLUE, t, true), t, true);
-const WHITE = [1, 0, 0], SHADE = [0.42, 0.07, 240];
+// The ramp is a quadratic curve that passes through the middle stop.
+function rampOf([A, M, B]) {
+  const P = M.map((v, k) => 2 * v - (A[k] + B[k]) / 2);
+  return t => mixLch(mixLch(A, P, t, true), mixLch(P, B, t, true), t, true);
+}
+// A new palette sweeps a random hue arc, light to deep.
+function freshPalette(prev) {
+  let h0 = 0;
+  // The new arc starts well away from the old one.
+  for (let n = 0; n < 8; n++) {
+    h0 = Math.random() * 360;
+    if (!prev || Math.abs(((h0 - prev[0][2] + 540) % 360) - 180) > 70) break;
+  }
+  const span = (60 + Math.random() * 130) * (Math.random() < 0.5 ? -1 : 1), c = 0.11 + Math.random() * 0.06;
+  return [
+    [0.86 + Math.random() * 0.05, c * 0.95, h0],
+    [0.77 + Math.random() * 0.04, c, h0 + span / 2],
+    [0.56 + Math.random() * 0.07, c * 1.05, h0 + span],
+  ];
+}
+const SHADE = [0.42, 0.07, 240];
 const skinOf = ([L, C, h]) => ({
-  top: [Math.min(0.97, L + 0.07), C * 0.85, h - 10],
+  top: [Math.min(0.97, L + 0.08), C * 0.85, h - 10],
   mid: [L, C, h],
-  low: [L - 0.15, C * 1.05, h + 14],
-  light: [0.97, 0.045, h - 20],
+  low: [L - 0.2, C * 1.05, h + 16],
+  light: [0.98, 0.03, h - 20],
 });
 // Popped film is darker and duller; light theme keeps it paler.
 const flatOf = ([L, C, h], lite) => (lite ? [L * 0.74, C * 0.6, h + 6] : [L * 0.5 + 0.05, C * 0.55, h + 6]);
@@ -117,6 +139,16 @@ const rng = s => () => {
   t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
+// Linear sRGB inside the gamut, for per-pixel lighting.
+function linFit([L, C, h]) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// A table turns linear light into 8-bit sRGB.
+const LUT = new Uint8ClampedArray(4097);
+for (let i = 0; i <= 4096; i++) LUT[i] = Math.round(gam(i / 4096) * 255);
+const enc = v => LUT[v >= 1 ? 4096 : v <= 0 ? 0 : (v * 4096) | 0];
 
 /* ---------- geometry ---------- */
 // Pointy-top hexagon with rounded corners, centred on the origin.
@@ -127,6 +159,14 @@ function hexPath(r, cr) {
   for (let k = 0; k < 6; k++) { const a = v[k], b = v[(k + 1) % 6]; p.arcTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, cr); }
   p.closePath();
   return p;
+}
+// Signed distance to a pointy-top hexagon of apothem a.
+function hexSD(x, y, a) {
+  let px = Math.abs(y), py = Math.abs(x);
+  const d = 2 * Math.min(-0.866025404 * px + 0.5 * py, 0);
+  px -= d * -0.866025404; py -= d * 0.5;
+  px -= clamp(px, -0.577350269 * a, 0.577350269 * a); py -= a;
+  return Math.hypot(px, py) * Math.sign(py);
 }
 // The same outline as points, then crinkled by a few sine waves.
 function crinkle(r, cr, rnd) {
@@ -148,32 +188,76 @@ function crinkle(r, cr, rnd) {
   });
 }
 
-/* ---------- sprites: one atlas, drawn once per size and theme ---------- */
+/* ---------- sprites: one atlas per palette, drawn once per size ---------- */
 const field = document.getElementById('field'), cv = field.querySelector('canvas'), ctx = cv.getContext('2d');
-const atlas = document.createElement('canvas'), ax = atlas.getContext('2d');
+// Two atlases let a new palette sweep in over the old one.
+const atl = [document.createElement('canvas'), document.createElement('canvas')];
 const NB = 32, SHADE_SLOT = NB * 2, SLOTS = NB * 2 + 1;
-let SP = 0, SB = 0, sR = 0, ox = [], oy = [], spriteTimer = 0;
+const pals = [[MINT, CYAN, BLUE], null], paints = [[], []];
+let SP = 0, SB = 0, sR = 0, ox = [], oy = [], spriteTimer = 0, cur = 0, LT = null;
 let lite = false, focusC = '#000', bgC = '#000';
 
 const gapOf = R => clamp(R * 0.075, 2.5, 4);
-// Glossy cell: three-stop gradient, top-left light, thin inner rim.
-function glossSprite(p, r, base) {
-  const s = skinOf(base);
-  const g = ax.createLinearGradient(-0.92 * r, -r, 0.92 * r, r);
-  g.addColorStop(0, css(s.top)); g.addColorStop(0.55, css(s.mid)); g.addColorStop(1, css(s.low));
-  ax.fillStyle = g; ax.fill(p);
-  const lx = -0.44 * r, ly = -0.6 * r, l = ax.createRadialGradient(lx, ly, 0, lx, ly, 1.16 * r);
-  l.addColorStop(0, css(s.light, 0.85)); l.addColorStop(1, css(s.light, 0));
-  ax.fillStyle = l; ax.fill(p);
-  ax.save();
-  ax.clip(p);
-  const w = (SQ3 * r) / 2, rim = ax.createLinearGradient(-w, -r, w, r);
-  rim.addColorStop(0, css(WHITE, 0.62)); rim.addColorStop(0.5, css(WHITE, 0));
-  ax.strokeStyle = rim; ax.lineWidth = Math.max(2.2, r * 0.065); ax.stroke(p);
-  ax.restore();
+const norm3 = (x, y, z) => { const l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; };
+// The key light sits up and left, in front of the sheet.
+const KEY = norm3(-0.5, -0.68, 0.54), HALF = norm3(KEY[0], KEY[1], KEY[2] + 1);
+// A crisp box in reflection space: the softbox seen in the plastic.
+const box = (x, y, cx, cy, hw, hh, e) => clamp((hw - Math.abs(x - cx)) / e + 0.5) * clamp((hh - Math.abs(y - cy)) / e + 0.5);
+
+// Bump terms per pixel: the dome's height gives normals, normals give light.
+// Every colour bin shares these terms; only the paint changes.
+function lightTerms(r0, cr, k) {
+  const n = SP, m = n * n, ap = (r0 * SQ3) / 2 - cr;
+  const hgt = new Float32Array(m), dep = new Float32Array(m);
+  const T = { a: new Float32Array(m), u: new Float32Array(m), ao: new Float32Array(m), w: new Float32Array(m), s: new Float32Array(m), t: new Float32Array(m) };
+  for (let py = 0, i = 0; py < n; py++) for (let px = 0; px < n; px++, i++) {
+    const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k, sd = hexSD(x, y, ap) - cr;
+    T.a[i] = clamp(0.5 - sd * k);
+    if (sd >= 0) continue;
+    // A smooth hexagon norm has no creases from the corners.
+    const q0 = Math.abs(x), q1 = Math.abs(0.5 * x + 0.866025404 * y), q2 = Math.abs(0.5 * x - 0.866025404 * y);
+    const sm = Math.min(-sd, (r0 * SQ3) / 2 - (q0 ** 10 + q1 ** 10 + q2 ** 10) ** 0.1);
+    // A pillow: steep walls, a soft crown over the middle.
+    const e = clamp(sm / (0.5 * r0)), rho = (x * x + y * y) / (r0 * r0);
+    hgt[i] = k * r0 * (0.27 * (1 - (1 - e) ** 2.4) + 0.12 * Math.max(0, 1 - rho));
+    dep[i] = -sd / r0;
+  }
+  for (let py = 1; py < n - 1; py++) for (let px = 1, i = py * n + 1; px < n - 1; px++, i++) {
+    if (!T.a[i]) continue;
+    const [nx, ny, nz] = norm3((hgt[i - 1] - hgt[i + 1]) / 2, (hgt[i - n] - hgt[i + n]) / 2, 1);
+    const ndl = nx * KEY[0] + ny * KEY[1] + nz * KEY[2], ndh = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
+    // Half-Lambert picks a spot on the deep-to-light paint ramp.
+    T.u[i] = clamp(ndl * 0.6 + 0.42) ** 1.15;
+    // The foot of the wall sits in its own shade.
+    T.ao[i] = 0.62 + 0.38 * clamp(dep[i] / 0.09);
+    // The view ray bounces off the dome into the room.
+    const rx = 2 * nz * nx, ry = 2 * nz * ny;
+    T.w[i] = 0.82 * box(rx, ry, -0.36, -0.44, 0.19, 0.1, 0.03) + 0.24 * box(rx, ry, 0.4, 0.5, 0.15, 0.05, 0.03);
+    T.s[i] = 1.1 * ndh ** 90 + 0.1 * ndh ** 14;
+    // Light leaks through the far walls, as in thin plastic.
+    const f = (1 - nz) ** 2.2;
+    T.t[i] = 0.55 * f * clamp(0.25 + 0.65 * nx + 0.75 * ny);
+  }
+  return T;
+}
+// Glossy cell: the shared bump terms painted with one colour bin.
+function glossSprite(img, base) {
+  const s = skinOf(base), lo = linFit(s.low), mi = linFit(s.mid), hi = linFit(s.top), li = linFit(s.light), d = img.data;
+  const { a, u, ao, w, s: sp, t } = LT;
+  for (let i = 0, j = 0; i < a.length; i++, j += 4) {
+    if (!a[i]) { d[j + 3] = 0; continue; }
+    const q = u[i], A = q < 0.5 ? lo : mi, B = q < 0.5 ? mi : hi, f = q < 0.5 ? 2 * q : 2 * q - 1, o = ao[i], W = w[i];
+    for (let c = 0; c < 3; c++) {
+      let v = (A[c] + (B[c] - A[c]) * f) * o + hi[c] * t[i];
+      v = v + (li[c] - v) * W + sp[i];
+      d[j + c] = enc(v);
+    }
+    d[j + 3] = (a[i] * 255 + 0.5) | 0;
+  }
+  return img;
 }
 // Popped cell: matte film, crinkled edge, a few soft folds.
-function flatSprite(r, cr, base, rnd) {
+function flatSprite(ax, r, cr, base, rnd) {
   const f = flatOf(base, lite), pts = crinkle(r * 0.97, cr, rnd), p = new Path2D();
   pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y)));
   p.closePath();
@@ -199,25 +283,39 @@ function flatSprite(r, cr, base, rnd) {
   ax.strokeStyle = css([f[0] - 0.08, f[1], f[2]], 0.7); ax.lineWidth = 1; ax.stroke(p);
 }
 // Press shade multiplies, darkest where the finger dents the dome.
-function shadeSprite(p, r) {
+function shadeSprite(ax, p, r) {
   const g = ax.createRadialGradient(0, 0.1 * r, 0, 0, 0.1 * r, 1.05 * r);
   g.addColorStop(0, css(SHADE, 0.85)); g.addColorStop(1, css(SHADE, 0.35));
   ax.fillStyle = g; ax.fill(p);
 }
-function buildSprites() {
-  sR = R;
-  const k = dpr * 1.1, r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), n = Math.ceil(Math.sqrt(SLOTS));
-  SB = 2 * R + 6; SP = Math.ceil(SB * k);
-  atlas.width = n * SP; atlas.height = Math.ceil(SLOTS / n) * SP;
+// One atlas holds every bin of one palette, glossy and popped.
+function buildAtlas(idx) {
+  const atlas = atl[idx], ax = atlas.getContext('2d'), n = Math.ceil(Math.sqrt(SLOTS)), k = dpr * 1.1;
+  const r0 = R - gapOf(R) / SQ3, c0 = r0 * 0.22, hp = hexPath(r0, c0), ramp = rampOf(pals[idx]), img = ax.createImageData(SP, SP);
+  if (atlas.width !== n * SP || atlas.height !== Math.ceil(SLOTS / n) * SP) { atlas.width = n * SP; atlas.height = Math.ceil(SLOTS / n) * SP; }
+  ax.setTransform(1, 0, 0, 1, 0, 0);
+  ax.clearRect(0, 0, atlas.width, atlas.height);
+  paints[idx] = [];
   for (let i = 0; i < SLOTS; i++) {
     ox[i] = (i % n) * SP; oy[i] = ((i / n) | 0) * SP;
-    ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2);
-    const base = fieldAt((i >> 1) / (NB - 1));
-    if (i === SHADE_SLOT) shadeSprite(hp, r0);
-    else if (i & 1) flatSprite(r0, c0, base, rng(i * 7919 + 13));
-    else glossSprite(hp, r0, base);
+    const base = ramp((i >> 1) / (NB - 1));
+    if (i === SHADE_SLOT) { ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2); shadeSprite(ax, hp, r0); continue; }
+    if (i & 1) { ax.setTransform(k, 0, 0, k, ox[i] + SP / 2, oy[i] + SP / 2); flatSprite(ax, r0, c0, base, rng(i * 7919 + 13)); continue; }
+    ax.putImageData(glossSprite(img, base), ox[i], oy[i]);
+    // Shards and rings take the bin's own paint.
+    const s = skinOf(base);
+    paints[idx][i >> 1] = { mid: css(s.mid), top: css(s.top), low: css(s.low), light: css(s.light) };
   }
   ax.setTransform(1, 0, 0, 1, 0, 0);
+}
+function buildSprites() {
+  sR = R;
+  const k = dpr * 1.1, r0 = R - gapOf(R) / SQ3;
+  SB = 2 * R + 6; SP = Math.ceil(SB * k);
+  LT = lightTerms(r0, r0 * 0.22, k);
+  buildAtlas(cur);
+  // A sweep in progress keeps its old palette too.
+  if (pals[1 - cur] && cells.some(c => c.pa !== cur)) buildAtlas(1 - cur);
 }
 function tokens() {
   const st = getComputedStyle(document.documentElement);
@@ -239,7 +337,7 @@ function makeCells() {
       i: out.length, row: i, col: j, x: 0, y: 0, b: 0,
       flip: Math.random() < 0.5 ? -1 : 1, rot: (Math.random() - 0.5) * 0.09,
       state: 0, s: 1, sv: 0, dx: 0, dy: 0, vx: 0, vy: 0, g: 1, p: 0, pT: 0,
-      popAt: -9, inAt: -9, due: Infinity,
+      popAt: -9, inAt: -9, due: Infinity, pa: cur,
     });
   }
   return out;
@@ -417,6 +515,7 @@ function pop(c, now, amp) {
   popSound(c);
   if (reduce) return;
   c.sv += 7.5;
+  burst(c, now, amp);
   // A ripple travels out and shoves the inflated cells it reaches.
   const D = R * 4.4, v = R * 13;
   for (const o of cells) {
@@ -453,7 +552,11 @@ function step(now, dt) {
   for (let n = events.length - 1; n >= 0; n--) {
     const e = events[n];
     if (e.at > now) continue;
-    if (!e.c.state) { e.c.vx += e.vx; e.c.vy += e.vy; e.c.sv += e.vs; }
+    if (e.swap != null) {
+      // The new paint lands with a small hop.
+      e.c.pa = e.swap;
+      if (!e.c.state) { e.c.sv += 2.6; bloop(); }
+    } else if (!e.c.state) { e.c.vx += e.vx; e.c.vy += e.vy; e.c.sv += e.vs; }
     events[n] = events[events.length - 1];
     events.pop();
   }
@@ -501,11 +604,136 @@ function step(now, dt) {
     if (busy) moving = true;
     else { c.s = sT; c.sv = 0; c.dx = tx; c.dy = ty; c.vx = 0; c.vy = 0; c.g = gT; c.p = c.pT; }
   }
-  return moving;
+  return fly(now, dt) || moving;
 }
 
+/* ---------- burst: shards and a ring leave every pop ---------- */
+// Shards are solid cut shapes; they shrink away, they never fade.
+const MAXBITS = 360, RING_S = 0.34, bits = [], rings = [];
+const shard = pts => { const p = new Path2D(); pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y))); p.closePath(); return p; };
+// A sharp triangle, a thin sliver and a chip, about one unit across.
+const SHARDS = [
+  shard([[0, -0.62], [0.55, 0.42], [-0.5, 0.36]]),
+  shard([[-0.7, -0.12], [0.7, -0.2], [0.62, 0.14], [-0.66, 0.1]]),
+  shard([[-0.4, -0.45], [0.45, -0.38], [0.3, 0.42], [-0.48, 0.3]]),
+];
+function burst(c, now, amp) {
+  const pt = paints[c.pa][c.b];
+  if (!pt) return;
+  const x = c.x + c.dx, y = c.y + c.dy;
+  rings.push({ x, y, t0: now, col: pt.top, amp });
+  // A busy sweep throws fewer shards per pop.
+  const n = bits.length > MAXBITS / 2 ? 3 : 5 + ((Math.random() * 3) | 0);
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * TAU, v = R * (5 + Math.random() * 8) * (0.7 + 0.5 * amp), o = R * 0.3 * Math.random(), q = Math.random();
+    bits.push({
+      x: x + Math.cos(a) * o, y: y + Math.sin(a) * o, vx: Math.cos(a) * v, vy: Math.sin(a) * v - R * 3,
+      a: Math.random() * TAU, va: (Math.random() - 0.5) * 26, s: R * (0.12 + Math.random() * 0.15),
+      t0: now, life: 0.32 + Math.random() * 0.3, col: q < 0.3 ? pt.light : q < 0.65 ? pt.top : pt.low, sh: (Math.random() * 3) | 0,
+    });
+  }
+  if (bits.length > MAXBITS) bits.splice(0, bits.length - MAXBITS);
+}
+// Shards drift out, slow down and fall; the result says if any fly.
+function fly(now, dt) {
+  const drag = Math.exp(-3.2 * dt), g = R * 22 * dt;
+  for (let n = bits.length - 1; n >= 0; n--) {
+    const b = bits[n];
+    if (now - b.t0 > b.life) { bits[n] = bits[bits.length - 1]; bits.pop(); continue; }
+    b.vx *= drag; b.vy = b.vy * drag + g;
+    b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va * dt;
+  }
+  for (let n = rings.length - 1; n >= 0; n--) if (now - rings[n].t0 > RING_S) rings.splice(n, 1);
+  return bits.length > 0 || rings.length > 0;
+}
+function drawBits() {
+  if (!bits.length && !rings.length) return;
+  const now = nowS();
+  ctx.globalAlpha = 1;
+  // The ring is a hard hexagon outline that thins as it grows.
+  for (const q of rings) {
+    const u = clamp((now - q.t0) / RING_S), sc = 1 + (0.35 + 0.4 * q.amp) * (1 - (1 - u) ** 3), lw = R * 0.2 * (1 - u) ** 1.5;
+    if (lw < 0.25) continue;
+    ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * q.x, dpr * q.y);
+    ctx.lineWidth = lw / sc; ctx.strokeStyle = q.col; ctx.stroke(ringP);
+  }
+  for (const b of bits) {
+    const u = clamp((now - b.t0) / b.life), sc = b.s * (1 - u * u);
+    if (sc < 0.3) continue;
+    const co = Math.cos(b.a) * sc * dpr, si = Math.sin(b.a) * sc * dpr;
+    ctx.setTransform(co, si, -si, co, dpr * b.x, dpr * b.y);
+    ctx.fillStyle = b.col; ctx.fill(SHARDS[b.sh]);
+  }
+}
+
+/* ---------- the die: a new palette floods in from the bar ---------- */
+const die = document.getElementById('roll'), dieSvg = die.querySelector('svg'), diePath = dieSvg.querySelector('path');
+const P0 = 4.6, P1 = 8, P2 = 11.4;
+const FACES = [
+  [[P1, P1]],
+  [[P0, P2], [P2, P0]],
+  [[P0, P2], [P1, P1], [P2, P0]],
+  [[P0, P0], [P2, P0], [P0, P2], [P2, P2]],
+  [[P0, P0], [P2, P0], [P1, P1], [P0, P2], [P2, P2]],
+  [[P0, P0], [P2, P0], [P0, P1], [P2, P1], [P0, P2], [P2, P2]],
+];
+const BODY = 'M4.5 1.5h7a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z';
+let face = 4;
+// Each pip is a round hole cut through the solid face.
+function showFace(n) {
+  face = n;
+  diePath.setAttribute('d', BODY + FACES[n].map(([x, y]) => `M${x - 1.2} ${y}a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0Z`).join(''));
+}
+showFace(face);
+// Rolling: a few hard plastic clicks that die away.
+function rattle() {
+  const a = kit.live();
+  if (!a) return;
+  let t = a.currentTime + LEAD;
+  for (let k = 0; k < 4 && voices < MAXV; k++) {
+    const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain(), amp = 0.75 * 0.62 ** k * level();
+    src.buffer = kit.noise;
+    bp.type = 'bandpass';
+    bp.frequency.value = 2600 * jit(0.25);
+    bp.Q.value = 4;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(amp, t + 0.001);
+    g.gain.setTargetAtTime(0, t + 0.001, 0.006);
+    src.connect(bp).connect(g).connect(kit.out);
+    src.start(t, Math.random() * 0.9, 0.05);
+    track(src, bp, g);
+    t += (0.05 + Math.random() * 0.05) * (1 + 0.3 * k);
+  }
+}
+function roll() {
+  if (!cells.length || !sR) return;
+  const now = nowS();
+  // A roll mid-sweep finishes the old sweep first.
+  events = events.filter(e => e.swap == null);
+  for (const c of cells) c.pa = cur;
+  const next = 1 - cur;
+  pals[next] = freshPalette(pals[cur]);
+  buildAtlas(next);
+  cur = next;
+  let n = face;
+  while (n === face) n = (Math.random() * 6) | 0;
+  showFace(n);
+  rattle();
+  if (reduce) { for (const c of cells) c.pa = cur; draw(); return; }
+  dieSvg.animate([
+    { transform: 'rotate(-280deg) scale(0.5)' },
+    { transform: 'rotate(16deg) scale(1.15)', offset: 0.7 },
+    { transform: 'none' },
+  ], { duration: 520, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' });
+  // The new paint floods out from the die's corner, bottom left.
+  const far = Math.hypot(W, H) || 1;
+  for (const c of cells) events.push({ at: now + 0.03 + (0.8 * Math.hypot(c.x, H - c.y)) / far + Math.random() * 0.03, c, swap: cur });
+  wake();
+}
+die.addEventListener('click', roll);
+
 /* ---------- drawing ---------- */
-function blit(c, slot, a, sx, sy, rot) {
+function blit(c, slot, a, sx, sy, rot, atlas = atl[c.pa]) {
   const X = dpr * (c.x + c.dx), Y = dpr * (c.y + c.dy);
   if (rot) {
     const co = Math.cos(rot) * dpr, si = Math.sin(rot) * dpr;
@@ -528,11 +756,12 @@ function draw() {
       blit(c, 2 * c.b, c.g, c.s * k, c.s * k, 0);
       if (c.p > 0.002) {
         ctx.globalCompositeOperation = 'multiply';
-        blit(c, SHADE_SLOT, c.p * c.g, c.s * k, c.s * k, 0);
+        blit(c, SHADE_SLOT, c.p * c.g, c.s * k, c.s * k, 0, atl[cur]);
         ctx.globalCompositeOperation = 'source-over';
       }
     }
   }
+  drawBits();
   const c = ring && cells[fi];
   if (c) {
     const sc = c.s;
