@@ -27,7 +27,7 @@ Read `README.md` for the toy list and the full rules.
 
 - `index.html` is the menu. It is an Artifact body fragment.
   - Main shelf (7): morpher, pop, fidget, domino, pins, galaxy, prism.
-  - Lab (`<details class="lab">`, 36 toys): all other toys.
+  - Lab (`section.lab`, 23 toys): all other toys. It shows only at `?lab`; `lab/` redirects there. The menu has no link to it.
 - Menu icons are inline SVG in an angular brut style: a hex, square or angled block with a hard offset shadow.
   A GSAP 3.13 timeline animates each icon on hover: `toys.<id> = { play, rest }`.
 - `icons/index.html` is an unlinked lab of old icon directions. The spheres are rejected.
