@@ -11,7 +11,7 @@ parent: stimming-io49
 Galleries icons/spike-1.html to spike-11.html, five rubrics A to E per toy (A Shaded object, B Stencil cut-out, C Single-weight line, D Isometric block, E Abstract mark). Emblems in icons/spike/emblems/<id>-<a..e>.svg.
 
 - [x] Spikes 1-6, 9-11 built and checked
-- [ ] Spikes 7 (Kaleidoscope, Soap) and 8 (Prism, Domino): agents stopped mid-QA; check hovers and console
-- [ ] Index page linking all galleries
+- [x] Spikes 7 (Kaleidoscope, Soap) and 8 (Prism, Domino): agents stopped mid-QA; check hovers and console
+- [x] Index page linking all galleries: icons/spikes.html, every toy's Current and A to E emblems in one sheet
 - [ ] Tom picks a letter per toy
 - [ ] Install picked icons in index.html and emblems in shared/emblems
