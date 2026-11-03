@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
 /* Caustic pool: thick water seen from above, by day or by night. */
-:root { --stage: oklch(0.5 0.08 215); }
+:root { --stage: oklch(0.32 0.07 222); }
 :root[data-time="night"] { --stage: oklch(0.22 0.05 232); }
 /* On the water the fail line keeps a pale tone. */
 .fail { color: oklch(0.92 0.02 210); }
@@ -113,20 +113,16 @@ const PAL = {
   HOR: linear(0.9, 0.075, 58),
   HALO: linear(0.95, 0.09, 75),
   AMB: mul(linear(0.84, 0.07, 215), 0.62),
-  TW: linear(0.97, 0.008, 210),
-  TP: linear(0.87, 0.055, 222),
-  TB: linear(0.46, 0.13, 252),
-  GR: linear(0.8, 0.02, 220),
-  WL: linear(0.5, 0.12, 240),
-  WL2: linear(0.64, 0.11, 205),
-  DECK: linear(0.84, 0.035, 72),
-  COPE: linear(0.93, 0.024, 82),
+  // Two tile tones, a cut joint, one flat deck and a bone coping.
+  TW: linear(0.88, 0.045, 205),
+  TB: linear(0.44, 0.17, 262),
+  GR: linear(0.3, 0.06, 255),
+  DECK: linear(0.66, 0.15, 42),
+  COPE: linear(0.93, 0.02, 90),
+  JNT: linear(0.36, 0.09, 38),
   SCAT: mul(linear(0.66, 0.13, 196), 0.55),
-  PK: linear(0.87, 0.085, 355),
-  PK2: linear(0.94, 0.045, 25),
-  PKB: linear(0.66, 0.17, 352),
-  LF: linear(0.56, 0.15, 142),
-  LF2: linear(0.74, 0.16, 120),
+  // The floaters share one sun-yellow accent.
+  ACC: linear(0.9, 0.18, 100),
   // Night: a cool moon, a deep sky and two warm-white pool lamps.
   MOON: mul(linear(0.86, 0.035, 245), 0.24),
   AMBN: mul(linear(0.5, 0.06, 262), 0.06),
@@ -213,7 +209,7 @@ function layoutPool(A) {
   CELL = (2 * PX) / NX;
   SIM_HZ = WAVE_C / (CELL_SPEED * CELL);
   damp = Math.exp(-DAMP_RATE / SIM_HZ);
-  TILE = (2 * PX) / Math.round((2 * PX) / 0.072);
+  TILE = (2 * PX) / Math.round((2 * PX) / 0.1);
   petalScale = PZ > PX ? 1.3 : 1;
   fitCam(A, PZ);
   for (const p of petals) {
@@ -427,12 +423,13 @@ function bedLevel(e) {
 }
 
 /* ---------- shaders ---------- */
-const NPM = 8, NOB = 10;
+const NPM = 4, NOB = 10;
 const CONSTS = `
 ${Object.entries(PAL).map(([k, c]) => `const vec3 ${k} = ${v3(c)};`).join('\n')}
 const vec3 SIG = vec3(0.85, 0.19, 0.11), SIGS = vec3(0.45);
-const vec3 PETAL_T = vec3(0.55, 0.3, 0.36), LEAF_T = vec3(0.12, 0.2, 0.06);
-const float BAND = 0.1, WLH = 0.075, GW = 0.06, COPE_W = 0.07, MEN = 0.06, MEN_L = 0.02, VSW = 0.55, EXPO = 0.8, EXPON = 1.0;
+// Floaters are opaque, so they cast near-black shadows.
+const vec3 FLT_T = vec3(0.05);
+const float BAND = 0.1, WLH = 0.075, GW = 0.045, COPE_W = 0.07, MEN = 0.06, MEN_L = 0.02, VSW = 0.55, EXPO = 0.8, EXPON = 1.0;
 const float LAMPX = 0.0, LAMPY = -0.19, LENS_E = 2.6, BALL_R = 0.058;
 const int NPM = ${NPM}, NOB = ${NOB};`;
 const SWELL = `
@@ -452,7 +449,7 @@ vec3 swell(vec2 p) {
 const PETAL_U = `uniform vec4 uPA[${NPM}], uPB[${NPM}];
 uniform int uNP;`;
 const PETAL_FN = `
-// Returns the distance to petal i in world units.
+// Returns the distance to floater i in world units.
 // q gets the local coordinates.
 float petalSd(vec2 p, int i, out vec2 q) {
   vec4 A = uPA[i], B = uPB[i];
@@ -460,13 +457,13 @@ float petalSd(vec2 p, int i, out vec2 q) {
   q = vec2(dot(d, A.zw), dot(d, vec2(-A.w, A.z))) / B.xy;
   float s;
   if (B.z < 0.5) {
-    // A blossom petal widens outward and has a notch at the tip.
-    float w = 0.56 + 0.44 * smoothstep(-1.0, 0.45, q.x);
-    s = length(vec2(q.x, q.y / w)) - 1.0;
-    s = max(s, 0.2 - length(q - vec2(1.1, 0.0)));
+    // A ring with one slot cut through it, like a stencil O.
+    s = abs(length(q) - 0.74) - 0.26;
+    s = max(s, -max(abs(q.y) - 0.13, -q.x));
   } else {
-    // A leaf narrows to a point at both ends.
-    s = max(abs(q.y) - (1.0 - q.x * q.x) * (1.0 + 0.2 * q.x), abs(q.x) - 1.0);
+    // A chevron: two thick arms meet at a point toward +x.
+    float u = q.x + 0.95 * abs(q.y) - 0.15;
+    s = max(abs(u) * 0.72 - 0.3, abs(q.y) - 0.9);
   }
   return s * B.y;
 }
@@ -481,8 +478,8 @@ float petals(vec2 p, out int k, out vec2 q) {
   }
   return best;
 }
-// Water climbs a petal's edge.
-// The surface slopes up toward the petal.
+// Water climbs a floater's edge.
+// The surface slopes up toward the floater.
 vec2 meniscus(vec2 p, int k, float s) {
   if (k < 0 || s <= 0.0 || s > 0.12) return vec2(0.0);
   vec2 q;
@@ -601,11 +598,6 @@ float hash(vec2 p) {
   vec3 q = fract(p.xyx * 0.1031);
   q += dot(q, q.yzx + 33.33);
   return fract((q.x + q.y) * q.z);
-}
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }`;
 const TONE = `
 vec3 aces(vec3 x) { return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -671,7 +663,7 @@ void main() {
   for (int i = 0; i < uNS; i++) c.x += uSegK[i].y * (bump(w - uSeg[i].zw, uSegK[i].x) - bump(w - uSeg[i].xy, uSegK[i].x));
   o = c;
 }`;
-// Each petal's pixel and each object's pixel read the water under it.
+// Each floater's pixel and each object's pixel read the water under it.
 // The last pixel sums the wave energy.
 const PROBE_FS = `${HEAD}
 uniform sampler2D uSim;
@@ -727,7 +719,7 @@ void main() {
   float cov = smoothstep(0.016, -0.012, ps);
   // Light fades over the last cells to soften wall shadows.
   vec2 e = min(vec2(c), vec2(uN - 1 - c));
-  vTint = mix(vec3(1.0), uPB[max(k, 0)].z > 0.5 ? LEAF_T : PETAL_T, cov) * smoothstep(0.0, 2.5, min(e.x, e.y));
+  vTint = mix(vec3(1.0), FLT_T, cov) * smoothstep(0.0, 2.5, min(e.x, e.y));
   gl_Position = vec4(vNew / uPool.xy, 0.0, 1.0);
 }`;
 const CAUS_FS = `${HEAD}
@@ -778,45 +770,48 @@ vec3 sky(vec3 d) {
   night += STAR * step(0.972, h) * (0.4 + 1.6 * fract(h * 37.0)) * (1.0 - smoothstep(0.05, 0.11, length(f - jt * 0.6)));
   return mix(day, night, uNight);
 }
-// Glazed tiles: face 0 is the floor, face 1 a wall.
+// Two-tone tiles with cut joints: face 0 is the floor, face 1 a wall.
+// Dark tiles edge the floor, mark the lanes and band the waterline.
 vec3 tiles(vec2 fq, float face) {
   vec2 g = fq / uTile, id = floor(g), f = fract(g), fw = fwidth(g);
   vec2 cen = (id + 0.5) * uTile;
-  float band, wl = 0.0;
+  float dark;
   if (face < 0.5) {
     vec2 cw = uPool.xy - abs(cen - uPool.xy);
-    band = step(min(cw.x, cw.y), BAND);
+    dark = step(min(cw.x, cw.y), BAND);
+    // Lanes run along the long side and end in a cross bar.
+    bool lx = uPool.x >= uPool.y;
+    float along = lx ? cen.x - uPool.x : cen.y - uPool.y, hl = lx ? uPool.x : uPool.y;
+    float ia = lx ? id.y : id.x, side = lx ? uPool.y : uPool.x;
+    // Two lanes, each one tile wide, sit at a quarter and three quarters.
+    float lane = min(abs(ia - floor(side * 0.5 / uTile)), abs(ia - floor(side * 1.5 / uTile)));
+    float reach = hl - abs(along);
+    float stripe = step(lane, 0.5) * step(3.0 * uTile, reach);
+    float bar = step(lane, 1.5) * step(abs(reach - 3.5 * uTile), uTile * 0.5);
+    dark = max(dark, max(stripe, bar));
   } else {
-    band = step(cen.y, BAND);
-    wl = step(uPool.z - WLH, cen.y);
+    dark = max(step(cen.y, BAND), step(uPool.z - WLH, cen.y));
   }
-  float h = hash(id + face * 17.3);
-  vec3 c = h < 0.3 ? TP : TW;
-  c = mix(c, TB * (0.85 + 0.3 * hash(id * 1.7 + 3.1)), band);
-  c = mix(c, mix(WL, WL2, step(0.62, hash(id + 9.2))), wl);
-  c *= 0.93 + 0.1 * hash(id + 5.7);
+  vec3 c = mix(TW, TB, dark);
   vec2 e2 = min(f, 1.0 - f), m = smoothstep(GW - fw, GW + fw, e2);
-  float bev = 0.84 + 0.16 * smoothstep(GW, GW + 0.16, min(e2.x, e2.y));
-  vec3 res = mix(GR, c * bev, m.x * m.y);
-  vec3 avg = mix(mix(mix(TW, TP, 0.3), TB, band), WL, wl) * 0.88;
+  vec3 res = mix(GR, c, m.x * m.y);
+  // Far tiles blend to their mean so the grid never shimmers.
+  vec3 avg = mix(c, GR, 0.25);
   return mix(res, avg, smoothstep(0.35, 0.8, max(fw.x, fw.y)));
 }
-// Pale travertine: coping stones round the edge, slabs beyond.
+// One flat deck colour, a bone coping band and hard cut joints.
 // At night the lit water washes the coping nearest it.
 vec3 deck(vec3 Q, float e) {
   vec2 p = Q.xz;
-  float n = 0.6 * vnoise(p * 6.0) + 0.4 * vnoise(p * 21.0);
-  float pit = smoothstep(0.74, 0.92, vnoise(p * 70.0 + 3.0));
-  float cope = 1.0 - smoothstep(COPE_W - 0.002, COPE_W + 0.002, e);
-  vec3 c = mix(DECK, COPE, cope) * (0.88 + 0.18 * n) * (1.0 - 0.12 * pit);
+  float fe = fwidth(e);
+  float cope = 1.0 - smoothstep(COPE_W - fe, COPE_W + fe, e);
+  vec3 c = mix(DECK, COPE, cope);
   bool sideX = abs(Q.x) - uPool.x > abs(Q.z) - uPool.y;
-  float jc = joint((sideX ? Q.z : Q.x) / 0.4, 0.012) * cope;
-  float jd = max(joint(p.x / 0.62, 0.008), joint(p.y / 0.62 + 0.31, 0.008)) * (1.0 - cope);
-  float jr = 1.0 - smoothstep(0.0, 0.004, abs(e - COPE_W));
-  c *= 1.0 - 0.3 * max(max(jc, jd), jr);
-  // The rounded nose falls away toward the water.
-  float nose = smoothstep(0.0, 0.03, e);
-  return c * (gSun * uSun.y * mix(0.35, 1.0, nose) + gAmb * 0.8 + WGLOW * gLamp * 0.22 * exp(-max(e, 0.0) / 0.07));
+  float jc = joint((sideX ? Q.z : Q.x) / 0.4, 0.014) * cope;
+  float jd = max(joint(p.x / 0.62, 0.01), joint(p.y / 0.62 + 0.31, 0.01)) * (1.0 - cope);
+  float jr = 1.0 - smoothstep(0.004 - fe, 0.004 + fe, abs(e - COPE_W));
+  c = mix(c, JNT, max(max(jc, jd), jr));
+  return c * (gSun * uSun.y + gAmb * 0.8 + WGLOW * gLamp * 0.22 * exp(-max(e, 0.0) / 0.07));
 }
 vec3 caustic(vec2 cp) {
   vec2 uv = cp / uPool.xy * 0.5 + 0.5;
@@ -915,25 +910,10 @@ vec3 shadeObj(int i, vec3 P, vec3 rd) {
   }
   return c;
 }
-vec3 petalColor(int k, vec2 q, float ps, vec3 n, vec3 rd) {
-  vec4 A = uPA[k], B = uPB[k];
-  vec3 c;
-  if (B.z < 0.5) {
-    c = mix(PKB, mix(PK, PK2, B.w), smoothstep(-0.95, 0.15, q.x));
-    float vein = smoothstep(0.55, 1.0, sin(atan(q.y, q.x + 1.3) * 30.0));
-    c *= 1.0 - 0.08 * vein * smoothstep(1.0, 0.2, length(q));
-  } else {
-    c = mix(LF, LF2, 0.35 * B.w + 0.4 * smoothstep(-1.0, 1.0, q.x));
-    float mid = 1.0 - smoothstep(0.025, 0.07, abs(q.y));
-    float vein = smoothstep(0.82, 1.0, sin((q.x - abs(q.y) * 1.3) * 19.0)) * (1.0 - mid);
-    c = mix(c, c * 1.45 + 0.015, max(mid * 0.75, vein * 0.3));
-  }
-  // The petal cups slightly and tilts with the water.
-  vec2 side = vec2(-A.w, A.z) * q.y;
-  vec3 pn = normalize(mix(vec3(0.0, 1.0, 0.0), n, 0.6) + vec3(side.x, 0.0, side.y) * 0.35);
-  vec3 lit = c * (gSun * (0.75 * max(dot(pn, uSun), 0.0) + 0.16) + gAmb + WGLOW * gLamp * 0.3);
-  lit += gSun * 0.1 * pow(max(dot(reflect(rd, pn), uSun), 0.0), 60.0);
-  return lit * (1.0 - 0.18 * smoothstep(-0.006 * B.y / 0.04, 0.0, ps));
+// A floater is one flat colour; it tilts with the water as a whole.
+vec3 petalColor(vec3 n) {
+  vec3 pn = normalize(mix(vec3(0.0, 1.0, 0.0), n, 0.6));
+  return ACC * (gSun * (0.75 * max(dot(pn, uSun), 0.0) + 0.16) + gAmb + WGLOW * gLamp * 0.3);
 }
 void main() {
   gSun = mix(SUN, MOON, uNight);
@@ -961,7 +941,7 @@ void main() {
   vec3 Nd = xw ? vec3(-sign(rd.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(rd.z));
   vec3 dry = tiles(vec2(xw ? Pd.z + PH.y : Pd.x + PH.x, Pd.y + D), 1.0) * (gSun * max(dot(Nd, uSun), 0.0) + gAmb + WGLOW * gLamp * 0.35);
 
-  // Ripples, the frozen relief and each petal's meniscus tilt the surface.
+  // Ripples, the frozen relief and each floater's meniscus tilt the surface.
   vec2 wp = clamp(W.xz, -PH, PH);
   vec4 s = texture(uSim, wp / PH * 0.5 + 0.5);
   int k;
@@ -1003,7 +983,7 @@ void main() {
   float depth = max(-P.y, 0.0);
   vec2 cp = P.xz - P.y * uRl.xz / uRl.y;
   vec3 cz = caustic(cp);
-  // Petal shadows blur with depth.
+  // Floater shadows blur with depth.
   int k2;
   vec2 q2;
   float soft = 0.006 + 0.05 * depth;
@@ -1026,7 +1006,7 @@ void main() {
   }
   vec3 water = mix(under, refl, F);
   float cov = k < 0 ? 0.0 : clamp(-ps / max(fwidth(ps), 1e-6) + 0.5, 0.0, 1.0);
-  water = mix(water, petalColor(max(k, 0), q, ps, n, rd), cov);
+  water = mix(water, petalColor(n), cov);
 
   vec3 col = mix(mix(water, dry, mDry), deckC, mDeck);
   // Things in the air sit in front of all of it.
@@ -1416,10 +1396,10 @@ function render(dt) {
   gl.bindVertexArray(null);
 }
 
-/* ---------- petals and leaves ---------- */
+/* ---------- floaters: slotted rings and chevrons ---------- */
 function seedPetals() {
   petals.length = 0;
-  const R = rng(20261102), types = [0, 0, 1, 0, 0, 1];
+  const R = rng(20261102), types = [0, 1, 0, 1];
   types.forEach((type, i) => {
     let x = 0, z = 0;
     for (let tries = 0; tries < 60; tries++) {
@@ -1427,14 +1407,14 @@ function seedPetals() {
       z = (R() * 2 - 1) * (PZ - 0.2);
       if (!petals.some(p => Math.hypot(p.x - x, p.z - z) < 0.36)) break;
     }
-    const L0 = type ? 0.078 + 0.01 * R() : 0.048 + 0.01 * R(), W0 = type ? 0.03 : 0.036 + 0.006 * R();
+    const L0 = type ? 0.06 : 0.046 + 0.008 * R(), W0 = type ? 0.055 : L0;
     petals.push({ x, z, vx: 0, vz: 0, a: R() * TAU, w: 0, L0, W0, L: L0 * petalScale, Wd: W0 * petalScale, type, hue: R(), seed: i * 1.7 });
   });
 }
 const SLOPE_G = 2.2;
 function stepPetals(dt) {
   petals.forEach((p, i) => {
-    // Petals slide down ripple slopes; still water holds them still.
+    // Floaters slide down ripple slopes; still water holds them still.
     let ax = -SLOPE_G * probeData[i * 4 + 2], az = -SLOPE_G * probeData[i * 4 + 3];
     // Walls push back softly.
     const mx = PX - 0.06 - p.L, mz = PZ - 0.06 - p.L;
@@ -1451,7 +1431,7 @@ function stepPetals(dt) {
     p.w *= Math.exp(-2.5 * dt);
     p.a += p.w * dt;
   });
-  // Petals nudge each other apart, and floating things push them aside.
+  // Floaters nudge each other apart, and floating things push them aside.
   const push = (a, bx, bz, lim, mb) => {
     const dx = a.x - bx, dz = a.z - bz, d = Math.hypot(dx, dz) || 1e-4;
     if (d >= lim) return;
@@ -1494,7 +1474,7 @@ function addDrop(x, z, r, s) {
   dropQ.push(inX(x), inZ(z), Math.max(r, 3 * CELL), s * STR);
   poke();
 }
-// The ring reaches each petal and floating thing and shoves it outward.
+// The ring reaches each floater and floating thing and shoves it outward.
 function kick(x, z, power) {
   for (const p of [...petals, ...objs.filter(o => o.K.float)]) {
     const dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz) || 1e-3;
@@ -1618,7 +1598,7 @@ function waterline(o) {
   const r = 0.058 * s;
   return Math.sqrt(Math.max(r * r - o.y * o.y, (r * 0.4) ** 2));
 }
-// Tall phone pools draw things a little larger, like the petals.
+// Tall phone pools draw things a little larger, like the floaters.
 function makeObj(kind, x, z) {
   const yaw = rand(0, TAU);
   return {
