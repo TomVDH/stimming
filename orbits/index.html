@@ -1,0 +1,1924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Orbits</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the stage at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --space: oklch(0.15 0.035 285);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The stage is 16:9, 4:5 on phones, and deep space in both. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--space);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark stage the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+/* With nothing in orbit, Clear rests dimmed. */
+.chip[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.chip[aria-disabled="true"]:hover { color: var(--muted); border-color: var(--line); }
+.chip[aria-disabled="true"]:active { transform: none; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Orbits</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A singing solar system around a glowing sun. Drag and release to fling a planet into orbit, or tap the sun to pulse it. Space launches a random planet, Enter pulses the sun, C clears.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Orbits needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="seed" type="button">Seed</button>
+        <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag and release</dt><dd>launch a planet</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the sun</dt><dd>pulse</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>random planet</dd></div>
+        <div class="fine"><dt><kbd>C</kbd></dt><dd>clear</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const seedB = document.getElementById('seed'), clearB = document.getElementById('clear');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const wrapA = a => a - TAU * Math.floor((a + Math.PI) / TAU);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// Ruby, citrine, emerald, aquamarine, sapphire, amethyst, tourmaline, topaz, peridot, tanzanite.
+const JEWELS = [[0.64, 0.22, 20], [0.85, 0.16, 90], [0.74, 0.19, 155], [0.8, 0.13, 210], [0.62, 0.2, 260], [0.65, 0.21, 305], [0.72, 0.2, 352], [0.75, 0.17, 50], [0.86, 0.19, 128], [0.6, 0.19, 283]];
+let bag = [];
+// A shuffled bag keeps neighbouring launches in different colours.
+function jewel() {
+  if (!bag.length) bag = JEWELS.map((_, i) => i).sort(() => Math.random() - 0.5);
+  return JEWELS[bag.pop()].slice();
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.orbits.sound', MAXV = 28, LEAD = 0.03;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, mix = null, noise = null, drone = null, askedAt = -1e9, voices = 0, restT = 0;
+let tokens = 5, tokenAt = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.05 * voices);
+// D major pentatonic: inner orbits take the higher degrees.
+const PENTA = [0, 2, 4, 7, 9], ROOT = 146.83, NDEG = 16;
+const freq = d => ROOT * 2 ** ((12 * Math.floor(d / 5) + PENTA[((d % 5) + 5) % 5]) / 12);
+// The sun hums an open fifth whose root walks D, B, G, A.
+const ROOTS = [146.83, 123.47, 98, 110];
+let rootI = 0;
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // Every voice also feeds a synthesised hall.
+    mix = ac.createGain();
+    const verb = ac.createConvolver(), send = ac.createGain();
+    verb.buffer = hall(3.4);
+    send.gain.value = 0.45;
+    mix.connect(out);
+    mix.connect(send).connect(verb).connect(out);
+    makeDrone();
+  }
+  // Off screen, the system stays silent until the stage returns.
+  if (!visible()) { ac.suspend()?.catch(() => {}); return; }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the stage empties, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 4000);
+}
+const GESTURE_KEYS = new Set([' ', 'Enter', 'c', 'C']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// A stereo hall: decaying noise whose highs fade first.
+function hall(dur) {
+  const sr = ac.sampleRate, n = Math.round(sr * dur), b = ac.createBuffer(2, n, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      lp += (Math.random() * 2 - 1 - lp) * (0.12 + 0.8 * Math.exp(-t / 0.5));
+      d[i] = lp * Math.exp(-t / 0.62) * Math.min(1, t / 0.015);
+    }
+  }
+  return b;
+}
+function makeDrone() {
+  const g = ac.createGain(), lp = ac.createBiquadFilter();
+  g.gain.value = 0;
+  lp.type = 'lowpass';
+  lp.frequency.value = 560;
+  lp.Q.value = 0.4;
+  g.connect(lp).connect(mix);
+  const os = [[0.5, 'sine', 0.4], [1, 'sine', 0.5], [1.5, 'sine', 0.26], [2.003, 'triangle', 0.16]].map(([r, type, v]) => {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = type;
+    o.frequency.value = ROOTS[rootI] * r;
+    og.gain.value = v;
+    o.connect(og).connect(g);
+    o.start();
+    return [o, r];
+  });
+  // A slow breath opens and closes the filter.
+  const lfo = ac.createOscillator(), lg = ac.createGain();
+  lfo.frequency.value = 0.07;
+  lg.gain.value = 180;
+  lfo.connect(lg).connect(lp.frequency);
+  lfo.start();
+  drone = { g, os };
+}
+// The hum grows with the number of planets.
+function droneLevel(n) {
+  if (!drone) return;
+  drone.g.gain.setTargetAtTime(n < 2 ? 0 : 0.075 * Math.min(1, (n - 1) / 5), ac.currentTime, 1.6);
+}
+// The root glides to its next step.
+function droneStep() {
+  rootI = (rootI + 1) % ROOTS.length;
+  if (drone) for (const [o, r] of drone.os) o.frequency.setTargetAtTime(ROOTS[rootI] * r, ac.currentTime, 1.4);
+}
+
+// Each voice pans with its place on the stage.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.7;
+  p.connect(mix);
+  return p;
+}
+// A soft bell: small bodies ring glassy, big ones round and long.
+function bell(a, dst, t, f, g, size, tails) {
+  const glass = clamp(1 - (size - 0.014) / 0.034);
+  const tau = clamp(1.5 * (330 / f) ** 0.35, 0.55, 2.6) * (1.2 - 0.35 * glass);
+  const parts = [[1, 1, 1], [2, 0.26 + 0.2 * glass, 0.42], [3.01, 0.07 + 0.1 * glass, 0.24], [4.17, 0.04 + 0.12 * glass, 0.15]];
+  if (glass < 0.5 && f > 150) parts.push([0.5, 0.3 * (1 - 2 * glass), 1.25]);
+  let long = null, end = 0;
+  for (const [r, v, k] of parts) {
+    if (f * r > 9000) continue;
+    const o = a.createOscillator(), og = a.createGain(), stop = t + 0.02 + tau * k * 6;
+    o.frequency.value = f * r * jit(0.0015);
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(v * g, t + 0.006);
+    og.gain.setTargetAtTime(0, t + 0.006, tau * k);
+    o.connect(og).connect(dst);
+    o.start(t);
+    o.stop(stop);
+    tails.push(og);
+    if (stop > end) { end = stop; long = o; }
+  }
+  return long;
+}
+function chime(f, size, x, at = 0, amp = 1) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD + Math.max(0, at), d = bus(a, x), tails = [d];
+  const src = bell(a, d, t, f * jit(0.003), 0.07 * amp * level() * (330 / f) ** 0.22 * jit(0.06), size, tails);
+  if (src) track(src, ...tails);
+  else d.disconnect();
+}
+// A bucket refills four orbit chimes a second, so crowds thin out.
+function take() {
+  const a = live();
+  if (!a) return false;
+  tokens = Math.min(5, tokens + (a.currentTime - tokenAt) * 4);
+  tokenAt = a.currentTime;
+  if (tokens < 1) return false;
+  tokens--;
+  return true;
+}
+function burst(a, dst, t, type, f0, f1, q, g, rise, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  fl.type = type;
+  fl.Q.value = q;
+  fl.frequency.setValueAtTime(f0, t);
+  fl.frequency.exponentialRampToValueAtTime(f1, t + len);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + rise);
+  ng.gain.setTargetAtTime(0, t + rise, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => { fl.disconnect(); ng.disconnect(); };
+  src.start(t, Math.random() * 0.8);
+  src.stop(t + rise + tau * 7);
+}
+function tone(a, dst, t, type, f0, f1, glide, g, rise, tau, tails) {
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + rise);
+  og.gain.setTargetAtTime(0, t + rise, tau);
+  o.connect(og).connect(dst);
+  o.start(t);
+  o.stop(t + rise + tau * 7);
+  tails.push(og);
+  return o;
+}
+// A conjunction: a strummed chord over a slow, warm swell.
+function chord(fs, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, x), tails = [d], g = (0.03 * level()) / Math.sqrt(fs.length);
+  let src = null;
+  for (const f of fs) {
+    for (const det of [0.997, 1.003]) {
+      const o = a.createOscillator(), og = a.createGain(), lp = a.createBiquadFilter();
+      o.type = 'triangle';
+      o.frequency.value = f * det;
+      lp.type = 'lowpass';
+      lp.frequency.value = Math.min(5000, f * 2.5);
+      og.gain.setValueAtTime(0, t);
+      og.gain.linearRampToValueAtTime(g, t + 0.45);
+      og.gain.setTargetAtTime(0, t + 0.6, 0.85);
+      o.connect(lp).connect(og).connect(d);
+      o.start(t);
+      o.stop(t + 6.6);
+      tails.push(lp, og);
+      src = src || o;
+    }
+  }
+  track(src, ...tails);
+  fs.forEach((f, i) => chime(f, 0.03, x, 0.045 * i, 0.5));
+}
+// A merger: a soft low thump, a sparkle and both notes at once.
+function mergeSound(f1, f2, f3, size, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, x), tails = [d], g = level();
+  const o = tone(a, d, t, 'sine', 140 * jit(0.04), 52, 0.3, 0.17 * g, 0.006, 0.17, tails);
+  burst(a, d, t, 'highpass', 5200, 7000, 0.7, 0.05 * g, 0.002, 0.035, 0.1);
+  track(o, ...tails);
+  chime(f1, size, x, 0, 0.6);
+  chime(f2, size, x, 0.025, 0.6);
+  chime(f3, size, x, 0.2, 1);
+}
+// Swallowed: a falling whoosh, the note sinking and the sun's low swell.
+function swallowSound(f, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, x * 0.5), tails = [d], g = level();
+  burst(a, d, t, 'bandpass', 2400 * jit(0.06), 220, 0.9, 0.11 * g, 0.08, 0.36, 1.1);
+  tone(a, d, t, 'triangle', f, f / 2, 0.9, 0.05 * g, 0.01, 0.35, tails);
+  const s = tone(a, d, t, 'sine', ROOTS[rootI], ROOTS[rootI], 0, 0.1 * g, 0.25, 0.55, tails);
+  track(s, ...tails);
+}
+// Escaping: the note drifts down and fades into the dark.
+function escapeSound(f, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, x), lp = a.createBiquadFilter(), tails = [d, lp];
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(3200, t);
+  lp.frequency.exponentialRampToValueAtTime(320, t + 1.6);
+  lp.connect(d);
+  const o = tone(a, lp, t, 'triangle', f, f * 0.75, 1.6, 0.045 * level(), 0.08, 0.45, tails);
+  track(o, ...tails);
+}
+// The sun's pulse: a deep soft boom with a breath of air.
+function pulseSound() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, 0), tails = [d], g = level(), f = ROOTS[rootI] / 2;
+  const o = tone(a, d, t, 'sine', f * 1.7 * jit(0.03), f, 0.16, 0.22 * g, 0.008, 0.45, tails);
+  tone(a, d, t, 'sine', f * 3.4, f * 2, 0.16, 0.07 * g, 0.008, 0.3, tails);
+  burst(a, d, t, 'lowpass', 900, 260, 0.6, 0.06 * g, 0.01, 0.12, 0.3);
+  track(o, ...tails);
+}
+// A launch: a short airy swish that rises with speed.
+function launchSound(speed, x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, x), k = clamp(speed / 2);
+  burst(a, d, t, 'bandpass', 520 * jit(0.1), (1400 + 2800 * k) * jit(0.1), 1.3, (0.035 + 0.07 * k) * level(), 0.05, 0.06, 0.16);
+  setTimeout(() => d.disconnect(), 1200);
+}
+// Pressing the stage gives a tiny glassy tick.
+function tick(x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, x), tails = [d], f = 2600 * jit(0.04);
+  track(tone(a, d, t, 'sine', f, f, 0, 0.022 * level(), 0.002, 0.018, tails), ...tails);
+}
+// Clearing: one soft falling breath.
+function clearSound() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, d = bus(a, 0);
+  burst(a, d, t, 'bandpass', 3200, 380, 1, 0.07 * level(), 0.04, 0.22, 0.6);
+  setTimeout(() => d.disconnect(), 2500);
+}
+
+/* ---------- the system: units of half the stage's short side ---------- */
+// The sun's pull carries a small 1/r³ term, so orbits precess into rosettes.
+const GM = 0.24, GAMMA = 0.0045, H = 1 / 240, MAXB = 26, A_IN = 0.17, A_OUT = 1.7;
+let U = 300, HW = 16 / 9, HH = 1, SZ = 1, SUN_R = 0.078;
+const bodies = [], sparks = [], rings = [], links = [], waves = [], flares = [], queue = [];
+let simT = 0, acc = 0, nextId = 1, heat = 0, sunS = 0, sunV = 0, pulseAt = -1e9, rootAt = 0, linkAt = -1e9, chordAt = -1e9;
+const vcirc = r => Math.sqrt(GM / r + (2 * GAMMA) / (r * r));
+const easeBack = t => (t >= 1 ? 1 : 1 + 2.4 * (t - 1) ** 3 + 1.4 * (t - 1) ** 2);
+const smooth = t => t * t * (3 - 2 * t);
+
+/* ---------- trail slots: one ring of segments per body ---------- */
+const SLOTS = 48, CAP = 1024, SEG = 8;
+const slotOwner = new Array(SLOTS).fill(null), slotEnd = new Float32Array(SLOTS).fill(-1e9);
+const slotStart = new Float32Array(SLOTS), slotHead = new Int32Array(SLOTS), slotTau = new Float32Array(SLOTS).fill(4);
+const slotCol = new Float32Array(SLOTS * 4), slotLo = new Int32Array(SLOTS).fill(-1), slotHi = new Int32Array(SLOTS);
+const segs = new Float32Array(SLOTS * CAP * SEG).fill(-1e9);
+function claimSlot(b) {
+  let best = -1, soonest = Infinity;
+  for (let s = 0; s < SLOTS; s++) {
+    if (slotOwner[s]) continue;
+    if (slotEnd[s] <= simT) { best = s; break; }
+    if (slotEnd[s] < soonest) { soonest = slotEnd[s]; best = s; }
+  }
+  if (best < 0) return -1;
+  slotOwner[best] = b;
+  slotStart[best] = simT;
+  slotEnd[best] = 1e9;
+  slotHead[best] = 0;
+  // Old conjunction memory for this slot is void.
+  for (let t = 0; t < SLOTS; t++) lastD[best * SLOTS + t] = lastD[t * SLOTS + best] = NaN;
+  return best;
+}
+function releaseSlot(b, fade) {
+  if (b.slot < 0) return;
+  slotOwner[b.slot] = null;
+  slotEnd[b.slot] = Math.min(slotEnd[b.slot], simT + fade);
+  b.slot = -1;
+}
+function writeSeg(s, x0, y0, x1, y1, w) {
+  const i = slotHead[s], o = (s * CAP + i) * SEG;
+  segs[o] = x0; segs[o + 1] = y0; segs[o + 2] = x1; segs[o + 3] = y1;
+  segs[o + 4] = simT; segs[o + 5] = s; segs[o + 6] = w; segs[o + 7] = 1;
+  slotHead[s] = (i + 1) % CAP;
+  if (slotLo[s] < 0) { slotLo[s] = i; slotHi[s] = i; }
+  else if (i < slotLo[s]) { slotLo[s] = 0; slotHi[s] = CAP - 1; }
+  else slotHi[s] = Math.max(slotHi[s], i);
+}
+
+/* ---------- bodies ---------- */
+// Mass goes as volume; sizes are in units at the desktop scale.
+function makeBody(x, y, vx, vy, size, col, ring) {
+  const b = {
+    id: nextId++, x, y, vx, vy, ax: 0, ay: 0, size, rad: size * SZ, mu: 0.0012 * (size / 0.035) ** 3, gm: 0,
+    L: col[0], C: col[1], h: col[2], rgb: null, trail: null, glow: 0, flash: 0, alpha: 1,
+    born: simT, fresh: -1, grow: 0, die: 0, out: 0, dead: false, host: null, moons: [], ma: 0, md: 0, md0: 0, mw: 0, capT: 1,
+    noCap: 0, deg: -1, T: 3, a: 0, nu: 0, th: 0, home: Math.atan2(y, x), chimeAt: -1e9, slot: -1, recT: simT, rx: x, ry: y,
+    ring: ring ? [rand(0.3, 0.42), rand(-0.6, 0.6)] : null, seed: Math.random(),
+  };
+  b.gm = GM * b.mu;
+  paint(b);
+  return b;
+}
+function paint(b) {
+  b.rgb = linear(b.L, b.C, b.h);
+  b.trail = linear(Math.min(0.9, b.L + 0.05), b.C, b.h);
+}
+function add(b) {
+  // The oldest free planet drifts away to make room.
+  if (bodies.filter(o => !o.dead && !o.die && !o.out).length >= MAXB) {
+    const old = bodies.find(o => !o.host && !o.out && !o.die && !o.dead);
+    if (old) leave(old, true);
+  }
+  b.slot = claimSlot(b);
+  bodies.push(b);
+  accel();
+  orbit(b);
+  return b;
+}
+function kill(b, fade = 2.4) {
+  if (b.dead) return;
+  b.dead = true;
+  for (const m of b.moons.slice()) release(m);
+  if (b.host) release(b);
+  releaseSlot(b, fade);
+}
+function sweep() {
+  let n = 0;
+  for (const b of bodies) if (!b.dead) bodies[n++] = b;
+  bodies.length = n;
+}
+const free = b => !b.dead && !b.die && !b.out && !b.host;
+
+/* ---------- forces and the leapfrog ---------- */
+function accel() {
+  for (const b of bodies) {
+    if (b.host || b.dead) continue;
+    const r2 = b.x * b.x + b.y * b.y, r = Math.sqrt(r2), k = GM / (r2 * r) + (2 * GAMMA) / (r2 * r2);
+    b.ax = -k * b.x;
+    b.ay = -k * b.y;
+  }
+  // Planets pull on each other weakly, softened up close.
+  for (let i = 0; i < bodies.length; i++) {
+    const p = bodies[i];
+    if (p.host || p.dead) continue;
+    for (let j = i + 1; j < bodies.length; j++) {
+      const q = bodies[j];
+      if (q.host || q.dead) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, e = 0.5 * (p.rad + q.rad) + 0.02;
+      const d2 = dx * dx + dy * dy + e * e, inv = 1 / (d2 * Math.sqrt(d2));
+      p.ax += q.gm * dx * inv;
+      p.ay += q.gm * dy * inv;
+      q.ax -= p.gm * dx * inv;
+      q.ay -= p.gm * dy * inv;
+    }
+  }
+}
+// A moon rides a circle around its host, eased in from where it was caught.
+function moonPlace(m) {
+  const p = m.host, d = lerp(m.md0, m.md, smooth(m.capT)), c = Math.cos(m.ma), s = Math.sin(m.ma);
+  m.x = p.x + d * c;
+  m.y = p.y + d * s;
+  m.vx = p.vx - m.mw * d * s;
+  m.vy = p.vy + m.mw * d * c;
+}
+// Kick, drift, kick: the leapfrog keeps orbits from creeping.
+function step() {
+  const h2 = H * 0.5;
+  for (const b of bodies) {
+    if (b.host || b.dead) continue;
+    b.vx += b.ax * h2;
+    b.vy += b.ay * h2;
+    b.x += b.vx * H;
+    b.y += b.vy * H;
+  }
+  accel();
+  for (const b of bodies) {
+    if (b.host || b.dead) continue;
+    b.vx += b.ax * h2;
+    b.vy += b.ay * h2;
+  }
+  for (const b of bodies) {
+    if (!b.host || b.dead) continue;
+    b.ma += b.mw * H;
+    b.capT = Math.min(1, b.capT + H / 0.8);
+    moonPlace(b);
+  }
+  simT += H;
+  collide();
+}
+function collide() {
+  let gone = false;
+  for (let i = 0; i < bodies.length; i++) {
+    const p = bodies[i];
+    if (p.dead || p.die) continue;
+    const r2 = p.x * p.x + p.y * p.y, lim = SUN_R * 1.08 + p.rad * 0.4;
+    if (r2 < lim * lim) { swallow(p); gone = true; continue; }
+    for (let j = i + 1; j < bodies.length; j++) {
+      const q = bodies[j];
+      if (q.dead || q.die || p.host === q || q.host === p || (p.host && p.host === q.host)) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, s = (p.rad + q.rad) * 0.85;
+      if (dx * dx + dy * dy < s * s) {
+        merge(p, q);
+        gone = true;
+        if (p.dead) break;
+      }
+    }
+  }
+  if (gone) { sweep(); accel(); }
+}
+
+/* ---------- orbits, moons and music ---------- */
+// Orbital energy gives the semi-major axis; inner orbits sing higher.
+function orbit(b) {
+  const c = b.host || b, r = Math.hypot(c.x, c.y), E = 0.5 * (c.vx * c.vx + c.vy * c.vy) - GM / r - GAMMA / (r * r);
+  b.a = E < 0 ? -GM / (2 * E) : 0;
+  if (b.host) {
+    b.deg = Math.min(19, b.host.deg + [5, 8, 10][Math.max(0, b.host.moons.indexOf(b))]);
+    b.T = b.host.T;
+    return;
+  }
+  if (!b.a) return;
+  b.T = TAU * Math.sqrt(b.a ** 3 / GM);
+  // Pitch keeps its note until the orbit moves well past the next one.
+  const f = clamp(((NDEG - 1) * Math.log2(A_OUT / b.a)) / Math.log2(A_OUT / A_IN), 0, NDEG - 1);
+  if (b.deg < 0 || Math.abs(f - b.deg) > 0.7) b.deg = Math.round(f);
+}
+const note = b => freq(Math.max(0, b.deg));
+// The eccentricity vector, using the pull's strength at this radius as GM.
+function evec(b) {
+  const r = Math.hypot(b.x, b.y), g = GM + (2 * GAMMA) / r, rv = b.x * b.vx + b.y * b.vy, k = b.vx * b.vx + b.vy * b.vy - g / r;
+  return [(k * b.x - rv * b.vx) / g, (k * b.y - rv * b.vy) / g];
+}
+const ecc = b => Math.hypot(...evec(b));
+const panOf = b => clamp(b.x / HW, -1, 1);
+// A chime rings at each perihelion, when the true anomaly passes zero.
+function sing(b) {
+  const [ex, ey] = evec(b), sg = Math.sign(b.x * b.vy - b.y * b.vx);
+  // Near-circular orbits chime as they pass their launch angle instead.
+  const nu = Math.hypot(ex, ey) > 0.02 ? Math.atan2(sg * (ex * b.y - ey * b.x), ex * b.x + ey * b.y) : wrapA(sg * (Math.atan2(b.y, b.x) - b.home));
+  const prev = b.nu;
+  b.nu = nu;
+  if (!b.a || !(prev < 0 && nu >= 0 && nu - prev < 1.5) || simT - b.chimeAt < 0.45 * b.T) return;
+  b.chimeAt = simT;
+  b.flash = Math.max(b.flash, 0.6);
+  ring(b.x, b.y, b.rad * 1.2, b.rad * 3.6, 0.9, b.rgb, 0.5, b);
+  if (!take()) return;
+  chime(note(b), b.size, panOf(b));
+  // Moons answer with grace notes above.
+  b.moons.forEach((m, i) => chime(note(m), m.size, panOf(m), 0.09 * (i + 1), 0.45));
+}
+function moonLane(p, m) {
+  let d = clamp(m.md0, 1.9 * p.rad + 1.4 * m.rad, 3.3 * p.rad + m.rad);
+  // Each moon keeps its own lane around the host.
+  for (let k = 0; k < 6 && p.moons.some(o => o !== m && Math.abs(o.md - d) < (o.rad + m.rad) * 1.5); k++) d += m.rad * 2.6;
+  return Math.min(d, 3.6 * p.rad + m.rad, 0.17 * SZ);
+}
+function hook(p, m, dx, dy, rvx, rvy, fx = true, ease = true) {
+  m.host = p;
+  p.moons.push(m);
+  m.ma = Math.atan2(dy, dx);
+  m.md0 = Math.hypot(dx, dy);
+  m.md = moonLane(p, m);
+  m.mw = (dx * rvy - dy * rvx >= 0 ? 1 : -1) * (TAU / clamp(1.8 * (m.md / (2.6 * p.rad)) ** 1.5, 0.9, 4.5));
+  m.capT = ease ? 0 : 1;
+  orbit(m);
+  if (!ease) moonPlace(m);
+  if (!fx) return;
+  m.flash = 1;
+  p.flash = Math.max(p.flash, 0.7);
+  ring(p.x, p.y, p.rad, m.md + m.rad, 0.8, m.rgb, 0.9, p);
+  chime(note(p), p.size, panOf(p), 0, 0.8);
+  chime(note(m), m.size, panOf(m), 0.1, 0.8);
+}
+function release(m) {
+  const p = m.host;
+  if (!p) return;
+  p.moons.splice(p.moons.indexOf(m), 1);
+  m.host = null;
+  m.noCap = simT + 2;
+  m.capT = 1;
+}
+// A freshly flung small body that drifts slowly past a heavy one is caught.
+// Old bodies are caught only when nearly at rest beside it.
+function catchable(p, s, dx, dy, rvx, rvy, young) {
+  if (p.mu < 3.5 * s.mu || p.moons.length >= 3) return false;
+  const reach = (young ? 2.8 : 2) * p.rad + s.rad, v = Math.hypot(rvx, rvy);
+  return dx * dx + dy * dy < reach * reach && v < (young ? 0.3 + (5 * p.rad) / SZ : 0.12);
+}
+function captures() {
+  for (const s of bodies) {
+    if (!free(s) || s.moons.length || s.noCap > simT) continue;
+    for (const p of bodies) {
+      if (p === s || !free(p)) continue;
+      const dx = s.x - p.x, dy = s.y - p.y, rvx = s.vx - p.vx, rvy = s.vy - p.vy;
+      if (!catchable(p, s, dx, dy, rvx, rvy, simT < s.fresh)) continue;
+      hook(p, s, dx, dy, rvx, rvy);
+      break;
+    }
+  }
+}
+
+/* ---------- events: flashes, mergers, flares, escapes, the pulse ---------- */
+const SUNC = linear(0.86, 0.17, 70), WAVEC = linear(0.88, 0.12, 80);
+const mixRgb = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
+// Rings spread from a point; a blob is a soft flash.
+function ring(x, y, r0, r1, life, rgb, k, follow = null, blob = false) {
+  if (rings.length > 70) rings.shift();
+  rings.push({ x, y, r0, r1, t0: simT, life, rgb, k, follow, dx: follow ? x - follow.x : 0, dy: follow ? y - follow.y : 0, blob });
+}
+function spray(x, y, n, speed, rgb, life, fall = 0, dir = 0, spread = Math.PI) {
+  for (let i = 0; i < n && sparks.length < 320; i++) {
+    const a = dir + rand(-spread, spread), v = speed * rand(0.25, 1);
+    sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: life * rand(0.6, 1.2), rgb, s: rand(0.6, 1.4), fall });
+  }
+}
+// Two bodies meet: the heavier keeps going, bigger and brighter.
+function merge(p, q) {
+  const [a, b] = q.mu > p.mu || (q.mu === p.mu && p.host) ? [q, p] : [p, q];
+  const m = a.mu + b.mu, ka = a.mu / m, kb = 1 - ka, f1 = note(a), f2 = note(b);
+  // Hues blend in OKLab; chroma and lightness only climb.
+  const A = ka * a.C * Math.cos(a.h * D2R) + kb * b.C * Math.cos(b.h * D2R);
+  const B = ka * a.C * Math.sin(a.h * D2R) + kb * b.C * Math.sin(b.h * D2R);
+  a.h = (Math.atan2(B, A) / D2R + 360) % 360;
+  a.C = Math.max(a.C, b.C);
+  a.L = Math.min(0.9, Math.max(a.L, b.L) + 0.03);
+  if (!a.host) {
+    a.x = ka * a.x + kb * b.x;
+    a.y = ka * a.y + kb * b.y;
+    a.vx = ka * a.vx + kb * b.vx;
+    a.vy = ka * a.vy + kb * b.vy;
+  }
+  a.size = Math.cbrt(a.size ** 3 + b.size ** 3);
+  a.rad = Math.cbrt(a.rad ** 3 + b.rad ** 3);
+  a.mu = m;
+  a.gm = GM * m;
+  a.glow = Math.min(2.4, Math.max(a.glow, b.glow) + 0.7);
+  a.flash = 1.5;
+  if (!a.ring && a.size > 0.05 && Math.random() < 0.5) a.ring = [rand(0.3, 0.42), rand(-0.6, 0.6)];
+  paint(a);
+  const moons = b.moons.slice();
+  kill(b);
+  // A free survivor adopts the other's moons.
+  if (!a.host) for (const mo of moons) if (a.moons.length < 3 && !mo.dead) hook(a, mo, mo.x - a.x, mo.y - a.y, mo.vx - a.vx, mo.vy - a.vy, false);
+  if (a.host) {
+    if (a.mu > 0.45 * a.host.mu) release(a);
+    else a.md = moonLane(a.host, a);
+  }
+  for (const mo of a.moons) mo.md = Math.max(mo.md, 1.9 * a.rad + 1.4 * mo.rad);
+  orbit(a);
+  ring(a.x, a.y, a.rad * 0.5, a.rad * 6 + 0.06, 0.6, mixRgb(a.rgb, [1, 1, 1], 0.4), 2.2, a, true);
+  ring(a.x, a.y, a.rad, a.rad * 7 + 0.1, 1.1, a.trail, 1.2, a);
+  spray(a.x, a.y, 22, 0.55, mixRgb(a.trail, [1, 1, 1], 0.3), 1);
+  mergeSound(f1, f2, note(a), a.size, panOf(a));
+}
+// Too close to the sun: the body melts into a flare.
+function swallow(b) {
+  const ang = Math.atan2(b.y, b.x), k = clamp(Math.sqrt(b.mu / 0.0012), 0.45, 1.6);
+  if (flares.length >= 4) flares.shift();
+  flares.push({ ang, t0: simT, k, rgb: b.trail });
+  heat = Math.min(2.2, heat + 0.35 * k);
+  sunV += 1.4 * k;
+  spray(Math.cos(ang) * SUN_R, Math.sin(ang) * SUN_R, Math.round(12 * k) + 8, 0.7, mixRgb(b.trail, SUNC, 0.45), 1.5, 1, ang, 0.8);
+  swallowSound(note(b), panOf(b));
+  kill(b, 1.6);
+}
+// An escaping body fades as it crosses the edge.
+function leave(b, quiet) {
+  if (b.out || b.dead) return;
+  b.out = 1e-4;
+  for (const m of b.moons) m.out = 1e-4;
+  if (!quiet) escapeSound(note(b), panOf(b));
+}
+function escapes() {
+  for (const b of bodies) {
+    if (!free(b)) continue;
+    const nx = b.x / HW, ny = b.y / HH, edge = nx * nx + ny * ny;
+    if (edge > 9 || (!b.a && edge > 0.8 && b.x * b.vx + b.y * b.vy > 0)) leave(b);
+  }
+}
+// Tapping the sun sends a wave that nudges each orbit outward.
+function pulse() {
+  if (!ready || simT - pulseAt < 0.28) return;
+  pulseAt = simT;
+  sunV += 5;
+  heat = Math.min(2.2, heat + 0.3);
+  waves.push({ t0: simT, hit: new Set() });
+  pulseSound();
+  wake();
+}
+function nudge(b) {
+  const r = Math.hypot(b.x, b.y), v = 0.03 * vcirc(r);
+  b.vx = b.vx * 1.028 + (b.x / r) * v;
+  b.vy = b.vy * 1.028 + (b.y / r) * v;
+  for (const m of b.moons) m.md = Math.min(m.md * 1.05, 3.6 * b.rad + m.rad);
+  b.flash = Math.max(b.flash, 1);
+  chime(note(b), b.size, panOf(b), 0, 0.6);
+}
+
+/* ---------- conjunctions: a chord and a brief line ---------- */
+const lastD = new Float32Array(SLOTS * SLOTS).fill(NaN);
+function conjunctions() {
+  const list = bodies.filter(b => free(b) && b.slot >= 0 && b.a && b.alpha > 0.6 && simT - b.born > 0.8);
+  for (const b of list) b.th = Math.atan2(b.y, b.x);
+  let best = null, most = 0;
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const p = list[i].slot < list[j].slot ? list[i] : list[j], q = p === list[i] ? list[j] : list[i];
+      const k = p.slot * SLOTS + q.slot, d = wrapA(p.th - q.th), prev = lastD[k];
+      lastD[k] = d;
+      if (!(Math.abs(d) < 0.35 && Math.abs(prev) < 0.35 && d >= 0 !== prev >= 0)) continue;
+      if (p.mu + q.mu > most) { most = p.mu + q.mu; best = [p, q]; }
+    }
+  }
+  if (!best || simT - linkAt < 1.1) return;
+  linkAt = simT;
+  const th = best[0].th, r = b => Math.hypot(b.x, b.y);
+  const group = list.filter(b => best.includes(b) || Math.abs(wrapA(b.th - th)) < 4 * D2R).sort((u, v) => r(u) - r(v));
+  links.push({ group, t0: simT, k: group.length > 2 ? 1.7 : 1 });
+  for (const b of group) b.flash = Math.max(b.flash, 0.5);
+  if (group.length < 3 && simT - chordAt < 2.4) return;
+  chordAt = simT;
+  const fs = [...new Set(group.map(b => b.deg))].sort((u, v) => u - v).map(freq);
+  if (fs.length < 3) fs.unshift(ROOTS[rootI] * 2);
+  chord(fs.slice(0, 5), panOf(group[group.length - 1]) * 0.5);
+}
+
+/* ---------- making planets ---------- */
+// The state on an orbit of semi-major axis a and eccentricity e.
+function kepler(a, e, w, nu, dir = 1) {
+  const p = a * (1 - e * e), r = p / (1 + e * Math.cos(nu)), th = w + dir * nu, k = Math.sqrt(GM / p);
+  const vr0 = k * e * Math.sin(nu), vt0 = k * (1 + e * Math.cos(nu));
+  // Extra speed pays for the extra pull, so the orbit keeps its energy.
+  const s = Math.sqrt(1 + (2 * GAMMA) / (r * r * (vr0 * vr0 + vt0 * vt0)));
+  const vr = vr0 * s, vt = vt0 * s, c = Math.cos(th), sn = Math.sin(th);
+  return [r * c, r * sn, vr * c - dir * vt * sn, vr * sn + dir * vt * c];
+}
+function pickSize(small) {
+  if (small) return rand(0.012, 0.016);
+  const r = Math.random();
+  return r < 0.18 ? rand(0.013, 0.017) : r < 0.52 ? rand(0.02, 0.026) : r < 0.84 ? rand(0.027, 0.034) : rand(0.037, 0.046);
+}
+// New circular orbits turn the way most of the system already does.
+function spin() {
+  let s = 0;
+  for (const b of bodies) if (free(b)) s += Math.sign(b.x * b.vy - b.y * b.vx) * b.mu;
+  return s < 0 ? -1 : 1;
+}
+function hello(b, k = 0.65) {
+  ring(b.x, b.y, b.rad, b.rad * 4, 0.7, b.rgb, 0.8, b);
+  chime(note(b), b.size, panOf(b), 0.02, k);
+}
+// A random planet takes the clearest lane among a few tries.
+function randomPlanet() {
+  if (!ready) return;
+  const lim = Math.min(HW, HH) * 0.9, size = pickSize(), rad = size * SZ;
+  const lanes = bodies.filter(free).map(b => {
+    const e = ecc(b), reach = b.rad + rad + (b.moons.length ? 4.2 * b.rad : 0) + 0.02;
+    return [b.a * (1 - e) - reach, (b.a || 9) * (1 + e) + reach];
+  });
+  let best = null, room = -Infinity;
+  for (let k = 0; k < 24; k++) {
+    const e = rand(0, 0.36) ** 2, a = rand(0.2, lim / (1 + e)), lo = a * (1 - e), hi = a * (1 + e);
+    const gap = lanes.reduce((g, [l, h]) => Math.min(g, Math.max(l - hi, lo - h)), 1);
+    if (gap > room) { room = gap; best = [a, e]; }
+  }
+  const c = kepler(best[0], best[1], rand(0, TAU), rand(0, TAU), Math.random() < 0.9 ? 1 : -1);
+  const b = add(makeBody(c[0], c[1], c[2], c[3], size, jewel(), size > 0.035 && Math.random() < 0.5));
+  b.fresh = simT + 8;
+  hello(b);
+  wake();
+}
+// Semi-major axis, eccentricity, periapsis, start, size, jewel, ring, moons.
+const PRESET = [
+  [0.2, 0.2, 30, 40, 0.016, 0, 0, 0],
+  [0.32, 0.12, 150, 200, 0.024, 1, 0, 0],
+  [0.47, 0.06, 260, 300, 0.038, 4, 1, 0],
+  [0.63, 0.11, 10, 120, 0.02, 3, 0, 0],
+  [0.86, 0.015, 80, 250, 0.044, 5, 0, 1],
+];
+const MOON_JEWELS = [6, 8, 7];
+function seed(instant) {
+  if (!ready && !instant) return;
+  clearAll(true);
+  bag = [];
+  PRESET.forEach(([a, e, w, nu, size, j, rg, nm], i) => {
+    const fn = () => {
+      const st = kepler(a, e, w * D2R, nu * D2R, 1), b = add(makeBody(st[0], st[1], st[2], st[3], size, JEWELS[j], rg));
+      if (instant) b.grow = 1;
+      else hello(b, 0.75);
+      for (let k = 0; k < nm; k++) {
+        const m = add(makeBody(b.x, b.y, b.vx, b.vy, 0.012 + 0.002 * k, JEWELS[MOON_JEWELS[k]], 0)), ang = rand(0, TAU);
+        const d = 1.9 * b.rad + 1.4 * m.rad + k * 2.6 * m.rad;
+        hook(b, m, Math.cos(ang) * d, Math.sin(ang) * d, -Math.sin(ang), Math.cos(ang), false, false);
+        if (instant) m.grow = 1;
+      }
+    };
+    if (instant) fn();
+    else queue.push({ at: simT + 0.4 + i * 0.17, fn });
+  });
+  wake();
+}
+function clearAll(quiet) {
+  let any = false;
+  for (const b of bodies) if (!b.die && !b.dead) { b.die = 1e-4; any = true; }
+  for (let s = 0; s < SLOTS; s++) slotEnd[s] = Math.min(slotEnd[s], simT + 1.4);
+  queue.length = links.length = waves.length = 0;
+  if (any && !quiet) clearSound();
+  wake();
+}
+
+/* ---------- launching ---------- */
+const K_LAUNCH = 2.5, VMAX = 3.2;
+function nearHost(x, y) {
+  return bodies.some(p => free(p) && p.size >= 0.026 && p.moons.length < 3 && Math.hypot(p.x - x, p.y - y) < 6 * p.rad + 0.05);
+}
+function launchV(g) {
+  const dx = g.px - g.x, dy = g.py - g.y, d = Math.hypot(dx, dy);
+  if (d * U < 7) return null;
+  const s = Math.min(d * K_LAUNCH, VMAX) / d;
+  return [dx * s, dy * s];
+}
+function fling(g) {
+  let v = launchV(g);
+  if (!v) {
+    // A tap leaves the planet on a neat circular orbit.
+    const r = Math.max(Math.hypot(g.x, g.y), 1e-3), c = vcirc(r) * spin();
+    v = [(-g.y / r) * c, (g.x / r) * c];
+  }
+  const b = add(makeBody(g.x, g.y, v[0], v[1], g.size, g.col, g.ring));
+  b.grow = Math.max(0.5, g.grow);
+  b.fresh = simT + 8;
+  hello(b, 0.6);
+  launchSound(Math.hypot(v[0], v[1]), panOf(b));
+  wake();
+}
+// The path ahead: other planets coast on the sun alone; the new one feels them all.
+function predict(g) {
+  const v = launchV(g);
+  g.n = 0;
+  if (!v) return;
+  let x = g.x, y = g.y, vx = v[0], vy = v[1], host = null, ma = 0, md = 0, md0 = 0, mw = 0, ct = 0;
+  const rad = g.size * SZ, mu = 0.0012 * (g.size / 0.035) ** 3, h = 1 / 120;
+  const os = bodies.filter(free).map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, gm: b.gm, rad: b.rad, mu: b.mu, nm: b.moons.length }));
+  const r0 = Math.hypot(x, y), E = 0.5 * (vx * vx + vy * vy) - GM / r0 - GAMMA / (r0 * r0);
+  const span = E < 0 ? clamp(1.05 * TAU * Math.sqrt((-GM / (2 * E)) ** 3 / GM), 1.2, 6) : 3.5;
+  const pts = g.pts || (g.pts = new Float32Array(1600));
+  const force = () => {
+    const r2 = x * x + y * y, r = Math.sqrt(r2), k = GM / (r2 * r) + (2 * GAMMA) / (r2 * r2);
+    let ax = -k * x, ay = -k * y;
+    for (const o of os) {
+      const dx = o.x - x, dy = o.y - y, e = 0.5 * (rad + o.rad) + 0.02, d2 = dx * dx + dy * dy + e * e, inv = o.gm / (d2 * Math.sqrt(d2));
+      ax += dx * inv;
+      ay += dy * inv;
+    }
+    return [ax, ay];
+  };
+  let [ax, ay] = force(), n = 0;
+  g.end = 0;
+  pts[n++] = x;
+  pts[n++] = y;
+  for (let i = 0, steps = Math.ceil(span / h); i < steps && n < pts.length - 2; i++) {
+    for (const o of os) {
+      const r2 = o.x * o.x + o.y * o.y, r = Math.sqrt(r2), k = (GM / (r2 * r) + (2 * GAMMA) / (r2 * r2)) * h;
+      o.vx -= k * o.x;
+      o.vy -= k * o.y;
+      o.x += o.vx * h;
+      o.y += o.vy * h;
+    }
+    if (host) {
+      ma += mw * h;
+      ct = Math.min(1, ct + h / 0.8);
+      const d = lerp(md0, md, smooth(ct));
+      x = host.x + d * Math.cos(ma);
+      y = host.y + d * Math.sin(ma);
+    } else {
+      vx += ax * h * 0.5;
+      vy += ay * h * 0.5;
+      x += vx * h;
+      y += vy * h;
+      [ax, ay] = force();
+      vx += ax * h * 0.5;
+      vy += ay * h * 0.5;
+      const lim = SUN_R * 1.08 + rad * 0.4;
+      if (x * x + y * y < lim * lim) { g.end = 1; break; }
+      let stop = false;
+      for (const o of os) {
+        const dx = x - o.x, dy = y - o.y, d = Math.hypot(dx, dy);
+        if (d < 0.85 * (rad + o.rad)) { g.end = 2; stop = true; break; }
+        const rvx = vx - o.vx, rvy = vy - o.vy;
+        if (catchable({ mu: o.mu, rad: o.rad, moons: { length: o.nm } }, { mu, rad }, dx, dy, rvx, rvy, true)) {
+          host = o;
+          ma = Math.atan2(dy, dx);
+          md0 = d;
+          md = clamp(d, 1.9 * o.rad + 1.4 * rad, 3.3 * o.rad + rad);
+          mw = (dx * rvy - dy * rvx >= 0 ? 1 : -1) * (TAU / clamp(1.8 * (md / (2.6 * o.rad)) ** 1.5, 0.9, 4.5));
+          break;
+        }
+      }
+      if (stop) break;
+      if ((x / HW) ** 2 + (y / HH) ** 2 > 4.5) break;
+    }
+    if (i & 1) {
+      pts[n++] = x;
+      pts[n++] = y;
+    }
+  }
+  g.n = n / 2;
+}
+
+/* ---------- one simulation frame ---------- */
+function record() {
+  for (const b of bodies) {
+    const s = b.slot;
+    if (s < 0 || b.dead) continue;
+    const tau = b.host ? Math.min(9, 1.6 * b.host.T) : b.a ? clamp(2.1 * b.T, 3.5, 15) : 3;
+    slotTau[s] = tau;
+    slotCol.set(b.trail, s * 4);
+    slotCol[s * 4 + 3] = 0.55 + 0.22 * b.glow;
+    if (simT - b.recT < Math.max(1 / 75, (3.3 * tau) / CAP)) continue;
+    writeSeg(s, b.rx, b.ry, b.x, b.y, 0.7 + (0.55 * b.size) / 0.035);
+    b.rx = b.x;
+    b.ry = b.y;
+    b.recT = simT;
+  }
+}
+let droneAt = 0;
+function update(dt) {
+  for (let i = 0; i < queue.length; ) {
+    if (queue[i].at <= simT) queue.splice(i, 1)[0].fn();
+    else i++;
+  }
+  acc += dt;
+  for (let n = 0; acc >= H && n < 48; n++) { step(); acc -= H; }
+  acc = Math.min(acc, H);
+  captures();
+  for (const b of bodies) {
+    if (b.dead) continue;
+    orbit(b);
+    if (free(b)) sing(b);
+  }
+  escapes();
+  conjunctions();
+  for (let i = waves.length - 1; i >= 0; i--) {
+    const w = waves[i], rw = SUN_R + (simT - w.t0) * 1.4;
+    for (const b of bodies) if (free(b) && !w.hit.has(b) && Math.hypot(b.x, b.y) < rw) { w.hit.add(b); nudge(b); }
+    if (rw > Math.hypot(HW, HH) + 0.3) waves.splice(i, 1);
+  }
+  for (const b of bodies) {
+    if (b.dead) continue;
+    b.grow = Math.min(1, b.grow + dt / 0.6);
+    b.flash *= Math.exp(-dt / 0.3);
+    if (b.out) {
+      b.out += dt / 1.2;
+      b.alpha = Math.max(0, 1 - b.out);
+      if (b.out >= 1) kill(b, 2);
+    }
+    if (b.die) {
+      b.die += dt / 0.4;
+      if (b.die >= 1) kill(b, 1.2);
+    }
+  }
+  sweep();
+  heat *= Math.exp(-dt / 1.8);
+  sunV += (-170 * sunS - 8 * sunV) * dt;
+  sunS += sunV * dt;
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i], r2 = s.x * s.x + s.y * s.y, k = (s.fall * 0.6 * GM) / (r2 * Math.sqrt(r2)), drag = Math.exp(-dt * 1.4);
+    s.vx = (s.vx - k * s.x * dt) * drag;
+    s.vy = (s.vy - k * s.y * dt) * drag;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.t += dt;
+    if (s.t > s.life || r2 < SUN_R * SUN_R) sparks.splice(i, 1);
+  }
+  for (let i = rings.length - 1; i >= 0; i--) if (simT - rings[i].t0 > rings[i].life) rings.splice(i, 1);
+  for (let i = links.length - 1; i >= 0; i--) if (simT - links[i].t0 > 2) links.splice(i, 1);
+  for (let i = flares.length - 1; i >= 0; i--) if (simT - flares[i].t0 > 2.4) flares.splice(i, 1);
+  record();
+  // The hum follows the crowd; its root moves every 24 seconds.
+  const n = bodies.reduce((c, b) => c + (free(b) ? 1 : 0), 0);
+  if (simT - droneAt > 0.5 && ac) {
+    droneAt = simT;
+    droneLevel(n);
+    if (n >= 2 && simT - rootAt > 24) { rootAt = simT; droneStep(); }
+  }
+}
+
+/* ---------- WebGL: shaders ---------- */
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const NOISE = `
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}`;
+// Deep space: a violet hollow, two faint nebulae, the sun's glow and stars.
+const BG_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes, uScale;
+uniform float uPr, uT, uHeat, uSunR;
+uniform vec3 uDeep, uMid, uHalo, uNebA, uNebB;
+out vec4 o;
+${NOISE}
+void main() {
+  vec2 p = (gl_FragCoord.xy / uRes * 2.0 - 1.0) / uScale;
+  float r = length(p);
+  vec3 col = mix(uMid, uDeep, smoothstep(0.15, 2.0, r));
+  float n1 = vnoise(p * 1.1 + vec2(3.1, 7.7)) * 0.6 + vnoise(p * 2.7 + vec2(1.3, -4.1)) * 0.4;
+  float n2 = vnoise(p * 0.8 - vec2(5.2, 1.3)) * 0.7 + vnoise(p * 2.1 + 9.0) * 0.3;
+  col += uNebA * smoothstep(0.42, 0.9, n1) + uNebB * smoothstep(0.48, 0.95, n2);
+  col += uHalo * (1.0 + 0.8 * uHeat) * (0.5 * exp(-r / (uSunR * 2.6)) + 0.16 * exp(-r / 0.6));
+  vec2 cp = gl_FragCoord.xy / (uPr * 9.0), cell = floor(cp);
+  float hs = hash(cell);
+  if (hs > 0.84) {
+    vec2 at = 0.2 + 0.6 * vec2(hash(cell + 17.3), hash(cell + 41.9));
+    float d = length(cp - cell - at) * 9.0;
+    float b = 0.05 + 0.9 * pow(hash(cell + 5.1), 4.0);
+    float tw = 0.7 + 0.3 * sin(uT * (0.5 + 2.0 * hs) + hs * 60.0);
+    col += mix(vec3(0.7, 0.8, 1.0), vec3(1.0, 0.85, 0.7), hash(cell + 3.3)) * b * tw * exp(-d * d * 2.2);
+  }
+  o = vec4(col, 1.0);
+}`;
+const SUN_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+uniform vec2 uScale;
+uniform float uR;
+out vec2 vQ;
+void main() {
+  vQ = aCorner * 3.4;
+  gl_Position = vec4(vQ * uR * uScale, 0.0, 1.0);
+}`;
+// The sun: a shimmering limb-darkened disk, a streaming corona and flares.
+const SUN_FS = `#version 300 es
+precision highp float;
+uniform float uT, uPx, uPulse, uHeat;
+uniform vec4 uFlare[4];
+uniform vec3 uFlareCol[4];
+uniform vec3 uCore, uBody, uLimb, uCorona, uRose;
+in vec2 vQ;
+out vec4 o;
+${NOISE}
+float fbm(vec2 p) { return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.1 + 3.7) + 0.2 * vnoise(p * 4.3 - 1.9); }
+void main() {
+  vec2 q = vQ;
+  float d = length(q), e = max(d - 1.0, 0.0);
+  vec2 dir = q / max(d, 1e-4);
+  float lift = 1.0 + 0.9 * uPulse + 0.6 * uHeat;
+  float rays = 0.55 * vnoise(dir * 2.4 + vec2(uT * 0.05, -uT * 0.04)) + 0.45 * vnoise(dir * 6.0 + vec2(d * 1.3 - uT * 0.16, uT * 0.07));
+  float cor = exp(-e * 3.4) * (0.3 + rays) + 0.3 * exp(-e * 1.25);
+  vec3 col = mix(uCorona, uRose, smoothstep(0.0, 1.6, e)) * cor * lift * smoothstep(0.9, 1.02, d);
+  float mu = sqrt(max(0.0, 1.0 - d * d));
+  vec2 sp = q / (0.45 + 0.55 * mu);
+  float g = fbm(sp * 3.2 + vec2(uT * 0.06, -uT * 0.05)), g2 = vnoise(sp * 9.0 - vec2(uT * 0.11, uT * 0.07));
+  vec3 surf = mix(uLimb, uBody, smoothstep(0.0, 0.55, mu));
+  surf = mix(surf, uCore, 0.85 * smoothstep(0.5, 1.0, mu));
+  surf *= (0.8 + 0.34 * g + 0.12 * g2) * lift;
+  col = mix(col, surf * 2.4, smoothstep(1.0, 1.0 - 1.5 / uPx, d));
+  for (int i = 0; i < 4; i++) {
+    vec4 f = uFlare[i];
+    if (f.z <= 0.0) continue;
+    vec2 fd = vec2(cos(f.x), sin(f.x));
+    float t = f.y, fade = smoothstep(0.0, 0.06, t) * exp(-t / 0.75);
+    float plume = exp(-(1.0 - dot(dir, fd)) * 70.0) * exp(-e / (0.2 + t * 1.6)) * smoothstep(0.96, 1.0, d);
+    float ar = 0.6 * (0.3 + 0.8 * sin(clamp(t / 1.7, 0.0, 1.0) * 3.14159));
+    float ad = abs(length(q - fd) - ar);
+    float arch = exp(-ad * ad * 260.0) * smoothstep(0.98, 1.04, d) * exp(-t / 1.0);
+    col += uFlareCol[i] * f.z * (plume * 2.6 * fade + arch * 1.8 * smoothstep(0.0, 0.1, t));
+  }
+  o = vec4(col * smoothstep(3.4, 2.5, d), 1.0);
+}`;
+const PLANET_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec4 aB;
+layout(location = 3) in vec4 aC;
+uniform vec2 uScale;
+out vec2 vQ;
+flat out vec4 vA, vB, vC;
+flat out float vExt;
+void main() {
+  vExt = aC.y > 0.0 ? 2.7 : 2.3 + 0.4 * aB.w + 0.6 * aC.x;
+  vQ = aCorner * vExt;
+  vA = aA;
+  vB = aB;
+  vC = aC;
+  gl_Position = vec4((aA.xy + vQ * aA.z) * uScale, 0.0, 1.0);
+}`;
+// A jewel sphere lit by the sun, with a thin rim, a halo and maybe a ring.
+const PLANET_FS = `#version 300 es
+precision highp float;
+uniform float uUpx;
+in vec2 vQ;
+flat in vec4 vA, vB, vC;
+flat in float vExt;
+out vec4 o;
+void main() {
+  vec2 q = vQ;
+  float d = length(q), R = vA.z, glow = vB.w, flash = vC.x;
+  vec3 base = vB.rgb;
+  vec2 sd = -normalize(vA.xy + vec2(1e-6));
+  vec3 L = normalize(vec3(sd, 0.5));
+  float cov = smoothstep(1.0, 1.0 - 1.4 / max(R * uUpx, 1.0), d);
+  vec3 n = vec3(q, sqrt(max(0.0, 1.0 - d * d)));
+  float diff = clamp((dot(n, L) + 0.3) / 1.3, 0.0, 1.0);
+  diff *= diff;
+  float tilt = (vC.w - 0.5) * 0.7;
+  float by = dot(q, vec2(-sin(tilt), cos(tilt)));
+  float band = 1.0 + 0.1 * sin(by * 8.5 + vC.w * 40.0) * smoothstep(0.026, 0.045, R);
+  vec3 deep = base * base * 0.5 + base * vec3(0.04, 0.03, 0.1);
+  vec3 col = mix(deep * 0.4, base * 1.25, diff) * band;
+  vec3 hv = normalize(L + vec3(0.0, 0.0, 1.0));
+  col += pow(max(dot(n, hv), 0.0), 40.0) * 0.6 * mix(vec3(1.0), base, 0.25);
+  float rim = smoothstep(0.72, 0.98, d) * (0.3 + 0.7 * clamp(dot(q / max(d, 1e-4), sd) * 0.5 + 0.5, 0.0, 1.0));
+  col += mix(base, vec3(1.0), 0.5) * rim * 0.75;
+  col *= 1.0 + 0.4 * glow + 1.1 * flash;
+  float halo = (0.1 + 0.22 * glow + 0.7 * flash) * exp(-max(d - 1.0, 0.0) * 2.6) * smoothstep(vExt, vExt * 0.6, d);
+  float ra = 0.0;
+  vec3 rc = vec3(0.0);
+  if (vC.y > 0.0) {
+    float ca = cos(vC.z), sa = sin(vC.z);
+    vec2 rq = vec2(ca * q.x + sa * q.y, -sa * q.x + ca * q.y);
+    float rr = length(vec2(rq.x, rq.y / vC.y)), w = fwidth(rr);
+    float bandR = smoothstep(1.42 - w, 1.42 + w, rr) * smoothstep(2.12 + w, 2.12 - w, rr);
+    float gap = 1.0 - 0.75 * smoothstep(1.7 - w, 1.7 + w, rr) * smoothstep(1.8 + w, 1.8 - w, rr);
+    ra = bandR * gap * (0.62 + 0.25 * sin(rr * 30.0)) * (rq.y < 0.0 ? 1.0 : 1.0 - cov);
+    rc = mix(base, vec3(1.0, 0.95, 0.86), 0.55) * (0.75 + 0.5 * flash);
+  }
+  vec3 rgb = rc * ra + col * cov * (1.0 - ra);
+  float a = ra + cov * (1.0 - ra);
+  o = vec4((rgb + base * halo) * vA.w, a * vA.w);
+}`;
+const FX_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec4 aB;
+layout(location = 3) in float aK;
+uniform vec2 uScale;
+out vec2 vP;
+flat out vec4 vA, vB;
+flat out float vK;
+void main() {
+  float ext = aK == 1.0 ? aA.z + aA.w * 3.0 : aA.z * (aK == 0.0 ? 2.2 : 1.2);
+  vP = aCorner * ext;
+  vA = aA;
+  vB = aB;
+  vK = aK;
+  gl_Position = vec4((aA.xy + vP) * uScale, 0.0, 1.0);
+}`;
+// Kind 0 is a soft flash, kind 1 a ring, kind 2 a dot.
+const FX_FS = `#version 300 es
+precision highp float;
+in vec2 vP;
+flat in vec4 vA, vB;
+flat in float vK;
+out vec4 o;
+void main() {
+  float d = length(vP), i;
+  if (vK == 1.0) { float x = (d - vA.z) / vA.w; i = exp(-x * x); }
+  else if (vK == 0.0) { float x = d / vA.z; i = exp(-x * x * 2.5) * smoothstep(2.2, 1.6, x); }
+  else i = smoothstep(vA.z, vA.z * 0.3, d);
+  o = vec4(vB.rgb * vB.a * i, 0.0);
+}`;
+const LINE_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec4 aB;
+layout(location = 3) in vec4 aC;
+layout(location = 4) in float aW;
+uniform vec2 uScale;
+out float vT;
+out vec4 vCol;
+void main() {
+  vec2 a = aA.xy, dv = aA.zw - aA.xy;
+  float len = length(dv);
+  vec2 t = len > 1e-6 ? dv / len : vec2(1.0, 0.0);
+  vT = aCorner.y * 3.0;
+  vCol = mix(aB, aC, aCorner.x);
+  gl_Position = vec4((a + dv * aCorner.x + vec2(-t.y, t.x) * vT * aW) * uScale, 0.0, 1.0);
+}`;
+const LINE_FS = `#version 300 es
+precision highp float;
+in float vT;
+in vec4 vCol;
+out vec4 o;
+void main() {
+  o = vec4(vCol.rgb * vCol.a * (exp(-vT * vT * 1.4) + 0.2 * exp(-vT * vT * 0.3)), 0.0);
+}`;
+// Trails fade with age, per slot; a cleared slot fades out fast.
+const TRAIL_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec4 aB;
+uniform vec2 uScale;
+uniform float uNow, uPx;
+uniform vec4 uCol[${SLOTS}];
+uniform vec4 uSlot[${SLOTS}];
+out float vT;
+out vec3 vCol;
+void main() {
+  int s = int(aB.y + 0.5);
+  vec4 sl = uSlot[s];
+  float age = uNow - aB.x;
+  float k = aB.w * exp(-age / sl.x) * clamp((sl.z - uNow) / 1.2, 0.0, 1.0) * step(sl.y, aB.x) * step(age, sl.x * 3.6);
+  if (k < 0.004) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  vec2 a = aA.xy, dv = aA.zw - aA.xy;
+  float len = length(dv);
+  vec2 t = len > 1e-6 ? dv / len : vec2(1.0, 0.0);
+  vT = aCorner.y * 4.0;
+  vCol = uCol[s].rgb * uCol[s].a * k;
+  gl_Position = vec4((a + dv * aCorner.x + vec2(-t.y, t.x) * vT * aB.z * uPx) * uScale, 0.0, 1.0);
+}`;
+const TRAIL_FS = `#version 300 es
+precision highp float;
+in float vT;
+in vec3 vCol;
+out vec4 o;
+void main() {
+  o = vec4(vCol * (exp(-vT * vT * 1.6) + 0.18 * exp(-vT * vT * 0.22)), 0.0);
+}`;
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uScene;
+uniform vec2 uRes;
+out vec4 o;
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+void main() {
+  vec3 c = texelFetch(uScene, ivec2(gl_FragCoord.xy), 0).rgb;
+  c = 1.0 - exp(-c * 1.1);
+  vec2 v = gl_FragCoord.xy / uRes - 0.5;
+  c *= 1.0 - 0.3 * dot(v, v);
+  o = vec4(srgb(c) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+
+/* ---------- WebGL: setup ---------- */
+const SKY = {
+  uDeep: linear(0.11, 0.03, 280), uMid: linear(0.19, 0.06, 295), uHalo: linear(0.5, 0.16, 55),
+  uNebA: linear(0.2, 0.08, 330).map(v => v * 0.6), uNebB: linear(0.2, 0.06, 215).map(v => v * 0.55),
+};
+const SUN = {
+  uCore: linear(0.99, 0.05, 95), uBody: linear(0.9, 0.17, 80), uLimb: linear(0.7, 0.2, 45),
+  uCorona: linear(0.78, 0.17, 60).map(v => v * 1.2), uRose: linear(0.62, 0.2, 15),
+};
+let gl = null, FLOAT = false, P = null, emptyVao = null, ready = false, scene = null;
+const V = {}, B = {};
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+// A vertex array: one corner buffer, then instanced float attributes.
+function vao(corner, buf, sizes) {
+  const a = gl.createVertexArray(), stride = sizes.reduce((s, n) => s + n, 0) * 4;
+  gl.bindVertexArray(a);
+  gl.bindBuffer(gl.ARRAY_BUFFER, corner);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  if (buf) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    let off = 0;
+    sizes.forEach((n, i) => {
+      gl.enableVertexAttribArray(i + 1);
+      gl.vertexAttribPointer(i + 1, n, gl.FLOAT, false, stride, off);
+      gl.vertexAttribDivisor(i + 1, 1);
+      off += n * 4;
+    });
+  }
+  gl.bindVertexArray(null);
+  return a;
+}
+function dynBuf(bytes) {
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.DYNAMIC_DRAW);
+  return b;
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  // Float targets keep bright light from clipping.
+  if (gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float')) {
+    const t = gl.createTexture(), fb = gl.createFramebuffer();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, 4, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    FLOAT = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    gl.deleteTexture(t);
+  }
+  const progs = {
+    bg: compile(TRI, BG_FS), sun: compile(SUN_VS, SUN_FS), planet: compile(PLANET_VS, PLANET_FS), fx: compile(FX_VS, FX_FS),
+    line: compile(LINE_VS, LINE_FS), trail: compile(TRAIL_VS, TRAIL_FS), comp: compile(TRI, COMP_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  uni(P.bg, ['uRes', 'uScale', 'uPr', 'uT', 'uHeat', 'uSunR', ...Object.keys(SKY)]);
+  uni(P.sun, ['uScale', 'uR', 'uT', 'uPx', 'uPulse', 'uHeat', 'uFlare', 'uFlareCol', ...Object.keys(SUN)]);
+  uni(P.planet, ['uScale', 'uUpx']);
+  uni(P.fx, ['uScale']);
+  uni(P.line, ['uScale']);
+  uni(P.trail, ['uScale', 'uNow', 'uPx', 'uCol', 'uSlot']);
+  uni(P.comp, ['uScene', 'uRes']);
+  gl.useProgram(P.bg.p);
+  for (const k in SKY) gl.uniform3fv(P.bg.u[k], SKY[k]);
+  gl.useProgram(P.sun.p);
+  for (const k in SUN) gl.uniform3fv(P.sun.u[k], SUN[k]);
+  gl.useProgram(P.comp.p);
+  gl.uniform1i(P.comp.u.uScene, 0);
+
+  emptyVao = gl.createVertexArray();
+  const quad = gl.createBuffer(), seg = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, seg);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, -1, 1, -1, 0, 1, 1, 1]), gl.STATIC_DRAW);
+  B.planet = dynBuf(64 * 12 * 4);
+  B.fx = dynBuf(1024 * 9 * 4);
+  B.line = dynBuf(128 * 13 * 4);
+  B.head = dynBuf(64 * SEG * 4);
+  B.trail = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, B.trail);
+  gl.bufferData(gl.ARRAY_BUFFER, segs, gl.DYNAMIC_DRAW);
+  V.sun = vao(quad, null, []);
+  V.planet = vao(quad, B.planet, [4, 4, 4]);
+  V.fx = vao(quad, B.fx, [4, 4, 1]);
+  V.line = vao(seg, B.line, [4, 4, 4, 1]);
+  V.trail = vao(seg, B.trail, [4, 4]);
+  V.head = vao(seg, B.head, [4, 4]);
+  slotLo.fill(-1);
+}
+function allocScene() {
+  if (scene) {
+    gl.deleteTexture(scene.tex);
+    gl.deleteFramebuffer(scene.fb);
+  }
+  const tex = gl.createTexture(), fb = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, FLOAT ? gl.RGBA16F : gl.RGBA8, canvas.width, canvas.height);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  scene = { tex, fb, w: canvas.width, h: canvas.height };
+}
+
+/* ---------- drawing ---------- */
+let SW = 0, SH = 0, pr = 1, drawn = 0;
+const planetData = new Float32Array(64 * 12), fxData = new Float32Array(2048 * 9), lineData = new Float32Array(128 * 13);
+const headData = new Float32Array(64 * SEG), slotU = new Float32Array(SLOTS * 4), flareU = new Float32Array(16), flareC = new Float32Array(12);
+const ptrs = new Map();
+function flushTrails() {
+  gl.bindBuffer(gl.ARRAY_BUFFER, B.trail);
+  for (let s = 0; s < SLOTS; s++) {
+    if (slotLo[s] < 0) continue;
+    const a = (s * CAP + slotLo[s]) * SEG;
+    gl.bufferSubData(gl.ARRAY_BUFFER, a * 4, segs, a, (slotHi[s] - slotLo[s] + 1) * SEG);
+    slotLo[s] = -1;
+  }
+}
+function send(key, data, n) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, B[key]);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, n);
+}
+let nf = 0;
+function fx(x, y, r, w, rgb, k, kind) {
+  if (nf >= 2048 || k <= 0.002) return;
+  fxData.set([x, y, r, w, rgb[0], rgb[1], rgb[2], k, kind], nf * 9);
+  nf++;
+}
+let nl = 0;
+function line(x0, y0, x1, y1, c0, k0, c1, k1, w) {
+  if (nl >= 128) return;
+  lineData.set([x0, y0, x1, y1, c0[0], c0[1], c0[2], k0, c1[0], c1[1], c1[2], k1, w], nl * 13);
+  nl++;
+}
+const scaleOf = b => easeBack(b.grow) * (b.die ? 1 - smooth(Math.min(1, b.die)) : 1);
+// The dotted path ahead marches gently toward where the planet will go.
+function dots(g) {
+  const px = 1 / U, gap = 11 * px, end = g.n;
+  let carry = reduce ? 0 : ((simT * 16 * px) % gap), shown = 0;
+  for (let i = 1; i < end && shown < 220; i++) {
+    const x0 = g.pts[2 * i - 2], y0 = g.pts[2 * i - 1], x1 = g.pts[2 * i], y1 = g.pts[2 * i + 1], len = Math.hypot(x1 - x0, y1 - y0);
+    let s = gap - carry;
+    while (s <= len) {
+      const t = s / len, f = i / end;
+      fx(lerp(x0, x1, t), lerp(y0, y1, t), 1.5 * px, 0, g.trail, 0.85 * (1 - 0.8 * f) * smooth(g.grow), 2);
+      shown++;
+      s += gap;
+    }
+    carry = len - (s - gap);
+  }
+  if (end > 1 && g.end) {
+    const x = g.pts[2 * end - 2], y = g.pts[2 * end - 1];
+    if (g.end === 1) fx(x, y, 6 * px, 0, SUNC, 0.9, 0);
+    else fx(x, y, 7 * px, 1.4 * px, g.trail, 0.8, 1);
+  }
+}
+function draw() {
+  if (!scene) return;
+  const cw = canvas.width, ch = canvas.height, sx = (2 * U) / SW, sy = (2 * U) / SH, amb = simT * (reduce ? 0.15 : 1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+  gl.viewport(0, 0, cw, ch);
+  gl.disable(gl.BLEND);
+  let u = P.bg.u;
+  gl.useProgram(P.bg.p);
+  gl.uniform2f(u.uRes, cw, ch);
+  gl.uniform2f(u.uScale, sx, sy);
+  gl.uniform1f(u.uPr, pr);
+  gl.uniform1f(u.uT, amb);
+  gl.uniform1f(u.uHeat, heat);
+  gl.uniform1f(u.uSunR, SUN_R);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // Trails and lines add light.
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  flushTrails();
+  for (let s = 0; s < SLOTS; s++) {
+    slotU[s * 4] = slotTau[s];
+    slotU[s * 4 + 1] = slotStart[s];
+    slotU[s * 4 + 2] = slotEnd[s];
+  }
+  u = P.trail.u;
+  gl.useProgram(P.trail.p);
+  gl.uniform2f(u.uScale, sx, sy);
+  gl.uniform1f(u.uNow, simT);
+  gl.uniform1f(u.uPx, 1 / U);
+  gl.uniform4fv(u.uCol, slotCol);
+  gl.uniform4fv(u.uSlot, slotU);
+  gl.bindVertexArray(V.trail);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, SLOTS * CAP);
+  let nh = 0;
+  for (const b of bodies) {
+    if (b.slot < 0 || nh >= 64) continue;
+    headData.set([b.rx, b.ry, b.x, b.y, simT, b.slot, 0.7 + (0.55 * b.size) / 0.035, b.alpha], nh * SEG);
+    nh++;
+  }
+  if (nh) {
+    send('head', headData, nh * SEG);
+    gl.bindVertexArray(V.head);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nh);
+  }
+
+  // Conjunction lines run from the sun through each aligned planet.
+  nl = 0;
+  for (const L of links) {
+    const age = simT - L.t0, k = L.k * 0.6 * smooth(clamp(age / 0.15)) * (1 - smooth(clamp((age - 0.25) / 1.7)));
+    const g = L.group.filter(b => !b.dead);
+    if (g.length < 2 || k <= 0) continue;
+    const r = Math.hypot(g[0].x, g[0].y) || 1;
+    let x = (g[0].x / r) * SUN_R * 1.35, y = (g[0].y / r) * SUN_R * 1.35, c = SUNC, ck = 0.25 * k;
+    for (const b of g) {
+      line(x, y, b.x, b.y, c, ck, b.trail, k, 0.9 / U);
+      x = b.x;
+      y = b.y;
+      c = b.trail;
+      ck = k;
+    }
+    const last = g[g.length - 1], rl = Math.hypot(last.x, last.y);
+    line(x, y, x + (last.x / rl) * 0.12, y + (last.y / rl) * 0.12, c, k, c, 0, 0.9 / U);
+  }
+  for (const g of ptrs.values()) {
+    if (Math.hypot(g.px - g.x, g.py - g.y) * U > 7) line(g.x, g.y, g.px, g.py, g.trail, 0.32 * smooth(g.grow), g.trail, 0.06, 0.7 / U);
+  }
+  if (nl) {
+    gl.useProgram(P.line.p);
+    gl.uniform2f(P.line.u.uScale, sx, sy);
+    send('line', lineData, nl * 13);
+    gl.bindVertexArray(V.line);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nl);
+  }
+
+  // The sun swells on its spring and flares where bodies fall in.
+  flareU.fill(0);
+  flares.forEach((f, i) => {
+    flareU.set([f.ang, simT - f.t0, f.k, 0], i * 4);
+    flareC.set(mixRgb(f.rgb, SUNC, 0.5), i * 3);
+  });
+  const sr = SUN_R * (1 + 0.45 * sunS);
+  u = P.sun.u;
+  gl.useProgram(P.sun.p);
+  gl.uniform2f(u.uScale, sx, sy);
+  gl.uniform1f(u.uR, sr);
+  gl.uniform1f(u.uT, amb);
+  gl.uniform1f(u.uPx, sr * U * pr);
+  gl.uniform1f(u.uPulse, Math.max(0, sunS) * 2);
+  gl.uniform1f(u.uHeat, heat);
+  gl.uniform4fv(u.uFlare, flareU);
+  gl.uniform3fv(u.uFlareCol, flareC);
+  gl.bindVertexArray(V.sun);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // Planets cover what lies behind them.
+  let np = 0;
+  const put = (x, y, r, a, rgb, glow, flash, ring, seed) => {
+    if (np >= 64 || r <= 1e-5) return;
+    planetData.set([x, y, r, a, rgb[0], rgb[1], rgb[2], glow, flash, ring ? ring[0] : 0, ring ? ring[1] : 0, seed], np * 12);
+    np++;
+  };
+  for (const b of bodies) put(b.x, b.y, b.rad * scaleOf(b), b.alpha, b.rgb, b.glow, Math.min(1.5, b.flash), b.ring, b.seed);
+  for (const g of ptrs.values()) {
+    const beat = reduce ? 0 : 0.12 * Math.sin(simT * 7);
+    put(g.x, g.y, g.size * SZ * easeBack(g.grow), 0.95, g.rgb, 0.4, 0.2 + beat, g.ring, g.seed);
+  }
+  if (np) {
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(P.planet.p);
+    gl.uniform2f(P.planet.u.uScale, sx, sy);
+    gl.uniform1f(P.planet.u.uUpx, U * pr);
+    send('planet', planetData, np * 12);
+    gl.bindVertexArray(V.planet);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, np);
+  }
+
+  // Flashes, rings, sparks and the dotted path add light on top.
+  nf = 0;
+  const px = 1 / U;
+  for (const w of waves) {
+    const rw = SUN_R + (simT - w.t0) * 1.4, k = Math.exp(-(rw - SUN_R) / 1.1);
+    fx(0, 0, rw, 2.2 * px, WAVEC, 0.9 * k, 1);
+    fx(0, 0, rw * 0.94, 7 * px, SUNC, 0.22 * k, 1);
+  }
+  for (const r of rings) {
+    const t = clamp((simT - r.t0) / r.life), e = 1 - (1 - t) ** 3, f = r.follow && !r.follow.dead ? r.follow : r;
+    const rad = lerp(r.r0, r.r1, e);
+    if (r.blob) fx(f.x, f.y, rad, 0, r.rgb, r.k * (1 - t) ** 2, 0);
+    else fx(f.x, f.y, rad, 1.3 * px, r.rgb, r.k * (1 - t) ** 2, 1);
+  }
+  for (const s of sparks) fx(s.x, s.y, s.s * 2.2 * px, 0, s.rgb, 1.5 * (1 - s.t / s.life) ** 2, 0);
+  for (const g of ptrs.values()) dots(g);
+  if (nf) {
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.useProgram(P.fx.p);
+    gl.uniform2f(P.fx.u.uScale, sx, sy);
+    send('fx', fxData, nf * 9);
+    gl.bindVertexArray(V.fx);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nf);
+  }
+
+  gl.disable(gl.BLEND);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.useProgram(P.comp.p);
+  gl.uniform2f(P.comp.u.uRes, cw, ch);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, scene.tex);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  if (++drawn === 2) canvas.classList.add('on');
+}
+
+/* ---------- layout ---------- */
+let rect = null, lowDpr = false;
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const cw = Math.round(w * p), ch = Math.round(h * p);
+  SW = w;
+  SH = h;
+  pr = cw / w;
+  U = Math.min(w, h) / 2;
+  HW = w / 2 / U;
+  HH = h / 2 / U;
+  // Small stages draw bodies a little larger.
+  SZ = clamp(270 / U, 1, 1.5);
+  SUN_R = 0.078 * Math.sqrt(SZ);
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+    if (ready) allocScene();
+  }
+  if (ready) draw();
+}
+
+/* ---------- one loop, running only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0, frames = 0, wasEmpty = null;
+const visible = () => onScreen && !document.hidden;
+function wake() {
+  if (!raf && ready && visible()) {
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+  }
+}
+function busy() {
+  if (bodies.length || ptrs.size || queue.length || sparks.length || rings.length || links.length || waves.length || flares.length) return true;
+  if (Math.abs(sunS) > 1e-3 || Math.abs(sunV) > 1e-2 || heat > 0.01) return true;
+  for (let s = 0; s < SLOTS; s++) if (slotEnd[s] > simT && slotEnd[s] < 1e8) return true;
+  return false;
+}
+function showClear() {
+  const empty = !queue.length && !bodies.some(b => !b.die && !b.dead);
+  if (empty === wasEmpty) return;
+  wasEmpty = empty;
+  clearB.setAttribute('aria-disabled', String(empty));
+}
+function frame(now) {
+  raf = 0;
+  if (!ready || !visible()) return;
+  const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 0.05);
+  last = now;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr && ++frames > 30) {
+    slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { lowDpr = true; fit(); }
+  }
+  // Reduced motion runs the system at under half speed.
+  update(dt * (reduce ? 0.45 : 1));
+  for (const g of ptrs.values()) {
+    g.grow = Math.min(1, g.grow + dt / 0.3);
+    predict(g);
+  }
+  draw();
+  showClear();
+  if (busy()) raf = requestAnimationFrame(frame);
+  else rest();
+}
+// Off screen or hidden, the system pauses and goes quiet.
+function sync() {
+  if (visible()) {
+    wake();
+    if (soundOn && ac && ac.state !== 'running' && bodies.length) audio();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+
+/* ---------- input ---------- */
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [(e.clientX - r.left - SW / 2) / U, -(e.clientY - r.top - SH / 2) / U];
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  // The sun takes taps; anywhere else starts a launch.
+  if (Math.hypot(x, y) < Math.max(SUN_R * 1.7, 24 / U)) return pulse();
+  if (ptrs.size >= 4) return;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const size = pickSize(nearHost(x, y)), col = jewel();
+  ptrs.set(e.pointerId, {
+    x, y, px: x, py: y, size, col, ring: size > 0.035 && Math.random() < 0.5 ? [rand(0.3, 0.42), rand(-0.6, 0.6)] : null,
+    rgb: linear(...col), trail: linear(Math.min(0.9, col[0] + 0.05), col[1], col[2]), grow: 0, n: 0, pts: null, end: 0, seed: Math.random(),
+  });
+  tick(x / HW);
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const g = ptrs.get(e.pointerId);
+  if (g) [g.px, g.py] = local(e);
+});
+panel.addEventListener('pointerup', e => {
+  const g = ptrs.get(e.pointerId);
+  if (!g) return;
+  ptrs.delete(e.pointerId);
+  [g.px, g.py] = local(e);
+  fling(g);
+});
+['pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, e => ptrs.delete(e.pointerId)));
+panel.addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === ' ' || k === 'Enter') {
+    // Buttons and links keep Space and Enter for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (e.repeat) return;
+    if (k === ' ') randomPlanet();
+    else pulse();
+  } else if ((k === 'c' || k === 'C') && !e.repeat) clearAll();
+});
+seedB.addEventListener('click', () => seed());
+clearB.addEventListener('click', () => { if (clearB.getAttribute('aria-disabled') !== 'true') clearAll(); });
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start: shaders link while the system runs ahead ---------- */
+function failed() {
+  ready = false;
+  cancelAnimationFrame(raf);
+  raf = 0;
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  seedB.setAttribute('aria-disabled', 'true');
+  clearB.setAttribute('aria-disabled', 'true');
+}
+canvas.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  ready = false;
+  cancelAnimationFrame(raf);
+  raf = 0;
+});
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    scene = null;
+    await initGL();
+    slotLo.fill(0);
+    slotHi.fill(CAP - 1);
+    allocScene();
+    ready = true;
+    draw();
+    wake();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!SW) {
+    SW = 1160;
+    SH = 652;
+    U = SH / 2;
+    HW = SW / 2 / U;
+    canvas.width = SW;
+    canvas.height = SH;
+  }
+  const gate = initGL();
+  gate.catch(() => {});
+  await idle();
+  // Sixteen seconds have already run, so the rosettes have begun.
+  seed(true);
+  for (let i = 0; i < 960; i++) update(1 / 60);
+  try { await gate; } catch (err) { console.error(err); failed(); return; }
+  slotLo.fill(0);
+  slotHi.fill(CAP - 1);
+  allocScene();
+  ready = true;
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+  draw();
+  wake();
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
