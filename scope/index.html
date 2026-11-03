@@ -462,7 +462,7 @@ void main() {
 const SCREEN = `#version 300 es
 precision highp float;
 out vec4 o;
-uniform sampler2D uAccum, uBloom, uHud;
+uniform sampler2D uAccum, uBloom, uHud, uGlass;
 uniform vec2 uRes;
 uniform float uDpr, uTime, uWarp, uFringe, uPower;
 uniform vec3 uFlash, uGlow, uGain, uTint;
@@ -483,33 +483,11 @@ vec3 phosphor(vec2 uv) {
   float hot = 1.0 - exp(-e.r * uGain.x * 0.08);
   return uFlash * a + uGlow * b + vec3(0.9, 0.95, 1.0) * hot * hot * 0.9;
 }
-// Specks of dust and a few soft motes sit on the glass, in CSS pixels.
-float dust(vec2 p) {
-  vec2 c = floor(p / 7.0);
-  float d = 0.0;
-  if (hash(c) > 0.94) {
-    vec2 o = vec2(hash(c + 3.1), hash(c + 7.7)) * 7.0;
-    float r = 0.45 + 1.1 * hash(c + 1.3);
-    d += (1.0 - smoothstep(r * 0.4, r, length(p - c * 7.0 - o))) * (0.35 + 0.65 * hash(c + 9.2));
-  }
-  vec2 c2 = floor(p / 53.0);
-  if (hash(c2 + 17.0) > 0.82) {
-    vec2 o = vec2(hash(c2 + 5.3), hash(c2 + 2.9)) * 53.0;
-    float r = 2.0 + 4.0 * hash(c2 + 8.1);
-    d += (1.0 - smoothstep(0.0, r, length(p - c2 * 53.0 - o))) * 0.3;
-  }
-  return d;
-}
-float smudge(vec2 p) {
-  float n = vnoise(p / 190.0) * 0.6 + vnoise(p / 64.0) * 0.28 + vnoise(p / 21.0) * 0.12;
-  return smoothstep(0.56, 0.86, n);
-}
 void main() {
   vec2 uv0 = gl_FragCoord.xy / uRes, uv = warp(uv0);
   // Power-on: a dot opens to a line, then the raster opens to full height.
   vec2 open = vec2(max(0.002, smoothstep(0.0, 0.3, uPower)), max(0.002, smoothstep(0.22, 0.78, uPower)));
   uv = (uv - 0.5) / open + 0.5;
-  vec2 css = gl_FragCoord.xy / uDpr;
   // Past the edge of the warped face the tube is black.
   vec2 edge = min(uv, 1.0 - uv) * uRes;
   float inside = clamp(min(edge.x, edge.y) / (2.0 * uDpr), 0.0, 1.0);
@@ -540,7 +518,8 @@ void main() {
   col += light * (1.0 + roll) + halo * (1.0 + roll);
 
   // Smudges on the glass spread the halo; dust blocks light and catches it.
-  float sm = smudge(css), du = dust(css);
+  vec2 gl2 = texelFetch(uGlass, ivec2(gl_FragCoord.xy), 0).rg;
+  float du = gl2.r, sm = gl2.g;
   float glowLum = dot(halo, vec3(0.3, 0.6, 0.1));
   col += halo * sm * 1.1 + vec3(0.006, 0.007, 0.007) * sm;
   col = col * (1.0 - 0.5 * du) + du * (0.008 + 0.7 * glowLum) * vec3(0.9, 0.9, 0.85);
@@ -554,6 +533,42 @@ void main() {
   col *= inside * (1.0 + 3.0 * (1.0 - smoothstep(0.55, 1.0, uPower)));
   col = pow(max(col, 0.0), vec3(1.0 / 2.2));
   o = vec4(col, 1.0);
+}`;
+// The glass: dust in red, smudges in green; it renders once per layout.
+const GLASS = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform float uDpr;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
+}
+// Specks of dust and a few soft motes sit on the glass, in CSS pixels.
+float dust(vec2 p) {
+  vec2 c = floor(p / 7.0);
+  float d = 0.0;
+  if (hash(c) > 0.94) {
+    vec2 o = vec2(hash(c + 3.1), hash(c + 7.7)) * 7.0;
+    float r = 0.45 + 1.1 * hash(c + 1.3);
+    d += (1.0 - smoothstep(r * 0.4, r, length(p - c * 7.0 - o))) * (0.35 + 0.65 * hash(c + 9.2));
+  }
+  vec2 c2 = floor(p / 53.0);
+  if (hash(c2 + 17.0) > 0.82) {
+    vec2 o = vec2(hash(c2 + 5.3), hash(c2 + 2.9)) * 53.0;
+    float r = 2.0 + 4.0 * hash(c2 + 8.1);
+    d += (1.0 - smoothstep(0.0, r, length(p - c2 * 53.0 - o))) * 0.3;
+  }
+  return d;
+}
+float smudge(vec2 p) {
+  float n = vnoise(p / 190.0) * 0.6 + vnoise(p / 64.0) * 0.28 + vnoise(p / 21.0) * 0.12;
+  return smoothstep(0.56, 0.86, n);
+}
+void main() {
+  vec2 css = gl_FragCoord.xy / uDpr;
+  o = vec4(clamp(dust(css), 0.0, 1.0), smudge(css), 0.0, 1.0);
 }`;
 const SCREEN_VS = `#version 300 es
 in vec2 aPos;
@@ -579,6 +594,7 @@ const P = {
   down: program(QUAD_VS, DOWN, ['aPos']),
   blur: program(QUAD_VS, BLUR, ['aPos']),
   screen: program(SCREEN_VS, SCREEN, ['aPos']),
+  glass: program(SCREEN_VS, GLASS, ['aPos']),
 };
 
 const quadVao = gl.createVertexArray();
@@ -772,6 +788,7 @@ function layout() {
   const BW = Math.max(4, Math.round(AW / 4)), BH = Math.max(4, Math.round(AH / 4));
   blm = [target(BW, BH), target(BW, BH)];
   ai = 0;
+  paintGlass(W, H);
   paintHud();
   // The beam restarts in the new pixel space, so no stray streak shows.
   if (raf) { tS = now(); sample(ph, tS); last = [pt[0], pt[1]]; return; }
@@ -779,6 +796,23 @@ function layout() {
 }
 
 /* ---------- passes ---------- */
+// Dust and smudges never move, so they bake into a texture.
+let glass = null;
+function paintGlass(W, H) {
+  if (glass) drop(glass);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(P.glass.p); gl.bindVertexArray(quadVao);
+  gl.uniform1f(P.glass.u.uDpr, dpr);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  glass = { tex, fb };
+}
 function decayPass(dt) {
   const ph = PHOS[phos], src = acc[ai], dst = acc[1 - ai];
   gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
@@ -826,7 +860,8 @@ function present(t) {
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, hudTex);
-  gl.uniform1i(u.uAccum, 0); gl.uniform1i(u.uBloom, 1); gl.uniform1i(u.uHud, 2);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, glass.tex);
+  gl.uniform1i(u.uAccum, 0); gl.uniform1i(u.uBloom, 1); gl.uniform1i(u.uHud, 2); gl.uniform1i(u.uGlass, 3);
   gl.uniform2f(u.uRes, canvas.width, canvas.height);
   gl.uniform1f(u.uDpr, dpr); gl.uniform1f(u.uTime, t % 1000);
   gl.uniform1f(u.uWarp, WARP); gl.uniform1f(u.uFringe, FRINGE);
@@ -924,14 +959,12 @@ function settle() {
 }
 
 /* ---------- loop ---------- */
-// A still shape settles after a short spell; a calm knot draws at 30 fps.
-const IDLE = 8, STILL = 2.5;
+// A still shape settles after a short spell; a turning one draws every frame.
+const STILL = 2.5;
 let raf = 0, lastFrame = 0, lastInput = 0, stroke = null, picking = false, sliding = false;
 function frame() {
   raf = 0;
   const t = now(), busy = stroke || picking || sliding;
-  const calm = !busy && t - lastInput >= IDLE;
-  if (calm && drifting() && t - lastFrame < 1 / 31) { raf = requestAnimationFrame(frame); return; }
   const dt = clamp(t - lastFrame, 0, 0.25);
   lastFrame = t;
   traces = traces.filter(v => !v.dieAt || t < v.dieAt + FADE);
