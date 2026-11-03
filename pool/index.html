@@ -149,7 +149,7 @@ const f5 = v => v.toFixed(5);
 const v3 = c => `vec3(${c.map(f5).join(', ')})`;
 
 /* ---------- the pool: world units, y up, z toward the viewer ---------- */
-const TILT = 27 * D2R, FOVY = 22 * D2R, PX = 1, HD = 0.045, DEPTH = 0.45, RIM = 0.075, WAVE_C = 0.5;
+const TILT = 20 * D2R, FOVY = 22 * D2R, PX = 1, HD = 0.045, DEPTH = 0.45, RIM = 0.075, WAVE_C = 0.5;
 // Thick water: waves step slower, damp harder and lose fine detail first.
 const C2 = 1.5, NU = 0.16, DAMP_RATE = 1.1, CELL_SPEED = Math.sqrt(C2 / 4);
 let PZ = 0.62, NX = 256, NZ = 144, CELL = 2 / 256, SIMN = 256, aspect = 0, TILE = 2 / 28, SIM_HZ = 105, damp = 0.99;
@@ -167,40 +167,51 @@ function refract(I, N, eta) {
 }
 // Sunlight bends at a calm surface and runs down into the water.
 const RL = refract(mul(SUN_DIR, -1), [0, 1, 0], 0.75);
-const cam = { p: [0, 0, 0], f: [0, 0, 0], u: [0, 0, 0], tx: 1, ty: 1 };
-function place(A, dist, tz) {
-  const c = Math.cos(TILT), s = Math.sin(TILT);
-  cam.p = [0, dist * c, tz + dist * s];
-  cam.f = [0, -c, -s];
-  cam.u = [0, s, -c];
+// The camera orbits the pool: yaw turns it, tilt leans it from straight down.
+const TILT_MIN = 6 * D2R, TILT_MAX = 50 * D2R;
+const cam = { p: [0, 0, 0], f: [0, 0, 0], r: [1, 0, 0], u: [0, 0, 0], tx: 1, ty: 1, yaw: 0, tilt: TILT };
+function place(A, dist, tz, yaw = cam.yaw) {
+  const c = Math.cos(cam.tilt), s = Math.sin(cam.tilt), cy = Math.cos(yaw), sy = Math.sin(yaw);
+  // The target sits tz toward the viewer from the pool centre.
+  cam.p = [(tz + dist * s) * sy, dist * c, (tz + dist * s) * cy];
+  cam.f = [-s * sy, -c, -s * cy];
+  cam.r = [cy, 0, -sy];
+  cam.u = [-c * sy, s, -c * cy];
   cam.ty = Math.tan(FOVY / 2);
   cam.tx = cam.ty * A;
 }
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 function project(x, y, z) {
-  const dx = x - cam.p[0], dy = y - cam.p[1], dz = z - cam.p[2];
-  const zc = dy * cam.f[1] + dz * cam.f[2];
-  return [dx / (zc * cam.tx), (dy * cam.u[1] + dz * cam.u[2]) / (zc * cam.ty)];
+  const d = [x - cam.p[0], y - cam.p[1], z - cam.p[2]], zc = dot3(d, cam.f);
+  return [dot3(d, cam.r) / (zc * cam.tx), dot3(d, cam.u) / (zc * cam.ty)];
 }
 // The camera frames the pool and its rim to fill the stage.
-function fitCam(A, pz) {
-  let dist = 5, tz = 0, n = [1, -1], f = [1, 1];
+function fitCam(A, pz, yaw = cam.yaw) {
+  let dist = 5, tz = 0, xm = 1, y0 = -1, y1 = 1;
+  const X = PX + RIM, Z = pz + RIM;
   for (let i = 0; i < 60; i++) {
-    place(A, dist, tz);
-    n = project(-(PX + RIM), HD, pz + RIM);
-    f = project(-(PX + RIM), HD, -(pz + RIM));
-    dist *= Math.max(-n[0], (f[1] - n[1]) / 2);
-    tz -= ((f[1] + n[1]) / 2) * pz * 0.6;
+    place(A, dist, tz, yaw);
+    xm = 0; y0 = 1e9; y1 = -1e9;
+    for (const [x, z] of [[-X, -Z], [X, -Z], [X, Z], [-X, Z]]) {
+      const q = project(x, HD, z);
+      xm = Math.max(xm, Math.abs(q[0]));
+      y0 = Math.min(y0, q[1]);
+      y1 = Math.max(y1, q[1]);
+    }
+    dist *= Math.max(xm, (y1 - y0) / 2);
+    tz -= ((y0 + y1) / 2) * pz * 0.6;
   }
-  place(A, dist, tz);
-  return { w: -n[0], h: (f[1] - n[1]) / 2 };
+  place(A, dist, tz, yaw);
+  return { w: xm, h: (y1 - y0) / 2 };
 }
 const petals = [], objs = [];
 let petalScale = 1;
 function layoutPool(A) {
   aspect = A;
-  let pz = PX / (A * Math.cos(TILT));
+  let pz = PX / (A * Math.cos(cam.tilt));
+  // The pool takes its shape from the front view.
   for (let i = 0; i < 14; i++) {
-    const r = fitCam(A, pz);
+    const r = fitCam(A, pz, 0);
     pz *= (r.w / r.h) ** 0.8;
   }
   // Square cells keep ripples round.
@@ -739,7 +750,7 @@ void main() {
 const VIEW_FS = `${HEAD}
 uniform sampler2D uSim, uCaus;
 uniform vec2 uRes, uTan;
-uniform vec3 uCam, uFwd, uUp, uSun, uRl;
+uniform vec3 uCam, uFwd, uRight, uUp, uSun, uRl;
 uniform vec4 uPool;
 uniform float uT, uAmp, uTile, uSeed, uNight;
 ${PETAL_U}
@@ -923,7 +934,7 @@ void main() {
   gAmb = mix(AMB, AMBN, uNight);
   gLamp = uNight;
   vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0, PH = uPool.xy;
-  vec3 rd = normalize(uFwd + vec3(ndc.x * uTan.x, 0.0, 0.0) + ndc.y * uTan.y * uUp);
+  vec3 rd = normalize(uFwd + ndc.x * uTan.x * uRight + ndc.y * uTan.y * uUp);
   float D = uPool.z, HD = uPool.w, pa = 2.0 * uTan.y / uRes.y;
 
   // The ray meets the deck plane at the pool's open top.
@@ -1028,7 +1039,7 @@ void main() {
 const PART_VS = `${HEAD}
 in vec4 aP;
 in vec2 aK;
-uniform vec3 uCam, uFwd, uUp;
+uniform vec3 uCam, uFwd, uRight, uUp;
 uniform vec2 uRes, uTan;
 out float vK, vA;
 void main() {
@@ -1036,7 +1047,7 @@ void main() {
   if (p.y < 0.0) p.y *= 0.75;
   vec3 d = p - uCam;
   float zc = dot(d, uFwd);
-  gl_Position = vec4(d.x / (zc * uTan.x), dot(d, uUp) / (zc * uTan.y), 0.0, 1.0);
+  gl_Position = vec4(dot(d, uRight) / (zc * uTan.x), dot(d, uUp) / (zc * uTan.y), 0.0, 1.0);
   gl_PointSize = max(aP.w * uRes.y / (zc * uTan.y), 1.5);
   vK = aK.x;
   vA = aK.y;
@@ -1224,6 +1235,7 @@ function camUniforms() {
     gl.useProgram(pr.p);
     setU(pr, 'uCam', '3fv', cam.p);
     setU(pr, 'uFwd', '3fv', cam.f);
+    setU(pr, 'uRight', '3fv', cam.r);
     setU(pr, 'uUp', '3fv', cam.u);
     setU(pr, 'uTan', '2f', cam.tx, cam.ty);
   }
@@ -1496,11 +1508,12 @@ function kick(x, z, power) {
     });
   }
 }
-const pan = x => x / PX;
+// Sound pans with where a thing sits on screen.
+const pan = (x, z = 0) => clamp(project(x, 0, z)[0], -1, 1);
 function raindrop() {
   const x = rand(-1, 1) * PX, z = rand(-1, 1) * PZ;
   addDrop(x, z, 0.014, -0.0042 * rand(0.6, 1.3));
-  if (Math.random() < 0.55) tick(pan(x));
+  if (Math.random() < 0.55) tick(pan(x, z));
 }
 // A finger stroke: water piles ahead and drops behind.
 const FR = 0.03, PUSH = 0.0032;
@@ -1523,29 +1536,21 @@ function drag(ax, az, bx, bz, dts) {
     p.w += (cx * vz - cz * vx) * w * 20;
   }
 }
-// Arrow keys sweep a finger across the pool along shifting lanes.
-const sweeps = [], LANES = [0, 0.38, -0.38, 0.66, -0.66];
-let laneN = 0;
-function sweep(key) {
-  const horiz = key === 'ArrowLeft' || key === 'ArrowRight';
-  const dir = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1;
-  const lane = LANES[laneN++ % LANES.length] * ((horiz ? PZ : PX) - 0.1);
-  sweeps.push({ horiz, dir, lane, t: 0, dur: 1.3, bow: rand(-0.12, 0.12), px: null, pz: null });
-  plop(0, 0.15);
+/* ---------- orbit: the view turns around the pool ---------- */
+// A drag on the deck, or a right drag, turns and tilts the view.
+// A let-go keeps a little spin that slows to a stop.
+let turn = null, spin = 0;
+function aim() {
+  fitCam(aspect, PZ);
+  if (ready) camUniforms();
   wake();
 }
-function stepSweeps(dt) {
-  for (let i = sweeps.length - 1; i >= 0; i--) {
-    const s = sweeps[i];
-    s.t = Math.min(1, s.t + dt / s.dur);
-    const e = 0.5 - 0.5 * Math.cos(s.t * Math.PI), L = (s.horiz ? PX : PZ) - 0.06;
-    const a = s.dir * lerp(-L, L, e), b = s.lane + Math.sin(e * Math.PI) * s.bow;
-    const x = s.horiz ? a : b, z = s.horiz ? b : a;
-    if (s.px != null && dt > 0) drag(s.px, s.pz, x, z, dt);
-    s.px = x;
-    s.pz = z;
-    if (s.t >= 1) sweeps.splice(i, 1);
-  }
+function stepSpin(dt) {
+  if (turn || !spin) return;
+  cam.yaw += spin * dt;
+  spin *= Math.exp(-3.5 * dt);
+  if (Math.abs(spin) < 0.01) spin = 0;
+  aim();
 }
 function setRain(v) {
   raining = v;
@@ -1622,7 +1627,7 @@ function retire(o) {
   // A sunk thing lets go of its last air as it goes.
   if (o.y < -0.05) {
     for (let i = 0; i < 6; i++) bubble(o.x + rand(-0.03, 0.03), o.y + rand(0, 0.04), o.z + rand(-0.03, 0.03), rand(0.004, 0.009));
-    gurgle(pan(o.x), 0.7);
+    gurgle(pan(o.x, o.z), 0.7);
   }
 }
 // Over the cap, the oldest thing sinks away.
@@ -1685,8 +1690,8 @@ function splash(x, z, S, r, o) {
   const nb = Math.round(3 + 30 * k);
   for (let i = 0; i < nb; i++) bubble(x + rand(-r, r), -rand(0.01, 0.06 + 0.12 * k), z + rand(-r, r), rand(0.003, 0.011));
   kick(x, z, 0.025 + 0.1 * k);
-  if (S < 0.55) plop(pan(x), clamp(lerp(0.3, 1, S / 0.55)));
-  else sploosh(pan(x), S);
+  if (S < 0.55) plop(pan(x, z), clamp(lerp(0.3, 1, S / 0.55)));
+  else sploosh(pan(x, z), S);
 }
 // The rebound jet: a narrow column of heavier drops.
 function column(x, z, S) {
@@ -1752,7 +1757,7 @@ function stepObjs(dt) {
       const yf = -DEPTH + lo;
       if (o.y <= yf) {
         o.y = yf;
-        if (o.vy < -0.1) { clank(pan(o.x), -o.vy, K.type); landed(o, -o.vy); o.vy *= -0.12; }
+        if (o.vy < -0.1) { clank(pan(o.x, o.z), -o.vy, K.type); landed(o, -o.vy); o.vy *= -0.12; }
         else o.vy = Math.max(o.vy, 0);
         o.floor = true;
       } else if (o.y > yf + 0.004) o.floor = false;
@@ -1787,7 +1792,7 @@ function stepObjs(dt) {
         bubble(o.x + rand(-0.03, 0.03), o.y + K.hi * s * rand(0.2, 1), o.z + rand(-0.03, 0.03), rand(0.0025, 0.008));
       }
       o.gurg -= dt;
-      if (rate > 0.25 && o.gurg <= 0) { o.gurg = rand(0.08, 0.22); gurgle(pan(o.x), rand(0.3, 0.9)); }
+      if (rate > 0.25 && o.gurg <= 0) { o.gurg = rand(0.08, 0.22); gurgle(pan(o.x, o.z), rand(0.3, 0.9)); }
     }
     const still = Math.hypot(o.vx, o.vy, o.vz) < 0.004 && Math.hypot(...w) < 0.03;
     if (!still || (!K.float && !o.floor) || (K.float && f === 0)) objMoving = true;
@@ -1843,7 +1848,7 @@ function stepParts(dt) {
       // A droplet falls back: a tiny ring and sometimes a plink.
       if (p.y < 0 && p.vy < 0) {
         if (drops < 10 && Math.random() < 0.5) { dropQ.push(inX(p.x), inZ(p.z), Math.max(p.r * 3, 3 * CELL), -0.0016 * STR * (p.r / 0.007)); drops++; }
-        if (Math.random() < 0.12) tick(pan(p.x), rand(0.3, 0.9));
+        if (Math.random() < 0.12) tick(pan(p.x, p.z), rand(0.3, 0.9));
         parts.splice(i, 1);
         continue;
       }
@@ -1861,7 +1866,7 @@ function stepParts(dt) {
       p.r = Math.min(p.r * (1 + 0.12 * dt), p.r0 * 1.35);
       if (p.y > -p.r) {
         if (drops < 10 && Math.random() < 0.6) { dropQ.push(inX(p.x), inZ(p.z), 3 * CELL, 0.001 * STR); drops++; }
-        if (Math.random() < 0.18) gurgle(pan(p.x), clamp(p.r / 0.011));
+        if (Math.random() < 0.18) gurgle(pan(p.x, p.z), clamp(p.r / 0.011));
         parts.splice(i, 1);
         continue;
       }
@@ -1874,7 +1879,7 @@ function stepParts(dt) {
 /* ---------- one loop: it runs only while something moves ---------- */
 let raf = 0, inFrame = false, running = false, onScreen = false, lastDraw = 0, drawn = 0, slowN = 0, busyN = 0, lowDpr = false, quiet = 0;
 let W = 0, H = 0;
-const busy = () => simActive || raining || objMoving || holds.size > 0 || parts.length > 0 || sweeps.length > 0 || later.length > 0
+const busy = () => simActive || raining || objMoving || holds.size > 0 || parts.length > 0 || turn || spin !== 0 || later.length > 0
   || dropQ.length > 0 || segQ.length > 0 || nightK !== nightT;
 function wake() {
   // A frame in progress schedules its own successor.
@@ -1920,7 +1925,7 @@ function step(dt) {
     rainAcc += dt * (reduce ? 6 : 10);
     while (rainAcc >= 1) { rainAcc--; raindrop(); }
   }
-  stepSweeps(dt);
+  stepSpin(dt);
   stepObjs(dt);
   stepParts(dt);
   stepPetals(dt);
@@ -1974,15 +1979,27 @@ function local(e) {
 // A stage point lands on a level plane at height y.
 function planeAt(px, py, y) {
   const nx = (px / W) * 2 - 1, ny = 1 - (py / H) * 2;
-  const d = [nx * cam.tx, cam.f[1] + ny * cam.ty * cam.u[1], cam.f[2] + ny * cam.ty * cam.u[2]];
+  const d = [0, 1, 2].map(i => cam.f[i] + nx * cam.tx * cam.r[i] + ny * cam.ty * cam.u[i]);
   const t = (y - cam.p[1]) / d[1];
   return [cam.p[0] + d[0] * t, cam.p[2] + d[2] * t];
 }
+const onWater = e => {
+  const [x, z] = planeAt(...local(e), 0);
+  return Math.abs(x) < PX && Math.abs(z) < PZ;
+};
 // Each pointer holds one thing over the water until it lets go.
 const holds = new Map();
 panel.addEventListener('pointerdown', e => {
-  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready || (e.pointerType === 'mouse' && e.button > 2)) return;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  if (e.button === 2 || !onWater(e)) {
+    if (!turn) turn = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, v: 0 };
+    spin = 0;
+    panel.style.cursor = 'grabbing';
+    wake();
+    return;
+  }
+  if (e.button !== 0) return;
   const [x, z] = planeAt(...local(e), HOV), R = KIND[thing].foot * KIND[thing].size * petalScale;
   const o = makeObj(thing, clamp(x, -PX + R, PX - R), clamp(z, -PZ + R, PZ - R));
   o.held = e.pointerId;
@@ -1993,8 +2010,21 @@ panel.addEventListener('pointerdown', e => {
   addObj(o);
 });
 panel.addEventListener('pointermove', e => {
+  if (turn && turn.id === e.pointerId) {
+    // Half the stage width turns the view half a circle.
+    const k = (Math.PI / Math.max(W, 1)) * 1.6, dx = e.clientX - turn.x, dt = Math.max(e.timeStamp - turn.t, 1) / 1000;
+    cam.yaw -= dx * k;
+    cam.tilt = clamp(cam.tilt - (e.clientY - turn.y) * k * 0.6, TILT_MIN, TILT_MAX);
+    turn.v = lerp(turn.v, (-dx * k) / dt, 0.4);
+    turn.x = e.clientX;
+    turn.y = e.clientY;
+    turn.t = e.timeStamp;
+    aim();
+    return;
+  }
   const o = holds.get(e.pointerId);
-  if (!o) return;
+  // A free mouse shows where a drag turns the view.
+  if (!o) { if (!turn && e.pointerType === 'mouse' && ready) panel.style.cursor = onWater(e) ? '' : 'grab'; return; }
   const list = e.getCoalescedEvents?.() || [];
   for (const c of list.length ? list : [e]) {
     const [x, z] = planeAt(...local(c), HOV);
@@ -2006,6 +2036,13 @@ panel.addEventListener('pointermove', e => {
 });
 // The last tenth of a second of motion sets the throw.
 function letGo(e, fling) {
+  if (turn && turn.id === e.pointerId) {
+    spin = fling && !reduce && e.timeStamp - turn.t < 80 ? clamp(turn.v, -4, 4) : 0;
+    turn = null;
+    panel.style.cursor = '';
+    wake();
+    return;
+  }
   const o = holds.get(e.pointerId);
   if (!o) return;
   holds.delete(e.pointerId);
@@ -2051,8 +2088,13 @@ addEventListener('keydown', e => {
     e.preventDefault();
     if (!e.repeat && ready) toss();
   } else if (k.startsWith('Arrow')) {
+    // Arrows turn and tilt the view a step.
     e.preventDefault();
-    if (ready && !e.repeat) sweep(k);
+    if (!ready) return;
+    if (k === 'ArrowLeft' || k === 'ArrowRight') spin = reduce ? 0 : (k === 'ArrowLeft' ? 1 : -1) * 2.2;
+    if (reduce && (k === 'ArrowLeft' || k === 'ArrowRight')) cam.yaw += (k === 'ArrowLeft' ? 1 : -1) * 0.4;
+    if (k === 'ArrowUp' || k === 'ArrowDown') cam.tilt = clamp(cam.tilt + (k === 'ArrowUp' ? 1 : -1) * 4 * D2R, TILT_MIN, TILT_MAX);
+    aim();
   }
 });
 
