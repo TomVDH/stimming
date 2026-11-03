@@ -23,6 +23,7 @@
 }
 .stage canvas.on { opacity: 1; }
 .stage canvas.tip { cursor: pointer; }
+.stage canvas.turn { cursor: grabbing; }
 .hint {
   position: absolute; left: 16px; bottom: 14px; margin: 0; pointer-events: none;
   font-size: 13px; color: var(--muted); transition: opacity 0.6s ease;
@@ -39,11 +40,14 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles; a long line ends at a tower. Click or tap a tile to tip it. Space tips the first tile, R stands them back up.">
+    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles; a long line ends at a tower. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. R stands the tiles back up.">
       <canvas></canvas>
       <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="choices">
+        <button class="chip" id="iso" type="button" aria-pressed="false" aria-keyshortcuts="I">Iso</button>
+      </div>
       <div class="actions">
         <button class="chip" id="reset" type="button" aria-keyshortcuts="R" disabled>Reset</button>
         <button class="chip" id="clear" type="button" disabled>Clear</button>
@@ -51,7 +55,7 @@
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>lay tiles</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>tip a tile</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>tip the first</dd></div>
+        <div><dt><span class="fine">Right-drag</span><span class="touch">Two fingers</span></dt><dd>turn the table</dd></div>
         <div class="fine"><dt><kbd>R</kbd></dt><dd>reset</dd></div>
       </dl>
     </div>
@@ -122,6 +126,7 @@ function rainbow(u) {
 /* ---------- page ---------- */
 const panel = document.getElementById('table'), canvas = panel.querySelector('canvas');
 const hint = panel.querySelector('.hint'), resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
+const isoB = document.getElementById('iso');
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 // The kit wakes on the first gesture (Space or Enter from the keyboard) and follows the header toggle.
@@ -942,21 +947,18 @@ function walled(x, z, ax, az, al, aw) {
 }
 // True when the tower stays inside the frame at the resting camera.
 function fits(x, z, dx, dz, levels) {
-  const keep = { ...cam };
-  Object.assign(cam, { pitch: PITCH0, dist: D0, tx: 0, tz: 0 });
-  placeCamera();
-  let ok = true;
-  for (const y of [0, levels * (H + T)]) {
-    for (const s of [-1, 1]) {
-      for (const c of [-1, 1]) {
-        vtmp.set(x + dx * s * TA - dz * c * TC, y, z + dz * s * TA + dx * c * TC).project(camera);
-        if (Math.abs(vtmp.x) > 0.97 || vtmp.y > 0.94 || vtmp.y < -0.8) ok = false;
+  return atRest({ pitch: goal.pitch, yaw: goal.yaw, lens: lensTo }, () => {
+    let ok = true;
+    for (const y of [0, levels * (H + T)]) {
+      for (const s of [-1, 1]) {
+        for (const c of [-1, 1]) {
+          vtmp.set(x + dx * s * TA - dz * c * TC, y, z + dz * s * TA + dx * c * TC).project(camera);
+          if (Math.abs(vtmp.x) > 0.97 || vtmp.y > 0.94 || vtmp.y < -0.8) ok = false;
+        }
       }
     }
-  }
-  Object.assign(cam, keep);
-  placeCamera();
-  return ok;
+    return ok;
+  });
 }
 // A finished chain of TLEN tiles or more gets a tower past its last tile.
 function crown(p) {
@@ -1290,15 +1292,13 @@ function drawTowers(t) {
 // Slack widens the target in pixels.
 function pickTower(x0, y0, slack) {
   const r = canvas.getBoundingClientRect(), px = x0 - r.left, py = y0 - r.top, t = nowS();
-  const ppu = r.height / 2 / Math.tan((FOV / 2) * D2R);
   for (const tw of towers) {
     if (tw.st !== 0 || tw.ready > t) continue;
     vtmp.set(tw.x, 0, tw.z).project(camera);
     const ax = ((vtmp.x + 1) / 2) * r.width, ay = ((1 - vtmp.y) / 2) * r.height;
     vtmp.set(tw.x, tw.levels * (H + T), tw.z).project(camera);
     const bx = ((vtmp.x + 1) / 2) * r.width, by = ((1 - vtmp.y) / 2) * r.height;
-    const depth = Math.hypot(tw.x - camera.position.x, camera.position.y, tw.z - camera.position.z);
-    if (distSeg(px, py, ax, ay, bx, by) <= (TC * ppu) / depth + slack) return tw;
+    if (distSeg(px, py, ax, ay, bx, by) <= TC * ppuAt(tw.x, 0, tw.z, r) + slack) return tw;
   }
   return null;
 }
@@ -1309,17 +1309,63 @@ function shove(tw) {
 }
 
 /* ---------- three.js ---------- */
-let THREE, renderer, scene, camera, mesh, tmesh, col, sun, shade, ray, ndc, vtmp, ready = false;
-const cam = { pitch: 55 * D2R, dist: 20, tx: 0, tz: 0 };
-const PITCH0 = 55 * D2R, PITCH_IN = 67 * D2R, FOV = 30;
+let THREE, renderer, scene, camera, persp, ortho, mesh, tmesh, col, sun, shade, ray, ndc, vtmp, ready = false;
+const PITCH0 = 55 * D2R, PITCH_IN = 67 * D2R, FOV = 30, TANF = Math.tan((FOV / 2) * D2R);
+// True isometric tips down by atan(1/√2) and turns 45 degrees.
+const ISO = Math.atan(Math.SQRT1_2), QUARTER = PI / 4;
+// The free view tilts between these pitches.
+const PMIN = 30 * D2R, PMAX = 85 * D2R;
+// The lens narrows to this before it swaps to a true orthographic view.
+const TANMIN = Math.tan(0.6 * D2R);
+// cam is the smoothed view; goal is where it heads.
+const cam = { pitch: PITCH0, yaw: 0, lift: 0, tx: 0, tz: 0 };
+const goal = { pitch: PITCH0, yaw: 0 };
+let lens = 0, lensTo = 0, aspect = 16 / 9;
 // The key light sits up and left, on the camera's side.
 const SUN = [-0.55, 1.15, 0.5];
 let D0 = 20, span = 16, bounds = { x0: -6, x1: 6, z0: -4, z1: 4 }, intro = 0, budget = 2.2e6;
+const smooth = t => t * t * t * (t * (6 * t - 15) + 10);
 
+// Aims a camera at a view: pitch, yaw, framing distance, target and lens.
+function aim(c, v) {
+  const cp = Math.cos(v.pitch), sp = Math.sin(v.pitch), dx = cp * Math.sin(v.yaw), dz = cp * Math.cos(v.yaw);
+  if (c.isOrthographicCamera) {
+    const hh = v.dist * TANF;
+    c.left = -hh * aspect; c.right = hh * aspect; c.top = hh; c.bottom = -hh;
+    c.position.set(v.tx + dx * 80, sp * 80, v.tz + dz * 80);
+  } else {
+    // A narrower lens backs away, so the frame keeps its size.
+    const th = lerp(TANF, TANMIN, v.lens), d = (v.dist * TANF) / th;
+    c.fov = (2 * Math.atan(th)) / D2R;
+    c.aspect = aspect;
+    c.near = Math.max(0.5, d - 60); c.far = d + 80;
+    c.position.set(v.tx + dx * d, sp * d, v.tz + dz * d);
+  }
+  c.updateProjectionMatrix();
+  c.lookAt(v.tx, 0, v.tz);
+  c.updateMatrixWorld();
+}
 function placeCamera() {
-  camera.position.set(cam.tx, cam.dist * Math.sin(cam.pitch), cam.tz + cam.dist * Math.cos(cam.pitch));
-  camera.lookAt(cam.tx, 0, cam.tz);
-  camera.updateMatrixWorld();
+  camera = lens >= 1 ? ortho : persp;
+  const pitch = Math.min(88 * D2R, cam.pitch + cam.lift * (PITCH_IN - PITCH0));
+  aim(camera, { pitch, yaw: cam.yaw, dist: D0 * (1 + 0.14 * cam.lift), tx: cam.tx, tz: cam.tz, lens: smooth(lens) });
+}
+// Runs fn with a camera at rest: a given view, centred, with no intro.
+function atRest(v, fn) {
+  const c = v.lens >= 1 ? ortho : persp, keep = camera;
+  aim(c, { ...v, dist: D0, tx: 0, tz: 0 });
+  camera = c;
+  const out = fn();
+  camera = keep;
+  placeCamera();
+  return out;
+}
+// Screen pixels per table unit at a point, for either lens.
+function ppuAt(x, y, z, r) {
+  vtmp.set(x, y, z).project(camera);
+  const ax = vtmp.x, ay = vtmp.y, e = camera.matrixWorld.elements;
+  vtmp.set(x + e[0], y + e[1], z + e[2]).project(camera);
+  return Math.hypot(((vtmp.x - ax) * r.width) / 2, ((vtmp.y - ay) * r.height) / 2);
 }
 // Where a screen point meets the table, in table units.
 function onTable(x, y) {
@@ -1334,29 +1380,43 @@ function tablePoint(cx, cy) {
   // Points stay inside the frame, with headroom for a tile's height.
   return onTable(clamp(((cx - r.left) / r.width) * 2 - 1, -0.96, 0.96), clamp(1 - ((cy - r.top) / r.height) * 2, -0.96, 0.84));
 }
-// The visible table at the resting camera, as an inner rectangle.
+const corners = () => [onTable(-1, -1), onTable(1, -1), onTable(-1, 1), onTable(1, 1)];
+// The visible table at the resting free view, as an inner rectangle.
 function measure() {
-  const keep = { ...cam };
-  Object.assign(cam, { pitch: PITCH0, dist: D0, tx: 0, tz: 0 });
-  placeCamera();
-  const c = [onTable(-1, -1), onTable(1, -1), onTable(-1, 1), onTable(1, 1)];
-  Object.assign(cam, keep);
-  placeCamera();
+  const c = atRest({ pitch: PITCH0, yaw: 0, lens: 0 }, corners);
   if (c.some(q => !q)) return;
   bounds = {
     x0: Math.max(c[0].x, c[2].x) + 0.7, x1: Math.min(c[1].x, c[3].x) - 0.7,
     z0: Math.max(c[2].z, c[3].z) + 1.3, z1: Math.min(c[0].z, c[1].z) - 0.5,
   };
-  // The shadow box covers the whole view plus the camera's drift.
-  const zc = (c[0].z + c[2].z) / 2;
-  const half = Math.max(Math.abs(c[2].x), Math.abs(c[3].x), (c[0].z - c[2].z) / 2) * 1.2 + 1.5;
-  const L = Math.hypot(...SUN);
-  sun.target.position.set(0, 0, zc);
-  sun.position.set((SUN[0] / L) * 40, (SUN[1] / L) * 40, zc + (SUN[2] / L) * 40);
+}
+// The shadow box covers the view, and the light turns with the camera.
+function fitShadow() {
+  const c = corners();
+  let cx = cam.tx, cz = cam.tz, half = 30;
+  if (!c.some(q => !q)) {
+    cx = (c[0].x + c[1].x + c[2].x + c[3].x) / 4;
+    cz = (c[0].z + c[1].z + c[2].z + c[3].z) / 4;
+    half = Math.max(...c.map(q => Math.hypot(q.x - cx, q.z - cz))) + 1.5;
+  }
+  const L = Math.hypot(...SUN), cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const sx = SUN[0] * cy + SUN[2] * sy, sz = SUN[2] * cy - SUN[0] * sy;
+  sun.target.position.set(cx, 0, cz);
+  sun.position.set(cx + (sx / L) * 40, (SUN[1] / L) * 40, cz + (sz / L) * 40);
   sun.target.updateMatrixWorld();
   const sc = sun.shadow.camera;
   sc.left = sc.bottom = -half; sc.right = sc.top = half; sc.near = 1; sc.far = 90;
   sc.updateProjectionMatrix();
+}
+// Iso turns to the nearest diagonal and flattens the lens.
+const diagonal = y => QUARTER + Math.round((y - QUARTER) / HALF) * HALF;
+function setView(iso, save = true) {
+  lensTo = iso ? 1 : 0;
+  goal.pitch = iso ? ISO : PITCH0;
+  if (iso) goal.yaw = diagonal(goal.yaw);
+  isoB.setAttribute('aria-pressed', String(iso));
+  if (save) try { localStorage.setItem('stimming.domino.view', iso ? 'iso' : 'free'); } catch (err) { /* storage is optional */ }
+  wake();
 }
 function layout() {
   const w = panel.clientWidth, h = panel.clientHeight;
@@ -1364,12 +1424,9 @@ function layout() {
   // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2, Math.sqrt(budget / (w * h))));
   renderer.setSize(w, h, false);
-  const asp = w / h;
-  camera.aspect = asp;
-  camera.updateProjectionMatrix();
-  span = clamp(3.5 + 6.2 * asp, 8.5, 15.5);
-  D0 = span / 2 / (Math.tan((FOV / 2) * D2R) * asp);
-  if (!intro) cam.dist = D0;
+  aspect = w / h;
+  span = clamp(3.5 + 6.2 * aspect, 8.5, 15.5);
+  D0 = span / 2 / (TANF * aspect);
   measure();
   placeCamera();
   wake();
@@ -1408,16 +1465,25 @@ function animate(t) {
   return towersAt(t) || busy;
 }
 const drawing = () => { for (const p of ptrs.values()) if (p.drawing) return true; return false; };
-// The camera settles in once, then leans gently toward the wave.
+// The camera settles in once, follows the turn, then leans toward the wave.
 function steer(dt, t) {
   let moving = false;
+  cam.lift = 0;
   if (intro) {
     if (intro < 0) intro = t;
-    const u = clamp((t - intro) / 1.6), e = 1 - (1 - u) ** 4;
-    cam.pitch = lerp(PITCH_IN, PITCH0, e);
-    cam.dist = D0 * lerp(1.14, 1, e);
+    const u = clamp((t - intro) / 1.6);
+    cam.lift = (1 - u) ** 4;
     if (u >= 1) intro = 0; else moving = true;
   }
+  // The lens walks to its goal; at the narrow end it swaps to orthographic.
+  if (lens !== lensTo) {
+    const s = dt / (reduce ? 0.12 : 0.9);
+    lens = lensTo > lens ? Math.min(lensTo, lens + s) : Math.max(lensTo, lens - s);
+    moving = true;
+  }
+  const k = reduce ? 1 : 1 - Math.exp(-dt * 9), dp = goal.pitch - cam.pitch, dy = goal.yaw - cam.yaw;
+  if (Math.abs(dp) + Math.abs(dy) > 1e-4) { cam.pitch += dp * k; cam.yaw += dy * k; moving = true; }
+  else { cam.pitch = goal.pitch; cam.yaw = goal.yaw; }
   let gx = 0, gz = 0, cnt = 0;
   if (!reduce) {
     for (const i of active) if (!CL[i] && LAND[i] === 0) { gx += PX[i]; gz += PZ[i]; cnt++; }
@@ -1462,6 +1528,7 @@ function frame(ms) {
   mesh.count = n;
   mesh.instanceMatrix.needsUpdate = true;
   drawTowers(t);
+  fitShadow();
   renderer.render(scene, camera);
   if (++shown === 2) canvas.classList.add('on');
   // Sustained slow frames shrink the pixel budget, up to three times.
@@ -1478,7 +1545,7 @@ const ptrs = new Map();
 // Picks the standing tile under a screen point, nearest first.
 function pick(x0, y0, touch) {
   const r = canvas.getBoundingClientRect(), px = x0 - r.left, py = y0 - r.top, te = mesh.instanceMatrix.array;
-  const ppu = r.height / 2 / Math.tan((FOV / 2) * D2R), t = nowS();
+  const t = nowS();
   let best = -1, bs = Infinity;
   for (let i = 0; i < n; i++) {
     if (ST[i] !== 0 || BORN[i] > t) continue;
@@ -1488,15 +1555,52 @@ function pick(x0, y0, touch) {
     vtmp.set(x + ux, y + uy, z + uz).project(camera);
     const bx = ((vtmp.x + 1) / 2) * r.width, by = ((1 - vtmp.y) / 2) * r.height;
     const depth = Math.hypot(x - camera.position.x, y - camera.position.y, z - camera.position.z);
-    const half = ((W / 2) * ppu) / depth, d = distSeg(px, py, ax, ay, bx, by);
+    const half = (W / 2) * ppuAt(x, y, z, r), d = distSeg(px, py, ax, ay, bx, by);
     if (d > Math.max(half + 2, touch ? 20 : 8)) continue;
     const s = d <= half ? depth : 1e3 + d;
     if (s < bs) { bs = s; best = i; }
   }
   return best;
 }
+// Right-drag, Shift-drag or two fingers turn the table.
+const turns = new Map();
+function turnBegin(e, id, x, y) {
+  try { canvas.setPointerCapture(id); } catch (err) { /* capture is optional */ }
+  turns.set(id, { x, y });
+  canvas.classList.add('turn');
+  canvas.classList.remove('tip');
+}
+function turnMove(e) {
+  const q = turns.get(e.pointerId);
+  if (!q) return false;
+  const k = 1 / turns.size, dx = (e.clientX - q.x) * k, dy = (e.clientY - q.y) * k;
+  q.x = e.clientX; q.y = e.clientY;
+  goal.yaw -= dx * 0.008;
+  if (!lensTo) goal.pitch = clamp(goal.pitch + dy * 0.006, PMIN, PMAX);
+  wake();
+  return true;
+}
+function turnEnd(e) {
+  if (!turns.delete(e.pointerId)) return false;
+  if (!turns.size) {
+    canvas.classList.remove('turn');
+    // Iso settles on the nearest quarter turn.
+    if (lensTo) goal.yaw = diagonal(goal.yaw);
+    wake();
+  }
+  return true;
+}
+canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('pointerdown', e => {
-  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready) return;
+  const mouse = e.pointerType === 'mouse';
+  if (mouse && (e.button === 2 || (e.button === 0 && e.shiftKey))) return turnBegin(e, e.pointerId, e.clientX, e.clientY);
+  if (mouse && e.button !== 0) return;
+  // A second finger turns every touch into a turn.
+  if (!mouse && (ptrs.size || turns.size)) {
+    for (const [id, p] of ptrs) if (p.touch) { ptrs.delete(id); turnBegin(e, id, p.cx, p.cy); }
+    return turnBegin(e, e.pointerId, e.clientX, e.clientY);
+  }
   if (clearing) finishClear();
   const q = tablePoint(e.clientX, e.clientY);
   if (!q) return;
@@ -1505,15 +1609,16 @@ canvas.addEventListener('pointerdown', e => {
   const touch = e.pointerType !== 'mouse', square = pickTower(e.clientX, e.clientY, 0);
   const tile = square ? -1 : pick(e.clientX, e.clientY, touch);
   const tower = square || (tile < 0 ? pickTower(e.clientX, e.clientY, touch ? 12 : 4) : null);
-  ptrs.set(e.pointerId, { sx: e.clientX, sy: e.clientY, q, touch, tile, tower, drawing: false });
+  ptrs.set(e.pointerId, { sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, q, touch, tile, tower, drawing: false });
 });
 canvas.addEventListener('pointermove', e => {
-  if (!ready) return;
+  if (!ready || turnMove(e)) return;
   const p = ptrs.get(e.pointerId);
   if (!p) {
     if (e.pointerType === 'mouse') canvas.classList.toggle('tip', pick(e.clientX, e.clientY, false) >= 0 || !!pickTower(e.clientX, e.clientY, 4));
     return;
   }
+  p.cx = e.clientX; p.cy = e.clientY;
   if (!p.drawing) {
     // Past a small slop, a press becomes a stroke.
     if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < (p.touch ? 10 : 5)) return;
@@ -1541,8 +1646,8 @@ function release(e, ok) {
   syncChips();
   wake();
 }
-canvas.addEventListener('pointerup', e => release(e, true));
-canvas.addEventListener('pointercancel', e => release(e, false));
+canvas.addEventListener('pointerup', e => { if (!turnEnd(e)) release(e, true); });
+canvas.addEventListener('pointercancel', e => { if (!turnEnd(e)) release(e, false); });
 canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') canvas.classList.remove('tip'); });
 
 addEventListener('keydown', e => {
@@ -1551,8 +1656,18 @@ addEventListener('keydown', e => {
   if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea')) return;
   if (e.key === ' ') { e.preventDefault(); if (!e.repeat) tipFirst(); }
   else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) reset(); }
+  else if (e.key === 'i' || e.key === 'I') { if (!e.repeat) setView(!lensTo); }
+  // Arrows turn the table only while the page itself has focus.
+  else if (e.key.startsWith('Arrow') && [document.body, panel].includes(document.activeElement)) {
+    e.preventDefault();
+    const side = { ArrowLeft: 1, ArrowRight: -1 }[e.key];
+    if (side) goal.yaw += side * (lensTo ? HALF : 15 * D2R);
+    else if (!lensTo) goal.pitch = clamp(goal.pitch + (e.key === 'ArrowUp' ? 8 : -8) * D2R, PMIN, PMAX);
+    wake();
+  }
 });
 resetB.addEventListener('click', reset);
+isoB.addEventListener('click', () => setView(!lensTo));
 clearB.addEventListener('click', clearAll);
 
 /* ---------- tile finish ---------- */
@@ -1614,7 +1729,9 @@ async function init() {
   scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
   pm.dispose();
   scene.environmentIntensity = 0.65;
-  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.5, 200);
+  persp = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.5, 200);
+  ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 200);
+  camera = persp;
   sun = new THREE.DirectionalLight(0xffffff, 1.7);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -1650,6 +1767,10 @@ async function init() {
   try { await renderer.compileAsync(scene, camera); } catch (err) { /* first render compiles instead */ }
   ready = true;
   intro = reduce ? 0 : -1;
+  // The last view comes back; iso starts already flat.
+  let saved = null;
+  try { saved = localStorage.getItem('stimming.domino.view'); } catch (err) { /* storage is optional */ }
+  if (saved === 'iso') { setView(true, false); lens = 1; cam.pitch = goal.pitch; cam.yaw = goal.yaw; }
   layout();
   new ResizeObserver(layout).observe(panel);
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; wake(); }).observe(panel);
