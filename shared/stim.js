@@ -30,8 +30,27 @@ export const sound = {
   onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 };
 
+/* ---------- header ---------- */
+// Each letter: glyph, hue, weight, tilt in degrees, lift in em.
+const MARK = [
+  ['S', '0.8 0.15 62', 800, -8, 0.02], ['t', '0.72 0.2 318', 500, 6, -0.04], ['i', '0.8 0.12 195', 900, -3, 0.03],
+  ['m', '0.7 0.19 32', 600, 4, -0.02], ['m', '0.72 0.14 255', 700, -5, 0.04], ['i', '0.82 0.11 345', 400, 7, -0.05],
+  ['n', '0.86 0.15 100', 800, -4, 0.01], ['g', '0.78 0.16 150', 600, 3, -0.03],
+];
+const SOUND_SVG = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/><path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/><path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/></svg>';
+function headerHTML(home) {
+  const letters = MARK.map(([ch, c, w, r, y]) => `<span style="--c: oklch(${c}); --w: ${w}; --r: ${r}deg; --y: ${y}em">${ch}</span>`).join('');
+  return `<a class="brand" href="${home}" aria-label="Back to Stimming">`
+    + '<svg class="back" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6"/></svg>'
+    + `<span class="mark" aria-hidden="true">${letters}</span></a>`
+    + `<div class="tools"><button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">${SOUND_SVG}</button></div>`;
+}
+
 // Call once per page, before the toy wires its audio.
-export function initPage({ id, silent = false } = {}) {
+// A page with an empty <header data-shell> gets the shared header.
+export function initPage({ id, silent = false, home = '../index.html' } = {}) {
+  const shell = document.querySelector('header[data-shell]');
+  if (shell && !shell.children.length) shell.innerHTML = headerHTML(home);
   soundKey = `stimming.${id}.sound`;
   soundOn = store.get(soundKey) !== '0';
   soundBtn = document.getElementById('snd');
