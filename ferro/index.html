@@ -1076,7 +1076,7 @@ function drawGlow() {
   glow.sprite.scale.setScalar(0.3 + 0.16 * s);
   glow.sprite.material.opacity = (0.22 + 0.4 * s) * fade;
   glow.light.position.set(pullX + LT.off[0], pullY + LT.off[1], pullZ + LT.off[2]);
-  glow.light.intensity = LT.i * (0.3 + s) * fade;
+  glow.light.intensity = LT.i * lightK * (0.3 + s) * fade;
 }
 function drawNecks() {
   let n = 0;
@@ -1291,14 +1291,15 @@ function buildGlow() {
 
 /* ---------- fluids: plain ink, two that glow inside, one oily ---------- */
 // base and glow are OKLCH; inner sets the core glow; irid sets the film.
+// light scales the glow's point light; fluids that glow need less.
 const FLUIDS = {
-  ink: { base: [0.07, 0.003, 270], glow: [0.86, 0.09, 215], inner: 0, irid: 0, rough: 0.07 },
-  alien: { base: [0.05, 0.02, 165], glow: [0.86, 0.23, 150], inner: 0.9, irid: 0, rough: 0.05 },
-  magma: { base: [0.05, 0.015, 35], glow: [0.72, 0.2, 45], inner: 1.3, irid: 0, rough: 0.12 },
-  oil: { base: [0.08, 0.006, 280], glow: [0.9, 0.06, 320], inner: 0, irid: 1, rough: 0.05 },
+  ink: { base: [0.07, 0.003, 270], glow: [0.86, 0.09, 215], inner: 0, irid: 0, rough: 0.07, light: 1 },
+  alien: { base: [0.05, 0.02, 165], glow: [0.86, 0.23, 150], inner: 0.9, irid: 0, rough: 0.05, light: 0.3 },
+  magma: { base: [0.04, 0.01, 35], glow: [0.72, 0.2, 45], inner: 2.2, irid: 0, rough: 0.08, light: 0.08 },
+  oil: { base: [0.08, 0.006, 280], glow: [0.93, 0.02, 250], inner: 0, irid: 1, rough: 0.05, light: 1 },
 };
 const FLUID_KEY = 'stimming.ferro.fluid';
-let fluidNow = 'ink', GLU = null;
+let fluidNow = 'ink', GLU = null, lightK = 1;
 const inks = [];
 try { const v = localStorage.getItem(FLUID_KEY); if (FLUIDS[v]) fluidNow = v; } catch (err) { /* storage is optional */ }
 // Light from inside: thin tips and grazing rims glow brightest.
@@ -1308,7 +1309,7 @@ function innerGlow(shader, tip) {
     .replace('#include <common>', '#include <common>\nuniform float uInner;\nuniform vec3 uInnerCol;')
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 \tfloat tipG = ${tip}, ndv = abs(dot(normal, normalize(vViewPosition)));
-\ttotalEmissiveRadiance += uInnerCol * uInner * (0.004 + 1.5 * pow(tipG, 2.5) + 0.3 * pow(1.0 - ndv, 4.0));`);
+\ttotalEmissiveRadiance += uInnerCol * uInner * (0.004 + 1.5 * pow(tipG, 2.5) + 0.25 * pow(1.0 - ndv, 7.0));`);
 }
 // One fluid part with the inner glow and its own program.
 function inkPart(params, tip, key) {
@@ -1326,10 +1327,11 @@ function setFluid(name) {
     m.color.setRGB(...oklchRgb(...f.base), THREE.SRGBColorSpace);
     m.roughness = f.rough;
     m.iridescence = f.irid;
-    m.iridescenceIOR = 1.33;
-    m.iridescenceThicknessRange = [250, 900];
+    m.iridescenceIOR = 2;
+    m.iridescenceThicknessRange = [200, 700];
   }
   GLU.uInner.value = f.inner;
+  lightK = f.light;
   GLU.uInnerCol.value.copy(col);
   // The glow, its light and the groove take the fluid's hue.
   glow.sprite.material.color.copy(col);
