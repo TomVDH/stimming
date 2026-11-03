@@ -47,6 +47,10 @@ button:hover { border-color: var(--fg); }
 .check { display: flex; gap: 8px; align-items: center; color: var(--muted); }
 .pauses { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 #go { border-color: var(--fg); font-weight: 700; }
+.spk { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; margin-left: auto; color: var(--muted); }
+.spk svg { width: 16px; height: 16px; }
+@keyframes snd-nudge { 0%, 100% { transform: none; } 15%, 45%, 75% { transform: scale(1.35); } 30%, 60% { transform: scale(1); } }
+#snd.is-nudge { animation: snd-nudge 2.2s steps(22, jump-end); color: var(--fg); }
 @media (max-width: 640px) { .panel { top: auto; height: 48svh; } }
 /* The intro plays in the space beside the panel. */
 @media (min-width: 641px) { .intro { right: 372px; } }
@@ -61,6 +65,16 @@ button:hover { border-color: var(--fg); }
   <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
   <label class="check"><input type="checkbox" id="done"> Signed off (tick)</label>
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
+  <div class="row"><label for="snote">Sound notice</label><select id="snote">
+    <option value="off">Off</option>
+    <option value="glyph">Headphones</option>
+    <option value="glyph|Ears on">Headphones + Ears on</option>
+    <option value="glyph|Oren open">Headphones + Oren open</option>
+    <option value="glyph|Best with sound">Headphones + Best with sound</option>
+    <option value="glyph|Listen">Headphones + Listen</option>
+    <option value="|Ears on">Ears on (no glyph)</option>
+  </select></div>
+  <label class="check"><input type="checkbox" id="nudge"> Pulse the speaker after the intro <button type="button" id="snd" aria-pressed="false" aria-label="Sound off" class="spk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l4 6M21 9l-4 6" stroke="currentColor" stroke-width="2"/></svg></button></label>
   <div class="row"><label for="fd">Name font</label><select id="fd"></select></div>
   <div class="row"><label for="ft">Detail font</label><select id="ft"></select></div>
   <div id="knobs"></div>
@@ -92,12 +106,20 @@ const T = { ...TIMING, ...(saved.base === BASE ? saved.timing || {} : {}) };
 const pauses = new Set(saved.pauses || []);
 const save = () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ base: BASE, timing: T, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fd: fdSel.value, ft: ftSel.value }));
+    localStorage.setItem(KEY, JSON.stringify({ base: BASE, timing: T, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fd: fdSel.value, ft: ftSel.value, note: noteSel.value, nudge: nudgeBox.checked }));
   } catch (err) {}
 };
 
 const knobs = document.getElementById('knobs'), toySel = document.getElementById('toy');
 const fdSel = document.getElementById('fd'), ftSel = document.getElementById('ft');
+const noteSel = document.getElementById('snote'), nudgeBox = document.getElementById('nudge');
+noteSel.value = saved.note || 'glyph';
+nudgeBox.checked = saved.nudge ?? true;
+[noteSel, nudgeBox].forEach(el => el.addEventListener('change', () => save()));
+const soundNote = () => {
+  const [g, words] = noteSel.value === 'off' ? ['', ''] : noteSel.value.split('|');
+  return { glyph: g === 'glyph', words: words || null, nudge: nudgeBox.checked };
+};
 const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop');
 for (const [k, [lo, hi, step, unit]] of Object.entries(RANGE)) {
   const row = document.createElement('div');
@@ -172,7 +194,7 @@ async function run() {
   const subSpan = t.sub ? '<span class="intro-sub"></span>' : '';
   root.innerHTML = `<div class="intro-mark"><div class="intro-text">${emblem}<span class="intro-name"></span>${subSpan}</div></div>`;
   document.body.prepend(root);
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...T }, gate });
+  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...T }, gate, soundNote: soundNote() });
   playing = false;
   if (loopBox.checked) setTimeout(run, 600);
 }
