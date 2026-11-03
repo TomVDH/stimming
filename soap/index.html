@@ -1,0 +1,1915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Soap cutting</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the board panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --table: oklch(0.21 0.008 265);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+    --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+    --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: oklch(0.975 0.004 275); --surface: oklch(0.995 0.002 275); --line: oklch(0.89 0.008 275);
+  --fg: oklch(0.22 0.02 275); --muted: oklch(0.5 0.02 275); --focus: oklch(0.52 0.17 255);
+  --pick: oklch(0.7 0.18 320 / 0.25); color-scheme: light;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The board panel is 16:9, and 4:5 on phones. */
+/* It stays dark in both themes. */
+.table {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--table);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+}
+.table:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .table { aspect-ratio: 4 / 5; } }
+.table canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.table canvas.on { opacity: 1; }
+/* On the dark panel the line keeps the dark muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .table canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Soap cutting</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting board. Drag across the soap to score it; swipe in from outside to slice right through. Space makes the next cut, N brings a new bar.">
+      <p class="fail" hidden>Soap cutting needs WebGL, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="fresh" type="button" aria-keyshortcuts="N">New bar</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag on the soap</dt><dd>score it</dd></div>
+        <div><dt>Swipe in from outside</dt><dd>slice through</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>next cut</dd></div>
+        <div class="fine"><dt><kbd>N</kbd></dt><dd>new bar</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const panel = document.getElementById('table');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const nowS = () => performance.now() / 1000;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+
+/* ---------- colour: OKLCH in, sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+const gam = x => (x = clamp(x), x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+function rgb([L, C, h]) {
+  let c = lin(L, C, h);
+  // Chroma shrinks until the colour fits sRGB.
+  for (let i = 0; i < 24 && (Math.min(c[0], c[1], c[2]) < -1e-4 || Math.max(c[0], c[1], c[2]) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return [gam(c[0]), gam(c[1]), gam(c[2])];
+}
+// Series hues: fire, amber, lemon, mint, cyan, blue, violet, magenta.
+const HUES = [28, 52, 84, 160, 206, 258, 292, 330];
+let hueAt = Math.floor(Math.random() * HUES.length) - 1;
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.soap.sound', MAXV = 16, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tickNext = 0, thunkNext = 0, restT = 0;
+let scrapeLo = null, scrapeHi = null, scrapeF = null, scrapeAt = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.6;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // The scrape loops underneath, silent until the blade moves.
+    const src = ac.createBufferSource(), body = ac.createBiquadFilter(), edge = ac.createBiquadFilter();
+    src.buffer = noise;
+    src.loop = true;
+    body.type = 'bandpass';
+    body.frequency.value = 1800;
+    body.Q.value = 0.8;
+    edge.type = 'bandpass';
+    edge.frequency.value = 6400;
+    edge.Q.value = 1.3;
+    scrapeLo = ac.createGain();
+    scrapeHi = ac.createGain();
+    scrapeLo.gain.value = scrapeHi.gain.value = 0;
+    src.connect(body).connect(scrapeLo).connect(out);
+    src.connect(edge).connect(scrapeHi).connect(out);
+    src.start();
+    scrapeF = body.frequency;
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the board settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !stroke && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set([' ', 'n', 'N', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// The blade's scrape: bandpassed noise that follows its speed.
+function scrape(v) {
+  if (!scrapeLo) return;
+  const s = live() ? clamp(v / 42) : 0;
+  if (Math.abs(s - scrapeAt) < 0.01) return;
+  scrapeAt = s;
+  const t = ac.currentTime;
+  scrapeLo.gain.setTargetAtTime(0.2 * s ** 0.8, t, 0.03);
+  scrapeHi.gain.setTargetAtTime(0.06 * s, t, 0.02);
+  scrapeF.setTargetAtTime(1300 + 1700 * s, t, 0.05);
+}
+// Crumbs: a tiny bandpassed tick, thinned when they pile up.
+function crumb(amp, at = 0, pitch = 1) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD;
+  let t = t0 + at;
+  if (!at) {
+    t = Math.max(t0, tickNext);
+    if (t - t0 > 0.06) return;
+    tickNext = t + 0.011 + Math.random() * 0.014;
+  }
+  const f = pitch * jit(0.25), g = level() * amp * jit(0.2);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 2900 * f;
+  bp.Q.value = 1.8;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.9 * g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, 0.0035 + Math.random() * 0.003);
+  src.connect(bp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.9, 0.04);
+  track(src, ng, bp);
+}
+// Cubes breaking off: a short crumbly patter.
+function crumble(n) {
+  const a = live();
+  if (!a) return;
+  let at = 0.004;
+  for (let k = 0; k < n; k++) {
+    crumb(0.85 - k * 0.05, at, rnd(0.8, 1.3));
+    at += rnd(0.008, 0.03);
+  }
+  tickNext = a.currentTime + LEAD + at;
+}
+// Landing: a soft low knock with a dull slap on the wood.
+function thunk(s, big) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, thunkNext);
+  if (t - t0 > 0.08) return;
+  thunkNext = t + 0.05;
+  const f = jit(0.06) * (big ? 1 : 1.45), g = level() * (0.3 + 0.7 * clamp(s)) * jit(0.1);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(170 * f, t);
+  o.frequency.exponentialRampToValueAtTime(78 * f, t + 0.09);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.55 * g, t + 0.004);
+  og.gain.setTargetAtTime(0, t + 0.004, big ? 0.05 : 0.03);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + 0.32);
+  const src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.frequency.value = 950 * f;
+  lp.Q.value = 0.7;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.5 * g, t + 0.002);
+  ng.gain.setTargetAtTime(0, t + 0.002, 0.016);
+  src.connect(lp).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.8, 0.12);
+  track(o, og, ng, lp);
+}
+// The sweep: a soft brush of filtered noise.
+function whoosh() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, src = a.createBufferSource(), lp = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(500, t);
+  lp.frequency.exponentialRampToValueAtTime(1600, t + 0.35);
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(0.12, t + 0.22);
+  ng.gain.setTargetAtTime(0, t + 0.3, 0.08);
+  src.connect(lp).connect(ng).connect(out);
+  src.start(t, 0, 0.8);
+  track(src, ng, lp);
+}
+
+/* ---------- the bar: a grid of soap cells ---------- */
+const NX = 16, NY = 8, NZ = 10, NC = NX * NY * NZ, SY = NX, SZ = NX * NY;
+const OX = NX / 2, OZ = NZ / 2;
+const DIM = [NX, NY, NZ], STRIDE = [1, SY, SZ];
+const COORD = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
+for (let id = 0; id < NC; id++) { COORD[0][id] = id % NX; COORD[1][id] = ((id / NX) | 0) % NY; COORD[2][id] = (id / SZ) | 0; }
+// Each cell belongs to one piece.
+// Piece 0 is the bar on the board.
+const owner = new Int16Array(NC);
+// Each cell's bond to its +x, +y and +z neighbour.
+// Bond values: 0 whole, 1 scored, 2 cut, 3 crumbled.
+const bond = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
+// The face each score came in from.
+const scoredFrom = [new Uint8Array(NC), new Uint8Array(NC), new Uint8Array(NC)];
+const scorePlanes = [new Set(), new Set(), new Set()];
+const SCORE = 2;
+const co = [0, 0, 0];
+const at3 = () => co[0] + SY * co[1] + SZ * co[2];
+let pieces = [], bar = null, staticDirty = false;
+// Bounds of the bar on the board, and each column's height.
+const box = { lo: [0, 0, 0], hi: [NX - 1, NY - 1, NZ - 1] };
+const colTop = new Int8Array(NX * NZ);
+
+function measure() {
+  box.lo = [99, 99, 99];
+  box.hi = [-1, -1, -1];
+  colTop.fill(0);
+  for (const id of bar.cells) {
+    for (let a = 0; a < 3; a++) {
+      const c = COORD[a][id];
+      if (c < box.lo[a]) box.lo[a] = c;
+      if (c > box.hi[a]) box.hi[a] = c;
+    }
+    const k = COORD[0][id] + NX * COORD[2][id], j = COORD[1][id] + 1;
+    if (j > colTop[k]) colTop[k] = j;
+  }
+}
+// Face d lies across axis d >> 1.
+// Even faces point up their axis.
+// Returns 0 hidden, 1 original skin, 2 cut face.
+function exposure(id, d, ch) {
+  const a = d >> 1, c = COORD[a][id];
+  if (d & 1) {
+    if (c === 0) return 1;
+    const n = id - STRIDE[a];
+    return owner[n] !== ch || bond[a][n] ? 2 : 0;
+  }
+  if (c === DIM[a] - 1) return 1;
+  const n = id + STRIDE[a];
+  return owner[n] !== ch || bond[a][id] ? 2 : 0;
+}
+// Connected groups of cells, joined by whole bonds.
+const mark = new Int32Array(NC), seen = new Int32Array(NC);
+let stampN = 0;
+function groups(cells) {
+  const tag = ++stampN;
+  for (const id of cells) mark[id] = tag;
+  const outG = [];
+  for (const id of cells) {
+    if (seen[id] === tag) continue;
+    const g = [id];
+    seen[id] = tag;
+    for (let h = 0; h < g.length; h++) {
+      const c = g[h];
+      for (let a = 0; a < 3; a++) {
+        const k = COORD[a][c];
+        if (k < DIM[a] - 1 && !bond[a][c]) {
+          const n = c + STRIDE[a];
+          if (mark[n] === tag && seen[n] !== tag) { seen[n] = tag; g.push(n); }
+        }
+        if (k > 0) {
+          const n = c - STRIDE[a];
+          if (!bond[a][n] && mark[n] === tag && seen[n] !== tag) { seen[n] = tag; g.push(n); }
+        }
+      }
+    }
+    outG.push(g);
+  }
+  return outG;
+}
+// A scored piece breaking free sheds its scored layer as crumbs.
+function crumbleCells(cells) {
+  const tag = ++stampN;
+  for (const id of cells) mark[id] = tag;
+  let dirs = 0;
+  for (const id of cells) for (let a = 0; a < 3; a++) {
+    if (bond[a][id] !== 1 || COORD[a][id] >= DIM[a] - 1) continue;
+    if (mark[id + STRIDE[a]] === tag) dirs |= 1 << scoredFrom[a][id];
+  }
+  if (!dirs) return [cells];
+  const lo = [99, 99, 99], hi = [-1, -1, -1];
+  for (const id of cells) for (let a = 0; a < 3; a++) {
+    const c = COORD[a][id];
+    if (c < lo[a]) lo[a] = c;
+    if (c > hi[a]) hi[a] = c;
+  }
+  for (let d = 0; d < 6; d++) {
+    if (!(dirs & (1 << d))) continue;
+    const a = d >> 1, edge = d & 1 ? lo[a] + SCORE : hi[a] - SCORE + 1;
+    if (edge <= lo[a] || edge > hi[a]) continue;
+    for (const id of cells) {
+      if (COORD[a][id] === edge - 1 && mark[id + STRIDE[a]] === tag && !bond[a][id]) bond[a][id] = 3;
+    }
+  }
+  return groups(cells);
+}
+
+/* ---------- surface: a smooth skin with crisp cuts ---------- */
+// Each cell face is split S x S, so edges can round.
+const S = 4, LX = NX * S + 1, LY = NY * S + 1, LXY = LX * LY, NL = LXY * (NZ * S + 1), LM = [1, LX, LXY];
+// The bar's skin is a rounded box.
+// RAD is its edge radius in cells.
+const RAD = 1.5, GD = 0.08, HX = OX - RAD, HY = NY / 2 - RAD, HZ = OZ - RAD;
+const lGen = new Int32Array(NL), lDone = new Int32Array(NL), lMask = new Uint16Array(NL);
+const lPos = new Float32Array(NL * 3), lThin = new Float32Array(NL), lAo = new Float32Array(NL);
+const vGen = new Int32Array(NL * 7), vAt = new Int32Array(NL * 7);
+const faceBuf = new Int32Array(NC * 6), corner = new Int32Array((S + 1) * (S + 1));
+const NRM = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+let gen = 0, vCap = 0, iCap = 0, vPos = null, vSoap = null, vIdx = null;
+
+// Looks for a cut across plane b beside a lattice point.
+// Returns 0 none, 1 a piece's edge, 2 an inner score.
+function severedNear(a, b, lu, lv, ch) {
+  const u = (a + 1) % 3, v = (a + 2) % 3;
+  const u0 = Math.floor(lu / S), v0 = Math.floor(lv / S);
+  const u1 = lu % S ? u0 : u0 - 1, v1 = lv % S ? v0 : v0 - 1;
+  let best = 0;
+  for (let cu = u1; cu <= u0; cu++) for (let cv = v1; cv <= v0; cv++) {
+    if (cu < 0 || cu >= DIM[u] || cv < 0 || cv >= DIM[v]) continue;
+    co[a] = b - 1; co[u] = cu; co[v] = cv;
+    const lo = at3(), ol = owner[lo] === ch, oh = owner[lo + STRIDE[a]] === ch;
+    if ((!ol && !oh) || !bond[a][lo]) continue;
+    if (ol && oh) return 2;
+    best = 1;
+  }
+  return best;
+}
+// Position, thinness and shading of one lattice point.
+function lattice(L, ch) {
+  lDone[L] = gen;
+  const lx = L % LX, ly = ((L / LX) | 0) % LY, lz = (L / LXY) | 0;
+  const mask = lMask[L], cm = mask >> 6, all = (mask | cm) & 63;
+  let x = lx / S - OX, y = ly / S, z = lz / S - OZ;
+  // Points past the rounded skin slide onto it.
+  // Points on cut planes stay on their plane.
+  const fx = cm & 3, fy = cm & 12, fz = cm & 48;
+  for (let it = 0; it < 6; it++) {
+    const py = y - NY / 2;
+    const qx = Math.max(Math.abs(x) - HX, 0), qy = Math.max(Math.abs(py) - HY, 0), qz = Math.max(Math.abs(z) - HZ, 0);
+    const len = Math.hypot(qx, qy, qz), sd = len - RAD;
+    if (sd <= 1e-4) break;
+    const gx = fx ? 0 : (qx / len) * Math.sign(x), gy = fy ? 0 : (qy / len) * Math.sign(py), gz = fz ? 0 : (qz / len) * Math.sign(z);
+    const g2 = gx * gx + gy * gy + gz * gz;
+    if (g2 < 1e-6) break;
+    x -= (gx * sd) / g2; y -= (gy * sd) / g2; z -= (gz * sd) / g2;
+  }
+  // Thickness inward sets how much light shines through.
+  let nx = 0, ny = 0, nz = 0;
+  for (let d = 0; d < 6; d++) if (all & (1 << d)) { nx += NRM[d][0]; ny += NRM[d][1]; nz += NRM[d][2]; }
+  const nl = Math.hypot(nx, ny, nz);
+  let thick = 6;
+  if (nl > 0) {
+    const ix = -nx / nl, iy = -ny / nl, iz = -nz / nl;
+    for (let t = 0.5; t < 6; t += 0.5) {
+      const ci = Math.floor(x + OX + ix * t), cj = Math.floor(y + iy * t), ck = Math.floor(z + OZ + iz * t);
+      if (ci < 0 || ci >= NX || cj < 0 || cj >= NY || ck < 0 || ck >= NZ || owner[ci + SY * cj + SZ * ck] !== ch) { thick = t; break; }
+    }
+  }
+  lThin[L] = Math.exp(-thick / 2.2);
+  // Cut edges get a soft bevel.
+  // Scores get a dark hairline groove.
+  const lc = [lx, ly, lz];
+  let gx = 0, gy = 0, gz = 0, ao = 1;
+  for (let a = 0; a < 3; a++) {
+    const m = lc[a] % S;
+    let b, k;
+    if (m === 0) { b = lc[a] / S; k = 1; }
+    else if (m === 1) { b = (lc[a] - 1) / S; k = 0.3; }
+    else if (m === S - 1) { b = (lc[a] + 1) / S; k = 0.3; }
+    else continue;
+    if (b <= 0 || b >= DIM[a]) continue;
+    const kind = severedNear(a, b, lc[(a + 1) % 3], lc[(a + 2) % 3], ch);
+    if (!kind) continue;
+    let dx = 0, dy = 0, dz = 0;
+    for (let d = 0; d < 6; d++) if ((all & (1 << d)) && d >> 1 !== a) { dx -= NRM[d][0]; dy -= NRM[d][1]; dz -= NRM[d][2]; }
+    const dl = Math.hypot(dx, dy, dz);
+    if (!dl) continue;
+    const g = (GD * k) / dl;
+    gx += dx * g; gy += dy * g; gz += dz * g;
+    if (kind === 2) ao *= k === 1 ? 0.5 : 0.9;
+  }
+  const gl = Math.hypot(gx, gy, gz);
+  if (gl > GD * 1.2) { const s = (GD * 1.2) / gl; gx *= s; gy *= s; gz *= s; }
+  lPos[L * 3] = x + gx;
+  lPos[L * 3 + 1] = y + gy;
+  lPos[L * 3 + 2] = z + gz;
+  lAo[L] = ao;
+}
+// One mesh per piece; shared vertices keep the skin smooth.
+// Cut faces get their own vertices, so cut edges stay crisp.
+function buildGeometry(ch, cells, bottom) {
+  gen++;
+  let nf = 0;
+  for (const id of cells) for (let d = 0; d < 6; d++) {
+    if (!bottom && d === 3 && COORD[1][id] === 0) continue;
+    const e = exposure(id, d, ch);
+    if (!e) continue;
+    faceBuf[nf++] = (id << 4) | (d << 1) | (e - 1);
+    const a = d >> 1, u = (a + 1) % 3, v = (a + 2) % 3, bit = e === 1 ? 1 << d : 64 << d;
+    const base = (COORD[a][id] + (d & 1 ? 0 : 1)) * S * LM[a] + COORD[u][id] * S * LM[u] + COORD[v][id] * S * LM[v];
+    for (let sv = 0; sv <= S; sv++) for (let su = 0; su <= S; su++) {
+      const L = base + su * LM[u] + sv * LM[v];
+      if (lGen[L] !== gen) { lGen[L] = gen; lMask[L] = 0; }
+      lMask[L] |= bit;
+    }
+  }
+  const maxV = nf * (S + 1) * (S + 1), maxI = nf * S * S * 6;
+  if (maxV > vCap) { vCap = maxV; vPos = new Float32Array(vCap * 3); vSoap = new Float32Array(vCap * 3); }
+  if (maxI > iCap) { iCap = maxI; vIdx = new Uint32Array(iCap); }
+  let nv = 0, ni = 0;
+  for (let f = 0; f < nf; f++) {
+    const fb = faceBuf[f], id = fb >> 4, d = (fb >> 1) & 7, isCut = fb & 1, grp = isCut ? 1 + d : 0;
+    const a = d >> 1, u = (a + 1) % 3, v = (a + 2) % 3;
+    const base = (COORD[a][id] + (d & 1 ? 0 : 1)) * S * LM[a] + COORD[u][id] * S * LM[u] + COORD[v][id] * S * LM[v];
+    for (let sv = 0; sv <= S; sv++) for (let su = 0; su <= S; su++) {
+      const L = base + su * LM[u] + sv * LM[v], key = L * 7 + grp;
+      if (vGen[key] !== gen) {
+        vGen[key] = gen;
+        vAt[key] = nv;
+        if (lDone[L] !== gen) lattice(L, ch);
+        vPos[nv * 3] = lPos[L * 3];
+        vPos[nv * 3 + 1] = lPos[L * 3 + 1];
+        vPos[nv * 3 + 2] = lPos[L * 3 + 2];
+        vSoap[nv * 3] = isCut;
+        vSoap[nv * 3 + 1] = lThin[L];
+        vSoap[nv * 3 + 2] = lAo[L];
+        nv++;
+      }
+      corner[sv * (S + 1) + su] = vAt[key];
+    }
+    for (let sv = 0; sv < S; sv++) for (let su = 0; su < S; su++) {
+      const p0 = corner[sv * (S + 1) + su], p1 = corner[sv * (S + 1) + su + 1];
+      const p2 = corner[(sv + 1) * (S + 1) + su + 1], p3 = corner[(sv + 1) * (S + 1) + su];
+      if (d & 1) { vIdx[ni++] = p0; vIdx[ni++] = p2; vIdx[ni++] = p1; vIdx[ni++] = p0; vIdx[ni++] = p3; vIdx[ni++] = p2; }
+      else { vIdx[ni++] = p0; vIdx[ni++] = p1; vIdx[ni++] = p2; vIdx[ni++] = p0; vIdx[ni++] = p2; vIdx[ni++] = p3; }
+    }
+  }
+  // Area-weighted normals.
+  const pos = vPos.slice(0, nv * 3), nrm = new Float32Array(nv * 3);
+  for (let i = 0; i < ni; i += 3) {
+    const a = vIdx[i] * 3, b = vIdx[i + 1] * 3, c = vIdx[i + 2] * 3;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+    const wx = pos[c] - pos[a], wy = pos[c + 1] - pos[a + 1], wz = pos[c + 2] - pos[a + 2];
+    const cx = uy * wz - uz * wy, cy = uz * wx - ux * wz, cz = ux * wy - uy * wx;
+    nrm[a] += cx; nrm[a + 1] += cy; nrm[a + 2] += cz;
+    nrm[b] += cx; nrm[b + 1] += cy; nrm[b + 2] += cz;
+    nrm[c] += cx; nrm[c + 1] += cy; nrm[c + 2] += cz;
+  }
+  for (let i = 0; i < nv * 3; i += 3) {
+    const l = Math.hypot(nrm[i], nrm[i + 1], nrm[i + 2]) || 1;
+    nrm[i] /= l; nrm[i + 1] /= l; nrm[i + 2] /= l;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('aSoap', new THREE.BufferAttribute(vSoap.slice(0, nv * 3), 3));
+  g.setIndex(new THREE.BufferAttribute(nv < 65536 ? Uint16Array.from(vIdx.subarray(0, ni)) : vIdx.slice(0, ni), 1));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/* ---------- pieces: particles held rigid by shape matching ---------- */
+const PMAX = 24000;
+const PX = new Float32Array(PMAX), PY = new Float32Array(PMAX), PZ = new Float32Array(PMAX);
+const QX = new Float32Array(PMAX), QY = new Float32Array(PMAX), QZ = new Float32Array(PMAX);
+const VX = new Float32Array(PMAX), VY = new Float32Array(PMAX), VZ = new Float32Array(PMAX);
+const RX = new Float32Array(PMAX), RY = new Float32Array(PMAX), RZ = new Float32Array(PMAX);
+const PR = new Float32Array(PMAX), PO = new Int32Array(PMAX);
+// PS marks particles that touch other pieces.
+// PT marks particles touching the board last substep.
+const PS = new Uint8Array(PMAX), PT = new Uint8Array(PMAX);
+let pN = 0;
+const awake = [];
+// Units are cells, about six millimetres each.
+// Gravity runs a little slower than real.
+const GRAV = 700, SUBH = 1 / 360, MU_S = 0.75, MU_K = 0.5;
+// Board size in cells; its top is y = 0.
+const BW = 72, BD = 48, BT = 2.4;
+const HT = 4096, hStart = new Int32Array(HT + 1), hList = new Int32Array(PMAX);
+const hashOf = (x, y, z) => (Math.imul(x, 92837111) ^ Math.imul(y, 689287499) ^ Math.imul(z, 283923481)) & (HT - 1);
+const RM9 = new Float64Array(9);
+function rot(w, x, y, z) {
+  const r = RM9;
+  r[0] = 1 - 2 * (y * y + z * z); r[1] = 2 * (x * y - w * z); r[2] = 2 * (x * z + w * y);
+  r[3] = 2 * (x * y + w * z); r[4] = 1 - 2 * (x * x + z * z); r[5] = 2 * (y * z - w * x);
+  r[6] = 2 * (x * z - w * y); r[7] = 2 * (y * z + w * x); r[8] = 1 - 2 * (x * x + y * y);
+  return r;
+}
+function spawn(cells) {
+  const pc = { id: pieces.length, cells, mesh: null, start: 0, n: 0, ncell: cells.length, q: [1, 0, 0, 0], c0: [0, 0, 0], c: [0, 0, 0], awake: false, still: 0, age: 0, impact: 0, snd: -1 };
+  pieces.push(pc);
+  for (const id of cells) owner[id] = pc.id;
+  return pc;
+}
+// Particles at cell centres, plus the extreme corners for the board.
+function arm(pc, f, loose) {
+  pc.start = pN;
+  for (const c of pc.cells) {
+    const p = pN++;
+    PX[p] = COORD[0][c] + 0.5 - OX; PY[p] = COORD[1][c] + 0.5; PZ[p] = COORD[2][c] + 0.5 - OZ;
+    PR[p] = 0.5; PO[p] = pc.id; PT[p] = 0;
+    let s = 0;
+    for (let d = 0; d < 6 && !s; d++) if (exposure(c, d, pc.id)) s = 1;
+    PS[p] = s;
+  }
+  for (let sx = -1; sx <= 1; sx += 2) for (let sy = -1; sy <= 1; sy += 2) for (let sz = -1; sz <= 1; sz += 2) {
+    let best = -1e9, bx = 0, by = 0, bz = 0;
+    for (const c of pc.cells) {
+      const x = COORD[0][c] + (sx > 0 ? 1 : 0) - OX, y = COORD[1][c] + (sy > 0 ? 1 : 0), z = COORD[2][c] + (sz > 0 ? 1 : 0) - OZ;
+      const v = sx * x + sy * y + sz * z;
+      if (v > best) { best = v; bx = x; by = y; bz = z; }
+    }
+    const p = pN++;
+    PX[p] = bx; PY[p] = by; PZ[p] = bz; PR[p] = 0; PO[p] = pc.id; PS[p] = 0; PT[p] = 0;
+  }
+  pc.n = pN - pc.start;
+  let cx = 0, cy = 0, cz = 0;
+  for (let p = pc.start; p < pN; p++) { cx += PX[p]; cy += PY[p]; cz += PZ[p]; }
+  cx /= pc.n; cy /= pc.n; cz /= pc.n;
+  pc.c0 = [cx, cy, cz];
+  pc.c = [cx, cy, cz];
+  // Crumbs get their own little jolt and spin.
+  const k = reduce ? 0.4 : 1;
+  let jx = 0, jy = 0, jz = 0, wx = 0, wy = 0, wz = 0;
+  if (loose) {
+    jx = rnd(-2.5, 2.5) * k; jy = rnd(2, 6) * k; jz = rnd(-2.5, 2.5) * k;
+    wx = rnd(-6, 6) * k; wy = rnd(-3, 3) * k; wz = rnd(-6, 6) * k;
+  }
+  for (let p = pc.start; p < pN; p++) {
+    const x = PX[p], y = PY[p], z = PZ[p];
+    RX[p] = x - cx; RY[p] = y - cy; RZ[p] = z - cz;
+    QX[p] = x; QY[p] = y; QZ[p] = z;
+    const rx = x - f.fx, ry = y - f.fy, rz = z - f.fz, sx = x - cx, sy = y - cy, sz = z - cz;
+    VX[p] = f.nx * f.push + (f.wy * rz - f.wz * ry) + jx + (wy * sz - wz * sy);
+    VY[p] = f.ny * f.push + (f.wz * rx - f.wx * rz) + jy + (wz * sx - wx * sz);
+    VZ[p] = f.nz * f.push + (f.wx * ry - f.wy * rx) + jz + (wx * sy - wy * sx);
+  }
+  // A slab tips exactly about its foot, then joins the others.
+  if (f.tip && !loose) pc.kin = { ...f.tip, th: 0, bounced: false };
+  const mesh = new THREE.Mesh(buildGeometry(pc.id, pc.cells, true), barMat);
+  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.matrixAutoUpdate = false;
+  stage.add(mesh);
+  pc.mesh = mesh;
+  wakePiece(pc);
+}
+function wakePiece(pc) {
+  if (pc.awake || pc === bar || pc.frozen) return;
+  pc.awake = true;
+  pc.still = 0;
+  pc.age = 0;
+  for (let p = pc.start, e = p + pc.n; p < e; p++) { QX[p] = PX[p]; QY[p] = PY[p]; QZ[p] = PZ[p]; }
+  awake.push(pc);
+}
+function hashBuild() {
+  hStart.fill(0);
+  for (const pc of pieces) {
+    if (pc === bar || pc.frozen) continue;
+    for (let p = pc.start, e = p + pc.ncell; p < e; p++) if (PS[p]) hStart[hashOf(Math.floor(PX[p]), Math.floor(PY[p]), Math.floor(PZ[p]))]++;
+  }
+  for (let i = 1; i <= HT; i++) hStart[i] += hStart[i - 1];
+  for (const pc of pieces) {
+    if (pc === bar || pc.frozen) continue;
+    for (let p = pc.start, e = p + pc.ncell; p < e; p++) if (PS[p]) hList[--hStart[hashOf(Math.floor(PX[p]), Math.floor(PY[p]), Math.floor(PZ[p]))]] = p;
+  }
+}
+// Static friction holds small slips.
+// Kinetic friction trims larger ones.
+function rub(p, nx, ny, nz, pen, wa, q, wb) {
+  let rx = PX[p] - QX[p], ry = PY[p] - QY[p], rz = PZ[p] - QZ[p];
+  if (q >= 0) { rx -= PX[q] - QX[q]; ry -= PY[q] - QY[q]; rz -= PZ[q] - QZ[q]; }
+  const rn = rx * nx + ry * ny + rz * nz;
+  const tx = rx - rn * nx, ty = ry - rn * ny, tz = rz - rn * nz, tl = Math.hypot(tx, ty, tz);
+  if (tl < 1e-9) return;
+  const k = tl < MU_S * pen ? 1 : Math.min(1, (MU_K * pen) / tl);
+  PX[p] -= tx * k * wa; PY[p] -= ty * k * wa; PZ[p] -= tz * k * wa;
+  if (q >= 0) { PX[q] += tx * k * wb; PY[q] += ty * k * wb; PZ[q] += tz * k * wb; }
+}
+function board(p, pc, first) {
+  const x = PX[p], z = PZ[p], floor = Math.abs(x) < BW / 2 && Math.abs(z) < BD / 2 ? 0 : -BT;
+  const pen = floor + PR[p] - PY[p];
+  if (pen <= 0) { if (first) PT[p] = 0; return; }
+  if (first) {
+    if (!PT[p] && VY[p] < -10) pc.impact = Math.max(pc.impact, -VY[p]);
+    PT[p] = 1;
+  }
+  PY[p] += pen;
+  rub(p, 0, 1, 0, pen, 1, -1, 0);
+}
+// Sphere against the cells of the bar on the board.
+function barHit(p) {
+  const r = PR[p];
+  let x = PX[p] + OX, y = PY[p], z = PZ[p] + OZ;
+  if (x < box.lo[0] - 1 || x > box.hi[0] + 2 || y > box.hi[1] + 2 || z < box.lo[2] - 1 || z > box.hi[2] + 2) return;
+  const x0 = x, y0 = y, z0 = z;
+  const i0 = Math.max(0, Math.floor(x - r)), i1 = Math.min(NX - 1, Math.floor(x + r));
+  const j0 = Math.max(0, Math.floor(y - r)), j1 = Math.min(NY - 1, Math.floor(y + r));
+  const k0 = Math.max(0, Math.floor(z - r)), k1 = Math.min(NZ - 1, Math.floor(z + r));
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
+    if (owner[i + SY * j + SZ * k] !== bar.id) continue;
+    const dx = x - clamp(x, i, i + 1), dy = y - clamp(y, j, j + 1), dz = z - clamp(z, k, k + 1), d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 >= r * r) continue;
+    if (d2 > 1e-10) {
+      const d = Math.sqrt(d2), s = (r - d) / d;
+      x += dx * s; y += dy * s; z += dz * s;
+    } else {
+      // A centre inside a cell leaves by its nearest face.
+      const f = [x - i, i + 1 - x, y - j, j + 1 - y, z - k, k + 1 - z];
+      let m = 0;
+      for (let q = 1; q < 6; q++) if (f[q] < f[m]) m = q;
+      const push = f[m] + r;
+      if (m === 0) x -= push; else if (m === 1) x += push; else if (m === 2) y -= push; else if (m === 3) y += push; else if (m === 4) z -= push; else z += push;
+    }
+  }
+  const mx = x - x0, my = y - y0, mz = z - z0, ml = Math.hypot(mx, my, mz);
+  if (!ml) return;
+  PX[p] = x - OX; PY[p] = y; PZ[p] = z - OZ;
+  rub(p, mx / ml, my / ml, mz / ml, ml, 1, -1, 0);
+}
+function contacts(first) {
+  for (const pc of awake) for (let p = pc.start, e = p + pc.ncell; p < e; p++) {
+    if (!PS[p]) continue;
+    const ix = Math.floor(PX[p]), iy = Math.floor(PY[p]), iz = Math.floor(PZ[p]);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      const h = hashOf(ix + a, iy + b, iz + c);
+      for (let k = hStart[h], ke = hStart[h + 1]; k < ke; k++) {
+        const q = hList[k], o = pieces[PO[q]];
+        if (o === pc) continue;
+        let dx = PX[p] - PX[q], dy = PY[p] - PY[q], dz = PZ[p] - PZ[q];
+        const d2 = dx * dx + dy * dy + dz * dz;
+        // A tipping slab shoves crumbs aside but stops at anything big.
+        if (pc.kin) { if (d2 < 0.8 && o.ncell * 4 >= pc.ncell) pc.release = true; continue; }
+        if ((o.awake && !o.kin && q < p) || d2 >= 1 || d2 < 1e-12) continue;
+        const d = Math.sqrt(d2), pen = 1 - d;
+        dx /= d; dy /= d; dz /= d;
+        if (first) {
+          const vn = (VX[p] - VX[q]) * dx + (VY[p] - VY[q]) * dy + (VZ[p] - VZ[q]) * dz;
+          if (vn < -20) pc.impact = Math.max(pc.impact, -vn * 0.6);
+          if (!o.awake && vn < -9) wakePiece(o);
+        }
+        // Lighter pieces give way more.
+        const wa = o.awake && !o.kin ? o.ncell / (o.ncell + pc.ncell) : 1, wb = 1 - wa;
+        PX[p] += dx * pen * wa; PY[p] += dy * pen * wa; PZ[p] += dz * pen * wa;
+        if (wb) { PX[q] -= dx * pen * wb; PY[q] -= dy * pen * wb; PZ[q] -= dz * pen * wb; }
+        rub(p, dx, dy, dz, pen, wa, wb ? q : -1, wb);
+      }
+    }
+  }
+}
+// The best rotation from rest to now, refined from last step's.
+function match(pc) {
+  const s = pc.start, e = s + pc.n, n = pc.n;
+  let cx = 0, cy = 0, cz = 0;
+  for (let p = s; p < e; p++) { cx += PX[p]; cy += PY[p]; cz += PZ[p]; }
+  cx /= n; cy /= n; cz /= n;
+  let a00 = 0, a01 = 0, a02 = 0, a10 = 0, a11 = 0, a12 = 0, a20 = 0, a21 = 0, a22 = 0;
+  for (let p = s; p < e; p++) {
+    const x = PX[p] - cx, y = PY[p] - cy, z = PZ[p] - cz, rx = RX[p], ry = RY[p], rz = RZ[p];
+    a00 += x * rx; a01 += x * ry; a02 += x * rz;
+    a10 += y * rx; a11 += y * ry; a12 += y * rz;
+    a20 += z * rx; a21 += z * ry; a22 += z * rz;
+  }
+  let [qw, qx, qy, qz] = pc.q;
+  for (let it = 0; it < 4; it++) {
+    const r = rot(qw, qx, qy, qz);
+    const ox = r[3] * a20 - r[6] * a10 + r[4] * a21 - r[7] * a11 + r[5] * a22 - r[8] * a12;
+    const oy = r[6] * a00 - r[0] * a20 + r[7] * a01 - r[1] * a21 + r[8] * a02 - r[2] * a22;
+    const oz = r[0] * a10 - r[3] * a00 + r[1] * a11 - r[4] * a01 + r[2] * a12 - r[5] * a02;
+    const den = Math.abs(r[0] * a00 + r[3] * a10 + r[6] * a20 + r[1] * a01 + r[4] * a11 + r[7] * a21 + r[2] * a02 + r[5] * a12 + r[8] * a22) + 1e-9;
+    const wx = ox / den, wy = oy / den, wz = oz / den, w = Math.hypot(wx, wy, wz);
+    if (w < 1e-9) break;
+    const hs = Math.sin(w / 2) / w, dw = Math.cos(w / 2), dx = wx * hs, dy = wy * hs, dz = wz * hs;
+    const nw = dw * qw - dx * qx - dy * qy - dz * qz;
+    const nx = dw * qx + dx * qw + dy * qz - dz * qy;
+    const ny = dw * qy - dx * qz + dy * qw + dz * qx;
+    const nz = dw * qz + dx * qy - dy * qx + dz * qw;
+    const l = Math.hypot(nw, nx, ny, nz);
+    qw = nw / l; qx = nx / l; qy = ny / l; qz = nz / l;
+  }
+  pc.q[0] = qw; pc.q[1] = qx; pc.q[2] = qy; pc.q[3] = qz;
+  pc.c[0] = cx; pc.c[1] = cy; pc.c[2] = cz;
+  const r = rot(qw, qx, qy, qz);
+  for (let p = s; p < e; p++) {
+    const rx = RX[p], ry = RY[p], rz = RZ[p];
+    PX[p] = cx + r[0] * rx + r[1] * ry + r[2] * rz;
+    PY[p] = cy + r[3] * rx + r[4] * ry + r[5] * rz;
+    PZ[p] = cz + r[6] * rx + r[7] * ry + r[8] * rz;
+  }
+}
+// A tipping slab turns about its foot under gravity's torque.
+function tip(pc, h) {
+  const k = pc.kin;
+  k.w += ((GRAV * (k.hc * Math.sin(k.th) - k.d * Math.cos(k.th))) / k.k2) * h;
+  k.th += k.w * h;
+  if (k.th >= Math.PI / 2) {
+    // Flat on its face: one small bounce, then it rests.
+    k.th = Math.PI / 2;
+    pc.impact = Math.max(pc.impact, k.w * k.tall * (k.bounced ? 0.5 : 1));
+    if (!k.bounced && k.w > 2 && !reduce) { k.w *= -0.2; k.bounced = true; }
+    else pc.soft = true;
+  }
+  const s = Math.sin(k.th / 2), q = pc.q, F = k.foot, o = pc.c0;
+  q[0] = Math.cos(k.th / 2); q[1] = k.axis[0] * s; q[2] = 0; q[3] = k.axis[2] * s;
+  const r = rot(q[0], q[1], q[2], q[3]);
+  for (let p = pc.start, e = p + pc.n; p < e; p++) {
+    const x = o[0] + RX[p] - F[0], y = o[1] + RY[p] - F[1], z = o[2] + RZ[p] - F[2];
+    QX[p] = PX[p]; QY[p] = PY[p]; QZ[p] = PZ[p];
+    PX[p] = F[0] + r[0] * x + r[1] * y + r[2] * z;
+    PY[p] = F[1] + r[3] * x + r[4] * y + r[5] * z;
+    PZ[p] = F[2] + r[6] * x + r[7] * y + r[8] * z;
+  }
+  const x = o[0] - F[0], y = o[1] - F[1], z = o[2] - F[2];
+  pc.c[0] = F[0] + r[0] * x + r[1] * y + r[2] * z;
+  pc.c[1] = F[1] + r[3] * x + r[4] * y + r[5] * z;
+  pc.c[2] = F[2] + r[6] * x + r[7] * y + r[8] * z;
+}
+function substep(h) {
+  const damp = 1 - (reduce ? 2.4 : 0.35) * h;
+  for (const pc of awake) {
+    if (pc.kin) { tip(pc, h); continue; }
+    // A nearly still piece is damped hard, so piles stop jittering.
+    const dk = pc.slow ? 1 - 9 * h : damp;
+    for (let p = pc.start, e = p + pc.n; p < e; p++) {
+      VY[p] -= GRAV * h;
+      VX[p] *= dk; VY[p] *= dk; VZ[p] *= dk;
+      QX[p] = PX[p]; QY[p] = PY[p]; QZ[p] = PZ[p];
+      PX[p] += VX[p] * h; PY[p] += VY[p] * h; PZ[p] += VZ[p] * h;
+    }
+  }
+  hashBuild();
+  for (let it = 0; it < 2; it++) {
+    for (const pc of awake) {
+      if (pc.kin) continue;
+      for (let p = pc.start, e = p + pc.n; p < e; p++) {
+        board(p, pc, !it);
+        if (PS[p]) barHit(p);
+      }
+    }
+    contacts(!it);
+    for (const pc of awake) if (!pc.kin) match(pc);
+  }
+  const ih = 1 / h;
+  for (const pc of awake) {
+    // Landing soaks up most of the swing.
+    // A collision just lets go.
+    const keep = pc.soft ? 0.08 : 1;
+    if (pc.soft || pc.release) pc.kin = null;
+    pc.soft = pc.release = false;
+    for (let p = pc.start, e = p + pc.n; p < e; p++) {
+      let vx = (PX[p] - QX[p]) * ih * keep, vy = (PY[p] - QY[p]) * ih * keep, vz = (PZ[p] - QZ[p]) * ih * keep;
+      const s2 = vx * vx + vy * vy + vz * vz;
+      if (s2 > 160 * 160) { const k = 160 / Math.sqrt(s2); vx *= k; vy *= k; vz *= k; }
+      VX[p] = vx; VY[p] = vy; VZ[p] = vz;
+    }
+  }
+}
+function place(pc) {
+  const r = rot(...pc.q), c = pc.c, o = pc.c0;
+  pc.mesh.matrix.set(
+    r[0], r[1], r[2], c[0] - (r[0] * o[0] + r[1] * o[1] + r[2] * o[2]),
+    r[3], r[4], r[5], c[1] - (r[3] * o[0] + r[4] * o[1] + r[5] * o[2]),
+    r[6], r[7], r[8], c[2] - (r[6] * o[0] + r[7] * o[1] + r[8] * o[2]),
+    0, 0, 0, 1,
+  );
+  pc.mesh.matrixWorldNeedsUpdate = true;
+}
+function physics(dt) {
+  if (!awake.length) return false;
+  // A frame with no time passed has nothing to step.
+  if (dt < 1e-4) return true;
+  const n = Math.min(12, Math.max(1, Math.ceil(dt / SUBH - 0.01)));
+  for (let s = 0; s < n; s++) substep(dt / n);
+  const t = nowS();
+  for (let k = awake.length - 1; k >= 0; k--) {
+    const pc = awake[k];
+    pc.age += dt;
+    // Rest is judged by this frame's movement and turn.
+    const c = pc.c, q = pc.q, lc = pc.lc || (pc.lc = c.slice()), lq = pc.lq || (pc.lq = q.slice());
+    const lin = Math.hypot(c[0] - lc[0], c[1] - lc[1], c[2] - lc[2]) / dt;
+    const turn = (2 * Math.acos(Math.min(1, Math.abs(lq[0] * q[0] + lq[1] * q[1] + lq[2] * q[2] + lq[3] * q[3])))) / dt;
+    for (let i = 0; i < 4; i++) { lq[i] = q[i]; if (i < 3) lc[i] = c[i]; }
+    const motion = lin + 3 * turn;
+    pc.still = motion < 0.7 ? pc.still + 1 : 0;
+    pc.slow = motion < 3;
+    place(pc);
+    // Landings: slabs thunk, crumbs tick.
+    if (pc.impact > 12 && t - pc.snd > 0.09) {
+      pc.snd = t;
+      if (pc.ncell >= 24) thunk(pc.impact / 95, pc.ncell >= 60);
+      else crumb(clamp(pc.impact / 60) * 0.75, 0, pc.ncell > 6 ? 0.85 : 1.15);
+    }
+    pc.impact = 0;
+    // Reduced motion settles pieces sooner.
+    if (!pc.kin && (pc.still > (reduce ? 6 : 14) || pc.age > (reduce ? 2.5 : 5))) {
+      pc.awake = false;
+      pc.slow = false;
+      pc.lc = pc.lq = null;
+      for (let p = pc.start, e = p + pc.n; p < e; p++) VX[p] = VY[p] = VZ[p] = 0;
+      awake.splice(k, 1);
+    }
+  }
+  return true;
+}
+// The knife's push: away from the bar, tipping over the outer foot.
+function launchField(cells, st) {
+  const lo = [99, 99, 99], hi = [-1, -1, -1], m = [0, 0, 0];
+  for (const id of cells) for (let a = 0; a < 3; a++) {
+    const c = COORD[a][id];
+    if (c < lo[a]) lo[a] = c;
+    if (c > hi[a]) hi[a] = c;
+    m[a] += c + 0.5;
+  }
+  for (let a = 0; a < 3; a++) m[a] /= cells.length;
+  const k = reduce ? 0.6 : 1;
+  const f = { nx: 0, ny: 0, nz: 0, push: 0, wx: 0, wy: 0, wz: 0, fx: m[0] - OX, fy: m[1], fz: m[2] - OZ };
+  if (st.p !== 1) {
+    const a = st.p, side = m[a] > st.c ? 1 : -1, n = [0, 0, 0];
+    n[a] = side;
+    const thick = hi[a] - lo[a] + 1, tall = hi[1] - lo[1] + 1, tips = thick < tall * 0.9;
+    const foot = [m[0], lo[1], m[2]];
+    foot[a] = side > 0 ? hi[a] + 1 : lo[a];
+    f.fx = foot[0] - OX; f.fy = foot[1]; f.fz = foot[2] - OZ;
+    f.nx = n[0]; f.nz = n[2];
+    f.push = tips ? 1.5 : 4 * k;
+    // Spin from the energy that lifts the centre over the foot.
+    const hc = m[1] - lo[1], rc = Math.hypot(hc, Math.abs(foot[a] - m[a]));
+    const need = Math.sqrt(2 * GRAV * (rc - hc)) / rc, spin = tips ? need * rnd(1.25, 1.45) : need * 0.35 * k;
+    f.wx = n[2] * spin;
+    f.wz = -n[0] * spin;
+    if (tips && lo[1] === 0) {
+      // Inertia about the foot, per unit mass, from the cells.
+      let k2 = 1 / 6;
+      for (const id of cells) k2 += ((COORD[a][id] + 0.5 - foot[a]) ** 2 + (COORD[1][id] + 0.5) ** 2) / cells.length;
+      const eng = Math.sqrt((2 * GRAV * (rc - hc)) / k2);
+      f.tip = { foot: [f.fx, f.fy, f.fz], axis: [n[2], 0, -n[0]], hc, d: Math.abs(foot[a] - m[a]), k2, tall, w: eng * rnd(1.15, 1.35) };
+    }
+  } else {
+    // Under a horizontal cut, pieces skid on with the blade.
+    f.push = rnd(12, 20) * k;
+    if (st.t === 0) f.nx = st.dirT; else f.nz = st.dirT;
+    f.ny = 0.15;
+  }
+  return f;
+}
+function split(st) {
+  const comps = groups(bar.cells);
+  if (comps.length < 2) { staticDirty = true; return; }
+  // The part standing widest on the board stays put.
+  let keep = 0, best = -1;
+  comps.forEach((cs, k) => {
+    let foot = 0;
+    for (const id of cs) if (COORD[1][id] === 0) foot++;
+    const sc = foot * 4096 + cs.length;
+    if (sc > best) { best = sc; keep = k; }
+  });
+  bar.cells = comps[keep];
+  const made = [];
+  comps.forEach((cs, k) => {
+    if (k === keep) return;
+    // The base tips on its own foot.
+    const whole = launchField(cs, st), parts = crumbleCells(cs), flat = st.p === 1;
+    // Crumbs ride half the slab's swing, so they pile close by.
+    const ride = flat ? whole : { ...whole, push: whole.push * 0.5, wx: whole.wx * 0.5, wz: whole.wz * 0.5 };
+    let low = 99;
+    for (const id of cs) low = Math.min(low, COORD[1][id]);
+    for (const part of parts) {
+      const base = parts.length === 1 || part.some(id => COORD[1][id] === low);
+      made.push([spawn(part), base && !flat ? launchField(part, st) : ride, flat || !base]);
+    }
+  });
+  measure();
+  for (const [pc, f, loose] of made) arm(pc, f, loose);
+  rebuildStatic();
+  // Pieces near the cut, or stacked off the board, may lose support.
+  const near = made.map(m => m[0].c0);
+  for (const pc of pieces) {
+    if (pc.c && (pc.c[1] > 2.2 || near.some(c => Math.abs(c[0] - pc.c[0]) + Math.abs(c[2] - pc.c[2]) < 9))) wakePiece(pc);
+  }
+  for (const sh of shavings) if (!sh.growing) sh.rest = false;
+  const crumbs = made.filter(m => m[2]).length;
+  crumb(0.9, 0, 0.8);
+  if (crumbs) crumble(Math.min(14, 3 + crumbs * 2));
+}
+function rebuildStatic() {
+  const g = buildGeometry(bar.id, bar.cells, false);
+  bar.mesh.geometry.dispose();
+  bar.mesh.geometry = g;
+  staticDirty = false;
+}
+
+/* ---------- shavings: ribbons that roll up ahead of the blade ---------- */
+const SH_M = 56;
+let shavings = [];
+function shavingGeometry() {
+  const g = new THREE.BufferGeometry(), n = SH_M * 3;
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  const soap = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { soap[i * 3] = 0.6; soap[i * 3 + 1] = 1; soap[i * 3 + 2] = 1; }
+  g.setAttribute('aSoap', new THREE.BufferAttribute(soap, 3));
+  const idx = [];
+  for (let k = 0; k < SH_M - 1; k++) for (let c = 0; c < 2; c++) {
+    const a = k * 3 + c, b = a + 1, d = a + 3, e = a + 4;
+    idx.push(a, d, b, b, d, e);
+  }
+  g.setIndex(idx);
+  return g;
+}
+function curlStart(st, dir) {
+  const T = [0, 0, 0], N = [0, 0, 0];
+  T[st.t] = dir;
+  N[st.a] = st.sg;
+  const W = [T[1] * N[2] - T[2] * N[1], T[2] * N[0] - T[0] * N[2], T[0] * N[1] - T[1] * N[0]];
+  const geo = shavingGeometry(), mesh = new THREE.Mesh(geo, shaveMat);
+  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  stage.add(mesh);
+  const sh = { mesh, geo, dir, T, N, W, O: [0, 0, 0], L: 0, Lmax: rnd(4.5, 8.5), R: rnd(0.4, 0.56), Wd: rnd(1.25, 1.9), seed: rnd(0, TAU), side: rnd(-0.25, 0.25), growing: true, rest: false, fade: 0, calm: 0, cx: 0, cy: 0, Rout: 0.5 };
+  shavings.push(sh);
+  // Old shavings make room.
+  if (shavings.length > 46) {
+    const old = shavings.find(s => !s.growing && !s.fade && s.rest) || shavings.find(s => !s.growing && !s.fade);
+    if (old) old.fade = 1;
+  }
+  return sh;
+}
+// Rises up the blade, then rolls into a tightening coil.
+function shapeCurl(sh) {
+  const pos = sh.geo.attributes.position.array;
+  const L = Math.max(sh.L, 0.05), R = sh.R * (1 + 0.06 * Math.min(L, 7)), cx = R + 0.04, cy = R * 0.88, tail = cy;
+  const [Ox, Oy, Oz] = sh.O, T = sh.T, N = sh.N, W = sh.W, cup = 0.05 * sh.Wd;
+  for (let k = 0; k < SH_M; k++) {
+    const s = (L * k) / (SH_M - 1);
+    let u, v, nu, nv;
+    if (s <= tail) { u = 0.04 * (s / tail); v = s; nu = -1; nv = 0; }
+    else {
+      const th = (s - tail) / (R * 0.95), r = R * (1 - (0.12 * th) / TAU), ph = Math.PI - th;
+      nu = Math.cos(ph); nv = Math.sin(ph);
+      u = cx + r * nu; v = cy + r * nv;
+    }
+    const tip = clamp((L - s) / 1.4), hw = sh.Wd * 0.5 * (0.6 + 0.4 * tip * (2 - tip)) * (1 + 0.07 * Math.sin(s * 5.1 + sh.seed));
+    for (let c = -1; c <= 1; c++) {
+      const off = (1 - c * c) * cup, uu = u + nu * off, vv = v + nv * off, ww = c * hw, o = (k * 3 + c + 1) * 3;
+      pos[o] = Ox + T[0] * uu + N[0] * vv + W[0] * ww;
+      pos[o + 1] = Oy + T[1] * uu + N[1] * vv + W[1] * ww;
+      pos[o + 2] = Oz + T[2] * uu + N[2] * vv + W[2] * ww;
+    }
+  }
+  sh.geo.attributes.position.needsUpdate = true;
+  sh.geo.computeVertexNormals();
+  sh.cx = cx; sh.cy = cy; sh.Rout = R;
+}
+// A finished curl lets go and rolls away.
+function loose(sh) {
+  sh.growing = false;
+  if (sh.L < 1.4) return dropShaving(sh);
+  const T = sh.T, N = sh.N, W = sh.W;
+  const C = [0, 1, 2].map(i => sh.O[i] + T[i] * sh.cx + N[i] * sh.cy);
+  const pos = sh.geo.attributes.position.array;
+  for (let i = 0; i < pos.length; i += 3) { pos[i] -= C[0]; pos[i + 1] -= C[1]; pos[i + 2] -= C[2]; }
+  sh.geo.attributes.position.needsUpdate = true;
+  sh.mesh.position.set(C[0], C[1], C[2]);
+  const k = reduce ? 0.5 : 1;
+  sh.v = new THREE.Vector3(T[0], T[1], T[2]).multiplyScalar(rnd(3, 6) * k)
+    .add(new THREE.Vector3(N[0], N[1], N[2]).multiplyScalar(rnd(1, 2.6) * k))
+    .add(new THREE.Vector3(W[0], W[1], W[2]).multiplyScalar(rnd(-1.2, 1.2) * k));
+  sh.axis = new THREE.Vector3(W[0], W[1], W[2]).normalize();
+  sh.ang = 0;
+  sh.w = (sh.v.x * -W[2] + sh.v.z * W[0]) / sh.Rout;
+  sh.reach = Math.abs(W[1]) * sh.Wd * 0.5 + Math.sqrt(Math.max(0, 1 - W[1] * W[1])) * (sh.Rout + 0.05);
+  sh.rest = false;
+}
+function dropShaving(sh) {
+  const i = shavings.indexOf(sh);
+  if (i >= 0) shavings.splice(i, 1);
+  sh.mesh.removeFromParent();
+  sh.geo.dispose();
+}
+// The board, or the top of the bar where it stands.
+function groundAt(x, z) {
+  let g = Math.abs(x) < BW / 2 && Math.abs(z) < BD / 2 ? 0 : -BT;
+  const i = Math.floor(x + OX), k = Math.floor(z + OZ);
+  if (i >= 0 && i < NX && k >= 0 && k < NZ) g = Math.max(g, colTop[i + NX * k]);
+  return g;
+}
+function updateShavings(dt) {
+  let busy = false;
+  for (let i = shavings.length - 1; i >= 0; i--) {
+    const sh = shavings[i];
+    if (sh.fade) {
+      sh.fade = Math.max(0, sh.fade - dt * 4);
+      sh.mesh.scale.setScalar(sh.fade);
+      if (!sh.fade) dropShaving(sh);
+      busy = true;
+      continue;
+    }
+    if (sh.growing || sh.rest) continue;
+    busy = true;
+    const p = sh.mesh.position, v = sh.v;
+    v.y -= 340 * dt;
+    v.multiplyScalar(Math.exp(-0.8 * dt));
+    p.addScaledVector(v, dt);
+    const g = groundAt(p.x, p.z), low = p.y - sh.reach;
+    let grounded = false;
+    if (low < g) {
+      p.y = g + sh.reach;
+      grounded = true;
+      if (v.y < -3) {
+        if (v.y < -16) crumb(clamp(-v.y / 140) * 0.22, 0, 1.7);
+        v.y *= -0.2;
+      } else v.y = 0;
+      const f = Math.exp(-(reduce ? 10 : 3.5) * dt);
+      v.x *= f;
+      v.z *= f;
+    }
+    // On the ground the curl rolls with its speed.
+    const W = sh.W, rdx = -W[2], rdz = W[0];
+    if (grounded && Math.hypot(rdx, rdz) > 0.3) sh.w = (v.x * rdx + v.z * rdz) / sh.Rout;
+    sh.ang += sh.w * dt;
+    sh.mesh.quaternion.setFromAxisAngle(sh.axis, sh.ang);
+    if (grounded && v.lengthSq() < 0.1) { if (++sh.calm > 8) { sh.rest = true; v.set(0, 0, 0); } }
+    else sh.calm = 0;
+  }
+  return busy;
+}
+
+/* ---------- strokes: score as you drag, slice when you swipe through ---------- */
+let stroke = null, queued = 0, planAt = 0;
+function makeStroke(kind) {
+  return {
+    kind, outside: false, a: -1, sg: 0, F: 0, t: -1, p: -1, c: 0, lo: 0, hi: -1, s: 0, s0: 0, smin: 1e9, smax: -1e9,
+    pts: [], ray: null, cols: new Uint8Array(32), surf: new Int8Array(32).fill(127), done: false, dead: false,
+    mode: '', shave: null, gap: 0.3, moved: 0, speed: 0, dirT: 1, id: -1, front: null,
+  };
+}
+function bindFace(st, hit, prev) {
+  st.a = hit.a;
+  st.sg = hit.sg;
+  st.F = hit.F;
+  if (prev) { const q = onPlane(prev, st.a, st.F); if (q) st.pts.push(q); }
+}
+// The bar's span along the stroke, beside plane c.
+function span(st) {
+  let lo = 99, hi = -1;
+  for (const id of bar.cells) {
+    const cp = COORD[st.p][id];
+    if (cp !== st.c - 1 && cp !== st.c) continue;
+    const ct = COORD[st.t][id];
+    if (ct < lo) lo = ct;
+    if (ct > hi) hi = ct;
+  }
+  st.lo = lo;
+  st.hi = hi;
+}
+// The axis locks to the stroke's main direction.
+// The line snaps to the grid.
+function settle(st) {
+  const p0 = st.pts[0], p1 = st.pts[st.pts.length - 1], u = (st.a + 1) % 3, v = (st.a + 2) % 3;
+  const du = p1[u] - p0[u], dv = p1[v] - p0[v];
+  if (Math.hypot(du, dv) < (st.outside ? 0.3 : 0.7)) return false;
+  st.t = Math.abs(du) >= Math.abs(dv) ? u : v;
+  st.p = st.t === u ? v : u;
+  st.dirT = (st.t === u ? du : dv) >= 0 ? 1 : -1;
+  const ref = (st.outside ? p1 : p0)[st.p];
+  let c = Math.round(ref);
+  // An earlier score nearby pulls the line onto it.
+  let near = 0.8;
+  for (const k of scorePlanes[st.p]) if (Math.abs(ref - k) < near) { near = Math.abs(ref - k); c = k; }
+  st.c = clamp(c, box.lo[st.p] + 1, box.hi[st.p]);
+  span(st);
+  if (st.lo > st.hi || box.lo[st.p] + 1 > box.hi[st.p]) { st.dead = true; return true; }
+  st.s = st.s0 = p0[st.t];
+  for (const q of st.pts) { st.smin = Math.min(st.smin, q[st.t]); st.smax = Math.max(st.smax, q[st.t]); }
+  return true;
+}
+function follow(st, r) {
+  if (st.a < 0 || st.dead) return;
+  const q = onPlane(r, st.a, st.F);
+  if (!q) return;
+  if (st.t < 0) {
+    st.pts.push(q);
+    if (!settle(st) || st.dead) return;
+  }
+  push(st, q[st.t]);
+}
+// The outermost cell beside the line, as a face coordinate.
+function surfAt(st, i) {
+  i = clamp(i, st.lo, st.hi);
+  if (st.surf[i] !== 127) return st.surf[i];
+  co[st.t] = i;
+  let top = -1;
+  for (let m = 0; m < DIM[st.a]; m++) {
+    co[st.a] = m;
+    co[st.p] = st.c - 1;
+    const lo = at3();
+    co[st.p] = st.c;
+    if (owner[lo] === bar.id || owner[at3()] === bar.id) { if (st.sg > 0) top = m; else if (top < 0) top = m; }
+  }
+  return (st.surf[i] = top < 0 ? st.F : st.sg > 0 ? top + 1 : top);
+}
+function scoreColumn(st, i) {
+  const a = st.a, p = st.p, top = surfAt(st, i) - (st.sg > 0 ? 1 : 0);
+  let any = false;
+  co[st.t] = i;
+  for (let k = 0; k < SCORE; k++) {
+    const m = top - k * st.sg;
+    if (m < 0 || m >= DIM[a]) break;
+    co[a] = m;
+    co[p] = st.c - 1;
+    const lo = at3();
+    if (owner[lo] !== bar.id || owner[lo + STRIDE[p]] !== bar.id || bond[p][lo]) continue;
+    bond[p][lo] = 1;
+    scoredFrom[p][lo] = a * 2 + (st.sg > 0 ? 0 : 1);
+    any = true;
+  }
+  return any;
+}
+function push(st, s) {
+  if (st.dead) return;
+  s = clamp(s, st.lo - 5, st.hi + 6);
+  const ds = s - st.s;
+  st.s = s;
+  if (Math.abs(ds) > 0.02) st.dirT = ds > 0 ? 1 : -1;
+  if (s < st.smin) st.smin = s;
+  if (s > st.smax) st.smax = s;
+  if (st.done) return;
+  const inside = s > st.lo - 0.05 && s < st.hi + 1.05;
+  if (inside) st.moved += Math.abs(ds);
+  // The blade scores each column it has passed.
+  let changed = false;
+  for (let i = st.lo; i <= st.hi; i++) {
+    if (st.cols[i] || st.smin > i + 0.5 || st.smax < i + 0.5) continue;
+    st.cols[i] = 1;
+    if (scoreColumn(st, i)) changed = true;
+  }
+  if (changed) { staticDirty = true; scorePlanes[st.p].add(st.c); }
+  // A swipe in from outside, clean across, cuts right through.
+  const thru = st.kind === 'auto' ? st.mode === 'through' : st.outside;
+  if (thru && st.smin <= st.lo + 0.35 && st.smax >= st.hi + 0.65) { through(st); return; }
+  shaveAlong(st, ds, inside);
+}
+function through(st) {
+  st.done = true;
+  for (const id of bar.cells) {
+    if (COORD[st.p][id] !== st.c - 1) continue;
+    if (owner[id + STRIDE[st.p]] === bar.id) bond[st.p][id] = 2;
+  }
+  const f = surfAt(st, Math.floor(st.s));
+  bl.to = Math.min(4.6, st.sg > 0 ? f - box.lo[st.a] : box.hi[st.a] + 1 - f);
+  if (st.shave) { loose(st.shave); st.shave = null; }
+  split(st);
+}
+function shaveAlong(st, ds, inside) {
+  if (!ds) return;
+  const dir = ds > 0 ? 1 : -1;
+  if (st.shave && (st.shave.dir !== dir || !inside)) { loose(st.shave); st.shave = null; st.gap = rnd(0.4, 1); }
+  if (!inside) return;
+  st.gap -= Math.abs(ds);
+  if (!st.shave && st.gap <= 0 && st.s > st.lo + 0.3 && st.s < st.hi + 0.7) st.shave = curlStart(st, dir);
+  const sh = st.shave;
+  if (!sh) return;
+  sh.L += Math.abs(ds) * 0.9;
+  edgePoint(st, sh.O);
+  for (let i = 0; i < 3; i++) sh.O[i] += sh.W[i] * sh.side;
+  shapeCurl(sh);
+  if (sh.L >= sh.Lmax) { loose(sh); st.shave = null; st.gap = rnd(0.5, 1.6); }
+}
+// Where the blade meets the soap, in world units.
+function edgePoint(st, outP) {
+  const e = [0, 0, 0];
+  e[st.t] = clamp(st.s, st.lo - 1.2, st.hi + 2.2);
+  e[st.p] = st.c;
+  e[st.a] = surfAt(st, Math.floor(st.s));
+  outP[0] = e[0] - OX;
+  outP[1] = e[1];
+  outP[2] = e[2] - OZ;
+  return outP;
+}
+function endStroke() {
+  const st = stroke;
+  if (!st) return;
+  if (st.shave) { loose(st.shave); st.shave = null; }
+  stroke = null;
+  scrape(0);
+  wake();
+}
+
+/* ---------- the preset path for Space ---------- */
+// Face, stroke axis, line, and whether it cuts through.
+const PLAN = [
+  ['top', 0, 2, 0], ['top', 0, 4, 0], ['top', 0, 6, 0], ['top', 0, 8, 0],
+  ['top', 2, 14, 1], ['top', 2, 12, 1], ['top', 2, 10, 1],
+  ['top', 2, 8, 0], ['top', 2, 6, 0], ['top', 2, 4, 0], ['top', 2, 2, 0],
+  ['front', 0, 6, 1],
+  ['top', 2, 8, 1], ['top', 2, 5, 1], ['top', 2, 2, 1],
+];
+function nextCut() {
+  if (!ready || sweep) return;
+  if (stroke) { if (stroke.kind === 'auto') queued = 1; return; }
+  while (planAt < PLAN.length) {
+    const [face, t, c, thru] = PLAN[planAt++], st = makeStroke('auto');
+    st.a = face === 'top' ? 1 : 2;
+    st.sg = 1;
+    st.F = box.hi[st.a] + 1;
+    st.t = t;
+    st.p = 3 - st.a - t;
+    if (c < box.lo[st.p] + 1 || c > box.hi[st.p]) continue;
+    st.c = c;
+    span(st);
+    if (st.lo > st.hi) continue;
+    st.mode = thru ? 'through' : 'score';
+    st.from = st.s = st.s0 = st.lo - 2.5;
+    st.to = st.hi + 3.5;
+    st.t0 = nowS();
+    st.dur = (reduce ? 0.2 : 0.4) + (st.hi - st.lo + 1) * (reduce ? 0.012 : 0.032);
+    stroke = st;
+    wake();
+    return;
+  }
+  newBar();
+}
+function updateAuto(now) {
+  const st = stroke;
+  if (!st || st.kind !== 'auto') return false;
+  const u = clamp((now - st.t0) / st.dur), e = u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) ** 2 / 2;
+  push(st, lerp(st.from, st.to, e));
+  if (u >= 1) {
+    endStroke();
+    if (queued) { queued = 0; nextCut(); }
+  }
+  return true;
+}
+function finishAuto() {
+  if (stroke?.kind !== 'auto') return;
+  push(stroke, stroke.to);
+  endStroke();
+  queued = 0;
+}
+
+/* ---------- three.js ---------- */
+let THREE = null, renderer = null, scene = null, camera = null, stage = null, blade = null, ray = null, ndc = null, vtmp = null;
+let barMat = null, shaveMat = null, ready = false, sweep = null, lowDpr = false;
+const bl = { on: 0, depth: SCORE, to: SCORE, pos: [0, 0, 0], X: [1, 0, 0], Y: [0, 1, 0] };
+// The camera looks down at 34 degrees from the front right.
+const EL = 34 * D2R, AZ = 26 * D2R, FOV = 30, SW = 70;
+let tgt = null;
+
+function soapMaterial(h, side) {
+  const col = c => new THREE.Color().setRGB(...rgb(c), THREE.SRGBColorSpace);
+  const m = new THREE.MeshPhysicalMaterial({
+    color: col([0.83, 0.135, h]), roughness: 0.62, metalness: 0, specularIntensity: 0.5,
+    sheen: 0.45, sheenRoughness: 0.55, sheenColor: col([0.95, 0.06, h]), side,
+  });
+  const u = { uSub: { value: col([0.6, 0.2, h]) }, uWrap: { value: 0.6 }, uTrans: { value: 1.6 }, uCutRough: { value: 0.3 } };
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 aSoap;\nvarying vec3 vSoap;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvSoap = aSoap;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + SOAP_PARS)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + SOAP_COLOR)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n\troughnessFactor = mix( roughnessFactor, uCutRough, vSoap.x );')
+      .replace('#include <lights_fragment_begin>', soapLights());
+  };
+  m.customProgramCacheKey = () => 'soap';
+  return m;
+}
+// vSoap: x fresh cut, y thinness, z groove shading.
+const SOAP_PARS = `
+uniform vec3 uSub;
+uniform float uWrap;
+uniform float uTrans;
+uniform float uCutRough;
+varying vec3 vSoap;
+vec3 soapScatter( vec3 L, vec3 lit, vec3 raw, vec3 N, vec3 V, vec3 base ) {
+	float ndl = dot( N, L );
+	float wrap = max( 0.0, ( ndl + uWrap ) / ( 1.0 + uWrap ) ) - max( 0.0, ndl );
+	vec3 col = lit * wrap * mix( base, uSub, 0.55 );
+	vec3 H = normalize( L + N * 0.4 );
+	float tr = pow( saturate( dot( V, - H ) ), 3.0 ) * vSoap.y * uTrans;
+	col += raw * tr * mix( base, uSub, 0.4 );
+	return col * RECIPROCAL_PI;
+}
+`;
+// The outer skin is a touch chalky.
+// Grooves sink to a deeper tone.
+const SOAP_COLOR = `
+	diffuseColor.rgb = mix( mix( diffuseColor.rgb, vec3( 1.0 ), 0.08 ), diffuseColor.rgb, vSoap.x );
+	diffuseColor.rgb *= mix( mix( uSub, vec3( 0.55 ), 0.35 ), vec3( 1.0 ), vSoap.z );
+`;
+// Wrap light and light through thin parts join each direct light.
+function soapLights() {
+  const call = 'RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );';
+  return THREE.ShaderChunk.lights_fragment_begin
+    .replace('IncidentLight directLight;', 'IncidentLight directLight;\nvec3 soapRaw = vec3( 0.0 );')
+    .replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight );\n\t\tsoapRaw = directLight.color;')
+    .split(call).join(call + '\n\t\treflectedLight.directDiffuse += soapScatter( directLight.direction, directLight.color, soapRaw, geometryNormal, geometryViewDir, material.diffuseColor );');
+}
+// Oiled oak, drawn once into a canvas.
+function woodTexture() {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#a98460';
+  g.fillRect(0, 0, 1024, 512);
+  for (let k = 0; k < 16; k++) {
+    const y = Math.random() * 512, h = 18 + Math.random() * 70, tone = Math.random() < 0.5 ? '255,232,200' : '86,48,22';
+    const grd = g.createLinearGradient(0, y - h, 0, y + h);
+    grd.addColorStop(0, `rgba(${tone},0)`);
+    grd.addColorStop(0.5, `rgba(${tone},${0.05 + Math.random() * 0.09})`);
+    grd.addColorStop(1, `rgba(${tone},0)`);
+    g.fillStyle = grd;
+    g.fillRect(0, y - h, 1024, 2 * h);
+  }
+  // Fine grain lines wander gently along the board.
+  for (let k = 0; k < 240; k++) {
+    const y = Math.random() * 512, amp = 1.5 + Math.random() * 5, fr = ((0.5 + Math.random() * 2) * TAU) / 1024, ph = Math.random() * TAU;
+    g.strokeStyle = `rgba(78,42,18,${0.04 + Math.random() * 0.13})`;
+    g.lineWidth = 0.6 + Math.random() * 1.5;
+    g.beginPath();
+    for (let x = 0; x <= 1024; x += 16) {
+      const yy = y + amp * Math.sin(x * fr + ph) + 2.5 * Math.sin(x * fr * 2.7 + ph * 1.3);
+      if (x) g.lineTo(x, yy); else g.moveTo(x, yy);
+    }
+    g.stroke();
+  }
+  // Short flecks of ray figure.
+  for (let k = 0; k < 160; k++) {
+    g.fillStyle = `rgba(255,236,206,${0.04 + Math.random() * 0.08})`;
+    g.fillRect(Math.random() * 1024, Math.random() * 512, 6 + Math.random() * 22, 1 + Math.random() * 1.5);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return tex;
+}
+function bladeGeometry() {
+  const s = new THREE.Shape();
+  s.moveTo(-7.5, 0);
+  s.lineTo(2.2, 0);
+  s.lineTo(3.4, 2.6);
+  s.quadraticCurveTo(3.7, 3.6, 2.6, 3.6);
+  s.lineTo(-7.5, 3.6);
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 1, curveSegments: 6 });
+  g.translate(0, 0, -0.05);
+  // Bright honed edge and spine bevel; the flat darkens upward.
+  const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i), k = y < 0.32 || y > 3.5 ? 1 : lerp(1, 0.6, clamp((y - 0.3) / 3.2));
+    col[i * 3] = k; col[i * 3 + 1] = k * 1.01; col[i * 3 + 2] = k * 1.03;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+function aimAt(d) {
+  camera.position.set(tgt.x + d * Math.cos(EL) * Math.sin(AZ), tgt.y + d * Math.sin(EL), tgt.z + d * Math.cos(EL) * Math.cos(AZ));
+  camera.lookAt(tgt);
+  camera.updateMatrixWorld();
+}
+// The camera backs off until the bar and its landing room fit.
+function fit(w, h) {
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  const k = clamp((w / h - 0.8) / 0.98), X = lerp(10.5, 14, k), Z0 = -6.5, Z1 = lerp(8.5, 8, k);
+  let lo = 8, hi = 300;
+  for (let it = 0; it < 28; it++) {
+    const d = (lo + hi) / 2;
+    aimAt(d);
+    let ok = true;
+    for (const x of [-X, X]) for (const y of [0, 8.6]) for (const z of [Z0, Z1]) {
+      vtmp.set(x, y, z).project(camera);
+      if (Math.abs(vtmp.x) > 0.95 || Math.abs(vtmp.y) > 0.92) ok = false;
+    }
+    if (ok) hi = d; else lo = d;
+  }
+  aimAt(hi);
+}
+// Budget caps drawing-buffer pixels, so big screens keep their frame rate.
+function fitRenderer(cap, onSize, budget) {
+  const apply = () => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setSize(w, h, false);
+    onSize(w, h);
+  };
+  new ResizeObserver(apply).observe(panel);
+  addEventListener('perf-low', apply);
+  apply();
+}
+// A ray from a screen point, in bar cell coordinates.
+function rayAt(cx, cy) {
+  const r = panel.getBoundingClientRect();
+  ndc.set(((cx - r.left) / r.width) * 2 - 1, 1 - ((cy - r.top) / r.height) * 2);
+  ray.setFromCamera(ndc, camera);
+  const o = ray.ray.origin, d = ray.ray.direction;
+  return { o: [o.x + OX, o.y, o.z + OZ], d: [d.x, d.y, d.z] };
+}
+function onPlane(r, a, F) {
+  const d = r.d[a];
+  if (Math.abs(d) < 1e-6) return null;
+  const t = (F - r.o[a]) / d;
+  if (t <= 0) return null;
+  return [r.o[0] + r.d[0] * t, r.o[1] + r.d[1] * t, r.o[2] + r.d[2] * t];
+}
+// Walks along the ray to the bar's first cell.
+function voxelHit(r) {
+  const o = r.o, d = r.d;
+  let t0 = 0, t1 = Infinity, ax = -1;
+  for (let a = 0; a < 3; a++) {
+    if (Math.abs(d[a]) < 1e-9) { if (o[a] < 0 || o[a] > DIM[a]) return null; continue; }
+    let ta = -o[a] / d[a], tb = (DIM[a] - o[a]) / d[a];
+    if (ta > tb) [ta, tb] = [tb, ta];
+    if (ta > t0) { t0 = ta; ax = a; }
+    if (tb < t1) t1 = tb;
+  }
+  if (t0 > t1 || ax < 0) return null;
+  const ci = [0, 0, 0], step = [0, 0, 0], tMax = [0, 0, 0], tDel = [0, 0, 0];
+  for (let a = 0; a < 3; a++) {
+    ci[a] = clamp(Math.floor(o[a] + d[a] * (t0 + 1e-6)), 0, DIM[a] - 1);
+    step[a] = d[a] > 0 ? 1 : -1;
+    tMax[a] = Math.abs(d[a]) < 1e-9 ? Infinity : ((d[a] > 0 ? ci[a] + 1 : ci[a]) - o[a]) / d[a];
+    tDel[a] = Math.abs(d[a]) < 1e-9 ? Infinity : Math.abs(1 / d[a]);
+  }
+  let last = ax;
+  for (let guard = 0; guard < 64; guard++) {
+    if (owner[ci[0] + SY * ci[1] + SZ * ci[2]] === bar.id) {
+      const sg = -step[last];
+      return { a: last, sg, F: sg > 0 ? ci[last] + 1 : ci[last] };
+    }
+    const m = tMax[0] < tMax[1] ? (tMax[0] < tMax[2] ? 0 : 2) : tMax[1] < tMax[2] ? 1 : 2;
+    if (tMax[m] > t1) return null;
+    ci[m] += step[m];
+    if (ci[m] < 0 || ci[m] >= DIM[m]) return null;
+    last = m;
+    tMax[m] += tDel[m];
+  }
+  return null;
+}
+
+/* ---------- the blade ---------- */
+function updateBlade(dt) {
+  const st = stroke, show = !!(st && st.t >= 0 && !st.dead);
+  if (show) {
+    if (!bl.on) bl.depth = bl.to = SCORE;
+    bl.on = Math.min(1, bl.on + dt / 0.09);
+    if (!st.done) bl.to = SCORE;
+    bl.depth += (bl.to - bl.depth) * (1 - Math.exp(-dt * 28));
+    edgePoint(st, bl.pos);
+    bl.X = [0, 0, 0];
+    bl.X[st.t] = st.dirT;
+    bl.Y = [0, 0, 0];
+    bl.Y[st.a] = st.sg;
+  } else {
+    if (bl.on <= 0) { blade.visible = false; return false; }
+    bl.on = Math.max(0, bl.on - dt / 0.14);
+  }
+  const X = bl.X, N = bl.Y, B = [X[1] * N[2] - X[2] * N[1], X[2] * N[0] - X[0] * N[2], X[0] * N[1] - X[1] * N[0]];
+  // The blade leans a little, the way a hand holds it.
+  const cr = Math.cos(0.14), sr = Math.sin(0.14);
+  const Y = [0, 1, 2].map(i => N[i] * cr + B[i] * sr), Z = [0, 1, 2].map(i => B[i] * cr - N[i] * sr);
+  const lift = (1 - bl.on) * 3.2 - bl.depth, p = bl.pos;
+  blade.matrix.set(
+    X[0], Y[0], Z[0], p[0] + Y[0] * lift,
+    X[1], Y[1], Z[1], p[1] + Y[1] * lift,
+    X[2], Y[2], Z[2], p[2] + Y[2] * lift,
+    0, 0, 0, 1,
+  );
+  blade.matrixWorldNeedsUpdate = true;
+  blade.visible = bl.on > 0;
+  return (bl.on > 0 && bl.on < 1) || Math.abs(bl.to - bl.depth) > 0.02;
+}
+
+/* ---------- a new bar: sweep the board, slide the next one in ---------- */
+function resetBar() {
+  owner.fill(0);
+  for (const b of bond) b.fill(0);
+  for (const s of scorePlanes) s.clear();
+  pN = 0;
+  awake.length = 0;
+  planAt = 0;
+  hueAt = (hueAt + 1) % HUES.length;
+  barMat = soapMaterial(HUES[hueAt], THREE.FrontSide);
+  shaveMat = soapMaterial(HUES[hueAt], THREE.DoubleSide);
+  bar = { id: 0, cells: Array.from({ length: NC }, (_, i) => i), mesh: null, frozen: false };
+  pieces = [bar];
+  shavings = [];
+  measure();
+  bar.mesh = new THREE.Mesh(buildGeometry(0, bar.cells, false), barMat);
+  bar.mesh.castShadow = bar.mesh.receiveShadow = true;
+  stage.add(bar.mesh);
+  staticDirty = false;
+}
+function newBar(first = false) {
+  if (!ready || sweep) return;
+  if (stroke?.kind === 'auto') finishAuto();
+  if (stroke) endStroke();
+  queued = 0;
+  const old = first ? null : stage, mats = [barMat, shaveMat];
+  for (const pc of pieces) pc.frozen = true;
+  stage = new THREE.Group();
+  scene.add(stage);
+  resetBar();
+  stage.position.x = reduce && !first ? 0 : SW;
+  sweep = { t0: nowS(), old, mats: first ? [] : mats, dur: reduce ? 0.35 : first ? 0.9 : 1.1, inAt: first ? 0 : reduce ? 0 : 0.32 };
+  if (!first) whoosh();
+  wake();
+}
+const outCubic = u => 1 - (1 - u) ** 3, outBack = u => 1 + 2.2 * (u - 1) ** 3 + 1.2 * (u - 1) ** 2;
+function updateSweep(now) {
+  if (!sweep) return false;
+  const u = clamp((now - sweep.t0) / sweep.dur);
+  if (sweep.old) {
+    // Reduced motion swaps the bars without the slide.
+    const k = reduce ? 1 : clamp(u / 0.5);
+    sweep.old.position.x = -SW * k * k * k;
+    sweep.old.visible = k < 1;
+  }
+  const k2 = clamp((u - sweep.inAt) / (1 - sweep.inAt));
+  stage.position.x = reduce ? 0 : SW * (1 - outBack(k2));
+  if (u >= 1) {
+    stage.position.x = 0;
+    if (sweep.old) {
+      sweep.old.traverse(o => o.geometry?.dispose());
+      sweep.old.removeFromParent();
+      for (const m of sweep.mats) m.dispose();
+    }
+    sweep = null;
+  }
+  return true;
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0, builtAt = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 30), now = ms / 1000;
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; dispatchEvent(new Event('perf-low')); }
+  }
+  let busy = updateAuto(nowS());
+  // The scrape follows the blade's speed through the soap.
+  const st = stroke;
+  if (st) {
+    const inst = st.moved / Math.max(dt, 1 / 240);
+    st.moved = 0;
+    st.speed += (inst - st.speed) * (inst > st.speed ? 0.5 : 0.25);
+    if (st.speed < 0.05) st.speed = 0;
+    scrape(st.done ? 0 : st.speed);
+    if (st.speed > 3 && !st.done && Math.random() < st.speed * dt * 0.3) crumb(rnd(0.08, 0.22), 0, rnd(1, 1.6));
+    if (st.speed > 0) busy = true;
+  }
+  if (physics(dt)) busy = true;
+  if (updateShavings(dt)) busy = true;
+  if (updateBlade(dt)) busy = true;
+  if (updateSweep(nowS())) busy = true;
+  // Scores show up as the blade passes, a few times a second.
+  if (staticDirty && (!stroke || now - builtAt > 0.07)) { rebuildStatic(); builtAt = now; }
+  if (staticDirty) busy = true;
+  renderer.render(scene, camera);
+  // A wake in this frame may have queued the next one.
+  if (busy && onScreen && !document.hidden) { if (!raf) raf = requestAnimationFrame(frame); }
+  else if (!raf) { scrape(0); rest(); }
+}
+
+/* ---------- input ---------- */
+panel.addEventListener('pointerdown', e => {
+  if (!ready || sweep || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (stroke) { if (stroke.kind !== 'auto') return; finishAuto(); }
+  const r = rayAt(e.clientX, e.clientY), hit = voxelHit(r), st = makeStroke('user');
+  st.id = e.pointerId;
+  st.outside = !hit;
+  st.ray = r;
+  if (hit) {
+    bindFace(st, hit, null);
+    const q = onPlane(r, st.a, st.F);
+    if (q) st.pts.push(q);
+  }
+  stroke = st;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const st = stroke;
+  if (!st || st.kind !== 'user' || e.pointerId !== st.id) return;
+  const list = e.getCoalescedEvents?.() || [];
+  for (const c of list.length ? list : [e]) {
+    const r = rayAt(c.clientX, c.clientY);
+    if (st.a < 0) { enter(st, r, c.clientX, c.clientY); if (st.a < 0) continue; }
+    follow(st, r);
+  }
+  wake();
+});
+// A swipe from outside binds to the top as it crosses.
+// It takes the front face only after a real drag along it.
+function enter(st, r, x, y) {
+  const top = box.hi[1] + 1, q = onPlane(r, 1, top);
+  if (q && q[0] >= box.lo[0] && q[0] <= box.hi[0] + 1 && q[2] >= box.lo[2] && q[2] <= box.hi[2] + 1) {
+    bindFace(st, { a: 1, sg: 1, F: top }, st.ray);
+  } else {
+    const hit = voxelHit(r);
+    if (hit && hit.a === 2 && hit.sg > 0) {
+      if (!st.front) st.front = { ray: st.ray, x, y };
+      if (Math.hypot(x - st.front.x, y - st.front.y) > 28) bindFace(st, hit, st.front.ray);
+    }
+  }
+  st.ray = r;
+}
+function release(e) {
+  if (stroke?.kind === 'user' && e.pointerId === stroke.id) endStroke();
+}
+panel.addEventListener('pointerup', release);
+panel.addEventListener('pointercancel', release);
+panel.addEventListener('lostpointercapture', release);
+addEventListener('keydown', e => {
+  if (!ready || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  // Buttons and links keep their own keys.
+  if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea')) return;
+  if (e.key === ' ') { e.preventDefault(); if (!e.repeat) nextCut(); }
+  else if (e.key === 'n' || e.key === 'N') { if (!e.repeat) newBar(); }
+});
+document.getElementById('fresh').addEventListener('click', () => newBar());
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+
+/* ---------- start: WebGL setup in idle slices ---------- */
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+}
+async function start() {
+  let RoomEnvironment, RoundedBoxGeometry;
+  try {
+    THREE = await import('three');
+    [{ RoomEnvironment }, { RoundedBoxGeometry }] = await Promise.all([
+      import('three/addons/environments/RoomEnvironment.js'),
+      import('three/addons/geometries/RoundedBoxGeometry.js'),
+    ]);
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 1, 500);
+  ray = new THREE.Raycaster();
+  ndc = new THREE.Vector2();
+  vtmp = new THREE.Vector3();
+  tgt = new THREE.Vector3(0, 2.4, 0.6);
+  await idle();
+
+  // Soft studio light for the wax and the steel.
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+  pm.dispose();
+  scene.environmentIntensity = 0.55;
+  // The key light comes from the left, grazing the front face.
+  const key = new THREE.DirectionalLight(0xfff3e6, 2.5);
+  key.position.set(-26, 40, 8);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  const sc = key.shadow.camera;
+  sc.left = sc.bottom = -34;
+  sc.right = sc.top = 34;
+  sc.near = 1;
+  sc.far = 120;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.05;
+  scene.add(key, key.target);
+  // The panel itself is the table.
+  // Only the board's shadow is drawn on it.
+  const table = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.ShadowMaterial({ opacity: 0.45 }));
+  table.rotation.x = -Math.PI / 2;
+  table.position.y = -BT;
+  table.receiveShadow = true;
+  scene.add(table);
+  const boardMesh = new THREE.Mesh(
+    new RoundedBoxGeometry(BW, BT, BD, 4, 0.9),
+    new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.68, metalness: 0 }),
+  );
+  boardMesh.position.y = -BT / 2;
+  boardMesh.receiveShadow = boardMesh.castShadow = true;
+  scene.add(boardMesh);
+  blade = new THREE.Mesh(bladeGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 1, roughness: 0.2, envMapIntensity: 2.2 }));
+  blade.castShadow = true;
+  blade.matrixAutoUpdate = false;
+  scene.add(blade);
+  stage = new THREE.Group();
+  scene.add(stage);
+  await idle();
+  resetBar();
+  stage.position.x = reduce ? 0 : SW;
+
+  panel.prepend(canvas);
+  fitRenderer(1.5, (w, h) => {
+    fit(w, h);
+    if (ready) { renderer.render(scene, camera); wake(); }
+  }, 1.4e6);
+  if (!camera.aspect) fit(16, 9);
+  await idle();
+  // Async compile keeps the shader build off the main thread.
+  const probe = new THREE.Mesh(shavingGeometry(), shaveMat);
+  probe.position.y = -60;
+  scene.add(probe);
+  blade.matrix.makeTranslation(0, -60, 0);
+  blade.visible = true;
+  try { await renderer.compileAsync(scene, camera); } catch (err) { /* first render compiles instead */ }
+  probe.removeFromParent();
+  probe.geometry.dispose();
+  blade.visible = false;
+  ready = true;
+  sweep = { t0: nowS(), old: null, mats: [], dur: reduce ? 0.01 : 0.9, inAt: 0 };
+  renderer.render(scene, camera);
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  wake();
+}
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>
