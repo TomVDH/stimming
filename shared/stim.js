@@ -48,6 +48,34 @@ function headerHTML(home) {
 
 // Call once per page, before the toy wires its audio.
 // A page with an empty <header data-shell> gets the shared header.
+/* ---------- mouse keys: gesture words become mouse keycaps ---------- */
+// The body is the mouse; the left button fills; a mark shows the gesture.
+const MOUSE = '<rect x="4" y="1.5" width="8" height="13" rx="4"/><path d="M8 1.5v4.5"/><path class="hit" d="M8 2a3.5 3.5 0 0 0-3.5 3.5V6H8Z"/>';
+const GESTURE = {
+  click: '',
+  drag: '<path d="M13.5 9.5h2m-1-1 1 1-1 1"/>',
+  hold: '<circle cx="14.5" cy="12.5" r="1.2" class="hit"/>',
+};
+function mouseKeys() {
+  document.querySelectorAll('.how dt').forEach(dt => {
+    const walk = document.createTreeWalker(dt, NodeFilter.SHOW_TEXT);
+    const hits = [];
+    while (walk.nextNode()) if (!walk.currentNode.parentElement.closest('.touch, kbd')) hits.push(walk.currentNode);
+    hits.forEach(node => {
+      const m = node.data.match(/\b(click|drag|hold)\b/i);
+      if (!m) return;
+      const word = m[1].toLowerCase();
+      const key = document.createElement('kbd');
+      key.className = 'mouse';
+      key.setAttribute('aria-label', word);
+      key.innerHTML = `<svg viewBox="0 0 17 16" aria-hidden="true">${MOUSE}${GESTURE[word]}</svg>`;
+      const rest = node.splitText(m.index);
+      rest.data = rest.data.slice(m[0].length);
+      rest.before(key);
+    });
+  });
+}
+
 /* ---------- fit: the stage fills the first screen above the bar ---------- */
 // --chrome is everything above the stage plus the bar under it.
 function fitStage() {
@@ -82,6 +110,7 @@ export function initPage({ id, silent = false, home = '../index.html' } = {}) {
     soundBtn.addEventListener('click', () => sound.toggle());
   }
   document.documentElement.dataset.toy = id;
+  mouseKeys();
   fitStage();
   return { sound };
 }
