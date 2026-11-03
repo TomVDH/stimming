@@ -223,6 +223,8 @@ async function start() {
   const TEXEL_X = 1 / GRID_SIZE_X;
   const TEXEL_Y = 1 / GRID_SIZE_Y;
   const TEXEL_Z = 1 / GRID_SIZE_Z;
+  // Cells are cubes, 0.12 world units on a side.
+  const CELL = VOLUME_WORLD_SIZE_X / GRID_SIZE_X;
 
   // The example's GUI defaults, fixed.
   const TURBULENCE = 3.2;
@@ -242,6 +244,7 @@ async function start() {
   const uTurbulenceDecay = uniform(0.1);
   const uTurbFrequency = uniform(10.0);
   const uVelDamping = uniform(0.25);
+  const uVorticity = uniform(3.0);
   const uCooling = uniform(1 / FIRE_LIFESPAN);
   const uDissipation = uniform(1 / SMOKE_LIFESPAN);
   const uEmitDensity = uniform(EMIT_D);
@@ -302,6 +305,8 @@ async function start() {
   const pressTexA = createStorage3D('pressure A');
   const pressTexB = createStorage3D('pressure B');
   const curlNoiseTex = createStorage3D('curl noise');
+  // Curl holds the vorticity vector in xyz and its length in w.
+  const curlTex = createStorage3D('curl');
   curlNoiseTex.wrapS = curlNoiseTex.wrapT = curlNoiseTex.wrapR = THREE.RepeatWrapping;
   // Dye holds density, temperature and age.
   const dyeTexNode = texture3D(dyeTexA);
@@ -385,6 +390,24 @@ async function start() {
     textureStore(dyeTexB, coord, vec4(0)).toWriteOnly();
   })().compute(CELL_COUNT);
 
+  // Vorticity is the curl of the projected velocity.
+  const curlPass = Fn(() => {
+    const coord = getVoxelCoord(instanceIndex);
+    const uvw = coordToUVW(coord);
+    const vR = texture3D(velTexA, uvw.add(vec3(TEXEL_X, 0, 0)), 0).xyz;
+    const vL = texture3D(velTexA, uvw.sub(vec3(TEXEL_X, 0, 0)), 0).xyz;
+    const vU = texture3D(velTexA, uvw.add(vec3(0, TEXEL_Y, 0)), 0).xyz;
+    const vD = texture3D(velTexA, uvw.sub(vec3(0, TEXEL_Y, 0)), 0).xyz;
+    const vF = texture3D(velTexA, uvw.add(vec3(0, 0, TEXEL_Z)), 0).xyz;
+    const vB = texture3D(velTexA, uvw.sub(vec3(0, 0, TEXEL_Z)), 0).xyz;
+    const w = vec3(
+      vU.z.sub(vD.z).sub(vF.y.sub(vB.y)),
+      vF.x.sub(vB.x).sub(vR.z.sub(vL.z)),
+      vR.y.sub(vL.y).sub(vU.x.sub(vD.x)),
+    ).div(2 * CELL);
+    textureStore(curlTex, coord, vec4(w, w.length())).toWriteOnly();
+  })().compute(CELL_COUNT);
+
   // Advects velocity, then adds buoyancy, turbulence, block wind and air wind.
   const advectVelocityPass = Fn(() => {
     const coord = getVoxelCoord(instanceIndex);
@@ -412,6 +435,19 @@ async function start() {
     newVel.addAssign(thermalTurbulence.add(ambientTurbulence).mul(VOLUME_WORLD_SIZE_Y).mul(uDt));
 
     newVel.mulAssign(max(float(1).sub(uVelDamping.mul(uDt)), 0));
+
+    // Vorticity confinement spins small curls back up into tongues.
+    // The force runs across the gradient of the curl length.
+    const wC = texture3D(curlTex, uvw, 0);
+    const eta = vec3(
+      texture3D(curlTex, uvw.add(vec3(TEXEL_X, 0, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(TEXEL_X, 0, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, TEXEL_Y, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, TEXEL_Y, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, 0, TEXEL_Z)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, 0, TEXEL_Z)), 0).w),
+    );
+    const N = eta.div(eta.length().add(1e-5));
+    // Hot gas and smoke take the force; empty air stays calm.
+    const where = temperature.add(density.mul(0.5)).clamp(0, 1);
+    newVel.addAssign(N.cross(wC.xyz).mul(uVorticity.mul(CELL)).mul(where).mul(uDt));
 
     // A moving block pushes wind through a sphere around it.
     const worldPos = uvw.sub(0.5).mul(uVolumeWorldSize).add(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0));
@@ -526,7 +562,7 @@ async function start() {
     });
   })().compute(vertexCount);
 
-  const stepPasses = [advectVelocityPass, divergencePass];
+  const stepPasses = [curlPass, advectVelocityPass, divergencePass];
   for (let i = 0; i < PRESSURE_ITERATIONS; i++) stepPasses.push(i % 2 === 0 ? jacobiPassAB : jacobiPassBA);
   stepPasses.push(projectPass, advectDyePass, emitPass);
 
