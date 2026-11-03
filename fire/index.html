@@ -13,12 +13,13 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Fire: a black panel at full width under the shared header. */
-:root { --stage: oklch(0 0 0); }
+/* Fire: a slotted iron block burns on a dark ember-tinted stage. */
+:root { --stage: oklch(0.12 0.02 35); }
 .stage--fire canvas {
-  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab;
   opacity: 0; transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+.stage--fire canvas:active { cursor: grabbing; }
 .stage--fire canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--fire canvas { transition: none; } }
 </style>
@@ -31,12 +32,24 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--fire" id="fire">
+    <div class="stage stage--fire" id="fire" tabindex="0" role="application" aria-label="A fire burns in a slotted iron block. Drag the block to move the fire, drag through the air to blow on it, and click or press Space to make it flare. The chips change what burns.">
       <p class="fail" hidden>Fire needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
+      <div class="choices" role="group" aria-label="Fuel">
+        <button class="chip" type="button" data-value="wood" aria-pressed="true"><span class="dot" style="--c: oklch(0.72 0.19 52)"></span>Wood</button>
+        <button class="chip" type="button" data-value="copper" aria-pressed="false"><span class="dot" style="--c: oklch(0.72 0.18 152)"></span>Copper</button>
+        <button class="chip" type="button" data-value="potassium" aria-pressed="false"><span class="dot" style="--c: oklch(0.66 0.22 310)"></span>Potassium</button>
+        <button class="chip" type="button" data-value="sodium" aria-pressed="false"><span class="dot" style="--c: oklch(0.88 0.18 92)"></span>Sodium</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="reset" type="button">Reset</button>
+      </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag the teapot</dt><dd>move the flame</dd></div>
+        <div><dt>Drag the block</dt><dd>move the fire</dd></div>
+        <div><dt>Drag the air</dt><dd>blow</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>flare</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>flare</dd></div>
       </dl>
     </div>
   </main>
@@ -53,10 +66,95 @@
 } }
 </script>
 <script type="module">
-import { initPage } from '../shared/stim.js';
-initPage({ id: 'fire', silent: true });
+import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange, oklchRgb } from '../shared/stim.js';
+initPage({ id: 'fire' });
 // Adapted from the three.js webgpu_volume_fire example (MIT).
 const panel = document.getElementById('fire');
+
+/* ---------- sound: crackle, roar, whoosh and flare ---------- */
+// All sound is synthesised; it starts after the first gesture.
+const kit = audioKit({ gain: 0.6, noiseSeconds: 2 });
+let roar = null, nextCrackle = 0, lastWhoosh = 0;
+// A brown noise loop feeds the low roar.
+function roarVoice(ac) {
+  if (roar) return roar;
+  const len = ac.sampleRate * 3, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+  let b = 0;
+  for (let i = 0; i < len; i++) { b = (b + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = b * 3.5; }
+  // A linear tilt joins the loop ends, so the seam stays silent.
+  const tilt = d[len - 1] - d[0];
+  for (let i = 0; i < len; i++) d[i] -= tilt * (i / len);
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = buf; src.loop = true;
+  lp.type = 'lowpass'; lp.frequency.value = 200; lp.Q.value = 0.8;
+  g.gain.value = 0;
+  src.connect(lp).connect(g).connect(kit.out);
+  src.start();
+  roar = { lp, g };
+  return roar;
+}
+// A crackle is a short noise band between 1 and 6 kHz.
+function crackle(ac, t, amt) {
+  const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  const dur = 0.003 + Math.random() ** 2 * 0.02;
+  src.buffer = kit.noise;
+  bp.type = 'bandpass'; bp.frequency.value = 1000 * 6 ** Math.random(); bp.Q.value = 1.5 + Math.random() * 4;
+  g.gain.setValueAtTime(amt * (0.25 + Math.random() ** 3 * 1.4), t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(t, Math.random() * 1.9, dur + 0.01);
+}
+// A pop is a lower snap, then a spray of small crackles.
+function pop(ac, t, amt) {
+  const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  bp.type = 'bandpass'; bp.frequency.value = 450 + Math.random() * 800; bp.Q.value = 1.2;
+  g.gain.setValueAtTime(amt * 1.6, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(t, Math.random() * 1.9, 0.04);
+  const n = 2 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < n; i++) crackle(ac, t + 0.01 + Math.random() * 0.07, amt * 0.6);
+}
+// A fast drag sweeps a band of noise up and down.
+function whoosh(ac, amt) {
+  const t = ac.currentTime, src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  bp.type = 'bandpass'; bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(320, t);
+  bp.frequency.exponentialRampToValueAtTime(1500 + 1200 * amt, t + 0.12);
+  bp.frequency.exponentialRampToValueAtTime(420, t + 0.5);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.25 + 0.35 * amt, t + 0.07);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(t, Math.random(), 0.6);
+}
+// A flare is a low whump: a falling sine under opening noise.
+function whump() {
+  const ac = kit.live(); if (!ac || !kit.noise) return;
+  const t = ac.currentTime;
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.5);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.7, t + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 0.65);
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  lp.type = 'lowpass'; lp.Q.value = 0.9;
+  lp.frequency.setValueAtTime(150, t); lp.frequency.exponentialRampToValueAtTime(2400, t + 0.18); lp.frequency.exponentialRampToValueAtTime(300, t + 0.8);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.55, t + 0.06); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+  src.connect(lp).connect(g).connect(kit.out); src.start(t, Math.random(), 0.9);
+}
+
+/* ---------- fuels: OKLCH ramps, hottest first ---------- */
+// Each fuel sets the start, mid and end colours of the flame.
+const FUELS = {
+  wood: [[0.93, 0.11, 95], [0.72, 0.19, 52], [0.6, 0.24, 30]],
+  copper: [[0.92, 0.08, 175], [0.72, 0.18, 152], [0.48, 0.14, 162]],
+  potassium: [[0.9, 0.07, 320], [0.66, 0.22, 310], [0.5, 0.24, 295]],
+  sodium: [[0.98, 0.1, 105], [0.88, 0.18, 92], [0.75, 0.18, 68]],
+};
 
 // Without WebGPU the panel shows one line and nothing runs.
 async function hasWebGPU() {
@@ -77,7 +175,7 @@ async function start() {
 
   const [
     THREE, TSL, { snoise, snoiseVec3 }, { ImprovedNoise }, { gaussianBlur }, { bloom },
-    { DragControls }, { TeapotGeometry },
+    { DragControls }, { mergeGeometries },
   ] = await Promise.all([
     import('three/webgpu'),
     import('three/tsl'),
@@ -86,13 +184,13 @@ async function start() {
     import('three/addons/tsl/display/GaussianBlurNode.js'),
     import('three/addons/tsl/display/BloomNode.js'),
     import('three/addons/controls/DragControls.js'),
-    import('three/addons/geometries/TeapotGeometry.js'),
+    import('three/addons/utils/BufferGeometryUtils.js'),
   ]);
   const {
     vec3, vec4, uvec3, float, Fn, uniform, texture3D, textureStore, instanceIndex,
     screenCoordinate, pass, smoothstep, mix, min, max, floor, mx_noise_float, storage, storageTexture, If,
     cameraPosition, Loop, positionWorld, positionLocal, interleavedGradientNoise, frameId, fract,
-    saturation, cos, sin, atan,
+    saturation,
   } = TSL;
 
   const renderer = new THREE.WebGPURenderer();
@@ -107,8 +205,10 @@ async function start() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.transmitted = true;
   const canvas = renderer.domElement;
+  // OKLCH in, a THREE colour out.
+  const okColor = (L, C, h, c = new THREE.Color()) => c.setRGB(...oklchRgb(L, C, h), THREE.SRGBColorSpace);
 
-  /* ---------- constants and uniforms, as in the example ---------- */
+  /* ---------- constants and uniforms ---------- */
   const GRID_SIZE_X = 100;
   const GRID_SIZE_Y = 100;
   const GRID_SIZE_Z = 200;
@@ -128,9 +228,11 @@ async function start() {
   const TURBULENCE = 3.2;
   const SMOKE_LIFESPAN = 3.5;
   const FIRE_LIFESPAN = 1.3;
-  // Reduced motion halves the simulation speed.
-  const RM = matchMedia('(prefers-reduced-motion: reduce)');
-  let simSpeed = RM.matches ? 0.6 : 1.2;
+  const SIM_SPEED = 1.2;
+  // Full fuel: the example's emit temperature and density.
+  const EMIT_T = 5.5, EMIT_D = 7.0;
+  // A drag through the air pushes wind inside this radius.
+  const WIND_RADIUS = 1.8;
 
   const uDt = uniform(0.016);
   const uTime = uniform(0);
@@ -142,23 +244,25 @@ async function start() {
   const uVelDamping = uniform(0.25);
   const uCooling = uniform(1 / FIRE_LIFESPAN);
   const uDissipation = uniform(1 / SMOKE_LIFESPAN);
-  const uEmitDensity = uniform(7.0);
-  const uEmitTemperature = uniform(5.5);
-  const uTeapotMatrix = uniform(new THREE.Matrix4());
-  const uTeapotSpeed = uniform(0.0);
+  const uEmitDensity = uniform(EMIT_D);
+  const uEmitTemperature = uniform(EMIT_T);
+  const uBlockMatrix = uniform(new THREE.Matrix4());
+  const uBlockSpeed = uniform(0.0);
   const uMotionBoost = uniform(0.25);
-  const uTeapotVelocity = uniform(new THREE.Vector3());
+  const uBlockVelocity = uniform(new THREE.Vector3());
   const uWindStrength = uniform(6.5);
-  const uTeapotPosition = uniform(new THREE.Vector3());
+  const uBlockPosition = uniform(new THREE.Vector3());
+  const uAirPosition = uniform(new THREE.Vector3(0, -100, 0));
+  const uAirVelocity = uniform(new THREE.Vector3());
 
   const uFireIntensity = uniform(40.0);
-  const uTeapotEmissiveIntensity = uniform(0.2);
+  const uCoreIntensity = uniform(0.55);
   const uFireGlowSpread = uniform(5.0);
   const uShadowAbsorption = uniform(2.0);
   const uShadowAmbient = uniform(0.5);
-  const uFireStartColor = uniform(new THREE.Color(0xffe68c));
-  const uFireMidColor = uniform(new THREE.Color(0xff7305));
-  const uFireEndColor = uniform(new THREE.Color(0xff0000));
+  const uFireStartColor = uniform(new THREE.Color());
+  const uFireMidColor = uniform(new THREE.Color());
+  const uFireEndColor = uniform(new THREE.Color());
   const uAsymmetry = uniform(0.0);
   const uPowderStrength = uniform(0.59);
   const uMultiScattering = uniform(1.0);
@@ -167,15 +271,14 @@ async function start() {
   const uLightNearIntensity = uniform(10.0);
   const uLightFarIntensity = uniform(15.0);
   const uLightFarDistance = uniform(10.0);
-  const uPointLightProjectionRadius = uniform(20.0);
-  const uPointLightProjectionFrequency = uniform(0.2);
-  const uPointLightProjectionNoiseFade = uniform(17.0);
-  const uPointLightProjectionCenterFade = uniform(3.25);
+  const uPoolRadius = uniform(3.4);
   const uFlameHeight = uniform(3.5);
   const uSway = uniform(new THREE.Vector3());
   const uFlicker = uniform(1.0);
   const uColorNoise = uniform(0.0);
   const uSaturation = uniform(1.1);
+  // Glow scales the fire light; 1 is the full example fire.
+  const uGlow = uniform(1.0);
   const denoiseStrength = uniform(0.5);
   const cpuNoise = new ImprovedNoise();
 
@@ -205,12 +308,48 @@ async function start() {
   const dyeTexWriteNode = storageTexture(dyeTexB).toWriteOnly();
   const curlNoiseTexNode = texture3D(curlNoiseTex);
 
-  // The teapot's vertices are the emitter.
-  const teapotGeometry = new TeapotGeometry(0.8, 28);
-  teapotGeometry.computeBoundingBox();
-  const teapotMinY = teapotGeometry.boundingBox.min.y;
-  const vertexCount = teapotGeometry.attributes.position.count;
-  const teapotVerticesBuffer = storage(teapotGeometry.attributes.position, 'vec3', vertexCount).toReadOnly();
+  /* ---------- the block: a brut box with cut slots ---------- */
+  // Width, height, wall, base and rim, in world units.
+  const BW = 1.9, BH = 1.3, WALL = 0.24, BASE = 0.22, RIM = 0.2, SLOT = 0.16;
+  const SLOTS = [-0.5, 0, 0.5];
+  const INNER = BW / 2 - WALL;
+  const shellParts = [];
+  const slab = (w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); shellParts.push(g); };
+  slab(BW, BASE, BW, 0, BASE / 2, 0);
+  // The rim is a closed ring round the open top.
+  for (const s of [-1, 1]) {
+    slab(BW, RIM, WALL, 0, BH - RIM / 2, s * (INNER + WALL / 2));
+    slab(WALL, RIM, 2 * INNER, s * (INNER + WALL / 2), BH - RIM / 2, 0);
+  }
+  // Each wall is cut into bars by three vertical slots.
+  const wallH = BH - BASE - RIM, wallY = BASE + wallH / 2;
+  const bars = (lo, hi) => {
+    const e = [lo, ...SLOTS.flatMap(c => [c - SLOT / 2, c + SLOT / 2]), hi];
+    const out = [];
+    for (let i = 0; i < e.length; i += 2) out.push([(e[i] + e[i + 1]) / 2, e[i + 1] - e[i]]);
+    return out;
+  };
+  for (const s of [-1, 1]) {
+    for (const [c, w] of bars(-BW / 2, BW / 2)) slab(w, wallH, WALL, c, wallY, s * (INNER + WALL / 2));
+    for (const [c, w] of bars(-INNER, INNER)) slab(WALL, wallH, w, s * (INNER + WALL / 2), wallY, c);
+  }
+  const shellGeometry = mergeGeometries(shellParts);
+  // The glowing core fills the box and shows through the slots.
+  const coreH = BH - BASE - 0.1;
+  const coreGeometry = new THREE.BoxGeometry(2 * INNER - 0.02, coreH, 2 * INNER - 0.02);
+  coreGeometry.translate(0, BASE + coreH / 2, 0);
+
+  // Emitter points: a thick layer over the open top.
+  const pts = [];
+  const STEP = 0.06;
+  for (let x = -INNER + 0.04; x <= INNER - 0.04; x += STEP) {
+    for (let z = -INNER + 0.04; z <= INNER - 0.04; z += STEP) {
+      for (let y = BH - 0.1; y <= BH + 0.36; y += STEP) pts.push(x, y, z);
+    }
+  }
+  const emitterAttribute = new THREE.BufferAttribute(new Float32Array(pts), 3);
+  const vertexCount = emitterAttribute.count;
+  const emitterBuffer = storage(emitterAttribute, 'vec3', vertexCount).toReadOnly();
 
   const getVoxelCoord = id => uvec3(id.mod(GRID_SIZE_X), id.div(GRID_SIZE_X).mod(GRID_SIZE_Y), id.div(GRID_SIZE_X * GRID_SIZE_Y));
   const coordToUVW = coord => vec3(coord).add(0.5).div(vec3(GRID_SIZE_X, GRID_SIZE_Y, GRID_SIZE_Z));
@@ -238,7 +377,15 @@ async function start() {
     textureStore(curlNoiseTex, coord, vec4(vec3(x, y, z).mul(5.0), 0.0)).toWriteOnly();
   })().compute(CELL_COUNT);
 
-  // Advects velocity, then adds buoyancy, turbulence and teapot wind.
+  // Reset empties the velocity and both dye textures.
+  const clearPass = Fn(() => {
+    const coord = getVoxelCoord(instanceIndex);
+    textureStore(velTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexB, coord, vec4(0)).toWriteOnly();
+  })().compute(CELL_COUNT);
+
+  // Advects velocity, then adds buoyancy, turbulence, block wind and air wind.
   const advectVelocityPass = Fn(() => {
     const coord = getVoxelCoord(instanceIndex);
     const uvw = coordToUVW(coord);
@@ -266,15 +413,22 @@ async function start() {
 
     newVel.mulAssign(max(float(1).sub(uVelDamping.mul(uDt)), 0));
 
-    // A moving teapot pushes wind through a sphere around it.
+    // A moving block pushes wind through a sphere around it.
     const worldPos = uvw.sub(0.5).mul(uVolumeWorldSize).add(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0));
-    const dist = worldPos.distance(uTeapotPosition);
-    const teapotRadius = float(1.0);
-    If(dist.lessThan(teapotRadius), () => {
-      const falloff = smoothstep(0.0, 1.0, float(1.0).sub(dist.div(teapotRadius)));
+    const dist = worldPos.distance(uBlockPosition);
+    const blockRadius = float(1.2);
+    If(dist.lessThan(blockRadius), () => {
+      const falloff = smoothstep(0.0, 1.0, float(1.0).sub(dist.div(blockRadius)));
       const windNoisePos = uvw.add(vec3(0.0, uTime.mul(0.5), 0.0).div(uTurbFrequency));
-      const windTurbulence = curlNoiseTexNode.sample(windNoisePos).level(0).xyz.mul(uTurbulence).mul(uTeapotSpeed);
-      newVel.addAssign(uTeapotVelocity.mul(uWindStrength).add(windTurbulence).mul(uDt).mul(falloff));
+      const windTurbulence = curlNoiseTexNode.sample(windNoisePos).level(0).xyz.mul(uTurbulence).mul(uBlockSpeed);
+      newVel.addAssign(uBlockVelocity.mul(uWindStrength).add(windTurbulence).mul(uDt).mul(falloff));
+    });
+
+    // A drag through empty air blows a gust round the pointer.
+    const airDist = worldPos.distance(uAirPosition);
+    If(airDist.lessThan(WIND_RADIUS), () => {
+      const falloff = smoothstep(0.0, 1.0, float(1.0).sub(airDist.div(WIND_RADIUS)));
+      newVel.addAssign(uAirVelocity.mul(2.5).mul(uDt).mul(falloff));
     });
 
     // Velocity fades near the box walls.
@@ -347,10 +501,10 @@ async function start() {
     textureStore(dyeTexWriteNode, coord, vec4(density, temperature, age, 1.0)).toWriteOnly();
   })().compute(CELL_COUNT);
 
-  // Emits density and heat from every teapot vertex.
-  const emitTeapotPass = Fn(() => {
-    const vertexPos = teapotVerticesBuffer.element(instanceIndex);
-    const worldPos = uTeapotMatrix.mul(vec4(vertexPos, 1.0)).xyz;
+  // Emits density and heat from every emitter point.
+  const emitPass = Fn(() => {
+    const vertexPos = emitterBuffer.element(instanceIndex);
+    const worldPos = uBlockMatrix.mul(vec4(vertexPos, 1.0)).xyz;
     const uvw = worldPos.sub(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0)).div(uVolumeWorldSize).add(0.5);
     If(uvw.x.greaterThanEqual(0).and(uvw.x.lessThanEqual(1))
       .and(uvw.y.greaterThanEqual(0)).and(uvw.y.lessThanEqual(1))
@@ -358,8 +512,8 @@ async function start() {
       const coord = uvec3(uvw.mul(vec3(GRID_SIZE_X, GRID_SIZE_Y, GRID_SIZE_Z)));
       const flicker = mx_noise_float(vertexPos.mul(9.0).add(vec3(0.0, uTime.negate().mul(2.5), uTime.mul(0.7)))).mul(0.5).add(0.5);
       const baseEmission = uEmitTemperature.greaterThan(0.0).select(float(1.0), float(0.0));
-      // Moving the teapot boosts emission.
-      const emissionFactor = baseEmission.add(uTeapotSpeed.mul(uMotionBoost));
+      // Moving the block boosts emission.
+      const emissionFactor = baseEmission.add(uBlockSpeed.mul(uMotionBoost));
       const densityVal = uEmitDensity.mul(float(1 / 120)).mul(flicker.mul(0.85).add(0.15)).mul(emissionFactor);
       If(densityVal.greaterThan(0.0), () => {
         const tempVal = uEmitTemperature.mul(float(1 / 120)).mul(flicker.mul(0.85).add(0.15)).mul(emissionFactor);
@@ -374,13 +528,14 @@ async function start() {
 
   const stepPasses = [advectVelocityPass, divergencePass];
   for (let i = 0; i < PRESSURE_ITERATIONS; i++) stepPasses.push(i % 2 === 0 ? jacobiPassAB : jacobiPassBA);
-  stepPasses.push(projectPass, advectDyePass, emitTeapotPass);
+  stepPasses.push(projectPass, advectDyePass, emitPass);
 
   /* ---------- scene ---------- */
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  // The backdrop is a dark ember tint, not pure black.
+  scene.background = okColor(0.12, 0.02, 35);
 
-  // The camera is fixed and faces the key light, so the smoke backlights.
+  // The fixed camera faces the key light, so the smoke backlights.
   const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100);
   camera.position.set(6.7, 5.5, -13.4);
   camera.lookAt(0, 3.6, 0);
@@ -507,29 +662,33 @@ async function start() {
   volumetricShadowMesh.castShadow = true;
   scene.add(volumetricShadowMesh);
 
-  const floorPlane = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: 0x111115, roughness: 0.8 }));
+  const floorPlane = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: okColor(0.15, 0.02, 40), roughness: 0.85 }));
   floorPlane.rotation.x = -Math.PI / 2;
-  floorPlane.position.y = -VOLUME_WORLD_SIZE_Y / 2 + 0.4 + VOLUME_WORLD_SIZE_Y / 2 + 0.4;
+  floorPlane.position.y = 0.8;
   floorPlane.receiveShadow = true;
   scene.add(floorPlane);
 
-  // A black metal teapot sits in the fire.
-  const teapot = new THREE.Mesh(teapotGeometry, new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1.0, metalness: 1.0 }));
-  teapot.receiveShadow = true;
-  teapot.position.set(0, floorPlane.position.y - teapotMinY, 0);
-  scene.add(teapot);
+  // The block: a matte iron shell round a glowing core.
+  const block = new THREE.Group();
+  const shell = new THREE.Mesh(shellGeometry, new THREE.MeshStandardMaterial({ color: okColor(0.2, 0.012, 50), roughness: 0.75, metalness: 0.35 }));
+  const core = new THREE.Mesh(coreGeometry, new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1.0 }));
+  shell.receiveShadow = true;
+  block.add(shell, core);
+  const HOME_Y = floorPlane.position.y;
+  block.position.set(0, HOME_Y, 0);
+  scene.add(block);
 
-  const prevTeapotPos = teapot.position.clone();
-  teapot.updateMatrixWorld();
-  uTeapotMatrix.value.copy(teapot.matrixWorld);
-  uTeapotPosition.value.copy(teapot.position);
+  const prevBlockPos = block.position.clone();
+  block.updateMatrixWorld();
+  uBlockMatrix.value.copy(block.matrixWorld);
+  uBlockPosition.value.copy(block.position);
 
   const isVolume = Fn(({ material }) => float(material && material.isVolumeNodeMaterial ? 1.0 : 0.0))();
 
-  // Fire light: a flickering capsule on smoke, projected noise on surfaces.
+  // Fire light: a flickering capsule on smoke, a point on surfaces.
   const pointLightColor = Fn(() => {
     const P = positionWorld;
-    const A = uTeapotPosition;
+    const A = uBlockPosition;
     const H = vec3(0.0, uFlameHeight, 0.0);
     // Closest point on the swaying flame segment.
     const V = P.sub(A);
@@ -544,29 +703,10 @@ async function start() {
     const attenuationCorrection = isVolume.equal(1.0).select(softAttenuation.div(defaultAttenuation), float(1.0));
     const currentIntensity = isVolume.equal(1.0).select(uPointLightVolumeIntensity, uPointLightSurfaceIntensity);
     const colorT = uEmitTemperature.div(8.34).mul(0.5).add(0.20).add(uColorNoise).clamp(0.0, 1.0);
-    const coloredFire = saturation(fireRamp(colorT), uSaturation);
-    // Surfaces get radial spokes and drifting noise.
-    const relP = P.xz.sub(A.xz);
-    const angle = atan(relP.y, relP.x);
-    const distXZ = relP.length();
-    const freqScale = uPointLightProjectionFrequency;
-    const angleNoise = mx_noise_float(vec3(cos(angle).mul(float(1.5).mul(freqScale)), sin(angle).mul(float(1.5).mul(freqScale)), uTime.mul(0.6))).mul(0.5).add(0.5);
-    const centerFadeFactor = smoothstep(0.0, uPointLightProjectionCenterFade, distXZ);
-    const cleanAngleNoise = mix(float(1.0), angleNoise, centerFadeFactor);
-    const projN1 = mx_noise_float(vec3(P.x.mul(float(0.6).mul(freqScale)), uTime.mul(1.2), P.z.mul(float(0.6).mul(freqScale)))).mul(0.5).add(0.5);
-    const projN2 = mx_noise_float(vec3(P.x.mul(float(1.5).mul(freqScale)), uTime.mul(2.5), P.z.mul(float(1.5).mul(freqScale)))).mul(0.5).add(0.5);
-    const projNoise = projN1.mul(0.65).add(projN2.mul(0.35));
-    const projectionIntensity = projNoise.mul(cleanAngleNoise.mul(0.5).add(0.5));
-    const noiseFadeFactor = distToSegment.div(uPointLightProjectionNoiseFade).clamp(0.0, 1.0);
-    const finalIntensity = mix(projectionIntensity, float(1.0), noiseFadeFactor);
-    const radialTemp = float(1.0).sub(distToSegment.div(uPointLightProjectionRadius)).clamp(0.0, 1.0);
-    const coloredFireProj = saturation(fireRamp(radialTemp.mul(finalIntensity).clamp(0.0, 1.0)), uSaturation);
-    const finalFireColor = isVolume.equal(1.0).select(coloredFire, coloredFireProj);
-    // Intensity scales with temperature to the fourth power.
-    const tempFactor = uEmitTemperature.div(8.34).max(0.0).pow(4.0);
-    const densityScale = uEmitDensity.div(11.02).max(0.0);
+    const finalFireColor = saturation(fireRamp(colorT), uSaturation);
+    // Glow carries temperature and density, as in the example.
     const fadeIn = smoothstep(0.0, 3.0, uTime);
-    const baseColor = finalFireColor.mul(tempFactor).mul(densityScale).mul(uFireIntensity).mul(currentIntensity).mul(uFlicker).mul(fadeIn);
+    const baseColor = finalFireColor.mul(uGlow).mul(0.12).mul(uFireIntensity).mul(currentIntensity).mul(uFlicker).mul(fadeIn);
     const distRatio = distToSegment.div(uLightFarDistance).clamp(0.0, 1.0);
     const distanceScale = mix(uLightNearIntensity, uLightFarIntensity, smoothstep(0.0, 1.0, distRatio));
     const finalScale = isVolume.equal(1.0).select(distanceScale, float(1.0));
@@ -576,18 +716,8 @@ async function start() {
   const pointLight = new THREE.PointLight(0xffffff, 1, 100, 2);
   pointLight.colorNode = pointLightColor;
   pointLight.castShadow = false;
-  teapot.add(pointLight);
-
-  // Dragging moves the teapot but keeps it inside the box.
-  const dragControls = new DragControls([teapot], camera, canvas);
-  dragControls.rotateSpeed = 0;
-  dragControls.addEventListener('drag', () => {
-    const limitX = VOLUME_WORLD_SIZE_X / 2 - 1.5;
-    const limitZ = VOLUME_WORLD_SIZE_Z / 2 - 1.5;
-    teapot.position.x = Math.max(-limitX, Math.min(limitX, teapot.position.x));
-    teapot.position.y = Math.max(floorPlane.position.y - teapotMinY, Math.min(VOLUME_WORLD_SIZE_Y - 1.5, teapot.position.y));
-    teapot.position.z = Math.max(-limitZ, Math.min(limitZ, teapot.position.z));
-  });
+  pointLight.position.y = BH * 0.6;
+  block.add(pointLight);
 
   // A white spot lights the smoke and casts its shadow.
   const keyLight = new THREE.SpotLight(0xffffff, 1000);
@@ -625,9 +755,9 @@ async function start() {
   volumetricPass.setLayers(volumetricLayer);
   volumetricPass.setResolutionScale(0.5);
 
-  // Lava veins glow on the teapot's crust.
-  teapot.material.emissiveNode = Fn(() => {
-    const p = positionLocal.mul(0.5);
+  // Lava flows across the core; embers keep a floor of glow.
+  core.material.emissiveNode = Fn(() => {
+    const p = positionLocal.mul(0.9);
     const flow = vec3(0.0, uTime.negate(), 0.0);
     const n1 = mx_noise_float(p.add(flow)).mul(0.5).add(0.5);
     const p2 = p.mul(2.0).sub(flow.mul(1.5));
@@ -635,12 +765,18 @@ async function start() {
     const p3 = p.mul(4.0).add(flow.mul(2.5));
     const n3 = mx_noise_float(p3).mul(0.5).add(0.5);
     const noiseVal = n1.mul(0.50).add(n2.mul(0.35)).add(n3.mul(0.15));
-    const lavaT = noiseVal.pow(2.5).clamp(0.0, 1.0);
-    const coloredFire = saturation(fireRamp(lavaT.add(0.1)), uSaturation);
-    const tempFactor = uEmitTemperature.div(8.34).max(0.0).pow(4.0);
-    const densityScale = uEmitDensity.div(11.02).max(0.0);
-    const fadeIn = smoothstep(0.0, 3.0, uTime);
-    return coloredFire.mul(tempFactor).mul(densityScale).mul(uFireIntensity).mul(uFlicker).mul(fadeIn).mul(uTeapotEmissiveIntensity);
+    const lavaT = noiseVal.pow(1.6).clamp(0.0, 1.0);
+    const coloredFire = saturation(fireRamp(lavaT.add(0.25)), uSaturation);
+    return coloredFire.mul(max(uGlow, 0.3)).mul(0.12).mul(uFireIntensity).mul(uFlicker).mul(uCoreIntensity);
+  })();
+
+  // The floor takes a flat, hard-rimmed pool of fire light.
+  floorPlane.material.emissiveNode = Fn(() => {
+    const d = positionWorld.xz.sub(uBlockPosition.xz).length();
+    const rim = float(1.0).sub(smoothstep(uPoolRadius.sub(0.06), uPoolRadius, d));
+    const fall = mix(float(1.0), float(0.55), d.div(uPoolRadius).clamp(0.0, 1.0));
+    const tint = saturation(fireRamp(float(0.5).add(uColorNoise)), uSaturation);
+    return tint.mul(rim).mul(fall).mul(max(uGlow, 0.15)).mul(uFlicker).mul(smoothstep(0.0, 3.0, uTime)).mul(0.22);
   })();
 
   // Blurred volume is composed over the scene, then bloomed.
@@ -655,18 +791,32 @@ async function start() {
 
   /* ---------- size ---------- */
   // DPR stays under 1.5 and about 1.4 million pixels.
+  // A tall stage widens the view, so the block stays in frame.
   function resize() {
     const w = panel.clientWidth || 1, h = panel.clientHeight || 1;
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(1.4e6 / (w * h))));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
+    const fit = Math.atan(Math.tan((25 * Math.PI) / 180) * 1.3 / camera.aspect) * 2 * (180 / Math.PI);
+    camera.fov = Math.min(72, Math.max(50, fit));
     camera.updateProjectionMatrix();
+    if (!running) draw();
   }
-  resize();
+
+  /* ---------- fuel colours ---------- */
+  const rampTarget = [new THREE.Color(), new THREE.Color(), new THREE.Color()];
+  const rampNow = [uFireStartColor.value, uFireMidColor.value, uFireEndColor.value];
+  function setFuel(name, snap) {
+    FUELS[name].forEach((lch, i) => {
+      okColor(...lch, rampTarget[i]);
+      if (snap) rampNow[i].copy(rampTarget[i]);
+    });
+  }
+  setFuel('wood', true);
 
   /* ---------- async warm-up ---------- */
   // Shaders compile off the critical path, so loading never freezes.
-  await renderer.compileComputeAsync([computeCurlNoisePass, ...new Set(stepPasses)]);
+  await renderer.compileComputeAsync([computeCurlNoisePass, clearPass, ...new Set(stepPasses)]);
   renderer.compute(computeCurlNoisePass);
   await scenePass.compileAsync(renderer);
   const cameraMask = camera.layers.mask;
@@ -674,18 +824,19 @@ async function start() {
   await volumetricPass.compileAsync(renderer);
   camera.layers.mask = cameraMask;
 
-  canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Volumetric fire rising from a black teapot');
+  canvas.setAttribute('aria-hidden', 'true');
   panel.prepend(canvas);
-  new ResizeObserver(resize).observe(panel);
 
-  /* ---------- animation loop, as in the example ---------- */
-  let simulationTime = 0;
-  let lastTime = performance.now();
-  let simAccumulator = 0;
-  let frames = 0;
-  const teapotVel = new THREE.Vector3();
-  const sizeFactor = Math.sqrt((uEmitTemperature.value / 8.34) * (uEmitDensity.value / 11.02) * (uFireIntensity.value / 5.63));
+  /* ---------- state ---------- */
+  // The fire banks to embers after 45 s, then sleeps.
+  const BANK_AFTER = 45000, SETTLE = 9000;
+  let simulationTime = 0, simAccumulator = 0, lastTime = performance.now(), frames = 0;
+  let lastInput = performance.now(), running = false, asleep = false, visible = false, ready = false, skip = false;
+  // Heat runs from 0 to 1.
+  // A tap spikes the flare, which fades in half a second.
+  let heat = 1, flare = 0, drive = 0, driveWas = 0;
+  const blockVel = new THREE.Vector3();
+  const air = { vel: new THREE.Vector3(), pos: new THREE.Vector3(0, -100, 0), prev: new THREE.Vector3(), prevT: 0, on: false };
 
   // CPU noise drives flame height, sway, flicker and colour.
   function updateTemporalUniforms(time) {
@@ -694,63 +845,257 @@ async function start() {
     uSway.value.set(cpuNoise.noise(time * 3.5, 0, 0) * 0.4, 0, cpuNoise.noise(0, 0, time * 3.5) * 0.4);
     uFlicker.value = cpuNoise.noise(0, time * 0.8, 0) * 0.12 + cpuNoise.noise(0, time * 15.0, 0) * 0.06 + 0.82;
     uColorNoise.value = cpuNoise.noise(time * 5.0, time * 5.0, 0) * 0.08;
-    teapot.rotation.y = time * 0.25;
-    teapot.updateMatrixWorld();
-    uTeapotMatrix.value.copy(teapot.matrixWorld);
+    uPoolRadius.value = 3.4 + cpuNoise.noise(0, time * 1.3, 4) * 0.25;
+    block.rotation.y = time * 0.15;
+    block.updateMatrixWorld();
+    uBlockMatrix.value.copy(block.matrixWorld);
   }
 
-  function animate() {
-    const currentTime = performance.now();
-    const delta = Math.min((currentTime - lastTime) * 0.001, 1 / 30);
-    lastTime = currentTime;
+  // Heat, flare and a gust set emission and the light's glow.
+  function feed(gust) {
+    const t = EMIT_T * heat + 4.5 * flare + 2.0 * gust * heat;
+    uEmitTemperature.value = t;
+    uEmitDensity.value = EMIT_D * heat + 3.0 * flare;
+    const lt = Math.max(Math.min(t, 7.5), 3.2);
+    const ld = Math.max(uEmitDensity.value, 0.4 * EMIT_D);
+    uGlow.value = ((lt / 8.34) ** 4 * (ld / 11.02)) / 0.12;
+  }
 
-    // Teapot speed and velocity drive the wind.
-    const currentPos = teapot.position;
-    uTeapotSpeed.value = delta > 0 ? currentPos.distanceTo(prevTeapotPos) / delta : 0;
-    if (delta > 0) teapotVel.subVectors(currentPos, prevTeapotPos).multiplyScalar(1 / delta);
-    else teapotVel.set(0, 0, 0);
-    prevTeapotPos.copy(currentPos);
-    uTeapotVelocity.value.copy(teapotVel);
-    uTeapotPosition.value.copy(currentPos);
+  // One fixed simulation step.
+  function simulate(step) {
+    uDt.value = step;
+    uTurbulence.value = TURBULENCE / Math.sqrt(SIM_SPEED);
+    simulationTime += step;
+    updateTemporalUniforms(simulationTime);
+    renderer.compute(stepPasses);
+    // Dye textures ping-pong each step.
+    const temp = dyeTexNode.value;
+    dyeTexNode.value = dyeTexWriteNode.value;
+    dyeTexWriteNode.value = temp;
+  }
 
-    // Fixed 1/120 s steps, scaled by simulation speed.
-    const simStep = (1 / 120) * simSpeed;
-    simAccumulator = Math.min(simAccumulator + delta * simSpeed, simStep * 8);
-    uDt.value = simStep;
-    uTurbulence.value = TURBULENCE / Math.sqrt(simSpeed);
-    while (simAccumulator >= simStep) {
-      simulationTime += simStep;
-      updateTemporalUniforms(simulationTime);
-      renderer.compute(stepPasses);
-      // Dye textures ping-pong each step.
-      const temp = dyeTexNode.value;
-      dyeTexNode.value = dyeTexWriteNode.value;
-      dyeTexWriteNode.value = temp;
-      simAccumulator -= simStep;
-    }
+  // Without the frame loop, passes need a manual frame tick.
+  const tick = () => { if (!running) renderer._animation.nodes.nodeFrame.update(); };
 
-    // Light reach grows in over the first three seconds.
+  // Light reach grows in over the first three seconds.
+  function draw() {
+    if (!ready) return;
+    tick();
+    const sizeFactor = Math.sqrt((EMIT_T / 8.34) * (EMIT_D / 11.02) * (uFireIntensity.value / 5.63));
     const t = Math.min(Math.max(simulationTime / 3.0, 0.0), 1.0);
     pointLight.distance = Math.max(0.01, 40.0 * Math.max(0.2, sizeFactor) * t * t * (3.0 - 2.0 * t));
-
     renderPipeline.render();
-    if (++frames === 3) canvas.classList.add('on');
+    if (++frames >= 3) canvas.classList.add('on');
   }
 
-  // Reduced motion slows the fire.
-  RM.addEventListener('change', () => { simSpeed = RM.matches ? 0.6 : 1.2; });
+  // Reduced motion: run the fire forward, then show one still frame.
+  function still(steps) {
+    heat = 1; feed(0);
+    prevBlockPos.copy(block.position);
+    uBlockPosition.value.copy(block.position);
+    uBlockSpeed.value = 0; uBlockVelocity.value.set(0, 0, 0); uAirVelocity.value.set(0, 0, 0);
+    rampNow.forEach((c, i) => c.copy(rampTarget[i]));
+    for (let i = 0; i < steps; i++) { tick(); simulate((1 / 120) * SIM_SPEED); }
+    flare = 0; feed(0);
+    frames = 2; draw();
+  }
 
-  // The loop runs only while the panel is on screen.
-  let onScreen = false, running = false;
-  const sync = () => {
-    const run = onScreen && !document.hidden;
+  /* ---------- sound mix ---------- */
+  function mixSound(delta) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) { if (roar && kit.ac) roar.g.gain.setTargetAtTime(0, kit.ac.currentTime, 0.05); return; }
+    const t = ac.currentTime, r = roarVoice(ac);
+    // The roar swells and opens with drag speed and flares.
+    const level = heat * (0.09 + 0.5 * drive + 0.45 * flare) * uFlicker.value;
+    r.g.gain.setTargetAtTime(level, t, 0.06);
+    r.lp.frequency.setTargetAtTime(150 + 1100 * drive + 900 * flare, t, 0.08);
+    // Crackles fall as a Poisson stream; drag and flare raise the rate.
+    const rate = 0.4 + heat * (3 + 24 * drive + 40 * flare);
+    if (nextCrackle < t) nextCrackle = t + (-Math.log(1 - Math.random()) / rate);
+    while (nextCrackle < t + delta + 0.03) {
+      const amt = 0.35 + 0.5 * heat + 0.4 * drive;
+      if (Math.random() < 0.1) pop(ac, nextCrackle, amt); else crackle(ac, nextCrackle, amt);
+      nextCrackle += -Math.log(1 - Math.random()) / rate;
+    }
+    // A fast drag past the threshold adds a whoosh.
+    if (drive > 0.5 && driveWas <= 0.5 && performance.now() - lastWhoosh > 350) { whoosh(ac, drive); lastWhoosh = performance.now(); }
+    driveWas = drive;
+  }
+
+  /* ---------- animation loop ---------- */
+  function animate() {
+    const now = performance.now();
+    const idle = now - lastInput;
+    const banking = idle > BANK_AFTER;
+    // Banked embers render at 30 Hz.
+    if (banking && (skip = !skip)) return;
+    const delta = Math.min((now - lastTime) * 0.001, 1 / 30);
+    lastTime = now;
+
+    heat += ((banking ? 0 : 1) - heat) * (1 - Math.exp(-delta / (banking ? 2.2 : 0.7)));
+    flare = Math.max(0, flare - delta * 2);
+    // Fuel colours glide to the new ramp.
+    rampNow.forEach((c, i) => c.lerp(rampTarget[i], 1 - Math.exp(-delta / 0.25)));
+
+    // Block speed and velocity drive the wind.
+    const currentPos = block.position;
+    uBlockSpeed.value = delta > 0 ? currentPos.distanceTo(prevBlockPos) / delta : 0;
+    if (delta > 0) blockVel.subVectors(currentPos, prevBlockPos).multiplyScalar(1 / delta);
+    else blockVel.set(0, 0, 0);
+    prevBlockPos.copy(currentPos);
+    uBlockVelocity.value.copy(blockVel);
+    uBlockPosition.value.copy(currentPos);
+
+    // The air gust fades fast once the pointer stops.
+    uAirVelocity.value.copy(air.vel);
+    uAirPosition.value.copy(air.pos);
+    const gustSpeed = air.vel.length();
+    air.vel.multiplyScalar(Math.exp(-delta / 0.08));
+    // A gust near the fire feeds it.
+    const near = Math.max(0, 1 - Math.hypot(air.pos.x - currentPos.x, air.pos.z - currentPos.z) / 3);
+    const gust = near * Math.min(1, gustSpeed / 12);
+    feed(gust);
+
+    const target = Math.min(1, Math.max(uBlockSpeed.value / 10, gustSpeed / 14));
+    drive += (target - drive) * (target > drive ? 0.5 : 0.08);
+
+    // Fixed steps; banked embers step at half rate.
+    const simStep = (banking ? 1 / 60 : 1 / 120) * SIM_SPEED;
+    simAccumulator = Math.min(simAccumulator + delta * SIM_SPEED, simStep * 8);
+    while (simAccumulator >= simStep) {
+      simulate(simStep);
+      simAccumulator -= simStep;
+    }
+    draw();
+    mixSound(delta);
+
+    // Once the embers settle, the loop and the audio sleep.
+    if (banking && idle > BANK_AFTER + SETTLE) { asleep = true; sync(); }
+  }
+
+  // The renderer's own frame loop runs only while the fire burns.
+  const frameLoop = renderer._animation;
+  function sync() {
+    const run = ready && visible && !asleep && !reduced();
     if (run === running) return;
     running = run;
     lastTime = performance.now();
     renderer.setAnimationLoop(run ? animate : null);
+    if (run && frameLoop._requestId === null) frameLoop.start();
+    if (!run) {
+      frameLoop.stop();
+      if (roar && kit.ac) roar.g.gain.setTargetAtTime(0, kit.ac.currentTime, 0.08);
+      kit.rest(() => !running);
+    }
+  }
+  // Any input rekindles the fire and keeps it burning.
+  function wake() {
+    lastInput = performance.now();
+    asleep = false;
+    sync();
+  }
+  function flareUp() {
+    wake();
+    flare = 1;
+    whump();
+    if (reduced()) { still(60); kit.rest(() => !running); }
+  }
+
+  /* ---------- input ---------- */
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2(), plane = new THREE.Plane(), hitP = new THREE.Vector3(), camDir = new THREE.Vector3();
+  function aim(e) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+  }
+  // The air plane faces the camera through the middle of the flame.
+  function airPoint(e, out) {
+    aim(e);
+    camera.getWorldDirection(camDir);
+    plane.setFromNormalAndCoplanarPoint(camDir, hitP.copy(block.position).setY(block.position.y + 1.8));
+    return raycaster.ray.intersectPlane(plane, out);
+  }
+
+  // Dragging moves the block but keeps it inside the box.
+  const dragControls = new DragControls([block], camera, canvas);
+  dragControls.transformGroup = true;
+  dragControls.rotateSpeed = 0;
+  dragControls.addEventListener('drag', () => {
+    const limitX = VOLUME_WORLD_SIZE_X / 2 - 1.5;
+    const limitZ = VOLUME_WORLD_SIZE_Z / 2 - 1.5;
+    block.position.x = Math.max(-limitX, Math.min(limitX, block.position.x));
+    block.position.y = Math.max(HOME_Y, Math.min(VOLUME_WORLD_SIZE_Y - 1.5, block.position.y));
+    block.position.z = Math.max(-limitZ, Math.min(limitZ, block.position.z));
+    wake();
+    if (reduced()) { block.updateMatrixWorld(); draw(); }
+  });
+  dragControls.addEventListener('dragend', () => {
+    if (reduced()) { prevBlockPos.copy(block.position); uBlockPosition.value.copy(block.position); still(90); }
+  });
+
+  let press = null;
+  canvas.addEventListener('pointerdown', e => {
+    wake();
+    aim(e);
+    const onBlock = raycaster.intersectObject(block, true).length > 0;
+    press = { x: e.clientX, y: e.clientY, t: performance.now(), onBlock, moved: false };
+    if (!onBlock && airPoint(e, air.prev)) { air.prevT = performance.now(); air.on = true; }
+  });
+  canvas.addEventListener('pointermove', e => {
+    wake();
+    if (!press) return;
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) press.moved = true;
+    if (!air.on || reduced()) return;
+    const p = new THREE.Vector3();
+    if (!airPoint(e, p)) return;
+    // Pointer speed in world units per second becomes the gust.
+    const now = performance.now(), dt = Math.max((now - air.prevT) / 1000, 1 / 240);
+    const v = p.clone().sub(air.prev).multiplyScalar(1 / dt);
+    if (v.length() > 25) v.setLength(25);
+    air.vel.lerp(v, 0.6);
+    air.pos.copy(p);
+    air.prev.copy(p); air.prevT = now;
+  });
+  const lift = () => {
+    if (press && !press.moved && performance.now() - press.t < 350) flareUp();
+    press = null; air.on = false;
   };
-  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
-  document.addEventListener('visibilitychange', sync);
+  canvas.addEventListener('pointerup', lift);
+  canvas.addEventListener('pointercancel', () => { press = null; air.on = false; });
+  panel.addEventListener('keydown', e => {
+    if (e.key !== ' ' || e.target !== panel) return;
+    e.preventDefault();
+    flareUp();
+  });
+
+  choices(document.querySelector('.choices'), v => {
+    setFuel(v, reduced());
+    wake();
+    if (reduced()) draw();
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    block.position.set(0, HOME_Y, 0);
+    prevBlockPos.copy(block.position);
+    renderer.compute(clearPass);
+    simulationTime = 0; heat = 0; flare = 0; air.vel.set(0, 0, 0);
+    wake();
+    if (reduced()) still(360);
+  });
+
+  onReducedChange(on => { sync(); if (on) still(120); else wake(); });
+  whenVisible(panel, v => {
+    visible = v;
+    // Coming back to a live fire restarts its idle clock.
+    if (v && !asleep) lastInput = performance.now();
+    sync();
+  });
+  new ResizeObserver(resize).observe(panel);
+  frameLoop.stop();
+  ready = true;
+  resize();
+  if (reduced()) still(360);
+  else sync();
 }
 
 start().catch(err => console.error(err));
