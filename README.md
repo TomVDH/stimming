@@ -22,7 +22,8 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Ferrofluid | [ferro/](ferro/) | live, with sound |
 | Galaxy | [galaxy/](galaxy/) | live, with sound; WebGPU only |
 | Zipper | [zipper/](zipper/) | live, with sound |
-| Glass, Soap cutting, Bubble wand, Rain on glass, Spinning top | | in progress; outlines on the menu |
+| Glass | [glass/](glass/) | live, with sound |
+| Soap cutting, Bubble wand, Rain on glass, Spinning top | | in progress; outlines on the menu |
 
 ## Run locally
 
