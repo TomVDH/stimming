@@ -60,7 +60,7 @@ const pct = v => `${(100 * v).toFixed(2)}%`;
 
 // The lines, in order: classic notice, main title, translation, subtitle, subtitle translation, audio notice.
 // Lab toys also carry a lab tag under the translation.
-// Every beat of the shipped intro (Snap), in frames at 30 fps or in milliseconds.
+// The base beats of every intro, in frames at 30 fps or in milliseconds.
 // The intro lab at /introlab/ edits a copy of this table live.
 export const TIMING = {
   lead: 2,        // frames of glass before the flash
@@ -96,14 +96,14 @@ export const TIMING = {
 // glyph and words make a quiet last line under the titles; nudge pulses the speaker.
 export const SOUND_NOTE = { glyph: false, words: null, nudge: false };
 
-// Snap ships. The others are proposals for the intro lab.
+// Classic ships for now. The others are proposals for the intro lab.
 // Each variety may change the timing, the flash, how the box leaves, how lines open and the exit.
 // read: true holds for reading time; false holds to T.hold from the start.
-export const DEFAULT_VARIETY = 'snap';
+export const DEFAULT_VARIETY = 'classic';
 export const VARIETIES = {
   // Snap runs 20% longer than the base table, every beat in proportion.
   snap: {
-    label: 'Snap', group: 'Default', read: true,
+    label: 'Snap', group: 'Earlier', read: true,
     timing: { lead: 3, pop: 3, flash: 11, unfurl: 290, nlLag: 4, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, clsLag: 4, readBase: 420, readPer: 15, readCap: 1560, wipe: 300, fade: 460 },
   },
   stamp: {
@@ -132,7 +132,7 @@ export const VARIETIES = {
     layout: 'side', cut: 'bar', reveal: 'type', exit: 'scan', read: true,
   },
   classic: {
-    label: 'Classic', group: 'Earlier',
+    label: 'Classic', group: 'Default',
     timing: { lead: 3, flash: 13, unfurl: 333, nlLag: 2, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, wipe: 333, fade: 500 }, exit: 'wipe',
   },
   type: {
@@ -348,17 +348,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   // Each line can sit higher or lower than its place in the column.
   [[cls, T.clsY], [name, T.nameY], [nl, T.nlY], [text.querySelector('.intro-tag:not(.intro-tag--nl)'), T.tagY], [text.querySelector('.intro-tag--nl'), T.tagNlY], [snd, T.sndY]]
     .forEach(([el, y]) => { if (el && y) el.style.translate = `0 ${y}vh`; });
-  // The icon's centre is the origin: dead centre in the page at every stage.
-  // The copy hangs below it and never pushes it; long copy shrinks to fit.
-  if (badge && !nameFlash) {
-    badge.style.translate = 'none';
-    const r = root.getBoundingClientRect(), mid = r.top + r.height / 2;
-    const fit = () => { const b = badge.getBoundingClientRect(); return [b.top + b.height / 2, text.getBoundingClientRect().bottom]; };
-    let [c, end] = fit();
-    const room = r.height / 2 - 24, need = end - c;
-    if (need > room) { text.style.setProperty('--copy-k', Math.max(0.6, room / need).toFixed(3)); [c] = fit(); }
-    text.style.translate = `0 ${Math.round(mid - c)}px`;
-    badge.style.translate = `0 ${T.iconY}vh`;
+  // The logo never moves: CSS pins it to one point on the screen.
+  // The copy under it shrinks to fit, so it stays on screen.
+  if (badge) {
+    const top = badge.getBoundingClientRect().bottom, room = root.getBoundingClientRect().bottom - 24 - top, need = text.getBoundingClientRect().bottom - top;
+    if (need > room) text.style.setProperty('--copy-k', Math.max(0.7, room / need).toFixed(3));
   }
   // A try-out: the name can share the flash, boxed and blown up with the mark.
   const both = nameFlash && badge;
@@ -387,7 +381,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
   } else {
     // For a few frames the flash fills the eye, then it snaps to its place.
-    blow.style.transform = `scale(${T.popScale})`;
+    // The cap keeps the box's top edge on screen; the logo's point stays put.
+    const b = blow.getBoundingClientRect();
+    blow.style.transform = `scale(${Math.min(T.popScale, (2 * (b.top + b.height / 2) - 16) / b.height).toFixed(3)})`;
   }
   await wait(T.pop);
   await gate('pop');

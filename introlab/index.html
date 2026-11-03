@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=15">
+<link rel="stylesheet" href="../shared/intro.css?v=16">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -128,7 +128,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=15';
+import { intro, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=16';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -367,7 +367,11 @@ let holdAt = null, held = null;
 function applyPose() {
   const t = T(), badge = document.querySelector('.intro-badge'), emblem = document.querySelector('.intro-emblem');
   if (!held || !badge || !emblem) return;
-  if (held === 'pop') (flashBox.checked ? document.querySelector('.intro-text') : badge).style.transform = `scale(${t.popScale})`;
+  if (held === 'pop') {
+    // The same cap as the engine: the box's top edge stays on screen.
+    const el = flashBox.checked ? document.querySelector('.intro-text') : badge, b = el.getBoundingClientRect();
+    el.style.transform = `scale(${Math.min(t.popScale, (2 * (b.top + b.height / 2) - 16) / el.offsetHeight).toFixed(3)})`;
+  }
   if (held === 'lines') {
     // The move to rest holds its last frame; drop it so the knobs show.
     for (const el of [emblem, badge]) for (const a of el.getAnimations()) {

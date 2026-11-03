@@ -4,8 +4,15 @@
 .intro {
   --intro-bg: oklch(0.16 0.012 275);
   position: fixed; inset: 0; z-index: 100;
-  display: grid; place-items: center; overflow: hidden;
-  padding: clamp(24px, 6vw, 80px);
+  overflow: hidden;
+  /* One size system: logo, title and copy scale with the shorter side of the screen. */
+  --logo: clamp(96px, min(30vw, 19vh), 168px);
+  --pad: calc(var(--logo) * 0.16);
+  --box: calc(var(--logo) + 2 * var(--pad));
+  --title: clamp(34px, min(11vw, 10vh), 108px);
+  --copy: clamp(13px, min(3.6vw, 2vh), 19px);
+  /* The logo's centre: one fixed point for the big flash, the flash at size and the rest. */
+  --origin: 36%;
   /* brightness() multiplies the blurred page down; the tint stays thin. */
   background: oklch(0.1 0.01 275 / 0.2);
   backdrop-filter: blur(36px) brightness(0.45); -webkit-backdrop-filter: blur(36px) brightness(0.45);
@@ -20,18 +27,19 @@
 @property --split { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 @property --box-y { syntax: "<number>"; inherits: true; initial-value: 1; }
 
-/* One centred column: the emblem's box, a gap, then the name and subtitle. */
-.intro-mark { position: relative; display: grid; max-width: 100%; }
-/* One rhythm: --g-s inside a group, --g-m between groups, --g-l under the emblem. */
+/* The column hangs from the logo's fixed point; the copy can never push the logo. */
+.intro-mark { position: absolute; left: 0; right: 0; top: calc(var(--origin) - var(--box) / 2); display: grid; justify-items: center; padding-inline: 16px; }
+.intro-mark:not(:has(.intro-emblem)) { top: calc(var(--origin) - var(--title) / 2); }
+/* One rhythm: --g-xs and --g-s inside a group, --g-m between groups, --g-l under the logo. */
 .intro-text {
-  --g-xs: calc(clamp(4px, 0.8vh, 8px) * var(--copy-k, 1)); --g-s: calc(clamp(10px, 2vh, 18px) * var(--copy-k, 1)); --g-m: calc(clamp(22px, 4.2vh, 40px) * var(--copy-k, 1)); --g-l: calc(clamp(26px, 5vh, 52px) * var(--copy-k, 1));
+  --g-xs: calc(clamp(3px, 0.6vh, 6px) * var(--copy-k, 1)); --g-s: calc(clamp(6px, 1.1vh, 12px) * var(--copy-k, 1)); --g-m: calc(clamp(14px, 2.4vh, 26px) * var(--copy-k, 1)); --g-l: calc(clamp(8px, 1.4vh, 16px) * var(--copy-k, 1));
   display: grid; justify-items: center; text-align: center; color: #fff; opacity: 0;
-  font-family: var(--intro-detail, var(--sans, "Gabarito", system-ui, sans-serif)); font-size: calc(clamp(11px, 1.5vw, 20px) * var(--copy-k, 1));
+  font-family: var(--intro-detail, var(--sans, "Gabarito", system-ui, sans-serif)); font-size: calc(var(--copy) * var(--copy-k, 1));
   max-width: 100%;
 }
 /* intro.js wraps the emblem in a badge; the badge's box is the flash. */
 /* Size scales about the box's centre, so the origin never moves. */
-.intro-badge { scale: var(--emblem-k); position: relative; display: grid; place-items: center; padding: clamp(14px, 2.2vw, 26px); margin-bottom: var(--g-l); }
+.intro-badge { scale: var(--emblem-k); position: relative; display: grid; place-items: center; padding: var(--pad); margin-bottom: var(--g-l); }
 /* --split parts the box down the middle; --box-y drops it to a bar at its foot. */
 .intro-badge::before {
   content: ""; position: absolute; inset: 0; opacity: var(--box, 0);
@@ -53,24 +61,24 @@
 }
 /* The emblem is the toy icon as a one-colour luminance mask. */
 .intro-emblem {
-  position: relative; display: block; width: clamp(90px, 13.75vw, 188px); aspect-ratio: 1;
+  position: relative; display: block; width: var(--logo); aspect-ratio: 1;
   background: currentColor;
   mask: var(--emblem) center / contain no-repeat; mask-mode: luminance;
 }
 /* The name scales with the shorter side and breaks into balanced lines, never mid-word. */
 /* The padding keeps descenders inside the box the reveal clips to. */
 .intro-name {
-  font-size: calc(clamp(40px, min(11vw, 14vh), 150px) * var(--copy-k, 1)); font-weight: 700; line-height: 0.92; letter-spacing: -0.04em;
-  max-width: min(12ch, 92vw); text-wrap: balance; overflow-wrap: normal; hyphens: manual;
-  padding-bottom: 0.16em; margin-bottom: -0.16em;
+  font-size: calc(var(--title) * var(--copy-k, 1)); font-weight: 700; line-height: 1; letter-spacing: -0.04em;
+  max-width: 92vw; text-wrap: balance; overflow-wrap: normal; hyphens: manual;
+  padding-bottom: 0.14em; margin-bottom: -0.14em;
 }
 /* The Dutch name sits small under the English one, its IPA quieter still. */
-.intro-nl { margin-top: var(--g-s); font-size: 1.15em; font-weight: 600; letter-spacing: 0.01em; opacity: 0.86; }
+.intro-nl { margin-top: var(--g-s); font-weight: 600; letter-spacing: 0.01em; opacity: 0.86; }
 .intro-nl .ipa { font-weight: 400; opacity: 0.6; }
 /* The motto follows the subtitle, its Dutch line quieter beneath. */
-.intro-tag { margin-top: var(--g-m); max-width: min(46ch, 86vw); font-size: 1.15em; font-weight: 500; letter-spacing: 0.01em; line-height: 1.35; text-wrap: balance; }
+.intro-tag { margin-top: var(--g-m); max-width: min(44ch, 86vw); font-weight: 500; letter-spacing: 0.01em; line-height: 1.35; text-wrap: balance; }
 .intro-tag--nl { margin-top: var(--g-xs); opacity: 0.6; }
-.intro-sub { margin-top: var(--g-s); max-width: 92vw; font-weight: 600; line-height: 1.4; letter-spacing: clamp(0.16em, 1vw, 0.32em); text-transform: uppercase; text-wrap: balance; }
+.intro-sub { margin-top: var(--g-s); max-width: 92vw; font-size: 0.85em; font-weight: 600; line-height: 1.4; letter-spacing: clamp(0.16em, 1vw, 0.32em); text-transform: uppercase; text-wrap: balance; }
 /* A toy with sound ends its titles with a quiet headphones line. */
 .intro-snd {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: var(--g-m);
@@ -88,13 +96,12 @@
 /* Without an emblem, the name itself sits in the flash box. */
 .intro-name.is-flash { color: var(--intro-bg); background: #fff; padding: 0.06em 0.22em 0.2em; margin: -0.06em -0.22em -0.2em; }
 /* A classic build's intro says so under the names. */
-.intro-badge:has(+ .intro-classic) { margin-bottom: var(--g-s); }
-.intro-classic { margin: 0 0 var(--g-m); font-family: var(--intro-display, inherit); font-size: 1em; font-weight: 800; letter-spacing: 0.2em; white-space: pre; }
+.intro-classic { margin: 0 0 var(--g-m); font-family: var(--intro-display, inherit); font-size: 0.85em; font-weight: 800; letter-spacing: 0.2em; white-space: pre; }
 /* The number can sit among the subtitles, or at the foot of the page. */
-.intro-num { margin-top: var(--g-s); font-family: var(--intro-display, inherit); font-size: 1.15em; font-weight: 800; letter-spacing: 0.02em; }
+.intro-num { margin-top: var(--g-s); font-family: var(--intro-display, inherit); font-size: 1em; font-weight: 800; letter-spacing: 0.02em; }
 .intro > .intro-num { position: absolute; left: 50%; bottom: max(24px, 6vh); translate: -50% 0; margin: 0; color: #fff; font-size: clamp(14px, 1.8vw, 24px); }
 /* Squad: the emblem stands left; the lines read beside it, left-aligned. */
-.intro[data-layout="side"] .intro-text { grid-template-columns: auto auto; column-gap: clamp(18px, 3vw, 44px); justify-items: start; align-items: center; text-align: left; }
+.intro[data-layout="side"] .intro-text { grid-template-columns: auto auto; column-gap: clamp(18px, 3vw, 44px); justify-items: start; align-items: start; text-align: left; }
 .intro[data-layout="side"] .intro-text > * { grid-column: 2; }
 .intro[data-layout="side"] .intro-badge { grid-column: 1; grid-row: 1 / span 8; margin-bottom: 0; }
 
