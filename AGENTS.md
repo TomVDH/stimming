@@ -119,7 +119,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 - Sound is synthesized with Web Audio. It is muted by default and starts after a user gesture. The choice is remembered in `stimming.<id>.sound`.
 - Hold 30 fps or better. Idle pages do no per-frame work. Respect `prefers-reduced-motion`.
 - Code comments follow ASD-STE100: one fact per line, twelve words or fewer, active voice, present tense.
-- Never use brand names for toys.
+- Never use brand names for toys. Tom's own exception: Domino Day.
 
 ## Taste
 

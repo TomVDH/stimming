@@ -14,7 +14,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Zen sand | [sand/](sand/) | live |
 | Fire | [fire/](fire/) | live, WebGPU only; port of the three.js volume fire example |
 | Slime | [slime/](slime/) | live, with sound |
-| Domino run | [domino/](domino/) | live, with sound |
+| Domino Day | [domino/](domino/) | live, with sound |
 | Magnet balls | [magnet/](magnet/) | live, with sound |
 | Infinity cube | [cube/](cube/) | live, with sound |
 | Pendulum wave | [pendulum/](pendulum/) | live, with sound |
