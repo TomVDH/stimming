@@ -38,7 +38,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. In Throw, tap to drop a ball, an anvil or a kettlebell, or drag and let go to throw it. In Cut, press and drag to dig a trench through the water. Drag the deck to turn the view. Space tosses one in, N switches day and night, R toggles rain and C clears the pool.">
+    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. In Throw, tap to drop a ball, an anvil or a kettlebell, or drag and let go to throw it. In Cut, press and drag to dig a trench through the water. Drag the deck to turn the view. Space tosses one in, P picks the next pool, N switches day and night, R toggles rain and C clears the pool.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Caustic pool needs WebGL 2 with float textures, which this browser lacks.</p>
     </div>
@@ -49,6 +49,7 @@
         <button class="chip" type="button" data-value="throw" id="throw" aria-pressed="true" aria-keyshortcuts="1 2 3"><svg class="ic" data-thing="ball" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/></svg><svg class="ic" data-thing="anvil" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/></svg><svg class="ic" data-thing="bell" viewBox="0 0 16 16" aria-hidden="true" hidden><path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/></svg><span id="thing-name">Ball</span></button>
       </div>
       <div class="actions">
+        <button class="chip" id="pool" type="button" aria-keyshortcuts="P" aria-label="Pool: Lane, press for the next pool"><svg class="ic" data-pool="lane" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M1.5 3h13v10h-13Zm5 2.6v4.8h3V5.6Z"/></svg><svg class="ic" data-pool="plunge" viewBox="0 0 16 16" aria-hidden="true" hidden><path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm0 4a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg><svg class="ic" data-pool="lagoon" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M4.6 2.4c2 0 3 1.6 4.4 1.6s2.2-1 3.6-.6c2 .6 2.6 3.4 1.6 5.8-1 2.6-3.6 4.6-6.6 4.6-3.6 0-6.2-2.2-6.2-5.6 0-3.4 1.4-5.8 3.2-5.8Z"/></svg><span id="pool-name">Lane</span></button>
         <button class="chip" id="night" type="button" aria-keyshortcuts="N" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.2 1.6a6.6 6.6 0 1 0 4.4 9.9A5.4 5.4 0 0 1 10.2 1.6Z"/></svg>Night</button>
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
       </div>
@@ -67,7 +68,7 @@
 import { initPage, sound, audioKit, choices } from '../shared/stim.js';
 initPage({ id: 'pool' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const nightB = document.getElementById('night'), clearB = document.getElementById('clear');
+const nightB = document.getElementById('night'), clearB = document.getElementById('clear'), poolB = document.getElementById('pool');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
@@ -115,13 +116,8 @@ const PAL = {
   HOR: linear(0.9, 0.075, 58),
   HALO: linear(0.95, 0.09, 75),
   AMB: mul(linear(0.84, 0.07, 215), 0.62),
-  // Two tile tones, a cut joint, one flat deck and a bone coping.
+  // Pale water white for droplets and foam; each pool brings its own tiles.
   TW: linear(0.88, 0.045, 205),
-  TB: linear(0.44, 0.17, 262),
-  GR: linear(0.3, 0.06, 255),
-  DECK: linear(0.66, 0.15, 42),
-  COPE: linear(0.93, 0.02, 90),
-  JNT: linear(0.36, 0.09, 38),
   SCAT: mul(linear(0.66, 0.13, 196), 0.55),
   // The floaters share one sun-yellow accent.
   ACC: linear(0.9, 0.18, 100),
@@ -151,7 +147,8 @@ const f5 = v => v.toFixed(5);
 const v3 = c => `vec3(${c.map(f5).join(', ')})`;
 
 /* ---------- the pool: world units, y up, z toward the viewer ---------- */
-const TILT = 20 * D2R, FOVY = 22 * D2R, PX = 1, HD = 0.045, DEPTH = 0.45, RIM = 0.075, WAVE_C = 0.5;
+const TILT = 20 * D2R, FOVY = 22 * D2R, PX = 1, HD = 0.045, RIM = 0.075, WAVE_C = 0.5;
+let DEPTH = 0.45;
 // Thick water: waves step slower, damp harder and lose fine detail first.
 const C2 = 1.5, NU = 0.16, DAMP_RATE = 1.1, CELL_SPEED = Math.sqrt(C2 / 4);
 let PZ = 0.62, NX = 256, NZ = 144, CELL = 2 / 256, SIMN = 256, aspect = 0, TILE = 2 / 28, SIM_HZ = 105, damp = 0.99;
@@ -163,6 +160,52 @@ const SUN_DIR = norm3([-0.42, 1, -0.55]);
 const AMP0 = 0.6, SWELL_T = 2.7;
 // Dispersion is several times real water's, so the fringes show.
 const DISP = 0.025;
+/* ---------- pools: a shape, a depth and a palette each ---------- */
+// Colours are OKLCH: two tiles, grout, deck, coping and deck joints.
+// Fixed pools keep their own proportions; ar is depth over width.
+const POOLS = {
+  lane: { name: 'Lane', shape: 0, depth: 0.45, ar: 0, tiles: [[0.88, 0.045, 205], [0.44, 0.17, 262]], grout: [0.3, 0.06, 255], deck: [0.66, 0.15, 42], cope: [0.93, 0.02, 90], joint: [0.36, 0.09, 38] },
+  plunge: { name: 'Plunge', shape: 1, depth: 0.7, ar: 1, tiles: [[0.93, 0.015, 95], [0.3, 0.05, 265]], grout: [0.52, 0.03, 260], deck: [0.7, 0.17, 355], cope: [0.93, 0.02, 90], joint: [0.42, 0.12, 355] },
+  lagoon: { name: 'Lagoon', shape: 2, depth: 0.38, ar: 0.72, tiles: [[0.86, 0.09, 165], [0.56, 0.12, 178]], grout: [0.32, 0.06, 185], deck: [0.62, 0.14, 295], cope: [0.92, 0.03, 95], joint: [0.36, 0.09, 295] },
+};
+const POOL_IDS = Object.keys(POOLS), POOL_KEY = 'stimming.pool.pool';
+let poolId = POOLS[store.get(POOL_KEY)] ? store.get(POOL_KEY) : 'lane', shape = POOLS[poolId].shape;
+DEPTH = POOLS[poolId].depth;
+const smin2 = (a, b, k) => { const h = clamp(0.5 + (0.5 * (b - a)) / k); return lerp(b, a, h) - k * h * (1 - h); };
+// Signed distance to the pool edge on the water plane: negative inside.
+// The shader keeps a copy of this function.
+function poolSd(x, z) {
+  if (shape === 0) {
+    const dx = Math.abs(x) - PX, dz = Math.abs(z) - PZ;
+    return Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0);
+  }
+  if (shape === 1) return Math.hypot(x, z) - PX;
+  // A bean: two round lobes, joined smooth, with a bite from the near side.
+  const qx = x / PX, qz = z / PX;
+  const d = smin2(Math.hypot(qx + 0.42, qz + 0.08) - 0.58, Math.hypot(qx - 0.5, qz - 0.12) - 0.48, 0.3);
+  return -smin2(-d, Math.hypot(qx, qz - 0.85) - 0.42, 0.2) * PX;
+}
+function poolGrad(x, z) {
+  const e = 0.002, gx = poolSd(x + e, z) - poolSd(x - e, z), gz = poolSd(x, z + e) - poolSd(x, z - e), l = Math.hypot(gx, gz) || 1;
+  return [gx / l, gz / l];
+}
+// Moves a point inside the pool by at least margin m.
+function inPool(x, z, m) {
+  for (let i = 0; i < 4; i++) {
+    const d = poolSd(x, z);
+    if (d <= -m) break;
+    const [gx, gz] = poolGrad(x, z);
+    x -= gx * (d + m);
+    z -= gz * (d + m);
+  }
+  return [x, z];
+}
+// Finds where the field crosses level v along a ray from the centre.
+function edgeAlong(dx, dz, v) {
+  let a = 0, b = 3;
+  for (let i = 0; i < 30; i++) { const m = (a + b) / 2; if (poolSd(dx * m, dz * m) < v) a = m; else b = m; }
+  return a;
+}
 function refract(I, N, eta) {
   const d = N[0] * I[0] + N[1] * I[1] + N[2] * I[2], k = 1 - eta * eta * (1 - d * d);
   return I.map((v, i) => v * eta - N[i] * (eta * d + Math.sqrt(k)));
@@ -191,10 +234,11 @@ function project(x, y, z) {
 function fitCam(A, pz, yaw = cam.yaw) {
   let dist = 5, tz = 0, xm = 1, y0 = -1, y1 = 1;
   const X = PX + RIM, Z = pz + RIM;
+  const pts = shape === 0 ? [[-X, -Z], [X, -Z], [X, Z], [-X, Z]] : outline;
   for (let i = 0; i < 60; i++) {
     place(A, dist, tz, yaw);
     xm = 0; y0 = 1e9; y1 = -1e9;
-    for (const [x, z] of [[-X, -Z], [X, -Z], [X, Z], [-X, Z]]) {
+    for (const [x, z] of pts) {
       const q = project(x, HD, z);
       xm = Math.max(xm, Math.abs(q[0]));
       y0 = Math.min(y0, q[1]);
@@ -207,14 +251,17 @@ function fitCam(A, pz, yaw = cam.yaw) {
   return { w: xm, h: (y1 - y0) / 2 };
 }
 const petals = [], objs = [];
-let petalScale = 1;
+let petalScale = 1, outline = [], lampZ = [-0.62, 0.62];
 function layoutPool(A) {
   aspect = A;
-  let pz = PX / (A * Math.cos(cam.tilt));
-  // The pool takes its shape from the front view.
-  for (let i = 0; i < 14; i++) {
-    const r = fitCam(A, pz, 0);
-    pz *= (r.w / r.h) ** 0.8;
+  let pz = PX * POOLS[poolId].ar;
+  // The lane pool takes its shape from the front view.
+  if (shape === 0) {
+    pz = PX / (A * Math.cos(cam.tilt));
+    for (let i = 0; i < 14; i++) {
+      const r = fitCam(A, pz, 0);
+      pz *= (r.w / r.h) ** 0.8;
+    }
   }
   // Square cells keep ripples round.
   const long = Math.max(PX, pz), oz = PZ;
@@ -225,14 +272,21 @@ function layoutPool(A) {
   SIM_HZ = WAVE_C / (CELL_SPEED * CELL);
   damp = Math.exp(-DAMP_RATE / SIM_HZ);
   TILE = (2 * PX) / Math.round((2 * PX) / 0.1);
-  petalScale = PZ > PX ? 1.3 : 1;
+  petalScale = A < 0.9 ? 1.3 : 1;
+  // The rim outline frames the camera; the lamps sit on the end walls.
+  outline = Array.from({ length: 32 }, (_, i) => {
+    const a = (i / 32) * TAU, r = edgeAlong(Math.cos(a), Math.sin(a), RIM);
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  });
+  lampZ = [-edgeAlong(0, -1, 0), edgeAlong(0, 1, 0)];
   fitCam(A, PZ);
   for (const p of petals) {
-    p.z = clamp((p.z * PZ) / oz, -PZ + 0.1, PZ - 0.1);
+    p.z = (p.z * PZ) / oz;
     p.L = p.L0 * petalScale;
     p.Wd = p.W0 * petalScale;
+    [p.x, p.z] = inPool(p.x, p.z, 0.1);
   }
-  for (const o of objs) o.z = clamp((o.z * PZ) / oz, -PZ + 0.1, PZ - 0.1);
+  for (const o of objs) { o.z = (o.z * PZ) / oz; [o.x, o.z] = inPool(o.x, o.z, 0.1); }
 }
 
 /* ---------- the frozen relief: a few long, shallow crossing waves ---------- */
@@ -244,7 +298,7 @@ const WAVES = [[14, 0.15, 0.036], [79, 0.115, 0.03], [141, 0.17, 0.04], [205, 0.
 
 /* ---------- sound: synthesised through the shell's audio kit ---------- */
 const MAXV = 16, LEAD = 0.004;
-const GESTURE_KEYS = new Set([' ', 'Enter', 'r', 'R', 'n', 'N', 'c', 'C', 'x', 'X', '1', '2', '3', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const GESTURE_KEYS = new Set([' ', 'Enter', 'r', 'R', 'n', 'N', 'c', 'C', 'x', 'X', 'p', 'P', '1', '2', '3', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const kit = audioKit({ gain: 0.55, keys: GESTURE_KEYS });
 let voices = 0, plopNext = 0, tickNext = 0, slapNext = 0, gurgleNext = 0, lapG = null, patG = null;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
@@ -461,6 +515,28 @@ vec3 swell(vec2 p) {
   }
   return s;
 }`;
+// The pool edge as a distance field; the JS poolSd matches it.
+const SHAPE = `
+uniform int uShape;
+float sminP(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+float poolSd(vec2 p) {
+  if (uShape == 0) {
+    vec2 d = abs(p) - uPool.xy;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+  }
+  if (uShape == 1) return length(p) - uPool.x;
+  vec2 q = p / uPool.x;
+  float d = sminP(length(q - vec2(-0.42, -0.08)) - 0.58, length(q - vec2(0.5, 0.12)) - 0.48, 0.3);
+  return -sminP(-d, length(q - vec2(0.0, 0.85)) - 0.42, 0.2) * uPool.x;
+}
+// The outward unit normal of the edge.
+vec2 poolGrad(vec2 p) {
+  const vec2 e = vec2(0.002, 0.0);
+  return normalize(vec2(poolSd(p + e) - poolSd(p - e), poolSd(p + e.yx) - poolSd(p - e.yx)) + 1e-7);
+}`;
 const PETAL_U = `uniform vec4 uPA[${NPM}], uPB[${NPM}];
 uniform int uNP;`;
 const PETAL_FN = `
@@ -638,13 +714,18 @@ uniform vec4 uCut[4];
 uniform vec2 uCutV[4];
 uniform int uNC;
 out vec4 o;
+${SHAPE}
+vec2 cellW(ivec2 q) { return ((vec2(q) + 0.5) / vec2(textureSize(uSim, 0)) * 2.0 - 1.0) * uPool.xy; }
+// A neighbour beyond the edge mirrors this cell, so walls reflect.
+vec2 nb(ivec2 q, ivec2 m, vec2 c) {
+  q = clamp(q, ivec2(0), m);
+  return poolSd(cellW(q)) > 0.0 ? c : texelFetch(uSim, q, 0).xy;
+}
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy), m = textureSize(uSim, 0) - 1;
   vec4 c = texelFetch(uSim, p, 0);
-  vec2 s = texelFetch(uSim, clamp(p + ivec2(1, 0), ivec2(0), m), 0).xy
-         + texelFetch(uSim, clamp(p - ivec2(1, 0), ivec2(0), m), 0).xy
-         + texelFetch(uSim, clamp(p + ivec2(0, 1), ivec2(0), m), 0).xy
-         + texelFetch(uSim, clamp(p - ivec2(0, 1), ivec2(0), m), 0).xy;
+  if (poolSd(cellW(p)) > 0.0) { o = vec4(0.0); return; }
+  vec2 s = nb(p + ivec2(1, 0), m, c.xy) + nb(p - ivec2(1, 0), m, c.xy) + nb(p + ivec2(0, 1), m, c.xy) + nb(p - ivec2(0, 1), m, c.xy);
   float v = (c.y + (s.x * 0.25 - c.x) * ${C2.toFixed(3)} + (s.y * 0.25 - c.y) * ${NU.toFixed(3)}) * uDamp;
   float h = (c.x + v) * 0.99985;
   vec2 w = (gl_FragCoord.xy / vec2(textureSize(uSim, 0)) * 2.0 - 1.0) * uPool.xy;
@@ -664,14 +745,19 @@ void main() {
 const GRAD_FS = `${HEAD}
 uniform sampler2D uSim;
 uniform float uCell;
+uniform vec4 uPool;
 out vec4 o;
+${SHAPE}
+vec2 cellW(ivec2 q) { return ((vec2(q) + 0.5) / vec2(textureSize(uSim, 0)) * 2.0 - 1.0) * uPool.xy; }
+float hb(ivec2 q, ivec2 m, float c) {
+  q = clamp(q, ivec2(0), m);
+  return poolSd(cellW(q)) > 0.0 ? c : texelFetch(uSim, q, 0).x;
+}
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy), m = textureSize(uSim, 0) - 1;
   vec4 c = texelFetch(uSim, p, 0);
-  float r = texelFetch(uSim, clamp(p + ivec2(1, 0), ivec2(0), m), 0).x;
-  float l = texelFetch(uSim, clamp(p - ivec2(1, 0), ivec2(0), m), 0).x;
-  float u = texelFetch(uSim, clamp(p + ivec2(0, 1), ivec2(0), m), 0).x;
-  float d = texelFetch(uSim, clamp(p - ivec2(0, 1), ivec2(0), m), 0).x;
+  float r = hb(p + ivec2(1, 0), m, c.x), l = hb(p - ivec2(1, 0), m, c.x);
+  float u = hb(p + ivec2(0, 1), m, c.x), d = hb(p - ivec2(0, 1), m, c.x);
   o = vec4(c.xy, (r - l) / (2.0 * uCell), (u - d) / (2.0 * uCell));
 }`;
 // Drops dent the surface.
@@ -731,6 +817,7 @@ ${PETAL_U}
 out vec2 vOld, vNew;
 out vec3 vTint;
 ${CONSTS}
+${SHAPE}
 ${SWELL}
 ${PETAL_FN}
 void main() {
@@ -751,8 +838,7 @@ void main() {
   vOld = p;
   float cov = smoothstep(0.016, -0.012, ps);
   // Light fades over the last cells to soften wall shadows.
-  vec2 e = min(vec2(c), vec2(uN - 1 - c));
-  vTint = mix(vec3(1.0), FLT_T, cov) * smoothstep(0.0, 2.5, min(e.x, e.y));
+  vTint = mix(vec3(1.0), FLT_T, cov) * smoothstep(0.0, 5.0 * uPool.x / float(uN.x), -poolSd(p));
   gl_Position = vec4(vNew / uPool.xy, 0.0, 1.0);
 }`;
 const CAUS_FS = `${HEAD}
@@ -772,10 +858,13 @@ uniform vec2 uRes, uTan;
 uniform vec3 uCam, uFwd, uRight, uUp, uSun, uRl;
 uniform vec4 uPool;
 uniform float uT, uAmp, uTile, uSeed, uNight, uHmax;
+uniform vec3 uTileA, uTileB, uGrout, uDeckC, uCopeC, uJointC;
+uniform vec2 uLampZ;
 ${PETAL_U}
 ${OBJ_U}
 out vec4 o;
 ${CONSTS}
+${SHAPE}
 // Day and night set these once per pixel.
 vec3 gSun, gAmb;
 float gLamp;
@@ -784,7 +873,6 @@ ${SWELL}
 ${PETAL_FN}
 ${OBJ_FN}
 ${TONE}
-float sdiv(float a, float b) { return a / (abs(b) < 1e-6 ? 1e-6 : b); }
 float lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 float joint(float x, float w) {
   float d = abs(fract(x) - 0.5), fw = fwidth(x);
@@ -803,6 +891,13 @@ vec3 sky(vec3 d) {
   night += STAR * step(0.972, h) * (0.4 + 1.6 * fract(h * 37.0)) * (1.0 - smoothstep(0.05, 0.11, length(f - jt * 0.6)));
   return mix(day, night, uNight);
 }
+// The tile coordinate along a wall.
+// Round walls wrap a whole number of tiles.
+float wallU(vec3 P, vec3 N) {
+  if (uShape == 0) return abs(N.x) > 0.5 ? P.z + uPool.y : P.x + uPool.x;
+  float n = max(round(6.2831853 * uPool.x * (uShape == 1 ? 1.0 : 0.78) / uTile), 1.0);
+  return (atan(P.z, P.x) / 6.2831853 + 0.5) * n * uTile;
+}
 // Two-tone tiles with cut joints: face 0 is the floor, face 1 a wall.
 // Dark tiles edge the floor, mark the lanes and band the waterline.
 vec3 tiles(vec2 fq, float face) {
@@ -810,8 +905,11 @@ vec3 tiles(vec2 fq, float face) {
   vec2 cen = (id + 0.5) * uTile;
   float dark;
   if (face < 0.5) {
-    vec2 cw = uPool.xy - abs(cen - uPool.xy);
-    dark = step(min(cw.x, cw.y), BAND);
+    vec2 cc = cen - uPool.xy;
+    dark = step(-poolSd(cc), BAND);
+    // The plunge has a ring and a dot; the lagoon is a checker.
+    if (uShape == 1) dark = max(dark, max(step(abs(length(cc) - 0.5 * uPool.x), uTile * 0.5), step(length(cc), uTile * 0.8)));
+    if (uShape == 2) dark = max(dark, mod(id.x + id.y, 2.0));
     // Lanes run along the long side and end in a cross bar.
     bool lx = uPool.x >= uPool.y;
     float along = lx ? cen.x - uPool.x : cen.y - uPool.y, hl = lx ? uPool.x : uPool.y;
@@ -821,15 +919,15 @@ vec3 tiles(vec2 fq, float face) {
     float reach = hl - abs(along);
     float stripe = step(lane, 0.5) * step(3.0 * uTile, reach);
     float bar = step(lane, 1.5) * step(abs(reach - 3.5 * uTile), uTile * 0.5);
-    dark = max(dark, max(stripe, bar));
+    if (uShape == 0) dark = max(dark, max(stripe, bar));
   } else {
     dark = max(step(cen.y, BAND), step(uPool.z - WLH, cen.y));
   }
-  vec3 c = mix(TW, TB, dark);
+  vec3 c = mix(uTileA, uTileB, dark);
   vec2 e2 = min(f, 1.0 - f), m = smoothstep(GW - fw, GW + fw, e2);
-  vec3 res = mix(GR, c, m.x * m.y);
+  vec3 res = mix(uGrout, c, m.x * m.y);
   // Far tiles blend to their mean so the grid never shimmers.
-  vec3 avg = mix(c, GR, 0.25);
+  vec3 avg = mix(c, uGrout, 0.25);
   return mix(res, avg, smoothstep(0.35, 0.8, max(fw.x, fw.y)));
 }
 // One flat deck colour, a bone coping band and hard cut joints.
@@ -838,19 +936,18 @@ vec3 deck(vec3 Q, float e) {
   vec2 p = Q.xz;
   float fe = fwidth(e);
   float cope = 1.0 - smoothstep(COPE_W - fe, COPE_W + fe, e);
-  vec3 c = mix(DECK, COPE, cope);
+  vec3 c = mix(uDeckC, uCopeC, cope);
   bool sideX = abs(Q.x) - uPool.x > abs(Q.z) - uPool.y;
-  float jc = joint((sideX ? Q.z : Q.x) / 0.4, 0.014) * cope;
+  float jc = joint(wallU(Q, vec3(sideX ? 1.0 : 0.0, 0.0, 0.0)) / 0.4, 0.014) * cope;
   float jd = max(joint(p.x / 0.62, 0.01), joint(p.y / 0.62 + 0.31, 0.01)) * (1.0 - cope);
   float jr = 1.0 - smoothstep(0.004 - fe, 0.004 + fe, abs(e - COPE_W));
-  c = mix(c, JNT, max(max(jc, jd), jr));
+  c = mix(c, uJointC, max(max(jc, jd), jr));
   return c * (gSun * uSun.y + gAmb * 0.8 + WGLOW * gLamp * 0.22 * exp(-max(e, 0.0) / 0.07));
 }
 vec3 caustic(vec2 cp) {
   vec2 uv = cp / uPool.xy * 0.5 + 0.5;
   // The wall's shadow edge has a narrow penumbra.
-  vec2 m = clamp((0.5 - abs(uv - 0.5)) * uPool.xy * 2.0 / 0.012, 0.0, 1.0);
-  return texture(uCaus, uv).rgb * m.x * m.y;
+  return texture(uCaus, uv).rgb * clamp(-poolSd(cp) / 0.012, 0.0, 1.0);
 }
 // Sun or moon light reaches P under water, then air above.
 // Objects on either leg cast the shadow.
@@ -863,7 +960,7 @@ float sunShadow(vec3 P) {
 }
 // Two lamps sit in the end walls and face into the pool.
 float lampFall(vec3 P, float sz, out vec3 L, out float d) {
-  vec3 v = vec3(LAMPX, LAMPY, sz * uPool.y) - P;
+  vec3 v = vec3(LAMPX, LAMPY, sz < 0.0 ? uLampZ.x : uLampZ.y) - P;
   d = length(v);
   L = v / max(d, 1e-4);
   float r = 0.16 + 0.24 * max(uPool.x, uPool.y);
@@ -959,20 +1056,27 @@ void main() {
   // The ray meets the deck plane at the pool's open top.
   float tQ = (HD - uCam.y) / rd.y;
   vec3 Q = uCam + rd * tQ;
-  float eq = max(abs(Q.x) - PH.x, abs(Q.z) - PH.y);
+  float eq = poolSd(Q.xz);
   float mDeck = clamp(eq / max(fwidth(eq), 1e-6) + 0.5, 0.0, 1.0);
   vec3 deckC = deck(Q, eq);
 
   // Above the water the ray can meet a dry wall.
   float t0 = -uCam.y / rd.y;
   vec3 W = uCam + rd * t0;
-  float ew = max(abs(W.x) - PH.x, abs(W.z) - PH.y);
+  float ew = poolSd(W.xz);
   float mDry = clamp(ew / max(fwidth(ew), 1e-6) + 0.5, 0.0, 1.0);
-  float tx = sdiv(sign(rd.x) * PH.x - Q.x, rd.x), tz = sdiv(sign(rd.z) * PH.y - Q.z, rd.z);
-  vec3 Pd = Q + rd * max(min(tx, tz), 0.0);
-  bool xw = tx < tz;
-  vec3 Nd = xw ? vec3(-sign(rd.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(rd.z));
-  vec3 dry = tiles(vec2(xw ? Pd.z + PH.y : Pd.x + PH.x, Pd.y + D), 1.0) * (gSun * max(dot(Nd, uSun), 0.0) + gAmb + WGLOW * gLamp * 0.35);
+  // The ray walks in from the deck edge until it meets the wall.
+  vec3 Pd = Q;
+  float lh = max(length(rd.xz), 1e-4);
+  for (int i = 0; i < 12; i++) {
+    float e = poolSd(Pd.xz);
+    if (e > -1e-4) break;
+    Pd += rd * (-e / lh);
+  }
+  vec2 gd = poolGrad(Pd.xz);
+  vec3 Nd = vec3(-gd.x, 0.0, -gd.y);
+  float tDry = length(Pd - uCam);
+  vec3 dry = tiles(vec2(wallU(Pd, Nd), Pd.y + D), 1.0) * (gSun * max(dot(Nd, uSun), 0.0) + gAmb + WGLOW * gLamp * 0.35);
 
   // Tall waves and cut holes march the ray onto the true surface.
   vec2 wp = clamp(W.xz, -PH, PH);
@@ -1009,26 +1113,34 @@ void main() {
   // Below, the ray meets the floor or a wall.
   vec3 tr = refract(rd, n, 0.75);
   float tf = (-D - hS) / tr.y;
-  float ux = max(sdiv(sign(tr.x) * PH.x - wp.x, tr.x), 0.0), uz = max(sdiv(sign(tr.z) * PH.y - wp.y, tr.z), 0.0);
-  float th = min(tf, min(ux, uz));
-  vec3 S0 = vec3(wp.x, hS, wp.y), P = S0 + tr * th;
+  vec3 S0 = vec3(wp.x, hS, wp.y);
+  // Under water the ray walks the field to the wall, or stops at the floor.
+  float tw = 0.0, lt = max(length(tr.xz), 1e-4);
+  for (int i = 0; i < 24; i++) {
+    float e = poolSd(S0.xz + tr.xz * tw);
+    if (e > -1e-4 || tw > tf) break;
+    tw += -e / lt;
+  }
+  float th = min(tf, tw);
+  vec3 P = S0 + tr * th;
   vec3 N;
   vec2 fq;
   float face, ao;
-  if (tf <= min(ux, uz)) {
+  if (tf <= tw) {
     N = vec3(0.0, 1.0, 0.0);
     fq = P.xz + PH;
     face = 0.0;
-    ao = mix(0.42, 1.0, smoothstep(0.0, 0.3, min(PH.x - abs(P.x), PH.y - abs(P.z))));
+    ao = mix(0.42, 1.0, smoothstep(0.0, 0.3, -poolSd(P.xz)));
   } else {
-    N = ux < uz ? vec3(-sign(tr.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(tr.z));
-    fq = ux < uz ? vec2(P.z + PH.y, P.y + D) : vec2(P.x + PH.x, P.y + D);
+    vec2 gw = poolGrad(P.xz);
+    N = vec3(-gw.x, 0.0, -gw.y);
+    fq = vec2(wallU(P, N), P.y + D);
     face = 1.0;
     ao = mix(0.5, 1.0, smoothstep(0.0, 0.3, P.y + D));
   }
   vec3 alb = tiles(fq, face);
   // A lamp lens with a steel ring sits in the far wall.
-  float onFar = face * step(0.5, N.z), lr = length(vec2(P.x - LAMPX, P.y - LAMPY));
+  float onFar = face * step(0.5, N.z) * step(P.z, 0.0), lr = length(vec2(P.x - LAMPX, P.y - LAMPY));
   float ring = onFar * (1.0 - smoothstep(0.052, 0.056, lr)), lens = onFar * (1.0 - smoothstep(0.038, 0.042, lr));
   alb = mix(mix(alb, RIMC, ring), LENS, lens);
   float depth = max(-P.y, 0.0);
@@ -1065,7 +1177,7 @@ void main() {
   vec3 col = mix(mix(water, dry, mDry), deckC, mDeck);
   // Things in the air sit in front of all of it.
   if (uNO > 0) {
-    float tEnd = mDeck > 0.5 ? tQ : mDry > 0.5 ? tQ + max(min(tx, tz), 0.0) : t0;
+    float tEnd = mDeck > 0.5 ? tQ : mDry > 0.5 ? tDry : t0;
     int oi;
     float oa;
     float to = traceObjs(uCam, rd, tEnd, pa, 0.0, oi, oa);
@@ -1264,7 +1376,18 @@ function allocPool() {
     setU(pr, 'uCaus', '1i', 1);
     setU(pr, 'uT', '1f', SWELL_T);
     setU(pr, 'uAmp', '1f', AMP0);
+    setU(pr, 'uShape', '1i', shape);
   }
+  // Each pool brings its own palette and lamp places.
+  const pl = POOLS[poolId], col = c => linear(...c);
+  gl.useProgram(P.view.p);
+  setU(P.view, 'uTileA', '3fv', col(pl.tiles[0]));
+  setU(P.view, 'uTileB', '3fv', col(pl.tiles[1]));
+  setU(P.view, 'uGrout', '3fv', col(pl.grout));
+  setU(P.view, 'uDeckC', '3fv', col(pl.deck));
+  setU(P.view, 'uCopeC', '3fv', col(pl.cope));
+  setU(P.view, 'uJointC', '3fv', col(pl.joint));
+  setU(P.view, 'uLampZ', '2f', lampZ[0], lampZ[1]);
   camUniforms();
   simActive = false;
   dropQ.length = segQ.length = 0;
@@ -1472,10 +1595,10 @@ function seedPetals() {
   const R = rng(20261102), types = [0, 1, 0, 1];
   types.forEach((type, i) => {
     let x = 0, z = 0;
-    for (let tries = 0; tries < 60; tries++) {
-      x = (R() * 2 - 1) * (PX - 0.25);
-      z = (R() * 2 - 1) * (PZ - 0.2);
-      if (!petals.some(p => Math.hypot(p.x - x, p.z - z) < 0.36)) break;
+    for (let tries = 0; tries < 80; tries++) {
+      x = (R() * 2 - 1) * PX;
+      z = (R() * 2 - 1) * PZ;
+      if (poolSd(x, z) < -0.22 && !petals.some(p => Math.hypot(p.x - x, p.z - z) < 0.36)) break;
     }
     const L0 = type ? 0.06 : 0.046 + 0.008 * R(), W0 = type ? 0.055 : L0;
     petals.push({ x, z, vx: 0, vz: 0, a: R() * TAU, w: 0, L0, W0, L: L0 * petalScale, Wd: W0 * petalScale, type, hue: R(), seed: i * 1.7 });
@@ -1487,9 +1610,8 @@ function stepPetals(dt) {
     // Floaters slide down ripple slopes; still water holds them still.
     let ax = -SLOPE_G * probeData[i * 4 + 2], az = -SLOPE_G * probeData[i * 4 + 3];
     // Walls push back softly.
-    const mx = PX - 0.06 - p.L, mz = PZ - 0.06 - p.L;
-    if (Math.abs(p.x) > mx) ax -= 40 * (p.x - Math.sign(p.x) * mx);
-    if (Math.abs(p.z) > mz) az -= 40 * (p.z - Math.sign(p.z) * mz);
+    const wd = poolSd(p.x, p.z) + 0.06 + p.L;
+    if (wd > 0) { const [gx, gz] = poolGrad(p.x, p.z); ax -= 40 * wd * gx; az -= 40 * wd * gz; }
     p.vx += ax * dt;
     p.vz += az * dt;
     // Thick water drags them to a stop sooner.
@@ -1560,7 +1682,8 @@ function kick(x, z, power) {
 // Sound pans with where a thing sits on screen.
 const pan = (x, z = 0) => clamp(project(x, 0, z)[0], -1, 1);
 function raindrop() {
-  const x = rand(-1, 1) * PX, z = rand(-1, 1) * PZ;
+  let x = 0, z = 0;
+  for (let i = 0; i < 6; i++) { x = rand(-1, 1) * PX; z = rand(-1, 1) * PZ; if (poolSd(x, z) < 0) break; }
   addDrop(x, z, 0.014, -0.0042 * rand(0.6, 1.3));
   if (Math.random() < 0.55) tick(pan(x, z));
 }
@@ -1571,7 +1694,8 @@ const cutters = new Map(), CUT = new Float32Array(NCUT * 4), CUTV = new Float32A
 let nCut = 0, cutGlow = 0, swishG = null, swishF = null;
 function startCut(id, x, z) {
   if (cutters.size >= NCUT) return;
-  cutters.set(id, { x: inX(x), z: inZ(z), tx: x, tz: z, vx: 0, vz: 0, k: 0, sp: 0 });
+  const [cx, cz] = inPool(x, z, 0.01);
+  cutters.set(id, { x: cx, z: cz, tx: x, tz: z, vx: 0, vz: 0, k: 0, sp: 0 });
   plop(pan(x, z), 0.75);
   poke();
 }
@@ -1605,8 +1729,7 @@ function stepCuts(dt) {
     const ox = c.x, oz = c.z;
     // The blade lags the finger a touch, so quick strokes stay smooth.
     const f = 1 - Math.exp(-dt * 40);
-    c.x = inX(lerp(c.x, c.tx, f));
-    c.z = inZ(lerp(c.z, c.tz, f));
+    [c.x, c.z] = inPool(lerp(c.x, c.tx, f), lerp(c.z, c.tz, f), 0.01);
     const vx = dt > 0 ? (c.x - ox) / dt : 0, vz = dt > 0 ? (c.z - oz) / dt : 0;
     c.vx = lerp(c.vx, vx, 0.3);
     c.vz = lerp(c.vz, vz, 0.3);
@@ -1701,7 +1824,7 @@ const throwB = document.getElementById('throw');
 function setThing(v) {
   thing = v;
   store.set(THING_KEY, v);
-  throwB.querySelectorAll('[data-thing]').forEach(el => { el.hidden = el.dataset.thing !== v; });
+  throwB.querySelectorAll('[data-thing]').forEach(el => el.toggleAttribute('hidden', el.dataset.thing !== v));
   document.getElementById('thing-name').textContent = NAMES[v];
 }
 function setMode(v) {
@@ -1786,7 +1909,7 @@ function release(o, vx, vz) {
 }
 function holdStep(o, dt) {
   const R = o.K.foot * o.s;
-  const tx = clamp(o.tx, -PX + R, PX - R), tz = clamp(o.tz, -PZ + R, PZ - R);
+  const [tx, tz] = inPool(o.tx, o.tz, R);
   const k = 1 - Math.exp(-28 * dt), nx = o.x + (tx - o.x) * k, nz = o.z + (tz - o.z) * k;
   if (dt > 0) {
     o.vx = lerp(o.vx, (nx - o.x) / dt, 0.4);
@@ -1898,9 +2021,13 @@ function stepObjs(dt) {
       } else if (o.y > yf + 0.004) o.floor = false;
     }
     // Walls keep everything inside the pool.
-    const R = K.foot * s, mx = PX - R, mz = PZ - R;
-    if (Math.abs(o.x) > mx) { o.x = Math.sign(o.x) * mx; o.vx *= -0.35; }
-    if (Math.abs(o.z) > mz) { o.z = Math.sign(o.z) * mz; o.vz *= -0.35; }
+    const R = K.foot * s, wd = poolSd(o.x, o.z) + R;
+    if (wd > 0) {
+      const [gx, gz] = poolGrad(o.x, o.z), vn = o.vx * gx + o.vz * gz;
+      o.x -= gx * wd;
+      o.z -= gz * wd;
+      if (vn > 0) { o.vx -= 1.35 * vn * gx; o.vz -= 1.35 * vn * gz; }
+    }
     // Water damps spin, a ball rolls with its drift, iron stands up.
     const w = o.w;
     if (f > 0) {
@@ -2121,7 +2248,7 @@ function planeAt(px, py, y) {
 }
 const onWater = e => {
   const [x, z] = planeAt(...local(e), 0);
-  return Math.abs(x) < PX && Math.abs(z) < PZ;
+  return poolSd(x, z) < 0;
 };
 // Each pointer holds one thing over the water until it lets go.
 const holds = new Map();
@@ -2142,7 +2269,7 @@ panel.addEventListener('pointerdown', e => {
     return;
   }
   const [x, z] = planeAt(...local(e), HOV), R = KIND[thing].foot * KIND[thing].size * petalScale;
-  const o = makeObj(thing, clamp(x, -PX + R, PX - R), clamp(z, -PZ + R, PZ - R));
+  const o = makeObj(thing, ...inPool(x, z, R));
   o.held = e.pointerId;
   o.tx = x;
   o.tz = z;
@@ -2210,7 +2337,9 @@ panel.addEventListener('contextmenu', e => e.preventDefault());
 // Space tosses the chosen thing in at a random spot.
 function toss() {
   const R = KIND[thing].foot * KIND[thing].size * petalScale;
-  const o = makeObj(thing, rand(-1, 1) * (PX - R - 0.1), rand(-1, 1) * (PZ - R - 0.1));
+  let x = 0, z = 0;
+  for (let i = 0; i < 12; i++) { x = rand(-1, 1) * PX; z = rand(-1, 1) * PZ; if (poolSd(x, z) < -R - 0.1) break; }
+  const o = makeObj(thing, ...inPool(x, z, R + 0.05));
   addObj(o);
   release(o, rand(-0.5, 0.5), rand(-0.4, 0.4));
 }
@@ -2218,6 +2347,31 @@ function clearPool() {
   objs.forEach(retire);
   wake();
 }
+// A new pool empties the water and rebuilds the grids.
+function showPool() {
+  // SVG has no hidden property, so the attribute is set directly.
+  poolB.querySelectorAll('[data-pool]').forEach(el => el.toggleAttribute('hidden', el.dataset.pool !== poolId));
+  document.getElementById('pool-name').textContent = POOLS[poolId].name;
+  poolB.setAttribute('aria-label', `Pool: ${POOLS[poolId].name}, press for the next pool`);
+}
+function nextPool() {
+  poolId = POOL_IDS[(POOL_IDS.indexOf(poolId) + 1) % POOL_IDS.length];
+  store.set(POOL_KEY, poolId);
+  shape = POOLS[poolId].shape;
+  DEPTH = POOLS[poolId].depth;
+  showPool();
+  if (!ready) return;
+  objs.length = parts.length = later.length = 0;
+  holds.clear();
+  cutters.clear();
+  layoutPool(aspect);
+  seedPetals();
+  allocPool();
+  plop(0, 0.5);
+  wake();
+}
+showPool();
+poolB.addEventListener('click', nextPool);
 nightB.addEventListener('click', () => setNight(!nightT));
 clearB.addEventListener('click', clearPool);
 const KEYS = { 1: 'ball', 2: 'anvil', 3: 'bell' };
@@ -2230,6 +2384,7 @@ addEventListener('keydown', e => {
   else if (k === 'c' || k === 'C') { if (!e.repeat) clearPool(); }
   else if (KEYS[k]) { setThing(KEYS[k]); setMode('throw'); picker.set('throw'); }
   else if (k === 'x' || k === 'X') { setMode('cut'); picker.set('cut'); }
+  else if (k === 'p' || k === 'P') { if (!e.repeat) nextPool(); }
   else if (k === ' ') {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
