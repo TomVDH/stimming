@@ -43,4 +43,9 @@ export default [
   { id: 'car', slot: 'band', load: () => import('./car.js') },
   { id: 'hourglass', slot: 'small', load: () => import('./hourglass.js') },
   { id: 'popup', slot: 'small', load: () => import('./popup.js') },
+  { id: 'metronome', slot: 'big', load: () => import('./metronome.js') },
+  { id: 'switchbank', slot: 'row', load: () => import('./switchbank.js') },
+  { id: 'bellows', slot: 'band', load: () => import('./bellows.js') },
+  { id: 'timer', slot: 'small', load: () => import('./timer.js') },
+  { id: 'toaster', slot: 'small', load: () => import('./toaster.js') },
 ];
