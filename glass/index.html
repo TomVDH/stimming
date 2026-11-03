@@ -65,6 +65,9 @@
             <button class="chip" type="button" data-value="laminated" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="4.2"/><rect x="2.5" y="8.8" width="11" height="4.2"/></svg>Laminated</button>
             <button class="chip" type="button" data-value="armored" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4"/><rect x="4.6" y="4.6" width="6.8" height="6.8"/></svg>Armored</button>
             <button class="chip" type="button" data-value="reeded" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path d="M5.3 2.5v11M8 2.5v11M10.7 2.5v11"/></svg>Reeded</button>
+            <button class="chip" type="button" data-value="shuttle" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 5h11.6l-1.8 6.5H4z"/><path d="M5.2 7.2h5.6"/></svg>Shuttle</button>
+            <button class="chip" type="button" data-value="stained" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 2.2v11.6M2.2 8h11.6M3.9 3.9l8.2 8.2"/></svg>Stained</button>
+            <button class="chip" type="button" data-value="rice" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path class="solid" d="M5 5.5l1.8 1-0.6 0.9-1.8-1zM9.6 9l1.8 1-0.6 0.9-1.8-1zM9.4 4.6l1 1.6-0.9 0.5-1-1.6z"/></svg>Rice</button>
             <button class="chip" type="button" data-value="dichroic" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/><path class="solid" d="M2.5 13.5L13.5 2.5v11z"/></svg>Dichroic</button>
           </div>
         </div>
@@ -91,9 +94,12 @@
 import { initPage, sound, oklchRgb, choices } from '../shared/stim.js';
 initPage({ id: 'glass' });
 // Three glasses: each breaks its own way.
-const KINDS = ['annealed', 'tempered', 'laminated', 'armored', 'reeded', 'dichroic'];
-// Each glass breaks like one of four: reeded and dichroic break as annealed.
-const MODE = { annealed: 'annealed', tempered: 'tempered', laminated: 'laminated', armored: 'armored', reeded: 'annealed', dichroic: 'annealed' };
+const KINDS = ['annealed', 'tempered', 'laminated', 'armored', 'reeded', 'dichroic', 'shuttle', 'stained', 'rice'];
+// Each glass breaks like one of five; several share annealed or armored breaks.
+const MODE = {
+  annealed: 'annealed', tempered: 'tempered', laminated: 'laminated', armored: 'armored', reeded: 'annealed',
+  dichroic: 'annealed', shuttle: 'armored', stained: 'annealed', rice: 'rice',
+};
 let glass = 'annealed';
 const mode = () => MODE[glass];
 try { const v = localStorage.getItem('stimming.glass.kind'); if (KINDS.includes(v)) glass = v; } catch (err) { /* storage is optional */ }
@@ -222,6 +228,7 @@ const VOICE = {
   tempered: { f: 1.45, ring: 1.5, knock: 0.5, snap: 0.9 },
   laminated: { f: 0.78, ring: 0.28, knock: 1.4, snap: 0.75 },
   armored: { f: 0.62, ring: 0.2, knock: 1.8, snap: 0.55 },
+  rice: { f: 0.7, ring: 0.06, knock: 1.3, snap: 1.25 },
 };
 // A crack: a sharp snap, a dull knock and a glassy ring.
 // Ticks follow the crack as it runs.
@@ -292,6 +299,13 @@ function tinkle(size, sp, x) {
   if (t - t0 > 0.07) return;
   tinkNext = t + 0.01 + Math.random() * 0.014;
   const g = level() * clamp(sp / 3, 0.12, 0.8) * jit(0.2), d = bus(a, x), s = clamp(size / 0.1, 0.6, 1.6);
+  // Sugar chunks land with a dull tock, not a ring.
+  if (mode() === 'rice') {
+    burst(a, d, t, 'bandpass', rnd(900, 1500) / s, 2, 0.7 * g, 0.012, 0.05);
+    burst(a, d, t, 'lowpass', 300, 1, 0.4 * g, 0.02, 0.06);
+    setTimeout(() => d.disconnect(), 300);
+    return;
+  }
   burst(a, d, t, 'highpass', 6000, 0.7, 0.35 * g, 0.0015, 0.02);
   const [o, gs] = partials(a, d, t, clamp(4200 * (0.1 / size) ** 0.35, 2400, 8500) * jit(0.08), [1, 1.47, 2.09], [0.1, 0.07, 0.045], [0.08 * s, 0.05 * s, 0.03 * s], g);
   track(o, ...gs, d);
@@ -523,12 +537,15 @@ function firstHit(px, py, qx, qy) {
   }
   return [Math.max(0, best), hit];
 }
-function addSeg(ax, ay, bx, by, ta, tb, w) {
+// Lead came: cell edges that stop cracks and bound shards, never drawn.
+const came = [];
+let cellSeeds = [];
+function addSeg(ax, ay, bx, by, ta, tb, w, hidden = false) {
   const l = Math.hypot(bx - ax, by - ay) || 1;
   // Cracks across the light catch more of it.
   const g = (0.3 + 0.7 * Math.abs((-(by - ay) / l) * L2X + ((bx - ax) / l) * L2Y) ** 3) * rnd(0.55, 1);
   const s = { ax, ay, bx, by, ta, tb, w, g, m: 0, x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
-  segs.push(s);
+  (hidden ? came : segs).push(s);
   for (let i = Math.floor(s.x0 / GC); i <= Math.floor(s.x1 / GC); i++) for (let j = Math.floor(s.y0 / GC); j <= Math.floor(s.y1 / GC); j++) {
     const k = cellKey(i, j);
     if (cells.has(k)) cells.get(k).push(s); else cells.set(k, [s]);
@@ -617,6 +634,11 @@ const WEB = {
   armored: hard => ({
     n: (hard ? 10 : 7) + Math.floor(Math.random() * 4), len: () => S * rnd(0.015, hard ? 0.06 : 0.035),
     r1: S * rnd(0.008, 0.012), gr: 1.45, m: hard ? 4 : 3, skip: () => 0.15, T1: 0.14, wander: 0.4, branch: false,
+  }),
+  // Sugar glass splits at once into a few big chunks.
+  rice: () => ({
+    n: 5 + Math.floor(Math.random() * 3), len: () => S * rnd(1.2, 2),
+    r1: S * rnd(0.1, 0.16), gr: 2.2, m: 1, skip: () => 0.3, T1: 0.1, wander: 0.22, branch: false,
   }),
   laminated: hard => ({
     n: (hard ? 20 : 14) + Math.floor(Math.random() * 6),
@@ -764,6 +786,44 @@ function craze(cx, cy, t0, cap) {
   }
   return { polys, end: t0 + waveT };
 }
+// Seeds on a jittered grid, in pane units 0 to 1, with a colour each.
+function makeCells() {
+  let sd = 7;
+  const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  const cols = Math.max(3, Math.round(Math.sqrt((NCELL * PW) / PH))), rows = Math.floor(NCELL / cols);
+  cellSeeds = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) cellSeeds.push([(i + 0.5 + (r() - 0.5) * 0.7) / cols, (j + 0.5 + (r() - 0.5) * 0.7) / rows, Math.floor(r() * 6)]);
+  while (cellSeeds.length < NCELL) cellSeeds.push([99, 99, 0]);
+}
+// The came: each cell's Voronoi outline, shared edges once.
+function addCame() {
+  came.length = 0;
+  if (glass !== 'stained') return;
+  const hx = PW / 2, hy = PH / 2, P = cellSeeds.filter(c => c[0] < 2).map(([u, v]) => [(u - 0.5) * PW, (v - 0.5) * PH]);
+  const clip = (Q, a, b, k) => {
+    const o = [];
+    for (let i = 0; i < Q.length; i++) {
+      const p = Q[i], q = Q[(i + 1) % Q.length], d1 = a * p[0] + b * p[1] - k, d2 = a * q[0] + b * q[1] - k;
+      if (d1 <= 0) o.push(p);
+      if ((d1 < 0 && d2 > 0) || (d1 > 0 && d2 < 0)) { const f = d1 / (d1 - d2); o.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); }
+    }
+    return o;
+  };
+  const seen = new Set(), key = (x, y) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)}`;
+  for (const [px, py] of P) {
+    let Q = [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]];
+    for (const [qx, qy] of P) if (qx !== px || qy !== py) Q = clip(Q, qx - px, qy - py, (qx * qx + qy * qy - px * px - py * py) / 2);
+    for (let i = 0; i < Q.length; i++) {
+      const [ax, ay] = Q[i], [bx, by] = Q[(i + 1) % Q.length];
+      // Edges on the frame and edges seen twice add nothing.
+      if ((Math.abs(ax - bx) < 1e-7 && Math.abs(Math.abs(ax) - hx) < 1e-7) || (Math.abs(ay - by) < 1e-7 && Math.abs(Math.abs(ay) - hy) < 1e-7)) continue;
+      const k = [key(ax, ay), key(bx, by)].sort().join('|');
+      if (seen.has(k) || Math.hypot(bx - ax, by - ay) < 1e-6) continue;
+      seen.add(k);
+      addSeg(ax, ay, bx, by, 0, 0, 0, true);
+    }
+  }
+}
 // At the burst, every open end runs to the next crack.
 function extend(t) {
   const now = () => 0;
@@ -777,6 +837,7 @@ function arrange() {
   const hx = PW / 2, hy = PH / 2;
   const L = [[-hx, -hy, hx, -hy], [hx, -hy, hx, hy], [hx, hy, -hx, hy], [-hx, hy, -hx, -hy]];
   for (const s of segs) L.push([s.ax, s.ay, s.bx, s.by]);
+  for (const s of came) L.push([s.ax, s.ay, s.bx, s.by]);
   const n = L.length, cuts = L.map(() => [0, 1]);
   const order = [...Array(n).keys()].sort((i, j) => Math.min(L[i][0], L[i][2]) - Math.min(L[j][0], L[j][2]));
   for (let ii = 0; ii < n; ii++) {
@@ -1134,6 +1195,8 @@ function stepSim(dt) {
 }
 
 /* ---------- shaders ---------- */
+// Stained glass: seed count for the cells.
+const NCELL = 44;
 const DITHER = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
 const GLASS_FS = `
 uniform mat4 projectionMatrix;
@@ -1144,7 +1207,8 @@ uniform vec4 uBoxA, uBoxB;
 uniform vec3 uKey, uAbs, uFlashC;
 uniform vec4 uFlash;
 uniform vec2 uFlashS;
-uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine, uDisp, uBend, uQuench, uReed, uDich, uArmor;
+uniform float uRefr, uOpacity, uCrackK, uEdge, uEnvI, uWallZ, uLine, uDisp, uBend, uQuench, uReed, uDich, uArmor, uStain, uRice;
+uniform vec3 uCells[${NCELL}], uPal[6];
 varying vec3 vWorld, vNormal;
 varying vec2 vPuv;
 varying float vSide, vFade;
@@ -1175,8 +1239,29 @@ void main() {
     texture2D(tCrack, vPuv + vec2(0.0, uTexel.y)).r - texture2D(tCrack, vPuv - vec2(0.0, uTexel.y)).r) * uCrackK;
   // Reeded glass: vertical flutes, each a shallow half cylinder.
   float fl = (fract(vPuv.x * uPane.x / 0.055) - 0.5) * uReed * (1.0 - vSide);
+  // Stained glass: the nearest seed picks the colour; lead runs on the cell edges.
+  vec3 stain = vec3(1.0);
+  float lead = 0.0, cid = 0.0;
+  vec2 tilt = vec2(0.0);
+  if (uStain > 0.0) {
+    vec2 q = vPuv * uPane, c1 = vec2(1e3), c2 = vec2(1e3);
+    float d1 = 1e9, d2 = 1e9;
+    for (int i = 0; i < ${NCELL}; i++) {
+      vec2 c = uCells[i].xy * uPane;
+      float d = dot(q - c, q - c);
+      if (d < d1) { d2 = d1; c2 = c1; d1 = d; c1 = c; cid = uCells[i].z; }
+      else if (d < d2) { d2 = d; c2 = c; }
+    }
+    // Distance to the bisector between the two nearest seeds.
+    float e = dot(q - 0.5 * (c1 + c2), normalize(c1 - c2)), ea = fwidth(e);
+    lead = (1.0 - smoothstep(0.008 - ea, 0.008 + ea, e)) * uStain;
+    for (int k = 0; k < 6; k++) if (float(k) == cid) stain = mix(vec3(1.0), uPal[k], uStain);
+    // Each piece sits at its own slight tilt and has its own ripple.
+    tilt = (vec2(fract(cid * 0.37 + c1.x * 3.1), fract(c1.y * 5.3 + 0.2)) - 0.5) * 0.06 * uStain;
+    tilt += vec2(sin(q.y * 23.0 + c1.x * 9.0) + 0.6 * sin(q.x * 31.0 + q.y * 11.0), sin(q.x * 19.0 - c1.y * 7.0) + 0.6 * sin(q.y * 29.0 - q.x * 13.0)) * 0.004 * uStain;
+  }
   // Cracks tilt the surface beside them, so reflections break there.
-  vec3 N = normalize(N0 + vec3(cg * uBend * (1.0 - vSide) + vec2(fl * 1.6, 0.0), 0.0));
+  vec3 N = normalize(N0 + vec3(cg * uBend * (1.0 - vSide) + vec2(fl * 1.6, 0.0) + tilt * (1.0 - vSide), 0.0));
   float cosT = clamp(dot(N, V), 0.0, 1.0);
   // Float glass is never quite flat.
   vec2 wav = vec2(sin(vPuv.y * 23.0 + vPuv.x * 5.0), sin(vPuv.x * 17.0 - vPuv.y * 7.0)) * 0.006;
@@ -1185,9 +1270,19 @@ void main() {
   vec2 off = -(Nv.xy * (1.0 + vSide * 2.0) + wav) * uRefr + cg * 30.0 / uRes;
   // Each flute bends the city sideways and repeats it.
   off.x -= fl * 0.05;
+  off -= tilt * 0.35;
+  // Rice glass is cast sugar: it ripples more than float glass.
+  off += vec2(sin(vPuv.y * 31.0 + vPuv.x * 9.0), sin(vPuv.x * 27.0 - vPuv.y * 13.0)) * 0.007 * uRice;
   // Dispersion: red bends least, blue bends most.
   vec2 dsp = off * uDisp;
   vec3 back = vec3(texture2D(tBack, suv + off - dsp).r, texture2D(tBack, suv + off).g, texture2D(tBack, suv + off + dsp).b);
+  // Sugar is faintly cloudy: the view softens and a milky haze lifts it.
+  if (uRice > 0.0) {
+    vec3 soft = (texture2D(tBack, suv + off + vec2(0.005, 0.002)).rgb + texture2D(tBack, suv + off - vec2(0.002, 0.005)).rgb + texture2D(tBack, suv + off + vec2(-0.004, 0.004)).rgb) / 3.0;
+    back = mix(back, (back + 2.0 * soft) / 3.0, uRice) + vec3(0.03, 0.026, 0.018) * uRice;
+  }
+  // Coloured glass passes its own hue and glows faintly with scattered light.
+  back = mix(back, back * stain * 1.5 + stain * 0.03, uStain);
   // Light through glass turns green with path length.
   // Side walls are the longest paths.
   float rim = min(min(vPuv.x, 1.0 - vPuv.x) * uPane.x, min(vPuv.y, 1.0 - vPuv.y) * uPane.y);
@@ -1223,6 +1318,8 @@ void main() {
   film *= film;
   vec3 Fr = mix(vec3(F), 0.04 + 0.32 * film, uDich), Ft = mix(vec3(1.0 - F), 1.0 - 0.42 * film, uDich);
   vec3 col = (back * tint * Ft * (1.0 - 0.35 * ck.r * (1.0 - ck.g)) + (env + uDich * 0.04) * Fr + spec) * (1.0 - 0.93 * gap) + lit * vec3(0.9, 1.0, 0.96) * 1.5;
+  // Lead came is opaque: dark grey with a dull sheen of the room.
+  col = mix(col, vec3(0.016, 0.016, 0.018) + env * 0.12, lead * (1.0 - vSide));
   // The muzzle flash is a point light, shaded on the glass.
   // Two GGX lobes: a broad bright sheen and a hot core inside it.
   if (uFlash.w > 0.0) {
@@ -1663,6 +1760,8 @@ function build() {
   pane.geometry = new THREE.PlaneGeometry(PW, PH, 160, 90).translate(0, 0, T / 2);
   pane.position.set(0, FH / 2, 0);
   for (const m of [paneMat, shardMat]) m.uniforms.uPane.value.set(PW, PH);
+  makeCells();
+  for (const m of [paneMat, shardMat]) cellSeeds.forEach((c, i) => m.uniforms.uCells.value[i].set(...c));
   while (frameG.children.length) { const c = frameG.children.pop(); c.geometry.dispose(); }
   // The frame's lip overlaps the pane by its bevel.
   const fb = 0.005, frame = new THREE.Mesh(ringGeo(FW / 2 - fb, FH / 2 - fb, PW / 2 + fb, PH / 2 + fb, FD, fb), frameMat);
@@ -1851,7 +1950,8 @@ function tap(x, y, hard = false) {
   lastWeb = w;
   state = 'cracked';
   if (kind === 'armored') {
-    // Armored glass takes the blow and holds.
+    // Armored glass takes the blow and holds; a shuttle's outer pane may craze.
+    bruise(x, y, hard ? 2 : 1);
   } else if (kind === 'laminated') {
     // The interlayer holds: each blow dents it, and the pane bows more.
     dentAt(x, y, hard ? 0.045 : 0.022, S * 0.14);
@@ -1929,7 +2029,7 @@ function shatter() {
     }
     if (p.stage < 3) {
       // Big faces split along hidden cracks of their own.
-      if (splitBig(p.polys, t, (PW * PH) / 80)) { p.polys = arrange(); ribbons(); p.stage++; }
+      if (splitBig(p.polys, t, (PW * PH) / (mode() === 'rice' ? 22 : 80))) { p.polys = arrange(); ribbons(); p.stage++; }
       else p.stage = 3;
       return;
     }
@@ -2064,12 +2164,14 @@ function stepRewind(dt) {
 function heal(quiet) {
   segs.length = 0;
   cells.clear();
+  addCame();
   tips.length = 0;
   cClock = 0;
   growEnd = -1;
   damage = 0;
   // Tempered glass takes a few blows; which one breaks it is luck.
-  limit = mode() === 'laminated' || mode() === 'armored' ? Infinity : mode() === 'tempered' ? 3 + Math.floor(Math.random() * 3) : 5 + (Math.random() < 0.5 ? 1 : 0);
+  crazed = false;
+  limit = mode() === 'rice' ? 1 : mode() === 'laminated' || mode() === 'armored' ? Infinity : mode() === 'tempered' ? 3 + Math.floor(Math.random() * 3) : 5 + (Math.random() < 0.5 ? 1 : 0);
   pending = rw = sim = bulge = lastWeb = null;
   removeBrick();
   if (holeMesh) { holeN = 0; holeMesh.geometry.instanceCount = 0; }
@@ -2094,9 +2196,12 @@ const LOOK = {
   armored: { face: [0.3, 0.012, 250], side: [0.23, 0.01, 250], abs: [0.16, 0.035, 0.1], quench: 0, armor: 1, hold: 'pound' },
   reeded: { face: [0.46, 0.04, 58], side: [0.34, 0.03, 58], abs: [0.06, 0.02, 0.045], quench: 0, reed: 1, hold: 'shatter' },
   dichroic: { face: [0.22, 0.008, 280], side: [0.18, 0.008, 280], abs: [0.02, 0.02, 0.02], quench: 0, dich: 1, hold: 'shatter' },
+  shuttle: { face: [0.19, 0.004, 260], side: [0.66, 0.008, 90], abs: [0.05, 0.035, 0.02], quench: 0, armor: 0.8, dich: 0.2, craze: true, hold: 'pound' },
+  stained: { face: [0.27, 0.012, 55], side: [0.2, 0.01, 55], abs: [0.015, 0.015, 0.015], quench: 0, stain: 1, hold: 'shatter' },
+  rice: { face: [0.62, 0.03, 85], side: [0.48, 0.03, 80], abs: [0.012, 0.035, 0.1], quench: 0, rice: 1, hold: 'shatter' },
 };
 // Ring: frequency in Hz, decay in seconds.
-const RINGF = { annealed: [11, 0.12], tempered: [14, 0.2], laminated: [7, 0.05], armored: [18, 0.06], reeded: [11, 0.12], dichroic: [12, 0.14] };
+const RINGF = { annealed: [11, 0.12], tempered: [14, 0.2], laminated: [7, 0.05], armored: [18, 0.06], reeded: [11, 0.12], dichroic: [12, 0.14], shuttle: [20, 0.05], stained: [9, 0.1], rice: [6, 0.04] };
 // The glass button shows the glass in use.
 function showGlass() {
   const b = document.querySelector(`#glasses [data-value="${glass}"]`);
@@ -2118,6 +2223,8 @@ function applyLook() {
     u.uReed.value = L.reed || 0;
     u.uDich.value = L.dich || 0;
     u.uArmor.value = L.armor || 0;
+    u.uStain.value = L.stain || 0;
+    u.uRice.value = L.rice || 0;
   }
   backDirty = true;
 }
@@ -2169,6 +2276,17 @@ function addHole(x, y, t, stuck = false) {
   a.needsUpdate = true;
   holeMesh.geometry.instanceCount = holeN;
   crackDirty = true;
+}
+// The shuttle's outer pane crazes after enough blows; the pressure panes hold.
+let crazed = false;
+function bruise(x, y, k) {
+  damage += k;
+  if (!LOOK[glass].craze || crazed || damage < 6) return;
+  crazed = true;
+  craze(x, y, cClock, capNow());
+  for (let i = 0; i < segs.length; i++) segs[i].g *= 0.8;
+  growEnd = Math.max(growEnd, cClock + (reduce ? 0.1 : 0.26));
+  sfx(() => crazeSound(x / (PW / 2), 0.26));
 }
 // A shot's web: short radials and a ring or two close in.
 function shotWeb(x, y) {
@@ -2241,7 +2359,8 @@ function shoot(x, y, auto = false) {
     const w = shotWeb(x, y);
     lastWeb = w;
     sfx(() => crackSound(x / (PW / 2), false, w.ticks, kind));
-    if (kind === 'annealed') { damage += 0.75; if (damage >= limit) pending = { at: w.end, x, y }; }
+    if (kind === 'annealed' || kind === 'rice') { damage += kind === 'rice' ? 1 : 0.75; if (damage >= limit) pending = { at: w.end, x, y }; }
+    if (kind === 'armored') bruise(x, y, 1);
   }
   ribbons();
   showChip();
@@ -2292,6 +2411,7 @@ function strike(x, y) {
   state = 'cracked';
   if (kind === 'armored') {
     // The brick bounces off a small bruise.
+    bruise(x, y, 3);
     const w = web(x, y, false);
     lastWeb = w;
     flexAt(x, y, -0.01);
@@ -2593,6 +2713,8 @@ async function start() {
   await idle();
 
   const V3 = c => new THREE.Vector3(...c), town = city();
+  // Jewel tones for stained glass, as transmission colours.
+  const PAL = [lin(0.7, 0.2, 25), lin(0.64, 0.17, 262), lin(0.78, 0.16, 150), lin(0.88, 0.15, 82), lin(0.66, 0.17, 310), lin(0.96, 0.025, 95)];
   wallMat = new THREE.ShaderMaterial({
     vertexShader: WORLD_VS, fragmentShader: WALL_FS,
     uniforms: {
@@ -2659,6 +2781,7 @@ async function start() {
     uRefr: { value: 0.25 }, uOpacity: { value: 1 }, uCrackK: { value: 1 }, uEdge: { value: 1 }, uEnvI: { value: 0.4 },
     uWallZ: { value: WALLZ }, uLine: { value: 1 }, uDisp: { value: 0.18 }, uBend: { value: 0.7 },
     uAbs: { value: new THREE.Vector3(0.07, 0.016, 0.05) }, uQuench: { value: 0 }, uReed: { value: 0 }, uDich: { value: 0 }, uArmor: { value: 0 },
+    uStain: { value: 0 }, uRice: { value: 0 }, uCells: { value: Array.from({ length: NCELL }, () => new THREE.Vector3(99, 99, 0)) }, uPal: { value: PAL.map(c => V3(c)) },
     uFlash: flashU, uFlashS: flashS, uFlashC: { value: V3(lin(0.96, 0.035, 80, 1)) },
     uBoxA: { value: new THREE.Vector4() }, uBoxB: { value: new THREE.Vector4() }, uKey: { value: V3(lin(0.97, 0.025, 80, 0.6)) },
   });
