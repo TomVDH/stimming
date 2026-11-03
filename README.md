@@ -73,7 +73,7 @@ There is no build step. Toys stay independent pages that share one wrapper.
 
 ## Publishing
 
-Publish `index.html` to the Artifact link above with every toy page passed as a file at its folder path (`morpher/index.html`, `fidget/index.html`, and so on), plus `shared/stim.css` and `shared/stim.js`. Add each new toy's path when it lands.
+Publish `index.html` to the Artifact link above with every toy page passed as a file at its folder path (`morpher/index.html`, `fidget/index.html`, and so on), plus `shared/stim.css`, `shared/stim.js`, `shared/intro.css`, `shared/intro.js` and `toys.json`. Add each new toy's path when it lands.
 
 ## Conventions
 

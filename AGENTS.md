@@ -39,7 +39,7 @@ Read `README.md` for the toy list and the full rules.
   3. `section.about` with `h1.display` and a `.vignette`.
 - Glass uses the shell but keeps its old header. Other Lab toys keep their own inline shell until Tom picks them.
 - `morpher/lab.html` is the old full Morphset page, `noindex`.
-- `shared/names.js` holds each toy's Dutch (Flemish) name and IPA. The menu and the intro show it under the English name. Tom sets the words.
+- `toys.json` (root) is the one source for each toy's name, number, intro subtitle, emblem, Dutch (Flemish) name and IPA. The intro and the menu read it; each page's own intro text is only the fallback. Tom sets the Dutch words. Add a new toy here.
 - A toy Tom signs off gets `data-done` on its `.intro` div (its intro flashes a tick) and on its menu `<li>` (it moves to the ticked shelf up top). Only Tom bestows it.
 
 ## Running
@@ -54,7 +54,7 @@ Open <http://localhost:8000/>. All links are relative.
 
 1. Read the Artifact before the first publish in a session.
 2. Publish root `index.html` to the Artifact URL.
-3. Pass each changed page in `files` at its folder path (`prism/index.html`, `shared/stim.css`). Use absolute source paths.
+3. Pass each changed page in `files` at its folder path (`prism/index.html`, `shared/stim.css`, `toys.json`). Use absolute source paths.
 
 ## Conventions
 

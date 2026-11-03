@@ -1,7 +1,26 @@
 // Stimming intro: emblem in a flash box, the name unfurls, hold until ready, clear.
 // Toy pages import it as '../shared/intro.js'. No dependencies.
+// The root toys.json holds each toy's name, subtitle, emblem and Dutch name.
+// The page's own intro text stays when toys.json cannot load.
 
-import { NL, toyId } from './names.js';
+const TOYS = new URL('../toys.json', import.meta.url);
+// The toy's folder name, read from the page address.
+function toyId(path = location.pathname) {
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length && parts[parts.length - 1].endsWith('.html')) parts.pop();
+  return parts[parts.length - 1] || '';
+}
+// One short fetch; a slow or missing file gives null.
+async function entry() {
+  try {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 400);
+    const res = await fetch(TOYS, { signal: ctl.signal });
+    clearTimeout(t);
+    return res.ok ? (await res.json())[toyId()] || null : null;
+  } catch (err) {
+    return null;
+  }
+}
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -39,14 +58,26 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   root.classList.add('is-live');
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min))]);
-  // The Dutch name and its IPA sit under the English name.
-  const nlName = NL[toyId()], nameEl = text.querySelector('.intro-name');
+  const info = await entry(), nameEl = text.querySelector('.intro-name');
   let nl = null;
-  if (nlName && nameEl) {
-    nl = document.createElement('span');
-    nl.className = 'intro-nl';
-    nl.innerHTML = `${nlName[0]} <span class="ipa">/${nlName[1]}/</span>`;
-    nameEl.after(nl);
+  if (info && nameEl) {
+    nameEl.textContent = info.name;
+    const subEl = text.querySelector('.intro-sub');
+    if (subEl && info.sub) subEl.textContent = info.sub;
+    let emb = text.querySelector('.intro-emblem');
+    if (info.emblem && !emb) {
+      emb = document.createElement('span');
+      emb.className = 'intro-emblem';
+      nameEl.before(emb);
+    }
+    if (info.emblem) emb.style.setProperty('--emblem', `url(${new URL(info.emblem, TOYS).href})`);
+    // The Dutch name and its IPA sit under the English name.
+    if (info.nl) {
+      nl = document.createElement('span');
+      nl.className = 'intro-nl';
+      nl.innerHTML = `${info.nl} <span class="ipa">/${info.ipa}/</span>`;
+      nameEl.after(nl);
+    }
   }
 
   if (RM.matches) {
