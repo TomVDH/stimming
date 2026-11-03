@@ -82,8 +82,21 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Neon Hum</h1><div class="vignette" hidden></div></section>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, audioKit, linFit, css } from '../shared/stim.js';
+import { createNoise2D } from 'simplex-noise';
 initPage({ id: 'neon' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -106,24 +119,7 @@ const curtain = new Promise(res => {
   to = setTimeout(done, 7000);
 });
 
-/* ---------- colour: OKLCH in, linear sRGB out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
-}
-// Chroma shrinks until the colour fits sRGB.
-function linear(L, C, h) {
-  let c = lin(L, C, h);
-  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return c.map(v => clamp(v));
-}
+/* ---------- colour: culori through the shared helpers ---------- */
 const scale = (c, k) => c.map(v => v * k);
 // Each gas: name, OKLCH, a balance set by eye, and warm-up seconds.
 // Pure neon burns red; the rest are argon and coated glass.
@@ -141,234 +137,174 @@ const GAS_SPEC = [
   ['White', 0.95, 0.035, 80, 0.55, 2.0],
 ];
 // Each gas is normalised to full strength, then balanced.
-const GAS = GAS_SPEC.map(([, L, C, h, k]) => { const c = linear(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
+const GAS = GAS_SPEC.map(([, L, C, h, k]) => { const c = linFit(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
 const WARM = GAS_SPEC.map(g => g[5]);
 // Cold argon glows a dim violet.
-const COLD = (() => { const c = linear(0.5, 0.22, 292), m = Math.max(...c); return c.map(v => (v / m) * 0.5); })();
+const COLD = (() => { const c = linFit(0.5, 0.22, 292), m = Math.max(...c); return c.map(v => (v / m) * 0.5); })();
 const MIX = GAS.length;
 // Mix hops between far hues, so neighbours contrast.
 const MIX_ORDER = [0, 6, 3, 8, 5, 1, 7, 4, 9, 2];
 // Each wall: name, shader kind, relief depth, metal, five colours.
 // Give scales how hard a knock shakes the tubes.
 const WALLS = [
-  { name: 'Brick', kind: 0, depth: 0.14, metal: 0, c: [linear(0.43, 0.1, 31), linear(0.37, 0.07, 40), linear(0.47, 0.1, 42), linear(0.29, 0.03, 30), linear(0.57, 0.012, 70)] },
-  { name: 'Steel', kind: 1, depth: 0.17, metal: 1, give: 1.3, c: [linear(0.74, 0.008, 240), linear(0.47, 0.11, 48), linear(0.32, 0.07, 36), linear(0.6, 0.01, 240), [0, 0, 0]] },
-  { name: 'Concrete', kind: 2, depth: 0.11, metal: 0, give: 0.7, c: [linear(0.6, 0.008, 250), linear(0.56, 0.016, 75), linear(0.4, 0.012, 235), linear(0.34, 0.01, 260), [0, 0, 0]] },
-  { name: 'Tile', kind: 3, depth: 0.13, metal: 0, sheen: 3.5, c: [linear(0.9, 0.018, 95), linear(0.46, 0.1, 160), linear(0.2, 0.01, 260), linear(0.5, 0.012, 80), [0, 0, 0]] },
-  { name: 'Sequins', kind: 4, depth: 0.5, metal: 1, give: 1.3, c: [linear(0.66, 0.2, 350), linear(0.82, 0.15, 85), linear(0.72, 0.14, 195), linear(0.16, 0.01, 300), [0, 0, 0]] },
-  { name: 'Foam', kind: 5, depth: 0.3, metal: 0, give: 0.2, c: [linear(0.3, 0.008, 270), linear(0.5, 0.2, 300), linear(0.1, 0.01, 280), [0, 0, 0], [0, 0, 0]] },
+  { name: 'Brick', kind: 0, depth: 0.14, metal: 0, c: [linFit(0.43, 0.1, 31), linFit(0.37, 0.07, 40), linFit(0.47, 0.1, 42), linFit(0.29, 0.03, 30), linFit(0.57, 0.012, 70)] },
+  { name: 'Steel', kind: 1, depth: 0.17, metal: 1, give: 1.3, c: [linFit(0.74, 0.008, 240), linFit(0.47, 0.11, 48), linFit(0.32, 0.07, 36), linFit(0.6, 0.01, 240), [0, 0, 0]] },
+  { name: 'Concrete', kind: 2, depth: 0.11, metal: 0, give: 0.7, c: [linFit(0.6, 0.008, 250), linFit(0.56, 0.016, 75), linFit(0.4, 0.012, 235), linFit(0.34, 0.01, 260), [0, 0, 0]] },
+  { name: 'Tile', kind: 3, depth: 0.13, metal: 0, sheen: 3.5, c: [linFit(0.9, 0.018, 95), linFit(0.46, 0.1, 160), linFit(0.2, 0.01, 260), linFit(0.5, 0.012, 80), [0, 0, 0]] },
+  { name: 'Sequins', kind: 4, depth: 0.5, metal: 1, give: 1.3, c: [linFit(0.66, 0.2, 350), linFit(0.82, 0.15, 85), linFit(0.72, 0.14, 195), linFit(0.16, 0.01, 300), [0, 0, 0]] },
+  { name: 'Foam', kind: 5, depth: 0.3, metal: 0, give: 0.2, c: [linFit(0.3, 0.008, 270), linFit(0.5, 0.2, 300), linFit(0.1, 0.01, 280), [0, 0, 0], [0, 0, 0]] },
 ];
-const AMB = scale(linear(0.62, 0.07, 255), 0.26), KEY = scale(linear(0.9, 0.03, 245), 0.7);
+const AMB = scale(linFit(0.62, 0.07, 255), 0.26), KEY = scale(linFit(0.9, 0.03, 245), 0.7);
 // The night light comes from the upper left; y points up.
 const LAMB = (() => { const v = [-0.35, 0.6, 0.72], n = Math.hypot(...v); return v.map(x => x / n); })();
 const LD = (() => { const n = Math.hypot(LAMB[0], LAMB[1]); return [LAMB[0] / n, LAMB[1] / n]; })();
 
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 16, MAXHUM = 6, LEAD = 0.004;
-let ac = null, out = null, noise = null, humBus = null, askedAt = -1e9, voices = 0, restT = 0;
+/* ---------- sound: Tone.js voices on the shared audio kit ---------- */
+const MAXHUM = 6, POOL = 6, LEAD = 0.004;
+// Drawing, switching and clearing keys count as gestures.
+const kit = audioKit({ keys: new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Backspace', 'c', 'C']) });
+let Tone = null, V = null, building = null, poolAt = 0;
 const hums = new Map();
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
-// Busy moments soften each voice; the compressor catches the rest.
-const level = () => 1 / (1 + 0.07 * voices);
-
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.55;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    // One second of white noise feeds every burst.
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    humBus = ac.createGain();
-    humBus.gain.value = 1;
-    humBus.connect(out);
+// Tone loads on the first live gesture; the voices follow.
+function voices() {
+  if (!kit.live()) return null;
+  if (!V && !building) {
+    building = kit.tone().then(T => {
+      building = null;
+      if (!T || V) return;
+      Tone = T;
+      V = build();
+      humSync();
+    });
   }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
-  humSync();
+  return V;
 }
-// A context still waking queues sounds for a moment.
-function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+// A gesture starts Tone loading, so the first strike is heard.
+['pointerup', 'keydown'].forEach(t => addEventListener(t, () => voices(), { capture: true, passive: true }));
+// A small pool of panned voices: noise bursts, falling drops, sine rings.
+function build() {
+  const pool = Array.from({ length: POOL }, () => {
+    const pan = new Tone.Panner(0).connect(kit.out);
+    const f = new Tone.Filter({ type: 'bandpass', frequency: 3000, Q: 1 }).connect(pan);
+    const n = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.01, sustain: 0, release: 0.002 } }).connect(f);
+    const drop = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 0.4, envelope: { attack: 0.002, decay: 0.1, sustain: 0, release: 0.02 } }).connect(pan);
+    const ring = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.002, decay: 0.2, sustain: 0, release: 0.05 } }).connect(pan);
+    ring.maxPolyphony = 6;
+    return { pan, f, n, drop, ring };
+  });
+  return { pool, humBus: new Tone.Gain(1).connect(kit.out) };
 }
-// Once every tube is dark and still, the context sleeps.
-function rest() {
-  clearTimeout(restT);
-  if (!ac || ac.state !== 'running') return;
-  restT = setTimeout(() => {
-    if (!raf && !draft && !tubes.some(t => t.lvl > 0) && ac.state === 'running') ac.suspend()?.catch(() => {});
-  }, 1500);
+// The next pool voice, panned to its place on the wall.
+function take(x) {
+  const v = V.pool[poolAt++ % POOL];
+  v.pan.pan.setValueAtTime(clamp(x, -1, 1) * 0.6, kit.ac.currentTime);
+  return v;
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Backspace', 'c', 'C']);
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
+// A noise burst through the voice's filter.
+function burst(v, t, type, f, q, g, tau) {
+  v.f.type = type;
+  v.f.frequency.setValueAtTime(f, t);
+  v.f.Q.setValueAtTime(q, t);
+  v.n.envelope.decay = tau * 3;
+  v.n.triggerAttackRelease(tau * 3, t, clamp(g));
 }
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
-
-// Each voice pans with its place on the wall.
-function bus(a, x) {
-  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
-  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
-  p.connect(out);
-  return p;
+// A sine that falls from f0 to f1 and dies away.
+function drop(v, t, f0, f1, g, tau) {
+  v.drop.octaves = Math.max(0.01, Math.log2(f0 / f1));
+  v.drop.pitchDecay = tau * 3;
+  v.drop.envelope.decay = tau * 5;
+  v.drop.triggerAttackRelease(f1, tau * 5, t, clamp(g));
 }
-// A noise burst through one filter; it tidies itself up.
-function burst(a, dst, t, type, f, q, g, tau, len, done) {
-  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
-  src.buffer = noise;
-  fl.type = type;
-  fl.frequency.value = f;
-  fl.Q.value = q;
-  ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(g, t + 0.0005);
-  ng.gain.setTargetAtTime(0, t + 0.0005, tau);
-  src.connect(fl).connect(ng).connect(dst);
-  src.onended = () => { fl.disconnect(); ng.disconnect(); done?.(); };
-  src.start(t, Math.random() * 0.9, len);
-}
-// A sine that falls in pitch and dies away.
-function tone(a, dst, t, f0, f1, g, tau, done) {
-  const o = a.createOscillator(), og = a.createGain();
-  o.frequency.setValueAtTime(f0, t);
-  o.frequency.exponentialRampToValueAtTime(f1, t + tau * 3);
-  og.gain.setValueAtTime(0, t);
-  og.gain.linearRampToValueAtTime(g, t + 0.002);
-  og.gain.setTargetAtTime(0, t + 0.002, tau);
-  o.connect(og).connect(dst);
-  o.onended = () => { og.disconnect(); done?.(); };
-  o.start(t);
-  o.stop(t + tau * 7 + 0.01);
-}
-// One voice frees its bus when its last node ends.
-function voice(a, x, build) {
-  if (voices >= MAXV) return;
-  const dst = bus(a, x);
-  let left = 0;
-  voices++;
-  const done = () => { if (--left === 0) { voices--; dst.disconnect(); } };
-  build(dst, () => { left++; return done; });
+// A steady sine partial with its own decay.
+function ring(v, t, f, g, tau) {
+  v.ring.set({ envelope: { decay: tau * 4 } });
+  v.ring.triggerAttackRelease(f, tau * 4, t, clamp(g));
 }
 // Ionising gas spits: a few tiny bright ticks.
 function crackle(t, k) {
-  const a = live();
-  if (!a || a.currentTime < t.crackAt) return;
-  t.crackAt = a.currentTime + 0.025;
-  const t0 = a.currentTime + LEAD, g = level() * k * jit(0.15);
-  voice(a, t.pan, (dst, hold) => {
-    for (let n = 2 + ((Math.random() * 4) | 0), i = 0; i < n; i++) {
-      burst(a, dst, t0 + Math.random() * 0.04, 'bandpass', rand(2200, 6000), 0.8, 0.13 * g * jit(0.3), rand(0.0012, 0.004), 0.03, hold());
-    }
-  });
+  if (!voices() || kit.ac.currentTime < t.crackAt) return;
+  t.crackAt = kit.ac.currentTime + 0.025;
+  const v = take(t.pan), t0 = kit.ac.currentTime + LEAD, g = k * jit(0.15);
+  for (let n = 2 + ((Math.random() * 4) | 0), i = 0; i < n; i++) {
+    burst(v, t0 + i * 0.01 + Math.random() * 0.008, 'bandpass', rand(2200, 6000), 0.8, 0.13 * g * jit(0.3), rand(0.0012, 0.004));
+  }
 }
 // The transformer takes the load with a soft thump.
 function thump(t) {
-  const a = live();
-  if (!a) return;
-  const t0 = a.currentTime + LEAD, g = level() * jit(0.08);
-  voice(a, t.pan, (dst, hold) => {
-    tone(a, dst, t0, 92 * jit(0.04), 70, 0.07 * g, 0.05, hold());
-    burst(a, dst, t0, 'lowpass', 900, 0.7, 0.03 * g, 0.02, 0.1, hold());
-  });
+  if (!voices()) return;
+  const v = take(t.pan), t0 = kit.ac.currentTime + LEAD, g = jit(0.08);
+  drop(v, t0, 92 * jit(0.04), 70, 0.07 * g, 0.05);
+  burst(v, t0, 'lowpass', 900, 0.7, 0.03 * g, 0.02);
 }
 // A switch snaps: a bright tick over a small body.
 function click(x, k = 1) {
-  const a = live();
-  if (!a) return;
-  const t0 = a.currentTime + LEAD, g = level() * k * jit(0.08);
-  voice(a, x, (dst, hold) => {
-    burst(a, dst, t0, 'bandpass', 3300 * jit(0.05), 1.3, 0.2 * g, 0.0022, 0.02, hold());
-    tone(a, dst, t0, 1500 * jit(0.04), 780, 0.04 * g, 0.004, hold());
-    tone(a, dst, t0 + 0.004, 130 * jit(0.05), 90, 0.06 * g, 0.022, hold());
-  });
+  if (!voices()) return;
+  const v = take(x), t0 = kit.ac.currentTime + LEAD, g = k * jit(0.08);
+  burst(v, t0, 'bandpass', 3300 * jit(0.05), 1.3, 0.2 * g, 0.0022);
+  ring(v, t0, 1500 * jit(0.04), 0.04 * g, 0.004);
+  drop(v, t0 + 0.004, 130 * jit(0.05), 90, 0.06 * g, 0.022);
 }
 // A knuckle on the wall: each wall answers in its own voice.
 function thud(x) {
-  const a = live();
-  if (!a) return;
-  const t0 = a.currentTime + LEAD, g = level() * jit(0.1), kind = WALLS[wallNow].kind;
-  voice(a, x, (dst, hold) => {
-    if (kind === 1) {
-      // The steel sheet booms and rings on a few loose partials.
-      tone(a, dst, t0, 74 * jit(0.05), 58, 0.16 * g, 0.09, hold());
-      for (const [f, k, tau] of [[187, 0.05, 0.16], [433, 0.035, 0.11], [761, 0.022, 0.08], [1290, 0.014, 0.05]]) {
-        tone(a, dst, t0 + 0.002, f * jit(0.03), f * 0.97, k * g, tau, hold());
-      }
-      burst(a, dst, t0, 'bandpass', 2400, 0.9, 0.05 * g, 0.012, 0.08, hold());
-    } else if (kind === 3) {
-      // Tile gives a bright, hard tock.
-      tone(a, dst, t0, 380 * jit(0.05), 300, 0.11 * g, 0.018, hold());
-      burst(a, dst, t0, 'bandpass', 3200, 1.4, 0.07 * g, 0.006, 0.04, hold());
-    } else if (kind === 4) {
-      // Sequins rattle: a soft thump under a spray of tiny ticks.
-      tone(a, dst, t0, 110 * jit(0.05), 70, 0.08 * g, 0.03, hold());
-      for (let i = 0; i < 14; i++) burst(a, dst, t0 + Math.random() * 0.22, 'highpass', rand(5500, 9000), 0.7, 0.05 * g * jit(0.4), 0.002, 0.02, hold());
-    } else if (kind === 5) {
-      // Foam swallows the blow almost whole.
-      tone(a, dst, t0, 78 * jit(0.05), 60, 0.05 * g, 0.03, hold());
-      burst(a, dst, t0, 'lowpass', 380, 0.7, 0.03 * g, 0.012, 0.05, hold());
-    } else if (kind === 2) {
-      // Concrete swallows the blow: a dead, short knock.
-      tone(a, dst, t0, 120 * jit(0.05), 64, 0.14 * g, 0.022, hold());
-      burst(a, dst, t0, 'lowpass', 1700, 0.8, 0.08 * g, 0.007, 0.05, hold());
-    } else {
-      // Brick gives a dull thump with a gritty edge.
-      tone(a, dst, t0, 104 * jit(0.05), 66, 0.15 * g, 0.04, hold());
-      burst(a, dst, t0, 'bandpass', 900, 0.9, 0.08 * g, 0.014, 0.08, hold());
-    }
-  });
+  if (!voices()) return;
+  const v = take(x), t0 = kit.ac.currentTime + LEAD, g = jit(0.1), kind = WALLS[wallNow].kind;
+  if (kind === 1) {
+    // The steel sheet booms and rings on a few loose partials.
+    drop(v, t0, 74 * jit(0.05), 58, 0.16 * g, 0.09);
+    for (const [f, k, tau] of [[187, 0.05, 0.16], [433, 0.035, 0.11], [761, 0.022, 0.08], [1290, 0.014, 0.05]]) ring(v, t0 + 0.002, f * jit(0.03), k * g, tau);
+    burst(v, t0, 'bandpass', 2400, 0.9, 0.05 * g, 0.012);
+  } else if (kind === 3) {
+    // Tile gives a bright, hard tock.
+    drop(v, t0, 380 * jit(0.05), 300, 0.11 * g, 0.018);
+    burst(v, t0, 'bandpass', 3200, 1.4, 0.07 * g, 0.006);
+  } else if (kind === 4) {
+    // Sequins rattle: a soft thump under a spray of tiny ticks.
+    drop(v, t0, 110 * jit(0.05), 70, 0.08 * g, 0.03);
+    for (let i = 0; i < 14; i++) burst(v, t0 + i * 0.016 + Math.random() * 0.01, 'highpass', rand(5500, 9000), 0.7, 0.05 * g * jit(0.4), 0.002);
+  } else if (kind === 5) {
+    // Foam swallows the blow almost whole.
+    drop(v, t0, 78 * jit(0.05), 60, 0.05 * g, 0.03);
+    burst(v, t0, 'lowpass', 380, 0.7, 0.03 * g, 0.012);
+  } else if (kind === 2) {
+    // Concrete swallows the blow: a dead, short knock.
+    drop(v, t0, 120 * jit(0.05), 64, 0.14 * g, 0.022);
+    burst(v, t0, 'lowpass', 1700, 0.8, 0.08 * g, 0.007);
+  } else {
+    // Brick gives a dull thump with a gritty edge.
+    drop(v, t0, 104 * jit(0.05), 66, 0.15 * g, 0.04);
+    burst(v, t0, 'bandpass', 900, 0.9, 0.08 * g, 0.014);
+  }
 }
 // Each lit tube buzzes: a mains sawtooth through a low filter.
 function humVoice(t) {
-  const a = ac, o = a.createOscillator(), o2 = a.createOscillator(), g2 = a.createGain();
-  const lp = a.createBiquadFilter(), g = a.createGain(), dst = bus(a, t.pan);
-  dst.disconnect();
-  dst.connect(humBus);
-  o.type = 'sawtooth';
-  o.frequency.value = 120 * jit(0.012);
-  o2.type = 'square';
-  o2.frequency.value = o.frequency.value * 2 * jit(0.003);
-  g2.gain.value = 0.22;
-  lp.type = 'lowpass';
-  lp.frequency.value = 480 * jit(0.08);
-  lp.Q.value = 2.4;
-  g.gain.value = 0;
-  o.connect(lp);
-  o2.connect(g2).connect(lp);
-  lp.connect(g).connect(dst);
-  o.start();
-  o2.start();
-  return { o, o2, g2, lp, g, dst, last: 0, hot: -1 };
+  const pan = new Tone.Panner(clamp(t.pan, -1, 1) * 0.6).connect(V.humBus);
+  const g = new Tone.Gain(0).connect(pan);
+  const lp = new Tone.Filter({ type: 'lowpass', frequency: 480 * jit(0.08), Q: 2.4 }).connect(g);
+  const g2 = new Tone.Gain(0.22).connect(lp);
+  const f = 120 * jit(0.012);
+  const o = new Tone.Oscillator(f, 'sawtooth').connect(lp).start();
+  const o2 = new Tone.Oscillator(f * 2 * jit(0.003), 'square').connect(g2).start();
+  return { o, o2, g2, lp, g, pan, last: 0, hot: -1 };
 }
 function humStop(v) {
-  const t = ac.currentTime;
+  const t = kit.ac.currentTime;
   v.g.gain.cancelScheduledValues(t);
   v.g.gain.setTargetAtTime(0, t, 0.02);
   v.o.stop(t + 0.25);
   v.o2.stop(t + 0.25);
-  v.o.onended = () => [v.o2, v.g2, v.lp, v.g, v.dst].forEach(n => n.disconnect());
+  setTimeout(() => [v.o, v.o2, v.g2, v.lp, v.g, v.pan].forEach(n => n.dispose()), 500);
 }
 // Voices follow the most recent lit tubes; the sum is capped.
 function humSync() {
-  if (!ac || !humBus) return;
+  if (!V || !kit.ac) return;
   const lit = [];
   // A chase keeps its voices, so they do not churn each beat.
   for (let i = tubes.length - 1; i >= 0 && lit.length < MAXHUM; i--) if (tubes[i].lvl > 0.01 || tubes[i].seq || (chase && tubes[i].keep)) lit.push(tubes[i]);
   for (const [t, v] of hums) if (!lit.includes(t)) { humStop(v); hums.delete(t); }
   for (const t of lit) if (!hums.has(t)) hums.set(t, humVoice(t));
-  const now = ac.currentTime, n = hums.size;
-  humBus.gain.setTargetAtTime(Math.min(1, 1.6 / Math.sqrt(Math.max(1, n))), now, 0.1);
+  const now = kit.ac.currentTime, n = hums.size;
+  V.humBus.gain.setTargetAtTime(Math.min(1, 1.6 / Math.sqrt(Math.max(1, n))), now, 0.1);
   for (const [t, v] of hums) {
     const hot = t.seq ? 1 : 0;
     const g = 0.028 * Math.sqrt(clamp(t.len / 420, 0.4, 1.6)) * t.show * (hot ? 2.6 : 1);
@@ -376,6 +312,8 @@ function humSync() {
     if (hot !== v.hot) { v.lp.frequency.setTargetAtTime(hot ? 2600 : 480, now, hot ? 0.01 : 0.15); v.hot = hot; }
   }
 }
+// Once every tube is dark and still, the context sleeps.
+const rest = () => kit.rest(() => !raf && !draft && !tubes.some(t => t.lvl > 0));
 function sfx(t, kind, v) {
   if (kind === 1) crackle(t, 0.4 + 0.6 * v);
   else if (kind === 2) { crackle(t, 1); thump(t); }
@@ -1669,6 +1607,8 @@ function render() {
 }
 
 /* ---------- one loop: alive while tubes glow, at rest when dark ---------- */
+// Simplex noise gives fresh gas an organic shimmer.
+const shimmer = createNoise2D();
 let raf = 0, last = 0, visible = false, onScreen = false, lowDpr = false, slow = 0, frames = 0, drawn = 0;
 const pen = { x: 0, y: 0, a: 0, seen: -1e9, keys: new Set(), shift: false };
 function update(now, dt) {
@@ -1694,7 +1634,7 @@ function update(now, dt) {
     // Fresh gas shimmers for a moment, then holds still.
     const k = reduce || t.lvl <= 0 ? 0 : 1 - (now - t.struck) / 1.6;
     if (k > 0) {
-      sh = 1 + k * (0.03 * Math.sin(TAU * t.f1 * now + t.ph) + 0.016 * Math.sin(TAU * t.f2 * now + 2 * t.ph) + 0.01 * Math.sin(TAU * 23.7 * now + t.ph));
+      sh = 1 + k * (0.04 * shimmer(t.f1 * now, t.ph) + 0.014 * shimmer(23.7 * now, t.ph + 7));
       busy = true;
     }
     // Argon keeps the loop awake until it is warm.
@@ -1789,11 +1729,11 @@ function sync() {
   dipLater();
   if (v) {
     wake();
-    if (sound.on && ac && ac.state !== 'running') audio();
+    if (sound.on && kit.ac && kit.ac.state !== 'running') kit.wake();
   } else {
     cancelAnimationFrame(raf);
     raf = 0;
-    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+    if (kit.ac && kit.ac.state === 'running') kit.ac.suspend()?.catch(() => {});
   }
 }
 
@@ -2032,7 +1972,7 @@ function clearAll() {
 const gasEl = document.getElementById('gas'), rail = gasEl.querySelector('.gas-rail');
 const wallBtn = document.getElementById('wall'), chaseBtn = document.getElementById('chase'), clearBtn = document.getElementById('clear');
 const NAMES = [...GAS_SPEC.map(g => g[0]), 'Mix'];
-rail.innerHTML = GAS_SPEC.map(([, L, C, h]) => `<i style="--c: oklch(${L} ${(C * 0.92).toFixed(3)} ${h})"></i>`).join('') + '<i class="mix"></i>';
+rail.innerHTML = GAS_SPEC.map(([, L, C, h]) => `<i style="--c: ${css([L, C * 0.92, h])}"></i>`).join('') + '<i class="mix"></i>';
 const swatches = [...rail.children];
 let peek = -1;
 // The tooltip names a hovered swatch, then the pick.
@@ -2167,10 +2107,8 @@ addEventListener('keyup', e => {
 });
 addEventListener('blur', () => pen.keys.clear());
 
-sound.onChange(on => {
-  if (on) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
-});
+// The kit wakes and sleeps the context; the hum follows it on.
+sound.onChange(on => { if (on) { voices(); humSync(); } });
 
 /* ---------- start: shaders link while the wall is laid out ---------- */
 function failed() {

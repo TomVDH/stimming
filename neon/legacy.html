@@ -1,0 +1,2226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neon Hum (legacy)</title>
+<meta name="robots" content="noindex">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Neon Hum: the wall at full width under the shared header. */
+:root { --stage: oklch(0.15 0.02 30); }
+.stage { cursor: crosshair; }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* The gas rail is one slider of solid swatches, the height of a chip. */
+.gas {
+  display: inline-flex; align-items: center; padding: 6px 11px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px;
+  touch-action: none; -webkit-tap-highlight-color: transparent; transition: border-color 0.2s ease;
+}
+.gas:hover { border-color: var(--muted); }
+.stage + .bar:not(.bar--below) .gas {
+  background-color: oklch(0.15 0.012 275 / 0.84);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.gas-rail { display: flex; align-items: center; gap: 3px; height: 16px; }
+.gas-rail i {
+  display: block; width: 8px; height: 8px; border-radius: 2px; background: var(--c);
+  transition: height 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* The chosen gas stands full height; a hovered one half way. */
+.gas-rail i.on { height: 16px; }
+.gas-rail i.peek:not(.on) { height: 12px; }
+/* Mix shows four hard stripes. */
+.gas-rail i.mix { background: linear-gradient(90deg, oklch(0.66 0.22 30) 0 25%, oklch(0.86 0.18 100) 0 50%, oklch(0.8 0.2 150) 0 75%, oklch(0.6 0.2 266) 0); }
+@media (pointer: coarse) {
+  .gas { padding: 10px 16px; }
+  .gas-rail i { width: 11px; }
+}
+@media (prefers-reduced-motion: reduce) { .stage canvas, .gas-rail i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true" data-done>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/neon.svg)"></span><span class="intro-name">Neon Hum</span><span class="intro-sub">Stimming No. 10</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag, or Snap, for straight runs with round corners; click a tube to switch it off or on; double-click a tube for the next gas; click the bare wall to knock on it and shake the tubes. Arrow keys draw, Shift with arrows moves the pen, Space ends a stroke or switches the nearest tube, Backspace undoes, C clears.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Neon Hum needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices">
+        <div class="gas" id="gas" tabindex="0" role="slider" aria-label="Gas" aria-valuemin="1" aria-valuemax="11" aria-valuenow="7" aria-valuetext="Blue"><span class="gas-rail" aria-hidden="true"></span></div>
+        <button class="chip" id="wall" type="button" aria-label="Wall: Brick">Brick</button>
+      </div>
+      <div class="actions">
+        <button class="chip" id="snap" type="button" aria-pressed="false">Snap</button>
+        <button class="chip" id="chase" type="button" aria-pressed="false">Chase</button>
+        <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>draw a tube</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a tube</dt><dd>switch</dd></div>
+        <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span> a tube</dt><dd>new gas</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the wall</dt><dd>knock</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Neon Hum</h1><div class="vignette" hidden></div></section>
+</div>
+
+<script type="module">
+import { initPage, sound } from '../shared/stim.js';
+initPage({ id: 'neon' });
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; motionPref(); dipLater(); wake(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+// The sign strikes as the intro starts to clear.
+const curtain = new Promise(res => {
+  const el = document.querySelector('.intro');
+  if (!el) return res();
+  let to = 0;
+  const done = () => { mo.disconnect(); clearTimeout(to); setTimeout(res, 250); };
+  const mo = new MutationObserver(() => { if (!el.isConnected || el.querySelector('.intro-tick')) done(); });
+  mo.observe(document.body, { childList: true, subtree: true });
+  to = setTimeout(done, 7000);
+});
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const scale = (c, k) => c.map(v => v * k);
+// Each gas: name, OKLCH, a balance set by eye, and warm-up seconds.
+// Pure neon burns red; the rest are argon and coated glass.
+// Neon strikes at once; argon starts dim violet and warms up.
+const GAS_SPEC = [
+  ['Red', 0.63, 0.26, 30, 1.0, 0],
+  ['Orange', 0.72, 0.22, 52, 0.85, 0],
+  ['Gold', 0.82, 0.18, 82, 0.68, 1.4],
+  ['Lemon', 0.9, 0.2, 108, 0.58, 1.5],
+  ['Green', 0.84, 0.26, 148, 0.62, 1.8],
+  ['Ice', 0.82, 0.15, 205, 0.72, 2.0],
+  ['Blue', 0.52, 0.24, 266, 1.35, 2.4],
+  ['Violet', 0.56, 0.26, 302, 1.15, 2.2],
+  ['Pink', 0.64, 0.29, 350, 1.0, 0],
+  ['White', 0.95, 0.035, 80, 0.55, 2.0],
+];
+// Each gas is normalised to full strength, then balanced.
+const GAS = GAS_SPEC.map(([, L, C, h, k]) => { const c = linear(L, C, h), m = Math.max(...c); return c.map(v => (v / m) * k); });
+const WARM = GAS_SPEC.map(g => g[5]);
+// Cold argon glows a dim violet.
+const COLD = (() => { const c = linear(0.5, 0.22, 292), m = Math.max(...c); return c.map(v => (v / m) * 0.5); })();
+const MIX = GAS.length;
+// Mix hops between far hues, so neighbours contrast.
+const MIX_ORDER = [0, 6, 3, 8, 5, 1, 7, 4, 9, 2];
+// Each wall: name, shader kind, relief depth, metal, five colours.
+// Give scales how hard a knock shakes the tubes.
+const WALLS = [
+  { name: 'Brick', kind: 0, depth: 0.14, metal: 0, c: [linear(0.43, 0.1, 31), linear(0.37, 0.07, 40), linear(0.47, 0.1, 42), linear(0.29, 0.03, 30), linear(0.57, 0.012, 70)] },
+  { name: 'Steel', kind: 1, depth: 0.17, metal: 1, give: 1.3, c: [linear(0.74, 0.008, 240), linear(0.47, 0.11, 48), linear(0.32, 0.07, 36), linear(0.6, 0.01, 240), [0, 0, 0]] },
+  { name: 'Concrete', kind: 2, depth: 0.11, metal: 0, give: 0.7, c: [linear(0.6, 0.008, 250), linear(0.56, 0.016, 75), linear(0.4, 0.012, 235), linear(0.34, 0.01, 260), [0, 0, 0]] },
+  { name: 'Tile', kind: 3, depth: 0.13, metal: 0, sheen: 3.5, c: [linear(0.9, 0.018, 95), linear(0.46, 0.1, 160), linear(0.2, 0.01, 260), linear(0.5, 0.012, 80), [0, 0, 0]] },
+  { name: 'Sequins', kind: 4, depth: 0.5, metal: 1, give: 1.3, c: [linear(0.66, 0.2, 350), linear(0.82, 0.15, 85), linear(0.72, 0.14, 195), linear(0.16, 0.01, 300), [0, 0, 0]] },
+  { name: 'Foam', kind: 5, depth: 0.3, metal: 0, give: 0.2, c: [linear(0.3, 0.008, 270), linear(0.5, 0.2, 300), linear(0.1, 0.01, 280), [0, 0, 0], [0, 0, 0]] },
+];
+const AMB = scale(linear(0.62, 0.07, 255), 0.26), KEY = scale(linear(0.9, 0.03, 245), 0.7);
+// The night light comes from the upper left; y points up.
+const LAMB = (() => { const v = [-0.35, 0.6, 0.72], n = Math.hypot(...v); return v.map(x => x / n); })();
+const LD = (() => { const n = Math.hypot(LAMB[0], LAMB[1]); return [LAMB[0] / n, LAMB[1] / n]; })();
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const MAXV = 16, MAXHUM = 6, LEAD = 0.004;
+let ac = null, out = null, noise = null, humBus = null, askedAt = -1e9, voices = 0, restT = 0;
+const hums = new Map();
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.07 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds every burst.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    humBus = ac.createGain();
+    humBus.gain.value = 1;
+    humBus.connect(out);
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+  humSync();
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!sound.on || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+// Once every tube is dark and still, the context sleeps.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !draft && !tubes.some(t => t.lvl > 0) && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Backspace', 'c', 'C']);
+function unlock(e) {
+  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place on the wall.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len, done) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => { fl.disconnect(); ng.disconnect(); done?.(); };
+  src.start(t, Math.random() * 0.9, len);
+}
+// A sine that falls in pitch and dies away.
+function tone(a, dst, t, f0, f1, g, tau, done) {
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + tau * 3);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.002);
+  og.gain.setTargetAtTime(0, t + 0.002, tau);
+  o.connect(og).connect(dst);
+  o.onended = () => { og.disconnect(); done?.(); };
+  o.start(t);
+  o.stop(t + tau * 7 + 0.01);
+}
+// One voice frees its bus when its last node ends.
+function voice(a, x, build) {
+  if (voices >= MAXV) return;
+  const dst = bus(a, x);
+  let left = 0;
+  voices++;
+  const done = () => { if (--left === 0) { voices--; dst.disconnect(); } };
+  build(dst, () => { left++; return done; });
+}
+// Ionising gas spits: a few tiny bright ticks.
+function crackle(t, k) {
+  const a = live();
+  if (!a || a.currentTime < t.crackAt) return;
+  t.crackAt = a.currentTime + 0.025;
+  const t0 = a.currentTime + LEAD, g = level() * k * jit(0.15);
+  voice(a, t.pan, (dst, hold) => {
+    for (let n = 2 + ((Math.random() * 4) | 0), i = 0; i < n; i++) {
+      burst(a, dst, t0 + Math.random() * 0.04, 'bandpass', rand(2200, 6000), 0.8, 0.13 * g * jit(0.3), rand(0.0012, 0.004), 0.03, hold());
+    }
+  });
+}
+// The transformer takes the load with a soft thump.
+function thump(t) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, g = level() * jit(0.08);
+  voice(a, t.pan, (dst, hold) => {
+    tone(a, dst, t0, 92 * jit(0.04), 70, 0.07 * g, 0.05, hold());
+    burst(a, dst, t0, 'lowpass', 900, 0.7, 0.03 * g, 0.02, 0.1, hold());
+  });
+}
+// A switch snaps: a bright tick over a small body.
+function click(x, k = 1) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, g = level() * k * jit(0.08);
+  voice(a, x, (dst, hold) => {
+    burst(a, dst, t0, 'bandpass', 3300 * jit(0.05), 1.3, 0.2 * g, 0.0022, 0.02, hold());
+    tone(a, dst, t0, 1500 * jit(0.04), 780, 0.04 * g, 0.004, hold());
+    tone(a, dst, t0 + 0.004, 130 * jit(0.05), 90, 0.06 * g, 0.022, hold());
+  });
+}
+// A knuckle on the wall: each wall answers in its own voice.
+function thud(x) {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + LEAD, g = level() * jit(0.1), kind = WALLS[wallNow].kind;
+  voice(a, x, (dst, hold) => {
+    if (kind === 1) {
+      // The steel sheet booms and rings on a few loose partials.
+      tone(a, dst, t0, 74 * jit(0.05), 58, 0.16 * g, 0.09, hold());
+      for (const [f, k, tau] of [[187, 0.05, 0.16], [433, 0.035, 0.11], [761, 0.022, 0.08], [1290, 0.014, 0.05]]) {
+        tone(a, dst, t0 + 0.002, f * jit(0.03), f * 0.97, k * g, tau, hold());
+      }
+      burst(a, dst, t0, 'bandpass', 2400, 0.9, 0.05 * g, 0.012, 0.08, hold());
+    } else if (kind === 3) {
+      // Tile gives a bright, hard tock.
+      tone(a, dst, t0, 380 * jit(0.05), 300, 0.11 * g, 0.018, hold());
+      burst(a, dst, t0, 'bandpass', 3200, 1.4, 0.07 * g, 0.006, 0.04, hold());
+    } else if (kind === 4) {
+      // Sequins rattle: a soft thump under a spray of tiny ticks.
+      tone(a, dst, t0, 110 * jit(0.05), 70, 0.08 * g, 0.03, hold());
+      for (let i = 0; i < 14; i++) burst(a, dst, t0 + Math.random() * 0.22, 'highpass', rand(5500, 9000), 0.7, 0.05 * g * jit(0.4), 0.002, 0.02, hold());
+    } else if (kind === 5) {
+      // Foam swallows the blow almost whole.
+      tone(a, dst, t0, 78 * jit(0.05), 60, 0.05 * g, 0.03, hold());
+      burst(a, dst, t0, 'lowpass', 380, 0.7, 0.03 * g, 0.012, 0.05, hold());
+    } else if (kind === 2) {
+      // Concrete swallows the blow: a dead, short knock.
+      tone(a, dst, t0, 120 * jit(0.05), 64, 0.14 * g, 0.022, hold());
+      burst(a, dst, t0, 'lowpass', 1700, 0.8, 0.08 * g, 0.007, 0.05, hold());
+    } else {
+      // Brick gives a dull thump with a gritty edge.
+      tone(a, dst, t0, 104 * jit(0.05), 66, 0.15 * g, 0.04, hold());
+      burst(a, dst, t0, 'bandpass', 900, 0.9, 0.08 * g, 0.014, 0.08, hold());
+    }
+  });
+}
+// Each lit tube buzzes: a mains sawtooth through a low filter.
+function humVoice(t) {
+  const a = ac, o = a.createOscillator(), o2 = a.createOscillator(), g2 = a.createGain();
+  const lp = a.createBiquadFilter(), g = a.createGain(), dst = bus(a, t.pan);
+  dst.disconnect();
+  dst.connect(humBus);
+  o.type = 'sawtooth';
+  o.frequency.value = 120 * jit(0.012);
+  o2.type = 'square';
+  o2.frequency.value = o.frequency.value * 2 * jit(0.003);
+  g2.gain.value = 0.22;
+  lp.type = 'lowpass';
+  lp.frequency.value = 480 * jit(0.08);
+  lp.Q.value = 2.4;
+  g.gain.value = 0;
+  o.connect(lp);
+  o2.connect(g2).connect(lp);
+  lp.connect(g).connect(dst);
+  o.start();
+  o2.start();
+  return { o, o2, g2, lp, g, dst, last: 0, hot: -1 };
+}
+function humStop(v) {
+  const t = ac.currentTime;
+  v.g.gain.cancelScheduledValues(t);
+  v.g.gain.setTargetAtTime(0, t, 0.02);
+  v.o.stop(t + 0.25);
+  v.o2.stop(t + 0.25);
+  v.o.onended = () => [v.o2, v.g2, v.lp, v.g, v.dst].forEach(n => n.disconnect());
+}
+// Voices follow the most recent lit tubes; the sum is capped.
+function humSync() {
+  if (!ac || !humBus) return;
+  const lit = [];
+  // A chase keeps its voices, so they do not churn each beat.
+  for (let i = tubes.length - 1; i >= 0 && lit.length < MAXHUM; i--) if (tubes[i].lvl > 0.01 || tubes[i].seq || (chase && tubes[i].keep)) lit.push(tubes[i]);
+  for (const [t, v] of hums) if (!lit.includes(t)) { humStop(v); hums.delete(t); }
+  for (const t of lit) if (!hums.has(t)) hums.set(t, humVoice(t));
+  const now = ac.currentTime, n = hums.size;
+  humBus.gain.setTargetAtTime(Math.min(1, 1.6 / Math.sqrt(Math.max(1, n))), now, 0.1);
+  for (const [t, v] of hums) {
+    const hot = t.seq ? 1 : 0;
+    const g = 0.028 * Math.sqrt(clamp(t.len / 420, 0.4, 1.6)) * t.show * (hot ? 2.6 : 1);
+    if (Math.abs(g - v.last) > 0.0008) { v.g.gain.setTargetAtTime(g, now, 0.006); v.last = g; }
+    if (hot !== v.hot) { v.lp.frequency.setTargetAtTime(hot ? 2600 : 480, now, hot ? 0.01 : 0.15); v.hot = hot; }
+  }
+}
+function sfx(t, kind, v) {
+  if (kind === 1) crackle(t, 0.4 + 0.6 * v);
+  else if (kind === 2) { crackle(t, 1); thump(t); }
+  else if (kind === 3) click(t.pan);
+}
+
+/* ---------- tubes: control points in stage units, centred ---------- */
+// Two dozen tubes keep a sign legible and the glow passes cheap.
+const MAXT = 24;
+let W = 0, H = 0, S = 1, R = 7, ROW = 60, pr = 1, gasNow = 6, mixAt = 0, wallNow = 0, chase = null;
+const tubes = [];
+// The gas a new tube takes; Mix walks its own order.
+const gasPick = () => (gasNow < MIX ? gasNow : MIX_ORDER[mixAt % MIX_ORDER.length]);
+let draft = null, staticDirty = true, draftDirty = false;
+
+// Centripetal Catmull-Rom through the control points, sampled densely.
+function catmull(P, step) {
+  const n = P.length, out = [];
+  if (n < 2) return n ? [P[0][0], P[0][1]] : out;
+  const ext = (a, b) => [2 * a[0] - b[0], 2 * a[1] - b[1]];
+  const k = (a, b) => Math.max(1e-3, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = i ? P[i - 1] : ext(P[0], P[1]), p1 = P[i], p2 = P[i + 1], p3 = i + 2 < n ? P[i + 2] : ext(P[n - 1], P[n - 2]);
+    const t1 = k(p0, p1), t2 = t1 + k(p1, p2), t3 = t2 + k(p2, p3);
+    const m = Math.max(1, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / step));
+    for (let j = 0; j < m; j++) {
+      const t = t1 + (t2 - t1) * (j / m);
+      for (let c = 0; c < 2; c++) {
+        const a1 = ((t1 - t) * p0[c] + t * p1[c]) / t1;
+        const a2 = ((t2 - t) * p1[c] + (t - t1) * p2[c]) / (t2 - t1);
+        const a3 = ((t3 - t) * p2[c] + (t - t2) * p3[c]) / (t3 - t2);
+        const b1 = ((t2 - t) * a1 + t * a2) / t2;
+        const b2 = ((t3 - t) * a2 + (t - t1) * a3) / (t3 - t1);
+        out.push(((t2 - t) * b1 + (t - t1) * b2) / (t2 - t1));
+      }
+    }
+  }
+  out.push(P[n - 1][0], P[n - 1][1]);
+  return out;
+}
+// Even spacing along the curve.
+function resample(d, step) {
+  const out = [d[0], d[1]];
+  let need = step, px = d[0], py = d[1];
+  for (let i = 2; i < d.length; i += 2) {
+    const x = d[i], y = d[i + 1];
+    let seg = Math.hypot(x - px, y - py);
+    while (seg >= need) {
+      const f = need / seg;
+      px += (x - px) * f;
+      py += (y - py) * f;
+      out.push(px, py);
+      seg -= need;
+      need = step;
+    }
+    need -= seg;
+    px = x;
+    py = y;
+  }
+  const n = out.length, lx = d[d.length - 2], ly = d[d.length - 1];
+  if (Math.hypot(lx - out[n - 2], ly - out[n - 1]) > step * 0.3) out.push(lx, ly);
+  else if (n > 2) { out[n - 2] = lx; out[n - 1] = ly; }
+  return out;
+}
+// Glass bends no tighter than a set radius; sharp turns relax.
+function relax(d, rho, step) {
+  const n = d.length / 2, cmin = Math.cos(Math.min(1.2, step / rho));
+  for (let it = 0; it < 48; it++) {
+    let moved = false;
+    for (let i = 1; i < n - 1; i++) {
+      const ax = d[2 * i] - d[2 * i - 2], ay = d[2 * i + 1] - d[2 * i - 1];
+      const bx = d[2 * i + 2] - d[2 * i], by = d[2 * i + 3] - d[2 * i + 1];
+      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+      if (!la || !lb || (ax * bx + ay * by) / (la * lb) >= cmin) continue;
+      d[2 * i] = lerp(d[2 * i], (d[2 * i - 2] + d[2 * i + 2]) / 2, 0.5);
+      d[2 * i + 1] = lerp(d[2 * i + 1], (d[2 * i - 1] + d[2 * i + 3]) / 2, 0.5);
+      moved = true;
+    }
+    if (!moved) break;
+  }
+}
+// Builds a tube's strip, clips and hit points from CSS-pixel control points.
+// The ninth float holds the blockout paint distance along the arc.
+const FPV = 9;
+function shape(ctrl, id) {
+  const rp = R * pr, step = Math.max(1, 0.5 * rp);
+  const d = resample(catmull(ctrl.map(([x, y]) => [x * pr, y * pr]), step * 0.5), step);
+  relax(d, 1.3 * rp, step);
+  const n = d.length / 2, arc = new Float32Array(n);
+  for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.hypot(d[2 * i] - d[2 * i - 2], d[2 * i + 1] - d[2 * i - 1]);
+  const L = arc[n - 1];
+  const tan = i => {
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+    const x = d[2 * b] - d[2 * a], y = d[2 * b + 1] - d[2 * a + 1], l = Math.hypot(x, y) || 1;
+    return [x / l, y / l];
+  };
+  // The strip is wider than the glass, so sleeves and edges fit.
+  const E = 1.32 + 2 / rp, v = new Float32Array((n + 2) * 2 * FPV);
+  let o = 0;
+  const put = (x, y, tx, ty, al) => {
+    for (const s of [E, -E]) {
+      v[o++] = x - ty * s * rp; v[o++] = y + tx * s * rp; v[o++] = s; v[o++] = al;
+      v[o++] = tx; v[o++] = ty; v[o++] = id; v[o++] = L; v[o++] = -1e4;
+    }
+  };
+  const ta = tan(0), tb = tan(n - 1), ex = 1.4 * rp;
+  put(d[0] - ta[0] * ex, d[1] - ta[1] * ex, ta[0], ta[1], -ex);
+  for (let i = 0; i < n; i++) { const t = tan(i); put(d[2 * i], d[2 * i + 1], t[0], t[1], arc[i]); }
+  put(d[2 * n - 2] + tb[0] * ex, d[2 * n - 1] + tb[1] * ex, tb[0], tb[1], L + ex);
+  // Standoff clips sit at even spacing, clear of the electrodes.
+  const at = [];
+  if (L < 11 * rp) at.push(L / 2);
+  else for (let k = Math.max(2, Math.round(L / (16 * rp)) + 1), i = 0; i < k; i++) at.push(4.8 * rp + (L - 9.6 * rp) * (i / (k - 1)));
+  const c = new Float32Array(at.length * 5);
+  let j = 0;
+  at.forEach((a, k) => {
+    while (j < n - 2 && arc[j + 1] < a) j++;
+    const f = clamp((a - arc[j]) / Math.max(1e-6, arc[j + 1] - arc[j])), t = tan(j);
+    c.set([lerp(d[2 * j], d[2 * j + 2], f), lerp(d[2 * j + 1], d[2 * j + 3], f), t[0], t[1], id], k * 5);
+  });
+  const hit = new Float32Array(d.length);
+  for (let i = 0; i < d.length; i++) hit[i] = d[i] / pr;
+  let cx = 0;
+  for (let i = 0; i < n; i++) cx += d[2 * i];
+  return { v, c, hit, arc, len: L / pr, pan: (cx / n / pr / W) * 2 - 1 };
+}
+// Where tubes cross, the lower glass takes black paint.
+// A later tube, or a later run of one tube, lies on top.
+function blockout() {
+  const G = 2 * R, rp = R * pr, cells = new Map(), spans = tubes.map(() => []);
+  const key = (x, y) => (Math.floor(x / G) + 2048) * 8192 + Math.floor(y / G) + 2048;
+  // Each segment goes into every grid cell its box touches.
+  tubes.forEach((t, a) => {
+    const h = t.hit;
+    for (let i = 0; i + 3 < h.length; i += 2) {
+      const x0 = Math.min(h[i], h[i + 2]), x1 = Math.max(h[i], h[i + 2]);
+      const y0 = Math.min(h[i + 1], h[i + 3]), y1 = Math.max(h[i + 1], h[i + 3]);
+      for (let x = Math.floor(x0 / G); x <= Math.floor(x1 / G); x++) {
+        for (let y = Math.floor(y0 / G); y <= Math.floor(y1 / G); y++) {
+          const k = key(x * G, y * G);
+          let list = cells.get(k);
+          if (!list) cells.set(k, (list = []));
+          list.push(a, i);
+        }
+      }
+    }
+  });
+  // Lists keep tube order, so the first entry of a pair lies under.
+  for (const [k, list] of cells) {
+    for (let m = 0; m < list.length; m += 2) {
+      for (let q = m + 2; q < list.length; q += 2) {
+        const A = tubes[list[m]], B = tubes[list[q]], i = list[m + 1], j = list[q + 1];
+        // Neighbour segments on one tube touch but do not cross.
+        if (A === B && Math.abs(A.arc[i / 2] - A.arc[j / 2]) < 4 * rp) continue;
+        const ha = A.hit, hb = B.hit;
+        const rx = ha[i + 2] - ha[i], ry = ha[i + 3] - ha[i + 1], sx = hb[j + 2] - hb[j], sy = hb[j + 3] - hb[j + 1];
+        const den = rx * sy - ry * sx;
+        if (!den) continue;
+        const qx = hb[j] - ha[i], qy = hb[j + 1] - ha[i + 1];
+        const t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
+        if (t < 0 || t >= 1 || u < 0 || u >= 1) continue;
+        // Only the cell that holds the crossing counts it.
+        if (key(ha[i] + rx * t, ha[i + 1] + ry * t) !== k) continue;
+        // A shallow crossing hides a longer run of the lower tube.
+        const sin = Math.abs(den) / (Math.hypot(rx, ry) * Math.hypot(sx, sy));
+        const c = A.arc[i / 2] + (A.arc[i / 2 + 1] - A.arc[i / 2]) * t, half = rp * (1 / Math.max(sin, 0.35) + 1.1);
+        spans[list[m]].push([c - half, c + half]);
+      }
+    }
+  }
+  tubes.forEach((t, a) => paintSpans(t.v, spans[a]));
+}
+// Each vertex gets its signed arc distance into the nearest paint span.
+function paintSpans(v, spans) {
+  spans.sort((p, q) => p[0] - q[0]);
+  const m = [];
+  for (const s of spans) {
+    const l = m[m.length - 1];
+    if (l && s[0] <= l[1]) l[1] = Math.max(l[1], s[1]);
+    else m.push([s[0], s[1]]);
+  }
+  for (let o = 0; o < v.length; o += FPV) {
+    const a = v[o + 3];
+    let d = -1e4;
+    for (const [s, e] of m) d = Math.max(d, Math.min(a - s, e - a));
+    v[o + 8] = d;
+  }
+}
+const toCss = ([u, v]) => [W / 2 + u * S, H / 2 + v * S];
+function makeTube(ctrlUnits, gas, on) {
+  return {
+    ctrl: ctrlUnits, gas, on, keep: true, lvl: on ? 1 : 0, goal: on ? 1 : 0, show: on ? 1 : 0, seq: null, si: 0, struck: -1e9, seed: false, shake: null,
+    f1: rand(2.2, 4.5), f2: rand(6, 11), ph: rand(0, TAU), crackAt: 0, v: null, c: null, hit: null, len: 0, pan: 0, first: 0, count: 0,
+  };
+}
+function shapeTube(t, id) {
+  Object.assign(t, shape(t.ctrl.map(toCss), id));
+}
+// A polyline with round corners, sampled densely, in stage units.
+// Each corner turns on an arc of radius r.
+function bent(pts, r, step = 0.005) {
+  const out = [];
+  const run = (a, b) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let i = 0; i < n; i++) out.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]);
+  };
+  let from = pts[0];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p = pts[i], a = pts[i - 1], b = pts[i + 1];
+    const ux = a[0] - p[0], uy = a[1] - p[1], la = Math.hypot(ux, uy);
+    const vx = b[0] - p[0], vy = b[1] - p[1], lb = Math.hypot(vx, vy);
+    const th = Math.acos(clamp((ux * vx + uy * vy) / (la * lb), -1, 1));
+    // A corner near a straight line needs no arc.
+    if (th > Math.PI - 1e-3) continue;
+    const tl = Math.min(r / Math.tan(th / 2), la / 2, lb / 2), rr = tl * Math.tan(th / 2);
+    const p1 = [p[0] + (ux / la) * tl, p[1] + (uy / la) * tl], p2 = [p[0] + (vx / lb) * tl, p[1] + (vy / lb) * tl];
+    run(from, p1);
+    const bx = ux / la + vx / lb, by = uy / la + vy / lb, bl = Math.hypot(bx, by), dc = rr / Math.sin(th / 2);
+    const c = [p[0] + (bx / bl) * dc, p[1] + (by / bl) * dc];
+    const a0 = Math.atan2(p1[1] - c[1], p1[0] - c[0]);
+    let da = Math.atan2(p2[1] - c[1], p2[0] - c[0]) - a0;
+    if (da > Math.PI) da -= TAU;
+    if (da < -Math.PI) da += TAU;
+    const n = Math.max(2, Math.ceil((Math.abs(da) * rr) / step));
+    for (let k = 0; k < n; k++) out.push([c[0] + rr * Math.cos(a0 + (da * k) / n), c[1] + rr * Math.sin(a0 + (da * k) / n)]);
+    from = p2;
+  }
+  run(from, pts[pts.length - 1]);
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+// The first view is a lit sign: OPEN, framed, one gas per letter.
+// Letters are 0.16 units tall; y points down.
+// Each stroke is one tube; gaps leave room for the electrodes.
+function sign() {
+  const h = 0.08, gap = 0.042, parts = [];
+  let x = 0;
+  const letter = (w, gas, strokes) => {
+    for (const [pts, r] of strokes(w)) parts.push([pts.map(([px, py]) => [x + px, py]), r, gas]);
+    x += w + gap;
+  };
+  // O: a round box whose two ends meet on its left side.
+  letter(0.112, 8, w => [[[[0, 0.004], [0, h], [w, h], [w, -h], [0, -h], [0, -0.004]], 0.04]]);
+  // P: the stem, then the bowl back toward it.
+  letter(0.086, 2, w => [[[[0, h], [0, -h], [w, -h], [w, 0.006], [0.03, 0.006]], 0.036]]);
+  // E: the top and middle bar in one stroke, the foot in another.
+  letter(0.084, 5, w => [[[[w, -h], [0, -h], [0, 0], [w * 0.88, 0]], 0.022], [[[0, 0.014], [0, h], [w, h]], 0.022]]);
+  // N: up, across and up again.
+  letter(0.1, 0, w => [[[[0, h], [0, -h], [w, h], [w, -h]], 0.012]]);
+  const W = x - gap, pad = 0.058, L = -pad, T = -h - pad, Rt = W + pad, B = h + pad;
+  // The frame is one loop with its ends at the foot.
+  parts.push([[[W / 2 - 0.03, B], [L, B], [L, T], [Rt, T], [Rt, B], [W / 2 + 0.03, B]], 0.05, 6]);
+  return { parts, w: Rt - L, h: B - T, cx: W / 2 };
+}
+// The sign fits the stage and sits a touch above centre.
+function seedSign() {
+  const { parts, w, h, cx } = sign();
+  const k = Math.min(1, (0.8 * W) / S / w, (0.62 * H) / S / h), dy = -0.035 * Math.min(1, H / S);
+  for (const [pts, r, gas] of parts) {
+    const t = makeTube(bent(pts, r).map(([x, y]) => [(x - cx) * k, y * k + dy]), gas, false);
+    t.seed = true;
+    tubes.push(t);
+  }
+}
+
+/* ---------- strike, flicker and switch ---------- */
+function strike(t, now, quick) {
+  t.on = true;
+  const seq = [];
+  let at = now + (quick ? 0.03 : 0.16);
+  const n = reduce ? 1 : quick ? 1 + ((Math.random() * 2) | 0) : 3 + ((Math.random() * 3) | 0);
+  for (let k = 0; k < n; k++) {
+    const v = rand(0.3, 0.9) * (0.45 + (0.55 * (k + 1)) / n);
+    seq.push([at, v, 1]);
+    at += rand(0.025, 0.08);
+    seq.push([at, rand(0, 0.08), 0]);
+    at += rand(0.05, 0.22) * (reduce ? 0.4 : 1);
+  }
+  seq.push([at, 1, 2]);
+  if (!reduce) seq.push([at + rand(0.05, 0.09), 0.8, 0], [at + 0.13, 1, 0]);
+  t.seq = seq;
+  t.si = 0;
+}
+function cut(t, now) {
+  t.on = false;
+  t.seq = reduce ? [[now, 0, 3]] : [[now, 0.32, 3], [now + 0.04, 0.9, 0], [now + 0.075, 0, 0]];
+  t.si = 0;
+}
+function toggle(t) {
+  const now = performance.now() / 1000;
+  // In a chase, a click takes a tube out of the show.
+  // A second click brings it back.
+  if (chase) t.keep = !t.on;
+  if (t.on) cut(t, now);
+  else strike(t, now, true);
+  wake();
+}
+
+/* ---------- knock: a rap on the wall jolts the tubes near it ---------- */
+function knock(x, y) {
+  const now = performance.now() / 1000;
+  thud((x / W) * 2 - 1);
+  for (const t of tubes) {
+    const h = t.hit;
+    let bd = Infinity;
+    for (let i = 0; i < h.length; i += 2) bd = Math.min(bd, (h[i] - x) ** 2 + (h[i + 1] - y) ** 2);
+    // Near tubes jump hard; far ones only shiver, a beat later.
+    const k = Math.exp(-Math.sqrt(bd) / (0.2 * S));
+    if (k < 0.12) continue;
+    // The tube jumps away from the knock, then rings down.
+    if (!reduce) {
+      const c = t.hit.length / 2, cx = t.hit[c & ~1] - x, cy = t.hit[(c & ~1) + 1] - y, l = Math.hypot(cx, cy) || 1;
+      t.shake = { t0: now, dx: cx / l, dy: cy / l, amp: k * 0.8 * R * (WALLS[wallNow].give || 1) };
+    }
+    if (!t.on && k < 0.45) continue;
+    const seq = [];
+    let at = now + 0.012 + (1 - k) * 0.06;
+    for (let j = 0, n = reduce ? 1 : 1 + Math.round(k * 4); j < n; j++) {
+      if (t.on) {
+        seq.push([at, rand(0.04, 0.6) * (1 - 0.6 * k), j ? 0 : 1]);
+        at += rand(0.02, 0.06);
+        seq.push([at, 1, 0]);
+      } else {
+        // A dark tube close by catches a stray spark.
+        seq.push([at, rand(0.25, 0.7) * k, 1]);
+        at += rand(0.015, 0.04);
+        seq.push([at, 0, 0]);
+      }
+      at += rand(0.03, 0.12);
+    }
+    t.seq = seq;
+    t.si = 0;
+  }
+  wake();
+}
+
+/* ---------- chase: the sign runs its show, one beat at a time ---------- */
+const BEAT = 0.17;
+// One show: each tube alone, then filling up, then two slow flashes.
+// Flashes hold two beats, so they stay under three a second.
+function chaseOn(k, i, n) {
+  k %= 2 * n + 12;
+  if (k < n) return i === k;
+  if (k < 2 * n) return i <= k - n;
+  k -= 2 * n;
+  return k >= 8 || ((k >> 1) & 1) === 0;
+}
+function chaseStep(now) {
+  const k = Math.floor((now - chase.t0) / BEAT);
+  if (k === chase.k) return;
+  chase.k = k;
+  const cast = tubes.filter(t => t.keep);
+  let flips = 0, pan = 0;
+  cast.forEach((t, i) => {
+    const want = chaseOn(k, i, cast.length);
+    if (want === t.on) return;
+    t.on = want;
+    t.seq = null;
+    t.goal = want ? 1 : 0;
+    flips++;
+    pan += t.pan;
+  });
+  // One relay tick per beat that changes anything.
+  if (flips) click(pan / flips, 0.45);
+}
+function setChase(on) {
+  on = on && !reduce && ready;
+  if (!!chase === on) return;
+  const now = performance.now() / 1000;
+  if (on) {
+    // The show casts the lit tubes, or every tube if none glow.
+    const any = tubes.some(t => t.on);
+    tubes.forEach(t => { t.keep = any ? t.on : true; });
+    chase = { t0: now, k: -1 };
+  } else {
+    chase = null;
+    // The sign settles back to the tubes in the show.
+    for (const t of tubes) {
+      if (t.keep && !t.on) strike(t, now, true);
+      else if (!t.keep && t.on) cut(t, now);
+      t.keep = true;
+    }
+  }
+  chaseBtn.setAttribute('aria-pressed', String(on));
+  humSync();
+  wake();
+}
+
+/* ---------- WebGL ---------- */
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const NOISE = `
+float hash12(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 hash22(vec2 p) { vec3 q = fract(p.xyx * vec3(0.1031, 0.103, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.07 + 13.7; a *= 0.5; }
+  return s / 0.9375;
+}`;
+// The wall's material, baked once per size and kind.
+// It holds albedo, gloss, normal, height and shade.
+const WALLGEN_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform float uRow, uDepth;
+uniform int uKind;
+uniform vec3 uC0, uC1, uC2, uC3, uC4, uLamb;
+layout(location = 0) out vec4 oA;
+layout(location = 1) out vec4 oB;
+${NOISE}
+const mat2 TURN = mat2(0.8, -0.6, 0.6, 0.8);
+float sdBox(vec2 q, vec2 b, float r) { vec2 d = abs(q) - b + r; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r; }
+// One inside a soft edge at distance w, zero outside.
+float band(float d, float w, float aa) { return 1.0 - smoothstep(w - aa, w + aa, d); }
+
+/* Brick: staggered courses in a sunken mortar bed. */
+const float BW = 3.15, MORT = 0.12;
+void cell(vec2 p, out vec2 id, out vec2 q) {
+  float row = floor(p.y);
+  float x = p.x + mod(row, 2.0) * 0.5 * BW + (hash12(vec2(row, 3.7)) - 0.5) * 0.24;
+  float col = floor(x / BW);
+  id = vec2(col, row);
+  q = vec2(x - (col + 0.5) * BW, p.y - row - 0.5);
+}
+// Brick faces stand near one; the mortar sinks near zero.
+float brickH(vec2 p, out vec2 id, out float face) {
+  vec2 q;
+  cell(p, id, q);
+  vec2 rn = hash22(id), rm = hash22(id + 17.3);
+  vec2 hb = vec2(BW * 0.5, 0.5) - MORT * 0.5 - vec2(rn.x * 0.035, rn.y * 0.02);
+  float d = sdBox(q - (rm - 0.5) * vec2(0.04, 0.025), hb, 0.04 + 0.07 * rn.y);
+  // Chips and worn corners roughen the outline.
+  d += (fbm(p * 4.3 + rn * 31.0) - 0.5) * 0.08;
+  face = smoothstep(0.0, 0.1, -d);
+  // A turned grid hides the noise lattice.
+  vec2 r = TURN * p;
+  float tilt = dot(q, (rm - 0.5) * vec2(0.03, 0.09));
+  float surf = (fbm(r * 5.0 + rm * 23.0) - 0.5) * 0.1 + (vnoise(r * 16.0) - 0.5) * 0.035;
+  float pit = smoothstep(0.78, 0.96, vnoise(r * 11.0 + rn * 7.0));
+  float hb2 = 0.78 + 0.16 * rn.x + tilt + surf - 0.1 * pit;
+  float hm = 0.1 + (vnoise(r * 26.0) - 0.5) * 0.07 + (vnoise(r * 8.0) - 0.5) * 0.06;
+  return mix(hm, hb2, face);
+}
+void brickMat(vec2 p, out vec3 alb, out float gloss) {
+  vec2 id;
+  float face;
+  brickH(p, id, face);
+  float k = hash12(id + 11.3), k2 = hash12(id + 5.1);
+  vec3 b = mix(uC0, uC1, smoothstep(0.15, 0.7, k));
+  b = mix(b, uC2, step(0.86, k));
+  b = mix(b, uC3, step(0.92, k2));
+  b *= 0.6 + 0.65 * fbm(p * 2.6 + id * 1.7);
+  // Fired clay shows darker flecks.
+  b *= 1.0 - 0.35 * smoothstep(0.6, 0.85, vnoise(p * 23.0 + 4.0));
+  alb = mix(uC4 * (0.72 + 0.5 * vnoise(p * 17.0)), b, face);
+  // Grime gathers in broad patches and runs down in streaks.
+  alb *= mix(0.55, 1.05, fbm(p * 0.21 + 3.0)) * (0.85 + 0.25 * vnoise(vec2(p.x * 1.7, p.y * 0.08)));
+  gloss = face * smoothstep(0.5, 0.72, fbm(p * 0.33 + 41.0)) * 0.9 + 0.05;
+}
+
+/* Corrugated steel: sine ridges, lapped sheets, screws on the rails. */
+const float CP = 0.44, SHW = 3.08, SHH = 4.6, PUR = 2.3;
+vec2 sheetOf(vec2 p) { return vec2(floor((p.x - 0.5 * CP) / SHW), floor(p.y / SHH)); }
+vec2 screwAt(vec2 p) { return vec2(floor(p.x / (2.0 * CP) + 0.5) * 2.0 * CP, (floor(p.y / PUR) + 0.5) * PUR); }
+float steelH(vec2 p) {
+  vec2 sh = sheetOf(p);
+  float c = 0.5 - 0.5 * cos(6.2831853 * p.x / CP);
+  // Alternate sheets lie on top, so each lap shows an edge.
+  float h = 0.3 + 0.52 * c + 0.05 * mod(sh.x + sh.y, 2.0);
+  // Old sheets wave and carry the odd dent.
+  vec2 r = TURN * p;
+  h += (fbm(r * 0.4 + sh * 7.3) - 0.5) * 0.18;
+  h -= 0.22 * smoothstep(0.72, 0.95, vnoise(r * 0.9 + sh * 3.1));
+  // A screw and its washer sit in every other trough.
+  float d = length(p - screwAt(p));
+  h += 0.1 * band(d, 0.085, 0.01) + 5.0 * sqrt(max(0.0, 0.0025 - d * d));
+  return h;
+}
+void steelMat(vec2 p, float h, out vec3 alb, out float gloss) {
+  vec2 sh = sheetOf(p);
+  // Zinc spangle: flakes of slightly different sheen.
+  vec2 g = p * 6.0, gi = floor(g), gf = fract(g);
+  float best = 9.0, flake = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 o = vec2(float(i), float(j)), r = o + hash22(gi + o) - gf;
+    float d = dot(r, r);
+    if (d < best) { best = d; flake = hash12(gi + o + 0.7); }
+  }
+  vec3 steel = mix(uC0, uC3, hash12(sh + 2.3)) * (0.84 + 0.26 * flake);
+  // Rust runs down from some screws and rings others.
+  vec2 sc = screwAt(p), dv = p - sc;
+  float rs = hash12(sc * 1.7 + 0.3);
+  float wob = (vnoise(vec2(p.y * 3.0, sc.x * 9.0)) - 0.5) * 0.08;
+  float wd = 0.03 + 0.05 * min(max(-dv.y, 0.0), 1.6);
+  float run = band(abs(dv.x + wob), wd, 0.02) * step(dv.y, 0.06) * exp(min(dv.y, 0.0) * mix(3.2, 0.6, rs)) * step(0.4, rs);
+  float ring = band(length(dv), 0.11, 0.04) * step(0.25, rs);
+  // Water sits on each lap; broad patches bloom here and there.
+  float lap = band(mod(p.y, SHH), 0.22, 0.12) * smoothstep(0.4, 0.7, fbm(p * vec2(1.6, 5.0) + 9.0));
+  float spot = smoothstep(0.6, 0.8, fbm(p * 0.42 + sh * 5.0 + 17.0));
+  float rust = clamp(max(max(run, ring), max(lap, spot)) * (0.55 + 0.7 * fbm(p * 7.0)), 0.0, 1.0);
+  alb = mix(steel, mix(uC1, uC2, fbm(p * 9.0 + 3.0)), rust);
+  // Grime streaks down the troughs.
+  alb *= mix(0.72, 1.0, smoothstep(0.3, 0.7, h)) * (0.82 + 0.3 * vnoise(vec2(p.x * 5.0, p.y * 0.18)));
+  // Sheet edges and laps show as dark cuts.
+  float ex = abs(fract((p.x - 0.5 * CP) / SHW + 0.5) - 0.5) * SHW;
+  float ey = abs(fract(p.y / SHH + 0.5) - 0.5) * SHH;
+  alb *= mix(0.3, 1.0, smoothstep(0.0, 0.03, min(ex, ey)));
+  gloss = mix(0.5 + 0.4 * flake, 0.07, rust);
+}
+
+/* Board-formed concrete: plank prints, fins, tie holes and bugholes. */
+const float BH = 1.15, TIE = 3.45, PW = 6.9;
+vec2 tieAt(vec2 p) { return (floor(p / TIE) + 0.5) * TIE; }
+float concH(vec2 p, out float hole) {
+  float b = floor(p.y / BH), fy = fract(p.y / BH);
+  // Formwork panels shift every third plank.
+  float px = (p.x + floor(b / 3.0) * 2.3) / PW;
+  float bs = hash12(vec2(b, floor(px)) + 4.1);
+  // Each plank sat a little proud or shy and cupped.
+  float h = 0.62 + (bs - 0.5) * 0.1 - 0.035 * sin(fy * 3.14159);
+  // Wood grain prints into the face along each plank.
+  vec2 w = vec2(p.x * 0.5 + bs * 40.0, p.y * 7.0);
+  w.y += (fbm(vec2(p.x * 0.3, b) + bs * 9.0) - 0.5) * 2.4;
+  h += (fbm(w) - 0.5) * 0.12 + (vnoise(vec2(p.x * 2.0, p.y * 26.0) + bs * 3.0) - 0.5) * 0.05;
+  // Grout leaks through each joint into a thin fin.
+  float dj = min(fy, 1.0 - fy) * BH;
+  h += 0.09 * band(dj, 0.025, 0.012) * (0.4 + 0.8 * vnoise(vec2(p.x * 5.0, b * 3.0)));
+  // Panel joints leave a narrow ridge.
+  float dp = abs(fract(px + 0.5) - 0.5) * PW;
+  h += 0.06 * band(dp, 0.02, 0.012);
+  // Bugholes are small pits where air was trapped.
+  vec2 bc = floor(p / 0.42), bf = fract(p / 0.42), bh = hash22(bc + 31.0);
+  float bug = step(bh.x, 0.2) * band(length(bf - 0.2 - 0.6 * hash22(bc + 5.0)) * 0.42, 0.015 + 0.035 * bh.y, 0.008);
+  h -= 0.3 * bug;
+  // A form tie leaves a cone-shaped hole.
+  float d = length(p - tieAt(p)), r = 0.11;
+  hole = band(d, r, 0.012);
+  return mix(h, 0.3 + 0.3 * d / r, hole);
+}
+void concMat(vec2 p, float h, float hole, out vec3 alb, out float gloss) {
+  float b = floor(p.y / BH);
+  vec3 c = mix(uC0, uC1, fbm(p * 0.6 + 5.0));
+  // Each plank takes its own tone.
+  c *= (0.9 + 0.18 * hash12(vec2(b, 8.0))) * (0.82 + 0.34 * fbm(p * 2.7 + 1.0));
+  // Sand and fine stone speckle the face.
+  c *= 0.88 + 0.24 * hash12(floor(p * 38.0));
+  // Rain stains run down from each tie hole.
+  vec2 tc = tieAt(p), dv = p - tc;
+  float wob = (vnoise(vec2(p.y * 2.0, tc.x)) - 0.5) * 0.2;
+  float st = band(abs(dv.x + wob), 0.08 + 0.09 * min(max(-dv.y, 0.0), 3.0), 0.06) * step(dv.y, 0.0) * exp(dv.y * 0.45);
+  c = mix(c, uC2, st * 0.65);
+  // Broad water marks drift down the wall.
+  c *= mix(0.72, 1.06, fbm(vec2(p.x * 0.8, p.y * 0.1) + 2.0));
+  alb = mix(c, uC3, hole * 0.6);
+  gloss = 0.05 + 0.12 * smoothstep(0.55, 0.85, fbm(p * 0.37 + 3.0));
+}
+
+/* Glazed tile: running bond, a green band with a black liner, sunken grout. */
+const float TW = 1.5, TH = 0.75;
+float tileH(vec2 p, out vec2 id, out float face) {
+  float row = floor(p.y / TH);
+  float x = p.x + mod(row, 2.0) * 0.5 * TW, col = floor(x / TW);
+  id = vec2(col, row);
+  vec2 q = vec2(x - (col + 0.5) * TW, p.y - (row + 0.5) * TH);
+  float d = sdBox(q, vec2(TW, TH) * 0.5 - 0.035, 0.05);
+  face = smoothstep(0.0, 0.015, -d);
+  // Bullnose edges round down into the grout.
+  float dome = sqrt(clamp(-d / 0.09, 0.0, 1.0));
+  // The glaze pools unevenly, so reflections wobble.
+  vec2 r = TURN * p;
+  float wave = (vnoise(r * 1.7 + id * 3.1) - 0.5) * 0.05 + (hash12(id) - 0.5) * 0.03;
+  float grout = 0.12 + (vnoise(r * 30.0) - 0.5) * 0.04;
+  return mix(grout, 0.7 + 0.15 * dome + wave, face);
+}
+void tileMat(vec2 p, out vec3 alb, out float gloss) {
+  vec2 id;
+  float face;
+  tileH(p, id, face);
+  vec3 g = uC0 * (0.92 + 0.12 * hash12(id + 2.0));
+  if (id.y == -6.0 || id.y == -7.0) g = uC1 * (0.85 + 0.25 * hash12(id + 7.0));
+  else if (id.y == -5.0) g = uC2;
+  // Contour lines of noise read as crazing in the glaze.
+  float craze = smoothstep(0.025, 0.0, abs(vnoise(p * 7.0 + id * 1.3) - 0.5)) * 0.3;
+  g *= 1.0 - craze;
+  vec3 grout = uC3 * (0.7 + 0.5 * vnoise(p * 21.0)) * mix(0.55, 1.0, fbm(p * 0.4 + 5.0));
+  alb = mix(grout, g, face) * mix(0.75, 1.0, fbm(p * 0.25 + 11.0));
+  gloss = face * (0.9 - craze) + 0.04;
+}
+
+/* Sequins: tilted discs hang in rows; a lower row lies over the row above. */
+const float SQX = 0.36, SQY = 0.26, SQR = 0.24;
+bool seqTop(vec2 p, out vec2 id, out vec2 q) {
+  float r0 = floor(p.y / SQY);
+  for (int j = -1; j <= 1; j++) {
+    float row = r0 + float(j), off = mod(row, 2.0) * 0.5 * SQX, cx = floor((p.x - off) / SQX);
+    for (int i = 1; i >= -1; i--) {
+      vec2 c = vec2((cx + float(i) + 0.5) * SQX + off, (row + 0.5) * SQY), d = p - c;
+      if (dot(d, d) < SQR * SQR) { id = vec2(cx + float(i), row); q = d; return true; }
+    }
+  }
+  return false;
+}
+float seqH(vec2 p) {
+  vec2 id, q;
+  if (!seqTop(p, id, q)) return 0.05;
+  float rr = length(q) / SQR;
+  // A punched hole shows the backing cloth.
+  if (rr < 0.14) return 0.2;
+  // Each disc tilts its own way and cups a little.
+  return 0.55 + dot(q, (hash22(id) - 0.5) * 1.3) + 0.08 * rr * rr;
+}
+void seqMat(vec2 p, out vec3 alb, out float gloss) {
+  vec2 id, q;
+  bool on = seqTop(p, id, q);
+  vec2 tilt = hash22(id) - 0.5;
+  // Holographic film shifts hue with each disc's tilt.
+  float a = fract(atan(tilt.y, tilt.x) / 6.2831853 + 0.3 * hash12(id + 9.0)) * 3.0;
+  vec3 c = a < 1.0 ? mix(uC0, uC1, a) : a < 2.0 ? mix(uC1, uC2, a - 1.0) : mix(uC2, uC0, a - 2.0);
+  float disc = on && length(q) > 0.14 * SQR ? 1.0 : 0.0;
+  alb = mix(uC3 * (0.7 + 0.6 * vnoise(p * 40.0)), c, disc);
+  gloss = mix(0.04, 0.94, disc);
+}
+
+/* Acoustic foam: pyramid panels and wedge panels in two tones. */
+const float FP = 2.0, FC = 0.5;
+float foamH(vec2 p, out float tone, out float seam) {
+  vec2 pi = floor(p / FP), pf = p / FP - pi;
+  tone = mod(pi.x + pi.y, 2.0);
+  seam = min(min(pf.x, 1.0 - pf.x), min(pf.y, 1.0 - pf.y)) * FP;
+  vec2 q = fract(p / FC) - 0.5;
+  // Wedge panels run their ridges up the wall.
+  float h = tone > 0.5 ? 1.0 - 2.0 * abs(q.x) : 1.0 - 2.0 * max(abs(q.x), abs(q.y));
+  // Peaks round off; open cells pock the faces.
+  h = 0.15 + 0.78 * h * (1.0 - 0.25 * h * h) + (vnoise(TURN * p * 40.0) - 0.5) * 0.06;
+  return h * smoothstep(0.0, 0.05, seam);
+}
+void foamMat(vec2 p, out vec3 alb, out float gloss) {
+  float tone, seam;
+  foamH(p, tone, seam);
+  alb = mix(uC0, uC1, tone) * (0.75 + 0.35 * vnoise(p * 55.0));
+  alb = mix(uC2, alb, smoothstep(0.0, 0.05, seam));
+  gloss = 0.01;
+}
+
+float height(vec2 p) {
+  float hole, t, s;
+  vec2 id;
+  float face;
+  if (uKind == 1) return steelH(p);
+  if (uKind == 2) return concH(p, hole);
+  if (uKind == 3) return tileH(p, id, face);
+  if (uKind == 4) return seqH(p);
+  if (uKind == 5) return foamH(p, t, s);
+  return brickH(p, id, face);
+}
+void main() {
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRow + vec2(0.37, 0.21);
+  float e = 1.0 / uRow;
+  float h = height(p), hx = height(p + vec2(e, 0.0)), hy = height(p + vec2(0.0, e));
+  vec3 n = normalize(vec3(-(hx - h) / e * uDepth, -(hy - h) / e * uDepth, 1.0));
+  // The night light skims the relief; raised edges shade the hollows.
+  vec2 ld = normalize(uLamb.xy);
+  float tanE = uLamb.z / length(uLamb.xy), occ = 0.0;
+  for (int i = 1; i <= 4; i++) {
+    float t = float(i * i) * 0.012;
+    occ = max(occ, (height(p + ld * t) - h) * uDepth - t * tanE);
+  }
+  float vis = 1.0 - smoothstep(0.0, 0.03, occ) * 0.75;
+  vec3 alb;
+  float gloss, hole;
+  if (uKind == 1) steelMat(p, h, alb, gloss);
+  else if (uKind == 2) { concH(p, hole); concMat(p, h, hole, alb, gloss); }
+  else if (uKind == 3) tileMat(p, alb, gloss);
+  else if (uKind == 4) seqMat(p, alb, gloss);
+  else if (uKind == 5) foamMat(p, alb, gloss);
+  else brickMat(p, alb, gloss);
+  float ao = mix(0.5, 1.0, smoothstep(0.05, 0.75, h));
+  oA = vec4(alb, gloss);
+  oB = vec4(n.xy * 0.5 + 0.5, clamp(h, 0.0, 1.0), vis * ao);
+}`;
+// Shared lighting: the wall under night light and neon, then the camera.
+const LIGHT = `
+uniform sampler2D uGA, uGB, uGlow, uHalo, uEm;
+uniform vec2 uRes, uShOff;
+uniform vec3 uAmb, uLamb, uKey;
+uniform float uLift, uRefl, uMetal, uSheen, uWallK, uBloom, uHaloK, uExpo;
+${NOISE}
+vec3 wallAt(vec2 fc) {
+  ivec2 top = ivec2(uRes) - 1, ip = clamp(ivec2(fc), ivec2(0), top);
+  vec4 A = texelFetch(uGA, ip, 0), B = texelFetch(uGB, ip, 0);
+  vec3 n = vec3(B.xy * 2.0 - 1.0, 0.0);
+  n.z = sqrt(max(0.0, 1.0 - dot(n.xy, n.xy)));
+  vec2 uv = (vec2(ip) + 0.5) / uRes;
+  // Glossy parts of a metal wall are bare steel; rust stays matte.
+  float metal = uMetal * smoothstep(0.25, 0.5, A.a), rough = 1.0 - A.a;
+  // Glaze raises the sheen of a plain wall.
+  vec3 dif = A.rgb * (1.0 - 0.9 * metal), F0 = mix(vec3(0.04 * uSheen), A.rgb, metal);
+  // Night light falls from above; tubes and clips shade it.
+  float sky = (0.55 + 0.6 * uv.y) * B.w * (1.0 - 0.7 * clamp(texture(uHalo, uv + uShOff).a * 1.4, 0.0, 1.0));
+  float ndl = max(dot(n, uLamb), 0.0);
+  vec3 col = uAmb * dif * sky * (0.25 + 0.95 * ndl);
+  vec3 H = normalize(uLamb + vec3(0.0, 0.0, 1.0));
+  float sp = pow(max(dot(n, H), 0.0), mix(90.0, 6.0, rough)) * mix(0.9, 0.08, rough);
+  col += F0 * sky * (uAmb * (0.4 + 1.5 * ndl) + uKey * sp);
+  // Neon light: glow sampled a little way along the slope.
+  // It shows how much a face turns toward the tubes.
+  // Each channel reads its own glow, so two colours light opposite slopes.
+  vec3 g = texture(uGlow, uv).rgb;
+  vec3 gb = texture(uGlow, uv + n.xy * uLift / uRes).rgb;
+  vec3 neon = clamp(g + (gb - g) * 2.2, g * 0.12, g * 3.0);
+  col += neon * uWallK * dif * mix(0.7, 1.0, B.w);
+  // Gloss and bare steel mirror the tubes, bent by the relief.
+  vec2 ro = n.xy * uRefl / uRes;
+  vec3 sharp = mix(texture(uHalo, uv + ro).rgb, texture(uEm, uv + ro).rgb, A.a);
+  vec3 refl = mix(texture(uGlow, uv + ro * 0.7).rgb, sharp, A.a * A.a);
+  col += refl * uWallK * F0 * A.a * 1.4 * mix(0.75, 1.0, B.w);
+  return col;
+}
+// Polished metal mirrors the neon around it.
+vec3 metal(vec3 n, vec2 uv, float base) {
+  vec3 R = reflect(vec3(0.0, 0.0, -1.0), n);
+  vec3 env = texture(uGlow, uv + R.xy * 0.03).rgb * uWallK + texture(uHalo, uv + R.xy * 0.01).rgb * uWallK * 0.5;
+  float sp = pow(max(dot(R, uLamb), 0.0), 40.0);
+  return base * (env * 0.9 + uAmb * (0.3 + 0.7 * max(dot(n, uLamb), 0.0))) + uKey * sp * base * 1.5;
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+// Bloom, vignette, a soft shoulder, then display colour.
+vec3 finish(vec3 c, vec2 fc) {
+  vec2 uv = fc / uRes, v = uv - 0.5;
+  c += texture(uGlow, uv).rgb * uBloom + texture(uHalo, uv).rgb * uHaloK;
+  c *= 1.0 - 0.8 * dot(v, v);
+  c = 1.0 - exp(-c * uExpo);
+  return srgb(c) + (hash12(fc + 3.1) - 0.5) / 255.0;
+}`;
+const FINAL_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+${LIGHT}
+out vec4 o;
+void main() { o = vec4(finish(wallAt(gl_FragCoord.xy), gl_FragCoord.xy), 1.0); }`;
+const TUBE_VS = `#version 300 es
+layout(location = 0) in vec4 aA;
+layout(location = 1) in vec4 aB;
+layout(location = 2) in float aP;
+uniform vec2 uView;
+uniform vec2 uShake[${MAXT}];
+out vec2 vSA;
+out vec2 vT;
+out float vP;
+flat out int vId;
+flat out float vLen;
+void main() {
+  vSA = aA.zw;
+  vP = aP;
+  vT = aB.xy;
+  vId = int(aB.z + 0.5);
+  vLen = aB.w;
+  vec2 pos = aA.xy + uShake[vId];
+  gl_Position = vec4(pos.x / uView.x * 2.0 - 1.0, 1.0 - pos.y / uView.y * 2.0, 0.0, 1.0);
+}`;
+// Mode 0 shades the tube; mode 1 writes only light and cover.
+const TUBE_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+${LIGHT}
+uniform vec4 uGas[${MAXT}];
+uniform float uR, uRpx, uMode, uEmK;
+in vec2 vSA;
+in vec2 vT;
+in float vP;
+flat in int vId;
+flat in float vLen;
+out vec4 o;
+void main() {
+  float s = vSA.x, a = vSA.y;
+  float ck = clamp(vLen / (14.0 * uR), 0.45, 1.0);
+  float e0 = a / uR, e1 = (vLen - a) / uR, e = min(e0, e1);
+  float outward = e0 < e1 ? -1.0 : 1.0;
+  float cap0 = 0.35 * ck, cap1 = 2.7 * ck;
+  bool sleeve = e > cap0 && e < cap1;
+  vec2 q = vec2(max(-e, 0.0), s);
+  float rr = length(q), rad = sleeve ? 1.2 : 1.0, aw = 1.0 / uRpx;
+  float cov = 1.0 - smoothstep(rad - aw, rad + aw, rr);
+  if (cov <= 0.002) discard;
+  vec4 gas = uGas[vId];
+  // Gas glows past a short dark space beyond each sleeve.
+  float act = gas.w * smoothstep(cap1, cap1 + 1.6 * ck, e);
+  // Blockout paint stops the light at a hard cut.
+  float paint = sleeve ? 0.0 : clamp(vP + 0.5, 0.0, 1.0);
+  act *= 1.0 - paint;
+  const float inner = 0.84;
+  float chord = sqrt(max(0.0, inner * inner - s * s)) / inner;
+  // Bright gas clips to a hot core with a little white.
+  vec3 em = gas.rgb * (0.5 + 1.2 * chord + 5.0 * pow(chord, 6.0)) + 0.6 * pow(chord, 18.0);
+  em *= act * uEmK;
+  if (uMode > 0.5) { o = vec4(em, cov); return; }
+  // The cross-section gives a screen-space normal; y points up.
+  vec2 t = normalize(vec2(vT.x, -vT.y)), pp = normalize(vec2(-vT.y, -vT.x));
+  vec2 nl = vec2(q.x * outward, s) / rad;
+  float nz = sqrt(max(0.0, 1.0 - dot(nl, nl)));
+  vec3 N = normalize(vec3(t * nl.x + pp * nl.y, nz));
+  vec2 fc = gl_FragCoord.xy, uv = fc / uRes;
+  vec3 R = reflect(vec3(0.0, 0.0, -1.0), N);
+  vec3 col;
+  if (sleeve) {
+    // Electrode sleeves are brushed steel with two rolled grooves.
+    float gr = exp(-pow((e - cap0 - 0.55 * ck) * 7.0, 2.0)) + exp(-pow((e - cap1 + 0.45 * ck) * 7.0, 2.0));
+    col = metal(N, uv, 0.42) * (1.0 - 0.6 * gr) * (0.45 + 0.55 * nz);
+  } else {
+    float F = 0.04 + 0.96 * pow(1.0 - nz, 5.0);
+    // Dark glass flips and squeezes the scene behind it, lit tubes too.
+    // Lit gas hides its own light, so only dark glass looks far.
+    float clear = 1.0 - clamp(gas.w * 3.0, 0.0, 1.0);
+    vec2 fl = -N.xy * uR * mix(0.85, 2.7, clear);
+    vec2 fuv = (fc + fl) / uRes;
+    // The glass also carries the near halo, as a light pipe does.
+    vec3 bg = wallAt(fc + fl) + (texture(uEm, fuv).rgb * 0.8 + texture(uHalo, fuv).rgb * 0.7) * clear;
+    vec3 tint = mix(vec3(1.0), gas.rgb / max(max(gas.r, gas.g), max(gas.b, 1e-3)), 0.12);
+    // The glass wall, seen edge-on, darkens and tints the rim.
+    float band = smoothstep(inner - 0.08, inner + 0.05, rr);
+    // The rim bends in the light of tubes beside it.
+    bg += texture(uEm, (fc + N.xy * uR * 1.7) / uRes).rgb * band * 0.9;
+    col = bg * tint * (1.0 - F) * mix(0.96, 0.62, band);
+    vec3 env = texture(uGlow, uv + R.xy * 0.04).rgb * uWallK * 0.5 + uKey * 0.06;
+    float k1 = pow(max(dot(R, uLamb), 0.0), 140.0), k2 = pow(max(dot(R, normalize(uLamb * vec3(-1.0, -0.7, 1.0))), 0.0), 26.0);
+    col += F * env * 1.3 + uKey * (k1 * 1.6 + k2 * 0.1);
+    col += smoothstep(0.05, 0.0, abs(rr - inner)) * (env * 0.25 + uKey * 0.05);
+    // An electrode wire shows through the clear tip.
+    if (e < cap0 && e > -0.6 && abs(s) < 0.3) col = mix(col, metal(normalize(vec3(pp * s * 2.0, 0.8)), uv, 0.25), 0.75);
+    // Black enamel keeps only the sheen of the glass.
+    vec3 enamel = vec3(0.004) + uAmb * 0.04 * max(dot(N, uLamb), 0.0) + F * env * 0.7 + uKey * k1 * 0.9;
+    col = mix(col, enamel, paint);
+    col += em + gas.rgb * act * uEmK * 0.3 * band;
+  }
+  o = vec4(finish(col, fc), cov);
+}`;
+const CLIP_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aC;
+layout(location = 2) in float aId;
+uniform vec2 uView;
+uniform vec2 uShake[${MAXT}];
+uniform float uR, uSize;
+out vec2 vL;
+flat out vec2 vT;
+void main() {
+  vec2 t = aC.zw, p = vec2(-t.y, t.x);
+  vL = aCorner * uSize;
+  vT = t;
+  // Clips ride with their tube; the pen has no tube.
+  vec2 pos = aC.xy + (t * vL.x + p * vL.y) * uR + (aId < -0.5 ? vec2(0.0) : uShake[int(aId + 0.5)]);
+  gl_Position = vec4(pos.x / uView.x * 2.0 - 1.0, 1.0 - pos.y / uView.y * 2.0, 0.0, 1.0);
+}`;
+// Modes: standoff base, strap, shadow cover, pen ring.
+const CLIP_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+${LIGHT}
+uniform float uRpx, uMode;
+uniform vec4 uPen;
+in vec2 vL;
+flat in vec2 vT;
+out vec4 o;
+void main() {
+  vec2 l = vL, fc = gl_FragCoord.xy, uv = fc / uRes;
+  float aw = 1.0 / uRpx;
+  vec2 t = normalize(vec2(vT.x, -vT.y)), pp = normalize(vec2(-vT.y, -vT.x));
+  if (uMode > 2.5) {
+    // The pen is a flat stencil cross; a gap cuts its centre.
+    vec2 m = abs(l);
+    float hw = 1.5 * aw, arm = 1.0 - smoothstep(3.0 - aw, 3.0 + aw, max(m.x, m.y));
+    float bar = max(1.0 - smoothstep(hw - aw, hw + aw, m.y), 1.0 - smoothstep(hw - aw, hw + aw, m.x));
+    float cross = bar * arm * smoothstep(1.0 - aw, 1.0 + aw, max(m.x, m.y)) * uPen.w;
+    if (cross <= 0.002) discard;
+    o = vec4(srgb(uPen.rgb / max(max(uPen.r, uPen.g), max(uPen.b, 1e-3))), cross);
+    return;
+  }
+  float d = length(l), rb = 1.5;
+  float cov = 1.0 - smoothstep(rb - aw, rb + aw, d);
+  if (uMode > 1.5) { o = vec4(0.0, 0.0, 0.0, cov * 0.8); return; }
+  if (uMode < 0.5) {
+    if (cov <= 0.002) discard;
+    // A shallow dome with a rolled rim.
+    float rim = smoothstep(0.72, 0.96, d / rb);
+    vec2 nl = l / rb * mix(0.3, 1.5, rim);
+    vec3 n = normalize(vec3(t * nl.x + pp * nl.y, 1.0));
+    o = vec4(finish(metal(n, uv, 0.3) * (1.0 - 0.35 * rim), fc), cov);
+    return;
+  }
+  // The strap wraps over the tube, then drops to the base.
+  float hw = 0.22, ay = abs(l.y);
+  float c2 = (1.0 - smoothstep(hw - aw, hw + aw, abs(l.x))) * (1.0 - smoothstep(1.42 - aw, 1.42 + aw, ay));
+  if (c2 <= 0.002) discard;
+  float y = l.y / 1.07;
+  vec3 nl = ay < 1.07 ? vec3(0.0, y, sqrt(max(0.0, 1.0 - y * y))) : vec3(0.0, sign(l.y) * 0.85, 0.5);
+  nl.x = l.x / hw * 0.45;
+  vec3 n = normalize(vec3(t * nl.x + pp * nl.y, nl.z));
+  o = vec4(finish(metal(n, uv, 0.62), fc), c2);
+}`;
+// Dual-filter blur: each step halves the size, then steps back up.
+const DOWN_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uSrc;
+uniform vec2 uTx, uDst;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  vec4 s = texture(uSrc, uv) * 4.0;
+  s += texture(uSrc, uv - uTx) + texture(uSrc, uv + uTx);
+  s += texture(uSrc, uv + vec2(uTx.x, -uTx.y)) + texture(uSrc, uv - vec2(uTx.x, -uTx.y));
+  o = s / 8.0;
+}`;
+const UP_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uSrc, uBase;
+uniform vec2 uTx, uDst;
+uniform float uW, uK;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst, h = uTx;
+  vec4 s = texture(uSrc, uv + vec2(-2.0 * h.x, 0.0)) + texture(uSrc, uv + vec2(2.0 * h.x, 0.0));
+  s += texture(uSrc, uv + vec2(0.0, -2.0 * h.y)) + texture(uSrc, uv + vec2(0.0, 2.0 * h.y));
+  s += 2.0 * (texture(uSrc, uv + h) + texture(uSrc, uv - h) + texture(uSrc, uv + vec2(h.x, -h.y)) + texture(uSrc, uv + vec2(-h.x, h.y)));
+  o = s / 12.0 * uK + texture(uBase, uv) * uW;
+}`;
+
+const LIGHT_U = ['uGA', 'uGB', 'uGlow', 'uHalo', 'uEm', 'uRes', 'uShOff', 'uAmb', 'uLamb', 'uKey', 'uLift', 'uRefl', 'uMetal', 'uSheen', 'uWallK', 'uBloom', 'uHaloK', 'uExpo'];
+const LOOK = { uWallK: 1.0, uBloom: 0.05, uHaloK: 0.2, uExpo: 1.0, emit: 1.6 };
+const LEVELS = 6, UPW = [0.9, 0.95, 0.9, 0.7, 0.42, 0.22];
+
+let gl = null, P = null, emptyVao = null, quadBuf = null, ready = false;
+let tubeVao = null, tubeBuf = null, tubeCap = 0, draftVao = null, draftBuf = null, draftCap = 0;
+let clipVao = null, clipBuf = null, clipCap = 0, draftClipVao = null, draftClipBuf = null, draftClipCap = 0;
+let penVao = null, penBuf = null, nClips = 0, nDraftClips = 0;
+let gbuf = null, E = null, D = [], U = [];
+const gasU = new Float32Array(MAXT * 4), shakeU = new Float32Array(MAXT * 2);
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+function texParams(min) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, min);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+function target(w, h, fmt, filter, extra) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  texParams(filter);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  let tex2 = null;
+  if (extra) {
+    tex2 = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex2);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+    texParams(filter);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, tex2, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  }
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, tex2, fb, w, h };
+}
+function freeTarget(t) {
+  if (!t) return;
+  gl.deleteTexture(t.tex);
+  if (t.tex2) gl.deleteTexture(t.tex2);
+  gl.deleteFramebuffer(t.fb);
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float targets unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    wall: compile(TRI, WALLGEN_FS), final: compile(TRI, FINAL_FS), tube: compile(TUBE_VS, TUBE_FS),
+    clip: compile(CLIP_VS, CLIP_FS), down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  uni(P.wall, ['uRes', 'uRow', 'uDepth', 'uKind', 'uLamb', 'uC0', 'uC1', 'uC2', 'uC3', 'uC4']);
+  uni(P.final, LIGHT_U);
+  uni(P.tube, [...LIGHT_U, 'uView', 'uShake', 'uGas', 'uR', 'uRpx', 'uMode', 'uEmK']);
+  uni(P.clip, [...LIGHT_U, 'uView', 'uShake', 'uR', 'uSize', 'uRpx', 'uMode', 'uPen']);
+  uni(P.down, ['uSrc', 'uTx', 'uDst']);
+  uni(P.up, ['uSrc', 'uBase', 'uTx', 'uDst', 'uW', 'uK']);
+  gl.useProgram(P.wall.p);
+  gl.uniform3fv(P.wall.u.uLamb, LAMB);
+  for (const q of [P.final, P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    ['uGA', 'uGB', 'uGlow', 'uHalo'].forEach((n, i) => gl.uniform1i(q.u[n], i));
+    // The sharp emission sits on unit 6.
+    gl.uniform1i(q.u.uEm, 6);
+    gl.uniform3fv(q.u.uAmb, AMB);
+    gl.uniform3fv(q.u.uLamb, LAMB);
+    gl.uniform3fv(q.u.uKey, KEY);
+    for (const k of ['uWallK', 'uBloom', 'uHaloK', 'uExpo']) gl.uniform1f(q.u[k], LOOK[k]);
+  }
+  gl.useProgram(P.tube.p);
+  gl.uniform1f(P.tube.u.uEmK, LOOK.emit);
+  gl.useProgram(P.down.p);
+  gl.uniform1i(P.down.u.uSrc, 4);
+  gl.useProgram(P.up.p);
+  gl.uniform1i(P.up.u.uSrc, 4);
+  gl.uniform1i(P.up.u.uBase, 5);
+
+  emptyVao = gl.createVertexArray();
+  quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const strip = buf => {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, FPV * 4, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, FPV * 4, 16);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, FPV * 4, 32);
+    return vao;
+  };
+  const inst = buf => {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 20, 0);
+    gl.vertexAttribDivisor(1, 1);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 20, 16);
+    gl.vertexAttribDivisor(2, 1);
+    return vao;
+  };
+  tubeBuf = gl.createBuffer();
+  draftBuf = gl.createBuffer();
+  clipBuf = gl.createBuffer();
+  draftClipBuf = gl.createBuffer();
+  penBuf = gl.createBuffer();
+  tubeVao = strip(tubeBuf);
+  draftVao = strip(draftBuf);
+  clipVao = inst(clipBuf);
+  draftClipVao = inst(draftClipBuf);
+  penVao = inst(penBuf);
+  gl.bindVertexArray(null);
+  tubeCap = draftCap = clipCap = draftClipCap = 0;
+  staticDirty = true;
+  draftDirty = !!draft;
+}
+// Grows a buffer when needed, then writes the data.
+function upload(buf, data, cap) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  if (data.byteLength > cap) {
+    cap = Math.max(data.byteLength * 1.5, 4096) | 0;
+    gl.bufferData(gl.ARRAY_BUFFER, cap, gl.DYNAMIC_DRAW);
+  }
+  if (data.byteLength) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+  return cap;
+}
+function rebuildStatic() {
+  staticDirty = false;
+  blockout();
+  let nv = 0, nc = 0;
+  for (const t of tubes) { nv += t.v.length; nc += t.c.length; }
+  const vv = new Float32Array(nv), cc = new Float32Array(nc);
+  let o = 0, k = 0;
+  for (const t of tubes) {
+    t.first = o / FPV;
+    t.count = t.v.length / FPV;
+    vv.set(t.v, o);
+    cc.set(t.c, k);
+    o += t.v.length;
+    k += t.c.length;
+  }
+  tubeCap = upload(tubeBuf, vv, tubeCap);
+  clipCap = upload(clipBuf, cc, clipCap);
+  nClips = nc / 5;
+}
+function rebuildDraft() {
+  draftDirty = false;
+  if (!draft || draft.ctrl.length < 2) { nDraftClips = 0; if (draft) draft.count = 0; return; }
+  Object.assign(draft, shape(draft.ctrl, tubes.length));
+  draft.count = draft.v.length / FPV;
+  draftCap = upload(draftBuf, draft.v, draftCap);
+  draftClipCap = upload(draftClipBuf, draft.c, draftClipCap);
+  nDraftClips = draft.c.length / 5;
+}
+// A fresh canvas gets a fresh wall and fresh glow targets.
+function allocTargets() {
+  [gbuf, E, ...D, ...U].forEach(freeTarget);
+  const cw = canvas.width, ch = canvas.height;
+  // Half floats keep smooth normals free of banding.
+  gbuf = target(cw, ch, gl.RGBA16F, gl.NEAREST, true);
+  E = target(Math.ceil(cw / 2), Math.ceil(ch / 2), gl.RGBA16F, gl.LINEAR);
+  D = [];
+  U = [];
+  for (let i = 0, w = E.w, h = E.h; i < LEVELS; i++) {
+    w = Math.max(1, Math.ceil(w / 2));
+    h = Math.max(1, Math.ceil(h / 2));
+    D.push(target(w, h, gl.RGBA16F, gl.LINEAR));
+    U.push(i < LEVELS - 1 ? target(w, h, gl.RGBA16F, gl.LINEAR) : null);
+  }
+  U.pop();
+  bakeWall();
+  [gbuf.tex, gbuf.tex2, U[0].tex, D[0].tex].forEach((tx, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, tx); });
+  gl.activeTexture(gl.TEXTURE0);
+  const rp = R * pr;
+  for (const q of [P.final, P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    gl.uniform2f(q.u.uRes, cw, ch);
+    gl.uniform2f(q.u.uShOff, (LD[0] * 2.9 * rp) / cw, (LD[1] * 2.9 * rp) / ch);
+    gl.uniform1f(q.u.uLift, 3 * rp);
+    gl.uniform1f(q.u.uRefl, 6 * rp);
+  }
+  for (const q of [P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    gl.uniform2f(q.u.uView, cw, ch);
+    gl.uniform1f(q.u.uR, rp);
+  }
+}
+
+// The wall bakes once per size and once per kind.
+function bakeWall() {
+  const cw = canvas.width, ch = canvas.height, w = WALLS[wallNow];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, gbuf.fb);
+  gl.viewport(0, 0, cw, ch);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.wall.p);
+  gl.uniform2f(P.wall.u.uRes, cw, ch);
+  gl.uniform1f(P.wall.u.uRow, ROW * pr);
+  gl.uniform1i(P.wall.u.uKind, w.kind);
+  gl.uniform1f(P.wall.u.uDepth, w.depth);
+  w.c.forEach((c, i) => gl.uniform3fv(P.wall.u[`uC${i}`], c));
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  for (const q of [P.final, P.tube, P.clip]) {
+    gl.useProgram(q.p);
+    gl.uniform1f(q.u.uMetal, w.metal);
+    gl.uniform1f(q.u.uSheen, w.sheen || 1);
+  }
+}
+
+/* ---------- drawing ---------- */
+function drawTubes(mode, rpx) {
+  gl.useProgram(P.tube.p);
+  gl.uniform1f(P.tube.u.uMode, mode);
+  gl.uniform1f(P.tube.u.uRpx, rpx);
+  gl.uniform4fv(P.tube.u.uGas, gasU);
+  gl.uniform2fv(P.tube.u.uShake, shakeU);
+  gl.bindVertexArray(tubeVao);
+  for (const t of tubes) gl.drawArrays(gl.TRIANGLE_STRIP, t.first, t.count);
+  if (draft && draft.count) {
+    gl.bindVertexArray(draftVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, draft.count);
+  }
+}
+function drawClips(mode, rpx, size) {
+  gl.useProgram(P.clip.p);
+  gl.uniform1f(P.clip.u.uMode, mode);
+  gl.uniform1f(P.clip.u.uRpx, rpx);
+  gl.uniform1f(P.clip.u.uSize, size);
+  gl.uniform2fv(P.clip.u.uShake, shakeU);
+  if (nClips) { gl.bindVertexArray(clipVao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nClips); }
+  if (draft && nDraftClips) { gl.bindVertexArray(draftClipVao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nDraftClips); }
+}
+function render() {
+  const cw = canvas.width, ch = canvas.height, rp = R * pr;
+  const now = performance.now() / 1000;
+  for (let i = 0; i < tubes.length; i++) {
+    const t = tubes[i], g = GAS[t.gas], dur = WARM[t.gas];
+    // Argon climbs from cold violet to its full colour.
+    const w = reduce || !dur ? 1 : clamp((now - t.struck) / dur), e = w * w * (3 - 2 * w);
+    for (let c = 0; c < 3; c++) gasU[i * 4 + c] = lerp(COLD[c], g[c], e) * (0.4 + 0.6 * e);
+    gasU[i * 4 + 3] = t.show;
+  }
+  if (draft) gasU.set([...GAS[draft.gas], 0], tubes.length * 4);
+
+  // Light and cover go to a half-size target.
+  // Unit 6 lets go of it first.
+  // So no pass samples its own target.
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, E.fb);
+  gl.viewport(0, 0, E.w, E.h);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  drawTubes(1, rp / 2);
+  drawClips(2, rp / 2, 1.6);
+  gl.disable(gl.BLEND);
+
+  // The glow pyramid: down to a blur, then back up with weights.
+  gl.bindVertexArray(emptyVao);
+  gl.activeTexture(gl.TEXTURE4);
+  gl.useProgram(P.down.p);
+  let src = E;
+  for (const d of D) {
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, d.fb);
+    gl.viewport(0, 0, d.w, d.h);
+    gl.uniform2f(P.down.u.uTx, 1 / src.w, 1 / src.h);
+    gl.uniform2f(P.down.u.uDst, d.w, d.h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    src = d;
+  }
+  gl.useProgram(P.up.p);
+  src = D[LEVELS - 1];
+  for (let i = LEVELS - 2; i >= 0; i--) {
+    const dst = U[i];
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, D[i].tex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0, 0, dst.w, dst.h);
+    gl.uniform2f(P.up.u.uTx, 0.5 / src.w, 0.5 / src.h);
+    gl.uniform2f(P.up.u.uDst, dst.w, dst.h);
+    gl.uniform1f(P.up.u.uW, UPW[i]);
+    gl.uniform1f(P.up.u.uK, i === LEVELS - 2 ? UPW[LEVELS - 1] : 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    src = dst;
+  }
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, E.tex);
+  gl.activeTexture(gl.TEXTURE0);
+
+  // The wall, then clips, glass and straps over it.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.useProgram(P.final.p);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  drawClips(0, rp, 1.6);
+  drawTubes(0, rp);
+  drawClips(1, rp, 1.6);
+  if (pen.a > 0.01) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, penBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([pen.x * pr, pen.y * pr, 1, 0, -1]), gl.DYNAMIC_DRAW);
+    gl.useProgram(P.clip.p);
+    const g = GAS[gasPick()];
+    gl.uniform4f(P.clip.u.uPen, g[0], g[1], g[2], pen.a);
+    gl.uniform1f(P.clip.u.uMode, 3);
+    gl.uniform1f(P.clip.u.uRpx, rp);
+    gl.uniform1f(P.clip.u.uSize, 3.2);
+    gl.bindVertexArray(penVao);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 1);
+  }
+  gl.disable(gl.BLEND);
+}
+
+/* ---------- one loop: alive while tubes glow, at rest when dark ---------- */
+let raf = 0, last = 0, visible = false, onScreen = false, lowDpr = false, slow = 0, frames = 0, drawn = 0;
+const pen = { x: 0, y: 0, a: 0, seen: -1e9, keys: new Set(), shift: false };
+function update(now, dt) {
+  let busy = !!draft;
+  for (const t of tubes) {
+    if (t.seq) {
+      while (t.si < t.seq.length && t.seq[t.si][0] <= now) {
+        const [, v, s] = t.seq[t.si++];
+        t.goal = v;
+        if (s) sfx(t, s, v);
+        // The full strike starts the shimmer and the argon warm-up.
+        if (s === 2) t.struck = now;
+      }
+      if (t.si >= t.seq.length) { t.seq = null; t.goal = t.on ? 1 : 0; }
+      busy = true;
+    }
+    // Gas lights fast and fades with a short afterglow.
+    const tau = t.goal > t.lvl ? 0.01 : t.on || t.seq ? 0.018 : 0.05;
+    t.lvl = t.goal + (t.lvl - t.goal) * Math.exp(-dt / tau);
+    if (Math.abs(t.lvl - t.goal) < 2e-3) t.lvl = t.goal;
+    else busy = true;
+    let sh = 1;
+    // Fresh gas shimmers for a moment, then holds still.
+    const k = reduce || t.lvl <= 0 ? 0 : 1 - (now - t.struck) / 1.6;
+    if (k > 0) {
+      sh = 1 + k * (0.03 * Math.sin(TAU * t.f1 * now + t.ph) + 0.016 * Math.sin(TAU * t.f2 * now + 2 * t.ph) + 0.01 * Math.sin(TAU * 23.7 * now + t.ph));
+      busy = true;
+    }
+    // Argon keeps the loop awake until it is warm.
+    if (t.on && !reduce && now - t.struck < WARM[t.gas]) busy = true;
+    t.show = t.lvl * sh;
+  }
+  // Shaken tubes swing in device pixels; the array stays zero elsewhere.
+  shakeU.fill(0);
+  tubes.forEach((t, i) => {
+    const sk = t.shake;
+    if (!sk) return;
+    const age = now - sk.t0;
+    if (age > 0.45) { t.shake = null; return; }
+    const v = sk.amp * pr * Math.exp(-age / 0.09) * Math.sin(TAU * 16 * age);
+    shakeU[i * 2] = sk.dx * v;
+    shakeU[i * 2 + 1] = sk.dy * v;
+    busy = true;
+  });
+  if (chase) { chaseStep(now); busy = true; }
+  // Held arrows steer the keyboard pen.
+  if (pen.keys.size) {
+    let dx = 0, dy = 0;
+    if (pen.keys.has('ArrowLeft')) dx--;
+    if (pen.keys.has('ArrowRight')) dx++;
+    if (pen.keys.has('ArrowUp')) dy--;
+    if (pen.keys.has('ArrowDown')) dy++;
+    const l = Math.hypot(dx, dy) || 1, v = 0.32 * S * dt;
+    pen.x = clamp(pen.x + (dx / l) * v, 2 * R, W - 2 * R);
+    pen.y = clamp(pen.y + (dy / l) * v, 2 * R, H - 2 * R);
+    pen.seen = now;
+    if (!pen.shift) {
+      if (!draft) beginDraft(pen.x, pen.y, 'kb');
+      if (draft.pid === 'kb') addPoint(pen.x, pen.y);
+    }
+    busy = true;
+  }
+  const want = now - pen.seen < 2.5 ? 1 : 0;
+  pen.a += (want - pen.a) * (1 - Math.exp(-dt / (want ? 0.05 : 0.4)));
+  if (Math.abs(pen.a - want) > 0.005) busy = true;
+  else pen.a = want;
+  if (pen.a > 0) busy = busy || want === 1;
+  return busy;
+}
+function frame(ms) {
+  raf = 0;
+  if (!visible) return;
+  const now = ms / 1000, raw = Math.max(0, (ms - last) / 1000), dt = Math.min(raw, 1 / 20);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr && ++frames > 30) {
+    slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { lowDpr = true; fit(); }
+  }
+  const busy = update(now, dt);
+  if (staticDirty) rebuildStatic();
+  if (draftDirty) rebuildDraft();
+  render();
+  humSync();
+  if (++drawn === 2) canvas.classList.add('on');
+  // Input during the frame may have queued the next one already.
+  if ((busy || drawn < 3) && !raf) raf = requestAnimationFrame(frame);
+  else if (!raf) rest();
+}
+function wake() {
+  if (!visible || raf) return;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+// Now and then a lit tube dips for a blink.
+// A timer wakes the loop, so a still sign costs no frames.
+let dipT = 0;
+function dipLater() {
+  clearTimeout(dipT);
+  if (!visible || reduce) return;
+  dipT = setTimeout(() => {
+    const now = performance.now() / 1000;
+    const pool = chase ? [] : tubes.filter(t => t.on && !t.seq && t.lvl === 1);
+    if (pool.length) {
+      const t = pool[(Math.random() * pool.length) | 0];
+      t.seq = [[now, 0.84, 0], [now + rand(0.03, 0.07), 1, 0]];
+      t.si = 0;
+      wake();
+    }
+    dipLater();
+  }, rand(3, 9) * 1000);
+}
+// Off screen or hidden, the wall pauses and goes quiet.
+function sync() {
+  const v = ready && onScreen && !document.hidden;
+  if (v === visible) return;
+  visible = v;
+  dipLater();
+  if (v) {
+    wake();
+    if (sound.on && ac && ac.state !== 'running') audio();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+
+/* ---------- layout ---------- */
+function layout(w, h) {
+  const first = !W;
+  W = w;
+  H = h;
+  S = (w + h) / 2;
+  R = clamp(0.0078 * S, 4.5, 9.5);
+  ROW = clamp(S / 13.5, 24, 80);
+  if (first) { pen.x = w / 2; pen.y = h * 0.68; }
+  pen.x = clamp(pen.x, 0, w);
+  pen.y = clamp(pen.y, 0, h);
+}
+function reshape() {
+  tubes.forEach(shapeTube);
+  staticDirty = true;
+  draftDirty = !!draft;
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const cw = Math.round(w * p), ch = Math.round(h * p);
+  const sized = w !== W || h !== H;
+  if (sized) layout(w, h);
+  if (canvas.width === cw && canvas.height === ch && !sized) return;
+  canvas.width = cw;
+  canvas.height = ch;
+  pr = cw / w;
+  reshape();
+  if (!ready) return;
+  allocTargets();
+  // A resized canvas is blank until drawn, so draw now.
+  if (visible) { rebuildStatic(); rebuildDraft(); render(); wake(); }
+}
+
+/* ---------- input: drag draws, a click switches ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+function beginDraft(x, y, pid, snap = false) {
+  draft = { raw: [x, y], ctrl: [[x, y]], arc: 0, pid, gas: gasPick(), count: 0, v: null, c: null };
+  if (snap) draft.snap = { at: [[x, y]], dir: -1, prev: -1, len: 0, last: [x, y], turn: null };
+  draftDirty = true;
+  wake();
+}
+// A snapped stroke runs in one of eight directions, 0 to 7.
+const OCT = Math.PI / 4;
+const octOf = (x, y) => (Math.round(Math.atan2(y, x) / OCT) + 8) % 8;
+const octVec = i => [Math.cos(i * OCT), Math.sin(i * OCT)];
+// The pointer pulls a straight run from the last corner.
+// Recent motion in a new direction sets the next corner.
+function snapPoint(x, y) {
+  const s = draft.snap;
+  let a = s.at[s.at.length - 1];
+  // A short run still turns with the pointer.
+  if (s.dir < 0 || s.len < 3 * R) {
+    if (s.dir < 0 && Math.hypot(x - a[0], y - a[1]) < 2 * R) return;
+    const d = octOf(x - a[0], y - a[1]);
+    // A run never folds straight back on the last one.
+    if (s.prev < 0 || (d - s.prev + 8) % 8 !== 4) s.dir = d;
+  }
+  // Motion samples set apart show where the hand starts to turn.
+  const [lx, ly] = s.last, back = (s.dir + 4) % 8;
+  if (Math.hypot(x - lx, y - ly) >= 1.6 * R) {
+    const m = octOf(x - lx, y - ly);
+    if (!s.turn && m !== s.dir && m !== back) s.turn = [lx, ly];
+    s.last = [x, y];
+  }
+  // A hand back on the run has not turned.
+  const [ux, uy] = octVec(s.dir), off = Math.abs((x - a[0]) * uy - (y - a[1]) * ux);
+  if (off < R) s.turn = null;
+  // The whole turn, not one sample, picks the new direction.
+  const td = s.turn ? octOf(x - s.turn[0], y - s.turn[1]) : -1;
+  // A turn held for a short way, clear of the run, sets a corner.
+  if (s.turn && td !== s.dir && td !== back && off >= 2 * R && Math.hypot(x - s.turn[0], y - s.turn[1]) >= 3 * R) {
+    const k = (s.turn[0] - a[0]) * ux + (s.turn[1] - a[1]) * uy;
+    if (k >= 2 * R) {
+      s.at.push((a = [a[0] + ux * k, a[1] + uy * k]));
+      s.prev = s.dir;
+      s.dir = td;
+    } else if (s.prev < 0 || (td - s.prev + 8) % 8 !== 4) {
+      // A turn close to the corner aims the run again instead.
+      s.dir = td;
+    }
+    s.turn = null;
+  }
+  const [dx, dy] = octVec(s.dir);
+  s.len = Math.max(0, (x - a[0]) * dx + (y - a[1]) * dy);
+  const pts = s.at.slice();
+  if (s.len > 1) pts.push([a[0] + dx * s.len, a[1] + dy * s.len]);
+  let arc = 0;
+  for (let i = 1; i < pts.length; i++) arc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  // Corners turn on a glass bend wider than the tube.
+  draft.ctrl = pts.length < 2 ? pts : bent(pts, 2.5 * R, Math.max(2, 0.5 * R));
+  draft.arc = arc;
+  draftDirty = true;
+}
+// Control points follow the raw path at a steady spacing.
+function addPoint(x, y) {
+  if (draft.snap) { snapPoint(x, y); return; }
+  const r = draft.raw, n = r.length, step = Math.hypot(x - r[n - 2], y - r[n - 1]);
+  if (step < 1.5) return;
+  r.push(x, y);
+  draft.arc += step;
+  const sp = Math.max(10, 2.6 * R), c = draft.ctrl;
+  let tail = c[c.length - 1];
+  if (c.length > 1 && !tail.fixed) c.pop();
+  tail = c[c.length - 1];
+  if (Math.hypot(x - tail[0], y - tail[1]) >= sp) {
+    const p = [x, y];
+    p.fixed = true;
+    c.push(p);
+    // Light smoothing settles the newest joints.
+    for (let i = Math.max(1, c.length - 4); i < c.length - 1; i++) {
+      c[i][0] = lerp(c[i][0], (c[i - 1][0] + c[i + 1][0]) / 2, 0.3);
+      c[i][1] = lerp(c[i][1], (c[i - 1][1] + c[i + 1][1]) / 2, 0.3);
+    }
+  } else c.push([x, y]);
+  draftDirty = true;
+  // A very long stroke strikes and a new tube carries on.
+  if (draft.arc > 3.2 * S) {
+    const pid = draft.pid;
+    endDraft();
+    beginDraft(x, y, pid);
+  }
+}
+function endDraft() {
+  const d = draft;
+  draft = null;
+  draftDirty = false;
+  if (!d || d.arc < 5 * R || d.ctrl.length < 2) return false;
+  if (tubes.length >= MAXT - 1) tubes.shift();
+  const t = makeTube(d.ctrl.map(([x, y]) => [(x - W / 2) / S, (y - H / 2) / S]), d.gas, false);
+  tubes.push(t);
+  if (gasNow === MIX) { mixAt++; paintGas(); }
+  tubes.forEach(shapeTube);
+  staticDirty = true;
+  strike(t, performance.now() / 1000, false);
+  wake();
+  return true;
+}
+function cancelDraft() {
+  draft = null;
+  draftDirty = false;
+  wake();
+}
+// The nearest tube within reach, or null.
+function pick(x, y, reach) {
+  let best = null, bd = reach * reach;
+  for (const t of tubes) {
+    const h = t.hit;
+    for (let i = 0; i < h.length; i += 2) {
+      const d = (h[i] - x) ** 2 + (h[i + 1] - y) ** 2;
+      if (d < bd) { bd = d; best = t; }
+    }
+  }
+  return best;
+}
+let press = null;
+panel.addEventListener('pointerdown', e => {
+  if (!ready || press || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  if (draft && draft.pid === 'kb') endDraft();
+  press = { id: e.pointerId, x, y, t: e.timeStamp, touch: e.pointerType !== 'mouse', moved: false };
+  pen.seen = -1e9;
+});
+panel.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const list = e.getCoalescedEvents?.() || [];
+  for (const c of list.length ? list : [e]) {
+    const [x, y] = local(c);
+    if (!press.moved) {
+      if (Math.hypot(x - press.x, y - press.y) < (press.touch ? 9 : 5)) continue;
+      press.moved = true;
+      beginDraft(press.x, press.y, press.id, snapOn || c.shiftKey);
+    }
+    if (draft && draft.pid === press.id) addPoint(x, y);
+  }
+});
+function lift(e) {
+  if (!press || e.pointerId !== press.id) return;
+  const p = press;
+  press = null;
+  if (e.type === 'pointercancel') { if (draft && draft.pid === p.id) cancelDraft(); return; }
+  if (p.moved) { if (draft && draft.pid === p.id) endDraft(); return; }
+  const t = pick(p.x, p.y, R * 1.3 + (p.touch ? 12 : 5));
+  if (!t) { knock(p.x, p.y); return; }
+  // A second tap on one tube fills it with the next gas.
+  if (lastTap && lastTap.t === t && e.timeStamp - lastTap.at < 340) {
+    lastTap = null;
+    swapGas(t);
+    return;
+  }
+  lastTap = { t, at: e.timeStamp };
+  toggle(t);
+}
+let lastTap = null;
+function swapGas(t) {
+  t.gas = (t.gas + 1) % MIX;
+  t.keep = true;
+  strike(t, performance.now() / 1000, true);
+  wake();
+}
+panel.addEventListener('pointerup', lift);
+panel.addEventListener('pointercancel', lift);
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+function undo() {
+  if (draft) { cancelDraft(); return; }
+  const t = tubes.pop();
+  if (!t) return;
+  if (t.lvl > 0) click(t.pan);
+  staticDirty = true;
+  humSync();
+  wake();
+}
+function clearAll() {
+  setChase(false);
+  if (draft) cancelDraft();
+  if (!tubes.length) return;
+  if (tubes.some(t => t.lvl > 0)) click(0);
+  tubes.length = 0;
+  staticDirty = true;
+  humSync();
+  wake();
+}
+/* ---------- the bar: gas rail, wall, chase, clear ---------- */
+const gasEl = document.getElementById('gas'), rail = gasEl.querySelector('.gas-rail');
+const wallBtn = document.getElementById('wall'), chaseBtn = document.getElementById('chase'), clearBtn = document.getElementById('clear');
+const NAMES = [...GAS_SPEC.map(g => g[0]), 'Mix'];
+rail.innerHTML = GAS_SPEC.map(([, L, C, h]) => `<i style="--c: oklch(${L} ${(C * 0.92).toFixed(3)} ${h})"></i>`).join('') + '<i class="mix"></i>';
+const swatches = [...rail.children];
+let peek = -1;
+// The tooltip names a hovered swatch, then the pick.
+function paintGas() {
+  const shown = peek >= 0 ? peek : gasNow;
+  swatches.forEach((el, i) => { el.classList.toggle('on', i === gasNow); el.classList.toggle('peek', i === peek); });
+  gasEl.title = shown === MIX && peek < 0 ? `Mix · ${NAMES[gasPick()]}` : NAMES[shown];
+  gasEl.setAttribute('aria-valuenow', String(gasNow + 1));
+  gasEl.setAttribute('aria-valuetext', NAMES[gasNow]);
+}
+function setGas(i) {
+  i = clamp(i, 0, MIX);
+  if (i === gasNow) return;
+  gasNow = i;
+  paintGas();
+  if (draft) draft.gas = gasPick();
+  pen.seen = performance.now() / 1000;
+  wake();
+}
+// The swatch under a point on the rail.
+function swatchAt(x) {
+  let best = 0, bd = Infinity;
+  swatches.forEach((el, i) => {
+    const r = el.getBoundingClientRect(), d = Math.abs(x - (r.left + r.right) / 2);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+let railId = null;
+gasEl.addEventListener('pointerdown', e => {
+  if (gasEl.getAttribute('aria-disabled') === 'true' || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  railId = e.pointerId;
+  try { gasEl.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  setGas(swatchAt(e.clientX));
+});
+gasEl.addEventListener('pointermove', e => {
+  if (railId === e.pointerId) { setGas(swatchAt(e.clientX)); return; }
+  if (e.pointerType !== 'mouse' || !rail.contains(e.target)) { if (peek >= 0) { peek = -1; paintGas(); } return; }
+  const i = swatchAt(e.clientX);
+  if (i !== peek) { peek = i; paintGas(); }
+});
+const railUp = e => { if (railId === e.pointerId) railId = null; };
+gasEl.addEventListener('pointerup', railUp);
+gasEl.addEventListener('pointercancel', railUp);
+gasEl.addEventListener('pointerleave', () => { if (peek >= 0) { peek = -1; paintGas(); } });
+gasEl.addEventListener('keydown', e => {
+  const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key];
+  if (d) setGas(gasNow + d);
+  else if (e.key === 'Home') setGas(0);
+  else if (e.key === 'End') setGas(MIX);
+  else return;
+  // The pen ignores keys the rail has used.
+  e.preventDefault();
+});
+paintGas();
+
+function setWall(i) {
+  wallNow = (i + WALLS.length) % WALLS.length;
+  const w = WALLS[wallNow];
+  wallBtn.textContent = w.name;
+  wallBtn.setAttribute('aria-label', `Wall: ${w.name}`);
+  if (!ready) return;
+  bakeWall();
+  // The swap dips the power for a blink.
+  const now = performance.now() / 1000;
+  let any = null;
+  for (const t of tubes) {
+    if (!t.on || t.seq) continue;
+    t.seq = reduce ? [[now, 0.6, 0], [now + 0.05, 1, 0]] : [[now, 0.1, 0], [now + 0.05, 0.7, 0], [now + 0.08, 0.2, 0], [now + 0.13, 1, 0]];
+    t.si = 0;
+    any = t;
+  }
+  if (any) thump(any);
+  wake();
+}
+setWall(0);
+// Snap makes every drag run straight; touch has no Shift key.
+const snapBtn = document.getElementById('snap');
+let snapOn = false;
+snapBtn.addEventListener('click', () => {
+  snapOn = !snapOn;
+  snapBtn.setAttribute('aria-pressed', String(snapOn));
+});
+wallBtn.addEventListener('click', () => setWall(wallNow + 1));
+// On a phone the bar sits under the wall, so the whole wall draws.
+const NARROW = matchMedia('(max-width: 560px)'), barEl = panel.nextElementSibling;
+const barPlace = () => barEl.classList.toggle('bar--below', NARROW.matches);
+NARROW.addEventListener?.('change', barPlace);
+barPlace();
+chaseBtn.addEventListener('click', () => setChase(!chase));
+clearBtn.addEventListener('click', clearAll);
+// Reduced motion stops the show and rests its chip.
+function motionPref() {
+  chaseBtn.setAttribute('aria-disabled', String(reduce));
+  if (reduce) setChase(false);
+}
+motionPref();
+const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const onButton = e.target.closest?.('button, a');
+  if (ARROWS.has(e.key)) {
+    e.preventDefault();
+    if (!ready) return;
+    pen.shift = e.shiftKey;
+    // Shift lifts the pen; a keyboard stroke ends first.
+    if (e.shiftKey && draft && draft.pid === 'kb') endDraft();
+    pen.keys.add(e.key);
+    pen.seen = performance.now() / 1000;
+    wake();
+  } else if (e.key === ' ') {
+    if (onButton) return;
+    e.preventDefault();
+    if (e.repeat || !ready) return;
+    pen.seen = performance.now() / 1000;
+    // Space ends a keyboard stroke, or else switches the nearest tube.
+    if (draft && draft.pid === 'kb') { endDraft(); return; }
+    const t = pick(pen.x, pen.y, 1e6);
+    if (t) toggle(t);
+    else wake();
+  } else if (e.key === 'Backspace') {
+    e.preventDefault();
+    if (!e.repeat) undo();
+  } else if (e.key === 'c' || e.key === 'C') {
+    if (!e.repeat) clearAll();
+  }
+});
+addEventListener('keyup', e => {
+  pen.keys.delete(e.key);
+  if (e.key === 'Shift') pen.shift = false;
+});
+addEventListener('blur', () => pen.keys.clear());
+
+sound.onChange(on => {
+  if (on) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start: shaders link while the wall is laid out ---------- */
+function failed() {
+  ready = false;
+  sync();
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  [snapBtn, wallBtn, chaseBtn, clearBtn].forEach(c => { c.disabled = true; });
+  gasEl.setAttribute('aria-disabled', 'true');
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    allocTargets();
+    ready = true;
+    sync();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!W) {
+    layout(1160, 652);
+    canvas.width = 1160;
+    canvas.height = 652;
+  }
+  seedSign();
+  reshape();
+  try { await initGL(); } catch (err) { console.error(err); failed(); return; }
+  allocTargets();
+  ready = true;
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+  await curtain;
+  // The seeded tubes strike one by one, left to right, frame last.
+  const now = performance.now() / 1000;
+  tubes.filter(t => t.seed && !t.on).forEach((t, i) => strike(t, now + (reduce ? 0 : i * 0.22), reduce));
+  wake();
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+<script type="module">
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+</script>
+</body>
+</html>
