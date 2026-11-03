@@ -594,6 +594,8 @@ vec4 deck(vec3 d, float a, float r, float disc, vec3 sun, bool withSun) {
   float cl = smoothstep(0.34 - uCover, 0.62 - uCover, n) * smoothstep(0.0, 0.025, d.y);
   // Cloud thins over the black hole, so its shadow reads.
   cl *= 1.0 - uHole * (1.0 - smoothstep(r * 1.0, r * 1.7, a));
+  // The alien sky has no cloud; the deck fades out as the look eases in.
+  cl *= 1.0 - uAlien;
   vec3 under = uCloudDark + uCloudLit * (uCloudAmb + 0.02 + 1.1 * (1.0 - 0.85 * uHole) * exp(-a / FH * 6.0) + 0.5 * exp(-max(d.y, 0.0) / FH * 7.0));
   // Thin edges near the sun catch a bright lining.
   under += SUNC * 3.5 * (1.0 - uHole) * exp(-a / FH * 16.0) * (1.0 - smoothstep(0.48, 0.68, n));
@@ -781,10 +783,15 @@ void main() {
       foam *= 1.0 - smoothstep(0.3, 1.0, foot * 6.0);
       vec3 fc = vec3(0.22, 0.15, 0.18) + SUNC * 0.6 * exp(-length(d - SD) / FH * 2.0);
       col = mix(col, fc, foam * 0.85);
-      // On the alien world the water glows faintly, most where it breaks.
+      // On the alien world drifting blooms of plankton light the water.
       if (uAlien > 0.0) {
-        float bio = 0.25 + 0.75 * smoothstep(0.45, 0.8, noise(p * vec2(6.0, 14.0) + uTime * 0.05));
-        col += vec3(0.02, 0.2, 0.17) * uAlien * (bio * 0.35 + foam * 1.6) * exp(-into * 0.15);
+        float bloom = smoothstep(0.42, 0.72, fbm(p * vec2(1.5, 3.6) + vec2(uTime * 0.02, -uTime * 0.035)));
+        // Fine sparks twinkle inside the blooms and fade with distance.
+        float spark = smoothstep(0.7, 0.86, noise(p * vec2(24.0, 62.0) + uTime * 0.12)) * (1.0 - smoothstep(0.1, 0.5, foot * 22.0));
+        // Blooms dim the reflection, so the electric blue reads against the aurora.
+        col *= 1.0 - 0.6 * bloom * uAlien;
+        vec3 glow = mix(vec3(0.03, 0.3, 0.95), vec3(0.05, 0.8, 1.0), bloom * bloom);
+        col += glow * uAlien * (0.03 + bloom * (0.4 + spark * 1.6) + foam * 1.2) * exp(-into * 0.08);
       }
     } else {
       // Wet sand: dark grains, low ripples, glossy film and pools.
