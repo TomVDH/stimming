@@ -33,12 +33,13 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to add a gravity well, drag a well to move it. Space adds a well, C clears.">
+    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to add a gravity well, drag a well to move it. Wells that meet merge, and heavy merges collapse into a black hole. Space adds a well, C clears, R resets.">
       <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
     </div>
     <div class="bar">
       <div class="actions" id="ctl">
         <button class="chip" id="clear" type="button" aria-keyshortcuts="C">Clear</button>
+        <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag</dt><dd>fling stars</dd></div>
@@ -79,16 +80,31 @@ const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 12, LEAD = 0.004;
+const MAXV = 20, LEAD = 0.004;
 let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0;
-let pad = null, padLp = null, padAt = 0;
-const padVoices = [];
-// The pad is a D chord, root first.
-// Its voices enter one by one as orbits fill.
-const PAD_NOTES = [73.42, 110, 164.81, 185, 277.18], PAD_AMP = [0.5, 0.34, 0.24, 0.17, 0.11];
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Busy moments soften each voice; the compressor catches the rest.
 const level = () => 1 / (1 + 0.08 * voices);
+const mtof = m => 440 * 2 ** ((m - 69) / 12);
+
+// Four chords in D major share one key.
+// Each chord holds eight voices, bass first, one per cluster rank.
+const CHORDS = [
+  [38, 50, 57, 62, 66, 69, 73, 76],
+  [35, 47, 54, 62, 66, 69, 71, 74],
+  [31, 43, 54, 62, 66, 69, 71, 73],
+  [33, 45, 52, 61, 64, 66, 69, 76],
+];
+// The chord moves every four bars, on one shared grid.
+const BPM = 76, SIX = 60 / BPM / 4, BEAT_HZ = BPM / 60;
+const AMP = [0.13, 0.075, 0.06, 0.05, 0.042, 0.036, 0.03, 0.026];
+// Each upper layer plucks on its own Euclidean rhythm.
+const euclid = (p, r) => Array.from({ length: 16 }, (_, i) => ((i + r) * p) % 16 < p);
+const RHYTHM = [null, euclid(3, 0), euclid(5, 2), euclid(2, 5), euclid(7, 1), euclid(3, 7), euclid(4, 3), euclid(5, 9)];
+const layers = [];
+// The star count writes these targets twice a second.
+const mixAt = { level: new Float32Array(8), pan: new Float32Array(8), rate: new Float32Array(8).fill(0.6), feed: 0, jet: 0 };
+let chordAt = 0, seqT = 0, seqStep = 0, roar = null, hiss = null;
 
 function audio() {
   if (!ac) {
@@ -106,36 +122,113 @@ function audio() {
     noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
     const d = noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    // The pad drones under one breathing lowpass.
-    padLp = ac.createBiquadFilter();
-    padLp.type = 'lowpass';
-    padLp.frequency.value = 280;
-    padLp.Q.value = 0.4;
-    pad = ac.createGain();
-    pad.gain.value = 0;
-    padLp.connect(pad).connect(out);
-    PAD_NOTES.forEach((f, k) => {
-      const g = ac.createGain();
-      g.gain.value = 0;
-      g.connect(padLp);
-      for (const s of [-1, 1]) {
-        const o = ac.createOscillator();
-        o.type = k ? 'triangle' : 'sine';
-        o.frequency.value = f;
-        o.detune.value = s * (3 + 2 * k);
-        o.connect(g);
-        o.start();
-      }
-      padVoices.push(g);
-    });
-    const lfo = ac.createOscillator(), lg = ac.createGain();
-    lfo.frequency.value = 0.06;
-    lg.gain.value = 70;
-    lfo.connect(lg).connect(padLp.frequency);
-    lfo.start();
-    padTo(padAt);
+    for (let k = 0; k < 8; k++) layers.push(makeLayer(k));
+    // The hole roars low while it feeds; its jets hiss high.
+    roar = noiseBand(150, 0.8);
+    hiss = noiseBand(2600, 2.5);
   }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.then(() => padTo(padAt)).catch(() => {}); }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.then(() => mixLayers()).catch(() => {}); }
+}
+function noiseBand(f, q) {
+  const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.frequency.value = f;
+  bp.Q.value = q;
+  g.gain.value = 0;
+  src.connect(bp).connect(g).connect(out);
+  src.start();
+  return g;
+}
+// One synth layer per cluster rank, silent until stars bind.
+function makeLayer(k) {
+  const g = ac.createGain(), lp = ac.createBiquadFilter();
+  g.gain.value = 0;
+  lp.type = 'lowpass';
+  lp.frequency.value = 300;
+  lp.Q.value = 0.6;
+  let bus = out;
+  const pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  if (pan) { pan.connect(out); bus = pan; }
+  lp.connect(g).connect(bus);
+  // The bass is pure; upper layers carry a thin buzz.
+  const parts = k
+    ? [['triangle', -6, 1], ['triangle', 6, 0.8], ['sawtooth', 0, 0.12]]
+    : [['sine', 0, 1], ['sine', 1200, 0.22]];
+  const f = mtof(CHORDS[chordAt][k]);
+  const oscs = parts.map(([type, cents, amp]) => {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = type;
+    o.frequency.value = f;
+    o.detune.value = cents;
+    og.gain.value = amp;
+    o.connect(og).connect(lp);
+    o.start();
+    return o;
+  });
+  // A tremolo pulses at the cluster's orbital beat.
+  const trem = ac.createOscillator(), depth = ac.createGain();
+  trem.frequency.value = 0.6;
+  depth.gain.value = 0;
+  trem.connect(depth).connect(g.gain);
+  trem.start();
+  return { g, lp, pan, bus, oscs, trem, depth };
+}
+// Layers glide toward the targets in mixAt.
+function mixLayers(tau = 1.1) {
+  if (!ac || ac.state !== 'running' || !layers.length) return;
+  const t = ac.currentTime, on = sound.on && running;
+  layers.forEach((L, k) => {
+    const lv = on ? mixAt.level[k] : 0;
+    // A feeding hole swells the bass.
+    const amp = AMP[k] * lv * (k ? 1 : 1 + 1.2 * mixAt.feed);
+    L.g.gain.setTargetAtTime(amp, t, tau);
+    L.depth.gain.setTargetAtTime(amp * 0.35, t, tau);
+    L.trem.frequency.setTargetAtTime(mixAt.rate[k], t, 0.5);
+    L.lp.frequency.setTargetAtTime(220 + 1500 * lv + (k ? 0 : 500 * mixAt.feed), t, 1.4);
+    L.pan?.pan.setTargetAtTime(mixAt.pan[k], t, 0.6);
+  });
+  roar.gain.setTargetAtTime(on ? 0.2 * mixAt.feed : 0, t, tau * 0.7);
+  hiss.gain.setTargetAtTime(on ? 0.05 * mixAt.jet : 0, t, tau * 0.7);
+}
+function glide(ch, t) {
+  chordAt = ch;
+  layers.forEach((L, k) => L.oscs.forEach(o => o.frequency.setTargetAtTime(mtof(CHORDS[ch][k]), t, 0.22)));
+}
+// A soft bell on a chord tone, through its layer's panner.
+function pluck(f, lv, bus, t) {
+  if (voices >= MAXV) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'sine';
+  o.frequency.value = f;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.085 * lv * level(), t + 0.006);
+  g.gain.setTargetAtTime(0, t + 0.012, 0.17);
+  o.connect(g).connect(bus);
+  o.start(t);
+  o.stop(t + 1.3);
+  track(o, g);
+}
+// The sequencer looks ahead a little on each frame.
+function sequence() {
+  const a = live();
+  if (!a || a.state !== 'running' || !running || !layers.length) return;
+  const now = a.currentTime;
+  // After a pause, the grid restarts just ahead.
+  if (seqT < now) seqT = now + 0.05;
+  while (seqT < now + 0.12) {
+    const s = seqStep++;
+    const ch = Math.floor(s / 64) % CHORDS.length;
+    if (s % 64 === 0) glide(ch, seqT);
+    for (let k = 1; k < 8; k++) {
+      const lv = mixAt.level[k];
+      if (lv < 0.12 || !RHYTHM[k][s % 16]) continue;
+      const note = CHORDS[ch][3 + ((k + (s >> 2)) % 5)] + 12;
+      pluck(mtof(note), lv, layers[k].bus, seqT);
+    }
+    seqT += SIX;
+  }
 }
 // A context still waking queues sounds for a moment.
 function live() {
@@ -150,18 +243,19 @@ function track(src, ...tails) {
 function rest() {
   clearTimeout(restT);
   if (!ac || ac.state !== 'running') return;
-  pad.gain.setTargetAtTime(0, ac.currentTime, 0.08);
+  mixLayers(0.08);
   restT = setTimeout(() => {
     if (!running && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 400);
 }
 function wakeSound() {
   clearTimeout(restT);
-  if (!sound.on || !ac || ac.state === 'running') return;
+  if (!sound.on || !ac) return;
+  if (ac.state === 'running') return mixLayers();
   askedAt = performance.now();
-  ac.resume()?.then(() => padTo(padAt)).catch(() => {});
+  ac.resume()?.then(() => mixLayers()).catch(() => {});
 }
-const GESTURE_KEYS = new Set([' ', 'c', 'C', 'Enter']);
+const GESTURE_KEYS = new Set([' ', 'c', 'C', 'r', 'R', 'Enter']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -171,15 +265,6 @@ function unlock(e) {
 // Touchend is the gesture iOS needs.
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
 
-// Orbit count sets how thick the pad is, from 0 to 1.
-function padTo(t) {
-  padAt = t;
-  if (!pad || ac.state !== 'running') return;
-  const a = ac.currentTime;
-  pad.gain.setTargetAtTime(sound.on && running ? 0.05 + 0.11 * t : 0, a, 1.2);
-  padLp.frequency.setTargetAtTime(240 + 900 * t, a, 1.6);
-  padVoices.forEach((g, k) => g.gain.setTargetAtTime(clamp(t * PAD_NOTES.length - k + 1.2) * PAD_AMP[k], a, 1.6));
-}
 // Flinging: a bandpassed breath of noise that rises, then falls away.
 function whoosh(amt, pan) {
   const a = live();
@@ -232,11 +317,38 @@ function tone(f, amp, tau) {
   o2.stop(t + tau * 7);
   track(o, og, og2);
 }
-// Wells step through a D pentatonic, low enough to feel heavy.
-const WELL_NOTES = [73.42, 82.41, 98, 110, 65.41, 87.31];
+// A merger chirps like an inspiral: pitch climbs as time runs out.
+// The chirp lands on a chord tone, then rings down.
+function chirp(note, amp = 1) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, T = 0.5, f1 = mtof(note), g = level() * amp;
+  const curve = new Float32Array(40), tauE = T / 6 ** (8 / 3);
+  for (let i = 0; i < 40; i++) curve[i] = f1 * ((T - (T - tauE) * (i / 39)) / tauE) ** -0.375;
+  const o = a.createOscillator(), o2 = a.createOscillator(), og = a.createGain(), og2 = a.createGain();
+  og2.gain.value = 0;
+  o.frequency.setValueCurveAtTime(curve, t, T);
+  o.frequency.setValueAtTime(f1, t + T + 0.002);
+  o.frequency.exponentialRampToValueAtTime(f1 * 0.985, t + T + 1.6);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.2 * g, t + T);
+  og.gain.setTargetAtTime(0, t + T + 0.01, 0.4);
+  o2.frequency.value = f1 * 2;
+  og2.gain.setValueAtTime(0, t + T);
+  og2.gain.linearRampToValueAtTime(0.07 * g, t + T + 0.01);
+  og2.gain.setTargetAtTime(0, t + T + 0.02, 0.25);
+  o.connect(og).connect(out);
+  o2.connect(og2).connect(out);
+  o.start(t);
+  o2.start(t + T);
+  o.stop(t + T + 2.4);
+  o2.stop(t + T + 2.4);
+  track(o, og, og2);
+}
+// Wells land on low tones of the current chord.
 let noteAt = 0;
-const wellTone = () => tone(WELL_NOTES[noteAt++ % WELL_NOTES.length] * jit(0.01), 1, 0.45);
-const mergeTone = () => tone(55 * jit(0.01), 0.8, 0.7);
+const wellTone = () => tone(mtof(CHORDS[chordAt][1 + (noteAt++ % 3)]) * jit(0.004), 1, 0.45);
+const mergeTone = () => chirp(CHORDS[chordAt][3] + 12, 0.9);
 
 /* ---------- capability check ---------- */
 // Without WebGPU the panel shows one line and nothing runs.
@@ -259,21 +371,28 @@ function noWebGPU() {
 /* ---------- constants ---------- */
 // Phones and tablets simulate fewer stars.
 const SMALL = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 600;
-const N = SMALL ? 131072 : 196608;
+const N = SMALL ? 196608 : 327680;
 // Two thirds of the stars seed the pair.
 // The rest wait for flings.
 const SEED = Math.round((N * 2) / 3);
 const MAXW = 8, CAP = 6;
 // Units: G is 1 and every mass is stored as GM.
 // The panel spans about twenty length units.
-const SEED_M = 26, TAP_M = 18, MAX_M = 80;
-const EPS2 = 0.2, EPSW2 = 0.64, KILL2 = 70 * 70, DEAD = -1e9;
+const SEED_M = 26, TAP_M = 18, MAX_M = 240;
+// A merger this heavy collapses into a black hole.
+const BH_M = 48, HOLE_R = 0.2, LENS = 0.3, SHADOW_K = 1.3;
+// Near a hole, stars spiral in and feed it.
+const HOLE_REACH = 6, INFLOW = 0.3, EAT = 160 / N;
+const DISK_N = SMALL ? 16384 : 32768, DISK_SPIN = 2.4, DISK_PX = 2.4;
+const JET_N = SMALL ? 4096 : 8192, JET_RATE = 0.45;
+const EPS2 = 0.2, EPSW2 = 1, KILL2 = 70 * 70, DEAD = -1e9;
 // Flings: an opening burst, then a steady stream while held.
-const INIT = 1600, RATE = 9000, MAXF = 14000;
+const INIT = 2000, RATE = 12000, MAXF = Math.round(N / 14);
 const STEP = 1 / 120;
 // Arms wind as log spirals, about 19 degrees of pitch.
 const WIND = 2.9;
 const FOV = 36, EL = (57 * Math.PI) / 180;
+const holeRadius = m => Math.min(0.55, HOLE_R * Math.sqrt(m / BH_M));
 
 let running = false, ready = false;
 let renderer = null, camera = null;
@@ -291,6 +410,7 @@ async function start() {
   const {
     Fn, If, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select, uv, smoothstep,
     mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, pass, max, atan,
+    fract, step, cameraPosition,
   } = TSL;
 
   renderer = new THREE.WebGPURenderer({ antialias: false });
@@ -310,16 +430,21 @@ async function start() {
   // Velocity xyz, w is the birth time.
   // DEAD marks an empty slot.
   const vel = instancedArray(N, 'vec4');
-  const counter = instancedArray(1, 'uint').toAtomic();
+  // Slot 0 counts tight stars, slots 1 to MAXW count per well.
+  // The last slot totals every star a hole swallows.
+  const NC = MAXW + 2, EATEN = MAXW + 1;
+  const counter = instancedArray(NC, 'uint').toAtomic();
 
   const uDt = uniform(STEP);
   const uTime = uniform(0);
   const uClearT = uniform(-1);
   const uFrame = uniform(new THREE.Vector3());
-  const uW = [], uWV = [];
+  const uW = [], uWV = [], uWH = [];
   for (let k = 0; k < MAXW; k++) {
     uW.push(uniform(new THREE.Vector4(0, 0, 0, 0)));
     uWV.push(uniform(new THREE.Vector4()));
+    // Horizon radius, zero for an ordinary well.
+    uWH.push(uniform(0));
   }
   // The held cluster is a ring-buffer range that follows the pointer.
   const uHeldStart = uniform(0, 'uint');
@@ -408,7 +533,7 @@ async function start() {
       const p = P.xyz.toVar(), v = V.xyz.toVar();
       const acc = uFrame.toVar();
       const best = float(0).toVar(), host = vec3(0).toVar(), hostP = vec3(0).toVar(), hostM = float(0).toVar();
-      const hostPh = float(0).toVar();
+      const hostPh = float(0).toVar(), hostH = float(0).toVar();
       for (let k = 0; k < MAXW; k++) {
         const d = uW[k].xyz.sub(p).toVar();
         const inv = inverseSqrt(d.dot(d).add(EPS2)).toVar();
@@ -416,7 +541,8 @@ async function start() {
         acc.addAssign(d.mul(f.mul(inv)));
         // Colour speed is measured against the strongest pull.
         If(f.greaterThan(best), () => {
-          best.assign(f); host.assign(uWV[k].xyz); hostP.assign(uW[k].xyz); hostM.assign(uW[k].w); hostPh.assign(uWV[k].w);
+          best.assign(f); host.assign(uWV[k].xyz); hostP.assign(uW[k].xyz); hostM.assign(uW[k].w);
+          hostPh.assign(uWV[k].w); hostH.assign(uWH[k]);
         });
       }
       // Settling: near a well, orbits ease toward circles in the plane.
@@ -426,9 +552,13 @@ async function start() {
       const tng = vec3(dp.z.negate(), 0, dp.x).mul(inverseSqrt(r2.add(1e-4))).toVar();
       // Each star keeps its own sense of rotation.
       const sgn = select(vr.dot(tng).greaterThanEqual(0), float(1), float(-1));
-      const goal = tng.mul(vcirc(hostM, sqrt(r2)).mul(sgn)).add(vec3(0, dp.y.mul(-0.6), 0));
-      const ease = uSettle.mul(exp(r2.mul(-1 / 16))).mul(hostM.min(1));
-      v.addAssign(goal.sub(vr).mul(ease.mul(uDt)));
+      // Around a hole, orbits settle fast and drift inward.
+      const reach = hostH.mul(HOLE_REACH);
+      const near = select(hostH.greaterThan(0), exp(r2.negate().div(reach.mul(reach).add(1e-4))), float(0)).toVar();
+      const inward = vec3(dp.x, 0, dp.z).mul(inverseSqrt(r2.add(1e-4))).mul(near.mul(-INFLOW));
+      const goal = tng.mul(vcirc(hostM, sqrt(r2)).mul(sgn)).add(vec3(0, dp.y.mul(-0.6), 0)).add(inward);
+      const ease = uSettle.mul(exp(r2.mul(-1 / 16))).mul(hostM.min(1)).add(near.mul(0.8));
+      v.addAssign(goal.sub(vr).mul(ease.mul(uDt).min(1)));
       // A faint two-arm spiral potential turns with each well, so arms persist.
       const rr = sqrt(r2.add(1e-4)).toVar();
       const omega = sqrt(hostM.div(44));
@@ -441,27 +571,39 @@ async function start() {
       acc.addAssign(vec3(dp.x, 0, dp.z).div(rr).mul(fr).add(tng.mul(ft)).mul(fade));
       v.addAssign(acc.mul(uDt));
       p.addAssign(v.mul(uDt));
+      // A star inside a horizon is gone, and the hole counts it.
+      const q = p.sub(hostP).toVar();
+      const eaten = hostH.greaterThan(0).and(q.dot(q).lessThan(hostH.mul(hostH)));
+      If(eaten, () => { atomicAdd(counter.element(uint(EATEN)), uint(1)); });
       P.assign(vec4(p, v.sub(host).length()));
-      V.assign(vec4(v, select(p.dot(p).greaterThan(KILL2), float(DEAD), born)));
+      V.assign(vec4(v, select(p.dot(p).greaterThan(KILL2).or(eaten), float(DEAD), born)));
     });
   })().compute(N);
 
   /* ---------- counting stars in tight orbits, one in eight ---------- */
-  const resetPass = Fn(() => { atomicStore(counter.element(0), uint(0)); })().compute(1);
+  // The swallow total is never reset; the CPU reads its growth.
+  const resetPass = Fn(() => { atomicStore(counter.element(instanceIndex), uint(0)); })().compute(MAXW + 1);
   const countPass = Fn(() => {
     const i = instanceIndex.mul(uint(8));
     const P = pos.element(i), V = vel.element(i);
     If(V.w.greaterThanEqual(uClearT), () => {
       const p = P.xyz.toVar();
-      const bestR2 = float(1e9).toVar(), bestM = float(0).toVar();
+      const bestR2 = float(1e9).toVar(), bestM = float(0).toVar(), bestK = uint(0).toVar();
       for (let k = 0; k < MAXW; k++) {
         const d = uW[k].xyz.sub(p).toVar();
         const r2 = d.dot(d).toVar();
-        If(r2.lessThan(bestR2).and(uW[k].w.greaterThan(0)), () => { bestR2.assign(r2); bestM.assign(uW[k].w); });
+        If(r2.lessThan(bestR2).and(uW[k].w.greaterThan(0)), () => {
+          bestR2.assign(r2); bestM.assign(uW[k].w); bestK.assign(uint(k + 1));
+        });
       }
-      // Tight: bound, and within about two units of its well.
+      // Tight: bound, and within a few units of its well.
+      // Heavier wells hold a wider reach.
       const e = P.w.mul(P.w).mul(0.5).sub(bestM.mul(inverseSqrt(bestR2.add(EPS2))));
-      If(bestR2.lessThan(5.3).and(e.lessThan(0)), () => { atomicAdd(counter.element(0), uint(1)); });
+      const reach = bestM.div(SEED_M).max(1).pow(0.67).mul(5.3);
+      If(bestR2.lessThan(reach).and(e.lessThan(0)).and(bestK.greaterThan(uint(0))), () => {
+        atomicAdd(counter.element(0), uint(1));
+        atomicAdd(counter.element(bestK), uint(1));
+      });
     });
   })().compute(N / 8);
 
@@ -480,6 +622,39 @@ async function start() {
     m.sizeAttenuation = false;
     return m;
   };
+  // Every sprite fades as a soft round dot.
+  const dotOf = col => Fn(() => {
+    const d = uv().sub(0.5).length().mul(2);
+    const a = float(1).sub(d).max(0);
+    return vec4(col, a.mul(a));
+  })();
+
+  /* ---------- the hole bends light ---------- */
+  // xyz is the hole centre, w the lens strength.
+  const uHole = uniform(new THREE.Vector4(0, 0, 0, 0));
+  const uHoleR = uniform(HOLE_R), uHoleVis = uniform(0), uHoleAA = uniform(0.1);
+  const uFeed = uniform(0), uJet = uniform(0), uDiskGain = uniform(1);
+  const uRingDir = uniform(new THREE.Vector2(1, 0));
+  // A thin lens: light from behind the hole bends outward around it.
+  // An image moves to the outer Einstein solution and brightens.
+  function lensOf(P) {
+    const C = uHole.xyz;
+    const D = C.sub(cameraPosition);
+    const dL = D.length();
+    const rel = P.sub(cameraPosition);
+    const s = rel.dot(D).div(dL).max(1e-3);
+    const behind = s.sub(dL).max(0);
+    // The point, carried along its sight line into the lens plane.
+    const u = cameraPosition.add(rel.mul(dL.div(s))).sub(C);
+    const ul = u.length().max(1e-5);
+    const re2 = uHole.w.mul(behind).div(s);
+    const root = sqrt(ul.mul(ul).add(re2.mul(4)));
+    const ul2 = ul.add(root).mul(0.5);
+    const p = cameraPosition.add(C.add(u.mul(ul2.div(ul))).sub(cameraPosition).mul(s.div(dL)));
+    const mu = ul.mul(ul).add(re2.mul(2)).div(ul.mul(root).max(1e-6)).min(3);
+    return { p, mu, behind, ul2 };
+  }
+
   const starMat = spriteMat();
   const SP = pos.toAttribute(), SV = vel.toAttribute();
   const born = SV.w;
@@ -488,19 +663,17 @@ async function start() {
   // Cleared stars fade out where they stand.
   const vis = select(born.greaterThanEqual(uClearT), smoothstep(born, born.add(0.3), uTime),
     select(born.greaterThan(-1e8), float(1).sub(uTime.sub(uClearT).div(0.45)).clamp(0, 1), float(0)));
-  starMat.positionNode = SP.xyz;
+  const starLens = lensOf(SP.xyz);
+  starMat.positionNode = starLens.p;
   starMat.scaleNode = select(vis.greaterThan(0.002), uStarSize.mul(lum.pow(12).mul(1.3).add(1)).mul(uPx), float(0));
   // Slow stars glow amber, fast ones blue-white.
   const AMBER = vec3(1.0, 0.43, 0.11), ICE = vec3(0.56, 0.74, 1.0);
+  const HOT = vec3(1.0, 0.86, 0.66), EMBER = vec3(0.75, 0.1, 0.04);
   const tint = mix(AMBER, ICE, smoothstep(2, 6, SP.w));
   // Fast core stars dim a little, so dense centres don't burn out.
   const calm = float(1.3).div(SP.w.mul(0.2).pow(2).add(1));
-  const starCol = varying(tint.mul(lum.pow(5).mul(2.2).add(0.42)).mul(calm).mul(vis).mul(uStarGain));
-  starMat.colorNode = Fn(() => {
-    const d = uv().sub(0.5).length().mul(2);
-    const a = float(1).sub(d).max(0);
-    return vec4(starCol, a.mul(a));
-  })();
+  const starCol = varying(tint.mul(lum.pow(5).mul(2.2).add(0.42)).mul(calm).mul(vis).mul(uStarGain).mul(starLens.mu));
+  starMat.colorNode = dotOf(starCol);
   const stars = new THREE.Sprite(starMat);
   stars.count = N;
   stars.frustumCulled = false;
@@ -523,6 +696,80 @@ async function start() {
     scene.add(s);
     wellDots.push({ s, size });
   }
+
+  /* ---------- the hole: shadow, photon ring, disk and jets ---------- */
+  // The shadow is a solid black disc with a thin hot rim.
+  // The rim brightens on the side that moves toward the camera.
+  const shadowMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, depthTest: false });
+  shadowMat.scaleNode = uHoleR.mul(2 * SHADOW_K).mul(uHoleVis.mul(0.5).add(0.5));
+  shadowMat.colorNode = Fn(() => {
+    const q = uv().sub(0.5).mul(2);
+    const d = q.length();
+    const edge = float(1 / SHADOW_K), aa = uHoleAA;
+    const rimW = max(float(0.08), aa.mul(2));
+    const inside = float(1).sub(smoothstep(edge.sub(aa), edge, d));
+    const rim = smoothstep(edge.sub(aa), edge, d).mul(float(1).sub(smoothstep(edge.add(rimW).sub(aa), edge.add(rimW), d)));
+    const beam = q.div(d.max(1e-4)).dot(uRingDir).mul(0.7).add(1);
+    return vec4(HOT.mul(beam.mul(2.6)).mul(rim), inside.add(rim).min(1).mul(uHoleVis));
+  })();
+  const shadow = new THREE.Sprite(shadowMat);
+  shadow.frustumCulled = false;
+  shadow.renderOrder = 3;
+  shadow.visible = false;
+  scene.add(shadow);
+
+  // The disk: particles on Kepler orbits, inner ones fastest.
+  // Radius is in horizon units, with two cut gaps.
+  const diskMat = spriteMat();
+  const dh = k => hash(instanceIndex.add(uint(k * 7349 + 101)));
+  const dr = mix(float(1.75), float(6.4), dh(1).pow(1.7));
+  const gap = step(0.14, dr.sub(3.0).abs()).mul(step(0.1, dr.sub(4.6).abs()));
+  const dth = dh(2).mul(TAU).add(uTime.mul(dr.pow(-1.5).mul(DISK_SPIN)));
+  const drw = dr.mul(uHoleR);
+  const dP = uHole.xyz.add(vec3(cos(dth).mul(drw), dh(3).sub(0.5).mul(drw).mul(0.06), sin(dth).mul(drw)));
+  const diskLens = lensOf(dP);
+  // The far side bends over the top.
+  // Any point that lands in the shadow hides.
+  const hidden = diskLens.behind.greaterThan(0).and(diskLens.ul2.lessThan(uHoleR));
+  diskMat.positionNode = diskLens.p;
+  diskMat.scaleNode = select(hidden.or(gap.lessThan(0.5)).or(uHoleVis.lessThan(0.002)), float(0), uPx.mul(DISK_PX));
+  // Doppler: the approaching side brightens and shifts toward blue.
+  const toCam = cameraPosition.sub(dP).normalize();
+  const beta = vec3(sin(dth).negate(), 0, cos(dth)).dot(toCam).mul(inverseSqrt(dr).mul(0.5));
+  const dop = float(1).div(float(1).sub(beta));
+  const heat = smoothstep(1.75, 6.4, dr);
+  const diskBase = mix(mix(HOT.mul(1.6), AMBER, smoothstep(0, 0.55, heat)), EMBER, smoothstep(0.55, 1, heat));
+  // Clumps belong to the gas, so shear winds them into streaks.
+  const clump = sin(dh(2).mul(TAU * 7).add(dr.mul(5))).mul(0.5).add(0.5).pow(3).mul(0.75).add(0.25);
+  const diskCol = varying(mix(diskBase, ICE.mul(1.4), beta.mul(1.6).clamp(0, 0.6))
+    .mul(dop.pow(3)).mul(clump).mul(diskLens.mu).mul(uFeed.mul(1.4).add(0.45)).mul(uHoleVis).mul(uDiskGain));
+  diskMat.colorNode = dotOf(diskCol);
+  const disk = new THREE.Sprite(diskMat);
+  disk.count = DISK_N;
+  disk.frustumCulled = false;
+  disk.renderOrder = 4;
+  disk.visible = false;
+  scene.add(disk);
+
+  // Jets: while the hole feeds hard, it fires along its axis.
+  // The jet comes in bursts, so knots travel out with cut gaps.
+  const jetMat = spriteMat();
+  const jh = k => hash(instanceIndex.add(uint(k * 5113 + 977)));
+  const up = select(instanceIndex.bitAnd(uint(1)).equal(uint(1)), float(1), float(-1));
+  const jt = fract(jh(1).add(uTime.mul(JET_RATE)));
+  const knot = step(0.4, fract(uTime.sub(jt.div(JET_RATE)).mul(1.4)));
+  const ja = jh(2).mul(TAU);
+  const jr = uHoleR.mul(jt.mul(1.4).add(0.2)).mul(sqrt(jh(3)));
+  const jl = uHoleR.mul(uJet.mul(14).add(4)).mul(jt);
+  jetMat.positionNode = uHole.xyz.add(vec3(cos(ja).mul(jr), up.mul(jl), sin(ja).mul(jr)));
+  jetMat.scaleNode = select(uJet.lessThan(0.01).or(knot.lessThan(0.5)), float(0), uPx.mul(2));
+  jetMat.colorNode = dotOf(varying(ICE.mul(1.6).mul(float(1).sub(jt).pow(1.5)).mul(uJet).mul(uHoleVis)));
+  const jets = new THREE.Sprite(jetMat);
+  jets.count = JET_N;
+  jets.frustumCulled = false;
+  jets.renderOrder = 4;
+  jets.visible = false;
+  scene.add(jets);
 
   const renderPipeline = new THREE.RenderPipeline(renderer);
   const scenePass = pass(scene, camera);
@@ -562,35 +809,49 @@ async function start() {
   }
 
   /* ---------- wells: a few heavy points, simulated on the CPU ---------- */
-  // Centring pulls the whole frame, so relative motion is untouched.
-  const K_C = 0.22, C_C = 0.9, GAMMA = 0.3, MERGE2 = 0.45 ** 2;
+  // Centring follows the heavy wells, gently, and moves the whole frame.
+  const K_C = 0.12, C_C = 0.7, GAMMA = 0.5, MERGE_R = 0.6;
+  // Heavy wells answer pulls slowly, so cores hold their place.
+  const INERT = 30, DRAG = 0.05, RAMP = 0.7;
+  const resp = m => 1 / (1 + m / INERT);
   let frameX = 0, frameZ = 0;
   function makeWell(x, z, vx, vz, m, mt) {
-    return { x, z, vx, vz, m, mt, ph: Math.random() * TAU, vis: 0, pulse: 0, held: false, born: performance.now(), ax: 0, az: 0, gx: 0, gz: 0, kept: null };
+    return {
+      x, z, vx, vz, m, mt, ph: Math.random() * TAU, vis: 0, pulse: 0, held: false, born: performance.now(),
+      ax: 0, az: 0, gx: 0, gz: 0, k: 1, hole: false, bound: 0,
+    };
   }
   function stepWells(h) {
-    let ax0 = 0, az0 = 0;
-    if (!wells.some(w => w.held)) {
-      let M = 0, x = 0, z = 0, vx = 0, vz = 0;
-      for (const w of wells) { M += w.m; x += w.m * w.x; z += w.m * w.z; vx += w.m * w.vx; vz += w.m * w.vz; }
-      if (M > 1e-3) { ax0 = (-K_C * x - C_C * vx) / M; az0 = (-K_C * z - C_C * vz) / M; }
+    let W = 0, x = 0, z = 0, vx = 0, vz = 0, M = 0, mx = 0, mz = 0;
+    for (const w of wells) {
+      const q = w.m * w.m;
+      W += q; x += q * w.x; z += q * w.z; vx += q * w.vx; vz += q * w.vz;
+      M += w.m; mx += w.m * w.vx; mz += w.m * w.vz;
+    }
+    let ax0 = 0, az0 = 0, ux = 0, uz = 0;
+    if (M > 1e-3) { ux = mx / M; uz = mz / M; }
+    if (W > 1e-6 && !wells.some(w => w.held)) {
+      ax0 = (-K_C * x - C_C * vx) / W;
+      az0 = (-K_C * z - C_C * vz) / W;
     }
     frameX = ax0;
     frameZ = az0;
     for (const w of wells) {
-      w.ax = ax0;
-      w.az = az0;
-      w.m += (w.mt - w.m) * (1 - Math.exp(-h / 0.18));
+      w.m += (w.mt - w.m) * (1 - Math.exp(-h / RAMP));
+      // Halo drag: each well sheds speed against the mean flow, and sinks.
+      w.ax = ax0 - DRAG * (w.vx - ux);
+      w.az = az0 - DRAG * (w.vz - uz);
+      w.k = resp(Math.max(w.m, w.mt));
     }
     for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
       const a = wells[i], b = wells[j], dx = b.x - a.x, dz = b.z - a.z, r2 = dx * dx + dz * dz;
       const inv = 1 / (r2 + EPSW2) ** 1.5;
-      a.ax += b.m * dx * inv; a.az += b.m * dz * inv;
-      b.ax -= a.m * dx * inv; b.az -= a.m * dz * inv;
+      a.ax += b.m * dx * inv * a.k; a.az += b.m * dz * inv * a.k;
+      b.ax -= a.m * dx * inv * b.k; b.az -= a.m * dz * inv * b.k;
       // Dynamical friction: close pairs shed relative speed and sink together.
-      const f = (GAMMA * Math.exp(-r2 / 10)) / (a.m + b.m + 1e-6), dvx = a.vx - b.vx, dvz = a.vz - b.vz;
-      a.ax -= f * b.m * dvx; a.az -= f * b.m * dvz;
-      b.ax += f * a.m * dvx; b.az += f * a.m * dvz;
+      const f = (GAMMA * Math.exp(-r2 / 14)) / (a.m + b.m + 1e-6), dvx = a.vx - b.vx, dvz = a.vz - b.vz;
+      a.ax -= f * b.m * dvx * a.k; a.az -= f * b.m * dvz * a.k;
+      b.ax += f * a.m * dvx * b.k; b.az += f * a.m * dvz * b.k;
     }
     for (const w of wells) {
       if (w.held) continue;
@@ -600,23 +861,30 @@ async function start() {
     merge();
   }
   // Two wells that meet slowly become one, keeping momentum.
+  // A hole catches from further out, and faster.
   function merge() {
     for (let i = 0; i < wells.length; i++) for (let j = i + 1; j < wells.length; j++) {
       const a = wells[i], b = wells[j];
       if (a.mt <= 0 || b.mt <= 0) continue;
       const dx = b.x - a.x, dz = b.z - a.z;
-      if (dx * dx + dz * dz > MERGE2 || Math.hypot(a.vx - b.vx, a.vz - b.vz) > 6) continue;
+      const reach = MERGE_R + 1.5 * ((a.hole ? holeRadius(a.m) : 0) + (b.hole ? holeRadius(b.m) : 0));
+      const fast = a.hole || b.hole ? 10 : 6;
+      if (dx * dx + dz * dz > reach * reach || Math.hypot(a.vx - b.vx, a.vz - b.vz) > fast) continue;
       const keep = b.held ? b : a, gone = keep === a ? b : a, M = a.m + b.m || 1;
       if (!keep.held) {
         keep.x = (a.x * a.m + b.x * b.m) / M; keep.z = (a.z * a.m + b.z * b.m) / M;
         keep.vx = (a.vx * a.m + b.vx * b.m) / M; keep.vz = (a.vz * a.m + b.vz * b.m) / M;
       }
+      const was = a.hole || b.hole;
       keep.m = a.m + b.m;
       keep.mt = Math.min(MAX_M, a.mt + b.mt);
+      keep.hole = was || keep.mt >= BH_M;
+      keep.bound = a.bound + b.bound;
       keep.vis = Math.max(a.vis, b.vis);
       keep.pulse = 1;
       wells.splice(wells.indexOf(gone), 1);
-      mergeTone();
+      if (keep.hole && !was) holeBorn(keep);
+      else mergeTone();
       return merge();
     }
   }
@@ -636,11 +904,12 @@ async function start() {
     cx /= M; cz /= M; vx /= M; vz /= M;
     const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz);
     if (r < 0.5) return [vx, vz];
-    const v = 0.85 * Math.sqrt(((M + m) * r * r) / (r * r + EPSW2) ** 1.5);
+    const v = 0.85 * Math.sqrt((resp(m) * (M + m * 0.5) * r * r) / (r * r + EPSW2) ** 1.5);
     return [vx - (dz / r) * v, vz + (dx / r) * v];
   }
   function addWell(x, z) {
-    const lit = wells.filter(w => w.mt > 0 && !w.held).sort((a, b) => a.born - b.born);
+    // A hole never lets go of its stars.
+    const lit = wells.filter(w => w.mt > 0 && !w.held && !w.hole).sort((a, b) => a.born - b.born);
     // At the cap, the oldest well lets go of its stars.
     if (wells.filter(w => w.mt > 0).length >= CAP && lit.length) lit[0].mt = 0;
     while (wells.length >= MAXW) {
@@ -668,10 +937,62 @@ async function start() {
   function syncWells() {
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k];
-      if (w) { uW[k].value.set(w.x, 0, w.z, w.m); uWV[k].value.set(w.vx, 0, w.vz, w.ph); }
-      else uW[k].value.set(0, 0, 0, 0);
+      if (w) {
+        uW[k].value.set(w.x, 0, w.z, w.m);
+        uWV[k].value.set(w.vx, 0, w.vz, w.ph);
+        uWH[k].value = w.hole ? holeRadius(w.m) : 0;
+      } else {
+        uW[k].value.set(0, 0, 0, 0);
+        uWH[k].value = 0;
+      }
     }
     uFrame.value.set(frameX, 0, frameZ);
+  }
+
+  /* ---------- the hole: one per sky, the heaviest ---------- */
+  let holeWell = null, holeVis = 0, holeX = 0, holeZ = 0, holeM = BH_M;
+  let feed = 0, feedGoal = 0, jet = 0;
+  const tA = new THREE.Vector3(), tB = new THREE.Vector3();
+  function heaviestHole() {
+    let best = null;
+    for (const w of wells) if (w.hole && w.mt > 0 && (!best || w.m > best.m)) best = w;
+    return best;
+  }
+  // Collapse: a deep chirp, a low boom and a burst of feeding.
+  function holeBorn(w) {
+    w.pulse = 1;
+    feed = Math.max(feed, 0.9);
+    chirp(CHORDS[chordAt][1] + 12, 1.3);
+    tone(mtof(CHORDS[chordAt][0]), 1.1, 1.2);
+  }
+  function updateHole(dt) {
+    const hw = heaviestHole();
+    holeWell = hw;
+    if (hw) { holeX = hw.x; holeZ = hw.z; holeM = hw.m; } else feedGoal = 0;
+    holeVis += ((hw ? 1 : 0) - holeVis) * (1 - Math.exp(-dt / 0.7));
+    feed += (feedGoal - feed) * (1 - Math.exp(-dt / 1.2));
+    const jetGoal = hw ? clamp((feed - 0.3) / 0.45) : 0;
+    jet += (jetGoal - jet) * (1 - Math.exp(-dt / 0.9));
+    const on = holeVis > 0.004;
+    shadow.visible = disk.visible = on;
+    jets.visible = on && jet > 0.01;
+    if (!on) { uHole.value.w = 0; uHoleVis.value = 0; return; }
+    const rS = holeRadius(holeM);
+    uHole.value.set(holeX, 0, holeZ, LENS * Math.min(holeM, 120) * holeVis);
+    uHoleR.value = rS;
+    uHoleVis.value = holeVis;
+    uFeed.value = feed;
+    uJet.value = jet;
+    shadow.position.set(holeX, 0, holeZ);
+    // Horizon size in CSS pixels sets edge softness and disk brightness.
+    const rpx = rS / (uPx.value * camera.position.distanceTo(tA.set(holeX, 0, holeZ)));
+    uHoleAA.value = 1.5 / Math.max(1, rpx * SHADOW_K);
+    uDiskGain.value = clamp((160 * rpx * rpx) / DISK_N, 0.08, 2.5);
+    // The approaching side of the disk faces the camera's azimuth.
+    tA.set(holeX, 0, holeZ).project(camera);
+    tB.set(holeX + Math.cos(az) * rS, 0, holeZ - Math.sin(az) * rS).project(camera);
+    const dx = (tB.x - tA.x) * camera.aspect, dy = tB.y - tA.y, l = Math.hypot(dx, dy) || 1;
+    uRingDir.value.set(dx / l, dy / l);
   }
 
   /* ---------- seeding the pair ---------- */
@@ -681,7 +1002,9 @@ async function start() {
     const c = Math.cos(turn), s = Math.sin(turn);
     const rot = (x, z) => [x * c - z * s, x * s + z * c];
     const [ax, az] = rot(-4.5, 0), [bx, bz] = rot(4.5, 0);
-    const [vx, vz] = rot(0.5, -1);
+    // Heavy wells answer slowly, so the pair keeps its path, slower.
+    const sv = Math.sqrt(resp(SEED_M));
+    const [vx, vz] = rot(0.5 * sv, -1 * sv);
     wells.length = 0;
     wells.push(makeWell(ax, az, vx, vz, SEED_M, SEED_M), makeWell(bx, bz, -vx, -vz, SEED_M, SEED_M));
     wells.forEach(w => { w.vis = 1; });
@@ -701,23 +1024,41 @@ async function start() {
     simT = 0;
     ring = SEED;
     uClearT.value = -1;
+    holeWell = null;
+    holeVis = feed = feedGoal = jet = 0;
     renderer.compute(seedPass);
   }
 
-  // Clear keeps the heaviest well, settled back to seed mass.
+  function letGoAll() {
+    fling = null;
+    uHeldCount.value = 0;
+    if (hold) { if (hold.well) hold.well.held = false; hold = null; panel.classList.remove('held'); }
+  }
+  // Clear keeps the heaviest well.
+  // An ordinary well returns to seed mass.
+  // A hole keeps its mass.
   function clearAll() {
     if (!ready) return;
     uClearT.value = simT;
     ring = 0;
-    fling = null;
-    uHeldCount.value = 0;
-    if (hold) { if (hold.well) hold.well.held = false; hold = null; panel.classList.remove('held'); }
+    letGoAll();
     let keep = null;
     for (const w of wells) if (w.mt > 0 && (!keep || w.mt > keep.mt)) keep = w;
     for (const w of wells) if (w !== keep) w.mt = 0;
-    if (keep) { keep.mt = SEED_M; keep.vx *= 0.3; keep.vz *= 0.3; }
-    else wells.push(makeWell(0, 0, 0, 0, 0, SEED_M));
+    if (keep) {
+      if (!keep.hole) keep.mt = SEED_M;
+      keep.vx *= 0.3;
+      keep.vz *= 0.3;
+    } else wells.push(makeWell(0, 0, 0, 0, 0, SEED_M));
     whoosh(0.25, 0);
+  }
+  // Reset brings back the colliding pair.
+  function resetAll() {
+    if (!ready) return;
+    letGoAll();
+    seed();
+    syncWells();
+    whoosh(0.4, 0);
   }
 
   /* ---------- pointer: plane hits and flings ---------- */
@@ -860,8 +1201,10 @@ async function start() {
     if (e.target.closest?.('input, textarea, select, button, a, [contenteditable]')) return;
     if (e.key === ' ') { e.preventDefault(); if (!e.repeat) dropCentre(); }
     else if (e.key === 'c' || e.key === 'C') { if (!e.repeat) clearAll(); }
+    else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) resetAll(); }
   });
   document.getElementById('clear').addEventListener('click', clearAll);
+  document.getElementById('reset').addEventListener('click', resetAll);
 
   /* ---------- async warm-up ---------- */
   resize();
@@ -869,26 +1212,64 @@ async function start() {
   await renderer.compileComputeAsync([seedPass, updatePass, resetPass, countPass]);
   seed();
   syncWells();
+  // The hole's sprites compile now, drawn at zero size.
+  shadow.visible = disk.visible = jets.visible = true;
   await scenePass.compileAsync(renderer);
+  shadow.visible = disk.visible = jets.visible = false;
 
   canvas.setAttribute('aria-hidden', 'true');
   panel.prepend(canvas);
   new ResizeObserver(resize).observe(panel);
 
-  /* ---------- animation loop ---------- */
-  let last = performance.now(), frames = 0, slow = 0, countAt = 0, counting = false;
-  // Twice a second, a sampled count of bound stars sets the pad.
-  function countTight(now) {
-    if (counting || now - countAt < 500 || !live()) return;
-    countAt = now;
-    counting = true;
+  /* ---------- star counts drive the layers and the hole ---------- */
+  let sampleAt = 0, sampling = false, eatenLast = -1, eatenAt = 0;
+  // Twice a second, a sampled count binds stars to wells.
+  function sample(now) {
+    if (sampling || now - sampleAt < 500 || !(live() || holeWell)) return;
+    sampleAt = now;
+    sampling = true;
+    const snap = wells.slice(0, MAXW);
     renderer.compute(resetPass);
     renderer.compute(countPass);
     renderer.getArrayBufferAsync(counter.value)
-      .then(buf => padTo(Math.sqrt(clamp((new Uint32Array(buf)[0] * 8) / (N * 0.55)))))
+      .then(buf => {
+        const c = new Uint32Array(buf);
+        snap.forEach((w, k) => { w.bound = c[k + 1] * 8; });
+        const eaten = c[EATEN], secs = (now - eatenAt) / 1000;
+        if (eatenLast >= 0 && secs > 0) fed((eaten - eatenLast) >>> 0, secs);
+        eatenLast = eaten;
+        eatenAt = now;
+        mixFromWells();
+      })
       .catch(() => {})
-      .finally(() => { counting = false; });
+      .finally(() => { sampling = false; });
   }
+  // Swallowed stars set the feeding rate and add mass.
+  function fed(n, secs) {
+    feedGoal = holeWell ? 1 - Math.exp(-n / secs / (N * 0.004)) : 0;
+    if (holeWell) holeWell.mt = Math.min(MAX_M, holeWell.mt + n * EAT);
+  }
+  // Layers follow wells by mass: the heaviest sounds the bass.
+  function mixFromWells() {
+    const ranked = wells.filter(w => w.mt > 0).sort((a, b) => b.m - a.m);
+    for (let k = 0; k < 8; k++) {
+      const w = ranked[k];
+      if (!w) { mixAt.level[k] = 0; continue; }
+      mixAt.level[k] = Math.sqrt(clamp(w.bound / (N * 0.22)));
+      mixAt.pan[k] = clamp(tmp.set(w.x, 0, w.z).project(camera).x * 0.8, -0.8, 0.8);
+      // Orbital rate at unit radius, snapped to the beat.
+      const hz = Math.sqrt(w.m / (1 + EPS2) ** 1.5) / TAU;
+      mixAt.rate[k] = BEAT_HZ * 2 ** clamp(Math.round(Math.log2(hz / BEAT_HZ)), -2, 1);
+    }
+    // A hole always sounds its bass.
+    if (holeWell && ranked[0] === holeWell) mixAt.level[0] = Math.max(mixAt.level[0], 0.6);
+    mixAt.feed = feed;
+    mixAt.jet = jet;
+    mixLayers();
+  }
+
+  /* ---------- animation loop ---------- */
+  let last = performance.now(), frames = 0, slow = 0;
   function animate() {
     const now = performance.now();
     const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 30);
@@ -920,17 +1301,20 @@ async function start() {
     prune();
     if (!reduce) az += dt * 0.016;
     placeCamera(now / 1000);
+    updateHole(dt);
     for (let k = 0; k < MAXW; k++) {
       const w = wells[k], dot = wellDots[k];
       if (!w) { dot.s.visible = false; continue; }
-      w.vis += ((w.mt > 0 ? 1 : 0) - w.vis) * (1 - Math.exp(-dt / 0.22));
+      // The hole shows its shadow instead of a nucleus.
+      w.vis += ((w.mt > 0 && w !== holeWell ? 1 : 0) - w.vis) * (1 - Math.exp(-dt / 0.22));
       w.pulse *= Math.exp(-dt / 0.3);
       dot.s.visible = w.vis > 0.01;
       dot.s.position.set(w.x, 0, w.z);
       dot.size.value = (7 + 5 * Math.sqrt(w.m / SEED_M)) * w.vis * (1 + 0.5 * w.pulse + (w.held ? 0.25 : 0));
     }
     renderPipeline.render();
-    countTight(now);
+    sample(now);
+    sequence();
     if (++frames === 3) canvas.classList.add('on');
   }
 
@@ -949,9 +1333,9 @@ async function start() {
   ready = true;
 }
 
-// Unmuting wakes the context; its resume brings the pad back.
+// Unmuting wakes the context; its resume brings the layers back.
 sound.onChange(on => {
-  if (on) { audio(); padTo(padAt); }
+  if (on) { audio(); mixLayers(); }
   else if (ac) ac.suspend()?.catch(() => {});
 });
 
