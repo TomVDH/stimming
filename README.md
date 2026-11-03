@@ -46,7 +46,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Dandelion | [dandelion/](dandelion/) | live, with sound |
 | Gear train | [gears/](gears/) | live, with sound; SVG only |
 | Coil | [coil/](coil/) | live, with sound |
-| Googly eyes | [eyes/](eyes/) | live draft, still being refined |
+| Googly eyes | [eyes/](eyes/) | live, with sound |
 | Ribbon | [ribbon/](ribbon/) | live draft, still being refined |
 | Balloon letters | [balloons/](balloons/) | live draft, still being refined |
 | TV tree, Orbits | | in progress; outlines on the menu |
