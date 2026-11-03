@@ -13,8 +13,8 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Beach walker: a wind-driven linkage walker on wet sand at dusk. */
-:root { --stage: oklch(0.19 0.035 285); }
+/* Beach walker: a wind-driven linkage walker, backlit on wet sand at sunset. */
+:root { --stage: oklch(0.13 0.04 282); }
 .stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
 .stage canvas.grab { cursor: grab; }
 .stage canvas.turning { cursor: grabbing; }
@@ -94,11 +94,14 @@ const css = ([L, C, h], a = 1) => {
   return `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)} / ${a})`;
 };
 const mix = (p, q, t) => [lerp(p[0], q[0], t), lerp(p[1], q[1], t), lerp(p[2], q[2], t)];
-// Far hues sit below zero so the fade passes through mauve, not teal.
-const BONE = [0.93, 0.03, 85], BONE_FAR = [0.5, 0.05, -65];
-const STEEL = [0.7, 0.025, 250], STEEL_FAR = [0.37, 0.04, 285];
-const JOINT = [0.3, 0.025, 55], JOINT_FAR = [0.24, 0.035, -75];
-const ACCENT = [0.83, 0.12, 192];
+// The sun sits behind the walker, so near parts are darkest.
+// Far parts take on the haze of the sky.
+const BODY = [0.12, 0.025, 290], BODY_FAR = [0.3, 0.06, 335];
+const STEEL = [0.15, 0.03, 275], STEEL_FAR = [0.33, 0.05, 320];
+const PAD = [0.09, 0.02, 290], PAD_FAR = [0.22, 0.05, 330];
+// RIM marks lit things: the held hub, the foot path, blown sand.
+// The vane is the one colour on the walker.
+const RIM = [0.93, 0.11, 78], VANE = [0.5, 0.19, 24];
 
 /* ---------- linkage ---------- */
 // The thirteen leg lengths, in the published proportions.
@@ -173,7 +176,7 @@ function build(n) {
       z: (s - (count - 1) / 2) * DZ, near,
       J: solveLeg((pair / n) * TAU + theta, !!flip, new Float64Array(16)),
       fx: 0, down: true, half: 0,
-      tube: css(mix(BONE_FAR, BONE, fade)), steel: css(mix(STEEL_FAR, STEEL, fade)), joint: css(mix(JOINT_FAR, JOINT, fade)),
+      tube: css(mix(BODY_FAR, BODY, fade)), steel: css(mix(STEEL_FAR, STEEL, fade)), joint: css(mix(PAD_FAR, PAD, fade)),
     });
   }
   legs.forEach(L => { L.fx = L.J[F]; L.half = Math.floor((theta + L.phase) / PI); });
@@ -195,6 +198,32 @@ function settle() {
 const WMAX = 200, DRAG = 2.36e-3, ROLL = 0.35, STICK = 6;
 let windUser = 0, keyWind = 0, breezeOn = false, breezeAmt = 0, wind = 0, rel = 0, simT = 0, puffT = 0;
 const gust = t => 0.55 + 0.22 * Math.sin(0.31 * t) + 0.15 * Math.sin(0.83 * t + 1.7) + 0.1 * Math.sin(2.3 * t + 0.4);
+
+/* ---------- vane ---------- */
+// A long pennant flies from the mast top.
+// It hangs limp in calm air and unfurls as the wind rises.
+// vane is signed: its sign is the downwind side, its size the strength.
+const MAST = 112, HOIST = 14, VN = 28;
+const VX = new Float64Array(VN + 1), VY = new Float64Array(VN + 1);
+let vane = 0;
+// The solver fills VX and VY with the centre line, in leg units.
+function vaneShape() {
+  const v = Math.abs(vane), dir = vane < 0 ? -1 : 1;
+  const len = 36 + 180 * v ** 0.7, ds = len / VN;
+  const hang = -PI / 2, base = hang * (1 - v) ** 2 + 0.12 * v;
+  // Gravity bends a slack tail toward the vertical.
+  const sag = 0.5 * (1 - v) ** 2;
+  const amp = reduce ? 0 : 0.18 * v, om = 4 + 8 * v;
+  let x = 0, y = MAST - HOIST / 2;
+  VX[0] = x; VY[0] = y;
+  for (let i = 1; i <= VN; i++) {
+    const f = i / VN;
+    const phi = base + (hang - base) * sag * f + amp * (0.25 + 0.75 * f) * Math.sin(f * 9 - simT * om);
+    x += Math.cos(phi) * ds; y += Math.sin(phi) * ds;
+    VX[i] = dir * x; VY[i] = y;
+  }
+  return len;
+}
 
 /* ---------- streaks and prints ---------- */
 const streaks = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), len: 0.3 + Math.random() * 0.7, sp: 0.6 + Math.random() * 0.8 }));
@@ -264,52 +293,87 @@ function windBed(level) {
 
 /* ---------- layout ---------- */
 // Every length below is in CSS pixels unless it says leg units.
-let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1;
+let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1, sunX = 1, sunY = 1, sunR = 1;
 const bg = document.createElement('canvas'), bgc = bg.getContext('2d');
 const wc = document.createElement('canvas'), wctx = wc.getContext('2d');
-const SKY = [[0.14, 0.03, 272], [0.2, 0.05, 290], [0.36, 0.09, 12], [0.5, 0.11, 38]];
-const SEA = [0.23, 0.045, 270], SAND_FAR = [0.38, 0.08, 28], SAND_MID = [0.24, 0.045, 292], SAND_NEAR = [0.16, 0.025, 272];
-const SUN = [0.86, 0.11, 78];
-const PRINT = css([0.12, 0.025, 275]);
+// Sky stops run from the zenith to the horizon.
+// Hues past 360 keep the blend on the warm side.
+const SKY = [[0.13, 0.04, 282], [0.2, 0.07, 300], [0.3, 0.11, 335], [0.48, 0.15, 380], [0.66, 0.15, 408], [0.8, 0.12, 434]];
+const skyAt = t => {
+  const x = clamp(t, 0, 1) * (SKY.length - 1), k = Math.min(SKY.length - 2, Math.floor(x));
+  return mix(SKY[k], SKY[k + 1], x - k);
+};
+// The sky is flat bands with hard edges; bands thin toward the horizon.
+const BANDS = 12;
+const bandEdge = k => (k / BANDS) ** 0.62;
+const bandAt = y => { let k = 0; while (k < BANDS - 1 && horizonY * bandEdge(k + 1) <= y) k++; return k; };
+const SUN = [0.95, 0.08, 92], CLOUD = [0.24, 0.07, 310], LAND = [0.17, 0.04, 300], SEA = [0.25, 0.06, 300];
+// Cloud bars: start and end in widths, height in horizon units, thickness in pixels.
+const CLOUDS = [[0.04, 0.42, 0.3, 3], [0.38, 0.97, 0.45, 2], [0.5, 0.86, 0.7, 4], [0.1, 0.36, 0.78, 2.5], [0.44, 0.7, 0.88, 2]];
+const PRINT = css([0.14, 0.03, 295]);
 function fit() {
   const r = fitCanvas(canvas, { budget: 2.6e6 });
   w = r.w; h = r.h; dpr = r.dpr;
   wc.width = bg.width = r.W; wc.height = bg.height = r.H;
+  // The walker stays small in a wide, empty scene.
+  s = Math.max(0.2, Math.min(h / 560, w / 420));
   // The bar sits on the stage; the feet stay just above it.
   const barH = bar.offsetHeight || 90;
-  trackY = Math.round(Math.min(h * 0.8, h - barH + 26));
-  horizonY = Math.round(trackY - clamp(h * 0.17, 44, 130));
-  seaY = horizonY + Math.max(6, h * 0.022);
-  s = Math.min((trackY - h * 0.07) / 190, w / 330, 2.5);
+  trackY = Math.round(clamp(h * 0.85, h * 0.5, h - barH - 12));
+  // The horizon runs just under the hub, so the body stands against the sky.
+  horizonY = Math.max(20, Math.round(trackY - 80 * s));
+  seaY = horizonY + Math.max(3, Math.round(h * 0.01));
+  sunR = clamp(Math.min(w, h) * 0.2, 36, 150);
+  sunX = w * 0.6; sunY = horizonY - sunR * 0.3;
   paintBackdrop();
   draw();
 }
-// The sky, sun, sea and sand base are painted once per resize.
+// The sky, sun, sea and wet sand are painted once per resize.
 function paintBackdrop() {
   const c = bgc;
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const sky = c.createLinearGradient(0, 0, 0, horizonY);
-  sky.addColorStop(0, css(SKY[0])); sky.addColorStop(0.45, css(SKY[1]));
-  sky.addColorStop(0.85, css(SKY[2])); sky.addColorStop(1, css(SKY[3]));
-  c.fillStyle = sky; c.fillRect(0, 0, w, horizonY + 1);
-  // A low sun, half set, with stencil slits across its lower half.
-  const R = clamp(Math.min(w, h) * 0.075, 26, 70), sunX = w * 0.74, sunY = horizonY - R * 0.3;
+  c.fillStyle = css(SKY[0]); c.fillRect(0, 0, w, h);
+  const bandColour = k => skyAt((k + 0.5) / BANDS);
+  for (let k = 0; k < BANDS; k++) {
+    const y0 = Math.floor(horizonY * bandEdge(k)), y1 = Math.ceil(horizonY * bandEdge(k + 1));
+    c.fillStyle = css(bandColour(k)); c.fillRect(0, y0, w, y1 - y0 + 1);
+  }
   c.save();
   c.beginPath(); c.rect(0, 0, w, horizonY); c.clip();
-  c.fillStyle = css(SUN); c.beginPath(); c.arc(sunX, sunY, R, 0, TAU); c.fill();
-  c.fillStyle = css(SKY[3]);
-  for (let k = 0; k < 4; k++) { const y = sunY + R * (0.02 + k * 0.2), t = 1.5 + k * 1.6; c.fillRect(sunX - R - 1, y, R * 2 + 2, t); }
+  // A huge low sun, part set, with slits cut across its lower half.
+  c.fillStyle = css(SUN); c.beginPath(); c.arc(sunX, sunY, sunR, 0, TAU); c.fill();
+  for (let k = 0; k < 5; k++) {
+    const y = sunY + sunR * (-0.22 + k * 0.17), t = 1.5 + k * 1.8;
+    c.fillStyle = css(bandColour(bandAt(y))); c.fillRect(sunX - sunR - 1, y, sunR * 2 + 2, t);
+  }
+  // Long thin cloud bars cross the sky and the sun.
+  c.fillStyle = css(CLOUD);
+  for (const [x0, x1, yf, t] of CLOUDS) { c.beginPath(); c.roundRect(x0 * w, horizonY * yf, (x1 - x0) * w, t, t / 2); c.fill(); }
+  // A far headland with a small lighthouse.
+  c.fillStyle = css(LAND);
+  c.beginPath(); c.moveTo(0, horizonY - h * 0.035); c.lineTo(w * 0.16, horizonY - h * 0.022); c.lineTo(w * 0.3, horizonY + 1); c.lineTo(0, horizonY + 1); c.fill();
+  const lx = w * 0.08, lt = horizonY - h * 0.03;
+  c.fillRect(lx - 1.5, lt - 16, 3, 17); c.fillRect(lx - 2.5, lt - 19, 5, 3);
+  c.fillStyle = css(RIM); c.fillRect(lx - 1, lt - 15, 2, 2);
   c.restore();
-  // The sea is a thin dark band under the horizon.
+  // The sea is a thin dark band with sun glints on it.
   c.fillStyle = css(SEA); c.fillRect(0, horizonY, w, seaY - horizonY + 1);
-  const sand = c.createLinearGradient(0, seaY, 0, h);
-  sand.addColorStop(0, css(SAND_FAR)); sand.addColorStop(0.3, css(SAND_MID)); sand.addColorStop(1, css(SAND_NEAR));
-  c.fillStyle = sand; c.fillRect(0, seaY, w, h - seaY);
-  // The wet sand mirrors the sun as a column of short dashes.
-  for (let k = 0; k < 26; k++) {
-    const f = k / 26, y = seaY + 3 + (h - seaY) * f ** 1.4, half = R * (0.9 - f * 0.5) * (0.5 + 0.5 * Math.sin(k * 2.7) ** 2);
-    c.fillStyle = css(SUN, 0.22 * (1 - f) ** 1.5);
-    c.fillRect(sunX - half, y, half * 2, 1 + f * 2);
+  c.fillStyle = css(SUN);
+  for (let k = 0; k < 7; k++) { const half = sunR * (0.15 + 0.6 * Math.sin(k * 2.3) ** 2); c.fillRect(sunX - half + Math.sin(k * 5.1) * sunR * 0.3, horizonY + 1 + (k % 3), half, 1); }
+  // The wet sand mirrors the sky bands, darker and deeper toward the viewer.
+  const sand = h - seaY;
+  c.fillStyle = css(mix(SKY[1], [0.08, 0.02, 290], 0.5)); c.fillRect(0, seaY, w, sand);
+  for (let k = BANDS - 1; k >= 0; k--) {
+    const y0 = Math.floor(seaY + horizonY * (1 - bandEdge(k + 1))), y1 = Math.ceil(seaY + horizonY * (1 - bandEdge(k)));
+    if (y0 > h) continue;
+    const depth = clamp(((y0 + y1) / 2 - seaY) / sand, 0, 1), [L, C, hue] = bandColour(k);
+    c.fillStyle = css([L * 0.8 * (1 - 0.45 * depth), C * 0.85, hue]); c.fillRect(0, y0, w, Math.min(y1, h) - y0 + 1);
+  }
+  // The sun reflects as a column of hard dashes.
+  for (let k = 0; k < 24; k++) {
+    const f = k / 24, y = seaY + 3 + sand * f ** 1.3, half = sunR * (0.7 - f * 0.4) * (0.45 + 0.55 * Math.sin(k * 2.7) ** 2);
+    c.fillStyle = css(SUN, 0.85 * (1 - f) ** 1.4);
+    c.fillRect(sunX - half, y, half * 2, 1 + f * 2.5);
   }
 }
 
@@ -344,6 +408,10 @@ function step(dt) {
     dTheta = (-u / GEAR) * dt;
   }
   rel += (clamp((wind * WMAX - u) / WMAX, -1.5, 1.5) - rel) * (1 - Math.exp(-dt * 4));
+  if (Math.abs(rel) < 0.002 && wind === 0 && u === 0) rel = 0;
+  // The vane follows the wind the walker feels, with a slow lag.
+  vane += (clamp(rel / 0.45, -1, 1) - vane) * (1 - Math.exp(-dt * 1.8));
+  if (Math.abs(vane) < 0.004 && rel === 0) vane = 0;
   theta += dTheta;
   if (theta > 1e4 || theta < -1e4) theta %= TAU;
 
@@ -433,9 +501,48 @@ function plate(c, pts, width, color, gap) {
   c.closePath(); c.fill();
   c.globalCompositeOperation = 'source-over';
 }
+// A joint is a solid disc; its pin is a hole cut through to the sky.
 function joint(c, x, y, r, color, pin) {
   c.fillStyle = color; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
-  c.fillStyle = pin; c.beginPath(); c.arc(x, y, r * 0.36, 0, TAU); c.fill();
+  if (!pin) c.globalCompositeOperation = 'destination-out';
+  else c.fillStyle = pin;
+  c.beginPath(); c.arc(x, y, r * 0.4, 0, TAU); c.fill();
+  c.globalCompositeOperation = 'source-over';
+}
+// The vane is one solid shape with a swallowtail and cut seams.
+function drawVane(c, tw, gap) {
+  const len = vaneShape(), top = [], bot = [];
+  for (let i = 0; i <= VN; i++) {
+    const a = Math.max(0, i - 1), b = Math.min(VN, i + 1);
+    const tx = VX[b] - VX[a], ty = VY[b] - VY[a], tl = Math.hypot(tx, ty) || 1;
+    const nx = -ty / tl, ny = tx / tl, half = (HOIST * (1 - (0.6 * i) / VN)) / 2;
+    top.push([X(VX[i] + nx * half, 0), Y(VY[i] + ny * half, 0)]);
+    bot.push([X(VX[i] - nx * half, 0), Y(VY[i] - ny * half, 0)]);
+  }
+  const notch = [X(VX[VN - 3], 0), Y(VY[VN - 3], 0)];
+  const shape = () => {
+    c.beginPath();
+    top.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+    c.lineTo(notch[0], notch[1]);
+    for (let i = VN; i >= 0; i--) c.lineTo(bot[i][0], bot[i][1]);
+    c.closePath();
+  };
+  c.globalCompositeOperation = 'destination-out';
+  c.lineWidth = gap * 2; shape(); c.fill(); c.stroke();
+  c.globalCompositeOperation = 'source-over';
+  c.fillStyle = css(VANE); shape(); c.fill();
+  // Seams cut across a long vane; each runs a little past both edges.
+  if (len < 70) return;
+  c.globalCompositeOperation = 'destination-out';
+  c.lineWidth = Math.max(1, gap * 0.9); c.lineCap = 'butt';
+  c.beginPath();
+  for (const f of [0.3, 0.55, 0.8]) {
+    const i = Math.round(f * VN), [ax, ay] = top[i], [bx, by] = bot[i], mx = (ax + bx) / 2, my = (ay + by) / 2;
+    c.moveTo(mx + (ax - mx) * 1.4, my + (ay - my) * 1.4); c.lineTo(mx + (bx - mx) * 1.4, my + (by - my) * 1.4);
+  }
+  c.stroke();
+  c.globalCompositeOperation = 'source-over';
+  c.lineCap = 'round';
 }
 
 function drawWalker() {
@@ -452,19 +559,10 @@ function drawWalker() {
   for (const bx of [BX, -BX]) tube(c, X(bx, far), Y(BY, far), X(bx, near), Y(BY, near), tw * 1.1, steelMid, gap);
   tube(c, X(0, far), Y(0, far), X(0, near), Y(0, near), tw * 1.5, steelMid, gap);
 
-  // The sail stands edge-on and bellies out downwind.
-  const zs = 0, top = 74, foot = 12, belly = clamp(rel, -1.2, 1.2) * 16;
-  c.globalCompositeOperation = 'destination-out';
-  c.lineWidth = gap * 2;
-  const sailPath = () => {
-    c.beginPath(); c.moveTo(X(0, zs), Y(top, zs));
-    c.quadraticCurveTo(X(belly * 1.6, zs), Y((top + foot) / 2, zs), X(0, zs), Y(foot, zs));
-    c.closePath();
-  };
-  sailPath(); c.fill(); c.stroke();
-  c.globalCompositeOperation = 'source-over';
-  c.fillStyle = mid.tube; sailPath(); c.fill();
-  tube(c, X(0, zs), Y(0, zs), X(0, zs), Y(top + 4, zs), tw * 0.9, steelMid, gap);
+  // A tall mast stands on the shaft and carries the vane.
+  tube(c, X(0, 0), Y(0, 0), X(0, 0), Y(MAST + 3, 0), tw * 0.9, steelMid, gap);
+  drawVane(c, tw, gap);
+  joint(c, X(0, 0), Y(MAST + 3, 0), jr * 1.1, mid.joint);
 
   // Legs draw from the far side to the near side.
   for (let n = legs.length - 1; n >= 0; n--) {
@@ -478,8 +576,8 @@ function drawWalker() {
     plate(c, [px(P4), py(P4), px(P3), py(P3), px(F), py(F)], tw, L.tube, gap);
     tube(c, px(A), py(A), px(P4), py(P4), tw, L.tube, gap);
     tube(c, px(A), py(A), px(P1), py(P1), tw, L.tube, gap);
-    for (const q of [B, P1, P2, P3, P4]) joint(c, px(q), py(q), jr, L.joint, L.tube);
-    joint(c, px(A), py(A), jr * 1.1, L.joint, L.steel);
+    for (const q of [B, P1, P2, P3, P4]) joint(c, px(q), py(q), jr, L.tube);
+    joint(c, px(A), py(A), jr * 1.1, L.steel);
     // The foot is a flat dark pad.
     c.fillStyle = L.joint;
     c.beginPath(); c.roundRect(px(F) - 2.6 * s, py(F) - 1.1 * s, 5.2 * s, 2.2 * s, 1.1 * s); c.fill();
@@ -489,9 +587,9 @@ function drawWalker() {
   c.globalCompositeOperation = 'destination-out';
   c.beginPath(); c.arc(H.x, H.y, 5.4 * s + gap, 0, TAU); c.fill();
   c.globalCompositeOperation = 'source-over';
-  c.strokeStyle = lit ? css(ACCENT) : legs[0].tube; c.lineWidth = Math.max(1.5, 1.5 * s);
+  c.strokeStyle = lit ? css(RIM) : legs[0].tube; c.lineWidth = Math.max(1.5, 1.5 * s);
   c.beginPath(); c.arc(H.x, H.y, 4.4 * s, 0, TAU); c.stroke();
-  joint(c, H.x, H.y, jr * 1.2, legs[0].joint, lit ? css(ACCENT) : legs[0].tube);
+  joint(c, H.x, H.y, jr * 1.2, legs[0].joint, lit ? css(RIM) : null);
 }
 
 // Dashed contour rows give the sand depth, parallax and the dune shape.
@@ -500,7 +598,7 @@ function drawSand() {
   const c = ctx;
   c.lineCap = 'butt';
   // Sea swell lines drift slowly with the camera.
-  c.strokeStyle = css([0.4, 0.05, 260], 0.25); c.lineWidth = 1;
+  c.strokeStyle = css([0.5, 0.08, 330], 0.35); c.lineWidth = 1;
   for (let k = 0; k < 3; k++) {
     const y = horizonY + ((seaY - horizonY) * (k + 0.5)) / 3;
     c.setLineDash([6 + k * 5, 10 + k * 9]); c.lineDashOffset = camX * s * (0.03 + k * 0.02);
@@ -508,7 +606,8 @@ function drawSand() {
   }
   for (let k = 0; k < ROWS.length; k++) {
     const f = ROWS[k] ** 1.7, y0 = seaY + (h - seaY) * f, par = 0.2 + 1.5 * f;
-    c.strokeStyle = css([0.62, 0.05, 40], 0.05 + 0.1 * f);
+    // Dark ripple dashes break up the mirror of the wet sand.
+    c.strokeStyle = css([0.16, 0.035, 300], 0.25 + 0.4 * f);
     c.lineWidth = 0.8 + f * 1.2;
     const dash = 4 + 26 * f;
     c.setLineDash([dash, dash * (1.4 + (k % 3) * 0.7)]);
@@ -537,32 +636,35 @@ function drawPrints() {
   }
   c.globalAlpha = 1;
 }
-// The wet sand mirrors the walker, fading with distance from the feet.
-function drawReflection(mirror, top) {
-  const c = ctx, Ym = mirror * dpr, H = canvas.height;
-  const span = Math.min(H - Ym, (Ym - top * dpr) * 0.85);
+// The wet sand mirrors the walker as hard strips with growing gaps.
+// Each strip is thin, so it copies unflipped from its mirror row.
+// Wind shakes the strips sideways.
+function drawReflection(mirror, box) {
+  const c = ctx, Ym = Math.round(mirror * dpr), H = canvas.height;
+  const span = Math.min(H - Ym, Ym - box.y0);
   if (span <= 2) return;
-  c.setTransform(1, 0, 0, -1, 0, 2 * Ym);
-  const n = 12;
-  for (let k = 0; k < n; k++) {
-    const y0 = Ym + (span * k) / n, y1 = Ym + (span * (k + 1)) / n;
-    const sy = Math.max(0, 2 * Ym - y1), sh = 2 * Ym - y0 - sy;
-    if (sh <= 0) continue;
-    c.globalAlpha = 0.17 * (1 - k / n) ** 1.6;
-    c.drawImage(wc, 0, sy, wc.width, sh, 0, sy, wc.width, sh);
+  const st = Math.max(1, Math.round(1.5 * dpr)), shake = Math.min(1, Math.abs(wind)) * 2 * dpr;
+  for (let d = 0; d < span;) {
+    const f = d / span, sy = Ym - d - st;
+    if (sy < 0) break;
+    c.globalAlpha = 0.75 * (1 - f) ** 1.3;
+    const dx = shake ? Math.sin(d * 0.21 + simT * 5) * shake : 0;
+    c.drawImage(wc, box.x0, sy, box.w, st, box.x0 + dx, Ym + d, box.w, st);
+    d += st + Math.round(st * (0.6 + f * 2.5));
   }
   c.globalAlpha = 1;
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 function drawStreaks() {
   const a = clamp(Math.abs(wind), 0, 1.4);
   if (reduce || a < 0.02) return;
   const c = ctx, dir = Math.sign(wind);
-  c.strokeStyle = css([0.9, 0.02, 80], 0.32 * Math.min(1, a)); c.lineWidth = 1; c.lineCap = 'round';
+  c.strokeStyle = css(RIM, 0.28 * Math.min(1, a)); c.lineWidth = 1; c.lineCap = 'round';
   c.beginPath();
   const count = Math.round(streaks.length * Math.min(1, 0.25 + a * 0.6));
+  // Blown sand and spray stay low over the beach.
+  const top = Math.max(10, horizonY - h * 0.3);
   for (let n = 0; n < count; n++) {
-    const k = streaks[n], x = k.x * w, y = 10 + k.y * (trackY - 10), len = (20 + 90 * a) * k.len;
+    const k = streaks[n], x = k.x * w, y = top + k.y * (h - top), len = (20 + 90 * a) * k.len;
     c.moveTo(x, y); c.lineTo(x - dir * len, y);
   }
   c.stroke();
@@ -571,13 +673,13 @@ function drawStreaks() {
 function drawPath() {
   if (!showPath) return;
   const c = ctx;
-  c.strokeStyle = css(ACCENT, 0.9); c.lineWidth = 1.25; c.lineJoin = 'round';
+  c.strokeStyle = css(RIM, 0.9); c.lineWidth = 1.25; c.lineJoin = 'round';
   for (const L of legs.slice(0, 2)) {
     const sg = L.flip ? -1 : 1;
     c.beginPath();
     LOOP.forEach(([x, y], n) => (n ? c.lineTo(X(sg * x, L.z), Y(y, L.z)) : c.moveTo(X(sg * x, L.z), Y(y, L.z))));
     c.stroke();
-    c.fillStyle = css(ACCENT);
+    c.fillStyle = css(RIM);
     c.beginPath(); c.arc(X(L.J[F], L.z), Y(L.J[F + 1], L.z), 2.5, 0, TAU); c.fill();
   }
 }
@@ -589,12 +691,18 @@ function draw() {
   ctx.drawImage(bg, 0, 0);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawSand();
-  drawPrints();
   drawWalker();
-  const top = Y(74 + 4, 0);
-  drawReflection(trackY - ground(bodyX) * s, top);
+  // Every copy of the walker touches only the box around it.
+  const W = canvas.width, H = canvas.height;
+  const x0 = clamp(Math.floor((cx - 260 * s) * dpr), 0, W), x1 = clamp(Math.ceil((cx + 260 * s) * dpr), 0, W);
+  const y0 = clamp(Math.floor((cy - 200 * s) * dpr), 0, H), y1 = clamp(Math.ceil((cy + 120 * s) * dpr), 0, H);
+  const box = { x0, y0, w: x1 - x0, h: y1 - y0 };
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(wc, 0, 0);
+  drawReflection(trackY - ground(bodyX) * s, box);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawPrints();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (box.w > 0 && box.h > 0) ctx.drawImage(wc, x0, y0, box.w, box.h, x0, y0, box.w, box.h);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawPath();
   drawStreaks();
@@ -604,7 +712,7 @@ function draw() {
 // The loop runs while anything moves, then sleeps.
 let raf = 0, last = 0, visible = true;
 const busy = () => mode === 'crank' || u !== 0 || windUser !== 0 || keyWind !== 0 || breezeAmt > 0 || breezeOn
-  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05;
+  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05 || vane !== 0;
 function frame(now) {
   raf = 0;
   const dt = clamp((now - last) / 1000, 0.001, 0.05);
@@ -678,7 +786,7 @@ const breezeBtn = document.getElementById('breeze');
 function setBreeze(on) { breezeOn = on; breezeBtn.setAttribute('aria-pressed', String(on)); wake(); }
 breezeBtn.addEventListener('click', () => setBreeze(!breezeOn));
 function reset() {
-  theta = 0; u = 0; bodyX = 0; camX = 0; windUser = 0; keyWind = 0; wind = 0; rel = 0; prints = [];
+  theta = 0; u = 0; bodyX = 0; camX = 0; windUser = 0; keyWind = 0; wind = 0; rel = 0; vane = 0; prints = [];
   setBreeze(false); breezeAmt = 0;
   build(pairs);
   draw();
