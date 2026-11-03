@@ -384,8 +384,9 @@ async function start() {
   ]);
   const {
     Fn, If, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select, uv, smoothstep,
-    mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, pass, max, atan,
+    mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, atomicLoad, pass, max, atan,
     fract, step, cameraPosition, positionWorld, interleavedGradientNoise, screenCoordinate, frameId, min, Loop,
+    texture3D, textureStore, storageTexture, uvec3,
   } = TSL;
 
   // The stock after-image cuts trails at a hard threshold.
@@ -798,50 +799,174 @@ async function start() {
     beams.push(s);
   }
 
-  // Nebula gas: a raymarched smoke volume, like Fire's smoke.
-  // It glows magenta and teal and its dust absorbs the stars behind.
-  // uGas: xz centre, cloud radius, opacity.
-  const uGas = uniform(new THREE.Vector4()), uGasSeed = uniform(new THREE.Vector3());
-  const GAS_STEPS = 22, GAS_H = 0.45;
+  /* ---------- nebula gas: gravity particles splatted into a smoke grid ---------- */
+  // Gas parcels move under the same forces as stars, so smoke follows orbits.
+  // Each frame they splat into a 3D grid, which is blurred and raymarched.
+  const GX = SMALL ? 64 : 96, GY = SMALL ? 8 : 12, GZ = GX, CELLS = GX * GY * GZ;
+  const GW = new THREE.Vector3(26, 3.2, 26), uGW = vec3(GW.x, GW.y, GW.z);
+  function grid3D(name) {
+    const t = new THREE.Storage3DTexture(GX, GY, GZ);
+    t.name = name;
+    t.format = THREE.RGBAFormat;
+    t.type = THREE.HalfFloatType;
+    t.minFilter = t.magFilter = THREE.LinearFilter;
+    t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping;
+    return t;
+  }
+  const gDyeA = grid3D('gas dye A'), gDyeB = grid3D('gas dye B');
+  // Dye: r is density, g the hue from magenta to teal, b how dark the dust is.
+  const dyeRead = texture3D(gDyeA), dyeWrite = storageTexture(gDyeB).toWriteOnly();
+  // Splat targets: parcel weight and hue-weighted sum, in 1/256 units.
+  const gMass = instancedArray(CELLS, 'uint').toAtomic(), gHue = instancedArray(CELLS, 'uint').toAtomic();
+  const GP = SMALL ? 16384 : 32768;
+  // Parcel: xyz and hue; velocity and birth time (DEAD when empty).
+  const gPos = instancedArray(GP, 'vec4'), gVel = instancedArray(GP, 'vec4');
+  const uGasDt = uniform(0), uGasSalt = uniform(1, 'uint');
+  const uSpawnStart = uniform(0, 'uint'), uSpawnCount = uniform(0, 'uint');
+  // The source: xz centre and radius; then its velocity.
+  const uEmit = uniform(new THREE.Vector4()), uEmitVel = uniform(new THREE.Vector3());
+  // One for dark dust, zero for glowing gas.
+  const uEmitDark = uniform(0);
+  // Gas lives about this long, in sim seconds; density per parcel per cell.
+  const GAS_LIFE = 30, GAS_K = SMALL ? 0.05 : 0.028;
+  const voxel = id => uvec3(id.mod(GX), id.div(GX).mod(GY), id.div(GX * GY));
+  const cellIndex = (x, y, z) => x.add(y.mul(GX)).add(z.mul(GX * GY));
+
+  // Spawn, move and splat each parcel.
+  const gasStep = Fn(() => {
+    const i = instanceIndex, P4 = gPos.element(i), V4 = gVel.element(i);
+    const rel = i.add(uint(GP)).sub(uSpawnStart).mod(uint(GP));
+    If(rel.lessThan(uSpawnCount), () => {
+      // New parcels fill the nebula's lobes, with a little random motion.
+      const H = k => hash(i.add(uGasSalt).add(uint(k * GP)));
+      const lobe = H(1).mul(LOBES).floor();
+      let lo = uLobe[0];
+      for (let k = 1; k < LOBES; k++) lo = select(lobe.equal(float(k)), uLobe[k], lo);
+      const q = lo.add(vec3(gauss(H(2), H(3)), gauss(H(4), H(5)).mul(0.6), gauss(H(6), H(7))).mul(0.32)).toVar();
+      // Each lobe has one hue: three magenta, two teal, so pockets stay apart.
+      const hue = select(lobe.lessThan(3), float(0.05), float(0.95));
+      // Hue stays under one, so the dark flag in the integer part never eats it.
+      P4.assign(vec4(vec3(uEmit.x, 0, uEmit.y).add(q.mul(uEmit.z)), hue.mul(0.998).add(uEmitDark.mul(2))));
+      // Enough spread that the cloud swells and the galaxies shear it into streams.
+      // Parcels also billow outward from the heart, like smoke leaving a fire.
+      const out = vec3(q.x, q.y.mul(0.3), q.z).mul(2);
+      V4.assign(vec4(uEmitVel.add(out).add(vec3(gauss(H(8), H(9)), gauss(H(10), H(11)).mul(0.3), gauss(H(12), H(13))).mul(0.8)), uTime));
+    }).ElseIf(V4.w.greaterThan(-1e8), () => {
+      const p = P4.xyz.toVar(), v = V4.xyz.toVar();
+      const age = uTime.sub(V4.w);
+      // The same wells, beams, shells and swirls that move stars move the gas.
+      const acc = uFrame.toVar();
+      const gone = age.greaterThan(GAS_LIFE).toVar();
+      for (let k = 0; k < MAXW; k++) {
+        const d = uW[k].xyz.sub(p);
+        const inv = inverseSqrt(d.dot(d).add(EPS2));
+        // Gas pressure resists collapse, so gas feels gravity at sixty percent.
+        acc.addAssign(d.mul(uW[k].w.mul(inv).mul(inv).mul(inv)).mul(0.6));
+        // A hole swallows the parcels that cross its horizon.
+        gone.assign(gone.or(uWH[k].greaterThan(0).and(d.dot(d).lessThan(uWH[k].mul(uWH[k])))));
+        If(uMag[k].z.greaterThan(0), () => {
+          const mx = p.x.sub(uMag[k].x), mz = p.z.sub(uMag[k].y), m2 = mx.mul(mx).add(mz.mul(mz));
+          acc.addAssign(vec3(mz.negate(), 0, mx).mul(uMag[k].z.mul(exp(m2.div(-9))).div(m2.add(0.16))));
+        });
+        If(uPulOn[k].greaterThan(0), () => {
+          const b = beamAt(k, p);
+          acc.addAssign(vec3(uPul[k].z, 0, uPul[k].w).mul(b.along.sign()).mul(b.w.mul(BEAM_PUSH)));
+        });
+      }
+      If(uBlast.w.greaterThan(0), () => {
+        const bx = p.x.sub(uBlast.x), bz = p.z.sub(uBlast.y), br = sqrt(bx.mul(bx).add(bz.mul(bz)).add(1e-4));
+        acc.addAssign(vec3(bx, 0, bz).div(br).mul(exp(br.sub(uBlast.z).div(0.6).pow(2).negate()).mul(uBlast.w)));
+      });
+      // A slow small-scale stir curls the smoke into wisps, as in Fire.
+      const f = p.mul(2.2).add(vec3(uTime.mul(0.6), 0, uTime.mul(-0.45)));
+      acc.addAssign(vec3(sin(f.z).add(cos(f.y.mul(2))), sin(f.x).mul(0.3), sin(f.y.mul(2)).add(cos(f.x))).mul(0.25));
+      v.addAssign(acc.mul(uGasDt));
+      p.addAssign(v.mul(uGasDt));
+      P4.assign(vec4(p, P4.w));
+      V4.assign(vec4(v, select(gone, float(DEAD), V4.w)));
+      // Splat: fade in, hold, fade out over the parcel's life.
+      const wgt = smoothstep(0, 0.8, age).mul(float(1).sub(smoothstep(GAS_LIFE * 0.55, GAS_LIFE, age)));
+      const u = p.div(uGW).add(0.5);
+      If(gone.not().and(u.x.greaterThan(0)).and(u.x.lessThan(1)).and(u.y.greaterThan(0)).and(u.y.lessThan(1))
+        .and(u.z.greaterThan(0)).and(u.z.lessThan(1)), () => {
+        const cx = uint(u.x.mul(GX)), cy = uint(u.y.mul(GY)), cz = uint(u.z.mul(GZ));
+        const idx = cellIndex(cx, cy, cz);
+        atomicAdd(gMass.element(idx), uint(wgt.mul(256)));
+        atomicAdd(gHue.element(idx), uint(wgt.mul(P4.w.fract()).mul(256)));
+      });
+    });
+  })().compute(GP);
+
+  // Resolve: blur the splats a little and blend them over the last frame.
+  const gasResolve = Fn(() => {
+    const c = voxel(instanceIndex);
+    const at = (dx, dy, dz) => {
+      const x = dx > 0 ? c.x.add(1).min(GX - 1) : dx < 0 ? c.x.max(1).sub(1) : c.x;
+      const y = dy > 0 ? c.y.add(1).min(GY - 1) : dy < 0 ? c.y.max(1).sub(1) : c.y;
+      const z = dz > 0 ? c.z.add(1).min(GZ - 1) : dz < 0 ? c.z.max(1).sub(1) : c.z;
+      return cellIndex(x, y, z);
+    };
+    const taps = [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    let m = float(0), h = float(0);
+    taps.forEach(([dx, dy, dz], k) => {
+      const wt = k ? 1 : 2, idx = at(dx, dy, dz);
+      m = m.add(float(atomicLoad(gMass.element(idx))).mul(wt));
+      h = h.add(float(atomicLoad(gHue.element(idx))).mul(wt));
+    });
+    const dens = m.div(8 * 256).mul(GAS_K);
+    const hue = h.div(m.max(1));
+    const uvw = vec3(c).add(0.5).div(vec3(GX, GY, GZ));
+    const prev = dyeRead.sample(uvw).level(0);
+    const next = mix(prev, vec4(dens, select(m.greaterThan(0), hue, prev.g), uEmitDark, 1), 0.35);
+    textureStore(dyeWrite, c, next).toWriteOnly();
+  })().compute(CELLS);
+  const gasZero = Fn(() => {
+    atomicStore(gMass.element(instanceIndex), uint(0));
+    atomicStore(gHue.element(instanceIndex), uint(0));
+  })().compute(CELLS);
+  const gasPasses = [gasStep, gasResolve, gasZero];
+
+  const gasClear = Fn(() => {
+    const c = voxel(instanceIndex);
+    textureStore(gDyeA, c, vec4(0)).toWriteOnly();
+    textureStore(gDyeB, c, vec4(0)).toWriteOnly();
+    atomicStore(gMass.element(instanceIndex), uint(0));
+    atomicStore(gHue.element(instanceIndex), uint(0));
+    If(instanceIndex.lessThan(uint(GP)), () => { gVel.element(instanceIndex).assign(vec4(0, 0, 0, DEAD)); });
+  })().compute(CELLS);
+
+  // The gas is raymarched through the grid: it glows and its dust absorbs.
+  const GAS_STEPS = SMALL ? 18 : 26;
   const MAGENTA = vec3(...oklchLinear(0.6, 0.22, 335)), TEAL = vec3(...oklchLinear(0.66, 0.13, 195));
   const gasMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, premultipliedAlpha: true });
   gasMat.colorNode = Fn(() => {
-    const R = uGas.z, C = vec3(uGas.x, 0, uGas.y), B = vec3(R, R.mul(GAS_H), R);
-    const ro = cameraPosition, rd = positionWorld.sub(cameraPosition).normalize();
-    // Slab test: where the view ray enters and leaves the cloud's box.
+    const B = uGW.mul(0.5), ro = cameraPosition, rd = positionWorld.sub(cameraPosition).normalize();
     const inv = vec3(1).div(rd);
-    const ta = C.sub(B).sub(ro).mul(inv), tb = C.add(B).sub(ro).mul(inv);
+    const ta = B.negate().sub(ro).mul(inv), tb = B.sub(ro).mul(inv);
     const lo3 = min(ta, tb), hi3 = max(ta, tb);
     const tn = max(max(lo3.x, lo3.y), lo3.z).max(0), tf = min(min(hi3.x, hi3.y), hi3.z);
     const dt = tf.sub(tn).max(0).div(GAS_STEPS);
-    // A dither per pixel and frame hides the step banding.
     const jit = fract(interleavedGradientNoise(screenCoordinate).add(float(frameId).mul(0.618034)));
     const T = float(1).toVar(), col = vec3(0).toVar();
-    const drift = vec3(0, uTime.mul(0.05), uTime.mul(0.02));
-    // A GPU loop keeps the shader small, so it compiles fast.
     Loop(GAS_STEPS, ({ i }) => {
-      const q = ro.add(rd.mul(tn.add(dt.mul(jit.add(float(i)))))).sub(C).div(R);
-      // The lobes where stars are born carry the bulk of the gas.
-      let base = float(0);
-      for (const L of uLobe) { const d = q.sub(L); base = base.add(exp(d.dot(d).mul(-5.5))); }
-      // Warped noise turns the bulk into wisps, as in Fire's smoke.
-      const w = snoise(q.mul(1.4).add(uGasSeed));
-      const n = snoise(q.mul(3).add(vec3(w.mul(0.9))).add(drift).add(uGasSeed)).mul(0.65)
-        .add(snoise(q.mul(7).add(uGasSeed.mul(1.7))).mul(0.3));
-      const dens = base.mul(n.add(0.4)).sub(0.18).max(0).mul(uGas.w);
-      const k = dt.div(R);
-      // Mostly magenta, with teal pockets; the lobe hearts glow hottest.
-      const hue = mix(MAGENTA, TEAL, smoothstep(0.15, 0.7, w));
-      col.addAssign(hue.mul(dens).mul(T).mul(k).mul(base.mul(0.8).add(0.5)).mul(3));
-      T.mulAssign(exp(dens.mul(k).mul(-4.5)));
+      const p = ro.add(rd.mul(tn.add(dt.mul(jit.add(float(i))))));
+      const d = dyeRead.sample(p.div(uGW).add(0.5)).level(0);
+      // Fine noise breaks the smooth splats into wisps, as Fire does.
+      // A square root lifts thin outskirts and tames the dense heart.
+      const dens = d.r.max(0).sqrt().mul(0.9).mul(snoise(p.mul(2.6).add(vec3(0, uTime.mul(0.08), 0))).mul(0.95).add(0.45).max(0));
+      const hue = mix(MAGENTA, TEAL, d.g);
+      col.addAssign(hue.mul(dens).mul(float(1).sub(d.b)).mul(T).mul(dt).mul(1.3));
+      T.mulAssign(exp(dens.mul(dt).mul(d.b.mul(5).add(0.35)).negate()));
     });
     return vec4(col, float(1).sub(T));
   })();
-  const gas = new THREE.Mesh(new THREE.BoxGeometry(2, 2 * GAS_H, 2), gasMat);
+  const gas = new THREE.Mesh(new THREE.BoxGeometry(GW.x, GW.y, GW.z), gasMat);
   gas.frustumCulled = false;
   gas.renderOrder = 5;
   gas.visible = false;
   scene.add(gas);
+  // The gas steps only while some is alive.
+  let gasUntil = -1, gasRing = 0;
 
   // Comet tails: dust streams out behind the head and fades.
   const tails = [];
@@ -1097,7 +1222,6 @@ async function start() {
       keep.pulse = 1;
       // A nebula's stream and gas follow it into the merger.
       if (fling?.nursery === gone) fling.nursery = keep;
-      if (gasBody === gone) gasBody = keep;
       wells.splice(wells.indexOf(gone), 1);
       if (keep.hole && !was) holeBorn(keep);
       return merge();
@@ -1250,7 +1374,7 @@ async function start() {
   }
   // Collapse: a rush of air and a burst of feeding.
   // A supernova blows its shell and leaves a pulsar behind.
-  let blast = null, gasFade = 0, gasX = 0, gasZ = 0, gasBody = null;
+  let blast = null;
   function shell(w, kind) {
     const S = SHELLS[kind];
     blast = { x: w.x, z: w.z, t0: simT, ...S };
@@ -1345,8 +1469,9 @@ async function start() {
     holeVis = feed = feedGoal = jet = 0;
     blast = null;
     fling = null;
-    gasBody = null;
-    gasFade = 0;
+    // Reset empties the gas grid.
+    renderer.compute(gasClear);
+    gasUntil = -1;
     renderer.compute(seedPass);
   }
 
@@ -1424,7 +1549,6 @@ async function start() {
       L.value.set(Math.cos(a) * r, (Math.random() - 0.5) * 0.5, Math.sin(a) * r);
     }
     uHoldCloud.value = 1;
-    uGasSeed.value.set(Math.random() * 50, Math.random() * 50, Math.random() * 50);
     fling = { start: ring, count: INIT, t0: simT, x: w.x, z: w.z, vx: w.vx, vz: w.vz, releasing: false, nursery: w, max: Math.round(MAXF / 2) };
     uSalt.value = (Math.random() * 1e6) | 0;
     w.nursed = true;
@@ -1628,7 +1752,7 @@ async function start() {
   /* ---------- async warm-up ---------- */
   resize();
   // Shaders compile off the critical path, so loading never freezes.
-  await renderer.compileComputeAsync([seedPass, updatePass, resetPass, countPass]);
+  await renderer.compileComputeAsync([seedPass, updatePass, resetPass, countPass, gasClear, ...gasPasses]);
   seed();
   syncWells();
   // The hole's sprites compile now, drawn at zero size.
@@ -1715,15 +1839,26 @@ async function start() {
       renderer.compute(updatePass);
       simT += h;
     }
-    // The gas follows its nebula, then thins slowly round the young cluster.
-    const nn = fling?.nursery;
-    if (nn) gasBody = nn;
-    gasFade += ((nn ? 1 : 0) - gasFade) * (1 - Math.exp(-dt / (nn ? 0.8 : 7)));
-    if (gasBody && gasBody.mt > 0) { gasX = gasBody.x; gasZ = gasBody.z; }
-    gas.visible = gasFade > 0.01;
-    uGas.value.set(gasX, gasZ, 2.2, gasFade);
-    gas.position.set(gasX, 0, gasZ);
-    gas.scale.setScalar(2.2);
+    // A nursing nebula releases gas parcels; they then move on their own.
+    const nn = fling?.nursery?.kind === 'nebula' ? fling.nursery : null;
+    uSpawnCount.value = 0;
+    if (nn && simDt > 0) {
+      uEmit.value.set(nn.x, nn.z, 2.2, 1);
+      uEmitVel.value.set(nn.vx, 0, nn.vz);
+      const n = Math.min(GP, Math.round((GP * simDt) / NURSE_T));
+      uSpawnStart.value = gasRing;
+      uSpawnCount.value = n;
+      uGasSalt.value = (Math.random() * 1e6) | 0;
+      gasRing = (gasRing + n) % GP;
+      gasUntil = simT + GAS_LIFE + 2;
+    }
+    if (simT < gasUntil && simDt > 0) {
+      uGasDt.value = simDt;
+      uTime.value = simT;
+      renderer.compute(gasPasses);
+      [dyeRead.value, dyeWrite.value] = [dyeWrite.value, dyeRead.value];
+    }
+    gas.visible = simT < gasUntil;
     for (const w of wells) {
       if (w.kind === 'nova' && simT >= w.fuse && !w.hole) explode(w);
       if (w.kind === 'giant' && simT >= w.fuse && !w.hole) shed(w);
