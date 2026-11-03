@@ -53,6 +53,7 @@ function headerHTML(home) {
 
 /* ---------- legacy: the pre-port page, one tap away ---------- */
 // A toy that moved to the library set keeps its old page as legacy.html.
+// toys.json flags it with legacy: true.
 // The header then offers Legacy; the legacy page offers Current.
 function legacyLink() {
   const tools = document.querySelector('header[data-shell] .tools');
@@ -67,8 +68,11 @@ function legacyLink() {
     tools.prepend(a);
   };
   if (onLegacy) { add('index.html', 'Current', 'Back to the current version'); document.documentElement.dataset.legacy = ''; return; }
-  fetch('legacy.html', { method: 'HEAD', cache: 'no-store' })
-    .then(r => { if (r.ok) add('legacy.html', 'Legacy', 'The version before the library port'); })
+  // toys.json marks which toys keep a legacy page, so no page probes for one.
+  const id = location.pathname.split('/').filter(Boolean).filter(p => !p.endsWith('.html')).pop();
+  fetch(new URL('../toys.json', import.meta.url))
+    .then(r => r.json())
+    .then(toys => { if (toys[id]?.legacy) add('legacy.html', 'Legacy', 'An earlier build of this toy'); })
     .catch(() => {});
 }
 
