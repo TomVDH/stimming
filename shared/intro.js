@@ -3,9 +3,9 @@
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 
-/* ---------- 24 fps timing ---------- */
-// Every transition steps at 24 fps, like film.
-const FPS = 24;
+/* ---------- 30 fps timing ---------- */
+// Every transition steps at 30 fps.
+const FPS = 30;
 const frames = ms => Math.max(1, Math.round((ms / 1000) * FPS));
 const wait = n => new Promise(r => setTimeout(r, (n * 1000) / FPS));
 
