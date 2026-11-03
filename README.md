@@ -50,7 +50,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Ribbon | [ribbon/](ribbon/) | live draft, still being refined |
 | Balloon letters | [balloons/](balloons/) | live draft, still being refined |
 | TV tree | [tvtree/](tvtree/) | live draft, still being refined |
-| Orbits | | in progress; outlines on the menu |
+| Orbits | [orbits/](orbits/) | live draft, still being refined |
 
 ## Run locally
 
