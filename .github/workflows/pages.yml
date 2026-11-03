@@ -1,0 +1,51 @@
+# Publish the toys to GitHub Pages: only site files, never notes or docs.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          # Every folder with an index.html is a page: toys, labs and the intro lab.
+          for d in */; do
+            d="${d%/}"
+            case "$d" in _site|node_modules) continue ;; esac
+            [ -f "$d/index.html" ] || [ "$d" = shared ] || continue
+            mkdir -p "_site/$d"
+            find "$d" -type f ! -name '*.md' -exec cp --parents {} _site/ \;
+          done
+          cp toys.json .nojekyll _site/
+          # The menu is an Artifact body fragment: a doctype and a viewport make it a full page.
+          # Its own charset, title and styles stay in the head; the first element opens the body.
+          { printf '<!doctype html>\n<html lang="en">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'; cat index.html; } > _site/index.html
+          find _site -maxdepth 1 | sort
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
