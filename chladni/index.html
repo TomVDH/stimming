@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Chladni plate</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the plate at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --studio: oklch(0.17 0.03 280);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The studio is 16:9, 4:5 on phones. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  max-height: max(320px, calc(100vh - 176px)); max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--studio); cursor: ns-resize;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage.bow { cursor: grab; }
+.stage.bowing { cursor: grabbing; }
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark studio the line keeps a pale tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.74 0.02 285); cursor: default;
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Chladni plate</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A sand-covered metal plate: drag up or down, or bow its right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, Space scatters the sand and Enter tosses it.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Chladni plate needs WebGL 2 with float textures, which this browser lacks.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="scatter" type="button" aria-keyshortcuts="Space">Scatter</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag up or down</dt><dd>tune</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>toss sand</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>next pattern</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>scatter</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+/* ---------- vectors and matrices, column-major ---------- */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = a => mul3(a, 1 / Math.hypot(...a));
+function persp(fovy, asp, n, f) {
+  const t = 1 / Math.tan(fovy / 2), nf = 1 / (n - f);
+  return [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) * nf, -1, 0, 0, 2 * f * n * nf, 0];
+}
+function lookAt(e, c, up) {
+  const z = unit(sub(e, c)), x = unit(cross(up, z)), y = cross(z, x);
+  return [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1];
+}
+function mul4(a, b) {
+  const o = new Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+      o[c * 4 + r] = s;
+    }
+  }
+  return o;
+}
+function inv4(a) {
+  const [a00, a01, a02, a03, a10, a11, a12, a13, a20, a21, a22, a23, a30, a31, a32, a33] = a;
+  const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10;
+  const b03 = a01 * a12 - a02 * a11, b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+  const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, b08 = a20 * a33 - a23 * a30;
+  const b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+  const d = 1 / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06);
+  return [
+    (a11 * b11 - a12 * b10 + a13 * b09) * d, (a02 * b10 - a01 * b11 - a03 * b09) * d,
+    (a31 * b05 - a32 * b04 + a33 * b03) * d, (a22 * b04 - a21 * b05 - a23 * b03) * d,
+    (a12 * b08 - a10 * b11 - a13 * b07) * d, (a00 * b11 - a02 * b08 + a03 * b07) * d,
+    (a32 * b02 - a30 * b05 - a33 * b01) * d, (a20 * b05 - a22 * b02 + a23 * b01) * d,
+    (a10 * b10 - a11 * b08 + a13 * b06) * d, (a01 * b08 - a00 * b10 - a03 * b06) * d,
+    (a30 * b04 - a31 * b02 + a33 * b00) * d, (a21 * b02 - a20 * b04 - a23 * b00) * d,
+    (a11 * b07 - a10 * b09 - a12 * b06) * d, (a00 * b09 - a01 * b07 + a02 * b06) * d,
+    (a31 * b01 - a30 * b03 - a32 * b00) * d, (a20 * b03 - a21 * b01 + a22 * b00) * d,
+  ];
+}
+const xf = (m, [x, y, z]) => [
+  m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13],
+  m[2] * x + m[6] * y + m[10] * z + m[14], m[3] * x + m[7] * y + m[11] * z + m[15],
+];
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h, k = 1) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v) * k);
+}
+const PAL = {
+  uEnvLo: linear(0.16, 0.04, 285), uEnvHi: linear(0.3, 0.07, 268),
+  uKeyC: linear(0.82, 0.16, 62, 5.5), uFillC: linear(0.8, 0.13, 212, 3.6), uTopC: linear(0.62, 0.13, 300, 0.8),
+  uSteel: linear(0.66, 0.018, 255), uFloorC: linear(0.26, 0.06, 284), uPoolC: linear(0.55, 0.12, 330),
+  uWood: linear(0.42, 0.12, 38), uHair: linear(0.93, 0.03, 88), uEbony: linear(0.2, 0.01, 270),
+  uSilver: linear(0.84, 0.01, 250), uPearl: linear(0.9, 0.05, 330),
+};
+const SAND = {
+  uS0: linear(0.92, 0.06, 95), uS1: linear(0.82, 0.13, 84), uS2: linear(0.7, 0.14, 66), uS3: linear(0.52, 0.1, 52),
+  uKeyCol: linear(0.9, 0.08, 75, 1.5), uFillCol: linear(0.8, 0.08, 220, 0.38), uAmb: linear(0.6, 0.08, 45, 0.5),
+};
+// Light directions point from the plate toward each lamp.
+const dirOf = (az, el) => [Math.sin(az * D2R) * Math.cos(el * D2R), Math.cos(az * D2R) * Math.cos(el * D2R), Math.sin(el * D2R)];
+function basis(c) {
+  const u = unit(cross(c, [0, 0, 1]));
+  return [c, u, cross(u, c)];
+}
+const LAMPS = { Key: basis(dirOf(-6.5, 42)), Fill: basis(dirOf(7, 41)), Top: basis(dirOf(0, 54)) };
+const SUN = unit(dirOf(-24, 46));
+
+/* ---------- the mode ladder ---------- */
+// Each rung: n, m, the sign between the terms, a MIDI note.
+// The notes walk a D minor pentatonic scale.
+const LADDER = [
+  [1, 2, 1, 50], [2, 3, -1, 53], [2, 4, 1, 55], [3, 4, -1, 57], [2, 5, -1, 60], [3, 5, 1, 62], [2, 6, 1, 65],
+  [3, 6, -1, 67], [4, 6, 1, 69], [4, 7, -1, 72], [5, 7, 1, 74], [4, 8, -1, 77], [6, 8, 1, 79],
+];
+const K = LADDER.length, START = 2, WIDTH = 0.42, DETENT = 0.8;
+const kOf = i => Math.PI * Math.sqrt((LADDER[i][0] ** 2 + LADDER[i][1] ** 2) / 2);
+// The pitch lingers near each rung, so resonance is easy to find.
+const ease = t => t - (DETENT * Math.sin(TAU * t)) / TAU;
+function semis(s) {
+  if (s <= 0) return LADDER[0][3] + s * 2.5;
+  if (s >= K - 1) return LADDER[K - 1][3] + (s - K + 1) * 2.5;
+  const k = Math.floor(s);
+  return lerp(LADDER[k][3], LADDER[k + 1][3], ease(s - k));
+}
+const resp = (st, k) => 1 / (1 + ((st - LADDER[k][3]) / WIDTH) ** 2);
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.chladni.sound', MAXV = 10, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, sand = null, askedAt = -1e9, voices = 0, restT = 0;
+let tone = null, tossNext = 0, pourNext = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // One second of white noise feeds the bow's rosin.
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    sand = sandBuffer();
+    voice();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the plate rests, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Scales a buffer channel to a target loudness.
+function norm(d, rms) {
+  let s = 0;
+  for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+  const k = rms / Math.sqrt(s / d.length || 1);
+  for (let i = 0; i < d.length; i++) d[i] *= k;
+}
+// Sand: a faint wash under thousands of tiny grain ticks.
+function sandBuffer() {
+  const sr = ac.sampleRate, len = Math.round(sr * 2.3), buf = ac.createBuffer(2, len, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.04;
+    for (let n = Math.round(2.3 * 2400), k = 0; k < n; k++) {
+      const at = Math.floor(Math.random() * (len - 64)), amp = 0.04 + 0.5 * Math.random() ** 4, dec = rand(3, 12);
+      for (let i = 0; i < 48; i++) d[at + i] += amp * (Math.random() * 2 - 1) * Math.exp(-i / dec);
+    }
+    norm(d, 0.2);
+  }
+  return buf;
+}
+// A bowed string's spectrum: every harmonic, falling away gently.
+function bowWave() {
+  const n = 24, re = new Float32Array(n), im = new Float32Array(n);
+  for (let i = 1; i < n; i++) im[i] = (i % 2 ? 1 : 0.6) / i ** 1.25;
+  return ac.createPeriodicWave(re, im);
+}
+const gainOf = v => { const g = ac.createGain(); g.gain.value = v; return g; };
+function filterOf(type, f, q) {
+  const b = ac.createBiquadFilter();
+  b.type = type;
+  b.frequency.value = f;
+  b.Q.value = q;
+  return b;
+}
+// One continuous voice: sine, a slow-beating twin, an octave and a bowed tone.
+// A looped sand bed hisses under it.
+function voice() {
+  const osc = (type, f) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; return o; };
+  const sine = osc('sine', 196), twin = osc('sine', 196.5), oct = osc('sine', 392), bow = ac.createOscillator();
+  bow.setPeriodicWave(bowWave());
+  bow.frequency.value = 196;
+  const tg = gainOf(0), lp = filterOf('lowpass', 900, 0.5), gBow = gainOf(0);
+  sine.connect(gainOf(0.6)).connect(tg);
+  twin.connect(gainOf(0.22)).connect(tg);
+  oct.connect(gainOf(0.06)).connect(tg);
+  bow.connect(lp).connect(gBow).connect(tg);
+  tg.connect(out);
+  const vib = osc('sine', 5.1), vibG = gainOf(1.5);
+  vib.connect(vibG);
+  [sine, twin, bow].forEach(o => vibG.connect(o.detune));
+  const ros = ac.createBufferSource(), rosG = gainOf(0), rosF = filterOf('bandpass', 2400, 1.2);
+  ros.buffer = noise;
+  ros.loop = true;
+  ros.connect(rosF).connect(rosG).connect(out);
+  const bed = ac.createBufferSource(), hissG = gainOf(0);
+  bed.buffer = sand;
+  bed.loop = true;
+  bed.connect(filterOf('highpass', 1800, 0.5)).connect(filterOf('bandpass', 5200, 0.6)).connect(hissG).connect(out);
+  [sine, twin, oct, bow, vib, ros, bed].forEach(n => n.start());
+  tone = { sine, twin, oct, bow, lp, gBow, tg, vibG, rosG, hissG, last: [] };
+}
+// The voice follows the plate; small changes skip the automation queue.
+function sing(f, lvl, bowAmt, vib, rosin, hiss) {
+  if (!tone || !ac || ac.state !== 'running') return;
+  const t = ac.currentTime, v = [f, lvl, bowAmt, vib, rosin, hiss], L = tone.last;
+  const moved = (i, eps) => L[i] === undefined || Math.abs(v[i] - L[i]) > eps;
+  if (moved(0, f * 0.0005)) {
+    tone.sine.frequency.setTargetAtTime(f, t, 0.03);
+    tone.twin.frequency.setTargetAtTime(f * 1.0026, t, 0.03);
+    tone.oct.frequency.setTargetAtTime(f * 2, t, 0.03);
+    tone.bow.frequency.setTargetAtTime(f, t, 0.03);
+    tone.lp.frequency.setTargetAtTime(f * 3 + 500, t, 0.05);
+    L[0] = f;
+  }
+  if (moved(1, 0.002)) { tone.tg.gain.setTargetAtTime(lvl, t, 0.06); L[1] = lvl; }
+  if (moved(2, 0.01)) { tone.gBow.gain.setTargetAtTime(bowAmt, t, 0.1); L[2] = bowAmt; }
+  if (moved(3, 0.2)) { tone.vibG.gain.setTargetAtTime(vib, t, 0.25); L[3] = vib; }
+  if (moved(4, 0.001)) { tone.rosG.gain.setTargetAtTime(rosin, t, 0.05); L[4] = rosin; }
+  if (moved(5, 0.002)) { tone.hissG.gain.setTargetAtTime(hiss, t, 0.08); L[5] = hiss; }
+}
+// Each voice pans with its place on the plate.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A thrown handful: a quick whoosh, then the patter of landing.
+function tossSound(x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < tossNext) return;
+  tossNext = t + 0.08;
+  const dst = bus(a, x);
+  [[0, 3400, 0.24, 0.07, 0.4], [0.2, 5200, 0.12, 0.16, 0.7]].forEach(([at, f, g, tau, len]) => {
+    const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+    src.buffer = sand;
+    src.playbackRate.value = jit(0.05);
+    bp.type = 'bandpass';
+    bp.frequency.value = f * jit(0.06);
+    bp.Q.value = 0.8;
+    ng.gain.setValueAtTime(0, t + at);
+    ng.gain.linearRampToValueAtTime(g * jit(0.1), t + at + 0.012);
+    ng.gain.setTargetAtTime(0, t + at + 0.012, tau);
+    src.connect(bp).connect(ng).connect(dst);
+    src.start(t + at, Math.random() * 1.5);
+    src.stop(t + at + len);
+    track(src, bp, ng, ...(at ? [dst] : []));
+  });
+}
+// Scattering pours sand over the whole plate.
+function pourSound() {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < pourNext) return;
+  pourNext = t + 0.4;
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = sand;
+  src.playbackRate.value = jit(0.05);
+  bp.type = 'bandpass';
+  bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(2600 * jit(0.05), t);
+  bp.frequency.exponentialRampToValueAtTime(5400, t + 1.1);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.3 * jit(0.08), t + 0.16);
+  g.gain.setTargetAtTime(0, t + 0.55, 0.28);
+  src.connect(bp).connect(g).connect(out);
+  src.start(t, Math.random() * 0.8);
+  src.stop(t + 2.2);
+  track(src, bp, g);
+}
+
+/* ---------- WebGL: grains live in float textures ---------- */
+const TW = 512, TH = 400, N = TW * TH, DS = 384, PLATE_T = 0.022, FLOOR_Z = -0.85;
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const HASH = `
+uvec3 pcg3(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  return v;
+}
+vec3 rnd3(uvec3 v) { return vec3(pcg3(v)) * (1.0 / 4294967296.0); }`;
+// The plate's shape: two modes blended by their response.
+// Each mode holds n, m, the sign and the weight.
+const FIELD = `
+uniform vec4 uM0, uM1;
+uniform float uAmp, uK;
+vec3 phi(vec4 M, vec2 p) {
+  vec2 a = M.x * 3.14159265 * p, b = M.y * 3.14159265 * p;
+  vec2 ca = cos(a), sa = sin(a), cb = cos(b), sb = sin(b);
+  float u = ca.x * cb.y + M.z * cb.x * ca.y;
+  float gx = -M.x * sa.x * cb.y - M.z * M.y * sb.x * ca.y;
+  float gy = -M.y * ca.x * sb.y - M.z * M.x * cb.x * sa.y;
+  return 0.5 * vec3(u, 3.14159265 * gx, 3.14159265 * gy);
+}
+vec3 field(vec2 p) { return uM0.w * phi(uM0, p) + uM1.w * phi(uM1, p); }`;
+const TONE = `
+vec3 knee(vec3 c) { return mix(c, 0.8 + 0.2 * (1.0 - exp(-(c - 0.8) * 5.0)), step(0.8, c)); }
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}`;
+const SIM_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+uniform sampler2D uA, uB;
+uniform uint uFrame;
+uniform float uDt, uG, uTh, uHop, uKick, uDrift, uCreep, uSpread, uScatter, uFallH;
+uniform vec4 uToss;
+${FIELD}
+${HASH}
+layout(location = 0) out vec4 oA;
+layout(location = 1) out vec4 oB;
+const float LIM = 0.005;
+void main() {
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec3 r1 = rnd3(uvec3(uvec2(ip), uFrame));
+  vec3 r2 = rnd3(uvec3(uvec2(ip.yx) + 7919u, uFrame ^ 0x5bd1e995u));
+  // Scattering lays grains on a jittered grid, falling from above.
+  if (uScatter > 0.0) {
+    vec2 cell = (vec2(ip) + r1.xy) / vec2(textureSize(uA, 0));
+    oA = vec4(mix(vec2(LIM), vec2(1.0 - LIM), cell), uFallH * (0.03 + 0.97 * r1.z * r1.z), 0.0);
+    oB = vec4((r2.xy - 0.5) * 0.03, 0.0, 0.0);
+    return;
+  }
+  vec4 A = texelFetch(uA, ip, 0), B = texelFetch(uB, ip, 0);
+  vec2 p = A.xy, v = B.xy;
+  float h = A.z, vh = A.w, k = max(uK, 1.0);
+  vec3 f = field(p);
+  float a = uAmp * abs(f.x);
+  if (h <= 0.0) {
+    h = 0.0;
+    vh = 0.0;
+    v *= exp(-16.0 * uDt);
+    // Above a threshold the plate throws the grain up.
+    float e = (a - uTh) / (1.0 - uTh);
+    if (e > 0.0 && r1.x < min(e * 5.0, 1.0) * uDt * 30.0) {
+      vh = sqrt(2.0 * uG * uHop * e * (0.25 + 0.75 * r1.y));
+      float ang = 6.2831853 * r1.z;
+      v = vec2(cos(ang), sin(ang)) * uKick / k * e * (0.3 + 0.7 * r2.x);
+      h = 1e-5;
+    }
+    // Weak shaking only makes the grain creep.
+    p += (r2.yz - 0.5) * 2.0 * a * uCreep / k * sqrt(uDt);
+  } else {
+    vh -= uG * uDt;
+    h += vh * uDt;
+    if (h <= 0.0) {
+      if (vh < -0.7) { h = 1e-5; vh *= -0.3; v *= 0.5; }
+      else { h = 0.0; vh = 0.0; v *= 0.3; }
+    }
+  }
+  if (uToss.z > 0.0) {
+    vec2 d = p - uToss.xy;
+    float dist = length(d), q = max(0.0, 1.0 - dist / uToss.w);
+    if (q > 0.0) {
+      q *= q;
+      float ang = 6.2831853 * r2.z;
+      vec2 dir = dist > 1e-4 ? d / dist : vec2(cos(ang), sin(ang));
+      vh = max(vh, 0.0) + uToss.z * q * (0.45 + 0.55 * r2.x);
+      v += dir * uToss.z * 0.6 * q * (0.35 + 0.65 * r2.y);
+      h = max(h, 1e-5);
+    }
+  }
+  p += v * uDt;
+  // The mean drift runs down the slope of u squared, onto the nodal lines.
+  p -= uDrift * uAmp * f.x * f.yz / (k * k) * uDt;
+  // A steady restlessness gives the lines their width.
+  vec3 r3 = rnd3(uvec3(uvec2(ip) + 31u, uFrame + 101u));
+  p += (r3.xy - 0.5) * 2.0 * uAmp * uSpread * sqrt(10.0 / k) * sqrt(uDt);
+  if (p.x < LIM) { p.x = 2.0 * LIM - p.x; v.x = abs(v.x) * 0.4; }
+  if (p.x > 1.0 - LIM) { p.x = 2.0 * (1.0 - LIM) - p.x; v.x = -abs(v.x) * 0.4; }
+  if (p.y < LIM) { p.y = 2.0 * LIM - p.y; v.y = abs(v.y) * 0.4; }
+  if (p.y > 1.0 - LIM) { p.y = 2.0 * (1.0 - LIM) - p.y; v.y = -abs(v.y) * 0.4; }
+  oA = vec4(clamp(p, vec2(LIM), vec2(1.0 - LIM)), h, vh);
+  oB = vec4(v, 0.0, 0.0);
+}`;
+// Each grain adds one texel of sand where its shadow falls.
+const DEN_VS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uA;
+uniform vec3 uSun;
+uniform float uW;
+out float vW;
+void main() {
+  int W = textureSize(uA, 0).x;
+  vec4 A = texelFetch(uA, ivec2(gl_VertexID % W, gl_VertexID / W), 0);
+  vec2 sp = A.xy - uSun.xy / uSun.z * A.z;
+  gl_Position = vec4(sp * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+  vW = uW / (1.0 + A.z * 30.0);
+}`;
+const DEN_FS = `#version 300 es
+precision highp float;
+in float vW;
+out vec4 o;
+void main() { o = vec4(vW); }`;
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / vec2(textureSize(uSrc, 0));
+  float s = texture(uSrc, uv).r * 0.227;
+  s += (texture(uSrc, uv + uDir * 1.3846).r + texture(uSrc, uv - uDir * 1.3846).r) * 0.3162;
+  s += (texture(uSrc, uv + uDir * 3.2308).r + texture(uSrc, uv - uDir * 3.2308).r) * 0.0703;
+  o = vec4(s);
+}`;
+// The studio: brushed plate, its front edge, the stand and the floor.
+const SCENE_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform mat4 uInv;
+uniform vec3 uEye, uSun;
+uniform vec2 uRes;
+uniform sampler2D uDen;
+uniform vec3 uKey, uKeyU, uKeyV, uFill, uFillU, uFillV, uTop, uTopU, uTopV;
+uniform vec3 uKeyC, uFillC, uTopC, uEnvLo, uEnvHi, uSteel, uFloorC, uPoolC;
+${FIELD}
+${TONE}
+out vec4 o;
+const float PT = ${PLATE_T}, FZ = ${FLOOR_Z};
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+// A soft round lamp seen along direction d.
+float lamp(vec3 d, vec3 c, vec3 cu, vec3 cv, vec2 sz) {
+  float w = dot(d, c);
+  if (w <= 0.0) return 0.0;
+  vec2 q = vec2(dot(d, cu), dot(d, cv)) / (w * sz);
+  return exp(-dot(q, q));
+}
+vec3 env(vec3 d) {
+  vec3 c = mix(uEnvLo, uEnvHi, smoothstep(-0.1, 0.9, d.z));
+  c += uKeyC * lamp(d, uKey, uKeyU, uKeyV, vec2(0.024, 0.07));
+  c += uFillC * lamp(d, uFill, uFillU, uFillV, vec2(0.018, 0.06));
+  c += uTopC * lamp(d, uTop, uTopU, uTopV, vec2(0.7, 0.16));
+  return c;
+}
+vec3 fresnel(float ndv) { return uSteel + (1.0 - uSteel) * pow(1.0 - ndv, 5.0); }
+// Brushed along x: the reflection smears across the grooves.
+vec3 brushed(vec3 rd, vec3 N, vec3 smear, float spread, float fine) {
+  vec3 acc = vec3(0.0);
+  float ws = 0.0;
+  for (int i = -3; i <= 3; i++) {
+    float s = float(i) / 3.0, w = exp(-2.2 * s * s);
+    acc += w * env(reflect(rd, normalize(N + smear * (s * spread + (fine - 0.5) * 0.05))));
+    ws += w;
+  }
+  return acc / ws;
+}
+vec3 plateTop(vec3 hp, vec3 rd, float fine, float broad) {
+  vec2 uv = hp.xy + 0.5;
+  vec3 f = field(uv);
+  float shake = uAmp * length(f.yz) / max(uK, 1.0);
+  // The bevel tilts the normal outward at the rim.
+  vec2 e = 0.5 - abs(hp.xy);
+  vec2 bev = sign(hp.xy) * (1.0 - smoothstep(0.0, 0.007, e)) * 0.8;
+  vec3 N = normalize(vec3(bev, 1.0));
+  // Vibration blurs the highlights where the plate moves most.
+  float spread = 0.07 + 0.04 * (broad - 0.5) + 0.5 * shake;
+  vec3 col = fresnel(clamp(dot(N, -rd), 0.0, 1.0)) * brushed(rd, N, vec3(0, 1, 0), spread, fine) * (0.8 + 0.4 * fine);
+  vec2 so = uSun.xy / uSun.z;
+  float d0 = texture(uDen, uv).r, d1 = texture(uDen, uv + so * 0.0035).r;
+  col *= 1.0 - clamp(0.32 * smoothstep(0.4, 3.0, d1) + 0.14 * smoothstep(0.8, 5.0, d0), 0.0, 0.5);
+  return col;
+}
+vec3 plateFront(vec3 fp, vec3 rd, float fine) {
+  float lip = smoothstep(-0.007, 0.0, fp.z);
+  vec3 N = normalize(vec3(0.0, -1.0, 1.4 * lip));
+  return fresnel(clamp(dot(N, -rd), 0.0, 1.0)) * brushed(rd, N, vec3(0, 0, 1), 0.3, fine) * 0.75;
+}
+// A vertical cylinder about the z axis; returns distance and normal.
+float cyl(vec3 ro, vec3 rd, float r, float z0, float z1, out vec3 n) {
+  float a = dot(rd.xy, rd.xy), b = dot(ro.xy, rd.xy), c = dot(ro.xy, ro.xy) - r * r;
+  float disc = b * b - a * c;
+  if (disc < 0.0) return -1.0;
+  float t = (-b - sqrt(disc)) / a, z = ro.z + rd.z * t;
+  if (t > 0.0 && z > z0 && z < z1) { n = vec3((ro.xy + rd.xy * t) / r, 0.0); return t; }
+  float tc = (z1 - ro.z) / rd.z;
+  vec2 q = ro.xy + rd.xy * tc;
+  if (tc > 0.0 && dot(q, q) < r * r) { n = vec3(0.0, 0.0, 1.0); return tc; }
+  return -1.0;
+}
+vec3 floorAt(vec3 fp, float dist) {
+  vec3 c = uFloorC * (0.7 + 0.3 * vnoise(fp.xy * 5.0));
+  vec2 pc = fp.xy - vec2(-0.2, 0.6);
+  c += uPoolC * 0.12 * exp(-dot(pc, pc) * 0.7);
+  // The plate shades the floor below it, softly.
+  vec2 q = fp.xy + uSun.xy / uSun.z * (-fp.z);
+  vec2 dd = abs(q) - 0.5;
+  float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0);
+  c *= 0.3 + 0.7 * smoothstep(-0.12, 0.16, sd);
+  float r = length(fp.xy);
+  c *= 0.55 + 0.45 * smoothstep(0.05, 0.35, r);
+  return mix(c, uEnvLo * 0.35, smoothstep(2.5, 6.5, dist));
+}
+void main() {
+  vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0;
+  vec4 a = uInv * vec4(ndc, -1.0, 1.0), b = uInv * vec4(ndc, 1.0, 1.0);
+  vec3 ro = uEye, rd = normalize(b.xyz / b.w - a.xyz / a.w);
+  float tp = -ro.z / rd.z;
+  vec3 hp = ro + rd * tp;
+  // Streak noise runs along x; it fades where a pixel spans many grooves.
+  float gy = (hp.y + 0.5) * 1100.0, my = (hp.y + 0.5) * 120.0;
+  float fine = mix(vnoise(vec2(hp.x * 9.0, gy)), 0.5, smoothstep(0.25, 0.9, fwidth(gy)));
+  float broad = mix(vnoise(vec2(hp.x * 3.0 + 7.0, my)), 0.5, smoothstep(0.25, 0.9, fwidth(my)));
+  vec3 col;
+  if (tp > 0.0 && max(abs(hp.x), abs(hp.y)) <= 0.5) col = plateTop(hp, rd, fine, broad);
+  else {
+    float tf = (-0.5 - ro.y) / rd.y;
+    vec3 fp = ro + rd * tf;
+    if (tf > 0.0 && abs(fp.x) <= 0.5 && fp.z <= 0.0 && fp.z >= -PT) col = plateFront(fp, rd, fine);
+    else {
+      vec3 n1, n2;
+      float t1 = cyl(ro, rd, 0.022, FZ, -PT, n1), t2 = cyl(ro, rd, 0.15, FZ, FZ + 0.035, n2);
+      float tfl = (FZ - ro.z) / rd.z;
+      // The stand is steel too, with a warm side and a cool side.
+      if (t1 > 0.0 && (t2 < 0.0 || t1 < t2)) col = fresnel(clamp(dot(n1, -rd), 0.0, 1.0)) * (brushed(rd, n1, vec3(0, 0, 1), 0.35, 0.5) * 0.7 + 0.05 * (uKeyC * max(-n1.x, 0.0) + uFillC * max(n1.x, 0.0)));
+      else if (t2 > 0.0) col = fresnel(clamp(dot(n2, -rd), 0.0, 1.0)) * (brushed(rd, n2, vec3(0, 0, 1), 0.3, 0.5) * 0.6 + 0.04 * (uKeyC * max(-n2.x, 0.0) + uFillC * max(n2.x, 0.0)));
+      else col = floorAt(ro + rd * tfl, tfl);
+    }
+  }
+  vec2 v = gl_FragCoord.xy / uRes - 0.5;
+  col *= 1.0 - 0.45 * dot(v, v);
+  o = vec4(srgb(knee(col)) + (hash(gl_FragCoord.xy + 3.0) - 0.5) / 255.0, 1.0);
+}`;
+// Grains: tiny lit points, gold with variation, lit by the pile's slope.
+const GRAIN_VS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+uniform sampler2D uA, uDen;
+uniform mat4 uVP;
+uniform vec3 uEye, uSun;
+uniform float uSize, uRefW, uJit, uRelief;
+uniform uint uSeed;
+uniform int uN;
+uniform vec3 uS0, uS1, uS2, uS3, uKeyCol, uFillCol, uAmb;
+${FIELD}
+${HASH}
+${TONE}
+out vec3 vCol;
+void main() {
+  int W = textureSize(uA, 0).x;
+  // A stride spreads a partial draw over the whole plate.
+  int id = int((uint(gl_VertexID) * 7919u) % uint(uN));
+  ivec2 ip = ivec2(id % W, id / W);
+  vec4 A = texelFetch(uA, ip, 0);
+  vec3 r = rnd3(uvec3(uvec2(ip), 40503u));
+  vec3 f = field(A.xy);
+  float a = uAmp * abs(f.x);
+  // Shaken grains blur in place.
+  vec3 j = rnd3(uvec3(uvec2(ip), uSeed)) - 0.5;
+  vec3 w = vec3(A.xy - 0.5 + j.xy * a * uJit, A.z + (j.z + 0.5) * a * uJit * 0.5);
+  vec4 c = uVP * vec4(w, 1.0);
+  gl_Position = c;
+  gl_PointSize = max(1.0, uSize * (0.7 + 0.6 * r.x) * uRefW / c.w);
+  vec2 ts = 1.0 / vec2(textureSize(uDen, 0));
+  float dl = texture(uDen, A.xy - vec2(ts.x, 0.0)).r, dr = texture(uDen, A.xy + vec2(ts.x, 0.0)).r;
+  float db = texture(uDen, A.xy - vec2(0.0, ts.y)).r, dt = texture(uDen, A.xy + vec2(0.0, ts.y)).r;
+  vec3 n = normalize(vec3(dl - dr, db - dt, uRelief));
+  vec3 base = r.y < 0.12 ? uS0 : r.y < 0.62 ? uS1 : r.y < 0.9 ? uS2 : uS3;
+  base *= 0.82 + 0.36 * r.z;
+  vec3 col = base * (uAmb + uKeyCol * max(dot(n, uSun), 0.0) + uFillCol * (0.5 + 0.5 * n.y));
+  // Resting grains keep one facet; tumbling grains twinkle.
+  uint spin = A.z > 1e-4 ? uSeed / 5u + 977u : 977u;
+  vec3 fn = normalize(n + 1.1 * (rnd3(uvec3(uvec2(ip), spin)) - 0.5));
+  float g = pow(max(dot(fn, normalize(uSun + normalize(uEye - w))), 0.0), 48.0);
+  col += uKeyCol * g * 1.4;
+  col *= 1.0 + 3.0 * min(A.z, 0.05);
+  vCol = srgb(knee(col));
+}`;
+const GRAIN_FS = `#version 300 es
+precision highp float;
+in vec3 vCol;
+out vec4 o;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float d = dot(q, q);
+  if (d > 1.0) discard;
+  float al = 1.0 - smoothstep(0.4, 1.0, d);
+  o = vec4(vCol * al, al);
+}`;
+// The violin bow, drawn in screen space along its hair.
+const BOW_FS = `#version 300 es
+precision highp float;
+uniform mat4 uInv;
+uniform vec3 uEye;
+uniform vec2 uRes, uH0, uH1, uPerp, uZ;
+uniform vec4 uGeo, uRad;
+uniform vec3 uWood, uHair, uEbony, uSilver, uPearl;
+${TONE}
+out vec4 o;
+vec4 acc = vec4(0.0);
+// Front-to-back compositing, premultiplied.
+void lay(vec3 c, float a) { acc += (1.0 - acc.a) * vec4(c * a, a); }
+float cover(float d) { return clamp(0.5 - d, 0.0, 1.0); }
+float rbox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+void main() {
+  vec2 px = gl_FragCoord.xy, ax = uH1 - uH0;
+  float len = length(ax), t = dot(px - uH0, ax) / (len * len), w = dot(px - uH0, uPerp);
+  float tp = t * len, tc = clamp(t, 0.0, 1.0);
+  float gap = mix(uGeo.x, uGeo.y, tc) - uGeo.z * sin(3.14159265 * tc);
+  float rs = mix(uRad.x, uRad.y, tc), hw = uRad.z;
+  // Frog: ebony block holding the hair, with a pearl eye and a silver ferrule.
+  float fd = rbox(vec2(tp - 0.045 * len, w - uGeo.x * 0.45), vec2(0.05 * len, uGeo.x * 0.55 + hw), 3.0);
+  if (fd < 1.0) {
+    vec2 eye = vec2(tp - 0.04 * len, w - uGeo.x * 0.42);
+    float pe = length(eye) - uGeo.x * 0.2;
+    vec3 c = uEbony * (0.7 + 0.6 * smoothstep(-uGeo.x, uGeo.x, w - uGeo.x * 0.3));
+    c = mix(c, uSilver * (0.7 + 0.3 * sin(tp * 0.8)), step(0.085 * len, tp) * step(w, uGeo.x * 0.35));
+    c = mix(c, uPearl * (0.8 + 0.25 * sin(eye.x * 0.9 + eye.y * 1.3)), cover(pe));
+    lay(c, cover(fd));
+  }
+  // Screw button at the end of the stick.
+  float bd = rbox(vec2(tp + 0.03 * len, w - uGeo.x), vec2(0.022 * len, uRad.x * 1.15), 2.0);
+  if (bd < 1.0) {
+    float ring = step(abs(abs(tp + 0.03 * len) - 0.018 * len), 1.2);
+    lay(mix(uEbony * 1.4, uSilver, ring), cover(bd));
+  }
+  // Tip head: a small ivory face joining hair to stick.
+  float hd = rbox(vec2(tp - 0.993 * len, w - uGeo.y * 0.5), vec2(0.012 * len, uGeo.y * 0.5 + rs), 2.0);
+  if (hd < 1.0) lay(mix(uHair, uSilver, 0.3) * (0.8 + 0.3 * smoothstep(0.0, uGeo.y, w)), cover(hd));
+  // Stick: a tapered round rod with a warm sheen.
+  float sw = w - gap, sd = abs(sw) - rs * (tp > 0.085 * len && tp < 0.13 * len ? 1.18 : 1.0);
+  float send = max(-tp - 0.01 * len, tp - len);
+  if (sd < 1.0 && send < 1.0) {
+    float u = clamp(sw / rs, -1.0, 1.0), cyl = sqrt(1.0 - u * u);
+    vec3 c = uWood * (0.85 + 0.15 * sin(tp * 0.35 + sin(tp * 0.05) * 3.0));
+    if (tp > 0.085 * len && tp < 0.13 * len) c = uSilver * (0.6 + 0.4 * abs(sin(tp * 2.2)));
+    else if (tp > 0.13 * len && tp < 0.16 * len) c = uEbony * 1.6;
+    c *= 0.35 + 0.75 * cyl * (0.8 - 0.4 * u);
+    c += vec3(0.9, 0.8, 0.7) * pow(max(0.0, 1.0 - abs(u + 0.4) * 2.5), 3.0) * 0.5;
+    lay(c, cover(max(sd, send)));
+  }
+  // Hair: a pale flat ribbon with fine strands.
+  float hdist = abs(w) - hw, hend = max(0.09 * len - tp, tp - 0.985 * len);
+  if (hdist < 1.0 && hend < 1.0) {
+    vec3 c = uHair * (0.82 + 0.18 * sin(w * 2.7 + 1.3) * sin(w * 1.1));
+    lay(c * (0.9 + 0.1 * smoothstep(-hw, hw, -w)), 0.94 * cover(max(hdist, hend)));
+  }
+  if (acc.a < 0.003) discard;
+  // Below the plate's surface, the plate hides the bow.
+  if (mix(uZ.x, uZ.y, tc) < 0.0) {
+    vec2 ndc = px / uRes * 2.0 - 1.0;
+    vec4 a = uInv * vec4(ndc, -1.0, 1.0), b = uInv * vec4(ndc, 1.0, 1.0);
+    vec3 ro = uEye, rd = normalize(b.xyz / b.w - a.xyz / a.w);
+    vec3 hp = ro + rd * (-ro.z / rd.z);
+    if (max(abs(hp.x), abs(hp.y)) <= 0.5) discard;
+    vec3 fp = ro + rd * ((-0.5 - ro.y) / rd.y);
+    if (abs(fp.x) <= 0.5 && fp.z <= 0.0 && fp.z >= -${PLATE_T}) discard;
+  }
+  o = vec4(srgb(knee(acc.rgb / acc.a)) * acc.a, acc.a);
+}`;
+
+let gl = null, P = null, vao = null, ready = false;
+let sim = [], cur = 0, den = null, tmp = null, denB = null;
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uniforms(q) {
+  const n = gl.getProgramParameter(q.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(q.p, i).name.replace(/\[0\]$/, '');
+    q.u[name] = gl.getUniformLocation(q.p, name);
+  }
+}
+function setVec3s(q, obj) {
+  for (const k in obj) if (q.u[k]) gl.uniform3fv(q.u[k], obj[k]);
+}
+function texture(fmt, w, h, filter) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function framebuffer(...texs) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  gl.drawBuffers(texs.map((t, i) => gl.COLOR_ATTACHMENT0 + i));
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('float targets unsupported');
+  return fb;
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    sim: compile(TRI, SIM_FS), den: compile(DEN_VS, DEN_FS), blur: compile(TRI, BLUR_FS),
+    scene: compile(TRI, SCENE_FS), grain: compile(GRAIN_VS, GRAIN_FS), bow: compile(TRI, BOW_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    uniforms(q);
+  }
+  P = progs;
+  gl.useProgram(P.sim.p);
+  gl.uniform1i(P.sim.u.uA, 0);
+  gl.uniform1i(P.sim.u.uB, 1);
+  gl.uniform1f(P.sim.u.uG, 3.2);
+  gl.uniform1f(P.sim.u.uTh, 0.14);
+  gl.uniform1f(P.sim.u.uKick, 0.9);
+  gl.uniform1f(P.sim.u.uDrift, 6);
+  gl.uniform1f(P.sim.u.uCreep, 0.6);
+  gl.uniform1f(P.sim.u.uSpread, 0.016);
+  gl.useProgram(P.den.p);
+  gl.uniform1i(P.den.u.uA, 0);
+  gl.uniform3fv(P.den.u.uSun, SUN);
+  gl.uniform1f(P.den.u.uW, (DS * DS) / N);
+  gl.useProgram(P.blur.p);
+  gl.uniform1i(P.blur.u.uSrc, 3);
+  gl.useProgram(P.scene.p);
+  gl.uniform1i(P.scene.u.uDen, 2);
+  gl.uniform3fv(P.scene.u.uSun, SUN);
+  setVec3s(P.scene, PAL);
+  for (const k in LAMPS) ['', 'U', 'V'].forEach((s, i) => gl.uniform3fv(P.scene.u['u' + k + s], LAMPS[k][i]));
+  gl.useProgram(P.grain.p);
+  gl.uniform1i(P.grain.u.uA, 0);
+  gl.uniform1i(P.grain.u.uDen, 2);
+  gl.uniform3fv(P.grain.u.uSun, SUN);
+  gl.uniform1f(P.grain.u.uJit, 0.006);
+  gl.uniform1f(P.grain.u.uRelief, 2.8);
+  setVec3s(P.grain, SAND);
+  gl.useProgram(P.bow.p);
+  setVec3s(P.bow, PAL);
+
+  vao = gl.createVertexArray();
+  sim = [0, 1].map(() => {
+    const a = texture(gl.RGBA32F, TW, TH, gl.NEAREST), b = texture(gl.RGBA32F, TW, TH, gl.NEAREST);
+    return { a, b, fb: framebuffer(a, b) };
+  });
+  den = { tex: texture(gl.R16F, DS, DS, gl.LINEAR) };
+  den.fb = framebuffer(den.tex);
+  tmp = { tex: texture(gl.R16F, DS, DS, gl.LINEAR) };
+  tmp.fb = framebuffer(tmp.tex);
+  denB = { tex: texture(gl.R16F, DS, DS, gl.LINEAR) };
+  denB.fb = framebuffer(denB.tex);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+/* ---------- the plate's state ---------- */
+// s is the place on the ladder; D is the drive, zero to one.
+let s = START, sT = START, D = 0, holdUntil = 0, settleUntil = 0, frameNo = 1;
+let formed = 1, domK = START, bowing = false, bowSpeed = 0, freq = 196, near = 1;
+let tossQ = null, scatterQ = false;
+const F = { m0: [2, 4, 1, 1], m1: [3, 4, -1, 0], amp: 0, k: kOf(START) };
+function tune() {
+  const st = semis(s), k0 = clamp(Math.floor(s), 0, K - 2), k1 = k0 + 1;
+  const r0 = resp(st, k0), r1 = resp(st, k1), sum = r0 + r1 + 1e-6;
+  F.m0 = [...LADDER[k0].slice(0, 3), r0 / sum];
+  F.m1 = [...LADDER[k1].slice(0, 3), r1 / sum];
+  F.k = (r0 * kOf(k0) + r1 * kOf(k1)) / sum;
+  near = Math.min(1, Math.max(r0, r1));
+  F.amp = D * Math.min(1, sum) ** 1.3 * (bowing ? 1 : 0.94);
+  freq = 440 * 2 ** ((st - 69) / 12);
+  const dom = r0 >= r1 ? k0 : k1;
+  if (dom !== domK) { domK = dom; formed *= 0.35; }
+}
+function setField(q) {
+  gl.uniform4fv(q.u.uM0, F.m0);
+  gl.uniform4fv(q.u.uM1, F.m1);
+  gl.uniform1f(q.u.uAmp, F.amp);
+  gl.uniform1f(q.u.uK, F.k);
+}
+function simStep(dt, fallH = -1) {
+  const q = P.sim;
+  gl.useProgram(q.p);
+  setField(q);
+  gl.uniform1ui(q.u.uFrame, frameNo++);
+  gl.uniform1f(q.u.uDt, dt);
+  gl.uniform1f(q.u.uHop, reduce ? 0.012 : 0.022);
+  gl.uniform1f(q.u.uScatter, fallH >= 0 ? 1 : 0);
+  gl.uniform1f(q.u.uFallH, Math.max(0, fallH));
+  gl.uniform4fv(q.u.uToss, tossQ || [0, 0, 0, 1]);
+  tossQ = null;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sim[1 - cur].fb);
+  gl.viewport(0, 0, TW, TH);
+  gl.disable(gl.BLEND);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sim[cur].a);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, sim[cur].b);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  cur = 1 - cur;
+}
+// The first paint shows a finished figure: the plate has already rung.
+function seed() {
+  s = sT = START;
+  D = 1;
+  tune();
+  F.amp = 1;
+  simStep(1 / 60, 0);
+  for (let i = 0; i < 260; i++) simStep(1 / 60);
+  F.amp = 0;
+  for (let i = 0; i < 40; i++) simStep(1 / 60);
+  D = 0;
+  tune();
+}
+
+/* ---------- camera and the bow's place ---------- */
+let W = 0, H = 0, pr = 1, cw = 0, ch = 0, lowDpr = false;
+let VP = null, INV = null, EYE = [0, -2, 2], refW = 1, plateW = 1, drawN = N;
+const BOW = { len: 1.1, tc: 0.42, yc: -0.3 }, BOW_REST = BOW.tc;
+const bowAxis = unit([0.1, 0.42, 1]);
+const bowSide = unit(sub([1, 0, 0], mul3(bowAxis, bowAxis[0])));
+const bowC = [0.506, BOW.yc, 0.004];
+const hairAt = t => add(bowC, mul3(bowAxis, BOW.len * (BOW.tc - t)));
+const stickAt = (t, g) => add(hairAt(t), mul3(bowSide, g));
+function camera() {
+  const A = cw / ch, tilt = lerp(32, 50, sstep(0.75, 1.78, A)) * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
+  EYE = [0, tgt[1] - dist * Math.sin(tilt), tgt[2] + dist * Math.cos(tilt)];
+  const pv = mul4(persp(28 * D2R, A, 0.1, 30), lookAt(EYE, tgt, [0, 0, 1]));
+  // The view fits the plate, its front edge and room for the bow.
+  const tc = BOW.tc;
+  BOW.tc = BOW_REST;
+  const pts = [[-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0], [-0.5, -0.5, -PLATE_T], [0.5, -0.5, -PLATE_T], stickAt(0, 0.05), stickAt(0.2, 0.04)];
+  BOW.tc = tc;
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const q of pts) {
+    const c = xf(pv, q), x = c[0] / c[3], y = c[1] / c[3];
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  const mx = (2 * 16) / W, myTop = (2 * 14) / H, myBot = (2 * 22) / H;
+  const k = Math.min((2 - 2 * mx) / (x1 - x0), (2 - myTop - myBot) / (y1 - y0));
+  const ox = -k * (x0 + x1) / 2, oy = (myBot - myTop) / 2 - k * (y0 + y1) / 2;
+  VP = mul4([k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1, 0, ox, oy, 0, 1], pv);
+  INV = inv4(VP);
+  refW = xf(VP, [0, 0, 0])[3];
+  const l = toDevice([-0.5, 0, 0]), r = toDevice([0.5, 0, 0]);
+  plateW = Math.hypot(r[0] - l[0], r[1] - l[1]);
+  // Small plates draw a share of the grains, so the figure stays crisp.
+  drawN = Math.round(N * clamp((plateW / pr) ** 2 / 820 ** 2, 0.4, 1));
+}
+// World to device pixels, y up.
+function toDevice(p) {
+  const c = xf(VP, p);
+  return [(c[0] / c[3] * 0.5 + 0.5) * cw, (c[1] / c[3] * 0.5 + 0.5) * ch, c[3]];
+}
+// CSS pixels to the plate, in plate units from the front-left corner.
+function toPlate(x, y) {
+  const nx = (x / W) * 2 - 1, ny = 1 - (y / H) * 2;
+  const a = xf(INV, [nx, ny, -1]), b = xf(INV, [nx, ny, 1]);
+  const p0 = [a[0] / a[3], a[1] / a[3], a[2] / a[3]], d = sub([b[0] / b[3], b[1] / b[3], b[2] / b[3]], p0);
+  const t = -p0[2] / d[2];
+  return [p0[0] + d[0] * t + 0.5, p0[1] + d[1] * t + 0.5];
+}
+// Bow geometry in device pixels: hair ends, gaps and radii.
+function bowGeo() {
+  const h0 = toDevice(hairAt(0)), h1 = toDevice(hairAt(1)), s0 = toDevice(stickAt(0, 0.034)), s1 = toDevice(stickAt(1, 0.013));
+  const ax = [h1[0] - h0[0], h1[1] - h0[1]], len = Math.hypot(...ax), dir = [ax[0] / len, ax[1] / len];
+  let pp = [s0[0] - h0[0], s0[1] - h0[1]];
+  const along = pp[0] * dir[0] + pp[1] * dir[1];
+  pp = [pp[0] - dir[0] * along, pp[1] - dir[1] * along];
+  const g0 = Math.hypot(...pp), perp = [pp[0] / g0, pp[1] / g0];
+  const g1 = Math.abs((s1[0] - h1[0]) * perp[0] + (s1[1] - h1[1]) * perp[1]);
+  const k0 = g0 / 0.034, k1 = g1 / 0.013;
+  return { h0, h1, perp, len, g0, g1, camber: 0.008 * (k0 + k1) / 2, r0: 0.0068 * k0, r1: 0.0042 * k1, hw: 0.0032 * (k0 + k1) / 2 };
+}
+let bowCache = null;
+function onBow(x, y) {
+  const [u, v] = toPlate(x, y);
+  if (u > 1.0 && v > -0.15 && v < 1.15) return true;
+  const g = bowCache || (bowCache = bowGeo());
+  // Device pixels have y up; pointer pixels have y down.
+  const px = [x * pr, (H - y) * pr], d = [px[0] - g.h0[0], px[1] - g.h0[1]];
+  const t = (d[0] * (g.h1[0] - g.h0[0]) + d[1] * (g.h1[1] - g.h0[1])) / (g.len * g.len);
+  const w = d[0] * g.perp[0] + d[1] * g.perp[1], pad = 22 * pr;
+  return t > -0.06 && t < 1.02 && w > -pad && w < Math.max(g.g0, g.g1) + pad;
+}
+
+/* ---------- drawing ---------- */
+function render() {
+  const sa = sim[cur].a;
+  // Sand density in plate space: shadows and pile slopes.
+  gl.bindVertexArray(vao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, den.fb);
+  gl.viewport(0, 0, DS, DS);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P.den.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sa);
+  gl.drawArrays(gl.POINTS, 0, N);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.blur.p);
+  gl.activeTexture(gl.TEXTURE3);
+  [[den, tmp, [1 / DS, 0]], [tmp, denB, [0, 1 / DS]]].forEach(([src, dst, dir]) => {
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.uniform2fv(P.blur.u.uDir, dir);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  });
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, denB.tex);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.useProgram(P.scene.p);
+  setField(P.scene);
+  gl.uniformMatrix4fv(P.scene.u.uInv, false, INV);
+  gl.uniform3fv(P.scene.u.uEye, EYE);
+  gl.uniform2f(P.scene.u.uRes, cw, ch);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(P.grain.p);
+  setField(P.grain);
+  gl.uniformMatrix4fv(P.grain.u.uVP, false, VP);
+  gl.uniform3fv(P.grain.u.uEye, EYE);
+  gl.uniform1f(P.grain.u.uSize, plateW * 0.0021);
+  gl.uniform1f(P.grain.u.uRefW, refW);
+  gl.uniform1ui(P.grain.u.uSeed, frameNo);
+  gl.uniform1i(P.grain.u.uN, drawN);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sa);
+  gl.drawArrays(gl.POINTS, 0, drawN);
+
+  const g = (bowCache = bowGeo());
+  const xs = [g.h0[0], g.h1[0]], ys = [g.h0[1], g.h1[1]], pad = Math.max(g.g0, g.g1) + 0.06 * g.len + 8;
+  const sx = Math.max(0, Math.floor(Math.min(...xs) - pad)), sy = Math.max(0, Math.floor(Math.min(...ys) - pad));
+  const ex = Math.min(cw, Math.ceil(Math.max(...xs) + pad)), ey = Math.min(ch, Math.ceil(Math.max(...ys) + pad));
+  if (ex > sx && ey > sy) {
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(sx, sy, ex - sx, ey - sy);
+    gl.useProgram(P.bow.p);
+    gl.uniformMatrix4fv(P.bow.u.uInv, false, INV);
+    gl.uniform3fv(P.bow.u.uEye, EYE);
+    gl.uniform2f(P.bow.u.uRes, cw, ch);
+    gl.uniform2f(P.bow.u.uH0, g.h0[0], g.h0[1]);
+    gl.uniform2f(P.bow.u.uH1, g.h1[0], g.h1[1]);
+    gl.uniform2fv(P.bow.u.uPerp, g.perp);
+    gl.uniform2f(P.bow.u.uZ, hairAt(0)[2], hairAt(1)[2]);
+    gl.uniform4f(P.bow.u.uGeo, g.g0, g.g1, g.camber, 0);
+    gl.uniform4f(P.bow.u.uRad, g.r0, g.r1, g.hw, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.SCISSOR_TEST);
+  }
+  gl.disable(gl.BLEND);
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const nw = Math.round(w * p), nh = Math.round(h * p);
+  W = w;
+  H = h;
+  if (canvas.width !== nw || canvas.height !== nh) {
+    canvas.width = nw;
+    canvas.height = nh;
+  }
+  cw = nw;
+  ch = nh;
+  pr = nw / w;
+  camera();
+  bowCache = null;
+  // A resized canvas is blank until drawn, so draw now.
+  if (ready) render();
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, slow = 0;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 20);
+  last = now;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 20) { lowDpr = true; fit(); }
+  }
+  const busy = advance(dt, now);
+  render();
+  if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else {
+    sing(freq, 0, 0, 1.5, 0, 0);
+    rest();
+  }
+}
+function advance(dt, now) {
+  const tuning = !!(tuner && (tuner.moved || tuner.bow));
+  const driving = tuning || now < holdUntil;
+  if (!tuning) s += (sT - s) * (1 - Math.exp(-dt * 8));
+  if (Math.abs(sT - s) < 1e-3) s = sT;
+  const goal = driving ? 1 : 0;
+  D += (goal - D) * (1 - Math.exp(-dt / (goal > D ? 0.1 : reduce ? 0.35 : 0.7)));
+  if (!driving && D < 0.003) D = 0;
+  tune();
+  if (F.amp > 0.12) settleUntil = Math.max(settleUntil, now + 1500);
+  formed = Math.min(1, formed + dt * F.amp * 0.55);
+  const steps = clamp(Math.round(dt * 60), 1, 3);
+  for (let i = 0; i < steps; i++) {
+    if (scatterQ) { scatterQ = false; simStep(dt / steps, reduce ? 0.12 : 0.5); continue; }
+    simStep(dt / steps);
+  }
+  bowSpeed *= Math.exp(-dt * 6);
+  const lvl = soundOn ? 0.22 * D * (0.16 + 0.84 * near ** 1.5) : 0;
+  const hiss = soundOn ? 0.11 * Math.min(1, F.amp * 1.3) * (0.2 + 0.8 * (1 - formed)) : 0;
+  const rosin = soundOn && bowing ? 0.03 * D * Math.min(1, bowSpeed / 700) : 0;
+  sing(freq, lvl, bowing ? 0.42 : 0.14, bowing ? 6 : 1.5, rosin, hiss);
+  return tuning || D > 0 || s !== sT || now < settleUntil || scatterQ || !!tossQ;
+}
+
+/* ---------- actions ---------- */
+function stepRung(dir) {
+  sT = clamp(dir > 0 ? Math.floor(sT + 0.25) + 1 : Math.ceil(sT - 0.25) - 1, 0, K - 1);
+  holdUntil = performance.now() + (reduce ? 2600 : 4000);
+  wake();
+}
+function scatter() {
+  scatterQ = true;
+  formed = 0;
+  settleUntil = performance.now() + 2200;
+  pourSound();
+  wake();
+}
+function toss(u, v) {
+  tossQ = [u, v, reduce ? 0.6 : 1, 0.15];
+  formed *= 0.7;
+  settleUntil = Math.max(settleUntil, performance.now() + 2000);
+  tossSound(u * 2 - 1);
+  wake();
+}
+
+/* ---------- input ---------- */
+let rect = null, tuner = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+const ptrs = new Map();
+function cursor(bow) {
+  panel.classList.toggle('bow', bow);
+  panel.classList.toggle('bowing', !!(tuner && tuner.bow));
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const p = { x0: x, y0: y, y, t0: e.timeStamp, t: e.timeStamp, bow: onBow(x, y), moved: false };
+  ptrs.set(e.pointerId, p);
+  if (!tuner) {
+    tuner = p;
+    bowing = p.bow;
+  }
+  cursor(p.bow);
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId);
+  if (!p) {
+    if (e.pointerType === 'mouse' && ready && !ptrs.size) {
+      const [x, y] = local(e);
+      cursor(onBow(x, y));
+    }
+    return;
+  }
+  const list = e.getCoalescedEvents?.() || [];
+  for (const c of list.length ? list : [e]) {
+    const [x, y] = local(c), dy = y - p.y;
+    p.y = y;
+    if (!p.moved && Math.hypot(x - p.x0, y - p.y0) > 6) p.moved = true;
+    if (p !== tuner || !p.moved) continue;
+    // Up raises the pitch; a stage height spans five or six rungs.
+    s = sT = clamp(s - dy / (H / 5.5), -0.45, K - 0.55);
+    if (p.bow) {
+      const g = bowCache || (bowCache = bowGeo());
+      BOW.tc = clamp(BOW.tc - (dy * pr) / g.len, 0.14, 0.9);
+      bowCache = null;
+      bowSpeed = lerp(bowSpeed, Math.abs(dy) / Math.max(4, c.timeStamp - p.t) * 1000, 0.3);
+    }
+    p.t = c.timeStamp;
+  }
+  wake();
+});
+function lift(e) {
+  const p = ptrs.get(e.pointerId);
+  if (!p) return;
+  ptrs.delete(e.pointerId);
+  const tap = e.type === 'pointerup' && !p.moved && e.timeStamp - p.t0 < 500;
+  if (tap && p.bow) holdUntil = Math.max(holdUntil, performance.now() + 900);
+  else if (tap) {
+    const [u, v] = toPlate(p.x0, p.y0);
+    if (u > -0.03 && u < 1.03 && v > -0.03 && v < 1.03) toss(clamp(u, 0.01, 0.99), clamp(v, 0.01, 0.99));
+  }
+  if (p === tuner) {
+    if (p.moved || p.bow) holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 600 : 1400));
+    tuner = null;
+    bowing = false;
+  }
+  cursor(false);
+  wake();
+}
+panel.addEventListener('pointerup', lift);
+panel.addEventListener('pointercancel', lift);
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+const scatterB = document.getElementById('scatter');
+scatterB.addEventListener('click', () => { if (ready) scatter(); });
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    if (ready) stepRung(e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : -1);
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    // Buttons and links keep Space and Enter for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!ready || e.repeat) return;
+    if (e.key === ' ') scatter();
+    else toss(rand(0.2, 0.8), rand(0.2, 0.8));
+  }
+});
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+// Hidden or off screen, the plate pauses and goes quiet.
+function pause() {
+  if (raf) { cancelAnimationFrame(raf); raf = 0; }
+  if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+}
+
+/* ---------- start: shaders link before the first paint ---------- */
+function failed() {
+  ready = false;
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  panel.style.cursor = 'default';
+  scatterB.disabled = true;
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; pause(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    seed();
+    ready = true;
+    render();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!W) {
+    W = 1160; H = 652; cw = canvas.width = 1160; ch = canvas.height = 652; pr = 1;
+    camera();
+  }
+  try { await initGL(); } catch (err) { console.error(err); failed(); return; }
+  await idle();
+  seed();
+  ready = true;
+  render();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); else pause(); }).observe(panel);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else wake(); });
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>

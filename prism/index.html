@@ -1,0 +1,1322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Prism</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the optical table at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --table: oklch(0.15 0.03 264);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The table is 16:9, 4:5 on phones. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--table);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark table the line keeps the muted tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.64 0.02 275);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+/* At the starting layout, Reset rests dimmed. */
+.chip[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.chip[aria-disabled="true"]:hover { color: var(--muted); border-color: var(--line); }
+.chip[aria-disabled="true"]:active { transform: none; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Prism</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="An optical table with a white light, two prisms, a lens and a mirror. Drag a piece to move it; drag its ring or Shift-drag to turn it. Tab picks a piece, arrow keys move it, Q and E turn it.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Prism needs canvas drawing, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Drag</dt><dd>move</dd></div>
+        <div class="fine"><dt><kbd>Shift</kbd> drag</dt><dd>rotate</dd></div>
+        <div class="touch"><dt>Two fingers</dt><dd>rotate</dd></div>
+        <div class="fine"><dt><kbd>Q</kbd> and <kbd>E</kbd></dt><dd>rotate</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>move</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const resetB = document.getElementById('reset');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+// Seeded random keeps the dust the same across resizes.
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const hash2 = (x, y) => {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+function vnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(ix, iy), hash2(ix + 1, iy), sx), lerp(hash2(ix, iy + 1), hash2(ix + 1, iy + 1), sx), sy);
+}
+
+/* ---------- colour: OKLCH in, sRGB strings out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+const enc = v => (v <= 0.0031308 ? 12.92 * v : 1.055 * clamp(v) ** (1 / 2.4) - 0.055);
+const rgb = (L, C, h) => linear(L, C, h).map(v => Math.round(enc(v) * 255));
+const css = (L, C, h, a = 1) => `rgba(${rgb(L, C, h).join(',')},${a})`;
+
+/* ---------- light: 24 wavelengths, Cauchy glass ---------- */
+const NK = 24, L0 = 0.405, L1 = 0.69, CA = 1.5, CB = 0.028;
+const LAM = Float64Array.from({ length: NK }, (_, k) => L0 + ((L1 - L0) * k) / (NK - 1));
+const NI = LAM.map(l => CA + CB / (l * l));
+const NW = CA + CB / 0.55 ** 2;
+// COL holds each wavelength's sRGB colour; the last entry is white.
+const COL = [], CORE = [];
+{
+  const g = (x, m, s1, s2) => { const t = (x - m) / (x < m ? s1 : s2); return Math.exp(-0.5 * t * t); };
+  const raw = [], sum = [0, 0, 0];
+  for (const l of LAM) {
+    const n = l * 1000;
+    const X = 1.056 * g(n, 599.8, 37.9, 31) + 0.362 * g(n, 442, 16, 26.7) - 0.065 * g(n, 501.1, 20.4, 26.2);
+    const Y = 0.821 * g(n, 568.8, 46.9, 40.5) + 0.286 * g(n, 530.9, 16.3, 31.1);
+    const Z = 1.217 * g(n, 437, 11.8, 36) + 0.681 * g(n, 459, 26, 13.8);
+    const c = [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.204 * Y + 1.057 * Z].map(v => Math.max(0, v));
+    raw.push(c);
+    c.forEach((v, i) => (sum[i] += v));
+  }
+  // Equal channel sums make the spectrum recombine to white.
+  const m = Math.max(...sum);
+  let top = 0;
+  for (const c of raw) for (let i = 0; i < 3; i++) top = Math.max(top, (c[i] *= m / sum[i]));
+  for (const c of raw) {
+    const e = c.map(v => enc((v / top) ** 0.8));
+    const hi = Math.max(...e), lift = 0.55 + 0.45 * hi;
+    COL.push(e.map(v => Math.round((v / hi) * lift * 255)));
+  }
+  COL.push([255, 255, 255]);
+  for (const c of COL) CORE.push(c.map(v => Math.round(lerp(v, 255, 0.4))));
+}
+const WHITE = NK;
+
+/* ---------- the pieces ---------- */
+// Sizes are fractions of S, the short side of the table.
+const pieces = [
+  { kind: 'source', w: 0.15, h: 0.07 },
+  { kind: 'prism', side: 0.27 },
+  { kind: 'lens', a: 0.13, t: 0.085 },
+  { kind: 'mirror', len: 0.26, th: 0.02 },
+  { kind: 'prism', side: 0.17 },
+].map(p => ({ ...p, u: 0.5, v: 0.5, rot: 0, x: 0, y: 0, r: 0, g: {}, snap: null }));
+const DRAW = [1, 2, 3, 4, 0];
+const PICK = [0, 4, 3, 2, 1];
+// Each row holds u, v and the angle in degrees.
+const LAYOUT = {
+  wide: [[0.082, 0.587, -21], [0.3, 0.5, 0], [0.473, 0.577, 29.6], [0.764, 0.816, -45.7], [0.661, 0.455, 50]],
+  tall: [[0.219, 0.773, -33], [0.525, 0.592, 109.3], [0.539, 0.367, -83], [0.588, 0.08, 170.5], [0.883, 0.56, 83.5]],
+};
+let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, tall = false, pristine = true, ready = false, lowDpr = false;
+
+function corners(p, hw, hh) {
+  const c = Math.cos(p.rot), s = Math.sin(p.rot), v = new Float64Array(8);
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b], i) => {
+    v[2 * i] = p.x + c * a * hw - s * b * hh;
+    v[2 * i + 1] = p.y + s * a * hw + c * b * hh;
+  });
+  return v;
+}
+// Each edge gets a unit normal that points out of the shape.
+function normals(v) {
+  const n = v.length / 2, out = new Float64Array(v.length);
+  let cx = 0, cy = 0;
+  for (let i = 0; i < n; i++) { cx += v[2 * i] / n; cy += v[2 * i + 1] / n; }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, ex = v[2 * j] - v[2 * i], ey = v[2 * j + 1] - v[2 * i + 1], l = Math.hypot(ex, ey);
+    let nx = ey / l, ny = -ex / l;
+    if ((v[2 * i] - cx) * nx + (v[2 * i + 1] - cy) * ny < 0) { nx = -nx; ny = -ny; }
+    out[2 * i] = nx;
+    out[2 * i + 1] = ny;
+  }
+  return out;
+}
+function build(p) {
+  p.x = p.u * W;
+  p.y = p.v * H;
+  const g = p.g, c = Math.cos(p.rot), s = Math.sin(p.rot);
+  if (p.kind === 'source') {
+    g.hw = (p.w * S) / 2;
+    g.hh = (p.h * S) / 2;
+    g.v = corners(p, g.hw, g.hh);
+    g.n = normals(g.v);
+    g.ex = p.x + c * (g.hw + 0.5);
+    g.ey = p.y + s * (g.hw + 0.5);
+    p.r = Math.hypot(g.hw, g.hh);
+  } else if (p.kind === 'prism') {
+    const R = (p.side * S) / Math.sqrt(3);
+    g.v = new Float64Array(6);
+    for (let i = 0; i < 3; i++) {
+      const a = p.rot - Math.PI / 2 + (i * TAU) / 3;
+      g.v[2 * i] = p.x + R * Math.cos(a);
+      g.v[2 * i + 1] = p.y + R * Math.sin(a);
+    }
+    g.n = normals(g.v);
+    p.r = R;
+  } else if (p.kind === 'lens') {
+    // The lens is the overlap of two discs of radius R.
+    const a = p.a * S, T = p.t * S, R = (a * a + (T * T) / 4) / T, off = R - T / 2;
+    g.R = R;
+    g.al = Math.asin(a / R);
+    g.ax = p.x + c * off;
+    g.ay = p.y + s * off;
+    g.bx = p.x - c * off;
+    g.by = p.y - s * off;
+    p.r = a;
+  } else {
+    g.L = (p.len * S) / 2;
+    g.th = Math.max(3, p.th * S);
+    g.v = corners(p, g.L, g.th / 2);
+    g.n = normals(g.v);
+    p.r = Math.hypot(g.L, g.th / 2);
+  }
+}
+
+/* ---------- ray tracing ---------- */
+const EPS = 1e-4, IMIN = 0.012, MAXD = 48, MAXS = 6000, SK = 11, SG = 10;
+const STK = new Float64Array(SK * 2048), SEG = new Float64Array(MAXS * SG), GLI = new Float32Array(3000 * 5), EDG = new Float32Array(1500 * 5);
+const fin = new Float64Array(NK);
+let sp = 0, nSeg = 0, nGl = 0, nEd = 0, nFam = 0, spread = 0, hT = 0, hNX = 0, hNY = 0, hI = -1, hS = 0, eSide = 0;
+// A ray's signature hashes every surface event along its path.
+const mix = (s, c) => (Math.imul(s ^ Math.imul(c + 1, 0x9e3779b1), 0x85ebca6b) ^ (s >>> 15)) >>> 0;
+function push(x, y, dx, dy, k, I, d, ins, prim, fam, sig) {
+  if (sp >= 2048) return;
+  const o = sp++ * SK;
+  STK[o] = x; STK[o + 1] = y; STK[o + 2] = dx; STK[o + 3] = dy; STK[o + 4] = k; STK[o + 5] = I;
+  STK[o + 6] = d; STK[o + 7] = ins; STK[o + 8] = prim; STK[o + 9] = fam; STK[o + 10] = sig;
+}
+function seg(x0, y0, x1, y1, k, I, ins, fam, sig, end) {
+  if (nSeg >= MAXS) return;
+  const o = nSeg++ * SG;
+  SEG[o] = x0; SEG[o + 1] = y0; SEG[o + 2] = x1; SEG[o + 3] = y1; SEG[o + 4] = k;
+  SEG[o + 5] = I; SEG[o + 6] = ins; SEG[o + 7] = fam; SEG[o + 8] = sig; SEG[o + 9] = end;
+}
+function glint(x, y, k, I, i) {
+  if (nGl >= 3000) return;
+  const o = nGl++ * 5;
+  GLI[o] = x; GLI[o + 1] = y; GLI[o + 2] = k; GLI[o + 3] = I; GLI[o + 4] = i;
+}
+function polyHit(v, n, i, ox, oy, dx, dy) {
+  const m = v.length / 2;
+  for (let e = 0; e < m; e++) {
+    const f = (e + 1) % m, ax = v[2 * e], ay = v[2 * e + 1], ex = v[2 * f] - ax, ey = v[2 * f + 1] - ay;
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const wx = ax - ox, wy = ay - oy, t = (wx * ey - wy * ex) / den, s = (wx * dy - wy * dx) / den;
+    if (t > EPS && t < hT && s >= 0 && s <= 1) { hT = t; hNX = n[2 * e]; hNY = n[2 * e + 1]; hI = i; hS = e; }
+  }
+}
+// A circle hit counts only inside the other disc.
+function arcHit(t, cx, cy, R, qx, qy, i, f, ox, oy, dx, dy) {
+  if (t <= EPS || t >= hT) return;
+  const x = ox + t * dx, y = oy + t * dy;
+  if ((x - qx) ** 2 + (y - qy) ** 2 > R * R * (1 + 1e-9)) return;
+  hT = t; hNX = (x - cx) / R; hNY = (y - cy) / R; hI = i; hS = f;
+}
+function circHit(cx, cy, R, qx, qy, i, f, ox, oy, dx, dy) {
+  const fx = ox - cx, fy = oy - cy, b = fx * dx + fy * dy, disc = b * b - (fx * fx + fy * fy - R * R);
+  if (disc <= 0) return;
+  const q = Math.sqrt(disc);
+  arcHit(-b - q, cx, cy, R, qx, qy, i, f, ox, oy, dx, dy);
+  arcHit(-b + q, cx, cy, R, qx, qy, i, f, ox, oy, dx, dy);
+}
+function nearest(ox, oy, dx, dy) {
+  hT = Infinity;
+  hI = -1;
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i], g = p.g, fx = ox - p.x, fy = oy - p.y, b = fx * dx + fy * dy;
+    const c = fx * fx + fy * fy - (p.r + 1) ** 2;
+    // A bounding circle skips pieces the ray cannot reach.
+    if (c > 0 && (b > 0 || b * b < c)) continue;
+    if (p.kind === 'lens') {
+      circHit(g.ax, g.ay, g.R, g.bx, g.by, i, 0, ox, oy, dx, dy);
+      circHit(g.bx, g.by, g.R, g.ax, g.ay, i, 1, ox, oy, dx, dy);
+    } else polyHit(g.v, g.n, i, ox, oy, dx, dy);
+  }
+}
+function toEdge(ox, oy, dx, dy) {
+  let t = Infinity;
+  if (dx > 1e-9) { const u = (W - ox) / dx; if (u < t) { t = u; eSide = 1; } }
+  else if (dx < -1e-9) { const u = -ox / dx; if (u < t) { t = u; eSide = 3; } }
+  if (dy > 1e-9) { const u = (H - oy) / dy; if (u < t) { t = u; eSide = 2; } }
+  else if (dy < -1e-9) { const u = -oy / dy; if (u < t) { t = u; eSide = 0; } }
+  return Math.max(0, t);
+}
+function fresnel(n1, n2, ci) {
+  const st2 = (n1 / n2) ** 2 * (1 - ci * ci);
+  if (st2 >= 1) return 1;
+  const ct = Math.sqrt(1 - st2);
+  const rs = (n1 * ci - n2 * ct) / (n1 * ci + n2 * ct), rp = (n2 * ci - n1 * ct) / (n2 * ci + n1 * ct);
+  return 0.5 * (rs * rs + rp * rp);
+}
+// Snell's law with Fresnel loss; past the critical angle, light reflects fully.
+function bend(hx, hy, dx, dy, nx, ny, ci, enter, k, I, d, prim, part, fam, sig, code) {
+  const n = NI[k], eta = enter ? 1 / n : n, st2 = eta * eta * (1 - ci * ci);
+  const rx = dx + 2 * ci * nx, ry = dy + 2 * ci * ny;
+  if (st2 >= 1) { push(hx, hy, rx, ry, k, I, d + 1, 1, prim, fam, mix(sig, code + 2)); return; }
+  const ct = Math.sqrt(1 - st2), m = eta * ci - ct;
+  let tx = eta * dx + m * nx, ty = eta * dy + m * ny;
+  const l = Math.hypot(tx, ty);
+  tx /= l;
+  ty /= l;
+  const n1 = enter ? 1 : n, n2 = enter ? n : 1;
+  const rs = (n1 * ci - n2 * ct) / (n1 * ci + n2 * ct), rp = (n2 * ci - n1 * ct) / (n2 * ci + n1 * ct);
+  const R = 0.5 * (rs * rs + rp * rp);
+  push(hx, hy, tx, ty, k, I * (1 - R), d + 1, enter ? 1 : 0, prim, fam, mix(sig, code));
+  if (part && I * R > IMIN) push(hx, hy, rx, ry, k, I * R, d + 1, enter ? 0 : 1, 0, fam, mix(sig, code + 1));
+}
+function trace() {
+  nSeg = nGl = nEd = sp = nFam = 0;
+  fin.fill(NaN);
+  const s = pieces[0];
+  push(s.g.ex, s.g.ey, Math.cos(s.rot), Math.sin(s.rot), -1, 1, 0, 0, 1, -1, 0);
+  while (sp > 0) {
+    const o = --sp * SK;
+    const ox = STK[o], oy = STK[o + 1], dx = STK[o + 2], dy = STK[o + 3], k = STK[o + 4], I = STK[o + 5];
+    const d = STK[o + 6], ins = STK[o + 7], prim = STK[o + 8], fam = STK[o + 9], sig = STK[o + 10];
+    nearest(ox, oy, dx, dy);
+    if (hI < 0) {
+      const t = toEdge(ox, oy, dx, dy), x = ox + t * dx, y = oy + t * dy;
+      seg(ox, oy, x, y, k, I, ins, fam, sig, 1000 + eSide);
+      if (nEd < 1500) {
+        const e = nEd++ * 5;
+        EDG[e] = x; EDG[e + 1] = y; EDG[e + 2] = eSide; EDG[e + 3] = k; EDG[e + 4] = I;
+      }
+      if (prim && k >= 0) fin[k] = Math.atan2(dy, dx);
+      continue;
+    }
+    const hx = ox + hT * dx, hy = oy + hT * dy, p = pieces[hI], code = (hI * 8 + hS) * 4;
+    seg(ox, oy, hx, hy, k, I, ins, fam, sig, hI * 8 + hS);
+    if (nSeg >= MAXS || d >= MAXD) continue;
+    if (p.kind === 'source') { glint(hx, hy, k, I * 0.5, hI); continue; }
+    if (p.kind === 'mirror') {
+      const dn = dx * hNX + dy * hNY;
+      glint(hx, hy, k, I, hI);
+      push(hx, hy, dx - 2 * dn * hNX, dy - 2 * dn * hNY, k, I * 0.94, d + 1, ins, prim, fam, mix(sig, code + 3));
+      continue;
+    }
+    let nx = hNX, ny = hNY, ci = -(dx * nx + dy * ny);
+    const enter = ci > 0;
+    if (!enter) { nx = -nx; ny = -ny; ci = -ci; }
+    glint(hx, hy, k, I, hI);
+    if (k < 0) {
+      // White light splits into the spectrum at its first glass surface.
+      const R = fresnel(enter ? 1 : NW, enter ? NW : 1, ci), f = nFam++;
+      if (I * R > IMIN) push(hx, hy, dx + 2 * ci * nx, dy + 2 * ci * ny, -1, I * R, d + 1, ins, 0, -1, 0);
+      for (let j = 0; j < NK; j++) bend(hx, hy, dx, dy, nx, ny, ci, enter, j, I, d, prim, false, f, 0, code);
+      continue;
+    }
+    bend(hx, hy, dx, dy, nx, ny, ci, enter, k, I, d, prim, true, fam, sig, code);
+  }
+  const a = fin[0], b = fin[NK - 1];
+  spread = Number.isNaN(a) || Number.isNaN(b) ? 0 : Math.abs(wrapA(a - b));
+}
+
+/* ---------- canvases ---------- */
+const ctx = canvas.getContext('2d', { alpha: false });
+const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+const [bgC, bgX] = mk(), [glowC, gX] = mk(), [glow2C, g2X] = mk(), [hzC, hzX] = mk(), [dustC, dX] = mk();
+// A soft round sprite per colour serves glints and edge light.
+const SPR = COL.map(c => {
+  const [s, x] = mk();
+  s.width = s.height = 64;
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  for (let i = 0; i <= 8; i++) g.addColorStop(i / 8, `rgba(${c.join(',')},${Math.exp(-((i / 8) ** 2) * 5.5) * (1 - i / 8)})`);
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  return s;
+});
+// Stroke styles per colour, alpha step and medium.
+const NB = 12, STY = { glow: [], mid: [], core: [] }, SHEET = [], SHEETG = [];
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+for (let ci = 0; ci <= NK; ci++) {
+  // One ray of colour carries a slice of white, so it draws fainter.
+  const w = ci === WHITE ? [0.5, 0.3, 1] : [0.12, 0.08, 0.4];
+  for (const k of ['glow', 'mid', 'core']) STY[k][ci] = [];
+  for (let b = 0; b <= NB; b++) for (let ins = 0; ins < 2; ins++) {
+    const a = b / NB, j = b * 2 + ins, g = ins ? 1.5 : 1;
+    STY.glow[ci][j] = `rgba(${COL[ci].join(',')},${clamp(a * w[0] * g)})`;
+    STY.mid[ci][j] = `rgba(${COL[ci].join(',')},${clamp(a * w[1] * g)})`;
+    // Faint rays lose their hard core and read as haze.
+    STY.core[ci][j] = `rgba(${CORE[ci].join(',')},${clamp(a * w[2] * sstep(0.1, 0.5, a))})`;
+  }
+}
+for (let k = 0; k < NK - 1; k++) {
+  const c = COL[k].map((v, i) => Math.round((v + COL[k + 1][i]) / 2)).join(',');
+  for (let b = 0; b <= NB; b++) {
+    SHEET[k * (NB + 1) + b] = `rgba(${c},${(b / NB) * 0.42})`;
+    SHEETG[k * (NB + 1) + b] = `rgba(${c},${(b / NB) * 0.35})`;
+  }
+}
+const TINT = [css(0.66, 0.08, 212, 0.16), css(0.5, 0.07, 232, 0.09), css(0.4, 0.08, 262, 0.13)];
+const RIMIN = css(0.72, 0.09, 215, 0.035);
+const FOC = a => `rgba(${rgb(0.84, 0.13, 205).join(',')},${a})`;
+const EDGE = rgb(0.95, 0.045, 205);
+const edge = a => `rgba(${EDGE.join(',')},${a})`;
+const LDX = -0.6, LDY = -0.8;
+
+function buildTable() {
+  const c = bgX, w = cw, h = ch;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  const g = c.createRadialGradient(w * 0.46, h * 0.4, 0, w * 0.5, h * 0.5, Math.hypot(w, h) * 0.6);
+  g.addColorStop(0, css(0.215, 0.042, 262));
+  g.addColorStop(0.5, css(0.17, 0.038, 264));
+  g.addColorStop(1, css(0.105, 0.03, 268));
+  c.fillStyle = g;
+  c.fillRect(0, 0, w, h);
+  // A faint grid is etched into the top, centred on the table.
+  const step = S / 14, px = 1 / pr, ox = (W / 2) % step, oy = (H / 2) % step;
+  const snap = v => (Math.round(v * pr) + 0.5) / pr;
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  c.lineWidth = px;
+  for (let pass = 0; pass < 2; pass++) {
+    c.strokeStyle = pass ? css(0.5, 0.05, 245, 0.07) : css(0.05, 0.02, 265, 0.5);
+    c.beginPath();
+    for (let x = ox; x < W; x += step) { const X = snap(x) + pass * px; c.moveTo(X, 0); c.lineTo(X, H); }
+    for (let y = oy; y < H; y += step) { const Y = snap(y) + pass * px; c.moveTo(0, Y); c.lineTo(W, Y); }
+    c.stroke();
+  }
+  // Threaded holes sit on every second crossing.
+  c.fillStyle = css(0.06, 0.02, 265, 0.7);
+  c.beginPath();
+  for (let x = ox; x < W; x += step * 2) for (let y = oy; y < H; y += step * 2) { c.moveTo(x + 2.2, y); c.arc(x, y, 2.2, 0, TAU); }
+  c.fill();
+  c.strokeStyle = css(0.6, 0.05, 240, 0.12);
+  c.beginPath();
+  for (let x = ox; x < W; x += step * 2) for (let y = oy; y < H; y += step * 2) { c.moveTo(x + 2.4, y + 0.6); c.arc(x, y + 0.6, 2.4, 0.15 * Math.PI, 0.85 * Math.PI); }
+  c.stroke();
+  // A soft satin sheen crosses the table.
+  const sh = c.createLinearGradient(0, 0, W, H);
+  sh.addColorStop(0, 'rgba(120,150,255,0)');
+  sh.addColorStop(0.42, 'rgba(120,150,255,0.035)');
+  sh.addColorStop(0.6, 'rgba(120,150,255,0)');
+  c.fillStyle = sh;
+  c.fillRect(0, 0, W, H);
+  // The rim catches a thin line of light.
+  c.strokeStyle = css(0.7, 0.05, 235, 0.08);
+  c.strokeRect(px / 2, px / 2, W - px, H - px);
+  // Grain hides gradient banding.
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  const img = c.getImageData(0, 0, w, h), d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * 3.2;
+    d[i] += n; d[i + 1] += n; d[i + 2] += n;
+  }
+  c.putImageData(img, 0, 0);
+}
+// Dust motes and a thin haze show where light passes.
+function buildDust() {
+  const w = dustC.width, h = dustC.height, c = dX;
+  const [t, tx] = mk(), tw = 48, th = Math.max(8, Math.round((48 * h) / w));
+  t.width = tw;
+  t.height = th;
+  const img = tx.createImageData(tw, th);
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+    const n = 0.6 * vnoise(x / 7, y / 7) + 0.4 * vnoise(x / 3 + 9, y / 3 + 4), v = Math.round(255 * (0.1 + 0.32 * n * n));
+    const o = (y * tw + x) * 4;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = v;
+    img.data[o + 3] = 255;
+  }
+  tx.putImageData(img, 0, 0);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.imageSmoothingEnabled = true;
+  c.drawImage(t, 0, 0, w, h);
+  const R = rng(20261102), n = Math.round((w * h) / 70), sz = Math.max(1, w / W);
+  c.globalCompositeOperation = 'lighter';
+  for (let b = 0; b < 6; b++) {
+    const v = Math.round(255 * (0.18 + 0.16 * b));
+    c.fillStyle = `rgb(${v},${v},${v})`;
+    for (let i = 0; i < n / (1 + b * 1.6); i++) {
+      const s = (R() < 0.2 ? 1.6 : 1) * sz;
+      c.fillRect(R() * w, R() * h, s, s);
+    }
+  }
+}
+
+/* ---------- drawing ---------- */
+const buckets = new Map(), sheets = new Map(), groups = new Map();
+function bucketize() {
+  buckets.clear();
+  for (let i = 0; i < nSeg; i++) {
+    const o = i * SG, b = Math.round(SEG[o + 5] ** 0.8 * NB);
+    if (!b) continue;
+    const key = ((SEG[o + 4] + 1) * (NB + 1) + b) * 2 + SEG[o + 6];
+    let p = buckets.get(key);
+    if (!p) buckets.set(key, (p = new Path2D()));
+    p.moveTo(SEG[o], SEG[o + 1]);
+    p.lineTo(SEG[o + 2], SEG[o + 3]);
+  }
+  // Neighbouring wavelengths on the same path bound a sheet of colour.
+  sheets.clear();
+  groups.clear();
+  const ws = clamp(S / 600, 0.75, 1.25);
+  for (let i = 0; i < nSeg; i++) {
+    const o = i * SG, k = SEG[o + 4];
+    if (k < 0) continue;
+    const key = SEG[o + 7] * 4294967296 + SEG[o + 8];
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = new Int32Array(NK).fill(-1)));
+    g[k] = i;
+  }
+  for (const g of groups.values()) for (let k = 0; k < NK - 1; k++) {
+    const a = g[k] * SG, b = g[k + 1] * SG;
+    if (a < 0 || b < 0 || SEG[a + 9] !== SEG[b + 9]) continue;
+    // Brightness follows energy density, so widening fans fade.
+    const w = (Math.hypot(SEG[a] - SEG[b], SEG[a + 1] - SEG[b + 1]) + Math.hypot(SEG[a + 2] - SEG[b + 2], SEG[a + 3] - SEG[b + 3])) / 2;
+    const I = (SEG[a + 5] + SEG[b + 5]) / 2, bin = Math.round((1 - Math.exp((-6 * ws * I) / Math.max(1, w))) * Math.min(1, I / 0.3) ** 0.6 * NB);
+    if (!bin) continue;
+    const key = k * (NB + 1) + bin;
+    let p = sheets.get(key);
+    if (!p) sheets.set(key, (p = new Path2D()));
+    p.moveTo(SEG[a], SEG[a + 1]);
+    p.lineTo(SEG[a + 2], SEG[a + 3]);
+    p.lineTo(SEG[b + 2], SEG[b + 3]);
+    p.lineTo(SEG[b], SEG[b + 1]);
+    p.closePath();
+  }
+}
+function fillSheets(c, set) {
+  for (const [key, path] of sheets) {
+    c.fillStyle = set[key];
+    c.fill(path);
+  }
+}
+function strokeAll(c, set) {
+  for (const [key, path] of buckets) {
+    const j = key % ((NB + 1) * 2), k = (key - j) / ((NB + 1) * 2) - 1;
+    c.strokeStyle = set[k < 0 ? WHITE : k][j];
+    c.stroke(path);
+  }
+}
+function glassPath(c, p) {
+  const g = p.g;
+  c.beginPath();
+  if (p.kind === 'lens') {
+    c.arc(g.ax, g.ay, g.R, p.rot + Math.PI - g.al, p.rot + Math.PI + g.al);
+    c.arc(g.bx, g.by, g.R, p.rot - g.al, p.rot + g.al);
+  } else {
+    c.moveTo(g.v[0], g.v[1]);
+    for (let i = 2; i < g.v.length; i += 2) c.lineTo(g.v[i], g.v[i + 1]);
+  }
+  c.closePath();
+}
+function body(p, i) {
+  const c = ctx, g = p.g;
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
+  if (p.kind === 'mirror') {
+    const nx = -Math.sin(p.rot), ny = Math.cos(p.rot), t = g.th / 2;
+    const gr = c.createLinearGradient(p.x - nx * t, p.y - ny * t, p.x + nx * t, p.y + ny * t);
+    gr.addColorStop(0, css(0.4, 0.02, 255));
+    gr.addColorStop(0.28, css(0.8, 0.025, 240));
+    gr.addColorStop(0.5, css(0.97, 0.012, 225));
+    gr.addColorStop(0.72, css(0.7, 0.025, 245));
+    gr.addColorStop(1, css(0.3, 0.025, 258));
+    glassPath(c, p);
+    c.fillStyle = gr;
+    c.fill();
+    return;
+  }
+  glassPath(c, p);
+  const r = p.r, gr = c.createLinearGradient(p.x - r * 0.6, p.y - r * 0.8, p.x + r * 0.6, p.y + r * 0.8);
+  TINT.forEach((t, j) => gr.addColorStop(j / 2, t));
+  c.fillStyle = gr;
+  c.fill();
+  // An inner rim and the passing light brighten the glass.
+  c.save();
+  c.clip();
+  c.globalCompositeOperation = 'lighter';
+  c.strokeStyle = RIMIN;
+  for (const w of [0.09, 0.055, 0.025]) {
+    c.lineWidth = w * S;
+    c.stroke();
+  }
+  const big = 0.17 * S;
+  for (let n = 0; n < nGl; n++) {
+    const o = n * 5;
+    if (GLI[o + 4] !== i) continue;
+    const a = GLI[o + 3] ** 0.8, k = GLI[o + 2];
+    if (a < 0.2) continue;
+    c.globalAlpha = a * (k < 0 ? 0.16 : 0.022);
+    c.drawImage(SPR[k < 0 ? WHITE : k], GLI[o] - big, GLI[o + 1] - big, big * 2, big * 2);
+  }
+  c.restore();
+}
+function rims(p) {
+  const c = ctx, g = p.g;
+  c.globalCompositeOperation = 'lighter';
+  c.globalAlpha = 1;
+  c.lineCap = 'round';
+  if (p.kind === 'mirror') {
+    // Two bright faces and a travelling glint make the chrome read.
+    const ux = Math.cos(p.rot), uy = Math.sin(p.rot), gr = c.createLinearGradient(p.x - ux * g.L, p.y - uy * g.L, p.x + ux * g.L, p.y + uy * g.L);
+    const k = clamp(0.5 - 0.35 * (ux * LDX + uy * LDY));
+    gr.addColorStop(0, 'rgba(255,255,255,0.05)');
+    gr.addColorStop(clamp(k - 0.18), 'rgba(255,255,255,0.08)');
+    gr.addColorStop(k, 'rgba(255,255,255,0.5)');
+    gr.addColorStop(clamp(k + 0.18), 'rgba(255,255,255,0.08)');
+    gr.addColorStop(1, 'rgba(255,255,255,0.05)');
+    c.lineWidth = 1;
+    c.strokeStyle = gr;
+    glassPath(c, p);
+    c.stroke();
+    return;
+  }
+  if (p.kind === 'prism') {
+    const v = g.v, n = g.n;
+    c.lineWidth = 1.15;
+    for (let e = 0; e < 3; e++) {
+      const f = (e + 1) % 3, lam = Math.max(0, n[2 * e] * LDX + n[2 * e + 1] * LDY);
+      c.strokeStyle = edge(0.2 + 0.6 * lam);
+      c.beginPath();
+      c.moveTo(v[2 * e], v[2 * e + 1]);
+      c.lineTo(v[2 * f], v[2 * f + 1]);
+      c.stroke();
+    }
+    // An inset outline gives the glass its thickness.
+    const ins = 1 - (0.028 * S) / (p.r / 2);
+    c.strokeStyle = edge(0.06);
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let e = 0; e < 3; e++) c.lineTo(p.x + (v[2 * e] - p.x) * ins, p.y + (v[2 * e + 1] - p.y) * ins);
+    c.closePath();
+    c.stroke();
+    const r = 0.016 * S;
+    for (let e = 0; e < 3; e++) {
+      const vx = v[2 * e] - p.x, vy = v[2 * e + 1] - p.y, lam = Math.max(0, -(vx * LDX + vy * LDY) / p.r);
+      c.globalAlpha = 0.25 + 0.5 * (1 - lam);
+      c.drawImage(SPR[WHITE], v[2 * e] - r, v[2 * e + 1] - r, r * 2, r * 2);
+    }
+    c.globalAlpha = 1;
+    return;
+  }
+  const gr = c.createLinearGradient(p.x + LDX * p.r, p.y + LDY * p.r, p.x - LDX * p.r, p.y - LDY * p.r);
+  gr.addColorStop(0, edge(0.85));
+  gr.addColorStop(0.45, edge(0.28));
+  gr.addColorStop(1, edge(0.16));
+  c.lineWidth = 1.15;
+  c.strokeStyle = gr;
+  glassPath(c, p);
+  c.stroke();
+  // A crescent of light rides inside the lit face.
+  c.save();
+  c.translate(p.x, p.y);
+  c.scale(0.8, 0.86);
+  c.translate(-p.x, -p.y);
+  const gc = c.createLinearGradient(p.x + LDX * p.r, p.y + LDY * p.r, p.x, p.y);
+  gc.addColorStop(0, edge(0.32));
+  gc.addColorStop(1, edge(0));
+  c.strokeStyle = gc;
+  c.lineWidth = 1.2;
+  glassPath(c, p);
+  c.stroke();
+  c.restore();
+}
+function drawSource(p) {
+  const c = ctx, g = p.g, hw = g.hw, hh = g.hh, co = Math.cos(p.rot), si = Math.sin(p.rot);
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
+  c.setTransform(pr * co, pr * si, -pr * si, pr * co, pr * p.x, pr * p.y);
+  const rr = hh * 0.42, path = new Path2D();
+  path.roundRect(-hw, -hh, hw * 2, hh * 2, rr);
+  const gr = c.createLinearGradient(0, -hh, 0, hh);
+  gr.addColorStop(0, css(0.4, 0.02, 255));
+  gr.addColorStop(0.18, css(0.29, 0.018, 260));
+  gr.addColorStop(0.7, css(0.19, 0.015, 264));
+  gr.addColorStop(1, css(0.13, 0.012, 266));
+  c.fillStyle = gr;
+  c.fill(path);
+  // Fins at the back and a bezel at the front.
+  c.lineWidth = 1;
+  c.strokeStyle = css(0.1, 0.012, 266, 0.9);
+  c.beginPath();
+  for (let i = 0; i < 4; i++) { const x = -hw * (0.78 - i * 0.14); c.moveTo(x, -hh * 0.62); c.lineTo(x, hh * 0.62); }
+  c.stroke();
+  c.strokeStyle = css(0.5, 0.02, 250, 0.35);
+  c.beginPath();
+  for (let i = 0; i < 4; i++) { const x = -hw * (0.78 - i * 0.14) + 1; c.moveTo(x, -hh * 0.62); c.lineTo(x, hh * 0.62); }
+  c.stroke();
+  const bz = c.createLinearGradient(0, -hh, 0, hh);
+  bz.addColorStop(0, css(0.62, 0.02, 245));
+  bz.addColorStop(0.5, css(0.36, 0.02, 255));
+  bz.addColorStop(1, css(0.22, 0.02, 262));
+  c.fillStyle = bz;
+  c.beginPath();
+  c.roundRect(hw * 0.5, -hh, hw * 0.5, hh * 2, [0, rr, rr, 0]);
+  c.fill();
+  c.strokeStyle = css(0.82, 0.03, 235, 0.3);
+  c.stroke(path);
+  c.fillStyle = css(0.12, 0.01, 265);
+  c.beginPath();
+  c.ellipse(hw * 0.97, 0, hh * 0.16, hh * 0.5, 0, 0, TAU);
+  c.fill();
+  c.fillStyle = css(0.98, 0.02, 95);
+  c.beginPath();
+  c.ellipse(hw * 0.98, 0, hh * 0.09, hh * 0.32, 0, 0, TAU);
+  c.fill();
+  // The aperture glows where the beam leaves.
+  c.globalCompositeOperation = 'lighter';
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  for (const [r, a] of [[0.045, 0.9], [0.13, 0.22]]) {
+    const R = r * S;
+    c.globalAlpha = a;
+    c.drawImage(SPR[WHITE], g.ex - R, g.ey - R, R * 2, R * 2);
+  }
+  c.globalAlpha = 1;
+}
+const ringR = p => p.r + Math.max(12, 0.045 * S);
+const knobA = p => (p.kind === 'source' ? p.rot + Math.PI : p.rot - Math.PI / 2);
+function ring(p) {
+  const c = ctx, R = ringR(p), A = ringA;
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
+  c.lineWidth = 1;
+  c.strokeStyle = FOC(0.4 * A);
+  c.beginPath();
+  c.arc(p.x, p.y, R, 0, TAU);
+  c.stroke();
+  if (turnA > 0.01) {
+    for (let j = 0; j < 24; j++) {
+      const a = j * 15 * D2R, len = j % 6 ? 4 : 8, on = p.snap !== null && Math.abs(wrapA(knobA(p) - a)) < 1e-6;
+      c.strokeStyle = FOC((on ? 1 : 0.4) * turnA * A);
+      c.beginPath();
+      c.moveTo(p.x + Math.cos(a) * (R + 3), p.y + Math.sin(a) * (R + 3));
+      c.lineTo(p.x + Math.cos(a) * (R + 3 + len), p.y + Math.sin(a) * (R + 3 + len));
+      c.stroke();
+    }
+  }
+  const ka = knobA(p), kx = p.x + Math.cos(ka) * R, ky = p.y + Math.sin(ka) * R;
+  c.fillStyle = FOC(A);
+  c.beginPath();
+  c.arc(kx, ky, coarse ? 6 : 4.5, 0, TAU);
+  c.fill();
+  c.strokeStyle = FOC(0.45 * A);
+  c.beginPath();
+  c.arc(kx, ky, coarse ? 11 : 8.5, 0, TAU);
+  c.stroke();
+}
+function beams() {
+  const c = ctx, ws = clamp(S / 600, 0.75, 1.25);
+  // Glow buffer at a third of the resolution.
+  gX.setTransform(1, 0, 0, 1, 0, 0);
+  gX.globalCompositeOperation = 'source-over';
+  gX.fillStyle = '#000';
+  gX.fillRect(0, 0, glowC.width, glowC.height);
+  gX.setTransform(glowC.width / W, 0, 0, glowC.height / H, 0, 0);
+  gX.globalCompositeOperation = 'lighter';
+  gX.lineCap = gX.lineJoin = 'round';
+  gX.lineWidth = 9 * ws;
+  strokeAll(gX, STY.glow);
+  fillSheets(gX, SHEETG);
+  g2X.globalCompositeOperation = 'copy';
+  g2X.drawImage(glowC, 0, 0, glow2C.width, glow2C.height);
+  // Dust scatters the glow into motes.
+  hzX.globalCompositeOperation = 'copy';
+  hzX.drawImage(glowC, 0, 0, hzC.width, hzC.height);
+  hzX.globalCompositeOperation = 'multiply';
+  hzX.drawImage(dustC, 0, 0);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'lighter';
+  c.globalAlpha = 1;
+  c.drawImage(hzC, 0, 0, cw, ch);
+  c.globalAlpha = 0.55;
+  c.drawImage(glowC, 0, 0, cw, ch);
+  c.globalAlpha = 0.7;
+  c.drawImage(glow2C, 0, 0, cw, ch);
+  c.globalAlpha = 1;
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  c.lineCap = c.lineJoin = 'round';
+  fillSheets(c, SHEET);
+  c.lineWidth = 3.6 * ws;
+  strokeAll(c, STY.mid);
+  c.lineWidth = 1.25 * ws;
+  strokeAll(c, STY.core);
+  // Light that reaches the rim paints a soft band there.
+  const lb = 0.034 * S, db = 0.15 * S, dc = 0.012 * S;
+  for (let n = 0; n < nEd; n++) {
+    const o = n * 5, k = EDG[o + 3], a = EDG[o + 4] ** 0.8 * (k < 0 ? 1 : 0.28);
+    if (a < 0.015) continue;
+    const s = EDG[o + 2], x = EDG[o], y = EDG[o + 1], spr = SPR[k < 0 ? WHITE : k];
+    const tx = s & 1 ? 0 : 1, ty = s & 1 ? 1 : 0, ix = s === 3 ? 1 : s === 1 ? -1 : 0, iy = s === 0 ? 1 : s === 2 ? -1 : 0;
+    c.setTransform(pr * tx, pr * ty, pr * ix, pr * iy, pr * x, pr * y);
+    c.globalAlpha = a * 0.3;
+    c.drawImage(spr, -lb, -db, lb * 2, db * 2);
+    c.globalAlpha = a * 0.85;
+    c.drawImage(spr, -lb * 0.7, -dc, lb * 1.4, dc * 2);
+  }
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  const r0 = 0.02 * S;
+  for (let n = 0; n < nGl; n++) {
+    const o = n * 5, a = GLI[o + 3] ** 0.8, k = GLI[o + 2];
+    if (a < 0.2) continue;
+    const r = r0 * (0.5 + 0.5 * a);
+    c.globalAlpha = a * (k < 0 ? 0.45 : 0.06);
+    c.drawImage(SPR[k < 0 ? WHITE : k], GLI[o] - r, GLI[o + 1] - r, r * 2, r * 2);
+  }
+  c.globalAlpha = 1;
+}
+let geomDirty = true, cost = 0, slowN = 0;
+function render() {
+  const t0 = performance.now();
+  if (geomDirty) {
+    pieces.forEach(build);
+    trace();
+    bucketize();
+    geomDirty = false;
+    voiceTrack();
+  }
+  const c = ctx;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'copy';
+  c.globalAlpha = 1;
+  c.drawImage(bgC, 0, 0);
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  for (const i of DRAW) if (i) body(pieces[i], i);
+  beams();
+  c.setTransform(pr, 0, 0, pr, 0, 0);
+  for (const i of DRAW) if (i) rims(pieces[i]);
+  drawSource(pieces[0]);
+  if (sel >= 0 && ringA > 0) ring(pieces[sel]);
+  // Slow frames drop the pixel ratio to 1.
+  cost = lerp(cost, performance.now() - t0, 0.2);
+  if (!lowDpr && cost > 14 && ++slowN > 20) { lowDpr = true; requestAnimationFrame(fit); }
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.prism.sound', MAXV = 10, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, tickNext = 0, restT = 0, toneT = 0, tone = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    noise = ac.createBuffer(1, Math.round(ac.sampleRate * 0.1), ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    glassTone();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the table settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// One sine with a beating octave shimmer sings while light moves.
+function glassTone() {
+  const a = ac, g = a.createGain(), lp = a.createBiquadFilter(), sh = a.createGain(), sp2 = a.createGain();
+  const pan = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  g.gain.value = 0;
+  lp.type = 'lowpass';
+  lp.frequency.value = 2000;
+  lp.Q.value = 0.3;
+  sh.gain.value = 0.2;
+  sp2.gain.value = 0;
+  const osc = (f, dst) => { const o = a.createOscillator(); o.frequency.value = f; o.connect(dst); o.start(); return o; };
+  const base = a.createGain(), depth = a.createGain();
+  base.gain.value = 1;
+  depth.gain.value = 0.08;
+  const o1 = osc(400, base), o2 = osc(801.6, sh), o3 = osc(798.7, sh), o4 = osc(1206, sp2);
+  // A slow tremolo makes the shimmer breathe.
+  osc(5.2, depth);
+  depth.connect(sh.gain);
+  base.connect(lp);
+  sh.connect(lp);
+  sp2.connect(lp);
+  lp.connect(g);
+  g.connect(pan);
+  pan.connect(out);
+  tone = { g, lp, sh, sp2, pan, o1, o2, o3, o4, depth };
+}
+let moved = 0, movedAt = 0, moveX = 0;
+function voiceTrack() {
+  const a = live();
+  if (!a || !tone) return;
+  const now = performance.now(), dt = Math.max(0.016, (now - movedAt) / 1000);
+  movedAt = now;
+  const sp = clamp(spread / 0.55), speed = clamp(moved / dt / 1.6);
+  moved = 0;
+  const f = 300 * 2 ** (1.25 * sp) * jit(0.004), t = a.currentTime, br = 0.15 + 0.85 * sp;
+  tone.o1.frequency.setTargetAtTime(f, t, 0.05);
+  tone.o2.frequency.setTargetAtTime(f * 2 + 1.6, t, 0.05);
+  tone.o3.frequency.setTargetAtTime(f * 2 - 1.3, t, 0.05);
+  tone.o4.frequency.setTargetAtTime(f * 3.01, t, 0.05);
+  tone.sh.gain.setTargetAtTime(0.1 + 0.3 * br, t, 0.08);
+  tone.depth.gain.setTargetAtTime(0.05 + 0.12 * br, t, 0.08);
+  tone.sp2.gain.setTargetAtTime(0.12 * br * br, t, 0.08);
+  tone.lp.frequency.setTargetAtTime(f * (2.5 + 7 * br), t, 0.08);
+  if (tone.pan.pan) tone.pan.pan.setTargetAtTime(clamp((moveX / W) * 2 - 1, -1, 1) * 0.5, t, 0.1);
+  tone.g.gain.setTargetAtTime((0.028 + 0.05 * speed) * level(), t, 0.05);
+  clearTimeout(toneT);
+  toneT = setTimeout(hush, 110);
+}
+function hush() {
+  if (ac && tone) tone.g.gain.setTargetAtTime(0, ac.currentTime, 0.25);
+}
+// A faint glass tick marks each 15 degree detent.
+function tick(x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const now = a.currentTime;
+  if (now < tickNext) return;
+  tickNext = now + 0.045;
+  const t = now + LEAD, p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp((x / W) * 2 - 1, -1, 1) * 0.5;
+  p.connect(out);
+  const o = a.createOscillator(), g = a.createGain(), v = 0.05 * jit(0.06) * level();
+  o.frequency.value = 3300 * jit(0.04);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.0015);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.045);
+  o.connect(g);
+  g.connect(p);
+  o.start(t);
+  o.stop(t + 0.06);
+  track(o, g, p);
+  const n = a.createBufferSource(), f = a.createBiquadFilter(), ng = a.createGain();
+  n.buffer = noise;
+  f.type = 'bandpass';
+  f.frequency.value = 6500 * jit(0.05);
+  f.Q.value = 1.4;
+  ng.gain.setValueAtTime(v * 0.6, t);
+  ng.gain.exponentialRampToValueAtTime(1e-4, t + 0.012);
+  n.connect(f);
+  f.connect(ng);
+  ng.connect(p);
+  n.start(t, Math.random() * 0.05, 0.03);
+  track(n, f, ng);
+}
+
+/* ---------- motion: placing, turning, detents ---------- */
+const SNAP = 15 * D2R, DET = 1.6 * D2R;
+function changed(p, amt) {
+  geomDirty = true;
+  moved += amt;
+  moveX = p.x;
+  if (pristine) { pristine = false; showChip(); }
+  wake();
+}
+function setRot(p, raw) {
+  const m = Math.round(raw / SNAP) * SNAP, on = Math.abs(raw - m) < DET, r = on ? m : raw;
+  const key = on ? Math.round(wrapA(m) / SNAP) : null;
+  if (on && p.snap !== key) tick(p.x);
+  p.snap = key;
+  const d = Math.abs(r - p.rot);
+  p.rot = r;
+  turning();
+  changed(p, d);
+}
+function moveTo(p, x, y) {
+  const m = 0.03 * S, nx = clamp(x, m, W - m), ny = clamp(y, m, H - m), d = Math.hypot(nx - p.x, ny - p.y) / S;
+  p.x = nx;
+  p.y = ny;
+  p.u = nx / W;
+  p.v = ny / H;
+  changed(p, d);
+}
+let sel = -1, ringA = 0, turnA = 0, turnUntil = 0, tween = null, coarse = matchMedia('(pointer: coarse)').matches;
+function turning() { turnUntil = performance.now() + 700; }
+function select(i) {
+  if (i === sel) return;
+  sel = i;
+  ringA = reduce ? 1 : 0;
+  turnA = 0;
+  wake();
+}
+function showChip() { resetB.setAttribute('aria-disabled', String(pristine)); }
+function applyLayout() {
+  LAYOUT[tall ? 'tall' : 'wide'].forEach(([u, v, a], i) => { const p = pieces[i]; p.u = u; p.v = v; p.rot = a * D2R; p.snap = null; });
+  geomDirty = true;
+}
+function reset() {
+  if (pristine || !ready) return;
+  const to = LAYOUT[tall ? 'tall' : 'wide'];
+  tween = { t: 0, dur: reduce ? 0.2 : 0.8, from: pieces.map(p => [p.u, p.v, p.rot]), to };
+  select(-1);
+  wake();
+}
+function stepTween(dt) {
+  tween.t = Math.min(1, tween.t + dt / tween.dur);
+  const e = 1 - (1 - tween.t) ** 3;
+  pieces.forEach((p, i) => {
+    const [u, v, r] = tween.from[i], [U, V, A] = tween.to[i], px = p.x;
+    p.u = lerp(u, U, e);
+    p.v = lerp(v, V, e);
+    p.rot = r + wrapA(A * D2R - r) * e;
+    p.snap = null;
+    moved += Math.abs(p.u * W - px) / S;
+  });
+  moveX = W / 2;
+  geomDirty = true;
+  if (tween.t >= 1) { tween = null; pristine = true; showChip(); }
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(ms) {
+  raf = 0;
+  const dt = Math.min(Math.max(0, (ms - last) / 1000), 1 / 30);
+  last = ms;
+  let busy = false;
+  if (tween) { stepTween(dt); busy = true; }
+  if (sel >= 0 && ringA < 1) { ringA = reduce ? 1 : Math.min(1, ringA + dt / 0.18); busy = true; }
+  const want = performance.now() < turnUntil ? 1 : 0;
+  if (turnA !== want) { turnA = reduce ? want : clamp(turnA + (want ? dt / 0.12 : -dt / 0.35)); busy = true; }
+  if (turnA > 0 && want) busy = true;
+  render();
+  if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else rest();
+}
+
+/* ---------- input ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [((e.clientX - r.left) * W) / r.width, ((e.clientY - r.top) * H) / r.height];
+}
+function inside(p, x, y, pad) {
+  const g = p.g;
+  if (p.kind === 'lens') return Math.hypot(x - g.ax, y - g.ay) < g.R + pad && Math.hypot(x - g.bx, y - g.by) < g.R + pad;
+  const n = g.n, v = g.v, extra = p.kind === 'mirror' ? Math.max(0, 9 - g.th / 2) : 0;
+  for (let e = 0; e < v.length / 2; e++) if ((x - v[2 * e]) * n[2 * e] + (y - v[2 * e + 1]) * n[2 * e + 1] > pad + extra) return false;
+  return true;
+}
+function pick(x, y, pad) {
+  for (const i of PICK) if (inside(pieces[i], x, y, pad)) return i;
+  return -1;
+}
+const onRing = (p, x, y, band) => Math.abs(Math.hypot(x - p.x, y - p.y) - ringR(p)) < band;
+const ptrs = new Map();
+let drag = null, twist = null, tapDown = null;
+function startDrag(i, x, y, id, turn, shift) {
+  const p = pieces[i];
+  drag = { i, id, turn, shift, ox: p.x - x, oy: p.y - y, raw: p.rot, aPrev: Math.atan2(y - p.y, x - p.x) };
+  if (turn) turning();
+  panel.style.cursor = 'grabbing';
+}
+function startTwist() {
+  const [a, b] = [...ptrs.values()];
+  let i = drag ? drag.i : sel;
+  if (i < 0) i = pick(b.x, b.y, 18);
+  drag = null;
+  if (i < 0) return;
+  select(i);
+  const p = pieces[i];
+  twist = { i, raw: p.rot, aPrev: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: p.x, py: p.y };
+  turning();
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const [x, y] = local(e);
+  ptrs.set(e.pointerId, { x, y, x0: x, y0: y });
+  coarse = e.pointerType !== 'mouse';
+  if (ptrs.size === 2) { tapDown = null; startTwist(); return; }
+  if (ptrs.size > 2) return;
+  const pad = coarse ? 14 : 4;
+  if (sel >= 0 && onRing(pieces[sel], x, y, coarse ? 20 : 10)) { startDrag(sel, x, y, e.pointerId, true, false); return; }
+  const i = pick(x, y, pad);
+  if (i < 0) { tapDown = { x, y }; return; }
+  tapDown = null;
+  select(i);
+  startDrag(i, x, y, e.pointerId, e.shiftKey, e.shiftKey);
+});
+panel.addEventListener('pointermove', e => {
+  const q = ptrs.get(e.pointerId);
+  if (!q) {
+    // A mouse hover shows what can be grabbed.
+    if (e.pointerType !== 'mouse' || !ready) return;
+    const [x, y] = local(e), hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
+    panel.style.cursor = hot ? 'grab' : '';
+    return;
+  }
+  [q.x, q.y] = local(e);
+  if (twist) {
+    if (ptrs.size < 2) return;
+    const [a, b] = [...ptrs.values()], p = pieces[twist.i], ang = Math.atan2(b.y - a.y, b.x - a.x);
+    twist.raw += wrapA(ang - twist.aPrev);
+    twist.aPrev = ang;
+    moveTo(p, twist.px + (a.x + b.x) / 2 - twist.mx, twist.py + (a.y + b.y) / 2 - twist.my);
+    setRot(p, twist.raw);
+    return;
+  }
+  if (!drag || drag.id !== e.pointerId) return;
+  const p = pieces[drag.i];
+  // Shift held mid-drag swaps between moving and turning.
+  if (drag.shift !== e.shiftKey && e.pointerType === 'mouse' && (drag.shift || !drag.turn)) {
+    startDrag(drag.i, q.x, q.y, drag.id, e.shiftKey, e.shiftKey);
+    return;
+  }
+  if (drag.turn) {
+    const a = Math.atan2(q.y - p.y, q.x - p.x);
+    drag.raw += wrapA(a - drag.aPrev);
+    drag.aPrev = a;
+    setRot(p, drag.raw);
+  } else moveTo(p, q.x + drag.ox, q.y + drag.oy);
+});
+function lift(e) {
+  const q = ptrs.get(e.pointerId);
+  if (!q) return;
+  ptrs.delete(e.pointerId);
+  if (twist && ptrs.size < 2) twist = null;
+  if (drag && drag.id === e.pointerId) { drag = null; panel.style.cursor = e.pointerType === 'mouse' ? 'grab' : ''; }
+  // A tap on bare table clears the selection.
+  if (tapDown && !ptrs.size && Math.hypot(q.x - tapDown.x, q.y - tapDown.y) < 8) select(-1);
+  if (!ptrs.size) tapDown = null;
+  wake();
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+panel.addEventListener('contextmenu', e => e.preventDefault());
+panel.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready) return;
+  // Tab walks the pieces, then lets focus leave the table.
+  const n = pieces.length, next = sel < 0 ? (e.shiftKey ? n - 1 : 0) : sel + (e.shiftKey ? -1 : 1);
+  if (next < 0 || next >= n) { select(-1); return; }
+  e.preventDefault();
+  select(next);
+});
+panel.addEventListener('blur', () => { if (!ptrs.size) select(-1); });
+const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], button, a')) return;
+  const k = e.key.toLowerCase(), arrow = ARROWS[e.key];
+  if (!arrow && k !== 'q' && k !== 'e' && e.key !== 'Escape') return;
+  if (e.key === 'Escape') { select(-1); return; }
+  e.preventDefault();
+  if (sel < 0) select(0);
+  const p = pieces[sel];
+  if (arrow) {
+    const st = (e.shiftKey ? 0.06 : 0.015) * S;
+    moveTo(p, p.x + arrow[0] * st, p.y + arrow[1] * st);
+  } else setRot(p, p.rot + (k === 'e' ? 1 : -1) * (e.shiftKey ? 15 : 3) * D2R);
+});
+resetB.addEventListener('click', reset);
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) { hush(); ac.suspend()?.catch(() => {}); }
+});
+
+/* ---------- size and start ---------- */
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const nw = Math.round(w * p), nh = Math.round(h * p), t = w / h < 1.2;
+  if (t !== tall) { tall = t; if (pristine) applyLayout(); }
+  if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
+  if (nw !== cw || nh !== ch || !bgC.width) {
+    cw = canvas.width = bgC.width = nw;
+    ch = canvas.height = bgC.height = nh;
+    pr = cw / W;
+    glowC.width = Math.ceil(cw / 3);
+    glowC.height = Math.ceil(ch / 3);
+    glow2C.width = Math.ceil(glowC.width / 2);
+    glow2C.height = Math.ceil(glowC.height / 2);
+    hzC.width = dustC.width = Math.ceil(cw / 2);
+    hzC.height = dustC.height = Math.ceil(ch / 2);
+    buildTable();
+    buildDust();
+  } else pr = cw / W;
+  if (ready) render();
+}
+function failed() {
+  panel.querySelector('.fail').hidden = false;
+  canvas.hidden = true;
+  resetB.setAttribute('aria-disabled', 'true');
+}
+function boot() {
+  if (!ctx || !ctx.createRadialGradient) return failed();
+  tall = panel.clientWidth / Math.max(1, panel.clientHeight) < 1.2;
+  applyLayout();
+  fit();
+  ready = true;
+  render();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  new ResizeObserver(() => fit()).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+}
+boot();
+</script>
+</body>
+</html>

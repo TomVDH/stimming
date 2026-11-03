@@ -1,0 +1,1364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Marbling</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the tray at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --tray: oklch(0.9 0.035 86);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The tray is 16:9, 4:5 on phones, and cream in both cases. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--tray);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the cream tray the line keeps a dark tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.4 0.03 70);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+/* While the paper is down, the chips rest dimmed. */
+.chip[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.chip[aria-disabled="true"]:hover { color: var(--muted); border-color: var(--line); }
+.chip[aria-disabled="true"]:active { transform: none; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Marbling</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A marbling tray of floating ink. Tap to drop ink and hold to grow it; drag to swirl. Space drops ink at random, arrow keys swirl, C combs and P prints.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Marbling needs WebGL 2 with float targets, which this browser lacks.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl">
+        <button class="chip" id="comb" type="button" aria-keyshortcuts="C">Comb</button>
+        <button class="chip" id="print" type="button" aria-keyshortcuts="P">Print</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop ink</dd></div>
+        <div><dt>Drag</dt><dd>swirl</dd></div>
+        <div class="fine"><dt><kbd>C</kbd></dt><dd>comb</dd></div>
+        <div class="fine"><dt><kbd>P</kbd></dt><dd>print</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>random drop</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const combB = document.getElementById('comb'), printB = document.getElementById('print');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; });
+const TAU = Math.PI * 2, PI = Math.PI, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+// Seeded random keeps the opening pattern the same on every load.
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// Indigo, oxblood, ochre, deep teal and sumi black.
+const INKS = [[0.35, 0.13, 266], [0.41, 0.145, 24], [0.75, 0.145, 76], [0.47, 0.085, 198], [0.22, 0.012, 255]];
+const CREAM = linear(0.93, 0.036, 86), PAPER = linear(0.975, 0.013, 92);
+const WOOD = linear(0.45, 0.075, 52), STEEL = linear(0.7, 0.012, 250);
+let inkI = 0;
+// Each drop varies a touch in tone, so repeated rings stay distinct.
+function nextInk(R = Math.random) {
+  const [L, C, h] = INKS[inkI++ % INKS.length];
+  return linear(L + (R() - 0.5) * 0.05, C * (0.92 + 0.12 * R()), h + (R() - 0.5) * 6);
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.marble.sound', MAXV = 14, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, plipNext = 0, restT = 0, swish = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.07 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // Two seconds of white noise feed every burst and the swish.
+    noise = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    swishVoice();
+  }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the tray settles, the context sleeps until the next gesture.
+function rest() {
+  clearTimeout(restT);
+  if (!ac || ac.state !== 'running') return;
+  restT = setTimeout(() => {
+    if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }, 1500);
+}
+const GESTURE_KEYS = new Set(['c', 'C', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// Each voice pans with its place on the tray.
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(out);
+  return p;
+}
+// A drop lands: a small rising bubble over a soft thump.
+function plip(x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < plipNext) return;
+  plipNext = t + 0.035;
+  const f = rand(430, 640), g = level() * jit(0.12), end = bus(a, x);
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(f, t);
+  o.frequency.exponentialRampToValueAtTime(f * 2.2 * jit(0.06), t + 0.055);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.2 * g, t + 0.004);
+  og.gain.setTargetAtTime(0, t + 0.006, 0.026);
+  o.connect(og).connect(end);
+  o.start(t);
+  o.stop(t + 0.22);
+  const b = a.createOscillator(), bg = a.createGain();
+  b.frequency.setValueAtTime(170 * jit(0.08), t);
+  b.frequency.exponentialRampToValueAtTime(85, t + 0.06);
+  bg.gain.setValueAtTime(0, t);
+  bg.gain.linearRampToValueAtTime(0.22 * g, t + 0.003);
+  bg.gain.setTargetAtTime(0, t + 0.004, 0.022);
+  b.connect(bg).connect(end);
+  b.start(t);
+  b.stop(t + 0.2);
+  track(o, og, end);
+  track(b, bg);
+}
+// The swish: looped noise through a broad and a narrow band.
+function swishVoice() {
+  const src = ac.createBufferSource(), lo = ac.createBiquadFilter(), hi = ac.createBiquadFilter();
+  const g = ac.createGain(), rg = ac.createGain();
+  src.buffer = noise;
+  src.loop = true;
+  lo.type = 'bandpass'; lo.frequency.value = 400; lo.Q.value = 0.7;
+  hi.type = 'bandpass'; hi.frequency.value = 900; hi.Q.value = 4.5;
+  g.gain.value = 0;
+  rg.gain.value = 0.55;
+  src.connect(lo).connect(g);
+  src.connect(hi).connect(rg).connect(g);
+  g.connect(out);
+  src.start();
+  swish = { lo, hi, g, k: 0 };
+}
+// Loudness and brightness follow the stroke's speed.
+function swishTo(speed) {
+  if (!swish) return;
+  const k = live() ? clamp(speed / 1.6) : 0;
+  if (k < 0.01 && swish.k < 0.01) return;
+  swish.k = k;
+  const t = ac.currentTime;
+  swish.g.gain.setTargetAtTime(0.32 * k ** 0.7, t, 0.07);
+  swish.lo.frequency.setTargetAtTime(300 + 650 * k, t, 0.08);
+  swish.hi.frequency.setTargetAtTime((650 + 1000 * k) * jit(0.2), t, 0.04);
+}
+// Paper rustle: crackling noise under a soft swell.
+function rustle(dur, amp, f) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, sr = a.sampleRate, n = Math.round(sr * dur);
+  const buf = a.createBuffer(1, n, sr), d = buf.getChannelData(0), dec = Math.exp(-1 / (sr * 0.011));
+  let env = 0;
+  for (let i = 0; i < n; i++) {
+    const sw = Math.sin((PI * i) / n) ** 1.4;
+    if (Math.random() < (110 * sw) / sr) env = Math.max(env, 0.3 + 0.7 * Math.random());
+    env *= dec;
+    d[i] = (Math.random() * 2 - 1) * sw * (0.2 + env);
+  }
+  const src = a.createBufferSource(), hp = a.createBiquadFilter(), bp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf;
+  hp.type = 'highpass'; hp.frequency.value = 450;
+  bp.type = 'bandpass'; bp.frequency.value = f * jit(0.08); bp.Q.value = 0.55;
+  g.gain.value = amp * level() * jit(0.1);
+  src.connect(hp).connect(bp).connect(g).connect(out);
+  src.start(t);
+  track(src, hp, bp, g);
+}
+
+/* ---------- the tray: units of tray height, y up ---------- */
+const MAXD = 8, MAXR = 6, MAXT = 4, MAXS = 6, JACOBI = 24;
+// A tap lays this much ink; holding adds more each second.
+const TAP_R = 0.07, FLUX = 0.05, AMAX = PI * 0.36 * 0.36, SPREAD = 0.1, SETTLE = 2.2;
+let TA = 16 / 9;
+const drops = [], ripples = [], ghosts = [], strokes = [];
+let comb = null, combN = 0, sheet = null, flowT = 0, speed = 0, spaceDrop = null;
+
+function addDrop(x, y, held) {
+  if (drops.length >= MAXD) return null;
+  const r = TAP_R * rand(0.86, 1.14);
+  const d = { x, y, col: nextInk(), seed: rand(0, 97), A: 0, prev: 0, T: PI * r * r, held };
+  drops.push(d);
+  if (!reduce) {
+    if (ripples.length >= MAXR) ripples.shift();
+    ripples.push({ x, y, t: 0, r0: r * 0.7, amp: 0.05 });
+  }
+  plip((x / TA) * 2 - 1);
+  wake();
+  return d;
+}
+// Ink spreads fast, then slows; held ink keeps pouring.
+function stepDrops(dt) {
+  const k = 1 - Math.exp(-dt / SPREAD);
+  for (const d of drops) {
+    d.prev = d.A;
+    if (d.held) d.T = Math.min(AMAX, d.T + FLUX * dt);
+    d.A += (d.T - d.A) * k;
+    if (!d.held && d.T - d.A < 2e-6) d.A = d.T;
+  }
+}
+function stepRipples(dt) {
+  for (let i = ripples.length - 1; i >= 0; i--) if ((ripples[i].t += dt) > 1.3) ripples.splice(i, 1);
+}
+
+// The rake runs left, down, right, then up, offset on the return.
+function startComb() {
+  if (!ready || comb || sheet) return;
+  const k = combN++ % 4, axis = k % 2, dir = k === 0 || k === 3 ? 1 : -1, span = axis ? 1 : TA, M = 0.07;
+  comb = { axis, dir, span, M, t: 0, dur: 1.2 + 0.75 * span, sp: 0.05, phase: k >= 2 ? 0.5 : 0, pos: 0, prev: 0, v: 0, o: 0 };
+  comb.pos = comb.prev = dir > 0 ? -M : span + M;
+  chips();
+  wake();
+}
+function stepComb(dt) {
+  const c = comb;
+  if (!c) return;
+  c.t = Math.min(1, c.t + dt / c.dur);
+  const e = sstep(0, 1, c.t), L = c.span + 2 * c.M;
+  c.prev = c.pos;
+  c.pos = c.dir > 0 ? -c.M + L * e : c.span + c.M - L * e;
+  c.v = (c.pos - c.prev) / dt;
+  c.o = Math.min(sstep(0, 0.05, c.t), 1 - sstep(0.95, 1, c.t));
+  speed = Math.max(speed, Math.abs(c.v));
+  flowT = SETTLE;
+  if (c.t >= 1) { comb = null; chips(); }
+}
+
+// Arrow keys draw a wavy stylus line through the tray.
+const lanes = { h: 0, v: 0 };
+function laneAt(n, span, gap) {
+  const most = Math.max(0, Math.floor((span / 2 - 0.1) / gap)), i = n % (2 * most + 1);
+  return span / 2 + (i === 0 ? 0 : i % 2 ? (i + 1) / 2 : -i / 2) * gap;
+}
+function stroke(key) {
+  const horiz = key === 'ArrowLeft' || key === 'ArrowRight', dir = key === 'ArrowRight' || key === 'ArrowUp' ? 1 : -1;
+  const lane = horiz ? laneAt(lanes.h++, 1, 0.14) : laneAt(lanes.v++, TA, 0.14);
+  const s = { horiz, dir, lane, t: 0, dur: 0.8 + 0.4 * (horiz ? TA : 1), amp: rand(0.05, 0.08) * (Math.random() < 0.5 ? -1 : 1), cyc: rand(1, 1.6), vx: 0, vy: 0, r: 0.009, o: 0 };
+  [s.x, s.y] = strokeAt(s);
+  s.px = s.x;
+  s.py = s.y;
+  strokes.push(s);
+  wake();
+}
+function strokeAt(s) {
+  const e = sstep(0, 1, s.t), span = s.horiz ? TA : 1, a = -0.05 + (span + 0.1) * (s.dir > 0 ? e : 1 - e);
+  const b = s.lane + s.amp * Math.sin(TAU * s.cyc * e);
+  return s.horiz ? [a, b] : [b, a];
+}
+
+/* ---------- the print: paper down, soak, turn over, hold, lift ---------- */
+const PHASES = () => (reduce
+  ? { down: 0.25, wet: 0.35, rest: 0.15, flip: 0.45, hold: 1.6, away: 0.3 }
+  : { down: 0.6, wet: 0.7, rest: 0.3, flip: 1.05, hold: 1.7, away: 0.7 });
+function startPrint() {
+  if (!ready || sheet) return;
+  const T = PHASES();
+  let acc = 0;
+  const at = {};
+  for (const k of ['down', 'wet', 'rest', 'flip', 'hold', 'away']) at[k] = (acc += T[k]) - T[k];
+  sheet = { t: 0, T, at, end: acc, took: false, cue: 0, h: 1, c: 1, s: 0, op: 0, wet: 0 };
+  for (const d of drops) d.held = false;
+  spaceDrop = null;
+  ptrs.clear();
+  strokes.length = 0;
+  comb = null;
+  rustle(0.75, 0.5, 2600);
+  chips();
+  wake();
+}
+function stepSheet(dt) {
+  const S = sheet;
+  if (!S) return;
+  S.t += dt;
+  const { T, at } = S, t = S.t;
+  S.c = 1; S.s = 0; S.wet = 0; S.op = 1; S.h = 0;
+  if (t < at.wet) {
+    const u = t / T.down;
+    S.h = reduce ? 0 : (1 - u) ** 2;
+    S.op = sstep(0, reduce ? 1 : 0.45, u);
+  } else if (!S.took) { S.took = true; takePrint(); }
+  if (t >= at.wet) S.wet = sstep(0, 1, (t - at.wet) / T.wet);
+  if (t >= at.flip && t < at.hold) {
+    const u = (t - at.flip) / T.flip, th = PI * sstep(0, 1, u);
+    if (S.cue < 1) { S.cue = 1; rustle(0.95, 0.65, 3200); }
+    S.c = Math.cos(th);
+    S.s = Math.sin(th);
+    S.h = reduce ? 0.1 * u : 0.3 * Math.sin(PI * u) + 0.1 * sstep(0, 1, u);
+  } else if (t >= at.hold) {
+    S.c = -1;
+    S.h = 0.1;
+  }
+  if (t >= at.away) {
+    const u = (t - at.away) / T.away;
+    if (S.cue < 2) { S.cue = 2; rustle(0.5, 0.3, 1800); }
+    S.h = reduce ? 0.1 : 0.1 + 0.9 * u * u;
+    S.op = 1 - sstep(reduce ? 0 : 0.25, 1, u);
+  }
+  if (t >= S.end) { sheet = null; chips(); }
+}
+// A tap while the print holds sends it away sooner.
+function skipHold() {
+  if (sheet && sheet.t >= sheet.at.hold && sheet.t < sheet.at.away) sheet.t = sheet.at.away;
+}
+
+/* ---------- WebGL ---------- */
+const TRI = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const HEAD = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 o;
+`;
+const NOISE = `
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}`;
+const COPY_FS = HEAD + `
+uniform sampler2D uSrc;
+uniform vec4 uMap;
+void main() {
+  vec2 q = vUv * uMap.xy + uMap.zw;
+  o = q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 ? vec4(0.0) : texture(uSrc, q);
+}`;
+// Styli and tines drag the water around them toward their own speed.
+const FORCE_FS = HEAD + `
+uniform sampler2D uVel;
+uniform float uA, uK;
+uniform int uN;
+uniform vec4 uSeg[${MAXS}];
+uniform vec4 uSegV[${MAXS}];
+uniform vec4 uComb, uCombB;
+float seg(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a, ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / max(dot(ba, ba), 1e-10), 0.0, 1.0));
+}
+void main() {
+  vec2 v = texture(uVel, vUv).xy, p = vUv * vec2(uA, 1.0);
+  for (int i = 0; i < ${MAXS}; i++) {
+    if (i >= uN) break;
+    float d = seg(p, uSeg[i].xy, uSeg[i].zw) / uSegV[i].z;
+    v = mix(v, uSegV[i].xy, uK * uSegV[i].w * exp(-d * d));
+  }
+  if (uComb.w > 0.0) {
+    bool ax = uComb.x < 0.5;
+    float along = ax ? p.y : p.x, mov = ax ? p.x : p.y;
+    float t = (fract(along / uCombB.x - uCombB.y) - 0.5) * uCombB.x;
+    float m = mov - clamp(mov, min(uComb.y, uComb.z), max(uComb.y, uComb.z));
+    float d = length(vec2(m, t)) / uCombB.w;
+    v = mix(v, ax ? vec2(uCombB.z, 0.0) : vec2(0.0, uCombB.z), uK * exp(-d * d));
+  }
+  o = vec4(v, 0.0, 1.0);
+}`;
+// Thick water: velocity carries itself, spreads a little and dies away.
+const ADV_FS = HEAD + `
+uniform sampler2D uVel;
+uniform vec2 uTex;
+uniform float uA, uDt, uDamp, uVisc;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uVel, 0);
+  if (c.x == 0 || c.y == 0 || c.x == s.x - 1 || c.y == s.y - 1) { o = vec4(0.0); return; }
+  vec2 v = texture(uVel, vUv).xy, b = vUv - uDt * v / vec2(uA, 1.0);
+  vec2 n = texture(uVel, b).xy;
+  vec2 avg = 0.25 * (texture(uVel, b + vec2(uTex.x, 0.0)).xy + texture(uVel, b - vec2(uTex.x, 0.0)).xy
+    + texture(uVel, b + vec2(0.0, uTex.y)).xy + texture(uVel, b - vec2(0.0, uTex.y)).xy);
+  o = vec4(mix(n, avg, uVisc) * uDamp, 0.0, 1.0);
+}`;
+const DIV_FS = HEAD + `
+uniform sampler2D uVel;
+uniform vec2 uH;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uVel, 0) - 1;
+  float L = texelFetch(uVel, clamp(c - ivec2(1, 0), ivec2(0), s), 0).x;
+  float R = texelFetch(uVel, clamp(c + ivec2(1, 0), ivec2(0), s), 0).x;
+  float B = texelFetch(uVel, clamp(c - ivec2(0, 1), ivec2(0), s), 0).y;
+  float T = texelFetch(uVel, clamp(c + ivec2(0, 1), ivec2(0), s), 0).y;
+  o = vec4(0.5 * ((R - L) / uH.x + (T - B) / uH.y), 0.0, 0.0, 1.0);
+}`;
+// One Jacobi sweep; clamped reads keep the walls closed.
+const JAC_FS = HEAD + `
+uniform sampler2D uP, uDiv;
+uniform vec2 uH;
+uniform float uKeep;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uP, 0) - 1;
+  float L = texelFetch(uP, clamp(c - ivec2(1, 0), ivec2(0), s), 0).x;
+  float R = texelFetch(uP, clamp(c + ivec2(1, 0), ivec2(0), s), 0).x;
+  float B = texelFetch(uP, clamp(c - ivec2(0, 1), ivec2(0), s), 0).x;
+  float T = texelFetch(uP, clamp(c + ivec2(0, 1), ivec2(0), s), 0).x;
+  vec2 k = 1.0 / (uH * uH);
+  float p = (((L + R) * k.x + (B + T) * k.y) * uKeep - texelFetch(uDiv, c, 0).x) / (2.0 * (k.x + k.y));
+  o = vec4(p, 0.0, 0.0, 1.0);
+}`;
+const GRAD_FS = HEAD + `
+uniform sampler2D uP, uVel;
+uniform vec2 uH;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uP, 0) - 1;
+  if (c.x == 0 || c.y == 0 || c.x == s.x || c.y == s.y) { o = vec4(0.0); return; }
+  float L = texelFetch(uP, c - ivec2(1, 0), 0).x, R = texelFetch(uP, c + ivec2(1, 0), 0).x;
+  float B = texelFetch(uP, c - ivec2(0, 1), 0).x, T = texelFetch(uP, c + ivec2(0, 1), 0).x;
+  o = vec4(texelFetch(uVel, c, 0).xy - 0.5 * vec2((R - L) / uH.x, (T - B) / uH.y), 0.0, 1.0);
+}`;
+// A spreading drop maps old ink outward, keeping every area.
+// Old radius d moves to sqrt(d² + rb² - ra²).
+const DROPS = `
+uniform vec4 uC[${MAXD}];
+uniform vec4 uInk[${MAXD}];
+uniform int uN;
+uniform float uE, uA, uDt;
+uniform sampler2D uVel;
+${NOISE}
+vec2 unpush(vec2 q, out vec4 over, out float keep) {
+  over = vec4(0.0);
+  keep = 1.0;
+  for (int k = ${MAXD - 1}; k >= 0; k--) {
+    if (k >= uN) continue;
+    vec2 r = q - uC[k].xy;
+    float d2 = dot(r, r), rb = sqrt(uC[k].w);
+    float a = 1.0 - smoothstep(rb - uE, rb + uE, sqrt(d2));
+    if (a > 0.0) {
+      // Pigment settles unevenly; the flow later stretches this grain.
+      float g = 0.6 * vnoise(q * 46.0 + uInk[k].w) + 0.4 * vnoise(q * 150.0 + uInk[k].w);
+      over += keep * a * vec4(uInk[k].rgb * (0.93 + 0.14 * g), 1.0);
+      keep *= 1.0 - a;
+    }
+    q = uC[k].xy + r * sqrt(max(0.0, 1.0 - (uC[k].w - uC[k].z) / max(d2, 1e-12)));
+  }
+  return q;
+}
+vec2 push(vec2 q) {
+  for (int k = 0; k < ${MAXD}; k++) {
+    if (k >= uN) break;
+    vec2 r = q - uC[k].xy;
+    q = uC[k].xy + r * sqrt(1.0 + (uC[k].w - uC[k].z) / max(dot(r, r), 1e-12));
+  }
+  return q;
+}
+// Catmull-Rom from nine bilinear taps: far less smear than one.
+vec4 cubic(sampler2D t, vec2 q) {
+  vec2 sz = vec2(textureSize(t, 0)), s = q / vec2(uA, 1.0) * sz, t1 = floor(s - 0.5) + 0.5, f = s - t1;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f), w12 = w1 + w2;
+  vec2 p0 = (t1 - 1.0) / sz, p3 = (t1 + 2.0) / sz, p12 = (t1 + w2 / w12) / sz;
+  return (texture(t, vec2(p0.x, p0.y)) * w0.x + texture(t, vec2(p12.x, p0.y)) * w12.x + texture(t, vec2(p3.x, p0.y)) * w3.x) * w0.y
+    + (texture(t, vec2(p0.x, p12.y)) * w0.x + texture(t, vec2(p12.x, p12.y)) * w12.x + texture(t, vec2(p3.x, p12.y)) * w3.x) * w12.y
+    + (texture(t, vec2(p0.x, p3.y)) * w0.x + texture(t, vec2(p12.x, p3.y)) * w12.x + texture(t, vec2(p3.x, p3.y)) * w3.x) * w3.y;
+}
+// The four texels around a point bound any value read there.
+void bounds(sampler2D t, vec2 q, out vec4 lo, out vec4 hi) {
+  ivec2 m = textureSize(t, 0) - 1, i = ivec2(floor(q / vec2(uA, 1.0) * vec2(m + 1) - 0.5));
+  vec4 a = texelFetch(t, clamp(i, ivec2(0), m), 0), b = texelFetch(t, clamp(i + ivec2(1, 0), ivec2(0), m), 0);
+  vec4 c = texelFetch(t, clamp(i + ivec2(0, 1), ivec2(0), m), 0), d = texelFetch(t, clamp(i + ivec2(1, 1), ivec2(0), m), 0);
+  lo = min(min(a, b), min(c, d));
+  hi = max(max(a, b), max(c, d));
+}
+vec2 vel(vec2 q) { return texture(uVel, q / vec2(uA, 1.0)).xy; }
+vec2 back(vec2 q) { return q - uDt * vel(q - 0.5 * uDt * vel(q)); }
+vec2 fwd(vec2 q) { return q + uDt * vel(q + 0.5 * uDt * vel(q)); }
+`;
+// MacCormack, step one: a backward trace, read through the cubic.
+const DYE_A_FS = HEAD + DROPS + `
+uniform sampler2D uDye;
+void main() {
+  vec4 over, lo, hi;
+  float keep;
+  vec2 q = unpush(vUv * vec2(uA, 1.0), over, keep);
+  if (keep < 1e-4) { o = over; return; }
+  q = back(q);
+  bounds(uDye, q, lo, hi);
+  o = over + keep * clamp(cubic(uDye, q), lo, hi);
+}`;
+// Step two: trace forward, halve the error, clamp to the source cell.
+const DYE_B_FS = HEAD + DROPS + `
+uniform sampler2D uDye, uPred;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy);
+  vec4 pred = texelFetch(uPred, c, 0), over, lo, hi;
+  float keep;
+  vec2 p = vUv * vec2(uA, 1.0), q = back(unpush(p, over, keep));
+  if (keep < 0.999) { o = pred; return; }
+  bounds(uDye, q, lo, hi);
+  o = clamp(pred + 0.5 * (texelFetch(uDye, c, 0) - cubic(uPred, push(fwd(p)))), lo, hi);
+}`;
+const COMP_FS = HEAD + `
+uniform sampler2D uDye, uVel, uPrint;
+uniform vec2 uRes, uTexel;
+uniform float uA, uPr, uRad;
+uniform vec3 uCream, uPaper, uWood, uSteel;
+uniform vec4 uRip[${MAXR}];
+uniform int uNRip, uNTip;
+uniform vec4 uRake, uRakeB;
+uniform vec4 uTip[${MAXT}];
+uniform vec4 uSheet;
+uniform float uWet;
+${NOISE}
+float fbm(vec2 p) { return 0.55 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 7.1) + 0.15 * vnoise(p * 4.1 + 2.3); }
+float box(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+float seg(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a, ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0));
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+// The rake: a wooden bar trailing a row of steel tines.
+// In rake space x runs with the motion and y along the bar.
+vec2 rakeSpace(vec2 p) { return uRake.x < 0.5 ? vec2(p.x - uRake.y, p.y) : vec2(p.y - uRake.y, p.x); }
+float rakeTine(vec2 q) {
+  float t = (fract(q.y / uRakeB.x - uRakeB.y) - 0.5) * uRakeB.x;
+  return seg(vec2(q.x, t), vec2(0.0), vec2(uRake.w * 0.032, 0.0)) - 0.0021;
+}
+float rakeBar(vec2 q) { return abs(q.x - uRake.w * 0.032) - 0.0062; }
+// A stylus needle leans down and to the right.
+float needle(vec2 q) { return seg(q, vec2(0.0), vec2(0.03, -0.048)) - 0.0019; }
+vec4 paperInk(vec2 u, float r) {
+  vec2 t = uTexel * r;
+  return 0.4 * texture(uPrint, u) + 0.15 * (texture(uPrint, u + vec2(t.x, t.y)) + texture(uPrint, u - vec2(t.x, t.y))
+    + texture(uPrint, u + vec2(t.x, -t.y)) + texture(uPrint, u - vec2(t.x, -t.y)));
+}
+void main() {
+  vec2 uv = vUv, S = vec2(uA, 1.0), p = uv * S, fc = gl_FragCoord.xy, mid = 0.5 * S;
+  float px = 1.0 / uRes.y;
+  // The surface tilts with drop ripples and with the flow.
+  vec2 n = vec2(0.0);
+  for (int i = 0; i < ${MAXR}; i++) {
+    if (i >= uNRip) break;
+    vec2 r = p - uRip[i].xy;
+    float d = length(r) + 1e-5, s = d - uRip[i].z;
+    n += uRip[i].w * exp(-s * s * 700.0) * sin(150.0 * s) * r / d;
+  }
+  n += 0.02 * texture(uVel, uv).xy;
+  vec2 su = uv - n * 0.004 / S;
+  vec4 c = texture(uDye, su);
+  vec4 l = texture(uDye, su - vec2(uTexel.x, 0.0)), r = texture(uDye, su + vec2(uTexel.x, 0.0));
+  vec4 b = texture(uDye, su - vec2(0.0, uTexel.y)), t = texture(uDye, su + vec2(0.0, uTexel.y));
+  // The size is pale and faintly clouded.
+  vec3 water = uCream * (0.955 + 0.07 * fbm(p * 2.3 + 3.1) + 0.02 * vnoise(p * 40.0));
+  vec3 ink = c.rgb / max(c.a, 1e-3);
+  vec3 col = mix(water, ink, clamp(c.a, 0.0, 1.0));
+  // Where two inks meet, a fine pale vein parts them.
+  float both = min(min(l.a, r.a), min(b.a, t.a));
+  float gc = length(r.rgb - l.rgb) + length(t.rgb - b.rgb);
+  col = mix(col, water, 0.32 * smoothstep(0.12, 0.5, gc) * both);
+  // Ink edges on open water darken slightly, like a dried rim.
+  col *= 1.0 - 0.09 * smoothstep(0.15, 0.8, length(vec2(r.a - l.a, t.a - b.a)));
+  // Soft light from the upper left, falling off to the corners.
+  vec2 cp = (p - mid) / S.y;
+  col *= 1.03 + 0.07 * dot(cp, vec2(-0.6, 0.8)) - 0.14 * pow(length((uv - 0.5) * 1.3), 3.0);
+  // Crests facing the light glint; the far sides shade.
+  float slope = dot(n, vec2(-0.6, 0.8)) * 16.0;
+  col *= 1.0 - 0.18 * clamp(-slope, 0.0, 1.0);
+  col += 0.2 * pow(clamp(slope, 0.0, 1.0), 2.0);
+  // A window above the tray reflects as a broad soft sheen.
+  vec2 R = cp / 1.6 + 1.6 * n;
+  float win = 1.0 - smoothstep(0.0, 0.17, box(R - vec2(-0.22, 0.16), vec2(0.16, 0.08)));
+  col += vec3(1.0, 0.985, 0.95) * 0.085 * win;
+
+  // The rake, its shadow and the dimples its tines press in.
+  if (uRake.z > 0.0) {
+    vec2 q = rakeSpace(p), qs = rakeSpace(p - vec2(0.012, -0.014));
+    float sh = min(rakeTine(qs), rakeBar(qs));
+    col *= 1.0 - 0.26 * uRake.z * (1.0 - smoothstep(-0.003, 0.009, sh));
+    float tt = (fract(q.y / uRakeB.x - uRakeB.y) - 0.5) * uRakeB.x, dt = length(vec2(q.x, tt));
+    col *= 1.0 - 0.16 * uRake.z * exp(-dt * dt / 4e-5);
+    col += 0.07 * uRake.z * exp(-pow((dt - 0.0075) / 0.0018, 2.0));
+    float tn = rakeTine(q);
+    col = mix(col, uSteel * (0.7 + 0.5 * smoothstep(0.002, -0.002, tn + 0.001)), uRake.z * smoothstep(px, -px, tn));
+    float br = rakeBar(q), across = (q.x - uRake.w * 0.032) / 0.0062;
+    vec3 wood = uWood * (0.78 + 0.32 * smoothstep(0.6, -0.8, across * sign(uRake.w)) + 0.08 * vnoise(vec2(q.y * 90.0, across * 3.0)));
+    col = mix(col, wood, uRake.z * smoothstep(px, -px, br));
+  }
+  // Each stylus: a shadow, a dimple and a steel needle.
+  for (int i = 0; i < ${MAXT}; i++) {
+    if (i >= uNTip) break;
+    vec2 q = p - uTip[i].xy;
+    float a = uTip[i].z, dn = length(q);
+    col *= 1.0 - 0.24 * a * (1.0 - smoothstep(-0.002, 0.008, needle(q - vec2(0.012, -0.014))));
+    col *= 1.0 - 0.18 * a * exp(-dn * dn / 5e-5);
+    col += 0.06 * a * exp(-pow((dn - 0.008) / 0.002, 2.0));
+    float nd = needle(q);
+    col = mix(col, uSteel * (0.72 + 0.45 * smoothstep(0.0015, -0.0015, nd + 0.0008)), a * smoothstep(px, -px, nd));
+  }
+  // The tray wall shades the water's edge; a meniscus catches light.
+  vec2 css = fc / uPr, hc = 0.5 * uRes / uPr;
+  float e = -(box(css - hc, hc - uRad) - uRad);
+  col *= 1.0 - 0.2 * exp(-e / 16.0) - 0.08 * exp(-e / 4.0);
+  col += 0.05 * exp(-pow((e - 2.5) / 1.3, 2.0));
+
+  // The paper sheet, turning about its vertical middle.
+  if (uSheet.w > 0.001) {
+    float h = uSheet.x, cs = uSheet.y, sn = uSheet.z, op = uSheet.w;
+    vec2 hs = mid - 0.045;
+    float sc = 1.0 + 0.14 * h, wx = max(abs(cs), 1e-4) * hs.x * sc;
+    vec2 so = vec2(0.018, -0.026) * (0.2 + 2.6 * h);
+    float bl = 0.004 + 0.07 * h;
+    float sd = box(p - mid - so, vec2(wx, hs.y * sc));
+    col *= 1.0 - op * (0.14 + 0.2 * h) * (1.0 - smoothstep(-bl, bl, sd));
+    vec2 X = p - mid;
+    float lx = X.x / (cs < 0.0 ? -wx : wx), pz = 1.0 + 0.16 * lx * sn, ly = X.y / (hs.y * sc * pz);
+    float edge = max((abs(lx) - 1.0) * wx, (abs(ly) - 1.0) * hs.y * sc * pz);
+    float cov = op * (1.0 - smoothstep(-px, px, edge));
+    if (cov > 0.0) {
+      vec2 pp = mid + vec2(lx, ly) * hs, pu = pp / S;
+      float fib = 0.5 * vnoise(pp * vec2(700.0, 210.0)) + 0.3 * vnoise(pp * 320.0) + 0.2 * vnoise(pp * 60.0);
+      vec3 paper = uPaper * (0.965 + 0.06 * fib), pc;
+      if (cs >= 0.0) {
+        // Wet ink shows faintly through the back as the paper soaks.
+        vec4 s = paperInk(pu, 3.0);
+        float wet = 1.0 - smoothstep(-0.12, 0.0, lx - (2.3 * uWet - 1.15) + 0.06 * vnoise(vec2(ly * 6.0, 1.0)));
+        pc = mix(paper, s.rgb / max(s.a, 1e-3), 0.24 * s.a * wet) * (1.0 - 0.05 * wet);
+      } else {
+        // The print side: ink taken into the paper's grain.
+        vec4 s = paperInk(pu, 0.7);
+        pc = mix(paper, (s.rgb / max(s.a, 1e-3)) * (0.97 + 0.07 * fib), s.a * (0.9 + 0.06 * fib));
+      }
+      vec3 nv = sign(cs + 1e-6) * vec3(sn, 0.0, cs);
+      pc *= 0.86 + 0.17 * dot(nv, normalize(vec3(-0.45, 0.35, 0.82)));
+      col = mix(col, pc, cov);
+    }
+  }
+  o = vec4(srgb(col) + (hash(fc + 7.0) - 0.5) / 255.0, 1.0);
+}`;
+
+let gl = null, P = null, vao = null, ready = false, FMT = null;
+let dye = null, pred = null, base = null, vel = null, pres = null, div = null, printT = null;
+let DW = 0, DH = 0, SW = 0, SH = 0, quality = 0;
+// Quality steps shrink the ink grid and then the canvas.
+const DS = [1, 0.78, 0.6], QS = [1, 0.9, 0.75];
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+function renderable(fmt) {
+  const t = gl.createTexture(), fb = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, 4, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.deleteTexture(t);
+  return ok;
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('float targets unavailable');
+  if (!renderable(gl.RGBA16F)) throw new Error('RGBA16F is not renderable');
+  // Narrow formats save bandwidth where the driver allows them.
+  FMT = { ink: gl.RGBA16F, vel: renderable(gl.RG16F) ? gl.RG16F : gl.RGBA16F, one: renderable(gl.R16F) ? gl.R16F : gl.RGBA16F };
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    copy: compile(TRI, COPY_FS), force: compile(TRI, FORCE_FS), adv: compile(TRI, ADV_FS), div: compile(TRI, DIV_FS),
+    jac: compile(TRI, JAC_FS), grad: compile(TRI, GRAD_FS), dyeA: compile(TRI, DYE_A_FS), dyeB: compile(TRI, DYE_B_FS), comp: compile(TRI, COMP_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  gl.useProgram(P.comp.p);
+  gl.uniform3fv(P.comp.u.uCream, CREAM);
+  gl.uniform3fv(P.comp.u.uPaper, PAPER);
+  gl.uniform3fv(P.comp.u.uWood, WOOD);
+  gl.uniform3fv(P.comp.u.uSteel, STEEL);
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.disable(gl.BLEND);
+  dye = pred = base = vel = pres = div = printT = null;
+  DW = DH = SW = SH = 0;
+}
+function target(w, h, fmt) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const t = { tex, fb, w, h };
+  wipe(t);
+  return t;
+}
+function pair(w, h, fmt) {
+  return { r: target(w, h, fmt), w: target(w, h, fmt), swap() { [this.r, this.w] = [this.w, this.r]; } };
+}
+function free(t) {
+  if (!t) return;
+  if (t.r) { free(t.r); free(t.w); return; }
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fb);
+}
+function wipe(t) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function bind(prog, name, unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.uniform1i(prog.u[name], unit);
+}
+function draw(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function copy(src, dst, map = [1, 1, 0, 0]) {
+  gl.useProgram(P.copy.p);
+  bind(P.copy, 'uSrc', 0, src);
+  gl.uniform4fv(P.copy.u.uMap, map);
+  draw(dst);
+}
+// Grids follow the tray's shape; ink keeps its place, cropped to fit.
+function alloc(A, ch) {
+  const dh = Math.round(Math.min(ch, Math.sqrt(1.1e6 / A)) * DS[quality]), dw = Math.round(dh * A);
+  const sh = clamp(Math.round(dh / 2.8), 80, 300), sw = Math.round(sh * A);
+  const oA = TA;
+  TA = A;
+  if (dw !== DW || dh !== DH) {
+    const nd = pair(dw, dh, FMT.ink);
+    if (dye) copy(dye.r, nd.r, [A / oA, 1, -(A - oA) / (2 * oA), 0]);
+    free(dye);
+    free(pred);
+    free(base);
+    dye = nd;
+    pred = target(dw, dh, FMT.ink);
+    base = target(dw, dh, FMT.ink);
+    still = false;
+    DW = dw;
+    DH = dh;
+    // Live drops and ripples shift with the crop.
+    const dx = (A - oA) / 2;
+    for (const o of [...drops, ...ripples]) o.x += dx;
+  }
+  if (sw !== SW || sh !== SH) {
+    free(vel);
+    free(pres);
+    free(div);
+    vel = pair(sw, sh, FMT.vel);
+    pres = pair(sw, sh, FMT.one);
+    div = target(sw, sh, FMT.one);
+    SW = sw;
+    SH = sh;
+  }
+}
+
+/* ---------- one frame of fluid ---------- */
+const segA = new Float32Array(MAXS * 4), segV = new Float32Array(MAXS * 4);
+let nSeg = 0;
+function simStep(dt) {
+  const hx = TA / SW, hy = 1 / SH, k = 1 - Math.exp(-dt * 40);
+  if (nSeg || comb) {
+    const f = P.force;
+    gl.useProgram(f.p);
+    bind(f, 'uVel', 0, vel.r);
+    gl.uniform1f(f.u.uA, TA);
+    gl.uniform1f(f.u.uK, k);
+    gl.uniform1i(f.u.uN, nSeg);
+    gl.uniform4fv(f.u.uSeg, segA);
+    gl.uniform4fv(f.u.uSegV, segV);
+    if (comb) {
+      gl.uniform4f(f.u.uComb, comb.axis, comb.prev, comb.pos, 1);
+      gl.uniform4f(f.u.uCombB, comb.sp, comb.phase, comb.v, 0.0085);
+    } else gl.uniform4f(f.u.uComb, 0, 0, 0, 0);
+    draw(vel.w);
+    vel.swap();
+  }
+  // The flow dies quickly, and faster still as it settles.
+  const tau = flowT < 0.6 ? lerp(0.06, 0.38, flowT / 0.6) : 0.38;
+  const a = P.adv;
+  gl.useProgram(a.p);
+  bind(a, 'uVel', 0, vel.r);
+  gl.uniform2f(a.u.uTex, 1 / SW, 1 / SH);
+  gl.uniform1f(a.u.uA, TA);
+  gl.uniform1f(a.u.uDt, dt);
+  gl.uniform1f(a.u.uDamp, Math.exp(-dt / tau));
+  gl.uniform1f(a.u.uVisc, 1 - Math.exp(-dt * 7));
+  draw(vel.w);
+  vel.swap();
+  gl.useProgram(P.div.p);
+  bind(P.div, 'uVel', 0, vel.r);
+  gl.uniform2f(P.div.u.uH, hx, hy);
+  draw(div);
+  const j = P.jac;
+  gl.useProgram(j.p);
+  bind(j, 'uDiv', 1, div);
+  gl.uniform2f(j.u.uH, hx, hy);
+  for (let i = 0; i < JACOBI; i++) {
+    bind(j, 'uP', 0, pres.r);
+    gl.uniform1f(j.u.uKeep, i ? 1 : 0.8);
+    draw(pres.w);
+    pres.swap();
+  }
+  const g = P.grad;
+  gl.useProgram(g.p);
+  bind(g, 'uP', 0, pres.r);
+  bind(g, 'uVel', 1, vel.r);
+  gl.uniform2f(g.u.uH, hx, hy);
+  draw(vel.w);
+  vel.swap();
+}
+const dropC = new Float32Array(MAXD * 4), dropI = new Float32Array(MAXD * 4);
+function dropUniforms(list, dt, still) {
+  list.forEach((d, i) => {
+    dropC.set([d.x, d.y, (still ? d.a0 || 0 : d.prev) / PI, d.A / PI], i * 4);
+    dropI.set([...d.col, d.seed], i * 4);
+  });
+  for (const q of [P.dyeA, P.dyeB]) {
+    gl.useProgram(q.p);
+    gl.uniform4fv(q.u.uC, dropC);
+    gl.uniform4fv(q.u.uInk, dropI);
+    gl.uniform1i(q.u.uN, list.length);
+    gl.uniform1f(q.u.uE, 0.8 / DH);
+    gl.uniform1f(q.u.uA, TA);
+    gl.uniform1f(q.u.uDt, dt);
+  }
+}
+// While the water moves, ink is carried one frame at a time.
+function dyeStep(dt, list = drops) {
+  dropUniforms(list, dt, false);
+  gl.useProgram(P.dyeA.p);
+  bind(P.dyeA, 'uDye', 0, dye.r);
+  bind(P.dyeA, 'uVel', 1, vel.r);
+  draw(pred);
+  gl.useProgram(P.dyeB.p);
+  bind(P.dyeB, 'uDye', 0, dye.r);
+  bind(P.dyeB, 'uVel', 1, vel.r);
+  bind(P.dyeB, 'uPred', 2, pred);
+  draw(dye.w);
+  dye.swap();
+}
+// In still water, growing drops redraw from one fixed copy.
+// Each drop then resamples the ink once, not once per frame.
+let still = false;
+function dyeStill() {
+  if (!still) {
+    still = true;
+    copy(dye.r, base);
+    for (const d of drops) d.a0 = d.prev;
+  }
+  dropUniforms(drops, 0, true);
+  gl.useProgram(P.dyeA.p);
+  bind(P.dyeA, 'uDye', 0, base);
+  bind(P.dyeA, 'uVel', 1, vel.r);
+  draw(dye.w);
+  dye.swap();
+}
+// The paper takes the ink; the tray is left as fresh water.
+function takePrint() {
+  if (!printT || printT.w !== DW || printT.h !== DH) { free(printT); printT = target(DW, DH, FMT.ink); }
+  copy(dye.r, printT);
+  [dye.r, dye.w, vel.r, vel.w, pres.r, pres.w].forEach(wipe);
+  drops.length = 0;
+  ripples.length = 0;
+  flowT = 0;
+  still = false;
+}
+// The opening tray: rings dropped in turn round seven centres.
+function seed() {
+  const R = rng(1102);
+  const pts = [];
+  for (let tries = 0; pts.length < Math.round(4 * TA + 1) && tries < 400; tries++) {
+    const x = (0.12 + 0.76 * R()) * TA, y = 0.14 + 0.72 * R();
+    if (pts.every(q => Math.hypot(q[0] - x, q[1] - y) > 0.3)) pts.push([x, y, 3 + Math.floor(R() * 4)]);
+  }
+  const one = [];
+  for (let round = 0; round < 6; round++) {
+    for (const q of pts) {
+      if (round >= q[2]) continue;
+      const r = (round ? 0.04 + 0.03 * R() : 0.06 + 0.03 * R());
+      one[0] = { x: q[0] + (R() - 0.5) * 0.01, y: q[1] + (R() - 0.5) * 0.01, col: nextInk(R), seed: R() * 97, prev: 0, A: PI * r * r };
+      dyeStep(0, one);
+    }
+  }
+  for (let i = 0; i < Math.round(9 * TA); i++) {
+    const r = 0.015 + 0.02 * R();
+    one[0] = { x: R() * TA, y: R(), col: nextInk(R), seed: R() * 97, prev: 0, A: PI * r * r };
+    dyeStep(0, one);
+  }
+}
+
+/* ---------- drawing ---------- */
+const ripU = new Float32Array(MAXR * 4), tipU = new Float32Array(MAXT * 4);
+function render() {
+  const c = P.comp;
+  gl.useProgram(c.p);
+  bind(c, 'uDye', 0, dye.r);
+  bind(c, 'uVel', 1, vel.r);
+  bind(c, 'uPrint', 2, printT || dye.r);
+  gl.uniform2f(c.u.uRes, canvas.width, canvas.height);
+  gl.uniform2f(c.u.uTexel, 1 / DW, 1 / DH);
+  gl.uniform1f(c.u.uA, TA);
+  gl.uniform1f(c.u.uPr, canvas.width / Math.max(1, panel.clientWidth));
+  gl.uniform1f(c.u.uRad, 18);
+  ripples.forEach((q, i) => {
+    const amp = q.amp * Math.exp(-q.t / 0.42) * sstep(0, 0.05, q.t);
+    ripU.set([q.x, q.y, q.r0 + 0.3 * q.t, amp], i * 4);
+  });
+  gl.uniform4fv(c.u.uRip, ripU);
+  gl.uniform1i(c.u.uNRip, ripples.length);
+  let nt = 0;
+  for (const s of [...ptrs.values(), ...strokes, ...ghosts]) {
+    if (nt >= MAXT || !(s.o > 0)) continue;
+    tipU.set([s.x, s.y, s.o, 0], nt++ * 4);
+  }
+  gl.uniform4fv(c.u.uTip, tipU);
+  gl.uniform1i(c.u.uNTip, nt);
+  if (comb) gl.uniform4f(c.u.uRake, comb.axis, comb.pos, comb.o, -comb.dir);
+  else gl.uniform4f(c.u.uRake, 0, 0, 0, 1);
+  gl.uniform4f(c.u.uRakeB, comb ? comb.sp : 1, comb ? comb.phase : 0, 0, 0);
+  if (sheet) gl.uniform4f(c.u.uSheet, sheet.h, sheet.c, sheet.s, sheet.op);
+  else gl.uniform4f(c.u.uSheet, 0, 1, 0, 0);
+  gl.uniform1f(c.u.uWet, sheet ? sheet.wet : 0);
+  draw(null);
+}
+
+/* ---------- input ---------- */
+const ptrs = new Map();
+const HOLD = 0.13;
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function toTray(cx, cy) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [((cx - r.left) / r.width) * TA, 1 - (cy - r.top) / r.height];
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (sheet) { skipHold(); return; }
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  const [x, y] = toTray(e.clientX, e.clientY);
+  // A pointer waits briefly: a still press drops ink, a move stirs.
+  ptrs.set(e.pointerId, {
+    mode: 'wait', cx: e.clientX, cy: e.clientY, x0: x, y0: y, x, y, px: x, py: y, vx: 0, vy: 0, t: 0, o: 0, drop: null,
+    slop: e.pointerType === 'mouse' ? 5 : 10, r: e.pointerType === 'touch' ? 0.011 : 0.0085,
+  });
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const s = ptrs.get(e.pointerId);
+  if (!s) return;
+  [s.x, s.y] = toTray(e.clientX, e.clientY);
+  const far = Math.hypot(e.clientX - s.cx, e.clientY - s.cy);
+  if (s.mode === 'wait' && far > s.slop) {
+    s.mode = 'stir';
+    s.px = s.x0;
+    s.py = s.y0;
+  } else if (s.mode === 'drop' && far > s.slop * 2.5) {
+    // Dragging out of a growing drop stops it and starts a swirl.
+    s.drop.held = false;
+    s.drop = null;
+    s.mode = 'stir';
+    s.px = s.x;
+    s.py = s.y;
+  }
+});
+function lift(e) {
+  const s = ptrs.get(e.pointerId);
+  if (!s) return;
+  ptrs.delete(e.pointerId);
+  if (s.mode === 'wait' && e.type === 'pointerup') addDrop(s.x0, s.y0, false);
+  if (s.drop) s.drop.held = false;
+  if (s.mode === 'stir') ghosts.push(s);
+  wake();
+}
+['pointerup', 'pointercancel'].forEach(t => panel.addEventListener(t, lift));
+panel.addEventListener('lostpointercapture', lift);
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+// A stylus drags water along the segment it moved this frame.
+function stylus(s, dt) {
+  const k = 1 - Math.exp(-dt * 30);
+  s.vx = lerp(s.vx, (s.x - s.px) / dt, k);
+  s.vy = lerp(s.vy, (s.y - s.py) / dt, k);
+  const v = Math.hypot(s.vx, s.vy);
+  if (v > 5) { s.vx *= 5 / v; s.vy *= 5 / v; }
+  if (nSeg < MAXS) {
+    segA.set([s.px, s.py, s.x, s.y], nSeg * 4);
+    segV.set([s.vx, s.vy, s.r, 1], nSeg * 4);
+    nSeg++;
+  }
+  s.px = s.x;
+  s.py = s.y;
+  s.o = Math.min(1, s.o + dt * 9);
+  speed = Math.max(speed, Math.min(v, 5));
+  flowT = SETTLE;
+}
+function stepInput(dt) {
+  nSeg = 0;
+  for (const s of ptrs.values()) {
+    s.t += dt;
+    if (s.mode === 'wait' && s.t > HOLD) {
+      s.drop = addDrop(s.x0, s.y0, true);
+      s.mode = 'drop';
+    }
+    if (s.mode === 'stir') stylus(s, dt);
+  }
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const s = strokes[i];
+    s.t = Math.min(1, s.t + dt / s.dur);
+    [s.x, s.y] = strokeAt(s);
+    stylus(s, dt);
+    if (s.t >= 1) { strokes.splice(i, 1); ghosts.push(s); }
+  }
+  for (let i = ghosts.length - 1; i >= 0; i--) if ((ghosts[i].o -= dt * 6) <= 0) ghosts.splice(i, 1);
+}
+
+const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === 'c' || k === 'C') { if (!e.repeat) startComb(); }
+  else if (k === 'p' || k === 'P') { if (!e.repeat) startPrint(); }
+  else if (k === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (e.repeat || !ready) return;
+    if (sheet) { skipHold(); return; }
+    spaceDrop = addDrop(rand(0.12, 0.88) * TA, rand(0.12, 0.88), true);
+  } else if (ARROWS.has(k)) {
+    e.preventDefault();
+    if (ready && !sheet && strokes.length < 3) stroke(k);
+  }
+});
+// Holding Space keeps the ink pouring.
+function letGo() {
+  if (spaceDrop) spaceDrop.held = false;
+  spaceDrop = null;
+}
+addEventListener('keyup', e => { if (e.key === ' ') letGo(); });
+addEventListener('blur', letGo);
+combB.addEventListener('click', startComb);
+printB.addEventListener('click', startPrint);
+function chips() {
+  const off = !ready || !!sheet;
+  printB.setAttribute('aria-disabled', String(off));
+  combB.setAttribute('aria-disabled', String(off || !!comb));
+}
+chips();
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- one loop, running only while something moves ---------- */
+let raf = 0, last = 0, running = false, onScreen = false, slow = 0, frames = 0;
+const busy = () => ptrs.size || drops.length || flowT > 0 || comb || sheet || strokes.length || ripples.length || ghosts.length;
+function frame(now) {
+  raf = 0;
+  if (!running || !ready) return;
+  const raw = Math.max(0, (now - last) / 1000), dt = clamp(raw, 1 / 240, 1 / 30);
+  last = now;
+  // Sustained slow frames step the grids down.
+  if (quality < 2 && ++frames > 40) {
+    slow = raw > 0.026 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { quality++; slow = frames = 0; fit(); }
+  }
+  speed = 0;
+  stepInput(dt);
+  stepComb(dt);
+  stepDrops(dt);
+  stepSheet(dt);
+  const flowing = flowT > 0;
+  if (flowing) {
+    simStep(dt);
+    flowT -= dt;
+    if (flowT <= 0) [vel.r, vel.w, pres.r, pres.w].forEach(wipe);
+  }
+  if (flowing) { still = false; dyeStep(dt); }
+  else if (drops.length) dyeStill();
+  else still = false;
+  for (let i = drops.length - 1; i >= 0; i--) if (!drops[i].held && drops[i].A === drops[i].T) drops.splice(i, 1);
+  stepRipples(dt);
+  render();
+  canvas.classList.add('on');
+  swishTo(speed);
+  if (busy()) raf = requestAnimationFrame(frame);
+  else { swishTo(0); rest(); }
+}
+function wake() {
+  if (!running || !ready || raf) return;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+// Off screen or hidden, the tray pauses and goes quiet.
+function sync() {
+  const run = ready && onScreen && !document.hidden;
+  if (run === running) return;
+  running = run;
+  if (run) {
+    render();
+    canvas.classList.add('on');
+    if (busy()) wake();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    swishTo(0);
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, 2, Math.sqrt(1.4e6 / (w * h))) * QS[quality];
+  const cw = Math.round(w * p), ch = Math.round(h * p);
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  if (!ready) { TA = w / h; return; }
+  alloc(w / h, ch);
+  // A resized canvas is blank until drawn, so draw now.
+  if (running) render();
+}
+
+/* ---------- start: shaders link before the first paint ---------- */
+function failed() {
+  ready = false;
+  sync();
+  canvas.hidden = true;
+  panel.querySelector('.fail').hidden = false;
+  chips();
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    alloc(TA, canvas.height);
+    seed();
+    ready = true;
+    sync();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!canvas.width) { canvas.width = 1160; canvas.height = 652; }
+  try {
+    await initGL();
+    alloc(TA, canvas.height);
+    seed();
+  } catch (err) { console.error(err); failed(); return; }
+  ready = true;
+  chips();
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>

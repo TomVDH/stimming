@@ -1,0 +1,1456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
+.how {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
+  font-size: 13px; color: var(--muted);
+}
+.how div { display: flex; align-items: baseline; gap: 6px; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; }
+.how kbd {
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+/* Touch screens hide keys and hover; mice hide touch gestures. */
+@media (hover: none) { .how .fine { display: none; } }
+@media (hover: hover) { .how .touch { display: none; } }
+@media (max-width: 640px) { .how { margin-left: 0; } }
+</style>
+<title>Plasma globe</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<style>
+/* Layout: header row, the globe panel at full width, one chip row. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --room: oklch(0.13 0.02 290);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--pick); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
+.home:hover { color: var(--fg); }
+/* The sound toggle sits as quietly as the home link. */
+.snd {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
+}
+.snd:hover { color: var(--fg); }
+.snd svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
+@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
+main { display: grid; gap: 14px; min-width: 0; }
+/* The stage is 16:9, 4:5 on phones, and a dark room. */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  max-height: max(320px, calc(100vh - 176px)); max-height: max(320px, calc(100svh - 176px));
+  border-radius: 18px; overflow: hidden; background: var(--room);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage:focus-visible { outline-offset: 3px; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
+.stage canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage canvas.on { opacity: 1; }
+/* On the dark room the line keeps a pale tone. */
+.fail {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
+  font-size: 14px; color: oklch(0.74 0.02 285);
+}
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+@media (pointer: coarse) { .chip { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Plasma globe</h1>
+    <div class="tools">
+      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
+          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
+          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
+        </svg>
+      </button>
+      <a class="home" href="../index.html">Stimming</a>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A plasma globe on a dark base. Touch or click the glass to pull an arc, and tap it for a crackle. Arrow keys move a touch point, Space crackles and Escape lets go.">
+      <canvas aria-hidden="true"></canvas>
+      <p class="fail" hidden>Plasma globe needs WebGL 2, which this browser has turned off.</p>
+    </div>
+    <div class="foot">
+      <div class="ctl" role="group" aria-label="Palette">
+        <button class="chip" type="button" data-pal="violet" aria-pressed="true">Violet</button>
+        <button class="chip" type="button" data-pal="ice" aria-pressed="false">Ice</button>
+        <button class="chip" type="button" data-pal="ember" aria-pressed="false">Ember</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt>Touch the glass</dt><dd>pull an arc</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>crackle</dd></div>
+        <div class="fine"><dt><kbd>Space</kbd></dt><dd>crackle</dd></div>
+        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>move the touch</dd></div>
+      </dl>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const randn = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// Three glow hues per palette, a tip hue, a hot core and the room.
+const PAL = {
+  violet: { glows: [[0.6, 0.28, 338], [0.57, 0.27, 302], [0.57, 0.25, 270]], tip: [0.6, 0.22, 262], core: [0.95, 0.06, 345], room: [0.115, 0.022, 292] },
+  ice: { glows: [[0.72, 0.15, 222], [0.64, 0.2, 252], [0.8, 0.12, 196]], tip: [0.64, 0.19, 268], core: [0.97, 0.035, 215], room: [0.115, 0.02, 250] },
+  ember: { glows: [[0.64, 0.22, 36], [0.58, 0.23, 22], [0.74, 0.18, 58]], tip: [0.56, 0.22, 16], core: [0.96, 0.07, 82], room: [0.115, 0.018, 38] },
+};
+const palCols = name => {
+  const p = PAL[name];
+  return { glows: p.glows.map(c => linear(...c)), tip: linear(...p.tip), core: linear(...p.core), room: linear(...p.room) };
+};
+const copyPal = p => ({ glows: p.glows.map(c => c.slice()), tip: p.tip.slice(), core: p.core.slice(), room: p.room.slice() });
+let palName = 'violet', palFrom = palCols('violet'), palTo = palFrom, palK = 1;
+const pal = copyPal(palFrom);
+pal.glow = [0, 0, 0];
+function mixPal() {
+  const e = sstep(0, 1, palK);
+  for (let c = 0; c < 3; c++) {
+    for (let i = 0; i < 3; i++) pal.glows[i][c] = lerp(palFrom.glows[i][c], palTo.glows[i][c], e);
+    pal.tip[c] = lerp(palFrom.tip[c], palTo.tip[c], e);
+    pal.core[c] = lerp(palFrom.core[c], palTo.core[c], e);
+    pal.room[c] = lerp(palFrom.room[c], palTo.room[c], e);
+    pal.glow[c] = (pal.glows[0][c] + pal.glows[1][c] + pal.glows[2][c]) / 3;
+  }
+}
+mixPal();
+
+/* ---------- noise: smooth gradient noise in two dimensions ---------- */
+const PERM = new Uint8Array(512), GX = new Float32Array(256), GY = new Float32Array(256);
+{
+  const p = [...Array(256).keys()];
+  for (let i = 255; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+  for (let i = 0; i < 512; i++) PERM[i] = p[i & 255];
+  for (let i = 0; i < 256; i++) { const a = (i / 256) * TAU; GX[i] = Math.cos(a); GY[i] = Math.sin(a); }
+}
+function noise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, X = ix & 255, Y = iy & 255;
+  const a = PERM[PERM[X] + Y], b = PERM[PERM[X + 1] + Y], c = PERM[PERM[X] + Y + 1], d = PERM[PERM[X + 1] + Y + 1];
+  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10), v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  const ga = GX[a] * fx + GY[a] * fy, gb = GX[b] * (fx - 1) + GY[b] * fy;
+  const gc = GX[c] * fx + GY[c] * (fy - 1), gd = GX[d] * (fx - 1) + GY[d] * (fy - 1);
+  return 1.4 * lerp(lerp(ga, gb, u), lerp(gc, gd, u), v);
+}
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const SKEY = 'stimming.plasma.sound', MAXV = 10, LEAD = 0.004;
+let soundOn = true;
+try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+let ac = null, out = null, noiseBuf = null, askedAt = -1e9, voices = 0, hum = null, humAt = 0, humWas = -1;
+const crNext = { amb: 0, hold: 0, snap: 0, burst: 0 };
+const crGap = { amb: 0.22, hold: 0.06, snap: 0.05, burst: 0.12 };
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.08 * voices);
+
+function audio() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (err) { return; }
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    out = ac.createGain();
+    out.gain.value = 0.55;
+    out.connect(comp);
+    comp.connect(ac.destination);
+    // Two seconds of white noise feed the buzz and every crackle.
+    noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    buildHum();
+  }
+  // Off screen, the globe stays silent until it returns.
+  if (!visible) { ac.suspend()?.catch(() => {}); return; }
+  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
+}
+// A context still waking queues sounds for a moment.
+function live() {
+  if (!soundOn || !ac || ac.state === 'closed') return null;
+  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+}
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+function unlock(e) {
+  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  // A touch counts as a gesture only once the finger lifts.
+  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+  audio();
+}
+// Touchend is the gesture iOS needs.
+['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+
+// The mains hum: 50 Hz harmonics, strongest at 100 Hz, under a low-pass.
+function buildHum() {
+  const N = 16, re = new Float32Array(N), im = new Float32Array(N);
+  [0, 0.3, 1, 0.3, 0.55, 0.14, 0.26, 0.06, 0.12, 0.04, 0.07, 0, 0.035, 0, 0.02, 0].forEach((v, i) => { im[i] = v; });
+  const wave = ac.createPeriodicWave(re, im);
+  const gain = v => { const g = ac.createGain(); g.gain.value = v; return g; };
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+  o1.setPeriodicWave(wave);
+  o2.setPeriodicWave(wave);
+  o1.frequency.value = 50;
+  // A slightly detuned twin makes the hum beat slowly.
+  o2.frequency.value = 50.17;
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 360;
+  lp.Q.value = 0.9;
+  const hg = gain(0);
+  o1.connect(lp);
+  o2.connect(gain(0.45)).connect(lp);
+  lp.connect(hg).connect(out);
+  // The corona buzz is band-passed noise pulsing at 100 Hz.
+  const ns = ac.createBufferSource();
+  ns.buffer = noiseBuf;
+  ns.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 2600;
+  bp.Q.value = 0.6;
+  const am = gain(0.5), mod = ac.createOscillator(), bz = gain(0);
+  mod.frequency.value = 100;
+  mod.connect(gain(0.5)).connect(am.gain);
+  ns.connect(bp).connect(am).connect(bz).connect(out);
+  [o1, o2, mod, ns].forEach(n => n.start());
+  hum = { hg, lp, bz };
+  humWas = -1;
+}
+// The hum swells and brightens while the glass is touched.
+function humLevel(k, now) {
+  const a = live();
+  if (!a || !hum || (now - humAt < 90 && Math.abs(k - humWas) < 0.15)) return;
+  humAt = now;
+  humWas = k;
+  const t = a.currentTime;
+  hum.hg.gain.setTargetAtTime(0.06 + 0.05 * k, t, 0.14);
+  hum.lp.frequency.setTargetAtTime(360 + 700 * k, t, 0.18);
+  hum.bz.gain.setTargetAtTime(0.026 * k, t, 0.1);
+}
+// A crackle: sparse noise grains, each a click with a tiny tail.
+function crackle(x, size, kind) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD;
+  if (t < crNext[kind]) return;
+  crNext[kind] = t + crGap[kind] * jit(0.3);
+  const sr = a.sampleRate, len = Math.ceil(sr * (0.03 + 0.24 * size));
+  const buf = a.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  for (let n = Math.round((3 + size * 28) * jit(0.3)), g = 0; g < n; g++) {
+    const at = Math.floor(len * 0.92 * Math.random() ** 1.6), gl = Math.max(4, Math.floor(sr * rand(0.0003, 0.0022)));
+    const amp = (0.25 + 0.75 * Math.random() ** 2) * (Math.random() < 0.5 ? -1 : 1);
+    for (let i = 0; i < gl && at + i < len; i++) d[at + i] += amp * (Math.random() * 2 - 1) * Math.exp(-i / (gl * 0.3));
+    d[at] += amp * 0.9;
+  }
+  const src = a.createBufferSource(), hp = a.createBiquadFilter(), bp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf;
+  hp.type = 'highpass';
+  hp.frequency.value = 1300 * jit(0.1);
+  bp.type = 'bandpass';
+  bp.frequency.value = rand(2800, 5400);
+  bp.Q.value = 0.7;
+  g.gain.value = level() * (0.2 + 0.28 * size) * jit(0.12);
+  let end = out, pan = null;
+  if (a.createStereoPanner) {
+    pan = a.createStereoPanner();
+    pan.pan.value = clamp(x * 1.6 - 0.8, -0.8, 0.8);
+    pan.connect(out);
+    end = pan;
+  }
+  src.connect(hp).connect(bp).connect(g).connect(end);
+  src.start(t);
+  track(src, hp, bp, g, ...(pan ? [pan] : []));
+}
+
+/* ---------- the camera, shared by the shader and the input ---------- */
+// The globe has radius 1 and sits on its base; the floor is at YBOT.
+const RE = 0.1, RIN = 0.972, YTOP = -0.78;
+const C = { px: 0, py: 0, pz: 0, fx: 0, fy: 0, fz: 0, ux: 0, uy: 0, uz: 0, s: 1, a: 1, gx: 0, gy: 0, gr: 1 };
+let W = 0, H = 0, cw = 1, ch = 1;
+function setCamera() {
+  const el = 8.5 * D2R, dist = 7.4, ty = -0.32;
+  C.py = ty + dist * Math.sin(el);
+  C.pz = dist * Math.cos(el);
+  C.fy = -Math.sin(el);
+  C.fz = -Math.cos(el);
+  C.uy = Math.cos(el);
+  C.uz = -Math.sin(el);
+  C.a = W / H;
+  C.s = Math.max(1.5, 1.24 / C.a) / dist;
+  proj(0, 0, 0, 0);
+  C.gx = PX[0];
+  C.gy = PY[0];
+  C.gr = (ch * 0.5) / C.s / Math.sqrt(C.py * C.py + C.pz * C.pz - 1);
+}
+// Projection scratch: canvas pixels, y up, and pixels per unit.
+const NP = 40, PX = new Float32Array(NP), PY = new Float32Array(NP), PK = new Float32Array(NP);
+const SX = new Float32Array(NP), SY = new Float32Array(NP), SZ = new Float32Array(NP);
+function proj(x, y, z, i) {
+  const vx = x - C.px, vy = y - C.py, vz = z - C.pz;
+  const inv = 1 / (vy * C.fy + vz * C.fz);
+  PX[i] = (0.5 + (0.5 * vx * inv) / (C.s * C.a)) * cw;
+  PY[i] = (0.5 + (0.5 * (vy * C.uy + vz * C.uz) * inv) / C.s) * ch;
+  PK[i] = (ch * 0.5 * inv) / C.s;
+}
+// The point under a stage position on the globe's front, or its rim.
+function globeAt(x, y, margin) {
+  const u = (x / W) * 2 - 1, v = 1 - (y / H) * 2;
+  let dx = u * C.s * C.a, dy = C.fy + C.uy * v * C.s, dz = C.fz + C.uz * v * C.s;
+  const l = Math.hypot(dx, dy, dz);
+  dx /= l; dy /= l; dz /= l;
+  const b = C.py * dy + C.pz * dz, c = C.py * C.py + C.pz * C.pz - 1, h = b * b - c;
+  let t = -b, hx, hy, hz;
+  if (h >= 0) t -= Math.sqrt(h);
+  hx = dx * t;
+  hy = C.py + dy * t;
+  hz = C.pz + dz * t;
+  const r = Math.hypot(hx, hy, hz);
+  if (h < 0 && r - 1 > margin) return null;
+  hx /= r; hy /= r; hz /= r;
+  // The collar hides the bottom of the glass.
+  if (hy < -0.72) {
+    if (h >= 0 && hy < -0.8 && margin < 0.1) return null;
+    const k = Math.sqrt((1 - 0.72 * 0.72) / Math.max(1e-6, hx * hx + hz * hz));
+    hx *= k; hz *= k; hy = -0.72;
+  }
+  return [hx, hy, hz];
+}
+
+/* ---------- filaments ---------- */
+let T = rand(0, 500), flash = 0, Lint = 1;
+const fils = [], touches = new Map(), ghosts = [];
+const B1 = new Float32Array(3), B2 = new Float32Array(3);
+// Two axes across a direction.
+function perp(x, y, z) {
+  let ax = -z, ay = 0, az = x, l = Math.hypot(ax, az);
+  if (l < 1e-3) { ax = 1; ay = 0; az = 0; l = 1; }
+  ax /= l; az /= l;
+  B1[0] = ax; B1[1] = ay; B1[2] = az;
+  B2[0] = y * az - z * ay; B2[1] = z * ax - x * az; B2[2] = x * ay - y * ax;
+}
+function randomDir(f) {
+  let x, y, z, l;
+  do { x = randn(); y = randn(); z = randn(); l = Math.hypot(x, y, z); } while (l < 1e-3 || y / l < -0.5);
+  f.ux = x / l; f.uy = y / l; f.uz = z / l;
+}
+function makeForks(f) {
+  f.forks.length = 0;
+  for (let n = Math.random() < 0.45 ? 3 : 2, j = 0; j < n; j++) f.forks.push({ tf: rand(0.52, 0.8), sp: rand(0.14, 0.34), phi: rand(0, TAU), w: rand(-0.5, 0.5), seed: rand(0, 100) });
+  f.forks.sort((a, b) => a.tf - b.tf);
+}
+function makeFils(n) {
+  fils.length = 0;
+  for (let i = 0; i < n; i++) {
+    // A golden spiral spreads the first filaments over the upper glass.
+    const y = 0.9 - 1.4 * ((i + 0.5) / n), r = Math.sqrt(1 - y * y), a = i * 2.39996;
+    const f = { ux: r * Math.cos(a), uy: y, uz: r * Math.sin(a), vx: 0, vy: 0, vz: 0, seed: rand(0, 200), h: Math.random(), life: rand(2, 9), grow: 1, delay: 0, flare: 0, I: 1, k: 0, kT: 0, tx: 0, ty: 0, tz: 1, tseed: 0, hold: 0, touch: null, forks: [], col: [0, 0, 0], tipCol: [0, 0, 0] };
+    makeForks(f);
+    fils.push(f);
+  }
+}
+// A filament strikes anew from the electrode toward a new spot.
+function restrike(f, near) {
+  if (near) {
+    perp(f.ux, f.uy, f.uz);
+    const a = rand(0, TAU), s = rand(0.35, 0.75);
+    f.ux += (B1[0] * Math.cos(a) + B2[0] * Math.sin(a)) * s;
+    f.uy += (B1[1] * Math.cos(a) + B2[1] * Math.sin(a)) * s;
+    f.uz += (B1[2] * Math.cos(a) + B2[2] * Math.sin(a)) * s;
+    const l = Math.hypot(f.ux, f.uy, f.uz);
+    f.ux /= l; f.uy /= l; f.uz /= l;
+    if (f.uy < -0.5) randomDir(f);
+  } else randomDir(f);
+  f.vx = f.vy = f.vz = 0;
+  f.seed = rand(0, 200);
+  f.grow = 0;
+  f.life = rand(3, 10);
+  makeForks(f);
+}
+function burst(x) {
+  for (const f of fils) {
+    f.flare = Math.max(f.flare, 1.3);
+    if (f.kT > 0) continue;
+    restrike(f, false);
+    f.k = 0;
+    f.delay = rand(0, 0.08);
+  }
+  flash = 1;
+  crackle(x, 1, 'burst');
+  wake();
+}
+
+/* ---------- touches ---------- */
+function touchStart(id, d, x) {
+  if (touches.size >= 5 || touches.has(id)) return;
+  const t = { id, dx: d[0], dy: d[1], dz: d[2], sx: d[0], sy: d[1], sz: d[2], hold: 0, str: 0, seed: rand(0, 200), fils: [], crk: rand(0.05, 0.15), x };
+  const free = fils.filter(f => !f.touch);
+  const want = Math.min(Math.random() < 0.2 ? 1 : Math.random() < 0.5 ? 2 : 3, Math.max(1, free.length - 3), free.length);
+  free.sort((a, b) => b.ux * d[0] + b.uy * d[1] + b.uz * d[2] - (a.ux * d[0] + a.uy * d[1] + a.uz * d[2]));
+  for (const f of free.slice(0, want)) {
+    f.touch = t;
+    f.kT = 1;
+    f.tseed = t.seed;
+    f.tx = t.sx; f.ty = t.sy; f.tz = t.sz;
+    if (f.grow < 1) { f.grow = 1; f.delay = 0; }
+    t.fils.push(f);
+  }
+  touches.set(id, t);
+  crackle(x, 0.35, 'snap');
+  wake();
+}
+function touchMove(id, d, x) {
+  const t = touches.get(id);
+  if (!t) return;
+  t.dx = d[0]; t.dy = d[1]; t.dz = d[2];
+  t.x = x;
+  wake();
+}
+function touchEnd(id) {
+  const t = touches.get(id);
+  if (!t) return;
+  for (const f of t.fils) { f.touch = null; f.kT = 0; }
+  touches.delete(id);
+  ghosts.push(t);
+  wake();
+}
+
+/* ---------- one step of the globe ---------- */
+function step(dt, now) {
+  const amb = reduce ? 0 : 1;
+  let busy = false;
+  T += dt * amb;
+  if (palK < 1) { palK = reduce ? 1 : Math.min(1, palK + dt / 0.45); mixPal(); busy = true; }
+  flash *= Math.exp(-dt / 0.25);
+  if (flash > 0.004) busy = true;
+
+  let tl = 0;
+  for (const t of touches.values()) {
+    const e = 1 - Math.exp(-dt * 24);
+    t.sx += (t.dx - t.sx) * e; t.sy += (t.dy - t.sy) * e; t.sz += (t.dz - t.sz) * e;
+    const l = Math.hypot(t.sx, t.sy, t.sz);
+    t.sx /= l; t.sy /= l; t.sz /= l;
+    t.hold += dt;
+    t.str = Math.min(1, t.str + dt / 0.08);
+    const hk = sstep(0, 2.4, t.hold);
+    tl += t.str * (0.55 + 0.6 * hk);
+    if (t.hold < 2.6 || Math.abs(t.dx - t.sx) + Math.abs(t.dy - t.sy) + Math.abs(t.dz - t.sz) > 1e-4) busy = true;
+    // Held contact crackles, faster as it builds.
+    t.crk -= dt;
+    if (t.crk <= 0) {
+      crackle(t.x, 0.18 + 0.32 * hk, 'hold');
+      t.crk = rand(0.07, 0.32) / (0.6 + hk);
+    }
+  }
+  for (let i = ghosts.length - 1; i >= 0; i--) {
+    ghosts[i].str -= dt / 0.22;
+    if (ghosts[i].str <= 0) ghosts.splice(i, 1);
+    else busy = true;
+  }
+  humLevel(Math.min(1.4, tl), now);
+
+  // Filaments wander, repel each other and lean toward touches.
+  if (amb) {
+    const s = Math.sqrt(dt) * 0.5, damp = Math.exp(-dt * 0.9);
+    for (const f of fils) {
+      f.vx = (f.vx + randn() * s) * damp;
+      f.vy = (f.vy + randn() * s + 0.02 * dt) * damp;
+      f.vz = (f.vz + randn() * s) * damp;
+      if (f.uy < -0.5) f.vy += (-0.5 - f.uy) * 6 * dt;
+      if (f.kT) continue;
+      for (const t of touches.values()) {
+        const d = f.ux * t.sx + f.uy * t.sy + f.uz * t.sz;
+        if (d > 0.1) { const k = 0.4 * d * dt; f.vx += (t.sx - f.ux) * k; f.vy += (t.sy - f.uy) * k; f.vz += (t.sz - f.uz) * k; }
+      }
+    }
+    for (let i = 0; i < fils.length; i++) {
+      const a = fils[i];
+      for (let j = i + 1; j < fils.length; j++) {
+        const b = fils[j], d = a.ux * b.ux + a.uy * b.uy + a.uz * b.uz;
+        if (d < 0.8) continue;
+        const k = (d - 0.8) * 2 * dt, x = (a.ux - b.ux) * k, y = (a.uy - b.uy) * k, z = (a.uz - b.uz) * k;
+        a.vx += x; a.vy += y; a.vz += z;
+        b.vx -= x; b.vy -= y; b.vz -= z;
+      }
+    }
+  }
+  let lsum = 0;
+  for (const f of fils) {
+    if (amb) {
+      const vd = f.vx * f.ux + f.vy * f.uy + f.vz * f.uz;
+      f.vx -= f.ux * vd; f.vy -= f.uy * vd; f.vz -= f.uz * vd;
+      const sp = Math.hypot(f.vx, f.vy, f.vz);
+      if (sp > 0.45) { f.vx *= 0.45 / sp; f.vy *= 0.45 / sp; f.vz *= 0.45 / sp; }
+      f.ux += f.vx * dt; f.uy += f.vy * dt; f.uz += f.vz * dt;
+      const l = Math.hypot(f.ux, f.uy, f.uz);
+      f.ux /= l; f.uy /= l; f.uz /= l;
+      f.life -= dt;
+      if (f.life <= 0 && f.kT === 0 && f.k < 0.05) {
+        restrike(f, Math.random() < 0.75);
+        f.flare = Math.max(f.flare, 0.45);
+        if (Math.random() < 0.7) { proj(f.ux, f.uy, f.uz, 0); crackle(PX[0] / cw, rand(0.1, 0.26), 'amb'); }
+      }
+    }
+    if (f.delay > 0) { f.delay -= dt; busy = true; }
+    else if (f.grow < 1) { f.grow = Math.min(1, f.grow + dt / 0.09); busy = true; }
+    f.flare *= Math.exp(-dt / 0.3);
+    if (f.flare > 0.004) busy = true;
+    // Flicker: a shimmer and, now and then, a dip.
+    const dip = sstep(0.42, 0.66, noise(T * 1.1 + f.seed * 3.7, 7.3));
+    f.I = (0.86 + 0.16 * noise(T * 4.2 + f.seed, f.seed * 0.31)) * (1 - 0.5 * dip);
+    const rate = f.kT > f.k ? 18 : 2.6;
+    f.k += (f.kT - f.k) * (1 - Math.exp(-dt * rate));
+    if (Math.abs(f.kT - f.k) > 0.002) busy = true;
+    else f.k = f.kT;
+    if (f.touch) { f.tx = f.touch.sx; f.ty = f.touch.sy; f.tz = f.touch.sz; f.hold = f.touch.hold; }
+    else f.hold *= Math.exp(-dt * 2.5);
+    lsum += f.I * (1 + 0.6 * f.flare);
+    // Each filament takes a place on the palette's three-stop ramp.
+    const g = pal.glows, h = f.h * 2, i0 = h < 1 ? 0 : 1, w = h - i0;
+    for (let c = 0; c < 3; c++) {
+      f.col[c] = lerp(g[i0][c], g[i0 + 1][c], w);
+      f.tipCol[c] = lerp(f.col[c], pal.tip[c], 0.65);
+    }
+  }
+  Lint = (0.85 * lsum) / fils.length + 0.22 * tl + 0.6 * flash;
+  return busy;
+}
+
+/* ---------- strands: polylines emitted as glowing segments ---------- */
+// Twelve floats per instance: ends, intensities, widths, colour, core.
+const INST = 12, MAXI = 2048;
+const inst = new Float32Array(INST * MAXI);
+let ni = 0;
+function put(ax, ay, bx, by, ia, ib, sc, sg, r, g, b, ca) {
+  if (ni >= MAXI) return;
+  let o = ni++ * INST;
+  inst[o++] = ax; inst[o++] = ay; inst[o++] = bx; inst[o++] = by;
+  inst[o++] = ia; inst[o++] = ib; inst[o++] = sc; inst[o++] = sg;
+  inst[o++] = r; inst[o++] = g; inst[o++] = b; inst[o] = ca;
+}
+// A blob is a segment of zero length with a negative core width.
+function blob(x, y, z, I, sc, sg, col, ca) {
+  proj(x, y, z, NP - 1);
+  const k = PK[NP - 1];
+  put(PX[NP - 1], PY[NP - 1], PX[NP - 1], PY[NP - 1], I, I, -Math.max(0.6, sc * k), sg * k, col[0], col[1], col[2], ca);
+}
+const ST = { n: 8, amp: 0, seed: 0, tseed: 0, k: 0, grow: 1, I0: 1, I1: 1, c0: 1, c1: 1, sc: 0.003, sg0: 0.01, sg1: 0.01, colA: null, colB: null, arch: 0 };
+const wander = (t, s) => 0.72 * noise(t * 1.7 + s, T * 0.33 + s * 0.37) + 0.3 * noise(t * 4.6 + s * 1.3, T * 1.25 + 3.1) + 0.14 * noise(t * 15 + s * 0.7, T * 7.5 + 9.7);
+// Emits one strand from a point to a point; its points stay in the scratch.
+function strand(x0, y0, z0, x1, y1, z1) {
+  const n = ST.n, lx = x1 - x0, ly = y1 - y0, lz = z1 - z0, len = Math.hypot(lx, ly, lz) || 1e-6;
+  perp(lx / len, ly / len, lz / len);
+  const last = Math.min(n, Math.ceil(ST.grow * n - 1e-4));
+  if (last < 1) return 0;
+  const k = ST.k * 0.88, amp = ST.amp * len;
+  for (let i = 0; i <= last; i++) {
+    const t = Math.min(i / n, ST.grow), e = Math.pow(Math.sin(Math.PI * t), 0.85) * amp;
+    let a = wander(t, ST.seed), b = wander(t, ST.seed + 57.3);
+    if (k > 0) { a += (wander(t, ST.tseed) - a) * k; b += (wander(t, ST.tseed + 57.3) - b) * k; }
+    let x = x0 + lx * t + (B1[0] * a + B2[0] * b) * e;
+    let y = y0 + ly * t + (B1[1] * a + B2[1] * b) * e + ST.arch * len * Math.sin(Math.PI * t);
+    let z = z0 + lz * t + (B1[2] * a + B2[2] * b) * e;
+    const r = Math.hypot(x, y, z);
+    if (r > RIN) { x *= RIN / r; y *= RIN / r; z *= RIN / r; }
+    SX[i] = x; SY[i] = y; SZ[i] = z;
+    proj(x, y, z, i);
+  }
+  const A = ST.colA, B = ST.colB;
+  for (let i = 0; i < last; i++) {
+    const ta = i / n, tb = Math.min((i + 1) / n, ST.grow), tm = (ta + tb) * 0.5, kp = (PK[i] + PK[i + 1]) * 0.5;
+    // Strands in front of the electrode read a little brighter.
+    const dc = 0.86 + 0.14 * (SZ[i] + SZ[i + 1]) * 0.5;
+    put(PX[i], PY[i], PX[i + 1], PY[i + 1], lerp(ST.I0, ST.I1, ta) * dc, lerp(ST.I0, ST.I1, tb) * dc,
+      Math.max(0.6, ST.sc * kp), lerp(ST.sg0, ST.sg1, tm) * kp,
+      lerp(A[0], B[0], tm), lerp(A[1], B[1], tm), lerp(A[2], B[2], tm), lerp(ST.c0, ST.c1, tm));
+  }
+  return last;
+}
+// A twig is a short hair off a strand near the glass.
+function twig(x, y, z, ex, ey, ez, ph, sp, I, col, seed) {
+  perp(ex, ey, ez);
+  let tx = ex + (B1[0] * Math.cos(ph) + B2[0] * Math.sin(ph)) * sp;
+  let ty = ey + (B1[1] * Math.cos(ph) + B2[1] * Math.sin(ph)) * sp;
+  let tz = ez + (B1[2] * Math.cos(ph) + B2[2] * Math.sin(ph)) * sp;
+  const l = RIN / Math.hypot(tx, ty, tz);
+  Object.assign(ST, { n: 4, amp: 0.45, seed, k: 0, grow: 1, I0: I, I1: I * 0.35, c0: 0.5, c1: 0.2, sc: 0.0022, sg0: 0.009, sg1: 0.012, colA: col, colB: col, arch: 0 });
+  strand(x, y, z, tx * l, ty * l, tz * l);
+}
+const FK = new Float32Array(3 * 6);
+function drawFil(f) {
+  if (f.delay > 0) return;
+  const k = sstep(0, 1, f.k), hk = k * sstep(0, 2.4, f.hold), free = 1 - k;
+  let ex = f.ux, ey = f.uy, ez = f.uz;
+  if (k > 0) {
+    ex += (f.tx - ex) * k; ey += (f.ty - ey) * k; ez += (f.tz - ez) * k;
+    const l = Math.hypot(ex, ey, ez);
+    ex /= l; ey /= l; ez /= l;
+  }
+  // The root wanders over the electrode; arcs share one root.
+  const ts = T * 0.21;
+  let ox = ex + 0.55 * noise(f.seed, ts), oy = ey + 0.15 + 0.55 * noise(f.seed + 9.1, ts), oz = ez + 0.55 * noise(f.seed + 4.4, ts);
+  if (k > 0) {
+    ox += (f.tx + 0.4 * noise(f.tseed, ts) - ox) * k;
+    oy += (f.ty + 0.15 + 0.4 * noise(f.tseed + 9.1, ts) - oy) * k;
+    oz += (f.tz + 0.4 * noise(f.tseed + 4.4, ts) - oz) * k;
+  }
+  const ol = (RE * 1.02) / Math.hypot(ox, oy, oz);
+  ox *= ol; oy *= ol; oz *= ol;
+  const I = f.I * (1 + f.flare) * (1 + 0.45 * k + 1.5 * hk), wk = 1 + 0.25 * k + 0.75 * hk;
+  Object.assign(ST, {
+    n: 30, amp: 0.2 * (1 - 0.45 * k), seed: f.seed, tseed: f.tseed, k, grow: f.grow,
+    I0: I, I1: I * (0.5 + 0.35 * k), c0: 2.6, c1: 0.7 + 1.2 * k, sc: 0.0032 * wk, sg0: 0.017 * wk, sg1: 0.03 * wk,
+    colA: f.col, colB: f.tipCol, arch: 0.07 * free,
+  });
+  const m = strand(ox, oy, oz, ex * RIN, ey * RIN, ez * RIN);
+  if (!m) return;
+  // Save the tip and the fork roots before the scratch is reused.
+  const px = SX[m], py = SY[m], pz = SZ[m], reached = f.grow >= 1;
+  const tw = m >= 22, wx = SX[22], wy = SY[22], wz = SZ[22];
+  let nf = 0;
+  if (free > 0.02) {
+    for (const fk of f.forks) {
+      const idx = Math.round(fk.tf * 30);
+      if (idx >= m) break;
+      FK[nf * 3] = SX[idx]; FK[nf * 3 + 1] = SY[idx]; FK[nf * 3 + 2] = SZ[idx];
+      nf++;
+    }
+  }
+  if (reached) blob(px, py, pz, I * 0.55 * (1 + hk), 0.004 * wk, 0.022 * wk, f.tipCol, 1.2);
+  if (free <= 0.02) return;
+  const sh = 0.6 + 0.4 * noise(T * 6 + f.seed, 1.7);
+  if (tw && reached) {
+    twig(wx, wy, wz, ex, ey, ez, f.seed + T * 0.7, 0.11, I * 0.3 * free * sh, f.tipCol, f.seed + 31);
+    twig(wx, wy, wz, ex, ey, ez, f.seed + 2.6 - T * 0.5, 0.15, I * 0.24 * free * sh, f.tipCol, f.seed + 77);
+  }
+  perp(ex, ey, ez);
+  const b1x = B1[0], b1y = B1[1], b1z = B1[2], b2x = B2[0], b2y = B2[1], b2z = B2[2];
+  for (let j = 0; j < nf; j++) {
+    const fk = f.forks[j], g = clamp((f.grow - fk.tf) / (1 - fk.tf));
+    if (g <= 0) continue;
+    const ph = fk.phi + T * fk.w + 0.5 * noise(T * 0.4, fk.seed), cs = Math.cos(ph) * fk.sp, sn = Math.sin(ph) * fk.sp;
+    let bx = ex + b1x * cs + b2x * sn, by = ey + b1y * cs + b2y * sn, bz = ez + b1z * cs + b2z * sn;
+    const bl = RIN / Math.hypot(bx, by, bz);
+    bx *= bl; by *= bl; bz *= bl;
+    const Ib = I * lerp(1, 0.5, fk.tf) * 0.55 * free;
+    Object.assign(ST, { n: 10, amp: 0.3, seed: fk.seed + f.seed, k: 0, grow: g, I0: Ib, I1: Ib * 0.55, c0: 1, c1: 0.5, sc: 0.0026, sg0: 0.013, sg1: 0.02, colA: f.col, colB: f.tipCol, arch: 0 });
+    const mb = strand(FK[j * 3], FK[j * 3 + 1], FK[j * 3 + 2], bx, by, bz);
+    if (g < 1 || mb < 7) continue;
+    const qx = SX[6], qy = SY[6], qz = SZ[6];
+    blob(bx, by, bz, Ib * 0.6, 0.0035, 0.018, f.tipCol, 0.9);
+    twig(qx, qy, qz, bx / RIN, by / RIN, bz / RIN, fk.seed + T * 0.9, 0.12, Ib * 0.4 * sh, f.tipCol, fk.seed + 13);
+  }
+}
+const TC = [0, 0, 0];
+function drawTouch(t, fade) {
+  const s = t.str * fade, hk = sstep(0, 2.4, t.hold);
+  const x = t.sx * RIN, y = t.sy * RIN, z = t.sz * RIN;
+  for (let c = 0; c < 3; c++) TC[c] = lerp(pal.glow[c], pal.core[c], 0.3);
+  blob(x, y, z, (2.2 + 3 * hk) * s, 0.006 * (1 + 0.6 * hk), 0.03 * (1 + 0.5 * hk), TC, 1.6);
+  blob(x, y, z, 0.35 * (1 + hk) * s, 0.01, 0.09, pal.glow, 0);
+  // Creepers spread over the glass around the contact.
+  for (let m = 0; m < 6; m++) {
+    const ph = (m / 6) * TAU + 0.9 * noise(T * 1.6, t.seed + m * 3.1);
+    const sp = 0.07 + 0.03 * (1 + noise(T * 2.3 + m, t.seed)) + 0.05 * hk;
+    perp(t.sx, t.sy, t.sz);
+    let ex = t.sx + (B1[0] * Math.cos(ph) + B2[0] * Math.sin(ph)) * sp;
+    let ey = t.sy + (B1[1] * Math.cos(ph) + B2[1] * Math.sin(ph)) * sp;
+    let ez = t.sz + (B1[2] * Math.cos(ph) + B2[2] * Math.sin(ph)) * sp;
+    const l = RIN / Math.hypot(ex, ey, ez);
+    const I = (0.7 + 0.9 * hk) * s * (0.55 + 0.45 * noise(T * 9 + m * 7, t.seed));
+    Object.assign(ST, { n: 4, amp: 0.4, seed: t.seed + m * 11, k: 0, grow: 1, I0: I, I1: 0.05 * I, c0: 0.6, c1: 0.2, sc: 0.0022, sg0: 0.01, sg1: 0.012, colA: TC, colB: pal.glow, arch: 0 });
+    strand(x, y, z, ex * l, ey * l, ez * l);
+  }
+}
+function build() {
+  ni = 0;
+  for (const f of fils) drawFil(f);
+  for (const t of touches.values()) drawTouch(t, 1);
+  for (const t of ghosts) drawTouch(t, 1);
+  // The electrode: a hot core inside a wide halo.
+  blob(0, 0, 0, (1.3 + 0.8 * flash) * Lint, RE * 0.5, RE * 1.8, pal.glow, 2.2);
+  blob(0, 0, 0, 0.22 * Lint, RE * 0.5, RE * 5, pal.glow, 0);
+}
+
+/* ---------- WebGL ---------- */
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// Each segment is a quad wide enough for its glow.
+const SEG_VS = `#version 300 es
+layout(location = 0) in vec2 aQ;
+layout(location = 1) in vec4 aP;
+layout(location = 2) in vec4 aI;
+layout(location = 3) in vec4 aC;
+uniform vec2 uRes;
+out vec2 vL;
+flat out vec4 vI;
+flat out vec4 vC;
+flat out float vLen;
+void main() {
+  vec2 a = aP.xy, d = aP.zw - aP.xy;
+  float l = length(d), m = 3.0 * aI.w + 1.0;
+  vec2 dir = l > 1e-4 ? d / l : vec2(1.0, 0.0);
+  float s = aQ.x < 0.0 ? -m : l + m, p = aQ.y * m;
+  vL = vec2(s, p);
+  vLen = l;
+  vI = aI;
+  vC = aC;
+  vec2 pos = a + dir * s + vec2(-dir.y, dir.x) * p;
+  gl_Position = vec4(pos / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// A Gaussian line integral: neighbouring segments sum without beads.
+const SEG_FS = `#version 300 es
+precision highp float;
+uniform vec3 uCore;
+in vec2 vL;
+flat in vec4 vI;
+flat in vec4 vC;
+flat in float vLen;
+out vec4 o;
+float G(float x) { return 0.5 + 0.5 * tanh(clamp(x * 0.8, -9.0, 9.0)); }
+void main() {
+  float s = vL.x, p = vL.y;
+  if (vI.z < 0.0) {
+    float r2 = dot(vL, vL), sc = -vI.z;
+    float core = exp(-r2 / (2.0 * sc * sc)), glow = exp(-r2 / (2.0 * vI.w * vI.w));
+    o = vec4((uCore * core * vC.a + vC.rgb * glow) * vI.x, 1.0);
+    return;
+  }
+  float l = vLen, sc = vI.z, sg = vI.w;
+  float I = mix(vI.x, vI.y, clamp(s / max(l, 1e-3), 0.0, 1.0));
+  float core = exp(-p * p / (2.0 * sc * sc)) * (G((l - s) / sc) - G(-s / sc));
+  float glow = exp(-p * p / (2.0 * sg * sg)) * (G((l - s) / sg) - G(-s / sg));
+  o = vec4((uCore * core * vC.a + vC.rgb * glow) * I, 1.0);
+}`;
+// A quarter-size copy of the plasma for soft reflections.
+const SOFT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uTx;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy * 4.0 * uTx;
+  vec3 c = texture(uSrc, uv - uTx).rgb + texture(uSrc, uv + uTx).rgb
+    + texture(uSrc, uv + vec2(uTx.x, -uTx.y)).rgb + texture(uSrc, uv + vec2(-uTx.x, uTx.y)).rgb;
+  o = vec4(c * 0.25, 1.0);
+}`;
+// The scene: room, floor, turned base, glass globe and electrode.
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uF, uFs;
+uniform vec2 uRes;
+uniform vec3 uCam, uUp, uFw, uGC;
+uniform float uS, uA;
+uniform vec3 uLight, uHaze, uElec, uRoom, uTCol;
+uniform vec4 uTouch[5];
+out vec4 o;
+const float YTOP = -0.78, YBOT = -1.56, RE = 0.1, RS = 0.022;
+
+vec2 sphere(vec3 ro, vec3 rd, float r) {
+  float b = dot(ro, rd), c = dot(ro, ro) - r * r, h = b * b - c;
+  if (h < 0.0) return vec2(-1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+float bump(float y, float c, float w) { float d = (y - c) / w; return exp(-d * d); }
+// Rises from 0 at a to 1 at b, where b lies below a.
+float fall(float a, float b, float y) { return 1.0 - smoothstep(b, a, y); }
+// The lathe profile: radius at each height.
+float prof(float y) {
+  float r = 0.636;
+  r += 0.014 * bump(y, -0.792, 0.011);
+  r -= 0.02 * bump(y, -0.95, 0.011);
+  r += 0.07 * fall(-0.975, -1.07, y);
+  r += 0.115 * pow(fall(-1.07, -1.47, y), 1.7);
+  r += 0.026 * fall(-1.452, -1.47, y);
+  r -= 0.014 * bump(y, -1.515, 0.01);
+  return r;
+}
+float smax(float a, float b, float k) { float h = max(k - abs(a - b), 0.0); return max(a, b) + h * h * 0.25 / k; }
+float sdBase(vec3 p) {
+  float d = (length(p.xz) - prof(p.y)) * 0.75;
+  return smax(d, max(p.y - YTOP, YBOT - p.y), 0.012);
+}
+vec3 nBase(vec3 p) {
+  const vec2 e = vec2(0.0015, -0.0015);
+  return normalize(e.xyy * sdBase(p + e.xyy) + e.yyx * sdBase(p + e.yyx) + e.yxy * sdBase(p + e.yxy) + e.xxx * sdBase(p + e.xxx));
+}
+// March the base only inside its bounding cylinder.
+bool baseHit(vec3 ro, vec3 rd, out float t) {
+  t = 0.0;
+  float a = dot(rd.xz, rd.xz), b = dot(ro.xz, rd.xz), c = dot(ro.xz, ro.xz) - 0.87 * 0.87, h = b * b - a * c;
+  if (h < 0.0) return false;
+  h = sqrt(h);
+  float t0 = (-b - h) / a, t1 = (-b + h) / a;
+  float ya = (YTOP + 0.01 - ro.y) / rd.y, yb = (YBOT - 0.005 - ro.y) / rd.y;
+  t0 = max(t0, min(ya, yb));
+  t1 = min(t1, max(ya, yb));
+  if (t0 > t1 || t1 < 0.0) return false;
+  t = max(t0, 0.0);
+  for (int i = 0; i < 80; i++) {
+    float d = sdBase(ro + rd * t);
+    if (d < 0.0005) return true;
+    t += d;
+    if (t > t1) return false;
+  }
+  return true;
+}
+float cylT(vec3 ro, vec3 rd) {
+  float a = dot(rd.xz, rd.xz);
+  if (a < 1e-6) return -1.0;
+  float b = dot(ro.xz, rd.xz), c = dot(ro.xz, ro.xz) - RS * RS, h = b * b - a * c;
+  if (h < 0.0) return -1.0;
+  float t = (-b - sqrt(h)) / a, y = ro.y + rd.y * t;
+  return t > 0.0 && y > YTOP && y < -RE * 0.6 ? t : -1.0;
+}
+// A rounded rectangle of light in direction k.
+float softbox(vec3 r, vec3 k, vec2 size) {
+  float d = dot(r, k);
+  if (d <= 0.0) return 0.0;
+  vec3 t1 = normalize(cross(k, vec3(0.0, 1.0, 0.0))), t2 = cross(t1, k);
+  vec2 q = vec2(dot(r, t1), dot(r, t2)) / d / size;
+  return smoothstep(1.0, 0.15, length(q * q * q * q) * 0.5 + length(q) * 0.5);
+}
+// The dark studio as seen in reflections.
+vec3 env(vec3 r) {
+  vec3 c = uRoom * (0.5 + 0.5 * clamp(r.y + 0.5, 0.0, 1.0));
+  c += vec3(0.95, 0.97, 1.0) * 10.0 * softbox(r, normalize(vec3(-0.5, 0.55, 0.67)), vec2(0.17, 0.12));
+  c += vec3(0.85, 0.9, 1.0) * 2.0 * softbox(r, normalize(vec3(0.82, 0.08, 0.57)), vec2(0.05, 0.55));
+  c += uLight * 0.07 * smoothstep(0.0, 0.5, -r.y);
+  return c;
+}
+// The back wall, lit softly by the globe.
+vec3 backdrop(vec3 rd) {
+  vec3 c = uRoom * (0.75 + 0.6 * smoothstep(-0.25, 0.35, rd.y));
+  float a = 1.0 - dot(rd, normalize(-uCam));
+  return c + uLight * (0.035 * exp(-a * 60.0) + 0.012 * exp(-a * 12.0));
+}
+vec3 touchLight(vec3 p, vec3 n) {
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 5; i++) {
+    vec4 T = uTouch[i];
+    if (T.w <= 0.0) continue;
+    vec3 tl = T.xyz * 0.98 - p;
+    float td = dot(tl, tl);
+    c += uTCol * T.w * 0.05 * max(dot(n, tl * inversesqrt(td)), 0.0) / td;
+  }
+  return c;
+}
+vec3 floorCol(vec3 p, vec3 rd, float t) {
+  float rho = length(p.xz);
+  vec3 lv = -p;
+  float d2 = dot(lv, lv), ndl = lv.y * inversesqrt(d2);
+  float sh = smoothstep(0.8, 2.2, rho), ao = mix(0.25, 1.0, smoothstep(0.84, 1.3, rho));
+  vec3 c = uRoom * 0.55 * ao + uLight * 0.16 * ndl * sh / d2 + touchLight(p, vec3(0.0, 1.0, 0.0)) * sh;
+  return mix(c, backdrop(rd), smoothstep(8.0, 20.0, t));
+}
+// Black lacquer with fine turned rings and two satin metal beads.
+vec3 baseCol(vec3 p, vec3 rd, float t) {
+  vec3 n = nBase(p), v = -rd, lv = -p;
+  float d2 = dot(lv, lv);
+  vec3 l = lv * inversesqrt(d2);
+  float ndl = clamp((dot(n, l) + 0.3) / 1.3, 0.0, 1.0);
+  float pxw = t * 2.0 * uS / uRes.y;
+  float rings = sin(p.y * 1500.0) * clamp(1.0 - pxw * 500.0, 0.0, 1.0);
+  float metal = clamp(bump(p.y, -0.792, 0.012) + bump(p.y, -1.46, 0.011), 0.0, 1.0);
+  vec3 c = mix(vec3(0.02, 0.018, 0.024), vec3(0.05, 0.045, 0.05), metal) * (uLight * ndl * 2.4 / d2 + uRoom * 0.5);
+  vec3 r = reflect(rd, n);
+  float f0 = mix(0.045, 0.55, metal), fr = f0 + (1.0 - f0) * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 5.0);
+  vec3 refl = env(r);
+  vec2 gs = sphere(p, r, 1.0);
+  if (gs.y > 0.0) {
+    float b2 = clamp(dot(p, p) - dot(p, r) * dot(p, r), 0.0, 1.0);
+    refl += uHaze * 7.0 * (1.0 - b2) + uLight * 0.25;
+  }
+  c += refl * fr * (0.85 + 0.15 * rings);
+  c += uLight * pow(max(dot(r, l), 0.0), 5.0) * (0.08 + 0.3 * metal) * (0.8 + 0.2 * rings) / d2;
+  c += touchLight(p, n);
+  c += vec3(0.5, 0.55, 0.7) * 0.03 * pow(1.0 - max(dot(n, v), 0.0), 3.0) * max(dot(n, normalize(vec3(-0.7, 0.4, -0.5))), 0.0);
+  return c;
+}
+// Through the glass: the electrode, its stalk, the base top and the room.
+vec3 glassCol(vec3 ro, vec3 rd, float t0, vec2 fc) {
+  vec3 P = ro + rd * t0, N = normalize(P);
+  float c = clamp(-dot(rd, N), 0.0, 1.0), fr = 0.04 + 0.96 * pow(1.0 - c, 5.0);
+  vec3 rr = refract(rd, N, 0.95), q = P + rr * 0.003;
+  float tm = sphere(q, rr, 0.99).y, tE = sphere(q, rr, RE).x, tC = cylT(q, rr);
+  float tP = rr.y < 0.0 ? (YTOP + 0.002 - q.y) / rr.y : 1e9;
+  int id = 0;
+  if (tP > 0.0 && tP < tm) { tm = tP; id = 1; }
+  if (tC > 0.0 && tC < tm) { tm = tC; id = 2; }
+  if (tE > 0.0 && tE < tm) { tm = tE; id = 3; }
+  vec3 X = q + rr * tm, col;
+  if (id == 3) {
+    float ce = max(dot(X / RE, -rr), 0.0);
+    col = uElec * (0.6 + 2.4 * ce * ce);
+  } else if (id == 2) {
+    float ce = abs(dot(normalize(vec3(X.x, 0.0, X.z)), -rr));
+    col = uHaze * (1.5 + 6.0 * pow(1.0 - ce, 3.0)) + uElec * 0.08 * smoothstep(-0.45, -0.1, X.y);
+  } else if (id == 1) {
+    vec3 lv = -X;
+    float d2 = dot(lv, lv), rho = length(X.xz);
+    float pxw = (t0 + tm) * 2.0 * uS / uRes.y;
+    float ring = 0.6 + 0.4 * sin(rho * 260.0) * clamp(1.0 - pxw * 90.0, 0.0, 1.0);
+    col = vec3(0.03, 0.028, 0.035) * uLight * (lv.y * inversesqrt(d2)) * 2.5 / d2 + uHaze * (0.5 + 2.5 * exp(-rho * rho * 9.0)) * ring;
+    col *= (smoothstep(RS, RS * 2.5, rho) * 0.7 + 0.3) * (1.0 - 0.6 * smoothstep(0.3, 0.62, rho));
+  } else {
+    vec3 rd2 = rr;
+    if (rd2.y < 0.0) {
+      float tf = (YBOT - X.y) / rd2.y;
+      col = floorCol(X + rd2 * tf, rd2, tf + t0);
+    } else col = backdrop(rd2);
+  }
+  vec3 fil = texelFetch(uF, ivec2(fc), 0).rgb;
+  // The gas glows faintly, most where the ray passes the centre.
+  float hz = 1.0 - clamp(dot(ro, ro) - dot(ro, rd) * dot(ro, rd), 0.0, 1.0);
+  vec3 inside = col * vec3(0.84, 0.86, 0.9) + fil + uHaze * (0.35 * hz * sqrt(hz) + 1.0 * pow(hz, 8.0));
+  // The inner glass mirrors the plasma toward the rim.
+  vec2 dv = fc - uGC.xy;
+  float rho = length(dv) / uGC.z;
+  vec2 mp = uGC.xy + dv * ((1.0 - (1.0 - rho) * 2.6) / max(rho, 1e-3));
+  inside += texture(uFs, mp / uRes).rgb * smoothstep(0.62, 0.99, rho) * 0.3;
+  vec3 g = inside * (1.0 - fr) + env(reflect(rd, N)) * fr;
+  // The shell pipes light to its edge.
+  float rim = pow(1.0 - c, 4.0);
+  g += (uHaze * 3.0 + texture(uFs, fc / uRes).rgb * 0.6) * rim * 0.6;
+  return g;
+}
+void main() {
+  vec2 fc = gl_FragCoord.xy, uv = fc / uRes * 2.0 - 1.0;
+  vec3 rd = normalize(uFw + vec3(uv.x * uS * uA, 0.0, 0.0) + uUp * (uv.y * uS)), ro = uCam;
+  vec2 ts = sphere(ro, rd, 1.0);
+  float tb;
+  bool hb = baseHit(ro, rd, tb);
+  vec3 col;
+  if (hb && (ts.x < 0.0 || tb < ts.x)) col = baseCol(ro + rd * tb, rd, tb);
+  else if (ts.x > 0.0) col = glassCol(ro, rd, ts.x, fc);
+  else if (rd.y < 0.0) { float tf = (YBOT - ro.y) / rd.y; col = floorCol(ro + rd * tf, rd, tf); }
+  else col = backdrop(rd);
+  o = vec4(col, 1.0);
+}`;
+// Bloom: dual-filter down and up passes.
+const DOWN_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uTx, uDst;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  vec3 c = texture(uSrc, uv).rgb * 4.0 + texture(uSrc, uv - uTx).rgb + texture(uSrc, uv + uTx).rgb
+    + texture(uSrc, uv + vec2(uTx.x, -uTx.y)).rgb + texture(uSrc, uv + vec2(-uTx.x, uTx.y)).rgb;
+  o = vec4(c / 8.0, 1.0);
+}`;
+const UP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uTx, uDst;
+uniform float uK;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst, h = uTx;
+  vec3 c = texture(uSrc, uv + vec2(-2.0 * h.x, 0.0)).rgb + texture(uSrc, uv + vec2(2.0 * h.x, 0.0)).rgb
+    + texture(uSrc, uv + vec2(0.0, -2.0 * h.y)).rgb + texture(uSrc, uv + vec2(0.0, 2.0 * h.y)).rgb;
+  c += 2.0 * (texture(uSrc, uv + h).rgb + texture(uSrc, uv - h).rgb + texture(uSrc, uv + vec2(h.x, -h.y)).rgb + texture(uSrc, uv + vec2(-h.x, h.y)).rgb);
+  o = vec4(c * uK / 12.0, 1.0);
+}`;
+const FIN_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uS, uB;
+uniform vec2 uRes;
+uniform float uBloom;
+out vec4 o;
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+void main() {
+  vec2 fc = gl_FragCoord.xy, uv = fc / uRes;
+  vec3 c = texelFetch(uS, ivec2(fc), 0).rgb + texture(uB, uv).rgb * uBloom;
+  // Hot light rolls off toward white.
+  c = 1.0 - exp(-c * 1.1);
+  vec2 v = uv - 0.5;
+  c *= 1.0 - 0.3 * dot(v, v);
+  o = vec4(srgb(c) + (hash(fc) - 0.5) / 255.0, 1.0);
+}`;
+
+let gl = null, P = null, emptyVao = null, segVao = null, instBuf = null, ready = false;
+let tF = null, tFs = null, tS = null, tB = [];
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+let noFloat = false;
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  // The light needs float targets to bloom without clipping.
+  let ok = false;
+  if (gl.getExtension('EXT_color_buffer_float')) {
+    const t = gl.createTexture(), fb = gl.createFramebuffer();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, 4, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    gl.deleteTexture(t);
+  }
+  if (!ok) { noFloat = true; throw new Error('float targets unavailable'); }
+  const progs = {
+    seg: compile(SEG_VS, SEG_FS), soft: compile(TRI, SOFT_FS), comp: compile(TRI, COMP_FS),
+    down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS), fin: compile(TRI, FIN_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  uni(P.seg, ['uRes', 'uCore']);
+  uni(P.soft, ['uSrc', 'uTx']);
+  uni(P.comp, ['uF', 'uFs', 'uRes', 'uCam', 'uUp', 'uFw', 'uGC', 'uS', 'uA', 'uLight', 'uHaze', 'uElec', 'uRoom', 'uTCol', 'uTouch']);
+  uni(P.down, ['uSrc', 'uTx', 'uDst']);
+  uni(P.up, ['uSrc', 'uTx', 'uDst', 'uK']);
+  uni(P.fin, ['uS', 'uB', 'uRes', 'uBloom']);
+  gl.useProgram(P.comp.p);
+  gl.uniform1i(P.comp.u.uF, 0);
+  gl.uniform1i(P.comp.u.uFs, 1);
+  gl.useProgram(P.fin.p);
+  gl.uniform1i(P.fin.u.uS, 0);
+  gl.uniform1i(P.fin.u.uB, 1);
+  for (const q of [P.soft, P.down, P.up]) { gl.useProgram(q.p); gl.uniform1i(q.u.uSrc, 0); }
+
+  emptyVao = gl.createVertexArray();
+  segVao = gl.createVertexArray();
+  gl.bindVertexArray(segVao);
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  [1, 2, 3].forEach((loc, i) => {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, INST * 4, i * 16);
+    gl.vertexAttribDivisor(loc, 1);
+  });
+  gl.bindVertexArray(null);
+}
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+function freeTarget(t) {
+  if (!t) return;
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fb);
+}
+function allocTargets() {
+  [tF, tFs, tS, ...tB].forEach(freeTarget);
+  tF = target(cw, ch);
+  tFs = target(Math.ceil(cw / 4), Math.ceil(ch / 4));
+  tS = target(cw, ch);
+  tB = [];
+  for (let w = cw, h = ch, i = 0; i < 6; i++) {
+    w = Math.max(1, Math.ceil(w / 2));
+    h = Math.max(1, Math.ceil(h / 2));
+    tB.push(target(w, h));
+    if (w < 12 || h < 12) break;
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+let lowDpr = false;
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const nw = Math.round(w * p), nh = Math.round(h * p);
+  W = w;
+  H = h;
+  const grew = nw !== canvas.width || nh !== canvas.height;
+  canvas.width = cw = nw;
+  canvas.height = ch = nh;
+  setCamera();
+  if (!ready) return;
+  if (grew) allocTargets();
+  // A resized canvas is blank until drawn, so draw now.
+  if (visible) { build(); render(); }
+}
+
+/* ---------- drawing ---------- */
+function pass(prog, t, src, extra) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.fb : null);
+  gl.viewport(0, 0, t ? t.w : cw, t ? t.h : ch);
+  gl.useProgram(prog.p);
+  if (src) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    if (prog.u.uTx) gl.uniform2f(prog.u.uTx, 1 / src.w, 1 / src.h);
+  }
+  if (prog.u.uDst && t) gl.uniform2f(prog.u.uDst, t.w, t.h);
+  extra?.();
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+const touchU = new Float32Array(20);
+function render() {
+  gl.bindVertexArray(segVao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tF.fb);
+  gl.viewport(0, 0, cw, ch);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P.seg.p);
+  gl.uniform2f(P.seg.u.uRes, cw, ch);
+  gl.uniform3fv(P.seg.u.uCore, pal.core);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, ni * INST);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ni);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(emptyVao);
+
+  pass(P.soft, tFs, tF);
+  pass(P.comp, tS, null, () => {
+    const u = P.comp.u, L = Lint, g = pal.glow, e = 1.6 + flash;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tF.tex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tFs.tex);
+    gl.uniform2f(u.uRes, cw, ch);
+    gl.uniform3f(u.uCam, C.px, C.py, C.pz);
+    gl.uniform3f(u.uUp, C.ux, C.uy, C.uz);
+    gl.uniform3f(u.uFw, C.fx, C.fy, C.fz);
+    gl.uniform3f(u.uGC, C.gx, C.gy, C.gr);
+    gl.uniform1f(u.uS, C.s);
+    gl.uniform1f(u.uA, C.a);
+    gl.uniform3f(u.uLight, g[0] * L * 1.3, g[1] * L * 1.3, g[2] * L * 1.3);
+    gl.uniform3f(u.uHaze, g[0] * L * 0.028, g[1] * L * 0.028, g[2] * L * 0.028);
+    gl.uniform3f(u.uElec, lerp(pal.core[0], g[0], 0.45) * e * L, lerp(pal.core[1], g[1], 0.45) * e * L, lerp(pal.core[2], g[2], 0.45) * e * L);
+    gl.uniform3fv(u.uRoom, pal.room);
+    gl.uniform3f(u.uTCol, lerp(g[0], pal.core[0], 0.4), lerp(g[1], pal.core[1], 0.4), lerp(g[2], pal.core[2], 0.4));
+    touchU.fill(0);
+    let i = 0;
+    for (const t of [...touches.values(), ...ghosts]) {
+      if (i >= 5) break;
+      touchU.set([t.sx, t.sy, t.sz, t.str * (1 + sstep(0, 2.4, t.hold))], i++ * 4);
+    }
+    gl.uniform4fv(u.uTouch, touchU);
+    gl.activeTexture(gl.TEXTURE0);
+  });
+  let src = tS;
+  for (const t of tB) { pass(P.down, t, src); src = t; }
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  // Wide levels weigh less, so the glow hugs the light.
+  for (let i = tB.length - 1; i > 0; i--) pass(P.up, tB[i - 1], tB[i], () => gl.uniform1f(P.up.u.uK, 0.62));
+  gl.disable(gl.BLEND);
+  pass(P.fin, null, null, () => {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tS.tex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tB[0].tex);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform2f(P.fin.u.uRes, cw, ch);
+    gl.uniform1f(P.fin.u.uBloom, 0.1);
+  });
+}
+
+/* ---------- one loop: always alive in view, at rest when reduced ---------- */
+let raf = 0, last = 0, visible = false, onScreen = false, slow = 0, frames = 0, drawn = 0;
+function wake() {
+  if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  if (!visible) return;
+  const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 20);
+  last = now;
+  // Sustained slow frames drop the pixel ratio to 1.
+  if (!lowDpr && ++frames > 30) {
+    slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) { lowDpr = true; fit(); }
+  }
+  const busy = step(dt, now);
+  build();
+  render();
+  if (++drawn === 2) canvas.classList.add('on');
+  // Reduced motion freezes the drift, so the loop rests once input settles.
+  if (!reduce || busy || drawn < 3) raf = requestAnimationFrame(frame);
+}
+// Off screen or hidden, the globe pauses and goes quiet.
+function sync() {
+  const v = ready && onScreen && !document.hidden;
+  if (v === visible) return;
+  visible = v;
+  if (v) {
+    wake();
+    if (soundOn && ac && ac.state !== 'running') audio();
+  } else {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  }
+}
+
+/* ---------- input ---------- */
+let rect = null;
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+const downs = new Map();
+panel.addEventListener('pointerdown', e => {
+  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e);
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  downs.set(e.pointerId, { x, y, t: e.timeStamp, moved: 0 });
+  const d = globeAt(x, y, 0.03);
+  if (d) touchStart(e.pointerId, d, x / W);
+});
+panel.addEventListener('pointermove', e => {
+  const s = downs.get(e.pointerId);
+  if (!s) return;
+  const [x, y] = local(e);
+  s.moved = Math.max(s.moved, Math.hypot(x - s.x, y - s.y));
+  if (touches.has(e.pointerId)) {
+    // A finger slid well off the glass lets the arc go.
+    const d = globeAt(x, y, 0.35);
+    if (d) touchMove(e.pointerId, d, x / W);
+    else touchEnd(e.pointerId);
+  } else {
+    const d = globeAt(x, y, 0);
+    if (d) touchStart(e.pointerId, d, x / W);
+  }
+});
+function lift(e) {
+  const s = downs.get(e.pointerId);
+  if (!s) return;
+  downs.delete(e.pointerId);
+  touchEnd(e.pointerId);
+  if (e.type === 'pointerup' && e.timeStamp - s.t < 260 && s.moved < 12) burst(s.x / W);
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+// Arrow keys steer a virtual fingertip over the front of the glass.
+const aim = { az: 0, el: 0.2 };
+const ARROWS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+function aimDir() {
+  return [Math.sin(aim.az) * Math.cos(aim.el), Math.sin(aim.el), Math.cos(aim.az) * Math.cos(aim.el)];
+}
+function aimX() {
+  const d = aimDir();
+  proj(d[0], d[1], d[2], 0);
+  return PX[0] / cw;
+}
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.key;
+  if (k === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (e.target.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat && ready) burst(aimX());
+  } else if (ARROWS[k]) {
+    e.preventDefault();
+    if (!ready) return;
+    if (touches.has('key')) {
+      aim.az = clamp(aim.az + ARROWS[k][0] * 0.14, -1.25, 1.25);
+      aim.el = clamp(aim.el + ARROWS[k][1] * 0.12, -0.55, 1.15);
+      touchMove('key', aimDir(), aimX());
+    } else touchStart('key', aimDir(), aimX());
+  } else if (k === 'Escape' && touches.has('key')) {
+    e.preventDefault();
+    touchEnd('key');
+  }
+});
+
+const chips = [...document.querySelectorAll('.chip[data-pal]')];
+function setPal(name) {
+  if (name === palName) return;
+  palFrom = copyPal(pal);
+  palTo = palCols(name);
+  palName = name;
+  palK = reduce ? 1 : 0;
+  mixPal();
+  chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.pal === name)));
+  for (const f of fils) f.flare = Math.max(f.flare, 0.35);
+  crackle(0.5, 0.25, 'amb');
+  wake();
+}
+chips.forEach(c => c.addEventListener('click', () => setPal(c.dataset.pal)));
+const sndB = document.getElementById('snd');
+const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
+showSound();
+sndB.addEventListener('click', () => {
+  soundOn = !soundOn;
+  showSound();
+  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
+  if (soundOn) audio();
+  else if (ac) ac.suspend()?.catch(() => {});
+});
+
+/* ---------- start: shaders link while the filaments settle ---------- */
+function failed() {
+  ready = false;
+  sync();
+  canvas.hidden = true;
+  const p = panel.querySelector('.fail');
+  if (noFloat) p.textContent = 'Plasma globe needs WebGL 2 float targets, which this browser lacks.';
+  p.hidden = false;
+  chips.forEach(c => { c.disabled = true; });
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    allocTargets();
+    ready = true;
+    sync();
+  } catch (err) { console.error(err); failed(); }
+});
+async function boot() {
+  await idle();
+  fit();
+  if (!W) { W = 1160; H = 652; canvas.width = cw = 1160; canvas.height = ch = 652; setCamera(); }
+  makeFils(W < 640 ? 9 : 11);
+  const gate = initGL();
+  gate.catch(() => {});
+  // A few seconds of drift have already run.
+  for (let i = 0; i < 90; i++) step(1 / 30, 0);
+  try { await gate; } catch (err) { console.error(err); failed(); return; }
+  allocTargets();
+  ready = true;
+  new ResizeObserver(fit).observe(panel);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
+  document.addEventListener('visibilitychange', sync);
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });
+</script>
+</body>
+</html>
