@@ -42,8 +42,8 @@
     <div class="bar">
       <div class="choices" role="group" aria-label="Mirror sectors">
         <button class="chip" type="button" data-n="6" aria-pressed="true">6</button>
-        <button class="chip" type="button" data-n="8" aria-pressed="false">8</button>
         <button class="chip" type="button" data-n="12" aria-pressed="false">12</button>
+        <button class="chip" type="button" data-n="0" aria-pressed="false">Tri</button>
       </div>
       <div class="actions">
         <button class="chip" id="shuffle" type="button">Shuffle</button>
@@ -807,10 +807,16 @@ precision highp float;
 uniform sampler2D uCell;
 uniform vec3 uView, uStage, uLight;
 uniform vec2 uN;
-uniform vec2 uApex, uHov;
+uniform vec2 uApex, uHov, uPtr;
 uniform float uTheta, uRho, uMix, uLod;
 out vec4 o;
 const float TAU = 6.28318531;
+// The Tri triangle: inradius and height in view units.
+const float TRI_RI = 0.17, TRI_H = 3.0 * TRI_RI;
+// Its glass patch sits on the heap, inside the drum wall.
+const float TRI_CELL = 0.4, TRI_AT = 3.3;
+const vec2 TRI_E[3] = vec2[3](vec2(0.0, -1.0), vec2(0.8660254, 0.5), vec2(-0.8660254, 0.5));
+mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
 float hash(vec2 p) {
   vec3 q = fract(p.xyx * 0.1031);
   q += dot(q, q.yzx + 33.33);
@@ -824,18 +830,11 @@ float vnoise(vec2 p) {
 vec3 cell(vec2 s, float lod) {
   return pow(textureLod(uCell, vec2(0.5 + 0.5 * s.x, 0.5 - 0.5 * s.y), lod).rgb, vec3(2.2));
 }
-// Two mirrors fold every view angle into one wedge of the cell.
-vec3 kaleido(vec2 q, float r, float n) {
-  float w = TAU / n, b = mod(atan(q.y, q.x) - uTheta, TAU);
-  float k = floor(b / w), f = mod(b, 2.0 * w);
-  f = f > w ? 2.0 * w - f : f;
-  float a = f + uTheta;
-  vec2 v = vec2(cos(a), sin(a)) * r * uRho, s = uApex + v;
-  // Red bends least and blue most, more toward the rim.
-  float ca = 0.012 * r * r;
-  vec3 c = vec3(cell(s + v * ca, uLod).r, cell(s, uLod).g, cell(s - v * ca, uLod).b);
+// Lit glass at cell point s; v splits red from blue.
+vec3 shade(vec2 s, vec2 v) {
+  vec3 c = vec3(cell(s + v, uLod).r, cell(s, uLod).g, cell(s - v, uLod).b);
   // The frosted diffuser turns with the barrel.
-  vec2 d = mat2(cos(uTheta), -sin(uTheta), sin(uTheta), cos(uTheta)) * s;
+  vec2 d = rot(-uTheta) * s;
   float frost = 0.91 + 0.07 * vnoise(d * 5.0) + 0.03 * vnoise(d * 23.0 + 7.0);
   vec3 light = uLight * frost * (1.1 - 0.2 * dot(s, s));
   // Glass edges brighten on one side and shade the other.
@@ -844,9 +843,53 @@ vec3 kaleido(vec2 q, float r, float n) {
   vec3 col = c * light * (1.0 + 0.45 * clamp(bev, -0.6, 0.6));
   // Bright openings bleed light over the dark rims.
   vec3 g = cell(s, uLod + 4.0);
-  col += light * max(g - 0.45, 0.0) * 0.5;
+  return col + light * max(g - 0.45, 0.0) * 0.5;
+}
+// Two mirrors fold every view angle into one wedge of the cell.
+vec3 wedge(vec2 q, float r, float n) {
+  float w = TAU / n, b = mod(atan(q.y, q.x) - uTheta, TAU);
+  float k = floor(b / w), f = mod(b, 2.0 * w);
+  f = f > w ? 2.0 * w - f : f;
+  float a = f + uTheta;
+  vec2 v = vec2(cos(a), sin(a)) * r * uRho;
+  // Red bends least and blue most, more toward the rim.
   // Each mirror bounce loses a little light.
-  return col * pow(0.97, min(k, n - k));
+  return shade(uApex + v, v * 0.012 * r * r) * pow(0.97, min(k, n - k));
+}
+// Three mirrors fold the whole plane into one equilateral triangle.
+vec3 tri(vec2 q) {
+  vec2 p = rot(-uTheta) * q;
+  float hops = 0.0;
+  for (int i = 0; i < 64; i++) {
+    bool inside = true;
+    for (int e = 0; e < 3; e++) {
+      float d = dot(p, TRI_E[e]) - TRI_RI;
+      if (d > 0.0) { p -= 2.0 * d * TRI_E[e]; hops += 1.0; inside = false; }
+    }
+    if (inside) break;
+  }
+  vec2 v = rot(uTheta) * p * (TRI_CELL / (2.0 * TRI_RI));
+  // Far images pass more mirrors, so they dim a little.
+  return shade(uApex * TRI_AT + v, v * 0.02) * max(pow(0.985, hops), 0.6);
+}
+// One mode's image: n is the sector count, or 0 for Tri.
+vec3 look(vec2 q, float r, float n) {
+  bool t = n < 0.5;
+  if (!t && r >= 1.03) return vec3(0.0);
+  // Toward the rim the glass splits light: red reaches out, blue pulls in.
+  float ab = t ? 0.003 : 0.035 * smoothstep(0.55, 1.0, r);
+  vec2 qr = q * (1.0 - ab), qb = q * (1.0 + ab);
+  vec3 k = t ? vec3(tri(qr).r, tri(q).g, tri(qb).b)
+    : vec3(wedge(qr, length(qr), n).r, wedge(q, r, n).g, wedge(qb, length(qb), n).b);
+  float l = dot(k, vec3(0.2126, 0.7152, 0.0722));
+  k = max(mix(vec3(l), k, 1.15), 0.0);
+  k = 1.0 - exp(-k * 1.25);
+  // Tri fills the stage edge to edge.
+  if (t) return k;
+  // Each channel tapers to black on its own radius, so the fade fringes.
+  vec3 rc = r * vec3(0.975, 1.0, 1.025);
+  vec3 fade = 1.0 - smoothstep(vec3(0.6), vec3(1.0), rc);
+  return k * fade * fade;
 }
 vec3 srgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
@@ -855,21 +898,23 @@ vec3 srgb(vec3 c) {
 void main() {
   vec2 q = (gl_FragCoord.xy - uView.xy) / uView.z;
   float r = length(q);
-  vec3 col = vec3(0.0);
-  if (r < 1.03) {
-    // Toward the rim the glass splits light: red reaches out, blue pulls in.
-    float ab = 0.035 * smoothstep(0.55, 1.0, r);
-    vec2 qr = q * (1.0 - ab), qb = q * (1.0 + ab);
-    vec3 k = vec3(kaleido(qr, length(qr), uN.y).r, kaleido(q, r, uN.y).g, kaleido(qb, length(qb), uN.y).b);
-    if (uMix < 1.0) k = mix(vec3(kaleido(qr, length(qr), uN.x).r, kaleido(q, r, uN.x).g, kaleido(qb, length(qb), uN.x).b), k, uMix);
-    float l = dot(k, vec3(0.2126, 0.7152, 0.0722));
-    k = max(mix(vec3(l), k, 1.15), 0.0);
-    k = 1.0 - exp(-k * 1.25);
-    // Each channel tapers to black on its own radius, so the fade fringes.
-    vec3 rc = r * vec3(0.975, 1.0, 1.025);
-    vec3 fade = 1.0 - smoothstep(vec3(0.6), vec3(1.0), rc);
-    k *= fade * fade;
-    col = k;
+  vec3 col = look(q, r, uN.y);
+  if (uMix < 1.0) col = mix(look(q, r, uN.x), col, uMix);
+  if (uHov.y > 0.0 && uN.y < 0.5) {
+    // The triangle under the pointer lifts; seams show around the pointer.
+    vec2 p = rot(-uTheta) * q, pp = rot(-uTheta) * uPtr;
+    float seam = 9.0, same = 1.0;
+    for (int e = 0; e < 3; e++) {
+      float u = (dot(p, TRI_E[e]) - TRI_RI) / TRI_H;
+      seam = min(seam, abs(fract(u + 0.5) - 0.5) * TRI_H);
+      if (floor(u) != floor((dot(pp, TRI_E[e]) - TRI_RI) / TRI_H)) same = 0.0;
+    }
+    // Seam distance is in device pixels.
+    float line = clamp(1.25 - seam * uView.z, 0.0, 1.0);
+    float reach = 1.0 - smoothstep(0.25, 0.8, length(q - uPtr));
+    col *= 1.0 + 0.1 * uHov.y * same;
+    col = mix(col, vec3(0.92, 0.9, 0.84), line * reach * 0.42 * uHov.y);
+  } else if (r < 1.03) {
     // The wedge under the pointer lifts; its two mirror seams show.
     if (uHov.y > 0.0) {
       float w = TAU / uN.y;
@@ -912,7 +957,7 @@ async function initGL() {
   // Polling lets the driver link off the main thread.
   if (par) while (!gl.isContextLost() && !gl.getProgramParameter(prog.p, par.COMPLETION_STATUS_KHR)) await nextFrame();
   if (!gl.getProgramParameter(prog.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(prog.f) || gl.getShaderInfoLog(prog.v) || gl.getProgramInfoLog(prog.p) || 'link failed');
-  for (const n of ['uCell', 'uView', 'uStage', 'uLight', 'uN', 'uApex', 'uHov', 'uTheta', 'uRho', 'uMix', 'uLod']) U[n] = gl.getUniformLocation(prog.p, n);
+  for (const n of ['uCell', 'uView', 'uStage', 'uLight', 'uN', 'uApex', 'uHov', 'uPtr', 'uTheta', 'uRho', 'uMix', 'uLod']) U[n] = gl.getUniformLocation(prog.p, n);
   gl.useProgram(prog.p);
   gl.uniform1i(U.uCell, 0);
   gl.uniform3fv(U.uStage, STAGE);
@@ -971,15 +1016,22 @@ function fit() {
 /* ---------- drawing ---------- */
 let theta = 0, nOld = 6, nNew = 6, mixT = 1;
 // The wedge under the pointer lifts and shows its seams.
-// a: pointer angle; s: shown strength; t: target; k: wedge.
-const hov = { a: 0, s: 0, t: 0, k: -1 };
+// a: pointer angle; x, y: pointer in view units; s: shown strength; t: target; k: zone.
+const hov = { a: 0, x: 0, y: 0, s: 0, t: 0, k: -1 };
 const wedge = a => Math.floor(((((a - theta) % TAU) + TAU) % TAU) / (TAU / nNew));
+// Tri mirrors match the shader: three edge normals, inradius and height.
+const TRI_RI = 0.17, TRI_E = [[0, -1], [0.8660254, 0.5], [-0.8660254, 0.5]];
+function triangle(x, y) {
+  const co = Math.cos(theta), si = Math.sin(theta), px = co * x + si * y, py = co * y - si * x;
+  return TRI_E.map(([ex, ey]) => Math.floor((px * ex + py * ey - TRI_RI) / (3 * TRI_RI))).join();
+}
+const zone = () => (nNew ? wedge(hov.a) : triangle(hov.x, hov.y));
 // Hover shows it gently; a held barrel shows it in full.
 function hover(x, y, held) {
   const r = Math.hypot(x, y) / RV;
-  if (r > 0.06 || held) hov.a = Math.atan2(y, x);
-  const t = held ? 1 : r > 0.06 && r < 0.97 ? 0.62 : 0;
-  if (t !== hov.t || (t && wedge(hov.a) !== hov.k)) { hov.t = t; wake(); }
+  if (r > 0.06 || held || !nNew) { hov.a = Math.atan2(y, x); hov.x = x / RV; hov.y = y / RV; }
+  const t = held ? 1 : !nNew || (r > 0.06 && r < 0.97) ? 0.62 : 0;
+  if (t !== hov.t || (t && zone() !== hov.k)) { hov.t = t; wake(); }
 }
 function unhover() {
   if (!hov.t) return;
@@ -1000,7 +1052,8 @@ function render() {
   gl.uniform1f(U.uRho, RHO);
   gl.uniform2fv(U.uApex, APEX);
   gl.uniform2f(U.uHov, hov.a, hov.s);
-  hov.k = wedge(hov.a);
+  gl.uniform2f(U.uPtr, hov.x, hov.y);
+  hov.k = zone();
   const m = mixT * mixT * (3 - 2 * mixT);
   gl.uniform1f(U.uMix, m);
   gl.uniform1f(U.uLod, Math.max(0, Math.log2((cell.width * 0.5 * RHO) / (RV * pr))));
