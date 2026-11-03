@@ -1,4 +1,4 @@
-// Stimming intro: flash, toy name, hold until ready, then clear.
+// Stimming intro: emblem in a flash box, the name unfurls, hold until ready, clear.
 // Toy pages import it as '../shared/intro.js'. No dependencies.
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -47,27 +47,35 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
     return;
   }
 
-  // The flash copy is the name in a white box.
-  const flash = text.cloneNode(true);
-  flash.className = 'intro-flash';
-  text.after(flash);
-  const fold = flash.querySelector('.intro-sub');
-  if (fold) fold.style.transform = 'rotateX(-90deg)';
+  const emblem = text.querySelector('.intro-emblem'), name = text.querySelector('.intro-name');
+  const sub = text.querySelector('.intro-sub');
+  // The emblem sits in a badge whose white box is the flash.
+  let badge = null;
+  if (emblem) {
+    badge = document.createElement('span');
+    badge.className = 'intro-badge';
+    emblem.before(badge);
+    badge.append(emblem);
+  }
+  // The name and subtitle start closed at their centre line.
+  const closed = 'inset(0 50% 0 50%)';
+  const unfurl = el => play(el, p => ({ clipPath: `inset(0 ${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}%)` }), 333, settle);
+  if (badge) name.style.clipPath = closed;
+  if (sub) sub.style.clipPath = closed;
 
-  // The box flashes on at full white over the dark glass.
+  // The box flashes on in one frame and holds.
   await wait(3);
-  flash.style.opacity = 1;
-  await wait(1);
-  // The subtitle folds down inside the box.
-  if (fold) await play(fold, p => ({ transform: `rotateX(${(-90 * (1 - p)).toFixed(2)}deg)` }), 167, settle);
-  await wait(2);
-  // The box cuts out in one frame and leaves the name in white.
+  if (badge) { badge.classList.add('is-flash'); badge.style.setProperty('--box', 1); } else name.classList.add('is-flash');
   text.style.opacity = 1;
-  flash.remove();
+  await wait(9);
+  // The box cuts out; the emblem stays, white, and the words unfurl beneath it.
+  if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
+  if (badge) unfurl(name);
+  if (sub) { await wait(4); await unfurl(sub); }
 
   await held;
 
-  // The name wipes off, then the glass fades away whole.
+  // The column wipes off, then the glass fades away whole.
   await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
   await play(root, p => ({ opacity: 1 - p }), 500, settle);
   root.remove();
