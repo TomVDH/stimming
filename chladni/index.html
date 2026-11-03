@@ -13,33 +13,60 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Chladni plate: a coloured steel plate, sand and a tuning rail. */
-:root { --stage: oklch(0.17 0.012 262); }
-.stage { cursor: ns-resize; }
-.stage.grip { cursor: grab; }
-.stage.gripping { cursor: grabbing; }
+/* Chladni plate: a steel plate on a post, sand, a bow and a rail. */
+:root {
+  --stage: oklch(0.17 0.012 262);
+  --sand: oklch(0.9 0.05 84);
+  --rail: oklch(0.33 0.014 262);
+}
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
+.stage.edge { cursor: grab; }
+.stage.bowing { cursor: grabbing; }
+.stage.over { cursor: crosshair; }
 /* On the dark stage the fail line keeps a pale tone. */
 .fail { color: oklch(0.74 0.02 285); cursor: default; }
+
+/* ---------- the tuning rail: log pitch, a notch for each mode ---------- */
+.tune {
+  position: relative; flex: 1 1 300px; min-width: 220px; max-width: 560px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 14px;
+  cursor: ew-resize; touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+.tune:focus-visible { outline: 2px solid var(--focus); outline-offset: 6px; border-radius: 4px; }
+.tune .track { position: relative; height: 30px; border-bottom: 2px solid var(--rail); }
+.tune .tick {
+  position: absolute; bottom: 0; width: 2px; margin-left: -1px; height: var(--h);
+  background: var(--rail); transition: background-color 0.25s ease;
+}
+.tune .tick.mute { background: oklch(0.26 0.012 262); }
+.tune .tick.hot { background: var(--sand); }
+/* The needle is a solid bar with a cut gap at its foot. */
+.tune .needle {
+  position: absolute; top: -4px; bottom: -6px; left: 0; width: 4px; margin-left: -2px;
+  background: var(--fg); pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) top / 100% calc(100% - 9px) no-repeat, linear-gradient(#000 0 0) bottom / 100% 5px no-repeat;
+  mask: linear-gradient(#000 0 0) top / 100% calc(100% - 9px) no-repeat, linear-gradient(#000 0 0) bottom / 100% 5px no-repeat;
+}
+.tune output {
+  display: grid; justify-items: end; min-width: 8ch; padding-bottom: 1px;
+  font: 500 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+  color: var(--muted); white-space: pre; transition: color 0.25s ease;
+}
+.tune output b { font-weight: 500; color: var(--fg); }
+.tune.ringing output { color: var(--fg); }
 /* Each finish chip shows its plate and its sand, split diagonally. */
 .chip i { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, var(--pl) 50%, var(--sd) 50%); }
-.chip[data-hue="steel"] { --pl: oklch(0.4 0.018 250); --sd: oklch(0.92 0.035 86); }
-.chip[data-hue="cobalt"] { --pl: oklch(0.42 0.16 264); --sd: oklch(0.92 0.15 97); }
-.chip[data-hue="vermilion"] { --pl: oklch(0.6 0.2 33); --sd: oklch(0.19 0.015 30); }
-/* The live pitch sits above the rail in fixed-width figures. */
-.hz {
-  position: absolute; z-index: 1; margin: 0; pointer-events: none;
-  font: 500 12px/1 ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
-  color: var(--muted); transition: color 0.3s ease;
-  /* The second line names the mode pair. */
-  white-space: pre; text-align: right; line-height: 1.5;
-}
-.hz.on { color: var(--fg); }
-@media (prefers-reduced-motion: reduce) { .stage canvas, .hz { transition: none; } }
+.chip[data-value="steel"] { --pl: oklch(0.72 0.01 250); --sd: oklch(0.9 0.05 84); }
+.chip[data-value="brass"] { --pl: oklch(0.78 0.11 84); --sd: oklch(0.24 0.01 250); }
+@media (max-width: 640px) { .tune { flex-basis: 100%; max-width: none; } }
+@media (prefers-reduced-motion: reduce) { .stage canvas, .tune .tick, .tune output { transition: none; } }
+
+/* ---------- vignette figure ---------- */
+.vignette figure canvas { border-radius: 14px; background: oklch(0.13 0.01 262); }
 </style>
 </head>
 <body>
@@ -50,1321 +77,1139 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A coloured steel plate covered in sand, seen at an angle: drag up or down, or slide the cap on the right edge, to tune it, drag the centre bolt to move the drive point, and tap to toss sand. Arrow keys step between patterns, Space spreads the sand again, Enter tosses it and C changes the finish.">
+    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A square steel plate clamped on a post, dusted with sand. Drag along its edge to bow it, click the plate to sprinkle sand, and use the rail to tune it. Arrow keys step between resonances, Space starts or stops the sweep, Enter sprinkles sand.">
       <canvas aria-hidden="true"></canvas>
-      <p class="hz" aria-hidden="true"></p>
-      <p class="fail" hidden>Chladni plate needs WebGL 2 with float textures, which this browser lacks.</p>
+      <p class="fail" hidden>Chladni plate needs WebGL 2, which this browser lacks.</p>
     </div>
     <div class="bar">
+      <div class="tune" id="tune" role="slider" tabindex="0" aria-label="Frequency" aria-valuemin="80" aria-valuemax="3200" aria-valuenow="1715" aria-valuetext="1715 hertz">
+        <div class="track"><span class="needle"></span></div>
+        <output aria-hidden="true"></output>
+      </div>
       <div class="choices">
-        <button class="chip" type="button" data-hue="steel" aria-pressed="true" aria-keyshortcuts="C"><i></i>Steel</button>
-        <button class="chip" type="button" data-hue="cobalt" aria-pressed="false" aria-keyshortcuts="C"><i></i>Cobalt</button>
-        <button class="chip" type="button" data-hue="vermilion" aria-pressed="false" aria-keyshortcuts="C"><i></i>Vermilion</button>
+        <button class="chip" type="button" data-value="steel" aria-pressed="true"><i></i>Steel</button>
+        <button class="chip" type="button" data-value="brass" aria-pressed="false"><i></i>Brass</button>
       </div>
       <div class="actions">
-        <button class="chip" id="scatter" type="button" aria-keyshortcuts="Space">Reset</button>
+        <button class="chip" id="sweep" type="button" aria-pressed="false" aria-keyshortcuts="Space">Sweep</button>
+        <button class="chip" id="reset" type="button">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag up or down</dt><dd>tune</dd></div>
-        <div><dt>Drag the bolt</dt><dd>morph</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>toss sand</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>next pattern</dd></div>
+        <div><dt>Drag the edge</dt><dd>bow</dd></div>
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> the plate</dt><dd>sprinkle sand</dd></div>
+        <div><dt>Drag the rail</dt><dd>tune</dd></div>
+        <div class="fine"><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>next resonance</dd></div>
       </dl>
     </div>
   </main>
-  <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Chladni plate</h1><div class="vignette" hidden></div></section>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Chladni plate</h1>
+    <div class="vignette">
+      <div>
+        <h2>Sand on a singing plate</h2>
+        <p>In 1787 Ernst Chladni drew a violin bow down the edge of a brass plate dusted with sand. The plate rang, and the sand jumped into sharp figures. He toured Europe with the trick, and Napoleon funded a prize for whoever could explain it. Sophie Germain won it in 1816.</p>
+        <p>Each figure is a mode, one way the plate can bend while it rings. Some lines on the plate stay still. Sand bounces off the parts that shake and comes to rest on those <em>nodal lines</em>. A higher note fits more waves across the plate, so its figure is finer.</p>
+      </div>
+      <figure>
+        <canvas id="figure" width="840" height="300" role="img" aria-label="Three square plates, each with sand lying on its nodal lines. From left to right the figures grow finer as the pitch rises."></canvas>
+        <figcaption>Three modes of a square plate held at its centre.</figcaption>
+      </figure>
+    </div>
+  </section>
 </div>
 
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js"
+} }
+</script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import * as THREE from 'three';
+import { initPage, sound, audioKit, choices, whenVisible, reduced, onReducedChange, oklchLinear } from '../shared/stim.js';
 initPage({ id: 'chladni' });
-const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const RM = matchMedia('(prefers-reduced-motion: reduce)');
-let reduce = RM.matches;
-RM.addEventListener?.('change', e => { reduce = e.matches; });
-const TAU = Math.PI * 2, D2R = Math.PI / 180;
+
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const bar = document.querySelector('.bar');
+const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
-const rand = (a, b) => a + Math.random() * (b - a);
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
-const nextFrame = () => new Promise(r => requestAnimationFrame(r));
-const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const lin = (L, C, h) => new THREE.Color().setRGB(...oklchLinear(L, C, h).map(v => clamp(v)));
+const coarse = matchMedia('(pointer: coarse)').matches;
+const DEBUG = new URLSearchParams(location.search).has('debug');
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
 
-/* ---------- vectors and matrices, column-major ---------- */
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const unit = a => mul3(a, 1 / Math.hypot(...a));
-function persp(fovy, asp, n, f) {
-  const t = 1 / Math.tan(fovy / 2), nf = 1 / (n - f);
-  return [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) * nf, -1, 0, 0, 2 * f * n * nf, 0];
-}
-function lookAt(e, c, up) {
-  const z = unit(sub(e, c)), x = unit(cross(up, z)), y = cross(z, x);
-  return [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1];
-}
-function mul4(a, b) {
-  const o = new Array(16);
-  for (let c = 0; c < 4; c++) {
-    for (let r = 0; r < 4; r++) {
-      let s = 0;
-      for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
-      o[c * 4 + r] = s;
+/* ---------- plate and modes ---------- */
+// The plate spans -1 to 1 in x and z.
+// Its top face sits at y = PT / 2.
+const PT = 0.024;
+// The plate mesh has GN segments a side.
+// The field has one sample per vertex.
+const GN = 160, FG = GN + 1;
+// The post stands on the bench at this height.
+const BENCH = -0.5;
+// Mode pitch is F0 times m² + n².
+// A degenerate pair splits apart by SPLIT.
+const F0 = 52, SPLIT = 0.03, Q = 180, FMIN = 80, FMAX = 3200;
+// A mode is cos(mπu)·cos(nπv) ± cos(nπu)·cos(mπv).
+// U and v run from 0 to 1 across the plate.
+// The clamp holds the centre still.
+// Modes that move the centre drop out.
+const MODES = [];
+for (let m = 0; m <= 8; m++) {
+  for (let n = m; n <= 8; n++) {
+    for (const s of [1, -1]) {
+      if ((m === n && s < 0) || m + n < 2) continue;
+      if (m % 2 === 0 && n % 2 === 0 && s > 0) continue;
+      const f = F0 * (m * m + n * n) * (m === n ? 1 : 1 + s * SPLIT);
+      if (f < FMIN * 1.05 || f > FMAX * 0.97) continue;
+      MODES.push({ m, n, s, f, re: 0, im: 0, w: 0 });
     }
   }
-  return o;
 }
-function inv4(a) {
-  const [a00, a01, a02, a03, a10, a11, a12, a13, a20, a21, a22, a23, a30, a31, a32, a33] = a;
-  const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10;
-  const b03 = a01 * a12 - a02 * a11, b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
-  const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, b08 = a20 * a33 - a23 * a30;
-  const b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
-  const d = 1 / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06);
-  return [
-    (a11 * b11 - a12 * b10 + a13 * b09) * d, (a02 * b10 - a01 * b11 - a03 * b09) * d,
-    (a31 * b05 - a32 * b04 + a33 * b03) * d, (a22 * b04 - a21 * b05 - a23 * b03) * d,
-    (a12 * b08 - a10 * b11 - a13 * b07) * d, (a00 * b11 - a02 * b08 + a03 * b07) * d,
-    (a32 * b02 - a30 * b05 - a33 * b01) * d, (a20 * b05 - a22 * b02 + a23 * b01) * d,
-    (a10 * b10 - a11 * b08 + a13 * b06) * d, (a01 * b08 - a00 * b10 - a03 * b06) * d,
-    (a30 * b04 - a31 * b02 + a33 * b00) * d, (a21 * b02 - a20 * b04 - a23 * b00) * d,
-    (a11 * b07 - a10 * b09 - a12 * b06) * d, (a00 * b09 - a01 * b07 + a02 * b06) * d,
-    (a31 * b01 - a30 * b03 - a32 * b00) * d, (a20 * b03 - a21 * b01 + a22 * b00) * d,
-  ];
-}
-const xf = (m, [x, y, z]) => [
-  m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13],
-  m[2] * x + m[6] * y + m[10] * z + m[14], m[3] * x + m[7] * y + m[11] * z + m[15],
-];
+MODES.sort((a, b) => a.f - b.f);
+const phiAt = (k, u, v) => 0.5 * (Math.cos(k.m * Math.PI * u) * Math.cos(k.n * Math.PI * v)
+  + k.s * Math.cos(k.n * Math.PI * u) * Math.cos(k.m * Math.PI * v));
+// COS holds cos(mπ·i/GN) for each index m, one row per m.
+const COS = new Float32Array(9 * FG);
+for (let m = 0; m <= 8; m++) for (let i = 0; i < FG; i++) COS[m * FG + i] = Math.cos((m * Math.PI * i) / GN);
 
-/* ---------- colour: OKLCH in, linear sRGB out ---------- */
-function lin(L, C, h) {
-  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
+/* ---------- the driven field ---------- */
+// Every mode answers the drive with a complex resonance response.
+// FT holds the real and imaginary field per sample for the GPU.
+// AG holds amplitude and its x and z gradient for the sand.
+const FRE = new Float32Array(FG * FG), FIM = new Float32Array(FG * FG);
+const FT = new Float32Array(FG * FG * 2), AG = new Float32Array(FG * FG * 3);
+let freq = 1715, du = 0.5, dv = 0, ACT = [], fieldMax = 0, solvedF = -1, solvedU = -1, solvedV = -1;
+function solve() {
+  if (freq === solvedF && du === solvedU && dv === solvedV) return false;
+  solvedF = freq; solvedU = du; solvedV = dv;
+  const f2 = freq * freq;
+  ACT = [];
+  for (const k of MODES) {
+    const fk2 = k.f * k.f, a = fk2 - f2, b = (freq * k.f) / Q, A = fk2 / Q, d = a * a + b * b;
+    const ph = phiAt(k, du, dv);
+    k.re = ((A * a) / d) * ph;
+    k.im = ((-A * b) / d) * ph;
+    k.w = Math.hypot(k.re, k.im);
+    if (k.w > 0.012) ACT.push(k);
+  }
+  ACT.sort((a, b) => b.w - a.w);
+  FRE.fill(0);
+  FIM.fill(0);
+  for (const k of ACT) {
+    const cm = k.m * FG, cn = k.n * FG, hr = 0.5 * k.re, hi = 0.5 * k.im, s = k.s;
+    for (let j = 0; j < FG; j++) {
+      const mj = COS[cm + j], nj = COS[cn + j], row = j * FG;
+      for (let i = 0; i < FG; i++) {
+        const p = COS[cm + i] * nj + s * COS[cn + i] * mj;
+        FRE[row + i] += hr * p;
+        FIM[row + i] += hi * p;
+      }
+    }
+  }
+  fieldMax = 0;
+  for (let c = 0; c < FG * FG; c++) {
+    FT[c * 2] = FRE[c];
+    FT[c * 2 + 1] = FIM[c];
+    const a = Math.sqrt(FRE[c] * FRE[c] + FIM[c] * FIM[c]);
+    AG[c * 3] = a;
+    if (a > fieldMax) fieldMax = a;
+  }
+  // The gradient uses central differences; one cell is 2 / GN wide.
+  const inv = GN / 4;
+  for (let j = 0; j < FG; j++) {
+    for (let i = 0; i < FG; i++) {
+      const c = j * FG + i;
+      const l = i > 0 ? c - 1 : c, r = i < GN ? c + 1 : c, dn = j > 0 ? c - FG : c, up = j < GN ? c + FG : c;
+      AG[c * 3 + 1] = (AG[r * 3] - AG[l * 3]) * inv;
+      AG[c * 3 + 2] = (AG[up * 3] - AG[dn * 3]) * inv;
+    }
+  }
+  fieldTex.needsUpdate = true;
+  return true;
 }
-// Chroma shrinks until the colour fits sRGB.
-function linear(L, C, h, k = 1) {
-  let c = lin(L, C, h);
-  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
-  return c.map(v => clamp(v) * k);
+
+/* ---------- renderer and scene ---------- */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  if (!renderer.capabilities.isWebGL2) throw new Error('no webgl2');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  throw err;
 }
-// Each finish: plate, band, face, bolt, rail cap and four sand tones.
-// The second sand tone is the sand's body colour.
-const HUES = {
-  steel: {
-    plate: [0.4, 0.018, 250], hi: [0.47, 0.022, 250], face: [0.27, 0.015, 255], nut: [0.62, 0.012, 250], cap: [0.92, 0.035, 86],
-    g: [[0.97, 0.02, 92], [0.92, 0.035, 86], [0.86, 0.045, 78], [0.78, 0.05, 70]],
-  },
-  cobalt: {
-    plate: [0.42, 0.16, 264], hi: [0.5, 0.16, 262], face: [0.29, 0.12, 266], nut: [0.74, 0.03, 250], cap: [0.92, 0.15, 97],
-    g: [[0.96, 0.11, 102], [0.92, 0.15, 97], [0.87, 0.17, 90], [0.8, 0.16, 82]],
-  },
-  vermilion: {
-    plate: [0.6, 0.2, 33], hi: [0.67, 0.19, 38], face: [0.42, 0.16, 30], nut: [0.84, 0.012, 60], cap: [0.66, 0.2, 35],
-    g: [[0.25, 0.02, 30], [0.19, 0.015, 30], [0.15, 0.012, 300], [0.31, 0.03, 40]],
-  },
+renderer.setClearColor(0x000000, 0);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1.6, 0.1, 40);
+
+// The field texture keeps one texel per plate vertex.
+const fieldTex = new THREE.DataTexture(FT, FG, FG, THREE.RGFormat, THREE.FloatType);
+fieldTex.minFilter = fieldTex.magFilter = THREE.NearestFilter;
+fieldTex.needsUpdate = true;
+// The pile texture holds the sand depth; the plate darkens under it.
+const PG = 128;
+const DENS = new Uint8Array(PG * PG);
+const densTex = new THREE.DataTexture(DENS, PG, PG, THREE.RedFormat, THREE.UnsignedByteType);
+densTex.minFilter = densTex.magFilter = THREE.LinearFilter;
+densTex.needsUpdate = true;
+
+// Plate and sand share these uniforms.
+const U = {
+  uField: { value: fieldTex }, uCS: { value: new THREE.Vector2(1, 0) }, uAmp: { value: 0 },
+  uDens: { value: densTex }, uShadow: { value: new THREE.Vector2(0.012, 0.006) },
 };
-const ORDER = Object.keys(HUES);
-const PALS = {};
-for (const k of ORDER) {
-  const h = HUES[k];
-  PALS[k] = {
-    g: new Float32Array(h.g.flatMap(c => linear(...c))), sand: linear(...h.g[1]),
-    plate: linear(...h.plate), hi: linear(...h.hi), face: linear(...h.face), nut: linear(...h.nut), cap: linear(...h.cap),
+
+/* ---------- light: one key, one rim, a studio for reflections ---------- */
+const KEY = new THREE.Vector3(-2.2, 3.6, 1.8).normalize(), RIM = new THREE.Vector3(1.6, 1.4, -3.2).normalize();
+const key = new THREE.DirectionalLight(lin(0.97, 0.02, 80), 2.1);
+key.position.copy(KEY).multiplyScalar(6);
+const rim = new THREE.DirectionalLight(lin(0.9, 0.04, 240), 1.5);
+rim.position.copy(RIM).multiplyScalar(6);
+scene.add(key, rim, new THREE.HemisphereLight(lin(0.5, 0.02, 250), lin(0.12, 0.01, 262), 0.35));
+function studio() {
+  const s = new THREE.Scene();
+  const room = new THREE.Mesh(new THREE.BoxGeometry(24, 12, 24), new THREE.MeshBasicMaterial({ color: lin(0.13, 0.01, 262), side: THREE.BackSide }));
+  room.position.y = 4;
+  s.add(room);
+  const panel = (w, h, c, k, p) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: c.multiplyScalar(k), side: THREE.DoubleSide }));
+    m.position.copy(p);
+    m.lookAt(0, 0, 0);
+    s.add(m);
   };
+  // A warm softbox sits with the key light.
+  // A cool strip sits with the rim light.
+  panel(4.5, 2.6, lin(0.97, 0.02, 80), 2.6, KEY.clone().multiplyScalar(7));
+  panel(9, 0.8, lin(0.9, 0.04, 240), 4, RIM.clone().multiplyScalar(8));
+  panel(10, 10, lin(0.4, 0.01, 262), 0.35, new THREE.Vector3(0, 9, 0));
+  panel(14, 1.2, lin(0.8, 0.02, 262), 1.4, new THREE.Vector3(-1, 1.2, 9));
+  return s;
 }
-const STAGE = { uStage: linear(0.17, 0.012, 262), uSlot: linear(0.11, 0.01, 262), uNotch: linear(0.38, 0.015, 262) };
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(studio(), 0.02).texture;
+pmrem.dispose();
 
-/* ---------- the mode ladder ---------- */
-// Each rung: n, m, the sign between the terms, a MIDI note.
-// The sign sets the figure where both terms vanish at the bolt.
-// The notes walk a D minor pentatonic scale.
-const LADDER = [
-  [1, 2, 1, 50], [2, 3, -1, 53], [2, 4, 1, 55], [3, 4, -1, 57], [2, 5, -1, 60], [3, 5, 1, 62], [2, 6, 1, 65],
-  [3, 6, -1, 67], [4, 6, 1, 69], [4, 7, -1, 72], [5, 7, 1, 74], [4, 8, 1, 77], [6, 8, 1, 79],
-];
-const K = LADDER.length, START = 2, WIDTH = 0.42, DETENT = 0.8, SMIN = -0.45, SMAX = K - 0.55;
-const kOf = i => Math.PI * Math.sqrt((LADDER[i][0] ** 2 + LADDER[i][1] ** 2) / 2);
-// The pitch lingers near each rung, so resonance is easy to find.
-const ease = t => t - (DETENT * Math.sin(TAU * t)) / TAU;
-function semis(s) {
-  if (s <= 0) return LADDER[0][3] + s * 2.5;
-  if (s >= K - 1) return LADDER[K - 1][3] + (s - K + 1) * 2.5;
-  const k = Math.floor(s);
-  return lerp(LADDER[k][3], LADDER[k + 1][3], ease(s - k));
-}
-const resp = (st, k) => 1 / (1 + ((st - LADDER[k][3]) / WIDTH) ** 2);
-
-/* ---------- sound: synthesised, started by the first gesture ---------- */
-const MAXV = 10, LEAD = 0.004;
-let ac = null, out = null, noise = null, sand = null, askedAt = -1e9, voices = 0, restT = 0;
-let tone = null, tossNext = 0, pourNext = 0, chimeNext = 0;
-const jit = x => 1 + (Math.random() * 2 - 1) * x;
-
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.55;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    // One second of white noise feeds the rosin rasp.
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    sand = sandBuffer();
-    voice();
-  }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
-}
-// A context still waking queues sounds for a moment.
-function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
-}
-function track(src, ...tails) {
-  voices++;
-  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
-}
-// Once the plate rests, the context sleeps until the next gesture.
-function rest() {
-  clearTimeout(restT);
-  if (!ac || ac.state === 'closed') return;
-  restT = setTimeout(() => {
-    if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
-  }, 1500);
-}
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'c', 'C']);
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
-}
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
-
-// Scales a buffer channel to a target loudness.
-function norm(d, rms) {
-  let s = 0;
-  for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-  const k = rms / Math.sqrt(s / d.length || 1);
-  for (let i = 0; i < d.length; i++) d[i] *= k;
-}
-// Sand: a faint wash under thousands of tiny grain ticks.
-function sandBuffer() {
-  const sr = ac.sampleRate, len = Math.round(sr * 2.3), buf = ac.createBuffer(2, len, sr);
-  for (let c = 0; c < 2; c++) {
-    const d = buf.getChannelData(c);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.04;
-    for (let n = Math.round(2.3 * 2400), k = 0; k < n; k++) {
-      const at = Math.floor(Math.random() * (len - 64)), amp = 0.04 + 0.5 * Math.random() ** 4, dec = rand(3, 12);
-      for (let i = 0; i < 48; i++) d[at + i] += amp * (Math.random() * 2 - 1) * Math.exp(-i / dec);
-    }
-    norm(d, 0.2);
-  }
-  return buf;
-}
-// A bowed string's spectrum: every harmonic, falling away gently.
-function bowWave() {
-  const n = 24, re = new Float32Array(n), im = new Float32Array(n);
-  for (let i = 1; i < n; i++) im[i] = (i % 2 ? 1 : 0.6) / i ** 1.25;
-  return ac.createPeriodicWave(re, im);
-}
-const gainOf = v => { const g = ac.createGain(); g.gain.value = v; return g; };
-function filterOf(type, f, q) {
-  const b = ac.createBiquadFilter();
-  b.type = type;
-  b.frequency.value = f;
-  b.Q.value = q;
-  return b;
-}
-// One continuous voice: sine, beating twin, octave and bowed tone.
-// A looped sand bed hisses under it.
-function voice() {
-  const osc = (type, f) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; return o; };
-  const sine = osc('sine', 196), twin = osc('sine', 196.5), oct = osc('sine', 392), bow = ac.createOscillator();
-  bow.setPeriodicWave(bowWave());
-  bow.frequency.value = 196;
-  const tg = gainOf(0), lp = filterOf('lowpass', 900, 0.5), gBow = gainOf(0);
-  sine.connect(gainOf(0.6)).connect(tg);
-  twin.connect(gainOf(0.22)).connect(tg);
-  oct.connect(gainOf(0.06)).connect(tg);
-  bow.connect(lp).connect(gBow).connect(tg);
-  tg.connect(out);
-  const vib = osc('sine', 5.1), vibG = gainOf(1.5);
-  vib.connect(vibG);
-  [sine, twin, bow].forEach(o => vibG.connect(o.detune));
-  const ros = ac.createBufferSource(), rosG = gainOf(0), rosF = filterOf('bandpass', 2400, 1.2);
-  ros.buffer = noise;
-  ros.loop = true;
-  ros.connect(rosF).connect(rosG).connect(out);
-  const bed = ac.createBufferSource(), hissG = gainOf(0);
-  bed.buffer = sand;
-  bed.loop = true;
-  bed.connect(filterOf('highpass', 1800, 0.5)).connect(filterOf('bandpass', 5200, 0.6)).connect(hissG).connect(out);
-  [sine, twin, oct, bow, vib, ros, bed].forEach(n => n.start());
-  tone = { sine, twin, oct, bow, lp, gBow, tg, vibG, rosG, hissG, last: [] };
-}
-// The voice follows the plate; small changes skip the automation queue.
-function sing(f, lvl, bowAmt, vib, rosin, hiss) {
-  if (!tone || !ac || ac.state !== 'running') return;
-  const t = ac.currentTime, v = [f, lvl, bowAmt, vib, rosin, hiss], L = tone.last;
-  const moved = (i, eps) => L[i] === undefined || Math.abs(v[i] - L[i]) > eps;
-  if (moved(0, f * 0.0005)) {
-    tone.sine.frequency.setTargetAtTime(f, t, 0.03);
-    tone.twin.frequency.setTargetAtTime(f * 1.0026, t, 0.03);
-    tone.oct.frequency.setTargetAtTime(f * 2, t, 0.03);
-    tone.bow.frequency.setTargetAtTime(f, t, 0.03);
-    tone.lp.frequency.setTargetAtTime(f * 3 + 500, t, 0.05);
-    L[0] = f;
-  }
-  if (moved(1, 0.002)) { tone.tg.gain.setTargetAtTime(lvl, t, 0.06); L[1] = lvl; }
-  if (moved(2, 0.01)) { tone.gBow.gain.setTargetAtTime(bowAmt, t, 0.1); L[2] = bowAmt; }
-  if (moved(3, 0.2)) { tone.vibG.gain.setTargetAtTime(vib, t, 0.25); L[3] = vib; }
-  if (moved(4, 0.001)) { tone.rosG.gain.setTargetAtTime(rosin, t, 0.05); L[4] = rosin; }
-  if (moved(5, 0.002)) { tone.hissG.gain.setTargetAtTime(hiss, t, 0.08); L[5] = hiss; }
-}
-// Each voice pans with its place on the plate.
-function bus(a, x) {
-  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
-  if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.6;
-  p.connect(out);
-  return p;
-}
-// A thrown handful: a quick whoosh, then the patter of landing.
-function tossSound(x) {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD;
-  if (t < tossNext) return;
-  tossNext = t + 0.08;
-  const dst = bus(a, x);
-  [[0, 3400, 0.24, 0.07, 0.4], [0.2, 5200, 0.12, 0.16, 0.7]].forEach(([at, f, g, tau, len]) => {
-    const src = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
-    src.buffer = sand;
-    src.playbackRate.value = jit(0.05);
-    bp.type = 'bandpass';
-    bp.frequency.value = f * jit(0.06);
-    bp.Q.value = 0.8;
-    ng.gain.setValueAtTime(0, t + at);
-    ng.gain.linearRampToValueAtTime(g * jit(0.1), t + at + 0.012);
-    ng.gain.setTargetAtTime(0, t + at + 0.012, tau);
-    src.connect(bp).connect(ng).connect(dst);
-    src.start(t + at, Math.random() * 1.5);
-    src.stop(t + at + len);
-    track(src, bp, ng, ...(at ? [dst] : []));
-  });
-}
-// Scattering pours sand over the whole plate.
-function pourSound() {
-  const a = live();
-  if (!a || voices >= MAXV) return;
-  const t = a.currentTime + LEAD;
-  if (t < pourNext) return;
-  pourNext = t + 0.4;
-  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
-  src.buffer = sand;
-  src.playbackRate.value = jit(0.05);
-  bp.type = 'bandpass';
-  bp.Q.value = 0.7;
-  bp.frequency.setValueAtTime(2600 * jit(0.05), t);
-  bp.frequency.exponentialRampToValueAtTime(5400, t + 1.1);
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.3 * jit(0.08), t + 0.16);
-  g.gain.setTargetAtTime(0, t + 0.55, 0.28);
-  src.connect(bp).connect(g).connect(out);
-  src.start(t, Math.random() * 0.8);
-  src.stop(t + 2.2);
-  track(src, bp, g);
-}
-// A new colour rings a small glassy bell at the plate's pitch.
-function chime(f) {
-  const a = live();
-  if (!a || voices > MAXV - 3) return;
-  const t = a.currentTime + LEAD;
-  if (t < chimeNext) return;
-  chimeNext = t + 0.12;
-  const base = f * 2 * jit(0.01);
-  [[1, 0.07, 1.4], [2.76, 0.025, 0.6], [5.4, 0.01, 0.3]].forEach(([m, g, d]) => {
-    const o = a.createOscillator(), e = a.createGain();
-    o.frequency.value = base * m;
-    e.gain.setValueAtTime(0, t);
-    e.gain.linearRampToValueAtTime(g * jit(0.1), t + 0.005);
-    e.gain.setTargetAtTime(0, t + 0.005, d / 4);
-    o.connect(e).connect(out);
-    o.start(t);
-    o.stop(t + d + 0.1);
-    track(o, e);
-  });
-}
-
-/* ---------- WebGL: grains live in float textures ---------- */
-const TW = 512, TH = 400, N = TW * TH, DS = 512, PAD = 0.2, PADK = 1 / (1 + 2 * PAD), PLATE_T = 0.022;
-const TRI = `#version 300 es
-void main() {
-  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-const HASH = `
-uvec3 pcg3(uvec3 v) {
-  v = v * 1664525u + 1013904223u;
-  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
-  v ^= v >> 16u;
-  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
-  return v;
-}
-vec3 rnd3(uvec3 v) { return vec3(pcg3(v)) * (1.0 / 4294967296.0); }`;
-// The plate's shape: two degenerate pairs blended by their response.
-// Each pair holds n, m and the weights of (n, m) and (m, n).
-// The drive point sets those weights, so the bolt picks the figure.
-const FIELD = `
-uniform vec4 uM0, uM1;
-uniform float uAmp, uK;
-vec3 phi(vec4 M, vec2 p) {
-  vec2 a = M.x * 3.14159265 * p, b = M.y * 3.14159265 * p;
-  vec2 ca = cos(a), sa = sin(a), cb = cos(b), sb = sin(b);
-  float u = M.z * ca.x * cb.y + M.w * cb.x * ca.y;
-  float gx = -M.z * M.x * sa.x * cb.y - M.w * M.y * sb.x * ca.y;
-  float gy = -M.z * M.y * ca.x * sb.y - M.w * M.x * cb.x * sa.y;
-  return 0.5 * vec3(u, 3.14159265 * gx, 3.14159265 * gy);
-}
-vec3 field(vec2 p) { return phi(uM0, p) + phi(uM1, p); }`;
-const SIM_FS = `#version 300 es
-precision highp float;
-precision highp int;
-precision highp sampler2D;
-uniform sampler2D uA, uB;
-uniform uint uFrame;
-uniform float uDt, uG, uTh, uHop, uKick, uDrift, uCreep, uSpread, uScatter, uFallH;
-uniform vec4 uToss;
-uniform vec3 uBolt;
-${FIELD}
-${HASH}
-layout(location = 0) out vec4 oA;
-layout(location = 1) out vec4 oB;
-const float LIM = 0.005;
-void main() {
-  ivec2 ip = ivec2(gl_FragCoord.xy);
-  vec3 r1 = rnd3(uvec3(uvec2(ip), uFrame));
-  vec3 r2 = rnd3(uvec3(uvec2(ip.yx) + 7919u, uFrame ^ 0x5bd1e995u));
-  // Scattering lays grains on a jittered grid, falling from above.
-  if (uScatter > 0.0) {
-    vec2 cell = (vec2(ip) + r1.xy) / vec2(textureSize(uA, 0));
-    oA = vec4(mix(vec2(LIM), vec2(1.0 - LIM), cell), uFallH * (0.03 + 0.97 * r1.z * r1.z), 0.0);
-    oB = vec4((r2.xy - 0.5) * 0.03, 0.0, 0.0);
-    return;
-  }
-  vec4 A = texelFetch(uA, ip, 0), B = texelFetch(uB, ip, 0);
-  vec2 p = A.xy, v = B.xy;
-  float h = A.z, vh = A.w, k = max(uK, 1.0);
-  vec3 f = field(p);
-  float a = uAmp * abs(f.x);
-  if (h <= 0.0) {
-    h = 0.0;
-    vh = 0.0;
-    v *= exp(-16.0 * uDt);
-    // Above a threshold the plate throws the grain up.
-    float e = (a - uTh) / (1.0 - uTh);
-    if (e > 0.0 && r1.x < min(e * 5.0, 1.0) * uDt * 30.0) {
-      vh = sqrt(2.0 * uG * uHop * e * (0.25 + 0.75 * r1.y));
-      float ang = 6.2831853 * r1.z;
-      v = vec2(cos(ang), sin(ang)) * uKick / k * e * (0.3 + 0.7 * r2.x);
-      h = 1e-5;
-    }
-    // Weak shaking only makes the grain creep.
-    p += (r2.yz - 0.5) * 2.0 * a * uCreep / k * sqrt(uDt);
-  } else {
-    vh -= uG * uDt;
-    h += vh * uDt;
-    if (h <= 0.0) {
-      if (vh < -0.7) { h = 1e-5; vh *= -0.3; v *= 0.5; }
-      else { h = 0.0; vh = 0.0; v *= 0.3; }
+/* ---------- textures drawn once ---------- */
+// The plate is spun: fine concentric rings with a tangent grain.
+function spunTextures() {
+  const S = 1024, rough = new Uint8Array(S * S * 4), dir = new Uint8Array(S * S * 4);
+  const ring = new Float32Array(2048);
+  let v = 0;
+  for (let i = 0; i < ring.length; i++) { v = v * 0.55 + (Math.random() - 0.5); ring[i] = v; }
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const dx = (x + 0.5) / S - 0.5, dy = (y + 0.5) / S - 0.5, r = Math.hypot(dx, dy) + 1e-6;
+      const o = (y * S + x) * 4, n = ring[Math.min(2047, (r * 2896) | 0)];
+      const g = clamp(0.36 + n * 0.11 + (Math.random() - 0.5) * 0.04, 0.12, 0.7);
+      rough[o] = rough[o + 1] = rough[o + 2] = g * 255;
+      rough[o + 3] = 255;
+      // Direction is the circle tangent, stored as 0.5 + 0.5 · t.
+      dir[o] = (0.5 - (0.5 * dy) / r) * 255;
+      dir[o + 1] = (0.5 + (0.5 * dx) / r) * 255;
+      dir[o + 2] = 255;
+      dir[o + 3] = 255;
     }
   }
-  if (uToss.z > 0.0) {
-    vec2 d = p - uToss.xy;
-    float dist = length(d), q = max(0.0, 1.0 - dist / uToss.w);
-    if (q > 0.0) {
-      q *= q;
-      float ang = 6.2831853 * r2.z;
-      vec2 dir = dist > 1e-4 ? d / dist : vec2(cos(ang), sin(ang));
-      vh = max(vh, 0.0) + uToss.z * q * (0.45 + 0.55 * r2.x);
-      v += dir * uToss.z * 0.6 * q * (0.35 + 0.65 * r2.y);
-      h = max(h, 1e-5);
+  const mk = d => { const t = new THREE.DataTexture(d, S, S); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8; t.needsUpdate = true; return t; };
+  return { rough: mk(rough), dir: mk(dir) };
+}
+// The bench fades out into the stage.
+function radial(size, stops) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  stops.forEach(([t, a]) => grad.addColorStop(t, `rgba(255,255,255,${a})`));
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+// A soft square marks the plate shadow on the bench.
+// Inner is the solid half width, from 0 to 0.5.
+// Soft is the fade width, from 0 to 0.5.
+function squareShadow(size, inner, soft) {
+  const d = new Uint8Array(size * size * 4);
+  const ramp = t => { const k = clamp((0.5 - inner - Math.abs(t - 0.5) + soft) / soft); return k * k * (3 - 2 * k); };
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const o = (y * size + x) * 4, a = ramp((x + 0.5) / size) * ramp((y + 0.5) / size) * 255;
+      d[o] = d[o + 1] = d[o + 2] = a;
+      d[o + 3] = 255;
     }
   }
-  p += v * uDt;
-  // The mean drift runs down the slope of u squared.
-  p -= uDrift * uAmp * f.x * f.yz / (k * k) * uDt;
-  // A steady restlessness gives the lines their width.
-  vec3 r3 = rnd3(uvec3(uvec2(ip) + 31u, uFrame + 101u));
-  p += (r3.xy - 0.5) * 2.0 * uAmp * uSpread * sqrt(10.0 / k) * sqrt(uDt);
-  // The bolt's washer pushes low grains aside, so a dragged bolt ploughs.
-  vec2 bd = p - uBolt.xy;
-  float bl = length(bd);
-  if (h < 0.01 && bl < uBolt.z) {
-    vec2 bdir = bl > 1e-4 ? bd / bl : vec2(cos(6.2831853 * r3.z), sin(6.2831853 * r3.z));
-    p = uBolt.xy + bdir * uBolt.z;
-    v *= 0.5;
-  }
-  if (p.x < LIM) { p.x = 2.0 * LIM - p.x; v.x = abs(v.x) * 0.4; }
-  if (p.x > 1.0 - LIM) { p.x = 2.0 * (1.0 - LIM) - p.x; v.x = -abs(v.x) * 0.4; }
-  if (p.y < LIM) { p.y = 2.0 * LIM - p.y; v.y = abs(v.y) * 0.4; }
-  if (p.y > 1.0 - LIM) { p.y = 2.0 * (1.0 - LIM) - p.y; v.y = -abs(v.y) * 0.4; }
-  oA = vec4(clamp(p, vec2(LIM), vec2(1.0 - LIM)), h, vh);
-  oB = vec4(v, 0.0, 0.0);
-}`;
-// Each grain adds one texel of light to a padded map of the plate.
-const DEN_VS = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-uniform sampler2D uA;
-uniform float uW, uPadK;
-out float vW;
-void main() {
-  int W = textureSize(uA, 0).x;
-  vec4 A = texelFetch(uA, ivec2(gl_VertexID % W, gl_VertexID / W), 0);
-  gl_Position = vec4((A.xy - 0.5) * uPadK * 2.0, 0.0, 1.0);
-  gl_PointSize = 1.0;
-  vW = uW;
-}`;
-const DEN_FS = `#version 300 es
-precision highp float;
-in float vW;
-out vec4 o;
-void main() { o = vec4(vW); }`;
-const BLUR_FS = `#version 300 es
-precision highp float;
-uniform sampler2D uSrc;
-uniform vec2 uDir;
-out vec4 o;
-void main() {
-  vec2 uv = gl_FragCoord.xy / vec2(textureSize(uSrc, 0));
-  float s = texture(uSrc, uv).r * 0.227;
-  s += (texture(uSrc, uv + uDir * 1.3846).r + texture(uSrc, uv - uDir * 1.3846).r) * 0.3162;
-  s += (texture(uSrc, uv + uDir * 3.2308).r + texture(uSrc, uv - uDir * 3.2308).r) * 0.0703;
-  o = vec4(s);
-}`;
-// One grain seen through the tilted camera, shared by the dot and streak passes.
-const GRAIN = `
-precision highp float;
-precision highp int;
-precision highp sampler2D;
-uniform sampler2D uA, uB;
-uniform mat4 uVP;
-uniform vec2 uRes;
-uniform float uRefW, uJit, uTau, uDrift, uFront, uFlash;
-uniform uint uSeed;
-uniform vec3 uPa[4], uPb[4];
-${FIELD}
-${HASH}
-struct Grain { vec4 head, tail; vec3 col; float size, w; };
-Grain grain(int n) {
-  ivec2 TS = textureSize(uA, 0);
-  // A stride spreads a partial draw over the whole plate.
-  int id = int((uint(n) * 7919u) % uint(TS.x * TS.y));
-  ivec2 ip = ivec2(id % TS.x, id / TS.x);
-  vec4 A = texelFetch(uA, ip, 0);
-  vec2 v = texelFetch(uB, ip, 0).xy;
-  vec3 r = rnd3(uvec3(uvec2(ip), 40503u));
-  vec3 f = field(A.xy);
-  float a = uAmp * abs(f.x), k = max(uK, 1.0);
-  // Shaken grains buzz in place.
-  vec3 j = rnd3(uvec3(uvec2(ip), uSeed)) - 0.5;
-  vec3 w = vec3(A.xy - 0.5 + j.xy * a * uJit, A.z + (j.z + 0.5) * a * uJit * 0.5);
-  // Motion: hops, the drift toward the lines and the climb.
-  vec3 vel = vec3(v - uDrift * uAmp * f.x * f.yz / (k * k), A.w) * uTau;
-  float vl = length(vel);
-  if (vl > 0.02) vel *= 0.02 / vl;
-  Grain g;
-  g.head = uVP * vec4(w, 1.0);
-  g.tail = uVP * vec4(w - vel, 1.0);
-  float near = uRefW / g.head.w, dist = length(A.xy - 0.5);
-  int ti = r.y < 0.14 ? 0 : r.y < 0.6 ? 1 : r.y < 0.88 ? 2 : 3;
-  vec3 col = mix(uPa[ti], uPb[ti], clamp((uFront - dist) / 0.05, 0.0, 1.0)) * (0.88 + 0.24 * r.z);
-  // A pale crest rides the finish as it changes.
-  col = mix(col, vec3(1.0), 0.5 * uFlash * exp(-pow((dist - uFront) / 0.04, 2.0)));
-  // Airborne grains catch the light as they rise.
-  col *= 1.0 + min(A.z, 0.04) * 12.0 * (1.0 - smoothstep(0.05, 0.15, A.z));
-  g.col = col;
-  // High falling sand is a thin dust until it lands.
-  g.w = 1.0 - 0.7 * smoothstep(0.04, 0.25, A.z);
-  // Near grains are more often two pixels wide; far grains shrink.
-  g.size = (r.x < 0.3 * pow(near, 5.0) || A.z > 0.012) ? 2.0 : 1.0;
-  return g;
-}`;
-// Grains: crisp square pixels of sand, summed as coverage and colour.
-const DOT_VS = `#version 300 es
-${GRAIN}
-out vec4 vCol;
-void main() {
-  Grain g = grain(gl_VertexID);
-  gl_Position = g.head;
-  gl_PointSize = g.size;
-  float w = g.w * (g.size > 1.5 ? 0.45 : 1.0);
-  vCol = vec4(g.col * w, w);
-}`;
-// Moving grains trail a one-pixel streak that fades behind them.
-const STREAK_VS = `#version 300 es
-${GRAIN}
-out vec4 vCol;
-void main() {
-  Grain g = grain(gl_VertexID & ~1);
-  float sl = length((g.head.xy / g.head.w - g.tail.xy / g.tail.w) * 0.5 * uRes);
-  vCol = vec4(0.0);
-  if (sl < 1.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-  bool head = (gl_VertexID & 1) == 1;
-  gl_Position = head ? g.head : g.tail;
-  float w = g.w * 0.6 / (1.0 + 0.1 * sl);
-  if (head) vCol = vec4(g.col * w, w);
-}`;
-const ADD_FS = `#version 300 es
-precision highp float;
-in vec4 vCol;
-out vec4 o;
-void main() { o = vCol; }`;
-// The stage: plate, sand, bolt and the tuning rail.
-const COMP_FS = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-uniform sampler2D uHdr, uG0;
-uniform mat4 uInv;
-uniform vec3 uEye;
-uniform vec2 uRes, uRung, uCap, uBoltP;
-uniform vec4 uRail;
-uniform float uTick[${K}];
-uniform float uFront, uPadK, uPr, uCovK;
-uniform vec3 uStage, uSlot, uNotch, uCapC;
-uniform vec3 uPlA, uPlB, uHiA, uHiB, uFcA, uFcB, uSdA, uSdB, uNtA, uNtB;
-${FIELD}
-out vec4 o;
-const float PT = ${PLATE_T};
-float hash(vec2 p) {
-  vec3 q = fract(p.xyx * 0.1031);
-  q += dot(q, q.yzx + 33.33);
-  return fract((q.x + q.y) * q.z);
-}
-vec3 srgb(vec3 c) {
-  c = clamp(c, 0.0, 1.0);
-  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
-}
-// Coverage of a signed distance in pixels, antialiased.
-float fill(float d) { return clamp(0.5 - d, 0.0, 1.0); }
-void main() {
-  vec2 px = gl_FragCoord.xy, ndc = px / uRes * 2.0 - 1.0;
-  float pr = uPr;
-  vec4 a = uInv * vec4(ndc, -1.0, 1.0), b = uInv * vec4(ndc, 1.0, 1.0);
-  vec3 ro = uEye, rd = normalize(b.xyz / b.w - a.xyz / a.w);
-  // The ray meets the plate's plane.
-  float tp = -ro.z / rd.z, hit = step(0.0, tp);
-  vec2 uv = (ro + rd * max(tp, 0.0)).xy + 0.5, tc = (uv - 0.5) * uPadK + 0.5;
-  // A new finish sweeps out from the centre.
-  float ft = clamp((uFront - length(uv - 0.5)) / 0.05, 0.0, 1.0);
-  vec3 plate = mix(uPlA, uPlB, ft), hi = mix(uHiA, uHiB, ft), face = mix(uFcA, uFcB, ft);
-  vec3 sand = mix(uSdA, uSdB, ft), nut = mix(uNtA, uNtB, ft);
-  vec2 sv = px / uRes - 0.5;
-  vec3 col = uStage * (1.0 - 0.6 * dot(sv, sv));
-  // The top: one flat colour, stepped into bands by the singing mode.
-  vec2 q = abs(uv - 0.5) - 0.5;
-  float sd = max(q.x, q.y), dpx = sd / max(fwidth(sd), 1e-6);
-  float inside = fill(dpx) * hit;
-  float lv = uAmp * abs(field(uv).x) * 3.2, lw = fwidth(lv);
-  float band = min(floor(lv) + smoothstep(1.0 - lw, 1.0, fract(lv)), 3.0);
-  vec3 top = mix(plate, hi, band / 3.0);
-  // A machined cut runs just inside the rim.
-  top = mix(top, face, 0.85 * fill(abs(dpx + 6.0 * pr) - 0.6 * pr));
-  // Piled sand: a solid body where it gathers, with a little relief.
-  float e = 2.0 / ${DS}.0, d0 = texture(uG0, tc).r;
-  float hgt = 1.0 - exp(-d0 * 0.25), hw = fwidth(hgt) + 1e-4;
-  float body = smoothstep(0.62 - hw, 0.62 + hw, hgt);
-  vec2 gr = vec2(texture(uG0, tc + vec2(e, 0.0)).r - texture(uG0, tc - vec2(e, 0.0)).r,
-    texture(uG0, tc + vec2(0.0, e)).r - texture(uG0, tc - vec2(0.0, e)).r);
-  float lit = dot(normalize(vec3(-gr * 0.08, 1.0)), vec3(-0.45, 0.55, 0.7)) / 0.7;
-  top = mix(top, sand * clamp(mix(1.0, lit, 0.45), 0.8, 1.15), body);
-  // The bolt: a washer, a hex nut and the stud's end.
-  // It sits at the drive point.
-  vec2 c = uv - uBoltP;
-  float cw = fwidth(c.x) + fwidth(c.y), r = length(c);
-  vec2 hq = abs(mat2(0.866, -0.5, 0.5, 0.866) * c);
-  float hx = max(hq.x * 0.8660254 + hq.y * 0.5, hq.y);
-  vec3 bolt = mix(face, nut, smoothstep(cw, -cw, hx - 0.03));
-  // Cut gaps outline the nut and hollow the stud.
-  bolt = mix(bolt, uSlot, max(smoothstep(cw, -cw, abs(hx - 0.033) - 0.0022), smoothstep(cw, -cw, r - 0.01)));
-  float wm = smoothstep(cw, -cw, r - 0.052);
-  top = mix(top, bolt, wm);
-  col = mix(col, top, inside);
-  // The front face: a darker band, lit along its top lip.
-  float tf = (-0.5 - ro.y) / rd.y;
-  vec3 fp = ro + rd * tf;
-  float fz = fwidth(fp.z) + 1e-6, fx = fwidth(fp.x) + 1e-6;
-  float faceM = step(0.0, tf) * clamp(min(-fp.z, fp.z + PT) / fz + 0.5, 0.0, 1.0) * clamp((0.5 - abs(fp.x)) / fx + 0.5, 0.0, 1.0);
-  col = mix(col, mix(face, hi, clamp(1.0 + 0.8 * fp.z / fz, 0.0, 1.0)), faceM);
-  // Single grains speckle the plate and the air above it.
-  vec4 g = texelFetch(uHdr, ivec2(px), 0);
-  float cov = (1.0 - exp(-g.a * uCovK)) * (1.0 - max(body, wm) * inside);
-  col = mix(col, g.rgb / max(g.a, 1e-4), cov);
-  // The rail: a slot cut into the stage, a notch per resonance.
-  float ax = abs(px.x - uRail.x), dy = max(max(uRail.y - px.y, px.y - uRail.z), 0.0);
-  col = mix(col, uSlot, fill(length(vec2(ax, dy)) - 3.0 * pr));
-  float kr = clamp(floor((px.y - uRung.x) / uRung.y + 0.5), 0.0, ${K - 1}.0), on = uTick[int(kr)];
-  float notch = fill(abs(px.y - (uRung.x + kr * uRung.y)) - 0.75 * pr) * fill(ax - (6.0 + 3.0 * on) * pr);
-  col = mix(col, mix(uNotch, uCapC, clamp(on * 1.5, 0.0, 1.0)), notch);
-  // The cap: a solid accent block, split by one cut.
-  vec2 hs = vec2(13.0, 6.5) * pr * (1.0 + 0.12 * uCap.x), cq = abs(px - uRail.xw) - hs + 2.0 * pr;
-  float cap = fill(length(max(cq, 0.0)) + min(max(cq.x, cq.y), 0.0) - 2.0 * pr);
-  float cut = fill(abs(px.y - uRail.w) - 0.7 * pr) * fill(ax - hs.x + 4.0 * pr);
-  col = mix(col, mix(uCapC, uSlot, cut), cap);
-  o = vec4(srgb(col) + (hash(px + 3.0) - 0.5) / 255.0, 1.0);
-}`;
-
-let gl = null, P = null, vao = null, ready = false;
-let sim = [], cur = 0, hdr = null, PY = null;
-function compile(vs, fs) {
-  const sh = (type, src) => {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    return s;
-  };
-  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
-  gl.attachShader(p, v);
-  gl.attachShader(p, f);
-  gl.linkProgram(p);
-  return { p, v, f, u: {} };
-}
-function uniforms(q) {
-  const n = gl.getProgramParameter(q.p, gl.ACTIVE_UNIFORMS);
-  for (let i = 0; i < n; i++) {
-    const name = gl.getActiveUniform(q.p, i).name.replace(/\[0\]$/, '');
-    q.u[name] = gl.getUniformLocation(q.p, name);
-  }
-}
-function setVec3s(q, obj) {
-  for (const k in obj) if (q.u[k]) gl.uniform3fv(q.u[k], obj[k]);
-}
-function texture(fmt, w, h, filter) {
-  const t = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, t);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const t = new THREE.DataTexture(d, size, size);
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.needsUpdate = true;
   return t;
 }
-function framebuffer(...texs) {
-  const fb = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
-  gl.drawBuffers(texs.map((t, i) => gl.COLOR_ATTACHMENT0 + i));
-  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('float targets unsupported');
-  return fb;
+
+/* ---------- the plate ---------- */
+const spun = spunTextures();
+const plateMat = new THREE.MeshPhysicalMaterial({
+  color: lin(0.8, 0.008, 250), metalness: 1, roughness: 1, roughnessMap: spun.rough,
+  anisotropy: 0.85, anisotropyMap: spun.dir, envMapIntensity: 1.1,
+});
+// The thin sides are ground plain, with no spun grain.
+const edgeMat = new THREE.MeshStandardMaterial({ color: lin(0.8, 0.008, 250), metalness: 1, roughness: 0.3 });
+plateMat.customProgramCacheKey = () => 'chladni-plate';
+edgeMat.customProgramCacheKey = () => 'chladni-edge';
+plateMat.onBeforeCompile = edgeMat.onBeforeCompile = sh => {
+  sh.uniforms.uField = U.uField; sh.uniforms.uCS = U.uCS; sh.uniforms.uAmp = U.uAmp;
+  sh.uniforms.uDens = U.uDens; sh.uniforms.uShadow = U.uShadow;
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', `#include <common>
+uniform sampler2D uField;
+uniform vec2 uCS;
+uniform float uAmp;
+varying vec2 vPlate;
+// The plate bends by the real and imaginary field at one phase.
+float wAt(ivec2 i) {
+  vec2 F = texelFetch(uField, clamp(i, ivec2(0), ivec2(${GN})), 0).rg;
+  return uAmp * (F.x * uCS.x - F.y * uCS.y);
+}`)
+    .replace('#include <beginnormal_vertex>', `
+ivec2 gi = ivec2(floor((position.xz * 0.5 + 0.5) * ${GN}.0 + 0.5));
+float wv = wAt(gi);
+float dwx = (wAt(gi + ivec2(1, 0)) - wAt(gi - ivec2(1, 0))) * ${(GN / 4).toFixed(1)};
+float dwz = (wAt(gi + ivec2(0, 1)) - wAt(gi - ivec2(0, 1))) * ${(GN / 4).toFixed(1)};
+vec3 objectNormal = normal;
+if (abs(normal.y) > 0.5) objectNormal = sign(normal.y) * normalize(vec3(-dwx, 1.0, -dwz));
+#ifdef USE_TANGENT
+vec3 objectTangent = vec3(tangent.xyz);
+#endif`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+transformed.y += wv;
+vPlate = position.xz * 0.5 + 0.5;`);
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+uniform sampler2D uDens;
+uniform vec2 uShadow;
+varying vec2 vPlate;`)
+    .replace('#include <opaque_fragment>', `
+// Sand darkens the steel under it and casts a short shadow.
+float dA = texture2D(uDens, vPlate).r, dS = texture2D(uDens, vPlate + uShadow).r;
+outgoingLight *= (1.0 - 0.3 * smoothstep(0.02, 0.5, dA)) * (1.0 - 0.5 * smoothstep(0.02, 0.45, dS));
+#include <opaque_fragment>`);
+};
+// Box groups: +x, -x, top, bottom, +z, -z.
+const plate = new THREE.Mesh(new THREE.BoxGeometry(2, PT, 2, GN, 1, GN), [edgeMat, edgeMat, plateMat, plateMat, edgeMat, edgeMat]);
+scene.add(plate);
+
+/* ---------- the stand: post, base, washer and nut ---------- */
+const darkMetal = new THREE.MeshStandardMaterial({ color: lin(0.3, 0.01, 262), metalness: 0.85, roughness: 0.38 });
+const brightMetal = new THREE.MeshStandardMaterial({ color: lin(0.82, 0.006, 250), metalness: 1, roughness: 0.22 });
+const postH = -PT / 2 - BENCH;
+const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, postH, 32), darkMetal);
+post.position.y = BENCH + postH / 2;
+const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 64), darkMetal);
+base.position.y = BENCH + 0.025;
+const washer = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.008, 48), brightMetal);
+washer.position.y = PT / 2 + 0.004;
+const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.04, 6), brightMetal);
+nut.position.y = PT / 2 + 0.028;
+const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.02, 24), brightMetal);
+stud.position.y = PT / 2 + 0.056;
+scene.add(post, base, washer, nut, stud);
+
+/* ---------- the bench ---------- */
+const bench = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), new THREE.MeshStandardMaterial({
+  color: lin(0.24, 0.012, 262), roughness: 0.62, metalness: 0, transparent: true, depthWrite: false,
+  alphaMap: radial(256, [[0, 1], [0.32, 0.95], [0.62, 0.4], [1, 0]]),
+}));
+bench.rotation.x = -Math.PI / 2;
+bench.position.y = BENCH;
+bench.renderOrder = -2;
+const shadowMat = (tex, o) => new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: o, alphaMap: tex, depthWrite: false });
+const plateShadow = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 2.9), shadowMat(squareShadow(256, 0.5 - 0.36, 0.13), 0.62));
+plateShadow.rotation.x = -Math.PI / 2;
+plateShadow.position.set(0.16, BENCH + 0.002, -0.1);
+plateShadow.renderOrder = -1;
+const baseShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), shadowMat(radial(128, [[0, 1], [0.6, 0.7], [1, 0]]), 0.75));
+baseShadow.rotation.x = -Math.PI / 2;
+baseShadow.position.set(0, BENCH + 0.003, 0);
+baseShadow.renderOrder = -1;
+scene.add(bench, plateShadow, baseShadow);
+
+/* ---------- the bow ---------- */
+// The bow stands at the edge and leans out.
+// It slides along its length as you drag.
+const bow = new THREE.Group(), bowBody = new THREE.Group();
+const wood = new THREE.MeshStandardMaterial({ color: lin(0.34, 0.08, 38), roughness: 0.32, metalness: 0.05 });
+const hair = new THREE.MeshStandardMaterial({ color: lin(0.92, 0.02, 90), roughness: 0.85 });
+const ebony = new THREE.MeshStandardMaterial({ color: lin(0.16, 0.01, 60), roughness: 0.4 });
+const part = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); bowBody.add(m); return m; };
+part(new THREE.BoxGeometry(0.011, 1.5, 0.011), wood, 0, 0, 0.034);
+part(new THREE.BoxGeometry(0.046, 1.36, 0.005), hair, 0, 0, 0.004);
+part(new THREE.BoxGeometry(0.03, 0.11, 0.04), ebony, 0, -0.69, 0.024);
+part(new THREE.BoxGeometry(0.02, 0.05, 0.036), ebony, 0, 0.71, 0.024);
+bow.add(bowBody);
+bow.visible = false;
+scene.add(bow);
+// The bow leans out from the plate and tilts along the edge.
+const BOW_LEAN = 0.2, BOW_TILT = 0.85;
+const bowState = { on: false, p: new THREE.Vector3(), n: new THREE.Vector3(1, 0, 0), stroke: 0, dir: 1, out: 1 };
+function placeBow() {
+  const { p, n } = bowState;
+  const a = new THREE.Vector3(0, Math.cos(BOW_LEAN), 0).addScaledVector(n, Math.sin(BOW_LEAN)).normalize();
+  const t = new THREE.Vector3(-n.z, 0, n.x);
+  a.applyAxisAngle(n, BOW_TILT * (p.dot(t) > 0 ? 1 : -1));
+  const z = n.clone().addScaledVector(a, -a.dot(n)).normalize(), x = new THREE.Vector3().crossVectors(a, z);
+  bow.matrixAutoUpdate = true;
+  bow.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, a, z));
+  // Out moves the bow away from the plate when it lifts.
+  bow.position.copy(p).addScaledVector(n, 0.004 + bowState.out * 0.4).addScaledVector(a, bowState.out * 0.25);
+  bowBody.position.y = -bowState.stroke;
 }
-function target(n) {
-  const tex = texture(gl.R16F, n, n, gl.LINEAR);
-  return { tex, n, fb: framebuffer(tex) };
+
+/* ---------- sand ---------- */
+// Each grain: x and z on the plate, hop height, three velocities.
+const NMAX = coarse ? 18000 : 44000;
+let NL = NMAX;
+const RG = 0.0046 * Math.sqrt(44000 / NMAX);
+const X = new Float32Array(NMAX), Y = new Float32Array(NMAX), Z = new Float32Array(NMAX);
+const VX = new Float32Array(NMAX), VY = new Float32Array(NMAX), VZ = new Float32Array(NMAX);
+const DEP = new Float32Array(NMAX);
+const POS = new Float32Array(NMAX * 4), SEED = new Float32Array(NMAX * 4), COL = new Float32Array(NMAX * 3);
+for (let i = 0; i < NMAX; i++) {
+  SEED[i * 4] = 0.7 + Math.random() * 0.6;
+  DEP[i] = SEED[i * 4 + 1] = Math.random();
+  SEED[i * 4 + 2] = Math.random();
+  SEED[i * 4 + 3] = Math.random();
 }
-async function initGL() {
-  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-  if (!gl) throw new Error('WebGL 2 unavailable');
-  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float unavailable');
-  const par = gl.getExtension('KHR_parallel_shader_compile');
-  const progs = {
-    sim: compile(TRI, SIM_FS), den: compile(DEN_VS, DEN_FS), blur: compile(TRI, BLUR_FS),
-    dot: compile(DOT_VS, ADD_FS), streak: compile(STREAK_VS, ADD_FS), comp: compile(TRI, COMP_FS),
+// Pile height per grain in one cell; the pack fraction is 0.6.
+const CELL = 2 / PG, HK = ((4 / 3) * Math.PI * RG ** 3 * 1.09) / (CELL * CELL * 0.6);
+const CNT = new Float32Array(PG * PG), TMP = new Float32Array(PG * PG), PH = new Float32Array(PG * PG * 3);
+
+const grainGeo = new THREE.InstancedBufferGeometry();
+{
+  const g = new THREE.OctahedronGeometry(1, 0);
+  grainGeo.setAttribute('position', g.getAttribute('position'));
+  grainGeo.setAttribute('normal', g.getAttribute('normal'));
+}
+const posAttr = new THREE.InstancedBufferAttribute(POS, 4).setUsage(THREE.DynamicDrawUsage);
+const colAttr = new THREE.InstancedBufferAttribute(COL, 3);
+grainGeo.setAttribute('aPos', posAttr);
+grainGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(SEED, 4));
+grainGeo.setAttribute('aCol', colAttr);
+grainGeo.instanceCount = NL;
+const grainMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uField: U.uField, uCS: U.uCS, uAmp: U.uAmp, uR: { value: RG },
+    uKey: { value: KEY }, uRim: { value: RIM },
+    uKeyCol: { value: lin(0.97, 0.02, 80).multiplyScalar(2.3) },
+    uRimCol: { value: lin(0.9, 0.04, 240).multiplyScalar(1.2) },
+    uAmb: { value: lin(0.5, 0.02, 250).multiplyScalar(0.55) },
+  },
+  vertexShader: `
+uniform sampler2D uField;
+uniform vec2 uCS;
+uniform float uAmp, uR;
+attribute vec4 aPos;
+attribute vec4 aSeed;
+attribute vec3 aCol;
+varying vec3 vN, vV, vCol;
+varying float vAO;
+// The grain rides the plate: bilinear field at its spot.
+float plateW(vec2 p) {
+  vec2 g = clamp((p * 0.5 + 0.5) * ${GN}.0, vec2(0.0), vec2(${GN - 0.001}));
+  ivec2 i = ivec2(floor(g));
+  vec2 f = fract(g);
+  vec2 a = texelFetch(uField, i, 0).rg, b = texelFetch(uField, i + ivec2(1, 0), 0).rg;
+  vec2 c = texelFetch(uField, i + ivec2(0, 1), 0).rg, d = texelFetch(uField, i + ivec2(1, 1), 0).rg;
+  vec2 F = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  return uAmp * (F.x * uCS.x - F.y * uCS.y);
+}
+void main() {
+  float sz = uR * aSeed.x;
+  vec2 ang = aSeed.zw * 6.2832;
+  float c1 = cos(ang.x), s1 = sin(ang.x), c2 = cos(ang.y), s2 = sin(ang.y);
+  mat3 R = mat3(c1, 0.0, -s1, 0.0, 1.0, 0.0, s1, 0.0, c1) * mat3(1.0, 0.0, 0.0, 0.0, c2, s2, 0.0, -s2, c2);
+  // Grains are flat, faceted chips, not perfect gems.
+  vec3 sq = vec3(1.0, 0.62, 0.86);
+  vec3 lp = R * (position * sq) * sz;
+  vN = normalize(R * (normal / sq));
+  vec3 wp = vec3(aPos.x, ${(PT / 2).toFixed(4)} + plateW(aPos.xy) + aPos.z + sz * 0.5, aPos.y) + lp;
+  vV = cameraPosition - wp;
+  // A grain deep in a pile sits in shade.
+  float pile = aPos.w;
+  float depth = clamp(aPos.z / max(pile, 1e-4), 0.0, 1.0);
+  vAO = mix(1.0, mix(0.38, 1.0, depth), smoothstep(0.0, 0.01, pile));
+  vCol = aCol;
+  gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+}`,
+  fragmentShader: `
+uniform vec3 uKey, uRim, uKeyCol, uRimCol, uAmb;
+varying vec3 vN, vV, vCol;
+varying float vAO;
+void main() {
+  vec3 N = normalize(vN), V = normalize(vV);
+  float k = max(dot(N, uKey), 0.0);
+  float r = max(dot(N, uRim), 0.0) * pow(1.0 - max(dot(N, V), 0.0), 2.0);
+  float sp = pow(max(dot(N, normalize(uKey + V)), 0.0), 48.0);
+  vec3 c = vCol * (uAmb * (0.55 + 0.45 * N.y) + uKeyCol * k) * vAO + uKeyCol * sp * 0.22 * vAO + uRimCol * r * 0.5;
+  gl_FragColor = vec4(c, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`,
+});
+const grains = new THREE.Mesh(grainGeo, grainMat);
+grains.frustumCulled = false;
+scene.add(grains);
+
+/* ---------- finishes ---------- */
+// Each finish: plate colour, then sand tones with their shares.
+const FINISH = {
+  steel: { plate: [0.8, 0.008, 250], rough: 1, sand: [[0.93, 0.03, 88, 0.34], [0.88, 0.045, 80, 0.3], [0.8, 0.055, 70, 0.2], [0.97, 0.012, 95, 0.12], [0.4, 0.02, 55, 0.04]] },
+  brass: { plate: [0.8, 0.1, 84], rough: 0.9, sand: [[0.25, 0.01, 250, 0.38], [0.21, 0.008, 60, 0.28], [0.31, 0.012, 70, 0.2], [0.17, 0.006, 260, 0.11], [0.78, 0.03, 80, 0.03]] },
+};
+function finish(name) {
+  const F = FINISH[name] || FINISH.steel;
+  plateMat.color.copy(lin(...F.plate));
+  edgeMat.color.copy(plateMat.color);
+  plateMat.roughness = F.rough;
+  const tones = F.sand.map(([L, C, h, w]) => [lin(L, C, h), w]);
+  for (let i = 0; i < NMAX; i++) {
+    let r = Math.random(), c = tones[0][0];
+    for (const [t, w] of tones) { if (r < w) { c = t; break; } r -= w; }
+    // Each grain varies a little in lightness.
+    const v = 0.88 + Math.random() * 0.24;
+    COL[i * 3] = c.r * v; COL[i * 3 + 1] = c.g * v; COL[i * 3 + 2] = c.b * v;
+  }
+  colAttr.needsUpdate = true;
+  const sd = F.sand[0];
+  document.documentElement.style.setProperty('--sand', `oklch(${name === 'brass' ? '0.82 0.11 84' : `${sd[0]} ${sd[1] + 0.02} ${sd[2]}`})`);
+}
+
+/* ---------- sand physics ---------- */
+// One plate unit is 12 cm.
+// Gravity is scaled so that hops read at screen rate.
+const GRAV = 9, A0 = 0.15, HOP = 60, HV = 0.62, KD = 1.45, KR = 0.3, S0 = 0.85, SLIDE = 0.9, NUT_R = 0.088, HCAP = 0.045;
+let drive = 0, airborne = 0, moving = 0, rs = 0x9e3779b9;
+// A fast xorshift keeps the inner loop cheap.
+const rnd = () => { rs ^= rs << 13; rs ^= rs >>> 17; rs ^= rs << 5; return (rs >>> 0) / 4294967296; };
+function buildPile() {
+  CNT.fill(0);
+  for (let i = 0; i < NL; i++) {
+    if (Z[i] > 0.02) continue;
+    const cx = Math.min(PG - 1, Math.max(0, ((X[i] + 1) * 0.5 * PG) | 0));
+    const cy = Math.min(PG - 1, Math.max(0, ((Y[i] + 1) * 0.5 * PG) | 0));
+    CNT[cy * PG + cx] += 1;
+  }
+  // Two passes of a 1-4-6-4-1 blur smooth the heap.
+  for (let j = 0; j < PG; j++) {
+    const row = j * PG;
+    for (let i = 0; i < PG; i++) {
+      const a = CNT[row + Math.max(0, i - 2)], b = CNT[row + Math.max(0, i - 1)], c = CNT[row + i];
+      const d = CNT[row + Math.min(PG - 1, i + 1)], e = CNT[row + Math.min(PG - 1, i + 2)];
+      TMP[row + i] = (a + 4 * b + 6 * c + 4 * d + e) / 16;
+    }
+  }
+  for (let j = 0; j < PG; j++) {
+    const j0 = Math.max(0, j - 2) * PG, j1 = Math.max(0, j - 1) * PG, j2 = j * PG, j3 = Math.min(PG - 1, j + 1) * PG, j4 = Math.min(PG - 1, j + 2) * PG;
+    for (let i = 0; i < PG; i++) {
+      // A tall heap flattens toward HCAP, as a real pile slumps.
+      const h0 = ((TMP[j0 + i] + 4 * TMP[j1 + i] + 6 * TMP[j2 + i] + 4 * TMP[j3 + i] + TMP[j4 + i]) / 16) * HK;
+      const h = HCAP * Math.tanh(h0 / HCAP);
+      PH[(j2 + i) * 3] = h;
+      DENS[j2 + i] = Math.min(255, h * 9000);
+    }
+  }
+  const inv = 1 / (2 * CELL);
+  for (let j = 0; j < PG; j++) {
+    for (let i = 0; i < PG; i++) {
+      const c = j * PG + i;
+      const l = i > 0 ? c - 1 : c, r = i < PG - 1 ? c + 1 : c, dn = j > 0 ? c - PG : c, up = j < PG - 1 ? c + PG : c;
+      PH[c * 3 + 1] = (PH[r * 3] - PH[l * 3]) * inv;
+      PH[c * 3 + 2] = (PH[up * 3] - PH[dn * 3]) * inv;
+    }
+  }
+  densTex.needsUpdate = true;
+}
+function step(dt) {
+  buildPile();
+  const D = drive, HG = GN / 2, HP = PG / 2;
+  airborne = 0;
+  moving = 0;
+  for (let i = 0; i < NL; i++) {
+    let x = X[i], y = Y[i], z = Z[i];
+    // The pile height and slope at the grain, bilinear on cell centres.
+    let gx = (x + 1) * HP - 0.5, gy = (y + 1) * HP - 0.5;
+    gx = gx < 0 ? 0 : gx > PG - 1.001 ? PG - 1.001 : gx;
+    gy = gy < 0 ? 0 : gy > PG - 1.001 ? PG - 1.001 : gy;
+    let ix = gx | 0, iy = gy | 0, fx = gx - ix, fy = gy - iy;
+    let c00 = (iy * PG + ix) * 3, c10 = c00 + 3, c01 = c00 + PG * 3, c11 = c01 + 3;
+    let w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+    const h = PH[c00] * w00 + PH[c10] * w10 + PH[c01] * w01 + PH[c11] * w11;
+    const hx = PH[c00 + 1] * w00 + PH[c10 + 1] * w10 + PH[c01 + 1] * w01 + PH[c11 + 1] * w11;
+    const hy = PH[c00 + 2] * w00 + PH[c10 + 2] * w10 + PH[c01 + 2] * w01 + PH[c11 + 2] * w11;
+    if (z > 0 || VZ[i] > 0) {
+      // In flight: gravity, then a dead landing.
+      airborne++;
+      VZ[i] -= GRAV * dt;
+      x += VX[i] * dt;
+      y += VY[i] * dt;
+      z += VZ[i] * dt;
+      if (z <= 0) { z = 0; VZ[i] = 0; VX[i] = 0; VY[i] = 0; }
+    } else if (D > 0) {
+      // The plate acceleration at the grain, bilinear on field samples.
+      gx = (x + 1) * HG; gy = (y + 1) * HG;
+      gx = gx < 0 ? 0 : gx > GN - 0.001 ? GN - 0.001 : gx;
+      gy = gy < 0 ? 0 : gy > GN - 0.001 ? GN - 0.001 : gy;
+      ix = gx | 0; iy = gy | 0; fx = gx - ix; fy = gy - iy;
+      c00 = (iy * FG + ix) * 3; c10 = c00 + 3; c01 = c00 + FG * 3; c11 = c01 + 3;
+      w00 = (1 - fx) * (1 - fy); w10 = fx * (1 - fy); w01 = (1 - fx) * fy; w11 = fx * fy;
+      const a = AG[c00] * w00 + AG[c10] * w10 + AG[c01] * w01 + AG[c11] * w11;
+      const ex = D * a - A0;
+      if (ex > 0 && rnd() < ex * HOP * dt) {
+        // The kick leans away from the antinode, with a random scatter.
+        const ax = AG[c00 + 1] * w00 + AG[c10 + 1] * w10 + AG[c01 + 1] * w01 + AG[c11 + 1] * w11;
+        const ay = AG[c00 + 2] * w00 + AG[c10 + 2] * w10 + AG[c01 + 2] * w01 + AG[c11 + 2] * w11;
+        const se = Math.sqrt(ex), gn = KD / (Math.sqrt(ax * ax + ay * ay) + 3), th = rnd() * TAU;
+        VZ[i] = HV * se * (0.55 + 0.9 * rnd());
+        VX[i] = (-ax * gn + Math.cos(th) * KR) * se;
+        VY[i] = (-ay * gn + Math.sin(th) * KR) * se;
+        z = 1e-5;
+        airborne++;
+      }
+    }
+    if (z === 0) {
+      // A heap steeper than repose slides down its own slope.
+      const s2 = hx * hx + hy * hy;
+      if (s2 > S0 * S0) {
+        const k = (SLIDE * (1 - S0 / Math.sqrt(s2))) / Math.sqrt(s2);
+        x -= hx * k * dt;
+        y -= hy * k * dt;
+        moving++;
+      }
+    }
+    // The edge turns grains back; the nut pushes them out.
+    if (x > 0.988) { x = 1.976 - x; VX[i] *= -0.4; } else if (x < -0.988) { x = -1.976 - x; VX[i] *= -0.4; }
+    if (y > 0.988) { y = 1.976 - y; VY[i] *= -0.4; } else if (y < -0.988) { y = -1.976 - y; VY[i] *= -0.4; }
+    const r2 = x * x + y * y;
+    if (r2 < NUT_R * NUT_R) { const k = NUT_R / Math.sqrt(r2 + 1e-9); x *= k; y *= k; }
+    X[i] = x; Y[i] = y; Z[i] = z;
+    const o = i * 4;
+    POS[o] = x; POS[o + 1] = y; POS[o + 2] = h * DEP[i] + z; POS[o + 3] = h;
+  }
+  posAttr.clearUpdateRanges();
+  posAttr.addUpdateRange(0, NL * 4);
+  posAttr.needsUpdate = true;
+}
+// Grains drop from a height onto the plate.
+function drop(i, x, y, hmin, hmax) {
+  X[i] = clamp(x, -0.985, 0.985); Y[i] = clamp(y, -0.985, 0.985);
+  Z[i] = hmin + rnd() * (hmax - hmin);
+  VZ[i] = -rnd() * 0.3; VX[i] = (rnd() - 0.5) * 0.06; VY[i] = (rnd() - 0.5) * 0.06;
+}
+let pourAt = 0;
+function sprinkle(x, y, n, spread = 0.075) {
+  for (let k = 0; k < n; k++) {
+    const i = pourAt % NL;
+    pourAt = (i + 1) % NL;
+    const r = spread * Math.sqrt(-2 * Math.log(rnd() + 1e-9)), th = rnd() * TAU;
+    drop(i, x + r * Math.cos(th), y + r * Math.sin(th), 0.22, 0.75);
+  }
+  wake();
+}
+function spread() {
+  for (let i = 0; i < NL; i++) drop(i, rnd() * 2 - 1, rnd() * 2 - 1, 0.02, reduce ? 0.06 : 0.5);
+  wake();
+}
+
+/* ---------- drive: generator, bow and ring-down ---------- */
+// The generator runs while the rail is held.
+// It then runs on for HOLD milliseconds.
+let gen = false, genUntil = 0, fGlide = null, sweeping = false, sweepDir = 1;
+let bowing = false, bowLevel = 0, bowLock = null, bowBaseF = freq, bowMoveAt = 0;
+const RING = 1.7, HOLD = 4200, GEN = 1.25;
+const fToX = f => Math.log(f / FMIN) / Math.log(FMAX / FMIN);
+const xToF = x => FMIN * (FMAX / FMIN) ** clamp(x);
+// The bow finds a mode near the base pitch.
+// That mode must move under the bow.
+function bestMode(fc, u, v) {
+  let best = MODES[0], bs = -1;
+  for (const k of MODES) {
+    const r = Math.log(k.f / fc) / 0.22, s = Math.abs(phiAt(k, u, v)) * Math.exp(-r * r);
+    if (s > bs) { bs = s; best = k; }
+  }
+  return [best, bs];
+}
+// The bow sits at the nearest rim point to the pointer.
+// The drive point follows the middle of the stroke, not each jitter.
+let bowU = 0.5, bowV = 0;
+function setBowPoint(x, z) {
+  let px = x, pz = z;
+  if (Math.abs(x) > Math.abs(z)) { px = Math.sign(x) || 1; pz = clamp(z, -1, 1); } else { pz = Math.sign(z) || 1; px = clamp(x, -1, 1); }
+  bowU = (px + 1) / 2;
+  bowV = (pz + 1) / 2;
+  bowState.p.set(px, 0, pz);
+  bowState.n.set(Math.abs(px) === 1 ? px : 0, 0, Math.abs(px) === 1 ? 0 : pz);
+}
+function setDrivePoint(x, z) {
+  setBowPoint(x, z);
+  du = bowU;
+  dv = bowV;
+  ticksDirty = true;
+}
+// A mode rings from the drive point only if it moves there.
+const COUPLED = 0.3;
+const coupled = k => Math.abs(phiAt(k, du, dv)) > COUPLED;
+function glideTo(f) { fGlide = clamp(f, FMIN, FMAX); }
+function nearestMode(f) {
+  let best = null;
+  for (const k of MODES) if (coupled(k) && (!best || Math.abs(Math.log(k.f / f)) < Math.abs(Math.log(best.f / f)))) best = k;
+  return best || MODES[0];
+}
+function stepMode(dir) {
+  const ok = MODES.filter(coupled);
+  const list = dir > 0 ? ok.filter(k => k.f > freq * 1.004) : ok.filter(k => k.f < freq / 1.004).reverse();
+  if (!list.length) return;
+  setSweep(false);
+  glideTo(list[0].f);
+  runGen();
+}
+function runGen() { genUntil = performance.now() + HOLD; wake(); }
+function update(dt, now) {
+  if (sweeping) {
+    // The sweep lingers where the plate answers strongly.
+    const rate = 0.1 * (1 - 0.96 * clamp(fieldMax * 1.6));
+    freq *= Math.exp(sweepDir * rate * dt);
+    if (freq > FMAX * 0.96) sweepDir = -1;
+    if (freq < FMIN * 1.15) sweepDir = 1;
+    freq = clamp(freq, FMIN, FMAX);
+  } else if (fGlide !== null) {
+    freq *= Math.pow(fGlide / freq, 1 - Math.exp(-dt / (bowing ? 0.06 : 0.12)));
+    if (Math.abs(Math.log(freq / fGlide)) < 2e-4) { freq = fGlide; fGlide = null; }
+  }
+  if (bowing && now - bowMoveAt > 60) bowLevel *= Math.exp(-dt / 0.1);
+  if (bowing) {
+    const k = 1 - Math.exp(-dt / 0.35);
+    du += (bowU - du) * k;
+    dv += (bowV - dv) * k;
+    ticksDirty = true;
+    // The lock is checked again once the drive point travels a little.
+    if (Math.hypot(du - lockU, dv - lockV) > 0.04) lockBow();
+  }
+  // A hard bow drives harder than the generator.
+  const target = Math.max(bowing ? bowLevel * 1.5 : 0, gen || sweeping || now < genUntil ? GEN : 0);
+  drive += (target - drive) * (1 - Math.exp(-dt / (target > drive ? 0.1 : RING)));
+  // Below this level the plate no longer moves sand or sounds.
+  if (target === 0 && drive < 0.02) drive = 0;
+}
+
+/* ---------- camera ---------- */
+// The camera sits front left and looks down at the plate.
+const look = new THREE.Vector3(), corners = [];
+for (const x of [-1.05, 1.05]) for (const z of [-1.05, 1.05]) for (const y of [-0.05, 0.08]) corners.push(new THREE.Vector3(x, y, z));
+let W = 0, H = 0, camDist = 6, camT = 0;
+function frameCamera() {
+  const portrait = clamp((H / W - 0.7) / 0.9);
+  const el = lerp(0.6, 1.1, portrait) + (reduce ? 0 : 0.012 * Math.sin(camT * 0.07));
+  const az = lerp(-0.4, -0.1, portrait) + (reduce ? 0 : 0.035 * Math.sin(camT * 0.11));
+  const place = d => {
+    camera.position.set(Math.sin(az) * Math.cos(el) * d, Math.sin(el) * d, Math.cos(az) * Math.cos(el) * d).add(look);
+    camera.lookAt(look);
+    camera.updateMatrixWorld();
   };
-  // Polling lets the driver link off the main thread.
-  const all = Object.values(progs);
-  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
-  for (const q of all) {
-    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
-    uniforms(q);
+  camera.aspect = W / H;
+  camera.clearViewOffset();
+  // The bar covers the lower stage.
+  // The plate centres in the space above the bar.
+  const barH = Math.max(0, (bar.getBoundingClientRect().height || 0) - 34);
+  const yb = -1 + (2 * (barH + 18)) / H, yt = 1 - 0.1, mx = W < 600 ? 0.97 : 0.9;
+  let d = camDist, b;
+  const bounds = () => {
+    let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+    for (const c of corners) {
+      const v = c.clone().project(camera);
+      x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+    }
+    return [x0, x1, y0, y1];
+  };
+  for (let k = 0; k < 6; k++) {
+    place(d);
+    camera.updateProjectionMatrix();
+    b = bounds();
+    d *= Math.max((b[1] - b[0]) / (2 * mx), (b[3] - b[2]) / (yt - yb)) ** 0.9;
   }
-  P = progs;
-  gl.useProgram(P.sim.p);
-  gl.uniform1i(P.sim.u.uA, 0);
-  gl.uniform1i(P.sim.u.uB, 1);
-  gl.uniform1f(P.sim.u.uG, 3.2);
-  gl.uniform1f(P.sim.u.uTh, 0.14);
-  gl.uniform1f(P.sim.u.uKick, 0.9);
-  gl.uniform1f(P.sim.u.uDrift, 6);
-  gl.uniform1f(P.sim.u.uCreep, 0.6);
-  gl.uniform1f(P.sim.u.uSpread, 0.016);
-  gl.useProgram(P.den.p);
-  gl.uniform1i(P.den.u.uA, 0);
-  gl.uniform1f(P.den.u.uW, (DS * PADK) ** 2 / N);
-  gl.uniform1f(P.den.u.uPadK, PADK);
-  gl.useProgram(P.blur.p);
-  gl.uniform1i(P.blur.u.uSrc, 3);
-  for (const q of [P.dot, P.streak]) {
-    gl.useProgram(q.p);
-    gl.uniform1i(q.u.uA, 0);
-    gl.uniform1i(q.u.uB, 1);
-    gl.uniform1f(q.u.uDrift, 6);
-  }
-  gl.useProgram(P.comp.p);
-  gl.uniform1i(P.comp.u.uHdr, 4);
-  gl.uniform1i(P.comp.u.uG0, 5);
-  gl.uniform1f(P.comp.u.uPadK, PADK);
-  setVec3s(P.comp, STAGE);
+  camDist = d;
+  place(d);
+  camera.updateProjectionMatrix();
+  b = bounds();
+  const dy = ((yt + yb) / 2 - (b[3] + b[2]) / 2) * (H / 2), dx = (-(b[1] + b[0]) / 2) * (W / 2);
+  camera.setViewOffset(W, H, -dx, dy, W, H);
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width);
+  H = Math.max(1, r.height);
+  const dpr = Math.min(window.devicePixelRatio || 1, slow > 0 ? 1 : 2, Math.sqrt(3.4e6 / (W * H)));
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(W, H, false);
+  frameCamera();
+  if (!raf) draw();
+}
 
-  vao = gl.createVertexArray();
-  sim = [0, 1].map(() => {
-    const a = texture(gl.RGBA32F, TW, TH, gl.NEAREST), b = texture(gl.RGBA32F, TW, TH, gl.NEAREST);
-    return { a, b, fb: framebuffer(a, b) };
+/* ---------- the tuning rail ---------- */
+const tune = document.getElementById('tune'), track = tune.querySelector('.track');
+const needle = tune.querySelector('.needle'), readout = tune.querySelector('output');
+const ticks = MODES.map(k => {
+  const t = document.createElement('span');
+  t.className = 'tick';
+  t.style.left = `${(fToX(k.f) * 100).toFixed(2)}%`;
+  track.append(t);
+  return t;
+});
+// A notch grows with its mode's motion at the drive point.
+let ticksDirty = true;
+function showTicks() {
+  ticksDirty = false;
+  MODES.forEach((k, i) => {
+    const c = Math.abs(phiAt(k, du, dv));
+    ticks[i].style.setProperty('--h', `${(14 + 86 * c).toFixed(0)}%`);
+    ticks[i].classList.toggle('mute', c <= COUPLED);
   });
-  // A blurred density map gives piled sand its body and relief.
-  PY = { d0: target(DS), t0: target(DS), g0: target(DS) };
-  hdr = null;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
-// The grain buffer matches the canvas and holds light beyond white.
-function ensureHdr() {
-  if (hdr && hdr.w === cw && hdr.h === ch) return;
-  if (hdr) {
-    gl.deleteFramebuffer(hdr.fb);
-    gl.deleteTexture(hdr.tex);
-  }
-  const tex = texture(gl.RGBA16F, cw, ch, gl.NEAREST);
-  hdr = { tex, w: cw, h: ch, fb: framebuffer(tex) };
+let shownF = -1, hotTick = null;
+function showTune() {
+  if (ticksDirty) showTicks();
+  const top = ACT[0], ring = drive * fieldMax > 0.12 && top && top.w > 0.45;
+  const hot = ring ? ticks[MODES.indexOf(top)] : null;
+  if (hot !== hotTick) { hotTick?.classList.remove('hot'); hot?.classList.add('hot'); hotTick = hot; }
+  tune.classList.toggle('ringing', !!ring);
+  const f = Math.round(freq);
+  if (f === shownF && readout.dataset.ring === String(!!ring)) return;
+  shownF = f;
+  readout.dataset.ring = String(!!ring);
+  needle.style.left = `${(fToX(freq) * 100).toFixed(2)}%`;
+  // The second line names the ringing mode, m and n.
+  readout.innerHTML = `<b>${String(f).padStart(4, ' ')} Hz</b>\n${ring ? `mode ${top.m}·${top.n}` : '       '}`;
+  tune.setAttribute('aria-valuenow', String(f));
+  tune.setAttribute('aria-valuetext', `${f} hertz${ring ? `, mode ${top.m} ${top.n}` : ''}`);
 }
-
-/* ---------- the plate's state ---------- */
-// s is the place on the ladder.
-// D is the drive, from zero to one.
-let s = START, sT = START, D = 0, holdUntil = 0, settleUntil = 0, frameNo = 1;
-let formed = 1, domK = START, gripping = false, gripSpeed = 0, freq = 196, near = 1;
-let tossQ = null, scatterQ = false, bolting = false;
-let hue = 'steel', hueWas = 'steel', wave = 1;
-const F = { m0: [2, 4, 1, 1], m1: [3, 4, 0, 0], amp: 0, k: kOf(START) };
-const TICKS = new Float32Array(K);
-// The bolt is the drive point, in plate units.
-const BOLT_R = 0.052, BOLT_LIM = 0.075;
-const DRV = { x: 0.5, y: 0.5 };
-// A small bias keeps the rung's figure where both terms vanish.
-const BIAS = 0.1;
-// Each term rings in proportion to its shape at the bolt.
-function pairOf(k, w) {
-  const [n, m, sg] = LADDER[k], cx = Math.PI * DRV.x, cy = Math.PI * DRV.y;
-  const a = Math.cos(n * cx) * Math.cos(m * cy) + BIAS, b = Math.cos(m * cx) * Math.cos(n * cy) + BIAS * sg;
-  const g = (Math.SQRT2 * w) / (Math.hypot(a, b) || 1);
-  return [n, m, a * g, b * g];
-}
-function tune() {
-  const st = semis(s), k0 = clamp(Math.floor(s), 0, K - 2), k1 = k0 + 1;
-  const r0 = resp(st, k0), r1 = resp(st, k1), sum = r0 + r1 + 1e-6;
-  F.m0 = pairOf(k0, r0 / sum);
-  F.m1 = pairOf(k1, r1 / sum);
-  F.k = (r0 * kOf(k0) + r1 * kOf(k1)) / sum;
-  near = Math.min(1, Math.max(r0, r1));
-  F.amp = D * Math.min(1, sum) ** 1.3 * (gripping || bolting ? 1 : 0.94);
-  freq = 440 * 2 ** ((st - 69) / 12);
-  const dom = r0 >= r1 ? k0 : k1;
-  if (dom !== domK) { domK = dom; formed *= 0.35; }
-  for (let k = 0; k < K; k++) TICKS[k] = resp(st, k) ** 2 * (0.45 + 0.55 * D);
-}
-function setField(q) {
-  gl.uniform4fv(q.u.uM0, F.m0);
-  gl.uniform4fv(q.u.uM1, F.m1);
-  gl.uniform1f(q.u.uAmp, F.amp);
-  gl.uniform1f(q.u.uK, F.k);
-}
-function simStep(dt, fallH = -1) {
-  const q = P.sim;
-  gl.useProgram(q.p);
-  setField(q);
-  gl.uniform1ui(q.u.uFrame, frameNo++);
-  gl.uniform1f(q.u.uDt, dt);
-  gl.uniform1f(q.u.uHop, reduce ? 0.012 : 0.022);
-  gl.uniform1f(q.u.uScatter, fallH >= 0 ? 1 : 0);
-  gl.uniform1f(q.u.uFallH, Math.max(0, fallH));
-  gl.uniform4fv(q.u.uToss, tossQ || [0, 0, 0, 1]);
-  gl.uniform3f(q.u.uBolt, DRV.x, DRV.y, BOLT_R + 0.004);
-  tossQ = null;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, sim[1 - cur].fb);
-  gl.viewport(0, 0, TW, TH);
-  gl.disable(gl.BLEND);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, sim[cur].a);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, sim[cur].b);
-  gl.bindVertexArray(vao);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-  cur = 1 - cur;
-}
-// The first paint shows a finished figure: the plate has already rung.
-function seed() {
-  s = sT = START;
-  D = 1;
-  tune();
-  F.amp = 1;
-  simStep(1 / 60, 0);
-  for (let i = 0; i < 260; i++) simStep(1 / 60);
-  F.amp = 0;
-  for (let i = 0; i < 40; i++) simStep(1 / 60);
-  D = 0;
-  tune();
-}
-
-/* ---------- camera: the plate seen from above at an angle ---------- */
-// The inset bar covers the stage's foot, less its faded top.
-const bar = document.querySelector('.bar');
-function barInset() {
-  if (!bar || bar.classList.contains('bar--below')) return 0;
-  return Math.max(0, panel.getBoundingClientRect().bottom - bar.getBoundingClientRect().top - 28);
-}
-let W = 0, H = 0, pr = 1, cw = 0, ch = 0, lowDpr = false, drawN = N;
-let VP = null, INV = null, EYE = [0, -2, 2], refW = 1, plateA = 1;
-// The rail in CSS pixels, y down.
-const L = { railX: 0, y0: 0, y1: 0, plateW: 400 };
-// World to device pixels, y up.
-function toDevice(p) {
-  const c = xf(VP, p);
-  return [(c[0] / c[3] * 0.5 + 0.5) * cw, (c[1] / c[3] * 0.5 + 0.5) * ch, c[3]];
-}
-function camera() {
-  const A = cw / ch, tilt = lerp(20, 50, sstep(0.75, 1.78, A)) * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
-  EYE = [0, tgt[1] - dist * Math.sin(tilt), tgt[2] + dist * Math.cos(tilt)];
-  const pv = mul4(persp(28 * D2R, A, 0.1, 30), lookAt(EYE, tgt, [0, 0, 1]));
-  const pts = [[-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0], [-0.5, -0.5, -PLATE_T], [0.5, -0.5, -PLATE_T]];
-  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-  for (const q of pts) {
-    const c = xf(pv, q), x = c[0] / c[3], y = c[1] / c[3];
-    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
-  }
-  // The plate fits left of the rail and above the inset bar.
-  // It sits centred when there is room.
-  const small = W < 560, my = small ? 22 : 34, mx = small ? 14 : 36, mb = my + barInset();
-  L.railX = W - (small ? 22 : 34);
-  const right = L.railX - (small ? 24 : 44);
-  const k = Math.max(0.05, Math.min((2 * (right - mx) / W) / (x1 - x0), (2 - 2 * (my + mb) / H) / (y1 - y0)));
-  const half = (k * (x1 - x0) * W) / 4, cx = Math.min(W / 2, right - half);
-  const ox = (2 * cx) / W - 1 - k * (x0 + x1) / 2, oy = (mb - my) / H - k * (y0 + y1) / 2;
-  VP = mul4([k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1, 0, ox, oy, 0, 1], pv);
-  INV = inv4(VP);
-  refW = xf(VP, [0, 0, 0])[3];
-  L.y0 = ((1 - (k * y1 + oy)) / 2) * H;
-  L.y1 = ((1 - (k * y0 + oy)) / 2) * H;
-  // The projected top face sets the grain brightness.
-  const c4 = pts.slice(0, 4).map(toDevice);
-  plateA = Math.abs(c4.reduce((s, c, i) => { const d = c4[(i + 1) % 4]; return s + c[0] * d[1] - d[0] * c[1]; }, 0)) / 2;
-  const l = toDevice([-0.5, 0, 0]), r = toDevice([0.5, 0, 0]), plateW = Math.hypot(r[0] - l[0], r[1] - l[1]) / pr;
-  L.plateW = plateW;
-  // Small plates draw only a share of the grains.
-  drawN = Math.round(N * clamp((plateW / 520) ** 2, 0.45, 1) * (lowDpr ? 0.7 : 1));
-}
-const railY = v => L.y1 - ((v - SMIN) / (SMAX - SMIN)) * (L.y1 - L.y0);
-const railS = y => SMIN + ((L.y1 - y) / (L.y1 - L.y0)) * (SMAX - SMIN);
-// CSS pixels to plate units, from the front-left corner.
-function toPlate(x, y) {
-  const nx = (x / W) * 2 - 1, ny = 1 - (y / H) * 2;
-  const a = xf(INV, [nx, ny, -1]), b = xf(INV, [nx, ny, 1]);
-  const p0 = [a[0] / a[3], a[1] / a[3], a[2] / a[3]], d = sub([b[0] / b[3], b[1] / b[3], b[2] / b[3]], p0);
-  const t = -p0[2] / d[2];
-  return [p0[0] + d[0] * t + 0.5, p0[1] + d[1] * t + 0.5];
-}
-const onRail = (x, y) => Math.abs(x - L.railX) < 24 && y > L.y0 - 18 && y < L.y1 + 18;
-// A press on the washer, plus finger slack, takes the bolt.
-function onBolt(x, y) {
-  const [u, v] = toPlate(x, y);
-  return Math.hypot(u - DRV.x, v - DRV.y) < BOLT_R + 16 / Math.max(L.plateW, 1);
-}
-
-/* ---------- drawing ---------- */
-function blurTo(src, dst, dx, dy) {
-  gl.useProgram(P.blur.p);
-  gl.bindTexture(gl.TEXTURE_2D, src.tex);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
-  gl.viewport(0, 0, dst.n, dst.n);
-  gl.uniform2f(P.blur.u.uDir, dx / src.n, dy / src.n);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-}
-// The finish wave sweeps out from the centre.
-const front = () => (wave >= 1 ? 3 : lerp(-0.06, 1.3, wave));
-function render() {
-  const sa = sim[cur].a, sb = sim[cur].b, py = PY;
-  gl.bindVertexArray(vao);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, py.d0.fb);
-  gl.viewport(0, 0, DS, DS);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.enable(gl.BLEND);
-  gl.blendEquation(gl.FUNC_ADD);
-  gl.blendFunc(gl.ONE, gl.ONE);
-  gl.useProgram(P.den.p);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, sa);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, sb);
-  gl.drawArrays(gl.POINTS, 0, N);
-  gl.disable(gl.BLEND);
-  gl.activeTexture(gl.TEXTURE3);
-  blurTo(py.d0, py.t0, 1, 0);
-  blurTo(py.t0, py.g0, 0, 1);
-
-  // Grains sum their colour and coverage into the float buffer.
-  ensureHdr();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
-  gl.viewport(0, 0, cw, ch);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.enable(gl.BLEND);
-  const fr = front();
-  // Every other grain streaks, so a pour stays airy.
-  for (const [q, mode, count] of [[P.dot, gl.POINTS, drawN], [P.streak, gl.LINES, drawN]]) {
-    gl.useProgram(q.p);
-    setField(q);
-    gl.uniformMatrix4fv(q.u.uVP, false, VP);
-    gl.uniform1f(q.u.uRefW, refW);
-    gl.uniform2f(q.u.uRes, cw, ch);
-    gl.uniform1f(q.u.uJit, reduce ? 0.003 : 0.006);
-    gl.uniform1f(q.u.uTau, reduce ? 0.015 : 0.028);
-    gl.uniform1f(q.u.uFront, fr);
-    gl.uniform1f(q.u.uFlash, reduce ? 0 : 1 - wave);
-    gl.uniform1ui(q.u.uSeed, frameNo);
-    gl.uniform3fv(q.u.uPa, PALS[hueWas].g);
-    gl.uniform3fv(q.u.uPb, PALS[hue].g);
-    gl.drawArrays(mode, 0, count);
-  }
-  gl.disable(gl.BLEND);
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, cw, ch);
-  gl.useProgram(P.comp.p);
-  [hdr, py.g0].forEach((t, i) => {
-    gl.activeTexture(gl.TEXTURE4 + i);
-    gl.bindTexture(gl.TEXTURE_2D, t.tex);
-  });
-  const u = P.comp.u, rungDY = ((L.y1 - L.y0) / (SMAX - SMIN)) * pr, A = PALS[hueWas], B = PALS[hue];
-  setField(P.comp);
-  gl.uniform2f(u.uRes, cw, ch);
-  gl.uniformMatrix4fv(u.uInv, false, INV);
-  gl.uniform3fv(u.uEye, EYE);
-  gl.uniform1f(u.uPr, pr);
-  gl.uniform4f(u.uRail, L.railX * pr, (H - L.y1) * pr, (H - L.y0) * pr, (H - railY(s)) * pr);
-  gl.uniform2f(u.uRung, (H - railY(0)) * pr, rungDY);
-  gl.uniform2f(u.uCap, gripping ? 1 : 0, D);
-  gl.uniform2f(u.uBoltP, DRV.x, DRV.y);
-  gl.uniform3fv(u.uCapC, A.cap.map((v, i) => lerp(v, B.cap[i], wave)));
-  gl.uniform1fv(u.uTick, TICKS);
-  gl.uniform1f(u.uFront, fr);
-  // Coverage scales so an even layer of sand covers about a third.
-  gl.uniform1f(u.uCovK, clamp((0.43 * plateA) / drawN, 0.2, 3));
-  for (const [k, key] of [['Pl', 'plate'], ['Hi', 'hi'], ['Fc', 'face'], ['Sd', 'sand'], ['Nt', 'nut']]) {
-    gl.uniform3fv(u[`u${k}A`], A[key]);
-    gl.uniform3fv(u[`u${k}B`], B[key]);
-  }
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-  readout();
-}
-// The live pitch and mode pair, redrawn only when they change.
-const hzEl = panel.querySelector('.hz');
-let hzText = '', hzOn = null, hzPos = '';
-function readout() {
-  const [n, m] = LADDER[domK], t = `${Math.round(freq)} Hz\n${n}\u00b7${m}`;
-  const on = D > 0.05 || gripping, pos = `${Math.max(6, L.y0 - 40)}|${Math.max(6, W - L.railX - 10)}`;
-  if (t !== hzText) { hzText = t; hzEl.textContent = t; }
-  if (on !== hzOn) { hzOn = on; hzEl.classList.toggle('on', on); }
-  if (pos !== hzPos) {
-    hzPos = pos;
-    const [top, right] = pos.split('|');
-    hzEl.style.top = `${top}px`;
-    hzEl.style.right = `${right}px`;
-  }
-}
-function fit() {
-  const w = panel.clientWidth, h = panel.clientHeight;
-  if (!w || !h) return;
-  rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
-  const nw = Math.round(w * p), nh = Math.round(h * p);
-  W = w;
-  H = h;
-  if (canvas.width !== nw || canvas.height !== nh) {
-    canvas.width = nw;
-    canvas.height = nh;
-  }
-  cw = nw;
-  ch = nh;
-  pr = nw / w;
-  camera();
-  // A resized canvas is blank until drawn, so draw now.
-  if (ready) render();
-}
-
-/* ---------- one loop, only while something moves ---------- */
-let raf = 0, last = 0, onScreen = true, slow = 0;
-function wake() {
-  if (!raf && ready && onScreen && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
-}
-function frame(now) {
-  raf = 0;
-  const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 20);
-  last = now;
-  // Sustained slow frames drop the pixel ratio to 1.
-  if (!lowDpr) {
-    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
-    if (slow > 20) { lowDpr = true; fit(); }
-  }
-  const busy = advance(dt, now);
-  render();
-  if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
-  else {
-    sing(freq, 0, 0, 1.5, 0, 0);
-    rest();
-  }
-}
-function advance(dt, now) {
-  const tuning = !!(tuner && !tuner.bolt && (tuner.moved || tuner.grip));
-  // A held bolt drives the plate.
-  const driving = tuning || bolting || now < holdUntil;
-  if (!tuning) s += (sT - s) * (1 - Math.exp(-dt * 8));
-  if (Math.abs(sT - s) < 1e-3) s = sT;
-  const goal = driving ? 1 : 0;
-  D += (goal - D) * (1 - Math.exp(-dt / (goal > D ? 0.1 : reduce ? 0.3 : 0.55)));
-  if (!driving && D < 0.003) D = 0;
-  tune();
-  if (F.amp > 0.12) settleUntil = Math.max(settleUntil, now + 1500);
-  formed = Math.min(1, formed + dt * F.amp * 0.55);
-  const steps = clamp(Math.round(dt * 60), 1, 3);
-  for (let i = 0; i < steps; i++) {
-    if (scatterQ) { scatterQ = false; simStep(dt / steps, reduce ? 0.12 : 0.32); continue; }
-    simStep(dt / steps);
-  }
-  if (wave < 1) wave = Math.min(1, wave + dt / (reduce ? 0.25 : 1.3));
-  gripSpeed *= Math.exp(-dt * 6);
-  const lvl = sound.on ? 0.22 * D * (0.16 + 0.84 * near ** 1.5) : 0;
-  const hiss = sound.on ? 0.11 * Math.min(1, F.amp * 1.3) * (0.2 + 0.8 * (1 - formed)) : 0;
-  // A moving grip rasps; a dragged bolt grinds a little quieter.
-  const rasp = gripping ? 0.03 : bolting ? 0.02 : 0;
-  const rosin = sound.on && rasp ? rasp * D * Math.min(1, gripSpeed / 700) : 0;
-  sing(freq, lvl, gripping ? 0.42 : 0.14, gripping ? 6 : 1.5, rosin, hiss);
-  return tuning || bolting || D > 0 || s !== sT || now < settleUntil || scatterQ || !!tossQ || wave < 1;
-}
-
-/* ---------- actions ---------- */
-function stepRung(dir) {
-  sT = clamp(dir > 0 ? Math.floor(sT + 0.25) + 1 : Math.ceil(sT - 0.25) - 1, 0, K - 1);
-  holdUntil = performance.now() + (reduce ? 2600 : 4000);
-  wake();
-}
-// Reset spreads fresh sand and sends the bolt back to the centre.
-function scatter() {
-  DRV.x = DRV.y = 0.5;
-  scatterQ = true;
-  formed = 0;
-  settleUntil = performance.now() + 2200;
-  pourSound();
-  wake();
-}
-function toss(u, v) {
-  tossQ = [u, v, reduce ? 0.6 : 1, 0.15];
-  formed *= 0.7;
-  settleUntil = Math.max(settleUntil, performance.now() + 2000);
-  tossSound(u * 2 - 1);
-  wake();
-}
-const hueBs = [...document.querySelectorAll('.chip[data-hue]')];
-function paint(name) {
-  if (!PALS[name]) return;
-  hueBs.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.hue === name)));
-  if (name === hue) return;
-  hueWas = wave < 0.5 ? hueWas : hue;
-  hue = name;
-  wave = 0;
-  chime(freq);
-  wake();
-}
-
-/* ---------- input ---------- */
-let rect = null, tuner = null;
-addEventListener('scroll', () => { rect = null; }, { passive: true });
-function local(e) {
-  const r = rect || (rect = panel.getBoundingClientRect());
-  return [e.clientX - r.left, e.clientY - r.top];
-}
-const ptrs = new Map();
-function cursor(grip) {
-  panel.classList.toggle('grip', grip);
-  panel.classList.toggle('gripping', !!(tuner && (tuner.grip || tuner.bolt)));
-}
-// The bolt stays on the plate, its washer inside the rim.
-function placeBolt(u, v) {
-  DRV.x = clamp(u, BOLT_LIM, 1 - BOLT_LIM);
-  DRV.y = clamp(v, BOLT_LIM, 1 - BOLT_LIM);
-}
-panel.addEventListener('pointerdown', e => {
-  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  const [x, y] = local(e);
-  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  const grip = onRail(x, y), bolt = !grip && onBolt(x, y);
-  const p = { x0: x, y0: y, x, y, t0: e.timeStamp, t: e.timeStamp, grip, bolt, moved: false, off: 0, bo: [0, 0] };
-  // A grab near the dot keeps its offset, so the dot does not jump.
-  if (p.grip && Math.abs(y - railY(s)) < 22) p.off = y - railY(s);
-  // A grab on the bolt keeps its offset too.
-  if (p.bolt) {
-    const [u, v] = toPlate(x, y);
-    p.bo = [u - DRV.x, v - DRV.y];
-  }
-  ptrs.set(e.pointerId, p);
-  if (!tuner) {
-    tuner = p;
-    gripping = p.grip;
-    bolting = p.bolt;
-    // A held bolt rings the nearest resonance.
-    if (p.bolt) sT = clamp(Math.round(s), 0, K - 1);
-  }
-  cursor(p.grip || p.bolt);
+let railDrag = null;
+const railF = cx => {
+  const r = track.getBoundingClientRect(), x = (cx - r.left) / r.width;
+  // A notch within four pixels holds the needle.
+  let f = xToF(x), best = 5;
+  for (const k of MODES) { const dpx = Math.abs(fToX(k.f) - x) * r.width; if (coupled(k) && dpx < best) { best = dpx; f = k.f; } }
+  return f;
+};
+tune.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  tune.setPointerCapture(e.pointerId);
+  railDrag = { x: e.clientX, moved: false };
+  setSweep(false);
+  gen = true;
+  fGlide = null;
+  freq = railF(e.clientX);
   wake();
 });
-panel.addEventListener('pointermove', e => {
-  const p = ptrs.get(e.pointerId);
-  if (!p) {
-    if (e.pointerType === 'mouse' && ready && !ptrs.size) {
-      const [x, y] = local(e);
-      cursor(onRail(x, y) || onBolt(x, y));
+tune.addEventListener('pointermove', e => {
+  if (!railDrag) return;
+  if (Math.abs(e.clientX - railDrag.x) > 3) railDrag.moved = true;
+  freq = railF(e.clientX);
+  wake();
+});
+const railUp = () => {
+  if (!railDrag) return;
+  // A tap glides to the nearest resonance.
+  if (!railDrag.moved) glideTo(nearestMode(freq).f);
+  railDrag = null;
+  gen = false;
+  runGen();
+};
+tune.addEventListener('pointerup', railUp);
+tune.addEventListener('pointercancel', railUp);
+tune.addEventListener('keydown', e => {
+  const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key];
+  if (!d) return;
+  e.preventDefault();
+  e.stopPropagation();
+  stepMode(d);
+});
+
+/* ---------- bar ---------- */
+const sweepB = document.getElementById('sweep');
+function setSweep(on) {
+  sweeping = on;
+  sweepB.setAttribute('aria-pressed', String(on));
+  if (on) { fGlide = null; wake(); } else if (!gen) runGen();
+}
+sweepB.addEventListener('click', () => setSweep(!sweeping));
+document.getElementById('reset').addEventListener('click', spread);
+const STORE = 'stimming.chladni.finish';
+let finishName = 'steel';
+try { finishName = localStorage.getItem(STORE) === 'brass' ? 'brass' : 'steel'; } catch (err) { /* storage is optional */ }
+const finishPick = choices(document.querySelector('.bar .choices'), v => {
+  finish(v);
+  try { localStorage.setItem(STORE, v); } catch (err) { /* storage is optional */ }
+  wake();
+});
+finishPick.set(finishName);
+finish(finishName);
+
+/* ---------- pointer on the stage ---------- */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), hitP = new THREE.Vector3();
+const TOP = new THREE.Plane(new THREE.Vector3(0, 1, 0), -PT / 2);
+function pick(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(TOP, hitP)) return null;
+  const x = hitP.x, z = hitP.z, d = 1 - Math.max(Math.abs(x), Math.abs(z)), band = coarse ? 0.17 : 0.11;
+  return { x, z, zone: d < -band ? null : d < band ? 'edge' : 'plate' };
+}
+let press = null;
+let lockU = 0, lockV = 0;
+function lockBow() {
+  lockU = du;
+  lockV = dv;
+  const [k, s] = bestMode(bowBaseF, du, dv);
+  const cur = bowLock ? Math.abs(phiAt(bowLock, du, dv)) * Math.exp(-((Math.log(bowLock.f / bowBaseF) / 0.22) ** 2)) : -1;
+  if (!bowLock || (k !== bowLock && s > cur * 2)) { bowLock = k; glideTo(k.f); }
+}
+stage.addEventListener('pointerdown', e => {
+  if (!ready || e.button > 0) return;
+  const h = pick(e.clientX, e.clientY);
+  if (!h || !h.zone) return;
+  stage.setPointerCapture(e.pointerId);
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), zone: h.zone, lx: h.x, lz: h.z };
+  if (h.zone === 'edge') {
+    setSweep(false);
+    genUntil = 0;
+    bowing = true;
+    bowLevel = Math.max(bowLevel, 0.25);
+    bowMoveAt = performance.now();
+    bowBaseF = freq;
+    bowLock = null;
+    setDrivePoint(h.x, h.z);
+    lockBow();
+    bowState.on = true;
+    bow.visible = true;
+    stage.classList.add('bowing');
+  } else {
+    sprinkle(h.x, h.z, coarse ? 700 : 1500, 0.065);
+  }
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) {
+    if (e.pointerType === 'mouse' && ready) {
+      const h = pick(e.clientX, e.clientY);
+      stage.classList.toggle('edge', h?.zone === 'edge');
+      stage.classList.toggle('over', h?.zone === 'plate');
     }
     return;
   }
-  const list = e.getCoalescedEvents?.() || [];
-  for (const c of list.length ? list : [e]) {
-    const [x, y] = local(c), dx = x - p.x, dy = y - p.y;
-    p.x = x;
-    p.y = y;
-    if (!p.moved && Math.hypot(x - p.x0, y - p.y0) > (p.bolt ? 3 : 6)) p.moved = true;
-    if (p !== tuner || !p.moved) continue;
-    if (p.bolt) {
-      // The bolt follows the finger, and the figure follows the bolt.
-      const [u, v] = toPlate(x, y);
-      placeBolt(u - p.bo[0], v - p.bo[1]);
-      gripSpeed = lerp(gripSpeed, Math.hypot(dx, dy) / Math.max(4, c.timeStamp - p.t) * 1000, 0.3);
-      settleUntil = Math.max(settleUntil, performance.now() + 1500);
-    } else if (p.grip) {
-      // The dot follows the finger along the rail.
-      s = sT = clamp(railS(y - p.off), SMIN, SMAX);
-      gripSpeed = lerp(gripSpeed, Math.abs(dy) / Math.max(4, c.timeStamp - p.t) * 1000, 0.3);
-    } else {
-      // Up raises the pitch; a stage height spans five or six rungs.
-      s = sT = clamp(s - dy / (H / 5.5), SMIN, SMAX);
+  const now = performance.now(), dt = Math.max(8, now - press.t) / 1000;
+  const dpx = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+  const h = pick(e.clientX, e.clientY);
+  if (press.zone === 'edge') {
+    // Bow speed, in stage heights per second, sets the drive.
+    const v = dpx / Math.min(W, H) / dt;
+    bowLevel = lerp(bowLevel, clamp(v / 0.9, 0, 1), 0.35);
+    bowMoveAt = now;
+    // The bow reverses at each end of its hair.
+    bowState.stroke += bowState.dir * (dpx / Math.min(W, H)) * 1.1;
+    if (bowState.stroke > 0.5) { bowState.stroke = 0.5; bowState.dir = -1; }
+    if (bowState.stroke < -0.5) { bowState.stroke = -0.5; bowState.dir = 1; }
+    if (h) {
+      setBowPoint(h.x, h.z);
     }
-    p.t = c.timeStamp;
+  } else if (h && h.zone === 'plate' && Math.hypot(h.x - press.lx, h.z - press.lz) > 0.05) {
+    // A drag over the plate pours a trail of sand.
+    sprinkle(h.x, h.z, coarse ? 120 : 260, 0.04);
+    press.lx = h.x; press.lz = h.z;
   }
+  press.x = e.clientX; press.y = e.clientY; press.t = now;
   wake();
 });
-function lift(e) {
-  const p = ptrs.get(e.pointerId);
-  if (!p) return;
-  ptrs.delete(e.pointerId);
-  const tap = e.type === 'pointerup' && !p.moved && e.timeStamp - p.t0 < 500;
-  if (tap && p.grip) {
-    // A tap on the rail glides to the nearest resonance and rings it.
-    sT = clamp(Math.round(railS(p.y0 - p.off)), 0, K - 1);
-    holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 2600 : 4000));
-  } else if (tap && p.bolt) {
-    // A tap on the bolt strikes it, and the plate rings.
-    holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 2600 : 4000));
-  } else if (tap) {
-    const [u, v] = toPlate(p.x0, p.y0);
-    if (u > -0.06 && u < 1.06 && v > -0.06 && v < 1.06) toss(clamp(u, 0.01, 0.99), clamp(v, 0.01, 0.99));
-  }
-  if (p === tuner) {
-    if (p.moved || p.grip || p.bolt) holdUntil = Math.max(holdUntil, performance.now() + (reduce ? 600 : 1400));
-    tuner = null;
-    gripping = false;
-    bolting = false;
-  }
-  cursor(false);
+const release = e => {
+  if (!press || e.pointerId !== press.id) return;
+  if (press.zone === 'edge') { bowing = false; bowState.on = false; stage.classList.remove('bowing'); }
+  press = null;
   wake();
-}
-panel.addEventListener('pointerup', lift);
-panel.addEventListener('pointercancel', lift);
-panel.addEventListener('contextmenu', e => e.preventDefault());
+};
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', release);
+stage.addEventListener('pointerleave', () => { if (!press) stage.classList.remove('edge', 'over'); });
+stage.addEventListener('keydown', e => {
+  if (!ready) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); stepMode(1); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); stepMode(-1); }
+  else if (e.key === ' ') { e.preventDefault(); setSweep(!sweeping); }
+  else if (e.key === 'Enter') { e.preventDefault(); sprinkle(rnd() * 1.4 - 0.7, rnd() * 1.4 - 0.7, 1100); }
+});
 
-const scatterB = document.getElementById('scatter');
-scatterB.addEventListener('click', () => { if (ready) scatter(); });
-hueBs.forEach(b => b.addEventListener('click', () => { if (ready) paint(b.dataset.hue); }));
-addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  if (e.key.startsWith('Arrow')) {
-    e.preventDefault();
-    if (ready) stepRung(e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : -1);
-  } else if (e.key === 'c' || e.key === 'C') {
-    if (ready && !e.repeat) paint(ORDER[(ORDER.indexOf(hue) + 1) % ORDER.length]);
-  } else if (e.key === ' ' || e.key === 'Enter') {
-    // Buttons and links keep Space and Enter for themselves.
-    if (e.target.closest?.('button, a')) return;
-    e.preventDefault();
-    if (!ready || e.repeat) return;
-    if (e.key === ' ') scatter();
-    else toss(rand(0.2, 0.8), rand(0.2, 0.8));
+/* ---------- sound ---------- */
+// Four sine voices sing the loudest modes, each with one plate overtone.
+// The bow adds a tuned scrape; flying sand adds a hiss.
+const kit = audioKit({ gain: 0.5 });
+let au = null;
+const pitch = f => 130.8 * Math.sqrt(f / 104);
+function graph(ac) {
+  const bus = ac.createGain(), lp = ac.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 0.4;
+  bus.connect(lp);
+  lp.connect(kit.out);
+  const voices = [];
+  for (let i = 0; i < 4; i++) {
+    const o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), g2 = ac.createGain();
+    g.gain.value = 0;
+    g2.gain.value = 0.2;
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(bus);
+    o.start(); o2.start();
+    voices.push({ o, o2, g });
   }
-});
-sound.onChange(on => {
-  if (on) {
-    audio();
-    if (!raf) rest();
-  } else if (ac) ac.suspend()?.catch(() => {});
-});
-// Hidden or off screen, the plate pauses and goes quiet.
-function pause() {
-  if (raf) { cancelAnimationFrame(raf); raf = 0; }
-  if (ac && ac.state === 'running') ac.suspend()?.catch(() => {});
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter(), bowG = ac.createGain();
+  bp.type = 'bandpass'; bp.Q.value = 7;
+  bowG.gain.value = 0;
+  src.connect(bp); bp.connect(bowG); bowG.connect(bus);
+  const rp = ac.createBiquadFilter(), raspG = ac.createGain();
+  rp.type = 'bandpass'; rp.frequency.value = 1700; rp.Q.value = 0.8;
+  raspG.gain.value = 0;
+  src.connect(rp); rp.connect(raspG); raspG.connect(bus);
+  const hp = ac.createBiquadFilter(), hissG = ac.createGain();
+  hp.type = 'highpass'; hp.frequency.value = 5200;
+  hissG.gain.value = 0;
+  src.connect(hp); hp.connect(hissG); hissG.connect(kit.out);
+  src.start();
+  return { voices, bp, bowG, raspG, hissG };
+}
+function voice() {
+  const ac = kit.live();
+  if (!ac) return;
+  au ||= graph(ac);
+  const t = ac.currentTime, T = 0.035;
+  au.voices.forEach((v, i) => {
+    const k = ACT[i];
+    if (k) {
+      v.o.frequency.setTargetAtTime(pitch(k.f), t, 0.02);
+      v.o2.frequency.setTargetAtTime(pitch(k.f) * 2.76, t, 0.02);
+    }
+    v.g.gain.setTargetAtTime(k ? Math.min(0.12, 0.1 * drive * k.w) : 0, t, T);
+  });
+  const b = bowing ? bowLevel : 0;
+  au.bp.frequency.setTargetAtTime(pitch(freq) * 2, t, 0.03);
+  au.bowG.gain.setTargetAtTime(0.32 * b, t, T);
+  au.raspG.gain.setTargetAtTime(0.05 * b * (0.5 + rnd()), t, 0.01);
+  au.hissG.gain.setTargetAtTime(Math.min(0.05, (0.09 * airborne) / NL), t, 0.06);
+}
+function hush() {
+  if (!au || !kit.ac) return;
+  const t = kit.ac.currentTime;
+  au.voices.forEach(v => v.g.gain.setTargetAtTime(0, t, 0.05));
+  au.bowG.gain.setTargetAtTime(0, t, 0.05);
+  au.raspG.gain.setTargetAtTime(0, t, 0.05);
+  au.hissG.gain.setTargetAtTime(0, t, 0.05);
 }
 
-/* ---------- start: shaders link before the first paint ---------- */
-function failed() {
-  ready = false;
-  canvas.hidden = true;
-  panel.querySelector('.fail').hidden = false;
-  panel.style.cursor = 'default';
-  scatterB.disabled = true;
-  hueBs.forEach(b => { b.disabled = true; });
+/* ---------- loop ---------- */
+// The loop runs while the plate rings or sand moves, then sleeps.
+let raf = 0, last = 0, acc = 0, phase = 0, visible = true, ready = false, still = 0;
+let ema = 16, frames = 0, slow = 0;
+function draw() {
+  U.uCS.value.set(Math.cos(phase), Math.sin(phase));
+  // Low modes swing wide; high modes shimmer small.
+  U.uAmp.value = drive * 0.04 * Math.sqrt(400 / (freq + 400));
+  renderer.render(scene, camera);
 }
-canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; pause(); });
-canvas.addEventListener('webglcontextrestored', async () => {
-  try {
-    await initGL();
-    seed();
-    ready = true;
-    render();
-  } catch (err) { console.error(err); failed(); }
-});
+let cpu = 0;
+function frame(now) {
+  raf = 0;
+  const t0 = performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+  last = now;
+  update(dt, now);
+  solve();
+  acc += dt;
+  let n = 0;
+  while (acc >= 1 / 60 && n < 2) { step(1 / 60); acc -= 1 / 60; n++; }
+  if (n === 2) acc = 0;
+  phase = (phase + dt * TAU * (6 + freq * 0.002)) % TAU;
+  if (!reduce) camT += dt;
+  // The bow eases in and out of the plate.
+  const outT = bowState.on ? 0 : 1;
+  bowState.out += (outT - bowState.out) * (1 - Math.exp(-dt / (reduce ? 0.02 : 0.08)));
+  if (!bowState.on && bowState.out > 0.97) bow.visible = false;
+  if (bow.visible) placeBow();
+  if (!reduce) frameCamera();
+  draw();
+  showTune();
+  if (sound.on) voice();
+  cpu += (performance.now() - t0 - cpu) * 0.05;
+  // A slow frame rate trades pixels, then grains, for speed.
+  frames++;
+  ema += ((now - (frame.prev || now)) - ema) * 0.05;
+  frame.prev = now;
+  if (frames > 90 && ema > 24 && slow < 2) {
+    slow++;
+    frames = 0;
+    NL = Math.round(NMAX * (slow === 1 ? 0.65 : 0.4));
+    grainGeo.instanceCount = NL;
+    resize();
+  }
+  const busy = drive > 0 || airborne > 0 || bowing || gen || sweeping || fGlide !== null || bow.visible || now < genUntil;
+  // Heaps get a short time to slump, then the loop sleeps.
+  still = busy ? 0 : still + dt;
+  if (visible && still < (moving > NL * 0.002 ? 1.2 : 0.4)) raf = requestAnimationFrame(frame);
+  else { frame.prev = 0; hush(); kit.rest(() => !raf); }
+}
+function wake() {
+  if (raf || !ready || !visible) return;
+  still = 0;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+whenVisible(stage, v => { visible = v; if (v) wake(); });
+new ResizeObserver(resize).observe(stage);
+new ResizeObserver(() => { frameCamera(); if (!raf) draw(); }).observe(bar);
+if (DEBUG) window.__chladni = { at(x, z) { const v = new THREE.Vector3(x, PT / 2, z).project(camera), r = canvas.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; }, get fps() { return 1000 / ema; }, get cpu() { return cpu; }, get drive() { return drive; }, get freq() { return freq; }, get grains() { return NL; }, get airborne() { return airborne; }, get moving() { return moving; }, get why() { return JSON.stringify({ drive, airborne, bowing, gen, sweeping, fGlide, bow: bow.visible, hold: performance.now() < genUntil, still, visible }); }, get running() { return !!raf; }, get slow() { return slow; } };
+
+/* ---------- opening ---------- */
+// The plate opens on mode 3·5, its sand already formed, still ringing.
+const OPEN = MODES.find(k => k.m === 3 && k.n === 5 && k.s < 0);
+const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 300 }) : setTimeout(r, 30)));
 async function boot() {
-  await idle();
-  fit();
-  if (!W) {
-    W = 1160; H = 652; cw = canvas.width = 1160; ch = canvas.height = 652; pr = 1;
-    camera();
+  resize();
+  freq = OPEN.f;
+  // The drive point sits where the opening mode moves most.
+  let bu = 0.5, bv = 0, bs = 0;
+  for (let i = 0; i <= 200; i++) { const u = i / 200, s = Math.abs(phiAt(OPEN, u, 0)); if (s > bs) { bs = s; bu = u; } }
+  setDrivePoint(bu * 2 - 1, -1);
+  solve();
+  // Grains settle where the field is weak, with a light dusting elsewhere.
+  for (let i = 0; i < NMAX; i++) {
+    let x, y;
+    for (let t = 0; t < 40; t++) {
+      x = rnd() * 2 - 1; y = rnd() * 2 - 1;
+      const c = Math.round((y + 1) * GN / 2) * FG + Math.round((x + 1) * GN / 2), a = AG[c * 3] / fieldMax;
+      if (rnd() < 0.02 + Math.exp(-((a / 0.09) ** 2))) break;
+    }
+    X[i] = x; Y[i] = y;
   }
-  try { await initGL(); } catch (err) { console.error(err); failed(); return; }
-  await idle();
-  seed();
+  drive = GEN;
+  for (let k = 0; k < 8; k++) {
+    await idle();
+    for (let s = 0; s < 12; s++) step(1 / 60);
+  }
+  if (reduce) { Z.fill(0); VZ.fill(0); drive = 0; step(1 / 60); }
+  draw();
+  showTune();
+  canvas.classList.add('on');
   ready = true;
-  render();
-  requestAnimationFrame(() => canvas.classList.add('on'));
-  const ro = new ResizeObserver(fit);
-  ro.observe(panel);
-  if (bar) ro.observe(bar);
-  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); else pause(); }).observe(panel);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else wake(); });
   await introGone();
-  ringOpen();
+  if (!reduce) { genUntil = performance.now() + 2600; wake(); }
 }
-// The intro covers the stage; the plate waits until it leaves.
+// The intro covers the stage; the plate rings once it leaves.
 function introGone() {
   const el = document.querySelector('.intro');
   if (!el || !el.isConnected) return Promise.resolve();
@@ -1373,14 +1218,36 @@ function introGone() {
     mo.observe(el.parentNode, { childList: true });
   });
 }
-// The page opens on a ringing plate: the figure hums, then settles.
-function ringOpen() {
-  if (!ready || reduce || tuner) return;
-  holdUntil = Math.max(holdUntil, performance.now() + 2800);
-  wake();
-}
-if (document.readyState === 'complete') boot();
-else addEventListener('load', boot, { once: true });
+boot().catch(err => { console.error(err); stage.querySelector('.fail').hidden = false; });
+
+/* ---------- vignette figure ---------- */
+// Three plates show sand on the nodal lines of three modes.
+(function figure() {
+  const cv = document.getElementById('figure'), g = cv.getContext('2d', { willReadFrequently: true });
+  const S = 220, gap = (cv.width - 3 * S) / 4, y0 = (cv.height - S) / 2;
+  const sets = [[0, 2, -1], [0, 3, -1], [3, 5, -1]];
+  const plateC = '#2b2f38';
+  sets.forEach(([m, n, s], k) => {
+    const x0 = gap + k * (S + gap);
+    g.fillStyle = plateC;
+    g.fillRect(x0, y0, S, S);
+    const img = g.getImageData(x0, y0, S, S), d = img.data;
+    const k0 = { m, n, s };
+    for (let j = 0; j < S; j++) {
+      for (let i = 0; i < S; i++) {
+        const a = Math.abs(phiAt(k0, (i + 0.5) / S, (j + 0.5) / S));
+        // Sand lies thick where the plate stands still.
+        const p = Math.exp(-((a / 0.07) ** 2)) * 0.95;
+        if (Math.random() < p) { const o = (j * S + i) * 4; d[o] = 239; d[o + 1] = 227; d[o + 2] = 196; }
+      }
+    }
+    g.putImageData(img, x0, y0);
+    g.fillStyle = '#9aa0ad';
+    g.beginPath();
+    g.arc(x0 + S / 2, y0 + S / 2, 6, 0, TAU);
+    g.fill();
+  });
+})();
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
