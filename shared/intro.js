@@ -111,7 +111,7 @@ export const PHASES = ['glass', 'pop', 'flash', 'lines', 'hold', 'wipe'];
 // ready is a promise; the intro holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
-export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = 'classic' } = {}) {
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = 'classic', nameFlash = false } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES.classic;
@@ -211,9 +211,13 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     }
     return play(el, p => ({ clipPath: `inset(0 ${(50 * (1 - p)).toFixed(2)}% 0 ${(50 * (1 - p)).toFixed(2)}%)` }), T.unfurl, settle);
   };
+  // A try-out: the name can share the flash, boxed and blown up with the mark.
+  const both = nameFlash && badge;
   const box = on => {
     if (badge) { badge.classList.toggle('is-flash', on); badge.style.setProperty('--box', on ? 1 : 0); } else name.classList.toggle('is-flash', on);
+    if (both) { name.classList.toggle('is-flash', on); name.style.clipPath = on ? 'none' : shut[how]; }
   };
+  const blow = both ? text : big;
 
   // The box flashes on and holds.
   await wait(T.lead);
@@ -224,11 +228,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   }
   box(true);
   // For a few frames the flash fills the eye, then it snaps to its place.
-  big.style.transform = `scale(${T.popScale})`;
+  blow.style.transform = `scale(${T.popScale})`;
   text.style.opacity = 1;
   await wait(T.pop);
   await gate('pop');
-  big.style.transform = '';
+  blow.style.transform = '';
   if (tick) tick.style.opacity = 1;
   await wait(T.flash);
   await gate('flash');
