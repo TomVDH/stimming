@@ -2,144 +2,63 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}/* The how-to line is as quiet as the home link. */
-.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; }
-.how {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 0 auto;
-  font-size: 13px; color: var(--muted);
-}
-.how div { display: flex; align-items: baseline; gap: 6px; }
-.how dt { font-weight: 600; }
-.how dd { margin: 0; }
-.how kbd {
-  font: inherit; font-size: 12px; line-height: 1; padding: 2px 6px 3px;
-  border: 1px solid var(--line); border-radius: 5px;
-}
-/* Touch screens hide keys and hover; mice hide touch gestures. */
-@media (hover: none) { .how .fine { display: none; } }
-@media (hover: hover) { .how .touch { display: none; } }
-@media (max-width: 640px) { .how { margin-left: 0; } }
-</style>
 <title>Chladni plate</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Layout: header row, the plate at full width, one chip row. */
-:root {
-  --bg: oklch(0.16 0.012 275);
-  --surface: oklch(0.195 0.014 275);
-  --line: oklch(0.29 0.016 275);
-  --fg: oklch(0.94 0.008 275);
-  --muted: oklch(0.64 0.02 275);
-  --focus: oklch(0.84 0.13 205);
-  --pick: oklch(0.7 0.18 320 / 0.35);
-  --studio: oklch(0.17 0.03 280);
-  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  color-scheme: dark;
-}
-body {
-  background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
-  -webkit-font-smoothing: antialiased;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-}
-::selection { background: var(--pick); }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.wrap { max-width: 1160px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: clamp(20px, 3.4vw, 40px); }
-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-h1 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
-.tools { display: flex; align-items: center; gap: 8px; }
-.home { font-size: 14px; color: var(--muted); text-decoration: none; border-radius: 4px; transition: color 0.2s ease; }
-.home:hover { color: var(--fg); }
-/* The sound toggle sits as quietly as the home link. */
-.snd {
-  display: grid; place-items: center; width: 28px; height: 28px; margin-block: -4px; padding: 0;
-  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
-  -webkit-tap-highlight-color: transparent; transition: color 0.2s ease;
-}
-.snd:hover { color: var(--fg); }
-.snd svg {
-  width: 18px; height: 18px; fill: none; stroke: currentColor;
-  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
-}
-.snd[aria-pressed="true"] .off, .snd[aria-pressed="false"] .on { display: none; }
-@media (pointer: coarse) { .snd { width: 40px; height: 40px; margin-block: -10px; } }
-main { display: grid; gap: 14px; min-width: 0; }
-/* The studio is 16:9, 4:5 on phones. */
-.stage {
-  position: relative; width: 100%; aspect-ratio: 16 / 9;
-  max-height: max(320px, calc(100vh - 176px)); max-height: max(320px, calc(100svh - 176px));
-  border-radius: 18px; overflow: hidden; background: var(--studio); cursor: ns-resize;
-  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
-}
+/* Chladni plate: a lit steel plate, gold sand and a bow, on the shared view. */
+:root { --stage: oklch(0.17 0.03 280); }
+.stage { cursor: ns-resize; }
 .stage.bow { cursor: grab; }
 .stage.bowing { cursor: grabbing; }
-.stage:focus-visible { outline-offset: 3px; }
-@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* On the dark studio the line keeps a pale tone. */
-.fail {
-  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-items: center; text-align: center;
-  font-size: 14px; color: oklch(0.74 0.02 285); cursor: default;
-}
-.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.chip {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: pointer;
-  font: inherit; font-size: 13px; color: var(--muted);
-  background: transparent; border: 1px solid var(--line); border-radius: 999px;
-  -webkit-tap-highlight-color: transparent;
-  transition: color 0.2s ease, border-color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.chip:hover { color: var(--fg); border-color: var(--muted); }
-.chip:active { transform: scale(0.94); transition-duration: 0.08s; }
-.chip:disabled { opacity: 0.45; cursor: default; }
-@media (pointer: coarse) { .chip { padding: 10px 16px; } }
-@media (prefers-reduced-motion: reduce) { .chip, .home, .snd, .stage canvas { transition: none; } }
+/* On the dark studio the fail line keeps a pale tone. */
+.fail { color: oklch(0.74 0.02 285); cursor: default; }
+@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
 <body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/chladni.svg)"></span><span class="intro-name">Chladni plate</span><span class="intro-sub">Stimming No. 15</span></div></div>
+</div>
 
 <div class="wrap">
-  <header>
-    <h1>Chladni plate</h1>
-    <div class="tools">
-      <button class="snd" id="snd" type="button" aria-label="Sound" aria-pressed="true">
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/>
-          <path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/>
-          <path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/>
-        </svg>
-      </button>
-      <a class="home" href="../index.html">Stimming</a>
-    </div>
-  </header>
+  <header data-shell></header>
   <main>
-    <div class="stage" id="stage" tabindex="0" role="application" aria-label="A sand-covered metal plate: drag up or down, or bow its right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, Space scatters the sand and Enter tosses it.">
+    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A sand-covered steel plate: drag up or down, or draw the bow on its right edge, to tune it, and tap to toss sand. Arrow keys step between patterns, S picks a random pattern, Space spreads the sand again and Enter tosses it.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Chladni plate needs WebGL 2 with float textures, which this browser lacks.</p>
     </div>
-    <div class="foot">
-      <div class="ctl">
-        <button class="chip" id="scatter" type="button" aria-keyshortcuts="Space">Scatter</button>
+    <div class="bar">
+      <div class="actions">
+        <button class="chip" id="shuffle" type="button" aria-keyshortcuts="S">Shuffle</button>
+        <button class="chip" id="scatter" type="button" aria-keyshortcuts="Space">Reset</button>
       </div>
       <dl class="how" aria-label="How to play">
         <div><dt>Drag up or down</dt><dd>tune</dd></div>
+        <div><dt>Draw the bow</dt><dd>ring</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>toss sand</dd></div>
         <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>next pattern</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>scatter</dd></div>
       </dl>
     </div>
   </main>
+  <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Chladni plate</h1><div class="vignette" hidden></div></section>
 </div>
 
 <script type="module">
+import { initPage, sound } from '../shared/stim.js';
+initPage({ id: 'chladni' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -221,7 +140,7 @@ function linear(L, C, h, k = 1) {
 }
 const PAL = {
   uEnvLo: linear(0.16, 0.04, 285), uEnvHi: linear(0.3, 0.07, 268),
-  uKeyC: linear(0.82, 0.16, 62, 5.5), uFillC: linear(0.8, 0.13, 212, 3.6), uTopC: linear(0.62, 0.13, 300, 0.8),
+  uKeyC: linear(0.82, 0.15, 62, 4.4), uFillC: linear(0.8, 0.12, 212, 3), uTopC: linear(0.62, 0.13, 300, 0.8),
   uSteel: linear(0.66, 0.018, 255), uFloorC: linear(0.26, 0.06, 284), uPoolC: linear(0.55, 0.12, 330),
   uWood: linear(0.42, 0.12, 38), uHair: linear(0.93, 0.03, 88), uEbony: linear(0.2, 0.01, 270),
   uSilver: linear(0.84, 0.01, 250), uPearl: linear(0.9, 0.05, 330),
@@ -236,7 +155,12 @@ function basis(c) {
   const u = unit(cross(c, [0, 0, 1]));
   return [c, u, cross(u, c)];
 }
-const LAMPS = { Key: basis(dirOf(-6.5, 42)), Fill: basis(dirOf(7, 41)), Top: basis(dirOf(0, 54)) };
+let LAMPS = null;
+// Lamps sit where the plate mirrors them, whatever the camera's tilt.
+function placeLamps(tiltDeg) {
+  const el = 90 - tiltDeg, cos = e => Math.cos((el + e) * D2R);
+  LAMPS = { Key: basis(dirOf(-4.8 / cos(2), el + 2)), Fill: basis(dirOf(5.2 / cos(1), el + 1)), Top: basis(dirOf(0, el + 13)) };
+}
 const SUN = unit(dirOf(-24, 46));
 
 /* ---------- the mode ladder ---------- */
@@ -259,9 +183,7 @@ function semis(s) {
 const resp = (st, k) => 1 / (1 + ((st - LADDER[k][3]) / WIDTH) ** 2);
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
-const SKEY = 'stimming.chladni.sound', MAXV = 10, LEAD = 0.004;
-let soundOn = true;
-try { soundOn = localStorage.getItem(SKEY) !== '0'; } catch (err) { /* storage is optional */ }
+const MAXV = 10, LEAD = 0.004;
 let ac = null, out = null, noise = null, sand = null, askedAt = -1e9, voices = 0, restT = 0;
 let tone = null, tossNext = 0, pourNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
@@ -289,7 +211,7 @@ function audio() {
 }
 // A context still waking queues sounds for a moment.
 function live() {
-  if (!soundOn || !ac || ac.state === 'closed') return null;
+  if (!sound.on || !ac || ac.state === 'closed') return null;
   return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
 }
 function track(src, ...tails) {
@@ -299,14 +221,14 @@ function track(src, ...tails) {
 // Once the plate rests, the context sleeps until the next gesture.
 function rest() {
   clearTimeout(restT);
-  if (!ac || ac.state !== 'running') return;
+  if (!ac || ac.state === 'closed') return;
   restT = setTimeout(() => {
     if (!raf && !ptrs.size && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 's', 'S']);
 function unlock(e) {
-  if (!soundOn || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
+  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
   if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
   audio();
@@ -730,16 +652,16 @@ uniform mat4 uVP;
 uniform vec3 uEye, uSun;
 uniform float uSize, uRefW, uJit, uRelief;
 uniform uint uSeed;
-uniform int uN;
 uniform vec3 uS0, uS1, uS2, uS3, uKeyCol, uFillCol, uAmb;
 ${FIELD}
 ${HASH}
 ${TONE}
 out vec3 vCol;
 void main() {
-  int W = textureSize(uA, 0).x;
+  ivec2 TS = textureSize(uA, 0);
+  int W = TS.x;
   // A stride spreads a partial draw over the whole plate.
-  int id = int((uint(gl_VertexID) * 7919u) % uint(uN));
+  int id = int((uint(gl_VertexID) * 7919u) % uint(W * TS.y));
   ivec2 ip = ivec2(id % W, id / W);
   vec4 A = texelFetch(uA, ip, 0);
   vec3 r = rnd3(uvec3(uvec2(ip), 40503u));
@@ -928,7 +850,6 @@ async function initGL() {
   gl.uniform1i(P.scene.u.uDen, 2);
   gl.uniform3fv(P.scene.u.uSun, SUN);
   setVec3s(P.scene, PAL);
-  for (const k in LAMPS) ['', 'U', 'V'].forEach((s, i) => gl.uniform3fv(P.scene.u['u' + k + s], LAMPS[k][i]));
   gl.useProgram(P.grain.p);
   gl.uniform1i(P.grain.u.uA, 0);
   gl.uniform1i(P.grain.u.uDen, 2);
@@ -1022,8 +943,15 @@ const bowSide = unit(sub([1, 0, 0], mul3(bowAxis, bowAxis[0])));
 const bowC = [0.506, BOW.yc, 0.004];
 const hairAt = t => add(bowC, mul3(bowAxis, BOW.len * (BOW.tc - t)));
 const stickAt = (t, g) => add(hairAt(t), mul3(bowSide, g));
+// The inset bar covers the stage's foot, less its faded top.
+const bar = document.querySelector('.bar');
+function barInset() {
+  if (!bar || bar.classList.contains('bar--below')) return 0;
+  return Math.max(0, panel.getBoundingClientRect().bottom - bar.getBoundingClientRect().top - 28);
+}
 function camera() {
-  const A = cw / ch, tilt = lerp(32, 50, sstep(0.75, 1.78, A)) * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
+  const A = cw / ch, deg = lerp(20, 50, sstep(0.75, 1.78, A)), tilt = deg * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
+  placeLamps(deg);
   EYE = [0, tgt[1] - dist * Math.sin(tilt), tgt[2] + dist * Math.cos(tilt)];
   const pv = mul4(persp(28 * D2R, A, 0.1, 30), lookAt(EYE, tgt, [0, 0, 1]));
   // The view fits the plate, its front edge and room for the bow.
@@ -1036,7 +964,7 @@ function camera() {
     const c = xf(pv, q), x = c[0] / c[3], y = c[1] / c[3];
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
-  const mx = (2 * 16) / W, myTop = (2 * 14) / H, myBot = (2 * 22) / H;
+  const mx = (2 * 16) / W, myTop = (2 * 14) / H, myBot = (2 * (22 + barInset())) / H;
   const k = Math.min((2 - 2 * mx) / (x1 - x0), (2 - myTop - myBot) / (y1 - y0));
   const ox = -k * (x0 + x1) / 2, oy = (myBot - myTop) / 2 - k * (y0 + y1) / 2;
   VP = mul4([k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1, 0, ox, oy, 0, 1], pv);
@@ -1119,6 +1047,7 @@ function render() {
   gl.uniformMatrix4fv(P.scene.u.uInv, false, INV);
   gl.uniform3fv(P.scene.u.uEye, EYE);
   gl.uniform2f(P.scene.u.uRes, cw, ch);
+  for (const k in LAMPS) ['', 'U', 'V'].forEach((s, i) => gl.uniform3fv(P.scene.u['u' + k + s], LAMPS[k][i]));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   gl.enable(gl.BLEND);
@@ -1130,7 +1059,6 @@ function render() {
   gl.uniform1f(P.grain.u.uSize, plateW * 0.0021);
   gl.uniform1f(P.grain.u.uRefW, refW);
   gl.uniform1ui(P.grain.u.uSeed, frameNo);
-  gl.uniform1i(P.grain.u.uN, drawN);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, sa);
   gl.drawArrays(gl.POINTS, 0, drawN);
@@ -1217,9 +1145,9 @@ function advance(dt, now) {
     simStep(dt / steps);
   }
   bowSpeed *= Math.exp(-dt * 6);
-  const lvl = soundOn ? 0.22 * D * (0.16 + 0.84 * near ** 1.5) : 0;
-  const hiss = soundOn ? 0.11 * Math.min(1, F.amp * 1.3) * (0.2 + 0.8 * (1 - formed)) : 0;
-  const rosin = soundOn && bowing ? 0.03 * D * Math.min(1, bowSpeed / 700) : 0;
+  const lvl = sound.on ? 0.22 * D * (0.16 + 0.84 * near ** 1.5) : 0;
+  const hiss = sound.on ? 0.11 * Math.min(1, F.amp * 1.3) * (0.2 + 0.8 * (1 - formed)) : 0;
+  const rosin = sound.on && bowing ? 0.03 * D * Math.min(1, bowSpeed / 700) : 0;
   sing(freq, lvl, bowing ? 0.42 : 0.14, bowing ? 6 : 1.5, rosin, hiss);
   return tuning || D > 0 || s !== sT || now < settleUntil || scatterQ || !!tossQ;
 }
@@ -1227,6 +1155,13 @@ function advance(dt, now) {
 /* ---------- actions ---------- */
 function stepRung(dir) {
   sT = clamp(dir > 0 ? Math.floor(sT + 0.25) + 1 : Math.ceil(sT - 0.25) - 1, 0, K - 1);
+  holdUntil = performance.now() + (reduce ? 2600 : 4000);
+  wake();
+}
+function shuffle() {
+  let k = Math.round(sT);
+  while (k === Math.round(sT)) k = Math.floor(Math.random() * K);
+  sT = k;
   holdUntil = performance.now() + (reduce ? 2600 : 4000);
   wake();
 }
@@ -1321,12 +1256,16 @@ panel.addEventListener('contextmenu', e => e.preventDefault());
 
 const scatterB = document.getElementById('scatter');
 scatterB.addEventListener('click', () => { if (ready) scatter(); });
+const shuffleB = document.getElementById('shuffle');
+shuffleB.addEventListener('click', () => { if (ready) shuffle(); });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   if (e.key.startsWith('Arrow')) {
     e.preventDefault();
     if (ready) stepRung(e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : -1);
+  } else if (e.key === 's' || e.key === 'S') {
+    if (ready && !e.repeat) shuffle();
   } else if (e.key === ' ' || e.key === 'Enter') {
     // Buttons and links keep Space and Enter for themselves.
     if (e.target.closest?.('button, a')) return;
@@ -1336,15 +1275,11 @@ addEventListener('keydown', e => {
     else toss(rand(0.2, 0.8), rand(0.2, 0.8));
   }
 });
-const sndB = document.getElementById('snd');
-const showSound = () => sndB.setAttribute('aria-pressed', String(soundOn));
-showSound();
-sndB.addEventListener('click', () => {
-  soundOn = !soundOn;
-  showSound();
-  try { localStorage.setItem(SKEY, soundOn ? '1' : '0'); } catch (err) { /* storage is optional */ }
-  if (soundOn) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
+sound.onChange(on => {
+  if (on) {
+    audio();
+    if (!raf) rest();
+  } else if (ac) ac.suspend()?.catch(() => {});
 });
 // Hidden or off screen, the plate pauses and goes quiet.
 function pause() {
@@ -1359,6 +1294,7 @@ function failed() {
   panel.querySelector('.fail').hidden = false;
   panel.style.cursor = 'default';
   scatterB.disabled = true;
+  shuffleB.disabled = true;
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; pause(); });
 canvas.addEventListener('webglcontextrestored', async () => {
@@ -1382,12 +1318,20 @@ async function boot() {
   ready = true;
   render();
   requestAnimationFrame(() => canvas.classList.add('on'));
-  new ResizeObserver(fit).observe(panel);
+  const ro = new ResizeObserver(fit);
+  ro.observe(panel);
+  if (bar) ro.observe(bar);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); else pause(); }).observe(panel);
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else wake(); });
 }
 if (document.readyState === 'complete') boot();
 else addEventListener('load', boot, { once: true });
+</script>
+<script type="module">
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 </body>
 </html>
