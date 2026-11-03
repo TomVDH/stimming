@@ -973,7 +973,7 @@ function splitBig(polys, t, amax) {
 /* ---------- shard bodies: rigid plates over a height field ---------- */
 // Contacts are solved on velocity, with accumulated impulses.
 // A thin skin catches a contact one step before it touches.
-const H = 1 / 240, REC = 4, CAP = 480, HS = 0.012, MU = 0.5, ITER = 5, SKIN = 0.003, SLOP = 0.0006;
+const H = 1 / 240, REC = 4, CAP = 720, HS = 0.012, MU = 0.5, ITER = 5, SKIN = 0.003, SLOP = 0.0006;
 let bodies = [], frames = [], sim = null, hf = null;
 // Floor bounds, set when the camera is fitted.
 let XB = 2, ZMAX = 0.6, Z0 = -0.4;
@@ -1118,7 +1118,7 @@ function substep() {
   const g = grav(), now = sim.t;
   let moving = 0;
   for (const b of bodies) {
-    if (b.sleep) continue;
+    if (b.sleep || b.hang) continue;
     moving++;
     if (now >= b.rel) stepBody(b, g, now);
   }
@@ -1772,7 +1772,7 @@ function fit(w, h) {
 function build() {
   built = true;
   pane.geometry.dispose();
-  pane.geometry = new THREE.PlaneGeometry(PW, PH, 160, 90).translate(0, 0, T / 2);
+  pane.geometry = new THREE.PlaneGeometry(PW, PH, 240, 135).translate(0, 0, T / 2);
   pane.position.set(0, FH / 2, 0);
   for (const m of [paneMat, shardMat]) m.uniforms.uPane.value.set(PW, PH);
   makeCells();
@@ -1848,7 +1848,8 @@ function onSize(w, h) {
   backRT.setSize(dbs.x, dbs.y);
   for (const m of [paneMat, shardMat, bgMat]) m.uniforms.uRes.value.copy(dbs);
   const px = ((ndcOf(PW / 2, FH / 2, T / 2).x - ndcOf(-PW / 2, FH / 2, T / 2).x) / 2) * dbs.x;
-  const cw = Math.round(clamp(px, 256, 2560)), ch = Math.round((cw * PH) / PW);
+  // The crack field renders at 1.5 times the pane's pixels, for crisp lines.
+  const cw = Math.round(clamp(px * 1.5, 256, 3072)), ch = Math.round((cw * PH) / PW);
   if (crackRT.width !== cw || crackRT.height !== ch) crackRT.setSize(cw, ch);
   for (const m of [paneMat, shardMat]) m.uniforms.uTexel.value.set(1 / cw, 1 / ch);
   ribbons();
@@ -1960,6 +1961,7 @@ function dentAt(x, y, sink, r) {
 }
 
 function tap(x, y, hard = false) {
+  if (ready && !rw && state === 'shattered') { knock(x, y); return; }
   if (!ready || rw || pending || state === 'shattered') return;
   const w = web(x, y, hard), kind = mode();
   lastWeb = w;
@@ -2065,7 +2067,41 @@ function shatter() {
     b.v = [(dx / d) * (0.1 + (0.4 + 0.5 * k) * near), (dy / d) * 0.3 * near + 0.1, lerp(rnd(0.35, 0.9) + 0.7 * near, rnd(-0.1, 0.3) - 2.6 * near, k)];
     b.w = [rnd(1.5, 4.5) * small * (1 + k), rnd(-2, 2) * small, rnd(-2.5, 2.5) * small * (1 + k)];
   }
+  hang(p, (mode() === 'rice' ? 0 : glass === 'stained' ? 1 : 0.85) * (1 - 0.6 * k));
   drop();
+}
+// Pieces held by the frame, far from the blow, stay put.
+// Some of them let go a few seconds later.
+function hang(p, k) {
+  for (const b of bodies) {
+    if (!b.edge) continue;
+    const d = Math.hypot(b.cx - p.x, b.cy - p.y) / S;
+    if (Math.random() >= k * clamp(d - 0.25)) continue;
+    if (Math.random() < 0.3) b.rel = rnd(1.4, 4.5) * (reduce ? 0.5 : 1);
+    else b.hang = true;
+  }
+}
+// A hanging piece under the blow comes loose and falls.
+function knock(x, y) {
+  if (!sim) return false;
+  for (const b of bodies) {
+    if (!b.hang) continue;
+    const P = b.poly, n = P.length / 2, px = x - b.cx, py = y - b.cy;
+    let inside = false;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      if ((P[2 * i + 1] > py) !== (P[2 * j + 1] > py) && px < ((P[2 * j] - P[2 * i]) * (py - P[2 * i + 1])) / (P[2 * j + 1] - P[2 * i + 1]) + P[2 * i]) inside = !inside;
+    }
+    if (!inside) continue;
+    b.hang = false;
+    b.rel = sim.t;
+    b.v = [rnd(-0.15, 0.15), rnd(-0.1, 0.1), rnd(-0.5, 0.5)];
+    b.w = [rnd(-4, 4), rnd(-3, 3), rnd(-4, 4)];
+    sim.active = true;
+    sfx(() => tinkle(b.size, 2.4, x / (PW / 2)));
+    wake();
+    return true;
+  }
+  return false;
 }
 // Tempered: the craze runs, the pane hangs a beat, then pours out.
 function burstTempered() {
@@ -2104,6 +2140,7 @@ function burstTempered() {
     b.v = [rnd(-0.08, 0.08), rnd(-0.25, 0), rnd(0.08, 0.45) - 2.4 * near];
     b.w = [rnd(-5, 5), rnd(-5, 5), rnd(-5, 5)];
   }
+  hang(p, 0.3 * (1 - 0.6 * (p.push || 0)));
   pourSound(1.4);
   drop();
 }
@@ -2363,8 +2400,9 @@ function shoot(x, y, auto = false) {
   muzzle(x, y);
   wake();
   sfx(() => gunSound(x / (PW / 2), auto));
-  // A shattered pane or one already giving way only hears the shot.
-  if (state === 'shattered' || pending) return;
+  // A shattered pane only loses a hanging piece; one giving way only hears it.
+  if (state === 'shattered') { knock(x, y); return; }
+  if (pending) return;
   const kind = mode();
   // Armored glass stops the round: a crater with the bullet in it.
   addHole(x, y, cClock, kind === 'armored');
@@ -2882,7 +2920,7 @@ async function start() {
   bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.6, 0.42, 0.72);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
-  fitRenderer(renderer, panel, 2, onSize, 2.4e6);
+  fitRenderer(renderer, panel, 2, onSize, 4.2e6);
   // A panel with no size yet still gets a frame.
   if (!built) onSize(16, 9);
   await idle();
