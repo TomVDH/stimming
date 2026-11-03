@@ -23,7 +23,9 @@ Everything ships as one Artifact: <https://claude.ai/artifact/MqswJLwcoxvYEazV2x
 | Galaxy | [galaxy/](galaxy/) | live, with sound; WebGPU only |
 | Zipper | [zipper/](zipper/) | live, with sound |
 | Glass | [glass/](glass/) | live, with sound |
-| Soap cutting, Bubble wand, Rain on glass, Spinning top | | in progress; outlines on the menu |
+| Bubble wand | [bubbles/](bubbles/) | live, with sound |
+| Spinning top | [top/](top/) | live, with sound |
+| Soap cutting, Rain on glass | | in progress; outlines on the menu |
 
 ## Run locally
 
@@ -44,7 +46,8 @@ Publish `index.html` to the Artifact link above with every toy page passed as a 
 - Libraries load from cdnjs or jsDelivr, pinned to exact versions.
 - Colours are OKLCH tokens, with dark and light themes.
 - Animation runs on one loop and holds 30 fps or better; idle pages do no per-frame work.
-- Visible text is names and control labels only: no blurbs, taglines or eyebrow labels.
+- Visible text is names, control labels and the how-to line only: no blurbs, taglines or eyebrow labels.
+- Every toy ends with one quiet how-to line (`dl.how`): gesture, then result. Keys show on mouse devices only.
 - Type is Gabarito. Monospace only for live numbers such as an fps readout.
 - No glows, drop shadows or contact shadows.
 - Sound, where a toy has it, is synthesized with Web Audio and has a remembered mute.
