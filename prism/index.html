@@ -632,6 +632,8 @@ const SPR = COL.map(c => {
   x.fillRect(0, 0, 128, 128);
   return s;
 });
+// Bitmaps stay on the GPU, so each sprite uploads once.
+SPR.forEach((s, i) => window.createImageBitmap?.(s).then(b => { SPR[i] = b; }, () => {}));
 // Each colour gets a stroke style per alpha step and medium.
 const NB = 12, STY = { glow: [], mid: [], core: [] }, SHEET = [], SHEETG = [];
 for (let ci = 0; ci <= NK; ci++) {
@@ -724,7 +726,82 @@ function buildDust() {
     c.drawImage(SPR[WHITE], R() * w - r, R() * h - r, r * 2, r * 2);
   }
   c.globalAlpha = 1;
+  // The haze weight is baked in, so the frame skips one pass.
+  c.globalCompositeOperation = 'multiply';
+  c.fillStyle = 'rgb(184,184,184)';
+  c.fillRect(0, 0, w, h);
+  c.globalCompositeOperation = 'source-over';
 }
+// Static layers become bitmaps once they are built.
+let bgB = null, dustB = null, bakeN = 0;
+function bake() {
+  const n = ++bakeN;
+  bgB?.close?.();
+  dustB?.close?.();
+  bgB = dustB = null;
+  if (!window.createImageBitmap) return;
+  createImageBitmap(bgC).then(b => { if (n === bakeN) bgB = b; else b.close?.(); }, () => {});
+  createImageBitmap(dustC).then(b => { if (n === bakeN) dustB = b; else b.close?.(); }, () => {});
+}
+
+/* ---------- edge light: a soft bleed where light meets the frame ---------- */
+// Each side holds one strip: along the edge, then depth into the table.
+// The blur widens with depth, so the light fans out as it fades.
+const EB = 384, ER = 48, ESD = [0.006, 0.045, 0.13], EDEP = 0.22;
+const EPR = ESD.map(() => new Float32Array(EB * 3));
+const EFO = Float32Array.from({ length: ER }, (_, r) => {
+  const d = r / (ER - 1);
+  return (Math.exp(-d / 0.035) + 0.7 * Math.exp(-d / 0.4)) * (1 - d) ** 2;
+});
+const STRIP = [0, 1, 2, 3].map(() => {
+  const [c, x] = mk();
+  c.width = EB;
+  c.height = ER;
+  const img = x.createImageData(EB, ER);
+  for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+  return { c, x, img, on: false };
+});
+function bleed() {
+  for (let s = 0; s < 4; s++) {
+    const st = STRIP[s], bw = (s & 1 ? H : W) / EB;
+    EPR.forEach(a => a.fill(0));
+    st.on = false;
+    for (let n = 0; n < nEd; n++) {
+      const o = n * 5;
+      if (EDG[o + 2] !== s || EDG[o + 4] < 0.01) continue;
+      st.on = true;
+      const k = EDG[o + 3], col = COL[k < 0 ? WHITE : k], w = (k < 0 ? 1 : 0.25) * EDG[o + 4] / 255;
+      const c = (s & 1 ? EDG[o + 1] : EDG[o]) / bw - 0.5;
+      // Wider blurs lose some energy, so the bleed stays faint.
+      for (let j = 0; j < 3; j++) {
+        const sd = Math.max(0.6, (ESD[j] * S) / bw), amp = w * Math.min(1, (ESD[0] * S) / bw / sd) ** 0.5, P = EPR[j];
+        const lo = Math.max(0, Math.ceil(c - 3 * sd)), hi = Math.min(EB - 1, Math.floor(c + 3 * sd));
+        for (let b = lo; b <= hi; b++) {
+          const t = (b - c) / sd, e = amp * Math.exp(-0.5 * t * t);
+          P[3 * b] += e * col[0];
+          P[3 * b + 1] += e * col[1];
+          P[3 * b + 2] += e * col[2];
+        }
+      }
+    }
+    if (!st.on) continue;
+    // Rows blend from the sharp profile at the rim to the wide one.
+    const d = st.img.data, [A, B, C] = EPR;
+    for (let r = 0; r < ER; r++) {
+      const t = r / (ER - 1), f = EFO[r] * 3;
+      const wa = t < 0.15 ? 1 - t / 0.15 : 0, wc = t < 0.15 ? 0 : (t - 0.15) / 0.85, wb = 1 - wa - wc;
+      let o = r * EB * 4;
+      for (let b = 0; b < EB * 3; b += 3, o += 4) {
+        d[o] = 255 * (1 - Math.exp(-f * (wa * A[b] + wb * B[b] + wc * C[b])));
+        d[o + 1] = 255 * (1 - Math.exp(-f * (wa * A[b + 1] + wb * B[b + 1] + wc * C[b + 1])));
+        d[o + 2] = 255 * (1 - Math.exp(-f * (wa * A[b + 2] + wb * B[b + 2] + wc * C[b + 2])));
+      }
+    }
+    st.x.putImageData(st.img, 0, 0);
+  }
+}
+// Each side maps strip x along the edge and strip y inward.
+const SIDE = [[1, 0, 0, 1, 0, 0], [0, 1, -1, 0, 1, 0], [1, 0, 0, -1, 0, 1], [0, 1, 1, 0, 0, 0]];
 
 /* ---------- drawing ---------- */
 const buckets = new Map(), sheets = new Map(), groups = new Map();
@@ -1239,18 +1316,20 @@ function beams() {
   hzX.imageSmoothingQuality = 'high';
   hzX.drawImage(g0.c, 0, 0, hzC.width, hzC.height);
   hzX.globalCompositeOperation = 'multiply';
-  hzX.drawImage(dustC, 0, 0);
+  hzX.drawImage(dustB || dustC, 0, 0);
+  // The glow and bloom join the haze, so one full-size pass remains.
+  hzX.globalCompositeOperation = 'lighter';
+  hzX.globalAlpha = 0.42;
+  hzX.drawImage(g0.c, 0, 0, hzC.width, hzC.height);
+  hzX.globalAlpha = 0.5;
+  hzX.drawImage(MIP[1].c, 0, 0, hzC.width, hzC.height);
+  hzX.globalAlpha = 1;
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'lighter';
   c.imageSmoothingEnabled = true;
   c.imageSmoothingQuality = 'high';
-  c.globalAlpha = 0.72;
-  c.drawImage(hzC, 0, 0, cw, ch);
-  c.globalAlpha = 0.42;
-  c.drawImage(g0.c, 0, 0, cw, ch);
-  c.globalAlpha = 0.5;
-  c.drawImage(MIP[1].c, 0, 0, cw, ch);
   c.globalAlpha = 1;
+  c.drawImage(hzC, 0, 0, cw, ch);
   c.setTransform(pr, 0, 0, pr, 0, 0);
   c.lineCap = c.lineJoin = 'round';
   fillSheets(c, SHEET);
@@ -1258,18 +1337,13 @@ function beams() {
   strokeAll(c, STY.mid);
   c.lineWidth = 1.25 * ws;
   strokeAll(c, STY.core);
-  // Light that reaches the rim paints a soft band there.
-  const lb = 0.13 * S, db = 0.07 * S, lc = 0.075 * S, dc = 0.007 * S;
-  for (let n = 0; n < nEd; n++) {
-    const o = n * 5, k = EDG[o + 3], a = EDG[o + 4] ** 0.8 * (k < 0 ? 1 : 0.28);
-    if (a < 0.015) continue;
-    const s = EDG[o + 2], x = EDG[o], y = EDG[o + 1], spr = SPR[k < 0 ? WHITE : k];
-    const tx = s & 1 ? 0 : 1, ty = s & 1 ? 1 : 0, ix = s === 3 ? 1 : s === 1 ? -1 : 0, iy = s === 0 ? 1 : s === 2 ? -1 : 0;
-    c.setTransform(pr * tx, pr * ty, pr * ix, pr * iy, pr * x, pr * y);
-    c.globalAlpha = clamp(a * 0.5);
-    c.drawImage(spr, -lb, -db, lb * 2, db * 2);
-    c.globalAlpha = clamp(a * 2.2);
-    c.drawImage(spr, -lc, -dc, lc * 2, dc * 2);
+  // Light that reaches the rim bleeds inward from a bright line.
+  const dep = EDEP * S;
+  for (let s = 0; s < 4; s++) {
+    if (!STRIP[s].on) continue;
+    const [tx, ty, ix, iy, ox, oy] = SIDE[s];
+    c.setTransform(pr * tx, pr * ty, pr * ix, pr * iy, pr * ox * W, pr * oy * H);
+    c.drawImage(STRIP[s].c, 0, 0, s & 1 ? H : W, dep);
   }
   c.setTransform(pr, 0, 0, pr, 0, 0);
   const r0 = 0.02 * S;
@@ -1322,6 +1396,7 @@ function render() {
     expose();
     for (const p of pieces) if (p.kind === 'sensor') develop(p);
     bucketize();
+    bleed();
     geomDirty = false;
     voiceTrack();
   }
@@ -1329,7 +1404,7 @@ function render() {
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'copy';
   c.globalAlpha = 1;
-  c.drawImage(bgC, 0, 0);
+  c.drawImage(bgB || bgC, 0, 0);
   if (wire) dotGrid(c);
   c.setTransform(pr, 0, 0, pr, 0, 0);
   for (let i = 1; i < n; i++) drawBody(pieces[i], i);
@@ -1991,6 +2066,7 @@ function fit(force) {
     });
     buildTable();
     buildDust();
+    bake();
   } else pr = cw / W;
   if (ready) render();
 }
