@@ -800,7 +800,7 @@ precision highp float;
 uniform sampler2D uCell;
 uniform vec3 uView, uStage, uLight;
 uniform vec2 uN;
-uniform vec2 uApex;
+uniform vec2 uApex, uHov;
 uniform float uTheta, uRho, uMix, uLod;
 out vec4 o;
 const float TAU = 6.28318531;
@@ -863,6 +863,22 @@ void main() {
     vec3 fade = 1.0 - smoothstep(vec3(0.6), vec3(1.0), rc);
     k *= fade * fade;
     col = k;
+    // The wedge under the pointer lifts; its two mirror seams show.
+    if (uHov.y > 0.0) {
+      float w = TAU / uN.y;
+      float kp = floor(mod(uHov.x - uTheta, TAU) / w);
+      float kq = floor(mod(atan(q.y, q.x) - uTheta, TAU) / w);
+      float a0 = uTheta + kp * w, a1 = a0 + w;
+      vec2 d0 = vec2(cos(a0), sin(a0)), d1 = vec2(cos(a1), sin(a1));
+      // Each seam is a ray from the centre.
+      // Seam distance is in device pixels.
+      float s0 = dot(q, d0) > 0.0 ? abs(d0.x * q.y - d0.y * q.x) : 9.0;
+      float s1 = dot(q, d1) > 0.0 ? abs(d1.x * q.y - d1.y * q.x) : 9.0;
+      float seam = clamp(1.25 - min(s0, s1) * uView.z, 0.0, 1.0);
+      float reach = smoothstep(0.04, 0.14, r) * (1.0 - smoothstep(0.8, 0.98, r));
+      col *= 1.0 + 0.1 * uHov.y * (1.0 - step(0.5, abs(kq - kp)));
+      col = mix(col, vec3(0.92, 0.9, 0.84), seam * reach * 0.42 * uHov.y);
+    }
   }
   o = vec4(srgb(col) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
@@ -889,7 +905,7 @@ async function initGL() {
   // Polling lets the driver link off the main thread.
   if (par) while (!gl.isContextLost() && !gl.getProgramParameter(prog.p, par.COMPLETION_STATUS_KHR)) await nextFrame();
   if (!gl.getProgramParameter(prog.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(prog.f) || gl.getShaderInfoLog(prog.v) || gl.getProgramInfoLog(prog.p) || 'link failed');
-  for (const n of ['uCell', 'uView', 'uStage', 'uLight', 'uN', 'uApex', 'uTheta', 'uRho', 'uMix', 'uLod']) U[n] = gl.getUniformLocation(prog.p, n);
+  for (const n of ['uCell', 'uView', 'uStage', 'uLight', 'uN', 'uApex', 'uHov', 'uTheta', 'uRho', 'uMix', 'uLod']) U[n] = gl.getUniformLocation(prog.p, n);
   gl.useProgram(prog.p);
   gl.uniform1i(U.uCell, 0);
   gl.uniform3fv(U.uStage, STAGE);
@@ -947,6 +963,22 @@ function fit() {
 
 /* ---------- drawing ---------- */
 let theta = 0, nOld = 6, nNew = 6, mixT = 1;
+// The wedge under the pointer lifts and shows its seams.
+// a: pointer angle; s: shown strength; t: target; k: wedge.
+const hov = { a: 0, s: 0, t: 0, k: -1 };
+const wedge = a => Math.floor(((((a - theta) % TAU) + TAU) % TAU) / (TAU / nNew));
+// Hover shows it gently; a held barrel shows it in full.
+function hover(x, y, held) {
+  const r = Math.hypot(x, y) / RV;
+  if (r > 0.06 || held) hov.a = Math.atan2(y, x);
+  const t = held ? 1 : r > 0.06 && r < 0.97 ? 0.62 : 0;
+  if (t !== hov.t || (t && wedge(hov.a) !== hov.k)) { hov.t = t; wake(); }
+}
+function unhover() {
+  if (!hov.t) return;
+  hov.t = 0;
+  wake();
+}
 function render() {
   if (cellDirty) { drawCell(); upload(); cellDirty = false; }
   const cw = canvas.width, ch = canvas.height;
@@ -960,6 +992,8 @@ function render() {
   gl.uniform1f(U.uTheta, theta);
   gl.uniform1f(U.uRho, RHO);
   gl.uniform2fv(U.uApex, APEX);
+  gl.uniform2f(U.uHov, hov.a, hov.s);
+  hov.k = wedge(hov.a);
   const m = mixT * mixT * (3 - 2 * mixT);
   gl.uniform1f(U.uMix, m);
   gl.uniform1f(U.uLod, Math.max(0, Math.log2((cell.width * 0.5 * RHO) / (RV * pr))));
@@ -1015,6 +1049,8 @@ function frame(now) {
     cellDirty = true;
   }
   if (mixT < 1) mixT = Math.min(1, mixT + dt / 0.5);
+  hov.s += (hov.t - hov.s) * (reduce ? 1 : 1 - Math.exp(-dt / 0.12));
+  if (Math.abs(hov.t - hov.s) < 2e-3) hov.s = hov.t;
   // The apex drifts slowly after the heap's centre.
   if (!asleep) aimApex();
   const ka = 1 - Math.exp(-dt / 0.6), gap = Math.hypot(AIM[0] - APEX[0], AIM[1] - APEX[1]);
@@ -1022,7 +1058,7 @@ function frame(now) {
   APEX[1] += (AIM[1] - APEX[1]) * ka;
   render();
   if (frames === 2) canvas.classList.add('on');
-  const busy = !asleep || spin !== 0 || spinW !== 0 || turnQ !== 0 || held.size > 0 || mixT < 1 || gap > 2e-4;
+  const busy = !asleep || spin !== 0 || spinW !== 0 || turnQ !== 0 || held.size > 0 || mixT < 1 || gap > 2e-4 || hov.s !== hov.t;
   if (busy && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
   else rest();
 }
@@ -1047,8 +1083,17 @@ panel.addEventListener('pointerdown', e => {
   spin = 0;
   drag = { id: e.pointerId, x, y, t: e.timeStamp, last: e.timeStamp, est: 0 };
   panel.classList.add('held');
+  hover(x, y, true);
   wake();
 });
+// A hovering mouse or pen shows the wedge it turns.
+panel.addEventListener('pointermove', e => {
+  if (!ready || (e.pointerType === 'touch' && !drag)) return;
+  if (drag && e.pointerId !== drag.id) return;
+  const [x, y] = local(e);
+  hover(x, y, !!drag);
+});
+panel.addEventListener('pointerleave', () => { if (!drag) unhover(); });
 panel.addEventListener('pointermove', e => {
   if (!drag || e.pointerId !== drag.id) return;
   const list = e.getCoalescedEvents?.() || [];
@@ -1068,6 +1113,9 @@ const lift = e => {
   spin = fresh ? clamp(drag.est, -7, 7) : 0;
   drag = null;
   panel.classList.remove('held');
+  // A lifted finger leaves no hover behind.
+  if (e.pointerType === 'touch' || e.type !== 'pointerup') unhover();
+  else { const [x, y] = local(e); hover(x, y, false); }
   wake();
 };
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
