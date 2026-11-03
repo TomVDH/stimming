@@ -31,14 +31,17 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape" aria-label="A dish of ferrofluid. The pointer holds a magnet above it; pressing strengthens the field. Arrow keys move the magnet, Space toggles a strong field, Escape lifts it away.">
+    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D" aria-label="A dish of ferrofluid. The pointer holds a magnet above it; pressing strengthens the field and lifts drops up to it. Arrow keys move the magnet, Space toggles a strong field, Escape lifts it away, D lets a drop fall.">
       <p class="fail" hidden>Ferrofluid needs WebGL, which this browser has turned off.</p>
     </div>
     <div class="bar">
+      <div class="actions">
+        <button class="chip" id="drip" type="button" aria-keyshortcuts="D">Drip</button>
+      </div>
       <dl class="how" aria-label="How to play">
         <div class="fine"><dt>Hover</dt><dd>move the magnet</dd></div>
         <div class="touch"><dt>Drag</dt><dd>move the magnet</dd></div>
-        <div><dt>Press</dt><dd>pull harder</dd></div>
+        <div><dt>Press</dt><dd>lift drops</dd></div>
         <div class="fine"><dt><kbd>Space</kbd></dt><dd>strong field</dd></div>
         <div class="fine"><dt><kbd>Esc</kbd></dt><dd>lift away</dd></div>
       </dl>
@@ -130,7 +133,7 @@ function rest() {
     if (!raf && Fs.x < 0.01 && ac.state === 'running') ac.suspend()?.catch(() => {});
   }, 1500);
 }
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', 'd', 'D']);
 function unlock(e) {
   if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
   // A touch counts as a gesture only once the finger lifts.
@@ -182,6 +185,33 @@ function crackle(amp) {
   src.start(t, Math.random() * 0.9, 0.025);
   track(o, og, bp, ng);
 }
+// A wet blip: one sine glides between two pitches.
+function bloop(f0, f1, dur, amp) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level() * amp;
+  const o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(g, t + 0.003);
+  og.gain.setTargetAtTime(0, t + 0.003, dur * 0.4);
+  o.connect(og).connect(out);
+  o.start(t);
+  o.stop(t + dur * 2.5 + 0.02);
+  track(o, og);
+}
+// A spike throws a bead: an upward slurp over a wet click.
+const slurp = () => { bloop(260 * jit(0.15), 760 * jit(0.1), 0.07, 0.07); crackle(0.5); };
+// A bead pinches off the hanging blob.
+const pinch = () => bloop(520 * jit(0.1), 980, 0.045, 0.05);
+// Two beads merge: a low blop, deeper for big beads.
+const blop = r => { const f = clamp(380 * (RSPIT / r), 160, 700) * jit(0.08); bloop(f, f * 0.6, 0.06, 0.06); };
+// A bead lands in the pool: a rising plip.
+function plip(r, sp) {
+  const f = clamp(620 * (RSPIT / r) ** 0.8, 260, 1300) * jit(0.1);
+  bloop(f * 0.6, f * 1.8, 0.05, 0.05 + 0.05 * clamp(sp / 3));
+}
 
 /* ---------- the field and the spike lattice ---------- */
 // The dish's inner radius is 1; the fluid rests at y = 0.
@@ -189,7 +219,7 @@ const RIN = 1, K = 9, KW = 2 * K + 1, RHO = 0.7;
 // Lattice spacing, hover spike height, mesh vertices per spacing.
 const LAM = small ? 0.16 : 0.15, A0 = LAM * 1.05, MESH_N = small ? 10 : 14;
 // Field falloff, spike threshold, hover and pressed strengths.
-const SIG2 = 0.42 ** 2, FC = 0.36, HOVER = 1, STRONG = 1.75;
+const SIG2 = 0.42 ** 2, FC = 0.36, HOVER = 1, STRONG = 2;
 // Crowding radius in lattice units; lean falloff and maximum.
 const CS2 = 3.2 ** 2, SIGL = 0.3, LEANMAX = 0.22;
 const mag = { x: 0, z: 0, present: false, pressed: false, locked: false, via: '' };
@@ -203,7 +233,7 @@ const CU = new Float32Array(NC), CV = new Float32Array(NC), CR = new Float32Arra
 const CF = new Float32Array(NC), WA = new Float32Array(NC), WS = new Float32Array(NC), PH = new Float32Array(NC);
 const A = new Float32Array(NC), VA = new Float32Array(NC), SX = new Float32Array(NC), SZ = new Float32Array(NC);
 const VSX = new Float32Array(NC), VSZ = new Float32Array(NC), COFF = new Int32Array(NC), FORM = new Uint8Array(NC);
-const CD = new Float32Array(KW * KW * 4);
+const CD = new Float32Array(KW * KW * 4), CIDX = new Int16Array(KW * KW).fill(-1);
 let nc = 0;
 for (let j = -K; j <= K; j++) for (let i = -K; i <= K; i++) {
   if (Math.abs(i + j) > K) continue;
@@ -214,6 +244,7 @@ for (let j = -K; j <= K; j++) for (let i = -K; i <= K; i++) {
   // Cells near the texture edge never rise.
   CF[nc] = smooth(7.6, 5.6, CR[nc]);
   COFF[nc] = ((j + K) * KW + i + K) * 4;
+  CIDX[(j + K) * KW + i + K] = nc;
   // Each spike springs at its own slightly different rate.
   WA[nc] = jit(0.15);
   WS[nc] = jit(0.18);
@@ -231,7 +262,7 @@ function spring2(s, tx, tz, w, z, h) {
 }
 // Spikes swell, sway and melt on their own springs.
 function cellsStep(h, F, crowd, atten, mx, mz, kx, kz) {
-  const wr = reduce ? 22 : 10, zr = reduce ? 1 : 0.45, wf = reduce ? 18 : 6.5, zf = reduce ? 1 : 0.8;
+  const wr = reduce ? 22 : 10, zr = reduce ? 1 : 0.32, wf = reduce ? 18 : 6.5, zf = reduce ? 1 : 0.8;
   const ws = reduce ? 20 : 13, zs = reduce ? 1 : 0.16;
   let busy = false, top = 0;
   for (let k = 0; k < nc; k++) {
@@ -243,7 +274,7 @@ function cellsStep(h, F, crowd, atten, mx, mz, kx, kz) {
     if (f > FC) {
       at = A0 * ((f - FC) / (1 - FC)) ** 0.7 * atten * CF[k] * smooth(0.95, 0.74, Math.hypot(x, z));
       // The idle ripple runs outward through the lattice.
-      if (idleAmt) at *= 1 + 0.07 * idleAmt * Math.sin(tNow * 2.3 - CR[k] * 1.1 + PH[k] * 0.35);
+      if (idleAmt) at *= 1 + 0.1 * idleAmt * Math.sin(tNow * 2.3 - CR[k] * 1.1 + PH[k] * 0.35);
     }
     const up = at > A[k], om = (up ? wr : wf) * WA[k], ze = up ? zr : zf;
     VA[k] += (om * om * (at - A[k]) - 2 * ze * om * VA[k]) * h;
@@ -354,6 +385,200 @@ function simulate(dt) {
   return top;
 }
 
+/* ---------- drops: beads that leap, hang, merge and splash ---------- */
+// Gravity, hang height under the magnet, pull strength.
+const GRAV = 5.5, YA = 0.56, KP = 18;
+// Bead cap, beads per press, thrown size, drip size.
+const NDROP = 24, SPITS = 6, RSPIT = 0.04, RDRIP = 0.07;
+const drops = [], SPT = new Float32Array(NC).fill(-9);
+const spit = { left: 0, next: 0, was: false };
+let pullX = 0, pullY = YA, pullZ = 0, pullF = 0, crownK = -1;
+
+// Pool height at a point, bilinear, as the shader reads it.
+function bulkAt(x, z) {
+  const gx = clamp((x * 0.5 + 0.5) * G - 0.5, 0, G - 1.001), gz = clamp((z * 0.5 + 0.5) * G - 0.5, 0, G - 1.001);
+  const i = gx | 0, j = gz | 0, fx = gx - i, fz = gz - j, k = j * G + i;
+  return (H[k] * (1 - fx) + H[k + 1] * fx) * (1 - fz) + (H[k + G] * (1 - fx) + H[k + G + 1] * fx) * fz;
+}
+// The nearest spike's height at a point; crownK keeps its cell.
+function crownAt(x, z) {
+  crownK = -1;
+  if (amax < 1e-4) return 0;
+  const bu = (x - L.x) / LAM, bv = (z - L.z) / LAM;
+  let u = bu, v = bv;
+  // Two passes undo the crowding near the centre.
+  for (let it = 0; it < 2; it++) {
+    const s = 1 - crowdNow * Math.exp(-(u * u + v * v) / CS2);
+    u = bu / s;
+    v = bv / s;
+  }
+  const fj = v / S3, fi = u - 0.5 * fj, fk = -fi - fj;
+  let ri = Math.round(fi), rj = Math.round(fj);
+  const rk = Math.round(fk), di = Math.abs(ri - fi), dj = Math.abs(rj - fj), dk = Math.abs(rk - fk);
+  if (di > dj && di > dk) ri = -rj - rk;
+  else if (dj > dk) rj = -ri - rk;
+  if (Math.abs(ri) > K || Math.abs(rj) > K) return 0;
+  const k = CIDX[(rj + K) * KW + ri + K];
+  if (k < 0 || A[k] <= 0) return 0;
+  const q = Math.hypot(u - CU[k], v - CV[k]) / RHO;
+  if (q >= 1) return 0;
+  crownK = k;
+  const b = 1 - q * q;
+  return A[k] * b * b * b;
+}
+// World position of a spike's tip.
+function tipOf(k) {
+  const w = (1 - crowdNow * CE[k]) * LAM, x = L.x + CU[k] * w, z = L.z + CV[k] * w, a = Math.max(0, A[k]);
+  let sx = SX[k], sz = SZ[k];
+  const sl = Math.hypot(sx, sz);
+  if (sl > 0.35) { sx *= 0.35 / sl; sz *= 0.35 / sl; }
+  return [x + sx * a, bulkAt(x, z) + a, z + sz * a];
+}
+// A free bead ignores the magnet and other beads for a moment.
+function addDrop(x, y, z, vx, vy, vz, r, free = 0) {
+  if (drops.length >= NDROP) return null;
+  const d = { x, y, z, vx, vy, vz, r, q: 0, qv: 0, free, pull: 0 };
+  drops.push(d);
+  return d;
+}
+// A tall spike throws a bead from its tip toward the magnet.
+function spitOne() {
+  let pk = -1, best = -1;
+  for (let k = 0; k < nc; k++) {
+    if (A[k] < 0.7 * amax || tNow - SPT[k] < 0.8) continue;
+    const s = A[k] * (0.6 + Math.random() * 0.8);
+    if (s > best) { best = s; pk = k; }
+  }
+  if (pk < 0) return;
+  const [x, y, z] = tipOf(pk), r = RSPIT * jit(0.12);
+  const dx = pullX - x, dy = pullY - y, dz = pullZ - z, l = Math.hypot(dx, dy, dz) || 1;
+  if (!addDrop(x, y + r * 0.5, z, (dx / l) * 1.4, (dy / l) * 1.4 + 0.5, (dz / l) * 1.4, r)) return;
+  // The spike pinches off and springs back down.
+  SPT[pk] = tNow;
+  A[pk] *= 0.55;
+  VA[pk] = -1.2;
+  FORM[pk] = 0;
+  slurp();
+}
+// A landing bead dents the pool; the dent rings outward.
+function splash(x, z, amp) {
+  for (let m = 0; m < NIN; m++) {
+    const dx = GXW[m] - x, dz = GZW[m] - z, d2 = dx * dx + dz * dz;
+    if (d2 < 0.03) V[IN[m]] -= amp * Math.exp(-d2 / 0.0035);
+  }
+}
+function dropsStep(dt) {
+  if (!drops.length) return false;
+  const n = Math.max(1, Math.ceil(dt * 240 - 1e-6)), h = dt / n, wq = 26, zq = 0.14;
+  for (let s = 0; s < n; s++) {
+    for (const d of drops) {
+      let ax = 0, ay = -GRAV, az = 0, drag = 0.4, pull = 0;
+      // The magnet pulls beads up under it; a long reach lets go.
+      if (pullF > 0 && d.free <= 0) {
+        const dx = pullX - d.x, dy = pullY - d.y, dz = pullZ - d.z, l2 = dx * dx + dy * dy + dz * dz;
+        pull = pullF * Math.exp(-l2 / 0.15);
+        const m = (KP * pull) / Math.sqrt(0.0144 + l2);
+        ax += dx * m;
+        ay += dy * m;
+        az += dz * m;
+        drag += 7 * pull;
+      }
+      d.pull = pull;
+      d.vx += (ax - drag * d.vx) * h;
+      d.vy += (ay - drag * d.vy) * h;
+      d.vz += (az - drag * d.vz) * h;
+      d.x += d.vx * h;
+      d.y += d.vy * h;
+      d.z += d.vz * h;
+      d.free -= h;
+      // Each bead wobbles on its own squash spring.
+      d.qv += (-wq * wq * d.q - 2 * zq * wq * d.qv) * h;
+      d.q += d.qv * h;
+      // The dish wall keeps every bead inside.
+      const rr = Math.hypot(d.x, d.z), lim = RIN - d.r;
+      if (rr > lim) {
+        const nx = d.x / rr, nz = d.z / rr, vn = d.vx * nx + d.vz * nz;
+        d.x = nx * lim;
+        d.z = nz * lim;
+        if (vn > 0) { d.vx -= 1.5 * vn * nx; d.vz -= 1.5 * vn * nz; }
+      }
+    }
+  }
+  // Touching beads merge into one bead of the same volume.
+  for (let i = 0; i < drops.length; i++) {
+    const a = drops[i];
+    for (let j = drops.length - 1; j > i; j--) {
+      const b = drops[j], rs = (a.r + b.r) * 0.85;
+      if (a.free > 0 || b.free > 0) continue;
+      if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2 > rs * rs) continue;
+      const va = a.r ** 3, vb = b.r ** 3, wa = va / (va + vb), wb = 1 - wa;
+      a.x = a.x * wa + b.x * wb;
+      a.y = a.y * wa + b.y * wb;
+      a.z = a.z * wa + b.z * wb;
+      a.vx = a.vx * wa + b.vx * wb;
+      a.vy = a.vy * wa + b.vy * wb;
+      a.vz = a.vz * wa + b.vz * wb;
+      a.r = Math.cbrt(va + vb);
+      a.qv += 4;
+      drops.splice(j, 1);
+      blop(a.r);
+    }
+  }
+  // A blob too heavy for the magnet drips from its underside.
+  for (let i = 0, n0 = drops.length; i < n0; i++) {
+    const d = drops[i];
+    if (d.r <= RDRIP || d.pull < 0.5 || drops.length >= NDROP) continue;
+    const r2 = d.r * 0.68;
+    d.r = Math.cbrt(d.r ** 3 - r2 ** 3);
+    d.qv -= 5;
+    addDrop(d.x, d.y - d.r - r2 * 0.6, d.z, d.vx, d.vy - 0.5, d.vz, r2, 0.4);
+    pinch();
+  }
+  // Falling beads land on the pool or a spike and rejoin the fluid.
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    if (d.vy > 0) continue;
+    const top = bulkAt(d.x, d.z) + crownAt(d.x, d.z), k = crownK;
+    if (d.y - d.r * 0.4 > top) continue;
+    const sp = Math.hypot(d.vx, d.vy, d.vz), vol = (d.r / RSPIT) ** 3;
+    splash(d.x, d.z, Math.min(0.7, 0.12 * vol ** 0.6 * (0.4 + sp)));
+    // A hit spike ducks and springs back.
+    if (k >= 0) VA[k] -= Math.min(3, sp) * 0.6 * Math.cbrt(vol);
+    drops.splice(i, 1);
+    // A big bead landing hard splits into smaller ones.
+    if (sp > 1.6 && d.r > 0.045) {
+      const kids = d.r > 0.06 ? 3 : 2, a0 = Math.random() * TAU;
+      for (let c = 0; c < kids; c++) {
+        const a = a0 + (c / kids) * TAU + (Math.random() - 0.5) * 0.6, hs = 0.35 + Math.random() * 0.35;
+        addDrop(d.x, top + d.r * 0.8, d.z, Math.cos(a) * hs, 0.55 + 0.18 * sp, Math.sin(a) * hs, d.r * 0.6, 0.15);
+      }
+    }
+    plip(d.r, sp);
+  }
+  for (const d of drops) {
+    if (Math.abs(d.vx) + Math.abs(d.vy) + Math.abs(d.vz) > 4e-3 || Math.abs(d.qv) > 3e-3 || Math.abs(d.q) > 1e-3) return true;
+  }
+  return false;
+}
+// Drip: a big drop falls from above the magnet, or anywhere.
+function drip() {
+  if (!ready) return;
+  let x, z;
+  if (mag.present) { x = mag.x; z = mag.z; }
+  else {
+    const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * 0.55;
+    x = Math.cos(a) * r;
+    z = Math.sin(a) * r;
+  }
+  const rr = Math.hypot(x, z);
+  if (rr > 0.8) { x *= 0.8 / rr; z *= 0.8 / rr; }
+  const d = addDrop(x, 0.95, z, 0, -0.2, 0, 0.068 * jit(0.08));
+  if (!d) return;
+  d.qv = 4;
+  pinch();
+  wake();
+}
+
 /* ---------- one step of everything ---------- */
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 const keys = new Set();
@@ -390,7 +615,7 @@ function step(dt) {
     if (idleAmt < 0.01) idleAmt = 0;
   }
   const n = Math.max(1, Math.ceil(dt * 120 - 1e-6)), h = dt / n;
-  const wF = reduce ? 14 : 7.5, zF = reduce ? 1 : 0.7, kick = reduce ? 0.25 : 1;
+  const wF = reduce ? 14 : 7.5, zF = reduce ? 1 : 0.5, kick = reduce ? 0.25 : 1;
   const wE = reduce ? 24 : 15, zE = reduce ? 1 : 0.9, wL = reduce ? 18 : 6.5, zL = reduce ? 1 : 0.8;
   let busy = false;
   for (let s = 0; s < n; s++) {
@@ -408,17 +633,33 @@ function step(dt) {
     const sp = Math.hypot(E.vx, E.vz);
     if (cellsStep(h, F, crowdNow, 1 / (1 + (sp / 2.2) ** 2), mx, mz, L.ax * kick, L.az * kick)) busy = true;
   }
+  // Beads hang under the envelope once the field passes hover strength.
+  pullF = smooth(1.25, 1.85, Fs.x);
+  pullX = E.x;
+  pullZ = E.z;
+  // Near the rim the beads hang lower, so they stay in frame.
+  pullY = YA - 0.14 * (E.x * E.x + E.z * E.z);
+  // Each strong press lets the crown throw a few beads.
+  const strong = Ft > 1.5;
+  if (strong && !spit.was) { spit.left = SPITS; spit.next = tNow + 0.28; }
+  spit.was = strong;
+  if (strong && spit.left > 0 && tNow >= spit.next && pullF > 0.8 && amax > 0.75 * A0) {
+    spitOne();
+    spit.left--;
+    spit.next = tNow + 0.2 + Math.random() * 0.2;
+  }
+  if (dropsStep(dt)) busy = true;
   pressure(Math.max(0, Fs.x));
   const top = simulate(dt);
   hum(clamp(Fs.x / STRONG), clamp((Fs.x - HOVER) / (STRONG - HOVER)));
-  return busy || keys.size > 0 || idleAmt > 0 || top > 1.2e-4 ||
+  return busy || keys.size > 0 || idleAmt > 0 || top > 1.2e-4 || (strong && spit.left > 0) ||
     Math.abs(Fs.x - Ft) > 1e-4 || Math.abs(Fs.v) > 1e-3 ||
     Math.abs(E.x - mx) + Math.abs(E.z - mz) > 1e-4 || Math.abs(E.vx) + Math.abs(E.vz) > 1e-3 ||
     Math.abs(L.x - mx) + Math.abs(L.z - mz) > 1e-4 || Math.abs(L.vx) + Math.abs(L.vz) > 1e-3;
 }
 
 /* ---------- rendering ---------- */
-let THREE = null, renderer = null, scene = null, camera = null, U = null, cellTex = null, bulkTex = null;
+let THREE = null, renderer = null, scene = null, camera = null, U = null, cellTex = null, bulkTex = null, dropMesh = null;
 let ray = null, plane = null, ndc = null, hitV = null, tmp = null;
 let ready = false, lowDpr = false;
 
@@ -547,7 +788,7 @@ for (let k = 0; k < 64; k++) {
   FIT.push([c, 0.09, s], [c, -0.13, s]);
 }
 function fitCamera(w, h) {
-  const port = w / h < 1.1, el = ((port ? 60 : 40) * Math.PI) / 180;
+  const port = w / h < 1.1, el = ((port ? 68 : 55) * Math.PI) / 180;
   camera.aspect = w / h;
   camera.fov = port ? 32 : 27;
   camera.updateProjectionMatrix();
@@ -603,7 +844,37 @@ function draw() {
   U.uL.value.set(L.x, L.z);
   U.uCrowd.value = crowdNow;
   U.uAmax.value = amax > 1e-5 ? amax : 0;
+  drawDrops();
   renderer.render(scene, camera);
+}
+// Beads stretch along their motion and toward the magnet, then wobble.
+function drawDrops() {
+  const M = dropMesh.instanceMatrix.array;
+  drops.forEach((d, i) => {
+    let wx = d.vx * 0.12, wy = d.vy * 0.12, wz = d.vz * 0.12;
+    if (d.pull > 0) {
+      const dx = pullX - d.x, dy = pullY - d.y, dz = pullZ - d.z, k = (0.35 * d.pull) / (Math.hypot(dx, dy, dz) || 1);
+      wx += dx * k;
+      wy += dy * k;
+      wz += dz * k;
+    }
+    const wl = Math.hypot(wx, wy, wz);
+    let ax = 0, ay = 1, az = 0;
+    if (wl > 1e-3) { ax = wx / wl; ay = wy / wl; az = wz / wl; }
+    const kp = (1 + Math.min(0.6, wl)) * (1 + clamp(d.q, -0.5, 0.5)), kq = 1 / Math.sqrt(kp), r = d.r, o = i * 16;
+    // The frame b, a, c is right-handed, so the winding holds.
+    const hx = Math.abs(ay) > 0.9 ? 1 : 0, hy = 1 - hx;
+    let bx = hy * az, by = -hx * az, bz = hx * ay - hy * ax;
+    const bl = Math.hypot(bx, by, bz);
+    bx /= bl; by /= bl; bz /= bl;
+    const cx = by * az - bz * ay, cy = bz * ax - bx * az, cz = bx * ay - by * ax;
+    M[o] = bx * kq * r; M[o + 1] = by * kq * r; M[o + 2] = bz * kq * r; M[o + 3] = 0;
+    M[o + 4] = ax * kp * r; M[o + 5] = ay * kp * r; M[o + 6] = az * kp * r; M[o + 7] = 0;
+    M[o + 8] = cx * kq * r; M[o + 9] = cy * kq * r; M[o + 10] = cz * kq * r; M[o + 11] = 0;
+    M[o + 12] = d.x; M[o + 13] = d.y; M[o + 14] = d.z; M[o + 15] = 1;
+  });
+  dropMesh.count = drops.length;
+  dropMesh.instanceMatrix.needsUpdate = true;
 }
 
 /* ---------- one loop, only while something moves ---------- */
@@ -706,8 +977,11 @@ addEventListener('keydown', e => {
     mag.present = mag.locked = false;
     keys.clear();
     stir();
+  } else if (e.key === 'd' || e.key === 'D') {
+    if (!e.repeat) drip();
   }
 });
+document.getElementById('drip').addEventListener('click', drip);
 addEventListener('keyup', e => { keys.delete(e.key); });
 addEventListener('blur', () => keys.clear());
 sound.onChange(on => {
@@ -772,8 +1046,9 @@ async function start() {
   };
   // Long strips behind the dish draw a line across the mirror.
   // One sits in view from each camera height.
-  glow(26, 0.2, 0.2, 4, 0, 9.5, -12);
-  glow(30, 0.26, 0.26, 4, 0, 21, -12);
+  // Each strip sits at one camera elevation: 55 or 68 degrees.
+  glow(26, 0.2, 0.2, 4, 0, 17.1, -12);
+  glow(30, 0.26, 0.26, 4, 0, 24.8, -10);
   // Low panels light the steep flanks, not the flat pool.
   for (let k = 0; k < 9; k++) {
     const a = (k / 9) * TAU + 0.2;
@@ -822,12 +1097,13 @@ async function start() {
     uEps: { value: 0.35 / MESH_N }, uAmax: { value: 0 }, uRin: { value: RIN + 0.003 },
   };
   // Deep black with a clear coat and a faint thin-film sheen.
-  const ink = new THREE.MeshPhysicalMaterial({
+  const INK = {
     color: 0x030304, metalness: 0, roughness: 0.07, ior: 1.6, specularIntensity: 1,
     clearcoat: 0.6, clearcoatRoughness: 0.05,
     iridescence: 0.15, iridescenceIOR: 1.32, iridescenceThicknessRange: [260, 560],
     envMapIntensity: 2,
-  });
+  };
+  const ink = new THREE.MeshPhysicalMaterial(INK);
   ink.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, U);
     shader.vertexShader = shader.vertexShader
@@ -844,6 +1120,12 @@ async function start() {
   const fluid = new THREE.Mesh(buildPool(MESH_N), ink);
   fluid.frustumCulled = false;
   scene.add(fluid);
+  // Loose beads share the fluid's finish.
+  dropMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 28, 18), new THREE.MeshPhysicalMaterial(INK), NDROP);
+  dropMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  dropMesh.frustumCulled = false;
+  dropMesh.count = 0;
+  scene.add(dropMesh);
 
   panel.prepend(canvas);
   fitRenderer(renderer, panel, 1.5, (w, h) => {
