@@ -66,8 +66,13 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   // The box flashes on in one frame and holds.
   await wait(3);
   if (badge) { badge.classList.add('is-flash'); badge.style.setProperty('--box', 1); } else name.classList.add('is-flash');
+  // For two frames the flash fills the eye, then it snaps to its place.
+  const big = badge || name;
+  big.style.transform = 'scale(2.6)';
   text.style.opacity = 1;
-  await wait(9);
+  await wait(2);
+  big.style.transform = '';
+  await wait(7);
   // The box cuts out; the emblem stays, white, and the words unfurl beneath it.
   if (badge) { badge.classList.remove('is-flash'); badge.style.setProperty('--box', 0); } else name.classList.remove('is-flash');
   if (badge) unfurl(name);
