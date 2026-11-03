@@ -1012,14 +1012,48 @@ function onPins(rr) {
   return onPlate(rr);
 }
 // The press lands on the pin you see, then follows the pointer without drifting.
-panel.addEventListener('pointerdown', e => {
-  if (!ready || flipT >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+function begin(e) {
   const rr = rayAt(e), [px, py] = onPlate(rr), [sx, sy] = onPins(rr);
   const b = press(e.pointerId, sx, sy, force(e), e.pointerType === 'touch' ? R_TOUCH : R_MOUSE);
   b.ox = sx - px;
   b.oy = sy - py;
+}
+// A touch waits a moment; a second finger in time makes it a pinch.
+const PINCH_WAIT = 90;
+const fingers = new Map();
+let pend = null, pinch = null;
+const spread = () => { const [a, b] = fingers.values(); return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1; };
+panel.addEventListener('pointerdown', e => {
+  if (!ready || flipT >= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  if (e.pointerType !== 'touch') return begin(e);
+  fingers.set(e.pointerId, e);
+  if (fingers.size === 2 && pend) {
+    clearTimeout(pend.timer);
+    pend = null;
+    pinch = { d0: spread(), z0: rig.tzoom };
+    return;
+  }
+  if (pinch) return;
+  const id = e.pointerId;
+  pend = { id, timer: setTimeout(() => { pend = null; if (fingers.has(id)) begin(fingers.get(id)); }, PINCH_WAIT) };
 });
+// Fingers pinched together back the camera off.
+panel.addEventListener('pointermove', e => {
+  if (!fingers.has(e.pointerId)) return;
+  fingers.set(e.pointerId, e);
+  if (!pinch || fingers.size < 2) return;
+  rig.tzoom = clamp((pinch.z0 * pinch.d0) / spread(), 1, ZOOM_MAX);
+  wake();
+});
+// A finger that lifts while waiting still taps the pins.
+function release(e) {
+  const f = fingers.get(e.pointerId);
+  if (!fingers.delete(e.pointerId)) return;
+  if (pend && pend.id === e.pointerId) { clearTimeout(pend.timer); pend = null; if (e.type === 'pointerup') begin(f); }
+  if (pinch && fingers.size < 2) pinch = null;
+}
+['pointerup', 'pointercancel'].forEach(t => panel.addEventListener(t, release));
 panel.addEventListener('pointermove', e => {
   const b = brushes.get(e.pointerId);
   if (!b) return;
@@ -1038,7 +1072,35 @@ panel.addEventListener('pointermove', e => {
   rig.tpitch = clamp(1 - ((e.clientY - r.top) / r.height) * 2, -1, 1) * WOBBLE_PITCH;
   wake();
 });
-panel.addEventListener('pointerleave', () => { rig.tyaw = rig.tpitch = 0; wake(); });
+panel.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { rig.tyaw = rig.tpitch = 0; wake(); } });
+// Tilting a phone sways the camera; the rest pose drifts to how it is held.
+const TILT_FULL = 20;
+let tiltRest = null, tiltAsked = false;
+function tilt(e) {
+  if (reduce || !ready || e.beta == null || e.gamma == null) return;
+  // A sideways screen swaps the two tilt axes.
+  const a = screen.orientation?.angle ?? window.orientation ?? 0;
+  const side = a === 90 ? [e.beta, -e.gamma] : a === -90 || a === 270 ? [-e.beta, e.gamma] : [e.gamma, e.beta];
+  if (!tiltRest) tiltRest = side.slice();
+  tiltRest[0] += (side[0] - tiltRest[0]) * 0.01;
+  tiltRest[1] += (side[1] - tiltRest[1]) * 0.01;
+  const yaw = clamp((side[0] - tiltRest[0]) / TILT_FULL, -1, 1) * WOBBLE_YAW;
+  const pitch = clamp((tiltRest[1] - side[1]) / TILT_FULL, -1, 1) * WOBBLE_PITCH;
+  // Small changes wait, so a still phone lets the loop sleep.
+  if (Math.abs(yaw - rig.tyaw) + Math.abs(pitch - rig.tpitch) < 0.002) return;
+  rig.tyaw = yaw;
+  rig.tpitch = pitch;
+  wake();
+}
+// iOS asks for motion access on the first touch; others listen at once.
+function listenTilt() {
+  if (tiltAsked || typeof DeviceOrientationEvent === 'undefined') return;
+  tiltAsked = true;
+  const ask = DeviceOrientationEvent.requestPermission;
+  if (typeof ask !== 'function') return addEventListener('deviceorientation', tilt);
+  ask.call(DeviceOrientationEvent).then(r => { if (r === 'granted') addEventListener('deviceorientation', tilt); }).catch(() => {});
+}
+addEventListener('pointerup', e => { if (e.pointerType === 'touch') listenTilt(); }, { passive: true });
 // Wheel or pinch backs the camera off; at a limit the page scrolls on.
 panel.addEventListener('wheel', e => {
   if (!ready) return;
