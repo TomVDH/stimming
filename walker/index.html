@@ -16,6 +16,7 @@
 /* Beach walker: a wind-driven linkage walker, backlit on wet sand at sunset. */
 :root { --stage: oklch(0.13 0.04 282); }
 .stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; }
+.stage canvas.sky { pointer-events: none; }
 .stage canvas.grab { cursor: grab; }
 .stage canvas.turning { cursor: grabbing; }
 .vignette figure svg { color: var(--fg); }
@@ -30,6 +31,7 @@
   <header data-shell></header>
   <main>
     <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The arrow keys blow gusts, B starts a breeze, P shows the foot path and R resets.">
+      <canvas class="sky" aria-hidden="true"></canvas>
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Beach walker needs canvas drawing, which this browser has turned off.</p>
     </div>
@@ -77,7 +79,8 @@ playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb } from '../shared/stim.js';
 initPage({ id: 'walker' });
 
-const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
+const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas:not(.sky)');
+const skyCanvas = stage.querySelector('canvas.sky');
 const bar = document.querySelector('.bar');
 const ctx = canvas.getContext('2d');
 if (!ctx) { stage.querySelector('.fail').hidden = false; throw new Error('no canvas'); }
@@ -293,7 +296,7 @@ function windBed(level) {
 
 /* ---------- layout ---------- */
 // Every length below is in CSS pixels unless it says leg units.
-let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1, sunX = 1, sunY = 1, sunR = 1;
+let w = 1, h = 1, dpr = 1, s = 1, trackY = 1, horizonY = 1, seaY = 1, sunX = 1, sunY = 1, sunR = 1, focal = 1;
 const bg = document.createElement('canvas'), bgc = bg.getContext('2d');
 const wc = document.createElement('canvas'), wctx = wc.getContext('2d');
 // Sky stops run from the zenith to the horizon.
@@ -320,12 +323,14 @@ function fit() {
   // The bar sits on the stage; the feet stay just above it.
   const barH = bar.offsetHeight || 90;
   trackY = Math.round(clamp(h * 0.85, h * 0.5, h - barH - 12));
-  // The horizon runs just under the hub, so the body stands against the sky.
-  horizonY = Math.max(20, Math.round(trackY - 80 * s));
+  // The sea runs high behind the walker; the mast and vane meet the sky.
+  horizonY = Math.max(20, Math.round(trackY - Math.max(110 * s, h * 0.26)));
   seaY = horizonY + Math.max(3, Math.round(h * 0.01));
-  sunR = clamp(Math.min(w, h) * 0.2, 36, 150);
-  sunX = w * 0.6; sunY = horizonY - sunR * 0.3;
-  paintBackdrop();
+  // A long lens: a large sun, low over the sea, behind the walker.
+  focal = 1.2 * Math.max(w, h);
+  sunR = clamp(Math.min(w, h) * 0.11, 26, 110);
+  sunX = w * 0.57; sunY = horizonY - sunR * 0.45;
+  if (sea) sea.fit(); else paintBackdrop();
   draw();
 }
 // The sky, sun, sea and wet sand are painted once per resize.
@@ -376,6 +381,183 @@ function paintBackdrop() {
     c.fillRect(sunX - half, y, half * 2, 1 + f * 2.5);
   }
 }
+
+/* ---------- sky and sea shader ---------- */
+// One fragment shader paints the sky, the sea and the wet sand.
+// The beach is a flat plane seen through a long lens.
+// The walker stands at depth 1; depth grows toward the horizon.
+const SEA_FS = `
+precision highp float;
+uniform vec2 uRes;
+uniform float uDpr, uHor, uTrack, uF, uCam, uTime, uWind, uSunR;
+uniform vec2 uSun;
+vec3 SD;
+
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float a = 0.5, s = 0.0;
+  mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+  for (int i = 0; i < 5; i++) { s += a * noise(p); p = m * p; a *= 0.5; }
+  return s;
+}
+
+const vec3 SUNC = vec3(1.0, 0.6, 0.3);
+// Clear sky: a dark zenith, a hot horizon, forward scatter round the sun.
+// The long lens sees a narrow cone, so falloffs use the angle a to the sun.
+vec3 skyBase(vec3 d, float a) {
+  float e = max(d.y, 0.0);
+  float side = exp(-abs(d.x - SD.x) * 2.5);
+  vec3 c = mix(vec3(0.3, 0.07, 0.13), vec3(0.01, 0.014, 0.045), smoothstep(0.0, 0.3, e));
+  c = mix(c, vec3(1.15, 0.3, 0.07) * (0.25 + 0.75 * side), exp(-e * 12.0));
+  c += SUNC * (0.1 * exp(-a * 6.0) + 0.45 * exp(-a * 24.0) + 0.3 * exp(-a * 120.0));
+  return c;
+}
+// Full sky: the base, the sun disc and a stratus deck lit from below.
+vec3 sky(vec3 d) {
+  float a = length(d - SD), r = uSunR;
+  vec3 c = skyBase(d, a);
+  float disc = 1.0 - smoothstep(r * 0.97, r, a);
+  float limb = sqrt(max(0.0, 1.0 - (a / r) * (a / r)));
+  // The limb darkens and reddens toward the edge.
+  vec3 sun = mix(vec3(1.2, 0.28, 0.04), vec3(2.2, 1.0, 0.3), limb);
+  c = mix(c, sun, disc);
+  if (d.y <= 0.0) return c;
+  // The deck curves away, so its depth stays finite at the horizon.
+  vec2 P = d.xz / (d.y + 0.05);
+  vec2 uv = vec2(P.x * 0.3 + uCam * 0.04 + uTime * 0.01, P.y * 0.7);
+  float n = fbm(uv + vec2(0.0, fbm(uv * 0.5) * 0.8));
+  float cl = smoothstep(0.34, 0.62, n) * smoothstep(0.0, 0.025, d.y);
+  vec3 under = vec3(0.03, 0.02, 0.045) + vec3(1.0, 0.3, 0.12) * (0.04 + 1.1 * exp(-a * 8.0) + 0.7 * exp(-max(d.y, 0.0) * 14.0));
+  // Thin edges near the sun catch a bright lining.
+  under += SUNC * 3.5 * exp(-a * 45.0) * (1.0 - smoothstep(0.48, 0.68, n));
+  // Thick cloud blocks the light and goes dark against the sun.
+  under *= 1.0 - 0.8 * smoothstep(0.55, 0.8, n);
+  return mix(c, under, cl * 0.94);
+}
+
+void main() {
+  vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
+  float cx = uRes.x / uDpr * 0.5;
+  SD = normalize(vec3((uSun.x - cx) / uF, (uHor - uSun.y) / uF, 1.0));
+  vec3 d = normalize(vec3((px.x - cx) / uF, (uHor - px.y) / uF, 1.0));
+  vec3 col;
+  if (px.y < uHor) {
+    col = sky(d);
+  } else {
+    float span = uTrack - uHor, Hc = span / uF;
+    float z = min(span / max(px.y - uHor, 0.02), 900.0);
+    float X = (px.x - cx) / uF * z + uCam;
+    vec2 p = vec2(X, z);
+    // World size of one pixel along the depth.
+    float foot = z * z / (uF * Hc);
+    // The swash runs up fast and drains back slowly, about every nine seconds.
+    float ph = fract(uTime / 9.0);
+    float run = sin(3.14159 * pow(ph, 0.4));
+    float zS = 2.8 - 1.15 * run + 0.18 * (noise(vec2(X * 5.0, 3.0)) - 0.5) + 0.04 * sin(X * 13.0 + uTime * 0.6);
+    float into = z - zS;
+    vec3 n;
+    float wet;
+    if (into > 0.0) {
+      // Sea: a sum of swells running toward the shore, filtered by footprint.
+      vec2 g = vec2(0.0);
+      float k = 7.0, sl = 0.13 * (0.75 + 0.5 * min(uWind, 1.0));
+      float zone = 0.65 + 0.7 * noise(p * vec2(1.5, 0.6));
+      for (int i = 0; i < 9; i++) {
+        float fi = float(i);
+        float ang = -1.5708 + sin(fi * 2.4) * 0.7;
+        vec2 dir = vec2(cos(ang), sin(ang));
+        float ph2 = dot(p, dir) * k + uTime * sqrt(9.8 * k) * 0.35 + fi * 1.7;
+        float aa = 1.0 - smoothstep(0.25, 0.9, foot * k / 6.283);
+        g += dir * cos(ph2) * sl * aa * zone;
+        k *= 1.55;
+      }
+      // The thin swash sheet lies almost flat.
+      g *= smoothstep(0.0, 0.5, into);
+      n = normalize(vec3(-g.x, 1.0, -g.y));
+      vec3 r = reflect(d, n); r.y = abs(r.y);
+      float F = 0.02 + 0.98 * pow(1.0 - clamp(dot(-d, n), 0.0, 1.0), 5.0);
+      col = mix(vec3(0.004, 0.008, 0.016), sky(r), F);
+      // Breakers roll in as foam lines, and lace marks the swash edge.
+      float lace = smoothstep(0.3, 0.7, noise(p * vec2(26.0, 70.0)));
+      float roll = pow(max(sin((into * 3.0 - uTime * 0.28) * 6.283), 0.0), 10.0) * exp(-into * 0.8) * smoothstep(0.0, 0.25, into);
+      float edge = exp(-into * 18.0);
+      float foam = clamp((roll * 0.8 + edge) * (0.45 + 0.75 * lace), 0.0, 1.0);
+      foam *= 1.0 - smoothstep(0.3, 1.0, foot * 6.0);
+      vec3 fc = vec3(0.22, 0.15, 0.18) + SUNC * 0.6 * exp(-length(d - SD) * 6.0);
+      col = mix(col, fc, foam * 0.85);
+    } else {
+      // Wet sand: dark grains, low ripples, glossy film and pools.
+      float back = -into;
+      float aaG = 1.0 - smoothstep(0.1, 0.6, foot * 180.0);
+      float grain = noise(p * vec2(240.0, 480.0)) * aaG;
+      float pool = smoothstep(0.56, 0.64, fbm(p * vec2(2.2, 4.5) + 3.0));
+      float film = exp(-back * 5.0);
+      float aaR = 1.0 - smoothstep(0.2, 0.8, foot * 45.0 / 6.283);
+      float rip = cos(z * 45.0 + noise(p * vec2(3.0, 6.0)) * 7.0) * 0.05 * aaR * (1.0 - pool) * (1.0 - film);
+      float rough = (noise(p * vec2(60.0, 120.0)) - 0.5) * 0.06 * aaG * (1.0 - pool);
+      n = normalize(vec3(rough, 1.0, rip + rough));
+      wet = clamp(0.55 * smoothstep(0.4, 1.1, z) + pool + film, 0.0, 1.0);
+      vec3 sand = vec3(0.3, 0.2, 0.15) * (0.75 + 0.5 * grain) * mix(1.0, 0.5, wet);
+      sand *= vec3(0.32, 0.22, 0.26);
+      vec3 r = reflect(d, n); r.y = abs(r.y);
+      float F = 0.02 + 0.98 * pow(1.0 - clamp(dot(-d, n), 0.0, 1.0), 5.0);
+      col = mix(sand, sky(r), F * wet * 0.92);
+    }
+    // Far water fades into the horizon haze.
+    vec3 hd = normalize(vec3(d.x, 0.0, 1.0));
+    col = mix(col, skyBase(hd, length(hd - SD)) * 0.8, 1.0 - exp(-z * 0.003));
+  }
+  // Exposure, gamma, then dither against banding.
+  col = 1.0 - exp(-col * 1.15);
+  col = pow(col, vec3(1.0 / 2.2));
+  col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const sea = (() => {
+  const gl = skyCanvas.getContext('webgl', { antialias: false, alpha: false, preserveDrawingBuffer: false });
+  if (!gl) { skyCanvas.remove(); return null; }
+  const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, 'attribute vec2 a; void main() { gl_Position = vec4(a, 0.0, 1.0); }'));
+    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, SEA_FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  } catch (err) { console.warn(err); skyCanvas.remove(); return null; }
+  gl.useProgram(prog);
+  // One triangle covers the whole canvas.
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const U = {};
+  ['uRes', 'uDpr', 'uHor', 'uTrack', 'uF', 'uCam', 'uTime', 'uWind', 'uSunR', 'uSun'].forEach(k => { U[k] = gl.getUniformLocation(prog, k); });
+  return {
+    // The shader runs at a lower pixel budget; the sky is smooth.
+    fit() {
+      const r = fitCanvas(skyCanvas, { budget: 1.5e6 });
+      gl.viewport(0, 0, r.W, r.H);
+      gl.uniform2f(U.uRes, r.W, r.H);
+      gl.uniform1f(U.uDpr, r.dpr);
+    },
+    render() {
+      gl.uniform1f(U.uHor, horizonY);
+      gl.uniform1f(U.uTrack, trackY);
+      gl.uniform1f(U.uF, focal);
+      gl.uniform1f(U.uCam, (camX * s) / focal);
+      gl.uniform1f(U.uTime, simT);
+      gl.uniform1f(U.uWind, Math.abs(wind));
+      gl.uniform1f(U.uSunR, sunR / focal);
+      gl.uniform2f(U.uSun, sunX, sunY);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    },
+  };
+})();
 
 /* ---------- motion ---------- */
 let mode = null, handTurn = 0, showPath = false, camLock = 0;
@@ -636,7 +818,7 @@ function drawPrints() {
   }
   c.globalAlpha = 1;
 }
-// The wet sand mirrors the walker as hard strips with growing gaps.
+// The wet sand mirrors the walker, fading with distance from the feet.
 // Each strip is thin, so it copies unflipped from its mirror row.
 // Wind shakes the strips sideways.
 function drawReflection(mirror, box) {
@@ -647,10 +829,10 @@ function drawReflection(mirror, box) {
   for (let d = 0; d < span;) {
     const f = d / span, sy = Ym - d - st;
     if (sy < 0) break;
-    c.globalAlpha = 0.75 * (1 - f) ** 1.3;
+    c.globalAlpha = 0.62 * (1 - f) ** 1.5;
     const dx = shake ? Math.sin(d * 0.21 + simT * 5) * shake : 0;
     c.drawImage(wc, box.x0, sy, box.w, st, box.x0 + dx, Ym + d, box.w, st);
-    d += st + Math.round(st * (0.6 + f * 2.5));
+    d += st;
   }
   c.globalAlpha = 1;
 }
@@ -658,11 +840,11 @@ function drawStreaks() {
   const a = clamp(Math.abs(wind), 0, 1.4);
   if (reduce || a < 0.02) return;
   const c = ctx, dir = Math.sign(wind);
-  c.strokeStyle = css(RIM, 0.28 * Math.min(1, a)); c.lineWidth = 1; c.lineCap = 'round';
+  c.strokeStyle = css(RIM, 0.14 * Math.min(1, a)); c.lineWidth = 1; c.lineCap = 'round';
   c.beginPath();
   const count = Math.round(streaks.length * Math.min(1, 0.25 + a * 0.6));
   // Blown sand and spray stay low over the beach.
-  const top = Math.max(10, horizonY - h * 0.3);
+  const top = Math.max(10, horizonY - h * 0.04);
   for (let n = 0; n < count; n++) {
     const k = streaks[n], x = k.x * w, y = top + k.y * (h - top), len = (20 + 90 * a) * k.len;
     c.moveTo(x, y); c.lineTo(x - dir * len, y);
@@ -688,9 +870,11 @@ function draw() {
   cx = w / 2 + (bodyX - camX) * s;
   cy = trackY - bodyY * s;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(bg, 0, 0);
+  // The shader paints the scene under the walker; the flat backdrop is the fallback.
+  if (sea) { sea.render(); ctx.clearRect(0, 0, canvas.width, canvas.height); }
+  else ctx.drawImage(bg, 0, 0);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawSand();
+  if (!sea) drawSand();
   drawWalker();
   // Every copy of the walker touches only the box around it.
   const W = canvas.width, H = canvas.height;
