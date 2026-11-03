@@ -172,8 +172,10 @@ const PAL = {
   bgTop: linear(0.17, 0.035, 290), bgMid: linear(0.215, 0.05, 300), bgLow: linear(0.12, 0.025, 280),
   key: linear(0.95, 0.04, 75), rim: linear(0.78, 0.1, 290), sky: linear(0.42, 0.05, 280), ground: linear(0.18, 0.03, 330),
 };
-// Cheerful set colours, each a different hue.
-const SET_HUES = [25, 75, 150, 215, 300, 350, 100, 190, 265, 50, 130, 330, 240, 0];
+// Cheerful set colours as lightness, chroma and hue.
+// Neighbours on the tree differ in hue and lightness.
+const SET_COLS = [[0.66, 0.17, 28], [0.77, 0.14, 86], [0.68, 0.17, 148], [0.7, 0.13, 238], [0.64, 0.17, 302], [0.76, 0.14, 352],
+  [0.8, 0.16, 118], [0.72, 0.12, 200], [0.66, 0.15, 272], [0.72, 0.17, 52], [0.78, 0.11, 172], [0.62, 0.2, 330]];
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const SKEY = 'stimming.tvtree.sound', MAXV = 24, LEAD = 0.004;
@@ -250,7 +252,7 @@ function buildHum() {
   o2.frequency.value = 50.23;
   const lp = ac.createBiquadFilter();
   lp.type = 'lowpass';
-  lp.frequency.value = 230;
+  lp.frequency.value = 310;
   lp.Q.value = 0.7;
   const hg = gain(0);
   o1.connect(lp);
@@ -278,13 +280,13 @@ function buildHum() {
   [o1, o2, ns, ws].forEach(n => n.start());
   hum = { hg, sg, wg, wl };
 }
-// Lit sets hum; lost signals hiss; a swaying tree swishes.
+// The bed follows lit sets, lost signals and the swaying tree.
 function humLevel(on, snow, sway, now) {
   const a = live();
   if (!a || !hum || now - humAt < 80) return;
   humAt = now;
   const t = a.currentTime;
-  hum.hg.gain.setTargetAtTime(0.045 * Math.sqrt(on), t, 0.25);
+  hum.hg.gain.setTargetAtTime(0.03 * Math.sqrt(on), t, 0.25);
   hum.sg.gain.setTargetAtTime(0.028 * Math.min(1, snow), t, 0.07);
   hum.wg.gain.setTargetAtTime(Math.min(0.14, sway * 0.09), t, 0.08);
   hum.wl.frequency.setTargetAtTime(260 + Math.min(1, sway) * 700, t, 0.08);
@@ -310,7 +312,7 @@ function burst(a, dst, t, type, f, q, g, tau, len) {
   src.onended = () => ng.disconnect();
   src.start(t, Math.random() * 0.7, len);
 }
-// A pitched blip that glides from f0 to f1.
+// A pitched blip glides from f0 to f1.
 function tone(a, dst, t, f0, f1, dur, g, type = 'sine') {
   const o = a.createOscillator(), og = a.createGain();
   o.type = type;
@@ -324,7 +326,7 @@ function tone(a, dst, t, f0, f1, dur, g, type = 'sine') {
   o.stop(t + dur * 2.2 + 0.05);
   return [o, og];
 }
-// The tuner knob: two detent clicks over a dull thump.
+// The tuner knob gives two detent clicks over a dull thump.
 function clunk(x) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -338,7 +340,7 @@ function clunk(x) {
   const [o, og] = tone(a, d, t, 165 * jit(0.05), 72, 0.08, 0.42 * g);
   track(o, og, d);
 }
-// Static: band-limited noise with a quick swell and a soft tail.
+// Static is band-limited noise with a quick swell and soft tail.
 function hiss(x, dur, k = 1) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -351,16 +353,16 @@ function hiss(x, dur, k = 1) {
   hp.type = 'highpass';
   hp.frequency.value = 650;
   lp.type = 'lowpass';
-  lp.frequency.value = 6200;
+  lp.frequency.value = 5400;
   ng.gain.setValueAtTime(0, t);
-  ng.gain.linearRampToValueAtTime(0.2 * g, t + 0.012);
-  ng.gain.setValueAtTime(0.2 * g, t + dur * 0.55);
+  ng.gain.linearRampToValueAtTime(0.15 * g, t + 0.012);
+  ng.gain.setValueAtTime(0.15 * g, t + dur * 0.55);
   ng.gain.linearRampToValueAtTime(0, t + dur);
   src.connect(hp).connect(lp).connect(ng).connect(d);
   src.start(t, Math.random() * 0.4, dur + 0.05);
   track(src, hp, lp, ng, d);
 }
-// Power off: a soft tick, a falling zip and a fading fizz.
+// Power off makes a tick, a falling zip and a fading fizz.
 function zip(x) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -384,7 +386,7 @@ function zip(x) {
   burst(a, d, t + 0.04, 'highpass', 2800, 0.5, 0.045 * g, 0.14, 0.45);
   track(o, lp, og, d);
 }
-// Power on: a thump, a crackle of charge and a low swell.
+// Power on makes a thump, a crackle and a low swell.
 function powerOn(x) {
   const a = live();
   if (!a || voices >= MAXV) return;
@@ -397,14 +399,14 @@ function powerOn(x) {
   const [o, og] = tone(a, d, t + 0.01, 52, 104, 0.32, 0.22 * g, 'triangle');
   track(o, og, d);
 }
-// Plastic knock when two sets bump.
+// Two sets bump with a plastic knock.
 function bonk(x, v) {
   const a = live();
   if (!a || voices >= MAXV) return;
   const t = a.currentTime + LEAD;
   if (t < gap.bonk) return;
   gap.bonk = t + 0.035;
-  const g = level() * clamp(v / 1.6, 0.1, 0.75) * jit(0.12), d = bus(a, x);
+  const g = level() * clamp(v / 1.3, 0.14, 0.9) * jit(0.12), d = bus(a, x);
   burst(a, d, t, 'bandpass', 950 * jit(0.15), 2.2, 0.55 * g, 0.012, 0.06);
   const [o, og] = tone(a, d, t, 420 * jit(0.1), 300, 0.05, 0.28 * g);
   track(o, og, d);
@@ -422,7 +424,7 @@ function thunk(x, v) {
   const [o, og] = tone(a, d, t, 120, 70, 0.1, 0.3 * g);
   track(o, og, d);
 }
-// The sets agree: a soft chord rises out of the static.
+// When the sets agree, a soft chord rises out of the static.
 function syncSound(dur) {
   const a = live();
   if (!a || voices >= MAXV - 4) return;
@@ -454,7 +456,7 @@ function syncSound(dur) {
 }
 
 /* ---------- the tree, in scene units: it stands about 3.2 tall ---------- */
-// Each branch: control points, base and tip radius, wobble slot, curl sense.
+// Each branch: points, base and tip radius, wobble slot, curl sense.
 const TREE = [
   { pts: [[0, -0.12, 0], [0.05, 0.42, 0.02], [-0.07, 0.98, 0], [0.0, 1.46, -0.02], [0.02, 1.76, 0]], r: [0.19, 0.115], w: 0 },
   { pts: [[-0.02, 1.0, 0], [-0.42, 1.2, 0.03], [-0.92, 1.3, 0.05], [-1.38, 1.47, 0.02], [-1.62, 1.72, 0]], r: [0.085, 0.034], w: 1, curl: -1 },
@@ -467,7 +469,7 @@ const TREE = [
 ];
 const NW = 6, HREF = 1.8;
 // Sets: branch, place along it, cord length, kind, scale, resting turn.
-// A branch of -1 is a fork seat with its own wobble slot.
+// Branch -1 marks a fork seat with its own wobble slot.
 const SETS = [
   { b: 1, t: 0.86, L: 0.26, kind: 'classic', s: 1.0, yaw: 0.18 },
   { b: 1, t: 0.5, L: 0.5, kind: 'portable', s: 1.0, yaw: 0.1 },
@@ -477,19 +479,19 @@ const SETS = [
   { b: 3, t: 0.6, L: 0.1, kind: 'cube', s: 0.86, yaw: 0.05 },
   { b: 4, t: 0.84, L: 0.2, kind: 'classic', s: 0.92, yaw: -0.22 },
   { b: 4, t: 0.47, L: 0.18, kind: 'orb', s: 0.9, yaw: -0.05 },
-  { b: 5, t: 1.0, L: 0.1, kind: 'cube', s: 0.85, yaw: -0.12 },
+  { b: 5, t: 1.0, L: 0.2, kind: 'cube', s: 0.85, yaw: -0.12 },
   { b: -1, seat: [0.02, 1.73, 0.08], w: 0, al: 0, kind: 'cabinet', s: 1.0, yaw: 0.0 },
   { b: -1, seat: [-0.46, 1.27, 0.06], w: 1, al: 0.3, kind: 'wide', s: 0.8, yaw: 0.16 },
 ];
 // The stage shape decides how wide the tree spreads.
 let KX = 1, KY = 1;
 
-// Points along a branch with radius, all in tree space.
+// A branch curve runs through its scaled control points.
 function branchCurve(br) {
   const P = br.pts.map(([x, y, z]) => new THREE.Vector3(x * KX, y * KY, z));
   return new THREE.CatmullRomCurve3(P, false, 'centripetal');
 }
-// A curl tip: a shrinking spiral that turns over the branch end.
+// A curl tip is a shrinking spiral over the branch end.
 function curlPoints(curve, sense, R) {
   const end = curve.getPointAt(1), dir = curve.getTangentAt(1).setZ(0).normalize();
   const nx = -dir.y * sense, ny = dir.x * sense;
@@ -502,7 +504,7 @@ function curlPoints(curve, sense, R) {
 }
 
 // A tapered tube with rounded tips and flared roots.
-// aInfo: wobble slot, along, colour mix, cavity shade.
+// aInfo holds wobble slot, along, colour mix and cavity shade.
 function treeGeometry() {
   const P = [], N = [], I = [], INFO = [], RADIAL = 16;
   const meta = [];
@@ -555,7 +557,8 @@ function treeGeometry() {
 }
 
 /* ---------- the sets: cheerful little televisions ---------- */
-// Sizes are before scale; screens are four by three.
+// Sizes are before scale.
+// Screens are four by three.
 const KINDS = {
   classic: { w: 0.44, h: 0.34, d: 0.3, r: 0.05, sw: 0.27, sh: 0.2, sx: -0.055, sy: 0.01, top: 'ears' },
   portable: { w: 0.38, h: 0.31, d: 0.22, r: 0.06, sw: 0.27, sh: 0.2, sx: 0, sy: 0.025, top: 'handle' },
@@ -587,7 +590,7 @@ function merge(list) {
   return mergeGeometries(gs);
 }
 function buildSet(def) {
-  const K = KINDS[def.kind], s = def.s * 1.25, w = K.w * s, h = K.h * s, d = K.d * s;
+  const K = KINDS[def.kind], s = def.s * 1.36, w = K.w * s, h = K.h * s, d = K.d * s;
   const parts = { body: [], bezel: [], trim: [], metal: [], dark: [] };
   const add = (k, g, x = 0, y = 0, z = 0, rx = 0, rz = 0) => {
     if (rx) g.rotateX(rx);
@@ -642,20 +645,18 @@ function buildSet(def) {
       add('dark', g, vertical ? x + (i - (n - 1) / 2) * 0.022 * s : x, vertical ? y : y - i * 0.022 * s, zf + 0.001);
     }
   };
-  let attach = h / 2;
+  let attach = h / 2, ears = null;
   const top = h / 2;
   if (K.top === 'ears') {
     const base = new THREE.SphereGeometry(0.04 * s, 20, 12, 0, TAU, 0, Math.PI / 2);
     add('dark', base, 0, top - 0.004, -0.02 * s);
-    for (const sgn of [-1, 1]) {
-      const L = 0.36 * s, rod = new THREE.CylinderGeometry(0.0045 * s, 0.006 * s, L, 8);
-      rod.translate(0, L / 2, 0);
-      rod.rotateX(-0.18);
-      rod.rotateZ(-sgn * 0.52);
-      add('metal', rod, 0, top + 0.02 * s, -0.02 * s);
-      const tip = new THREE.Vector3(0, L, 0).applyAxisAngle(new THREE.Vector3(1, 0, 0), -0.18).applyAxisAngle(new THREE.Vector3(0, 0, 1), -sgn * 0.52);
-      add('metal', new THREE.SphereGeometry(0.013 * s, 12, 8), tip.x, top + 0.02 * s + tip.y, -0.02 * s + tip.z);
-    }
+    // Each ear is a separate piece that wobbles on its base.
+    ears = [-1, 1].map(sgn => {
+      const L = 0.36 * s, rod = new THREE.CylinderGeometry(0.0045 * s, 0.006 * s, L, 8).translate(0, L / 2, 0);
+      const tip = new THREE.SphereGeometry(0.013 * s, 12, 8).translate(0, L, 0);
+      const g = merge([rod, tip]).rotateX(-0.18).rotateZ(-sgn * 0.52);
+      return { geo: g, at: [sgn * 0.012 * s, top + 0.02 * s, -0.02 * s] };
+    });
     attach = top + 0.04 * s;
     knob(w / 2 - 0.075 * s, sy + 0.05 * s);
     knob(w / 2 - 0.075 * s, sy - 0.025 * s, 0.02);
@@ -699,14 +700,15 @@ function buildSet(def) {
   const out = {};
   for (const k of Object.keys(parts)) if (parts[k].length) out[k] = merge(parts[k]);
   return {
-    geo: out, screen: scr, w, h, d, attach, low, sw, sh, sx, sy, sz,
-    // Collision capsule along the set's width.
+    geo: out, screen: scr, ears, w, h, d, attach, low, sw, sh, sx, sy, sz,
+    // A collision capsule runs along the set's width.
     hx: def.kind === 'orb' ? 0 : Math.max(0, w / 2 - h * 0.45), rc: def.kind === 'orb' ? w * 0.48 : h * 0.48,
   };
 }
 
 /* ---------- shaders ---------- */
-// Channels draw into one atlas: four by four tiles of 160 by 120.
+// Channels draw into one atlas of four by four tiles.
+// Each tile is 160 by 120 pixels.
 const TW = 160, TH = 120, TC = 4, NCH = 12;
 const QUAD_VS = `
 varying vec2 vUv;
@@ -725,14 +727,7 @@ float sdSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; float h = cla
 float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 float fill(float d, float w) { return 1.0 - smoothstep(-w, w, d); }
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }`;
-const ATLAS_FS = `
-uniform float uTime;
-uniform vec4 uA[16], uB[16], uC[16], uD[16], uBig;
-varying vec2 vUv;
-${LIB}
-const vec2 ASP = vec2(4.0 / 3.0, 1.0);
-const float PX = 1.0 / 120.0;
-
+const BIG = `
 // Seven bars, a reversed strip, then steps of grey.
 vec3 bar(float i) {
   if (i < 0.5) return vec3(0.8);
@@ -743,6 +738,64 @@ vec3 bar(float i) {
   if (i < 5.5) return vec3(0.8, 0.05, 0.05);
   return vec3(0.05, 0.05, 0.8);
 }
+// An eye blinks its lids.
+// It watches the look point.
+vec3 eyeArt(vec2 p, vec2 look, float t, float s) {
+  vec3 skin = mix(vec3(0.98, 0.7, 0.62), vec3(0.93, 0.5, 0.62), p.y * 0.6 + 0.5);
+  float bt = mod(t + s * 3.7, 4.1);
+  float open = clamp(abs(bt - 0.1) / 0.1, 0.0, 1.0);
+  float xx = p.x / 0.56, env = max(1.0 - xx * xx, 0.0);
+  float up = 0.3 * env * mix(0.02, 1.0, open) - 0.02 * (1.0 - open), lo = -0.23 * env;
+  float inEye = fill(p.y - up, 0.008) * fill(lo - p.y, 0.008) * step(abs(xx), 1.0);
+  vec3 col = vec3(0.97, 0.95, 0.94) - 0.3 * pow(abs(xx), 3.0) * vec3(0.1, 0.45, 0.4);
+  vec2 ic = clamp(look, -1.0, 1.0) * vec2(0.22, 0.07);
+  float ir = length(p - ic), a = atan(p.y - ic.y, p.x - ic.x);
+  vec3 iris = mix(vec3(0.05, 0.38, 0.42), vec3(0.32, 0.82, 0.58), smoothstep(0.06, 0.16, ir));
+  iris *= 0.75 + 0.25 * sin(a * 23.0 + vn(vec2(a * 3.0, s * 9.0)) * 4.0);
+  col = mix(col, iris, fill(ir - 0.17, 0.006));
+  col = mix(col, vec3(0.02, 0.1, 0.12), fill(abs(ir - 0.168) - 0.012, 0.006));
+  col = mix(col, vec3(0.02), fill(ir - 0.075 - 0.01 * sin(t * 0.7), 0.006));
+  col = mix(col, vec3(1.0), fill(length(p - ic - vec2(-0.05, 0.055)) - 0.026, 0.006));
+  col *= 1.0 - 0.35 * smoothstep(0.1, 0.0, up - p.y);
+  col = mix(skin, col, inEye);
+  col = mix(col, vec3(0.16, 0.05, 0.1), fill(abs(p.y - up) - 0.012, 0.006) * step(abs(xx), 1.02));
+  return col;
+}
+// The big pictures span the whole tree when the sets agree.
+// In tree units, the sets span about two units each way.
+vec3 bigImage(vec2 P, float t, vec2 look, float kind) {
+  float r = length(P), a = atan(P.y, P.x);
+  if (kind < 0.5) return eyeArt(P * vec2(0.34, 0.4), look, t + 2.2, 0.37);
+  if (kind < 1.5) {
+    vec3 sky = mix(vec3(0.3, 0.75, 1.0), vec3(0.12, 0.3, 0.85), P.y * 0.3 + 0.5);
+    sky = mix(sky, vec3(1.0, 0.92, 0.5), step(0.5, fract(a / (2.0 * PI) * 10.0 + t * 0.06)) * 0.6);
+    vec3 col = mix(sky, mix(vec3(1.0, 0.93, 0.32), vec3(1.0, 0.58, 0.14), smoothstep(0.8, -0.9, P.y)), fill(r - 1.05, 0.02));
+    float bt = mod(t, 3.1), open = clamp(abs(bt - 0.14) / 0.14, 0.0, 1.0);
+    vec2 e = vec2(abs(P.x) - 0.42, P.y - 0.32);
+    col = mix(col, vec3(0.22, 0.08, 0.05), fill(length(e / vec2(1.0, max(open, 0.08))) - 0.17, 0.02));
+    col = mix(col, vec3(1.0, 0.45, 0.48), fill(length(vec2(abs(P.x) - 0.74, P.y + 0.12)) - 0.2, 0.05) * 0.7);
+    col = mix(col, vec3(0.22, 0.08, 0.05), fill(abs(length(P - vec2(0.0, 0.12)) - 0.58) - 0.07, 0.02) * step(P.y, -0.06));
+    return col;
+  }
+  if (kind < 2.5) {
+    vec3 col = hue(fract(r * 0.55 + a / (2.0 * PI) - t * 0.22));
+    return mix(col * 0.92, vec3(1.0), smoothstep(0.1, 0.0, abs(fract(r * 1.6 - t * 0.5) - 0.5) - 0.4) * 0.5);
+  }
+  // Colour bars span the tree, and a strip ticks along below.
+  float i = floor(clamp((P.x + 1.75) / 3.5, 0.0, 0.999) * 7.0);
+  if (P.y > -0.5) return bar(i);
+  if (P.y > -0.68) return mod(i, 2.0) < 0.5 ? bar(6.0 - i) : vec3(0.06);
+  return vec3(floor(clamp((P.x + 1.75) / 3.5, 0.0, 0.999) * 6.0) / 5.0 * 0.85 + 0.04) + vec3(0.9, 0.3, 0.5) * step(abs(fract(t * 0.25) * 3.5 - 1.75 - P.x), 0.15);
+}
+`;
+const ATLAS_FS = `
+uniform float uTime;
+uniform vec4 uA[16], uB[16], uC[16], uD[16], uBig;
+varying vec2 vUv;
+${LIB}
+const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+const float PX = 1.0 / 120.0;
+${BIG}
 vec3 chBars(vec2 uv, float t) {
   float x = uv.x + sin(uv.y * 30.0 + t * 3.0) * 0.002;
   float i = floor(clamp(x, 0.0, 0.999) * 7.0);
@@ -882,7 +935,8 @@ vec3 chCard(vec2 uv, float t) {
   col = mix(col, vec3(1.0, 0.3, 0.3), step(length(p - vec2(0.0, 0.45)), 0.03) * step(0.5, fract(t)));
   return col;
 }
-// A pixel fish turns at each edge; bubbles rise from its mouth.
+// A pixel fish turns at each edge.
+// Bubbles rise from its mouth.
 vec3 chFish(vec2 uv, float t, float s) {
   vec2 res = vec2(64.0, 48.0), q = (floor(uv * res) + 0.5) / res;
   vec3 col = mix(vec3(0.02, 0.16, 0.38), vec3(0.08, 0.56, 0.72), q.y);
@@ -911,28 +965,6 @@ vec3 chFish(vec2 uv, float t, float s) {
     float rr = length((q - bp) * ASP);
     col = mix(col, vec3(0.8, 0.95, 1.0), step(abs(rr - 0.016 - 0.008 * fi), 0.008) * (1.0 - bt));
   }
-  return col;
-}
-// An eye with lids that blink; it watches the look point.
-vec3 eyeArt(vec2 p, vec2 look, float t, float s) {
-  vec3 skin = mix(vec3(0.98, 0.7, 0.62), vec3(0.93, 0.5, 0.62), p.y * 0.6 + 0.5);
-  float bt = mod(t + s * 3.7, 4.1);
-  float open = clamp(abs(bt - 0.1) / 0.1, 0.0, 1.0);
-  float xx = p.x / 0.56, env = max(1.0 - xx * xx, 0.0);
-  float up = 0.3 * env * mix(0.02, 1.0, open) - 0.02 * (1.0 - open), lo = -0.23 * env;
-  float inEye = fill(p.y - up, 0.008) * fill(lo - p.y, 0.008) * step(abs(xx), 1.0);
-  vec3 col = vec3(0.97, 0.95, 0.94) - 0.3 * pow(abs(xx), 3.0) * vec3(0.1, 0.45, 0.4);
-  vec2 ic = clamp(look, -1.0, 1.0) * vec2(0.22, 0.07);
-  float ir = length(p - ic), a = atan(p.y - ic.y, p.x - ic.x);
-  vec3 iris = mix(vec3(0.05, 0.38, 0.42), vec3(0.32, 0.82, 0.58), smoothstep(0.06, 0.16, ir));
-  iris *= 0.75 + 0.25 * sin(a * 23.0 + vn(vec2(a * 3.0, s * 9.0)) * 4.0);
-  col = mix(col, iris, fill(ir - 0.17, 0.006));
-  col = mix(col, vec3(0.02, 0.1, 0.12), fill(abs(ir - 0.168) - 0.012, 0.006));
-  col = mix(col, vec3(0.02), fill(ir - 0.075 - 0.01 * sin(t * 0.7), 0.006));
-  col = mix(col, vec3(1.0), fill(length(p - ic - vec2(-0.05, 0.055)) - 0.026, 0.006));
-  col *= 1.0 - 0.35 * smoothstep(0.1, 0.0, up - p.y);
-  col = mix(skin, col, inEye);
-  col = mix(col, vec3(0.16, 0.05, 0.1), fill(abs(p.y - up) - 0.012, 0.006) * step(abs(xx), 1.02));
   return col;
 }
 vec3 chEye(vec2 uv, float t, vec2 look, float s) { return eyeArt((uv - 0.5) * ASP / 0.85, look, t, s); }
@@ -989,24 +1021,6 @@ vec3 chTree(vec2 uv, float t, float s) {
   }
   return col;
 }
-// The big pictures span the whole tree when the sets agree.
-vec3 bigImage(vec2 P, float t, vec2 look, float kind) {
-  float r = length(P), a = atan(P.y, P.x);
-  if (kind < 0.5) return eyeArt(P * vec2(0.62, 0.7), look, t, 0.37);
-  if (kind < 1.5) {
-    vec3 sky = mix(vec3(0.3, 0.75, 1.0), vec3(0.12, 0.3, 0.85), P.y * 0.4 + 0.5);
-    sky = mix(sky, vec3(1.0, 0.9, 0.45), step(0.5, fract(a / (2.0 * PI) * 12.0 + t * 0.05)) * smoothstep(1.6, 0.6, r) * 0.55);
-    vec3 col = mix(sky, mix(vec3(1.0, 0.92, 0.3), vec3(1.0, 0.6, 0.15), smoothstep(0.6, -0.6, P.y)), fill(r - 0.62, 0.01));
-    float bt = mod(t, 3.3), open = clamp(abs(bt - 0.12) / 0.12, 0.0, 1.0);
-    vec2 e = vec2(abs(P.x) - 0.22, P.y - 0.14);
-    col = mix(col, vec3(0.2, 0.08, 0.05), fill(length(e / vec2(1.0, max(open, 0.08))) - 0.07, 0.01));
-    col = mix(col, vec3(1.0, 0.5, 0.5), fill(length(vec2(abs(P.x) - 0.36, P.y + 0.08)) - 0.09, 0.03) * 0.6);
-    col = mix(col, vec3(0.2, 0.08, 0.05), fill(abs(length(P - vec2(0.0, 0.08)) - 0.3) - 0.035, 0.01) * step(P.y, -0.04));
-    return col;
-  }
-  vec3 col = hue(fract(r * 0.9 + a / (2.0 * PI) - t * 0.25));
-  return mix(col * 0.9, vec3(1.0), smoothstep(0.08, 0.0, abs(fract(r * 3.0 - t * 0.6) - 0.5) - 0.42) * 0.5);
-}
 vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
   if (ch == 0) return chBars(uv, t);
   if (ch == 1) return chBounce(uv, t, s);
@@ -1029,7 +1043,8 @@ void main() {
   vec4 A = uA[i], B = uB[i], C = uC[i], D = uD[i];
   float st = A.z, t = uTime + D.z;
   vec2 cu = uv;
-  // A slipping picture rolls; a weak signal tears sideways.
+  // A slipping picture rolls.
+  // A weak signal tears sideways.
   cu.y = fract(cu.y + A.w);
   float ln = floor(uv.y * 120.0);
   cu.x += (h21(vec2(ln, floor(uTime * 25.0))) - 0.5) * 0.12 * st * st + sin(uv.y * 38.0 + uTime * 13.0) * 0.014 * B.w;
@@ -1082,7 +1097,8 @@ void main() {
   vec2 o = vec2(6.0 / ${TW}.0, 4.0 / ${TH}.0);
   vec3 glow = src(q + o) + src(q - o) + src(q + vec2(o.x, -o.y)) + src(q - vec2(o.x, -o.y));
   col = pow(col, vec3(2.2)) + pow(glow * 0.25, vec3(2.2)) * 0.22;
-  // Scanlines: bright lines swell; tiny screens fade them out.
+  // Bright scanlines swell.
+  // Tiny screens fade the scanlines out.
   float y = q.y * uLines, f = fract(y) - 0.5, lum = dot(col, vec3(0.3, 0.6, 0.1));
   float wd = mix(0.2, 0.4, clamp(lum, 0.0, 1.0)), scan = exp(-f * f / (2.0 * wd * wd)) * 1.45;
   col *= mix(scan, 0.95, smoothstep(0.35, 0.8, fwidth(y)));
@@ -1099,7 +1115,7 @@ void main() {
   float dl = length(vec2(max(abs(c.x) - sx, 0.0), c.y));
   col += vec3(0.75, 0.88, 1.0) * lg * (exp(-dl * dl * 90.0) * 1.6 + exp(-dot(c, c) * 30.0) * smoothstep(0.6, 0.8, k) * 2.0);
   col += vec3(0.8, 0.9, 1.0) * uFlash * exp(-dot(c, c) * 1.2) * 1.5;
-  // Dark glass with a soft window highlight.
+  // The dark glass carries a soft window highlight.
   vec3 N = normalize(vN), V = normalize(cameraPosition - vW), R = reflect(-V, N);
   float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
   float hl = pow(max(dot(R, normalize(vec3(-0.45, 0.7, 0.55))), 0.0), 30.0);
@@ -1154,18 +1170,27 @@ void main() {
 const BG_FS = `
 uniform vec3 uTop, uMid, uLow, uGlow;
 uniform vec2 uC, uBase;
-uniform float uAspect;
+uniform float uAspect, uGhost;
+uniform vec4 uBig, uView;
 varying vec2 vUv;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+${LIB}
+${BIG}
 void main() {
   vec2 q = (vUv - uC) * vec2(uAspect, 1.0);
   vec3 col = mix(uLow, uTop, smoothstep(-0.1, 1.0, vUv.y));
   col = mix(col, uMid, exp(-dot(q, q) * 2.4));
   col += uGlow * exp(-dot(q, q) * 3.5) * 0.3;
-  // TV light pools under the tree; the trunk darkens its footprint.
+  // TV light pools under the tree.
+  // The trunk darkens its footprint.
   vec2 b = (vUv - uBase) * vec2(uAspect, 1.0);
   col += uGlow * exp(-dot(b / vec2(0.5, 0.06), b / vec2(0.5, 0.06))) * 0.35;
   col *= 1.0 - 0.6 * exp(-dot(b / vec2(0.13, 0.022), b / vec2(0.13, 0.022)));
+  // While the sets agree, their picture glows faintly behind the tree.
+  if (uGhost > 0.001) {
+    vec2 P = (vUv * 2.0 - 1.0 - uView.xy) * vec2(uView.w, 1.0) * 0.5 / uView.z;
+    vec3 g = pow(bigImage(P, uBig.y, uBig.zw, uBig.x), vec3(2.2));
+    col += g * uGhost * uGhost * 0.045 * exp(-dot(P, P) * 0.14);
+  }
   gl_FragColor = vec4(col, 1.0);
 }`;
 const FINAL_FS = `
@@ -1187,7 +1212,7 @@ varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 
 /* ---------- the world: sway, branch wobble, swinging sets ---------- */
-// Average colour of each channel, for light the sets throw on the tree.
+// Each channel's average colour tints the light on the tree.
 const CH_LIGHT = [[0.55, 0.5, 0.5], [0.2, 0.14, 0.42], [0.85, 0.5, 0.45], [0.6, 0.12, 0.3], [0.3, 0.12, 0.45], [0.55, 0.55, 0.6],
   [0.1, 0.45, 0.6], [0.9, 0.68, 0.64], [0.1, 0.38, 0.16], [0.75, 0.25, 0.2], [0.2, 0.1, 0.32], [0.5, 0.5, 0.5]];
 const SNOW = 11, G = 9.8, H = 1 / 120;
@@ -1196,7 +1221,8 @@ const wob = Array.from({ length: 8 }, () => ({ p: [0, 0, 0], v: [0, 0, 0], pull:
 const sets = [];
 let chClock = 0, fxClock = 0, quiet = true, breezeT = 0;
 const bOut = [0, 0, 0];
-// The trunk bends from its base; each branch adds its own wobble.
+// The trunk bends from its base.
+// Each branch adds its own wobble.
 function bend(p, along, slot, o = bOut) {
   const h = Math.max(p[1], 0) / HREF, k = h * h, a2 = along * along, W = wob[slot].p;
   o[0] = p[0] + sway.p[0] * k + W[0] * a2;
@@ -1210,7 +1236,7 @@ function stepSway(dt) {
   const k = 30, c = reduce ? 9 : 1.0;
   for (let a = 0; a < 2; a++) {
     let f = -k * sway.p[a] - c * sway.v[a];
-    if (sway.tgt) f += (sway.tgt[a] - sway.p[a]) * 160 - sway.v[a] * 9;
+    if (sway.tgt) f += (sway.tgt[a] - sway.p[a]) * 110 - sway.v[a] * 8;
     sway.a[a] = f;
     sway.v[a] += f * dt;
     sway.p[a] += sway.v[a] * dt;
@@ -1226,7 +1252,7 @@ function stepSway(dt) {
     }
   }
 }
-// Closest points between two segments, as parameters on each.
+// This finds the closest points between two segments.
 function segSeg(p1, d1, p2, d2) {
   const rx = p1[0] - p2[0], ry = p1[1] - p2[1], rz = p1[2] - p2[2];
   const a = d1[0] * d1[0] + d1[1] * d1[1] + d1[2] * d1[2], e = d2[0] * d2[0] + d2[1] * d2[1] + d2[2] * d2[2];
@@ -1284,7 +1310,7 @@ function pushOut(s) {
 function physics(dt) {
   stepSway(dt);
   breezeT += dt;
-  const on = sets.some(s => s.power), damp = Math.exp(-(reduce ? 2.2 : 0.3) * dt);
+  const on = sets.some(s => s.power), base = reduce ? 2.2 : 0.42;
   for (const W of wob) W.pull.fill(0);
   for (const s of sets) {
     if (s.hang) {
@@ -1295,6 +1321,10 @@ function physics(dt) {
         s.v[0] += Math.sin(breezeT * 0.5 + s.i * 1.7) * Math.sin(breezeT * 0.23 + s.i) * 0.5 * dt;
         s.v[2] += Math.sin(breezeT * 0.37 + s.i * 2.3) * 0.25 * dt;
       }
+      // Air drag grows with speed, so wild swings calm quickly.
+      // With every screen dark, pivot friction stills the last sway.
+      const sp = Math.hypot(s.v[0], s.v[1], s.v[2]), fr = on && !reduce ? 0 : 1.8 * clamp(1 - sp / 0.2);
+      const damp = Math.exp(-(base + fr + 0.22 * sp) * dt);
       for (let k = 0; k < 3; k++) { s.v[k] *= damp; s.n[k] = s.c[k] + s.v[k] * dt; }
       if (s.drag) {
         for (let k = 0; k < 3; k++) s.n[k] += (s.drag[k] - s.n[k]) * 0.3;
@@ -1311,7 +1341,8 @@ function physics(dt) {
         s.seatV[k] = sv;
         s.seatP[k] = seat[k];
       }
-      // The set rides in its fork on a soft spring and can hop out.
+      // The set rides its fork on a soft spring.
+      // A lift lets it hop out.
       s.ov[1] -= G * dt;
       for (const k of [0, 2]) s.ov[k] += (-140 * s.o[k] - (reduce ? 20 : 5) * s.ov[k]) * dt;
       if (s.drag) {
@@ -1345,15 +1376,30 @@ function physics(dt) {
     if (!s.hang) continue;
     pushOut(s);
     const a = s.anchor;
-    // The cord is a rope: it holds the set up but can go slack.
+    // The cord is a rope that can go slack.
     const dx = s.n[0] - a[0], dy = s.n[1] - a[1], dz = s.n[2] - a[2], L = Math.hypot(dx, dy, dz);
     if (L > s.R) { const f = s.R / L; s.n[0] = a[0] + dx * f; s.n[1] = a[1] + dy * f; s.n[2] = a[2] + dz * f; }
     // Sets never swing up past the branch or into the camera.
-    s.n[1] = Math.min(s.n[1], a[1] - 0.25 * s.R);
+    s.n[1] = Math.min(s.n[1], a[1] - 0.45 * s.R);
     s.n[2] = clamp(s.n[2], a[2] - 0.9, a[2] + 0.9);
     for (let k = 0; k < 3; k++) { s.v[k] = (s.n[k] - s.c[k]) / dt; s.c[k] = s.n[k]; }
   }
   for (const s of sets) if (!s.hang) for (let k = 0; k < 3; k++) { s.v[k] = (s.n[k] - s.c[k]) / dt; s.c[k] = s.n[k]; }
+  for (const r of plugs) stepPlug(r, dt);
+  // Rabbit ears lag behind the set's jolts, then wobble back.
+  for (const s of sets) {
+    if (!s.ea.length) { s.pv[0] = s.v[0]; s.pv[1] = s.v[1]; s.pv[2] = s.v[2]; continue; }
+    const e = s.group.matrixWorld.elements, ax = (s.v[0] - s.pv[0]) / dt, ay = (s.v[1] - s.pv[1]) / dt, az = (s.v[2] - s.pv[2]) / dt;
+    const lx = ax * e[0] + ay * e[1] + az * e[2], lz = ax * e[8] + ay * e[9] + az * e[10];
+    s.pv[0] = s.v[0]; s.pv[1] = s.v[1]; s.pv[2] = s.v[2];
+    s.ea.forEach((E, k) => {
+      const kk = k ? 380 : 450, cc = reduce ? 30 : 2.6;
+      E[2] += (-kk * E[0] - cc * E[2] + clamp(lx, -60, 60) * 0.12 - s.twv * 0.4) * dt;
+      E[3] += (-kk * E[1] - cc * E[3] - clamp(lz, -60, 60) * 0.12) * dt;
+      E[0] = clamp(E[0] + E[2] * dt, -0.7, 0.7);
+      E[1] = clamp(E[1] + E[3] * dt, -0.6, 0.6);
+    });
+  }
   // Bumps bounce a little, kick a twist and jolt the picture.
   for (const [A, B, nx, ny, nz, wa, wb] of contacts) {
     const vn = (B.v[0] - A.v[0]) * nx + (B.v[1] - A.v[1]) * ny + (B.v[2] - A.v[2]) * nz;
@@ -1362,8 +1408,8 @@ function physics(dt) {
     if (A.hang) { A.v[0] -= nx * j * wa; A.v[1] -= ny * j * wa; A.v[2] -= nz * j * wa; }
     if (B.hang) { B.v[0] += nx * j * wb; B.v[1] += ny * j * wb; B.v[2] += nz * j * wb; }
     const sp = -vn;
-    A.twv += (Math.random() - 0.5) * sp * 3;
-    B.twv += (Math.random() - 0.5) * sp * 3;
+    A.twv += (Math.random() - 0.5) * sp * 1.6;
+    B.twv += (Math.random() - 0.5) * sp * 1.6;
     if (sp > 0.22 && !quiet) {
       bonk((panOf(A) + panOf(B)) / 2, sp);
       A.jolt = Math.max(A.jolt, Math.min(1, sp * 0.8));
@@ -1372,21 +1418,44 @@ function physics(dt) {
   }
 }
 
+/* ---------- unplugged cords dangle from the sitting sets ---------- */
+const plugs = [], PN = 9, PL = 0.042;
+function stepPlug(r, dt) {
+  const s = r.s, e = s.group.matrixWorld.elements, [lx, ly, lz] = r.at, p = r.p, q = r.q;
+  p[0] = e[0] * lx + e[4] * ly + e[8] * lz + e[12];
+  p[1] = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
+  p[2] = e[2] * lx + e[6] * ly + e[10] * lz + e[14];
+  const dmp = reduce ? 0.9 : 0.985;
+  for (let i = 1; i < PN; i++) {
+    const k = i * 3;
+    for (let a = 0; a < 3; a++) {
+      const v = (p[k + a] - q[k + a]) * dmp;
+      q[k + a] = p[k + a];
+      p[k + a] += v - (a === 1 ? G * dt * dt : 0);
+    }
+  }
+  // Links keep a fixed length.
+  // The cord stays in front of the wood.
+  for (let it = 0; it < 4; it++) for (let i = 0; i < PN - 1; i++) {
+    const a = i * 3, b = a + 3, dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2];
+    const l = Math.hypot(dx, dy, dz) || 1, f = (l - PL) / l;
+    if (i === 0) { p[b] -= dx * f; p[b + 1] -= dy * f; p[b + 2] -= dz * f; }
+    else { p[a] += dx * f * 0.5; p[a + 1] += dy * f * 0.5; p[a + 2] += dz * f * 0.5; p[b] -= dx * f * 0.5; p[b + 1] -= dy * f * 0.5; p[b + 2] -= dz * f * 0.5; }
+  }
+  for (let i = 1; i < PN; i++) p[i * 3 + 2] = Math.max(p[i * 3 + 2], s.anchor[2] + r.front);
+}
+
 /* ---------- screens: channels, static, power and the big picture ---------- */
 const party = { phase: 'idle', t: 0, wait: 26, kind: 0, clock: 0, order: [] };
-function others(s, ch) { return sets.some(o => o !== s && o.power && o.ch === ch); }
-// The next channel is one no other set is showing, if possible.
-function nextChannel(s) {
-  let c = s.ch;
-  for (let k = 0; k < NCH; k++) {
-    c = (c + 1) % NCH;
-    if (!others(s, c) || c === SNOW) return c;
-  }
-  return (s.ch + 1) % NCH;
+// Channels run in order.
+// Now and then a channel is only snow.
+function nextChannel(ch) {
+  if (ch !== SNOW && Math.random() < 0.1) return SNOW;
+  return ch === SNOW ? Math.floor(Math.random() * SNOW) : (ch + 1) % SNOW;
 }
 function changeChannel(s, to = -1) {
   if (!s.power) return powerSet(s, true);
-  s.next = to >= 0 ? to : nextChannel(s.next >= 0 ? { ...s, ch: s.next } : s);
+  s.next = to >= 0 ? to : nextChannel(s.next >= 0 ? s.next : s.ch);
   s.burstLen = reduce ? 0.12 : rnd(0.26, 0.36);
   s.burst = s.burstLen;
   s.syncOn = false;
@@ -1405,6 +1474,8 @@ function powerSet(s, on) {
   s.syncOn = false;
   if (on) {
     s.flash = 1;
+    // The tube degausses with a brief wobble.
+    s.jolt = 0.9;
     s.burst = s.burstLen = reduce ? 0.1 : 0.32;
     s.rollV = rnd(2, 3.5);
     powerOn(panOf(s));
@@ -1433,18 +1504,19 @@ function stepScreen(s, dt) {
   return s.burst > 0 || s.next >= 0 || s.rollV !== 0 || Math.abs(s.roll - Math.round(s.roll)) > 1e-3 || s.lost > 0 || s.jolt > 0 || s.flash > 0 ||
     Math.abs(s.off - goal) > 1e-4 || Math.abs(s.sync - (s.syncOn && s.power ? 1 : 0)) > 1e-3;
 }
-// Shaking drops weak signals to snow for a moment.
-function shakeLoss(dt) {
+// Each hard jolt of the trunk drops a few signals to snow.
+let shakeAt = -9, shakeHi = false;
+function shakeLoss() {
   const e = Math.hypot(sway.v[0], sway.v[1]);
-  if (e < 0.9) return;
+  if (e < 0.7) { shakeHi = false; return; }
+  if (shakeHi || fxClock - shakeAt < 0.5) return;
+  shakeHi = true;
+  shakeAt = fxClock;
   for (const s of sets) {
-    if (!s.power || s.lost > 0) continue;
-    const sp = Math.hypot(s.v[0], s.v[2]);
-    if (Math.random() < dt * (e - 0.8) * (0.4 + sp) * 0.9) {
-      s.lost = rnd(1.2, 3.2);
-      s.syncOn = false;
-      if (!quiet) hiss(panOf(s), 0.25, 0.5);
-    }
+    if (!s.power || s.lost > 0 || Math.random() > 0.16 + 0.1 * Math.min(2, e)) continue;
+    s.lost = rnd(1.4, 3.4);
+    s.syncOn = false;
+    if (!quiet) hiss(panOf(s), 0.22, 0.45);
   }
 }
 // Now and then every set tunes to one big picture.
@@ -1457,7 +1529,7 @@ function stepParty(dt) {
     if (held || lit.length < 4 || party.t < party.wait) return false;
     party.phase = 'gather';
     party.t = 0;
-    party.kind = (party.kind + 1 + Math.floor(Math.random() * 2)) % 3;
+    party.kind = (party.kind + 1 + Math.floor(Math.random() * 3)) % 4;
     party.clock = 0;
     // The wave spreads out from the trunk.
     party.order = lit.map(s => [s, Math.hypot(s.c[0], s.c[1] - 1.6 * KY) * 0.22 + Math.random() * 0.08]);
@@ -1493,7 +1565,7 @@ function stepParty(dt) {
 let THREE = null, RoundedBoxGeometry = null, mergeGeometries = null;
 let renderer = null, scene = null, camera = null, composer = null, canvas = null;
 let atlasRT = null, atlasScene = null, atlasCam = null, atlasMat = null, bgMat = null, treeMat = null, treeMesh = null;
-let mats = null, treeMeta = null, treeSegs = [], built = false, cordGeo = null, knotGeo = null;
+let mats = null, treeMeta = null, treeSegs = [], built = false, cordGeo = null, knotGeo = null, plugGeo = null;
 let ready = false, lowDpr = false, sized = false, visible = false, onScreen = false;
 let ray = null, ndc = null, tv3 = null, tq = null, tq2 = null, Y = null, plane = null, hitV = null, inv = null, eul = null;
 const FOV = 30, view = { A: 16 / 9, hS: 0.36, cx: 0, cy: 0 };
@@ -1559,6 +1631,10 @@ function placeRest(s) {
   s.seatP = [...a];
   s.seatV = [0, 0, 0];
   s.seatA = [0, 0, 0];
+  for (const r of plugs) if (r.s === s) {
+    for (let i = 0; i < PN; i++) { r.p[i * 3] = s.c[0] + r.at[0]; r.p[i * 3 + 1] = s.c[1] + r.at[1] - i * PL; r.p[i * 3 + 2] = s.c[2] + r.at[2]; }
+    r.q.set(r.p);
+  }
 }
 // Quiet steps let overlapping sets nudge apart before anyone looks.
 function settle(n) {
@@ -1575,13 +1651,14 @@ function makeSets() {
   const R = rng(20261102), order = [...Array(NCH - 1).keys()];
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
   SETS.forEach((def, i) => {
-    const info = buildSet(def), hueV = SET_HUES[i % SET_HUES.length];
+    const info = buildSet(def), [cL, cC, hueV] = SET_COLS[i % SET_COLS.length];
+    const nPlugs = plugs.length;
     const body = new THREE.MeshPhysicalMaterial({
-      color: col3(linear(0.7, 0.17, hueV)), roughness: 0.38, clearcoat: 0.7, clearcoatRoughness: 0.2, envMapIntensity: 0.45,
+      color: col3(linear(cL, cC, hueV)), roughness: 0.38, clearcoat: 0.7, clearcoatRoughness: 0.2, envMapIntensity: 0.45,
     });
     const group = new THREE.Group();
     // The bezel is a deep shade of the body colour.
-    const bezel = new THREE.MeshStandardMaterial({ color: col3(linear(0.36, 0.08, hueV)), roughness: 0.32, envMapIntensity: 0.5 });
+    const bezel = new THREE.MeshStandardMaterial({ color: col3(linear(cL * 0.5, 0.08, hueV)), roughness: 0.32, envMapIntensity: 0.5 });
     for (const k of Object.keys(info.geo)) group.add(new THREE.Mesh(info.geo[k], k === 'body' ? body : k === 'bezel' ? bezel : mats[k]));
     const col = i % TC, row = Math.floor(i / TC);
     const sm = new THREE.ShaderMaterial({
@@ -1593,6 +1670,13 @@ function makeSets() {
     });
     const screen = new THREE.Mesh(info.screen, sm);
     group.add(screen);
+    const earG = (info.ears || []).map(e => {
+      const g = new THREE.Group();
+      g.position.set(...e.at);
+      g.add(new THREE.Mesh(e.geo, mats.metal));
+      group.add(g);
+      return g;
+    });
     // The keyboard ring hugs the picked set.
     const shape = rrPath(info.w + 0.1, info.h + 0.1, 0.07, new THREE.Shape());
     shape.holes.push(rrPath(info.w + 0.064, info.h + 0.064, 0.054, new THREE.Path()));
@@ -1609,6 +1693,16 @@ function makeSets() {
       cord.frustumCulled = false;
       scene.add(cord, knot);
     }
+    if (def.b < 0) {
+      // A loose power cord hangs from the side, plug and all.
+      const at = [info.w * 0.5 - 0.04, info.low + 0.05, info.d * 0.32];
+      const r = { s: null, at, front: info.d * 0.42, p: new Float64Array(PN * 3), q: new Float64Array(PN * 3) };
+      r.links = new THREE.InstancedMesh(cordGeo, mats.cord, PN - 1);
+      r.links.frustumCulled = false;
+      r.plug = new THREE.Mesh(plugGeo, mats.dark);
+      scene.add(r.links, r.plug);
+      plugs.push(r);
+    }
     sets.push({
       i, def, hang: def.b >= 0, group, screen, sm, ring, cord, knot, ...info, rb: info.rc * 0.92,
       rest: [0, 0, 0], anchor: [0, 0, 0], along: 0, slot: 0, R: 1, up: [0, 1, 0],
@@ -1616,8 +1710,27 @@ function makeSets() {
       o: [0, 0, 0], ov: [0, 0, 0], tilt: [0, 0], tiltV: [0, 0], seatP: [0, 0, 0], seatV: [0, 0, 0], seatA: [0, 0, 0],
       ch: order[i % order.length], next: -1, burst: 0, burstLen: 0, roll: 0, rollV: 0, lost: 0, jolt: 0, flash: 0,
       interf: 0, stat: 0, off: 0, power: true, sync: 0, syncOn: false, seed: R(), tOff: R() * 60, drag: null, look: [0, 0],
+      earG, ea: earG.map(() => [0, 0, 0, 0]), pv: [0, 0, 0], pre: 0, hov: 0,
     });
+    if (plugs.length > nPlugs) plugs[nPlugs].s = sets[sets.length - 1];
   });
+}
+const pm4 = [];
+function placePlug(r) {
+  if (!pm4.length) pm4.push(new THREE.Matrix4(), v3(), v3(), new THREE.Quaternion());
+  const [M, P, S, Q] = pm4, p = r.p;
+  for (let i = 0; i < PN - 1; i++) {
+    const a = i * 3;
+    tv3.set(p[a + 3] - p[a], p[a + 4] - p[a + 1], p[a + 5] - p[a + 2]);
+    const L = Math.max(1e-4, tv3.length());
+    Q.setFromUnitVectors(Y, tv3.multiplyScalar(1 / L));
+    M.compose(P.set(p[a], p[a + 1], p[a + 2]), Q, S.set(1.15, L + 0.006, 1.15));
+    r.links.setMatrixAt(i, M);
+  }
+  r.links.instanceMatrix.needsUpdate = true;
+  const e = (PN - 1) * 3;
+  r.plug.position.set(p[e], p[e + 1], p[e + 2]);
+  r.plug.quaternion.copy(Q);
 }
 // Each set hangs along its cord, turned by its twist.
 function place(s) {
@@ -1633,6 +1746,7 @@ function place(s) {
     s.group.quaternion.setFromEuler(eul);
   }
   s.group.position.set(s.c[0], s.c[1], s.c[2]);
+  s.earG.forEach((g, k) => g.rotation.set(s.ea[k][1], 0, s.ea[k][0]));
   s.group.updateMatrixWorld();
   const e = s.group.matrixWorld.elements;
   s.ax[0] = e[0]; s.ax[1] = e[1]; s.ax[2] = e[2];
@@ -1646,9 +1760,9 @@ function place(s) {
     s.knot.position.set(a[0], a[1], a[2]);
   }
 }
-const moving = s => s.hang
+const moving = s => s.ea.some(e => Math.abs(e[2]) + Math.abs(e[3]) > 0.01) || (s.hang
   ? Math.hypot(s.v[0], s.v[1], s.v[2]) > 0.004 || Math.abs(s.twv) > 0.004 || Math.abs(s.tw) > 0.002 || !!s.drag
-  : Math.hypot(s.ov[0], s.ov[1], s.ov[2]) > 0.004 || s.o[1] > 1e-4 || Math.abs(s.tiltV[0]) + Math.abs(s.tiltV[1]) > 0.004 || Math.abs(s.twv) > 0.004 || !!s.drag;
+  : Math.hypot(s.ov[0], s.ov[1], s.ov[2]) > 0.004 || s.o[1] > 1e-4 || Math.abs(s.tiltV[0]) + Math.abs(s.tiltV[1]) > 0.004 || Math.abs(s.twv) > 0.004 || !!s.drag);
 function ndcOf(x, y, z, m) {
   tv3.set(x, y, z);
   if (m) tv3.applyMatrix4(m);
@@ -1660,6 +1774,7 @@ function stepGaze(dt, now) {
     const s = sets[picked], p = ndcOf(s.sx, s.sy, s.sz, s.group.matrixWorld);
     gaze.tx = p.x; gaze.ty = p.y;
   } else if (!pointerIn || now - pointerAt > 3500) {
+    if (reduce) return;
     gaze.wander -= dt;
     if (gaze.wander <= 0) { gaze.wander = rnd(1.2, 3); gaze.tx = rnd(-0.8, 0.8); gaze.ty = rnd(-0.7, 0.7); }
   } else { gaze.tx = pointer.x; gaze.ty = pointer.y; }
@@ -1684,10 +1799,13 @@ function upload() {
     U.uC.value[i].set(b0, b1, r0, r1);
     U.uD.value[i].set(t0, t1, chClock + s.tOff - fxClock, 0);
     const u = s.sm.uniforms;
-    u.uOff.value = s.off;
-    u.uFlash.value = s.flash;
+    // Holding squeezes the picture a touch, a hint of what comes.
+    u.uOff.value = s.power ? Math.max(s.off, s.pre * 0.07) : s.off;
+    u.uFlash.value = Math.max(s.flash, s.power ? 0 : s.pre * 0.12);
     u.uTime.value = fxClock;
     u.uJolt.value = s.jolt * 0.6;
+    // A hovered set brightens a little.
+    u.uBright.value = 1.45 + 0.25 * s.hov;
     // Scanlines stay about three device pixels apart.
     u.uLines.value = clamp((Math.abs(tl.y - bl.y) * 0.5 * dbH) / 3, 22, 90);
     // Each lit screen throws its channel's colour onto the wood.
@@ -1699,8 +1817,11 @@ function upload() {
   });
   const gx = clamp((gaze.x - view.cx) * A * 0.5 / hS * 0.8, -1, 1), gy = clamp(((gaze.y - view.cy) * 0.5) / hS * 0.8, -1, 1);
   U.uBig.value.set(party.kind, party.clock, gx, gy);
-  const n = sets.length;
-  bgMat.uniforms.uGlow.value.set(gr / n, gg / n, gb / n);
+  const n = sets.length, BU = bgMat.uniforms;
+  BU.uGlow.value.set(gr / n, gg / n, gb / n);
+  BU.uGhost.value = sets.reduce((m, s) => Math.max(m, s.sync), 0);
+  BU.uBig.value.copy(U.uBig.value);
+  BU.uView.value.set(view.cx, view.cy, hS, A);
   TU.uSway.value.set(sway.p[0], sway.p[1]);
   wob.forEach((W, i) => TU.uWob.value[i].set(W.p[0], W.p[1], W.p[2]));
 }
@@ -1711,9 +1832,10 @@ function step(dt, now) {
   let n = 0;
   while (simAcc >= H && n < 8) { physics(H); simAcc -= H; n++; }
   if (n >= 8) simAcc = 0;
-  shakeLoss(dt);
+  shakeLoss();
   let busy = !!held || !!enterT;
   let snow = 0, lit = 0;
+  for (const r of plugs) placePlug(r);
   for (const s of sets) {
     place(s);
     if (stepScreen(s, dt)) busy = true;
@@ -1721,11 +1843,19 @@ function step(dt, now) {
     if (s.power) { lit++; snow += s.lost > 0 ? 1 : s.interf * 0.5; }
   }
   if (stepParty(dt)) busy = true;
+  if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) busy = true;
   if (Math.abs(sway.p[0]) + Math.abs(sway.p[1]) + Math.abs(sway.v[0]) + Math.abs(sway.v[1]) > 3e-4) busy = true;
   if (wob.some(W => Math.abs(W.v[0]) + Math.abs(W.v[1]) + Math.abs(W.v[2]) > 3e-4)) busy = true;
+  for (const s of sets) {
+    const h = (held && held.s === s && !held.drag && !held.long) || (enterT && !enterFired && kbd && sets[picked] === s);
+    s.pre = h ? clamp((now - (held && held.s === s ? held.t0 : enterAt) - 140) / 380) : Math.max(0, s.pre - dt * 6);
+    const ht = hover === s ? 1 : 0;
+    if (s.hov !== ht) { s.hov = ht > s.hov ? Math.min(1, s.hov + dt * 6) : Math.max(0, s.hov - dt * 4); busy = true; }
+  }
   stepGaze(dt, now);
   upload();
-  humLevel(lit / sets.length, snow * 0.5, Math.hypot(sway.v[0], sway.v[1]) * 0.6, now);
+  const fast = sets.reduce((m, s) => Math.max(m, Math.hypot(s.v[0], s.v[1], s.v[2])), 0);
+  humLevel(lit / sets.length, snow * 0.5, Math.max(Math.hypot(sway.v[0], sway.v[1]) * 0.6, (fast - 0.8) * 0.25), now);
   return busy || (lit > 0 && !reduce);
 }
 function draw() {
@@ -1736,7 +1866,7 @@ function draw() {
 }
 // The camera frames the whole tree, wide or tall.
 function fit(w, h) {
-  const A = w / h, portrait = A < 1.1, kx = portrait ? 0.82 : 1.3, ky = portrait ? 1.12 : 1;
+  const A = w / h, portrait = A < 1.1, kx = portrait ? 0.82 : 1.42, ky = portrait ? 1.12 : 1;
   view.A = A;
   if (kx !== KX || ky !== KY || !built) { KX = kx; KY = ky; build(); }
   const x0 = -2.0 * KX, x1 = 2.0 * KX, y0 = -0.12, y1 = 3.3 * KY, t = Math.tan((FOV * D2R) / 2);
@@ -1801,8 +1931,8 @@ function vis() {
 }
 
 /* ---------- input ---------- */
-let held = null, kbd = false, picked = -1, holdT = 0, enterT = 0, enterFired = false, shakeDir = 1;
-let pointerIn = false, pointerAt = -1e9;
+let held = null, kbd = false, picked = -1, holdT = 0, enterT = 0, enterAt = 0, enterFired = false, shakeDir = 1;
+let pointerIn = false, pointerAt = -1e9, hover = null;
 const pointer = { x: 0, y: 0 };
 function toNdc(e) {
   const r = panel.getBoundingClientRect();
@@ -1815,7 +1945,8 @@ function planeHit(e, z) {
   plane.constant = -z;
   return ray.ray.intersectPlane(plane, hitV) ? hitV : null;
 }
-// A ray against each set's box; touch also takes the nearest set.
+// A ray tests each set's box.
+// Touch also takes the nearest set.
 function pick(e) {
   const r = toNdc(e), o = v3(), d = v3();
   let best = null, bt = Infinity;
@@ -1852,7 +1983,7 @@ panel.addEventListener('pointerdown', e => {
   showRing();
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   const s = pick(e);
-  held = { id: e.pointerId, s, x0: e.clientX, y0: e.clientY, drag: false, long: false, lx: e.clientX };
+  held = { id: e.pointerId, s, x0: e.clientX, y0: e.clientY, drag: false, long: false, lx: e.clientX, t0: performance.now() };
   if (s) {
     // Holding still long enough flips the power.
     holdT = setTimeout(() => {
@@ -1876,7 +2007,16 @@ panel.addEventListener('pointermove', e => {
   pointerIn = true;
   pointerAt = performance.now();
   if (!ready) return;
-  if (!held) { if (e.pointerType === 'mouse') panel.classList.toggle('grab', !!pick(e)); return; }
+  // A watching eye wakes the loop, even when nothing else moves.
+  if (!raf && sets.some(s => s.power && (s.ch === 7 || (s.sync > 0.5 && party.kind === 0)))) wake();
+  if (!held) {
+    if (e.pointerType === 'mouse') {
+      const h = pick(e);
+      panel.classList.toggle('grab', !!h);
+      if (h !== hover) { hover = h; wake(); }
+    }
+    return;
+  }
   if (e.pointerId !== held.id) return;
   if (!held.drag && Math.hypot(e.clientX - held.x0, e.clientY - held.y0) > 7) { held.drag = true; clearTimeout(holdT); }
   if (!held.drag) return;
@@ -1889,11 +2029,11 @@ panel.addEventListener('pointermove', e => {
     held.lx = e.clientX;
   } else {
     const p = planeHit(e, 0);
-    if (p) sway.tgt = [clamp(held.s0[0] + (p.x - held.gx) / held.gk, -0.6, 0.6), clamp(held.s0[1] - ((p.y - held.gy) * 0.7) / held.gk, -0.45, 0.45)];
+    if (p) sway.tgt = [clamp(held.s0[0] + (p.x - held.gx) / held.gk, -0.42, 0.42), clamp(held.s0[1] - ((p.y - held.gy) * 0.6) / held.gk, -0.3, 0.3)];
   }
   wake();
 });
-panel.addEventListener('pointerleave', () => { pointerIn = false; });
+panel.addEventListener('pointerleave', () => { pointerIn = false; hover = null; wake(); });
 function lift(e) {
   if (!held || e.pointerId !== held.id) return;
   clearTimeout(holdT);
@@ -1914,7 +2054,7 @@ function lift(e) {
 panel.addEventListener('contextmenu', e => e.preventDefault());
 
 function shake() {
-  sway.v[0] += shakeDir * 2.1;
+  sway.v[0] += shakeDir * 1.7;
   sway.v[1] += rnd(-0.6, 0.6);
   shakeDir = -shakeDir;
   for (const W of wob) { W.v[0] += rnd(-0.8, 0.8); W.v[1] += rnd(-0.5, 0.5); }
@@ -1969,6 +2109,7 @@ addEventListener('keydown', e => {
     if (picked < 0) pickDir([0, 0]);
     showRing();
     enterFired = false;
+    enterAt = performance.now();
     clearTimeout(enterT);
     enterT = setTimeout(() => { enterFired = true; const s = sets[picked]; if (s) powerSet(s, !s.power); }, 520);
     wake();
@@ -2054,6 +2195,7 @@ async function start() {
   scene.environment = pm.fromScene(room, 0.04).texture;
   room.dispose();
   pm.dispose();
+  await idle();
   scene.add(new THREE.HemisphereLight(col3(PAL.sky), col3(PAL.ground), 0.55));
   const key = new THREE.DirectionalLight(col3(PAL.key), 1.25);
   key.position.set(-2.5, 4, 5);
@@ -2069,6 +2211,8 @@ async function start() {
   };
   cordGeo = new THREE.CylinderGeometry(0.0075, 0.0075, 1, 6, 1, true).translate(0, 0.5, 0);
   knotGeo = new THREE.SphereGeometry(0.022, 12, 8);
+  // The plug is a little block with two prongs.
+  plugGeo = mergeGeometries([new RoundedBoxGeometry(0.05, 0.07, 0.032, 2, 0.008).translate(0, 0.035, 0), new THREE.BoxGeometry(0.008, 0.035, 0.004).translate(-0.013, 0.085, 0), new THREE.BoxGeometry(0.008, 0.035, 0.004).translate(0.013, 0.085, 0)].map(g => (g.index ? g.toNonIndexed() : g)).map(g => { g.deleteAttribute('uv'); return g; }));
 
   const V = c => new THREE.Vector3(...c);
   bgMat = new THREE.ShaderMaterial({
@@ -2076,6 +2220,7 @@ async function start() {
     uniforms: {
       uTop: { value: V(PAL.bgTop) }, uMid: { value: V(PAL.bgMid) }, uLow: { value: V(PAL.bgLow) }, uGlow: { value: v3() },
       uC: { value: new THREE.Vector2(0.5, 0.5) }, uBase: { value: new THREE.Vector2(0.5, 0.05) }, uAspect: { value: 16 / 9 },
+      uGhost: { value: 0 }, uBig: { value: new THREE.Vector4() }, uView: { value: new THREE.Vector4(0, 0, 0.36, 16 / 9) },
     },
   });
   const bg = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
@@ -2111,8 +2256,10 @@ async function start() {
   const rt = new THREE.WebGLRenderTarget(16, 9, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(16, 9), 0.6, 0.42, 0.95));
-  composer.addPass(new ShaderPass({ uniforms: { tDiffuse: { value: null }, uVig: { value: 0.5 } }, vertexShader: FINAL_VS, fragmentShader: FINAL_FS }));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.62, 0.42, 1.0);
+  const fin = new ShaderPass({ uniforms: { tDiffuse: { value: null }, uVig: { value: 0.5 } }, vertexShader: FINAL_VS, fragmentShader: FINAL_FS });
+  composer.addPass(bloom);
+  composer.addPass(fin);
 
   panel.prepend(canvas);
   fitRenderer(renderer, panel, 2, onSize, 1.4e6);
@@ -2121,8 +2268,14 @@ async function start() {
   quiet = false;
   await idle();
   // Async compile keeps the shader builds off the main thread.
+  // Programs match their targets: offscreen first, then the screen.
+  const quad = new THREE.PlaneGeometry(2, 2), pre = mats => { const s = new THREE.Scene(); mats.forEach(m => s.add(new THREE.Mesh(quad, m))); return s; };
+  renderer.setRenderTarget(composer.readBuffer);
   await renderer.compileAsync(scene, camera);
   await renderer.compileAsync(atlasScene, atlasCam);
+  await renderer.compileAsync(pre([bloom.materialHighPassFilter, ...bloom.separableBlurMaterials, bloom.compositeMaterial, bloom.blendMaterial]), camera);
+  renderer.setRenderTarget(null);
+  await renderer.compileAsync(pre([fin.material]), camera);
   ready = true;
   step(0, performance.now());
   draw();
