@@ -32,7 +32,7 @@ Read `README.md` for the toy list and the full rules.
   A GSAP 3.13 timeline animates each icon on hover: `toys.<id> = { play, rest }`.
 - `icons/index.html` is an unlinked lab of old icon directions. The spheres are rejected.
 - Icon iteration happens per toy, in that toy's own chat. Tom starts those chats; do not iterate icons across toys here.
-  `icons/colour.html` shows every toy's directions (Current, A to E) at rest beside their hover transition.
+  `icons/sheet.html` is the one icons page: every toy's directions (Current, A to E) as Icon, Transition (the luminance emblem) or Both; scrub and cut.
   The galleries are `icons/spike-1.html` to `spike-11.html`; emblems sit in `icons/spike/emblems/<id>-<a..e>.svg`.
 - `shared/stim.css` and `shared/stim.js` are the shared shell.
   `stim.js` exports `initPage({ id })`, `sound`, `audioKit`, `choices`, `fitCanvas`, `whenVisible`, `reduced` and the OKLCH helpers.
