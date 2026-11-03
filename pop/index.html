@@ -128,7 +128,7 @@ const PALS = {
 };
 // A recipe sets the whole sheet: paint, material, size, jumbos and gap.
 // The material brings its own light, popped look, burst, sound and feel.
-const MATS = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel'];
+const MATS = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel', 'lava', 'ice', 'holo', 'paper', 'gum', 'topo', 'popcorn', 'disco'];
 const DENS = [6, 9, 12, 15, 20, 27], JUMS = [0, 1, 2, 3, 5, 8], GAPS = [0.05, 0.075, 0.11];
 const pick = (a, not) => { let v; do v = a[(Math.random() * a.length) | 0]; while (a.length > 1 && v === not); return v; };
 let rec = { kind: 'arc', pal: [MINT, CYAN, BLUE], mat: 'gloss', den: 15, jum: null, gap: 0.075 };
@@ -331,14 +331,21 @@ function jumboTerms(r0, k) {
 // Light from a height map: normals, paint ramp, shade, gloss and glow.
 // The recipe's material decides how each term reads the normal.
 const step01 = (x, e = 0.03) => clamp(x / e + 0.5);
+// A stable hash of two integers, in 0..1.
+const hash = (a, b) => { let h = Math.imul(a, 374761393) + Math.imul(b, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 function litTerms(a, hgt, dep, n, k) {
-  const m = n * n, M = rec.mat, f32 = () => new Float32Array(m), see = M === 'soap' || M === 'glass';
+  const m = n * n, M = rec.mat, f32 = () => new Float32Array(m), see = M === 'soap' || M === 'glass' || M === 'topo', irid = M === 'soap' || M === 'holo';
   const T = {
     a, n, u: f32(), ao: f32(), w: f32(), s: f32(), t: f32(),
-    ip: M === 'soap' ? f32() : null, iw: M === 'soap' ? f32() : null, op: see ? f32() : null, st: M === 'candy' ? f32() : null,
+    ip: irid ? f32() : null, iw: irid ? f32() : null, op: see ? f32() : null, st: M === 'candy' ? f32() : null,
+    e: M === 'lava' ? f32() : null, mw: M === 'ice' ? f32() : null,
   };
+  // Contours need the peak height.
+  let hmax = 1e-6;
+  if (M === 'topo') for (const v of hgt) if (v > hmax) hmax = v;
   for (let py = 1; py < n - 1; py++) for (let px = 1, i = py * n + 1; px < n - 1; px++, i++) {
     if (!T.a[i]) continue;
+    const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k;
     const [nx, ny, nz] = norm3((hgt[i - 1] - hgt[i + 1]) / 2, (hgt[i - n] - hgt[i + n]) / 2, 1);
     const ndl = nx * KEY[0] + ny * KEY[1] + nz * KEY[2], ndh = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
     // The view ray bounces off the dome into the room.
@@ -383,7 +390,6 @@ function litTerms(a, hgt, dep, n, k) {
       }
       case 'candy': {
         // Candy: a peppermint swirl under a hard lacquer.
-        const x = (px + 0.5 - n / 2) / k, y = (py + 0.5 - n / 2) / k;
         s = 1.2 * ndh ** 110 + 0.1 * ndh ** 14; t = 0.3 * leak;
         T.st[i] = step01(Math.sin(6 * Math.atan2(y, x) + Math.hypot(x, y) / (R * 0.32)), 0.25);
         break;
@@ -394,6 +400,46 @@ function litTerms(a, hgt, dep, n, k) {
         w = 1.1 * box(rx, ry, -0.34, -0.42, 0.3, 0.08, 0.03) + 0.2 * box(rx, ry, 0.42, 0.5, 0.12, 0.04, 0.03);
         s = 1.3 * ndh ** 60; t = 0.9 * leak;
         break;
+      case 'lava': {
+        // Lava: a dark crust split by glowing veins.
+        const q = R * 0.5, v = Math.abs(Math.sin((x / q) * 2.1 + Math.sin((y / q) * 1.3)) * Math.sin((y / q) * 1.9 + Math.sin((x / q) * 1.7)));
+        u = clamp(ndl * 0.5 + 0.35); ao = 0.6 + 0.4 * rim; w = 0.15 * soft; s = 0.3 * ndh ** 40; t = 0;
+        T.e[i] = step01(0.1 - v, 0.06) * (0.6 + 0.4 * rim);
+        break;
+      }
+      case 'ice':
+        // Ice: frost whitens the paint; a hard glint and loose sparkles.
+        u = clamp(ndl * 0.45 + 0.5); ao = 0.8 + 0.2 * rim; w = 0.7 * soft; s = 1.4 * ndh ** 200 + (hash(px, py) > 0.992 ? 0.9 : 0); t = 0.6 * leak;
+        T.mw[i] = 0.35 + 0.35 * (1 - nz);
+        break;
+      case 'holo':
+        // Hologram: rainbow bands follow the slope and sweep across.
+        w = soft; s = 1.4 * ndh ** 120; t = 0;
+        T.ip[i] = Math.atan2(ny, nx) + 6 * (1 - nz) + (x + y) / (R * 0.7); T.iw[i] = 0.78;
+        break;
+      case 'paper': {
+        // Paper: six flat folds meet at a peak in the middle.
+        const mid = Math.round(Math.atan2(y, x) / (PI / 3)) * (PI / 3), fn = norm3(Math.cos(mid) * 0.5, Math.sin(mid) * 0.5, 1);
+        u = clamp((fn[0] * KEY[0] + fn[1] * KEY[1] + fn[2] * KEY[2]) * 0.9 + 0.25); ao = 0.85 + 0.15 * rim; w = 0; s = 0; t = 0;
+        break;
+      }
+      case 'gum':
+        // Bubblegum: soft and sticky, with a faint sheen.
+        u = clamp(ndl * 0.6 + 0.4) ** 1.1; ao = 0.6 + 0.4 * rim; w = 0.15 * soft; s = 0.25 * ndh ** 25; t = 0.35 * leak;
+        break;
+      case 'topo': {
+        // Contours: only lines of equal height, and the rim.
+        const hn = hgt[i] / hmax, fr = (hn * 7) % 1;
+        u = 0.25 + 0.75 * hn; ao = 1; w = 0; s = 0; t = 0;
+        T.op[i] = Math.max(step01(0.06 - Math.min(fr, 1 - fr), 0.03), step01(0.03 - dep[i], 0.015));
+        break;
+      }
+      case 'disco': {
+        // Mirror tiles: each tile reflects a sky over a dark floor.
+        const sky = step01(0.05 - ry, 0.04);
+        u = lerp(0.1 + 0.25 * clamp(ry), 0.55 + 0.45 * clamp(-ry * 1.4), sky); ao = 0.8 + 0.2 * rim; w = 0.6 * soft; s = ndh ** 60; t = 0;
+        break;
+      }
     }
     T.u[i] = u; T.ao[i] = ao; T.w[i] = w; T.s[i] = s; T.t[i] = t;
   }
@@ -402,30 +448,40 @@ function litTerms(a, hgt, dep, n, k) {
 // Glossy cell: the bump terms painted with one colour bin.
 function glossSprite(img, base, L = LT) {
   const s = skinOf(base), lo = linFit(s.low), mi = linFit(s.mid), hi = linFit(s.top), li = linFit(s.light), d = img.data;
-  const { a, n, u, ao, w, s: sp, t, ip, iw, op, st } = L;
-  // Soap film colours sit a third of the wheel apart.
-  const P = ip && [0, 120, 240].map(dh => linFit([0.86, 0.13, base[2] + dh])), film = [0, 0, 0];
+  const { a, n, u, ao, w, s: sp, t, ip, iw, op, st, e, mw } = L;
+  // Film colours: three for soap, six for a hologram.
+  const HN = rec.mat === 'holo' ? 6 : 3, film = [0, 0, 0];
+  const P = ip && Array.from({ length: HN }, (_, k) => linFit(HN === 6 ? [0.8, 0.17, base[2] + k * 60] : [0.86, 0.13, base[2] + k * 120]));
+  // Frost whitens toward this; lava veins glow in this.
+  const WH = mw && linFit([0.97, 0.02, base[2]]), HOTL = e && linFit([0.84, 0.2, base[2]]), CRL = e && linFit([0.3, 0.015, 50]);
   // Candy's white body takes the same light as its paint.
   const CW = st && linFit([0.97, 0.015, base[2]]), CL = st && linFit([0.68, 0.02, base[2]]);
   // Pixel mode reads the terms in blocks and posterizes them.
-  const pix = rec.mat === 'pixel', B = Math.max(2, Math.round(SP / 12));
+  const pix = rec.mat === 'pixel', disco = rec.mat === 'disco', blk = pix || disco, B = Math.max(2, Math.round(SP / (disco ? 15 : 12)));
   for (let i = 0, j = 0; i < a.length; i++, j += 4) {
     let I = i;
-    if (pix) {
+    if (blk) {
       const x = i % n, y = (i / n) | 0;
       I = Math.min(n - 1, ((y / B) | 0) * B + (B >> 1)) * n + Math.min(n - 1, ((x / B) | 0) * B + (B >> 1));
     }
-    const al = pix ? (a[I] > 0.5 ? 1 : 0) : a[i];
+    const al = blk ? (a[I] > 0.5 ? 1 : 0) : a[i];
     if (!al) { d[j + 3] = 0; continue; }
     let q = u[I], W = w[I], S = sp[I];
     if (pix) { q = Math.round(q * 3) / 3; W = W > 0.4 ? 1 : 0; S = S > 0.4 ? 0.8 : 0; }
+    // Disco tiles sit in dark grout; a few tiles flash white.
+    let grout = 1;
+    if (disco) {
+      const x = i % n, y = (i / n) | 0;
+      if (x % B === 0 || y % B === 0) grout = 0.22;
+      if (hash((x / B) | 0, (y / B) | 0) > 0.86) S += 0.9;
+    }
     const A = q < 0.5 ? lo : mi, Bc = q < 0.5 ? mi : hi, f = q < 0.5 ? 2 * q : 2 * q - 1, o = ao[I];
     if (P) {
       let sum = 0;
       film[0] = film[1] = film[2] = 0;
-      for (let k = 0; k < 3; k++) {
-        const e = (0.5 + 0.5 * Math.cos(ip[I] - (k * TAU) / 3)) ** 2;
-        sum += e; film[0] += P[k][0] * e; film[1] += P[k][1] * e; film[2] += P[k][2] * e;
+      for (let k = 0; k < HN; k++) {
+        const g = (0.5 + 0.5 * Math.cos(ip[I] - (k * TAU) / HN)) ** 2;
+        sum += g; film[0] += P[k][0] * g; film[1] += P[k][1] * g; film[2] += P[k][2] * g;
       }
       for (let c = 0; c < 3; c++) film[c] /= sum || 1;
     }
@@ -434,8 +490,10 @@ function glossSprite(img, base, L = LT) {
       if (st) v += ((CL[c] + (CW[c] - CL[c]) * q) * o - v) * (1 - st[I]);
       v += hi[c] * t[I];
       if (P) v += (film[c] - v) * iw[I];
+      if (WH) v += (WH[c] - v) * mw[I];
+      if (HOTL) { const cr = CRL[c] * (0.35 + 0.9 * q) * o; v = cr + (HOTL[c] - cr) * e[I]; }
       v = v + (li[c] - v) * W + S;
-      d[j + c] = enc(v);
+      d[j + c] = enc(v * grout);
     }
     d[j + 3] = (al * (op ? op[I] : 1) * 255 + 0.5) | 0;
   }
@@ -552,6 +610,99 @@ function popped(ax, pts, r, base, rnd, nf) {
     }
     ax.restore();
     ax.lineWidth = 1; ax.strokeStyle = css([fl[0] - 0.12, fl[1], fl[2]], 0.8); ax.stroke(p);
+    return;
+  }
+  if (M === 'lava') {
+    // Cooled lava: black crust with a few veins still hot.
+    const p = outline(wobble(pts, rnd));
+    ax.fillStyle = css([0.2, 0.012, 50]); ax.fill(p);
+    ax.save(); ax.clip(p); ax.lineJoin = 'round'; ax.strokeStyle = css([0.8, 0.2, h]); ax.lineWidth = Math.max(1, r * 0.045);
+    for (let n = 0; n < 4; n++) {
+      let x = (rnd() - 0.5) * r, y = (rnd() - 0.5) * r, a = rnd() * TAU;
+      ax.beginPath(); ax.moveTo(x, y);
+      for (let j = 0; j < 5; j++) { a += (rnd() - 0.5) * 1.2; x += Math.cos(a) * r * 0.25; y += Math.sin(a) * r * 0.25; ax.lineTo(x, y); }
+      ax.stroke();
+    }
+    ax.restore();
+    return;
+  }
+  if (M === 'ice') {
+    // Frost: a pale flat with a six-armed crystal grown across it.
+    const p = outline(pts), a0 = rnd() * PI;
+    ax.fillStyle = css([0.88, 0.04, h], 0.9); ax.fill(p);
+    ax.save(); ax.clip(p); ax.strokeStyle = css([0.99, 0.01, h]); ax.lineCap = 'round'; ax.lineWidth = Math.max(1, r * 0.035);
+    for (let k = 0; k < 6; k++) {
+      const a = a0 + (k * PI) / 3, ca = Math.cos(a), sa = Math.sin(a);
+      ax.beginPath(); ax.moveTo(0, 0); ax.lineTo(ca * r * 0.85, sa * r * 0.85);
+      for (const d of [0.35, 0.6]) for (const sd of [-1, 1]) {
+        const b = a + sd * 0.8, bx = ca * r * d, by = sa * r * d;
+        ax.moveTo(bx, by); ax.lineTo(bx + Math.cos(b) * r * 0.2, by + Math.sin(b) * r * 0.2);
+      }
+      ax.stroke();
+    }
+    ax.restore();
+    return;
+  }
+  if (M === 'holo') {
+    // Spent hologram: dark film inside a rainbow rim.
+    const m = pts.length;
+    ax.fillStyle = css([0.24, 0.04, h]); ax.fill(outline(pts));
+    ax.lineWidth = Math.max(1.2, r * 0.08); ax.lineJoin = 'round';
+    for (let k = 0; k < 6; k++) {
+      const j0 = Math.floor((k * m) / 6), j1 = Math.floor(((k + 1) * m) / 6);
+      ax.beginPath();
+      for (let j = j0; j <= j1; j++) { const q = pts[j % m]; if (j === j0) ax.moveTo(q[0], q[1]); else ax.lineTo(q[0], q[1]); }
+      ax.strokeStyle = css([0.78, 0.17, h + k * 60]); ax.stroke();
+    }
+    return;
+  }
+  if (M === 'paper') {
+    // Torn paper: the sheet stays, with a ragged hole punched through.
+    const hole = outline(Array.from({ length: 14 }, (_, k) => { const a = (k / 14) * TAU, d = r * (0.3 + 0.28 * rnd()); return [Math.cos(a) * d + (rnd() - 0.5) * r * 0.1, Math.sin(a) * d]; }));
+    ax.fillStyle = css([Math.min(0.92, L * 0.95), C * 0.5, h]); ax.fill(outline(pts));
+    ax.globalCompositeOperation = 'destination-out'; ax.fill(hole); ax.globalCompositeOperation = 'source-over';
+    ax.lineWidth = Math.max(1, r * 0.03); ax.strokeStyle = css([0.97, 0.01, h]); ax.stroke(hole);
+    return;
+  }
+  if (M === 'gum') {
+    // Burst gum: a sticky splat with strands still clinging.
+    const col = css([L * 0.8, C, h]);
+    ax.fillStyle = col; ax.fill(outline(wobble(wobble(pts, rnd), rnd)));
+    ax.lineCap = 'round'; ax.strokeStyle = col; ax.lineWidth = Math.max(1, r * 0.06);
+    for (let n = 0; n < 3; n++) {
+      const a = rnd() * TAU;
+      ax.beginPath(); ax.moveTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7);
+      ax.quadraticCurveTo(Math.cos(a + 0.3) * r * 0.95, Math.sin(a + 0.3) * r * 0.95, Math.cos(a + 0.1) * r * 1.05, Math.sin(a + 0.1) * r * 1.05); ax.stroke();
+    }
+    dot(ax, -0.3 * r, -0.3 * r, 0.1 * r, css([Math.min(0.97, L + 0.08), C * 0.6, h]));
+    return;
+  }
+  if (M === 'topo') {
+    // A spent contour: only a dashed outline and a mark are left.
+    ax.setLineDash([r * 0.14, r * 0.1]); ax.lineWidth = Math.max(1, r * 0.035); ax.strokeStyle = css([L * 0.75, C, h]); ax.stroke(outline(pts)); ax.setLineDash([]);
+    ax.beginPath(); ax.moveTo(-r * 0.1, 0); ax.lineTo(r * 0.1, 0); ax.moveTo(0, -r * 0.1); ax.lineTo(0, r * 0.1); ax.stroke();
+    return;
+  }
+  if (M === 'popcorn') {
+    // Popcorn: the kernel bursts into a puffy white cloud.
+    const blobs = Array.from({ length: 6 }, () => { const a = rnd() * TAU, d = r * 0.4 * rnd(); return [Math.cos(a) * d, Math.sin(a) * d, r * (0.3 + 0.18 * rnd())]; });
+    for (const [x, y, b] of blobs) dot(ax, x + r * 0.06, y + r * 0.07, b, css([0.74, 0.06, 75]));
+    for (const [x, y, b] of blobs) dot(ax, x, y, b, css([0.94, 0.04, 90]));
+    for (const [x, y, b] of blobs) dot(ax, x - b * 0.28, y - b * 0.3, b * 0.35, css([0.99, 0.02, 95]));
+    // A scrap of husk keeps the kernel's colour.
+    const a = rnd() * TAU;
+    ax.save(); ax.translate(Math.cos(a) * r * 0.35, Math.sin(a) * r * 0.35); ax.rotate(a); ax.scale(r * 0.22, r * 0.22);
+    ax.fillStyle = css([L * 0.6, C * 1.2, h]); ax.fill(SHARDS[0]); ax.restore();
+    return;
+  }
+  if (M === 'disco') {
+    // A stripped mirror ball: dark grout with a few dull tiles left.
+    const ps = R * 0.2, n = Math.ceil(r / ps) + 1;
+    ax.fillStyle = css([0.18, 0.02, h]); ax.fill(outline(pts));
+    for (let y = -n; y < n; y++) for (let x = -n; x < n; x++) {
+      if (rnd() > 0.35 || polySD((x + 0.5) * ps, (y + 0.5) * ps, pts) > -ps * 0.4) continue;
+      ax.fillStyle = css([L * 0.55 + rnd() * 0.15, C * 0.4, h]); ax.fillRect(x * ps + 1, y * ps + 1, ps - 2, ps - 2);
+    }
     return;
   }
   // Gloss and rubber: crumpled film; rubber is darker, with heavy folds.
@@ -811,6 +962,14 @@ const SND = {
   candy: { crack: [2600, 4, 0.8], wave: 'triangle', oct: 1, bend: 1.04, bt: 0.012, tau: 0.04, ng: 0.15, crunch: 3 },
   latex: { crack: [1100, 0.7, 1.8], wave: 'sine', oct: 0.25, bend: 1.6, bt: 0.05, tau: 0.08, ng: 0.55 },
   pixel: { crack: null, wave: 'square', oct: 1, bend: 1, bt: 0.01, tau: 0.05, ng: 0.07, arp: 1.5 },
+  lava: { crack: null, wave: 'sine', oct: 0.35, bend: 1.8, bt: 0.06, tau: 0.08, ng: 0.4, hiss: 1 },
+  ice: { crack: [6000, 5, 0.6], wave: 'sine', oct: 2, bend: 1, bt: 0.01, tau: 0.1, ng: 0.06, crunch: 4, ping: [2.4] },
+  holo: { crack: [3000, 1, 0.4], wave: 'sine', oct: 1, bend: 1, bt: 0.01, tau: 0.12, ng: 0.09, ping: [1.26, 1.5, 2] },
+  paper: { crack: null, wave: 'triangle', oct: 1, bend: 1, bt: 0.01, tau: 0.02, ng: 0.05, rip: 1 },
+  gum: { crack: [500, 1, 0.8], wave: 'sine', oct: 0.5, bend: 0.6, bt: 0.05, tau: 0.06, ng: 0.35, squish: 1 },
+  topo: { crack: null, wave: 'sawtooth', oct: 1, bend: 2, bt: 0.025, tau: 0.03, ng: 0.06 },
+  popcorn: { crack: [900, 6, 1.3], wave: 'sine', oct: 0.5, bend: 1.5, bt: 0.02, tau: 0.035, ng: 0.3 },
+  disco: { crack: [7000, 2, 0.3], wave: 'sine', oct: 2, bend: 1, bt: 0.01, tau: 0.16, ng: 0.05, ping: [1.5, 2, 3] },
 };
 function popSound(c) {
   const a = kit.live();
@@ -860,6 +1019,9 @@ function popSound(c) {
   }
   // Jelly squishes: a dark wet slide under the note.
   if (V.squish) noise('lowpass', 900, 2, 0.5, t, 0.08, 220);
+  // Lava hisses; paper rips upward.
+  if (V.hiss) noise('bandpass', 5200, 0.8, 0.3, t, 0.26);
+  if (V.rip) noise('highpass', 1400, 0.7, 0.9, t, 0.07, 6500);
   // The note snaps onto its pitch and rings briefly.
   const o = tonal(V.wave, nf, V.bend, V.ng, t, V.tau);
   // Foil and glass ring with inharmonic partials.
@@ -978,7 +1140,10 @@ const SPR = {
 const OK = 240, OC = 2 * 0.42 * Math.sqrt(OK);
 // Materials differ in feel: stiffness and damping scales.
 // Jelly wobbles long; glass and pixels barely give.
-const FEEL = { jelly: [0.7, 0.45], rubber: [1.1, 0.7], latex: [1.2, 0.8], glass: [1.4, 1.5], foil: [1, 1.4], toon: [1.3, 0.8], pixel: [1.4, 1.8], soap: [0.8, 0.7] };
+const FEEL = {
+  jelly: [0.7, 0.45], rubber: [1.1, 0.7], latex: [1.2, 0.8], glass: [1.4, 1.5], foil: [1, 1.4], toon: [1.3, 0.8], pixel: [1.4, 1.8], soap: [0.8, 0.7],
+  gum: [0.8, 0.5], ice: [1.4, 1.5], paper: [1.3, 1.6], popcorn: [1.2, 0.6], topo: [1.2, 1], disco: [1.1, 1.2], lava: [0.9, 1.1],
+};
 
 function pop(c, now, amp, force) {
   if (!c || c.state || c.hid) return;
@@ -1121,16 +1286,29 @@ PILL.moveTo(-0.65, -0.35); PILL.lineTo(0.65, -0.35); PILL.arc(0.65, 0, 0.35, -PI
 // Sprinkles and soap film keep their own fixed colours.
 const CANDY = [[0.72, 0.19, 25], [0.86, 0.17, 95], [0.8, 0.17, 150], [0.7, 0.15, 245], [0.74, 0.2, 335], [0.96, 0.01, 0]].map(c => css(c));
 const IRID = [[0.84, 0.12, 330], [0.88, 0.1, 200], [0.9, 0.11, 95]].map(c => css(c));
+const HOLO = [0, 60, 120, 180, 240, 300].map(h => css([0.8, 0.17, h]));
+const CRUST = css([0.24, 0.03, 40]), WHITE = css([0.98, 0.01, 230]), CREAM = css([0.94, 0.04, 90]);
+// A square tile, a four-point glint and a six-armed snowflake.
+const SQ = shard([[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]);
+// A paper scrap is a skewed quad.
+const CARD = shard([[-1, -0.6], [0.9, -0.8], [1, 0.7], [-0.8, 0.6]]);
+const GLINT = shard(Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * TAU, d = i & 1 ? 0.18 : 1; return [Math.cos(a) * d, Math.sin(a) * d]; }));
+const SNOW = new Path2D();
+for (let k = 0; k < 6; k++) {
+  const a = (k * PI) / 3, c = Math.cos(a), s = Math.sin(a);
+  SNOW.moveTo(0, 0); SNOW.lineTo(c, s);
+  for (const sd of [-1, 1]) { SNOW.moveTo(c * 0.55, s * 0.55); SNOW.lineTo(c * 0.55 + Math.cos(a + sd * 0.7) * 0.3, s * 0.55 + Math.sin(a + sd * 0.7) * 0.3); }
+}
 // Ring styles per material; the rest leave no ring.
-const RINGS = { gloss: 'hex', rubber: 'hex', candy: 'hex', soap: 'circle', latex: 'circle', pixel: 'square' };
+const RINGS = { gloss: 'hex', rubber: 'hex', candy: 'hex', soap: 'circle', latex: 'circle', pixel: 'square', ice: 'spike', holo: 'circle', topo: 'hex' };
 function burst(c, now, amp) {
   const pt = paints[c.b];
   if (!pt) return;
   const M = rec.mat, x = c.x + c.dx, y = c.y + c.dy, big = c.J ? 1 : 0, rs = RINGS[M];
   if (rs) {
-    const wk = M === 'rubber' ? 1.5 : M === 'soap' ? 0.3 : M === 'latex' ? 1.3 : 1;
+    const wk = M === 'rubber' ? 1.5 : M === 'soap' || M === 'topo' ? 0.3 : M === 'latex' ? 1.3 : M === 'ice' ? 0.5 : 1;
     rings.push({ x, y, t0: now, amp, shape: rs, path: big ? jRing : ringP, rad: big ? 2.6 * R : r,
-      col: M === 'soap' ? IRID[(Math.random() * 3) | 0] : pt.top, w: (big ? 0.32 : 0.2) * wk, life: (big ? 0.55 : RING_S) * (M === 'rubber' ? 1.3 : M === 'latex' ? 0.7 : 1) });
+      col: M === 'soap' ? IRID[(Math.random() * 3) | 0] : M === 'holo' ? HOLO[(Math.random() * 6) | 0] : M === 'ice' ? WHITE : pt.top, w: (big ? 0.32 : 0.2) * wk, life: (big ? 0.55 : RING_S) * (M === 'rubber' ? 1.3 : M === 'latex' ? 0.7 : 1) });
   }
   // A busy sweep throws fewer bits per pop; a jumbo throws a fistful.
   const mul = big ? 3 : bits.length > MAXBITS / 2 ? 0.45 : 1, sz = big ? 1.7 : 1, spread = R * (big ? 1.6 : 0.3);
@@ -1191,6 +1369,45 @@ function burst(c, now, amp) {
       // Pixels: square blocks on a grid, no spin.
       for (let i = N(12); i--;) out('pixel', R01(4, 10), 0.16, R01(0.5, 0.8), { col: pc(), va: 0, dr: 2.5 });
       break;
+    case 'lava':
+      // Lava: molten drips cool as they fall; embers rise.
+      for (let i = N(6); i--;) out('drip', R01(4, 9), R01(0.12, 0.2), R01(0.7, 1.1), { col: pt.light, col2: CRUST, gm: 1.3, dr: 1.5 });
+      for (let i = N(8); i--;) out('ember', R01(2, 6), R01(0.05, 0.09), R01(0.8, 1.4), { col: Math.random() < 0.5 ? pt.light : pt.top, gm: -0.25, dr: 2 });
+      break;
+    case 'ice':
+      // Ice: snowflakes drift down slowly, turning.
+      for (let i = N(7); i--;) out('snow', R01(3, 7), R01(0.16, 0.28), R01(1.1, 1.7), { col: WHITE, gm: 0.12, dr: 3, va: (Math.random() - 0.5) * 3 });
+      break;
+    case 'holo':
+      // Hologram: rainbow prisms spin out behind white streaks.
+      for (let i = N(9); i--;) out('prism', R01(5, 12), R01(0.14, 0.26), R01(0.5, 0.9), { col: HOLO[(Math.random() * 6) | 0], gm: 0.6, dr: 3, va: (Math.random() - 0.5) * 24 });
+      for (let i = N(4); i--;) out('spark', R01(14, 24), 0.4, R01(0.14, 0.24), { col: WHITE, dr: 2, gm: 0.1 });
+      break;
+    case 'paper':
+      // Paper: scraps tumble down slowly, two-faced.
+      for (let i = N(6); i--;) out('scrap', R01(3, 8), R01(0.16, 0.26), R01(1.2, 1.7), { col: pt.light, col2: pt.mid, gm: 0.35, dr: 3.5, va: (Math.random() - 0.5) * 8 });
+      break;
+    case 'gum':
+      // Gum: strings stretch out from the burst and snap back.
+      for (let i = N(6); i--;) bits.push({ k: 'string', x, y, vx: 0, vy: 0, a: Math.random() * TAU, va: 0, s: R * R01(0.9, 1.6) * sz, t0: now, life: R01(0.35, 0.5), dr: 0, gm: 0, bo: 0, col: pt.mid, lw: R * 0.09 * sz });
+      break;
+    case 'topo':
+      // Contours: line scraps spin away.
+      for (let i = N(10); i--;) out('seg', R01(4, 10), R01(0.3, 0.5), R01(0.4, 0.7), { col: pc(), gm: 0.3, dr: 2.5, va: (Math.random() - 0.5) * 14 });
+      break;
+    case 'popcorn':
+      // Popcorn: husks fly off and small puffs bounce.
+      for (let i = N(4); i--;) out('husk', R01(5, 10), R01(0.1, 0.16), R01(0.6, 0.9), { col: pt.low, bo: 0.4, gm: 1.2 });
+      for (let i = N(3); i--;) out('puff', R01(4, 8), R01(0.12, 0.18), R01(0.8, 1.1), { col: CREAM, bo: 0.5, gm: 1.2, dr: 1.5 });
+      break;
+    case 'disco':
+      // Disco: mirror tiles flip and flash; glints flare round the hole.
+      for (let i = N(10); i--;) out('tile', R01(4, 11), R01(0.1, 0.16), R01(0.6, 1), { col: WHITE, col2: pt.low, gm: 0.8, dr: 2.5, va: (Math.random() - 0.5) * 20 });
+      for (let i = N(4); i--;) {
+        const a = Math.random() * TAU, d = R * R01(0.3, 1.2) * sz;
+        bits.push({ k: 'glint', x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, vx: 0, vy: 0, a: 0, va: 0, s: R * R01(0.2, 0.35) * sz, t0: now + Math.random() * 0.15, life: 0.35, dr: 0, gm: 0, bo: 0, col: WHITE });
+      }
+      break;
     default:
       // Gloss: hard shards.
       for (let i = N(6); i--;) out('shard', R01(5, 13), R01(0.12, 0.27), R01(0.32, 0.62), { col: pc() });
@@ -1229,6 +1446,7 @@ function drawBits() {
     ctx.lineWidth = lw / sc; ctx.strokeStyle = q.col;
     if (q.shape === 'circle') { ctx.beginPath(); ctx.arc(0, 0, q.rad, 0, TAU); ctx.stroke(); }
     else if (q.shape === 'square') ctx.strokeRect(-q.rad, -q.rad, 2 * q.rad, 2 * q.rad);
+    else if (q.shape === 'spike') { ctx.setTransform(dpr * sc * q.rad, 0, 0, dpr * sc * q.rad, dpr * q.x, dpr * q.y); ctx.lineWidth = lw / (sc * q.rad); ctx.stroke(STAR); }
     else ctx.stroke(q.path);
   }
   ctx.lineCap = 'butt';
@@ -1288,29 +1506,74 @@ function drawBits() {
         ctx.fillStyle = b.col; ctx.fill(BEAD);
         break;
       }
+      case 'snow': {
+        // A snowflake: six thin arms, each with two short branches.
+        if (sc < 0.3) break;
+        const co = Math.cos(b.a) * sc * dpr, si = Math.sin(b.a) * sc * dpr;
+        ctx.setTransform(co, si, -si, co, dpr * b.x, dpr * b.y);
+        ctx.lineWidth = 0.12; ctx.lineCap = 'round'; ctx.strokeStyle = b.col; ctx.stroke(SNOW); ctx.lineCap = 'butt';
+        break;
+      }
+      case 'string': {
+        // A gum string reaches out, then snaps back to the splat.
+        const d = b.s * Math.sin(PI * u) ** 0.7, ex = b.x + Math.cos(b.a) * d, ey = b.y + Math.sin(b.a) * d;
+        if (d < 0.5) break;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.beginPath(); ctx.moveTo(b.x, b.y);
+        ctx.quadraticCurveTo(b.x + Math.cos(b.a + 0.3) * d * 0.5, b.y + Math.sin(b.a + 0.3) * d * 0.5 + d * 0.15, ex, ey);
+        ctx.lineCap = 'round'; ctx.lineWidth = b.lw * (1 - 0.6 * u); ctx.strokeStyle = b.col; ctx.stroke(); ctx.lineCap = 'butt';
+        ctx.beginPath(); ctx.arc(ex, ey, b.lw * 0.9, 0, TAU); ctx.fillStyle = b.col; ctx.fill();
+        break;
+      }
+      case 'seg': {
+        // A contour scrap spins away as a hard line.
+        if (sc < 0.3) break;
+        const co = Math.cos(b.a) * sc, si = Math.sin(b.a) * sc;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.beginPath(); ctx.moveTo(b.x - co, b.y - si); ctx.lineTo(b.x + co, b.y + si);
+        ctx.lineWidth = Math.max(1, R * 0.05); ctx.strokeStyle = b.col; ctx.stroke();
+        break;
+      }
+      case 'glint': {
+        // A mirror glint flares, then shrinks back to nothing.
+        sc = b.s * Math.sin(PI * u);
+        if (sc < 0.3) break;
+        ctx.setTransform(sc * dpr, 0, 0, sc * dpr, dpr * b.x, dpr * b.y);
+        ctx.fillStyle = b.col; ctx.fill(GLINT);
+        break;
+      }
+      case 'ember': {
+        // Embers flicker as they rise.
+        if (((now * 24 + b.sh * 5) | 0) % 4 === 0 || sc < 0.3) break;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = b.col; ctx.fillRect(b.x - sc / 2, b.y - sc / 2, sc, sc);
+        break;
+      }
+      case 'drip':
       case 'goo': {
-        // Goo stretches along its flight.
+        // Goo stretches along its flight; lava drips cool as they go.
         const sp = Math.hypot(b.vx, b.vy), st = 1 + sp / (R * 10), an = Math.atan2(b.vy, b.vx);
         sc *= 2;
         if (sc < 0.3) break;
         const co = Math.cos(an) * dpr, si = Math.sin(an) * dpr;
         ctx.setTransform(co * sc * st, si * sc * st, (-si * sc) / Math.sqrt(st), (co * sc) / Math.sqrt(st), dpr * b.x, dpr * b.y);
-        ctx.fillStyle = b.col; ctx.fill(BEAD);
+        ctx.fillStyle = b.k === 'drip' && u > 0.45 ? b.col2 : b.col; ctx.fill(BEAD);
         break;
       }
       default: {
         if (sc < 0.3) break;
         // Flakes and glass flip edge-on; the face shown sets the colour.
-        const turn = b.k === 'flake' ? Math.cos(b.a * 2.7) : b.k === 'glass' ? Math.cos(b.a * 1.9) : 1;
-        if (b.k === 'chunk' || b.k === 'mist') sc = b.s * 2 * (1 - u ** 3);
+        const flip = b.k === 'flake' || b.k === 'tile' || b.k === 'scrap' || b.k === 'prism', round = b.k === 'chunk' || b.k === 'mist' || b.k === 'puff';
+        const turn = flip ? Math.cos(b.a * 2.7) : b.k === 'glass' ? Math.cos(b.a * 1.9) : 1;
+        if (round) sc = b.s * 2 * (1 - u ** 3);
         const co = Math.cos(b.a) * sc * dpr, si = Math.sin(b.a) * sc * dpr;
         ctx.setTransform(co, si, -si * turn, co * turn, dpr * b.x, dpr * b.y);
-        const path = b.k === 'chunk' || b.k === 'mist' ? BEAD : b.k === 'sprinkle' ? PILL : SHARDS[b.sh];
+        const path = round ? BEAD : b.k === 'sprinkle' ? PILL : b.k === 'scrap' ? CARD : b.k === 'tile' ? SQ : SHARDS[b.sh];
         if (b.k === 'glass') {
           ctx.globalAlpha = 0.7; ctx.fillStyle = b.col; ctx.fill(path); ctx.globalAlpha = 1;
           ctx.lineWidth = 1.5 / sc; ctx.strokeStyle = b.col2; ctx.stroke(path);
         } else {
-          ctx.fillStyle = b.k === 'flake' && turn < 0 ? b.col2 : b.col; ctx.fill(path);
+          ctx.fillStyle = flip && b.col2 && turn < 0 ? b.col2 : b.col; ctx.fill(path);
         }
       }
     }
