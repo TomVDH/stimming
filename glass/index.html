@@ -1447,12 +1447,12 @@ varying vec2 vUv;
 void main() {
   vec2 q = vUv * 2.0 - 1.0;
   float r = length(q), a = atan(q.y, q.x) + uTurn;
-  // Out of focus at the lens: a soft core, soft spokes and a wide haze.
-  float core = exp(-r * r * 16.0);
-  float rays = pow(abs(cos(a * 3.0)), 6.0) * exp(-r * 2.6);
-  float fine = pow(abs(cos(a * 2.5 + 0.7)), 12.0) * exp(-r * 3.4);
-  float haze = exp(-r * r * 3.5) * 0.4;
-  float m = (core + 0.5 * rays + 0.35 * fine + haze) * (1.0 - smoothstep(0.7, 1.0, r));
+  // Out of focus at the lens: a clear six-point star with blurred edges.
+  float star = 1.0 - smoothstep(-0.1, 0.1, r - (0.22 + 0.62 * pow(abs(cos(a * 3.0)), 8.0)));
+  float fine = 1.0 - smoothstep(-0.08, 0.08, r - (0.16 + 0.4 * pow(abs(cos(a * 3.0 + 0.52)), 14.0)));
+  float core = exp(-r * r * 18.0);
+  float haze = exp(-r * r * 4.0) * 0.22;
+  float m = (core + 0.75 * star * (1.0 - 0.6 * r) + 0.4 * fine + haze) * (1.0 - smoothstep(0.75, 1.0, r));
   if (m < 0.002) discard;
   // Far brighter than white, so the bloom spreads it.
   vec3 col = mix(uRay, uCore, core) * m * uK;
@@ -2865,7 +2865,7 @@ async function start() {
   // The flash sits between the eye and the pane and lights the frame.
   flashMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
     vertexShader: FLASH_VS, fragmentShader: FLASH_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: { uTurn: { value: 0 }, uK: { value: 1 }, uCore: { value: new THREE.Color(...lin(1, 0, 0, 5.5)) }, uRay: { value: new THREE.Color(...lin(0.94, 0.04, 70, 1.7)) } },
+    uniforms: { uTurn: { value: 0 }, uK: { value: 1 }, uCore: { value: new THREE.Color(...lin(0.98, 0.07, 98, 5.5)) }, uRay: { value: new THREE.Color(...lin(0.86, 0.19, 86, 1.5)) } },
   }));
   flashMesh.renderOrder = 3;
   flashMesh.visible = false;
