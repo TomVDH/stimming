@@ -47,7 +47,8 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Gear train | [gears/](gears/) | live, with sound; SVG only |
 | Coil | [coil/](coil/) | live, with sound |
 | Googly eyes | [eyes/](eyes/) | live draft, still being refined |
-| TV tree, Ribbon, Orbits, Balloon letters | | in progress; outlines on the menu |
+| Ribbon | [ribbon/](ribbon/) | live draft, still being refined |
+| TV tree, Orbits, Balloon letters | | in progress; outlines on the menu |
 
 ## Run locally
 
