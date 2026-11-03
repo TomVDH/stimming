@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* Spike gallery: five icon directions per toy, each with its emblem. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --focus: oklch(0.84 0.13 205);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); }
+body { margin: 0; color: var(--fg); font: 500 13px/1.35 var(--sans); padding-inline: max(16px, env(safe-area-inset-left, 0px)); -webkit-font-smoothing: antialiased; }
+.defs { position: absolute; width: 0; height: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 40px 72px; display: grid; gap: 56px; }
+h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 6px 0 0; color: var(--muted); }
+section { display: grid; gap: 16px; }
+h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; display: flex; gap: 10px; align-items: baseline; }
+h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.dirs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1100px) { .dirs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .dirs { grid-template-columns: minmax(0, 1fr); } }
+.dir { display: grid; gap: 12px; align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 14px; }
+.tag { display: flex; gap: 8px; align-items: baseline; }
+.tag b { font-size: 15px; font-weight: 800; }
+.tag span { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+/* Icons sit on the menu ground: 128px and 64px squares. */
+.icons { display: flex; gap: 14px; align-items: end; }
+.toy { display: grid; place-items: center; color: inherit; border-radius: 10px; outline: none; cursor: pointer; }
+.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.toy.s128 { width: 128px; height: 128px; }
+.toy.s64 { width: 64px; height: 64px; }
+.toy svg { width: 100%; height: 100%; overflow: visible; }
+.size { color: var(--muted); font-size: 10px; text-align: center; margin-top: 4px; }
+/* Emblems: the intro flash box, then white on dark glass. */
+.embs { display: flex; gap: 10px; }
+.flash, .glass { position: relative; width: 96px; height: 96px; display: grid; place-items: center; border-radius: 2px; overflow: hidden; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: radial-gradient(circle at 30% 25%, var(--tint) 0%, transparent 70%), oklch(0.12 0.01 275); }
+.glass::before { content: ""; position: absolute; inset: 0; background: oklch(0.1 0.01 275 / 0.35); }
+.em { position: relative; width: 72px; height: 72px; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.idea { margin: 0; color: var(--fg); font-size: 13px; }
+.pick { color: oklch(0.85 0.14 85); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lit" cx="0.32" cy="0.26" r="0.7">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
+<div class="wrap">
+  <header>
+    <h1>Icon spike 1</h1>
+    <p class="lede">Chladni plate, Beach walker, Fire. Five directions each. Hover or focus an icon.</p>
+  </header>
+  <main id="rows"></main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const TAU = Math.PI * 2, PI = Math.PI;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const f1 = n => (+n).toFixed(1);
+  const pt = p => f1(p[0]) + ' ' + f1(p[1]);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smooth = t => t * t * (3 - 2 * t);
+  let uid = 0;
+  // A gradient gets a unique id per icon instance.
+  const grad = (svg, type, attrs, stops) => {
+    let defs = svg.querySelector('defs') || el('defs', {}, svg);
+    const id = 'g' + ++uid;
+    const g = el(type, { id, ...attrs }, defs);
+    stops.forEach(([o, c, op]) => el('stop', { offset: o, 'stop-color': c, ...(op != null ? { 'stop-opacity': op } : {}) }, g));
+    return `url(#${id})`;
+  };
+  const clip = (svg, shape, attrs) => {
+    let defs = svg.querySelector('defs') || el('defs', {}, svg);
+    const id = 'c' + ++uid;
+    const c = el('clipPath', { id }, defs);
+    const s = el(shape, attrs, c);
+    return { url: `url(#${id})`, shape: s };
+  };
+  const svgDoc = body => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">\n${body}\n</svg>\n`;
+  // Seeded noise keeps every load the same.
+  const rng = seed => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+  // ---------- Chladni geometry ----------
+  // A free square plate: nodal lines are the zeros of this mode sum.
+  const mode = (n, m, s) => (u, v) => Math.cos(n * PI * u) * Math.cos(m * PI * v) + s * Math.cos(m * PI * u) * Math.cos(n * PI * v);
+  const MODES = [mode(1, 3, 1), mode(2, 4, 1), mode(3, 5, 1), mode(4, 6, 1), mode(3, 7, 1)];
+  const REST = 1;
+  // Marching squares trace the zero line; map sends u v to the drawing.
+  const contour = (fn, N, map) => {
+    const W = N + 1, val = new Float32Array(W * W);
+    for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) val[j * W + i] = fn(i / N, j / N);
+    let d = '';
+    const P = (i, j) => pt(map(i / N, j / N));
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const a = val[j * W + i], b = val[j * W + i + 1], c = val[(j + 1) * W + i + 1], e = val[(j + 1) * W + i];
+      const ps = [];
+      if ((a > 0) !== (b > 0)) ps.push([i + a / (a - b), j]);
+      if ((b > 0) !== (c > 0)) ps.push([i + 1, j + b / (b - c)]);
+      if ((c > 0) !== (e > 0)) ps.push([i + 1 - c / (c - e), j + 1]);
+      if ((e > 0) !== (a > 0)) ps.push([i, j + 1 - e / (e - a)]);
+      for (let k = 0; k + 1 < ps.length; k += 2) d += 'M' + P(ps[k][0], ps[k][1]) + 'L' + P(ps[k + 1][0], ps[k + 1][1]);
+    }
+    return d;
+  };
+  // A fractional index blends two neighbouring modes.
+  const blendAt = r => {
+    const k = Math.min(MODES.length - 2, Math.floor(r)), t = smooth(clamp(r - k, 0, 1));
+    const A = MODES[k], B = MODES[k + 1];
+    return (u, v) => (1 - t) * A(u, v) + t * B(u, v);
+  };
+  // Sand grains settle where the plate is still.
+  const GRAINS = 640;
+  const grainSets = MODES.map((f, mi) => {
+    const r = rng(17 + mi * 101), out = [];
+    let guard = 0;
+    while (out.length < GRAINS && guard++ < 400000) {
+      const u = r(), v = r(), e = 1e-3;
+      const gx = (f(u + e, v) - f(u - e, v)) / (2 * e), gy = (f(u, v + e) - f(u, v - e)) / (2 * e);
+      const dist = Math.abs(f(u, v)) / (Math.hypot(gx, gy) + 1e-6);
+      if (dist < 0.011 * (0.4 + r())) out.push([u, v]);
+    }
+    // Grains sort by angle so a mode change swirls instead of crossing.
+    return out.sort((p, q) => Math.atan2(p[1] - 0.5, p[0] - 0.5) - Math.atan2(q[1] - 0.5, q[0] - 0.5));
+  });
+
+  // ---------- Jansen geometry ----------
+  // The eleven holy numbers of the linkage, in its own units.
+  const J = { a: 38, b: 41.5, c: 39.3, d: 40.1, e: 55.8, f: 39.4, g: 36.7, h: 65.7, i: 49, j: 50, k: 61.9, l: 7.8, m: 15 };
+  const meet = (p, r1, q, r2, pick) => {
+    const dx = q[0] - p[0], dy = q[1] - p[1], D = Math.hypot(dx, dy);
+    const A = (r1 * r1 - r2 * r2 + D * D) / (2 * D), H = Math.sqrt(Math.max(0, r1 * r1 - A * A));
+    const mx = p[0] + (A * dx) / D, my = p[1] + (A * dy) / D;
+    const s1 = [mx - (H * dy) / D, my + (H * dx) / D], s2 = [mx + (H * dy) / D, my - (H * dx) / D];
+    return pick(s1, s2) ? s1 : s2;
+  };
+  const up = (p, q) => p[1] > q[1], down = (p, q) => p[1] < q[1], left = (p, q) => p[0] < q[0];
+  // One leg for crank angle th; y points up.
+  const jansen = th => {
+    const O = [0, 0], B = [-J.a, -J.l], M = [J.m * Math.cos(th), J.m * Math.sin(th)];
+    const C = meet(M, J.j, B, J.b, up), D = meet(B, J.d, C, J.e, left), E = meet(M, J.k, B, J.c, down);
+    const F = meet(D, J.f, E, J.g, left), G = meet(F, J.h, E, J.i, down);
+    return { O, B, M, C, D, E, F, G };
+  };
+  // The mirror leg shares the crank pin.
+  const pair = th => {
+    const L = jansen(th), R0 = jansen(PI - th), R = {};
+    for (const k in R0) R[k] = [-R0[k][0], R0[k][1]];
+    return [L, R];
+  };
+  // The body travels this far per crank turn, in linkage units.
+  const STRIDE = 115;
+  const toScreen = (P, ax, ay, s) => { const o = {}; for (const k in P) o[k] = [ax + P[k][0] * s, ay - P[k][1] * s]; return o; };
+  const legPaths = L => ({
+    bars: `M${pt(L.O)}L${pt(L.M)}M${pt(L.M)}L${pt(L.C)}M${pt(L.M)}L${pt(L.E)}M${pt(L.B)}L${pt(L.E)}M${pt(L.D)}L${pt(L.F)}`,
+    plates: `M${pt(L.B)}L${pt(L.C)}L${pt(L.D)}ZM${pt(L.E)}L${pt(L.F)}L${pt(L.G)}Z`,
+    lines: `M${pt(L.B)}L${pt(L.C)}L${pt(L.D)}ZM${pt(L.E)}L${pt(L.F)}L${pt(L.G)}Z`,
+  });
+  // A walker is a row of leg pairs on one body; phases spread the gait.
+  const walkerPaths = (mods, ay, s, th) => {
+    let bars = '', plates = '', xs = [];
+    mods.forEach(([ax, ph]) => pair(th + ph).forEach(P => {
+      const L = toScreen(P, ax, ay, s), q = legPaths(L);
+      bars += q.bars; plates += q.plates; xs.push(L.B[0]);
+    }));
+    const body = `M${f1(Math.min(...xs))} ${f1(ay + J.l * s)}L${f1(Math.max(...xs))} ${f1(ay + J.l * s)}`;
+    return { bars, plates, body };
+  };
+  const footPath = (ox, oy, s) => Array.from({ length: 121 }, (_, k) => {
+    const G = jansen((k / 120) * TAU).G;
+    return [ox + G[0] * s, oy - G[1] * s];
+  });
+  const FOOT_Y = 91.8;
+
+  // ---------- Flame geometry ----------
+  // A tongue: tip at the top, round base at by; sw bends the tip.
+  const flameD = (cx, by, w, h, sw = 0) => {
+    const tx = cx + sw * w * 0.3, ty = by - h, R = cx + w / 2, L = cx - w / 2;
+    const n = v => f1(v);
+    return `M${n(tx)} ${n(ty)}C${n(tx + w * 0.06)} ${n(ty + h * 0.3)} ${n(R + w * 0.02)} ${n(by - h * 0.56)} ${n(R)} ${n(by - h * 0.3)}` +
+      `C${n(R)} ${n(by - h * 0.08)} ${n(cx + w * 0.3)} ${n(by)} ${n(cx)} ${n(by)}` +
+      `C${n(cx - w * 0.3)} ${n(by)} ${n(L)} ${n(by - h * 0.08)} ${n(L)} ${n(by - h * 0.3)}` +
+      `C${n(L)} ${n(by - h * 0.5)} ${n(tx - w * 0.28)} ${n(ty + h * 0.46)} ${n(tx)} ${n(ty)}Z`;
+  };
+  const SALTS = [
+    { name: 'wood', stops: ['oklch(0.94 0.11 92)', 'oklch(0.8 0.18 62)', 'oklch(0.64 0.21 38)', 'oklch(0.5 0.2 27)'], core: ['oklch(0.99 0.03 95)', 'oklch(0.92 0.13 85)'] },
+    { name: 'copper', stops: ['oklch(0.95 0.08 165)', 'oklch(0.84 0.19 150)', 'oklch(0.7 0.16 172)', 'oklch(0.56 0.12 195)'], core: ['oklch(0.99 0.03 165)', 'oklch(0.9 0.15 150)'] },
+    { name: 'potassium', stops: ['oklch(0.9 0.07 320)', 'oklch(0.74 0.17 312)', 'oklch(0.6 0.21 302)', 'oklch(0.47 0.2 292)'], core: ['oklch(0.98 0.03 320)', 'oklch(0.86 0.11 315)'] },
+    { name: 'sodium', stops: ['oklch(0.98 0.07 102)', 'oklch(0.91 0.17 96)', 'oklch(0.83 0.17 80)', 'oklch(0.7 0.16 62)'], core: ['oklch(0.99 0.03 100)', 'oklch(0.95 0.14 98)'] },
+  ];
+  const flameGrad = (svg, salt, y1, y2) => grad(svg, 'linearGradient', { gradientUnits: 'userSpaceOnUse', x1: 0, y1, x2: 0, y2 },
+    salt.stops.map((c, k) => [k / 3, c]));
+  const coreGrad = (svg, salt, y1, y2) => grad(svg, 'linearGradient', { gradientUnits: 'userSpaceOnUse', x1: 0, y1, x2: 0, y2 },
+    [[0, salt.core[0]], [1, salt.core[1]]]);
+  const IRON = ['oklch(0.36 0.012 260)', 'oklch(0.2 0.01 262)'];
+
+  // A hover loop: play runs while hovered; rest returns to the finished pose.
+  const loopToy = (play, rest) => ({ play, rest });
+  const both = (...tls) => ({ kill: () => tls.forEach(t => t.kill()) });
+
+  // =====================================================================
+  const TOYS = [
+    {
+      id: 'chladni', name: 'Chladni plate', tint: 'oklch(0.55 0.14 75 / 0.55)', pick: 'A',
+      dirs: [
+        {
+          letter: 'A', kind: 'Shaded object',
+          idea: 'Real sand: 640 grains migrate to the next figure as the pointer tunes across the plate.',
+          icon(svg) {
+            const plate = grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 0 }, [
+              [0, 'oklch(0.27 0.05 275)'], [0.28, 'oklch(0.44 0.07 50)'], [0.42, 'oklch(0.28 0.05 278)'],
+              [0.7, 'oklch(0.3 0.05 270)'], [0.8, 'oklch(0.46 0.09 215)'], [1, 'oklch(0.26 0.05 275)']]);
+            el('rect', { x: 9, y: 9, width: 110, height: 110, rx: 5, fill: plate }, svg);
+            el('rect', { x: 9, y: 9, width: 110, height: 110, rx: 5, fill: 'url(#lit)', opacity: 0.6 }, svg);
+            el('rect', { x: 9, y: 9, width: 110, height: 110, rx: 5, fill: 'none', stroke: 'url(#rim)', 'stroke-width': 1.5 }, svg);
+            el('circle', { cx: 64, cy: 64, r: 3.2, fill: 'oklch(0.22 0.03 270)', stroke: 'oklch(0.55 0.03 270)', 'stroke-width': 1 }, svg);
+            const sand = el('path', { fill: 'oklch(0.84 0.15 78)' }, svg);
+            const at = (u, v) => [12 + u * 104, 12 + v * 104];
+            const cur = grainSets[REST].map(([u, v]) => at(u, v));
+            const draw = () => { let d = ''; for (const [x, y] of cur) d += `M${f1(x)} ${f1(y)}h1.5v1.5h-1.5z`; sand.setAttribute('d', d); };
+            draw();
+            const lag = grainSets[0].map((_, k) => (k * 7919 % 97) / 97 * 0.3);
+            let idx = REST, from = null, to = null;
+            const prox = { t: 0 };
+            const migrate = k => {
+              if (k === idx) return;
+              idx = k; from = cur.map(p => p.slice()); to = grainSets[k].map(([u, v]) => at(u, v));
+              prox.t = 0;
+              gsap.to(prox, { t: 1, duration: 0.95, ease: 'none', overwrite: true, onUpdate() {
+                for (let i = 0; i < cur.length; i++) {
+                  const s = smooth(clamp((prox.t - lag[i]) / 0.7, 0, 1));
+                  cur[i][0] = lerp(from[i][0], to[i][0], s); cur[i][1] = lerp(from[i][1], to[i][1], s);
+                }
+                draw();
+              } });
+            };
+            const pick = p => migrate(clamp(Math.floor(((p[0] - 9) / 110) * MODES.length), 0, MODES.length - 1));
+            return { enter: p => (p ? pick(p) : migrate(3)), move: p => p && pick(p), leave: () => migrate(REST) };
+          },
+          emblem() {
+            // Bold grains along the nodal lines; no plate.
+            const f = MODES[REST], r = rng(5), dots = [];
+            let guard = 0;
+            while (dots.length < 120 && guard++ < 200000) {
+              const u = r(), v = r(), e = 1e-3;
+              const gx = (f(u + e, v) - f(u - e, v)) / (2 * e), gy = (f(u, v + e) - f(u, v - e)) / (2 * e);
+              if (Math.abs(f(u, v)) / (Math.hypot(gx, gy) + 1e-6) > 0.012) continue;
+              const x = 12 + u * 104, y = 12 + v * 104;
+              if (dots.every(([a, b]) => Math.hypot(a - x, b - y) > 7.4)) dots.push([x, y]);
+            }
+            return svgDoc(dots.map(([x, y]) => `  <circle cx="${f1(x)}" cy="${f1(y)}" r="2.9" fill="#fff"/>`).join('\n'));
+          },
+        },
+        {
+          letter: 'B', kind: 'Stencil cut-out',
+          idea: 'Steel tile with the nodal figure cut through; on hover it hums from mode to mode.',
+          icon(svg) {
+            const c = clip(svg, 'rect', { x: 9, y: 9, width: 110, height: 110, rx: 6 });
+            el('rect', { x: 9, y: 9, width: 110, height: 110, rx: 6, fill: grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 1 }, [[0, 'oklch(0.86 0.03 255)'], [1, 'oklch(0.6 0.05 270)']]) }, svg);
+            const cut = el('path', { fill: 'none', style: 'stroke: var(--bg)', 'stroke-width': 3.4, 'stroke-linecap': 'round', 'clip-path': c.url }, svg);
+            const SEQ = [1, 3, 2];
+            const st = { p: 0 };
+            const at = (u, v) => [9 + u * 110, 9 + v * 110];
+            const draw = () => {
+              const k = Math.floor(st.p) % 3, t = smooth(st.p - Math.floor(st.p));
+              const A = MODES[SEQ[k]], B = MODES[SEQ[(k + 1) % 3]];
+              cut.setAttribute('d', contour((u, v) => (1 - t) * A(u, v) + t * B(u, v), 44, at));
+            };
+            draw();
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, onUpdate: draw })
+                .to(st, { p: 1, duration: 1.1, ease: 'none' }, 0.5)
+                .to(st, { p: 2, duration: 1.1, ease: 'none' }, '+=0.5')
+                .to(st, { p: 3, duration: 1.1, ease: 'none' }, '+=0.5'),
+              () => gsap.to(st, { p: st.p % 3 > 1.5 ? Math.ceil(st.p / 3) * 3 : Math.floor(st.p / 3) * 3, duration: 0.45, ease: 'power2.out', overwrite: true, onUpdate: draw, onComplete() { st.p = 0; draw(); } }),
+            );
+          },
+          emblem() {
+            const d = contour(MODES[REST], 64, (u, v) => [12 + u * 104, 12 + v * 104]);
+            return svgDoc(`  <rect x="12" y="12" width="104" height="104" rx="6" fill="#fff"/>\n  <path d="${d}" fill="none" stroke="#000" stroke-width="5" stroke-linecap="round"/>`);
+          },
+        },
+        {
+          letter: 'C', kind: 'Single-weight line',
+          idea: 'The plate on its post with the tuning rail; slide the pointer up and the sand redraws.',
+          icon(svg) {
+            const line = { fill: 'none', stroke: 'oklch(0.8 0.03 265)', 'stroke-width': 1.6, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' };
+            // The plate in perspective: back edge short, front edge long.
+            const Q = { bl: [24, 26], br: [90, 26], fl: [9, 74], fr: [105, 74] };
+            const at = (u, v) => [lerp(lerp(Q.bl[0], Q.br[0], u), lerp(Q.fl[0], Q.fr[0], u), v), lerp(Q.bl[1], Q.fl[1], v)];
+            el('path', { d: `M${pt(Q.bl)}L${pt(Q.br)}L${pt(Q.fr)}L${pt(Q.fl)}ZM9 74V78H105V74`, ...line }, svg);
+            el('path', { d: 'M54 78V114M60 78V114M47 82H67M44 117H70', ...line }, svg);
+            const sand = el('path', { fill: 'none', stroke: 'oklch(0.84 0.15 78)', 'stroke-width': 1.5, 'stroke-linecap': 'round' }, svg);
+            // The rail: ticks per mode and a sliding gold bar.
+            const R0 = 112, R1 = 20;
+            el('path', { d: `M117 ${R1}V${R0}` + MODES.map((_, k) => `M114 ${f1(R0 - (k / (MODES.length - 1)) * (R0 - R1))}H120`).join(''), ...line }, svg);
+            const knob = el('rect', { x: 111, width: 12, height: 4, rx: 1.5, fill: 'oklch(0.84 0.15 78)' }, svg);
+            const st = { r: REST };
+            const draw = () => {
+              sand.setAttribute('d', contour(blendAt(st.r), 34, at));
+              knob.setAttribute('y', f1(R0 - (st.r / (MODES.length - 1)) * (R0 - R1) - 2));
+            };
+            draw();
+            const tune = r => gsap.to(st, { r, duration: 0.35, ease: 'power3.out', overwrite: true, onUpdate: draw });
+            const aim = p => tune(clamp((R0 - p[1]) / (R0 - R1), 0, 1) * (MODES.length - 1));
+            return { enter: p => (p ? aim(p) : tune(3)), move: p => p && aim(p), leave: () => tune(REST) };
+          },
+          emblem() {
+            const Q = { bl: [24, 26], br: [90, 26], fl: [9, 74], fr: [105, 74] };
+            const at = (u, v) => [lerp(lerp(Q.bl[0], Q.br[0], u), lerp(Q.fl[0], Q.fr[0], u), v), lerp(Q.bl[1], Q.fl[1], v)];
+            const sand = contour(MODES[REST], 30, at);
+            const s = 'fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"';
+            return svgDoc(`  <path d="M${pt(Q.bl)}L${pt(Q.br)}L${pt(Q.fr)}L${pt(Q.fl)}ZM9 74V79H105V74" ${s} stroke-width="4"/>\n  <path d="M57 80V114M44 117H70M117 18V112" ${s} stroke-width="4.5"/>\n  <rect x="109" y="84" width="16" height="7" rx="2" fill="#fff"/>\n  <path d="${sand}" ${s} stroke-width="3.6"/>`);
+          },
+        },
+        {
+          letter: 'D', kind: 'Isometric block',
+          idea: 'A thick steel slab on its post; on hover it turns in quarter steps and the figure turns with it.',
+          icon(svg) {
+            const R = 31.75, Yc = 44, T = 9;
+            const sides = el('g', {}, svg);
+            const top = el('path', { fill: grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 1 }, [[0, 'oklch(0.42 0.05 268)'], [1, 'oklch(0.24 0.04 275)']]) }, svg);
+            const shade = el('path', { fill: 'none', stroke: 'oklch(0.2 0.03 275)', 'stroke-width': 2.2, 'stroke-linecap': 'round', transform: 'translate(0 0.9)' }, svg);
+            const sand = el('path', { fill: 'none', stroke: 'oklch(0.86 0.15 80)', 'stroke-width': 1.8, 'stroke-linecap': 'round' }, svg);
+            // The post and its foot sit under the slab.
+            const post = grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 0 }, [[0, 'oklch(0.5 0.02 265)'], [0.5, 'oklch(0.32 0.02 265)'], [1, 'oklch(0.22 0.02 265)']]);
+            const g0 = el('g', {}, svg);
+            svg.insertBefore(g0, sides);
+            el('ellipse', { cx: 64, cy: 114, rx: 15, ry: 5, fill: 'oklch(0.3 0.02 265)' }, g0);
+            el('rect', { x: 59, y: Yc + T, width: 10, height: 114 - Yc - T, fill: post }, g0);
+            const st = { a: 0 };
+            const P = (u, v) => {
+              const c = Math.cos(st.a), s = Math.sin(st.a), ur = u * c - v * s, vr = u * s + v * c;
+              return [64 + (ur - vr) * 0.866 * R, Yc + (ur + vr) * 0.5 * R];
+            };
+            const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+            const draw = () => {
+              const p = corners.map(([u, v]) => P(u, v));
+              top.setAttribute('d', 'M' + p.map(pt).join('L') + 'Z');
+              sides.replaceChildren();
+              p.forEach((a, i) => {
+                const b = p[(i + 1) % 4];
+                // An edge faces the viewer when its far side is lower on screen.
+                const mx = (corners[i][0] + corners[(i + 1) % 4][0]) / 2, my = (corners[i][1] + corners[(i + 1) % 4][1]) / 2;
+                const c = Math.cos(st.a), s = Math.sin(st.a), nx = mx * c - my * s, ny = mx * s + my * c;
+                if (nx + ny <= 0.001) return;
+                const L = 0.34 + 0.1 * (nx - ny) / 1.42;
+                el('path', { d: `M${pt(a)}L${pt(b)}L${pt([b[0], b[1] + T])}L${pt([a[0], a[1] + T])}Z`, fill: `oklch(${L.toFixed(3)} 0.035 268)` }, sides);
+              });
+              const d = contour((u, v) => MODES[REST](u, v), 36, (u, v) => P(u * 2 - 1, v * 2 - 1));
+              sand.setAttribute('d', d); shade.setAttribute('d', d);
+            };
+            draw();
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { a: 0 }, { a: PI / 2, duration: 1.1, ease: 'power2.inOut' }).to({}, { duration: 0.45 }),
+              () => gsap.to(st, { a: Math.round(st.a / (PI / 2)) * (PI / 2), duration: 0.4, ease: 'power2.out', overwrite: true, onUpdate: draw, onComplete() { st.a = 0; draw(); } }),
+            );
+          },
+          emblem() {
+            const R = 31.75, Yc = 44, T = 10;
+            const P = (u, v) => [64 + (u - v) * 0.866 * R, Yc + (u + v) * 0.5 * R];
+            const t = [P(-1, -1), P(1, -1), P(1, 1), P(-1, 1)];
+            const sand = contour(MODES[REST], 36, (u, v) => P(u * 2 - 1, v * 2 - 1));
+            const dn = p => [p[0], p[1] + T];
+            return svgDoc(`  <path d="M${pt(t[3])}L${pt(t[2])}L${pt(t[1])}L${pt(dn(t[1]))}L${pt(dn(t[2]))}L${pt(dn(t[3]))}Z" fill="#fff"/>\n  <path d="M${pt(t[0])}L${pt(t[1])}L${pt(t[2])}L${pt(t[3])}Z" fill="#fff"/>\n  <path d="M${pt(t[3])}L${pt(t[2])}L${pt(t[1])}M${pt(t[2])}L${pt(dn(t[2]))}" fill="none" stroke="#000" stroke-width="2.6" stroke-linejoin="round"/>\n  <path d="${sand}" fill="none" stroke="#000" stroke-width="3.6" stroke-linecap="round"/>\n  <rect x="58" y="${Yc + R + T + 3}" width="12" height="${f1(114 - Yc - R - T - 3)}" fill="#fff"/>\n  <ellipse cx="64" cy="115" rx="17" ry="5.5" fill="#fff"/>`);
+          },
+        },
+        {
+          letter: 'E', kind: 'Abstract mark',
+          idea: 'The rest figure as a bold glyph; on hover it breathes like a standing wave, nodes held still.',
+          icon(svg) {
+            el('rect', { x: 9.6, y: 9.6, width: 108.8, height: 108.8, rx: 4, fill: 'none', stroke: 'oklch(0.42 0.03 268)', 'stroke-width': 1.2 }, svg);
+            const gold = grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 1, y2: 1 }, [[0, 'oklch(0.9 0.13 88)'], [1, 'oklch(0.72 0.16 62)']]);
+            const s = { fill: 'none', stroke: gold, 'stroke-width': 6.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+            const dia = el('path', { d: 'M64 17L111 64L64 111L17 64Z', ...s }, svg);
+            const ring = el('circle', { cx: 64, cy: 64, r: 17, ...s }, svg);
+            const arcs = [[13, 13, 1, 1], [115, 13, -1, 1], [115, 115, -1, -1], [13, 115, 1, -1]].map(([x, y, sx, sy]) =>
+              el('path', { d: `M${x + sx * 22} ${y}A22 22 0 0 ${sx * sy > 0 ? 1 : 0} ${x} ${y + sy * 22}`, ...s, 'data-o': `${x} ${y}` }, svg));
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, yoyo: true, defaults: { duration: 0.55, ease: 'sine.inOut' } })
+                .to(ring, { scale: 1.32, svgOrigin: '64 64' }, 0)
+                .to(dia, { scale: 0.93, svgOrigin: '64 64' }, 0)
+                .add(arcs.map(a => gsap.to(a, { scale: 1.28, svgOrigin: a.dataset.o, duration: 0.55, ease: 'sine.inOut' })), 0),
+              () => gsap.to([ring, dia, ...arcs], { scale: 1, duration: 0.35, ease: 'power2.out', overwrite: true, clearProps: 'transform' }),
+            );
+          },
+          emblem() {
+            const s = 'fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"';
+            const arcs = [[13, 13, 1, 1], [115, 13, -1, 1], [115, 115, -1, -1], [13, 115, 1, -1]].map(([x, y, sx, sy]) =>
+              `M${x + sx * 24} ${y}A24 24 0 0 ${sx * sy > 0 ? 1 : 0} ${x} ${y + sy * 24}`).join('');
+            return svgDoc(`  <path d="M64 17L111 64L64 111L17 64Z" ${s}/>\n  <circle cx="64" cy="64" r="16" ${s}/>\n  <path d="${arcs}" ${s}/>`);
+          },
+        },
+      ],
+    },
+    // =====================================================================
+    {
+      id: 'walker', name: 'Beach walker', tint: 'oklch(0.6 0.15 45 / 0.6)', pick: 'B',
+      dirs: [
+        {
+          letter: 'A', kind: 'Shaded poster',
+          idea: 'A dark walker crosses a low sun; the sea glints as cut lines under the horizon.',
+          icon(svg) {
+            const sun = grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 0, y2: 1 }, [[0, 'oklch(0.93 0.1 90)'], [0.5, 'oklch(0.8 0.15 60)'], [0.78, 'oklch(0.66 0.17 35)'], [1, 'oklch(0.5 0.15 15)']]);
+            el('circle', { cx: 64, cy: 62, r: 50, fill: sun }, svg);
+            el('circle', { cx: 64, cy: 62, r: 50, fill: 'url(#lit)', opacity: 0.5 }, svg);
+            // Glint cuts widen toward the viewer.
+            el('path', { d: [92, 97, 103, 109].map((y, k) => `M${30 - k * 3} ${y}H${98 + k * 3}`).join(''), style: 'stroke: var(--bg)', 'stroke-width': 1.6 + 0 }, svg);
+            const ink = 'oklch(0.13 0.015 30)';
+            const s = 0.32, ay = 59, mods = [[30, 0], [64, (2 * PI) / 3], [98, (4 * PI) / 3]];
+            el('path', { d: `M14 ${f1(ay + FOOT_Y * s + 0.8)}H114`, stroke: ink, 'stroke-width': 1.6 }, svg);
+            const bars = el('path', { fill: 'none', stroke: ink, 'stroke-width': 1.7, 'stroke-linecap': 'round' }, svg);
+            const plates = el('path', { fill: ink, stroke: ink, 'stroke-width': 1, 'stroke-linejoin': 'round' }, svg);
+            const body = el('path', { fill: 'none', stroke: ink, 'stroke-width': 4, 'stroke-linecap': 'round' }, svg);
+            el('path', { d: `M64 ${ay}V${ay - 38}`, stroke: ink, 'stroke-width': 2, 'stroke-linecap': 'round' }, svg);
+            const flag = el('path', { fill: ink }, svg);
+            const st = { th: 0 };
+            const draw = () => {
+              const w = walkerPaths(mods, ay, s, st.th);
+              bars.setAttribute('d', w.bars); plates.setAttribute('d', w.plates); body.setAttribute('d', w.body);
+              const k = Math.sin(st.th * 2) * 2.2, y0 = ay - 38;
+              flag.setAttribute('d', `M64 ${y0}C72 ${f1(y0 - 2 + k)} 80 ${f1(y0 + 3 - k)} 90 ${f1(y0 + 2 + k * 0.6)}L64 ${y0 + 9}Z`);
+            };
+            draw();
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { th: 0 }, { th: TAU, duration: 1.8, ease: 'none' }),
+              () => gsap.to(st, { th: st.th > PI ? TAU : 0, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: draw, onComplete() { st.th = 0; draw(); } }),
+            );
+          },
+          emblem() {
+            const s = 0.32, ay = 59, w = walkerPaths([[30, 0], [64, (2 * PI) / 3], [98, (4 * PI) / 3]], ay, s, 0);
+            const y0 = ay - 38;
+            return svgDoc(`  <circle cx="64" cy="62" r="50" fill="#fff"/>\n  <path d="${[92, 97, 103, 109].map((y, k) => `M${30 - k * 3} ${y}H${98 + k * 3}`).join('')}" stroke="#000" stroke-width="2.4"/>\n  <path d="${w.bars}${w.body}M64 ${ay}V${y0}" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/>\n  <path d="${w.plates}M64 ${y0}C72 ${y0 - 2} 80 ${y0 + 3} 90 ${y0 + 2}L64 ${y0 + 9}Z" fill="#000" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/>\n  <path d="M14 ${f1(ay + FOOT_Y * s + 0.8)}H114" stroke="#000" stroke-width="2.4"/>`);
+          },
+        },
+        {
+          letter: 'B', kind: 'Mechanism stencil',
+          idea: 'One true Jansen leg as bone plates with cut pins; the crank turns and the foot draws its loop.',
+          icon(svg) {
+            const s = 0.87, ox = 104, oy = 38.8;
+            const bone = 'oklch(0.9 0.025 78)';
+            const loop = footPath(ox, oy, s);
+            el('path', { d: 'M' + loop.map(pt).join('L') + 'Z', fill: 'none', stroke: 'oklch(0.7 0.15 42)', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-dasharray': '0 4.6' }, svg);
+            const frame = el('path', { fill: 'none', stroke: 'oklch(0.5 0.03 60)', 'stroke-width': 7, 'stroke-linecap': 'round' }, svg);
+            frame.setAttribute('d', `M${ox} ${oy}L${f1(ox - J.a * s)} ${f1(oy + J.l * s)}`);
+            const bars = el('path', { fill: 'none', stroke: bone, 'stroke-width': 4.6, 'stroke-linecap': 'round' }, svg);
+            const plates = el('path', { fill: bone, stroke: bone, 'stroke-width': 4.6, 'stroke-linejoin': 'round' }, svg);
+            const crank = el('circle', { cx: ox, cy: oy, r: J.m * s + 4.5, fill: bone }, svg);
+            const foot = el('circle', { r: 4.2, fill: 'oklch(0.72 0.16 42)' }, svg);
+            const holes = el('g', { style: 'fill: var(--bg)' }, svg);
+            const hs = 'OBMCDEFG'.split('').map(() => el('circle', { r: 1.7 }, holes));
+            const st = { th: 0 };
+            const draw = () => {
+              const L = toScreen(jansen(st.th), ox, oy, s), q = legPaths(L);
+              bars.setAttribute('d', q.bars); plates.setAttribute('d', q.plates);
+              'OBMCDEFG'.split('').forEach((k, i) => { hs[i].setAttribute('cx', f1(L[k][0])); hs[i].setAttribute('cy', f1(L[k][1])); });
+              foot.setAttribute('cx', f1(L.G[0])); foot.setAttribute('cy', f1(L.G[1]));
+            };
+            draw();
+            void crank;
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { th: 0 }, { th: TAU, duration: 2.4, ease: 'none' }),
+              () => gsap.to(st, { th: st.th > PI ? TAU : 0, duration: 0.6, ease: 'power2.out', overwrite: true, onUpdate: draw, onComplete() { st.th = 0; draw(); } }),
+            );
+          },
+          emblem() {
+            const s = 0.87, ox = 104, oy = 38.8;
+            const L = toScreen(jansen(0), ox, oy, s), q = legPaths(L);
+            const holes = 'OBMCDEFG'.split('').map(k => `<circle cx="${f1(L[k][0])}" cy="${f1(L[k][1])}" r="2.6" fill="#000"/>`).join('');
+            return svgDoc(`  <path d="M${ox} ${oy}L${f1(ox - J.a * s)} ${f1(oy + J.l * s)}${q.bars}" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>\n  <path d="${q.plates}" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>\n  <circle cx="${ox}" cy="${oy}" r="${f1(J.m * s + 5)}" fill="#fff"/>\n  ${holes}`);
+          },
+        },
+        {
+          letter: 'C', kind: 'Single-weight line',
+          idea: 'Every bar in one thin line under a ring sun; the sand ticks pass at exactly foot speed.',
+          icon(svg) {
+            const s = 0.34, ay = 62, mods = [[44, 0], [84, PI / 2]];
+            const gy = ay + FOOT_Y * s + 0.8;
+            el('circle', { cx: 64, cy: 50, r: 34, fill: 'none', stroke: 'oklch(0.74 0.15 45)', 'stroke-width': 1.6 }, svg);
+            el('path', { d: `M9 ${f1(gy)}H119`, stroke: 'oklch(0.62 0.03 70)', 'stroke-width': 1.4 }, svg);
+            // One dash period divides one crank turn of travel, so the loop is seamless.
+            const per = (STRIDE * s) / 3;
+            const sandL = el('path', { d: `M9 ${f1(gy + 6)}H119M9 ${f1(gy + 11)}H119`, stroke: 'oklch(0.5 0.03 60)', 'stroke-width': 1.4, 'stroke-dasharray': `${f1(per * 0.35)} ${f1(per * 0.65)}` }, svg);
+            const line = { fill: 'none', stroke: 'oklch(0.9 0.025 78)', 'stroke-width': 1.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+            const bars = el('path', line, svg), plates = el('path', line, svg), body = el('path', { ...line, 'stroke-width': 2.4 }, svg);
+            const st = { th: 0 };
+            const draw = () => {
+              const w = walkerPaths(mods, ay, s, st.th);
+              bars.setAttribute('d', w.bars); plates.setAttribute('d', w.plates); body.setAttribute('d', w.body);
+              sandL.setAttribute('stroke-dashoffset', f1((-st.th / TAU) * STRIDE * s));
+            };
+            draw();
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { th: 0 }, { th: TAU, duration: 1.8, ease: 'none' }),
+              () => gsap.to(st, { th: st.th > PI ? TAU : 0, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: draw, onComplete() { st.th = 0; draw(); } }),
+            );
+          },
+          emblem() {
+            const s = 0.34, ay = 62, w = walkerPaths([[44, 0], [84, PI / 2]], ay, s, 0);
+            const gy = ay + FOOT_Y * s + 0.8;
+            const ln = 'fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"';
+            return svgDoc(`  <circle cx="64" cy="50" r="34" ${ln} stroke-width="3.6"/>\n  <path d="${w.bars}${w.plates}" ${ln} stroke-width="3.4"/>\n  <path d="${w.body}M9 ${f1(gy + 1)}H119" ${ln} stroke-width="5"/>`);
+          },
+        },
+        {
+          letter: 'D', kind: 'Scene with reflection',
+          idea: 'A small walker on the waterline follows the pointer; its legs turn exactly with the ground covered.',
+          icon(svg) {
+            const H = 74;
+            const sky = grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 0, y2: 1 }, [[0, 'oklch(0.32 0.08 300)'], [0.55, 'oklch(0.58 0.14 20)'], [1, 'oklch(0.84 0.13 70)']]);
+            const sea = grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 0, y2: 1 }, [[0, 'oklch(0.5 0.1 35)'], [1, 'oklch(0.22 0.04 300)']]);
+            const tile = clip(svg, 'rect', { x: 9, y: 9, width: 110, height: 110, rx: 7 });
+            const g = el('g', { 'clip-path': tile.url }, svg);
+            el('rect', { x: 9, y: 9, width: 110, height: H - 9, fill: sky }, g);
+            el('circle', { cx: 86, cy: H, r: 15, fill: 'oklch(0.95 0.08 90)' }, g);
+            el('rect', { x: 9, y: H, width: 110, height: 119 - H, fill: sea }, g);
+            el('path', { d: [79, 85, 92, 100, 109].map((y, k) => `M${80 - k * 3} ${y}H${92 + k * 3}`).join(''), stroke: 'oklch(0.92 0.09 85)', 'stroke-width': 1.5, opacity: 0.8 }, g);
+            const ink = 'oklch(0.14 0.02 300)';
+            const s = 0.2, mods = [[-12, 0], [12, PI / 2]];
+            const ay = H - FOOT_Y * s - 0.5;
+            const mk = parent => {
+              const b = el('path', { fill: 'none', stroke: ink, 'stroke-width': 1.3, 'stroke-linecap': 'round' }, parent);
+              const p = el('path', { fill: ink, stroke: ink, 'stroke-width': 0.8, 'stroke-linejoin': 'round' }, parent);
+              const y = el('path', { fill: 'none', stroke: ink, 'stroke-width': 2.6, 'stroke-linecap': 'round' }, parent);
+              const m = el('path', { fill: ink, stroke: ink, 'stroke-width': 1.3, 'stroke-linejoin': 'round' }, parent);
+              return [b, p, y, m];
+            };
+            const me = el('g', {}, g), mirror = el('g', { transform: `translate(0 ${2 * H}) scale(1 -1)`, opacity: 0.45 }, g);
+            // Stripes break the reflection like wet sand.
+            const m = el('mask', { id: 'm' + ++uid }, svg.querySelector('defs'));
+            for (let y = H; y < 120; y += 4) el('rect', { x: 0, y, width: 128, height: 2.4, fill: '#fff' }, m);
+            el('g', { mask: `url(#${m.id})` }, g).appendChild(mirror);
+            const parts = [mk(me), mk(mirror)];
+            const st = { x: 64 };
+            const draw = () => {
+              const th = (-(st.x - 64) / (STRIDE * s)) * TAU;
+              const w = walkerPaths(mods.map(([dx, ph]) => [st.x + dx, ph]), ay, s, th);
+              const mast = `M${f1(st.x)} ${f1(ay)}V${f1(ay - 22)}M${f1(st.x)} ${f1(ay - 22)}L${f1(st.x + 12)} ${f1(ay - 19)}L${f1(st.x)} ${f1(ay - 16)}Z`;
+              parts.forEach(([b, p, y, mm]) => { b.setAttribute('d', w.bars); p.setAttribute('d', w.plates); y.setAttribute('d', w.body); mm.setAttribute('d', mast); });
+            };
+            draw();
+            const go = x => {
+              const tx = clamp(x, 40, 92);
+              gsap.to(st, { x: tx, duration: 0.25 + Math.abs(tx - st.x) / 34, ease: 'power1.inOut', overwrite: true, onUpdate: draw });
+            };
+            return { enter: p => go(p ? p[0] : 40), move: p => p && go(p[0]), leave: () => go(64) };
+          },
+          emblem() {
+            const H = 74, s = 0.2, ay = H - FOOT_Y * s - 0.5;
+            const w = walkerPaths([[52, 0], [76, PI / 2]], ay, s, 0);
+            const mast = `M64 ${f1(ay)}V${f1(ay - 22)}M64 ${f1(ay - 22)}L76 ${f1(ay - 19)}L64 ${f1(ay - 16)}Z`;
+            let stripes = '';
+            for (let y = H + 3; y < 117; y += 6) stripes += `<rect x="12" y="${y}" width="104" height="3" fill="#000"/>`;
+            return svgDoc(`  <rect x="12" y="12" width="104" height="104" rx="7" fill="#fff"/>\n  <circle cx="88" cy="${H}" r="15" fill="#000"/>\n  ${stripes}\n  <g fill="none" stroke="#000" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="${w.bars}${mast}"/><path d="${w.plates}" fill="#000"/><path d="${w.body}" stroke-width="4"/></g>\n  <rect x="12" y="${H - 0.5}" width="104" height="2.5" fill="#000"/>`);
+          },
+        },
+        {
+          letter: 'E', kind: 'Abstract mark',
+          idea: 'Three true foot paths stacked as a gait chart; a sun-dot runs each loop a third apart.',
+          icon(svg) {
+            const s = 110 / 67, rows = [30, 64, 98];
+            const raw = footPath(0, 0, 1);
+            const minx = Math.min(...raw.map(p => p[0])), maxx = Math.max(...raw.map(p => p[0]));
+            const miny = Math.min(...raw.map(p => p[1])), maxy = Math.max(...raw.map(p => p[1]));
+            const loops = rows.map(cy => raw.map(([x, y]) => [9 + (x - minx) * s * (110 / ((maxx - minx) * s)), cy + (y - (miny + maxy) / 2) * s]));
+            const bone = 'oklch(0.86 0.03 75)';
+            loops.forEach(L => el('path', { d: 'M' + L.map(pt).join('L') + 'Z', fill: 'none', stroke: bone, 'stroke-width': 3, 'stroke-linejoin': 'round' }, svg));
+            const sunC = ['oklch(0.9 0.14 85)', 'oklch(0.76 0.17 50)', 'oklch(0.64 0.19 25)'];
+            const dots = rows.map((_, k) => el('circle', { r: 5.2, fill: sunC[k], style: 'stroke: var(--bg)', 'stroke-width': 2 }, svg));
+            const st = { t: 0 };
+            const at = (L, t) => { const n = L.length - 1, x = (((t % 1) + 1) % 1) * n, i = Math.floor(x), f = x - i; return [lerp(L[i][0], L[i + 1][0], f), lerp(L[i][1], L[i + 1][1], f)]; };
+            const draw = () => dots.forEach((d, k) => { const p = at(loops[k], st.t + k / 3); d.setAttribute('cx', f1(p[0])); d.setAttribute('cy', f1(p[1])); });
+            draw();
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { t: 0 }, { t: 1, duration: 2.2, ease: 'none' }),
+              () => gsap.to(st, { t: st.t > 0.5 ? 1 : 0, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: draw, onComplete() { st.t = 0; draw(); } }),
+            );
+          },
+          emblem() {
+            const s = 110 / 67, rows = [30, 64, 98];
+            const raw = footPath(0, 0, 1);
+            const minx = Math.min(...raw.map(p => p[0])), miny = Math.min(...raw.map(p => p[1])), maxy = Math.max(...raw.map(p => p[1]));
+            const loops = rows.map(cy => raw.map(([x, y]) => [9 + (x - minx) * s, cy + (y - (miny + maxy) / 2) * s]));
+            const dots = rows.map((_, k) => loops[k][Math.round(((k / 3) % 1) * 120)]);
+            return svgDoc(`  <path d="${loops.map(L => 'M' + L.map(pt).join('L') + 'Z').join('')}" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round"/>\n${dots.map(p => `  <circle cx="${f1(p[0])}" cy="${f1(p[1])}" r="9" fill="#fff" stroke="#000" stroke-width="3"/>`).join('\n')}`);
+          },
+        },
+      ],
+    },
+    // =====================================================================
+    {
+      id: 'fire', name: 'Fire', tint: 'oklch(0.6 0.19 40 / 0.6)', pick: 'E',
+      dirs: [
+        {
+          letter: 'A', kind: 'Shaded object',
+          idea: 'Flame over the slatted iron block; on hover it flickers and burns through all four salts.',
+          icon(svg) {
+            const by = 98, top = 9;
+            const layers = SALTS.map((salt, k) => {
+              const g = el('g', { opacity: k ? 0 : 1 }, svg);
+              const outer = el('path', { fill: flameGrad(svg, salt, by, top) }, g);
+              const side = el('path', { fill: flameGrad(svg, salt, by, top) }, g);
+              const core = el('path', { fill: coreGrad(svg, salt, by, top + 40) }, g);
+              return { g, outer, side, core };
+            });
+            const iron = grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 0, y2: 1 }, [[0, IRON[0]], [1, IRON[1]]]);
+            el('rect', { x: 36, y: 92, width: 56, height: 27, rx: 5, fill: iron }, svg);
+            el('rect', { x: 36, y: 92, width: 56, height: 27, rx: 5, fill: 'none', stroke: 'url(#rim)', 'stroke-width': 1.2 }, svg);
+            // The slats glow in the burning salt's colour.
+            const slats = SALTS.map((salt, k) => {
+              const g = el('g', { opacity: k ? 0 : 1, fill: salt.stops[1] }, svg);
+              [46, 55, 64, 73, 82].forEach(x => el('rect', { x: x - 1.6, y: 97, width: 3.2, height: 17, rx: 1 }, g));
+              return g;
+            });
+            const st = { t: 0 };
+            const draw = () => {
+              const a = Math.sin(st.t * TAU), b = Math.sin(st.t * TAU * 2 + 1);
+              const o = flameD(64, by, 58, by - top - 4 * (1 - b) * 0.5, 0.45 * a + 0.15 * b);
+              const sd = flameD(46, by - 6, 22, 44 + 6 * b, -0.6 * a);
+              const c = flameD(64, by, 30, 50 + 5 * a, 0.3 * a);
+              layers.forEach(L => { L.outer.setAttribute('d', o); L.side.setAttribute('d', sd); L.core.setAttribute('d', c); });
+            };
+            draw();
+            const salt = { k: 0 };
+            const show = () => layers.forEach((L, k) => {
+              // Weight falls off with the salt's distance round the cycle.
+              const d = (((salt.k - k) % 4) + 4) % 4, w = clamp(1 - Math.min(d, 4 - d), 0, 1);
+              L.g.setAttribute('opacity', w.toFixed(3)); slats[k].setAttribute('opacity', w.toFixed(3));
+            });
+            show();
+            return loopToy(
+              () => {
+                const flick = gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { t: 0 }, { t: 1, duration: 0.9, ease: 'none' });
+                const cyc = gsap.timeline({ repeat: -1, onUpdate: show });
+                [1, 2, 3, 4].forEach(k => cyc.to(salt, { k, duration: 0.4, ease: 'power1.inOut' }, '+=0.9'));
+                return both(flick, cyc);
+              },
+              () => {
+                gsap.to(st, { t: st.t > 0.5 ? 1 : 0, duration: 0.3, overwrite: true, onUpdate: draw, onComplete() { st.t = 0; draw(); } });
+                gsap.to(salt, { k: salt.k > 2 ? 4 : 0, duration: 0.35, overwrite: true, onUpdate: show, onComplete() { salt.k = 0; show(); } });
+              },
+            );
+          },
+          emblem() {
+            const by = 98;
+            return svgDoc(`  <path d="${flameD(64, by, 58, by - 9, 0)}${flameD(46, by - 6, 22, 44, 0)}" fill="#fff"/>\n  <path d="${flameD(64, by, 30, 50, 0)}" fill="#000"/>\n  <rect x="36" y="92" width="56" height="27" rx="5" fill="#fff"/>\n  ${[46, 55, 64, 73, 82].map(x => `<rect x="${x - 2}" y="97" width="4" height="17" rx="1" fill="#000"/>`).join('')}`);
+          },
+        },
+        {
+          letter: 'B', kind: 'Stencil cut-out',
+          idea: 'One solid flame on a solid block; three cut tongues rise through it while hovered.',
+          icon(svg) {
+            const by = 94, top = 9;
+            const fl = flameD(64, by, 64, by - top, 0.25);
+            el('path', { d: fl, fill: flameGrad(svg, SALTS[0], by, top) }, svg);
+            const c = clip(svg, 'path', { d: fl });
+            const cutW = { fill: 'none', style: 'stroke: var(--bg)', 'stroke-width': 2.8, 'stroke-linecap': 'round', 'stroke-dasharray': '11 7', 'clip-path': c.url };
+            const cuts = [
+              el('path', { d: 'M50 98C44 80 56 70 50 52C46 42 50 34 54 28', ...cutW }, svg),
+              el('path', { d: 'M64 98C70 84 58 72 66 56C72 44 66 30 70 14', ...cutW }, svg),
+              el('path', { d: 'M78 98C84 82 74 74 80 60C84 50 80 42 82 36', ...cutW }, svg),
+            ];
+            el('rect', { x: 30, y: 90, width: 68, height: 29, rx: 5, fill: grad(svg, 'linearGradient', { x1: 0, y1: 0, x2: 0, y2: 1 }, [[0, 'oklch(0.66 0.02 260)'], [1, 'oklch(0.46 0.02 262)']]) }, svg);
+            el('path', { d: [40, 49, 58, 70, 79, 88].map(x => `M${x} 96V113`).join(''), style: 'stroke: var(--bg)', 'stroke-width': 3, 'stroke-linecap': 'round' }, svg);
+            return loopToy(
+              () => gsap.timeline({ repeat: -1 }).fromTo(cuts, { strokeDashoffset: 0 }, { strokeDashoffset: 18, duration: 0.6, ease: 'none' }),
+              () => gsap.to(cuts, { strokeDashoffset: 0, duration: 0.3, overwrite: true, clearProps: 'strokeDashoffset' }),
+            );
+          },
+          emblem() {
+            const by = 94;
+            return svgDoc(`  <path d="${flameD(64, by, 64, by - 9, 0.25)}" fill="#fff"/>\n  <path d="M50 98C44 80 56 70 50 52C46 42 50 34 54 28M64 98C70 84 58 72 66 56C72 44 66 30 70 14M78 98C84 82 74 74 80 60C84 50 80 42 82 36" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round" stroke-dasharray="12 7"/>\n  <rect x="30" y="90" width="68" height="29" rx="5" fill="#fff"/>\n  <path d="${[40, 49, 58, 70, 79, 88].map(x => `M${x} 96V113`).join('')}" stroke="#000" stroke-width="4" stroke-linecap="round"/>`);
+          },
+        },
+        {
+          letter: 'C', kind: 'Single-weight line',
+          idea: 'Four nested tongues, one per salt: potassium, copper, wood, sodium; they lick out of step.',
+          icon(svg) {
+            const by = 96;
+            const tongues = [[64, 96, 'oklch(0.66 0.2 305)'], [50, 78, 'oklch(0.78 0.17 155)'], [36, 58, 'oklch(0.74 0.18 50)'], [22, 38, 'oklch(0.92 0.16 98)']]
+              .map(([w, h, c]) => ({ w, h, p: el('path', { fill: 'none', stroke: c, 'stroke-width': 1.8, 'stroke-linejoin': 'round' }, svg) }));
+            const line = { fill: 'none', stroke: 'oklch(0.7 0.02 265)', 'stroke-width': 1.6, 'stroke-linecap': 'round' };
+            el('rect', { x: 32, y: 99, width: 64, height: 20, rx: 4, ...line }, svg);
+            el('path', { d: [44, 54, 64, 74, 84].map(x => `M${x} 103V115`).join(''), ...line }, svg);
+            const st = { t: 0 };
+            const draw = () => tongues.forEach((g, k) => {
+              const a = Math.sin(st.t * TAU + k * 1.1), b = Math.sin(st.t * TAU * 2 + k * 0.7);
+              g.p.setAttribute('d', flameD(64, by, g.w + b * 1.5, g.h * (1 + 0.04 * b), 0.35 * a));
+            });
+            draw();
+            return loopToy(
+              () => gsap.timeline({ repeat: -1, onUpdate: draw }).fromTo(st, { t: 0 }, { t: 1, duration: 1.2, ease: 'none' }),
+              () => gsap.to(st, { t: st.t > 0.5 ? 1 : 0, duration: 0.35, overwrite: true, onUpdate: draw, onComplete() { st.t = 0; draw(); } }),
+            );
+          },
+          emblem() {
+            const by = 96;
+            const t = [[64, 96], [48, 76], [32, 56], [16, 34]].map(([w, h]) => flameD(64, by, w, h, 0)).join('');
+            return svgDoc(`  <path d="${t}" fill="none" stroke="#fff" stroke-width="4.4" stroke-linejoin="round"/>\n  <rect x="32" y="100" width="64" height="18" rx="4" fill="none" stroke="#fff" stroke-width="4.4"/>\n  <path d="M48 104V114M64 104V114M80 104V114" stroke="#fff" stroke-width="4.4" stroke-linecap="round"/>`);
+          },
+        },
+        {
+          letter: 'D', kind: 'Isometric block',
+          idea: 'An iso iron box with a faceted flame that leans away from the pointer, then springs upright.',
+          icon(svg) {
+            const N = [64, 76], E = [90, 91], S = [64, 106], W = [38, 91], h = 13;
+            const dn = p => [p[0], p[1] + h];
+            const flame = el('g', {}, svg);
+            el('path', { d: `M${pt(W)}L${pt(S)}L${pt(dn(S))}L${pt(dn(W))}Z`, fill: 'oklch(0.34 0.012 260)' }, svg);
+            el('path', { d: `M${pt(S)}L${pt(E)}L${pt(dn(E))}L${pt(dn(S))}Z`, fill: 'oklch(0.24 0.012 262)' }, svg);
+            el('path', { d: `M${pt(N)}L${pt(E)}L${pt(S)}L${pt(W)}Z`, fill: 'oklch(0.7 0.19 45)' }, svg);
+            // Grate bars cross the glowing top; slats cut both side faces.
+            const lerp2 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t)];
+            el('path', { d: [0.25, 0.5, 0.75].map(t => `M${pt(lerp2(W, N, t))}L${pt(lerp2(S, E, t))}`).join(''), stroke: 'oklch(0.28 0.012 260)', 'stroke-width': 2.2 }, svg);
+            el('path', { d: [0.25, 0.5, 0.75].map(t => { const a = lerp2(W, S, t); return `M${f1(a[0])} ${f1(a[1] + 3)}V${f1(a[1] + h - 3)}`; }).join('') +
+              [0.25, 0.5, 0.75].map(t => { const a = lerp2(S, E, t); return `M${f1(a[0])} ${f1(a[1] + 3)}V${f1(a[1] + h - 3)}`; }).join(''),
+              stroke: 'oklch(0.76 0.18 55)', 'stroke-width': 2, 'stroke-linecap': 'round' }, svg);
+            // Three nested low-poly tongues; y runs from the base up.
+            const shapes = [
+              [[40, 92], [36, 64], [50, 44], [56, 54], [70, 9], [84, 48], [92, 66], [88, 92]],
+              [[48, 92], [46, 70], [58, 52], [62, 60], [72, 34], [82, 66], [80, 92]],
+              [[56, 92], [55, 76], [64, 62], [68, 70], [74, 58], [75, 92]],
+            ];
+            const fills = ['oklch(0.58 0.21 32)', 'oklch(0.74 0.19 52)', 'oklch(0.92 0.13 92)'];
+            const polys = shapes.map((_, k) => el('path', { fill: fills[k], style: 'stroke: var(--bg)', 'stroke-width': 1.4, 'stroke-linejoin': 'round' }, flame));
+            const st = { lean: 0 };
+            const draw = () => shapes.forEach((sh, k) => polys[k].setAttribute('d', 'M' + sh.map(([x, y]) => pt([x + st.lean * 20 * ((92 - y) / 83) ** 1.6, y])).join('L') + 'Z'));
+            draw();
+            const lean = p => gsap.to(st, { lean: clamp((64 - p[0]) / 48, -1, 1), duration: 0.4, ease: 'power3.out', overwrite: true, onUpdate: draw });
+            return {
+              enter: p => lean(p || [100, 64]), move: p => p && lean(p),
+              leave: () => gsap.to(st, { lean: 0, duration: 1.1, ease: 'elastic.out(1, 0.35)', overwrite: true, onUpdate: draw }),
+            };
+          },
+          emblem() {
+            const N = [64, 76], E = [90, 91], S = [64, 106], W = [38, 91], h = 13;
+            const dn = p => [p[0], p[1] + h];
+            const shapes = [
+              [[40, 92], [36, 64], [50, 44], [56, 54], [70, 9], [84, 48], [92, 66], [88, 92]],
+              [[56, 92], [55, 76], [64, 62], [68, 70], [74, 58], [75, 92]],
+            ];
+            return svgDoc(`  <path d="M${shapes[0].map(pt).join('L')}Z" fill="#fff"/>\n  <path d="M${shapes[1].map(pt).join('L')}Z" fill="#000"/>\n  <path d="M${pt(N)}L${pt(E)}L${pt(dn(E))}L${pt(dn(S))}L${pt(dn(W))}L${pt(W)}Z" fill="#fff" stroke="#000" stroke-width="3" stroke-linejoin="round"/>\n  <path d="M${pt(W)}L${pt(S)}L${pt(E)}M${pt(S)}L${pt(dn(S))}" fill="none" stroke="#000" stroke-width="3"/>`);
+          },
+        },
+        {
+          letter: 'E', kind: 'Abstract mark',
+          idea: 'The flame is its own spectrum: drag across and the lines regroup into each salt’s emission lines.',
+          icon(svg) {
+            const by = 106, top = 9;
+            const fl = flameD(64, by, 74, by - top, 0.2);
+            el('path', { d: fl, fill: 'oklch(0.22 0.03 40)' }, svg);
+            const c = clip(svg, 'path', { d: fl });
+            const g = el('g', { 'clip-path': c.url }, svg);
+            el('rect', { x: 34, y: 111, width: 60, height: 7, rx: 2, fill: 'oklch(0.42 0.015 260)' }, svg);
+            // Wavelength 400 to 780 nm maps across the flame.
+            const X = nm => 27 + ((nm - 400) / 380) * 74;
+            const NB = 11;
+            const sets = {
+              wood: Array.from({ length: NB }, (_, k) => {
+                const x = 29 + (k + 0.5) * (70 / NB), heat = 1 - Math.abs(k - (NB - 1) / 2) / ((NB - 1) / 2);
+                return [x - 2.4, 4.8, `hsl(${(12 + heat * 36).toFixed(0)}, 92%, ${(48 + heat * 22).toFixed(0)}%)`];
+              }),
+              copper: [[427, 2.4, 'hsl(222, 80%, 62%)'], [435, 1.6, 'hsl(215, 80%, 60%)'], [452, 2.4, 'hsl(200, 85%, 58%)'], [465, 2.8, 'hsl(190, 85%, 55%)'],
+                [500, 2, 'hsl(165, 80%, 52%)'], [510, 4, 'hsl(150, 85%, 55%)'], [515, 3, 'hsl(140, 85%, 55%)'], [521, 4, 'hsl(130, 80%, 55%)'],
+                [529, 2, 'hsl(120, 70%, 50%)'], [578, 2.4, 'hsl(58, 90%, 58%)'], [560, 1.6, 'hsl(90, 70%, 52%)']].map(([nm, w, c]) => [X(nm) - w / 2, w, c]),
+              potassium: [[404, 3, 'hsl(275, 80%, 64%)'], [404.7, 3, 'hsl(280, 80%, 62%)'], [410, 2, 'hsl(285, 70%, 60%)'], [420, 1.6, 'hsl(290, 60%, 58%)'],
+                [691, 1.6, 'hsl(358, 70%, 45%)'], [694, 1.6, 'hsl(358, 70%, 45%)'], [762, 3, 'hsl(352, 80%, 40%)'], [766, 4, 'hsl(350, 85%, 42%)'],
+                [770, 4, 'hsl(348, 85%, 40%)'], [580, 1.2, 'hsl(320, 40%, 55%)'], [500, 1.2, 'hsl(300, 40%, 55%)']].map(([nm, w, c]) => [X(nm) - w / 2, w, c]),
+              sodium: Array.from({ length: NB }, (_, k) => {
+                const x = k < 6 ? X(589.0) - 4.6 : X(589.6) + 1.4;
+                return [x - 1.6 + (k % 6) * 0.25, 3.6, `hsl(${k < 6 ? 46 : 50}, 98%, 60%)`];
+              }),
+            };
+            const ORDER = ['wood', 'copper', 'potassium', 'sodium'];
+            const bars = sets.wood.map(([x, w, col]) => el('rect', { x: f1(x), y: top, width: f1(w), height: by - top, style: `fill: ${col}` }, g));
+            let cur = 'wood';
+            const show = name => {
+              if (name === cur) return;
+              cur = name;
+              sets[name].forEach(([x, w, col], k) => gsap.to(bars[k], { attr: { x, width: w }, fill: col, duration: 0.5, delay: k * 0.018, ease: 'power3.inOut', overwrite: true }));
+            };
+            const pick = p => show(ORDER[clamp(Math.floor(((p[0] - 9) / 110) * 4), 0, 3)]);
+            return { enter: p => (p ? pick(p) : show('copper')), move: p => p && pick(p), leave: () => show('wood') };
+          },
+          emblem() {
+            const by = 106, top = 9, NB = 9;
+            const bars = Array.from({ length: NB - 1 }, (_, k) => 29 + ((k + 1) * 70) / NB).map(x => `M${f1(x)} ${top}V${by}`).join('');
+            return svgDoc(`  <path d="${flameD(64, by, 74, by - top, 0.2)}" fill="#fff"/>\n  <path d="${bars}" stroke="#000" stroke-width="3.4"/>\n  <rect x="34" y="111" width="60" height="7" rx="2" fill="#fff"/>`);
+          },
+        },
+      ],
+    },
+  ];
+
+  // ---------- Page ----------
+  const rows = document.getElementById('rows');
+  const EMBLEMS = {};
+  const fitIcon = svg => {
+    const b = svg.getBBox(), side = Math.max(b.width, b.height);
+    if (!side || b.x < -2 || b.y < -2 || b.x + b.width > 130 || b.y + b.height > 130) return;
+    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    svg.setAttribute('viewBox', `${(cx - size / 2).toFixed(2)} ${(cy - size / 2).toFixed(2)} ${size.toFixed(2)} ${size.toFixed(2)}`);
+  };
+  const local = (t, e) => {
+    const svg = t.querySelector('svg'), r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const wire = (t, toy) => {
+    if (reduce) return;
+    // Loop icons run while hovered and rest when the pointer leaves.
+    if (!toy.enter) {
+      const { play, rest } = toy;
+      let tl = null;
+      toy = { enter() { if (!tl) tl = play(); }, move() {}, leave() { tl?.kill(); tl = null; rest(); } };
+    }
+    t.addEventListener('pointerenter', e => toy.enter(local(t, e)));
+    t.addEventListener('pointermove', e => toy.move(local(t, e)));
+    t.addEventListener('pointerleave', () => toy.leave());
+    t.addEventListener('focusin', () => toy.enter(null));
+    t.addEventListener('focusout', () => toy.leave());
+  };
+  const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+  TOYS.forEach(toy => {
+    const sec = h('section'); sec.id = 'row-' + toy.id;
+    sec.append(h('h2', '', `${toy.name} <small>${toy.id}/</small>`));
+    const dirs = h('div', 'dirs');
+    toy.dirs.forEach(dir => {
+      const card = h('article', 'dir');
+      card.dataset.key = `${toy.id}-${dir.letter.toLowerCase()}`;
+      card.append(h('div', 'tag', `<b>${dir.letter}</b><span>${dir.kind}</span>${toy.pick === dir.letter ? '<span class="pick">pick</span>' : ''}`));
+      const icons = h('div', 'icons');
+      [128, 64].forEach(size => {
+        const wrap = h('div');
+        const t = h('a', `toy s${size}`); t.tabIndex = 0; t.setAttribute('aria-label', `${toy.name} ${dir.letter}, ${size} pixels`);
+        const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, t);
+        const api = dir.icon(svg);
+        wrap.append(t, h('div', 'size', `${size}`));
+        icons.append(wrap);
+        requestAnimationFrame(() => fitIcon(svg));
+        wire(t, api);
+      });
+      card.append(icons);
+      const svgText = dir.emblem();
+      EMBLEMS[card.dataset.key] = svgText;
+      const uri = `url("data:image/svg+xml;utf8,${encodeURIComponent(svgText)}")`;
+      const embs = h('div', 'embs');
+      embs.style.setProperty('--tint', toy.tint);
+      ['flash', 'glass'].forEach(k => { const b = h('div', k); const m = h('i', 'em'); m.style.setProperty('--emblem', uri); b.append(m); embs.append(b); });
+      card.append(embs, h('p', 'idea', dir.idea));
+      dirs.append(card);
+    });
+    sec.append(dirs);
+    rows.append(sec);
+  });
+  window.SPIKE_EMBLEMS = EMBLEMS;
+})();
+</script>
+</body>
+</html>
