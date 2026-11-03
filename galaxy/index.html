@@ -154,6 +154,38 @@ function mixLayers(tau = 1.1) {
   });
 }
 // A context still waking queues sounds for a moment.
+// A new hole sounds a four-part chord in the drone's own voice.
+// The voices bloom in turn, hold, then sink back into the drone.
+const HOLE_CHORD = [50, 57, 66, 73];
+function holeChord() {
+  const a = live();
+  if (!a) return;
+  const t0 = a.currentTime + 0.05, lp = a.createBiquadFilter(), bus = a.createGain();
+  lp.type = 'lowpass';
+  lp.Q.value = 0.4;
+  lp.frequency.setValueAtTime(260, t0);
+  lp.frequency.linearRampToValueAtTime(1400, t0 + 3);
+  lp.frequency.setTargetAtTime(300, t0 + 5.5, 2);
+  bus.gain.value = 1;
+  lp.connect(bus).connect(out);
+  HOLE_CHORD.forEach((m, k) => {
+    const g = a.createGain(), t = t0 + k * 0.35, f = mtof(m);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05 - k * 0.006, t + 1.8);
+    g.gain.setTargetAtTime(0, t0 + 5.5, 1.6);
+    g.connect(lp);
+    for (const sgn of [-1, 1]) {
+      const o = a.createOscillator();
+      o.type = k ? 'triangle' : 'sine';
+      o.frequency.value = f;
+      o.detune.value = sgn * (4 + 2 * k);
+      o.connect(g);
+      o.start(t);
+      o.stop(t0 + 14);
+    }
+  });
+  setTimeout(() => bus.disconnect(), 15000);
+}
 function live() {
   if (!sound.on || !ac || ac.state === 'closed') return null;
   return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
@@ -215,7 +247,7 @@ const MAXW = 8, CAP = 6, HOLE_WELLS = 6;
 // The panel spans about twenty length units.
 const SEED_M = 26, TAP_M = 18, MAX_M = 240;
 // A merger this heavy collapses into a black hole.
-const BH_M = 48, HOLE_R = 0.2, LENS = 0.3, SHADOW_K = 1.3, DISK_TILT = (-43 * Math.PI) / 180;
+const BH_M = 48, HOLE_R = 0.2, LENS = 0.3, SHADOW_K = 1.3, DISK_TILT = (-18 * Math.PI) / 180;
 // Near a hole, stars spiral in and feed it.
 const HOLE_REACH = 6, INFLOW = 0.3, EAT = 160 / N;
 const DISK_N = SMALL ? 16384 : 32768, DISK_SPIN = 2.4, DISK_PX = 2.4;
@@ -226,7 +258,7 @@ const INIT = 2000, RATE = 12000, MAXF = Math.round(N / 14);
 const STEP = 1 / 120;
 // Arms wind as log spirals, about 19 degrees of pitch.
 const WIND = 2.9;
-const FOV = 36, EL = (57 * Math.PI) / 180;
+const FOV = 36, EL = (32 * Math.PI) / 180;
 const holeRadius = m => Math.min(0.55, HOLE_R * Math.sqrt(m / BH_M));
 
 let running = false, ready = false;
@@ -591,18 +623,17 @@ async function start() {
   scene.add(disk);
 
   // Jets: while the hole feeds hard, it fires along its axis.
-  // The jet comes in bursts, so knots travel out with cut gaps.
+  // The jet streams out steadily and fades toward its tip.
   const jetMat = spriteMat();
   const jh = k => hash(instanceIndex.add(uint(k * 5113 + 977)));
   const up = select(instanceIndex.bitAnd(uint(1)).equal(uint(1)), float(1), float(-1));
   const jt = fract(jh(1).add(uTime.mul(JET_RATE)));
-  const knot = step(0.4, fract(uTime.sub(jt.div(JET_RATE)).mul(1.4)));
   const ja = jh(2).mul(TAU);
   const jr = uHoleR.mul(jt.mul(1.4).add(0.2)).mul(sqrt(jh(3)));
   const jl = uHoleR.mul(uJet.mul(14).add(4)).mul(jt);
   jetMat.positionNode = uHole.xyz.add(uDiskRot.mul(vec3(cos(ja).mul(jr), up.mul(jl), sin(ja).mul(jr))));
-  jetMat.scaleNode = select(uJet.lessThan(0.01).or(knot.lessThan(0.5)), float(0), uPx.mul(2));
-  jetMat.colorNode = dotOf(varying(ICE.mul(1.6).mul(float(1).sub(jt).pow(1.5)).mul(uJet).mul(uHoleVis)));
+  jetMat.scaleNode = select(uJet.lessThan(0.01), float(0), uPx.mul(2));
+  jetMat.colorNode = dotOf(varying(ICE.mul(1.6).mul(smoothstep(0, 0.06, jt)).mul(float(1).sub(jt).pow(2)).mul(uJet).mul(uHoleVis)));
   const jets = new THREE.Sprite(jetMat);
   jets.count = JET_N;
   jets.frustumCulled = false;
@@ -801,6 +832,7 @@ async function start() {
   function holeBorn(w) {
     w.pulse = 1;
     feed = Math.max(feed, 0.9);
+    holeChord();
   }
   function updateHole(dt) {
     const hw = heaviestHole();
