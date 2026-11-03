@@ -1431,7 +1431,7 @@ function makeStroke(kind) {
     kind, pc: bar, box, outside: false, a: -1, sg: 0, F: 0, t: -1, p: -1, c: 0, lo: 0, hi: -1, s: 0, s0: 0, smin: 1e9, smax: -1e9,
     pts: [], ray: null, cols: new Uint8Array(64), worn: new Uint8Array(64), surf: new Int8Array(64).fill(127), done: false, dead: false,
     mode: '', shave: null, gap: 0.45, moved: 0, speed: 0, dirT: 1, id: -1, front: null, born: nowS(),
-    deep: false, sweepLo: 1e9, sweepHi: -1e9, turnAt: 0, reach: SCORE,
+    deep: false, cut: SCORE,
   };
 }
 function bindFace(st, hit, prev) {
@@ -1476,9 +1476,6 @@ function settle(st) {
   if (st.lo > st.hi) { st.dead = true; return true; }
   st.s = st.s0 = p0[st.t];
   for (const q of st.pts) { st.smin = Math.min(st.smin, q[st.t]); st.smax = Math.max(st.smax, q[st.t]); }
-  st.sweepLo = st.smin;
-  st.sweepHi = st.smax;
-  st.turnAt = st.s;
   return true;
 }
 function follow(st, rs) {
@@ -1506,29 +1503,29 @@ function surfAt(st, i) {
   }
   return (st.surf[i] = top < 0 ? st.F : st.sg > 0 ? top + 1 : top);
 }
-// Each pass cuts SCORE cells below the groove; a deep stroke cuts all.
+// Cuts one column down to depth cells under the face.
 // Returns 0 no cut, 1 a deeper groove, 2 a fresh score.
-function scoreColumn(st, i) {
+function scoreColumn(st, i, depth) {
   const a = st.a, p = st.p, top = surfAt(st, i) - (st.sg > 0 ? 1 : 0), id = st.pc.id;
-  const depth = st.deep || st.outside ? DIM[a] : SCORE;
-  let cut = 0, fresh = true;
+  let cut = 0, fresh = false;
   co[st.t] = i;
-  for (let k = 0; cut < depth; k++) {
+  for (let k = 0; k < depth; k++) {
     const m = top - k * st.sg;
     if (m < 0 || m >= DIM[a]) break;
     co[a] = m;
     co[p] = st.c - 1;
     const lo = at3();
-    if (owner[lo] !== id || owner[lo + STRIDE[p]] !== id) continue;
-    if (bond[p][lo]) { fresh = false; continue; }
+    if (owner[lo] !== id || owner[lo + STRIDE[p]] !== id || bond[p][lo]) continue;
     bond[p][lo] = 1;
     scoredFrom[p][lo] = a * 2 + (st.sg > 0 ? 0 : 1);
     chatAx[p][lo] = st.t + 1;
-    st.reach = Math.max(SCORE, k + 1);
+    if (!k) fresh = true;
     cut++;
   }
   return cut ? (fresh ? 2 : 1) : 0;
 }
+// The blade sinks this many cells per cell it travels through soap.
+const BITE = 0.3;
 // The share of the piece's bonds across the stroke's plane that are cut.
 function cutShare(st) {
   const id = st.pc.id;
@@ -1548,26 +1545,24 @@ function push(st, s) {
   s = clamp(s, st.lo - 7.5, st.hi + 9);
   const s0 = st.s, ds = s - s0, lo0 = st.smin, hi0 = st.smax;
   st.s = s;
-  if (Math.abs(ds) > 0.02) {
-    const dir = ds > 0 ? 1 : -1;
-    // A turn after a real sweep starts a new pass, so sawing cuts deeper.
-    if (dir !== st.dirT && Math.abs(s0 - st.turnAt) > 1.5) { st.cols.fill(0); st.sweepLo = st.sweepHi = s0; st.turnAt = s0; }
-    st.dirT = dir;
-  }
+  if (Math.abs(ds) > 0.02) st.dirT = ds > 0 ? 1 : -1;
   if (s < st.smin) st.smin = s;
   if (s > st.smax) st.smax = s;
-  if (s < st.sweepLo) st.sweepLo = s;
-  if (s > st.sweepHi) st.sweepHi = s;
   if (st.done) return;
   const inside = s > st.lo - 0.05 && s < st.hi + 1.05;
-  // The blade scores each column it has passed.
-  // A column scored before only lets the blade ride its groove.
+  // Travel through soap sinks the blade; a deep stroke drops it to the mat.
+  const full = st.box.hi[st.a] - st.box.lo[st.a] + 1;
+  if (st.deep || st.outside) st.cut = full;
+  else if (inside) st.cut = Math.min(full, st.cut + Math.abs(ds) * BITE);
+  // The blade cuts each column it crosses down to its depth.
+  // st.cols holds each column's depth, so a column cuts only when deeper.
   // A groove cut deeper peels no curl.
+  const d = Math.floor(st.cut), i0 = Math.max(st.lo, Math.floor(Math.min(s0, s))), i1 = Math.min(st.hi, Math.floor(Math.max(s0, s)));
   let changed = false;
-  for (let i = st.lo; i <= st.hi; i++) {
-    if (st.cols[i] || st.sweepLo > i + 0.5 || st.sweepHi < i + 0.5) continue;
-    st.cols[i] = 1;
-    const r = scoreColumn(st, i);
+  for (let i = i0; i <= i1; i++) {
+    if (st.cols[i] >= d) continue;
+    st.cols[i] = d;
+    const r = scoreColumn(st, i, d);
     if (r) changed = true;
     if (r !== 2) st.worn[i] = 1;
   }
@@ -1605,7 +1600,7 @@ function through(st) {
   }
   pitchOf(st);
   const f = surfAt(st, Math.floor(st.s)), bx = st.box;
-  bl.to = Math.min(4.6 / K, st.sg > 0 ? f - bx.lo[st.a] : bx.hi[st.a] + 1 - f);
+  bl.to = st.sg > 0 ? f - bx.lo[st.a] : bx.hi[st.a] + 1 - f;
   if (st.shave) { loose(st.shave); st.shave = null; }
   split(st);
 }
@@ -2173,20 +2168,22 @@ function matMaterials() {
   const edge = new THREE.MeshStandardMaterial({ color: lin(MAT_GAP), roughness: 0.95, metalness: 0 });
   return { top, edge };
 }
+// A tall cleaver: taller than the bar, so it cuts right down to the mat.
+const BLADE_H = 10.5;
 function bladeGeometry() {
   const s = new THREE.Shape();
-  s.moveTo(-7.5, 0);
-  s.lineTo(2.2, 0);
-  s.lineTo(3.4, 2.6);
-  s.quadraticCurveTo(3.7, 3.6, 2.6, 3.6);
-  s.lineTo(-7.5, 3.6);
+  s.moveTo(-8, 0);
+  s.lineTo(2.6, 0);
+  s.quadraticCurveTo(4, 0.3, 4, 2);
+  s.lineTo(4, BLADE_H);
+  s.lineTo(-8, BLADE_H);
   s.closePath();
   const g = new THREE.ExtrudeGeometry(s, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 1, curveSegments: 6 });
   g.translate(0, 0, -0.05);
   // Bright honed edge and spine bevel; the flat darkens upward.
   const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
-    const y = pos.getY(i), k = y < 0.32 || y > 3.5 ? 1 : lerp(1, 0.6, clamp((y - 0.3) / 3.2));
+    const y = pos.getY(i), k = y < 0.32 || y > BLADE_H - 0.1 ? 1 : lerp(1, 0.6, clamp((y - 0.3) / (BLADE_H - 0.4)));
     col[i * 3] = k; col[i * 3 + 1] = k * 1.01; col[i * 3 + 2] = k * 1.03;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -2288,7 +2285,7 @@ function updateBlade(dt) {
   if (show) {
     if (!bl.on) bl.depth = bl.to = SCORE;
     bl.on = Math.min(1, bl.on + dt / 0.09);
-    if (!st.done) bl.to = Math.min(4.6 / K, st.reach);
+    if (!st.done) bl.to = st.cut;
     bl.depth += (bl.to - bl.depth) * (1 - Math.exp(-dt * 28));
     edgePoint(st, bl.pos);
     const x = [0, 0, 0], y = [0, 0, 0];
