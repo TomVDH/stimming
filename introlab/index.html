@@ -9,7 +9,7 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=30">
+<link rel="stylesheet" href="../shared/intro.css?v=31">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -87,7 +87,6 @@ button:hover { border-color: var(--fg); }
   <p id="took">Run time: –</p>
   <div class="tl" id="tl" aria-label="Timeline"><div class="tl-total" id="tl-total"></div><div class="tl-bar" id="tl-bar"></div><div class="tl-keys" id="tl-keys"></div></div>
   <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
-  <label class="check"><input type="checkbox" id="done"> Signed off (tick)</label>
   <label class="check"><input type="checkbox" id="static"> Static: hold every line on screen</label>
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
   <label class="check"><input type="checkbox" id="replay"> Replay on change</label>
@@ -130,7 +129,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, fitIntro, popFit, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=30';
+import { intro, fitIntro, popFit, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=31';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -163,7 +162,7 @@ let tlReady = false;
 const save = () => {
   if (tlReady) drawTL();
   try {
-    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, done: doneBox.checked, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, isStatic: staticBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, textFlash: textBox.checked, numAt: numSel.value }));
+    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, isStatic: staticBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, textFlash: textBox.checked, numAt: numSel.value }));
   } catch (err) {}
 };
 
@@ -197,7 +196,7 @@ const soundNote = () => {
 const staticBox = document.getElementById('static');
 staticBox.checked = !!saved.isStatic;
 staticBox.addEventListener('change', () => { save(); run(); });
-const doneBox = document.getElementById('done'), loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
+const loopBox = document.getElementById('loop'), replayBox = document.getElementById('replay');
 const textBox = document.getElementById('textflash'), flashBox = document.getElementById('nameflash'), numSel = document.getElementById('numat'), classicBox = document.getElementById('classic');
 classicBox.addEventListener('change', () => { save(); replay(); });
 numSel.value = ['box', 'subs', 'bottom'].includes(saved.numAt) ? saved.numAt : '';
@@ -393,9 +392,8 @@ function pose(ph) {
 const toys = await fetch('../toys.json').then(r => r.json());
 for (const [id, t] of Object.entries(toys)) toySel.add(new Option(`${t.name}${t.number ? ` · ${t.number}` : ''}`, id));
 toySel.value = saved.toy && toys[saved.toy] ? saved.toy : 'morpher';
-doneBox.checked = !!saved.done;
 tlReady = true;
-[toySel, doneBox].forEach(el => el.addEventListener('change', () => { save(); replay(); }));
+toySel.addEventListener('change', () => { save(); replay(); });
 
 // Each play builds a fresh intro block, as a toy page carries it.
 // A new play replaces the running one at once.
@@ -435,7 +433,7 @@ async function run({ hold = null } = {}) {
     }
     return gate(ph);
   };
-  await intro({ id: toySel.value, done: doneBox.checked, timing: { ...(tune[varSel.value] || {}), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, textFlash: textBox.checked, classic: classicBox.checked, fill: still ? FILL : null });
+  await intro({ id: toySel.value, timing: { ...(tune[varSel.value] || {}), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, textFlash: textBox.checked, classic: classicBox.checked, fill: still ? FILL : null });
   if (my !== gen) return;
   playing = false;
   took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})${pauses.size ? ', with pauses' : ''}`;

@@ -285,7 +285,7 @@ export function fitIntro(root, T) {
 // ready is a promise; a fixed-hold variety holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
-export async function intro({ ready = Promise.resolve(), min, timing = {}, id, done, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, textFlash = false, classic = false, fill = null } = {}) {
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, textFlash = false, classic = false, fill = null } = {}) {
   const root = document.querySelector('.intro');
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
@@ -367,15 +367,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     snd.innerHTML = icon + (soundNote.words ? `<span>${soundNote.words}</span>` : '');
     text.append(snd);
   }
-  // A toy Tom signs off shows a tick cut into the box at size.
   const big = badge || name;
-  let tick = null;
-  if (done ?? 'done' in root.dataset) {
-    tick = document.createElement('span');
-    tick.className = 'intro-tick';
-    tick.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.5l5.5 5.5L20.5 6" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="square"/></svg>';
-    big.append(tick);
-  }
   // The subtitles and the notes sit at the foot, away from the logo.
   if (!V.layout) {
     const make = (tag, className) => Object.assign(document.createElement(tag), { className });
@@ -436,7 +428,6 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
     for (const s of [0.86, 1.07, 0.98]) { blow.style.transform = `scale(${s})`; await wait(1); }
   }
   blow.style.transform = '';
-  if (tick) tick.style.opacity = 1;
   if (V.flash === 'jitter') {
     // Jitter: the box slips sideways for a few frames, then holds still.
     const steps = [7, -5, 3, -2, 0];
@@ -451,7 +442,6 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, d
   }
   await gate('flash');
   // The box leaves; the emblem stays, white, and the lines open beneath it.
-  if (tick) tick.remove();
   if (V.cut === 'split' && badge) {
     // Split: the box parts down the middle and its halves slide out.
     badge.classList.remove('is-flash');
