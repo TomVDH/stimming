@@ -40,7 +40,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles; a long line ends at a tower. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. R stands the tiles back up.">
+    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay a line of tiles, or in Field mode a box of tiles that falls into a picture; a long line ends at a tower. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. R stands the tiles back up.">
       <canvas></canvas>
       <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
     </div>
@@ -54,7 +54,7 @@
         <button class="chip" id="clear" type="button" disabled>Clear</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>lay tiles</dd></div>
+        <div><dt>Drag</dt><dd id="drag-how">lay tiles</dd></div>
         <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>tip a tile</dd></div>
         <div><dt><span class="fine">Right-drag</span><span class="touch">Two fingers</span></dt><dd>turn the table</dd></div>
         <div class="fine"><dt><kbd>R</kbd></dt><dd>reset</dd></div>
@@ -308,8 +308,15 @@ const SID = new Int32Array(MAX), SEQ = new Int32Array(MAX);
 // Parallel rows of one stroke share a group and start together.
 const GRP = new Int32Array(MAX);
 // Rows per stroke, and the spacing between rows.
-const ROWS = [1, 3, 5], LANE = 0.85;
+// Zero rows means Field mode: a drag fills a box.
+const ROWS = [1, 3, 5, 0], LANE = 0.85;
 let rows = 1;
+// A starter tips with its group: a row's first tile, a field's front row.
+const START = new Uint8Array(MAX);
+// Field tiles stand cream and lie down in their picture colour, in sRGB.
+const FIELD = new Uint8Array(MAX), BASE = new Float32Array(MAX * 3), PIC = new Float32Array(MAX * 3);
+// Starters tip in a ripple from the tile that is tipped.
+const queue = [];
 // ST: 0 standing, 1 falling, 2 down, 3 standing back up.
 let n = 0, rank = 0, stamp = 0, nextHue = 0, lastBorn = -1e9, clearing = 0, strokes = 0;
 const active = [];
@@ -485,12 +492,12 @@ function tip(i, sg) {
   if (ST[i] !== 0) return;
   RUN[i] = 0;
   start(i, sg, TAP);
-  // A row's first tile tips the first tiles of its sibling rows.
-  if (SEQ[i] === 0) {
+  // A starter sends a ripple through the other starters of its group.
+  if (START[i]) {
+    const t = nowS();
     for (let j = 0; j < n; j++) {
-      if (j === i || GRP[j] !== GRP[i] || SEQ[j] !== 0 || ST[j] !== 0) continue;
-      RUN[j] = 0;
-      start(j, pushDir(j), TAP);
+      if (j === i || !START[j] || GRP[j] !== GRP[i] || ST[j] !== 0) continue;
+      queue.push({ i: j, sg: pushDir(j), t: t + Math.hypot(PX[j] - PX[i], PZ[j] - PZ[i]) * 0.05 });
     }
   }
   tick(0.7);
@@ -512,6 +519,7 @@ function reset() {
   const down = [], t = nowS();
   for (let i = 0; i < n; i++) if (ST[i] !== 0) down.push(i);
   const rose = rebuild(t);
+  queue.length = 0;
   if (!down.length && !rose) return;
   down.sort((a, b) => RANK[b] - RANK[a]);
   const step = reduce ? 0.002 : Math.min(0.012, 0.75 / down.length);
@@ -533,7 +541,7 @@ function clearAll() {
 }
 function finishClear() {
   for (let i = 0; i < n; i++) { ACT[i] = 0; CANDS[i] = null; }
-  n = 0; clearing = 0; nextHue = 0; active.length = 0; loose = 0; towers.length = 0;
+  n = 0; clearing = 0; nextHue = 0; active.length = 0; loose = 0; towers.length = 0; queue.length = 0;
   grid.clear();
   if (mesh) mesh.count = tmesh.count = 0;
   syncChips();
@@ -630,6 +638,7 @@ function addTile(x, z, ax, az, hue, born, p) {
   PX[i] = x; PZ[i] = z; AX[i] = ax; AZ[i] = az; HUE[i] = hue; BORN[i] = born;
   TH[i] = 0; OM[i] = 0; ST[i] = 0; SG[i] = 1; LAND[i] = 0; CL[i] = 0; ACT[i] = 0; CANDS[i] = null; RUN[i] = 0;
   SID[i] = p.id; SEQ[i] = p.seq++; GRP[i] = p.grp || p.id;
+  START[i] = SEQ[i] === 0 ? 1 : 0; FIELD[i] = 0;
   lastBorn = Math.max(lastBorn, born);
   gridAdd(i);
   mesh.setColorAt(i, col.setRGB(...rgb(rainbow(hue / PER)), THREE.SRGBColorSpace));
@@ -899,6 +908,98 @@ function preset(t0) {
   advance(p, true);
   crown(p);
   nextHue = p.hue;
+}
+
+/* ---------- picture fields ---------- */
+// A field is a brick grid: each tile knocks the two tiles behind it.
+// Columns sit this far apart; odd rows shift by half of it.
+const CW = 0.62;
+const CREAM = rgb([0.93, 0.02, 85]);
+let fields = 0;
+// Pictures in a centred square: x right, y down, the short side spans one.
+const MOTIFS = [
+  // A grin.
+  (x, y) => {
+    if (Math.hypot(x, y) > 0.47) return [0.6, 0.23, 350];
+    const eye = Math.hypot(Math.abs(x) - 0.17, y + 0.12) < 0.085;
+    const smile = y > 0.04 && Math.abs(Math.hypot(x, y + 0.05) - 0.27) < 0.06;
+    return eye || smile ? [0.24, 0.05, 275] : [0.87, 0.18, 95];
+  },
+  // A sunburst.
+  (x, y) => {
+    const r = Math.hypot(x, y), a = Math.atan2(y, x);
+    if (r < 0.17) return [0.9, 0.17, 100];
+    return Math.floor((a + PI) / (PI / 8)) % 2 ? [0.72, 0.19, 55] : [0.45, 0.2, 18];
+  },
+  // A heart.
+  (x, y) => {
+    const X = x / 0.42, Y = -y / 0.42 + 0.25, q = X * X + Y * Y - 1;
+    return q * q * q - X * X * Y * Y * Y < 0 ? [0.62, 0.24, 25] : [0.42, 0.09, 200];
+  },
+  // Target rings.
+  (x, y) => [[0.82, 0.17, 85], [0.6, 0.22, 340], [0.72, 0.14, 210]][Math.floor(Math.hypot(x, y) / 0.1) % 3],
+];
+// True when a field tile fits among other tiles and towers.
+function room(x, z, ax, az, p) {
+  if (walled(x, z, ax, az, T / 2 + MARGIN, W / 2 + MARGIN)) return false;
+  let ok = true;
+  near(x, z, H + W, j => {
+    if (!ok || j >= n || SID[j] === p.id) return;
+    const [fx, fz, fl] = foot(j);
+    if (overlap(x, z, ax, az, T / 2 + MARGIN, W / 2 + MARGIN, fx, fz, AX[j], AZ[j], fl, W / 2)) ok = false;
+  });
+  return ok;
+}
+// Screen axes on the table: right, and down toward the viewer.
+const screenAxes = () => [Math.cos(cam.yaw), -Math.sin(cam.yaw), Math.sin(cam.yaw), Math.cos(cam.yaw)];
+// A dragged box fills with a field that falls along the drag.
+// The picture keeps upright on screen, whichever way the field falls.
+function layField(A, B) {
+  const [ax, az, bx, bz] = screenAxes(), dx = B.x - A.x, dz = B.z - A.z;
+  const d1 = dx * ax + dz * az, d2 = dx * bx + dz * bz, wide = Math.abs(d1) >= Math.abs(d2);
+  const su = Math.sign(wide ? d1 : d2) || 1, ux = (wide ? ax : bx) * su, uz = (wide ? az : bz) * su;
+  const vx = wide ? bx : ax, vz = wide ? bz : az, len = Math.abs(wide ? d1 : d2), wid = wide ? d2 : d1;
+  const nc = Math.floor(Math.abs(wid) / CW) + 1, v0 = Math.min(0, wid);
+  let nr = Math.floor((len - 0.3) / PITCH) + 1;
+  nr = Math.min(nr, Math.floor((MAX - n) / nc));
+  if (nr < 3 || nc < 2) return;
+  const p = { id: ++strokes, seq: 0 }, motif = MOTIFS[fields++ % MOTIFS.length], t0 = nowS();
+  p.grp = p.id;
+  const sw = Math.abs(d1) || 1, sh = Math.abs(d2) || 1, m = Math.min(sw, sh);
+  for (let r = 0; r < nr; r++) {
+    for (let c = 0; c < nc; c++) {
+      const s = v0 + c * CW + (r % 2 ? CW / 2 : 0), a = 0.3 + r * PITCH;
+      if (s > v0 + Math.abs(wid) + 1e-6) continue;
+      const x = A.x + ux * a + vx * s, z = A.z + uz * a + vz * s;
+      if (!room(x, z, ux, uz, p)) continue;
+      // Picture coordinates come from the screen box, so circles stay round.
+      const px = ((x - A.x) * ax + (z - A.z) * az) / (d1 || 1), py = ((x - A.x) * bx + (z - A.z) * bz) / (d2 || 1);
+      const born = reduce ? -1e9 : t0 + r * 0.018 + Math.abs(s - v0) * 0.012 + Math.random() * 0.02;
+      const i = addTile(x, z, ux, uz, 0, born, p);
+      FIELD[i] = 1; START[i] = r === 0 ? 1 : 0;
+      BASE.set(CREAM, i * 3);
+      PIC.set(rgb(motif(((px - 0.5) * sw) / m, ((py - 0.5) * sh) / m)), i * 3);
+      mesh.setColorAt(i, col.setRGB(...CREAM, THREE.SRGBColorSpace));
+    }
+  }
+  mesh.instanceColor.needsUpdate = true;
+  tick(0.8);
+}
+// A field tile's colour follows its tilt, cream to picture.
+let tint = false;
+function tone(i) {
+  const k = clamp((Math.abs(TH[i]) / HALF - 0.3) / 0.6), o = i * 3;
+  mesh.setColorAt(i, col.setRGB(lerp(BASE[o], PIC[o], k), lerp(BASE[o + 1], PIC[o + 1], k), lerp(BASE[o + 2], PIC[o + 2], k), THREE.SRGBColorSpace));
+  tint = true;
+}
+// The box outline while a field is dragged.
+function outline(A, B) {
+  const [ax, az, bx, bz] = screenAxes(), dx = B.x - A.x, dz = B.z - A.z;
+  const d1 = dx * ax + dz * az, d2 = dx * bx + dz * bz, P = ghost.geometry.attributes.position;
+  const pts = [[0, 0], [d1, 0], [d1, d2], [0, d2], [0, 0]];
+  pts.forEach(([u, v], k) => P.setXYZ(k, A.x + ax * u + bx * v, 0.01, A.z + az * u + bz * v));
+  P.needsUpdate = true;
+  ghost.visible = true;
 }
 
 /* ---------- the finale tower ---------- */
@@ -1359,7 +1460,7 @@ function shove(tw) {
 }
 
 /* ---------- three.js ---------- */
-let THREE, renderer, scene, camera, persp, ortho, mesh, tmesh, col, sun, shade, ray, ndc, vtmp, ready = false;
+let THREE, renderer, scene, camera, persp, ortho, mesh, tmesh, ghost, col, sun, shade, ray, ndc, vtmp, ready = false;
 const PITCH0 = 55 * D2R, PITCH_IN = 67 * D2R, FOV = 30, TANF = Math.tan((FOV / 2) * D2R);
 // True isometric tips down by atan(1/√2) and turns 45 degrees.
 const ISO = Math.atan(Math.SQRT1_2), QUARTER = PI / 4;
@@ -1511,6 +1612,7 @@ function animate(t) {
     const u = (t - RISET[i]) / dur;
     if (u >= 1) { ST[i] = 0; TH[i] = 0; tick(0.35); }
     else if (u > 0) TH[i] = RISE0[i] * (1 - (reduce ? out3(u) : back(u)));
+    if (FIELD[i]) tone(i);
   }
   return towersAt(t) || busy;
 }
@@ -1564,6 +1666,13 @@ function frame(ms) {
   last = t;
   let busy = false;
   simT = t;
+  for (let k = queue.length - 1; k >= 0; k--) {
+    const q = queue[k];
+    if (q.t > t) continue;
+    queue.splice(k, 1);
+    if (ST[q.i] === 0) { RUN[q.i] = 0; start(q.i, q.sg, TAP); }
+  }
+  if (queue.length) busy = true;
   if (active.length || loose) {
     const steps = Math.max(1, Math.ceil(dt / SUB - 1e-6));
     for (let s = 0; s < steps; s++) physics(dt / steps);
@@ -1571,7 +1680,9 @@ function frame(ms) {
     busy = true;
   }
   if (clearing && t - clearing > 0.34) finishClear();
+  for (const i of active) if (FIELD[i]) tone(i);
   busy = animate(t) || busy;
+  if (tint) { mesh.instanceColor.needsUpdate = true; tint = false; }
   busy = steer(dt, t) || busy;
   const te = mesh.instanceMatrix.array;
   for (let i = 0; i < n; i++) pose(i, t, te, i * 16);
@@ -1674,7 +1785,14 @@ canvas.addEventListener('pointermove', e => {
     if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < (p.touch ? 10 : 5)) return;
     p.drawing = true;
     canvas.classList.remove('tip');
-    begin(p);
+    if (!rows) p.field = true;
+    else begin(p);
+  }
+  if (p.field) {
+    const q = tablePoint(e.clientX, e.clientY);
+    if (q) { p.b = q; outline(p.q, q); }
+    wake();
+    return;
   }
   const list = e.getCoalescedEvents?.() || [];
   for (const c of list.length ? list : [e]) {
@@ -1688,7 +1806,11 @@ function release(e, ok) {
   const p = ptrs.get(e.pointerId);
   if (!p) return;
   ptrs.delete(e.pointerId);
-  if (p.drawing) {
+  if (p.field) {
+    ghost.visible = false;
+    const q = ok && (tablePoint(e.clientX, e.clientY) || p.b);
+    if (q) layField(p.q, q);
+  } else if (p.drawing) {
     const q = ok && tablePoint(e.clientX, e.clientY);
     if (q) finish(p, q.x, q.z);
   } else if (ok && p.tile >= 0 && ST[p.tile] === 0) tip(p.tile, pushDir(p.tile));
@@ -1718,16 +1840,20 @@ addEventListener('keydown', e => {
 });
 resetB.addEventListener('click', reset);
 isoB.addEventListener('click', () => setView(!lensTo));
-// The Rows chip cycles 1, 3 and 5 parallel rows per stroke.
+// The Rows chip cycles 1, 3 and 5 rows per stroke, then Field.
 function setRows(r, save = true) {
   rows = ROWS.includes(r) ? r : 1;
-  rowsB.textContent = rows === 1 ? '1 row' : `${rows} rows`;
-  rowsB.setAttribute('aria-label', `Rows per stroke: ${rows}`);
-  rowsB.setAttribute('aria-pressed', String(rows > 1));
+  rowsB.textContent = !rows ? 'Field' : rows === 1 ? '1 row' : `${rows} rows`;
+  rowsB.setAttribute('aria-label', rows ? `Rows per stroke: ${rows}` : 'Field: a drag fills a box');
+  rowsB.setAttribute('aria-pressed', String(rows !== 1));
+  document.getElementById('drag-how').textContent = rows ? 'lay tiles' : 'fill a field';
   if (save) try { localStorage.setItem('stimming.domino.rows', String(rows)); } catch (err) { /* storage is optional */ }
 }
 rowsB.addEventListener('click', () => setRows(ROWS[(ROWS.indexOf(rows) + 1) % ROWS.length]));
-try { setRows(+localStorage.getItem('stimming.domino.rows'), false); } catch (err) { setRows(1, false); }
+try {
+  const v = localStorage.getItem('stimming.domino.rows');
+  setRows(v === null ? 1 : +v, false);
+} catch (err) { setRows(1, false); }
 clearB.addEventListener('click', clearAll);
 
 /* ---------- tile finish ---------- */
@@ -1821,6 +1947,10 @@ async function init() {
   });
   ray = new THREE.Raycaster();
   ndc = new THREE.Vector2();
+  ghost = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(15), 3)), new THREE.LineBasicMaterial({ color: 0xe8e0d0 }));
+  ghost.visible = false;
+  ghost.frustumCulled = false;
+  scene.add(ghost);
   vtmp = new THREE.Vector3();
   await idle();
   // Async compile keeps the physical-material build off the main thread.
