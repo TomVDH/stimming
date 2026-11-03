@@ -392,20 +392,33 @@ function voice(t, x) {
   v.p.pan.setValueAtTime(clamp(x, -1, 1) * 0.7, t);
   return v;
 }
+// Tone refuses two starts at one instant on one synth.
+// Each start moves just past the last; a refusal never stops the frame.
+function startAt(syn, t) {
+  t = Math.max(t, (syn.last || 0) + 0.002);
+  syn.last = t;
+  return t;
+}
 // A tone that glides from f0 to f1, then dies with time constant tau.
 function glide(syn, t, f0, f1, ramp, g, tau) {
-  syn.envelope.decay = tau * 4;
-  syn.triggerAttackRelease(f0, tau * 4, t, clamp(g));
-  syn.frequency.exponentialRampToValueAtTime(f1, t + ramp);
+  t = startAt(syn, t);
+  try {
+    syn.envelope.decay = tau * 4;
+    syn.triggerAttackRelease(f0, tau * 4, t, clamp(g));
+    syn.frequency.exponentialRampToValueAtTime(f1, t + ramp);
+  } catch (err) { /* a dropped note is fine */ }
 }
 // A noise burst through the voice filter, with an optional sweep.
 function burst(v, t, type, f, q, g, tau, to = 0, sweep = 0) {
+  t = startAt(v.n, t);
   v.f.type = type;
   v.f.Q.setValueAtTime(q, t);
   v.f.frequency.setValueAtTime(f, t);
   if (to) v.f.frequency.exponentialRampToValueAtTime(to, t + sweep);
-  v.n.envelope.decay = tau * 4;
-  v.n.triggerAttackRelease(tau * 4, t, clamp(g));
+  try {
+    v.n.envelope.decay = tau * 4;
+    v.n.triggerAttackRelease(tau * 4, t, clamp(g));
+  } catch (err) { /* a dropped burst is fine */ }
 }
 // A plop: a bubble's rising ring, with spray for bigger drops.
 // Bigger drops ring lower and longer.
@@ -682,6 +695,11 @@ float hash(vec2 p) {
   vec3 q = fract(p.xyx * 0.1031);
   q += dot(q, q.yzx + 33.33);
   return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }`;
 const TONE = `
 vec3 aces(vec3 x) { return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -797,11 +815,40 @@ void main() {
   }
   o = vec4(e.xy / 1024.0, e.z, 0.0);
 }`;
+// White water: foam rides the slopes, spreads a little and fades.
+// Torn, fast water and cut trenches whip up new foam.
+const FOAM_FS = `${HEAD}
+uniform sampler2D uSim, uFoam;
+uniform vec4 uPool;
+uniform float uDt;
+uniform vec4 uCut[4];
+uniform vec2 uCutV[4];
+uniform int uNC;
+out vec4 o;
+${SHAPE}
+void main() {
+  vec2 n = vec2(textureSize(uFoam, 0)), uv = gl_FragCoord.xy / n, w = (uv * 2.0 - 1.0) * uPool.xy;
+  if (poolSd(w) > 0.0) { o = vec4(0.0); return; }
+  vec4 s = texture(uSim, uv);
+  // Foam slides downhill on the waves it rides.
+  float f = texture(uFoam, uv + s.zw * 0.12 * uDt / (2.0 * uPool.xy)).r;
+  vec2 px = 1.0 / n;
+  float nb = texture(uFoam, uv + vec2(px.x, 0.0)).r + texture(uFoam, uv - vec2(px.x, 0.0)).r
+           + texture(uFoam, uv + vec2(0.0, px.y)).r + texture(uFoam, uv - vec2(0.0, px.y)).r;
+  f = mix(f, nb * 0.25, 0.12);
+  float src = smoothstep(0.5, 1.3, length(s.zw)) * 8.0 + smoothstep(0.0012, 0.007, abs(s.y)) * 5.0;
+  for (int i = 0; i < uNC; i++) {
+    float d = length(w - uCut[i].xy), r = uCut[i].z;
+    src += (1.0 - smoothstep(0.8 * r, 2.0 * r, d)) * (2.0 + 25.0 * length(uCutV[i]));
+  }
+  f = (f + src * uDt) * exp(-uDt / 2.5);
+  o = vec4(min(f, 1.5), 0.0, 0.0, 1.0);
+}`;
 // Caustics: each surface vertex follows its refracted sun ray down.
 // The floor gathers light where the ray grid bunches up.
 // Each colour bends by its own index, so bright lines fringe.
 const CAUS_VS = `${HEAD}
-uniform sampler2D uSim;
+uniform sampler2D uSim, uFoam;
 uniform ivec2 uN;
 uniform vec4 uPool;
 uniform vec3 uSun, uRl;
@@ -833,6 +880,8 @@ void main() {
   float cov = smoothstep(0.016, -0.012, ps);
   // Light fades over the last cells to soften wall shadows.
   vTint = mix(vec3(1.0), FLT_T, cov) * smoothstep(0.0, 5.0 * uPool.x / float(uN.x), -poolSd(p));
+  // Foam scatters the light, so the floor under it goes dim.
+  vTint *= 1.0 - 0.7 * clamp(textureLod(uFoam, uv, 0.0).r, 0.0, 1.0);
   gl_Position = vec4(vNew / uPool.xy, 0.0, 1.0);
 }`;
 const CAUS_FS = `${HEAD}
@@ -847,7 +896,7 @@ void main() {
 // The view: one ray per pixel through deck, wall, water and tile.
 // The ray also meets the thrown things.
 const VIEW_FS = `${HEAD}
-uniform sampler2D uSim, uCaus;
+uniform sampler2D uSim, uCaus, uFoam;
 uniform vec2 uRes, uTan;
 uniform vec3 uCam, uFwd, uRight, uUp, uSun, uRl;
 uniform vec4 uPool;
@@ -1161,9 +1210,16 @@ void main() {
     if (ui >= 0) under = mix(under, shadeObj(ui, S0 + tr * tu, tr) * exp(-SIG * tu) + scat * (1.0 - exp(-SIGS * tu)), ua);
   }
   vec3 water = mix(under, refl, F);
-  // Water torn steep turns to a hard band of foam.
-  float foam = smoothstep(1.15, 1.35, length(s.zw));
-  water = mix(water, TW * (gSun * 0.45 + gAmb * 1.4 + WGLOW * gLamp * 0.8), foam * 0.85);
+  // White water: a lace whose holes close as the foam thickens.
+  // The lace edge is hard, like a cut stencil.
+  float fo = clamp(texture(uFoam, wp / PH * 0.5 + 0.5).r, 0.0, 1.0);
+  if (fo > 0.01) {
+    vec2 fp = wp * 64.0 + vec2(uT * 0.4, -uT * 0.3);
+    float e = 0.62 * vnoise(fp) + 0.38 * vnoise(fp * 2.7 + 13.1) - (1.0 - fo);
+    float lace = clamp(e / max(fwidth(e), 1e-4) + 0.5, 0.0, 1.0);
+    vec3 foamC = TW * (gSun * (0.35 + 0.4 * max(dot(n, uSun), 0.0)) + gAmb * 1.5 + WGLOW * gLamp * 0.9);
+    water = mix(water, foamC, lace * 0.95);
+  }
   float cov = k < 0 ? 0.0 : clamp(-ps / max(fwidth(ps), 1e-6) + 0.5, 0.0, 1.0);
   water = mix(water, petalColor(n), cov);
 
@@ -1230,6 +1286,7 @@ void main() {
 
 /* ---------- WebGL ---------- */
 let gl = null, P = null, SIMFMT = 0, vaoEmpty = null, vaoCaus = null, vaoPart = null, partBuf = null, idxBuf = null, nIdx = 0, pbo = null, fence = null;
+let foam = [null, null], fcur = 0, foamUntil = 0, foamDirty = false;
 let sim = [null, null], cur = 0, caus = null, probeT = null, ready = false, simActive = false, simAcc = 0;
 const PW = NPM + NOB + 1, EI = (NPM + NOB) * 4;
 const probeData = new Float32Array(PW * 4);
@@ -1297,7 +1354,7 @@ async function initGL() {
   const progs = {
     sim: compile(TRI, SIM_FS), grad: compile(TRI, GRAD_FS), dist: compile(TRI, DIST_FS),
     probe: compile(TRI, PROBE_FS), caus: compile(CAUS_VS, CAUS_FS), view: compile(TRI, VIEW_FS),
-    part: compile(PART_VS, PART_FS, ['aP', 'aK']),
+    part: compile(PART_VS, PART_FS, ['aP', 'aK']), foam: compile(TRI, FOAM_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -1337,11 +1394,14 @@ function setU(pr, name, type, ...v) {
 // A new pool shape needs new grids and new uniforms.
 function allocPool() {
   sim.forEach(freeTarget);
+  foam.forEach(freeTarget);
   freeTarget(caus);
   sim = [target(NX, NZ, SIMFMT, gl.LINEAR), target(NX, NZ, SIMFMT, gl.LINEAR)];
   cur = 0;
   const ck = SIMN >= 256 ? 4 : 3;
   caus = target(NX * ck, NZ * ck, gl.RGBA16F, gl.LINEAR);
+  foam = [target(NX, NZ, gl.RGBA16F, gl.LINEAR), target(NX, NZ, gl.RGBA16F, gl.LINEAR)];
+  fcur = 0;
   const idx = new Uint32Array((NX - 1) * (NZ - 1) * 6);
   let o = 0;
   for (let z = 0; z < NZ - 1; z++) {
@@ -1367,6 +1427,7 @@ function allocPool() {
     setU(pr, 'uTile', '1f', TILE);
     setU(pr, 'uSim', '1i', 0);
     setU(pr, 'uCaus', '1i', 1);
+    setU(pr, 'uFoam', '1i', 2);
     setU(pr, 'uT', '1f', SWELL_T);
     setU(pr, 'uAmp', '1f', AMP0);
     setU(pr, 'uShape', '1i', shape);
@@ -1474,6 +1535,37 @@ function probe() {
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
+// Foam steps while the water moves and for a while after.
+// Old foam clears once, so no ghost lace stays behind.
+function stepFoam(dt) {
+  if (simActive || cutters.size) foamUntil = clock + 8;
+  if (clock >= foamUntil) {
+    if (foamDirty) {
+      for (const t of foam) { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+      foamDirty = false;
+    }
+    return;
+  }
+  const pr = P.foam, dst = foam[fcur ^ 1];
+  gl.useProgram(pr.p);
+  gl.uniform1f(pr.u.uDt, dt);
+  gl.uniform1i(pr.u.uNC, nCut);
+  if (nCut) {
+    gl.uniform4fv(pr.u.uCut, CUT);
+    gl.uniform2fv(pr.u.uCutV, CUTV);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+  gl.viewport(0, 0, dst.w, dst.h);
+  gl.disable(gl.BLEND);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, foam[fcur].tex);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sim[cur].tex);
+  gl.bindVertexArray(vaoEmpty);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  fcur ^= 1;
+  foamDirty = true;
+}
 // A settled pool stops stepping and clears its last ripples.
 function settle() {
   simActive = false;
@@ -1518,6 +1610,10 @@ function render(dt) {
   packObjs();
   if (simActive) simulate(dt);
   if (simActive && !fence) probe();
+  stepFoam(dt);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, foam[fcur].tex);
+  gl.activeTexture(gl.TEXTURE0);
   // Caustics add light into the floor map.
   gl.useProgram(P.caus.p);
   gl.uniform1f(P.caus.u.uT, swellT);
@@ -2128,7 +2224,7 @@ function stepParts(dt) {
 /* ---------- one loop: it runs only while something moves ---------- */
 let raf = 0, inFrame = false, running = false, onScreen = false, lastDraw = 0, drawn = 0, slowN = 0, busyN = 0, lowDpr = false, quiet = 0;
 let W = 0, H = 0;
-const busy = () => simActive || raining || objMoving || holds.size > 0 || parts.length > 0 || turn || spin !== 0 || cutters.size > 0 || later.length > 0
+const busy = () => simActive || raining || objMoving || holds.size > 0 || parts.length > 0 || turn || spin !== 0 || cutters.size > 0 || clock < foamUntil || later.length > 0
   || dropQ.length > 0 || segQ.length > 0 || nightK !== nightT;
 function wake() {
   // A frame in progress schedules its own successor.
@@ -2156,10 +2252,14 @@ function frame(now) {
       else if (SIMN > 160) { SIMN = 160; layoutPool(aspect); allocPool(); }
     }
   }
+  // A thrown error must not leave the loop marked busy forever.
   inFrame = true;
-  step(dt);
-  render(dt);
-  inFrame = false;
+  try {
+    step(dt);
+    render(dt);
+  } finally {
+    inFrame = false;
+  }
   // The canvas fades in once its first frame is up.
   if (++drawn === 1) requestAnimationFrame(() => canvas.classList.add('on'));
   const still = !busy() && !petalsMoving();
