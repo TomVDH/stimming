@@ -56,6 +56,11 @@ vec3 eyeArt(vec2 p, vec2 look, float t, float s) {
 // In tree units, the sets span about two units each way.
 vec3 bigImage(vec2 P, float t, vec2 look, float kind) {
   float r = length(P), a = atan(P.y, P.x);
+  if (kind > 5.5) {
+    // Dark across the whole tree; one line wavers, then lies flat.
+    float y = mod(t, 6.0) < 3.0 ? 0.25 * exp(-pow((fract(P.x * 0.35 + t * 0.5) - 0.5) * 30.0, 2.0)) : 0.0;
+    return vec3(0.02) + vec3(0.8, 0.85, 0.8) * smoothstep(0.03, 0.0, abs(P.y - y));
+  }
   if (kind > 4.5) {
     // A giant heart beats across the whole tree.
     vec2 q = P / (1.35 * (1.0 + 0.08 * exp(-fract(t * 1.1) * 8.0))) - vec2(0.0, 0.1);
@@ -103,9 +108,41 @@ vec3 bigImage(vec2 P, float t, vec2 look, float kind) {
 }
 `;
 
-// One function per programme, then the dispatch by channel number.
-export const CHANNELS = `const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+// Programmes sit in groups of 25, one shader per group.
+// Small shaders compile fast and in parallel; a tile draws with its group.
+export const GROUP = 25;
+export const GROUPS = [
+`const vec2 ASP = vec2(4.0 / 3.0, 1.0);
 const float PX = 1.0 / 120.0;
+vec3 chSnow(vec2 uv, float t) {
+  float f = mod(floor(t * 30.0), 97.0);
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
+  float l = h21(vec2(floor(uv.y * 120.0), f));
+  n = mix(n, l, 0.22);
+  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
+}
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// A seven-segment digit in a box one wide and two tall.
+float seg7(vec2 p, int d) {
+  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
+  float c = 0.0;
+  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
+  return c;
+}
+float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
+// Film grain for the old-footage channels.
+float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
 vec3 chBars(vec2 uv, float t) {
   float x = uv.x + sin(uv.y * 30.0 + t * 3.0) * 0.002;
   float i = floor(clamp(x, 0.0, 0.999) * 7.0);
@@ -117,13 +154,6 @@ vec3 chBars(vec2 uv, float t) {
   float bx = fract(t * 0.07);
   if (abs(uv.x - bx) < 0.04 && uv.y < 0.18 && uv.y > 0.06) c = vec3(0.95, 0.4, 0.6);
   return c;
-}
-vec3 chSnow(vec2 uv, float t) {
-  float f = mod(floor(t * 30.0), 97.0);
-  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
-  float l = h21(vec2(floor(uv.y * 120.0), f));
-  n = mix(n, l, 0.22);
-  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
 }
 // A smiling ball bounces off the edges and blushes a new colour.
 vec3 chBounce(vec2 uv, float t, float s) {
@@ -178,12 +208,6 @@ vec3 chOcean(vec2 uv, float t) {
     col = sea;
   }
   return col;
-}
-float sdHeart(vec2 p) {
-  p.x = abs(p.x);
-  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
-  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
-  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
 }
 // A pixel heart beats twice a second, lub-dub.
 vec3 chHeart(vec2 uv, float t) {
@@ -331,20 +355,6 @@ vec3 chTree(vec2 uv, float t, float s) {
   }
   return col;
 }
-// A seven-segment digit in a box one wide and two tall.
-float seg7(vec2 p, int d) {
-  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
-  float c = 0.0;
-  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
-  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
-  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
-  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
-  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
-  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
-  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
-  return c;
-}
-float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
 // A weather map: land, sea, isobars and a cold front with its teeth.
 vec3 chWeather(vec2 uv, float t) {
   vec2 p = uv * ASP * 2.0 + vec2(t * 0.05, 0.0);
@@ -513,6 +523,66 @@ vec3 chPlanet(vec2 uv, float t) {
   if (rq.y <= 0.0) col = mix(col, rc, inR);
   return col;
 }
+vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
+  if (ch == 0) return chBars(uv, t);
+  if (ch == 1) return chBounce(uv, t, s);
+  if (ch == 2) return chOcean(uv, t);
+  if (ch == 3) return chHeart(uv, t);
+  if (ch == 4) return chCube(uv, t);
+  if (ch == 5) return chCard(uv, t);
+  if (ch == 6) return chFish(uv, t, s);
+  if (ch == 7) return chEye(uv, t, look, s);
+  if (ch == 8) return chRadar(uv, t);
+  if (ch == 9) return chLava(uv, t);
+  if (ch == 10) return chTree(uv, t, s);
+  if (ch == 11) return chWeather(uv, t);
+  if (ch == 12) return chClock(uv, t);
+  if (ch == 13) return chCount(uv, t);
+  if (ch == 14) return chStars(uv, t);
+  if (ch == 15) return chPaddle(uv, t);
+  if (ch == 16) return chEq(uv, t);
+  if (ch == 17) return chScope(uv, t);
+  if (ch == 18) return chKaleido(uv, t);
+  if (ch == 19) return chPlasma(uv, t);
+  if (ch == 20) return chRain(uv, t);
+  if (ch == 21) return chFire(uv, t);
+  if (ch == 22) return chJelly(uv, t);
+  if (ch == 23) return chMoon(uv, t);
+  if (ch == 24) return chPlanet(uv, t);
+  return chSnow(uv, t);
+}
+`,
+`const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+const float PX = 1.0 / 120.0;
+vec3 chSnow(vec2 uv, float t) {
+  float f = mod(floor(t * 30.0), 97.0);
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
+  float l = h21(vec2(floor(uv.y * 120.0), f));
+  n = mix(n, l, 0.22);
+  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
+}
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// A seven-segment digit in a box one wide and two tall.
+float seg7(vec2 p, int d) {
+  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
+  float c = 0.0;
+  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
+  return c;
+}
+float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
+// Film grain for the old-footage channels.
+float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
 // A tunnel of rings rushes toward you.
 vec3 chTunnel(vec2 uv, float t) {
   vec2 p = (uv - 0.5) * ASP;
@@ -809,6 +879,66 @@ vec3 chUfo(vec2 uv, float t) {
   }
   return col;
 }
+vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
+  if (ch == 25) return chTunnel(uv, t);
+  if (ch == 26) return chSnake(uv, t);
+  if (ch == 27) return chBlocks(uv, t);
+  if (ch == 28) return chHills(uv, t);
+  if (ch == 29) return chCity(uv, t);
+  if (ch == 30) return chRoad(uv, t);
+  if (ch == 31) return chLight(uv, t);
+  if (ch == 32) return chWorks(uv, t);
+  if (ch == 33) return chMandala(uv, t);
+  if (ch == 34) return chCat(uv, t, look);
+  if (ch == 35) return chVinyl(uv, t);
+  if (ch == 36) return chMetro(uv, t);
+  if (ch == 37) return chWaves(uv, t);
+  if (ch == 38) return chRoto(uv, t);
+  if (ch == 39) return chHypno(uv, t);
+  if (ch == 40) return chSunrise(uv, t);
+  if (ch == 41) return chBubbles(uv, t);
+  if (ch == 42) return chGlobe(uv, t);
+  if (ch == 43) return chTraffic(uv, t);
+  if (ch == 44) return chEcg(uv, t);
+  if (ch == 45) return chNews(uv, t);
+  if (ch == 46) return chLotto(uv, t);
+  if (ch == 47) return chVolcano(uv, t);
+  if (ch == 48) return chFly(uv, t);
+  if (ch == 49) return chUfo(uv, t);
+  return chSnow(uv, t);
+}
+`,
+`const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+const float PX = 1.0 / 120.0;
+vec3 chSnow(vec2 uv, float t) {
+  float f = mod(floor(t * 30.0), 97.0);
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
+  float l = h21(vec2(floor(uv.y * 120.0), f));
+  n = mix(n, l, 0.22);
+  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
+}
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// A seven-segment digit in a box one wide and two tall.
+float seg7(vec2 p, int d) {
+  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
+  float c = 0.0;
+  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
+  return c;
+}
+float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
+// Film grain for the old-footage channels.
+float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
 // Night-vision footage: tracers climb and flak bursts over a burning city.
 vec3 chRaid(vec2 uv, float t) {
   vec3 col = mix(vec3(0.02, 0.08, 0.03), vec3(0.05, 0.16, 0.06), uv.y);
@@ -909,8 +1039,6 @@ vec3 chFleet(vec2 uv, float t) {
   }
   return col;
 }
-// Film grain for the old-footage channels.
-float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
 // Late film: a train runs into a tunnel, then the censor cuts to fireworks.
 vec3 chLate(vec2 uv, float t) {
   float ph = mod(t, 10.0);
@@ -1330,6 +1458,66 @@ vec3 chBubbly(vec2 uv, float t) {
   }
   return col;
 }
+vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
+  if (ch == 50) return chRaid(uv, t);
+  if (ch == 51) return chBombers(uv, t);
+  if (ch == 52) return chBarrage(uv, t);
+  if (ch == 53) return chSearch(uv, t);
+  if (ch == 54) return chFleet(uv, t);
+  if (ch == 55) return chLate(uv, t);
+  if (ch == 56) return chSteam(uv, t);
+  if (ch == 57) return chSax(uv, t);
+  if (ch == 58) return chHeels(uv, t);
+  if (ch == 59) return chHall(uv, t);
+  if (ch == 60) return chWoods(uv, t);
+  if (ch == 61) return chTornado(uv, t);
+  if (ch == 62) return chQuake(uv, t);
+  if (ch == 63) return chWave(uv, t);
+  if (ch == 64) return chCrash(uv, t);
+  if (ch == 65) return chShades(uv, t);
+  if (ch == 66) return chBuffer(uv, t);
+  if (ch == 67) return chToys(uv, t);
+  if (ch == 68) return chClaude(uv, t);
+  if (ch == 69) return chSub(uv, t);
+  if (ch == 70) return chFruit(uv, t);
+  if (ch == 71) return chDoor(uv, t);
+  if (ch == 72) return chCar(uv, t);
+  if (ch == 73) return chBanana(uv, t);
+  if (ch == 74) return chBubbly(uv, t);
+  return chSnow(uv, t);
+}
+`,
+`const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+const float PX = 1.0 / 120.0;
+vec3 chSnow(vec2 uv, float t) {
+  float f = mod(floor(t * 30.0), 97.0);
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
+  float l = h21(vec2(floor(uv.y * 120.0), f));
+  n = mix(n, l, 0.22);
+  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
+}
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// A seven-segment digit in a box one wide and two tall.
+float seg7(vec2 p, int d) {
+  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
+  float c = 0.0;
+  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
+  return c;
+}
+float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
+// Film grain for the old-footage channels.
+float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
 // A burlesque shadow on a lit blind; two big fans keep everything covered.
 vec3 chFans(vec2 uv, float t) {
   vec2 p = (uv - vec2(0.5, 0.0)) * ASP;
@@ -1741,115 +1929,966 @@ vec3 chCandle(vec2 uv, float t) {
   return mix(col, vec3(1.0, 0.98, 0.85), fill(length((f + vec2(0.0, 0.01)) / vec2(0.5, 1.1)) - 0.02, PX));
 }
 vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
-  if (ch == 0) return chBars(uv, t);
-  if (ch == 1) return chBounce(uv, t, s);
-  if (ch == 2) return chOcean(uv, t);
-  if (ch == 3) return chHeart(uv, t);
-  if (ch == 4) return chCube(uv, t);
-  if (ch == 5) return chCard(uv, t);
-  if (ch == 6) return chFish(uv, t, s);
-  if (ch == 7) return chEye(uv, t, look, s);
-  if (ch == 8) return chRadar(uv, t);
-  if (ch == 9) return chLava(uv, t);
-  if (ch == 10) return chTree(uv, t, s);
-  // Later channels sit in two blocks, so most tiles skip most tests.
-  if (ch < 30) {
-    if (ch == 11) return chWeather(uv, t);
-    if (ch == 12) return chClock(uv, t);
-    if (ch == 13) return chCount(uv, t);
-    if (ch == 14) return chStars(uv, t);
-    if (ch == 15) return chPaddle(uv, t);
-    if (ch == 16) return chEq(uv, t);
-    if (ch == 17) return chScope(uv, t);
-    if (ch == 18) return chKaleido(uv, t);
-    if (ch == 19) return chPlasma(uv, t);
-    if (ch == 20) return chRain(uv, t);
-    if (ch == 21) return chFire(uv, t);
-    if (ch == 22) return chJelly(uv, t);
-    if (ch == 23) return chMoon(uv, t);
-    if (ch == 24) return chPlanet(uv, t);
-    if (ch == 25) return chTunnel(uv, t);
-    if (ch == 26) return chSnake(uv, t);
-    if (ch == 27) return chBlocks(uv, t);
-    if (ch == 28) return chHills(uv, t);
-    if (ch == 29) return chCity(uv, t);
-  } else if (ch < 50) {
-    if (ch == 30) return chRoad(uv, t);
-    if (ch == 31) return chLight(uv, t);
-    if (ch == 32) return chWorks(uv, t);
-    if (ch == 33) return chMandala(uv, t);
-    if (ch == 34) return chCat(uv, t, look);
-    if (ch == 35) return chVinyl(uv, t);
-    if (ch == 36) return chMetro(uv, t);
-    if (ch == 37) return chWaves(uv, t);
-    if (ch == 38) return chRoto(uv, t);
-    if (ch == 39) return chHypno(uv, t);
-    if (ch == 40) return chSunrise(uv, t);
-    if (ch == 41) return chBubbles(uv, t);
-    if (ch == 42) return chGlobe(uv, t);
-    if (ch == 43) return chTraffic(uv, t);
-    if (ch == 44) return chEcg(uv, t);
-    if (ch == 45) return chNews(uv, t);
-    if (ch == 46) return chLotto(uv, t);
-    if (ch == 47) return chVolcano(uv, t);
-    if (ch == 48) return chFly(uv, t);
-    if (ch == 49) return chUfo(uv, t);
-  } else if (ch < 70) {
-    if (ch == 50) return chRaid(uv, t);
-    if (ch == 51) return chBombers(uv, t);
-    if (ch == 52) return chBarrage(uv, t);
-    if (ch == 53) return chSearch(uv, t);
-    if (ch == 54) return chFleet(uv, t);
-    if (ch == 55) return chLate(uv, t);
-    if (ch == 56) return chSteam(uv, t);
-    if (ch == 57) return chSax(uv, t);
-    if (ch == 58) return chHeels(uv, t);
-    if (ch == 59) return chHall(uv, t);
-    if (ch == 60) return chWoods(uv, t);
-    if (ch == 61) return chTornado(uv, t);
-    if (ch == 62) return chQuake(uv, t);
-    if (ch == 63) return chWave(uv, t);
-    if (ch == 64) return chCrash(uv, t);
-    if (ch == 65) return chShades(uv, t);
-    if (ch == 66) return chBuffer(uv, t);
-    if (ch == 67) return chToys(uv, t);
-    if (ch == 68) return chClaude(uv, t);
-    if (ch == 69) return chSub(uv, t);
-  } else if (ch < 100) {
-    if (ch == 70) return chFruit(uv, t);
-    if (ch == 71) return chDoor(uv, t);
-    if (ch == 72) return chCar(uv, t);
-    if (ch == 73) return chBanana(uv, t);
-    if (ch == 74) return chBubbly(uv, t);
-    if (ch == 75) return chFans(uv, t);
-    if (ch == 76) return chSheets(uv, t);
-    if (ch == 77) return chLips(uv, t);
-    if (ch == 78) return chCensor(uv, t);
-    if (ch == 79) return chLine(uv, t);
-    if (ch == 80) return chPeep(uv, t);
-    if (ch == 81) return chNuke(uv, t);
-    if (ch == 82) return chVirus(uv, t);
-    if (ch == 83) return chMalware(uv, t);
-    if (ch == 84) return chEgg(uv, t);
-    if (ch == 85) return chPitch(uv, t);
-    if (ch == 86) return chTennis(uv, t);
-    if (ch == 87) return chBowl(uv, t);
-    if (ch == 88) return chDuck(uv, t);
-    if (ch == 89) return chWhale(uv, t);
-    if (ch == 90) return chRocket(uv, t);
-    if (ch == 91) return chAurora(uv, t);
-    if (ch == 92) return chDisco(uv, t);
-    if (ch == 93) return chSlots(uv, t);
-    if (ch == 94) return chHack(uv, t);
-    if (ch == 95) return chAerobics(uv, t);
-    if (ch == 96) return chOcto(uv, t);
-    if (ch == 97) return chCamels(uv, t);
-    if (ch == 98) return chSki(uv, t);
-    if (ch == 99) return chCandle(uv, t);
-  }
+  if (ch == 75) return chFans(uv, t);
+  if (ch == 76) return chSheets(uv, t);
+  if (ch == 77) return chLips(uv, t);
+  if (ch == 78) return chCensor(uv, t);
+  if (ch == 79) return chLine(uv, t);
+  if (ch == 80) return chPeep(uv, t);
+  if (ch == 81) return chNuke(uv, t);
+  if (ch == 82) return chVirus(uv, t);
+  if (ch == 83) return chMalware(uv, t);
+  if (ch == 84) return chEgg(uv, t);
+  if (ch == 85) return chPitch(uv, t);
+  if (ch == 86) return chTennis(uv, t);
+  if (ch == 87) return chBowl(uv, t);
+  if (ch == 88) return chDuck(uv, t);
+  if (ch == 89) return chWhale(uv, t);
+  if (ch == 90) return chRocket(uv, t);
+  if (ch == 91) return chAurora(uv, t);
+  if (ch == 92) return chDisco(uv, t);
+  if (ch == 93) return chSlots(uv, t);
+  if (ch == 94) return chHack(uv, t);
+  if (ch == 95) return chAerobics(uv, t);
+  if (ch == 96) return chOcto(uv, t);
+  if (ch == 97) return chCamels(uv, t);
+  if (ch == 98) return chSki(uv, t);
+  if (ch == 99) return chCandle(uv, t);
   return chSnow(uv, t);
 }
-`;
+`,
+`const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+const float PX = 1.0 / 120.0;
+vec3 chSnow(vec2 uv, float t) {
+  float f = mod(floor(t * 30.0), 97.0);
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
+  float l = h21(vec2(floor(uv.y * 120.0), f));
+  n = mix(n, l, 0.22);
+  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
+}
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// A seven-segment digit in a box one wide and two tall.
+float seg7(vec2 p, int d) {
+  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
+  float c = 0.0;
+  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
+  return c;
+}
+float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
+// Film grain for the old-footage channels.
+float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
+// Two champagne glasses clink over a steaming hot tub.
+vec3 chHotTub(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.1, 0.05, 0.15), vec3(0.3, 0.12, 0.3), uv.y);
+  float water = 0.35;
+  if (uv.y < water) col = mix(vec3(0.1, 0.4, 0.55), vec3(0.2, 0.6, 0.7), uv.y / water) + vec3(0.3) * step(0.9, vn(vec2(uv.x * 30.0, uv.y * 40.0 - t * 2.0)));
+  for (int i = 0; i < 12; i++) {
+    float fi = float(i), f = fract(t * 0.5 + fi / 12.0);
+    col = mix(col, vec3(0.8, 0.95, 1.0), smoothstep(0.006, 0.0, abs(length((uv - vec2(0.1 + 0.8 * h21(vec2(fi, 1.0)), f * water)) * ASP) - 0.008)));
+  }
+  col = mix(col, vec3(0.85, 0.8, 0.9), smoothstep(0.55, 0.8, fbm(vec2(uv.x * 4.0, uv.y * 3.0 - t * 0.3))) * step(water, uv.y) * 0.5);
+  float clink = abs(sin(t * 0.8));
+  for (int i = 0; i < 2; i++) {
+    float sx = i == 0 ? -1.0 : 1.0;
+    vec2 p = rot(sx * (0.25 - 0.15 * clink)) * ((uv - vec2(0.5 + sx * (0.06 + 0.06 * clink), 0.42)) * ASP);
+    col = mix(col, vec3(0.9, 0.95, 1.0), fill(min(sdBox(p - vec2(0.0, 0.06), vec2(0.03, 0.07), 0.02), sdBox(p - vec2(0.0, -0.04), vec2(0.004, 0.04), 0.0)), PX) * 0.6);
+    col = mix(col, vec3(1.0, 0.85, 0.4), fill(sdBox(p - vec2(0.0, 0.05), vec2(0.024, 0.05), 0.015), PX));
+  }
+  return col + vec3(1.0) * smoothstep(0.03, 0.0, length((uv - vec2(0.5, 0.58)) * ASP)) * smoothstep(0.85, 1.0, 1.0 - clink);
+}
+// A pink phone with lipstick lips; a number flashes.
+vec3 chCallNow(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.5, 0.05, 0.3), vec3(0.9, 0.2, 0.5), uv.y);
+  vec2 p = rot(0.05 * sin(t * 12.0) * step(0.5, fract(t * 0.5))) * ((uv - vec2(0.38, 0.55)) * ASP);
+  float hand = min(min(length(p - vec2(-0.18, 0.0)) - 0.06, length(p - vec2(0.18, 0.0)) - 0.06), sdBox(p - vec2(0.0, 0.04), vec2(0.18, 0.03), 0.02));
+  col = mix(col, vec3(1.0, 0.55, 0.75), fill(min(hand, sdBox(p - vec2(0.0, -0.13), vec2(0.17, 0.08), 0.04)), PX));
+  vec2 l = (p - vec2(0.0, -0.13)) / 0.06;
+  col = mix(col, vec3(0.85, 0.0, 0.2), step(min(length((l - vec2(0.0, 0.25)) / vec2(1.4, 0.5)) - 0.6, length((l + vec2(0.0, 0.2)) / vec2(1.3, 0.55)) - 0.6), 0.0));
+  float bl = step(0.4, fract(t * 1.5));
+  vec2 q = uv * ASP - vec2(0.82, 0.12);
+  for (int i = 0; i < 4; i++) col = mix(col, mix(vec3(0.6, 0.2, 0.4), vec3(1.0, 0.95, 0.4), bl), seg7((q - vec2(float(i) * 0.1, 0.0)) / 0.05, i == 0 ? 0 : i == 2 ? 6 : 9));
+  return col;
+}
+// A waterbed rolls in slow waves under a heart pillow.
+vec3 chWaterbed(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.25, 0.05, 0.2), vec3(0.45, 0.1, 0.3), uv.y) + vec3(0.06, 0.02, 0.03) * step(0.5, fract(uv.x * 12.0));
+  float top = 0.4 + 0.03 * sin(uv.x * 12.0 - t * 3.0) * (0.6 + 0.4 * sin(t));
+  col = mix(col, mix(vec3(0.1, 0.35, 0.6), vec3(0.3, 0.6, 0.85), smoothstep(0.2, top, uv.y)), step(uv.y, top) * step(0.12, uv.x) * step(uv.x, 0.88) * step(0.2, uv.y));
+  col = mix(col, vec3(0.2, 0.08, 0.1), step(uv.y, 0.2) * step(0.1, uv.x) * step(uv.x, 0.9));
+  return mix(col, vec3(1.0, 0.3, 0.5), step(sdHeart(((uv - vec2(0.75, top + 0.05)) * ASP) / 0.07 + vec2(0.0, 0.5)), 0.0));
+}
+// A strawberry dips, slowly, into cream.
+vec3 chStrawberry(vec2 uv, float t) {
+  vec2 p = (uv - vec2(0.5, 0.0)) * ASP;
+  vec3 col = mix(vec3(0.95, 0.85, 0.85), vec3(0.85, 0.6, 0.65), uv.y);
+  float dip = 0.5 + 0.5 * sin(t * 0.6), cream = 0.3 + 0.01 * sin(p.x * 30.0 + t);
+  vec2 q = p - vec2(0.0, 0.42 + 0.25 * dip);
+  float berry = length(vec2(q.x * (1.0 + max(-q.y, 0.0) * 4.0), q.y * 0.9)) - 0.12;
+  col = mix(col, vec3(0.85, 0.08, 0.12), fill(berry, PX));
+  col = mix(col, vec3(1.0, 0.9, 0.4), step(berry, 0.0) * step(length(fract(q * 22.0) - 0.5), 0.15));
+  col = mix(col, vec3(0.2, 0.55, 0.2), fill(max(abs(q.x) - 0.08 + (q.y - 0.1) * 0.6, abs(q.y - 0.11) - 0.025), PX));
+  col = mix(col, vec3(0.98, 0.96, 0.9), step(berry, 0.0) * step(uv.y, cream + 0.06 * (1.0 - dip)));
+  return mix(col, vec3(0.98, 0.96, 0.9), step(uv.y, cream));
+}
+// A motel at night: the heart sign flickers, a car pulls in, a curtain closes.
+vec3 chMotel(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.03, 0.03, 0.1), vec3(0.12, 0.06, 0.2), uv.y);
+  col = mix(col, vec3(0.12, 0.1, 0.12), step(uv.y, 0.15));
+  col = mix(col, vec3(0.3, 0.22, 0.25), step(abs(uv.x - 0.55), 0.42) * step(0.15, uv.y) * step(uv.y, 0.45));
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i), x = 0.2 + fi * 0.17, curtain = i == 2 ? smoothstep(0.0, 1.0, fract(t * 0.12)) : 0.0;
+    vec3 wc = mix(vec3(0.05), vec3(1.0, 0.8, 0.5), step(0.3, h21(vec2(fi, floor(t * 0.1)))));
+    wc = mix(wc, vec3(0.8, 0.2, 0.3), step(abs(uv.x - x), 0.05 * curtain));
+    col = mix(col, wc, step(abs(uv.x - x), 0.05) * step(abs(uv.y - 0.32), 0.05));
+  }
+  col = mix(col, vec3(0.2), step(abs(uv.x - 0.08), 0.008) * step(uv.y, 0.75));
+  float on = step(0.08, h21(vec2(floor(t * 8.0), 4.0)));
+  col = mix(col, vec3(1.0, 0.2, 0.5) * (0.3 + 0.9 * on), smoothstep(0.12, 0.0, abs(sdHeart(((uv - vec2(0.08, 0.78)) * ASP) / 0.07 + vec2(0.0, 0.5)))));
+  vec2 c = (uv - vec2(mix(1.2, 0.6, smoothstep(0.0, 4.0, mod(t, 10.0))), 0.12)) * ASP;
+  col = mix(col, vec3(0.15, 0.2, 0.45), fill(min(sdBox(c, vec2(0.12, 0.025), 0.02), sdBox(c - vec2(0.02, 0.04), vec2(0.06, 0.025), 0.02)), PX));
+  return mix(col, vec3(1.0, 1.0, 0.7), fill(length(c - vec2(-0.12, 0.0)) - 0.012, PX));
+}
+// A curvy hourglass pours its sand.
+vec3 chHourglass(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP;
+  vec3 col = mix(vec3(0.15, 0.08, 0.1), vec3(0.35, 0.18, 0.2), uv.y);
+  float ph = fract(t / 12.0), w = 0.02 + 0.2 * pow(abs(p.y) / 0.38, 1.4);
+  float glass = step(abs(p.x), w) * step(abs(p.y), 0.38);
+  col = mix(col, vec3(0.75, 0.8, 0.85), glass * 0.35);
+  float topL = 0.38 * (1.0 - ph), botL = -0.38 + 0.38 * ph;
+  float sand = glass * (step(0.0, p.y) * step(p.y, topL * 0.95) + step(p.y, botL));
+  sand = max(sand, step(abs(p.x), 0.006) * step(botL, p.y) * step(p.y, 0.0));
+  col = mix(col, vec3(0.95, 0.75, 0.4), min(sand, 1.0));
+  return mix(col, vec3(0.35, 0.2, 0.1), step(abs(abs(p.y) - 0.41), 0.025) * step(abs(p.x), 0.27));
+}
+// A silk sheet slides from a marble statue's shoulder.
+vec3 chStatue(vec2 uv, float t) {
+  vec2 p = (uv - vec2(0.5, 0.0)) * ASP;
+  vec3 col = mix(vec3(0.08, 0.06, 0.1), vec3(0.2, 0.15, 0.2), uv.y) + vec3(0.25, 0.2, 0.15) * smoothstep(0.6, 0.0, length(p - vec2(0.0, 0.5)));
+  float body = min(min(length((p - vec2(0.0, 0.75)) / vec2(0.8, 1.0)) - 0.09, sdBox(p - vec2(0.0, 0.62), vec2(0.035, 0.06), 0.02)), sdBox(p - vec2(0.0, 0.3), vec2(0.2 - 0.05 * smoothstep(0.5, 0.2, p.y), 0.28), 0.12));
+  col = mix(col, mix(vec3(0.85, 0.83, 0.8), vec3(0.95, 0.94, 0.92), fbm(p * 12.0)) * (0.7 + 0.3 * smoothstep(-0.2, 0.2, -p.x)), fill(body, PX));
+  float edge = 0.55 - p.x * 0.6 - (0.5 + 0.5 * sin(t * 0.4)) * 0.2;
+  return mix(col, mix(vec3(0.6, 0.1, 0.2), vec3(0.85, 0.25, 0.35), 0.5 + 0.5 * sin(p.x * 30.0 + p.y * 10.0)), step(p.y, edge + 0.02 * sin(p.x * 20.0)) * step(body, 0.02));
+}
+// A lipstick twists up out of its gold case.
+vec3 chLipstick(vec2 uv, float t) {
+  vec2 p = (uv - vec2(0.5, 0.1)) * ASP;
+  vec3 col = mix(vec3(0.95, 0.85, 0.85), vec3(0.8, 0.55, 0.6), uv.y);
+  float up = 0.5 + 0.5 * sin(t * 0.8);
+  vec2 s = p - vec2(0.0, 0.38 + up * 0.18);
+  col = mix(col, vec3(0.8, 0.0, 0.15), fill(max(sdBox(s, vec2(0.06, 0.1), 0.0), s.y - 0.06 + s.x * 0.8), PX));
+  col = mix(col, vec3(1.0, 0.5, 0.6), fill(sdBox(s - vec2(-0.035, -0.02), vec2(0.008, 0.06), 0.0), PX) * 0.5);
+  col = mix(col, vec3(0.7, 0.55, 0.2), fill(sdBox(p - vec2(0.0, 0.33 + up * 0.05), vec2(0.075, 0.05), 0.0), PX));
+  col = mix(col, vec3(0.85, 0.7, 0.3), fill(sdBox(p - vec2(0.0, 0.15), vec2(0.09, 0.15), 0.01), PX));
+  return mix(col, vec3(0.95, 0.85, 0.5), fill(sdBox(p - vec2(0.03, 0.15), vec2(0.015, 0.13), 0.0), PX) * 0.6);
+}
+// A face presses out of the static.
+vec3 chSnowFace(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP;
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 30.0) * 13.0);
+  float emerge = smoothstep(0.0, 1.0, 0.5 + 0.5 * sin(t * 0.5)), face = smoothstep(0.32, 0.2, length(p / vec2(0.8, 1.0)));
+  float eyes = smoothstep(0.06, 0.02, min(length(p - vec2(-0.09, 0.06)), length(p - vec2(0.09, 0.06))));
+  float mouth = smoothstep(0.03, 0.0, abs(length((p - vec2(0.0, -0.02)) / vec2(1.0, 0.6)) - 0.11)) * step(p.y, -0.08);
+  return vec3(mix(n, n * 0.4 + (face * (0.6 + 0.4 * smoothstep(-0.3, 0.3, -p.x)) - eyes * 0.8 - mouth * 0.6) * 0.8, emerge * face));
+}
+// A porcelain doll turns her head toward you.
+vec3 chDoll(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.15, 0.1, 0.12), vec3(0.3, 0.22, 0.22), uv.y) * (0.8 + 0.2 * step(0.5, fract(uv.x * 20.0)));
+  vec2 p = (uv - vec2(0.5, 0.45)) * ASP;
+  float a = (1.0 - smoothstep(0.0, 1.0, clamp((mod(t, 8.0) - 3.0) / 3.0, 0.0, 1.0))) * 1.4;
+  float head = length(p / vec2(0.9, 1.0)) - 0.2;
+  col = mix(col, vec3(0.92, 0.88, 0.85), fill(head, PX));
+  vec2 e1 = vec2(-0.07 * cos(a) + 0.15 * sin(a), 0.03), e2 = vec2(0.07 * cos(a) + 0.15 * sin(a), 0.03);
+  col = mix(col, vec3(0.05), fill(length(p - e1) - 0.03, PX) * step(abs(e1.x), 0.16));
+  col = mix(col, vec3(0.05), fill(length(p - e2) - 0.03, PX) * step(abs(e2.x), 0.16));
+  col = mix(col, vec3(0.6, 0.0, 0.05), fill(length((p - vec2(0.15 * sin(a), -0.09)) / vec2(1.0, 0.6)) - 0.02, PX) * step(abs(0.15 * sin(a)), 0.15));
+  col = mix(col, vec3(0.35, 0.2, 0.1), fill(max(head - 0.025, 0.06 - p.y - 0.2 * sin(a) * step(0.0, -p.x)), PX));
+  return mix(col, vec3(0.3), fill(sdSeg(p, vec2(-0.05, -0.02), vec2(-0.1, -0.12)) - 0.002, PX) * step(head, 0.0));
+}
+// An empty rocking chair rocks by a moonlit window.
+vec3 chRocking(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.05, 0.05, 0.07), vec3(0.1, 0.1, 0.13), uv.y);
+  col = mix(col, vec3(0.3, 0.32, 0.4), step(abs(uv.x - 0.75), 0.1) * step(abs(uv.y - 0.65), 0.15));
+  col = mix(col, vec3(0.08), min(step(abs(uv.x - 0.75), 0.006) * step(abs(uv.y - 0.65), 0.15) + step(abs(uv.y - 0.65), 0.006) * step(abs(uv.x - 0.75), 0.1), 1.0));
+  col = mix(col, vec3(0.06, 0.05, 0.05), step(uv.y, 0.2));
+  col += vec3(0.15, 0.17, 0.22) * step(uv.y, 0.2) * step(abs(uv.x - 0.6 + uv.y), 0.08);
+  vec2 p = rot(0.18 * sin(t * 1.6)) * ((uv - vec2(0.4, 0.2)) * ASP);
+  float chair = max(abs(length(p - vec2(0.0, 0.6)) - 0.6) - 0.008, abs(p.x) - 0.22);
+  chair = min(chair, sdBox(p - vec2(0.0, 0.14), vec2(0.13, 0.012), 0.0));
+  chair = min(chair, sdBox(rot(-0.15) * (p - vec2(-0.13, 0.32)), vec2(0.012, 0.2), 0.0));
+  chair = min(chair, min(sdSeg(p, vec2(-0.11, 0.0), vec2(-0.11, 0.14)), sdSeg(p, vec2(0.11, 0.0), vec2(0.11, 0.14))) - 0.008);
+  chair = min(chair, sdSeg(p, vec2(-0.12, 0.24), vec2(0.12, 0.22)) - 0.008);
+  return mix(col, vec3(0.2, 0.13, 0.08), fill(chair, PX));
+}
+// A blood moon over the graves; a hand rises from the earth.
+vec3 chGrave(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.15, 0.02, 0.04), vec3(0.04, 0.02, 0.06), uv.y);
+  col = mix(col, vec3(0.75, 0.12, 0.08), fill(length((uv - vec2(0.7, 0.72)) * ASP) - 0.12, PX));
+  float ground = 0.25 + 0.03 * sin(uv.x * 8.0);
+  col = mix(col, vec3(0.04, 0.03, 0.04), step(uv.y, ground));
+  for (int i = 0; i < 4; i++) {
+    vec2 q = (uv - vec2(0.12 + float(i) * 0.25, 0.27)) * ASP;
+    col = mix(col, vec3(0.25, 0.24, 0.27), fill(min(sdBox(q - vec2(0.0, 0.06), vec2(0.05, 0.06), 0.0), length(q - vec2(0.0, 0.12)) - 0.05), PX));
+  }
+  vec2 h = (uv - vec2(0.5, 0.1 + smoothstep(0.0, 1.0, fract(t * 0.12) * 2.0) * 0.12)) * ASP;
+  float hand = min(sdBox(h - vec2(0.0, 0.05), vec2(0.022, 0.07), 0.01), sdBox(h - vec2(0.0, 0.14), vec2(0.03, 0.03), 0.01));
+  for (int j = 0; j < 4; j++) hand = min(hand, sdBox(h - vec2(-0.022 + float(j) * 0.015, 0.19 + 0.01 * sin(t * 6.0 + float(j))), vec2(0.004, 0.025), 0.003));
+  return mix(col, vec3(0.45, 0.5, 0.4), fill(hand, PX) * step(ground, uv.y));
+}
+// A phone rings in an empty room; the clock reads three.
+vec3 chThreeAM(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.03, 0.03, 0.05), vec3(0.08, 0.06, 0.06), step(uv.y, 0.3));
+  float ring = step(0.5, fract(t * 0.5)) * step(0.5, fract(t * 6.0));
+  vec2 p = (uv - vec2(0.35 + 0.004 * ring * sin(t * 80.0), 0.36)) * ASP;
+  col = mix(col, vec3(0.12, 0.12, 0.14), fill(sdBox(p, vec2(0.12, 0.05), 0.02), PX));
+  col = mix(col, vec3(0.15), fill(sdBox(p - vec2(0.0, 0.07 + 0.01 * ring), vec2(0.14, 0.02), 0.02), PX));
+  col += vec3(0.15, 0.15, 0.2) * ring * smoothstep(0.3, 0.0, length(p));
+  vec2 c = uv * ASP - vec2(0.85, 0.33);
+  float d = max(seg7(c / 0.05, 3), max(seg7((c - vec2(0.15, 0.0)) / 0.05, 0), seg7((c - vec2(0.21, 0.0)) / 0.05, 0)));
+  d = max(d, step(length(c - vec2(0.115, 0.03)), 0.007) + step(length(c - vec2(0.115, 0.07)), 0.007));
+  return mix(col, vec3(1.0, 0.1, 0.05), min(d, 1.0)) + vec3(0.05, 0.005, 0.0) * step(uv.y, 0.3);
+}
+// A hillside burns at night.
+vec3 chWildfire(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.3, 0.06, 0.02), vec3(0.05, 0.02, 0.04), uv.y);
+  float hill = 0.35 + 0.12 * sin(uv.x * 4.0 + 0.5), burn = step(uv.x, fract(t * 0.04) * 1.4 - 0.2);
+  col = mix(col, vec3(0.04, 0.02, 0.02), step(uv.y, hill));
+  for (int i = 0; i < 6; i++) {
+    float x = 0.1 + float(i) * 0.16, hb = 0.35 + 0.12 * sin(x * 4.0 + 0.5);
+    col = mix(col, vec3(0.02), step(abs(uv.x - x) * 4.0, 0.1 - (uv.y - hb)) * step(hb - 0.01, uv.y));
+  }
+  float fl = fbm(vec2(uv.x * 20.0, uv.y * 8.0 - t * 2.0));
+  col = mix(col, mix(vec3(1.0, 0.3, 0.0), vec3(1.0, 0.85, 0.3), fl), step(uv.y, hill + 0.08 * fl * burn + 0.02) * step(hill - 0.02, uv.y) * burn);
+  return mix(col, vec3(0.25, 0.2, 0.2), smoothstep(0.55, 0.8, fbm(vec2(uv.x * 3.0 - t * 0.1, uv.y * 3.0 - t * 0.2))) * step(hill, uv.y) * 0.7);
+}
+// A tanker sits in an oily rainbow sheen.
+vec3 chOil(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.55, 0.6, 0.65), vec3(0.4, 0.45, 0.55), uv.y);
+  float sea = 0.5;
+  if (uv.y < sea) {
+    col = mix(vec3(0.05, 0.12, 0.2), vec3(0.15, 0.25, 0.35), uv.y / sea);
+    float slick = smoothstep(0.45, 0.6, fbm(uv * vec2(4.0, 8.0) + vec2(t * 0.02, 0.0)));
+    col = mix(col, mix(vec3(0.02), hue(fract(fbm(uv * 12.0 + t * 0.05) * 2.0)) * 0.5 + 0.05, 0.6), slick);
+  }
+  vec2 p = (uv - vec2(0.6, sea)) * ASP;
+  col = mix(col, vec3(0.15, 0.15, 0.17), fill(min(sdBox(p - vec2(0.0, 0.02), vec2(0.3 - max(0.0, -p.y) * 0.5, 0.03), 0.01), sdBox(p - vec2(0.22, 0.07), vec2(0.05, 0.03), 0.005)), PX));
+  return mix(col, vec3(0.6, 0.15, 0.1), fill(sdBox(p, vec2(0.28, 0.008), 0.0), PX));
+}
+// A polar bear on a shrinking floe; an iceberg calves.
+vec3 chIce(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.8, 0.88, 0.95), vec3(0.5, 0.65, 0.85), uv.y);
+  float sea = 0.35, cal = fract(t * 0.1);
+  vec2 b = uv - vec2(0.82, sea);
+  col = mix(col, vec3(0.92, 0.96, 1.0), step(b.y, 0.35 - abs(b.x) * 1.2) * step(0.0, b.y));
+  col = mix(col, vec3(0.85, 0.92, 1.0), fill(sdBox(rot(cal * 1.2) * ((uv - vec2(0.68, sea + 0.05 - cal * cal * 0.3)) * ASP), vec2(0.04, 0.07), 0.01), PX) * step(sea, uv.y));
+  if (uv.y < sea) col = mix(vec3(0.05, 0.2, 0.35), vec3(0.15, 0.35, 0.5), uv.y / sea);
+  vec2 f = (uv - vec2(0.35, sea)) * ASP, q = f - vec2(0.0, 0.05);
+  col = mix(col, vec3(0.95, 0.97, 1.0), fill(sdBox(f, vec2(0.18 * (1.0 - fract(t * 0.05) * 0.6), 0.015), 0.005), PX));
+  float bear = min(length(q / vec2(1.6, 1.0)) - 0.035, length(q - vec2(0.06, 0.015)) - 0.022);
+  bear = min(bear, min(sdBox(q - vec2(-0.035, -0.03), vec2(0.008, 0.02), 0.004), sdBox(q - vec2(0.035, -0.03), vec2(0.008, 0.02), 0.004)));
+  col = mix(col, vec3(0.97, 0.95, 0.88), fill(bear, PX * 0.5));
+  return mix(col, vec3(0.05), fill(length(q - vec2(0.08, 0.02)) - 0.004, PX * 0.5));
+}
+// A price tag whose numbers keep climbing.
+vec3 chInflation(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.9, 0.85, 0.6), vec3(0.95, 0.75, 0.3), uv.y);
+  vec2 q = rot(0.15 + 0.05 * sin(t)) * ((uv - 0.5) * ASP);
+  col = mix(col, vec3(0.98, 0.97, 0.92), fill(sdBox(q, vec2(0.36, 0.17), 0.04), PX));
+  col = mix(col, vec3(0.9, 0.8, 0.6), fill(length(q - vec2(-0.3, 0.0)) - 0.022, PX));
+  float price = mod(floor(99.0 + t * t * 3.0), 10000.0);
+  for (int i = 0; i < 4; i++) col = mix(col, vec3(0.8, 0.05, 0.1), seg7((q - vec2(-0.22 + float(i) * 0.12, -0.11)) / 0.11, int(mod(floor(price / pow(10.0, float(3 - i))), 10.0))));
+  vec2 a = (uv - vec2(0.85, 0.82)) * ASP;
+  return mix(col, vec3(0.85, 0.05, 0.1), fill(min(sdBox(a - vec2(0.0, -0.03), vec2(0.015, 0.04), 0.0), max(abs(a.x) * 1.2 + a.y - 0.05, -a.y)), PX) * step(0.4, fract(t * 2.0)));
+}
+// Election night: the bars swing back and forth.
+vec3 chElection(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.05, 0.08, 0.2), vec3(0.1, 0.15, 0.35), uv.y);
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i), x = 0.18 + fi * 0.22, h = 0.15 + 0.45 * (0.5 + 0.5 * sin(t * (0.6 + fi * 0.13) + fi * 1.7));
+    vec3 c = i == 0 ? vec3(0.9, 0.2, 0.2) : i == 1 ? vec3(0.2, 0.4, 0.95) : i == 2 ? vec3(0.95, 0.8, 0.2) : vec3(0.3, 0.8, 0.4);
+    col = mix(col, c, step(abs(uv.x - x), 0.07) * step(0.12, uv.y) * step(uv.y, 0.12 + h));
+    float pct = floor(h * 100.0);
+    col = mix(col, vec3(1.0), max(seg7((uv * ASP - vec2(x * ASP.x - 0.07, 0.15 + h)) / 0.035, int(pct / 10.0)), seg7((uv * ASP - vec2(x * ASP.x - 0.025, 0.15 + h)) / 0.035, int(mod(pct, 10.0)))));
+  }
+  return mix(col, vec3(0.9), step(abs(uv.y - 0.12), 0.004));
+}
+// Gridlock: rows of brake lights in the rain.
+vec3 chGridlock(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.05, 0.05, 0.08), vec3(0.15, 0.12, 0.18), uv.y);
+  float hz = 0.6;
+  if (uv.y < hz) {
+    float z = 0.2 / (hz - uv.y + 0.01), x = (uv.x - 0.5) * z;
+    col = vec3(0.05, 0.05, 0.06) + vec3(0.09, 0.008, 0.008) * step(abs(x), 1.2);
+    for (int lane = 0; lane < 3; lane++) {
+      float lx = (float(lane) - 1.0) * 0.6, row = floor(z * 1.5), fz = fract(z * 1.5);
+      col = mix(col, vec3(0.08), step(abs(x - lx), 0.22) * step(fz, 0.35));
+      col = mix(col, vec3(1.0, 0.1, 0.05) * (0.5 + 0.8 * step(0.5, h21(vec2(row, float(lane)) + floor(t * 0.7)))), step(abs(abs(x - lx) - 0.16), 0.04) * step(abs(fz - 0.3), 0.04));
+    }
+  }
+  float rx = floor(uv.x * 80.0);
+  return col + vec3(0.4) * step(0.97, h21(vec2(rx, floor(uv.y * 20.0 + t * 15.0 + h21(vec2(rx, 2.0)) * 20.0))));
+}
+// A black hole bends its glowing disk.
+vec3 chBlackHole(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP;
+  float r = length(p);
+  vec3 col = vec3(0.01) + stars2(uv + p * 0.02 / max(r * r, 0.01), 0.993) * 0.6;
+  vec2 d = p / vec2(1.0, 0.3);
+  float rd = length(d), disk = smoothstep(0.42, 0.3, rd) * smoothstep(0.12, 0.16, rd);
+  vec3 dc = mix(vec3(1.0, 0.85, 0.5), vec3(1.0, 0.35, 0.05), smoothstep(0.15, 0.4, rd)) * (0.6 + 0.4 * sin(atan(d.y, d.x) * 8.0 - t * 3.0 + rd * 20.0)) * (0.7 + 0.6 * smoothstep(-0.3, 0.3, p.x));
+  col = mix(col, dc, disk * step(0.0, p.y));
+  col += vec3(1.0, 0.7, 0.3) * smoothstep(0.02, 0.0, abs(r - 0.13)) * 0.8;
+  col = mix(col, vec3(0.0), step(r, 0.11));
+  return mix(col, dc, disk * step(p.y, 0.0));
+}
+// Asteroids tumble past.
+vec3 chAsteroids(vec2 uv, float t) {
+  vec3 col = vec3(0.01, 0.01, 0.03) + stars2(uv, 0.994) * 0.6;
+  vec2 p = uv * ASP;
+  for (int i = 0; i < 8; i++) {
+    float fi = float(i), r = 0.03 + 0.06 * h21(vec2(fi, 5.0));
+    vec2 c = vec2(fract(h21(vec2(fi, 2.0)) - t * (0.05 + 0.1 * h21(vec2(fi, 1.0)))) * 1.6 - 0.1, 0.1 + 0.8 * h21(vec2(fi, 3.0)));
+    vec2 q = rot(t * (h21(vec2(fi, 4.0)) - 0.5) * 2.0) * (p - c);
+    float d = length(q) - r * (0.8 + 0.25 * vn(vec2(atan(q.y, q.x) * 3.0, fi)));
+    vec3 rc = vec3(0.45, 0.4, 0.38) * (0.6 + 0.5 * smoothstep(-r, r, q.x - q.y));
+    col = mix(col, rc, fill(d, PX));
+    col = mix(col, rc * 0.6, fill(length(q - vec2(r * 0.3, -r * 0.2)) - r * 0.25, PX) * step(d, 0.0));
+  }
+  return col;
+}
+// A tentacled anchor reads the news in glyphs.
+vec3 chAlienNews(vec2 uv, float t) {
+  vec2 p = uv * ASP;
+  vec3 col = mix(vec3(0.1, 0.4, 0.2), vec3(0.05, 0.2, 0.15), uv.y) + vec3(0.03, 0.09, 0.03) * step(0.5, fract(uv.x * 8.0 - uv.y * 4.0));
+  vec2 h = p - vec2(0.67, 0.5);
+  float body = min(length(h / vec2(1.0, 1.25)) - 0.13, sdBox(p - vec2(0.67, 0.22), vec2(0.14, 0.12), 0.06));
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i) - 1.5;
+    body = min(body, sdSeg(p, vec2(0.67 + fi * 0.05, 0.38), vec2(0.67 + fi * 0.08 + 0.03 * sin(t * 3.0 + fi), 0.3)) - 0.012);
+  }
+  col = mix(col, vec3(0.6, 0.9, 0.4), fill(body, PX));
+  col = mix(col, vec3(1.0), fill(length(h - vec2(0.0, 0.04)) - 0.05, PX));
+  col = mix(col, vec3(0.05), fill(length(h - vec2(0.02 * sin(t), 0.04)) - 0.022, PX));
+  col = mix(col, vec3(0.2, 0.1, 0.3), step(uv.y, 0.16));
+  if (uv.y < 0.1) col = mix(vec3(0.7, 0.1, 0.8), vec3(0.9, 1.0, 0.5), step(0.55, h21(floor(vec2((uv.x + t * 0.1) * 40.0, uv.y * 30.0)))) * step(abs(uv.y - 0.05), 0.03));
+  return col;
+}
+// A space station orbits over the Earth.
+vec3 chStation(vec2 uv, float t) {
+  vec2 p = uv * ASP;
+  vec3 col = vec3(0.0, 0.0, 0.02) + stars2(uv, 0.995) * 0.5;
+  float er = length(p - vec2(0.67, -1.3)) - 1.6;
+  vec3 earth = mix(vec3(0.05, 0.2, 0.55), vec3(0.15, 0.45, 0.25), step(0.55, fbm(p * 4.0 + vec2(t * 0.05, 0.0))));
+  earth = mix(earth, vec3(0.95), smoothstep(0.55, 0.75, fbm(p * 6.0 + vec2(t * 0.08, 3.0))) * 0.8);
+  col = mix(col, earth, step(er, 0.0)) + vec3(0.3, 0.55, 1.0) * smoothstep(0.04, 0.0, abs(er)) * 0.8;
+  vec2 s = rot(0.2 + 0.05 * sin(t * 0.3)) * (p - vec2(0.7 + 0.03 * sin(t * 0.2), 0.65));
+  col = mix(col, vec3(0.75), fill(min(sdBox(s, vec2(0.12, 0.012), 0.0), sdBox(s, vec2(0.025, 0.04), 0.01)), PX * 0.5));
+  return mix(col, mix(vec3(0.1, 0.15, 0.45), vec3(0.3, 0.4, 0.8), step(0.5, fract(s.y * 40.0))), fill(min(sdBox(s - vec2(-0.16, 0.0), vec2(0.04, 0.07), 0.0), sdBox(s - vec2(0.16, 0.0), vec2(0.04, 0.07), 0.0)), PX * 0.5));
+}
+// A rover crawls across Mars, leaving tracks.
+vec3 chRover(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.85, 0.55, 0.35), vec3(0.6, 0.4, 0.35), uv.y);
+  col = mix(col, mix(vec3(0.7, 0.35, 0.18), vec3(0.55, 0.25, 0.12), fbm(uv * 8.0)), step(uv.y, 0.5 + 0.03 * sin(uv.x * 5.0)));
+  float x = fract(t * 0.03) * 1.4 - 0.2;
+  col = mix(col, vec3(0.45, 0.2, 0.1), step(abs(uv.y - 0.22), 0.006) * step(uv.x, x) * step(0.5, fract(uv.x * 80.0)));
+  vec2 p = (uv - vec2(x, 0.27)) * ASP;
+  col = mix(col, vec3(0.85, 0.82, 0.75), fill(min(sdBox(p - vec2(0.0, 0.04), vec2(0.08, 0.03), 0.01), min(sdBox(p - vec2(0.05, 0.11), vec2(0.006, 0.05), 0.0), sdBox(p - vec2(0.06, 0.16), vec2(0.022, 0.012), 0.004))), PX * 0.6));
+  for (int i = 0; i < 3; i++) col = mix(col, vec3(0.2), fill(length(p - vec2(-0.06 + float(i) * 0.06, -0.01)) - 0.02, PX * 0.6));
+  return mix(col, vec3(0.9, 0.9, 1.0), fill(length(uv * ASP - vec2(1.1, 0.85)) - 0.012, PX));
+}
+// A wormhole swirls toward elsewhere.
+vec3 chWormhole(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP;
+  float r = length(p) + 1e-3, z = 0.25 / r + t * 0.6;
+  float sw = atan(p.y, p.x) / (2.0 * PI) + z * 0.3 + 0.1 * sin(z * 2.0);
+  vec3 col = mix(vec3(0.3, 0.05, 0.6), vec3(0.1, 0.7, 1.0), 0.5 + 0.5 * sin(sw * 12.0 * PI));
+  return col * smoothstep(0.0, 0.25, r) * (0.6 + 0.4 * step(0.5, fract(z * 2.0))) + vec3(1.0, 0.95, 0.9) * smoothstep(0.06, 0.0, r);
+}
+vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
+  if (ch == 100) return chHotTub(uv, t);
+  if (ch == 101) return chCallNow(uv, t);
+  if (ch == 102) return chWaterbed(uv, t);
+  if (ch == 103) return chStrawberry(uv, t);
+  if (ch == 104) return chMotel(uv, t);
+  if (ch == 105) return chHourglass(uv, t);
+  if (ch == 106) return chStatue(uv, t);
+  if (ch == 107) return chLipstick(uv, t);
+  if (ch == 108) return chSnowFace(uv, t);
+  if (ch == 109) return chDoll(uv, t);
+  if (ch == 110) return chRocking(uv, t);
+  if (ch == 111) return chGrave(uv, t);
+  if (ch == 112) return chThreeAM(uv, t);
+  if (ch == 113) return chWildfire(uv, t);
+  if (ch == 114) return chOil(uv, t);
+  if (ch == 115) return chIce(uv, t);
+  if (ch == 116) return chInflation(uv, t);
+  if (ch == 117) return chElection(uv, t);
+  if (ch == 118) return chGridlock(uv, t);
+  if (ch == 119) return chBlackHole(uv, t);
+  if (ch == 120) return chAsteroids(uv, t);
+  if (ch == 121) return chAlienNews(uv, t);
+  if (ch == 122) return chStation(uv, t);
+  if (ch == 123) return chRover(uv, t);
+  if (ch == 124) return chWormhole(uv, t);
+  return chSnow(uv, t);
+}
+`,
+`const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+const float PX = 1.0 / 120.0;
+vec3 chSnow(vec2 uv, float t) {
+  float f = mod(floor(t * 30.0), 97.0);
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
+  float l = h21(vec2(floor(uv.y * 120.0), f));
+  n = mix(n, l, 0.22);
+  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
+}
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// A seven-segment digit in a box one wide and two tall.
+float seg7(vec2 p, int d) {
+  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
+  float c = 0.0;
+  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
+  return c;
+}
+float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
+// Film grain for the old-footage channels.
+float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
+// Fork lightning over a dark plain.
+vec3 chLightning(vec2 uv, float t) {
+  float k = floor(t * 0.7), flash = step(fract(t * 0.7), 0.12) * step(0.4, h21(vec2(k, 1.0)));
+  vec3 col = mix(vec3(0.05, 0.06, 0.12), vec3(0.15, 0.15, 0.25), uv.y) + vec3(0.2, 0.2, 0.28) * flash;
+  col = mix(col, vec3(0.03, 0.05, 0.04), step(uv.y, 0.18 + 0.03 * sin(uv.x * 7.0)));
+  if (flash > 0.0) {
+    float d = 1e9;
+    vec2 prev = vec2(0.2 + 0.6 * h21(vec2(k, 2.0)), 1.0);
+    for (int i = 1; i <= 10; i++) {
+      vec2 q = vec2(prev.x + (h21(vec2(k, float(i))) - 0.5) * 0.08, 1.0 - float(i) * 0.082);
+      d = min(d, sdSeg(uv * ASP, prev * ASP, q * ASP));
+      prev = q;
+    }
+    col += vec3(0.9, 0.9, 1.0) * (fill(d - 0.004, PX) + 0.4 * exp(-d * 40.0));
+  }
+  return col;
+}
+// Fish weave through a coral reef.
+vec3 chReef(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.0, 0.25, 0.45), vec3(0.2, 0.6, 0.75), uv.y) + vec3(0.2) * smoothstep(0.02, 0.0, abs(fract(uv.x * 3.0 + uv.y + t * 0.05) - 0.5) - 0.46) * uv.y;
+  for (int i = 0; i < 6; i++) {
+    float fi = float(i), c = 1e9;
+    vec2 q = (uv - vec2(0.08 + fi * 0.17, 0.1)) * ASP;
+    for (int j = 0; j < 3; j++) {
+      float a = (float(j) - 1.0) * 0.5 + 0.1 * sin(t + fi + float(j));
+      c = min(c, sdSeg(q, vec2(0.0), vec2(sin(a), cos(a)) * (0.12 + 0.05 * h21(vec2(fi, float(j))))) - 0.018);
+    }
+    col = mix(col, hue(fi * 0.17 + 0.9) * 0.9, fill(c, PX));
+  }
+  col = mix(col, vec3(0.9, 0.8, 0.6), step(uv.y, 0.08));
+  for (int i = 0; i < 7; i++) {
+    float fi = float(i);
+    vec2 q = (uv - vec2(fract(t * 0.06 + fi * 0.03) * 1.6 - 0.3 + 0.04 * sin(fi * 3.0), 0.55 + 0.05 * sin(fi * 2.0 + t))) * ASP;
+    col = mix(col, vec3(1.0, 0.6, 0.1), fill(min(length(q / vec2(1.8, 1.0)) - 0.015, max(abs(q.y) - (-q.x - 0.02) * 0.8, max(q.x + 0.02, -q.x - 0.045))), PX * 0.5));
+  }
+  return col;
+}
+// Penguins waddle and belly-slide.
+vec3 chPenguins(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.75, 0.85, 0.95), vec3(0.55, 0.7, 0.9), uv.y);
+  col = mix(col, vec3(0.95, 0.97, 1.0), step(uv.y, 0.3 + 0.04 * sin(uv.x * 4.0)));
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i), x = fract(t * 0.05 + fi * 0.27) * 1.4 - 0.2, slide = step(0.75, fract(t * 0.05 + fi * 0.27 + 0.1));
+    vec2 p = rot(0.12 * sin(t * 8.0 + fi) * (1.0 - slide) + slide * 1.4) * ((uv - vec2(x, 0.3 + 0.04 * sin(x * 4.0))) * ASP - vec2(0.0, 0.07 * (1.0 - slide)));
+    col = mix(col, vec3(0.08, 0.08, 0.12), fill(min(length(p / vec2(0.75, 1.0)) - 0.06, length(p - vec2(0.0, 0.07)) - 0.035), PX * 0.6));
+    col = mix(col, vec3(0.97), fill(length((p - vec2(0.012, -0.005)) / vec2(0.6, 1.0)) - 0.04, PX * 0.6));
+    col = mix(col, vec3(1.0, 0.6, 0.1), fill(sdBox(p - vec2(0.04, 0.07), vec2(0.015, 0.006), 0.002), PX * 0.6));
+  }
+  return col;
+}
+// Bees dance over honeycomb.
+vec3 chBees(vec2 uv, float t) {
+  vec2 p = uv * ASP * 7.0, r = vec2(1.0, 1.732), hh = r * 0.5;
+  vec2 a = mod(p, r) - hh, b = mod(p - hh, r) - hh, gv = dot(a, a) < dot(b, b) ? a : b, id = p - gv;
+  float hex = max(abs(gv.x) * 0.866 + abs(gv.y) * 0.5, abs(gv.y));
+  vec3 col = mix(vec3(0.85, 0.55, 0.1), vec3(1.0, 0.75, 0.2), step(0.5, h21(floor(id * 3.0)))) * (0.7 + 0.3 * (1.0 - hex));
+  col = mix(col, vec3(0.45, 0.25, 0.05), smoothstep(0.42, 0.48, hex));
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    vec2 q = rot(t * 2.0 + fi) * (uv * ASP - vec2(0.67 + 0.4 * sin(t * (0.5 + fi * 0.1) + fi * 2.0), 0.5 + 0.3 * sin(t * (0.7 + fi * 0.13) + fi)));
+    col = mix(col, mix(vec3(0.1), vec3(1.0, 0.85, 0.1), step(0.5, fract(q.x * 40.0))), fill(length(q / vec2(1.6, 1.0)) - 0.025, PX * 0.5));
+    col = mix(col, vec3(0.9, 0.95, 1.0), fill(length((q - vec2(0.0, 0.025 + 0.004 * sin(t * 40.0))) / vec2(0.7, 1.0)) - 0.015, PX * 0.5) * 0.7);
+  }
+  return col;
+}
+// Mushrooms grow in a time-lapse.
+vec3 chMushrooms(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.1, 0.12, 0.08), vec3(0.2, 0.22, 0.15), uv.y);
+  col = mix(col, vec3(0.25, 0.15, 0.08), step(uv.y, 0.2));
+  float g = fract(t / 10.0);
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i), gi = clamp(g * 1.6 - fi * 0.12, 0.0, 1.0), h = 0.25 * gi * (0.7 + 0.4 * h21(vec2(fi, 1.0)));
+    vec2 p = (uv - vec2(0.15 + fi * 0.17, 0.2)) * ASP;
+    float spotty = step(0.5, h21(vec2(fi, 2.0)));
+    col = mix(col, vec3(0.92, 0.88, 0.8), fill(sdBox(p - vec2(0.0, h * 0.5), vec2(0.018 * gi + 0.002, h * 0.5), 0.005), PX * 0.6));
+    col = mix(col, mix(vec3(0.75, 0.55, 0.35), vec3(0.85, 0.2, 0.15), spotty), fill(max(length((p - vec2(0.0, h)) / vec2(1.0, 0.7)) - 0.07 * gi, h - p.y), PX * 0.6));
+    col = mix(col, vec3(1.0), fill(length(p - vec2(-0.02 * gi, h + 0.03 * gi)) - 0.008 * gi, PX * 0.5) * spotty);
+  }
+  return col;
+}
+// A murmuration of starlings over a field at dusk.
+vec3 chStarlings(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.95, 0.65, 0.45), vec3(0.45, 0.4, 0.6), uv.y);
+  col = mix(col, vec3(0.15, 0.12, 0.12), step(uv.y, 0.15 + 0.02 * sin(uv.x * 10.0)));
+  vec2 p = uv * ASP, c = vec2(0.67 + 0.3 * sin(t * 0.3), 0.6 + 0.12 * sin(t * 0.47));
+  for (int i = 0; i < 60; i++) {
+    float fi = float(i);
+    vec2 o = vec2(sin(fi * 2.3 + t * 0.9) * (0.25 + 0.1 * sin(t * 0.5)), sin(fi * 3.7 + t * 1.1) * 0.12) * (0.6 + 0.4 * sin(fi));
+    col = mix(col, vec3(0.08), step(length(p - c - o), 0.006));
+  }
+  return col;
+}
+// Two dice bounce and settle.
+vec3 chDice(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.1, 0.4, 0.2), vec3(0.15, 0.5, 0.25), uv.y);
+  for (int i = 0; i < 2; i++) {
+    float fi = float(i), k = floor(t * 0.5 + fi * 0.5), f = fract(t * 0.5 + fi * 0.5);
+    vec2 p = rot(f < 0.6 ? f * 10.0 : 6.0) * ((uv - vec2(0.35 + fi * 0.3, 0.3 + abs(sin(f * PI * 3.0)) * (1.0 - f) * 0.25)) * ASP);
+    col = mix(col, vec3(0.97), fill(sdBox(p, vec2(0.09, 0.09), 0.02), PX));
+    int n = int(floor(h21(vec2(k, fi)) * 6.0)) + 1;
+    vec2 g = p / 0.045;
+    float pip = 0.0;
+    if (n == 1 || n == 3 || n == 5) pip = max(pip, step(length(g), 0.32));
+    if (n >= 2) pip = max(pip, step(min(length(g - vec2(1.0, 1.0)), length(g + vec2(1.0, 1.0))), 0.32));
+    if (n >= 4) pip = max(pip, step(min(length(g - vec2(1.0, -1.0)), length(g + vec2(1.0, -1.0))), 0.32));
+    if (n == 6) pip = max(pip, step(min(length(g - vec2(1.0, 0.0)), length(g + vec2(1.0, 0.0))), 0.32));
+    col = mix(col, vec3(0.1), pip);
+  }
+  return col;
+}
+// Two sock puppets argue.
+vec3 chPuppets(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.95, 0.85, 0.5), vec3(0.95, 0.6, 0.4), uv.y);
+  col = mix(col, vec3(0.55, 0.2, 0.15), step(uv.y, 0.25));
+  for (int i = 0; i < 2; i++) {
+    float sx = i == 0 ? -1.0 : 1.0, turn = step(0.5, fract(t * 0.4)), talk = (i == 0 ? turn : 1.0 - turn) * (0.5 + 0.5 * sin(t * 18.0));
+    vec2 p = (uv - vec2(0.5 + sx * 0.22, 0.25)) * ASP;
+    p.x *= -sx;
+    vec3 sock = i == 0 ? vec3(0.3, 0.5, 0.9) : vec3(0.9, 0.3, 0.4);
+    col = mix(col, sock * (0.8 + 0.2 * step(0.5, fract(p.y * 20.0))), fill(min(sdBox(p - vec2(0.0, 0.12), vec2(0.06, 0.14), 0.05), length((p - vec2(0.04, 0.3)) / vec2(1.4, 1.0)) - 0.07), PX));
+    col = mix(col, vec3(0.4, 0.05, 0.1), fill(sdBox(p - vec2(0.11, 0.29), vec2(0.04, 0.005 + 0.02 * talk), 0.004), PX));
+    col = mix(col, vec3(1.0), fill(length(p - vec2(0.05, 0.34)) - 0.018, PX));
+    col = mix(col, vec3(0.05), fill(length(p - vec2(0.055, 0.34)) - 0.008, PX));
+  }
+  return col;
+}
+// Bright paint runs down a white wall.
+vec3 chPaint(vec2 uv, float t) {
+  vec3 col = vec3(0.95, 0.93, 0.88);
+  for (int i = 0; i < 7; i++) {
+    float fi = float(i), x = 0.07 + fi * 0.14, len = fract(t * 0.05 + h21(vec2(fi, 1.0))) * 1.2, w = 0.05 + 0.02 * sin(uv.y * 20.0 + fi);
+    col = mix(col, hue(fi / 7.0), max(step(abs(uv.x - x), w) * step(1.0 - len, uv.y), step(length((uv - vec2(x, 1.0 - len)) * ASP), w * 1.4)));
+  }
+  return col;
+}
+// A red balloon floats away over the roofs.
+vec3 chBalloon(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.6, 0.8, 0.95), vec3(0.35, 0.6, 0.95), uv.y);
+  for (int i = 0; i < 8; i++) {
+    float fi = float(i), h = 0.18 + 0.1 * h21(vec2(fi, 1.0));
+    vec2 q = uv - vec2(0.06 + fi * 0.125, 0.0);
+    col = mix(col, vec3(0.6, 0.35, 0.3) * (0.8 + 0.2 * h21(vec2(fi, 2.0))), step(abs(q.x), 0.055) * step(uv.y, h));
+    col = mix(col, vec3(0.4, 0.2, 0.2), step(abs(q.x) * 1.2, h + 0.06 - uv.y) * step(h, uv.y));
+  }
+  vec2 p = (uv - vec2(0.5 + 0.1 * sin(t * 0.8), 0.25 + fract(t * 0.07) * 0.9)) * ASP;
+  col = mix(col, vec3(0.9, 0.1, 0.12), fill(length(p / vec2(0.85, 1.0)) - 0.06, PX));
+  col = mix(col, vec3(1.0, 0.6, 0.6), fill(length(p - vec2(-0.02, 0.025)) - 0.012, PX));
+  return mix(col, vec3(0.2), fill(sdSeg(p, vec2(0.0, -0.06), vec2(0.02 * sin(t * 3.0), -0.2)) - 0.002, PX));
+}
+// A box robot pops and locks to the beat.
+vec3 chRobot(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.15, 0.1, 0.3), vec3(0.4, 0.15, 0.5), uv.y);
+  col = mix(col, hue(fract(floor(uv.x * 8.0) / 8.0 + floor(t * 2.0) * 0.13)) * 0.4, step(uv.y, 0.18));
+  float b = floor(t * 2.0), pose = h21(vec2(b, 1.0)), pose2 = h21(vec2(b, 2.0));
+  vec2 p = (uv - vec2(0.5, 0.18)) * ASP, la = vec2(-0.1, 0.38), ra = vec2(0.1, 0.38);
+  vec2 lh = la + vec2(-0.1, 0.1 * (pose * 2.0 - 1.0)), rh = ra + vec2(0.1, 0.1 * (pose2 * 2.0 - 1.0));
+  float d = min(sdBox(p - vec2(0.0, 0.32), vec2(0.07, 0.09), 0.01), sdBox(p - vec2(0.0, 0.5), vec2(0.05, 0.05), 0.01));
+  d = min(d, min(sdSeg(p, la, lh), sdSeg(p, ra, rh)) - 0.018);
+  d = min(d, min(sdSeg(p, lh, lh + vec2(0.0, step(0.5, pose) * 0.12 - 0.06)), sdSeg(p, rh, rh + vec2(0.0, step(0.5, pose2) * 0.12 - 0.06))) - 0.015);
+  d = min(d, min(sdSeg(p, vec2(-0.04, 0.23), vec2(-0.06, 0.02)), sdSeg(p, vec2(0.04, 0.23), vec2(0.06, 0.02))) - 0.02);
+  col = mix(col, vec3(0.75, 0.78, 0.85), fill(d, PX));
+  col = mix(col, vec3(1.0, 0.2, 0.3), fill(min(length(p - vec2(-0.02, 0.51)), length(p - vec2(0.02, 0.51))) - 0.01, PX));
+  return mix(col, vec3(0.2, 0.9, 1.0), fill(sdBox(p - vec2(0.0, 0.33), vec2(0.035, 0.025), 0.005), PX) * (0.5 + 0.5 * step(0.5, fract(t * 2.0))));
+}
+// The prize wheel spins and ticks to a stop.
+vec3 chWheel(vec2 uv, float t) {
+  vec2 p = (uv - vec2(0.5, 0.48)) * ASP;
+  float r = length(p), cyc = mod(t, 8.0), base = floor(t / 8.0) * 1.7;
+  float spin = (cyc < 5.0 ? (1.0 - pow(1.0 - cyc / 5.0, 3.0)) * 12.0 : 12.0) + base;
+  vec3 col = mix(vec3(0.4, 0.05, 0.4), vec3(0.15, 0.05, 0.3), r);
+  float seg = floor(fract((atan(p.y, p.x) + spin) / (2.0 * PI)) * 12.0);
+  if (r < 0.38) col = hue(seg / 12.0) * (0.7 + 0.3 * mod(seg, 2.0));
+  col = mix(col, vec3(1.0, 0.85, 0.3), smoothstep(0.012, 0.0, abs(r - 0.38)));
+  for (int i = 0; i < 24; i++) {
+    float aa = float(i) / 24.0 * 2.0 * PI;
+    col = mix(col, vec3(1.0, 0.95, 0.7) * (0.4 + 0.6 * step(0.5, fract(t * 3.0 + float(i) * 0.5))), fill(length(p - vec2(cos(aa), sin(aa)) * 0.42) - 0.01, PX));
+  }
+  col = mix(col, vec3(0.9), fill(r - 0.04, PX));
+  vec2 q = p - vec2(0.0, 0.43);
+  return mix(col, vec3(0.95), step(abs(q.x) * 2.0, -q.y) * step(-0.06, q.y));
+}
+// A pinball ricochets off flashing bumpers.
+vec3 chPinball(vec2 uv, float t) {
+  vec2 p = uv * ASP;
+  vec3 col = mix(vec3(0.05, 0.05, 0.25), vec3(0.1, 0.05, 0.35), uv.y);
+  for (int i = 0; i < 3; i++) {
+    vec2 c = vec2(0.45 + float(i) * 0.22, 0.65 - abs(float(i) - 1.0) * 0.1);
+    float hit = step(0.85, fract(t * 1.3 + float(i) * 0.33));
+    col = mix(col, mix(vec3(0.9, 0.2, 0.5), vec3(1.0, 1.0, 0.6), hit), fill(length(p - c) - 0.06, PX));
+    col = mix(col, vec3(1.0), smoothstep(0.008, 0.0, abs(length(p - c) - 0.075)) * hit);
+  }
+  vec2 tri = abs(fract(vec2(t * 0.37, t * 0.53)) * 2.0 - 1.0), ball = vec2(0.15 + tri.x * 1.03, 0.15 + tri.y * 0.75);
+  col = mix(col, vec3(0.85), fill(length(p - ball) - 0.025, PX));
+  col = mix(col, vec3(1.0), fill(length(p - ball - vec2(-0.008, 0.008)) - 0.007, PX));
+  float fa = -0.4 + 0.4 * sin(t * 3.0);
+  col = mix(col, vec3(0.95, 0.4, 0.2), fill(sdSeg(p, vec2(0.45, 0.1), vec2(0.45, 0.1) + vec2(cos(fa), sin(fa)) * 0.15) - 0.015, PX));
+  return mix(col, vec3(0.95, 0.4, 0.2), fill(sdSeg(p, vec2(0.88, 0.1), vec2(0.88, 0.1) + vec2(-cos(fa), sin(fa)) * 0.15) - 0.015, PX));
+}
+// The claw grabs, lifts, and drops the prize.
+vec3 chClaw(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.95, 0.5, 0.7), vec3(0.6, 0.3, 0.7), uv.y);
+  col = mix(col, col * 0.7 + vec3(0.22, 0.25, 0.28), step(0.1, uv.x) * step(uv.x, 0.9) * step(0.12, uv.y) * step(uv.y, 0.9));
+  for (int i = 0; i < 9; i++) {
+    float fi = float(i);
+    col = mix(col, hue(fi * 0.13), fill(length((uv - vec2(0.15 + mod(fi, 5.0) * 0.17 + 0.08 * step(5.0, fi), 0.18 + 0.1 * step(5.0, fi))) * ASP) - 0.06, PX));
+  }
+  float ph = mod(t, 8.0) / 8.0, cx = 0.5 + 0.3 * sin(floor(t / 8.0) * 2.0);
+  float cy = ph < 0.35 ? 0.8 - ph / 0.35 * 0.5 : ph < 0.7 ? 0.3 + (ph - 0.35) / 0.35 * 0.5 : 0.8;
+  float grip = smoothstep(0.3, 0.38, ph) * (1.0 - smoothstep(0.6, 0.65, ph));
+  col = mix(col, vec3(0.7), step(abs(uv.x - cx), 0.004) * step(cy, uv.y) * step(uv.y, 0.9));
+  vec2 p = (uv - vec2(cx, cy)) * ASP;
+  for (int i = 0; i < 2; i++) col = mix(col, vec3(0.8), fill(sdSeg(p, vec2(0.0), vec2((i == 0 ? -1.0 : 1.0) * (0.06 - 0.03 * grip), -0.06)) - 0.008, PX));
+  float py = ph > 0.62 ? mix(cy - 0.08, 0.2, clamp((ph - 0.62) / 0.1, 0.0, 1.0)) : cy - 0.08;
+  return mix(col, vec3(1.0, 0.85, 0.2), fill(length((uv - vec2(cx, py)) * ASP) - 0.055, PX) * step(0.35, ph));
+}
+// A top-down racer on a winding track.
+vec3 chRacer(vec2 uv, float t) {
+  float y = uv.y + t * 0.8, d = abs(uv.x - (0.5 + 0.2 * sin(y * 2.0) + 0.1 * sin(y * 5.3)));
+  vec3 col = mix(vec3(0.2, 0.55, 0.2), vec3(0.25, 0.6, 0.25), step(0.5, fract(y * 6.0)));
+  col = mix(col, vec3(0.3), step(d, 0.18));
+  col = mix(col, mix(vec3(0.9, 0.1, 0.1), vec3(0.95), step(0.5, fract(y * 12.0))), step(abs(d - 0.19), 0.015));
+  col = mix(col, vec3(0.9), step(d, 0.006) * step(0.5, fract(y * 8.0)));
+  float y1 = 0.25 + t * 0.8, y2 = 0.6 + t * 0.8;
+  vec2 p = (uv - vec2(0.5 + 0.2 * sin(y1 * 2.0) + 0.1 * sin(y1 * 5.3), 0.25)) * ASP;
+  col = mix(col, vec3(0.1, 0.4, 0.95), fill(sdBox(p, vec2(0.03, 0.05), 0.01), PX));
+  col = mix(col, vec3(0.05), fill(sdBox(p - vec2(0.0, 0.01), vec2(0.022, 0.015), 0.004), PX));
+  vec2 q = (uv - vec2(0.5 + 0.2 * sin(y2 * 2.0) + 0.1 * sin(y2 * 5.3) + 0.05 * sin(t), 0.6)) * ASP;
+  return mix(col, vec3(0.95, 0.8, 0.1), fill(sdBox(q, vec2(0.03, 0.05), 0.01), PX));
+}
+// Darts thunk into the board.
+vec3 chDarts(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP;
+  vec3 col = vec3(0.12, 0.1, 0.1);
+  float r = length(p), s = floor(fract(atan(p.y, p.x) / (2.0 * PI) + 0.025) * 20.0), odd = mod(s, 2.0);
+  if (r < 0.4) {
+    col = odd < 1.0 ? vec3(0.1) : vec3(0.95, 0.9, 0.75);
+    col = mix(col, odd < 1.0 ? vec3(0.85, 0.1, 0.1) : vec3(0.1, 0.6, 0.2), min(step(abs(r - 0.25), 0.02) + step(abs(r - 0.38), 0.02), 1.0));
+    col = mix(col, vec3(0.1, 0.6, 0.2), step(r, 0.05));
+    col = mix(col, vec3(0.85, 0.1, 0.1), step(r, 0.025));
+  }
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i), k = floor(t / 1.2 - fi * 0.33), f = fract(t / 1.2 - fi * 0.33);
+    vec2 hit = vec2(h21(vec2(k, fi)) - 0.5, h21(vec2(k, fi + 3.0)) - 0.5) * 0.6;
+    vec2 pos = mix(hit + vec2(0.6, -0.1), hit, smoothstep(0.0, 0.15, f));
+    col = mix(col, vec3(0.7, 0.7, 0.75), fill(sdSeg(p, pos, pos + vec2(0.08, 0.03)) - 0.006, PX));
+    col = mix(col, vec3(0.2, 0.5, 1.0), fill(sdSeg(p, pos + vec2(0.06, 0.02), pos + vec2(0.1, 0.04)) - 0.015, PX));
+  }
+  return col;
+}
+// Two silhouettes spar under a ring light.
+vec3 chBoxing(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.9, 0.85, 0.7), vec3(0.6, 0.55, 0.45), length((uv - vec2(0.5, 0.7)) * ASP));
+  col = mix(col, vec3(0.6, 0.15, 0.1), min(step(abs(uv.y - 0.35), 0.006) + step(abs(uv.y - 0.45), 0.006), 1.0));
+  for (int i = 0; i < 2; i++) {
+    float sx = i == 0 ? -1.0 : 1.0, jab = max(0.0, sin(t * 5.0 + float(i) * PI));
+    vec2 p = (uv - vec2(0.5 + sx * 0.14, 0.15 + 0.01 * sin(t * 6.0 + float(i) * 2.0))) * ASP;
+    p.x *= sx;
+    float d = min(length(p - vec2(0.0, 0.55)) - 0.05, sdBox(p - vec2(0.0, 0.38), vec2(0.06, 0.12), 0.04));
+    d = min(d, min(sdSeg(p, vec2(-0.03, 0.27), vec2(-0.07, 0.0)), sdSeg(p, vec2(0.03, 0.27), vec2(0.06, 0.0))) - 0.025);
+    d = min(d, sdSeg(p, vec2(0.04, 0.45), vec2(0.1 + 0.12 * jab, 0.47)) - 0.02);
+    d = min(d, min(length(p - vec2(0.1 + 0.12 * jab, 0.47)), length(p - vec2(0.06, 0.52))) - 0.035);
+    col = mix(col, vec3(0.08), fill(d, PX));
+  }
+  return col;
+}
+// Swimmers race their lanes from above.
+vec3 chSwim(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.1, 0.55, 0.8), vec3(0.2, 0.7, 0.9), vn(uv * vec2(20.0, 10.0) + t));
+  for (int i = 1; i < 6; i++) col = mix(col, mix(vec3(0.95, 0.2, 0.2), vec3(0.95), step(0.5, fract(uv.x * 20.0))), step(abs(uv.y - float(i) / 6.0), 0.006));
+  col = mix(col, vec3(0.05, 0.25, 0.5), step(abs(fract(uv.y * 6.0) - 0.5), 0.02));
+  for (int i = 0; i < 6; i++) {
+    float fi = float(i), x = abs(fract(t * (0.06 + 0.02 * h21(vec2(fi, 1.0))) + h21(vec2(fi, 2.0)) * 0.1) * 2.0 - 1.0) * 0.9 + 0.05;
+    vec2 p = (uv - vec2(x, (fi + 0.5) / 6.0)) * ASP;
+    col = mix(col, vec3(0.9, 0.95, 1.0), step(length(p / vec2(3.0, 1.0)), 0.03) * 0.8);
+    col = mix(col, hue(fi / 6.0), fill(length(p) - 0.018, PX * 0.5));
+  }
+  return col;
+}
+// A putt curls across the green and drops.
+vec3 chGolf(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP, hole = vec2(0.3, 0.1);
+  vec3 col = mix(vec3(0.2, 0.55, 0.2), vec3(0.3, 0.65, 0.3), smoothstep(0.6, 0.0, length(p))) * (1.0 + 0.08 * step(0.5, fract((p.x + p.y) * 6.0)));
+  col = mix(col, vec3(0.03), fill(length(p - hole) - 0.025, PX));
+  col = mix(col, vec3(0.9), fill(sdBox(p - hole - vec2(0.0, 0.12), vec2(0.003, 0.12), 0.0), PX));
+  col = mix(col, vec3(0.95, 0.15, 0.15), fill(max(abs(p.y - hole.y - 0.21) - 0.03 + (p.x - hole.x) * 0.5, -(p.x - hole.x)), PX));
+  float f = clamp(mod(t, 6.0) / 4.0, 0.0, 1.0), e = 1.0 - pow(1.0 - f, 2.0);
+  vec2 ball = mix(vec2(-0.4, -0.2), hole, e) + vec2(0.0, 0.12 * sin(e * PI));
+  return mix(col, vec3(0.98), fill(length(p - ball) - 0.014, PX) * (1.0 - step(0.999, f)));
+}
+// Two ring fields drift into moiré.
+vec3 chMoire(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP;
+  float a = step(0.5, fract(length(p - vec2(0.15 * sin(t * 0.3), 0.0)) * 40.0));
+  float b = step(0.5, fract(length(p + vec2(0.15 * sin(t * 0.3), 0.1 * cos(t * 0.2))) * 40.0));
+  return vec3(mod(a + b, 2.0)) * vec3(0.92, 0.89, 0.82) + vec3(0.03);
+}
+// Primary colour blocks slide and regroup between black lines.
+vec3 chPrimary(vec2 uv, float t) {
+  float k = floor(t * 0.4), f = smoothstep(0.0, 0.3, fract(t * 0.4));
+  float x1 = mix(0.3 + 0.3 * h21(vec2(k, 1.0)), 0.3 + 0.3 * h21(vec2(k + 1.0, 1.0)), f);
+  float y1 = mix(0.3 + 0.4 * h21(vec2(k, 2.0)), 0.3 + 0.4 * h21(vec2(k + 1.0, 2.0)), f);
+  float x2 = mix(0.65 + 0.2 * h21(vec2(k, 3.0)), 0.65 + 0.2 * h21(vec2(k + 1.0, 3.0)), f);
+  vec3 col = vec3(0.95, 0.93, 0.88);
+  if (uv.x < x1 && uv.y > y1) col = vec3(0.85, 0.1, 0.1);
+  if (uv.x > x2 && uv.y < y1) col = vec3(0.1, 0.2, 0.7);
+  if (uv.x > x1 && uv.x < x2 && uv.y < 0.18) col = vec3(0.95, 0.8, 0.1);
+  float lines = step(abs(uv.x - x1), 0.01) + step(abs(uv.x - x2), 0.01) * step(uv.y, y1 + 0.3) + step(abs(uv.y - y1), 0.012) + step(abs(uv.y - 0.18), 0.01) * step(x1, uv.x);
+  return mix(col, vec3(0.05), min(lines, 1.0));
+}
+// Ink blooms down through water.
+vec3 chInk(vec2 uv, float t) {
+  float age = fract(t / 12.0) * 12.0;
+  vec2 q = (uv - vec2(0.5, 0.8)) * ASP + vec2(0.0, age * 0.05);
+  float n = fbm(q * 4.0 + vec2(0.0, t * 0.1)) + fbm(q * 9.0 - t * 0.15) * 0.5;
+  float plume = smoothstep(0.1 + age * 0.05, 0.0, length(q * vec2(1.0 + 0.5 * sin(q.y * 10.0 + t), 0.6)) - n * 0.03 * age);
+  return mix(vec3(0.95, 0.96, 0.98), mix(vec3(0.1, 0.1, 0.5), vec3(0.6, 0.1, 0.5), n), plume);
+}
+// Oil-wheel colours swirl like a sixties light show.
+vec3 chLiquid(vec2 uv, float t) {
+  vec2 p = (uv - 0.5) * ASP, q = p;
+  for (int i = 0; i < 3; i++) q += 0.15 * vec2(sin(q.y * 4.0 + t * 0.7 + float(i)), cos(q.x * 4.0 - t * 0.5 + float(i)));
+  float v = fbm(q * 3.0 + t * 0.1);
+  return mix(hue(fract(v * 1.5 + t * 0.05)), vec3(1.0, 0.95, 0.8), smoothstep(0.7, 0.75, v)) * smoothstep(0.65, 0.45, length(p));
+}
+// A modem screeches through its handshake.
+vec3 chDialup(vec2 uv, float t) {
+  vec3 col = mix(vec3(0.75), vec3(0.0, 0.0, 0.5), step(0.85, uv.y));
+  vec2 g = uv - vec2(0.1, 0.45);
+  float inside = step(0.0, g.x) * step(g.x, 0.8) * step(abs(g.y), 0.2);
+  col = mix(col, vec3(0.0, 0.1, 0.0), inside);
+  float wave = sin(uv.x * (60.0 + 200.0 * vn(vec2(t * 3.0, 1.0))) + t * 30.0) * 0.12 * (0.3 + 0.7 * vn(vec2(uv.x * 20.0 + t * 8.0, 2.0)));
+  col = mix(col, vec3(0.2, 1.0, 0.3), smoothstep(0.01, 0.0, abs(g.y - wave)) * inside);
+  for (int i = 0; i < 6; i++) col = mix(col, mix(vec3(0.1, 0.25, 0.1), vec3(0.2, 1.0, 0.2), step(0.5, h21(vec2(float(i), floor(t * 8.0))))), step(length((uv - vec2(0.15 + float(i) * 0.06, 0.12)) * ASP), 0.015));
+  col = mix(col, vec3(0.6), step(abs(uv.y - 0.2), 0.02) * step(0.5, uv.x) * step(uv.x, 0.9));
+  return mix(col, vec3(0.0, 0.0, 0.6), step(abs(uv.y - 0.2), 0.02) * step(0.5, uv.x) * step(uv.x, 0.5 + 0.4 * fract(t * 0.12)));
+}
+// A blue crash screen with a frown, counting to a hundred.
+vec3 chCrashScreen(vec2 uv, float t) {
+  vec3 col = vec3(0.05, 0.35, 0.75);
+  vec2 p = uv * ASP, f = p - vec2(0.2, 0.72);
+  col = mix(col, vec3(1.0), step(min(length(f - vec2(-0.04, 0.03)), length(f - vec2(0.04, 0.03))), 0.012));
+  col = mix(col, vec3(1.0), smoothstep(0.008, 0.0, abs(length(f - vec2(0.0, -0.09)) - 0.06)) * step(-0.04, f.y) * step(f.y, -0.01));
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    col = mix(col, vec3(0.85, 0.9, 1.0), step(abs(uv.y - 0.5 + fi * 0.07), 0.012) * step(0.12, uv.x) * step(uv.x, 0.52 + 0.4 * h21(vec2(fi, 1.0))) * step(0.25, fract(uv.x * 25.0 + h21(vec2(fi, 2.0)))));
+  }
+  float pc = min(floor(mod(t * 4.0, 120.0)), 99.0);
+  return mix(col, vec3(1.0), max(seg7((p - vec2(0.16, 0.08)) / 0.04, int(pc / 10.0)), seg7((p - vec2(0.21, 0.08)) / 0.04, int(mod(pc, 10.0)))));
+}
+vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
+  if (ch == 125) return chLightning(uv, t);
+  if (ch == 126) return chReef(uv, t);
+  if (ch == 127) return chPenguins(uv, t);
+  if (ch == 128) return chBees(uv, t);
+  if (ch == 129) return chMushrooms(uv, t);
+  if (ch == 130) return chStarlings(uv, t);
+  if (ch == 131) return chDice(uv, t);
+  if (ch == 132) return chPuppets(uv, t);
+  if (ch == 133) return chPaint(uv, t);
+  if (ch == 134) return chBalloon(uv, t);
+  if (ch == 135) return chRobot(uv, t);
+  if (ch == 136) return chWheel(uv, t);
+  if (ch == 137) return chPinball(uv, t);
+  if (ch == 138) return chClaw(uv, t);
+  if (ch == 139) return chRacer(uv, t);
+  if (ch == 140) return chDarts(uv, t);
+  if (ch == 141) return chBoxing(uv, t);
+  if (ch == 142) return chSwim(uv, t);
+  if (ch == 143) return chGolf(uv, t);
+  if (ch == 144) return chMoire(uv, t);
+  if (ch == 145) return chPrimary(uv, t);
+  if (ch == 146) return chInk(uv, t);
+  if (ch == 147) return chLiquid(uv, t);
+  if (ch == 148) return chDialup(uv, t);
+  if (ch == 149) return chCrashScreen(uv, t);
+  return chSnow(uv, t);
+}
+`,
+`const vec2 ASP = vec2(4.0 / 3.0, 1.0);
+const float PX = 1.0 / 120.0;
+vec3 chSnow(vec2 uv, float t) {
+  float f = mod(floor(t * 30.0), 97.0);
+  float n = h21(floor(uv * vec2(160.0, 120.0)) + f * vec2(17.0, 23.0));
+  float l = h21(vec2(floor(uv.y * 120.0), f));
+  n = mix(n, l, 0.22);
+  return vec3(n * (0.85 + 0.15 * sin((uv.y + t * 0.4) * 6.283)));
+}
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// A seven-segment digit in a box one wide and two tall.
+float seg7(vec2 p, int d) {
+  int m = d == 0 ? 63 : d == 1 ? 6 : d == 2 ? 91 : d == 3 ? 79 : d == 4 ? 102 : d == 5 ? 109 : d == 6 ? 125 : d == 7 ? 7 : d == 8 ? 127 : 111;
+  float c = 0.0;
+  if ((m & 1) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.9), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 2) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 4) != 0) c = max(c, fill(sdBox(p - vec2(0.9, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 8) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 0.1), vec2(0.36, 0.08), 0.04), 0.03));
+  if ((m & 16) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 0.55), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 32) != 0) c = max(c, fill(sdBox(p - vec2(0.1, 1.45), vec2(0.08, 0.36), 0.04), 0.03));
+  if ((m & 64) != 0) c = max(c, fill(sdBox(p - vec2(0.5, 1.0), vec2(0.36, 0.08), 0.04), 0.03));
+  return c;
+}
+float stars2(vec2 uv, float k) { return step(k, h21(floor(uv * vec2(160.0, 120.0)))); }
+// Film grain for the old-footage channels.
+float grain(vec2 uv, float t, float k) { return 1.0 - k + 2.0 * k * h21(floor(uv * vec2(160.0, 120.0)) + floor(t * 20.0)); }
+// Lights out: the night side of the Earth goes dark, city by city.
+vec3 chLightsOut(vec2 uv, float t) {
+  vec2 p = (uv - vec2(0.5, -0.9)) * ASP;
+  vec3 col = vec3(0.0) + stars2(uv, 0.996) * 0.3;
+  float r = length(p), R = 1.25, ph = fract(t / 40.0);
+  if (r < R) {
+    vec2 s = p * 6.0, cell = floor(s * 8.0);
+    float land = smoothstep(0.45, 0.55, fbm(s * 0.6 + 2.0));
+    col = mix(vec3(0.0, 0.01, 0.03), vec3(0.02, 0.02, 0.025), land);
+    float city = step(0.86, h21(cell)) * land * step(ph, h21(cell + 7.0) * 0.95);
+    col += vec3(1.0, 0.75, 0.35) * city * (0.6 + 0.4 * h21(cell + 3.0)) * step(length(fract(s * 8.0) - 0.5), 0.3);
+  }
+  return col + vec3(0.1, 0.2, 0.45) * smoothstep(0.03, 0.0, abs(r - R)) * (1.0 - ph * 0.85);
+}
+// A hospital ward under flickering tubes; the counter in the corner never stops.
+vec3 chWard(vec2 uv, float t) {
+  float flick = 0.85 + 0.15 * step(0.1, h21(vec2(floor(t * 9.0), 3.0))), hz = 0.5;
+  vec3 col = mix(vec3(0.55, 0.6, 0.58), vec3(0.75, 0.8, 0.78), uv.y) * flick;
+  if (uv.y < hz) col = mix(vec3(0.35, 0.4, 0.38), vec3(0.5, 0.55, 0.52), uv.y / hz) * flick;
+  for (int i = 3; i >= 0; i--) {
+    float sc = 1.0 / (1.0 + float(i) * 0.8);
+    for (int side = 0; side < 2; side++) {
+      float sx = side == 0 ? -1.0 : 1.0;
+      vec2 q = (uv - vec2(0.5 + sx * 0.32 * sc, hz - 0.28 * sc)) / sc;
+      col = mix(col, vec3(0.3, 0.32, 0.33) * flick, step(abs(q.x), 0.12) * step(abs(q.y - 0.03), 0.04));
+      float body = step(length((q - vec2(0.0, 0.09)) / vec2(3.0, 1.0)), 0.03) * step(0.4, h21(vec2(float(i), float(side))));
+      col = mix(col, vec3(0.85, 0.88, 0.9) * flick, max(step(abs(q.x), 0.11) * step(abs(q.y - 0.075), 0.015), body));
+      col = mix(col, vec3(0.05, 0.1, 0.08), step(abs(q.x + sx * 0.16), 0.03) * step(abs(q.y - 0.15), 0.025));
+    }
+  }
+  float n = floor(t * 3.0 + 1000.0);
+  vec2 cp = uv * ASP - vec2(0.85, 0.85);
+  for (int i = 0; i < 5; i++) col = mix(col, vec3(0.7, 0.05, 0.05), seg7((cp - vec2(float(i) * 0.07, 0.0)) / 0.03, int(mod(floor(n / pow(10.0, float(4 - i))), 10.0))));
+  return col;
+}
+// Ash: a broken skyline at dusk, distant flashes, ash falling on one figure.
+vec3 chAsh(vec2 uv, float t) {
+  float k = floor(t * 0.35), flash = step(0.55, h21(vec2(k, 1.0))) * exp(-fract(t * 0.35) * 10.0);
+  vec3 col = mix(vec3(0.35, 0.22, 0.18), vec3(0.12, 0.1, 0.12), uv.y) + vec3(0.6, 0.5, 0.42) * flash * smoothstep(1.0, 0.2, uv.y);
+  float bx = floor(uv.x * 22.0);
+  float h = 0.18 + 0.2 * h21(vec2(bx, 2.0)) * (0.4 + 0.6 * step(0.3, h21(vec2(bx, 5.0)))) - 0.06 * step(0.7, h21(vec2(bx, 9.0))) * abs(fract(uv.x * 22.0) - 0.5);
+  col = mix(col, vec3(0.06, 0.05, 0.05), step(uv.y, h));
+  col = mix(col, vec3(0.15, 0.13, 0.13), smoothstep(0.5, 0.7, fbm(vec2(uv.x * 5.0, uv.y * 2.0 - t * 0.08))) * smoothstep(0.15, 0.6, uv.y) * 0.8);
+  col += vec3(0.2, 0.06, 0.01) * step(uv.y, h + 0.02) * step(0.85, h21(vec2(bx, 11.0))) * (0.7 + 0.3 * sin(t * 7.0 + bx));
+  col = mix(col, vec3(0.04, 0.035, 0.035), step(uv.y, 0.1));
+  vec2 p = (uv - vec2(0.3, 0.1)) * ASP;
+  col = mix(col, vec3(0.02), fill(min(length(p - vec2(0.0, 0.16)) - 0.018, sdBox(p - vec2(0.0, 0.07), vec2(0.022, 0.07), 0.012)), PX * 0.5));
+  for (int i = 0; i < 2; i++) {
+    vec2 q = uv * vec2(90.0, 60.0) + vec2(sin(t * 0.3 + float(i)) * 2.0, t * (3.0 + float(i) * 2.0));
+    col = mix(col, vec3(0.7, 0.68, 0.65), step(0.93, h21(floor(q) + float(i) * 17.0)) * step(length(fract(q) - 0.5), 0.2) * 0.8);
+  }
+  return col * grain(uv, t, 0.05);
+}
+// Watcher: rows of people; a red eye opens and they turn grey, one by one.
+vec3 chWatcher(vec2 uv, float t) {
+  vec3 col = vec3(0.05, 0.05, 0.06);
+  float ph = fract(t / 30.0);
+  vec2 g = floor(uv * vec2(16.0, 7.0)), f = fract(uv * vec2(16.0, 7.0)) - vec2(0.5, 0.35);
+  float person = step(min(length(f * vec2(1.0, 1.3) - vec2(0.0, 0.35)) - 0.14, max(length((f - vec2(0.0, -0.1)) / vec2(1.6, 1.0)) - 0.25, f.y - 0.05)), 0.0) * step(g.y, 4.0);
+  col = mix(col, mix(vec3(0.75, 0.62, 0.55) * (0.7 + 0.3 * h21(g + 3.0)), vec3(0.32), step(h21(g), ph * 1.15)), person);
+  vec2 e = (uv - vec2(0.5, 0.86)) * ASP;
+  float open = smoothstep(0.0, 0.08, ph) * (1.0 - step(0.98, fract(t * 0.23)));
+  float lid = length(e / vec2(1.0, max(open, 0.02) * 0.45)) - 0.09;
+  col = mix(col, vec3(0.9), fill(lid, PX) * step(0.02, open));
+  vec2 pupil = e - vec2(0.03 * sin(t * 0.4), 0.0);
+  col = mix(col, vec3(0.85, 0.0, 0.05), fill(length(pupil) - 0.03, PX) * step(lid, 0.0));
+  return mix(col, vec3(0.0), fill(length(pupil) - 0.012, PX) * step(lid, 0.0));
+}
+// Wilt: a flower in a glass by the window; the day passes, it bows, the light goes.
+vec3 chWilt(vec2 uv, float t) {
+  float ph = fract(t / 40.0), dusk = smoothstep(0.3, 1.0, ph);
+  vec3 col = mix(vec3(0.75, 0.7, 0.6), vec3(0.06, 0.06, 0.08), dusk);
+  vec2 w = uv - vec2(0.7, 0.62);
+  col = mix(col, mix(vec3(0.75, 0.82, 0.9), vec3(0.08, 0.06, 0.15), dusk), step(abs(w.x), 0.16) * step(abs(w.y), 0.22));
+  col = mix(col, col * 0.4, min(step(abs(w.x), 0.006) * step(abs(w.y), 0.22) + step(abs(w.y), 0.006) * step(abs(w.x), 0.16), 1.0));
+  col = mix(col, mix(vec3(0.5, 0.42, 0.35), vec3(0.08, 0.07, 0.07), dusk), step(uv.y, 0.25));
+  vec2 p = (uv - vec2(0.35, 0.25)) * ASP;
+  col = mix(col, mix(vec3(0.8, 0.85, 0.9), vec3(0.15), dusk), fill(sdBox(p - vec2(0.0, 0.08), vec2(0.045, 0.08), 0.01), PX) * 0.5);
+  float bow = smoothstep(0.1, 0.8, ph) * 1.6, stem = 1e9;
+  vec2 prev = vec2(0.0);
+  for (int i = 1; i <= 8; i++) {
+    float u = float(i) / 8.0, a = bow * u * u;
+    vec2 q = prev + vec2(sin(a), cos(a)) * 0.05;
+    stem = min(stem, sdSeg(p, prev, q));
+    prev = q;
+  }
+  col = mix(col, mix(vec3(0.25, 0.5, 0.2), vec3(0.3, 0.25, 0.1), ph), fill(stem - 0.006, PX * 0.6));
+  vec3 petal = mix(vec3(0.85, 0.15, 0.2), vec3(0.3, 0.12, 0.1), ph) * (1.0 - dusk * 0.7);
+  for (int i = 0; i < 5; i++) {
+    float a = float(i) / 5.0 * 2.0 * PI + bow;
+    col = mix(col, petal, fill(length((p - prev - vec2(cos(a), sin(a)) * 0.03) / vec2(1.0, 0.7)) - 0.022 * (1.0 - ph * 0.5), PX * 0.6));
+  }
+  col = mix(col, petal * 0.8, fill(length((p - vec2(0.12, 0.01)) / vec2(1.0, 0.4)) - 0.02, PX * 0.6) * step(0.6, ph));
+  return col * grain(uv, t, 0.03);
+}
+vec3 channel(int ch, vec2 uv, float t, float s, vec2 look) {
+  if (ch == 150) return chLightsOut(uv, t);
+  if (ch == 151) return chWard(uv, t);
+  if (ch == 152) return chAsh(uv, t);
+  if (ch == 153) return chWatcher(uv, t);
+  if (ch == 154) return chWilt(uv, t);
+  return chSnow(uv, t);
+}
+`
+];
 
 // Programme names, in channel order; the last is static.
 export const NAMES = [
@@ -1869,10 +2908,21 @@ export const NAMES = [
   "Art house", "Washing line", "Keyhole", "Test blast", "Virus", "Malware",
   "Cooking", "Football", "Tennis", "Bowling", "Rubber duck", "Whale",
   "Lift-off", "Aurora", "Disco", "Slots", "Terminal", "Aerobics",
-  "Octopus", "Caravan", "Ski jump", "Candle", "Static",
+  "Octopus", "Caravan", "Ski jump", "Candle", "Hot tub", "Call now",
+  "Waterbed", "Strawberry", "Motel", "Hourglass", "Statue", "Lipstick",
+  "Snow face", "Doll", "Rocking chair", "Graveyard", "3 a.m.", "Wildfire",
+  "Oil spill", "Melting ice", "Inflation", "Election night", "Gridlock", "Black hole",
+  "Asteroids", "Alien news", "Station", "Rover", "Wormhole", "Lightning",
+  "Coral reef", "Penguins", "Bees", "Mushrooms", "Starlings", "Dice",
+  "Sock puppets", "Paint drips", "Lost balloon", "Robot dance", "Prize wheel", "Pinball",
+  "Claw machine", "Pixel racer", "Darts", "Shadow boxing", "Swimming", "Golf",
+  "Moiré", "Primary blocks", "Ink", "Light show", "Dial-up", "Crash screen",
+  "Lights out", "Ward", "Ash", "Watcher", "Wilt", "Static",
 ];
 export const NCH = NAMES.length;
 export const SNOW = NCH - 1;
+// Static lives in every group; it uses the first.
+export const groupOf = ch => (ch >= SNOW ? 0 : Math.floor(ch / GROUP));
 
 // Each channel's average colour tints the light on the tree.
 export const CH_LIGHT = [
@@ -1892,9 +2942,18 @@ export const CH_LIGHT = [
   [0.5,  0.3,  0.32], [0.8,  0.75,  0.75], [0.25,  0.14,  0.1], [0.7,  0.7,  0.7], [0.15,  0.25,  0.2], [0.2,  0.5,  0.5],
   [0.8,  0.8,  0.75], [0.2,  0.5,  0.22], [0.25,  0.5,  0.45], [0.4,  0.3,  0.25], [0.75,  0.85,  0.9], [0.5,  0.6,  0.75],
   [0.65,  0.6,  0.65], [0.1,  0.35,  0.3], [0.35,  0.2,  0.4], [0.7,  0.3,  0.3], [0.05,  0.3,  0.08], [0.75,  0.6,  0.8],
-  [0.1,  0.25,  0.35], [0.75,  0.4,  0.35], [0.75,  0.82,  0.95], [0.35,  0.2,  0.1], [0.5,  0.5,  0.5],
+  [0.1,  0.25,  0.35], [0.75,  0.4,  0.35], [0.75,  0.82,  0.95], [0.35,  0.2,  0.1], [0.3,  0.25,  0.4], [0.75,  0.2,  0.45],
+  [0.35,  0.15,  0.35], [0.9,  0.75,  0.75], [0.15,  0.1,  0.2], [0.3,  0.2,  0.18], [0.35,  0.25,  0.25], [0.85,  0.7,  0.7],
+  [0.5,  0.5,  0.5], [0.25,  0.2,  0.2], [0.08,  0.08,  0.1], [0.2,  0.05,  0.05], [0.06,  0.04,  0.05], [0.35,  0.1,  0.03],
+  [0.3,  0.32,  0.38], [0.7,  0.8,  0.9], [0.9,  0.8,  0.5], [0.15,  0.2,  0.4], [0.15,  0.06,  0.07], [0.15,  0.1,  0.05],
+  [0.05,  0.05,  0.06], [0.2,  0.4,  0.2], [0.05,  0.1,  0.2], [0.75,  0.45,  0.3], [0.25,  0.3,  0.7], [0.12,  0.12,  0.2],
+  [0.15,  0.45,  0.6], [0.75,  0.85,  0.95], [0.85,  0.6,  0.15], [0.15,  0.15,  0.1], [0.75,  0.55,  0.5], [0.2,  0.5,  0.25],
+  [0.9,  0.7,  0.45], [0.85,  0.8,  0.75], [0.5,  0.7,  0.9], [0.3,  0.15,  0.4], [0.4,  0.2,  0.4], [0.15,  0.1,  0.35],
+  [0.75,  0.45,  0.7], [0.3,  0.45,  0.3], [0.3,  0.25,  0.2], [0.75,  0.7,  0.6], [0.2,  0.6,  0.85], [0.25,  0.6,  0.25],
+  [0.5,  0.5,  0.45], [0.7,  0.6,  0.55], [0.7,  0.7,  0.8], [0.6,  0.4,  0.5], [0.6,  0.65,  0.6], [0.1,  0.35,  0.75],
+  [0.05,  0.04,  0.03], [0.6,  0.65,  0.62], [0.25,  0.15,  0.12], [0.25,  0.22,  0.22], [0.4,  0.35,  0.3], [0.5,  0.5,  0.5],
 ];
 
 // Each channel calls up the big picture closest to it.
-// 0 eye, 1 sun, 2 spiral, 3 bars, 4 night raid, 5 heart.
-export const BIG_OF = [3,  1,  1,  2,  2,  3,  2,  0,  2,  2,  2,  2,  3,  3,  2,  3,  3,  2,  2,  2,  2,  1,  2,  1,  1,  2,  3,  3,  1,  2,  2,  1,  2,  2,  0,  2,  3,  2,  2,  2,  1,  2,  2,  3,  3,  3,  2,  1,  1,  2,  4,  4,  4,  4,  4,  1,  1,  2,  3,  0,  0,  2,  3,  2,  3,  1,  3,  2,  1,  2,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  4,  2,  3,  1,  3,  3,  3,  1,  2,  2,  2,  2,  3,  3,  1,  2,  1,  2,  1];
+// 0 eye, 1 sun, 2 spiral, 3 bars, 4 night raid, 5 heart, 6 flatline.
+export const BIG_OF = [3,  1,  1,  2,  2,  3,  2,  0,  2,  2,  2,  2,  3,  3,  2,  3,  3,  2,  2,  2,  2,  1,  2,  1,  1,  2,  3,  3,  1,  2,  2,  1,  2,  2,  0,  2,  3,  2,  2,  2,  1,  2,  2,  3,  3,  3,  2,  1,  1,  2,  4,  4,  4,  4,  4,  1,  1,  2,  3,  0,  0,  2,  3,  2,  3,  1,  3,  2,  1,  2,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  4,  2,  3,  1,  3,  3,  3,  1,  2,  2,  2,  2,  3,  3,  1,  2,  1,  2,  1,  5,  5,  5,  5,  5,  5,  5,  5,  0,  0,  0,  0,  0,  4,  2,  2,  3,  3,  2,  2,  2,  2,  2,  2,  2,  2,  2,  1,  1,  2,  2,  3,  1,  2,  1,  3,  2,  3,  1,  3,  3,  3,  1,  1,  2,  3,  2,  2,  3,  3,  6,  6,  6,  6,  6];

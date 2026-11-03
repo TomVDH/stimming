@@ -63,7 +63,7 @@
 </script>
 <script type="module">
 import { initPage, sound } from '../shared/stim.js';
-import { LIB, BIG, CHANNELS, NCH, SNOW, CH_LIGHT, BIG_OF } from './channels.js';
+import { LIB, BIG, GROUPS, groupOf, NCH, SNOW, CH_LIGHT, BIG_OF } from './channels.js';
 initPage({ id: 'tvtree' });
 const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -823,13 +823,14 @@ const TW = 160, TH = 120, TC = 4;
 const QUAD_VS = `
 varying vec2 vUv;
 void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
-const ATLAS_FS = `
+// One atlas shader per channel group; each holds 25 programmes.
+const atlasFS = code => `
 uniform float uTime;
 uniform vec4 uA[16], uB[16], uC[16], uD[16], uBig;
 varying vec2 vUv;
 ${LIB}
 ${BIG}
-${CHANNELS}
+${code}
 void main() {
   vec2 fc = gl_FragCoord.xy, ts = vec2(${TW}.0, ${TH}.0);
   ivec2 tl = ivec2(floor(fc / ts));
@@ -1482,7 +1483,7 @@ function moveLantern(e) {
 /* ---------- rendering ---------- */
 let THREE = null, RoundedBoxGeometry = null, mergeGeometries = null;
 let renderer = null, scene = null, camera = null, composer = null, canvas = null;
-let atlasRT = null, atlasScene = null, atlasCam = null, atlasMat = null, bgMat = null, treeMat = null, treeMesh = null;
+let atlasRT = null, atlasScene = null, atlasCam = null, atlasMat = null, atlasMats = null, atlasQuad = null, bgMat = null, treeMat = null, treeMesh = null;
 let mats = null, treeMeta = null, treeSegs = [], built = false, cordGeo = null;
 let ready = false, lowDpr = false, sized = false, visible = false, onScreen = false;
 let ray = null, ndc = null, tv3 = null, tq = null, tq2 = null, Y = null, plane = null, hitV = null, inv = null, eul = null;
@@ -1797,9 +1798,16 @@ function step(dt, now) {
   lively = act || fast > 0.12;
   return busy || act || (lit > 0 && !reduce);
 }
+// Each set's tile draws with the shader of its channel's group.
 function draw() {
-  renderer.setRenderTarget(atlasRT);
-  renderer.render(atlasScene, atlasCam);
+  atlasRT.scissorTest = true;
+  sets.forEach((s, i) => {
+    atlasRT.scissor.set((i % TC) * TW, Math.floor(i / TC) * TH, TW, TH);
+    atlasQuad.material = atlasMats[groupOf(s.ch)];
+    renderer.setRenderTarget(atlasRT);
+    renderer.render(atlasScene, atlasCam);
+  });
+  atlasRT.scissorTest = false;
   renderer.setRenderTarget(null);
   composer.render();
 }
@@ -2308,14 +2316,14 @@ async function start() {
 
   atlasRT = new THREE.WebGLRenderTarget(TW * TC, TH * TC, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   const v4 = () => Array.from({ length: 16 }, () => new THREE.Vector4());
-  atlasMat = new THREE.ShaderMaterial({
-    vertexShader: QUAD_VS, fragmentShader: ATLAS_FS, depthTest: false, depthWrite: false,
-    uniforms: { uTime: { value: 0 }, uA: { value: v4() }, uB: { value: v4() }, uC: { value: v4() }, uD: { value: v4() }, uBig: { value: new THREE.Vector4() } },
-  });
+  // The group shaders share one set of uniforms.
+  const atlasU = { uTime: { value: 0 }, uA: { value: v4() }, uB: { value: v4() }, uC: { value: v4() }, uD: { value: v4() }, uBig: { value: new THREE.Vector4() } };
+  atlasMats = GROUPS.map(code => new THREE.ShaderMaterial({ vertexShader: QUAD_VS, fragmentShader: atlasFS(code), depthTest: false, depthWrite: false, uniforms: atlasU }));
+  atlasMat = atlasMats[0];
   atlasScene = new THREE.Scene();
-  const aq = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), atlasMat);
-  aq.frustumCulled = false;
-  atlasScene.add(aq);
+  atlasQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), atlasMat);
+  atlasQuad.frustumCulled = false;
+  atlasScene.add(atlasQuad);
   atlasCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   makeSets();
   await idle();
@@ -2340,7 +2348,7 @@ async function start() {
   const quad = new THREE.PlaneGeometry(2, 2), pre = mats => { const s = new THREE.Scene(); mats.forEach(m => s.add(new THREE.Mesh(quad, m))); return s; };
   renderer.setRenderTarget(composer.readBuffer);
   await renderer.compileAsync(scene, camera);
-  await renderer.compileAsync(atlasScene, atlasCam);
+  await renderer.compileAsync(pre(atlasMats), atlasCam);
   renderer.setRenderTarget(null);
   await renderer.compileAsync(pre([bloom.materialHighPassFilter, ...bloom.separableBlurMaterials, bloom.compositeMaterial, bloom.blendMaterial]), camera);
   await renderer.compileAsync(pre([fin.material]), camera);
