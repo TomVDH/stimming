@@ -56,7 +56,7 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   const fold = flash.querySelector('.intro-sub');
   if (fold) fold.style.transform = 'rotateX(-90deg)';
 
-  // The viewport whites out, then shrinks back to the glowing box.
+  // The viewport whites out, then shrinks back to the box.
   await wait(3);
   whiteout.style.opacity = 1;
   flash.style.opacity = 1;
@@ -77,10 +77,10 @@ export async function intro({ ready = Promise.resolve(), min = 1800 } = {}) {
   await play(text, p => ({ clipPath: `inset(0 0 0 ${(p * 100).toFixed(2)}%)` }), 333, accel);
   await Promise.all([
     play(root, p => ({
-      backdropFilter: `blur(${(24 * (1 - p)).toFixed(2)}px)`,
-      backgroundColor: `oklch(0.16 0.012 275 / ${(0.78 * (1 - p)).toFixed(3)})`,
+      backdropFilter: `blur(${(48 * (1 - p)).toFixed(2)}px) brightness(${(0.6 + 0.4 * p).toFixed(3)})`,
+      backgroundColor: `oklch(0.1 0.01 275 / ${(0.9 * (1 - p)).toFixed(3)})`,
     }), 708, settle),
-    play(grain, p => ({ opacity: 0.2 * (1 - p) }), 708),
+    play(grain, p => ({ opacity: 0.4 * (1 - p) }), 708),
   ]);
   root.remove();
 }
