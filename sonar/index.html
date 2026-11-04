@@ -238,12 +238,27 @@ void main() {
     vec2 l = vec2(ca * dv.x + sa * dv.y, -sa * dv.x + ca * dv.y);
     vec2 q = l / c.zw;
     float d = dot(q, q);
-    if (d > 2.5) continue;
+    // Ship wakes reach far behind the hull, so ships skip the early out.
+    if (d > 2.5 && (k.z < 4.5 || k.z > 5.5)) continue;
     float v;
     if (k.z < 0.5) v = smoothstep(1.0, 0.7, d) * (0.6 + 0.8 * hash12(floor(l / 7.0) + k.w)) + smoothstep(0.3, 0.0, abs(abs(q.x) - 0.85)) * smoothstep(1.0, 0.6, d) * 0.8;
     else if (k.z < 1.5) v = smoothstep(1.4, 0.3, d) * step(0.83, hash12(floor((w + vec2(uTime * 2.0, uTime)) / 10.0) + k.w)) * 1.6;
     else if (k.z < 2.5) v = smoothstep(1.0, 0.35, d);
-    else v = smoothstep(1.0, 0.15, d) * (0.45 + 0.8 * fbm(l / 60.0 + uTime * 0.15));
+    else if (k.z < 3.5) v = smoothstep(1.0, 0.15, d) * (0.45 + 0.8 * fbm(l / 60.0 + uTime * 0.15));
+    else if (k.z < 4.5) v = smoothstep(1.0, 0.35, d);
+    else if (k.z < 5.5) {
+      // A ship: a hard hull and a widening bubble wake behind it.
+      v = smoothstep(1.0, 0.6, d) * (0.8 + 0.5 * hash12(floor(l / 6.0) + k.w));
+      float back = -l.x - c.z;
+      if (back > 0.0 && back < 700.0) {
+        float ww = c.w * 0.8 + back * 0.09;
+        v += 0.32 * exp(-pow(l.y / ww, 2.0)) * (1.0 - back / 700.0) * step(0.68, hash12(floor(w / 8.0) + floor(uTime * 4.0)));
+      }
+    } else {
+      // The Auntie: an enormous ribbed hull with a sail amidships.
+      v = smoothstep(1.0, 0.75, d) * (1.0 + 0.35 * step(0.8, fract(l.x / 38.0)))
+        + smoothstep(1.0, 0.0, length((l - vec2(c.z * 0.2, 0.0)) / vec2(c.z * 0.08, c.w * 0.5))) * 1.5;
+    }
     tgt += v * k.y;
   }
   // Echoes scatter, so the clutter speckles like real returns.
@@ -494,8 +509,21 @@ const TINT = PHOS.flash.map((f, i) => (f * 0.45 + PHOS.glow[i] * 0.8) * 0.9);
 
 /* ---------- the sea ---------- */
 // Kinds: 0 wreck, 1 fish school, 2 whale, 3 unknown.
-const KIND = ['WRECK', 'BIO  SCHOOL', 'BIO', 'UNKNOWN', 'BIO?  DUCK'];
-const kindOf = c => (c.sub && c.alerted === true ? 'SUBMARINE' : KIND[c.kind]);
+const KIND = ['WRECK', 'BIO  SCHOOL', 'BIO', 'UNKNOWN', 'BIO?  DUCK', 'MECH  SURFACE', 'UNKNOWN  MASSIVE'];
+const kindOf = c => (c.alerted === true ? (c.sub ? 'SUBMARINE' : c.kind === 6 ? 'CRANKY AUNTIE' : KIND[c.kind]) : KIND[c.kind]);
+// Ships, subs and the Auntie carry tonals; level falls off with distance.
+function tonalAmp(c) {
+  const d = Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
+  return c.ton.level / (1 + (d / 900) ** 2) * (c.str0 ? c.str / c.str0 : 1);
+}
+const bearingTo = c => Math.atan2(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
+// The shader stretches a hull along orient; motion runs along hdg.
+function setCourse(c, hdg, speed) { c.hdg = hdg; c.orient = PI / 2 - hdg; c.vel = [Math.sin(hdg) * speed, Math.cos(hdg) * speed]; }
+function makeSub(pos, life) {
+  const c = { kind: 3, sub: true, stalk: true, pos, a: 55, b: 7, str: 1.3, str0: 1.3, life, ton: { f1: rnd(13, 18), blades: 7, level: 0.4 }, id: Math.random() * 99 };
+  setCourse(c, Math.random() * TAU, 4);
+  return c;
+}
 const sea = { seed: 0, own: [0, 0], head: 0, speed: 9, contacts: [], oddNext: 0 };
 function place(dist, brg) { return [sea.own[0] + Math.sin(brg) * dist, sea.own[1] + Math.cos(brg) * dist]; }
 function shuffle() {
@@ -510,7 +538,17 @@ function shuffle() {
     C.push({ kind: 1, pos: place(i ? rnd(800, 2600) : rnd(300, 1200), Math.random() * TAU), a: rnd(80, 150), b: rnd(45, 80), orient: Math.random() * PI, str: 0.95, vel: [Math.sin(v) * 3, Math.cos(v) * 3] });
   }
   const wv = Math.random() * TAU;
-  C.push({ kind: 2, pos: place(rnd(600, 1500), Math.random() * TAU), a: 18, b: 7, orient: wv, str: 1.5, vel: [Math.sin(wv) * 12, Math.cos(wv) * 12], turn: 0 });
+  const whale = { kind: 2, pos: place(rnd(600, 1500), Math.random() * TAU), a: 18, b: 7, str: 1.5, turn: 0 };
+  setCourse(whale, wv, 12);
+  C.push(whale);
+  // Surface traffic: one or two ships on straight courses.
+  for (let i = 0, n = Math.random() < 0.5 ? 2 : 1; i < n; i++) {
+    const ship = { kind: 5, pos: place(rnd(800, 2400), Math.random() * TAU), a: rnd(65, 105), b: rnd(10, 14), str: 2.1, ton: { f1: rnd(24, 44), blades: 3 + Math.floor(Math.random() * 3), level: 0.9 } };
+    setCourse(ship, Math.random() * TAU, rnd(6, 9));
+    C.push(ship);
+  }
+  // Some seas hide an enemy submarine that stalks the boat.
+  if (Math.random() < 0.4) C.push(makeSub(place(rnd(1600, 2600), Math.random() * TAU), 1e9));
   // Once in a while a toy duck drifts in the shallows.
   if (Math.random() < 0.06) {
     const dv = Math.random() * TAU;
@@ -527,13 +565,17 @@ function shuffle() {
 }
 // Now and then a ping finds something large that should not be there.
 function maybeOdd() {
-  if (sea.contacts.some(c => c.kind === 3)) return;
+  if (sea.contacts.some(c => (c.kind === 3 && !c.sub) || c.kind === 6)) return;
   if (--sea.oddNext > 0) return;
   sea.oddNext = 4 + Math.floor(Math.random() * 6);
   const v = Math.random() * TAU, roll = Math.random();
   const pos = place(rnd(0.7, 0.92) * rangeM(), Math.random() * TAU);
-  // Half the time it is a submarine, and it listens back.
-  if (roll < 0.5) sea.contacts.push({ kind: 3, sub: true, pos, a: 55, b: 7, orient: v, str: 1.4, str0: 1.4, vel: [Math.sin(v) * 5, Math.cos(v) * 5], life: rnd(60, 90), id: Math.random() * 99 });
+  // One time in five it is «Сварливая тётушка»: the Cranky Auntie.
+  if (roll < 0.2) {
+    const au = { kind: 6, pos: place(rnd(0.78, 0.92) * rangeM(), Math.random() * TAU), a: 480, b: 60, str: 2.6, str0: 2.6, life: 1e9, ton: { f1: 13, blades: 9, level: 1.8 }, id: Math.random() * 99 };
+    setCourse(au, v, 4);
+    sea.contacts.push(au);
+  } else if (roll < 0.55 && !sea.contacts.some(c => c.sub)) sea.contacts.push(makeSub(pos, rnd(60, 90)));
   else {
     const long = roll < 0.75;
     sea.contacts.push({ kind: 3, pos, a: long ? 380 : 230, b: long ? 120 : 210, orient: v, str: 1.7, str0: 1.7, vel: [Math.sin(v) * 7, Math.cos(v) * 7], life: rnd(45, 80), id: Math.random() * 99 });
@@ -547,11 +589,17 @@ function stepSea(dt) {
     if (c.kind === 2) {
       // The whale wanders on a slowly bending course.
       c.turn += (Math.random() - 0.5) * dt * 0.6; c.turn *= 0.995;
-      c.orient += c.turn * dt;
-      c.vel = [Math.sin(c.orient) * 12, Math.cos(c.orient) * 12];
+      setCourse(c, c.hdg + c.turn * dt, 12);
+    }
+    if (c.stalk && c.alerted !== true) {
+      // A stalking sub closes to a kilometre, then circles.
+      const dx = sea.own[0] - c.pos[0], dy = sea.own[1] - c.pos[1], d = Math.hypot(dx, dy);
+      const want = Math.atan2(dx, dy) + (d < 1000 ? PI / 2 : 0);
+      const turn = clamp(wrapA(want - c.hdg + PI) - PI, -0.15 * dt, 0.15 * dt);
+      setCourse(c, c.hdg + turn, 4);
     }
     c.pos[0] += c.vel[0] * dt; c.pos[1] += c.vel[1] * dt;
-    if (c.kind === 3) { c.life -= dt; if (c.life < 10) c.str = c.str0 * Math.max(0, c.life / 10); if (c.life <= 0) sea.contacts.splice(i, 1); }
+    if (c.life != null) { c.life -= dt; if (c.life < 10) c.str = c.str0 * Math.max(0, c.life / 10); if (c.life <= 0) sea.contacts.splice(i, 1); }
   }
 }
 
@@ -608,6 +656,7 @@ function stepProp(dt) {
   prop.wob += dt;
 }
 let knockAt = -1e9;
+const auntieGroan = (tt, c) => 38 + 46 * (0.5 + 0.5 * Math.sin(tt * 0.7 + (c.id || 0)));
 
 /* ---------- the waterfall rows ---------- */
 const rowF = new Float32Array(NBIN), rowB = new Uint8Array(NBIN);
@@ -636,6 +685,19 @@ function makeRow(tt) {
     }
   }
   if (song.amp > 0.01) for (let h = 1; h <= 4; h++) addLine(song.f * h, song.amp * 1.5 / Math.pow(h, 1.2), 1.6);
+  // Each ship, sub and Auntie paints its own blade lines.
+  for (const c of sea.contacts) {
+    if (!c.ton) continue;
+    const a = tonalAmp(c);
+    if (a < 0.02) continue;
+    for (let k = 1; k <= 16; k++) addLine(k * c.ton.f1 * (1 + 0.002 * Math.sin(tt * 0.3 + k + (c.id || 0))), a * (k % c.ton.blades === 0 ? 0.95 : 0.45) / Math.sqrt(k), 0.8);
+    if (c.kind === 6) {
+      // The Auntie rumbles low and groans on a slow sweep.
+      for (let i = 0; i < 48; i++) rowF[i] += a * 0.35 * Math.random();
+      const g = auntieGroan(tt, c);
+      for (let h = 1; h <= 3; h++) addLine(g * h, a * 0.9 / h, 1.2);
+    }
+  }
   // A hull knock is broadband for an instant, then the hull rings.
   const ka = tt - knockAt;
   if (ka >= 0 && ka < 2) {
@@ -701,7 +763,13 @@ function buildVoices() {
   // A knock: a dull thump with a short metal ring.
   const thump = new T.MembraneSynth({ pitchDecay: 0.03, octaves: 2.5, envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.1 }, volume: -5 }).connect(rev);
   const clank = new T.MetalSynth({ harmonicity: 3.1, modulationIndex: 14, resonance: 1900, octaves: 1, envelope: { attack: 0.001, decay: 0.7, release: 0.2 }, volume: -30 }).connect(rev);
-  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, p2, thump, clank };
+  // The Auntie: two growling saws under a swept low filter.
+  const auntG = new T.Gain(0).connect(rev);
+  const auntF = new T.Filter({ type: 'lowpass', frequency: 260, Q: 2 }).connect(auntG);
+  const aun1 = new T.Oscillator(52, 'sawtooth').connect(auntF).start();
+  const aun2 = new T.Oscillator(78, 'sawtooth').connect(auntF).start();
+  new T.LFO(0.7, 160, 420).connect(auntF.frequency).start();
+  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, p2, thump, clank, auntG, aun1, aun2 };
 }
 // Continuous voices follow the shared model each frame.
 function steerVoices() {
@@ -712,10 +780,16 @@ function steerVoices() {
   v.w1.frequency.rampTo(song.f, 0.05);
   v.w2.frequency.rampTo(song.f * 2, 0.05);
   v.whaleG.gain.rampTo(song.amp * (sono ? 0.2 : clock < song.loud ? 0.16 : 0.06), 0.06);
-  v.propG.gain.rampTo(prop.amp * (sono ? 0.1 : 0.035), 0.3);
-  v.p1.frequency.rampTo(prop.f1 * 2, 0.5);
-  v.p2.frequency.rampTo(prop.f1 * 4, 0.5);
-  v.beat.frequency.rampTo(prop.f1 / prop.blades / 9, 0.5);
+  // The loudest propeller in the water drives the prop voice.
+  let src = { f1: prop.f1, blades: prop.blades, amp: prop.amp };
+  for (const c of sea.contacts) if (c.ton && c.kind !== 6) { const a = tonalAmp(c); if (a > src.amp) src = { f1: c.ton.f1, blades: c.ton.blades, amp: a }; }
+  v.propG.gain.rampTo(Math.min(1, src.amp) * (sono ? 0.1 : 0.035), 0.3);
+  v.p1.frequency.rampTo(src.f1 * 2, 0.5);
+  v.p2.frequency.rampTo(src.f1 * 4, 0.5);
+  v.beat.frequency.rampTo(src.f1 / src.blades / 9, 0.5);
+  const au = sea.contacts.find(c => c.kind === 6), aa = au ? tonalAmp(au) : 0;
+  v.auntG.gain.rampTo(Math.min(1, aa) * (sono ? 0.12 : 0.05), 0.4);
+  if (au) { const g = auntieGroan(clock, au); v.aun1.frequency.rampTo(g, 0.2); v.aun2.frequency.rampTo(g * 1.5, 0.2); }
 }
 
 // One shot of the recorded ping: rate sets the pitch; dry or through the echo path.
@@ -769,6 +843,8 @@ function ping(brg = null, power = 0) {
     if (e.c.kind === 2 && !omni) later.push({ at: clock + e.at + 0.9, fn: whaleAnswers });
     // A submarine hears the ping and answers with its own.
     if (e.c.sub && !e.c.alerted) { e.c.alerted = 'soon'; later.push({ at: clock + e.at + rnd(1.3, 2.4), fn: () => counterPing(e.c) }); }
+    // Pinging the Auntie is a mistake.
+    if (e.c.kind === 6 && !e.c.alerted) { e.c.alerted = 'soon'; later.push({ at: clock + e.at + 1.1, fn: () => auntieWakes(e.c) }); }
   }
   if (power > 0) say(`POWER PING   ${'▮'.repeat(1 + Math.round(power * 4))}`);
   const v = voices();
@@ -799,6 +875,8 @@ function echoVoice(v, e, at, rate, power) {
     else if (kind === 1) for (let i = 0; i < 5; i++) playSample(v, { rate: r * rnd(0.99, 1.01), gain: g * 0.45, at: at + i * rnd(0.02, 0.05), dur: 0.14, wet: true });
     else if (kind === 2) playSample(v, { rate: r, gain: g * 0.8, at, dur: 0.6, wet: true });
     else if (kind === 4) for (let i = 0; i < 2; i++) playSample(v, { rate: r * 2.1, gain: g * 0.7, at: at + i * 0.09, dur: 0.1, wet: true });
+    else if (kind === 5) { playSample(v, { rate: r, gain: g, at, dur: 1.1, wet: true }); playSample(v, { rate: r * 0.997, gain: g * 0.7, at: at + 0.06, dur: 0.9, wet: true }); playSample(v, { rate: r * 0.9, gain: g * 0.3, at: at + 0.12, dur: 1.2, wet: true }); }
+    else if (kind === 6) { playSample(v, { rate: r * 0.62, gain: g * 1.3, at, dur: 3, wet: true }); playSample(v, { rate: r * 0.6, gain: g, at: at + 0.25, dur: 3, wet: true }); }
     else { playSample(v, { rate: r * 0.82, gain: g * 1.1, at, dur: 1.8, wet: true }); playSample(v, { rate: r * 0.8, gain: g * 0.7, at: at + 0.18, dur: 1.6, wet: true }); }
     return;
   }
@@ -807,6 +885,8 @@ function echoVoice(v, e, at, rate, power) {
   else if (kind === 1) for (let i = 0; i < 5; i++) v.echo.triggerAttackRelease(f * rnd(0.99, 1.01), 0.12, at + i * rnd(0.02, 0.05), 0.22 * k + 0.05);
   else if (kind === 2) v.echo.triggerAttackRelease(f, 0.3, at, 0.45 * k + 0.1);
   else if (kind === 4) v.echo.triggerAttackRelease(f * 2.1, 0.08, at, 0.3 * k + 0.1);
+  else if (kind === 5) { v.echo.triggerAttackRelease(f, 0.5, at, 0.6 * k + 0.15); v.echo.triggerAttackRelease(f * 0.997, 0.4, at + 0.06, 0.4 * k); }
+  else if (kind === 6) v.echo.triggerAttackRelease(f * 0.62, 2.4, at, 0.8 * k + 0.2);
   else { v.echo.triggerAttackRelease(f * 0.82, 1.6, at, 0.6 * k + 0.2); v.echo.triggerAttackRelease(f * 0.795, 1.4, at + 0.18, 0.5 * k + 0.1); }
 }
 function whaleAnswers() {
@@ -824,14 +904,33 @@ function counterPing(c) {
   say(`ВНИМАНИЕ!   ОБЛУЧЕНИЕ   ${pad3(wrapA(b) / D2R)}`, true);
   say(`WARNING   ACTIVE SONAR   BRG ${pad3(wrapA(b) / D2R)}`, true);
   // It turns away, runs and goes quiet.
-  c.vel = [Math.sin(b) * 16, Math.cos(b) * 16];
-  c.orient = b;
+  c.stalk = false;
+  setCourse(c, b, 16);
   c.life = Math.min(c.life, 14);
   const v = voices();
   if (v) {
     const now = T.now() + 0.02, pan = clamp(Math.sin(b), -0.9, 0.9);
     if (!playSample(v, { rate: 0.78, gain: 0.6, at: now, dur: 4, pan })) v.ping.triggerAttackRelease(1150, 0.5, now);
     for (let i = 0; i < 4; i++) v.beep.triggerAttackRelease(i % 2 ? 660 : 880, 0.12, now + 0.9 + i * 0.22);
+  }
+  wake();
+}
+// The Auntie answers: alarms, a huge low ping, a raster glitch, then she dives.
+function auntieWakes(c) {
+  if (!sea.contacts.includes(c)) return;
+  c.alerted = true;
+  const b = bearingTo(c);
+  strobe.b = b; strobe.a = 1;
+  say('ВНИМАНИЕ!   «СВАРЛИВАЯ ТЁТУШКА»', true);
+  say(`CRANKY AUNTIE   SUPERWEAPON CLASS   BRG ${pad3(wrapA(b) / D2R)}`, true);
+  later.push({ at: clock + 0.5, fn: () => { if (!reduce) powerT0 = clock - 0.9 * 0.3; } });
+  later.push({ at: clock + 2.6, fn: () => { strobe.b = bearingTo(c); strobe.a = 1; } });
+  later.push({ at: clock + 18, fn: () => { c.life = 12; setCourse(c, bearingTo(c), 8); } });
+  const v = voices();
+  if (v) {
+    const now = T.now() + 0.02, pan = clamp(Math.sin(b), -0.9, 0.9);
+    if (!playSample(v, { rate: 0.5, gain: 1, at: now, dur: 7, pan })) v.ping.triggerAttackRelease(740, 1.5, now);
+    for (let i = 0; i < 8; i++) v.beep.triggerAttackRelease(i % 2 ? 440 : 587, 0.2, now + 0.6 + i * 0.26);
   }
   wake();
 }
@@ -987,12 +1086,28 @@ let hudDirty = true, hudFade = false;
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const grey = v => `rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})`;
 let cursorF = -1;
+// Loud enough tonal sources, as the classifier names them.
+function sources() {
+  const out = [];
+  for (const c of sea.contacts) {
+    if (!c.ton || tonalAmp(c) < 0.12) continue;
+    if (c.kind === 6) out.unshift('!!   CRANKY AUNTIE   «СВАРЛИВАЯ ТЁТУШКА»');
+    else if (c.kind === 5) out.push(`MECH   SURFACE   ${c.ton.blades} BLADE   ${Math.round(c.ton.f1 * c.ton.blades)} HZ`);
+    else out.push(`MECH   SUBMERGED   ${c.ton.blades} BLADE`);
+  }
+  return out;
+}
 // The cursor snaps to a known line and names it.
 function identify(f) {
   const tol = spanHz() * 0.012;
   const cand = [[60, 'OWN SHIP'], [180, 'OWN SHIP'], [400, 'OWN SHIP  PUMP']];
   if (prop.amp > 0.15) for (let k = 1; k <= 18; k++) cand.push([k * prop.f1, k % prop.blades === 0 ? `BLADE RATE  x${k / prop.blades}` : `SHAFT  x${k}`]);
   if (song.amp > 0.1) for (let h = 1; h <= 4; h++) cand.push([song.f * h, h === 1 ? 'BIO  WHALE' : `BIO  WHALE  H${h}`]);
+  for (const c of sea.contacts) {
+    if (!c.ton || tonalAmp(c) < 0.08) continue;
+    const who = c.kind === 5 ? 'SURFACE' : c.kind === 6 ? 'AUNTIE' : 'SUB';
+    for (let k = 1; k <= 16; k++) cand.push([k * c.ton.f1, k % c.ton.blades === 0 ? `${who}  BLADE  x${k / c.ton.blades}` : `${who}  SHAFT  x${k}`]);
+  }
   let best = null, bd = tol;
   for (const [cf, name] of cand) { const d = Math.abs(cf - f); if (d < bd) { bd = d; best = [cf, name]; } }
   return best;
@@ -1117,9 +1232,11 @@ function drawHud() {
     c.fillText(`PASSIVE   LOFAR   0-${Math.round(span)} HZ`, 14 * dpr, Y(top));
     // The classifier names what it hears; narrow screens stack it under the title.
     const cls = [];
-    if (prop.amp > 0.15) cls.push(`MECH   ${prop.blades} BLADE   ${Math.round(prop.f1 * prop.blades)} HZ`);
+    for (const s of sources()) cls.push(s);
+    if (prop.amp > 0.15) cls.push(`MECH   DISTANT   ${prop.blades} BLADE`);
     if (song.bout) cls.push('BIO   WHALE');
     const narrow = W < 620 * dpr;
+    cls.length = Math.min(cls.length, narrow ? 2 : 4);
     c.textAlign = narrow ? 'left' : 'right';
     cls.forEach((s, i) => c.fillText(s, narrow ? 14 * dpr : W - 14 * dpr, Y(top - (narrow ? i + 1 : i) * 14 * dpr)));
   }
@@ -1297,7 +1414,7 @@ function step(dt) {
     while (rowClock >= 1 / ROW_HZ && n++ < 6) { rowClock -= 1 / ROW_HZ; makeRow(clock); }
     rowFrac = rowClock * ROW_HZ;
     // The classifier lines change with what the sea is doing.
-    const sig = `${prop.amp > 0.15}|${song.bout}`;
+    const sig = `${prop.amp > 0.15}|${song.bout}|${sources().join()}`;
     if (sig !== step.sig) { step.sig = sig; hudDirty = true; }
   }
   if (hudFade && Math.floor(clock * 10) !== Math.floor((clock - dt) * 10)) hudDirty = true;
