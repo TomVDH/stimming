@@ -116,7 +116,7 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, audioKit, choices, fitCanvas, whenVisible, reduced, onReducedChange } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -427,7 +427,7 @@ function walk(o) {
   const seg = [];
   let { x, y, th } = o;
   const ds = o.ds * U, B = opts.mag;
-  let s = 0, z = o.z ?? 0;
+  let s = 0, z = o.z ?? 0, entered = false;
   const kids = [];
   while (s < o.len * U) {
     const f = s / (o.len * U);
@@ -441,17 +441,20 @@ function walk(o) {
     seg.push(x, y, nx, ny, k, o.w(f) * dpr);
     if (o.delta && Math.random() < o.delta * o.ds) kids.push([nx, ny, th]);
     x = nx; y = ny; s += ds;
-    if (!inView(x, y, 20 * U)) break;
+    // A walk may start off screen; it ends once it leaves the view.
+    if (inView(x, y, 20 * U)) entered = true;
+    else if (entered) break;
   }
   return { seg: new Float32Array(seg), kids };
 }
-function add(seg, delay = 0, fresh = 1) { if (seg.length) tracks.push({ seg, age: -delay, fresh, born: false }); }
+// Kind is a, b, m or d: alpha, beta, muon or delta ray.
+function add(seg, delay = 0, kind = 'b') { if (seg.length) tracks.push({ seg, age: -delay, fresh: 1, born: false, kind }); }
 
 // A low-energy electron knocked loose: short, curly, tight in the magnet.
 function delta(x, y, th, delay) {
   const p = rnd(0.12, 0.35);
   const { seg } = walk({ x, y, th: th + (Math.random() < 0.5 ? 1 : -1) * rnd(1.0, 1.45), p, q: -1, R: 26, slow: 0.55, pEnd: 0.02, len: 6 + 22 * p, ds: 0.4, scat: 0.04, k: (f, p) => 0.42 * Math.min(2.4, 1 / Math.sqrt(p)), w: () => 0.95, bead: true, dz: 0.03 });
-  add(seg, delay);
+  add(seg, delay, 'd');
 }
 // Alpha: short, thick and straight. It brightens at the end (Bragg peak).
 function alpha(x, y, th, len, delay = 0) {
@@ -471,7 +474,7 @@ function alpha(x, y, th, len, delay = 0) {
       seg[i * 6 + j] = px + c * dx - s * dy; seg[i * 6 + j + 1] = py + s * dx + c * dy;
     }
   }
-  add(seg, delay);
+  add(seg, delay, 'a');
   kids.forEach(([kx, ky, kth]) => delta(kx, ky, kth, delay));
 }
 // Beta: thin, long and wiggly. It curls tighter as it slows.
@@ -480,21 +483,21 @@ function beta(x, y, th, p0, delay = 0, q = -1) {
     x, y, th, p: p0, q, R: 26, slow: 0.55, pEnd: 0.03, len: 14 + 40 * Math.pow(p0, 1.3),
     ds: 0.5, scat: 0.045, k: (f, p) => 0.34 * Math.min(2.6, 1 / Math.sqrt(p)), w: () => 0.9, bead: true, dz: 0.025, z: rnd(-0.5, 0.5),
   });
-  add(seg, delay);
+  add(seg, delay, 'b');
 }
 // Muon: long, straight and thin; it crosses the whole view.
-function muon(x, y, th, delay = 0) {
+function muon(x, y, th, delay = 0, gain = 1) {
   const D = Math.hypot(W, H);
   const sx = x - Math.cos(th) * D, sy = y - Math.sin(th) * D;
   const p = rnd(40, 140);
   const { seg, kids } = walk({
     x: sx, y: sy, th, p, q: Math.random() < 0.56 ? 1 : -1, R: 26, len: 4 * D / U, ds: 1.5, scat: 0.0015,
-    k: () => 0.3, w: () => 0.85, bead: true, delta: 0.006,
+    k: () => 0.3 * gain, w: () => 0.85, bead: true, delta: 0.006,
   });
   // The walk starts off screen; drop the steps before the view.
   let i = 0;
   while (i < seg.length && !inView(seg[i + 2], seg[i + 3], 20 * U)) i += 6;
-  add(seg.slice(i), delay);
+  add(seg.slice(i), delay, 'm');
   kids.forEach(([kx, ky, kth]) => { if (inView(kx, ky, 0)) delta(kx, ky, kth, delay); });
 }
 // A fast cosmic electron: long, mostly straight, a little curved.
@@ -534,16 +537,81 @@ function spawn(dt) {
 }
 // A cosmic shower: dozens of near-parallel tracks within a blink.
 function shower() {
+  clatter();
   const th = rnd(0, TAU), nx = -Math.sin(th), ny = Math.cos(th);
   const cx = rnd(0.3, 0.7) * W, cy = rnd(0.3, 0.7) * H, span = Math.hypot(W, H) * 0.6;
   const n = Math.round(rnd(24, 44));
   for (let i = 0; i < n; i++) {
     const o = gauss() * span * 0.35, a = th + gauss() * 0.035, d = rnd(0, 0.15);
     const x = cx + nx * o, y = cy + ny * o;
-    if (Math.random() < 0.7) muon(x, y, a, d);
+    if (Math.random() < 0.7) muon(x, y, a, d, 1.5);
     else beta(x - Math.cos(a) * span, y - Math.sin(a) * span, a, rnd(0.8, 3), d, Math.random() < 0.5 ? 1 : -1);
   }
   wake();
+}
+
+
+/* ---------- sound ---------- */
+// Plain Web Audio on the shared kit: ticks, a hiss bed and a clatter.
+// Muted by default; a gesture starts it; the context sleeps when hidden.
+const kit = audioKit({ keys: new Set([' ']), sleepMs: 2500 });
+let bed = null, tickBudget = 0, tickClock = 0;
+// The hiss bed: a quiet band of noise, the mist settling.
+function hum() {
+  const ac = kit.live();
+  if (!ac || bed) { if (bed && ac) bed.g.gain.setTargetAtTime(0.012 + 0.008 * opts.mist, ac.currentTime, 0.4); return; }
+  const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 4200; bp.Q.value = 0.35;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 9000;
+  const g = ac.createGain(); g.gain.value = 0;
+  src.connect(bp); bp.connect(lp); lp.connect(g); g.connect(kit.out);
+  src.start();
+  g.gain.setTargetAtTime(0.012 + 0.008 * opts.mist, ac.currentTime, 0.8);
+  bed = { g };
+}
+// Each kind has its own voice: pitch, body and level.
+const VOICE = {
+  a: { f: [380, 560], q: 6, n: 0.5, g: 0.22, d: 0.07 },
+  b: { f: [1300, 2100], q: 9, n: 0.25, g: 0.1, d: 0.035 },
+  m: { f: [2600, 3400], q: 4, n: 0.6, g: 0.07, d: 0.09 },
+  d: { f: [3000, 4200], q: 10, n: 0.2, g: 0.03, d: 0.02 },
+};
+// A soft tick: a short noise grain through a ringing band filter.
+function voice(ac, kind, x, when) {
+  const v = VOICE[kind];
+  const src = ac.createBufferSource(); src.buffer = kit.noise;
+  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = rnd(v.f[0], v.f[1]); bp.Q.value = v.q;
+  const g = ac.createGain();
+  const pan = ac.createStereoPanner(); pan.pan.value = clamp(x / W * 1.6 - 0.8, -0.8, 0.8);
+  g.gain.setValueAtTime(0, when);
+  g.gain.linearRampToValueAtTime(v.g * rnd(0.6, 1), when + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + v.d);
+  src.connect(bp); bp.connect(g); g.connect(pan); pan.connect(kit.out);
+  src.start(when, Math.random() * (kit.noise.duration - 0.2), v.d + 0.02);
+}
+function tick(tr) {
+  const ac = kit.live();
+  if (!ac) return;
+  // A budget keeps busy moments from turning into a roar.
+  const now = ac.currentTime;
+  tickBudget = Math.min(6, tickBudget + (now - tickClock) * 14); tickClock = now;
+  if (tr.kind === 'd' && Math.random() < 0.6) return;
+  if (tickBudget < 1) return;
+  tickBudget -= 1;
+  voice(ac, tr.kind, tr.seg[0], now + 0.005);
+}
+// The shower: a dense clatter that thins out, over a soft low thump.
+function clatter() {
+  const ac = kit.live();
+  if (!ac) return;
+  const t0 = ac.currentTime + 0.01;
+  for (let i = 0; i < 34; i++) voice(ac, Math.random() < 0.7 ? 'm' : 'b', Math.random() * W, t0 + 0.22 * Math.pow(Math.random(), 1.8));
+  const o = ac.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(120, t0); o.frequency.exponentialRampToValueAtTime(48, t0 + 0.35);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.18, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
+  o.connect(g); g.connect(kit.out); o.start(t0); o.stop(t0 + 0.5);
+  tickBudget = 0;
 }
 
 /* ---------- loop ---------- */
@@ -554,7 +622,9 @@ function frameFn(now) {
   last = now;
   step(dt);
   render();
+  hum();
   if (visible) raf = requestAnimationFrame(frameFn);
+  else kit.rest(() => !visible);
 }
 function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
 
@@ -574,6 +644,7 @@ function deposit(dt) {
     if (tr.age <= 0) continue;
     const share = (Math.min(tr.age, GROW) - Math.max(a0, 0)) / GROW;
     const flash = tr.born ? 0 : tr.fresh;
+    if (!tr.born && !warming) tick(tr);
     tr.born = true;
     const wk = 0.6 + 0.4 * Math.min(1, tr.age / GROW);
     const s = tr.seg;
@@ -623,9 +694,11 @@ function resize() {
   if (ready) { render(); wake(); }
 }
 // The first view opens on a chamber already at work.
+let warming = false;
 function warm() {
-  const steps = 90;
-  for (let i = 0; i < steps; i++) { t += 1 / 30; mistPass(1 / 30); spawn(1 / 30); deposit(1 / 30); }
+  warming = true;
+  for (let i = 0; i < 90; i++) { t += 1 / 30; mistPass(1 / 30); spawn(1 / 30); deposit(1 / 30); }
+  warming = false;
 }
 
 /* ---------- input ---------- */
@@ -695,7 +768,7 @@ gl.finish();
 ready = true;
 markReady();
 requestAnimationFrame(() => canvas.classList.add('on'));
-whenVisible(stage, v => { visible = v; if (v) wake(); });
+whenVisible(stage, v => { visible = v; if (v) wake(); else kit.rest(() => true); });
 wake();
 </script>
 </body>
