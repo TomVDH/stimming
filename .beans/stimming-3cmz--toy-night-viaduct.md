@@ -39,7 +39,7 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [ ] Sound
 - [ ] Checkpoint 2: Tom reviews motion and sound
 - [ ] Pass: parked by Tom 2026-11-04; Port first
-- [ ] Prototypes: Tom picks any to grow (Earthrise span, Window seat, Glacier bore may still change)
+- [ ] Prototypes: Tom picks any to grow (all six final in the gallery)
 - [ ] Menu Lab entry: icon and `toys.viaduct` hook kept as they are
 - [ ] QA Q1 to Q10 (docs/plans/README.md)
 - [ ] Record the session cost
