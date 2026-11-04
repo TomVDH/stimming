@@ -287,9 +287,10 @@ export function onQuality(fn) {
 // The pixel ratio for a w x h surface.
 // High gives the screen's own ratio, up to 3, with no budget.
 // Standard caps the ratio at maxDpr and keeps the pixel count under the budget.
-export function pixelRatio(w, h, { maxDpr = 2, budget = 1.4e6, low = false } = {}) {
+// A toy with its own lower tier passes quality: 'standard' to keep the caps.
+export function pixelRatio(w, h, { maxDpr = 2, budget = 1.4e6, low = false, quality: q = quality() } = {}) {
   const dev = window.devicePixelRatio || 1;
-  if (quality() === 'high') return Math.min(dev, 3);
+  if (q === 'high') return Math.min(dev, 3);
   return Math.min(dev, low ? 1 : maxDpr, Math.sqrt(budget / Math.max(1, w * h)));
 }
 
@@ -326,7 +327,7 @@ function settingsTray() {
 }
 // Adds the Quality group to a Settings tray.
 // Without a tray, the shared tray is made first.
-// Buttons that sit loose in the tray, such as Reset, stay last.
+// Buttons that sit loose in the tray, such as Reset, stay after it.
 export function qualitySetting(tray = null) {
   tray ||= settingsTray();
   if (!tray) return null;
@@ -335,7 +336,7 @@ export function qualitySetting(tray = null) {
   group.innerHTML = '<span>Quality</span><div class="choices" role="group" aria-label="Quality">'
     + '<button class="chip" type="button" data-value="standard" aria-pressed="false">Standard</button>'
     + '<button class="chip" type="button" data-value="high" aria-pressed="false">High</button></div>';
-  const loose = [...tray.children].find(el => !el.classList.contains('group'));
+  const loose = [...tray.children].find(el => el.tagName === 'BUTTON');
   if (loose) loose.before(group); else tray.append(group);
   const chips = choices(group.querySelector('.choices'), v => setQuality(v));
   chips.set(quality());
@@ -345,10 +346,10 @@ export function qualitySetting(tray = null) {
 
 /* ---------- canvas sizing ---------- */
 // The quality setting picks the pixel ratio; see pixelRatio.
-export function fitCanvas(canvas, { maxDpr = 2, budget = 1.4e6, low = false } = {}) {
+export function fitCanvas(canvas, { maxDpr = 2, budget = 1.4e6, low = false, quality: q = quality() } = {}) {
   const r = canvas.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  const dpr = pixelRatio(w, h, { maxDpr, budget, low });
+  const dpr = pixelRatio(w, h, { maxDpr, budget, low, quality: q });
   const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   return { w, h, dpr, W, H };
