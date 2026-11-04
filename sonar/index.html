@@ -74,10 +74,6 @@
               <button class="chip" type="button" data-value="short" aria-pressed="false">Short</button>
               <button class="chip" type="button" data-value="long" aria-pressed="true">Long</button>
             </div></div>
-            <div class="group"><span>Screen</span><div class="choices" id="curve" role="group" aria-label="Screen">
-              <button class="chip" type="button" data-value="flat" aria-pressed="false">Flat</button>
-              <button class="chip" type="button" data-value="curved" aria-pressed="true">Curved</button>
-            </div></div>
             <div class="group"><span>Scanlines</span><div class="choices" id="scan" role="group" aria-label="Scanlines">
               <button class="chip" type="button" data-value="off" aria-pressed="false">Off</button>
               <button class="chip" type="button" data-value="on" aria-pressed="true">On</button>
@@ -90,9 +86,9 @@
         </div>
         <dl class="how" aria-label="How to play">
           <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>ping that bearing; knock on the sonogram</dd></div>
+          <div><dt>Hold</dt><dd>charge a power ping</dd></div>
           <div><dt>Drag</dt><dd>steer; tune on the sonogram</dd></div>
-          <div class="fine"><dt><kbd>Space</kbd></dt><dd>ping all round</dd></div>
-          <div class="fine"><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>steer or tune</dd></div>
+          <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span></dt><dd>track a contact</dd></div>
         </dl>
       </div>
     </div>
@@ -144,7 +140,6 @@ const opts = {
   range: num('range', 0.55),
   span: num('span', 0.33),
   persist: saved('persist') || 'long',
-  curve: saved('curve') || 'curved',
   scan: saved('scan') || 'on',
   grid: saved('grid') || 'on',
 };
@@ -154,7 +149,16 @@ onReducedChange(v => { reduce = v; hudDirty = true; });
 // The slider maps to metres in Active and to hertz in Sonogram.
 const rangeM = () => 500 * Math.pow(8, opts.range);
 const spanHz = () => 500 * Math.pow(8, opts.span);
-const tau = () => (opts.persist === 'long' ? 8 : 3);
+// The red phosphor: a bright flash over a long, deep afterglow.
+const PHOS = { flash: linFit(0.66, 0.24, 27), glow: linFit(0.56, 0.22, 26), hot: linFit(0.88, 0.1, 28), dark: linFit(0.13, 0.012, 30), tf: 0.08, gain: [1.2, 1.4, 0.5] };
+const ts = () => (opts.persist === 'long' ? 3.4 : 1.2);
+// Each echo feeds this share into the slow glow.
+const SLOW = 1.8;
+// Console tubes sit behind flat glass, so the bulge stays slight.
+const WARP = 0.016;
+const FRINGE = 0.006;
+// The console refreshes at a fixed, modest rate.
+const DISPLAY_HZ = 30;
 const RING_T = 2.4;     // seconds for a ping to reach full range
 const NBIN = 1024, FMAX = 4000, NROW = 384, ROW_HZ = 20;
 const BIN_HZ = FMAX / NBIN;
@@ -183,11 +187,12 @@ float angDiff(float a, float b) { return abs(mod(a - b + 3.14159265, 6.2831853) 
 `;
 
 /* ---------- K1: accumulation and decay (from Star trails) ---------- */
-// Two float targets ping-pong; each frame fades the plate by exp(-dt/tau).
+// Two float targets ping-pong; the flash and the glow fade at their own rates.
 const DECAY = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform float uK, uEps; in vec2 vUv; out vec4 o;
-void main() { vec4 c = texture(uSrc, vUv) * uK; o = max(c - uEps, 0.0); }`;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uDecay; uniform float uEps;
+void main() { o = vec4(max(texture(uSrc, vUv).rg * uDecay - uEps, 0.0), 0.0, 1.0); }`;
 /* ---------- end K1 ---------- */
 
 // The ping front paints the ring it swept since the last frame.
@@ -196,7 +201,8 @@ const MAXC = 12;
 const EXCITE = `#version 300 es
 precision highp float;
 uniform vec2 uCenter, uOwn;
-uniform float uRad, uR0, uR1, uBeam, uHalf, uRange, uSeed, uTime, uGain;
+uniform float uRad, uR0, uR1, uBeam, uHalf, uRange, uSeed, uTime;
+uniform vec2 uW;
 uniform vec4 uC[${MAXC}]; uniform vec4 uK[${MAXC}]; uniform int uN;
 out vec4 o;
 ${NOISE}
@@ -245,7 +251,7 @@ void main() {
   float spread = 1.0 / (1.0 + rn * rn * 2.4);
   float ringDown = exp(-rn * 55.0) * 1.3;
   float e = (clutter * shade * speck * 0.3 + tgt * (0.75 + 0.35 * speck)) * spread + ringDown;
-  o = vec4(e * beam * uGain, 0.0, 0.0, 1.0);
+  o = vec4(e * beam * uW, 0.0, 1.0);
 }`;
 // The frame holds the raw light of the current display.
 const FRAME = `#version 300 es
@@ -253,19 +259,26 @@ precision highp float;
 uniform sampler2D uAcc, uFall;
 uniform int uMode;
 uniform vec2 uCenter; uniform vec4 uBox;
-uniform float uRad, uFront, uBeam, uHalf, uDpr, uHead, uSpan, uRowsVis;
+uniform float uRad, uFront, uBeam, uHalf, uDpr, uHead, uSpan, uRowsVis, uShow;
+uniform vec2 uStrobe;
 in vec2 vUv; out vec4 o;
 ${NOISE}
 void main() {
   vec2 px = gl_FragCoord.xy;
-  float L = 0.0;
+  vec2 L = vec2(0.0);
   if (uMode == 0) {
-    L = texture(uAcc, vUv).r;
+    L = texture(uAcc, vUv).rg;
     vec2 p = px - uCenter; float r = length(p);
     if (uFront > 0.0) {
       float beam = uHalf > 3.0 ? 1.0 : smoothstep(uHalf, uHalf * 0.55, angDiff(atan(p.x, p.y), uBeam));
       float g = (r - uFront) / (1.4 * uDpr);
-      L += 0.55 * exp(-g * g) * beam;
+      L += vec2(0.55, 0.1) * exp(-g * g) * beam;
+    }
+    // A foreign ping shows as a bright strobe on its bearing.
+    if (uStrobe.y > 0.0) {
+      vec2 dir = vec2(sin(uStrobe.x), cos(uStrobe.x));
+      float along = dot(p, dir), perp = abs(p.x * dir.y - p.y * dir.x) / (1.6 * uDpr);
+      L += vec2(0.9, 0.3) * uStrobe.y * exp(-perp * perp) * step(0.0, along) * smoothstep(0.0, uRad, along);
     }
     L *= smoothstep(uRad + 1.5 * uDpr, uRad - 0.5 * uDpr, r);
   } else if (px.x >= uBox.x && px.x <= uBox.z && px.y >= uBox.y && px.y <= uBox.w) {
@@ -274,57 +287,141 @@ void main() {
     float row = uHead - (1.0 - uv.y) * uRowsVis - 1.0;
     float b = texture(uFall, vec2(uv.x * uSpan / ${FMAX.toFixed(1)}, (row + 0.5) / ${NROW.toFixed(1)})).r;
     // A contrast curve sinks the sea floor and lifts the lines.
-    L = pow(b, 2.2) * 3.2;
+    float v = pow(b, 2.4) * 3.0;
+    L = vec2(v, v * 0.22);
   }
-  o = vec4(L, 0.0, 0.0, 1.0);
+  o = vec4(L * uShow, 0.0, 1.0);
 }`;
+// Four bilinear taps average a four by four block.
 const DOWN = `#version 300 es
 precision highp float;
 in vec2 vUv; out vec4 o;
 uniform sampler2D uSrc; uniform vec2 uTexel;
 void main() {
-  float s = texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).r + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).r
-          + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).r + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).r;
-  o = vec4(s * 0.25, 0.0, 0.0, 1.0);
+  vec2 s = texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rg
+         + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rg;
+  o = vec4(s * 0.25, 0.0, 1.0);
 }`;
 const BLUR = `#version 300 es
 precision highp float;
 in vec2 vUv; out vec4 o;
 uniform sampler2D uSrc; uniform vec2 uDir;
 void main() {
-  float s = texture(uSrc, vUv).r * 0.227027;
-  s += (texture(uSrc, vUv + uDir * 1.384615).r + texture(uSrc, vUv - uDir * 1.384615).r) * 0.316216;
-  s += (texture(uSrc, vUv + uDir * 3.230769).r + texture(uSrc, vUv - uDir * 3.230769).r) * 0.070270;
-  o = vec4(s, 0.0, 0.0, 1.0);
+  vec2 s = texture(uSrc, vUv).rg * 0.227027;
+  s += (texture(uSrc, vUv + uDir * 1.384615).rg + texture(uSrc, vUv - uDir * 1.384615).rg) * 0.316216;
+  s += (texture(uSrc, vUv + uDir * 3.230769).rg + texture(uSrc, vUv - uDir * 3.230769).rg) * 0.070270;
+  o = vec4(s, 0.0, 1.0);
 }`;
-// The tube: curve, glow, graticule light, scanlines, flicker and grain.
+// The tube, after the Oscilloscope: a monochrome red phosphor behind flat glass.
 const SCREEN = `#version 300 es
 precision highp float;
-uniform sampler2D uFrame, uBloom, uHud;
-uniform vec2 uRes; uniform vec3 uTint, uHot;
-uniform float uCurve, uScan, uTime, uFlick, uSwitch, uGrain;
-in vec2 vUv; out vec4 o;
-${NOISE}
+out vec4 o;
+uniform sampler2D uAccum, uBloom, uHud, uGlass;
+uniform vec2 uRes;
+uniform float uDpr, uTime, uWarp, uFringe, uPower, uMask, uScan, uMotion;
+uniform vec3 uFlash, uGlow, uGain, uTint, uHotCol, uDark;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+// Barrel curvature: the face bulges, so the content squeezes to the edges.
+vec2 warp(vec2 uv) {
+  vec2 as = vec2(uRes.x / uRes.y, 1.0), c = (uv - 0.5) * as;
+  return c * (1.0 + uWarp * dot(c, c)) / as + 0.5;
+}
+vec3 phosphor(vec2 uv) {
+  vec2 e = texture(uAccum, uv).rg;
+  float a = 1.0 - exp(-e.r * uGain.x), b = 1.0 - exp(-e.g * uGain.y);
+  float hot = 1.0 - exp(-e.r * uGain.x * 0.08);
+  return uFlash * a + uGlow * b + uHotCol * hot * hot * 0.9;
+}
 void main() {
-  vec2 c = vUv * 2.0 - 1.0;
-  float as = uRes.x / uRes.y;
-  vec2 cc = c * vec2(as, 1.0) / sqrt(as * as + 1.0);
-  c *= 1.0 + uCurve * dot(cc, cc);
-  // A display switch folds the raster to one line, then opens it.
-  c.y *= 1.0 + uSwitch * 40.0;
-  vec2 w = c * 0.5 + 0.5;
-  float edge = smoothstep(0.0, 0.006, min(min(w.x, 1.0 - w.x), min(w.y, 1.0 - w.y)));
-  float L = texture(uFrame, w).r + texture(uBloom, w).r * 0.9 + texture(uHud, w).r * 0.42;
-  L += uSwitch * 0.8 * exp(-abs(c.y) * 2.0);
-  L += 0.0035;
-  if (uScan > 0.5) L *= 0.8 + 0.2 * sin(w.y * uRes.y * 3.14159);
-  L *= uFlick;
-  vec3 col = uTint * (1.0 - exp(-L * 1.5)) * 1.55 + uHot * max(L - 1.1, 0.0) * 0.22;
-  col *= 1.0 - dot(c * 0.5, c * 0.5) * 0.55;
-  col += (hash12(gl_FragCoord.xy + uGrain * 917.0) - 0.5) * 0.012 * uTint;
-  col *= edge;
-  o = vec4(pow(max(col, 0.0), vec3(1.0 / 2.2)), 1.0);
+  vec2 uv0 = gl_FragCoord.xy / uRes, uv = warp(uv0);
+  // Power-on: a dot opens to a line, then the raster opens to full height.
+  vec2 open = vec2(max(0.002, smoothstep(0.0, 0.3, uPower)), max(0.002, smoothstep(0.22, 0.78, uPower)));
+  uv = (uv - 0.5) / open + 0.5;
+  // Past the edge of the face the tube is black.
+  vec2 edge = min(uv, 1.0 - uv) * uRes;
+  float inside = clamp(min(edge.x, edge.y) / (2.0 * uDpr), 0.0, 1.0);
+
+  // Each colour lands a little apart, more so away from centre.
+  vec2 ca = (uv - 0.5) * uFringe + vec2(0.7 * uDpr / uRes.x, 0.0);
+  vec3 beam = vec3(phosphor(uv + ca).r, phosphor(uv).g, phosphor(uv - ca).b);
+  vec3 hud = vec3(texture(uHud, uv + ca * 1.4).r, texture(uHud, uv).r, texture(uHud, uv - ca * 1.4).r) * uTint;
+  vec3 light = beam + hud;
+
+  // A soft mask and beam-wide scanlines follow the raster.
+  vec2 pw = uv * uRes;
+  float m = floor(mod(pw.x / max(1.0, floor(uDpr + 0.5)), 3.0));
+  vec3 grille = mix(vec3(1.0), vec3(m == 0.0, m == 1.0, m == 2.0) * 0.75 + 0.42, uMask);
+  float lum = clamp(max(light.r, max(light.g, light.b)), 0.0, 1.0);
+  float sy = fract(pw.y / (3.0 * uDpr)) - 0.5, sw = mix(0.2, 0.52, lum);
+  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.55, uScan);
+
+  // Halation: the beam's bloom and a wide halo round the graticule.
+  vec2 bl = texture(uBloom, uv).rg;
+  vec3 halo = (uFlash * (1.0 - exp(-bl.r * uGain.x)) + uGlow * (1.0 - exp(-bl.g * uGain.y))) * uGain.z;
+  halo += uTint * (textureLod(uHud, uv, 3.5).r * 0.3 + textureLod(uHud, uv, 5.5).r * 0.18);
+
+  // Unlit phosphor is a dark warm grey with the mask just visible.
+  vec3 col = uDark * mix(vec3(1.0), grille, 0.5);
+  // A faint band rolls down the raster.
+  float roll = exp(-pow((fract(uv0.y + uTime * 0.07) - 0.5) * 9.0, 2.0)) * 0.03 * uMotion;
+  col += light * (1.0 + roll) + halo * (1.0 + roll);
+
+  // Smudges on the glass spread the halo; dust blocks light and catches it.
+  vec2 gl2 = texelFetch(uGlass, ivec2(gl_FragCoord.xy), 0).rg;
+  float du = gl2.r, sm = gl2.g;
+  float glowLum = max(halo.r, max(halo.g, halo.b));
+  col += halo * sm * 1.1 + uDark * 0.5 * sm;
+  col = col * (1.0 - 0.5 * du) + du * (0.008 + 0.7 * glowLum) * vec3(0.9, 0.82, 0.8);
+
+  // The corners fall off; a broad dull sheen sits high on the left.
+  vec2 c = (uv0 - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.38 * smoothstep(0.25, 1.1, dot(c, c));
+  col += (1.0 - smoothstep(0.0, 0.85, length((uv0 - vec2(0.22, 0.86)) * vec2(0.8, 1.5)))) * 0.006;
+  col *= 1.0 + 0.012 * sin(uTime * 113.0) * uMotion;
+  col += (hash(gl_FragCoord.xy + fract(uTime) * 61.0 * uMotion) - 0.5) * 0.006;
+  col *= inside * (1.0 + 3.0 * (1.0 - smoothstep(0.55, 1.0, uPower)));
+  col = pow(max(col, 0.0), vec3(1.0 / 2.2));
+  o = vec4(col, 1.0);
 }`;
+// The glass: dust in red, smudges in green; it renders once per layout.
+const GLASS = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform float uDpr;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
+}
+// Specks of dust and a few soft motes sit on the glass, in CSS pixels.
+float dust(vec2 p) {
+  vec2 c = floor(p / 7.0);
+  float d = 0.0;
+  if (hash(c) > 0.94) {
+    vec2 o = vec2(hash(c + 3.1), hash(c + 7.7)) * 7.0;
+    float r = 0.45 + 1.1 * hash(c + 1.3);
+    d += (1.0 - smoothstep(r * 0.4, r, length(p - c * 7.0 - o))) * (0.35 + 0.65 * hash(c + 9.2));
+  }
+  vec2 c2 = floor(p / 53.0);
+  if (hash(c2 + 17.0) > 0.82) {
+    vec2 o = vec2(hash(c2 + 5.3), hash(c2 + 2.9)) * 53.0;
+    float r = 2.0 + 4.0 * hash(c2 + 8.1);
+    d += (1.0 - smoothstep(0.0, r, length(p - c2 * 53.0 - o))) * 0.3;
+  }
+  return d;
+}
+float smudge(vec2 p) {
+  float n = vnoise(p / 190.0) * 0.6 + vnoise(p / 64.0) * 0.28 + vnoise(p / 21.0) * 0.12;
+  return smoothstep(0.56, 0.86, n);
+}
+void main() {
+  vec2 css = gl_FragCoord.xy / uDpr;
+  o = vec4(clamp(dust(css), 0.0, 1.0), smudge(css), 0.0, 1.0);
+}`;
+const SCREEN_VS = `#version 300 es
+in vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
 function program(vs, fs, attrs) {
   const p = gl.createProgram();
@@ -346,7 +443,8 @@ const P = {
   frame: program(QUAD_VS, FRAME, ['aPos']),
   down: program(QUAD_VS, DOWN, ['aPos']),
   blur: program(QUAD_VS, BLUR, ['aPos']),
-  screen: program(QUAD_VS, SCREEN, ['aPos']),
+  screen: program(SCREEN_VS, SCREEN, ['aPos']),
+  glass: program(SCREEN_VS, GLASS, ['aPos']),
 };
 
 const quadVao = gl.createVertexArray();
@@ -370,7 +468,7 @@ function target(w, h) {
   return { tex, fb, w, h };
 }
 const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
-let acc = [], ai = 0, frame = null, blm = [];
+let acc = [], ai = 0, frame = null, blm = [], glass = null;
 const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
 
 // The waterfall is a ring of rows: one byte per frequency bin.
@@ -391,11 +489,13 @@ gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-const TINT = linFit(0.6, 0.24, 27), HOT = linFit(0.86, 0.11, 48);
+// The graticule glows in a blend of the flash and glow colours.
+const TINT = PHOS.flash.map((f, i) => (f * 0.45 + PHOS.glow[i] * 0.8) * 0.9);
 
 /* ---------- the sea ---------- */
 // Kinds: 0 wreck, 1 fish school, 2 whale, 3 unknown.
-const KIND = ['WRECK', 'BIO  SCHOOL', 'BIO', 'UNKNOWN'];
+const KIND = ['WRECK', 'BIO  SCHOOL', 'BIO', 'UNKNOWN', 'BIO?  DUCK'];
+const kindOf = c => (c.sub && c.alerted === true ? 'SUBMARINE' : KIND[c.kind]);
 const sea = { seed: 0, own: [0, 0], head: 0, speed: 9, contacts: [], oddNext: 0 };
 function place(dist, brg) { return [sea.own[0] + Math.sin(brg) * dist, sea.own[1] + Math.cos(brg) * dist]; }
 function shuffle() {
@@ -411,8 +511,14 @@ function shuffle() {
   }
   const wv = Math.random() * TAU;
   C.push({ kind: 2, pos: place(rnd(600, 1500), Math.random() * TAU), a: 18, b: 7, orient: wv, str: 1.5, vel: [Math.sin(wv) * 12, Math.cos(wv) * 12], turn: 0 });
+  // Once in a while a toy duck drifts in the shallows.
+  if (Math.random() < 0.06) {
+    const dv = Math.random() * TAU;
+    C.push({ kind: 4, pos: place(rnd(250, 700), Math.random() * TAU), a: 3, b: 2.2, orient: dv, str: 1.1, vel: [Math.sin(dv) * 0.8, Math.cos(dv) * 0.8] });
+  }
   C.forEach((c, i) => (c.id = i * 7.3 + sea.seed));
   sea.contacts = C;
+  tracks.length = 0; later.length = 0; strobe.a = 0;
   sea.oddNext = 2 + Math.floor(Math.random() * 4);
   prop.f1 = rnd(31, 46); prop.blades = 3 + Math.floor(Math.random() * 3); prop.amp = 0; prop.target = 0.8;
   song.bout = false; song.boutT = rnd(2, 8);
@@ -424,8 +530,14 @@ function maybeOdd() {
   if (sea.contacts.some(c => c.kind === 3)) return;
   if (--sea.oddNext > 0) return;
   sea.oddNext = 4 + Math.floor(Math.random() * 6);
-  const v = Math.random() * TAU, long = Math.random() < 0.5;
-  sea.contacts.push({ kind: 3, pos: place(rnd(0.75, 0.95) * rangeM(), Math.random() * TAU), a: long ? 380 : 230, b: long ? 120 : 210, orient: v, str: 1.7, vel: [Math.sin(v) * 7, Math.cos(v) * 7], life: rnd(45, 80), id: Math.random() * 99 });
+  const v = Math.random() * TAU, roll = Math.random();
+  const pos = place(rnd(0.7, 0.92) * rangeM(), Math.random() * TAU);
+  // Half the time it is a submarine, and it listens back.
+  if (roll < 0.5) sea.contacts.push({ kind: 3, sub: true, pos, a: 55, b: 7, orient: v, str: 1.4, str0: 1.4, vel: [Math.sin(v) * 5, Math.cos(v) * 5], life: rnd(60, 90), id: Math.random() * 99 });
+  else {
+    const long = roll < 0.75;
+    sea.contacts.push({ kind: 3, pos, a: long ? 380 : 230, b: long ? 120 : 210, orient: v, str: 1.7, str0: 1.7, vel: [Math.sin(v) * 7, Math.cos(v) * 7], life: rnd(45, 80), id: Math.random() * 99 });
+  }
 }
 function stepSea(dt) {
   sea.own[0] += Math.sin(sea.head) * sea.speed * dt;
@@ -439,13 +551,13 @@ function stepSea(dt) {
       c.vel = [Math.sin(c.orient) * 12, Math.cos(c.orient) * 12];
     }
     c.pos[0] += c.vel[0] * dt; c.pos[1] += c.vel[1] * dt;
-    if (c.kind === 3) { c.life -= dt; if (c.life < 10) c.str = 1.7 * Math.max(0, c.life / 10); if (c.life <= 0) sea.contacts.splice(i, 1); }
+    if (c.kind === 3) { c.life -= dt; if (c.life < 10) c.str = c.str0 * Math.max(0, c.life / 10); if (c.life <= 0) sea.contacts.splice(i, 1); }
   }
 }
 
 /* ---------- the passive picture: whale song and a far propeller ---------- */
 // A song is phrases of units; phrases repeat, as humpback song does.
-const song = { bout: false, boutT: 5, phrase: [], ui: 0, ut: 0, gap: 0, reps: 0, f: 200, amp: 0 };
+const song = { bout: false, boutT: 5, phrase: [], ui: 0, ut: 0, gap: 0, reps: 0, f: 200, amp: 0, loud: 0 };
 function makeUnit() {
   const r = Math.random();
   if (r < 0.3) { const f0 = rnd(140, 260); return { type: 'glide', f0, f1: f0 * rnd(1.8, 2.6), dur: rnd(0.8, 1.6), vib: 0 }; }
@@ -541,6 +653,9 @@ function makeRow(tt) {
 /* ---------- sound ---------- */
 const kit = audioKit({ keys: new Set([' ', 'Enter']), sleepMs: 2500 });
 let V = null, T = null, toneLoad = null;
+// The recorded ping loads early and decodes once audio starts.
+const pingBytes = fetch('ping.mp3').then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
+let pingBuf = null;
 function voices() {
   if (!kit.live()) return null;
   if (V) return V;
@@ -549,7 +664,15 @@ function voices() {
 }
 function buildVoices() {
   const out = kit.out;
+  pingBytes.then(b => (b ? kit.ac.decodeAudioData(b.slice(0)) : null)).then(buf => { if (buf) pingBuf = buf; }).catch(() => {});
   const rev = new T.Reverb({ decay: 5.5, preDelay: 0.03, wet: 0.42 }).connect(out);
+  // Echoes of the recorded ping come back muffled through the reverb.
+  const echoIn = new T.Filter({ type: 'lowpass', frequency: 3400, Q: 0.5 }).connect(rev);
+  // Boot beeps and the alarm: a small square tone.
+  const beep = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.002, decay: 0.05, sustain: 0, release: 0.02 }, volume: -32 }).connect(out);
+  // Charging a power ping: a whine that climbs.
+  const chargeG = new T.Gain(0).connect(rev);
+  const charge = new T.Oscillator(260, 'sine').connect(chargeG).start();
   // The ping: a clean sine with a long, wet tail.
   const ping = new T.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.004, decay: 1.1, sustain: 0, release: 0.6 }, volume: -11 }).connect(rev);
   const echoF = new T.Filter({ type: 'lowpass', frequency: 1350, Q: 0.7 }).connect(rev);
@@ -578,7 +701,7 @@ function buildVoices() {
   // A knock: a dull thump with a short metal ring.
   const thump = new T.MembraneSynth({ pitchDecay: 0.03, octaves: 2.5, envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.1 }, volume: -5 }).connect(rev);
   const clank = new T.MetalSynth({ harmonicity: 3.1, modulationIndex: 14, resonance: 1900, octaves: 1, envelope: { attack: 0.001, decay: 0.7, release: 0.2 }, volume: -30 }).connect(rev);
-  return { rev, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, p2, thump, clank };
+  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, p2, thump, clank };
 }
 // Continuous voices follow the shared model each frame.
 function steerVoices() {
@@ -588,19 +711,45 @@ function steerVoices() {
   v.bedG.gain.rampTo(sono ? 0.16 : 0.07, 0.3);
   v.w1.frequency.rampTo(song.f, 0.05);
   v.w2.frequency.rampTo(song.f * 2, 0.05);
-  v.whaleG.gain.rampTo(song.amp * (sono ? 0.2 : 0.06), 0.06);
+  v.whaleG.gain.rampTo(song.amp * (sono ? 0.2 : clock < song.loud ? 0.16 : 0.06), 0.06);
   v.propG.gain.rampTo(prop.amp * (sono ? 0.1 : 0.035), 0.3);
   v.p1.frequency.rampTo(prop.f1 * 2, 0.5);
   v.p2.frequency.rampTo(prop.f1 * 4, 0.5);
   v.beat.frequency.rampTo(prop.f1 / prop.blades / 9, 0.5);
 }
 
+// One shot of the recorded ping: rate sets the pitch; dry or through the echo path.
+function playSample(v, { rate = 1, gain = 1, at, dur = 0, wet = false, pan = 0 }) {
+  const ac = kit.ac;
+  if (!pingBuf || !ac) return false;
+  const src = ac.createBufferSource();
+  src.buffer = pingBuf;
+  src.playbackRate.value = rate;
+  const g = ac.createGain();
+  g.gain.value = gain;
+  src.connect(g);
+  let tail = g;
+  if (pan) { const p = ac.createStereoPanner(); p.pan.value = pan; g.connect(p); tail = p; }
+  T.connect(tail, wet ? v.echoIn : kit.out);
+  src.start(at);
+  if (dur) {
+    g.gain.setValueAtTime(gain, at + dur * 0.55);
+    g.gain.linearRampToValueAtTime(0, at + dur);
+    src.stop(at + dur + 0.05);
+  }
+  return true;
+}
+
 /* ---------- the ping ---------- */
-const ring = { on: false, t: 0, beam: 0, half: PI + 1, front: 0 };
+const ring = { on: false, t: 0, beam: 0, half: PI + 1, front: 0, power: 0 };
 const pending = [];
-function ping(brg = null) {
+// Delayed events: answers, counter-pings and the first ping after boot.
+const later = [];
+const strobe = { b: 0, a: 0 };
+function ping(brg = null, power = 0) {
+  if (boot.phase !== 'run') { endBoot(); return; }
   const omni = brg == null;
-  ring.on = true; ring.t = 0; ring.front = 0;
+  ring.on = true; ring.t = 0; ring.front = 0; ring.power = power;
   ring.beam = omni ? 0 : brg; ring.half = omni ? PI + 1 : 17 * D2R;
   maybeOdd();
   const R = rangeM();
@@ -615,29 +764,188 @@ function ping(brg = null) {
     const vr = (c.vel[0] * dx + c.vel[1] * dy) / d;
     pending.push({ c, at: (d / R) * RING_T, d, b, vr, done: false });
   }
+  for (const e of pending) {
+    // A whale pinged on its bearing sings back.
+    if (e.c.kind === 2 && !omni) later.push({ at: clock + e.at + 0.9, fn: whaleAnswers });
+    // A submarine hears the ping and answers with its own.
+    if (e.c.sub && !e.c.alerted) { e.c.alerted = 'soon'; later.push({ at: clock + e.at + rnd(1.3, 2.4), fn: () => counterPing(e.c) }); }
+  }
+  if (power > 0) say(`POWER PING   ${'▮'.repeat(1 + Math.round(power * 4))}`);
   const v = voices();
   if (v) {
     const now = T.now() + 0.02;
-    v.ping.triggerAttackRelease(1480, 0.5, now);
-    v.ping.frequency.setValueAtTime(1500, now);
-    v.ping.frequency.exponentialRampToValueAtTime(1440, now + 0.9);
-    v.verb.triggerAttackRelease(RING_T, now + 0.05, omni ? 0.9 : 0.5);
-    for (const e of pending) echoVoice(v, e, now + e.at);
+    // A beam ping is higher and shorter; a power ping is lower and louder.
+    const rate = omni ? 1 - 0.18 * power : 1.32;
+    if (!playSample(v, { rate, gain: (omni ? 0.85 : 0.7) * (1 + 0.4 * power), at: now, dur: omni ? 6 : 3.2 })) {
+      const f = 1480 * rate;
+      v.ping.triggerAttackRelease(f, 0.5, now);
+      v.ping.frequency.setValueAtTime(f * 1.013, now);
+      v.ping.frequency.exponentialRampToValueAtTime(f * 0.973, now + 0.9);
+    }
+    v.verb.triggerAttackRelease(RING_T, now + 0.05, (omni ? 0.6 : 0.35) * (1 + power));
+    for (const e of pending) echoVoice(v, e, now + e.at, rate, power);
   }
   wake();
 }
-function echoVoice(v, e, at) {
+function echoVoice(v, e, at, rate, power) {
   const R = rangeM();
-  const k = clamp(e.c.str / 2.4) * (1 / (1 + (e.d / R) ** 2 * 1.4));
+  const k = clamp(e.c.str / 2.4) * (1 / (1 + (e.d / R) ** 2 * 1.4)) * (1 + power);
   // Approaching targets ring sharp; retreating ones ring flat.
   const dop = 1 - clamp(e.vr / 400, -0.04, 0.04);
-  const f = 1480 * dop;
-  if (e.c.kind === 0) { v.echo.triggerAttackRelease(f, 0.55, at, 0.7 * k + 0.15); v.echo.triggerAttackRelease(f * 1.003, 0.4, at + 0.035, 0.3 * k); }
-  else if (e.c.kind === 1) for (let i = 0; i < 5; i++) v.echo.triggerAttackRelease(f * rnd(0.99, 1.01), 0.12, at + i * rnd(0.02, 0.05), 0.22 * k + 0.05);
-  else if (e.c.kind === 2) v.echo.triggerAttackRelease(f, 0.3, at, 0.45 * k + 0.1);
+  const r = rate * dop, kind = e.c.kind;
+  if (pingBuf) {
+    const g = 0.5 * k + 0.06;
+    if (kind === 0) { playSample(v, { rate: r, gain: g, at, dur: 1.3, wet: true }); playSample(v, { rate: r * 1.004, gain: g * 0.4, at: at + 0.035, dur: 0.8, wet: true }); }
+    else if (kind === 1) for (let i = 0; i < 5; i++) playSample(v, { rate: r * rnd(0.99, 1.01), gain: g * 0.45, at: at + i * rnd(0.02, 0.05), dur: 0.14, wet: true });
+    else if (kind === 2) playSample(v, { rate: r, gain: g * 0.8, at, dur: 0.6, wet: true });
+    else if (kind === 4) for (let i = 0; i < 2; i++) playSample(v, { rate: r * 2.1, gain: g * 0.7, at: at + i * 0.09, dur: 0.1, wet: true });
+    else { playSample(v, { rate: r * 0.82, gain: g * 1.1, at, dur: 1.8, wet: true }); playSample(v, { rate: r * 0.8, gain: g * 0.7, at: at + 0.18, dur: 1.6, wet: true }); }
+    return;
+  }
+  const f = 1480 * r;
+  if (kind === 0) { v.echo.triggerAttackRelease(f, 0.55, at, 0.7 * k + 0.15); v.echo.triggerAttackRelease(f * 1.003, 0.4, at + 0.035, 0.3 * k); }
+  else if (kind === 1) for (let i = 0; i < 5; i++) v.echo.triggerAttackRelease(f * rnd(0.99, 1.01), 0.12, at + i * rnd(0.02, 0.05), 0.22 * k + 0.05);
+  else if (kind === 2) v.echo.triggerAttackRelease(f, 0.3, at, 0.45 * k + 0.1);
+  else if (kind === 4) v.echo.triggerAttackRelease(f * 2.1, 0.08, at, 0.3 * k + 0.1);
   else { v.echo.triggerAttackRelease(f * 0.82, 1.6, at, 0.6 * k + 0.2); v.echo.triggerAttackRelease(f * 0.795, 1.4, at + 0.18, 0.5 * k + 0.1); }
 }
+function whaleAnswers() {
+  song.bout = true; song.boutT = rnd(20, 30);
+  song.phrase = Array.from({ length: 3 + Math.floor(Math.random() * 2) }, makeUnit);
+  song.ui = 0; song.ut = 0; song.gap = 0.2; song.reps = 0;
+  song.loud = clock + 20;
+  say('BIO   WHALE   ANSWERS');
+}
+function counterPing(c) {
+  if (!sea.contacts.includes(c)) return;
+  c.alerted = true;
+  const b = Math.atan2(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
+  strobe.b = b; strobe.a = 1;
+  say(`ВНИМАНИЕ!   ОБЛУЧЕНИЕ   ${pad3(wrapA(b) / D2R)}`, true);
+  say(`WARNING   ACTIVE SONAR   BRG ${pad3(wrapA(b) / D2R)}`, true);
+  // It turns away, runs and goes quiet.
+  c.vel = [Math.sin(b) * 16, Math.cos(b) * 16];
+  c.orient = b;
+  c.life = Math.min(c.life, 14);
+  const v = voices();
+  if (v) {
+    const now = T.now() + 0.02, pan = clamp(Math.sin(b), -0.9, 0.9);
+    if (!playSample(v, { rate: 0.78, gain: 0.6, at: now, dur: 4, pan })) v.ping.triggerAttackRelease(1150, 0.5, now);
+    for (let i = 0; i < 4; i++) v.beep.triggerAttackRelease(i % 2 ? 660 : 880, 0.12, now + 0.9 + i * 0.22);
+  }
+  wake();
+}
+// Holding still charges a power ping; the whine climbs with the charge.
+const charge = { on: false, t0: 0 };
+function chargeSound(on) {
+  const v = voices();
+  if (!v) return;
+  v.charge.frequency.rampTo(on ? 820 : 260, on ? 1.6 : 0.05);
+  v.chargeG.gain.rampTo(on ? 0.05 : 0, on ? 0.3 : 0.05);
+}
+const chargeLevel = () => clamp((clock - charge.t0) / 1.6, 0.2, 1);
+
+/* ---------- tracks ---------- */
+const tracks = [];
+function toScreen(c) {
+  const R = rangeM(), x = (c.pos[0] - sea.own[0]) / R * scope.rad, y = (c.pos[1] - sea.own[1]) / R * scope.rad;
+  return Math.hypot(x, y) < scope.rad ? [scope.cx + x, scope.cy + y] : null;
+}
+// Only a contact the sonar has heard can be tracked.
+function toggleTrack(x, y) {
+  let best = null, bd = 30 * dpr;
+  for (const c of sea.contacts) {
+    if (!c.seen) continue;
+    const p = toScreen(c);
+    if (!p) continue;
+    const d = Math.hypot(p[0] - x, p[1] - y);
+    if (d < bd) { bd = d; best = c; }
+  }
+  if (!best) return false;
+  const i = tracks.findIndex(t => t.c === best);
+  if (i >= 0) { say(`TRACK T${tracks[i].n}   DROPPED`); tracks.splice(i, 1); }
+  else {
+    const n = [1, 2, 3, 4, 5].find(k => !tracks.some(t => t.n === k));
+    if (!n) return true;
+    tracks.push({ c: best, n });
+    say(`TRACK T${n}   ${kindOf(best)}`);
+  }
+  hudDirty = true;
+  wake();
+  return true;
+}
+
+/* ---------- boot ---------- */
+// The console boots in Russian: self-tests, then a loading bar.
+const boot = { phase: 'off', t0: 0, runAt: -1e9, beeps: 0 };
+const BOOT_LINES = [
+  ['ГАК «ОКУНЬ-7»   ВЕРСИЯ 4.12', ''],
+  ['ПРОВЕРКА ПАМЯТИ', 'НОРМА'],
+  ['АНТЕННА  48/48', 'НОРМА'],
+  ['ГИДРОФОНЫ', 'НОРМА'],
+  ['ИЗЛУЧАТЕЛЬ', 'ГОТОВ'],
+  ['СКОРОСТЬ ЗВУКА', '1497 М/С'],
+];
+const LINE_T = 0.3, BAR_T0 = BOOT_LINES.length * LINE_T + 0.15, BAR_T = 1.3;
+const bootLen = () => (reduce ? 1.2 : BAR_T0 + BAR_T + 0.8);
+function startBoot() {
+  powerT0 = clock;
+  boot.phase = 'text';
+  boot.t0 = clock + (reduce ? 0 : 0.9);
+  boot.beeps = 0;
+  hudDirty = true;
+  wake();
+}
+function endBoot() {
+  if (boot.phase === 'run') return;
+  if (boot.phase === 'off') startBoot();
+  powerT0 = Math.min(powerT0, clock - 0.9);
+  boot.phase = 'run';
+  boot.runAt = clock;
+  hudDirty = true;
+  later.push({ at: clock + 0.35, fn: () => { if (opts.mode === 'active' && !ring.on) ping(); } });
+  wake();
+}
+const bootLine = ([a, b]) => (b ? `${a} ${'.'.repeat(Math.max(2, 27 - a.length))} ${b}` : a);
+function drawBoot(c, Y) {
+  const e = reduce ? 99 : clock - boot.t0;
+  if (e < 0) return;
+  const lh = 21 * dpr;
+  c.font = `${Math.round(13 * dpr)}px ${MONO}`;
+  c.textAlign = 'left';
+  const lines = BOOT_LINES.map(bootLine);
+  const bw = Math.max(...lines.map(l => c.measureText(l).width), c.measureText('ЗАГРУЗКА  [████████████████████]  100%').width);
+  const x0 = Math.max(14 * dpr, (W - bw) / 2);
+  let y = H / 2 - (lines.length + 3) * lh / 2;
+  let typed = 0;
+  lines.forEach((l, i) => {
+    const n = Math.floor((e - i * LINE_T) * 90);
+    if (n <= 0) return;
+    if (n >= l.length) typed++;
+    c.fillStyle = grey(i === 0 ? 0.9 : 0.7);
+    c.fillText(l.slice(0, n), x0, y + i * lh);
+  });
+  // A soft beep marks each finished line.
+  const v = typed > boot.beeps ? voices() : null;
+  if (typed > boot.beeps) { boot.beeps = typed; if (v) v.beep.triggerAttackRelease(1320, 0.03, T.now() + 0.01); }
+  y += (lines.length + 0.6) * lh;
+  if (e >= BAR_T0) {
+    const q = clamp((e - BAR_T0) / BAR_T);
+    // The bar stalls once, as old loaders do.
+    const p = reduce ? 1 : q < 0.45 ? q * 1.2 : q < 0.6 ? 0.54 : 0.54 + (q - 0.6) / 0.4 * 0.46;
+    const cells = Math.round(p * 20);
+    c.fillStyle = grey(0.8);
+    c.fillText(`ЗАГРУЗКА  [${'█'.repeat(cells)}${'░'.repeat(20 - cells)}]  ${String(Math.round(p * 100)).padStart(3, ' ')}%`, x0, y);
+  }
+  if (e >= BAR_T0 + BAR_T) {
+    c.fillStyle = grey(0.9);
+    const blink = Math.floor(clock * 2.5) % 2 ? '' : ' ▌';
+    c.fillText(`РЕЖИМ: ${opts.mode === 'active' ? 'АКТИВНЫЙ' : 'ПАССИВНЫЙ'}${blink}`, x0, y + lh * 1.3);
+  }
+}
+
 function knock() {
+  if (boot.phase !== 'run') { endBoot(); return; }
   knockAt = clock;
   const v = voices();
   if (v) {
@@ -650,9 +958,9 @@ function knock() {
 
 /* ---------- readouts ---------- */
 const readouts = [];
-function say(text) {
-  readouts.push({ text, born: clock });
-  while (readouts.length > 3) readouts.shift();
+function say(text, warn = false) {
+  readouts.push({ text, born: clock, warn });
+  while (readouts.length > 4) readouts.shift();
   hudDirty = true;
 }
 const pad3 = n => String(Math.round(n) % 360).padStart(3, '0');
@@ -679,17 +987,29 @@ let hudDirty = true, hudFade = false;
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const grey = v => `rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})`;
 let cursorF = -1;
+// The cursor snaps to a known line and names it.
+function identify(f) {
+  const tol = spanHz() * 0.012;
+  const cand = [[60, 'OWN SHIP'], [180, 'OWN SHIP'], [400, 'OWN SHIP  PUMP']];
+  if (prop.amp > 0.15) for (let k = 1; k <= 18; k++) cand.push([k * prop.f1, k % prop.blades === 0 ? `BLADE RATE  x${k / prop.blades}` : `SHAFT  x${k}`]);
+  if (song.amp > 0.1) for (let h = 1; h <= 4; h++) cand.push([song.f * h, h === 1 ? 'BIO  WHALE' : `BIO  WHALE  H${h}`]);
+  let best = null, bd = tol;
+  for (const [cf, name] of cand) { const d = Math.abs(cf - f); if (d < bd) { bd = d; best = [cf, name]; } }
+  return best;
+}
 function drawHud() {
   hudDirty = false;
   hud.width = W; hud.height = H;
   const c = hctx, Y = y => H - y;
   c.clearRect(0, 0, W, H);
   c.lineWidth = Math.max(1, dpr);
-  const fs = Math.round(10.5 * dpr);
+  const fs = Math.round(12 * dpr);
   c.font = `${fs}px ${MONO}`;
   c.textBaseline = 'middle';
   const top = H - 16 * dpr;
-  if (opts.mode === 'active') {
+  if (boot.phase !== 'run') {
+    drawBoot(c, Y);
+  } else if (opts.mode === 'active') {
     const { cx, cy, rad } = scope;
     const R = rangeM();
     c.strokeStyle = grey(0.55);
@@ -733,6 +1053,27 @@ function drawHud() {
     c.fill();
     c.strokeStyle = grey(0.6);
     c.beginPath(); c.moveTo(cx - 4 * dpr, Y(cy)); c.lineTo(cx + 4 * dpr, Y(cy)); c.moveTo(cx, Y(cy) - 4 * dpr); c.lineTo(cx, Y(cy) + 4 * dpr); c.stroke();
+    // Track brackets follow their contacts.
+    for (let i = tracks.length - 1; i >= 0; i--) if (!sea.contacts.includes(tracks[i].c)) tracks.splice(i, 1);
+    c.strokeStyle = grey(0.85); c.fillStyle = grey(0.85);
+    c.textAlign = 'left';
+    for (const t of tracks) {
+      const p = toScreen(t.c);
+      if (!p) continue;
+      const bx = p[0], by = Y(p[1]), q = 9 * dpr, l = 4 * dpr;
+      c.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        c.moveTo(bx + sx * q, by + sy * q - sy * l); c.lineTo(bx + sx * q, by + sy * q); c.lineTo(bx + sx * q - sx * l, by + sy * q);
+      }
+      c.stroke();
+      c.fillText(`T${t.n}`, bx + q + 3 * dpr, by - q);
+    }
+    if (charge.on) {
+      const cells = Math.round(chargeLevel() * 12);
+      c.textAlign = 'center';
+      c.fillStyle = grey(0.85);
+      c.fillText(`POWER  [${'█'.repeat(cells)}${'░'.repeat(12 - cells)}]`, cx, Y(cy - rad * 0.55));
+    }
     c.textAlign = 'left';
     c.fillStyle = grey(0.7);
     c.fillText(`ACTIVE   RNG ${(R / 1000).toFixed(1)} KM   HDG ${pad3(wrapA(h) / D2R)}`, 14 * dpr, Y(top));
@@ -761,14 +1102,15 @@ function drawHud() {
       c.fillText(s ? `-${s}s` : '0', x0 - 8 * dpr, Y(y));
     }
     if (cursorF >= 0 && cursorF <= span) {
-      const x = x0 + (cursorF / span) * (x1 - x0);
+      const id = identify(cursorF), cf = id ? id[0] : cursorF;
+      const x = x0 + (clamp(cf / span)) * (x1 - x0);
       c.strokeStyle = grey(0.5);
       c.setLineDash([3 * dpr, 4 * dpr]);
       c.beginPath(); c.moveTo(x, Y(y1)); c.lineTo(x, Y(y0)); c.stroke();
       c.setLineDash([]);
       c.fillStyle = grey(0.75);
       c.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
-      c.fillText(`${Math.round(cursorF)} HZ`, x + (x > (x0 + x1) / 2 ? -6 : 6) * dpr, Y(y1) + 12 * dpr);
+      c.fillText(id ? `${Math.round(cf)} HZ   ${id[1]}` : `${Math.round(cf)} HZ`, x + (x > (x0 + x1) / 2 ? -6 : 6) * dpr, Y(y1) + 12 * dpr);
     }
     c.textAlign = 'left';
     c.fillStyle = grey(0.7);
@@ -784,17 +1126,23 @@ function drawHud() {
   // Contact reports fade out after a few seconds.
   hudFade = false;
   c.textAlign = 'left';
-  if (opts.mode === 'active') readouts.forEach((r, i) => {
-    const age = clock - r.born, a = clamp(1 - (age - 5) / 2);
+  if (opts.mode === 'active' && boot.phase === 'run') readouts.forEach((r, i) => {
+    const life = r.warn ? 8 : 5, age = clock - r.born;
+    let a = clamp(1 - (age - life) / 2);
     if (a <= 0) return;
     hudFade = true;
-    c.fillStyle = grey(0.8 * a);
-    c.fillText(r.text, 14 * dpr, Y(top - (1.4 + i) * 15 * dpr));
+    // Warnings blink.
+    if (r.warn && Math.floor(clock * 3) % 2) a *= 0.4;
+    c.fillStyle = grey((r.warn ? 0.95 : 0.8) * a);
+    c.fillText(r.text, 14 * dpr, Y(top - (1.4 + i) * 17 * dpr));
   });
   gl.bindTexture(gl.TEXTURE_2D, hudTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hud);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  // Mipmaps feed the wide halo round the graticule.
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 }
 
 /* ---------- passes ---------- */
@@ -804,7 +1152,7 @@ function decayPass(dt) {
   gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
   gl.uniform1i(P.decay.u.uSrc, 0);
-  gl.uniform1f(P.decay.u.uK, Math.exp(-dt / tau()));
+  gl.uniform2f(P.decay.u.uDecay, Math.exp(-dt / PHOS.tf), Math.exp(-dt / ts()));
   gl.uniform1f(P.decay.u.uEps, FLOAT ? 0.0006 * dt : 0.6 / 255);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   ai = 1 - ai;
@@ -823,7 +1171,7 @@ function excitePass(r0, r1) {
   gl.uniform1f(u.uRange, rangeM());
   gl.uniform1f(u.uSeed, sea.seed);
   gl.uniform1f(u.uTime, clock);
-  gl.uniform1f(u.uGain, 1);
+  gl.uniform2f(u.uW, 1 + ring.power * 0.8, SLOW * (1 + ring.power * 0.8));
   const n = Math.min(MAXC, sea.contacts.length);
   cBuf.fill(0); kBuf.fill(0);
   sea.contacts.slice(0, n).forEach((c, i) => {
@@ -844,7 +1192,7 @@ function quadPass(prog, dst, src, set) {
   set(prog.u);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
-let switchT = 1, rowFrac = 0;
+let rowFrac = 0;
 function render() {
   if (hudDirty) drawHud();
   // The frame holds the light of the current display.
@@ -860,6 +1208,8 @@ function render() {
   gl.uniform4f(u.uBox, box.x0, box.y0, box.x1, box.y1);
   gl.uniform1f(u.uRad, scope.rad);
   gl.uniform1f(u.uFront, ring.on ? ring.front : -1);
+  gl.uniform1f(u.uShow, boot.phase === 'run' ? clamp((clock - boot.runAt) / 0.25) : 0);
+  gl.uniform2f(u.uStrobe, strobe.b, strobe.a);
   gl.uniform1f(u.uBeam, ring.beam); gl.uniform1f(u.uHalf, ring.half);
   gl.uniform1f(u.uDpr, dpr);
   gl.uniform1f(u.uHead, head + (reduce ? 0 : rowFrac));
@@ -875,30 +1225,41 @@ function render() {
   const s = P.screen.u;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
   gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.tex); gl.uniform1i(s.uFrame, 0);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex); gl.uniform1i(s.uBloom, 1);
-  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, hudTex); gl.uniform1i(s.uHud, 2);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, hudTex);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, glass.tex);
+  gl.uniform1i(s.uAccum, 0); gl.uniform1i(s.uBloom, 1); gl.uniform1i(s.uHud, 2); gl.uniform1i(s.uGlass, 3);
   gl.uniform2f(s.uRes, W, H);
-  gl.uniform3fv(s.uTint, TINT); gl.uniform3fv(s.uHot, HOT);
-  gl.uniform1f(s.uCurve, opts.curve === 'curved' ? 0.06 : 0);
-  gl.uniform1f(s.uScan, opts.scan === 'on' && dpr >= 1 ? 1 : 0);
-  gl.uniform1f(s.uTime, clock);
-  gl.uniform1f(s.uFlick, reduce ? 1 : 1 + 0.012 * Math.sin(clock * 113) + 0.008 * Math.sin(clock * 7.7));
-  gl.uniform1f(s.uGrain, reduce ? 0.5 : (clock * 7.13) % 1);
-  const sw = switchT < 0.3 && !reduce ? Math.sin(PI * switchT / 0.3) : 0;
-  gl.uniform1f(s.uSwitch, sw);
+  gl.uniform1f(s.uDpr, dpr); gl.uniform1f(s.uTime, clock % 1000);
+  gl.uniform1f(s.uWarp, WARP); gl.uniform1f(s.uFringe, FRINGE);
+  gl.uniform1f(s.uPower, power());
+  gl.uniform1f(s.uMask, 0.35);
+  gl.uniform1f(s.uScan, opts.scan === 'on' ? 1 : 0);
+  gl.uniform1f(s.uMotion, reduce ? 0 : 1);
+  gl.uniform3fv(s.uFlash, PHOS.flash); gl.uniform3fv(s.uGlow, PHOS.glow); gl.uniform3fv(s.uGain, PHOS.gain);
+  gl.uniform3fv(s.uTint, TINT); gl.uniform3fv(s.uHotCol, PHOS.hot); gl.uniform3fv(s.uDark, PHOS.dark);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.activeTexture(gl.TEXTURE0);
 }
 
 /* ---------- loop ---------- */
-let raf = 0, last = 0, visible = true, clock = 0, lastLight = -1e9, ready = false, pendingMode = null;
-const idle = () => opts.mode === 'active' && !ring.on && clock - lastLight > tau() * 6 && !hudFade && switchT >= 0.3;
+let raf = 0, last = 0, visible = true, clock = 0, lastLight = -1e9, ready = false, lag = 0;
+// The tube powers on when the intro clears; until then it stays dark.
+let powerT0 = 1e9;
+const power = () => (reduce ? 1 : clamp((clock - powerT0) / 0.9));
+const idle = () => boot.phase === 'run' && opts.mode === 'active' && !ring.on && clock - lastLight > ts() * 6 && !hudFade && power() >= 1 && !later.length && strobe.a < 0.01 && !charge.on;
+// The console draws at its own refresh rate, not the screen's.
 function frameFn(now) {
   raf = 0;
-  const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+  const dt = last ? Math.min(0.25, (now - last) / 1000) : 0;
   last = now;
-  step(dt);
-  render();
+  lag += dt;
+  if (lag >= 1 / DISPLAY_HZ - 0.002) {
+    step(Math.min(lag, 0.1));
+    lag = 0;
+    render();
+  }
   if (visible && !idle()) raf = requestAnimationFrame(frameFn);
   else kit.rest(idle);
 }
@@ -908,11 +1269,13 @@ function step(dt) {
   clock += dt;
   stepSea(dt); stepSong(dt); stepProp(dt);
   steerVoices();
-  if (switchT < 0.3) {
-    switchT += dt;
-    // The display changes at the fold, mid-switch.
-    if (pendingMode && switchT >= 0.15) { applyMode(pendingMode); pendingMode = null; }
-  }
+  for (let i = later.length - 1; i >= 0; i--) if (clock >= later[i].at) { const f = later[i].fn; later.splice(i, 1); f(); }
+  strobe.a = Math.max(0, strobe.a - dt / 3);
+  if (boot.phase === 'text') { hudDirty = true; if (clock - boot.t0 > bootLen()) endBoot(); }
+  if (charge.on) hudDirty = true;
+  // Track brackets and the cursor label follow at four frames a second.
+  const tick4 = Math.floor(clock * 4) !== Math.floor((clock - dt) * 4);
+  if (tick4 && ((tracks.length && opts.mode === 'active') || (cursorF >= 0 && opts.mode === 'sono'))) hudDirty = true;
   decayPass(dt);
   if (ring.on) {
     ring.t += dt;
@@ -924,7 +1287,7 @@ function step(dt) {
     for (const e of pending) {
       if (e.done || ring.t < e.at) continue;
       e.done = true;
-      if (e.c.str > 0.2) say(`CONTACT   ${pad3(wrapA(e.b) / D2R)}   ${(e.d / 1000).toFixed(2)} KM   ${KIND[e.c.kind]}`);
+      if (e.c.str > 0.2) { e.c.seen = clock; say(`CONTACT   ${pad3(wrapA(e.b) / D2R)}   ${(e.d / 1000).toFixed(2)} KM   ${kindOf(e.c)}`); }
     }
     if (ring.t >= RING_T) { ring.on = false; ring.front = 0; }
   }
@@ -955,10 +1318,12 @@ function applyMode(m) {
   syncSlider();
   hudDirty = true;
 }
+// A switch re-opens the raster from a line, as the tube resyncs.
 function setMode(m) {
   save('mode', m);
-  if (reduce || !ready) { applyMode(m); render(); wake(); return; }
-  pendingMode = m; switchT = 0;
+  applyMode(m);
+  if (ready && power() >= 1) powerT0 = clock - 0.9 * 0.22;
+  render();
   wake();
 }
 
@@ -968,9 +1333,14 @@ function resize() {
   dpr = fit.dpr;
   if (fit.W !== W || fit.H !== H || !acc.length) {
     W = fit.W; H = fit.H;
-    acc.forEach(drop); blm.forEach(drop); if (frame) drop(frame);
+    acc.forEach(drop); blm.forEach(drop); if (frame) drop(frame); if (glass) drop(glass);
     acc = [target(W, H), target(W, H)]; ai = 0;
     frame = target(W, H);
+    glass = target(W, H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glass.fb); gl.viewport(0, 0, W, H);
+    gl.useProgram(P.glass.p); gl.bindVertexArray(quadVao);
+    gl.uniform1f(P.glass.u.uDpr, dpr);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     blm = [target(Math.max(1, W >> 1), Math.max(1, H >> 1)), target(Math.max(1, W >> 1), Math.max(1, H >> 1))];
   }
   measure();
@@ -979,10 +1349,14 @@ function resize() {
 }
 
 /* ---------- input ---------- */
-const pt = { down: false, drag: false, x: 0, y: 0, a: 0 };
+const pt = { down: false, drag: false, x: 0, y: 0, a: 0, timer: 0, charging: false };
+let lastTap = { t: -1e9, x: 0, y: 0 };
+// The pointer maps through the same slight bulge as the face.
 function glXY(e) {
-  const r = canvas.getBoundingClientRect();
-  return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr];
+  const r = canvas.getBoundingClientRect(), as = r.width / r.height;
+  const x = ((e.clientX - r.left) / r.width - 0.5) * as, y = 0.5 - (e.clientY - r.top) / r.height;
+  const f = 1 + WARP * (x * x + y * y);
+  return [(x * f / as + 0.5) * W, (y * f + 0.5) * H];
 }
 const angleAt = (x, y) => Math.atan2(x - scope.cx, y - scope.cy);
 function tune(x) {
@@ -994,11 +1368,21 @@ stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   stage.setPointerCapture?.(e.pointerId);
   const [x, y] = glXY(e);
-  Object.assign(pt, { down: true, drag: false, x, y, a: angleAt(x, y) });
+  Object.assign(pt, { down: true, drag: false, x, y, a: angleAt(x, y), charging: false });
+  clearTimeout(pt.timer);
+  // Holding still for a moment starts the charge.
+  pt.timer = setTimeout(() => {
+    if (!pt.down || pt.drag || opts.mode !== 'active' || boot.phase !== 'run') return;
+    pt.charging = true; charge.on = true; charge.t0 = clock;
+    chargeSound(true);
+    hudDirty = true;
+    wake();
+  }, 320);
 });
 stage.addEventListener('pointermove', e => {
   if (!pt.down) return;
   const [x, y] = glXY(e);
+  if (pt.charging) return;
   if (!pt.drag && Math.hypot(x - pt.x, y - pt.y) > 7 * dpr) { pt.drag = true; stage.classList.add('held'); }
   if (!pt.drag) return;
   if (opts.mode === 'active') {
@@ -1013,16 +1397,33 @@ stage.addEventListener('pointermove', e => {
 function release(e) {
   if (!pt.down) return;
   pt.down = false;
+  clearTimeout(pt.timer);
   stage.classList.remove('held');
+  if (pt.charging) {
+    pt.charging = false;
+    const lvl = chargeLevel();
+    charge.on = false;
+    chargeSound(false);
+    ping(null, lvl);
+    return;
+  }
   if (pt.drag) return;
+  if (boot.phase !== 'run') { endBoot(); return; }
   if (opts.mode === 'sono') { knock(); return; }
   const [x, y] = glXY(e);
+  // A second tap on the same spot marks or drops a track.
+  const nowMs = performance.now();
+  if (nowMs - lastTap.t < 350 && Math.hypot(x - lastTap.x, y - lastTap.y) < 24 * dpr) {
+    lastTap.t = -1e9;
+    if (toggleTrack(x, y)) return;
+  }
+  lastTap = { t: nowMs, x, y };
   // A tap near the centre pings all round; elsewhere it pings that bearing.
   const r = Math.hypot(x - scope.cx, y - scope.cy);
   ping(r < scope.rad * 0.12 ? null : angleAt(x, y));
 }
 stage.addEventListener('pointerup', release);
-stage.addEventListener('pointercancel', () => { pt.down = false; stage.classList.remove('held'); });
+stage.addEventListener('pointercancel', () => { pt.down = false; clearTimeout(pt.timer); if (pt.charging) { pt.charging = false; charge.on = false; chargeSound(false); } stage.classList.remove('held'); });
 stage.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Enter') {
     e.preventDefault();
@@ -1047,7 +1448,6 @@ function popover(boxEl, btn) {
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
 choices(document.getElementById('mode'), v => setMode(v)).set(opts.mode);
 choices(document.getElementById('persist'), v => { opts.persist = v; save('persist', v); wake(); }).set(opts.persist);
-choices(document.getElementById('curve'), v => { opts.curve = v; save('curve', v); render(); wake(); }).set(opts.curve);
 choices(document.getElementById('scan'), v => { opts.scan = v; save('scan', v); render(); wake(); }).set(opts.scan);
 choices(document.getElementById('grid'), v => { opts.grid = v; save('grid', v); hudDirty = true; render(); wake(); }).set(opts.grid);
 sliderEl.addEventListener('input', () => {
@@ -1071,11 +1471,10 @@ ready = true;
 markReady();
 requestAnimationFrame(() => canvas.classList.add('on'));
 whenVisible(stage, v => { visible = v; if (v) wake(); else kit.rest(() => true); });
-// The scope opens with one ping once the intro has cleared.
+// The console boots once the intro has cleared, then pings once.
 const introEl = document.querySelector('.intro');
-const firstPing = () => setTimeout(() => { if (opts.mode === 'active' && !ring.on) ping(); }, 350);
-if (!introEl) firstPing();
-else new MutationObserver((_, mo) => { if (!document.querySelector('.intro')) { mo.disconnect(); firstPing(); } }).observe(document.body, { childList: true });
+if (!introEl) startBoot();
+else new MutationObserver((_, mo) => { if (!document.querySelector('.intro')) { mo.disconnect(); startBoot(); } }).observe(document.body, { childList: true });
 wake();
 </script>
 </body>
