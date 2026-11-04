@@ -138,12 +138,14 @@
 } }
 </script>
 <script type="module">
-import { initPage, audioKit, choices, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, audioKit, choices, reduced, onReducedChange, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'domino' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
 
 let reduce = reduced();
 onReducedChange(on => { reduce = on; if (reduce) { intro = 0; wake(); } });
@@ -1803,7 +1805,7 @@ function layout() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   // Budget caps drawing-buffer pixels, so big screens keep their frame rate.
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2, Math.sqrt(budget / (w * h))));
+  renderer.setPixelRatio(pixelRatio(w, h, { budget }));
   renderer.setSize(w, h, false);
   aspect = w / h;
   span = clamp(3.5 + 6.2 * aspect, 8.5, 15.5);
@@ -2259,6 +2261,7 @@ async function init() {
   if (saved === 'iso') { setView(true, false); lens = 1; cam.pitch = goal.pitch; cam.yaw = goal.yaw; }
   layout();
   new ResizeObserver(layout).observe(panel);
+  onQuality(layout);
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; wake(); }).observe(panel);
   preset(nowS() + 0.25);
   syncChips();

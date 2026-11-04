@@ -61,8 +61,10 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 initPage({ id: 'cube' });
+// Settings holds the site-wide Quality choice.
+qualitySetting();
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const hint = stage.querySelector('.hint'), fail = stage.querySelector('.fail');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -475,8 +477,8 @@ function fit() {
   if (!w || !h || !renderer) return;
   W = w;
   H = h;
-  // DPR stays under 1.5 and about 1.4 million pixels.
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(1.4e6 / (w * h))));
+  // Standard keeps DPR under 1.5 and about 1.4 million pixels.
+  renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: 1.5 }));
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   // The open ring reaches 1.9 units.
@@ -538,6 +540,7 @@ async function build(RBox) {
   ready = true;
   fit();
   new ResizeObserver(fit).observe(stage);
+  onQuality(fit);
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', e => onUp(e, true));

@@ -81,12 +81,14 @@ import { converter } from 'culori';
 const toRgbC = converter('rgb');
 import { gsap } from 'gsap';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb } from '../shared/stim.js';
+import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'pop' });
+// Settings holds the site-wide Quality choice.
+qualitySetting();
 
 const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, SQ3 = Math.sqrt(3);
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
@@ -764,7 +766,7 @@ function centreCell() {
 }
 // Force rebuilds the grid even at the same size.
 function layout(force) {
-  const w = field.clientWidth, h = field.clientHeight, d = Math.min(devicePixelRatio || 1, 2);
+  const w = field.clientWidth, h = field.clientHeight, d = pixelRatio(w, h, { budget: Infinity });
   if (!w || !h || (!force && w === W && h === H && d === dpr)) return;
   W = w; H = h; dpr = d;
   cv.width = Math.round(w * d); cv.height = Math.round(h * d);
@@ -2001,6 +2003,8 @@ new MutationObserver(retheme).observe(document.documentElement, { attributes: tr
 tokens();
 layout();
 new ResizeObserver(layout).observe(field);
+// A new quality changes the pixel ratio; the sheet stays.
+onQuality(() => layout());
 // Scrolling moves the field under a still mouse, so hover lets go.
 addEventListener('scroll', () => { if (hover) { hover = null; hoverCell = null; wake(); } }, { passive: true });
 

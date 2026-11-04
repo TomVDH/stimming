@@ -23,10 +23,11 @@ Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-li
 - [x] Easter eggs: power ping, whale answers, sub counter-ping, tracks, cursor names lines, rare duck
 - [x] Surface ships with wakes, a stalking enemy sub, and the Cranky Auntie («Сварливая тётушка»)
 - [x] Calmer audio, ghosting, sharper mask, brighter text, on-screen keycaps
-- [x] Bearing (BTR) and Sounder (echogram) modes; passive fans on the scope; vaguer sub
+- [x] Bearing (BTR) mode; passive fans on the scope; vaguer sub
+- [ ] Sounder (echogram): built, parked by Tom 2026-11-04 (`SOUNDER = false`)
 - [x] Dolphins, diving whale, bait schools, sub below the layer
-- [x] Real MBARI MARS loops (CC BY 4.0): sea, whale, ship
-- [ ] Ask Tom what failed on the Sonogram (it scrolls in headless)
+- [x] Real MBARI MARS loops tried, then reverted by Tom: they did not work in the mix
+- [x] Sonogram tied to the sea: no phantom prop; lines per contact with Doppler; sub motor and pump lines; whale by range; bearing tags
 - [ ] Checkpoint: Tom reviews look and sound on a real device
 - [ ] Record the session cost
 

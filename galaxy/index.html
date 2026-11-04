@@ -122,12 +122,14 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, oklchLinear } from '../shared/stim.js';
+import { initPage, sound, oklchLinear, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'galaxy' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
 
 const panel = document.getElementById('space');
 // The first pass waits for the intro to clear, so nobody misses it.
@@ -1191,10 +1193,10 @@ async function start() {
   }
 
   /* ---------- size ---------- */
-  // DPR stays under 1.5 and about 1.4 million pixels.
+  // Standard keeps DPR under 1.5 and about 1.4 million pixels.
   function resize() {
     const w = panel.clientWidth || 1, h = panel.clientHeight || 1;
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, lowDpr ? 1 : 1.5, Math.sqrt(1.4e6 / (w * h))));
+    renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: 1.5, low: lowDpr }));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -1900,6 +1902,7 @@ async function start() {
   canvas.setAttribute('aria-hidden', 'true');
   panel.prepend(canvas);
   new ResizeObserver(resize).observe(panel);
+  onQuality(resize);
 
   /* ---------- star counts drive the layers and the hole ---------- */
   let sampleAt = 0, sampling = false, eatenLast = -1, eatenAt = 0;

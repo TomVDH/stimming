@@ -82,8 +82,10 @@
 } }
 </script>
 <script type="module">
-import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 initPage({ id: 'pendulum' });
+// Settings holds the site-wide Quality choice.
+qualitySetting();
 const panel = document.getElementById('stage');
 let reduce = reduced();
 onReducedChange(on => { reduce = on; });
@@ -727,7 +729,7 @@ function fitRenderer(cap, onSize, budget = Infinity) {
   const apply = () => {
     const w = panel.clientWidth, h = panel.clientHeight;
     if (!w || !h) return;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: cap, budget, low: lowDpr }));
     renderer.setSize(w, h, false);
     onSize(w, h);
   };
@@ -735,6 +737,8 @@ function fitRenderer(cap, onSize, budget = Infinity) {
   ro.observe(panel);
   if (barEl) ro.observe(barEl);
   addEventListener('perf-low', apply);
+  // A new quality setting re-fits the renderer.
+  onQuality(apply);
   apply();
 }
 // Points that must stay in view: bar ends and every ball's swing.

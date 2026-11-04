@@ -61,7 +61,6 @@
         <button class="chip" type="button" data-value="active" aria-pressed="true">Active</button>
         <button class="chip" type="button" data-value="sono" aria-pressed="false">Sonogram</button>
         <button class="chip" type="button" data-value="btr" aria-pressed="false">Bearing</button>
-        <button class="chip" type="button" data-value="sounder" aria-pressed="false">Sounder</button>
       </div>
       <label class="slider"><span id="sliderLab">Range</span><input type="range" id="slider" min="0" max="1" step="0.01" value="0.5" aria-label="Range"></label>
       <div class="actions">
@@ -125,6 +124,8 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
 initPage({ id: 'sonar' });
 
+// The Sounder is parked: its chip is off until Tom brings it back.
+const SOUNDER = false;
 const PI = Math.PI, TAU = PI * 2, D2R = PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -138,7 +139,7 @@ const saved = k => { try { return localStorage.getItem(`stimming.sonar.${k}`); }
 const save = (k, v) => { try { localStorage.setItem(`stimming.sonar.${k}`, String(v)); } catch { /* storage is optional */ } };
 const num = (k, d) => { const v = saved(k); return v == null || isNaN(+v) ? d : +v; };
 const opts = {
-  mode: ['active', 'sono', 'btr', 'sounder'].includes(saved('mode')) ? saved('mode') : 'active',
+  mode: ['active', 'sono', 'btr', ...(SOUNDER ? ['sounder'] : [])].includes(saved('mode')) ? saved('mode') : 'active',
   gain: num('gain', 0.5),
   depth: num('depth', 0.45),
   range: num('range', 0.55),
@@ -598,14 +599,21 @@ const KIND = ['WRECK', 'BIO  SCHOOL', 'BIO', 'UNKNOWN', 'BIO?  DUCK', 'MECH  SUR
 const kindOf = c => (c.alerted === true ? (c.sub ? 'SUBMARINE' : c.kind === 6 ? 'CRANKY AUNTIE' : KIND[c.kind]) : KIND[c.kind]);
 // Ships, subs and the Auntie carry tonals; level falls off with distance.
 function tonalAmp(c) {
-  const d = Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
-  return c.ton.level / (1 + (d / 900) ** 2) * (c.str0 ? c.str / c.str0 : 1);
+  return c.ton.level * hearF(c) * (c.str0 ? c.str / c.str0 : 1);
+}
+// Passive arrays hear far: level falls off gently with range.
+function hearF(c) { return 1 / (1 + (Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]) / 1700) ** 2); }
+// Closing speed shifts each line; the shift is exaggerated so it shows.
+function doppler(c) {
+  const dx = c.pos[0] - sea.own[0], dy = c.pos[1] - sea.own[1], d = Math.hypot(dx, dy) || 1;
+  const v = c.vel || [0, 0], rx = v[0] - Math.sin(sea.head) * sea.speed, ry = v[1] - Math.cos(sea.head) * sea.speed;
+  return 1 + clamp(-(rx * dx + ry * dy) / d * 0.004, -0.06, 0.06);
 }
 const bearingTo = c => Math.atan2(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
 // The shader stretches a hull along orient; motion runs along hdg.
 function setCourse(c, hdg, speed) { c.hdg = hdg; c.orient = PI / 2 - hdg; c.vel = [Math.sin(hdg) * speed, Math.cos(hdg) * speed]; }
 function makeSub(pos, life) {
-  const c = { kind: 3, sub: true, stalk: true, pos, a: 55, b: 7, str: 1.3, str0: 1.3, life, depth: rnd(60, 200), dTarget: 120, dT: rnd(20, 40), ton: { f1: rnd(13, 18), blades: 7, level: 0.4 }, id: Math.random() * 99 };
+  const c = { kind: 3, sub: true, stalk: true, pos, a: 55, b: 7, str: 1.3, str0: 1.3, life, depth: rnd(60, 200), dTarget: 120, dT: rnd(20, 40), ton: { f1: rnd(13, 18), blades: 7, level: 0.5, pump: rnd(260, 340) }, id: Math.random() * 99 };
   setCourse(c, Math.random() * TAU, 4);
   return c;
 }
@@ -649,7 +657,6 @@ function shuffle() {
     c.id = i * 7.3 + sea.seed;
     if (c.depth == null) c.depth = c.kind === 1 ? rnd(20, 60) : c.kind === 5 ? 0 : c.kind === 0 ? null : 30;
   });
-  prop.brg = Math.random() * TAU;
   sea.baitT = rnd(8, 16);
   // One school waits just ahead and one lies in the track behind, so the sounder opens alive.
   for (const along of [rnd(120, 220), -rnd(250, 450)]) {
@@ -660,7 +667,6 @@ function shuffle() {
   sea.contacts = C;
   tracks.length = 0; later.length = 0; strobe.a = 0;
   sea.oddNext = 2 + Math.floor(Math.random() * 4);
-  prop.f1 = rnd(31, 46); prop.blades = 3 + Math.floor(Math.random() * 3); prop.amp = 0; prop.target = 0.8;
   song.bout = false; song.boutT = rnd(2, 8);
   readouts.length = 0;
   hudDirty = true;
@@ -787,13 +793,6 @@ function stepSong(dt) {
     }
   }
 }
-// A distant ship drifts in and out; its blades beat at a slow rate.
-const prop = { f1: 37, blades: 4, amp: 0, target: 0.8, wob: 0 };
-function stepProp(dt) {
-  if (Math.random() < dt / 25) prop.target = Math.random() < 0.25 ? 0 : rnd(0.35, 1);
-  prop.amp = lerp(prop.amp, prop.target, 1 - Math.exp(-dt / 6));
-  prop.wob += dt;
-}
 let knockAt = -1e9;
 // The whale only sings once it is well below the surface.
 function whaleGate() {
@@ -807,12 +806,11 @@ function passiveSources() {
     const d = Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
     let lvl = 0, spread = 0.06;
     // Passive arrays hear tonals far: level falls off gently with range.
-    if (c.ton) { lvl = c.ton.level / (1 + (d / 1700) ** 2) * (c.str0 ? c.str / c.str0 : 1) * (c.kind === 6 ? 1 : 1.2); if (c.kind === 6) spread = 0.12; if (c.sub) spread = 0.05; }
-    else if (c.kind === 2) lvl = song.amp * whaleGate() * 1.2 / (1 + (d / 1600) ** 2);
+    if (c.ton) { lvl = tonalAmp(c) * (c.kind === 6 ? 1 : 1.2); if (c.kind === 6) spread = 0.12; if (c.sub) spread = 0.05; }
+    else if (c.kind === 2) lvl = song.amp * whaleGate() * 1.2 * hearF(c);
     else if (c.kind === 7) lvl = (c.click ? 0.6 : 0.15) / (1 + (d / 1200) ** 2);
     if (lvl > 0.01) out.push({ c, brg: bearingTo(c), lvl, spread });
   }
-  if (prop.amp > 0.02) out.push({ c: null, brg: prop.brg, lvl: prop.amp * 0.3, spread: 0.1 });
   return out;
 }
 // The scope's passive fans refresh three times a second, with a little jitter.
@@ -954,25 +952,25 @@ function addLine(f, amp, width) {
   for (let i = lo; i <= hi; i++) { const g = (i - c) / width; rowF[i] += amp * Math.exp(-g * g); }
 }
 function makeRow(tt) {
-  const beat = 1 + 0.45 * Math.sin(TAU * prop.f1 / prop.blades / 9 * tt);
+  // Ships thrash broadband noise around 900 Hz, beating with their blades.
+  let cav = 0;
+  for (const c of sea.contacts) if (c.kind === 5) cav += tonalAmp(c) * 0.08 * (1 + 0.45 * Math.sin(TAU * c.ton.f1 / 9 * tt + (c.id || 0)));
   for (let i = 0; i < NBIN; i++) {
     const f = i * BIN_HZ;
     // Sea noise is louder low down; each bin speckles like real data.
-    const floor = 0.11 + 0.1 * Math.exp(-f / 300);
-    const cav = prop.amp * 0.07 * beat * Math.exp(-Math.pow((f - 900) / 900, 2));
-    rowF[i] = (floor + cav) * Math.min(3.2, -Math.log(Math.random() + 1e-6));
+    const floor = 0.09 + 0.08 * Math.exp(-f / 300);
+    rowF[i] = (floor + cav * Math.exp(-Math.pow((f - 900) / 900, 2))) * Math.min(3.2, -Math.log(Math.random() + 1e-6));
   }
   // Our own machinery hums at a few fixed lines.
-  addLine(60, 0.16, 0.7); addLine(180, 0.07, 0.7); addLine(400, 0.06, 0.8);
-  // Propeller tonals sit at multiples of the blade line and wander a little.
-  if (prop.amp > 0.02) {
-    for (let k = 1; k <= 18; k++) {
-      const f = k * prop.f1 * (1 + 0.002 * Math.sin(prop.wob * 0.3 + k));
-      addLine(f, prop.amp * (k % prop.blades === 0 ? 0.95 : 0.5) / Math.sqrt(k), 0.8);
-    }
+  addLine(60, 0.1, 0.7); addLine(180, 0.05, 0.7); addLine(400, 0.04, 0.8);
+  const wh = sea.contacts.find(c => c.kind === 2), wa = wh ? song.amp * whaleGate() * hearF(wh) : 0;
+  // A fast glide smears across the bins it swept since the last row.
+  const f0 = makeRow.wf ?? song.f;
+  makeRow.wf = song.f;
+  if (wa > 0.01) for (let h = 1; h <= 4; h++) {
+    const n = Math.max(1, Math.ceil(Math.abs(song.f - f0) * h / BIN_HZ));
+    for (let j = 0; j < n; j++) addLine(lerp(f0, song.f, (j + 0.5) / n) * h, wa * 1.2 / Math.pow(h, 1.2) / Math.sqrt(n), 1.2);
   }
-  const wg = whaleGate();
-  if (song.amp * wg > 0.01) for (let h = 1; h <= 4; h++) addLine(song.f * h, song.amp * wg * 1.5 / Math.pow(h, 1.2), 1.6);
   // Dolphins: click trains speckle the high band; whistles sweep through it.
   for (const c of sea.contacts) {
     if (c.kind !== 7) continue;
@@ -980,12 +978,14 @@ function makeRow(tt) {
     if (c.click) for (let i = 0; i < 40; i++) rowF[Math.floor((1500 + Math.random() * 2500) / BIN_HZ)] += a * 0.9 * Math.random();
     if (c.wh) { const f = lerp(c.wh.f0, c.wh.f1, c.wh.t / c.wh.dur); addLine(f, a * 0.9, 1.2); addLine(f * 2, a * 0.35, 1.2); }
   }
-  // Each ship, sub and Auntie paints its own blade lines.
+  // Each ship, sub and Auntie paints its own lines, shifted by its Doppler.
   for (const c of sea.contacts) {
     if (!c.ton) continue;
-    const a = tonalAmp(c);
+    const a = tonalAmp(c), dp = doppler(c);
     if (a < 0.02) continue;
-    for (let k = 1; k <= 16; k++) addLine(k * c.ton.f1 * (1 + 0.002 * Math.sin(tt * 0.3 + k + (c.id || 0))), a * (k % c.ton.blades === 0 ? 0.95 : 0.45) / Math.sqrt(k), 0.8);
+    for (let k = 1; k <= 16; k++) addLine(k * c.ton.f1 * dp * (1 + 0.0015 * Math.sin(tt * 0.3 + k + (c.id || 0))), a * (k % c.ton.blades === 0 ? 2.5 : 1.1) / Math.pow(k, 0.35), 0.8);
+    // A submarine hums with its motors and a coolant pump.
+    if (c.sub) { addLine(50 * dp, a * 2.4, 0.6); addLine(100 * dp, a * 1.4, 0.6); addLine(c.ton.pump * dp, a * 2, 0.6); }
     if (c.kind === 6) {
       // The Auntie rumbles low and groans on a slow sweep.
       for (let i = 0; i < 48; i++) rowF[i] += a * 0.35 * Math.random();
@@ -1012,8 +1012,6 @@ const kit = audioKit({ keys: new Set([' ', 'Enter']), sleepMs: 2500 });
 let V = null, T = null, toneLoad = null;
 // The recorded ping loads early and decodes once audio starts.
 const pingBytes = fetch('ping.mp3').then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
-// Real hydrophone loops from MBARI's deep-sea recorder (CC BY 4.0).
-const loopBytes = Object.fromEntries(['sea', 'whale', 'ship'].map(n => [n, fetch(`sea/${n}.mp3`).then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null)]));
 let pingBuf = null;
 function voices() {
   if (!kit.live()) return null;
@@ -1069,27 +1067,13 @@ function buildVoices() {
   const aun1 = new T.Oscillator(52, 'sine').connect(auntS).start();
   const aun2g = new T.Gain(0.3).connect(auntS);
   const aun2 = new T.Oscillator(78, 'sine').connect(aun2g).start();
-  // Each recording loops silently until the model calls for it.
-  const loops = {};
-  for (const [name, bytes] of Object.entries(loopBytes)) {
-    bytes.then(b => (b ? kit.ac.decodeAudioData(b.slice(0)) : null)).then(buf => {
-      if (!buf) return;
-      const src = kit.ac.createBufferSource();
-      src.buffer = buf; src.loop = true;
-      const g = kit.ac.createGain();
-      g.gain.value = 0;
-      src.connect(g); g.connect(kit.out);
-      src.start();
-      loops[name] = g;
-    }).catch(() => {});
-  }
   // Dolphin clicks: tiny high bursts. Whistles: a soft high sine.
   const click = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.004, sustain: 0, release: 0.002 }, volume: -26 }).connect(new T.Filter({ type: 'highpass', frequency: 3500 }).connect(rev));
   const whG = new T.Gain(0).connect(rev);
   const wh = new T.Oscillator(1500, 'sine').connect(whG).start();
   // The sounder ticks once per ping, quietly.
   const tick = new T.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.012, sustain: 0, release: 0.005 }, volume: -34 }).connect(out);
-  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, thump, clank, auntG, aun1, aun2, loops, click, whG, wh, tick };
+  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, thump, clank, auntG, aun1, aun2, click, whG, wh, tick };
 }
 // Continuous voices follow the shared model each frame.
 function steerVoices(dt = 0) {
@@ -1097,24 +1081,15 @@ function steerVoices(dt = 0) {
   if (!v) return;
   // Passive displays listen harder; the scope and sounder keep the sea low.
   const listen = opts.mode === 'sono' || opts.mode === 'btr';
-  const L = v.loops, now = kit.ac.currentTime;
-  const set = (g, x) => g.gain.setTargetAtTime(x, now, 0.35);
-  // The recorded sea replaces the synth bed once it has loaded.
-  if (L.sea) { set(L.sea, listen ? 1 : 0.5); v.bedG.gain.rampTo(0, 0.5); }
-  else v.bedG.gain.rampTo(listen ? 0.09 : 0.04, 0.3);
-  const wl = song.bout ? whaleGate() : 0;
-  if (L.whale) { set(L.whale, wl * (listen ? 0.9 : clock < song.loud ? 0.6 : 0.3)); v.whaleG.gain.rampTo(0, 0.2); }
-  else {
-    v.w1.frequency.rampTo(song.f, 0.05);
-    v.w2.frequency.rampTo(song.f * 2, 0.05);
-    v.whaleG.gain.rampTo(song.amp * whaleGate() * (listen ? 0.07 : clock < song.loud ? 0.05 : 0.02), 0.06);
-  }
-  // The loudest propeller in the water drives the chug and the ship recording.
-  let src = { f1: prop.f1, blades: prop.blades, amp: prop.amp * 0.5 };
+  v.bedG.gain.rampTo(listen ? 0.09 : 0.04, 0.3);
+  v.w1.frequency.rampTo(song.f, 0.05);
+  v.w2.frequency.rampTo(song.f * 2, 0.05);
+  const wh = sea.contacts.find(c => c.kind === 2);
+  v.whaleG.gain.rampTo(song.amp * whaleGate() * (wh ? hearF(wh) : 0) * (listen ? 0.07 : clock < song.loud ? 0.05 : 0.02), 0.06);
+  // The loudest propeller in the water drives the prop voice.
+  let src = { f1: 37, blades: 4, amp: 0 };
   for (const c of sea.contacts) if (c.ton && c.kind !== 6) { const a = tonalAmp(c); if (a > src.amp) src = { f1: c.ton.f1, blades: c.ton.blades, amp: a }; }
-  const amp = Math.min(1, src.amp);
-  if (L.ship) set(L.ship, amp * (listen ? 1.1 : 0.35));
-  v.propG.gain.rampTo(amp * (listen ? 0.07 : 0.02) * (L.ship ? 0.4 : 1), 0.3);
+  v.propG.gain.rampTo(Math.min(1, src.amp) * (listen ? 0.07 : 0.02), 0.3);
   v.p1.frequency.rampTo(src.f1 * 2, 0.5);
   v.beat.frequency.rampTo(clamp(src.f1 * src.blades / 40, 2, 6), 0.5);
   const au = sea.contacts.find(c => c.kind === 6), aa = au ? tonalAmp(au) : 0;
@@ -1327,8 +1302,6 @@ const BOOT_LINES = [
   ['ГИДРОФОНЫ', 'НОРМА'],
   ['ИЗЛУЧАТЕЛЬ', 'ГОТОВ'],
   ['СКОРОСТЬ ЗВУКА', '1497 М/С'],
-  // Hydrophone recordings: MBARI Pacific Ocean Sound (MARS), CC BY 4.0.
-  ['ЗАПИСИ  MBARI MARS', 'CC BY 4.0'],
 ];
 const LINE_T = 0.3, BAR_T0 = BOOT_LINES.length * LINE_T + 0.15, BAR_T = 1.3;
 const bootLen = () => (reduce ? 1.2 : BAR_T0 + BAR_T + 0.8);
@@ -1490,8 +1463,8 @@ function drawKeys(c) {
 function drawClassifier(c, Y, top) {
   const cls = [];
   for (const s of sources()) cls.push(s);
-  if (prop.amp > 0.15) cls.push(`MECH   DISTANT   ${prop.blades} BLADE`);
-  if (song.bout && whaleGate() > 0.2) cls.push('BIO   WHALE');
+  const wh = sea.contacts.find(k => k.kind === 2);
+  if (wh && song.bout && whaleGate() * hearF(wh) > 0.2) cls.push(`BIO   WHALE   ${pad3(wrapA(bearingTo(wh)) / D2R)}`);
   if (sea.contacts.some(k => k.kind === 7 && k.click)) cls.push('BIO   DOLPHINS   CLICKS');
   const narrow = W < 620 * dpr;
   cls.length = Math.min(cls.length, narrow ? 2 : 4);
@@ -1614,9 +1587,10 @@ function sources() {
   const out = [];
   for (const c of sea.contacts) {
     if (!c.ton || tonalAmp(c) < 0.12) continue;
-    if (c.kind === 6) out.unshift('!!   CRANKY AUNTIE   «СВАРЛИВАЯ ТЁТУШКА»');
-    else if (c.kind === 5) out.push(`MECH   SURFACE   ${c.ton.blades} BLADE   ${Math.round(c.ton.f1 * c.ton.blades)} HZ`);
-    else out.push(`MECH   SUBMERGED   ${c.ton.blades} BLADE`);
+    const b = pad3(wrapA(bearingTo(c)) / D2R);
+    if (c.kind === 6) out.unshift(`!!   CRANKY AUNTIE   ${b}`);
+    else if (c.kind === 5) out.push(`MECH   SURFACE   ${c.ton.blades} BLADE   ${b}`);
+    else out.push(`MECH   SUBMERGED   ${c.ton.blades} BLADE   ${b}`);
   }
   return out;
 }
@@ -1624,12 +1598,12 @@ function sources() {
 function identify(f) {
   const tol = spanHz() * 0.012;
   const cand = [[60, 'OWN SHIP'], [180, 'OWN SHIP'], [400, 'OWN SHIP  PUMP']];
-  if (prop.amp > 0.15) for (let k = 1; k <= 18; k++) cand.push([k * prop.f1, k % prop.blades === 0 ? `BLADE RATE  x${k / prop.blades}` : `SHAFT  x${k}`]);
-  if (song.amp > 0.1) for (let h = 1; h <= 4; h++) cand.push([song.f * h, h === 1 ? 'BIO  WHALE' : `BIO  WHALE  H${h}`]);
+  if (song.amp * whaleGate() > 0.1) for (let h = 1; h <= 4; h++) cand.push([song.f * h, h === 1 ? 'BIO  WHALE' : `BIO  WHALE  H${h}`]);
   for (const c of sea.contacts) {
     if (!c.ton || tonalAmp(c) < 0.08) continue;
-    const who = c.kind === 5 ? 'SURFACE' : c.kind === 6 ? 'AUNTIE' : 'SUB';
-    for (let k = 1; k <= 16; k++) cand.push([k * c.ton.f1, k % c.ton.blades === 0 ? `${who}  BLADE  x${k / c.ton.blades}` : `${who}  SHAFT  x${k}`]);
+    const who = `${c.kind === 5 ? 'SURFACE' : c.kind === 6 ? 'AUNTIE' : 'SUB'} ${pad3(wrapA(bearingTo(c)) / D2R)}`, dp = doppler(c);
+    for (let k = 1; k <= 16; k++) cand.push([k * c.ton.f1 * dp, k % c.ton.blades === 0 ? `${who}  BLADE  x${k / c.ton.blades}` : `${who}  SHAFT  x${k}`]);
+    if (c.sub) cand.push([50 * dp, `${who}  MOTOR`], [100 * dp, `${who}  MOTOR  x2`], [c.ton.pump * dp, `${who}  PUMP`]);
   }
   let best = null, bd = tol;
   for (const [cf, name] of cand) { const d = Math.abs(cf - f); if (d < bd) { bd = d; best = [cf, name]; } }
@@ -1738,6 +1712,19 @@ function drawHud() {
       const y = y1 - (s / secs) * (y1 - y0);
       c.beginPath(); c.moveTo(x0, Y(y)); c.lineTo(x0 - 5 * dpr, Y(y)); c.stroke();
       c.fillText(s ? `-${s}s` : '0', x0 - 8 * dpr, Y(y));
+    }
+    // Each heard contact tags its blade line with its bearing, as on the scope.
+    const tags = sea.contacts.filter(k => k.ton && tonalAmp(k) >= 0.12)
+      .map(k => [k.ton.f1 * k.ton.blades * doppler(k), k]).filter(([f]) => f <= span).sort((p, q) => p[0] - q[0]);
+    let lastX = -1e9;
+    c.textAlign = 'center';
+    for (const [f, k] of tags) {
+      const x = x0 + (f / span) * (x1 - x0), ty = Y(y1) + 3 * dpr;
+      if (x - lastX < 30 * dpr) continue;
+      lastX = x;
+      c.fillStyle = grey(k.kind === 6 ? 1 : 0.8);
+      c.beginPath(); c.moveTo(x, ty + 6 * dpr); c.lineTo(x - 4 * dpr, ty); c.lineTo(x + 4 * dpr, ty); c.fill();
+      c.fillText(`${k.kind === 6 ? '!!' : ''}${pad3(wrapA(bearingTo(k)) / D2R)}`, x, ty + 15 * dpr);
     }
     if (cursorF >= 0 && cursorF <= span) {
       const id = identify(cursorF), cf = id ? id[0] : cursorF;
@@ -1921,7 +1908,7 @@ function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimati
 
 function step(dt) {
   clock += dt;
-  stepSea(dt); stepSong(dt); stepProp(dt);
+  stepSea(dt); stepSong(dt);
   steerVoices(dt);
   if (opts.mode === 'active' && clock - pasT > 1 / 3) refreshFans();
   if (opts.mode === 'btr') {
@@ -1967,7 +1954,7 @@ function step(dt) {
     while (rowClock >= 1 / ROW_HZ && n++ < 6) { rowClock -= 1 / ROW_HZ; makeRow(clock); }
     rowFrac = rowClock * ROW_HZ;
     // The classifier lines change with what the sea is doing.
-    const sig = `${prop.amp > 0.15}|${song.bout}|${sources().join()}`;
+    const sig = `${song.bout}|${sources().join()}`;
     if (sig !== step.sig) { step.sig = sig; hudDirty = true; }
   }
   if (hudFade && Math.floor(clock * 10) !== Math.floor((clock - dt) * 10)) hudDirty = true;
@@ -2156,11 +2143,11 @@ syncSlider();
 new ResizeObserver(() => resize()).observe(stage);
 resize();
 // Prime the waterfall so the sonogram opens full.
-for (let i = 0; i < NROW; i++) { const tt = -NROW / ROW_HZ + i / ROW_HZ; stepSong(1 / ROW_HZ); stepProp(1 / ROW_HZ); makeRow(tt); }
+for (let i = 0; i < NROW; i++) { const tt = -NROW / ROW_HZ + i / ROW_HZ; stepSong(1 / ROW_HZ); makeRow(tt); }
 // The bearing display opens with a minute of history.
 for (let i = 0; i < BROW; i++) makeBtrRow(-BROW / BROW_HZ + i / BROW_HZ);
 // The sounder opens with the track just sailed, drawn behind the boat.
-{
+if (SOUNDER) {
   const own = [...sea.own], back = sea.speed / SND_HZ;
   for (let i = 0; i < SCOL; i++) {
     const k = SCOL - i;
