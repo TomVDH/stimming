@@ -7,13 +7,13 @@ Build each toy in its own fresh session, in this order. Open the session with:
 
 | Order | Toy | id | Size | Estimate | Builds |
 |---|---|---|---|---|---|
-| 1 | Star trails | `trails` | S | $10 to $15 | K1, the fading-trail buffer |
-| 2 | Sonar | `sonar` | M | $20 to $30 | CRT pass; reuses K1 |
-| 3 | Cloud chamber | `chamber` | S to M | $12 to $20 | reuses K1 |
-| 4 | Night viaduct | `viaduct` | M to L | $35 to $50 | K2, the night scene |
+| 1 | Night viaduct | `viaduct` | M to L | $35 to $50 | K2, the night scene |
+| 2 | Star trails | `trails` | S | $10 to $15 | K1, the fading-trail buffer |
+| 3 | Sonar | `sonar` | M | $20 to $30 | CRT pass; reuses K1 |
+| 4 | Cloud chamber | `chamber` | S to M | $12 to $20 | reuses K1 |
 | | **Total** | | | **$77 to $115** | |
 
-If Star trails costs more than $20, stop and rescale [toy-plan.md](toy-plan.md) before Sonar.
+Tom moved Night viaduct to first on 2026-11-04. If it costs more than $50, stop and rescale [toy-plan.md](toy-plan.md) before Star trails.
 
 ## Ground rules
 
