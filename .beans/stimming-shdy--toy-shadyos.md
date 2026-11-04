@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:30:00Z
-updated_at: 2026-11-04T20:30:00Z
+updated_at: 2026-11-04T21:40:00Z
 ---
 
 Build ShadyOS from docs/plans/shadyos.md. An original glossy glass desktop OS, a bootleg "ultimate edition" a script kiddie skinned in 2008, aged and quietly possessed. The OS itself is the fidget. It starts in the Lab.
@@ -16,7 +16,7 @@ Build ShadyOS from docs/plans/shadyos.md. An original glossy glass desktop OS, a
 - [x] Interaction: pointer state machine, drag, fling, double-click fold, shelf, beads, cascade close
 - [x] Bar: Smear and Jelly, Age, + Window, Error, Clear, (i)
 - [x] Sound: hum, clicks, dings, glass rub, fold whoosh
-- [x] Menu Lab entry with icon and hook; toys.json entry (Dutch name is a draft)
+- [x] Menu Lab entry with icon and hook; toys.json entry (Dutch name LoucheOS, confirmed by Tom)
 - [x] QA: 1280 and 375 px, clean console, idle stop, hidden tab, reduced motion
 - [ ] Settings popover (hum level, haunt on or off, quality)
 - [ ] Haunt beats: cursor hesitation, 3:33 clock beat, tidy while you look away, screensaver
