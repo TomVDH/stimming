@@ -785,16 +785,15 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
         <a class="toy" id="bubbles" href="bubbles/index.html">
           <span class="obj">
             <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-              <g fill="none" stroke="oklch(0.78 0.12 330)" stroke-width="4" stroke-linecap="round">
-                <circle cx="38" cy="86" r="14"/>
-                <line x1="28" y1="96" x2="14" y2="114"/>
+              <!-- Four soap-film bubbles; hover bobs them and pops the smallest. -->
+              <radialGradient id="bub-film"><stop offset="0" stop-color="#fff" stop-opacity="0.03"/><stop offset="0.62" stop-color="oklch(0.85 0.1 300)" stop-opacity="0.08"/><stop offset="0.84" stop-color="oklch(0.8 0.14 200)" stop-opacity="0.3"/><stop offset="0.94" stop-color="oklch(0.85 0.15 340)" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0.85"/></radialGradient>
+              <g id="bubble-set">
+                <g class="bub" data-c="50 74"><circle cx="50" cy="74" r="34" fill="url(#bub-film)"/><circle cx="50" cy="74" r="33" fill="none" stroke="url(#g-film)" stroke-width="3.1" stroke-opacity="0.9"/><ellipse cx="35.7" cy="59.7" rx="10.2" ry="5.1" transform="rotate(-45 35.7 59.7)" fill="#fff" fill-opacity="0.85"/><circle cx="67.0" cy="91.7" r="2.7" fill="#fff" fill-opacity="0.6"/></g>
+                <g class="bub" data-c="97 35"><circle cx="97" cy="35" r="19" fill="url(#bub-film)"/><circle cx="97" cy="35" r="18" fill="none" stroke="url(#g-film)" stroke-width="1.7" stroke-opacity="0.9"/><ellipse cx="89.0" cy="27.0" rx="5.7" ry="2.9" transform="rotate(-45 89.0 27.0)" fill="#fff" fill-opacity="0.85"/><circle cx="106.5" cy="44.9" r="1.5" fill="#fff" fill-opacity="0.6"/></g>
+                <g class="bub" data-c="103 89"><circle cx="103" cy="89" r="11" fill="url(#bub-film)"/><circle cx="103" cy="89" r="10" fill="none" stroke="url(#g-film)" stroke-width="1.6" stroke-opacity="0.9"/><ellipse cx="98.4" cy="84.4" rx="3.3" ry="1.6" transform="rotate(-45 98.4 84.4)" fill="#fff" fill-opacity="0.85"/><circle cx="108.5" cy="94.7" r="1.0" fill="#fff" fill-opacity="0.6"/></g>
+                <g class="bub" data-c="56 18"><circle cx="56" cy="18" r="8" fill="url(#bub-film)"/><circle cx="56" cy="18" r="7" fill="none" stroke="url(#g-film)" stroke-width="1.6" stroke-opacity="0.9"/><ellipse cx="52.6" cy="14.6" rx="2.4" ry="1.2" transform="rotate(-45 52.6 14.6)" fill="#fff" fill-opacity="0.85"/><circle cx="60.0" cy="22.2" r="1.0" fill="#fff" fill-opacity="0.6"/></g>
               </g>
-              <g id="bubble-set" fill="oklch(0.92 0.04 300 / 0.12)" stroke="url(#g-film)" stroke-width="2">
-                <circle cx="66" cy="66" r="14"/>
-                <circle cx="90" cy="44" r="10"/>
-                <circle cx="70" cy="30" r="7"/>
-                <circle cx="100" cy="74" r="6"/>
-              </g>
+              <circle id="bubble-burst" cx="56" cy="18" r="8" fill="none" stroke="#fff" stroke-width="1.5" opacity="0"/>
             </svg>
           </span>
           <span class="name">Bubble wand</span>
@@ -1603,11 +1602,28 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     rest: () => gsap.to(slider, { x: 0, duration: 0.3, overwrite: true }),
   };
 
-  const bubbleSet = [...$('bubble-set').children];
+  const bubbleSet = [...$('bubble-set').children], bubbleBurst = $('bubble-burst');
+  const bubbleAt = g => g.dataset.c;
   toys.bubbles = {
-    // Bubbles rise and fade, then drift back.
-    play: () => loop().fromTo(bubbleSet, { y: 0, opacity: 1 }, { y: -14, opacity: 0.2, duration: 1.4, ease: 'sine.inOut', stagger: 0.18, yoyo: true, repeat: 1 }),
-    rest: () => gsap.to(bubbleSet, { y: 0, opacity: 1, duration: 0.3, overwrite: true }),
+    // Bubbles bob and squish; the smallest pops, flashes a ring and grows back.
+    play() {
+      const tl = gsap.timeline({ repeat: -1 });
+      bubbleSet.forEach((g, i) => tl.to(g, { keyframes: [
+        { y: -5 - i, scaleX: 1.05, scaleY: 0.95, svgOrigin: bubbleAt(g), duration: 0.5, ease: 'sine.inOut' },
+        { y: 0, scaleX: 0.97, scaleY: 1.03, svgOrigin: bubbleAt(g), duration: 0.5, ease: 'sine.inOut' },
+        { scaleX: 1, scaleY: 1, svgOrigin: bubbleAt(g), duration: 0.3, ease: 'sine.out' },
+      ] }, i * 0.12));
+      const tiny = bubbleSet[3];
+      tl.to(tiny, { scale: 1.25, svgOrigin: bubbleAt(tiny), duration: 0.12, ease: 'power2.in' }, 0.9)
+        .set(tiny, { opacity: 0 }, 1.02)
+        .fromTo(bubbleBurst, { opacity: 1, scale: 1, svgOrigin: '56 18' }, { opacity: 0, scale: 1.9, svgOrigin: '56 18', duration: 0.3, ease: 'power2.out' }, 1.02)
+        .fromTo(tiny, { opacity: 1, scale: 0 }, { scale: 1, svgOrigin: bubbleAt(tiny), duration: 0.5, ease: 'back.out(2)' }, 1.5);
+      return tl;
+    },
+    rest() {
+      bubbleSet.forEach(g => gsap.to(g, { y: 0, scale: 1, opacity: 1, svgOrigin: bubbleAt(g), duration: 0.3, overwrite: true }));
+      gsap.set(bubbleBurst, { opacity: 0 });
+    },
   };
 
   // Rain on glass: wind drives streaks along arcs, past still beads.
