@@ -95,22 +95,37 @@ function wedge(x0, z, ramp, cliff, yLow, yCrest, yNext, dir, foot) {
 
 /* Mountain wall: a sawtooth row of lit ramps and dark cliffs, a hazier row behind. */
 const FOOT = -420;
-const near = [], back = [];
-function row(list, x0, x1, z, crest, dirs) {
+const near = [], back = [], ridges = [];
+function row(list, x0, x1, z, crest, dirs, rim) {
   // Lay wedges left to right; each next ramp starts at the previous cliff foot.
   let x = x0, i = 0, yLow = crest * 0.66;
   while (x < x1) {
-    const dir = dirs[i % dirs.length], ramp = 420 * (0.6 + rand() * 0.8), cliff = 45 + rand() * 40;
+    // Wedges near the centre are narrower, so a narrow lens still sees rhythm.
+    const dir = dirs[i % dirs.length], ramp = 420 * (0.6 + rand() * 0.8) * (Math.abs(x) < 600 ? 0.6 : 1), cliff = 45 + rand() * 40;
     const yC = crest * (0.9 + rand() * 0.2), yN = crest * (0.6 + rand() * 0.12);
     // Each wedge sits a little behind the last, so its ramp starts behind the cliff.
     const zz = z - i * 40;
     if (dir > 0) list.push(...wedge(x, zz, ramp, cliff, yLow, yC, yN, 1, FOOT));
     else list.push(...wedge(x + ramp + cliff, zz, ramp, cliff, yN, yC, yLow, -1, FOOT));
+    // The ramp's top edge catches snow light, brightest at the crest.
+    if (dir > 0) ridges.push([x, yLow, x + ramp, yC, zz, rim]);
+    else ridges.push([x + ramp + cliff, yN, x + cliff, yC, zz, rim]);
     x += ramp + cliff - 30; yLow = yN; i++;
   }
 }
-row(near, -1500, 1500, -2600, 310, [1, 1, 1, -1, 1, 1, 1, -1]);
-row(back, -1900, 1900, -3500, 430, [1, 1, -1, 1, 1]);
+row(near, -1500, 1500, -2600, 350, [1, 1, 1, -1, 1, 1, 1, -1], 0.16);
+row(back, -1900, 1900, -3500, 480, [1, 1, -1, 1, 1], 0.06);
+{
+  const pos = [], col = [];
+  for (const [ax, ay, cx, cy, z, k] of ridges) {
+    pos.push(ax, ay, z + 2, cx, cy, z + 2);
+    col.push(0, 0, 0, k * 0.75, k * 0.85, k);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+}
 scene.add(new THREE.Mesh(tris(near), litMaterial({ shadow: [0.004, 0.006, 0.016], lit: [0.1, 0.115, 0.21], snow: [0.05, 0.06, 0.09], foot: FOOT })));
 scene.add(new THREE.Mesh(tris(back), litMaterial({ shadow: [0.012, 0.016, 0.034], lit: [0.045, 0.054, 0.1], snow: [0.03, 0.035, 0.055], foot: FOOT })));
 
