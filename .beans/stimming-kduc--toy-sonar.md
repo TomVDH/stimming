@@ -27,7 +27,7 @@ Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-li
 - [ ] Sounder (echogram): built, parked by Tom 2026-11-04 (`SOUNDER = false`)
 - [x] Dolphins, diving whale, bait schools, sub below the layer
 - [x] Real MBARI MARS loops tried, then reverted by Tom: they did not work in the mix
-- [ ] Sonogram: Tom finds it random; tie it to the contacts in the sea
+- [x] Sonogram tied to the sea: no phantom prop; lines per contact with Doppler; sub motor and pump lines; whale by range; bearing tags
 - [ ] Checkpoint: Tom reviews look and sound on a real device
 - [ ] Record the session cost
 
