@@ -17,6 +17,11 @@ Tom moved Night viaduct to first on 2026-11-04. If it costs more than $50, stop 
 
 ## Ground rules
 
+### Look (Tom, 2026-11-04)
+
+Relative minimalism blended with realistic, sweeping light. Shapes stay simple and few; light, haze and glow carry the scene.
+No props, no fussy detail, nothing skeuomorphic. Cut any object that is only there to say what the place is.
+
 `AGENTS.md` is the house spec. This section is what a new toy needs from it.
 
 ### Files
