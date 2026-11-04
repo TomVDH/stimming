@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
-updated_at: 2026-11-04T23:00:00Z
+updated_at: 2026-11-04T23:30:00Z
 ---
 
 Window seat (idea 56). Tom, 2026-11-04: S tier, diegetic. Airliner first; an orbit seat may follow. Full window frame (bezel, shade).
@@ -21,6 +21,12 @@ Decisions:
 - Storm cells are projected towers (column plus anvil to 11.5 to 14 km); they tilt with the roll.
 - Round 3: the window is real geometry. The camera sits 33 cm from the wall, aft and above, rolled -9 degrees. A march finds the recess wall between rim and pane; the shade slides in a slot. The pointer moves the eye.
 - The seat sits over the wing, so the wing fills the lower view. Outside work runs only for glass pixels.
+- Round 5 (2026-11-04): Tom approved a quality pass, then parked it for budget. Five child beans hold it, in build order:
+  1. stimming-kws3: two-pass render, physical sky, sun, moon, flare, speed
+  2. stimming-h1c7: procedural city lights
+  3. stimming-fres: volumetric clouds, storm towers, bolts
+  4. stimming-x27w: panes, glass wear, bezel, shade
+  5. stimming-v9hp: wing flap, aileron, fairings
 
 - [x] Frame: wall, bezel, shade with lip, inner pane with frost and breather hole, head parallax
 - [x] Outside: sky palettes, procedural towns, cloud deck lit from below, towers, flashes
