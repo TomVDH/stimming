@@ -78,7 +78,7 @@ vec3 k2hazeColor(vec3 dir, vec3 P) {
   float face = k2face(dir);
   float near = exp(-length(P.xz - uGlow.xz) / uGlowR);
   vec3 cool = uCool * 0.012;
-  return mix(cool, uAmber * 0.075, clamp(pow(face, 5.0) * 0.45 + near * 1.1, 0.0, 1.0));
+  return mix(cool, uAmber * 0.14, clamp(pow(face, 5.0) * 0.45 + near * 1.1, 0.0, 1.0));
 }
 float k2hazeAmount(vec3 P) {
   vec3 v = P - cameraPosition;
@@ -111,7 +111,7 @@ const k2 = {
   uHaze: { value: 0.0011 },
   uHazeH: { value: 70 },
   uPortZ: { value: QUAY + 260 },
-  uPortFog: { value: 0.012 },
+  uPortFog: { value: 0.05 },
 };
 
 // Light list for lit surfaces: position + power, colour + range, spot axis + cone.
@@ -218,7 +218,7 @@ const steel = new THREE.ShaderMaterial({
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(cameraPosition - vP);
-    vec3 c = vec3(0.02) * k2lights(vP, N) + k2spec(vP, N, V, 14.0) * 3.0 + k2sky(reflect(-V, N)) * 0.6;
+    vec3 c = vec3(0.02) * k2lights(vP, N) + k2spec(vP, N, V, 9.0) * 8.0 + k2sky(reflect(-V, N)) * 1.4;
     gl_FragColor = vec4(k2haze(c, vP, 1.0), 1.0);
   }`,
 });
@@ -709,9 +709,9 @@ function frame(w, h, pr) {
     camera.position.set(0, 55, 110);
     camera.lookAt(-70, -68, -1500);
   } else {
-    camera.fov = 80;
-    camera.position.set(-40, 200, 160);
-    camera.lookAt(-100, -330, -1500);
+    camera.fov = 66;
+    camera.position.set(40, 120, 230);
+    camera.lookAt(-60, -100, -1500);
   }
   camera.updateProjectionMatrix();
   // Point sizes follow the projected pixel scale.

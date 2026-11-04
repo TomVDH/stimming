@@ -24,7 +24,7 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [x] Framing in three.js: Pass and Port, 1280 and 375 px
 - [x] One page, two scenes: `viaduct/index.html` hosts `pass.js` and `port.js`; scene chips; K2 bloom and grade shared
 - [ ] Checkpoint 1: Tom approves both framings
-- [ ] Framing fixes. Pass: crest snow light, portrait wedge rhythm. Port: fog on the port, rail glints, 375 px framing
+- [x] Framing fixes. Pass: sea, crest snow line, taller peaks, portrait wedge rhythm. Port: fog on the port, rail glints, 375 px framing
 - [ ] Motion and interaction: trains, gestures, bar (Time slider, + Train, Settings)
 - [ ] Frame loop: 30 fps drift, sleep 60 s after input, stop when hidden; reduced motion
 - [ ] Decide: Port rack focus as a moment, or off
