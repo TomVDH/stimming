@@ -132,8 +132,10 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 <script type="module">
-import { initPage, audioKit, sound, choices, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb } from '../shared/stim.js';
+import { initPage, audioKit, sound, choices, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 initPage({ id: 'walker' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas:not(.sky)');
 const skyCanvas = stage.querySelector('canvas.sky');
@@ -1380,7 +1382,7 @@ void main() {
   return {
     legZ,
     fit() {
-      const pr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(1.3e6 / (w * h)));
+      const pr = pixelRatio(w, h, { budget: 1.3e6 });
       renderer.setPixelRatio(pr);
       renderer.setSize(w, h, false);
       const W = Math.round(w * pr), H = Math.round(h * pr);
@@ -2038,6 +2040,7 @@ onReducedChange(on => { reduce = on; camX = bodyX; if (!raf) draw(); });
 /* ---------- start ---------- */
 build(+legsPick.value || 6);
 new ResizeObserver(fit).observe(stage);
+onQuality(fit);
 fit();
 // After the intro, one soft puff shows the stride.
 // The breeze starts the walk once the page is up.
