@@ -17,6 +17,6 @@ Build Star trails from docs/toy-dev-plan.md, section 1. It starts in the Lab. It
 - [x] Hold or Space opens the shutter; reduced motion draws the arc at once
 - [ ] Checkpoint 1: Tom reviews the stills
 - [ ] Sound: shutter click, a pad that opens with exposure, meteor ticks
-- [ ] toys.json entry and menu Lab entry with an icon and a GSAP hook
+- [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] QA: 1280 and 375 px, clean console, idle stop, hidden tab stops the loop
 - [ ] Record the session cost
