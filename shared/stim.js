@@ -314,9 +314,10 @@ function settingsTray() {
   tray.setAttribute('aria-label', 'Settings');
   btn.setAttribute('aria-controls', tray.id);
   box.append(btn, tray);
-  // Settings sits just before the (i), or at the end of the bar.
-  const edge = bar.querySelector(':scope > .how-tip, :scope > .how');
-  if (edge) edge.before(box); else bar.append(box);
+  // Settings and the (i) share one right-edge group, so they never split on a wrap.
+  const edge = document.createElement('div'), tip = bar.querySelector('.how-tip');
+  edge.className = 'stim-edge';
+  if (tip) { tip.before(edge); edge.append(box, tip); } else { bar.append(edge); edge.append(box); }
   const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
   btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
   document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
@@ -330,7 +331,7 @@ export function qualitySetting(tray = null) {
   tray ||= settingsTray();
   if (!tray) return null;
   const group = document.createElement('div');
-  group.className = 'group';
+  group.className = 'group stim-q';
   group.innerHTML = '<span>Quality</span><div class="choices" role="group" aria-label="Quality">'
     + '<button class="chip" type="button" data-value="standard" aria-pressed="false">Standard</button>'
     + '<button class="chip" type="button" data-value="high" aria-pressed="false">High</button></div>';
