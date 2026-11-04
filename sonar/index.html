@@ -61,7 +61,6 @@
         <button class="chip" type="button" data-value="active" aria-pressed="true">Active</button>
         <button class="chip" type="button" data-value="sono" aria-pressed="false">Sonogram</button>
         <button class="chip" type="button" data-value="btr" aria-pressed="false">Bearing</button>
-        <button class="chip" type="button" data-value="sounder" aria-pressed="false">Sounder</button>
       </div>
       <label class="slider"><span id="sliderLab">Range</span><input type="range" id="slider" min="0" max="1" step="0.01" value="0.5" aria-label="Range"></label>
       <div class="actions">
@@ -125,6 +124,8 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
 initPage({ id: 'sonar' });
 
+// The Sounder is parked: its chip is off until Tom brings it back.
+const SOUNDER = false;
 const PI = Math.PI, TAU = PI * 2, D2R = PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -138,7 +139,7 @@ const saved = k => { try { return localStorage.getItem(`stimming.sonar.${k}`); }
 const save = (k, v) => { try { localStorage.setItem(`stimming.sonar.${k}`, String(v)); } catch { /* storage is optional */ } };
 const num = (k, d) => { const v = saved(k); return v == null || isNaN(+v) ? d : +v; };
 const opts = {
-  mode: ['active', 'sono', 'btr', 'sounder'].includes(saved('mode')) ? saved('mode') : 'active',
+  mode: ['active', 'sono', 'btr', ...(SOUNDER ? ['sounder'] : [])].includes(saved('mode')) ? saved('mode') : 'active',
   gain: num('gain', 0.5),
   depth: num('depth', 0.45),
   range: num('range', 0.55),
@@ -1012,8 +1013,6 @@ const kit = audioKit({ keys: new Set([' ', 'Enter']), sleepMs: 2500 });
 let V = null, T = null, toneLoad = null;
 // The recorded ping loads early and decodes once audio starts.
 const pingBytes = fetch('ping.mp3').then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
-// Real hydrophone loops from MBARI's deep-sea recorder (CC BY 4.0).
-const loopBytes = Object.fromEntries(['sea', 'whale', 'ship'].map(n => [n, fetch(`sea/${n}.mp3`).then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null)]));
 let pingBuf = null;
 function voices() {
   if (!kit.live()) return null;
@@ -1069,27 +1068,13 @@ function buildVoices() {
   const aun1 = new T.Oscillator(52, 'sine').connect(auntS).start();
   const aun2g = new T.Gain(0.3).connect(auntS);
   const aun2 = new T.Oscillator(78, 'sine').connect(aun2g).start();
-  // Each recording loops silently until the model calls for it.
-  const loops = {};
-  for (const [name, bytes] of Object.entries(loopBytes)) {
-    bytes.then(b => (b ? kit.ac.decodeAudioData(b.slice(0)) : null)).then(buf => {
-      if (!buf) return;
-      const src = kit.ac.createBufferSource();
-      src.buffer = buf; src.loop = true;
-      const g = kit.ac.createGain();
-      g.gain.value = 0;
-      src.connect(g); g.connect(kit.out);
-      src.start();
-      loops[name] = g;
-    }).catch(() => {});
-  }
   // Dolphin clicks: tiny high bursts. Whistles: a soft high sine.
   const click = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.004, sustain: 0, release: 0.002 }, volume: -26 }).connect(new T.Filter({ type: 'highpass', frequency: 3500 }).connect(rev));
   const whG = new T.Gain(0).connect(rev);
   const wh = new T.Oscillator(1500, 'sine').connect(whG).start();
   // The sounder ticks once per ping, quietly.
   const tick = new T.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.012, sustain: 0, release: 0.005 }, volume: -34 }).connect(out);
-  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, thump, clank, auntG, aun1, aun2, loops, click, whG, wh, tick };
+  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, thump, clank, auntG, aun1, aun2, click, whG, wh, tick };
 }
 // Continuous voices follow the shared model each frame.
 function steerVoices(dt = 0) {
@@ -1097,24 +1082,14 @@ function steerVoices(dt = 0) {
   if (!v) return;
   // Passive displays listen harder; the scope and sounder keep the sea low.
   const listen = opts.mode === 'sono' || opts.mode === 'btr';
-  const L = v.loops, now = kit.ac.currentTime;
-  const set = (g, x) => g.gain.setTargetAtTime(x, now, 0.35);
-  // The recorded sea replaces the synth bed once it has loaded.
-  if (L.sea) { set(L.sea, listen ? 1 : 0.5); v.bedG.gain.rampTo(0, 0.5); }
-  else v.bedG.gain.rampTo(listen ? 0.09 : 0.04, 0.3);
-  const wl = song.bout ? whaleGate() : 0;
-  if (L.whale) { set(L.whale, wl * (listen ? 0.9 : clock < song.loud ? 0.6 : 0.3)); v.whaleG.gain.rampTo(0, 0.2); }
-  else {
-    v.w1.frequency.rampTo(song.f, 0.05);
-    v.w2.frequency.rampTo(song.f * 2, 0.05);
-    v.whaleG.gain.rampTo(song.amp * whaleGate() * (listen ? 0.07 : clock < song.loud ? 0.05 : 0.02), 0.06);
-  }
-  // The loudest propeller in the water drives the chug and the ship recording.
-  let src = { f1: prop.f1, blades: prop.blades, amp: prop.amp * 0.5 };
+  v.bedG.gain.rampTo(listen ? 0.09 : 0.04, 0.3);
+  v.w1.frequency.rampTo(song.f, 0.05);
+  v.w2.frequency.rampTo(song.f * 2, 0.05);
+  v.whaleG.gain.rampTo(song.amp * whaleGate() * (listen ? 0.07 : clock < song.loud ? 0.05 : 0.02), 0.06);
+  // The loudest propeller in the water drives the prop voice.
+  let src = { f1: prop.f1, blades: prop.blades, amp: prop.amp };
   for (const c of sea.contacts) if (c.ton && c.kind !== 6) { const a = tonalAmp(c); if (a > src.amp) src = { f1: c.ton.f1, blades: c.ton.blades, amp: a }; }
-  const amp = Math.min(1, src.amp);
-  if (L.ship) set(L.ship, amp * (listen ? 1.1 : 0.35));
-  v.propG.gain.rampTo(amp * (listen ? 0.07 : 0.02) * (L.ship ? 0.4 : 1), 0.3);
+  v.propG.gain.rampTo(Math.min(1, src.amp) * (listen ? 0.07 : 0.02), 0.3);
   v.p1.frequency.rampTo(src.f1 * 2, 0.5);
   v.beat.frequency.rampTo(clamp(src.f1 * src.blades / 40, 2, 6), 0.5);
   const au = sea.contacts.find(c => c.kind === 6), aa = au ? tonalAmp(au) : 0;
@@ -1327,8 +1302,6 @@ const BOOT_LINES = [
   ['ГИДРОФОНЫ', 'НОРМА'],
   ['ИЗЛУЧАТЕЛЬ', 'ГОТОВ'],
   ['СКОРОСТЬ ЗВУКА', '1497 М/С'],
-  // Hydrophone recordings: MBARI Pacific Ocean Sound (MARS), CC BY 4.0.
-  ['ЗАПИСИ  MBARI MARS', 'CC BY 4.0'],
 ];
 const LINE_T = 0.3, BAR_T0 = BOOT_LINES.length * LINE_T + 0.15, BAR_T = 1.3;
 const bootLen = () => (reduce ? 1.2 : BAR_T0 + BAR_T + 0.8);
@@ -2160,7 +2133,7 @@ for (let i = 0; i < NROW; i++) { const tt = -NROW / ROW_HZ + i / ROW_HZ; stepSon
 // The bearing display opens with a minute of history.
 for (let i = 0; i < BROW; i++) makeBtrRow(-BROW / BROW_HZ + i / BROW_HZ);
 // The sounder opens with the track just sailed, drawn behind the boat.
-{
+if (SOUNDER) {
   const own = [...sea.own], back = sea.speed / SND_HZ;
   for (let i = 0; i < SCOL; i++) {
     const k = SCOL - i;
