@@ -26,11 +26,13 @@ Decisions:
 - [x] Outside: sky palettes, procedural towns, cloud deck lit from below, towers, flashes
 - [x] Wing: quads with sky reflection, nav light, strobe; banked and rolled view
 - [x] Bar: Dusk, Midnight, Dawn; Storm; Shade; Settings (cloud, towns)
-- [x] Drag drifts along; drag the shade lip; tap a tower to flash it
+- [x] Drag the shade lip; tap a tower to flash it (drag-to-drift is gone; drag now moves the head)
 - [x] toys.json entry (Dutch name and IPA are drafts)
 - [x] Checkpoint 1: Tom reviewed; asked for wing, slant, colour, procedural
 - [x] Checkpoint 2: Tom: the window still looks awkward; wants an up-close slanted view of the frame
-- [ ] Checkpoint 3: Tom reviews the 3D window
+- [x] Checkpoint 3: Tom: still unimpressive, the angle is strange; wants limited camera movement to peer through
+- [x] Head movement: drag moves the eye (fore, aft, up, down), scroll or pinch leans in, arrows and +/- too; clamped to a box
+- [ ] Checkpoint 4: Tom tests live
 - [ ] Sound: cabin drone, far thunder after each flash, shade slide
 - [ ] Menu Lab entry with an icon and a GSAP hook
 - [ ] Remove the `window.__ws` test hook

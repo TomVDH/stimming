@@ -82,8 +82,9 @@
           </div>
         </div>
         <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>drift along</dd></div>
-          <div><dt>Shade</dt><dd>drag it up or down</dd></div>
+          <div><dt>Drag</dt><dd>lean and peer</dd></div>
+          <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>lean closer</dd></div>
+          <div><dt>Shade</dt><dd>drag its lip</dd></div>
           <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>a storm flashes</dd></div>
         </dl>
       </div>
@@ -155,7 +156,7 @@ const hourLin = () => {
 const ALT = 11;            // cruise height in km
 const SPEED = 2.4;         // ground speed in km/s, sped up about ten times
 const FOV = 64 * D2R;      // field of view across the short side
-const ROLL = -9 * D2R;     // the camera tilts: a slanted, close look
+const ROLL = -6 * D2R;     // the camera tilts a little: a slanted, close look
 // The window in the cabin wall, in metres.
 // Local frame: x to the nose, y up, z out through the glass.
 const WIN = {
@@ -164,8 +165,10 @@ const WIN = {
   depth: 0.06, slot: 0.024,         // pane depth and shade depth
 };
 // The eye sits close, a little aft and above the window.
-const EYE = [-0.19, 0.09, -0.33];
+// The head moves within a box around the rest pose, in metres.
+const EYE = [-0.13, 0.07, -0.34];
 const AIM = [0.03, 0.0, 0.05];
+const REACH = { x: [-0.2, 0.17], y: [-0.08, 0.14], z: [-0.1, 0.16] };
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
@@ -574,9 +577,10 @@ const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] 
 // Camera axes in the cabin (a*) and in the world (F, R, U).
 const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], Fa: [0, 0, 1], Ra: [1, 0, 0], Ua: [0, 1, 0], eye: EYE.slice(), focal: 600 };
 function setBasis() {
-  // The head moves the eye a few centimetres; the aim stays on the window.
-  const eye = [EYE[0] + head.x * 0.05, EYE[1] + head.y * 0.035, EYE[2]];
-  const Fa = norm(sub(AIM, eye));
+  // The eye moves with the head; the aim follows a third of the way.
+  const hx = head.x + head.hx * 0.02, hy = head.y + head.hy * 0.015;
+  const eye = [EYE[0] + hx, EYE[1] + hy, EYE[2] + head.z];
+  const Fa = norm(sub([AIM[0] + hx * 0.35, AIM[1] + hy * 0.35, AIM[2]], eye));
   const R0 = norm(cross([0, 1, 0], Fa)), U0 = cross(Fa, R0);
   // Roll turns the right and up axes about the view.
   const cr = Math.cos(ROLL), sr = Math.sin(ROLL);
@@ -593,7 +597,7 @@ function toScreen(p) {
 
 /* ---------- flight ---------- */
 // The plane flies along world x; the left window looks along world z.
-const cam = { x: 0, z: 0, push: 0 };
+const cam = { x: 0, z: 0 };
 
 // Storm cells live on the map; new ones form ahead as old ones fall behind.
 const cells = [];
@@ -642,8 +646,13 @@ function stepFlashes(dt) {
 }
 
 /* ---------- head and shade ---------- */
-// The head drifts with the pointer, so the frame shifts against the view.
-const head = { x: 0, y: 0, tx: 0, ty: 0 };
+// Drag moves the head; hover adds a small sway on mouse devices.
+const head = { x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0, hx: 0, hy: 0, thx: 0, thy: 0 };
+function moveHead(dx, dy, dz) {
+  head.tx = clamp(head.tx + dx, REACH.x[0], REACH.x[1]);
+  head.ty = clamp(head.ty + dy, REACH.y[0], REACH.y[1]);
+  head.tz = clamp(head.tz + dz, REACH.z[0], REACH.z[1]);
+}
 const shade = { v: 0.05, target: 0.05 };
 // The shade's lip height in window metres.
 const lipY = () => WIN.inn[1] + 0.02 - shade.v * (2 * WIN.inn[1] + 0.04);
@@ -662,13 +671,15 @@ function frameFn(now) {
 function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
 function step(dt) {
   t += dt;
-  // Drag adds a push that fades back to cruise.
-  cam.push *= Math.exp(-dt / 1.2);
-  cam.x += ((reduce ? SPEED * 0.4 : SPEED) + cam.push) * dt;
+  // The plane cruises at a steady pace.
+  cam.x += (reduce ? SPEED * 0.4 : SPEED) * dt;
   // The bank breathes between about 3 and 9 degrees.
   if (!reduce) bank = (6 + 2.2 * Math.sin(t * 0.045) + 0.9 * Math.sin(t * 0.13)) * D2R;
   const k = 1 - Math.exp(-dt / 0.35);
-  head.x += (head.tx - head.x) * k; head.y += (head.ty - head.y) * k;
+  // The head eases toward its target, so moves feel bodily.
+  const kh = 1 - Math.exp(-dt / 0.18);
+  head.x += (head.tx - head.x) * kh; head.y += (head.ty - head.y) * kh; head.z += (head.tz - head.z) * kh;
+  head.hx += (head.thx - head.hx) * k; head.hy += (head.thy - head.hy) * k;
   shade.v += (shade.target - shade.v) * (1 - Math.exp(-dt / 0.12));
   stepCells(dt);
   stepFlashes(dt);
@@ -786,32 +797,57 @@ function tapAt(x, y) {
   flash(cam.x + d[0] * tt, cam.z + d[2] * tt, 1.2);
 }
 let drag = null;
+// Two touches pinch to lean; the map holds each live pointer.
+const touches = new Map();
+let pinch = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   stage.setPointerCapture?.(e.pointerId);
   const [x, y] = toPx(e);
-  drag = { x0: x, y0: y, x, t: performance.now(), moved: false, shade: onLip(x, y), s0: shade.target };
+  touches.set(e.pointerId, [x, y]);
+  if (touches.size === 2) { pinch = spread(); if (drag) drag.moved = true; return; }
+  drag = { x0: x, y0: y, x, y, moved: false, shade: onLip(x, y), s0: shade.target };
   stage.classList.add('dragging');
 });
 stage.addEventListener('pointermove', e => {
   const [x, y] = toPx(e);
-  if (e.pointerType === 'mouse') { head.tx = clamp(x / W * 2 - 1, -1, 1); head.ty = clamp(y / H * 2 - 1, -1, 1); }
+  if (e.pointerType === 'mouse') { head.thx = clamp(x / W * 2 - 1, -1, 1); head.thy = clamp(y / H * 2 - 1, -1, 1); }
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, [x, y]);
+  if (touches.size === 2) {
+    // Fingers apart lean in; together lean back.
+    const s2 = spread();
+    moveHead(0, 0, (s2 - pinch) / Math.min(W, H) * 0.3);
+    pinch = s2;
+    return;
+  }
   if (!drag) { stage.classList.toggle('on-shade', onLip(x, y)); return; }
   if (Math.hypot(x - drag.x0, y - drag.y0) > 6 * dpr) drag.moved = true;
   if (drag.shade) { shade.target = clamp(drag.s0 - (y - drag.y0) / shadeScale() / (2 * WIN.inn[1] + 0.04)); return; }
-  // Dragging toward the tail pushes the plane on; the view runs right to left.
-  const now = performance.now(), dts = Math.max(0.008, (now - drag.t) / 1000);
-  cam.push = clamp(cam.push - (x - drag.x) / dpr / dts * 0.05, -SPEED * 3, SPEED * 6);
-  drag.x = x; drag.t = now;
+  // The head follows the drag: right moves toward the nose, up rises.
+  const k = 0.42 / Math.min(W, H);
+  moveHead((x - drag.x) * k, (y - drag.y) * k, 0);
+  drag.x = x; drag.y = y;
 });
-function release() {
+function release(e) {
+  touches.delete(e.pointerId);
+  if (touches.size) return;
   if (drag && !drag.moved && !drag.shade) tapAt(drag.x0, drag.y0);
   drag = null;
   stage.classList.remove('dragging');
 }
 stage.addEventListener('pointerup', release);
-stage.addEventListener('pointercancel', () => { drag = null; stage.classList.remove('dragging'); });
-stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { head.tx = 0; head.ty = 0; } });
+stage.addEventListener('pointercancel', e => { touches.delete(e.pointerId); drag = null; stage.classList.remove('dragging'); });
+stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { head.thx = 0; head.thy = 0; } });
+// The wheel leans toward the glass or back into the seat.
+stage.addEventListener('wheel', e => { e.preventDefault(); moveHead(0, 0, -e.deltaY * 0.0004); }, { passive: false });
+// Arrow keys move the head; plus and minus lean.
+stage.addEventListener('keydown', e => {
+  const m = { ArrowLeft: [-0.02, 0, 0], ArrowRight: [0.02, 0, 0], ArrowUp: [0, 0.02, 0], ArrowDown: [0, -0.02, 0], '+': [0, 0, 0.02], '=': [0, 0, 0.02], '-': [0, 0, -0.02] }[e.key];
+  if (!m) return;
+  e.preventDefault();
+  moveHead(...m);
+});
 
 /* ---------- bar ---------- */
 function popover(box, btn) {
