@@ -27,6 +27,13 @@ Decisions:
   3. stimming-fres: volumetric clouds, storm towers, bolts
   4. stimming-x27w: panes, glass wear, bezel, shade
   5. stimming-v9hp: wing flap, aileron, fairings
+- Round 5 findings (audit of ae3f2fd, 1280 px, all three hours):
+  - Frame: the wall is one flat beige plane. The bezel is one smooth box: no gasket, no pane layers. The shade reads as a thin grey bar, not a blind.
+  - Sun and moon: each is a 3 to 6 px dot. The flare streak spans the whole screen and the cabin wall, so it is louder than its source.
+  - Clouds: the deck is a low-contrast brown noise smear. The storm tower reads as a smoke plume.
+  - Towns: the lights barely show. A few dots sit near the wing; the ground reads as muddy haze.
+  - Speed: 2.4 km/s, about ten times real. The ground streams past.
+  - Perf: one full-screen fragment shader does all the work. Volumetrics need the two-pass split (stimming-kws3).
 
 - [x] Frame: wall, bezel, shade with lip, inner pane with frost and breather hole, head parallax
 - [x] Outside: sky palettes, procedural towns, cloud deck lit from below, towers, flashes
