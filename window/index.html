@@ -52,14 +52,14 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a night flight. Towns glow below; storms flash inside the clouds. Drag to drift along, pull the shade, tap a storm to make it flash.">
+    <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a night flight, the wing below. Towns glow on the ground; storms flash inside the clouds. Drag to drift along, pull the shade, tap a storm to make it flash.">
       <p class="fail" hidden>Window seat needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="route" role="group" aria-label="Route">
-        <button class="chip" type="button" data-value="low" aria-pressed="true">Low Countries</button>
-        <button class="chip" type="button" data-value="nile" aria-pressed="false">Nile</button>
-        <button class="chip" type="button" data-value="coast" aria-pressed="false">Seaboard</button>
+      <div class="choices" id="hour" role="group" aria-label="Hour">
+        <button class="chip" type="button" data-value="dusk" aria-pressed="true">Dusk</button>
+        <button class="chip" type="button" data-value="night" aria-pressed="false">Midnight</button>
+        <button class="chip" type="button" data-value="dawn" aria-pressed="false">Dawn</button>
       </div>
       <label class="slider"><span>Storm</span><input type="range" id="storm" min="0" max="1" step="0.01" value="0.5" aria-label="Storm: how many cells and how often they flash"></label>
       <div class="actions">
@@ -74,10 +74,10 @@
               <button class="chip" type="button" data-value="0.5" aria-pressed="true">Broken</button>
               <button class="chip" type="button" data-value="0.38" aria-pressed="false">Deck</button>
             </div></div>
-            <div class="group"><span>Moon</span><div class="choices" id="moon" role="group" aria-label="Moon">
-              <button class="chip" type="button" data-value="0" aria-pressed="false">New</button>
-              <button class="chip" type="button" data-value="0.5" aria-pressed="true">Half</button>
-              <button class="chip" type="button" data-value="1" aria-pressed="false">Full</button>
+            <div class="group"><span>Towns</span><div class="choices" id="towns" role="group" aria-label="Towns">
+              <button class="chip" type="button" data-value="0.5" aria-pressed="false">Sparse</button>
+              <button class="chip" type="button" data-value="1" aria-pressed="true">Some</button>
+              <button class="chip" type="button" data-value="1.7" aria-pressed="false">Dense</button>
             </div></div>
           </div>
         </div>
@@ -108,7 +108,7 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -116,12 +116,11 @@ let markReady;
 const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(8000)])]) });
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
 initPage({ id: 'window' });
 
 const PI = Math.PI, TAU = PI * 2, D2R = PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
-const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 /* ---------- settings ---------- */
@@ -130,10 +129,10 @@ const saved = k => { try { return localStorage.getItem(`stimming.window.${k}`); 
 const save = (k, v) => { try { localStorage.setItem(`stimming.window.${k}`, String(v)); } catch { /* storage is optional */ } };
 const num = (k, d) => { const v = saved(k); return v != null && isFinite(+v) ? +v : d; };
 const opts = {
-  route: saved('route') || 'low',
+  hour: saved('hour') || 'dusk',
   storm: num('storm', 0.5),
   cloud: num('cloud', 0.5),
-  moon: num('moon', 0.5),
+  towns: num('towns', 1),
 };
 // A test hook sets values from the address, for screenshots.
 const qs = new URLSearchParams(location.search);
@@ -141,16 +140,24 @@ for (const k of Object.keys(opts)) if (qs.has(k)) opts[k] = typeof opts[k] === '
 let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
-// Each route sets a start point and a heading; the seat is on the left.
-const ROUTES = {
-  low: { lat: 50.25, lon: 3.6, head: 40 },
-  nile: { lat: 24.6, lon: 33.15, head: 352 },
-  coast: { lat: 38.4, lon: -77.6, head: 38 },
+// Each hour is one sky palette in OKLCH: zenith, band, horizon, ambient.
+// The band sits between zenith and horizon, where the afterglow turns.
+const HOURS = {
+  dusk: { zen: [0.17, 0.07, 275], band: [0.36, 0.13, 335], hor: [0.62, 0.15, 48], amb: [0.42, 0.1, 300], gain: 1 },
+  night: { zen: [0.12, 0.035, 265], band: [0.2, 0.05, 250], hor: [0.34, 0.07, 228], amb: [0.4, 0.07, 250], gain: 0.55 },
+  dawn: { zen: [0.2, 0.06, 255], band: [0.46, 0.09, 205], hor: [0.74, 0.11, 62], amb: [0.5, 0.07, 220], gain: 1.1 },
 };
-const ALT = 11;           // cruise height in km
-const SPEED = 2.4;        // ground speed in km/s, sped up about ten times
-const PITCH = -17 * D2R;  // the view looks a little down
-const FOV = 72 * D2R;     // vertical field of the outside view
+const hourLin = () => {
+  const h = HOURS[opts.hour] || HOURS.dusk;
+  return { zen: linFit(...h.zen), band: linFit(...h.band), hor: linFit(...h.hor), amb: linFit(...h.amb), gain: h.gain };
+};
+
+const ALT = 11;            // cruise height in km
+const SPEED = 2.4;         // ground speed in km/s, sped up about ten times
+const YAW = 6 * D2R;       // the view turns a little toward the nose
+const PITCH = -10 * D2R;   // and looks a little down
+const FOV = 74 * D2R;      // vertical field of the outside view
+const ROLL = -13 * D2R;    // the outside view tilts, as in a turn
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
@@ -166,16 +173,18 @@ in vec2 aPos; void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const MAXCELL = 6, MAXFL = 4;
 const FS = `#version 300 es
 precision highp float;
-uniform vec2 uRes; uniform float uTime, uDpr;
-uniform vec2 uCam; uniform float uLat0, uLon0, uCosLat;
+uniform vec2 uRes; uniform float uTime, uDpr, uTowns;
+uniform vec2 uCam;
 uniform vec3 uF, uR, uU; uniform float uFocal;
-uniform vec4 uWin; uniform vec2 uPar; uniform float uShade, uFlash, uCover, uMoon;
+uniform vec4 uWin; uniform vec2 uPar; uniform float uShade, uFlash, uCover;
+uniform vec3 uZen, uBand, uHor, uAmb; uniform float uGain;
+uniform vec3 uWing[4], uLet[4], uWingN, uLetN, uTip; uniform float uStrobe;
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
 uniform vec4 uFl[${MAXFL}];
-uniform sampler2D uNight;
 out vec4 o;
 const float R = 6371.0, H = ${ALT.toFixed(1)};
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec2 hash22(vec2 p) { return vec2(hash12(p), hash12(p + 19.19)); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
 float fbm(vec2 p, int n) { float a = 0.5, s = 0.0; for (int i = 0; i < 6; i++) { if (i >= n) break; s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
@@ -185,13 +194,78 @@ float hitLayer(vec3 d, float hl) {
   float b = (R + H) * d.y, c = (H - hl) * (2.0 * R + H + hl), disc = b * b - c;
   return (disc < 0.0 || b > 0.0) ? -1.0 : -b - sqrt(disc);
 }
-// World km to texture coordinates: an equirectangular map.
-vec2 mapUv(vec2 w) {
-  float lat = uLat0 + w.y / 111.2, lon = uLon0 + w.x / (111.2 * uCosLat);
-  return vec2(lon / 360.0 + 0.5, 0.5 - lat / 180.0);
+
+// The sky: zenith, an afterglow band, then the horizon glow.
+// The glow is strongest toward the set sun, behind the tail.
+vec3 skyCol(vec3 d) {
+  float el = d.y + 0.058;
+  float sunSide = 0.55 + 0.45 * dot(normalize(vec2(d.x, d.z) + 1e-5), vec2(-0.8, 0.6));
+  vec3 c = mix(uBand, uZen, smoothstep(0.02, 0.45, el));
+  c = mix(uHor * (0.55 + 0.6 * sunSide), c, smoothstep(-0.01, 0.14, el));
+  c *= 0.35 * uGain;
+  c += uHor * 0.25 * uGain * exp(-abs(el) * 60.0) * sunSide;
+  return c;
 }
-// The map is moonlit land in blue; only towns carry red.
-float lightsOf(vec3 t) { return max(t.r - 0.035, 0.0) * 3.0; }
+
+// Towns: one site per 16 km cell, with a size and a street angle.
+// x: town density, y: street angle of the strongest site.
+vec2 towns(vec2 w) {
+  vec2 g = w / 16.0, i = floor(g);
+  float T = 0.0, best = 0.0, ang = 0.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 c = i + vec2(x, y);
+    vec2 site = (c + 0.15 + 0.7 * hash22(c)) * 16.0;
+    float sz = pow(hash12(c + 11.3), 2.6) * uTowns;
+    float r = 1.0 + 6.5 * sz;
+    vec2 q = w - site;
+    float v = (0.3 + sz) * exp(-dot(q, q) / (r * r));
+    T += v;
+    if (v > best) { best = v; ang = hash12(c + 2.7) * 3.1416; }
+  }
+  // Ragged edges: towns spill along valleys, not in discs.
+  T *= 0.45 + 1.1 * fbm(w / 2.2, 3);
+  return vec2(T, ang);
+}
+
+// One lamp per cell, at a random spot, lit with chance p.
+float lamps(vec2 w, float s, float p, float fw, float seed, out float hue) {
+  vec2 gp = w / s, id = floor(gp), f = fract(gp);
+  hue = hash12(id + seed + 9.3);
+  float on = step(hash12(id + seed), p);
+  vec2 at = 0.2 + 0.6 * hash22(id + seed + 3.1);
+  float r = max(0.08, fw / s * 0.7);
+  vec2 q = f - at;
+  float b = 0.012 / (r * r) * exp(-dot(q, q) / (r * r)) * on * (0.5 + hash12(id + seed + 5.5));
+  // Far away, lamps blend into their average glow.
+  return mix(p * 0.04, b, smoothstep(0.9, 0.25, fw / s));
+}
+
+vec3 ground(vec2 w, float fw) {
+  vec3 sodium = vec3(1.0, 0.5, 0.16), led = vec3(0.8, 0.88, 1.0);
+  // Fields: a patchwork that catches the sky light.
+  vec2 fp = floor(vec2(w.x * 1.7 + w.y * 0.4, w.y * 2.4 - w.x * 0.3));
+  float parcel = 0.45 + 0.9 * hash12(fp);
+  vec3 g = uAmb * 0.005 * uGain * parcel * (0.7 + 0.6 * fbm(w / 9.0, 3));
+  vec2 tw = towns(w);
+  float T = tw.x;
+  float dense = smoothstep(0.08, 0.5, T);
+  // The town glow: warm haze over the roofs.
+  g += sodium * T * 0.035;
+  float hue;
+  // Lamps gather in blocks, with dark gaps for parks and yards.
+  float blocks = smoothstep(0.35, 0.6, vnoise(w / 0.45));
+  float a = lamps(w, 0.13, dense * (0.25 + 0.65 * blocks), fw, 0.0, hue);
+  g += mix(sodium, led, step(0.9, hue)) * a;
+  // Highways: long white lines between towns, with a few lamps out in the dark.
+  vec2 hw = w / 22.0 + 0.9 * vec2(vnoise(w / 30.0), vnoise(w / 30.0 + 7.3));
+  float ridge = abs(vnoise(hw) - 0.5);
+  float hwW = max(0.02, fw * 0.6) / 22.0;
+  float road = exp(-ridge * ridge / (hwW * hwW * 4.0)) * 0.012 / max(0.02, fw * 0.6) * (0.5 + 0.5 * vnoise(w / 3.0));
+  g += mix(led, sodium, 0.5) * road * 0.18;
+  float rural = lamps(w, 0.9, 0.08 * uTowns, fw, 41.0, hue);
+  g += sodium * rural * 0.6;
+  return g;
+}
 
 // Lightning lights the cloud around each flash from inside.
 vec3 flashAt(vec2 w, float dens) {
@@ -202,105 +276,119 @@ vec3 flashAt(vec2 w, float dens) {
     vec2 q = w - l.xy;
     f += l.z * exp(-dot(q, q) / (l.w * l.w));
   }
-  return vec3(0.78, 0.82, 1.0) * f * (0.12 + dens * 1.4);
+  return vec3(0.72, 0.74, 1.0) * f * (0.1 + dens * 1.5);
 }
 
-vec3 outside(vec2 px) {
-  vec3 d = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
-  vec3 moonCol = vec3(0.004, 0.0055, 0.009) * (0.2 + uMoon * 1.6);
-  // Sky: deep blue, a lit band of haze at the horizon, then stars.
-  float el = d.y + 0.058;
-  vec3 sky = mix(vec3(0.004, 0.005, 0.009), vec3(0.0012, 0.0016, 0.003), smoothstep(0.0, 0.5, el));
-  sky += vec3(0.016, 0.009, 0.005) * exp(-max(el, 0.0) * 30.0);
-  sky += moonCol * 0.8 * exp(-max(el, 0.0) * 6.0);
+vec3 outside(vec3 d) {
+  vec3 sky = skyCol(d);
+  // Stars show only high up, where the glow has faded.
   vec2 sp = vec2(atan(d.x, d.z) * 160.0, d.y * 160.0);
   vec2 si = floor(sp), sf = fract(sp) - 0.5;
-  float st = step(0.985, hash12(si)) * exp(-dot(sf, sf) * 40.0) * smoothstep(0.0, 0.15, el);
-  sky += vec3(0.8, 0.85, 1.0) * st * (0.2 + hash12(si + 3.0)) * 0.25;
+  float st = step(0.985, hash12(si)) * exp(-dot(sf, sf) * 40.0) * smoothstep(0.08, 0.3, d.y);
+  sky += vec3(0.8, 0.85, 1.0) * st * (0.2 + hash12(si + 3.0)) * 0.12;
 
   float tg = hitLayer(d, 0.0);
   if (tg < 0.0) return sky;
-  vec3 p = vec3(0.0, R + H, 0.0) + d * tg;
-  vec2 w = uCam + p.xz;
-  // Ground: moonlit land, then the lights of the towns.
-  vec3 tex = texture(uNight, mapUv(w)).rgb;
-  float D = lightsOf(tex);
-  // Towns cluster, with ribbons of houses along the roads between them.
-  float town = fbm(w / 3.2, 4);
-  // Ridges of warped noise make long roads, not rings.
-  vec2 rw = w / 6.0 + vec2(vnoise(w / 9.0), vnoise(w / 9.0 + 5.2)) * 1.6;
-  float rid = 1.0 - abs(fbm(rw, 2) * 2.0 - 0.75);
-  float ribbon = smoothstep(0.93, 0.99, rid) * min(D * 2.5, 1.0);
-  float Dl = D * (smoothstep(0.56 - D * 0.08, 0.7 - D * 0.08, town) * 2.6 + ribbon * 1.6);
-  vec3 g = moonCol * tex.b * 2.2;
-  g += vec3(1.0, 0.55, 0.22) * (D * 0.12 + Dl * 0.88) * 0.045;
-  // Street lights: points in a grid, as many as the map's glow allows.
+  vec2 w = uCam + (vec3(0.0, R + H, 0.0) + d * tg).xz;
   float fw = length(fwidth(w));
-  for (int k = 0; k < 3; k++) {
-    float s = k == 0 ? 1.1 : k == 1 ? 0.36 : 0.13;
-    vec2 gp = w / s, id = floor(gp), f = fract(gp);
-    float h = hash12(id + s * 31.7);
-    vec2 at = 0.25 + 0.5 * vec2(hash12(id + 3.1), hash12(id + 7.7));
-    float on = step(h, Dl * (k == 0 ? 0.6 : k == 1 ? 0.7 : 0.6));
-    float r = max(0.07, fw / s * 0.7);
-    vec2 q = f - at;
-    float b = 0.012 / (r * r) * exp(-dot(q, q) / (r * r)) * on;
-    float detail = smoothstep(0.9, 0.25, fw / s);
-    vec3 lc = hash12(id + 9.3) < 0.62 ? vec3(1.0, 0.58, 0.2) : vec3(0.85, 0.9, 1.0);
-    g += lc * mix(D * 0.03, b, detail) * (0.6 + 0.8 * hash12(id + 5.5));
-  }
-  float fog = 1.0 - exp(-tg / 170.0);
-  vec3 haze = vec3(0.01, 0.006, 0.0038) + moonCol * 0.7;
+  vec3 g = ground(w, fw);
 
-  // Lower deck: broken cloud at 2 km, lit by the towns from below.
+  // Cloud deck at 2 km: lit by the sky above and the towns below.
   float tc = hitLayer(d, 2.0);
   vec2 wc = uCam + (vec3(0.0, R + H, 0.0) + d * tc).xz;
   float n = fbm(wc / 22.0 + vec2(uTime * 0.004, 0.0), 5);
   float cd = smoothstep(uCover, uCover + 0.22, n);
-  float under = lightsOf(textureLod(uNight, mapUv(wc), 3.0).rgb);
-  vec3 cc = vec3(1.0, 0.6, 0.3) * under * 0.03 + moonCol * (0.9 + 2.2 * fbm(wc / 3.0, 3)) + flashAt(wc, cd);
+  float under = towns(wc).x;
+  float lump = fbm(wc / 3.0, 3);
+  vec3 cc = uAmb * 0.03 * uGain * (0.5 + 1.2 * lump) + vec3(1.0, 0.5, 0.2) * under * 0.02 + flashAt(wc, cd);
+  // Toward the sun side the cloud tops pick up the horizon colour.
+  cc += uHor * 0.02 * uGain * lump * smoothstep(0.0, 1.0, dot(normalize(d.xz), vec2(-0.8, 0.6)));
   g = mix(g, cc, cd * 0.94);
 
-  g = mix(g, haze, fog);
+  // Aerial haze: the far ground melts into the horizon glow.
+  float fog = 1.0 - exp(-tg / 220.0);
+  g = mix(g, mix(uBand, uHor, 0.35) * 0.06 * uGain, fog);
   return g;
 }
 
-// Storm towers: each cell stands as a projected column with an anvil.
-// uTw: base x, base y, half width, height, in pixels.
-// uTwB: seed, strength, fog, unused. uTwC: flash u, flash v, flash level.
+// Storm towers: each cell stands as a column with an anvil.
+// uTw: base xy, top xy in pixels. uTwB: seed, strength, haze, half width.
+// uTwC: flash u, flash v, flash level.
 vec3 towers(vec2 px, vec3 c) {
-  vec3 moonCol = vec3(0.004, 0.0055, 0.009) * (0.2 + uMoon * 1.6);
-  vec3 haze = vec3(0.01, 0.006, 0.0038) + moonCol * 0.7;
   for (int i = 0; i < ${MAXCELL}; i++) {
     if (i >= uNTw) break;
     vec4 a = uTw[i], b = uTwB[i], f = uTwC[i];
-    vec2 q = vec2((px.x - a.x) / a.z, (px.y - a.y) / a.w);
-    if (q.y < -0.1 || q.y > 1.25 || abs(q.x) > 3.0) continue;
+    vec2 ax = a.zw - a.xy; float L2 = dot(ax, ax);
+    vec2 p = px - a.xy;
+    vec2 q = vec2((ax.x * p.y - ax.y * p.x) / sqrt(L2) / b.w, dot(p, ax) / L2);
+    q.x = -q.x;
+    if (q.y < -0.1 || q.y > 1.25 || abs(q.x) > 3.2) continue;
     float sd = b.x;
-    // The outline: a billowing column that flares into an anvil near the top.
-    // Billows: round bumps along the edge, larger low down.
     float bil = fbm(vec2(q.x * 1.6, q.y * 3.2) + sd, 5);
     float anv = smoothstep(0.76, 0.93, q.y);
     // The anvil leans downwind, so it spreads further to one side.
     float qx = q.x - anv * 0.6;
-    // A broad base, a column that narrows a little, then the flat anvil.
     float hw = 0.62 - 0.22 * smoothstep(0.0, 0.75, q.y) + 0.5 * (bil - 0.5) + anv * (1.3 + 0.5 * fbm(vec2(q.x * 0.7 + sd, 3.0), 3));
     float top = 0.94 + 0.08 * (fbm(vec2(q.x * 2.0 + sd, 1.0), 3) - 0.5) - 0.1 * smoothstep(0.6, 1.9, abs(qx));
     float shape = smoothstep(0.1, -0.1, abs(qx) - hw) * smoothstep(0.04, -0.06, q.y - top) * smoothstep(-0.1, 0.08, q.y);
     float dens = shape * b.y;
     if (dens <= 0.0) continue;
-    // Moonlight from the upper left; the billows shade each other.
     float lumps = fbm(vec2(q.x * 4.0, q.y * 9.0) + sd * 3.0 - vec2(uTime * 0.01, 0.0), 5);
-    vec3 col = moonCol * (1.5 + 7.0 * lumps * lumps * (0.5 + 0.6 * q.y) * (1.0 - 0.35 * qx));
-    // The towns below light the cloud base orange.
-    col += vec3(1.0, 0.55, 0.25) * 0.012 * (1.0 - smoothstep(0.0, 0.5, q.y)) * (0.5 + lumps);
-    // Lightning glows from inside and bleeds to the soft edges.
+    // The sky lights the tops; the sunward side catches the afterglow.
+    vec3 col = uAmb * 0.03 * uGain * (0.6 + 2.4 * lumps * lumps * (0.4 + 0.8 * q.y));
+    col += uHor * 0.05 * uGain * smoothstep(0.3, 1.0, q.y) * smoothstep(-0.6, 1.0, -qx) * lumps;
+    col += vec3(1.0, 0.5, 0.2) * 0.012 * (1.0 - smoothstep(0.0, 0.5, q.y)) * (0.5 + lumps);
     vec2 fq = (q - f.xy) * vec2(1.0, 1.8);
     float glow = f.z * (exp(-dot(fq, fq) * 5.0) * 2.2 + exp(-dot(fq, fq) * 0.8) * 0.5) * (0.5 + lumps);
-    col += vec3(0.75, 0.8, 1.0) * glow;
-    col = mix(col, haze, b.z);
+    col += vec3(0.72, 0.74, 1.0) * glow;
+    col = mix(col, skyCol(vec3(0.0, -0.02, 1.0)) * 0.9, b.z);
     c = mix(c, col, dens);
   }
+  return c;
+}
+
+// A ray hits a flat convex quad: the wing or its winglet.
+// Returns the hit distance, or -1; uv gives chord and span from 0 to 1.
+float quad(vec3 d, vec3 v[4], vec3 n, out vec2 uv) {
+  float dn = dot(d, n);
+  if (abs(dn) < 1e-4) return -1.0;
+  float t = dot(v[0], n) / dn;
+  if (t <= 0.0) return -1.0;
+  vec3 p = d * t;
+  // Inside a convex quad, every edge test has the same sign.
+  float s0 = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec3 e = v[(i + 1) % 4] - v[i];
+    float s = dot(cross(e, p - v[i]), n);
+    if (i == 0) s0 = s;
+    else if (s * s0 < 0.0) return -1.0;
+  }
+  // Span runs root to tip; chord runs leading to trailing edge.
+  vec3 le = v[1] - v[0];
+  float sp = clamp(dot(p - v[0], le) / dot(le, le), 0.0, 1.0);
+  vec3 a = mix(v[0], v[1], sp), b = mix(v[3], v[2], sp);
+  uv = vec2(clamp(dot(p - a, b - a) / dot(b - a, b - a), 0.0, 1.0), sp);
+  return t;
+}
+// The wing is painted grey; its top mirrors the sky at a grazing angle.
+vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E) {
+  vec3 r = reflect(d, n);
+  vec3 env = r.y > -0.02 ? skyCol(r) : skyCol(vec3(r.x, -0.02, r.z)) * 0.5;
+  // Grey paint: the sky shows in it, but muted.
+  env = mix(vec3(dot(env, vec3(0.3, 0.5, 0.2))), env, 0.55);
+  float fres = 0.04 + 0.96 * pow(1.0 - abs(dot(d, n)), 5.0);
+  vec3 c = uAmb * 0.01 * uGain * (0.8 + 0.4 * uv.y) + env * (0.12 + 0.6 * fres);
+  // A faint grain of brushed panels, and the flap seam near the trail.
+  c *= 0.9 + 0.2 * vnoise(vec2(uv.x * 6.0, uv.y * 90.0));
+  c *= 1.0 - 0.45 * smoothstep(0.012, 0.0, abs(uv.x - 0.72));
+  // The leading edge is round, so it catches a bright line of sky.
+  c += env * 0.9 * smoothstep(0.06, 0.0, uv.x);
+  c *= 1.0 - 0.6 * smoothstep(0.94, 1.0, uv.x);
+  // The nav light and the strobe light the wing near the tip.
+  vec3 tp = d * t - uTip;
+  float near = exp(-dot(tp, tp) / 0.8);
+  c += vec3(1.0, 0.08, 0.05) * near * 0.02 + vec3(0.9, 0.95, 1.0) * exp(-dot(tp, tp) / 4.0) * uStrobe * 0.3;
+  c += vec3(0.72, 0.74, 1.0) * E * 0.25;
   return c;
 }
 
@@ -309,7 +397,22 @@ float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(ma
 
 void main() {
   vec2 px = gl_FragCoord.xy;
-  vec3 view = towers(px, outside(px));
+  vec3 d = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
+  vec3 view = towers(px, outside(d));
+  float E = 0.004 + uFlash * 0.07;
+
+  // The wing and its winglet sit in front of everything outside.
+  vec2 uv; vec2 uv2;
+  float tw = quad(d, uWing, uWingN, uv);
+  if (tw > 0.0) view = wingCol(d, uWingN, uv, tw, E);
+  float tl = quad(d, uLet, uLetN, uv2);
+  if (tl > 0.0 && (tw < 0.0 || tl < tw)) view = wingCol(d, uLetN, uv2.yx, tl, E) * 0.8;
+  // The red nav light: a hot core and a soft halo.
+  vec3 tipD = normalize(uTip);
+  float ang = acos(clamp(dot(d, tipD), -1.0, 1.0)) * uFocal / uDpr;
+  view += vec3(1.0, 0.06, 0.04) * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
+  view += vec3(0.9, 0.95, 1.0) * uStrobe * (exp(-ang * ang / 5.0) * 4.0 + exp(-ang / 40.0) * 0.12);
+
   // The opening sits deeper than the wall, so the head moves it less.
   vec2 cIn = uWin.xy + uPar * 0.55, cOut = uWin.xy + uPar;
   vec2 hb = uWin.zw;
@@ -317,51 +420,45 @@ void main() {
   float sIn = sdBox(px - cIn, hb, rIn);
   float sOut = sdBox(px - cOut, hb + bez, rIn + bez);
   float aa = 1.2 * uDpr;
-  // Light from outside reaches into the cabin; flashes light it all.
-  float E = 0.004 + uFlash * 0.07;
-  vec3 eCol = mix(vec3(0.5, 0.45, 0.5), vec3(0.75, 0.8, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
-  vec3 cabin = vec3(0.009, 0.0105, 0.016);
-  float alb = 0.42;
+  vec3 eCol = mix(vec3(1.0, 0.86, 0.72), vec3(0.75, 0.8, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
+  // Warm cabin light, low and dim, for a night flight.
+  vec3 cabin = vec3(0.016, 0.012, 0.0095);
+  float alb = 0.5;
 
   // Inner pane: frost grows in from the lower corners and glows when lit.
   vec2 lp = (px - cIn) / hb;
   float edge = -sIn / hb.x;
   float fr = fbm(px / (2.2 * uDpr), 4) * 0.7 + fbm(px / (14.0 * uDpr), 3) * 0.5;
   float frost = smoothstep(0.26, 0.0, edge) * smoothstep(-0.2, -0.85, lp.y) * smoothstep(0.62, 0.8, fr + 0.3 * (0.26 - edge));
-  view += eCol * frost * (0.0015 + E * 0.35);
-  // A soft sheen: the cabin seen faintly in the glass.
-  view += vec3(0.0012, 0.0014, 0.002) * smoothstep(0.9, -0.2, lp.x + lp.y * 0.4);
-  // The breather hole: a small dark dot low on the pane.
+  view += eCol * frost * (0.003 + E * 0.35);
+  view += vec3(0.0016, 0.0014, 0.0012) * smoothstep(0.9, -0.2, lp.x + lp.y * 0.4);
   float bh = length(px - (cIn + vec2(0.0, -hb.y * 0.7))) / uDpr;
   view = mix(view, vec3(0.0), smoothstep(2.6, 1.6, bh) * 0.8);
-  view += vec3(1.0) * E * smoothstep(1.0, 0.0, abs(bh - 2.6)) * 0.4;
 
   // The shade comes down from the top of the opening.
   float yShade = cIn.y + hb.y - uShade * hb.y * 2.0;
   float above = px.y - yShade;
   vec3 shade = alb * 1.2 * (cabin * (0.6 + 0.8 * smoothstep(-hb.y, hb.y, px.y - cIn.y)) + eCol * E * 0.12);
-  // Its lip: a dark groove, then a lit edge.
   shade *= 1.0 - 0.55 * smoothstep(14.0 * uDpr, 0.0, above) * smoothstep(0.0, 4.0 * uDpr, above);
   shade += alb * smoothstep(3.0 * uDpr, 0.0, abs(above - 2.0 * uDpr)) * (cabin * 1.5 + eCol * E * 0.8);
   float isShade = smoothstep(-aa, aa, above) * step(0.001, uShade);
-  // The shade casts a short soft shadow onto the pane below its lip.
   view *= 1.0 - 0.5 * smoothstep(-12.0 * uDpr, 0.0, above) * step(0.001, uShade);
   vec3 win = mix(view, shade, isShade);
 
   // Bezel: a plastic slope from the wall down into the opening.
+  // The glow from outside tints the slope near the glass.
+  vec3 outGlow = uHor * 0.012 * uGain + eCol * E;
   float tb = clamp(sIn / max(sIn - sOut, 1e-3), 0.0, 1.0);
   vec2 gIn = normalize(vec2(dFdx(sIn), dFdy(sIn)) + 1e-6);
   float up = 0.5 + 0.5 * gIn.y;
-  vec3 bezel = alb * (cabin * (0.5 + up) + eCol * E * 1.6 * pow(1.0 - tb, 2.0));
+  vec3 bezel = alb * (cabin * (0.5 + up) + outGlow * 1.4 * pow(1.0 - tb, 2.0));
   bezel *= 0.75 + 0.25 * smoothstep(0.0, 0.25, tb);
-  // A crisp rim where the slope meets the wall.
   bezel += alb * cabin * 1.5 * smoothstep(1.5 * uDpr, 0.0, abs(sOut + 1.0 * uDpr)) * (0.3 + up);
 
   // Wall: curved plastic panels, lit from above and by the window.
   float wx = (px.x - cOut.x) / uRes.y;
   vec3 wall = alb * cabin * (0.5 + 0.9 * smoothstep(-0.2, 1.0, px.y / uRes.y)) * (1.0 - 0.35 * wx * wx);
-  wall += alb * eCol * E * 0.9 * exp(-max(sOut, 0.0) / (hb.x * 0.6));
-  // Soft occlusion at the rim of the recess.
+  wall += alb * outGlow * 0.7 * exp(-max(sOut, 0.0) / (hb.x * 0.6));
   wall *= 1.0 - 0.45 * exp(-max(sOut, 0.0) / (6.0 * uDpr));
 
   vec3 c = wall;
@@ -395,68 +492,56 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), g
 gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-// The night map: mipmapped, with anisotropy for the low view.
-const nightTex = gl.createTexture();
-function loadNight() {
-  return new Promise(res => {
-    const img = new Image();
-    img.onload = () => {
-      gl.bindTexture(gl.TEXTURE_2D, nightTex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      const an = gl.getExtension('EXT_texture_filter_anisotropic');
-      if (an) gl.texParameterf(gl.TEXTURE_2D, an.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(an.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
-      res(true);
-    };
-    img.onerror = () => { console.warn('night map failed to load'); res(false); };
-    img.src = 'night.jpg';
-  });
+/* ---------- the aircraft ---------- */
+// Aircraft frame: x to the nose, y up, z out of the left window.
+// Units are metres from the eye; the seat sits behind the wing.
+const WING = [[8.5, -2.4, 1.2], [-0.4, -0.75, 17], [-2.0, -0.75, 17], [2.6, -2.4, 1.2]];
+const LET = [[-0.4, -0.75, 17], [-1.5, 1.4, 17.6], [-2.3, 1.4, 17.6], [-2.0, -0.75, 17]];
+const TIP = [-1.9, 1.35, 17.6];
+const sub = (a, b) => a.map((v, i) => v - b[i]);
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+// Each quad's normal faces the eye side, so the edge test agrees.
+function quadNormal(v) {
+  const n = norm(cross(sub(v[1], v[0]), sub(v[3], v[0])));
+  return dot(n, v[0]) > 0 ? n.map(x => -x) : n;
 }
-// One dark texel stands in until the map arrives.
-gl.bindTexture(gl.TEXTURE_2D, nightTex);
-gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([4, 8, 16, 255]));
 
-/* ---------- flight ---------- */
 let W = 1, H = 1, dpr = 1, t = 0;
-// The plane flies on a flat local map, in km from the route's start.
-const cam = { x: 0, z: 0, v: SPEED, push: 0 };
-let route = ROUTES[opts.route] || ROUTES.low;
-const hdg = () => route.head * D2R;
-const fwd = () => [Math.sin(hdg()), Math.cos(hdg())];
-// The left window looks 90 degrees left of the heading.
-const look = () => [-Math.cos(hdg()), Math.sin(hdg())];
+// The plane banks gently left; the roll drifts slowly.
+let bank = 10 * D2R;
+// Aircraft axes in the world: the left wing dips by the bank.
+const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
 const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], focal: 600 };
-function setBasis(yaw = 0, pitch = 0) {
-  const az = hdg() - PI / 2 + yaw, el = PITCH + pitch;
-  const F = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
-  const Rv = [Math.cos(az), 0, -Math.sin(az)];
-  const U = [F[1] * Rv[2] - F[2] * Rv[1], F[2] * Rv[0] - F[0] * Rv[2], F[0] * Rv[1] - F[1] * Rv[0]];
-  basis.F = F; basis.R = Rv; basis.U = U;
+function setBasis() {
+  const Fa = norm([Math.sin(YAW) * Math.cos(PITCH), Math.sin(PITCH), Math.cos(YAW) * Math.cos(PITCH)]);
+  const R0 = norm(cross([0, 1, 0], Fa)), U0 = cross(Fa, R0);
+  // Roll turns the right and up axes about the view.
+  const cr = Math.cos(ROLL), sr = Math.sin(ROLL);
+  const Ra = R0.map((v, i) => cr * v + sr * U0[i]), Ua = U0.map((v, i) => cr * v - sr * R0[i]);
+  basis.F = toWorld(Fa); basis.R = toWorld(Ra); basis.U = toWorld(Ua);
   basis.focal = H / 2 / Math.tan(FOV / 2);
 }
+
+/* ---------- flight ---------- */
+// The plane flies along world x; the left window looks along world z.
+const cam = { x: 0, z: 0, push: 0 };
 
 // Storm cells live on the map; new ones form ahead as old ones fall behind.
 const cells = [];
 function newCell(ahead) {
-  const [fx, fz] = fwd(), [lx, lz] = look();
-  // Cells form ahead and inside the window's view, so they pass through it.
-  const side = rnd(25, 160), a = (ahead ? rnd(70, 160) : rnd(-20, 140)) + side * rnd(-0.3, 0.3);
-  return { x: cam.x + fx * a + lx * side, z: cam.z + fz * a + lz * side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14) };
+  const side = rnd(25, 160), a = (ahead ? rnd(70, 160) : rnd(-20, 140)) + side * rnd(-0.2, 0.4);
+  return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14) };
 }
 function stepCells(dt) {
   const want = Math.round(opts.storm * MAXCELL);
-  const [fx, fz] = fwd();
   for (let i = cells.length - 1; i >= 0; i--) {
     const c = cells[i];
     c.age += dt;
     // Cells grow in and die back over tens of seconds.
     c.s = clamp(Math.min(c.age / 12, (c.life - c.age) / 12));
-    const along = (c.x - cam.x) * fx + (c.z - cam.z) * fz;
-    if (c.age > c.life || along < -120 || i >= want) cells.splice(i, 1);
+    if (c.age > c.life || c.x - cam.x < -120 || i >= want) cells.splice(i, 1);
   }
   while (cells.length < want) cells.push(newCell(true));
 }
@@ -467,7 +552,7 @@ function flash(x, z, big = 1, cell = null, u = rnd(-0.3, 0.3), v = rnd(0.2, 0.75
   const strokes = [0];
   const n = 1 + Math.floor(Math.random() * 4);
   for (let i = 1; i < n; i++) strokes.push(strokes[i - 1] + rnd(0.05, 0.22));
-  flashes.push({ x, z, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, u, v });
+  flashes.push({ x, z, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, u, v, level: 0 });
   if (flashes.length > MAXFL) flashes.shift();
 }
 function flashLevel(f) {
@@ -492,7 +577,7 @@ function stepFlashes(dt) {
 /* ---------- head and shade ---------- */
 // The head drifts with the pointer, so the frame shifts against the view.
 const head = { x: 0, y: 0, tx: 0, ty: 0 };
-const shade = { v: 0.16, target: 0.16 };
+const shade = { v: 0.12, target: 0.12 };
 const win = { x: 0, y: 0, w: 1, h: 1 };
 function layout() {
   // The window stands tall in the stage, above the bar.
@@ -517,61 +602,63 @@ function step(dt) {
   t += dt;
   // Drag adds a push that fades back to cruise.
   cam.push *= Math.exp(-dt / 1.2);
-  const v = (reduce ? SPEED * 0.4 : SPEED) + cam.push;
-  const [fx, fz] = fwd();
-  cam.x += fx * v * dt; cam.z += fz * v * dt;
+  cam.x += ((reduce ? SPEED * 0.4 : SPEED) + cam.push) * dt;
+  // The bank breathes between about 7 and 13 degrees.
+  if (!reduce) bank = (10 + 3 * Math.sin(t * 0.045) + 1.2 * Math.sin(t * 0.13)) * D2R;
   const k = 1 - Math.exp(-dt / 0.35);
   head.x += (head.tx - head.x) * k; head.y += (head.ty - head.y) * k;
   shade.v += (shade.target - shade.v) * (1 - Math.exp(-dt / 0.12));
   stepCells(dt);
   stepFlashes(dt);
 }
+// The strobe double-flashes every 1.6 seconds.
+function strobe() {
+  const p = t % 1.6;
+  return Math.exp(-p / 0.03) + Math.exp(-Math.max(0, p - 0.12) / 0.03) * (p > 0.12 ? 1 : 0);
+}
 function render() {
+  setBasis();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
   gl.useProgram(P.p); gl.bindVertexArray(quadVao);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, nightTex);
   const u = P.u;
-  gl.uniform1i(u.uNight, 0);
   gl.uniform2f(u.uRes, W, H);
   gl.uniform1f(u.uTime, t);
   gl.uniform1f(u.uDpr, dpr);
-  gl.uniform1f(u.uCosLat, Math.cos(route.lat * D2R));
-  setBasis();
+  gl.uniform1f(u.uTowns, opts.towns);
+  gl.uniform2f(u.uCam, cam.x, cam.z);
   gl.uniform3fv(u.uF, basis.F); gl.uniform3fv(u.uR, basis.R); gl.uniform3fv(u.uU, basis.U);
   gl.uniform1f(u.uFocal, basis.focal);
   gl.uniform4f(u.uWin, win.x, win.y, win.w, win.h);
   gl.uniform2f(u.uPar, head.x * 26 * dpr, head.y * 18 * dpr);
   gl.uniform1f(u.uShade, shade.v);
   gl.uniform1f(u.uCover, opts.cloud);
-  gl.uniform1f(u.uMoon, opts.moon);
+  const hl = hourLin();
+  gl.uniform3fv(u.uZen, hl.zen); gl.uniform3fv(u.uBand, hl.band); gl.uniform3fv(u.uHor, hl.hor); gl.uniform3fv(u.uAmb, hl.amb);
+  gl.uniform1f(u.uGain, hl.gain);
+  // The wing goes in world space, so it banks with the cabin.
+  const wing = WING.map(toWorld), let_ = LET.map(toWorld);
+  gl.uniform3fv(u['uWing[0]'], wing.flat()); gl.uniform3fv(u.uWingN, quadNormal(wing));
+  gl.uniform3fv(u['uLet[0]'], let_.flat()); gl.uniform3fv(u.uLetN, quadNormal(let_));
+  gl.uniform3fv(u.uTip, toWorld(TIP));
+  gl.uniform1f(u.uStrobe, reduce ? 0 : strobe());
   fl.fill(0); tw.fill(0); twB.fill(0); twC.fill(0);
   let sum = 0;
-  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x - cam.x, f.z - cam.z, f.level, f.r], i * 4); });
+  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
   const n = towerUniforms();
   gl.uniform4fv(u['uTw[0]'], tw); gl.uniform4fv(u['uTwB[0]'], twB); gl.uniform4fv(u['uTwC[0]'], twC);
   gl.uniform1i(u.uNTw, n);
-  // Cell and flash positions go in relative to the plane, for precision.
-  gl.uniform2f(u.uCam, 0, 0);
-  gl.uniform1f(u.uLat0, route.lat + cam.z / 111.2);
-  gl.uniform1f(u.uLon0, route.lon + cam.x / (111.2 * Math.cos(route.lat * D2R)));
   gl.uniform4fv(u['uFl[0]'], fl);
   gl.uniform1f(u.uFlash, Math.min(1.2, sum * 0.35));
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
-
-// Project a point given in km from the plane: side, along, height.
+// Project a point in km from the plane, along x, out along z, at height h.
 function project(dx, dz, h) {
   const dist = Math.hypot(dx, dz);
   // Earth's curve drops far points below the flat plane.
-  const y = h - ALT - dist * dist / (2 * 6371);
-  const P = [dx, y, dz];
-  const z = P[0] * basis.F[0] + P[1] * basis.F[1] + P[2] * basis.F[2];
+  const P = [dx, h - ALT - dist * dist / (2 * 6371), dz];
+  const z = dot(P, basis.F);
   if (z < 1) return null;
-  return {
-    x: W / 2 + (P[0] * basis.R[0] + P[1] * basis.R[1] + P[2] * basis.R[2]) / z * basis.focal,
-    y: H / 2 + (P[0] * basis.U[0] + P[1] * basis.U[1] + P[2] * basis.U[2]) / z * basis.focal,
-    z, dist,
-  };
+  return { x: W / 2 + dot(P, basis.R) / z * basis.focal, y: H / 2 + dot(P, basis.U) / z * basis.focal, z, dist };
 }
 // Towers go in far to near, so near ones cover far ones.
 function towerUniforms() {
@@ -582,15 +669,15 @@ function towerUniforms() {
     if (!b || !tp) continue;
     const half = c.r * 0.55 / b.z * basis.focal;
     if (b.x + half * 3 < 0 || b.x - half * 3 > W) continue;
-    c.screen = { x: b.x, y: b.y, w: half, h: tp.y - b.y };
+    c.screen = { x: b.x, y: b.y, tx: tp.x, ty: tp.y, w: half };
     let fu = 0, fv = 0.5, fk = 0;
     for (const f of flashes) if (f.cell === c && f.level > fk) { fk = f.level; fu = f.u; fv = f.v; }
-    list.push({ c, b, half, hgt: tp.y - b.y, fu, fv, fk });
+    list.push({ c, b, tp, half, fu, fv, fk });
   }
   list.sort((a, b) => b.b.dist - a.b.dist);
   list.slice(0, MAXCELL).forEach((o, i) => {
-    tw.set([o.b.x, o.b.y, o.half, o.hgt], i * 4);
-    twB.set([o.c.seed, o.c.s, 1 - Math.exp(-o.b.dist / 170), 0], i * 4);
+    tw.set([o.b.x, o.b.y, o.tp.x, o.tp.y], i * 4);
+    twB.set([o.c.seed, o.c.s, 1 - Math.exp(-o.b.dist / 150), o.half], i * 4);
     twC.set([o.fu, o.fv, o.fk, 0], i * 4);
   });
   return Math.min(list.length, MAXCELL);
@@ -613,19 +700,18 @@ function onLip(x, y) {
   const lipY = win.y + head.y * 18 * dpr * 0.55 + win.h - shade.v * win.h * 2;
   return Math.abs(x - cx) < win.w && Math.abs(y - lipY) < 22 * dpr;
 }
-// A tap aims a flash at the storm layer under the pointer.
+// A tap on a tower lights it at that spot; elsewhere it lights the deck.
 function tapAt(x, y) {
-  setBasis();
-  // A tap on a tower lights it at that spot.
   for (const c of cells) {
     const sc = c.screen;
     if (!sc || c.s < 0.2) continue;
-    const u = (x - sc.x) / sc.w, v = (y - sc.y) / sc.h;
-    if (Math.abs(u) < 1.2 && v > 0 && v < 1) { flash(c.x, c.z, 1.2, c, u, v); return; }
+    const ax = [sc.tx - sc.x, sc.ty - sc.y], L2 = ax[0] ** 2 + ax[1] ** 2, p = [x - sc.x, y - sc.y];
+    const v = (p[0] * ax[0] + p[1] * ax[1]) / L2, uu = -(ax[0] * p[1] - ax[1] * p[0]) / Math.sqrt(L2) / sc.w;
+    if (Math.abs(uu) < 1.2 && v > 0 && v < 1) { flash(c.x, c.z, 1.2, c, uu, v); return; }
   }
-  const d = [0, 1, 2].map(i => basis.F[i] * basis.focal + basis.R[i] * (x - W / 2) + basis.U[i] * (y - H / 2));
-  const l = Math.hypot(...d); d.forEach((v, i) => (d[i] = v / l));
-  const Rr = 6371, b = (Rr + ALT) * d[1], c = (ALT - 8) * (2 * Rr + ALT + 8), disc = b * b - c;
+  setBasis();
+  const d = norm([0, 1, 2].map(i => basis.F[i] * basis.focal + basis.R[i] * (x - W / 2) + basis.U[i] * (y - H / 2)));
+  const Rr = 6371, b = (Rr + ALT) * d[1], c = (ALT - 2) * (2 * Rr + ALT + 2), disc = b * b - c;
   if (disc < 0 || b > 0) return;
   const tt = -b - Math.sqrt(disc);
   flash(cam.x + d[0] * tt, cam.z + d[2] * tt, 1.2);
@@ -641,7 +727,7 @@ stage.addEventListener('pointerdown', e => {
 stage.addEventListener('pointermove', e => {
   const [x, y] = toPx(e);
   if (e.pointerType === 'mouse') { head.tx = clamp(x / W * 2 - 1, -1, 1); head.ty = clamp(y / H * 2 - 1, -1, 1); }
-  if (!drag) { stage.classList.toggle('on-shade', onLip(x, y)); wake(); return; }
+  if (!drag) { stage.classList.toggle('on-shade', onLip(x, y)); return; }
   if (Math.hypot(x - drag.x0, y - drag.y0) > 6 * dpr) drag.moved = true;
   if (drag.shade) { shade.target = clamp(drag.s0 - (y - drag.y0) / (win.h * 2)); return; }
   // Dragging toward the tail pushes the plane on; the view runs right to left.
@@ -669,32 +755,25 @@ popover(document.getElementById('setter'), document.getElementById('setBtn'));
 const stormEl = document.getElementById('storm');
 stormEl.value = String(opts.storm);
 stormEl.addEventListener('input', () => { opts.storm = +stormEl.value; save('storm', opts.storm); });
-function setRoute(v) {
-  route = ROUTES[v] || ROUTES.low;
-  cam.x = 0; cam.z = 0; cam.push = 0;
-  cells.length = 0; flashes.length = 0;
-  for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(12, 40); c.s = 1; cells.push(c); }
-}
-choices(document.getElementById('route'), v => { opts.route = v; save('route', v); setRoute(v); render(); }).set(opts.route);
+choices(document.getElementById('hour'), v => { opts.hour = v; save('hour', v); render(); }).set(opts.hour);
 choices(document.getElementById('cloud'), v => { opts.cloud = +v; save('cloud', v); render(); }).set(String(opts.cloud));
-choices(document.getElementById('moon'), v => { opts.moon = +v; save('moon', v); render(); }).set(String(opts.moon));
-document.getElementById('shadeBtn').addEventListener('click', () => { shade.target = shade.target > 0.5 ? 0.16 : 0.92; wake(); });
+choices(document.getElementById('towns'), v => { opts.towns = +v; save('towns', v); render(); }).set(String(opts.towns));
+document.getElementById('shadeBtn').addEventListener('click', () => { shade.target = shade.target > 0.5 ? 0.12 : 0.92; });
 
 /* ---------- start ---------- */
-setRoute(opts.route);
-window.__ws = { cells, cam, flashes, look, fwd };
+// The flight opens with a few cells already standing.
+for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(12, 40); c.s = 1; cells.push(c); }
+window.__ws = { cells, flashes };
 new ResizeObserver(() => resize()).observe(stage);
 resize();
-loadNight().then(() => {
-  render();
-  // One finished frame folds shader work into the intro.
-  gl.finish();
-  ready = true;
-  markReady();
-  requestAnimationFrame(() => canvas.classList.add('on'));
-  whenVisible(stage, v => { visible = v; if (v) wake(); });
-  wake();
-});
+render();
+// One finished frame folds shader work into the intro.
+gl.finish();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => { visible = v; if (v) wake(); });
+wake();
 </script>
 </body>
 </html>
