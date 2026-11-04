@@ -41,6 +41,9 @@ uniform float uGlowR;
 uniform float uCloudY;
 uniform vec3 uSearchHit;
 uniform float uTime;
+uniform float uZenK, uDomeK, uBankGlowK, uCloudLo, uCloudHi, uCloudK, uGapK, uSearchK;
+uniform vec2 uWind;
+uniform float uConeK, uFlareK, uPlumeK, uWinK, uRainK, uLightK;
 // Horizontal alignment of a view direction with the port.
 float k2face(vec3 dir) {
   vec2 toC = normalize(uGlow.xz - cameraPosition.xz);
@@ -50,28 +53,28 @@ vec3 k2sky(vec3 dir) {
   float face = k2face(dir);
   float up = max(dir.y, 0.0);
   // Dark zenith, a cool low band, a wide amber dome over the port.
-  vec3 col = vec3(0.0025, 0.003, 0.006) + uCool * 0.02 * exp(-up * 10.0);
-  col += uAmber * 0.036 * pow(face, 5.0) * exp(-up * 7.0);
+  vec3 col = (vec3(0.0025, 0.003, 0.006) + uCool * 0.02 * exp(-up * 10.0)) * uZenK;
+  col += uAmber * uDomeK * pow(face, 5.0) * exp(-up * 7.0);
   // The fog bank glows above the horizon in the haze colour itself.
   // Sky, fog and far water then meet with no seam.
-  col += uAmber * 0.1 * pow(face, 2.0) * exp(-up * 18.0);
+  col += uAmber * uBankGlowK * pow(face, 2.0) * exp(-up * 18.0);
   if (dir.y > 0.002) {
     float t = (uCloudY - cameraPosition.y) / dir.y;
     vec3 p = cameraPosition + dir * t;
     // A slow warp bends the cloud into soft, natural shapes.
     // Wind carries the cloud slowly across; the warp changes its shape.
-    vec2 q = p.xz + vec2(uTime * 6.0, uTime * 2.5);
+    vec2 q = p.xz + uWind * uTime;
     vec2 w = vec2(k2noise(q * 0.0012 + 11.0 + uTime * 0.004), k2noise(q * 0.0012 + 23.0 - uTime * 0.003));
     float d = k2fbm(q * 0.0028 + vec2(3.0, 7.0) + w * 1.6);
-    float cover = smoothstep(0.26, 0.6, d);
+    float cover = smoothstep(uCloudLo, uCloudHi, d);
     float thick = smoothstep(0.45, 0.85, d);
     // The underside takes amber from the port, and a little everywhere.
     float g = exp(-length(p.xz - uGlow.xz) / uGlowR);
-    vec3 cc = uAmber * (0.016 + 0.16 * g) * (0.6 + 0.6 * thick) + uCool * 0.003;
+    vec3 cc = (uAmber * (0.016 + 0.16 * g) * (0.6 + 0.6 * thick) + uCool * 0.003) * uCloudK;
     // The searchlight leaves a pale patch on the cloud.
-    cc += vec3(0.75, 0.82, 1.0) * 0.6 * exp(-length(p.xz - uSearchHit.xz) / 45.0) * (0.5 + thick);
+    cc += vec3(0.75, 0.82, 1.0) * uSearchK * exp(-length(p.xz - uSearchHit.xz) / 45.0) * (0.5 + thick);
     // Gaps show the dim sky above, still lit faintly by the port.
-    vec3 gap = col + uAmber * 0.008 * (0.3 + g);
+    vec3 gap = col + uAmber * uGapK * (0.3 + g);
     cc = mix(gap, cc, cover);
     float far = 1.0 - exp(-t / 4200.0);
     // Near the horizon the cloud thins away, so no grazing stripes show.
@@ -90,13 +93,14 @@ uniform float uHazeH;
 uniform float uPortZ;
 uniform float uPortFog;
 uniform vec3 uFogLo, uFogHi;
+uniform float uWisp, uFogFall;
 // Fog density in the port volume: soft at every side, thin with height.
 float k2fogDensity(vec3 p) {
   float sx = smoothstep(0.0, 320.0, p.x - uFogLo.x) * smoothstep(0.0, 320.0, uFogHi.x - p.x);
   float sz = smoothstep(0.0, 360.0, p.z - uFogLo.z) * smoothstep(0.0, 360.0, uFogHi.z - p.z);
-  float h = exp(-max(p.y, 0.0) / 220.0);
+  float h = exp(-max(p.y, 0.0) / uFogFall);
   // Slow wisps vary the fog, so it never reads as one flat sheet.
-  float w = 0.6 + 0.8 * k2noise(p.xz * 0.004 + vec2(uTime * 0.012, uTime * 0.004));
+  float w = 1.0 - uWisp * 0.5 + uWisp * k2noise(p.xz * 0.004 + vec2(uTime * 0.012, uTime * 0.004));
   return sx * sz * h * w;
 }
 // A short march sums the fog along the view ray inside the volume.
@@ -154,6 +158,14 @@ const k2 = {
   uFogLo: { value: new THREE.Vector3(CX - 1300, -10, QUAY - 900) },
   uFogHi: { value: new THREE.Vector3(CX + 1300, 700, QUAY + 380) },
   uTime: { value: 0 },
+  // Look knobs: the tuning panel moves these; defaults keep the signed look.
+  uZenK: { value: 1 }, uDomeK: { value: 0.036 }, uBankGlowK: { value: 0.1 },
+  uCloudLo: { value: 0.26 }, uCloudHi: { value: 0.6 }, uCloudK: { value: 1 }, uGapK: { value: 0.008 },
+  uWind: { value: new THREE.Vector2(6, 2.5) }, uSearchK: { value: 0.6 },
+  uWisp: { value: 0.8 }, uFogFall: { value: 220 }, uLightK: { value: 1 },
+  uConeK: { value: 1 }, uFlareK: { value: 1 }, uPlumeK: { value: 1 }, uWinK: { value: 2.4 }, uRainK: { value: 1 },
+  uSwellK: { value: 1 }, uSwellT: { value: 1 }, uGlintK: { value: 0.9 }, uGlintW: { value: 0.018 },
+  uBankK: { value: 0.05 }, uRingK: { value: 0.03 }, uRippleK: { value: 1 }, uDeep: { value: new THREE.Vector3(0.0006, 0.0011, 0.002) },
 };
 
 // Light list for lit surfaces: position + power, colour + range, spot axis + cone.
@@ -183,7 +195,7 @@ vec3 k2lights(vec3 P, vec3 N) {
     vec3 L = uLP[i].xyz - P;
     float d = length(L);
     L /= d;
-    float att = uLP[i].w / (1.0 + pow(d / uLC[i].w, 2.0));
+    float att = uLP[i].w * uLightK / (1.0 + pow(d / uLC[i].w, 2.0));
     float spot = 1.0;
     if (uLD[i].w > -1.5) spot = smoothstep(uLD[i].w, uLD[i].w + 0.12, dot(-L, uLD[i].xyz));
     float wrap = max(dot(N, L) * 0.85 + 0.15, 0.0);
@@ -199,7 +211,7 @@ vec3 k2spec(vec3 P, vec3 N, vec3 V, float shin) {
     vec3 L = uLP[i].xyz - P;
     float d = length(L);
     L /= d;
-    float att = uLP[i].w / (1.0 + pow(d / uLC[i].w, 2.0));
+    float att = uLP[i].w * uLightK / (1.0 + pow(d / uLC[i].w, 2.0));
     float s = pow(max(dot(N, normalize(L + V)), 0.0), shin);
     sum += uLC[i].rgb * att * s;
   }
@@ -303,7 +315,7 @@ const facade = new THREE.ShaderMaterial({
       float a = abs(N.x) > abs(N.z) ? vP.z : vP.x;
       vec2 cell = floor(vP.xz / 60.0);
       vec2 uv = vec2(a / 4.5, vP.y / 4.2) / 32.0 + vec2(k2hash(cell), k2hash(cell + 7.0));
-      em = texture2D(uWin, uv).rgb * 2.4 * vWin;
+      em = texture2D(uWin, uv).rgb * uWinK * vWin;
     }
     float f = k2hazeAmount(vP);
     vec3 col = mix(c, k2hazeColor(normalize(vP - cameraPosition), vP), f);
@@ -313,7 +325,7 @@ const facade = new THREE.ShaderMaterial({
 
 // Flame: a soft tongue, white at the root, orange at the tip.
 const flameMat = new THREE.ShaderMaterial({
-  uniforms: { uTime: k2.uTime },
+  uniforms: { uTime: k2.uTime, uFlameK: { value: 1 } },
   transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
   vertexShader: /* glsl */`
   varying vec2 vUv;
@@ -330,14 +342,14 @@ const flameMat = new THREE.ShaderMaterial({
   varying vec2 vUv;
   varying vec3 vN;
   varying vec3 vP;
-  uniform float uTime;
+  uniform float uTime, uFlameK;
   void main() {
     float rim = pow(abs(dot(normalize(vN), normalize(cameraPosition - vP))), 1.5);
     // The flame flickers and licks upward.
     float t = clamp(vUv.y + 0.12 * sin(uTime * 11.0 + vUv.x * 6.3) * vUv.y, 0.0, 1.0);
     vec3 c = mix(vec3(6.0, 4.6, 2.2), vec3(3.2, 0.7, 0.12), smoothstep(0.0, 0.8, t));
     float flick = 0.8 + 0.2 * sin(uTime * 17.0) * sin(uTime * 7.3 + 1.7);
-    gl_FragColor = vec4(c * rim * (1.0 - t) * 0.9 * flick, 1.0);
+    gl_FragColor = vec4(c * rim * (1.0 - t) * 0.9 * flick * uFlameK, 1.0);
   }`,
 });
 
@@ -410,7 +422,7 @@ const flareMat = new THREE.ShaderMaterial({
     // The glow reaches zero inside the sprite, so no square edge shows.
     float a = max(exp(-dot(c, c) * 22.0) - 0.0041, 0.0);
     float f = k2hazeAmount(vP) * 0.65;
-    gl_FragColor = vec4(vC * a * (1.0 - f), 1.0);
+    gl_FragColor = vec4(vC * a * (1.0 - f) * uFlareK, 1.0);
   }`,
 });
 
@@ -445,7 +457,7 @@ const plumeMat = new THREE.ShaderMaterial({
     float a = smoothstep(1.0, 0.0, r) * (0.55 + 0.45 * n);
     // Lit from below: brighter at the bottom of each puff.
     vec3 col = uAmber * (0.03 + 0.06 * vLit) * (1.0 + 0.8 * c.y);
-    gl_FragColor = vec4(col * a * a * 0.85, 1.0);
+    gl_FragColor = vec4(col * a * a * 0.85 * uPlumeK, 1.0);
   }`,
 });
 
@@ -479,7 +491,7 @@ function coneMat(color, k, fallK = 3.2) {
       float rim = pow(abs(dot(normalize(vN), V)), 3.0);
       float fall = exp(-vAlong * uFall) * smoothstep(0.0, 0.12, vAlong) * smoothstep(1.0, 0.7, vAlong);
       float f = k2hazeAmount(vP);
-      float a = rim * fall * uK * (0.4 + 0.6 * smoothstep(0.0, 0.5, f)) * (1.0 - 0.6 * f);
+      float a = rim * fall * uK * uConeK * (0.4 + 0.6 * smoothstep(0.0, 0.5, f)) * (1.0 - 0.6 * f);
       gl_FragColor = vec4(uColor * a, 1.0);
     }`,
   });
@@ -1049,7 +1061,7 @@ let rain;
     ${LIGHTS_GLSL}
     void main() {
       vec4 w = modelMatrix * vec4(position, 1.0);
-      vC = k2lights(w.xyz, normalize(cameraPosition - w.xyz)) * 1.6 + uCool * 0.11 + uAmber * 0.05;
+      vC = (k2lights(w.xyz, normalize(cameraPosition - w.xyz)) * 1.6 + uCool * 0.11 + uAmber * 0.05) * uRainK;
       vec4 mv = viewMatrix * w;
       vSize = 170.0 * uScale / -mv.z;
       gl_PointSize = clamp(vSize, 2.0, 48.0);
@@ -1076,17 +1088,16 @@ let rain;
 /* ---------- end K2 ---------- */
 
 /* Framing: a low, wide shot beside the causeway; portrait stacks it. */
+const CAM = {
+  w: { fov: 44, px: 0, py: 55, pz: 110, tx: -70, ty: -68, tz: -1500 },
+  p: { fov: 66, px: 40, py: 120, pz: 230, tx: -60, ty: -100, tz: -1500 },
+};
 function frame(w, h, pr) {
   camera.aspect = w / h;
-  if (w >= h) {
-    camera.fov = 44;
-    camera.position.set(0, 55, 110);
-    camera.lookAt(-70, -68, -1500);
-  } else {
-    camera.fov = 66;
-    camera.position.set(40, 120, 230);
-    camera.lookAt(-60, -100, -1500);
-  }
+  const c = w >= h ? CAM.w : CAM.p;
+  camera.fov = c.fov;
+  camera.position.set(c.px, c.py, c.pz);
+  camera.lookAt(c.tx, c.ty, c.tz);
   camera.updateProjectionMatrix();
   // The mirror bakes once at half the frame, at most 1024 px wide.
   const rk = Math.min(0.5 * pr, 1024 / w);
@@ -1161,13 +1172,15 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
   uniform vec4 uRip[4];
   uniform float uGX[${NG}];
   uniform float uRT, uReflK;
+  uniform float uSwellK, uSwellT, uGlintK, uGlintW, uBankK, uRingK, uRippleK;
+  uniform vec3 uDeep;
   varying vec2 vUv;
   ${HEAD}
   vec2 swell(vec2 p, vec2 dir, float len, float amp, float ph, float dist) {
     float k = 6.2832 / len;
     float fade = 1.0 - smoothstep(len * 9.0, len * 24.0, dist);
     // Deep-water swell: speed follows wavelength.
-    return dir * amp * cos(dot(p, dir) * k + ph - uTime * sqrt(9.81 * k)) * fade;
+    return dir * amp * uSwellK * cos(dot(p, dir) * k + ph - uTime * uSwellT * sqrt(9.81 * k)) * fade;
   }
   vec3 seaAt(vec3 P, vec3 V, float dist, float sx0) {
     vec2 p = P.xz;
@@ -1187,7 +1200,7 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
       float dd = length(dv) + 1e-3, x = dd - age * 14.0;
       float env = exp(-x * x / 400.0) * exp(-age * 0.45) * uRip[i].w;
       float wv = sin(x * 0.55);
-      sl += dv / dd * wv * env * 0.22;
+      sl += dv / dd * wv * env * 0.22 * uRippleK;
       ring += env * max(wv, 0.0);
     }
     float nearK = 1.0 - smoothstep(50.0, 180.0, dist);
@@ -1214,7 +1227,7 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
     refl *= 0.7 + 0.6 * smoothstep(-0.025, 0.035, -sl.y);
     float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
     refl *= 1.0 - 0.3 * smoothstep(1300.0, 2800.0, dist);
-    vec3 col = vec3(0.0006, 0.0011, 0.002) * (1.0 - F) + refl * F * vec3(0.74, 0.9, 1.1);
+    vec3 col = uDeep * (1.0 - F) + refl * F * vec3(0.74, 0.9, 1.1);
     // Glint columns: wave facets that tilt just right flash as soft dashes.
     float dn = k2noise(vec2(P.x * 0.05 + uTime * 0.07, P.z * 0.42 + uTime * 1.1));
     float dn2 = k2noise(vec2(P.x * 0.11 + 7.0 - uTime * 0.05, P.z * 0.9 + uTime * 1.7));
@@ -1231,16 +1244,16 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
       float dl = length(L);
       vec3 err = R0 - L / dl;
       float ex = dot(err, right) + (dn2 - 0.5) * 0.004, ey = err.y, need = ey * 0.5;
-      float m = mix(exp(-pow((tilt - need) / 0.018, 2.0)), 0.35 * exp(-pow(need / 0.09, 2.0)), farK);
+      float m = mix(exp(-pow((tilt - need) / uGlintW, 2.0)), 0.35 * exp(-pow(need / 0.09, 2.0)), farK);
       float fall = ey > 0.0 ? exp(-ey / uGC[i].w) : exp(-pow(ey / 0.02, 2.0));
       float sx = max(0.0035, 3.0 / dl);
       float ahead = smoothstep(0.96, 0.995, dot(normalize(R0.xz), normalize(L.xz)));
       st += uGC[i].rgb * uGP[i].w * m * fall * ahead * exp(-ex * ex / (sx * sx)) * smoothstep(0.16, 0.1, cx);
     }
     float bank = exp(-length(P.xz - uGlow.xz) / (uGlowR * 1.3));
-    col += uAmber * 0.05 * bank * (0.4 + 0.6 * F) * (0.75 + 0.5 * smoothstep(-0.03, 0.03, -sl.y));
-    col += uAmber * 0.03 * ring * (0.3 + bank);
-    col += st * mix(0.45, 1.0, F) * 0.9;
+    col += uAmber * uBankK * bank * (0.4 + 0.6 * F) * (0.75 + 0.5 * smoothstep(-0.03, 0.03, -sl.y));
+    col += uAmber * uRingK * ring * (0.3 + bank);
+    col += st * mix(0.45, 1.0, F) * uGlintK;
     return col;
   }
   void main() {
@@ -1299,6 +1312,7 @@ function bake(renderer) {
   /* Motion: one clock drives the ambient life; trains run out and back. */
 train.place(175, 1, sea);
 const run = { s: 175, dir: 1, v: 20, wait: 0, user: false };
+let runPause = 6;
 const END = LEN + 160, START = -160;
 let time = 0, rt = 0;
 // The searchlight: auto sweep, or the pointer's aim while steering.
@@ -1331,7 +1345,7 @@ function update(dt, pace) {
   } else {
     run.s += run.dir * run.v * dt * k;
     // Past the far end the train is lost in the port fog; then it returns.
-    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.wait = 6; run.user = false; }
+    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.wait = runPause; run.user = false; }
   }
   train.place(run.s, run.dir, sea);
   uploadLights();
@@ -1382,5 +1396,76 @@ function lower(rung) {
     });
   }
 
-return { scene, camera, frame, bake, dispose, orbs, update, tap, steer, release, lively, lower, post: { bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
+/* ---------- tune: every look knob, for the ?tune panel ---------- */
+// Each knob: group, key, label, range, step, default, and what it sets.
+// bake: true knobs change the matte painting, so the page re-bakes.
+const U = k2;
+const col3 = (v3) => ({ get: () => '#' + new THREE.Color(v3.x, v3.y, v3.z).getHexString(), set: hex => { const c = new THREE.Color(hex); v3.set(c.r, c.g, c.b); } });
+const uni = (u) => ({ get: () => u.value, set: v => { u.value = v; } });
+const TUNE = [];
+function knob(group, key, label, min, max, step, io, bake = false) { TUNE.push({ group, key, label, min, max, step, bake, def: io.get(), ...io }); }
+function colour(group, key, label, v3, bake = false) { const io = col3(v3); TUNE.push({ group, key, label, type: 'color', bake, def: io.get(), ...io }); }
+// Colour.
+colour('Colour', 'amber', 'Port amber', U.uAmber.value, true);
+colour('Colour', 'cool', 'Cool air', U.uCool.value, true);
+colour('Colour', 'deep', 'Deep water', U.uDeep.value);
+// Sky and cloud.
+knob('Sky', 'zen', 'Sky brightness', 0, 4, 0.01, uni(U.uZenK), true);
+knob('Sky', 'dome', 'Amber dome', 0, 0.2, 0.001, uni(U.uDomeK), true);
+knob('Sky', 'bankGlow', 'Horizon glow', 0, 0.4, 0.001, uni(U.uBankGlowK), true);
+knob('Sky', 'cloudK', 'Cloud light', 0, 4, 0.01, uni(U.uCloudK));
+knob('Sky', 'cloudLo', 'Cloud cover from', 0, 1, 0.01, uni(U.uCloudLo));
+knob('Sky', 'cloudHi', 'Cloud cover to', 0, 1, 0.01, uni(U.uCloudHi));
+knob('Sky', 'gap', 'Cloud gap light', 0, 0.05, 0.0005, uni(U.uGapK));
+knob('Sky', 'windX', 'Wind across', -40, 40, 0.5, { get: () => U.uWind.value.x, set: v => { U.uWind.value.x = v; } });
+knob('Sky', 'windZ', 'Wind toward', -40, 40, 0.5, { get: () => U.uWind.value.y, set: v => { U.uWind.value.y = v; } });
+knob('Sky', 'cloudY', 'Cloud height', 120, 800, 1, uni(U.uCloudY), true);
+// Haze and fog.
+knob('Haze', 'haze', 'Air haze', 0, 0.006, 0.00005, uni(U.uHaze), true);
+knob('Haze', 'hazeH', 'Haze height', 10, 400, 1, uni(U.uHazeH), true);
+knob('Haze', 'portFog', 'Port fog', 0, 0.2, 0.001, uni(U.uPortFog), true);
+knob('Haze', 'fogFall', 'Fog thins with height', 40, 800, 1, uni(U.uFogFall), true);
+knob('Haze', 'wisp', 'Fog wisps', 0, 1.6, 0.01, uni(U.uWisp), true);
+knob('Haze', 'glowR', 'Glow reach', 300, 3000, 10, uni(U.uGlowR), true);
+// Light.
+knob('Light', 'lightK', 'Lamp power', 0, 4, 0.01, uni(U.uLightK), true);
+knob('Light', 'winK', 'Window light', 0, 8, 0.05, uni(U.uWinK), true);
+knob('Light', 'coneK', 'Light cones', 0, 4, 0.01, uni(U.uConeK), true);
+knob('Light', 'flareK', 'Lamp flares', 0, 4, 0.01, uni(U.uFlareK));
+knob('Light', 'plumeK', 'Plume glow', 0, 4, 0.01, uni(U.uPlumeK));
+knob('Light', 'flameK', 'Flare-stack flame', 0, 4, 0.01, uni(flameMat.uniforms.uFlameK));
+knob('Light', 'searchK', 'Searchlight on cloud', 0, 2, 0.01, uni(U.uSearchK));
+// Sea.
+knob('Sea', 'reflK', 'Reflection', 0, 3, 0.01, uni(su.uReflK));
+knob('Sea', 'swellK', 'Swell height', 0, 4, 0.01, uni(U.uSwellK));
+knob('Sea', 'swellT', 'Swell speed', 0, 4, 0.01, uni(U.uSwellT));
+knob('Sea', 'glintK', 'Glint brightness', 0, 4, 0.01, uni(U.uGlintK));
+knob('Sea', 'glintW', 'Glint spread', 0.004, 0.08, 0.001, uni(U.uGlintW));
+knob('Sea', 'bankK', 'Golden sheen', 0, 0.3, 0.001, uni(U.uBankK));
+knob('Sea', 'rippleK', 'Tap ripple size', 0, 4, 0.01, uni(U.uRippleK));
+knob('Sea', 'ringK', 'Ripple shine', 0, 0.2, 0.001, uni(U.uRingK));
+// Motion.
+knob('Motion', 'speed', 'Train speed', 2, 80, 0.5, { get: () => run.v, set: v => { run.v = v; } });
+knob('Motion', 'pause', 'Pause between trains', 0, 30, 0.5, { get: () => runPause, set: v => { runPause = v; } });
+knob('Motion', 'rain', 'Rain', 0, 3, 0.01, uni(U.uRainK));
+// Camera, per orientation.
+for (const [o, name] of [['w', 'Camera (wide)'], ['p', 'Camera (portrait)']]) {
+  const c = CAM[o];
+  const io = k => ({ get: () => c[k], set: v => { c[k] = v; frame(view.w, view.h, view.pr); } });
+  knob(name, o + 'fov', 'Lens (fov)', 15, 100, 0.5, io('fov'), true);
+  knob(name, o + 'px', 'Position x', -800, 800, 1, io('px'), true);
+  knob(name, o + 'py', 'Height', 5, 600, 1, io('py'), true);
+  knob(name, o + 'pz', 'Position z', -400, 900, 1, io('pz'), true);
+  knob(name, o + 'tx', 'Look x', -1500, 1500, 1, io('tx'), true);
+  knob(name, o + 'ty', 'Look y', -800, 400, 1, io('ty'), true);
+  knob(name, o + 'tz', 'Look z', -4000, -200, 1, io('tz'), true);
+}
+const tune = {
+  list: TUNE,
+  // set returns true when the matte painting needs a re-bake.
+  set(key, v) { const k = TUNE.find(t => t.key === key); if (!k) return false; k.set(v); return k.bake; },
+};
+/* ---------- end tune ---------- */
+
+return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, steer, release, lively, lower, post: { bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
 }
