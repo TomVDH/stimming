@@ -1,14 +1,18 @@
 ---
 # stimming-3cmz
 title: 'Toy: Night viaduct'
-status: in-progress
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-04T13:00:00Z
-updated_at: 2026-11-04T13:00:00Z
+updated_at: 2026-11-04T14:00:00Z
 ---
 
 Build Night viaduct from docs/toy-dev-plan.md, section 4. It starts in the Lab.
+
+> Parked 2026-11-04. Tom tried it live: it is broken and needs general refinements.
+> Ask Tom what broke before you change it. The toy stays in the Lab as it is.
+> Tom also pictured an urban viaduct or overpass. Ask whether the scene changes.
 
 - [x] Blockout: valley, viaduct, trees, river, sky, village lights, train, snow, post
 - [x] Bar: weather chips, Time slider, + Train, Settings (cars, letterbox, quality)
