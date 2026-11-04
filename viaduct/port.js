@@ -113,7 +113,7 @@ const k2 = {
   uHaze: { value: 0.0011 },
   uHazeH: { value: 70 },
   uPortZ: { value: QUAY + 260 },
-  uPortFog: { value: 0.05 },
+  uPortFog: { value: 0.04 },
 };
 
 // Light list for lit surfaces: position + power, colour + range, spot axis + cone.
@@ -837,8 +837,8 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
       float cosT = max(dot(N, V), 0.0);
       float F = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
       vec3 deep = vec3(0.0006, 0.0011, 0.002);
-      // The fog bank's mirror image fades on the far water.
-      refl *= 1.0 - 0.92 * smoothstep(1300.0, 2800.0, dist);
+      // The far water mirrors the glowing fog bank, softened by the swell.
+      refl *= 1.0 - 0.3 * smoothstep(1300.0, 2800.0, dist);
       vec3 col = deep * (1.0 - F) + refl * F * vec3(0.74, 0.9, 1.1);
       // Streaks: wave facets that tilt just right flash as soft dashes.
       // Facets are wide across and short in depth, so perspective sizes them.
@@ -865,12 +865,16 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
         float ahead = smoothstep(0.96, 0.995, dot(normalize(R0.xz), normalize(L.xz)));
         st += uGC[i].rgb * uGP[i].w * m * fall * ahead * exp(-ex * ex / (sx * sx));
       }
+      // The glowing fog bank lays a broad, soft golden sheen on the water.
+      float bank = exp(-length(vP.xz - uGlow.xz) / (uGlowR * 1.3));
+      col += uAmber * 0.05 * bank * (0.4 + 0.6 * F) * (0.75 + 0.5 * smoothstep(-0.03, 0.03, -sl.y));
       st *= mix(0.45, 1.0, F);
       col += st * 0.9;
       // Far water hands over to the horizon sky, so no seam shows.
       vec3 hor = k2sky(normalize(vec3(-V.x, 0.0005, -V.z)));
-      float hf = k2hazeAmount(vP) * 0.45;
-      col = mix(col, k2hazeColor(normalize(vP - cameraPosition), vP) * 0.3, hf);
+      // The same golden fog lies on the water toward the port.
+      float hf = k2hazeAmount(vP) * 0.85;
+      col = mix(col, k2hazeColor(normalize(vP - cameraPosition), vP), hf);
       col = mix(col, hor, smoothstep(5000.0, 20000.0, dist));
       gl_FragColor = vec4(col, 1.0);
     }`,
