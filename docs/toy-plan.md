@@ -84,6 +84,24 @@ Order weighs four things: how much Tom wants it, cost, risk, and whether it buil
 Next tier, when budget allows: Wind map, Coast and meteor, Wind farm, Collatz coral, Dry ice fog, Pull chain, Ulam spiral.
 Last tier, costly or risky: Canal at dusk, Marsh launch, Washing line, the chemistry bench, Kelvin dropper, Rain stick, Peel, Calm jar, Pea pod, Water wheel.
 
+## Next set (Tom, 2026-11-04)
+
+Built so far in this sequence: Star trails, Sonar, Cloud chamber, Window seat (Lab, still open).
+
+| Toy | Kind | Status |
+|---|---|---|
+| Wind farm (59) | Scene | Blocked out on Beach walker framing: the cluster on the left third, a low sun right of it |
+| Fireworks (S2) | Scene | Blocked out; the cheapest of the three to finish |
+| Ink in water (35) | Volume | Blocked out: dark water, glowing ink; the costliest of the three |
+| Glow paper (44) | Small | Picked |
+| Oil slick (77) | Small | Picked |
+| Sequin brush (104) | Small | Picked |
+| Crinkle foil (107) | Small | Picked |
+
+- Every toy gets a blockout before code. Tom signs it off.
+- Rendering starts in raw WebGL2. Any of them may move to three.js later.
+- Window seat stays unvetted: do not reuse its parts yet.
+
 ## Plan for $250
 
 | Phase | Toys | Estimate |
