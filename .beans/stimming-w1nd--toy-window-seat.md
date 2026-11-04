@@ -32,6 +32,9 @@ Decisions:
 - [x] Checkpoint 2: Tom: the window still looks awkward; wants an up-close slanted view of the frame
 - [x] Checkpoint 3: Tom: still unimpressive, the angle is strange; wants limited camera movement to peer through
 - [x] Head movement: drag moves the eye (fore, aft, up, down), scroll or pinch leans in, arrows and +/- too; clamped to a box
+- [x] Tom: planet and weather shading looked weird; flares should follow Buoy Business
+- [x] Sun at the horizon (Dusk, Dawn) or moon (Midnight); deck lumps and towers lit from it
+- [x] Lens flare ported from Beach walker for sun or moon, lightning, strobe and nav light; each shows only when seen through the glass
 - [ ] Checkpoint 4: Tom tests live
 - [ ] Sound: cabin drone, far thunder after each flash, shade slide
 - [ ] Menu Lab entry with an icon and a GSAP hook

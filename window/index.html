@@ -144,13 +144,22 @@ onReducedChange(v => { reduce = v; });
 // Each hour is one sky palette in OKLCH: zenith, band, horizon, ambient.
 // The band sits between zenith and horizon, where the afterglow turns.
 const HOURS = {
-  dusk: { zen: [0.17, 0.07, 275], band: [0.36, 0.13, 335], hor: [0.62, 0.15, 48], amb: [0.42, 0.1, 300], gain: 1 },
-  night: { zen: [0.12, 0.035, 265], band: [0.2, 0.05, 250], hor: [0.34, 0.07, 228], amb: [0.4, 0.07, 250], gain: 0.55 },
-  dawn: { zen: [0.2, 0.06, 255], band: [0.46, 0.09, 205], hor: [0.74, 0.11, 62], amb: [0.5, 0.07, 220], gain: 1.1 },
+  // sun: bearing from straight out (toward the nose is positive), height, both in degrees.
+  dusk: { zen: [0.17, 0.07, 275], band: [0.36, 0.13, 335], hor: [0.62, 0.15, 48], amb: [0.42, 0.1, 300], gain: 1,
+    sun: [20, 0.15], sunCol: [0.8, 0.17, 45], sunK: 2.2, sunR: 0.5, flare: 1 },
+  night: { zen: [0.12, 0.035, 265], band: [0.2, 0.05, 250], hor: [0.34, 0.07, 228], amb: [0.4, 0.07, 250], gain: 0.55,
+    sun: [22, 3.2], sunCol: [0.92, 0.03, 240], sunK: 0.5, sunR: 0.28, flare: 0.4 },
+  dawn: { zen: [0.2, 0.06, 255], band: [0.46, 0.09, 205], hor: [0.74, 0.11, 62], amb: [0.5, 0.07, 220], gain: 1.1,
+    sun: [9, 0.9], sunCol: [0.9, 0.1, 70], sunK: 2.4, sunR: 0.5, flare: 0.8 },
 };
 const hourLin = () => {
   const h = HOURS[opts.hour] || HOURS.dusk;
-  return { zen: linFit(...h.zen), band: linFit(...h.band), hor: linFit(...h.hor), amb: linFit(...h.amb), gain: h.gain };
+  const az = h.sun[0] * D2R, el = h.sun[1] * D2R;
+  return {
+    zen: linFit(...h.zen), band: linFit(...h.band), hor: linFit(...h.hor), amb: linFit(...h.amb), gain: h.gain,
+    sun: [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)],
+    sunCol: linFit(...h.sunCol).map(v => v * h.sunK), sunR: h.sunR * D2R, flare: h.flare,
+  };
 };
 
 const ALT = 11;            // cruise height in km
@@ -190,6 +199,8 @@ uniform vec2 uCam;
 uniform vec3 uF, uR, uU; uniform float uFocal;
 uniform vec3 uEye; uniform vec2 uBank; uniform float uShade, uFlash, uCover;
 uniform vec3 uZen, uBand, uHor, uAmb; uniform float uGain;
+uniform vec3 uSun, uSunCol; uniform float uSunR;
+uniform vec4 uFlr[4]; uniform vec3 uFlrC[4];
 uniform vec3 uWing[4], uLet[4], uWingN, uLetN, uTip; uniform float uStrobe;
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
 uniform vec4 uFl[${MAXFL}];
@@ -208,14 +219,17 @@ float hitLayer(vec3 d, float hl) {
 }
 
 // The sky: zenith, an afterglow band, then the horizon glow.
-// The glow is strongest toward the set sun, behind the tail.
+// The glow gathers toward the sun, or the moon at midnight.
 vec3 skyCol(vec3 d) {
   float el = d.y + 0.058;
-  float sunSide = 0.55 + 0.45 * dot(normalize(vec2(d.x, d.z) + 1e-5), vec2(-0.8, 0.6));
+  float sunSide = 0.5 + 0.5 * dot(normalize(d.xz + 1e-5), normalize(uSun.xz));
   vec3 c = mix(uBand, uZen, smoothstep(0.02, 0.45, el));
-  c = mix(uHor * (0.55 + 0.6 * sunSide), c, smoothstep(-0.01, 0.14, el));
+  c = mix(uHor * (0.4 + 0.8 * sunSide * sunSide), c, smoothstep(-0.01, 0.14, el));
   c *= 0.35 * uGain;
-  c += uHor * 0.25 * uGain * exp(-abs(el) * 60.0) * sunSide;
+  c += uHor * 0.25 * uGain * exp(-abs(el) * 60.0) * sunSide * sunSide;
+  // A wide aureole and a tight glow round the sun itself.
+  float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
+  c += uSunCol * (0.012 * exp(-ang * 4.0) + 0.05 * exp(-ang * 22.0));
   return c;
 }
 
@@ -299,6 +313,9 @@ vec3 outside(vec3 d) {
   float st = step(0.985, hash12(si)) * exp(-dot(sf, sf) * 40.0) * smoothstep(0.08, 0.3, d.y);
   sky += vec3(0.8, 0.85, 1.0) * st * (0.2 + hash12(si + 3.0)) * 0.12;
 
+  // The sun or moon disc; the ground hides it once it sets.
+  float sang = acos(clamp(dot(d, uSun), -1.0, 1.0));
+  sky += uSunCol * smoothstep(uSunR, uSunR * 0.8, sang) * 3.0;
   float tg = hitLayer(d, 0.0);
   if (tg < 0.0) return sky;
   vec2 w = uCam + (vec3(0.0, R + H, 0.0) + d * tg).xz;
@@ -312,10 +329,18 @@ vec3 outside(vec3 d) {
   float n = fbm(wc / 22.0 + vec2(uTime * 0.004, 0.0), 5);
   float cd = smoothstep(uCover, uCover + 0.22, n);
   float under = towns(wc).x;
-  float lump = fbm(wc / 3.0, 3);
-  vec3 cc = uAmb * 0.03 * uGain * (0.5 + 1.2 * lump) + vec3(1.0, 0.5, 0.2) * under * 0.02 + flashAt(wc, cd);
-  // Toward the sun side the cloud tops pick up the horizon colour.
-  cc += uHor * 0.02 * uGain * lump * smoothstep(0.0, 1.0, dot(normalize(d.xz), vec2(-0.8, 0.6)));
+  // Lumps: their slope toward the sun decides lit side and shadow side.
+  vec2 sx = normalize(uSun.xz) * 0.5;
+  float lump = vnoise(wc / 3.0) + 0.5 * vnoise(wc / 1.3);
+  float slope = (vnoise((wc + sx) / 3.0) + 0.5 * vnoise((wc + sx) / 1.3)) - lump;
+  float lit = clamp(0.5 - slope * 4.0, 0.0, 1.0);
+  vec3 cc = uAmb * 0.022 * uGain * (0.55 + 0.7 * lit);
+  // A low sun rakes across the deck and gilds the lumps that face it.
+  cc += uSunCol * 0.06 * lit * lit * smoothstep(-0.05, 0.3, uSun.y + 0.1);
+  // Thin edges let the light through: a silver lining toward the sun.
+  float rim = smoothstep(0.0, 0.35, cd) * smoothstep(0.75, 0.35, cd);
+  cc += uSunCol * 0.04 * rim * (0.5 + 0.5 * dot(normalize(d.xz), normalize(uSun.xz)));
+  cc += vec3(1.0, 0.5, 0.2) * under * 0.016 + flashAt(wc, cd);
   g = mix(g, cc, cd * 0.94);
 
   // Aerial haze: the far ground melts into the horizon glow.
@@ -346,10 +371,14 @@ vec3 towers(vec2 px, vec3 c) {
     float shape = smoothstep(0.1, -0.1, abs(qx) - hw) * smoothstep(0.04, -0.06, q.y - top) * smoothstep(-0.1, 0.08, q.y);
     float dens = shape * b.y;
     if (dens <= 0.0) continue;
-    float lumps = fbm(vec2(q.x * 4.0, q.y * 9.0) + sd * 3.0 - vec2(uTime * 0.01, 0.0), 5);
-    // The sky lights the tops; the sunward side catches the afterglow.
-    vec3 col = uAmb * 0.03 * uGain * (0.6 + 2.4 * lumps * lumps * (0.4 + 0.8 * q.y));
-    col += uHor * 0.05 * uGain * smoothstep(0.3, 1.0, q.y) * smoothstep(-0.6, 1.0, -qx) * lumps;
+    vec2 lq = vec2(q.x * 4.0, q.y * 9.0) + sd * 3.0 - vec2(uTime * 0.01, 0.0);
+    float lumps = fbm(lq, 5);
+    // The side toward the sun is lit; each billow shades the next.
+    float side = f.w;
+    float bump = clamp(0.5 + (lumps - fbm(lq + vec2(0.25 * side, 0.0), 3) * 1.0) * 5.0, 0.0, 1.0);
+    float lit = smoothstep(-0.9, 0.9, q.x * side) * bump;
+    vec3 col = uAmb * 0.022 * uGain * (0.45 + 0.9 * lumps) * (0.6 + 0.6 * q.y);
+    col += uSunCol * 0.1 * lit * (0.25 + 0.75 * smoothstep(0.1, 0.9, q.y));
     col += vec3(1.0, 0.5, 0.2) * 0.012 * (1.0 - smoothstep(0.0, 0.5, q.y)) * (0.5 + lumps);
     vec2 fq = (q - f.xy) * vec2(1.0, 1.8);
     float glow = f.z * (exp(-dot(fq, fq) * 5.0) * 2.2 + exp(-dot(fq, fq) * 0.8) * 0.5) * (0.5 + lumps);
@@ -441,6 +470,44 @@ vec3 glass(vec3 da, vec2 px, float E) {
   return view;
 }
 
+// Lens flare, after Buoy Business (see Beach walker): haze, orb,
+// an anamorphic streak and warm ghosts on the line through the centre.
+// uFlr: source xy in pixels, gain times cover, size. uFlrC: colour.
+vec3 flare(vec2 px, vec3 base) {
+  const vec3 ORANGE = vec3(1.0, 0.42, 0.1);
+  vec2 uv = px / uRes;
+  float aspect = uRes.x / uRes.y;
+  vec3 add = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec4 f = uFlr[i];
+    if (f.z <= 0.0) continue;
+    vec3 col = uFlrC[i];
+    vec2 sp = f.xy / uRes;
+    vec2 d = (uv - sp) / f.w;
+    float ax = d.x * aspect, ay = d.y;
+    // A wide veil of haze and a soft orb, squashed sideways.
+    float r = length(vec2(ax * 0.6, ay));
+    vec3 a = col * (0.025 * exp(-r * 1.5) + 0.08 * exp(-r * 5.0) + 0.4 * exp(-r * 22.0));
+    // The streak spans the frame in three nested bands.
+    float line = 0.9 * exp(-abs(ay) * 34.0) + 0.3 * exp(-abs(ay) * 9.0) + 0.07 * exp(-abs(ay) * 2.6);
+    a += mix(col, vec3(0.85, 0.8, 1.0), 0.25) * line * exp(-abs(ax) / 1.4);
+    // Ghosts sit on the line from the source through the frame centre.
+    vec2 toC = vec2(0.5) - sp;
+    for (int k = 0; k < 4; k++) {
+      vec3 gs = k == 0 ? vec3(0.7, 0.05, 0.9) : k == 1 ? vec3(1.4, 0.09, 0.6) : k == 2 ? vec3(2.2, 0.15, 0.4) : vec3(-0.45, 0.03, 0.5);
+      vec2 g = (uv - (sp + toC * gs.x)) * vec2(aspect, 1.0);
+      float gr = length(g) / (gs.y * f.w);
+      a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12;
+    }
+    add += a * f.z;
+  }
+  // Screen blend: the flare washes the frame instead of clipping it.
+  vec3 c = 1.0 - (1.0 - base) * (1.0 - min(add, 1.0));
+  // The lens darkens toward the corners.
+  vec2 vq = (uv - 0.5) * vec2(aspect, 1.0);
+  return c * mix(1.0, 0.6, smoothstep(0.3, 1.0, length(vq)));
+}
+
 void main() {
   vec2 px = gl_FragCoord.xy;
   // The camera ray, in the cabin frame.
@@ -525,8 +592,11 @@ void main() {
     c = mix(wall, inner, smoothstep(aa, -aa, sOut));
   }
   c = 1.0 - exp(-c * 3.2);
+  c = flare(px, c);
   c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * 0.006;
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  // A soft S-curve for contrast, as in Beach walker's grade.
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.3);
   o = vec4(c, 1.0);
 }`;
 
@@ -709,6 +779,9 @@ function render() {
   const hl = hourLin();
   gl.uniform3fv(u.uZen, hl.zen); gl.uniform3fv(u.uBand, hl.band); gl.uniform3fv(u.uHor, hl.hor); gl.uniform3fv(u.uAmb, hl.amb);
   gl.uniform1f(u.uGain, hl.gain);
+  gl.uniform3fv(u.uSun, hl.sun); gl.uniform3fv(u.uSunCol, hl.sunCol); gl.uniform1f(u.uSunR, hl.sunR);
+  sunScreen = screenOf(hl.sun);
+  flareUniforms(u, hl);
   // The wing goes in world space, so it banks with the cabin.
   const wing = WING.map(toWorld), let_ = LET.map(toWorld);
   gl.uniform3fv(u['uWing[0]'], wing.flat()); gl.uniform3fv(u.uWingN, quadNormal(wing));
@@ -725,6 +798,67 @@ function render() {
   gl.uniform1f(u.uFlash, Math.min(1.2, sum * 0.35));
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
+/* ---------- lens flare ---------- */
+let sunScreen = null;
+// A world direction to screen pixels; null when it is behind the camera.
+function screenOf(v) {
+  const z = dot(v, basis.F);
+  if (z < 0.05) return null;
+  return [W / 2 + dot(v, basis.R) / z * basis.focal, H / 2 + dot(v, basis.U) / z * basis.focal];
+}
+// World to aircraft frame: undo the bank.
+const toAir = v => [v[0], v[1] * Math.cos(bank) + v[2] * Math.sin(bank), -v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
+function sdBox2(x, y, bx, by, rr) {
+  const qx = Math.abs(x) - bx + rr, qy = Math.abs(y) - by + rr;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
+}
+// How much of a source shows through the glass, from 0 to 1.
+// The ray must clear the rim, the shade and the pane's edge.
+function seen(dirA) {
+  const e = basis.eye;
+  if (dirA[2] <= 1e-4) return 0;
+  let worst = -1;
+  for (const z of [0, WIN.slot, WIN.depth]) {
+    const k = clamp(z / WIN.depth), tt = (z - e[2]) / dirA[2];
+    const x = e[0] + dirA[0] * tt, y = e[1] + dirA[1] * tt;
+    const bx = WIN.out[0] + (WIN.inn[0] - WIN.out[0]) * k, by = WIN.out[1] + (WIN.inn[1] - WIN.out[1]) * k;
+    worst = Math.max(worst, sdBox2(x, y, bx, by, WIN.rOut + (WIN.rIn - WIN.rOut) * k));
+    if (z === WIN.slot && shade.v > 0.001) worst = Math.max(worst, y - lipY());
+  }
+  // A soft edge of 4 mm lets the flare fade as the source slips behind.
+  return clamp(-worst / 0.004);
+}
+const flr = new Float32Array(16), flrC = new Float32Array(12);
+const flareSeen = [0, 0, 0, 0];
+function flareUniforms(u, hl) {
+  flr.fill(0); flrC.fill(0);
+  const put = (i, dirW, gain, size, col) => {
+    const sp = screenOf(dirW);
+    const vis = sp ? seen(norm(toAir(dirW))) : 0;
+    // Visibility eases, so a source does not pop at the rim.
+    flareSeen[i] += (vis - flareSeen[i]) * 0.35;
+    if (!sp || gain * flareSeen[i] < 1e-3) return;
+    flr.set([sp[0], sp[1], gain * flareSeen[i], size], i * 4);
+    flrC.set(col, i * 3);
+  };
+  // The sun or the moon.
+  put(0, hl.sun, hl.flare * 0.6, 1, norm(hl.sunCol).map(v => v * 1.2));
+  // The brightest flash in a storm.
+  let best = null;
+  for (const f of flashes) if (f.level > 0.05 && (!best || f.level > best.level)) best = f;
+  if (best) {
+    const dx = best.x - cam.x, dz = best.z - cam.z, sc = best.cell && best.cell.screen;
+    const h = sc ? 2 + (best.cell.top - 2) * best.v : 2;
+    const dist = Math.hypot(dx, dz);
+    put(1, norm([dx, h - ALT - dist * dist / 12742, dz]), Math.min(1, best.level * 0.4), 0.8, [0.75, 0.78, 1.0]);
+  }
+  // The strobe and the red nav light on the wingtip.
+  const tipW = norm(toWorld(sub(TIP, basis.eye)));
+  put(2, tipW, reduce ? 0 : strobe() * 0.5, 0.5, [0.9, 0.95, 1.0]);
+  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05]);
+  gl.uniform4fv(u['uFlr[0]'], flr); gl.uniform3fv(u['uFlrC[0]'], flrC);
+}
+
 // Project a point in km from the plane, along x, out along z, at height h.
 function project(dx, dz, h) {
   const dist = Math.hypot(dx, dz);
@@ -752,7 +886,13 @@ function towerUniforms() {
   list.slice(0, MAXCELL).forEach((o, i) => {
     tw.set([o.b.x, o.b.y, o.tp.x, o.tp.y], i * 4);
     twB.set([o.c.seed, o.c.s, 1 - Math.exp(-o.b.dist / 150), o.half], i * 4);
-    twC.set([o.fu, o.fv, o.fk, 0], i * 4);
+    // Which side of the tower faces the sun, across its axis.
+    let side = 1;
+    if (sunScreen) {
+      const ax = [o.tp.x - o.b.x, o.tp.y - o.b.y], p = [sunScreen[0] - o.b.x, sunScreen[1] - o.b.y];
+      side = -(ax[0] * p[1] - ax[1] * p[0]) >= 0 ? 1 : -1;
+    }
+    twC.set([o.fu, o.fv, o.fk, side], i * 4);
   });
   return Math.min(list.length, MAXCELL);
 }

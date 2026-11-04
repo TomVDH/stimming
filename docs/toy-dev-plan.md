@@ -21,6 +21,7 @@ Tom moved Night viaduct to first on 2026-11-04. If it costs more than $50, stop 
 
 Relative minimalism blended with realistic, sweeping light. Shapes stay simple and few; light, haze and glow carry the scene.
 No props, no fussy detail, nothing skeuomorphic. Cut any object that is only there to say what the place is.
+Lens flares follow Buoy Business (Tom, 2026-11-04): haze veil, soft orb, an anamorphic streak in three bands and warm ghosts on the line through the frame centre, screen-blended. The reference is `POST_FS` in `walker/index.html`; Window seat ports it as one function.
 
 `AGENTS.md` is the house spec. This section is what a new toy needs from it.
 
