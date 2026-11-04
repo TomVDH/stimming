@@ -150,7 +150,7 @@ uniform vec4 uGC[${NG}];
 // Haze takes the sky colour, warmed over each town.
 vec3 hazeCol(vec3 d, vec3 P) {
   vec3 c = skyCol(normalize(vec3(d.x, max(d.y, 0.0) * 0.4 + 0.02, d.z))) * 0.7;
-  for (int i = 0; i < ${NG}; i++) c += uGC[i].rgb * uGP[i].w * 0.7 * exp(-length(P.xz - uGP[i].xz) / 150.0);
+  for (int i = 0; i < ${NG}; i++) c += uGC[i].rgb * uGP[i].w * 0.3 * exp(-length(P.xz - uGP[i].xz) / 110.0);
   return c;
 }`;
 
@@ -569,11 +569,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       vec3 sharp = texture2D(tOut, uv).rgb;
       vec3 blur = vec3(0.0);
       float R = 0.004 + 0.022 * fog;
-      for (int i = 0; i < 14; i++) {
-        float a = float(i) * 2.39996, r = sqrt((float(i) + 0.5) / 14.0) * R;
+      // A per-pixel turn of the spiral hides the tap pattern as grain.
+      float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      for (int i = 0; i < 24; i++) {
+        float a = float(i) * 2.39996 + rot, r = sqrt((float(i) + 0.5) / 24.0) * R;
         blur += texture2D(tOut, uv + vec2(cos(a), sin(a)) * r / vec2(asp, 1.0)).rgb;
       }
-      blur /= 14.0;
+      blur /= 24.0;
       col = mix(sharp, blur, smoothstep(0.05, 0.55, fog));
       // Fog scatters light into a milky veil, warm from the room.
       vec3 veil = warm * 0.03 * roomG + blur * 1.1 + vec3(0.006, 0.007, 0.009);
