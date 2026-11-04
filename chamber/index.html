@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.14 0.008 260); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cloud chamber</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Cloud chamber: black velvet, a raking light, tracks in the mist. */
+:root { --stage: oklch(0.08 0.005 260); }
+.stage--chamber { cursor: crosshair; touch-action: none; }
+.stage--chamber canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--chamber canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--chamber canvas { transition: none; } }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Cloud chamber</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--chamber" id="stage" tabindex="0" role="application" aria-label="A dark chamber of mist under a side light. Particle tracks form as thin white lines and fade. Tap to place the source, drag to stir the mist, Space for a cosmic shower.">
+      <p class="fail" hidden>Cloud chamber needs WebGL2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="src" role="group" aria-label="Source">
+        <button class="chip" type="button" data-value="cosmic" aria-pressed="false">Cosmic</button>
+        <button class="chip" type="button" data-value="mantle" aria-pressed="true">Mantle</button>
+        <button class="chip" type="button" data-value="beta" aria-pressed="false">Beta</button>
+      </div>
+      <label class="slider"><span>Magnet</span><input type="range" id="mag" min="0" max="1" step="0.01" value="0" aria-label="Magnet: how hard the field bends the tracks"></label>
+      <div class="actions">
+        <button class="chip" id="shower" type="button">Shower</button>
+      </div>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Activity</span><div class="choices" id="act" role="group" aria-label="Activity">
+              <button class="chip" type="button" data-value="0.5" aria-pressed="false">Low</button>
+              <button class="chip" type="button" data-value="1" aria-pressed="true">Mid</button>
+              <button class="chip" type="button" data-value="2" aria-pressed="false">High</button>
+            </div></div>
+            <div class="group"><span>Mist</span><div class="choices" id="mist" role="group" aria-label="Mist">
+              <button class="chip" type="button" data-value="0.5" aria-pressed="false">Thin</button>
+              <button class="chip" type="button" data-value="1" aria-pressed="true">Some</button>
+              <button class="chip" type="button" data-value="1.8" aria-pressed="false">Thick</button>
+            </div></div>
+            <div class="group"><span>Light</span><div class="choices" id="light" role="group" aria-label="Light">
+              <button class="chip" type="button" data-value="side" aria-pressed="true">Side</button>
+              <button class="chip" type="button" data-value="corner" aria-pressed="false">Corner</button>
+              <button class="chip" type="button" data-value="top" aria-pressed="false">Top</button>
+            </div></div>
+            <div class="group"><span>Tracks</span><div class="choices" id="life" role="group" aria-label="Track life">
+              <button class="chip" type="button" data-value="1.4" aria-pressed="false">Brief</button>
+              <button class="chip" type="button" data-value="2.4" aria-pressed="true">Mid</button>
+              <button class="chip" type="button" data-value="4.5" aria-pressed="false">Long</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>place the source</dd></div>
+          <div><dt>Drag</dt><dd>stir the mist</dd></div>
+          <div class="fine"><dt><kbd>Space</kbd></dt><dd>shower</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Cloud chamber</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+initPage({ id: 'chamber' });
+
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const rnd = (a, b) => a + Math.random() * (b - a);
+// Box-Muller gives one normal sample.
+const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(TAU * Math.random());
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.chamber.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.chamber.${k}`, String(v)); } catch { /* storage is optional */ } };
+const num = (k, d) => { const v = saved(k); return v != null && isFinite(+v) ? +v : d; };
+const opts = {
+  src: saved('src') || 'mantle',
+  mag: num('mag', 0),
+  act: num('act', 1),
+  mist: num('mist', 1),
+  light: saved('light') || 'side',
+  life: num('life', 2.4),
+};
+// A test hook sets values from the address, for screenshots.
+const qs = new URLSearchParams(location.search);
+for (const k of Object.keys(opts)) if (qs.has(k)) opts[k] = typeof opts[k] === 'number' ? +qs.get(k) : qs.get(k);
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
+
+/* ---------- WebGL2 ---------- */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+if (!gl) fail();
+// Half floats keep the fade smooth; bytes are the fallback.
+const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
+
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+const NOISE = `
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
+float fbm3(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s / 0.875; }
+`;
+
+/* ---------- K1: accumulation and decay (pattern from Star trails and Sonar) ---------- */
+// The plate holds four channels.
+// R: fresh condensation, a fast flash. G: the droplet trail, a slow glow.
+// B: mist density. A: not used.
+// Each frame advects the plate through the air, then fades R and G by exp(-dt/tau).
+const MAXSW = 8;
+const MIST = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uRes;
+uniform float uDt, uTime, uU, uFlow, uKf, uKt, uDiff, uMistK, uEps;
+uniform vec4 uSw[${MAXSW}]; uniform float uSwA[${MAXSW}];
+in vec2 vUv; out vec4 o;
+${NOISE}
+// A stream function: its curl gives a flow with no sources or sinks.
+float psi(vec2 p) { return vnoise(p + vec2(uTime * 0.05, 0.0)) + 0.5 * vnoise(p * 2.1 - vec2(0.0, uTime * 0.07)); }
+vec2 vel(vec2 px) {
+  vec2 p = px / (uU * 32.0);
+  const float e = 0.05;
+  vec2 v = vec2(psi(p + vec2(0.0, e)) - psi(p - vec2(0.0, e)), psi(p - vec2(e, 0.0)) - psi(p + vec2(e, 0.0))) / (2.0 * e);
+  v = v * uU * 1.6 * uFlow + vec2(uU * 0.35, uU * 0.12) * uFlow;
+  // Each drag leaves a short-lived push in the air.
+  for (int i = 0; i < ${MAXSW}; i++) {
+    float a = uSwA[i];
+    if (a <= 0.0) continue;
+    vec2 d = px - uSw[i].xy;
+    v += uSw[i].zw * a * exp(-dot(d, d) / (uU * uU * 64.0));
+  }
+  float s = length(v), cap = uU * 30.0;
+  return s > cap ? v * cap / s : v;
+}
+void main() {
+  vec2 px = gl_FragCoord.xy;
+  vec2 q = (px - vel(px) * uDt) / uRes;
+  vec2 tx = 1.0 / uRes;
+  vec4 c = texture(uSrc, q);
+  vec4 n = 0.25 * (texture(uSrc, q + vec2(tx.x, 0.0)) + texture(uSrc, q - vec2(tx.x, 0.0)) + texture(uSrc, q + vec2(0.0, tx.y)) + texture(uSrc, q - vec2(0.0, tx.y)));
+  // The trail spreads a little as droplets grow; the flash stays sharp.
+  c.r = mix(c.r, n.r, uDiff * 0.3) * uKf;
+  c.g = mix(c.g, n.g, uDiff) * uKt;
+  c.rg = max(c.rg - uEps, 0.0);
+  // Mist relaxes toward a slow noise field, so drags heal over time.
+  float base = fbm3(px / (uU * 24.0) + vec2(uTime * 0.021, -uTime * 0.013));
+  c.b = mix(c.b, base, uMistK);
+  o = vec4(c.rgb, 0.0);
+}`;
+// A segment draws as a soft line with ramped ends.
+// Adjacent segments overlap their ramps, so joins add up to one.
+const SEG_VS = `#version 300 es
+in vec2 aCorner; in vec4 aSeg; in vec4 aCol;
+uniform vec2 uRes;
+out vec2 vP; flat out vec4 vSeg; flat out vec4 vCol;
+void main() {
+  vec2 a = aSeg.xy, b = aSeg.zw; float w = aCol.a;
+  vec2 d = b - a; float L = length(d);
+  vec2 t = L > 1e-3 ? d / L : vec2(1, 0), n = vec2(-t.y, t.x);
+  float r = w * 3.0 + 1.0;
+  vec2 p = mix(a, b, aCorner.x * 0.5 + 0.5) + t * aCorner.x * r + n * aCorner.y * r;
+  vP = p; vSeg = aSeg; vCol = aCol;
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const SEG_FS = `#version 300 es
+precision highp float;
+in vec2 vP; flat in vec4 vSeg; flat in vec4 vCol; out vec4 o;
+void main() {
+  vec2 a = vSeg.xy, b = vSeg.zw; float w = vCol.a;
+  vec2 d = b - a; float L = length(d);
+  float k;
+  if (L < 0.05) { float r = length(vP - a) / w; k = exp(-r * r); }
+  else {
+    vec2 t = d / L; float s = dot(vP - a, t); float q = dot(vP - a, vec2(-t.y, t.x)) / w;
+    float h = w * 1.2;
+    k = exp(-q * q) * clamp((s + h) / (2.0 * h), 0.0, 1.0) * clamp((L + h - s) / (2.0 * h), 0.0, 1.0);
+  }
+  o = vec4(vCol.rgb * k, 0.0);
+}`;
+/* ---------- end K1 ---------- */
+
+// The view: velvet, mist and droplets lit by one raking lamp.
+const OUT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uRes;
+uniform float uTime, uU, uMist, uD0;
+uniform vec2 uDir; uniform vec3 uSrcPos;
+in vec2 vUv; out vec4 o;
+${NOISE}
+void main() {
+  vec2 px = gl_FragCoord.xy;
+  vec4 s = texture(uSrc, vUv);
+  // Two rings of taps, turned at random per pixel, give a soft halo.
+  // The random turn breaks the taps into grain, not ghost copies.
+  float halo = 0.0, rot = hash12(px) * 6.2832;
+  for (int i = 0; i < 6; i++) {
+    float a = float(i) * 1.0472 + rot;
+    vec2 dir = vec2(cos(a), sin(a)) * uU / uRes;
+    halo += texture(uSrc, vUv + dir * 0.9).g + texture(uSrc, vUv + dir * 2.0).g * 0.6;
+  }
+  halo *= 0.1;
+  // Depth into the beam, in view heights, from the lit edge.
+  float d = (dot(px, uDir) - uD0) / min(uRes.x, uRes.y);
+  float across = dot(px, vec2(-uDir.y, uDir.x)) / min(uRes.x, uRes.y);
+  // Shafts: the beam breaks into slow bands along its length.
+  float shaft = 0.72 + 0.28 * fbm3(vec2(across * 4.0, d * 0.35 - uTime * 0.015));
+  float lit = (0.1 + 1.15 * exp(-d * 1.5)) * shaft;
+  vec3 lamp = vec3(0.92, 0.96, 1.0);
+  // Black velvet: a deep floor with a faint nap.
+  vec3 c = vec3(0.0022, 0.0022, 0.0034) * (0.75 + 0.5 * vnoise(px / 1.7));
+  c += vec3(0.008, 0.009, 0.013) * exp(-d * 5.0);
+  // Mist: thin vapour that the beam catches.
+  // Wisps show only where the beam is strong.
+  float m = smoothstep(0.42, 0.95, s.b);
+  c += vec3(0.04, 0.047, 0.06) * m * m * uMist * lit * lit;
+  // Droplets: the trail, the fresh flash and the halo.
+  float drop = s.g * 1.05 + s.r * 0.9 + halo * 0.35;
+  c += lamp * drop * lit;
+  // The source is a speck that catches the light.
+  if (uSrcPos.z > 0.0) {
+    vec2 r = (px - uSrcPos.xy) / uU;
+    float rr = dot(r, r);
+    c += vec3(1.0, 0.94, 0.86) * (0.32 * exp(-rr / 0.35) + 0.035 * exp(-rr / 9.0)) * uSrcPos.z * (0.4 + lit);
+  }
+  c = 1.0 - exp(-c * 1.25);
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q * vec2(1.0, 1.25), q) * 0.85;
+  c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * 0.006;
+  c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  o = vec4(c, 1.0);
+}`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+const P = {
+  mist: program(QUAD_VS, MIST, ['aPos']),
+  seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
+  out: program(QUAD_VS, OUT_FS, ['aPos']),
+};
+
+const corners = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// Segment data: a.xy, b.xy in pixels, then fresh, trail, unused and width.
+const MAXSEG = 16000;
+const inst = new Float32Array(MAXSEG * 8);
+const segVao = gl.createVertexArray();
+gl.bindVertexArray(segVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const instBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1);
+gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+gl.vertexAttribDivisor(1, 1);
+gl.enableVertexAttribArray(2);
+gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+gl.vertexAttribDivisor(2, 1);
+gl.bindVertexArray(null);
+
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+let acc = [], ai = 0;
+
+// The swirl list feeds drag pushes to the mist pass.
+const swirls = [];
+const swBuf = new Float32Array(MAXSW * 4), swA = new Float32Array(MAXSW);
+function mistPass(dt, mistK) {
+  const src = acc[ai], dst = acc[1 - ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.mist.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  const u = P.mist.u;
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform1f(u.uDt, dt);
+  gl.uniform1f(u.uTime, t);
+  gl.uniform1f(u.uU, U);
+  // Reduced motion stops the air; tracks fade in place.
+  gl.uniform1f(u.uFlow, reduce ? 0 : 1);
+  gl.uniform1f(u.uKf, Math.exp(-dt / 0.28));
+  gl.uniform1f(u.uKt, Math.exp(-dt / (opts.life * 0.42)));
+  gl.uniform1f(u.uDiff, reduce ? 0 : clamp(dt * 1.6, 0, 0.3));
+  gl.uniform1f(u.uMistK, mistK ?? 1 - Math.exp(-dt / 7));
+  gl.uniform1f(u.uEps, FLOAT ? 0.002 * dt : 0.6 / 255);
+  swBuf.fill(0); swA.fill(0);
+  swirls.forEach((s, i) => { swBuf.set([s.x, s.y, s.vx, s.vy], i * 4); swA[i] = reduce ? 0 : (1 - s.age / s.life) ** 2; });
+  gl.uniform4fv(u['uSw[0]'], swBuf);
+  gl.uniform1fv(u['uSwA[0]'], swA);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ai = 1 - ai;
+}
+function segPass(count) {
+  if (!count) return;
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.seg.p); gl.bindVertexArray(segVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, count * 8);
+  gl.uniform2f(P.seg.u.uRes, dst.w, dst.h);
+  // Only the light channels add; mist keeps its value.
+  gl.colorMask(true, true, false, false);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+  gl.disable(gl.BLEND);
+  gl.colorMask(true, true, true, true);
+}
+
+/* ---------- tracks ---------- */
+// U is one chamber unit in pixels: a hundredth of the short side.
+// A unit is about 2.5 mm, so the view spans about 25 cm.
+let W = 1, H = 1, dpr = 1, U = 1, t = 0;
+const source = { x: 0, y: 0, placed: false };
+// A track is a list of segments: ax, ay, bx, by, strength, width.
+// It grows in over GROW seconds, as droplets form on the ions.
+const GROW = 0.32;
+const tracks = [];
+const inView = (x, y, m) => x > -m && y > -m && x < W + m && y < H + m;
+
+// One charged particle walks in small steps.
+// The magnet turns it by ds / R, with R proportional to momentum.
+// Small-angle scattering grows as the particle slows.
+function walk(o) {
+  const seg = [];
+  let { x, y, th } = o;
+  const ds = o.ds * U, B = opts.mag;
+  let s = 0, z = o.z ?? 0;
+  const kids = [];
+  while (s < o.len * U) {
+    const f = s / (o.len * U);
+    const p = Math.max(0.03, o.p * Math.pow(1 - f, o.slow ?? 0) + (o.pEnd ?? 0));
+    th += clamp(gauss() * o.scat * Math.sqrt(o.ds) / p, -0.6, 0.6);
+    th += o.q * B * o.ds / (o.R * p);
+    const nx = x + Math.cos(th) * ds, ny = y + Math.sin(th) * ds;
+    // Depth: a particle that leaves the lit layer leaves no trail.
+    if (o.dz) { z += gauss() * o.dz; if (Math.abs(z) > 1.6) break; }
+    const k = o.k(f, p) * Math.exp(-z * z * 1.5) * (o.bead ? 0.45 + Math.random() * 1.1 : 1);
+    seg.push(x, y, nx, ny, k, o.w(f) * dpr);
+    if (o.delta && Math.random() < o.delta * o.ds) kids.push([nx, ny, th]);
+    x = nx; y = ny; s += ds;
+    if (!inView(x, y, 20 * U)) break;
+  }
+  return { seg: new Float32Array(seg), kids };
+}
+function add(seg, delay = 0, fresh = 1) { if (seg.length) tracks.push({ seg, age: -delay, fresh, born: false }); }
+
+// A low-energy electron knocked loose: short, curly, tight in the magnet.
+function delta(x, y, th, delay) {
+  const p = rnd(0.12, 0.35);
+  const { seg } = walk({ x, y, th: th + (Math.random() < 0.5 ? 1 : -1) * rnd(1.0, 1.45), p, q: -1, R: 26, slow: 0.55, pEnd: 0.02, len: 6 + 22 * p, ds: 0.4, scat: 0.04, k: (f, p) => 0.42 * Math.min(2.4, 1 / Math.sqrt(p)), w: () => 0.95, bead: true, dz: 0.03 });
+  add(seg, delay);
+}
+// Alpha: short, thick and straight. It brightens at the end (Bragg peak).
+function alpha(x, y, th, len, delay = 0) {
+  const kink = Math.random() < 0.25 ? rnd(0.82, 0.95) : 2;
+  const { seg, kids } = walk({
+    x, y, th, p: 1, q: 1, R: 900, len, ds: 0.7, scat: 0.002,
+    k: f => 1.35 * (1 + 0.9 * Math.pow(f, 3)),
+    w: f => 2.1 * (0.85 + 0.45 * f * f), delta: 0.01,
+  });
+  // A rare hard nudge from a nucleus bends the last stretch.
+  if (kink < 1) {
+    const n = seg.length / 6, i0 = Math.floor(n * kink), da = rnd(0.25, 0.6) * (Math.random() < 0.5 ? 1 : -1);
+    const px = seg[i0 * 6], py = seg[i0 * 6 + 1];
+    const c = Math.cos(da), s = Math.sin(da);
+    for (let i = i0; i < n; i++) for (const j of [0, 2]) {
+      const dx = seg[i * 6 + j] - px, dy = seg[i * 6 + j + 1] - py;
+      seg[i * 6 + j] = px + c * dx - s * dy; seg[i * 6 + j + 1] = py + s * dx + c * dy;
+    }
+  }
+  add(seg, delay);
+  kids.forEach(([kx, ky, kth]) => delta(kx, ky, kth, delay));
+}
+// Beta: thin, long and wiggly. It curls tighter as it slows.
+function beta(x, y, th, p0, delay = 0, q = -1) {
+  const { seg } = walk({
+    x, y, th, p: p0, q, R: 26, slow: 0.55, pEnd: 0.03, len: 14 + 40 * Math.pow(p0, 1.3),
+    ds: 0.5, scat: 0.045, k: (f, p) => 0.34 * Math.min(2.6, 1 / Math.sqrt(p)), w: () => 0.9, bead: true, dz: 0.025, z: rnd(-0.5, 0.5),
+  });
+  add(seg, delay);
+}
+// Muon: long, straight and thin; it crosses the whole view.
+function muon(x, y, th, delay = 0) {
+  const D = Math.hypot(W, H);
+  const sx = x - Math.cos(th) * D, sy = y - Math.sin(th) * D;
+  const p = rnd(40, 140);
+  const { seg, kids } = walk({
+    x: sx, y: sy, th, p, q: Math.random() < 0.56 ? 1 : -1, R: 26, len: 4 * D / U, ds: 1.5, scat: 0.0015,
+    k: () => 0.3, w: () => 0.85, bead: true, delta: 0.006,
+  });
+  // The walk starts off screen; drop the steps before the view.
+  let i = 0;
+  while (i < seg.length && !inView(seg[i + 2], seg[i + 3], 20 * U)) i += 6;
+  add(seg.slice(i), delay);
+  kids.forEach(([kx, ky, kth]) => { if (inView(kx, ky, 0)) delta(kx, ky, kth, delay); });
+}
+// A fast cosmic electron: long, mostly straight, a little curved.
+function cosmicElectron(delay = 0) {
+  const th = rnd(0, TAU), x = rnd(0.1, 0.9) * W, y = rnd(0.1, 0.9) * H;
+  const D = Math.hypot(W, H) * 0.5;
+  beta(x - Math.cos(th) * D, y - Math.sin(th) * D, th, rnd(1.6, 4.5), delay, Math.random() < 0.5 ? 1 : -1);
+}
+
+// The source emits from a small patch around its point.
+function fromSource(fn) {
+  const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * 1.1 * U;
+  fn(source.x + Math.cos(a) * r, source.y + Math.sin(a) * r, rnd(0, TAU));
+}
+// Thoriated mantle: thorium's chain gives alphas, and some betas.
+// Thoron decays in under a second, so alphas often come in close pairs.
+function mantleAlpha() {
+  fromSource((x, y, th) => {
+    // Steep tracks leave the lit layer, so they look shorter.
+    const len = rnd(14, 30) * Math.cos(rnd(0, 1.0));
+    alpha(x, y, th, len);
+    if (Math.random() < 0.35) alpha(x, y, rnd(0, TAU), rnd(16, 30) * Math.cos(rnd(0, 0.8)), rnd(0.06, 0.45));
+  });
+}
+const sourceBeta = (lo, hi) => fromSource((x, y, th) => beta(x, y, th, rnd(lo, hi)));
+function radonAlpha() { alpha(rnd(0.05, 0.95) * W, rnd(0.05, 0.95) * H, rnd(0, TAU), rnd(12, 26) * Math.cos(rnd(0, 1.1))); }
+
+// Rates per second at Mid activity.
+const RATES = {
+  cosmic: [[0.45, () => muon(rnd(0.1, 0.9) * W, rnd(0.1, 0.9) * H, rnd(0, TAU))], [0.3, () => cosmicElectron()], [0.25, radonAlpha]],
+  mantle: [[2.6, mantleAlpha], [0.7, () => sourceBeta(0.35, 1.5)]],
+  beta: [[2.8, () => sourceBeta(0.2, 1.6)]],
+};
+function spawn(dt) {
+  const list = opts.src === 'cosmic' ? RATES.cosmic : [...RATES.cosmic, ...RATES[opts.src]];
+  for (const [rate, fn] of list) if (Math.random() < rate * opts.act * dt) fn();
+}
+// A cosmic shower: dozens of near-parallel tracks within a blink.
+function shower() {
+  const th = rnd(0, TAU), nx = -Math.sin(th), ny = Math.cos(th);
+  const cx = rnd(0.3, 0.7) * W, cy = rnd(0.3, 0.7) * H, span = Math.hypot(W, H) * 0.6;
+  const n = Math.round(rnd(24, 44));
+  for (let i = 0; i < n; i++) {
+    const o = gauss() * span * 0.35, a = th + gauss() * 0.035, d = rnd(0, 0.15);
+    const x = cx + nx * o, y = cy + ny * o;
+    if (Math.random() < 0.7) muon(x, y, a, d);
+    else beta(x - Math.cos(a) * span, y - Math.sin(a) * span, a, rnd(0.8, 3), d, Math.random() < 0.5 ? 1 : -1);
+  }
+  wake();
+}
+
+/* ---------- loop ---------- */
+let raf = 0, last = 0, visible = true, ready = false;
+function frameFn(now) {
+  raf = 0;
+  const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+  last = now;
+  step(dt);
+  render();
+  if (visible) raf = requestAnimationFrame(frameFn);
+}
+function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+
+function step(dt) {
+  t += dt;
+  for (let i = swirls.length - 1; i >= 0; i--) if ((swirls[i].age += dt) >= swirls[i].life) swirls.splice(i, 1);
+  mistPass(dt);
+  spawn(dt);
+  deposit(dt);
+}
+// Each growing track adds its share of trail; a new one adds its flash.
+function deposit(dt) {
+  let n = 0;
+  for (let k = tracks.length - 1; k >= 0; k--) {
+    const tr = tracks[k];
+    const a0 = tr.age; tr.age += dt;
+    if (tr.age <= 0) continue;
+    const share = (Math.min(tr.age, GROW) - Math.max(a0, 0)) / GROW;
+    const flash = tr.born ? 0 : tr.fresh;
+    tr.born = true;
+    const wk = 0.6 + 0.4 * Math.min(1, tr.age / GROW);
+    const s = tr.seg;
+    for (let i = 0; i < s.length; i += 6) {
+      const o = n * 8;
+      inst[o] = s[i]; inst[o + 1] = s[i + 1]; inst[o + 2] = s[i + 2]; inst[o + 3] = s[i + 3];
+      inst[o + 4] = s[i + 4] * flash * 0.8; inst[o + 5] = s[i + 4] * share; inst[o + 6] = 0; inst[o + 7] = s[i + 5] * wk;
+      if (++n >= MAXSEG) { segPass(n); n = 0; }
+    }
+    if (tr.age >= GROW) tracks.splice(k, 1);
+  }
+  segPass(n);
+}
+const LIGHTS = { side: [1, 0], corner: [Math.SQRT1_2, -Math.SQRT1_2], top: [0, -1] };
+function render() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P.out.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[ai].tex);
+  const u = P.out.u;
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform1f(u.uTime, t);
+  gl.uniform1f(u.uU, U);
+  gl.uniform1f(u.uMist, opts.mist);
+  const d = LIGHTS[opts.light] || LIGHTS.side;
+  gl.uniform2f(u.uDir, d[0], d[1]);
+  // The lit edge is the screen corner that sits first along the beam.
+  gl.uniform1f(u.uD0, Math.min(0, d[0] * W, d[1] * H, d[0] * W + d[1] * H));
+  gl.uniform3f(u.uSrcPos, source.x, source.y, opts.src === 'cosmic' ? 0 : 1);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ---------- size ---------- */
+function resize() {
+  const fit = fitCanvas(canvas, { budget: 1.8e6 });
+  if (fit.W === W && fit.H === H && acc.length) return;
+  const oW = W, oH = H;
+  W = fit.W; H = fit.H; dpr = fit.dpr; U = Math.min(W, H) / 100;
+  acc.forEach(drop);
+  acc = [target(W, H), target(W, H)]; ai = 0;
+  if (source.placed) { source.x *= W / oW; source.y *= H / oH; }
+  // The source starts left of centre, upstream of the beam.
+  else { source.x = W * 0.4; source.y = H * 0.56; }
+  tracks.length = 0;
+  mistPass(1 / 60, 1);
+  warm();
+  if (ready) { render(); wake(); }
+}
+// The first view opens on a chamber already at work.
+function warm() {
+  const steps = 90;
+  for (let i = 0; i < steps; i++) { t += 1 / 30; mistPass(1 / 30); spawn(1 / 30); deposit(1 / 30); }
+}
+
+/* ---------- input ---------- */
+const toPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr]; };
+let down = null;
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture?.(e.pointerId);
+  const [x, y] = toPx(e);
+  down = { x, y, lx: x, ly: y, lt: performance.now(), drag: false };
+});
+stage.addEventListener('pointermove', e => {
+  if (!down) return;
+  const [x, y] = toPx(e), now = performance.now();
+  if (!down.drag && Math.hypot(x - down.x, y - down.y) > 8 * dpr) down.drag = true;
+  if (!down.drag) return;
+  const dx = x - down.lx, dy = y - down.ly, dtm = Math.max(0.008, (now - down.lt) / 1000);
+  if (Math.hypot(dx, dy) < 2.5 * U) return;
+  // A drag pushes the air along its path.
+  swirls.push({ x, y, vx: dx / dtm * 0.5, vy: dy / dtm * 0.5, age: 0, life: 1.3 });
+  if (swirls.length > MAXSW) swirls.shift();
+  down.lx = x; down.ly = y; down.lt = now;
+  wake();
+});
+function up() {
+  if (down && !down.drag) tap(down.x, down.y);
+  down = null;
+}
+stage.addEventListener('pointerup', up);
+stage.addEventListener('pointercancel', () => { down = null; });
+function tap(x, y) {
+  // In Cosmic, a tap sends one muon through the point.
+  if (opts.src === 'cosmic') { muon(x, y, rnd(0, TAU)); wake(); return; }
+  source.x = x; source.y = y; source.placed = true;
+  render(); wake();
+}
+stage.addEventListener('keydown', e => {
+  if (e.key !== ' ') return;
+  e.preventDefault();
+  if (!e.repeat) shower();
+});
+
+/* ---------- bar ---------- */
+function popover(box, btn) {
+  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+const magEl = document.getElementById('mag');
+magEl.value = String(opts.mag);
+magEl.addEventListener('input', () => { opts.mag = +magEl.value; save('mag', opts.mag); });
+choices(document.getElementById('src'), v => { opts.src = v; save('src', v); render(); }).set(opts.src);
+choices(document.getElementById('act'), v => { opts.act = +v; save('act', v); }).set(String(opts.act));
+choices(document.getElementById('mist'), v => { opts.mist = +v; save('mist', v); render(); }).set(String(opts.mist));
+choices(document.getElementById('light'), v => { opts.light = v; save('light', v); render(); }).set(opts.light);
+choices(document.getElementById('life'), v => { opts.life = +v; save('life', v); }).set(String(opts.life));
+document.getElementById('shower').addEventListener('click', shower);
+
+/* ---------- start ---------- */
+new ResizeObserver(() => resize()).observe(stage);
+resize();
+render();
+// One finished frame folds shader work into the intro.
+gl.finish();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => { visible = v; if (v) wake(); });
+wake();
+</script>
+</body>
+</html>
