@@ -157,9 +157,11 @@
 }
 </script>
 <script type="module">
-import { initPage, sound, audioKit, choices, linFit, css } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices, linFit, css, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 import { createNoise2D } from 'simplex-noise';
 initPage({ id: 'neon' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1931,7 +1933,7 @@ function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const p = pixelRatio(w, h, { low: lowDpr });
   const cw = Math.round(w * p), ch = Math.round(h * p);
   const sized = w !== W || h !== H;
   if (sized) layout(w, h);
@@ -2319,6 +2321,7 @@ async function boot() {
   allocTargets();
   ready = true;
   new ResizeObserver(fit).observe(panel);
+  onQuality(fit);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
   document.addEventListener('visibilitychange', sync);
   await curtain;
