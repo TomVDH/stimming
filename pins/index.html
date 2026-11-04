@@ -66,12 +66,14 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, reduced, onReducedChange, oklchRgb, choices } from '../shared/stim.js';
+import { initPage, sound, reduced, onReducedChange, oklchRgb, choices, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'pins' });
+// Settings holds the site-wide Quality choice.
+qualitySetting();
 
 const panel = document.getElementById('board');
 let reduce = reduced();
@@ -802,12 +804,14 @@ function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
   const apply = () => {
     const w = panel.clientWidth, h = panel.clientHeight;
     if (!w || !h) return;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: cap, budget, low: lowDpr }));
     renderer.setSize(w, h, false);
     onSize(w, h);
   };
   new ResizeObserver(apply).observe(panel);
   addEventListener('perf-low', apply);
+  // A new quality setting re-fits the renderer.
+  onQuality(apply);
   apply();
 }
 // Counter-clockwise rounded rectangle from half sizes.
