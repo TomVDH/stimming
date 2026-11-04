@@ -21,6 +21,27 @@
 }
 .stage--viaduct canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--viaduct canvas { transition: none; } }
+/* The ?tune panel: a tuning desk for every look knob. Hidden in normal use. */
+.tune {
+  position: fixed; top: 12px; right: 12px; bottom: 12px; z-index: 50; width: 310px;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: oklch(0.17 0.012 275 / 0.92); border: 1px solid var(--line); border-radius: 12px;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  font: 12px/1.3 var(--sans); color: var(--fg);
+}
+.tune[hidden] { display: none; }
+.tune .head { display: flex; gap: 6px; align-items: center; }
+.tune .head b { flex: 1; font-size: 13px; }
+.tune .head button { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; cursor: pointer; }
+.tune .body { overflow: auto; flex: 1; padding-right: 2px; }
+.tune details { border-top: 1px solid var(--line); padding: 6px 0; }
+.tune summary { cursor: pointer; font-weight: 600; color: var(--muted); padding: 2px 0; }
+.tune .row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 56px; gap: 6px; align-items: center; padding: 3px 0; }
+.tune .row.changed span { color: oklch(0.85 0.12 75); }
+.tune input[type=range] { width: 100%; accent-color: oklch(0.8 0.12 75); }
+.tune input[type=number] { width: 100%; font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+.tune input[type=color] { width: 100%; height: 22px; border: 0; background: none; padding: 0; }
+.tune .note { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -157,8 +178,8 @@ function placeOrbs(pass, s) {
     if (n >= ORB_N) break;
     tmpV.copy(o.pos).project(s.camera);
     if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
-    pass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
-    pass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    pass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size * look.orbSize);
+    pass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k * look.orbK);
     n++;
   }
   pass.uniforms.uN.value = n;
@@ -199,7 +220,9 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 // One scene lives at a time; a switch disposes the old one.
-let rung = 0;
+let rung = 0, bloomPass = null;
+// Page-level look knobs: exposure and lamp orbs.
+const look = { orbK: 1, orbSize: 1 };
 let cur = null, composer = null, grade = null, orbPass = null, size = { w: 1, h: 1, dpr: 1 }, loading = 0;
 function chain(s) {
   composer?.renderTarget1.dispose(); composer?.renderTarget2.dispose();
@@ -209,7 +232,8 @@ function chain(s) {
   composer.addPass(new RenderPass(s.scene, s.camera));
   orbPass = makeOrbs();
   composer.addPass(orbPass);
-  composer.addPass(makeBloom(...s.post.bloom));
+  bloomPass = makeBloom(...s.post.bloom);
+  composer.addPass(bloomPass);
   grade = makeGrade(s.post);
   composer.addPass(grade);
   composer.addPass(new OutputPass());
@@ -332,6 +356,7 @@ async function show(id) {
   cur?.dispose();
   cur = next;
   chain(cur);
+  tuneScene(id);
   resize();
   store.set('stimming.viaduct.scene', id);
   stage.dataset.scene = id;
@@ -341,6 +366,84 @@ async function show(id) {
   markReady();
   wake();
 }
+
+/* ---------- tune panel (?tune) ---------- */
+// Lists every knob of the scene and the post chain. Changes save per scene.
+const TUNING = new URLSearchParams(location.search).has('tune');
+const postKnobs = () => {
+  const g = grade.uniforms, col = { get: () => '#' + new THREE.Color(g.uTint.value.x * 40, g.uTint.value.y * 40, g.uTint.value.z * 40).getHexString(), set: h => { const c = new THREE.Color(h); g.uTint.value.set(c.r / 40, c.g / 40, c.b / 40); } };
+  const k = (key, label, min, max, step, get, set) => ({ group: 'Post', key, label, min, max, step, get, set });
+  return [
+    k('expo', 'Exposure', 0.2, 3, 0.01, () => renderer.toneMappingExposure, v => { renderer.toneMappingExposure = v; }),
+    k('bloom', 'Bloom strength', 0, 3, 0.01, () => bloomPass.strength, v => { bloomPass.strength = v; }),
+    k('bloomR', 'Bloom radius', 0, 1.5, 0.01, () => bloomPass.radius, v => { bloomPass.radius = v; }),
+    k('bloomT', 'Bloom threshold', 0, 3, 0.01, () => bloomPass.threshold, v => { bloomPass.threshold = v; }),
+    k('orbK', 'Lamp glow', 0, 4, 0.01, () => look.orbK, v => { look.orbK = v; }),
+    k('orbSize', 'Lamp glow size', 0.2, 4, 0.01, () => look.orbSize, v => { look.orbSize = v; }),
+    k('vig', 'Vignette', 0, 1, 0.01, () => g.uVig.value, v => { g.uVig.value = v; }),
+    k('vigIn', 'Vignette start', 0, 1, 0.01, () => g.uVigIn.value, v => { g.uVigIn.value = v; }),
+    k('grain', 'Grain', 0, 0.2, 0.001, () => g.uGrain.value, v => { g.uGrain.value = v; }),
+    { group: 'Post', key: 'tint', label: 'Black lift (tint)', type: 'color', ...col },
+  ].map(t => ({ ...t, def: t.get() }));
+};
+let tunePanel = null, bakeTimer = 0;
+function tuneScene(id) {
+  const key = `stimming.viaduct.tune.${id}`;
+  let saved = {};
+  try { saved = JSON.parse(store.get(key) || '{}'); } catch {}
+  const list = [...(cur.tune?.list || []), ...postKnobs()];
+  const setOne = (t, v) => (cur.tune?.list.includes(t) ? cur.tune.set(t.key, v) : (t.set(v), false));
+  // Saved values apply on every load, panel or not.
+  for (const t of list) if (t.key in saved) setOne(t, saved[t.key]);
+  if (!TUNING) return;
+  tunePanel?.remove();
+  const el = document.createElement('aside');
+  el.className = 'tune';
+  el.innerHTML = `<div class="head"><b>Tune · ${id}</b><button data-a="copy">Copy JSON</button><button data-a="reset">Reset</button><button data-a="hide">Hide</button></div>
+    <p class="note">Changes save in this browser. <kbd>T</kbd> shows or hides it. Knobs marked · re-bake the still layer; changed knobs turn amber.</p><div class="body"></div>`;
+  const body = el.querySelector('.body');
+  const groups = {};
+  const save = () => { const o = {}; for (const t of list) { const v = t.get(); if (v !== t.def) o[t.key] = v; } store.set(key, JSON.stringify(o)); return o; };
+  const rebake = () => { clearTimeout(bakeTimer); bakeTimer = setTimeout(() => { resize(); wake(); }, 150); };
+  for (const t of list) {
+    if (!groups[t.group]) { const d = document.createElement('details'); d.open = !Object.keys(groups).length; d.innerHTML = `<summary>${t.group}</summary>`; body.append(d); groups[t.group] = d; }
+    const row = document.createElement('label');
+    row.className = 'row';
+    const name = document.createElement('span');
+    name.textContent = t.label + (t.bake ? ' ·' : '');
+    if (t.bake) name.title = 'Re-bakes the still layer';
+    row.append(name);
+    const mark = () => row.classList.toggle('changed', t.get() !== t.def);
+    if (t.type === 'color') {
+      const c = document.createElement('input'); c.type = 'color'; c.value = t.get();
+      c.addEventListener('input', () => { if (setOne(t, c.value)) rebake(); else draw(); save(); mark(); wake(); });
+      row.append(c, document.createElement('span'));
+      t.sync = () => { c.value = t.get(); mark(); };
+    } else {
+      const r = document.createElement('input'); r.type = 'range'; r.min = t.min; r.max = t.max; r.step = t.step; r.value = t.get();
+      const n = document.createElement('input'); n.type = 'number'; n.min = t.min; n.max = t.max; n.step = t.step; n.value = +(+t.get()).toFixed(5);
+      const apply = v => { if (!Number.isFinite(v)) return; if (setOne(t, v)) rebake(); else draw(); save(); mark(); wake(); };
+      r.addEventListener('input', () => { n.value = r.value; apply(+r.value); });
+      n.addEventListener('change', () => { r.value = n.value; apply(+n.value); });
+      row.append(r, n);
+      t.sync = () => { r.value = t.get(); n.value = +(+t.get()).toFixed(5); mark(); };
+    }
+    body.querySelector('details:last-of-type').append(row);
+    mark();
+  }
+  el.addEventListener('click', e => {
+    const a = e.target.closest('button')?.dataset.a;
+    if (a === 'copy') navigator.clipboard?.writeText(JSON.stringify(save(), null, 2));
+    if (a === 'reset') { let b = false; for (const t of list) b = setOne(t, t.def) || b; for (const t of list) t.sync(); save(); if (b) rebake(); else draw(); wake(); }
+    if (a === 'hide') el.hidden = true;
+  });
+  // The panel takes its own keys and pointer, away from the stage.
+  el.addEventListener('keydown', e => e.stopPropagation());
+  document.body.append(el);
+  tunePanel = el;
+}
+addEventListener('keydown', e => { if (TUNING && e.code === 'KeyT' && !e.target.closest?.('input')) tunePanel && (tunePanel.hidden = !tunePanel.hidden); });
+/* ---------- end tune panel ---------- */
 
 const pick = choices(document.getElementById('scene'), id => show(id));
 const first = new URLSearchParams(location.search).get('scene') || store.get('stimming.viaduct.scene');
