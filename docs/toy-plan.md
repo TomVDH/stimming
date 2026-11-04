@@ -1,6 +1,7 @@
 # Toy plan: feasibility, ranking, budget
 
 Covers the 27 shortlisted toys in [toy-ideas.md](toy-ideas.md). Drafted 2026-11-04; Tom decides.
+Tom chose the top four to build first; their briefs are in [toy-dev-plan.md](toy-dev-plan.md).
 
 ## Budget assumption
 
