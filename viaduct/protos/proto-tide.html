@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tide arches prototype</title>
+<style>
+:root { --bg: #06070d; --fg: #e9ebf5; --muted: #9096ad; --line: #1e2234; --chip: #131626; --on: #2c3252; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.3 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; cursor: pointer; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.choices { display: flex; gap: 2px; background: var(--chip); border-radius: 999px; padding: 2px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.choices button[aria-pressed="true"] { background: var(--on); }
+label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.how { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .how { display: none; } }
+</style></head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="bar">
+  <div class="choices" id="tide" role="group" aria-label="Tide">
+    <button data-v="low" aria-pressed="false">Low tide</button><button data-v="rising" aria-pressed="true">Rising</button><button data-v="flood" aria-pressed="false">Flood</button>
+  </div>
+  <label>Moon <input type="range" id="moon" min="0" max="1" step="0.001" value="0.18"></label>
+  <button id="add">+ Train</button>
+  <span class="how">Tap: tide line · Hold: still · Drag: moon · Space: train</span>
+</div>
+<script>
+// Tide arches: a low arched viaduct on a wet tidal flat that mirrors it.
+const stage = document.getElementById('stage'), cv = document.getElementById('c'), g = cv.getContext('2d');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+const [skyC, sg] = mk(), [reflS, rs] = mk(), [reflD, rd] = mk(), [viaC, vg] = mk(), [sandC, sd] = mk(), [fxC, fx] = mk();
+let W = 0, H = 0, dpr = 1, hz = 0, f = 0, V = null;
+const hc = 1.5, DECK = 6, SPRING = 2.2, SPAN = 6, PIER = 1.1;
+
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function size(c, x, w, h) { c.width = Math.max(1, Math.round(w * dpr)); c.height = Math.max(1, Math.round(h * dpr)); x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+function lin(c, y0, y1, stops, x0 = 0, x1 = 0) { const l = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, s]) => l.addColorStop(o, s)); return l; }
+function glow(c, x, y, r, col, a, sy = 1) {
+  if (r <= 0 || a <= 0.001) return;
+  c.save(); c.translate(x, y); c.scale(1, sy);
+  const l = c.createRadialGradient(0, 0, 0, 0, 0, r);
+  l.addColorStop(0, col.replace('A', a)); l.addColorStop(0.3, col.replace('A', a * 0.35)); l.addColorStop(1, col.replace('A', 0));
+  c.fillStyle = l; c.fillRect(-r, -r, r * 2, r * 2); c.restore();
+}
+
+function fit() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = stage.clientWidth; H = stage.clientHeight;
+  if (!W || !H) return;
+  const portrait = H > W;
+  hz = Math.round(H * (portrait ? 0.4 : 0.55)); f = portrait ? W * 1.5 : W * 0.95;
+  // Viaduct runs from near left to far right; portrait brings it closer.
+  const A = portrait ? [-8, 14] : [-30, 24], B = portrait ? [60, 300] : [110, 420];
+  const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  V = { A, ux: (B[0] - A[0]) / len, uz: (B[1] - A[1]) / len, len };
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  size(skyC, sg, W, hz); size(reflS, rs, W, H - hz); size(reflD, rd, W, H - hz);
+  size(viaC, vg, W, H); size(sandC, sd, W, H - hz); size(fxC, fx, W, H);
+  bakeSky(); bakeVia(); bakeSand(); bakeFx(); wake();
+}
+new ResizeObserver(fit).observe(stage);
+
+// Projection: world (along d, height Y) to screen; m = -1 mirrors in the sand.
+function P(d, Y, m = 1) {
+  const X = V.A[0] + V.ux * d, Z = V.A[1] + V.uz * d;
+  return [W / 2 + f * X / Z, hz - f * (m * Y - hc) / Z, Z];
+}
+
+let tide = 'rising', moon = 0.18, held = false, calm = 0, t = 0, dir = 1, nextTide = 9, skyDirty = false;
+const trains = [], fronts = [];
+const glints = (() => { const r = rng(11); return Array.from({ length: 220 }, () => ({ y: Math.pow(r(), 0.8), x: (r() + r() + r() - 1.5) * 1.4, s: 1 + r() * 3, p: r() * 9 })); })();
+const moonPos = () => [W * (H > W ? 0.8 : 0.6), hz - hz * ((H > W ? 0.12 : 0.05) + 0.6 * moon)];
+
+// Sky with moon and stars. It changes only on resize and moon moves.
+function bakeSky() {
+  const c = sg, r = rng(7), [mx, my] = moonPos(), lift = 1 - moon * 0.5;
+  c.fillStyle = lin(c, 0, hz, [[0, '#020308'], [0.5, '#070b1c'], [0.82, '#18203d'], [0.95, '#38406a'], [1, '#5a6290']]); c.fillRect(0, 0, W, hz);
+  for (let i = 0; i < 260; i++) { const y = Math.pow(r(), 1.4) * hz * 0.85, a = r() * 0.5 * (1 - y / hz); c.fillStyle = `rgba(215,222,255,${a})`; c.fillRect(r() * W, y, 1.2, 1.2); }
+  c.save(); c.globalCompositeOperation = 'lighter';
+  // Low moon warms the horizon; high moon lights more sky.
+  glow(c, mx, hz, W * 0.5, 'rgba(150,120,140,A)', 0.22 * lift, 0.28);
+  glow(c, mx, my, Math.min(W, H) * 0.55, 'rgba(120,140,215,A)', 0.2);
+  glow(c, mx, my, Math.min(W, H) * 0.09, 'rgba(230,232,255,A)', 0.4);
+  glow(c, mx, my, Math.min(W, H) * 0.03, 'rgba(255,250,240,A)', 1);
+  c.fillStyle = '#fbf8f0'; c.beginPath(); c.arc(mx, my, Math.min(W, H) * 0.012, 0, 7); c.fill();
+  c.restore();
+  // The mirror: the sky flipped about the horizon, plus the viaduct reflected.
+  const R = rs, h2 = H - hz;
+  R.fillStyle = '#020308'; R.fillRect(0, 0, W, h2);
+  R.save(); R.translate(0, hz); R.scale(1, -1); R.drawImage(skyC, 0, 0, W, hz); R.restore();
+  R.save(); R.globalCompositeOperation = 'lighter';
+  const my2 = hz - my, cw = Math.min(W, H) * 0.035;
+  glow(R, mx, my2, cw * 1.2, 'rgba(255,246,230,A)', 0.45, h2 * 1.1 / (cw * 1.2));
+  glow(R, mx, my2, cw * 5, 'rgba(200,210,255,A)', 0.12, h2 * 1.1 / (cw * 5));
+  R.restore();
+  R.save(); R.translate(0, -hz); viaPath(R, -1); R.fillStyle = '#05060b'; R.fill('evenodd'); R.restore();
+  haze(R, -hz);
+}
+
+// One path for the wall with its arch openings cut out.
+function viaPath(c, m) {
+  c.beginPath();
+  const a = P(0, DECK, m), b = P(V.len, DECK, m), b0 = P(V.len, 0, m), a0 = P(0, 0, m);
+  c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.lineTo(b0[0], b0[1]); c.lineTo(a0[0], a0[1]); c.closePath();
+  const rad = (SPAN - PIER) / 2;
+  for (let i = 0; i * SPAN < V.len - SPAN; i++) {
+    const dl = i * SPAN + PIER / 2, dr = (i + 1) * SPAN - PIER / 2, dc = (dl + dr) / 2;
+    const p0 = P(dl, 0, m); if (p0[0] > W + 50) break;
+    const pe = P(dr, 0, m); if (pe[0] < -50) continue;
+    c.moveTo(p0[0], p0[1]);
+    for (let k = 0; k <= 16; k++) { const th = Math.PI * (1 - k / 16), p = P(dc + rad * Math.cos(th), SPRING + rad * Math.sin(th), m); c.lineTo(p[0], p[1]); }
+    c.lineTo(pe[0], pe[1]); c.closePath();
+  }
+}
+// Distance haze: the far end melts into the horizon glow.
+function haze(c, oy) {
+  c.save(); c.globalCompositeOperation = 'source-atop';
+  const xa = P(0, 0)[0], xb = P(V.len, 0)[0];
+  c.fillStyle = lin(c, 0, 0, [[0, 'rgba(70,78,120,0)'], [0.55, 'rgba(70,78,120,0.25)'], [1, 'rgba(90,98,140,0.85)']], Math.max(xa, -W * 0.2), xb);
+  c.fillRect(0, 0, W, H); c.restore();
+}
+function bakeVia() {
+  const c = vg; c.clearRect(0, 0, W, H);
+  viaPath(c, 1); c.fillStyle = '#05060b'; c.fill('evenodd');
+  // Moonlit coping: a fine cool line on the deck edge.
+  const a = P(0, DECK), b = P(V.len, DECK);
+  c.strokeStyle = lin(c, 0, 0, [[0, 'rgba(150,160,210,0.45)'], [1, 'rgba(150,160,210,0.05)']], 0, b[0]); c.lineWidth = 1;
+  c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
+  haze(c, 0);
+}
+// Dry sand with soft pools; drawn over the mirror at the tide's dryness.
+function bakeSand() {
+  const c = sd, r = rng(21), h2 = H - hz;
+  c.clearRect(0, 0, W, h2);
+  c.fillStyle = lin(c, 0, h2, [[0, '#1a1b26'], [1, '#0b0b10']]); c.fillRect(0, 0, W, h2);
+  c.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 220; i++) {
+    const y = Math.pow(r(), 1.7) * h2, s = 0.15 + y / h2 * 1.2, w = (60 + r() * 260) * s * (W / 900);
+    glow(c, r() * W, y, w, 'rgba(0,0,0,A)', 0.9, 0.06 + 0.05 * s);
+  }
+  c.globalCompositeOperation = 'source-over';
+}
+function bakeFx() {
+  const c = fx, [nc, n] = mk(), r = rng(3); nc.width = nc.height = 192;
+  const id = n.createImageData(192, 192);
+  for (let i = 0; i < id.data.length; i += 4) { const v = r() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 14; }
+  n.putImageData(id, 0, 0);
+  c.clearRect(0, 0, W, H); c.fillStyle = c.createPattern(nc, 'repeat'); c.fillRect(0, 0, W, H);
+  const v = c.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)'); c.fillStyle = v; c.fillRect(0, 0, W, H);
+}
+
+function sendTrain() { trains.push({ d: dir > 0 ? -30 : V.len + 10, dir, v: 6 + Math.random() * 1.5, cars: 4 + (Math.random() * 3 | 0) }); dir = -dir; wake(); }
+function sendTide() { fronts.push({ t0: t, ph: Math.random() * 9 }); wake(); }
+
+// Train: dark body, warm windows; m = -1 draws its reflection.
+function drawTrain(c, tr, m, oy, a) {
+  const L = tr.cars * 5, d0 = tr.d, d1 = tr.d - tr.dir * L;
+  c.fillStyle = '#05060b';
+  const q = [P(d0, DECK, m), P(d1, DECK, m), P(d1, DECK + 1.2, m), P(d0, DECK + 1.2, m)];
+  c.beginPath(); q.forEach((p, i) => c[i ? 'lineTo' : 'moveTo'](p[0], p[1] - oy)); c.fill();
+  c.save(); c.globalCompositeOperation = 'lighter';
+  const mid = P((d0 + d1) / 2, DECK + 0.8, m), span = Math.abs(P(d0, 0)[0] - P(d1, 0)[0]);
+  glow(c, mid[0], mid[1] - oy, span * 0.7 + 10, 'rgba(255,150,70,A)', 0.16 * a, 0.3);
+  c.fillStyle = `rgba(255,196,120,${0.95 * a})`;
+  for (let k = 0; k < tr.cars; k++) for (let w = 0; w < 4; w++) {
+    const s = d1 + tr.dir * (k * 5 + 0.6 + w * 1.05), e = s + tr.dir * 0.65;
+    const p = [P(s, DECK + 0.5, m), P(e, DECK + 0.5, m), P(e, DECK + 0.95, m), P(s, DECK + 0.95, m)];
+    if (p[0][0] < -20 && p[1][0] < -20) continue;
+    c.beginPath(); p.forEach((pp, i) => c[i ? 'lineTo' : 'moveTo'](pp[0], pp[1] - oy)); c.fill();
+  }
+  const h = P(d0, DECK + 0.7, m), hs = Math.max(8, f * 1.2 / h[2]);
+  glow(c, h[0], h[1] - oy, hs * 3, 'rgba(255,240,215,A)', 0.5 * a);
+  glow(c, h[0], h[1] - oy, hs, 'rgba(255,252,240,A)', a);
+  c.restore();
+}
+
+function frontY(fr) { const p = (t - fr.t0) / 11, Zf = 500 * Math.pow((f * hc / (H - hz) * 0.85) / 500, p); return f * hc / Zf; }
+function render() {
+  if (skyDirty) { bakeSky(); skyDirty = false; }
+  g.drawImage(skyC, 0, 0, W, hz);
+  // Reflection layer for this frame: static mirror plus trains.
+  rd.clearRect(0, 0, W, H - hz); rd.drawImage(reflS, 0, 0, W, H - hz);
+  for (const tr of trains) drawTrain(rd, tr, -1, hz, 0.75);
+  g.fillStyle = '#0b0b12'; g.fillRect(0, hz, W, H - hz);
+  const h2 = H - hz, st = 2, still = 1 - calm, mirror = tide === 'flood' ? 1 : tide === 'rising' ? 0.92 : 0.85;
+  const fy = fronts.map(frontY), [mx] = moonPos();
+  for (let y = 0; y < h2; y += st) {
+    const persp = 0.2 + y / h2;
+    let dx = reduced ? 0 : still * Math.sin(y * 0.11 + t * 1.2) * 0.9 * persp, ag = 0;
+    for (let i = 0; i < fy.length; i++) {
+      const yf = fy[i]; if (y > yf + 1) continue;
+      ag = Math.max(ag, Math.exp(-(yf - y) / (yf * 0.35 + 4)) * (1 - calm * 0.7));
+    }
+    if (ag > 0.01) dx += ag * Math.sin(y * 0.6 + t * 5) * (2 + persp * 9);
+    g.globalAlpha = mirror * (1 - 0.75 * ag);
+    g.drawImage(reflD, 0, y * dpr, W * dpr, st * dpr, dx, hz + y, W, st);
+  }
+  g.globalAlpha = 1;
+  // Wet water is darker than the sky it mirrors; dry sand covers the rest.
+  g.fillStyle = lin(g, hz, H, [[0, 'rgba(4,5,12,0)'], [0.35, 'rgba(4,5,12,0.25)'], [1, 'rgba(2,2,6,0.7)']]); g.fillRect(0, hz, W, h2);
+  // Moon glints: short dashes that wink on the glade.
+  if (!reduced) {
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (const q of glints) {
+      const y = q.y * h2, persp = 0.15 + q.y, a = Math.max(0, Math.sin(t * q.s + q.p)) ** 8 * 0.38 * (1 - calm * 0.8);
+      if (a < 0.02) continue;
+      g.fillStyle = `rgba(255,244,225,${a})`; g.fillRect(mx + q.x * persp * Math.min(W, H) * 0.12, hz + y, 2 + persp * 7, 0.6 + persp * 0.8);
+    }
+    g.restore();
+  }
+  const dry = tide === 'low' ? 0.88 : tide === 'rising' ? 0.3 : 0;
+  if (dry > 0) { g.globalAlpha = dry; g.drawImage(sandC, 0, hz, W, h2); g.globalAlpha = 1; }
+  // Tide fronts: a thin foam edge with a faint wash behind it.
+    g.save(); g.globalCompositeOperation = 'lighter';
+  fronts.forEach((fr, i) => {
+    const yf = fy[i], fade = Math.min(1, (t - fr.t0) * 0.8) * Math.min(1, (h2 - yf) / 40 + 0.1);
+    if (yf > h2 + 20) return;
+    g.fillStyle = lin(g, hz + yf * 0.55, hz + yf, [[0, 'rgba(120,140,210,0)'], [1, `rgba(120,140,210,${0.12 * fade})`]]); g.fillRect(0, hz + yf * 0.55, W, yf * 0.45);
+    g.beginPath();
+    for (let x = -10; x <= W + 10; x += 6) {
+      const y = hz + yf + (Math.sin(x * 0.011 + fr.ph + t * 0.9) * 0.05 + Math.sin(x * 0.037 - t * 1.7 + fr.ph) * 0.02) * yf;
+      x < 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+    }
+    g.strokeStyle = `rgba(205,215,255,${0.5 * fade})`; g.lineWidth = 0.8 + yf * 0.012; g.stroke();
+    glow(g, mx, hz + yf, Math.max(30, yf * 0.8), 'rgba(255,245,225,A)', 0.35 * fade, 0.08);
+  });
+  g.restore();
+  g.drawImage(viaC, 0, 0, W, H);
+  for (const tr of trains) drawTrain(g, tr, 1, 0, 1);
+  g.drawImage(fxC, 0, 0, W, H);
+}
+
+function step(dt) {
+  t += dt;
+  calm += ((held ? 1 : 0) - calm) * Math.min(1, dt * 2);
+  for (const tr of trains) tr.d += tr.dir * tr.v * dt * (1 - calm * 0.6);
+  for (let i = trains.length - 1; i >= 0; i--) { const tr = trains[i]; if ((tr.dir > 0 && tr.d > V.len + 40) || (tr.dir < 0 && tr.d < -40)) trains.splice(i, 1); }
+  for (let i = fronts.length - 1; i >= 0; i--) if (frontY(fronts[i]) > H - hz + 30) fronts.splice(i, 1);
+  if (tide === 'rising' && !held) { nextTide -= dt; if (nextTide <= 0) { sendTide(); nextTide = 13 + Math.random() * 5; } }
+}
+
+/* Frame loop: lively at full rate, drifting at 30 fps, asleep after 60 s idle. */
+let raf = 0, lastDraw = 0, lastT = 0, lastInput = performance.now(), dragging = false;
+const busy = () => trains.length > 0 || fronts.length > 0 || held || dragging || calm > 0.01;
+function frame(now) {
+  raf = 0;
+  const lively = busy(), idle = now - lastInput;
+  if (!lively && (reduced || idle > 60000)) { render(); return; }
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  try { step(dt); render(); } finally { lastDraw = now; if (!document.hidden) raf = requestAnimationFrame(frame); }
+}
+function wake() { if (!raf && !document.hidden && W) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else wake(); });
+
+/* Pointer: drag after 8 px, hold after 260 ms, else a tap. */
+let press = null, holdTimer = 0;
+stage.addEventListener('pointerdown', e => {
+  stage.setPointerCapture(e.pointerId); lastInput = performance.now();
+  press = { x: e.clientX, y: e.clientY, ly: e.clientY }; dragging = false;
+  holdTimer = setTimeout(() => { held = true; wake(); }, 260); wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press) return; lastInput = performance.now();
+  if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { dragging = true; clearTimeout(holdTimer); held = false; }
+  if (dragging) { const dy = e.clientY - press.ly; press.ly = e.clientY; setMoon(moon - dy / (hz * 0.6)); }
+});
+function end(tap) {
+  clearTimeout(holdTimer);
+  if (press && tap && !dragging && !held) sendTide();
+  press = null; dragging = false; held = false; lastInput = performance.now(); wake();
+}
+stage.addEventListener('pointerup', () => end(true));
+stage.addEventListener('pointercancel', () => end(false));
+stage.addEventListener('lostpointercapture', () => { if (press) end(false); });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); sendTrain(); }
+  if (e.code === 'Enter') sendTide();
+  lastInput = performance.now(); wake();
+});
+
+const moonInput = document.getElementById('moon');
+function setMoon(v) { moon = Math.max(0, Math.min(1, v)); moonInput.value = moon; skyDirty = true; wake(); }
+moonInput.addEventListener('input', e => { lastInput = performance.now(); setMoon(+e.target.value); });
+document.getElementById('tide').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const o of e.currentTarget.children) o.setAttribute('aria-pressed', o === b);
+  tide = b.dataset.v; if (tide === 'rising') nextTide = 2; lastInput = performance.now(); wake();
+});
+document.getElementById('add').addEventListener('click', () => { lastInput = performance.now(); sendTrain(); });
+
+// First frame: a train mid-crossing and a tide line under the arches.
+fit();
+if (V) { trains.push({ d: V.len * (H > W ? 0.1 : 0.2), dir: 1, v: 6.5, cars: 5 }); dir = -1; fronts.push({ t0: -3.2, ph: 2 }); }
+</script></body></html>

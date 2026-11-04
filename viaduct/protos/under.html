@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Under the surface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..700&display=swap">
+<style>
+:root {
+  --bg: oklch(0.1 0.01 270);
+  --ink: oklch(0.93 0.01 270);
+  --dim: oklch(0.72 0.015 270);
+  --chip: oklch(0.2 0.015 270 / 0.62);
+  --line: oklch(0.85 0.01 270 / 0.22);
+}
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
+body { font: 500 13px/1.2 Gabarito, system-ui, sans-serif; }
+canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+.bar {
+  position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; pointer-events: none;
+}
+.bar > * { pointer-events: auto; }
+.choices { display: flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--chip); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--line); }
+.chip {
+  font: inherit; color: var(--dim); background: transparent; border: 0; border-radius: 999px;
+  padding: 7px 13px; cursor: pointer; transition: color 0.2s, background 0.2s;
+}
+.chip[aria-pressed="true"] { color: var(--bg); background: var(--ink); }
+.act { background: var(--chip); border: 1px solid var(--line); color: var(--ink); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.how { margin: 0; color: var(--dim); font-size: 12px; text-shadow: 0 1px 4px #000; }
+.how b { color: var(--ink); font-weight: 600; }
+@media (max-width: 520px) { .how { flex-basis: 100%; order: -1; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<div class="bar">
+  <div class="choices" id="modes" role="group" aria-label="Mood"><button class="chip" type="button" data-value="moon" aria-pressed="true">Moon</button><button class="chip" type="button" data-value="starlight" aria-pressed="false">Starlight</button><button class="chip" type="button" data-value="murky" aria-pressed="false">Murky</button></div>
+  <button class="chip act" id="act" type="button">+ Train</button>
+  <p class="how"><b>Tap</b> send a train</p>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// Seeded random keeps every load the same.
+let seed = 1337;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const range = (a, b) => a + (b - a) * rnd();
+const ease = (x) => x * x * (3 - 2 * x);
+
+// Shared GLSL: hash, value noise and fbm.
+const NOISE = /* glsl */`
+float hash12(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+vec2 hash22(vec2 p) { float n = hash12(p); return vec2(n, hash12(p + n * 17.3 + 3.1)); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), u.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; }
+  return s;
+}`;
+const WORLD_VS = /* glsl */`
+varying vec3 vP;
+varying vec3 vN;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vP = w.xyz;
+  vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+
+// A quadratic Bezier in plan, walked by arc length.
+function makePath(B0, B1, B2) {
+  const bez = t => new THREE.Vector2().addScaledVector(B0, (1 - t) ** 2).addScaledVector(B1, 2 * t * (1 - t)).addScaledVector(B2, t * t);
+  const LUT = [{ t: 0, s: 0 }];
+  for (let i = 1, prev = bez(0); i <= 1000; i++) { const p = bez(i / 1000); LUT.push({ t: i / 1000, s: LUT[i - 1].s + p.distanceTo(prev) }); prev = p; }
+  const LEN = LUT[LUT.length - 1].s;
+  function tAt(s) {
+    s = Math.max(0, Math.min(LEN, s));
+    let lo = 0, hi = LUT.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (LUT[m].s < s) lo = m; else hi = m; }
+    const a = LUT[lo], b = LUT[hi];
+    return a.t + (b.t - a.t) * ((s - a.s) / Math.max(1e-6, b.s - a.s));
+  }
+  // Past either end the path runs on along its tangent.
+  function at(s, side = 0) {
+    const e = Math.max(0, Math.min(LEN, s)), d = s - e;
+    const t = tAt(e), p = bez(t), q = bez(Math.min(1, t + 0.001)), r = bez(Math.max(0, t - 0.001));
+    const tan = q.sub(r).normalize();
+    const n = new THREE.Vector2(-tan.y, tan.x);
+    return { x: p.x + n.x * side + tan.x * d, z: p.y + n.y * side + tan.y * d, yaw: Math.atan2(tan.x, tan.y), tan, n };
+  }
+  return { at, LEN };
+}
+
+// A box baked in place, yawed about its centre.
+function boxG(x, y, z, w, h, d, ry = 0, rz = 0) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (rz) g.rotateZ(rz);
+  if (ry) g.rotateY(ry);
+  g.translate(x, y + h / 2, z);
+  return g.toNonIndexed();
+}
+
+/* ---------- scene ---------- */
+// Under the surface: a drowned stone viaduct, seen from below the water.
+function build(renderer) {
+const scene = new THREE.Scene();
+const air = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 6000);
+const Q = new URLSearchParams(location.search);
+const ETA = 1.333;
+
+// The moon hangs low ahead; its light bends steeply down into the water.
+const moonA = new THREE.Vector3(0.357, 0.342, -0.865).normalize();
+const moonW = (() => {
+  const h = new THREE.Vector2(moonA.x, moonA.z).normalize();
+  const sa = Math.sqrt(1 - moonA.y * moonA.y), sw = sa / ETA, cw = Math.sqrt(1 - sw * sw);
+  return new THREE.Vector3(h.x * sw, cw, h.y * sw);
+})();
+
+const U = {
+  uTime: { value: 0 },
+  uLa: { value: moonA }, uLr: { value: moonW },
+  uMoonK: { value: 1 }, uStarK: { value: 0.35 }, uSigma: { value: 0.022 }, uShaftK: { value: 1 },
+  uWaterC: { value: new THREE.Vector3(0.1, 0.42, 0.62) },
+  uTrainP: { value: new THREE.Vector3(0, -999, 0) }, uTrainK: { value: 0 },
+};
+const MODES = {
+  moon: { uMoonK: 1, uStarK: 0.35, uSigma: 0.022, uShaftK: 1, uWaterC: [0.1, 0.42, 0.62] },
+  starlight: { uMoonK: 0, uStarK: 1, uSigma: 0.022, uShaftK: 0, uWaterC: [0.08, 0.3, 0.7] },
+  murky: { uMoonK: 0.75, uStarK: 0.2, uSigma: 0.075, uShaftK: 1.6, uWaterC: [0.2, 0.5, 0.36] },
+};
+
+/* ---------- GLSL: light in the water ---------- */
+const WATER = /* glsl */`
+${NOISE}
+uniform float uTime, uMoonK, uStarK, uSigma, uShaftK, uTrainK;
+uniform vec3 uLa, uLr, uWaterC, uTrainP;
+const vec3 MOONC = vec3(0.75, 0.86, 1.0);
+const vec3 WARM = vec3(1.0, 0.62, 0.3);
+// Moving cells: their edges are the bright lines of a caustic net.
+float cnet(vec2 p, float t) {
+  vec2 n = floor(p), f = fract(p);
+  float F1 = 8.0, F2 = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j));
+    vec2 h = hash22(n + g);
+    vec2 o = 0.5 + 0.38 * sin(t * (0.6 + 0.5 * h) + 6.2831 * h);
+    vec2 r = g + o - f;
+    float d = dot(r, r);
+    if (d < F1) { F2 = F1; F1 = d; } else if (d < F2) { F2 = d; }
+  }
+  return sqrt(F2) - sqrt(F1);
+}
+// Caustics on a surface: two nets, one sharp, one soft.
+float caustic(vec2 q) {
+  vec2 w = q + 0.35 * vec2(vnoise(q * 0.4 + uTime * 0.3), vnoise(q * 0.4 - uTime * 0.25));
+  float a = exp(-cnet(w * 0.75, uTime * 1.2) / 0.08);
+  return a * 0.9 + 0.1;
+}
+// Shafts: the same net, wider, swayed by slow wave groups.
+float shaft(vec2 q) {
+  float a = vnoise(q * vec2(0.11, 0.09) + vec2(uTime * 0.07, -uTime * 0.04));
+  float b = vnoise(q * vec2(0.07, 0.15) + vec2(-uTime * 0.05, uTime * 0.06) + 7.0);
+  return smoothstep(0.32, 0.8, a * b * 2.0) * (0.3 + 0.7 * a);
+}
+// Where the moon's refracted ray through X left the surface.
+vec2 entry(vec3 X, out float t) { t = max(-X.y, 0.0) / uLr.y; return X.xz + uLr.xz * t; }
+// Skylight from the window above, dimming with depth.
+vec3 ambient(float y) { return uWaterC * (0.022 * uMoonK + 0.008 * uStarK + 0.0015) * exp(min(y, 0.0) * uSigma * 1.4); }
+// Water between the eye and P: absorption, glow, shafts, train light.
+vec3 medium(vec3 c, vec3 P) {
+  vec3 ro = cameraPosition;
+  vec3 rd = P - ro;
+  // A mirror pass starts above the water; clip its ray to the surface.
+  if (ro.y > 0.0 && rd.y < 0.0) ro += rd * (ro.y / -rd.y);
+  rd = P - ro;
+  float L = length(rd);
+  rd /= max(L, 1e-4);
+  float tr = exp(-uSigma * L);
+  float ym = 0.5 * (ro.y + max(P.y, -60.0));
+  vec3 col = c * tr + ambient(ym) * (1.0 - tr);
+  // March the shafts through the first stretch of water.
+  float Lc = min(L, 70.0);
+#ifdef VERT
+  float j = 0.5;
+#else
+  float j = hash12(gl_FragCoord.xy + fract(uTime) * 61.0);
+#endif
+  float ds = Lc / 14.0, sh = 0.0, tw = 0.0;
+  for (int i = 0; i < 14; i++) {
+    float d = (float(i) + j) * ds;
+    vec3 X = ro + rd * d;
+    float t;
+    vec2 q = entry(X, t);
+    float vis = exp(-uSigma * (t + d));
+    sh += shaft(q) * vis;
+    // The train lights the water just under it.
+    vec3 dT = X - uTrainP;
+    tw += exp(-dot(dT.xz, dT.xz) / 900.0) * exp(X.y / 5.0) * exp(-uSigma * d);
+  }
+  float ph = 0.35 + 2.2 * pow(max(dot(rd, uLr), 0.0), 6.0);
+  col += uWaterC * MOONC * sh * ds * uSigma * 2.2 * uShaftK * uMoonK * ph;
+  col += WARM * tw * ds * 0.004 * uTrainK;
+  return col;
+}`;
+
+/* ---------- underwater materials ---------- */
+// Stone: coursed blocks, silt on top faces, caustics from the moon.
+function stoneMat(base, courses) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...U, uBase: { value: base }, uCourses: { value: courses } },
+    vertexShader: WORLD_VS,
+    fragmentShader: /* glsl */`
+    uniform float uBase, uCourses;
+    varying vec3 vP;
+    varying vec3 vN;
+    ${WATER}
+    void main() {
+      vec3 N = normalize(vN);
+      float tex = vnoise(vP.xz * 0.6 + vP.y * 0.4) * 0.5 + vnoise(vP.xy * 1.7 + vP.z) * 0.5;
+      vec3 alb = vec3(uBase) * vec3(0.9, 1.0, 0.95) * (0.65 + 0.6 * tex);
+      // Mortar joints: courses of 0.7 m, blocks of 1.4 m.
+      float dist = length(vP - cameraPosition);
+      if (uCourses > 0.5) {
+        float a = abs(N.x) > abs(N.z) ? vP.z : vP.x;
+        float row = floor(vP.y / 0.7);
+        float jy = smoothstep(0.0, 0.06, abs(fract(vP.y / 0.7) - 0.5) - 0.44);
+        float jx = smoothstep(0.0, 0.06, abs(fract(a / 1.4 + row * 0.5) - 0.5) - 0.46);
+        alb *= 1.0 - 0.45 * max(jy, jx) * (1.0 - abs(N.y)) * (1.0 - smoothstep(8.0, 30.0, dist));
+      }
+      // Silt settles on faces that look up.
+      alb = mix(alb, vec3(0.26, 0.27, 0.22), smoothstep(0.4, 0.9, N.y) * 0.6);
+      float t;
+      vec2 q = entry(vP, t);
+      vec3 moon = MOONC * uMoonK * 1.6 * max(dot(N, uLr), 0.0) * exp(-uSigma * t) * (0.2 + 1.8 * mix(caustic(q), 0.32, smoothstep(12.0, 50.0, dist)));
+      vec3 sky = ambient(vP.y) * 6.0 * (0.5 + 0.5 * N.y);
+      vec3 dT = vP - uTrainP;
+      vec3 train = WARM * uTrainK * 0.6 * exp(-dot(dT.xz, dT.xz) / 400.0) * exp(vP.y / 4.0) * max(N.y, 0.2) * (0.3 + caustic(vP.xz * 1.3));
+      gl_FragColor = vec4(medium(alb * (moon + sky + train), vP), 1.0);
+    }`,
+  });
+}
+const stone = stoneMat(0.3, 1);
+const sand = stoneMat(0.36, 0);
+
+/* ---------- open water behind everything ---------- */
+{
+  const m = new THREE.Mesh(new THREE.SphereGeometry(2500, 32, 16), new THREE.ShaderMaterial({
+    uniforms: U, side: THREE.BackSide, depthWrite: false,
+    vertexShader: `varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `varying vec3 vP; ${WATER} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(medium(vec3(0.0), cameraPosition + d * 600.0), 1.0); }`,
+  }));
+  m.renderOrder = -1;
+  m.onBeforeRender = (r, s, cam) => m.position.copy(cam.position);
+  scene.add(m);
+}
+
+/* ---------- the drowned valley ---------- */
+const hb = (x, z) => {
+  const v = Math.abs(x - 15 + z * 0.15);
+  const wall = THREE.MathUtils.smoothstep(v, 50, 240);
+  return -40 + 30 * wall + 2.2 * Math.sin(x * 0.05) * Math.cos(z * 0.04) + 1.2 * Math.sin(x * 0.17 + z * 0.13);
+};
+{
+  const g = new THREE.PlaneGeometry(5000, 5000, 220, 220);
+  g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setY(i, hb(p.getX(i), p.getZ(i)));
+  g.computeVertexNormals();
+  g.translate(0, 0, -600);
+  scene.add(new THREE.Mesh(g, sand));
+}
+
+/* ---------- the viaduct: one stone elevation, extruded ---------- */
+// The line runs from behind-left overhead out into the murk ahead-right.
+const O = new THREE.Vector3(-10, 0, -15), DIR = new THREE.Vector3(1, 0, -0.52).normalize();
+const SPAN = 22, PW = 5, SPRING = -12, DECK = 6.5, WIDTH = 8, NS = 26, S0 = -6;
+let viaductG;
+{
+  const sh = new THREE.Shape();
+  const xs = Array.from({ length: NS + 1 }, (_, i) => (S0 + i) * SPAN);
+  const x0 = xs[0] - PW / 2, x1 = xs[NS] + PW / 2, BOT = -70;
+  sh.moveTo(x0, BOT); sh.lineTo(x0, DECK); sh.lineTo(x1, DECK); sh.lineTo(x1, BOT);
+  for (let i = NS; i >= 1; i--) {
+    const r = (SPAN - PW) / 2, cx = (xs[i] + xs[i - 1]) / 2;
+    sh.lineTo(xs[i] - PW / 2, BOT);
+    sh.lineTo(xs[i] - PW / 2, SPRING);
+    sh.absarc(cx, SPRING, r, 0, Math.PI, false);
+    sh.lineTo(xs[i - 1] + PW / 2, BOT);
+  }
+  sh.closePath();
+  const wall = new THREE.ExtrudeGeometry(sh, { depth: WIDTH, bevelEnabled: false, curveSegments: 20 });
+  wall.translate(0, 0, -WIDTH / 2);
+  const parts = [wall];
+  // Cutwaters: pointed noses on every pier, upstream side.
+  for (const x of xs) {
+    const g = new THREE.CylinderGeometry(PW / 2 * 1.2, PW / 2 * 1.3, SPRING - BOT, 4, 1);
+    g.rotateY(Math.PI / 4); g.scale(0.75, 1, 1.15); g.translate(x, (SPRING + BOT) / 2, 0);
+    parts.push(g.toNonIndexed());
+  }
+  // A string course and a parapet above the water.
+  parts.push(new THREE.BoxGeometry(x1 - x0, 0.5, WIDTH + 0.8).translate((x0 + x1) / 2, DECK - 1.2, 0).toNonIndexed());
+  for (const side of [-1, 1]) parts.push(new THREE.BoxGeometry(x1 - x0, 1.0, 0.5).translate((x0 + x1) / 2, DECK + 0.5, side * (WIDTH / 2 - 0.25)).toNonIndexed());
+  for (const p of parts) { p.deleteAttribute('uv'); }
+  viaductG = mergeGeometries(parts);
+  viaductG.rotateY(-Math.atan2(DIR.z, DIR.x));
+  viaductG.translate(O.x, 0, O.z);
+  scene.add(new THREE.Mesh(viaductG, stone));
+}
+const along = (s, side = 0) => new THREE.Vector3(O.x + DIR.x * s - DIR.z * side, 0, O.z + DIR.z * s + DIR.x * side);
+
+/* ---------- marine snow: drifting motes lit by the shafts ---------- */
+const projU = { uScale: { value: 1 } };
+{
+  const n = 2200, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { pos[i * 3] = range(-60, 90); pos[i * 3 + 1] = range(-40, -0.5); pos[i * 3 + 2] = range(-110, 8); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, ...projU },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+    uniform float uScale;
+    varying vec3 vC;
+    #define VERT
+    ${WATER}
+    void main() {
+      vec3 P = position;
+      // Motes sink slowly and sway.
+      P.y = -0.5 - mod(-P.y + uTime * 0.12, 40.0);
+      P.x += sin(uTime * 0.2 + P.z) * 0.6;
+      float t;
+      vec2 q = entry(P, t);
+      vec3 lit = MOONC * uMoonK * shaft(q) * exp(-uSigma * t) * 0.5 + ambient(P.y) * 2.0;
+      vec4 mv = viewMatrix * vec4(P, 1.0);
+      float d = -mv.z;
+      vC = lit * exp(-uSigma * d) * 0.9;
+      float s = 0.07 * uScale / d;
+      vC *= clamp(s / 1.5, 0.1, 1.0);
+      gl_PointSize = clamp(s, 1.5, 12.0);
+      gl_Position = projectionMatrix * mv;
+    }`,
+    fragmentShader: `varying vec3 vC; void main() { vec2 c = gl_PointCoord - 0.5; gl_FragColor = vec4(vC * exp(-dot(c, c) * 16.0) * smoothstep(0.5, 0.3, length(c)), 1.0); }`,
+  }));
+  pts.frustumCulled = false; pts.renderOrder = 5;
+  scene.add(pts);
+}
+
+/* ---------- the world above, rendered into a cube for the window ---------- */
+const AIRSKY = /* glsl */`
+${NOISE}
+uniform float uTime, uMoonK, uStarK;
+uniform vec3 uLa;
+vec3 airSky(vec3 dir) {
+  float up = max(dir.y, 0.0);
+  vec3 col = vec3(0.012, 0.022, 0.05) * (0.4 + 0.6 * uMoonK) + vec3(0.05, 0.08, 0.14) * exp(-up * 9.0) * (0.35 + 0.65 * uMoonK);
+  float ma = sqrt(max(2.0 - 2.0 * dot(dir, uLa), 0.0));
+  col += uMoonK * (vec3(16.0, 17.0, 18.0) * smoothstep(0.035, 0.03, ma) + vec3(0.5, 0.6, 0.8) * (0.5 * exp(-ma * 9.0) + 0.12 * exp(-ma * 2.5)));
+  for (int k = 0; k < 2; k++) {
+    float sc = 90.0 + float(k) * 130.0;
+    vec2 sp = dir.xz / (dir.y + 0.3) * sc + float(k) * 5.1;
+    vec2 cell = floor(sp);
+    float h = hash12(cell);
+    float star = step(0.986, h) * smoothstep(0.35, 0.0, length(fract(sp) - 0.5));
+    col += vec3(0.9, 0.95, 1.0) * star * (0.3 + 1.1 * uStarK) / (1.0 + float(k)) * smoothstep(0.0, 0.1, dir.y);
+  }
+  // Below the horizon lies dark, moonlit water.
+  if (dir.y < 0.0) col = vec3(0.002, 0.005, 0.01) + uMoonK * vec3(0.02, 0.03, 0.05) * pow(max(dot(normalize(vec3(dir.x, -dir.y, dir.z)), uLa), 0.0), 30.0);
+  return col;
+}`;
+{
+  const m = new THREE.Mesh(new THREE.SphereGeometry(3000, 48, 24), new THREE.ShaderMaterial({
+    uniforms: U, side: THREE.BackSide, depthWrite: false,
+    vertexShader: `varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `varying vec3 vP; ${AIRSKY} void main() { gl_FragColor = vec4(airSky(normalize(vP - cameraPosition)), 1.0); }`,
+  }));
+  m.renderOrder = -1;
+  air.add(m);
+  // The deck in the air: dark stone with a cold moon edge.
+  air.add(new THREE.Mesh(viaductG, new THREE.ShaderMaterial({
+    uniforms: U, vertexShader: WORLD_VS,
+    fragmentShader: /* glsl */`
+    varying vec3 vP; varying vec3 vN;
+    uniform float uMoonK, uTrainK;
+    uniform vec3 uLa, uTrainP;
+    void main() {
+      vec3 N = normalize(vN);
+      vec3 c = vec3(0.2) * (vec3(0.5, 0.6, 0.8) * 0.25 * uMoonK * max(dot(N, uLa), 0.0) + 0.004);
+      vec3 dT = vP - uTrainP;
+      c += vec3(0.2) * vec3(1.0, 0.6, 0.3) * uTrainK * 0.5 * exp(-dot(dT, dT) / 300.0);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  })));
+}
+const train = (() => {
+  const CAR = 20, GAP = 0.9, N = 4, SPAN_T = N * (CAR + GAP);
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(CAR, 3.4, 3.0).translate(0, DECK + 1.0 + 1.7, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.012, 0.012, 0.014) }));
+  const wins = [];
+  for (const side of [-1, 1]) for (let k = 0; k < 7; k++) wins.push(new THREE.BoxGeometry(2.0, 1.0, 0.06).translate(-CAR / 2 + 2.0 + k * 2.65, DECK + 1.0 + 2.2, side * 1.52).toNonIndexed());
+  const winM = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 1.9, 0.85) });
+  const cars = [];
+  for (let i = 0; i < N; i++) {
+    const c = new THREE.Group();
+    c.add(body.clone(), new THREE.Mesh(mergeGeometries(wins), winM));
+    c.rotation.y = -Math.atan2(DIR.z, DIR.x);
+    g.add(c); cars.push(c);
+  }
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 13, 11) }));
+  g.add(head);
+  air.add(g);
+  function place(s) {
+    for (let i = 0; i < N; i++) { const p = along(s - i * (CAR + GAP) - CAR / 2); cars[i].position.set(p.x, 0, p.z); }
+    const h = along(s);
+    head.position.set(h.x, DECK + 2.6, h.z);
+    const m = along(s - SPAN_T / 2);
+    U.uTrainP.value.set(m.x, 0, m.z);
+  }
+  function show(on) { g.visible = on; U.uTrainK.value = on ? 1 : 0; }
+  return { place, show, SPAN: SPAN_T };
+})();
+const cubeRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+const cubeCam = new THREE.CubeCamera(0.5, 4000, cubeRT);
+
+/* ---------- the surface from below: Snell's window and a moving mirror ---------- */
+const surface = new Reflector(new THREE.PlaneGeometry(6000, 6000, 1, 1), {
+  textureWidth: 512, textureHeight: 512, clipBias: 0.003,
+  shader: {
+    name: 'Underside',
+    uniforms: { ...U, color: { value: new THREE.Color() }, tDiffuse: { value: null }, textureMatrix: { value: null }, tSky: { value: null } },
+    vertexShader: /* glsl */`
+    uniform mat4 textureMatrix;
+    varying vec4 vR;
+    varying vec3 vP;
+    void main() {
+      vR = textureMatrix * vec4(position, 1.0);
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform samplerCube tSky;
+    varying vec4 vR;
+    varying vec3 vP;
+    ${WATER}
+    vec2 wave(vec2 p, vec2 dir, float len, float amp, float ph) {
+      float k = 6.2832 / len;
+      return dir * amp * cos(dot(p, dir) * k + ph - uTime * sqrt(9.81 * k));
+    }
+    void main() {
+      vec3 I = normalize(vP - cameraPosition);
+      float dist = length(vP - cameraPosition);
+      vec2 p = vP.xz;
+      // Short wind waves; far away they average out.
+      float fade = 1.0 - smoothstep(12.0, 140.0, dist);
+      vec2 sl = (wave(p, normalize(vec2(0.3, 1.0)), 7.0, 0.09, 0.0) + wave(p, normalize(vec2(-0.6, 1.0)), 4.3, 0.07, 1.3)
+              + wave(p, normalize(vec2(0.9, 0.4)), 2.6, 0.05, 2.9) + wave(p, normalize(vec2(-0.2, -1.0)), 11.0, 0.06, 4.0)) * fade * 0.5;
+      float r0 = vnoise(p * 0.9 + uTime * 0.4);
+      sl += vec2(vnoise(p * 0.9 + vec2(0.25, 0.0) + uTime * 0.4) - r0, vnoise(p * 0.9 + vec2(0.0, 0.25) + uTime * 0.4) - r0) * 0.18 * fade;
+      vec3 Nu = normalize(vec3(-sl.x, 1.0, -sl.y));
+      vec3 n = -Nu;
+      vec3 T = refract(I, n, ${ETA.toFixed(3)});
+      // The mirror: the drowned world, bent by the same waves.
+      vec2 uv = vR.xy / vR.w + n.xz * vec2(0.03, 0.05);
+      vec3 mirror = texture2D(tDiffuse, clamp(uv, 0.001, 0.999)).rgb;
+      vec3 col;
+      if (dot(T, T) < 0.5) {
+        col = mirror;
+      } else {
+        float ci = -dot(I, n), ct = sqrt(max(1.0 - dot(cross(T, n), cross(T, n)), 0.0));
+        float rs = (${ETA.toFixed(3)} * ci - ct) / (${ETA.toFixed(3)} * ci + ct), rp = (ci - ${ETA.toFixed(3)} * ct) / (ci + ${ETA.toFixed(3)} * ct);
+        float F = 0.5 * (rs * rs + rp * rp);
+        // Slight dispersion fringes the rim of the window.
+        vec3 Tb = refract(I, n, ${(ETA + 0.012).toFixed(3)});
+        vec3 sky = textureCube(tSky, T).rgb;
+        if (dot(Tb, Tb) > 0.5) sky.b = mix(sky.b, textureCube(tSky, Tb).b, 0.6); else sky.b *= 0.6;
+        col = mix(sky * 1.0, mirror, F);
+      }
+      gl_FragColor = vec4(medium(col, vP), 1.0);
+    }`,
+  },
+});
+surface.rotation.x = Math.PI / 2;
+scene.add(surface);
+for (const k in U) surface.material.uniforms[k] = U[k];
+// Set the cube after the clone; render-target textures do not clone.
+surface.material.uniforms.tSky.value = cubeRT.texture;
+
+/* ---------- framing ---------- */
+function frame(w, h, pr) {
+  camera.aspect = w / h;
+  if (w >= h) {
+    camera.fov = 64;
+    camera.position.set(43, -16, 0);
+    camera.lookAt(39, 2, -40);
+  } else {
+    camera.fov = 92;
+    camera.position.set(42, -17, 4);
+    camera.lookAt(40, 10, -40);
+  }
+  camera.updateProjectionMatrix();
+  surface.getRenderTarget().setSize(Math.max(1, Math.round(w * pr / 3)), Math.max(1, Math.round(h * pr / 3)));
+  projU.uScale.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+  cubeDirty = true;
+}
+
+/* ---------- motion ---------- */
+const S_START = -200, S_END = 420;
+const run = { s: +(Q.get('train') || 40), on: true, user: false, v: 22 };
+train.place(run.s); train.show(true);
+let time = 0, tmode = null, cubeDirty = true;
+function update(dt, pace) {
+  time += dt * pace;
+  U.uTime.value = time;
+  if (tmode) {
+    tmode.t = Math.min(1, tmode.t + dt / 1.6);
+    const e = ease(tmode.t);
+    for (const k in tmode.to) {
+      const a = tmode.from[k], b = tmode.to[k];
+      if (Array.isArray(b)) U[k].value.set(...b.map((v, i) => a[i] + (v - a[i]) * e));
+      else U[k].value = a + (b - a) * e;
+    }
+    if (tmode.t >= 1) tmode = null;
+    cubeDirty = true;
+  }
+  if (run.on) {
+    run.s += run.v * dt * (run.user ? 1 : pace);
+    if (run.s > S_END + train.SPAN) { run.on = false; run.user = false; train.show(false); }
+    else train.place(run.s);
+    cubeDirty = true;
+  }
+}
+// The cube re-renders only when the world above changes.
+function beforeRender(r) {
+  if (!cubeDirty) return;
+  cubeCam.position.set(camera.position.x, 0.3, camera.position.z);
+  cubeCam.update(r, air);
+  cubeDirty = false;
+}
+function action() {
+  if (run.on) return;
+  run.on = true; run.user = true; run.s = S_START;
+  train.show(true); train.place(run.s);
+}
+function mode(id) {
+  const to = MODES[id];
+  if (!to) return;
+  tmode = { t: 0, to, from: Object.fromEntries(Object.keys(to).map(k => [k, U[k].value.isVector3 ? U[k].value.toArray() : U[k].value])) };
+}
+if (MODES[Q.get('mode')]) for (const [k, v] of Object.entries(MODES[Q.get('mode')])) { if (Array.isArray(v)) U[k].value.set(...v); else U[k].value = v; }
+
+return {
+  scene, camera, frame, update, beforeRender, tap: () => action(), action, mode,
+  lively: () => run.user || !!tmode,
+  post: { bloom: [0.8, 0.3, 0.85], haze: 0.015, tint: [0.0004, 0.0009, 0.0013], vig: 0.6, vigIn: 0.3, grain: 0.04, exposure: 1.2 },
+};
+}
+
+/* ---------- end scene ---------- */
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const canvas = renderer.domElement;
+document.body.prepend(canvas);
+const S = build(renderer);
+renderer.toneMappingExposure = S.post.exposure ?? 1;
+// Additive glows keep the target's alpha at 1, so bloom stays round.
+S.scene.traverse(o => {
+  for (const m of [].concat(o.material || [])) {
+    if (m.blending !== THREE.AdditiveBlending) continue;
+    Object.assign(m, { blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
+  }
+});
+
+// Soft orbs round the brightest lamps, squashed sideways into the haze.
+const ORB_N = 12;
+const orbPass = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
+    uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+    uN: { value: 0 }, uAsp: { value: 1 },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform vec3 uOP[${ORB_N}];
+  uniform vec4 uOC[${ORB_N}];
+  uniform int uN;
+  uniform float uAsp;
+  varying vec2 vUv;
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb;
+    for (int i = 0; i < ${ORB_N}; i++) {
+      if (i >= uN) break;
+      vec2 d = vUv - uOP[i].xy;
+      float r = length(vec2(d.x * uAsp * 0.6, d.y));
+      c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+    }
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
+const tmpV = new THREE.Vector3();
+function placeOrbs() {
+  S.camera.updateMatrixWorld();
+  let n = 0;
+  for (const o of S.orbs || []) {
+    if (n >= ORB_N || o.k <= 0.001) continue;
+    tmpV.copy(o.pos).project(S.camera);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
+    orbPass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
+    orbPass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    n++;
+  }
+  orbPass.uniforms.uN.value = n;
+}
+
+// Half-resolution bloom; only bright sources cross the threshold.
+function makeBloom(strength, radius, threshold) {
+  const b = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+  // A tighter Gaussian per mip; the stock kernel is nearly a box, so points bloom square.
+  for (const m of b.separableBlurMaterials) {
+    const c = m.uniforms.gaussianCoefficients.value, r = c.length;
+    for (let i = 0; i < r; i++) c[i] = Math.exp(-0.5 * i * i / ((r / 2.2) ** 2));
+  }
+  const full = b.setSize.bind(b);
+  b.setSize = (w, h) => full(Math.max(1, w / 2), Math.max(1, h / 2));
+  return b;
+}
+
+// Grade in linear light: tint lift, vignette, fixed grain.
+const grade = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
+    uTint: { value: new THREE.Vector3(...S.post.tint) }, uVig: { value: S.post.vig }, uVigIn: { value: S.post.vigIn }, uGrain: { value: S.post.grain },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform vec2 uRes;
+  uniform vec3 uTint;
+  uniform float uVig, uVigIn, uGrain;
+  varying vec2 vUv;
+  float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
+    vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+    c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c *= 1.0 + (h(vUv * uRes) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+    gl_FragColor = vec4(max(c, 0.0), 1.0);
+  }`,
+});
+
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(S.scene, S.camera));
+for (const p of S.passes || []) composer.addPass(p);
+composer.addPass(orbPass);
+composer.addPass(makeBloom(...S.post.bloom));
+if (S.post.haze) composer.addPass(makeBloom(S.post.haze, 1.0, 0.0));
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+let size = { w: 1, h: 1, dpr: 1 };
+function resize() {
+  const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
+  // Cap the pixel count so slow GPUs keep their frame rate.
+  const dpr = Math.max(1, Math.min(devicePixelRatio || 1, 2, Math.sqrt(2.6e6 / (w * h))));
+  size = { w, h, dpr };
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  grade.uniforms.uRes.value.set(w * dpr, h * dpr);
+  orbPass.uniforms.uAsp.value = w / h;
+  S.frame(w, h, dpr);
+  draw();
+}
+
+let visible = !document.hidden;
+function draw() {
+  if (!visible) return;
+  S.beforeRender?.(renderer);
+  placeOrbs();
+  composer.render();
+  if (!window.__ready) window.__ready = true;
+}
+
+/* Frame loop: full rate in an event, 30 fps while drifting, then sleep. */
+const reducedRM = matchMedia('(prefers-reduced-motion: reduce)');
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reducedRM.matches ? 0 : 1;
+function loop(now) {
+  raf = 0;
+  if (!visible) return;
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000);
+  lastT = now;
+  // Ambient motion eases out over 2 s once idle.
+  const awake = !reducedRM.matches && now - lastInput < SLEEP;
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  const lively = S.lively();
+  if (!lively && pace === 0) { draw(); return; }
+  try {
+    if (lively || now - lastDraw >= 31) {
+      // A drift frame covers the gap since the last draw.
+      S.update(lively ? dt : Math.min(0.1, Math.max(dt, (now - lastDraw) / 1000)), pace);
+      draw();
+      lastDraw = now;
+    }
+  } finally {
+    if (visible && !raf) raf = requestAnimationFrame(loop);
+  }
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible) { lastT = lastDraw = performance.now(); raf = requestAnimationFrame(loop); }
+}
+document.addEventListener('visibilitychange', () => {
+  visible = !document.hidden;
+  if (!visible) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw(); wake();
+});
+
+/* Pointer: a press is a tap unless it moves 8 px or holds 300 ms. */
+let press = null;
+canvas.addEventListener('pointerdown', e => { press = { x: e.clientX, y: e.clientY, t: performance.now() }; wake(); });
+canvas.addEventListener('pointerup', e => {
+  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8 && performance.now() - press.t < 300) {
+    S.tap(new THREE.Vector2(e.clientX / size.w * 2 - 1, 1 - e.clientY / size.h * 2));
+  }
+  press = null; wake();
+});
+canvas.addEventListener('pointercancel', () => { press = null; });
+
+const chips = [...document.querySelectorAll('#modes .chip')];
+function pick(id) {
+  for (const c of chips) c.setAttribute('aria-pressed', String(c.dataset.value === id));
+  S.mode(id); wake();
+}
+for (const c of chips) c.addEventListener('click', () => pick(c.dataset.value));
+document.getElementById('act').addEventListener('click', () => { S.action(); wake(); });
+addEventListener('keydown', e => {
+  const i = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+  if (i !== undefined && chips[i]) pick(chips[i].dataset.value);
+  if (e.code === 'Space' && !e.target.closest?.('button')) { e.preventDefault(); S.action(); }
+  wake();
+});
+addEventListener('resize', resize);
+
+// Compile first, so the first frame lands whole.
+(async () => {
+  // Async compile needs the parallel-compile extension.
+  if (renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(S.scene, S.camera);
+  else renderer.compile(S.scene, S.camera);
+  resize();
+  wake();
+})();
+</script>
+</body>
+</html>

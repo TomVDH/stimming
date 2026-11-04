@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rings prototype</title>
+<style>
+:root { --bg: #07080f; --fg: #e9ebf5; --muted: #9096ad; --line: #22263a; --chip: #141728; --on: #2c3252; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.3 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; cursor: pointer; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.choices { display: flex; gap: 2px; background: var(--chip); border-radius: 999px; padding: 2px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.choices button[aria-pressed="true"] { background: var(--on); }
+label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.how { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .how { display: none; } }
+</style></head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="bar">
+  <div class="choices" id="sky" role="group" aria-label="Sky">
+    <button data-v="moon" aria-pressed="true">Moon</button><button data-v="stars" aria-pressed="false">Stars</button><button data-v="fog" aria-pressed="false">Fog</button>
+  </div>
+  <label>Time <input type="range" id="time" min="0" max="1" step="0.001" value="0.35"></label>
+  <button id="add">+ Train</button>
+  <span class="how">Tap water: ripple · Tap sky: train · Hold: still · Drag: moon</span>
+</div>
+<script>
+// Rings prototype: arches close into rings with their reflection in still water.
+const stage = document.getElementById('stage'), cv = document.getElementById('c'), g = cv.getContext('2d');
+const upper = document.createElement('canvas'), tg = upper.getContext('2d');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W = 0, H = 0, dpr = 1, hz = 0;
+function fit() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = stage.clientWidth; H = stage.clientHeight;
+  hz = Math.round(H * (H > W ? 0.5 : 0.56));
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  upper.width = W * dpr; upper.height = hz * dpr; tg.setTransform(dpr, 0, 0, dpr, 0, 0);
+  stars = Array.from({ length: 220 }, () => ({ x: Math.random() * W, y: Math.random() * hz * 0.8, a: Math.random(), p: Math.random() * 6 }));
+  wake();
+}
+new ResizeObserver(fit).observe(stage);
+
+let sky = 'moon', time = 0.35, timeV = 0, held = false, calm = 0, t = 0, dir = 1, stars = [];
+const trains = [], ripples = [];
+
+// Viaduct layout: n arches; portrait zooms in so the rings stay large.
+function layout() {
+  const portrait = H > W, n = portrait ? 3 : 7;
+  const x0 = portrait ? -W * 0.25 : -W * 0.07, x1 = portrait ? W * 1.25 : W * 1.07, span = (x1 - x0) / n;
+  const rad = span * 0.86 / 2, legs = rad * 0.12, deck = hz - legs - rad - Math.max(18, rad * 0.22);
+  return { n, x0, x1, span, rad, legs, deck, pier: span * 0.14 };
+}
+
+function lin(c, y0, y1, stops, x0 = 0, x1 = 0) { const l = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, s]) => l.addColorStop(o, s)); return l; }
+function glow(c, x, y, r, col, a, sy = 1) {
+  if (r <= 0 || a <= 0.001) return;
+  c.save(); c.translate(x, y); c.scale(1, sy);
+  const l = c.createRadialGradient(0, 0, 0, 0, 0, r);
+  l.addColorStop(0, col.replace('A', a)); l.addColorStop(0.3, col.replace('A', a * 0.35)); l.addColorStop(1, col.replace('A', 0));
+  c.fillStyle = l; c.fillRect(-r, -r, r * 2, r * 2); c.restore();
+}
+
+function sendTrain() { trains.push({ x: dir > 0 ? -0.6 : 1.6, dir, v: 0.11 + Math.random() * 0.03, len: 0.3 + Math.random() * 0.15 }); dir = -dir; wake(); }
+
+// The upper half: sky, moon, viaduct, train. The water mirrors this canvas.
+function drawTop() {
+  const L = layout(), c = tg;
+  const fog = sky === 'fog', band = fog ? 0.55 : 1;
+  c.fillStyle = lin(c, 0, hz, [[0, '#03030a'], [0.55, '#0a0e22'], [0.88, fog ? '#3a4466' : '#29386a'], [1, fog ? '#9aa0bf' : '#8e97c8']]); c.fillRect(0, 0, W, hz);
+  if (!fog) for (const s of stars) { const a = s.a * (sky === 'stars' ? 0.9 : 0.45) * (0.7 + 0.3 * Math.sin(t * 1.3 + s.p)); c.fillStyle = `rgba(220,225,255,${a})`; c.fillRect(s.x, s.y, sky === 'stars' ? 1.4 : 1.1, sky === 'stars' ? 1.4 : 1.1); }
+  // Moon rises through one ring as time runs; it goes behind the deck.
+  if (sky !== 'stars') {
+    const ring = L.n === 3 ? 1 : 4, mx = L.x0 + (ring + 0.5) * L.span;
+    const my = hz + L.rad * 0.25 - time * L.rad * 2.4;
+    glow(c, mx, my, L.rad * 1.8, 'rgba(170,185,240,A)', (fog ? 0.35 : 0.22) * band);
+    glow(c, mx, my, L.rad * (fog ? 0.5 : 0.17), 'rgba(245,247,255,A)', fog ? 0.6 : 1);
+  }
+  // Fog: a pale veil thickest at the waterline.
+  if (fog) { c.fillStyle = lin(c, hz * 0.4, hz, [[0, 'rgba(140,150,190,0)'], [1, 'rgba(140,150,190,0.35)']]); c.fillRect(0, hz * 0.4, W, hz * 0.6); }
+  // Viaduct silhouette with ring openings.
+  c.beginPath(); c.moveTo(L.x0, L.deck); c.lineTo(L.x1, L.deck); c.lineTo(L.x1, hz + 1);
+  for (let i = L.n - 1; i >= 0; i--) {
+    const a = L.x0 + i * L.span, l = a + L.pier / 2, r = a + L.span - L.pier / 2, cx = (l + r) / 2, sp = hz - L.legs;
+    c.lineTo(r, hz + 1); c.lineTo(r, sp); c.arc(cx, sp, L.rad, 0, Math.PI, true); c.lineTo(l, hz + 1);
+  }
+  c.lineTo(L.x0, hz + 1); c.closePath(); c.fillStyle = fog ? '#0c0d16' : '#040409'; c.fill();
+  // Trains: a line of light on the deck; rings under it glow warm inside.
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const tr of trains) {
+    const head = tr.x * W, tail = head - tr.dir * tr.len * W, a = Math.min(head, tail), b = Math.max(head, tail), ty = L.deck - 3;
+    for (let i = 0; i < L.n; i++) {
+      const cx = L.x0 + (i + 0.5) * L.span, inside = cx > a - L.rad && cx < b + L.rad;
+      if (!inside) continue;
+      const k = 1 - Math.min(1, Math.abs(cx - (a + b) / 2) / ((b - a) / 2 + L.rad));
+      c.strokeStyle = `rgba(255,170,90,${0.35 * k})`; c.lineWidth = 3;
+      c.beginPath(); c.arc(cx, hz - L.legs, L.rad - 2, Math.PI, 0); c.stroke();
+      glow(c, cx, hz - L.legs - L.rad * 0.7, L.rad * 0.9, 'rgba(255,160,80,A)', 0.1 * k, 0.5);
+    }
+    glow(c, (a + b) / 2, ty, (b - a) * 0.6, 'rgba(255,160,70,A)', 0.2, 0.35);
+    c.fillStyle = lin(c, 0, 0, [[0, 'rgba(255,200,130,0)'], [0.25, 'rgba(255,205,140,0.9)'], [1, 'rgba(255,228,185,1)']], tail, head);
+    c.fillRect(a, ty - 1.5, b - a, 3);
+    glow(c, head, ty, 22, 'rgba(255,250,235,A)', 1);
+  }
+  c.restore();
+}
+
+// The water: row strips of the upper canvas, mirrored and displaced by ripples.
+function render() {
+  drawTop();
+  g.drawImage(upper, 0, 0, W, hz);
+  g.fillStyle = '#05060d'; g.fillRect(0, hz, W, H - hz);
+  const rows = H - hz, step = 2, still = 1 - calm;
+  for (let y = 0; y < rows; y += step) {
+    const wy = hz + y, persp = 0.25 + y / rows;
+    let dx = still * (reduced ? 0 : Math.sin(y * 0.09 + t * 1.4) * 1.2 * persp), dy = 0, lit = 0;
+    for (const r of ripples) {
+      const age = t - r.t0, front = age * 240, ry = Math.abs(wy - r.y) * 2.6;
+      if (ry > front + 80) continue;
+      const amp = r.a * Math.exp(-age * (0.6 + calm * 3));
+      // Strongest near the expanding front; the row's offset follows the wave.
+      const d = Math.sqrt(Math.max(0, front * front - ry * ry));
+      const e = Math.exp(-Math.pow((ry - front * 0.7) / 90, 2)) + 0.4;
+      dx += amp * e * Math.sin(ry * 0.07 - age * 9) * 6;
+      dy += amp * e * Math.cos(ry * 0.07 - age * 9) * 4;
+      lit += amp * e * Math.max(0, Math.sin(ry * 0.07 - age * 9)) * 0.08 * (d > 0 ? 1 : 0);
+    }
+    let sy = (hz - 1 - y * 0.92 + dy);
+    sy = Math.max(0, Math.min(hz - step, sy));
+    g.drawImage(upper, 0, sy * dpr, W * dpr, step * dpr, dx, wy, W, step);
+    if (lit > 0.01) { g.fillStyle = `rgba(150,165,220,${Math.min(0.2, lit)})`; g.fillRect(0, wy, W, step); }
+  }
+  // Water is darker than the sky it mirrors.
+  g.fillStyle = lin(g, hz, H, [[0, 'rgba(5,6,14,0.15)'], [0.4, 'rgba(5,6,14,0.55)'], [1, 'rgba(3,3,8,0.9)']]); g.fillRect(0, hz, W, H - hz);
+  g.fillStyle = 'rgba(160,170,220,0.25)'; g.fillRect(0, hz, W, 1);
+  const v = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)'); g.fillStyle = v; g.fillRect(0, 0, W, H);
+}
+
+function step(dt) {
+  t += dt;
+  calm += ((held ? 1 : 0) - calm) * Math.min(1, dt * 2);
+  for (const tr of trains) tr.x += tr.dir * tr.v * dt;
+  for (let i = trains.length - 1; i >= 0; i--) { const tr = trains[i]; if ((tr.dir > 0 && tr.x > 1.6) || (tr.dir < 0 && tr.x < -0.6)) trains.splice(i, 1); }
+  for (let i = ripples.length - 1; i >= 0; i--) if (t - ripples[i].t0 > 6) ripples.splice(i, 1);
+  time = Math.max(0, Math.min(1, time + timeV * dt)); timeV *= Math.pow(0.05, dt);
+  timeInput.value = time;
+}
+
+/* Frame loop: lively at full rate, drifting at 30 fps, asleep after 60 s idle. */
+let raf = 0, lastDraw = 0, lastT = 0, lastInput = performance.now(), dragging = false;
+const busy = () => trains.length > 0 || ripples.length > 0 || held || dragging || Math.abs(timeV) > 0.001;
+function frame(now) {
+  raf = 0;
+  const lively = busy(), idle = now - lastInput;
+  if (!lively && (reduced || idle > 60000)) { render(); return; }
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  try { step(dt); render(); } finally { lastDraw = now; if (!document.hidden) raf = requestAnimationFrame(frame); }
+}
+function wake() { if (!raf && !document.hidden && W) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else wake(); });
+
+/* Pointer: drag after 8 px, hold after 260 ms, else a tap. */
+let press = null, holdTimer = 0;
+stage.addEventListener('pointerdown', e => {
+  stage.setPointerCapture(e.pointerId); lastInput = performance.now();
+  const r = stage.getBoundingClientRect();
+  press = { x: e.clientX, y: e.clientY, ly: e.clientY, sx: e.clientX - r.left, sy: e.clientY - r.top }; dragging = false;
+  holdTimer = setTimeout(() => { held = true; wake(); }, 260); wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press) return; lastInput = performance.now();
+  if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { dragging = true; clearTimeout(holdTimer); held = false; }
+  if (dragging) { const dy = e.clientY - press.ly; press.ly = e.clientY; time = Math.max(0, Math.min(1, time - dy / (layout().rad * 2.4))); wake(); }
+});
+function end(tap) {
+  clearTimeout(holdTimer);
+  if (press && tap && !dragging && !held) {
+    if (press.sy > hz) ripples.push({ x: press.sx, y: press.sy, t0: t, a: 1 }); else sendTrain();
+  }
+  press = null; dragging = false; held = false; lastInput = performance.now(); wake();
+}
+stage.addEventListener('pointerup', () => end(true));
+stage.addEventListener('pointercancel', () => end(false));
+stage.addEventListener('lostpointercapture', () => { if (press) end(false); });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); sendTrain(); }
+  if (e.code === 'ArrowUp') timeV = 0.25; if (e.code === 'ArrowDown') timeV = -0.25;
+  if (e.code === 'Enter') ripples.push({ x: W / 2, y: hz + (H - hz) * 0.3, t0: t, a: 1 });
+  lastInput = performance.now(); wake();
+});
+
+document.getElementById('sky').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const o of e.currentTarget.children) o.setAttribute('aria-pressed', o === b);
+  sky = b.dataset.v; lastInput = performance.now(); wake();
+});
+const timeInput = document.getElementById('time');
+timeInput.addEventListener('input', e => { time = +e.target.value; lastInput = performance.now(); wake(); });
+document.getElementById('add').addEventListener('click', () => { lastInput = performance.now(); sendTrain(); });
+
+// First frame: a train mid-crossing over the rings.
+trains.push({ x: 0.6, dir: 1, v: 0.12, len: 0.38 }); dir = -1;
+fit();
+</script></body></html>

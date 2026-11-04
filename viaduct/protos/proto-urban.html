@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Urban overpass prototype</title>
+<style>
+:root { --bg: #0b0a10; --fg: #ece9f2; --muted: #9a94a8; --line: #2c2834; --chip: #1a1720; --on: #3a3044; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.3 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; cursor: pointer; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.choices { display: flex; gap: 2px; background: var(--chip); border-radius: 999px; padding: 2px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.choices button[aria-pressed="true"] { background: var(--on); }
+label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.how { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .how { display: none; } }
+</style></head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="bar">
+  <div class="choices" id="wx" role="group" aria-label="Weather">
+    <button data-v="dry" aria-pressed="false">Dry</button><button data-v="rain" aria-pressed="true">Rain</button><button data-v="mist" aria-pressed="false">Mist</button>
+  </div>
+  <label>Traffic <input type="range" id="traffic" min="0" max="1" step="0.01" value="0.4"></label>
+  <button id="add">+ Train</button>
+  <span class="how">Tap: train · Hold: brake · Drag: look</span>
+</div>
+<script>
+// Urban overpass prototype: an elevated rail viaduct recedes right; trains come and go.
+const stage = document.getElementById('stage'), cv = document.getElementById('c'), g = cv.getContext('2d');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W = 0, H = 0, dpr = 1, blocks = [];
+function fit() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = stage.clientWidth; H = stage.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  let s = 11; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  blocks = Array.from({ length: 26 }, () => ({ x: r() * 1.3 - 0.15, w: 20 + r() * 70, h: 20 + r() * (H > W ? 140 : 110), a: 0.6 + r() * 0.3 }));
+  wake();
+}
+new ResizeObserver(fit).observe(stage);
+
+// State.
+let weather = 'rain', traffic = 0.4, look = 0, held = false, dir = -1, nextAuto = 7, t = 0;
+let flick = 1, flickT = 3, flickLamp = 5;
+const trains = [];
+const drops = Array.from({ length: 520 }, () => ({ x: Math.random(), y: Math.random(), s: 0.7 + Math.random() * 0.6 }));
+
+// Viaduct geometry, metres. u is the distance along the deck from the near end.
+const DB = 9, DT = 11.2, HW = 4.2, N = 22, STEP = 18, ULEN = N * STEP, TLEN = 92;
+const along = (u, off) => [-14 + u * 0.32 + off, 8 + u];
+function camera() {
+  const portrait = H > W, hz = H * (portrait ? 0.66 : 0.7), f = portrait ? H * 0.42 : W * 0.62;
+  const yaw = (portrait ? -0.18 : -0.32) + look, c = Math.cos(yaw), s = Math.sin(yaw);
+  const P = (x, y, z) => { const X = x * c - z * s, Z = x * s + z * c; return [W / 2 + f * X / Z, hz - f * (y - 1.6) / Z, Z]; };
+  return { P, hz, f };
+}
+
+function sendTrain() {
+  // dir -1 comes toward camera from the far end; +1 runs away from the near end.
+  trains.push({ u: dir < 0 ? ULEN + 20 : -TLEN - 10, dir, v: 26 + Math.random() * 6, cur: 1 });
+  dir = -dir; wake();
+}
+
+function lin(y0, y1, stops, x0 = 0, x1 = 0) { const l = g.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, c]) => l.addColorStop(o, c)); return l; }
+function glow(x, y, r, col, a, sy = 1) {
+  if (!(r > 0) || a <= 0.002) return;
+  g.save(); g.translate(x, y); g.scale(1, sy);
+  const l = g.createRadialGradient(0, 0, 0, 0, 0, r);
+  l.addColorStop(0, col.replace('A', a)); l.addColorStop(0.3, col.replace('A', a * 0.35)); l.addColorStop(1, col.replace('A', 0));
+  g.fillStyle = l; g.fillRect(-r, -r, r * 2, r * 2); g.restore();
+}
+function poly(pts, fill) { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fillStyle = fill; g.fill(); }
+
+// Train light at deck distance u: 1 where a train body is, 0 elsewhere.
+function trainLight(u) {
+  let k = 0;
+  for (const tr of trains) { const a = Math.min(tr.u, tr.u - tr.dir * TLEN), b = Math.max(tr.u, tr.u - tr.dir * TLEN); if (u > a - 12 && u < b + 12) k = Math.max(k, u < a ? 1 - (a - u) / 12 : u > b ? 1 - (u - b) / 12 : 1); }
+  return k;
+}
+
+function render() {
+  const { P, hz, f } = camera(), portrait = H > W, wet = weather === 'dry' ? 0.35 : 1;
+  // City sky: sodium glow from below, ink above.
+  g.fillStyle = lin(0, hz, [[0, '#07070d'], [0.55, '#1c1420'], [0.9, '#4a2a22'], [1, '#6a3a24']]); g.fillRect(0, 0, W, hz);
+  // Distant blocks: flat, low contrast, no windows; they slide a little with the look.
+  for (const b of blocks) { g.fillStyle = `rgba(30,20,26,${b.a})`; g.fillRect(b.x * W - look * W * 0.5, hz - b.h, b.w, b.h); }
+  g.fillStyle = lin(hz - 60, hz, [[0, 'rgba(110,60,40,0)'], [1, 'rgba(110,60,40,0.55)']]); g.fillRect(0, hz - 60, W, 60);
+  // Wet street.
+  g.fillStyle = lin(hz, H, [[0, '#2a1a18'], [0.15, '#130e10'], [1, '#060508']]); g.fillRect(0, hz, W, H - hz);
+
+  // Structure, far to near.
+  const lamps = [];
+  for (let k = N; k >= 0; k--) {
+    const u = k * STEP, [px, pz] = along(u, 0), w = 0.9;
+    const [qx, qz] = along(u + STEP, 0);
+    // Deck segment: underside then the side face toward camera.
+    const uL0 = P(px - HW, DB, pz), uR0 = P(px + HW, DB, pz), uL1 = P(qx - HW, DB, qz), uR1 = P(qx + HW, DB, qz);
+    if (uL0[2] > 1 && uL1[2] > 1) {
+      poly([uL0, uR0, uR1, uL1], lin(Math.min(uL0[1], uL1[1]), Math.max(uR0[1], uR1[1]), [[0, '#1a1014'], [1, '#2a1812']]));
+      poly([P(px - HW, DB, pz), P(qx - HW, DB, qz), P(qx - HW, DT, qz), P(px - HW, DT, pz)], '#09070a');
+    }
+    // Pier: a slab that flares into a T cap.
+    const a = P(px - w, 0, pz), b = P(px + w, 0, pz), c = P(px + w, DB - 1.4, pz), d = P(px - w, DB - 1.4, pz), e = P(px + HW, DB, pz), h = P(px - HW, DB, pz);
+    if (a[2] > 1) {
+      poly([a, b, c, e, h, d], '#0b080c');
+      g.strokeStyle = 'rgba(255,140,60,0.35)'; g.lineWidth = Math.max(0.5, 2.5 * f / pz / 40); g.beginPath(); g.moveTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.stroke();
+    }
+    lamps.push({ k, u: u + STEP / 2, head: P(px + 6, 6, pz + STEP / 2), foot: P(px + 6, 0.02, pz + STEP / 2), post: P(px + 6, 0, pz + STEP / 2) });
+  }
+  // Lamp posts: thin dark lines.
+  for (const L of lamps) { if (L.head[2] < 3) continue; g.strokeStyle = '#0c090c'; g.lineWidth = Math.max(1, f / L.head[2] * 0.25); g.beginPath(); g.moveTo(L.post[0], L.post[1]); g.lineTo(L.head[0], L.head[1]); g.stroke(); }
+
+  g.save(); g.globalCompositeOperation = 'lighter';
+  // Street lamps: halo, pool and a long wet streak. One flickers now and then.
+  for (const L of lamps) {
+    const [lx, ly, lz] = L.head, gy = L.foot[1], s = f / lz;
+    if (lz < 4) continue;
+    const k = L.k === flickLamp ? flick : 1, cold = trainLight(L.u);
+    glow(lx, ly, Math.max(3, s * 1.2), 'rgba(255,215,150,A)', k);
+    glow(lx, ly, s * 9, 'rgba(255,130,40,A)', 0.22 * k);
+    glow(lx, gy, s * 14, 'rgba(255,120,30,A)', 0.28 * k, 0.22);
+    g.fillStyle = lin(gy, Math.min(H, gy + s * 30 + 40), [[0, `rgba(255,150,60,${0.35 * k * wet})`], [1, 'rgba(255,150,60,0)']]);
+    g.fillRect(lx - Math.max(1, s * 0.25), gy, Math.max(2, s * 0.5), s * 30 + 40);
+    // Train spill: the post and its pool turn cold while a train is overhead.
+    if (cold > 0) {
+      g.strokeStyle = `rgba(150,220,255,${0.4 * cold})`; g.lineWidth = Math.max(1, s * 0.2);
+      g.beginPath(); g.moveTo(L.post[0] - s * 0.15, L.post[1]); g.lineTo(lx - s * 0.15, ly); g.stroke();
+      glow(lx, gy, s * 10, 'rgba(140,210,255,A)', 0.14 * cold, 0.25);
+    }
+  }
+  // Trains: cold window band on the side face, glow on the parapet, streaks on the street.
+  for (const tr of trains) {
+    const head = tr.u, tail = tr.u - tr.dir * TLEN, lo = Math.min(head, tail), hi = Math.max(head, tail);
+    for (let u = hi; u > lo; u -= 2.6) {
+      if (u < -2) continue;
+      const [x, z] = along(u, -HW + 0.3), [x2, z2] = along(Math.max(-2, u - 1.6), -HW + 0.3);
+      const a = P(x, DT + 1.1, z), b = P(x, DT + 2.3, z), c = P(x2, DT + 2.3, z2), d = P(x2, DT + 1.1, z2);
+      if (a[2] < 1.5 || d[2] < 1.5) continue;
+      poly([a, b, c, d], `rgba(170,230,255,${(0.75 + 0.2 * Math.sin(t * 11 + u)) * Math.min(1, (z - 8) / 30)})`);
+      // Spill on the parapet and its reflection on the wet street below.
+      if ((u | 0) % 8 === 0) {
+        const s = f / z, pp = P(x, DT, z), gp = P(x - 1, 0.02, z);
+        glow(pp[0], pp[1], s * 3, 'rgba(140,210,255,A)', 0.18, 0.5);
+        g.fillStyle = lin(gp[1], Math.min(H, gp[1] + s * 18 + 20), [[0, `rgba(140,215,255,${0.16 * wet})`], [1, 'rgba(140,215,255,0)']]);
+        g.fillRect(gp[0] - s * 0.6, gp[1], s * 1.2, s * 18 + 20);
+      }
+    }
+    // Headlight: at the front end; it flares as it nears the camera.
+    if (head > -4) {
+      const [hx, hz2] = along(head, -HW + 1.5), hp = P(hx, DT + 1.6, hz2);
+      if (hp[2] > 1.5) {
+        const near = tr.dir < 0 ? Math.max(0, 1 - hp[2] / 140) : 0.15, s = f / hp[2];
+        glow(hp[0], hp[1], s * 6 + 6, 'rgba(255,250,235,A)', tr.dir < 0 ? 0.95 : 0.35);
+        glow(hp[0], hp[1], s * (tr.dir < 0 ? 40 : 14) + near * W * 0.5, 'rgba(200,235,255,A)', 0.14 + near * 0.35);
+        if (tr.dir < 0) {
+          // Flare streak across the frame when close.
+          g.fillStyle = lin(0, 0, [[0, 'rgba(200,235,255,0)'], [0.5, `rgba(220,240,255,${near * 0.35})`], [1, 'rgba(200,235,255,0)']], hp[0] - W * 0.6, hp[0] + W * 0.6);
+          g.fillRect(hp[0] - W * 0.6, hp[1] - 1 - near * 2, W * 1.2, 2 + near * 4);
+          const gp = P(hx, 0.02, hz2);
+          // Wet-street streak: soft at the edges, fading downward.
+          const sw = s * 1.5 + near * 30, sa = (0.1 + near * 0.3) * wet;
+          for (let k = -6; k < 6; k++) {
+            const fx = Math.exp(-Math.pow((k + 0.5) / 3, 2)) * sa, cw = sw / 6;
+            g.fillStyle = lin(gp[1], H, [[0, `rgba(210,235,255,${fx})`], [1, 'rgba(210,235,255,0)']]);
+            g.fillRect(gp[0] + k * cw, gp[1], cw, H - gp[1]);
+          }
+        }
+      }
+    }
+  }
+  // Rain: faint, bright near lamps and the headlight.
+  if (weather === 'rain') {
+    g.lineWidth = 1;
+    const hot = lamps.filter(L => L.head[2] > 4 && L.head[2] < 120).map(L => [L.head[0], L.head[1], f / L.head[2] * 9]);
+    for (const d of drops) {
+      const x = d.x * W, y = d.y * H; let a = 0.07;
+      for (const [hx, hy, r] of hot) if (Math.abs(x - hx) < r && Math.abs(y - hy) < r) { a = 0.3; break; }
+      g.strokeStyle = `rgba(230,200,180,${a})`;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x - 2 * d.s, y + 14 * d.s); g.stroke();
+    }
+  }
+  g.restore();
+  // Mist: a warm veil, thicker with distance near the horizon.
+  if (weather === 'mist') { g.fillStyle = lin(0, H, [[0, 'rgba(120,80,70,0.08)'], [0.6, 'rgba(130,85,70,0.32)'], [1, 'rgba(60,40,40,0.15)']]); g.fillRect(0, 0, W, H); }
+  const v = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.5)'); g.fillStyle = v; g.fillRect(0, 0, W, H);
+}
+
+function step(dt) {
+  t += dt;
+  for (const tr of trains) {
+    const target = held ? 0.08 : 1;
+    tr.cur += (target - tr.cur) * Math.min(1, dt * (held ? 1.5 : 0.6));
+    tr.u += tr.dir * tr.v * tr.cur * dt;
+  }
+  for (let i = trains.length - 1; i >= 0; i--) { const tr = trains[i]; if ((tr.dir < 0 && tr.u < -TLEN - 20) || (tr.dir > 0 && tr.u - TLEN > ULEN + 20)) trains.splice(i, 1); }
+  if (traffic > 0.02 && !held) { nextAuto -= dt * traffic; if (nextAuto <= 0) { sendTrain(); nextAuto = 8 + Math.random() * 6; } }
+  if (!reduced) {
+    for (const d of drops) { d.y += dt * 1.6 * d.s; d.x -= dt * 0.2 * d.s; if (d.y > 1) { d.y -= 1; d.x = Math.random() * 1.1; } }
+    flickT -= dt;
+    if (flickT < 0) { flick = Math.random() < 0.5 ? 0.25 : 1; if (flickT < -0.25) { flick = 1; flickT = 5 + Math.random() * 9; flickLamp = 2 + (Math.random() * 8 | 0); } }
+  }
+  if (!dragging) look *= Math.pow(0.35, dt);
+}
+
+/* Frame loop: lively at full rate, drifting at 30 fps, asleep after 60 s idle. */
+let raf = 0, lastDraw = 0, lastT = 0, lastInput = performance.now(), dragging = false;
+const busy = () => trains.length > 0 || held || dragging || Math.abs(look) > 0.002;
+function frame(now) {
+  raf = 0;
+  const lively = busy(), idle = now - lastInput;
+  if (!lively && (reduced || idle > 60000)) { render(); return; }
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  try { step(dt); render(); } finally { lastDraw = now; if (!document.hidden) raf = requestAnimationFrame(frame); }
+}
+function wake() { if (!raf && !document.hidden && W) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else wake(); });
+
+/* Pointer: drag after 8 px, hold after 260 ms, else a tap. */
+let press = null, holdTimer = 0;
+stage.addEventListener('pointerdown', e => {
+  stage.setPointerCapture(e.pointerId); lastInput = performance.now();
+  press = { x: e.clientX, y: e.clientY, lx: e.clientX }; dragging = false;
+  holdTimer = setTimeout(() => { held = true; wake(); }, 260); wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press) return; lastInput = performance.now();
+  if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { dragging = true; clearTimeout(holdTimer); held = false; }
+  if (dragging) { const dx = e.clientX - press.lx; press.lx = e.clientX; look = Math.max(-0.12, Math.min(0.12, look - dx / W * 0.3)); wake(); }
+});
+function end(tap) {
+  clearTimeout(holdTimer);
+  if (press && tap && !dragging && !held) sendTrain();
+  press = null; dragging = false; held = false; lastInput = performance.now(); wake();
+}
+stage.addEventListener('pointerup', () => end(true));
+stage.addEventListener('pointercancel', () => end(false));
+stage.addEventListener('lostpointercapture', () => { if (press) end(false); });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); lastInput = performance.now(); sendTrain(); } });
+
+document.getElementById('wx').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const o of e.currentTarget.children) o.setAttribute('aria-pressed', o === b);
+  weather = b.dataset.v; lastInput = performance.now(); wake();
+});
+document.getElementById('traffic').addEventListener('input', e => { traffic = +e.target.value; lastInput = performance.now(); wake(); });
+document.getElementById('add').addEventListener('click', () => { lastInput = performance.now(); sendTrain(); });
+
+// First frame: a train already coming toward camera, mid-span.
+trains.push({ u: 70, dir: -1, v: 24, cur: 1 }); dir = 1;
+fit();
+</script></body></html>

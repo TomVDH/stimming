@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Metro prototype</title>
+<style>
+:root { --bg: #07080d; --fg: #e8eaf1; --muted: #9195a6; --line: #22252f; --chip: #14161e; --on: #2b3040; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.3 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; cursor: pointer; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.choices { display: flex; gap: 2px; background: var(--chip); border-radius: 999px; padding: 2px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.choices button[aria-pressed="true"] { background: var(--on); }
+label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.how { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .how { display: none; } }
+</style></head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="bar">
+  <div class="choices" id="hour" role="group" aria-label="Hour">
+    <button data-v="late" aria-pressed="true">Late</button><button data-v="small" aria-pressed="false">Small hours</button><button data-v="rain" aria-pressed="false">Rain</button>
+  </div>
+  <label>Windows <input type="range" id="win" min="0" max="1" step="0.01" value="0.45"></label>
+  <button id="add">+ Train</button>
+  <span class="how">Tap: train · Hold: dim the city</span>
+</div>
+<script>
+// Metro prototype: a lit train threads between dark slabs and sweeps their facades.
+const stage = document.getElementById('stage'), cv = document.getElementById('c'), g = cv.getContext('2d');
+const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+const [backC, bg] = mk(), [maskC, mg] = mk(), [deckC, dkg] = mk(), [nearC, ng] = mk(), [swC, sg] = mk(), grainC = document.createElement('canvas'), overC = document.createElement('canvas');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W = 0, H = 0, dpr = 1;
+
+function rng(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let q = Math.imul(s ^ s >>> 15, 1 | s); q = q + Math.imul(q ^ q >>> 7, 61 | q) ^ q; return ((q ^ q >>> 14) >>> 0) / 4294967296; }; }
+function lin(c, x0, y0, x1, y1, stops) { const l = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, s]) => l.addColorStop(o, s)); return l; }
+function glow(c, x, y, r, col, a, sy = 1) {
+  if (r <= 0 || a <= 0.002) return;
+  c.save(); c.translate(x, y); c.scale(1, sy);
+  const l = c.createRadialGradient(0, 0, 0, 0, 0, r);
+  l.addColorStop(0, col.replace('A', a)); l.addColorStop(0.3, col.replace('A', a * 0.35)); l.addColorStop(1, col.replace('A', 0));
+  c.fillStyle = l; c.fillRect(-r, -r, r * 2, r * 2); c.restore();
+}
+
+// Layout in stage units. Sizes follow H, so portrait shows a narrower slice of the same street.
+let L = null, wins = [];
+function layout() {
+  const portrait = H > W, gy = H * 0.9, track = H * (portrait ? 0.6 : 0.57), fh = H * 0.03, cw = H * 0.022;
+  return { portrait, gy, track, fh, cw, deckH: H * 0.04, th: H * 0.058, car: H * 0.36, nearL: W * (portrait ? 0.08 : 0.06), nearR: W * (portrait ? 0.92 : 0.94) };
+}
+
+function fit() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = stage.clientWidth; H = stage.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const [c, x] of [[backC, bg], [maskC, mg], [deckC, dkg], [nearC, ng], [swC, sg]]) { c.width = W * dpr; c.height = H * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  L = layout(); drawStatic(); wake();
+}
+new ResizeObserver(fit).observe(stage);
+
+// Static layers: sky and slabs, the facade mask, the viaduct, the near slabs, grain.
+function drawStatic() {
+  const R = rng(11), { gy, track, fh, cw } = L;
+  const keep = new Map(wins.map(w => [w.key, w]));
+  wins = [];
+  // Sky: a low city glow under a flat dark.
+  bg.fillStyle = lin(bg, 0, 0, 0, gy, [[0, '#04050b'], [0.55, '#0c0d18'], [1, '#2a1f28']]); bg.fillRect(0, 0, W, H);
+  glow(bg, W * 0.5, gy, H * 0.9, 'rgba(170,100,70,A)', 0.18, 0.5);
+  // Back row: taller, hazed slabs with rare dim windows.
+  for (let x = -H * 0.1; x < W + H * 0.1;) {
+    const w = H * (0.12 + R() * 0.2), top = H * (0.06 + R() * 0.22);
+    bg.fillStyle = lin(bg, 0, top, 0, gy, [[0, '#0e0f1a'], [1, '#191722']]); bg.fillRect(x, top, w, gy - top);
+    for (let y = top + fh * 0.6; y < gy - fh; y += fh * 0.7) for (let xx = x + cw * 0.4; xx < x + w - cw * 0.4; xx += cw * 0.7)
+      if (R() < 0.06) { bg.fillStyle = `rgba(230,170,110,${0.18 + R() * 0.2})`; bg.fillRect(xx, y, cw * 0.28, fh * 0.26); }
+    x += w + H * (0.01 + R() * 0.05);
+  }
+  bg.fillStyle = lin(bg, 0, H * 0.2, 0, gy, [[0, 'rgba(60,45,60,0)'], [1, 'rgba(60,45,60,0.45)']]); bg.fillRect(0, H * 0.2, W, gy - H * 0.2);
+  // Facing row: the facades the train lights. The mask holds their shapes.
+  mg.clearRect(0, 0, W, H);
+  let i = 0;
+  for (let x = -H * 0.05; x < W + H * 0.05; i++) {
+    const w = H * (0.22 + R() * 0.26), top = H * (0.16 + R() * 0.2), floors = Math.floor((gy - top - fh * 0.5) / fh);
+    bg.fillStyle = lin(bg, 0, top, 0, gy, [[0, '#0a0b12'], [1, '#0d0d14']]); bg.fillRect(x, top, w, gy - top);
+    bg.fillStyle = 'rgba(160,150,180,0.08)'; bg.fillRect(x, top, w, 1);
+    mg.fillStyle = '#fff'; mg.fillRect(x, top, w, gy - top);
+    const cols = Math.floor((w - cw * 0.6) / cw);
+    for (let f = 0; f < floors; f++) for (let k = 0; k < cols; k++) {
+      const wx = x + cw * 0.5 + k * cw, wy = top + fh * 0.55 + f * fh, key = i * 10000 + f * 100 + k;
+      bg.fillStyle = 'rgba(26,30,46,0.45)'; bg.fillRect(wx, wy, cw * 0.42, fh * 0.45);
+      const old = keep.get(key);
+      wins.push({ key, x: wx, y: wy, w: cw * 0.42, h: fh * 0.45, r: R(), hue: R(), p: R(), on: old ? old.on : 0, at: old ? old.at : 0, until: old ? old.until : 0 });
+    }
+    x += w + H * (0.03 + R() * 0.07);
+  }
+  bg.fillStyle = lin(bg, 0, gy - H * 0.25, 0, gy, [[0, 'rgba(150,90,60,0)'], [1, 'rgba(150,90,60,0.14)']]); bg.fillRect(0, gy - H * 0.25, W, H * 0.25);
+  // Street: a dark band at the foot.
+  bg.fillStyle = lin(bg, 0, gy, 0, H, [[0, '#0b0a10'], [1, '#040406']]); bg.fillRect(0, gy, W, H - gy);
+  // Viaduct: deck beam, parapet lip, piers to the street.
+  dkg.clearRect(0, 0, W, H);
+  dkg.fillStyle = '#050509'; dkg.fillRect(0, track, W, L.deckH);
+  dkg.fillStyle = 'rgba(140,140,170,0.16)'; dkg.fillRect(0, track, W, 1);
+  for (let x = W * 0.16; x < W; x += H * 0.42) { dkg.fillStyle = '#040407'; dkg.fillRect(x, track + L.deckH, H * 0.026, gy - track - L.deckH); }
+  // Near slabs: two dark edges the train threads between.
+  ng.clearRect(0, 0, W, H);
+  for (const [x0, x1, s] of [[-2, L.nearL, 1], [L.nearR, W + 2, -1]]) {
+    ng.fillStyle = '#040407'; ng.fillRect(x0, 0, x1 - x0, H);
+    ng.fillStyle = 'rgba(130,130,160,0.1)'; ng.fillRect(s > 0 ? x1 - 1 : x0, 0, 1, H);
+  }
+  // Grain tile.
+  grainC.width = grainC.height = 160; const gc = grainC.getContext('2d'), id = gc.createImageData(160, 160), Rg = rng(3);
+  for (let j = 0; j < id.data.length; j += 4) { const v = Rg() * 255; id.data[j] = id.data[j + 1] = id.data[j + 2] = v; id.data[j + 3] = 13; }
+  gc.putImageData(id, 0, 0);
+  // Vignette and grain, baked once into one overlay.
+  overC.width = W * dpr; overC.height = H * dpr; const og = overC.getContext('2d'); og.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const v = og.createRadialGradient(W / 2, H * 0.55, Math.min(W, H) * 0.3, W / 2, H * 0.55, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.5)'); og.fillStyle = v; og.fillRect(0, 0, W, H);
+  og.fillStyle = og.createPattern(grainC, 'repeat'); og.fillRect(0, 0, W, H);
+}
+
+// State.
+let hour = 'late', windows = 0.45, held = false, dim = 1, t = 0, dir = 1, nextAuto = 14;
+const trains = [], drops = Array.from({ length: 260 }, () => ({ x: Math.random(), y: Math.random(), s: 0.7 + Math.random() * 0.6 }));
+const TRAIN = [205, 235, 255];
+function sendTrain(user = true) {
+  const len = L.car * (3 + (Math.random() * 2 | 0));
+  trains.push({ x: dir > 0 ? -L.car * 0.2 : W + L.car * 0.2, dir, len, v: H * (0.26 + Math.random() * 0.06), user });
+  dir = -dir; wake();
+}
+const litBase = w => w.r < windows * (hour === 'small' ? 0.14 : 0.36);
+
+function render() {
+  const { gy, track, fh, th, deckH } = L, band = track - th * 0.5, rain = hour === 'rain';
+  g.globalCompositeOperation = 'source-over';
+  g.drawImage(backC, 0, 0, W, H);
+  // Small hours: colder and lower.
+  if (hour === 'small') { g.fillStyle = 'rgba(8,12,30,0.35)'; g.fillRect(0, 0, W, H); }
+  // Hold dims the whole city; the train keeps its light.
+  if (dim < 0.999) { g.fillStyle = `rgba(0,0,0,${(1 - dim) * 0.75})`; g.fillRect(0, 0, W, H); }
+  // Lit windows: a warm base set, plus the ones the train woke.
+  g.globalCompositeOperation = 'lighter';
+  for (const w of wins) {
+    const base = litBase(w) ? 1 : 0, lv = Math.max(base, w.on) * dim;
+    if (lv < 0.02) continue;
+    const warm = w.hue < 0.86, a = lv * (0.55 + w.p * 0.4);
+    g.fillStyle = warm ? `rgba(255,${170 + w.hue * 40 | 0},${90 + w.hue * 40 | 0},${a})` : `rgba(170,200,255,${a * 0.8})`;
+    g.fillRect(w.x, w.y, w.w, w.h);
+  }
+  // Train light on the facades: one soft band, then a slat per train window, masked to the slabs.
+  if (trains.length) {
+    sg.globalCompositeOperation = 'source-over'; sg.clearRect(0, band - th * 4, W, th * 9);
+    const vg = lin(sg, 0, band - th * 3.5, 0, band + th * 4.5, [[0, 'rgba(190,225,255,0)'], [0.42, 'rgba(190,225,255,1)'], [0.6, 'rgba(190,225,255,0.7)'], [1, 'rgba(190,225,255,0)']]);
+    sg.fillStyle = vg;
+    for (const tr of trains) {
+      const a = tr.dir > 0 ? tr.x - tr.len : tr.x, b = a + tr.len, pitch = L.car / 10;
+      sg.globalAlpha = 0.2; sg.fillRect(a - th, band - th * 3.5, tr.len + th * 2, th * 8);
+      sg.globalAlpha = 0.3;
+      for (let x = a + pitch * 0.3; x < b; x += pitch) { if (((x - a) % L.car) > L.car - pitch * 0.9) continue; sg.fillRect(x - pitch * 0.25, band - th * 3.5, pitch * 1.0, th * 8); }
+    }
+    // Only the lit band is masked and copied: the rest of the canvas stays untouched.
+    const y0 = Math.max(0, Math.floor(band - th * 3.5)), y1 = Math.min(H, Math.ceil(band + th * 4.5));
+    sg.globalAlpha = 1; sg.globalCompositeOperation = 'destination-in';
+    sg.drawImage(maskC, 0, y0 * dpr, W * dpr, (y1 - y0) * dpr, 0, y0, W, y1 - y0);
+    g.drawImage(swC, 0, y0 * dpr, W * dpr, (y1 - y0) * dpr, 0, y0, W, y1 - y0);
+  }
+  // Viaduct over the facades.
+  g.globalCompositeOperation = 'source-over'; g.drawImage(deckC, 0, 0, W, H);
+  if (dim < 0.999) { g.fillStyle = `rgba(0,0,0,${(1 - dim) * 0.5})`; g.fillRect(0, track, W, gy - track); }
+  // Trains: dark body, a bright window band, a halo, a headlight.
+  for (const tr of trains) {
+    const a = tr.dir > 0 ? tr.x - tr.len : tr.x, b = a + tr.len, pitch = L.car / 10, top = track - th;
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = '#08090e'; g.fillRect(a, top, tr.len, th - 2);
+    g.globalCompositeOperation = 'lighter';
+    g.fillStyle = lin(g, 0, top - th, 0, track + th * 0.6, [[0, 'rgba(180,220,255,0)'], [0.45, 'rgba(180,220,255,0.16)'], [1, 'rgba(180,220,255,0)']]);
+    g.fillRect(a - th, top - th, tr.len + th * 2, th * 2.6);
+    for (let x = a + pitch * 0.3; x < b; x += pitch) {
+      if (((x - a) % L.car) > L.car - pitch * 0.9) continue;
+      g.fillStyle = 'rgba(215,240,255,0.92)'; g.fillRect(x, band - th * 0.15, pitch * 0.58, th * 0.3);
+    }
+    g.fillStyle = 'rgba(200,225,255,0.35)'; g.fillRect(a, track - 2, tr.len, 1.5);
+    const hx = tr.dir > 0 ? b : a;
+    glow(g, hx, track - th * 0.3, th * 0.5, 'rgba(255,250,235,A)', 1);
+    g.fillStyle = lin(g, hx, 0, hx + tr.dir * H * 0.5, 0, [[0, 'rgba(255,245,225,0.28)'], [1, 'rgba(255,245,225,0)']]);
+    g.beginPath(); g.moveTo(hx, track - th * 0.3); g.lineTo(hx + tr.dir * H * 0.5, track - th * 0.9); g.lineTo(hx + tr.dir * H * 0.5, track + th * 0.3); g.closePath(); g.fill();
+    // Rain: the band's reflection smears down the wet street.
+    if (rain) {
+      g.fillStyle = lin(g, 0, gy, 0, H, [[0, 'rgba(180,220,255,0.16)'], [0.6, 'rgba(180,220,255,0.03)'], [1, 'rgba(180,220,255,0)']]);
+      for (let x = a + pitch * 0.3; x < b; x += pitch) if (((x - a) % L.car) <= L.car - pitch * 0.9) g.fillRect(x + pitch * 0.12 + Math.sin(t * 7 + x) * 1.5, gy + 2, pitch * 0.3, H - gy);
+    }
+  }
+  // Rain: streaks, bright only inside the train's light.
+  if (rain) {
+    g.lineWidth = 1;
+    for (const d of drops) {
+      const x = d.x * W, y = d.y * H; let a = 0.07;
+      for (const tr of trains) { const a0 = tr.dir > 0 ? tr.x - tr.len : tr.x; if (x > a0 - fh && x < a0 + tr.len + fh && Math.abs(y - band) < fh * 5) a = 0.5 * (1 - Math.abs(y - band) / (fh * 5)) + 0.07; }
+      g.strokeStyle = `rgba(200,225,255,${a})`; g.beginPath(); g.moveTo(x, y); g.lineTo(x - 2 * d.s, y + 14 * d.s); g.stroke();
+    }
+  }
+  g.globalCompositeOperation = 'source-over';
+  // Near slabs in front; their inner edges catch the train.
+  g.drawImage(nearC, 0, 0, W, H);
+  g.globalCompositeOperation = 'lighter';
+  for (const tr of trains) {
+    const a = tr.dir > 0 ? tr.x - tr.len : tr.x, b = a + tr.len;
+    for (const [ex, s] of [[L.nearL, -1], [L.nearR, 1]]) {
+      const d = Math.max(0, Math.max(a, Math.min(b, ex)) === ex ? 0 : Math.min(Math.abs(a - ex), Math.abs(b - ex)));
+      const k = Math.exp(-d / (H * 0.15));
+      if (k < 0.02) continue;
+      g.fillStyle = lin(g, 0, band - th * 6, 0, band + th * 6, [[0, 'rgba(190,225,255,0)'], [0.5, `rgba(190,225,255,${0.35 * k})`], [1, 'rgba(190,225,255,0)']]);
+      g.fillRect(s < 0 ? ex - 2 : ex, band - th * 6, 2, th * 12);
+      glow(g, ex, band, th * 3, 'rgba(190,225,255,A)', 0.12 * k, 1.6);
+    }
+  }
+  g.globalCompositeOperation = 'source-over';
+  g.drawImage(overC, 0, 0, W, H);
+}
+
+function step(dt) {
+  t += dt;
+  dim += ((held ? 0.15 : 1) - dim) * Math.min(1, dt * 2.5);
+  const band = L.track - L.th * 0.5;
+  for (const tr of trains) {
+    tr.x += tr.dir * tr.v * dt;
+    // Windows in the sweep may wake up, a beat after the light passes.
+    const a = tr.dir > 0 ? tr.x - tr.len : tr.x, b = a + tr.len;
+    for (const w of wins) {
+      if (w.at || w.p > 0.1 || litBase(w) || w.x < a || w.x > b || Math.abs(w.y - band) > L.th * 4) continue;
+      w.at = t + 0.3 + Math.random() * 1.6; w.until = w.at + 4 + Math.random() * 7;
+    }
+  }
+  for (let i = trains.length - 1; i >= 0; i--) { const tr = trains[i]; if ((tr.dir > 0 && tr.x - tr.len > W + 20) || (tr.dir < 0 && tr.x + tr.len < -20)) trains.splice(i, 1); }
+  for (const w of wins) {
+    if (!w.at) continue;
+    if (t > w.until) { w.on = Math.max(0, w.on - dt * 0.8); if (w.on === 0) w.at = 0; }
+    else if (t > w.at) w.on = t - w.at < 0.25 ? (Math.random() < 0.5 ? 1 : 0.3) : 1;
+  }
+  if (!reduced) {
+    nextAuto -= dt; if (nextAuto <= 0 && !trains.length) { sendTrain(false); nextAuto = 14 + Math.random() * 10; }
+    if (hour === 'rain') for (const d of drops) { d.y += dt * 1.5 * d.s; d.x -= dt * 0.03 * d.s; if (d.y > 1) { d.y -= 1; d.x = Math.random() * 1.05; } }
+  }
+}
+
+/* Frame loop: lively at full rate, drifting at 30 fps, asleep after 60 s idle. */
+let raf = 0, lastDraw = 0, lastT = 0, lastInput = performance.now(), dragging = false;
+const busy = () => trains.some(tr => tr.user) || held || Math.abs(dim - 1) > 0.01 || dragging;
+function frame(now) {
+  raf = 0;
+  const lively = busy(), idle = now - lastInput;
+  if (!lively && (reduced || idle > 60000)) { render(); return; }
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  try { step(dt); render(); } finally { lastDraw = now; if (!document.hidden) raf = requestAnimationFrame(frame); }
+}
+function wake() { if (!raf && !document.hidden && W) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else wake(); });
+
+/* Pointer: drag after 8 px, hold after 260 ms, else a tap. */
+let press = null, holdTimer = 0;
+stage.addEventListener('pointerdown', e => {
+  stage.setPointerCapture(e.pointerId); lastInput = performance.now();
+  press = { x: e.clientX, y: e.clientY }; dragging = false;
+  holdTimer = setTimeout(() => { held = true; wake(); }, 260); wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press) return; lastInput = performance.now();
+  if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { dragging = true; clearTimeout(holdTimer); }
+});
+function end(tap) {
+  clearTimeout(holdTimer);
+  if (press && tap && !dragging && !held) sendTrain();
+  press = null; dragging = false; held = false; lastInput = performance.now(); wake();
+}
+stage.addEventListener('pointerup', () => end(true));
+stage.addEventListener('pointercancel', () => end(false));
+stage.addEventListener('lostpointercapture', () => { if (press) end(false); });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); lastInput = performance.now(); sendTrain(); } });
+
+document.getElementById('hour').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const o of e.currentTarget.children) o.setAttribute('aria-pressed', o === b);
+  hour = b.dataset.v; lastInput = performance.now(); wake();
+});
+document.getElementById('win').addEventListener('input', e => { windows = +e.target.value; lastInput = performance.now(); wake(); });
+document.getElementById('add').addEventListener('click', () => { lastInput = performance.now(); sendTrain(); });
+
+// First frame: a train mid-street, a few windows already woken behind it.
+fit();
+{
+  const len = L.car * 4, x = W * 0.5 + len * 0.45;
+  trains.push({ x, dir: 1, len, v: H * 0.28, user: false }); dir = -1;
+  const band = L.track - L.th * 0.5;
+  for (const w of wins) if (w.p < 0.1 && !litBase(w) && w.x > x - len && w.x < x - len * 0.3 && Math.abs(w.y - band) < L.th * 4) { w.at = -1; w.on = 1; w.until = 3 + Math.random() * 6; }
+}
+</script></body></html>

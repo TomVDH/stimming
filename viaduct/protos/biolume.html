@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Glow bay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..700&display=swap">
+<style>
+:root {
+  --bg: oklch(0.1 0.01 270);
+  --ink: oklch(0.93 0.01 270);
+  --dim: oklch(0.72 0.015 270);
+  --chip: oklch(0.2 0.015 270 / 0.62);
+  --line: oklch(0.85 0.01 270 / 0.22);
+}
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
+body { font: 500 13px/1.2 Gabarito, system-ui, sans-serif; }
+canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+.bar {
+  position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; pointer-events: none;
+}
+.bar > * { pointer-events: auto; }
+.choices { display: flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--chip); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--line); }
+.chip {
+  font: inherit; color: var(--dim); background: transparent; border: 0; border-radius: 999px;
+  padding: 7px 13px; cursor: pointer; transition: color 0.2s, background 0.2s;
+}
+.chip[aria-pressed="true"] { color: var(--bg); background: var(--ink); }
+.act { background: var(--chip); border: 1px solid var(--line); color: var(--ink); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.how { margin: 0; color: var(--dim); font-size: 12px; text-shadow: 0 1px 4px #000; }
+.how b { color: var(--ink); font-weight: 600; }
+@media (max-width: 520px) { .how { flex-basis: 100%; order: -1; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<div class="bar">
+  <div class="choices" id="modes" role="group" aria-label="Mood"><button class="chip" type="button" data-value="calm" aria-pressed="true">Calm</button><button class="chip" type="button" data-value="current" aria-pressed="false">Current</button><button class="chip" type="button" data-value="bloom" aria-pressed="false">Bloom</button></div>
+  <button class="chip act" id="act" type="button">+ Train</button>
+  <p class="how"><b>Tap water</b> stir a bloom · <b>Tap sky</b> send a train</p>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// Seeded random keeps every load the same.
+let seed = 1337;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const range = (a, b) => a + (b - a) * rnd();
+const ease = (x) => x * x * (3 - 2 * x);
+
+// Shared GLSL: hash, value noise and fbm.
+const NOISE = /* glsl */`
+float hash12(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+vec2 hash22(vec2 p) { float n = hash12(p); return vec2(n, hash12(p + n * 17.3 + 3.1)); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), u.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; }
+  return s;
+}`;
+const WORLD_VS = /* glsl */`
+varying vec3 vP;
+varying vec3 vN;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vP = w.xyz;
+  vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+
+// A quadratic Bezier in plan, walked by arc length.
+function makePath(B0, B1, B2) {
+  const bez = t => new THREE.Vector2().addScaledVector(B0, (1 - t) ** 2).addScaledVector(B1, 2 * t * (1 - t)).addScaledVector(B2, t * t);
+  const LUT = [{ t: 0, s: 0 }];
+  for (let i = 1, prev = bez(0); i <= 1000; i++) { const p = bez(i / 1000); LUT.push({ t: i / 1000, s: LUT[i - 1].s + p.distanceTo(prev) }); prev = p; }
+  const LEN = LUT[LUT.length - 1].s;
+  function tAt(s) {
+    s = Math.max(0, Math.min(LEN, s));
+    let lo = 0, hi = LUT.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (LUT[m].s < s) lo = m; else hi = m; }
+    const a = LUT[lo], b = LUT[hi];
+    return a.t + (b.t - a.t) * ((s - a.s) / Math.max(1e-6, b.s - a.s));
+  }
+  // Past either end the path runs on along its tangent.
+  function at(s, side = 0) {
+    const e = Math.max(0, Math.min(LEN, s)), d = s - e;
+    const t = tAt(e), p = bez(t), q = bez(Math.min(1, t + 0.001)), r = bez(Math.max(0, t - 0.001));
+    const tan = q.sub(r).normalize();
+    const n = new THREE.Vector2(-tan.y, tan.x);
+    return { x: p.x + n.x * side + tan.x * d, z: p.y + n.y * side + tan.y * d, yaw: Math.atan2(tan.x, tan.y), tan, n };
+  }
+  return { at, LEN };
+}
+
+// A box baked in place, yawed about its centre.
+function boxG(x, y, z, w, h, d, ry = 0, rz = 0) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (rz) g.rotateZ(rz);
+  if (ry) g.rotateY(ry);
+  g.translate(x, y + h / 2, z);
+  return g.toNonIndexed();
+}
+
+/* ---------- scene ---------- */
+// Glow bay: a long low viaduct crosses a black bay full of glowing plankton.
+function build() {
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 40000);
+const Q = new URLSearchParams(location.search);
+
+// The viaduct runs straight from A along T; piers stand every SP metres.
+const A = new THREE.Vector2(70, 40), T = new THREE.Vector2(-0.3, -1).normalize(), NRM = new THREE.Vector2(-T.y, T.x);
+const SP = 30, NP = 110, LEN = SP * NP, DECK = 9, COL = 3.4;
+// The current pulls across the line, toward the camera side.
+const CUR = new THREE.Vector2(-0.83, 0.56).normalize();
+const at = (s, side = 0) => ({ x: A.x + T.x * s + NRM.x * side, z: A.y + T.y * s + NRM.y * side });
+const YAW = Math.atan2(T.x, T.y);
+
+const NB = 8;
+const U = {
+  uTime: { value: 0 }, uTC: { value: 0 }, uEv: { value: 0 },
+  uA: { value: A }, uT: { value: T }, uC: { value: CUR },
+  uCur: { value: 0.25 }, uHalo: { value: 0.7 }, uSpark: { value: 0.7 }, uBase: { value: 0 },
+  uS0: { value: 0 }, uDir: { value: -1 }, uV: { value: 32 }, uT0: { value: -999 },
+  uB: { value: Array.from({ length: NB }, () => new THREE.Vector4(0, 0, -999, 0)) },
+  uWarm: { value: new THREE.Vector3(1.0, 0.5, 0.22) },
+  uWarmDir: { value: new THREE.Vector2(-0.12, -1).normalize() },
+  uHaze: { value: 0.0007 }, uHazeH: { value: 40 },
+};
+const MODES = {
+  calm: { uCur: 0.25, uHalo: 0.7, uSpark: 0.7, uBase: 0.0 },
+  current: { uCur: 1.0, uHalo: 1.0, uSpark: 0.9, uBase: 0.05 },
+  bloom: { uCur: 0.45, uHalo: 1.0, uSpark: 1.4, uBase: 0.35 },
+};
+
+const BAY = /* glsl */`
+${NOISE}
+uniform float uTime, uTC, uEv, uCur, uHalo, uSpark, uBase, uS0, uDir, uV, uT0, uHaze, uHazeH;
+uniform vec2 uA, uT, uC, uWarmDir;
+uniform vec3 uWarm;
+uniform vec4 uB[${NB}];
+const vec3 CYAN = vec3(0.12, 0.85, 1.0);
+// Glow strength of the plankton at p, before sparkle.
+float bio(vec2 p) {
+  vec2 d0 = p - uA;
+  vec2 nr = vec2(-uT.y, uT.x);
+  float s = dot(d0, uT), l = dot(d0, nr);
+  // The current, in the viaduct's own frame.
+  vec2 cq = vec2(dot(uC, uT), dot(uC, nr));
+  float g = 0.0;
+  float i0 = floor(s / ${SP.toFixed(1)} + 0.5);
+  float flow = uTime * (0.6 + 1.6 * uCur);
+  // Wakes drift toward lower s, so look one pier further ahead.
+  for (int k = -1; k <= 2; k++) {
+    float i = i0 + float(k);
+    if (i < 0.0 || i > ${NP.toFixed(1)}) continue;
+    float si = i * ${SP.toFixed(1)};
+    vec2 q = vec2(s - si, l);
+    // Two columns per pier; each wears a halo and trails a wake.
+    for (int c = -1; c <= 1; c += 2) {
+      vec2 r = q - vec2(0.0, float(c) * ${COL.toFixed(1)});
+      float dist = length(r);
+      float a = dot(r, cq), b = dot(r, vec2(-cq.y, cq.x));
+      float halo = exp(-max(dist - 1.1, 0.0) / (1.4 + 1.2 * uCur)) * (0.7 + 0.5 * vnoise(vec2(atan(r.y, r.x) * 2.0, uTime * 0.7 + i)));
+      float len = 10.0 + 40.0 * uCur;
+      float wake = smoothstep(-1.0, 1.5, a) * exp(-max(a, 0.0) / len) * exp(-b * b / (1.2 + max(a, 0.0) * (0.25 + 0.3 * uCur)));
+      // Eddies roll down the wake with the current.
+      float ed = vnoise(vec2(a * 0.35 - flow * 1.5, b * 0.7 + i * 3.1));
+      wake *= 0.35 + 1.2 * ed * ed;
+      g += halo * 0.8 * uHalo + wake * (0.08 + 1.2 * uCur);
+    }
+    // The train shakes each pier as it passes: a ring runs out from it.
+    float ti = uT0 + (si - uS0) / (uDir * uV);
+    float age = uTC - ti;
+    if (age > 0.0 && age < 7.0) {
+      float r = length(q * vec2(1.0, 0.8));
+      float R = 2.0 + age * 4.5;
+      float ring = exp(-pow((r - R) / (0.6 + age * 0.3), 2.0)) * exp(-age / 1.7);
+      float core = exp(-age * 1.4) * exp(-r / 3.5);
+      // A second, fainter ring trails the first.
+      float ring2 = exp(-pow((r - R * 0.55) / (0.6 + age * 0.3), 2.0)) * exp(-age / 1.8) * 0.5;
+      g += (ring + ring2) * 2.4 + core * 2.2;
+    }
+  }
+  // Blooms stirred by a tap spread and fade.
+  for (int i = 0; i < ${NB}; i++) {
+    float age = uEv - uB[i].z;
+    if (age < 0.0 || age > 14.0) continue;
+    vec2 d = p - uB[i].xy;
+    float r = length(d);
+    float R = (2.0 + 9.0 * sqrt(age)) * uB[i].w;
+    float edge = R * (0.82 + 0.36 * vnoise(d * 0.18 + uB[i].xy));
+    float fill = smoothstep(edge, edge * 0.3, r) * 0.7;
+    float rim = exp(-pow((r - edge) / (0.8 + 0.25 * R), 2.0)) * 1.4;
+    float flash = exp(-age * 2.5) * exp(-r / 2.0) * 4.0;
+    g += (fill + rim) * exp(-age / 3.8) * (0.4 + 0.6 * vnoise(d * 0.4 - age)) + flash;
+  }
+  // Faint patches drift with the current in the bloom mood.
+  g += uBase * smoothstep(0.45, 0.8, fbm(p * 0.02 - uC * uTime * 0.6)) * 0.8;
+  return g;
+}
+// Light thrown up by the plankton onto the piers and deck.
+vec3 bioLight(vec3 P, vec3 N) {
+  float g = bio(P.xz);
+  float facing = max(-N.y, 0.0) * 0.6 + 0.5 * (1.0 - abs(N.y));
+  return CYAN * g * exp(-max(P.y, 0.0) / 2.2) * facing * 0.9;
+}
+float hazeAmt(vec3 P) {
+  vec3 v = P - cameraPosition;
+  float dist = length(v), k = 1.0 / uHazeH;
+  float h0 = max(cameraPosition.y, 0.0), h1 = max(P.y, 0.0), dh = h1 - h0;
+  float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+  return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
+}
+// Warm toward the low glow on the horizon, deep blue elsewhere.
+float faceWarm(vec3 dir) { return max(dot(normalize(dir.xz + 1e-5), uWarmDir), 0.0); }
+vec3 hazeCol(vec3 dir) { return vec3(0.004, 0.007, 0.014) + uWarm * 0.03 * pow(faceWarm(dir), 6.0); }
+vec3 haze(vec3 c, vec3 P, float keep) { return mix(c, hazeCol(normalize(P - cameraPosition)), hazeAmt(P) * keep); }
+vec3 sky(vec3 dir) {
+  float up = max(dir.y, 0.0);
+  float fw = faceWarm(dir);
+  vec3 col = vec3(0.0015, 0.0025, 0.006) + vec3(0.004, 0.008, 0.018) * exp(-up * 6.0);
+  // A faint warm band where a far shore lies under the horizon.
+  col += uWarm * (0.016 + 0.08 * pow(fw, 6.0)) * exp(-up * 30.0) + uWarm * 0.006 * pow(fw, 3.0) * exp(-up * 6.0);
+  // A diagonal river of faint stars.
+  vec3 mwN = normalize(vec3(0.5, 0.35, 0.8));
+  float band = exp(-pow(dot(dir, mwN) / 0.16, 2.0));
+  vec2 mp = vec2(atan(dir.z, dir.x), dir.y) * 40.0;
+  col += vec3(0.012, 0.014, 0.022) * band * (0.4 + 0.9 * fbm(mp * 0.5)) * smoothstep(0.0, 0.25, dir.y);
+  // Stars on three layers: few bright, many faint.
+  for (int k = 0; k < 3; k++) {
+    float sc = 140.0 + float(k) * 190.0;
+    vec2 sp = dir.xz / (dir.y + 0.35) * sc + float(k) * 7.3;
+    vec2 cell = floor(sp);
+    float h = hash12(cell);
+    float thr = 0.985 - float(k) * 0.01 + band * 0.02 * float(k);
+    float star = step(thr, h) * smoothstep(0.32, 0.0, length(fract(sp) - 0.5 - (hash22(cell) - 0.5) * 0.4));
+    float tw = 0.75 + 0.25 * sin(uTime * (1.0 + h * 3.0) + h * 40.0);
+    col += mix(vec3(1.0, 0.85, 0.7), vec3(0.75, 0.85, 1.0), hash12(cell + 2.0)) * star * tw * (0.25 / (1.0 + float(k) * 2.0)) * smoothstep(0.0, 0.12, dir.y);
+  }
+  return col;
+}`;
+
+// Concrete: dark, lit from below by the plankton and from the horizon glow.
+const concrete = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: WORLD_VS,
+  fragmentShader: /* glsl */`
+  varying vec3 vP;
+  varying vec3 vN;
+  ${BAY}
+  void main() {
+    vec3 N = normalize(vN);
+    float panel = vnoise(vP.xz * 0.3 + vP.y * 0.2) * 0.5 + vnoise(vec2(vP.y * 1.3, (vP.x + vP.z) * 0.08)) * 0.5;
+    // A tide line darkens the foot of every column.
+    float wet = smoothstep(1.6, 0.4, vP.y);
+    vec3 alb = vec3(0.34, 0.34, 0.33) * (0.7 + 0.5 * panel) * (1.0 - 0.6 * wet);
+    vec3 amb = vec3(0.004, 0.006, 0.011) * (0.6 + 0.4 * N.y) + uWarm * 0.02 * max(dot(N.xz, uWarmDir), 0.0);
+    vec3 c = alb * (amb + bioLight(vP, N));
+    gl_FragColor = vec4(haze(c, vP, 1.0), 1.0);
+  }`,
+});
+// Window glow, hazed a little less than surfaces.
+const glowMat = new THREE.ShaderMaterial({
+  uniforms: U, vertexColors: true,
+  vertexShader: `varying vec3 vP; varying vec3 vC; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; vC = color; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `varying vec3 vP; varying vec3 vC; ${BAY} void main() { gl_FragColor = vec4(haze(vC, vP, 0.7), 1.0); }`,
+});
+const projU = { uScale: { value: 1 } };
+const flareMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...projU },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`
+  attribute vec3 color;
+  attribute float size;
+  uniform float uScale;
+  varying vec3 vC;
+  void main() {
+    vC = color;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = clamp(size * uScale / -mv.z, 2.0, 64.0);
+    gl_Position = projectionMatrix * mv;
+  }`,
+  fragmentShader: `varying vec3 vC; void main() { vec2 c = gl_PointCoord - 0.5; gl_FragColor = vec4(vC * exp(-dot(c, c) * 22.0) * smoothstep(0.5, 0.3, length(c)), 1.0); }`,
+});
+
+/* ---------- viaduct ---------- */
+const NG = 24;
+const glints = [];
+const flares = { pos: [], col: [], size: [] };
+const LAMP = [1.0, 0.62, 0.3];
+{
+  const parts = [];
+  const g0 = at(-200), g1 = at(LEN);
+  const mid = at((LEN - 200) / 2);
+  // The deck is one long slab with a slim parapet each side.
+  const L = LEN + 200;
+  parts.push(boxG(mid.x, DECK - 1.4, mid.z, 10, 1.4, L, YAW));
+  for (const side of [-1, 1]) { const e = at((LEN - 200) / 2, side * 4.8); parts.push(boxG(e.x, DECK, e.z, 0.4, 0.9, L, YAW)); }
+  for (let i = 0; i <= NP; i++) {
+    for (const c of [-1, 1]) {
+      const p = at(i * SP, c * COL);
+      const g = new THREE.CylinderGeometry(1.0, 1.15, DECK - 1.4 + 3, 20, 1);
+      g.translate(p.x, (DECK - 1.4 - 3) / 2, p.z);
+      parts.push(g.toNonIndexed());
+    }
+    const cap = at(i * SP);
+    parts.push(boxG(cap.x, DECK - 2.4, cap.z, 10.5, 1.0, 2.6, YAW));
+    // Small warm lamps on every fourth pier, alternating sides.
+    if (i % 4 === 2) {
+      const side = (i / 4 | 0) % 2 ? 1 : -1, q = at(i * SP, side * 4.8);
+      parts.push(boxG(q.x, DECK + 0.9, q.z, 0.2, 3.6, 0.2, YAW));
+      const head = new THREE.Vector3(q.x, DECK + 4.6, q.z);
+      flares.pos.push(head.x, head.y, head.z); flares.col.push(...LAMP.map(v => v * 2.2)); flares.size.push(2.0);
+      if (glints.length < 14) glints.push({ pos: head, col: LAMP, k: 1.2, reach: 0.25 });
+    }
+  }
+  scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(flares.pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(flares.col, 3));
+  g.setAttribute('size', new THREE.Float32BufferAttribute(flares.size, 1));
+  const pts = new THREE.Points(g, flareMat); pts.frustumCulled = false; pts.renderOrder = 3; scene.add(pts);
+}
+
+/* ---------- train ---------- */
+const orbs = [];
+const train = (() => {
+  const CAR = 22, GAP = 1.0, N = 4, SPAN = N * (CAR + GAP);
+  const body = mergeGeometries([
+    new THREE.BoxGeometry(3.0, 3.4, CAR).translate(0, 0.7 + 1.7, 0).toNonIndexed(),
+    new THREE.BoxGeometry(2.4, 0.4, CAR - 1.5).translate(0, 4.3, 0).toNonIndexed(),
+  ]);
+  const wins = [];
+  for (const side of [-1, 1]) for (let k = 0; k < 8; k++) {
+    const g = new THREE.BoxGeometry(0.06, 1.0, 1.9).translate(side * 1.52, 2.5, -CAR / 2 + 2.2 + k * 2.6);
+    const n = g.attributes.position.count, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) a.set([1.25, 0.8, 0.4], i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+    wins.push(g.toNonIndexed());
+  }
+  const winG = mergeGeometries(wins);
+  const cars = [];
+  for (let i = 0; i < N; i++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(body, concrete), new THREE.Mesh(winG, glowMat));
+    g.rotation.y = YAW;
+    scene.add(g); cars.push(g);
+  }
+  const lampG = new THREE.BufferGeometry();
+  lampG.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(9), 3));
+  lampG.setAttribute('color', new THREE.Float32BufferAttribute([3, 0.2, 0.08, 3, 0.2, 0.08, 5, 5, 4.6], 3));
+  lampG.setAttribute('size', new THREE.Float32BufferAttribute([0.8, 0.8, 1.8], 1));
+  const lamps = new THREE.Points(lampG, flareMat);
+  lamps.frustumCulled = false; lamps.renderOrder = 4; scene.add(lamps);
+  const head = new THREE.Vector3();
+  const orb = { pos: head, color: [1, 0.95, 0.85], k: 0.35, size: 0.9 };
+  orbs.push(orb);
+  const carG = [];
+  for (let i = 0; i < N; i++) { carG.push(glints.length); glints.push({ pos: new THREE.Vector3(), col: [1, 0.66, 0.34], k: 1.3, reach: 0.18 }); }
+  const headG = glints.length; glints.push({ pos: head, col: [0.95, 0.95, 1.0], k: 3.0, reach: 0.5 });
+  function place(s, dir) {
+    for (let i = 0; i < N; i++) {
+      const c = at(s - dir * (i * (CAR + GAP) + CAR / 2));
+      cars[i].position.set(c.x, DECK, c.z);
+      glints[carG[i]].pos.set(c.x, DECK + 2.5, c.z);
+    }
+    const h = at(s);
+    head.set(h.x, DECK + 1.9, h.z);
+    const p = lampG.attributes.position, t = at(s - dir * SPAN);
+    p.setXYZ(0, t.x + NRM.x, DECK + 1.3, t.z + NRM.y);
+    p.setXYZ(1, t.x - NRM.x, DECK + 1.3, t.z - NRM.y);
+    p.setXYZ(2, head.x, head.y, head.z);
+    p.needsUpdate = true;
+  }
+  function show(on) {
+    for (const c of cars) c.visible = on;
+    lamps.visible = on; orb.k = on ? 0.35 : 0;
+    for (const i of [...carG, headG]) glints[i].k = on ? (i === headG ? 3.0 : 1.3) : 0;
+  }
+  return { place, show, SPAN };
+})();
+while (glints.length < NG) glints.push({ pos: new THREE.Vector3(0, -1000, 0), col: [0, 0, 0], k: 0, reach: 0.1 });
+
+/* ---------- sky ---------- */
+{
+  const m = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), new THREE.ShaderMaterial({
+    uniforms: U, side: THREE.BackSide, depthWrite: false,
+    vertexShader: `varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `varying vec3 vP; ${BAY} void main() { gl_FragColor = vec4(sky(normalize(vP - cameraPosition)), 1.0); }`,
+  }));
+  m.renderOrder = -1;
+  scene.add(m);
+}
+
+/* ---------- water: a still, black mirror that glows when stirred ---------- */
+const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
+  textureWidth: 512, textureHeight: 512, clipBias: 0.002,
+  shader: {
+    name: 'GlowBay',
+    uniforms: { ...U, color: { value: new THREE.Color() }, tDiffuse: { value: null }, textureMatrix: { value: null }, uFov: { value: new THREE.Vector2(1, 1) },
+      uGP: { value: glints.map(g => new THREE.Vector4()) }, uGC: { value: glints.map(g => new THREE.Vector4()) } },
+    vertexShader: /* glsl */`
+    uniform mat4 textureMatrix;
+    varying vec4 vR;
+    varying vec3 vP;
+    void main() {
+      vR = textureMatrix * vec4(position, 1.0);
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec2 uFov;
+    uniform vec4 uGP[${NG}];
+    uniform vec4 uGC[${NG}];
+    varying vec4 vR;
+    varying vec3 vP;
+    ${BAY}
+    vec2 swell(vec2 p, vec2 dir, float len, float amp, float ph, float dist) {
+      float k = 6.2832 / len;
+      float fade = 1.0 - smoothstep(len * 9.0, len * 24.0, dist);
+      return dir * amp * cos(dot(p, dir) * k + ph - uTime * sqrt(9.81 * k)) * fade;
+    }
+    void main() {
+      vec3 V = normalize(cameraPosition - vP);
+      float dist = length(cameraPosition - vP);
+      vec2 p = vP.xz;
+      float fw = length(fwidth(p));
+      float g = bio(p);
+      // A low swell; glowing water ripples a little more.
+      vec2 sl = swell(p, normalize(vec2(0.3, 1.0)), 40.0, 0.06, 0.0, dist)
+              + swell(p, normalize(vec2(-0.5, 1.0)), 21.0, 0.05, 1.7, dist)
+              + swell(p, normalize(vec2(0.7, 1.0)), 9.0, 0.035, 4.1, dist);
+      float nearK = 1.0 - smoothstep(30.0, 140.0, dist);
+      if (nearK > 0.0) {
+        float r0 = vnoise(p * 0.6 + uTime * 0.2);
+        sl += vec2(vnoise(p * 0.6 + vec2(0.3, 0.0) + uTime * 0.2) - r0, vnoise(p * 0.6 + vec2(0.0, 0.3) + uTime * 0.2) - r0) * (0.08 + 0.2 * min(g, 1.5)) * nearK;
+      }
+      vec3 N = normalize(vec3(-sl.x, 1.0, -sl.y));
+      float graze = max(V.y, 0.04);
+      vec2 off = vec2(N.x * 0.7 * graze * uFov.x, -N.z * 0.7 * uFov.y);
+      vec2 uv = vR.xy / vR.w;
+      float stretch = 0.05 + 0.08 * (1.0 - smoothstep(0.04, 0.4, graze));
+      vec3 refl = vec3(0.0);
+      float wsum = 0.0;
+      for (int i = -5; i <= 5; i++) {
+        float t = float(i) / 5.0;
+        float wgt = exp(-t * t * 2.2);
+        refl += texture2D(tDiffuse, clamp(uv + off + vec2(sl.x * 0.03 * t, t * stretch), 0.001, 0.999)).rgb * wgt;
+        wsum += wgt;
+      }
+      refl /= wsum;
+      float cosT = max(dot(N, V), 0.0);
+      float F = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
+      vec3 col = vec3(0.0003, 0.0007, 0.0012) * (1.0 - F) + refl * F;
+      // Glint columns: tilted facets flash each strong light as dashes.
+      float dn = vnoise(vec2(vP.x * 0.07, vP.z * 0.5 + uTime * 0.3));
+      float dn2 = vnoise(vec2(vP.x * 0.15 + 7.0, vP.z * 1.0));
+      float tilt = (dn * 0.7 + dn2 * 0.3 - 0.5) * 0.5;
+      float farK = smoothstep(500.0, 2000.0, dist);
+      vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
+      vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
+      vec3 st = vec3(0.0);
+      for (int i = 0; i < ${NG}; i++) {
+        if (uGP[i].w <= 0.0) continue;
+        vec3 L = uGP[i].xyz - vP;
+        float dl = length(L);
+        vec3 err = R0 - L / dl;
+        float ex = dot(err, right) + (dn2 - 0.5) * 0.004;
+        float ey = err.y;
+        float need = ey * 0.5;
+        float m = mix(exp(-pow((tilt - need) / 0.018, 2.0)), 0.35 * exp(-pow(need / 0.09, 2.0)), farK);
+        float fall = ey > 0.0 ? exp(-ey / uGC[i].w) : exp(-pow(ey / 0.02, 2.0));
+        float sx = max(0.0035, 2.0 / dl);
+        float ahead = smoothstep(0.96, 0.995, dot(normalize(R0.xz), normalize(L.xz)));
+        st += uGC[i].rgb * uGP[i].w * m * fall * ahead * exp(-ex * ex / (sx * sx));
+      }
+      col += st * mix(0.45, 1.0, F) * 0.8;
+      // Plankton: points of light that twinkle where the water is stirred.
+      vec2 sp = p * 3.0;
+      vec2 cell = floor(sp);
+      float h = hash12(cell);
+      float pt = smoothstep(0.13, 0.0, length(fract(sp) - 0.5 - (hash22(cell) - 0.5) * 0.6));
+      float tw = 0.5 + 0.5 * sin(uTime * (2.0 + 3.0 * h) + h * 50.0);
+      // Far away a point is below a pixel; use its mean.
+      float pts = mix(pt * step(0.5, h) * tw * 7.0, 0.22, smoothstep(0.1, 0.4, fw));
+      float glow = g * (0.3 + uSpark * pts);
+      // A soft knee keeps bright water cyan instead of white.
+      vec3 bc = mix(vec3(0.02, 0.45, 1.0), vec3(0.4, 1.0, 1.0), smoothstep(0.8, 4.0, glow)) * (1.0 - exp(-glow * 0.9)) * 2.4;
+      col += bc * (1.0 - hazeAmt(vP) * 0.8);
+      col = mix(col, hazeCol(-V), hazeAmt(vP) * 0.85);
+      col = mix(col, sky(normalize(vec3(-V.x, 0.0005, -V.z))), smoothstep(3000.0, 12000.0, dist));
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+  },
+});
+sea.rotation.x = -Math.PI / 2;
+scene.add(sea);
+// Reflector clones its uniforms; point them back at the shared set.
+for (const k in U) sea.material.uniforms[k] = U[k];
+function uploadGlints() {
+  glints.forEach((g, i) => {
+    sea.material.uniforms.uGP.value[i].set(g.pos.x, g.pos.y, g.pos.z, g.k);
+    sea.material.uniforms.uGC.value[i].set(g.col[0], g.col[1], g.col[2], g.reach);
+  });
+}
+
+/* ---------- framing ---------- */
+function frame(w, h, pr) {
+  camera.aspect = w / h;
+  if (w >= h) {
+    camera.fov = 46;
+    camera.position.set(0, 14, 0);
+    camera.lookAt(-70, -6, -380);
+  } else {
+    camera.fov = 70;
+    camera.position.set(10, 16, 10);
+    camera.lookAt(-40, -10, -380);
+  }
+  camera.updateProjectionMatrix();
+  sea.getRenderTarget().setSize(Math.max(1, Math.round(w * pr / 2)), Math.max(1, Math.round(h * pr / 2)));
+  const vf = THREE.MathUtils.degToRad(camera.fov);
+  sea.material.uniforms.uFov.value.set(1 / (2 * Math.atan(Math.tan(vf / 2) * camera.aspect)), 1 / vf);
+  projU.uScale.value = (h * pr) / (2 * Math.tan(vf / 2));
+}
+
+/* ---------- motion ---------- */
+const S_START = -260, S_END = 1800;
+const run = { s: +(Q.get('train') || 290), dir: 1, on: true, user: false };
+// Back-date the clock so earlier piers already ring behind the train.
+U.uS0.value = S_START; U.uDir.value = 1;
+U.uTC.value = (run.s - S_START) / U.uV.value; U.uT0.value = 0;
+train.place(run.s, run.dir);
+train.show(true);
+uploadGlints();
+let time = 0, ev = 0, nb = 0, lastBloom = -99, tmode = null;
+function update(dt, pace) {
+  time += dt * pace;
+  ev += dt;
+  U.uTime.value = time;
+  U.uEv.value = ev;
+  if (tmode) {
+    tmode.t = Math.min(1, tmode.t + dt / 1.6);
+    const e = ease(tmode.t);
+    for (const k in tmode.to) U[k].value = tmode.from[k] + (tmode.to[k] - tmode.from[k]) * e;
+    if (tmode.t >= 1) tmode = null;
+  }
+  if (run.on) {
+    const k = run.user ? 1 : pace;
+    U.uTC.value += dt * k;
+    run.s = U.uS0.value + U.uDir.value * U.uV.value * (U.uTC.value - U.uT0.value);
+    if (run.s > S_END + train.SPAN) { run.on = false; train.show(false); }
+    else train.place(run.s, run.dir);
+  } else if (run.user && U.uTC.value - U.uT0.value < (S_END - S_START) / U.uV.value + 9) {
+    // The last rings still spread after the train has gone.
+    U.uTC.value += dt;
+  } else run.user = false;
+  uploadGlints();
+}
+function sendTrain() {
+  if (run.on) return;
+  run.on = true; run.user = true; run.s = S_START;
+  U.uT0.value = U.uTC.value;
+  train.show(true); train.place(run.s, run.dir);
+}
+const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
+function tap(ndc) {
+  ray.setFromCamera(ndc, camera);
+  if (ray.ray.intersectPlane(plane, hit) && hit.distanceTo(camera.position) < 2500) {
+    U.uB.value[nb % NB].set(hit.x, hit.z, ev, Math.min(3, 0.6 + hit.distanceTo(camera.position) / 150));
+    nb++; lastBloom = ev;
+  } else sendTrain();
+}
+function mode(id) {
+  const to = MODES[id];
+  if (!to) return;
+  tmode = { t: 0, to, from: Object.fromEntries(Object.keys(to).map(k => [k, U[k].value])) };
+}
+if (MODES[Q.get('mode')]) for (const k in MODES[Q.get('mode')]) U[k].value = MODES[Q.get('mode')][k];
+// QA can place a bloom with ?bloom=x,z,age.
+if (Q.get('bloom')) { const [x, z, a] = Q.get('bloom').split(',').map(Number); U.uB.value[0].set(x, z, -a, 1.4); nb = 1; }
+
+return {
+  scene, camera, frame, update, orbs, tap, mode, action: sendTrain,
+  lively: () => run.user || !!tmode || ev - lastBloom < 14,
+  post: { bloom: [0.75, 0.25, 0.85], haze: 0.012, tint: [0.0006, 0.0009, 0.0014], vig: 0.55, vigIn: 0.35, grain: 0.03, exposure: 1.1 },
+};
+}
+
+/* ---------- end scene ---------- */
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const canvas = renderer.domElement;
+document.body.prepend(canvas);
+const S = build(renderer);
+renderer.toneMappingExposure = S.post.exposure ?? 1;
+// Additive glows keep the target's alpha at 1, so bloom stays round.
+S.scene.traverse(o => {
+  for (const m of [].concat(o.material || [])) {
+    if (m.blending !== THREE.AdditiveBlending) continue;
+    Object.assign(m, { blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
+  }
+});
+
+// Soft orbs round the brightest lamps, squashed sideways into the haze.
+const ORB_N = 12;
+const orbPass = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
+    uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+    uN: { value: 0 }, uAsp: { value: 1 },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform vec3 uOP[${ORB_N}];
+  uniform vec4 uOC[${ORB_N}];
+  uniform int uN;
+  uniform float uAsp;
+  varying vec2 vUv;
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb;
+    for (int i = 0; i < ${ORB_N}; i++) {
+      if (i >= uN) break;
+      vec2 d = vUv - uOP[i].xy;
+      float r = length(vec2(d.x * uAsp * 0.6, d.y));
+      c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+    }
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
+const tmpV = new THREE.Vector3();
+function placeOrbs() {
+  S.camera.updateMatrixWorld();
+  let n = 0;
+  for (const o of S.orbs || []) {
+    if (n >= ORB_N || o.k <= 0.001) continue;
+    tmpV.copy(o.pos).project(S.camera);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
+    orbPass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
+    orbPass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    n++;
+  }
+  orbPass.uniforms.uN.value = n;
+}
+
+// Half-resolution bloom; only bright sources cross the threshold.
+function makeBloom(strength, radius, threshold) {
+  const b = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+  // A tighter Gaussian per mip; the stock kernel is nearly a box, so points bloom square.
+  for (const m of b.separableBlurMaterials) {
+    const c = m.uniforms.gaussianCoefficients.value, r = c.length;
+    for (let i = 0; i < r; i++) c[i] = Math.exp(-0.5 * i * i / ((r / 2.2) ** 2));
+  }
+  const full = b.setSize.bind(b);
+  b.setSize = (w, h) => full(Math.max(1, w / 2), Math.max(1, h / 2));
+  return b;
+}
+
+// Grade in linear light: tint lift, vignette, fixed grain.
+const grade = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
+    uTint: { value: new THREE.Vector3(...S.post.tint) }, uVig: { value: S.post.vig }, uVigIn: { value: S.post.vigIn }, uGrain: { value: S.post.grain },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform vec2 uRes;
+  uniform vec3 uTint;
+  uniform float uVig, uVigIn, uGrain;
+  varying vec2 vUv;
+  float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
+    vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+    c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c *= 1.0 + (h(vUv * uRes) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+    gl_FragColor = vec4(max(c, 0.0), 1.0);
+  }`,
+});
+
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(S.scene, S.camera));
+for (const p of S.passes || []) composer.addPass(p);
+composer.addPass(orbPass);
+composer.addPass(makeBloom(...S.post.bloom));
+if (S.post.haze) composer.addPass(makeBloom(S.post.haze, 1.0, 0.0));
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+let size = { w: 1, h: 1, dpr: 1 };
+function resize() {
+  const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
+  // Cap the pixel count so slow GPUs keep their frame rate.
+  const dpr = Math.max(1, Math.min(devicePixelRatio || 1, 2, Math.sqrt(2.6e6 / (w * h))));
+  size = { w, h, dpr };
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  grade.uniforms.uRes.value.set(w * dpr, h * dpr);
+  orbPass.uniforms.uAsp.value = w / h;
+  S.frame(w, h, dpr);
+  draw();
+}
+
+let visible = !document.hidden;
+function draw() {
+  if (!visible) return;
+  S.beforeRender?.(renderer);
+  placeOrbs();
+  composer.render();
+  if (!window.__ready) window.__ready = true;
+}
+
+/* Frame loop: full rate in an event, 30 fps while drifting, then sleep. */
+const reducedRM = matchMedia('(prefers-reduced-motion: reduce)');
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reducedRM.matches ? 0 : 1;
+function loop(now) {
+  raf = 0;
+  if (!visible) return;
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000);
+  lastT = now;
+  // Ambient motion eases out over 2 s once idle.
+  const awake = !reducedRM.matches && now - lastInput < SLEEP;
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  const lively = S.lively();
+  if (!lively && pace === 0) { draw(); return; }
+  try {
+    if (lively || now - lastDraw >= 31) {
+      // A drift frame covers the gap since the last draw.
+      S.update(lively ? dt : Math.min(0.1, Math.max(dt, (now - lastDraw) / 1000)), pace);
+      draw();
+      lastDraw = now;
+    }
+  } finally {
+    if (visible && !raf) raf = requestAnimationFrame(loop);
+  }
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible) { lastT = lastDraw = performance.now(); raf = requestAnimationFrame(loop); }
+}
+document.addEventListener('visibilitychange', () => {
+  visible = !document.hidden;
+  if (!visible) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw(); wake();
+});
+
+/* Pointer: a press is a tap unless it moves 8 px or holds 300 ms. */
+let press = null;
+canvas.addEventListener('pointerdown', e => { press = { x: e.clientX, y: e.clientY, t: performance.now() }; wake(); });
+canvas.addEventListener('pointerup', e => {
+  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8 && performance.now() - press.t < 300) {
+    S.tap(new THREE.Vector2(e.clientX / size.w * 2 - 1, 1 - e.clientY / size.h * 2));
+  }
+  press = null; wake();
+});
+canvas.addEventListener('pointercancel', () => { press = null; });
+
+const chips = [...document.querySelectorAll('#modes .chip')];
+function pick(id) {
+  for (const c of chips) c.setAttribute('aria-pressed', String(c.dataset.value === id));
+  S.mode(id); wake();
+}
+for (const c of chips) c.addEventListener('click', () => pick(c.dataset.value));
+document.getElementById('act').addEventListener('click', () => { S.action(); wake(); });
+addEventListener('keydown', e => {
+  const i = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+  if (i !== undefined && chips[i]) pick(chips[i].dataset.value);
+  if (e.code === 'Space' && !e.target.closest?.('button')) { e.preventDefault(); S.action(); }
+  wake();
+});
+addEventListener('resize', resize);
+
+// Compile first, so the first frame lands whole.
+(async () => {
+  // Async compile needs the parallel-compile extension.
+  if (renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(S.scene, S.camera);
+  else renderer.compile(S.scene, S.camera);
+  resize();
+  wake();
+})();
+</script>
+</body>
+</html>
