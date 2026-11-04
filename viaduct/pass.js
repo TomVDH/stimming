@@ -291,14 +291,14 @@ scene.add(sky);
 
 /* Sea: a cold, dark water between the gorge and the far peaks. */
 const SEA_Y = -60;
-const sea = new THREE.Mesh(new THREE.PlaneGeometry(9000, 3060), new THREE.ShaderMaterial({
-  uniforms: { ...K2_HAZE, uMoon: { value: MOON }, uGlint: { value: 1 } },
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(9000, 3030), new THREE.ShaderMaterial({
+  uniforms: { ...K2_HAZE, uMoon: { value: MOON }, uGlint: { value: 1 }, uHead: { value: HEAD } },
   vertexShader: /* glsl */`
     varying vec3 vW;
     void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
   fragmentShader: /* glsl */`
     ${K2_HAZE_GLSL}
-    uniform vec3 uMoon;
+    uniform vec3 uMoon, uHead;
     uniform float uGlint;
     varying vec3 vW;
     float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -320,20 +320,29 @@ const sea = new THREE.Mesh(new THREE.PlaneGeometry(9000, 3060), new THREE.Shader
       // The moon leaves a broken path of glints on the swell.
       float m = max(dot(R, uMoon), 0.0);
       col += vec3(0.75, 0.8, 1.0) * (pow(m, 1400.0) * 1.4 + pow(m, 90.0) * 0.04) * uGlint;
+      // The headlight and the warm windows leave a soft streak below the train.
+      vec3 toH = normalize(uHead - vW);
+      float hx = dot(R - toH, normalize(cross(V, vec3(0.0, 1.0, 0.0)))), hy = R.y - toH.y;
+      col += vec3(1.0, 0.75, 0.45) * exp(-hx * hx / 0.00002 - hy * hy / 0.004) * 0.6;
       // A thin cold mist lies on the far water, at the peaks' feet.
       gl_FragColor = vec4(mix(col, k2Haze(col, vW, cameraPosition), 0.35), 1.0);
     }`,
 }));
 sea.rotation.x = -Math.PI / 2;
-sea.position.set(0, SEA_Y, -1570);
+sea.position.set(0, SEA_Y, -1585);
 scene.add(sea);
-// The gorge ends in a dark back wall; the sea starts at its top.
-const backWall = new THREE.Mesh(new THREE.PlaneGeometry(700, 1400), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.003, 0.004, 0.009) }));
-backWall.position.set(0, SEA_Y - 700, -40);
-scene.add(backWall);
-const lip = new THREE.Mesh(new THREE.PlaneGeometry(700, 1.2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.05, 0.06, 0.1) }));
-lip.position.set(0, SEA_Y - 0.6, -39.5);
-scene.add(lip);
+// The gully ends in a dark rock face up to the deck, so no sea shows in it.
+{
+  const pts = [[-260, -1450], [260, -1450], [260, -18], [170, -9], [95, -15], [30, -6], [-40, -13], [-120, -4], [-200, -12], [-260, -6]];
+  const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  const face = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.004, 0.005, 0.011) }));
+  face.position.z = -60;
+  scene.add(face);
+  // A faint moonlit rim runs along its broken top edge.
+  const rim = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.slice(2).map(([x, y]) => new THREE.Vector3(x, y + 0.5, -59.5))),
+    new THREE.LineBasicMaterial({ color: new THREE.Color(0.06, 0.07, 0.12) }));
+  scene.add(rim);
+}
 
 /* ---------- K2: precipitation ---------- */
 // Snow: a very light placeholder of points around the viaduct.
