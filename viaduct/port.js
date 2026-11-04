@@ -13,6 +13,8 @@ const range = (a, b) => a + (b - a) * rnd();
 
 
 const scene = new THREE.Scene();
+// Orbs: soft glows the post chain draws round the brightest lamps.
+const orbs = [];
 const camera = new THREE.PerspectiveCamera(46, 1, 1, 30000);
 
 // The port lies across the far horizon; its centre drives the amber glow.
@@ -84,6 +86,34 @@ uniform float uHaze;
 uniform float uHazeH;
 uniform float uPortZ;
 uniform float uPortFog;
+uniform vec3 uFogLo, uFogHi;
+uniform float uTime;
+// Fog density in the port volume: soft at every side, thin with height.
+float k2fogDensity(vec3 p) {
+  float sx = smoothstep(0.0, 320.0, p.x - uFogLo.x) * smoothstep(0.0, 320.0, uFogHi.x - p.x);
+  float sz = smoothstep(0.0, 360.0, p.z - uFogLo.z) * smoothstep(0.0, 360.0, uFogHi.z - p.z);
+  float h = exp(-max(p.y, 0.0) / 220.0);
+  // Slow wisps vary the fog, so it never reads as one flat sheet.
+  float w = 0.6 + 0.8 * k2noise(p.xz * 0.004 + vec2(uTime * 0.012, uTime * 0.004));
+  return sx * sz * h * w;
+}
+// A short march sums the fog along the view ray inside the volume.
+float k2portFog(vec3 P) {
+  vec3 ro = cameraPosition, rd = P - ro;
+  float L = length(rd);
+  vec3 dir = rd / max(L, 1e-3);
+  vec3 inv = 1.0 / (dir + vec3(1e-6));
+  vec3 ta = (uFogLo - ro) * inv, tb = (uFogHi - ro) * inv;
+  float tn = clamp(max(max(min(ta.x, tb.x), min(ta.y, tb.y)), min(ta.z, tb.z)), 0.0, L);
+  float tf = clamp(min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z)), 0.0, L);
+  float seg = max(tf - tn, 0.0);
+  if (seg <= 0.0) return 0.0;
+  // Per-pixel jitter turns step bands into fine grain.
+  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float ds = seg / 10.0, sum = 0.0;
+  for (int i = 0; i < 10; i++) sum += k2fogDensity(ro + dir * (tn + (float(i) + j) * ds));
+  return sum * ds;
+}
 vec3 k2hazeColor(vec3 dir, vec3 P) {
   float face = k2face(dir);
   float near = exp(-length(P.xz - uGlow.xz) / uGlowR);
@@ -98,11 +128,8 @@ float k2hazeAmount(vec3 P) {
   // Exponential height fog integrated along the ray.
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
   float tau = dist * uHaze * max(avg, 0.0);
-  // The part of the ray past the fog front, thinned with height.
-  if (P.z < uPortZ) {
-    float seg = dist * clamp((uPortZ - P.z) / max(cameraPosition.z - P.z, 1.0), 0.0, 1.0);
-    tau += seg * uPortFog * exp(-h1 / 220.0);
-  }
+  // The port fog volume adds its own soft-edged share.
+  tau += k2portFog(P) * uPortFog;
   return 1.0 - exp(-tau);
 }
 vec3 k2haze(vec3 c, vec3 P, float keep) {
@@ -122,6 +149,9 @@ const k2 = {
   uHazeH: { value: 70 },
   uPortZ: { value: QUAY + 260 },
   uPortFog: { value: 0.05 },
+  uFogLo: { value: new THREE.Vector3(CX - 1300, -10, QUAY - 900) },
+  uFogHi: { value: new THREE.Vector3(CX + 1300, 700, QUAY + 380) },
+  uTime: { value: 0 },
 };
 
 // Light list for lit surfaces: position + power, colour + range, spot axis + cone.
@@ -587,6 +617,7 @@ const DECK = 24, HW = 7.5;
   const fs = s0 + N * (CAR + GAP) - GAP + 0.2, f = at(fs, -1.6);
   const head = new THREE.Vector3(f.x, DECK + 2.0, f.z);
   flare(head, scale(WHITE, 12), 160);
+  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2 });
   const ahead = at(fs + 80, -1.6), dir = new THREE.Vector3(ahead.x - f.x, -2.5, ahead.z - f.z).normalize();
   addLight(head, new THREE.Vector3(1, 0.95, 0.85), 4, 45, dir, Math.cos(0.3));
   addGlint(head, WHITE, 3.0, 0.5);
@@ -691,6 +722,7 @@ const buildings = [];
     m.position.set(x, h, z); m.rotation.z = -0.12; m.renderOrder = 3;
     scene.add(m);
     flare(new THREE.Vector3(x, h + 6, z), [9, 4.6, 1.2], 900);
+    orbs.push({ pos: new THREE.Vector3(x, h + 6, z), color: [1, 0.5, 0.15], k: 0.45, size: 1.4 });
     addGlint(new THREE.Vector3(x, h + 6, z), [1, 0.5, 0.12], 3.2, 0.5);
     for (let k = 0; k < 6; k++) {
       plumes.pos.push(x + 8 + k * 9, h + 20 + k * 10, z);
@@ -715,6 +747,7 @@ const buildings = [];
     const head = new THREE.Vector3(x, h + 1, z);
     const dir = new THREE.Vector3(range(-0.3, 0.3), -1, range(-0.5, -0.1)).normalize();
     flare(head, scale(WHITE, 8), 240);
+    orbs.push({ pos: head, color: [1, 0.72, 0.42], k: 0.15, size: 0.8 });
     addGlint(head, WHITE, 2.6, 0.45);
     cone(head, dir, h * 1.5, 0.55, new THREE.Vector3(1, 0.72, 0.42), 0.22);
     if (i % 2 === 0) addLight(head, new THREE.Vector3(1, 0.72, 0.42), 2.5, 50, dir, Math.cos(0.6));
@@ -736,6 +769,7 @@ const buildings = [];
   // Start the beam a little above the lamp so its base stays clean.
   cone(src.clone().addScaledVector(dir, 6), dir, len - 6, 0.06, new THREE.Vector3(0.75, 0.85, 1.0), 2.2, 0.5);
   flare(src, [3, 3.5, 4], 90);
+  orbs.push({ pos: src, color: [0.75, 0.85, 1], k: 0.3, size: 0.9 });
 }
 
 // Bake static geometry into a few draw calls.
@@ -969,5 +1003,5 @@ function frame(w, h, pr) {
     });
   }
 
-return { scene, camera, frame, dispose, post: { bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
+return { scene, camera, frame, dispose, orbs, post: { haze: 0.035, bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
 }
