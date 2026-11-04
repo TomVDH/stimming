@@ -37,7 +37,7 @@ Decisions:
 - [x] Lens flare ported from Beach walker for sun or moon, lightning, strobe and nav light; each shows only when seen through the glass
 - [ ] Checkpoint 4: Tom tests live
 - [ ] Sound: cabin drone, far thunder after each flash, shade slide
-- [ ] Menu Lab entry with an icon and a GSAP hook
+- [x] Menu Lab entry: tilted window with horizon, wing and sun; hover glints the sun with a flare streak
 - [ ] Remove the `window.__ws` test hook
 - [ ] QA: 1280 and 375 px, clean console, reduced motion, hidden tab stops the loop
 - [ ] Record the session cost
