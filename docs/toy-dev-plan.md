@@ -142,7 +142,7 @@ The repo has no test tooling. Use a throwaway Playwright script outside the repo
 
 ## 2. Sonar (`sonar`)
 
-**Scene:** a green phosphor CRT that fills the stage. It has a light barrel curve, scanlines, a soft glow, grain and a slight flicker. No bezel.
+**Scene:** military realism. A red low-light phosphor CRT fills the stage: red is the only colour, as on a darkened submarine console. It has a light barrel curve, scanlines, a soft glow, grain and a slight flicker. No bezel. (Tom, 2026-11-04)
 
 **Active mode (round display):**
 - A sweep line turns.
@@ -152,10 +152,10 @@ The repo has no test tooling. Use a throwaway Playwright script outside the repo
   - a noise-shaped seabed
   - a wreck: strong and long
   - a fish school: a cloud of weak returns
-  - a whale: it moves, and sings in Passive mode
+  - a whale: it moves, and sings on the sonogram
   - a rare odd contact: large, slow, then gone
 
-**Passive mode (waterfall):**
+**Sonogram mode (passive waterfall, a main mode):**
 - Frequency runs on x; time scrolls down.
 - Whale song shows as rising curves, a far propeller as steady tonal lines, sea noise as speckle.
 - Tap to knock the hull, which shows as a broadband stripe. This is the Spectrogram, idea 54.
@@ -164,10 +164,10 @@ The repo has no test tooling. Use a throwaway Playwright script outside the repo
 
 | Control | Content |
 |---|---|
-| Chips | Active, Passive |
+| Chips | Active, Sonogram |
 | Slider | Range |
 | Actions | Ping, Shuffle (a new sea) |
-| Settings | Phosphor (green, amber, white), persistence, curvature, scanlines, sweep speed |
+| Settings | Persistence, curvature, scanlines, sweep speed |
 | How | Tap: ping or hull knock · Drag: steer · Space: ping (mouse devices only) |
 
 **Tech:**
