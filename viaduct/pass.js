@@ -394,5 +394,7 @@ function frame(w, h, dpr) {
     });
   }
 
-return { scene, camera, frame, dispose, post: { bloom: [0.55, 0.45, 0.9], tint: [0.004, 0.006, 0.014], vig: 0.45, vigIn: 0.45, grain: 0.03 } };
+// Orbs: the headlight glows softly into the cold air.
+const orbs = [{ pos: HEAD, color: [1, 0.92, 0.8], k: 0.35, size: 0.7 }];
+return { scene, camera, frame, dispose, orbs, post: { haze: 0.04, bloom: [0.55, 0.45, 0.9], tint: [0.004, 0.006, 0.014], vig: 0.45, vigIn: 0.45, grain: 0.03 } };
 }

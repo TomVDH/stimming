@@ -105,6 +105,59 @@ function makeBloom(strength, radius, threshold) {
 }
 /* ---------- end K2 ---------- */
 
+/* ---------- K2: orbs ---------- */
+// Soft glows round the brightest lamps, squashed sideways, so light bleeds into haze.
+const ORB_N = 24;
+function makeOrbs() {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
+      uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+      uN: { value: 0 },
+      uAsp: { value: 1 },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec3 uOP[${ORB_N}];
+    uniform vec4 uOC[${ORB_N}];
+    uniform int uN;
+    uniform float uAsp;
+    varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      for (int i = 0; i < ${ORB_N}; i++) {
+        if (i >= uN) break;
+        vec2 d = vUv - uOP[i].xy;
+        float r = length(vec2(d.x * uAsp * 0.6, d.y));
+        // A tight core and a wide skirt; z holds the orb size.
+        c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  });
+}
+// Each frame, project the orbs to the screen; hidden ones get no glow.
+const tmpV = new THREE.Vector3();
+function placeOrbs(pass, s) {
+  const list = s.orbs || [];
+  // The camera matrices must be current before projecting.
+  s.camera.updateMatrixWorld();
+  let n = 0;
+  for (const o of list) {
+    if (n >= ORB_N) break;
+    tmpV.copy(o.pos).project(s.camera);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
+    pass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
+    pass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    n++;
+  }
+  pass.uniforms.uN.value = n;
+  pass.uniforms.uAsp.value = size.w / size.h;
+}
+/* ---------- end K2 ---------- */
+
 /* ---------- K2: grade ---------- */
 // Linear grade before tone mapping: haze lift, vignette, fixed grain.
 function makeGrade({ tint, vig, vigIn, grain }) {
@@ -138,13 +191,17 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 // One scene lives at a time; a switch disposes the old one.
-let cur = null, composer = null, grade = null, size = { w: 1, h: 1, dpr: 1 }, loading = 0;
+let cur = null, composer = null, grade = null, orbPass = null, size = { w: 1, h: 1, dpr: 1 }, loading = 0;
 function chain(s) {
   composer?.renderTarget1.dispose(); composer?.renderTarget2.dispose();
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(s.scene, s.camera));
+  orbPass = makeOrbs();
+  composer.addPass(orbPass);
   composer.addPass(makeBloom(...s.post.bloom));
+  // A wide, low glow lets every light bleed softly into the air.
+  if (s.post.haze) composer.addPass(makeBloom(s.post.haze, 1.0, 0.0));
   grade = makeGrade(s.post);
   composer.addPass(grade);
   composer.addPass(new OutputPass());
@@ -164,7 +221,7 @@ function resize() {
 }
 // Framing stage: the scene is still, so a frame draws only on change.
 let visible = true;
-function draw() { if (cur && visible) composer.render(); }
+function draw() { if (cur && visible) { placeOrbs(orbPass, cur); composer.render(); } }
 whenVisible(stage, v => { visible = v; if (v) draw(); });
 
 async function show(id) {
