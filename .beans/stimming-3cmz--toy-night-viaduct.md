@@ -25,9 +25,12 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [x] One page, two scenes: `viaduct/index.html` hosts `pass.js` and `port.js`; scene chips; K2 bloom and grade shared
 - [ ] Checkpoint 1: Tom approves both framings
 - [x] Framing fixes. Pass: sea, crest snow line, taller peaks, portrait wedge rhythm. Port: fog on the port, rail glints, 375 px framing
-- [ ] Motion and interaction: trains, gestures, bar (Time slider, + Train, Settings)
-- [ ] Frame loop: 30 fps drift, sleep 60 s after input, stop when hidden; reduced motion
-- [ ] Decide: Port rack focus as a moment, or off
+- [x] Volumetrics: Port fog volume, lamp orbs, wide low glow (havoc lens post as the model)
+- [x] Port motion: train runs out and back; swell, fog, plumes, flame, blinkers, searchlight
+- [ ] Port interaction: hold steers the searchlight, drag sweeps it; bar Settings and (i)
+- [ ] Pass: parked by Tom 2026-11-04; Port first
+- [x] Frame loop: 30 fps drift, sleep 60 s after input, stop when hidden; reduced motion
+- [ ] Lens flare (havoc lensflare.js) and the rack focus as hero moments
 - [ ] Sound
 - [ ] Checkpoint 2: Tom reviews motion and sound
 - [ ] Menu Lab entry: icon and `toys.viaduct` hook kept as they are
