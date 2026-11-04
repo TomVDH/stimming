@@ -3,6 +3,7 @@
 // The railway causeway is the hero; the port is a far, fogged backdrop.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 export function build() {
 // Seeded random keeps the scene the same on every load.
@@ -47,9 +48,10 @@ vec3 k2sky(vec3 dir) {
   float up = max(dir.y, 0.0);
   // Dark zenith, a cool low band, a wide amber dome over the port.
   vec3 col = vec3(0.0025, 0.003, 0.006) + uCool * 0.02 * exp(-up * 10.0);
-  col += uAmber * 0.07 * pow(face, 5.0) * exp(-up * 7.0);
+  col += uAmber * 0.05 * pow(face, 5.0) * exp(-up * 7.0);
   // The fog bank over the port glows just above the horizon.
-  col += uAmber * 0.06 * pow(face, 2.0) * exp(-up * 28.0);
+  // Its level matches the far, fogged sea, so no strip shows.
+  col += uAmber * 0.015 * pow(face, 2.0) * exp(-up * 28.0);
   if (dir.y > 0.002) {
     float t = (uCloudY - cameraPosition.y) / dir.y;
     vec3 p = cameraPosition + dir * t;
@@ -120,10 +122,6 @@ const lights = [];
 function addLight(pos, col, power, range, dir = null, cos = -2) {
   lights.push({ pos, col, power, range, dir: dir || new THREE.Vector3(0, -1, 0), cos });
 }
-// Glint list for the sea: the light sources that matter most.
-const NG = 80;
-const glints = [];
-const addGlint = (pos, col, k) => glints.push({ pos, col, k });
 
 const LIGHTS_GLSL = /* glsl */`
 uniform vec4 uLP[${NL}];
@@ -168,11 +166,6 @@ const lightU = {
   uLD: { value: Array.from({ length: NL }, () => new THREE.Vector4()) },
   uLN: { value: 0 },
 };
-const glintU = {
-  uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
-  uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
-  uGN: { value: 0 },
-};
 const projU = { uScale: { value: 1 } };
 
 const WORLD_VS = /* glsl */`
@@ -203,6 +196,98 @@ const concrete = new THREE.ShaderMaterial({
     vec3 amb = uCool * 0.006 + uAmber * 0.04 * under * max(N.y, 0.0) + uAmber * 0.008 * under;
     vec3 c = albedo * (amb + k2lights(vP, N));
     gl_FragColor = vec4(k2haze(c, vP, 1.0), 1.0);
+  }`,
+});
+
+// Window atlas: 32 x 32 cells of glass, some lit warm, some fluorescent.
+const atlas = (() => {
+  const N = 32, C = 16, cv = document.createElement('canvas');
+  cv.width = cv.height = N * C;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, N * C, N * C);
+  for (let r = 0; r < N; r++) {
+    // Each floor has a mood: fully lit, a fluorescent band, or sparse.
+    const mood = rnd(), warmFloor = mood < 0.14, fluoFloor = mood > 0.9;
+    for (let c = 0; c < N; c++) {
+      const lit = warmFloor ? rnd() < 0.85 : fluoFloor ? rnd() < 0.8 : rnd() < 0.16;
+      const fluo = fluoFloor || (!warmFloor && rnd() < 0.3);
+      const k = 0.55 + rnd() * 0.45;
+      g.fillStyle = lit ? (fluo ? `rgb(${190 * k | 0},${225 * k | 0},${255 * k | 0})` : `rgb(${255 * k | 0},${180 * k | 0},${95 * k | 0})`) : 'rgb(10,11,14)';
+      g.fillRect(c * C + 3, r * C + 4, C - 6, C - 7);
+    }
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+})();
+
+// Facades: concrete lighting plus windows from the atlas, set by floor.
+const facade = new THREE.ShaderMaterial({
+  uniforms: { ...k2, ...lightU, uWin: { value: atlas } },
+  vertexShader: /* glsl */`
+  attribute float aWin;
+  varying vec3 vP;
+  varying vec3 vN;
+  varying float vWin;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vP = w.xyz; vWin = aWin;
+    vN = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D uWin;
+  varying vec3 vP;
+  varying vec3 vN;
+  varying float vWin;
+  ${HEAD}
+  ${LIGHTS_GLSL}
+  void main() {
+    vec3 N = normalize(vN);
+    float panel = k2noise(vP.xz * 0.11 + vP.y * 0.07);
+    vec3 albedo = vec3(0.27, 0.26, 0.25) * (0.8 + 0.35 * panel);
+    float under = exp(-length(vP.xz - uGlow.xz) / uGlowR);
+    vec3 amb = uCool * 0.006 + uAmber * 0.04 * under * max(N.y, 0.0) + uAmber * 0.008 * under;
+    vec3 c = albedo * (amb + k2lights(vP, N));
+    // Walls take windows; one cell is 4.5 m wide and one floor high.
+    vec3 em = vec3(0.0);
+    if (abs(N.y) < 0.5 && vP.y > 5.0) {
+      float a = abs(N.x) > abs(N.z) ? vP.z : vP.x;
+      vec2 cell = floor(vP.xz / 60.0);
+      vec2 uv = vec2(a / 4.5, vP.y / 4.2) / 32.0 + vec2(k2hash(cell), k2hash(cell + 7.0));
+      em = texture2D(uWin, uv).rgb * 2.4 * vWin;
+    }
+    float f = k2hazeAmount(vP);
+    vec3 col = mix(c, k2hazeColor(normalize(vP - cameraPosition), vP), f);
+    gl_FragColor = vec4(col + em * (1.0 - 0.72 * f), 1.0);
+  }`,
+});
+
+// Flame: a soft tongue, white at the root, orange at the tip.
+const flameMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`
+  varying vec2 vUv;
+  varying vec3 vN;
+  varying vec3 vP;
+  void main() {
+    vUv = uv;
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vP = w.xyz;
+    vN = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec2 vUv;
+  varying vec3 vN;
+  varying vec3 vP;
+  void main() {
+    float rim = pow(abs(dot(normalize(vN), normalize(cameraPosition - vP))), 1.5);
+    float t = vUv.y;
+    vec3 c = mix(vec3(6.0, 4.6, 2.2), vec3(3.2, 0.7, 0.12), smoothstep(0.0, 0.8, t));
+    gl_FragColor = vec4(c * rim * (1.0 - t) * 0.9, 1.0);
   }`,
 });
 
@@ -353,13 +438,27 @@ function cone(pos, dir, len, halfAngle, color, k, fallK) {
 }
 
 // Geometry helpers: parts bake in place, then merge into one draw each.
-const parts = [], glowParts = [], railParts = [];
+const parts = [], glowParts = [], railParts = [], facadeParts = [];
 function box(x, y, z, w, h, d, ry = 0, list = parts, col = null) {
   const g = new THREE.BoxGeometry(w, h, d);
   if (ry) g.rotateY(ry);
   g.translate(x, y + h / 2, z);
   if (col) paint(g, col);
   list.push(g.toNonIndexed());
+}
+// A facade box carries its window strength as a vertex attribute.
+function fbox(x, y, z, w, h, d, win) {
+  const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+  g.translate(x, y + h / 2, z);
+  g.setAttribute('aWin', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(win), 1));
+  facadeParts.push(g);
+}
+// A beam between two points, for conveyors.
+function beam(a, b, w, h) {
+  const g = new THREE.BoxGeometry(w, h, a.distanceTo(b));
+  g.applyMatrix4(new THREE.Matrix4().lookAt(a, b, new THREE.Vector3(0, 1, 0)));
+  g.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  parts.push(g.toNonIndexed());
 }
 function cyl(x, y, z, r, h, seg = 24) {
   const g = new THREE.CylinderGeometry(r, r, h, seg, 1);
@@ -446,7 +545,6 @@ const DECK = 24, HW = 7.5;
     box(p.x, DECK + 1.2, p.z, 0.3, 6.2, 0.3, p.yaw);
     const head = new THREE.Vector3(p.x, DECK + 7.6, p.z);
     flare(head, scale(SODIUM, 4.5), 110);
-    if (glints.length < 46) addGlint(head, SODIUM, 2.0);
     if (s < 360) addLight(head, new THREE.Vector3(...SODIUM), 0.45, 9);
   }
 }
@@ -466,7 +564,6 @@ const DECK = 24, HW = 7.5;
     }
     const mid = at(sc, -1.6);
     addLight(new THREE.Vector3(mid.x, DECK + 2.6, mid.z), new THREE.Vector3(...WARM), 1.3, 9);
-    addGlint(new THREE.Vector3(mid.x, DECK + 2.6, mid.z), WARM, 1.4);
   }
   // Red tail at the near end, headlight at the far end.
   for (const side of [-0.9, 0.9]) {
@@ -478,47 +575,84 @@ const DECK = 24, HW = 7.5;
   const ahead = at(fs + 80, -1.6), dir = new THREE.Vector3(ahead.x - f.x, -2.5, ahead.z - f.z).normalize();
   addLight(head, new THREE.Vector3(1, 0.95, 0.85), 4, 45, dir, Math.cos(0.3));
   cone(head, dir, 110, 0.2, new THREE.Vector3(1, 0.95, 0.85), 0.7);
-  addGlint(head, WHITE, 2.4);
-  const tail = at(s0, -1.6); addGlint(new THREE.Vector3(tail.x, DECK + 1.6, tail.z), RED, 1.0);
 }
 /* ---------- end train ---------- */
 
 /* ---------- port: a dense complex strung along the horizon ---------- */
 const tops = [];
+const buildings = [];
 {
-  // Quay front: a low dark wall the fog hides at its foot.
-  // Layered massing: front rows lower, back rows taller.
-  for (let i = 0; i < 150; i++) {
-    const zr = rnd(), z = QUAY - 60 - zr * 620, x = CX + range(-1050, 1050);
-    const w = range(18, 75), d = range(18, 60), h = range(10, 40) + zr * range(10, 60);
-    box(x, 0, z, w, h, d);
-    // Window strips on the faces toward the sea.
-    if (rnd() < 0.62) {
-      const col = rnd() < 0.7 ? SODIUM : FLUO;
-      const strips = 1 + (rnd() * 4 | 0);
-      for (let k = 0; k < strips; k++) {
-        const sw = range(0.25, 0.9) * w, y = range(0.15, 0.9) * h;
-        box(x + range(-0.3, 0.3) * (w - sw), y, z + d / 2 + 0.3, sw, 1.4, 0.4, 0, glowParts, scale(col, 3.6));
-      }
+  // Blocks with setbacks; front rows lower, back rows taller.
+  for (let i = 0; i < 110; i++) {
+    const zr = rnd(), z = QUAY - 70 - zr * 620, x = CX + range(-1080, 1080);
+    let w = range(24, 80), d = range(20, 60), h = range(10, 34) + zr * range(8, 50);
+    const win = rnd() < 0.72 ? range(0.5, 1.3) : 0;
+    let y = 0;
+    for (let tier = 0; tier < 3 && h > 6; tier++) {
+      fbox(x, y, z, w, h, d, win);
+      y += h; w *= range(0.55, 0.8); d *= range(0.6, 0.85); h *= range(0.35, 0.6);
+      if (rnd() < 0.45) break;
     }
-    // Deck lights on roofs and corners.
-    if (rnd() < 0.7) flare(new THREE.Vector3(x + range(-0.5, 0.5) * w, h + 1, z + d / 2), scale(rnd() < 0.8 ? SODIUM : WHITE, 3.5), 70);
+    buildings.push({ x, z, top: y, w, d });
+    // Roof plant: small boxes and a vent or two.
+    for (let k = 0; k < 2 + (rnd() * 3 | 0); k++) box(x + range(-0.4, 0.4) * w, y, z + range(-0.4, 0.4) * d, range(3, 8), range(2, 5), range(3, 8));
+    if (rnd() < 0.6) flare(new THREE.Vector3(x + range(-0.5, 0.5) * w, y + 1, z + d / 2), scale(rnd() < 0.8 ? SODIUM : WHITE, 3.2), 60);
   }
   // Slim towers break the skyline.
-  for (let i = 0; i < 14; i++) {
-    const x = CX + range(-900, 900), z = QUAY - range(200, 650), h = range(90, 170), w = range(10, 18);
-    box(x, 0, z, w, h, w);
-    tops.push(new THREE.Vector3(x, h + 2, z));
-    for (let y = 12; y < h; y += range(9, 16)) if (rnd() < 0.5) box(x, y, z + w / 2 + 0.3, w * 0.8, 1.1, 0.3, 0, glowParts, scale(FLUO, 3));
+  for (let i = 0; i < 10; i++) {
+    const x = CX + range(-900, 900), z = QUAY - range(250, 650), h = range(90, 170), w = range(12, 20);
+    fbox(x, 0, z, w, h, w, range(0.6, 1.2));
+    box(x, h, z, w * 0.5, 6, w * 0.5);
+    tops.push(new THREE.Vector3(x, h + 8, z));
   }
-  // Tank farm.
-  for (let i = 0; i < 18; i++) {
+  // Pipe racks run between blocks, with lights along them.
+  for (let i = 0; i < 16; i++) {
+    const x0 = CX + range(-1000, 800), L = range(70, 240), z = QUAY - range(60, 420), y = range(8, 14);
+    box(x0 + L / 2, y, z, L, 1.0, 7);
+    for (const dy of [1.4, 2.6]) box(x0 + L / 2, y + dy, z + range(-2, 2), L, 0.9, 0.9);
+    for (let px = x0; px <= x0 + L; px += 12) { box(px, 0, z - 3, 0.8, y, 0.8); box(px, 0, z + 3, 0.8, y, 0.8); }
+    for (let px = x0 + 10; px < x0 + L; px += 30) flare(new THREE.Vector3(px, y + 4, z + 4), scale(SODIUM, 2.6), 40);
+  }
+  // Conveyor gantries climb from the quay onto block roofs.
+  for (let i = 0; i < 7; i++) {
+    const t = buildings[(rnd() * buildings.length) | 0];
+    const a = new THREE.Vector3(t.x + range(-120, 120), 2, QUAY - range(10, 40)), b = new THREE.Vector3(t.x, t.top, t.z);
+    beam(a, b, 4, 3.2);
+    for (let k = 1; k < 4; k++) flare(a.clone().lerp(b, k / 4).add(new THREE.Vector3(0, 2.4, 0)), scale(WHITE, 2.2), 36);
+  }
+  // Distillation columns with lit platforms and ladder lights.
+  for (let i = 0; i < 9; i++) {
+    const x = CX + range(-850, 850), z = QUAY - range(150, 450), r = range(2.5, 5), h = range(55, 115);
+    cyl(x, 0, z, r, h, 16);
+    for (let y = 14; y < h - 4; y += 14) {
+      cyl(x, y, z, r + 1.8, 0.5, 16);
+      for (const ang of [-0.9, 0, 0.9]) flare(new THREE.Vector3(x + Math.sin(ang) * (r + 1.8), y + 1.2, z + Math.cos(ang) * (r + 1.8)), scale(WHITE, 2.4), 34);
+    }
+    for (let y = 6; y < h; y += 5) flare(new THREE.Vector3(x + r * 0.7, y, z + r + 0.6), scale(SODIUM, 1.6), 22);
+    tops.push(new THREE.Vector3(x, h + 2, z));
+  }
+  // Tank farm with ring lights round each roof.
+  for (let i = 0; i < 16; i++) {
     const r = range(12, 22), h = range(14, 26), x = CX + range(-1000, 1000), z = QUAY - range(80, 300);
     cyl(x, 0, z, r, h); dome(x, h, z, r);
-    flare(new THREE.Vector3(x, h + r * 0.32 + 1, z), scale(RED, 3), 50);
+    for (let k = 0; k < 10; k++) { const ang = k / 10 * Math.PI * 2; flare(new THREE.Vector3(x + Math.cos(ang) * r, h + 0.8, z + Math.sin(ang) * r), scale(SODIUM, 2.2), 34); }
+  }
+  // Two cooling towers with lit plumes.
+  for (const [x, z] of [[CX - 620, QUAY - 520], [CX - 520, QUAY - 610]]) {
+    const pts = [];
+    for (let k = 0; k <= 12; k++) { const y = k / 12 * 120, wy = (y - 88) / 88; pts.push(new THREE.Vector2(30 + 18 * wy * wy * (y < 88 ? 1 : 0.35), y)); }
+    const g = new THREE.LatheGeometry(pts, 48);
+    g.translate(x, 0, z);
+    parts.push(g.toNonIndexed());
+    for (let k = 0; k < 4; k++) flare(new THREE.Vector3(x + (k - 1.5) * 14, 121, z + 25), scale(RED, 5), 120);
+    for (let k = 0; k < 8; k++) {
+      plumes.pos.push(x + k * k * 3 + range(-6, 6), 135 + k * 18, z + range(-6, 6));
+      plumes.size.push((70 + k * 22) * 400);
+      plumes.lit.push(1.4 - k / 7);
+    }
   }
   // Stacks with lit vapour drifting off downwind.
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 8; i++) {
     const h = range(140, 260), x = CX + range(-950, 950), z = QUAY - range(250, 600), r = range(3.5, 6);
     cyl(x, 0, z, r, h, 16);
     tops.push(new THREE.Vector3(x, h + 2, z));
@@ -526,6 +660,23 @@ const tops = [];
       plumes.pos.push(x + k * k * 2.2 + range(-4, 4), h + 6 + k * 9, z + range(-4, 4));
       plumes.size.push((26 + k * 12) * 400);
       plumes.lit.push(1 - k / 7);
+    }
+  }
+  // One flare stack: a small live flame lights its own smoke.
+  {
+    const x = CX + 430, z = QUAY - 380, h = 150;
+    cyl(x, 0, z, 1.8, h, 12);
+    box(x, h - 2, z, 6, 0.6, 6);
+    const g = new THREE.ConeGeometry(2.6, 15, 16, 1, true);
+    g.translate(0, 7.5, 0);
+    const m = new THREE.Mesh(g, flameMat);
+    m.position.set(x, h, z); m.rotation.z = -0.12; m.renderOrder = 3;
+    scene.add(m);
+    flare(new THREE.Vector3(x, h + 6, z), [9, 4.6, 1.2], 900);
+    for (let k = 0; k < 6; k++) {
+      plumes.pos.push(x + 8 + k * 9, h + 20 + k * 10, z);
+      plumes.size.push((30 + k * 14) * 400);
+      plumes.lit.push(3.2 - k * 0.45);
     }
   }
   // Gantry cranes along the quay, booms over the water, lights along the booms.
@@ -545,13 +696,10 @@ const tops = [];
     const dir = new THREE.Vector3(range(-0.3, 0.3), -1, range(-0.5, -0.1)).normalize();
     flare(head, scale(WHITE, 8), 240);
     cone(head, dir, h * 1.5, 0.55, new THREE.Vector3(1, 0.72, 0.42), 0.22);
-    addGlint(head, [1, 0.75, 0.45], 2.4);
     if (i % 2 === 0) addLight(head, new THREE.Vector3(1, 0.72, 0.42), 2.5, 50, dir, Math.cos(0.6));
   }
   // Red blinkers on every tall top.
-  for (const t of tops) { flare(t, scale(RED, 7), 200); if (glints.length < NG - 8) addGlint(t, RED, 0.6); }
-  // A few broad glints stand in for the window field on the sea.
-  for (let i = 0; i < 10 && glints.length < NG - 1; i++) addGlint(new THREE.Vector3(CX + range(-900, 900), range(15, 40), QUAY - range(60, 200)), SODIUM, 1.0);
+  for (const t of tops) flare(t, scale(RED, 7), 200);
 }
 /* ---------- end port ---------- */
 
@@ -570,6 +718,7 @@ const tops = [];
 // Bake static geometry into a few draw calls.
 scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
 scene.add(new THREE.Mesh(mergeGeometries(railParts), steel));
+scene.add(new THREE.Mesh(mergeGeometries(facadeParts), facade));
 scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
 {
   const g = new THREE.BufferGeometry();
@@ -584,18 +733,13 @@ scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
   const q = new THREE.Points(h, plumeMat); q.renderOrder = 1; q.frustumCulled = false; scene.add(q);
 }
 
-// Upload the light and glint lists.
+// Upload the light list.
 lights.slice(0, NL).forEach((l, i) => {
   lightU.uLP.value[i].set(l.pos.x, l.pos.y, l.pos.z, l.power);
   lightU.uLC.value[i].set(l.col.x, l.col.y, l.col.z, l.range);
   lightU.uLD.value[i].set(l.dir.x, l.dir.y, l.dir.z, l.cos);
 });
 lightU.uLN.value = Math.min(NL, lights.length);
-glints.slice(0, NG).forEach((g, i) => {
-  glintU.uGP.value[i].set(g.pos.x, g.pos.y, g.pos.z, g.k);
-  glintU.uGC.value[i].set(g.col[0], g.col[1], g.col[2], 0);
-});
-glintU.uGN.value = Math.min(NG, glints.length);
 
 /* Sky dome behind everything. */
 {
@@ -608,51 +752,82 @@ glintU.uGN.value = Math.min(NG, glints.length);
   scene.add(m);
 }
 
-/* Sea: noise normals; every listed light leaves a long broken streak. */
-{
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000, 1, 1), new THREE.ShaderMaterial({
-    uniforms: { ...k2, ...glintU },
-    vertexShader: WORLD_VS,
-    fragmentShader: /* glsl */`
+/* Sea: a calm, heavy swell over a half-resolution planar reflection. */
+const sea = new Reflector(new THREE.PlaneGeometry(9000, 9000, 1, 1), {
+  textureWidth: 512, textureHeight: 512, clipBias: 0.002,
+  shader: {
+    name: 'PortSea',
+    uniforms: { ...k2, color: { value: new THREE.Color() }, tDiffuse: { value: null }, textureMatrix: { value: null }, uFov: { value: new THREE.Vector2(1, 1) } },
+    vertexShader: /* glsl */`
+    uniform mat4 textureMatrix;
+    varying vec4 vR;
     varying vec3 vP;
-    varying vec3 vN;
-    uniform vec4 uGP[${NG}];
-    uniform vec4 uGC[${NG}];
-    uniform int uGN;
+    void main() {
+      vR = textureMatrix * vec4(position, 1.0);
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec2 uFov;
+    varying vec4 vR;
+    varying vec3 vP;
     ${HEAD}
-    float waves(vec2 p) {
-      return k2fbm(p * vec2(0.045, 0.16)) + 0.5 * k2fbm(p * vec2(0.13, 0.42) + 9.0);
+    // One long swell train: slope of a sine, faded out with distance.
+    vec2 swell(vec2 p, vec2 dir, float len, float amp, float ph, float dist) {
+      float k = 6.2832 / len;
+      float fade = 1.0 - smoothstep(len * 9.0, len * 24.0, dist);
+      return dir * amp * cos(dot(p, dir) * k + ph) * fade;
     }
     void main() {
       vec3 V = normalize(cameraPosition - vP);
       float dist = length(cameraPosition - vP);
-      // Slope from finite differences; far water flattens to stay calm.
-      float e = 0.6;
-      float h = waves(vP.xz);
-      vec2 grad = vec2(waves(vP.xz + vec2(e, 0.0)) - h, waves(vP.xz + vec2(0.0, e)) - h) / e;
-      float k = 0.55 * mix(1.0, 0.35, smoothstep(60.0, 1400.0, dist));
-      vec3 N = normalize(vec3(-grad.x * k, 1.0, -grad.y * k));
-      vec3 R = reflect(-V, N);
-      R.y = abs(R.y);
-      float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
-      vec3 col = k2sky(R) * min(fres, 0.35) * 0.9 + vec3(0.002, 0.0025, 0.004);
-      // Glints: narrow across, long along the view, so streaks run vertical.
-      vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
-      for (int i = 0; i < ${NG}; i++) {
-        if (i >= uGN) break;
-        vec3 d = normalize(uGP[i].xyz - vP);
-        vec3 err = R - d;
-        float ex = dot(err, right), ey = err.y;
-        float s = exp(-(ex * ex) / (0.0045 * 0.0045) - (ey * ey) / (0.05 * 0.05));
-        col += uGC[i].rgb * uGP[i].w * s * 0.45;
+      vec2 p = vP.xz;
+      // Broad swell at a few scales, crests mostly facing the camera.
+      vec2 sl = swell(p, normalize(vec2(0.25, 1.0)), 95.0, 0.05, 0.0, dist)
+              + swell(p, normalize(vec2(-0.4, 1.0)), 52.0, 0.04, 1.7, dist)
+              + swell(p, normalize(vec2(0.55, 1.0)), 27.0, 0.032, 4.1, dist)
+              + swell(p, normalize(vec2(-0.15, 1.0)), 14.0, 0.022, 2.3, dist);
+      // A slow irregular heave breaks the regular trains.
+      float e = 4.0, h0 = k2fbm(p * 0.006);
+      sl += vec2(k2fbm((p + vec2(e, 0.0)) * 0.006) - h0, k2fbm((p + vec2(0.0, e)) * 0.006) - h0) / e * 1.5;
+      // Fine ripple only close to the camera.
+      float nearK = 1.0 - smoothstep(50.0, 180.0, dist);
+      if (nearK > 0.0) {
+        float r0 = k2noise(p * 0.45);
+        sl += vec2(k2noise(p * 0.45 + vec2(0.3, 0.0)) - r0, k2noise(p * 0.45 + vec2(0.0, 0.3)) - r0) * 0.12 * nearK;
       }
+      vec3 N = normalize(vec3(-sl.x, 1.0, -sl.y));
+      // Grazing views stretch the reflection along the view, not across it.
+      float graze = max(V.y, 0.04);
+      vec2 off = vec2(N.x * 0.7 * graze * uFov.x, -N.z * 0.7 * uFov.y);
+      vec2 uv = vR.xy / vR.w;
+      // Sub-pixel ripple smears each light into a long, smooth vertical streak.
+      float stretch = 0.06 + 0.1 * (1.0 - smoothstep(0.04, 0.4, graze));
+      vec3 refl = vec3(0.0);
+      float wsum = 0.0;
+      for (int i = -6; i <= 6; i++) {
+        float t = float(i) / 6.0;
+        float wgt = exp(-t * t * 2.2);
+        vec2 o = off + vec2(sl.x * 0.03 * t, t * stretch);
+        refl += texture2D(tDiffuse, clamp(uv + o, 0.001, 0.999)).rgb * wgt;
+        wsum += wgt;
+      }
+      refl /= wsum;
+      // Swell crests break the streaks gently.
+      refl *= 0.7 + 0.6 * smoothstep(-0.025, 0.035, -sl.y);
+      float cosT = max(dot(N, V), 0.0);
+      float F = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
+      vec3 deep = vec3(0.0012, 0.002, 0.0032);
+      vec3 col = deep * (1.0 - F) + refl * F * vec3(0.88, 0.96, 1.05);
       gl_FragColor = vec4(k2haze(col, vP, 0.85), 1.0);
     }`,
-  }));
-  sea.rotation.x = -Math.PI / 2;
-  sea.position.set(0, 0, -2000);
-  scene.add(sea);
-}
+  },
+});
+sea.rotation.x = -Math.PI / 2;
+sea.position.set(0, 0, -2000);
+scene.add(sea);
 
 /* ---------- K2: precipitation ---------- */
 // Light rain around the camera; drops brighten where light falls on them.
@@ -714,12 +889,17 @@ function frame(w, h, pr) {
     camera.lookAt(-60, -100, -1500);
   }
   camera.updateProjectionMatrix();
+  // The reflection renders at half resolution.
+  sea.getRenderTarget().setSize(Math.max(1, Math.round(w * pr / 2)), Math.max(1, Math.round(h * pr / 2)));
+  const vf = THREE.MathUtils.degToRad(camera.fov);
+  sea.material.uniforms.uFov.value.set(1 / (2 * Math.atan(Math.tan(vf / 2) * camera.aspect)), 1 / vf);
   // Point sizes follow the projected pixel scale.
   projU.uScale.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) / 400;
 }
 
   // Dispose frees every geometry, material and texture this scene made.
   function dispose() {
+    sea.dispose();
     scene.traverse(o => {
       o.geometry?.dispose();
       for (const m of [].concat(o.material || [])) { for (const v of Object.values(m.uniforms || {})) v.value?.isTexture && v.value.dispose(); m.map?.dispose(); m.dispose(); }
