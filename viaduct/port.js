@@ -13,6 +13,8 @@ const range = (a, b) => a + (b - a) * rnd();
 
 
 const scene = new THREE.Scene();
+// Orbs: soft glows the post chain draws round the brightest lamps.
+const orbs = [];
 const camera = new THREE.PerspectiveCamera(46, 1, 1, 30000);
 
 // The port lies across the far horizon; its centre drives the amber glow.
@@ -84,6 +86,34 @@ uniform float uHaze;
 uniform float uHazeH;
 uniform float uPortZ;
 uniform float uPortFog;
+uniform vec3 uFogLo, uFogHi;
+uniform float uTime;
+// Fog density in the port volume: soft at every side, thin with height.
+float k2fogDensity(vec3 p) {
+  float sx = smoothstep(0.0, 320.0, p.x - uFogLo.x) * smoothstep(0.0, 320.0, uFogHi.x - p.x);
+  float sz = smoothstep(0.0, 360.0, p.z - uFogLo.z) * smoothstep(0.0, 360.0, uFogHi.z - p.z);
+  float h = exp(-max(p.y, 0.0) / 220.0);
+  // Slow wisps vary the fog, so it never reads as one flat sheet.
+  float w = 0.6 + 0.8 * k2noise(p.xz * 0.004 + vec2(uTime * 0.012, uTime * 0.004));
+  return sx * sz * h * w;
+}
+// A short march sums the fog along the view ray inside the volume.
+float k2portFog(vec3 P) {
+  vec3 ro = cameraPosition, rd = P - ro;
+  float L = length(rd);
+  vec3 dir = rd / max(L, 1e-3);
+  vec3 inv = 1.0 / (dir + vec3(1e-6));
+  vec3 ta = (uFogLo - ro) * inv, tb = (uFogHi - ro) * inv;
+  float tn = clamp(max(max(min(ta.x, tb.x), min(ta.y, tb.y)), min(ta.z, tb.z)), 0.0, L);
+  float tf = clamp(min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z)), 0.0, L);
+  float seg = max(tf - tn, 0.0);
+  if (seg <= 0.0) return 0.0;
+  // Per-pixel jitter turns step bands into fine grain.
+  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float ds = seg / 10.0, sum = 0.0;
+  for (int i = 0; i < 10; i++) sum += k2fogDensity(ro + dir * (tn + (float(i) + j) * ds));
+  return sum * ds;
+}
 vec3 k2hazeColor(vec3 dir, vec3 P) {
   float face = k2face(dir);
   float near = exp(-length(P.xz - uGlow.xz) / uGlowR);
@@ -98,11 +128,8 @@ float k2hazeAmount(vec3 P) {
   // Exponential height fog integrated along the ray.
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
   float tau = dist * uHaze * max(avg, 0.0);
-  // The part of the ray past the fog front, thinned with height.
-  if (P.z < uPortZ) {
-    float seg = dist * clamp((uPortZ - P.z) / max(cameraPosition.z - P.z, 1.0), 0.0, 1.0);
-    tau += seg * uPortFog * exp(-h1 / 220.0);
-  }
+  // The port fog volume adds its own soft-edged share.
+  tau += k2portFog(P) * uPortFog;
   return 1.0 - exp(-tau);
 }
 vec3 k2haze(vec3 c, vec3 P, float keep) {
@@ -122,6 +149,9 @@ const k2 = {
   uHazeH: { value: 70 },
   uPortZ: { value: QUAY + 260 },
   uPortFog: { value: 0.05 },
+  uFogLo: { value: new THREE.Vector3(CX - 1300, -10, QUAY - 900) },
+  uFogHi: { value: new THREE.Vector3(CX + 1300, 700, QUAY + 380) },
+  uTime: { value: 0 },
 };
 
 // Light list for lit surfaces: position + power, colour + range, spot axis + cone.
@@ -281,6 +311,7 @@ const facade = new THREE.ShaderMaterial({
 
 // Flame: a soft tongue, white at the root, orange at the tip.
 const flameMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: k2.uTime },
   transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
   vertexShader: /* glsl */`
   varying vec2 vUv;
@@ -297,11 +328,14 @@ const flameMat = new THREE.ShaderMaterial({
   varying vec2 vUv;
   varying vec3 vN;
   varying vec3 vP;
+  uniform float uTime;
   void main() {
     float rim = pow(abs(dot(normalize(vN), normalize(cameraPosition - vP))), 1.5);
-    float t = vUv.y;
+    // The flame flickers and licks upward.
+    float t = clamp(vUv.y + 0.12 * sin(uTime * 11.0 + vUv.x * 6.3) * vUv.y, 0.0, 1.0);
     vec3 c = mix(vec3(6.0, 4.6, 2.2), vec3(3.2, 0.7, 0.12), smoothstep(0.0, 0.8, t));
-    gl_FragColor = vec4(c * rim * (1.0 - t) * 0.9, 1.0);
+    float flick = 0.8 + 0.2 * sin(uTime * 17.0) * sin(uTime * 7.3 + 1.7);
+    gl_FragColor = vec4(c * rim * (1.0 - t) * 0.9 * flick, 1.0);
   }`,
 });
 
@@ -349,11 +383,18 @@ const flareMat = new THREE.ShaderMaterial({
   attribute vec3 color;
   attribute float size;
   uniform float uScale;
+  uniform float uTime;
   varying vec3 vC;
   varying vec3 vP;
   void main() {
     vec4 w = modelMatrix * vec4(position, 1.0);
     vP = w.xyz; vC = color;
+    // Pure red lamps are warning lights: each blinks on its own beat.
+    float red = step(vC.g * 6.0 + 0.2, vC.r);
+    float ph = fract(sin(dot(position.xz, vec2(12.9898, 78.233))) * 43758.5453);
+    float b = fract(uTime * 0.45 + ph);
+    float on = smoothstep(0.0, 0.06, b) * (1.0 - smoothstep(0.45, 0.55, b));
+    vC *= mix(1.0, 0.12 + 0.88 * on, red);
     vec4 mv = viewMatrix * w;
     gl_PointSize = clamp(size * uScale / -mv.z, 2.0, 48.0);
     gl_Position = projectionMatrix * mv;
@@ -378,10 +419,13 @@ const plumeMat = new THREE.ShaderMaterial({
   attribute float size;
   attribute float lit;
   uniform float uScale;
+  uniform float uTime;
   varying float vLit;
   varying vec3 vP;
   void main() {
-    vec4 w = modelMatrix * vec4(position, 1.0);
+    // Each puff sways a little in the wind.
+    vec3 sway = vec3(sin(uTime * 0.21 + position.y * 0.05) * 3.0, sin(uTime * 0.13 + position.x * 0.03) * 1.5, 0.0);
+    vec4 w = modelMatrix * vec4(position + sway, 1.0);
     vP = w.xyz; vLit = lit;
     vec4 mv = viewMatrix * w;
     gl_PointSize = size * uScale / -mv.z;
@@ -394,7 +438,7 @@ const plumeMat = new THREE.ShaderMaterial({
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     float r = length(c) * 2.0;
-    float n = k2noise(gl_PointCoord * 4.0 + vP.xy * 0.01);
+    float n = k2noise(gl_PointCoord * 4.0 + vP.xy * 0.01 + vec2(uTime * 0.05, -uTime * 0.09));
     float a = smoothstep(1.0, 0.0, r) * (0.55 + 0.45 * n);
     // Lit from below: brighter at the bottom of each puff.
     vec3 col = uAmber * (0.03 + 0.06 * vLit) * (1.0 + 0.8 * c.y);
@@ -564,34 +608,78 @@ const DECK = 24, HW = 7.5;
 }
 /* ---------- end causeway ---------- */
 
-/* ---------- train: mid-ground, outbound to the port ---------- */
-{
-  const s0 = 80, CAR = 23, GAP = 1.2, N = 4;
-  for (let i = 0; i < N; i++) {
-    const sc = s0 + i * (CAR + GAP) + CAR / 2, c = at(sc, -1.6);
-    box(c.x, DECK + 0.7, c.z, 3.1, 3.7, CAR, c.yaw);
-    box(c.x, DECK + 4.4, c.z, 2.6, 0.35, CAR - 1, c.yaw);
-    // The lit window band runs both sides of each car.
-    for (const side of [-1, 1]) for (let k = 0; k < 9; k++) {
-      const w = at(sc - CAR / 2 + 1.9 + k * 2.4, -1.6 + side * 1.57);
-      box(w.x, DECK + 2.2, w.z, 0.06, 1.0, 1.8, w.yaw, glowParts, scale(WARM, 2.0));
-    }
-    const mid = at(sc, -1.6);
-    addLight(new THREE.Vector3(mid.x, DECK + 2.6, mid.z), new THREE.Vector3(...WARM), 1.3, 9);
-    addGlint(new THREE.Vector3(mid.x, DECK + 2.4, mid.z), WARM, 1.4, 0.16);
-  }
-  // Red tail at the near end, headlight at the far end.
-  for (const side of [-0.9, 0.9]) {
-    const t = at(s0 - 0.1, -1.6 + side); flare(new THREE.Vector3(t.x, DECK + 1.6, t.z), scale(RED, 6), 70);
-  }
-  const fs = s0 + N * (CAR + GAP) - GAP + 0.2, f = at(fs, -1.6);
-  const head = new THREE.Vector3(f.x, DECK + 2.0, f.z);
-  flare(head, scale(WHITE, 12), 160);
-  const ahead = at(fs + 80, -1.6), dir = new THREE.Vector3(ahead.x - f.x, -2.5, ahead.z - f.z).normalize();
-  addLight(head, new THREE.Vector3(1, 0.95, 0.85), 4, 45, dir, Math.cos(0.3));
-  addGlint(head, WHITE, 3.0, 0.5);
-  cone(head, dir, 110, 0.2, new THREE.Vector3(1, 0.95, 0.85), 0.7);
+/* ---------- train: runs the causeway out to the port and back ---------- */
+// Past either end of the curve, the track runs on along its tangent.
+function atX(s, side = 0) {
+  if (s >= 0 && s <= LEN) return at(s, side);
+  const e = s < 0 ? 0 : LEN, c = at(e, side), d = s - e;
+  return { x: c.x + c.tan.x * d, z: c.z + c.tan.y * d, yaw: c.yaw, tan: c.tan };
 }
+const train = (() => {
+  const CAR = 23, GAP = 1.2, N = 4, SPAN = N * (CAR + GAP) - GAP, TRACK = -1.6;
+  // One car, built at the origin and placed each frame.
+  const body = mergeGeometries([
+    new THREE.BoxGeometry(3.1, 3.7, CAR).translate(0, 0.7 + 1.85, 0).toNonIndexed(),
+    new THREE.BoxGeometry(2.6, 0.35, CAR - 1).translate(0, 4.4 + 0.175, 0).toNonIndexed(),
+  ]);
+  const wins = [];
+  for (const side of [-1, 1]) for (let k = 0; k < 9; k++) {
+    const g = new THREE.BoxGeometry(0.06, 1.0, 1.8).translate(side * 1.57, 2.2 + 0.5, -CAR / 2 + 1.9 + k * 2.4);
+    paint(g, scale(WARM, 2.0));
+    wins.push(g.toNonIndexed());
+  }
+  const winG = mergeGeometries(wins);
+  const cars = [];
+  for (let i = 0; i < N; i++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(body, concrete), new THREE.Mesh(winG, glowMat));
+    scene.add(g);
+    cars.push(g);
+  }
+  // Lamps: two tail lights and the headlight, as their own small flare set.
+  const lampG = new THREE.BufferGeometry();
+  lampG.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(9), 3).setUsage(THREE.DynamicDrawUsage));
+  // The tail is orange-red, so the warning-light blink skips it.
+  lampG.setAttribute('color', new THREE.Float32BufferAttribute([...scale([1, 0.2, 0.1], 6), ...scale([1, 0.2, 0.1], 6), ...scale(WHITE, 12)], 3));
+  lampG.setAttribute('size', new THREE.Float32BufferAttribute([70, 70, 160], 1));
+  const lamps = new THREE.Points(lampG, flareMat);
+  lamps.renderOrder = 3; lamps.frustumCulled = false; scene.add(lamps);
+  const head = new THREE.Vector3();
+  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2 });
+  // Light list slots: one warm lamp per car, then the headlight.
+  const carL = [], carG = [];
+  for (let i = 0; i < N; i++) { carL.push(lights.length); addLight(new THREE.Vector3(), new THREE.Vector3(...WARM), 1.3, 9); carG.push(glints.length); addGlint(new THREE.Vector3(), WARM, 1.4, 0.16); }
+  const headL = lights.length; addLight(new THREE.Vector3(), new THREE.Vector3(1, 0.95, 0.85), 4, 45, new THREE.Vector3(0, 0, -1), Math.cos(0.3));
+  const headG = glints.length; addGlint(new THREE.Vector3(), WHITE, 3.0, 0.5);
+  const beam = cone(new THREE.Vector3(), new THREE.Vector3(0, 0, -1), 110, 0.2, new THREE.Vector3(1, 0.95, 0.85), 0.7);
+  const Y = new THREE.Vector3(0, -1, 0), d = new THREE.Vector3(), p = new THREE.Vector3();
+  // Place the train: s is the head's place on the track, dir its heading.
+  function place(s, dir, sea) {
+    for (let i = 0; i < N; i++) {
+      const sc = s - dir * (i * (CAR + GAP) + CAR / 2), c = atX(sc, TRACK);
+      cars[i].position.set(c.x, DECK, c.z);
+      cars[i].rotation.y = c.yaw;
+      p.set(c.x, DECK + 2.6, c.z);
+      lights[carL[i]].pos.copy(p);
+      if (sea) sea.material.uniforms.uGP.value[carG[i]].set(p.x, DECK + 2.4, p.z, 1.4);
+    }
+    const h = atX(s + dir * 0.2, TRACK), ahead = atX(s + dir * 80, TRACK);
+    head.set(h.x, DECK + 2.0, h.z);
+    d.set(ahead.x - h.x, -2.5, ahead.z - h.z).normalize();
+    lights[headL].pos.copy(head); lights[headL].dir.copy(d);
+    if (sea) sea.material.uniforms.uGP.value[headG].set(head.x, head.y, head.z, 3.0);
+    beam.position.copy(head);
+    beam.quaternion.setFromUnitVectors(Y, d);
+    const pos = lampG.attributes.position;
+    for (const [k, side] of [[0, -0.9], [1, 0.9]]) { const t = atX(s - dir * (SPAN + 0.1), TRACK + side); pos.setXYZ(k, t.x, DECK + 1.6, t.z); }
+    pos.setXYZ(2, head.x, head.y, head.z);
+    pos.needsUpdate = true;
+  }
+  function show(on) { for (const c of cars) c.visible = on; lamps.visible = beam.visible = on; }
+  return { place, show, SPAN };
+})();
+// The first frame shows the train mid-ground, outbound.
+train.place(175, 1, null);
 /* ---------- end train ---------- */
 
 /* ---------- port: a dense complex strung along the horizon ---------- */
@@ -691,6 +779,7 @@ const buildings = [];
     m.position.set(x, h, z); m.rotation.z = -0.12; m.renderOrder = 3;
     scene.add(m);
     flare(new THREE.Vector3(x, h + 6, z), [9, 4.6, 1.2], 900);
+    orbs.push({ pos: new THREE.Vector3(x, h + 6, z), color: [1, 0.5, 0.15], k: 0.45, size: 1.4 });
     addGlint(new THREE.Vector3(x, h + 6, z), [1, 0.5, 0.12], 3.2, 0.5);
     for (let k = 0; k < 6; k++) {
       plumes.pos.push(x + 8 + k * 9, h + 20 + k * 10, z);
@@ -715,6 +804,7 @@ const buildings = [];
     const head = new THREE.Vector3(x, h + 1, z);
     const dir = new THREE.Vector3(range(-0.3, 0.3), -1, range(-0.5, -0.1)).normalize();
     flare(head, scale(WHITE, 8), 240);
+    orbs.push({ pos: head, color: [1, 0.72, 0.42], k: 0.15, size: 0.8 });
     addGlint(head, WHITE, 2.6, 0.45);
     cone(head, dir, h * 1.5, 0.55, new THREE.Vector3(1, 0.72, 0.42), 0.22);
     if (i % 2 === 0) addLight(head, new THREE.Vector3(1, 0.72, 0.42), 2.5, 50, dir, Math.cos(0.6));
@@ -727,22 +817,33 @@ const buildings = [];
 /* ---------- end port ---------- */
 
 /* One searchlight from the tallest stack, up into the cloud deck. */
-{
+const search = (() => {
   const t = tops.slice().sort((a, b) => b.y - a.y)[0];
   const src = new THREE.Vector3(t.x, t.y - 4, t.z);
   const dir = new THREE.Vector3(-0.5, 1, 0.55).normalize();
-  const len = (CLOUD_Y - src.y) / dir.y;
-  k2.uSearchHit.value.copy(src).addScaledVector(dir, len);
   // Start the beam a little above the lamp so its base stays clean.
-  cone(src.clone().addScaledVector(dir, 6), dir, len - 6, 0.06, new THREE.Vector3(0.75, 0.85, 1.0), 2.2, 0.5);
+  const m = cone(src.clone().addScaledVector(dir, 6), dir, 100, 0.06, new THREE.Vector3(0.75, 0.85, 1.0), 2.2, 0.5);
   flare(src, [3, 3.5, 4], 90);
-}
+  orbs.push({ pos: src, color: [0.75, 0.85, 1], k: 0.3, size: 0.9 });
+  const Y = new THREE.Vector3(0, -1, 0);
+  // Aim the beam; it ends where it meets the cloud deck.
+  function aim(x, z) {
+    dir.set(x, 1, z).normalize();
+    const len = (CLOUD_Y - src.y) / dir.y;
+    k2.uSearchHit.value.copy(src).addScaledVector(dir, len);
+    m.position.copy(src).addScaledVector(dir, 6);
+    m.quaternion.setFromUnitVectors(Y, dir);
+    m.scale.setScalar(len - 6);
+  }
+  aim(-0.5, 0.55);
+  return { aim };
+})();
 
 // Bake static geometry into a few draw calls.
-scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
-scene.add(new THREE.Mesh(mergeGeometries(railParts), steel));
-scene.add(new THREE.Mesh(mergeGeometries(facadeParts), facade));
-scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
+if (parts.length) scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
+if (railParts.length) scene.add(new THREE.Mesh(mergeGeometries(railParts), steel));
+if (facadeParts.length) scene.add(new THREE.Mesh(mergeGeometries(facadeParts), facade));
+if (glowParts.length) scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
 {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(flares.pos, 3));
@@ -756,13 +857,16 @@ scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
   const q = new THREE.Points(h, plumeMat); q.renderOrder = 1; q.frustumCulled = false; scene.add(q);
 }
 
-// Upload the light list.
-lights.slice(0, NL).forEach((l, i) => {
-  lightU.uLP.value[i].set(l.pos.x, l.pos.y, l.pos.z, l.power);
-  lightU.uLC.value[i].set(l.col.x, l.col.y, l.col.z, l.range);
-  lightU.uLD.value[i].set(l.dir.x, l.dir.y, l.dir.z, l.cos);
-});
-lightU.uLN.value = Math.min(NL, lights.length);
+// Upload the light list; moving lamps upload again each frame.
+function uploadLights() {
+  lights.slice(0, NL).forEach((l, i) => {
+    lightU.uLP.value[i].set(l.pos.x, l.pos.y, l.pos.z, l.power);
+    lightU.uLC.value[i].set(l.col.x, l.col.y, l.col.z, l.range);
+    lightU.uLD.value[i].set(l.dir.x, l.dir.y, l.dir.z, l.cos);
+  });
+  lightU.uLN.value = Math.min(NL, lights.length);
+}
+uploadLights();
 
 /* Sky dome behind everything. */
 {
@@ -803,7 +907,8 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
     vec2 swell(vec2 p, vec2 dir, float len, float amp, float ph, float dist) {
       float k = 6.2832 / len;
       float fade = 1.0 - smoothstep(len * 9.0, len * 24.0, dist);
-      return dir * amp * cos(dot(p, dir) * k + ph) * fade;
+      // Deep-water swell: speed follows wavelength.
+      return dir * amp * cos(dot(p, dir) * k + ph - uTime * sqrt(9.81 * k)) * fade;
     }
     void main() {
       vec3 V = normalize(cameraPosition - vP);
@@ -850,7 +955,7 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
       vec3 col = deep * (1.0 - F) + refl * F * vec3(0.74, 0.9, 1.1);
       // Streaks: wave facets that tilt just right flash as soft dashes.
       // Facets are wide across and short in depth, so perspective sizes them.
-      float dn = k2noise(vec2(vP.x * 0.05, vP.z * 0.42));
+      float dn = k2noise(vec2(vP.x * 0.05, vP.z * 0.42 + uTime * 0.35));
       float dn2 = k2noise(vec2(vP.x * 0.11 + 7.0, vP.z * 0.9));
       float tilt = (dn * 0.7 + dn2 * 0.3 - 0.5) * 0.5;
       // Far facets shrink below a pixel; use their mean response there.
@@ -960,7 +1065,37 @@ function frame(w, h, pr) {
   projU.uScale.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) / 400;
 }
 
-  // Dispose frees every geometry, material and texture this scene made.
+  /* Motion: one clock drives the ambient life; trains run out and back. */
+train.place(175, 1, sea);
+const run = { s: 175, dir: 1, v: 20, wait: 0, user: false };
+const END = LEN + 160, START = -160;
+let time = 0;
+// pace eases ambient motion: 1 awake, 0 asleep; user trains keep running.
+function update(dt, pace) {
+  time += dt * pace;
+  k2.uTime.value = time;
+  // The searchlight sweeps a slow figure over the cloud.
+  search.aim(-0.5 + 0.45 * Math.sin(time * 0.05), 0.55 + 0.3 * Math.cos(time * 0.037));
+  const k = run.user ? 1 : pace;
+  if (run.wait > 0) {
+    run.wait -= dt * k;
+    if (run.wait <= 0) { run.dir = -run.dir; run.s = run.dir > 0 ? START : END; train.show(true); }
+  } else {
+    run.s += run.dir * run.v * dt * k;
+    // Past the far end the train is lost in the port fog; then it returns.
+    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.wait = 6; run.user = false; }
+  }
+  train.place(run.s, run.dir, sea);
+  uploadLights();
+}
+// A tap sends the next train at once.
+function tap() {
+  if (run.wait > 0) run.wait = 0.001;
+  run.user = true;
+}
+const lively = () => run.user;
+
+// Dispose frees every geometry, material and texture this scene made.
   function dispose() {
     sea.dispose();
     scene.traverse(o => {
@@ -969,5 +1104,5 @@ function frame(w, h, pr) {
     });
   }
 
-return { scene, camera, frame, dispose, post: { bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
+return { scene, camera, frame, dispose, orbs, update, tap, lively, post: { haze: 0.035, bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
 }
