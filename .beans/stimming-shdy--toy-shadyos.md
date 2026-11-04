@@ -16,8 +16,8 @@ Build ShadyOS from docs/plans/shadyos.md. An original glossy glass desktop OS, a
 - [x] Interaction: pointer state machine, drag, fling, double-click fold, shelf, beads, cascade close
 - [x] Bar: Smear and Jelly, Age, + Window, Error, Clear, (i)
 - [x] Sound: hum, clicks, dings, glass rub, fold whoosh
-- [ ] Menu Lab entry with icon and hook; toys.json entry (Dutch name is a draft)
-- [ ] QA: 1280 and 375 px, clean console, idle stop, hidden tab, reduced motion
+- [x] Menu Lab entry with icon and hook; toys.json entry (Dutch name is a draft)
+- [x] QA: 1280 and 375 px, clean console, idle stop, hidden tab, reduced motion
 - [ ] Settings popover (hum level, haunt on or off, quality)
 - [ ] Haunt beats: cursor hesitation, 3:33 clock beat, tidy while you look away, screensaver
 - [ ] Shadows that follow a wobbling window
