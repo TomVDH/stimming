@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Salt mirror prototype</title>
+<style>
+:root { --bg: #04050b; --fg: #e9ebf5; --muted: #9096ad; --line: #1c2032; --chip: #121524; --on: #2c3252; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.3 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; cursor: pointer; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.choices { display: flex; gap: 2px; background: var(--chip); border-radius: 999px; padding: 2px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.choices button[aria-pressed="true"] { background: var(--on); }
+label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.how { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .how { display: none; } }
+</style></head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="bar">
+  <div class="choices" id="sky" role="group" aria-label="Sky">
+    <button data-v="stars" aria-pressed="false">Stars</button><button data-v="milky" aria-pressed="true">Milky way</button><button data-v="moon" aria-pressed="false">Moonrise</button>
+  </div>
+  <label>Water <input type="range" id="water" min="0" max="1" step="0.01" value="0.85"></label>
+  <button id="add">+ Train</button>
+  <span class="how">Tap: ripple · Hold: still · Drag: water · Space: train</span>
+</div>
+<script>
+// Salt mirror: a fine viaduct on stilts across a flooded salt pan under stars.
+const stage = document.getElementById('stage'), cv = document.getElementById('c'), g = cv.getContext('2d');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+const [skyC, sg] = mk(), [reflS, rs] = mk(), [reflD, rd] = mk(), [viaC, vg] = mk(), [saltC, sl] = mk(), [fxC, fx] = mk();
+let W = 0, H = 0, dpr = 1, hz = 0, f = 0, V = null;
+const hc = 1.7, DECK = 2.6, STILT = 3;
+
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function size(c, x, w, h) { c.width = Math.max(1, Math.round(w * dpr)); c.height = Math.max(1, Math.round(h * dpr)); x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+function lin(c, y0, y1, stops, x0 = 0, x1 = 0) { const l = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, s]) => l.addColorStop(o, s)); return l; }
+function glow(c, x, y, r, col, a, sy = 1) {
+  if (r <= 0 || a <= 0.001) return;
+  c.save(); c.translate(x, y); c.scale(1, sy);
+  const l = c.createRadialGradient(0, 0, 0, 0, 0, r);
+  l.addColorStop(0, col.replace('A', a)); l.addColorStop(0.3, col.replace('A', a * 0.35)); l.addColorStop(1, col.replace('A', 0));
+  c.fillStyle = l; c.fillRect(-r, -r, r * 2, r * 2); c.restore();
+}
+
+function fit() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = stage.clientWidth; H = stage.clientHeight;
+  if (!W || !H) return;
+  const portrait = H > W;
+  hz = Math.round(H * (portrait ? 0.5 : 0.56)); f = portrait ? W * 1.6 : W;
+  const A = portrait ? [-30, 50] : [-150, 150], B = portrait ? [90, 190] : [330, 340];
+  const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  V = { A, ux: (B[0] - A[0]) / len, uz: (B[1] - A[1]) / len, len };
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  size(skyC, sg, W, hz); size(reflS, rs, W, H - hz); size(reflD, rd, W, H - hz);
+  size(viaC, vg, W, H); size(saltC, sl, W, H - hz); size(fxC, fx, W, H);
+  bakeSky(); bakeSalt(); bakeFx(); wake();
+}
+new ResizeObserver(fit).observe(stage);
+
+function P(d, Y, m = 1) {
+  const X = V.A[0] + V.ux * d, Z = V.A[1] + V.uz * d;
+  return [W / 2 + f * X / Z, hz - f * (m * Y - hc) / Z, Z];
+}
+
+let sky = 'milky', water = 0.85, held = false, calm = 0, t = 0, dir = 1;
+const trains = [], ripples = [];
+
+// Sky: stars, the galaxy band or a low moon. Rebuilt on resize or sky change.
+function bakeSky() {
+  const c = sg, r = rng(sky === 'moon' ? 17 : 9), moon = sky === 'moon', milky = sky === 'milky';
+  c.fillStyle = lin(c, 0, hz, [[0, '#010207'], [0.6, '#040818'], [0.9, '#0d1430'], [1, moon ? '#2a2638' : '#18203f']]); c.fillRect(0, 0, W, hz);
+  c.save(); c.globalCompositeOperation = 'lighter';
+  // Airglow: a faint band that hugs the horizon.
+  c.fillStyle = lin(c, hz * 0.7, hz, [[0, 'rgba(60,110,120,0)'], [0.8, 'rgba(60,110,120,0.10)'], [1, 'rgba(90,110,150,0.16)']]); c.fillRect(0, hz * 0.7, W, hz * 0.3);
+  const ax = W * -0.05, ay = hz * 1.05, bx = W * 1.05, by = -hz * 0.1, bl = Math.hypot(bx - ax, by - ay), nx = -(by - ay) / bl, ny = (bx - ax) / bl;
+  const gauss = () => (r() + r() + r() + r() - 2) * 0.9;
+  if (milky) {
+    for (let i = 0; i < 260; i++) {
+      const k = r(), o = gauss() * hz * 0.12, x = ax + (bx - ax) * k + nx * o, y = ay + (by - ay) * k + ny * o;
+      glow(c, x, y, hz * (0.05 + r() * 0.12), r() < 0.5 ? 'rgba(170,160,200,A)' : 'rgba(210,195,175,A)', 0.03 + r() * 0.04);
+    }
+  }
+  const n = Math.round(W * hz / (moon ? 260 : 150));
+  for (let i = 0; i < n; i++) {
+    const x = r() * W, y = r() * hz, ext = Math.min(1, (hz - y) / (hz * 0.25)), b = Math.pow(r(), 5);
+    const a = (0.15 + b * 0.85) * ext * (moon ? 0.6 : 1), s = 0.6 + b * 1.4;
+    c.fillStyle = `rgba(${200 + r() * 55 | 0},${210 + r() * 40 | 0},255,${a})`; c.fillRect(x, y, s, s);
+    if (b > 0.5) glow(c, x + s / 2, y + s / 2, 4 + b * 6, 'rgba(200,215,255,A)', 0.25 * a);
+  }
+  if (milky) {
+    // Dense dust of faint stars inside the band, and a dark lane down its middle.
+    for (let i = 0; i < 2600; i++) {
+      const k = r(), o = gauss() * hz * 0.09, x = ax + (bx - ax) * k + nx * o, y = ay + (by - ay) * k + ny * o;
+      if (y > hz) continue;
+      c.fillStyle = `rgba(230,225,240,${r() * 0.45 * Math.min(1, (hz - y) / (hz * 0.2))})`; c.fillRect(x, y, 0.9, 0.9);
+    }
+    c.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 90; i++) {
+      const k = r(), o = (gauss() * 0.25 + 0.15) * hz * 0.05, x = ax + (bx - ax) * k + nx * o, y = ay + (by - ay) * k + ny * o;
+      glow(c, x, y, hz * (0.02 + r() * 0.04), 'rgba(2,3,9,A)', 0.25, 0.6);
+    }
+    c.globalCompositeOperation = 'lighter';
+  }
+  if (moon) {
+    const mx = W * (H > W ? 0.3 : 0.22), my = hz - Math.min(W, H) * 0.06, mr = Math.min(W, H) * 0.022;
+    glow(c, mx, hz, W * 0.7, 'rgba(200,130,90,A)', 0.2, 0.25);
+    glow(c, mx, my, Math.min(W, H) * 0.5, 'rgba(230,170,120,A)', 0.16);
+    glow(c, mx, my, mr * 4, 'rgba(255,215,170,A)', 0.4);
+    c.fillStyle = '#ffe2bd'; c.beginPath(); c.arc(mx, my, mr, 0, 7); c.fill();
+  }
+  c.restore();
+  bakeVia();
+  // Mirror: sky flipped about the horizon, then the viaduct reflected.
+  const R = rs, h2 = H - hz;
+  R.fillStyle = '#010207'; R.fillRect(0, 0, W, h2);
+  R.save(); R.translate(0, hz); R.scale(1, -1); R.drawImage(skyC, 0, 0, W, hz); R.restore();
+  R.save(); R.translate(0, -hz); viaShape(R, -1); R.restore();
+}
+
+// Deck as a thin band; stilts as hairlines down to the salt.
+function viaShape(c, m) {
+  const col = '#020309';
+  c.fillStyle = col; c.strokeStyle = col;
+  const a = P(0, DECK, m), b = P(V.len, DECK, m), b1 = P(V.len, DECK - 0.35, m), a1 = P(0, DECK - 0.35, m);
+  c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.lineTo(b1[0], b1[1]); c.lineTo(a1[0], a1[1]); c.fill();
+  for (let d = 0; d < V.len; d += STILT) {
+    const p = P(d, DECK - 0.3, m), q = P(d, 0, m); if (p[0] < -5 || p[0] > W + 5) continue;
+    c.lineWidth = Math.max(0.5, f * 0.1 / p[2]); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke();
+  }
+}
+function bakeVia() {
+  vg.clearRect(0, 0, W, H); viaShape(vg, 1);
+  // Sky light grazes the top of the deck.
+  const a = P(0, DECK), b = P(V.len, DECK);
+  vg.strokeStyle = sky === 'moon' ? 'rgba(255,190,140,0.35)' : 'rgba(150,165,220,0.25)'; vg.lineWidth = 0.8;
+  vg.beginPath(); vg.moveTo(a[0], a[1]); vg.lineTo(b[0], b[1]); vg.stroke();
+}
+// Dry salt: pale crust in perspective bands; drawn where the water is thin.
+function bakeSalt() {
+  const c = sl, r = rng(31), h2 = H - hz;
+  c.clearRect(0, 0, W, h2);
+  c.fillStyle = lin(c, 0, h2, [[0, '#2a2d3c'], [0.3, '#1c1f2b'], [1, '#121420']]); c.fillRect(0, 0, W, h2);
+  for (let i = 0; i < 900; i++) {
+    const y = Math.pow(r(), 1.5) * h2, s = 0.1 + y / h2;
+    c.fillStyle = `rgba(160,170,200,${0.03 + r() * 0.05})`; c.fillRect(r() * W, y, (20 + r() * 120) * s, Math.max(0.6, s * 1.5));
+  }
+}
+function bakeFx() {
+  const c = fx, [nc, n] = mk(), r = rng(3); nc.width = nc.height = 192;
+  const id = n.createImageData(192, 192);
+  for (let i = 0; i < id.data.length; i += 4) { const v = r() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 12; }
+  n.putImageData(id, 0, 0);
+  c.clearRect(0, 0, W, H); c.fillStyle = c.createPattern(nc, 'repeat'); c.fillRect(0, 0, W, H);
+  const v = c.createRadialGradient(W / 2, hz, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)'); c.fillStyle = v; c.fillRect(0, 0, W, H);
+}
+
+function sendTrain() { trains.push({ d: dir > 0 ? -10 : V.len + 10, dir, v: 9 + Math.random() * 3 }); dir = -dir; wake(); }
+function dropRipple(x, y) {
+  const yy = y > hz + 2 ? y - hz : Math.max(3, hz - y);
+  const Z = f * hc / yy; ripples.push({ X: (x - W / 2) * Z / f, Z, t0: t, a: 1 }); wake();
+}
+
+// Bead with a long glowing trail along the deck; m = -1 draws its reflection.
+function drawTrain(c, tr, m, oy, a) {
+  const TL = 70, N = 36;
+  c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
+  let prev = P(tr.d, DECK + 0.25, m);
+  for (let k = 1; k <= N; k++) {
+    const d = tr.d - tr.dir * TL * k / N, p = P(d, DECK + 0.25, m), q = 1 - k / N;
+    c.strokeStyle = `rgba(255,${190 + q * 50 | 0},${130 + q * 100 | 0},${a * q * q * 0.9})`;
+    c.lineWidth = Math.max(0.8, f * 0.18 / p[2]) * (0.5 + q);
+    c.beginPath(); c.moveTo(prev[0], prev[1] - oy); c.lineTo(p[0], p[1] - oy); c.stroke(); prev = p;
+  }
+  const h = P(tr.d, DECK + 0.25, m), s = Math.max(2, f * 0.25 / h[2]);
+  glow(c, h[0], h[1] - oy, s * 22, 'rgba(160,190,255,A)', 0.18 * a, 0.5);
+  glow(c, h[0], h[1] - oy, s * 5, 'rgba(230,240,255,A)', 0.6 * a);
+  glow(c, h[0], h[1] - oy, s * 1.6, 'rgba(255,255,255,A)', a);
+  c.restore();
+}
+
+function render() {
+  g.drawImage(skyC, 0, 0, W, hz);
+  rd.clearRect(0, 0, W, H - hz); rd.drawImage(reflS, 0, 0, W, H - hz);
+  for (const tr of trains) drawTrain(rd, tr, -1, hz, 0.85);
+  // Base: dry salt; the mirror goes on top at the water's strength.
+  const h2 = H - hz, st = 2, still = 1 - calm;
+  g.drawImage(saltC, 0, hz, W, h2);
+  g.globalAlpha = 0.15 + 0.85 * water;
+  const rp = ripples.map(r => { const age = t - r.t0; return { ...r, age, R: age * 1.6, amp: r.a * Math.exp(-age * (0.7 + calm * 2)), cx: W / 2 + f * r.X / r.Z }; });
+  for (let y = 0; y < h2; y += st) {
+    const persp = 0.15 + y / h2, Zr = f * hc / Math.max(0.5, y);
+    const base = reduced ? 0 : still * Math.sin(y * 0.13 + t * 1.1) * 0.6 * persp;
+    g.drawImage(reflD, 0, y * dpr, W * dpr, st * dpr, base, hz + y, W, st);
+    for (const r of rp) {
+      const dz = Zr - r.Z; if (Math.abs(dz) > r.R + 0.6) continue;
+      const hx = Math.sqrt(Math.max(0, (r.R + 0.6) ** 2 - dz * dz)), hw = f * hx / Zr, x0 = Math.max(0, r.cx - hw), x1 = Math.min(W, r.cx + hw);
+      if (x1 - x0 < 1) continue;
+      const rad = Math.hypot(dz, 0), ph = (r.R - Math.abs(dz)) * 4 - r.age * 2;
+      const dx = r.amp * Math.sin(ph) * (2 + persp * 8) * Math.exp(-Math.max(0, r.R - Math.abs(dz) - 3) * 0.4);
+      g.drawImage(reflD, x0 * dpr, y * dpr, (x1 - x0) * dpr, st * dpr, x0 + dx, hz + y, x1 - x0, st);
+    }
+  }
+  g.globalAlpha = 1;
+  // Water darkens what it mirrors a touch, more toward the viewer.
+  g.fillStyle = lin(g, hz, H, [[0, 'rgba(2,3,8,0)'], [0.5, 'rgba(2,3,8,0.2)'], [1, 'rgba(2,3,8,0.5)']]); g.fillRect(0, hz, W, h2);
+  // Ripple rings catch the sky light.
+  g.save(); g.globalCompositeOperation = 'lighter'; g.lineWidth = 1;
+  for (const r of rp) for (let k = 0; k < 3; k++) {
+    const Rk = r.R - k * 0.9; if (Rk <= 0.05) continue;
+    const zn = Math.max(0.6, r.Z - Rk), zf = r.Z + Rk, yn = f * hc / zn, yf = f * hc / zf;
+    const a = r.amp * 0.26 * (1 - k * 0.3) * (0.4 + water * 0.6); if (a < 0.01) continue;
+    g.strokeStyle = `rgba(200,212,255,${a})`;
+    g.beginPath(); g.ellipse(r.cx, hz + (yn + yf) / 2, f * Rk / r.Z, Math.max(0.5, (yn - yf) / 2), 0, 0, 7); g.stroke();
+  }
+  g.restore();
+  // The horizon melts: a soft band blends sky into its reflection.
+  g.fillStyle = lin(g, hz - H * 0.03, hz + H * 0.03, [[0, 'rgba(30,38,70,0)'], [0.5, 'rgba(30,38,70,0.35)'], [1, 'rgba(30,38,70,0)']]); g.fillRect(0, hz - H * 0.03, W, H * 0.06);
+  g.drawImage(viaC, 0, 0, W, H);
+  for (const tr of trains) drawTrain(g, tr, 1, 0, 1);
+  g.drawImage(fxC, 0, 0, W, H);
+}
+
+function step(dt) {
+  t += dt;
+  calm += ((held ? 1 : 0) - calm) * Math.min(1, dt * 2);
+  for (const tr of trains) tr.d += tr.dir * tr.v * dt;
+  for (let i = trains.length - 1; i >= 0; i--) { const tr = trains[i]; if ((tr.dir > 0 && tr.d > V.len + 80) || (tr.dir < 0 && tr.d < -80)) trains.splice(i, 1); }
+  for (let i = ripples.length - 1; i >= 0; i--) if (t - ripples[i].t0 > 7) ripples.splice(i, 1);
+}
+
+/* Frame loop: lively at full rate, drifting at 30 fps, asleep after 60 s idle. */
+let raf = 0, lastDraw = 0, lastT = 0, lastInput = performance.now(), dragging = false;
+const busy = () => trains.length > 0 || ripples.length > 0 || held || dragging || calm > 0.01;
+function frame(now) {
+  raf = 0;
+  const lively = busy(), idle = now - lastInput;
+  if (!lively && (reduced || idle > 60000)) { render(); return; }
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  try { step(dt); render(); } finally { lastDraw = now; if (!document.hidden) raf = requestAnimationFrame(frame); }
+}
+function wake() { if (!raf && !document.hidden && W) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else wake(); });
+
+/* Pointer: drag after 8 px, hold after 260 ms, else a tap. */
+let press = null, holdTimer = 0;
+stage.addEventListener('pointerdown', e => {
+  stage.setPointerCapture(e.pointerId); lastInput = performance.now();
+  const r = stage.getBoundingClientRect();
+  press = { x: e.clientX, y: e.clientY, ly: e.clientY, sx: e.clientX - r.left, sy: e.clientY - r.top }; dragging = false;
+  holdTimer = setTimeout(() => { held = true; wake(); }, 260); wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press) return; lastInput = performance.now();
+  if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { dragging = true; clearTimeout(holdTimer); held = false; }
+  if (dragging) { const dy = e.clientY - press.ly; press.ly = e.clientY; setWater(water - dy / (H * 0.5)); }
+});
+function end(tap) {
+  clearTimeout(holdTimer);
+  if (press && tap && !dragging && !held) dropRipple(press.sx, press.sy);
+  press = null; dragging = false; held = false; lastInput = performance.now(); wake();
+}
+stage.addEventListener('pointerup', () => end(true));
+stage.addEventListener('pointercancel', () => end(false));
+stage.addEventListener('lostpointercapture', () => { if (press) end(false); });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); sendTrain(); }
+  if (e.code === 'Enter') dropRipple(W / 2, hz + (H - hz) * 0.35);
+  lastInput = performance.now(); wake();
+});
+
+const waterInput = document.getElementById('water');
+function setWater(v) { water = Math.max(0, Math.min(1, v)); waterInput.value = water; wake(); }
+waterInput.addEventListener('input', e => { lastInput = performance.now(); setWater(+e.target.value); });
+document.getElementById('sky').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const o of e.currentTarget.children) o.setAttribute('aria-pressed', o === b);
+  sky = b.dataset.v; if (W) bakeSky(); lastInput = performance.now(); wake();
+});
+document.getElementById('add').addEventListener('click', () => { lastInput = performance.now(); sendTrain(); });
+
+// First frame: a bead mid-crossing, its trail doubled in the salt.
+fit();
+if (V) { trains.push({ d: V.len * (H > W ? 0.3 : 0.32), dir: 1, v: 10 }); dir = -1; }
+</script></body></html>

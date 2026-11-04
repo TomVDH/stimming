@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aurora prototype</title>
+<style>
+:root { --bg: #05070b; --fg: #e6eef0; --muted: #8e9ba3; --line: #1d252c; --chip: #10161b; --on: #233139; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.3 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; cursor: pointer; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.choices { display: flex; gap: 2px; background: var(--chip); border-radius: 999px; padding: 2px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.choices button[aria-pressed="true"] { background: var(--on); }
+label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.how { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .how { display: none; } }
+</style></head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="bar">
+  <div class="choices" id="hue" role="group" aria-label="Aurora colour">
+    <button data-v="green" aria-pressed="true">Green</button><button data-v="violet" aria-pressed="false">Violet</button><button data-v="faint" aria-pressed="false">Faint</button>
+  </div>
+  <label>Aurora <input type="range" id="aur" min="0" max="1" step="0.01" value="0.7"></label>
+  <button id="add">+ Train</button>
+  <span class="how">Tap: surge · Hold: glow · Drag: wind</span>
+</div>
+<script>
+// Aurora prototype: a lone truss crosses a frozen lake under a slow aurora.
+const stage = document.getElementById('stage'), cv = document.getElementById('c'), g = cv.getContext('2d');
+const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+const [skyC, kg] = mk(), [iceC, ig] = mk(), [crackC, cg] = mk(), [trussC, tg] = mk(), [tmpC, xg] = mk(), [aurC, ag] = mk(), [refC, rg] = mk(), grainC = document.createElement('canvas'), overC = document.createElement('canvas');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W = 0, H = 0, dpr = 1, L = null;
+
+function rng(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let q = Math.imul(s ^ s >>> 15, 1 | s); q = q + Math.imul(q ^ q >>> 7, 61 | q) ^ q; return ((q ^ q >>> 14) >>> 0) / 4294967296; }; }
+function lin(c, x0, y0, x1, y1, stops) { const l = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, s]) => l.addColorStop(o, s)); return l; }
+function glow(c, x, y, r, col, a, sy = 1) {
+  if (r <= 0 || a <= 0.002) return;
+  c.save(); c.translate(x, y); c.scale(1, sy);
+  const l = c.createRadialGradient(0, 0, 0, 0, 0, r);
+  l.addColorStop(0, col.replace('A', a)); l.addColorStop(0.3, col.replace('A', a * 0.35)); l.addColorStop(1, col.replace('A', 0));
+  c.fillStyle = l; c.fillRect(-r, -r, r * 2, r * 2); c.restore();
+}
+
+// Palettes: ray foot colour, crown colour, strength.
+const PAL = { green: [[90, 255, 170], [190, 80, 255], 1], violet: [[175, 120, 255], [255, 90, 170], 0.95], faint: [[130, 210, 180], [150, 120, 220], 0.42] };
+const sprites = {};
+function makeSprites() {
+  for (const k in PAL) {
+    const [f, c] = PAL[k], s = document.createElement('canvas'); s.width = 2; s.height = 256; const x = s.getContext('2d');
+    x.fillStyle = lin(x, 0, 0, 0, 256, [[0, `rgba(${c},0)`], [0.35, `rgba(${c},0.25)`], [0.72, `rgba(${f},0.55)`], [0.9, `rgba(${f},1)`], [1, `rgba(${f},0)`]]);
+    x.fillRect(0, 0, 2, 256); sprites[k] = s;
+  }
+}
+makeSprites();
+
+function layout() {
+  const portrait = H > W, hz = Math.round(H * (portrait ? 0.55 : 0.6));
+  const yf = hz + H * (portrait ? 0.1 : 0.12), yb = hz + H * 0.012, th = H * (portrait ? 0.07 : 0.085), yt = yb - th;
+  return { portrait, hz, yf, yb, yt, th, panel: th * 0.95, piers: portrait ? [-0.35, 0.5, 1.35] : [-0.12, 0.29, 0.71, 1.12] };
+}
+
+function fit() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = stage.clientWidth; H = stage.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const [c, x] of [[skyC, kg], [iceC, ig], [crackC, cg], [trussC, tg], [tmpC, xg]]) { c.width = W * dpr; c.height = H * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  L = layout();
+  aurC.width = Math.ceil(W / 2); aurC.height = Math.ceil(L.hz / 2);
+  refC.width = Math.ceil(W / 10); refC.height = Math.ceil(L.hz / 10);
+  drawStatic(); wake();
+}
+new ResizeObserver(fit).observe(stage);
+
+// Static layers: sky with stars, ice with cracks, crack highlights, the truss and its reflection.
+function drawStatic() {
+  const { hz, yf, yb, yt, th, panel } = L, R = rng(21);
+  kg.fillStyle = lin(kg, 0, 0, 0, hz, [[0, '#020309'], [0.6, '#06101a'], [1, '#0d1c22']]); kg.fillRect(0, 0, W, hz);
+  for (let i = 0; i < 360; i++) { const y = Math.pow(R(), 1.4) * hz * 0.95, a = 0.2 + R() * 0.7; kg.fillStyle = `rgba(220,230,255,${a * (1 - y / hz)})`; const s = R() < 0.08 ? 1.6 : 1; kg.fillRect(R() * W, y, s, s); }
+  // Ice: dull, dark, a little frost toward the shore.
+  kg.fillStyle = lin(kg, 0, hz, 0, H, [[0, '#0e1a20'], [0.3, '#081014'], [1, '#030507']]); kg.fillRect(0, hz, W, H - hz);
+  // Far shore: a low dark line on the horizon.
+  kg.fillStyle = '#020306'; kg.beginPath(); kg.moveTo(0, hz);
+  for (let x = 0; x <= W; x += 8) kg.lineTo(x, hz - H * 0.006 - Math.max(0, Math.sin(x / W * 5 + 1) * H * 0.012) - Math.max(0, Math.sin(x / W * 13) * H * 0.005));
+  kg.lineTo(W, hz + 2); kg.lineTo(0, hz + 2); kg.closePath(); kg.fill();
+  // Ice overlay: frost blotches dull the mirror; cracks scar it.
+  ig.clearRect(0, 0, W, H); cg.clearRect(0, 0, W, H);
+  for (let i = 0; i < 40; i++) { const y = hz + Math.pow(R(), 0.8) * (H - hz); glow(ig, R() * W, y, H * (0.05 + R() * 0.12) * (0.4 + (y - hz) / (H - hz)), 'rgba(110,130,145,A)', 0.05, 0.25); }
+  ig.fillStyle = lin(ig, 0, hz, 0, H, [[0, 'rgba(12,20,26,0.15)'], [1, 'rgba(3,5,8,0.55)']]); ig.fillRect(0, hz, W, H - hz);
+  for (let i = 0; i < 46; i++) {
+    let x = R() * W, y = hz + H * 0.01 + Math.pow(R(), 0.7) * (H - hz), ang = (R() - 0.5) * 1.2 + (R() < 0.5 ? 0 : Math.PI);
+    const pts = [[x, y]], n = 5 + (R() * 10 | 0);
+    for (let k = 0; k < n; k++) {
+      const p = 0.15 + (y - hz) / (H - hz), len = H * (0.015 + R() * 0.04) * (0.4 + p);
+      ang += (R() - 0.5) * 0.9; x += Math.cos(ang) * len; y += Math.sin(ang) * len * p * 0.6;
+      if (y < hz + 2) break; pts.push([x, y]);
+    }
+    for (const [ctx, col, w, dy] of [[ig, 'rgba(0,0,0,0.6)', 1.2, 0], [ig, 'rgba(150,180,200,0.13)', 1, 1], [cg, '#fff', 1.3, 0.5]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); pts.forEach(([px, py], k) => k ? ctx.lineTo(px, py + dy) : ctx.moveTo(px, py + dy)); ctx.stroke();
+    }
+  }
+  // Truss: spans between piers; chords, end posts, Warren diagonals and verticals.
+  tg.clearRect(0, 0, W, H);
+  const drawTruss = (c, my, alpha) => {
+    const Y = y => my ? 2 * yf - y : y;
+    c.strokeStyle = `rgba(2,3,6,${alpha})`; c.fillStyle = `rgba(2,3,6,${alpha})`; c.lineCap = 'square';
+    const P = L.piers.map(p => p * W);
+    for (let s = 0; s < P.length - 1; s++) {
+      const a = P[s] + H * 0.018, b = P[s + 1] - H * 0.018, n = Math.max(4, Math.round((b - a) / panel)), pw = (b - a) / n;
+      c.lineWidth = 3.2; c.beginPath(); c.moveTo(a, Y(yb)); c.lineTo(b, Y(yb)); c.moveTo(a + pw, Y(yt)); c.lineTo(b - pw, Y(yt));
+      c.moveTo(a, Y(yb)); c.lineTo(a + pw, Y(yt)); c.moveTo(b, Y(yb)); c.lineTo(b - pw, Y(yt)); c.stroke();
+      c.lineWidth = 1.6; c.beginPath();
+      for (let k = 1; k < n; k++) { const x = a + k * pw; c.moveTo(x, Y(yb)); c.lineTo(x, Y(yt)); if (k < n - 1) { const up = k % 2; c.moveTo(x, Y(up ? yt : yb)); c.lineTo(x + pw, Y(up ? yb : yt)); } }
+      c.stroke();
+    }
+    // Piers: slender tapered legs to the ice.
+    for (const x of P) { c.beginPath(); c.moveTo(x - H * 0.012, Y(yb)); c.lineTo(x + H * 0.012, Y(yb)); c.lineTo(x + H * 0.02, Y(yf)); c.lineTo(x - H * 0.02, Y(yf)); c.closePath(); c.fill(); }
+    c.fillRect(-2, Y(yb) - (my ? 0 : 2), W + 4, 3);
+  };
+  drawTruss(tg, false, 1);
+  drawTruss(tg, true, 0.45);
+  // Grain.
+  grainC.width = grainC.height = 160; const gc = grainC.getContext('2d'), id = gc.createImageData(160, 160), Rg = rng(3);
+  for (let j = 0; j < id.data.length; j += 4) { const v = Rg() * 255; id.data[j] = id.data[j + 1] = id.data[j + 2] = v; id.data[j + 3] = 12; }
+  gc.putImageData(id, 0, 0);
+  // Vignette and grain, baked once into one overlay.
+  overC.width = W * dpr; overC.height = H * dpr; const og = overC.getContext('2d'); og.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const v = og.createRadialGradient(W / 2, H * 0.5, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.5)'); og.fillStyle = v; og.fillRect(0, 0, W, H);
+  og.fillStyle = og.createPattern(grainC, 'repeat'); og.fillRect(0, 0, W, H);
+}
+
+// State.
+let hue = 'green', power = 0.7, held = false, boost = 0, wind = 0, windV = 0, t = 37, dir = 1, nextAuto = 20;
+const trains = [], surges = [];
+function sendTrain(user = true) { trains.push({ x: dir > 0 ? -H * 0.1 : W + H * 0.1, dir, len: H * 0.42, v: H * 0.1, user }); dir = -dir; wake(); }
+function surge(x) { surges.push({ x: x ?? (Math.random() * W), t0: t }); wake(); }
+
+// Aurora: two curtains of thin rays, drawn at half size, folded and drifting.
+function drawAurora() {
+  const c = ag, w = aurC.width, h = aurC.height, [, , str] = PAL[hue], spr = sprites[hue], tt = reduced ? 37 : t;
+  c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, w, h); c.globalCompositeOperation = 'lighter';
+  const I = power * str * (1 + boost * 0.7);
+  for (let k = 0; k < 2; k++) {
+    for (let x = 0; x < w; x += 1.5) {
+      const u = x / w + wind * 0.0004 * (1 + k * 0.3);
+      const base = h * (0.6 + 0.1 * k + 0.09 * Math.sin(u * 7.2 + tt * 0.07 + k * 1.7) + 0.04 * Math.sin(u * 16 - tt * 0.11 + k));
+      let ht = h * (0.36 - 0.08 * k) * (0.65 + 0.35 * Math.sin(u * 9.4 + tt * 0.05 + k * 3));
+      const env = Math.pow(0.5 + 0.5 * Math.sin(u * 5.3 + tt * 0.03 + k * 2.2), 1.6);
+      const ray = 0.45 + 0.55 * Math.pow(0.5 + 0.5 * Math.sin(u * 140 + tt * 0.9 + Math.sin(u * 17 + tt * 0.25) * 5), 2);
+      let s = 0;
+      for (const p of surges) { const age = t - p.t0, front = p.x / 2 + age * w * 0.35, front2 = p.x / 2 - age * w * 0.35; s += (Math.exp(-Math.pow((x - front) / (w * 0.05), 2)) + Math.exp(-Math.pow((x - front2) / (w * 0.05), 2))) * Math.exp(-age * 0.7) * 1.6; }
+      ht *= 1 + s * 0.35;
+      const a = Math.min(1, I * env * ray * (0.55 - 0.15 * k) * (1 + s));
+      if (a < 0.01) continue;
+      c.globalAlpha = a; c.drawImage(spr, x, base - ht, 1.6, ht * 1.08);
+    }
+  }
+  c.globalAlpha = 1;
+}
+
+// Copy one horizontal band of an offscreen layer.
+function part(src, y0, y1, dst = g) {
+  y0 = Math.max(0, Math.floor(y0)); y1 = Math.min(H, Math.ceil(y1)); if (y1 <= y0) return;
+  dst.drawImage(src, 0, y0 * dpr, W * dpr, (y1 - y0) * dpr, 0, y0, W, y1 - y0);
+}
+
+function render() {
+  const { hz, yf, yb, yt, th } = L, [foot] = PAL[hue];
+  g.globalCompositeOperation = 'source-over'; g.drawImage(skyC, 0, 0, W, H);
+  drawAurora();
+  g.globalCompositeOperation = 'lighter';
+  g.drawImage(aurC, 0, 0, W, hz);
+  // Sky glow near the horizon picks up the aurora's colour.
+  glow(g, W / 2, hz, W * 0.7, `rgba(${foot},A)`, 0.06 * power * PAL[hue][2] * (1 + boost), 0.25);
+  // Ice: a soft, dull mirror of the aurora, from a tiny copy so it blurs.
+  rg.clearRect(0, 0, refC.width, refC.height); rg.drawImage(aurC, 0, 0, refC.width, refC.height);
+  g.save(); g.globalAlpha = 0.45; g.translate(0, hz); g.scale(1, -0.75); g.drawImage(refC, 0, -hz, W, hz); g.restore();
+  g.globalCompositeOperation = 'source-over'; part(iceC, hz, H);
+  // Crack edges catch a trace of the aurora.
+  g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.08 * power * (1 + boost); part(crackC, hz, H); g.globalAlpha = 1;
+  // Train bodies inside the truss: dark, with a line of warm windows.
+  for (const tr of trains) {
+    const a = tr.dir > 0 ? tr.x - tr.len : tr.x, h = th * 0.42;
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = '#04050a'; g.fillRect(a, yb - h, tr.len, h);
+    g.globalCompositeOperation = 'lighter';
+    for (let x = a + 4; x < a + tr.len - 4; x += h * 0.55) { if (((x - a) % (tr.len / 4)) > tr.len / 4 - h * 0.6) continue; g.fillStyle = 'rgba(255,200,130,0.75)'; g.fillRect(x, yb - h * 0.72, h * 0.3, h * 0.26); }
+    // The windows in the ice, faint and stretched.
+    g.fillStyle = lin(g, 0, 2 * yf - yb, 0, 2 * yf - yb + h * 3, [[0, 'rgba(255,190,120,0.1)'], [1, 'rgba(255,190,120,0)']]); g.fillRect(a, 2 * yf - yb, tr.len, h * 3);
+  }
+  g.globalCompositeOperation = 'source-over'; part(trussC, yt - 6, 2 * yf - yt + 6);
+  // Headlights: a beam through the haze, a pool that sweeps the ice, glints on the truss ahead.
+  g.globalCompositeOperation = 'lighter';
+  for (const tr of trains) {
+    const hx = tr.dir > 0 ? tr.x : tr.x - tr.len, hy = yb - th * 0.24, d = tr.dir, reach = H * 0.9;
+    const beam = lin(g, hx, 0, hx + d * reach, 0, [[0, 'rgba(255,245,220,0.3)'], [1, 'rgba(255,245,220,0)']]);
+    g.fillStyle = beam; g.beginPath(); g.moveTo(hx, hy - 2); g.lineTo(hx + d * reach, hy - th * 0.9); g.lineTo(hx + d * reach, yf + H * 0.05); g.lineTo(hx, hy + 2); g.closePath(); g.fill();
+    const px = hx + d * H * 0.45, py = yf + H * 0.03;
+    glow(g, px, py, H * 0.55, 'rgba(255,235,200,A)', 0.22, 0.12);
+    // Cracks in the pool light up: the pool, masked by the crack layer, in its own band.
+    const p0 = py - H * 0.14, p1 = py + H * 0.14;
+    xg.globalCompositeOperation = 'source-over'; xg.clearRect(0, p0, W, p1 - p0);
+    glow(xg, px, py, H * 0.6, 'rgba(255,240,215,A)', 1, 0.22);
+    xg.globalCompositeOperation = 'destination-in'; part(crackC, p0, p1, xg);
+    g.globalAlpha = 0.9; part(tmpC, p0, p1); g.globalAlpha = 1;
+    // Truss members ahead glint in the beam.
+    xg.globalCompositeOperation = 'source-over'; xg.clearRect(0, yt - 6, W, yb - yt + 12);
+    xg.fillStyle = beam; xg.fillRect(Math.min(hx, hx + d * reach), yt - 4, reach, yb - yt + 8);
+    xg.globalCompositeOperation = 'destination-in'; part(trussC, yt - 6, yb + 6, xg);
+    part(tmpC, yt - 6, yb + 6);
+    glow(g, hx, hy, th * 0.35, 'rgba(255,250,235,A)', 1);
+    glow(g, hx, hy, th * 1.6, 'rgba(255,230,190,A)', 0.18);
+    glow(g, hx, 2 * yf - hy, th * 0.9, 'rgba(255,230,190,A)', 0.12, 1.6);
+  }
+  g.globalCompositeOperation = 'source-over';
+  g.drawImage(overC, 0, 0, W, H);
+}
+
+function step(dt) {
+  t += dt;
+  boost += ((held ? 1 : 0) - boost) * Math.min(1, dt * 1.2);
+  wind += windV * dt; windV *= Math.pow(0.2, dt);
+  for (const tr of trains) tr.x += tr.dir * tr.v * dt;
+  for (let i = trains.length - 1; i >= 0; i--) { const tr = trains[i]; if ((tr.dir > 0 && tr.x - tr.len > W + H * 0.9) || (tr.dir < 0 && tr.x < -H * 0.9)) trains.splice(i, 1); }
+  for (let i = surges.length - 1; i >= 0; i--) if (t - surges[i].t0 > 6) surges.splice(i, 1);
+  if (!reduced) { nextAuto -= dt; if (nextAuto <= 0 && !trains.length) { sendTrain(false); nextAuto = 25 + Math.random() * 20; } }
+}
+
+/* Frame loop: lively at full rate, drifting at 30 fps, asleep after 60 s idle. */
+let raf = 0, lastDraw = 0, lastT = 0, lastInput = performance.now(), dragging = false;
+const busy = () => trains.some(tr => tr.user) || surges.length > 0 || held || boost > 0.01 || dragging || Math.abs(windV) > 1;
+function frame(now) {
+  raf = 0;
+  const lively = busy(), idle = now - lastInput;
+  if (!lively && (reduced || idle > 60000)) { render(); return; }
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  try { step(dt); render(); } finally { lastDraw = now; if (!document.hidden) raf = requestAnimationFrame(frame); }
+}
+function wake() { if (!raf && !document.hidden && W) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else wake(); });
+
+/* Pointer: drag after 8 px, hold after 260 ms, else a tap. */
+let press = null, holdTimer = 0;
+stage.addEventListener('pointerdown', e => {
+  stage.setPointerCapture(e.pointerId); lastInput = performance.now();
+  const r = stage.getBoundingClientRect();
+  press = { x: e.clientX, y: e.clientY, lx: e.clientX, sx: e.clientX - r.left }; dragging = false;
+  holdTimer = setTimeout(() => { held = true; wake(); }, 260); wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press) return; lastInput = performance.now();
+  if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { dragging = true; clearTimeout(holdTimer); held = false; }
+  if (dragging) { const dx = e.clientX - press.lx; press.lx = e.clientX; windV += dx * 6; wake(); }
+});
+function end(tap) {
+  clearTimeout(holdTimer);
+  if (press && tap && !dragging && !held) surge(press.sx);
+  press = null; dragging = false; held = false; lastInput = performance.now(); wake();
+}
+stage.addEventListener('pointerup', () => end(true));
+stage.addEventListener('pointercancel', () => end(false));
+stage.addEventListener('lostpointercapture', () => { if (press) end(false); });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); surge(); } if (e.code === 'Enter') sendTrain();
+  lastInput = performance.now(); wake();
+});
+
+document.getElementById('hue').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const o of e.currentTarget.children) o.setAttribute('aria-pressed', o === b);
+  hue = b.dataset.v; lastInput = performance.now(); wake();
+});
+document.getElementById('aur').addEventListener('input', e => { power = +e.target.value; lastInput = performance.now(); wake(); });
+document.getElementById('add').addEventListener('click', () => { lastInput = performance.now(); sendTrain(); });
+
+// First frame: a train halfway across, its beam already on the ice.
+fit();
+trains.push({ x: W * 0.42, dir: 1, len: H * 0.42, v: H * 0.1, user: false }); dir = -1;
+</script></body></html>

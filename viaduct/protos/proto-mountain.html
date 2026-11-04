@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mountain viaduct prototype</title>
+<style>
+:root { --bg: #070810; --fg: #e9ebf5; --muted: #9096ad; --line: #22263a; --chip: #141728; --on: #2c3252; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.3 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; cursor: pointer; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.choices { display: flex; gap: 2px; background: var(--chip); border-radius: 999px; padding: 2px; }
+button { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.choices button[aria-pressed="true"] { background: var(--on); }
+label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.how { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .how { display: none; } }
+</style></head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="bar">
+  <div class="choices" id="wx" role="group" aria-label="Weather">
+    <button data-v="clear" aria-pressed="true">Clear</button><button data-v="snow" aria-pressed="false">Snow</button><button data-v="cloud" aria-pressed="false">Cloud</button>
+  </div>
+  <label>Time <input type="range" id="time" min="0" max="1" step="0.001" value="0.55"></label>
+  <button id="add">+ Train</button>
+  <span class="how">Tap: train · Hold: slow · Drag: moon</span>
+</div>
+<script>
+// Mountain viaduct prototype: one thin bridge across a gorge, one small train.
+const stage = document.getElementById('stage'), cv = document.getElementById('c'), g = cv.getContext('2d');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W = 0, H = 0, dpr = 1, G = null;
+const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+const [skyC, skyG] = mk(), [darkC, darkG] = mk(), [litC, litG] = mk(), [midC, midG] = mk(), [frontC, frontG] = mk();
+
+// Seeded random: the ridges stay the same on every redraw.
+let seed = 1;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+function lin(c, y0, y1, stops, x0 = 0, x1 = 0) { const l = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, s]) => l.addColorStop(o, s)); return l; }
+function glow(c, x, y, r, col, a, sy = 1) {
+  if (r <= 0 || a <= 0.001) return;
+  c.save(); c.translate(x, y); c.scale(1, sy);
+  const l = c.createRadialGradient(0, 0, 0, 0, 0, r);
+  l.addColorStop(0, col.replace('A', a)); l.addColorStop(0.3, col.replace('A', a * 0.35)); l.addColorStop(1, col.replace('A', 0));
+  c.fillStyle = l; c.fillRect(-r, -r, r * 2, r * 2); c.restore();
+}
+function poly(c, pts) { c.beginPath(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); }
+
+// Scene geometry, from the stage size.
+function geometry() {
+  const portrait = H > W, hz = H * (portrait ? 0.5 : 0.52), gx = W * 0.5;
+  const deckY = H * 0.6, half = W * (portrait ? 0.36 : 0.26);
+  const x0 = gx - half - 6, x1 = gx + half + 6, sag = H * 0.012;
+  const dy = x => deckY + sag * Math.sin(Math.PI * (x - x0) / (x1 - x0));
+  const L = [[-10, deckY - H * 0.08], [gx - half, deckY + 4], [gx - half * 0.55, deckY + H * 0.16], [gx - half * 0.2, H + 10], [-10, H + 10]];
+  const R = [[W + 10, deckY - H * 0.12], [gx + half, deckY + 2], [gx + half * 0.5, deckY + H * 0.2], [gx + half * 0.15, H + 10], [W + 10, H + 10]];
+  return { portrait, hz, gx, deckY, half, x0, x1, dy, L, R, n: portrait ? 5 : 7, mx: W * (portrait ? 0.24 : 0.2) };
+}
+
+// Static layers: built on resize only.
+function build() {
+  G = geometry();
+  for (const [c, x] of [[skyC, skyG], [darkC, darkG], [litC, litG], [midC, midG], [frontC, frontG]]) { c.width = W * dpr; c.height = H * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H); }
+  const { hz, gx, deckY, half, x0, x1, dy, L, R, n } = G;
+  // Sky and stars.
+  skyG.fillStyle = lin(skyG, 0, H, [[0, '#03040b'], [0.45, '#0b1230'], [0.75, '#16224a'], [1, '#0a0f22']]); skyG.fillRect(0, 0, W, H);
+  seed = 3;
+  for (let i = 0; i < 240; i++) { skyG.fillStyle = `rgba(215,225,255,${rnd() * 0.5})`; skyG.fillRect(rnd() * W, rnd() * hz * 0.9, 1.1, 1.1); }
+  // Peaks: a dark mass, and a separate layer of moonlit facets.
+  seed = 7;
+  const base = hz - 10, amp = H * 0.26, pts = [];
+  for (let x = -40; x <= W + 40; x += W * 0.07 * (0.5 + rnd())) pts.push([x, base - amp * (0.3 + rnd() * 0.7)]);
+  darkG.beginPath(); darkG.moveTo(-40, H); pts.forEach(p => darkG.lineTo(...p)); darkG.lineTo(W + 40, H); darkG.closePath(); darkG.fillStyle = '#121a34'; darkG.fill();
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+    // Faces that rise to the right face the moon on the left.
+    if (by >= ay) continue;
+    const steep = Math.min(1, (ay - by) / (bx - ax) * 1.2);
+    litG.fillStyle = lin(litG, by, by + amp * 0.8, [[0, `rgba(195,212,255,${0.4 + 0.4 * steep})`], [1, 'rgba(195,212,255,0)']]);
+    litG.beginPath(); litG.moveTo(ax, ay); litG.lineTo(bx, by); litG.lineTo(bx - (bx - ax) * 0.1, by + amp * 0.8); litG.lineTo(ax, ay + amp * 0.4); litG.closePath(); litG.fill();
+  }
+  // Haze band at the foot of the range.
+  darkG.fillStyle = lin(darkG, hz - 40, hz + 60, [[0, 'rgba(90,110,170,0)'], [1, 'rgba(90,110,170,0.35)']]); darkG.fillRect(0, hz - 40, W, 100);
+  // Mid layer: mist in the gorge, then the piers and deck.
+  midG.fillStyle = lin(midG, deckY, H, [[0, 'rgba(70,90,150,0)'], [0.5, 'rgba(70,90,150,0.3)'], [1, 'rgba(40,55,100,0.5)']]); midG.fillRect(0, deckY, W, H - deckY);
+  for (let i = 1; i < n; i++) {
+    const x = x0 + (x1 - x0) * i / n, t = dy(x), foot = H * (0.98 - 0.12 * Math.abs(i / n - 0.5));
+    midG.fillStyle = lin(midG, t, foot, [[0, '#05070f'], [1, 'rgba(5,7,15,0.15)']]); midG.fillRect(x - 2, t, 4, foot - t);
+    midG.strokeStyle = 'rgba(170,195,250,0.3)'; midG.lineWidth = 1; midG.beginPath(); midG.moveTo(x - 2, t + 2); midG.lineTo(x - 2, t + (foot - t) * 0.5); midG.stroke();
+  }
+  midG.strokeStyle = '#05070f'; midG.lineWidth = 6; midG.beginPath(); for (let x = x0; x <= x1; x += 4) midG.lineTo(x, dy(x)); midG.stroke();
+  midG.strokeStyle = 'rgba(190,210,255,0.55)'; midG.lineWidth = 1; midG.beginPath(); for (let x = x0; x <= x1; x += 4) midG.lineTo(x, dy(x) - 3); midG.stroke();
+  // Front: the two near flanks, with a moonlit snow edge on the left.
+  frontG.fillStyle = '#060912'; poly(frontG, L); frontG.fill(); poly(frontG, R); frontG.fill();
+  frontG.strokeStyle = 'rgba(190,210,255,0.45)'; frontG.lineWidth = 1.5; frontG.beginPath(); frontG.moveTo(...L[0]); frontG.lineTo(...L[1]); frontG.stroke();
+}
+
+function fit() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = stage.clientWidth; H = stage.clientHeight;
+  if (!W || !H) return;
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  build(); flakes.forEach(f => { f.x = Math.random(); f.y = Math.random(); });
+  wake();
+}
+new ResizeObserver(fit).observe(stage);
+
+// State.
+let weather = 'clear', time = 0.55, held = false, dragging = false, dir = 1, t = 0;
+const trains = [];
+const flakes = Array.from({ length: 320 }, () => ({ x: Math.random(), y: Math.random(), s: 0.4 + Math.random() * 0.9, p: Math.random() * 6 }));
+const clouds = Array.from({ length: 6 }, (_, i) => ({ x: Math.random(), y: 0.06 + i * 0.05 + Math.random() * 0.04, w: 0.3 + Math.random() * 0.35, h: 14 + Math.random() * 22 }));
+
+function sendTrain() {
+  // The train enters from inside one flank and leaves into the other.
+  trains.push({ u: 0, dir, cur: 1 }); dir = -dir; wake();
+}
+const CROSS = 10; // seconds for the head to cross the span
+
+// Train head x for progress u in [0, 1.35]: starts hidden in the rock.
+function headX(tr) {
+  const { x0, x1, half } = G, tl = half * 0.32, from = tr.dir > 0 ? x0 - 30 : x1 + 30, span = (x1 - x0) + tl + 60;
+  return from + tr.dir * tr.u * span;
+}
+
+function moonPos() { return [G.mx, G.hz - 10 - time * (G.hz * 0.85)]; }
+
+function render() {
+  const { hz, deckY, half, x0, x1, dy, R, L } = G;
+  const [mx, my] = moonPos(), cloud = weather === 'cloud';
+  g.drawImage(skyC, 0, 0, W, H);
+  // Moon and its halo; cloud dims and spreads it.
+  g.save(); g.globalCompositeOperation = 'lighter';
+  glow(g, mx, my, Math.min(W, H) * (cloud ? 0.7 : 0.55), 'rgba(110,140,210,A)', cloud ? 0.24 : 0.18);
+  glow(g, mx, my, cloud ? 22 : 9, 'rgba(250,252,255,A)', cloud ? 0.55 : 1);
+  g.restore();
+  // Cloud bands drift across the moon.
+  if (cloud) {
+    g.save(); g.filter = 'blur(8px)';
+    for (const c of clouds) {
+      const x = ((c.x + t * 0.004) % 1.4 - 0.2) * W, y = c.y * H, near = Math.max(0, 1 - Math.hypot(x + c.w * W / 2 - mx, y - my) / (W * 0.4));
+      g.fillStyle = `rgba(${40 + near * 90},${50 + near * 100},${80 + near * 130},0.55)`;
+      g.fillRect(x, y, c.w * W, c.h);
+    }
+    g.restore();
+  }
+  // Peaks: moonlight on the facets grows with moon height.
+  g.drawImage(darkC, 0, 0, W, H);
+  const lit = Math.max(0, Math.min(1, (time - 0.05) / 0.7)) * (cloud ? 0.45 : 1);
+  if (lit > 0.01) { g.save(); g.globalAlpha = lit; g.drawImage(litC, 0, 0, W, H); g.restore(); }
+  g.drawImage(midC, 0, 0, W, H);
+
+  g.save(); g.globalCompositeOperation = 'lighter';
+  const tl = half * 0.32;
+  for (const tr of trains) {
+    const hx = headX(tr), tx = hx - tr.dir * tl, a = Math.min(hx, tx), b = Math.max(hx, tx);
+    const ca = Math.max(a, x0), cb = Math.min(b, x1);
+    // Warm window glow on the mist far below.
+    if (cb > ca) {
+      const mid = (ca + cb) / 2, k = (cb - ca) / tl;
+      glow(g, mid, H * 0.84, tl * 1.6, 'rgba(255,150,70,A)', 0.22 * k, 0.35);
+      glow(g, mid, dy(mid) + H * 0.12, tl * 1.1, 'rgba(255,160,80,A)', 0.12 * k, 0.7);
+      glow(g, mid, dy(mid) - 6, tl * 0.8, 'rgba(255,160,70,A)', 0.18 * k, 0.5);
+      for (let x = ca; x < cb; x += 5) {
+        const f = 0.8 + 0.2 * Math.sin(t * 11 + x * 0.7);
+        g.fillStyle = `rgba(255,200,130,${0.95 * f})`; g.fillRect(x, dy(x) - 7, 3, 2.5);
+      }
+    }
+    // Headlight: a cone that follows the deck curve and reaches the far wall.
+    if (hx > x0 - 30 && hx < x1 + 30) {
+      const hy = dy(Math.max(x0, Math.min(x1, hx))) - 6;
+      const slope = (dy(Math.max(x0, Math.min(x1, hx + tr.dir * 4))) - dy(Math.max(x0, Math.min(x1, hx)))) / 4;
+      const bw = half * 1.2, ex = hx + tr.dir * bw, ey = hy + slope * bw * tr.dir;
+      g.fillStyle = lin(g, 0, 0, [[0, 'rgba(255,240,210,0.3)'], [1, 'rgba(255,240,210,0)']], hx, ex);
+      g.beginPath(); g.moveTo(hx, hy); g.lineTo(ex, ey - bw * 0.08); g.lineTo(ex, ey + bw * 0.12); g.closePath(); g.fill();
+      glow(g, hx, hy, 12, 'rgba(255,250,235,A)', 1);
+    }
+  }
+  g.restore();
+
+  // Snow falls between the deck and the near flanks.
+  if (weather === 'snow') {
+    for (const f of flakes) {
+      const x = f.x * W + Math.sin(t * 0.8 + f.p) * 6, y = f.y * H;
+      g.fillStyle = `rgba(205,218,250,${0.25 + f.s * 0.25})`; g.beginPath(); g.arc(x, y, f.s, 0, 7); g.fill();
+    }
+  }
+  g.drawImage(frontC, 0, 0, W, H);
+
+  // The far flank wall catches the headlight where the cone lands.
+  g.save(); g.globalCompositeOperation = 'lighter';
+  for (const tr of trains) {
+    const hx = headX(tr);
+    if (hx < x0 - 30 || hx > x1 + 30) continue;
+    const wallX = tr.dir > 0 ? x1 : x0, dist = Math.abs(wallX - hx), reach = half * 1.2;
+    if (dist > reach) continue;
+    const k = 1 - dist / reach, wy = dy(wallX) - 6 + (1 - k) * 6;
+    g.save(); poly(g, tr.dir > 0 ? R : L); g.clip();
+    glow(g, wallX + tr.dir * 10, wy, 20 + (1 - k) * half * 0.35, 'rgba(255,235,200,A)', 0.1 + 0.4 * k * k, 1.2);
+    g.restore();
+  }
+  g.restore();
+
+  const v = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.5)'); g.fillStyle = v; g.fillRect(0, 0, W, H);
+}
+
+function step(dt) {
+  t += dt;
+  for (const tr of trains) {
+    tr.cur += ((held ? 0.15 : 1) - tr.cur) * Math.min(1, dt * (held ? 1.5 : 0.6));
+    tr.u += tr.cur * dt / CROSS;
+  }
+  for (let i = trains.length - 1; i >= 0; i--) if (trains[i].u > 1.05) trains.splice(i, 1);
+  if (!reduced && weather === 'snow') for (const f of flakes) { f.y += dt * 0.03 * f.s; if (f.y > 1) { f.y -= 1; f.x = Math.random(); } }
+}
+
+/* Frame loop: lively at full rate, drifting at 30 fps, asleep after 60 s idle. */
+let raf = 0, lastDraw = 0, lastT = 0, lastInput = performance.now();
+const busy = () => trains.length > 0 || held || dragging;
+function frame(now) {
+  raf = 0;
+  const lively = busy(), idle = now - lastInput;
+  if (!lively && (reduced || idle > 60000)) { render(); return; }
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  try { step(dt); render(); } finally { lastDraw = now; if (!document.hidden) raf = requestAnimationFrame(frame); }
+}
+function wake() { if (!raf && !document.hidden && W && G) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else wake(); });
+
+/* Pointer: drag after 8 px, hold after 260 ms, else a tap. */
+let press = null, holdTimer = 0;
+const timeInput = document.getElementById('time');
+function setTime(v) { time = Math.max(0, Math.min(1, v)); timeInput.value = time; }
+stage.addEventListener('pointerdown', e => {
+  stage.setPointerCapture(e.pointerId); lastInput = performance.now();
+  press = { x: e.clientX, y: e.clientY, ly: e.clientY }; dragging = false;
+  holdTimer = setTimeout(() => { held = true; wake(); }, 260); wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press) return; lastInput = performance.now();
+  if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { dragging = true; clearTimeout(holdTimer); held = false; }
+  if (dragging) { const d = e.clientY - press.ly; press.ly = e.clientY; setTime(time - d / (G.hz * 0.85)); wake(); }
+});
+function end(tap) {
+  clearTimeout(holdTimer);
+  if (press && tap && !dragging && !held) sendTrain();
+  press = null; dragging = false; held = false; lastInput = performance.now(); wake();
+}
+stage.addEventListener('pointerup', () => end(true));
+stage.addEventListener('pointercancel', () => end(false));
+stage.addEventListener('lostpointercapture', () => { if (press) end(false); });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); sendTrain(); }
+  else if (e.code === 'ArrowUp') setTime(time + 0.05);
+  else if (e.code === 'ArrowDown') setTime(time - 0.05);
+  else return;
+  lastInput = performance.now(); wake();
+});
+
+document.getElementById('wx').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const o of e.currentTarget.children) o.setAttribute('aria-pressed', o === b);
+  weather = b.dataset.v; lastInput = performance.now(); wake();
+});
+timeInput.addEventListener('input', e => { time = +e.target.value; lastInput = performance.now(); wake(); });
+document.getElementById('add').addEventListener('click', () => { lastInput = performance.now(); sendTrain(); });
+
+// First frame: the train already halfway across, headlight on the far wall.
+trains.push({ u: 0.55, dir: 1, cur: 1 }); dir = -1;
+fit();
+</script></body></html>

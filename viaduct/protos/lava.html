@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ember field</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..700&display=swap">
+<style>
+:root {
+  --bg: oklch(0.1 0.01 270);
+  --ink: oklch(0.93 0.01 270);
+  --dim: oklch(0.72 0.015 270);
+  --chip: oklch(0.2 0.015 270 / 0.62);
+  --line: oklch(0.85 0.01 270 / 0.22);
+}
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
+body { font: 500 13px/1.2 Gabarito, system-ui, sans-serif; }
+canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+.bar {
+  position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; pointer-events: none;
+}
+.bar > * { pointer-events: auto; }
+.choices { display: flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--chip); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--line); }
+.chip {
+  font: inherit; color: var(--dim); background: transparent; border: 0; border-radius: 999px;
+  padding: 7px 13px; cursor: pointer; transition: color 0.2s, background 0.2s;
+}
+.chip[aria-pressed="true"] { color: var(--bg); background: var(--ink); }
+.act { background: var(--chip); border: 1px solid var(--line); color: var(--ink); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.how { margin: 0; color: var(--dim); font-size: 12px; text-shadow: 0 1px 4px #000; }
+.how b { color: var(--ink); font-weight: 600; }
+@media (max-width: 520px) { .how { flex-basis: 100%; order: -1; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<div class="bar">
+  <div class="choices" id="modes" role="group" aria-label="Mood"><button class="chip" type="button" data-value="crust" aria-pressed="true">Crust</button><button class="chip" type="button" data-value="flowing" aria-pressed="false">Flowing</button><button class="chip" type="button" data-value="embers" aria-pressed="false">Embers</button></div>
+  <button class="chip act" id="act" type="button">+ Train</button>
+  <p class="how"><b>Tap</b> send a train</p>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// Seeded random keeps every load the same.
+let seed = 1337;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const range = (a, b) => a + (b - a) * rnd();
+const ease = (x) => x * x * (3 - 2 * x);
+
+// Shared GLSL: hash, value noise and fbm.
+const NOISE = /* glsl */`
+float hash12(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+vec2 hash22(vec2 p) { float n = hash12(p); return vec2(n, hash12(p + n * 17.3 + 3.1)); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), u.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; }
+  return s;
+}`;
+const WORLD_VS = /* glsl */`
+varying vec3 vP;
+varying vec3 vN;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vP = w.xyz;
+  vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+
+// A quadratic Bezier in plan, walked by arc length.
+function makePath(B0, B1, B2) {
+  const bez = t => new THREE.Vector2().addScaledVector(B0, (1 - t) ** 2).addScaledVector(B1, 2 * t * (1 - t)).addScaledVector(B2, t * t);
+  const LUT = [{ t: 0, s: 0 }];
+  for (let i = 1, prev = bez(0); i <= 1000; i++) { const p = bez(i / 1000); LUT.push({ t: i / 1000, s: LUT[i - 1].s + p.distanceTo(prev) }); prev = p; }
+  const LEN = LUT[LUT.length - 1].s;
+  function tAt(s) {
+    s = Math.max(0, Math.min(LEN, s));
+    let lo = 0, hi = LUT.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (LUT[m].s < s) lo = m; else hi = m; }
+    const a = LUT[lo], b = LUT[hi];
+    return a.t + (b.t - a.t) * ((s - a.s) / Math.max(1e-6, b.s - a.s));
+  }
+  // Past either end the path runs on along its tangent.
+  function at(s, side = 0) {
+    const e = Math.max(0, Math.min(LEN, s)), d = s - e;
+    const t = tAt(e), p = bez(t), q = bez(Math.min(1, t + 0.001)), r = bez(Math.max(0, t - 0.001));
+    const tan = q.sub(r).normalize();
+    const n = new THREE.Vector2(-tan.y, tan.x);
+    return { x: p.x + n.x * side + tan.x * d, z: p.y + n.y * side + tan.y * d, yaw: Math.atan2(tan.x, tan.y), tan, n };
+  }
+  return { at, LEN };
+}
+
+// A box baked in place, yawed about its centre.
+function boxG(x, y, z, w, h, d, ry = 0, rz = 0) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (rz) g.rotateZ(rz);
+  if (ry) g.rotateY(ry);
+  g.translate(x, y + h / 2, z);
+  return g.toNonIndexed();
+}
+
+/* ---------- scene ---------- */
+// Ember field: a heavy viaduct crosses a cooling lava field at night.
+function build() {
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 40000);
+const Q = new URLSearchParams(location.search);
+const DECK = 30, CLOUD_Y = 520;
+
+const U = {
+  uTime: { value: 0 },
+  uCrack: { value: 1 }, uFlow: { value: 0.15 }, uEmber: { value: 0.15 },
+  uMoon: { value: new THREE.Vector3(0.689, 0.342, -0.632).normalize() },
+  uMoonC: { value: new THREE.Vector3(0.55, 0.7, 1.0) },
+  uHeadP: { value: new THREE.Vector3() }, uHeadD: { value: new THREE.Vector3(0, 0, -1) }, uHeadK: { value: 0 },
+  uHaze: { value: 0.0016 }, uHazeH: { value: 60 },
+};
+const MODES = {
+  crust: { uCrack: 1.0, uFlow: 0.12, uEmber: 0.12 },
+  flowing: { uCrack: 1.1, uFlow: 1.0, uEmber: 0.25 },
+  embers: { uCrack: 0.6, uFlow: 0.08, uEmber: 1.0 },
+};
+
+/* ---------- GLSL: the field, its heat, haze and sky ---------- */
+const FIELD = /* glsl */`
+${NOISE}
+uniform float uTime, uCrack, uFlow, uEmber, uHaze, uHazeH, uHeadK;
+uniform vec3 uMoon, uMoonC, uHeadP, uHeadD;
+const vec3 EMBER = vec3(1.0, 0.2, 0.045);
+// Cell edge distance: F2 minus F1 of a jittered grid.
+float vorEdge(vec2 p) {
+  vec2 n = floor(p), f = fract(p);
+  float F1 = 8.0, F2 = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j));
+    vec2 o = 0.5 + 0.42 * sin(6.2831 * hash22(n + g));
+    vec2 r = g + o - f;
+    float d = dot(r, r);
+    if (d < F1) { F2 = F1; F1 = d; } else if (d < F2) { F2 = d; }
+  }
+  return sqrt(F2) - sqrt(F1);
+}
+// Large hot regions of the field, 0 to 1.
+float heat(vec2 p) { return smoothstep(0.48, 0.92, fbm(p * 0.0016 + vec2(6.66, 9.02))); }
+// Molten channels follow one isoline of a slow noise.
+float riverN(vec2 p) {
+  // One meander leads from the near field out beside the viaduct.
+  float m = p.y + 140.0 + 0.9 * p.x + 30.0 * sin(p.x * 0.013) + 50.0 * (fbm(p * 0.004) - 0.5);
+  return min(abs(fbm(p * 0.0021 + vec2(11.0, 3.0)) - 0.5) + 0.02, abs(m) * 0.0045);
+}
+// Glow of the crust at p; fw is the pixel footprint in metres.
+float crack(vec2 p, float sc, float w, float fw) {
+  float e = vorEdge(p / sc);
+  // Far away, a crack below a pixel shows only its mean.
+  return mix(exp(-e / w), w * 2.0, clamp(fw / sc / w * 0.5, 0.0, 1.0));
+}
+float lavaGlow(vec2 p, float fw) {
+  float H = heat(p);
+  // A warp bends the cells, so plates never read as a grid.
+  vec2 q = p + (vec2(fbm(p * 0.02), fbm(p * 0.02 + 5.2)) - 0.5) * 26.0;
+  float var = vnoise(q * 0.035 + 2.0);
+  float w1 = (0.012 + 0.05 * H) * (0.45 + 0.9 * var);
+  float c1 = crack(q, 26.0, w1, fw) * (0.03 + 1.6 * H * H) * (0.35 + 0.9 * vnoise(q * 0.021 + 9.0));
+  float c2 = crack(q + 31.0, 8.0, 0.035 + 0.03 * H, fw) * H * H * H * 0.9 * (0.3 + 0.9 * vnoise(q * 0.06));
+  float c3 = crack(q + 77.0, 2.6, 0.05, fw) * pow(H, 5.0) * 0.4;
+  // The thinnest crust glows dull red right through.
+  float plate = pow(H, 3.0) * 0.07 * smoothstep(0.3, 0.8, fbm(q * 0.05));
+  float pulse = 0.72 + 0.4 * vnoise(p * 0.03 + vec2(uTime * 0.09, -uTime * 0.06));
+  float g = (c1 + c2 + c3 + plate) * pulse * uCrack;
+  // Channels widen and brighten in the flowing mood.
+  float rv = exp(-riverN(p) * mix(110.0, 34.0, uFlow));
+  float skin = vnoise(p * vec2(0.09, 0.16) + vec2(uTime * 0.5, uTime * 0.22));
+  g += rv * uFlow * (0.6 + 1.0 * skin * skin) * 1.1;
+  return g;
+}
+// Mean glow over a wide area, for light thrown up at the viaduct.
+float glowAvg(vec2 p) {
+  float H = heat(p);
+  return (0.03 + 0.16 * H) * H * uCrack + exp(-riverN(p) * 26.0) * uFlow * 0.3 + 0.012 * uCrack;
+}
+// Blackbody ramp: deep red, orange, then a pale yellow core.
+vec3 bb(float g) {
+  vec3 c = mix(vec3(1.0, 0.1, 0.015), vec3(1.0, 0.33, 0.05), smoothstep(0.3, 1.0, g));
+  c = mix(c, vec3(1.0, 0.72, 0.36), smoothstep(1.0, 2.2, g));
+  return c * g;
+}
+// Light thrown up by the field onto any surface.
+vec3 uplight(vec3 P, vec3 N) {
+  float h = max(P.y, 0.3);
+  float r = 4.0 + h * 0.7;
+  float g = glowAvg(P.xz) * 2.0 + glowAvg(P.xz + vec2(r, 0.0)) + glowAvg(P.xz - vec2(r, 0.0)) + glowAvg(P.xz + vec2(0.0, r)) + glowAvg(P.xz - vec2(0.0, r));
+  g /= 6.0;
+  // Near the crust the local cracks dominate and flicker.
+  float near = exp(-h / 3.5) * lavaGlow(P.xz + N.xz * 1.5, 0.0) * 0.6;
+  float facing = max(-N.y, 0.0) + 0.42 * (1.0 - abs(N.y));
+  return EMBER * (g * 7.0 + near) * facing * (0.2 + 0.8 * exp(-h / 22.0));
+}
+// The train headlight as a soft spot.
+vec3 headlight(vec3 P, vec3 N) {
+  vec3 L = uHeadP - P;
+  float d = length(L); L /= d;
+  float spot = smoothstep(0.955, 0.99, dot(-L, uHeadD));
+  return vec3(0.75, 0.87, 1.0) * uHeadK * 900.0 / (d * d + 30.0) * spot * max(dot(N, L) * 0.8 + 0.2, 0.0);
+}
+// Height haze, integrated along the ray.
+float hazeAmt(vec3 P) {
+  vec3 v = P - cameraPosition;
+  float dist = length(v), k = 1.0 / uHazeH;
+  float h0 = max(cameraPosition.y, 0.0), h1 = max(P.y, 0.0), dh = h1 - h0;
+  float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+  return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
+}
+// Haze takes the field's red near the ground, cold moon higher up.
+vec3 hazeCol(vec3 P) {
+  vec2 mid = mix(cameraPosition.xz, P.xz, 0.6);
+  float lit = glowAvg(mid) * 0.6 + glowAvg(P.xz) * 0.4;
+  float hgt = max(min(P.y, 200.0), 0.0) * 0.5 + cameraPosition.y * 0.5;
+  return EMBER * (0.006 + 1.25 * lit) * exp(-hgt / 55.0) + uMoonC * 0.0025;
+}
+vec3 haze(vec3 c, vec3 P, float keep) { return mix(c, hazeCol(P), hazeAmt(P) * keep); }
+// Sky: dark, a red dome over the field, ash cloud lit from below.
+vec3 sky(vec3 dir) {
+  float up = max(dir.y, 0.0);
+  vec3 col = vec3(0.0018, 0.0022, 0.0045) + uMoonC * 0.01 * pow(max(dot(dir, uMoon), 0.0), 3.0);
+  col += EMBER * 0.075 * exp(-up * 16.0) + EMBER * 0.02 * exp(-up * 4.0);
+  // Sparse stars, dimmed toward the glowing horizon.
+  vec2 sp = dir.xz / (dir.y + 0.25) * 260.0;
+  vec2 cell = floor(sp);
+  float st = step(0.993, hash12(cell)) * smoothstep(0.45, 0.0, length(fract(sp) - 0.5)) * smoothstep(0.08, 0.35, dir.y);
+  col += vec3(0.7, 0.8, 1.0) * st * 0.06 * hash12(cell + 3.0);
+  // A small cold moon with a wide halo in the ash.
+  float ma = sqrt(max(2.0 - 2.0 * dot(dir, uMoon), 0.0));
+  col += vec3(2.6, 2.9, 3.4) * smoothstep(0.0125, 0.011, ma) + uMoonC * (0.05 * exp(-ma * 28.0) + 0.012 * exp(-ma * 5.0));
+  if (dir.y > 0.002) {
+    float t = (${CLOUD_Y.toFixed(1)} - cameraPosition.y) / dir.y;
+    vec3 p = cameraPosition + dir * t;
+    vec2 w = vec2(fbm(p.xz * 0.0011 + 11.0), fbm(p.xz * 0.0011 + 23.0));
+    float d = fbm(p.xz * 0.0024 + vec2(3.0, 7.0) + w * 1.7 + vec2(uTime * 0.004, 0.0));
+    float cover = smoothstep(0.3, 0.62, d);
+    float thick = smoothstep(0.45, 0.85, d);
+    float g = glowAvg(p.xz * 0.6) * 0.5 + heat(p.xz) * 0.08;
+    vec3 cc = EMBER * (0.008 + 0.75 * g) * (0.5 + 0.8 * thick) + uMoonC * 0.003 * (1.0 - thick);
+    float far = 1.0 - exp(-t / 5000.0);
+    float graze = smoothstep(0.01, 0.12, dir.y);
+    col = mix(col, mix(mix(col, cc, cover), col, far * 0.6), graze);
+  }
+  return col;
+}`;
+
+/* ---------- materials ---------- */
+// The crust: black glassy basalt split by glowing cracks.
+const ground = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: WORLD_VS,
+  fragmentShader: /* glsl */`
+  varying vec3 vP;
+  varying vec3 vN;
+  ${FIELD}
+  void main() {
+    vec2 p = vP.xz;
+    float fw = length(fwidth(p));
+    float g = lavaGlow(p, fw);
+    // A fine bump gives the crust a surface to catch light.
+    float b0 = fbm(p * 0.35);
+    vec2 gr = vec2(fbm((p + vec2(0.4, 0.0)) * 0.35) - b0, fbm((p + vec2(0.0, 0.4)) * 0.35) - b0) / 0.4;
+    vec3 N = normalize(vec3(-gr.x * 1.6, 1.0, -gr.y * 1.6));
+    vec3 V = normalize(cameraPosition - vP);
+    float far = smoothstep(80.0, 600.0, length(cameraPosition - vP));
+    vec3 alb = vec3(0.022, 0.02, 0.019) * (0.7 + 0.6 * b0);
+    // Cracks light the crust near them; the moon grazes the plates.
+    float H = heat(p);
+    vec3 c = alb * (EMBER * (g * 0.9 + glowAvg(p) * 3.0) + uMoonC * 0.06 * max(dot(N, uMoon), 0.0));
+    float F = pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 Ns = normalize(vec3(-gr.x * 0.5, 1.0, -gr.y * 0.5));
+    c += uMoonC * 0.07 * (0.3 + F) * pow(max(dot(reflect(-V, Ns), uMoon), 0.0), 12.0) * (1.0 - far * 0.7);
+    c += sky(reflect(-V, vec3(0.0, 1.0, 0.0))) * F * 0.4;
+    c += headlight(vP, N) * alb * 3.0;
+    vec3 em = bb(g) * 3.2;
+    float f = hazeAmt(vP);
+    vec3 col = mix(c + em * (1.0 - 0.8 * f), hazeCol(vP), f);
+    // Far crust hands over to the horizon sky, so no seam shows.
+    col = mix(col, sky(normalize(vec3(-V.x, 0.0005, -V.z))), smoothstep(2500.0, 9000.0, length(cameraPosition - vP)));
+    gl_FragColor = vec4(col, 1.0);
+  }`,
+});
+
+// Concrete: lit only by the red field below and a cold moon on top edges.
+function concreteMat(base, spec = 0) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...U, uBase: { value: base }, uSpec: { value: spec } },
+    vertexShader: WORLD_VS,
+    fragmentShader: /* glsl */`
+    uniform float uBase, uSpec;
+    varying vec3 vP;
+    varying vec3 vN;
+    ${FIELD}
+    void main() {
+      vec3 N = normalize(vN);
+      vec3 V = normalize(cameraPosition - vP);
+      float panel = vnoise(vP.xz * 0.21 + vP.y * 0.13) * 0.5 + vnoise(vec2(vP.y * 0.9, (vP.x + vP.z) * 0.06)) * 0.5;
+      // Soot streaks run down the piers.
+      float soot = vnoise(vec2((vP.x + vP.z) * 0.8, vP.y * 0.05));
+      vec3 alb = vec3(uBase) * (0.7 + 0.5 * panel) * (0.75 + 0.35 * soot);
+      vec3 moon = uMoonC * max(dot(N, uMoon), 0.0) * smoothstep(0.25, 0.6, N.y) * 2.2;
+      vec3 c = alb * (uplight(vP, N) + moon + headlight(vP, N) + vec3(0.003, 0.0035, 0.005));
+      c += uSpec * uMoonC * pow(max(dot(reflect(-V, N), uMoon), 0.0), 30.0) * smoothstep(0.2, 0.6, N.y);
+      gl_FragColor = vec4(haze(c, vP, 1.0), 1.0);
+    }`,
+  });
+}
+const concrete = concreteMat(0.26);
+const metal = concreteMat(0.07, 0.6);
+
+// Window glow: warm, hazed a little less than surfaces.
+const glowMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: `varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `varying vec3 vP; ${FIELD} void main() { gl_FragColor = vec4(haze(vec3(1.9, 1.05, 0.45), vP, 0.6), 1.0); }`,
+});
+
+// Point flares with a size floor, so far lamps stay visible.
+const projU = { uScale: { value: 1 } };
+const flareMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...projU },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`
+  attribute vec3 color;
+  attribute float size;
+  uniform float uScale;
+  varying vec3 vC;
+  void main() {
+    vC = color;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = clamp(size * uScale / -mv.z, 2.0, 64.0);
+    gl_Position = projectionMatrix * mv;
+  }`,
+  fragmentShader: `varying vec3 vC; void main() { vec2 c = gl_PointCoord - 0.5; gl_FragColor = vec4(vC * exp(-dot(c, c) * 22.0) * smoothstep(0.5, 0.3, length(c)), 1.0); }`,
+});
+
+// Volumetric cone: bright core, soft silhouette, long fade.
+function cone(len, halfAngle, color, k, fall) {
+  const g = new THREE.ConeGeometry(Math.tan(halfAngle), 1, 48, 8, true);
+  g.translate(0, -0.5, 0);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, uColor: { value: color }, uK: { value: k }, uFall: { value: fall } },
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+    varying vec3 vP; varying vec3 vN; varying float vAlong;
+    void main() {
+      vAlong = clamp(-position.y, 0.0, 1.0);
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform vec3 uColor; uniform float uK, uFall;
+    varying vec3 vP; varying vec3 vN; varying float vAlong;
+    ${FIELD}
+    void main() {
+      vec3 V = normalize(cameraPosition - vP);
+      float rim = pow(abs(dot(normalize(vN), V)), 2.5);
+      float fall = exp(-vAlong * uFall) * smoothstep(0.0, 0.06, vAlong) * smoothstep(1.0, 0.6, vAlong);
+      // Ash in the air breaks the beam into drifting motes.
+      float mote = 0.75 + 0.5 * vnoise(vP.xz * 0.25 + vP.y * 0.3 + uTime * 0.4);
+      gl_FragColor = vec4(uColor * rim * fall * uK * mote * (1.0 - 0.5 * hazeAmt(vP)), 1.0);
+    }`,
+  }));
+  m.scale.setScalar(len);
+  m.renderOrder = 3;
+  m.frustumCulled = false;
+  scene.add(m);
+  return m;
+}
+
+/* ---------- the field ---------- */
+{
+  const g = new THREE.PlaneGeometry(50000, 50000, 1, 1);
+  g.rotateX(-Math.PI / 2);
+  scene.add(new THREE.Mesh(g, ground));
+}
+// Sky dome behind everything.
+{
+  const m = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), new THREE.ShaderMaterial({
+    uniforms: U, side: THREE.BackSide, depthWrite: false,
+    vertexShader: `varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `varying vec3 vP; ${FIELD} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(sky(d), 1.0); }`,
+  }));
+  m.renderOrder = -1;
+  scene.add(m);
+}
+
+/* ---------- the viaduct: heavy girder on tall square piers ---------- */
+const path = makePath(new THREE.Vector2(-150, -30), new THREE.Vector2(30, -120), new THREE.Vector2(900, -1500));
+const HW = 5.5;
+{
+  const parts = [];
+  const SEG = 8;
+  for (let s = -400; s < path.LEN + 400; s += SEG) {
+    const c = path.at(s + SEG / 2);
+    // A deep box girder with a slim parapet.
+    parts.push(boxG(c.x, DECK - 4.6, c.z, HW * 2 - 1.6, 4.6, SEG + 0.05, c.yaw));
+    parts.push(boxG(c.x, DECK - 0.5, c.z, HW * 2, 0.5, SEG + 0.05, c.yaw));
+    for (const side of [-1, 1]) {
+      const e = path.at(s + SEG / 2, side * (HW - 0.25));
+      parts.push(boxG(e.x, DECK, e.z, 0.5, 1.1, SEG + 0.05, e.yaw));
+      // A chamfered coping: its bevel catches the moon.
+      const k = path.at(s + SEG / 2, side * HW);
+      const g = new THREE.BoxGeometry(0.62, 0.62, SEG + 0.05);
+      g.rotateZ(Math.PI / 4); g.rotateY(k.yaw); g.translate(k.x, DECK + 1.1, k.z);
+      parts.push(g.toNonIndexed());
+    }
+  }
+  // Tall piers on wide footings, every 52 m.
+  for (let s = -364; s <= path.LEN + 400; s += 52) {
+    const c = path.at(s);
+    parts.push(boxG(c.x, -2, c.z, 7.5, 4.2, 6, c.yaw));
+    const g = new THREE.CylinderGeometry(2.2, 2.9, DECK - 4.6 + 2, 4, 1);
+    g.rotateY(Math.PI / 4); g.scale(1.45, 1, 1.0); g.rotateY(c.yaw); g.translate(c.x, (DECK - 4.6 - 2) / 2, c.z);
+    parts.push(g.toNonIndexed());
+    parts.push(boxG(c.x, DECK - 6.4, c.z, HW * 2 - 0.6, 1.8, 5, c.yaw));
+  }
+  scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
+}
+
+/* ---------- the train ---------- */
+const orbs = [];
+const train = (() => {
+  const CAR = 24, GAP = 1.0, N = 4, SPAN = N * (CAR + GAP);
+  const body = mergeGeometries([
+    new THREE.BoxGeometry(3.2, 3.6, CAR).translate(0, 0.8 + 1.8, 0).toNonIndexed(),
+    new THREE.BoxGeometry(2.6, 0.4, CAR - 1.5).translate(0, 4.6, 0).toNonIndexed(),
+    new THREE.BoxGeometry(2.4, 0.8, CAR - 4).translate(0, 0.4, 0).toNonIndexed(),
+  ]);
+  const wins = [];
+  for (const side of [-1, 1]) for (let k = 0; k < 8; k++) wins.push(new THREE.BoxGeometry(0.06, 1.05, 2.0).translate(side * 1.62, 2.75, -CAR / 2 + 2.3 + k * 2.75).toNonIndexed());
+  const winG = mergeGeometries(wins);
+  const cars = [];
+  for (let i = 0; i < N; i++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(body, metal), new THREE.Mesh(winG, glowMat));
+    scene.add(g); cars.push(g);
+  }
+  const lampG = new THREE.BufferGeometry();
+  lampG.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(9), 3));
+  lampG.setAttribute('color', new THREE.Float32BufferAttribute([3, 0.2, 0.08, 3, 0.2, 0.08, 3.2, 3.8, 4.6], 3));
+  lampG.setAttribute('size', new THREE.Float32BufferAttribute([0.9, 0.9, 1.6], 1));
+  const lamps = new THREE.Points(lampG, flareMat);
+  lamps.frustumCulled = false; lamps.renderOrder = 4; scene.add(lamps);
+  const beam = cone(320, 0.1, new THREE.Vector3(0.7, 0.85, 1.0), 1.1, 1.3);
+  const head = new THREE.Vector3(), d = new THREE.Vector3(), Y = new THREE.Vector3(0, -1, 0);
+  const orb = { pos: head, color: [0.8, 0.9, 1.0], k: 0.22, size: 0.7 };
+  orbs.push(orb);
+  const tc = new THREE.Vector3();
+  const camDir = (h) => tc.subVectors(h, camera.position).setY(0).normalize();
+  const carPos = Array.from({ length: N }, () => new THREE.Vector3());
+  function place(s, dir) {
+    for (let i = 0; i < N; i++) {
+      const c = path.at(s - dir * (i * (CAR + GAP) + CAR / 2));
+      cars[i].position.set(c.x, DECK, c.z);
+      cars[i].rotation.y = c.yaw;
+      carPos[i].set(c.x, DECK + 2.5, c.z);
+    }
+    const h = path.at(s), a = path.at(s + dir * 60);
+    head.set(h.x, DECK + 2.0, h.z);
+    d.set(a.x - h.x, -1.5, a.z - h.z).normalize();
+    U.uHeadP.value.copy(head); U.uHeadD.value.copy(d);
+    beam.position.copy(head); beam.quaternion.setFromUnitVectors(Y, d);
+    const p = lampG.attributes.position, t = path.at(s - dir * SPAN);
+    p.setXYZ(0, t.x + t.n.x * 1.1, DECK + 1.4, t.z + t.n.y * 1.1);
+    p.setXYZ(1, t.x - t.n.x * 1.1, DECK + 1.4, t.z - t.n.y * 1.1);
+    p.setXYZ(2, head.x, head.y, head.z);
+    p.needsUpdate = true;
+    // The lamp shows only when it faces the camera; tail lights the reverse.
+    const face = Math.max(0, -d.clone().setY(0).normalize().dot(camDir(head)));
+    const col = lampG.attributes.color;
+    col.setXYZ(2, 3.2 * face, 3.8 * face, 4.6 * face);
+    for (const k of [0, 1]) col.setXYZ(k, 3 * (1 - face * 0.8), 0.2 * (1 - face * 0.8), 0.08);
+    col.needsUpdate = true;
+    orb.k = 0.05 + 0.25 * face;
+  }
+  function show(on) { for (const c of cars) c.visible = on; lamps.visible = beam.visible = on; if (!on) orb.k = 0; U.uHeadK.value = on ? 1 : 0; }
+  return { place, show, SPAN, carPos, head, dir: d };
+})();
+
+/* ---------- ash: drifting flakes, lit red from below ---------- */
+const ASH = 3200;
+const ash = (() => {
+  const pos = new Float32Array(ASH * 3), vel = new Float32Array(ASH * 3), life = new Float32Array(ASH * 2), kind = new Float32Array(ASH), alpha = new Float32Array(ASH);
+  function spawn(i, anyAge) {
+    // Most flakes hang near the viaduct; some drift close to the camera.
+    let x, y, z;
+    if (rnd() < 0.8) {
+      const c = path.at(range(-120, 900), range(-60, 60));
+      x = c.x; z = c.z; y = kind[i] < 0.2 ? range(0, 12) : range(1, 75);
+    } else { x = range(10, 130); z = range(-170, -30); y = range(1, 40); }
+    pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+    vel[i * 3] = vel[i * 3 + 1] = vel[i * 3 + 2] = 0;
+    life[i * 2 + 1] = range(18, 40);
+    life[i * 2] = anyAge ? range(0, life[i * 2 + 1]) : 0;
+  }
+  for (let i = 0; i < ASH; i++) { kind[i] = rnd(); spawn(i, true); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('kind', new THREE.BufferAttribute(kind, 1));
+  g.setAttribute('alpha', new THREE.BufferAttribute(alpha, 1).setUsage(THREE.DynamicDrawUsage));
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, ...projU },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+    attribute float kind;
+    attribute float alpha;
+    uniform float uScale;
+    varying vec3 vC;
+    varying float vS;
+    ${FIELD}
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vec3 P = w.xyz;
+      // Embers glow; ash only scatters the light that reaches it.
+      float isEmber = step(kind, 0.008 + 0.2 * uEmber);
+      vec3 lit = uplight(P, vec3(0.0, -1.0, 0.0)) * 0.07 + uMoonC * 0.003;
+      vec3 L = P - uHeadP;
+      float al = dot(L, uHeadD), rad = length(L - uHeadD * al);
+      float inBeam = step(0.0, al) * smoothstep(al * 0.17 + 0.5, al * 0.08, rad) * 3000.0 / (al * al + 200.0) * uHeadK;
+      lit += vec3(0.7, 0.85, 1.0) * inBeam;
+      float fl = 0.6 + 0.4 * sin(uTime * 7.0 + kind * 300.0);
+      vC = mix(lit, bb(1.4) * 1.6 * fl, isEmber) * alpha;
+      vec4 mv = viewMatrix * w;
+      vS = mix(0.55, 0.3, isEmber) * uScale / -mv.z;
+      gl_PointSize = clamp(vS, 1.5, 24.0);
+      // Sub-pixel flakes fade instead of turning into hard dots.
+      vC *= clamp(vS / 1.5, 0.15, 1.0);
+      gl_Position = projectionMatrix * mv;
+    }`,
+    fragmentShader: `varying vec3 vC; varying float vS; void main() { vec2 c = gl_PointCoord - 0.5; gl_FragColor = vec4(vC * exp(-dot(c, c) * 14.0), 1.0); }`,
+  }));
+  pts.frustumCulled = false; pts.renderOrder = 5;
+  scene.add(pts);
+  const T = new THREE.Vector3();
+  function step(dt, drift, trainOn, tdir, speed, tm) {
+    for (let i = 0; i < ASH; i++) {
+      const j = i * 3;
+      let x = pos[j], y = pos[j + 1], z = pos[j + 2];
+      // Wind, a slow curl, and a thermal over the hot ground.
+      let ax = (0.9 + 0.8 * Math.sin(y * 0.05 + tm * 0.13 + z * 0.01) - vel[j]) * 0.4 * drift;
+      // Embers ride the thermals faster than ash.
+      const rise = kind[i] < 0.008 + 0.2 * U.uEmber.value ? 2.6 : 0.35;
+      let ay = (rise + 0.5 * Math.sin(x * 0.03 + tm * 0.2) - vel[j + 1]) * 0.4 * drift;
+      let az = (-0.4 + 0.7 * Math.cos(x * 0.02 + tm * 0.1) - vel[j + 2]) * 0.4 * drift;
+      if (trainOn) {
+        // The train wake: a drag along the track and a roll around it.
+        for (let k = 0; k < train.carPos.length; k++) {
+          const c = train.carPos[k];
+          const dx = x - c.x, dy = y - c.y, dz = z - c.z;
+          const r2 = dx * dx + dy * dy + dz * dz;
+          if (r2 > 900) continue;
+          const f = Math.exp(-r2 / 180) * speed;
+          const along = dx * tdir.x + dz * tdir.z;
+          const px = dx - tdir.x * along, pz = dz - tdir.z * along;
+          ax += tdir.x * f * 1.4; az += tdir.z * f * 1.4;
+          // Roll: lateral offset turns into lift, height into sideways push.
+          ax += -tdir.z * dy * f * 0.25; az += tdir.x * dy * f * 0.25;
+          ay += (px * -tdir.z + pz * tdir.x) * f * 0.25 + f * 0.3;
+        }
+      }
+      vel[j] += ax * dt; vel[j + 1] += ay * dt; vel[j + 2] += az * dt;
+      pos[j] = x + vel[j] * dt; pos[j + 1] = Math.max(0.5, y + vel[j + 1] * dt); pos[j + 2] = z + vel[j + 2] * dt;
+      life[i * 2] += dt * Math.max(drift, trainOn ? 0.3 : 0);
+      if (life[i * 2] > life[i * 2 + 1]) spawn(i, false);
+      const a = life[i * 2] / life[i * 2 + 1];
+      alpha[i] = Math.min(1, a * 6, (1 - a) * 6);
+    }
+    g.attributes.position.needsUpdate = true;
+    g.attributes.alpha.needsUpdate = true;
+  }
+  return { step, pts };
+})();
+ash.step(0.016, 1, false, null, 0, 0);
+
+/* ---------- heat shimmer: a screen-space distortion over warm pixels ---------- */
+const shimmer = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uTime: U.uTime, uAmt: { value: 0.0045 }, uAsp: { value: 1 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform float uTime, uAmt, uAsp;
+  varying vec2 vUv;
+  ${NOISE}
+  float warm(vec2 uv) { vec3 c = texture2D(tDiffuse, uv).rgb; return max(c.r - 0.9 * c.b - 0.4 * c.g, 0.0); }
+  void main() {
+    // Heat rises: the warmth just below a pixel bends it.
+    float m = warm(vUv - vec2(0.0, 0.01)) + warm(vUv - vec2(0.008, 0.03)) + warm(vUv - vec2(-0.008, 0.05)) + warm(vUv - vec2(0.0, 0.08));
+    m = smoothstep(0.004, 0.25, m * 0.25);
+    vec2 q = vUv * vec2(uAsp, 1.0);
+    float n1 = vnoise(q * vec2(34.0, 15.0) + vec2(0.0, -uTime * 2.4));
+    float n2 = vnoise(q * vec2(30.0, 13.0) + vec2(9.0, -uTime * 2.0));
+    vec2 off = (vec2(n1, n2) - 0.5) * vec2(0.6, 1.0) * uAmt * m;
+    gl_FragColor = vec4(texture2D(tDiffuse, vUv + off).rgb, 1.0);
+  }`,
+});
+
+/* ---------- framing ---------- */
+function frame(w, h, pr) {
+  camera.aspect = w / h;
+  if (w >= h) {
+    camera.fov = 50;
+    camera.position.set(30, 9, -10);
+    camera.lookAt(160, 28, -330);
+  } else {
+    camera.fov = 74;
+    camera.position.set(90, 9, -60);
+    camera.lookAt(120, 38, -420);
+  }
+  camera.updateProjectionMatrix();
+  projU.uScale.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+  shimmer.uniforms.uAsp.value = w / h;
+}
+
+/* ---------- motion ---------- */
+const run = { s: +(Q.get('train') || 330), dir: 1, v: 34, on: true, user: false };
+const START = -260, END = 1500;
+train.place(run.s, run.dir);
+let time = 0, tmode = null;
+const tdir = new THREE.Vector3();
+function update(dt, pace) {
+  time += dt * pace;
+  U.uTime.value = time;
+  // Mood changes ease the field over 1.6 s.
+  if (tmode) {
+    tmode.t = Math.min(1, tmode.t + dt / 1.6);
+    const e = ease(tmode.t);
+    for (const k in tmode.to) U[k].value = tmode.from[k] + (tmode.to[k] - tmode.from[k]) * e;
+    if (tmode.t >= 1) tmode = null;
+  }
+  const k = run.user ? 1 : pace;
+  if (run.on) {
+    run.s += run.dir * run.v * dt * k;
+    if (run.s > END + train.SPAN) { run.on = false; run.user = false; train.show(false); }
+    else train.place(run.s, run.dir);
+  }
+  tdir.copy(train.dir).setY(0).normalize();
+  ash.step(dt, pace, run.on && k > 0, tdir, run.on ? k : 0, time);
+}
+function action() {
+  if (run.on) return;
+  run.on = true; run.user = true; run.s = START; run.dir = 1;
+  train.show(true); train.place(run.s, run.dir);
+}
+function mode(id) {
+  const to = MODES[id];
+  if (!to) return;
+  tmode = { t: 0, to, from: Object.fromEntries(Object.keys(to).map(k => [k, U[k].value])) };
+}
+if (MODES[Q.get('mode')]) for (const k in MODES[Q.get('mode')]) U[k].value = MODES[Q.get('mode')][k];
+train.show(true);
+train.place(run.s, run.dir);
+
+return {
+  scene, camera, frame, update, orbs, passes: [shimmer],
+  tap: () => action(), action, mode,
+  lively: () => run.user || !!tmode,
+  post: { bloom: [0.7, 0.28, 0.9], haze: 0.02, tint: [0.0012, 0.0008, 0.0008], vig: 0.6, vigIn: 0.35, grain: 0.035, exposure: 1.0 },
+};
+}
+
+/* ---------- end scene ---------- */
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const canvas = renderer.domElement;
+document.body.prepend(canvas);
+const S = build(renderer);
+renderer.toneMappingExposure = S.post.exposure ?? 1;
+// Additive glows keep the target's alpha at 1, so bloom stays round.
+S.scene.traverse(o => {
+  for (const m of [].concat(o.material || [])) {
+    if (m.blending !== THREE.AdditiveBlending) continue;
+    Object.assign(m, { blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
+  }
+});
+
+// Soft orbs round the brightest lamps, squashed sideways into the haze.
+const ORB_N = 12;
+const orbPass = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
+    uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+    uN: { value: 0 }, uAsp: { value: 1 },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform vec3 uOP[${ORB_N}];
+  uniform vec4 uOC[${ORB_N}];
+  uniform int uN;
+  uniform float uAsp;
+  varying vec2 vUv;
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb;
+    for (int i = 0; i < ${ORB_N}; i++) {
+      if (i >= uN) break;
+      vec2 d = vUv - uOP[i].xy;
+      float r = length(vec2(d.x * uAsp * 0.6, d.y));
+      c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+    }
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
+const tmpV = new THREE.Vector3();
+function placeOrbs() {
+  S.camera.updateMatrixWorld();
+  let n = 0;
+  for (const o of S.orbs || []) {
+    if (n >= ORB_N || o.k <= 0.001) continue;
+    tmpV.copy(o.pos).project(S.camera);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
+    orbPass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
+    orbPass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    n++;
+  }
+  orbPass.uniforms.uN.value = n;
+}
+
+// Half-resolution bloom; only bright sources cross the threshold.
+function makeBloom(strength, radius, threshold) {
+  const b = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+  // A tighter Gaussian per mip; the stock kernel is nearly a box, so points bloom square.
+  for (const m of b.separableBlurMaterials) {
+    const c = m.uniforms.gaussianCoefficients.value, r = c.length;
+    for (let i = 0; i < r; i++) c[i] = Math.exp(-0.5 * i * i / ((r / 2.2) ** 2));
+  }
+  const full = b.setSize.bind(b);
+  b.setSize = (w, h) => full(Math.max(1, w / 2), Math.max(1, h / 2));
+  return b;
+}
+
+// Grade in linear light: tint lift, vignette, fixed grain.
+const grade = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
+    uTint: { value: new THREE.Vector3(...S.post.tint) }, uVig: { value: S.post.vig }, uVigIn: { value: S.post.vigIn }, uGrain: { value: S.post.grain },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform vec2 uRes;
+  uniform vec3 uTint;
+  uniform float uVig, uVigIn, uGrain;
+  varying vec2 vUv;
+  float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
+    vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+    c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c *= 1.0 + (h(vUv * uRes) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+    gl_FragColor = vec4(max(c, 0.0), 1.0);
+  }`,
+});
+
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(S.scene, S.camera));
+for (const p of S.passes || []) composer.addPass(p);
+composer.addPass(orbPass);
+composer.addPass(makeBloom(...S.post.bloom));
+if (S.post.haze) composer.addPass(makeBloom(S.post.haze, 1.0, 0.0));
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+let size = { w: 1, h: 1, dpr: 1 };
+function resize() {
+  const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
+  // Cap the pixel count so slow GPUs keep their frame rate.
+  const dpr = Math.max(1, Math.min(devicePixelRatio || 1, 2, Math.sqrt(2.6e6 / (w * h))));
+  size = { w, h, dpr };
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  grade.uniforms.uRes.value.set(w * dpr, h * dpr);
+  orbPass.uniforms.uAsp.value = w / h;
+  S.frame(w, h, dpr);
+  draw();
+}
+
+let visible = !document.hidden;
+function draw() {
+  if (!visible) return;
+  S.beforeRender?.(renderer);
+  placeOrbs();
+  composer.render();
+  if (!window.__ready) window.__ready = true;
+}
+
+/* Frame loop: full rate in an event, 30 fps while drifting, then sleep. */
+const reducedRM = matchMedia('(prefers-reduced-motion: reduce)');
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reducedRM.matches ? 0 : 1;
+function loop(now) {
+  raf = 0;
+  if (!visible) return;
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000);
+  lastT = now;
+  // Ambient motion eases out over 2 s once idle.
+  const awake = !reducedRM.matches && now - lastInput < SLEEP;
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  const lively = S.lively();
+  if (!lively && pace === 0) { draw(); return; }
+  try {
+    if (lively || now - lastDraw >= 31) {
+      // A drift frame covers the gap since the last draw.
+      S.update(lively ? dt : Math.min(0.1, Math.max(dt, (now - lastDraw) / 1000)), pace);
+      draw();
+      lastDraw = now;
+    }
+  } finally {
+    if (visible && !raf) raf = requestAnimationFrame(loop);
+  }
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible) { lastT = lastDraw = performance.now(); raf = requestAnimationFrame(loop); }
+}
+document.addEventListener('visibilitychange', () => {
+  visible = !document.hidden;
+  if (!visible) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw(); wake();
+});
+
+/* Pointer: a press is a tap unless it moves 8 px or holds 300 ms. */
+let press = null;
+canvas.addEventListener('pointerdown', e => { press = { x: e.clientX, y: e.clientY, t: performance.now() }; wake(); });
+canvas.addEventListener('pointerup', e => {
+  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8 && performance.now() - press.t < 300) {
+    S.tap(new THREE.Vector2(e.clientX / size.w * 2 - 1, 1 - e.clientY / size.h * 2));
+  }
+  press = null; wake();
+});
+canvas.addEventListener('pointercancel', () => { press = null; });
+
+const chips = [...document.querySelectorAll('#modes .chip')];
+function pick(id) {
+  for (const c of chips) c.setAttribute('aria-pressed', String(c.dataset.value === id));
+  S.mode(id); wake();
+}
+for (const c of chips) c.addEventListener('click', () => pick(c.dataset.value));
+document.getElementById('act').addEventListener('click', () => { S.action(); wake(); });
+addEventListener('keydown', e => {
+  const i = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+  if (i !== undefined && chips[i]) pick(chips[i].dataset.value);
+  if (e.code === 'Space' && !e.target.closest?.('button')) { e.preventDefault(); S.action(); }
+  wake();
+});
+addEventListener('resize', resize);
+
+// Compile first, so the first frame lands whole.
+(async () => {
+  // Async compile needs the parallel-compile extension.
+  if (renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(S.scene, S.camera);
+  else renderer.compile(S.scene, S.camera);
+  resize();
+  wake();
+})();
+</script>
+</body>
+</html>
