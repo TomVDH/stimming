@@ -90,9 +90,11 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 import { LIB, BIG, GROUPS, groupOf, SNOW, CH_LIGHT, BIG_OF } from './channels.js';
 initPage({ id: 'tvtree' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
 // A header pill opens the contact sheet of every channel.
 const sheetLink = Object.assign(document.createElement('a'), { className: 'ver', href: 'channels.html', textContent: 'Channels', title: 'Every channel on one sheet' });
 document.querySelector('header[data-shell] .tools')?.prepend(sheetLink);
@@ -1598,12 +1600,14 @@ function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
   const apply = () => {
     const w = panel.clientWidth, h = panel.clientHeight;
     if (!w || !h) return;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: cap, budget, low: lowDpr }));
     renderer.setSize(w, h, false);
     onSize(w, h);
   };
   new ResizeObserver(apply).observe(panel);
   addEventListener('perf-low', apply);
+  // A new quality setting re-fits the renderer.
+  onQuality(apply);
   apply();
 }
 // The tree and every anchor follow the stage shape.
