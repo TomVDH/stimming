@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sonar</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Sonar: a red low-light console, an active scope and a sonogram. */
+:root { --stage: oklch(0.08 0.012 25); }
+.stage--sonar { cursor: crosshair; }
+.stage--sonar.held { cursor: grabbing; }
+.stage--sonar canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.stage--sonar canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--sonar canvas { transition: none; } }
+/* The die is a solid face with its pips cut out. */
+.chip svg.die { width: 16px; height: 16px; flex: none; fill: currentColor; stroke: none; }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Sonar</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active mode, tap a bearing to ping it, or press Space to ping all round; drag around the centre to steer. In Sonogram mode the sea scrolls past as a waterfall; tap to knock the hull and drag to tune the cursor.">
+      <p class="fail" hidden>Sonar needs WebGL2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="mode" role="group" aria-label="Display">
+        <button class="chip" type="button" data-value="active" aria-pressed="true">Active</button>
+        <button class="chip" type="button" data-value="sono" aria-pressed="false">Sonogram</button>
+      </div>
+      <label class="slider"><span id="sliderLab">Range</span><input type="range" id="slider" min="0" max="1" step="0.01" value="0.5" aria-label="Range"></label>
+      <div class="actions">
+        <button class="chip" id="ping" type="button">Ping</button>
+        <button class="chip" id="shuffle" type="button" title="Shuffle: a new sea"><svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M3.5 1.5h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5.2 3.9a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zm5.6 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zM8 6.8a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zM5.2 9.7a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zm5.6 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"/></svg>Shuffle</button>
+      </div>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Afterglow</span><div class="choices" id="persist" role="group" aria-label="Afterglow">
+              <button class="chip" type="button" data-value="short" aria-pressed="false">Short</button>
+              <button class="chip" type="button" data-value="long" aria-pressed="true">Long</button>
+            </div></div>
+            <div class="group"><span>Screen</span><div class="choices" id="curve" role="group" aria-label="Screen">
+              <button class="chip" type="button" data-value="flat" aria-pressed="false">Flat</button>
+              <button class="chip" type="button" data-value="curved" aria-pressed="true">Curved</button>
+            </div></div>
+            <div class="group"><span>Scanlines</span><div class="choices" id="scan" role="group" aria-label="Scanlines">
+              <button class="chip" type="button" data-value="off" aria-pressed="false">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="true">On</button>
+            </div></div>
+            <div class="group"><span>Grid</span><div class="choices" id="grid" role="group" aria-label="Grid">
+              <button class="chip" type="button" data-value="off" aria-pressed="false">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="true">On</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>ping that bearing; knock on the sonogram</dd></div>
+          <div><dt>Drag</dt><dd>steer; tune on the sonogram</dd></div>
+          <div class="fine"><dt><kbd>Space</kbd></dt><dd>ping all round</dd></div>
+          <div class="fine"><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>steer or tune</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Sonar</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, audioKit, sound, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+initPage({ id: 'sonar' });
+
+const PI = Math.PI, TAU = PI * 2, D2R = PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const wrapA = a => ((a % TAU) + TAU) % TAU;
+const angDiff = (a, b) => { const d = wrapA(a - b + PI) - PI; return Math.abs(d); };
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.sonar.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.sonar.${k}`, String(v)); } catch { /* storage is optional */ } };
+const num = (k, d) => { const v = saved(k); return v == null || isNaN(+v) ? d : +v; };
+const opts = {
+  mode: saved('mode') === 'sono' ? 'sono' : 'active',
+  range: num('range', 0.55),
+  span: num('span', 0.33),
+  persist: saved('persist') || 'long',
+  curve: saved('curve') || 'curved',
+  scan: saved('scan') || 'on',
+  grid: saved('grid') || 'on',
+};
+let reduce = reduced();
+onReducedChange(v => { reduce = v; hudDirty = true; });
+
+// The slider maps to metres in Active and to hertz in Sonogram.
+const rangeM = () => 500 * Math.pow(8, opts.range);
+const spanHz = () => 500 * Math.pow(8, opts.span);
+const tau = () => (opts.persist === 'long' ? 8 : 3);
+const RING_T = 2.4;     // seconds for a ping to reach full range
+const NBIN = 1024, FMAX = 4000, NROW = 384, ROW_HZ = 20;
+const BIN_HZ = FMAX / NBIN;
+
+/* ---------- WebGL2 ---------- */
+const stage = document.getElementById('stage');
+const barEl = document.querySelector('.bar');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+if (!gl) fail();
+// Half floats keep the afterglow smooth; bytes are the fallback.
+const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
+
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+const NOISE = `
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+float angDiff(float a, float b) { return abs(mod(a - b + 3.14159265, 6.2831853) - 3.14159265); }
+`;
+
+/* ---------- K1: accumulation and decay (from Star trails) ---------- */
+// Two float targets ping-pong; each frame fades the plate by exp(-dt/tau).
+const DECAY = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform float uK, uEps; in vec2 vUv; out vec4 o;
+void main() { vec4 c = texture(uSrc, vUv) * uK; o = max(c - uEps, 0.0); }`;
+/* ---------- end K1 ---------- */
+
+// The ping front paints the ring it swept since the last frame.
+// Echo strength comes from the seabed, the contacts and their shadows.
+const MAXC = 12;
+const EXCITE = `#version 300 es
+precision highp float;
+uniform vec2 uCenter, uOwn;
+uniform float uRad, uR0, uR1, uBeam, uHalf, uRange, uSeed, uTime, uGain;
+uniform vec4 uC[${MAXC}]; uniform vec4 uK[${MAXC}]; uniform int uN;
+out vec4 o;
+${NOISE}
+void main() {
+  vec2 p = gl_FragCoord.xy - uCenter;
+  float r = length(p);
+  if (r < uR0 || r >= uR1 || r > uRad) { o = vec4(0.0); return; }
+  float brg = atan(p.x, p.y);
+  float beam = uHalf > 3.0 ? 1.0 : smoothstep(uHalf, uHalf * 0.55, angDiff(brg, uBeam));
+  if (beam <= 0.0) { o = vec4(0.0); return; }
+  float rn = r / uRad;
+  vec2 w = uOwn + p / uRad * uRange;
+  float rw = rn * uRange;
+  // Rocks, sand waves and a soft bottom make the clutter.
+  float base = fbm(w / 300.0 + uSeed);
+  float rock = smoothstep(0.58, 0.78, base) * (0.35 + 0.9 * fbm(w / 55.0 + uSeed * 1.7));
+  float wave = pow(0.5 + 0.5 * sin(dot(w, vec2(0.6, 0.8)) / 34.0 + fbm(w / 420.0 + uSeed) * 9.0), 10.0)
+             * smoothstep(0.47, 0.6, base) * 0.22;
+  float clutter = 0.05 + rock + wave;
+  float shade = 1.0, tgt = 0.0;
+  for (int i = 0; i < ${MAXC}; i++) {
+    if (i >= uN) break;
+    vec4 c = uC[i]; vec4 k = uK[i];
+    // Solid contacts cast an acoustic shadow behind them.
+    if (k.z < 0.5 || k.z > 2.5) {
+      vec2 rel = c.xy - uOwn; float rc = length(rel);
+      float hw = atan(c.z * 0.8, max(rc, 1.0));
+      shade *= 1.0 - 0.88 * k.y / (k.y + 0.4) * smoothstep(hw, hw * 0.5, angDiff(brg, atan(rel.x, rel.y)))
+                    * smoothstep(rc + c.w, rc + c.z * 1.2, rw);
+    }
+    vec2 dv = w - c.xy;
+    float ca = cos(k.x), sa = sin(k.x);
+    vec2 l = vec2(ca * dv.x + sa * dv.y, -sa * dv.x + ca * dv.y);
+    vec2 q = l / c.zw;
+    float d = dot(q, q);
+    if (d > 2.5) continue;
+    float v;
+    if (k.z < 0.5) v = smoothstep(1.0, 0.7, d) * (0.6 + 0.8 * hash12(floor(l / 7.0) + k.w)) + smoothstep(0.3, 0.0, abs(abs(q.x) - 0.85)) * smoothstep(1.0, 0.6, d) * 0.8;
+    else if (k.z < 1.5) v = smoothstep(1.4, 0.3, d) * step(0.83, hash12(floor((w + vec2(uTime * 2.0, uTime)) / 10.0) + k.w)) * 1.6;
+    else if (k.z < 2.5) v = smoothstep(1.0, 0.35, d);
+    else v = smoothstep(1.0, 0.15, d) * (0.45 + 0.8 * fbm(l / 60.0 + uTime * 0.15));
+    tgt += v * k.y;
+  }
+  // Echoes scatter, so the clutter speckles like real returns.
+  float speck = min(-log(max(hash12(gl_FragCoord.xy * 1.37 + uSeed * 91.0 + floor(uTime * 30.0)), 1e-3)), 3.5);
+  float spread = 1.0 / (1.0 + rn * rn * 2.4);
+  float ringDown = exp(-rn * 55.0) * 1.3;
+  float e = (clutter * shade * speck * 0.3 + tgt * (0.75 + 0.35 * speck)) * spread + ringDown;
+  o = vec4(e * beam * uGain, 0.0, 0.0, 1.0);
+}`;
+// The frame holds the raw light of the current display.
+const FRAME = `#version 300 es
+precision highp float;
+uniform sampler2D uAcc, uFall;
+uniform int uMode;
+uniform vec2 uCenter; uniform vec4 uBox;
+uniform float uRad, uFront, uBeam, uHalf, uDpr, uHead, uSpan, uRowsVis;
+in vec2 vUv; out vec4 o;
+${NOISE}
+void main() {
+  vec2 px = gl_FragCoord.xy;
+  float L = 0.0;
+  if (uMode == 0) {
+    L = texture(uAcc, vUv).r;
+    vec2 p = px - uCenter; float r = length(p);
+    if (uFront > 0.0) {
+      float beam = uHalf > 3.0 ? 1.0 : smoothstep(uHalf, uHalf * 0.55, angDiff(atan(p.x, p.y), uBeam));
+      float g = (r - uFront) / (1.4 * uDpr);
+      L += 0.55 * exp(-g * g) * beam;
+    }
+    L *= smoothstep(uRad + 1.5 * uDpr, uRad - 0.5 * uDpr, r);
+  } else if (px.x >= uBox.x && px.x <= uBox.z && px.y >= uBox.y && px.y <= uBox.w) {
+    vec2 uv = (px - uBox.xy) / (uBox.zw - uBox.xy);
+    // Age one starts below the newest row, so the top never blends.
+    float row = uHead - (1.0 - uv.y) * uRowsVis - 1.0;
+    float b = texture(uFall, vec2(uv.x * uSpan / ${FMAX.toFixed(1)}, (row + 0.5) / ${NROW.toFixed(1)})).r;
+    // A contrast curve sinks the sea floor and lifts the lines.
+    L = pow(b, 2.2) * 3.2;
+  }
+  o = vec4(L, 0.0, 0.0, 1.0);
+}`;
+const DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uTexel;
+void main() {
+  float s = texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).r + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).r
+          + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).r + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).r;
+  o = vec4(s * 0.25, 0.0, 0.0, 1.0);
+}`;
+const BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uDir;
+void main() {
+  float s = texture(uSrc, vUv).r * 0.227027;
+  s += (texture(uSrc, vUv + uDir * 1.384615).r + texture(uSrc, vUv - uDir * 1.384615).r) * 0.316216;
+  s += (texture(uSrc, vUv + uDir * 3.230769).r + texture(uSrc, vUv - uDir * 3.230769).r) * 0.070270;
+  o = vec4(s, 0.0, 0.0, 1.0);
+}`;
+// The tube: curve, glow, graticule light, scanlines, flicker and grain.
+const SCREEN = `#version 300 es
+precision highp float;
+uniform sampler2D uFrame, uBloom, uHud;
+uniform vec2 uRes; uniform vec3 uTint, uHot;
+uniform float uCurve, uScan, uTime, uFlick, uSwitch, uGrain;
+in vec2 vUv; out vec4 o;
+${NOISE}
+void main() {
+  vec2 c = vUv * 2.0 - 1.0;
+  float as = uRes.x / uRes.y;
+  vec2 cc = c * vec2(as, 1.0) / sqrt(as * as + 1.0);
+  c *= 1.0 + uCurve * dot(cc, cc);
+  // A display switch folds the raster to one line, then opens it.
+  c.y *= 1.0 + uSwitch * 40.0;
+  vec2 w = c * 0.5 + 0.5;
+  float edge = smoothstep(0.0, 0.006, min(min(w.x, 1.0 - w.x), min(w.y, 1.0 - w.y)));
+  float L = texture(uFrame, w).r + texture(uBloom, w).r * 0.9 + texture(uHud, w).r * 0.42;
+  L += uSwitch * 0.8 * exp(-abs(c.y) * 2.0);
+  L += 0.0035;
+  if (uScan > 0.5) L *= 0.8 + 0.2 * sin(w.y * uRes.y * 3.14159);
+  L *= uFlick;
+  vec3 col = uTint * (1.0 - exp(-L * 1.5)) * 1.55 + uHot * max(L - 1.1, 0.0) * 0.22;
+  col *= 1.0 - dot(c * 0.5, c * 0.5) * 0.55;
+  col += (hash12(gl_FragCoord.xy + uGrain * 917.0) - 0.5) * 0.012 * uTint;
+  col *= edge;
+  o = vec4(pow(max(col, 0.0), vec3(1.0 / 2.2)), 1.0);
+}`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+const P = {
+  decay: program(QUAD_VS, DECAY, ['aPos']),
+  excite: program(QUAD_VS, EXCITE, ['aPos']),
+  frame: program(QUAD_VS, FRAME, ['aPos']),
+  down: program(QUAD_VS, DOWN, ['aPos']),
+  blur: program(QUAD_VS, BLUR, ['aPos']),
+  screen: program(QUAD_VS, SCREEN, ['aPos']),
+};
+
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+let acc = [], ai = 0, frame = null, blm = [];
+const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
+
+// The waterfall is a ring of rows: one byte per frequency bin.
+const fallTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, fallTex);
+gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, NBIN, NROW, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(NBIN * NROW));
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+// The graticule and readouts draw in grey on a 2D canvas.
+const hud = document.createElement('canvas'), hctx = hud.getContext('2d');
+const hudTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, hudTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+const TINT = linFit(0.6, 0.24, 27), HOT = linFit(0.86, 0.11, 48);
+
+/* ---------- the sea ---------- */
+// Kinds: 0 wreck, 1 fish school, 2 whale, 3 unknown.
+const KIND = ['WRECK', 'BIO  SCHOOL', 'BIO', 'UNKNOWN'];
+const sea = { seed: 0, own: [0, 0], head: 0, speed: 9, contacts: [], oddNext: 0 };
+function place(dist, brg) { return [sea.own[0] + Math.sin(brg) * dist, sea.own[1] + Math.cos(brg) * dist]; }
+function shuffle() {
+  sea.seed = Math.random() * 50;
+  sea.own = [0, 0];
+  sea.head = Math.random() * TAU;
+  const C = [];
+  const wb = Math.random() * TAU;
+  C.push({ kind: 0, pos: place(rnd(450, 1150), wb), a: rnd(45, 70), b: rnd(10, 15), orient: Math.random() * PI, str: 2.4, vel: [0, 0] });
+  for (let i = 0; i < 2; i++) {
+    const v = Math.random() * TAU;
+    C.push({ kind: 1, pos: place(i ? rnd(800, 2600) : rnd(300, 1200), Math.random() * TAU), a: rnd(80, 150), b: rnd(45, 80), orient: Math.random() * PI, str: 0.95, vel: [Math.sin(v) * 3, Math.cos(v) * 3] });
+  }
+  const wv = Math.random() * TAU;
+  C.push({ kind: 2, pos: place(rnd(600, 1500), Math.random() * TAU), a: 18, b: 7, orient: wv, str: 1.5, vel: [Math.sin(wv) * 12, Math.cos(wv) * 12], turn: 0 });
+  C.forEach((c, i) => (c.id = i * 7.3 + sea.seed));
+  sea.contacts = C;
+  sea.oddNext = 2 + Math.floor(Math.random() * 4);
+  prop.f1 = rnd(31, 46); prop.blades = 3 + Math.floor(Math.random() * 3); prop.amp = 0; prop.target = 0.8;
+  song.bout = false; song.boutT = rnd(2, 8);
+  readouts.length = 0;
+  hudDirty = true;
+}
+// Now and then a ping finds something large that should not be there.
+function maybeOdd() {
+  if (sea.contacts.some(c => c.kind === 3)) return;
+  if (--sea.oddNext > 0) return;
+  sea.oddNext = 4 + Math.floor(Math.random() * 6);
+  const v = Math.random() * TAU, long = Math.random() < 0.5;
+  sea.contacts.push({ kind: 3, pos: place(rnd(0.75, 0.95) * rangeM(), Math.random() * TAU), a: long ? 380 : 230, b: long ? 120 : 210, orient: v, str: 1.7, vel: [Math.sin(v) * 7, Math.cos(v) * 7], life: rnd(45, 80), id: Math.random() * 99 });
+}
+function stepSea(dt) {
+  sea.own[0] += Math.sin(sea.head) * sea.speed * dt;
+  sea.own[1] += Math.cos(sea.head) * sea.speed * dt;
+  for (let i = sea.contacts.length - 1; i >= 0; i--) {
+    const c = sea.contacts[i];
+    if (c.kind === 2) {
+      // The whale wanders on a slowly bending course.
+      c.turn += (Math.random() - 0.5) * dt * 0.6; c.turn *= 0.995;
+      c.orient += c.turn * dt;
+      c.vel = [Math.sin(c.orient) * 12, Math.cos(c.orient) * 12];
+    }
+    c.pos[0] += c.vel[0] * dt; c.pos[1] += c.vel[1] * dt;
+    if (c.kind === 3) { c.life -= dt; if (c.life < 10) c.str = 1.7 * Math.max(0, c.life / 10); if (c.life <= 0) sea.contacts.splice(i, 1); }
+  }
+}
+
+/* ---------- the passive picture: whale song and a far propeller ---------- */
+// A song is phrases of units; phrases repeat, as humpback song does.
+const song = { bout: false, boutT: 5, phrase: [], ui: 0, ut: 0, gap: 0, reps: 0, f: 200, amp: 0 };
+function makeUnit() {
+  const r = Math.random();
+  if (r < 0.3) { const f0 = rnd(140, 260); return { type: 'glide', f0, f1: f0 * rnd(1.8, 2.6), dur: rnd(0.8, 1.6), vib: 0 }; }
+  if (r < 0.55) { const f0 = rnd(420, 760); return { type: 'glide', f0, f1: f0 * rnd(0.35, 0.55), dur: rnd(0.6, 1.2), vib: 0 }; }
+  if (r < 0.75) return { type: 'flat', f0: rnd(95, 160), f1: 0, dur: rnd(1.4, 2.4), vib: rnd(1.4, 2.6) };
+  if (r < 0.9) { const f0 = rnd(260, 380); return { type: 'arch', f0, f1: f0 * rnd(1.6, 2.2), dur: rnd(0.7, 1.3), vib: 0 }; }
+  const g = rnd(90, 130); return { type: 'glide', f0: g, f1: g * 0.6, dur: rnd(0.3, 0.5), vib: 0 };
+}
+function stepSong(dt) {
+  if (!song.bout) {
+    song.amp = Math.max(0, song.amp - dt * 3);
+    song.boutT -= dt;
+    if (song.boutT <= 0) {
+      song.bout = true; song.boutT = rnd(30, 55);
+      song.phrase = Array.from({ length: 3 + Math.floor(Math.random() * 3) }, makeUnit);
+      song.ui = 0; song.ut = 0; song.gap = 0.4; song.reps = 0;
+    }
+    return;
+  }
+  song.boutT -= dt;
+  if (song.gap > 0) { song.gap -= dt; song.amp = Math.max(0, song.amp - dt * 8); return; }
+  const u = song.phrase[song.ui];
+  song.ut += dt;
+  const p = clamp(song.ut / u.dur);
+  let f = u.f0;
+  if (u.type === 'glide') f = u.f0 * Math.pow(u.f1 / u.f0, p * p * (3 - 2 * p));
+  else if (u.type === 'arch') f = lerp(u.f0, u.f1, Math.sin(PI * p));
+  if (u.vib) f *= 1 + 0.012 * Math.sin(song.ut * u.vib * TAU);
+  song.f = f;
+  song.amp = Math.pow(Math.sin(PI * p), 0.6);
+  if (song.ut >= u.dur) {
+    song.ut = 0; song.gap = rnd(0.25, 0.9);
+    if (++song.ui >= song.phrase.length) {
+      song.ui = 0;
+      if (++song.reps >= 2 + Math.floor(Math.random() * 2)) {
+        song.reps = 0;
+        if (song.boutT <= 0) { song.bout = false; song.boutT = rnd(14, 30); }
+        else song.phrase = Array.from({ length: 3 + Math.floor(Math.random() * 3) }, makeUnit);
+      }
+    }
+  }
+}
+// A distant ship drifts in and out; its blades beat at a slow rate.
+const prop = { f1: 37, blades: 4, amp: 0, target: 0.8, wob: 0 };
+function stepProp(dt) {
+  if (Math.random() < dt / 25) prop.target = Math.random() < 0.25 ? 0 : rnd(0.35, 1);
+  prop.amp = lerp(prop.amp, prop.target, 1 - Math.exp(-dt / 6));
+  prop.wob += dt;
+}
+let knockAt = -1e9;
+
+/* ---------- the waterfall rows ---------- */
+const rowF = new Float32Array(NBIN), rowB = new Uint8Array(NBIN);
+let head = 0, rowClock = 0;
+function addLine(f, amp, width) {
+  const c = f / BIN_HZ;
+  const lo = Math.max(0, Math.floor(c - width * 3)), hi = Math.min(NBIN - 1, Math.ceil(c + width * 3));
+  for (let i = lo; i <= hi; i++) { const g = (i - c) / width; rowF[i] += amp * Math.exp(-g * g); }
+}
+function makeRow(tt) {
+  const beat = 1 + 0.45 * Math.sin(TAU * prop.f1 / prop.blades / 9 * tt);
+  for (let i = 0; i < NBIN; i++) {
+    const f = i * BIN_HZ;
+    // Sea noise is louder low down; each bin speckles like real data.
+    const floor = 0.11 + 0.1 * Math.exp(-f / 300);
+    const cav = prop.amp * 0.07 * beat * Math.exp(-Math.pow((f - 900) / 900, 2));
+    rowF[i] = (floor + cav) * Math.min(3.2, -Math.log(Math.random() + 1e-6));
+  }
+  // Our own machinery hums at a few fixed lines.
+  addLine(60, 0.16, 0.7); addLine(180, 0.07, 0.7); addLine(400, 0.06, 0.8);
+  // Propeller tonals sit at multiples of the blade line and wander a little.
+  if (prop.amp > 0.02) {
+    for (let k = 1; k <= 18; k++) {
+      const f = k * prop.f1 * (1 + 0.002 * Math.sin(prop.wob * 0.3 + k));
+      addLine(f, prop.amp * (k % prop.blades === 0 ? 0.95 : 0.5) / Math.sqrt(k), 0.8);
+    }
+  }
+  if (song.amp > 0.01) for (let h = 1; h <= 4; h++) addLine(song.f * h, song.amp * 1.5 / Math.pow(h, 1.2), 1.6);
+  // A hull knock is broadband for an instant, then the hull rings.
+  const ka = tt - knockAt;
+  if (ka >= 0 && ka < 2) {
+    const flash = Math.exp(-ka / 0.07) * 1.4;
+    if (flash > 0.02) for (let i = 0; i < NBIN; i++) rowF[i] += flash * (0.7 + 0.3 * Math.random());
+    const ring = Math.exp(-ka / 0.5);
+    addLine(880, ring, 1); addLine(1760, ring * 0.6, 1); addLine(2640, ring * 0.3, 1.2);
+  }
+  for (let i = 0; i < NBIN; i++) rowB[i] = Math.min(255, rowF[i] * 0.5 * 255);
+  head = (head + 1) % NROW;
+  gl.bindTexture(gl.TEXTURE_2D, fallTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, head, NBIN, 1, gl.RED, gl.UNSIGNED_BYTE, rowB);
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ keys: new Set([' ', 'Enter']), sleepMs: 2500 });
+let V = null, T = null, toneLoad = null;
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => { toneLoad = null; if (m && !V) { T = m; V = buildVoices(); } });
+  return null;
+}
+function buildVoices() {
+  const out = kit.out;
+  const rev = new T.Reverb({ decay: 5.5, preDelay: 0.03, wet: 0.42 }).connect(out);
+  // The ping: a clean sine with a long, wet tail.
+  const ping = new T.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.004, decay: 1.1, sustain: 0, release: 0.6 }, volume: -11 }).connect(rev);
+  const echoF = new T.Filter({ type: 'lowpass', frequency: 1350, Q: 0.7 }).connect(rev);
+  const echo = new T.PolySynth(T.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.012, decay: 0.55, sustain: 0, release: 0.4 } }).connect(echoF);
+  echo.maxPolyphony = 32; echo.volume.value = -13;
+  const verbF = new T.Filter({ type: 'bandpass', frequency: 1100, Q: 0.9 }).connect(rev);
+  const verb = new T.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.06, decay: RING_T * 0.9, sustain: 0, release: 0.3 }, volume: -31 }).connect(verbF);
+  // The sea bed hiss runs all the time, low and filtered.
+  const bedG = new T.Gain(0).connect(out);
+  new T.Noise('brown').connect(new T.Filter({ type: 'lowpass', frequency: 330 }).connect(bedG)).start();
+  // The whale is two sines through a soft filter into the reverb.
+  const whaleG = new T.Gain(0).connect(rev);
+  const whaleF = new T.Filter({ type: 'lowpass', frequency: 1600 }).connect(whaleG);
+  const w1 = new T.Oscillator(200, 'sine').connect(whaleF).start();
+  const w2g = new T.Gain(0.28).connect(whaleF);
+  const w2 = new T.Oscillator(400, 'triangle').connect(w2g).start();
+  // The far ship: two low tonals and a chuff, all beating with the blades.
+  const propG = new T.Gain(0).connect(out);
+  const beatG = new T.Gain(0.6).connect(propG);
+  const beat = new T.LFO(1, 0.25, 1).connect(beatG.gain).start();
+  const p1 = new T.Oscillator(74, 'sine').connect(beatG).start();
+  const p2g = new T.Gain(0.5).connect(beatG);
+  const p2 = new T.Oscillator(148, 'sine').connect(p2g).start();
+  const chuffG = new T.Gain(0.35).connect(beatG);
+  new T.Noise('pink').connect(new T.Filter({ type: 'bandpass', frequency: 650, Q: 1.2 }).connect(chuffG)).start();
+  // A knock: a dull thump with a short metal ring.
+  const thump = new T.MembraneSynth({ pitchDecay: 0.03, octaves: 2.5, envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.1 }, volume: -5 }).connect(rev);
+  const clank = new T.MetalSynth({ harmonicity: 3.1, modulationIndex: 14, resonance: 1900, octaves: 1, envelope: { attack: 0.001, decay: 0.7, release: 0.2 }, volume: -30 }).connect(rev);
+  return { rev, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, p2, thump, clank };
+}
+// Continuous voices follow the shared model each frame.
+function steerVoices() {
+  const v = voices();
+  if (!v) return;
+  const sono = opts.mode === 'sono';
+  v.bedG.gain.rampTo(sono ? 0.16 : 0.07, 0.3);
+  v.w1.frequency.rampTo(song.f, 0.05);
+  v.w2.frequency.rampTo(song.f * 2, 0.05);
+  v.whaleG.gain.rampTo(song.amp * (sono ? 0.2 : 0.06), 0.06);
+  v.propG.gain.rampTo(prop.amp * (sono ? 0.1 : 0.035), 0.3);
+  v.p1.frequency.rampTo(prop.f1 * 2, 0.5);
+  v.p2.frequency.rampTo(prop.f1 * 4, 0.5);
+  v.beat.frequency.rampTo(prop.f1 / prop.blades / 9, 0.5);
+}
+
+/* ---------- the ping ---------- */
+const ring = { on: false, t: 0, beam: 0, half: PI + 1, front: 0 };
+const pending = [];
+function ping(brg = null) {
+  const omni = brg == null;
+  ring.on = true; ring.t = 0; ring.front = 0;
+  ring.beam = omni ? 0 : brg; ring.half = omni ? PI + 1 : 17 * D2R;
+  maybeOdd();
+  const R = rangeM();
+  // Each contact in the beam answers when the front reaches it.
+  pending.length = 0;
+  for (const c of sea.contacts) {
+    const dx = c.pos[0] - sea.own[0], dy = c.pos[1] - sea.own[1], d = Math.hypot(dx, dy);
+    if (d > R * 0.99 || d < 20) continue;
+    const b = Math.atan2(dx, dy);
+    const span = Math.atan2(c.a, d);
+    if (!omni && angDiff(b, ring.beam) > ring.half + span) continue;
+    const vr = (c.vel[0] * dx + c.vel[1] * dy) / d;
+    pending.push({ c, at: (d / R) * RING_T, d, b, vr, done: false });
+  }
+  const v = voices();
+  if (v) {
+    const now = T.now() + 0.02;
+    v.ping.triggerAttackRelease(1480, 0.5, now);
+    v.ping.frequency.setValueAtTime(1500, now);
+    v.ping.frequency.exponentialRampToValueAtTime(1440, now + 0.9);
+    v.verb.triggerAttackRelease(RING_T, now + 0.05, omni ? 0.9 : 0.5);
+    for (const e of pending) echoVoice(v, e, now + e.at);
+  }
+  wake();
+}
+function echoVoice(v, e, at) {
+  const R = rangeM();
+  const k = clamp(e.c.str / 2.4) * (1 / (1 + (e.d / R) ** 2 * 1.4));
+  // Approaching targets ring sharp; retreating ones ring flat.
+  const dop = 1 - clamp(e.vr / 400, -0.04, 0.04);
+  const f = 1480 * dop;
+  if (e.c.kind === 0) { v.echo.triggerAttackRelease(f, 0.55, at, 0.7 * k + 0.15); v.echo.triggerAttackRelease(f * 1.003, 0.4, at + 0.035, 0.3 * k); }
+  else if (e.c.kind === 1) for (let i = 0; i < 5; i++) v.echo.triggerAttackRelease(f * rnd(0.99, 1.01), 0.12, at + i * rnd(0.02, 0.05), 0.22 * k + 0.05);
+  else if (e.c.kind === 2) v.echo.triggerAttackRelease(f, 0.3, at, 0.45 * k + 0.1);
+  else { v.echo.triggerAttackRelease(f * 0.82, 1.6, at, 0.6 * k + 0.2); v.echo.triggerAttackRelease(f * 0.795, 1.4, at + 0.18, 0.5 * k + 0.1); }
+}
+function knock() {
+  knockAt = clock;
+  const v = voices();
+  if (v) {
+    const now = T.now() + 0.01;
+    v.thump.triggerAttackRelease('A1', 0.3, now);
+    v.clank.triggerAttackRelease(880, 0.5, now, 0.4);
+  }
+  wake();
+}
+
+/* ---------- readouts ---------- */
+const readouts = [];
+function say(text) {
+  readouts.push({ text, born: clock });
+  while (readouts.length > 3) readouts.shift();
+  hudDirty = true;
+}
+const pad3 = n => String(Math.round(n) % 360).padStart(3, '0');
+
+/* ---------- layout ---------- */
+let W = 1, H = 1, dpr = 1, safe = 0;
+const scope = { cx: 0, cy: 0, rad: 100 };
+const box = { x0: 0, y0: 0, x1: 1, y1: 1 };
+function measure() {
+  const sr = stage.getBoundingClientRect(), first = barEl?.firstElementChild;
+  safe = first ? clamp(sr.bottom - first.getBoundingClientRect().top, 0, sr.height * 0.4) * dpr : 0;
+  const lab = 30 * dpr;
+  const availH = H - safe - 20 * dpr;
+  scope.rad = Math.max(40, Math.min(W / 2, availH / 2) - lab);
+  scope.cx = W / 2;
+  scope.cy = safe + 10 * dpr + availH / 2;
+  box.x0 = Math.min(64 * dpr, W * 0.12); box.x1 = W - 22 * dpr;
+  // Narrow screens stack the classifier, so the box starts lower.
+  box.y0 = safe + 38 * dpr; box.y1 = H - (W < 620 * dpr ? 64 : 34) * dpr;
+}
+
+/* ---------- HUD ---------- */
+let hudDirty = true, hudFade = false;
+const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+const grey = v => `rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})`;
+let cursorF = -1;
+function drawHud() {
+  hudDirty = false;
+  hud.width = W; hud.height = H;
+  const c = hctx, Y = y => H - y;
+  c.clearRect(0, 0, W, H);
+  c.lineWidth = Math.max(1, dpr);
+  const fs = Math.round(10.5 * dpr);
+  c.font = `${fs}px ${MONO}`;
+  c.textBaseline = 'middle';
+  const top = H - 16 * dpr;
+  if (opts.mode === 'active') {
+    const { cx, cy, rad } = scope;
+    const R = rangeM();
+    c.strokeStyle = grey(0.55);
+    c.beginPath(); c.arc(cx, Y(cy), rad, 0, TAU); c.stroke();
+    if (opts.grid === 'on') {
+      c.strokeStyle = grey(0.28);
+      c.setLineDash([2 * dpr, 5 * dpr]);
+      for (let k = 1; k < 4; k++) { c.beginPath(); c.arc(cx, Y(cy), rad * k / 4, 0, TAU); c.stroke(); }
+      c.setLineDash([]);
+      c.fillStyle = grey(0.4);
+      c.textAlign = 'left';
+      for (let k = 1; k <= 4; k++) {
+        const a = 45 * D2R, rr = rad * k / 4;
+        c.fillText((R * k / 4 / 1000).toFixed(R < 1000 ? 2 : 1), cx + Math.sin(a) * rr + 4 * dpr, Y(cy + Math.cos(a) * rr) - 6 * dpr);
+      }
+    }
+    // Bearing ticks every ten degrees, numbers every thirty.
+    c.strokeStyle = grey(0.5);
+    c.fillStyle = grey(0.6);
+    c.textAlign = 'center';
+    for (let d = 0; d < 360; d += 10) {
+      const a = d * D2R, l = d % 30 ? 4 : 8;
+      c.beginPath();
+      c.moveTo(cx + Math.sin(a) * rad, Y(cy + Math.cos(a) * rad));
+      c.lineTo(cx + Math.sin(a) * (rad + l * dpr), Y(cy + Math.cos(a) * (rad + l * dpr)));
+      c.stroke();
+      if (d % 30 === 0) c.fillText(pad3(d), cx + Math.sin(a) * (rad + 18 * dpr), Y(cy + Math.cos(a) * (rad + 18 * dpr)));
+    }
+    // The heading line runs from the centre to the rim.
+    const h = sea.head;
+    c.strokeStyle = grey(0.32);
+    c.setLineDash([6 * dpr, 4 * dpr]);
+    c.beginPath(); c.moveTo(cx, Y(cy)); c.lineTo(cx + Math.sin(h) * rad, Y(cy + Math.cos(h) * rad)); c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = grey(0.75);
+    const tx = cx + Math.sin(h) * (rad - 2 * dpr), ty = cy + Math.cos(h) * (rad - 2 * dpr), s = 5 * dpr;
+    c.beginPath();
+    c.moveTo(tx, Y(ty));
+    c.lineTo(tx - Math.sin(h) * s * 2 + Math.cos(h) * s, Y(ty - Math.cos(h) * s * 2 - Math.sin(h) * s));
+    c.lineTo(tx - Math.sin(h) * s * 2 - Math.cos(h) * s, Y(ty - Math.cos(h) * s * 2 + Math.sin(h) * s));
+    c.fill();
+    c.strokeStyle = grey(0.6);
+    c.beginPath(); c.moveTo(cx - 4 * dpr, Y(cy)); c.lineTo(cx + 4 * dpr, Y(cy)); c.moveTo(cx, Y(cy) - 4 * dpr); c.lineTo(cx, Y(cy) + 4 * dpr); c.stroke();
+    c.textAlign = 'left';
+    c.fillStyle = grey(0.7);
+    c.fillText(`ACTIVE   RNG ${(R / 1000).toFixed(1)} KM   HDG ${pad3(wrapA(h) / D2R)}`, 14 * dpr, Y(top));
+  } else {
+    const { x0, y0, x1, y1 } = box;
+    const span = spanHz();
+    c.strokeStyle = grey(0.42);
+    c.strokeRect(x0, Y(y1), x1 - x0, y1 - y0);
+    // Frequency ticks: a round step that gives about eight labels.
+    const step = [50, 100, 250, 500, 1000].find(s => span / s <= 9) || 1000;
+    c.fillStyle = grey(0.55);
+    c.strokeStyle = grey(0.45);
+    c.textAlign = 'center';
+    for (let f = 0; f <= span + 1; f += step / 2) {
+      const x = x0 + (f / span) * (x1 - x0), major = Math.round(f / step * 2) % 2 === 0;
+      c.beginPath(); c.moveTo(x, Y(y0)); c.lineTo(x, Y(y0) + (major ? 7 : 4) * dpr); c.stroke();
+      if (major) c.fillText(String(f), x, Y(y0) + 16 * dpr);
+    }
+    c.textAlign = 'right';
+    c.fillText('HZ', x1, Y(y0) + 28 * dpr);
+    // Time runs down the left edge in seconds ago.
+    const secs = NROW / ROW_HZ;
+    for (let s = 0; s <= secs; s += 5) {
+      const y = y1 - (s / secs) * (y1 - y0);
+      c.beginPath(); c.moveTo(x0, Y(y)); c.lineTo(x0 - 5 * dpr, Y(y)); c.stroke();
+      c.fillText(s ? `-${s}s` : '0', x0 - 8 * dpr, Y(y));
+    }
+    if (cursorF >= 0 && cursorF <= span) {
+      const x = x0 + (cursorF / span) * (x1 - x0);
+      c.strokeStyle = grey(0.5);
+      c.setLineDash([3 * dpr, 4 * dpr]);
+      c.beginPath(); c.moveTo(x, Y(y1)); c.lineTo(x, Y(y0)); c.stroke();
+      c.setLineDash([]);
+      c.fillStyle = grey(0.75);
+      c.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
+      c.fillText(`${Math.round(cursorF)} HZ`, x + (x > (x0 + x1) / 2 ? -6 : 6) * dpr, Y(y1) + 12 * dpr);
+    }
+    c.textAlign = 'left';
+    c.fillStyle = grey(0.7);
+    c.fillText(`PASSIVE   LOFAR   0-${Math.round(span)} HZ`, 14 * dpr, Y(top));
+    // The classifier names what it hears; narrow screens stack it under the title.
+    const cls = [];
+    if (prop.amp > 0.15) cls.push(`MECH   ${prop.blades} BLADE   ${Math.round(prop.f1 * prop.blades)} HZ`);
+    if (song.bout) cls.push('BIO   WHALE');
+    const narrow = W < 620 * dpr;
+    c.textAlign = narrow ? 'left' : 'right';
+    cls.forEach((s, i) => c.fillText(s, narrow ? 14 * dpr : W - 14 * dpr, Y(top - (narrow ? i + 1 : i) * 14 * dpr)));
+  }
+  // Contact reports fade out after a few seconds.
+  hudFade = false;
+  c.textAlign = 'left';
+  if (opts.mode === 'active') readouts.forEach((r, i) => {
+    const age = clock - r.born, a = clamp(1 - (age - 5) / 2);
+    if (a <= 0) return;
+    hudFade = true;
+    c.fillStyle = grey(0.8 * a);
+    c.fillText(r.text, 14 * dpr, Y(top - (1.4 + i) * 15 * dpr));
+  });
+  gl.bindTexture(gl.TEXTURE_2D, hudTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hud);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+}
+
+/* ---------- passes ---------- */
+function decayPass(dt) {
+  const src = acc[ai], dst = acc[1 - ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(P.decay.u.uSrc, 0);
+  gl.uniform1f(P.decay.u.uK, Math.exp(-dt / tau()));
+  gl.uniform1f(P.decay.u.uEps, FLOAT ? 0.0006 * dt : 0.6 / 255);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ai = 1 - ai;
+}
+const cBuf = new Float32Array(MAXC * 4), kBuf = new Float32Array(MAXC * 4);
+function excitePass(r0, r1) {
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, W, H);
+  const u = P.excite.u;
+  gl.useProgram(P.excite.p); gl.bindVertexArray(quadVao);
+  gl.uniform2f(u.uCenter, scope.cx, scope.cy);
+  gl.uniform2f(u.uOwn, sea.own[0], sea.own[1]);
+  gl.uniform1f(u.uRad, scope.rad);
+  gl.uniform1f(u.uR0, r0); gl.uniform1f(u.uR1, r1);
+  gl.uniform1f(u.uBeam, ring.beam); gl.uniform1f(u.uHalf, ring.half);
+  gl.uniform1f(u.uRange, rangeM());
+  gl.uniform1f(u.uSeed, sea.seed);
+  gl.uniform1f(u.uTime, clock);
+  gl.uniform1f(u.uGain, 1);
+  const n = Math.min(MAXC, sea.contacts.length);
+  cBuf.fill(0); kBuf.fill(0);
+  sea.contacts.slice(0, n).forEach((c, i) => {
+    cBuf.set([c.pos[0], c.pos[1], c.a, c.b], i * 4);
+    kBuf.set([c.orient, c.str, c.kind, c.id], i * 4);
+  });
+  gl.uniform4fv(u['uC[0]'], cBuf); gl.uniform4fv(u['uK[0]'], kBuf);
+  gl.uniform1i(u.uN, n);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.disable(gl.BLEND);
+}
+function quadPass(prog, dst, src, set) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(prog.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(prog.u.uSrc, 0);
+  set(prog.u);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+let switchT = 1, rowFrac = 0;
+function render() {
+  if (hudDirty) drawHud();
+  // The frame holds the light of the current display.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, frame.fb); gl.viewport(0, 0, W, H);
+  const u = P.frame.u;
+  gl.useProgram(P.frame.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[ai].tex);
+  gl.uniform1i(u.uAcc, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fallTex);
+  gl.uniform1i(u.uFall, 1);
+  gl.uniform1i(u.uMode, opts.mode === 'active' ? 0 : 1);
+  gl.uniform2f(u.uCenter, scope.cx, scope.cy);
+  gl.uniform4f(u.uBox, box.x0, box.y0, box.x1, box.y1);
+  gl.uniform1f(u.uRad, scope.rad);
+  gl.uniform1f(u.uFront, ring.on ? ring.front : -1);
+  gl.uniform1f(u.uBeam, ring.beam); gl.uniform1f(u.uHalf, ring.half);
+  gl.uniform1f(u.uDpr, dpr);
+  gl.uniform1f(u.uHead, head + (reduce ? 0 : rowFrac));
+  gl.uniform1f(u.uSpan, spanHz());
+  gl.uniform1f(u.uRowsVis, NROW - 2);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // Two blur rounds, the second wider, keep the glow round.
+  quadPass(P.down, blm[0], frame, s => gl.uniform2f(s.uTexel, 1 / W, 1 / H));
+  for (const k of [1, 2.4]) {
+    quadPass(P.blur, blm[1], blm[0], s => gl.uniform2f(s.uDir, k / blm[0].w, 0));
+    quadPass(P.blur, blm[0], blm[1], s => gl.uniform2f(s.uDir, 0, k / blm[0].h));
+  }
+  const s = P.screen.u;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.tex); gl.uniform1i(s.uFrame, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex); gl.uniform1i(s.uBloom, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, hudTex); gl.uniform1i(s.uHud, 2);
+  gl.uniform2f(s.uRes, W, H);
+  gl.uniform3fv(s.uTint, TINT); gl.uniform3fv(s.uHot, HOT);
+  gl.uniform1f(s.uCurve, opts.curve === 'curved' ? 0.06 : 0);
+  gl.uniform1f(s.uScan, opts.scan === 'on' && dpr >= 1 ? 1 : 0);
+  gl.uniform1f(s.uTime, clock);
+  gl.uniform1f(s.uFlick, reduce ? 1 : 1 + 0.012 * Math.sin(clock * 113) + 0.008 * Math.sin(clock * 7.7));
+  gl.uniform1f(s.uGrain, reduce ? 0.5 : (clock * 7.13) % 1);
+  const sw = switchT < 0.3 && !reduce ? Math.sin(PI * switchT / 0.3) : 0;
+  gl.uniform1f(s.uSwitch, sw);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ---------- loop ---------- */
+let raf = 0, last = 0, visible = true, clock = 0, lastLight = -1e9, ready = false, pendingMode = null;
+const idle = () => opts.mode === 'active' && !ring.on && clock - lastLight > tau() * 6 && !hudFade && switchT >= 0.3;
+function frameFn(now) {
+  raf = 0;
+  const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+  last = now;
+  step(dt);
+  render();
+  if (visible && !idle()) raf = requestAnimationFrame(frameFn);
+  else kit.rest(idle);
+}
+function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+
+function step(dt) {
+  clock += dt;
+  stepSea(dt); stepSong(dt); stepProp(dt);
+  steerVoices();
+  if (switchT < 0.3) {
+    switchT += dt;
+    // The display changes at the fold, mid-switch.
+    if (pendingMode && switchT >= 0.15) { applyMode(pendingMode); pendingMode = null; }
+  }
+  decayPass(dt);
+  if (ring.on) {
+    ring.t += dt;
+    const p = clamp(ring.t / RING_T);
+    // Reduced motion moves the front in eight steps.
+    const pq = reduce ? Math.ceil(p * 8) / 8 : p;
+    const front = pq * scope.rad;
+    if (front > ring.front) { excitePass(ring.front, front); ring.front = front; lastLight = clock; }
+    for (const e of pending) {
+      if (e.done || ring.t < e.at) continue;
+      e.done = true;
+      if (e.c.str > 0.2) say(`CONTACT   ${pad3(wrapA(e.b) / D2R)}   ${(e.d / 1000).toFixed(2)} KM   ${KIND[e.c.kind]}`);
+    }
+    if (ring.t >= RING_T) { ring.on = false; ring.front = 0; }
+  }
+  if (opts.mode === 'sono') {
+    rowClock += dt;
+    let n = 0;
+    while (rowClock >= 1 / ROW_HZ && n++ < 6) { rowClock -= 1 / ROW_HZ; makeRow(clock); }
+    rowFrac = rowClock * ROW_HZ;
+    // The classifier lines change with what the sea is doing.
+    const sig = `${prop.amp > 0.15}|${song.bout}`;
+    if (sig !== step.sig) { step.sig = sig; hudDirty = true; }
+  }
+  if (hudFade && Math.floor(clock * 10) !== Math.floor((clock - dt) * 10)) hudDirty = true;
+}
+
+/* ---------- modes ---------- */
+const sliderEl = document.getElementById('slider'), sliderLab = document.getElementById('sliderLab');
+const pingBtn = document.getElementById('ping');
+function syncSlider() {
+  const active = opts.mode === 'active';
+  sliderLab.textContent = active ? 'Range' : 'Span';
+  sliderEl.setAttribute('aria-label', active ? 'Range' : 'Frequency span');
+  sliderEl.value = String(active ? opts.range : opts.span);
+  pingBtn.textContent = active ? 'Ping' : 'Knock';
+}
+function applyMode(m) {
+  opts.mode = m;
+  syncSlider();
+  hudDirty = true;
+}
+function setMode(m) {
+  save('mode', m);
+  if (reduce || !ready) { applyMode(m); render(); wake(); return; }
+  pendingMode = m; switchT = 0;
+  wake();
+}
+
+/* ---------- size ---------- */
+function resize() {
+  const fit = fitCanvas(canvas, { budget: 2.2e6 });
+  dpr = fit.dpr;
+  if (fit.W !== W || fit.H !== H || !acc.length) {
+    W = fit.W; H = fit.H;
+    acc.forEach(drop); blm.forEach(drop); if (frame) drop(frame);
+    acc = [target(W, H), target(W, H)]; ai = 0;
+    frame = target(W, H);
+    blm = [target(Math.max(1, W >> 1), Math.max(1, H >> 1)), target(Math.max(1, W >> 1), Math.max(1, H >> 1))];
+  }
+  measure();
+  hudDirty = true;
+  if (ready) { render(); wake(); }
+}
+
+/* ---------- input ---------- */
+const pt = { down: false, drag: false, x: 0, y: 0, a: 0 };
+function glXY(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr];
+}
+const angleAt = (x, y) => Math.atan2(x - scope.cx, y - scope.cy);
+function tune(x) {
+  cursorF = clamp((x - box.x0) / (box.x1 - box.x0)) * spanHz();
+  hudDirty = true;
+  wake();
+}
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture?.(e.pointerId);
+  const [x, y] = glXY(e);
+  Object.assign(pt, { down: true, drag: false, x, y, a: angleAt(x, y) });
+});
+stage.addEventListener('pointermove', e => {
+  if (!pt.down) return;
+  const [x, y] = glXY(e);
+  if (!pt.drag && Math.hypot(x - pt.x, y - pt.y) > 7 * dpr) { pt.drag = true; stage.classList.add('held'); }
+  if (!pt.drag) return;
+  if (opts.mode === 'active') {
+    // Dragging round the centre turns the boat like a wheel.
+    const a = angleAt(x, y);
+    sea.head = wrapA(sea.head + (wrapA(a - pt.a + PI) - PI));
+    pt.a = a;
+    hudDirty = true;
+    wake();
+  } else tune(x);
+});
+function release(e) {
+  if (!pt.down) return;
+  pt.down = false;
+  stage.classList.remove('held');
+  if (pt.drag) return;
+  if (opts.mode === 'sono') { knock(); return; }
+  const [x, y] = glXY(e);
+  // A tap near the centre pings all round; elsewhere it pings that bearing.
+  const r = Math.hypot(x - scope.cx, y - scope.cy);
+  ping(r < scope.rad * 0.12 ? null : angleAt(x, y));
+}
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', () => { pt.down = false; stage.classList.remove('held'); });
+stage.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (e.repeat) return;
+    if (opts.mode === 'active') ping(); else knock();
+    return;
+  }
+  const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (!d) return;
+  e.preventDefault();
+  if (opts.mode === 'active') { sea.head = wrapA(sea.head + d * 5 * D2R); hudDirty = true; wake(); }
+  else { const f = cursorF < 0 ? spanHz() / 2 : cursorF; cursorF = clamp(f + d * spanHz() / 100, 0, spanHz()); hudDirty = true; wake(); }
+});
+
+/* ---------- bar ---------- */
+function popover(boxEl, btn) {
+  const set = on => { boxEl.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!boxEl.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!boxEl.contains(e.target)) set(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+choices(document.getElementById('mode'), v => setMode(v)).set(opts.mode);
+choices(document.getElementById('persist'), v => { opts.persist = v; save('persist', v); wake(); }).set(opts.persist);
+choices(document.getElementById('curve'), v => { opts.curve = v; save('curve', v); render(); wake(); }).set(opts.curve);
+choices(document.getElementById('scan'), v => { opts.scan = v; save('scan', v); render(); wake(); }).set(opts.scan);
+choices(document.getElementById('grid'), v => { opts.grid = v; save('grid', v); hudDirty = true; render(); wake(); }).set(opts.grid);
+sliderEl.addEventListener('input', () => {
+  if (opts.mode === 'active') { opts.range = +sliderEl.value; save('range', opts.range); clearAcc(); ring.on = false; }
+  else { opts.span = +sliderEl.value; save('span', opts.span); if (cursorF > spanHz()) cursorF = -1; }
+  hudDirty = true; render(); wake();
+});
+pingBtn.addEventListener('click', () => (opts.mode === 'active' ? ping() : knock()));
+document.getElementById('shuffle').addEventListener('click', () => { shuffle(); clearAcc(); ring.on = false; render(); if (opts.mode === 'active') ping(); });
+sound.onChange(on => { if (on) wake(); });
+
+/* ---------- start ---------- */
+shuffle();
+syncSlider();
+new ResizeObserver(() => resize()).observe(stage);
+resize();
+// Prime the waterfall so the sonogram opens full.
+for (let i = 0; i < NROW; i++) { const tt = -NROW / ROW_HZ + i / ROW_HZ; stepSong(1 / ROW_HZ); stepProp(1 / ROW_HZ); makeRow(tt); }
+render();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => { visible = v; if (v) wake(); else kit.rest(() => true); });
+// The scope opens with one ping once the intro has cleared.
+const introEl = document.querySelector('.intro');
+const firstPing = () => setTimeout(() => { if (opts.mode === 'active' && !ring.on) ping(); }, 350);
+if (!introEl) firstPing();
+else new MutationObserver((_, mo) => { if (!document.querySelector('.intro')) { mo.disconnect(); firstPing(); } }).observe(document.body, { childList: true });
+wake();
+</script>
+</body>
+</html>
