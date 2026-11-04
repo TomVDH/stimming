@@ -81,7 +81,8 @@
             </div></div>
             <div class="group"><span>Quality</span><div class="choices" id="quality" role="group" aria-label="Quality">
               <button class="chip" type="button" data-value="low" aria-pressed="false">Low</button>
-              <button class="chip" type="button" data-value="high" aria-pressed="true">High</button>
+              <button class="chip" type="button" data-value="standard" aria-pressed="true">Standard</button>
+              <button class="chip" type="button" data-value="high" aria-pressed="false">High</button>
             </div></div>
           </div>
         </div>
@@ -113,7 +114,7 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit } from '../shared/stim.js';
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, setQuality, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -145,7 +146,8 @@ const opts = {
   time: saved('time') != null ? +saved('time') : 0.5,
   cars: +(saved('cars') || 4),
   letter: saved('letter') === 'on',
-  quality: saved('quality') || 'high',
+  // Low is this toy's own tier; Standard and High follow the site-wide choice.
+  quality: saved('quality') === 'low' ? 'low' : quality(),
 };
 
 /* ---------- world layout ---------- */
@@ -816,12 +818,13 @@ function placeTrain(sdt) {
 /* ---------- size ---------- */
 function resize() {
   const canvas = renderer.domElement;
-  const high = opts.quality === 'high';
-  const { w, h, W, H } = fitCanvas(canvas, { maxDpr: high ? 2 : 1, budget: high ? 2.6e6 : 1e6 });
+  // Low halves the caps; Standard keeps them; High renders at full resolution.
+  const low = opts.quality === 'low';
+  const { w, h, W, H } = fitCanvas(canvas, { maxDpr: low ? 1 : 2, budget: low ? 1e6 : 2.6e6, quality: low ? 'standard' : opts.quality });
   renderer.setPixelRatio(1);
   renderer.setSize(W, H, false);
   composer.setSize(W, H);
-  bloom.setSize(Math.round(W / (high ? 2 : 3)), Math.round(H / (high ? 2 : 3)));
+  bloom.setSize(Math.round(W / (low ? 3 : 2)), Math.round(H / (low ? 3 : 2)));
   const aspect = w / h;
   camera.aspect = aspect;
   // Narrow stages widen the lens so the viaduct still spans the frame.
@@ -830,7 +833,7 @@ function resize() {
   camera.updateProjectionMatrix();
   const px = H / (2 * Math.tan(camera.fov * PI / 360));
   snowMat.uniforms.uPx.value = px * 0.27;
-  snowGeo.setDrawRange(0, opts.quality === 'high' ? 9000 : 4500);
+  snowGeo.setDrawRange(0, opts.quality === 'low' ? 4500 : 9000);
   grade.uniforms.uRes.value.set(W, H);
   applyTime.river.uniforms.uRes.value.set(W, H);
   if (ready && !raf) composer.render();
@@ -889,7 +892,21 @@ popover(document.getElementById('setter'), document.getElementById('setBtn'));
 choices(document.getElementById('weather'), v => { opts.weather = v; save('weather', v); }).set(opts.weather);
 choices(document.getElementById('cars'), v => { opts.cars = +v; save('cars', v); }).set(String(opts.cars));
 choices(document.getElementById('letter'), v => { opts.letter = v === 'on'; save('letter', v); }).set(opts.letter ? 'on' : 'off');
-choices(document.getElementById('quality'), v => { opts.quality = v; save('quality', v); if (renderer) resize(); }).set(opts.quality);
+// Standard and High set the site-wide choice; Low stays on this toy.
+const qualityChips = choices(document.getElementById('quality'), v => {
+  opts.quality = v;
+  save('quality', v === 'low' ? 'low' : 'site');
+  if (v !== 'low') setQuality(v);
+  if (renderer) resize();
+});
+qualityChips.set(opts.quality);
+// A site-wide change from another tab moves this toy too, unless it is on Low.
+onQuality(q => {
+  if (opts.quality === 'low') return;
+  opts.quality = q;
+  qualityChips.set(q);
+  if (renderer) resize();
+});
 timeEl.value = String(opts.time);
 timeEl.addEventListener('input', () => { opts.time = +timeEl.value; save('time', opts.time); applyTime(); });
 document.getElementById('train').addEventListener('click', () => sendTrain());
