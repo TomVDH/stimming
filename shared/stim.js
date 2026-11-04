@@ -266,12 +266,88 @@ export function choices(group, onPick) {
   };
 }
 
+/* ---------- graphics quality ---------- */
+// One site-wide choice: 'standard' keeps the caps, 'high' renders at full resolution.
+const QUALITY_KEY = 'stimming.quality', QUALITY_EVENT = 'stim:quality';
+export const quality = () => (store.get(QUALITY_KEY) === 'high' ? 'high' : 'standard');
+export function setQuality(q) {
+  q = q === 'high' ? 'high' : 'standard';
+  if (q === quality()) return;
+  store.set(QUALITY_KEY, q);
+  dispatchEvent(new CustomEvent(QUALITY_EVENT, { detail: q }));
+}
+// The callback hears each change, from this page or from another tab.
+export function onQuality(fn) {
+  const local = e => fn(e.detail);
+  const other = e => { if (e.key === QUALITY_KEY) fn(quality()); };
+  addEventListener(QUALITY_EVENT, local);
+  addEventListener('storage', other);
+  return () => { removeEventListener(QUALITY_EVENT, local); removeEventListener('storage', other); };
+}
+// The pixel ratio for a w x h surface.
+// High gives the screen's own ratio, up to 3, with no budget.
+// Standard caps the ratio at maxDpr and keeps the pixel count under the budget.
+export function pixelRatio(w, h, { maxDpr = 2, budget = 1.4e6, low = false } = {}) {
+  const dev = window.devicePixelRatio || 1;
+  if (quality() === 'high') return Math.min(dev, 3);
+  return Math.min(dev, low ? 1 : maxDpr, Math.sqrt(budget / Math.max(1, w * h)));
+}
+
+/* ---------- settings tray ---------- */
+const SLIDERS = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg>';
+// A toy without Settings gets the shared tray at the bar's right edge.
+// Hover or a tap opens it; a press elsewhere or Escape closes it.
+function settingsTray() {
+  const bar = document.querySelector('.bar');
+  if (!bar) return null;
+  const box = document.createElement('div'), btn = document.createElement('button'), tray = document.createElement('div');
+  box.className = 'stim-set';
+  btn.className = 'chip icon stim-set-btn';
+  btn.type = 'button';
+  btn.innerHTML = SLIDERS;
+  btn.setAttribute('aria-label', 'Settings');
+  btn.title = 'Settings';
+  btn.setAttribute('aria-expanded', 'false');
+  tray.className = 'stim-sets';
+  tray.id = 'stim-sets';
+  tray.setAttribute('role', 'group');
+  tray.setAttribute('aria-label', 'Settings');
+  btn.setAttribute('aria-controls', tray.id);
+  box.append(btn, tray);
+  // Settings sits just before the (i), or at the end of the bar.
+  const edge = bar.querySelector(':scope > .how-tip, :scope > .how');
+  if (edge) edge.before(box); else bar.append(box);
+  const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
+  return tray;
+}
+// Adds the Quality group to a Settings tray.
+// Without a tray, the shared tray is made first.
+// Buttons that sit loose in the tray, such as Reset, stay last.
+export function qualitySetting(tray = null) {
+  tray ||= settingsTray();
+  if (!tray) return null;
+  const group = document.createElement('div');
+  group.className = 'group';
+  group.innerHTML = '<span>Quality</span><div class="choices" role="group" aria-label="Quality">'
+    + '<button class="chip" type="button" data-value="standard" aria-pressed="false">Standard</button>'
+    + '<button class="chip" type="button" data-value="high" aria-pressed="false">High</button></div>';
+  const loose = [...tray.children].find(el => !el.classList.contains('group'));
+  if (loose) loose.before(group); else tray.append(group);
+  const chips = choices(group.querySelector('.choices'), v => setQuality(v));
+  chips.set(quality());
+  onQuality(q => chips.set(q));
+  return group;
+}
+
 /* ---------- canvas sizing ---------- */
-// Pixel ratio caps at 2 and the backing store stays under the budget.
+// The quality setting picks the pixel ratio; see pixelRatio.
 export function fitCanvas(canvas, { maxDpr = 2, budget = 1.4e6, low = false } = {}) {
   const r = canvas.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  const dpr = Math.min(window.devicePixelRatio || 1, low ? 1 : maxDpr, Math.sqrt(budget / (w * h)));
+  const dpr = pixelRatio(w, h, { maxDpr, budget, low });
   const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   return { w, h, dpr, W, H };
