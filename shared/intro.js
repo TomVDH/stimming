@@ -10,11 +10,12 @@ function toyId(path = location.pathname) {
   if (parts.length && parts[parts.length - 1].endsWith('.html')) parts.pop();
   return parts[parts.length - 1] || '';
 }
-// One short fetch; a slow or missing file gives null.
+// One fetch that always revalidates; a slow or missing file gives null.
+// The revalidation keeps a cached copy from hiding new names and icons.
 async function entry(id = toyId()) {
   try {
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 400);
-    const res = await fetch(TOYS, { signal: ctl.signal });
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 1500);
+    const res = await fetch(TOYS, { signal: ctl.signal, cache: 'no-cache' });
     clearTimeout(t);
     return res.ok ? (await res.json())[id] || null : null;
   } catch (err) {
