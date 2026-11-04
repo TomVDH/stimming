@@ -49,9 +49,9 @@ vec3 k2sky(vec3 dir) {
   // Dark zenith, a cool low band, a wide amber dome over the port.
   vec3 col = vec3(0.0025, 0.003, 0.006) + uCool * 0.02 * exp(-up * 10.0);
   col += uAmber * 0.036 * pow(face, 5.0) * exp(-up * 7.0);
-  // The fog bank over the port glows just above the horizon.
-  // It stays faint so the dark far sea meets it without a band.
-  col += uAmber * 0.012 * pow(face, 2.0) * exp(-up * 28.0);
+  // The fog bank glows above the horizon in the haze colour itself.
+  // Sky, fog and far water then meet with no seam.
+  col += uAmber * 0.1 * pow(face, 2.0) * exp(-up * 18.0);
   if (dir.y > 0.002) {
     float t = (uCloudY - cameraPosition.y) / dir.y;
     vec3 p = cameraPosition + dir * t;
@@ -69,7 +69,9 @@ vec3 k2sky(vec3 dir) {
     vec3 gap = col + uAmber * 0.008 * (0.3 + g);
     cc = mix(gap, cc, cover);
     float far = 1.0 - exp(-t / 4200.0);
-    col = mix(cc, col, far * 0.7);
+    // Near the horizon the cloud thins away, so no grazing stripes show.
+    float graze = smoothstep(0.015, 0.11, dir.y);
+    col = mix(col, mix(cc, col, far * 0.7), graze);
   }
   return col;
 }`;
@@ -99,7 +101,7 @@ float k2hazeAmount(vec3 P) {
   // The part of the ray past the fog front, thinned with height.
   if (P.z < uPortZ) {
     float seg = dist * clamp((uPortZ - P.z) / max(cameraPosition.z - P.z, 1.0), 0.0, 1.0);
-    tau += seg * uPortFog * exp(-h1 * 0.4 / 200.0);
+    tau += seg * uPortFog * exp(-h1 / 220.0);
   }
   return 1.0 - exp(-tau);
 }
@@ -119,7 +121,7 @@ const k2 = {
   uHaze: { value: 0.0011 },
   uHazeH: { value: 70 },
   uPortZ: { value: QUAY + 260 },
-  uPortFog: { value: 0.04 },
+  uPortFog: { value: 0.05 },
 };
 
 // Light list for lit surfaces: position + power, colour + range, spot axis + cone.
@@ -881,7 +883,7 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
       // The same golden fog lies on the water toward the port.
       float hf = k2hazeAmount(vP) * 0.85;
       col = mix(col, k2hazeColor(normalize(vP - cameraPosition), vP), hf);
-      col = mix(col, hor, smoothstep(5000.0, 20000.0, dist));
+      col = mix(col, hor, smoothstep(2200.0, 6000.0, dist));
       gl_FragColor = vec4(col, 1.0);
     }`,
   },
