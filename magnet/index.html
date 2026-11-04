@@ -67,8 +67,10 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, choices, oklchLinear } from '../shared/stim.js';
+import { initPage, sound, choices, oklchLinear, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 initPage({ id: 'magnet' });
+// Settings holds the site-wide Quality choice.
+qualitySetting();
 const panel = document.getElementById('table');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1011,12 +1013,14 @@ function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
   const apply = () => {
     const w = panel.clientWidth, h = panel.clientHeight;
     if (!w || !h) return;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: cap, budget, low: lowDpr }));
     renderer.setSize(w, h, false);
     onSize(w, h);
   };
   new ResizeObserver(apply).observe(panel);
   addEventListener('perf-low', apply);
+  // A new quality setting re-fits the renderer.
+  onQuality(apply);
   apply();
 }
 function orbit(d) {

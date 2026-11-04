@@ -39,6 +39,7 @@ Read `README.md` for the toy list and the full rules.
   The galleries are `icons/spike-1.html` to `spike-11.html`; emblems sit in `icons/spike/emblems/<id>-<a..e>.svg`.
 - `shared/stim.css` and `shared/stim.js` are the shared shell.
   `stim.js` exports `initPage({ id })`, `sound`, `audioKit`, `choices`, `fitCanvas`, `whenVisible`, `reduced` and the OKLCH helpers.
+  It also holds the site-wide graphics quality (`stimming.quality`): `quality()`, `setQuality()`, `onQuality()`, `pixelRatio()` and `qualitySetting(tray)`. High renders at the screen's own pixel ratio (up to 3) with no pixel budget; Standard keeps each toy's caps. `fitCanvas` follows it.
 - Toy page skeleton (the main seven use it):
   1. `<header data-shell>`. `initPage` fills it with the mark, a back arrow and the sound toggle.
   2. `.stage.stage--<id>`, then `.bar` with `.choices`, `.actions` and `dl.how`.

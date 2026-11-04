@@ -118,7 +118,8 @@
           <div class="group"><span>Quality</span><div class="choices" id="quality" role="group" aria-label="Quality">
             <button class="chip" type="button" data-value="low" aria-pressed="false">Low</button>
             <button class="chip" type="button" data-value="medium" aria-pressed="false">Medium</button>
-            <button class="chip" type="button" data-value="high" aria-pressed="true">High</button>
+            <button class="chip" type="button" data-value="standard" aria-pressed="true">Standard</button>
+            <button class="chip" type="button" data-value="high" aria-pressed="false">High</button>
           </div></div>
         </div>
       </div>
@@ -143,7 +144,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange, oklchRgb } from '../shared/stim.js';
+import { initPage, audioKit, choices, whenVisible, reduced, onReducedChange, oklchRgb, quality as siteQuality, setQuality as setSiteQuality, onQuality, pixelRatio } from '../shared/stim.js';
 initPage({ id: 'fire' });
 // Adapted from the three.js webgpu_volume_fire example (MIT).
 const panel = document.getElementById('fire');
@@ -279,11 +280,17 @@ const object = 'none';
 const QUALITY = {
   low: { dpr: 0.8, pixels: 0.7e6, march: 12, shadow: 4 },
   medium: { dpr: 1.1, pixels: 1e6, march: 16, shadow: 3 },
-  high: { dpr: 1.5, pixels: 1.4e6, march: 22, shadow: 2 },
+  standard: { dpr: 1.5, pixels: 1.4e6, march: 22, shadow: 2 },
+  // High renders at the screen's full resolution; pixelRatio sets the ratio.
+  high: { dpr: 3, pixels: Infinity, march: 22, shadow: 2 },
 };
-let quality = QUALITY[saved('quality')] ? saved('quality') : 'high';
+// Low and Medium are this toy's own steps; Standard and High follow the site-wide choice.
+// An older saved 'high' was a pick of today's Standard.
+const ownQuality = saved('quality');
+let quality = ownQuality === 'low' || ownQuality === 'medium' ? ownQuality : siteQuality();
 // A picked step stays; otherwise a slow GPU steps quality down.
-let qualityAuto = quality !== saved('quality');
+// High is always a pick, so it never steps down.
+let qualityAuto = !ownQuality && quality !== 'high';
 
 // Without WebGPU the panel shows one line and nothing runs.
 async function hasWebGPU() {
@@ -1201,7 +1208,7 @@ async function start() {
     slowFor = frameEma > 1 / 38 ? slowFor + raw : 0;
     if (slowFor > 2) {
       slowFor = 0; frameEma = 1 / 60;
-      setQuality(quality === 'high' ? 'medium' : 'low');
+      setQuality(quality === 'standard' ? 'medium' : 'low');
       qualityChips.set(quality);
     }
   }
@@ -1210,7 +1217,7 @@ async function start() {
   // A tall stage widens the view, so the block stays in frame.
   function resize() {
     const w = panel.clientWidth || 1, h = panel.clientHeight || 1, Q = QUALITY[quality];
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, Q.dpr, Math.sqrt(Q.pixels / (w * h))));
+    renderer.setPixelRatio(quality === 'high' ? pixelRatio(w, h, { quality: 'high' }) : Math.min(devicePixelRatio || 1, Q.dpr, Math.sqrt(Q.pixels / (w * h))));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     const fit = Math.atan(Math.tan((25 * Math.PI) / 180) * 1.3 / camera.aspect) * 2 * (180 / Math.PI);
@@ -1627,11 +1634,18 @@ async function start() {
   choices(document.getElementById('motion'), v => { motion = v; save('motion', v); changed(120); }).set(motion);
   const qualityChips = choices(document.getElementById('quality'), v => {
     qualityAuto = false;
-    save('quality', v);
+    save('quality', v === 'low' || v === 'medium' ? v : 'site');
+    if (v === 'standard' || v === 'high') setSiteQuality(v);
     setQuality(v);
     changed(120);
   });
   qualityChips.set(quality);
+  // A site-wide change from another tab moves this toy too, unless it is on its own step.
+  onQuality(q => {
+    if (quality === 'low' || quality === 'medium') return;
+    setQuality(q);
+    qualityChips.set(q);
+  });
   pickFuel(fuel, true);
   document.getElementById('reset').addEventListener('click', () => {
     block.position.set(0, HOME_Y, 0);

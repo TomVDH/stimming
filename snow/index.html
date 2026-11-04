@@ -56,8 +56,10 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
+import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 initPage({ id: 'snow' });
+// Settings holds the site-wide Quality choice.
+qualitySetting();
 const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1037,7 +1039,7 @@ function fit(w, h) {
 function resize() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
-  const pr = Math.min(devicePixelRatio, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const pr = pixelRatio(w, h, { low: lowDpr });
   renderer.setPixelRatio(pr);
   renderer.setSize(w, h, false);
   composer.setPixelRatio(pr);
@@ -1224,6 +1226,7 @@ async function start() {
 
   panel.prepend(canvas);
   new ResizeObserver(resize).observe(panel);
+  onQuality(resize);
   resize();
   await idle();
   // Async compile keeps the shader builds off the main thread.

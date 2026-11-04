@@ -69,7 +69,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { initPage, choices, whenVisible } from '../shared/stim.js';
+import { initPage, choices, whenVisible, pixelRatio, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 initPage({ id: 'viaduct' });
@@ -151,7 +151,9 @@ function chain(s) {
 }
 function resize() {
   const r = stage.getBoundingClientRect();
-  size = { w: Math.max(1, r.width), h: Math.max(1, r.height), dpr: Math.min(2, devicePixelRatio || 1) };
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  // The site-wide quality sets the pixel ratio; Standard keeps the budget.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2.6e6 }) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(size.w, size.h, false);
   if (!cur) return;
@@ -189,6 +191,7 @@ const first = new URLSearchParams(location.search).get('scene') || store.get('st
 const start = SCENES[first] ? first : 'pass';
 pick.set(start);
 new ResizeObserver(resize).observe(stage);
+onQuality(() => resize());
 addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea')) return;
   const id = { Digit1: 'pass', Digit2: 'port' }[e.code];

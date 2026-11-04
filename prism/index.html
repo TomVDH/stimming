@@ -149,12 +149,14 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { initPage, sound, audioKit, choices, oklchRgb, css as okCss } from '../shared/stim.js';
+import { initPage, sound, audioKit, choices, oklchRgb, css as okCss, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 initPage({ id: 'prism' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
 // The lamp shines white light or one laser line.
@@ -2208,7 +2210,7 @@ function fit(force) {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(2.2e6 / (w * h)));
+  const p = pixelRatio(w, h, { budget: 2.2e6, low: lowDpr });
   const nw = Math.floor(w * p), nh = Math.floor(h * p);
   if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
   measureBar();
@@ -2243,6 +2245,7 @@ function boot() {
   // Resizes settle before the smoke and dust rebuild.
   let fitT = 0;
   new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fit, 140); }).observe(panel);
+  onQuality(() => fit());
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
 }

@@ -109,8 +109,10 @@
 }
 </script>
 <script type="module">
-import { initPage, audioKit, choices, linFit } from '../shared/stim.js';
+import { initPage, audioKit, choices, linFit, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
 initPage({ id: 'glass' });
+// Settings holds the site-wide Quality choice.
+qualitySetting();
 // Three glasses: each breaks its own way.
 const KINDS = ['annealed', 'tempered', 'laminated', 'armored', 'reeded', 'dichroic', 'shuttle', 'stained', 'rice'];
 // Each glass breaks like one of five; several share annealed or armored breaks.
@@ -1679,12 +1681,14 @@ function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
   const apply = () => {
     const w = panel.clientWidth, h = panel.clientHeight;
     if (!w || !h) return;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, lowDpr ? 1 : cap, Math.sqrt(budget / (w * h))));
+    renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: cap, budget, low: lowDpr }));
     renderer.setSize(w, h, false);
     onSize(w, h);
   };
   new ResizeObserver(apply).observe(panel);
   addEventListener('perf-low', apply);
+  // A new quality setting re-fits the renderer.
+  onQuality(apply);
   apply();
 }
 const ndcOf = (x, y, z) => tmpV.set(x, y, z).project(camera);
