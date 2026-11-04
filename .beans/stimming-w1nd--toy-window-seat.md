@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
-updated_at: 2026-11-04T21:30:00Z
+updated_at: 2026-11-04T23:00:00Z
 ---
 
 Window seat (idea 56). Tom, 2026-11-04: S tier, diegetic. Airliner first; an orbit seat may follow. Full window frame (bezel, shade).
@@ -19,6 +19,8 @@ Decisions:
 - The plane banks 7 to 13 degrees; the outside view rolls -13 degrees, so the horizon slants.
 - The wing and winglet are two ray-traced quads in aircraft space: grey paint mirroring the sky, a red nav light and a white strobe.
 - Storm cells are projected towers (column plus anvil to 11.5 to 14 km); they tilt with the roll.
+- Round 3: the window is real geometry. The camera sits 33 cm from the wall, aft and above, rolled -9 degrees. A march finds the recess wall between rim and pane; the shade slides in a slot. The pointer moves the eye.
+- The seat sits over the wing, so the wing fills the lower view. Outside work runs only for glass pixels.
 
 - [x] Frame: wall, bezel, shade with lip, inner pane with frost and breather hole, head parallax
 - [x] Outside: sky palettes, procedural towns, cloud deck lit from below, towers, flashes
@@ -27,7 +29,8 @@ Decisions:
 - [x] Drag drifts along; drag the shade lip; tap a tower to flash it
 - [x] toys.json entry (Dutch name and IPA are drafts)
 - [x] Checkpoint 1: Tom reviewed; asked for wing, slant, colour, procedural
-- [ ] Checkpoint 2: Tom reviews the procedural round
+- [x] Checkpoint 2: Tom: the window still looks awkward; wants an up-close slanted view of the frame
+- [ ] Checkpoint 3: Tom reviews the 3D window
 - [ ] Sound: cabin drone, far thunder after each flash, shade slide
 - [ ] Menu Lab entry with an icon and a GSAP hook
 - [ ] Remove the `window.__ws` test hook

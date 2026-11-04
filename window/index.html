@@ -154,10 +154,18 @@ const hourLin = () => {
 
 const ALT = 11;            // cruise height in km
 const SPEED = 2.4;         // ground speed in km/s, sped up about ten times
-const YAW = 6 * D2R;       // the view turns a little toward the nose
-const PITCH = -10 * D2R;   // and looks a little down
-const FOV = 74 * D2R;      // vertical field of the outside view
-const ROLL = -13 * D2R;    // the outside view tilts, as in a turn
+const FOV = 64 * D2R;      // field of view across the short side
+const ROLL = -9 * D2R;     // the camera tilts: a slanted, close look
+// The window in the cabin wall, in metres.
+// Local frame: x to the nose, y up, z out through the glass.
+const WIN = {
+  out: [0.165, 0.23], rOut: 0.135,  // the rim, where the bezel meets the wall
+  inn: [0.118, 0.175], rIn: 0.1,    // the pane, at the bottom of the recess
+  depth: 0.06, slot: 0.024,         // pane depth and shade depth
+};
+// The eye sits close, a little aft and above the window.
+const EYE = [-0.19, 0.09, -0.33];
+const AIM = [0.03, 0.0, 0.05];
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
@@ -171,12 +179,13 @@ if (!gl) fail();
 const QUAD_VS = `#version 300 es
 in vec2 aPos; void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const MAXCELL = 6, MAXFL = 4;
+const W2 = v => `vec2(${v[0].toFixed(4)}, ${v[1].toFixed(4)})`;
 const FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes; uniform float uTime, uDpr, uTowns;
 uniform vec2 uCam;
 uniform vec3 uF, uR, uU; uniform float uFocal;
-uniform vec4 uWin; uniform vec2 uPar; uniform float uShade, uFlash, uCover;
+uniform vec3 uEye; uniform vec2 uBank; uniform float uShade, uFlash, uCover;
 uniform vec3 uZen, uBand, uHor, uAmb; uniform float uGain;
 uniform vec3 uWing[4], uLet[4], uWingN, uLetN, uTip; uniform float uStrobe;
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
@@ -253,7 +262,7 @@ vec3 ground(vec2 w, float fw) {
   g += sodium * T * 0.035;
   float hue;
   // Lamps gather in blocks, with dark gaps for parks and yards.
-  float blocks = smoothstep(0.35, 0.6, vnoise(w / 0.45));
+  float blocks = smoothstep(0.2, 0.8, vnoise(w / 0.45));
   float a = lamps(w, 0.13, dense * (0.25 + 0.65 * blocks), fw, 0.0, hue);
   g += mix(sodium, led, step(0.9, hue)) * a;
   // Highways: long white lines between towns, with a few lamps out in the dark.
@@ -290,7 +299,8 @@ vec3 outside(vec3 d) {
   float tg = hitLayer(d, 0.0);
   if (tg < 0.0) return sky;
   vec2 w = uCam + (vec3(0.0, R + H, 0.0) + d * tg).xz;
-  float fw = length(fwidth(w));
+  // Ground footprint of one pixel, in km, grows at grazing angles.
+  float fw = tg / uFocal / max(-d.y, 0.03);
   vec3 g = ground(w, fw);
 
   // Cloud deck at 2 km: lit by the sky above and the towns below.
@@ -371,99 +381,146 @@ float quad(vec3 d, vec3 v[4], vec3 n, out vec2 uv) {
   return t;
 }
 // The wing is painted grey; its top mirrors the sky at a grazing angle.
+// uv.x runs leading to trailing edge; uv.y runs root to tip.
 vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E) {
+  // A satin finish blurs the mirror toward the horizon glow.
   vec3 r = reflect(d, n);
-  vec3 env = r.y > -0.02 ? skyCol(r) : skyCol(vec3(r.x, -0.02, r.z)) * 0.5;
-  // Grey paint: the sky shows in it, but muted.
-  env = mix(vec3(dot(env, vec3(0.3, 0.5, 0.2))), env, 0.55);
-  float fres = 0.04 + 0.96 * pow(1.0 - abs(dot(d, n)), 5.0);
-  vec3 c = uAmb * 0.01 * uGain * (0.8 + 0.4 * uv.y) + env * (0.12 + 0.6 * fres);
-  // A faint grain of brushed panels, and the flap seam near the trail.
-  c *= 0.9 + 0.2 * vnoise(vec2(uv.x * 6.0, uv.y * 90.0));
-  c *= 1.0 - 0.45 * smoothstep(0.012, 0.0, abs(uv.x - 0.72));
+  vec3 env = skyCol(normalize(vec3(r.x, max(r.y, -0.02) * 0.45, r.z)));
+  // Grey paint keeps half the sky's colour.
+  env = mix(vec3(dot(env, vec3(0.3, 0.5, 0.2))), env, 0.5);
+  float fres = 0.05 + 0.6 * pow(1.0 - abs(dot(d, n)), 4.0);
+  // Diffuse light from the whole sky dome on grey paint.
+  vec3 c = mix(uZen, uBand, 0.5) * 0.09 * uGain * (0.85 + 0.3 * uv.y);
+  c += env * fres * 0.9;
+  // Panel joints run chordwise; spars and the flap seam run spanwise.
+  float sp = uv.y * 15.0;
+  c *= 1.0 - 0.25 * smoothstep(0.03, 0.0, abs(fract(sp) - 0.5) - 0.47);
+  c *= 1.0 - 0.3 * smoothstep(0.008, 0.0, abs(uv.x - 0.24));
+  c *= 1.0 - 0.5 * smoothstep(0.01, 0.0, abs(uv.x - 0.7));
+  c *= 0.92 + 0.16 * vnoise(vec2(uv.x * 8.0, uv.y * 60.0));
   // The leading edge is round, so it catches a bright line of sky.
-  c += env * 0.9 * smoothstep(0.06, 0.0, uv.x);
-  c *= 1.0 - 0.6 * smoothstep(0.94, 1.0, uv.x);
+  c += env * 1.4 * smoothstep(0.045, 0.0, uv.x);
+  // The trailing edge thins to a dark line.
+  c *= 1.0 - 0.6 * smoothstep(0.95, 1.0, uv.x);
+  // The cabin windows throw warm pools on the wing near the root.
+  float row = smoothstep(0.1, 0.02, uv.y) * smoothstep(0.0, 0.015, uv.y);
+  float pane = smoothstep(0.3, 0.12, abs(fract(uv.x * 14.0) - 0.5));
+  c += vec3(1.0, 0.72, 0.42) * 0.01 * row * pane;
   // The nav light and the strobe light the wing near the tip.
   vec3 tp = d * t - uTip;
-  float near = exp(-dot(tp, tp) / 0.8);
-  c += vec3(1.0, 0.08, 0.05) * near * 0.02 + vec3(0.9, 0.95, 1.0) * exp(-dot(tp, tp) / 4.0) * uStrobe * 0.3;
+  c += vec3(1.0, 0.08, 0.05) * exp(-dot(tp, tp) / 0.8) * 0.02 + vec3(0.9, 0.95, 1.0) * exp(-dot(tp, tp) / 4.0) * uStrobe * 0.3;
   c += vec3(0.72, 0.74, 1.0) * E * 0.25;
   return c;
 }
 
 // A rounded box: the shape of the window.
 float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+const vec2 OUTB = ${W2(WIN.out)}, INB = ${W2(WIN.inn)};
+const float ROUT = ${WIN.rOut.toFixed(4)}, RIN = ${WIN.rIn.toFixed(4)}, DEPTH = ${WIN.depth.toFixed(4)}, SLOT = ${WIN.slot.toFixed(4)};
+// The recess narrows from the rim to the pane.
+float sdRecess(vec2 p, float z) { float k = clamp(z / DEPTH, 0.0, 1.0); return sdBox(p, mix(OUTB, INB, k), mix(ROUT, RIN, k)); }
+// The ray's point on the plane at depth z, in window metres.
+vec2 at(vec3 da, float z) { return (uEye + da * ((z - uEye.z) / da.z)).xy; }
 
-void main() {
-  vec2 px = gl_FragCoord.xy;
-  vec3 d = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
+vec3 glass(vec3 da, vec2 px, float E) {
+  // Outside rays turn with the bank of the plane.
+  vec3 d = vec3(da.x, da.y * uBank.x - da.z * uBank.y, da.y * uBank.y + da.z * uBank.x);
   vec3 view = towers(px, outside(d));
-  float E = 0.004 + uFlash * 0.07;
-
-  // The wing and its winglet sit in front of everything outside.
-  vec2 uv; vec2 uv2;
+  vec2 uv, uv2;
   float tw = quad(d, uWing, uWingN, uv);
   if (tw > 0.0) view = wingCol(d, uWingN, uv, tw, E);
   float tl = quad(d, uLet, uLetN, uv2);
   if (tl > 0.0 && (tw < 0.0 || tl < tw)) view = wingCol(d, uLetN, uv2.yx, tl, E) * 0.8;
   // The red nav light: a hot core and a soft halo.
-  vec3 tipD = normalize(uTip);
-  float ang = acos(clamp(dot(d, tipD), -1.0, 1.0)) * uFocal / uDpr;
+  float ang = acos(clamp(dot(d, normalize(uTip)), -1.0, 1.0)) * uFocal / uDpr;
   view += vec3(1.0, 0.06, 0.04) * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
   view += vec3(0.9, 0.95, 1.0) * uStrobe * (exp(-ang * ang / 5.0) * 4.0 + exp(-ang / 40.0) * 0.12);
+  return view;
+}
 
-  // The opening sits deeper than the wall, so the head moves it less.
-  vec2 cIn = uWin.xy + uPar * 0.55, cOut = uWin.xy + uPar;
-  vec2 hb = uWin.zw;
-  float rIn = hb.x * 0.86, bez = hb.x * 0.3;
-  float sIn = sdBox(px - cIn, hb, rIn);
-  float sOut = sdBox(px - cOut, hb + bez, rIn + bez);
-  float aa = 1.2 * uDpr;
+void main() {
+  vec2 px = gl_FragCoord.xy;
+  // The camera ray, in the cabin frame.
+  vec3 da = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
+  float E = 0.004 + uFlash * 0.07;
   vec3 eCol = mix(vec3(1.0, 0.86, 0.72), vec3(0.75, 0.8, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
   // Warm cabin light, low and dim, for a night flight.
   vec3 cabin = vec3(0.016, 0.012, 0.0095);
+  vec3 outGlow = uHor * 0.014 * uGain + eCol * E;
   float alb = 0.5;
+  // Cabin light falls from above and a little aft.
+  vec3 Lc = normalize(vec3(-0.3, 0.85, -0.45));
 
-  // Inner pane: frost grows in from the lower corners and glows when lit.
-  vec2 lp = (px - cIn) / hb;
-  float edge = -sIn / hb.x;
-  float fr = fbm(px / (2.2 * uDpr), 4) * 0.7 + fbm(px / (14.0 * uDpr), 3) * 0.5;
-  float frost = smoothstep(0.26, 0.0, edge) * smoothstep(-0.2, -0.85, lp.y) * smoothstep(0.62, 0.8, fr + 0.3 * (0.26 - edge));
-  view += eCol * frost * (0.003 + E * 0.35);
-  view += vec3(0.0016, 0.0014, 0.0012) * smoothstep(0.9, -0.2, lp.x + lp.y * 0.4);
-  float bh = length(px - (cIn + vec2(0.0, -hb.y * 0.7))) / uDpr;
-  view = mix(view, vec3(0.0), smoothstep(2.6, 1.6, bh) * 0.8);
-
-  // The shade comes down from the top of the opening.
-  float yShade = cIn.y + hb.y - uShade * hb.y * 2.0;
-  float above = px.y - yShade;
-  vec3 shade = alb * 1.2 * (cabin * (0.6 + 0.8 * smoothstep(-hb.y, hb.y, px.y - cIn.y)) + eCol * E * 0.12);
-  shade *= 1.0 - 0.55 * smoothstep(14.0 * uDpr, 0.0, above) * smoothstep(0.0, 4.0 * uDpr, above);
-  shade += alb * smoothstep(3.0 * uDpr, 0.0, abs(above - 2.0 * uDpr)) * (cabin * 1.5 + eCol * E * 0.8);
-  float isShade = smoothstep(-aa, aa, above) * step(0.001, uShade);
-  view *= 1.0 - 0.5 * smoothstep(-12.0 * uDpr, 0.0, above) * step(0.001, uShade);
-  vec3 win = mix(view, shade, isShade);
-
-  // Bezel: a plastic slope from the wall down into the opening.
-  // The glow from outside tints the slope near the glass.
-  vec3 outGlow = uHor * 0.012 * uGain + eCol * E;
-  float tb = clamp(sIn / max(sIn - sOut, 1e-3), 0.0, 1.0);
-  vec2 gIn = normalize(vec2(dFdx(sIn), dFdy(sIn)) + 1e-6);
-  float up = 0.5 + 0.5 * gIn.y;
-  vec3 bezel = alb * (cabin * (0.5 + up) + outGlow * 1.4 * pow(1.0 - tb, 2.0));
-  bezel *= 0.75 + 0.25 * smoothstep(0.0, 0.25, tb);
-  bezel += alb * cabin * 1.5 * smoothstep(1.5 * uDpr, 0.0, abs(sOut + 1.0 * uDpr)) * (0.3 + up);
-
+  vec2 p0 = da.z > 0.0 ? at(da, 0.0) : vec2(9.0);
+  float sOut = sdBox(p0, OUTB, ROUT);
   // Wall: curved plastic panels, lit from above and by the window.
-  float wx = (px.x - cOut.x) / uRes.y;
-  vec3 wall = alb * cabin * (0.5 + 0.9 * smoothstep(-0.2, 1.0, px.y / uRes.y)) * (1.0 - 0.35 * wx * wx);
-  wall += alb * outGlow * 0.7 * exp(-max(sOut, 0.0) / (hb.x * 0.6));
-  wall *= 1.0 - 0.45 * exp(-max(sOut, 0.0) / (6.0 * uDpr));
-
+  float wy = p0.y;
+  vec3 wall = alb * cabin * (0.55 + 0.6 * smoothstep(-0.6, 0.5, wy)) * (0.85 + 0.15 * vnoise(p0 * 900.0));
+  // A seam between two wall panels gives the plane its slant.
+  wall *= 1.0 - 0.35 * smoothstep(0.004, 0.0, abs(p0.x - 0.36));
+  wall += alb * outGlow * 0.8 * exp(-max(sOut, 0.0) / 0.07);
+  // A soft shadow rings the rim of the recess.
+  wall *= 1.0 - 0.4 * exp(-max(sOut, 0.0) / 0.012);
   vec3 c = wall;
-  c = mix(c, bezel, smoothstep(aa, -aa, sOut));
-  c = mix(c, win, smoothstep(aa, -aa, sIn));
+
+  if (da.z > 0.0 && sOut < 0.01) {
+    // March the recess from the rim to the pane.
+    float z0 = 0.0, hit = -1.0;
+    for (int i = 1; i <= 14; i++) {
+      float z = DEPTH * float(i) / 14.0;
+      if (sdRecess(at(da, z), z) > 0.0) { hit = z; break; }
+      z0 = z;
+    }
+    if (hit > 0.0) {
+      for (int k = 0; k < 5; k++) { float m = 0.5 * (z0 + hit); if (sdRecess(at(da, m), m) > 0.0) hit = m; else z0 = m; }
+    }
+    // The shade slides in its slot, just behind the rim.
+    vec2 pS = at(da, SLOT);
+    float lipY = INB.y + 0.02 - uShade * (2.0 * INB.y + 0.04);
+    bool inSlot = sdRecess(pS, SLOT) < 0.0;
+    bool onShade = uShade > 0.001 && inSlot && pS.y > lipY && (hit < 0.0 || hit > SLOT);
+    vec3 inner;
+    if (onShade) {
+      float above = pS.y - lipY;
+      vec3 sh = alb * 1.2 * (cabin * (0.5 + 0.7 * smoothstep(-0.2, 0.2, pS.y)) + eCol * E * 0.12);
+      // Its lip: a dark groove, then a lit edge.
+      sh *= 1.0 - 0.55 * smoothstep(0.012, 0.0, above) * smoothstep(0.0, 0.003, above);
+      sh += alb * smoothstep(0.003, 0.0, abs(above - 0.0015)) * (cabin * 1.6 + eCol * E * 0.8);
+      inner = sh;
+    } else if (hit > 0.0) {
+      // Bezel: the tunnel wall faces into the hole and toward the cabin.
+      vec2 ph = at(da, hit);
+      float k = hit / DEPTH;
+      vec2 e = vec2(0.002, 0.0);
+      vec2 g2 = normalize(vec2(sdRecess(ph + e.xy, hit) - sdRecess(ph - e.xy, hit), sdRecess(ph + e.yx, hit) - sdRecess(ph - e.yx, hit)) + 1e-6);
+      float slope = (OUTB.x - INB.x) / DEPTH;
+      vec3 n = normalize(vec3(-g2, -slope));
+      float diff = max(dot(n, Lc), 0.0);
+      // Sky light through the glass falls on the sill and lower walls.
+      float sky = (0.35 + 0.65 * max(-g2.y, 0.0)) * pow(k, 1.5);
+      inner = alb * (cabin * (0.25 + 1.3 * diff) + outGlow * 1.6 * sky);
+      // A crisp rim where the slope meets the wall.
+      inner += alb * cabin * 1.4 * smoothstep(0.004, 0.0, hit) * (0.3 + diff);
+    } else {
+      // Glass: the outside, with frost and the breather hole on the pane.
+      vec2 pG = at(da, DEPTH);
+      vec3 view = glass(da, px, E);
+      float edge = -sdBox(pG, INB, RIN);
+      float fr = fbm(pG * 520.0, 4) * 0.7 + fbm(pG * 80.0, 3) * 0.5;
+      float frost = smoothstep(0.03, 0.0, edge) * smoothstep(-0.03, -0.15, pG.y) * smoothstep(0.62, 0.8, fr + 6.0 * (0.03 - edge));
+      view += eCol * frost * (0.003 + E * 0.35);
+      // A faint reflection of the lit cabin in the glass.
+      view += vec3(0.0018, 0.0015, 0.0012) * smoothstep(0.2, -0.15, pG.x + pG.y * 0.5);
+      float bh = length(pG - vec2(0.0, -INB.y * 0.72));
+      view = mix(view, vec3(0.0), smoothstep(0.0028, 0.0018, bh) * 0.85);
+      // The shade's lip casts a short shadow down the glass.
+      view *= 1.0 - 0.45 * smoothstep(lipY - 0.03, lipY, pG.y) * step(0.001, uShade);
+      inner = view;
+    }
+    // Soften the step from wall to rim over about a pixel.
+    float aa = fwidth(sOut) * 1.2;
+    c = mix(wall, inner, smoothstep(aa, -aa, sOut));
+  }
   c = 1.0 - exp(-c * 3.2);
   c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * 0.006;
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
@@ -495,9 +552,10 @@ gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 /* ---------- the aircraft ---------- */
 // Aircraft frame: x to the nose, y up, z out of the left window.
 // Units are metres from the eye; the seat sits behind the wing.
-const WING = [[8.5, -2.4, 1.2], [-0.4, -0.75, 17], [-2.0, -0.75, 17], [2.6, -2.4, 1.2]];
-const LET = [[-0.4, -0.75, 17], [-1.5, 1.4, 17.6], [-2.3, 1.4, 17.6], [-2.0, -0.75, 17]];
-const TIP = [-1.9, 1.35, 17.6];
+// The seat sits over the wing, so the wing fills the lower view.
+const WING = [[7.0, -2.6, 1.2], [1.6, -0.9, 17], [0.0, -0.9, 17], [-0.6, -2.6, 1.2]];
+const LET = [[1.6, -0.9, 17], [0.5, 1.3, 17.6], [-0.3, 1.3, 17.6], [0.0, -0.9, 17]];
+const TIP = [0.1, 1.25, 17.6];
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
@@ -510,18 +568,27 @@ function quadNormal(v) {
 
 let W = 1, H = 1, dpr = 1, t = 0;
 // The plane banks gently left; the roll drifts slowly.
-let bank = 10 * D2R;
+let bank = 6 * D2R;
 // Aircraft axes in the world: the left wing dips by the bank.
 const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
-const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], focal: 600 };
+// Camera axes in the cabin (a*) and in the world (F, R, U).
+const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], Fa: [0, 0, 1], Ra: [1, 0, 0], Ua: [0, 1, 0], eye: EYE.slice(), focal: 600 };
 function setBasis() {
-  const Fa = norm([Math.sin(YAW) * Math.cos(PITCH), Math.sin(PITCH), Math.cos(YAW) * Math.cos(PITCH)]);
+  // The head moves the eye a few centimetres; the aim stays on the window.
+  const eye = [EYE[0] + head.x * 0.05, EYE[1] + head.y * 0.035, EYE[2]];
+  const Fa = norm(sub(AIM, eye));
   const R0 = norm(cross([0, 1, 0], Fa)), U0 = cross(Fa, R0);
   // Roll turns the right and up axes about the view.
   const cr = Math.cos(ROLL), sr = Math.sin(ROLL);
   const Ra = R0.map((v, i) => cr * v + sr * U0[i]), Ua = U0.map((v, i) => cr * v - sr * R0[i]);
-  basis.F = toWorld(Fa); basis.R = toWorld(Ra); basis.U = toWorld(Ua);
-  basis.focal = H / 2 / Math.tan(FOV / 2);
+  Object.assign(basis, { Fa, Ra, Ua, eye, F: toWorld(Fa), R: toWorld(Ra), U: toWorld(Ua) });
+  // On tall screens the window still fills most of the height.
+  basis.focal = Math.max(Math.min(W, H), H * 0.72) / 2 / Math.tan(FOV / 2);
+}
+// A cabin point in metres to screen pixels.
+function toScreen(p) {
+  const v = sub(p, basis.eye), z = dot(v, basis.Fa);
+  return [W / 2 + dot(v, basis.Ra) / z * basis.focal, H / 2 + dot(v, basis.Ua) / z * basis.focal];
 }
 
 /* ---------- flight ---------- */
@@ -577,14 +644,9 @@ function stepFlashes(dt) {
 /* ---------- head and shade ---------- */
 // The head drifts with the pointer, so the frame shifts against the view.
 const head = { x: 0, y: 0, tx: 0, ty: 0 };
-const shade = { v: 0.12, target: 0.12 };
-const win = { x: 0, y: 0, w: 1, h: 1 };
-function layout() {
-  // The window stands tall in the stage, above the bar.
-  const hh = Math.min(H * 0.34, (W * 0.36) / 0.64);
-  win.h = hh; win.w = hh * 0.64;
-  win.x = W / 2; win.y = H * 0.54;
-}
+const shade = { v: 0.05, target: 0.05 };
+// The shade's lip height in window metres.
+const lipY = () => WIN.inn[1] + 0.02 - shade.v * (2 * WIN.inn[1] + 0.04);
 
 /* ---------- loop ---------- */
 let raf = 0, last = 0, visible = true, ready = false;
@@ -603,8 +665,8 @@ function step(dt) {
   // Drag adds a push that fades back to cruise.
   cam.push *= Math.exp(-dt / 1.2);
   cam.x += ((reduce ? SPEED * 0.4 : SPEED) + cam.push) * dt;
-  // The bank breathes between about 7 and 13 degrees.
-  if (!reduce) bank = (10 + 3 * Math.sin(t * 0.045) + 1.2 * Math.sin(t * 0.13)) * D2R;
+  // The bank breathes between about 3 and 9 degrees.
+  if (!reduce) bank = (6 + 2.2 * Math.sin(t * 0.045) + 0.9 * Math.sin(t * 0.13)) * D2R;
   const k = 1 - Math.exp(-dt / 0.35);
   head.x += (head.tx - head.x) * k; head.y += (head.ty - head.y) * k;
   shade.v += (shade.target - shade.v) * (1 - Math.exp(-dt / 0.12));
@@ -626,10 +688,11 @@ function render() {
   gl.uniform1f(u.uDpr, dpr);
   gl.uniform1f(u.uTowns, opts.towns);
   gl.uniform2f(u.uCam, cam.x, cam.z);
-  gl.uniform3fv(u.uF, basis.F); gl.uniform3fv(u.uR, basis.R); gl.uniform3fv(u.uU, basis.U);
+  // The shader takes the cabin axes; it turns outside rays by the bank.
+  gl.uniform3fv(u.uF, basis.Fa); gl.uniform3fv(u.uR, basis.Ra); gl.uniform3fv(u.uU, basis.Ua);
+  gl.uniform3fv(u.uEye, basis.eye);
+  gl.uniform2f(u.uBank, Math.cos(bank), Math.sin(bank));
   gl.uniform1f(u.uFocal, basis.focal);
-  gl.uniform4f(u.uWin, win.x, win.y, win.w, win.h);
-  gl.uniform2f(u.uPar, head.x * 26 * dpr, head.y * 18 * dpr);
   gl.uniform1f(u.uShade, shade.v);
   gl.uniform1f(u.uCover, opts.cloud);
   const hl = hourLin();
@@ -688,7 +751,6 @@ function resize() {
   const fit = fitCanvas(canvas, { budget: 1.6e6 });
   if (fit.W === W && fit.H === H) return;
   W = fit.W; H = fit.H; dpr = fit.dpr;
-  layout();
   if (ready) render();
 }
 
@@ -696,9 +758,16 @@ function resize() {
 const toPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr]; };
 // The shade's lip is the grab zone for the shade.
 function onLip(x, y) {
-  const cx = win.x + head.x * 26 * dpr * 0.55;
-  const lipY = win.y + head.y * 18 * dpr * 0.55 + win.h - shade.v * win.h * 2;
-  return Math.abs(x - cx) < win.w && Math.abs(y - lipY) < 22 * dpr;
+  setBasis();
+  const a = toScreen([-WIN.inn[0], lipY(), WIN.slot]), b = toScreen([WIN.inn[0], lipY(), WIN.slot]);
+  const ab = [b[0] - a[0], b[1] - a[1]], L2 = ab[0] ** 2 + ab[1] ** 2;
+  const k = clamp(((x - a[0]) * ab[0] + (y - a[1]) * ab[1]) / L2);
+  return Math.hypot(x - a[0] - ab[0] * k, y - a[1] - ab[1] * k) < 24 * dpr;
+}
+// Screen pixels per metre of shade travel, near the lip.
+function shadeScale() {
+  const a = toScreen([0, 0.1, WIN.slot]), b = toScreen([0, -0.1, WIN.slot]);
+  return Math.hypot(a[0] - b[0], a[1] - b[1]) / 0.2;
 }
 // A tap on a tower lights it at that spot; elsewhere it lights the deck.
 function tapAt(x, y) {
@@ -729,7 +798,7 @@ stage.addEventListener('pointermove', e => {
   if (e.pointerType === 'mouse') { head.tx = clamp(x / W * 2 - 1, -1, 1); head.ty = clamp(y / H * 2 - 1, -1, 1); }
   if (!drag) { stage.classList.toggle('on-shade', onLip(x, y)); return; }
   if (Math.hypot(x - drag.x0, y - drag.y0) > 6 * dpr) drag.moved = true;
-  if (drag.shade) { shade.target = clamp(drag.s0 - (y - drag.y0) / (win.h * 2)); return; }
+  if (drag.shade) { shade.target = clamp(drag.s0 - (y - drag.y0) / shadeScale() / (2 * WIN.inn[1] + 0.04)); return; }
   // Dragging toward the tail pushes the plane on; the view runs right to left.
   const now = performance.now(), dts = Math.max(0.008, (now - drag.t) / 1000);
   cam.push = clamp(cam.push - (x - drag.x) / dpr / dts * 0.05, -SPEED * 3, SPEED * 6);
@@ -758,7 +827,7 @@ stormEl.addEventListener('input', () => { opts.storm = +stormEl.value; save('sto
 choices(document.getElementById('hour'), v => { opts.hour = v; save('hour', v); render(); }).set(opts.hour);
 choices(document.getElementById('cloud'), v => { opts.cloud = +v; save('cloud', v); render(); }).set(String(opts.cloud));
 choices(document.getElementById('towns'), v => { opts.towns = +v; save('towns', v); render(); }).set(String(opts.towns));
-document.getElementById('shadeBtn').addEventListener('click', () => { shade.target = shade.target > 0.5 ? 0.12 : 0.92; });
+document.getElementById('shadeBtn').addEventListener('click', () => { shade.target = shade.target > 0.5 ? 0.05 : 0.92; });
 
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
