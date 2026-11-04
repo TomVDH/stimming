@@ -42,7 +42,7 @@ In the first frame two lamps are on: two soft pools of light on the wall, each h
 | Chips | Filament, Daylight, Colour |
 | Slider | none |
 | Actions | Shuffle, Clear |
-| Settings | Chains: 5, 7, 9 · Scale: Pentatonic, Major, Minor · Quality: Low, High |
+| Settings | Chains: 5, 7, 9 · Scale: Pentatonic, Major, Minor · Quality: Standard, High (shared) |
 | How | Drag: pull or swing · Click/Tap: tug · 1 to 9: a chain (mouse devices only) · Space: shuffle (mouse devices only) |
 
 | Lamps | On | Off | Colour |

@@ -43,7 +43,7 @@ The first frame shows the flow with one young cyclone already turning near the c
 | Chips | Silk, Heat, Dye |
 | Slider | Wind: the strength of the base flow |
 | Actions | + Cyclone, Clear |
-| Settings | Particles: Few, Some, Many · Trails: Short, Long · Hemisphere: North, South · Isobars: Off, On |
+| Settings | Particles: Few, Some, Many · Trails: Short, Long · Hemisphere: North, South · Isobars: Off, On · Quality: Standard, High (shared) |
 | How | Drag: circle to spin a storm · Click/Tap: gust · Space: cyclone (mouse devices only) |
 
 | Look | Colour |
@@ -56,7 +56,7 @@ The first frame shows the flow with one young cyclone already turning near the c
 
 **World.** x runs from 0 to the aspect ratio and y from 0 to 1. The particle state is RGBA32F: (x, y, age, life).
 
-| Quality | State texture | Particles |
+| Particles setting | State texture | Particles |
 |---|---|---|
 | Many | 256 × 256 | 65,536 |
 | Some | 256 × 128 | 32,768 |

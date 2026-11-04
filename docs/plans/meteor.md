@@ -49,7 +49,7 @@ A new tap during a long event queues it, one at most.
 | Chips | Pebble, Fireball, Impact |
 | Slider | Dusk: the last light, to night |
 | Action | Shower: a dozen Pebbles over 20 s |
-| Settings | Letterbox: Off, On · Cliff: Left, Right · Quality: Low, High |
+| Settings | Letterbox: Off, On · Cliff: Left, Right · Quality: Standard, High (shared) |
 | How | Click/Tap: a meteor there · Drag: look around · Space: shower (mouse devices only) |
 
 ## Tech

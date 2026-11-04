@@ -45,7 +45,7 @@ A faint band of ground haze sits at the bottom. No posts, no garden: the Look ru
 | Chips | Breeze, Gusty, Gale |
 | Slider | Sun: from in front of the line to behind it |
 | Actions | + Sheet, Release |
-| Settings | Fabric: Cotton, Linen, Silk · Line: Slack, Taut · Quality: Low, High |
+| Settings | Fabric: Cotton, Linen, Silk · Line: Slack, Taut · Quality: Standard, High (shared) |
 | How | Click/Tap: unclip a peg · Drag: pull cloth or pluck the line · Space: sheet (mouse devices only) |
 
 | Fabric | Bend stiffness | Damping | Mass per area | Look |

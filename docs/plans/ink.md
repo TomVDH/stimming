@@ -44,7 +44,7 @@ The first frame shows one indigo plume already halfway down, so the stage opens 
 | Chips (dot plus name) | Indigo, Carmine, Sumi, Saffron, Mixed |
 | Slider | Weight: how much heavier the ink is than water |
 | Action | Clear |
-| Settings | Light: Backlit, Dark field · Water: Still, Drift · Quality: Low, Medium, High |
+| Settings | Light: Backlit, Dark field · Water: Still, Drift · Quality: Low, Medium, Standard, High (shared, plus Fire's lower tiers) |
 | How | Click/Tap: drop · Hold: pipette · Drag: stir · Space: drop (mouse devices only) |
 
 | Ink | Absorption σ (r, g, b) | Dark-field scatter colour |

@@ -43,7 +43,7 @@ In the beam, thousands of motes turn and drift. Outside it they are invisible, a
 | Chips | Morning, Noon, Golden, Moon |
 | Slider | Dust: how many motes |
 | Action | Blow |
-| Settings | Window: Open, Panes · Focus: Near, Beam, Far · Quality: Low, High |
+| Settings | Window: Open, Panes · Focus: Near, Beam, Far · Quality: Standard, High (shared) |
 | How | Drag: stir the air · Click/Tap: a puff · Space: blow (mouse devices only) |
 
 | Light | Elevation | Colour (OKLCH) | Character |

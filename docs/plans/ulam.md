@@ -42,7 +42,7 @@ A slow light sweep rests at about 2 o'clock.
 | Chips | Square, Sacks, Hex |
 | Slider | Zoom |
 | Action | Sweep |
-| Settings | Show: Primes, Twins, Gaps · Start: 1, 41 · Digits: Off, On (D6) · Quality: Low, High |
+| Settings | Show: Primes, Twins, Gaps · Start: 1, 41 · Digits: Off, On (D6) · Quality: Standard, High (shared) |
 | How | Drag: pan · Wheel/Pinch: zoom · Click/Tap: light a diagonal · Space: sweep (mouse devices only) |
 
 ## Tech

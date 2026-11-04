@@ -46,7 +46,7 @@ A sun low behind the fog makes one bright patch in the haze. Nothing else.
 | Chips | Dawn, Day, Dusk, Night |
 | Slider | Wind |
 | Action | Gust |
-| Settings | Fog: Light, Thick · Letterbox: Off, On · Quality: Low, High |
+| Settings | Fog: Light, Thick · Letterbox: Off, On · Quality: Standard, High (shared) |
 | How | Click/Tap: a gust · Drag: look along the rows · Space: gust (mouse devices only) |
 
 ## Tech

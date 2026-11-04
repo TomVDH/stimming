@@ -17,6 +17,7 @@ Quality and pizazz come first; each plan follows the house architecture.
 - [x] Plans: Coast and meteor, Wind farm, Collatz coral, Dry ice fog, Pull chain
 - [x] Plans: Ulam spiral, Canal at dusk, Marsh launch, Washing line, Bench
 - [x] Links from toy-plan.md and toy-dev-plan.md
+- [x] Plans use the shared Quality setting (bean stimming-gq7k), not their own chips
 
 ## Notes
 

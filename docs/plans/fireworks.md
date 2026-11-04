@@ -41,7 +41,7 @@ Above it: a clear sky with faint haze and few stars. Nothing else. The fireworks
 | Chips | Peony, Willow, Crossette, Ring, Strobe |
 | Slider | Distance: 300 m to 1,500 m; size, haze and sound delay follow |
 | Action | + Finale |
-| Settings | Smoke: Thin, Thick · Water: Calm, Ripple · Quality: Low, High |
+| Settings | Smoke: Thin, Thick · Water: Calm, Ripple · Quality: Standard, High (shared) |
 | How | Click/Tap: launch · Hold: bigger shell · Space: shell (mouse devices only) |
 
 ## Tech

@@ -43,7 +43,7 @@ The ground drifts slowly, as in a time-lapse from orbit.
 | Chips | Europe, Nile, Gulf, Japan, East Coast |
 | Slider | Moon: new to full; it sets the cloud tops' silver and the glint on the sea |
 | Actions | + Storm, Dawn |
-| Settings | Clouds: Few, Some, Many · Airglow: Off, On · Quality: Low, High |
+| Settings | Clouds: Few, Some, Many · Airglow: Off, On · Quality: Standard, High (shared) |
 | How | Drag: drift and tilt · Click/Tap: lightning · Arrows: drift (mouse devices only) · Space: storm (mouse devices only) |
 
 | Route | Start, heading | What passes |

@@ -51,7 +51,7 @@ The first frame shows the rainbow already formed: red at the left rod, violet at
 | Chips | Electrolysis, Clock |
 | Slider | Current (Electrolysis) or Delay (Clock): the label changes with the chip, as Sonar's does |
 | Actions | Stir, Reset |
-| Settings | Indicator: Universal, Cabbage · Bubbles: Fine, Coarse · Quality: Low, High |
+| Settings | Indicator: Universal, Cabbage · Bubbles: Fine, Coarse · Quality: Standard, High (shared) |
 | How | Hold: current on, or pour · Drag: stir · Space: hold to switch on or pour (mouse devices only) |
 
 ## Tech

@@ -55,7 +55,7 @@ Low mist lies over the far flats. There is no tower and no pad: the Look rule cu
 | Chips | Small, Medium, Heavy |
 | Slider | Dawn |
 | Action | Launch |
-| Settings | Distance: Near, Mid, Far · Letterbox: Off, On · Quality: Low, High |
+| Settings | Distance: Near, Mid, Far · Letterbox: Off, On · Quality: Standard, High (shared) |
 | How | Click/Tap: launch · Drag: look around · Space: launch (mouse devices only) |
 
 | Distance | Range | Sound delay |

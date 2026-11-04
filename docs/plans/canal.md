@@ -48,7 +48,7 @@ Every object has a job: lamps light, the bridge makes the circle, the belfry rin
 | Chips | Dry, Drizzle, Rain, Downpour |
 | Slider | Dusk |
 | Action | + Boat |
-| Settings | Letterbox: Off, On · Quality: Low, High |
+| Settings | Letterbox: Off, On · Quality: Standard, High (shared) |
 | How | Click/Tap: a lamp or the belfry · Drag: look along the canal · Space: boat (mouse devices only) |
 
 ## Tech

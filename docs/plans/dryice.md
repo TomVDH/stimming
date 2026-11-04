@@ -45,7 +45,7 @@ The first frame shows one pellet already fizzing and a thin fog sheet spilling o
 | Chips | Lab, Stage, Torch |
 | Slider | Warmth |
 | Actions | + Ice, Blow |
-| Settings | Table: Edge, Wide · Quality: Low, Medium, High |
+| Settings | Table: Edge, Wide · Quality: Low, Medium, Standard, High (shared, plus Fire's lower tiers) |
 | How | Click/Tap: drop ice · Drag: waft · Space: ice (mouse devices only) |
 
 ## Tech

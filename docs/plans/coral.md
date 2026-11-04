@@ -44,7 +44,7 @@ The first frame shows the full grown coral for N = 20,000, already lit.
 | Chips (dot plus name) | Reef, Bone, Abyss, Ember |
 | Slider | Bend |
 | Actions | Grow, Shuffle |
-| Settings | Count: 5k, 20k, 60k · Caustics: Off, On · Quality: Low, High |
+| Settings | Count: 5k, 20k, 60k · Caustics: Off, On · Quality: Standard, High (shared) |
 | How | Click/Tap: sing a branch · Drag: pan · Wheel/Pinch: zoom · Space: grow (mouse devices only) |
 
 | Palette | Root (OKLCH) | Tip (OKLCH) | Water (OKLCH) |

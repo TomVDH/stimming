@@ -110,11 +110,22 @@ Wrap `step()` and `render()` in `try`/`finally`, as Caustic pool does, so an err
 ### Performance ladder
 
 Use the watchdog from Fire and Snow globe. After 4 s of run time, a frame-time average above 1/38 s for 2 s steps quality down one rung.
-It never steps back up in a session, and the Quality chip follows. The rungs, in order:
+It never steps back up in a session. It never writes the site-wide `stimming.quality` either: that is the user's choice. The rungs, in order:
 
 1. Pixel ratio to 1.
 2. Effect buffers (bloom, volume, reflection) to the next lower size.
 3. Counts (particles, cells, instances).
+
+### Quality
+
+Quality is site-wide since bean `stimming-gq7k`. Never build a toy's own Quality chips.
+
+1. Call `qualitySetting(document.getElementById('sets'))` after `initPage()`. It adds the shared Standard and High chips to Settings.
+2. Size canvases through `fitCanvas()` or `pixelRatio()`; both read the shared choice. three.js toys pass the result to `renderer.setPixelRatio()`.
+3. Call `onQuality(() => resize())`, so a change applies live, also from another tab.
+4. A toy that needs a lighter tier keeps its own Low (or Low and Medium) in front of Standard, as Night viaduct and Fire do, and passes `quality: 'standard'` to keep the caps there.
+
+In the plans, "High" means the shared High. "Low" means the watchdog's lower rung, or a toy's own Low tier where its Settings row lists one.
 
 ### Delayed sound
 
