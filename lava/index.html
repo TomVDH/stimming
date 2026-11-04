@@ -1406,8 +1406,10 @@ function fit() {
   rect = null;
   // The lamp fills the height; narrow stages pull the camera back.
   tanF = Math.max(0.58, 0.42 / (w / h)) / CAMD;
-  // High skips the slow-frame scale step and renders at full resolution.
-  const p = pixelRatio(w, h) * (quality() === 'high' ? 1 : SCALES[scaleI]);
+  // High renders at full resolution until slow frames step it down.
+  // Its first step is Standard; later steps follow the scale table.
+  const high = quality() === 'high';
+  const p = high && scaleI === 0 ? pixelRatio(w, h) : pixelRatio(w, h, { quality: 'standard' }) * SCALES[high ? scaleI - 1 : scaleI];
   const cw = Math.max(1, Math.round(w * p)), ch = Math.max(1, Math.round(h * p));
   if (canvas.width !== cw || canvas.height !== ch) {
     canvas.width = cw;
@@ -1779,7 +1781,8 @@ async function boot() {
   ready = true;
   fit();
   new ResizeObserver(fit).observe(panel);
-  onQuality(fit);
+  // A new quality setting clears the slow-frame steps.
+  onQuality(() => { scaleI = 0; slow = 0; fit(); });
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
   document.addEventListener('visibilitychange', sync);
 }
