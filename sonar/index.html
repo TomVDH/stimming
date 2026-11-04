@@ -336,10 +336,12 @@ uniform vec2 uRes;
 uniform float uDpr, uTime, uWarp, uFringe, uPower, uMask, uScan, uMotion;
 uniform vec3 uFlash, uGlow, uGain, uTint, uHotCol, uDark;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-// Barrel curvature: the face bulges, so the content squeezes to the edges.
+// Barrel curvature, scaled so the corners land on the stage corners.
+// The face fills the whole stage; no black band shows at the edges.
 vec2 warp(vec2 uv) {
   vec2 as = vec2(uRes.x / uRes.y, 1.0), c = (uv - 0.5) * as;
-  return c * (1.0 + uWarp * dot(c, c)) / as + 0.5;
+  float dm = dot(as * 0.5, as * 0.5);
+  return c * (1.0 + uWarp * dot(c, c)) / (1.0 + uWarp * dm) / as + 0.5;
 }
 vec3 phosphor(vec2 uv) {
   vec2 e = texture(uAccum, uv).rg;
@@ -354,7 +356,7 @@ void main() {
   uv = (uv - 0.5) / open + 0.5;
   // Past the edge of the face the tube is black.
   vec2 edge = min(uv, 1.0 - uv) * uRes;
-  float inside = clamp(min(edge.x, edge.y) / (2.0 * uDpr), 0.0, 1.0);
+  float inside = clamp(min(edge.x, edge.y) / (0.75 * uDpr), 0.0, 1.0);
 
   // Each colour lands a little apart, more so away from centre.
   vec2 ca = (uv - 0.5) * uFringe + vec2(0.7 * uDpr / uRes.x, 0.0);
@@ -390,7 +392,7 @@ void main() {
 
   // The corners fall off; a broad dull sheen sits high on the left.
   vec2 c = (uv0 - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-  col *= 1.0 - 0.38 * smoothstep(0.25, 1.1, dot(c, c));
+  col *= 1.0 - 0.2 * smoothstep(0.35, 1.2, dot(c, c));
   col += (1.0 - smoothstep(0.0, 0.85, length((uv0 - vec2(0.22, 0.86)) * vec2(0.8, 1.5)))) * 0.006;
   col *= 1.0 + 0.012 * sin(uTime * 113.0) * uMotion;
   col += (hash(gl_FragCoord.xy + fract(uTime) * 61.0 * uMotion) - 0.5) * 0.006;
@@ -1472,7 +1474,7 @@ let lastTap = { t: -1e9, x: 0, y: 0 };
 function glXY(e) {
   const r = canvas.getBoundingClientRect(), as = r.width / r.height;
   const x = ((e.clientX - r.left) / r.width - 0.5) * as, y = 0.5 - (e.clientY - r.top) / r.height;
-  const f = 1 + WARP * (x * x + y * y);
+  const f = (1 + WARP * (x * x + y * y)) / (1 + WARP * (as * as + 1) / 4);
   return [(x * f / as + 0.5) * W, (y * f + 0.5) * H];
 }
 const angleAt = (x, y) => Math.atan2(x - scope.cx, y - scope.cy);

@@ -18,6 +18,10 @@ Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-li
 - [x] Bar: Active and Sonogram, Range or Span, Ping or Knock, Shuffle; Settings: afterglow, screen, scanlines, grid
 - [x] Menu Lab entry with icon and hook; toys.json entry (Dutch name is a draft)
 - [x] QA: 1280 and 375 px, clean console, reduced motion, idle stop
+- [x] Oscilloscope CRT stack, kept red; near-flat face that fills the stage; 30 Hz refresh
+- [x] Cyrillic boot with a loading bar; Tom's recorded ping (higher for a beam ping)
+- [x] Easter eggs: power ping, whale answers, sub counter-ping, tracks, cursor names lines, rare duck
+- [x] Surface ships with wakes, a stalking enemy sub, and the Cranky Auntie («Сварливая тётушка»)
 - [ ] Checkpoint: Tom reviews look and sound on a real device
 - [ ] Record the session cost
 
