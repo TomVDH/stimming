@@ -12,10 +12,10 @@ Build ShadyOS from docs/plans/shadyos.md. An original glossy glass desktop OS, a
 
 - [x] Concept, names and look studies (scratchpad stills; Tom picked the glass look, the warez layer and the name)
 - [x] Playable prototype in the scratchpad: smear, jelly, fold, cascade
-- [ ] Page: shell, intro, stage and render (desktop bake, smear plate, frost blur, window meshes, aged screen)
-- [ ] Interaction: pointer state machine, drag, fling, double-click fold, shelf, beads, cascade close
-- [ ] Bar: Smear and Jelly, Age, + Window, Error, Clear, (i)
-- [ ] Sound: hum, clicks, dings, glass rub, fold whoosh
+- [x] Page: shell, intro, stage and render (desktop bake, smear plate, frost blur, window meshes, aged screen)
+- [x] Interaction: pointer state machine, drag, fling, double-click fold, shelf, beads, cascade close
+- [x] Bar: Smear and Jelly, Age, + Window, Error, Clear, (i)
+- [x] Sound: hum, clicks, dings, glass rub, fold whoosh
 - [ ] Menu Lab entry with icon and hook; toys.json entry (Dutch name is a draft)
 - [ ] QA: 1280 and 375 px, clean console, idle stop, hidden tab, reduced motion
 - [ ] Settings popover (hum level, haunt on or off, quality)
