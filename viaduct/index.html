@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Night viaduct</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Night viaduct: a snowy valley, a stone viaduct, a lit train. */
+:root { --stage: oklch(0.13 0.03 265); }
+.stage--viaduct { cursor: pointer; }
+.stage--viaduct.held { cursor: grabbing; }
+.stage--viaduct canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--viaduct canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--viaduct canvas { transition: none; } }
+#train { display: inline-flex; align-items: center; gap: 6px; }
+#train svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Night viaduct</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--viaduct" id="stage" tabindex="0" role="application" aria-label="A stone viaduct over a snowy valley at night. Tap or press Space to send a train. Hold to slow time. Drag or use the arrow keys to look around.">
+      <p class="fail" hidden>Night viaduct needs WebGL2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="weather" role="group" aria-label="Weather">
+        <button class="chip" type="button" data-value="snow" aria-pressed="true">Light snow</button>
+        <button class="chip" type="button" data-value="blizzard" aria-pressed="false">Blizzard</button>
+        <button class="chip" type="button" data-value="clear" aria-pressed="false">Clear</button>
+      </div>
+      <label class="slider"><span>Time</span><input type="range" id="time" min="0" max="1" step="0.01" value="0.5" aria-label="Time, from dusk to midnight"></label>
+      <div class="actions">
+        <button class="chip" id="train" type="button" title="Send the next train"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Train</button>
+      </div>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Cars</span><div class="choices" id="cars" role="group" aria-label="Cars">
+              <button class="chip" type="button" data-value="2" aria-pressed="false">2</button>
+              <button class="chip" type="button" data-value="4" aria-pressed="true">4</button>
+              <button class="chip" type="button" data-value="6" aria-pressed="false">6</button>
+            </div></div>
+            <div class="group"><span>Letterbox</span><div class="choices" id="letter" role="group" aria-label="Letterbox">
+              <button class="chip" type="button" data-value="off" aria-pressed="true">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="false">On</button>
+            </div></div>
+            <div class="group"><span>Quality</span><div class="choices" id="quality" role="group" aria-label="Quality">
+              <button class="chip" type="button" data-value="low" aria-pressed="false">Low</button>
+              <button class="chip" type="button" data-value="high" aria-pressed="true">High</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>send a train</dd></div>
+          <div><dt>Hold</dt><dd>slow time</dd></div>
+          <div><dt>Drag</dt><dd>look around</dd></div>
+          <div class="fine"><dt><kbd>Space</kbd></dt><dd>train</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Night viaduct</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const sceneReady = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the compiled scene are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([sceneReady, wait(9000)])]) });
+initPage({ id: 'viaduct' });
+
+const PI = Math.PI;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const ss = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.viaduct.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.viaduct.${k}`, String(v)); } catch { /* storage is optional */ } };
+
+const stage = document.getElementById('stage');
+const failEl = stage.querySelector('.fail');
+const timeEl = document.getElementById('time');
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
+
+const opts = {
+  weather: saved('weather') || 'snow',
+  time: saved('time') != null ? +saved('time') : 0.5,
+  cars: +(saved('cars') || 4),
+  letter: saved('letter') === 'on',
+  quality: saved('quality') || 'high',
+};
+
+/* ---------- world layout ---------- */
+const DECK = 24;      // deck top height
+const BAY = 12;       // pier spacing
+const PIER = 2.6;     // pier width
+const HALF = 84;      // half the viaduct length
+const WIDTH = 5.4;    // deck width
+const CAR = 10, GAP = 0.7, CAR_H = 3.1, CAR_W = 2.9;
+const SPEED = 12;     // train speed in units per second
+const RUN = 150;      // the train runs from -RUN to +RUN
+const CAM = { x: 0, y: 11, z: 128, lookY: 15 };
+
+// Seeded random keeps the same valley on every visit.
+function mulberry(a) {
+  return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/* ---------- palettes: dusk at 0, midnight at 1 ---------- */
+const DUSK = {
+  zenith: [0.3, 0.07, 262], horizon: [0.47, 0.055, 30], glow: [0.55, 0.1, 45],
+  haze: [0.36, 0.045, 255], sky: [0.42, 0.05, 258], ground: [0.32, 0.03, 250], moon: [0.72, 0.035, 240],
+};
+const NIGHT = {
+  zenith: [0.13, 0.035, 266], horizon: [0.24, 0.045, 258], glow: [0.26, 0.05, 250],
+  haze: [0.22, 0.04, 258], sky: [0.27, 0.05, 262], ground: [0.2, 0.03, 255], moon: [0.82, 0.03, 235],
+};
+// Weather sets haze, snow, cloud and how bright the moon reads.
+const WEATHER = {
+  snow: { haze: 0.0055, density: 0.45, fall: 2.2, wind: 0.8, cloud: 0.55, stars: 0.25, moon: 0.75, cone: 0.55 },
+  blizzard: { haze: 0.011, density: 1, fall: 5.5, wind: 7, cloud: 1, stars: 0, moon: 0.3, cone: 1 },
+  clear: { haze: 0.0022, density: 0, fall: 2, wind: 0.3, cloud: 0.05, stars: 1, moon: 1, cone: 0.18 },
+};
+
+/* ---------- shared GLSL ---------- */
+const NOISE = /* glsl */`
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+`;
+// One light model for every lit surface: moon, sky, train, headlight, arc.
+const LIGHT = /* glsl */`
+uniform vec3 uMoonDir, uMoonCol, uSkyCol, uGroundCol, uHazeCol, uWarm, uHeadCol;
+uniform float uHaze, uTrainOn, uHeadOn, uTime;
+uniform vec3 uTrainA, uTrainB, uHeadPos, uHeadDir;
+uniform vec4 uArc;
+vec3 lightAt(vec3 p, vec3 n, vec3 alb) {
+  float wrap = max((dot(n, uMoonDir) + 0.25) / 1.25, 0.0);
+  vec3 c = alb * (uMoonCol * wrap * 0.55 + mix(uGroundCol, uSkyCol, n.y * 0.5 + 0.5) * 1.35);
+  // Moonlit snow bounces a cool fill onto faces that look at the camera.
+  c += alb * uMoonCol * 0.35 * max(dot(n, normalize(vec3(0.0, -0.25, 1.0))), 0.0);
+  vec3 ab = uTrainB - uTrainA;
+  vec3 q = uTrainA + ab * clamp(dot(p - uTrainA, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
+  vec3 d = q - p; float dl = max(length(d), 1e-3);
+  c += alb * uWarm * uTrainOn * 6.0 / (1.0 + dl * dl * 0.3) * (0.3 + 0.7 * max(dot(n, d / dl), 0.0));
+  vec3 hp = p - uHeadPos; float hd = max(length(hp), 1e-3);
+  float cone = smoothstep(0.9, 0.975, dot(hp / hd, uHeadDir));
+  c += alb * uHeadCol * uHeadOn * cone * 70.0 / (1.0 + hd * hd * 0.02) * max(dot(n, -hp / hd), 0.0);
+  vec3 ap = uArc.xyz - p; float ad = length(ap);
+  c += alb * vec3(0.55, 0.72, 1.0) * uArc.w * 40.0 / (1.0 + ad * ad * 0.04);
+  return c;
+}
+// Mist pools low in the valley and thickens with distance.
+vec3 haze(vec3 c, vec3 p) {
+  float d = length(p - cameraPosition);
+  float low = exp(-max(p.y - 1.0, 0.0) * 0.07);
+  float f = 1.0 - exp(-d * uHaze * (0.45 + 1.8 * low));
+  return mix(c, uHazeCol, clamp(f, 0.0, 1.0));
+}
+`;
+const LIT_VERT = /* glsl */`
+varying vec3 vPos; varying vec3 vN;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vPos = wp.xyz; vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+
+/* ---------- start ---------- */
+let THREE, renderer, scene, camera, composer, bloom, grade, U;
+let terrainH, trainMesh, coneMesh, arcSprite, lampSprite, snowMat, snowGeo;
+let ready = false;
+
+function failed() {
+  failEl.hidden = false;
+  markReady();
+}
+
+async function start() {
+  let EffectComposer, RenderPass, UnrealBloomPass, OutputPass, ShaderPass, mergeGeometries, createNoise2D;
+  try {
+    [THREE, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }, { ShaderPass }, { mergeGeometries }, { createNoise2D }] = await Promise.all([
+      import('three'),
+      import('three/addons/postprocessing/EffectComposer.js'),
+      import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'),
+      import('three/addons/postprocessing/OutputPass.js'),
+      import('three/addons/postprocessing/ShaderPass.js'),
+      import('three/addons/utils/BufferGeometryUtils.js'),
+      import('simplex-noise'),
+    ]);
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    return failed();
+  }
+  const ext = renderer.extensions;
+  if (!ext.has('EXT_color_buffer_float') && !ext.has('EXT_color_buffer_half_float')) { renderer.dispose(); return failed(); }
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.5;
+  const canvas = renderer.domElement;
+  canvas.setAttribute('aria-hidden', 'true');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(28, 16 / 9, 1, 4000);
+
+  const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  const C3 = () => new THREE.Color();
+  // Shared uniforms: every lit material holds these same objects.
+  U = {
+    uMoonDir: { value: V3(0.38, 0.3, -1).normalize() }, uMoonCol: { value: C3() }, uSkyCol: { value: C3() },
+    uGroundCol: { value: C3() }, uHazeCol: { value: C3() }, uWarm: { value: new THREE.Color().setRGB(...linFit(0.78, 0.13, 70)) },
+    uHeadCol: { value: new THREE.Color().setRGB(...linFit(0.95, 0.04, 85)) },
+    uHaze: { value: 0.005 }, uTrainOn: { value: 0 }, uHeadOn: { value: 0 }, uTime: { value: 0 },
+    uTrainA: { value: V3() }, uTrainB: { value: V3(1) }, uHeadPos: { value: V3() }, uHeadDir: { value: V3(1) },
+    uArc: { value: new THREE.Vector4(0, -100, 0, 0) },
+  };
+  const lit = (frag, extra = {}, vert = LIT_VERT) => new THREE.ShaderMaterial({
+    uniforms: { ...U, ...extra }, vertexShader: vert, fragmentShader: NOISE + LIGHT + frag,
+  });
+
+  /* ---------- terrain ---------- */
+  const rand = mulberry(7);
+  const noise = createNoise2D(rand);
+  const meander = z => 7 * Math.sin(z * 0.018) + 3 * Math.sin(z * 0.047 + 1.3);
+  terrainH = (x, z) => {
+    const dx = Math.abs(x - meander(z));
+    let h = 26 * ss(14, 92, dx) - 1.2 - 1.8 * Math.exp(-dx * dx / 28);
+    h += Math.max(0, -z - 90) * 0.14 * (0.4 + ss(10, 120, dx));
+    h += ss(70, 220, dx) * 40;
+    const n = noise(x * 0.018, z * 0.018) * 7 + noise(x * 0.06 + 9, z * 0.06) * 2.2;
+    h += n * ss(4, 30, dx) * (0.35 + 0.65 * ss(6, 30, Math.abs(z)));
+    // The track bed runs flat beyond the viaduct ends.
+    const bed = ss(9, 3, Math.abs(z)) * ss(70, 86, Math.abs(x));
+    return lerp(h, DECK - 0.15, bed);
+  };
+  {
+    const g = new THREE.PlaneGeometry(700, 640, 175, 160);
+    g.rotateX(-PI / 2);
+    g.translate(0, 0, -160);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) p.setY(i, terrainH(p.getX(i), p.getZ(i)));
+    g.computeVertexNormals();
+    const m = lit(/* glsl */`
+      uniform vec3 uSnowAlb, uRock;
+      varying vec3 vPos; varying vec3 vN;
+      void main() {
+        vec3 n = normalize(vN);
+        float rock = smoothstep(0.82, 0.62, n.y + (vnoise(vPos.xz * 0.15) - 0.5) * 0.25);
+        vec3 alb = mix(uSnowAlb * (0.9 + 0.1 * vnoise(vPos.xz * 0.4)), uRock * (0.6 + 0.8 * vnoise(vPos.xz * 0.7)), rock);
+        vec3 c = lightAt(vPos, n, alb);
+        // Sparse glints catch the moon on fresh snow.
+        float glint = step(0.996, hash12(floor(vPos.xz * 5.0))) * (1.0 - rock) * max(dot(n, uMoonDir), 0.0);
+        c += uMoonCol * glint * 1.5;
+        gl_FragColor = vec4(haze(c, vPos), 1.0);
+      }`, { uSnowAlb: { value: new THREE.Color().setRGB(...linFit(0.93, 0.012, 250)) }, uRock: { value: new THREE.Color().setRGB(...linFit(0.3, 0.012, 60)) } });
+    scene.add(new THREE.Mesh(g, m));
+  }
+
+  /* ---------- viaduct ---------- */
+  {
+    const s = new THREE.Shape();
+    s.moveTo(-HALF - 3, -14); s.lineTo(HALF + 3, -14); s.lineTo(HALF + 3, DECK); s.lineTo(-HALF - 3, DECK); s.closePath();
+    const r = (BAY - PIER) / 2, spring = DECK - 2.6 - r;
+    for (let x = -HALF; x < HALF - 1; x += BAY) {
+      const x0 = x + PIER / 2, x1 = x + BAY - PIER / 2;
+      const h = new THREE.Path();
+      h.moveTo(x0, -10); h.lineTo(x1, -10); h.lineTo(x1, spring);
+      h.absarc((x0 + x1) / 2, spring, r, 0, PI, false);
+      h.lineTo(x0, -10);
+      s.holes.push(h);
+    }
+    const body = new THREE.ExtrudeGeometry(s, { depth: WIDTH, bevelEnabled: false, curveSegments: 18 });
+    body.translate(0, 0, -WIDTH / 2);
+    const parts = [body.index ? body.toNonIndexed() : body];
+    for (const z of [-1, 1]) {
+      const wall = new THREE.BoxGeometry(2 * HALF + 6, 1.1, 0.5);
+      wall.translate(0, DECK + 0.55, z * (WIDTH / 2 - 0.25));
+      parts.push(wall.toNonIndexed());
+      // A cornice band reads as a line in the moonlight.
+      const band = new THREE.BoxGeometry(2 * HALF + 6, 0.5, 0.35);
+      band.translate(0, DECK - 1.6, z * (WIDTH / 2 + 0.17));
+      parts.push(band.toNonIndexed());
+    }
+    for (const p of parts) p.deleteAttribute('uv');
+    const geo = mergeGeometries(parts);
+    const m = lit(/* glsl */`
+      uniform vec3 uStone, uSnowAlb;
+      varying vec3 vPos; varying vec3 vN;
+      void main() {
+        vec3 n = normalize(vN);
+        // Masonry courses with offset blocks and darker mortar.
+        float fy = vPos.y / 0.9, row = floor(fy);
+        float u = (abs(n.x) > 0.5 ? vPos.z : vPos.x) / 1.7 + 0.5 * mod(row, 2.0);
+        float mort = min(smoothstep(0.0, 0.07, fract(fy)) * smoothstep(1.0, 0.93, fract(fy)),
+                         smoothstep(0.0, 0.05, fract(u)) * smoothstep(1.0, 0.95, fract(u)));
+        float tone = 0.7 + 0.6 * hash12(vec2(floor(u), row));
+        vec3 stone = uStone * tone * mix(0.5, 1.0, mort);
+        float snow = smoothstep(0.55, 0.9, n.y) * (0.85 + 0.15 * vnoise(vPos.xz * 2.0));
+        vec3 c = lightAt(vPos, n, mix(stone, uSnowAlb, snow));
+        gl_FragColor = vec4(haze(c, vPos), 1.0);
+      }`, { uStone: { value: new THREE.Color().setRGB(...linFit(0.64, 0.025, 60)) }, uSnowAlb: { value: new THREE.Color().setRGB(...linFit(0.93, 0.012, 250)) } });
+    scene.add(new THREE.Mesh(geo, m));
+  }
+
+  /* ---------- trees ---------- */
+  {
+    const spots = [];
+    for (let k = 0; spots.length < 1600 && k < 20000; k++) {
+      const x = (rand() * 2 - 1) * 240, z = -340 + rand() * 430;
+      const dx = Math.abs(x - meander(z));
+      if (dx < 15 || z > 92) continue;
+      if (Math.abs(z) < 11 && Math.abs(x) < HALF + 30) continue;
+      const h = terrainH(x, z), sl = Math.hypot(terrainH(x + 1, z) - h, terrainH(x, z + 1) - h);
+      if (sl > 0.95 || rand() > 0.35 + sl * 0.6) continue;
+      spots.push([x, h - 0.4, z, 0.7 + rand() * 0.9]);
+    }
+    const g = new THREE.ConeGeometry(1.7, 6.5, 7, 1);
+    g.translate(0, 3.25, 0);
+    const m = lit(/* glsl */`
+      uniform vec3 uLeaf, uSnowAlb;
+      varying vec3 vPos; varying vec3 vN;
+      void main() {
+        vec3 n = normalize(vN);
+        float snow = smoothstep(0.25, 0.55, n.y + (vnoise(vPos.xy * 1.2 + vPos.z) - 0.5) * 0.4) * 0.8;
+        vec3 c = lightAt(vPos, n, mix(uLeaf, uSnowAlb, snow));
+        gl_FragColor = vec4(haze(c, vPos), 1.0);
+      }`, { uLeaf: { value: new THREE.Color().setRGB(...linFit(0.24, 0.035, 160)) }, uSnowAlb: { value: new THREE.Color().setRGB(...linFit(0.9, 0.012, 250)) } },
+    /* glsl */`
+      varying vec3 vPos; varying vec3 vN;
+      void main() {
+        mat4 w = modelMatrix * instanceMatrix;
+        vec4 wp = w * vec4(position, 1.0);
+        vPos = wp.xyz; vN = normalize(mat3(w) * normal);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`);
+    const trees = new THREE.InstancedMesh(g, m, spots.length);
+    const o = new THREE.Object3D();
+    spots.forEach(([x, y, z, s], i) => {
+      o.position.set(x, y, z); o.scale.set(s, s * (0.85 + rand() * 0.4), s); o.rotation.y = rand() * PI;
+      o.updateMatrix(); trees.setMatrixAt(i, o.matrix);
+    });
+    scene.add(trees);
+  }
+
+  /* ---------- river ---------- */
+  const river = { mat: null };
+  {
+    const N = 140, z0 = -330, z1 = 120, pos = [], idx = [];
+    for (let i = 0; i <= N; i++) {
+      const z = lerp(z0, z1, i / N), cx = meander(z), y = terrainH(cx, z) + 0.45, w = 2.6 + 0.8 * Math.sin(z * 0.05);
+      pos.push(cx - w, y, z, cx + w, y, z);
+      if (i < N) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    river.mat = new THREE.ShaderMaterial({
+      uniforms: { ...U, uHorizon: { value: C3() }, uMoonX: { value: 0 }, uTrainX: { value: -1e4 }, uRes: { value: new THREE.Vector2(1, 1) } },
+      vertexShader: /* glsl */`varying vec3 vPos; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vPos = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+      fragmentShader: NOISE + LIGHT + /* glsl */`
+        uniform vec3 uHorizon; uniform float uMoonX, uTrainX; uniform vec2 uRes;
+        varying vec3 vPos;
+        void main() {
+          float rip = vnoise(vec2(vPos.x * 0.9, vPos.z * 0.12 - uTime * 0.35));
+          float sx = gl_FragCoord.x;
+          // Reflections stretch into vertical streaks under the moon and the train.
+          float moon = exp(-pow((sx - uMoonX) / (uRes.x * 0.01 * (0.5 + rip)), 2.0)) * (0.3 + 0.7 * rip);
+          float train = uTrainOn * exp(-pow((sx - uTrainX) / (uRes.x * 0.035), 2.0)) * rip;
+          vec3 c = uSkyCol * 0.12 + uMoonCol * moon * 1.6 + uWarm * train * 1.4;
+          gl_FragColor = vec4(haze(c, vPos), 1.0);
+        }`,
+    });
+    scene.add(new THREE.Mesh(g, river.mat));
+  }
+
+  /* ---------- sky ---------- */
+  const sky = new THREE.ShaderMaterial({
+    uniforms: { ...U, uZenith: { value: C3() }, uHorizon: { value: C3() }, uGlow: { value: C3() }, uCloud: { value: 0.5 }, uStars: { value: 0 }, uMoonBright: { value: 1 } },
+    vertexShader: /* glsl */`varying vec3 vDir; void main() { vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+    fragmentShader: NOISE + /* glsl */`
+      uniform vec3 uZenith, uHorizon, uGlow, uMoonDir, uMoonCol, uHazeCol;
+      uniform float uCloud, uStars, uMoonBright, uTime, uHaze;
+      varying vec3 vDir;
+      void main() {
+        vec3 d = normalize(vDir);
+        float h = max(d.y, 0.0);
+        vec3 c = mix(uHorizon, uZenith, pow(smoothstep(0.0, 0.55, h), 0.7));
+        // The last light of dusk lingers low on the left.
+        c += uGlow * exp(-h * 9.0) * (0.35 + 0.65 * smoothstep(0.3, -0.8, d.x));
+        float md = max(dot(d, uMoonDir), 0.0);
+        float disc = smoothstep(0.99955, 0.99972, md);
+        float halo = pow(md, 900.0) * 0.9 + pow(md, 60.0) * 0.07 + pow(md, 8.0) * 0.012;
+        vec2 cp = d.xz / (d.y + 0.18) * 1.3 + vec2(uTime * 0.006, 0.0);
+        float cl = smoothstep(1.02 - uCloud * 0.62, 1.12 - uCloud * 0.45, fbm(cp) + 0.25) * smoothstep(0.0, 0.12, h);
+        vec2 sp = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0))) * 220.0;
+        float st = hash12(floor(sp));
+        float star = step(0.986, st) * smoothstep(0.42, 0.0, length(fract(sp) - 0.5)) * (0.6 + 0.4 * sin(uTime * 3.0 + st * 300.0));
+        c += star * uStars * (1.0 - cl) * 1.6 * smoothstep(0.03, 0.2, h);
+        c += uMoonCol * uMoonBright * (disc * 11.0 * (1.0 - cl * 0.75) + halo * (1.0 - cl * 0.4));
+        // Clouds take a silver edge near the moon.
+        vec3 cloud = mix(uZenith * 1.3, uMoonCol * 0.32, pow(md, 24.0) * uMoonBright);
+        c = mix(c, cloud, cl * 0.85);
+        // The low sky takes the same haze as the land.
+        c = mix(c, uHazeCol, max(exp(-h * 16.0) * 0.55, exp(-h * 5.0) * clamp(uHaze * 65.0, 0.0, 0.85)));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+    side: THREE.BackSide, depthWrite: false,
+  });
+  const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(1500, 48, 24), sky);
+  skyMesh.renderOrder = -1;
+  scene.add(skyMesh);
+
+  /* ---------- village lights ---------- */
+  {
+    const pos = [], seeds = [];
+    const put = (x, z) => { pos.push(x, terrainH(x, z) + 0.7, z); seeds.push(rand()); };
+    for (const [zc, n] of [[-75, 26], [-150, 44], [-230, 36]]) {
+      for (let i = 0; i < n; i++) { const z = zc + (rand() - 0.5) * 34; put(meander(z) + (rand() < 0.5 ? -1 : 1) * (5 + rand() * 22), z); }
+    }
+    for (let i = 0; i < 40; i++) { const z = -60 - rand() * 260; put(meander(z) + (rand() * 2 - 1) * 110, z); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('seed', new THREE.Float32BufferAttribute(seeds, 1));
+    const m = new THREE.ShaderMaterial({
+      uniforms: { ...U, uPx: { value: 300 } },
+      vertexShader: /* glsl */`
+        attribute float seed; uniform float uPx; varying float vS; varying vec3 vPos;
+        void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vPos = wp.xyz; vS = seed; vec4 mv = viewMatrix * wp;
+          gl_PointSize = clamp(uPx * (0.5 + seed) / -mv.z, 1.5, 6.0); gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: NOISE + LIGHT + /* glsl */`
+        varying float vS; varying vec3 vPos;
+        void main() { float r = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.1, r);
+          vec3 c = uWarm * (2.5 + 3.0 * vS); c = haze(c, vPos);
+          gl_FragColor = vec4(c * a, 1.0); }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    scene.add(new THREE.Points(g, m));
+  }
+
+  /* ---------- train ---------- */
+  {
+    const g = new THREE.BoxGeometry(CAR, CAR_H, CAR_W);
+    const m = lit(/* glsl */`
+      uniform vec3 uBody, uRed; uniform float uDir, uCars;
+      varying vec3 vPos; varying vec3 vN; varying vec3 vL; flat varying float vInst;
+      void main() {
+        vec3 n = normalize(vN);
+        float side = step(0.5, abs(n.z));
+        float wy = smoothstep(-0.32, -0.26, vL.y) * smoothstep(0.66, 0.6, vL.y);
+        float ax = vL.x + ${(CAR / 2).toFixed(1)};
+        float wx = fract(ax / 1.8);
+        float inset = step(0.9, ax) * step(ax, ${(CAR - 0.9).toFixed(1)});
+        float win = side * wy * inset * smoothstep(0.1, 0.16, wx) * smoothstep(0.84, 0.78, wx);
+        float id = floor(ax / 1.8);
+        float occ = (0.55 + 0.45 * hash12(vec2(id, vInst + 3.0))) * step(0.15, hash12(vec2(id * 1.7, vInst)));
+        float roof = smoothstep(0.6, 0.9, n.y);
+        vec3 c = lightAt(vPos, n, mix(uBody, vec3(0.75), roof * 0.7));
+        c += uWarm * win * occ * 5.0;
+        float front = step(0.5, dot(n, vec3(uDir, 0.0, 0.0)));
+        float lamps = smoothstep(0.32, 0.18, length(vec2(abs(vL.z) - 0.85, vL.y + 0.75)));
+        c += uHeadCol * lamps * front * step(vInst, 0.5) * 30.0;
+        float back = step(0.5, dot(n, vec3(-uDir, 0.0, 0.0)));
+        c += uRed * lamps * back * step(uCars - 1.5, vInst) * 12.0;
+        gl_FragColor = vec4(haze(c, vPos), 1.0);
+      }`, { uBody: { value: new THREE.Color().setRGB(...linFit(0.36, 0.1, 28)) }, uRed: { value: new THREE.Color().setRGB(...linFit(0.6, 0.22, 28)) }, uDir: { value: 1 }, uCars: { value: 4 } },
+    /* glsl */`
+      varying vec3 vPos; varying vec3 vN; varying vec3 vL; flat varying float vInst;
+      void main() {
+        mat4 w = modelMatrix * instanceMatrix;
+        vec4 wp = w * vec4(position, 1.0);
+        vPos = wp.xyz; vN = normalize(mat3(w) * normal); vL = position; vInst = float(gl_InstanceID);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`);
+    trainMesh = new THREE.InstancedMesh(g, m, 6);
+    trainMesh.frustumCulled = false;
+    trainMesh.visible = false;
+    scene.add(trainMesh);
+
+    // The headlight beam is an additive cone, open in front of the train.
+    const cg = new THREE.ConeGeometry(7, 46, 28, 1, true);
+    cg.rotateZ(PI / 2);
+    cg.translate(23, 0, 0);
+    coneMesh = new THREE.Mesh(cg, new THREE.ShaderMaterial({
+      uniforms: { uHeadCol: U.uHeadCol, uOn: { value: 0 } },
+      vertexShader: /* glsl */`varying vec3 vN; varying vec3 vPos; varying float vAlong;
+        void main() { vAlong = position.x / 46.0; vec4 wp = modelMatrix * vec4(position, 1.0); vPos = wp.xyz;
+          vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * wp; }`,
+      fragmentShader: /* glsl */`uniform vec3 uHeadCol; uniform float uOn; varying vec3 vN; varying vec3 vPos; varying float vAlong;
+        void main() { float f = pow(abs(dot(normalize(vN), normalize(cameraPosition - vPos))), 1.6);
+          float a = pow(1.0 - clamp(vAlong, 0.0, 1.0), 1.8) * f * uOn * 0.35;
+          gl_FragColor = vec4(uHeadCol * a, 1.0); }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }));
+    coneMesh.visible = false;
+    scene.add(coneMesh);
+
+    const glow = (rgb, n = 64) => {
+      const c = document.createElement('canvas'); c.width = c.height = n;
+      const x = c.getContext('2d'); const gr = x.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+      gr.addColorStop(0, `rgba(${rgb},1)`); gr.addColorStop(0.25, `rgba(${rgb},0.45)`); gr.addColorStop(1, `rgba(${rgb},0)`);
+      x.fillStyle = gr; x.fillRect(0, 0, n, n);
+      return new THREE.CanvasTexture(c);
+    };
+    arcSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow('180,210,255'), color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    arcSprite.scale.setScalar(9);
+    scene.add(arcSprite);
+    lampSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow('255,240,215'), color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    lampSprite.scale.setScalar(6);
+    scene.add(lampSprite);
+  }
+
+  /* ---------- snow ---------- */
+  {
+    const N = 9000, seeds = new Float32Array(N * 4);
+    for (let i = 0; i < N * 4; i++) seeds[i] = rand();
+    snowGeo = new THREE.BufferGeometry();
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    snowGeo.setAttribute('seed', new THREE.BufferAttribute(seeds, 4));
+    snowMat = new THREE.ShaderMaterial({
+      uniforms: { ...U, uBoxMin: { value: V3(-95, -4, -40) }, uBoxSize: { value: V3(190, 62, 158) }, uT: { value: 0 },
+        uFall: { value: 2 }, uWind: { value: 1 }, uDensity: { value: 0.5 }, uPx: { value: 300 }, uSnowAmb: { value: C3() } },
+      vertexShader: /* glsl */`
+        attribute vec4 seed;
+        uniform vec3 uBoxMin, uBoxSize, uSnowAmb, uWarm, uHeadCol, uTrainA, uTrainB, uHeadPos, uHeadDir;
+        uniform vec4 uArc; uniform float uT, uFall, uWind, uDensity, uPx, uTrainOn, uHeadOn;
+        varying vec3 vCol; varying float vA;
+        void main() {
+          vec3 p = seed.xyz * uBoxSize;
+          p.y -= uT * uFall * (0.7 + 0.6 * seed.w);
+          p.x += uT * uWind * (0.8 + 0.4 * seed.w) + sin(uT * 0.9 + seed.w * 40.0) * 0.6;
+          p.z += sin(uT * 0.7 + seed.w * 23.0) * 0.5;
+          p = uBoxMin + mod(p, uBoxSize);
+          vec4 mv = viewMatrix * vec4(p, 1.0);
+          float dist = -mv.z;
+          vec3 c = uSnowAmb;
+          vec3 hp = p - uHeadPos; float hd = max(length(hp), 1e-3);
+          c += uHeadCol * uHeadOn * smoothstep(0.9, 0.975, dot(hp / hd, uHeadDir)) * 90.0 / (1.0 + hd * hd * 0.012);
+          vec3 ab = uTrainB - uTrainA;
+          vec3 q = uTrainA + ab * clamp(dot(p - uTrainA, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
+          float dl = length(q - p);
+          c += uWarm * uTrainOn * 8.0 / (1.0 + dl * dl * 0.25);
+          float ad = length(uArc.xyz - p);
+          c += vec3(0.55, 0.72, 1.0) * uArc.w * 60.0 / (1.0 + ad * ad * 0.03);
+          vCol = c;
+          vA = step(seed.w, uDensity) * smoothstep(4.0, 14.0, dist);
+          gl_PointSize = vA > 0.0 ? clamp(uPx * (0.6 + 0.8 * seed.w) / dist, 1.0, 14.0) : 0.0;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */`
+        varying vec3 vCol; varying float vA;
+        void main() { float r = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.12, r) * vA * 0.85;
+          if (a < 0.01) discard; gl_FragColor = vec4(vCol, a); }`,
+      transparent: true, depthWrite: false,
+    });
+    const pts = new THREE.Points(snowGeo, snowMat);
+    pts.frustumCulled = false;
+    scene.add(pts);
+  }
+
+  /* ---------- post ---------- */
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  composer = new EffectComposer(renderer, rt);
+  composer.addPass(new RenderPass(scene, camera));
+  bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.45, 1.1);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+  grade = new ShaderPass({
+    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uLetter: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) } },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: NOISE + /* glsl */`
+      uniform sampler2D tDiffuse; uniform float uTime, uLetter; uniform vec2 uRes; varying vec2 vUv;
+      void main() {
+        vec3 c = texture2D(tDiffuse, vUv).rgb;
+        vec2 q = vUv - 0.5;
+        c *= clamp(1.0 - dot(q * vec2(1.0, 1.25), q) * 0.95, 0.0, 1.0);
+        c += (hash12(vUv * uRes + fract(uTime * 7.31) * 913.0) - 0.5) * 0.035;
+        // Letterbox bars crop wide stages to 2.39:1.
+        float ar = uRes.x / uRes.y;
+        float bar = uLetter * step(1.2, ar) * max(0.0, (1.0 - ar / 2.39) * 0.5);
+        c *= step(bar, vUv.y) * step(vUv.y, 1.0 - bar);
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+  composer.addPass(grade);
+
+  // The sky, river and snow hold their own colour uniforms.
+  applyTime.sky = sky; applyTime.river = river.mat;
+  applyTime();
+  applyWeather(true);
+
+  stage.prepend(canvas);
+  new ResizeObserver(resize).observe(stage);
+  resize();
+  step(0);
+  await renderer.compileAsync(scene, camera);
+  composer.render();
+  ready = true;
+  markReady();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  if (visible && !raf) { last = 0; raf = requestAnimationFrame(frame); }
+}
+
+/* ---------- time of night ---------- */
+function applyTime() {
+  if (!U) return;
+  const t = opts.time;
+  const mix = k => { const a = linFit(DUSK[k]), b = linFit(NIGHT[k]); return [0, 1, 2].map(i => lerp(a[i], b[i], t)); };
+  const set = (col, k, s = 1) => { const v = mix(k); col.setRGB(v[0] * s, v[1] * s, v[2] * s); };
+  set(U.uMoonCol.value, 'moon', 1.0);
+  set(U.uSkyCol.value, 'sky', 0.9);
+  set(U.uGroundCol.value, 'ground', 0.6);
+  set(U.uHazeCol.value, 'haze');
+  const sky = applyTime.sky;
+  if (sky) {
+    set(sky.uniforms.uZenith.value, 'zenith');
+    set(sky.uniforms.uHorizon.value, 'horizon');
+    set(sky.uniforms.uGlow.value, 'glow', 0.5 * (1 - t) ** 2);
+    applyTime.river.uniforms.uHorizon.value.copy(sky.uniforms.uHorizon.value);
+  }
+  if (snowMat) set(snowMat.uniforms.uSnowAmb.value, 'sky', 2.6);
+}
+
+/* ---------- weather ---------- */
+const cur = { ...WEATHER[opts.weather] };
+function applyWeather(now) {
+  if (now) Object.assign(cur, WEATHER[opts.weather]);
+}
+
+/* ---------- train ---------- */
+const train = { on: false, x: 0, dir: 1, cars: 4, queued: false, next: 4, nextDir: 1, arc: 0, arcT: 3 };
+function sendTrain() {
+  if (train.on) { train.queued = true; return; }
+  train.on = true;
+  train.dir = train.nextDir;
+  train.nextDir *= -1;
+  train.cars = opts.cars;
+  train.x = -train.dir * RUN;
+}
+
+/* ---------- loop ---------- */
+let raf = 0, last = 0, visible = true, t = 0, slow = 1;
+const look = { x: 0, y: 0, tx: 0, ty: 0 };
+const pointer = { down: false, held: false, drag: false, x: 0, y: 0, timer: 0 };
+
+function frame(now) {
+  raf = 0;
+  const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
+  last = now;
+  step(dt);
+  composer.render();
+  if (visible) raf = requestAnimationFrame(frame);
+}
+
+function step(dt) {
+  slow = lerp(slow, pointer.held ? 0.18 : 1, 1 - Math.exp(-dt * 5));
+  const sdt = dt * slow;
+  t += sdt;
+  U.uTime.value = t;
+
+  // Weather eases toward the chosen preset over a few seconds.
+  const W = WEATHER[opts.weather], k = 1 - Math.exp(-dt * 0.9);
+  for (const key in W) cur[key] = lerp(cur[key], W[key], k);
+  U.uHaze.value = cur.haze;
+  const sky = applyTime.sky;
+  sky.uniforms.uCloud.value = cur.cloud;
+  sky.uniforms.uStars.value = cur.stars;
+  sky.uniforms.uMoonBright.value = cur.moon;
+  snowMat.uniforms.uDensity.value = cur.density;
+  snowMat.uniforms.uFall.value = cur.fall * (reduce ? 0.35 : 1);
+  snowMat.uniforms.uWind.value = cur.wind * (reduce ? 0.35 : 1);
+  snowMat.uniforms.uT.value = t;
+
+  // Trains come by themselves now and then.
+  if (!train.on) {
+    train.next -= sdt;
+    if (train.next <= 0 || train.queued) { train.queued = false; sendTrain(); }
+  }
+  if (train.on) {
+    train.x += train.dir * SPEED * sdt;
+    const len = train.cars * (CAR + GAP);
+    if (train.x * train.dir > RUN + len) {
+      train.on = false;
+      train.next = 22 + Math.random() * 18;
+    }
+  }
+  placeTrain(sdt);
+
+  // The camera breathes slowly and leans toward the pointer.
+  look.x = lerp(look.x, look.tx, 1 - Math.exp(-dt * 3));
+  look.y = lerp(look.y, look.ty, 1 - Math.exp(-dt * 3));
+  const br = reduce ? 0 : 1;
+  camera.position.set(CAM.x + look.x * 30 + Math.sin(t * 0.13) * 0.8 * br, CAM.y + look.y * 8 + Math.sin(t * 0.17) * 0.35 * br, CAM.z);
+  camera.lookAt(look.x * 70, CAM.lookY + look.y * 14, 0);
+  camera.updateMatrixWorld();
+
+  // Screen positions feed the river streaks.
+  const v = new THREE.Vector3().copy(camera.position).addScaledVector(U.uMoonDir.value, 1000).project(camera);
+  const res = applyTime.river.uniforms.uRes.value;
+  applyTime.river.uniforms.uMoonX.value = (v.x * 0.5 + 0.5) * res.x;
+  if (train.on) {
+    const c = new THREE.Vector3().addVectors(U.uTrainA.value, U.uTrainB.value).multiplyScalar(0.5).project(camera);
+    applyTime.river.uniforms.uTrainX.value = (c.x * 0.5 + 0.5) * res.x;
+  }
+  grade.uniforms.uTime.value = t;
+  grade.uniforms.uLetter.value = lerp(grade.uniforms.uLetter.value, opts.letter ? 1 : 0, 1 - Math.exp(-dt * 6));
+}
+
+const _o = { m: null };
+function placeTrain(sdt) {
+  const on = train.on;
+  trainMesh.visible = coneMesh.visible = on;
+  U.uTrainOn.value = on ? 1 : 0;
+  U.uHeadOn.value = on ? 1 : 0;
+  if (!on) { lampSprite.material.opacity = 0; arcSprite.material.opacity = 0; U.uArc.value.w = 0; return; }
+  if (!_o.m) _o.m = new THREE.Matrix4();
+  const d = train.dir, y = DECK + 0.35 + CAR_H / 2;
+  trainMesh.count = train.cars;
+  for (let i = 0; i < train.cars; i++) {
+    _o.m.makeTranslation(train.x - d * (i * (CAR + GAP) + CAR / 2), y, 0);
+    trainMesh.setMatrixAt(i, _o.m);
+  }
+  trainMesh.instanceMatrix.needsUpdate = true;
+  trainMesh.material.uniforms.uDir.value = d;
+  trainMesh.material.uniforms.uCars.value = train.cars;
+  const tail = train.x - d * train.cars * (CAR + GAP);
+  U.uTrainA.value.set(train.x - d * 0.6, y, 0);
+  U.uTrainB.value.set(tail + d * 0.6, y, 0);
+  const tilt = 0.07;
+  U.uHeadPos.value.set(train.x + d * 0.2, y - 0.75, 0);
+  U.uHeadDir.value.set(d * Math.cos(tilt), -Math.sin(tilt), 0);
+  coneMesh.position.copy(U.uHeadPos.value);
+  coneMesh.scale.set(d, 1, 1);
+  coneMesh.rotation.z = -tilt * d;
+  coneMesh.material.uniforms.uOn.value = cur.cone;
+  lampSprite.position.set(train.x + d * 0.4, y - 0.75, 0);
+  lampSprite.material.opacity = 0.9;
+
+  // The pantograph arcs now and then and lights the snow blue.
+  train.arcT -= sdt;
+  if (train.arcT <= 0) { train.arc = reduce ? 0.6 : 1; train.arcT = 2 + Math.random() * 7; }
+  train.arc = Math.max(0, train.arc - sdt * (reduce ? 2 : 6));
+  const flick = reduce ? 1 : 0.55 + 0.45 * Math.sin(t * 90) * Math.sin(t * 37);
+  const a = train.arc * flick * (reduce ? 0.4 : 1);
+  const ax = train.x - d * 2.5, ay = y + CAR_H / 2 + 0.9;
+  U.uArc.value.set(ax, ay, 0, a);
+  arcSprite.position.set(ax, ay, 0);
+  arcSprite.material.opacity = Math.min(1, a);
+}
+
+/* ---------- size ---------- */
+function resize() {
+  const canvas = renderer.domElement;
+  const high = opts.quality === 'high';
+  const { w, h, W, H } = fitCanvas(canvas, { maxDpr: high ? 2 : 1, budget: high ? 2.6e6 : 1e6 });
+  renderer.setPixelRatio(1);
+  renderer.setSize(W, H, false);
+  composer.setSize(W, H);
+  bloom.setSize(Math.round(W / (high ? 2 : 3)), Math.round(H / (high ? 2 : 3)));
+  const aspect = w / h;
+  camera.aspect = aspect;
+  // Narrow stages widen the lens so the viaduct still spans the frame.
+  const hf = 52 * PI / 180;
+  camera.fov = clamp(2 * Math.atan(Math.tan(hf / 2) / aspect) * 180 / PI, 26, 68);
+  camera.updateProjectionMatrix();
+  const px = H / (2 * Math.tan(camera.fov * PI / 360));
+  snowMat.uniforms.uPx.value = px * 0.27;
+  snowGeo.setDrawRange(0, opts.quality === 'high' ? 9000 : 4500);
+  grade.uniforms.uRes.value.set(W, H);
+  applyTime.river.uniforms.uRes.value.set(W, H);
+  if (ready && !raf) composer.render();
+}
+
+/* ---------- input ---------- */
+whenVisible(stage, v => {
+  visible = v;
+  if (v && ready && !raf) { last = 0; raf = requestAnimationFrame(frame); }
+});
+
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture?.(e.pointerId);
+  Object.assign(pointer, { down: true, held: false, drag: false, x: e.clientX, y: e.clientY });
+  clearTimeout(pointer.timer);
+  pointer.timer = setTimeout(() => { if (pointer.down && !pointer.drag) { pointer.held = true; stage.classList.add('held'); } }, 260);
+});
+stage.addEventListener('pointermove', e => {
+  if (!pointer.down) return;
+  const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
+  if (!pointer.drag && Math.hypot(dx, dy) > 8) { pointer.drag = true; pointer.held = false; stage.classList.add('held'); }
+  if (pointer.drag) {
+    const r = stage.getBoundingClientRect();
+    look.tx = clamp(look.tx + (e.movementX || 0) / r.width * 1.2, -1, 1);
+    look.ty = clamp(look.ty - (e.movementY || 0) / r.height * 0.8, -0.6, 1);
+  }
+});
+const release = () => {
+  if (!pointer.down) return;
+  clearTimeout(pointer.timer);
+  if (!pointer.drag && !pointer.held) sendTrain();
+  Object.assign(pointer, { down: false, held: false, drag: false });
+  stage.classList.remove('held');
+};
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', () => { Object.assign(pointer, { down: false, held: false, drag: false }); stage.classList.remove('held'); });
+stage.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) sendTrain(); return; }
+  const d = { ArrowLeft: [-0.15, 0], ArrowRight: [0.15, 0], ArrowUp: [0, 0.12], ArrowDown: [0, -0.12] }[e.key];
+  if (!d) return;
+  e.preventDefault();
+  look.tx = clamp(look.tx + d[0], -1, 1);
+  look.ty = clamp(look.ty + d[1], -0.6, 1);
+});
+
+/* ---------- bar ---------- */
+function popover(box, btn) {
+  const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
+  return open;
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+choices(document.getElementById('weather'), v => { opts.weather = v; save('weather', v); }).set(opts.weather);
+choices(document.getElementById('cars'), v => { opts.cars = +v; save('cars', v); }).set(String(opts.cars));
+choices(document.getElementById('letter'), v => { opts.letter = v === 'on'; save('letter', v); }).set(opts.letter ? 'on' : 'off');
+choices(document.getElementById('quality'), v => { opts.quality = v; save('quality', v); if (renderer) resize(); }).set(opts.quality);
+timeEl.value = String(opts.time);
+timeEl.addEventListener('input', () => { opts.time = +timeEl.value; save('time', opts.time); applyTime(); });
+document.getElementById('train').addEventListener('click', () => sendTrain());
+
+start().catch(err => { console.error(err); failed(); });
+</script>
+</body>
+</html>

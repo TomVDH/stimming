@@ -1,0 +1,45 @@
+---
+# stimming-bg6j
+title: Smoother toy loading
+status: todo
+type: task
+priority: low
+created_at: 2026-11-04T12:00:00Z
+updated_at: 2026-11-04T12:00:00Z
+---
+
+Make toys open faster from the menu. Shelved by Tom on 2026-11-04 in favour of the toy builds.
+
+## What the baseline showed
+
+Headless Chromium, cold and warm opens, measured on 2026-11-04.
+
+| Toy | CDN on cold open | Page `load`, cold / warm | Intro clears at |
+|---|---|---|---|
+| Pop field | 12 files, 234 KB | 0.8 / 0.4 s | 7.5 s |
+| Snow globe | 13 files, 210 KB | 0.4 / 0.06 s | 7.7 to 8.6 s |
+| Galaxy | 8 files, 283 KB | 0.6 / 0.08 s | 5.6 to 6.2 s |
+| Prism | 2 files, 157 KB | 0.7 / 0.2 s | 6.1 to 6.5 s |
+| Glass | 14 files, 178 KB | 0.4 / 0.07 s | 10.6 to 11.9 s |
+
+- Most of the wait is the intro, not library loading.
+- After the intro, the largest frame gap was 17 to 50 ms, with no long tasks. Headless runs on SwiftShader, so a real-GPU stutter does not show; a trace from a real machine is needed.
+- jsdelivr URLs are versioned and served `immutable` for a year, so a fixed warm list stays valid.
+
+## Options
+
+- [ ] Intro length: a shorter hold, or tap to skip. This is Tom's design call.
+- [ ] A1. The menu warms the browser cache in idle time: fetch only, never run. The list is in the notes below.
+- [ ] A2. Speculation Rules prerender on hover (Chrome and Edge), plus a `document.prerendering` guard in `shared/intro.js`.
+- [ ] A3. Fold shader compile and the first frame into `ready`. Try it on Pop field first, after a real-device trace.
+
+## Notes
+
+- **Warm list:**
+  - `three@0.170.0/build/three.module.min.js`
+  - the `+esm` bundles for culori 4.0.1, gsap 3.13.0 and simplex-noise 4.0.3
+  - `tone@15.0.4/+esm`, plus `standardized-audio-context@25.3.72`, `tslib@2.6.2` and `automation-events@7.0.5` (`+esm`)
+  - the postprocessing set: EffectComposer, RenderPass, UnrealBloomPass, OutputPass, ShaderPass, MaskPass, Pass, CopyShader, LuminosityHighPassShader and OutputShader
+  - RoomEnvironment, RoundedBoxGeometry and BufferGeometryUtils
+  - Galaxy's `three@0.186.1`: webgpu, tsl and core builds, plus its addons
+- **Measurement method:** a Playwright script logs CDN responses through CDP `Network.responseReceived`. It times the intro end by watching for the `.intro` element's removal, and it watches long tasks and rAF gaps for 2 s after the intro.
