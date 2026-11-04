@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-04T09:00:00Z
-updated_at: 2026-11-04T14:00:00Z
+updated_at: 2026-11-04T21:00:00Z
 ---
 
 Tom wants a Quality setting in Settings on every three.js toy. High renders at 100% of the screen resolution. Standard keeps today's caps. Many toys render below 100% because a pixel budget caps the backing size.
@@ -29,3 +29,13 @@ The preference is site-wide (`stimming.quality`). Sonar is out of scope: its own
 - Night viaduct keeps Low as its own tier: Low | Standard | High. Fire keeps Low and Medium: Low | Medium | Standard | High.
 - Headless Chromium at 1280px and 375px, 1x, 2x and 3x: on High, every main canvas measures CSS size times devicePixelRatio. Consoles are clean, except the WebGPU device-lost errors that Fire and Galaxy also log on main in this headless browser.
 - Glass at phone width now takes three rows in its bar instead of two.
+
+## Follow-up: open items
+
+- [x] High keeps a 30 fps guard: a toy's slow-frame step falls back to Standard, not to 1x
+- [x] A new quality choice clears the step, so High gets a fresh try
+- [x] Fire on High steps down once, to Standard; Lava and Domino Day step to Standard first
+- [x] Glass hides its stepper arrows on phones; the bar keeps two rows on iPhone 13 and Pixel 7
+- [x] Night viaduct: the restyle gets the shared Quality tray back (PR #17)
+
+Headless SwiftShader trips Bubble wand's step: Standard drops to 1x, High stops at Standard (1.28 at 1280px, 2x), and a re-pick of High gives 2x again. Real-GPU frame rates stay unmeasured here.

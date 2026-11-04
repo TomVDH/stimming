@@ -1200,15 +1200,16 @@ async function start() {
     resize();
   }
   // A slow GPU steps quality down, never back up; the chip follows.
+  // High always steps down once, to Standard; a picked step stays.
   let slowFor = 0, frameEma = 1 / 60;
   function watchdog(raw, runFor) {
     // The first seconds hold shader compiles; long gaps are pauses.
-    if (!qualityAuto || runFor < 4000 || raw > 0.25 || quality === 'low') return;
+    if ((!qualityAuto && quality !== 'high') || runFor < 4000 || raw > 0.25 || quality === 'low') return;
     frameEma += (raw - frameEma) * 0.05;
     slowFor = frameEma > 1 / 38 ? slowFor + raw : 0;
     if (slowFor > 2) {
       slowFor = 0; frameEma = 1 / 60;
-      setQuality(quality === 'standard' ? 'medium' : 'low');
+      setQuality(quality === 'high' ? 'standard' : quality === 'standard' ? 'medium' : 'low');
       qualityChips.set(quality);
     }
   }

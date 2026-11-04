@@ -287,10 +287,12 @@ export function onQuality(fn) {
 // The pixel ratio for a w x h surface.
 // High gives the screen's own ratio, up to 3, with no budget.
 // Standard caps the ratio at maxDpr and keeps the pixel count under the budget.
+// Low is the toy's slow-frame flag: Standard drops to 1, High drops to Standard.
 // A toy with its own lower tier passes quality: 'standard' to keep the caps.
 export function pixelRatio(w, h, { maxDpr = 2, budget = 1.4e6, low = false, quality: q = quality() } = {}) {
   const dev = window.devicePixelRatio || 1;
-  if (q === 'high') return Math.min(dev, 3);
+  if (q === 'high' && !low) return Math.min(dev, 3);
+  if (q === 'high') low = false;
   return Math.min(dev, low ? 1 : maxDpr, Math.sqrt(budget / Math.max(1, w * h)));
 }
 
