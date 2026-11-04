@@ -64,10 +64,40 @@ Two skins clash: the OS's smoky glass, and the kid's black glass with a flame ti
 Lively at full rate; drifting grain at 30 fps; asleep 60 s after the last input. A hidden tab stops it at once.
 Reduced motion: no grain, stiff windows, a quick fold.
 
-## Next
+## Status
 
-- [ ] Haunt beats: cursor hesitation, the 3:33 clock beat, tidy while you look away, a screensaver
-- [ ] Shadows that follow a wobbling window
-- [ ] Settings: hum level, haunt on or off
-- [ ] The mascot, once the look is settled
-- [ ] Real-device fps and sound check with Tom
+Live in the Lab since PR #18. Parked by Tom on 2026-11-04. Each polish item has its own bean under `stimming-shdy`; work them in this order, on a fresh branch from `main`.
+
+## Polish
+
+### 1. The haunt beats (`stimming-i9t4`)
+
+Four quiet beats. Possessed, never scary.
+
+| Beat | What happens | Cost |
+|---|---|---|
+| You looked away | Back from a hidden tab, the windows sit tidied; a dialog: "You looked away. So I tidied up." | One move on return; no work while hidden |
+| 3:33 | The strip clock shows real local time; once per visit it reads 3:33 for one minute. Uptime ticks live. | A clock repaint per minute |
+| Cursor | The OS draws its own pointer with the kid's glitter trail; once per visit it hesitates for a beat mid-drag. | Mouse only |
+| Screensaver | At about 45 s idle the OS's own saver starts while you watch; at 60 s the backlight dims to standby and the loop stops. | Ends inside the 60 s sleep rule |
+| File creep | Each Error adds one more "untitled" file, saved at 3:33. | A face repaint |
+
+### 2. Shadows follow the wobble (`stimming-j1lw`)
+
+Draw the shadow from the window mesh, offset and softened, so it bends with a jelly window. Keep the scissor.
+
+### 3. Settings (`stimming-yb20`)
+
+Beside the shared Quality: Haunt (On, Off), Hum (Off, Low, On), Trail (Dense, Sparse).
+
+### 4. Sound pass (`stimming-balv`)
+
+Its own startup chime on the first gesture (a slow, warped bell chord), a faint inverter whine, jitter on every hit, and pan with the window.
+
+### 5. The mascot (`stimming-zpoq`)
+
+After 1 to 4 settle. Three original sketches of a helper that grew out of one of the kid's tweaks; Tom picks one. Short, slightly too helpful lines. Never a paperclip, nothing from a real assistant.
+
+### Also open
+
+- Real-device fps and sound check with Tom.
