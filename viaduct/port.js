@@ -40,6 +40,7 @@ uniform vec3 uGlow;
 uniform float uGlowR;
 uniform float uCloudY;
 uniform vec3 uSearchHit;
+uniform float uTime;
 // Horizontal alignment of a view direction with the port.
 float k2face(vec3 dir) {
   vec2 toC = normalize(uGlow.xz - cameraPosition.xz);
@@ -58,8 +59,10 @@ vec3 k2sky(vec3 dir) {
     float t = (uCloudY - cameraPosition.y) / dir.y;
     vec3 p = cameraPosition + dir * t;
     // A slow warp bends the cloud into soft, natural shapes.
-    vec2 w = vec2(k2fbm(p.xz * 0.0012 + 11.0), k2fbm(p.xz * 0.0012 + 23.0));
-    float d = k2fbm(p.xz * 0.0028 + vec2(3.0, 7.0) + w * 1.6);
+    // Wind carries the cloud slowly across; the warp changes its shape.
+    vec2 q = p.xz + vec2(uTime * 6.0, uTime * 2.5);
+    vec2 w = vec2(k2noise(q * 0.0012 + 11.0 + uTime * 0.004), k2noise(q * 0.0012 + 23.0 - uTime * 0.003));
+    float d = k2fbm(q * 0.0028 + vec2(3.0, 7.0) + w * 1.6);
     float cover = smoothstep(0.26, 0.6, d);
     float thick = smoothstep(0.45, 0.85, d);
     // The underside takes amber from the port, and a little everywhere.
@@ -87,7 +90,6 @@ uniform float uHazeH;
 uniform float uPortZ;
 uniform float uPortFog;
 uniform vec3 uFogLo, uFogHi;
-uniform float uTime;
 // Fog density in the port volume: soft at every side, thin with height.
 float k2fogDensity(vec3 p) {
   float sx = smoothstep(0.0, 320.0, p.x - uFogLo.x) * smoothstep(0.0, 320.0, uFogHi.x - p.x);
@@ -110,8 +112,8 @@ float k2portFog(vec3 P) {
   if (seg <= 0.0) return 0.0;
   // Per-pixel jitter turns step bands into fine grain.
   float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  float ds = seg / 10.0, sum = 0.0;
-  for (int i = 0; i < 10; i++) sum += k2fogDensity(ro + dir * (tn + (float(i) + j) * ds));
+  float ds = seg / 6.0, sum = 0.0;
+  for (int i = 0; i < 6; i++) sum += k2fogDensity(ro + dir * (tn + (float(i) + j) * ds));
   return sum * ds;
 }
 vec3 k2hazeColor(vec3 dir, vec3 P) {
@@ -405,7 +407,8 @@ const flareMat = new THREE.ShaderMaterial({
   ${HEAD}
   void main() {
     vec2 c = gl_PointCoord - 0.5;
-    float a = exp(-dot(c, c) * 22.0);
+    // The glow reaches zero inside the sprite, so no square edge shows.
+    float a = max(exp(-dot(c, c) * 22.0) - 0.0041, 0.0);
     float f = k2hazeAmount(vP) * 0.65;
     gl_FragColor = vec4(vC * a * (1.0 - f), 1.0);
   }`,
@@ -442,8 +445,7 @@ const plumeMat = new THREE.ShaderMaterial({
     float a = smoothstep(1.0, 0.0, r) * (0.55 + 0.45 * n);
     // Lit from below: brighter at the bottom of each puff.
     vec3 col = uAmber * (0.03 + 0.06 * vLit) * (1.0 + 0.8 * c.y);
-    float f = k2hazeAmount(vP) * 0.5;
-    gl_FragColor = vec4(col * a * a * (1.0 - f), 1.0);
+    gl_FragColor = vec4(col * a * a * 0.85, 1.0);
   }`,
 });
 
@@ -633,6 +635,7 @@ const train = (() => {
   for (let i = 0; i < N; i++) {
     const g = new THREE.Group();
     g.add(new THREE.Mesh(body, concrete), new THREE.Mesh(winG, glowMat));
+    g.userData.live = true;
     scene.add(g);
     cars.push(g);
   }
@@ -643,7 +646,7 @@ const train = (() => {
   lampG.setAttribute('color', new THREE.Float32BufferAttribute([...scale([1, 0.2, 0.1], 6), ...scale([1, 0.2, 0.1], 6), ...scale(WHITE, 12)], 3));
   lampG.setAttribute('size', new THREE.Float32BufferAttribute([70, 70, 160], 1));
   const lamps = new THREE.Points(lampG, flareMat);
-  lamps.renderOrder = 3; lamps.frustumCulled = false; scene.add(lamps);
+  lamps.renderOrder = 3; lamps.frustumCulled = false; lamps.userData.live = true; scene.add(lamps);
   const head = new THREE.Vector3();
   orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2 });
   // Light list slots: one warm lamp per car, then the headlight.
@@ -652,6 +655,7 @@ const train = (() => {
   const headL = lights.length; addLight(new THREE.Vector3(), new THREE.Vector3(1, 0.95, 0.85), 4, 45, new THREE.Vector3(0, 0, -1), Math.cos(0.3));
   const headG = glints.length; addGlint(new THREE.Vector3(), WHITE, 3.0, 0.5);
   const beam = cone(new THREE.Vector3(), new THREE.Vector3(0, 0, -1), 110, 0.2, new THREE.Vector3(1, 0.95, 0.85), 0.7);
+  beam.userData.live = true;
   const Y = new THREE.Vector3(0, -1, 0), d = new THREE.Vector3(), p = new THREE.Vector3();
   // Place the train: s is the head's place on the track, dir its heading.
   function place(s, dir, sea) {
@@ -676,7 +680,8 @@ const train = (() => {
     pos.needsUpdate = true;
   }
   function show(on) { for (const c of cars) c.visible = on; lamps.visible = beam.visible = on; }
-  return { place, show, SPAN };
+  // The bake turns these lamps off, so no train light stays on the deck.
+  return { place, show, SPAN, lightIdx: [...carL, headL] };
 })();
 // The first frame shows the train mid-ground, outbound.
 train.place(175, 1, null);
@@ -777,6 +782,7 @@ const buildings = [];
     g.translate(0, 7.5, 0);
     const m = new THREE.Mesh(g, flameMat);
     m.position.set(x, h, z); m.rotation.z = -0.12; m.renderOrder = 3;
+    m.userData.live = true;
     scene.add(m);
     flare(new THREE.Vector3(x, h + 6, z), [9, 4.6, 1.2], 900);
     orbs.push({ pos: new THREE.Vector3(x, h + 6, z), color: [1, 0.5, 0.15], k: 0.45, size: 1.4 });
@@ -823,6 +829,7 @@ const search = (() => {
   const dir = new THREE.Vector3(-0.5, 1, 0.55).normalize();
   // Start the beam a little above the lamp so its base stays clean.
   const m = cone(src.clone().addScaledVector(dir, 6), dir, 100, 0.06, new THREE.Vector3(0.75, 0.85, 1.0), 2.2, 0.5);
+  m.userData.live = true;
   flare(src, [3, 3.5, 4], 90);
   orbs.push({ pos: src, color: [0.75, 0.85, 1], k: 0.3, size: 0.9 });
   const Y = new THREE.Vector3(0, -1, 0);
@@ -836,7 +843,7 @@ const search = (() => {
     m.scale.setScalar(len - 6);
   }
   aim(-0.5, 0.55);
-  return { aim };
+  return { aim, src };
 })();
 
 // Bake static geometry into a few draw calls.
@@ -849,12 +856,12 @@ if (glowParts.length) scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowM
   g.setAttribute('position', new THREE.Float32BufferAttribute(flares.pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(flares.col, 3));
   g.setAttribute('size', new THREE.Float32BufferAttribute(flares.size, 1));
-  const p = new THREE.Points(g, flareMat); p.renderOrder = 3; p.frustumCulled = false; scene.add(p);
+  const p = new THREE.Points(g, flareMat); p.renderOrder = 3; p.frustumCulled = false; p.userData.live = true; scene.add(p);
   const h = new THREE.BufferGeometry();
   h.setAttribute('position', new THREE.Float32BufferAttribute(plumes.pos, 3));
   h.setAttribute('size', new THREE.Float32BufferAttribute(plumes.size, 1));
   h.setAttribute('lit', new THREE.Float32BufferAttribute(plumes.lit, 1));
-  const q = new THREE.Points(h, plumeMat); q.renderOrder = 1; q.frustumCulled = false; scene.add(q);
+  const q = new THREE.Points(h, plumeMat); q.renderOrder = 1; q.frustumCulled = false; q.userData.live = true; scene.add(q);
 }
 
 // Upload the light list; moving lamps upload again each frame.
@@ -876,15 +883,16 @@ uploadLights();
     fragmentShader: /* glsl */`varying vec3 vP; ${K2_NOISE} ${K2_SKY} void main() { gl_FragColor = vec4(k2sky(normalize(vP - cameraPosition)), 1.0); }`,
   }));
   m.renderOrder = -1;
+  m.userData.sky = true;
   scene.add(m);
 }
 
 /* Sea: a calm, heavy swell over a half-resolution planar reflection. */
 const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
-  textureWidth: 512, textureHeight: 512, clipBias: 0.002,
+  textureWidth: 256, textureHeight: 256, clipBias: 0.002,
   shader: {
     name: 'PortSea',
-    uniforms: { ...k2, color: { value: new THREE.Color() }, tDiffuse: { value: null }, textureMatrix: { value: null }, uFov: { value: new THREE.Vector2(1, 1) }, uGP: { value: glints.map(g => new THREE.Vector4(g.pos.x, g.pos.y, g.pos.z, g.k)) }, uGC: { value: glints.map(g => new THREE.Vector4(...g.col, g.reach)) } },
+    uniforms: { ...k2, uRip: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, -99, 0)) }, uRT: { value: 0 }, uReflK: { value: 1 }, color: { value: new THREE.Color() }, tDiffuse: { value: null }, textureMatrix: { value: null }, uFov: { value: new THREE.Vector2(1, 1) }, uGP: { value: glints.map(g => new THREE.Vector4(g.pos.x, g.pos.y, g.pos.z, g.k)) }, uGC: { value: glints.map(g => new THREE.Vector4(...g.col, g.reach)) } },
     vertexShader: /* glsl */`
     uniform mat4 textureMatrix;
     varying vec4 vR;
@@ -900,6 +908,8 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
     uniform vec2 uFov;
     uniform vec4 uGP[${NG}];
     uniform vec4 uGC[${NG}];
+    uniform vec4 uRip[4];
+    uniform float uRT, uReflK;
     varying vec4 vR;
     varying vec3 vP;
     ${HEAD}
@@ -920,13 +930,27 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
               + swell(p, normalize(vec2(0.55, 1.0)), 27.0, 0.032, 4.1, dist)
               + swell(p, normalize(vec2(-0.15, 1.0)), 14.0, 0.022, 2.3, dist);
       // A slow irregular heave breaks the regular trains.
-      float e = 4.0, h0 = k2fbm(p * 0.006);
-      sl += vec2(k2fbm((p + vec2(e, 0.0)) * 0.006) - h0, k2fbm((p + vec2(0.0, e)) * 0.006) - h0) / e * 1.5;
+      vec2 hp = p * 0.006 + vec2(uTime * 0.01, uTime * 0.006);
+      float e = 0.024, h0 = k2noise(hp);
+      sl += vec2(k2noise(hp + vec2(e, 0.0)) - h0, k2noise(hp + vec2(0.0, e)) - h0) * 0.9;
+      // Tap ripples: a ring of waves runs out from each touch point.
+      float ring = 0.0;
+      for (int i = 0; i < 4; i++) {
+        float age = uRT - uRip[i].z;
+        if (age < 0.0 || age > 7.0) continue;
+        vec2 dv = p - uRip[i].xy;
+        float dd = length(dv) + 1e-3, x = dd - age * 14.0;
+        float env = exp(-x * x / 400.0) * exp(-age * 0.45) * uRip[i].w;
+        float wv = sin(x * 0.55);
+        sl += dv / dd * wv * env * 0.22;
+        ring += env * max(wv, 0.0);
+      }
       // Fine ripple only close to the camera.
       float nearK = 1.0 - smoothstep(50.0, 180.0, dist);
       if (nearK > 0.0) {
-        float r0 = k2noise(p * 0.45);
-        sl += vec2(k2noise(p * 0.45 + vec2(0.3, 0.0)) - r0, k2noise(p * 0.45 + vec2(0.0, 0.3)) - r0) * 0.12 * nearK;
+        vec2 rp = p * 0.45 + vec2(uTime * 0.6, -uTime * 0.35);
+        float r0 = k2noise(rp);
+        sl += vec2(k2noise(rp + vec2(0.3, 0.0)) - r0, k2noise(rp + vec2(0.0, 0.3)) - r0) * 0.12 * nearK;
       }
       vec3 N = normalize(vec3(-sl.x, 1.0, -sl.y));
       // Grazing views stretch the reflection along the view, not across it.
@@ -944,7 +968,7 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
         refl += texture2D(tDiffuse, clamp(uv + o, 0.001, 0.999)).rgb * wgt;
         wsum += wgt;
       }
-      refl /= wsum;
+      refl = refl / wsum * uReflK;
       // Swell crests break the streaks gently.
       refl *= 0.7 + 0.6 * smoothstep(-0.025, 0.035, -sl.y);
       float cosT = max(dot(N, V), 0.0);
@@ -955,9 +979,10 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
       vec3 col = deep * (1.0 - F) + refl * F * vec3(0.74, 0.9, 1.1);
       // Streaks: wave facets that tilt just right flash as soft dashes.
       // Facets are wide across and short in depth, so perspective sizes them.
-      float dn = k2noise(vec2(vP.x * 0.05, vP.z * 0.42 + uTime * 0.35));
-      float dn2 = k2noise(vec2(vP.x * 0.11 + 7.0, vP.z * 0.9));
-      float tilt = (dn * 0.7 + dn2 * 0.3 - 0.5) * 0.5;
+      // The facets roll toward the camera with the swell, so the dashes twinkle.
+      float dn = k2noise(vec2(vP.x * 0.05 + uTime * 0.07, vP.z * 0.42 + uTime * 1.1));
+      float dn2 = k2noise(vec2(vP.x * 0.11 + 7.0 - uTime * 0.05, vP.z * 0.9 + uTime * 1.7));
+      float tilt = (dn * 0.7 + dn2 * 0.3 - 0.5) * 0.5 + (sl.y + sl.x * 0.3) * 0.5;
       // Far facets shrink below a pixel; use their mean response there.
       float farK = smoothstep(900.0, 2600.0, dist);
       vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
@@ -981,6 +1006,8 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
       // The glowing fog bank lays a broad, soft golden sheen on the water.
       float bank = exp(-length(vP.xz - uGlow.xz) / (uGlowR * 1.3));
       col += uAmber * 0.05 * bank * (0.4 + 0.6 * F) * (0.75 + 0.5 * smoothstep(-0.03, 0.03, -sl.y));
+      // Ripple crests catch the amber sky.
+      col += uAmber * 0.03 * ring * (0.3 + bank);
       st *= mix(0.45, 1.0, F);
       col += st * 0.9;
       // Far water hands over to the horizon sky, so no seam shows.
@@ -995,13 +1022,16 @@ const sea = new Reflector(new THREE.PlaneGeometry(60000, 60000, 1, 1), {
 });
 sea.rotation.x = -Math.PI / 2;
 sea.position.set(0, 0, -2000);
-scene.add(sea);
+sea.updateMatrixWorld();
+// The bake calls the mirror once; the sea mesh never draws itself.
+const mirror = sea.onBeforeRender;
+sea.onBeforeRender = () => {};
 
 /* ---------- K2: precipitation ---------- */
 // Light rain around the camera; drops brighten where light falls on them.
 let rain;
 {
-  const n = 6000, pos = new Float32Array(n * 3);
+  const n = 2500, pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     pos[i * 3] = range(-260, 160); pos[i * 3 + 1] = range(0, 200); pos[i * 3 + 2] = range(-420, 190);
   }
@@ -1040,6 +1070,7 @@ let rain;
   }));
   rain.frustumCulled = false;
   rain.renderOrder = 4;
+  rain.userData.live = true;
   scene.add(rain);
 }
 /* ---------- end K2 ---------- */
@@ -1057,25 +1088,242 @@ function frame(w, h, pr) {
     camera.lookAt(-60, -100, -1500);
   }
   camera.updateProjectionMatrix();
-  // The reflection renders at half resolution.
-  sea.getRenderTarget().setSize(Math.max(1, Math.round(w * pr / 2)), Math.max(1, Math.round(h * pr / 2)));
+  // The mirror bakes once at half the frame, at most 1024 px wide.
+  const rk = Math.min(0.5 * pr, 1024 / w);
+  sea.getRenderTarget().setSize(Math.max(1, Math.round(w * rk)), Math.max(1, Math.round(h * rk)));
+  view = { w, h, pr };
   const vf = THREE.MathUtils.degToRad(camera.fov);
   sea.material.uniforms.uFov.value.set(1 / (2 * Math.atan(Math.tan(vf / 2) * camera.aspect)), 1 / vf);
   // Point sizes follow the projected pixel scale.
   projU.uScale.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) / 400;
 }
 
+/* ---------- bake: a matte painting of everything that holds still ---------- */
+// Static parts render once per resize into textures; each frame draws only
+// one full-screen pass for sky and sea, plus the few live 3D parts.
+let view = { w: 1, h: 1, pr: 1 };
+const statics = new THREE.Group(), live = new THREE.Group(), skyG = new THREE.Group();
+for (const o of [...scene.children]) {
+  if (o === sea) continue;
+  (o.userData.live ? live : o.userData.sky ? skyG : statics).add(o);
+}
+scene.remove(sea);
+scene.add(statics, live, skyG);
+// Additive light adds colour but keeps the bake's coverage alpha.
+statics.traverse(o => {
+  for (const m of [].concat(o.material || [])) {
+    if (m.blending !== THREE.AdditiveBlending) continue;
+    m.blending = THREE.CustomBlending;
+    m.blendEquation = THREE.AddEquation;
+    m.blendSrc = THREE.OneFactor; m.blendDst = THREE.OneFactor;
+    m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;
+  }
+});
+const rtOpt = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
+const backRT = new THREE.WebGLRenderTarget(1, 1, { ...rtOpt, depthTexture: new THREE.DepthTexture(1, 1) });
+const fogRT = new THREE.WebGLRenderTarget(1, 1, rtOpt);
+// The sea's fog and horizon never change, so they bake per pixel too.
+const fogScene = new THREE.Scene();
+fogScene.add(new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000).rotateX(-Math.PI / 2).translate(0, 0, -2000), new THREE.ShaderMaterial({
+  uniforms: { ...k2 },
+  vertexShader: WORLD_VS,
+  fragmentShader: /* glsl */`
+  varying vec3 vP;
+  varying vec3 vN;
+  ${HEAD}
+  void main() {
+    vec3 V = normalize(cameraPosition - vP);
+    float dist = length(cameraPosition - vP);
+    float hf = k2hazeAmount(vP) * 0.85;
+    vec3 hc = k2hazeColor(normalize(vP - cameraPosition), vP);
+    vec3 hor = k2sky(normalize(vec3(-V.x, 0.0005, -V.z)));
+    float h2 = smoothstep(2200.0, 6000.0, dist);
+    // final = sea * a + rgb.
+    gl_FragColor = vec4(hc * hf * (1.0 - h2) + hor * h2, (1.0 - hf) * (1.0 - h2));
+  }`,
+})));
+const mirrorM = new THREE.Matrix4(), invVP = new THREE.Matrix4();
+const su = sea.material.uniforms;
+const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: {
+    ...k2, uGP: su.uGP, uGC: su.uGC, uRip: su.uRip, uRT: su.uRT, uReflK: su.uReflK,
+    tBack: { value: backRT.texture }, tDepth: { value: backRT.depthTexture }, tFog: { value: fogRT.texture },
+    tMirror: { value: sea.getRenderTarget().texture }, uMirrorM: { value: mirrorM }, uInvVP: { value: invVP },
+    uGX: { value: new Float32Array(NG) },
+  },
+  depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tBack, tDepth, tFog, tMirror;
+  uniform mat4 uMirrorM, uInvVP;
+  uniform vec4 uGP[${NG}];
+  uniform vec4 uGC[${NG}];
+  uniform vec4 uRip[4];
+  uniform float uGX[${NG}];
+  uniform float uRT, uReflK;
+  varying vec2 vUv;
+  ${HEAD}
+  vec2 swell(vec2 p, vec2 dir, float len, float amp, float ph, float dist) {
+    float k = 6.2832 / len;
+    float fade = 1.0 - smoothstep(len * 9.0, len * 24.0, dist);
+    // Deep-water swell: speed follows wavelength.
+    return dir * amp * cos(dot(p, dir) * k + ph - uTime * sqrt(9.81 * k)) * fade;
+  }
+  vec3 seaAt(vec3 P, vec3 V, float dist, float sx0) {
+    vec2 p = P.xz;
+    vec2 sl = swell(p, normalize(vec2(0.25, 1.0)), 95.0, 0.05, 0.0, dist)
+            + swell(p, normalize(vec2(-0.4, 1.0)), 52.0, 0.04, 1.7, dist)
+            + swell(p, normalize(vec2(0.55, 1.0)), 27.0, 0.032, 4.1, dist)
+            + swell(p, normalize(vec2(-0.15, 1.0)), 14.0, 0.022, 2.3, dist);
+    vec2 hp = p * 0.006 + vec2(uTime * 0.01, uTime * 0.006);
+    float h0 = k2noise(hp);
+    sl += vec2(k2noise(hp + vec2(0.024, 0.0)) - h0, k2noise(hp + vec2(0.0, 0.024)) - h0) * 0.9;
+    // Tap ripples: a ring of waves runs out from each touch point.
+    float ring = 0.0;
+    for (int i = 0; i < 4; i++) {
+      float age = uRT - uRip[i].z;
+      if (age < 0.0 || age > 7.0) continue;
+      vec2 dv = p - uRip[i].xy;
+      float dd = length(dv) + 1e-3, x = dd - age * 14.0;
+      float env = exp(-x * x / 400.0) * exp(-age * 0.45) * uRip[i].w;
+      float wv = sin(x * 0.55);
+      sl += dv / dd * wv * env * 0.22;
+      ring += env * max(wv, 0.0);
+    }
+    float nearK = 1.0 - smoothstep(50.0, 180.0, dist);
+    if (nearK > 0.0) {
+      vec2 rp = p * 0.45 + vec2(uTime * 0.6, -uTime * 0.35);
+      float r0 = k2noise(rp);
+      sl += vec2(k2noise(rp + vec2(0.3, 0.0)) - r0, k2noise(rp + vec2(0.0, 0.3)) - r0) * 0.12 * nearK;
+    }
+    vec3 N = normalize(vec3(-sl.x, 1.0, -sl.y));
+    // The baked mirror, bent by the swell and smeared into vertical streaks.
+    vec4 mr = uMirrorM * vec4(P, 1.0);
+    vec2 uv = mr.xy / mr.w;
+    float graze = max(V.y, 0.04);
+    vec2 off = vec2(N.x * 0.7 * graze * 0.6, -N.z * 0.7 * 0.9);
+    float stretch = 0.06 + 0.1 * (1.0 - smoothstep(0.04, 0.4, graze));
+    vec3 refl = vec3(0.0);
+    float wsum = 0.0;
+    for (int i = -3; i <= 3; i++) {
+      float t = float(i) / 3.0, wgt = exp(-t * t * 2.2);
+      refl += texture2D(tMirror, clamp(uv + off + vec2(sl.x * 0.03 * t, t * stretch), 0.001, 0.999)).rgb * wgt;
+      wsum += wgt;
+    }
+    refl = refl / wsum * uReflK;
+    refl *= 0.7 + 0.6 * smoothstep(-0.025, 0.035, -sl.y);
+    float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    refl *= 1.0 - 0.3 * smoothstep(1300.0, 2800.0, dist);
+    vec3 col = vec3(0.0006, 0.0011, 0.002) * (1.0 - F) + refl * F * vec3(0.74, 0.9, 1.1);
+    // Glint columns: wave facets that tilt just right flash as soft dashes.
+    float dn = k2noise(vec2(P.x * 0.05 + uTime * 0.07, P.z * 0.42 + uTime * 1.1));
+    float dn2 = k2noise(vec2(P.x * 0.11 + 7.0 - uTime * 0.05, P.z * 0.9 + uTime * 1.7));
+    float tilt = (dn * 0.7 + dn2 * 0.3 - 0.5) * 0.5 + (sl.y + sl.x * 0.3) * 0.5;
+    float farK = smoothstep(900.0, 2600.0, dist);
+    vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
+    vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
+    vec3 st = vec3(0.0);
+    for (int i = 0; i < ${NG}; i++) {
+      // Each column runs straight down under its light; skip far columns.
+      float cx = abs(uGX[i] - sx0);
+      if (cx > 0.16) continue;
+      vec3 L = uGP[i].xyz - P;
+      float dl = length(L);
+      vec3 err = R0 - L / dl;
+      float ex = dot(err, right) + (dn2 - 0.5) * 0.004, ey = err.y, need = ey * 0.5;
+      float m = mix(exp(-pow((tilt - need) / 0.018, 2.0)), 0.35 * exp(-pow(need / 0.09, 2.0)), farK);
+      float fall = ey > 0.0 ? exp(-ey / uGC[i].w) : exp(-pow(ey / 0.02, 2.0));
+      float sx = max(0.0035, 3.0 / dl);
+      float ahead = smoothstep(0.96, 0.995, dot(normalize(R0.xz), normalize(L.xz)));
+      st += uGC[i].rgb * uGP[i].w * m * fall * ahead * exp(-ex * ex / (sx * sx)) * smoothstep(0.16, 0.1, cx);
+    }
+    float bank = exp(-length(P.xz - uGlow.xz) / (uGlowR * 1.3));
+    col += uAmber * 0.05 * bank * (0.4 + 0.6 * F) * (0.75 + 0.5 * smoothstep(-0.03, 0.03, -sl.y));
+    col += uAmber * 0.03 * ring * (0.3 + bank);
+    col += st * mix(0.45, 1.0, F) * 0.9;
+    return col;
+  }
+  void main() {
+    vec4 back = texture2D(tBack, vUv);
+    vec3 col = back.rgb;
+    if (back.a < 0.999) {
+      vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+      vec3 dir = normalize(wp.xyz / wp.w - cameraPosition);
+      vec3 under;
+      float t = dir.y < -0.0004 ? -cameraPosition.y / dir.y : 1e9;
+      // Past the baked fog plane the horizon sky takes over.
+      if (t < 20000.0) {
+        vec3 P = cameraPosition + dir * t;
+        vec4 fog = texture2D(tFog, vUv);
+        under = seaAt(P, -dir, t, vUv.x * 2.0 - 1.0) * fog.a + fog.rgb;
+      } else under = k2sky(dir);
+      col = under * (1.0 - back.a) + back.rgb;
+    }
+    gl_FragColor = vec4(col, 1.0);
+    gl_FragDepthEXT = texture2D(tDepth, vUv).r;
+  }`,
+}));
+comp.frustumCulled = false;
+comp.renderOrder = -100;
+scene.add(comp);
+const clearC = new THREE.Color();
+// Bake: mirror, then the still scene with depth, then the sea's fog.
+function bake(renderer) {
+  const { w, h, pr } = view;
+  // The still layer bakes at up to twice the pixels, for smooth edges.
+  const ss = Math.min(2, 4096 / (w * pr), 4096 / (h * pr));
+  const bw = Math.round(w * pr * ss), bh = Math.round(h * pr * ss);
+  backRT.setSize(bw, bh);
+  fogRT.setSize(Math.round(w * pr), Math.round(h * pr));
+  const prevT = renderer.getRenderTarget(), prevA = renderer.getClearAlpha();
+  renderer.getClearColor(clearC);
+  // No train light may stay baked on the deck.
+  for (const i of train.lightIdx) lightU.uLP.value[i].w = 0;
+  camera.updateMatrixWorld();
+  statics.visible = true; live.visible = false; comp.visible = false;
+  skyG.visible = true;
+  mirror.call(sea, renderer, scene, camera);
+  mirrorM.copy(su.textureMatrix.value).multiply(sea.matrixWorld.clone().invert());
+  skyG.visible = false;
+  renderer.setClearColor(0x000000, 0);
+  renderer.setRenderTarget(backRT); renderer.clear(); renderer.render(scene, camera);
+  renderer.setRenderTarget(fogRT); renderer.clear(); renderer.render(fogScene, camera);
+  renderer.setRenderTarget(prevT);
+  renderer.setClearColor(clearC, prevA);
+  statics.visible = false; live.visible = true; comp.visible = true;
+  invVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+  uploadLights();
+}
+/* ---------- end bake ---------- */
+
   /* Motion: one clock drives the ambient life; trains run out and back. */
 train.place(175, 1, sea);
 const run = { s: 175, dir: 1, v: 20, wait: 0, user: false };
 const END = LEN + 160, START = -160;
-let time = 0;
-// pace eases ambient motion: 1 awake, 0 asleep; user trains keep running.
+let time = 0, rt = 0;
+// The searchlight: auto sweep, or the pointer's aim while steering.
+const aimNow = new THREE.Vector2(-0.5, 0.55), aimTo = new THREE.Vector2();
+let steering = false, steerEase = 0;
+// Ripples: four slots, reused oldest first.
+const rips = sea.material.uniforms.uRip.value;
+let ripN = 0;
+const ray = new THREE.Raycaster(), hit = new THREE.Vector3();
+const seaPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const cloudPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), CLOUD_Y);
+// pace eases ambient motion: 1 awake, 0 asleep; user acts keep running.
 function update(dt, pace) {
   time += dt * pace;
+  rt += dt;
   k2.uTime.value = time;
-  // The searchlight sweeps a slow figure over the cloud.
-  search.aim(-0.5 + 0.45 * Math.sin(time * 0.05), 0.55 + 0.3 * Math.cos(time * 0.037));
+  sea.material.uniforms.uRT.value = rt;
+  // Auto sweep: a slow figure over the cloud.
+  const ax = -0.5 + 0.45 * Math.sin(time * 0.05), az = 0.55 + 0.3 * Math.cos(time * 0.037);
+  steerEase = steering ? 1 : Math.max(0, steerEase - dt * 0.4);
+  const tx = steerEase > 0 ? aimTo.x * steerEase + ax * (1 - steerEase) : ax;
+  const tz = steerEase > 0 ? aimTo.y * steerEase + az * (1 - steerEase) : az;
+  aimNow.x += (tx - aimNow.x) * Math.min(1, dt * 6);
+  aimNow.y += (tz - aimNow.y) * Math.min(1, dt * 6);
+  search.aim(aimNow.x, aimNow.y);
   const k = run.user ? 1 : pace;
   if (run.wait > 0) {
     run.wait -= dt * k;
@@ -1087,22 +1335,52 @@ function update(dt, pace) {
   }
   train.place(run.s, run.dir, sea);
   uploadLights();
+  const gx = comp.material.uniforms.uGX.value;
+  su.uGP.value.forEach((g, i) => { gv.set(g.x, g.y, g.z).project(camera); gx[i] = gv.z < 1 ? gv.x : 9; });
 }
-// A tap sends the next train at once.
-function tap() {
+const gv = new THREE.Vector3();
+function sendTrain() {
   if (run.wait > 0) run.wait = 0.001;
   run.user = true;
 }
-const lively = () => run.user;
+// A tap on the water drops a ripple; a tap on the sky sends a train.
+function tap(ndc) {
+  if (!ndc) return sendTrain();
+  ray.setFromCamera(ndc, camera);
+  if (ray.ray.direction.y < -0.002 && ray.ray.intersectPlane(seaPlane, hit) && hit.distanceTo(camera.position) < 2600) {
+    rips[ripN % 4].set(hit.x, hit.z, rt, 1);
+    ripN++;
+  } else sendTrain();
+}
+// Drag or hold aims the searchlight at the cloud under the pointer.
+function steer(ndc) {
+  ray.setFromCamera(ndc, camera);
+  const d = ray.ray.direction;
+  if (d.y > 0.01 && ray.ray.intersectPlane(cloudPlane, hit)) {
+    const src = search.src, h = hit.clone().sub(src);
+    aimTo.set(h.x / Math.max(h.y, 1), h.z / Math.max(h.y, 1));
+  } else aimTo.set(d.x * 3, d.z * 0.5 + 0.2);
+  aimTo.x = Math.max(-1.6, Math.min(1.6, aimTo.x));
+  aimTo.y = Math.max(-1.2, Math.min(1.6, aimTo.y));
+  steering = true;
+}
+function release() { steering = false; }
+const lively = () => run.user || steering || steerEase > 0 || rips.some(r => rt - r.z < 7);
+// Lower steps quality down one rung: 1 drops the mirror, 2 the rain.
+function lower(rung) {
+  if (rung >= 2) rain.visible = false;
+}
 
 // Dispose frees every geometry, material and texture this scene made.
   function dispose() {
-    sea.dispose();
+    sea.dispose(); backRT.dispose(); fogRT.dispose();
+    fogScene.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+    statics.visible = skyG.visible = true;
     scene.traverse(o => {
       o.geometry?.dispose();
       for (const m of [].concat(o.material || [])) { for (const v of Object.values(m.uniforms || {})) v.value?.isTexture && v.value.dispose(); m.map?.dispose(); m.dispose(); }
     });
   }
 
-return { scene, camera, frame, dispose, orbs, update, tap, lively, post: { haze: 0.035, bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
+return { scene, camera, frame, bake, dispose, orbs, update, tap, steer, release, lively, lower, post: { bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
 }

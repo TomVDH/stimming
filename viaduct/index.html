@@ -43,9 +43,10 @@
         <button class="chip" id="train" type="button" title="Send a train">+ Train</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div data-moves><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>send a train</dd></div>
+        <div data-moves><dt><span class="fine">Click</span><span class="touch">Tap</span> water</dt><dd>ripple</dd></div>
+        <div data-moves><dt><span class="fine">Click</span><span class="touch">Tap</span> sky</dt><dd>train</dd></div>
+        <div data-moves><dt>Drag</dt><dd>searchlight</dd></div>
         <div class="fine" data-moves><dt><kbd>Space</kbd></dt><dd>train</dd></div>
-        <div class="fine"><dt><kbd>1</kbd> <kbd>2</kbd></dt><dd>scene</dd></div>
       </dl>
     </div>
   </main>
@@ -198,17 +199,17 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 // One scene lives at a time; a switch disposes the old one.
+let rung = 0;
 let cur = null, composer = null, grade = null, orbPass = null, size = { w: 1, h: 1, dpr: 1 }, loading = 0;
 function chain(s) {
   composer?.renderTarget1.dispose(); composer?.renderTarget2.dispose();
-  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  // Two MSAA samples on Standard; the ladder drops them when frames run slow.
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: rung >= 3 ? 0 : 2 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(s.scene, s.camera));
   orbPass = makeOrbs();
   composer.addPass(orbPass);
   composer.addPass(makeBloom(...s.post.bloom));
-  // A wide, low glow lets every light bleed softly into the air.
-  if (s.post.haze) composer.addPass(makeBloom(s.post.haze, 1.0, 0.0));
   grade = makeGrade(s.post);
   composer.addPass(grade);
   composer.addPass(new OutputPass());
@@ -217,13 +218,16 @@ function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
   // The site-wide quality sets the pixel ratio; Standard keeps the budget.
-  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2.6e6 }) };
+  // The ladder's first rung caps the pixel ratio at 1.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: rung >= 1 ? 1 : 1.5, budget: 1.6e6, low: rung >= 1 }) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(size.w, size.h, false);
   if (!cur) return;
   composer.setSize(size.w, size.h);
   grade.uniforms.uRes.value.set(size.w * size.dpr, size.h * size.dpr);
   cur.frame(size.w, size.h, size.dpr);
+  // Scenes with a matte painting re-bake their still layers here.
+  cur.bake?.(renderer);
   draw();
 }
 let visible = true;
@@ -249,11 +253,32 @@ function loop(now) {
       // A drift frame covers the gap since the last draw, never more than 0.1 s.
       cur.update(lively ? dt : Math.min(0.1, Math.max(dt, (now - lastDraw) / 1000)), pace);
       draw();
+      watch(now, lively);
       lastDraw = now;
     }
   } finally {
     if (visible) raf = requestAnimationFrame(loop);
   }
+}
+/* Performance ladder: slow frames step quality down a rung, never back up. */
+let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
+function watch(now, lively) {
+  const gap = now - prevDraw;
+  prevDraw = now;
+  if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
+  if (!watchFrom) watchFrom = now;
+  // Measure after 4 s of motion, over windows of 2 s.
+  if (now - watchFrom < 4000) return;
+  watchN++; watchSum += gap;
+  if (watchN < 2 || now - watchFrom < 6000) return;
+  const want = lively ? 1000 / 38 : 1000 / 22;
+  if (watchSum / watchN > want && rung < 3) {
+    rung++;
+    cur.lower?.(rung);
+    if (rung === 3) chain(cur);
+    resize();
+  }
+  watchFrom = now - 4000; watchN = watchSum = 0;
 }
 function wake() {
   lastInput = performance.now();
@@ -266,17 +291,28 @@ whenVisible(stage, v => {
 });
 
 /* Pointer: a press is a tap unless it moves 8 px or holds 260 ms. */
-let press = null;
+let press = null, holdTimer = 0;
+const ndcOf = e => {
+  const r = stage.getBoundingClientRect();
+  return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+};
 stage.addEventListener('pointerdown', e => {
   stage.setPointerCapture(e.pointerId);
-  press = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
+  press = { x: e.clientX, y: e.clientY, steer: false, ndc: ndcOf(e) };
+  // A hold aims the searchlight where the pointer rests.
+  holdTimer = setTimeout(() => { if (press) { press.steer = true; cur?.steer?.(press.ndc); wake(); } }, 260);
   wake();
 });
 stage.addEventListener('pointermove', e => {
-  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) press.moved = true;
+  if (!press) return;
+  press.ndc = ndcOf(e);
+  if (!press.steer && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.steer = true; clearTimeout(holdTimer); }
+  if (press.steer) { cur?.steer?.(press.ndc); wake(); }
 });
 function endPress(tap) {
-  if (press && tap && !press.moved && performance.now() - press.t < 260) { cur?.tap?.(); }
+  clearTimeout(holdTimer);
+  if (press && tap && !press.steer) cur?.tap?.(press.ndc);
+  if (press?.steer) cur?.release?.();
   press = null; wake();
 }
 stage.addEventListener('pointerup', () => endPress(true));
