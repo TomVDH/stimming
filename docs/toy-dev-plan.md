@@ -1,6 +1,7 @@
 # Development plan: the first four toys
 
 Tom chose the ranked top four from [toy-plan.md](toy-plan.md) on 2026-11-04.
+Ranks 5 to 19 have their own plans in [plans/](plans/README.md). The Ground rules below hold for them too.
 Build each toy in its own fresh session, in this order. Open the session with:
 
 > Build **<toy>** from `docs/toy-dev-plan.md`: read the ground rules and the toy's section, then follow the process.
