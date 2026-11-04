@@ -55,13 +55,19 @@ vec3 k2sky(vec3 dir) {
   if (dir.y > 0.002) {
     float t = (uCloudY - cameraPosition.y) / dir.y;
     vec3 p = cameraPosition + dir * t;
-    float d = k2fbm(p.xz * 0.0028 + vec2(3.0, 7.0));
-    float cloud = smoothstep(0.32, 0.78, d);
-    // The underside takes amber from the port below it.
+    // A slow warp bends the cloud into soft, natural shapes.
+    vec2 w = vec2(k2fbm(p.xz * 0.0012 + 11.0), k2fbm(p.xz * 0.0012 + 23.0));
+    float d = k2fbm(p.xz * 0.0028 + vec2(3.0, 7.0) + w * 1.6);
+    float cover = smoothstep(0.26, 0.6, d);
+    float thick = smoothstep(0.45, 0.85, d);
+    // The underside takes amber from the port, and a little everywhere.
     float g = exp(-length(p.xz - uGlow.xz) / uGlowR);
-    vec3 cc = uAmber * (0.003 + 0.16 * g) * (0.35 + 0.9 * cloud) + uCool * 0.002;
+    vec3 cc = uAmber * (0.016 + 0.16 * g) * (0.6 + 0.6 * thick) + uCool * 0.003;
     // The searchlight leaves a pale patch on the cloud.
-    cc += vec3(0.75, 0.82, 1.0) * 0.6 * exp(-length(p.xz - uSearchHit.xz) / 45.0) * (0.5 + cloud);
+    cc += vec3(0.75, 0.82, 1.0) * 0.6 * exp(-length(p.xz - uSearchHit.xz) / 45.0) * (0.5 + thick);
+    // Gaps show the dim sky above, still lit faintly by the port.
+    vec3 gap = col + uAmber * 0.008 * (0.3 + g);
+    cc = mix(gap, cc, cover);
     float far = 1.0 - exp(-t / 4200.0);
     col = mix(cc, col, far * 0.7);
   }
