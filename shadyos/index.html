@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ShadyOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* ShadyOS: a bootleg glass desktop, aged and a little possessed. */
+:root { --stage: oklch(0.12 0.02 230); }
+.stage--shadyos canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: default; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">ShadyOS</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--shadyos" id="stage" tabindex="0" role="application" aria-label="An old glass desktop. Drag a window to smear it across the screen, or fling it so it wobbles.">
+      <p class="fail" hidden>This toy needs WebGL2, which this browser has turned off.</p>
+    </div>
+    <div class="bar bar--below">
+      <div class="choices" id="mode" role="group" aria-label="Drag">
+        <button class="chip" type="button" data-value="smear" aria-pressed="true">Smear</button>
+        <button class="chip" type="button" data-value="jelly" aria-pressed="false">Jelly</button>
+      </div>
+      <label class="slider"><span>Age</span><input type="range" id="age" min="0" max="1" step="0.01" value="0.6" aria-label="Age: how worn the screen is"></label>
+      <div class="actions">
+        <button class="chip" id="add" type="button">+ Window</button>
+        <button class="chip" id="err" type="button">Error</button>
+        <button class="chip" id="clear" type="button">Clear</button>
+      </div>
+      <dl class="how" aria-label="How to play">
+          <div><dt>Drag</dt><dd>smear or fling a window</dd></div>
+          <div><dt>Double-click title</dt><dd>fold it to the shelf</dd></div>
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span> shelf</dt><dd>bring it back</dd></div>
+          <div class="fine"><dt><kbd>Space</kbd></dt><dd>error</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">ShadyOS</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, audioKit, qualitySetting, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the fonts and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+initPage({ id: 'shadyos' });
+qualitySetting();
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => t * t * (3 - 2 * t);
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
+
+/* ---------- settings ---------- */
+const saved = k => { try { return localStorage.getItem(`stimming.shadyos.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.shadyos.${k}`, String(v)); } catch { /* storage is optional */ } };
+const opts = { mode: saved('mode') || 'smear', age: saved('age') != null ? +saved('age') : 0.6 };
+
+/* =====================================================================
+   Painter: canvas 2D draws the desktop and each window face once.
+   ===================================================================== */
+let g = null, cv = null, PW = 0, PH = 0, PD = 2;
+const tmp = document.createElement('canvas'), tg = tmp.getContext('2d');
+let seed = 5;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
+const lin = (x0, y0, x1, y1, s) => { const l = g.createLinearGradient(x0, y0, x1, y1); s.forEach(([o, c]) => l.addColorStop(o, c)); return l; };
+const rad = (x, y, r0, r1, s, fx = x, fy = y) => { const l = g.createRadialGradient(fx, fy, r0, x, y, r1); s.forEach(([o, c]) => l.addColorStop(o, c)); return l; };
+const SANS = 'Gabarito, system-ui, sans-serif';
+const MONO = '"Iosevka Term Slab Nerd Font", ui-monospace, monospace';
+function txt(s, x, y, size, col, { w = 500, glow = null, align = 'left', font = SANS, shadow = null } = {}) {
+  g.save(); g.font = `${w} ${size}px ${font}`; g.textAlign = align;
+  if (glow) { g.shadowColor = glow; g.shadowBlur = 10; for (let i = 0; i < 8; i++) { g.fillStyle = glow; g.fillText(s, x, y); } }
+  if (shadow) { g.shadowColor = shadow; g.shadowBlur = 3; g.shadowOffsetY = 1; } else g.shadowColor = 'transparent';
+  g.fillStyle = col; g.fillText(s, x, y); g.restore();
+}
+function begin(canvas, w, h) {
+  cv = canvas; PW = w; PH = h;
+  canvas.width = Math.round(w * PD); canvas.height = Math.round(h * PD);
+  g = canvas.getContext('2d'); g.setTransform(PD, 0, 0, PD, 0, 0); g.clearRect(0, 0, w, h);
+}
+// Static glass on the desktop blurs the wallpaper in canvas.
+function frost(x, y, w, h, r, blur = 9, tint = 'oklch(0.42 0.035 215 / 0.38)') {
+  const b = blur * 3;
+  tmp.width = Math.max(1, (w + 2 * b) * PD); tmp.height = Math.max(1, (h + 2 * b) * PD);
+  tg.drawImage(cv, (x - b) * PD, (y - b) * PD, tmp.width, tmp.height, 0, 0, tmp.width, tmp.height);
+  g.save(); rr(x, y, w, h, r); g.clip();
+  g.filter = `blur(${blur * PD}px) saturate(1.5) brightness(1.08)`;
+  g.drawImage(tmp, x - b, y - b, w + 2 * b, h + 2 * b);
+  g.filter = 'none'; g.fillStyle = tint; g.fillRect(x, y, w, h); g.restore();
+}
+function bead(x, y, r, c) {
+  g.fillStyle = rad(x, y + r * 0.3, 0, r, [[0, `oklch(${c[0] + 0.15} ${c[1]} ${c[2]})`], [0.7, `oklch(${c[0]} ${c[1]} ${c[2]})`], [1, `oklch(${c[0] - 0.2} ${c[1]} ${c[2]})`]]);
+  g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  g.strokeStyle = 'oklch(0.15 0.03 240 / 0.6)'; g.lineWidth = 0.8; g.stroke();
+  g.save(); g.beginPath(); g.arc(x, y, r - 0.6, 0, 7); g.clip();
+  g.fillStyle = lin(0, y - r, 0, y, [[0, 'oklch(1 0 0 / 0.7)'], [0.98, 'oklch(1 0 0 / 0.3)'], [1, 'oklch(1 0 0 / 0)']]); g.fillRect(x - r, y - r, r * 2, r);
+  g.fillStyle = rad(x, y + r * 1.1, 0, r * 1.1, [[0, 'oklch(0.95 0.15 90 / 0.7)'], [1, 'oklch(0.95 0.15 90 / 0)']]); g.fillRect(x - r, y, r * 2, r);
+  g.restore();
+}
+function sparkle(x, y, r, c) {
+  g.save(); g.translate(x, y); g.beginPath();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, q = i % 2 ? r * 0.25 : r; g.lineTo(Math.cos(a) * q, Math.sin(a) * q); }
+  g.closePath(); g.shadowColor = c; g.shadowBlur = 6; g.fillStyle = 'oklch(0.98 0.03 90)'; g.fill(); g.restore();
+}
+function gelPill(x, y, w, h, label, def) {
+  rr(x, y, w, h, 3);
+  g.fillStyle = def ? lin(0, y, 0, y + h, [[0, 'oklch(0.95 0.03 215)'], [0.3, 'oklch(0.9 0.06 220)'], [0.5, 'oklch(0.86 0.07 222)'], [0.51, 'oklch(0.76 0.1 225)'], [1, 'oklch(0.66 0.11 228)']])
+    : lin(0, y, 0, y + h, [[0, 'oklch(0.97 0 0)'], [0.45, 'oklch(0.94 0 0)'], [0.46, 'oklch(0.87 0.005 240)'], [1, 'oklch(0.82 0.005 240)']]);
+  g.fill();
+  if (def) { g.save(); rr(x, y, w, h, 3); g.clip(); g.fillStyle = rad(x + w / 2, y + h * 1.1, 0, w * 0.45, [[0, 'oklch(0.9 0.14 200 / 0.8)'], [1, 'oklch(0.9 0.14 200 / 0)']]); g.fillRect(x, y, w, h); g.restore(); }
+  g.strokeStyle = def ? 'oklch(0.45 0.08 235)' : 'oklch(0.55 0.005 240)'; g.lineWidth = 1; g.stroke();
+  rr(x + 1, y + 1, w - 2, h - 2, 2); g.strokeStyle = 'oklch(1 0 0 / 0.75)'; g.stroke();
+  txt(label, x + w / 2, y + h * 0.68, 12, 'oklch(0.15 0.01 240)', { align: 'center' });
+}
+
+/* ---------- desktop: wallpaper, icons, shelf, strip ---------- */
+const SHELF = ['jar', 'box', 'disc', 'page', 'lamp', 'box', 'jar'];
+function wallpaper() {
+  g.fillStyle = lin(0, 0, PW * 0.4, PH, [[0, 'oklch(0.2 0.045 230)'], [0.5, 'oklch(0.16 0.04 210)'], [1, 'oklch(0.11 0.03 280)']]);
+  g.fillRect(0, 0, PW, PH);
+  g.fillStyle = rad(PW * 0.62, PH * 0.58, 10, PW * 0.6, [[0, 'oklch(0.45 0.09 75 / 0.55)'], [0.4, 'oklch(0.3 0.07 150 / 0.25)'], [1, 'oklch(0.2 0.04 200 / 0)']]);
+  g.fillRect(0, 0, PW, PH);
+  g.save(); g.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < 70; k++) {
+    const t = k / 69, sp = Math.sin(t * Math.PI);
+    g.beginPath(); g.moveTo(-60, PH * (0.95 - t * 0.25));
+    g.bezierCurveTo(PW * 0.25, PH * (0.4 + t * 0.35), PW * 0.55, PH * (0.95 - t * 0.5), PW + 60, PH * (0.25 + t * 0.2));
+    g.strokeStyle = `oklch(${0.55 + sp * 0.2} ${0.1 + sp * 0.04} ${175 - t * 110} / ${0.012 + sp * 0.03})`;
+    g.lineWidth = 1 + sp * 10; g.stroke();
+  }
+  g.filter = 'blur(6px)';
+  for (let k = 0; k < 4; k++) {
+    g.beginPath(); g.moveTo(-60, PH * (0.82 - k * 0.04));
+    g.bezierCurveTo(PW * 0.25, PH * (0.55 + k * 0.03), PW * 0.55, PH * (0.72 - k * 0.05), PW + 60, PH * (0.32 + k * 0.03));
+    g.strokeStyle = `oklch(0.8 0.1 ${85 - k * 10} / 0.12)`; g.lineWidth = 3 + k * 2; g.stroke();
+  }
+  g.filter = 'none';
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * PW, y = PH * (0.2 + rnd() * 0.7), r = 4 + rnd() * 22, a = 0.03 + rnd() * 0.07;
+    g.fillStyle = rad(x, y, 0, r, [[0, `oklch(0.85 0.08 ${70 + rnd() * 120} / ${a * 0.6})`], [0.85, `oklch(0.85 0.08 90 / ${a})`], [1, 'oklch(0.85 0.08 90 / 0)']]);
+    g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  }
+  g.restore();
+}
+function flare(x, y) {
+  g.save(); g.globalCompositeOperation = 'lighter';
+  g.fillStyle = rad(x, y, 0, 60, [[0, 'oklch(1 0.03 90 / 0.8)'], [0.15, 'oklch(0.9 0.1 80 / 0.35)'], [1, 'oklch(0.8 0.1 80 / 0)']]); g.beginPath(); g.arc(x, y, 60, 0, 7); g.fill();
+  g.fillStyle = 'oklch(0.9 0.08 80 / 0.25)'; g.fillRect(x - 160, y - 0.75, 320, 1.5);
+  [[0.25, 14, 200], [0.45, 26, 150], [0.62, 9, 60], [0.8, 34, 280]].forEach(([t, r, hue]) => {
+    const hx = x + (PW / 2 - x) * t * 2, hy = y + (PH / 2 - y) * t * 2;
+    g.beginPath(); for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; g.lineTo(hx + Math.cos(a) * r, hy + Math.sin(a) * r); } g.closePath();
+    g.fillStyle = `oklch(0.7 0.1 ${hue} / 0.08)`; g.fill();
+  });
+  g.restore();
+}
+function glyph(kind, x, y, s) {
+  g.save(); g.translate(x, y); g.scale(s, s);
+  if (kind === 'jar') {
+    rr(-14, -12, 28, 30, 7); g.fillStyle = lin(-14, 0, 14, 0, [[0, 'oklch(0.55 0.09 160 / 0.85)'], [0.3, 'oklch(0.85 0.06 150 / 0.75)'], [1, 'oklch(0.45 0.08 170 / 0.9)']]); g.fill();
+    rr(-12, -18, 24, 7, 2); g.fillStyle = lin(0, -18, 0, -11, [[0, 'oklch(0.85 0.05 80)'], [1, 'oklch(0.55 0.06 70)']]); g.fill();
+    g.fillStyle = 'oklch(1 0 0 / 0.55)'; rr(-9, -8, 4, 20, 2); g.fill();
+  } else if (kind === 'box') {
+    g.fillStyle = lin(0, -16, 0, 18, [[0, 'oklch(0.8 0.1 70)'], [1, 'oklch(0.55 0.11 55)']]); rr(-17, -10, 34, 28, 3); g.fill();
+    g.fillStyle = lin(0, -18, 0, -6, [[0, 'oklch(0.92 0.08 80)'], [1, 'oklch(0.7 0.1 65)']]); rr(-19, -18, 38, 10, 3); g.fill();
+    g.fillStyle = 'oklch(0.4 0.08 50 / 0.6)'; g.fillRect(-4, -18, 8, 36);
+  } else if (kind === 'disc') {
+    const cg = g.createConicGradient(0.6, 0, 0);
+    [[0, 'oklch(0.85 0.02 240)'], [0.15, 'oklch(0.9 0.1 200)'], [0.3, 'oklch(0.75 0.02 240)'], [0.5, 'oklch(0.92 0.12 90)'], [0.65, 'oklch(0.7 0.02 240)'], [0.8, 'oklch(0.88 0.12 330)'], [1, 'oklch(0.85 0.02 240)']].forEach(([o, c]) => cg.addColorStop(o, c));
+    g.fillStyle = cg; g.beginPath(); g.arc(0, 0, 18, 0, 7); g.fill();
+    g.fillStyle = 'oklch(0.3 0.02 240)'; g.beginPath(); g.arc(0, 0, 4, 0, 7); g.fill();
+  } else if (kind === 'page') {
+    g.fillStyle = lin(0, -18, 0, 18, [[0, 'oklch(0.99 0.005 90)'], [1, 'oklch(0.86 0.02 85)']]);
+    g.beginPath(); g.moveTo(-13, -18); g.lineTo(6, -18); g.lineTo(13, -11); g.lineTo(13, 18); g.lineTo(-13, 18); g.closePath(); g.fill();
+    g.fillStyle = 'oklch(0.8 0.02 85)'; g.beginPath(); g.moveTo(6, -18); g.lineTo(6, -11); g.lineTo(13, -11); g.fill();
+    g.fillStyle = 'oklch(0.6 0.03 240 / 0.6)'; for (let i = 0; i < 5; i++) g.fillRect(-8, -6 + i * 5, 16 - (i % 2) * 5, 1.5);
+  } else {
+    g.fillStyle = rad(0, -2, 0, 18, [[0, 'oklch(0.99 0.06 95)'], [0.5, 'oklch(0.85 0.14 80 / 0.9)'], [1, 'oklch(0.6 0.12 60 / 0.6)']]);
+    g.beginPath(); g.arc(0, -3, 15, 0, 7); g.fill();
+    rr(-6, 11, 12, 8, 2); g.fillStyle = 'oklch(0.6 0.02 240)'; g.fill();
+  }
+  g.restore();
+}
+function icons(list) {
+  list.forEach(([k, n, x, y]) => {
+    g.save(); g.shadowColor = 'oklch(0 0 0 / 0.6)'; g.shadowBlur = 8; g.shadowOffsetY = 3; glyph(k, x, y, 1.15); g.restore();
+    txt(n, x, y + 36, 11.5, 'oklch(0.98 0.005 90)', { w: 600, align: 'center', shadow: 'oklch(0 0 0 / 0.95)' });
+  });
+}
+function shelf(cx, w, n) {
+  const y = PH - 46, h = 34, inset = 16, spots = [];
+  const trap = () => { g.beginPath(); g.moveTo(cx - w / 2 + inset, y); g.lineTo(cx + w / 2 - inset, y); g.lineTo(cx + w / 2, y + h); g.lineTo(cx - w / 2, y + h); g.closePath(); };
+  g.save(); trap(); g.clip(); frost(cx - w / 2, y, w, h, 0, 6, 'oklch(0.75 0.02 220 / 0.22)'); g.restore();
+  trap(); g.strokeStyle = 'oklch(1 0 0 / 0.45)'; g.lineWidth = 1; g.stroke();
+  g.fillStyle = 'oklch(1 0 0 / 0.5)'; g.fillRect(cx - w / 2 + inset, y, w - inset * 2, 1);
+  const step = (w - 40) / n;
+  for (let i = 0; i < n; i++) {
+    const x = cx - w / 2 + 20 + step * (i + 0.5);
+    g.save(); g.globalAlpha = 0.22; g.translate(0, (y + 10) * 2); g.scale(1, -1); glyph(SHELF[i], x, y + 10 - 22, 1.15); g.restore();
+    g.save(); g.shadowColor = 'oklch(0 0 0 / 0.5)'; g.shadowBlur = 6; g.shadowOffsetY = 3; glyph(SHELF[i], x, y - 12, 1.15); g.restore();
+    spots.push({ kind: SHELF[i], x, y: y - 12 });
+  }
+  return spots;
+}
+function topStrip() {
+  frost(0, 0, PW, 24, 0, 8, 'oklch(0.3 0.025 220 / 0.45)');
+  g.fillStyle = lin(0, 0, 0, 24, [[0, 'oklch(1 0 0 / 0.22)'], [0.5, 'oklch(1 0 0 / 0.06)'], [1, 'oklch(1 0 0 / 0)']]); g.fillRect(0, 0, PW, 24);
+  g.fillStyle = 'oklch(0.05 0.02 240 / 0.7)'; g.fillRect(0, 24, PW, 1);
+  bead(16, 12, 6, [0.62, 0.12, 190]);
+  txt('3:33', PW - 14, 16.5, 12.5, 'oklch(0.97 0.01 90)', { w: 700, align: 'right', shadow: 'oklch(0 0 0 / 0.8)' });
+  txt('up 6,809 days', PW - 52, 16.5, 11, 'oklch(0.85 0.02 90 / 0.8)', { align: 'right', shadow: 'oklch(0 0 0 / 0.8)' });
+}
+function watermark(x, y, align) {
+  ['ShadyOS Ultimate XTreme Edition SP3', 'Build 6809 · tw34k3d by d4rkm0th · activation: bypassed'].forEach((l, i) =>
+    txt(l, x, y + i * 15, i ? 10.5 : 12, `oklch(0.95 0.01 90 / ${i ? 0.4 : 0.5})`, { w: i ? 500 : 700, align }));
+}
+function burnIn(rects) {
+  g.save(); g.globalCompositeOperation = 'multiply'; g.fillStyle = 'oklch(0.84 0.02 85)';
+  rects.forEach(([x, y, w, h, r]) => { rr(x, y, w, h, r); g.fill(); }); g.restore();
+}
+function bakeDesktop(canvas, w, h) {
+  seed = 5; begin(canvas, w, h);
+  const phone = w < 600;
+  wallpaper();
+  flare(w * (phone ? 0.8 : 0.82), h * (phone ? 0.6 : 0.47));
+  const sw = phone ? w - 24 : Math.min(460, w * 0.5);
+  burnIn([[w / 2 - sw / 2, h - 46, sw, 34, 4], [0, 0, w, 25, 0], [w * 0.36, h * 0.4, Math.min(330, w * 0.6), 150, 9]]);
+  if (!phone) icons([['disc', 'Basement', w - 52, 64], ['jar', 'Keep', w - 52, 140], ['page', 'read me', w - 52, 216]]);
+  const spots = shelf(w / 2, sw, phone ? 5 : SHELF.length);
+  topStrip();
+  if (phone) watermark(w / 2, h - 120, 'center'); else watermark(w - 16, h - 40, 'right');
+  return spots;
+}
+
+/* ---------- window faces ---------- */
+// The face holds the gloss overlay and the client; the shader adds the frost.
+function glassFace(w, h, title) {
+  g.save(); rr(0, 0, w, h, 9); g.clip();
+  g.fillStyle = lin(0, 0, w, 0, [[0, 'oklch(1 0 0 / 0.3)'], [0.5, 'oklch(0 0 0 / 0.1)'], [1, 'oklch(1 0 0 / 0.16)']]); g.fillRect(0, 0, w, h);
+  g.fillStyle = lin(0, 0, 90, 90, [[0, 'oklch(1 0 0 / 0.36)'], [0.7, 'oklch(1 0 0 / 0.36)'], [1, 'oklch(1 0 0 / 0)']]);
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(300, 0); g.lineTo(0, 300); g.fill();
+  g.fillStyle = lin(w, 0, w - 90, 90, [[0, 'oklch(1 0 0 / 0.36)'], [0.7, 'oklch(1 0 0 / 0.36)'], [1, 'oklch(1 0 0 / 0)']]);
+  g.beginPath(); g.moveTo(w, 0); g.lineTo(w - 300, 0); g.lineTo(w, 300); g.fill();
+  const L = Math.hypot(w, h);
+  g.translate(0, h); g.rotate(-0.94);
+  for (let t = 0, k = 0; t < L * 1.4; k++) {
+    const bw = 2 + ((k * 37) % 11);
+    g.fillStyle = k % 3 !== 1 ? 'oklch(0 0 0 / 0.1)' : 'oklch(0.92 0 0 / 0.1)';
+    g.fillRect(t - L * 0.2, -L, bw, L * 2);
+    t += bw + 6 + ((k * 53) % 19);
+  }
+  g.restore();
+  rr(0.5, 0.5, w - 1, h - 1, 9); g.strokeStyle = 'oklch(0.05 0.01 240 / 0.8)'; g.lineWidth = 1; g.stroke();
+  rr(1.5, 1.5, w - 3, h - 3, 8); g.strokeStyle = 'oklch(1 0 0 / 0.6)'; g.stroke();
+  txt(title, w / 2, 20, 13, 'oklch(0.14 0.02 240)', { w: 600, align: 'center', glow: 'oklch(1 0 0 / 0.7)' });
+  bead(w - 20, 15, 6.5, [0.6, 0.17, 25]); bead(w - 38, 15, 6.5, [0.7, 0.13, 80]);
+}
+function client(x, y, w, h) {
+  rr(x - 1, y - 1, w + 2, h + 2, 4); g.strokeStyle = 'oklch(1 0 0 / 0.55)'; g.lineWidth = 1; g.stroke();
+  rr(x, y, w, h, 3); g.fillStyle = 'oklch(0.95 0.018 88)'; g.fill(); g.strokeStyle = 'oklch(0.08 0.01 240 / 0.7)'; g.stroke();
+  g.save(); rr(x, y, w, h, 3); g.clip();
+}
+function files(x, y, w, h) {
+  g.fillStyle = lin(0, y, 0, y + 34, [[0, 'oklch(0.93 0.01 90)'], [1, 'oklch(0.82 0.015 90)']]); g.fillRect(x, y, w, 34);
+  g.fillStyle = 'oklch(0.6 0.01 240)'; g.fillRect(x, y + 34, w, 1);
+  rr(x + 10, y + 7, 52, 20, 10); g.fillStyle = lin(0, y + 7, 0, y + 27, [[0, 'oklch(0.98 0 0)'], [1, 'oklch(0.84 0.01 90)']]); g.fill(); g.strokeStyle = 'oklch(0.55 0.01 240)'; g.lineWidth = 0.8; g.stroke();
+  g.fillStyle = 'oklch(0.35 0.02 240)'; g.beginPath(); g.moveTo(x + 22, y + 17); g.lineTo(x + 29, y + 12); g.lineTo(x + 29, y + 22); g.fill(); g.beginPath(); g.moveTo(x + 50, y + 17); g.lineTo(x + 43, y + 12); g.lineTo(x + 43, y + 22); g.fill();
+  const sw2 = Math.min(138, w * 0.4);
+  rr(x + w - sw2 - 12, y + 8, sw2, 19, 9.5); g.fillStyle = 'oklch(0.99 0.005 90)'; g.fill(); g.strokeStyle = 'oklch(0.6 0.01 240)'; g.stroke();
+  txt('Search', x + w - sw2, y + 21.5, 11, 'oklch(0.6 0.01 240)');
+  const sw = Math.min(140, w * 0.3);
+  g.fillStyle = lin(x, 0, x + sw, 0, [[0, 'oklch(0.88 0.02 230)'], [1, 'oklch(0.85 0.025 230)']]); g.fillRect(x, y + 35, sw, h - 55);
+  g.fillStyle = 'oklch(0.65 0.02 230)'; g.fillRect(x + sw, y + 35, 1, h - 55);
+  txt('PLACES', x + 12, y + 54, 9.5, 'oklch(0.5 0.03 235)', { w: 700 });
+  ['Home', 'Downloads', 'Basement', 'Skins', 'Kept'].forEach((n, i) => {
+    const ry = y + 62 + i * 21;
+    if (i === 2) { rr(x + 3, ry + 0.5, sw - 6, 19, 3); g.fillStyle = lin(0, ry, 0, ry + 20, [[0, 'oklch(0.97 0.02 220)'], [0.9, 'oklch(0.86 0.05 225)'], [1, 'oklch(0.94 0.03 220)']]); g.fill(); g.strokeStyle = 'oklch(0.75 0.08 225)'; g.lineWidth = 1; g.stroke(); }
+    g.fillStyle = rad(x + 19, ry + 9, 0, 6, [[0, 'oklch(0.9 0.06 85)'], [1, 'oklch(0.6 0.1 70)']]); rr(x + 13, ry + 4, 12, 11, 2); g.fill();
+    txt(n, x + 32, ry + 14, 12, 'oklch(0.25 0.02 240)', { w: i === 2 ? 700 : 500 });
+  });
+  const lx = x + sw + 1, lw = w - sw - 1;
+  g.fillStyle = lin(0, y + 35, 0, y + 53, [[0, 'oklch(0.97 0.005 90)'], [1, 'oklch(0.88 0.01 90)']]); g.fillRect(lx, y + 35, lw, 18);
+  txt('Name', lx + 26, y + 48, 10.5, 'oklch(0.35 0.01 240)', { w: 600 }); txt('Modified', lx + lw * 0.62, y + 48, 10.5, 'oklch(0.35 0.01 240)', { w: 600 });
+  const rows = [['xtreme_skinpack_v4', '14 Mar 2008'], ['keygen_FINAL_real', '14 Mar 2008'], ['tw34ks (dont delete)', '14 Mar 2008'], ['your notes', 'Today, 3:31'], ['setup (2)', '14 Mar 2008'], ['untitled 41', 'Today, 3:33'], ['untitled 42', 'Today, 3:33'], ['untitled 43', 'Today, 3:33']];
+  rows.forEach(([n, d], i) => {
+    const ry = y + 54 + i * 19; if (ry > y + h - 40) return;
+    g.fillStyle = i % 2 ? 'oklch(0.92 0.02 225 / 0.6)' : 'oklch(0.96 0.015 88)'; g.fillRect(lx, ry, lw, 19);
+    if (i === 3) { rr(lx + 2, ry + 0.5, lw - 4, 18, 3); g.fillStyle = lin(0, ry, 0, ry + 19, [[0, 'oklch(0.97 0.02 220)'], [0.9, 'oklch(0.88 0.05 225)'], [1, 'oklch(0.95 0.03 220)']]); g.fill(); g.strokeStyle = 'oklch(0.78 0.08 225)'; g.stroke(); }
+    g.fillStyle = lin(0, ry + 4, 0, ry + 15, [[0, 'oklch(0.98 0.01 90)'], [1, 'oklch(0.85 0.02 85)']]); g.fillRect(lx + 9, ry + 3, 10, 13);
+    g.strokeStyle = 'oklch(0.6 0.02 80)'; g.lineWidth = 0.6; g.strokeRect(lx + 9, ry + 3, 10, 13);
+    txt(n, lx + 26, ry + 13.5, 12, 'oklch(0.22 0.02 240)'); txt(d, lx + lw * 0.62, ry + 13.5, 12, 'oklch(0.45 0.01 240)');
+  });
+  rr(x + w - 11, y + 60, 8, 60, 4); g.fillStyle = lin(x + w - 11, 0, x + w - 3, 0, [[0, 'oklch(0.75 0.08 210)'], [0.5, 'oklch(0.55 0.11 220)'], [1, 'oklch(0.7 0.08 210)']]); g.fill();
+  g.fillStyle = lin(0, y + h - 20, 0, y + h, [[0, 'oklch(0.88 0.01 90)'], [1, 'oklch(0.8 0.015 90)']]); g.fillRect(x, y + h - 20, w, 20);
+  txt('8 items, 0 KB available', x + w / 2, y + h - 6, 10.5, 'oklch(0.4 0.01 240)', { align: 'center' });
+}
+function note(x, y, w, h, lines) {
+  g.fillStyle = 'oklch(0.94 0.04 95)'; g.fillRect(x, y, w, h);
+  g.strokeStyle = 'oklch(0.75 0.05 230 / 0.35)'; g.lineWidth = 1;
+  for (let ly = y + 30; ly < y + h; ly += 18) { g.beginPath(); g.moveTo(x, ly); g.lineTo(x + w, ly); g.stroke(); }
+  lines.forEach((l, i) => txt(l, x + 14, y + 26 + i * 18, 13, 'oklch(0.25 0.03 250)', { font: MONO }));
+}
+function dialog(x, y, w, h, o) {
+  g.fillStyle = lin(0, y, 0, y + h, [[0, 'oklch(0.96 0.012 88)'], [1, 'oklch(0.9 0.015 88)']]); g.fillRect(x, y, w, h);
+  const gx = x + 34, gy = y + 36;
+  g.fillStyle = rad(gx, gy + 6, 0, 22, [[0, 'oklch(0.92 0.14 85)'], [0.6, 'oklch(0.72 0.17 60)'], [1, 'oklch(0.45 0.14 40)']]);
+  g.beginPath(); g.moveTo(gx, gy - 20); g.lineTo(gx + 20, gy + 16); g.lineTo(gx - 20, gy + 16); g.closePath(); g.fill();
+  g.fillStyle = 'oklch(1 0 0 / 0.5)'; g.beginPath(); g.moveTo(gx, gy - 15); g.lineTo(gx + 8, gy); g.lineTo(gx - 8, gy); g.fill();
+  txt('!', gx, gy + 12, 18, 'oklch(0.25 0.06 50)', { w: 800, align: 'center' });
+  txt(o.head, x + 66, y + 30, 13.5, 'oklch(0.18 0.02 240)', { w: 700 });
+  txt(o.body, x + 66, y + 50, 12.5, 'oklch(0.35 0.02 240)');
+  gelPill(x + w - 92, y + h - 34, 80, 22, o.yes, true);
+  if (o.no) gelPill(x + w - 182, y + h - 34, 80, 22, o.no, false);
+}
+function kidFace(w, h, title) {
+  const top = 26;
+  g.save(); rr(0, 0, w, top, 4); g.clip();
+  g.fillStyle = lin(0, 0, w, 0, [[0, 'oklch(0.55 0.22 28)'], [0.45, 'oklch(0.75 0.18 60)'], [0.7, 'oklch(0.35 0.12 30)'], [1, 'oklch(0.12 0.02 270)']]); g.fillRect(0, 0, w, top);
+  g.fillStyle = lin(0, 0, 0, top, [[0, 'oklch(1 0 0 / 0.45)'], [0.5, 'oklch(1 0 0 / 0.1)'], [0.51, 'oklch(0 0 0 / 0.1)'], [1, 'oklch(0 0 0 / 0.3)']]); g.fillRect(0, 0, w, top);
+  g.restore();
+  txt(title, 10, 18, 12, 'oklch(0.99 0.03 90)', { w: 800, font: MONO, shadow: 'oklch(0 0 0 / 0.9)' });
+  [w - 16, w - 34].forEach((dx, i) => sparkle(dx, 13, 7, i ? 'oklch(0.85 0.15 200)' : 'oklch(0.85 0.2 20)'));
+  g.strokeStyle = 'oklch(0.75 0.18 50 / 0.7)'; g.lineWidth = 1; rr(0.5, 0.5, w - 1, h - 1, 4); g.stroke();
+  g.save(); rr(5, top + 2, w - 10, h - top - 7, 2); g.clip();
+  g.fillStyle = 'oklch(0.07 0.01 270)'; g.fillRect(5, top + 2, w - 10, h - top - 7);
+}
+function nfo(x, y, w, h) {
+  const F = { D: ['###.', '#..#', '#..#', '#..#', '###.'], 4: ['#..#', '#..#', '####', '...#', '...#'], R: ['###.', '#..#', '###.', '#.#.', '#..#'],
+    K: ['#..#', '#.#.', '##..', '#.#.', '#..#'], M: ['#...#', '##.##', '#.#.#', '#...#', '#...#'], 0: ['.##.', '#..#', '#.##', '##.#', '.##.'],
+    T: ['#####', '..#..', '..#..', '..#..', '..#..'], H: ['#..#', '#..#', '####', '#..#', '#..#'] };
+  const cs = Math.min(6, (w - 30) / 43);
+  let bx = x + (w - 43 * cs) / 2;
+  [...'D4RKM0TH'].forEach(ch => {
+    F[ch].forEach((row, ry) => [...row].forEach((c, rx) => {
+      if (c !== '#') return;
+      g.fillStyle = `oklch(${0.86 - ry * 0.06} 0.15 ${200 - ry * 14})`; g.shadowColor = 'oklch(0.7 0.15 200 / 0.6)'; g.shadowBlur = 6;
+      g.fillRect(bx + rx * cs, y + 14 + ry * cs, cs - 1, cs - 1);
+    }));
+    bx += (F[ch][0].length + 1) * cs;
+  });
+  g.shadowBlur = 0;
+  const lines = ['p r e s e n t s', '', '> ULTIMATE XTREME EDITION SP3', '> all tweaks applied (all of them)', '> activation ...... bypassed lol', '> uptime .......... do not reset', '> greetz: nobody. just me now'];
+  lines.forEach((l, i) => txt(l, i ? x + 12 : x + w / 2, y + 14 + 5 * cs + 20 + i * 15, 11.5, i ? 'oklch(0.82 0.06 200)' : 'oklch(0.85 0.17 60)', { font: MONO, align: i ? 'left' : 'center' }));
+  g.fillStyle = 'oklch(0.14 0.03 270)'; g.fillRect(x, y + h - 20, w, 20);
+  txt('*** thx for using my os *** pls dont format *** i can see ur cursor ***', x + 8, y + h - 6, 11, 'oklch(0.85 0.17 330)', { font: MONO });
+}
+function gauge(x, y, w, h) {
+  const cx = x + w / 2, cy = y + h * 0.62, r = Math.min(w, h) * 0.42;
+  g.fillStyle = rad(cx, cy, 0, r, [[0, 'oklch(0.3 0.04 240)'], [1, 'oklch(0.1 0.02 260)']]); g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+  for (let i = 0; i <= 10; i++) { const a = Math.PI * (0.8 + i * 0.14); g.strokeStyle = i > 7 ? 'oklch(0.65 0.2 25)' : 'oklch(0.85 0.03 240)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx + Math.cos(a) * r * 0.78, cy + Math.sin(a) * r * 0.78); g.lineTo(cx + Math.cos(a) * r * 0.92, cy + Math.sin(a) * r * 0.92); g.stroke(); }
+  const a = Math.PI * 2.2; g.strokeStyle = 'oklch(0.7 0.22 30)'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * r * 0.82, cy + Math.sin(a) * r * 0.82); g.stroke();
+  bead(cx, cy, 4, [0.6, 0.05, 240]);
+  txt('CPU 100%', cx, cy + r * 0.55, 10.5, 'oklch(0.85 0.17 60)', { w: 700, align: 'center', font: MONO });
+  txt('since 2008', cx, y + 14, 9.5, 'oklch(0.7 0.03 240)', { align: 'center', font: MONO });
+}
+function paintWindow(win) {
+  const c = win.canvas || (win.canvas = document.createElement('canvas'));
+  begin(c, win.w, win.h);
+  if (win.skin === 'kid') {
+    kidFace(win.w, win.h, win.title);
+    if (win.kind === 'nfo') nfo(5, 28, win.w - 10, win.h - 33);
+    if (win.kind === 'gauge') gauge(5, 28, win.w - 10, win.h - 33);
+    g.restore();
+  } else {
+    glassFace(win.w, win.h, win.title);
+    const x = 7, y = 30, w = win.w - 14, h = win.h - 37;
+    client(x, y, w, h);
+    if (win.kind === 'files') files(x, y, w, h);
+    if (win.kind === 'note') note(x, y, w, h, win.lines);
+    if (win.kind === 'dialog') dialog(x, y, w, h, win);
+    g.restore();
+  }
+  return c;
+}
+
+/* =====================================================================
+   WebGL2: desktop, smear plate, frost blur, window meshes, aged screen.
+   ===================================================================== */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: true });
+if (!gl) { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); }
+
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function prog(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+}
+function tex(w, h, data = null) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  return t;
+}
+function upload(t, src) {
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+}
+function target(w, h) { const t = tex(w, h), f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return { t, f, w, h }; }
+function free(rt) { if (rt) { gl.deleteTexture(rt.t); gl.deleteFramebuffer(rt.f); } }
+
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+const COPY_FS = `#version 300 es
+precision highp float; uniform sampler2D uSrc; uniform float uFlip; in vec2 vUv; out vec4 o;
+void main() { o = texture(uSrc, vec2(vUv.x, mix(vUv.y, 1.0 - vUv.y, uFlip))); }`;
+// Separable Gaussian, nine taps.
+const BLUR_FS = `#version 300 es
+precision highp float; uniform sampler2D uSrc; uniform vec2 uDir; in vec2 vUv; out vec4 o;
+void main() {
+  float w[5] = float[](0.227, 0.1945, 0.1216, 0.054, 0.0162);
+  vec4 c = texture(uSrc, vUv) * w[0];
+  for (int i = 1; i < 5; i++) { c += (texture(uSrc, vUv + uDir * float(i)) + texture(uSrc, vUv - uDir * float(i))) * w[i]; }
+  o = c;
+}`;
+const FADE_FS = `#version 300 es
+precision highp float; uniform float uA; out vec4 o; void main() { o = vec4(0.0, 0.0, 0.0, uA); }`;
+// Window mesh: positions in CSS pixels, y down.
+const WIN_VS = `#version 300 es
+in vec2 aPos; in vec2 aUv; uniform vec2 uRes, uShift; out vec2 vUv;
+void main() { vUv = aUv; vec2 p = (aPos + uShift) / uRes * 2.0 - 1.0; gl_Position = vec4(p.x, -p.y, 0.0, 1.0); }`;
+const WIN_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uFace, uBlur; uniform vec2 uSize, uFb; uniform float uR, uAlpha; uniform vec4 uTint;
+in vec2 vUv; out vec4 o;
+float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+void main() {
+  vec2 p = vUv * uSize;
+  float d = sdBox(p - uSize * 0.5, uSize * 0.5, uR);
+  float inside = 1.0 - smoothstep(-0.6, 0.6, d);
+  // The frost is whatever lies behind, blurred, lifted and tinted.
+  vec3 fr = texture(uBlur, gl_FragCoord.xy / uFb).rgb;
+  float l = dot(fr, vec3(0.299, 0.587, 0.114));
+  fr = mix(vec3(l), fr, 1.5) * 1.1 + 0.03;
+  vec3 base = mix(fr, uTint.rgb, uTint.a);
+  vec4 f = texture(uFace, vUv);
+  vec3 c = base * (1.0 - f.a) + f.rgb;
+  float a = inside * uAlpha;
+  o = vec4(c * a, a);
+}`;
+const SHADOW_FS = `#version 300 es
+precision highp float;
+uniform vec4 uRect; uniform float uDpr, uFbH, uK; out vec4 o;
+float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+void main() {
+  vec2 css = vec2(gl_FragCoord.x, uFbH - gl_FragCoord.y) / uDpr;
+  vec2 c = uRect.xy + uRect.zw * 0.5 + vec2(0.0, 16.0 * uK);
+  float d = sdBox(css - c, uRect.zw * 0.5, 10.0);
+  // A wide soft drop plus a tight contact line.
+  float a = exp(-max(d, 0.0) / (16.0 * uK)) * 0.5 + exp(-max(d + 2.0, 0.0) / 3.0) * 0.35;
+  o = vec4(0.0, 0.0, 0.0, a * min(uK, 1.0));
+}`;
+// The aged screen: warp, warm cast, bleed, burn, grain, dust.
+const POST_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uFb; uniform float uAge, uTime, uDpr; in vec2 vUv; out vec4 o;
+float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+void main() {
+  vec2 q = vUv * 2.0 - 1.0;
+  q *= 1.0 + uAge * 0.018 * dot(q, q);
+  vec2 uv = q * 0.5 + 0.5;
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  vec3 c = texture(uSrc, uv).rgb;
+  // Old backlight: warm, uneven, a little dim.
+  c = mix(c, c * vec3(1.07, 0.98, 0.84) + vec3(0.012, 0.008, 0.0), uAge);
+  float bleed = exp(-length((uv - vec2(0.02, 0.05)) * vec2(1.2, 2.0)) * 4.0) * 0.12 + exp(-length((uv - vec2(0.98, 0.96)) * vec2(1.6, 2.2)) * 5.0) * 0.08
+    + exp(-length((uv - vec2(0.5, -0.02)) * vec2(1.0, 4.0)) * 4.0) * 0.06;
+  c += vec3(0.85, 0.8, 0.66) * bleed * uAge;
+  // Faint violet in the far dark corner.
+  float vio = exp(-length((uv - vec2(0.88, 0.85)) * vec2(1.5, 1.8)) * 3.0);
+  c = mix(c, c * vec3(0.86, 0.78, 1.04), vio * 0.5 * uAge);
+  // Rows, grain, dust.
+  vec2 px = gl_FragCoord.xy;
+  c *= 1.0 - 0.03 * uAge * step(0.66, fract(px.y / (3.0 * uDpr)));
+  c += (hash(px + fract(uTime) * 97.0) - 0.5) * (0.025 + 0.035 * uAge);
+  float dust = step(0.9993, hash(floor(uv * uFb / (1.5 * uDpr))));
+  c += dust * 0.05 * uAge;
+  // A vignette, heavier with age.
+  float v = smoothstep(1.35, 0.35, length(q * vec2(0.92, 1.05)));
+  c *= mix(1.0, v, 0.5 + 0.3 * uAge);
+  // One stuck green pixel.
+  vec2 sp = floor(vec2(0.71, 0.63) * uFb);
+  if (all(equal(floor(px), sp))) c = vec3(0.3, 1.0, 0.35);
+  o = vec4(c, 1.0);
+}`;
+
+const P = {
+  copy: prog(QUAD_VS, COPY_FS), blur: prog(QUAD_VS, BLUR_FS), fade: prog(QUAD_VS, FADE_FS),
+  win: prog(WIN_VS, WIN_FS), shadow: prog(QUAD_VS, SHADOW_FS), post: prog(QUAD_VS, POST_FS),
+};
+const quad = gl.createVertexArray(); gl.bindVertexArray(quad);
+const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+[P.copy, P.blur, P.fade, P.shadow, P.post].forEach(q => gl.bindAttribLocation(q.p, 0, 'aPos'));
+
+// Window grid: NX by NY vertices, shared UVs and indices.
+const NX = 16, NY = 12, NV = NX * NY;
+const wvao = gl.createVertexArray(); gl.bindVertexArray(wvao);
+const posBuf = gl.createBuffer(), uvBuf = gl.createBuffer(), idxBuf = gl.createBuffer();
+const uvs = new Float32Array(NV * 2), idx = [];
+for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { uvs[(j * NX + i) * 2] = i / (NX - 1); uvs[(j * NX + i) * 2 + 1] = j / (NY - 1); }
+for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) { const a = j * NX + i; idx.push(a, a + 1, a + NX, a + 1, a + NX + 1, a + NX); }
+const aPosW = gl.getAttribLocation(P.win.p, 'aPos'), aUvW = gl.getAttribLocation(P.win.p, 'aUv');
+gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.bufferData(gl.ARRAY_BUFFER, NV * 8, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(aPosW); gl.vertexAttribPointer(aPosW, 2, gl.FLOAT, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf); gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(aUvW); gl.vertexAttribPointer(aUvW, 2, gl.FLOAT, false, 0, 0);
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+gl.bindVertexArray(null);
+
+/* ---------- scene state ---------- */
+let W = 0, H = 0, dpr = 1, FW = 0, FH = 0;
+let deskTex = null, scene = null, acc = null, b1 = null, b2 = null, spots = [];
+const deskCanvas = document.createElement('canvas');
+const wins = [];
+let lastPhone = null, nextId = 1, blurDirty = true, clearing = 0, accDirty = false;
+
+const GLASS_TINT = [0.27, 0.33, 0.37, 0.34], KID_TINT = [0.04, 0.04, 0.06, 0.82];
+function makeWin(spec) {
+  const w = Math.min(spec.w, W - 16), h = Math.min(spec.h, H - 90);
+  const win = { id: nextId++, skin: 'glass', ...spec, w, h, x: spec.x, y: spec.y, vx: 0, vy: 0,
+    pos: new Float32Array(NV * 2), vel: new Float32Array(NV * 2), alpha: 1, state: 'open', g: 0, gTo: 0, pop: spec.pop ? 0.82 : 1, closing: 0 };
+  win.x = clamp(win.x, 4, W - w - 4); win.y = clamp(win.y, 28, H - h - 6);
+  win.tex = tex(1, 1); upload(win.tex, paintWindow(win));
+  const cx = win.x + w / 2, cy = win.y + h / 2;
+  for (let k = 0; k < NV; k++) {
+    const u = uvs[k * 2], v = uvs[k * 2 + 1];
+    win.pos[k * 2] = cx + (u - 0.5) * w * win.pop; win.pos[k * 2 + 1] = cy + (v - 0.5) * h * win.pop;
+  }
+  win.pop = 1;
+  wins.push(win);
+  return win;
+}
+function killWin(win) { gl.deleteTexture(win.tex); wins.splice(wins.indexOf(win), 1); }
+
+function seedScene() {
+  wins.splice(0).forEach(w => gl.deleteTexture(w.tex));
+  const phone = W < 600;
+  if (phone) {
+    makeWin({ kind: 'nfo', skin: 'kid', title: 'd4rkm0th.nfo', x: 10, y: 34, w: W - 20, h: 236 });
+    makeWin({ kind: 'dialog', title: 'Notice', x: 18, y: H * 0.5, w: W - 36, h: 132, head: 'You looked away.', body: 'So I tidied up.', yes: 'Thanks' });
+  } else {
+    makeWin({ kind: 'nfo', skin: 'kid', title: 'd4rkm0th.nfo', x: W * 0.6, y: H * 0.08, w: 390, h: 240 });
+    makeWin({ kind: 'files', title: 'Basement', x: W * 0.05, y: H * 0.12, w: 600, h: 330 });
+    makeWin({ kind: 'gauge', skin: 'kid', title: 'cpu', x: W * 0.875, y: H * 0.6, w: 120, h: 120 });
+    makeWin({ kind: 'dialog', title: 'Notice', x: W * 0.36, y: H * 0.55, w: 380, h: 132, head: 'This copy is genuine :)', body: 'Shutting down is not recommended.', yes: 'Keep on', no: 'Later' });
+  }
+}
+
+function resize() {
+  const s = fitCanvas(canvas, { budget: 2.4e6 });
+  const changed = s.w !== W || s.h !== H;
+  W = s.w; H = s.h; dpr = s.dpr; FW = s.W; FH = s.H;
+  if (!changed && scene) return;
+  spots = bakeDesktop(deskCanvas, W, H);
+  if (deskTex) gl.deleteTexture(deskTex);
+  deskTex = tex(1, 1); upload(deskTex, deskCanvas);
+  const oldAcc = acc;
+  [scene, b1, b2].forEach(free);
+  scene = target(FW, FH); acc = target(FW, FH);
+  b1 = target(Math.max(1, FW >> 2), Math.max(1, FH >> 2)); b2 = target(b1.w, b1.h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, acc.f); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  free(oldAcc);
+  // A switch between phone and desk layouts lays the desktop out again.
+  const phone = W < 600;
+  if (!wins.length || phone !== lastPhone) seedScene();
+  else wins.forEach(w => { w.x = clamp(w.x, 4, Math.max(4, W - w.w - 4)); w.y = clamp(w.y, 28, Math.max(28, H - w.h - 6)); });
+  lastPhone = phone;
+  blurDirty = true;
+  wake();
+}
+
+/* ---------- drawing ---------- */
+function fsq(pr) { gl.useProgram(pr.p); gl.bindVertexArray(quad); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
+function drawWin(win, shiftX = 0, shiftY = 0, alpha = win.alpha) {
+  gl.useProgram(P.win.p); gl.bindVertexArray(wvao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, win.pos);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, win.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b2.t);
+  const u = P.win.u;
+  gl.uniform1i(u.uFace, 0); gl.uniform1i(u.uBlur, 1);
+  gl.uniform2f(u.uRes, W, H); gl.uniform2f(u.uShift, shiftX, shiftY); gl.uniform2f(u.uSize, win.w, win.h); gl.uniform2f(u.uFb, FW, FH);
+  gl.uniform1f(u.uR, win.skin === 'kid' ? 4 : 9); gl.uniform1f(u.uAlpha, alpha);
+  gl.uniform4fv(u.uTint, win.skin === 'kid' ? KID_TINT : GLASS_TINT);
+  gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_SHORT, 0);
+  gl.activeTexture(gl.TEXTURE0);
+}
+function bbox(win) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (let k = 0; k < NV; k++) { const x = win.pos[k * 2], y = win.pos[k * 2 + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return [x0, y0, x1 - x0, y1 - y0];
+}
+function drawShadow(win) {
+  if (win.state !== 'open' || win.alpha < 0.05) return;
+  const u = P.shadow.u; gl.useProgram(P.shadow.p);
+  const b = bbox(win);
+  gl.uniform4fv(u.uRect, b); gl.uniform1f(u.uDpr, dpr); gl.uniform1f(u.uFbH, FH); gl.uniform1f(u.uK, (win === drag?.win ? 1.25 : 1) * win.alpha);
+  // A scissor keeps the shadow pass near its window.
+  const m = 90, x0 = Math.floor((b[0] - m) * dpr), y0 = Math.floor(FH - (b[1] + b[3] + m + 20) * dpr);
+  gl.enable(gl.SCISSOR_TEST); gl.scissor(Math.max(0, x0), Math.max(0, y0), Math.ceil((b[2] + 2 * m) * dpr), Math.ceil((b[3] + 2 * m + 20) * dpr));
+  fsq(P.shadow);
+  gl.disable(gl.SCISSOR_TEST);
+}
+function blurPass() {
+  gl.disable(gl.BLEND);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.f); gl.viewport(0, 0, b1.w, b1.h);
+  gl.useProgram(P.copy.p); gl.bindTexture(gl.TEXTURE_2D, scene.t); gl.uniform1i(P.copy.u.uSrc, 0); gl.uniform1f(P.copy.u.uFlip, 0); fsq(P.copy);
+  for (let it = 0; it < 2; it++) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b2.f); gl.useProgram(P.blur.p); gl.bindTexture(gl.TEXTURE_2D, b1.t); gl.uniform2f(P.blur.u.uDir, 1.6 / b1.w, 0); fsq(P.blur);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b1.f); gl.bindTexture(gl.TEXTURE_2D, b2.t); gl.uniform2f(P.blur.u.uDir, 0, 1.6 / b1.h); fsq(P.blur);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.f); gl.useProgram(P.copy.p); gl.bindTexture(gl.TEXTURE_2D, b1.t); fsq(P.copy);
+}
+function baseScene() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.f); gl.viewport(0, 0, FW, FH);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.copy.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, deskTex); gl.uniform1i(P.copy.u.uSrc, 0); gl.uniform1f(P.copy.u.uFlip, 1); fsq(P.copy);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindTexture(gl.TEXTURE_2D, acc.t); gl.uniform1f(P.copy.u.uFlip, 0); fsq(P.copy);
+}
+function render(t) {
+  // Smear stamps go on the plate before the live windows draw.
+  if (stamps.length) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, acc.f); gl.viewport(0, 0, FW, FH);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    stamps.forEach(([win, sx, sy]) => drawWin(win, sx, sy, 1));
+    stamps.length = 0; blurDirty = true;
+  }
+  if (clearing > 0) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, acc.f); gl.viewport(0, 0, FW, FH);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(P.fade.p); gl.uniform1f(P.fade.u.uA, 0.16); fsq(P.fade);
+    if (--clearing === 0) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+    blurDirty = true;
+  }
+  baseScene();
+  if (blurDirty) { blurPass(); blurDirty = false; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.f); gl.viewport(0, 0, FW, FH);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  wins.forEach(win => { if (win.state === 'min') return; drawShadow(win); drawWin(win); });
+  gl.disable(gl.BLEND);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, FW, FH);
+  gl.useProgram(P.post.p); gl.bindTexture(gl.TEXTURE_2D, scene.t);
+  const u = P.post.u;
+  gl.uniform1i(u.uSrc, 0); gl.uniform2f(u.uFb, FW, FH); gl.uniform1f(u.uAge, opts.age); gl.uniform1f(u.uTime, reduce ? 0 : t * 0.001); gl.uniform1f(u.uDpr, dpr);
+  fsq(P.post);
+}
+
+/* ---------- physics: springy windows ---------- */
+const stamps = [];
+let drag = null;
+function stiff() { return opts.mode === 'jelly' && !reduce ? [170, 9] : [900, 55]; }
+function step(win, dt) {
+  // The anchor flies after a fling and bounces off the edges.
+  if (drag?.win !== win && win.state === 'open' && (Math.abs(win.vx) + Math.abs(win.vy) > 1)) {
+    win.x += win.vx * dt; win.y += win.vy * dt;
+    const f = Math.exp(-dt * 3.2); win.vx *= f; win.vy *= f;
+    const minY = 28, maxX = W - win.w - 2, maxY = H - win.h - 2;
+    if (win.x < 2) { win.x = 2; win.vx = Math.abs(win.vx) * 0.55; bump(win); }
+    if (win.x > maxX) { win.x = maxX; win.vx = -Math.abs(win.vx) * 0.55; bump(win); }
+    if (win.y < minY) { win.y = minY; win.vy = Math.abs(win.vy) * 0.55; bump(win); }
+    if (win.y > maxY) { win.y = maxY; win.vy = -Math.abs(win.vy) * 0.55; bump(win); }
+  } else if (drag?.win !== win) { win.vx = win.vy = 0; }
+  if (win.state === 'min') { win.busy = false; return true; }
+  if (win.state === 'genie') return genie(win, dt);
+  if (win.closing) { win.closing = Math.min(1, win.closing + dt * 5); win.alpha = 1 - win.closing; if (win.closing >= 1) { killWin(win); return false; } }
+  const [K, Dm] = stiff();
+  const gx = drag?.win === win ? drag.gx : win.w / 2, gy = drag?.win === win ? drag.gy : win.h / 2;
+  const s = win.closing ? 1 - win.closing * 0.12 : 1;
+  let energy = 0;
+  const sub = 2, h = dt / sub;
+  for (let it = 0; it < sub; it++) {
+    for (let k = 0; k < NV; k++) {
+      const rx = uvs[k * 2] * win.w, ry = uvs[k * 2 + 1] * win.h;
+      const tx = win.x + win.w / 2 + (rx - win.w / 2) * s, ty = win.y + win.h / 2 + (ry - win.h / 2) * s;
+      const dist = Math.hypot(rx - gx, ry - gy);
+      const kk = K / (1 + dist / 140);
+      const i = k * 2;
+      const ax = kk * (tx - win.pos[i]) - Dm * win.vel[i], ay = kk * (ty - win.pos[i + 1]) - Dm * win.vel[i + 1];
+      win.vel[i] += ax * h; win.vel[i + 1] += ay * h;
+      win.pos[i] += win.vel[i] * h; win.pos[i + 1] += win.vel[i + 1] * h;
+      if (it === sub - 1) energy += Math.abs(win.vel[i]) + Math.abs(win.vel[i + 1]) + Math.abs(tx - win.pos[i]) + Math.abs(ty - win.pos[i + 1]);
+    }
+  }
+  win.busy = energy / NV > 0.05 || Math.abs(win.vx) + Math.abs(win.vy) > 1 || win.closing > 0;
+  return true;
+}
+// Fold toward a shelf spot; the bottom rows lead.
+function genie(win, dt) {
+  win.g = clamp(win.g + (win.gTo > win.g ? 1 : -1) * dt / (reduce ? 0.2 : 0.55));
+  const sp = win.spot, p = win.g;
+  for (let k = 0; k < NV; k++) {
+    const u = uvs[k * 2], v = uvs[k * 2 + 1];
+    const e = smooth(clamp((p * 1.5 - (1 - v) * 0.5)));
+    const width = lerp(win.w, 22, Math.pow(e, 0.8));
+    win.pos[k * 2] = lerp(win.x + win.w / 2, sp.x, e) + (u - 0.5) * width;
+    win.pos[k * 2 + 1] = lerp(win.y + v * win.h, sp.y, e);
+    win.vel[k * 2] = win.vel[k * 2 + 1] = 0;
+  }
+  win.alpha = 1 - smooth(clamp((p - 0.8) / 0.2));
+  if (p >= 1 && win.gTo === 1) { win.state = 'min'; win.busy = false; }
+  else if (p <= 0 && win.gTo === 0) { win.state = 'open'; win.alpha = 1; win.busy = false; }
+  else win.busy = true;
+  return true;
+}
+const SPOT_FOR = { files: 'box', note: 'page', nfo: 'disc', gauge: 'lamp', dialog: 'jar' };
+function fold(win) {
+  if (win.state !== 'open') return;
+  win.spot = spots.find(s => s.kind === SPOT_FOR[win.kind]) || spots[0];
+  win.state = 'genie'; win.g = 0; win.gTo = 1; whoosh(true); wake();
+}
+function unfold(win) { win.state = 'genie'; win.gTo = 0; raise(win); whoosh(false); wake(); }
+function raise(win) { wins.splice(wins.indexOf(win), 1); wins.push(win); }
+
+/* ---------- actions ---------- */
+const NOTES = [['groceries', 'call mum', 'turn it off tonight'], ['it is warm in here', 'the fan never stops', 'is that normal'], ['note to self:', 'do NOT update', 'it gets mad']];
+let noteN = 0;
+function addWindow() {
+  const kinds = ['note', 'files', 'note', 'nfo'];
+  const kind = kinds[noteN % kinds.length];
+  const x = W * 0.15 + (noteN * 47) % Math.max(60, W * 0.5), y = 40 + (noteN * 31) % Math.max(40, H * 0.4);
+  if (kind === 'note') makeWin({ kind, title: 'your notes', x, y, w: 300, h: 220, lines: NOTES[noteN % NOTES.length], pop: true });
+  else if (kind === 'files') makeWin({ kind, title: 'Basement', x, y, w: 560, h: 310, pop: true });
+  else makeWin({ kind, skin: 'kid', title: 'd4rkm0th.nfo', x, y, w: 390, h: 240, pop: true });
+  noteN++;
+  // Keep the desktop at ten windows.
+  while (wins.filter(w => w.kind !== 'dialog').length > 10) killWin(wins.find(w => w.kind !== 'dialog'));
+  click(); wake();
+}
+const CASCADE = [['Activation not needed.', 'It is late. Stay a while.'], ['Are you sure?', 'You were sure last time too.'], ['Error 0x0333', 'Everything is fine.'], ['Still here?', 'Good.'], ['Do not close this.', 'I mean it nicely.'], ['Thank you.', 'For staying.']];
+let cascading = false;
+function cascade() {
+  if (cascading) return;
+  cascading = true;
+  const n = 6, bw = Math.min(360, W - 40), bx = W < 600 ? 20 : W * 0.58, by = H * 0.12;
+  for (let i = 0; i < n; i++) setTimeout(() => {
+    const [head, body] = CASCADE[i];
+    makeWin({ kind: 'dialog', title: 'Notice', x: bx + i * (W < 600 ? 6 : 20), y: by + i * 24, w: bw, h: 126, head, body, yes: 'Stay', pop: true, cascade: true });
+    ding(i); wake();
+    if (i === n - 1) cascading = false;
+  }, reduce ? 0 : i * 110);
+}
+function closeDialogs(from) {
+  const list = wins.filter(w => w.kind === 'dialog' && w.cascade);
+  const all = from.cascade ? list.reverse() : [from];
+  all.forEach((w, i) => setTimeout(() => { w.closing = 0.0001; click(); wake(); }, i * 70));
+}
+function clearPlate() { clearing = 14; click(); wake(); }
+
+/* ---------- pointer: tap, drag, hold ---------- */
+function at(e) { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+function hit(x, y) {
+  for (let i = wins.length - 1; i >= 0; i--) {
+    const w = wins[i];
+    if (w.state !== 'open' || w.closing) continue;
+    if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) return w;
+  }
+  return null;
+}
+let press = null, lastTap = { t: 0, id: 0 };
+canvas.addEventListener('pointerdown', e => {
+  const [x, y] = at(e);
+  canvas.setPointerCapture(e.pointerId);
+  const win = hit(x, y);
+  press = { id: e.pointerId, x0: x, y0: y, t0: performance.now(), win, mode: 'press', hx: [[x, y, performance.now()]] };
+  if (win) raise(win);
+  wake();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const [x, y] = at(e), now = performance.now();
+  press.hx.push([x, y, now]); if (press.hx.length > 6) press.hx.shift();
+  if (press.mode === 'press' && Math.hypot(x - press.x0, y - press.y0) > 8 && press.win) {
+    press.mode = 'drag';
+    drag = { win: press.win, gx: press.x0 - press.win.x, gy: press.y0 - press.win.y, lx: press.win.x, ly: press.win.y };
+    press.win.vx = press.win.vy = 0;
+    rub(true);
+  }
+  if (press.mode === 'drag') {
+    const win = drag.win;
+    win.x = x - drag.gx; win.y = clamp(y - drag.gy, 28 - win.h * 0.6, H - 20);
+    wake();
+  }
+});
+function endPress(e, cancel) {
+  if (!press || e.pointerId !== press.id) return;
+  const [x, y] = at(e), now = performance.now();
+  if (press.mode === 'drag') {
+    // Fling speed comes from the last few samples.
+    const h = press.hx, a = h[0], b = h[h.length - 1], dt = Math.max(16, b[2] - a[2]) / 1000;
+    const win = drag.win;
+    if (!cancel && now - b[2] < 80) { win.vx = clamp((b[0] - a[0]) / dt, -2600, 2600); win.vy = clamp((b[1] - a[1]) / dt, -2600, 2600); }
+    drag = null; rub(false);
+  } else if (!cancel) tap(x, y, press.win);
+  press = null; wake();
+}
+canvas.addEventListener('pointerup', e => endPress(e, false));
+canvas.addEventListener('pointercancel', e => endPress(e, true));
+canvas.addEventListener('lostpointercapture', e => endPress(e, true));
+
+function tap(x, y, win) {
+  if (win) {
+    const lx = x - win.x, ly = y - win.y;
+    if (ly < 30) {
+      // Beads: right one closes, left one folds.
+      if (Math.hypot(lx - (win.w - (win.skin === 'kid' ? 16 : 20)), ly - (win.skin === 'kid' ? 13 : 15)) < 10) { if (win.kind === 'dialog') closeDialogs(win); else { win.closing = 0.0001; click(); } return; }
+      if (Math.hypot(lx - (win.w - (win.skin === 'kid' ? 34 : 38)), ly - (win.skin === 'kid' ? 13 : 15)) < 10) { fold(win); return; }
+      const now = performance.now();
+      if (lastTap.id === win.id && now - lastTap.t < 380) { fold(win); lastTap.t = 0; return; }
+      lastTap = { t: now, id: win.id };
+    }
+    if (win.kind === 'dialog' && ly > win.h - 42 && lx > win.w - 190) { closeDialogs(win); return; }
+    click();
+    return;
+  }
+  // The shelf brings a folded window back, or opens a new one.
+  if (y > H - 70) {
+    const s = spots.reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a), spots[0]);
+    if (s && Math.abs(s.x - x) < 28) {
+      const folded = [...wins].reverse().find(w => w.state === 'min' && w.spot === s) || [...wins].reverse().find(w => w.state === 'min');
+      if (folded) unfold(folded); else addWindow();
+    }
+  }
+}
+
+/* ---------- sound: hum, clicks, dings, glass rub ---------- */
+const kit = audioKit({ keys: new Set([' ']) });
+let hum = null, rubber = null;
+function startHum(ac) {
+  if (hum) return;
+  hum = ac.createGain(); hum.gain.value = 0.012; hum.connect(kit.out);
+  [60, 120, 180].forEach((f, i) => { const o = ac.createOscillator(); o.frequency.value = f; const gg = ac.createGain(); gg.gain.value = [1, 0.5, 0.25][i]; o.connect(gg); gg.connect(hum); o.start(); });
+}
+function voice() { const ac = kit.live(); if (ac) startHum(ac); return ac; }
+function click() {
+  const ac = voice(); if (!ac || !kit.noise) return;
+  const s = ac.createBufferSource(); s.buffer = kit.noise; s.playbackRate.value = 0.9 + Math.random() * 0.3;
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600 + Math.random() * 900; f.Q.value = 2;
+  const gg = ac.createGain(), t = ac.currentTime; gg.gain.setValueAtTime(0.22, t); gg.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+  s.connect(f); f.connect(gg); gg.connect(kit.out); s.start(t, Math.random() * 0.5, 0.05);
+}
+// A glassy two-note ding, one step higher per dialog.
+function ding(i) {
+  const ac = voice(); if (!ac) return;
+  const t = ac.currentTime, base = 440 * Math.pow(2, (i * 2 + Math.random() * 0.2) / 12);
+  [[base, 0.09], [base * 1.5, 0.05], [base * 2.76, 0.025]].forEach(([f, a], k) => {
+    const o = ac.createOscillator(), gg = ac.createGain(); o.type = 'sine'; o.frequency.value = f * (1 + (Math.random() - 0.5) * 0.004);
+    gg.gain.setValueAtTime(0, t + k * 0.06); gg.gain.linearRampToValueAtTime(a, t + k * 0.06 + 0.005); gg.gain.exponentialRampToValueAtTime(0.0005, t + k * 0.06 + 0.9);
+    o.connect(gg); gg.connect(kit.out); o.start(t + k * 0.06); o.stop(t + k * 0.06 + 1);
+  });
+}
+function whoosh(down) {
+  const ac = voice(); if (!ac || !kit.noise) return;
+  const s = ac.createBufferSource(); s.buffer = kit.noise; s.loop = true;
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 3;
+  const t = ac.currentTime; f.frequency.setValueAtTime(down ? 2400 : 400, t); f.frequency.exponentialRampToValueAtTime(down ? 380 : 2400, t + 0.5);
+  const gg = ac.createGain(); gg.gain.setValueAtTime(0, t); gg.gain.linearRampToValueAtTime(0.12, t + 0.1); gg.gain.linearRampToValueAtTime(0, t + 0.55);
+  s.connect(f); f.connect(gg); gg.connect(kit.out); s.start(t); s.stop(t + 0.6);
+}
+// Dragging glass makes a soft rub that follows speed.
+function rub(on) {
+  const ac = voice();
+  if (on && ac && kit.noise && !rubber) {
+    const s = ac.createBufferSource(); s.buffer = kit.noise; s.loop = true;
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.4;
+    const gg = ac.createGain(); gg.gain.value = 0;
+    s.connect(f); f.connect(gg); gg.connect(kit.out); s.start();
+    rubber = { s, f, g: gg };
+  } else if (!on && rubber) {
+    const r = rubber; rubber = null; const t = r.g.context.currentTime;
+    r.g.gain.setTargetAtTime(0, t, 0.05); r.s.stop(t + 0.3);
+  }
+}
+
+/* ---------- frame loop: lively, drifting, asleep ---------- */
+let raf = 0, visible = true, last = 0, lastInput = performance.now(), lastDraw = 0;
+function wake() { lastInput = performance.now(); if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+function frame(now) {
+  raf = 0;
+  if (!scene) return;
+  const dt = Math.min(1 / 30, (now - last) / 1000); last = now;
+  let busy = !!drag || clearing > 0 || cascading;
+  try {
+    for (const win of [...wins]) if (step(win, dt) && win.busy) busy = true;
+    // Smear: stamp the moving window along its path.
+    if (opts.mode === 'smear') for (const win of wins) {
+      if (win.state !== 'open' || win.closing) continue;
+      const moving = drag?.win === win || Math.abs(win.vx) + Math.abs(win.vy) > 30;
+      if (!moving) { win.lsx = undefined; continue; }
+      if (win.lsx === undefined) { win.lsx = win.x; win.lsy = win.y; continue; }
+      const d = Math.hypot(win.x - win.lsx, win.y - win.lsy), n = Math.min(14, Math.floor(d / 5));
+      for (let j = 1; j <= n; j++) {
+        const t = j / n;
+        stamps.push([win, lerp(win.lsx, win.x, t) - win.x, lerp(win.lsy, win.y, t) - win.y]);
+      }
+      if (n) { win.lsx = win.x; win.lsy = win.y; }
+    }
+    if (rubber && drag) {
+      const h = press?.hx; let sp = 0;
+      if (h && h.length > 1) { const a = h[0], b = h[h.length - 1]; sp = Math.hypot(b[0] - a[0], b[1] - a[1]) / Math.max(16, b[2] - a[2]); }
+      rubber.g.gain.setTargetAtTime(clamp(sp * 0.08, 0, 0.09), rubber.g.context.currentTime, 0.04);
+      rubber.f.frequency.setTargetAtTime(600 + sp * 500, rubber.g.context.currentTime, 0.05);
+    }
+    const idle = now - lastInput;
+    // Drifting grain runs at 30 fps; a minute without input sleeps.
+    if (busy || now - lastDraw > 31) { render(now); lastDraw = now; markReady(); }
+    if (busy || (!reduce && idle < 60000)) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf);
+  } catch (err) { raf = 0; throw err; }
+}
+whenVisible(stage, v => { visible = v; if (v) wake(); else if (raf) { cancelAnimationFrame(raf); raf = 0; } });
+
+/* ---------- bar ---------- */
+const mode = choices(document.getElementById('mode'), v => { opts.mode = v; save('mode', v); wake(); });
+mode.set(opts.mode);
+const age = document.getElementById('age');
+age.value = opts.age;
+age.addEventListener('input', () => { opts.age = +age.value; save('age', opts.age); wake(); });
+document.getElementById('add').addEventListener('click', addWindow);
+document.getElementById('err').addEventListener('click', cascade);
+document.getElementById('clear').addEventListener('click', clearPlate);
+stage.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); cascade(); } });
+
+/* ---------- start ---------- */
+await Promise.all(['600 12px Gabarito', '700 12px Gabarito', `500 12px ${MONO}`, `700 12px ${MONO}`].map(f => document.fonts.load(f).catch(() => {})));
+new ResizeObserver(() => resize()).observe(stage);
+// A new quality rebuilds the targets at the new pixel ratio.
+onQuality(() => { W = 0; resize(); });
+resize();
+// QA reads the window list with ?qa.
+if (new URLSearchParams(location.search).has('qa')) window.__shadyos = { wins };
+</script>
+</body>
+</html>
