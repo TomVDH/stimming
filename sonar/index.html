@@ -266,7 +266,8 @@ void main() {
   float spread = 1.0 / (1.0 + rn * rn * 2.4);
   float ringDown = exp(-rn * 55.0) * 1.3;
   float e = (clutter * shade * speck * 0.3 + tgt * (0.75 + 0.35 * speck)) * spread + ringDown;
-  o = vec4(e * beam * uW, 0.0, 1.0);
+  // The front itself burns a band into the fast flash, which trails it.
+  o = vec4((e * uW.x + 0.32) * beam, e * uW.y * beam, 0.0, 1.0);
 }`;
 // The frame holds the raw light of the current display.
 const FRAME = `#version 300 es
@@ -287,7 +288,7 @@ void main() {
     if (uFront > 0.0) {
       float beam = uHalf > 3.0 ? 1.0 : smoothstep(uHalf, uHalf * 0.55, angDiff(atan(p.x, p.y), uBeam));
       float g = (r - uFront) / (1.4 * uDpr);
-      L += vec2(0.55, 0.1) * exp(-g * g) * beam;
+      L += vec2(0.3, 0.05) * exp(-g * g) * beam;
     }
     // A foreign ping shows as a bright strobe on its bearing.
     if (uStrobe.y > 0.0) {
@@ -361,8 +362,10 @@ void main() {
   // Each colour lands a little apart, more so away from centre.
   vec2 ca = (uv - 0.5) * uFringe + vec2(0.7 * uDpr / uRes.x, 0.0);
   vec3 beam = vec3(phosphor(uv + ca).r, phosphor(uv).g, phosphor(uv - ca).b);
-  vec3 hud = vec3(texture(uHud, uv + ca * 1.4).r, texture(uHud, uv).r, texture(uHud, uv - ca * 1.4).r) * uTint;
-  vec3 light = beam + hud;
+  vec3 hud = vec3(texture(uHud, uv + ca * 1.4).r, texture(uHud, uv).r, texture(uHud, uv - ca * 1.4).r) * uTint * 1.7;
+  // A faint echo of the picture trails to the right, as on old cabling.
+  vec2 echo = vec2(5.0 * uDpr / uRes.x, 0.0);
+  vec3 light = beam + hud + (phosphor(uv - echo) + texture(uHud, uv - echo).r * uTint) * 0.07;
 
   // A soft mask and beam-wide scanlines follow the raster.
   vec2 pw = uv * uRes;
@@ -375,7 +378,7 @@ void main() {
   // Halation: the beam's bloom and a wide halo round the graticule.
   vec2 bl = texture(uBloom, uv).rg;
   vec3 halo = (uFlash * (1.0 - exp(-bl.r * uGain.x)) + uGlow * (1.0 - exp(-bl.g * uGain.y))) * uGain.z;
-  halo += uTint * (textureLod(uHud, uv, 3.5).r * 0.3 + textureLod(uHud, uv, 5.5).r * 0.18);
+  halo += uTint * (textureLod(uHud, uv, 3.5).r * 0.4 + textureLod(uHud, uv, 5.5).r * 0.24);
 
   // Unlit phosphor is a dark warm grey with the mask just visible.
   vec3 col = uDark * mix(vec3(1.0), grille, 0.5);
@@ -436,6 +439,12 @@ void main() {
   vec2 css = gl_FragCoord.xy / uDpr;
   o = vec4(clamp(dust(css), 0.0, 1.0), smudge(css), 0.0, 1.0);
 }`;
+// Ghosting: the face keeps a short trail of whatever moves on it.
+const GHOST = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc, uOld; uniform float uK;
+void main() { o = vec4(max(texture(uSrc, vUv).rg, texture(uOld, vUv).rg * uK), 0.0, 1.0); }`;
 const SCREEN_VS = `#version 300 es
 in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -462,6 +471,7 @@ const P = {
   blur: program(QUAD_VS, BLUR, ['aPos']),
   screen: program(SCREEN_VS, SCREEN, ['aPos']),
   glass: program(SCREEN_VS, GLASS, ['aPos']),
+  ghost: program(QUAD_VS, GHOST, ['aPos']),
 };
 
 const quadVao = gl.createVertexArray();
@@ -485,7 +495,7 @@ function target(w, h) {
   return { tex, fb, w, h };
 }
 const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
-let acc = [], ai = 0, frame = null, blm = [], glass = null;
+let acc = [], ai = 0, frame = null, blm = [], glass = null, ghost = [], gi = 0;
 const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
 
 // The waterfall is a ring of rows: one byte per frequency bin.
@@ -733,64 +743,66 @@ function buildVoices() {
   // Echoes of the recorded ping come back muffled through the reverb.
   const echoIn = new T.Filter({ type: 'lowpass', frequency: 3400, Q: 0.5 }).connect(rev);
   // Boot beeps and the alarm: a small square tone.
-  const beep = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.002, decay: 0.05, sustain: 0, release: 0.02 }, volume: -32 }).connect(out);
+  const beep = new T.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.004, decay: 0.08, sustain: 0, release: 0.04 }, volume: -30 }).connect(out);
   // Charging a power ping: a whine that climbs.
   const chargeG = new T.Gain(0).connect(rev);
-  const charge = new T.Oscillator(260, 'sine').connect(chargeG).start();
+  const charge = new T.Oscillator(180, 'sine').connect(chargeG).start();
   // The ping: a clean sine with a long, wet tail.
   const ping = new T.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.004, decay: 1.1, sustain: 0, release: 0.6 }, volume: -11 }).connect(rev);
   const echoF = new T.Filter({ type: 'lowpass', frequency: 1350, Q: 0.7 }).connect(rev);
   const echo = new T.PolySynth(T.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.012, decay: 0.55, sustain: 0, release: 0.4 } }).connect(echoF);
   echo.maxPolyphony = 32; echo.volume.value = -13;
   const verbF = new T.Filter({ type: 'bandpass', frequency: 1100, Q: 0.9 }).connect(rev);
-  const verb = new T.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.06, decay: RING_T * 0.9, sustain: 0, release: 0.3 }, volume: -31 }).connect(verbF);
+  const verb = new T.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.06, decay: RING_T * 0.9, sustain: 0, release: 0.3 }, volume: -38 }).connect(verbF);
   // The sea bed hiss runs all the time, low and filtered.
   const bedG = new T.Gain(0).connect(out);
   new T.Noise('brown').connect(new T.Filter({ type: 'lowpass', frequency: 330 }).connect(bedG)).start();
   // The whale is two sines through a soft filter into the reverb.
   const whaleG = new T.Gain(0).connect(rev);
-  const whaleF = new T.Filter({ type: 'lowpass', frequency: 1600 }).connect(whaleG);
+  const whaleF = new T.Filter({ type: 'lowpass', frequency: 900, Q: 0.5 }).connect(whaleG);
   const w1 = new T.Oscillator(200, 'sine').connect(whaleF).start();
-  const w2g = new T.Gain(0.28).connect(whaleF);
-  const w2 = new T.Oscillator(400, 'triangle').connect(w2g).start();
-  // The far ship: two low tonals and a chuff, all beating with the blades.
+  const w2g = new T.Gain(0.12).connect(whaleF);
+  const w2 = new T.Oscillator(400, 'sine').connect(w2g).start();
+  // A propeller on a hydrophone is a chug: noise that beats with the blades.
   const propG = new T.Gain(0).connect(out);
   const beatG = new T.Gain(0.6).connect(propG);
-  const beat = new T.LFO(1, 0.25, 1).connect(beatG.gain).start();
-  const p1 = new T.Oscillator(74, 'sine').connect(beatG).start();
-  const p2g = new T.Gain(0.5).connect(beatG);
-  const p2 = new T.Oscillator(148, 'sine').connect(p2g).start();
-  const chuffG = new T.Gain(0.35).connect(beatG);
-  new T.Noise('pink').connect(new T.Filter({ type: 'bandpass', frequency: 650, Q: 1.2 }).connect(chuffG)).start();
+  const beat = new T.LFO(3, 0.05, 1).connect(beatG.gain).start();
+  new T.Noise('pink').connect(new T.Filter({ type: 'bandpass', frequency: 220, Q: 0.9 }).connect(beatG)).start();
+  const chuffG = new T.Gain(0.3).connect(beatG);
+  new T.Noise('pink').connect(new T.Filter({ type: 'bandpass', frequency: 900, Q: 1 }).connect(chuffG)).start();
+  // Only a whisper of machinery hum sits under the chug.
+  const humG = new T.Gain(0.06).connect(propG);
+  const p1 = new T.Oscillator(74, 'sine').connect(humG).start();
   // A knock: a dull thump with a short metal ring.
-  const thump = new T.MembraneSynth({ pitchDecay: 0.03, octaves: 2.5, envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.1 }, volume: -5 }).connect(rev);
-  const clank = new T.MetalSynth({ harmonicity: 3.1, modulationIndex: 14, resonance: 1900, octaves: 1, envelope: { attack: 0.001, decay: 0.7, release: 0.2 }, volume: -30 }).connect(rev);
-  // The Auntie: two growling saws under a swept low filter.
+  const thump = new T.MembraneSynth({ pitchDecay: 0.03, octaves: 2, envelope: { attack: 0.002, decay: 0.28, sustain: 0, release: 0.1 }, volume: -12 }).connect(rev);
+  const clank = new T.MetalSynth({ harmonicity: 3.1, modulationIndex: 14, resonance: 1900, octaves: 1, envelope: { attack: 0.001, decay: 0.5, release: 0.2 }, volume: -42 }).connect(rev);
+  // The Auntie: a deep rumble and a low groan that swells slowly.
   const auntG = new T.Gain(0).connect(rev);
-  const auntF = new T.Filter({ type: 'lowpass', frequency: 260, Q: 2 }).connect(auntG);
-  const aun1 = new T.Oscillator(52, 'sawtooth').connect(auntF).start();
-  const aun2 = new T.Oscillator(78, 'sawtooth').connect(auntF).start();
-  new T.LFO(0.7, 160, 420).connect(auntF.frequency).start();
-  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, p2, thump, clank, auntG, aun1, aun2 };
+  const auntS = new T.Gain(0.6).connect(auntG);
+  new T.LFO(0.35, 0.35, 1).connect(auntS.gain).start();
+  new T.Noise('brown').connect(new T.Filter({ type: 'lowpass', frequency: 120 }).connect(auntS)).start();
+  const aun1 = new T.Oscillator(52, 'sine').connect(auntS).start();
+  const aun2g = new T.Gain(0.3).connect(auntS);
+  const aun2 = new T.Oscillator(78, 'sine').connect(aun2g).start();
+  return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, thump, clank, auntG, aun1, aun2 };
 }
 // Continuous voices follow the shared model each frame.
 function steerVoices() {
   const v = voices();
   if (!v) return;
   const sono = opts.mode === 'sono';
-  v.bedG.gain.rampTo(sono ? 0.16 : 0.07, 0.3);
+  v.bedG.gain.rampTo(sono ? 0.09 : 0.04, 0.3);
   v.w1.frequency.rampTo(song.f, 0.05);
   v.w2.frequency.rampTo(song.f * 2, 0.05);
-  v.whaleG.gain.rampTo(song.amp * (sono ? 0.2 : clock < song.loud ? 0.16 : 0.06), 0.06);
+  v.whaleG.gain.rampTo(song.amp * (sono ? 0.07 : clock < song.loud ? 0.05 : 0.02), 0.06);
   // The loudest propeller in the water drives the prop voice.
   let src = { f1: prop.f1, blades: prop.blades, amp: prop.amp };
   for (const c of sea.contacts) if (c.ton && c.kind !== 6) { const a = tonalAmp(c); if (a > src.amp) src = { f1: c.ton.f1, blades: c.ton.blades, amp: a }; }
-  v.propG.gain.rampTo(Math.min(1, src.amp) * (sono ? 0.1 : 0.035), 0.3);
+  v.propG.gain.rampTo(Math.min(1, src.amp) * (sono ? 0.07 : 0.02), 0.3);
   v.p1.frequency.rampTo(src.f1 * 2, 0.5);
-  v.p2.frequency.rampTo(src.f1 * 4, 0.5);
-  v.beat.frequency.rampTo(src.f1 / src.blades / 9, 0.5);
+  v.beat.frequency.rampTo(clamp(src.f1 * src.blades / 40, 2, 6), 0.5);
   const au = sea.contacts.find(c => c.kind === 6), aa = au ? tonalAmp(au) : 0;
-  v.auntG.gain.rampTo(Math.min(1, aa) * (sono ? 0.12 : 0.05), 0.4);
+  v.auntG.gain.rampTo(Math.min(1, aa) * (sono ? 0.08 : 0.03), 0.4);
   if (au) { const g = auntieGroan(clock, au); v.aun1.frequency.rampTo(g, 0.2); v.aun2.frequency.rampTo(g * 1.5, 0.2); }
 }
 
@@ -826,6 +838,7 @@ function ping(brg = null, power = 0) {
   if (boot.phase !== 'run') { endBoot(); return; }
   const omni = brg == null;
   ring.on = true; ring.t = 0; ring.front = 0; ring.power = power;
+  press(power > 0 ? 'hold' : 'ping');
   ring.beam = omni ? 0 : brg; ring.half = omni ? PI + 1 : 17 * D2R;
   maybeOdd();
   const R = rangeM();
@@ -941,8 +954,8 @@ const charge = { on: false, t0: 0 };
 function chargeSound(on) {
   const v = voices();
   if (!v) return;
-  v.charge.frequency.rampTo(on ? 820 : 260, on ? 1.6 : 0.05);
-  v.chargeG.gain.rampTo(on ? 0.05 : 0, on ? 0.3 : 0.05);
+  v.charge.frequency.rampTo(on ? 480 : 180, on ? 1.6 : 0.05);
+  v.chargeG.gain.rampTo(on ? 0.02 : 0, on ? 0.3 : 0.05);
 }
 const chargeLevel = () => clamp((clock - charge.t0) / 1.6, 0.2, 1);
 
@@ -964,6 +977,7 @@ function toggleTrack(x, y) {
   }
   if (!best) return false;
   const i = tracks.findIndex(t => t.c === best);
+  press('track');
   if (i >= 0) { say(`TRACK T${tracks[i].n}   DROPPED`); tracks.splice(i, 1); }
   else {
     const n = [1, 2, 3, 4, 5].find(k => !tracks.some(t => t.n === k));
@@ -1048,6 +1062,7 @@ function drawBoot(c, Y) {
 function knock() {
   if (boot.phase !== 'run') { endBoot(); return; }
   knockAt = clock;
+  press('knock');
   const v = voices();
   if (v) {
     const now = T.now() + 0.01;
@@ -1073,14 +1088,14 @@ const box = { x0: 0, y0: 0, x1: 1, y1: 1 };
 function measure() {
   const sr = stage.getBoundingClientRect(), first = barEl?.firstElementChild;
   safe = first ? clamp(sr.bottom - first.getBoundingClientRect().top, 0, sr.height * 0.4) * dpr : 0;
-  const lab = 30 * dpr;
-  const availH = H - safe - 20 * dpr;
+  const lab = 30 * dpr, keys = keysH() * dpr;
+  const availH = H - safe - keys - 20 * dpr;
   scope.rad = Math.max(40, Math.min(W / 2, availH / 2) - lab);
   scope.cx = W / 2;
-  scope.cy = safe + 10 * dpr + availH / 2;
+  scope.cy = safe + keys + 10 * dpr + availH / 2;
   box.x0 = Math.min(64 * dpr, W * 0.12); box.x1 = W - 22 * dpr;
   // Narrow screens stack the classifier, so the box starts lower.
-  box.y0 = safe + 38 * dpr; box.y1 = H - (W < 620 * dpr ? 64 : 34) * dpr;
+  box.y0 = safe + keysH() * dpr + 38 * dpr; box.y1 = H - (W < 620 * dpr ? 64 : 34) * dpr;
 }
 
 /* ---------- HUD ---------- */
@@ -1088,6 +1103,54 @@ let hudDirty = true, hudFade = false;
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const grey = v => `rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})`;
 let cursorF = -1;
+// The controls show on the console itself, as lit keycaps.
+// A keycap lights up for a moment when its gesture is used.
+const KEYS_H = 30;
+// Narrow screens fold the keycap strip into two rows.
+const keyRows = () => (W < 600 * dpr && keyList().length > 2 ? 2 : 1);
+const keysH = () => KEYS_H + (keyRows() - 1) * 24;
+const keyLit = {};
+const press = k => { keyLit[k] = clock; hudDirty = true; };
+function keyList() {
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (opts.mode === 'active') return touch
+    ? [['TAP', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['DRAG', 'STEER', 'steer'], ['2× TAP', 'TRACK', 'track']]
+    : [['SPACE', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['← →', 'STEER', 'steer'], ['2× CLICK', 'TRACK', 'track']];
+  return touch
+    ? [['TAP', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune']]
+    : [['SPACE', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune'], ['← →', 'CURSOR', 'tune']];
+}
+function drawKeys(c) {
+  const list = keyList();
+  c.font = `${Math.round(10.5 * dpr)}px ${MONO}`;
+  c.textBaseline = 'middle';
+  const padX = 6 * dpr, gap = 8 * dpr, sep = 18 * dpr, h = 17 * dpr;
+  const items = list.map(([k, label, id]) => ({ k, label, id, kw: c.measureText(k).width + padX * 2, lw: c.measureText(label).width }));
+  const rows = keyRows(), per = Math.ceil(items.length / rows);
+  let lit = false;
+  // Each row centres under the face.
+  for (let r = 0; r < rows; r++) {
+  const row = items.slice(r * per, r * per + per);
+  const total = row.reduce((a, it) => a + it.kw + gap + it.lw, 0) + sep * (row.length - 1);
+  let x = Math.max(10 * dpr, (W - total) / 2);
+  const y = H - safe - (keysH() - KEYS_H / 2 - 4 - r * 24) * dpr;
+  for (const it of row) {
+    const on = clock - (keyLit[it.id] ?? -1e9) < 0.3;
+    lit ||= on;
+    c.lineWidth = Math.max(1, dpr);
+    c.strokeStyle = grey(on ? 1 : 0.75);
+    c.beginPath(); c.roundRect(x, y - h / 2, it.kw, h, 3 * dpr); c.stroke();
+    if (on) { c.fillStyle = grey(0.9); c.fill(); }
+    c.fillStyle = grey(on ? 0.05 : 0.95);
+    c.textAlign = 'left';
+    c.fillText(it.k, x + padX, y + 0.5 * dpr);
+    c.fillStyle = grey(on ? 1 : 0.7);
+    c.fillText(it.label, x + it.kw + gap, y + 0.5 * dpr);
+    x += it.kw + gap + it.lw + sep;
+  }
+  }
+  return lit;
+}
 // Loud enough tonal sources, as the classifier names them.
 function sources() {
   const out = [];
@@ -1192,7 +1255,7 @@ function drawHud() {
       c.fillText(`POWER  [${'█'.repeat(cells)}${'░'.repeat(12 - cells)}]`, cx, Y(cy - rad * 0.55));
     }
     c.textAlign = 'left';
-    c.fillStyle = grey(0.7);
+    c.fillStyle = grey(0.9);
     c.fillText(`ACTIVE   RNG ${(R / 1000).toFixed(1)} KM   HDG ${pad3(wrapA(h) / D2R)}`, 14 * dpr, Y(top));
   } else {
     const { x0, y0, x1, y1 } = box;
@@ -1230,7 +1293,7 @@ function drawHud() {
       c.fillText(id ? `${Math.round(cf)} HZ   ${id[1]}` : `${Math.round(cf)} HZ`, x + (x > (x0 + x1) / 2 ? -6 : 6) * dpr, Y(y1) + 12 * dpr);
     }
     c.textAlign = 'left';
-    c.fillStyle = grey(0.7);
+    c.fillStyle = grey(0.9);
     c.fillText(`PASSIVE   LOFAR   0-${Math.round(span)} HZ`, 14 * dpr, Y(top));
     // The classifier names what it hears; narrow screens stack it under the title.
     const cls = [];
@@ -1243,16 +1306,17 @@ function drawHud() {
     cls.forEach((s, i) => c.fillText(s, narrow ? 14 * dpr : W - 14 * dpr, Y(top - (narrow ? i + 1 : i) * 14 * dpr)));
   }
   // Contact reports fade out after a few seconds.
-  hudFade = false;
+  hudFade = boot.phase === 'run' && drawKeys(c);
   c.textAlign = 'left';
-  if (opts.mode === 'active' && boot.phase === 'run') readouts.forEach((r, i) => {
+  const shown = W < 600 * dpr ? readouts.slice(-2) : readouts;
+  if (opts.mode === 'active' && boot.phase === 'run') shown.forEach((r, i) => {
     const life = r.warn ? 8 : 5, age = clock - r.born;
     let a = clamp(1 - (age - life) / 2);
     if (a <= 0) return;
     hudFade = true;
     // Warnings blink.
     if (r.warn && Math.floor(clock * 3) % 2) a *= 0.4;
-    c.fillStyle = grey((r.warn ? 0.95 : 0.8) * a);
+    c.fillStyle = grey((r.warn ? 1 : 0.92) * a);
     c.fillText(r.text, 14 * dpr, Y(top - (1.4 + i) * 17 * dpr));
   });
   gl.bindTexture(gl.TEXTURE_2D, hudTex);
@@ -1335,8 +1399,18 @@ function render() {
   gl.uniform1f(u.uSpan, spanHz());
   gl.uniform1f(u.uRowsVis, NROW - 2);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // The ghost pass keeps the brighter of now and a fading past.
+  const gNew = ghost[1 - gi];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, gNew.fb); gl.viewport(0, 0, W, H);
+  gl.useProgram(P.ghost.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ghost[gi].tex);
+  gl.uniform1i(P.ghost.u.uSrc, 0); gl.uniform1i(P.ghost.u.uOld, 1);
+  gl.uniform1f(P.ghost.u.uK, reduce ? 0 : 0.55);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gi = 1 - gi;
   // Two blur rounds, the second wider, keep the glow round.
-  quadPass(P.down, blm[0], frame, s => gl.uniform2f(s.uTexel, 1 / W, 1 / H));
+  quadPass(P.down, blm[0], gNew, s => gl.uniform2f(s.uTexel, 1 / W, 1 / H));
   for (const k of [1, 2.4]) {
     quadPass(P.blur, blm[1], blm[0], s => gl.uniform2f(s.uDir, k / blm[0].w, 0));
     quadPass(P.blur, blm[0], blm[1], s => gl.uniform2f(s.uDir, 0, k / blm[0].h));
@@ -1344,7 +1418,7 @@ function render() {
   const s = P.screen.u;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
   gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.tex);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, ghost[gi].tex);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blm[0].tex);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, hudTex);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, glass.tex);
@@ -1353,7 +1427,7 @@ function render() {
   gl.uniform1f(s.uDpr, dpr); gl.uniform1f(s.uTime, clock % 1000);
   gl.uniform1f(s.uWarp, WARP); gl.uniform1f(s.uFringe, FRINGE);
   gl.uniform1f(s.uPower, power());
-  gl.uniform1f(s.uMask, 0.35);
+  gl.uniform1f(s.uMask, 0.6);
   gl.uniform1f(s.uScan, opts.scan === 'on' ? 1 : 0);
   gl.uniform1f(s.uMotion, reduce ? 0 : 1);
   gl.uniform3fv(s.uFlash, PHOS.flash); gl.uniform3fv(s.uGlow, PHOS.glow); gl.uniform3fv(s.uGain, PHOS.gain);
@@ -1448,12 +1522,13 @@ function setMode(m) {
 
 /* ---------- size ---------- */
 function resize() {
-  const fit = fitCanvas(canvas, { budget: 2.2e6 });
+  const fit = fitCanvas(canvas, { maxDpr: 2, budget: 4.2e6 });
   dpr = fit.dpr;
   if (fit.W !== W || fit.H !== H || !acc.length) {
     W = fit.W; H = fit.H;
-    acc.forEach(drop); blm.forEach(drop); if (frame) drop(frame); if (glass) drop(glass);
+    acc.forEach(drop); blm.forEach(drop); ghost.forEach(drop); if (frame) drop(frame); if (glass) drop(glass);
     acc = [target(W, H), target(W, H)]; ai = 0;
+    ghost = [target(W, H), target(W, H)]; gi = 0;
     frame = target(W, H);
     glass = target(W, H);
     gl.bindFramebuffer(gl.FRAMEBUFFER, glass.fb); gl.viewport(0, 0, W, H);
@@ -1480,7 +1555,7 @@ function glXY(e) {
 const angleAt = (x, y) => Math.atan2(x - scope.cx, y - scope.cy);
 function tune(x) {
   cursorF = clamp((x - box.x0) / (box.x1 - box.x0)) * spanHz();
-  hudDirty = true;
+  press('tune');
   wake();
 }
 stage.addEventListener('pointerdown', e => {
@@ -1493,6 +1568,7 @@ stage.addEventListener('pointerdown', e => {
   pt.timer = setTimeout(() => {
     if (!pt.down || pt.drag || opts.mode !== 'active' || boot.phase !== 'run') return;
     pt.charging = true; charge.on = true; charge.t0 = clock;
+    press('hold');
     chargeSound(true);
     hudDirty = true;
     wake();
@@ -1508,6 +1584,7 @@ stage.addEventListener('pointermove', e => {
     // Dragging round the centre turns the boat like a wheel.
     const a = angleAt(x, y);
     sea.head = wrapA(sea.head + (wrapA(a - pt.a + PI) - PI));
+    press('steer');
     pt.a = a;
     hudDirty = true;
     wake();
@@ -1553,8 +1630,8 @@ stage.addEventListener('keydown', e => {
   const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
   if (!d) return;
   e.preventDefault();
-  if (opts.mode === 'active') { sea.head = wrapA(sea.head + d * 5 * D2R); hudDirty = true; wake(); }
-  else { const f = cursorF < 0 ? spanHz() / 2 : cursorF; cursorF = clamp(f + d * spanHz() / 100, 0, spanHz()); hudDirty = true; wake(); }
+  if (opts.mode === 'active') { sea.head = wrapA(sea.head + d * 5 * D2R); press('steer'); wake(); }
+  else { const f = cursorF < 0 ? spanHz() / 2 : cursorF; cursorF = clamp(f + d * spanHz() / 100, 0, spanHz()); press('tune'); wake(); }
 });
 
 /* ---------- bar ---------- */
