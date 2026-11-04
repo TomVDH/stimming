@@ -104,7 +104,7 @@ The repo has no test tooling. Use a throwaway Playwright script outside the repo
 
 ## 1. Star trails (`trails`)
 
-**Scene:** a night sky over a black dune ridge with marram grass and one warm tent glow. The sky has an airglow band at the horizon, a faint Milky Way and film grain.
+**Scene:** one dark horizon line, a low ridge in near black, under the night sky. The sky has an airglow band at the horizon, a faint Milky Way and film grain. No props: light does the rest. (Look rule, 2026-11-04)
 
 **Loop:**
 - Hold to open the shutter: the stars sweep arcs around the celestial pole.
@@ -119,14 +119,14 @@ The repo has no test tooling. Use a throwaway Playwright script outside the repo
 | Chips | North (Polaris inside the arcs), South (no pole star), Equator (near-straight lines) |
 | Slider | Exposure: how long trails last |
 | Action | Clear |
-| Settings | Star count, true colour or mono, meteor chance, foreground on or off |
+| Settings | Star count, true colour or mono, meteor chance |
 | How | Hold: open shutter · Release: close · Space: shutter (mouse devices only) |
 
 **Tech:**
 - About 4,000 stars on a power-law magnitude scale, coloured by temperature with `linFit`.
 - Each frame draws each star as an instanced capsule from its previous angle to the new one, with additive blending into an RGBA16F accumulation target. That gives continuous arcs at any frame rate.
 - The decay pass ping-pongs.
-- The composite adds the sky gradient, the accumulation, live twinkle, a foreground silhouette (a noise SDF), grain and a vignette.
+- The composite adds the sky gradient, the accumulation, live twinkle, the ridge silhouette (a noise line), grain and a vignette.
 - **K1:** keep accumulation and decay in one marked section, so Sonar and Cloud chamber can copy it.
 
 **Sound:**
