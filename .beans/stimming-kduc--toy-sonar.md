@@ -28,6 +28,7 @@ Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-li
 - [x] Dolphins, diving whale, bait schools, sub below the layer
 - [x] Real MBARI MARS loops tried, then reverted by Tom: they did not work in the mix
 - [x] Sonogram tied to the sea: no phantom prop; lines per contact with Doppler; sub motor and pump lines; whale by range; bearing tags
+- [x] Quality in Settings: the shared Standard and High (bean stimming-gq7k); a change resizes live
 - [ ] Checkpoint: Tom reviews look and sound on a real device
 - [ ] Record the session cost
 

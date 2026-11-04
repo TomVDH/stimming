@@ -2,6 +2,7 @@
 
 Covers the 27 shortlisted toys in [toy-ideas.md](toy-ideas.md). Drafted 2026-11-04; Tom decides.
 Tom chose the top four to build first; their briefs are in [toy-dev-plan.md](toy-dev-plan.md).
+Ranks 5 to 19 have development plans in [plans/](plans/README.md). Its index corrects the kit table below: K4 and K5 already exist in the code.
 
 ## Budget assumption
 
