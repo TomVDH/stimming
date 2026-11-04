@@ -231,7 +231,7 @@ function mist(z, yTop, yFull, alpha, warm) {
   }));
   m.position.set(0, -700, z); return m;
 }
-scene.add(mist(-120, 20, -260, 0.92, 1), mist(18, -50, -380, 0.7, 0));
+scene.add(mist(-20, 20, -260, 0.92, 1), mist(18, -50, -380, 0.7, 0));
 
 /* ---------- K2: sky ---------- */
 // Dome: gradient, horizon glow, stars, a small moon and two thin cloud bands.
@@ -274,6 +274,52 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(15000, 48, 24), new THREE.Sh
 scene.add(sky);
 /* ---------- end K2 ---------- */
 
+/* Sea: a cold, dark water between the gorge and the far peaks. */
+const SEA_Y = -60;
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(9000, 3060), new THREE.ShaderMaterial({
+  uniforms: { ...K2_HAZE, uMoon: { value: MOON }, uGlint: { value: 1 } },
+  vertexShader: /* glsl */`
+    varying vec3 vW;
+    void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: /* glsl */`
+    ${K2_HAZE_GLSL}
+    uniform vec3 uMoon;
+    uniform float uGlint;
+    varying vec3 vW;
+    float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+    }
+    // Long, low swells run across the view.
+    float swell(vec2 p) { return noise(p * vec2(0.012, 0.05)) + 0.5 * noise(p * vec2(0.04, 0.16) + 7.0); }
+    void main() {
+      vec3 V = normalize(cameraPosition - vW);
+      float e = 2.0, h0 = swell(vW.xz);
+      vec2 g = vec2(swell(vW.xz + vec2(e, 0.0)) - h0, swell(vW.xz + vec2(0.0, e)) - h0) / e;
+      vec3 N = normalize(vec3(-g.x * 5.0, 1.0, -g.y * 5.0));
+      vec3 R = reflect(-V, N);
+      float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+      // Near black water; it takes the cold sky only at grazing angles.
+      vec3 col = vec3(0.001, 0.0014, 0.0035) + uHazeLow * fres * 0.25;
+      // The moon leaves a broken path of glints on the swell.
+      float m = max(dot(R, uMoon), 0.0);
+      col += vec3(0.75, 0.8, 1.0) * (pow(m, 1400.0) * 1.4 + pow(m, 90.0) * 0.04) * uGlint;
+      // A thin cold mist lies on the far water, at the peaks' feet.
+      gl_FragColor = vec4(mix(col, k2Haze(col, vW, cameraPosition), 0.35), 1.0);
+    }`,
+}));
+sea.rotation.x = -Math.PI / 2;
+sea.position.set(0, SEA_Y, -1570);
+scene.add(sea);
+// The gorge ends in a dark back wall; the sea starts at its top.
+const backWall = new THREE.Mesh(new THREE.PlaneGeometry(700, 1400), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.003, 0.004, 0.009) }));
+backWall.position.set(0, SEA_Y - 700, -40);
+scene.add(backWall);
+const lip = new THREE.Mesh(new THREE.PlaneGeometry(700, 1.2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.05, 0.06, 0.1) }));
+lip.position.set(0, SEA_Y - 0.6, -39.5);
+scene.add(lip);
+
 /* ---------- K2: precipitation ---------- */
 // Snow: a very light placeholder of points around the viaduct.
 const SNOW_N = 900, snowPos = new Float32Array(SNOW_N * 3);
@@ -302,13 +348,17 @@ function frame(w, h, dpr) {
   const D = wide ? 1500 : 4200, span = wide ? 0.54 : 0.9, deckNdc = wide ? -0.17 : -0.12;
   const halfW = 220 / span, halfH = halfW / aspect;
   camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(halfH / D));
-  camera.position.set(0, -deckNdc * halfH, FRONT + D);
+  // The camera rises above the deck, so the sea shows as a band.
+  const lift = wide ? 110 : 260;
+  camera.position.set(0, -deckNdc * halfH + lift, FRONT + D);
   camera.lookAt(0, -deckNdc * halfH, 0);
   camera.updateProjectionMatrix();
   skyU.uPxRad.value = h * dpr / THREE.MathUtils.degToRad(camera.fov);
   snow.material.uniforms.uPx.value = 1.4 * dpr;
+  // A narrow portrait lens puts the moon path everywhere; thin it.
+  sea.material.uniforms.uGlint.value = wide ? 1 : 0.3;
   // The moon sits at a set point on screen, upper left.
-  const ndc = wide ? [-0.66, 0.86] : [-0.5, 0.8];
+  const ndc = wide ? [-0.66, 0.86] : [-0.5, 0.72];
   MOON.copy(new THREE.Vector3(ndc[0], ndc[1], 0.5).unproject(camera).sub(camera.position).normalize());
 }
 
