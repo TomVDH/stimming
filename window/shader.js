@@ -194,10 +194,10 @@ vec3 ground(vec2 w, float fw) {
   vec3 tw = towns(w, ang2, mixW);
   float T = tw.x;
   // The light dome: haze over each town glows from the streets below.
-  g += vec3(1.0, 0.55, 0.24) * tw.z * 0.016;
+  g += vec3(1.0, 0.55, 0.24) * tw.z * 0.009;
   float dense = smoothstep(0.08, 0.5, T);
   // The town glow: warm haze over the roofs.
-  g += sodium * T * 0.02;
+  g += sodium * T * 0.013;
   float hue;
   // Streets run on each town's own grid; parks and yards leave dark gaps.
   float blocks = smoothstep(0.25, 0.75, vnoise(w / 0.6 + 3.1));
@@ -339,7 +339,7 @@ vec4 deck(vec3 d) {
       S += uAmb * 0.026 * (0.3 + 0.7 * h01);
       // Streets light the base; the cloud filters that light as it rises.
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
-      S += vec3(1.0, 0.5, 0.2) * town * 0.06 * exp(-SIG * 0.35 * max(p.y - 1.55, 0.0));
+      S += vec3(1.0, 0.5, 0.2) * town * 0.022 * exp(-SIG * 0.5 * max(p.y - 1.55, 0.0));
       S += flashAt(w, 1.0) * 0.6 * (0.4 + 0.6 * h01);
       float a = 1.0 - exp(-SIG * dn * ds);
       col += Tc * S * a;
@@ -429,8 +429,8 @@ vec4 cirrus(vec3 d, vec3 sk) {
     float y = heightAt(d, t);
     float lod = lodAt(t, 24.0);
     float n = cn(vec3(q.x / 6.0, y * 2.0, q.y), 24.0, lod).r * 0.7 + cn(vec3(q.x / 4.0, y * 3.0, q.y) + 0.5, 6.0, lod).g * 0.3;
-    float dn = smoothstep(0.5, 0.78, n) * uCirrus * smoothstep(12.1, 12.3, y) * smoothstep(12.8, 12.6, y);
-    Tc *= exp(-1.6 * dn * ds);
+    float dn = smoothstep(0.6, 0.84, n) * uCirrus * smoothstep(12.1, 12.3, y) * smoothstep(12.8, 12.6, y);
+    Tc *= exp(-0.9 * dn * ds);
     t += ds;
   }
   // Far streaks fade into the horizon glow.
