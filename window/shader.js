@@ -57,6 +57,8 @@ uniform vec2 uCam;
 uniform vec3 uF, uR, uU;
 uniform vec3 uAmb, uSun, uSunL, uFloor;
 uniform vec3 uWing[4], uLet[4], uWingN, uLetN, uTip; uniform float uStrobe;
+// The engine nacelle as a capsule, and three flap-track fairings as ellipsoids.
+uniform vec3 uNacA, uNacB, uChord, uUpA, uSpan; uniform float uNacR; uniform vec4 uFair[3];
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
 uniform vec4 uFl[${MAXFL}];
 uniform vec4 uTrA[40], uTrB[40]; uniform int uTrN;
@@ -613,6 +615,42 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
   return c;
 }
 
+// Painted metal for the nacelle and fairings: sky reflection, sky fill, glint.
+vec3 paint(vec3 d, vec3 n, float E, float shade) {
+  vec3 r = reflect(d, n);
+  vec3 env = skyL(normalize(vec3(r.x, max(r.y, -0.02) * 0.45, r.z)));
+  env = mix(vec3(dot(env, vec3(0.3, 0.5, 0.2))), env, 0.5);
+  float fres = 0.05 + 0.6 * pow(1.0 - abs(dot(d, n)), 4.0);
+  vec3 c = uAmb * 0.03 * shade * (0.6 + 0.4 * max(n.y, 0.0)) + env * fres * 0.9;
+  c += uSunL * 0.06 * pow(max(dot(r, uSun), 0.0), 80.0);
+  return c + vec3(0.72, 0.74, 1.0) * E * 0.25 * shade;
+}
+// A ray from the eye against a capsule from a to b; the hit distance or -1.
+float capsule(vec3 rd, vec3 pa, vec3 pb, float ra) {
+  vec3 ba = pb - pa, oa = -pa;
+  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+  float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - ra * ra * baba;
+  float h = b * b - a * c;
+  if (h < 0.0) return -1.0;
+  float t = (-b - sqrt(h)) / a, y = baoa + t * bard;
+  if (y > 0.0 && y < baba) return t;
+  vec3 oc = y <= 0.0 ? oa : -pb;
+  b = dot(rd, oc); c = dot(oc, oc) - ra * ra; h = b * b - c;
+  return h > 0.0 ? -b - sqrt(h) : -1.0;
+}
+// A ray against an ellipsoid with semi-axes along chord, up and span.
+float ellipsoid(vec3 rd, vec3 ctr, vec3 rad, out vec3 nrm) {
+  vec3 o = -ctr;
+  vec3 ol = vec3(dot(o, uChord), dot(o, uUpA), dot(o, uSpan)) / rad;
+  vec3 dl = vec3(dot(rd, uChord), dot(rd, uUpA), dot(rd, uSpan)) / rad;
+  float a = dot(dl, dl), b = dot(ol, dl), c = dot(ol, ol) - 1.0, h = b * b - a * c;
+  if (h < 0.0) return -1.0;
+  float t = (-b - sqrt(h)) / a;
+  vec3 pl = (ol + dl * t) / rad;
+  nrm = normalize(uChord * pl.x + uUpA * pl.y + uSpan * pl.z);
+  return t;
+}
+
 // Trails: rocket plumes and contrails, as chains of glowing capsules.
 // uTrA: point relative to the eye in km, radius; uTrB: colour.
 // tEnd stops them at the ground; below the deck they dim by gDeckT.
@@ -672,6 +710,8 @@ float quad(vec3 d, vec3 v[4], vec3 n, out vec2 uv) {
 // The wing is painted grey; its top mirrors the sky at a grazing angle.
 // uv.x runs leading to trailing edge; uv.y runs root to tip.
 vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E, float strobe) {
+  // The upper skin curves over the airfoil: it faces forward near the leading edge, aft near the trailing edge.
+  n = normalize(n + uChord * (uv.x - 0.35) * 0.45);
   // A satin finish blurs the mirror toward the horizon glow.
   vec3 r = reflect(d, n);
   vec3 rd = normalize(vec3(r.x, max(r.y, -0.02) * 0.45, r.z));
@@ -683,11 +723,30 @@ vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E, float strobe) {
   // Diffuse light from the whole sky dome on grey paint.
   vec3 c = uAmb * 0.03 * (0.85 + 0.3 * uv.y);
   c += env * fres * 0.9;
+  // The moon or sun glints off the top skin.
+  c += uSunL * 0.08 * pow(max(dot(r, uSun), 0.0), 160.0) + uSunL * 0.01 * pow(max(dot(r, uSun), 0.0), 12.0);
   // Panel joints run chordwise; spars and the flap seam run spanwise.
   float sp = uv.y * 15.0;
-  c *= 1.0 - 0.25 * smoothstep(0.03, 0.0, abs(fract(sp) - 0.5) - 0.47);
-  c *= 1.0 - 0.3 * smoothstep(0.008, 0.0, abs(uv.x - 0.24));
-  c *= 1.0 - 0.5 * smoothstep(0.01, 0.0, abs(uv.x - 0.7));
+  float seam = 0.25 * smoothstep(0.03, 0.0, abs(fract(sp) - 0.5) - 0.47);
+  seam = max(seam, 0.3 * smoothstep(0.008, 0.0, abs(uv.x - 0.24)));
+  // Slats: the leading edge splits into segments that slide forward.
+  seam = max(seam, 0.45 * smoothstep(0.006, 0.0, abs(uv.x - 0.085)) * step(0.06, uv.y));
+  seam = max(seam, 0.4 * step(uv.x, 0.085) * smoothstep(0.004, 0.0, abs(fract(uv.y * 7.0) - 0.5) - 0.495));
+  // Spoilers: a row of panels ahead of the flap, inboard.
+  float spo = step(0.56, uv.x) * step(uv.x, 0.72) * step(0.08, uv.y) * step(uv.y, 0.62);
+  seam = max(seam, 0.45 * spo * smoothstep(0.006, 0.0, abs(fract(uv.y / 0.09) - 0.5) - 0.48));
+  seam = max(seam, 0.45 * smoothstep(0.006, 0.0, abs(uv.x - 0.56)) * step(0.08, uv.y) * step(uv.y, 0.62));
+  // The flap hinge line, and the aileron outboard.
+  seam = max(seam, 0.55 * smoothstep(0.01, 0.0, abs(uv.x - 0.72)));
+  seam = max(seam, 0.5 * smoothstep(0.006, 0.0, abs(uv.y - 0.66)) * step(0.72, uv.x));
+  seam = max(seam, 0.5 * smoothstep(0.006, 0.0, abs(uv.y - 0.94)) * step(0.72, uv.x));
+  c *= 1.0 - seam;
+  // Spoiler and aileron paint sits a shade apart from the skin.
+  c *= 1.0 - 0.06 * spo + 0.05 * step(0.72, uv.x) * step(0.66, uv.y) * step(uv.y, 0.94);
+  // Walkway lines near the root: a dashed border on the skin.
+  float walk = smoothstep(0.004, 0.0, abs(uv.y - 0.2)) * step(0.15, uv.x) * step(uv.x, 0.55);
+  walk = max(walk, smoothstep(0.003, 0.0, abs(uv.x - 0.15)) * step(uv.y, 0.2));
+  c *= 1.0 - 0.3 * walk * step(0.5, fract(uv.x * 30.0 + uv.y * 30.0));
   c *= 0.92 + 0.16 * vnoise(vec2(uv.x * 8.0, uv.y * 60.0));
   // The leading edge is round, so it catches a bright line of sky.
   c += env * 1.4 * smoothstep(0.045, 0.0, uv.x);
@@ -722,6 +781,31 @@ void main() {
   if (tw > 0.0) { c = wingCol(d, uWingN, uv, tw, E, uStrobe); skyA = 0.0; }
   float tl = quad(d, uLet, uLetN, uv2);
   if (tl > 0.0 && (tw < 0.0 || tl < tw)) { c = wingCol(d, uLetN, uv2.yx, tl, E, uStrobe) * 0.8; skyA = 0.0; }
+  float tNear = tw > 0.0 ? tw : 1e5;
+  if (tl > 0.0) tNear = min(tNear, tl);
+  // The engine nacelle hangs under the wing; its inlet shows ahead of the leading edge.
+  float tn = capsule(d, uNacA, uNacB, uNacR);
+  if (tn > 0.0 && tn < tNear) {
+    vec3 p = d * tn, ba = uNacB - uNacA;
+    float h = clamp(dot(p - uNacA, ba) / dot(ba, ba), 0.0, 1.0);
+    vec3 n = normalize(p - (uNacA + ba * h));
+    c = paint(d, n, E, 1.0) * 1.15;
+    // The inlet: a polished lip round a dark fan face.
+    if (h >= 1.0) {
+      float rr = length(p - uNacB - ba * dot(p - uNacB, ba) / dot(ba, ba)) / uNacR;
+      float lip = smoothstep(0.7, 0.82, rr) * smoothstep(1.0, 0.9, rr);
+      c = mix(vec3(0.0015, 0.0016, 0.002) * (0.6 + 0.4 * sin(atan(n.y, n.z) * 22.0)), c * 1.5, lip);
+    }
+    // Panel lines ring the cowling.
+    c *= 1.0 - 0.35 * smoothstep(0.008, 0.0, abs(h - 0.35)) - 0.3 * smoothstep(0.008, 0.0, abs(h - 0.7));
+    tNear = tn; skyA = 0.0;
+  }
+  // Flap-track fairings: canoe shapes under the trailing edge.
+  for (int i = 0; i < 3; i++) {
+    vec3 nf;
+    float tf = ellipsoid(d, uFair[i].xyz, vec3(1.8, 0.36, 0.26) * uFair[i].w, nf);
+    if (tf > 0.0 && tf < tNear) { c = paint(d, nf, E, 0.9); tNear = tf; skyA = 0.0; }
+  }
   o = vec4(c, skyA);
 }`;
 
@@ -733,7 +817,7 @@ uniform vec2 uRes; uniform float uTime, uDpr, uFocal, uFlash, uDimE, uDimC;
 uniform vec3 uF, uR, uU;
 uniform int uSteps;
 uniform sampler2D uOut;
-uniform vec3 uGlow, uSun, uDisc, uTint, uTip; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
+uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
 uniform vec4 uFlr[8]; uniform vec4 uFlrC[8];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
 out vec4 o;
@@ -932,8 +1016,8 @@ void main() {
   vec3 da = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
   float E = 0.004 + uFlash * 0.07;
   vec3 eCol = mix(vec3(1.0, 0.86, 0.72), vec3(0.75, 0.8, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
-  // Warm cabin light, low and dim, for a night flight.
-  vec3 cabin = vec3(0.016, 0.012, 0.0095);
+  // Cabin mood light, set per hour: amber, deep night blue, or dawn rose.
+  vec3 cabin = uCabin;
   vec3 outGlow = uGlow * 0.014 + eCol * E;
   float alb = 0.5;
   // Cabin light falls from above and a little aft.
@@ -1022,8 +1106,16 @@ void main() {
       view = mix(view, view * Tg, smoothstep(aaO, -aaO, sSk));
       // Scratches on the scratch pane ring each bright source.
       view += scratches(pG, px) * Tg;
-      // A faint reflection of the lit cabin in the glass.
-      view += vec3(0.0018, 0.0015, 0.0012) * smoothstep(0.2, -0.15, pG.x + pG.y * 0.5);
+      // The pane mirrors the dim cabin, shifted as the head moves.
+      // The shift follows the head's move from its rest pose at (-0.13, 0.06).
+      vec2 rq = pG + (uEye.xy - vec2(-0.13, 0.06)) * 0.4;
+      view += cabin * 0.12 * smoothstep(0.25, -0.2, rq.x + rq.y * 0.5);
+      // A reading light further up the cabin, as a soft warm smear.
+      vec2 lq = (rq - vec2(-0.1, 0.19)) * vec2(1.0, 1.8);
+      view += vec3(1.0, 0.8, 0.55) * 0.004 * exp(-dot(lq, lq) / 0.0016);
+      // A ghost of the bezel's far rim, just inside the pane's edge.
+      float gr = sdBox(rq * 1.02, INB, RIN);
+      view += cabin * 0.22 * smoothstep(0.005, 0.0, abs(gr + 0.01)) * smoothstep(-0.05, 0.15, rq.y);
       float bh = length(pG - vec2(0.0, -INB.y * 0.72));
       view = mix(view, vec3(0.0), smoothstep(0.0028, 0.0018, bh) * 0.85);
       inner = view;
