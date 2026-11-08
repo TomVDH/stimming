@@ -79,6 +79,12 @@ t('empty slot draws nothing', () => {
   const { layer } = fixture();
   ['.s2-bl', '.s2-br'].forEach(s => { const el = layer.querySelector(s); eq(el.children.length, 0); ok(!shown(el), `${s} shown`); });
 });
+t('icons keep their size', () => {
+  const { layer } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }] });
+  eq(Math.round(layer.querySelector('.snd svg').getBoundingClientRect().width), 14);
+  eq(Math.round(layer.querySelector('.s2-set svg').getBoundingClientRect().width), 14);
+  eq(getComputedStyle(layer.querySelector('.snd')).paddingLeft, '0px');
+});
 t('hideControls', () => {
   const { layer, ui } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }], keys: [['click', 'place']], quality: true });
   ui.hideControls();
@@ -244,6 +250,110 @@ t('limits warn', () => {
   eq(got.length, 1);
   const got2 = warns(() => fixture({ actions: [{ verb: 'clear', onPress() {} }, { verb: 'reset', onPress() {} }] }));
   eq(got2.length, 1);
+});
+
+/* ---------- Task 4: Settings sheet ---------- */
+const store = { set: (k, v) => localStorage.setItem(`stimming.bartest.${k}`, v), get: k => localStorage.getItem(`stimming.bartest.${k}`), del: k => localStorage.removeItem(`stimming.bartest.${k}`) };
+const rows = () => [
+  { type: 'slider', id: 'streak', label: 'Star streaks', min: 0, max: 1, step: 0.01, value: 0.18, persist: true, onInput: spy() },
+  { type: 'choice', id: 'mode', label: 'Mode', value: 'a', persist: true, onPick: spy(), options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+  { type: 'toggle', id: 'trail', label: 'Trails', value: false, onToggle: spy() },
+];
+const openSet = layer => { click(layer.querySelector('.s2-set')); return layer.querySelector('.s2-sheet--right'); };
+t('sheet anatomy', () => {
+  const { layer } = fixture({ settings: rows(), quality: true, reset() {} });
+  const sh = openSet(layer);
+  ok(shown(sh), 'settings sheet hidden');
+  eq(sh.querySelector('.s2-hd').textContent, 'Settingsesc');
+  eq([...sh.querySelectorAll('.s2-lab')].map(e => e.textContent).join(','), 'bartest,Site');
+  eq([...sh.querySelectorAll('.s2-sec')[0].querySelectorAll('.s2-row > span:first-child')].map(e => e.textContent).join(','), 'Star streaks,Mode,Trails');
+  eq([...sh.querySelectorAll('.s2-sec')[1].querySelectorAll('.s2-chip')].map(e => e.textContent).join(','), 'Standard,High');
+  eq(sh.querySelector('.s2-ft .s2-chip').textContent, 'Reset');
+  click(layer.querySelector('.s2-set'));
+});
+t('row types', () => {
+  const r = rows();
+  const { layer } = fixture({ settings: r });
+  const sh = openSet(layer);
+  click(sh.querySelector('[data-value="b"]'));
+  eq(r[1].onPick.calls[0][0], 'b');
+  click(sh.querySelector('[data-value="on"]'));
+  eq(r[2].onToggle.calls[0][0], true);
+  click(layer.querySelector('.s2-set'));
+});
+t('persist writes', () => {
+  store.del('streak');
+  const { layer } = fixture({ settings: rows() });
+  const input = layer.querySelector('.s2-sheet input[type="range"]');
+  input.value = '0.5';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(store.get('streak'), '0.5');
+});
+t('persist restores', () => {
+  store.set('streak', '0.4');
+  store.set('mode', 'b');
+  const r = rows();
+  const { ui } = fixture({ settings: r });
+  eq(ui.setting('streak').value, 0.4);
+  eq(ui.setting('mode').value, 'b');
+  eq(r[0].onInput.calls.length + r[1].onPick.calls.length, 0);
+});
+t('junk restores to default', () => {
+  for (const junk of ['abc', '9', '']) {
+    store.set('streak', junk);
+    store.set('mode', 'zzz');
+    const { ui } = fixture({ settings: rows() });
+    eq(ui.setting('streak').value, 0.18);
+    eq(ui.setting('mode').value, 'a');
+  }
+  store.del('streak'); store.del('mode');
+});
+t('quality row', () => {
+  const before = stim.quality();
+  const { layer } = fixture({ quality: true });
+  const sh = openSet(layer);
+  click(sh.querySelector('[data-value="high"]'));
+  eq(stim.quality(), 'high');
+  stim.setQuality('standard');
+  eq(sh.querySelector('[data-value="standard"]').getAttribute('aria-pressed'), 'true');
+  stim.setQuality(before);
+  click(layer.querySelector('.s2-set'));
+});
+t('reset', () => {
+  const reset = spy();
+  const { layer } = fixture({ settings: rows(), reset });
+  const sh = openSet(layer);
+  click(sh.querySelector('.s2-ft .s2-chip'));
+  eq(reset.calls.length, 1);
+  ok(!shown(sh), 'sheet still open');
+});
+t('no rows hides button', () => {
+  const { layer } = fixture({ quality: false });
+  ok(!shown(layer.querySelector('.s2-set')));
+});
+t('focus', () => {
+  const { layer } = fixture({ settings: rows(), quality: true });
+  const btn = layer.querySelector('.s2-set');
+  btn.focus();
+  const sh = openSet(layer);
+  ok(sh.contains(document.activeElement), 'focus outside sheet');
+  key('Escape', {}, document.activeElement);
+  ok(!shown(sh), 'Escape left it open');
+  eq(document.activeElement, btn);
+});
+t('no hover open', () => {
+  const { layer } = fixture({ settings: rows() });
+  layer.querySelector('.s2-set').dispatchEvent(new MouseEvent('mouseenter'));
+  layer.querySelector('.s2-set').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  ok(!shown(layer.querySelector('.s2-sheet--right')));
+});
+t('one sheet at a time', () => {
+  const { layer } = fixture({ settings: rows(), choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }] } });
+  click(layer.querySelector('.s2-tray'));
+  openSet(layer);
+  ok(!shown(layer.querySelector('.s2-sheet--left')), 'tray stayed open');
+  ok(shown(layer.querySelector('.s2-sheet--right')), 'settings not open');
+  click(layer.querySelector('.s2-set'));
 });
 
 /* ---------- run ---------- */

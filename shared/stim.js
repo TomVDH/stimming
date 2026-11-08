@@ -218,7 +218,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('pointerdown', e => {
   if (openSheet && !openSheet.el.contains(e.target) && !openSheet.anchor.contains(e.target)) openSheet.open(false);
 });
-function makeSheet(layer, { title, anchor, align = 'right' }) {
+function makeSheet(layer, { title, anchor, align = 'right', focusPressed = false }) {
   const el = make('div', `s2-sheet s2-sheet--${align}`, `<div class="s2-hd"><span>${title}</span><em aria-hidden="true">esc</em></div>`);
   el.hidden = true;
   el.setAttribute('role', 'dialog');
@@ -235,7 +235,7 @@ function makeSheet(layer, { title, anchor, align = 'right' }) {
       el.hidden = !on;
       anchor.setAttribute('aria-expanded', String(on));
       openSheet = on ? sheet : null;
-      if (on) (el.querySelector('[aria-pressed="true"]') || el.querySelector(FOCUSABLE))?.focus({ preventScroll: true });
+      if (on) ((focusPressed && el.querySelector('[aria-pressed="true"]')) || el.querySelector(FOCUSABLE))?.focus({ preventScroll: true });
       else if (refocus || el.contains(document.activeElement)) anchor.focus({ preventScroll: true });
     },
   };
@@ -313,7 +313,7 @@ function makeChoice(spec, display, state, pick, layer) {
   // The tray chip opens a grid sheet below the top-left corner.
   const el = make('button', 's2-chip s2-tray');
   el.type = 'button';
-  const sheet = makeSheet(layer, { title: label, anchor: el, align: 'left' });
+  const sheet = makeSheet(layer, { title: label, anchor: el, align: 'left', focusPressed: true });
   const grid = make('div', 's2-grid');
   grid.setAttribute('role', 'group');
   grid.setAttribute('aria-label', label);
@@ -379,6 +379,55 @@ function makeAction(a, bindKey) {
   return { el: b, handle };
 }
 
+/* settings rows: slider, choice or toggle */
+// A stored value restores only when it is valid for its row.
+function restore(row, key) {
+  const raw = row.persist ? store.get(key) : null;
+  if (raw == null || raw === '') return row.value;
+  if (row.type === 'slider') {
+    const n = Number(raw), min = row.min ?? 0, max = row.max ?? 1;
+    return Number.isFinite(n) && n >= min && n <= max ? n : row.value;
+  }
+  if (row.type === 'toggle') return raw === '1' ? true : raw === '0' ? false : row.value;
+  return row.options.some(o => o.value === raw) ? raw : row.value;
+}
+function makeRow(row, key, layer) {
+  const save = v => { if (row.persist) store.set(key, row.type === 'toggle' ? (v ? '1' : '0') : String(v)); };
+  const value = restore(row, key);
+  if (row.type === 'slider') {
+    const sl = makeSlider({ ...row, value, onInput: v => { save(v); row.onInput?.(v); } });
+    sl.el.classList.add('s2-row');
+    const set = sl.handle.set;
+    sl.handle.set = (v, fire = false) => { set(v, fire); save(v); };
+    return { el: sl.el, handle: sl.handle };
+  }
+  // A toggle is an Off/On pair of segments.
+  const toggle = row.type === 'toggle';
+  const options = toggle ? [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }] : row.options;
+  const out = v => (toggle ? v === 'on' : v);
+  const state = { value: toggle ? (value ? 'on' : 'off') : value, disabled: false };
+  let ctl = null;
+  const pick = (v, fire, user = false) => {
+    if (user && state.disabled) return;
+    if (!options.some(o => o.value === v)) return;
+    state.value = v;
+    ctl.sync();
+    save(out(v));
+    if (fire) (toggle ? row.onToggle : row.onPick)?.(out(v));
+  };
+  ctl = makeChoice({ label: row.label, options }, 'segments', state, pick, layer);
+  ctl.sync();
+  const el = make('div', 's2-row', `<span>${row.label}</span>`);
+  el.append(ctl.el);
+  const handle = {
+    get value() { return out(state.value); },
+    set(v, fire = false) { pick(toggle ? (v ? 'on' : 'off') : v, fire); },
+    get disabled() { return state.disabled; },
+    set disabled(d) { state.disabled = !!d; ctl.sync(); },
+  };
+  return { el, handle };
+}
+
 export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) {
   document.documentElement.classList.add('stim2');
   // The frame holds the stage and the layer, so control events skip the stage.
@@ -442,6 +491,39 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
   set.setAttribute('aria-expanded', 'false');
   set.hidden = !(spec.settings?.length || spec.quality);
   tr.append(snd, set);
+
+  /* the Settings sheet: toy rows, site rows, then Reset */
+  const settings = new Map();
+  let toyLab = null;
+  if (!set.hidden) {
+    const sheet = makeSheet(layer, { title: 'Settings', anchor: set });
+    if (spec.settings?.length) {
+      const sec = make('div', 's2-sec');
+      toyLab = make('span', 's2-lab', name.firstChild.textContent);
+      sec.append(toyLab);
+      spec.settings.forEach(row => {
+        const r = makeRow(row, `stimming.${id}.${row.id}`, layer);
+        settings.set(row.id, r.handle);
+        sec.append(r.el);
+      });
+      sheet.el.append(sec);
+    }
+    if (spec.quality) {
+      const sec = make('div', 's2-sec', '<span class="s2-lab">Site</span>');
+      const q = makeRow({ type: 'choice', id: 'quality', label: 'Quality', value: quality(), onPick: v => setQuality(v),
+        options: [{ value: 'standard', label: 'Standard' }, { value: 'high', label: 'High' }] }, QUALITY_KEY, layer);
+      onQuality(v => q.handle.set(v));
+      sec.append(q.el);
+      sheet.el.append(sec);
+    }
+    if (spec.reset) {
+      const ft = make('div', 's2-ft'), b = make('button', 's2-chip', 'Reset');
+      b.type = 'button';
+      b.addEventListener('click', () => { spec.reset(); sheet.open(false, true); });
+      ft.append(b);
+      sheet.el.append(ft);
+    }
+  }
   if (Array.isArray(spec.keys) && spec.keys.length) tr.append(iconButton('s2-info', 'i', 'How to play'));
 
   let legacy = null;
@@ -449,10 +531,11 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
     choice,
     slider: slider?.handle ?? null,
     action: verb => actions.get(verb) ?? null,
+    setting: sid => settings.get(sid) ?? null,
     soundButton: snd,
     // A missing toy keeps the fallback name and shows no tags.
     applyToy(info) {
-      if (info?.name) name.firstChild.textContent = info.name;
+      if (info?.name) { name.firstChild.textContent = info.name; if (toyLab) toyLab.textContent = info.name; }
       name.querySelectorAll('.s2-tag').forEach(t => t.remove());
       if (info?.sub) name.append(make('span', 's2-tag', 'LAB'));
       if (info?.tier) name.append(make('span', 's2-tag', String(info.tier).toUpperCase()));
