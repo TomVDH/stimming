@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:58:46Z
-updated_at: 2026-11-08T11:13:04Z
+updated_at: 2026-11-08T11:22:04Z
 ---
 
 Build Oil slick (idea 77): a thin oil film on a puddle; drag to swirl the rainbow bands. Folder `oilslick`. It starts in the Lab. Raw WebGL2. It follows the Look rule: one puddle, no props.
@@ -17,7 +17,7 @@ Build Oil slick (idea 77): a thin oil film on a puddle; drag to swirl the rainbo
 - [x] Gesture: drag swirls the film; hold thins it into rings; + Drop adds oil
 - [x] Bar: sky chips, Film slider, + Drop, Shuffle, Clear, Settings
 - [x] Frame loop: 30 fps or better, idle sleep, hidden stop, reduced motion
-- [ ] Sound: Tom to confirm
+- [x] Sound: a low wet hum that follows drag speed and darkens on a hold; a plip per drop
 - [x] toys.json entry (Olievlek) and menu Lab entry with an icon and a GSAP hook
 - [ ] QA: 1280 and 375 px, clean console, idle stop, hidden tab stops the loop
 - [ ] Record the session cost
