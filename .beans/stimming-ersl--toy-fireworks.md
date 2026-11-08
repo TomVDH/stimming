@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T11:50:20Z
+updated_at: 2026-11-08T11:53:30Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -23,7 +23,8 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Task 3: lit smoke, water reflections, finale (24 shells in 6 s to a strobe-and-crackle wall, then three gold willows)
 - [x] Task 4: sound, with delayed boom: lift thump, whoosh and 1-in-6 whistle; crack, body, sub, 3.5 s reverb and shore slap; crackle and sizzle; water bed; caps 6 booms, 2 crackles; mute and hidden stop all
 - [ ] Q9: confirm the context suspends after the show (Tom was playing during the check)
-- [ ] Task 5: bar, menu Lab entry, toys.json, QA
+- [x] Task 5 (part): menu Lab entry with icon and hover hook; toys.json entry, nl Vuurwerk and IPA as drafts for Tom
+- [ ] Task 5: final QA (375 px, reduced motion, audio sleep)
 - [ ] Record the session cost
 
 ## K2 fixes in this copy
