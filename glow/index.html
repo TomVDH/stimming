@@ -104,7 +104,7 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, qualitySetting, onQuality } from '../shared/stim.js';
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, qualitySetting, onQuality, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -429,13 +429,14 @@ function preExpose() {
 // The torch charges the paper along its path and soaks the spot it holds.
 function charge(dt) {
   const on = writing();
-  if (!on) held = 0;
+  if (!on) { held = 0; strokeSpeed = 0; }
   if (!on && !segs.length) return;
   const w = torch.r * 0.09;
   // Each segment carries its own time, so slow frames do not fake speed.
   let L = 0, T = 0;
   for (const s of segs) { L += Math.hypot(s[2] - s[0], s[3] - s[1]); T += s[4]; }
   const speed = T > 0 ? L / T : 0;
+  strokeSpeed = on ? speed : 0;
   // Only a nearly still torch soaks the spot under it.
   const still = speed < torch.r * 0.4;
   if (on) held = still ? held + dt : held * Math.exp(-dt * 10);
@@ -517,7 +518,10 @@ function frameFn(now) {
   last = now;
   let more = false;
   try { more = step(dt, now); render(); }
-  finally { if (visible && (live || more)) raf = requestAnimationFrame(frameFn); }
+  finally {
+    if (visible && (live || more)) raf = requestAnimationFrame(frameFn);
+    else { hush(); kit.rest(() => !raf); }
+  }
 }
 function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
 // Any input wakes the loop and resets the sleep clock.
@@ -535,6 +539,7 @@ function step(dt, now) {
   decayPass(dt, clearing ? 14 : rate);
   if (clearUntil > 0 && !clearing) { clearUntil = -1; clearAcc(); lastCharge = -1e9; }
   charge(dt);
+  humTick();
   flash = flash * Math.exp(-dt / 0.09);
   if (flash < 0.003) flash = 0;
   if (lively()) watchdog(dt);
@@ -582,6 +587,70 @@ function resize(force = false) {
   wake();
 }
 
+/* ---------- sound ---------- */
+// Space and Enter switch the torch, so they count as gestures.
+const kit = audioKit({ keys: new Set([' ', 'Enter']) });
+let V = null, T = null, toneLoad = null, strokeSpeed = 0;
+const LEAD = 0.005;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Sound pans with the torch, a little short of the edges.
+const panOf = () => clamp((torch.x / W) * 2 - 1, -1, 1) * 0.6;
+// The first live call loads Tone; voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
+  });
+  return null;
+}
+function buildVoices() {
+  const pan = new T.Panner(0).connect(kit.out);
+  // The switch: a short band of noise over a tiny knock.
+  const clickF = new T.Filter({ type: 'bandpass', Q: 2.5, frequency: 2400 }).connect(pan);
+  const click = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.012, sustain: 0, release: 0.004 } }).connect(clickF);
+  const knock = new T.MembraneSynth({ pitchDecay: 0.008, octaves: 2, envelope: { attack: 0.0005, decay: 0.03, sustain: 0, release: 0.01 }, volume: -18 }).connect(pan);
+  // The hum runs at zero gain; the lit torch opens it.
+  const hg = new T.Gain(0).connect(pan);
+  const hf = new T.Filter({ type: 'lowpass', Q: 1, frequency: 320 }).connect(hg);
+  const hum = new T.Oscillator({ type: 'sawtooth', frequency: 100 }).connect(hf).start();
+  const whine = new T.Oscillator({ type: 'sine', frequency: 6200, volume: -34 }).connect(hg).start();
+  // The flash: a bright snap over a low thump.
+  const snapF = new T.Filter({ type: 'highpass', Q: 0.7, frequency: 2500 }).connect(kit.out);
+  const snap = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.05, sustain: 0, release: 0.02 } }).connect(snapF);
+  const thump = new T.MembraneSynth({ pitchDecay: 0.02, octaves: 3, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.05 }, volume: -12 }).connect(kit.out);
+  return { pan, clickF, click, knock, hg, hf, hum, whine, snapF, snap, thump };
+}
+// The switch clicks on press and on release; no click repeats exactly.
+function click(on, delay = 0) {
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime + LEAD + delay;
+  v.pan.pan.setValueAtTime(panOf(), t);
+  v.clickF.frequency.setValueAtTime((on ? 2300 : 3100) * jit(0.12), t);
+  v.click.triggerAttackRelease(0.012, t, (on ? 0.55 : 0.4) * jit(0.15));
+  v.knock.triggerAttackRelease((on ? 190 : 240) * jit(0.06), 0.03, t + 0.001, 0.5 * jit(0.2));
+  if (on) v.hum.frequency.setValueAtTime(100 * jit(0.03), t);
+}
+// The hum follows the torch: level, pan, and a brighter tone on fast strokes.
+function humTick() {
+  if (!V || !kit.live()) return;
+  const t = kit.ac.currentTime;
+  V.hg.gain.setTargetAtTime(torch.on * 0.16, t, 0.03);
+  V.pan.pan.setTargetAtTime(panOf(), t, 0.05);
+  V.hf.frequency.setTargetAtTime(300 + Math.min(1, strokeSpeed / (torch.r * 8)) * 500, t, 0.05);
+}
+function hush() { if (V && kit.ac) V.hg.gain.setTargetAtTime(0, kit.ac.currentTime, 0.02); }
+function flashSound() {
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime + LEAD;
+  v.snapF.frequency.setValueAtTime(2500 * jit(0.15), t);
+  v.snap.triggerAttackRelease(0.05, t, 0.6 * jit(0.1));
+  v.thump.triggerAttackRelease(70 * jit(0.08), 0.12, t, 0.5 * jit(0.15));
+}
+
 /* ---------- input ---------- */
 const at = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (r.bottom - e.clientY) * H / r.height]; };
 // A move queues one segment with its own duration in seconds.
@@ -598,6 +667,7 @@ stage.addEventListener('pointerdown', e => {
   torch.x = p[0]; torch.y = p[1]; torch.ms = e.timeStamp;
   press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), kind: 'press' };
   segs.push([p[0], p[1], p[0], p[1], 0.016]);
+  click(true);
   poke();
 });
 stage.addEventListener('pointermove', e => {
@@ -611,7 +681,9 @@ stage.addEventListener('pointermove', e => {
 const end = e => {
   if (!press || (e && e.pointerId !== press.id)) return;
   // A tap blinks the torch on for a moment.
-  if (press.kind === 'press') tapUntil = t + 0.14;
+  const tap = press.kind === 'press';
+  if (tap) tapUntil = t + 0.14;
+  click(false, tap ? 0.14 : 0);
   press = null;
   poke();
 };
@@ -627,6 +699,7 @@ stage.addEventListener('keydown', e => {
     lift(); keyOn = true;
     torch.ms = performance.now();
     segs.push([torch.x, torch.y, torch.x, torch.y, 0.016]);
+    click(true);
     poke();
   } else if (mv) {
     e.preventDefault();
@@ -636,8 +709,8 @@ stage.addEventListener('keydown', e => {
     poke();
   }
 });
-stage.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') { keyOn = false; poke(); } });
-stage.addEventListener('blur', () => { keyOn = false; poke(); });
+stage.addEventListener('keyup', e => { if ((e.key === ' ' || e.key === 'Enter') && keyOn) { keyOn = false; click(false); poke(); } });
+stage.addEventListener('blur', () => { if (keyOn) click(false); keyOn = false; poke(); });
 
 /* ---------- bar ---------- */
 function popover(box, btn) {
@@ -658,6 +731,7 @@ document.getElementById('flash').addEventListener('click', () => {
   lift(); clearUntil = -1;
   fillPass(0.32);
   flash = reduce ? 0.3 : 1;
+  flashSound();
   lastCharge = t;
   poke();
 });
@@ -675,7 +749,7 @@ requestAnimationFrame(() => canvas.classList.add('on'));
 whenVisible(stage, v => {
   visible = v;
   if (v) wake();
-  else if (raf) { cancelAnimationFrame(raf); raf = 0; }
+  else { if (raf) { cancelAnimationFrame(raf); raf = 0; } hush(); }
 });
 // The preview pool clicks off a moment after the intro.
 Promise.race([introDone, wait(9000)]).then(() => wait(700)).then(() => { lift(); poke(); });
