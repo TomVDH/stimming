@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T11:47:05Z
+updated_at: 2026-11-08T11:51:55Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -36,3 +36,5 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - [x] Rain on the front glass after Train Ride: still beads at three sizes, running drops with trails swept by the wind, refraction, dark rims, glints of the light behind
 
 - [x] Tom: glass rain replaced; a slight fog on the glass and soft bokeh drops that sprinkle in, lit by the light behind
+
+- [x] Tom: painted drops removed; real depth-of-field bokeh after Buoy Business (havoc src/engine/post.js discBlur): 28 golden-angle taps turned per pixel, hot pixels weighted, blur by distance from the nearest turbine in view; off on ladder rung 2
