@@ -1,0 +1,23 @@
+---
+# stimming-er83
+title: 'Toy: Oil slick'
+status: in-progress
+type: feature
+priority: normal
+created_at: 2026-11-08T10:58:46Z
+updated_at: 2026-11-08T11:03:40Z
+---
+
+Build Oil slick (idea 77): a thin oil film on a puddle; drag to swirl the rainbow bands. Folder `oilslick`. It starts in the Lab. Raw WebGL2. It follows the Look rule: one puddle, no props.
+
+- [x] Blockout: a still of the film with one swirl, one held hole and one fresh drop
+- [ ] Checkpoint 1: Tom signs off the blockout
+- [ ] Film: thickness field in a float texture, advected by a 2D fluid
+- [ ] Colour: spectral thin-film interference, oil on water
+- [ ] Gesture: drag swirls the film; hold thins it into rings; + Drop adds oil
+- [ ] Bar: sky chips, Film slider, + Drop, Shuffle, Clear, Settings
+- [ ] Frame loop: 30 fps or better, idle sleep, hidden stop, reduced motion
+- [ ] Sound: Tom to confirm
+- [ ] toys.json entry and menu Lab entry with an icon and a GSAP hook
+- [ ] QA: 1280 and 375 px, clean console, idle stop, hidden tab stops the loop
+- [ ] Record the session cost
