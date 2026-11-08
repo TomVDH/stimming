@@ -257,6 +257,60 @@ const concrete = new THREE.ShaderMaterial({
   }`,
 });
 
+// Precast concrete: segment tone, joints, rain streaks, a wet deck.
+// aSU: arc length and across offset; across 99 marks a pier.
+const precast = new THREE.ShaderMaterial({
+  uniforms: { ...k2, ...lightU },
+  vertexShader: /* glsl */`
+  attribute vec2 aSU;
+  varying vec3 vP;
+  varying vec3 vN;
+  varying vec2 vSU;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vP = w.xyz; vSU = aSU;
+    vN = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP;
+  varying vec3 vN;
+  varying vec2 vSU;
+  ${HEAD}
+  ${LIGHTS_GLSL}
+  void main() {
+    vec3 N = normalize(vN);
+    vec3 V = normalize(cameraPosition - vP);
+    float pier = step(50.0, vSU.y);
+    // Each 4 m segment has its own tone.
+    float tone = 0.8 + 0.32 * k2hash(vec2(floor(vSU.x / 4.0), 3.0 + pier * 4.0));
+    // Joints: a dark groove each 4 m, faded out where it would alias.
+    float dj = abs(fract(vSU.x / 4.0 + 0.5) - 0.5) * 4.0, aa = fwidth(vSU.x);
+    float joint = mix(mix(0.3, 1.0, smoothstep(0.05, 0.05 + 1.5 * aa, dj)), 1.0, max(pier, smoothstep(0.4, 1.4, aa)));
+    // Rain streaks run down every wall.
+    float vert = 1.0 - abs(N.y);
+    float along = mix(vSU.x, vP.x + vP.z, pier);
+    float streak = k2noise(vec2(along * 2.2, vP.y * 0.12)) * k2noise(vec2(along * 0.7 + 3.0, vP.y * 0.05));
+    // The tide line darkens and wets each pier foot.
+    float tide = 1.0 - smoothstep(1.0, 2.6, vP.y + k2noise(vec2(along * 0.8, 1.0)) * 0.8);
+    // The deck top and its darker slab track.
+    float deck = smoothstep(0.85, 0.95, N.y) * (1.0 - pier) * step(abs(vSU.y), 6.8);
+    float slab = deck * (1.0 - smoothstep(2.0, 2.4, abs(vSU.y + 1.6)));
+    // The wet deck top hides its joints; walls show them.
+    joint = mix(joint, 1.0, deck * 0.8);
+    vec3 albedo = vec3(0.25, 0.245, 0.24) * tone * joint;
+    albedo *= (1.0 - 0.45 * streak * vert) * (1.0 - 0.6 * tide) * (1.0 - 0.5 * slab);
+    float wet = max(deck * 0.9, max(streak * vert * 0.5, tide * 0.8));
+    float under = exp(-length(vP.xz - uGlow.xz) / uGlowR);
+    vec3 amb = uCool * 0.006 + uAmber * 0.04 * under * max(N.y, 0.0) + uAmber * 0.008 * under;
+    vec3 c = albedo * (amb + k2lights(vP, N));
+    // Wet faces mirror each lamp and the lit cloud.
+    float F = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    c += wet * (k2spec(vP, N, V, 90.0) * 0.35 + k2sky(reflect(-V, N)) * F * 0.8);
+    gl_FragColor = vec4(k2haze(c, vP, 1.0), 1.0);
+  }`,
+});
+
 // Window atlas: 32 x 32 cells of glass, some lit warm, some fluorescent.
 const atlas = (() => {
   const N = 32, C = 16, cv = document.createElement('canvas');
@@ -576,27 +630,85 @@ function at(s, side = 0) {
   const n = new THREE.Vector2(-tan.y, tan.x);
   return { x: p.x + n.x * side, z: p.y + n.y * side, yaw: Math.atan2(tan.x, tan.y), tan };
 }
-const DECK = 24, HW = 7.5;
-{
-  const SEG = 10;
-  for (let s = 0; s < LEN; s += SEG) {
-    const c = at(s + SEG / 2);
-    box(c.x, DECK - 3.2, c.z, HW * 2, 3.2, SEG + 0.3, c.yaw);
-    for (const side of [-1, 1]) {
-      const e = at(s + SEG / 2, side * (HW - 0.3));
-      box(e.x, DECK, e.z, 0.6, 1.2, SEG + 0.3, e.yaw);
-    }
-    // Twin rails on sleepers' line: thin steel bars.
-    for (const side of [-0.75, 0.75]) {
-      const r = at(s + SEG / 2, side - 1.6);
-      box(r.x, DECK, r.z, 0.14, 0.22, SEG + 0.05, r.yaw, railParts);
+const DECK = 24, HW = 7.5, TRACK = -1.6, S0 = -220;
+const castParts = [];
+// Sweep a convex profile [across, up] along the track; faces stay flat.
+// aSU holds arc length and across offset for the precast shader.
+function sweep(prof, s0, s1, step) {
+  const n = Math.max(1, Math.ceil((s1 - s0) / step)), fr = [];
+  for (let i = 0; i <= n; i++) { const s = s0 + (s1 - s0) * i / n, c = atX(s); fr.push({ s, x: c.x, z: c.z, nx: -c.tan.y, nz: c.tan.x }); }
+  const cu = prof.reduce((a, p) => a + p[0], 0) / prof.length, cv = prof.reduce((a, p) => a + p[1], 0) / prof.length;
+  const pos = [], nor = [], su = [];
+  const P = (f, p) => [f.x + f.nx * p[0], DECK + p[1], f.z + f.nz * p[0]];
+  for (let e = 0; e < prof.length; e++) {
+    const a = prof[e], b = prof[(e + 1) % prof.length];
+    // The outward normal points away from the profile centre.
+    let nu = b[1] - a[1], nv = a[0] - b[0];
+    if (nu * ((a[0] + b[0]) / 2 - cu) + nv * ((a[1] + b[1]) / 2 - cv) < 0) { nu = -nu; nv = -nv; }
+    const nl = Math.hypot(nu, nv); nu /= nl; nv /= nl;
+    for (let i = 0; i < n; i++) {
+      const f0 = fr[i], f1 = fr[i + 1];
+      const q = [[f0, a], [f0, b], [f1, b], [f1, a]];
+      const N0 = new THREE.Vector3(f0.nx * nu, nv, f0.nz * nu);
+      const v = q.map(([f, p]) => new THREE.Vector3(...P(f, p)));
+      // Wind each quad so its face points along the normal.
+      const flip = new THREE.Vector3().subVectors(v[1], v[0]).cross(new THREE.Vector3().subVectors(v[2], v[0])).dot(N0) < 0;
+      for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
+        const [f, p] = q[k];
+        pos.push(...P(f, p)); nor.push(f.nx * nu, nv, f.nz * nu); su.push(f.s, p[0]);
+      }
     }
   }
-  // Heavy piers with flared caps, standing in the sea.
-  for (let s = 0; s <= LEN; s += 40) {
-    const c = at(s);
-    box(c.x, -6, c.z, 7, DECK - 3.2 - 2.6 + 6, 5.5, c.yaw);
-    box(c.x, DECK - 5.8, c.z, HW * 2 - 1, 2.6, 7, c.yaw);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('aSU', new THREE.Float32BufferAttribute(su, 2));
+  castParts.push(g);
+}
+// A vertical prism between two convex outlines [across, along], with caps.
+function prism(s, lo, hi, y0, y1) {
+  const c = atX(s), ax = -c.tan.y, az = c.tan.x;
+  const W = (p, y) => new THREE.Vector3(c.x + ax * p[0] + c.tan.x * p[1], y, c.z + az * p[0] + c.tan.y * p[1]);
+  const pos = [], push = (...vs) => { for (const v of vs) pos.push(v.x, v.y, v.z); };
+  const n = lo.length, mid = W([0, 0], 0);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, a = W(lo[i], y0), b = W(lo[j], y0), d = W(hi[i], y1), e = W(hi[j], y1);
+    const out = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5).sub(mid).setY(0);
+    const fn = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(e, a));
+    if (fn.dot(out) < 0) push(a, e, b, a, d, e); else push(a, b, e, a, e, d);
+  }
+  // Top cap: a fan, wound to face up.
+  for (let i = 1; i < n - 1; i++) {
+    const a = W(hi[0], y1), b = W(hi[i], y1), d = W(hi[i + 1], y1);
+    if (new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(d, a)).y > 0) push(a, b, d); else push(a, d, b);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  // Piers mark across as 99, so the shader leaves joints off them.
+  g.setAttribute('aSU', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2).map((_, i) => (i % 2 ? 99 : s)), 2));
+  castParts.push(g);
+}
+// A chamfered rectangle outline, w across and t along.
+const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2, -t / 2 + k], [w / 2, t / 2 - k], [w / 2 - k, t / 2], [-w / 2 + k, t / 2], [-w / 2, t / 2 - k], [-w / 2, -t / 2 + k]];
+{
+  // Precast box girder: a thin deck slab over a deep trapezoid spine.
+  sweep([[-HW, 0], [HW, 0], [HW, -0.7], [5.2, -1.0], [3.6, -3.6], [-3.6, -3.6], [-5.2, -1.0], [-HW, -0.7]], S0, LEN, 2);
+  // Solid parapets, flush with the slab edge, sloped on the inside.
+  for (const k of [-1, 1]) sweep([[k * 6.85, 0], [k * HW, 0], [k * HW, 1.25], [k * 7.15, 1.25]], S0, LEN, 2);
+  // Twin rails: thin steel bars on the track line.
+  for (let s = S0; s < LEN; s += 10) {
+    for (const side of [-0.75, 0.75]) {
+      const r = atX(s + 5, side + TRACK);
+      box(r.x, DECK, r.z, 0.14, 0.22, 10.05, r.yaw, railParts);
+    }
+  }
+  // Blade piers: a pile cap at the waterline, a slim shaft, a flared head.
+  const yHead = DECK - 3.6 - 2.4;
+  for (let s = S0 + 20; s <= LEN; s += 40) {
+    prism(s, chamfer(9, 4.6, 0.8), chamfer(9, 4.6, 0.8), -3, 1.4);
+    prism(s, chamfer(5.6, 2.4, 0.5), chamfer(5.6, 2.4, 0.5), 1.4, yHead);
+    prism(s, chamfer(5.6, 2.4, 0.5), chamfer(7.6, 2.8, 0.5), yHead, DECK - 3.6);
   }
   // Catenary masts in rhythm, with a small light at each top.
   const wire = [];
@@ -630,54 +742,134 @@ function atX(s, side = 0) {
   return { x: c.x + c.tan.x * d, z: c.z + c.tan.y * d, yaw: c.yaw, tan: c.tan };
 }
 const train = (() => {
-  const CAR = 23, GAP = 1.2, N = 4, SPAN = N * (CAR + GAP) - GAP, TRACK = -1.6;
-  // One car, built at the origin and placed each frame.
-  const body = mergeGeometries([
-    new THREE.BoxGeometry(3.1, 3.7, CAR).translate(0, 0.7 + 1.85, 0).toNonIndexed(),
-    new THREE.BoxGeometry(2.6, 0.35, CAR - 1).translate(0, 4.4 + 0.175, 0).toNonIndexed(),
-  ]);
-  const wins = [];
-  for (const side of [-1, 1]) for (let k = 0; k < 9; k++) {
-    const g = new THREE.BoxGeometry(0.06, 1.0, 1.8).translate(side * 1.57, 2.2 + 0.5, -CAR / 2 + 1.9 + k * 2.4);
-    paint(g, scale(WARM, 2.0));
-    wins.push(g.toNonIndexed());
+  // A raked locomotive and three long wagons: one heavy, monolithic machine.
+  const LOCO = 20, CAR = 24, GAP = 1.0, N = 4;
+  const lens = [LOCO, CAR, CAR, CAR], offs = [];
+  for (let i = 0, o = 0; i < N; o += lens[i] + GAP, i++) offs.push(o + lens[i] / 2);
+  const SPAN = offs[N - 1] + lens[N - 1] / 2;
+  const attrs = (g, col, kind) => {
+    g = g.index ? g.toNonIndexed() : g;
+    g.deleteAttribute('uv'); g.clearGroups();
+    paint(g, col);
+    g.setAttribute('aKind', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(kind), 1));
+    return g;
+  };
+  // Hull section: a chamfered box on the bogies, built along +z.
+  function hull(len, loco) {
+    const h = loco ? 3.4 : 3.7, ch = loco ? 0.55 : 0.8, x = 1.65, y0 = 1.1, y1 = y0 + h;
+    const shape = new THREE.Shape([[-x + 0.2, y0], [x - 0.2, y0], [x, y0 + 0.2], [x, y1 - ch], [x - ch, y1], [-x + ch, y1], [-x, y1 - ch], [-x, y0 + 0.2]].map(([a, b]) => new THREE.Vector2(a, b)));
+    let g = new THREE.ExtrudeGeometry(shape, { depth: len, steps: loco ? 24 : 1, bevelEnabled: false });
+    g.translate(0, 0, -len / 2);
+    if (loco) {
+      // The nose rakes down to a wedge over its last 6.5 m.
+      const p = g.attributes.position, zN = len / 2 - 6.5;
+      for (let i = 0; i < p.count; i++) {
+        const z = p.getZ(i);
+        if (z <= zN) continue;
+        const t = (z - zN) / 6.5, y = p.getY(i);
+        if (y > 2.2) p.setY(i, 2.2 + (y - 2.2) * (1 - 0.72 * t));
+        p.setX(i, p.getX(i) * (1 - 0.08 * t));
+      }
+      g.computeVertexNormals();
+    }
+    const DARK = [0.025, 0.025, 0.027], BODY = [0.15, 0.15, 0.155];
+    const bits = [attrs(g, BODY, loco ? 1 : 0)];
+    for (const z of [-len / 2 + 3.6, len / 2 - 3.6]) bits.push(attrs(new THREE.BoxGeometry(2.7, 1.0, 3.2).translate(0, 0.55, z), DARK, 0));
+    // A low roof block breaks the long top line.
+    const rl = len * (loco ? 0.45 : 0.8);
+    bits.push(attrs(new THREE.BoxGeometry(2.0, 0.35, rl).translate(0, y1 + 0.17, loco ? -len * 0.18 : 0), DARK, 0));
+    return mergeGeometries(bits);
   }
-  const winG = mergeGeometries(wins);
+  // Hull: dark wet paint with panel seams, a cab slit and flank markers.
+  const hullMat = new THREE.ShaderMaterial({
+    uniforms: { ...k2, ...lightU },
+    vertexColors: true,
+    vertexShader: /* glsl */`
+    attribute float aKind;
+    varying vec3 vP;
+    varying vec3 vN;
+    varying vec3 vL;
+    varying vec3 vNL;
+    varying vec3 vC;
+    varying float vKind;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xyz; vL = position; vNL = normal; vC = color; vKind = aKind;
+      vN = normalize(mat3(modelMatrix) * normal);
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    varying vec3 vN;
+    varying vec3 vL;
+    varying vec3 vNL;
+    varying vec3 vC;
+    varying float vKind;
+    ${HEAD}
+    ${LIGHTS_GLSL}
+    // A thin line at distance d, softened by the pixel footprint.
+    float line(float d, float w, float aa) { return 1.0 - smoothstep(w, w + aa * 1.5 + 0.005, abs(d)); }
+    void main() {
+      vec3 N = normalize(vN), V = normalize(cameraPosition - vP), NL = normalize(vNL);
+      float side = step(0.8, abs(NL.x));
+      float az = fwidth(vL.z), ay = fwidth(vL.y);
+      // Panel seams every 2.6 m and one at the waist, on the flanks only.
+      float seam = side * max(line(fract(vL.z / 2.6 + 0.5) * 2.6 - 1.3, 0.02, az), line(vL.y - 2.9, 0.015, ay));
+      vec3 albedo = vC * (1.0 - 0.6 * seam);
+      // A dark skirt runs along the foot of the body.
+      albedo *= mix(0.35, 1.0, smoothstep(1.55, 1.62, vL.y));
+      float under = exp(-length(vP.xz - uGlow.xz) / uGlowR);
+      vec3 amb = uCool * 0.01 + uAmber * 0.05 * under * (0.5 + 0.5 * N.y);
+      vec3 c = albedo * (amb + k2lights(vP, N));
+      // Wet paint: sharp lamp highlights and the lit cloud on the shoulders.
+      float F = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+      c += (k2spec(vP, N, V, 70.0) * 0.25 + k2sky(reflect(-V, N)) * F * 1.4) * (1.0 - seam) * step(0.1, vC.r);
+      // The cab slit glows across the raked nose.
+      vec3 em = vec3(1.0, 0.62, 0.3) * 2.4 * vKind * step(0.3, NL.z) * step(abs(vL.x), 1.15) * line(vL.y - 3.5, 0.11, ay);
+      // A cold marker line runs along each flank.
+      em += vec3(0.7, 0.85, 1.0) * 1.8 * side * step(1.5, vL.y) * line(vL.y - 1.7, 0.03, ay);
+      float f = k2hazeAmount(vP);
+      vec3 col = mix(c, k2hazeColor(normalize(vP - cameraPosition), vP), f);
+      gl_FragColor = vec4(col + em * (1.0 - 0.7 * f), 1.0);
+    }`,
+  });
+  const locoG = hull(LOCO, true), carG0 = hull(CAR, false);
   const cars = [];
   for (let i = 0; i < N; i++) {
-    const g = new THREE.Group();
-    g.add(new THREE.Mesh(body, concrete), new THREE.Mesh(winG, glowMat));
-    g.userData.live = true;
-    scene.add(g);
-    cars.push(g);
+    const m = new THREE.Mesh(i ? carG0 : locoG, hullMat);
+    m.userData.live = true;
+    scene.add(m);
+    cars.push(m);
   }
-  // Lamps: two tail lights and the headlight, as their own small flare set.
+  // Lamps: two red tail lights and two head lamps, as a small flare set.
   const lampG = new THREE.BufferGeometry();
-  lampG.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(9), 3).setUsage(THREE.DynamicDrawUsage));
+  lampG.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(12), 3).setUsage(THREE.DynamicDrawUsage));
   // The tail is orange-red, so the warning-light blink skips it.
-  lampG.setAttribute('color', new THREE.Float32BufferAttribute([...scale([1, 0.2, 0.1], 6), ...scale([1, 0.2, 0.1], 6), ...scale(WHITE, 12)], 3));
-  lampG.setAttribute('size', new THREE.Float32BufferAttribute([70, 70, 160], 1));
+  lampG.setAttribute('color', new THREE.Float32BufferAttribute([...scale([1, 0.2, 0.1], 6), ...scale([1, 0.2, 0.1], 6), ...scale(WHITE, 9), ...scale(WHITE, 9)], 3));
+  lampG.setAttribute('size', new THREE.Float32BufferAttribute([70, 70, 120, 120], 1));
   const lamps = new THREE.Points(lampG, flareMat);
   lamps.renderOrder = 3; lamps.frustumCulled = false; lamps.userData.live = true; scene.add(lamps);
   const head = new THREE.Vector3();
   orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2 });
-  // Light list slots: one warm lamp per car, then the headlight.
-  const carL = [], carG = [];
-  for (let i = 0; i < N; i++) { carL.push(lights.length); addLight(new THREE.Vector3(), new THREE.Vector3(...WARM), 1.3, 9); carG.push(glints.length); addGlint(new THREE.Vector3(), WARM, 1.4, 0.16); }
+  // Light list slots: one cold flank light per car, then the headlight.
+  const COLD = [0.7, 0.85, 1.0];
+  const carL = [], carGl = [];
+  for (let i = 0; i < N; i++) { carL.push(lights.length); addLight(new THREE.Vector3(), new THREE.Vector3(...COLD), 0.6, 8); carGl.push(glints.length); addGlint(new THREE.Vector3(), COLD, 0.6, 0.12); }
   const headL = lights.length; addLight(new THREE.Vector3(), new THREE.Vector3(1, 0.95, 0.85), 4, 45, new THREE.Vector3(0, 0, -1), Math.cos(0.3));
   const headG = glints.length; addGlint(new THREE.Vector3(), WHITE, 3.0, 0.5);
   const beam = cone(new THREE.Vector3(), new THREE.Vector3(0, 0, -1), 110, 0.2, new THREE.Vector3(1, 0.95, 0.85), 0.7);
   beam.userData.live = true;
   const Y = new THREE.Vector3(0, -1, 0), d = new THREE.Vector3(), p = new THREE.Vector3();
-  // Place the train: s is the head's place on the track, dir its heading.
+  // Place the train: s is the nose's place on the track, dir its heading.
   function place(s, dir, sea) {
     for (let i = 0; i < N; i++) {
-      const sc = s - dir * (i * (CAR + GAP) + CAR / 2), c = atX(sc, TRACK);
+      const c = atX(s - dir * offs[i], TRACK);
       cars[i].position.set(c.x, DECK, c.z);
-      cars[i].rotation.y = c.yaw;
-      p.set(c.x, DECK + 2.6, c.z);
+      // Each car faces the way the train runs.
+      cars[i].rotation.y = c.yaw + (dir < 0 ? Math.PI : 0);
+      p.set(c.x, DECK + 1.7, c.z);
       lights[carL[i]].pos.copy(p);
-      if (sea) sea.material.uniforms.uGP.value[carG[i]].set(p.x, DECK + 2.4, p.z, 1.4);
+      if (sea) sea.material.uniforms.uGP.value[carGl[i]].set(p.x, p.y, p.z, 0.6);
     }
     const h = atX(s + dir * 0.2, TRACK), ahead = atX(s + dir * 80, TRACK);
     head.set(h.x, DECK + 2.0, h.z);
@@ -687,13 +879,17 @@ const train = (() => {
     beam.position.copy(head);
     beam.quaternion.setFromUnitVectors(Y, d);
     const pos = lampG.attributes.position;
-    for (const [k, side] of [[0, -0.9], [1, 0.9]]) { const t = atX(s - dir * (SPAN + 0.1), TRACK + side); pos.setXYZ(k, t.x, DECK + 1.6, t.z); }
-    pos.setXYZ(2, head.x, head.y, head.z);
+    for (const [k, side] of [[0, -0.9], [1, 0.9]]) {
+      const t = atX(s - dir * (SPAN + 0.1), TRACK + side), f = atX(s + dir * 0.15, TRACK + side);
+      pos.setXYZ(k, t.x, DECK + 1.6, t.z);
+      pos.setXYZ(k + 2, f.x, DECK + 1.75, f.z);
+    }
     pos.needsUpdate = true;
   }
-  function show(on) { for (const c of cars) c.visible = on; lamps.visible = beam.visible = on; }
+  let on = true;
+  function show(v) { on = v; for (const c of cars) c.visible = v; lamps.visible = beam.visible = v; }
   // The bake turns these lamps off, so no train light stays on the deck.
-  return { place, show, SPAN, lightIdx: [...carL, headL] };
+  return { place, show, SPAN, lightIdx: [...carL, headL], get on() { return on; } };
 })();
 // The first frame shows the train mid-ground, outbound.
 train.place(175, 1, null);
@@ -860,6 +1056,7 @@ const search = (() => {
 
 // Bake static geometry into a few draw calls.
 if (parts.length) scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
+if (castParts.length) scene.add(new THREE.Mesh(mergeGeometries(castParts), precast));
 if (railParts.length) scene.add(new THREE.Mesh(mergeGeometries(railParts), steel));
 if (facadeParts.length) scene.add(new THREE.Mesh(mergeGeometries(facadeParts), facade));
 if (glowParts.length) scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
@@ -1133,6 +1330,20 @@ statics.traverse(o => {
 const rtOpt = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
 const backRT = new THREE.WebGLRenderTarget(1, 1, { ...rtOpt, depthTexture: new THREE.DepthTexture(1, 1) });
 const fogRT = new THREE.WebGLRenderTarget(1, 1, rtOpt);
+// World normals of the still layer, so the train can relight it.
+const normRT = new THREE.WebGLRenderTarget(1, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+const normalMat = new THREE.ShaderMaterial({
+  vertexShader: /* glsl */`varying vec3 vN; void main() { vN = mat3(modelMatrix) * normal; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  // Lines have no normals; they count as facing up.
+  fragmentShader: /* glsl */`varying vec3 vN; void main() { vec3 N = length(vN) > 0.01 ? normalize(vN) : vec3(0.0, 1.0, 0.0); gl_FragColor = vec4(N * 0.5 + 0.5, 1.0); }`,
+});
+// Train light slots for the relight: position and power, colour and range, spot.
+const NT = 5;
+const trainU = {
+  uTP: { value: Array.from({ length: NT }, () => new THREE.Vector4()) },
+  uTC: { value: Array.from({ length: NT }, () => new THREE.Vector4()) },
+  uTD: { value: Array.from({ length: NT }, () => new THREE.Vector4()) },
+};
 // The sea's fog and horizon never change, so they bake per pixel too.
 const fogScene = new THREE.Scene();
 fogScene.add(new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000).rotateX(-Math.PI / 2).translate(0, 0, -2000), new THREE.ShaderMaterial({
@@ -1158,14 +1369,17 @@ const su = sea.material.uniforms;
 const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
   uniforms: {
     ...k2, uGP: su.uGP, uGC: su.uGC, uRip: su.uRip, uRT: su.uRT, uReflK: su.uReflK,
-    tBack: { value: backRT.texture }, tDepth: { value: backRT.depthTexture }, tFog: { value: fogRT.texture },
+    tBack: { value: backRT.texture }, tDepth: { value: backRT.depthTexture }, tFog: { value: fogRT.texture }, tNorm: { value: normRT.texture }, ...trainU,
     tMirror: { value: sea.getRenderTarget().texture }, uMirrorM: { value: mirrorM }, uInvVP: { value: invVP },
     uGX: { value: new Float32Array(NG) },
   },
   depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth,
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
   fragmentShader: /* glsl */`
-  uniform sampler2D tBack, tDepth, tFog, tMirror;
+  uniform sampler2D tBack, tDepth, tFog, tMirror, tNorm;
+  uniform vec4 uTP[${NT}];
+  uniform vec4 uTC[${NT}];
+  uniform vec4 uTD[${NT}];
   uniform mat4 uMirrorM, uInvVP;
   uniform vec4 uGP[${NG}];
   uniform vec4 uGC[${NG}];
@@ -1256,9 +1470,35 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
     col += st * mix(0.45, 1.0, F) * uGlintK;
     return col;
   }
+  // Train light on a baked pixel: a diffuse pool and a wet highlight.
+  vec3 trainLight(vec3 P, vec3 N, vec3 V, float wet) {
+    vec3 sum = vec3(0.0);
+    for (int i = 0; i < ${NT}; i++) {
+      if (uTP[i].w <= 0.0) continue;
+      vec3 L = uTP[i].xyz - P;
+      float d = length(L);
+      if (d > uTC[i].w * 8.0) continue;
+      L /= d;
+      float att = uTP[i].w * uLightK / (1.0 + pow(d / uTC[i].w, 2.0));
+      float spot = uTD[i].w > -1.5 ? smoothstep(uTD[i].w, uTD[i].w + 0.12, dot(-L, uTD[i].xyz)) : 1.0;
+      float diff = max(dot(N, L) * 0.85 + 0.15, 0.0);
+      float sp = pow(max(dot(N, normalize(L + V)), 0.0), 60.0) * wet * 4.0;
+      sum += uTC[i].rgb * att * spot * (0.22 * diff + sp);
+    }
+    return sum;
+  }
   void main() {
     vec4 back = texture2D(tBack, vUv);
     vec3 col = back.rgb;
+    // Rebuild each baked pixel's position from depth, then add train light.
+    vec4 nz = texture2D(tNorm, vUv);
+    if (back.a > 0.5 && nz.a > 0.5) {
+      vec3 N = normalize(nz.xyz * 2.0 - 1.0);
+      vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, texture2D(tDepth, vUv).r * 2.0 - 1.0, 1.0);
+      vec3 P = wp.xyz / wp.w;
+      vec3 tl = trainLight(P, N, normalize(cameraPosition - P), smoothstep(0.8, 0.97, N.y));
+      if (dot(tl, tl) > 1e-10) col += tl * (1.0 - k2hazeAmount(P));
+    }
     if (back.a < 0.999) {
       vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
       vec3 dir = normalize(wp.xyz / wp.w - cameraPosition);
@@ -1301,6 +1541,14 @@ function bake(renderer) {
   renderer.setClearColor(0x000000, 0);
   renderer.setRenderTarget(backRT); renderer.clear(); renderer.render(scene, camera);
   renderer.setRenderTarget(fogRT); renderer.clear(); renderer.render(fogScene, camera);
+  // Normals: see-through parts stay out, so they never take train light.
+  normRT.setSize(Math.round(w * pr), Math.round(h * pr));
+  const hid = [];
+  statics.traverse(o => { if (o.visible && [].concat(o.material || []).some(m => m.transparent)) { o.visible = false; hid.push(o); } });
+  scene.overrideMaterial = normalMat;
+  renderer.setRenderTarget(normRT); renderer.clear(); renderer.render(scene, camera);
+  scene.overrideMaterial = null;
+  for (const o of hid) o.visible = true;
   renderer.setRenderTarget(prevT);
   renderer.setClearColor(clearC, prevA);
   statics.visible = false; live.visible = true; comp.visible = true;
@@ -1311,10 +1559,10 @@ function bake(renderer) {
 
   /* Motion: one clock drives the ambient life; trains run out and back. */
 train.place(175, 1, sea);
-const run = { s: 175, dir: 1, v: 20, wait: 0, user: false };
+const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false };
 let runPause = 6;
 const END = LEN + 160, START = -160;
-let time = 0, rt = 0;
+let time = 0, rt = 0, paceNow = 1;
 // The searchlight: auto sweep, or the pointer's aim while steering.
 const aimNow = new THREE.Vector2(-0.5, 0.55), aimTo = new THREE.Vector2();
 let steering = false, steerEase = 0;
@@ -1338,23 +1586,31 @@ function update(dt, pace) {
   aimNow.x += (tx - aimNow.x) * Math.min(1, dt * 6);
   aimNow.y += (tz - aimNow.y) * Math.min(1, dt * 6);
   search.aim(aimNow.x, aimNow.y);
+  paceNow = pace;
   const k = run.user ? 1 : pace;
-  if (run.wait > 0) {
+  if (run.gone) {
     run.wait -= dt * k;
-    if (run.wait <= 0) { run.dir = -run.dir; run.s = run.dir > 0 ? START : END; train.show(true); }
+    if (run.wait <= 0) { run.gone = false; run.dir = -run.dir; run.s = run.dir > 0 ? START : END; train.show(true); }
   } else {
     run.s += run.dir * run.v * dt * k;
     // Past the far end the train is lost in the port fog; then it returns.
-    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.wait = runPause; run.user = false; }
+    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.gone = true; run.wait = runPause; run.user = false; }
   }
   train.place(run.s, run.dir, sea);
   uploadLights();
+  // The relight takes the train's lamps; a hidden train lights nothing.
+  train.lightIdx.forEach((li, i) => {
+    trainU.uTP.value[i].copy(lightU.uLP.value[li]);
+    if (!train.on) trainU.uTP.value[i].w = 0;
+    trainU.uTC.value[i].copy(lightU.uLC.value[li]);
+    trainU.uTD.value[i].copy(lightU.uLD.value[li]);
+  });
   const gx = comp.material.uniforms.uGX.value;
   su.uGP.value.forEach((g, i) => { gv.set(g.x, g.y, g.z).project(camera); gx[i] = gv.z < 1 ? gv.x : 9; });
 }
 const gv = new THREE.Vector3();
 function sendTrain() {
-  if (run.wait > 0) run.wait = 0.001;
+  if (run.gone) run.wait = 0;
   run.user = true;
 }
 // A tap on the water drops a ripple; a tap on the sky sends a train.
@@ -1379,7 +1635,8 @@ function steer(ndc) {
   steering = true;
 }
 function release() { steering = false; }
-const lively = () => run.user || steering || steerEase > 0 || rips.some(r => rt - r.z < 7);
+// A moving train runs at full rate, so it never steps.
+const lively = () => run.user || steering || steerEase > 0 || rips.some(r => rt - r.z < 7) || (train.on && paceNow > 0);
 // Lower steps quality down one rung: 1 drops the mirror, 2 the rain.
 function lower(rung) {
   if (rung >= 2) rain.visible = false;
@@ -1387,7 +1644,7 @@ function lower(rung) {
 
 // Dispose frees every geometry, material and texture this scene made.
   function dispose() {
-    sea.dispose(); backRT.dispose(); fogRT.dispose();
+    sea.dispose(); backRT.dispose(); fogRT.dispose(); normRT.dispose(); normalMat.dispose();
     fogScene.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
     statics.visible = skyG.visible = true;
     scene.traverse(o => {
@@ -1474,6 +1731,9 @@ const LOOK = {
 };
 // The look becomes each knob's default, so Reset returns to it.
 for (const t of TUNE) if (t.key in LOOK) { t.set(LOOK[t.key]); t.def = t.get(); }
+// QA can park the train with ?train=<s>, in metres along the track.
+const parkAt = new URLSearchParams(location.search).get('train');
+if (parkAt !== null) { run.s = +parkAt; run.v = 0; train.place(run.s, 1, sea); }
 const tune = {
   list: TUNE,
   // set returns true when the matte painting needs a re-bake.
