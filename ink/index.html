@@ -110,7 +110,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, choices, linFit, pixelRatio, whenVisible, reduced, quality as siteQuality, setQuality as setSiteQuality, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, choices, linFit, pixelRatio, whenVisible, reduced, quality as siteQuality, setQuality as setSiteQuality, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -187,6 +187,122 @@ const ownQuality = saved('quality');
 let quality = ownQuality === 'low' || ownQuality === 'medium' ? ownQuality : siteQuality();
 // A picked step stays; otherwise a slow GPU steps quality down.
 let qualityAuto = !(ownQuality === 'low' || ownQuality === 'medium');
+
+/* ---------- sound ---------- */
+// Web Audio voices on the shared kit: muted by default, started by a gesture.
+const kit = audioKit({ keys: new Set([' ']), sleepMs: 2600 });
+const jit = (v, r) => v * (1 + (Math.random() * 2 - 1) * r);
+let busyUntil = 0, fizz = null, swish = null;
+// The context sleeps once every voice has ended and no gesture is held.
+const quiet = () => performance.now() > busyUntil && !fizz && !swish;
+function settle(ms) {
+  busyUntil = Math.max(busyUntil, performance.now() + ms);
+  kit.rest(quiet);
+}
+function noiseSrc(ac, loop = false) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = loop;
+  src.playbackRate.value = jit(1, 0.1);
+  return src;
+}
+function panned(ac, pan) {
+  const p = ac.createStereoPanner();
+  p.pan.value = Math.max(-0.8, Math.min(0.8, pan));
+  p.connect(kit.out);
+  return p;
+}
+// Drip: the bubble a drop pulls under rings as it rises, with a small splash.
+// Bloom: a low swell of noise follows as the ink spreads.
+function dripSound(pan) {
+  const ac = kit.live();
+  if (!ac) return;
+  const t = ac.currentTime + Math.random() * 0.012, out = panned(ac, pan);
+  const osc = ac.createOscillator(), og = ac.createGain(), f0 = jit(600, 0.12);
+  osc.frequency.setValueAtTime(f0, t);
+  osc.frequency.exponentialRampToValueAtTime(f0 * jit(2.7, 0.1), t + 0.04);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(jit(0.3, 0.2), t + 0.004);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  osc.connect(og).connect(out);
+  osc.start(t);
+  osc.stop(t + 0.16);
+  const splash = noiseSrc(ac), bp = ac.createBiquadFilter(), sg = ac.createGain();
+  bp.type = 'bandpass';
+  bp.frequency.value = jit(3200, 0.2);
+  bp.Q.value = 1.2;
+  sg.gain.setValueAtTime(jit(0.1, 0.2), t);
+  sg.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  splash.connect(bp).connect(sg).connect(out);
+  splash.start(t, Math.random() * 0.5);
+  splash.stop(t + 0.06);
+  const bloom = noiseSrc(ac, true), lp = ac.createBiquadFilter(), bg = ac.createGain(), tb = t + 0.12;
+  lp.type = 'lowpass';
+  lp.frequency.value = jit(380, 0.2);
+  // The swell peaks at -30 dB.
+  bg.gain.setValueAtTime(0, tb);
+  bg.gain.linearRampToValueAtTime(0.032, tb + 0.7);
+  bg.gain.linearRampToValueAtTime(0, tb + 2);
+  bloom.connect(lp).connect(bg).connect(out);
+  bloom.start(tb, Math.random() * 0.5);
+  bloom.stop(tb + 2.05);
+  settle(2300);
+}
+// Fizz and swish loop while a gesture is held; each fades out on release.
+function loopVoice(type, freq, q) {
+  const ac = kit.live();
+  if (!ac) return null;
+  const src = noiseSrc(ac, true), f = ac.createBiquadFilter(), g = ac.createGain();
+  f.type = type;
+  f.frequency.value = freq;
+  f.Q.value = q;
+  g.gain.value = 0;
+  src.connect(f).connect(g).connect(kit.out);
+  src.start(0, Math.random() * 0.5);
+  return { ac, src, f, g };
+}
+function fadeLoop(v) {
+  if (!v) return;
+  const t = v.ac.currentTime;
+  v.g.gain.setTargetAtTime(0, t, 0.06);
+  v.src.stop(t + 0.4);
+}
+// Pipette: a soft high fizz, with a little flutter.
+function fizzSound() {
+  fizz ||= loopVoice('highpass', 3500, 0.7);
+  if (fizz) fizz.g.gain.setTargetAtTime(jit(0.026, 0.3), fizz.ac.currentTime, 0.05);
+}
+// Stir: a muffled swish below 500 Hz; its level follows the drag speed.
+function swishSound(speed) {
+  swish ||= loopVoice('lowpass', 300, 0.8);
+  if (!swish) return;
+  const k = Math.min(1, speed / 1.2), t = swish.ac.currentTime;
+  swish.g.gain.setTargetAtTime(0.13 * k, t, 0.05);
+  swish.f.frequency.setTargetAtTime(220 + 280 * k, t, 0.08);
+}
+function gestureSoundOff() {
+  fadeLoop(fizz);
+  fadeLoop(swish);
+  fizz = swish = null;
+  settle(500);
+}
+// Clear: one long, soft wash.
+function washSound() {
+  const ac = kit.live();
+  if (!ac) return;
+  const t = ac.currentTime, src = noiseSrc(ac, true), lp = ac.createBiquadFilter(), g = ac.createGain();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(300, t);
+  lp.frequency.exponentialRampToValueAtTime(1400, t + 0.6);
+  lp.frequency.exponentialRampToValueAtTime(260, t + 1.6);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.07, t + 0.4);
+  g.gain.linearRampToValueAtTime(0, t + 1.6);
+  src.connect(lp).connect(g).connect(kit.out);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + 1.65);
+  settle(1900);
+}
 
 async function start() {
   if (!(await hasWebGPU())) return noWebGPU();
@@ -848,6 +964,7 @@ async function start() {
   function dropAt(x) {
     wake();
     drop(x, (Math.random() - 0.5) * D * 0.5, nextInk());
+    dripSound((x / (W / 2)) * 0.7);
   }
 
   // A press turns into a drag after 8 px, or a hold after 260 ms.
@@ -856,6 +973,7 @@ async function start() {
   let press = null;
   function endPress() {
     if (press) clearTimeout(press.timer);
+    if (press && press.mode !== 'press') gestureSoundOff();
     press = null;
   }
   panel.addEventListener('pointerdown', e => {
@@ -896,6 +1014,8 @@ async function start() {
     press.last = p;
     let v = p.map((c, i) => (c - from[i]) / SIM_STEP);
     const speed = Math.hypot(...v);
+    if (press.mode === 'hold') fizzSound();
+    else swishSound(Math.min(speed, MAX_SPEED));
     if (speed > MAX_SPEED) v = v.map(c => (c * MAX_SPEED) / speed);
     // A fast move lays splats along its path, so the thread and the stir have no gaps.
     const n = Math.min(4, Math.max(1, Math.ceil(Math.hypot(p[0] - from[0], p[1] - from[1]) / 0.02)));
@@ -940,6 +1060,7 @@ async function start() {
     endPress();
     pending.length = 0;
     clearLeft = CLEAR_TIME;
+    washSound();
     wake();
   });
   choices(document.getElementById('light'), v => {
@@ -988,7 +1109,12 @@ async function start() {
   resize();
   canvas.classList.add('on');
   markReady();
-  whenVisible(panel, v => { visible = v; sync(); });
+  // A hidden page stops the sim and every held sound.
+  whenVisible(panel, v => {
+    visible = v;
+    if (!v) endPress();
+    sync();
+  });
   sync();
 }
 start().catch(err => console.error(err)).finally(() => markReady());

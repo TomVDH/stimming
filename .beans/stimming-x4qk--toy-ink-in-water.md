@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:08:28Z
-updated_at: 2026-11-08T11:08:03Z
+updated_at: 2026-11-08T11:11:12Z
 ---
 
 Ink in water (`ink`, idea 35). Ink drops fall into a tall, still tank of dark water as vortex rings, break into fingers, and glow in side light.
@@ -21,7 +21,7 @@ Plan: `docs/plans/ink.md`. D3: WebGPU only on three.js 0.186.1, as Fire (Tom, 20
 - [x] Task 3: pipette, stir, Backlit mode in Settings, Drift, watchdog (K3 is now a factory; a quality or stage-shape change rebuilds it and resamples the ink)
 - [x] Tom, 2026-11-08: no meniscus line; the tank fills the stage, its width follows the stage shape
 - [x] Tom, 2026-11-08: look pass: brighter ink, soft water with no edge, finer cells, Backlit as a soft oval lightbox
-- [ ] Task 4: sound
+- [x] Task 4: sound (drip, bloom, fizz, swish, wash; plain Web Audio on the kit; Q9: running after a tap, suspended 6 s later)
 - [ ] Task 5: bar, Settings, toys.json, menu Lab entry, QA
 - [ ] Record the session cost
 
