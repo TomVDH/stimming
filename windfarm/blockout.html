@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wind farm blockout</title>
+<style>
+html, body { margin: 0; height: 100%; background: oklch(0.16 0.012 275); overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Wind farm blockout"></canvas>
+<script type="module">
+// Wind farm blockout: one still frame in raw WebGL2.
+// The sky, sea and fog fill one full-screen pass.
+// The turbines are one instanced draw in the same fog.
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: true });
+
+/* ---------- look: Dawn ---------- */
+// Colours are linear light.
+const LOOK = {
+  zen: [0.035, 0.05, 0.085], hor: [0.3, 0.28, 0.27], fog: [0.2, 0.21, 0.22],
+  sun: [2.6, 1.9, 1.15], deep: [0.012, 0.024, 0.022], paint: [0.8, 0.81, 0.82],
+  // Fog length in metres: transmittance falls by 1/e per length.
+  fogL: 4200,
+};
+
+/* ---------- shot ---------- */
+// The camera stands 6 m above the sea and looks level along -z.
+const CAM_H = 6;
+// The horizon sits at 62 % of the stage height.
+const HOR = 0.62;
+
+/* ---------- farm ---------- */
+// A grid of 60 turbines seen from near one corner.
+// The corner sits 1.5 km out; both grid axes run away inside the left third.
+const NU = 6, NV = 10, SU = 900, SV = 600;
+const CORNER = { d: 1500, b: -6 }, AXIS_U = -2, AXIS_V = -14;
+const dir = deg => [Math.sin(deg * Math.PI / 180), -Math.cos(deg * Math.PI / 180)];
+function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+const farm = [];
+{
+  const c0 = dir(CORNER.b).map(v => v * CORNER.d), u = dir(AXIS_U), v = dir(AXIS_V);
+  for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
+    const k = i * NV + j, jx = (rand(k) - 0.5) * 50, jz = (rand(k + 99) - 0.5) * 50;
+    farm.push([c0[0] + i * SU * u[0] + j * SV * v[0] + jx, c0[1] + i * SU * u[1] + j * SV * v[1] + jz, rand(k + 7) * 2.094]);
+  }
+}
+
+/* ---------- shared GLSL ---------- */
+const COMMON = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform float uF, uHor, uCamH, uFogL;
+// FH is the frame height as an angle; sky falloffs scale with it.
+float FH() { return uRes.y / uF; }
+// FS is the short side as an angle; the sun and its glow scale with it.
+float FS() { return min(uRes.x, uRes.y) / uF; }
+uniform vec3 uSD, uZen, uHorC, uFog, uSun, uDeep, uPaint;
+// The sun hides behind the fog; its disc keeps this much light.
+#define SUN_VIS 0.18
+// Fog colour along a view ray: grey haze plus forward scatter round the sun.
+vec3 fogCol(vec3 d) {
+  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / FS();
+  return uFog + uSun * (0.32 * exp(-A * 9.0) + 0.1 * exp(-A * 2.6) + 0.025 * exp(-A * 0.8));
+}
+// Fog transmittance over a distance in metres.
+float fogT(float t) { return exp(-t / uFogL); }
+// A soft filmic curve, then gamma.
+vec3 grade(vec3 c) {
+  c = c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14);
+  return pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2));
+}
+`;
+
+const BACK_VS = `#version 300 es
+void main() {
+  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+
+const BACK_FS = COMMON + `
+out vec4 o;
+// Sky: a slate zenith, a pale horizon, and the veiled sun.
+vec3 sky(vec3 d) {
+  float E = max(d.y, 0.0) / FH();
+  vec3 c = mix(uHorC, uZen, smoothstep(0.0, 0.62, E));
+  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / FS(), r = 0.05;
+  c += uSun * SUN_VIS * (1.0 - smoothstep(r * 0.85, r, A));
+  // Haze thickens toward the horizon and takes the sun glow.
+  return mix(c, fogCol(d), exp(-E * 5.0));
+}
+// Swell: a few long waves; their slope fades with distance.
+vec3 seaNormal(vec2 p, float t) {
+  vec2 g = vec2(0.0);
+  const vec3 W[5] = vec3[5](vec3(0.9, 0.42, 0.11), vec3(-0.5, 0.86, 0.17), vec3(0.2, 0.98, 0.29), vec3(0.95, -0.3, 0.47), vec3(-0.75, 0.66, 0.83));
+  for (int i = 0; i < 5; i++) {
+    vec2 dd = normalize(W[i].xy); float k = W[i].z;
+    g += dd * cos(dot(p, dd) * k + float(i) * 1.7) * 0.06 / (1.0 + float(i) * 0.4);
+  }
+  g *= 1.0 / (1.0 + t * 0.0025);
+  return normalize(vec3(-g.x, 1.0, -g.y));
+}
+void main() {
+  vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec3 d = normalize(vec3((px.x - uRes.x * 0.5) / uF, (uHor - px.y) / uF, -1.0));
+  vec3 c;
+  if (d.y >= 0.0) c = sky(d);
+  else {
+    float t = uCamH / -d.y;
+    vec3 p = d * t;
+    vec3 n = seaNormal(p.xz, t);
+    vec3 r = reflect(d, n); r.y = abs(r.y);
+    float fr = 0.02 + 0.98 * pow(1.0 - max(dot(-d, n), 0.0), 5.0);
+    // Grey sea: it takes some of the sky, never all of it.
+    c = mix(uDeep, sky(r), fr * 0.7);
+    // The sun patch lays a soft column on the water.
+    vec3 h = normalize(uSD - d);
+    c += uSun * SUN_VIS * 0.35 * pow(max(dot(n, h), 0.0), 2400.0 / (1.0 + t * 0.004));
+    c = mix(fogCol(d), c, fogT(t));
+  }
+  o = vec4(grade(c), 1.0);
+}`;
+
+// Turbine parts: 0 tower, 1 nacelle, 2 blade.
+const TURB_VS = COMMON + `
+in vec3 aPos;
+in vec3 aNrm;
+in float aPart;
+in vec3 aInst;
+out vec3 vW;
+out vec3 vN;
+// The rotor turns about the hub axis, which runs along local z.
+const vec3 HUB = vec3(0.0, 112.0, 6.0);
+// All rotors face the wind, which comes from the sun side.
+const float YAW = -0.35;
+vec3 yaw(vec3 v) { float c = cos(YAW), s = sin(YAW); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+void main() {
+  vec3 p = aPos, n = aNrm;
+  if (aPart > 1.5) {
+    float c = cos(aInst.z), s = sin(aInst.z);
+    vec2 xy = p.xy - HUB.xy;
+    p.xy = HUB.xy + mat2(c, s, -s, c) * xy;
+    n.xy = mat2(c, s, -s, c) * n.xy;
+  }
+  p = yaw(p); n = yaw(n);
+  vec3 w = p + vec3(aInst.x, 0.0, aInst.y);
+  vW = w; vN = n;
+  // An off-centre perspective that matches the full-screen pass.
+  vec3 v = w - vec3(0.0, uCamH, 0.0);
+  float zn = 5.0, zf = 60000.0;
+  gl_Position = vec4(
+    2.0 * uF * v.x / uRes.x,
+    -v.z * (1.0 - 2.0 * uHor / uRes.y) + 2.0 * uF * v.y / uRes.y,
+    -(zf + zn) / (zf - zn) * v.z - 2.0 * zf * zn / (zf - zn),
+    -v.z);
+}`;
+
+const TURB_FS = COMMON + `
+in vec3 vW;
+in vec3 vN;
+out vec4 o;
+void main() {
+  vec3 cam = vec3(0.0, uCamH, 0.0);
+  vec3 d = normalize(vW - cam);
+  float t = length(vW - cam);
+  vec3 n = normalize(vN);
+  if (dot(n, d) > 0.0) n = -n;
+  // Sky light from above, sea light from below, the veiled sun as a key.
+  float up = n.y * 0.5 + 0.5;
+  vec3 amb = mix(uDeep * 4.0 + uFog * 0.25, mix(uHorC, uZen, 0.4) * 0.9, up);
+  // The sun reaches the farm through the fog it sits behind.
+  float key = max(dot(n, uSD), 0.0);
+  vec3 c = uPaint * (amb + uSun * 0.22 * key);
+  // The paint takes the low sun as a soft rim.
+  float rim = pow(1.0 - max(dot(-d, n), 0.0), 3.0) * max(dot(d, uSD), 0.0);
+  c += uSun * 0.12 * rim;
+  c = mix(fogCol(d), c, fogT(t));
+  o = vec4(grade(c), 1.0);
+}`;
+
+/* ---------- turbine mesh ---------- */
+// One turbine in metres: tower 110 m, rotor radius 80 m.
+function turbineMesh() {
+  const P = [], N = [], K = [];
+  const tri = (a, b, c, n, k) => { P.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) { N.push(...n); K.push(k); } };
+  const quad = (a, b, c, d, n, k) => { tri(a, b, c, n, k); tri(a, c, d, n, k); };
+  // Tower: a tapered tube with twelve sides.
+  const S = 12, R0 = 3.6, R1 = 2.2, H = 110;
+  for (let i = 0; i < S; i++) {
+    const a0 = i / S * Math.PI * 2, a1 = (i + 1) / S * Math.PI * 2, am = (a0 + a1) / 2;
+    const n = [Math.cos(am), 0.012, Math.sin(am)];
+    quad([Math.cos(a0) * R0, 0, Math.sin(a0) * R0], [Math.cos(a1) * R0, 0, Math.sin(a1) * R0],
+      [Math.cos(a1) * R1, H, Math.sin(a1) * R1], [Math.cos(a0) * R1, H, Math.sin(a0) * R1], n, 0);
+  }
+  // Nacelle: a box from the tower top to the hub.
+  const box = (x0, x1, y0, y1, z0, z1, k) => {
+    quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [0, 0, 1], k);
+    quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [0, 0, -1], k);
+    quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [1, 0, 0], k);
+    quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [-1, 0, 0], k);
+    quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0], k);
+    quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], k);
+  };
+  box(-2.4, 2.4, 109, 115, -9, 5, 1);
+  box(-1.6, 1.6, 110.4, 113.6, 5, 7.5, 1);
+  // Blades: three flat tapers in the rotor plane, slightly swept.
+  const L = 80;
+  for (let b = 0; b < 3; b++) {
+    const a = b * Math.PI * 2 / 3, ca = Math.cos(a), sa = Math.sin(a);
+    const at = (r, c) => [ca * c - sa * r, 112 + sa * c + ca * r, 6.6];
+    const root = 1.6, chord = 3.4, tip = 0.5, sweep = 1.8;
+    const pts = [at(1.5, -root), at(1.5, root), at(L * 0.22, chord), at(L, tip + sweep), at(L, sweep - tip), at(L * 0.22, -chord * 0.4)];
+    const n = [0, 0, 1];
+    tri(pts[0], pts[1], pts[2], n, 2); tri(pts[0], pts[2], pts[5], n, 2);
+    tri(pts[5], pts[2], pts[3], n, 2); tri(pts[5], pts[3], pts[4], n, 2);
+  }
+  return { P: new Float32Array(P), N: new Float32Array(N), K: new Float32Array(K), count: P.length / 3 };
+}
+
+/* ---------- GL setup ---------- */
+function program(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const back = program(BACK_VS, BACK_FS), turb = program(TURB_VS, TURB_FS);
+const mesh = turbineMesh();
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+function attr(prog, name, data, size, divisor = 0) {
+  const loc = gl.getAttribLocation(prog, name);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(loc, divisor);
+}
+attr(turb, 'aPos', mesh.P, 3); attr(turb, 'aNrm', mesh.N, 3); attr(turb, 'aPart', mesh.K, 1);
+attr(turb, 'aInst', new Float32Array(farm.flat()), 3, 1);
+gl.bindVertexArray(null);
+const emptyVao = gl.createVertexArray();
+
+function uniforms(p, shot) {
+  const u = n => gl.getUniformLocation(p, n);
+  gl.uniform2f(u('uRes'), shot.W, shot.H);
+  gl.uniform1f(u('uF'), shot.f); gl.uniform1f(u('uHor'), shot.hor);
+  gl.uniform1f(u('uCamH'), CAM_H); gl.uniform1f(u('uFogL'), LOOK.fogL);
+  gl.uniform3fv(u('uSD'), shot.sd);
+  gl.uniform3fv(u('uZen'), LOOK.zen); gl.uniform3fv(u('uHorC'), LOOK.hor); gl.uniform3fv(u('uFog'), LOOK.fog);
+  gl.uniform3fv(u('uSun'), LOOK.sun); gl.uniform3fv(u('uDeep'), LOOK.deep); gl.uniform3fv(u('uPaint'), LOOK.paint);
+}
+
+/* ---------- frame ---------- */
+// A long lens, as Beach walker uses; portrait takes a longer one.
+function shot() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const W = Math.round(canvas.clientWidth * dpr), H = Math.round(canvas.clientHeight * dpr);
+  const tall = Math.min(1, Math.max(0, (H / W - 0.8) / 1.4));
+  const f = W * (2.2 + 1.4 * tall);
+  const hor = H * HOR;
+  // The sun sits low, right of the cluster, at 62 % of the width.
+  const sx = (W * 0.62 - W * 0.5) / f, sy = Math.min(W, H) * 0.07 / f;
+  const l = Math.hypot(sx, sy, 1);
+  return { W, H, f, hor, sd: [sx / l, sy / l, -1 / l] };
+}
+function draw() {
+  const s = shot();
+  canvas.width = s.W; canvas.height = s.H;
+  gl.viewport(0, 0, s.W, s.H);
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(back); uniforms(back, s);
+  gl.bindVertexArray(emptyVao); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.DEPTH_TEST); gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(turb); uniforms(turb, s);
+  gl.bindVertexArray(vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.count, farm.length);
+  gl.bindVertexArray(null);
+}
+draw();
+addEventListener('resize', draw);
+</script>
+</body>
+</html>
