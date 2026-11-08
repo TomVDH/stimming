@@ -112,7 +112,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit } from '../shared/stim.js';
+import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 initPage({ id: 'fireworks' });
@@ -183,13 +183,13 @@ vec3 burstGlow(vec3 dir) {
     float dist = length(v);
     float c = dot(dir, v / dist) - 1.0;
     // A tight core, a mid halo, and a wide lift of the low haze.
-    float g = 0.9 * exp(c * 900.0) + 0.1 * exp(c * 60.0) + 0.05 * exp(c * 5.0) * exp(-up * 7.0);
+    float g = 0.22 * exp(c * 2500.0) + 0.1 * exp(c * 60.0) + 0.05 * exp(c * 5.0) * exp(-up * 7.0);
     s += uLC[i] * uL[i].w * g * (900.0 / dist);
   }
   return s;
 }`;
 // Flash in 30 ms, fall with tau 0.35 s, then a glow tail with tau 1.5 s.
-const flash = age => (age < 0 ? 0 : Math.min(1, age / 0.03) * (0.78 * Math.exp(-age / 0.35) + 0.22 * Math.exp(-age / 1.5)));
+const flash = (age, rise = 0.03) => (age < 0 ? 0 : Math.min(1, age / rise) * (0.78 * Math.exp(-age / 0.35) + 0.22 * Math.exp(-age / 1.5)));
 /* ---------- end burst lights ---------- */
 
 /* ---------- K2: noise ---------- */
@@ -351,7 +351,7 @@ const aA = slot('aA'), aB = slot('aB'), aC = slot('aC'), aD = slot('aD');
 starGeo.instanceCount = 0;
 const starMat = new THREE.ShaderMaterial({
   uniforms: {
-    uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 },
+    uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uSteady: { value: reduced() ? 1 : 0 },
     uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
   },
   transparent: true, depthWrite: false,
@@ -359,7 +359,7 @@ const starMat = new THREE.ShaderMaterial({
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`
   attribute vec4 aA, aB, aC, aD;
-  uniform float uTime, uDpr;
+  uniform float uTime, uDpr, uSteady;
   uniform vec2 uRes;
   uniform vec3 uG, uRamp[5], uEmber;
   varying vec3 vCol;
@@ -369,6 +369,7 @@ const starMat = new THREE.ShaderMaterial({
     vec3 vt = uG / k;
     return p0 + vt * t + (v0 - vt) * (1.0 - exp(-k * t)) / k;
   }
+  float hash11(float x) { return fract(sin(x * 12.9898) * 43758.5453); }
   void main() {
     float age = uTime - aA.w, life = aC.y;
     if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
@@ -387,11 +388,19 @@ const starMat = new THREE.ShaderMaterial({
     c.xy += off * 2.0 / uRes * c.w;
     gl_Position = c;
     vQ = vec2(position.x, position.y);
-    // White-hot first, then the chemical colour, then an ember red.
+    // aD: x kind (1 strobe, 2 willow, 3 comet), y seed, w gain.
     vec3 chem = uRamp[int(aC.x + 0.5)];
-    vec3 col = mix(vec3(1.0, 0.95, 0.85) * 1.6, chem, smoothstep(0.02, 0.12, f));
-    col = mix(col, uEmber * 0.5, smoothstep(0.6, 1.0, f));
-    vCol = col * 4.0 * (1.0 - smoothstep(0.75, 1.0, f));
+    vec3 col = chem * 0.8;
+    float b = 1.0 - smoothstep(0.75, 1.0, f);
+    if (aD.x < 2.5) {
+      // White-hot first, then the chemical colour, then an ember red.
+      col = mix(vec3(1.0, 0.95, 0.85) * 1.6, chem, smoothstep(0.02, 0.12, f));
+      col = mix(col, uEmber * 0.5, smoothstep(0.6, 1.0, f));
+    }
+    // Strobe stars blink at 12 Hz; reduced motion holds them steady.
+    if (abs(aD.x - 1.0) < 0.5) b *= mix(step(0.45, hash11(aD.y + floor(age * 12.0))), 0.7, uSteady);
+    if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
+    vCol = col * 4.0 * aD.w * b;
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vCol;
@@ -405,26 +414,48 @@ const stars = new THREE.Mesh(starGeo, starMat);
 stars.frustumCulled = false;
 stars.layers.enable(LIGHT);
 scene.add(stars);
-let head = 0;
+let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
 // Write one star into the next slot; the oldest slot gives way.
-function writeStar(p0, t0, v0, k, ramp, life, trail, size, flags = 0, sd = 0, split = 0) {
+function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1) {
   const i = head;
   head = (head + 1) % CAP;
+  if (dirtyFrom < 0) dirtyFrom = i;
+  dirtyN = Math.min(CAP, dirtyN + 1);
   aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
   aB.setXYZW(i, v0.x, v0.y, v0.z, k);
   aC.setXYZW(i, ramp, life, trail, size);
-  aD.setXYZW(i, flags, sd, split, 0);
+  aD.setXYZW(i, kind, rnd() * 100, 0, gain);
   starGeo.instanceCount = Math.max(starGeo.instanceCount, i + 1);
+  lastDeath = Math.max(lastDeath, t0 + life);
 }
-// Peony: a full sphere of stars at one speed, with a little jitter.
-function burst(pos, t0, calibre, ramp) {
-  const n = Math.round(110 + 70 * calibre), speed = 95 + 45 * calibre, v = new THREE.Vector3();
-  for (let i = 0; i < n; i++) {
-    const y = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(1 - y * y), th = i * 2.39996 + rnd() * 0.3;
-    v.set(Math.cos(th) * r, y, Math.sin(th) * r).multiplyScalar(speed * (0.94 + rnd() * 0.12));
-    writeStar(pos, t0, v, 1.6, ramp, 1.6 + rnd() * 0.5, 0.22, 1.3 + rnd() * 0.5);
+// Upload only the slots a launch wrote; a wrap gives two ranges.
+function commitStars() {
+  if (dirtyFrom < 0) return;
+  const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
+  for (const at of [aA, aB, aC, aD]) {
+    at.clearUpdateRanges();
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
   }
-  for (const a of [aA, aB, aC, aD]) a.needsUpdate = true;
+  dirtyFrom = -1; dirtyN = 0;
+}
+// The same closed form on the CPU, for splits and comet sparks.
+function posAt(p0, v0, k, t, out) {
+  const vt = G.y / k, e = (1 - Math.exp(-k * t)) / k;
+  return out.set(p0.x + v0.x * e, p0.y + vt * t + (v0.y - vt) * e, p0.z + v0.z * e);
+}
+function velAt(v0, k, t, out) {
+  const vt = G.y / k, e = Math.exp(-k * t);
+  return out.set(v0.x * e, vt + (v0.y - vt) * e, v0.z * e);
+}
+// The launch speed whose apex lies h above the start, and the climb time.
+function climb(h, k) {
+  const vt = G.y / k;
+  const apex = v0 => { const T = Math.log((v0 - vt) / -vt) / k; return [vt * T + (v0 - vt) * (1 - Math.exp(-k * T)) / k, T]; };
+  let lo = 1, hi = 800;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (apex(m)[0] < h) lo = m; else hi = m; }
+  return { v0: hi, T: apex(hi)[1] };
 }
 /* ---------- end K6 ---------- */
 
@@ -591,38 +622,151 @@ const grade = makeGrade(POST);
 composer.addPass(grade);
 composer.addPass(new OutputPass());
 
-/* ---------- blockout still: one frozen peony ---------- */
-// The burst sits at a fixed point on screen at 900 m.
-const STILL_T = 0.8, DIST = 900, RED = 0;
-const burstPos = new THREE.Vector3();
-const ray = new THREE.Raycaster();
-function placeStill() {
-  const portrait = size.w < size.h;
-  ray.setFromCamera(new THREE.Vector2(portrait ? -0.15 : -0.22, portrait ? 0.32 : 0.36), camera);
-  const t = (-DIST - camera.position.z) / ray.ray.direction.z;
-  burstPos.copy(ray.ray.origin).addScaledVector(ray.ray.direction, t);
-  head = 0; starGeo.instanceCount = 0;
-  burst(burstPos, 0, 1.5, RED);
-  U.uTime.value = STILL_T;
-  const I = flash(STILL_T) * 3.2;
-  U.uL.value[0].set(burstPos.x, burstPos.y, burstPos.z, I);
-  U.uLC.value[0].set(...RAMPS[RED]);
-  U.uLN.value = 1;
+/* ---------- shells ---------- */
+const RED = 0, GREEN = 1, BLUE = 2, GOLD = 3, WHITE = 4;
+const STROBE = 1, WILLOW = 2, COMET = 3;
+const pick = list => list[Math.floor(rnd() * list.length)];
+const v = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Vector3();
+// The i-th of n directions spread evenly over the sphere.
+function sphereDir(i, n, out) {
+  const y = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(1 - y * y), th = i * 2.39996 + rnd() * 0.3;
+  return out.set(Math.cos(th) * r, y, Math.sin(th) * r);
+}
+// Two unit vectors at right angles to a, and to each other.
+function basis(a) {
+  const u = new THREE.Vector3(Math.abs(a.y) < 0.9 ? 0 : 1, Math.abs(a.y) < 0.9 ? 1 : 0, 0).cross(a).normalize();
+  return [u, a.clone().cross(u).normalize()];
+}
+// Each shell writes its stars and returns its light: [ramp, gain].
+const SHELLS = {
+  peony(pos, t0, cal, s) {
+    const ramp = pick([RED, GREEN, BLUE, GOLD]), n = Math.round(100 + 70 * cal), speed = (70 + 45 * cal) * s;
+    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.94 + rnd() * 0.12)), 1.6, ramp, 1.6 + rnd() * 0.5, 0.22, 1.3 + rnd() * 0.5);
+    return [ramp, ramp === BLUE ? 0.7 : 1];
+  },
+  willow(pos, t0, cal, s) {
+    const n = Math.round(70 + 50 * cal), speed = (55 + 35 * cal) * s;
+    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.9 + rnd() * 0.2)), 2.2, GOLD, 4.2 + rnd() * 0.6, 1.2, 1.0 + rnd() * 0.3, WILLOW, 0.8);
+    return [GOLD, 0.9];
+  },
+  crossette(pos, t0, cal, s) {
+    const ramp = pick([GREEN, RED, WHITE]), n = Math.round(14 + 6 * cal), speed = (60 + 35 * cal) * s;
+    let splitAt = 0;
+    for (let i = 0; i < n; i++) {
+      const v0 = sphereDir(i, n, new THREE.Vector3()).multiplyScalar(speed * (0.95 + rnd() * 0.1));
+      const split = 0.55 + rnd() * 0.25;
+      splitAt += split / n;
+      // The parent burns gold and ends at the split.
+      writeStar(pos, t0, v0, 1.2, GOLD, split, 0.3, 1.6);
+      posAt(pos, v0, 1.2, split, p);
+      velAt(v0, 1.2, split, q);
+      // Four children leave the split at right angles to the parent.
+      const [u, w] = basis(q.clone().normalize());
+      for (const d of [u, w, u.clone().negate(), w.clone().negate()]) {
+        writeStar(p, t0 + split, v.copy(q).multiplyScalar(0.4).addScaledVector(d, 45 * s), 1.8, ramp, 0.9 + rnd() * 0.4, 0.18, 1.2);
+      }
+    }
+    addLight(pos, ramp, t0 + splitAt, 0.5 * lightK(cal));
+    return [GOLD, 0.6];
+  },
+  ring(pos, t0, cal, s) {
+    const ramp = pick([RED, GREEN, BLUE, GOLD, WHITE]), n = Math.round(60 + 30 * cal), speed = (70 + 45 * cal) * s;
+    // The ring's plane faces the shore, with a random tilt.
+    const [u, w] = basis(new THREE.Vector3((rnd() - 0.5) * 1.6, (rnd() - 0.5) * 1.6, 1).normalize());
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * Math.PI * 2;
+      v.copy(u).multiplyScalar(Math.cos(th)).addScaledVector(w, Math.sin(th)).multiplyScalar(speed * (0.97 + rnd() * 0.06));
+      writeStar(pos, t0, v, 1.6, ramp, 1.7 + rnd() * 0.4, 0.2, 1.5);
+    }
+    return [ramp, ramp === BLUE ? 0.6 : 0.8];
+  },
+  strobe(pos, t0, cal, s) {
+    const n = Math.round(70 + 40 * cal), speed = (60 + 40 * cal) * s;
+    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.85 + rnd() * 0.3)), 2.0, WHITE, 2.4 + rnd() * 0.6, 0.06, 1.7, STROBE);
+    return [WHITE, 0.8];
+  },
+};
+
+/* ---------- burst lights over time ---------- */
+const lights = [], live = [];
+const SEED = linFit(0.95, 0.04, 80);
+const lightK = cal => 2.1 * cal;
+// White carries most luminance, so it lights the haze at half gain.
+function addLight(pos, ramp, t0, k) { lights.push({ pos: pos.clone(), col: RAMPS[ramp], t0, k: ramp === WHITE ? k * 0.5 : k }); }
+// The eight brightest lights win the uniform slots.
+function updateLights() {
+  live.length = 0;
+  const rise = reduced() ? 0.15 : 0.03;
+  for (let i = lights.length - 1; i >= 0; i--) {
+    const L = lights[i], age = simT - L.t0, I = flash(age, rise) * L.k;
+    if (age > 1 && I < 0.003) { lights.splice(i, 1); continue; }
+    if (I > 0.002) live.push({ pos: L.pos, col: L.col, I });
+  }
+  if (press?.seed) live.push({ pos: press.seed, col: SEED, I: 0.02 + 0.1 * press.charge });
+  live.sort((a, b) => b.I - a.I);
+  const n = Math.min(LN, live.length);
+  for (let i = 0; i < n; i++) {
+    const L = live[i];
+    U.uL.value[i].set(L.pos.x, L.pos.y, L.pos.z, L.I);
+    U.uLC.value[i].set(L.col[0], L.col[1], L.col[2]);
+  }
+  U.uLN.value = n;
+}
+
+/* ---------- launch ---------- */
+const saved = k => { try { return localStorage.getItem(`stimming.fireworks.${k}`); } catch { return null; } };
+const save = (k, val) => { try { localStorage.setItem(`stimming.fireworks.${k}`, String(val)); } catch { /* storage is optional */ } };
+const opts = { shell: SHELLS[saved('shell')] ? saved('shell') : 'peony', dist: saved('dist') != null ? +saved('dist') : 0.5 };
+let simT = 0, horizonNdc = -0.28;
+// The slider maps 0 to 1 onto 300 to 1,500 m; far shells are larger.
+const shellDist = () => 300 + 1200 * opts.dist;
+const shellScale = () => 0.6 + 0.6 * opts.dist;
+const ray = new THREE.Raycaster(), ndcV = new THREE.Vector2();
+// Map a screen point onto the altitude band that keeps the burst in view.
+function burstPoint(ndc, cal, out = new THREE.Vector3()) {
+  const d = shellDist(), R = 50 * cal * shellScale();
+  const at = y => {
+    ray.setFromCamera(ndcV.set(ndc.x, y), camera);
+    const t = (-d - camera.position.z) / ray.ray.direction.z;
+    return ray.ray.origin.clone().addScaledVector(ray.ray.direction, t);
+  };
+  const top = at(0.92).y, lo = Math.max(R * 0.9, 50), hi = Math.max(lo, top - R * 1.1);
+  const u = THREE.MathUtils.clamp((ndc.y - horizonNdc) / (0.92 - horizonNdc), 0, 1);
+  const pt = at(Math.max(ndc.y, horizonNdc + 0.02));
+  return out.set(pt.x, lo + (hi - lo) * u, -d);
+}
+// A comet climbs from the water and the shell bursts at its apex.
+function launch(ndc, cal) {
+  // Strong drag: the comet leaves fast and slows near the apex, about 3 s up.
+  const pos = burstPoint(ndc, cal), s = shellScale(), k = 1.2;
+  const { v0, T } = climb(pos.y - 1, k), base = new THREE.Vector3(pos.x, 1, pos.z), up = new THREE.Vector3(0, v0, 0), t0 = simT;
+  writeStar(base, t0, up, k, GOLD, T, 0.35, 1.2, COMET, 0.5);
+  // The comet sheds a few sparks as it climbs.
+  for (let i = 0; i < 10; i++) {
+    const ts = T * (0.05 + 0.9 * rnd());
+    posAt(base, up, k, ts, p);
+    writeStar(p, t0 + ts, q.set((rnd() - 0.5) * 8, (rnd() - 0.3) * 6, (rnd() - 0.5) * 8), 1.5, GOLD, 0.4 + rnd() * 0.4, 0.1, 0.8, COMET, 0.35);
+  }
+  const [ramp, gain] = SHELLS[opts.shell](pos, t0 + T, cal, s);
+  addLight(pos, ramp, t0 + T, gain * lightK(cal));
+  commitStars();
+  wake();
 }
 function orbList() {
-  const list = [{ pos: burstPos, size: 1.6, color: RAMPS[RED], k: flash(STILL_T) * 0.5 }];
+  const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 }));
   for (const l of lamps.filter(l => l.k > 1.1).slice(0, 4)) list.push({ pos: new THREE.Vector3(l.x, l.y, l.z), size: 0.25, color: SODIUM, k: 0.05 });
   return list;
 }
 
 /* ---------- frame and draw ---------- */
-let size = { w: 1, h: 1, dpr: 1 };
+let size = { w: 1, h: 1, dpr: 1 }, rung = 0;
 // The horizon sits low; portrait widens the lens to keep the sky tall.
 function frame() {
   const portrait = size.w < size.h;
   camera.fov = portrait ? 56 : 36;
   camera.aspect = size.w / size.h;
   const hf = portrait ? 0.72 : 0.64;
+  horizonNdc = 1 - 2 * hf;
   camera.rotation.set(Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))), 0, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
@@ -630,17 +774,18 @@ function frame() {
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6 }) };
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the mirror.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
-  mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr / 2)), Math.max(1, Math.round(h * size.dpr / 2)));
+  const m = rung >= 2 ? 4 : 2;
+  mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr / m)), Math.max(1, Math.round(h * size.dpr / m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   lampMat.uniforms.uDpr.value = size.dpr;
   frame();
-  placeStill();
   draw();
 }
 let visible = true;
@@ -650,9 +795,88 @@ function draw() {
   placeOrbs(orbPass, orbList());
   composer.render();
 }
-whenVisible(stage, v => { visible = v; if (v) draw(); });
+
+/* Frame loop: runs while a star, a light or a held seed lives, then sleeps. */
+let raf = 0, lastT = 0;
+const busy = () => !!press || simT < lastDeath || lights.length > 0;
+function tick(now) {
+  raf = 0;
+  if (!visible) return;
+  const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0;
+  lastT = now;
+  try {
+    simT += dt;
+    U.uTime.value = simT;
+    if (press) {
+      press.charge = Math.min(1, (performance.now() - press.at) / 1500);
+      press.seed = burstPoint(press.ndc, 1 + press.charge, press.seed || new THREE.Vector3());
+    }
+    updateLights();
+    draw();
+    watch(now);
+  } finally {
+    if (visible && busy()) raf = requestAnimationFrame(tick);
+    else { lastT = 0; updateLights(); draw(); }
+  }
+}
+function wake() { if (!raf && visible) raf = requestAnimationFrame(tick); }
+/* Performance ladder: slow frames step quality down a rung, never back up. */
+let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
+function watch(now) {
+  const gap = now - prevDraw;
+  prevDraw = now;
+  if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
+  if (!watchFrom) watchFrom = now;
+  if (now - watchFrom < 4000) return;
+  watchN++; watchSum += gap;
+  if (watchN < 2 || now - watchFrom < 6000) return;
+  if (watchSum / watchN > 1000 / 38 && rung < 2) { rung++; resize(); }
+  watchFrom = now - 4000; watchN = watchSum = 0;
+}
+whenVisible(stage, vis => {
+  visible = vis;
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw();
+  if (busy()) wake();
+});
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; });
+
+/* Pointer: press grows a seed light; release launches; hold sets the calibre. */
+let press = null;
+const ndcOf = e => {
+  const r = stage.getBoundingClientRect();
+  return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+};
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture(e.pointerId);
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: ndcOf(e), charge: 0, seed: null, moved: false };
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  // After 8 px of travel the seed follows the pointer.
+  if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) press.moved = true;
+  if (press.moved) press.ndc = ndcOf(e);
+});
+stage.addEventListener('pointerup', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const held = (performance.now() - press.at) / 1000, ndc = press.ndc;
+  press = null;
+  // A tap is calibre 1; a hold reaches calibre 2 at 1.5 s.
+  launch(ndc, held < 0.26 ? 1 : 1 + Math.min(1, held / 1.5));
+});
+const cancel = e => { if (press && e.pointerId === press.id) { press = null; wake(); } };
+stage.addEventListener('pointercancel', cancel);
+stage.addEventListener('lostpointercapture', cancel);
+// Space launches a shell at a random point in the sky.
+stage.addEventListener('keydown', e => {
+  if (e.code !== 'Space') return;
+  e.preventDefault();
+  launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
+});
 
 /* ---------- bar ---------- */
 function popover(box, btn) {
@@ -662,7 +886,10 @@ function popover(box, btn) {
   addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
 }
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
-choices(document.getElementById('shell'), () => {});
+choices(document.getElementById('shell'), val => { opts.shell = val; save('shell', val); }).set(opts.shell);
+const distEl = document.getElementById('dist');
+distEl.value = String(opts.dist);
+distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); });
 choices(document.getElementById('smoke'), () => {});
 choices(document.getElementById('water'), v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); });
 
