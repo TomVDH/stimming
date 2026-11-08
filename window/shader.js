@@ -61,7 +61,11 @@ uniform vec3 uWing[4], uLet[4], uWingN, uLetN, uTip; uniform float uStrobe;
 uniform vec3 uNacA, uNacB, uChord, uUpA, uSpan; uniform float uNacR; uniform vec4 uFair[3];
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
 uniform vec4 uFl[${MAXFL}];
-uniform vec4 uTrA[40], uTrB[40]; uniform int uTrN;
+// Trail points live in a 128 by 2 float texture: row 0 point and radius, row 1 colour and shell.
+uniform highp sampler2D uTrail; uniform int uTrN;
+// The passing jet's body, and the impact's fireball dome.
+uniform vec3 uJetF0, uJetF1, uJetW0, uJetW1, uJetT0, uJetT1; uniform float uJetOn;
+uniform vec4 uBall, uBallC;
 // The impact: site xz, shock ring radius, ring strength; then flash light, crater glow.
 uniform vec4 uBoom; uniform vec2 uBoomL;
 out vec4 o;
@@ -679,9 +683,9 @@ float ellipsoid(vec3 rd, vec3 ctr, vec3 rad, out vec3 nrm) {
 vec3 trails(vec3 d, float tEnd) {
   vec3 e = vec3(0.0);
   float pxK = 1.3 / gFocal1;
-  for (int i = 0; i < 39; i++) {
+  for (int i = 0; i < 127; i++) {
     if (i + 1 >= uTrN) break;
-    vec4 a = uTrA[i], b = uTrA[i + 1];
+    vec4 a = texelFetch(uTrail, ivec2(i, 0), 0), b = texelFetch(uTrail, ivec2(i + 1, 0), 0);
     if (a.w <= 0.0 || b.w <= 0.0) continue;
     // Closest approach between the ray and the segment from a to b.
     vec3 u = b.xyz - a.xyz;
@@ -694,9 +698,12 @@ vec3 trails(vec3 d, float tEnd) {
     float dist = length(d * s - q);
     // A trail is never thinner than about a pixel.
     float rad = max(mix(a.w, b.w, k), s * pxK);
-    float glow = exp(-dist * dist / (rad * rad));
+    // Tubes glow at the core; thin sheets glow at their rim, like a jellyfish bell.
+    vec4 ca = texelFetch(uTrail, ivec2(i, 1), 0), cb = texelFetch(uTrail, ivec2(i + 1, 1), 0);
+    float rr = dist / rad, shell = mix(ca.w, cb.w, k);
+    float glow = mix(exp(-rr * rr), exp(-rr * rr) * 0.3 + exp(-pow((rr - 0.85) / 0.13, 2.0)) * 0.9, shell);
     if (glow < 0.002) continue;
-    vec3 col = mix(uTrB[i].rgb, uTrB[i + 1].rgb, k);
+    vec3 col = mix(ca.rgb, cb.rgb, k);
     // Thin far trails keep their brightness per pixel, not per km.
     col *= min(1.0, mix(a.w, b.w, k) / rad + 0.15);
     float y = q.y + H + dot(q.xz, q.xz) / 12742.0;
@@ -797,6 +804,35 @@ void main() {
   vec3 c = outside(d, uFocal * uOutRes.x / uRes.x, skyA);
   float tg = hitLayer(d, 0.0);
   c = towers(d, tg > 0.0 ? tg : 1e4, c, skyA);
+  // The fireball dome: white-hot, cooling to orange, its surface churning.
+  if (uBallC.w > 0.0) {
+    vec3 oc = -uBall.xyz;
+    float bb = dot(oc, d), cc = dot(oc, oc) - uBall.w * uBall.w, hh = bb * bb - cc;
+    float q = length(oc - d * bb);
+    vec3 glowC = uBallC.rgb * uBallC.w;
+    if (hh > 0.0 && -bb - sqrt(hh) > 0.0) {
+      float tb = -bb - sqrt(hh);
+      vec3 p = d * tb - uBall.xyz, nn = p / uBall.w;
+      float limb = pow(max(dot(nn, -d), 0.0), 0.5);
+      float churn = cn(p * 0.9 + vec3(0.0, uTime * 0.3, 0.0), 4.0, 0.0).r;
+      float up = clamp((d * tb).y + H + dot((d * tb).xz, (d * tb).xz) / 12742.0, 0.0, 99.0);
+      c = glowC * (0.5 + 0.9 * churn) * (0.45 + 0.55 * limb) * (up < 3.5 ? max(gDeckT, 0.15) : 1.0);
+      skyA = 0.0;
+    }
+    // Its glow spills into the air round it.
+    c += glowC * 0.25 * exp(-max(q - uBall.w, 0.0) / (uBall.w * 0.7 + 1.0));
+  }
+  // The passing jet: a small moonlit body of fuselage, wing and fin.
+  if (uJetOn > 0.0) {
+    float tj = 1e9; vec3 nj = vec3(0.0, 1.0, 0.0);
+    float t1 = capsule(d, uJetF0, uJetF1, 0.0028);
+    if (t1 > 0.0 && t1 < tj) { tj = t1; vec3 p = d * t1, ba = uJetF1 - uJetF0; nj = normalize(p - (uJetF0 + ba * clamp(dot(p - uJetF0, ba) / dot(ba, ba), 0.0, 1.0))); }
+    float t2 = capsule(d, uJetW0, uJetW1, 0.0012);
+    if (t2 > 0.0 && t2 < tj) { tj = t2; nj = vec3(0.0, 1.0, 0.0); }
+    float t3 = capsule(d, uJetT0, uJetT1, 0.0012);
+    if (t3 > 0.0 && t3 < tj) { tj = t3; nj = vec3(0.0, 0.0, -1.0); }
+    if (tj < 1e8 && (tg < 0.0 || tj < tg)) { c = paint(d, nj, 0.004, 1.0) * 1.2; skyA = 0.0; }
+  }
   if (uTrN > 1) c += trails(d, tg > 0.0 ? tg : 1e4);
   vec2 uv, uv2;
   float tw = quad(d, uWing, uWingN, uv);
@@ -842,6 +878,7 @@ uniform sampler2D uOut;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
 uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
+uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
 
 // Stars hold still; they fade toward the horizon glow.
@@ -947,6 +984,13 @@ vec3 glass(vec3 da, vec2 px) {
   vec3 d = toWorld(da);
   // Point sources draw at full size; pass 1 says where sky shows.
   if (out1.a > 0.001) view += out1.a * (stars(d) + disc(d) + meteor(d));
+  // Small steady lights: a jet's nav lights, strobes and beacons.
+  for (int i = 0; i < 10; i++) {
+    vec4 pt = uPt[i];
+    if (pt.w <= 0.0) continue;
+    float r2 = dot(px - pt.xy, px - pt.xy);
+    view += uPtC[i] * pt.w * (exp(-r2 / (pt.z * pt.z)) + 0.06 * exp(-sqrt(r2) / (pt.z * 5.0)));
+  }
   // The red nav light: a hot core and a soft halo.
   float ang = acos(clamp(dot(d, normalize(uTip)), -1.0, 1.0)) * uFocal / uDpr;
   view += vec3(1.0, 0.06, 0.04) * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);

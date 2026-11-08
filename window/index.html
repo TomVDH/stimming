@@ -484,8 +484,10 @@ function startEvent(want = null) {
   if (kind === 'meteor') EV.meteor = newMeteor(call === 'fireball' ? true : call === 'meteor' ? false : null);
   if (kind === 'rocket') EV.rocket = { x: cam.x + rnd(60, 220), z: cam.z + rnd(420, 600), hd: rnd(0, TAU), s: 0 };
   // The impact is rare on its own; the Sights button calls it any time.
-  if (kind === 'boom') EV.boom = { x: cam.x + rnd(60, 150), z: cam.z + rnd(190, 270), s: 0, seed: -rnd(1, 90), hd: rnd(0, TAU) };
-  if (kind === 'jet') EV.jet = { x: cam.x + (call ? 40 : rnd(55, 75)), z: cam.z + rnd(16, 45), y: rnd(10.2, 12.2), s: 0, hist: [] };
+  if (kind === 'boom') EV.boom = { x: cam.x + rnd(60, 150), z: cam.z + rnd(190, 270), s: 0, seed: -rnd(1, 90), hd: rnd(0, TAU),
+    // Ejecta: rock thrown out at 1 to 3 km/s, in arcs under a strong, toy gravity.
+    ejecta: Array.from({ length: 18 }, () => { const a = rnd(0, TAU), e = rnd(0.5, 1.2), v = rnd(1, 3); return { vx: Math.cos(a) * Math.cos(e) * v, vy: Math.sin(e) * v, vz: Math.sin(a) * Math.cos(e) * v, life: rnd(12, 30) }; }) };
+  if (kind === 'jet') EV.jet = { x: cam.x + (call ? 30 : rnd(45, 60)), z: cam.z + rnd(6, 14), y: rnd(10.5, 11.6), s: 0, hist: [] };
 }
 
 // A meteor streaks across the part of the sky the window shows.
@@ -561,8 +563,8 @@ function stepEvents(dt, skipping = false) {
     j.s += dt;
     // It flies the other way, so it closes at about twice cruise speed.
     j.x -= 0.25 * dt;
-    if (!j.hist.length || j.s - j.hist[j.hist.length - 1].s > 4) j.hist.push({ x: j.x, s: j.s });
-    if (j.hist.length > 16) j.hist.shift();
+    if (!j.hist.length || j.s - j.hist[j.hist.length - 1].s > 2) j.hist.push({ x: j.x, s: j.s });
+    if (j.hist.length > 24) j.hist.shift();
     if (j.x - cam.x < -40) EV.jet = null;
   }
 }
@@ -583,53 +585,102 @@ function boomCell(b) {
 
 // Trails: rocket plume and contrail, as chains of points with a radius and a colour.
 // A zero radius breaks one chain from the next.
-const TRAIL_N = 40;
+const TRAIL_N = 128;
 const trA = new Float32Array(TRAIL_N * 4), trB = new Float32Array(TRAIL_N * 4);
+const trailData = new Float32Array(TRAIL_N * 8);
+const trailTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, trailTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, TRAIL_N, 2, 0, gl.RGBA, gl.FLOAT, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 function trailUniforms() {
   trA.fill(0); trB.fill(0);
   let n = 0;
-  const push = (p, rad, col) => { if (n < TRAIL_N) { trA.set([...p, rad], n * 4); trB.set([...col, 0], n * 4); n++; } };
+  // shell: 0 draws a soft tube; 1 draws a hollow sheet, brightest at its rim.
+  const push = (p, rad, col, shell = 0) => { if (n < TRAIL_N) { trA.set([...p, rad], n * 4); trB.set([...col, shell], n * 4); n++; } };
+  const end = () => push([0, 0, 0], 0, [0, 0, 0]);
   const r = EV.rocket;
   if (r) {
-    const sNow = Math.min(r.s, ROCKET_T), fade = r.s > ROCKET_T ? Math.exp(-(r.s - ROCKET_T) / 18) : 1;
-    // Sunlight above the dark ground: white, a touch blue, as in the twilight jellyfish.
-    const sunCol = sky.h.moon ? [0.006, 0.007, 0.009] : [0.09, 0.1, 0.12];
-    for (let i = 0; i < 24; i++) {
-      const u = sNow * (i / 23) ** 0.8, age = r.s - u;
+    const sNow = Math.min(r.s, ROCKET_T), fade = r.s > ROCKET_T ? Math.exp(-(r.s - ROCKET_T) / 25) : 1;
+    // Sunlight high above the dark ground: blue-white, as in the twilight jellyfish.
+    const sunCol = sky.h.moon ? [0.005, 0.006, 0.008] : [0.1, 0.12, 0.15];
+    const smoke = sky.amb.map((v, c) => v * 0.5 + sky.sunL[c] * 0.02);
+    const STAGE = ROCKET_T * 0.55;
+    for (let i = 0; i < 40; i++) {
+      const u = sNow * (i / 39) ** 0.8, age = r.s - u;
       const [x, h, z] = rocketAt(r, u);
       const p = rel(x, h, z);
-      // The plume spreads with age, and far faster in the thin air up high.
-      const rad = 0.1 + age * (0.004 + 0.0045 * Math.max(h - 30, 0));
       const lit = sunlit(p) * fade;
-      const thin = Math.min(1, (0.25 / rad) ** 0.35);
-      const flame = r.s < ROCKET_T && i === 23 ? 1 : 0;
-      push(p, rad, sunCol.map((v, c) => v * lit * thin + [0.25, 0.12, 0.04][c] * flame + [0.004, 0.003, 0.002][c] * thin * fade));
+      // Low down, a smoke column; up high, exhaust that balloons into a thin bell.
+      const high = clamp((h - 45) / 40);
+      const rad = 0.12 + age * (0.006 + 0.012 * Math.max(h - 25, 0) * (0.3 + high));
+      const thin = Math.min(1, (0.3 / rad) ** 0.3);
+      // Staging leaves a short gap in the trail.
+      const gap = 1 - 0.85 * Math.exp(-(((u - STAGE) / 1.2) ** 2));
+      const col = [0, 1, 2].map(c => (sunCol[c] * lit * (0.5 + high) + smoke[c] * (1 - high) * 0.8) * thin * gap);
+      push(p, rad, col, high);
     }
-    push([0, 0, 0], 0, [0, 0, 0]);
+    end();
+    if (r.s < ROCKET_T) {
+      // The flame: a short hot plume behind the head; it lengthens and blues in thin air.
+      const [x, h, z] = rocketAt(r, r.s), [x0, h0, z0] = rocketAt(r, Math.max(0, r.s - 1.5 - h * 0.02));
+      const hot = h < 40 ? [1.0, 0.62, 0.3] : [0.75, 0.8, 1.0];
+      const k = Math.min(1, r.s / 2) * (0.85 + 0.15 * Math.sin(t * 37));
+      push(rel(x, h, z), 0.08 + h * 0.004, hot.map(v => v * 0.9 * k));
+      push(rel(x0, h0, z0), 0.25 + h * 0.012, hot.map(v => v * 0.15 * k));
+      end();
+    }
+    // At staging, a puff of exhaust swells round the stack.
+    const ps = r.s - STAGE;
+    if (ps > 0 && ps < 30) {
+      const [x, h, z] = rocketAt(r, STAGE), q = rel(x, h, z);
+      const lit = sunlit(q);
+      const pr = 1 + ps * 1.1;
+      push(q, pr, sunCol.map(v => v * lit * Math.exp(-ps / 12)), 1);
+      push([q[0] + 0.01, q[1] + 0.01, q[2]], pr, sunCol.map(v => v * lit * Math.exp(-ps / 12)), 1);
+      end();
+    }
   }
   const bm = EV.boom;
-  if (bm && bm.s < BOOM_HIT + 25) {
-    const f = Math.min(1, bm.s / BOOM_HIT), smoke = bm.s > BOOM_HIT ? Math.exp(-(bm.s - BOOM_HIT) / 10) : 1;
-    // A white-hot streak near the head, a glowing smoke trail behind it.
-    for (let i = 0; i < 12; i++) {
-      const g = f * (i / 11);
+  if (bm && bm.s < BOOM_HIT + 30) {
+    const f = Math.min(1, bm.s / BOOM_HIT), smokeK = bm.s > BOOM_HIT ? Math.exp(-(bm.s - BOOM_HIT) / 12) : 1;
+    // A white-hot head, a glowing wake, and a smoke trail lit by the fall.
+    for (let i = 0; i < 16; i++) {
+      const g = f * (i / 15);
       const [x, h, z] = boomAt(bm, g);
-      const hot = bm.s < BOOM_HIT ? Math.exp(-(f - g) / 0.06) : 0;
-      const smokeCol = sky.amb.map(v => v * 0.6 + 0.002);
-      push(rel(x, h, z), 0.25 + (f - g) * 2.5, [1.0, 0.75, 0.5].map((v, c) => v * hot * 0.6 + smokeCol[c] * smoke));
+      const hot = bm.s < BOOM_HIT ? Math.exp(-(f - g) / 0.08) : 0;
+      const smokeCol = sky.amb.map(v => v * 0.6 + 0.003);
+      push(rel(x, h, z), 0.35 + (f - g) * 3.5, [1.0, 0.72, 0.45].map((v, c) => v * hot * 0.9 + smokeCol[c] * smokeK));
     }
-    push([0, 0, 0], 0, [0, 0, 0]);
+    end();
+  }
+  if (bm && bm.ejecta) {
+    // Ejecta: glowing rock thrown out in arcs, cooling as it falls.
+    for (const e of bm.ejecta) {
+      const u = bm.s - BOOM_HIT;
+      if (u <= 0 || u > e.life) continue;
+      const pos = s => [bm.x + e.vx * s, e.vy * s - 0.06 * s * s, bm.z + e.vz * s];
+      const a = pos(u), b2 = pos(Math.max(0, u - 0.8));
+      if (a[1] < 0) continue;
+      const k = Math.exp(-u / 9);
+      push(rel(a[0], a[1], a[2]), 0.25, [1.0, 0.55, 0.22].map(v => v * k * 0.8));
+      push(rel(b2[0], b2[1], b2[2]), 0.35, [1.0, 0.45, 0.18].map(v => v * k * 0.25));
+      end();
+    }
   }
   const j = EV.jet;
   if (j) {
-    // The contrail: the moon or sun lights it, and the sky fills it in.
-    const base = sky.sunL.map((v, c) => v * 0.035 + sky.amb[c] * 0.02);
-    for (const hpt of j.hist) {
-      const age = j.s - hpt.s;
-      push(rel(hpt.x, j.y + 0.05, j.z), 0.025 + age * 0.006, base.map(v => v * Math.exp(-age / 90)));
+    // Twin contrails from the engines, close at first, merging as they spread.
+    const base = sky.sunL.map((v, c) => v * 0.04 + sky.amb[c] * 0.025);
+    for (const side of [-1, 1]) {
+      for (const hpt of j.hist) {
+        const age = j.s - hpt.s;
+        const sep = 0.011 * Math.exp(-age / 25);
+        push(rel(hpt.x + 0.08, j.y - 0.01 - age * 0.002, j.z + side * sep), 0.006 + age * 0.004, base.map(v => v * Math.exp(-age / 100)));
+      }
+      push(rel(j.x + 0.08, j.y - 0.01, j.z + side * 0.011), 0.004, base.map(v => v * 0.5));
+      end();
     }
-    push(rel(j.x + 0.15, j.y, j.z), 0.02, base);
-    push([0, 0, 0], 0, [0, 0, 0]);
   }
   return n;
 }
@@ -664,12 +715,60 @@ function eventFlares(put) {
   }
   const j = EV.jet;
   if (j) {
-    const d = norm(rel(j.x, j.y, j.z));
-    // Strobes double-flash; the green nav light on its near wing glows steady.
-    const sp = j.s % 1.3, str = Math.exp(-sp / 0.04) + (sp > 0.15 ? Math.exp(-(sp - 0.15) / 0.04) : 0);
-    put(6, d, str * 0.12, 0.2, [0.9, 0.95, 1.0], 0, 0.2);
-    put(7, norm(rel(j.x - 0.02, j.y, j.z - 0.02)), 0.025, 0.12, [0.2, 1.0, 0.4]);
+    // Only its strobes throw a flare; the steady lights go in as points.
+    const sp = j.s % 1.2, str = Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    put(6, norm(rel(j.x, j.y, j.z - 0.03)), str * 0.1, 0.18, [0.9, 0.95, 1.0], 0, 0.25);
   }
+}
+// Small steady lights in the glass pass: screen xy, radius, strength; and colour.
+const PTS = 10;
+const ptA = new Float32Array(PTS * 4), ptC = new Float32Array(PTS * 3);
+function pointUniforms(u) {
+  ptA.fill(0); ptC.fill(0);
+  let n = 0;
+  const tc = dimT(dim.core);
+  const add = (p, I, col) => {
+    if (n >= PTS || I <= 0) return;
+    const dW = norm(p), sp = screenOf(dW);
+    if (!sp) return;
+    const vis = seen(norm(toAir(dW)));
+    if (vis <= 0) return;
+    ptA.set([sp[0], sp[1], 1.1 * dpr, I * vis], n * 4);
+    ptC.set(col.map((v, c) => v * tc[c]), n * 3);
+    n++;
+  };
+  const j = EV.jet;
+  if (j) {
+    // Heading aft, its right wing faces us: green there, red on the far tip.
+    const sp = j.s % 1.2, str = Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    const bc = (j.s + 0.5) % 1.0 < 0.1 ? 1 : 0, bc2 = (j.s % 1.0) < 0.1 ? 1 : 0;
+    add(rel(j.x, j.y, j.z - 0.03), 0.6, [0.15, 1.0, 0.35]);
+    add(rel(j.x, j.y, j.z + 0.03), 0.4, [1.0, 0.1, 0.06]);
+    add(rel(j.x, j.y, j.z - 0.031), str * 3, [0.9, 0.95, 1.0]);
+    add(rel(j.x, j.y, j.z + 0.031), str * 2, [0.9, 0.95, 1.0]);
+    add(rel(j.x, j.y + 0.004, j.z), bc * 2.5, [1.0, 0.08, 0.04]);
+    add(rel(j.x, j.y - 0.004, j.z), bc2 * 2.5, [1.0, 0.08, 0.04]);
+    add(rel(j.x + 0.032, j.y + 0.002, j.z), 0.5, [1.0, 1.0, 0.95]);
+  }
+  gl.uniform4fv(u['uPt[0]'], ptA); gl.uniform3fv(u['uPtC[0]'], ptC);
+}
+// The jet's body for the outside pass: fuselage and wing as capsules, relative to the eye.
+function jetUniforms(u) {
+  const j = EV.jet;
+  const z = [0, 0, 0];
+  gl.uniform3fv(u.uJetF0, j ? rel(j.x - 0.03, j.y, j.z) : z); gl.uniform3fv(u.uJetF1, j ? rel(j.x + 0.03, j.y, j.z) : z);
+  gl.uniform3fv(u.uJetW0, j ? rel(j.x + 0.004, j.y - 0.001, j.z - 0.03) : z); gl.uniform3fv(u.uJetW1, j ? rel(j.x + 0.004, j.y - 0.001, j.z + 0.03) : z);
+  gl.uniform3fv(u.uJetT0, j ? rel(j.x - 0.026, j.y, j.z) : z); gl.uniform3fv(u.uJetT1, j ? rel(j.x - 0.03, j.y + 0.009, j.z) : z);
+  gl.uniform1f(u.uJetOn, j ? 1 : 0);
+  // The impact's fireball: a glowing dome that rises and cools.
+  const bm = EV.boom, uu = bm ? bm.s - BOOM_HIT : -1;
+  if (bm && uu > 0 && uu < 40) {
+    const R = 8 * (1 - Math.exp(-uu / 2.5)), y = R * 0.55 + uu * 0.18;
+    const temp = clamp(uu / 18);
+    const col = [1.0, 0.95 - 0.5 * temp, 0.85 - 0.75 * temp];
+    gl.uniform4fv(u.uBall, [...rel(bm.x, y, bm.z), R]);
+    gl.uniform4fv(u.uBallC, [...col, 3.5 * Math.exp(-uu / 7) + 0.3 * Math.exp(-uu / 25)]);
+  } else { gl.uniform4fv(u.uBall, [0, 0, 0, 0]); gl.uniform4fv(u.uBallC, [0, 0, 0, 0]); }
 }
 // Both passes share the view, the bank and the sky table.
 function shared(u) {
@@ -737,8 +836,13 @@ function render() {
   const b0 = EV.boom;
   gl.uniform4fv(u.uBoom, b0 ? [b0.x, b0.z, b0.ring || 0, b0.ringK || 0] : [0, 0, 0, 0]);
   gl.uniform2fv(u.uBoomL, b0 ? [b0.flash || 0, b0.crater || 0] : [0, 0]);
+  jetUniforms(u);
   const nTr = trailUniforms();
-  gl.uniform4fv(u['uTrA[0]'], trA); gl.uniform4fv(u['uTrB[0]'], trB); gl.uniform1i(u.uTrN, nTr);
+  // Both rows go up as one 128 by 2 float texture.
+  trailData.set(trA, 0); trailData.set(trB, TRAIL_N * 4);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, trailTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TRAIL_N, 2, gl.RGBA, gl.FLOAT, trailData);
+  gl.uniform1i(u.uTrail, 4); gl.uniform1i(u.uTrN, nTr);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
   // Pass 2: the cabin, the frame and the glass, to the screen.
@@ -762,6 +866,7 @@ function render() {
   gl.uniform4fv(u.uMet, m ? [m.p, m.tail, m.b, m.train] : [0, 0, 0, 0]);
   gl.uniform4fv(u.uMetF, m ? [m.fire ? 1 : 0, m.seed, m.trainAge, m.hue] : [0, 0, 0, 0]);
   flareUniforms(u);
+  pointUniforms(u);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 /* ---------- lens flare ---------- */
