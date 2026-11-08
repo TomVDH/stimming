@@ -112,7 +112,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 initPage({ id: 'fireworks' });
@@ -142,10 +142,12 @@ stage.prepend(canvas);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(36, 1, 1, 20000);
-camera.position.set(0, 3, 0);
+camera.position.set(0, 12, 0);
 // Layer 1 holds what the water mirrors.
 const LIGHT = 1;
-const SHORE_Z = -2300;
+const SHORE_Z = -1500;
+// The performance ladder's rung; slow frames raise it, never lower it.
+let rung = 0;
 
 /* ---------- burst lights ---------- */
 // Eight burst lights; every lit shader reads this array.
@@ -260,69 +262,212 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(15000, 32, 16), new THREE.Sh
 sky.renderOrder = -1;
 scene.add(sky);
 
-/* ---------- ridge: one low far shore ---------- */
-// A vertical strip whose top follows simplex noise.
+/* ---------- land: beach, hills and the far range ---------- */
+// A height field behind a wandering waterline; normals give the relief.
 const noise = createNoise2D(rnd);
-function ridgeGeometry() {
-  const N = 480, X0 = -9000, X1 = 9000, pos = [], uv = [], idx = [];
-  for (let i = 0; i <= N; i++) {
-    const x = X0 + (X1 - X0) * (i / N);
-    const top = 34 + 52 * (0.5 + 0.5 * noise(x * 0.00042, 0.3)) + 14 * noise(x * 0.0021, 4.1) + 4 * noise(x * 0.011, 9.7);
-    const z = SHORE_Z + 120 * noise(x * 0.0004, 7.7);
-    pos.push(x, -2, z, x, top, z);
-    uv.push(i / N, 0, i / N, 1);
-    if (i < N) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const shoreZ = x => SHORE_Z + 120 * noise(x * 0.0004, 7.7);
+// Height at x, b metres inland from the waterline.
+function landH(x, b) {
+  if (b < 0) return -2 + b * 0.05;
+  const beach = 1.2 + 1.5 * smooth(0, 90, b);
+  // Three ridged octaves cut spurs and gullies into the range.
+  const r1 = 1 - Math.abs(noise(x * 0.00035, b * 0.0006 + 3.3));
+  const r2 = 1 - Math.abs(noise(x * 0.0013, b * 0.0019 + 7.1));
+  const r3 = 1 - Math.abs(noise(x * 0.0042, b * 0.0052 + 1.9));
+  const m = 45 + 170 * r1 * r1 * (0.6 + 0.4 * noise(x * 0.0001, 1.7)) + 60 * r2 * r2 * r1 + 18 * r3 * r2 + 5 * noise(x * 0.012, b * 0.014);
+  return beach + smooth(70, 650, b) * Math.max(0, m);
+}
+// A point on the land: x across, b inland, lifted by y.
+const landAt = (x, b, y = 0) => new THREE.Vector3(x, landH(x, b) + y, shoreZ(x) - b);
+function landGeometry() {
+  const NX = 760, NB = 96, pos = [], bb = [], idx = [];
+  for (let j = 0; j <= NB; j++) {
+    // Rows bunch up near the shore, where the beach sits.
+    const b = -30 + 1630 * Math.pow(j / NB, 1.6);
+    for (let i = 0; i <= NX; i++) {
+      const x = -9000 + 18000 * (i / NX);
+      pos.push(x, landH(x, b), shoreZ(x) - b);
+      bb.push(b);
+    }
+  }
+  for (let j = 0; j < NB; j++) for (let i = 0; i < NX; i++) {
+    const a = j * (NX + 1) + i, c = a + NX + 1;
+    idx.push(a, a + 1, c, a + 1, c + 1, c);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aB', new THREE.Float32BufferAttribute(bb, 1));
   g.setIndex(idx);
+  g.computeVertexNormals();
   return g;
 }
-const ridge = new THREE.Mesh(ridgeGeometry(), new THREE.ShaderMaterial({
-  uniforms: U, side: THREE.DoubleSide,
-  vertexShader: /* glsl */`varying vec3 vP; varying float vH; void main() { vH = uv.y; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; varying float vH; ${HEAD}
+
+/* ---------- festival: campfires and light dots on the beach ---------- */
+const FN = 16;
+const FIRE = linFit(0.74, 0.17, 52);
+const fires = [];
+for (const [cx, n] of [[-700, 4], [-330, 2], [90, 3], [520, 4], [880, 2], [-1050, 1]]) {
+  for (let i = 0; i < n && fires.length < FN; i++) fires.push(landAt(cx + (rnd() - 0.5) * 140, 18 + rnd() * 50, 1));
+}
+// Fire flicker, shared by the flames and the light they cast.
+const FIRE_GLSL = /* glsl */`
+uniform vec4 uF[${FN}];
+uniform float uTime;
+uniform vec3 uFireCol;
+uniform float uPace;
+float fireFlick(float seed) {
+  float t = uTime;
+  float f = sin(t * 7.3 + seed * 11.0) * 0.5 + sin(t * 13.1 + seed * 5.0) * 0.3 + sin(t * 23.7 + seed * 3.0) * 0.2;
+  return 0.8 + 0.2 * f * uPace;
+}
+// Light from every campfire onto a surface with normal N.
+vec3 fireLit(vec3 P, vec3 N) {
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < ${FN}; i++) {
+    vec3 L = uF[i].xyz + vec3(0.0, 1.5, 0.0) - P;
+    float d2 = dot(L, L);
+    s += vec3(max(dot(N, L * inversesqrt(d2)), 0.0) * fireFlick(uF[i].w) / (1.0 + d2 / 500.0));
+  }
+  return s * uFireCol;
+}`;
+const FU = {
+  uF: { value: fires.map((f, i) => new THREE.Vector4(f.x, f.y, f.z, i * 1.37)) },
+  uFireCol: { value: new THREE.Vector3(...FIRE) },
+  uPace: { value: 1 },
+};
+
+// The land's height on a regular grid; shaders march it for shadows.
+const HB = { x0: -4500, z0: -3400, w: 9000, d: 2000, nx: 768, nz: 192 };
+function heightTexture() {
+  const data = new Uint16Array(HB.nx * HB.nz);
+  for (let j = 0; j < HB.nz; j++) for (let i = 0; i < HB.nx; i++) {
+    const x = HB.x0 + HB.w * (i / (HB.nx - 1)), z = HB.z0 + HB.d * (j / (HB.nz - 1));
+    data[j * HB.nx + i] = THREE.DataUtils.toHalfFloat(landH(x, shoreZ(x) - z));
+  }
+  const t = new THREE.DataTexture(data, HB.nx, HB.nz, THREE.RedFormat, THREE.HalfFloatType);
+  t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+const land = new THREE.Mesh(landGeometry(), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FU, tHeight: { value: heightTexture() }, uHB: { value: new THREE.Vector4(HB.x0, HB.z0, 1 / HB.w, 1 / HB.d) } },
+  vertexShader: /* glsl */`attribute float aB; varying vec3 vP; varying vec3 vN; varying float vB;
+  void main() { vB = aB; vN = normal; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying float vB; ${HEAD} ${FIRE_GLSL}
+  uniform sampler2D tHeight;
+  uniform vec4 uHB;
+  float landY(vec2 xz) {
+    vec2 uv = (xz - uHB.xy) * uHB.zw;
+    return (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) ? -10.0 : texture2D(tHeight, uv).r;
+  }
+  // Soft shadow: march toward the light and test the height field.
+  float shade(vec3 P, vec3 Lp) {
+    vec3 d = Lp - P;
+    float len = length(d), s = 1.0;
+    for (int k = 1; k <= 14; k++) {
+      float t = float(k) / 14.0;
+      t = t * t * 0.5;
+      vec3 q = P + d * t;
+      s = min(s, clamp((q.y - landY(q.xz)) / (t * len * 0.025 + 1.0), 0.0, 1.0));
+    }
+    return s;
+  }
   void main() {
-    // Near-black land; burst light rims the crest.
-    vec3 c = vec3(0.0009, 0.001, 0.0015);
-    c += burstLit(vP, 700.0) * (0.05 + 0.9 * smoothstep(0.8, 1.0, vH));
+    vec3 N = normalize(vN), V = normalize(cameraPosition - vP);
+    // Pale sand on the beach; dark scrub, then darker rock on steep slopes.
+    float sand = 1.0 - smoothstep(40.0, 140.0, vB);
+    vec3 alb = mix(vec3(0.07, 0.066, 0.06), vec3(0.24, 0.21, 0.17), sand);
+    alb *= 1.0 - 0.55 * smoothstep(0.2, 0.6, 1.0 - N.y);
+    // Each burst lights the slopes that face it; the rest stay dark.
+    vec3 lit = vec3(0.0);
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 L = uL[i].xyz - vP;
+      float d2 = dot(L, L);
+      L *= inversesqrt(d2);
+      float ndl = max(dot(N, L), 0.0);
+      // Slopes that graze the light catch a bright rim.
+      float rim = pow(1.0 - max(dot(N, V), 0.0), 2.0) * smoothstep(0.0, 0.4, ndl);
+      // The three brightest lights cast shadows over the ridges.
+      float sh = i < 3 && ndl > 0.0 ? shade(vP + N * 2.0, uL[i].xyz) : 1.0;
+      lit += uLC[i] * uL[i].w * (ndl + 0.8 * rim) * sh / (1.0 + d2 / 1.4e6);
+    }
+    // Faint sky light from above keeps the shapes readable.
+    vec3 amb = uCool * 0.006 * (0.3 + 0.7 * N.y);
+    vec3 c = alb * (amb + lit * 1.7 + fireLit(vP, N) * 1.2);
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
   }`,
 }));
-ridge.layers.enable(LIGHT);
-scene.add(ridge);
+land.layers.enable(LIGHT);
+scene.add(land);
 
-/* ---------- village lights ---------- */
-// Two small clusters of warm lamps at the water's edge.
-const lamps = [];
-for (const [cx, n, spread] of [[-1150, 9, 260], [620, 6, 160]]) {
-  for (let i = 0; i < n; i++) {
-    const x = cx + (rnd() - 0.5) * spread * 2;
-    lamps.push({ x, y: 2 + rnd() * 9, z: SHORE_Z + 120 * noise(x * 0.0004, 7.7) + 40, k: 0.5 + rnd() * 0.8 });
+// Light dots: string lights, lanterns, torches and a few homes up the hill.
+const dots = { pos: [], col: [], k: [] };
+const WARM = linFit(0.86, 0.09, 75), AMBER = linFit(0.78, 0.15, 60), COOLW = linFit(0.9, 0.04, 240);
+const PARTY = [linFit(0.7, 0.2, 25), linFit(0.78, 0.18, 145), linFit(0.65, 0.17, 260), linFit(0.82, 0.15, 85), linFit(0.7, 0.2, 330)];
+function dot(p, col, k, size, tw) { dots.pos.push(p.x, p.y, p.z); dots.col.push(...col); dots.k.push(k, size, tw, rnd() * 100); }
+// String lights sag between poles near the fires.
+for (let s = 0; s < 9; s++) {
+  const x0 = (rnd() - 0.5) * 2200, len = 60 + rnd() * 120, b0 = 10 + rnd() * 60, n = Math.round(len / 5), party = rnd() < 0.45;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, x = x0 + len * t, sag = 2.2 * 4 * t * (1 - t);
+    dot(landAt(x, b0 + 8 * Math.sin(t * 3 + s), 5 - sag), party ? PARTY[i % 5] : WARM, 0.45, 2.0, party ? 0.2 : 0.05);
   }
 }
-const SODIUM = linFit(0.8, 0.13, 72);
-const lampGeo = new THREE.BufferGeometry();
-lampGeo.setAttribute('position', new THREE.Float32BufferAttribute(lamps.flatMap(l => [l.x, l.y, l.z]), 3));
-lampGeo.setAttribute('aK', new THREE.Float32BufferAttribute(lamps.map(l => l.k), 1));
-const lampMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uDpr: { value: 1 }, uCol: { value: new THREE.Vector3(...SODIUM) } },
+// Lanterns, torches and phones scattered over the beach.
+for (let i = 0; i < 320; i++) {
+  const r = rnd(), col = r < 0.45 ? AMBER : r < 0.75 ? WARM : r < 0.9 ? COOLW : PARTY[i % 5];
+  dot(landAt((rnd() - 0.5) * 2600, 4 + rnd() * 200, 1 + rnd() * 1.5), col, 0.4 + rnd() * 0.8, 1.6 + rnd() * 1.2, rnd() < 0.3 ? 0.6 : 0.08);
+}
+// A few homes and a winding path of lamps up the hill.
+for (let i = 0; i < 140; i++) dot(landAt((rnd() - 0.5) * 3600, 160 + rnd() * 700, 2), rnd() < 0.7 ? AMBER : WARM, 0.25 + rnd() * 0.4, 1.6, 0.02);
+// Boats at anchor on the bay, each a small cluster of lamps.
+for (let i = 0; i < 14; i++) {
+  const z = -350 - rnd() * 1050, x = (rnd() - 0.5) * 1.1 * -z, n = 2 + Math.floor(rnd() * 4);
+  for (let j = 0; j < n; j++) dot(new THREE.Vector3(x + (rnd() - 0.5) * 8, 1 + rnd() * (j ? 3 : 7), z + (rnd() - 0.5) * 4), j ? AMBER : WARM, 0.6 + rnd() * 0.5, 2.2, 0.03);
+}
+// Paper lanterns afloat on the water, in loose drifts.
+for (let i = 0; i < 110; i++) {
+  const z = -250 - Math.pow(rnd(), 0.7) * 1150, x = (rnd() - 0.5) * 1.05 * -z;
+  dot(new THREE.Vector3(x, 0.4, z), rnd() < 0.85 ? AMBER : PARTY[i % 5], 0.35 + rnd() * 0.35, 1.8, 0.25);
+}
+// The flames: one tall sprite per fire.
+for (const [i, f] of fires.entries()) { dot(f.clone().setY(f.y + 0.6), FIRE, 2.2, 6.5, -1 - i * 1.37); }
+const dotGeo = new THREE.BufferGeometry();
+dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(dots.pos, 3));
+dotGeo.setAttribute('aCol', new THREE.Float32BufferAttribute(dots.col, 3));
+dotGeo.setAttribute('aK', new THREE.Float32BufferAttribute(dots.k, 4));
+const dotMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FU, uDpr: { value: 1 } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`attribute float aK; uniform float uDpr; varying float vK; varying vec3 vP;
-  void main() { vK = aK; vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = 3.0 * uDpr; }`,
-  fragmentShader: /* glsl */`uniform vec3 uCol; varying float vK; varying vec3 vP; ${HEAD}
+  vertexShader: /* glsl */`attribute vec3 aCol; attribute vec4 aK; uniform float uDpr; uniform float uTime; uniform float uPace;
+  varying vec3 vCol; varying float vFire; varying vec3 vP;
+  void main() {
+    vP = position;
+    vFire = aK.z < 0.0 ? 1.0 : 0.0;
+    float t = uTime;
+    // Fires flicker; party strings and phones twinkle a little.
+    float f = aK.z < 0.0
+      ? 0.8 + 0.2 * (sin(t * 7.3 - aK.z * 11.0) * 0.5 + sin(t * 13.1 - aK.z * 5.0) * 0.3 + sin(t * 23.7 - aK.z * 3.0) * 0.2) * uPace
+      : 1.0 - aK.z * uPace * (0.5 + 0.5 * sin(t * (1.5 + fract(aK.w) * 3.0) + aK.w));
+    vCol = aCol * aK.x * f;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = aK.y * uDpr;
+  }`,
+  fragmentShader: /* glsl */`varying vec3 vCol; varying float vFire; varying vec3 vP; ${HEAD}
   void main() {
     vec2 q = gl_PointCoord - 0.5;
-    float a = exp(-dot(q, q) * 18.0);
-    gl_FragColor = vec4(uCol * vK * 2.2 * a * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
+    // Flames stand taller than they are wide.
+    float a = vFire > 0.5 ? exp(-(q.x * q.x * 40.0 + q.y * q.y * 9.0)) : exp(-dot(q, q) * 18.0);
+    gl_FragColor = vec4(vCol * 2.4 * a * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
   }`,
 });
-const lampPts = new THREE.Points(lampGeo, lampMat);
-lampPts.layers.enable(LIGHT);
-scene.add(lampPts);
+const dotPts = new THREE.Points(dotGeo, dotMat);
+dotPts.layers.enable(LIGHT);
+scene.add(dotPts);
 
 /* ---------- K6: burst particles ---------- */
 // A ring buffer of star slots on one instanced streak quad.
@@ -460,7 +605,7 @@ function climb(h, k) {
 /* ---------- end K6 ---------- */
 
 /* ---------- water ---------- */
-// Half-size mirror: a camera under y = 0 sees only the LIGHT layer.
+// Mirror: a camera under y = 0 sees only the LIGHT layer.
 const mirrorCam = new THREE.PerspectiveCamera();
 mirrorCam.layers.set(LIGHT);
 const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
@@ -511,11 +656,12 @@ function renderMirror() {
 /* ---------- end water ---------- */
 
 /* ---------- K2: bloom ---------- */
-// Half-resolution bloom on a float target; only bright sources cross the threshold.
+// Bloom on a float target; only bright sources cross the threshold.
+// Fireworks runs it at full size; rung 2 of the ladder halves it.
 function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
-  bloom.setSize = (w, h) => full(Math.max(1, w / 2), Math.max(1, h / 2));
+  bloom.setSize = (w, h) => { const d = rung >= 2 ? 2 : 1; full(Math.max(1, w / d), Math.max(1, h / d)); };
   return bloom;
 }
 /* ---------- end K2 ---------- */
@@ -611,7 +757,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.6, 0.45, 0.95], tint: [0.0012, 0.0012, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.03 };
+const POST = { bloom: [0.7, 0.6, 0.9], tint: [0.0012, 0.0012, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.03 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
@@ -754,12 +900,12 @@ function launch(ndc, cal) {
 }
 function orbList() {
   const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 }));
-  for (const l of lamps.filter(l => l.k > 1.1).slice(0, 4)) list.push({ pos: new THREE.Vector3(l.x, l.y, l.z), size: 0.25, color: SODIUM, k: 0.05 });
+  for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.12, color: FIRE, k: 0.01 });
   return list;
 }
 
 /* ---------- frame and draw ---------- */
-let size = { w: 1, h: 1, dpr: 1 }, rung = 0;
+let size = { w: 1, h: 1, dpr: 1 };
 // The horizon sits low; portrait widens the lens to keep the sky tall.
 function frame() {
   const portrait = size.w < size.h;
@@ -779,12 +925,13 @@ function resize() {
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
-  const m = rung >= 2 ? 4 : 2;
-  mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr / m)), Math.max(1, Math.round(h * size.dpr / m)));
+  // The mirror runs at full size on High, three quarters on Standard.
+  const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.75;
+  mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
-  lampMat.uniforms.uDpr.value = size.dpr;
+  dotMat.uniforms.uDpr.value = size.dpr;
   frame();
   draw();
 }
@@ -797,8 +944,10 @@ function draw() {
   composer.render();
 }
 
-/* Frame loop: runs while a star, a light or a held seed lives, then sleeps. */
-let raf = 0, lastT = 0;
+/* Frame loop: full rate in a show, 30 fps while fires flicker, then sleep. */
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1;
 const busy = () => !!press || simT < lastDeath || lights.length > 0;
 function tick(now) {
   raf = 0;
@@ -806,6 +955,11 @@ function tick(now) {
   // Closed-form stars allow long steps; slow frames do not slow the show.
   const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
   lastT = now;
+  // Ambient flicker eases out over 2 s once idle, and stays off in reduced motion.
+  const awake = !reduced() && now - lastInput < SLEEP;
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  FU.uPace.value = pace;
+  const lively = busy();
   try {
     simT += dt;
     U.uTime.value = simT;
@@ -813,18 +967,24 @@ function tick(now) {
       press.charge = Math.min(1, (performance.now() - press.at) / 1500);
       press.seed = burstPoint(press.ndc, 1 + press.charge, press.seed || new THREE.Vector3());
     }
-    updateLights();
-    draw();
-    watch(now);
+    if (lively || now - lastDraw >= 31) {
+      updateLights();
+      draw();
+      watch(now, lively);
+      lastDraw = now;
+    }
   } finally {
-    if (visible && busy()) raf = requestAnimationFrame(tick);
+    if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
     else { lastT = 0; updateLights(); draw(); }
   }
 }
-function wake() { if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick); }
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
+}
 /* Performance ladder: slow frames step quality down a rung, never back up. */
 let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
-function watch(now) {
+function watch(now, lively) {
   const gap = now - prevDraw;
   prevDraw = now;
   if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
@@ -832,18 +992,18 @@ function watch(now) {
   if (now - watchFrom < 4000) return;
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
-  if (watchSum / watchN > 1000 / 38 && rung < 2) { rung++; resize(); }
+  if (watchSum / watchN > (lively ? 1000 / 38 : 1000 / 22) && rung < 2) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
   visible = vis;
   if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
   draw();
-  if (busy()) wake();
+  wake();
 });
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
-onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; });
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; wake(); });
 
 /* Pointer: press grows a seed light; release launches; hold sets the calibre. */
 let press = null;
@@ -902,6 +1062,7 @@ renderer.compileAsync(scene, camera).then(() => {
   draw();
   canvas.classList.add('on');
   markReady();
+  wake();
 }, () => { canvas.classList.add('on'); markReady(); });
 </script>
 </body>

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T10:41:50Z
+updated_at: 2026-11-08T10:52:02Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -29,3 +29,12 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 
 - Grade grain: the sin hash drew faint vertical stripes on the sky; an integer hash replaces it. Night viaduct still has the sin hash.
 - Orbs pass: caps pixels at 6 before bloom; very bright cores made square bloom tiles.
+
+## Tom's batch, 2026-11-08
+
+- [x] Bloom at full size; mirror at 3/4 (Standard) or full (High)
+- [x] Land: beach, ridged hills and range as a lit height field; burst shadows from a baked height texture
+- [x] Festival: 16 campfires that light the sand, string lights, lanterns, boats, floating lanterns, homes up the hill
+- [x] Drift tier: fires flicker at 30 fps, then sleep after 60 s
+- [ ] Reflections
+- [ ] Wide shell variety, with insane ones
