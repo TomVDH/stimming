@@ -17,7 +17,7 @@ float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.y
 vec2 hash22(vec2 p) { return vec2(hash12(p), hash12(p + 19.19)); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
-float fbm(vec2 p, int n) { float a = 0.5, s = 0.0; for (int i = 0; i < 6; i++) { if (i >= n) break; s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+float fbm(vec2 p, int n) { float a = 0.5, s = 0.0; for (int i = 0; i < 8; i++) { if (i >= n) break; s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
 
 // A rounded box: the shape of the window.
 float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
@@ -59,6 +59,7 @@ uniform vec3 uAmb, uSun, uSunL, uFloor;
 uniform vec3 uWing[4], uLet[4], uWingN, uLetN, uTip; uniform float uStrobe;
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
 uniform vec4 uFl[${MAXFL}];
+uniform vec4 uTrA[40], uTrB[40]; uniform int uTrN;
 out vec4 o;
 
 // A ray from the eye hits the sphere at height hl, from above.
@@ -245,6 +246,8 @@ vec3 flashAt(vec2 w, float dens) {
 // Cloud noise: one tiling 3D texture, sampled at a level of detail.
 // R holds the base shape; G, B, A hold Worley noise for erosion.
 float gFocal1 = 1.0;
+// What the deck lets through along this pixel's ray; trails below it dim by this.
+float gDeckT = 1.0;
 // Near, cubic weights between voxels hide the diamond steps of plain blending.
 vec4 cnS(vec3 p, float tile) {
   vec3 q = p / tile * 64.0 - 0.5, i = floor(q), f = fract(q);
@@ -469,6 +472,7 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
     vec3 sk = L + uFloor + uSunL * 0.03 * exp(-ang * 22.0) + aurora(d, 0.0);
     // Far deck and mid-layer tops rise above the ground's horizon.
     vec4 cl = deck(d), ml = midLayer(d), ci = cirrus(d, sk);
+    gDeckT = cl.a;
     // Tops seen above the horizon are hundreds of km off: haze softens them.
     cl.rgb = mix(cl.rgb, sk * (1.0 - cl.a), 0.65);
     ml.rgb = mix(ml.rgb, sk * (1.0 - ml.a), 0.5);
@@ -484,6 +488,7 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   float fw = tg / focal1 / max(-d.y, 0.03);
   vec3 g = ground(w, fw);
   vec4 cl = deck(d);
+  gDeckT = cl.a;
   g = g * cl.a + cl.rgb;
   vec4 ml = midLayer(d);
   g = g * ml.a + ml.rgb;
@@ -607,6 +612,38 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
   return c;
 }
 
+// Trails: rocket plumes and contrails, as chains of glowing capsules.
+// uTrA: point relative to the eye in km, radius; uTrB: colour.
+// tEnd stops them at the ground; below the deck they dim by gDeckT.
+vec3 trails(vec3 d, float tEnd) {
+  vec3 e = vec3(0.0);
+  float pxK = 1.3 / gFocal1;
+  for (int i = 0; i < 39; i++) {
+    if (i + 1 >= uTrN) break;
+    vec4 a = uTrA[i], b = uTrA[i + 1];
+    if (a.w <= 0.0 || b.w <= 0.0) continue;
+    // Closest approach between the ray and the segment from a to b.
+    vec3 u = b.xyz - a.xyz;
+    float bb = dot(d, u), cc = max(dot(u, u), 1e-6), dd = dot(d, -a.xyz), ee = dot(u, -a.xyz);
+    float den = cc - bb * bb;
+    float k = den > 1e-6 ? clamp((ee - bb * dd) / den, 0.0, 1.0) : 0.0;
+    vec3 q = a.xyz + u * k;
+    float s = dot(d, q);
+    if (s <= 0.0 || s > tEnd) continue;
+    float dist = length(d * s - q);
+    // A trail is never thinner than about a pixel.
+    float rad = max(mix(a.w, b.w, k), s * pxK);
+    float glow = exp(-dist * dist / (rad * rad));
+    if (glow < 0.002) continue;
+    vec3 col = mix(uTrB[i].rgb, uTrB[i + 1].rgb, k);
+    // Thin far trails keep their brightness per pixel, not per km.
+    col *= min(1.0, mix(a.w, b.w, k) / rad + 0.15);
+    float y = q.y + H + dot(q.xz, q.xz) / 12742.0;
+    e += col * glow * (y < 3.5 ? gDeckT : 1.0);
+  }
+  return e;
+}
+
 // A ray hits a flat convex quad: the wing or its winglet.
 // Returns the hit distance, or -1; uv gives chord and span from 0 to 1.
 float quad(vec3 d, vec3 v[4], vec3 n, out vec2 uv) {
@@ -677,6 +714,7 @@ void main() {
   vec3 c = outside(d, uFocal * uOutRes.x / uRes.x, skyA);
   float tg = hitLayer(d, 0.0);
   c = towers(d, tg > 0.0 ? tg : 1e4, c, skyA);
+  if (uTrN > 1) c += trails(d, tg > 0.0 ? tg : 1e4);
   vec2 uv, uv2;
   float tw = quad(d, uWing, uWingN, uv);
   if (tw > 0.0) { c = wingCol(d, uWingN, uv, tw, E, uStrobe); skyA = 0.0; }
@@ -694,7 +732,8 @@ uniform vec3 uF, uR, uU;
 uniform int uSteps;
 uniform sampler2D uOut;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
-uniform vec4 uFlr[6]; uniform vec4 uFlrC[6];
+uniform vec4 uFlr[8]; uniform vec4 uFlrC[8];
+uniform vec3 uMetA, uMetB; uniform vec4 uMet;
 out vec4 o;
 
 // Stars hold still; they fade toward the horizon glow.
@@ -732,12 +771,38 @@ vec3 disc(vec3 d) {
   return c * texture(uSkyT, skyUV(d)).rgb;
 }
 
+// A meteor: a hot head and a fading streak along a great circle of the sky.
+// uMet: head progress, tail length, brightness, train glow.
+vec3 meteor(vec3 d) {
+  if (uMet.z <= 0.0 && uMet.w <= 0.0) return vec3(0.0);
+  vec3 n = normalize(cross(uMetA, uMetB));
+  float off = dot(d, n);
+  vec3 dp = normalize(d - n * off);
+  float total = acos(clamp(dot(uMetA, uMetB), -1.0, 1.0));
+  float along = atan(dot(cross(uMetA, dp), n), dot(uMetA, dp)) / total;
+  float w = 1.1 / uFocal;
+  float head = uMet.x, tail = head - uMet.y;
+  float line = exp(-off * off / (w * w));
+  // The streak brightens toward the head and stops at it.
+  float streak = smoothstep(tail, head, along) * step(along, head) * line;
+  vec3 hd = normalize(mix(uMetA, uMetB, head));
+  float hr = acos(clamp(dot(d, hd), -1.0, 1.0)) / w;
+  vec3 c = vec3(0.85, 0.9, 1.0) * uMet.z * (streak * 0.6 + exp(-hr * hr * 0.5) * 1.5);
+  // A fireball's train: an orange thread that widens and wanders as it fades.
+  if (uMet.w > 0.0 && along > 0.0 && along < head) {
+    float tw = w * (2.0 + 6.0 * (1.0 - uMet.w));
+    float wob = sin(along * 23.0 + uTime * 0.7) * w * 4.0 * (1.0 - uMet.w);
+    c += vec3(1.0, 0.55, 0.25) * uMet.w * 0.35 * exp(-pow((off - wob) / tw, 2.0));
+  }
+  return c;
+}
+
 vec3 glass(vec3 da, vec2 px) {
   vec4 out1 = texture(uOut, px / uRes);
   vec3 view = out1.rgb;
   vec3 d = toWorld(da);
   // Point sources draw at full size; pass 1 says where sky shows.
-  if (out1.a > 0.001) view += out1.a * (stars(d) + disc(d));
+  if (out1.a > 0.001) view += out1.a * (stars(d) + disc(d) + meteor(d));
   // The red nav light: a hot core and a soft halo.
   float ang = acos(clamp(dot(d, normalize(uTip)), -1.0, 1.0)) * uFocal / uDpr;
   view += vec3(1.0, 0.06, 0.04) * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
@@ -775,7 +840,7 @@ vec3 scratches(vec2 pG, vec2 px) {
 // A faint ghost of each bright source, bounced between the panes.
 vec3 ghosts(vec2 px) {
   vec3 s = vec3(0.0);
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
     vec4 fl = uFlr[i];
     if (fl.z <= 0.0) continue;
     vec2 at2 = fl.xy + (fl.xy - uRes * 0.5) * 0.07 + vec2(0.0, -uRes.y * 0.012);
@@ -803,7 +868,7 @@ vec3 flare(vec2 px, vec3 base) {
   vec2 uv = px / uRes;
   float aspect = uRes.x / uRes.y;
   vec3 add = vec3(0.0);
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
     vec4 f = uFlr[i];
     if (f.z <= 0.0) continue;
     vec3 col = uFlrC[i].rgb;

@@ -47,3 +47,7 @@ Decisions:
 - [ ] Remove the `window.__ws` test hook
 - [ ] QA: 1280 and 375 px, clean console, reduced motion, hidden tab stops the loop
 - [ ] Record the session cost
+
+## Events (Tom, 2026-11-08)
+
+They happen on their own, every 22 to 55 s: a meteor (one in four a green fireball with a lingering train), a rocket launch (its high plume lit by the sun at dusk and dawn: the twilight jellyfish), and a passing jet with strobes and a moonlit or sunlit contrail. Tap-to-flash lightning stays.
