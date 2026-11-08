@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.14 0.006 70); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crinkle foil</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Crinkle foil: one sheet of foil under one strip light. */
+:root { --stage: oklch(0.1 0.005 70); }
+.stage--foil { cursor: grab; }
+.stage--foil canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--foil canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--foil canvas { transition: none; } }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.008 70 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.chip .dot.holo { background: conic-gradient(oklch(0.8 0.14 20), oklch(0.85 0.14 120), oklch(0.8 0.13 220), oklch(0.8 0.14 320), oklch(0.8 0.14 20)); }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Crinkle foil</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--foil" id="stage" tabindex="0" role="application" aria-label="A sheet of foil under a strip light. Drag to scrunch it; smooth it flat again.">
+      <p class="fail" hidden>Crinkle foil needs WebGL2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="metal" role="group" aria-label="Foil">
+        <button class="chip" type="button" data-value="silver" aria-pressed="true"><span class="dot" style="background:oklch(0.88 0.005 250)"></span>Silver</button>
+        <button class="chip" type="button" data-value="gold" aria-pressed="false"><span class="dot" style="background:oklch(0.82 0.12 85)"></span>Gold</button>
+        <button class="chip" type="button" data-value="holo" aria-pressed="false"><span class="dot holo"></span>Holo</button>
+      </div>
+      <label class="slider"><span>Creases</span><input type="range" id="creases" min="0" max="1" step="0.01" value="0.5" aria-label="Creases: coarse to fine"></label>
+      <div class="actions">
+        <button class="chip" id="smooth" type="button">Smooth</button>
+        <button class="chip" id="shuffle" type="button"><svg viewBox="0 0 16 16" aria-hidden="true" width="14" height="14" style="vertical-align:-2px;margin-right:5px"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.6" cy="5.6" r="1.1" fill="currentColor"/><circle cx="10.4" cy="10.4" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/></svg>Shuffle</button>
+      </div>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt>Drag</dt><dd>scrunch the foil</dd></div>
+          <div><dt>Smooth</dt><dd>press it flat</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Crinkle foil</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, choices, fitCanvas, linFit, qualitySetting, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+// Blockout: still frames only; no loop, no input, no sound.
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+initPage({ id: 'foil' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.foil.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.foil.${k}`, String(v)); } catch { /* storage is optional */ } };
+const opts = {
+  metal: saved('metal') || 'silver',
+  creases: saved('creases') != null ? +saved('creases') : 0.5,
+};
+// Each foil has one base reflectance; Holo adds a hue per facet.
+const METALS = {
+  silver: { f0: [0.9, 0.006, 250], holo: 0 },
+  gold: { f0: [0.8, 0.13, 82], holo: 0 },
+  holo: { f0: [0.88, 0.01, 250], holo: 1 },
+};
+// The scrunch: its centre, its strength and the crease seed.
+const scrunch = { cx: 0, cy: 0, amt: 1, seed: 37 };
+// The fold count fits the fragment uniform limit.
+const NF = 80;
+const fold = new Float32Array(NF * 4), foldB = new Float32Array(NF * 2);
+// A seeded random stream makes Shuffle repeatable per seed.
+function rng(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+// Folds cluster at the scrunch; most creases run across the pull.
+function makeFolds(c) {
+  const R = rng(scrunch.seed), fine = 1.35 - opts.creases * 0.7;
+  const gauss = () => Math.sqrt(-2 * Math.log(R() + 1e-9)) * Math.cos(6.2832 * R());
+  for (let i = 0; i < NF; i++) {
+    const big = i < 10, mid = i < 35;
+    const spread = big ? 0.24 : mid ? 0.22 : 0.2;
+    const x = c[0] + gauss() * spread, y = c[1] + gauss() * spread * 0.85;
+    const radial = Math.atan2(y - c[1], x - c[0]);
+    const a = R() < 0.3 ? R() * Math.PI : radial + (R() - 0.5) * 2.1;
+    fold.set([x, y, Math.cos(a), Math.sin(a)], i * 4);
+    const reach = (big ? 0.42 : mid ? 0.2 : 0.09) * fine * (0.7 + 0.6 * R());
+    const slope = (big ? 0.32 : mid ? 0.26 : 0.2) * (R() < 0.5 ? -1 : 1) * (0.6 + 0.8 * R());
+    foldB.set([reach, slope], i * 2);
+  }
+}
+
+/* ---------- WebGL2 ---------- */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+if (!gl) fail();
+// Half floats keep the highlights above one for bloom.
+const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
+
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+const NOISE = `
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec2 hash22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
+`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name.replace('[0]', ''); u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+
+/* ---------- the sheet ---------- */
+// The sheet: faceted creases, a mirror finish and a ceiling of lights.
+const SHEET_FS = `#version 300 es
+precision highp float;
+#define NF ${NF}
+uniform vec2 uRes, uHalf, uC, uStripC, uSoftC;
+uniform float uAmt, uSeed, uHolo, uStripA;
+uniform vec3 uF0, uTable;
+// Each fold: centre and crease normal, then reach and slope.
+uniform vec4 uFold[NF];
+uniform vec2 uFoldB[NF];
+in vec2 vUv; out vec4 o;
+${NOISE}
+// Fine crinkles: one short random fold per grid cell.
+vec2 crinkle(vec2 q, float k, float seed) {
+  vec2 p = q * k, i = floor(p), g = vec2(0.0);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 c = i + vec2(x, y), h = hash22(c + seed), h2 = hash22(c + seed + 19.7);
+    vec2 dq = p - c - h;
+    float a = h2.x * 3.1416;
+    vec2 nn = vec2(cos(a), sin(a));
+    float d = dot(dq, nn);
+    g += (h2.y * 2.0 - 1.0) * exp(-dot(dq, dq) / 0.6) * d * inversesqrt(d * d + 4e-4) * nn;
+  }
+  return g;
+}
+mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+float sdBox(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+// The ceiling: one strip light, one soft box and a dim room.
+vec3 env(vec2 q, vec3 r) {
+  float rz = max(r.z, 0.06);
+  vec2 hit = q + r.xy / rz * 1.2;
+  vec2 s = rot(-uStripA) * (hit - uStripC);
+  float strip = (1.0 - smoothstep(0.55, 0.8, abs(s.x))) * (1.0 - smoothstep(0.018, 0.045, abs(s.y)));
+  vec2 b = hit - uSoftC;
+  float soft = exp(-dot(b, b) * 5.0);
+  // The room is dim and uneven, so each facet finds its own shade.
+  float m = vnoise(hit * 0.9 + 4.0);
+  float room = 0.004 + 0.07 * m * m * m + 0.03 * (1.0 - smoothstep(0.2, 0.9, rz));
+  return vec3(1.0, 0.95, 0.87) * strip * 7.0 + vec3(0.55, 0.62, 0.8) * soft * 0.1 + vec3(room);
+}
+void main() {
+  float S = min(uRes.x, uRes.y);
+  vec2 q = (vUv * uRes - 0.5 * uRes) / S;
+  // The scrunch is strongest at its centre; old creases stay faint.
+  vec2 rel = q - uC;
+  float core = 1.0 - smoothstep(0.05, 0.5, length(rel * vec2(1.0, 1.15)));
+  float A = max(uAmt * core, 0.0);
+  float mem = 0.04 + 0.96 * A;
+  // A scrunch pulls the sheet in toward its centre.
+  vec2 qs = uC + rel * (1.0 + 0.3 * A);
+  float edge = sdBox(qs, uHalf) + A * (vnoise(q * 13.0 + uSeed) - 0.5) * 0.07;
+  float aa = 1.5 / S;
+  float cover = 1.0 - smoothstep(-aa, aa, edge);
+  // Each fold adds a straight crease that fades out with distance.
+  vec2 g = vec2(0.0);
+  for (int i = 0; i < NF; i++) {
+    vec4 F = uFold[i]; vec2 B = uFoldB[i];
+    vec2 dq = q - F.xy;
+    float w = exp(-dot(dq, dq) / (B.x * B.x));
+    float d = dot(dq, F.zw);
+    g += B.y * w * d * inversesqrt(d * d + 2e-6) * F.zw;
+  }
+  g += crinkle(q, 9.0, uSeed) * 0.34 + crinkle(q, 22.0, uSeed + 3.0) * 0.22;
+  g *= mem;
+  // A broad sag keeps even the flat sheet from a perfect mirror.
+  g += (vec2(vnoise(q * 2.2 + 3.0), vnoise(q * 2.2 + 8.0)) - 0.5) * 0.05;
+  g += (vec2(vnoise(q * 90.0), vnoise(q * 90.0 + 5.0)) - 0.5) * 0.006;
+  vec3 n = normalize(vec3(-g, 1.0));
+  vec3 r = reflect(vec3(0.0, 0.0, -1.0), n);
+  // Holo shifts the hue with the facet tilt.
+  float hue = fract(dot(g, vec2(1.1, 0.7)) + dot(q, vec2(0.22, 0.12)));
+  vec3 pal = 0.5 + 0.5 * cos(6.2832 * (hue + vec3(0.0, 0.33, 0.67)));
+  vec3 F0 = mix(uF0, uF0 * (0.5 + 0.6 * pal), uHolo);
+  vec3 F = mix(F0, vec3(1.0), pow(1.0 - n.z, 5.0) * 0.5);
+  vec3 c = env(q, r) * F + F0 * 0.006;
+  // The table: flat dark, with a soft shadow under the sheet.
+  float sh = 1.0 - 0.6 * (1.0 - smoothstep(-0.02, 0.06, sdBox(qs - vec2(0.012, -0.018), uHalf)));
+  vec3 table = uTable * sh;
+  o = vec4(mix(table, c, cover), 1.0);
+}`;
+// The bright pass keeps only light above a soft threshold.
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; in vec2 vUv; out vec4 o;
+void main() { vec3 c = texture(uSrc, vUv).rgb; float l = max(c.r, max(c.g, c.b)); o = vec4(c * smoothstep(0.5, 2.5, l), 1.0); }`;
+// A nine-tap blur runs once per axis.
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uDir; in vec2 vUv; out vec4 o;
+void main() {
+  vec3 s = texture(uSrc, vUv).rgb * 0.227;
+  s += (texture(uSrc, vUv + uDir * 1.385).rgb + texture(uSrc, vUv - uDir * 1.385).rgb) * 0.316;
+  s += (texture(uSrc, vUv + uDir * 3.231).rgb + texture(uSrc, vUv - uDir * 3.231).rgb) * 0.070;
+  o = vec4(s, 1.0);
+}`;
+// The final pass: glow, vignette, grain and output curve.
+const OUT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc, uBloom, uWide; uniform vec2 uRes;
+in vec2 vUv; out vec4 o;
+${NOISE}
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb + texture(uBloom, vUv).rgb * 0.35 + texture(uWide, vUv).rgb * 0.18;
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q * vec2(1.0, 1.3), q) * 0.7;
+  c = 1.0 - exp(-c * 1.4);
+  c += (hash12(vUv * uRes) - 0.5) * 0.006;
+  o = vec4(pow(max(c, 0.0), vec3(1.0 / 2.2)), 1.0);
+}`;
+const P = {
+  sheet: program(QUAD_VS, SHEET_FS, ['aPos']),
+  bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
+  blur: program(QUAD_VS, BLUR_FS, ['aPos']),
+  out: program(QUAD_VS, OUT_FS, ['aPos']),
+};
+
+/* ---------- render ---------- */
+let W = 1, H = 1, frame = null, bl = [], wd = [];
+function quad(dst, prog) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : W, dst ? dst.h : H);
+  gl.useProgram(prog.p); gl.bindVertexArray(quadVao);
+}
+const bind = (unit, tex, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(loc, unit); };
+function blur(pair) {
+  quad(pair[1], P.blur); bind(0, pair[0].tex, P.blur.u.uSrc); gl.uniform2f(P.blur.u.uDir, 1 / pair[0].w, 0); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  quad(pair[0], P.blur); bind(0, pair[1].tex, P.blur.u.uSrc); gl.uniform2f(P.blur.u.uDir, 0, 1 / pair[0].h); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+// The layout puts the scrunch on one side and the strip across it.
+function layout() {
+  const S = Math.min(W, H), ax = W / S, ay = H / S, tall = W < H;
+  const m = tall ? 0.07 : 0.09;
+  return {
+    half: [ax * 0.5 - m, ay * 0.5 - m],
+    c: tall ? [scrunch.cx * ax, ay * 0.18 + scrunch.cy] : [-ax * 0.2 + scrunch.cx, 0.03 + scrunch.cy],
+    strip: tall ? [0.02, -ay * 0.02] : [ax * 0.04, -0.03],
+    stripA: tall ? 1.2 : -0.38,
+    soft: tall ? [-0.4, -ay * 0.4] : [ax * 0.42, 0.42],
+  };
+}
+function render() {
+  const L = layout(), M = METALS[opts.metal];
+  quad(frame, P.sheet);
+  const u = P.sheet.u;
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform2fv(u.uHalf, L.half);
+  gl.uniform2fv(u.uC, L.c);
+  gl.uniform2fv(u.uStripC, L.strip);
+  gl.uniform1f(u.uStripA, L.stripA);
+  gl.uniform2fv(u.uSoftC, L.soft);
+  gl.uniform1f(u.uAmt, scrunch.amt);
+  gl.uniform1f(u.uSeed, scrunch.seed);
+  makeFolds(L.c);
+  gl.uniform4fv(u.uFold, fold);
+  gl.uniform2fv(u.uFoldB, foldB);
+  gl.uniform1f(u.uHolo, M.holo);
+  gl.uniform3fv(u.uF0, linFit(...M.f0));
+  gl.uniform3fv(u.uTable, linFit(0.1, 0.005, 70));
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // Two blur sizes give a tight glint and a wide bloom.
+  quad(bl[0], P.bright); bind(0, frame.tex, P.bright.u.uSrc); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  blur(bl);
+  quad(wd[0], P.bright); bind(0, bl[0].tex, P.bright.u.uSrc); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  blur(wd); blur(wd);
+  quad(null, P.out);
+  bind(0, frame.tex, P.out.u.uSrc); bind(1, bl[0].tex, P.out.u.uBloom); bind(2, wd[0].tex, P.out.u.uWide);
+  gl.uniform2f(P.out.u.uRes, W, H);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ---------- size ---------- */
+function resize() {
+  const fit = fitCanvas(canvas, { budget: 2.2e6 });
+  if (fit.W === W && fit.H === H && frame) return;
+  W = fit.W; H = fit.H;
+  [...bl, ...wd].forEach(drop); if (frame) drop(frame);
+  frame = target(W, H);
+  const bw = Math.max(1, W >> 2), bh = Math.max(1, H >> 2);
+  bl = [target(bw, bh), target(bw, bh)];
+  wd = [target(Math.max(1, bw >> 2), Math.max(1, bh >> 2)), target(Math.max(1, bw >> 2), Math.max(1, bh >> 2))];
+  render();
+}
+
+/* ---------- bar ---------- */
+function popover(box, btn) {
+  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+const creasesEl = document.getElementById('creases');
+creasesEl.value = String(opts.creases);
+creasesEl.addEventListener('input', () => { opts.creases = +creasesEl.value; save('creases', opts.creases); render(); });
+choices(document.getElementById('metal'), v => { opts.metal = v; save('metal', v); render(); }).set(opts.metal);
+// Smooth shows the pressed state; Shuffle shows a new scrunch.
+document.getElementById('smooth').addEventListener('click', () => { scrunch.amt = 0; render(); });
+document.getElementById('shuffle').addEventListener('click', () => {
+  scrunch.amt = 1; scrunch.seed = (Math.random() * 1e9) | 0;
+  scrunch.cx = (Math.random() - 0.5) * 0.3; scrunch.cy = (Math.random() - 0.5) * 0.2;
+  render();
+});
+
+/* ---------- start ---------- */
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+resize();
+gl.finish();
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+</script>
+</body>
+</html>
