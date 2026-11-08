@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-04T23:30:00Z
+updated_at: 2026-11-08T17:19:58Z
 parent: stimming-w1nd
 ---
 
@@ -21,3 +21,5 @@ Today the wing is one flat quad with a painted flap seam.
 ## Notes
 
 - Tom (2026-11-08): wing, winglet and nacelle fidelity. Added: airfoil curvature in the shading, a moon or sun glint, slat, spoiler, flap and aileron seams, walkway lines, three flap-track fairings (ellipsoids), and an engine nacelle (capsule) with a dark inlet and a polished lip. Panels do not move yet.
+
+Fairings: tapered canoes (round cone, squashed across the span) replace the ellipsoids. Paint gains sky fill and sun or moon diffuse.

@@ -57,8 +57,9 @@ uniform vec2 uCam;
 uniform vec3 uF, uR, uU;
 uniform vec3 uAmb, uSun, uSunL, uFloor;
 uniform vec3 uWing[4], uLet[4], uWingN, uLetN, uTip; uniform float uStrobe;
-// The engine nacelle as a capsule, and three flap-track fairings as ellipsoids.
-uniform vec3 uNacA, uNacB, uChord, uUpA, uSpan; uniform float uNacR; uniform vec4 uFair[3];
+// The engine nacelle as a capsule, and three flap-track fairings as canoes.
+// uFairA: the nose and its radius; uFairB: the tail and its radius.
+uniform vec3 uNacA, uNacB, uChord, uUpA, uSpan; uniform float uNacR; uniform vec4 uFairA[3], uFairB[3];
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
 uniform vec4 uFl[${MAXFL}];
 // Trail points live in a 128 by 2 float texture: row 0 point and radius, row 1 colour and shell.
@@ -647,7 +648,11 @@ vec3 paint(vec3 d, vec3 n, float E, float shade) {
   vec3 env = skyL(normalize(vec3(r.x, max(r.y, -0.02) * 0.45, r.z)));
   env = mix(vec3(dot(env, vec3(0.3, 0.5, 0.2))), env, 0.5);
   float fres = 0.05 + 0.6 * pow(1.0 - abs(dot(d, n)), 4.0);
-  vec3 c = uAmb * 0.03 * shade * (0.6 + 0.4 * max(n.y, 0.0)) + env * fres * 0.9;
+  // The sky dome lights the upper side; the lower side stays dim.
+  float up = 0.5 + 0.5 * n.y;
+  vec3 c = uAmb * 0.03 * shade * (0.35 + 0.75 * up) + env * fres * 0.9;
+  // The sun or moon lights the side that faces it.
+  c += uSunL * 0.012 * shade * max(dot(n, uSun), 0.0);
   c += uSunL * 0.06 * pow(max(dot(r, uSun), 0.0), 80.0);
   return c + vec3(0.72, 0.74, 1.0) * E * 0.25 * shade;
 }
@@ -664,17 +669,46 @@ float capsule(vec3 rd, vec3 pa, vec3 pb, float ra) {
   b = dot(rd, oc); c = dot(oc, oc) - ra * ra; h = b * b - c;
   return h > 0.0 ? -b - sqrt(h) : -1.0;
 }
-// A ray against an ellipsoid with semi-axes along chord, up and span.
-float ellipsoid(vec3 rd, vec3 ctr, vec3 rad, out vec3 nrm) {
-  vec3 o = -ctr;
-  vec3 ol = vec3(dot(o, uChord), dot(o, uUpA), dot(o, uSpan)) / rad;
-  vec3 dl = vec3(dot(rd, uChord), dot(rd, uUpA), dot(rd, uSpan)) / rad;
-  float a = dot(dl, dl), b = dot(ol, dl), c = dot(ol, ol) - 1.0, h = b * b - a * c;
+// A round cone from a to b, with radius r1 at a and r2 at b.
+float sdCone(vec3 p, vec3 a, vec3 b, float r1, float r2) {
+  vec3 ba = b - a, pa = p - a;
+  float l2 = dot(ba, ba), rr = r1 - r2, a2 = l2 - rr * rr, il2 = 1.0 / l2;
+  float y = dot(pa, ba), z = y - l2;
+  vec3 xv = pa * l2 - ba * y;
+  float x2 = dot(xv, xv), y2 = y * y * l2, z2 = z * z * l2;
+  float k = sign(rr) * rr * rr * x2;
+  if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2;
+  if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1;
+  return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
+}
+// A canoe body: the round cone, narrower across the span than tall.
+float canoe(vec3 p, vec4 a, vec4 b) {
+  vec3 q = p - a.xyz;
+  q += uSpan * dot(q, uSpan) * 0.6;
+  return sdCone(q, vec3(0.0), b.xyz - a.xyz, a.w, b.w);
+}
+// A ray from the eye against a canoe; the hit distance or -1.
+float canoeHit(vec3 rd, vec4 a, vec4 b, out vec3 nrm) {
+  // A bounding sphere limits the march.
+  vec3 ctr = (a.xyz + b.xyz) * 0.5;
+  float rb = length(b.xyz - a.xyz) * 0.5 + a.w;
+  float bc = dot(rd, ctr), h = bc * bc - dot(ctr, ctr) + rb * rb;
   if (h < 0.0) return -1.0;
-  float t = (-b - sqrt(h)) / a;
-  vec3 pl = (ol + dl * t) / rad;
-  nrm = normalize(uChord * pl.x + uUpA * pl.y + uSpan * pl.z);
-  return t;
+  float t = max(bc - sqrt(h), 0.0), t1 = bc + sqrt(h);
+  for (int i = 0; i < 40; i++) {
+    float s = canoe(rd * t, a, b);
+    if (s < 0.0004 * t) {
+      vec2 e = vec2(0.002 * t, 0.0);
+      vec3 p = rd * t;
+      nrm = normalize(vec3(canoe(p + e.xyy, a, b) - canoe(p - e.xyy, a, b),
+        canoe(p + e.yxy, a, b) - canoe(p - e.yxy, a, b), canoe(p + e.yyx, a, b) - canoe(p - e.yyx, a, b)));
+      return t;
+    }
+    // The span squash overstates distance, so each step shrinks.
+    t += s * 0.6;
+    if (t > t1) break;
+  }
+  return -1.0;
 }
 
 // Trails: rocket plumes and contrails, as chains of glowing capsules.
@@ -858,11 +892,18 @@ void main() {
     c *= 1.0 - 0.35 * smoothstep(0.008, 0.0, abs(h - 0.35)) - 0.3 * smoothstep(0.008, 0.0, abs(h - 0.7));
     tNear = tn; skyA = 0.0;
   }
-  // Flap-track fairings: canoe shapes under the trailing edge.
+  // Flap-track fairings: canoes under the trailing edge, tails pointing aft.
   for (int i = 0; i < 3; i++) {
     vec3 nf;
-    float tf = ellipsoid(d, uFair[i].xyz, vec3(1.8, 0.36, 0.26) * uFair[i].w, nf);
-    if (tf > 0.0 && tf < tNear) { c = paint(d, nf, E, 0.9); tNear = tf; skyA = 0.0; }
+    float tf = canoeHit(d, uFairA[i], uFairB[i], nf);
+    if (tf > 0.0 && tf < tNear) {
+      vec3 p = d * tf;
+      c = paint(d, nf, E, 0.9);
+      // A seam marks where the moving tail section starts.
+      float k = dot(p - uFairA[i].xyz, uChord) / max(dot(uFairB[i].xyz - uFairA[i].xyz, uChord), 1e-3);
+      c *= 1.0 - 0.4 * smoothstep(0.012, 0.0, abs(k - 0.62));
+      tNear = tf; skyA = 0.0;
+    }
   }
   o = vec4(c, skyA);
 }`;
