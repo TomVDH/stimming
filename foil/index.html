@@ -53,7 +53,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--foil" id="stage" tabindex="0" role="application" aria-label="A sheet of foil under a strip light. Drag to pull and scrunch it, hold to crush it, then smooth it flat again.">
+    <div class="stage stage--foil" id="stage" tabindex="0" role="application" aria-label="A sheet of foil under a strip light. Drag to scrunch it, hold to crush it, then smooth it flat again.">
       <p class="fail" hidden>Crinkle foil needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -73,7 +73,7 @@
           <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
         </div>
         <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>pull and scrunch</dd></div>
+          <div><dt>Drag</dt><dd>scrunch the foil</dd></div>
           <div><dt>Hold</dt><dd>crush into a ball</dd></div>
           <div><dt>Smooth</dt><dd>press it flat</dd></div>
           <div class="fine"><dt>Move</dt><dd>steer the light</dd></div>
@@ -248,7 +248,8 @@ void main() {
   float d = dot(dq, vF.zw);
   o = vec4(vB.y * w * d * inversesqrt(d * d + uEps) * vF.zw, vB.z * w, 0.0);
 }`;
-// A warp moves foil: mode 0 drags it along, mode 1 gathers it to a point.
+// A warp squeezes foil: mode 0 buckles it along one axis, mode 1 gathers it to a point.
+// Foil never flows, so no warp carries it sideways.
 const WARP_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uD; uniform vec2 uRes, uP, uDelta; uniform float uS, uR, uMode;
@@ -257,7 +258,7 @@ ${UNITS}
 void main() {
   vec2 q = toQ(vUv), dq = q - uP;
   float w = exp(-dot(dq, dq) / (uR * uR));
-  vec2 q2 = uMode < 0.5 ? q - uDelta * w : uP + dq * (1.0 + uS * w);
+  vec2 q2 = uMode < 0.5 ? q + uDelta * dot(dq, uDelta) * uS * w : uP + dq * (1.0 + uS * w);
   o = vec4(q2 + texture(uD, toUv(q2)).xy - q, 0.0, 1.0);
 }`;
 // Smoothing scales a target by the share of the press each texel saw.
@@ -337,8 +338,15 @@ void main() {
   mat2 J = mat2((mapM(q + vec2(h, 0.0)) - mapM(q - vec2(h, 0.0))) / (2.0 * h),
                 (mapM(q + vec2(0.0, h)) - mapM(q - vec2(0.0, h))) / (2.0 * h));
   float det = max(determinant(J), 0.05);
+  // Singular values: the most and least foil per screen step, and the squeeze axis.
+  float ja = dot(J[0], J[0]), jb = dot(J[0], J[1]), jc = dot(J[1], J[1]);
+  float disc = sqrt(max(0.25 * (ja - jc) * (ja - jc) + jb * jb, 0.0));
+  float s1 = sqrt(0.5 * (ja + jc) + disc), s2 = sqrt(max(0.5 * (ja + jc) - disc, 1e-4));
+  float th = 0.5 * atan(2.0 * jb, ja - jc);
+  vec2 sv = vec2(cos(th), sin(th)), sp = vec2(-sv.y, sv.x);
+  float squeeze = max(0.0, log(s1));
   // Squeezed foil crinkles by itself.
-  float comp = max(0.0, log(det));
+  float comp = max(0.0, log(det)) + squeeze * 0.5;
   vec4 f = texture(uField, toUv(m));
   float A = 1.0 - exp(-(f.z * 1.3 + comp * 1.4));
   float mem = 0.04 + 0.96 * A;
@@ -347,14 +355,20 @@ void main() {
   // A crinkle layer fades out once its cells shrink below a few pixels.
   float sq = sqrt(det);
   vec3 k = vec3(11.0, 26.0, 58.0) * uFine;
-  vec3 wk = 1.0 - smoothstep(0.1, 0.2, k * sq / S);
+  vec3 wk = 1.0 - smoothstep(0.1, 0.2, k * s1 / S);
   gm += (crinkle(m, k.x, 3.0) * 0.3 * wk.x + crinkle(m, k.y, 6.0) * 0.22 * wk.y + crinkle(m, k.z, 9.0) * 0.14 * wk.z) * mem;
   gm += (vec2(vnoise(m * 90.0), vnoise(m * 90.0 + 5.0)) - 0.5) * 0.006;
-  // Squeezed foil folds steeper; an even scale avoids radial streaks.
-  vec2 g = gm * min(sq, 2.2);
   // Hard-squeezed foil becomes a ball of small screen-scale facets.
-  float ball = smoothstep(0.35, 1.6, comp);
-  g += (crinkle(q, 34.0, 12.0) * 0.32 + crinkle(q, 80.0, 15.0) * 0.18 * (1.0 - smoothstep(0.1, 0.2, 80.0 / S))) * ball;
+  // Its material detail is far below a pixel there, so it gives way.
+  float ball = smoothstep(0.15, 0.7, squeeze);
+  // Squeezed foil folds steeper; an even scale avoids radial streaks.
+  vec2 g = gm * min(s1, 2.2) * (1.0 - ball);
+  // Gathered foil folds across the squeeze axis, so its facets run along sp.
+  float an = clamp(log(s1 / s2) / 1.2, 0.0, 1.0);
+  float ks = mix(1.0, 0.3, an);
+  vec2 pq = vec2(dot(q, sv), dot(q, sp) * ks);
+  vec2 gp = crinkle(pq, 34.0, 12.0) * 0.32 + crinkle(pq, 80.0, 15.0) * 0.18 * (1.0 - smoothstep(0.1, 0.2, 80.0 / S));
+  g += (sv * gp.x + sp * gp.y * ks) * ball;
   g /= 1.0 + 0.25 * length(g);
   // A broad sag keeps even the flat sheet from a perfect mirror.
   g += (vec2(vnoise(q * 2.2 + 3.0), vnoise(q * 2.2 + 8.0)) - 0.5) * 0.05;
@@ -456,12 +470,8 @@ function warp(mode, x, y, dx, dy, s, r) {
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   di = 1 - di;
 }
-// A long drag splits into short steps, so the foil never folds through itself.
-const GRAB = 0.13;
-function pull(x0, y0, x1, y1) {
-  const dx = x1 - x0, dy = y1 - y0, n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 0.03));
-  for (let i = 1; i <= n; i++) warp(0, x0 + dx * i / n, y0 + dy * i / n, dx / n, dy / n, 0, GRAB);
-}
+// A buckle squeezes the foil along the push, just ahead of the finger.
+function buckle(b) { warp(0, b[0], b[1], b[2], b[3], b[4], 0.08); }
 
 /* ---------- stamps ---------- */
 function push(x, y, a, reach, slope, amt) {
@@ -697,7 +707,7 @@ stage.addEventListener('pointerdown', e => {
   if (e.button > 0 || drag) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = toQ(e), now = performance.now();
-  drag = { id: e.pointerId, kind: e.pointerType, x, y, x0: x, y0: y, t0: now, tm: now, run: 0, moved: false, crush: 0, pend: [] };
+  drag = { id: e.pointerId, kind: e.pointerType, x, y, x0: x, y0: y, t0: now, tm: now, run: 0, moved: false, crush: 0, pend: [], bend: 0, next: 0 };
   stage.classList.add('is-drag');
   poke();
 });
@@ -714,14 +724,19 @@ stage.addEventListener('pointermove', e => {
   const dt = Math.max(0.004, (now - drag.tm) / 1000);
   speed = lerp(speed, d / dt, 0.4);
   if (Math.hypot(x - drag.x0, y - drag.y0) > 0.012) drag.moved = true;
-  drag.pend.push([drag.x, drag.y, x, y]);
   // One crease step per hundredth of a unit keeps density even at any speed.
   const ux = dx / d, uy = dy / d;
   let run = drag.run + d, s = 0;
   while (run >= 0.01) {
     run -= 0.01; s += 0.01;
-    scrunchStep(drag.x + ux * s, drag.y + uy * s, ux, uy, speed);
+    const px = drag.x + ux * s, py = drag.y + uy * s;
+    scrunchStep(px, py, ux, uy, speed);
     if (Math.random() < Math.min(0.9, speed * 0.6)) tick(0.12 + Math.min(speed, 3) * 0.06);
+    // Every few steps the foil gives way in one buckle.
+    if ((drag.bend += 0.01) >= 0.035) {
+      drag.bend = 0;
+      drag.pend.push([px + ux * 0.03, py + uy * 0.03, ux, uy, (0.1 + Math.min(speed, 3) * 0.04) * (0.6 + 0.8 * Math.random())]);
+    }
   }
   if (s) buzz(4, drag.kind);
   drag.run = run; drag.x = x; drag.y = y; drag.tm = now;
@@ -770,21 +785,28 @@ function step(dt, now) {
   tickBudget = Math.min(8, tickBudget + dt * 120);
   let level = 0, bright = 0;
   if (drag) {
-    for (const p of drag.pend) pull(...p);
+    for (const b of drag.pend) buckle(b);
     drag.pend.length = 0;
     if (now - drag.tm > 60) speed *= Math.exp(-dt / 0.05);
     level = speed * 0.05; bright = Math.min(speed, 4);
-    // A still finger crushes the foil into a ball, up to a limit.
-    if (now - drag.tm > 160 && now - drag.t0 > 220 && drag.crush < 2.5) {
-      const s = Math.min(dt, 0.05) * 0.9;
+    // A still finger crushes the foil in sharp snaps, up to a limit.
+    if (now - drag.tm > 160 && now - drag.t0 > 220 && drag.crush < 3 && now >= drag.next) {
+      // Each snap squeezes along three random axes, so the crumple stays uneven.
+      // A radial gather would stretch the foil outward into petals.
+      const R = Math.random, s = 0.16 + 0.12 * R();
       drag.crush += s;
-      crushStep(drag.x, drag.y, 3);
+      drag.next = now + 80 + 130 * R();
+      crushStep(drag.x, drag.y, 10);
       flush();
-      warp(1, drag.x, drag.y, 0, 0, s, 0.2);
-      level = 0.06 + 0.05 * Math.random(); bright = 2.5;
-      for (let i = 0; i < 3; i++) if (Math.random() < 0.7) tick(0.18 + 0.12 * Math.random());
-      buzz(6, drag.kind);
+      const a0 = R() * Math.PI;
+      for (let i = 0; i < 3; i++) {
+        const a = a0 + i * Math.PI / 3 + (R() - 0.5) * 0.6;
+        warp(0, drag.x + gauss(R) * 0.03, drag.y + gauss(R) * 0.03, Math.cos(a), Math.sin(a), s, 0.09 + 0.05 * R());
+      }
+      for (let i = 0; i < 5; i++) tick(0.2 + 0.15 * R());
+      buzz(10, drag.kind);
     }
+    if (drag.crush) { level = Math.max(level, 0.03); bright = 2.5; }
   }
   rustle(level, bright);
   easing = lightStep(dt);
