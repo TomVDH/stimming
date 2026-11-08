@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T10:32:05Z
+updated_at: 2026-11-08T10:39:28Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -15,7 +15,7 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 
 ## Checklist
 
-- [ ] Blockout: sea, horizon, turbine cluster, sun patch and fog steps; stills at 1280 and 375 px; Tom signs it off (`windfarm/blockout.html`, Dawn, long telephoto; three near towers at 0.75 to 1.4 km with rotors above the frame, a 950 m by 760 m lattice out to 20 km)
+- [ ] Blockout: sea, horizon, turbine cluster, sun patch and fog steps; stills at 1280 and 375 px; Tom signs it off (`windfarm/blockout.html`: three.js, three cameras, 16-step fog march with a 35 m sheet and a 72 m deck, red lights with fog halos, film grain)
 - [x] D1: Tom names what broke in Night viaduct
 - [ ] Task 1: turbines in fog, raw WebGL2
 - [ ] Task 2: wind, power curve, gust fronts, storm cut-out

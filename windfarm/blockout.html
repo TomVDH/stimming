@@ -7,42 +7,61 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wind farm blockout</title>
 <style>
-html, body { margin: 0; height: 100%; background: oklch(0.16 0.012 275); overflow: hidden; }
+html, body { margin: 0; height: 100%; background: oklch(0.12 0.008 220); overflow: hidden; }
 canvas { display: block; width: 100%; height: 100%; }
+.cams { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 6px; }
+.cams button {
+  font: 600 13px/1 system-ui, sans-serif; color: oklch(0.85 0.01 220); background: oklch(0.2 0.01 220 / 0.7);
+  border: 1px solid oklch(0.4 0.01 220 / 0.6); border-radius: 999px; padding: 8px 14px; cursor: pointer;
+}
+.cams button[aria-pressed="true"] { background: oklch(0.85 0.01 220); color: oklch(0.15 0.01 220); }
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
 </head>
 <body>
 <canvas id="c" aria-label="Wind farm blockout"></canvas>
+<div class="cams" role="group" aria-label="Camera">
+  <button data-cam="0" aria-pressed="true">Rows</button>
+  <button data-cam="1" aria-pressed="false">Foot</button>
+  <button data-cam="2" aria-pressed="false">Above</button>
+</div>
 <script type="module">
-// Wind farm blockout: one still frame in raw WebGL2.
-// The sky, sea and fog fill one full-screen pass.
-// The turbines are one instanced draw in the same fog.
-const canvas = document.getElementById('c');
-const gl = canvas.getContext('webgl2', { antialias: true });
+// Wind farm blockout: one still frame per camera, in three.js.
+// One shared fog function feeds the sky, sea, turbines and lights.
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-/* ---------- look: Dawn ---------- */
+const canvas = document.getElementById('c');
+
+/* ---------- look: murk ---------- */
 // Colours are linear light.
 const LOOK = {
-  zen: [0.035, 0.05, 0.085], hor: [0.3, 0.28, 0.27], fog: [0.2, 0.21, 0.22],
-  sun: [2.6, 1.9, 1.15], deep: [0.012, 0.024, 0.022], paint: [0.8, 0.81, 0.82],
-  // Fog length in metres: transmittance falls by 1/e per length.
-  fogL: 4000,
+  zen: [0.004, 0.006, 0.009], hor: [0.02, 0.024, 0.026],
+  fog: [0.03, 0.035, 0.036], sun: [0.1, 0.075, 0.055],
+  deep: [0.003, 0.006, 0.006], paint: [0.62, 0.64, 0.65],
+  red: [1, 0.035, 0.012],
 };
-
-/* ---------- shot ---------- */
-// The camera stands 10 m above the sea, on a long telephoto lens.
-const CAM_H = 10;
-// The horizon sits low, at 76 % of the stage height.
-const HOR = 0.76;
-// The sun's angular radius in radians, larger than life.
-const SUN_R = 0.011;
 
 /* ---------- farm ---------- */
 // A wide lattice of turbines, 950 m by 760 m, turned against the view.
-// The farm's right edge is a straight row that runs away to the middle.
+// The farm's right edge is a straight row that runs away from the sea camera.
 const SU = 950, SV = 760, TURN = 0.42;
-const EDGE_A = -60, EDGE_B = 0.0136, Z_MIN = 1800, Z_MAX = 20000;
-// Three near towers stand close; their rotors sit above the frame.
+const EDGE_A = -60, EDGE_B = 0.0136, Z_MIN = 1800, Z_MAX = 16000, X_MIN = -4200;
+// Three near towers stand close to the sea camera.
 const POLES = [[-48, -750], [-25, -1050], [2, -1400]];
 function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 const farm = POLES.map(([x, z], i) => [x, z, rand(i + 501) * 2.094]);
@@ -52,150 +71,161 @@ const farm = POLES.map(([x, z], i) => [x, z, rand(i + 501) * 2.094]);
     const k = (i + 50) * 101 + j + 50;
     const x = 300 + i * SU * u[0] + j * SV * v[0] + (rand(k) - 0.5) * 80;
     const z = -2600 + i * SU * u[1] + j * SV * v[1] + (rand(k + 99) - 0.5) * 80;
-    if (-z < Z_MIN || -z > Z_MAX || x > EDGE_A + EDGE_B * -z || x / -z < -0.12) continue;
+    if (-z < Z_MIN || -z > Z_MAX || x < X_MIN || x > EDGE_A + EDGE_B * -z) continue;
     farm.push([x, z, rand(k + 7) * 2.094]);
   }
 }
+// All rotors face the wind, which comes from the right.
+const YAW = -0.35;
 
-/* ---------- shared GLSL ---------- */
-const COMMON = `#version 300 es
-precision highp float;
-uniform vec2 uRes;
-uniform float uF, uHor, uCamH, uFogL, uSunR, uYaw;
-// FH is the frame height as an angle; sky falloffs scale with it.
-float FH() { return uRes.y / uF; }
-uniform vec3 uSD, uZen, uHorC, uFog, uSun, uDeep, uPaint;
-// The sun hides behind the fog; its disc keeps this much light.
-#define SUN_VIS 0.18
-// Fog colour along a view ray: grey haze plus forward scatter round the sun.
-vec3 fogCol(vec3 d) {
-  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / uSunR;
-  return uFog + uSun * (0.32 * exp(-A / 2.5) + 0.1 * exp(-A / 9.0) + 0.025 * exp(-A / 30.0));
+/* ---------- shared uniforms ---------- */
+const U = {
+  uRes: { value: new THREE.Vector2(1, 1) },
+  uFocal: { value: 1 },
+  uSD: { value: new THREE.Vector3(0.1, 0.02, -1).normalize() },
+  uZen: { value: new THREE.Vector3(...LOOK.zen) }, uHorC: { value: new THREE.Vector3(...LOOK.hor) },
+  uFog: { value: new THREE.Vector3(...LOOK.fog) }, uSun: { value: new THREE.Vector3(...LOOK.sun) },
+  uDeep: { value: new THREE.Vector3(...LOOK.deep) }, uPaint: { value: new THREE.Vector3(...LOOK.paint) },
+  uRed: { value: new THREE.Vector3(...LOOK.red) },
+  uCamWorld: { value: new THREE.Matrix4() }, uInvProj: { value: new THREE.Matrix4() },
+};
+
+/* ---------- fog ---------- */
+// Fog is a short ray march through height layers and drifting banks.
+// Sixteen steps, spaced wider with distance, jittered per pixel.
+// The jitter shows as grain, which the look wants.
+const FOG = `
+uniform vec3 uSD, uFog, uSun;
+float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
 }
-// Fog transmittance over a distance in metres.
-float fogT(float t) { return exp(-t / uFogL); }
-// A soft filmic curve, then gamma.
-vec3 grade(vec3 c) {
-  c = c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14);
-  return pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2));
+float fbm3(vec2 p) { return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 7.1) + 0.2 * vnoise(p * 4.1 + 3.3); }
+// Extinction per metre at a world point.
+float fogSigma(vec3 p) {
+  float y = max(p.y, 0.0);
+  // A base layer that hugs the sea, broken into banks a few km wide.
+  float bank = 0.35 + 1.3 * fbm3(p.xz / 2200.0);
+  float s = exp(-y / 55.0) * bank / 3200.0;
+  // A low sheet at 35 m and a deck at 72 m; the hubs stand clear of it.
+  s += exp(-pow((y - 35.0) / 18.0, 2.0)) * smoothstep(0.35, 0.7, fbm3(p.xz / 900.0 + 11.0)) / 700.0;
+  s += exp(-pow((y - 72.0) / 16.0, 2.0)) * smoothstep(0.3, 0.7, fbm3(p.xz / 1400.0 + 23.0)) / 120.0;
+  return s;
+}
+// Light the fog sends toward the eye: murk plus a dull glow round the sun.
+vec3 fogLight(vec3 d) {
+  float a = acos(clamp(dot(d, uSD), -1.0, 1.0));
+  return uFog + uSun * (0.35 * exp(-a / 0.05) + 0.15 * exp(-a / 0.2));
+}
+// March from ro along d to tMax. Returns inscatter in rgb, transmittance in a.
+vec4 fogMarch(vec3 ro, vec3 d, float tMax, float jitter) {
+  // Rays leave the fog above 320 m; rays down stop at the sea.
+  if (d.y > 0.0) tMax = min(tMax, max(320.0 - ro.y, 0.0) / d.y);
+  float T = 1.0, t0 = 0.0;
+  const int N = 16;
+  float tMin = 12.0;
+  vec3 L = fogLight(d);
+  vec3 S = vec3(0.0);
+  for (int i = 1; i <= N; i++) {
+    float t1 = tMax <= tMin ? tMax * float(i) / float(N) : tMin * pow(tMax / tMin, (float(i) - 1.0 + jitter) / float(N - 1));
+    t1 = min(t1, tMax);
+    float dt = t1 - t0;
+    if (dt <= 0.0) continue;
+    float a = exp(-fogSigma(ro + d * (t0 + dt * 0.5)) * dt);
+    S += T * (1.0 - a) * L;
+    T *= a;
+    t0 = t1;
+  }
+  return vec4(S, T);
 }
 `;
 
-const BACK_VS = `#version 300 es
-void main() {
-  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
-  gl_Position = vec4(p, 0.0, 1.0);
-}`;
-
-const BACK_FS = COMMON + `
-out vec4 o;
-// Sky: a slate zenith, a pale horizon, and the veiled sun.
+/* ---------- sky and sea ---------- */
+const BACK_FS = FOG + `
+uniform vec2 uRes;
+uniform mat4 uCamWorld, uInvProj;
+uniform vec3 uZen, uHorC, uDeep;
+// Sky: a near-black zenith; the horizon takes the colour of deep fog.
 vec3 sky(vec3 d) {
-  float E = max(d.y, 0.0) / FH();
-  vec3 c = mix(uHorC, uZen, smoothstep(0.0, 0.62, E));
-  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / uSunR;
-  c += uSun * SUN_VIS * (1.0 - smoothstep(0.7, 1.0, A));
-  // Haze thickens toward the horizon and takes the sun glow.
-  return mix(c, fogCol(d), exp(-E * 5.0));
+  float e = max(d.y, 0.0);
+  return mix(fogLight(d), uZen, smoothstep(0.0, 0.2, e));
 }
-// Swell: a few long waves.
-// Each wave fades once a pixel covers a third of its length.
-vec3 seaNormal(vec2 p, float t) {
+// Swell: a few long waves; each fades once a pixel spans its length.
+vec3 seaNormal(vec2 p, float fp) {
   vec2 g = vec2(0.0);
-  float fp = t * t / (uF * uCamH);
   const vec3 W[5] = vec3[5](vec3(0.9, 0.42, 0.05), vec3(-0.5, 0.86, 0.08), vec3(0.2, 0.98, 0.13), vec3(0.95, -0.3, 0.21), vec3(-0.75, 0.66, 0.34));
   for (int i = 0; i < 5; i++) {
     vec2 dd = normalize(W[i].xy); float k = W[i].z;
-    float keep = clamp(1.0 - fp * k / 2.1, 0.0, 1.0);
-    g += dd * cos(dot(p, dd) * k + float(i) * 1.7) * 0.022 * keep;
+    g += dd * cos(dot(p, dd) * k + float(i) * 1.7) * 0.03 * clamp(1.0 - fp * k / 2.1, 0.0, 1.0);
   }
   return normalize(vec3(-g.x, 1.0, -g.y));
 }
 void main() {
-  vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
-  vec3 d = normalize(vec3((px.x - uRes.x * 0.5) / uF, (uHor - px.y) / uF, -1.0));
-  vec3 c;
+  vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0;
+  vec4 v = uInvProj * vec4(ndc, 1.0, 1.0);
+  vec3 d = normalize((uCamWorld * vec4(v.xyz / v.w, 0.0)).xyz);
+  vec3 ro = cameraPosition;
+  vec3 c; float tMax = 30000.0;
   if (d.y >= 0.0) c = sky(d);
   else {
-    float t = uCamH / -d.y;
-    vec3 p = d * t;
-    vec3 n = seaNormal(p.xz, t);
+    float t = ro.y / -d.y;
+    tMax = t;
+    vec3 p = ro + d * t;
+    // A pixel's footprint on the sea grows with distance and grazing angle.
+    float fp = t / max(-d.y, 0.02) / 1500.0;
+    vec3 n = seaNormal(p.xz, fp);
     vec3 r = reflect(d, n); r.y = abs(r.y);
     float fr = 0.02 + 0.98 * pow(1.0 - max(dot(-d, n), 0.0), 5.0);
-    // Grey sea: it takes some of the sky, never all of it.
-    c = mix(uDeep, sky(r), fr * 0.7);
-    // The sun patch lays a soft column on the water.
-    vec3 h = normalize(uSD - d);
-    c += uSun * SUN_VIS * 0.35 * pow(max(dot(n, h), 0.0), 2400.0 / (1.0 + t * 0.004));
-    c = mix(fogCol(d), c, fogT(t));
+    vec4 fr4 = fogMarch(p, r, 4000.0, 0.5);
+    c = mix(uDeep, sky(r) * fr4.a + fr4.rgb, fr * 0.8);
   }
-  o = vec4(grade(c), 1.0);
+  vec4 f = fogMarch(ro, d, tMax, hash12(gl_FragCoord.xy));
+  gl_FragColor = vec4(c * f.a + f.rgb, 1.0);
 }`;
 
-// Turbine parts: 0 tower, 1 nacelle, 2 blade.
-const TURB_VS = COMMON + `
-in vec3 aPos;
-in vec3 aNrm;
-in float aPart;
-in vec3 aInst;
-out vec3 vW;
-out vec3 vN;
+/* ---------- turbines ---------- */
+// Parts: 0 tower, 1 nacelle, 2 blade.
+const TURB_VS = `
+attribute float aPart;
+attribute float aAngle;
+varying vec3 vW;
+varying vec3 vN;
 // The rotor turns about the hub axis, which runs along local z.
 const vec3 HUB = vec3(0.0, 112.0, 6.0);
-// All rotors face the wind, which comes from the sun side.
-const float YAW = -0.35;
-vec3 yaw(vec3 v) { float c = cos(YAW), s = sin(YAW); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+uniform float uYaw;
+vec3 yaw(vec3 v) { float c = cos(uYaw), s = sin(uYaw); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
 void main() {
-  vec3 p = aPos, n = aNrm;
+  vec3 p = position, n = normal;
   if (aPart > 1.5) {
-    float c = cos(aInst.z), s = sin(aInst.z);
-    vec2 xy = p.xy - HUB.xy;
-    p.xy = HUB.xy + mat2(c, s, -s, c) * xy;
+    float c = cos(aAngle), s = sin(aAngle);
+    p.xy = HUB.xy + mat2(c, s, -s, c) * (p.xy - HUB.xy);
     n.xy = mat2(c, s, -s, c) * n.xy;
   }
   p = yaw(p); n = yaw(n);
-  vec3 w = p + vec3(aInst.x, 0.0, aInst.y);
-  // The camera turns by uYaw; the world turns the other way.
-  float cy = cos(uYaw), sy = sin(uYaw);
-  w.xz = vec2(w.x * cy + w.z * sy, -w.x * sy + w.z * cy);
-  n.xz = vec2(n.x * cy + n.z * sy, -n.x * sy + n.z * cy);
-  vW = w; vN = n;
-  // An off-centre perspective that matches the full-screen pass.
-  vec3 v = w - vec3(0.0, uCamH, 0.0);
-  float zn = 5.0, zf = 60000.0;
-  gl_Position = vec4(
-    2.0 * uF * v.x / uRes.x,
-    -v.z * (1.0 - 2.0 * uHor / uRes.y) + 2.0 * uF * v.y / uRes.y,
-    -(zf + zn) / (zf - zn) * v.z - 2.0 * zf * zn / (zf - zn),
-    -v.z);
+  vec4 w = modelMatrix * instanceMatrix * vec4(p, 1.0);
+  vW = w.xyz; vN = n;
+  gl_Position = projectionMatrix * viewMatrix * w;
 }`;
-
-const TURB_FS = COMMON + `
-in vec3 vW;
-in vec3 vN;
-out vec4 o;
+const TURB_FS = FOG + `
+uniform vec3 uPaint, uZen, uHorC, uDeep;
+varying vec3 vW;
+varying vec3 vN;
 void main() {
-  vec3 cam = vec3(0.0, uCamH, 0.0);
-  vec3 d = normalize(vW - cam);
-  float t = length(vW - cam);
+  vec3 d = normalize(vW - cameraPosition);
+  float t = length(vW - cameraPosition);
   vec3 n = normalize(vN);
   if (dot(n, d) > 0.0) n = -n;
-  // Sky light from above, sea light from below, the veiled sun as a key.
+  // Fog light from all round, darker from the sea below.
   float up = n.y * 0.5 + 0.5;
-  vec3 amb = mix(uDeep * 4.0 + uFog * 0.25, mix(uHorC, uZen, 0.4) * 0.9, up);
-  // The sun reaches the farm through the fog it sits behind.
-  float key = max(dot(n, uSD), 0.0);
-  vec3 c = uPaint * (amb + uSun * 0.22 * key);
-  // The paint takes the low sun as a soft rim.
-  float rim = pow(1.0 - max(dot(-d, n), 0.0), 3.0) * max(dot(d, uSD), 0.0);
-  c += uSun * 0.12 * rim;
-  c = mix(fogCol(d), c, fogT(t));
-  o = vec4(grade(c), 1.0);
+  vec3 amb = mix(uFog * 0.5, uFog * 1.4 + uHorC, up);
+  vec3 c = uPaint * (amb + uSun * 0.35 * max(dot(n, uSD), 0.0));
+  vec4 f = fogMarch(cameraPosition, d, t, hash12(gl_FragCoord.xy));
+  gl_FragColor = vec4(c * f.a + f.rgb, 1.0);
 }`;
 
-/* ---------- turbine mesh ---------- */
 // One turbine in metres: tower 110 m, rotor radius 80 m.
-function turbineMesh() {
+function turbineGeometry() {
   const P = [], N = [], K = [];
   const tri = (a, b, c, n, k) => { P.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) { N.push(...n); K.push(k); } };
   const quad = (a, b, c, d, n, k) => { tri(a, b, c, n, k); tri(a, c, d, n, k); };
@@ -203,9 +233,8 @@ function turbineMesh() {
   const S = 12, R0 = 3.6, R1 = 2.2, H = 110;
   for (let i = 0; i < S; i++) {
     const a0 = i / S * Math.PI * 2, a1 = (i + 1) / S * Math.PI * 2, am = (a0 + a1) / 2;
-    const n = [Math.cos(am), 0.012, Math.sin(am)];
-    quad([Math.cos(a0) * R0, 0, Math.sin(a0) * R0], [Math.cos(a1) * R0, 0, Math.sin(a1) * R0],
-      [Math.cos(a1) * R1, H, Math.sin(a1) * R1], [Math.cos(a0) * R1, H, Math.sin(a0) * R1], n, 0);
+    quad([Math.cos(a0) * R0, 0, Math.sin(a0) * R0], [Math.cos(a0) * R1, H, Math.sin(a0) * R1],
+      [Math.cos(a1) * R1, H, Math.sin(a1) * R1], [Math.cos(a1) * R0, 0, Math.sin(a1) * R0], [Math.cos(am), 0.012, Math.sin(am)], 0);
   }
   // Nacelle: a box from the tower top to the hub.
   const box = (x0, x1, y0, y1, z0, z1, k) => {
@@ -224,83 +253,193 @@ function turbineMesh() {
     const a = b * Math.PI * 2 / 3, ca = Math.cos(a), sa = Math.sin(a);
     const at = (r, c) => [ca * c - sa * r, 112 + sa * c + ca * r, 6.6];
     const root = 1.6, chord = 3.4, tip = 0.5, sweep = 1.8;
-    const pts = [at(1.5, -root), at(1.5, root), at(L * 0.22, chord), at(L, tip + sweep), at(L, sweep - tip), at(L * 0.22, -chord * 0.4)];
+    const p = [at(1.5, -root), at(1.5, root), at(L * 0.22, chord), at(L, tip + sweep), at(L, sweep - tip), at(L * 0.22, -chord * 0.4)];
     const n = [0, 0, 1];
-    tri(pts[0], pts[1], pts[2], n, 2); tri(pts[0], pts[2], pts[5], n, 2);
-    tri(pts[5], pts[2], pts[3], n, 2); tri(pts[5], pts[3], pts[4], n, 2);
+    tri(p[0], p[1], p[2], n, 2); tri(p[0], p[2], p[5], n, 2);
+    tri(p[5], p[2], p[3], n, 2); tri(p[5], p[3], p[4], n, 2);
   }
-  return { P: new Float32Array(P), N: new Float32Array(N), K: new Float32Array(K), count: P.length / 3 };
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('aPart', new THREE.Float32BufferAttribute(K, 1));
+  return g;
 }
 
-/* ---------- GL setup ---------- */
-function program(vs, fs) {
-  const p = gl.createProgram();
-  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-    gl.attachShader(p, s);
+/* ---------- aviation lights ---------- */
+// Each turbine carries one light on the nacelle and three round the tower.
+// A core sprite holds the lamp; a halo sprite grows with the fog in front.
+const LIGHT_VS = FOG + `
+attribute float aKind;
+uniform float uFocal, uHalo;
+varying float vT;
+varying float vTau;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float t = -mv.z;
+  vec3 d = normalize(position - cameraPosition);
+  vec4 f = fogMarch(cameraPosition, d, length(position - cameraPosition), 0.5);
+  vT = f.a; vTau = -log(max(f.a, 1e-4));
+  // The nacelle lamp is larger than the tower lamps.
+  float lamp = aKind > 0.5 ? 1.2 : 2.2;
+  float core = max(1.6, lamp * uFocal / t);
+  gl_PointSize = uHalo > 0.5 ? min(core * (3.0 + 6.0 * min(vTau, 2.5)), 160.0) : core * 2.0;
+}`;
+const LIGHT_FS = `
+uniform vec3 uRed;
+uniform float uHalo;
+varying float vT;
+varying float vTau;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0) discard;
+  // Both sprites fall to zero at the rim, so no edge shows.
+  float edge = (1.0 - r2) * (1.0 - r2);
+  float k = uHalo > 0.5
+    ? exp(-r2 * 2.5) * edge * 0.9 * min(vTau, 2.5) * vT
+    : exp(-r2 * 9.0) * edge * 12.0 * vT;
+  gl_FragColor = vec4(uRed * k, 1.0);
+}`;
+function lightGeometry() {
+  const P = [], K = [];
+  const c = Math.cos(YAW), s = Math.sin(YAW);
+  for (const [x, z] of farm) {
+    // Nacelle top, toward the rear.
+    const lx = 0, lz = -5;
+    P.push(x + c * lx + s * lz, 115.6, z - s * lx + c * lz); K.push(0);
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.094 + 0.4;
+      P.push(x + Math.cos(a) * 3.3, 62, z + Math.sin(a) * 3.3); K.push(1);
+    }
   }
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-  return p;
-}
-const back = program(BACK_VS, BACK_FS), turb = program(TURB_VS, TURB_FS);
-const mesh = turbineMesh();
-const vao = gl.createVertexArray();
-gl.bindVertexArray(vao);
-function attr(prog, name, data, size, divisor = 0) {
-  const loc = gl.getAttribLocation(prog, name);
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
-  gl.vertexAttribDivisor(loc, divisor);
-}
-attr(turb, 'aPos', mesh.P, 3); attr(turb, 'aNrm', mesh.N, 3); attr(turb, 'aPart', mesh.K, 1);
-attr(turb, 'aInst', new Float32Array(farm.flat()), 3, 1);
-gl.bindVertexArray(null);
-const emptyVao = gl.createVertexArray();
-
-function uniforms(p, shot) {
-  const u = n => gl.getUniformLocation(p, n);
-  gl.uniform2f(u('uRes'), shot.W, shot.H);
-  gl.uniform1f(u('uF'), shot.f); gl.uniform1f(u('uHor'), shot.hor);
-  gl.uniform1f(u('uCamH'), CAM_H); gl.uniform1f(u('uFogL'), LOOK.fogL);
-  gl.uniform1f(u('uSunR'), SUN_R); gl.uniform1f(u('uYaw'), shot.yaw);
-  gl.uniform3fv(u('uSD'), shot.sd);
-  gl.uniform3fv(u('uZen'), LOOK.zen); gl.uniform3fv(u('uHorC'), LOOK.hor); gl.uniform3fv(u('uFog'), LOOK.fog);
-  gl.uniform3fv(u('uSun'), LOOK.sun); gl.uniform3fv(u('uDeep'), LOOK.deep); gl.uniform3fv(u('uPaint'), LOOK.paint);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('aKind', new THREE.Float32BufferAttribute(K, 1));
+  return g;
 }
 
-/* ---------- frame ---------- */
-// A long telephoto: the near rotor looms past the top of the frame.
-// Portrait sets the lens by height and turns a little left.
-function shot() {
+/* ---------- scene ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// The grade pass does the curve and gamma, so targets hold linear light.
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(10, 1, 5, 40000);
+camera.rotation.order = 'YXZ';
+
+const back = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: U, depthTest: false, depthWrite: false,
+  vertexShader: 'void main() { gl_Position = vec4(position.xy, 1.0, 1.0); }',
+  fragmentShader: BACK_FS,
+}));
+back.frustumCulled = false; back.renderOrder = -10;
+scene.add(back);
+
+const turbines = new THREE.InstancedMesh(turbineGeometry(), new THREE.ShaderMaterial({
+  uniforms: { ...U, uYaw: { value: YAW } }, vertexShader: TURB_VS, fragmentShader: TURB_FS, side: THREE.DoubleSide,
+}), farm.length);
+{
+  const m = new THREE.Matrix4(), ang = new Float32Array(farm.length);
+  farm.forEach(([x, z, a], i) => { m.makeTranslation(x, 0, z); turbines.setMatrixAt(i, m); ang[i] = a; });
+  turbines.geometry.setAttribute('aAngle', new THREE.InstancedBufferAttribute(ang, 1));
+}
+turbines.frustumCulled = false;
+scene.add(turbines);
+
+const lightGeo = lightGeometry();
+for (const halo of [0, 1]) {
+  const pts = new THREE.Points(lightGeo, new THREE.ShaderMaterial({
+    uniforms: { ...U, uHalo: { value: halo } }, vertexShader: LIGHT_VS, fragmentShader: LIGHT_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  pts.frustumCulled = false; pts.renderOrder = 5 + halo;
+  scene.add(pts);
+}
+
+/* ---------- post ---------- */
+// Bloom runs at half size; the grade adds the curve, vignette and grain.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.85, 1.2);
+composer.addPass(bloom);
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uRes: U.uRes, uExp: { value: 2.2 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `
+uniform sampler2D tDiffuse;
+uniform vec2 uRes;
+uniform float uExp;
+varying vec2 vUv;
+float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+void main() {
+  vec3 c = texture2D(tDiffuse, vUv).rgb * uExp;
+  c = c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14);
+  vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - 0.35 * dot(q, q);
+  c = pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2));
+  // Film grain, strongest in the mid tones.
+  float g = hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy + 71.3) - 1.0;
+  c += g * 0.05 * (0.4 + c * (1.0 - c) * 2.4);
+  gl_FragColor = vec4(c, 1.0);
+}`,
+});
+composer.addPass(grade);
+
+/* ---------- cameras ---------- */
+// Rows: a long telephoto from the sea; the near towers loom.
+// Foot: below one tower, looking up into its rotor.
+// Above: over the fog deck; hubs and lights stand out of it.
+const CAMS = [
+  (W, H, tall) => {
+    const f = W * 5.9 * (1 - tall) + H * 7 * tall;
+    const hor = 0.76 + 0.06 * tall;
+    return { pos: [0, 10, 0], yaw: 0.014 * tall, pitch: Math.atan((hor - 0.5) * H / f), f };
+  },
+  (W, H, tall) => {
+    const f = H * (0.9 - 0.35 * tall);
+    return { pos: [-6, 14, -662], yaw: 0.16 + 0.2 * tall, pitch: 0.42, f };
+  },
+  (W, H, tall) => {
+    const f = W * 2.6 * (1 - tall) + H * 2.2 * tall;
+    return { pos: [450, 230, -600], yaw: 0.36, pitch: -0.1, f };
+  },
+];
+let cam = Math.max(0, Math.min(2, Number(new URLSearchParams(location.search).get('cam') ?? 0) || 0));
+
+function frame() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
-  const W = Math.round(canvas.clientWidth * dpr), H = Math.round(canvas.clientHeight * dpr);
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  const W = Math.round(w * dpr), H = Math.round(h * dpr);
   const tall = Math.min(1, Math.max(0, (H / W - 0.8) / 1.4));
-  const f = W * 5.9 * (1 - tall) + H * 7 * tall;
-  const hor = H * (HOR + 0.06 * tall);
-  const yaw = -0.014 * tall;
-  // The sun sits right of the farm edge, at 62 % of the width, low on the sea.
-  const sx = (W * (0.62 + 0.18 * tall) - W * 0.5) / f, sy = SUN_R * 1.5;
-  const l = Math.hypot(sx, sy, 1);
-  return { W, H, f, hor, yaw, sd: [sx / l, sy / l, -1 / l] };
+  const c = CAMS[cam](W, H, tall);
+  camera.aspect = W / H;
+  camera.fov = 2 * Math.atan(H / 2 / c.f) * 180 / Math.PI;
+  camera.position.set(...c.pos);
+  camera.rotation.set(c.pitch, c.yaw, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  U.uRes.value.set(W, H);
+  U.uFocal.value = c.f;
+  U.uCamWorld.value.copy(camera.matrixWorld);
+  U.uInvProj.value.copy(camera.projectionMatrixInverse);
+  // The dull sun glow sits low, to the right of the sea camera's view.
+  U.uSD.value.set(0.075, 0.016, -1).normalize();
+  composer.render();
 }
-function draw() {
-  const s = shot();
-  canvas.width = s.W; canvas.height = s.H;
-  gl.viewport(0, 0, s.W, s.H);
-  gl.disable(gl.DEPTH_TEST);
-  gl.useProgram(back); uniforms(back, s);
-  gl.bindVertexArray(emptyVao); gl.drawArrays(gl.TRIANGLES, 0, 3);
-  gl.enable(gl.DEPTH_TEST); gl.clear(gl.DEPTH_BUFFER_BIT);
-  gl.useProgram(turb); uniforms(turb, s);
-  gl.bindVertexArray(vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.count, farm.length);
-  gl.bindVertexArray(null);
-}
-draw();
-addEventListener('resize', draw);
+
+document.querySelectorAll('.cams button').forEach(b => b.addEventListener('click', () => {
+  cam = Number(b.dataset.cam);
+  document.querySelectorAll('.cams button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  frame();
+}));
+document.querySelectorAll('.cams button').forEach(x => x.setAttribute('aria-pressed', String(Number(x.dataset.cam) === cam)));
+addEventListener('keydown', e => { if ('123'.includes(e.key)) document.querySelector(`[data-cam="${Number(e.key) - 1}"]`).click(); });
+addEventListener('resize', frame);
+frame();
 </script>
 </body>
 </html>
