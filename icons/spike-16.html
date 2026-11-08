@@ -165,183 +165,325 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   // A teardrop: the tip at the top, a round belly of radius r centred at cx, cy.
   const tear = (cx, cy, r, h) => `M${cx} ${cy - h}C${f(cx + r * 0.18)} ${f(cy - h * 0.55)} ${cx + r} ${f(cy - r * 0.85)} ${cx + r} ${cy}A${r} ${r} 0 0 1 ${cx - r} ${cy}C${cx - r} ${f(cy - r * 0.85)} ${f(cx - r * 0.18)} ${f(cy - h * 0.55)} ${cx} ${cy - h}Z`;
-  // A glossy drop: deep ink, the shared glint, a rim, and two highlights, as the bubbles have.
-  const dropSvg = (id, cx, cy, r, h, hue, L = 0.5) => `
-    <radialGradient id="${id}" cx="0.36" cy="0.42" r="0.75">
-      <stop offset="0" style="stop-color: oklch(${L + 0.18} 0.15 ${hue})"/>
-      <stop offset="0.7" style="stop-color: oklch(${L} 0.19 ${hue})"/>
-      <stop offset="1" style="stop-color: oklch(${L - 0.2} 0.15 ${hue})"/>
-    </radialGradient>
-    <path d="${tear(cx, cy, r, h)}" fill="url(#${id})"/>
-    <path d="${tear(cx, cy, r, h)}" fill="url(#lit)"/>
-    <path d="${tear(cx, cy, r, h)}" fill="none" stroke="url(#rim)" stroke-width="${f(Math.max(1.2, r * 0.07))}"/>
-    <ellipse cx="${f(cx - r * 0.42)}" cy="${f(cy - r * 0.38)}" rx="${f(r * 0.3)}" ry="${f(r * 0.15)}" transform="rotate(-50 ${f(cx - r * 0.42)} ${f(cy - r * 0.38)})" fill="#fff" fill-opacity="0.85"/>
-    <circle cx="${f(cx + r * 0.5)}" cy="${f(cy + r * 0.48)}" r="${f(r * 0.08)}" fill="#fff" fill-opacity="0.55"/>`;
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // A ticker that runs while step() returns true.
+  const sim = step => {
+    let on = false;
+    const tick = () => { if (!step()) { on = false; gsap.ticker.remove(tick); } };
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } } };
+  };
+  // Resamples a polyline to n points spread evenly along its length.
+  const resample = (pts, n) => {
+    const L = [0];
+    for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const s = (L[L.length - 1] * k) / (n - 1);
+      let i = 1;
+      while (i < L.length - 1 && L[i] < s) i++;
+      const t = L[i] > L[i - 1] ? (s - L[i - 1]) / (L[i] - L[i - 1]) : 0;
+      out.push([pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t]);
+    }
+    return out;
+  };
+  // A smooth path through points: quadratic curves through the midpoints.
+  const smooth = pts => {
+    let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+    for (let i = 1; i < pts.length - 1; i++) d += `Q${f(pts[i][0])} ${f(pts[i][1])} ${f((pts[i][0] + pts[i + 1][0]) / 2)} ${f((pts[i][1] + pts[i + 1][1]) / 2)}`;
+    const e = pts[pts.length - 1];
+    return d + `L${f(e[0])} ${f(e[1])}`;
+  };
+  const INKS = ['oklch(0.45 0.17 266)', 'oklch(0.56 0.2 18)', 'oklch(0.82 0.15 80)'];
+  // The resting plume in a lit tank: a cap, two rolled ends, a trail and two tendrils.
+  const PLUME = [[65, 20, 3], [64, 30, 3.6], [64, 40, 4.4], [64, 48, 5.5], [48, 60, 10], [64, 54, 12.5], [80, 60, 10], [40, 66, 6.5], [88, 66, 6.5], [54, 74, 4.4], [52, 85, 3.8], [55, 96, 3], [74, 74, 4.4], [76, 85, 3.8], [73, 96, 3]];
 
-  /* ================= A · Shaded object ================= */
+  /* ================= A · Stir ================= */
 
-  // A porthole on dark water; side light catches a glowing ring of ink and its fine curls.
+  // A porthole on dark water with a glowing plume; a drag through it stirs the ink, which drifts back.
   DIRS.push({
-    toy: 'ink', l: 'A', name: 'Shaded object', emblemUrl: 'spike/emblems/ink-a.svg',
+    toy: 'ink', l: 'A', name: 'Stir', emblemUrl: 'spike/emblems/ink-a.svg',
     box: [12, 12, 104, 104],
     art(svg, id) {
+      const B = PLUME.map(([x, y, r]) => ({ x0: x, y0: y, r, dx: 0, dy: 0 }));
       svg.innerHTML = `
         <defs>
           <clipPath id="${id}c"><circle cx="64" cy="64" r="50"/></clipPath>
           <radialGradient id="${id}w" cx="0.3" cy="0.28" r="0.85"><stop offset="0" style="stop-color: oklch(0.25 0.05 252)"/><stop offset="1" style="stop-color: oklch(0.1 0.03 266)"/></radialGradient>
-          <linearGradient id="${id}t" gradientUnits="userSpaceOnUse" x1="0" y1="66" x2="0" y2="106"><stop offset="0" style="stop-color: oklch(0.62 0.16 258)"/><stop offset="1" style="stop-color: oklch(0.62 0.16 258)" stop-opacity="0"/></linearGradient>
-          <linearGradient id="${id}r" gradientUnits="userSpaceOnUse" x1="0" y1="10" x2="0" y2="48"><stop offset="0" style="stop-color: oklch(0.7 0.12 255)" stop-opacity="0"/><stop offset="1" style="stop-color: oklch(0.7 0.12 255)"/></linearGradient>
-          <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter>
+          <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3"/></filter>
+          <filter id="${id}m" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.8"/></filter>
         </defs>
         <circle cx="64" cy="64" r="50" fill="url(#${id}w)"/>
         <g clip-path="url(#${id}c)">
           <path d="M6 26L48 6L122 96L104 124Z" fill="oklch(0.9 0.04 240)" opacity="0.06"/>
-          <g class="plume">
-            <path class="fil" pathLength="1" d="M66 12c-4 12 4 22-2 36" fill="none" stroke="url(#${id}r)" stroke-width="1.6" stroke-linecap="round"/>
-            <g fill="none" stroke="url(#${id}t)" stroke-width="2.6" stroke-linecap="round" filter="url(#${id}b)" opacity="0.9">
-              <path d="M52 68c-6 10 6 18-2 30"/><path d="M64 70c6 12-6 20 2 34"/><path d="M76 68c6 10-6 16 2 28"/>
-            </g>
-            <g class="cap" filter="url(#${id}b)">
-              <circle cx="49" cy="61" r="12" fill="oklch(0.58 0.18 264)"/>
-              <circle cx="79" cy="61" r="12" fill="oklch(0.58 0.18 264)"/>
-              <ellipse cx="64" cy="55" rx="20" ry="9" fill="oklch(0.68 0.15 258)"/>
-            </g>
-            <g fill="none" stroke="oklch(0.9 0.08 245)" stroke-width="1.2" stroke-linecap="round">
-              <path class="fil" pathLength="1" d="M42 66c-7-4-3-15 6-13c7 2 6 11-1 10"/>
-              <path class="fil" pathLength="1" d="M86 66c7-4 3-15-6-13c-7 2-6 11 1 10"/>
-              <path class="fil" pathLength="1" d="M44 52c7-11 33-11 40 0"/>
-            </g>
-          </g>
+          <g class="s" fill="oklch(0.55 0.18 264)" filter="url(#${id}b)">${B.map(b => `<circle r="${b.r}"/>`).join('')}</g>
+          <g class="k" fill="oklch(0.84 0.1 250)" opacity="0.32" filter="url(#${id}m)">${B.map(b => `<circle r="${f(b.r * 0.6)}"/>`).join('')}</g>
         </g>
         <circle cx="64" cy="64" r="50" fill="url(#lit)" opacity="0.5"/>
         <circle cx="64" cy="64" r="49.2" fill="none" stroke="url(#rim)" stroke-width="1.8"/>
         <circle cx="64" cy="64" r="50" fill="none" stroke="oklch(0.34 0.04 262)" stroke-width="1"/>`;
-      const plume = svg.querySelector('.plume'), cap = svg.querySelector('.cap'), fils = svg.querySelectorAll('.fil');
-      return hoverLoop(
-        () => loop({ repeatDelay: 0.4 })
-          .fromTo(plume, { y: -16 }, { y: 4, duration: 2.2, ease: 'sine.out' })
-          .fromTo(cap, { scaleX: 0.6, scaleY: 0.8, transformOrigin: '50% 50%' }, { scaleX: 1.08, scaleY: 1, transformOrigin: '50% 50%', duration: 2.2, ease: 'sine.out' }, 0)
-          .fromTo(fils, { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.4, stagger: 0.12, ease: 'sine.inOut' }, 0.3),
-        () => {
-          gsap.to(plume, { y: 0, duration: 0.4, overwrite: true });
-          gsap.to(cap, { scaleX: 1, scaleY: 1, duration: 0.4, overwrite: true });
-          gsap.to(fils, { strokeDashoffset: 0, duration: 0.4, overwrite: true });
-        });
+      const soft = [...svg.querySelectorAll('.s circle')], core = [...svg.querySelectorAll('.k circle')];
+      const draw = () => B.forEach((b, i) => {
+        const x = f(b.x0 + b.dx), y = f(b.y0 + b.dy);
+        soft[i].setAttribute('cx', x); soft[i].setAttribute('cy', y);
+        core[i].setAttribute('cx', x); core[i].setAttribute('cy', y);
+      });
+      draw();
+      let last = null, demo = null, hover = false;
+      // The drag pushes nearby ink along its path, curling it a little sideways.
+      const push = (p, v) => B.forEach(b => {
+        const d = Math.hypot(b.x0 + b.dx - p[0], b.y0 + b.dy - p[1]);
+        if (d > 24) return;
+        const k = (1 - d / 24) * 0.9;
+        b.dx = clamp(b.dx + (v[0] - v[1] * 0.35) * k, -22, 22);
+        b.dy = clamp(b.dy + (v[1] + v[0] * 0.35) * k, -22, 22);
+      });
+      // Stirred ink drifts slowly back, as it does in still water.
+      const S = sim(() => {
+        let m = 0;
+        B.forEach(b => { b.dx *= 0.97; b.dy *= 0.97; m = Math.max(m, Math.abs(b.dx) + Math.abs(b.dy)); });
+        draw();
+        return hover || m > 0.05;
+      });
+      const moveTo = p => {
+        if (last) {
+          let v = [p[0] - last[0], p[1] - last[1]];
+          const m = Math.hypot(...v);
+          if (m > 6) v = v.map(c => (c * 6) / m);
+          push(p, v);
+        }
+        last = p;
+      };
+      return {
+        enter(p) {
+          hover = true; S.start();
+          if (p) last = p;
+          else { const st = { a: 0 }; demo = gsap.to(st, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate: () => moveTo([28 + 72 * st.a, 66 + 16 * Math.sin(st.a * TAU)]) }); }
+        },
+        move(p) { if (p && !demo) moveTo(p); },
+        leave() { hover = false; demo?.kill(); demo = null; last = null; S.start(); },
+      };
     },
   });
 
-  /* ================= B · One drop ================= */
+  /* ================= B · Drop ================= */
 
-  // One glossy drop of indigo ink, the moment before it meets the water.
+  // A backlit tank: where the pointer goes, a drop falls in and blooms; the inks take turns and mix.
   DIRS.push({
-    toy: 'ink', l: 'B', name: 'One drop', emblemUrl: 'spike/emblems/ink-b.svg',
-    box: [30, 12, 68, 104],
-    art(svg, id) {
-      svg.innerHTML = `
-        <ellipse class="ripple" cx="64" cy="112" rx="30" ry="4" fill="none" stroke="oklch(0.7 0.1 255)" stroke-width="1.4" opacity="0"/>
-        <g class="drop">${dropSvg(`${id}d`, 64, 78, 30, 64, 266)}</g>`;
-      const drop = svg.querySelector('.drop'), rip = svg.querySelector('.ripple');
-      return hoverLoop(
-        () => loop({ repeatDelay: 0.3 })
-          .to(drop, { scaleY: 1.06, scaleX: 0.95, transformOrigin: '50% 100%', duration: 0.5, ease: 'sine.inOut' })
-          .to(drop, { y: 18, opacity: 0, duration: 0.45, ease: 'power2.in' })
-          .fromTo(rip, { opacity: 0.9, attr: { rx: 6, ry: 1 } }, { opacity: 0, attr: { rx: 40, ry: 6 }, duration: 0.8, ease: 'power2.out' }, '-=0.1')
-          .fromTo(drop, { y: -20, opacity: 0, scaleX: 1, scaleY: 1 }, { y: 0, opacity: 1, duration: 0.6, ease: 'power2.out' }),
-        () => {
-          gsap.to(drop, { y: 0, opacity: 1, scaleX: 1, scaleY: 1, duration: 0.3, overwrite: true });
-          gsap.to(rip, { opacity: 0, duration: 0.2, overwrite: true });
-        });
-    },
-  });
-
-  /* ================= C · Three drops ================= */
-
-  // Indigo, carmine and saffron fall in a loose cascade, each with its own glint.
-  DIRS.push({
-    toy: 'ink', l: 'C', name: 'Three drops', emblemUrl: 'spike/emblems/ink-c.svg',
-    box: [16, 12, 96, 100],
-    art(svg, id) {
-      svg.innerHTML = `
-        <g class="dr">${dropSvg(`${id}a`, 44, 82, 24, 50, 266)}</g>
-        <g class="dr">${dropSvg(`${id}b`, 88, 64, 17, 36, 18, 0.52)}</g>
-        <g class="dr">${dropSvg(`${id}c`, 76, 30, 11, 24, 78, 0.7)}</g>`;
-      const drs = svg.querySelectorAll('.dr');
-      return hoverLoop(
-        () => loop().to(drs, { y: 6, duration: 0.7, ease: 'sine.inOut', yoyo: true, repeat: 1, stagger: 0.18 }),
-        () => gsap.to(drs, { y: 0, duration: 0.3, overwrite: true }));
-    },
-  });
-
-  /* ================= D · Backlit slab ================= */
-
-  // A lit slab of water on its hard shadow; the ink blooms in it like watercolour, dark core, pale edge.
-  DIRS.push({
-    toy: 'ink', l: 'D', name: 'Backlit slab', emblemUrl: 'spike/emblems/ink-d.svg',
+    toy: 'ink', l: 'B', name: 'Drop', emblemUrl: 'spike/emblems/ink-b.svg',
     box: [12, 12, 110, 110],
     art(svg, id) {
       svg.innerHTML = `
         <defs>
           <clipPath id="${id}c"><rect x="12" y="12" width="104" height="104" rx="12"/></clipPath>
           <radialGradient id="${id}l" cx="0.34" cy="0.3" r="0.9"><stop offset="0" style="stop-color: oklch(0.99 0.02 85)"/><stop offset="0.6" style="stop-color: oklch(0.9 0.02 90)"/><stop offset="1" style="stop-color: oklch(0.76 0.03 235)"/></radialGradient>
-          <filter id="${id}s" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3.2"/></filter>
-          <filter id="${id}m" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.2"/></filter>
+          <filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.6"/></filter>
         </defs>
         <rect x="18" y="18" width="104" height="104" rx="12" fill="oklch(0.07 0.01 260)"/>
         <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#${id}l)"/>
         <g clip-path="url(#${id}c)" style="isolation: isolate">
-          <g class="ink" style="mix-blend-mode: multiply">
-            <path d="M66 14c-4 12 4 22-2 34" fill="none" stroke="oklch(0.62 0.12 262)" stroke-width="2.2" stroke-linecap="round" filter="url(#${id}m)"/>
-            <g class="bl" fill="oklch(0.74 0.1 262)" filter="url(#${id}s)">
-              <circle cx="48" cy="62" r="15"/><circle cx="80" cy="62" r="15"/><ellipse cx="64" cy="55" rx="22" ry="11"/>
-              <path d="M50 70c-8 12 8 20-2 34M64 72c8 14-8 22 2 36M78 70c8 12-8 18 2 30" fill="none" stroke="oklch(0.74 0.1 262)" stroke-width="5" stroke-linecap="round"/>
-            </g>
-            <g class="bl" fill="oklch(0.4 0.17 266)" filter="url(#${id}m)">
-              <circle cx="49" cy="62" r="9"/><circle cx="79" cy="62" r="9"/><ellipse cx="64" cy="56" rx="15" ry="6"/>
-            </g>
+          <g style="mix-blend-mode: multiply" filter="url(#${id}b)" fill="oklch(0.48 0.16 264)">
+            <ellipse cx="64" cy="66" rx="17" ry="7"/><path d="M57 70c-5 9 5 15-1 26M71 70c5 9-5 13 1 24" fill="none" stroke="oklch(0.48 0.16 264)" stroke-width="3.4" stroke-linecap="round"/>
           </g>
+          <g class="drops"></g>
         </g>
         <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#lit)" opacity="0.45"/>
         <rect x="12.8" y="12.8" width="102.4" height="102.4" rx="11.4" fill="none" stroke="url(#rim)" stroke-width="1.6"/>`;
-      const ink = svg.querySelector('.ink'), bls = svg.querySelectorAll('.bl'), fils = svg.querySelectorAll('.fil');
-      return hoverLoop(
-        () => loop({ repeatDelay: 0.4 })
-          .fromTo(ink, { y: -14 }, { y: 2, duration: 2.2, ease: 'sine.out' })
-          .fromTo(bls, { scale: 0.6, transformOrigin: '50% 40%' }, { scale: 1.06, transformOrigin: '50% 40%', duration: 2.2, ease: 'sine.out' }, 0)
-          .fromTo(fils, { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.4, stagger: 0.12, ease: 'sine.inOut' }, 0.4),
-        () => {
-          gsap.to(ink, { y: 0, duration: 0.4, overwrite: true });
-          gsap.to(bls, { scale: 1, duration: 0.4, overwrite: true });
-          gsap.to(fils, { strokeDashoffset: 0, duration: 0.4, overwrite: true });
-        });
+      const layer = svg.querySelector('.drops');
+      let n = 0, lastAt = 0, demo = null;
+      const spawn = x => {
+        x = f(clamp(x, 28, 100));
+        const c = INKS[n++ % INKS.length];
+        const g = el('g', { style: 'mix-blend-mode: multiply' }, layer);
+        const drop = el('path', { d: tear(x, 22, 3.6, 8), fill: c }, g);
+        const bloom = el('g', { filter: `url(#${id}b)`, opacity: 0 }, g);
+        const cap = el('ellipse', { cx: x, cy: 48, rx: 3, ry: 2, fill: c }, bloom);
+        const tens = [`M${x - 5} 52c-4 8 4 14-1 24`, `M${x + 5} 52c4 8-4 13 1 22`].map(d => el('path', { d, fill: 'none', stroke: c, 'stroke-width': 3, 'stroke-linecap': 'round', pathLength: 1, 'stroke-dasharray': 1, 'stroke-dashoffset': 1 }, bloom));
+        gsap.timeline({ onComplete: () => g.remove() })
+          .fromTo(drop, { y: -12 }, { y: 24, duration: 0.42, ease: 'power2.in' })
+          .to(drop, { opacity: 0, duration: 0.08 })
+          .to(bloom, { opacity: 0.95, duration: 0.15 }, '<')
+          .to(cap, { attr: { rx: 15, ry: 7, cy: 54 }, duration: 1.2, ease: 'power2.out' }, '<')
+          .to(tens, { strokeDashoffset: 0, duration: 1.4, ease: 'sine.out' }, '<0.2')
+          .to(bloom, { opacity: 0, y: 12, duration: 1.8, ease: 'sine.in' }, '+=0.3');
+        while (layer.children.length > 7) layer.firstChild.remove();
+      };
+      return {
+        enter(p) {
+          if (p) { lastAt = performance.now(); spawn(p[0]); }
+          else demo = gsap.timeline().call(() => spawn(44)).call(() => spawn(64), null, 0.35).call(() => spawn(84), null, 0.7);
+        },
+        // A moving pointer drops ink every 0.4 s at its own x.
+        move(p) {
+          if (!p) return;
+          const now = performance.now();
+          if (now - lastAt > 400) { lastAt = now; spawn(p[0]); }
+        },
+        leave() { demo?.kill(); demo = null; },
+      };
     },
   });
 
-  /* ================= E · Abstract mark ================= */
+  /* ================= C · Thread ================= */
 
-  // A brush ring in ink, heavy at the foot and thin where it opens, with one drop at the gap.
+  // A dark tank with a glowing thread of ink; the pointer is the pipette, and the thread follows it and sinks.
   DIRS.push({
-    toy: 'ink', l: 'E', name: 'Brush ring', emblemUrl: 'spike/emblems/ink-e.svg',
-    box: [18, 14, 92, 96],
+    toy: 'ink', l: 'C', name: 'Thread', emblemUrl: 'spike/emblems/ink-c.svg',
+    box: [12, 12, 110, 110],
     art(svg, id) {
+      const N = 26;
+      const REST = resample(Array.from({ length: 40 }, (_, i) => { const t = i / 39; return [36 + 56 * t, 26 + 66 * t + 12 * Math.sin(t * TAU * 1.1)]; }), N);
+      let pts = REST.map(p => [...p]);
       svg.innerHTML = `
         <defs>
-          <linearGradient id="${id}g" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" style="stop-color: oklch(0.72 0.12 255)"/><stop offset="1" style="stop-color: oklch(0.42 0.18 266)"/></linearGradient>
-          <mask id="${id}k"><rect x="0" y="0" width="128" height="128" fill="#fff"/><path class="gap" d="M64 64L118 6L128 40Z" fill="#000"/></mask>
+          <clipPath id="${id}c"><rect x="12" y="12" width="104" height="104" rx="12"/></clipPath>
+          <radialGradient id="${id}w" cx="0.3" cy="0.26" r="0.9"><stop offset="0" style="stop-color: oklch(0.24 0.05 252)"/><stop offset="1" style="stop-color: oklch(0.1 0.03 266)"/></radialGradient>
+          <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.2"/></filter>
         </defs>
-        <g class="ring" mask="url(#${id}k)">
-          <path d="M22 66a42 42 0 1 0 84 0a42 42 0 1 0 -84 0ZM34 61a32 32 0 1 0 64 0a32 32 0 1 0 -64 0Z" fill="url(#${id}g)" fill-rule="evenodd"/>
-          <path d="M22 66a42 42 0 1 0 84 0a42 42 0 1 0 -84 0ZM34 61a32 32 0 1 0 64 0a32 32 0 1 0 -64 0Z" fill="url(#lit)" fill-rule="evenodd"/>
+        <rect x="18" y="18" width="104" height="104" rx="12" fill="oklch(0.05 0.01 260)"/>
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#${id}w)"/>
+        <g clip-path="url(#${id}c)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 30L52 8L124 94L104 124Z" fill="oklch(0.9 0.04 240)" opacity="0.06"/>
+          <path class="glow" stroke="oklch(0.55 0.18 264)" stroke-width="6" filter="url(#${id}b)"/>
+          <path class="core" stroke="oklch(0.86 0.1 250)" stroke-width="1.5"/>
+          <circle class="bead" r="2.6" fill="oklch(0.94 0.05 250)" stroke="none"/>
         </g>
-        <g class="dot">${dropSvg(`${id}d`, 102, 26, 7, 15, 266)}</g>`;
-      const ring = svg.querySelector('.ring'), dot = svg.querySelector('.dot');
-      return hoverLoop(
-        () => loop()
-          .to(ring, { rotation: 360, svgOrigin: '64 64', duration: 6, ease: 'none' }, 0)
-          .to(dot, { y: 8, duration: 0.75, ease: 'sine.inOut', yoyo: true, repeat: 7 }, 0),
-        () => {
-          gsap.to(ring, { rotation: 0, svgOrigin: '64 64', duration: 0.5, overwrite: true });
-          gsap.to(dot, { y: 0, duration: 0.3, overwrite: true });
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#lit)" opacity="0.45"/>
+        <rect x="12.8" y="12.8" width="102.4" height="102.4" rx="11.4" fill="none" stroke="url(#rim)" stroke-width="1.6"/>`;
+      const glow = svg.querySelector('.glow'), core = svg.querySelector('.core'), bead = svg.querySelector('.bead');
+      const draw = () => {
+        const d = smooth(pts);
+        glow.setAttribute('d', d); core.setAttribute('d', d);
+        const h = pts[pts.length - 1];
+        bead.setAttribute('cx', f(h[0])); bead.setAttribute('cy', f(h[1]));
+      };
+      draw();
+      let hover = false, demo = null, back = null, t = 0;
+      // Laid ink sinks and sways a little; the newest point stays at the pipette.
+      const S = sim(() => {
+        t += 1;
+        for (let i = 0; i < pts.length - 1; i++) { pts[i][1] = Math.min(112, pts[i][1] + 0.12); pts[i][0] += Math.sin(t * 0.05 + i * 0.6) * 0.04; }
+        draw();
+        return hover;
+      });
+      const moveTo = p => {
+        const h = pts[pts.length - 1];
+        if (Math.hypot(p[0] - h[0], p[1] - h[1]) < 2.5) return;
+        pts.push([clamp(p[0], 16, 112), clamp(p[1], 16, 112)]);
+        if (pts.length > N) pts.shift();
+        draw();
+      };
+      return {
+        enter(p) {
+          back?.kill(); back = null;
+          hover = true; S.start();
+          if (p) moveTo(p);
+          else { const st = { a: 0 }; demo = gsap.to(st, { a: 1, duration: 2, ease: 'sine.inOut', onUpdate: () => moveTo([64 + 34 * Math.sin(st.a * TAU), 64 + 22 * Math.sin(st.a * TAU * 2)]) }); }
+        },
+        move(p) { if (p && !demo) moveTo(p); },
+        // On release the thread eases back to its resting curve.
+        leave() {
+          hover = false; demo?.kill(); demo = null;
+          const from = resample(pts, N), st = { k: 0 };
+          back = gsap.to(st, { k: 1, duration: 0.9, ease: 'power2.inOut', onUpdate: () => { pts = from.map((p, i) => [p[0] + (REST[i][0] - p[0]) * st.k, p[1] + (REST[i][1] - p[1]) * st.k]); draw(); } });
+        },
+      };
+    },
+  });
+
+  /* ================= D · Light ================= */
+
+  // A dark tank with a resting plume; the light comes from the pointer, so the lit edge and the beam turn to it.
+  DIRS.push({
+    toy: 'ink', l: 'D', name: 'Light', emblemUrl: 'spike/emblems/ink-d.svg',
+    box: [12, 12, 110, 110],
+    art(svg, id) {
+      const C = [64, 60], HOME = [20, 20];
+      svg.innerHTML = `
+        <defs>
+          <clipPath id="${id}c"><rect x="12" y="12" width="104" height="104" rx="12"/></clipPath>
+          <radialGradient id="${id}p" gradientUnits="userSpaceOnUse" r="52"><stop offset="0" style="stop-color: oklch(0.86 0.1 250)"/><stop offset="0.45" style="stop-color: oklch(0.55 0.18 264)"/><stop offset="1" style="stop-color: oklch(0.22 0.1 268)"/></radialGradient>
+          <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter>
+          <filter id="${id}w" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+        </defs>
+        <rect x="18" y="18" width="104" height="104" rx="12" fill="oklch(0.05 0.01 260)"/>
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="oklch(0.11 0.03 262)"/>
+        <g clip-path="url(#${id}c)">
+          <path class="beam" fill="oklch(0.92 0.04 240)" opacity="0.13" filter="url(#${id}w)"/>
+          <circle class="src" r="7" fill="oklch(0.95 0.03 90)" opacity="0.55" filter="url(#${id}w)"/>
+          <g fill="url(#${id}p)" filter="url(#${id}b)">${PLUME.map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}"/>`).join('')}</g>
+        </g>
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#lit)" opacity="0.3"/>
+        <rect x="12.8" y="12.8" width="102.4" height="102.4" rx="11.4" fill="none" stroke="url(#rim)" stroke-width="1.6"/>`;
+      const grad = svg.querySelector(`#${id}p`), beam = svg.querySelector('.beam'), src = svg.querySelector('.src');
+      const L = { x: HOME[0], y: HOME[1] };
+      const draw = () => {
+        const dx = C[0] - L.x, dy = C[1] - L.y, m = Math.hypot(dx, dy) || 1, nx = -dy / m, ny = dx / m;
+        grad.setAttribute('cx', f(C[0] - (dx / m) * 16)); grad.setAttribute('cy', f(C[1] - (dy / m) * 16));
+        beam.setAttribute('d', `M${f(L.x)} ${f(L.y)}L${f(C[0] + nx * 26)} ${f(C[1] + ny * 26)}L${f(C[0] + dx * 0.6 + nx * 34)} ${f(C[1] + dy * 0.6 + ny * 34)}L${f(C[0] + dx * 0.6 - nx * 34)} ${f(C[1] + dy * 0.6 - ny * 34)}L${f(C[0] - nx * 26)} ${f(C[1] - ny * 26)}Z`);
+        src.setAttribute('cx', f(L.x)); src.setAttribute('cy', f(L.y));
+      };
+      draw();
+      let demo = null;
+      const aim = (x, y, d = 0.35) => gsap.to(L, { x, y, duration: d, ease: 'power2.out', overwrite: true, onUpdate: draw });
+      return {
+        enter(p) {
+          if (p) aim(p[0], p[1]);
+          else { const st = { a: 0 }; demo = gsap.to(st, { a: 1, duration: 2.4, ease: 'none', onUpdate: () => { const a = -2.4 + st.a * TAU; L.x = 64 + 48 * Math.cos(a); L.y = 60 + 48 * Math.sin(a); draw(); } }); }
+        },
+        move(p) { if (p && !demo) aim(p[0], p[1]); },
+        leave() { demo?.kill(); demo = null; aim(HOME[0], HOME[1], 0.8); },
+      };
+    },
+  });
+
+  /* ================= E · Mix ================= */
+
+  // Three soft inks on a lit tank chase the pointer at their own pace; where they overlap, they mix.
+  DIRS.push({
+    toy: 'ink', l: 'E', name: 'Mix', emblemUrl: 'spike/emblems/ink-e.svg',
+    box: [12, 12, 110, 110],
+    art(svg, id) {
+      const HOME = [[54, 56], [76, 56], [65, 74]], K = [0.16, 0.1, 0.065];
+      const P = HOME.map(p => [...p]);
+      svg.innerHTML = `
+        <defs>
+          <clipPath id="${id}c"><rect x="12" y="12" width="104" height="104" rx="12"/></clipPath>
+          <radialGradient id="${id}l" cx="0.34" cy="0.3" r="0.9"><stop offset="0" style="stop-color: oklch(0.99 0.02 85)"/><stop offset="0.6" style="stop-color: oklch(0.92 0.02 90)"/><stop offset="1" style="stop-color: oklch(0.8 0.03 235)"/></radialGradient>
+          <filter id="${id}b" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.8"/></filter>
+        </defs>
+        <rect x="18" y="18" width="104" height="104" rx="12" fill="oklch(0.07 0.01 260)"/>
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#${id}l)"/>
+        <g clip-path="url(#${id}c)" style="isolation: isolate">
+          ${INKS.map(c => `<circle class="ink" r="18" fill="${c}" opacity="0.88" filter="url(#${id}b)" style="mix-blend-mode: multiply"/>`).join('')}
+        </g>
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#lit)" opacity="0.45"/>
+        <rect x="12.8" y="12.8" width="102.4" height="102.4" rx="11.4" fill="none" stroke="url(#rim)" stroke-width="1.6"/>`;
+      const dots = [...svg.querySelectorAll('.ink')];
+      const draw = () => dots.forEach((d, i) => { d.setAttribute('cx', f(P[i][0])); d.setAttribute('cy', f(P[i][1])); });
+      draw();
+      let target = null, demo = null;
+      // Each ink follows its own spring; the pointer pulls them into one shared mix.
+      const S = sim(() => {
+        let m = 0;
+        P.forEach((p, i) => {
+          const g = target ? [target[0] + (HOME[i][0] - 65) * 0.35, target[1] + (HOME[i][1] - 62) * 0.35] : HOME[i];
+          const k = target ? K[i] : 0.08;
+          p[0] += (g[0] - p[0]) * k; p[1] += (g[1] - p[1]) * k;
+          m = Math.max(m, Math.abs(g[0] - p[0]) + Math.abs(g[1] - p[1]));
         });
+        draw();
+        return !!target || m > 0.05;
+      });
+      return {
+        enter(p) {
+          if (p) target = [clamp(p[0], 26, 102), clamp(p[1], 26, 102)];
+          else { target = [64, 62]; const st = { a: 0 }; demo = gsap.to(st, { a: 1, duration: 2.4, ease: 'none', onUpdate: () => { target = [64 + 26 * Math.cos(st.a * TAU), 62 + 22 * Math.sin(st.a * TAU)]; } }); }
+          S.start();
+        },
+        move(p) { if (p && !demo) { target = [clamp(p[0], 26, 102), clamp(p[1], 26, 102)]; S.start(); } },
+        leave() { demo?.kill(); demo = null; target = null; S.start(); },
+      };
     },
   });
 
@@ -354,6 +496,11 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     if (!side || b.x < -2 || b.y < -2 || b.x + b.width > 130 || b.y + b.height > 130) return;
     const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
     svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  // The pointer in the icon's own coordinates, as the menu passes it.
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
   };
   const out = document.getElementById('out');
   let uid = 0;
@@ -376,7 +523,8 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         const ctl = D.art(svg, `u${++uid}`);
         fitIcon(svg, D.box);
         if (reduce) return;
-        tile.addEventListener('pointerenter', () => ctl.enter(null));
+        tile.addEventListener('pointerenter', e => ctl.enter(local(svg, e)));
+        tile.addEventListener('pointermove', e => ctl.move?.(local(svg, e)));
         tile.addEventListener('pointerleave', () => ctl.leave());
         tile.addEventListener('focus', () => ctl.enter(null));
         tile.addEventListener('blur', () => ctl.leave());
