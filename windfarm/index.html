@@ -421,9 +421,11 @@ void main() {
     vec2 q = p.xy - HUB;
     float chord = dot(q, tdir), radial = dot(q, rdir);
     vRad = radial / 80.0;
+    // e is the offset across the blade's thickness, out of the rotor plane.
+    float e = p.z - 6.6;
     float cp = cos(aPitch), sp = sin(aPitch);
-    q = rdir * radial + tdir * chord * cp;
-    p.z += chord * sp;
+    q = rdir * radial + tdir * (chord * cp - e * sp);
+    p.z = 6.6 + chord * sp + e * cp;
     // The airfoil normal turns with the blade: chord and face parts mix.
     float na = dot(n.xy, tdir), nr = dot(n.xy, rdir), nb = n.z;
     n = vec3(tdir * (na * cp - nb * sp) + rdir * nr, na * sp + nb * cp);
@@ -515,18 +517,32 @@ function turbineGeometry() {
     const n0 = [Math.cos(a0) * 0.8, Math.sin(a0) * 0.8, 0.6], n1 = [Math.cos(a1) * 0.8, Math.sin(a1) * 0.8, 0.6];
     tri(v0, v1, [0, 112, 10.4], [n0, n1, [0, 0, 1]], 1);
   }
-  // Blades: tapers in the rotor plane, slightly swept.
-  // Normals lean toward each edge, so the airfoil reads as curved.
+  // Blades: swept airfoils with real thickness, so a feathered blade still shows.
+  // Each blade is a front face, a back face and two rounded edges.
   const L = 80;
   for (let b = 0; b < 3; b++) {
     const a = b * Math.PI * 2 / 3, ca = Math.cos(a), sa = Math.sin(a);
-    const at3 = (r, c) => [ca * c - sa * r, 112 + sa * c + ca * r, 6.6];
-    const nm = u => { const l = Math.hypot(0.7 * u, 1); return [ca * 0.7 * u / l, sa * 0.7 * u / l, 1 / l]; };
-    const root = 1.6, chord = 3.4, tip = 0.5, sweep = 1.8;
-    const p = [at3(1.5, -root), at3(1.5, root), at3(L * 0.22, chord), at3(L, tip + sweep), at3(L, sweep - tip), at3(L * 0.22, -chord * 0.4)];
-    const n = [nm(-1), nm(1), nm(1), nm(1), nm(-1), nm(-1)];
-    tri(p[0], p[1], p[2], [n[0], n[1], n[2]], 2, b); tri(p[0], p[2], p[5], [n[0], n[2], n[5]], 2, b);
-    tri(p[5], p[2], p[3], [n[5], n[2], n[3]], 2, b); tri(p[5], p[3], p[4], [n[5], n[3], n[4]], 2, b);
+    // r runs along the blade, c across the chord, e across the thickness.
+    const at3 = (r, c, e = 0) => [ca * c - sa * r, 112 + sa * c + ca * r, 6.6 + e];
+    const nm = (u, side) => { const l = Math.hypot(0.7 * u, 1); return [ca * 0.7 * u / l, sa * 0.7 * u / l, side / l]; };
+    const tdir = [ca, sa, 0];
+    // Stations from root to tip: radius, leading chord, trailing chord, thickness.
+    const ST = [[1.5, 1.6, -1.6, 1.9], [L * 0.22, 3.4, -1.36, 1.1], [L * 0.6, 2.2, -0.7, 0.55], [L, 2.3, 1.3, 0.22]];
+    for (let k = 0; k < ST.length - 1; k++) {
+      const [r0, l0, t0, h0] = ST[k], [r1, l1, t1, h1] = ST[k + 1];
+      for (const side of [1, -1]) {
+        const A = at3(r0, t0, side * h0 / 2), B = at3(r0, l0, side * h0 / 2), C = at3(r1, l1, side * h1 / 2), D = at3(r1, t1, side * h1 / 2);
+        const nA = nm(-1, side), nB = nm(1, side);
+        if (side > 0) { tri(A, B, C, [nA, nB, nB], 2, b); tri(A, C, D, [nA, nB, nA], 2, b); }
+        else { tri(A, C, B, [nA, nB, nB], 2, b); tri(A, D, C, [nA, nA, nB], 2, b); }
+      }
+      // Leading and trailing edges close the section.
+      for (const [c0, c1, dir] of [[l0, l1, 1], [t0, t1, -1]]) {
+        const P0 = at3(r0, c0, h0 / 2), P1 = at3(r0, c0, -h0 / 2), P2 = at3(r1, c1, -h1 / 2), P3 = at3(r1, c1, h1 / 2);
+        const n = [tdir[0] * dir, tdir[1] * dir, 0];
+        tri(P0, P1, P2, n, 2, b); tri(P0, P2, P3, n, 2, b);
+      }
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
