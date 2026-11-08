@@ -503,6 +503,41 @@ t('narrow at build', () => {
   ok(stage.parentElement.querySelector('.s2-bl > .s2-step'), 'choice not placed at build');
 });
 
+/* ---------- final review fixes ---------- */
+const narrowFixture = (spec, w = 343) => {
+  const main = document.createElement('main'), stage = document.createElement('div');
+  stage.className = 'stage';
+  main.style.width = `${w}px`;
+  main.append(stage);
+  fx.append(main);
+  const ui = buildBar(stage, spec, { id: 'bartest' });
+  return { main, stage, ui, frame: stage.parentElement, layer: stage.parentElement.querySelector('.stim-ui') };
+};
+t('key strip fits a phone', () => {
+  const { frame, layer } = narrowFixture({ actions: [{ verb: 'clear', onPress() {} }],
+    keys: [['click', 'place'], ['hold + drag', 'throw a cluster'], ['drag', 'move'], ['scroll', 'zoom']] });
+  const f = frame.getBoundingClientRect(), k = layer.querySelector('.s2-keys').getBoundingClientRect();
+  ok(k.left >= f.left && k.right <= f.right, `strip ${Math.round(k.left)}..${Math.round(k.right)} outside frame ${Math.round(f.left)}..${Math.round(f.right)}`);
+});
+t('tray pick keeps the toy focus', () => {
+  const target = document.body.appendChild(Object.assign(document.createElement('div'), { tabIndex: 0 }));
+  const { layer } = fixture({ choice: { label: 'Add', display: 'tray', value: 'a', onPick: () => target.focus(),
+    options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  click(layer.querySelector('.s2-tray'));
+  click(layer.querySelector('.s2-sheet--left [data-value="b"]'));
+  const got = document.activeElement;
+  target.remove();
+  eq(got, target);
+});
+t('narrow tray sheet rises from its chip', () => {
+  const { layer } = narrowFixture({ choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  const chip = layer.querySelector('.s2-bl > .s2-tray');
+  click(chip);
+  const sh = layer.querySelector('.s2-sheet--left').getBoundingClientRect(), c = chip.getBoundingClientRect();
+  ok(sh.bottom <= c.top && c.top - sh.bottom < 20, `sheet bottom ${Math.round(sh.bottom)} vs chip top ${Math.round(c.top)}`);
+  click(chip);
+});
+
 /* ---------- run ---------- */
 let pass = 0, ran = 0;
 for (const [name, fn, paneOnly] of queue) {

@@ -321,7 +321,8 @@ function makeChoice(spec, display, state, pick, layer) {
   const cells = options.map(o => {
     const b = iconButton('s2-chip', o.icon || o.label.slice(0, 1), o.label);
     b.dataset.value = o.value;
-    b.addEventListener('click', () => { pick(o.value, true, true); sheet.open(false, true); });
+    // The sheet closes first, so the toy's onPick can take focus.
+    b.addEventListener('click', () => { sheet.open(false, true); pick(o.value, true, true); });
     return b;
   });
   grid.append(...cells);
