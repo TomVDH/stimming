@@ -450,11 +450,14 @@ const flareMat = new THREE.ShaderMaterial({
   vertexShader: /* glsl */`
   attribute vec3 color;
   attribute float size;
+  attribute float aPin;
   uniform float uScale;
   uniform float uTime;
   varying vec3 vC;
   varying vec3 vP;
+  varying float vPin;
   void main() {
+    vPin = aPin;
     vec4 w = modelMatrix * vec4(position, 1.0);
     vP = w.xyz; vC = color;
     // Pure red lamps are warning lights: each blinks on its own beat.
@@ -464,17 +467,23 @@ const flareMat = new THREE.ShaderMaterial({
     float on = smoothstep(0.0, 0.06, b) * (1.0 - smoothstep(0.45, 0.55, b));
     vC *= mix(1.0, 0.12 + 0.88 * on, red);
     vec4 mv = viewMatrix * w;
-    gl_PointSize = clamp(size * uScale / -mv.z, 2.0, 48.0);
+    // A pin keeps its colour dim, so it stays under the bloom threshold.
+    float lum = dot(vC, vec3(0.2126, 0.7152, 0.0722));
+    vC *= mix(1.0, min(1.0, 0.69 / max(lum, 1e-4)), aPin);
+    gl_PointSize = mix(clamp(size * uScale / -mv.z, 2.0, 48.0), clamp(size * uScale / -mv.z, 1.0, 3.0), aPin);
     gl_Position = projectionMatrix * mv;
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vC;
   varying vec3 vP;
+  varying float vPin;
   ${HEAD}
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     // The glow reaches zero inside the sprite, so no square edge shows.
     float a = max(exp(-dot(c, c) * 22.0) - 0.0041, 0.0);
+    // A pin draws the core only.
+    a = mix(a, exp(-dot(c, c) * 60.0), vPin);
     float f = k2hazeAmount(vP) * 0.65;
     gl_FragColor = vec4(vC * a * (1.0 - f) * uFlareK, 1.0);
   }`,
@@ -602,8 +611,10 @@ function paint(g, c) {
   for (let i = 0; i < n; i++) { a[i * 3] = c[0]; a[i * 3 + 1] = c[1]; a[i * 3 + 2] = c[2]; }
   g.setAttribute('color', new THREE.BufferAttribute(a, 3));
 }
-const flares = { pos: [], col: [], size: [] };
-function flare(p, c, size) { flares.pos.push(p.x, p.y, p.z); flares.col.push(...c); flares.size.push(size); }
+const flares = { pos: [], col: [], size: [], pin: [] };
+function flare(p, c, size) { flares.pos.push(p.x, p.y, p.z); flares.col.push(...c); flares.size.push(size); flares.pin.push(0); }
+// A pin is a bare core: no halo, no bloom.
+function pin(p, c) { flares.pos.push(p.x, p.y, p.z); flares.col.push(...c); flares.size.push(14); flares.pin.push(1); }
 const plumes = { pos: [], size: [], lit: [] };
 
 const SODIUM = [1.0, 0.52, 0.18], WHITE = [0.86, 0.93, 1.0], RED = [1.0, 0.03, 0.02], FLUO = [0.7, 0.88, 1.0], WARM = [1.0, 0.72, 0.42];
@@ -710,14 +721,13 @@ const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2,
     prism(s, chamfer(5.6, 2.4, 0.5), chamfer(5.6, 2.4, 0.5), 1.4, yHead);
     prism(s, chamfer(5.6, 2.4, 0.5), chamfer(7.6, 2.8, 0.5), yHead, DECK - 3.6);
   }
-  // Catenary masts in rhythm, with a small light at each top.
+  // Catenary masts in rhythm, with no lamp.
   const wire = [];
   for (let s = 8; s < LEN; s += 48) {
     const m = at(s, HW - 1.6), arm = at(s, -1.6);
     box(m.x, DECK, m.z, 0.45, 8.6, 0.45, m.yaw);
     const mid = at(s, (HW - 1.6 - 1.6) / 2 - 0.8);
     box(mid.x, DECK + 8.0, mid.z, HW - 1.6 + 1.6 + 1.2, 0.3, 0.3, mid.yaw + Math.PI / 2);
-    flare(new THREE.Vector3(m.x, DECK + 8.9, m.z), scale(FLUO, 2.6), 60);
   }
   for (let s = 0; s <= LEN; s += 6) { const w = at(s, -1.6); wire.push(new THREE.Vector3(w.x, DECK + 6.9, w.z)); }
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(wire), new THREE.LineBasicMaterial({ color: new THREE.Color(0.05, 0.05, 0.055), transparent: true, opacity: 0.8 }));
@@ -850,7 +860,7 @@ const train = (() => {
   const lamps = new THREE.Points(lampG, flareMat);
   lamps.renderOrder = 3; lamps.frustumCulled = false; lamps.userData.live = true; scene.add(lamps);
   const head = new THREE.Vector3();
-  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2 });
+  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2, train: true });
   // Light list slots: one cold flank light per car, then the headlight.
   const COLD = [0.7, 0.85, 1.0];
   const carL = [], carGl = [];
@@ -913,7 +923,7 @@ const buildings = [];
     buildings.push({ x, z, top: y, w, d });
     // Roof plant: small boxes and a vent or two.
     for (let k = 0; k < 2 + (rnd() * 3 | 0); k++) box(x + range(-0.4, 0.4) * w, y, z + range(-0.4, 0.4) * d, range(3, 8), range(2, 5), range(3, 8));
-    if (rnd() < 0.6) flare(new THREE.Vector3(x + range(-0.5, 0.5) * w, y + 1, z + d / 2), scale(rnd() < 0.8 ? SODIUM : WHITE, 3.2), 60);
+    if (rnd() < 0.6) pin(new THREE.Vector3(x + range(-0.5, 0.5) * w, y + 1, z + d / 2), scale(rnd() < 0.8 ? SODIUM : WHITE, 3.2));
   }
   // Slim towers break the skyline.
   for (let i = 0; i < 10; i++) {
@@ -928,14 +938,14 @@ const buildings = [];
     box(x0 + L / 2, y, z, L, 1.0, 7);
     for (const dy of [1.4, 2.6]) box(x0 + L / 2, y + dy, z + range(-2, 2), L, 0.9, 0.9);
     for (let px = x0; px <= x0 + L; px += 12) { box(px, 0, z - 3, 0.8, y, 0.8); box(px, 0, z + 3, 0.8, y, 0.8); }
-    for (let px = x0 + 10; px < x0 + L; px += 30) flare(new THREE.Vector3(px, y + 4, z + 4), scale(SODIUM, 2.6), 40);
+    for (let px = x0 + 10; px < x0 + L; px += 30) pin(new THREE.Vector3(px, y + 4, z + 4), scale(SODIUM, 2.6));
   }
   // Conveyor gantries climb from the quay onto block roofs.
   for (let i = 0; i < 7; i++) {
     const t = buildings[(rnd() * buildings.length) | 0];
     const a = new THREE.Vector3(t.x + range(-120, 120), 2, QUAY - range(10, 40)), b = new THREE.Vector3(t.x, t.top, t.z);
     beam(a, b, 4, 3.2);
-    for (let k = 1; k < 4; k++) flare(a.clone().lerp(b, k / 4).add(new THREE.Vector3(0, 2.4, 0)), scale(WHITE, 2.2), 36);
+    for (let k = 1; k < 4; k++) pin(a.clone().lerp(b, k / 4).add(new THREE.Vector3(0, 2.4, 0)), scale(WHITE, 2.2));
   }
   // Distillation columns with lit platforms and ladder lights.
   for (let i = 0; i < 9; i++) {
@@ -943,16 +953,16 @@ const buildings = [];
     cyl(x, 0, z, r, h, 16);
     for (let y = 14; y < h - 4; y += 14) {
       cyl(x, y, z, r + 1.8, 0.5, 16);
-      for (const ang of [-0.9, 0, 0.9]) flare(new THREE.Vector3(x + Math.sin(ang) * (r + 1.8), y + 1.2, z + Math.cos(ang) * (r + 1.8)), scale(WHITE, 2.4), 34);
+      for (const ang of [-0.9, 0, 0.9]) pin(new THREE.Vector3(x + Math.sin(ang) * (r + 1.8), y + 1.2, z + Math.cos(ang) * (r + 1.8)), scale(WHITE, 2.4));
     }
-    for (let y = 6; y < h; y += 5) flare(new THREE.Vector3(x + r * 0.7, y, z + r + 0.6), scale(SODIUM, 1.6), 22);
+    for (let y = 6; y < h; y += 5) pin(new THREE.Vector3(x + r * 0.7, y, z + r + 0.6), scale(SODIUM, 1.6));
     tops.push(new THREE.Vector3(x, h + 2, z));
   }
   // Tank farm with ring lights round each roof.
   for (let i = 0; i < 16; i++) {
     const r = range(12, 22), h = range(14, 26), x = CX + range(-1000, 1000), z = QUAY - range(80, 300);
     cyl(x, 0, z, r, h); dome(x, h, z, r);
-    for (let k = 0; k < 10; k++) { const ang = k / 10 * Math.PI * 2; flare(new THREE.Vector3(x + Math.cos(ang) * r, h + 0.8, z + Math.sin(ang) * r), scale(SODIUM, 2.2), 34); }
+    for (let k = 0; k < 10; k++) { const ang = k / 10 * Math.PI * 2; pin(new THREE.Vector3(x + Math.cos(ang) * r, h + 0.8, z + Math.sin(ang) * r), scale(SODIUM, 2.2)); }
   }
   // Two cooling towers with lit plumes.
   for (const [x, z] of [[CX - 700, QUAY - 150], [CX - 590, QUAY - 230]]) {
@@ -961,7 +971,7 @@ const buildings = [];
     const g = new THREE.LatheGeometry(pts, 48);
     g.translate(x, 0, z);
     parts.push(g.toNonIndexed());
-    for (let k = 0; k < 4; k++) flare(new THREE.Vector3(x + (k - 1.5) * 14, 121, z + 25), scale(RED, 5), 120);
+    for (let k = 0; k < 4; k++) { const rp = new THREE.Vector3(x + (k - 1.5) * 14, 121, z + 25); if (k % 2 === 0) flare(rp, scale(RED, 5), 120); else pin(rp, scale(RED, 5)); }
     // A low spot washes the shell so it reads through the fog.
     addLight(new THREE.Vector3(x + 30, 15, z + 90), new THREE.Vector3(1, 0.6, 0.3), 3.5, 90, new THREE.Vector3(-0.3, 0.45, -1).normalize(), Math.cos(0.5));
     for (let k = 0; k < 8; k++) {
@@ -1007,7 +1017,7 @@ const buildings = [];
     for (const dx of [-20, 20]) for (const dz of [0, -22]) box(x + dx, 0, z + dz, 2.6, h, 2.6);
     box(x, h, z - 11, 46, 5, 28);
     box(x, h + 2, z + 34, 5, 3.5, 92);
-    for (let k = 0; k < 6; k++) flare(new THREE.Vector3(x, h + 1, z + 70 - k * 18), scale(WHITE, 3), 60);
+    for (let k = 0; k < 6; k++) pin(new THREE.Vector3(x, h + 1, z + 70 - k * 18), scale(WHITE, 3));
     addGlint(new THREE.Vector3(x, h + 1, z + 60), WHITE, 1.5, 0.18);
     tops.push(new THREE.Vector3(x, h + 8, z - 11));
   }
@@ -1024,7 +1034,7 @@ const buildings = [];
     if (i % 2 === 0) addLight(head, new THREE.Vector3(1, 0.72, 0.42), 2.5, 50, dir, Math.cos(0.6));
   }
   // Red blinkers on every tall top.
-  tops.forEach((t, i) => { flare(t, scale(RED, 7), 200); if (i % 2 === 0) addGlint(t, RED, 1.5, 0.15); });
+  tops.forEach((t, i) => { if (i % 2 === 0) flare(t, scale(RED, 7), 200); else pin(t, scale(RED, 7)); if (i % 2 === 0) addGlint(t, RED, 1.5, 0.15); });
   // Window fields: a few warm and cool sources stand in for lit facades.
   for (let i = 0; i < 14; i++) addGlint(new THREE.Vector3(CX + range(-950, 950), range(12, 40), QUAY - range(80, 260)), i % 3 ? SODIUM : FLUO, 1.0, 0.12);
 }
@@ -1054,6 +1064,14 @@ const search = (() => {
   return { aim, src };
 })();
 
+// Keep the train head orb and the 5 strongest static orbs.
+{
+  const keep = orbs.filter(o => !o.train).sort((a, b) => b.k * b.size - a.k * a.size).slice(0, 5);
+  const train = orbs.filter(o => o.train);
+  orbs.length = 0;
+  orbs.push(...train, ...keep);
+}
+
 // Bake static geometry into a few draw calls.
 if (parts.length) scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
 if (castParts.length) scene.add(new THREE.Mesh(mergeGeometries(castParts), precast));
@@ -1065,6 +1083,7 @@ if (glowParts.length) scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowM
   g.setAttribute('position', new THREE.Float32BufferAttribute(flares.pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(flares.col, 3));
   g.setAttribute('size', new THREE.Float32BufferAttribute(flares.size, 1));
+  g.setAttribute('aPin', new THREE.Float32BufferAttribute(flares.pin, 1));
   const p = new THREE.Points(g, flareMat); p.renderOrder = 3; p.frustumCulled = false; p.userData.live = true; scene.add(p);
   const h = new THREE.BufferGeometry();
   h.setAttribute('position', new THREE.Float32BufferAttribute(plumes.pos, 3));
@@ -1829,5 +1848,5 @@ const tune = {
 };
 /* ---------- end tune ---------- */
 
-return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, steer, release, lively, lower, post: { expo: 0.61, bloom: [1.68, 1.18, 0.8], orbK: 0.88, orbSize: 1.19, tint: '#150f09', vig: 0.01, vigIn: 0.35, grain: 0.094 } };
+return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, steer, release, lively, lower, post: { expo: 0.61, bloom: [0.9, 0.6, 1.6], orbK: 0.88, orbSize: 1.19, tint: '#150f09', vig: 0.01, vigIn: 0.35, grain: 0.094 } };
 }
