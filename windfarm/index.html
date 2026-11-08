@@ -880,13 +880,25 @@ const dofPass = new ShaderPass({
   uniforms: {
     tScene: { value: sceneRT.texture }, tDepth: { value: sceneRT.depthTexture },
     uNear: { value: 5 }, uFar: { value: 40000 }, uFocus: { value: 1700 }, uAperture: { value: 12 }, uRes: { value: new THREE.Vector2(1, 1) },
+    uHits: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0.1, 0)) },
   },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: `
 uniform sampler2D tScene, tDepth;
 uniform float uNear, uFar, uFocus, uAperture;
 uniform vec2 uRes;
+uniform vec4 uHits[8];
 varying vec2 vUv;
+// Rain strikes on the lens: x, y in uv, radius in heights, strength.
+float pulse(vec2 uv) {
+  float p = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 h = uHits[i];
+    vec2 d = (uv - h.xy) * vec2(uRes.x / uRes.y, 1.0);
+    p += h.w * exp(-dot(d, d) / (h.z * h.z));
+  }
+  return min(p, 1.0);
+}
 // Distance in metres from the depth buffer.
 float dist(vec2 uv) {
   float z = texture2D(tDepth, uv).r * 2.0 - 1.0;
@@ -894,9 +906,13 @@ float dist(vec2 uv) {
 }
 // The blur radius in pixels: zero at the focus, the full aperture at infinity.
 float coc(float d) { return min(uAperture * abs(1.0 - uFocus / max(d, 1.0)), uAperture * 1.6); }
+float P;
+// A strike swells the blur nearby, so the discs there open and pulse.
+float cocP(float d) { return coc(d) * (1.0 + 1.8 * P) + P * uAperture * 0.35; }
 void main() {
   vec3 c0 = texture2D(tScene, vUv).rgb;
-  float r = coc(dist(vUv));
+  P = pulse(vUv);
+  float r = cocP(dist(vUv));
   if (r < 0.6) { gl_FragColor = vec4(c0, 1.0); return; }
   // Interleaved gradient noise turns the disc per pixel.
   float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -907,12 +923,12 @@ void main() {
     vec2 uv = vUv + o;
     vec3 col = texture2D(tScene, uv).rgb;
     // A sharp object in front keeps its edge: a tap counts only if its own blur reaches here.
-    float reach = smoothstep(0.0, 1.0, coc(dist(uv)) - rk * r + 1.0);
+    float reach = smoothstep(0.0, 1.0, cocP(dist(uv)) - rk * r + 1.0);
     float hot = max(max(col.r, max(col.g, col.b)) - 0.25, 0.0);
-    float w = (1.0 + hot * hot * 30.0) * reach;
+    float w = (1.0 + hot * hot * 30.0 * (1.0 + P)) * reach;
     acc += col * w; wsum += w;
   }
-  gl_FragColor = vec4(acc / wsum, 1.0);
+  gl_FragColor = vec4(acc / wsum * (1.0 + 0.18 * P), 1.0);
 }`,
 }, 'tUnused');
 composer.addPass(dofPass);
@@ -1121,6 +1137,15 @@ function syncUniforms() {
   U.uRain.value = grade.uniforms.uRain.value;
   grade.uniforms.uTimeR.value = clock;
   U.uFlash.value = flash.k * (reduce ? 0.35 : 1);
+  // Each strike flares in 50 ms, then fades over about half a second.
+  const hv = dofPass.uniforms.uHits.value;
+  for (let i = 0; i < 8; i++) {
+    const h = hits[i];
+    if (!h) { hv[i].w = 0; continue; }
+    const t = clock - h.t0;
+    const env = t < 0.05 ? t / 0.05 : Math.exp(-(t - 0.05) / 0.5);
+    hv[i].set(h.x, h.y, h.R * (0.7 + 0.3 * Math.min(t / 0.3, 1)), h.s * env);
+  }
   setFog();
 }
 function draw() {
@@ -1190,6 +1215,10 @@ function tick(dt, now) {
   storm.k = clamp(storm.k + (storm.on ? dt / 7 : -dt / 5));
   // Lightning: bolts strike every few seconds once the storm is strong.
   if (storm.k > 0.45 && clock > flash.next) bolt();
+  // Rain strikes the lens more often as the storm builds.
+  const rainK = reduce ? 0 : smooth(0.25, 0.9, storm.k);
+  if (Math.random() < dt * rainK * 4) lensHit();
+  while (hits.length && clock - hits[0].t0 > 2.5) hits.shift();
   if (flash.t0 >= 0) {
     const t = clock - flash.t0;
     // A bolt flickers: a main stroke, then two weaker return strokes.
@@ -1343,6 +1372,23 @@ function thunder(delay, dist, pan) {
 /* ---------- gestures ---------- */
 // A front starts upwind, just behind the camera, and runs down the farm.
 const flash = { t0: -1, k: 0, amp: 1, next: 0 };
+// Raindrops that strike the lens in a storm.
+const hits = [];
+const hitV = new THREE.Vector3();
+function lensHit() {
+  if (hits.length >= 8) hits.shift();
+  let x = 0.08 + Math.random() * 0.84, y = 0.12 + Math.random() * 0.8;
+  // Most strikes land on a lamp, so its disc swells and pulses.
+  if (Math.random() < 0.7) {
+    const t = farm[Math.floor(Math.random() * farm.length)];
+    hitV.set(t.x, Math.random() < 0.5 ? 62 : 116, t.z).project(camera);
+    if (Math.abs(hitV.x) < 1 && Math.abs(hitV.y) < 1 && hitV.z < 1) {
+      x = hitV.x * 0.5 + 0.5 + (Math.random() - 0.5) * 0.04;
+      y = hitV.y * 0.5 + 0.5 + (Math.random() - 0.5) * 0.04;
+    }
+  }
+  hits.push({ x, y, t0: clock, s: 0.6 + Math.random() * 0.5, R: 0.06 + Math.random() * 0.1 });
+}
 // A bolt in front, somewhere over the farm; its thunder comes late for the distance.
 function bolt() {
   const az = (Math.random() - 0.5) * 0.9, el = 0.04 + Math.random() * 0.16;
