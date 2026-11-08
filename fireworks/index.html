@@ -365,8 +365,10 @@ function heightTexture() {
   t.needsUpdate = true;
   return t;
 }
-const land = new THREE.Mesh(landGeometry(), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FU, tHeight: { value: heightTexture() }, uHB: { value: new THREE.Vector4(HB.x0, HB.z0, 1 / HB.w, 1 / HB.d) } },
+// One uniform set serves the full land and its cheap mirror copy.
+const LU = { ...U, ...FU, tHeight: { value: heightTexture() }, uHB: { value: new THREE.Vector4(HB.x0, HB.z0, 1 / HB.w, 1 / HB.d) } };
+const landMat = mirror => new THREE.ShaderMaterial({
+  uniforms: LU, defines: mirror ? { MIRROR: 1 } : {},
   vertexShader: /* glsl */`attribute float aB; varying vec3 vP; varying vec3 vN; varying float vB;
   void main() { vB = aB; vN = normal; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying float vB; ${HEAD} ${FIRE_GLSL}
@@ -380,8 +382,8 @@ const land = new THREE.Mesh(landGeometry(), new THREE.ShaderMaterial({
   float shade(vec3 P, vec3 Lp) {
     vec3 d = Lp - P;
     float len = length(d), s = 1.0;
-    for (int k = 1; k <= 14; k++) {
-      float t = float(k) / 14.0;
+    for (int k = 1; k <= 10; k++) {
+      float t = float(k) / 10.0;
       t = t * t * 0.5;
       vec3 q = P + d * t;
       s = min(s, clamp((q.y - landY(q.xz)) / (t * len * 0.025 + 1.0), 0.0, 1.0));
@@ -404,18 +406,29 @@ const land = new THREE.Mesh(landGeometry(), new THREE.ShaderMaterial({
       float ndl = max(dot(N, L), 0.0);
       // Slopes that graze the light catch a bright rim.
       float rim = pow(1.0 - max(dot(N, V), 0.0), 2.0) * smoothstep(0.0, 0.4, ndl);
-      // The three brightest lights cast shadows over the ridges.
-      float sh = i < 3 && ndl > 0.0 ? shade(vP + N * 2.0, uL[i].xyz) : 1.0;
+      // The two brightest lights cast shadows over the ridges.
+      float sh = 1.0;
+      #ifndef MIRROR
+      if (i < 2 && ndl > 0.0 && uL[i].w > 0.05) sh = shade(vP + N * 2.0, uL[i].xyz);
+      #endif
       lit += uLC[i] * uL[i].w * (ndl + 0.8 * rim) * sh / (1.0 + d2 / 1.4e6);
     }
     // Faint sky light from above keeps the shapes readable.
     vec3 amb = uCool * 0.006 * (0.3 + 0.7 * N.y);
-    vec3 c = alb * (amb + lit * 1.7 + fireLit(vP, N) * 1.2);
+    // Campfires reach only the beach; the mirror skips them.
+    vec3 fl = vec3(0.0);
+    #ifndef MIRROR
+    if (vB < 300.0) fl = fireLit(vP, N) * 1.2;
+    #endif
+    vec3 c = alb * (amb + lit * 1.7 + fl);
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
   }`,
-}));
-land.layers.enable(LIGHT);
-scene.add(land);
+});
+// The main camera sees the full land; the mirror sees the cheap copy.
+const land = new THREE.Mesh(landGeometry(), landMat(false));
+const landMirror = new THREE.Mesh(land.geometry, landMat(true));
+landMirror.layers.set(LIGHT);
+scene.add(land, landMirror);
 
 // Light dots: string lights, lanterns, torches and a few homes up the hill.
 const dots = { pos: [], col: [], k: [] };
@@ -636,6 +649,126 @@ function climb(h, k) {
 }
 /* ---------- end K6 ---------- */
 
+/* ---------- smoke: lit puffs that drift away on the wind ---------- */
+// A ring buffer of billboard puffs; every burst light lights each puff.
+const SCAP = 640;
+const WIND = new THREE.Vector3(3.2, 0.5, -1.2);
+const smokeGeo = new THREE.InstancedBufferGeometry();
+smokeGeo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
+smokeGeo.setIndex([0, 1, 2, 0, 2, 3]);
+const sslot = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(SCAP * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  smokeGeo.setAttribute(name, a);
+  return a;
+};
+const sA = sslot('sA'), sB = sslot('sB'), sC = sslot('sC');
+smokeGeo.instanceCount = 0;
+let sHead = 0, sFrom = -1, sN = 0, smokeEnd = 0;
+const SU = { uSmokeK: { value: 1 }, uWind: { value: WIND }, uDrift: { value: reduced() ? 0.5 : 1 } };
+const smokeMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...SU },
+  transparent: true, depthWrite: false,
+  // Premultiplied smoke; the alpha channel stays the mirror's land mask.
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 sA, sB, sC;
+  uniform float uTime, uDrift;
+  uniform vec3 uWind;
+  varying vec2 vUv;
+  varying vec3 vLit;
+  varying float vA, vSeed, vAge;
+  ${HEAD}
+  void main() {
+    // sA: birth point, birth time. sB: push, start size. sC: growth, life, seed, density.
+    float age = uTime - sA.w, life = sC.y;
+    if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float ad = age * uDrift;
+    // The puff slows from the burst's push, then rides the wind.
+    vec3 c = sA.xyz + sB.xyz * (1.0 - exp(-ad * 1.5)) / 1.5 + uWind * ad;
+    float size = sB.w + sC.x * ad, ang = sC.z * 6.28 + ad * 0.05;
+    vec4 mv = viewMatrix * vec4(c, 1.0);
+    mv.xy += mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * position.xy * size;
+    gl_Position = projectionMatrix * mv;
+    vUv = position.xy; vSeed = sC.z; vAge = ad;
+    // Fade in over 0.6 s; thin out over the second half of the life.
+    vA = sC.w * smoothstep(0.0, 0.6, age) * (1.0 - smoothstep(life * 0.35, life, age));
+    // Each burst lights the puff; a light behind it scatters through brighter.
+    vec3 V = normalize(c - cameraPosition), L = vec3(0.0);
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 d = uL[i].xyz - c;
+      float d2 = dot(d, d), ph = 0.6 + 1.6 * pow(max(dot(V, d * inversesqrt(d2)), 0.0), 3.0);
+      L += uLC[i] * uL[i].w * ph / (1.0 + d2 / 28900.0);
+    }
+    vLit = (L * 0.7 + uCool * 0.004) * (1.0 - k2hazeAmount(c) * 0.7);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform float uSmokeK;
+  varying vec2 vUv;
+  varying vec3 vLit;
+  varying float vA, vSeed, vAge;
+  ${K2_NOISE}
+  void main() {
+    float r = length(vUv);
+    if (r > 1.0) discard;
+    // Three octaves of noise tear the puff into wisps that slowly churn.
+    vec2 p = vUv * 1.3 + vec2(vSeed * 17.0, vSeed * 9.0) + vec2(vAge * 0.03, -vAge * 0.02);
+    float n = k2noise(p * 2.0) * 0.55 + k2noise(p * 4.3 + 3.0) * 0.3 + k2noise(p * 9.1 + 7.0) * 0.15;
+    float d = smoothstep(1.0, 0.25, r) * smoothstep(0.3, 0.75, n) * vA * uSmokeK;
+    gl_FragColor = vec4(vLit * d, d * 0.55);
+  }`,
+});
+const smoke = new THREE.Mesh(smokeGeo, smokeMat);
+smoke.frustumCulled = false;
+// Smoke draws over the beach lights and under the stars.
+smoke.renderOrder = 1;
+stars.renderOrder = 2;
+smoke.layers.enable(LIGHT);
+scene.add(smoke);
+function writePuff(p0, t0, v0, size, grow, life, dens) {
+  const i = sHead;
+  sHead = (sHead + 1) % SCAP;
+  if (sFrom < 0) sFrom = i;
+  sN = Math.min(SCAP, sN + 1);
+  sA.setXYZW(i, p0.x, p0.y, p0.z, t0);
+  sB.setXYZW(i, v0.x, v0.y, v0.z, size);
+  sC.setXYZW(i, grow, life, rnd(), dens);
+  smokeGeo.instanceCount = Math.max(smokeGeo.instanceCount, i + 1);
+  smokeEnd = Math.max(smokeEnd, t0 + life);
+}
+function commitSmoke() {
+  if (sFrom < 0) return;
+  const a = sFrom, n = sN, run = Math.min(n, SCAP - a);
+  for (const at of [sA, sB, sC]) {
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
+  }
+  sFrom = -1; sN = 0;
+}
+const thick = () => opts.smoke === 'thick';
+// A burst leaves a ragged shell of puffs where its stars burned.
+function smokeBurst(pos, t0, cal, s) {
+  const n = Math.round((7 + 4 * cal) * (thick() ? 1.6 : 1)), R = 45 * cal * s, pp = new THREE.Vector3(), pv = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    sphereDir(i, n, pv);
+    pp.copy(pos).addScaledVector(pv, R * (0.2 + rnd() * 0.5));
+    writePuff(pp, t0 + 0.2 + rnd() * 0.6, pv.multiplyScalar(R * 0.6), R * (0.35 + rnd() * 0.25), 2.5 + rnd() * 2, 10 + rnd() * 4, 0.55 + rnd() * 0.35);
+  }
+}
+// The climb leaves a thin trail of smoke.
+function smokeTrail(base, up, k, t0, T) {
+  const pp = new THREE.Vector3(), zero = new THREE.Vector3();
+  for (let i = 0; i < 8; i++) {
+    const ts = T * (0.08 + 0.11 * i);
+    posAt(base, up, k, ts, pp);
+    writePuff(pp, t0 + ts, zero, 3 + rnd() * 2, 1.6, 6 + rnd() * 2, 0.3);
+  }
+}
+/* ---------- end smoke ---------- */
+
 /* ---------- water ---------- */
 // Mirror: a camera under y = 0 sees only the LIGHT layer.
 const mirrorCam = new THREE.PerspectiveCamera();
@@ -711,7 +844,8 @@ function renderMirror() {
 function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
-  bloom.setSize = (w, h) => { const d = rung >= 2 ? 2 : 1; full(Math.max(1, w / d), Math.max(1, h / d)); };
+  // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
+  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
   // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
   // A sigma of radius / 2.5 gives each layer a round falloff.
   for (const m of bloom.separableBlurMaterials) {
@@ -1038,7 +1172,7 @@ function updateLights() {
 /* ---------- launch ---------- */
 const saved = k => { try { return localStorage.getItem(`stimming.fireworks.${k}`); } catch { return null; } };
 const save = (k, val) => { try { localStorage.setItem(`stimming.fireworks.${k}`, String(val)); } catch { /* storage is optional */ } };
-const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5 };
+const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5, smoke: saved('smoke') === 'thick' ? 'thick' : 'thin' };
 let simT = 0, horizonNdc = -0.28;
 // The slider maps 0 to 1 onto 300 to 1,500 m; far shells are larger.
 const shellDist = () => 300 + 1200 * opts.dist;
@@ -1057,20 +1191,40 @@ function burstPoint(ndc, cal, out = new THREE.Vector3()) {
   const pt = at(Math.max(ndc.y, horizonNdc + 0.02));
   return out.set(pt.x, lo + (hi - lo) * u, -d);
 }
+// Comet styles; dark comets climb unseen and carry bigger shells.
+const COMETS = ['gold', 'gold', 'glitter', 'colour', 'dark', 'spin', 'crackle'];
 // A comet climbs from the water and the shell bursts at its apex.
-function fire(pos, t0, type, cal) {
+function fire(pos, t0, type, cal, style = pick(COMETS)) {
   // Strong drag: the comet leaves fast and slows near the apex, about 3 s up.
   const s = shellScale(), k = 1.2;
-  const { v0, T } = climb(pos.y - 1, k), base = new THREE.Vector3(pos.x, 1, pos.z), up = new THREE.Vector3(0, v0, 0);
-  writeStar(base, t0, up, k, GOLD, T, 0.35, 1.2, COMET, 0.5);
-  // The comet sheds a few sparks as it climbs.
-  for (let i = 0; i < 10; i++) {
-    const ts = T * (0.05 + 0.9 * rnd());
-    posAt(base, up, k, ts, p);
-    writeStar(p, t0 + ts, q.set((rnd() - 0.5) * 8, (rnd() - 0.3) * 6, (rnd() - 0.5) * 8), 1.5, GOLD, 0.4 + rnd() * 0.4, 0.1, 0.8, COMET, 0.35);
+  if (style === 'dark') cal *= 1.3;
+  const { v0, T } = climb(pos.y - 1, k);
+  // The mortar leans up to about 9 degrees; drag eases the drift too.
+  const dx = (rnd() - 0.5) * 0.3 * pos.y, vx = (dx * k) / (1 - Math.exp(-k * T));
+  const base = new THREE.Vector3(pos.x - dx, 1, pos.z), up = new THREE.Vector3(vx, v0, 0);
+  const col = pick(COLOURS);
+  const spark = (n, ramp, kind, gain, life, spread) => {
+    for (let i = 0; i < n; i++) {
+      const ts = T * (0.05 + 0.9 * rnd());
+      posAt(base, up, k, ts, p);
+      writeStar(p, t0 + ts, q.set((rnd() - 0.5) * spread, (rnd() - 0.3) * spread * 0.7, (rnd() - 0.5) * spread), 1.5, ramp, life * (0.6 + rnd() * 0.8), 0.1, 0.8, kind, gain);
+    }
+  };
+  // Bold jets: long trails, bright heads, a spray of sparks shed behind.
+  if (style === 'gold') { writeStar(base, t0, up, k, GOLD, T, 0.7, 2.0, COMET, 1.0); spark(40, GOLD, COMET, 0.45, 0.8, 10); }
+  if (style === 'glitter') { writeStar(base, t0, up, k, WHITE, T, 0.45, 1.6, COMET, 0.8); spark(80, WHITE, GLITTER, 0.7, 1.1, 12); }
+  if (style === 'colour') { writeStar(base, t0, up, k, col, T, 0.9, 2.2, COMET, 1.2); spark(30, col, COMET, 0.5, 0.6, 8); }
+  if (style === 'dark') writeStar(base, t0, up, k, ORANGE, T, 0.2, 1.0, COMET, 0.08);
+  if (style === 'spin') { writeStar(base, t0, up, k, pick([WHITE, GOLD, AQUA]), T, 0.6, 2.0, FISH, 1.0); spark(20, GOLD, COMET, 0.4, 0.6, 8); }
+  if (style === 'crackle') {
+    writeStar(base, t0, up, k, GOLD, T, 0.6, 1.8, COMET, 0.8);
+    spark(36, WHITE, 0, 1.4, 0.1, 16);
   }
+  smokeTrail(base, up, k, t0, T);
   const [ramp, gain] = SHELLS[type](pos, t0 + T, cal, s);
-  addLight(pos, ramp, t0 + T, gain * lightK(cal));
+  // A dark comet ends in a huge flash.
+  addLight(pos, ramp, t0 + T, gain * lightK(cal) * (style === 'dark' ? 1.7 : 1));
+  smokeBurst(pos, t0 + T, cal, s);
 }
 function launch(ndc, cal) {
   const type = opts.shell === 'mix' ? pick(MIX) : opts.shell;
@@ -1078,10 +1232,11 @@ function launch(ndc, cal) {
     // Sixteen small shells fan out across the sky, 0.11 s apart.
     for (let i = 0; i < 16; i++) {
       const at = new THREE.Vector2(ndc.x + (i / 15 - 0.5) * 0.9, ndc.y - 0.12 + rnd() * 0.24);
-      fire(burstPoint(at, 0.7), simT + i * 0.11, pick(['peony', 'ring', 'strobe', 'crackle', 'pistil']), 0.7 * cal);
+      fire(burstPoint(at, 0.7), simT + i * 0.11, pick(['peony', 'ring', 'strobe', 'crackle', 'pistil']), 0.7 * cal, pick(['gold', 'colour', 'glitter']));
     }
   } else fire(burstPoint(ndc, cal), simT, type, cal);
   commitStars();
+  commitSmoke();
   wake();
 }
 function orbList() {
@@ -1111,8 +1266,8 @@ function resize() {
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
-  // The mirror runs at full size on High, three quarters on Standard.
-  const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.75;
+  // The mirror runs at full size on High, 0.6 on Standard.
+  const m = rung >= 2 ? 0.4 : quality() === 'high' ? 1 : 0.6;
   mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
@@ -1134,7 +1289,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1;
-const busy = () => !!press || simT < lastDeath || lights.length > 0;
+const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -1189,7 +1344,7 @@ whenVisible(stage, vis => {
 });
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
-onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; wake(); });
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; SU.uDrift.value = on ? 0.5 : 1; wake(); });
 
 /* Pointer: press grows a seed light; release launches; hold sets the calibre. */
 let press = null;
@@ -1259,7 +1414,8 @@ shellBox.addEventListener('keydown', e => {
 const distEl = document.getElementById('dist');
 distEl.value = String(opts.dist);
 distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); });
-choices(document.getElementById('smoke'), () => {});
+choices(document.getElementById('smoke'), val => { opts.smoke = val; save('smoke', val); SU.uSmokeK.value = val === 'thick' ? 1.5 : 1.0; }).set(opts.smoke);
+SU.uSmokeK.value = opts.smoke === 'thick' ? 1.5 : 1.0;
 choices(document.getElementById('water'), v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); });
 
 /* ---------- ready ---------- */

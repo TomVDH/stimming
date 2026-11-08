@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T11:03:28Z
+updated_at: 2026-11-08T11:09:07Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -39,3 +39,10 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Reflections: moving swell, chop and ripple; nine-tap streaks that lengthen on far water; crest glints near; two shells in one frame keep both uploads
 - [x] Wide shell variety on a stepper: Mix and 17 shells (Chrysanthemum, Palm, Kamuro, Saturn, Pistil, Crackle, Fish, Heart, Galaxy, Cascade, Barrage, Supernova and the five first)
 - [x] Square bloom: the stock blur has sigma = radius (a near box); weights now use sigma = radius / 2.5
+
+## Tom's batch 2, 2026-11-08
+
+- [x] Performance: cheap land copy in the mirror, shadows from 2 lights, fires only near the beach, bloom 0.7 and mirror 0.6 on Standard
+- [x] Comets: six styles (gold, glitter, colour, dark, spin, crackle), bold trails and spark sprays, a lean up to about 9 degrees; dark comets carry bigger shells and a huge flash
+- [x] Smoke: lit puffs that drift on the wind, layered; later bursts light earlier smoke; Thin and Thick
+- [ ] fps on a real device (the pane stays hidden here)
