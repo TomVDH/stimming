@@ -5,10 +5,10 @@ status: completed
 type: feature
 priority: normal
 created_at: 2026-11-04T14:00:00Z
-updated_at: 2026-11-08T11:36:55Z
+updated_at: 2026-11-08T11:38:55Z
 ---
 
-Build Star trails from docs/toy-dev-plan.md, section 1. It sits on the main shelf as beta. It follows the Look rule: one horizon line, no props.
+Build Star trails from docs/toy-dev-plan.md, section 1. It sits on the main shelf, signed off. It follows the Look rule: one horizon line, no props.
 
 - [x] Plate: K1 accumulation and decay, soft line segments with ramped joins
 - [x] Sky: gradient, airglow, a turning Milky Way, live twinkling stars, ridge, grain
