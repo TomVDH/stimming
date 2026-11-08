@@ -135,9 +135,11 @@ vec3 towns(vec2 w, out float ang2, out float mixW) {
     float sz = pow(hash12(c + 11.3), 2.6) * uTowns;
     float r = 1.0 + 6.5 * sz;
     vec2 q = w - site;
-    float v = (0.3 + sz) * exp(-dot(q, q) / (r * r));
+    // Each field falls to zero inside 15 km, so the 3 by 3 lookup holds it whole.
+    float win = smoothstep(15.0, 8.0, length(q));
+    float v = (0.3 + sz) * exp(-dot(q, q) / (r * r)) * win;
     T += v;
-    wide += (0.15 + sz) * sz * exp(-dot(q, q) / (r * r * 6.0));
+    wide += (0.15 + sz) * sz * exp(-dot(q, q) / (r * r * 4.0)) * win;
     float a = hash12(c + 2.7) * 3.1416;
     if (v > best) { second = best; ang2 = ang; best = v; ang = a; }
     else if (v > second) { second = v; ang2 = a; }
@@ -162,26 +164,30 @@ float lamps(vec2 w, float s, float p, float fw, float seed, out float hue) {
   return mix(p * 0.04, b, smoothstep(0.9, 0.25, fw / s));
 }
 
-// Street lamps on a block grid turned to the town's own angle.
-// s is the block size in km; lamps stand every quarter block along each street.
-// Some streets are avenues: brighter and fully lit.
+// Town lights: a few avenues as lines of lamps, turned to the town's own angle,
+// and scattered house and yard lights between them, clustered by noise.
 float streets(vec2 w, float ang, float s, float p, float fw, out float hue) {
   vec2 cs = vec2(cos(ang), sin(ang));
   vec2 q = vec2(dot(w, cs), dot(w, vec2(-cs.y, cs.x))) / s;
   hue = hash12(floor(q / 9.0) + 9.3);
-  float r = max(0.035, fw / s * 0.7);
+  float r = clamp(fw / s * 0.7, 0.035, 0.07);
   float b = 0.0;
   for (int k = 0; k < 2; k++) {
     vec2 a = k == 0 ? q : q.yx;
     float line = floor(a.y + 0.5), lamp = floor(a.x * 4.0 + 0.5);
+    // Only some streets are lit avenues; each runs a stretch, then stops.
+    float avenue = step(0.86, hash12(vec2(line, float(k) + 5.1))) * step(0.35, vnoise(vec2(a.x / 7.0, line + float(k) * 3.0)));
     vec2 dd = vec2(a.x - lamp / 4.0, a.y - line);
-    float avenue = step(0.82, hash12(vec2(line, float(k) + 5.1)));
-    float on = step(hash12(vec2(lamp, line) + float(k) * 13.7), p * (1.0 + avenue));
-    float rr = r * (1.0 + avenue * 0.5);
-    b += on * (0.6 + 0.7 * avenue) * 0.0035 / (rr * rr) * exp(-dot(dd, dd) / (rr * rr));
+    float on = avenue * step(hash12(vec2(lamp, line) + float(k) * 13.7), 0.85);
+    b += on * 0.004 / (r * r) * exp(-dot(dd, dd) / (r * r));
   }
+  // Houses: one jittered light per small cell, lit in clusters.
+  vec2 hq = w / 0.05, id = floor(hq), f = fract(hq) - 0.3 - 0.4 * hash22(id + 2.3);
+  float hr = max(0.12, fw / 0.05 * 0.6);
+  float lit = step(hash12(id + 7.7), p * (0.35 + 0.9 * vnoise(w / 0.4)));
+  b += lit * 0.0016 / (hr * hr) * exp(-dot(f, f) / (hr * hr));
   // Far away, lamps blend into their average glow.
-  return mix(p * 0.07, b, smoothstep(0.35, 0.08, fw / s));
+  return mix(p * 0.07, b, smoothstep(0.3, 0.06, fw / s));
 }
 vec3 ground(vec2 w, float fw) {
   vec3 sodium = vec3(1.0, 0.5, 0.16), led = vec3(0.8, 0.88, 1.0);
@@ -251,9 +257,12 @@ vec4 cn(vec3 p, float tile, float lod) {
 }
 // The mip level that matches one pixel's footprint at distance t.
 float lodAt(float t, float tile) { return clamp(log2(t / gFocal1 / (tile / 64.0)) + 0.5, 0.0, 6.0); }
-// Cover on the map from two flat slices of the volume, about 0.2 to 0.8.
+// Cover on the map from two slices of the volume, about 0.2 to 0.8.
+// The slices turn at odd angles and odd scales, so the pattern never repeats.
 float coverAt(vec2 w, float sc, float z) {
-  return textureLod(uNoise, vec3(w / sc, z), 0.0).r * 0.65 + textureLod(uNoise, vec3(w / (sc * 0.37), z + 0.31), 0.0).r * 0.35;
+  vec2 a = mat2(0.825, -0.565, 0.565, 0.825) * w / sc;
+  vec2 b = mat2(-0.32, -0.947, 0.947, -0.32) * w / (sc * 0.389);
+  return textureLod(uNoise, vec3(a, z), 0.0).r * 0.65 + textureLod(uNoise, vec3(b, z + 0.31), 0.0).r * 0.35;
 }
 // Two Henyey-Greenstein lobes: a strong forward one and a soft back one.
 float hg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
@@ -265,7 +274,7 @@ const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
 // fine adds the Worley erosion that frays the edges.
 float deckDens(vec3 p, float lod, bool fine) {
   vec2 w = p.xz + vec2(uTime * 0.012, 0.0);
-  float c = smoothstep(uCover - 0.1, uCover + 0.14, fbm(mat2(0.8, -0.6, 0.6, 0.8) * w / 26.0, 3) * 1.1 - 0.03);
+  float c = smoothstep(uCover - 0.1, uCover + 0.14, coverAt(w, 70.0, 0.13));
   if (c <= 0.0) return 0.0;
   float base = 1.55, top = base + 0.7 + 1.5 * c;
   float hgt = smoothstep(base, base + 0.35, p.y) * smoothstep(top, top - 0.5 - 0.6 * c, p.y);
@@ -339,7 +348,7 @@ vec4 deck(vec3 d) {
       S += uAmb * 0.026 * (0.3 + 0.7 * h01);
       // Streets light the base; the cloud filters that light as it rises.
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
-      S += vec3(1.0, 0.5, 0.2) * town * 0.022 * exp(-SIG * 0.5 * max(p.y - 1.55, 0.0));
+      S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
       S += flashAt(w, 1.0) * 0.6 * (0.4 + 0.6 * h01);
       float a = 1.0 - exp(-SIG * dn * ds);
       col += Tc * S * a;
@@ -366,7 +375,7 @@ vec4 deck(vec3 d) {
 /* The mid layer: thin altocumulus at 5.2 to 6.1 km, in cells and rolls. */
 float midDens(vec3 p, float lod) {
   vec2 w = p.xz + vec2(uTime * 0.02, 0.0);
-  float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, fbm(w / 21.0 + 50.0, 3) * 1.1 - 0.03) * step(0.01, uMid);
+  float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, coverAt(w, 55.0, 0.71)) * step(0.01, uMid);
   if (c <= 0.0) return 0.0;
   float hgt = smoothstep(5.2, 5.45, p.y) * smoothstep(6.1, 5.75, p.y);
   vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 3.2, lod);
