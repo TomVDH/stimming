@@ -683,9 +683,103 @@ turbines.geometry.setAttribute('aPitch', pitchAttr);
 }
 turbines.frustumCulled = false;
 scene.add(turbines);
+/* ---------- fog wakes ---------- */
+// In moderate wind each rotor sheds three helices of condensed fog downwind.
+// Each helix is a soft band; it widens, breaks up and fades as it drifts away.
+const WAKE_L = 700, WAKE_SEG = 120;
+const WAKE_VS = FOG + `
+attribute vec2 aUv;
+attribute float aHelix;
+attribute vec3 aBase;
+attribute float aSpin;
+attribute float aOn;
+uniform float uYaw, uTime;
+varying vec2 vUv2;
+varying float vK;
+varying vec3 vL;
+varying float vRed;
+vec3 yaw(vec3 v) { float c = cos(uYaw), s = sin(uYaw); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+void main() {
+  float s = aUv.x, w = aUv.y;
+  // The wake grows wider downwind; three turns span its length.
+  float r = 78.0 * (1.0 + 0.55 * s);
+  float th = aSpin + aHelix * 2.0943951 - s * 6.2832 * 3.0;
+  vec3 p = vec3(r * cos(th), 112.0 + r * sin(th) * (1.0 - 0.25 * s), -12.0 - s * ${WAKE_L}.0);
+  // The band spans along the axis, so it reads as a coil from any side.
+  p.z += (w - 0.5) * (10.0 + 30.0 * s);
+  // It sags a little and drifts with the fog.
+  p.y -= s * s * 18.0;
+  vec3 wp = aBase + yaw(p);
+  vec4 mv = viewMatrix * vec4(wp, 1.0);
+  gl_Position = projectionMatrix * mv;
+  vec3 d = normalize(wp - cameraPosition);
+  vec4 f = fogMarch(cameraPosition, d, length(wp - cameraPosition), 0.5);
+  vK = aOn * f.a;
+  vL = fogLight(d);
+  // Near the hub the coil passes the lamp and takes its red.
+  vRed = exp(-s * 10.0);
+  vUv2 = vec2(s, w);
+}`;
+const WAKE_FS = FOG + `
+uniform float uTime, uWakes;
+uniform vec3 uRed;
+uniform float uBlink;
+varying vec2 vUv2;
+varying float vK;
+varying vec3 vL;
+varying float vRed;
+void main() {
+  float s = vUv2.x, w = vUv2.y;
+  // Soft across the band, faded in near the rotor and out downwind.
+  float across = smoothstep(0.0, 0.35, w) * smoothstep(1.0, 0.65, w);
+  float along = smoothstep(0.0, 0.06, s) * (1.0 - smoothstep(0.35, 1.0, s));
+  // The coil breaks into puffs that drift downwind.
+  float n = fbm3(vec2(s * 22.0 - uTime * 0.6, w * 3.0 + s * 4.0));
+  float puff = smoothstep(0.42, 0.8, n) * (0.6 + 0.4 * fbm3(vec2(s * 5.0 + 3.0, w + uTime * 0.1)));
+  float a = across * along * puff * vK * uWakes;
+  if (a < 0.002) discard;
+  vec3 c = vL * 2.6 + uRed * vRed * 0.15 * (0.4 + 0.6 * uBlink);
+  gl_FragColor = vec4(c * a, 1.0);
+}`;
+const wakes = (() => {
+  // One helix is a strip of quads; three helices make one wake.
+  const P = [], UV = [], HX = [], I = [];
+  for (let h = 0; h < 3; h++) {
+    const o = P.length / 3;
+    for (let i = 0; i <= WAKE_SEG; i++) for (let j = 0; j < 2; j++) { P.push(0, 0, 0); UV.push(i / WAKE_SEG, j); HX.push(h); }
+    for (let i = 0; i < WAKE_SEG; i++) { const a = o + i * 2; I.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+  }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('aUv', new THREE.Float32BufferAttribute(UV, 2));
+  g.setAttribute('aHelix', new THREE.Float32BufferAttribute(HX, 1));
+  g.setIndex(I);
+  g.instanceCount = farm.length;
+  g.setAttribute('aBase', new THREE.InstancedBufferAttribute(new Float32Array(farm.flatMap(t => [t.x, 0, t.z])), 3));
+  const spin = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1), on = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1);
+  spin.setUsage(THREE.DynamicDrawUsage); on.setUsage(THREE.DynamicDrawUsage);
+  g.setAttribute('aSpin', spin); g.setAttribute('aOn', on);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, uYaw: { value: YAW }, uWakes: { value: 0 } }, vertexShader: WAKE_VS, fragmentShader: WAKE_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  }));
+  m.frustumCulled = false; m.renderOrder = 3;
+  scene.add(m);
+  return { m, spin, on };
+})();
+
 function pushRotors() {
-  farm.forEach((t, i) => { angAttr.array[i] = t.ang; pitchAttr.array[i] = t.pitch; });
+  farm.forEach((t, i) => {
+    angAttr.array[i] = t.ang; pitchAttr.array[i] = t.pitch;
+    // The coil turns with its rotor and fades as the rotor slows or stops.
+    wakes.spin.array[i] = t.ang;
+    wakes.on.array[i] = clamp(t.omega / OMAX) * (t.feathered ? 0 : 1);
+  });
   angAttr.needsUpdate = true; pitchAttr.needsUpdate = true;
+  wakes.spin.needsUpdate = true; wakes.on.needsUpdate = true;
+  // Wakes form in moderate wind only, in fog; strong wind tears them apart.
+  const w = windNow();
+  wakes.m.material.uniforms.uWakes.value = 0.7 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.6 : 1);
 }
 
 const lightGeo = lightGeometry();
