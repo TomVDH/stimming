@@ -665,9 +665,9 @@ function shuffle() {
     const h = sea.head;
     C.push({ kind: 1, pos: [Math.sin(h) * along, Math.cos(h) * along], a: rnd(30, 50), b: rnd(20, 30), orient: Math.random() * PI, str: 0.9, str0: 0.9, vel: [0, 0], depth: rnd(25, 55), life: rnd(120, 180), id: Math.random() * 99 });
   }
-  marks.length = 0; btrSel = null; bCursor = -1; dCursor = -1;
+  marks.length = 0; tgt = null; bCursor = -1; dCursor = -1;
   sea.contacts = C;
-  tracks.length = 0; later.length = 0; strobe.a = 0;
+  heard.length = 0; later.length = 0; strobe.a = 0;
   sea.oddNext = 2 + Math.floor(Math.random() * 4);
   song.bout = false; song.boutT = rnd(2, 8);
   readouts.length = 0;
@@ -828,7 +828,9 @@ function refreshFans() {
 
 /* ---------- the bearing-time rows ---------- */
 const btrRow = new Float32Array(NBB), btrB = new Uint8Array(NBB);
-let bHead = 0, bClock = 0, bFrac = 0, btrSel = null, bCursor = -1;
+let bHead = 0, bClock = 0, bFrac = 0, bCursor = -1;
+// One locked contact links all three displays.
+let tgt = null;
 function btrAdd(brg, amp, width) {
   const c = wrapA(brg) / TAU * NBB, w = width / TAU * NBB;
   for (let i = Math.floor(c - w * 3); i <= Math.ceil(c + w * 3); i++) {
@@ -850,6 +852,14 @@ function makeBtrRow(tt) {
   }
   const ka = tt - knockAt;
   if (ka >= 0 && ka < 0.3) for (let i = 0; i < NBB; i++) btrRow[i] += 0.9 * (1 - ka / 0.3);
+  // A ping flares on its bearing; an all-round ping lights the whole row.
+  for (const ev of heard) {
+    const age = tt - ev.at;
+    if (age < 0 || age > 0.6) continue;
+    const k = ev.amp * (1 - age / 0.6);
+    if (ev.brg == null) for (let i = 0; i < NBB; i++) btrRow[i] += 0.5 * k;
+    else btrAdd(ev.brg, 1.6 * k, 0.03);
+  }
   for (let i = 0; i < NBB; i++) btrB[i] = Math.min(255, btrRow[i] * 0.9 * 255);
   bHead = (bHead + 1) % BROW;
   gl.bindTexture(gl.TEXTURE_2D, btrTex);
@@ -995,6 +1005,14 @@ function makeRow(tt) {
       for (let h = 1; h <= 3; h++) addLine(g * h, a * 0.9 / h, 1.2);
     }
   }
+  // A ping is a short tone with a faint broadband edge.
+  for (const ev of heard) {
+    const age = tt - ev.at;
+    if (age < 0 || age > 0.9) continue;
+    addLine(ev.f, ev.amp * 1.6 * Math.exp(-age / 0.3), 1.4);
+    const edge = Math.exp(-age / 0.05) * 0.6 * ev.amp;
+    if (edge > 0.02) for (let i = 0; i < NBIN; i++) rowF[i] += edge * Math.random();
+  }
   // A hull knock is broadband for an instant, then the hull rings.
   const ka = tt - knockAt;
   if (ka >= 0 && ka < 2) {
@@ -1079,14 +1097,14 @@ function buildVoices() {
 }
 // Continuous voices follow the shared model each frame.
 // The passive displays hear one contact at a time.
-// A drag hears what is under the cursor; otherwise the selection plays.
+// A drag hears what is under the cursor; otherwise the target plays.
 function listenTo() {
-  if (opts.mode === 'btr') {
-    const under = bCursor >= 0 ? traceAt(bCursor) : null;
-    return pt.drag ? under : btrSel || under;
-  }
-  if (opts.mode === 'sono') return cursorF >= 0 ? identify(cursorF)?.[2] || null : null;
-  return null;
+  const drag = pt.down && pt.drag;
+  let under = null;
+  if (opts.mode === 'btr') under = bCursor >= 0 ? traceAt(bCursor) : null;
+  else if (opts.mode === 'sono') under = cursorF >= 0 ? identify(cursorF)?.[2] || null : null;
+  else return null;
+  return drag ? under : tgt || under;
 }
 // The loudest trace within six degrees of a bearing.
 function traceAt(b) {
@@ -1179,11 +1197,12 @@ function ping(brg = null, power = 0) {
     if (e.c.kind === 6 && !e.c.alerted) { e.c.alerted = 'soon'; later.push({ at: clock + e.at + 1.1, fn: () => auntieWakes(e.c) }); }
   }
   if (power > 0) say(`POWER PING   ${'▮'.repeat(1 + Math.round(power * 4))}`);
+  // A beam ping is higher and shorter; a power ping is lower and louder.
+  const rate = omni ? 1 - 0.18 * power : 1.32;
+  hear(omni ? null : brg, 1480 * rate, 1 + power);
   const v = voices();
   if (v) {
     const now = T.now() + 0.02;
-    // A beam ping is higher and shorter; a power ping is lower and louder.
-    const rate = omni ? 1 - 0.18 * power : 1.32;
     if (!playSample(v, { rate, gain: (omni ? 0.85 : 0.7) * (1 + 0.4 * power), at: now, dur: omni ? 6 : 3.2 })) {
       const f = 1480 * rate;
       v.ping.triggerAttackRelease(f, 0.5, now);
@@ -1235,6 +1254,7 @@ function counterPing(c) {
   c.alerted = true;
   const b = Math.atan2(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
   strobe.b = b; strobe.a = 1;
+  hear(b, 1150, 1.4);
   say(`ВНИМАНИЕ!   ОБЛУЧЕНИЕ   ${pad3(wrapA(b) / D2R)}`, true);
   say(`WARNING   ACTIVE SONAR   BRG ${pad3(wrapA(b) / D2R)}`, true);
   // It turns away, runs and goes quiet.
@@ -1255,6 +1275,7 @@ function auntieWakes(c) {
   c.alerted = true;
   const b = bearingTo(c);
   strobe.b = b; strobe.a = 1;
+  hear(b, 740, 2);
   say('ВНИМАНИЕ!   «СВАРЛИВАЯ ТЁТУШКА»', true);
   say(`CRANKY AUNTIE   SUPERWEAPON CLASS   BRG ${pad3(wrapA(b) / D2R)}`, true);
   later.push({ at: clock + 0.5, fn: () => { if (!reduce) powerT0 = clock - 0.9 * 0.3; } });
@@ -1282,14 +1303,16 @@ function chargeSound(on) {
 }
 const chargeLevel = () => clamp((clock - charge.t0) / 1.6, 0.2, 1);
 
-/* ---------- tracks ---------- */
-const tracks = [];
+/* ---------- the tgt ---------- */
 function toScreen(c) {
   const R = rangeM(), x = (c.pos[0] - sea.own[0]) / R * scope.rad, y = (c.pos[1] - sea.own[1]) / R * scope.rad;
   return Math.hypot(x, y) < scope.rad ? [scope.cx + x, scope.cy + y] : null;
 }
-// Only a contact the sonar has heard can be tracked.
-function toggleTrack(x, y) {
+// What a display point shows: a contact on the scope, a trace or a line.
+function pickAt(x, y) {
+  if (opts.mode === 'btr') return traceAt(clamp((x - box.x0) / (box.x1 - box.x0)) * TAU);
+  if (opts.mode === 'sono') return identify(clamp((x - box.x0) / (box.x1 - box.x0)) * spanHz())?.[2] || null;
+  // The scope only offers contacts that a ping has found.
   let best = null, bd = 30 * dpr;
   for (const c of sea.contacts) {
     if (!c.seen) continue;
@@ -1298,20 +1321,25 @@ function toggleTrack(x, y) {
     const d = Math.hypot(p[0] - x, p[1] - y);
     if (d < bd) { bd = d; best = c; }
   }
-  if (!best) return false;
-  const i = tracks.findIndex(t => t.c === best);
-  press('track');
-  if (i >= 0) { say(`TRACK T${tracks[i].n}   DROPPED`); tracks.splice(i, 1); }
-  else {
-    const n = [1, 2, 3, 4, 5].find(k => !tracks.some(t => t.n === k));
-    if (!n) return true;
-    tracks.push({ c: best, n });
-    say(`TRACK T${n}   ${kindOf(best)}`);
-  }
+  return best;
+}
+// The name a display gives the target.
+const tgtName = c => (c.ton || c.kind === 2 || c.kind === 7 ? passName(c) : kindOf(c));
+// A lock on the target drops it; a lock on another contact moves to it.
+function lockTarget(c) {
+  if (!c) return false;
+  press('lock');
+  tgt = tgt === c ? null : c;
+  say(tgt ? `TARGET   ${pad3(wrapA(bearingTo(c)) / D2R)}   ${tgtName(c)}` : 'TARGET   DROPPED');
   hudDirty = true;
   wake();
   return true;
 }
+
+/* ---------- heard events ---------- */
+// Pings and enemy pings mark every display; brg null means all round.
+const heard = [];
+const hear = (brg, f, amp) => { heard.push({ at: clock, brg, f, amp }); while (heard.length > 8) heard.shift(); };
 
 /* ---------- boot ---------- */
 // The console boots in Russian: self-tests, then a loading bar.
@@ -1437,16 +1465,16 @@ const press = k => { keyLit[k] = clock; hudDirty = true; };
 function keyList() {
   const touch = matchMedia('(pointer: coarse)').matches;
   if (opts.mode === 'active') return touch
-    ? [['TAP', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['DRAG', 'STEER', 'steer'], ['2× TAP', 'TRACK', 'track']]
-    : [['SPACE', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['← →', 'STEER', 'steer'], ['2× CLICK', 'TRACK', 'track']];
+    ? [['TAP', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['DRAG', 'STEER', 'steer'], ['2× TAP', 'LOCK', 'lock']]
+    : [['SPACE', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['← →', 'STEER', 'steer'], ['2× CLICK', 'LOCK', 'lock']];
   if (opts.mode === 'btr') return touch
-    ? [['TAP', 'SELECT', 'select'], ['DRAG', 'BEARING', 'tune']]
-    : [['CLICK', 'SELECT', 'select'], ['DRAG', 'BEARING', 'tune'], ['SPACE', 'KNOCK', 'knock']];
+    ? [['TAP', 'KNOCK', 'knock'], ['DRAG', 'BEARING', 'tune'], ['2× TAP', 'LOCK', 'lock']]
+    : [['CLICK', 'KNOCK', 'knock'], ['DRAG', 'BEARING', 'tune'], ['2× CLICK', 'LOCK', 'lock']];
   if (opts.mode === 'sounder') return touch
     ? [['TAP', 'MARK', 'mark'], ['DRAG', 'DEPTH', 'tune']]
     : [['SPACE', 'MARK', 'mark'], ['DRAG', 'DEPTH', 'tune'], ['↑ ↓', 'DEPTH', 'tune']];
   return touch
-    ? [['TAP', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune']]
+    ? [['TAP', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune'], ['2× TAP', 'LOCK', 'lock']]
     : [['SPACE', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune'], ['← →', 'CURSOR', 'tune']];
 }
 function drawKeys(c) {
@@ -1526,14 +1554,13 @@ function drawBtr(c, Y, top) {
   c.fillStyle = grey(0.5); c.textAlign = 'center';
   c.fillText('BAFFLES', a0 < a1 ? (a0 + a1) / 2 : (a1 - x0 > x1 - a0 ? (x0 + a1) / 2 : (a0 + x1) / 2), Y(y1) + 13 * dpr);
   // A selected trace keeps a caret, a faint line and its name.
-  if (btrSel && !sea.contacts.includes(btrSel)) btrSel = null;
-  if (btrSel) {
-    const b = bearingTo(btrSel), x = bx(b);
+  if (tgt) {
+    const b = bearingTo(tgt), x = bx(b);
     c.strokeStyle = grey(0.4); dashed(c, x, Y(y1), x, Y(y0), 2, 6);
     c.fillStyle = grey(1);
     c.beginPath(); c.moveTo(x, Y(y1) + 2 * dpr); c.lineTo(x - q, Y(y1) + 2 * dpr + q * 1.4); c.lineTo(x + q, Y(y1) + 2 * dpr + q * 1.4); c.fill();
     c.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
-    c.fillText(`${pad3(wrapA(b) / D2R)}   ${passName(btrSel)}`, x + (x > (x0 + x1) / 2 ? -9 : 9) * dpr, Y(y1) + 14 * dpr);
+    c.fillText(`${pad3(wrapA(b) / D2R)}   TGT  ${tgtName(tgt)}`, x + (x > (x0 + x1) / 2 ? -9 : 9) * dpr, Y(y1) + 27 * dpr);
   }
   if (bCursor >= 0) {
     const x = x0 + bCursor / TAU * (x1 - x0);
@@ -1586,13 +1613,6 @@ function drawSnd(c, Y, top) {
 }
 function bearTune(x) { bCursor = clamp((x - box.x0) / (box.x1 - box.x0)) * TAU; press('tune'); wake(); }
 function depthTune(y) { dCursor = clamp((box.y1 - y) / (box.y1 - box.y0)) * depthMax(); press('tune'); wake(); }
-function selectTrace(x) {
-  const best = traceAt(clamp((x - box.x0) / (box.x1 - box.x0)) * TAU);
-  btrSel = best && best !== btrSel ? best : null;
-  press('select');
-  hudDirty = true;
-  wake();
-}
 function mark() {
   if (boot.phase !== 'run') { endBoot(); return; }
   marks.push({ col: sHead + sFrac, n: (marks.at(-1)?.n || 0) + 1 });
@@ -1612,6 +1632,13 @@ function sources() {
     else out.push(`MECH   SUBMERGED   ${c.ton.blades} BLADE   ${b}`);
   }
   return out;
+}
+// The line a contact shows best: blades, song or whistle.
+function targetF(c) {
+  if (c.ton) return c.ton.f1 * c.ton.blades * doppler(c);
+  if (c.kind === 2 && song.amp * whaleGate() > 0.1) return song.f;
+  if (c.kind === 7 && c.wh) return lerp(c.wh.f0, c.wh.f1, c.wh.t / c.wh.dur);
+  return -1;
 }
 // The cursor snaps to a known line and names it.
 function identify(f) {
@@ -1685,20 +1712,25 @@ function drawHud() {
     c.fill();
     c.strokeStyle = grey(0.6);
     c.beginPath(); c.moveTo(cx - 4 * dpr, Y(cy)); c.lineTo(cx + 4 * dpr, Y(cy)); c.moveTo(cx, Y(cy) - 4 * dpr); c.lineTo(cx, Y(cy) + 4 * dpr); c.stroke();
-    // Track brackets follow their contacts.
-    for (let i = tracks.length - 1; i >= 0; i--) if (!sea.contacts.includes(tracks[i].c)) tracks.splice(i, 1);
-    c.strokeStyle = grey(0.85); c.fillStyle = grey(0.85);
+    // The target bracket follows its contact; off the scope, a rim caret points to it.
+    const tp = tgt && toScreen(tgt);
+    c.strokeStyle = grey(0.95); c.fillStyle = grey(0.95);
     c.textAlign = 'left';
-    for (const t of tracks) {
-      const p = toScreen(t.c);
-      if (!p) continue;
-      const bx = p[0], by = Y(p[1]), q = 9 * dpr, l = 4 * dpr;
+    if (tp) {
+      const bx = tp[0], by = Y(tp[1]), q = 9 * dpr, l = 4 * dpr;
       c.beginPath();
       for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
         c.moveTo(bx + sx * q, by + sy * q - sy * l); c.lineTo(bx + sx * q, by + sy * q); c.lineTo(bx + sx * q - sx * l, by + sy * q);
       }
       c.stroke();
-      c.fillText(`T${t.n}`, bx + q + 3 * dpr, by - q);
+      c.fillText(`TGT  ${tgtName(tgt)}`, bx + q + 3 * dpr, by - q);
+    } else if (tgt) {
+      const b = bearingTo(tgt), ox = cx + Math.sin(b) * (rad - 4 * dpr), oy = cy + Math.cos(b) * (rad - 4 * dpr), s2 = 5 * dpr;
+      c.beginPath();
+      c.moveTo(ox, Y(oy));
+      c.lineTo(ox - Math.sin(b) * s2 * 2 + Math.cos(b) * s2, Y(oy - Math.cos(b) * s2 * 2 - Math.sin(b) * s2));
+      c.lineTo(ox - Math.sin(b) * s2 * 2 - Math.cos(b) * s2, Y(oy - Math.cos(b) * s2 * 2 + Math.sin(b) * s2));
+      c.fill();
     }
     if (charge.on) {
       const cells = Math.round(chargeLevel() * 12);
@@ -1745,6 +1777,21 @@ function drawHud() {
       c.fillStyle = grey(k.kind === 6 ? 1 : 0.8);
       c.beginPath(); c.moveTo(x, ty + 6 * dpr); c.lineTo(x - 4 * dpr, ty); c.lineTo(x + 4 * dpr, ty); c.fill();
       c.fillText(`${k.kind === 6 ? '!!' : ''}${pad3(wrapA(bearingTo(k)) / D2R)}`, x, ty + 15 * dpr);
+    }
+    // The target's strongest line carries a bright marker.
+    const tf = tgt ? targetF(tgt) : -1;
+    if (tf > 0 && tf <= span) {
+      const x = x0 + (tf / span) * (x1 - x0);
+      c.strokeStyle = grey(0.7);
+      dashed(c, x, Y(y1), x, Y(y0), 2, 6);
+      c.fillStyle = grey(1);
+      c.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
+      c.fillText(`TGT  ${tgtName(tgt)}`, x + (x > (x0 + x1) / 2 ? -6 : 6) * dpr, Y(y1) + 27 * dpr);
+    } else if (tgt) {
+      // A silent target has no line, so the axis names it.
+      c.fillStyle = grey(0.85);
+      c.textAlign = 'left';
+      c.fillText(`TGT  ${pad3(wrapA(bearingTo(tgt)) / D2R)}  ${tgtName(tgt)}  ${tf > 0 ? 'OFF SPAN' : 'SILENT'}`, x0, Y(y0) + 28 * dpr);
     }
     if (cursorF >= 0 && cursorF <= span) {
       const id = identify(cursorF), cf = id ? id[0] : cursorF;
@@ -1931,11 +1978,17 @@ function step(dt) {
   stepSea(dt); stepSong(dt);
   steerVoices(dt);
   if (opts.mode === 'active' && clock - pasT > 1 / 3) refreshFans();
+  if (tgt && !sea.contacts.includes(tgt)) { tgt = null; hudDirty = true; }
+  // Both passive displays record all the time, so a switch shows the past.
+  bClock += dt;
+  let bn = 0;
+  while (bClock >= 1 / BROW_HZ && bn++ < 4) { bClock -= 1 / BROW_HZ; makeBtrRow(clock); if (opts.mode === 'btr' && (tgt || bCursor >= 0)) hudDirty = true; }
+  bFrac = bClock * BROW_HZ;
+  rowClock += dt;
+  let rn = 0;
+  while (rowClock >= 1 / ROW_HZ && rn++ < 6) { rowClock -= 1 / ROW_HZ; makeRow(clock); }
+  rowFrac = rowClock * ROW_HZ;
   if (opts.mode === 'btr') {
-    bClock += dt;
-    let n = 0;
-    while (bClock >= 1 / BROW_HZ && n++ < 4) { bClock -= 1 / BROW_HZ; makeBtrRow(clock); if (btrSel || bCursor >= 0) hudDirty = true; }
-    bFrac = bClock * BROW_HZ;
     const sig = sources().join() + (song.bout && whaleGate() > 0.2);
     if (sig !== step.bsig) { step.bsig = sig; hudDirty = true; }
   }
@@ -1950,9 +2003,9 @@ function step(dt) {
   strobe.a = Math.max(0, strobe.a - dt / 3);
   if (boot.phase === 'text') { hudDirty = true; if (clock - boot.t0 > bootLen()) endBoot(); }
   if (charge.on) hudDirty = true;
-  // Track brackets and the cursor label follow at four frames a second.
+  // The target marks and the cursor label follow at four frames a second.
   const tick4 = Math.floor(clock * 4) !== Math.floor((clock - dt) * 4);
-  if (tick4 && ((tracks.length && opts.mode === 'active') || (cursorF >= 0 && opts.mode === 'sono'))) hudDirty = true;
+  if (tick4 && ((tgt && opts.mode !== 'btr') || (cursorF >= 0 && opts.mode === 'sono'))) hudDirty = true;
   decayPass(dt);
   if (ring.on) {
     ring.t += dt;
@@ -1969,10 +2022,6 @@ function step(dt) {
     if (ring.t >= RING_T) { ring.on = false; ring.front = 0; }
   }
   if (opts.mode === 'sono') {
-    rowClock += dt;
-    let n = 0;
-    while (rowClock >= 1 / ROW_HZ && n++ < 6) { rowClock -= 1 / ROW_HZ; makeRow(clock); }
-    rowFrac = rowClock * ROW_HZ;
     // The classifier lines change with what the sea is doing.
     const sig = `${song.bout}|${sources().join()}`;
     if (sig !== step.sig) { step.sig = sig; hudDirty = true; }
@@ -2100,17 +2149,16 @@ function release(e) {
   }
   if (pt.drag) return;
   if (boot.phase !== 'run') { endBoot(); return; }
-  if (opts.mode === 'sono') { knock(); return; }
-  if (opts.mode === 'btr') { selectTrace(glXY(e)[0]); return; }
   if (opts.mode === 'sounder') { mark(); return; }
   const [x, y] = glXY(e);
-  // A second tap on the same spot marks or drops a track.
+  // A second tap on the same spot locks or drops the target.
   const nowMs = performance.now();
   if (nowMs - lastTap.t < 350 && Math.hypot(x - lastTap.x, y - lastTap.y) < 24 * dpr) {
     lastTap.t = -1e9;
-    if (toggleTrack(x, y)) return;
+    if (lockTarget(pickAt(x, y))) return;
   }
   lastTap = { t: nowMs, x, y };
+  if (opts.mode !== 'active') { knock(); return; }
   // A tap near the centre pings all round; elsewhere it pings that bearing.
   const r = Math.hypot(x - scope.cx, y - scope.cy);
   ping(r < scope.rad * 0.12 ? null : angleAt(x, y));
