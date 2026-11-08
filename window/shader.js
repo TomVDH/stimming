@@ -48,9 +48,11 @@ vec2 skyUV(vec3 d) {
 /* ---------- pass 1: the outside ---------- */
 export const outsideFS = ({ ALT, WIN, MAXCELL, MAXFL }) => `#version 300 es
 precision highp float;
+precision highp sampler3D;
 ${common({ ALT, WIN })}
 uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uFocal, uCover, uFlash, uCirrus;
-uniform int uDeckSteps, uTowSteps, uTowOct; uniform float uTowStep;
+uniform int uDeckSteps, uTowSteps, uTowOct, uLightSteps; uniform float uTowStep, uMid;
+uniform highp sampler3D uNoise;
 uniform vec2 uCam;
 uniform vec3 uF, uR, uU;
 uniform vec3 uAmb, uSun, uSunL, uFloor;
@@ -154,133 +156,226 @@ vec3 flashAt(vec2 w, float dens) {
   return vec3(0.72, 0.74, 1.0) * f * (0.1 + dens * 1.5);
 }
 
-// The deck at a map point. x: cover, y: top height in km, z: lumps.
-// Far away, lod drops the fine detail that would only alias.
-vec3 deckAt(vec2 w, float lod) {
-  float n = fbm(w / 22.0 + vec2(uTime * 0.004, 0.0), 4 - int(lod * 2.0));
-  float c = smoothstep(uCover, uCover + 0.22, n);
-  float l = mix(vnoise(w / 3.0) + 0.5 * vnoise(w / 1.3), 0.75, lod);
-  return vec3(c, 1.75 + c * (0.45 + 0.8 * l), l);
+// Cloud noise: one tiling 3D texture, sampled at a level of detail.
+// R holds the base shape; G, B, A hold Worley noise for erosion.
+float gFocal1 = 1.0;
+vec4 cn(vec3 p, float tile, float lod) { return textureLod(uNoise, p / tile, lod); }
+// The mip level that matches one pixel's footprint at distance t.
+float lodAt(float t, float tile) { return clamp(log2(t / gFocal1 / (tile / 64.0)) + 0.5, 0.0, 6.0); }
+// Cover on the map from two flat slices of the volume, about 0.2 to 0.8.
+float coverAt(vec2 w, float sc, float z) {
+  return textureLod(uNoise, vec3(w / sc, z), 0.0).r * 0.65 + textureLod(uNoise, vec3(w / (sc * 0.37), z + 0.31), 0.0).r * 0.35;
 }
-const float DECK_LO = 1.4, DECK_HI = 3.3, SIG = 3.0;
-// The cloud deck as a volume: a march through the slab.
+// Two Henyey-Greenstein lobes: a strong forward one and a soft back one.
+float hg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
+float cloudPhase(float mu) { return mix(hg(mu, 0.72), hg(mu, -0.2), 0.35); }
+
+/* The deck: stratocumulus at 1.5 to 3.7 km, fully volumetric. */
+const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
+// Deck density at p = (map x, height, map z) in km, from 0 to 1.
+// fine adds the Worley erosion that frays the edges.
+float deckDens(vec3 p, float lod, bool fine) {
+  vec2 w = p.xz + vec2(uTime * 0.012, 0.0);
+  float c = smoothstep(uCover - 0.1, uCover + 0.14, coverAt(w, 70.0, 0.13));
+  if (c <= 0.0) return 0.0;
+  float base = 1.55, top = base + 0.7 + 1.5 * c;
+  float hgt = smoothstep(base, base + 0.35, p.y) * smoothstep(top, top - 0.5 - 0.6 * c, p.y);
+  if (hgt <= 0.0) return 0.0;
+  float d = clamp((cn(vec3(w.x, p.y * 1.6, w.y), 7.0, lod).r * hgt - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  if (fine && d > 0.0) {
+    vec4 e = cn(vec3(w.x, p.y * 1.3, w.y) + vec3(0.0, uTime * 0.003, 0.0), 1.4, lod);
+    // Erosion bites the thin edges hardest.
+    d = clamp(d - (1.0 - d) * (e.g * 0.625 + e.b * 0.25 + e.a * 0.125) * 0.6, 0.0, 1.0);
+  }
+  return d;
+}
+// Optical depth toward the light, in growing steps.
+float deckLight(vec3 p, float lod) {
+  float od = 0.0, st = 0.15;
+  for (int j = 0; j < 6; j++) {
+    if (j >= uLightSteps) break;
+    p += uSun * st;
+    od += deckDens(p, lod + 1.0, false) * st;
+    st *= 1.9;
+  }
+  return od;
+}
+
+// A cloud shell segment along the ray, from height hi down to lo.
+vec2 shellSeg(vec3 d, float lo, float hi) {
+  vec2 top = shell(d, hi), bot = shell(d, lo);
+  if (top.x < 0.0) return vec2(-1.0);
+  return vec2(top.x, min(bot.x > 0.0 ? bot.x : top.y, top.x + 160.0));
+}
+
+// The deck as a volume: light from above through the cloud, town light from below.
 // It returns the light it scatters and, in alpha, what it lets through.
 vec4 deck(vec3 d) {
-  vec2 top = shell(d, DECK_HI), bot = shell(d, DECK_LO);
-  if (top.x < 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
-  float t0 = top.x, t1 = bot.x > 0.0 ? bot.x : top.y;
-  t1 = min(t1, t0 + 140.0);
+  vec2 seg = shellSeg(d, DECK_LO, DECK_HI);
+  if (seg.x < 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+  float t0 = seg.x, t1 = seg.y;
   int N = uDeckSteps;
   // Steps stay short; a long grazing path ends in one closing step.
-  float ds = min((t1 - t0) / float(N), 2.5);
-  // A fixed jitter per pixel breaks the step bands into fine grain.
+  float ds = min((t1 - t0) / float(N), 1.1);
   float t = t0 + ds * fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
   // Town light under the deck, sampled at both ends of the segment.
-  vec2 wa = uCam + d.xz * t0, wb = uCam + d.xz * t1;
-  float ua = towns(wa).z, ub = towns(wb).z;
-  vec2 sx = normalize(uSun.xz + 1e-5) * 0.5;
-  // Forward scatter makes a silver lining toward the light.
-  float mu = max(dot(d, uSun), 0.0);
-  float phase = 0.6 + 1.6 * pow(mu, 6.0) + 2.5 * pow(mu, 60.0);
+  float ua = towns(uCam + d.xz * t0).z, ub = towns(uCam + d.xz * t1).z;
+  float mu = dot(d, uSun);
+  float phase = cloudPhase(mu);
   // A low sun reaches only the tops that face it.
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
+  bool lit = dot(uSunL, vec3(1.0)) > 1e-4;
   vec3 col = vec3(0.0), last = vec3(0.0);
-  float Tc = 1.0, lastC = 0.0;
-  for (int i = 0; i < 32; i++) {
-    if (i >= N) break;
-    float y = heightAt(d, t);
+  float Tc = 1.0, lastD = 0.0;
+  for (int i = 0; i < 40; i++) {
+    if (i >= N || t > t1) break;
     vec2 w = uCam + d.xz * t;
-    float lod = smoothstep(25.0, 90.0, t);
-    vec3 dk = deckAt(w, lod);
-    float c = dk.x, tp = dk.y, base = 1.6 - 0.15 * c;
-    float dens = c * smoothstep(base, base + 0.25, y) * smoothstep(tp, tp - 0.35, y);
-    if (dens > 0.002) {
-      float h01 = clamp((y - base) / max(tp - base, 0.1), 0.0, 1.0);
-      // Lumps that face the light catch it; the depth above shades the rest.
-      float slope = lod < 1.0 ? (vnoise((w + sx) / 3.0) + 0.5 * vnoise((w + sx) / 1.3)) - dk.z : 0.0;
-      float lit = clamp(0.5 - slope * 4.0 * (1.0 - lod), 0.0, 1.0);
-      float Tl = exp(-SIG * 0.6 * max(tp - y, 0.0));
-      vec3 S = uSunL * 0.07 * sunK * Tl * (0.25 + 0.75 * lit * lit) * phase;
-      S += uAmb * 0.024 * (0.35 + 0.65 * h01) * (0.7 + 0.5 * lit);
-      // Streets light the base from below, orange through the haze.
-      float town = mix(ua, ub, float(i) / float(N));
-      S += vec3(1.0, 0.5, 0.2) * town * 0.05 * exp(-SIG * 1.6 * max(y - base, 0.0));
+    vec3 p = vec3(w.x, heightAt(d, t), w.y);
+    float lod = lodAt(t, 7.0);
+    float dn = deckDens(p, lod, lod < 3.0);
+    if (dn > 0.002) {
+      float h01 = clamp((p.y - 1.55) / 2.0, 0.0, 1.0);
+      vec3 S = vec3(0.0);
+      if (lit) {
+        float od = deckLight(p, lod);
+        // Beer's law, with a slower tail for light that scatters many times.
+        float Tl = max(exp(-SIG * od), 0.5 * exp(-SIG * od * 0.2));
+        // Powder: thin edges facing away from the light look dark.
+        float powder = 1.0 - exp(-SIG * dn * 0.6);
+        S += uSunL * 0.05 * sunK * Tl * phase * mix(1.0, powder, 0.55);
+      }
+      // Sky light from above; the base sees less of it.
+      S += uAmb * 0.026 * (0.3 + 0.7 * h01);
+      // Streets light the base; the cloud filters that light as it rises.
+      float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
+      S += vec3(1.0, 0.5, 0.2) * town * 0.06 * exp(-SIG * 0.35 * max(p.y - 1.55, 0.0));
       S += flashAt(w, 1.0) * 0.6 * (0.4 + 0.6 * h01);
-      float a = 1.0 - exp(-SIG * dens * ds);
+      float a = 1.0 - exp(-SIG * dn * ds);
       col += Tc * S * a;
       Tc *= 1.0 - a;
       last = S;
       if (Tc < 0.02) break;
     }
-    lastC = c;
+    lastD = dn;
     t += ds;
   }
-  // The rest of a long path takes the last cover and light.
+  // The rest of a long path takes the last density and light.
   if (Tc >= 0.02 && t < t1) {
-    float a = 1.0 - exp(-SIG * lastC * 0.5 * (t1 - t));
+    float a = 1.0 - exp(-SIG * lastD * 0.5 * (t1 - t));
     col += Tc * last * a;
     Tc *= 1.0 - a;
   }
   return vec4(col, Tc);
 }
 
-// Cirrus: thin streaks high above, at 12.5 km, lit by the sun or moon.
-// The streaks scatter the same light as the sky behind them, a little more.
+/* The mid layer: thin altocumulus at 5.2 to 6.1 km, in cells and rolls. */
+float midDens(vec3 p, float lod) {
+  vec2 w = p.xz + vec2(uTime * 0.02, 0.0);
+  float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, coverAt(w, 55.0, 0.71)) * step(0.01, uMid);
+  if (c <= 0.0) return 0.0;
+  float hgt = smoothstep(5.2, 5.45, p.y) * smoothstep(6.1, 5.75, p.y);
+  vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 3.2, lod);
+  return clamp((n.r * hgt - (1.0 - c)) / max(c, 0.05) - (n.b * 0.3), 0.0, 1.0);
+}
+vec4 midLayer(vec3 d) {
+  vec2 seg = shellSeg(d, 5.2, 6.1);
+  if (seg.x < 0.0 || uMid <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+  float t0 = seg.x, t1 = seg.y;
+  const int N = 8;
+  float ds = min((t1 - t0) / float(N), 1.5);
+  float t = t0 + ds * fract(0.37 + 52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
+  float phase = cloudPhase(dot(d, uSun));
+  float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.15);
+  vec3 col = vec3(0.0);
+  float Tc = 1.0;
+  for (int i = 0; i < N; i++) {
+    if (t > t1) break;
+    vec2 w = uCam + d.xz * t;
+    vec3 p = vec3(w.x, heightAt(d, t), w.y);
+    float dn = midDens(p, lodAt(t, 3.2));
+    if (dn > 0.002) {
+      // Thin cloud: one tap toward the light is enough.
+      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 3.2) + 1.0) * 0.3);
+      vec3 S = uSunL * 0.06 * sunK * Tl * phase + uAmb * 0.03;
+      float a = 1.0 - exp(-SIG * 0.6 * dn * ds);
+      col += Tc * S * a;
+      Tc *= 1.0 - a;
+    }
+    t += ds;
+  }
+  return vec4(col, Tc);
+}
+
+/* Cirrus: a thin ice slab at 12.1 to 12.8 km, streaked by the wind. */
 vec4 cirrus(vec3 d, vec3 sk) {
-  if (uCirrus <= 0.0) return vec4(0.0);
-  float b = (R + H) * d.y, c = (R + H) * (R + H) - (R + 12.5) * (R + 12.5);
-  float t = -b + sqrt(b * b - c);
-  vec2 w = uCam + d.xz * t;
-  // Wind stretches the streaks along one bearing.
-  vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * w;
-  float n = fbm(vec2(q.x / 30.0, q.y / 4.0) + vec2(uTime * 0.002, 0.0), 5);
-  float a = smoothstep(0.52, 0.78, n) * uCirrus * 0.45;
-  // Far streaks fade into the horizon glow.
-  a *= exp(-t / 320.0);
+  if (uCirrus <= 0.0 || d.y < -0.02) return vec4(0.0, 0.0, 0.0, 1.0);
+  // From inside the shells, the ray leaves each one once.
+  float b = (R + H) * d.y;
+  float ta = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.1) * (R + 12.1)));
+  float tb = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.8) * (R + 12.8)));
+  tb = min(tb, ta + 60.0);
+  const int N = 5;
+  float ds = (tb - ta) / float(N);
   float mu = max(dot(d, uSun), 0.0);
-  vec3 col = sk * 1.25 + uAmb * 0.008 + uSunL * 0.05 * (0.4 + 3.0 * pow(mu, 10.0));
-  return vec4(col, a);
+  // Ice crystals: strong forward scatter and the 22 degree halo.
+  float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
+  float halo = exp(-pow((ang - 0.384) / 0.012, 2.0)) * 0.6 + exp(-pow((ang - 0.384) / 0.04, 2.0)) * 0.15;
+  vec3 light = sk * 1.2 + uAmb * 0.006 + uSunL * 0.05 * (0.4 + 3.0 * pow(mu, 10.0) + halo * 4.0);
+  float Tc = 1.0;
+  float t = ta + ds * 0.5;
+  for (int i = 0; i < N; i++) {
+    vec2 w = uCam + d.xz * t + vec2(uTime * 0.03, 0.0);
+    // The wind stretches the streaks along one bearing.
+    vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * w;
+    float y = heightAt(d, t);
+    float lod = lodAt(t, 24.0);
+    float n = cn(vec3(q.x / 6.0, y * 2.0, q.y), 24.0, lod).r * 0.7 + cn(vec3(q.x / 4.0, y * 3.0, q.y) + 0.5, 6.0, lod).g * 0.3;
+    float dn = smoothstep(0.5, 0.78, n) * uCirrus * smoothstep(12.1, 12.3, y) * smoothstep(12.8, 12.6, y);
+    Tc *= exp(-1.6 * dn * ds);
+    t += ds;
+  }
+  // Far streaks fade into the horizon glow.
+  float a = (1.0 - Tc) * exp(-ta / 320.0);
+  return vec4(light * a, 1.0 - a);
 }
 
 // skyA turns 1 where the ray reaches open sky, 0 where it hits ground.
 vec3 outside(vec3 d, float focal1, out float skyA) {
+  gFocal1 = focal1;
   vec2 uv = skyUV(d);
   vec3 L = texture(uSkyL, uv).rgb, T = texture(uSkyT, uv).rgb;
   float tg = hitLayer(d, 0.0);
   if (tg < 0.0) {
-    skyA = 1.0;
     // A tight glow round the sun, finer than the table holds.
     float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
     vec3 sk = L + uFloor + uSunL * 0.03 * exp(-ang * 22.0);
-    // The tops of a far deck rise above the ground's horizon.
-    vec4 cl = deck(d);
-    skyA = cl.a;
+    // Far deck and mid-layer tops rise above the ground's horizon.
+    vec4 cl = deck(d), ml = midLayer(d), ci = cirrus(d, sk);
     sk = sk * cl.a + cl.rgb;
-    vec4 ci = cirrus(d, sk);
-    skyA *= 1.0 - ci.a;
-    return mix(sk, ci.rgb, ci.a);
+    sk = sk * ml.a + ml.rgb;
+    sk = sk * ci.a + ci.rgb;
+    skyA = cl.a * ml.a * ci.a;
+    return sk;
   }
   skyA = 0.0;
   vec2 w = uCam + (vec3(0.0, R + H, 0.0) + d * tg).xz;
   // Ground footprint of one pixel, in km, grows at grazing angles.
   float fw = tg / focal1 / max(-d.y, 0.03);
   vec3 g = ground(w, fw);
-
   vec4 cl = deck(d);
   g = g * cl.a + cl.rgb;
-
+  vec4 ml = midLayer(d);
+  g = g * ml.a + ml.rgb;
   // The air between: the baked view ray dims the ground and adds its glow.
   return g * T + L + uFloor * 0.5;
 }
 
-// 3D value noise, for the billows of the storm towers.
-float hash13(vec3 p3) { p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
-float vnoise3(vec3 p) {
-  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y),
-             mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+// Tower billows from the cloud noise volume.
+float tnoise(vec3 p, int oct) {
+  float s = textureLod(uNoise, p / 5.0, 0.0).r;
+  if (oct > 1) { vec4 m = textureLod(uNoise, p / 1.7 + 0.37, 0.0); s = s * 0.65 + (m.g * 0.6 + m.b * 0.4) * 0.35; }
+  return s;
 }
-float fbm3(vec3 p, int n) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { if (i >= n) break; s += a * vnoise3(p); p = p * 2.07 + 13.7; a *= 0.5; } return s; }
 
 // Storm towers: true volumes, a column under a sheared anvil.
 // uTw: centre xz on the map, radius, top height, all in km.
@@ -305,10 +400,10 @@ float towerBound(vec3 p, vec3 sz, vec2 sh) {
 // oct 0 gives the smooth shape alone, for cheap light taps.
 float towerDens(vec3 p, vec4 b, vec3 sz, vec2 sh, int oct) {
   float y = p.y, top = sz.z;
-  float bl = oct > 0 ? fbm3(vec3(p.x, p.y * 1.25, p.z) / 1.6 + b.x, oct) - 0.5 : 0.0;
+  float bl = oct > 0 ? (tnoise(vec3(p.x, p.y * 1.25, p.z) + b.x, oct) - 0.47) * 1.3 : 0.0;
   // The column: narrow at the base, bulging mid-height, cauliflower billows.
   float rc = sz.x * (0.62 + 0.45 * smoothstep(2.0, 6.5, y) - 0.2 * smoothstep(6.5, top, y));
-  float big = oct > 0 ? vnoise3(p / 4.5 + b.x * 0.37) - 0.5 : 0.0;
+  float big = oct > 0 ? textureLod(uNoise, p / 14.0 + b.x * 0.37, 0.0).r - 0.47 : 0.0;
   float col = smoothstep(0.0, 0.7, rc - length(p.xz) + bl * 3.4 + big * sz.x * 0.7);
   // The overshooting top domes over the core.
   float cap = top + 0.8 * exp(-dot(p.xz, p.xz) / (sz.x * sz.x * 0.5));
@@ -533,7 +628,7 @@ vec3 scratches(vec2 pG, vec2 px) {
     float cs = l == 0 ? 0.006 : 0.0105;
     vec2 g = pG / cs + float(l) * 17.3;
     vec2 id = floor(g), f = fract(g) - 0.5;
-    if (hash12(id + 3.1) > 0.3) continue;
+    if (hash12(id + 3.1) > 0.22) continue;
     float a = hash12(id) * PI;
     vec2 t = vec2(cos(a), sin(a));
     float along = dot(f, t), across = dot(f, vec2(-t.y, t.x));
@@ -545,7 +640,7 @@ vec3 scratches(vec2 pG, vec2 px) {
       vec2 r = px - fl.xy;
       float dist = length(r);
       float al = dot(r / max(dist, 1.0), t);
-      s += uFlrC[i] * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.2)) * 0.32;
+      s += uFlrC[i] * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.1)) * 0.22;
     }
   }
   return s;

@@ -26,3 +26,7 @@ Tom picked all four: volumetric deck, better towers, visible bolts, high cirrus 
 
 - Towers march only inside a bounding cylinder. A shape-following bound skips empty space; one smooth tap gives the light.
 - Cost, leaned in, Standard, on the dev Mac: 79 fps without towers, 48 fps with six towers before the last trim (step 0.6 km, 32 steps). Not yet timed on an office laptop.
+- Round 2 (Tom: clouds volumetric throughout, real translucency): one baked 64^3 noise volume (`window/noise3d.js`, about 0.2 s) feeds every layer.
+- Deck: true 3D density with Worley erosion; light marched toward the sun or moon (3 taps Standard, 5 High); two-lobe phase, multiple-scatter tail, powder; town light filtered up through the base.
+- New mid layer of thin altocumulus at 5.2 to 6.1 km. Cirrus is now a volume, with a 22 degree halo round the sun or moon.
+- Towers sample the same volume instead of hashed noise. Frame rate not yet timed after this change.

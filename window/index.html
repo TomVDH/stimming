@@ -116,6 +116,7 @@ import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, li
 import { intro as playIntro } from '../shared/intro.js';
 import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
 import { bake, lookup, horizonEl, NU, NV } from './sky.js';
+import { bakeNoise } from './noise3d.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
@@ -263,6 +264,15 @@ const skyTex = { L: null, T: null };
 function uploadSky() {
   for (const k of ['L', 'T']) { if (skyTex[k]) gl.deleteTexture(skyTex[k]); skyTex[k] = texture(NU, NV, sky.b[k]); }
 }
+// The cloud noise volume: 64 cubed, tiling, with mipmaps for far cloud.
+const NOISE_N = 64;
+const noiseTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, NOISE_N, NOISE_N, NOISE_N, 0, gl.RGBA, gl.UNSIGNED_BYTE, bakeNoise(NOISE_N));
+gl.generateMipmap(gl.TEXTURE_3D);
+gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
 // The outside buffer: half size on Standard, full size on High.
 const outBuf = { fb: gl.createFramebuffer(), tex: null, w: 0, h: 0 };
 const outScale = () => (quality() === 'high' ? 1 : 0.5);
@@ -467,7 +477,11 @@ function render() {
   gl.uniform1f(u.uCover, opts.cloud);
   // Cirrus thickens as the deck closes.
   gl.uniform1f(u.uCirrus, clamp(1.4 - opts.cloud * 1.5, 0.3, 1));
-  gl.uniform1i(u.uDeckSteps, quality() === 'high' ? 24 : 12);
+  gl.uniform1i(u.uDeckSteps, quality() === 'high' ? 36 : 18);
+  gl.uniform1i(u.uLightSteps, quality() === 'high' ? 5 : 3);
+  // The mid layer fills in as the deck closes.
+  gl.uniform1f(u.uMid, clamp(1.6 - opts.cloud * 2.1, 0.2, 1));
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_3D, noiseTex); gl.uniform1i(u.uNoise, 3);
   gl.uniform1f(u.uFlash, flash);
   gl.uniform3fv(u.uAmb, sky.amb); gl.uniform3fv(u.uSunL, sky.sunL); gl.uniform3fv(u.uFloor, sky.h.floor);
   // The wing goes in world space, so it banks with the cabin.
