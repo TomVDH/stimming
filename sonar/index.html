@@ -1024,7 +1024,7 @@ function voices() {
 function buildVoices() {
   const out = kit.out;
   pingBytes.then(b => (b ? kit.ac.decodeAudioData(b.slice(0)) : null)).then(buf => { if (buf) pingBuf = buf; }).catch(() => {});
-  const rev = new T.Reverb({ decay: 5.5, preDelay: 0.03, wet: 0.42 }).connect(out);
+  const rev = new T.Reverb({ decay: 2.5, preDelay: 0.03, wet: 0.25 }).connect(out);
   // Echoes of the recorded ping come back muffled through the reverb.
   const echoIn = new T.Filter({ type: 'lowpass', frequency: 3400, Q: 0.5 }).connect(rev);
   // Boot beeps and the alarm: a small square tone.
@@ -1078,32 +1078,49 @@ function buildVoices() {
   return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, thump, clank, auntG, aun1, aun2, click, whG, wh, tick };
 }
 // Continuous voices follow the shared model each frame.
+// The passive displays hear one contact at a time.
+// A drag hears what is under the cursor; otherwise the selection plays.
+function listenTo() {
+  if (opts.mode === 'btr') {
+    const under = bCursor >= 0 ? traceAt(bCursor) : null;
+    return pt.drag ? under : btrSel || under;
+  }
+  if (opts.mode === 'sono') return cursorF >= 0 ? identify(cursorF)?.[2] || null : null;
+  return null;
+}
+// The loudest trace within six degrees of a bearing.
+function traceAt(b) {
+  let best = null, bd = 6 * D2R;
+  for (const s of passiveSources()) { if (!s.c || s.lvl < 0.04) continue; const d = angDiff(s.brg, b); if (d < bd) { bd = d; best = s.c; } }
+  return best;
+}
+// A contact you listen to stays audible, even when it is far.
+const upFront = x => 0.35 + 0.65 * Math.min(1, x);
 function steerVoices(dt = 0) {
   const v = voices();
   if (!v) return;
-  // Passive displays listen harder; the scope and sounder keep the sea low.
   const listen = opts.mode === 'sono' || opts.mode === 'btr';
-  v.bedG.gain.rampTo(listen ? 0.09 : 0.04, 0.3);
+  const f = listen ? listenTo() : null;
+  v.bedG.gain.rampTo(listen ? 0.045 : 0.025, 0.3);
   v.w1.frequency.rampTo(song.f, 0.05);
   v.w2.frequency.rampTo(song.f * 2, 0.05);
+  // The whale plays when you listen to it, or when it answers a ping.
   const wh = sea.contacts.find(c => c.kind === 2);
-  v.whaleG.gain.rampTo(song.amp * whaleGate() * (wh ? hearF(wh) : 0) * (listen ? 0.07 : clock < song.loud ? 0.05 : 0.02), 0.06);
-  // The loudest propeller in the water drives the prop voice.
-  let src = { f1: 37, blades: 4, amp: 0 };
-  for (const c of sea.contacts) if (c.ton && c.kind !== 6) { const a = tonalAmp(c); if (a > src.amp) src = { f1: c.ton.f1, blades: c.ton.blades, amp: a }; }
-  v.propG.gain.rampTo(Math.min(1, src.amp) * (listen ? 0.07 : 0.02), 0.3);
-  v.p1.frequency.rampTo(src.f1 * 2, 0.5);
-  v.beat.frequency.rampTo(clamp(src.f1 * src.blades / 40, 2, 6), 0.5);
-  const au = sea.contacts.find(c => c.kind === 6), aa = au ? tonalAmp(au) : 0;
-  v.auntG.gain.rampTo(Math.min(1, aa) * (listen ? 0.08 : 0.03), 0.4);
+  const wl = wh && f === wh ? 0.07 * upFront(hearF(wh)) : wh && clock < song.loud ? 0.04 * hearF(wh) : 0;
+  v.whaleG.gain.rampTo(song.amp * whaleGate() * wl, 0.06);
+  // A ship or a sub you listen to drives the prop voice.
+  const ship = f?.ton && f.kind !== 6 ? f : null;
+  v.propG.gain.rampTo(ship ? 0.08 * upFront(tonalAmp(ship)) : 0, 0.3);
+  if (ship) { v.p1.frequency.rampTo(ship.ton.f1 * 2, 0.5); v.beat.frequency.rampTo(clamp(ship.ton.f1 * ship.ton.blades / 40, 2, 6), 0.5); }
+  const au = f?.kind === 6 ? f : null;
+  v.auntG.gain.rampTo(au ? 0.08 * upFront(tonalAmp(au)) : 0, 0.4);
   if (au) { const g = auntieGroan(clock, au); v.aun1.frequency.rampTo(g, 0.2); v.aun2.frequency.rampTo(g * 1.5, 0.2); }
-  // The nearest dolphin pod clicks in trains and whistles now and then.
-  let pod = null, pd = 1e9;
-  for (const c of sea.contacts) if (c.kind === 7) { const d = Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]); if (d < pd) { pd = d; pod = c; } }
-  const pa = pod ? 1 / (1 + (pd / 1200) ** 2) : 0;
-  if (pod?.click && Math.random() < dt * 22) v.click.triggerAttackRelease(0.004, T.now() + 0.005, pa * (listen ? 1 : 0.35));
+  // A pod you listen to clicks in trains and whistles now and then.
+  const pod = f?.kind === 7 ? f : null;
+  const pa = pod ? upFront(1 / (1 + (Math.hypot(pod.pos[0] - sea.own[0], pod.pos[1] - sea.own[1]) / 1200) ** 2)) : 0;
+  if (pod?.click && Math.random() < dt * 22) v.click.triggerAttackRelease(0.004, T.now() + 0.005, pa);
   if (pod?.wh) v.wh.frequency.rampTo(lerp(pod.wh.f0, pod.wh.f1, pod.wh.t / pod.wh.dur), 0.03);
-  v.whG.gain.rampTo(pod?.wh ? pa * (listen ? 0.03 : 0.01) : 0, 0.05);
+  v.whG.gain.rampTo(pod?.wh ? pa * 0.03 : 0, 0.05);
 }
 
 // One shot of the recorded ping: rate sets the pitch; dry or through the echo path.
@@ -1174,7 +1191,9 @@ function ping(brg = null, power = 0) {
       v.ping.frequency.exponentialRampToValueAtTime(f * 0.973, now + 0.9);
     }
     v.verb.triggerAttackRelease(RING_T, now + 0.05, (omni ? 0.6 : 0.35) * (1 + power));
-    for (const e of pending) echoVoice(v, e, now + e.at, rate, power);
+    // Only the eight strongest echoes sound.
+    const loud = e => e.c.str / (1 + (e.d / R) ** 2 * 1.4);
+    for (const e of [...pending].sort((a, b) => loud(b) - loud(a)).slice(0, 8)) echoVoice(v, e, now + e.at, rate, power);
   }
   wake();
 }
@@ -1187,7 +1206,7 @@ function echoVoice(v, e, at, rate, power) {
   if (pingBuf) {
     const g = 0.5 * k + 0.06;
     if (kind === 0) { playSample(v, { rate: r, gain: g, at, dur: 1.3, wet: true }); playSample(v, { rate: r * 1.004, gain: g * 0.4, at: at + 0.035, dur: 0.8, wet: true }); }
-    else if (kind === 1) for (let i = 0; i < 5; i++) playSample(v, { rate: r * rnd(0.99, 1.01), gain: g * 0.45, at: at + i * rnd(0.02, 0.05), dur: 0.14, wet: true });
+    else if (kind === 1) for (let i = 0; i < 3; i++) playSample(v, { rate: r * rnd(0.99, 1.01), gain: g * 0.45, at: at + i * rnd(0.02, 0.05), dur: 0.14, wet: true });
     else if (kind === 2) playSample(v, { rate: r, gain: g * 0.8, at, dur: 0.6, wet: true });
     else if (kind === 4) for (let i = 0; i < 2; i++) playSample(v, { rate: r * 2.1, gain: g * 0.7, at: at + i * 0.09, dur: 0.1, wet: true });
     else if (kind === 5) { playSample(v, { rate: r, gain: g, at, dur: 1.1, wet: true }); playSample(v, { rate: r * 0.997, gain: g * 0.7, at: at + 0.06, dur: 0.9, wet: true }); playSample(v, { rate: r * 0.9, gain: g * 0.3, at: at + 0.12, dur: 1.2, wet: true }); }
@@ -1226,7 +1245,7 @@ function counterPing(c) {
   if (v) {
     const now = T.now() + 0.02, pan = clamp(Math.sin(b), -0.9, 0.9);
     if (!playSample(v, { rate: 0.78, gain: 0.6, at: now, dur: 4, pan })) v.ping.triggerAttackRelease(1150, 0.5, now);
-    for (let i = 0; i < 4; i++) v.beep.triggerAttackRelease(i % 2 ? 660 : 880, 0.12, now + 0.9 + i * 0.22);
+    v.beep.triggerAttackRelease(880, 0.15, now + 0.9);
   }
   wake();
 }
@@ -1245,7 +1264,7 @@ function auntieWakes(c) {
   if (v) {
     const now = T.now() + 0.02, pan = clamp(Math.sin(b), -0.9, 0.9);
     if (!playSample(v, { rate: 0.5, gain: 1, at: now, dur: 7, pan })) v.ping.triggerAttackRelease(740, 1.5, now);
-    for (let i = 0; i < 8; i++) v.beep.triggerAttackRelease(i % 2 ? 440 : 587, 0.2, now + 0.6 + i * 0.26);
+    v.beep.triggerAttackRelease(440, 0.3, now + 0.6);
   }
   wake();
 }
@@ -1568,9 +1587,7 @@ function drawSnd(c, Y, top) {
 function bearTune(x) { bCursor = clamp((x - box.x0) / (box.x1 - box.x0)) * TAU; press('tune'); wake(); }
 function depthTune(y) { dCursor = clamp((box.y1 - y) / (box.y1 - box.y0)) * depthMax(); press('tune'); wake(); }
 function selectTrace(x) {
-  const b = clamp((x - box.x0) / (box.x1 - box.x0)) * TAU;
-  let best = null, bd = 6 * D2R;
-  for (const s of passiveSources()) { if (!s.c || s.lvl < 0.04) continue; const d = angDiff(s.brg, b); if (d < bd) { bd = d; best = s.c; } }
+  const best = traceAt(clamp((x - box.x0) / (box.x1 - box.x0)) * TAU);
   btrSel = best && best !== btrSel ? best : null;
   press('select');
   hudDirty = true;
@@ -1600,15 +1617,16 @@ function sources() {
 function identify(f) {
   const tol = spanHz() * 0.012;
   const cand = [[60, 'OWN SHIP'], [180, 'OWN SHIP'], [400, 'OWN SHIP  PUMP']];
-  if (song.amp * whaleGate() > 0.1) for (let h = 1; h <= 4; h++) cand.push([song.f * h, h === 1 ? 'BIO  WHALE' : `BIO  WHALE  H${h}`]);
+  const wh = sea.contacts.find(c => c.kind === 2);
+  if (wh && song.amp * whaleGate() > 0.1) for (let h = 1; h <= 4; h++) cand.push([song.f * h, h === 1 ? 'BIO  WHALE' : `BIO  WHALE  H${h}`, wh]);
   for (const c of sea.contacts) {
     if (!c.ton || tonalAmp(c) < 0.08) continue;
     const who = `${c.kind === 5 ? 'SURFACE' : c.kind === 6 ? 'AUNTIE' : 'SUB'} ${pad3(wrapA(bearingTo(c)) / D2R)}`, dp = doppler(c);
-    for (let k = 1; k <= 16; k++) cand.push([k * c.ton.f1 * dp, k % c.ton.blades === 0 ? `${who}  BLADE  x${k / c.ton.blades}` : `${who}  SHAFT  x${k}`]);
-    if (c.sub) cand.push([50 * dp, `${who}  MOTOR`], [100 * dp, `${who}  MOTOR  x2`], [c.ton.pump * dp, `${who}  PUMP`]);
+    for (let k = 1; k <= 16; k++) cand.push([k * c.ton.f1 * dp, k % c.ton.blades === 0 ? `${who}  BLADE  x${k / c.ton.blades}` : `${who}  SHAFT  x${k}`, c]);
+    if (c.sub) cand.push([50 * dp, `${who}  MOTOR`, c], [100 * dp, `${who}  MOTOR  x2`, c], [c.ton.pump * dp, `${who}  PUMP`, c]);
   }
   let best = null, bd = tol;
-  for (const [cf, name] of cand) { const d = Math.abs(cf - f); if (d < bd) { bd = d; best = [cf, name]; } }
+  for (const k of cand) { const d = Math.abs(k[0] - f); if (d < bd) { bd = d; best = k; } }
   return best;
 }
 function drawHud() {
