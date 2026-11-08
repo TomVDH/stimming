@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T11:04:37Z
+updated_at: 2026-11-08T11:11:06Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -23,3 +23,5 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - [x] Task 4: sound (wind bed, blade swish, sea wash, gust whoosh, cut-out hum); not heard by Tom yet
 - [x] Task 5a: bar, menu Lab entry, toys.json\n- [ ] Task 5b: QA Q1 to Q10; Tom checks fps on a real device\n- [x] Tom round 1: fewer turbines (4 rows of 11), five fog sheets, lamps light the fog, more grain, always opens on Rows
 - [ ] Record the session cost
+
+- [x] Tom round 2: loose scatter of 22 turbines across the Rows frame, mist on the water fades tower feet, softer towers, lamp glows never cut by geometry

@@ -176,32 +176,46 @@ const LOOK = {
 };
 
 /* ---------- farm ---------- */
-// Rows of turbines 900 m apart along the row, rows 800 m apart.
-// Row 0 starts 1.5 km out and runs away almost along the sea camera's view.
-const FIRST = [-76, -1500], ALONG = 2.4 * Math.PI / 180, SU = 900, SV = 800;
-const ROWS = [-2, 1], PER_ROW = 11;
-const RU = [Math.sin(ALONG), -Math.cos(ALONG)], RV = [Math.cos(ALONG), Math.sin(ALONG)];
+// A loose scatter of turbines, composed for the Rows lens.
+// Each one takes a place across the Rows frame and a depth; its spot at sea follows.
 function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
-// The ground position of turbine i in row j, without jitter.
-const at = (i, j) => [FIRST[0] + i * SU * RU[0] + j * SV * RV[0], FIRST[1] + i * SU * RU[1] + j * SV * RV[1]];
 // Rotors face the wind; it blows from the sea camera's side into the farm.
 const YAW = -0.35;
 const WIND_DIR = [-Math.sin(YAW), -Math.cos(YAW)];
+// The Rows frame spans this much sideways per metre of depth.
+const SPAN = 1 / 5.9;
+const N_TURB = 22, MIN_GAP = 520, NEAR_D = 1700, FAR_D = 13000;
+// Two turbines are placed by hand: one looms on the left, one stands mid-frame.
+const PLACED = [[0.13, NEAR_D], [0.63, 2700]];
 const farm = [];
-for (let j = ROWS[0]; j <= ROWS[1]; j++) for (let i = 0; i < PER_ROW; i++) {
-  // Rows start staggered, so the farm edge runs at an angle.
-  const k = (j + 10) * 31 + i, i0 = j < 0 ? -j : 0;
-  const [x0, z0] = at(i + i0, j);
-  const x = x0 + (rand(k) - 0.5) * 40, z = z0 + (rand(k + 99) - 0.5) * 40;
+function addTurbine(fx, d, k) {
+  const x = (fx - 0.5) * SPAN * d, z = -d;
   farm.push({
-    x, z, row: i + i0,
+    x, z,
     // Distance downwind, for gust fronts.
     s: x * WIND_DIR[0] + z * WIND_DIR[1],
     ang: rand(k + 7) * 2.094, omega: 0, pitch: 0.06, feathered: false,
-    // No two rotors share a speed or a stopping angle.
-    jit: 0.96 + 0.08 * rand(k + 13),
+    // No two rotors share a speed, a gust phase or a stopping angle.
+    jit: 0.96 + 0.08 * rand(k + 13), ph: rand(k + 17) * 9,
   });
 }
+PLACED.forEach(([fx, d], i) => addTurbine(fx, d, 900 + i));
+for (let k = 1; farm.length < N_TURB && k < 4000; k++) {
+  // Depths spread evenly on a log scale, so each step back holds the same count.
+  const d = NEAR_D * 1.25 * Math.pow(FAR_D / (NEAR_D * 1.25), rand(k * 3 + 1));
+  const fx = 0.03 + 0.94 * rand(k * 3 + 2), x = (fx - 0.5) * SPAN * d;
+  if (farm.some(t => Math.hypot(t.x - x, t.z + d) < MIN_GAP)) continue;
+  // No two towers stack on one line of sight at a similar depth.
+  if (farm.some(t => Math.abs(t.x / -t.z - x / d) < 0.012 && Math.abs(Math.log(-t.z / d)) < 0.3)) continue;
+  addTurbine(fx, d, k);
+}
+// A turbine in the wake of another, close upwind, gets 8 % less wind.
+for (const t of farm) {
+  t.wake = farm.some(u => u !== t && u.s < t.s && t.s - u.s < 2500 &&
+    Math.abs((t.x - u.x) * WIND_DIR[1] - (t.z - u.z) * WIND_DIR[0]) < 160);
+}
+const NEAR = farm[0];
+const CENTRE = [farm.reduce((a, t) => a + t.x, 0) / farm.length, farm.reduce((a, t) => a + t.z, 0) / farm.length];
 const S_MAX = Math.max(...farm.map(t => t.s));
 
 /* ---------- wind ---------- */
@@ -220,9 +234,9 @@ const fronts = [];
 function gustNoise(t) { return 0.8 * Math.sin(t * 0.21) + 0.5 * Math.sin(t * 0.37 + 1.3) + 0.3 * Math.sin(t * 0.83 + 4.1); }
 // Wind at one turbine: the slider, slow gusts, fronts and the wake of the turbine upwind.
 function windAt(t, clock) {
-  let w = opts.wind * (1 + 0.06 * gustNoise(clock + t.row * 0.7));
+  let w = opts.wind * (1 + 0.06 * gustNoise(clock + t.ph));
   for (const f of fronts) w += f.amp * Math.exp(-(((t.s - f.s) / FRONT_W) ** 2));
-  if (t.row > 0) w *= 0.92;
+  if (t.wake) w *= 0.92;
   return clamp(w, 0, 30);
 }
 function stepWind(dt, clock, calm) {
@@ -293,9 +307,10 @@ float fogSigma(vec3 p) {
   // The deck at 72 m; the hubs stand clear of it.
   s += exp(-pow((y - 72.0) / 12.0, 2.0)) * smoothstep(0.45, 0.72, fbm3(q / 1400.0 + 23.0)) / 420.0;
   s += exp(-pow((y - 96.0) / 8.0, 2.0)) * smoothstep(0.55, 0.75, fbm3(q / 1600.0 + 31.0)) / 1500.0;
-  // Dense low banks sit between the rows; the lane along row 0 stays clear.
-  float lane = smoothstep(180.0, 520.0, abs(dot(p.xz - vec2(-76.0, -1500.0), vec2(0.9991, 0.0419))));
-  s += smoothstep(0.5, 0.75, fbm3(q / 1700.0 + 5.0)) * exp(-y / 55.0) * lane / 140.0;
+  // Mist lies on the water, so every tower foot fades into it.
+  s += exp(-y / 7.0) * (0.6 + 0.8 * fbm3(q / 500.0 + 41.0)) / 600.0;
+  // Dense low banks drift between the turbines, clear of the sea camera.
+  s += smoothstep(0.55, 0.78, fbm3(q / 1700.0 + 5.0)) * exp(-y / 55.0) * smoothstep(1200.0, 2600.0, length(p.xz)) / 180.0;
   return s * uFogK;
 }
 // Light the fog sends toward the eye: murk plus a cold glow low in the sky.
@@ -433,7 +448,7 @@ void main() {
   if (dot(n, d) > 0.0) n = -n;
   // Dark shapes against the fog: overcast light from above, the dark sea below.
   float up = n.y * 0.5 + 0.5;
-  vec3 amb = mix(uFog * 0.15, uFog * 0.6 + uZen * 1.2, up);
+  vec3 amb = mix(uFog * 0.35, uFog * 0.8 + uZen * 1.2, up);
   vec3 c = uPaint * (amb + uSun * 0.35 * max(dot(n, uSD), 0.0));
   vec4 f = fogMarch(cameraPosition, d, t, hash12(gl_FragCoord.xy));
   gl_FragColor = vec4(c * f.a + f.rgb, 1.0);
@@ -494,9 +509,9 @@ varying float vSig;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float t = -mv.z;
-  // Halo and glow sprites sit in front of their own turbine, so its tower never cuts them.
-  // Nearer turbines still hide them; turbines stand 800 m apart.
-  float lift = uHalo > 1.5 ? min(90.0, t * 0.5) : uHalo > 0.5 ? min(12.0, t * 0.5) : 0.0;
+  // Halos sit in front of their own turbine, so its tower and blades never cut them.
+  // Turbines stand at least 520 m apart, so nearer turbines still hide them.
+  float lift = uHalo > 0.5 ? min(120.0, t * 0.5) : 0.0;
   vec4 mvs = vec4(mv.xyz * (1.0 - lift / t), 1.0);
   // The lift runs along the view ray, so the sprite stays on the lamp.
   gl_Position = projectionMatrix * mvs;
@@ -605,6 +620,8 @@ for (const halo of [0, 1, 2]) {
   const pts = new THREE.Points(lightGeo, new THREE.ShaderMaterial({
     uniforms: { ...U, uHalo: { value: halo } }, vertexShader: LIGHT_VS, fragmentShader: LIGHT_FS,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    // The glow is lit fog, so no solid shape cuts it.
+    depthTest: halo < 2,
   }));
   pts.frustumCulled = false; pts.renderOrder = 5 + halo;
   scene.add(pts);
@@ -667,7 +684,7 @@ const SHOTS = {
   },
   // Foot: on the water in front of one rotor, looking up into it.
   Foot: (W, H, tall) => {
-    const [x, z] = at(0, 0), pos = [x - 25, 6, z + 125];
+    const { x, z } = NEAR, pos = [x - 25, 6, z + 125];
     const f = H * (0.72 - 0.22 * tall);
     return { pos, yaw: aim(pos, [x, z]) - 0.32 * (1 - tall) - 0.1, pitch: 0.5, f, exp: 2.6 };
   },
@@ -675,25 +692,25 @@ const SHOTS = {
   Above: (W, H, tall) => {
     const pos = [1400, 420, -600];
     const f = W * 2.0 * (1 - tall) + H * 1.5 * tall;
-    return { pos, yaw: aim(pos, at(7, -3)), pitch: -0.2, f, exp: 3.4 };
+    return { pos, yaw: aim(pos, CENTRE), pitch: -0.2, f, exp: 3.4 };
   },
-  // Across: a boat between two rows, looking out across the farm.
+  // Across: a boat inside the farm, looking out across it.
   Across: (W, H, tall) => {
-    const [x, z] = at(4, 0), pos = [x - 400, 8, z];
+    const pos = [CENTRE[0] + 350, 8, -4800];
     const f = W * 1.5 * (1 - tall) + H * 1.3 * tall;
-    return { pos, yaw: aim(pos, at(12, -5)), pitch: Math.atan(0.2 * H / f), f, exp: 2.2 };
+    return { pos, yaw: aim(pos, [-2200, -11000]), pitch: Math.atan(0.2 * H / f), f, exp: 2.2 };
   },
-  // Hub: on top of one nacelle, looking down the row at eye level with the lights.
+  // Hub: on top of the near nacelle, looking out at eye level with the lamps.
   Hub: (W, H, tall) => {
-    const [x, z] = at(0, 0), pos = [x + 40, 119, z - 10];
+    const { x, z } = NEAR, pos = [x + 40, 119, z - 10];
     const f = W * 4.2 * (1 - tall) + H * 3.4 * tall;
-    return { pos, yaw: aim(pos, at(8, 0)) + 0.02, pitch: -0.012, f, exp: 1.8 };
+    return { pos, yaw: aim(pos, [x + 300, z - 6000]), pitch: -0.012, f, exp: 1.8 };
   },
-  // Grid: outside the farm's side, looking through the rows on a long lens.
+  // Grid: off the farm's side, looking through it on a long lens.
   Grid: (W, H, tall) => {
-    const [x, z] = at(4, 2.6), pos = [x, 22, z];
+    const pos = [2600, 22, -5200];
     const f = W * 3.2 * (1 - tall) + H * 2.8 * tall;
-    return { pos, yaw: aim(pos, at(9, -6)), pitch: Math.atan(0.2 * H / f), f, exp: 2 };
+    return { pos, yaw: aim(pos, [-1600, -7600]), pitch: Math.atan(0.2 * H / f), f, exp: 2 };
   },
 };
 
