@@ -175,8 +175,8 @@ const DECAY = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc; uniform vec4 uK; uniform float uEps; in vec2 vUv; out vec4 o;
 void main() { vec4 c = texture(uSrc, vUv) * uK; o = max(c - uEps, 0.0); }`;
-// A segment draws as a soft line with ramped ends.
-// Adjacent segments overlap their ramps, so joins add up to one.
+// A segment draws as a soft capsule.
+// Change: MAX blending needs round ends, not ramps that add up.
 const SEG_VS = `#version 300 es
 in vec2 aCorner; in vec4 aSeg; in vec4 aCol;
 uniform vec2 uRes;
@@ -196,14 +196,9 @@ in vec2 vP; flat in vec4 vSeg; flat in vec4 vCol; out vec4 o;
 void main() {
   vec2 a = vSeg.xy, b = vSeg.zw; float w = vCol.a;
   vec2 d = b - a; float L = length(d);
-  float k;
-  if (L < 0.05) { float r = length(vP - a) / w; k = exp(-r * r); }
-  else {
-    vec2 t = d / L; float s = dot(vP - a, t); float q = dot(vP - a, vec2(-t.y, t.x)) / w;
-    float h = w * 1.2;
-    k = exp(-q * q) * clamp((s + h) / (2.0 * h), 0.0, 1.0) * clamp((L + h - s) / (2.0 * h), 0.0, 1.0);
-  }
-  o = vec4(vCol.rgb * k, 1.0);
+  float h = L < 0.05 ? 0.0 : clamp(dot(vP - a, d) / (L * L), 0.0, 1.0);
+  float r = length(vP - a - d * h) / w;
+  o = vec4(vCol.rgb * exp(-r * r), 1.0);
 }`;
 // A flat value fills the whole plate, for the flash.
 const FILL_FS = `#version 300 es
@@ -380,7 +375,7 @@ const P = {
 let W = 1, H = 1, frame = null, bl = [], wd = [];
 let t = 0, ready = false, flash = 0, clearUntil = -1, lastCharge = -1e9;
 // The torch shows its pool at first, then clicks off after the intro.
-const torch = { x: 0, y: 0, r: 1, on: 1, preview: true };
+const torch = { x: 0, y: 0, r: 1, on: 1, preview: true, ms: 0 };
 let press = null, keyOn = false, tapUntil = -1, held = 0;
 const segs = [];
 const writing = () => !!press || keyOn || t < tapUntil;
@@ -433,23 +428,30 @@ function preExpose() {
 /* ---------- charge ---------- */
 // The torch charges the paper along its path and soaks the spot it holds.
 function charge(dt) {
-  if (!writing()) { segs.length = 0; held = 0; return; }
+  const on = writing();
+  if (!on) held = 0;
+  if (!on && !segs.length) return;
   const w = torch.r * 0.09;
-  let L = 0;
-  for (const s of segs) L += Math.hypot(s[2] - s[0], s[3] - s[1]);
-  const speed = dt > 0 ? L / dt : 0;
-  // Slow strokes take a full charge; fast flicks stay faint.
-  const k = 1 - Math.exp(-60 * w / Math.max(speed, 1e-3));
-  held = speed < torch.r * 1.5 ? held + dt : held * Math.exp(-dt * 6);
+  // Each segment carries its own time, so slow frames do not fake speed.
+  let L = 0, T = 0;
+  for (const s of segs) { L += Math.hypot(s[2] - s[0], s[3] - s[1]); T += s[4]; }
+  const speed = T > 0 ? L / T : 0;
+  // Only a nearly still torch soaks the spot under it.
+  const still = speed < torch.r * 0.4;
+  if (on) held = still ? held + dt : held * Math.exp(-dt * 10);
   const core = 1 - Math.exp(-(held + dt) * 8);
   const soak = 0.9 * (1 - Math.exp(-held / 1.4));
   let n = 0;
   for (const s of segs) {
+    // Slow strokes take a full charge; fast flicks stay faint.
+    const v = Math.hypot(s[2] - s[0], s[3] - s[1]) / Math.max(s[4], 1e-3);
+    const k = 1 - Math.exp(-60 * w / Math.max(v, 1e-3));
     inst.set([s[0], s[1], s[2], s[3], k, k, 0, w], n * 8);
     if (++n >= MAXSEG - 2) { segPass(acc[ai], n); n = 0; }
   }
-  inst.set([torch.x, torch.y, torch.x, torch.y, core, core, 0, w * 1.4], n++ * 8);
-  if (soak > 0.01) inst.set([torch.x, torch.y, torch.x, torch.y, soak, soak, 0, torch.r * 0.42], n++ * 8);
+  // Moves queued before a release still draw; the dots need the torch on.
+  if (on && still) inst.set([torch.x, torch.y, torch.x, torch.y, core, core, 0, w * 1.4], n++ * 8);
+  if (on && soak > 0.01) inst.set([torch.x, torch.y, torch.x, torch.y, soak, soak, 0, torch.r * 0.42], n++ * 8);
   segPass(acc[ai], n);
   segs.length = 0;
   lastCharge = t;
@@ -582,9 +584,10 @@ function resize(force = false) {
 
 /* ---------- input ---------- */
 const at = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (r.bottom - e.clientY) * H / r.height]; };
-function torchTo(p) {
-  if (writing()) segs.push([torch.x, torch.y, p[0], p[1]]);
-  torch.x = p[0]; torch.y = p[1];
+// A move queues one segment with its own duration in seconds.
+function torchTo(p, ms = performance.now()) {
+  if (writing()) segs.push([torch.x, torch.y, p[0], p[1], clamp((ms - torch.ms) / 1000, 0.001, 0.25)]);
+  torch.x = p[0]; torch.y = p[1]; torch.ms = ms;
 }
 function lift() { torch.preview = false; }
 stage.addEventListener('pointerdown', e => {
@@ -592,15 +595,17 @@ stage.addEventListener('pointerdown', e => {
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   lift();
   const p = at(e);
-  torch.x = p[0]; torch.y = p[1];
+  torch.x = p[0]; torch.y = p[1]; torch.ms = e.timeStamp;
   press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), kind: 'press' };
-  segs.push([p[0], p[1], p[0], p[1]]);
+  segs.push([p[0], p[1], p[0], p[1], 0.016]);
   poke();
 });
 stage.addEventListener('pointermove', e => {
   if (!press || e.pointerId !== press.id) return;
   if (press.kind !== 'drag' && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 8) press.kind = 'drag';
-  for (const c of e.getCoalescedEvents?.() || [e]) torchTo(at(c));
+  // Coalesced moves keep fast strokes smooth; an empty list falls back to the event.
+  const list = e.getCoalescedEvents?.();
+  for (const c of list?.length ? list : [e]) torchTo(at(c), c.timeStamp);
   poke();
 });
 const end = e => {
@@ -620,7 +625,8 @@ stage.addEventListener('keydown', e => {
     e.preventDefault();
     if (e.repeat) return;
     lift(); keyOn = true;
-    segs.push([torch.x, torch.y, torch.x, torch.y]);
+    torch.ms = performance.now();
+    segs.push([torch.x, torch.y, torch.x, torch.y, 0.016]);
     poke();
   } else if (mv) {
     e.preventDefault();
