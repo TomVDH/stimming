@@ -769,8 +769,14 @@ void main() {
 /* ---------- post ---------- */
 // Bloom runs on its own small mips; the grade adds ACES, a cool balance, vignette and grain.
 // The farm renders into its own target with depth, so the bokeh pass knows each pixel's distance.
-const sceneRT = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 });
-sceneRT.depthTexture = new THREE.DepthTexture(2, 2);
+// A depth texture keeps its first size, so a resize builds a fresh target.
+let sceneRT = null;
+function makeSceneRT(w, h) {
+  sceneRT?.depthTexture?.dispose();
+  sceneRT?.dispose();
+  sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(w, h) });
+}
+makeSceneRT(2, 2);
 const composer = new EffectComposer(renderer);
 // Bokeh, after Buoy Business: a real depth of field on the long lens.
 // 28 golden-angle disc taps, turned per pixel, so the taps blend into grain.
@@ -940,7 +946,11 @@ function resize() {
   // The fog pass runs at half size, or a quarter on the lowest rung.
   const k = rung >= 2 ? 0.25 : 0.5;
   bgRT.setSize(Math.max(2, Math.round(W * k)), Math.max(2, Math.round(H * k)));
-  sceneRT.setSize(W, H);
+  if (sceneRT.width !== W || sceneRT.height !== H) {
+    makeSceneRT(W, H);
+    dofPass.uniforms.tScene.value = sceneRT.texture;
+    dofPass.uniforms.tDepth.value = sceneRT.depthTexture;
+  }
   dofPass.uniforms.uRes.value.set(W, H);
   grade.uniforms.uRes.value.set(W, H);
   U.uRes.value.set(W, H);
