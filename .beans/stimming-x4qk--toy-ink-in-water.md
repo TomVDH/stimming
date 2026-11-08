@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:08:28Z
-updated_at: 2026-11-08T17:18:26Z
+updated_at: 2026-11-08T17:49:17Z
 ---
 
 Ink in water (`ink`, idea 35). Ink drops fall into a tall, still tank of dark water as vortex rings, break into fingers, and glow in side light.
@@ -34,3 +34,5 @@ Plan: `docs/plans/ink.md`. D3: WebGPU only on three.js 0.186.1, as Fire (Tom, 20
 - In a hidden Browser pane, frame callbacks almost stop. Judge motion with the pane shown.
 - An inactive pane tab gets no WebGPU adapter until it shows; it is not a GPU crash.
 - A visible tab ran at 120 fps on the Standard grid (72 x 120 x 36).
+
+- Menu icon pass 2: inertia, smear along the stroke, denser plume and curled tendrils, wisps, a sliding glint; spike 16 A matches.
