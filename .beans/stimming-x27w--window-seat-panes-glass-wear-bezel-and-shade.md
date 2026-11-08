@@ -27,3 +27,4 @@ Out: cabin wall detail, shade light leaks, the physical slide, shade sound.
 
 - Pass 1 now skips every pixel outside the skin opening, which is smaller than the scratch pane.
 - The scratch halos and ghosts are built but not yet seen in the pane: the sun sat outside the window in the check.
+- Tom asked for a larger, Dreamliner-like window: the visible glass is now about 27 by 47 cm, and the eye sits 40 cm from the wall.
