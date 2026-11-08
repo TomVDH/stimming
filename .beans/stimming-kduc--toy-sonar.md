@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T15:00:00Z
-updated_at: 2026-11-08T11:18:21Z
+updated_at: 2026-11-08T11:44:22Z
 ---
 
 Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-light phosphor console. It starts in the Lab.
@@ -33,9 +33,11 @@ Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-li
 - [x] One target across modes (2× tap locks it); pings, knocks and enemy pings show on every display
 - [x] Keycaps are the only legend: one cap per action, plain words; the bar how-to list goes
 - [ ] Checkpoint: Tom reviews look and sound on a real device
-- [ ] Record the session cost
+- [x] Record the session cost
 
 ## Notes
 
 - The sonogram and the audio read one sea model, so what you see is what you hear, even when muted.
 - Headless SwiftShader runs at 3 to 8 fps; a real-device fps check is still needed.
+
+- Session cost, rework of 2026-11-08 (sound, target, keycaps): billed on the plan, not in dollars. About 233k context tokens; 9% of the weekly limit used at the end.
