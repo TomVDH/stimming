@@ -879,9 +879,9 @@ vec3 disc(vec3 d) {
   return c * texture(uSkyT, skyUV(d)).rgb;
 }
 
-// A meteor: a tiny hot head and a thin streak that fades fast behind it.
+// A meteor along a great circle of the sky.
 // uMet: head progress, persistence length, brightness, train glow.
-// uMetF: fireball flag, seed, train age from 0 to 1.
+// uMetF: fireball flag, seed, train age 0 to 1, colour pick 0 to 1.
 vec3 meteor(vec3 d) {
   if (uMet.z <= 0.0 && uMet.w <= 0.0) return vec3(0.0);
   vec3 n = normalize(cross(uMetA, uMetB));
@@ -890,42 +890,53 @@ vec3 meteor(vec3 d) {
   float total = max(acos(clamp(dot(uMetA, uMetB), -1.0, 1.0)), 1e-4);
   float along = atan(dot(cross(uMetA, dp), n), dot(uMetA, dp)) / total;
   float px = 1.0 / uFocal;
-  float head = uMet.x, behind = head - along;
+  float head = uMet.x, behind = head - along, behR = behind * total;
   bool fire = uMetF.x > 0.5;
+  // Plain meteors burn white with a green or blue cast; fireballs burn green.
+  vec3 tint = fire ? vec3(0.45, 1.0, 0.6) : mix(vec3(0.75, 1.0, 0.8), vec3(0.75, 0.85, 1.0), uMetF.w);
   vec3 c = vec3(0.0);
   if (uMet.z > 0.0) {
-    // The glow persists a short way behind the head; the streak tapers as it fades.
+    float fl = 0.8 + 0.2 * sin(uTime * 61.0 + along * 50.0) * sin(uTime * 37.0 + uMetF.y);
+    // The streak: a thin core with a soft bloom, fading fast behind the head.
+    // A fireball's wake widens behind it, into a teardrop.
     float fade = behind >= 0.0 ? exp(-behind / uMet.y) : 0.0;
-    float wid = px * mix(0.55, fire ? 1.8 : 1.1, fade);
-    float line = exp(-off * off / (wid * wid)) * fade * step(0.0, along);
-    // It flickers as it burns.
-    float fl = 0.78 + 0.22 * sin(uTime * 61.0 + along * 50.0) * sin(uTime * 37.0 + uMetF.y);
+    float wid = px * (fire ? 1.6 : 0.9) + max(behR, 0.0) * (fire ? 0.08 : 0.015);
+    float line = (exp(-off * off / (wid * wid)) + 0.22 * exp(-off * off / (9.0 * wid * wid))) * fade * step(0.0, along);
+    // Hot white at the head, its own colour behind, a little orange at the end.
+    vec3 col = mix(vec3(1.0, 0.97, 0.92), tint, smoothstep(0.0, 0.25, 1.0 - fade));
+    col = mix(col, vec3(1.0, 0.55, 0.3), smoothstep(0.55, 0.95, 1.0 - fade) * 0.6);
     vec3 hd = normalize(mix(uMetA, uMetB, head));
     float hr = acos(clamp(dot(d, hd), -1.0, 1.0)) / px;
-    float core = exp(-hr * hr / (fire ? 2.0 : 0.9)) + (fire ? 0.12 : 0.04) * exp(-hr / 4.0);
-    vec3 tint = fire ? vec3(0.55, 1.0, 0.72) : vec3(0.82, 0.9, 1.0);
-    c += (vec3(1.0, 0.98, 0.95) * core * 1.6 + tint * line * 0.8) * uMet.z * fl;
-    // A fireball breaks up near its end: sparks peel off behind the head.
-    if (fire && head > 0.6) {
-      float br = (head - 0.6) / 0.4;
-      for (int k = 0; k < 5; k++) {
+    float core = exp(-hr * hr / (fire ? 4.0 : 1.4)) + exp(-hr / (fire ? 12.0 : 4.0)) * (fire ? 0.3 : 0.07);
+    c += (vec3(1.0, 0.98, 0.95) * core * 1.8 + col * line) * uMet.z * fl;
+    // A fireball breaks up late: sparks fall back, each trailing its own short streak.
+    if (fire && head > 0.55) {
+      float br = (head - 0.55) / 0.45;
+      vec3 tg = normalize(uMetB - uMetA);
+      for (int k = 0; k < 6; k++) {
         float fk = float(k);
-        float back = (0.01 + 0.018 * fk) * br;
-        float side = (hash12(vec2(fk, uMetF.y)) - 0.5) * 14.0 * px * br;
-        vec3 sp = normalize(mix(uMetA, uMetB, head - back) + n * side);
-        float sr = acos(clamp(dot(d, sp), -1.0, 1.0)) / px;
-        c += vec3(1.0, 0.72, 0.4) * exp(-sr * sr / 0.7) * uMet.z * 0.5 * (0.6 + 0.4 * sin(uTime * 43.0 + fk * 2.3));
+        float back = (0.008 + 0.022 * fk) * br * total;
+        float side = (hash12(vec2(fk, uMetF.y)) - 0.5) * 18.0 * px * br;
+        vec3 sp = normalize(hd - tg * back + n * side);
+        // Spark-local offsets: along the path and across it, in pixels.
+        float sa = dot(d - sp, tg) / px, so = dot(d - sp, n) / px;
+        float trail = exp(-so * so / 0.8) * exp(-max(-sa, 0.0) / (3.0 + 4.0 * br)) * step(sa, 1.0);
+        float spark = exp(-(sa * sa + so * so) / 0.9);
+        float life = 0.6 + 0.4 * sin(uTime * 43.0 + fk * 2.3);
+        c += vec3(1.0, 0.7, 0.38) * (spark * 1.2 + trail * 0.35) * uMet.z * 0.5 * life;
       }
     }
   }
-  // A fireball's train: a faint thread, green at first, then a dim drifting smudge.
+  // The persistent train: a glowing thread that twists in the high wind.
+  // Green-cyan at first, then dull red, then a grey ghost.
   if (uMet.w > 0.0 && along > 0.0 && along < head) {
     float age = uMetF.z;
-    float tw = px * (1.5 + 14.0 * age);
-    float wob = sin(along * 17.0 + uTime * 0.4 + uMetF.y) * px * 8.0 * age;
-    float g = exp(-pow((off - wob) / tw, 2.0)) * smoothstep(0.0, 0.08, along);
-    vec3 tc = mix(vec3(0.3, 0.85, 0.55), vec3(0.45, 0.4, 0.42), age);
-    c += tc * uMet.w * 0.22 * g / (1.0 + 4.0 * age);
+    float tw = px * (1.4 + 26.0 * age);
+    float wob = (sin(along * 13.0 + age * 3.0 + uMetF.y) + 0.5 * sin(along * 31.0 - age * 2.0)) * px * 22.0 * age;
+    float g = exp(-pow((off - wob) / tw, 2.0)) * smoothstep(0.0, 0.1, along) * smoothstep(0.0, 0.05, head - along + 0.02);
+    vec3 tc = mix(vec3(0.3, 1.0, 0.65), vec3(0.95, 0.4, 0.3), smoothstep(0.05, 0.4, age));
+    tc = mix(tc, vec3(0.5, 0.48, 0.5), smoothstep(0.4, 0.9, age));
+    c += tc * uMet.w * 0.3 * g / (1.0 + 6.0 * age);
   }
   return c;
 }

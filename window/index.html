@@ -470,6 +470,8 @@ const EV = { wait: rnd(10, 20), meteor: null, rocket: null, jet: null, boom: nul
 // A test hook: ?event=meteor, fireball, rocket or jet calls that sight soon and often.
 const forced = qs.get('event');
 if (forced) EV.wait = 2;
+// ?at=seconds starts the called sight part-way in; ?hold=1 freezes the sights there.
+const atT = +qs.get('at') || 0, hold = qs.has('hold');
 function startEvent(want = null) {
   const call = want || forced;
   const pool = [];
@@ -501,7 +503,7 @@ function newMeteor(fireWant = null) {
   const elB = Math.max(3 * D2R, elA + Math.sin(th) * len), azB = azA + Math.cos(th) * len / Math.cos(elA);
   const B = dir(azB, elB);
   // tail: how far behind the head the glow persists, as a share of the path.
-  return { A, B, fire, dur: fire ? rnd(2.6, 3.6) : rnd(0.35, 0.8), age: 0, p: 0, tail: fire ? 0.16 : 0.07, b: 0, train: 0, trainAge: 0, seed: rnd(0, 100) };
+  return { A, B, fire, dur: fire ? rnd(3, 4) : rnd(0.6, 1.2), age: 0, p: 0, tail: fire ? 0.2 : 0.12, b: 0, train: 0, trainAge: 0, seed: rnd(0, 100), hue: Math.random() };
 }
 
 // Rocket path, u seconds after lift-off: height and downrange in km.
@@ -519,19 +521,27 @@ function sunlit(p) {
   return clamp((rmin - 6371 - 12) / 10);
 }
 
-function stepEvents(dt) {
+// Jump a fresh sight forward by T seconds, for the test hook.
+function skipTo(T) {
+  for (let k = 0; k < T * 20; k++) stepEvents(0.05, true);
+}
+function stepEvents(dt, skipping = false) {
+  if (hold && !skipping && !EV.held) { EV.held = true; if (atT && forced) { EV.wait = 0; } }
+  if (hold && !skipping && EV.started) return;
   EV.wait -= dt;
-  if (EV.wait <= 0) { startEvent(); EV.wait = forced ? ({ rocket: 120, jet: 90, boom: 180 }[forced] || 6) : rnd(22, 55) * (reduce ? 2.5 : 1); }
+  if (EV.wait <= 0 && !skipping) { startEvent(); EV.started = true; if (forced && atT) skipTo(atT); EV.wait = forced ? ({ rocket: 120, jet: 90, boom: 180, fireball: 25 }[forced] || 6) : rnd(22, 55) * (reduce ? 2.5 : 1); }
   const m = EV.meteor;
   if (m) {
     m.age += dt;
     m.p = clamp(m.age / m.dur);
     // It brightens, flares near its end, then its train lingers.
     // A plain meteor swells and dies; a fireball builds, then bursts near its end.
-    m.b = m.age < m.dur ? Math.sin(Math.PI * m.p) ** 0.7 * (m.fire ? 1.6 + 6 * Math.max(0, m.p - 0.7) ** 1.5 * 4 : 0.7) : 0;
-    m.train = m.fire ? (m.age < m.dur ? 0.5 * m.p : 0.5 * Math.exp(-(m.age - m.dur) / 6)) : 0;
-    m.trainAge = m.age < m.dur ? 0 : clamp((m.age - m.dur) / 16);
-    if (m.age > m.dur + (m.fire ? 16 : 0.5)) EV.meteor = null;
+    // A plain meteor swells and dies; a fireball builds, then bursts near its end.
+    const burst = m.fire ? 5 * Math.exp(-(((m.p - 0.9) / 0.04) ** 2)) : 0;
+    m.b = m.age < m.dur ? Math.sin(Math.PI * m.p) ** 0.6 * (m.fire ? 1.6 : 1.1) + burst : 0;
+    m.train = m.fire ? (m.age < m.dur ? 0.6 * m.p : 0.6 * Math.exp(-(m.age - m.dur) / 14)) : 0;
+    m.trainAge = m.age < m.dur ? 0 : clamp((m.age - m.dur) / 40);
+    if (m.age > m.dur + (m.fire ? 40 : 0.5)) EV.meteor = null;
   }
   const r = EV.rocket;
   if (r) { r.s += dt; if (r.s > ROCKET_T + 45) EV.rocket = null; }
@@ -750,7 +760,7 @@ function render() {
   const m = EV.meteor;
   gl.uniform3fv(u.uMetA, m ? m.A : [0, 0, 1]); gl.uniform3fv(u.uMetB, m ? m.B : [0, 0, 1]);
   gl.uniform4fv(u.uMet, m ? [m.p, m.tail, m.b, m.train] : [0, 0, 0, 0]);
-  gl.uniform4fv(u.uMetF, m ? [m.fire ? 1 : 0, m.seed, m.trainAge, 0] : [0, 0, 0, 0]);
+  gl.uniform4fv(u.uMetF, m ? [m.fire ? 1 : 0, m.seed, m.trainAge, m.hue] : [0, 0, 0, 0]);
   flareUniforms(u);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
