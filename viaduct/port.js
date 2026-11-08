@@ -1877,9 +1877,10 @@ function hitTrain(ndc) {
 /* ---------- end chase ---------- */
 // A moving train runs at full rate, so it never steps.
 const lively = () => run.user || steering || steerEase > 0 || rips.some(r => rt - r.z < 7) || (train.on && paceNow > 0) || chase.mode > 0;
-// Lower steps quality down one rung: 1 drops the mirror, 2 the rain.
+// Lower applies the quality rung, down or back up.
+// Rung 2 and up hide the rain.
 function lower(rung) {
-  if (rung >= 2) rain.visible = false;
+  rain.visible = rung < 2;
 }
 
 // Dispose frees every geometry, material and texture this scene made.
