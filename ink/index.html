@@ -151,10 +151,10 @@ function tankWidth() {
 }
 // Each quality step sets the cell count, the pressure solve, the ray steps and the pixel ratio.
 const GRADES = {
-  low: { cells: 92e3, pressure: 10, march: 40, dpr: 1 },
-  medium: { cells: 180e3, pressure: 10, march: 48, dpr: 1.25 },
-  standard: { cells: 311e3, pressure: 12, march: 56 },
-  high: { cells: 737e3, pressure: 16, march: 64 },
+  low: { cells: 120e3, pressure: 10, march: 40, dpr: 1 },
+  medium: { cells: 240e3, pressure: 10, march: 48, dpr: 1.25 },
+  standard: { cells: 420e3, pressure: 12, march: 56 },
+  high: { cells: 1e6, pressure: 16, march: 64 },
 };
 // Cells stay cubes, so the grid takes the tank's shape at the step's cell count.
 function gridFor(grade, w) {
@@ -568,15 +568,16 @@ async function start() {
   // Mass turns dye into optical depth per world unit.
   const uMass = uniform(55);
   // Scatter adds a grey share to extinction, so the plume shades itself.
-  const SCATTER = 1.3, BACKLIT_DEPTH = 3;
+  const SCATTER = 1.3, BACKLIT_DEPTH = 7;
   // Tint sets how strongly absorption colours the scattered light.
-  const uTint = uniform(2.6);
+  const uTint = uniform(3.2);
   // The light comes from the left, 70 degrees from the vertical.
   const lightDir = new THREE.Vector3(-Math.sin(1.22), Math.cos(1.22), 0.12).normalize();
   const uLightDir = uniform(lightDir);
   const uLight = uniform(vec(0.97, 0.02, 85).multiplyScalar(6.6));
-  const uHaze = uniform(vec(0.55, 0.03, 240).multiplyScalar(0.08));
-  const uWater = uniform(vec(0.08, 0.012, 255));
+  const uHaze = uniform(vec(0.55, 0.03, 240).multiplyScalar(0.16));
+  // The water matches the stage, so the tank has no visible box.
+  const uWater = uniform(vec(0.07, 0.008, 255));
   // The lightbox is warm at the top and cool at the foot.
   const uBoxTop = uniform(vec(0.96, 0.02, 85));
   const uBoxFoot = uniform(vec(0.94, 0.02, 235));
@@ -585,7 +586,7 @@ async function start() {
   // The ink's scattered colour follows its absorption per unit mass.
   const albedoOf = dye => {
     const sig = dye.rgb.div(max(dye.a, 1e-4));
-    return exp(sig.sub(min(sig.x, min(sig.y, sig.z))).mul(uTint).negate()).mul(0.6);
+    return exp(sig.sub(min(sig.x, min(sig.y, sig.z))).mul(uTint).negate()).mul(0.9);
   };
 
   // Henyey-Greenstein phase; g leans the scatter forward.
@@ -630,7 +631,7 @@ async function start() {
       Loop(steps, () => {
         const p = ro.add(rd.mul(t)).toVar();
         // Fine noise breaks up the grid cells in thin ink.
-        const grain = mx_noise_float(p.mul(70)).mul(0.35).add(0.85);
+        const grain = mx_noise_float(p.mul(70)).mul(0.25).add(mx_noise_float(p.mul(170)).mul(0.15)).add(0.82);
         const dye = dyeAt(p).mul(grain).toVar();
         const m = dye.a.mul(uMass);
         if (mode === 'dark') {
@@ -646,15 +647,12 @@ async function start() {
             });
             const Tl = exp(od.mul(uMass).mul(sds).negate());
             // Each step scatters what it takes out, so dense cores cannot blow out.
-            L.addAssign(T.mul(albedoOf(dye)).mul(Tl).mul(uLight).mul(lit).mul(ph).mul(exp(m.mul(ds).negate()).oneMinus()).mul(11));
+            L.addAssign(T.mul(albedoOf(dye)).mul(Tl).mul(uLight).mul(lit).mul(ph).mul(exp(m.mul(ds).negate()).oneMinus()).mul(14));
           });
-          // Faint haze in the water shows the light sheet; it fades at the walls.
-          const wall = smoothstep(0, 0.09, min(p.x.abs().negate().add(W / 2), p.y.add(H / 2)));
-          L.addAssign(T.mul(uHaze).mul(lit).mul(wall).mul(ds));
           T.mulAssign(exp(extinction(dye).mul(uMass).mul(ds).negate()));
         } else {
           // Through light, ink mostly absorbs; a little scatter softens thick ink.
-          // Thin ink must still read against the bright box, so the depth is tripled.
+          // Thin ink must still read against the bright box, so the depth is raised.
           If(m.greaterThan(0.01), () => {
             L.addAssign(T.mul(albedoOf(dye)).mul(uBoxTop).mul(exp(m.mul(ds).mul(BACKLIT_DEPTH).negate()).oneMinus()).mul(0.12));
           });
@@ -662,22 +660,45 @@ async function start() {
         }
         t.addAssign(ds);
       });
-      if (mode === 'dark') return vec4(L.add(T.mul(uWater)), 1);
+      if (mode === 'dark') {
+        // Faint haze shows the light sheet; it is summed once, so it has no step bands.
+        // It is a soft pool, brightest mid-tank, near nothing at the walls, so the water has no edge.
+        const mid = ro.add(rd.mul(tNear.add(tFar).mul(0.5)));
+        const fx = mid.x.div(W / 2), fy = mid.y.sub(0.08).div(H / 2);
+        const fade = exp(fx.mul(fx).mul(2.2).add(fy.mul(fy).mul(1.8)).negate())
+          .mul(smoothstep(0, 1, mid.x.abs().negate().add(W / 2).div(0.12)))
+          .mul(smoothstep(0, 1, mid.y.abs().negate().add(H / 2).div(0.12)));
+        L.addAssign(uHaze.mul(sheet(mid)).mul(tFar.sub(tNear)).mul(fade).mul(T.add(1).mul(0.5)));
+        // A dither of one 8-bit step hides banding in the dark haze.
+        return vec4(L.add(T.mul(uWater)).add(jitter.sub(0.5).mul(1.5 / 255)), 1);
+      }
+      // The lightbox is a soft oval of light that falls off into the dark stage, so no frame shows.
       const back = ro.add(rd.mul(tFar));
-      return vec4(L.add(T.mul(lightbox(back))), 1);
+      const bx = back.x.div(W / 2), by = back.y.sub(0.05).div(H / 2);
+      const glow = exp(bx.mul(bx).mul(2.6).add(by.mul(by).mul(2.4)).negate())
+        .mul(smoothstep(0, 1, back.x.abs().negate().add(W / 2).div(0.12)))
+        .mul(smoothstep(0, 1, back.y.abs().negate().add(H / 2).div(0.12)));
+      return vec4(L.add(T.mul(mix(uWater, lightbox(back), glow))).add(jitter.sub(0.5).mul(1.5 / 255)), 1);
     })();
   }
 
   const volMat = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false });
   const tank = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), volMat);
   tank.scale.set(W, H, D);
-  scene.add(tank);
+  // A backdrop behind the tank takes the same tone mapping as the water.
+  // So the water and the stage around it match, and the tank has no edge.
+  const backMat = new THREE.MeshBasicNodeMaterial({ depthWrite: false });
+  backMat.colorNode = vec4(uWater, 1);
+  const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), backMat);
+  backdrop.position.z = -D / 2 - 0.05;
+  backdrop.renderOrder = -1;
+  scene.add(backdrop, tank);
 
   // The light mode picks the march and the exposure.
   function setLight() {
     volMat.colorNode = raymarch(light, grade.march);
     volMat.needsUpdate = true;
-    renderer.toneMappingExposure = light === 'dark' ? 1.6 : 1.05;
+    renderer.toneMappingExposure = light === 'dark' ? 1.6 : 1.15;
   }
   setLight();
 
