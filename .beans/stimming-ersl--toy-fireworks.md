@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T11:09:07Z
+updated_at: 2026-11-08T11:15:05Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -46,3 +46,8 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Comets: six styles (gold, glitter, colour, dark, spin, crackle), bold trails and spark sprays, a lean up to about 9 degrees; dark comets carry bigger shells and a huge flash
 - [x] Smoke: lit puffs that drift on the wind, layered; later bursts light earlier smoke; Thin and Thick
 - [ ] fps on a real device (the pane stays hidden here)
+
+## Tom's batch 3, 2026-11-08
+
+- [x] Smoke ages into level, sheared strands (slierten) instead of textured blobs
+- [x] Beach lights glow less and are about a quarter fewer
