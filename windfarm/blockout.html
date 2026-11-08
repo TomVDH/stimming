@@ -26,20 +26,22 @@ const LOOK = {
   zen: [0.035, 0.05, 0.085], hor: [0.3, 0.28, 0.27], fog: [0.2, 0.21, 0.22],
   sun: [2.6, 1.9, 1.15], deep: [0.012, 0.024, 0.022], paint: [0.8, 0.81, 0.82],
   // Fog length in metres: transmittance falls by 1/e per length.
-  fogL: 4200,
+  fogL: 3400,
 };
 
 /* ---------- shot ---------- */
-// The camera stands 6 m above the sea and looks level along -z.
-const CAM_H = 6;
-// The horizon sits at 62 % of the stage height.
-const HOR = 0.62;
+// The camera stands 10 m above the sea, on a long telephoto lens.
+const CAM_H = 10;
+// The horizon sits low, at 76 % of the stage height.
+const HOR = 0.76;
+// The sun's angular radius in radians, larger than life.
+const SUN_R = 0.011;
 
 /* ---------- farm ---------- */
 // A grid of 60 turbines seen from near one corner.
-// The corner sits 1.5 km out; both grid axes run away inside the left third.
+// The corner sits 2 km out; both grid axes run away in a narrow wedge.
 const NU = 6, NV = 10, SU = 900, SV = 600;
-const CORNER = { d: 1500, b: -6 }, AXIS_U = -2, AXIS_V = -14;
+const CORNER = { d: 2000, b: 0 }, AXIS_U = 2, AXIS_V = -2.5;
 const dir = deg => [Math.sin(deg * Math.PI / 180), -Math.cos(deg * Math.PI / 180)];
 function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 const farm = [];
@@ -55,18 +57,16 @@ const farm = [];
 const COMMON = `#version 300 es
 precision highp float;
 uniform vec2 uRes;
-uniform float uF, uHor, uCamH, uFogL;
+uniform float uF, uHor, uCamH, uFogL, uSunR, uYaw;
 // FH is the frame height as an angle; sky falloffs scale with it.
 float FH() { return uRes.y / uF; }
-// FS is the short side as an angle; the sun and its glow scale with it.
-float FS() { return min(uRes.x, uRes.y) / uF; }
 uniform vec3 uSD, uZen, uHorC, uFog, uSun, uDeep, uPaint;
 // The sun hides behind the fog; its disc keeps this much light.
 #define SUN_VIS 0.18
 // Fog colour along a view ray: grey haze plus forward scatter round the sun.
 vec3 fogCol(vec3 d) {
-  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / FS();
-  return uFog + uSun * (0.32 * exp(-A * 9.0) + 0.1 * exp(-A * 2.6) + 0.025 * exp(-A * 0.8));
+  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / uSunR;
+  return uFog + uSun * (0.32 * exp(-A / 2.5) + 0.1 * exp(-A / 9.0) + 0.025 * exp(-A / 30.0));
 }
 // Fog transmittance over a distance in metres.
 float fogT(float t) { return exp(-t / uFogL); }
@@ -89,20 +89,22 @@ out vec4 o;
 vec3 sky(vec3 d) {
   float E = max(d.y, 0.0) / FH();
   vec3 c = mix(uHorC, uZen, smoothstep(0.0, 0.62, E));
-  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / FS(), r = 0.05;
-  c += uSun * SUN_VIS * (1.0 - smoothstep(r * 0.85, r, A));
+  float A = acos(clamp(dot(d, uSD), -1.0, 1.0)) / uSunR;
+  c += uSun * SUN_VIS * (1.0 - smoothstep(0.7, 1.0, A));
   // Haze thickens toward the horizon and takes the sun glow.
   return mix(c, fogCol(d), exp(-E * 5.0));
 }
-// Swell: a few long waves; their slope fades with distance.
+// Swell: a few long waves.
+// Each wave fades once a pixel covers a third of its length.
 vec3 seaNormal(vec2 p, float t) {
   vec2 g = vec2(0.0);
-  const vec3 W[5] = vec3[5](vec3(0.9, 0.42, 0.11), vec3(-0.5, 0.86, 0.17), vec3(0.2, 0.98, 0.29), vec3(0.95, -0.3, 0.47), vec3(-0.75, 0.66, 0.83));
+  float fp = t * t / (uF * uCamH);
+  const vec3 W[5] = vec3[5](vec3(0.9, 0.42, 0.05), vec3(-0.5, 0.86, 0.08), vec3(0.2, 0.98, 0.13), vec3(0.95, -0.3, 0.21), vec3(-0.75, 0.66, 0.34));
   for (int i = 0; i < 5; i++) {
     vec2 dd = normalize(W[i].xy); float k = W[i].z;
-    g += dd * cos(dot(p, dd) * k + float(i) * 1.7) * 0.06 / (1.0 + float(i) * 0.4);
+    float keep = clamp(1.0 - fp * k / 2.1, 0.0, 1.0);
+    g += dd * cos(dot(p, dd) * k + float(i) * 1.7) * 0.022 * keep;
   }
-  g *= 1.0 / (1.0 + t * 0.0025);
   return normalize(vec3(-g.x, 1.0, -g.y));
 }
 void main() {
@@ -149,6 +151,10 @@ void main() {
   }
   p = yaw(p); n = yaw(n);
   vec3 w = p + vec3(aInst.x, 0.0, aInst.y);
+  // The camera turns by uYaw; the world turns the other way.
+  float cy = cos(uYaw), sy = sin(uYaw);
+  w.xz = vec2(w.x * cy + w.z * sy, -w.x * sy + w.z * cy);
+  n.xz = vec2(n.x * cy + n.z * sy, -n.x * sy + n.z * cy);
   vW = w; vN = n;
   // An off-centre perspective that matches the full-screen pass.
   vec3 v = w - vec3(0.0, uCamH, 0.0);
@@ -256,23 +262,30 @@ function uniforms(p, shot) {
   gl.uniform2f(u('uRes'), shot.W, shot.H);
   gl.uniform1f(u('uF'), shot.f); gl.uniform1f(u('uHor'), shot.hor);
   gl.uniform1f(u('uCamH'), CAM_H); gl.uniform1f(u('uFogL'), LOOK.fogL);
+  gl.uniform1f(u('uSunR'), SUN_R); gl.uniform1f(u('uYaw'), shot.yaw);
   gl.uniform3fv(u('uSD'), shot.sd);
   gl.uniform3fv(u('uZen'), LOOK.zen); gl.uniform3fv(u('uHorC'), LOOK.hor); gl.uniform3fv(u('uFog'), LOOK.fog);
   gl.uniform3fv(u('uSun'), LOOK.sun); gl.uniform3fv(u('uDeep'), LOOK.deep); gl.uniform3fv(u('uPaint'), LOOK.paint);
 }
 
 /* ---------- frame ---------- */
-// A long lens, as Beach walker uses; portrait takes a longer one.
+// The cluster's bearings, in radians, set where the camera aims.
+const BEAR = farm.map(([x, z]) => Math.atan2(x, -z));
+const BEAR_MID = (Math.min(...BEAR) + Math.max(...BEAR)) / 2;
+// A long telephoto: the near rotor looms past the top of the frame.
+// Portrait sets the lens by height and aims the cluster nearer the middle.
 function shot() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
   const W = Math.round(canvas.clientWidth * dpr), H = Math.round(canvas.clientHeight * dpr);
   const tall = Math.min(1, Math.max(0, (H / W - 0.8) / 1.4));
-  const f = W * (2.2 + 1.4 * tall);
-  const hor = H * HOR;
-  // The sun sits low, right of the cluster, at 62 % of the width.
-  const sx = (W * 0.62 - W * 0.5) / f, sy = Math.min(W, H) * 0.07 / f;
+  const f = W * 5.9 * (1 - tall) + H * 7 * tall;
+  const hor = H * (HOR + 0.06 * tall);
+  const aim = 0.26 + 0.04 * tall;
+  const yaw = BEAR_MID - Math.atan((aim - 0.5) * W / f);
+  // The sun sits right of the cluster, at 62 % of the width, low on the sea.
+  const sx = (W * (0.62 + 0.18 * tall) - W * 0.5) / f, sy = SUN_R * 1.5;
   const l = Math.hypot(sx, sy, 1);
-  return { W, H, f, hor, sd: [sx / l, sy / l, -1 / l] };
+  return { W, H, f, hor, yaw, sd: [sx / l, sy / l, -1 / l] };
 }
 function draw() {
   const s = shot();
