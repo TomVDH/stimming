@@ -152,7 +152,7 @@ const OMEGA = 0.055;  // sky turn in radians per second, sped up
 // Plate energy per unit of star brightness per second.
 const FLUX = 11;
 // Exposure maps the slider to how long trails last, in seconds.
-const tau = () => 4 * Math.pow(18, opts.expo);
+const tau = () => 1.5 * Math.pow(40, opts.expo);
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
@@ -506,23 +506,30 @@ function scintillate(i, th, el) {
 }
 // Arcs from th0 to th1, split so each piece stays short.
 // Energy per piece is flux times dwell time, so slow stars burn in.
-function exposeArcs(th0, th1, gain) {
-  const steps = Math.min(120, Math.max(1, Math.ceil(Math.abs(th1 - th0) / 0.006)));
+// The fade, in radians, dims older pieces as the plate decay does.
+function exposeArcs(th0, th1, gain, step = 0.006, fade = Infinity) {
+  const steps = Math.min(600, Math.max(1, Math.ceil(Math.abs(th1 - th0) / step)));
   const dts = Math.abs(th1 - th0) / steps / OMEGA;
+  const age = new Float32Array(steps);
+  for (let s = 0; s < steps; s++) age[s] = gain * Math.exp(-Math.abs(th1 - lerp(th0, th1, (s + 0.5) / steps)) / fade);
   let n = 0;
   const count = Math.min(opts.count, MAXSTAR);
   for (let i = 0; i < count; i++) {
     const width = (0.55 + 0.5 * Math.min(1, star.b[i])) * dpr;
+    // Each piece starts where the last one ended, so one projection per step.
+    let ok = project(i, th0, pb);
     for (let s = 0; s < steps; s++) {
-      const a0 = lerp(th0, th1, s / steps), a1 = lerp(th0, th1, (s + 1) / steps);
-      if (!project(i, a0, pa) || !project(i, a1, pb)) continue;
+      pa[0] = pb[0]; pa[1] = pb[1]; pa[2] = pb[2];
+      const was = ok;
+      ok = project(i, lerp(th0, th1, (s + 1) / steps), pb);
+      if (!was || !ok) continue;
       const el = (pa[2] + pb[2]) / 2;
       const w = starWeight(i, el);
       if (w <= 0.002) continue;
       const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
       const dwell = dts * Math.min(1, 1.8 * width / Math.max(L, 1e-4));
-      const sc = scintillate(i, (a0 + a1) / 2, el);
-      pushSeg(n++, pa, pb, i, w * FLUX * dwell * sc.k * gain, width, sc.shift);
+      const sc = scintillate(i, lerp(th0, th1, (s + 0.5) / steps), el);
+      pushSeg(n++, pa, pb, i, w * FLUX * dwell * sc.k * age[s], width, sc.shift);
       if (n >= MAXSEG) { segPass(acc[ai], n); n = 0; }
     }
   }
@@ -664,12 +671,19 @@ function close() {
   stage.classList.remove('held');
   wake();
 }
-// The first view opens on a plate exposed for about a minute.
+// A closed shutter shows a plate already exposed for the chosen time.
+// The arc spans about two decay times; older light is dimmer.
 function preExpose() {
   clearAcc();
-  const th0 = theta - 0.55;
-  for (let s = 0; s < 8; s++) exposeArcs(lerp(th0, theta, s / 8), lerp(th0, theta, (s + 1) / 8), 1);
+  const span = Math.min(3.4, OMEGA * tau() * 2.2);
+  exposeArcs(theta - span, theta, 1, Math.max(0.006, span / 400), OMEGA * tau());
   closedAt = t;
+}
+// Slider drags redraw the plate at most once per frame.
+let rebuild = 0;
+function queuePreExpose() {
+  if (rebuild || shutter) return;
+  rebuild = requestAnimationFrame(() => { rebuild = 0; if (!shutter) { preExpose(); render(); } });
 }
 
 /* ---------- size ---------- */
@@ -714,7 +728,7 @@ function popover(box, btn) {
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
 const expoEl = document.getElementById('expo');
 expoEl.value = String(opts.expo);
-expoEl.addEventListener('input', () => { opts.expo = +expoEl.value; save('expo', opts.expo); closedAt = t; wake(); });
+expoEl.addEventListener('input', () => { opts.expo = +expoEl.value; save('expo', opts.expo); queuePreExpose(); wake(); });
 choices(document.getElementById('sky'), v => { opts.sky = v; save('sky', v); setCamera(); preExpose(); render(); wake(); }).set(opts.sky);
 choices(document.getElementById('count'), v => { opts.count = +v; save('count', v); preExpose(); render(); wake(); }).set(String(opts.count));
 choices(document.getElementById('tint'), v => { opts.tint = v; save('tint', v); render(); wake(); }).set(opts.tint);
