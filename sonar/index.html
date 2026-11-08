@@ -53,7 +53,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active mode, tap a bearing to ping it, or press Space to ping all round; drag around the centre to steer. In Sonogram mode the sea scrolls past as a waterfall; tap to knock the hull and drag to tune the cursor.">
+    <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active, tap a bearing to ping it, hold to charge a power ping and drag to turn the boat. In Bearing and Sonogram, tap to knock the hull and drag to listen. Double-tap a contact in any display to lock it as the target.">
       <p class="fail" hidden>Sonar needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -85,12 +85,6 @@
             </div></div>
           </div>
         </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>ping that bearing; knock on the sonogram</dd></div>
-          <div><dt>Hold</dt><dd>charge a power ping</dd></div>
-          <div><dt>Drag</dt><dd>steer; tune on the sonogram</dd></div>
-          <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span></dt><dd>track a contact</dd></div>
-        </dl>
       </div>
     </div>
   </main>
@@ -1173,7 +1167,7 @@ function ping(brg = null, power = 0) {
   if (boot.phase !== 'run') { endBoot(); return; }
   const omni = brg == null;
   ring.on = true; ring.t = 0; ring.front = 0; ring.power = power;
-  press(power > 0 ? 'hold' : 'ping');
+  press(power > 0 ? 'hold' : omni ? 'omni' : 'ping');
   ring.beam = omni ? 0 : brg; ring.half = omni ? PI + 1 : 17 * D2R;
   maybeOdd();
   const R = rangeM();
@@ -1464,18 +1458,10 @@ const keyLit = {};
 const press = k => { keyLit[k] = clock; hudDirty = true; };
 function keyList() {
   const touch = matchMedia('(pointer: coarse)').matches;
-  if (opts.mode === 'active') return touch
-    ? [['TAP', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['DRAG', 'STEER', 'steer'], ['2× TAP', 'LOCK', 'lock']]
-    : [['SPACE', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['← →', 'STEER', 'steer'], ['2× CLICK', 'LOCK', 'lock']];
-  if (opts.mode === 'btr') return touch
-    ? [['TAP', 'KNOCK', 'knock'], ['DRAG', 'BEARING', 'tune'], ['2× TAP', 'LOCK', 'lock']]
-    : [['CLICK', 'KNOCK', 'knock'], ['DRAG', 'BEARING', 'tune'], ['2× CLICK', 'LOCK', 'lock']];
-  if (opts.mode === 'sounder') return touch
-    ? [['TAP', 'MARK', 'mark'], ['DRAG', 'DEPTH', 'tune']]
-    : [['SPACE', 'MARK', 'mark'], ['DRAG', 'DEPTH', 'tune'], ['↑ ↓', 'DEPTH', 'tune']];
-  return touch
-    ? [['TAP', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune'], ['2× TAP', 'LOCK', 'lock']]
-    : [['SPACE', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune'], ['← →', 'CURSOR', 'tune']];
+  const tap = touch ? 'TAP' : 'CLICK', two = touch ? '2× TAP' : '2× CLICK', drag = touch ? 'DRAG' : 'DRAG / ← →';
+  if (opts.mode === 'active') return [[tap, 'PING THAT WAY', 'ping'], ['HOLD', 'POWER PING', 'hold'], [drag, 'TURN', 'steer'], [two, 'LOCK TARGET', 'lock']];
+  if (opts.mode === 'sounder') return [[tap, 'MARK', 'mark'], [touch ? 'DRAG' : 'DRAG / ↑ ↓', 'DEPTH', 'tune']];
+  return [[tap, 'KNOCK HULL', 'knock'], [drag, opts.mode === 'btr' ? 'LISTEN' : 'READ A LINE', 'tune'], [two, 'LOCK TARGET', 'lock']];
 }
 function drawKeys(c) {
   const list = keyList();

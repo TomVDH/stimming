@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T15:00:00Z
-updated_at: 2026-11-08T11:16:43Z
+updated_at: 2026-11-08T11:18:21Z
 ---
 
 Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-light phosphor console. It starts in the Lab.
@@ -31,7 +31,7 @@ Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-li
 - [x] Quality in Settings: the shared Standard and High (bean stimming-gq7k); a change resizes live
 - [x] Sound: you hear what you point at; Active plays ping and echoes only; shorter reverb; one-tone alarms
 - [x] One target across modes (2× tap locks it); pings, knocks and enemy pings show on every display
-- [ ] Keycaps are the only legend: one cap per action, plain words; the bar how-to list goes
+- [x] Keycaps are the only legend: one cap per action, plain words; the bar how-to list goes
 - [ ] Checkpoint: Tom reviews look and sound on a real device
 - [ ] Record the session cost
 
