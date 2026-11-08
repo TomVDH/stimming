@@ -493,8 +493,13 @@ varying float vOn;
 varying float vSig;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * mv;
   float t = -mv.z;
+  // Halo and glow sprites sit in front of their own turbine, so its tower never cuts them.
+  // Nearer turbines still hide them; turbines stand 800 m apart.
+  float lift = uHalo > 1.5 ? min(90.0, t * 0.5) : uHalo > 0.5 ? min(12.0, t * 0.5) : 0.0;
+  vec4 mvs = vec4(mv.xyz * (1.0 - lift / t), 1.0);
+  // The lift runs along the view ray, so the sprite stays on the lamp.
+  gl_Position = projectionMatrix * mvs;
   vec3 d = normalize(position - cameraPosition);
   vec4 f = fogMarch(cameraPosition, d, length(position - cameraPosition), 0.5);
   vT = f.a; vTau = -log(max(f.a, 1e-4));
