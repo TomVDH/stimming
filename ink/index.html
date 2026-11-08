@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.12 0.012 255); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ink in water</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Ink in water: a dark tank, lit from the side; the ink glows. */
+:root { --stage: oklch(0.07 0.008 255); }
+.stage--ink canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage--ink canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--ink canvas { transition: none; } }
+#setBtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.setter { margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Ink in water</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--ink" id="ink" tabindex="0" role="application" aria-label="A tall tank of dark water, lit from the side. One indigo drop of ink falls through it as a ring and breaks into fingers.">
+      <p class="fail" hidden>Ink in water needs WebGPU, which this browser doesn't have.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="inks" role="group" aria-label="Ink">
+        <button class="chip" type="button" data-value="indigo" aria-pressed="true"><span class="dot" style="--c: oklch(0.62 0.14 265)"></span>Indigo</button>
+        <button class="chip" type="button" data-value="carmine" aria-pressed="false"><span class="dot" style="--c: oklch(0.6 0.2 15)"></span>Carmine</button>
+        <button class="chip" type="button" data-value="sumi" aria-pressed="false"><span class="dot" style="--c: oklch(0.75 0.01 80)"></span>Sumi</button>
+        <button class="chip" type="button" data-value="saffron" aria-pressed="false"><span class="dot" style="--c: oklch(0.82 0.15 75)"></span>Saffron</button>
+        <button class="chip" type="button" data-value="mixed" aria-pressed="false">Mixed</button>
+      </div>
+      <label class="slider"><span>Weight</span><input type="range" id="weight" min="0.2" max="2" step="0.01" value="1"></label>
+      <div class="actions">
+        <button class="chip" id="clear" type="button">Clear</button>
+      </div>
+      <div class="setter">
+        <button class="chip icon" id="setBtn" type="button" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+      </div>
+      <dl class="how" aria-label="How to play">
+        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
+        <div><dt>Hold</dt><dd>pipette</dd></div>
+        <div><dt>Drag</dt><dd>stir</dd></div>
+        <div class="fine"><dt>Space</dt><dd>drop</dd></div>
+      </dl>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Ink in water</h1><div class="vignette" hidden></div></section>
+</div>
+
+<!-- Blockout: one still frame. The plume is procedural; no fluid sim runs yet. -->
+<!-- three.js stays on 0.186.1, the WebGPU build Fire uses. -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js",
+  "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+} }
+</script>
+<script type="module">
+import { initPage, linFit, pixelRatio } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(9000)])]) });
+initPage({ id: 'ink' });
+const panel = document.getElementById('ink');
+
+// Without WebGPU the stage shows one line and nothing runs.
+async function hasWebGPU() {
+  if (!navigator.gpu) return false;
+  try {
+    const { default: WebGPU } = await import('three/addons/capabilities/WebGPU.js');
+    return WebGPU.isAvailable();
+  } catch {
+    return false;
+  }
+}
+function noWebGPU() {
+  panel.querySelector('.fail').hidden = false;
+  markReady();
+}
+
+/* ---------- tank and grid ---------- */
+// The tank is a tall, thin slab, in world units.
+const W = 0.6, H = 1, D = 0.3;
+// The blockout grid is the plan's Medium step.
+const NX = 72, NY = 120, NZ = 36;
+// The bar covers the stage foot; the tank fits above it.
+const bar = document.querySelector('.bar');
+const TOP_PX = 22, SIDE_PX = 16;
+
+/* ---------- the plume: one indigo drop, halfway down ---------- */
+// A seeded random keeps the still the same on every load.
+function mulberry(a) {
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function bakePlume(createNoise3D) {
+  const n3 = createNoise3D(mulberry(35));
+  const data = new Uint8Array(NX * NY * NZ);
+  // The ring sits a little below the middle, tilted.
+  const cx = 0.03, cy = -0.07, cz = 0, R = 0.1, r = 0.03;
+  const tz = 0.16, tx = 0.11;
+  const cz1 = Math.cos(tz), sz1 = Math.sin(tz), cx1 = Math.cos(tx), sx1 = Math.sin(tx);
+  // Rayleigh-Taylor fingers hang from the ring: angle, length, drift.
+  const fingers = [
+    [0.3, 0.25, 0.25], [1.4, 0.15, 0.45], [2.5, 0.3, 0.15],
+    [3.6, 0.19, 0.5], [4.5, 0.27, 0.3], [5.5, 0.13, 0.35], [6.0, 0.22, 0.1],
+  ];
+  const surf = H / 2;
+  for (let k = 0; k < NZ; k++) {
+    const z = ((k + 0.5) / NZ - 0.5) * D;
+    for (let j = 0; j < NY; j++) {
+      const y = ((j + 0.5) / NY - 0.5) * H;
+      if (y < cy - 0.4) continue;
+      for (let i = 0; i < NX; i++) {
+        const x = ((i + 0.5) / NX - 0.5) * W;
+        if (Math.abs(x - cx) > 0.26) continue;
+        // A domain warp turns clean shapes into soft wisps.
+        const qx = x + 0.017 * n3(x * 7, y * 7, z * 7);
+        const qy = y + 0.017 * n3(x * 7 + 31, y * 7, z * 7);
+        const qz = z + 0.017 * n3(x * 7, y * 7 + 67, z * 7);
+        let d = 0;
+
+        // The wake trails from the surface down to the ring.
+        if (qy > cy) {
+          const s = (qy - cy) / (surf - cy);
+          const sx = cx + 0.02 * Math.sin(s * 9 + 1) * s, sz = 0.012 * Math.sin(s * 7);
+          const rr = 0.028 + (0.005 - 0.028) * Math.sqrt(s);
+          const dd = Math.hypot(qx - sx, qz - sz) / rr;
+          d += 0.42 * (1 - 0.5 * s) * Math.exp(-dd * dd);
+        }
+        // A thin lens of ink stays at the surface, where the drop went in.
+        {
+          const dd = Math.hypot((qx - cx) / 0.034, (qy - surf + 0.012) / 0.007, qz / 0.03);
+          d += 0.3 * Math.exp(-dd * dd);
+        }
+
+        // Ring frame: offsets from the centre, tilted about z, then x.
+        const ox = qx - cx, oy = qy - cy, oz = qz - cz;
+        const ax = ox * cz1 + oy * sz1, ay = -ox * sz1 + oy * cz1;
+        const rx = ax, ry = ay * cx1 + oz * sx1, rz = -ay * sx1 + oz * cx1;
+        // The vortex ring core holds the densest ink.
+        const rho = Math.hypot(rx, rz) - R;
+        const dt = Math.hypot(rho, ry * 1.15) / r;
+        d += 1.15 * Math.exp(-dt * dt);
+        // A thin dome of ink caps the ring, as a mushroom head.
+        if (ry > -0.012) {
+          const e = (Math.hypot(rx, (ry - 0.006) * 1.7, rz) - R * 1.08) / 0.014;
+          d += 0.2 * Math.exp(-e * e);
+        }
+        // Each finger drops from the ring and ends in a small ring.
+        for (const [th, len, drift] of fingers) {
+          const bx = R * Math.cos(th), bz = R * Math.sin(th);
+          const t = -ry / len;
+          if (t < -0.05 || t > 1.15) continue;
+          const tc = Math.min(1, Math.max(0, t));
+          const fx = bx * (1 + drift * tc), fz = bz * (1 + drift * tc);
+          const fr = 0.011 * (1 - 0.4 * tc);
+          const df = Math.hypot(rx - fx, rz - fz) / fr;
+          d += 0.55 * Math.exp(-df * df);
+          // The tip rolls into a small mushroom: a round head, a short skirt.
+          const ty = ry + len;
+          const hd = Math.hypot(rx - fx, ty * 1.25, rz - fz) / (0.017 + 0.03 * drift);
+          d += 0.7 * Math.exp(-hd * hd * hd * hd);
+          if (ty > -0.004) {
+            const rho2 = Math.hypot(rx - fx, rz - fz) - 0.014;
+            const dt2 = Math.hypot(rho2, (ty - 0.008) * 1.4) / 0.008;
+            d += 0.35 * Math.exp(-dt2 * dt2);
+          }
+        }
+        if (d < 0.004) continue;
+        // Fine noise breaks the ink into filaments of varied depth.
+        const f = 0.62 * n3(qx * 26, qy * 26, qz * 26) + 0.38 * n3(qx * 55, qy * 55, qz * 55);
+        d *= Math.min(1.3, Math.max(0, 0.62 + 0.7 * f));
+        data[i + NX * (j + NY * k)] = Math.min(255, Math.round(d * 255));
+      }
+    }
+  }
+  return data;
+}
+
+async function start() {
+  if (!(await hasWebGPU())) return noWebGPU();
+
+  const [THREE, TSL, { createNoise3D }] = await Promise.all([
+    import('three/webgpu'),
+    import('three/tsl'),
+    import('simplex-noise'),
+  ]);
+  const {
+    vec3, vec4, float, int, Fn, uniform, texture3D, Loop, If, min, max, exp, pow,
+    cameraPosition, positionWorld, screenCoordinate, interleavedGradientNoise, smoothstep,
+  } = TSL;
+
+  const renderer = new THREE.WebGPURenderer({ antialias: false });
+  await renderer.init();
+  // WebGPURenderer can fall back to WebGL 2; this toy does not.
+  if (!renderer.backend.isWebGPUBackend) {
+    renderer.dispose();
+    return noWebGPU();
+  }
+  // Neutral tone mapping keeps the ink's hue and saturation.
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.6;
+  const canvas = renderer.domElement;
+  panel.prepend(canvas);
+
+  const vec = (L, C, h) => new THREE.Vector3(...linFit(L, C, h));
+  const scene = new THREE.Scene();
+  // Outside the tank the stage is near black.
+  scene.background = new THREE.Color().setRGB(...linFit(0.07, 0.008, 255), THREE.LinearSRGBColorSpace);
+  const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 20);
+
+  /* ---------- dye texture ---------- */
+  const dyeTex = new THREE.Data3DTexture(bakePlume(createNoise3D), NX, NY, NZ);
+  dyeTex.format = THREE.RedFormat;
+  dyeTex.type = THREE.UnsignedByteType;
+  dyeTex.minFilter = dyeTex.magFilter = THREE.LinearFilter;
+  dyeTex.wrapS = dyeTex.wrapT = dyeTex.wrapR = THREE.ClampToEdgeWrapping;
+  dyeTex.unpackAlignment = 1;
+  dyeTex.needsUpdate = true;
+
+  /* ---------- dark field raymarch ---------- */
+  const STEPS = 72, SHADOW_STEPS = 8;
+  const BMIN = vec3(-W / 2, -H / 2, -D / 2), BMAX = vec3(W / 2, H / 2, D / 2), BSIZE = vec3(W, H, D);
+  // Indigo absorbs red and passes blue.
+  const SIGMA = new THREE.Vector3(1.0, 0.4, 0.08);
+  // Scatter adds a grey share to extinction, so the plume shades itself.
+  const uExt = uniform(SIGMA.clone().addScalar(1.3));
+  const uScatter = uniform(vec(0.62, 0.14, 265));
+  // Mass turns texture density into optical depth per world unit.
+  const uMass = uniform(55);
+  // The light comes from the left, 70 degrees from the vertical.
+  const lightDir = new THREE.Vector3(-Math.sin(1.22), Math.cos(1.22), 0.12).normalize();
+  const uLightDir = uniform(lightDir);
+  // Shadow rays leave the tank through the walls the light faces.
+  const LIGHT_EXIT = vec3(...['x', 'y', 'z'].map(k => (lightDir[k] > 0 ? 0.5 : -0.5) * { x: W, y: H, z: D }[k]));
+  const uLight = uniform(vec(0.97, 0.02, 85).multiplyScalar(5));
+  const uHaze = uniform(vec(0.55, 0.03, 240).multiplyScalar(0.08));
+  const uWater = uniform(vec(0.08, 0.012, 255));
+
+  const sampleDye = p => texture3D(dyeTex, p.sub(BMIN).div(BSIZE), 0).r;
+
+  // Henyey-Greenstein phase; g leans the scatter forward.
+  const phase = Fn(([cosT, g]) => {
+    const g2 = g.mul(g);
+    return g2.oneMinus().div(pow(g2.add(1).sub(g.mul(cosT).mul(2)), 1.5).mul(4 * Math.PI));
+  });
+
+  // The light is a broad sheet, brightest in the middle plane.
+  const sheet = Fn(([p]) => {
+    const zf = p.z.div(D * 0.42);
+    return exp(zf.mul(zf).negate()).mul(0.75).add(0.25).mul(p.x.div(W).mul(-0.5).add(0.85));
+  });
+
+  const march = Fn(() => {
+    const ro = cameraPosition;
+    const rd = positionWorld.sub(ro).normalize();
+    const t0 = BMIN.sub(ro).div(rd), t1 = BMAX.sub(ro).div(rd);
+    const tmin = min(t0, t1), tmax = max(t0, t1);
+    const tNear = max(max(tmin.x, tmin.y), max(tmin.z, 0));
+    const tFar = min(min(tmax.x, tmax.y), tmax.z);
+    const ds = tFar.sub(tNear).div(STEPS).toVar();
+    // A jittered start hides the step bands.
+    const t = tNear.add(ds.mul(interleavedGradientNoise(screenCoordinate))).toVar();
+    const T = vec3(1).toVar();
+    const L = vec3(0).toVar();
+    const ph = phase(uLightDir.dot(rd), float(0.35));
+    Loop(STEPS, () => {
+      const p = ro.add(rd.mul(t)).toVar();
+      const a = sampleDye(p).mul(uMass).toVar();
+      const lit = sheet(p).toVar();
+      If(a.greaterThan(0.01), () => {
+        // The shadow march finds how much light reaches this sample.
+        const exitT = LIGHT_EXIT.sub(p).div(uLightDir);
+        const sds = min(min(exitT.x, exitT.y), exitT.z).div(SHADOW_STEPS).toVar();
+        const od = float(0).toVar();
+        Loop({ start: int(0), end: int(SHADOW_STEPS), type: 'int', name: 'j' }, ({ j }) => {
+          od.addAssign(sampleDye(p.add(uLightDir.mul(sds.mul(float(j).add(0.5))))));
+        });
+        const Tl = exp(uExt.mul(od.mul(uMass).mul(sds)).negate());
+        // Each step scatters what it takes out, so dense cores cannot blow out.
+        L.addAssign(T.mul(uScatter).mul(Tl).mul(uLight).mul(lit).mul(ph).mul(exp(a.mul(ds).negate()).oneMinus()).mul(11));
+      });
+      // Faint haze in the water shows the light sheet; it fades at the walls.
+      const wall = smoothstep(0, 0.09, min(p.x.abs().negate().add(W / 2), p.y.add(H / 2)));
+      L.addAssign(T.mul(uHaze).mul(lit).mul(wall).mul(ds));
+      T.mulAssign(exp(uExt.mul(a).mul(ds).negate()));
+      t.addAssign(ds);
+    });
+    return vec4(L.add(T.mul(uWater)), 1);
+  });
+
+  const volMat = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false });
+  volMat.colorNode = march();
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), volMat);
+  scene.add(tank);
+
+  /* ---------- the surface ---------- */
+  // The front edge of the meniscus is a bright 1 px line.
+  // The underside of the surface glows very faintly.
+  const lineMat = (L, glow) => {
+    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    m.colorNode = vec4(vec3(...linFit(L, 0.02, 85)).mul(glow), 1);
+    return m;
+  };
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(W, 1), lineMat(0.97, 2.4));
+  front.position.set(0, H / 2, D / 2);
+  const under = new THREE.Mesh(new THREE.PlaneGeometry(W, D), lineMat(0.6, 0.008));
+  under.rotation.x = Math.PI / 2;
+  under.position.set(0, H / 2, 0);
+  scene.add(front, under);
+
+  /* ---------- size ---------- */
+  // The tank fits the free stage above the bar; the camera faces it.
+  function resize() {
+    const w = panel.clientWidth || 1, h = panel.clientHeight || 1;
+    renderer.setPixelRatio(pixelRatio(w, h));
+    renderer.setSize(w, h, false);
+    const barPx = bar.offsetHeight + 4;
+    const freeW = w - SIDE_PX * 2, freeH = h - barPx - TOP_PX;
+    const s = Math.min(freeH / H, freeW / W);
+    const tan = Math.tan((camera.fov * Math.PI) / 360);
+    const dist = h / s / (2 * tan);
+    const lift = (barPx - TOP_PX) / 2 / s;
+    camera.aspect = w / h;
+    camera.position.set(0, -lift, dist + D / 2);
+    camera.lookAt(0, -lift, 0);
+    camera.updateProjectionMatrix();
+    // Line widths stay in screen pixels.
+    const px = 1 / s;
+    front.scale.y = px * 1.2;
+    renderer.render(scene, camera);
+  }
+  // Compile off the main path, so the intro keeps its frame rate.
+  await renderer.compileAsync(scene, camera);
+  new ResizeObserver(resize).observe(panel);
+  resize();
+  canvas.classList.add('on');
+  markReady();
+}
+start().catch(err => console.error(err)).finally(() => markReady());
+</script>
+</body>
+</html>
