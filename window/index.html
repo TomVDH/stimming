@@ -205,6 +205,9 @@ const WIN = {
   out: [0.165, 0.23], rOut: 0.135,  // the rim, where the bezel meets the wall
   inn: [0.118, 0.175], rIn: 0.1,    // the pane, at the bottom of the recess
   depth: 0.06, slot: 0.024,         // pane depth and shade depth
+  // Behind the scratch pane: the inner pane, then the outer pane in the skin.
+  zIn: 0.072, zOut: 0.096,
+  skin: [0.094, 0.147], rSkin: 0.07, // the skin opening, smaller and sharper
 };
 // The eye sits close, a little aft and above the window.
 // The head moves within a box around the rest pose, in metres.
@@ -506,11 +509,11 @@ function seen(dirA, rad = 0) {
   const e = basis.eye;
   if (dirA[2] <= 1e-4) return 0;
   let cover = 1;
-  for (const z of [0, WIN.slot, WIN.depth]) {
+  for (const z of [0, WIN.slot, WIN.depth, WIN.zOut]) {
     const k = clamp(z / WIN.depth), tt = (z - e[2]) / dirA[2];
     const x = e[0] + dirA[0] * tt, y = e[1] + dirA[1] * tt;
     const bx = WIN.out[0] + (WIN.inn[0] - WIN.out[0]) * k, by = WIN.out[1] + (WIN.inn[1] - WIN.out[1]) * k;
-    let sd = sdBox2(x, y, bx, by, WIN.rOut + (WIN.rIn - WIN.rOut) * k);
+    let sd = z === WIN.zOut ? sdBox2(x, y, WIN.skin[0], WIN.skin[1], WIN.rSkin) : sdBox2(x, y, bx, by, WIN.rOut + (WIN.rIn - WIN.rOut) * k);
     if (z === WIN.slot && shade.v > 0.001) sd = Math.max(sd, y - lipY());
     // The disc's radius on this plane, in metres.
     const rr = Math.max(rad * tt, 0.002);

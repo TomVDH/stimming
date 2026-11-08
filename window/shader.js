@@ -23,6 +23,10 @@ float fbm(vec2 p, int n) { float a = 0.5, s = 0.0; for (int i = 0; i < 6; i++) {
 float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 const vec2 OUTB = ${W2(WIN.out)}, INB = ${W2(WIN.inn)};
 const float ROUT = ${WIN.rOut.toFixed(4)}, RIN = ${WIN.rIn.toFixed(4)}, DEPTH = ${WIN.depth.toFixed(4)}, SLOT = ${WIN.slot.toFixed(4)};
+// The inner and outer panes sit behind the scratch pane.
+// The outer pane fills the skin opening, smaller and sharper.
+const float Z_IN = ${WIN.zIn.toFixed(4)}, Z_OUT = ${WIN.zOut.toFixed(4)}, RSK = ${WIN.rSkin.toFixed(4)};
+const vec2 SKIN = ${W2(WIN.skin)};
 // The recess narrows from the rim to the pane.
 float sdRecess(vec2 p, float z) { float k = clamp(z / DEPTH, 0.0, 1.0); return sdBox(p, mix(OUTB, INB, k), mix(ROUT, RIN, k)); }
 // The ray's point on the plane at depth z, in window metres.
@@ -447,8 +451,8 @@ void main() {
   // Pass 1 pixels map onto full-size screen pixels.
   vec2 px = gl_FragCoord.xy * uRes / uOutRes;
   vec3 da = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
-  // Only rays that can reach the pane pay for the outside.
-  if (da.z <= 0.0 || sdBox(at(da, DEPTH), INB, RIN) > 0.012) { o = vec4(0.0); return; }
+  // Only rays that pass the skin opening pay for the outside.
+  if (da.z <= 0.0 || sdBox(at(da, Z_OUT), SKIN, RSK) > 0.008) { o = vec4(0.0); return; }
   vec3 d = toWorld(da);
   float E = 0.004 + uFlash * 0.07;
   float skyA;
@@ -519,6 +523,56 @@ vec3 glass(vec3 da, vec2 px) {
   return view;
 }
 
+// Fine scratches on the scratch pane, pG in metres.
+// A scratch glints when it runs across the line to a bright source.
+// So the glints ring each source in arcs.
+vec3 scratches(vec2 pG, vec2 px) {
+  vec3 s = vec3(0.0);
+  float fw = max(fwidth(pG.x), 1e-6);
+  for (int l = 0; l < 2; l++) {
+    float cs = l == 0 ? 0.006 : 0.0105;
+    vec2 g = pG / cs + float(l) * 17.3;
+    vec2 id = floor(g), f = fract(g) - 0.5;
+    if (hash12(id + 3.1) > 0.6) continue;
+    float a = hash12(id) * PI;
+    vec2 t = vec2(cos(a), sin(a));
+    float along = dot(f, t), across = dot(f, vec2(-t.y, t.x));
+    float line = smoothstep(fw / cs * 1.3, 0.0, abs(across)) * smoothstep(0.5, 0.25, abs(along));
+    if (line <= 0.0) continue;
+    for (int i = 0; i < 4; i++) {
+      vec4 fl = uFlr[i];
+      if (fl.z <= 0.0) continue;
+      vec2 r = px - fl.xy;
+      float dist = length(r);
+      float al = dot(r / max(dist, 1.0), t);
+      s += uFlrC[i] * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.2)) * 0.45;
+    }
+  }
+  return s;
+}
+// A faint ghost of each bright source, bounced between the panes.
+vec3 ghosts(vec2 px) {
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec4 fl = uFlr[i];
+    if (fl.z <= 0.0) continue;
+    vec2 at2 = fl.xy + (fl.xy - uRes * 0.5) * 0.07 + vec2(0.0, -uRes.y * 0.012);
+    float gr = length(px - at2) / (fl.w * uRes.y * 0.01 + 2.0 * uDpr);
+    s += uFlrC[i] * fl.z * exp(-gr * gr) * 0.2;
+  }
+  return s;
+}
+// Ice crystals grow up from the bottom edge of the outer pane.
+// edge: the distance inside the skin opening, in metres.
+float ice(vec2 pO, float edge) {
+  float grow = 0.02 * (0.4 + fbm(pO * 55.0, 3)) * smoothstep(-0.01, -0.12, pO.y);
+  if (grow <= 0.001 || edge > grow) return 0.0;
+  vec2 q = pO * 900.0;
+  // Ridged noise gives the feathered, branching look of frost.
+  float rid = (1.0 - abs(2.0 * vnoise(q) - 1.0)) * 0.6 + (1.0 - abs(2.0 * vnoise(q * 2.7 + 5.0) - 1.0)) * 0.4;
+  return smoothstep(0.5, 0.85, rid + 0.7 * (1.0 - edge / grow) - 0.35) * smoothstep(grow, grow * 0.4, edge);
+}
+
 // Lens flare, after Buoy Business (see Beach walker): haze, orb,
 // an anamorphic streak and warm ghosts on the line through the centre.
 // uFlr: source xy in pixels, gain times cover, size. uFlrC: colour.
@@ -580,6 +634,16 @@ void main() {
   wall += alb * outGlow * 0.8 * exp(-max(sOut, 0.0) / 0.07);
   // A soft shadow rings the rim of the recess.
   wall *= 1.0 - 0.4 * exp(-max(sOut, 0.0) / 0.012);
+  // The rim rolls over into the wall; its outward face catches the light from above.
+  vec2 nR = normalize(p0 - clamp(p0, -(OUTB - ROUT), OUTB - ROUT) + 1e-6);
+  float faceUp = max(dot(nR, normalize(Lc.xy)), 0.0);
+  float roll = smoothstep(0.0, 0.003, sOut) * smoothstep(0.011, 0.004, sOut);
+  wall += alb * cabin * 0.9 * roll * (0.3 + faceUp);
+  wall *= 1.0 - 0.35 * smoothstep(0.002, 0.0, abs(sOut - 0.012));
+  // A moulded seam joins the bezel to the wall panel.
+  float sSeam = sdBox(p0, OUTB + 0.05, ROUT + 0.05);
+  wall *= 1.0 - 0.45 * smoothstep(0.0016, 0.0, abs(sSeam));
+  wall += alb * cabin * 0.6 * smoothstep(0.0018, 0.0, abs(sSeam - 0.0022)) * (0.2 + faceUp);
   vec3 c = wall;
 
   if (da.z > 0.0 && sOut < 0.01) {
@@ -602,10 +666,27 @@ void main() {
     vec3 inner;
     if (onShade) {
       float above = pS.y - lipY;
-      vec3 sh = alb * 1.2 * (cabin * (0.5 + 0.7 * smoothstep(-0.2, 0.2, pS.y)) + eCol * E * 0.12);
-      // Its lip: a dark groove, then a lit edge.
-      sh *= 1.0 - 0.55 * smoothstep(0.012, 0.0, above) * smoothstep(0.0, 0.003, above);
-      sh += alb * smoothstep(0.003, 0.0, abs(above - 0.0015)) * (cabin * 1.6 + eCol * E * 0.8);
+      // Grained plastic with a slight bow; the middle stands out into the light.
+      float bx = pS.x / INB.x, bow = 1.0 - bx * bx;
+      float grain = vnoise(vec2(pS.x * 2600.0, pS.y * 500.0)) * 0.6 + vnoise(pS * 9000.0) * 0.4;
+      vec3 sh = alb * 1.15 * (cabin * (0.5 + 0.7 * smoothstep(-0.2, 0.2, pS.y)) * (0.88 + 0.16 * bow) + eCol * E * 0.12);
+      sh *= 0.94 + 0.08 * grain;
+      // The lip: a chunky moulded bar along the shade's lower edge.
+      const float LIP = 0.014;
+      if (above < LIP) {
+        float u = above / LIP;
+        // Its face bulges: lit along the top, shaded underneath.
+        vec3 lip = alb * 1.3 * cabin * (0.7 + 0.55 * smoothstep(0.0, 0.7, u) - 0.25 * smoothstep(0.6, 1.0, u));
+        // A finger groove scoops into the middle of the lip.
+        float groove = smoothstep(1.0, 0.75, abs(pS.x) / 0.035) * smoothstep(0.12, 0.32, u) * smoothstep(0.88, 0.66, u);
+        lip *= 1.0 - 0.5 * groove * (1.2 - u);
+        lip *= 0.96 + 0.06 * grain;
+        // Window light catches the lip's lower edge.
+        lip += alb * (outGlow * 1.6 + eCol * E * 0.8) * smoothstep(0.0028, 0.0, above);
+        sh = lip;
+      }
+      // A shadow line runs where the lip meets the panel.
+      sh *= 1.0 - 0.5 * smoothstep(0.0022, 0.0, abs(above - LIP));
       inner = sh;
     } else if (hit > 0.0) {
       // Bezel: the tunnel wall faces into the hole and toward the cabin.
@@ -619,16 +700,37 @@ void main() {
       // Sky light through the glass falls on the sill and lower walls.
       float sky = (0.35 + 0.65 * max(-g2.y, 0.0)) * pow(k, 1.5);
       inner = alb * (cabin * (0.25 + 1.3 * diff) + outGlow * 1.6 * sky);
-      // A crisp rim where the slope meets the wall.
-      inner += alb * cabin * 1.4 * smoothstep(0.004, 0.0, hit) * (0.3 + diff);
+      // The rolled lip at the rim catches the cabin light.
+      inner += alb * cabin * 1.2 * smoothstep(0.0, 0.003, hit) * smoothstep(0.01, 0.004, hit) * (0.3 + diff);
+      // The corners and the joint to the pane sit in soft shadow.
+      vec2 bq = abs(ph) - (mix(OUTB, INB, k) - mix(ROUT, RIN, k));
+      float corner = smoothstep(0.0, mix(ROUT, RIN, k) * 0.7, min(bq.x, bq.y));
+      inner *= (1.0 - 0.3 * corner) * mix(1.0, 0.55, smoothstep(0.75, 1.0, k));
     } else {
-      // Glass: the outside, with frost and the breather hole on the pane.
-      vec2 pG = at(da, DEPTH);
-      vec3 view = glass(da, px);
-      float edge = -sdBox(pG, INB, RIN);
-      float fr = fbm(pG * 520.0, 4) * 0.7 + fbm(pG * 80.0, 3) * 0.5;
-      float frost = smoothstep(0.03, 0.0, edge) * smoothstep(-0.03, -0.15, pG.y) * smoothstep(0.62, 0.8, fr + 6.0 * (0.03 - edge));
-      view += eCol * frost * (0.003 + E * 0.35);
+      // Glass: three panes, each at its own depth, so they shift as the head moves.
+      vec2 pG = at(da, DEPTH), pI = at(da, Z_IN), pO = at(da, Z_OUT);
+      float sSk = sdBox(pO, SKIN, RSK);
+      float aaO = fwidth(sSk) * 1.2;
+      float sI = sdBox(pI, SKIN + 0.014, RSK + 0.014), aaI = fwidth(sI) * 1.5;
+      vec3 view = vec3(0.0);
+      if (sSk < aaO) {
+        // Through the skin opening: the outside, then ice on the outer pane.
+        view = glass(da, px) + ghosts(px);
+        float ic = ice(pO, -sSk);
+        view = mix(view, view * 1.3 + uGlow * 0.02 + eCol * E * 0.6 + vec3(0.004, 0.0045, 0.005), ic * 0.75);
+        // The outer pane's edge glints where it meets the skin.
+        view += outGlow * 0.5 * smoothstep(aaO * 2.0, 0.0, abs(sSk + 0.0015));
+      }
+      if (sSk > -aaO) {
+        // Between the panes: the grey rubber gasket, lit through the glass.
+        float gk = clamp(sSk / 0.03, 0.0, 1.0);
+        vec3 gasket = alb * 0.4 * (cabin * 0.5 + outGlow * (1.5 - gk));
+        // The inner pane's edge catches a thin line of light.
+        gasket += outGlow * 0.45 * smoothstep(aaI, 0.0, abs(sI));
+        view = mix(view, gasket, smoothstep(-aaO, aaO, sSk));
+      }
+      // Scratches on the scratch pane ring each bright source.
+      view += scratches(pG, px);
       // A faint reflection of the lit cabin in the glass.
       view += vec3(0.0018, 0.0015, 0.0012) * smoothstep(0.2, -0.15, pG.x + pG.y * 0.5);
       float bh = length(pG - vec2(0.0, -INB.y * 0.72));
