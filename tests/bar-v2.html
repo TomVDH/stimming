@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Bar v2 tests</title>
+<link rel="stylesheet" href="../shared/stim.css">
+<style>
+#fx main { width: 900px; margin-bottom: 24px; }
+#fx .stage { height: 300px; background: var(--stage); }
+#out { font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<pre id="out"></pre>
+<div id="fx"></div>
+<script type="module">
+import * as stim from '../shared/stim.js';
+const { buildBar } = stim;
+
+/* ---------- harness ---------- */
+const out = document.getElementById('out'), fx = document.getElementById('fx');
+const queue = [];
+const t = (name, fn) => queue.push([name, fn]);
+const ok = (cond, msg = 'expected true') => { if (!cond) throw new Error(msg); };
+const eq = (a, b) => { if (a !== b) throw new Error(`${JSON.stringify(a)} !== ${JSON.stringify(b)}`); };
+const frames = (n = 2) => new Promise(r => { const f = k => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
+const wait = ms => new Promise(r => setTimeout(r, ms));
+// Each fixture gets its own main and stage.
+function fixture(spec = {}, opts = {}) {
+  const main = document.createElement('main'), stage = document.createElement('div');
+  stage.className = 'stage';
+  main.append(stage);
+  fx.append(main);
+  const ui = buildBar(stage, spec, { id: 'bartest', ...opts });
+  return { main, stage, ui, frame: stage.parentElement, layer: stage.parentElement.querySelector('.stim-ui') };
+}
+const shown = el => !!el && el.checkVisibility();
+const click = el => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+const key = (k, init = {}, target = document.body) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
+const tray = (cls = 's2-sheet') => [...document.querySelectorAll(`.${cls}`)];
+
+/* ---------- Task 1: frame, layer, top corners ---------- */
+t('frame wraps stage', () => {
+  const { stage, frame } = fixture();
+  ok(frame.classList.contains('stim-frame'), 'no stim-frame');
+  ok(frame.querySelector(':scope > .stim-ui') && stage.nextElementSibling?.classList.contains('stim-ui'), 'layer not beside stage');
+});
+t('root gets stim2', () => { fixture(); ok(document.documentElement.classList.contains('stim2')); });
+t('back block links home', () => {
+  const { layer } = fixture();
+  const a = layer.querySelector('.s2-back');
+  eq(a?.tagName, 'A');
+  ok(a.getAttribute('href').endsWith('index.html'), a.getAttribute('href'));
+  eq(a.getAttribute('aria-label'), 'Back to Stimming');
+});
+t('fallback name', () => { const { layer } = fixture(); eq(layer.querySelector('.s2-name').firstChild.textContent, 'bartest'); });
+t('applyToy tags', () => {
+  const { layer, ui } = fixture();
+  ui.applyToy({ name: 'Galaxy', sub: 'Stimming Lab', tier: 'beta' });
+  ok(layer.querySelector('.s2-name').textContent.startsWith('Galaxy'));
+  eq([...layer.querySelectorAll('.s2-tag')].map(e => e.textContent).join(','), 'LAB,BETA');
+});
+t('applyToy missing toy', () => {
+  const { layer, ui } = fixture();
+  ui.applyToy(undefined);
+  eq(layer.querySelector('.s2-name').firstChild.textContent, 'bartest');
+  eq(layer.querySelectorAll('.s2-tag').length, 0);
+});
+t('cluster order', () => {
+  const { layer, ui } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }], keys: [['click', 'place']] });
+  const names = () => [...layer.querySelector('.s2-tr').children].map(e => e.className.split(' ')[0]);
+  eq(names().join(','), 'snd,s2-set,s2-info');
+  ui.applyToy({ legacy: true });
+  eq(names().join(','), 'ver,snd,s2-set,s2-info');
+});
+t('empty slot draws nothing', () => {
+  const { layer } = fixture();
+  ['.s2-bl', '.s2-br'].forEach(s => { const el = layer.querySelector(s); eq(el.children.length, 0); ok(!shown(el), `${s} shown`); });
+});
+t('hideControls', () => {
+  const { layer, ui } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }], keys: [['click', 'place']], quality: true });
+  ui.hideControls();
+  const visible = [...layer.querySelectorAll('.s2-back, .s2-name, .snd, .s2-set, .s2-info, .s2-keys, .s2-bl, .s2-br')].filter(shown).map(e => e.className.split(' ')[0]);
+  eq(visible.join(','), 's2-back,s2-name');
+});
+
+/* ---------- run ---------- */
+let pass = 0;
+for (const [name, fn] of queue) {
+  try { await fn(); pass++; out.textContent += `PASS ${name}\n`; }
+  catch (err) { out.textContent += `FAIL ${name}: ${err.message}\n`; console.error(name, err); }
+}
+out.textContent += `DONE ${pass}/${queue.length}\n`;
+try { Object.keys(localStorage).filter(k => k.startsWith('stimming.bartest.')).forEach(k => localStorage.removeItem(k)); } catch (err) { /* storage is optional */ }
+</script>
+</body>
+</html>

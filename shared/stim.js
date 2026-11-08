@@ -155,23 +155,103 @@ function fitStage() {
   fit();
 }
 
-export function initPage({ id, silent = false, home = '../index.html' } = {}) {
+export function initPage({ id, silent = false, home = '../index.html', bar = null } = {}) {
+  const stage = bar && document.querySelector('.stage');
+  const ui = stage ? buildBar(stage, bar, { id, home }) : null;
   const shell = document.querySelector('header[data-shell]');
-  if (shell && !shell.children.length) shell.innerHTML = headerHTML(home);
+  if (!ui && shell && !shell.children.length) shell.innerHTML = headerHTML(home);
   soundKey = `stimming.${id}.sound`;
   soundOn = store.get(soundKey) === '1';
-  soundBtn = document.getElementById('snd');
+  soundBtn = ui ? ui.soundButton : document.getElementById('snd');
   if (soundBtn) {
     soundBtn.hidden = silent;
     soundBtn.setAttribute('aria-pressed', String(soundOn));
     soundBtn.addEventListener('click', () => sound.toggle());
   }
   document.documentElement.dataset.toy = id;
-  legacyLink();
-  mouseKeys();
-  howTip();
+  if (ui) {
+    // toys.json gives the name, the tags and the legacy flag.
+    fetch(new URL('../toys.json', import.meta.url))
+      .then(r => r.json())
+      .then(toys => ui.applyToy(toys[id]))
+      .catch(() => ui.applyToy(null));
+  } else {
+    legacyLink();
+    mouseKeys();
+    howTip();
+  }
   fitStage();
-  return { sound };
+  return ui ? { sound, ...ui } : { sound };
+}
+
+/* ---------- bar v2: the Corners shell ---------- */
+// The shell lays its controls in the four corners of the stage.
+// Spec: docs/plans/bar-v2.md.
+const make = (tag, cls = '', html = '') => {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (html) el.innerHTML = html;
+  return el;
+};
+const iconButton = (cls, html, label) => {
+  const b = make('button', `${cls} s2-icon`, html);
+  b.type = 'button';
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  return b;
+};
+
+export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) {
+  document.documentElement.classList.add('stim2');
+  // The frame holds the stage and the layer, so control events skip the stage.
+  const frame = make('div', 'stim-frame'), layer = make('div', 'stim-ui');
+  stage.before(frame);
+  frame.append(stage, layer);
+  const slot = name => layer.appendChild(make('div', `s2-${name}`));
+  const tl = slot('tl'), tr = slot('tr');
+  slot('bl');
+  slot('br');
+
+  /* top left: back block, then the toy name */
+  const letters = MARK.map(([ch, c, w, r, y], i) => `<span style="--i: ${i}; --c: oklch(${c}); --w: ${w}; --r: ${r}deg; --y: ${y}em">${ch}</span>`).join('');
+  const back = make('a', 's2-back', `<span class="s2-arrow" aria-hidden="true">‹</span><span class="mark" aria-hidden="true">${letters}</span>`);
+  back.href = home;
+  back.setAttribute('aria-label', 'Back to Stimming');
+  const name = make('span', 's2-name');
+  name.append(document.querySelector('.intro-name')?.textContent.trim() || id);
+  tl.append(back, name);
+
+  /* top right: legacy link, sound, Settings, (i) */
+  const snd = iconButton('snd', SOUND_SVG, 'Sound');
+  if (!document.getElementById('snd')) snd.id = 'snd';
+  snd.setAttribute('aria-pressed', 'false');
+  const set = iconButton('s2-set', SLIDERS, 'Settings');
+  set.setAttribute('aria-expanded', 'false');
+  set.hidden = !(spec.settings?.length || spec.quality);
+  tr.append(snd, set);
+  if (Array.isArray(spec.keys) && spec.keys.length) tr.append(iconButton('s2-info', 'i', 'How to play'));
+
+  let legacy = null;
+  const ui = {
+    soundButton: snd,
+    // A missing toy keeps the fallback name and shows no tags.
+    applyToy(info) {
+      if (info?.name) name.firstChild.textContent = info.name;
+      name.querySelectorAll('.s2-tag').forEach(t => t.remove());
+      if (info?.sub) name.append(make('span', 's2-tag', 'LAB'));
+      if (info?.tier) name.append(make('span', 's2-tag', String(info.tier).toUpperCase()));
+      const onLegacy = /\/legacy\.html$/.test(location.pathname);
+      if (legacy || !(onLegacy || info?.legacy)) return;
+      legacy = make('a', 'ver ver--build', onLegacy ? 'Fresh' : 'Classic');
+      legacy.href = onLegacy ? 'index.html' : 'legacy.html';
+      legacy.title = onLegacy ? 'Back to the fresh version' : 'The classic build of this toy';
+      if (onLegacy) document.documentElement.dataset.legacy = '';
+      tr.prepend(legacy);
+    },
+    // Only the back block and the name stay, for a toy that cannot run.
+    hideControls() { layer.dataset.bare = ''; },
+  };
+  return ui;
 }
 
 /* ---------- audio kit ---------- */
