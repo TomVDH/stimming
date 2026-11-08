@@ -437,7 +437,8 @@ vec4 cirrus(vec3 d, vec3 sk) {
   vec3 S = uSunL * 0.045 * ice + uAmb * 0.016 + sk * 0.55;
   vec3 col = vec3(0.0);
   float Tc = 1.0;
-  float t = ta + ds * hash12(gl_FragCoord.xy + 41.0);
+  // Mid-step samples: in so thin a layer, jitter shows as grain.
+  float t = ta + ds * 0.5;
   for (int i = 0; i < N; i++) {
     vec2 w = uCam + d.xz * t + vec2(uTime * 0.03, 0.0);
     // The wind draws the ice out into long fibres: mares' tails.
@@ -734,7 +735,7 @@ uniform int uSteps;
 uniform sampler2D uOut;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
 uniform vec4 uFlr[8]; uniform vec4 uFlrC[8];
-uniform vec3 uMetA, uMetB; uniform vec4 uMet;
+uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
 out vec4 o;
 
 // Stars hold still; they fade toward the horizon glow.
@@ -772,28 +773,53 @@ vec3 disc(vec3 d) {
   return c * texture(uSkyT, skyUV(d)).rgb;
 }
 
-// A meteor: a hot head and a fading streak along a great circle of the sky.
-// uMet: head progress, tail length, brightness, train glow.
+// A meteor: a tiny hot head and a thin streak that fades fast behind it.
+// uMet: head progress, persistence length, brightness, train glow.
+// uMetF: fireball flag, seed, train age from 0 to 1.
 vec3 meteor(vec3 d) {
   if (uMet.z <= 0.0 && uMet.w <= 0.0) return vec3(0.0);
   vec3 n = normalize(cross(uMetA, uMetB));
   float off = dot(d, n);
   vec3 dp = normalize(d - n * off);
-  float total = acos(clamp(dot(uMetA, uMetB), -1.0, 1.0));
+  float total = max(acos(clamp(dot(uMetA, uMetB), -1.0, 1.0)), 1e-4);
   float along = atan(dot(cross(uMetA, dp), n), dot(uMetA, dp)) / total;
-  float w = 1.1 / uFocal;
-  float head = uMet.x, tail = head - uMet.y;
-  float line = exp(-off * off / (w * w));
-  // The streak brightens toward the head and stops at it.
-  float streak = smoothstep(tail, head, along) * step(along, head) * line;
-  vec3 hd = normalize(mix(uMetA, uMetB, head));
-  float hr = acos(clamp(dot(d, hd), -1.0, 1.0)) / w;
-  vec3 c = vec3(0.85, 0.9, 1.0) * uMet.z * (streak * 0.6 + exp(-hr * hr * 0.5) * 1.5);
-  // A fireball's train: an orange thread that widens and wanders as it fades.
+  float px = 1.0 / uFocal;
+  float head = uMet.x, behind = head - along;
+  bool fire = uMetF.x > 0.5;
+  vec3 c = vec3(0.0);
+  if (uMet.z > 0.0) {
+    // The glow persists a short way behind the head; the streak tapers as it fades.
+    float fade = behind >= 0.0 ? exp(-behind / uMet.y) : 0.0;
+    float wid = px * mix(0.55, fire ? 1.8 : 1.1, fade);
+    float line = exp(-off * off / (wid * wid)) * fade * step(0.0, along);
+    // It flickers as it burns.
+    float fl = 0.78 + 0.22 * sin(uTime * 61.0 + along * 50.0) * sin(uTime * 37.0 + uMetF.y);
+    vec3 hd = normalize(mix(uMetA, uMetB, head));
+    float hr = acos(clamp(dot(d, hd), -1.0, 1.0)) / px;
+    float core = exp(-hr * hr / (fire ? 2.0 : 0.9)) + (fire ? 0.12 : 0.04) * exp(-hr / 4.0);
+    vec3 tint = fire ? vec3(0.55, 1.0, 0.72) : vec3(0.82, 0.9, 1.0);
+    c += (vec3(1.0, 0.98, 0.95) * core * 1.6 + tint * line * 0.8) * uMet.z * fl;
+    // A fireball breaks up near its end: sparks peel off behind the head.
+    if (fire && head > 0.6) {
+      float br = (head - 0.6) / 0.4;
+      for (int k = 0; k < 5; k++) {
+        float fk = float(k);
+        float back = (0.01 + 0.018 * fk) * br;
+        float side = (hash12(vec2(fk, uMetF.y)) - 0.5) * 14.0 * px * br;
+        vec3 sp = normalize(mix(uMetA, uMetB, head - back) + n * side);
+        float sr = acos(clamp(dot(d, sp), -1.0, 1.0)) / px;
+        c += vec3(1.0, 0.72, 0.4) * exp(-sr * sr / 0.7) * uMet.z * 0.5 * (0.6 + 0.4 * sin(uTime * 43.0 + fk * 2.3));
+      }
+    }
+  }
+  // A fireball's train: a faint thread, green at first, then a dim drifting smudge.
   if (uMet.w > 0.0 && along > 0.0 && along < head) {
-    float tw = w * (2.0 + 6.0 * (1.0 - uMet.w));
-    float wob = sin(along * 23.0 + uTime * 0.7) * w * 4.0 * (1.0 - uMet.w);
-    c += vec3(1.0, 0.55, 0.25) * uMet.w * 0.35 * exp(-pow((off - wob) / tw, 2.0));
+    float age = uMetF.z;
+    float tw = px * (1.5 + 14.0 * age);
+    float wob = sin(along * 17.0 + uTime * 0.4 + uMetF.y) * px * 8.0 * age;
+    float g = exp(-pow((off - wob) / tw, 2.0)) * smoothstep(0.0, 0.08, along);
+    vec3 tc = mix(vec3(0.3, 0.85, 0.55), vec3(0.45, 0.4, 0.42), age);
+    c += tc * uMet.w * 0.22 * g / (1.0 + 4.0 * age);
   }
   return c;
 }
