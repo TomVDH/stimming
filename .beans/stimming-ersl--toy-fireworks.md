@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T11:59:22Z
+updated_at: 2026-11-08T12:01:52Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -73,3 +73,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 
 - [x] Star fidelity: three-point curved trails on the true path, hot heads with a halo, exponential tail falloff, tails cool toward ember, glints along glitter, willow and comet tails, sub-pixel cores widened and dimmed
 - [x] Burst light flashes white-hot, then takes its colour over 0.15 s; Strobe and Crackle light flickers at 14 Hz
+
+- [x] Emblem: shared/emblems/fireworks.svg (burst, 12 rays, star dots, rising trail), set in toys.json
