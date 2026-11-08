@@ -35,6 +35,7 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [x] Tom: tune the Port in `?tune`, then send the Copy JSON; bake those values in as defaults
 - [ ] Checkpoint 1: Tom approves the Port framing
 - [ ] Death Stranding pass: precast girder causeway, monolithic train, train light on the baked deck, full rate while the train shows
+- [ ] Chase cam: tap the train to ride beside it; the scene renders live during the ride
 - [ ] Lens flare (havoc `src/view/lensflare.js`) and the rack focus as hero moments
 - [ ] Bar: Settings tray holds Quality (pass it to `qualitySetting(tray)`) plus Port options; (i) vignette
 - [ ] Sound

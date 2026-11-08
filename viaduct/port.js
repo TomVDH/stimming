@@ -1528,6 +1528,8 @@ scene.add(comp);
 const clearC = new THREE.Color();
 // Bake: mirror, then the still scene with depth, then the sea's fog.
 function bake(renderer) {
+  bakeWith = renderer;
+  scene.remove(sea);
   const { w, h, pr } = view;
   // The still layer bakes at up to twice the pixels, for smooth edges.
   const ss = Math.min(2, 4096 / (w * pr), 4096 / (h * pr));
@@ -1560,6 +1562,7 @@ function bake(renderer) {
   statics.visible = false; live.visible = true; comp.visible = true;
   invVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   uploadLights();
+  if (chase.mode) setLive(true);
 }
 /* ---------- end bake ---------- */
 
@@ -1568,7 +1571,9 @@ train.place(175, 1, sea);
 const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false };
 let runPause = 6;
 const END = LEN + 160, START = -160;
-let time = 0, rt = 0, paceNow = 1;
+let time = 0, rt = 0, paceNow = 1, parked = false;
+// A parked train (QA) holds still at any speed setting.
+const speed = () => (parked ? 0 : run.v);
 // The searchlight: auto sweep, or the pointer's aim while steering.
 const aimNow = new THREE.Vector2(-0.5, 0.55), aimTo = new THREE.Vector2();
 let steering = false, steerEase = 0;
@@ -1598,11 +1603,12 @@ function update(dt, pace) {
     run.wait -= dt * k;
     if (run.wait <= 0) { run.gone = false; run.dir = -run.dir; run.s = run.dir > 0 ? START : END; train.show(true); }
   } else {
-    run.s += run.dir * run.v * dt * k;
+    run.s += run.dir * speed() * dt * k;
     // Past the far end the train is lost in the port fog; then it returns.
     if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.gone = true; run.wait = runPause; run.user = false; }
   }
   train.place(run.s, run.dir, sea);
+  updateChase(dt);
   uploadLights();
   // The relight takes the train's lamps; a hidden train lights nothing.
   train.lightIdx.forEach((li, i) => {
@@ -1622,6 +1628,9 @@ function sendTrain() {
 // A tap on the water drops a ripple; a tap on the sky sends a train.
 function tap(ndc) {
   if (!ndc) return sendTrain();
+  // During a ride, any tap returns to the wide shot.
+  if (chase.mode === 1) return endChase();
+  if (!chase.mode && train.on && hitTrain(ndc)) return startChase();
   ray.setFromCamera(ndc, camera);
   if (ray.ray.direction.y < -0.002 && ray.ray.intersectPlane(seaPlane, hit) && hit.distanceTo(camera.position) < 2600) {
     rips[ripN % 4].set(hit.x, hit.z, rt, 1);
@@ -1641,8 +1650,78 @@ function steer(ndc) {
   steering = true;
 }
 function release() { steering = false; }
+
+/* ---------- chase: a tap on the train rides a low camera beside it ---------- */
+// Mode 0 is the wide shot, 1 rides, 2 eases back to the wide shot.
+const chase = { mode: 0, t: 0, s: 0 };
+// The camera rides this far off the track, on this side, this far ahead.
+const SIDE = 1, OFF = 16, LEAD = 45, REL = 16, IN = 1.4, OUT = 1.8, FOV = 30;
+let bakeWith = null;
+const camP = new THREE.Vector3(), lookT = new THREE.Vector3(), wideP = new THREE.Vector3(), wideT = new THREE.Vector3(), aimT = new THREE.Vector3();
+const smooth = t => t * t * (3 - 2 * t);
+// A moving camera cannot use the bake, so the still parts draw live.
+function setLive(on) {
+  statics.visible = skyG.visible = on;
+  comp.visible = !on;
+  sea.onBeforeRender = on ? mirror : () => {};
+  if (on) scene.add(sea); else scene.remove(sea);
+}
+function lens(fov) {
+  camera.fov = fov;
+  camera.updateProjectionMatrix();
+  const vf = THREE.MathUtils.degToRad(fov);
+  su.uFov.value.set(1 / (2 * Math.atan(Math.tan(vf / 2) * camera.aspect)), 1 / vf);
+  projU.uScale.value = (view.h * view.pr) / (2 * Math.tan(vf / 2)) / 400;
+}
+function startChase() {
+  chase.mode = 1; chase.t = 0;
+  chase.s = run.s + run.dir * LEAD;
+  // A ride keeps the train at full speed.
+  run.user = true;
+  setLive(true);
+}
+function endChase() { if (chase.mode === 1) { chase.mode = 2; chase.t = 0; } }
+function updateChase(dt) {
+  if (!chase.mode) return;
+  chase.t += dt;
+  const dir = run.dir;
+  // The camera rolls a little slower than the train, so the train slides past.
+  chase.s += dir * Math.max(0, speed() - REL) * dt;
+  const c = atX(chase.s, TRACK + SIDE * OFF);
+  camP.set(c.x, DECK + 3.2, c.z);
+  // Aim at the part of the train just behind the camera, nose to tail.
+  const head = run.s, tail = run.s - dir * train.SPAN;
+  const ls = THREE.MathUtils.clamp(chase.s - dir * 10, Math.min(head, tail), Math.max(head, tail));
+  const l = atX(ls, TRACK);
+  lookT.set(l.x, DECK + 2.4, l.z);
+  // The ride ends 60 m after the tail passes, or when the train leaves.
+  if (chase.mode === 1 && (dir * (tail - chase.s) > 60 || !train.on)) endChase();
+  const cw = view.w >= view.h ? CAM.w : CAM.p;
+  wideP.set(cw.px, cw.py, cw.pz); wideT.set(cw.tx, cw.ty, cw.tz);
+  const k = chase.mode === 1 ? smooth(Math.min(1, chase.t / IN)) : 1 - smooth(Math.min(1, chase.t / OUT));
+  camera.position.lerpVectors(wideP, camP, k);
+  camera.lookAt(aimT.lerpVectors(wideT, lookT, k));
+  lens(cw.fov + (FOV - cw.fov) * k);
+  if (chase.mode === 2 && chase.t >= OUT) {
+    // Back on the wide shot: the bake takes over again, with a fresh mirror.
+    chase.mode = 0;
+    frame(view.w, view.h, view.pr);
+    setLive(false);
+    if (bakeWith) bake(bakeWith);
+  }
+}
+// A tap within 40 px of the train starts a ride.
+function hitTrain(ndc) {
+  for (let d = 0; d <= train.SPAN; d += 6) {
+    const c = atX(run.s - run.dir * d, TRACK);
+    gv.set(c.x, DECK + 2.5, c.z).project(camera);
+    if (gv.z < 1 && Math.hypot((gv.x - ndc.x) * view.w / 2, (gv.y - ndc.y) * view.h / 2) < 40) return true;
+  }
+  return false;
+}
+/* ---------- end chase ---------- */
 // A moving train runs at full rate, so it never steps.
-const lively = () => run.user || steering || steerEase > 0 || rips.some(r => rt - r.z < 7) || (train.on && paceNow > 0);
+const lively = () => run.user || steering || steerEase > 0 || rips.some(r => rt - r.z < 7) || (train.on && paceNow > 0) || chase.mode > 0;
 // Lower steps quality down one rung: 1 drops the mirror, 2 the rain.
 function lower(rung) {
   if (rung >= 2) rain.visible = false;
@@ -1740,7 +1819,9 @@ const LOOK = {
 for (const t of TUNE) if (t.key in LOOK) { t.set(LOOK[t.key]); t.def = t.get(); }
 // QA can park the train with ?train=<s>, in metres along the track.
 const parkAt = new URLSearchParams(location.search).get('train');
-if (parkAt !== null) { run.s = +parkAt; run.v = 0; train.place(run.s, 1, sea); }
+if (parkAt !== null) { parked = true; run.s = +parkAt; train.place(run.s, 1, sea); }
+// QA can start a ride at load with ?ride.
+if (new URLSearchParams(location.search).has('ride')) startChase();
 const tune = {
   list: TUNE,
   // set returns true when the matte painting needs a re-bake.
