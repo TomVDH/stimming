@@ -86,6 +86,89 @@ t('hideControls', () => {
   eq(visible.join(','), 's2-back,s2-name');
 });
 
+/* ---------- Task 2: choice ---------- */
+const opts = n => Array.from({ length: n }, (_, i) => ({ value: `o${i}`, label: `Opt ${i}` }));
+const spy = () => { const f = (...a) => { f.calls.push(a); }; f.calls = []; return f; };
+t('auto segments', () => {
+  const { layer } = fixture({ choice: { label: 'Palette', value: 'o1', options: opts(3), onPick: spy() } });
+  const seg = layer.querySelector('.s2-tl .s2-seg');
+  ok(seg, 'no segments');
+  eq(seg.querySelectorAll('.s2-chip').length, 3);
+  eq(seg.querySelectorAll('[aria-pressed="true"]').length, 1);
+  eq(seg.querySelector('[aria-pressed="true"]').dataset.value, 'o1');
+});
+t('auto stepper', () => {
+  const onPick = spy();
+  const { layer, ui } = fixture({ choice: { label: 'Kind', value: 'o4', options: opts(6), onPick } });
+  const step = layer.querySelector('.s2-tl .s2-step');
+  ok(step, 'no stepper');
+  eq(step.querySelector('.s2-step-now').textContent, 'Opt 4');
+  click(step.querySelector('.s2-step-next'));
+  eq(step.querySelector('.s2-step-now').textContent, 'Opt 5');
+  click(step.querySelector('.s2-step-next'));
+  eq(ui.choice.value, 'o0');
+  eq(onPick.calls.length, 2);
+});
+t('arrow keys step', () => {
+  const onPick = spy();
+  const { layer } = fixture({ choice: { label: 'P', value: 'o0', options: opts(3), onPick } });
+  const first = layer.querySelector('.s2-seg .s2-chip');
+  first.focus();
+  key('ArrowRight', {}, first);
+  eq(onPick.calls.length, 1);
+  eq(onPick.calls[0][0], 'o1');
+  eq(document.activeElement.dataset.value, 'o1');
+});
+t('tray', () => {
+  const onPick = spy();
+  const icon = '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/></svg>';
+  const { layer } = fixture({ choice: { label: 'Add', display: 'tray', value: 'star', onPick,
+    options: [{ value: 'star', label: 'Star', icon }, { value: 'binary', label: 'Binary', icon }] } });
+  const chip = layer.querySelector('.s2-tl .s2-tray');
+  eq(chip.textContent.trim(), '+ Star');
+  click(chip);
+  const sheet = layer.querySelector('.s2-sheet');
+  ok(shown(sheet), 'sheet not open');
+  eq(chip.getAttribute('aria-expanded'), 'true');
+  const b = sheet.querySelector('[aria-label="Binary"]');
+  ok(b?.querySelector('svg'), 'no icon button');
+  click(b);
+  eq(chip.textContent.trim(), '+ Binary');
+  ok(!shown(sheet), 'sheet still open');
+  eq(onPick.calls.length, 1);
+  eq(onPick.calls[0][0], 'binary');
+});
+t('set does not fire', () => {
+  const onPick = spy();
+  const { layer, ui } = fixture({ choice: { label: 'P', value: 'o0', options: opts(3), onPick } });
+  ui.choice.set('o2');
+  eq(ui.choice.value, 'o2');
+  eq(layer.querySelector('.s2-seg [aria-pressed="true"]').dataset.value, 'o2');
+  eq(onPick.calls.length, 0);
+  ui.choice.set('o1', true);
+  eq(onPick.calls.length, 1);
+});
+t('choice disabled', () => {
+  const onPick = spy();
+  const { layer, ui } = fixture({ choice: { label: 'P', value: 'o0', options: opts(3), onPick } });
+  ui.choice.disabled = true;
+  click(layer.querySelectorAll('.s2-seg .s2-chip')[2]);
+  eq(ui.choice.value, 'o0');
+  eq(onPick.calls.length, 0);
+  eq(layer.querySelector('.s2-seg').getAttribute('aria-disabled'), 'true');
+});
+t('palette dot', () => {
+  const { layer } = fixture({ choice: { label: 'P', value: 'a', options: [{ value: 'a', label: 'Ember', dot: 'rgb(255, 0, 0)' }, { value: 'b', label: 'Sea' }] } });
+  eq(getComputedStyle(layer.querySelector('.s2-dot')).backgroundColor, 'rgb(255, 0, 0)');
+});
+t('option key', () => {
+  const onPick = spy();
+  const { ui } = fixture({ choice: { label: 'P', value: 'a', onPick, options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B', key: '7' }] } });
+  key('7');
+  eq(ui.choice.value, 'b');
+  eq(onPick.calls.length, 1);
+});
+
 /* ---------- run ---------- */
 let pass = 0;
 for (const [name, fn] of queue) {

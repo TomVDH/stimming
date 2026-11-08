@@ -201,6 +201,137 @@ const iconButton = (cls, html, label) => {
   return b;
 };
 
+/* sheets: one open at a time, opened only by a click */
+let openSheet = null;
+const FOCUSABLE = 'button:not([hidden]):not([disabled]), input:not([disabled]), a[href]';
+document.addEventListener('keydown', e => {
+  if (!openSheet) return;
+  if (e.key === 'Escape') { e.preventDefault(); openSheet.open(false, true); return; }
+  if (e.key !== 'Tab') return;
+  // Tab stays inside the open sheet.
+  const items = [...openSheet.el.querySelectorAll(FOCUSABLE)].filter(el => el.checkVisibility());
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+document.addEventListener('pointerdown', e => {
+  if (openSheet && !openSheet.el.contains(e.target) && !openSheet.anchor.contains(e.target)) openSheet.open(false);
+});
+function makeSheet(layer, { title, anchor, align = 'right' }) {
+  const el = make('div', `s2-sheet s2-sheet--${align}`, `<div class="s2-hd"><span>${title}</span><em aria-hidden="true">esc</em></div>`);
+  el.hidden = true;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', title);
+  layer.append(el);
+  anchor.setAttribute('aria-expanded', 'false');
+  const sheet = {
+    el, anchor,
+    get isOpen() { return !el.hidden; },
+    // Closing by key or button returns focus to the button.
+    open(on, refocus = false) {
+      if (on === sheet.isOpen) return;
+      if (on && openSheet) openSheet.open(false);
+      el.hidden = !on;
+      anchor.setAttribute('aria-expanded', String(on));
+      openSheet = on ? sheet : null;
+      if (on) (el.querySelector('[aria-pressed="true"]') || el.querySelector(FOCUSABLE))?.focus({ preventScroll: true });
+      else if (refocus || el.contains(document.activeElement)) anchor.focus({ preventScroll: true });
+    },
+  };
+  anchor.addEventListener('click', () => sheet.open(!sheet.isOpen, true));
+  return sheet;
+}
+
+/* shortcut keys: one listener per bar */
+// Keys skip modified presses, text fields and open sheets.
+function keyBinder() {
+  const map = new Map();
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+    const fn = map.get(e.key.toLowerCase());
+    if (!fn) return;
+    e.preventDefault();
+    fn();
+  });
+  return (key, fn) => map.set(String(key).toLowerCase(), fn);
+}
+
+/* choice: segments, stepper or tray */
+const dot = o => (o.dot ? `<span class="s2-dot" style="background: ${o.dot}"></span>` : '');
+function makeChoice(spec, display, state, pick, layer) {
+  const { options, label } = spec;
+  const find = v => options.find(o => o.value === v);
+  const step = d => {
+    const i = options.findIndex(o => o.value === state.value);
+    pick(options[(i + d + options.length) % options.length].value, true, true);
+  };
+  const arrows = (box, onStep) => box.addEventListener('keydown', e => {
+    const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onStep(d);
+  });
+  if (display === 'segments') {
+    const el = make('div', 's2-seg');
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', label);
+    const chips = options.map(o => {
+      const b = make('button', 's2-chip', `${dot(o)}${o.label}`);
+      b.type = 'button';
+      b.dataset.value = o.value;
+      b.addEventListener('click', () => pick(o.value, true, true));
+      return b;
+    });
+    el.append(...chips);
+    arrows(el, d => { step(d); chips.find(b => b.dataset.value === state.value)?.focus(); });
+    return { el, sync() {
+      chips.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === state.value)));
+      el.setAttribute('aria-disabled', String(state.disabled));
+    } };
+  }
+  if (display === 'stepper') {
+    const el = make('div', 's2-step');
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', label);
+    const prev = iconButton('s2-chip s2-step-prev', '‹', `Previous ${label}`);
+    const next = iconButton('s2-chip s2-step-next', '›', `Next ${label}`);
+    const now = make('span', 's2-step-now');
+    now.setAttribute('aria-live', 'polite');
+    prev.addEventListener('click', () => step(-1));
+    next.addEventListener('click', () => step(1));
+    el.append(prev, now, next);
+    arrows(el, step);
+    return { el, sync() {
+      const o = find(state.value);
+      now.innerHTML = o ? `${dot(o)}${o.label}` : '';
+      el.setAttribute('aria-disabled', String(state.disabled));
+    } };
+  }
+  // The tray chip opens a grid sheet below the top-left corner.
+  const el = make('button', 's2-chip s2-tray');
+  el.type = 'button';
+  const sheet = makeSheet(layer, { title: label, anchor: el, align: 'left' });
+  const grid = make('div', 's2-grid');
+  grid.setAttribute('role', 'group');
+  grid.setAttribute('aria-label', label);
+  const cells = options.map(o => {
+    const b = iconButton('s2-chip', o.icon || o.label.slice(0, 1), o.label);
+    b.dataset.value = o.value;
+    b.addEventListener('click', () => { pick(o.value, true, true); sheet.open(false, true); });
+    return b;
+  });
+  grid.append(...cells);
+  sheet.el.append(grid);
+  return { el, sheet, sync() {
+    el.textContent = `+ ${find(state.value)?.label ?? ''}`;
+    el.setAttribute('aria-disabled', String(state.disabled));
+    cells.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === state.value)));
+  } };
+}
+
 export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) {
   document.documentElement.classList.add('stim2');
   // The frame holds the stage and the layer, so control events skip the stage.
@@ -220,6 +351,33 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
   const name = make('span', 's2-name');
   name.append(document.querySelector('.intro-name')?.textContent.trim() || id);
   tl.append(back, name);
+  const bindKey = keyBinder();
+
+  /* the choice: one group, after the name */
+  let choice = null, choiceCtl = null;
+  if (spec.choice?.options?.length) {
+    const c = spec.choice;
+    const state = { value: c.value ?? c.options[0].value, disabled: false };
+    // The shell calls onPick only for user input, or for set(v, true).
+    const pick = (v, fire, user = false) => {
+      if (user && state.disabled) return;
+      if (!c.options.some(o => o.value === v)) return;
+      state.value = v;
+      choiceCtl.sync();
+      if (fire) c.onPick?.(v);
+    };
+    const display = c.display || (c.options.length > 5 ? 'stepper' : 'segments');
+    choiceCtl = makeChoice(c, display, state, pick, layer);
+    choiceCtl.sync();
+    tl.append(choiceCtl.el);
+    c.options.forEach(o => { if (o.key) bindKey(o.key, () => pick(o.value, true, true)); });
+    choice = {
+      get value() { return state.value; },
+      set(v, fire = false) { pick(v, fire); },
+      get disabled() { return state.disabled; },
+      set disabled(d) { state.disabled = !!d; choiceCtl.sync(); },
+    };
+  }
 
   /* top right: legacy link, sound, Settings, (i) */
   const snd = iconButton('snd', SOUND_SVG, 'Sound');
@@ -233,6 +391,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
 
   let legacy = null;
   const ui = {
+    choice,
     soundButton: snd,
     // A missing toy keeps the fallback name and shows no tags.
     applyToy(info) {
