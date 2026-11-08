@@ -118,7 +118,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
   const TAU = Math.PI * 2;
   // The film order, outer edge to centre: thin silver, then the first bands.
   const ORDER = [
-    'oklch(0.36 0.04 255)', 'oklch(0.88 0.02 95)', 'oklch(0.84 0.14 88)', 'oklch(0.6 0.21 345)',
+    'oklch(0.36 0.04 255)', 'oklch(0.76 0.03 95)', 'oklch(0.84 0.14 88)', 'oklch(0.6 0.21 345)',
     'oklch(0.58 0.16 260)', 'oklch(0.76 0.12 185)', 'oklch(0.86 0.15 105)', 'oklch(0.7 0.17 355)',
   ];
   const PUDDLE = 'oklch(0.13 0.012 250)', HOLE = 'oklch(0.08 0.01 260)';
@@ -264,153 +264,183 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= A · Shaded object ================= */
 
-  // A glossy puddle on a hard shadow; a slick of filled bands floats on it.
+  // An asphalt block on a hard shadow; a soft slick floats in its puddle.
+  // The sky's sheen slides against the pointer, as a reflection would.
   {
-    const EDGE = smoothD(ring(64, 64, 47, 43, 0.07, 0.6, 14));
-    const REST = bands(66, 66, 40, 6, ORDER.length);
+    const EDGE = smoothD(ring(66, 64, 38, 33, 0.09, 0.6, 14));
+    const REST = bands(68, 66, 34, 5, ORDER.length, 0.84);
     DIRS.push({
       toy: 'oilslick', l: 'A', name: 'Shaded object',
-      box: [17, 21, 100, 96],
+      box: [16, 16, 98, 98],
       art(svg, id) {
         svg.innerHTML = `
-          <defs><clipPath id="${id}c"><path d="${EDGE}"/></clipPath></defs>
-          <path d="${EDGE}" transform="translate(6 7)" fill="${HOLE}"/>
+          <defs>
+            <clipPath id="${id}c"><path d="${EDGE}"/></clipPath>
+            <filter id="${id}s" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="0.8"/></filter>
+            <linearGradient id="${id}k" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0.3" stop-color="#fff" stop-opacity="0"/><stop offset="0.45" stop-color="#fff" stop-opacity="0.22"/><stop offset="0.6" stop-color="#fff" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <rect x="22" y="22" width="92" height="92" fill="${HOLE}"/>
+          <rect x="16" y="16" width="92" height="92" fill="oklch(0.24 0.008 250)"/>
+          <rect x="16" y="16" width="92" height="92" fill="url(#lit)" opacity="0.25"/>
           <path d="${EDGE}" fill="${PUDDLE}"/>
           <g clip-path="url(#${id}c)">
-            ${ORDER.map(c => `<path class="b" fill="${c}"/>`).join('')}
+            <g filter="url(#${id}s)">${ORDER.map(c => `<path class="b" fill="${c}"/>`).join('')}</g>
             <circle class="h" r="0" fill="${HOLE}"/>
+            <rect class="k" x="0" y="0" width="128" height="128" fill="url(#${id}k)"/>
           </g>
-          <path d="${EDGE}" fill="url(#lit)" opacity="0.35"/>
-          <path d="${EDGE}" fill="none" stroke="url(#rim)" stroke-width="1.4"/>`;
-        const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h');
+          <path d="${EDGE}" fill="none" stroke="oklch(0.08 0.01 260 / 0.7)" stroke-width="1.6"/>`;
+        const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h'), k = svg.querySelector('.k');
         const draw = () => {
-          paths.forEach((p, k) => p.setAttribute('d', smoothD(F.pts[k])));
+          paths.forEach((p, i) => p.setAttribute('d', smoothD(F.pts[i])));
           h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.8));
         };
         draw();
-        return finger(F, draw);
+        const base = finger(F, draw);
+        const sheen = p => gsap.to(k, { x: p ? (64 - p[0]) * 0.5 : 0, y: p ? (64 - p[1]) * 0.5 : 0, duration: 0.4, overwrite: 'auto' });
+        return { enter(p) { base.enter(p); sheen(p); }, move(p) { base.move(p); sheen(p); }, leave() { base.leave(); sheen(null); } };
       },
-      // The emblem: a solid puddle; the slick's band edges cut as dark lines.
       emblem: emb(`
-        <mask id="m">
-        <path d="${EDGE}" fill="#fff"/>
-        <g fill="none" stroke="#000" stroke-width="3">
-        ${REST.filter((_, k) => k % 2 === 0).map(L => `<path d="${smoothD(L)}"/>`).join('\n')}
+        <rect x="16" y="16" width="92" height="92" fill="#fff"/>
+        <path d="${EDGE}" fill="#000"/>
+        <g fill="none" stroke="#fff" stroke-width="3">
+        ${REST.filter((_, k) => k % 2 === 1).map(L => `<path d="${smoothD(L)}"/>`).join('\n')}
         </g>
-        </mask>
-        <path d="${EDGE}" fill="#fff" mask="url(#m)"/>
       `),
     });
   }
 
   /* ================= B · Stencil cut-out ================= */
 
-  // A film-coloured tile; four bands are cut through it, each held by a bridge.
+  // A hex in film colours on a hard shadow; three bands are cut through it.
   {
-    const REST = bands(64, 64, 42, 12, 4, 0.84, [0.7, -0.5]);
+    const hex = (cx, cy, r) => Array.from({ length: 6 }, (_, i) => { const a = (-90 + 60 * i) * (Math.PI / 180); return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; });
+    const HEX = poly(hex(60, 60, 48)), SHADOW = poly(hex(66, 67, 48));
+    const REST = bands(60, 61, 34, 10, 3, 0.9, [0.8, -0.6]);
     DIRS.push({
       toy: 'oilslick', l: 'B', name: 'Stencil cut-out',
-      box: [14, 14, 100, 100],
+      box: [18, 12, 90, 103],
       art(svg, id) {
         svg.innerHTML = `
-          <defs><clipPath id="${id}c"><rect x="14" y="14" width="100" height="100" rx="16"/></clipPath></defs>
-          <rect x="14" y="14" width="100" height="100" rx="16" fill="url(#os-film)"/>
-          <rect x="14" y="14" width="100" height="100" rx="16" fill="url(#lit)"/>
-          <g clip-path="url(#${id}c)" fill="none" style="stroke: var(--bg)" stroke-width="4.5" stroke-linecap="round">
-            ${REST.map(() => '<path class="b" pathLength="100" stroke-dasharray="46 5 49 0"/>').join('')}
+          <defs><clipPath id="${id}c"><path d="${HEX}"/></clipPath></defs>
+          <path d="${SHADOW}" fill="${HOLE}"/>
+          <path d="${HEX}" fill="url(#os-film)"/>
+          <path d="${HEX}" fill="url(#lit)"/>
+          <g clip-path="url(#${id}c)" fill="none" style="stroke: var(--bg)" stroke-width="6" stroke-linecap="round">
+            ${REST.map(() => '<path class="b" pathLength="100" stroke-dasharray="44 7 49 0"/>').join('')}
             <circle class="h" r="0" style="fill: var(--bg); stroke: none"/>
-          </g>
-          <rect x="14" y="14" width="100" height="100" rx="16" fill="none" stroke="url(#rim)" stroke-width="1.6"/>`;
+          </g>`;
         const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h');
         const draw = () => {
-          paths.forEach((p, k) => p.setAttribute('d', smoothD(F.pts[k])));
+          paths.forEach((p, i) => p.setAttribute('d', smoothD(F.pts[i])));
           h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.9));
         };
         draw();
-        return finger(F, draw);
+        return finger(F, draw, p => p, [60, 60]);
       },
       emblem: emb(`
         <mask id="m">
-        <rect x="14" y="14" width="100" height="100" rx="16" fill="#fff"/>
-        <g fill="none" stroke="#000" stroke-width="5.5" stroke-linecap="round">
-        ${REST.map(L => `<path d="${smoothD(L)}" pathLength="100" stroke-dasharray="46 6 48 0"/>`).join('\n')}
+        <path d="${HEX}" fill="#fff"/>
+        <g fill="none" stroke="#000" stroke-width="7" stroke-linecap="round">
+        ${REST.map(L => `<path d="${smoothD(L)}" pathLength="100" stroke-dasharray="44 8 48 0"/>`).join('\n')}
         </g>
         </mask>
-        <rect x="14" y="14" width="100" height="100" rx="16" fill="#fff" mask="url(#m)"/>
+        <path d="${HEX}" fill="#fff" mask="url(#m)"/>
       `),
     });
   }
 
   /* ================= C · Single-weight line ================= */
 
-  // One stroke weight in a film gradient: the puddle edge and five loose bands.
+  // One unbroken line: a wobbly spiral in the film colours.
   {
-    const EDGE = smoothD(ring(64, 64, 48, 42, 0.08, 0.2, 14));
-    const REST = bands(62, 64, 37, 7, 5, 0.82, [0.6, -0.5]);
+    const spiral = (cx, cy, turns, r0, r1, n = 150) => Array.from({ length: n }, (_, i) => {
+      const t = i / (n - 1), a = t * turns * TAU, r = r0 + (r1 - r0) * t, k = 1 + 0.07 * Math.sin(3 * a);
+      return [cx + r * k * Math.cos(a), cy + r * k * 0.88 * Math.sin(a)];
+    });
+    // An open Catmull-Rom curve: the spiral has two loose ends.
+    const openD = P => {
+      let d = `M${f(P[0][0])} ${f(P[0][1])}`;
+      for (let i = 0; i < P.length - 1; i++) {
+        const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+        d += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+      }
+      return d;
+    };
+    const REST = [spiral(64, 64, 4.2, 3, 46)];
     DIRS.push({
       toy: 'oilslick', l: 'C', name: 'Single-weight line',
-      box: [14, 18, 100, 92],
+      box: [16, 22, 96, 84],
       art(svg) {
-        svg.innerHTML = `
-          <g fill="none" stroke="url(#os-line)" stroke-width="3.5" stroke-linejoin="round">
-            <path d="${EDGE}"/>
-            ${REST.map(() => '<path class="b"/>').join('')}
-          </g>
-          <circle class="h" r="0" fill="none" stroke="url(#os-line)" stroke-width="3.5"/>`;
-        const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h');
-        const draw = () => {
-          paths.forEach((p, k) => p.setAttribute('d', smoothD(F.pts[k])));
-          h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.5));
-        };
+        svg.innerHTML = `<path class="b" fill="none" stroke="url(#os-line)" stroke-width="3.6" stroke-linecap="round"/>`;
+        const F = film(REST), p = svg.querySelector('.b');
+        const draw = () => p.setAttribute('d', openD(F.pts[0]));
         draw();
         return finger(F, draw);
       },
-      emblem: emb(`
-        <g fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round">
-        <path d="${EDGE}"/>
-        ${REST.map(L => `<path d="${smoothD(L)}"/>`).join('\n')}
-        </g>
-      `),
+      emblem: emb(`<path d="${openD(REST[0])}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>`),
     });
   }
 
   /* ================= D · Isometric block ================= */
 
-  // A thin asphalt slab; its top face is the puddle, and the film smears on it.
+  // A thin asphalt slab with a puddle on top. A drop falls where the pointer
+  // enters, rings spread from it, and then the pointer smears the film.
   {
     const T = [64, 18], UR = [110, 44.6], C0 = [64, 71.2], UL = [18, 44.6];
     const LL = [18, 62.6], BB = [64, 89.2], LR = [110, 62.6];
     const CEN = [64, 44.6], SX = 1.2247, SY = 0.7071;
-    // A circle of radius r on the top face draws as this ellipse.
     const ISO = `translate(${CEN[0]} ${CEN[1]}) scale(${SX} ${SY})`;
     const POOL = smoothD(ring(0, 0, 33, 33, 0.08, 0.7, 14));
     const REST = bands(1, 1, 28, 4, ORDER.length, 1, [-0.3, -0.2]);
+    const toLocal = p => [(p[0] - CEN[0]) / SX, (p[1] - CEN[1]) / SY];
     DIRS.push({
       toy: 'oilslick', l: 'D', name: 'Isometric block',
-      box: [14, 14, 100, 80],
+      box: [14, 4, 100, 90],
       art(svg, id) {
         svg.innerHTML = `
-          <defs><clipPath id="${id}c"><path d="${POOL}"/></clipPath></defs>
+          <defs>
+            <clipPath id="${id}c"><path d="${POOL}"/></clipPath>
+            <filter id="${id}s" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="0.6"/></filter>
+          </defs>
           <path d="${poly([UL, C0, BB, LL])}" fill="oklch(0.27 0.01 250)"/>
           <path d="${poly([C0, UR, LR, BB])}" fill="oklch(0.18 0.01 250)"/>
           <path d="${poly([T, UR, C0, UL])}" fill="oklch(0.33 0.008 250)"/>
           <g transform="${ISO}">
             <path d="${POOL}" fill="${PUDDLE}"/>
             <g clip-path="url(#${id}c)">
-              ${ORDER.map(c => `<path class="b" fill="${c}"/>`).join('')}
+              <g filter="url(#${id}s)">${ORDER.map(c => `<path class="b" fill="${c}"/>`).join('')}</g>
               <circle class="h" r="0" fill="${HOLE}"/>
+              <g class="rings" fill="none" stroke="oklch(0.95 0.02 95)" stroke-width="1.2" vector-effect="non-scaling-stroke">
+                <circle r="0" opacity="0" vector-effect="non-scaling-stroke"/><circle r="0" opacity="0" vector-effect="non-scaling-stroke"/>
+              </g>
             </g>
           </g>
+          <path class="drop" d="${dropD(0, 0, 3.4)}" fill="oklch(0.84 0.14 88)" opacity="0"/>
           <path d="${poly([T, UR, C0, UL])}" fill="none" stroke="url(#rim)" stroke-width="1.5" stroke-linejoin="round"/>
           <path d="M${C0[0]} ${C0[1]}V${BB[1]}" stroke="oklch(0.9 0.02 250 / 0.25)" stroke-width="1.2"/>`;
         const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h');
+        const drop = svg.querySelector('.drop'), rings = [...svg.querySelectorAll('.rings circle')];
         const draw = () => {
-          paths.forEach((p, k) => p.setAttribute('d', smoothD(F.pts[k])));
+          paths.forEach((p, i) => p.setAttribute('d', smoothD(F.pts[i])));
           h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.8));
         };
         draw();
-        // The pointer maps from the icon into the top face's own units.
-        return finger(F, draw, p => [(p[0] - CEN[0]) / SX, (p[1] - CEN[1]) / SY], [64, 44.6]);
+        const base = finger(F, draw, toLocal, [64, 44.6]);
+        let fall = null;
+        // The drop lands on the top face, then pushes rings out through the film.
+        const dropAt = p => {
+          const q = toLocal(p), r = Math.hypot(q[0], q[1]), s = r > 24 ? 24 / r : 1, at = [q[0] * s, q[1] * s];
+          const sx = CEN[0] + at[0] * SX, sy = CEN[1] + at[1] * SY;
+          fall?.kill();
+          fall = gsap.timeline()
+            .fromTo(drop, { x: sx, y: sy - 36, opacity: 1 }, { y: sy, duration: 0.32, ease: 'power2.in' })
+            .set(drop, { opacity: 0 })
+            .add(() => { const st = { n: 0 }; gsap.to(st, { n: 1, duration: 0.5, onUpdate: () => { F.push(at, 1.4); F.hole = 0; draw(); } }); })
+            .fromTo(rings, { attr: { cx: at[0], cy: at[1], r: 1 }, opacity: 0.9 }, { attr: { r: 20 }, opacity: 0, duration: 0.9, ease: 'power2.out', stagger: 0.18 });
+        };
+        return { enter(p) { base.enter(p); dropAt(p || [64, 44.6]); }, move: base.move, leave() { fall?.progress(1); base.leave(); } };
       },
       emblem: emb(`
         <path d="${poly([T, UR, LR, BB, LL, UL])}" fill="#fff"/>
@@ -418,7 +448,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         <g transform="${ISO}">
         <path d="${POOL}" fill="#000"/>
         <g fill="none" stroke="#fff" stroke-width="2.8">
-        ${REST.filter((_, k) => k % 3 === 0).map(L => `<path d="${smoothD(L)}" vector-effect="non-scaling-stroke"/>`).join('\n')}
+        ${REST.filter((_, k) => k % 3 === 1).map(L => `<path d="${smoothD(L)}" vector-effect="non-scaling-stroke"/>`).join('\n')}
         </g>
         </g>
       `),
@@ -427,27 +457,47 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= E · Abstract mark ================= */
 
-  // Three heavy drops nest like film bands; the pointer smears and parts them.
+  // One heavy drop of oil. Its sheen turns to face the pointer, and the
+  // bands slide as the pointer comes closer, as film does with view angle.
   {
-    const C = [64, 80];
-    const LIST = [[33, 'oklch(0.85 0.14 88)'], [21, 'oklch(0.6 0.21 345)'], [9, 'oklch(0.62 0.15 250)']];
+    const C = [64, 76], R = 30, D = dropD(C[0], C[1], R);
     DIRS.push({
       toy: 'oilslick', l: 'E', name: 'Abstract mark',
-      box: [26, 12, 76, 106],
-      art(svg) {
+      box: [30, 14, 68, 94],
+      art(svg, id) {
         svg.innerHTML = `
-          <g fill="none" stroke-width="9" stroke-linejoin="round">
-            ${LIST.map(([, c]) => `<path class="b" stroke="${c}"/>`).join('')}
-          </g>`;
-        const F = film(LIST.map(([r]) => dropPts(C[0], C[1], r))), paths = [...svg.querySelectorAll('.b')];
-        const draw = () => paths.forEach((p, k) => p.setAttribute('d', smoothD(F.pts[k])));
-        draw();
-        return finger(F, draw, p => p, [64, 70]);
+          <defs>
+            <linearGradient id="${id}g" x1="0" y1="0" x2="0.55" y2="0" spreadMethod="repeat">
+              ${ORDER.slice(1).map((c, i, a) => `<stop offset="${f(i / (a.length - 1))}" stop-color="${c}"/>`).join('')}
+            </linearGradient>
+          </defs>
+          <path d="${D}" transform="translate(5 6)" fill="${HOLE}"/>
+          <path d="${D}" fill="url(#${id}g)"/>
+          <path d="${D}" fill="url(#lit)"/>
+          <path d="${D}" fill="none" stroke="oklch(0.08 0.01 260 / 0.6)" stroke-width="1.4"/>`;
+        const g = svg.querySelector('linearGradient'), st = { a: -30, s: 0 };
+        const paint = () => g.setAttribute('gradientTransform', `rotate(${f(st.a)} 0.5 0.5) translate(${f(st.s)} 0)`);
+        paint();
+        const aim = p => {
+          const a = (Math.atan2(p[1] - C[1], p[0] - C[0]) * 180) / Math.PI, d = Math.hypot(p[0] - C[0], p[1] - C[1]);
+          gsap.to(st, { a, s: 0.6 - d / 80, duration: 0.5, ease: 'power2.out', onUpdate: paint, overwrite: 'auto' });
+        };
+        let spin = null;
+        return {
+          enter(p) { if (p) aim(p); else spin = gsap.to(st, { a: '+=360', s: '+=0.55', duration: 2.4, ease: 'sine.inOut', repeat: -1, onUpdate: paint }); },
+          move(p) { if (p && !spin) aim(p); },
+          leave() { spin?.kill(); spin = null; gsap.to(st, { a: -30, s: 0, duration: 0.6, ease: 'power2.inOut', onUpdate: paint, overwrite: 'auto' }); },
+        };
       },
       emblem: emb(`
-        <g fill="none" stroke="#fff" stroke-width="10" stroke-linejoin="round">
-        ${LIST.map(([r]) => `<path d="${dropD(C[0], C[1], r)}"/>`).join('\n')}
+        <mask id="m">
+        <path d="${D}" fill="#fff"/>
+        <g fill="none" stroke="#000" stroke-width="3.5">
+        <path d="${dropD(C[0], C[1], R * 0.66)}"/>
+        <path d="${dropD(C[0], C[1], R * 0.33)}"/>
         </g>
+        </mask>
+        <path d="${D}" fill="#fff" mask="url(#m)"/>
       `),
     });
   }
