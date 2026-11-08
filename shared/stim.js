@@ -332,6 +332,53 @@ function makeChoice(spec, display, state, pick, layer) {
   } };
 }
 
+/* slider: a word label, a bar thumb, no number */
+function makeSlider({ label, min = 0, max = 1, step = 0.01, value = min, onInput }) {
+  const el = make('label', 's2-slider', `<span>${label}</span>`);
+  const input = make('input');
+  Object.assign(input, { type: 'range', min, max, step });
+  input.value = String(value);
+  el.append(input);
+  const fill = () => el.style.setProperty('--v', `${((Number(input.value) - min) / (max - min || 1)) * 100}%`);
+  input.addEventListener('input', () => { fill(); onInput?.(Number(input.value)); });
+  fill();
+  const handle = {
+    get value() { return Number(input.value); },
+    set(v, fire = false) { input.value = String(v); fill(); if (fire) onInput?.(Number(input.value)); },
+    get disabled() { return input.disabled; },
+    set disabled(d) { input.disabled = !!d; el.toggleAttribute('data-disabled', !!d); },
+  };
+  return { el, input, handle };
+}
+
+/* actions: shared verbs keep one label each */
+const DIE = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1"/><circle class="solid" cx="5.5" cy="5.5" r="1"/><circle class="solid" cx="10.5" cy="10.5" r="1"/><circle class="solid" cx="8" cy="8" r="1"/></svg>';
+const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
+function actionLabel(a) {
+  if (a.label) return a.label;
+  if (a.verb === 'add') return `+ ${a.noun ?? 'One'}`;
+  return cap(a.verb);
+}
+function makeAction(a, bindKey) {
+  const b = make('button', 's2-chip', `${a.verb === 'shuffle' ? DIE : ''}<span class="s2-label">${actionLabel(a)}</span>`);
+  b.type = 'button';
+  let disabled = false;
+  const press = () => { if (!disabled) a.onPress?.(); };
+  b.addEventListener('click', press);
+  if (a.key) {
+    b.append(make('kbd', 's2-kbd', a.key));
+    b.setAttribute('aria-keyshortcuts', a.key);
+    bindKey(a.key, press);
+  }
+  const handle = {
+    get value() { return a.verb; },
+    set(v, fire = false) { if (fire) press(); },
+    get disabled() { return disabled; },
+    set disabled(d) { disabled = !!d; b.setAttribute('aria-disabled', String(disabled)); },
+  };
+  return { el: b, handle };
+}
+
 export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) {
   document.documentElement.classList.add('stim2');
   // The frame holds the stage and the layer, so control events skip the stage.
@@ -339,9 +386,11 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
   stage.before(frame);
   frame.append(stage, layer);
   const slot = name => layer.appendChild(make('div', `s2-${name}`));
-  const tl = slot('tl'), tr = slot('tr');
-  slot('bl');
-  slot('br');
+  const tl = slot('tl'), tr = slot('tr'), bl = slot('bl'), br = slot('br');
+  // Limits warn the author; the shell still draws every control.
+  const acts = spec.actions || [];
+  if (acts.length > 3) console.warn(`Bar v2 (${id}): ${acts.length} actions; the limit is three.`);
+  if (acts.some(a => a.verb === 'clear') && acts.some(a => a.verb === 'reset')) console.warn(`Bar v2 (${id}): Reset belongs in Settings when Clear shows.`);
 
   /* top left: back block, then the toy name */
   const letters = MARK.map(([ch, c, w, r, y], i) => `<span style="--i: ${i}; --c: oklch(${c}); --w: ${w}; --r: ${r}deg; --y: ${y}em">${ch}</span>`).join('');
@@ -379,6 +428,12 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
     };
   }
 
+  /* bottom corners: actions left, the main slider right */
+  const actions = new Map();
+  acts.forEach(a => { const { el, handle } = makeAction(a, bindKey); bl.append(el); actions.set(a.verb, handle); });
+  const slider = spec.slider ? makeSlider(spec.slider) : null;
+  if (slider) br.append(slider.el);
+
   /* top right: legacy link, sound, Settings, (i) */
   const snd = iconButton('snd', SOUND_SVG, 'Sound');
   if (!document.getElementById('snd')) snd.id = 'snd';
@@ -392,6 +447,8 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
   let legacy = null;
   const ui = {
     choice,
+    slider: slider?.handle ?? null,
+    action: verb => actions.get(verb) ?? null,
     soundButton: snd,
     // A missing toy keeps the fallback name and shows no tags.
     applyToy(info) {

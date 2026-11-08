@@ -169,6 +169,83 @@ t('option key', () => {
   eq(onPick.calls.length, 1);
 });
 
+/* ---------- Task 3: actions, slider, keys ---------- */
+const warns = fn => { const w = console.warn, got = []; console.warn = (...a) => got.push(a); try { fn(); } finally { console.warn = w; } return got; };
+t('action labels', () => {
+  const { layer } = fixture({ actions: [{ verb: 'add', noun: 'Star', onPress() {} }, { verb: 'shuffle', onPress() {} }, { verb: 'clear', onPress() {} }] });
+  const chips = [...layer.querySelectorAll('.s2-bl .s2-chip')];
+  eq(chips.map(c => c.querySelector('.s2-label').textContent).join(','), '+ Star,Shuffle,Clear');
+  ok(chips[1].querySelector('svg'), 'no die icon');
+});
+t('own verb label', () => {
+  const { layer } = fixture({ actions: [{ verb: 'flip', onPress() {} }, { verb: 'blow', label: 'Puff', onPress() {} }] });
+  eq([...layer.querySelectorAll('.s2-bl .s2-label')].map(c => c.textContent).join(','), 'Flip,Puff');
+});
+t('action press', () => {
+  const onPress = spy();
+  const { layer, ui } = fixture({ actions: [{ verb: 'clear', onPress }] });
+  const b = layer.querySelector('.s2-bl .s2-chip');
+  click(b);
+  eq(onPress.calls.length, 1);
+  ui.action('clear').disabled = true;
+  click(b);
+  eq(onPress.calls.length, 1);
+  eq(b.getAttribute('aria-disabled'), 'true');
+});
+t('action key', () => {
+  const onPress = spy();
+  const { layer } = fixture({ actions: [{ verb: 'drip', key: 'J', onPress }] });
+  key('j');
+  key('J');
+  eq(onPress.calls.length, 2);
+  eq(layer.querySelector('.s2-bl .s2-chip kbd')?.textContent, 'J');
+});
+t('keys ignore modifiers', () => {
+  const onPress = spy();
+  fixture({ actions: [{ verb: 'blow', key: 'K', onPress }] });
+  key('k', { metaKey: true });
+  key('k', { ctrlKey: true });
+  key('k', { altKey: true });
+  eq(onPress.calls.length, 0);
+});
+t('keys ignore fields', () => {
+  const onPress = spy();
+  const { layer } = fixture({ actions: [{ verb: 'ping', key: 'L', onPress }],
+    choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  const field = document.body.appendChild(document.createElement('input'));
+  key('l', {}, field);
+  field.remove();
+  click(layer.querySelector('.s2-tray'));
+  const inSheet = layer.querySelector('.s2-sheet .s2-chip');
+  ok(shown(inSheet), 'tray sheet not open');
+  key('l', {}, inSheet);
+  key('Escape', {}, inSheet);
+  eq(onPress.calls.length, 0);
+  key('l');
+  eq(onPress.calls.length, 1);
+});
+t('slider', () => {
+  const onInput = spy();
+  const { layer, ui } = fixture({ slider: { label: 'Gravity', min: 0.3, max: 1.2, step: 0.05, value: 0.3, onInput } });
+  const sl = layer.querySelector('.s2-br .s2-slider');
+  eq(sl.textContent.trim(), 'Gravity');
+  const input = sl.querySelector('input[type="range"]');
+  input.value = '0.6';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(onInput.calls.length, 1);
+  eq(onInput.calls[0][0], 0.6);
+  ui.slider.set(0.9);
+  eq(input.value, '0.9');
+  eq(ui.slider.value, 0.9);
+  eq(onInput.calls.length, 1);
+});
+t('limits warn', () => {
+  const got = warns(() => fixture({ actions: ['a', 'b', 'c', 'd'].map(v => ({ verb: v, onPress() {} })) }));
+  eq(got.length, 1);
+  const got2 = warns(() => fixture({ actions: [{ verb: 'clear', onPress() {} }, { verb: 'reset', onPress() {} }] }));
+  eq(got2.length, 1);
+});
+
 /* ---------- run ---------- */
 let pass = 0;
 for (const [name, fn] of queue) {
