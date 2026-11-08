@@ -1617,13 +1617,25 @@ function bake(renderer) {
 
   /* Motion: one clock drives the ambient life; trains run out and back. */
 train.place(175, 1, sea);
-const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false };
+// t counts seconds since the train left its end; 99 means already at cruise.
+const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false, t: 99 };
 let runPause = 6;
 // END sits behind the mouth plane, so the tail hides out of view.
 const END = PORTAL_S + 32, START = -160;
 let time = 0, rt = 0, paceNow = 1, parked = false;
 // A parked train (QA) holds still at any speed setting.
 const speed = () => (parked ? 0 : run.v);
+const smoother = x => { x = Math.min(1, Math.max(0, x)); return x * x * x * (x * (6 * x - 15) + 10); };
+// The train eases out over 6 s and brakes over its last 220 m.
+// The stop point is the hide point, so the train halts as it hides.
+function trainSpeed(s, dir, t) {
+  const cruise = speed();
+  if (cruise <= 0) return 0;
+  const d = dir > 0 ? END + train.SPAN - s : s - (START - train.SPAN);
+  if (d <= 0) return 0;
+  // The floor keeps the train moving, so it always arrives.
+  return Math.min(cruise, Math.max(0.6, cruise * Math.min(smoother(t / 6), smoother(d / 220))));
+}
 // The searchlight: auto sweep, or the pointer's aim while steering.
 const aimNow = new THREE.Vector2(-0.5, 0.55), aimTo = new THREE.Vector2();
 let steering = false, steerEase = 0;
@@ -1651,11 +1663,12 @@ function update(dt, pace) {
   const k = run.user ? 1 : pace;
   if (run.gone) {
     run.wait -= dt * k;
-    if (run.wait <= 0) { run.gone = false; run.dir = -run.dir; run.s = run.dir > 0 ? START : END; train.show(true); }
+    if (run.wait <= 0) { run.gone = false; run.dir = -run.dir; run.s = run.dir > 0 ? START : END; run.t = 0; train.show(true); }
   } else {
-    run.s += run.dir * speed() * dt * k;
+    run.t += dt * k;
+    run.s += run.dir * trainSpeed(run.s, run.dir, run.t) * dt * k;
     // Past the far end the train is lost in the port fog; then it returns.
-    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.gone = true; run.wait = runPause; run.user = false; }
+    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.gone = true; run.wait = Math.max(1, runPause); run.user = false; }
   }
   train.place(run.s, run.dir, sea);
   updateChase(dt);
