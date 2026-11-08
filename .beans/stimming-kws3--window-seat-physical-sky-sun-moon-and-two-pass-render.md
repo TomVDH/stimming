@@ -1,11 +1,11 @@
 ---
 # stimming-kws3
 title: 'Window seat: physical sky, sun, moon and two-pass render'
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-04T23:30:00Z
+updated_at: 2026-11-08T10:09:53Z
 parent: stimming-w1nd
 ---
 
@@ -23,11 +23,18 @@ Decisions:
 - Each hour keeps a small OKLCH grade tint.
 - Speed drops from 2.4 km/s to 0.75 km/s (about 3x real).
 
-- [ ] Two-pass render; GLSL in `window/shader.js`; quality hook
-- [ ] Speed to 0.75 km/s
-- [ ] Rayleigh, Mie and ozone sky baked to a texture; Earth's shadow and the pink band emerge
-- [ ] Hour chips set sun positions; small OKLCH grade tint per hour
-- [ ] Sun: colour from transmittance, limb darkening, refraction squash near the horizon
-- [ ] Moon: a proper disc with faint maria and a halo (no phase, no earthshine)
-- [ ] Flare scales to its source: a shorter streak, full only when the whole disc clears the frame
+- [x] Two-pass render; GLSL in `window/shader.js`; quality hook
+- [x] Speed to 0.75 km/s
+- [x] Rayleigh, Mie and ozone sky baked to a texture; Earth's shadow and the pink band emerge
+- [x] Hour chips set sun positions; small OKLCH grade tint per hour
+- [x] Sun: colour from transmittance, limb darkening, refraction squash near the horizon
+- [x] Moon: a proper disc with faint maria and a halo (no phase, no earthshine)
+- [x] Flare scales to its source: a shorter streak, full only when the whole disc clears the frame
 - [ ] Screenshots to Tom: Dusk, Midnight, Dawn at 1280 px
+
+## Notes
+
+- The sky bake runs in JS (`window/sky.js`), about 50 ms per hour change, into two RGBA16F tables (96 x 80).
+- Pass 1 draws only pixels that can reach the pane. Its alpha marks open sky, so pass 2 draws stars, sun and moon at full size.
+- The flare also hides behind the wing and the storm towers.
+- The pink band lies on the anti-sun side, outside the window at these bearings.
