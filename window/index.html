@@ -88,6 +88,7 @@
               <button class="chip" type="button" data-sight="fireball">Fireball</button>
               <button class="chip" type="button" data-sight="rocket">Rocket</button>
               <button class="chip" type="button" data-sight="jet">Jet</button>
+              <button class="chip" type="button" data-sight="boom">Impact</button>
             </div></div>
             <div class="group"><span>Aurora</span><div class="choices" id="aurora" role="group" aria-label="Aurora at midnight">
               <button class="chip" type="button" data-value="off" aria-pressed="false">Off</button>
@@ -465,7 +466,7 @@ function strobe() {
 const auroraOn = () => (opts.hour === 'night' && opts.aurora === 'on' ? 1 : 0);
 /* ---------- events ---------- */
 // Rare sights happen on their own: a meteor, a rocket launch, a passing jet.
-const EV = { wait: rnd(10, 20), meteor: null, rocket: null, jet: null };
+const EV = { wait: rnd(10, 20), meteor: null, rocket: null, jet: null, boom: null };
 // A test hook: ?event=meteor, fireball, rocket or jet calls that sight soon and often.
 const forced = qs.get('event');
 if (forced) EV.wait = 2;
@@ -475,10 +476,13 @@ function startEvent(want = null) {
   if (!EV.meteor) pool.push('meteor', 'meteor');
   if (!EV.rocket) pool.push('rocket');
   if (!EV.jet) pool.push('jet');
+  if (!EV.boom && Math.random() < 0.15) pool.push('boom');
   if (!pool.length && !call) return;
   const kind = call ? (call === 'fireball' ? 'meteor' : call) : pool[Math.floor(Math.random() * pool.length)];
   if (kind === 'meteor') EV.meteor = newMeteor(call === 'fireball' ? true : call === 'meteor' ? false : null);
   if (kind === 'rocket') EV.rocket = { x: cam.x + rnd(60, 220), z: cam.z + rnd(420, 600), hd: rnd(0, TAU), s: 0 };
+  // The impact is rare on its own; the Sights button calls it any time.
+  if (kind === 'boom') EV.boom = { x: cam.x + rnd(60, 150), z: cam.z + rnd(190, 270), s: 0, seed: -rnd(1, 90), hd: rnd(0, TAU) };
   if (kind === 'jet') EV.jet = { x: cam.x + (call ? 40 : rnd(55, 75)), z: cam.z + rnd(16, 45), y: rnd(10.2, 12.2), s: 0, hist: [] };
 }
 
@@ -517,7 +521,7 @@ function sunlit(p) {
 
 function stepEvents(dt) {
   EV.wait -= dt;
-  if (EV.wait <= 0) { startEvent(); EV.wait = forced ? (forced === 'rocket' ? 120 : forced === 'jet' ? 90 : 6) : rnd(22, 55) * (reduce ? 2.5 : 1); }
+  if (EV.wait <= 0) { startEvent(); EV.wait = forced ? ({ rocket: 120, jet: 90, boom: 180 }[forced] || 6) : rnd(22, 55) * (reduce ? 2.5 : 1); }
   const m = EV.meteor;
   if (m) {
     m.age += dt;
@@ -531,6 +535,17 @@ function stepEvents(dt) {
   }
   const r = EV.rocket;
   if (r) { r.s += dt; if (r.s > ROCKET_T + 45) EV.rocket = null; }
+  const bm = EV.boom;
+  if (bm) {
+    bm.s += dt;
+    const u = bm.s - BOOM_HIT;
+    // The flash: a hard peak at impact, then a long glow as the fireball rises.
+    bm.flash = u < 0 ? 0 : Math.exp(-u / 2.2) + 0.15 * Math.exp(-u / 30);
+    bm.crater = u < 0 ? 0 : Math.min(1, u / 2) * Math.exp(-u / 120);
+    bm.ring = u < 0 ? 0 : u * 2.4;
+    bm.ringK = u < 0 ? 0 : Math.exp(-u / 14);
+    if (bm.s > 170) EV.boom = null;
+  }
   const j = EV.jet;
   if (j) {
     j.s += dt;
@@ -540,6 +555,20 @@ function stepEvents(dt) {
     if (j.hist.length > 16) j.hist.shift();
     if (j.x - cam.x < -40) EV.jet = null;
   }
+}
+
+// The impactor dives in over BOOM_HIT seconds from 90 km up, along a slant.
+const BOOM_HIT = 4.5;
+const boomAt = (b, f) => {
+  const back = 140 * (1 - f);
+  return [b.x - Math.cos(b.hd) * back, 90 * (1 - f) ** 1.15, b.z - Math.sin(b.hd) * back];
+};
+// The mushroom cloud, as a cell for the tower volume.
+function boomCell(b) {
+  const u = b.s - BOOM_HIT;
+  if (u <= 0) return null;
+  return { x: b.x, z: b.z, r: 13, top: 4 + 36 * (1 - Math.exp(-u / 22)), s: Math.min(1, u / 3) * (b.s > 140 ? Math.max(0, (170 - b.s) / 30) : 1),
+    seed: b.seed, shear: b.hd, glow: 40 * b.flash + 4 * b.crater };
 }
 
 // Trails: rocket plume and contrail, as chains of points with a radius and a colour.
@@ -565,6 +594,19 @@ function trailUniforms() {
       const thin = Math.min(1, (0.25 / rad) ** 0.35);
       const flame = r.s < ROCKET_T && i === 23 ? 1 : 0;
       push(p, rad, sunCol.map((v, c) => v * lit * thin + [0.25, 0.12, 0.04][c] * flame + [0.004, 0.003, 0.002][c] * thin * fade));
+    }
+    push([0, 0, 0], 0, [0, 0, 0]);
+  }
+  const bm = EV.boom;
+  if (bm && bm.s < BOOM_HIT + 25) {
+    const f = Math.min(1, bm.s / BOOM_HIT), smoke = bm.s > BOOM_HIT ? Math.exp(-(bm.s - BOOM_HIT) / 10) : 1;
+    // A white-hot streak near the head, a glowing smoke trail behind it.
+    for (let i = 0; i < 12; i++) {
+      const g = f * (i / 11);
+      const [x, h, z] = boomAt(bm, g);
+      const hot = bm.s < BOOM_HIT ? Math.exp(-(f - g) / 0.06) : 0;
+      const smokeCol = sky.amb.map(v => v * 0.6 + 0.002);
+      push(rel(x, h, z), 0.25 + (f - g) * 2.5, [1.0, 0.75, 0.5].map((v, c) => v * hot * 0.6 + smokeCol[c] * smoke));
     }
     push([0, 0, 0], 0, [0, 0, 0]);
   }
@@ -600,6 +642,16 @@ function eventFlares(put) {
     // Under the cloud deck, the flame shows only as a glow.
     put(5, d, (h < 3.5 ? 0.08 : 0.3) * flick * Math.min(1, r.s / 3), 0.35, [1.0, 0.7, 0.4], 0, 0.15);
   }
+  const bm = EV.boom;
+  if (bm) {
+    if (bm.s < BOOM_HIT) {
+      const [x, h, z] = boomAt(bm, bm.s / BOOM_HIT);
+      put(8, norm(rel(x, h, z)), 0.25 + 0.5 * bm.s / BOOM_HIT, 0.5, [1.0, 0.8, 0.6], 0, 0.3);
+    } else {
+      // The impact flash: huge at first, a warm glow after.
+      put(9, norm(rel(bm.x, 1.5, bm.z)), Math.min(1.6, bm.flash * 1.6), 0.6 + 1.2 * bm.flash, [1.0, 0.75, 0.5], 0, 0.6);
+    }
+  }
   const j = EV.jet;
   if (j) {
     const d = norm(rel(j.x, j.y, j.z));
@@ -633,7 +685,7 @@ function render() {
   let sum = 0;
   flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
   // A fireball lights the whole scene for a moment, as lightning does.
-  const flash = Math.min(1.2, sum * 0.35 + (EV.meteor && EV.meteor.fire ? EV.meteor.b * 0.06 : 0));
+  const flash = Math.min(1.6, sum * 0.35 + (EV.meteor && EV.meteor.fire ? EV.meteor.b * 0.06 : 0) + (EV.boom ? (EV.boom.flash || 0) * 1.1 : 0));
 
   // Pass 1: the outside, into its own buffer.
   sizeOut();
@@ -672,6 +724,9 @@ function render() {
   gl.uniform4fv(u['uTw[0]'], tw); gl.uniform4fv(u['uTwB[0]'], twB); gl.uniform4fv(u['uTwC[0]'], twC);
   gl.uniform1i(u.uNTw, n);
   gl.uniform4fv(u['uFl[0]'], fl);
+  const b0 = EV.boom;
+  gl.uniform4fv(u.uBoom, b0 ? [b0.x, b0.z, b0.ring || 0, b0.ringK || 0] : [0, 0, 0, 0]);
+  gl.uniform2fv(u.uBoomL, b0 ? [b0.flash || 0, b0.crater || 0] : [0, 0]);
   const nTr = trailUniforms();
   gl.uniform4fv(u['uTrA[0]'], trA); gl.uniform4fv(u['uTrB[0]'], trB); gl.uniform1i(u.uTrN, nTr);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -769,8 +824,8 @@ function towerCover(d) {
   for (const c of cells) if (c.s > 0 && towerHit(c, d)) hide = Math.max(hide, c.s);
   return hide;
 }
-// Eight flare slots: sun or moon, lightning, strobe, nav light, then meteor, rocket and a jet's two lights.
-const FLARES = 8;
+// Ten flare slots: sun or moon, lightning, strobe, nav light, meteor, rocket, a jet's two lights, and the impact's two.
+const FLARES = 10;
 const flr = new Float32Array(FLARES * 4), flrC = new Float32Array(FLARES * 4);
 const flareSeen = new Array(FLARES).fill(0);
 function flareUniforms(u) {
@@ -810,7 +865,10 @@ function flareUniforms(u) {
 
 // Towers go in far to near, so near ones cover far ones.
 function towerUniforms() {
-  const list = cells.filter(c => c.s > 0.01).map(c => ({ c, dist: Math.hypot(c.x - cam.x, c.z - cam.z) }));
+  const all = cells.filter(c => c.s > 0.01);
+  const bc = EV.boom && boomCell(EV.boom);
+  if (bc) all.push(bc);
+  const list = all.map(c => ({ c, dist: Math.hypot(c.x - cam.x, c.z - cam.z) }));
   list.sort((a, b) => b.dist - a.dist);
   const near = list.slice(-MAXCELL);
   near.forEach(({ c }, i) => {
@@ -819,7 +877,9 @@ function towerUniforms() {
     // The brightest flash inside this cell lights it from within.
     let best = null;
     for (const f of flashes) if (f.cell === c && (!best || f.level > best.level)) best = f;
-    twC.set(best ? [best.x, best.y, best.z, best.level] : [c.x, 6, c.z, 0], i * 4);
+    // The mushroom glows from its fireball, low in the stem.
+    if (c === bc) twC.set([c.x, c.top * 0.35, c.z, 3 * EV.boom.flash + 0.3 * EV.boom.crater], i * 4);
+    else twC.set(best ? [best.x, best.y, best.z, best.level] : [c.x, 6, c.z, 0], i * 4);
   });
   return near.length;
 }

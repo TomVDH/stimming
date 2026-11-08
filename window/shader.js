@@ -17,7 +17,7 @@ float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.y
 vec2 hash22(vec2 p) { return vec2(hash12(p), hash12(p + 19.19)); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
-float fbm(vec2 p, int n) { float a = 0.5, s = 0.0; for (int i = 0; i < 8; i++) { if (i >= n) break; s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+float fbm(vec2 p, int n) { float a = 0.5, s = 0.0; for (int i = 0; i < 10; i++) { if (i >= n) break; s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
 
 // A rounded box: the shape of the window.
 float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
@@ -62,6 +62,8 @@ uniform vec3 uNacA, uNacB, uChord, uUpA, uSpan; uniform float uNacR; uniform vec
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
 uniform vec4 uFl[${MAXFL}];
 uniform vec4 uTrA[40], uTrB[40]; uniform int uTrN;
+// The impact: site xz, shock ring radius, ring strength; then flash light, crater glow.
+uniform vec4 uBoom; uniform vec2 uBoomL;
 out vec4 o;
 
 // A ray from the eye hits the sphere at height hl, from above.
@@ -192,6 +194,12 @@ float streets(vec2 w, float ang, float s, float p, float fw, out float hue) {
   // Far away, lamps blend into their average glow.
   return mix(p * 0.07, b, smoothstep(0.3, 0.06, fw / s));
 }
+// Orange light from the impact, falling off with distance from the site.
+vec3 boomLight(vec2 w, float reach) {
+  if (uBoomL.x <= 0.0 && uBoomL.y <= 0.0) return vec3(0.0);
+  float d2 = dot(w - uBoom.xy, w - uBoom.xy);
+  return vec3(1.0, 0.6, 0.32) * uBoomL.x / (1.0 + d2 / (reach * reach));
+}
 vec3 ground(vec2 w, float fw) {
   vec3 sodium = vec3(1.0, 0.5, 0.16), led = vec3(0.8, 0.88, 1.0);
   // Fields: a patchwork that catches the sky light.
@@ -202,6 +210,9 @@ vec3 ground(vec2 w, float fw) {
   float ang2, mixW;
   vec3 tw = towns(w, ang2, mixW);
   float T = tw.x;
+  // The impact lights the land round it; the crater glows on for minutes.
+  g += boomLight(w, 20.0) * 0.25;
+  if (uBoomL.y > 0.0) { vec2 cq = w - uBoom.xy; g += vec3(1.0, 0.4, 0.1) * uBoomL.y * 0.6 * exp(-dot(cq, cq) / 3.0); }
   // The light dome: haze over each town glows from the streets below.
   g += vec3(1.0, 0.55, 0.24) * tw.z * 0.009;
   float dense = smoothstep(0.08, 0.5, T);
@@ -356,6 +367,9 @@ vec4 deck(vec3 d) {
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
       S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
       S += flashAt(w, 1.0) * 0.6 * (0.4 + 0.6 * h01);
+      // The impact lights the deck, and its shock ring races out across the tops.
+      S += boomLight(w, 30.0) * 0.9 * (0.4 + 0.6 * h01);
+      if (uBoom.w > 0.0) { float rr = length(w - uBoom.xy) - uBoom.z; S += vec3(1.0, 0.92, 0.82) * uBoom.w * 0.35 * exp(-rr * rr / 2.5) * h01; }
       float a = 1.0 - exp(-SIG * dn * ds);
       col += Tc * S * a;
       Tc *= 1.0 - a;
@@ -473,6 +487,12 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
     // A tight glow round the sun, finer than the table holds.
     float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
     vec3 sk = L + uFloor + uSunL * 0.03 * exp(-ang * 22.0) + aurora(d, 0.0);
+    // The air over the impact glows with its light, low on the horizon.
+    if (uBoomL.x > 0.0) {
+      vec3 bd = normalize(vec3(uBoom.x - uCam.x, 0.0, uBoom.y - uCam.y));
+      float ba = acos(clamp(dot(normalize(vec3(d.x, 0.0, d.z)), bd), -1.0, 1.0));
+      sk += vec3(1.0, 0.58, 0.32) * uBoomL.x * 0.25 * exp(-ba / 0.12) * exp(-max(d.y - uHorEl, 0.0) / 0.08);
+    }
     // Far deck and mid-layer tops rise above the ground's horizon.
     vec4 cl = deck(d), ml = midLayer(d), ci = cirrus(d, sk);
     gDeckT = cl.a;
@@ -574,6 +594,8 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
     float sq = sqrt(disc);
     float t0 = max((bq - sq) / a2, 0.0), t1 = min((bq + sq) / a2, tEnd);
     if (t1 <= t0) continue;
+    // A negative seed marks the impact's mushroom cloud: it glows orange, and haze touches it less.
+    bool boom = b.x < 0.0;
     vec3 pf = vec3(f.x - a.x, f.y, f.z - a.y);
     vec3 col = vec3(0.0);
     float Tc = 1.0, t = t0 + uTowStep * jit, tIn = -1.0;
@@ -595,10 +617,10 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         vec3 S = uSunL * 0.08 * sunK * Tl * phase;
         S += uAmb * 0.026 * (0.3 + 0.7 * h01) * (0.4 + 0.6 * Tl);
         // Streets under the cell light its base orange.
-        S += vec3(1.0, 0.5, 0.2) * b.w * 0.05 * exp(-(p.y - 2.0) / 1.5);
+        S += vec3(1.0, 0.5, 0.2) * b.w * 0.05 * exp(-(p.y - 2.0) / (boom ? 9.0 : 1.5));
         // Lightning lights the volume from inside.
         vec3 q = p - pf;
-        S += vec3(0.72, 0.74, 1.0) * f.w * 1.6 * exp(-length(q) / 1.8);
+        S += (boom ? vec3(1.0, 0.55, 0.25) : vec3(0.72, 0.74, 1.0)) * f.w * 1.6 * exp(-length(q) / (boom ? 6.0 : 1.8));
         float al = 1.0 - exp(-2.6 * dn * uTowStep);
         col += Tc * S * al;
         Tc *= 1.0 - al;
@@ -607,7 +629,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
       t += uTowStep;
     }
     if (tIn < 0.0) continue;
-    float fog = 1.0 - exp(-tIn / 160.0);
+    float fog = (1.0 - exp(-tIn / 160.0)) * (boom ? 0.35 : 1.0);
     col = col * (1.0 - fog) + haze * (1.0 - Tc) * fog;
     c = c * Tc + col;
     skyA *= Tc;
@@ -818,7 +840,7 @@ uniform vec3 uF, uR, uU;
 uniform int uSteps;
 uniform sampler2D uOut;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
-uniform vec4 uFlr[8]; uniform vec4 uFlrC[8];
+uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
 out vec4 o;
 
@@ -951,7 +973,7 @@ vec3 scratches(vec2 pG, vec2 px) {
 // A faint ghost of each bright source, bounced between the panes.
 vec3 ghosts(vec2 px) {
   vec3 s = vec3(0.0);
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 10; i++) {
     vec4 fl = uFlr[i];
     if (fl.z <= 0.0) continue;
     vec2 at2 = fl.xy + (fl.xy - uRes * 0.5) * 0.07 + vec2(0.0, -uRes.y * 0.012);
@@ -979,7 +1001,7 @@ vec3 flare(vec2 px, vec3 base) {
   vec2 uv = px / uRes;
   float aspect = uRes.x / uRes.y;
   vec3 add = vec3(0.0);
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 10; i++) {
     vec4 f = uFlr[i];
     if (f.z <= 0.0) continue;
     vec3 col = uFlrC[i].rgb;
