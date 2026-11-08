@@ -17,7 +17,12 @@ Tom picked all four: volumetric deck, better towers, visible bolts, high cirrus 
 - [x] Deck light: the sun or moon and the sky from above; the towns from below
 - [x] Cirrus: a thin streaky layer near 12.5 km that catches the sun and moon
 - [ ] Haze bands in the scattering
-- [ ] Towers: true volumes inside bounding cylinders, so only pixels that touch a cell pay
-- [ ] Towers: cauliflower billows, a sheared flat anvil, inner lightning that lights the volume
+- [x] Towers: true volumes inside bounding cylinders, so only pixels that touch a cell pay
+- [x] Towers: cauliflower billows, a sheared flat anvil, inner lightning that lights the volume
 - [ ] Bolts: a branching stroke built in JS for the brightest flash. Cloud to ground below the base; short crawlers in the anvil
 - [ ] Screenshots to Tom: each Cloud setting, Storm at full
+
+## Notes
+
+- Towers march only inside a bounding cylinder. A shape-following bound skips empty space; one smooth tap gives the light.
+- Cost, leaned in, Standard, on the dev Mac: 79 fps without towers, 48 fps with six towers before the last trim (step 0.6 km, 32 steps). Not yet timed on an office laptop.

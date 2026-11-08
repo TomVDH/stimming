@@ -325,10 +325,13 @@ function toScreen(p) {
 const cam = { x: 0, z: 0 };
 
 // Storm cells live on the map; new ones form ahead as old ones fall behind.
+// The high wind blows toward the tail, so the anvils stream aft.
+const WIND = PI * 0.92;
 const cells = [];
 function newCell(ahead) {
   const side = rnd(25, 160), a = (ahead ? rnd(70, 160) : rnd(-20, 140)) + side * rnd(-0.2, 0.4);
-  return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14) };
+  return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14),
+    shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2 };
 }
 function stepCells(dt) {
   const want = Math.round(opts.storm * MAXCELL);
@@ -343,12 +346,12 @@ function stepCells(dt) {
 }
 // A flash is a burst of strokes within about a second.
 const flashes = [];
-// A flash inside a tower sits at (u, v) in the tower's own frame.
-function flash(x, z, big = 1, cell = null, u = rnd(-0.3, 0.3), v = rnd(0.2, 0.75)) {
+// A flash inside a tower sits at height y, in km.
+function flash(x, z, big = 1, cell = null, y = cell ? rnd(3.5, cell.top - 1.5) : 2.4) {
   const strokes = [0];
   const n = 1 + Math.floor(Math.random() * 4);
   for (let i = 1; i < n; i++) strokes.push(strokes[i - 1] + rnd(0.05, 0.22));
-  flashes.push({ x, z, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, u, v, level: 0 });
+  flashes.push({ x, z, y, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, level: 0 });
   if (flashes.length > MAXFL) flashes.shift();
 }
 function flashLevel(f) {
@@ -438,7 +441,6 @@ function render() {
   let sum = 0;
   flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
   const flash = Math.min(1.2, sum * 0.35);
-  sunScreen = screenOf(sky.sun);
 
   // Pass 1: the outside, into its own buffer.
   sizeOut();
@@ -460,6 +462,9 @@ function render() {
   gl.uniform3fv(u['uWing[0]'], wing.flat()); gl.uniform3fv(u.uWingN, quadNormal(wing));
   gl.uniform3fv(u['uLet[0]'], let_.flat()); gl.uniform3fv(u.uLetN, quadNormal(let_));
   const n = towerUniforms();
+  gl.uniform1i(u.uTowSteps, quality() === 'high' ? 80 : 32);
+  gl.uniform1i(u.uTowOct, quality() === 'high' ? 3 : 2);
+  gl.uniform1f(u.uTowStep, quality() === 'high' ? 0.3 : 0.6);
   gl.uniform4fv(u['uTw[0]'], tw); gl.uniform4fv(u['uTwB[0]'], twB); gl.uniform4fv(u['uTwC[0]'], twC);
   gl.uniform1i(u.uNTw, n);
   gl.uniform4fv(u['uFl[0]'], fl);
@@ -482,7 +487,6 @@ function render() {
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 /* ---------- lens flare ---------- */
-let sunScreen = null;
 // A world direction to screen pixels; null when it is behind the camera.
 function screenOf(v) {
   const z = dot(v, basis.F);
@@ -531,19 +535,26 @@ function onWing(d) {
   }
   return false;
 }
-// How much the storm towers hide a screen point, from 0 to 1.
-// It follows the tower shape in the shader, without the noise.
-function towerCover(sp) {
-  let hide = 0;
-  for (const c of cells) {
-    const sc = c.screen;
-    if (!sc || c.s <= 0) continue;
-    const ax = [sc.tx - sc.x, sc.ty - sc.y], L2 = ax[0] ** 2 + ax[1] ** 2, p = [sp[0] - sc.x, sp[1] - sc.y];
-    const v = (p[0] * ax[0] + p[1] * ax[1]) / L2, u = -(ax[0] * p[1] - ax[1] * p[0]) / Math.sqrt(L2) / sc.w;
-    const anv = clamp((v - 0.76) / 0.17);
-    const hw = 0.62 - 0.22 * clamp(v / 0.75) + anv * 1.3;
-    if (v > 0 && v < 0.94 && Math.abs(u - anv * 0.6) < hw) hide = Math.max(hide, c.s);
+// A world ray from the eye against one tower, by its shape without billows.
+// It returns the distance in km where the ray enters, or -1.
+function towerHit(c, d) {
+  const C = [c.x - cam.x, c.z - cam.z], a2 = d[0] * d[0] + d[2] * d[2];
+  const rc = c.r * 0.36 * (0.55 + 0.45 * c.s), ra = c.r * 1.0 * c.s;
+  const sh = [Math.cos(c.shear) * c.r * 0.55 * c.s, Math.sin(c.shear) * c.r * 0.55 * c.s];
+  // Column first, then the anvil slab near the top.
+  for (const [cx, cz, rr, lo, hi] of [[C[0], C[1], rc, 2.5, c.top], [C[0] + sh[0], C[1] + sh[1], ra * 0.8, c.top - 2.2, c.top]]) {
+    const t = (d[0] * cx + d[2] * cz) / a2;
+    if (t <= 0) continue;
+    const m = Math.hypot(d[0] * t - cx, d[2] * t - cz);
+    const y = Math.hypot(d[0] * t, 6371 + ALT + d[1] * t, d[2] * t) - 6371;
+    if (m < rr && y > lo && y < hi) return { t, y };
   }
+  return null;
+}
+// How much the storm towers hide a world direction, from 0 to 1.
+function towerCover(d) {
+  let hide = 0;
+  for (const c of cells) if (c.s > 0 && towerHit(c, d)) hide = Math.max(hide, c.s);
   return hide;
 }
 const flr = new Float32Array(16), flrC = new Float32Array(12);
@@ -560,17 +571,15 @@ function flareUniforms(u) {
     flrC.set(col, i * 3);
   };
   // The sun or the moon: full only once the whole disc clears the frame.
-  const ss = screenOf(sky.sun);
-  const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (ss ? 1 - towerCover(ss) : 1);
+  const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun));
   put(0, sky.sun, sky.h.flare * clear ** 3, 0.5 + 0.5 * clear, sky.flareCol, sky.sunR);
   // The brightest flash in a storm.
   let best = null;
   for (const f of flashes) if (f.level > 0.05 && (!best || f.level > best.level)) best = f;
   if (best) {
-    const dx = best.x - cam.x, dz = best.z - cam.z, sc = best.cell && best.cell.screen;
-    const h = sc ? 2 + (best.cell.top - 2) * best.v : 2;
+    const dx = best.x - cam.x, dz = best.z - cam.z;
     const dist = Math.hypot(dx, dz);
-    put(1, norm([dx, h - ALT - dist * dist / 12742, dz]), Math.min(1, best.level * 0.4), 0.8, [0.75, 0.78, 1.0]);
+    put(1, norm([dx, best.y - ALT - dist * dist / 12742, dz]), Math.min(1, best.level * 0.4), 0.8, [0.75, 0.78, 1.0]);
   }
   // The strobe and the red nav light on the wingtip.
   const tipW = norm(toWorld(sub(TIP, basis.eye)));
@@ -579,42 +588,20 @@ function flareUniforms(u) {
   gl.uniform4fv(u['uFlr[0]'], flr); gl.uniform3fv(u['uFlrC[0]'], flrC);
 }
 
-// Project a point in km from the plane, along x, out along z, at height h.
-function project(dx, dz, h) {
-  const dist = Math.hypot(dx, dz);
-  // Earth's curve drops far points below the flat plane.
-  const P = [dx, h - ALT - dist * dist / (2 * 6371), dz];
-  const z = dot(P, basis.F);
-  if (z < 1) return null;
-  return { x: W / 2 + dot(P, basis.R) / z * basis.focal, y: H / 2 + dot(P, basis.U) / z * basis.focal, z, dist };
-}
 // Towers go in far to near, so near ones cover far ones.
 function towerUniforms() {
-  const list = [];
-  for (const c of cells) {
-    const dx = c.x - cam.x, dz = c.z - cam.z;
-    const b = project(dx, dz, 2), tp = project(dx, dz, c.top);
-    if (!b || !tp) continue;
-    const half = c.r * 0.55 / b.z * basis.focal;
-    if (b.x + half * 3 < 0 || b.x - half * 3 > W) continue;
-    c.screen = { x: b.x, y: b.y, tx: tp.x, ty: tp.y, w: half };
-    let fu = 0, fv = 0.5, fk = 0;
-    for (const f of flashes) if (f.cell === c && f.level > fk) { fk = f.level; fu = f.u; fv = f.v; }
-    list.push({ c, b, tp, half, fu, fv, fk });
-  }
-  list.sort((a, b) => b.b.dist - a.b.dist);
-  list.slice(0, MAXCELL).forEach((o, i) => {
-    tw.set([o.b.x, o.b.y, o.tp.x, o.tp.y], i * 4);
-    twB.set([o.c.seed, o.c.s, 1 - Math.exp(-o.b.dist / 150), o.half], i * 4);
-    // Which side of the tower faces the sun, across its axis.
-    let side = 1;
-    if (sunScreen) {
-      const ax = [o.tp.x - o.b.x, o.tp.y - o.b.y], p = [sunScreen[0] - o.b.x, sunScreen[1] - o.b.y];
-      side = -(ax[0] * p[1] - ax[1] * p[0]) >= 0 ? 1 : -1;
-    }
-    twC.set([o.fu, o.fv, o.fk, side], i * 4);
+  const list = cells.filter(c => c.s > 0.01).map(c => ({ c, dist: Math.hypot(c.x - cam.x, c.z - cam.z) }));
+  list.sort((a, b) => b.dist - a.dist);
+  const near = list.slice(-MAXCELL);
+  near.forEach(({ c }, i) => {
+    tw.set([c.x, c.z, c.r, c.top], i * 4);
+    twB.set([c.seed, c.s, c.shear, c.glow * opts.towns], i * 4);
+    // The brightest flash inside this cell lights it from within.
+    let best = null;
+    for (const f of flashes) if (f.cell === c && (!best || f.level > best.level)) best = f;
+    twC.set(best ? [best.x, best.y, best.z, best.level] : [c.x, 6, c.z, 0], i * 4);
   });
-  return Math.min(list.length, MAXCELL);
+  return near.length;
 }
 
 /* ---------- size ---------- */
@@ -642,15 +629,20 @@ function shadeScale() {
 }
 // A tap on a tower lights it at that spot; elsewhere it lights the deck.
 function tapAt(x, y) {
-  for (const c of cells) {
-    const sc = c.screen;
-    if (!sc || c.s < 0.2) continue;
-    const ax = [sc.tx - sc.x, sc.ty - sc.y], L2 = ax[0] ** 2 + ax[1] ** 2, p = [x - sc.x, y - sc.y];
-    const v = (p[0] * ax[0] + p[1] * ax[1]) / L2, uu = -(ax[0] * p[1] - ax[1] * p[0]) / Math.sqrt(L2) / sc.w;
-    if (Math.abs(uu) < 1.2 && v > 0 && v < 1) { flash(c.x, c.z, 1.2, c, uu, v); return; }
-  }
   setBasis();
   const d = norm([0, 1, 2].map(i => basis.F[i] * basis.focal + basis.R[i] * (x - W / 2) + basis.U[i] * (y - H / 2)));
+  // The nearest tower under the tap flashes where the tap meets it.
+  let hit = null;
+  for (const c of cells) {
+    if (c.s < 0.2) continue;
+    const h = towerHit(c, d);
+    if (h && (!hit || h.t < hit.h.t)) hit = { c, h };
+  }
+  if (hit) {
+    const { c, h } = hit;
+    flash(cam.x + d[0] * h.t, cam.z + d[2] * h.t, 1.2, c, clamp(h.y, 3, c.top - 0.8));
+    return;
+  }
   const Rr = 6371, b = (Rr + ALT) * d[1], c = (ALT - 2) * (2 * Rr + ALT + 2), disc = b * b - c;
   if (disc < 0 || b > 0) return;
   const tt = -b - Math.sqrt(disc);
