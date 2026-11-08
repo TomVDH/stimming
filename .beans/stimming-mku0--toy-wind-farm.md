@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T11:57:24Z
+updated_at: 2026-11-08T12:01:00Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -40,3 +40,5 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - [x] Tom: painted drops removed; real depth-of-field bokeh after Buoy Business (havoc src/engine/post.js discBlur): 28 golden-angle taps turned per pixel, hot pixels weighted, blur by distance from the nearest turbine in view; off on ladder rung 2
 
 - [x] Boat bob: the camera heaves, pitches and rolls on the swell, more with wind and storm; off under reduced motion
+
+- [x] Tom: no bokeh spatter on the lens and no bokeh raindrops; the only bokeh is the depth of field on the lamps
