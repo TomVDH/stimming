@@ -158,11 +158,13 @@ function tankWidth() {
 }
 // Each quality step sets the cell count, the pressure solve, the ray steps and the pixel ratio.
 const GRADES = {
-  low: { cells: 120e3, pressure: 10, march: 40, dpr: 1 },
-  medium: { cells: 240e3, pressure: 10, march: 48, dpr: 1.25 },
-  standard: { cells: 420e3, pressure: 12, march: 56 },
-  high: { cells: 1.6e6, pressure: 20, march: 80 },
+  low: { cells: 120e3, pressure: 10, march: 40, dpr: 1, ink: 1.5 },
+  medium: { cells: 240e3, pressure: 10, march: 48, dpr: 1.25, ink: 1.5 },
+  standard: { cells: 420e3, pressure: 12, march: 56, ink: 2 },
+  high: { cells: 1.6e6, pressure: 20, march: 80, ink: 1.5 },
 };
+// The ink grid is finer than the flow grid by the grade's ink factor.
+// So threads and sheets come out thinner than one flow cell.
 // Cells stay cubes, so the grid takes the tank's shape at the step's cell count.
 function gridFor(grade, w) {
   const gy = Math.round(Math.cbrt(grade.cells / ((w / H) * (D / H))));
@@ -385,11 +387,13 @@ async function start() {
     const CELL = H / GY;
     const DIMS = vec3(GX, GY, GZ);
     const TX = 1 / GX, TY = 1 / GY, TZ = 1 / GZ;
+    const [IX, IY, IZ] = grid.map(n => Math.round(n * grade.ink));
+    const INK_CELLS = IX * IY * IZ, INK_DIMS = vec3(IX, IY, IZ);
 
     // rgba16float is storage-writable and linearly filterable.
     const textures = [];
-    function createStorage3D(name) {
-      const texture = new THREE.Storage3DTexture(GX, GY, GZ);
+    function createStorage3D(name, [x, y, z] = grid) {
+      const texture = new THREE.Storage3DTexture(x, y, z);
       texture.name = name;
       texture.format = THREE.RGBAFormat;
       texture.type = THREE.HalfFloatType;
@@ -401,9 +405,9 @@ async function start() {
     const velTexA = createStorage3D('velocity A');
     const velTexB = createStorage3D('velocity B');
     // Dye A is the current field, B the forward pass, C the corrected result.
-    const dyeTexA = createStorage3D('dye A');
-    const dyeTexB = createStorage3D('dye B');
-    const dyeTexC = createStorage3D('dye C');
+    const dyeTexA = createStorage3D('dye A', [IX, IY, IZ]);
+    const dyeTexB = createStorage3D('dye B', [IX, IY, IZ]);
+    const dyeTexC = createStorage3D('dye C', [IX, IY, IZ]);
     const divTex = createStorage3D('divergence');
     const pressTexA = createStorage3D('pressure A');
     const pressTexB = createStorage3D('pressure B');
@@ -418,6 +422,8 @@ async function start() {
 
     const voxel = id => uvec3(id.mod(GX), id.div(GX).mod(GY), id.div(GX * GY));
     const uvwOf = coord => vec3(coord).add(0.5).div(DIMS);
+    const inkVoxel = id => uvec3(id.mod(IX), id.div(IX).mod(IY), id.div(IX * IY));
+    const inkUvwOf = coord => vec3(coord).add(0.5).div(INK_DIMS);
     const worldOf = uvw => uvw.sub(0.5).mul(WORLD);
 
     // Curl noise is computed once into a 3D texture.
@@ -435,14 +441,17 @@ async function start() {
       textureStore(curlNoiseTex, coord, vec4(vec3(x, y, z).div(e.mul(2)), 0)).toWriteOnly();
     })().compute(CELLS);
 
-    // Clear empties velocity, pressure and both dye fields.
+    // Clear empties velocity and pressure; the ink clear empties both dye fields.
     const clearPass = Fn(() => {
       const coord = voxel(instanceIndex);
       textureStore(velTexA, coord, vec4(0)).toWriteOnly();
-      textureStore(dyeTexA, coord, vec4(0)).toWriteOnly();
-      textureStore(dyeTexC, coord, vec4(0)).toWriteOnly();
       textureStore(pressTexA, coord, vec4(0)).toWriteOnly();
     })().compute(CELLS);
+    const clearInkPass = Fn(() => {
+      const coord = inkVoxel(instanceIndex);
+      textureStore(dyeTexA, coord, vec4(0)).toWriteOnly();
+      textureStore(dyeTexC, coord, vec4(0)).toWriteOnly();
+    })().compute(INK_CELLS);
 
     // Vorticity is the curl of the projected velocity.
     const curlPass = Fn(() => {
@@ -565,29 +574,29 @@ async function start() {
 
     // MacCormack, step 1: a plain semi-Lagrangian pass into B.
     const dyeForwardPass = Fn(() => {
-      const coord = voxel(instanceIndex);
-      const uvw = uvwOf(coord);
+      const coord = inkVoxel(instanceIndex);
+      const uvw = inkUvwOf(coord);
       const vel = texture3D(velTexA, uvw, 0).xyz;
       const prevPos = uvw.sub(vel.div(WORLD).mul(uDt));
       textureStore(dyeTexB, coord, dyeRead.sample(prevPos).level(0)).toWriteOnly();
-    })().compute(CELLS);
+    })().compute(INK_CELLS);
 
     // MacCormack, step 2: trace B back and correct by half the error.
     // The result stays inside the neighbours' range, so it never rings.
     // Emitters add dye here; nothing dissipates.
     const dyeCorrectPass = Fn(() => {
-      const coord = voxel(instanceIndex);
-      const uvw = uvwOf(coord);
+      const coord = inkVoxel(instanceIndex);
+      const uvw = inkUvwOf(coord);
       const step = texture3D(velTexA, uvw, 0).xyz.div(WORLD).mul(uDt);
       const prevPos = uvw.sub(step);
       const forward = texture3D(dyeTexB, uvw, 0);
       const back = texture3D(dyeTexB, uvw.add(step), 0);
       const now = dyeRead.sample(uvw).level(0);
       const dye = forward.add(now.sub(back).mul(0.5)).toVar();
-      const base = floor(prevPos.mul(DIMS).sub(0.5));
+      const base = floor(prevPos.mul(INK_DIMS).sub(0.5));
       const lo = vec4(1e4).toVar(), hi = vec4(-1e4).toVar();
       for (const o of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]) {
-        const s = dyeRead.sample(base.add(vec3(...o)).add(0.5).div(DIMS)).level(0);
+        const s = dyeRead.sample(base.add(vec3(...o)).add(0.5).div(INK_DIMS)).level(0);
         lo.assign(min(lo, s));
         hi.assign(max(hi, s));
       }
@@ -601,7 +610,7 @@ async function start() {
         dye.addAssign(e2.mul(emitWeight(p, i)).mul(lumpy));
       });
       textureStore(dyeWrite, coord, max(dye, vec4(0))).toWriteOnly();
-    })().compute(CELLS);
+    })().compute(INK_CELLS);
 
     const stepPasses = [curlPass, advectVelocityPass, divergencePass];
     for (let i = 0; i < PRESSURE_ITERATIONS; i++) stepPasses.push(i % 2 === 0 ? jacobiPassAB : jacobiPassBA);
@@ -613,9 +622,9 @@ async function start() {
       get dye() { return dyeRead.value; },
       get vel() { return velTexA; },
       async compile() {
-        await renderer.compileComputeAsync([curlNoisePass, clearPass, ...new Set(stepPasses)]);
+        await renderer.compileComputeAsync([curlNoisePass, clearPass, clearInkPass, ...new Set(stepPasses)]);
         renderer.compute(curlNoisePass);
-        renderer.compute(clearPass);
+        renderer.compute([clearPass, clearInkPass]);
       },
       step() {
         renderer.compute(stepPasses);
@@ -623,16 +632,20 @@ async function start() {
         dyeRead.value = dyeWrite.value;
         dyeWrite.value = swap;
       },
-      clear() { renderer.compute(clearPass); },
+      clear() { renderer.compute([clearPass, clearInkPass]); },
       // A new grid takes the old ink and flow, resampled, so nothing is wiped.
       resampleFrom(old) {
         const oldDye = texture3D(old.dye), oldVel = texture3D(old.vel);
-        renderer.compute(Fn(() => {
-          const coord = voxel(instanceIndex);
-          const uvw = uvwOf(coord);
-          textureStore(dyeRead.value, coord, oldDye.sample(uvw).level(0)).toWriteOnly();
-          textureStore(velTexA, coord, oldVel.sample(uvw).level(0)).toWriteOnly();
-        })().compute(CELLS));
+        renderer.compute([
+          Fn(() => {
+            const coord = voxel(instanceIndex);
+            textureStore(velTexA, coord, oldVel.sample(uvwOf(coord)).level(0)).toWriteOnly();
+          })().compute(CELLS),
+          Fn(() => {
+            const coord = inkVoxel(instanceIndex);
+            textureStore(dyeRead.value, coord, oldDye.sample(inkUvwOf(coord)).level(0)).toWriteOnly();
+          })().compute(INK_CELLS),
+        ]);
       },
       dispose() { textures.forEach(t => t.dispose()); },
     };

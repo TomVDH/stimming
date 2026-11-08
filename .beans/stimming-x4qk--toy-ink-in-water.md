@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:08:28Z
-updated_at: 2026-11-08T17:49:17Z
+updated_at: 2026-11-08T17:58:56Z
 ---
 
 Ink in water (`ink`, idea 35). Ink drops fall into a tall, still tank of dark water as vortex rings, break into fingers, and glow in side light.
@@ -36,3 +36,5 @@ Plan: `docs/plans/ink.md`. D3: WebGPU only on three.js 0.186.1, as Fire (Tom, 20
 - A visible tab ran at 120 fps on the Standard grid (72 x 120 x 36).
 
 - Menu icon pass 2: inertia, smear along the stroke, denser plume and curled tendrils, wisps, a sliding glint; spike 16 A matches.
+
+- Ink grid: the dye runs on its own grid, finer than the flow (x2 on Standard, x1.5 on the others), so threads and ring rims come out sharper. Step cost rose about 12% on Standard.
