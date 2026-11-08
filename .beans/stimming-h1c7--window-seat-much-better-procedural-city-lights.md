@@ -17,7 +17,7 @@ Tom picked street grids, the road network, and glow and haze. Bright cores (stad
 - [ ] Lamps sit along the streets; dark parks and yards break the blocks
 - [ ] Colour varies by town, from sodium orange to LED white
 - [ ] Highways link neighbouring towns as lit threads, with faint moving car lights
-- [ ] Each town casts a light dome into the haze and onto the cloud base
+- [x] Each town casts a light dome into the haze and onto the cloud base
 - [ ] Far towns twinkle through the air
 - [ ] Lamps are filtered by pixel footprint, so they do not shimmer
 - [ ] Screenshots to Tom: Midnight with Dense towns, at 1280 px and 375 px

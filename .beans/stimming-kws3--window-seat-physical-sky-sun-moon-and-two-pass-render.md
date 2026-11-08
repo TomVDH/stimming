@@ -24,7 +24,7 @@ Decisions:
 - Speed drops from 2.4 km/s to 0.75 km/s (about 3x real).
 
 - [x] Two-pass render; GLSL in `window/shader.js`; quality hook
-- [x] Speed to 0.75 km/s
+- [x] Speed to 0.75 km/s; Tom later set real cruise, 0.25 km/s
 - [x] Rayleigh, Mie and ozone sky baked to a texture; Earth's shadow and the pink band emerge
 - [x] Hour chips set sun positions; small OKLCH grade tint per hour
 - [x] Sun: colour from transmittance, limb darkening, refraction squash near the horizon

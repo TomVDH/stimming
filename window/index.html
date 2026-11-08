@@ -144,7 +144,7 @@ let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
 const ALT = 11;            // cruise height in km
-const SPEED = 0.75;        // ground speed in km/s, about three times real
+const SPEED = 0.25;        // ground speed in km/s, real cruise
 const HOR = horizonEl(ALT);
 // Each hour places one light: the sun at dusk and dawn, the moon at midnight.
 // az: bearing from straight out, toward the nose positive, in degrees.
@@ -163,6 +163,11 @@ function buildSky() {
   const h = HOURS[opts.hour] || HOURS.dusk;
   const el = HOR + h.rel * D2R, az = h.az * D2R;
   const b = bake(ALT, el, h.E);
+  // Night eyes see little colour: moonlit haze goes grey-blue.
+  if (h.moon) for (let i = 0; i < b.L.length; i += 4) {
+    const y = lum([b.L[i], b.L[i + 1], b.L[i + 2]]);
+    for (let c = 0; c < 3; c++) b.L[i + c] = (y + (b.L[i + c] - y) * 0.35) * [0.8, 0.95, 1.25][c];
+  }
   const sun = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
   const sunR = h.r * D2R;
   // The part of the disc above the eye's horizon.
@@ -445,6 +450,9 @@ function render() {
   gl.uniform1f(u.uTowns, opts.towns);
   gl.uniform2f(u.uCam, cam.x, cam.z);
   gl.uniform1f(u.uCover, opts.cloud);
+  // Cirrus thickens as the deck closes.
+  gl.uniform1f(u.uCirrus, clamp(1.4 - opts.cloud * 1.5, 0.3, 1));
+  gl.uniform1i(u.uDeckSteps, quality() === 'high' ? 24 : 12);
   gl.uniform1f(u.uFlash, flash);
   gl.uniform3fv(u.uAmb, sky.amb); gl.uniform3fv(u.uSunL, sky.sunL); gl.uniform3fv(u.uFloor, sky.h.floor);
   // The wing goes in world space, so it banks with the cabin.
