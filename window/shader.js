@@ -78,46 +78,57 @@ float heightAt(vec3 d, float t) { return length(vec3(0.0, R + H, 0.0) + d * t) -
 
 // Aurora: two wavy curtains far out past the window, 95 to 320 km up.
 // Each ray meets a curtain sheet once; its height there sets the colour.
-// Green glows low, red high, and a violet fringe lines the bottom edge.
-vec3 aurora(vec3 d) {
+// Green glows low, red high, and a violet fringe lines the lower edge.
+// Folds seen edge-on glow brightest. soft drops the fine rays, for reflections.
+vec3 aurora(vec3 d, float soft) {
   if (uAurora <= 0.0 || d.z < 0.08 || d.y < uHorEl - 0.02) return vec3(0.0);
   vec3 e = vec3(0.0);
+  vec2 dh = normalize(d.xz);
   for (int k = 0; k < 2; k++) {
-    float z0 = k == 0 ? 400.0 : 560.0, ph = k == 0 ? 0.0 : 2.1;
+    float z0 = k == 0 ? 400.0 : 560.0, ph = k == 0 ? 0.0 : 2.1, kk = float(k);
     // Find where the ray crosses the wavy sheet, by a few fixed-point steps.
-    float t = (z0 - uCam.y) / d.z, x = 0.0;
+    float t = (z0 - uCam.y) / d.z, x = 0.0, slope = 0.0;
     for (int i = 0; i < 3; i++) {
       x = uCam.x + d.x * t;
-      float zc = z0 + 130.0 * sin(x / 850.0 + ph + uTime * 0.008) + 70.0 * sin(x / 260.0 - ph + uTime * 0.021);
+      float a1 = x / 850.0 + ph + uTime * 0.008, a2 = x / 230.0 - ph + uTime * 0.021, a3 = x / 70.0 + ph * 3.0 + uTime * 0.05;
+      float zc = z0 + 130.0 * sin(a1) + 60.0 * sin(a2) + 18.0 * sin(a3);
+      slope = 130.0 / 850.0 * cos(a1) + 60.0 / 230.0 * cos(a2) + 18.0 / 70.0 * cos(a3);
       t = (zc - uCam.y) / d.z;
     }
     if (t <= 0.0) continue;
     float h = length(vec3(0.0, R + H, 0.0) + d * t) - R;
-    if (h < 90.0 || h > 340.0) continue;
+    // The lower edge wanders up and down along the curtain.
+    float base = 96.0 + 22.0 * vnoise(vec2(x / 140.0 + uTime * 0.015, 5.0 + kk));
+    if (h < base - 4.0 || h > 330.0) continue;
+    // Where the sheet turns side-on to the eye, its light piles up: the folds.
+    float edgeOn = clamp(1.0 / max(abs(dot(dh, normalize(vec2(-slope, 1.0)))), 0.2), 1.0, 4.0);
     // Rays: fine vertical streaks that slide along the curtain.
-    float ray = vnoise(vec2(x / 3.5 + uTime * 0.35, float(k) * 7.0));
-    ray = 0.25 + 1.5 * ray * ray + 0.5 * vnoise(vec2(x / 0.9 - uTime * 0.6, 3.0 + float(k)));
+    float ray = vnoise(vec2(x / 2.6 + uTime * 0.35, kk * 7.0)) * 0.6 + vnoise(vec2(x / 0.8 - uTime * 0.5, 3.0 + kk)) * 0.4;
+    ray = mix(0.55 + 0.9 * ray * ray, 1.0, soft);
     // Slow surges brighten and fade whole stretches of curtain.
-    float surge = smoothstep(0.3, 0.8, vnoise(vec2(x / 180.0 - uTime * 0.03, 11.0 + float(k))));
-    surge *= 0.4 + 0.6 * vnoise(vec2(x / 45.0 + uTime * 0.05, 4.0 + float(k)));
-    // Green peaks just above the lower edge and fades upward; red tops it, faint.
-    vec3 col = vec3(0.12, 1.0, 0.42) * smoothstep(94.0, 101.0, h) * exp(-max(h - 104.0, 0.0) / 28.0) * 1.3;
+    float surge = smoothstep(0.25, 0.8, vnoise(vec2(x / 180.0 - uTime * 0.03, 11.0 + kk)));
+    surge *= 0.45 + 0.55 * vnoise(vec2(x / 45.0 + uTime * 0.05, 4.0 + kk));
+    float u = h - base;
+    vec3 col = vec3(0.12, 1.0, 0.42) * smoothstep(-2.0, 5.0, u) * exp(-max(u - 6.0, 0.0) / (22.0 + 20.0 * surge)) * 1.3;
     col += vec3(1.0, 0.12, 0.25) * 0.1 * exp(-pow((h - 200.0) / 45.0, 2.0));
-    col += vec3(0.75, 0.2, 1.0) * 0.8 * smoothstep(93.0, 96.0, h) * smoothstep(101.0, 97.0, h);
-    e += col * ray * surge * (k == 0 ? 1.0 : 0.55) / max(d.z, 0.3);
+    col += vec3(0.75, 0.2, 1.0) * 0.7 * smoothstep(-3.0, 0.0, u) * smoothstep(5.0, 1.0, u);
+    e += col * ray * surge * edgeOn * (k == 0 ? 1.0 : 0.5);
   }
-  return e * uAurora * 0.1;
+  return e * uAurora * 0.06;
 }
 
 // Sky light along a ray, from the baked table, with the aurora.
-vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor + aurora(d); }
+vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor; }
 
 // Towns: one site per 16 km cell, with a size and a street angle.
 // x: town density, y: street angle of the strongest site.
 // z: the town light spread wide, as the haze scatters it.
-vec3 towns(vec2 w) {
+// ang2 and mixW give the second town's street angle and its share,
+// so the street grids blend where two towns meet.
+vec3 towns(vec2 w, out float ang2, out float mixW) {
   vec2 g = w / 16.0, i = floor(g);
-  float T = 0.0, best = 0.0, ang = 0.0, wide = 0.0;
+  float T = 0.0, best = 0.0, ang = 0.0, wide = 0.0, second = 0.0;
+  ang2 = 0.0;
   for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
     vec2 c = i + vec2(x, y);
     vec2 site = (c + 0.15 + 0.7 * hash22(c)) * 16.0;
@@ -127,12 +138,16 @@ vec3 towns(vec2 w) {
     float v = (0.3 + sz) * exp(-dot(q, q) / (r * r));
     T += v;
     wide += (0.15 + sz) * sz * exp(-dot(q, q) / (r * r * 6.0));
-    if (v > best) { best = v; ang = hash12(c + 2.7) * 3.1416; }
+    float a = hash12(c + 2.7) * 3.1416;
+    if (v > best) { second = best; ang2 = ang; best = v; ang = a; }
+    else if (v > second) { second = v; ang2 = a; }
   }
+  mixW = second / max(best + second, 1e-5);
   // Ragged edges: towns spill along valleys, not in discs.
   T *= 0.45 + 1.1 * fbm(w / 2.2, 3);
   return vec3(T, ang, wide);
 }
+vec3 towns(vec2 w) { float a, m; return towns(w, a, m); }
 
 // One lamp per cell, at a random spot, lit with chance p.
 float lamps(vec2 w, float s, float p, float fw, float seed, out float hue) {
@@ -140,7 +155,7 @@ float lamps(vec2 w, float s, float p, float fw, float seed, out float hue) {
   hue = hash12(id + seed + 9.3);
   float on = step(hash12(id + seed), p);
   vec2 at = 0.2 + 0.6 * hash22(id + seed + 3.1);
-  float r = max(0.08, fw / s * 0.7);
+  float r = max(0.02, fw / s * 0.7);
   vec2 q = f - at;
   float b = 0.012 / (r * r) * exp(-dot(q, q) / (r * r)) * on * (0.5 + hash12(id + seed + 5.5));
   // Far away, lamps blend into their average glow.
@@ -175,7 +190,8 @@ vec3 ground(vec2 w, float fw) {
   float parcel = 0.45 + 0.9 * hash12(fp);
   vec3 g = uAmb * 0.005 * parcel * (0.7 + 0.6 * fbm(w / 9.0, 3));
   g += uSunL * 0.004 * parcel * max(uSun.y, 0.0);
-  vec3 tw = towns(w);
+  float ang2, mixW;
+  vec3 tw = towns(w, ang2, mixW);
   float T = tw.x;
   // The light dome: haze over each town glows from the streets below.
   g += vec3(1.0, 0.55, 0.24) * tw.z * 0.016;
@@ -185,7 +201,15 @@ vec3 ground(vec2 w, float fw) {
   float hue;
   // Streets run on each town's own grid; parks and yards leave dark gaps.
   float blocks = smoothstep(0.25, 0.75, vnoise(w / 0.6 + 3.1));
-  float a = streets(w, tw.y, 0.18, dense * (0.3 + 0.65 * blocks), fw, hue);
+  float a = 0.0;
+  if (dense > 0.005) {
+    // Streets bend a little; old towns are never a perfect grid.
+    vec2 wq = w + 0.22 * (vec2(vnoise(w / 1.6), vnoise(w / 1.6 + 9.0)) - 0.5);
+    float pl = dense * (0.3 + 0.65 * blocks);
+    a = streets(wq, tw.y, 0.18, pl, fw, hue);
+    // Where two towns meet, their grids cross-fade instead of meeting at a seam.
+    if (mixW > 0.08) { float h2; a = mix(a, streets(wq, ang2, 0.18, pl, fw, h2), smoothstep(0.08, 0.5, mixW)); }
+  }
   // Districts differ: sodium orange, warm white, or cold LED.
   vec3 lampCol = hue < 0.55 ? sodium : hue < 0.82 ? vec3(1.0, 0.78, 0.5) : led;
   g += lampCol * a;
@@ -215,7 +239,16 @@ vec3 flashAt(vec2 w, float dens) {
 // Cloud noise: one tiling 3D texture, sampled at a level of detail.
 // R holds the base shape; G, B, A hold Worley noise for erosion.
 float gFocal1 = 1.0;
-vec4 cn(vec3 p, float tile, float lod) { return textureLod(uNoise, p / tile, lod); }
+// Near, cubic weights between voxels hide the diamond steps of plain blending.
+vec4 cnS(vec3 p, float tile) {
+  vec3 q = p / tile * 64.0 - 0.5, i = floor(q), f = fract(q);
+  f = f * f * (3.0 - 2.0 * f);
+  return textureLod(uNoise, (i + f + 0.5) / 64.0, 0.0);
+}
+vec4 cn(vec3 p, float tile, float lod) {
+  if (lod >= 1.0) return textureLod(uNoise, p / tile, lod);
+  return mix(cnS(p, tile), textureLod(uNoise, p / tile, lod), smoothstep(0.3, 1.0, lod));
+}
 // The mip level that matches one pixel's footprint at distance t.
 float lodAt(float t, float tile) { return clamp(log2(t / gFocal1 / (tile / 64.0)) + 0.5, 0.0, 6.0); }
 // Cover on the map from two flat slices of the volume, about 0.2 to 0.8.
@@ -318,9 +351,12 @@ vec4 deck(vec3 d) {
     t += ds;
     ds *= grow;
   }
-  // The rest of a long path takes the last density and light.
+  // The rest of a long path takes a smooth, far-blurred density and the last light.
   if (Tc >= 0.02 && t < t1) {
-    float a = 1.0 - exp(-SIG * lastD * 0.5 * (t1 - t));
+    float tm = 0.5 * (t + t1);
+    vec2 wm = uCam + d.xz * tm;
+    float far = deckDens(vec3(wm.x, heightAt(d, tm), wm.y), 6.0, false);
+    float a = 1.0 - exp(-SIG * 0.35 * far * (t1 - t));
     col += Tc * last * a;
     Tc *= 1.0 - a;
   }
@@ -340,8 +376,8 @@ vec4 midLayer(vec3 d) {
   vec2 seg = shellSeg(d, 5.2, 6.1);
   if (seg.x < 0.0 || uMid <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
-  const int N = 8;
-  float ds = min((t1 - t0) / float(N), 1.0);
+  const int N = 12;
+  float ds = min((t1 - t0) / float(N), 0.8);
   float grow = clamp(pow(max((t1 - t0) / (ds * float(N)), 1.0), 1.7 / float(N)), 1.0, 1.45);
   float t = t0 + ds * fract(0.37 + 52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
   float phase = cloudPhase(dot(d, uSun));
@@ -364,7 +400,9 @@ vec4 midLayer(vec3 d) {
     t += ds;
     ds *= grow;
   }
-  return vec4(col, Tc);
+  // Far off, the thin layer melts into the haze instead of banding.
+  float fade = exp(-t0 / 200.0);
+  return vec4(col * fade, 1.0 - (1.0 - Tc) * fade);
 }
 
 /* Cirrus: a thin ice slab at 12.1 to 12.8 km, streaked by the wind. */
@@ -409,9 +447,12 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   if (tg < 0.0) {
     // A tight glow round the sun, finer than the table holds.
     float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
-    vec3 sk = L + uFloor + uSunL * 0.03 * exp(-ang * 22.0) + aurora(d);
+    vec3 sk = L + uFloor + uSunL * 0.03 * exp(-ang * 22.0) + aurora(d, 0.0);
     // Far deck and mid-layer tops rise above the ground's horizon.
     vec4 cl = deck(d), ml = midLayer(d), ci = cirrus(d, sk);
+    // Tops seen above the horizon are hundreds of km off: haze softens them.
+    cl.rgb = mix(cl.rgb, sk * (1.0 - cl.a), 0.65);
+    ml.rgb = mix(ml.rgb, sk * (1.0 - ml.a), 0.5);
     sk = sk * cl.a + cl.rgb;
     sk = sk * ml.a + ml.rgb;
     sk = sk * ci.a + ci.rgb;
@@ -433,8 +474,8 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
 
 // Tower billows from the cloud noise volume.
 float tnoise(vec3 p, int oct) {
-  float s = textureLod(uNoise, p / 5.0, 0.0).r;
-  if (oct > 1) { vec4 m = textureLod(uNoise, p / 1.7 + 0.37, 0.0); s = s * 0.65 + (m.g * 0.6 + m.b * 0.4) * 0.35; }
+  float s = cnS(p, 5.0).r;
+  if (oct > 1) { vec4 m = cnS(p + 0.63, 1.7); s = s * 0.65 + (m.g * 0.6 + m.b * 0.4) * 0.35; }
   return s;
 }
 
@@ -575,7 +616,9 @@ float quad(vec3 d, vec3 v[4], vec3 n, out vec2 uv) {
 vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E, float strobe) {
   // A satin finish blurs the mirror toward the horizon glow.
   vec3 r = reflect(d, n);
-  vec3 env = skyL(normalize(vec3(r.x, max(r.y, -0.02) * 0.45, r.z)));
+  vec3 rd = normalize(vec3(r.x, max(r.y, -0.02) * 0.45, r.z));
+  // The satin paint blurs the aurora into soft bands.
+  vec3 env = skyL(rd) + aurora(rd, 1.0) * 0.5;
   // Grey paint keeps half the sky's colour.
   env = mix(vec3(dot(env, vec3(0.3, 0.5, 0.2))), env, 0.5);
   float fres = 0.05 + 0.6 * pow(1.0 - abs(dot(d, n)), 4.0);

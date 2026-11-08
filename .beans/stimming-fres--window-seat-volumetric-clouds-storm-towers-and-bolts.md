@@ -33,3 +33,4 @@ Tom picked all four: volumetric deck, better towers, visible bolts, high cirrus 
 - Round 3 (Tom): aurora at Midnight (Settings, on by default): two wavy curtains 400 and 560 km out, green low, faint red high, violet lower edge; streaks slide along; it tints cloud tops and the cabin green.
 - Horizon fix: the deck no longer stops at 160 km; its steps grow toward the horizon. Cloud cover uses non-tiling noise.
 - Towns: lamps line each town's own street grid, with avenues and three lamp colours; the glow is softer.
+- Round 4 (Tom: things look weird): smooth cubic fetch of the noise volume ends blocky cloud edges; far deck uses a blurred closing sample and haze, the mid layer fades with distance; towns cross-fade street grids where they meet, streets bend, rural lamps shrink; the aurora gains folds, a wavy lower edge and a soft wing reflection.
