@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T17:46:25Z
+updated_at: 2026-11-08T18:23:48Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -21,7 +21,7 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - [ ] Task 2: wind, power curve, gust fronts, storm cut-out
 - [x] Task 3: fog wakes (three helices per rotor, 4 to 16 m/s, broken into puffs) and synced night lights
 - [x] Task 4: sound (wind bed, blade swish, sea wash, gust whoosh, cut-out hum); not heard by Tom yet
-- [x] Task 5a: bar, menu Lab entry, toys.json\n- [ ] Task 5b: QA Q1 to Q10; Tom checks fps on a real device\n- [x] Tom round 1: fewer turbines (4 rows of 11), five fog sheets, lamps light the fog, more grain, always opens on Rows
+- [x] Task 5a: bar, menu Lab entry, toys.json\n- [x] Task 5b: QA Q1 to Q10, deterministic (`node windfarm/qa.mjs <out>`): all pass, 14 stills repeat byte for byte\n- [ ] Tom checks fps on a real device\n- [x] Tom round 1: fewer turbines (4 rows of 11), five fog sheets, lamps light the fog, more grain, always opens on Rows
 - [ ] Record the session cost
 
 - [x] Tom round 2: loose scatter of 22 turbines across the Rows frame, mist on the water fades tower feet, softer towers, lamp glows never cut by geometry
@@ -46,3 +46,5 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - Lens strikes (2026-11-08): in a storm, raindrops strike the lens. Each strike swells the DOF bokeh nearby for about half a second; most land on a lamp, so its disc pulses.
 
 - Wakes torn (2026-11-08): the coils wander, swell and tear into shreds, so end-on they no longer read as rings.
+
+- QA fixes (2026-11-08): the loop drifts at 30 rAF/s and sleeps before 62 s; far gust fronts no longer hold full rate; Tone's spare context closes; DOF uniforms no longer warn; portrait framing lifts the horizon above the bar; Across wakes tear more.

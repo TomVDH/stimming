@@ -242,9 +242,10 @@ function stepWind(dt, clock, calm) {
     else if (t.feathered && w < t.cut - (CUT_OUT - RESTART)) t.feathered = false;
     const target = (t.feathered ? 0 : powerCurve(w) * t.jit) * calm;
     // Spin-up has a 4 s lag, braking a 2 s lag.
-    const tau = target > t.omega ? 4 : 2;
+    // While the page goes to sleep, braking has a 1 s lag.
+    const tau = target > t.omega ? 4 : calm < 1 ? 1 : 2;
     t.omega += (target - t.omega) * (1 - Math.exp(-dt / tau));
-    if (Math.abs(target - t.omega) > 0.01) moving = true;
+    if (Math.abs(target - t.omega) > 0.02) moving = true;
     // Blades pitch out of the wind above rated speed, and turn edge-on to feather.
     const pt = t.feathered ? 1.45 : 0.06 + 0.4 * smooth(RATED, CUT_OUT, w);
     t.pitch += (pt - t.pitch) * (1 - Math.exp(-dt / 1.5));
@@ -707,7 +708,7 @@ void main() {
   float tt = uTime * 0.04;
   // Turbulence bends the coil: the radius swells and shrinks downwind.
   float wob = fbm3(vec2(s * 3.0 + seed, tt)) - 0.5;
-  float r = 78.0 * (1.0 + 0.55 * s) * (1.0 + 1.1 * s * wob);
+  float r = 78.0 * (1.0 + 0.55 * s) * (1.0 + 0.7 * s * wob);
   float th = aSpin + aHelix * 2.0943951 - s * 6.2832 * 3.0 + 2.4 * s * (fbm3(vec2(s * 2.0 + seed + 9.0, tt)) - 0.5);
   vec3 p = vec3(r * cos(th), 112.0 + r * sin(th) * (1.0 - 0.25 * s), -12.0 - s * ${WAKE_L}.0);
   // The wake centre meanders away from the rotor axis.
@@ -747,7 +748,7 @@ void main() {
   float n = fbm3(vec2(s * 14.0 - uTime * 0.6 + vSeed.x, w * 2.0 + s * 3.0 + vSeed.y * 3.1));
   float puff = smoothstep(0.45, 0.85, n) * (0.6 + 0.4 * fbm3(vec2(s * 5.0 + vSeed.x, w + uTime * 0.1)));
   // Long tears leave only shreds of each turn.
-  puff *= smoothstep(0.38, 0.62, fbm3(vec2(s * 4.0 + vSeed.x * 1.3, uTime * 0.08 + vSeed.y)));
+  puff *= smoothstep(0.42, 0.66, fbm3(vec2(s * 9.0 + vSeed.x * 1.3, uTime * 0.08 + vSeed.y)));
   float a = across * along * puff * vK * uWakes;
   if (a < 0.002) discard;
   vec3 c = vL * 2.6 + uRed * vRed * 0.15 * (0.4 + 0.6 * uBlink);
@@ -791,7 +792,7 @@ function pushRotors() {
   wakes.spin.needsUpdate = true; wakes.on.needsUpdate = true;
   // Wakes form in moderate wind only, in fog; strong wind tears them apart.
   const w = windNow();
-  wakes.m.material.uniforms.uWakes.value = 0.9 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.6 : 1);
+  wakes.m.material.uniforms.uWakes.value = 0.9 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.15 : 1);
 }
 
 const lightGeo = lightGeometry();
@@ -890,7 +891,7 @@ const composer = new EffectComposer(renderer);
 // Hot pixels weigh more, so out-of-focus lamps open into discs.
 const dofPass = new ShaderPass({
   uniforms: {
-    tScene: { value: sceneRT.texture }, tDepth: { value: sceneRT.depthTexture },
+    tScene: { value: null }, tDepth: { value: null },
     uNear: { value: 5 }, uFar: { value: 40000 }, uFocus: { value: 1700 }, uAperture: { value: 12 }, uRes: { value: new THREE.Vector2(1, 1) },
     uHits: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0.1, 0)) },
   },
@@ -1019,7 +1020,7 @@ const SHOTS = {
   // Rows: a long telephoto down one row; the near rotors loom.
   Rows: (W, H, tall) => {
     const f = W * 5.9 * (1 - tall) + H * 5.2 * tall;
-    const hor = 0.74 + 0.06 * tall;
+    const hor = 0.74 - 0.12 * tall;
     return { pos: [0, 10, 0], yaw: -0.012 * tall, pitch: Math.atan((hor - 0.5) * H / f), f, exp: 1.8 };
   },
   // Foot: on the water in front of one rotor, looking up into it.
@@ -1037,8 +1038,8 @@ const SHOTS = {
   // Across: a boat off the farm's right side, looking left across it.
   Across: (W, H, tall) => {
     const pos = [950, 9, -3600];
-    const f = W * 1.7 * (1 - tall) + H * 1.6 * tall;
-    return { pos, yaw: aim(pos, [-900, -8200]), pitch: Math.atan(0.2 * H / f), f, exp: 2.2 };
+    const f = W * 1.7 * (1 - tall) + H * 2.6 * tall;
+    return { pos, yaw: aim(pos, [-900, -8200]), pitch: Math.atan((0.2 - 0.12 * tall) * H / f), f, exp: 2.2 };
   },
   // Hub: on top of the near nacelle, looking out at eye level with the lamps.
   Hub: (W, H, tall) => {
@@ -1069,11 +1070,9 @@ function resize() {
   // The fog pass runs at half size, or a quarter on the lowest rung.
   const k = rung >= 2 ? 0.25 : 0.5;
   bgRT.setSize(Math.max(2, Math.round(W * k)), Math.max(2, Math.round(H * k)));
-  if (sceneRT.width !== W || sceneRT.height !== H) {
-    makeSceneRT(W, H);
-    dofPass.uniforms.tScene.value = sceneRT.texture;
-    dofPass.uniforms.tDepth.value = sceneRT.depthTexture;
-  }
+  if (sceneRT.width !== W || sceneRT.height !== H) makeSceneRT(W, H);
+  dofPass.uniforms.tScene.value = sceneRT.texture;
+  dofPass.uniforms.tDepth.value = sceneRT.depthTexture;
   dofPass.uniforms.uRes.value.set(W, H);
   grade.uniforms.uRes.value.set(W, H);
   U.uRes.value.set(W, H);
@@ -1173,15 +1172,20 @@ function draw() {
 
 /* ---------- loop ---------- */
 // Lively: full rate. Drifting: 30 fps. Asleep 60 s after the last input. Hidden: stopped.
-let raf = 0, last = 0, lastDraw = 0, visible = true, ready = false, lastInput = 0, rotorsMoving = true;
-const SLEEP_MS = 60000;
-function lively(now) { return now - lastInput < 1500 || storm.on || storm.k > 0 || fronts.length > 0 || cut.t >= 0 || look.yaw !== look.toYaw || look.pitch !== look.toPitch; }
+let raf = 0, timer = 0, last = 0, lastDraw = 0, visible = true, ready = false, lastInput = 0, rotorsMoving = true;
+// Ambient motion starts to stop at 52 s; the loop ends before 62 s.
+const SLEEP_MS = 52000;
+// A front runs full rate only near the camera; far rows drift at 30 fps.
+const NEAR_S = 3000;
+function lively(now) { return now - lastInput < 1500 || storm.on || storm.k > 0 || fronts.some(f => f.s < NEAR_S) || cut.t >= 0 || look.yaw !== look.toYaw || look.pitch !== look.toPitch; }
 function frameFn(now) {
   raf = 0;
+  const t0 = performance.now();
   const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
   last = now;
+  let live = true;
   try {
-    const live = lively(now);
+    live = lively(now);
     // Asleep: ambient motion eases to a stop over 2 s, then the loop ends.
     const asleep = now - lastInput > SLEEP_MS;
     calm = asleep ? Math.max(0, calm - dt / 2) : Math.min(1, calm + dt);
@@ -1193,8 +1197,10 @@ function frameFn(now) {
       if (live) watchdog(dt);
     }
   } finally {
-    if (visible && !(calm === 0 && !lively(now) && !rotorsMoving)) raf = requestAnimationFrame(frameFn);
-    else kit.rest(() => true);
+    if (!visible || (calm === 0 && !lively(now) && !rotorsMoving)) kit.rest(() => true);
+    else if (live) raf = requestAnimationFrame(frameFn);
+    // Drifting: ask for the next frame 28 ms after this one began, so 30 fps.
+    else { raf = -1; timer = setTimeout(() => { raf = requestAnimationFrame(frameFn); }, Math.max(0, t0 + 28 - performance.now())); }
   }
 }
 function tick(dt, now) {
@@ -1257,7 +1263,10 @@ function tick(dt, now) {
 }
 function wake() {
   lastInput = performance.now();
-  if (visible && ready && !raf) { last = 0; lastDraw = 0; raf = requestAnimationFrame(frameFn); }
+  if (!visible || !ready) return;
+  // Input cuts a drift wait short.
+  if (raf === -1) { clearTimeout(timer); raf = requestAnimationFrame(frameFn); }
+  else if (!raf) { last = 0; lastDraw = 0; raf = requestAnimationFrame(frameFn); }
 }
 
 /* ---------- sound ---------- */
@@ -1267,7 +1276,14 @@ let V = null, T = null, toneLoad = null, nearWasRunning = true;
 function voices() {
   if (!kit.live()) return null;
   if (V) return V;
-  toneLoad ||= kit.tone().then(m => { toneLoad = null; if (m && !V) { T = m; V = buildVoices(); } });
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (!m || V) return;
+    T = m; V = buildVoices();
+    // Tone makes a spare context on import; close it, so it does not run idle.
+    const spare = m.Destination?.context?.rawContext;
+    if (spare && spare !== kit.ac && spare.state !== 'closed') spare.close?.().catch(() => {});
+  });
   return null;
 }
 function buildVoices() {
@@ -1533,7 +1549,7 @@ draw();
 ready = true;
 markReady();
 requestAnimationFrame(() => canvas.classList.add('on'));
-whenVisible(stage, v => { visible = v; if (v) wake(); else { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); } });
+whenVisible(stage, v => { visible = v; if (v) wake(); else { cancelAnimationFrame(raf); clearTimeout(timer); raf = 0; kit.rest(() => true); } });
 wake();
 </script>
 </body>
