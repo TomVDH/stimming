@@ -356,6 +356,69 @@ t('one sheet at a time', () => {
   click(layer.querySelector('.s2-set'));
 });
 
+/* ---------- Task 5: key strip ---------- */
+const down = el => el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+const strip = layer => layer.querySelector('.s2-keys');
+t('entries', () => {
+  const { layer } = fixture({ keys: [['click', 'place'], ['scroll', 'zoom']] });
+  const dl = strip(layer);
+  eq(dl?.tagName, 'DL');
+  eq(dl.getAttribute('aria-label'), 'How to play');
+  const items = [...dl.children];
+  eq(items.length, 2);
+  ok(items[0].querySelector('dt kbd'), 'no keycap');
+  eq(items[1].querySelector('dd').textContent, 'zoom');
+});
+t('touch words', () => {
+  eq(stim.keyWord('click', true), 'TAP');
+  eq(stim.keyWord('scroll', true), 'PINCH');
+  eq(stim.keyWord('double-click', true), 'DOUBLE-TAP');
+  eq(stim.keyWord('hold + drag', true), 'HOLD + DRAG');
+  eq(stim.keyWord('click', false), 'CLICK');
+});
+t('fade on gestures', () => {
+  const { layer, stage } = fixture({ keys: [['click', 'place']] });
+  down(stage); down(stage);
+  ok(!strip(layer).classList.contains('is-faded'), 'faded after two');
+  down(stage);
+  ok(strip(layer).classList.contains('is-faded'), 'not faded after three');
+});
+t('controls are not gestures', () => {
+  const { layer } = fixture({ keys: [['click', 'place']], actions: [{ verb: 'clear', onPress() {} }] });
+  const chip = layer.querySelector('.s2-bl .s2-chip');
+  for (let i = 0; i < 4; i++) { down(chip); click(chip); }
+  ok(!strip(layer).classList.contains('is-faded'));
+});
+t('fade on time', async () => {
+  const intro = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'intro' }));
+  const { layer } = fixture({ keys: [['click', 'place']] }, { keyDelay: 50 });
+  await wait(120);
+  ok(!strip(layer).classList.contains('is-faded'), 'faded during the intro');
+  intro.remove();
+  await wait(150);
+  ok(strip(layer).classList.contains('is-faded'), 'not faded after the delay');
+});
+t('(i) returns it', () => {
+  const { layer, stage } = fixture({ keys: [['click', 'place']] });
+  const info = layer.querySelector('.s2-info');
+  eq(info.getAttribute('aria-expanded'), 'true');
+  down(stage); down(stage); down(stage);
+  eq(info.getAttribute('aria-expanded'), 'false');
+  click(info);
+  ok(!strip(layer).classList.contains('is-faded'), 'still faded');
+  eq(info.getAttribute('aria-expanded'), 'true');
+  click(info);
+  ok(strip(layer).classList.contains('is-faded'), 'second click did not hide');
+});
+t('keys false', () => {
+  const { layer } = fixture({ keys: false });
+  ok(!strip(layer) && !layer.querySelector('.s2-info'));
+});
+t('five entries warn', () => {
+  const got = warns(() => fixture({ keys: [1, 2, 3, 4, 5].map(i => ['click', `v${i}`]) }));
+  eq(got.length, 1);
+});
+
 /* ---------- run ---------- */
 let pass = 0;
 for (const [name, fn] of queue) {

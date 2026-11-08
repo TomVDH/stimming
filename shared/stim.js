@@ -193,6 +193,7 @@ const make = (tag, cls = '', html = '') => {
   if (html) el.innerHTML = html;
   return el;
 };
+let barCount = 0;
 const iconButton = (cls, html, label) => {
   const b = make('button', `${cls} s2-icon`, html);
   b.type = 'button';
@@ -428,7 +429,56 @@ function makeRow(row, key, layer) {
   return { el, handle };
 }
 
-export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) {
+/* key strip: printed keycaps, gone after a few gestures */
+const TOUCH_WORD = { 'double-click': 'double-tap', click: 'tap', scroll: 'pinch' };
+// Mouse words swap to touch words on a touch screen.
+export function keyWord(word, touch) {
+  const w = touch ? word.replace(/double-click|click|scroll/gi, m => TOUCH_WORD[m.toLowerCase()]) : word;
+  return w.toUpperCase();
+}
+const COARSE = matchMedia('(pointer: coarse)');
+function makeKeys(entries, stage, info, delay) {
+  const el = make('dl', 's2-keys');
+  el.setAttribute('aria-label', 'How to play');
+  const rows = entries.map(([word, verb]) => {
+    const row = make('div'), kbd = make('kbd');
+    row.append(make('dt'), make('dd'));
+    row.firstChild.append(kbd);
+    row.lastChild.textContent = verb;
+    return { kbd, word };
+  });
+  el.append(...rows.map(r => r.kbd.closest('div')));
+  const words = () => rows.forEach(r => { r.kbd.textContent = keyWord(r.word, COARSE.matches); });
+  words();
+  COARSE.addEventListener?.('change', words);
+  // The strip fades by opacity only, so screen readers keep it.
+  let count = 0, timer = 0, wheelAt = 0;
+  const show = on => {
+    el.classList.toggle('is-faded', !on);
+    info?.setAttribute('aria-expanded', String(on));
+    clearTimeout(timer);
+    count = 0;
+    if (on) arm();
+  };
+  // The timer starts once the intro has gone.
+  const arm = () => {
+    if (document.querySelector('.intro')) {
+      const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); arm(); } });
+      mo.observe(document.body, { childList: true, subtree: true });
+      return;
+    }
+    timer = setTimeout(() => show(false), delay);
+  };
+  const gesture = () => { if (!el.classList.contains('is-faded') && ++count >= 3) show(false); };
+  stage.addEventListener('pointerdown', gesture);
+  // One scroll burst counts as one gesture.
+  stage.addEventListener('wheel', () => { const now = performance.now(); if (now - wheelAt > 400) gesture(); wheelAt = now; }, { passive: true });
+  info?.addEventListener('click', () => show(el.classList.contains('is-faded')));
+  show(true);
+  return { el, handle: { show: () => show(true), hide: () => show(false), get shown() { return !el.classList.contains('is-faded'); } } };
+}
+
+export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDelay = 8000 } = {}) {
   document.documentElement.classList.add('stim2');
   // The frame holds the stage and the layer, so control events skip the stage.
   const frame = make('div', 'stim-frame'), layer = make('div', 'stim-ui');
@@ -524,7 +574,15 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
       sheet.el.append(ft);
     }
   }
-  if (Array.isArray(spec.keys) && spec.keys.length) tr.append(iconButton('s2-info', 'i', 'How to play'));
+  let keys = null;
+  if (Array.isArray(spec.keys) && spec.keys.length) {
+    if (spec.keys.length > 4) console.warn(`Bar v2 (${id}): ${spec.keys.length} key entries; the limit is four.`);
+    const info = iconButton('s2-info', 'i', 'How to play');
+    tr.append(info);
+    keys = makeKeys(spec.keys, stage, info, keyDelay);
+    info.setAttribute('aria-controls', keys.el.id = `s2-keys-${id}-${++barCount}`);
+    layer.append(keys.el);
+  }
 
   let legacy = null;
   const ui = {
@@ -532,6 +590,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html' } = {}) 
     slider: slider?.handle ?? null,
     action: verb => actions.get(verb) ?? null,
     setting: sid => settings.get(sid) ?? null,
+    keys: keys?.handle ?? { show() {}, hide() {}, shown: false },
     soundButton: snd,
     // A missing toy keeps the fallback name and shows no tags.
     applyToy(info) {
