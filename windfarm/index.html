@@ -31,22 +31,6 @@
 .stage--windfarm::before { top: 0; }
 .stage--windfarm::after { bottom: 0; }
 .stage--windfarm.letterbox::before, .stage--windfarm.letterbox::after { height: var(--lb, 0px); }
-/* The view is one stepper pill: an arrow each side of the name. */
-.stepper {
-  display: inline-flex; align-items: center; color: var(--fg); font-size: 13px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background-color: oklch(0.15 0.012 275 / 0.84); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-}
-#view .chip { border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
-#view .chip svg { stroke-width: 1.8; stroke-linecap: round; }
-/* The longest name sets the width, so the arrows never move. */
-.stepper .name { display: grid; text-align: center; white-space: nowrap; }
-.stepper .name > * { grid-area: 1 / 1; }
-.stepper .sizer { visibility: hidden; }
-.stepper output.from-next { animation: name-in 0.22s ease-out; --from: 8px; }
-.stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
-@keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
-@media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
 /* Settings opens a column of tweaks at the right edge. */
 .adder { position: relative; }
 .add {
@@ -79,10 +63,9 @@
       <p class="fail" hidden>Wind farm needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="stepper" id="view" role="group" aria-label="View" hidden>
-        <button class="chip icon" type="button" data-step="-1" aria-label="Previous view" title="Previous view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
-        <span class="name"><output aria-live="polite">Rows</output><span class="sizer" aria-hidden="true">Across</span></span>
-        <button class="chip icon" type="button" data-step="1" aria-label="Next view" title="Next view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
+      <div class="choices" id="view" role="group" aria-label="View">
+        <button class="chip" type="button" data-value="Rows" aria-pressed="true">Rows</button>
+        <button class="chip" type="button" data-value="Across" aria-pressed="false">Across</button>
       </div>
       <label class="slider"><span>Wind</span><input type="range" id="wind" min="0" max="30" step="0.1" value="9" aria-label="Wind"></label>
       <div class="actions">
@@ -106,6 +89,7 @@
           <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>send a gust down the rows</dd></div>
           <div><dt>Drag</dt><dd>look around</dd></div>
           <div class="fine"><dt>Space</dt><dd>a gust</dd></div>
+          <div class="fine"><dt>← →</dt><dd>change the view</dd></div>
         </dl>
       </div>
     </div>
@@ -156,8 +140,8 @@ const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t *
 const saved = k => { try { return localStorage.getItem(`stimming.windfarm.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.windfarm.${k}`, String(v)); } catch { /* storage is optional */ } };
 const VIEWS = ['Rows', 'Foot', 'Above', 'Across', 'Hub', 'Grid'];
-// Only Rows shows for now; the other views wait, parked.
-const VIEW_PICKER = false;
+// The bar offers Rows and Across; the other views wait, parked.
+const PICKS = ['Rows', 'Across'];
 const opts = {
   // The toy always opens on Rows.
   view: 0,
@@ -267,7 +251,7 @@ function stepWind(dt, clock, calm) {
 
 /* ---------- shared uniforms ---------- */
 const U = {
-  uFocal: { value: 1 }, uTime: { value: 0 }, uWind: { value: opts.wind }, uRes: { value: new THREE.Vector2(1, 1) },
+  uFocal: { value: 1 }, uTime: { value: 0 }, uWind: { value: opts.wind }, uRes: { value: new THREE.Vector2(1, 1) }, uClear: { value: new THREE.Vector2() },
   uDrift: { value: new THREE.Vector2() }, uFogK: { value: 1 }, uSteps: { value: 16 },
   uFront: { value: new THREE.Vector4(-1e9, -1e9, -1e9, -1e9) }, uFrontK: { value: new THREE.Vector4() },
   uWindDir: { value: new THREE.Vector2(...WIND_DIR) }, uBlink: { value: 1 },
@@ -285,7 +269,7 @@ const U = {
 // The jitter shows as grain, which the look wants.
 const FOG = `
 uniform vec3 uSD, uFog, uSun;
-uniform vec2 uDrift;
+uniform vec2 uDrift, uClear;
 uniform float uFogK, uSteps;
 float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float vnoise(vec2 p) {
@@ -310,8 +294,8 @@ float fogSigma(vec3 p) {
   s += exp(-pow((y - 96.0) / 8.0, 2.0)) * smoothstep(0.55, 0.75, fbm3(q / 1600.0 + 31.0)) / 1500.0;
   // Mist lies on the water, so every tower foot fades into it.
   s += exp(-y / 7.0) * (0.6 + 0.8 * fbm3(q / 500.0 + 41.0)) / 600.0;
-  // Dense low banks drift between the turbines, clear of the sea camera.
-  s += smoothstep(0.55, 0.78, fbm3(q / 1700.0 + 5.0)) * exp(-y / 55.0) * smoothstep(1200.0, 2600.0, length(p.xz)) / 180.0;
+  // Dense low banks drift between the turbines; none sits on the camera.
+  s += smoothstep(0.55, 0.78, fbm3(q / 1700.0 + 5.0)) * exp(-y / 55.0) * smoothstep(1200.0, 2600.0, length(p.xz - uClear)) / 180.0;
   return s * uFogK;
 }
 // Light the fog sends toward the eye: murk plus a cold glow low in the sky.
@@ -822,11 +806,11 @@ const SHOTS = {
     const f = W * 2.0 * (1 - tall) + H * 1.5 * tall;
     return { pos, yaw: aim(pos, CENTRE), pitch: -0.2, f, exp: 3.4 };
   },
-  // Across: a boat inside the farm, looking out across it.
+  // Across: a boat off the farm's right side, looking left across it.
   Across: (W, H, tall) => {
-    const pos = [CENTRE[0] + 350, 8, -4800];
-    const f = W * 1.5 * (1 - tall) + H * 1.3 * tall;
-    return { pos, yaw: aim(pos, [-2200, -11000]), pitch: Math.atan(0.2 * H / f), f, exp: 2.2 };
+    const pos = [950, 9, -3600];
+    const f = W * 1.7 * (1 - tall) + H * 1.6 * tall;
+    return { pos, yaw: aim(pos, [-900, -8200]), pitch: Math.atan(0.2 * H / f), f, exp: 2.2 };
   },
   // Hub: on top of the near nacelle, looking out at eye level with the lamps.
   Hub: (W, H, tall) => {
@@ -878,6 +862,7 @@ function aimCamera(breath = 0) {
   U.uCamWorld.value.copy(camera.matrixWorld);
   U.uInvProj.value.copy(camera.projectionMatrixInverse);
   bgMat.uniforms.uCamPos.value.copy(camera.position);
+  U.uClear.value.set(shot.pos[0], shot.pos[2]);
   grade.uniforms.uExp.value = shot.exp;
 }
 
@@ -1089,23 +1074,16 @@ function gust(pan = 0) {
   gustSound(pan);
   wake();
 }
-const stepper = document.getElementById('view'), viewOut = stepper.querySelector('output');
-function setView(i, dir = 1) {
-  i = (i + VIEWS.length) % VIEWS.length;
-  if (i === opts.view && cut.next < 0) return;
-  viewOut.textContent = VIEWS[i];
-  viewOut.classList.remove('from-next', 'from-prev');
-  void viewOut.offsetWidth;
-  viewOut.classList.add(dir > 0 ? 'from-next' : 'from-prev');
+const viewChips = [...document.querySelectorAll('#view .chip')];
+function setView(i) {
+  if (i === (cut.next >= 0 ? cut.next : opts.view)) return;
+  viewChips.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === VIEWS[i])));
   if (!ready) { opts.view = i; aimCamera(); return; }
   cut.next = i; cut.t = 0;
   look.toYaw = 0; look.toPitch = 0;
   wake();
 }
-stepper.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
-  const d = +b.dataset.step;
-  setView((cut.next >= 0 ? cut.next : opts.view) + d, d);
-}));
+viewChips.forEach(b => b.addEventListener('click', () => setView(VIEWS.indexOf(b.dataset.value))));
 
 // Pointer: a press turns into a drag after 8 px, or a hold after 260 ms; else it is a tap.
 const pt = { down: false, drag: false, x: 0, y: 0, yaw0: 0, pitch0: 0, t0: 0, id: -1 };
@@ -1141,10 +1119,11 @@ stage.addEventListener('pointercancel', () => { pt.down = false; stage.classList
 stage.addEventListener('lostpointercapture', () => { pt.down = false; stage.classList.remove('held'); });
 stage.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) gust(0); return; }
-  if (VIEW_PICKER && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     e.preventDefault();
+    const cur = PICKS.indexOf(VIEWS[cut.next >= 0 ? cut.next : opts.view]);
     const d = e.key === 'ArrowLeft' ? -1 : 1;
-    setView((cut.next >= 0 ? cut.next : opts.view) + d, d);
+    setView(VIEWS.indexOf(PICKS[(cur + d + PICKS.length) % PICKS.length]));
   }
 });
 
@@ -1169,7 +1148,6 @@ const windEl = document.getElementById('wind');
 windEl.value = opts.wind;
 windEl.addEventListener('input', () => { opts.wind = +windEl.value; save('wind', opts.wind); wake(); });
 document.getElementById('gust').addEventListener('click', () => gust(0));
-viewOut.textContent = VIEWS[opts.view];
 onReducedChange(v => { reduce = v; wake(); });
 sound.onChange(on => { if (on) wake(); });
 
