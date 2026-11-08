@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T13:00:00Z
-updated_at: 2026-11-04T22:35:00Z
+updated_at: 2026-11-08T12:00:00Z
 ---
 
 Night viaduct, restyled from an empty file. One toy; each viaduct is a scene chosen by a chip.
@@ -34,8 +34,11 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [ ] Tom: real-device fps check of the Port on Standard and High
 - [x] Tom: tune the Port in `?tune`, then send the Copy JSON; bake those values in as defaults
 - [ ] Checkpoint 1: Tom approves the Port framing
-- [ ] Death Stranding pass: precast girder causeway, monolithic train, train light on the baked deck, full rate while the train shows
-- [ ] Chase cam: tap the train to ride beside it; the scene renders live during the ride
+- [x] Death Stranding pass: precast girder causeway, monolithic train, train light on the baked deck, full rate while the train shows
+- [x] Chase cam: tap the train to ride beside it; the scene renders live during the ride
+- [x] Polish pass: glow, terminal portal, smoothness (branch feature/stimming-3cmz)
+- [ ] Port sub-project 2: live fog layer, tune desk by layer, player Settings tray
+- [ ] Port sub-project 3: lights wave, lightning, Fog slider
 - [ ] Lens flare (havoc `src/view/lensflare.js`) and the rack focus as hero moments
 - [ ] Bar: Settings tray holds Quality (pass it to `qualitySetting(tray)`) plus Port options; (i) vignette
 - [ ] Sound
@@ -58,4 +61,5 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - K2 lives in marked sections. Shared in `index.html`: bloom, grade. Per scene: sky, haze, precipitation (Pass: snow, Port: rain). Unify them before Fireworks lifts K2.
 - Headless SwiftShader is slow (about 1 s per Port frame), so it cannot judge fps. A real-device check is still needed.
 - The bake hides static parts each frame; tune knobs marked bake re-render the still layer 150 ms after the last move.
+- Polish pass not yet seen in a visible pane; frame times not measured.
 - havoc (`TomVDH/havoc`) holds the lens flare, disc blur and box-fog shaders used as models; it is WebGPU/TSL, so ports are rewrites in GLSL.
