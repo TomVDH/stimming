@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-08T11:33:56Z
+updated_at: 2026-11-08T11:39:10Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -34,3 +34,8 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Drag leans the head (lean and peer) with a small aim; the frame stays upright
 - [x] Scroll or pinch leans toward the glass, down to 0.3 m; drops and blur scale with the distance
 - [x] Rain streaks near the eye fade out
+
+## Round 4 (Tom, 2026-11-08)
+- [x] Fog patches grow after about 30 s of Rain, from the frame and the low pane; other weather dries them
+- [x] Running drops wipe tracks through fog that fog over behind them
+- [x] Cabin baked once into a cube map: faint reflection on clear glass (Fresnel) and a softer one in the fog

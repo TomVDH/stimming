@@ -560,6 +560,8 @@ const W = {
   uRad: { value: 0.08 },
   uRain: { value: 1 },
   uFog: { value: 0 },
+  uPatch: { value: 0 },
+  tRoom: { value: null },
   uSpeed: { value: 0 },
   uFlow: { value: 0 },
   uLamp: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
@@ -570,7 +572,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   fragmentShader: /* glsl */`
   uniform sampler2D tOut;
   uniform vec2 uRes;
-  uniform float uTime, uRad, uRain, uFog, uSpeed, uFlow;
+  uniform float uTime, uRad, uRain, uFog, uSpeed, uFlow, uPatch;
+  uniform samplerCube tRoom;
   uniform vec2 uTan, uC0;
   uniform float uYaw;
   uniform vec3 uEye;
@@ -609,6 +612,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     if (dot(q, q) < 1.0) return vec4(ax * q.x + m * q.y, hr * 1.2, 1.0);
     // The trail is a thin water thread behind the head; speed draws it out.
     float tl = (0.22 + 0.2 * h) * (1.0 + uSpeed / 18.0);
+    // The head wipes a track through fog; the track fogs over behind it.
+    if (dv < 0.0 && dv > -tl * 2.0) trail = smoothstep(1.0, 0.55, abs(fu) / hr) * (1.0 + dv / (tl * 2.0));
     if (dv < 0.0 && dv > -tl) {
       float age = -dv / tl;
       float cell = v * 70.0 + h * 9.0;
@@ -616,7 +621,6 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       if (hash1(vec2(col, floor(cell))) > 0.6 && dot(tb, tb) < 1.0) return vec4(ax * tb.x + m * tb.y, 0.0015, 0.6);
       // The thread thins toward its tail and acts as a narrow cylinder lens.
       float tw = 0.0018 * (1.0 - 0.6 * age);
-      trail = smoothstep(1.0, 0.6, abs(fu) / tw) * (1.0 - age);
       if (abs(fu) < tw) return vec4(ax * (fu / tw), tw, 0.8 * (1.0 - age));
     }
     return vec4(0.0);
@@ -674,6 +678,14 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Fog: the mode base and a cold rim near the frame.
       float fog = uFog * (0.8 + 0.35 * fbm(p * 6.0));
       fog += 0.22 * smoothstep(-0.07, 0.0, d) * (0.6 + 0.6 * vnoise(p * 30.0));
+      // Long rain fogs the pane in patches.
+      // They start at the cold frame and the low pane, then spread.
+      if (uPatch > 0.001) {
+        float field = fbm(p * 3.2 + 11.0) * 0.75 + fbm(p * 9.0 + 3.0) * 0.25;
+        field += 0.42 * smoothstep(-0.16, 0.0, d) + 0.22 * smoothstep(0.0, -0.32, q.y);
+        float thr = mix(1.3, 0.6, uPatch) + (vnoise(p * 46.0) - 0.5) * 0.06;
+        fog += 0.8 * smoothstep(thr, thr + 0.16, field) * (0.85 + 0.3 * vnoise(p * 18.0));
+      }
       fog = clamp(fog * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
       // Close to the glass, each drop covers more of the view.
       vec2 uv = px + off / vec2(asp, 1.0) / uEye.z;
@@ -692,8 +704,16 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       }
       col = mix(sharp, blur, smoothstep(0.05, 0.55, fog));
       // Fog scatters light into a milky veil, warm from the room.
-      vec3 veil = warm * 0.03 * roomG + blur * 1.1 + vec3(0.006, 0.007, 0.009);
+      // The carriage reflects in the pane; R points back into the cabin.
+      vec3 V = normalize(dir);
+      vec3 R = vec3(V.xy, -V.z);
+      float F = 0.04 + 0.96 * pow(1.0 - max(-V.z, 0.0), 5.0);
+      vec3 room = textureLod(tRoom, R, 1.0).rgb;
+      // Fog scatters the room light, so its reflection blurs and grows.
+      vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb;
+      vec3 veil = warm * 0.02 * roomG + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
       col = col * (1.0 - 0.8 * fog) + veil * fog * 0.9;
+      col += room * F * 0.5 * (1.0 - fog);
       // The glass reflects the lit carriage as a soft warm gradient.
       float rg = smoothstep(-0.7, 0.4, -p.y * 0.8 + p.x * 0.35) * 0.7 + 0.3 * smoothstep(0.1, 0.5, p.y);
       col += warm * 0.012 * rg * (1.0 - 0.5 * fog);
@@ -749,6 +769,48 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
 glass.frustumCulled = false;
 scene.add(glass);
 
+/* ---------- the carriage, seen only in its reflection ---------- */
+// The cabin bakes once into a cube map; the glass samples it.
+// The window wall is at z = -1; the far wall at z = 1.8.
+const room = new THREE.Scene();
+const roomRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+const roomCam = new THREE.CubeCamera(0.05, 60, roomRT);
+W.tRoom.value = roomRT.texture;
+{
+  const flat = c => new THREE.MeshBasicMaterial({ color: new THREE.Color(...c) });
+  // The shell is warm and lit from the ceiling strip.
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 2.3, 2.8).translate(0, 0.05, 0.4), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: /* glsl */`varying vec3 vP; void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    void main() {
+      float lit = 0.04 + 0.16 * smoothstep(-1.1, 1.2, vP.y) * exp(-abs(vP.z - 0.4) * 0.5);
+      // The rack light washes the far wall below it.
+      lit += 0.25 * smoothstep(1.2, 1.79, vP.z) * exp(-abs(vP.y - 0.5) * 3.0);
+      gl_FragColor = vec4(vec3(1.0, 0.7, 0.45) * lit, 1.0);
+    }`,
+  })));
+  // One long light strip runs down the ceiling.
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.04, 0.24).translate(0, 1.18, 0.4), flat([3.2, 2.4, 1.5])));
+  // A lamp strip under the far luggage rack: the glass sees this one.
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.03, 0.1).translate(0, 0.62, 1.72), flat([1.8, 1.3, 0.8])));
+  // The far wall holds dark panes; the seat backs stand in rows.
+  const pane = new THREE.PlaneGeometry(1.5, 0.62).rotateY(Math.PI);
+  const seat = new THREE.BoxGeometry(0.12, 0.78, 0.95);
+  for (let x = -24; x <= 24; x += 2.4) {
+    const m = new THREE.Mesh(pane, flat([0.004, 0.005, 0.009]));
+    m.position.set(x, 0.05, 1.79);
+    room.add(m);
+  }
+  for (let x = -24.3; x <= 24; x += 0.95) for (const z of [-0.45, 1.25]) {
+    const m = new THREE.Mesh(seat, flat([0.014, 0.01, 0.008]));
+    m.position.set(x, -0.2, z);
+    room.add(m);
+  }
+}
+let baked = false;
+
 /* ---------- framing ---------- */
 // The head: x and y lean along the wall, z is the distance to the glass.
 const eye = new THREE.Vector3(0, 0, 1), eyeT = eye.clone();
@@ -773,7 +835,7 @@ function frame(w, h, pr) {
 /* ---------- motion ---------- */
 let time = 0, flow = 0, camX = 1203.3, speed = 0, target = 27;
 const MODES = { clear: { rain: 0, fog: 0 }, rain: { rain: 1, fog: 0 }, fogged: { rain: 0.45, fog: 0.85 } };
-let mode = MODES.rain, mk = 0;
+let mode = MODES.rain, mk = 0, rainT = 0;
 let drag = false;
 // Each wheelset kicks the carriage as it crosses a rail joint.
 // The pairs sit 2.6 m apart; the far bogie kicks softer.
@@ -844,6 +906,9 @@ function update(dt, pace) {
   W.uTime.value = time;
   W.uFlow.value = flow;
   mk = Math.min(1, mk + dt * 0.8);
+  // Patches show after about 30 s of rain; other weather dries them.
+  rainT = mode === MODES.rain ? rainT + dt : Math.max(0, rainT - dt * 4);
+  W.uPatch.value = THREE.MathUtils.smoothstep(rainT, 18, 75);
   W.uRain.value += (mode.rain - W.uRain.value) * Math.min(1, dt * 2);
   W.uFog.value += (mode.fog - W.uFog.value) * Math.min(1, dt * 1.2);
   OUTU.uRain.value = W.uRain.value;
@@ -859,6 +924,7 @@ return {
   setSpeed(v) { target = v; },
   outside: [out, outCam],
   before(r) {
+    if (!baked) { roomCam.update(r, room); baked = true; }
     r.setRenderTarget(outRT);
     r.render(out, outCam);
     r.setRenderTarget(null);
