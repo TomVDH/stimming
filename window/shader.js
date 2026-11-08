@@ -317,7 +317,8 @@ vec4 deck(vec3 d) {
   float len = t1 - t0;
   float ds = min(len / float(N), 0.45);
   float grow = clamp(pow(max(len / (ds * float(N)), 1.0), 1.7 / float(N)), 1.0, 1.3);
-  float t = t0 + ds * fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
+  // Plain random jitter: structured jitter ripples on long grazing paths.
+  float t = t0 + ds * hash12(gl_FragCoord.xy);
   // Town light under the deck, sampled at both ends of the segment.
   float ua = towns(uCam + d.xz * t0).z, ub = towns(uCam + d.xz * t1).z;
   float mu = dot(d, uSun);
@@ -378,7 +379,7 @@ float midDens(vec3 p, float lod) {
   float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, coverAt(w, 55.0, 0.71)) * step(0.01, uMid);
   if (c <= 0.0) return 0.0;
   float hgt = smoothstep(5.2, 5.45, p.y) * smoothstep(6.1, 5.75, p.y);
-  vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 3.2, lod);
+  vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 6.0, lod);
   return clamp((n.r * hgt - (1.0 - c)) / max(c, 0.05) - (n.b * 0.3), 0.0, 1.0);
 }
 vec4 midLayer(vec3 d) {
@@ -388,7 +389,7 @@ vec4 midLayer(vec3 d) {
   const int N = 12;
   float ds = min((t1 - t0) / float(N), 0.8);
   float grow = clamp(pow(max((t1 - t0) / (ds * float(N)), 1.0), 1.7 / float(N)), 1.0, 1.45);
-  float t = t0 + ds * fract(0.37 + 52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
+  float t = t0 + ds * hash12(gl_FragCoord.xy + 17.0);
   float phase = cloudPhase(dot(d, uSun));
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.15);
   vec3 col = vec3(0.0);
@@ -397,11 +398,11 @@ vec4 midLayer(vec3 d) {
     if (t > t1) break;
     vec2 w = uCam + d.xz * t;
     vec3 p = vec3(w.x, heightAt(d, t), w.y);
-    float dn = midDens(p, lodAt(t, 3.2));
+    float dn = midDens(p, lodAt(t, 6.0) + 0.5);
     if (dn > 0.002) {
       // Thin cloud: one tap toward the light is enough.
-      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 3.2) + 1.0) * 0.3);
-      vec3 S = uSunL * 0.06 * sunK * Tl * phase + uAmb * 0.03;
+      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 6.0) + 1.5) * 0.3);
+      vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03;
       float a = 1.0 - exp(-SIG * 0.6 * dn * ds);
       col += Tc * S * a;
       Tc *= 1.0 - a;
@@ -410,7 +411,7 @@ vec4 midLayer(vec3 d) {
     ds *= grow;
   }
   // Far off, the thin layer melts into the haze instead of banding.
-  float fade = exp(-t0 / 200.0);
+  float fade = exp(-t0 / 140.0);
   return vec4(col * fade, 1.0 - (1.0 - Tc) * fade);
 }
 
@@ -420,31 +421,40 @@ vec4 cirrus(vec3 d, vec3 sk) {
   // From inside the shells, the ray leaves each one once.
   float b = (R + H) * d.y;
   float ta = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.1) * (R + 12.1)));
-  float tb = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.8) * (R + 12.8)));
-  tb = min(tb, ta + 70.0);
-  const int N = 5;
+  float tb = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.9) * (R + 12.9)));
+  tb = min(tb, ta + 90.0);
+  const int N = 8;
   float ds = (tb - ta) / float(N);
-  float mu = max(dot(d, uSun), 0.0);
-  // Ice crystals: strong forward scatter and the 22 degree halo.
-  float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
+  float mu = dot(d, uSun);
+  // Ice: a sharp forward lobe and the 22 degree halo round the light.
+  float ang = acos(clamp(mu, -1.0, 1.0));
   float halo = exp(-pow((ang - 0.384) / 0.012, 2.0)) * 0.6 + exp(-pow((ang - 0.384) / 0.04, 2.0)) * 0.15;
-  vec3 light = sk * 1.2 + uAmb * 0.006 + uSunL * 0.05 * (0.4 + 3.0 * pow(mu, 10.0) + halo * 4.0);
+  float ice = 0.5 + 0.6 * hg(mu, 0.8) * 0.25 + halo * 3.0;
+  // Light on the ice: the sun or moon, the sky all round, and its own glow.
+  vec3 S = uSunL * 0.045 * ice + uAmb * 0.016 + sk * 0.55;
+  vec3 col = vec3(0.0);
   float Tc = 1.0;
-  float t = ta + ds * 0.5;
+  float t = ta + ds * hash12(gl_FragCoord.xy + 41.0);
   for (int i = 0; i < N; i++) {
     vec2 w = uCam + d.xz * t + vec2(uTime * 0.03, 0.0);
-    // The wind stretches the streaks along one bearing.
+    // The wind draws the ice out into long fibres: mares' tails.
     vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * w;
     float y = heightAt(d, t);
-    float lod = lodAt(t, 24.0);
-    float n = cn(vec3(q.x / 6.0, y * 2.0, q.y), 24.0, lod).r * 0.7 + cn(vec3(q.x / 4.0, y * 3.0, q.y) + 0.5, 6.0, lod).g * 0.3;
-    float dn = smoothstep(0.6, 0.84, n) * uCirrus * smoothstep(12.1, 12.3, y) * smoothstep(12.8, 12.6, y);
-    Tc *= exp(-0.9 * dn * ds);
+    float lod = lodAt(t, 18.0);
+    float body = cn(vec3(q.x / 5.0, y * 1.5, q.y), 18.0, lod).r;
+    // Far away the fine fibres would only alias; they fade to their mean.
+    float fl = lodAt(t, 5.0);
+    float fibre = mix(cn(vec3(q.x / 9.0, y * 4.0, q.y * 1.4) + 0.5, 5.0, fl + 0.5).g, 0.47, smoothstep(1.0, 3.0, fl));
+    float dn = smoothstep(0.66, 0.88, body * 0.75 + fibre * 0.4) * uCirrus;
+    dn *= smoothstep(12.1, 12.35, y) * smoothstep(12.9, 12.6, y);
+    float a = 1.0 - exp(-0.45 * dn * ds);
+    col += Tc * S * a;
+    Tc *= 1.0 - a;
     t += ds;
   }
-  // Far streaks fade into the horizon glow.
-  float a = (1.0 - Tc) * exp(-ta / 220.0);
-  return vec4(light * a, 1.0 - a);
+  // Far fibres fade into the horizon glow.
+  float fade = exp(-ta / 200.0);
+  return vec4(col * fade, 1.0 - (1.0 - Tc) * fade);
 }
 
 // skyA turns 1 where the ray reaches open sky, 0 where it hits ground.
@@ -684,7 +694,7 @@ uniform vec3 uF, uR, uU;
 uniform int uSteps;
 uniform sampler2D uOut;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
-uniform vec4 uFlr[4]; uniform vec3 uFlrC[4];
+uniform vec4 uFlr[6]; uniform vec4 uFlrC[6];
 out vec4 o;
 
 // Stars hold still; they fade toward the horizon glow.
@@ -707,9 +717,13 @@ vec3 disc(vec3 d) {
   float mu = sqrt(max(0.0, 1.0 - r * r));
   vec3 c;
   if (uMoon > 0.5) {
-    // Faint maria, and a soft halo of ice haze.
-    float maria = smoothstep(0.42, 0.62, fbm(q * 1.6 + 4.0, 4)) * 0.3 + 0.08 * vnoise(q * 9.0);
-    c = uDisc * (1.0 - maria) * (0.88 + 0.12 * mu) * body;
+    // Maria: broad grey seas, upper left heavier, as seen from the north.
+    float sea = smoothstep(0.46, 0.6, fbm(q * 1.25 + vec2(4.0, 1.7), 5) + 0.12 * (q.y - q.x) * 0.5);
+    // Highlands: fine bright speckle, and one rayed crater low on the disc.
+    float speck = fbm(q * 7.0 + 2.0, 3);
+    vec2 cq = q - vec2(-0.15, -0.55);
+    float crater = exp(-dot(cq, cq) * 90.0) * 0.6 + exp(-dot(cq, cq) * 6.0) * 0.12 * (0.6 + 0.4 * sin(atan(cq.y, cq.x) * 9.0));
+    c = uDisc * vec3(1.0, 0.97, 0.9) * (1.0 - 0.42 * sea) * (0.85 + 0.25 * speck + crater) * (0.9 + 0.1 * mu) * body;
     c += uDisc * 0.035 * exp(-max(r - 1.0, 0.0) * 0.9) * (1.0 - body);
   } else {
     // Limb darkening: the edge of the sun looks dimmer and redder.
@@ -753,7 +767,7 @@ vec3 scratches(vec2 pG, vec2 px) {
       vec2 r = px - fl.xy;
       float dist = length(r);
       float al = dot(r / max(dist, 1.0), t);
-      s += uFlrC[i] * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.1)) * 0.22;
+      s += uFlrC[i].rgb * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.1)) * 0.22;
     }
   }
   return s;
@@ -761,12 +775,12 @@ vec3 scratches(vec2 pG, vec2 px) {
 // A faint ghost of each bright source, bounced between the panes.
 vec3 ghosts(vec2 px) {
   vec3 s = vec3(0.0);
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 6; i++) {
     vec4 fl = uFlr[i];
     if (fl.z <= 0.0) continue;
     vec2 at2 = fl.xy + (fl.xy - uRes * 0.5) * 0.07 + vec2(0.0, -uRes.y * 0.012);
     float gr = length(px - at2) / (fl.w * uRes.y * 0.01 + 2.0 * uDpr);
-    s += uFlrC[i] * fl.z * exp(-gr * gr) * 0.2;
+    s += uFlrC[i].rgb * fl.z * exp(-gr * gr) * 0.2;
   }
   return s;
 }
@@ -789,26 +803,27 @@ vec3 flare(vec2 px, vec3 base) {
   vec2 uv = px / uRes;
   float aspect = uRes.x / uRes.y;
   vec3 add = vec3(0.0);
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 6; i++) {
     vec4 f = uFlr[i];
     if (f.z <= 0.0) continue;
-    vec3 col = uFlrC[i];
+    vec3 col = uFlrC[i].rgb;
+    float streak = uFlrC[i].w;
     vec2 sp = f.xy / uRes;
     vec2 d = (uv - sp) / f.w;
     float ax = d.x * aspect, ay = d.y;
     // A wide veil of haze and a soft orb, squashed sideways.
     float r = length(vec2(ax * 0.6, ay));
     vec3 a = col * (0.025 * exp(-r * 1.5) + 0.08 * exp(-r * 5.0) + 0.4 * exp(-r * 22.0));
-    // The streak grows with its source, in three nested bands.
-    float line = 0.9 * exp(-abs(ay) * 34.0) + 0.3 * exp(-abs(ay) * 9.0) + 0.07 * exp(-abs(ay) * 2.6);
-    a += mix(col, vec3(0.85, 0.8, 1.0), 0.25) * line * exp(-abs(ax) / (0.3 * f.w));
+    // A short streak, only for sources that throw one: the sun, lightning, the strobe.
+    float line = 0.9 * exp(-abs(ay) * 40.0) + 0.25 * exp(-abs(ay) * 12.0);
+    a += mix(col, vec3(0.85, 0.8, 1.0), 0.25) * line * exp(-abs(ax) / (0.18 * f.w)) * streak;
     // Ghosts sit on the line from the source through the frame centre.
     vec2 toC = vec2(0.5) - sp;
     for (int k = 0; k < 4; k++) {
       vec3 gs = k == 0 ? vec3(0.7, 0.05, 0.9) : k == 1 ? vec3(1.4, 0.09, 0.6) : k == 2 ? vec3(2.2, 0.15, 0.4) : vec3(-0.45, 0.03, 0.5);
       vec2 g = (uv - (sp + toC * gs.x)) * vec2(aspect, 1.0);
       float gr = length(g) / (gs.y * f.w);
-      a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12;
+      a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak);
     }
     add += a * f.z;
   }

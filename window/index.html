@@ -163,7 +163,7 @@ const HOR = horizonEl(ALT);
 // tint: a small OKLCH grade for the hour.
 const HOURS = {
   dusk: { moon: false, az: 30, rel: -0.7, E: 13, disc: 0, r: 0.4, stars: 0.45, flare: 0, tint: [0.8, 0.06, 330], floor: [0.0004, 0.0004, 0.0009] },
-  night: { moon: true, az: 14, rel: 9, E: 0.5, skyK: 0.45, disc: 1.5, r: 0.3, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014] },
+  night: { moon: true, az: 14, rel: 9, E: 0.5, skyK: 0.45, disc: 1.5, r: 0.5, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014] },
   dawn: { moon: false, az: 10, rel: 1.6, E: 4, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006] },
 };
 const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -449,6 +449,8 @@ function strobe() {
 }
 // The aurora shows at midnight only, when Settings allow it.
 const auroraOn = () => (opts.hour === 'night' && opts.aurora === 'on' ? 1 : 0);
+// Events add their own flare sources; filled in by the event code.
+let eventFlares = () => {};
 // Both passes share the view, the bank and the sky table.
 function shared(u) {
   gl.uniform2f(u.uRes, W, H);
@@ -597,13 +599,16 @@ function towerCover(d) {
   for (const c of cells) if (c.s > 0 && towerHit(c, d)) hide = Math.max(hide, c.s);
   return hide;
 }
-const flr = new Float32Array(16), flrC = new Float32Array(12);
-const flareSeen = [0, 0, 0, 0];
+// Six flare slots: sun or moon, lightning, strobe, nav light, and two for events.
+const FLARES = 6;
+const flr = new Float32Array(FLARES * 4), flrC = new Float32Array(FLARES * 4);
+const flareSeen = new Array(FLARES).fill(0);
 function flareUniforms(u) {
   flr.fill(0); flrC.fill(0);
   // Each source shines through the tinted pane, dimmer and bluer.
   const tc = dimT(dim.core), tl = lum(tc);
-  const put = (i, dirW, gain, size, col, rad = 0) => {
+  // streak: how strongly the source throws a short horizontal streak.
+  const put = (i, dirW, gain, size, col, rad = 0, streak = 0) => {
     gain *= tl;
     col = col.map((v, c) => v * tc[c] / tl);
     const sp = screenOf(dirW);
@@ -612,24 +617,25 @@ function flareUniforms(u) {
     flareSeen[i] += (vis - flareSeen[i]) * 0.35;
     if (!sp || gain * flareSeen[i] < 1e-3) return;
     flr.set([sp[0], sp[1], gain * flareSeen[i], size], i * 4);
-    flrC.set(col, i * 3);
+    flrC.set([...col, streak], i * 4);
   };
   // The sun or the moon: full only once the whole disc clears the frame.
   const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun));
-  put(0, sky.sun, sky.h.flare * clear ** 3, 0.5 + 0.5 * clear, sky.flareCol, sky.sunR);
+  put(0, sky.sun, sky.h.flare * clear ** 3, 0.5 + 0.5 * clear, sky.flareCol, sky.sunR, sky.h.moon ? 0 : 0.4);
   // The brightest flash in a storm.
   let best = null;
   for (const f of flashes) if (f.level > 0.05 && (!best || f.level > best.level)) best = f;
   if (best) {
     const dx = best.x - cam.x, dz = best.z - cam.z;
     const dist = Math.hypot(dx, dz);
-    put(1, norm([dx, best.y - ALT - dist * dist / 12742, dz]), Math.min(1, best.level * 0.4), 0.8, [0.75, 0.78, 1.0]);
+    put(1, norm([dx, best.y - ALT - dist * dist / 12742, dz]), Math.min(1, best.level * 0.4), 0.8, [0.75, 0.78, 1.0], 0, 0.5);
   }
   // The strobe and the red nav light on the wingtip.
   const tipW = norm(toWorld(sub(TIP, basis.eye)));
-  put(2, tipW, reduce ? 0 : strobe() * 0.5, 0.5, [0.9, 0.95, 1.0]);
+  put(2, tipW, reduce ? 0 : strobe() * 0.5, 0.5, [0.9, 0.95, 1.0], 0, 0.6);
   put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05]);
-  gl.uniform4fv(u['uFlr[0]'], flr); gl.uniform3fv(u['uFlrC[0]'], flrC);
+  eventFlares(put);
+  gl.uniform4fv(u['uFlr[0]'], flr); gl.uniform4fv(u['uFlrC[0]'], flrC);
 }
 
 // Towers go in far to near, so near ones cover far ones.
