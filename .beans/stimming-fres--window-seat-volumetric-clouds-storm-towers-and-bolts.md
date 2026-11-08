@@ -30,3 +30,6 @@ Tom picked all four: volumetric deck, better towers, visible bolts, high cirrus 
 - Deck: true 3D density with Worley erosion; light marched toward the sun or moon (3 taps Standard, 5 High); two-lobe phase, multiple-scatter tail, powder; town light filtered up through the base.
 - New mid layer of thin altocumulus at 5.2 to 6.1 km. Cirrus is now a volume, with a 22 degree halo round the sun or moon.
 - Towers sample the same volume instead of hashed noise. Frame rate not yet timed after this change.
+- Round 3 (Tom): aurora at Midnight (Settings, on by default): two wavy curtains 400 and 560 km out, green low, faint red high, violet lower edge; streaks slide along; it tints cloud tops and the cabin green.
+- Horizon fix: the deck no longer stops at 160 km; its steps grow toward the horizon. Cloud cover uses non-tiling noise.
+- Towns: lamps line each town's own street grid, with avenues and three lamp colours; the glow is softer.

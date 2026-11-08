@@ -83,6 +83,10 @@
               <button class="chip" type="button" data-value="1" aria-pressed="true">Some</button>
               <button class="chip" type="button" data-value="1.7" aria-pressed="false">Dense</button>
             </div></div>
+            <div class="group"><span>Aurora</span><div class="choices" id="aurora" role="group" aria-label="Aurora at midnight">
+              <button class="chip" type="button" data-value="off" aria-pressed="false">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="true">On</button>
+            </div></div>
           </div>
         </div>
         <dl class="how" aria-label="How to play">
@@ -141,6 +145,7 @@ const opts = {
   cloud: num('cloud', 0.5),
   towns: num('towns', 1),
   dim: num('dim', 0),
+  aurora: saved('aurora') || 'on',
 };
 // A test hook sets values from the address, for screenshots.
 const qs = new URLSearchParams(location.search);
@@ -440,6 +445,8 @@ function strobe() {
   const p = t % 1.6;
   return Math.exp(-p / 0.03) + Math.exp(-Math.max(0, p - 0.12) / 0.03) * (p > 0.12 ? 1 : 0);
 }
+// The aurora shows at midnight only, when Settings allow it.
+const auroraOn = () => (opts.hour === 'night' && opts.aurora === 'on' ? 1 : 0);
 // Both passes share the view, the bank and the sky table.
 function shared(u) {
   gl.uniform2f(u.uRes, W, H);
@@ -483,7 +490,10 @@ function render() {
   gl.uniform1f(u.uMid, clamp(1.6 - opts.cloud * 2.1, 0.2, 1));
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_3D, noiseTex); gl.uniform1i(u.uNoise, 3);
   gl.uniform1f(u.uFlash, flash);
-  gl.uniform3fv(u.uAmb, sky.amb); gl.uniform3fv(u.uSunL, sky.sunL); gl.uniform3fv(u.uFloor, sky.h.floor);
+  // At midnight the aurora glows over the clouds and tints their tops green.
+  const aur = auroraOn();
+  gl.uniform1f(u.uAurora, aur);
+  gl.uniform3fv(u.uAmb, sky.amb.map((v, i) => v + [0.0004, 0.004, 0.0018][i] * aur)); gl.uniform3fv(u.uSunL, sky.sunL); gl.uniform3fv(u.uFloor, sky.h.floor);
   // The wing goes in world space, so it banks with the cabin.
   const wing = WING.map(toWorld), let_ = LET.map(toWorld);
   gl.uniform3fv(u['uWing[0]'], wing.flat()); gl.uniform3fv(u.uWingN, quadNormal(wing));
@@ -509,7 +519,7 @@ function render() {
   gl.uniform1i(u.uSteps, marchSteps());
   // Less window light reaches the cabin through dimmed glass, and it turns blue.
   const tg = dimT((dim.edge + dim.core) / 2);
-  gl.uniform3fv(u.uGlow, sky.glow.map((v, i) => v * tg[i])); gl.uniform3fv(u.uDisc, sky.disc); gl.uniform3fv(u.uTint, sky.tint);
+  gl.uniform3fv(u.uGlow, sky.glow.map((v, i) => (v + [0.004, 0.05, 0.022][i] * aur) * tg[i])); gl.uniform3fv(u.uDisc, sky.disc); gl.uniform3fv(u.uTint, sky.tint);
   gl.uniform1f(u.uSunR, sky.sunR); gl.uniform1f(u.uSquash, sky.squash);
   gl.uniform1f(u.uMoon, sky.h.moon ? 1 : 0); gl.uniform1f(u.uStars, sky.h.stars);
   flareUniforms(u);
@@ -733,6 +743,7 @@ stormEl.addEventListener('input', () => { opts.storm = +stormEl.value; save('sto
 choices(document.getElementById('hour'), v => { opts.hour = v; save('hour', v); buildSky(); uploadSky(); render(); }).set(opts.hour);
 choices(document.getElementById('cloud'), v => { opts.cloud = +v; save('cloud', v); render(); }).set(String(opts.cloud));
 choices(document.getElementById('towns'), v => { opts.towns = +v; save('towns', v); render(); }).set(String(opts.towns));
+choices(document.getElementById('aurora'), v => { opts.aurora = v; save('aurora', v); render(); }).set(opts.aurora);
 // Quality sets the canvas size, the pass 1 size and the march steps.
 qualitySetting(document.getElementById('sets'));
 onQuality(() => resize(true));

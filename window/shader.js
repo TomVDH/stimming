@@ -51,7 +51,7 @@ precision highp float;
 precision highp sampler3D;
 ${common({ ALT, WIN })}
 uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uFocal, uCover, uFlash, uCirrus;
-uniform int uDeckSteps, uTowSteps, uTowOct, uLightSteps; uniform float uTowStep, uMid;
+uniform int uDeckSteps, uTowSteps, uTowOct, uLightSteps; uniform float uTowStep, uMid, uAurora;
 uniform highp sampler3D uNoise;
 uniform vec2 uCam;
 uniform vec3 uF, uR, uU;
@@ -76,8 +76,41 @@ vec2 shell(vec3 d, float hl) {
 // The point's height above the ground, t km along the ray.
 float heightAt(vec3 d, float t) { return length(vec3(0.0, R + H, 0.0) + d * t) - R; }
 
-// Sky light along a ray, from the baked table.
-vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor; }
+// Aurora: two wavy curtains far out past the window, 95 to 320 km up.
+// Each ray meets a curtain sheet once; its height there sets the colour.
+// Green glows low, red high, and a violet fringe lines the bottom edge.
+vec3 aurora(vec3 d) {
+  if (uAurora <= 0.0 || d.z < 0.08 || d.y < uHorEl - 0.02) return vec3(0.0);
+  vec3 e = vec3(0.0);
+  for (int k = 0; k < 2; k++) {
+    float z0 = k == 0 ? 400.0 : 560.0, ph = k == 0 ? 0.0 : 2.1;
+    // Find where the ray crosses the wavy sheet, by a few fixed-point steps.
+    float t = (z0 - uCam.y) / d.z, x = 0.0;
+    for (int i = 0; i < 3; i++) {
+      x = uCam.x + d.x * t;
+      float zc = z0 + 130.0 * sin(x / 850.0 + ph + uTime * 0.008) + 70.0 * sin(x / 260.0 - ph + uTime * 0.021);
+      t = (zc - uCam.y) / d.z;
+    }
+    if (t <= 0.0) continue;
+    float h = length(vec3(0.0, R + H, 0.0) + d * t) - R;
+    if (h < 90.0 || h > 340.0) continue;
+    // Rays: fine vertical streaks that slide along the curtain.
+    float ray = vnoise(vec2(x / 3.5 + uTime * 0.35, float(k) * 7.0));
+    ray = 0.25 + 1.5 * ray * ray + 0.5 * vnoise(vec2(x / 0.9 - uTime * 0.6, 3.0 + float(k)));
+    // Slow surges brighten and fade whole stretches of curtain.
+    float surge = smoothstep(0.3, 0.8, vnoise(vec2(x / 180.0 - uTime * 0.03, 11.0 + float(k))));
+    surge *= 0.4 + 0.6 * vnoise(vec2(x / 45.0 + uTime * 0.05, 4.0 + float(k)));
+    // Green peaks just above the lower edge and fades upward; red tops it, faint.
+    vec3 col = vec3(0.12, 1.0, 0.42) * smoothstep(94.0, 101.0, h) * exp(-max(h - 104.0, 0.0) / 28.0) * 1.3;
+    col += vec3(1.0, 0.12, 0.25) * 0.1 * exp(-pow((h - 200.0) / 45.0, 2.0));
+    col += vec3(0.75, 0.2, 1.0) * 0.8 * smoothstep(93.0, 96.0, h) * smoothstep(101.0, 97.0, h);
+    e += col * ray * surge * (k == 0 ? 1.0 : 0.55) / max(d.z, 0.3);
+  }
+  return e * uAurora * 0.1;
+}
+
+// Sky light along a ray, from the baked table, with the aurora.
+vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor + aurora(d); }
 
 // Towns: one site per 16 km cell, with a size and a street angle.
 // x: town density, y: street angle of the strongest site.
@@ -114,6 +147,27 @@ float lamps(vec2 w, float s, float p, float fw, float seed, out float hue) {
   return mix(p * 0.04, b, smoothstep(0.9, 0.25, fw / s));
 }
 
+// Street lamps on a block grid turned to the town's own angle.
+// s is the block size in km; lamps stand every quarter block along each street.
+// Some streets are avenues: brighter and fully lit.
+float streets(vec2 w, float ang, float s, float p, float fw, out float hue) {
+  vec2 cs = vec2(cos(ang), sin(ang));
+  vec2 q = vec2(dot(w, cs), dot(w, vec2(-cs.y, cs.x))) / s;
+  hue = hash12(floor(q / 9.0) + 9.3);
+  float r = max(0.035, fw / s * 0.7);
+  float b = 0.0;
+  for (int k = 0; k < 2; k++) {
+    vec2 a = k == 0 ? q : q.yx;
+    float line = floor(a.y + 0.5), lamp = floor(a.x * 4.0 + 0.5);
+    vec2 dd = vec2(a.x - lamp / 4.0, a.y - line);
+    float avenue = step(0.82, hash12(vec2(line, float(k) + 5.1)));
+    float on = step(hash12(vec2(lamp, line) + float(k) * 13.7), p * (1.0 + avenue));
+    float rr = r * (1.0 + avenue * 0.5);
+    b += on * (0.6 + 0.7 * avenue) * 0.0035 / (rr * rr) * exp(-dot(dd, dd) / (rr * rr));
+  }
+  // Far away, lamps blend into their average glow.
+  return mix(p * 0.07, b, smoothstep(0.35, 0.08, fw / s));
+}
 vec3 ground(vec2 w, float fw) {
   vec3 sodium = vec3(1.0, 0.5, 0.16), led = vec3(0.8, 0.88, 1.0);
   // Fields: a patchwork that catches the sky light.
@@ -124,15 +178,17 @@ vec3 ground(vec2 w, float fw) {
   vec3 tw = towns(w);
   float T = tw.x;
   // The light dome: haze over each town glows from the streets below.
-  g += vec3(1.0, 0.55, 0.24) * tw.z * 0.03;
+  g += vec3(1.0, 0.55, 0.24) * tw.z * 0.016;
   float dense = smoothstep(0.08, 0.5, T);
   // The town glow: warm haze over the roofs.
-  g += sodium * T * 0.035;
+  g += sodium * T * 0.02;
   float hue;
-  // Lamps gather in blocks, with dark gaps for parks and yards.
-  float blocks = smoothstep(0.2, 0.8, vnoise(w / 0.45));
-  float a = lamps(w, 0.13, dense * (0.25 + 0.65 * blocks), fw, 0.0, hue);
-  g += mix(sodium, led, step(0.9, hue)) * a;
+  // Streets run on each town's own grid; parks and yards leave dark gaps.
+  float blocks = smoothstep(0.25, 0.75, vnoise(w / 0.6 + 3.1));
+  float a = streets(w, tw.y, 0.18, dense * (0.3 + 0.65 * blocks), fw, hue);
+  // Districts differ: sodium orange, warm white, or cold LED.
+  vec3 lampCol = hue < 0.55 ? sodium : hue < 0.82 ? vec3(1.0, 0.78, 0.5) : led;
+  g += lampCol * a;
   // Highways: long white lines between towns, with a few lamps out in the dark.
   vec2 hw = w / 22.0 + 0.9 * vec2(vnoise(w / 30.0), vnoise(w / 30.0 + 7.3));
   float ridge = abs(vnoise(hw) - 0.5);
@@ -176,7 +232,7 @@ const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
 // fine adds the Worley erosion that frays the edges.
 float deckDens(vec3 p, float lod, bool fine) {
   vec2 w = p.xz + vec2(uTime * 0.012, 0.0);
-  float c = smoothstep(uCover - 0.1, uCover + 0.14, coverAt(w, 70.0, 0.13));
+  float c = smoothstep(uCover - 0.1, uCover + 0.14, fbm(mat2(0.8, -0.6, 0.6, 0.8) * w / 26.0, 3) * 1.1 - 0.03);
   if (c <= 0.0) return 0.0;
   float base = 1.55, top = base + 0.7 + 1.5 * c;
   float hgt = smoothstep(base, base + 0.35, p.y) * smoothstep(top, top - 0.5 - 0.6 * c, p.y);
@@ -205,7 +261,7 @@ float deckLight(vec3 p, float lod) {
 vec2 shellSeg(vec3 d, float lo, float hi) {
   vec2 top = shell(d, hi), bot = shell(d, lo);
   if (top.x < 0.0) return vec2(-1.0);
-  return vec2(top.x, min(bot.x > 0.0 ? bot.x : top.y, top.x + 160.0));
+  return vec2(top.x, min(bot.x > 0.0 ? bot.x : top.y, top.x + 900.0));
 }
 
 // The deck as a volume: light from above through the cloud, town light from below.
@@ -215,8 +271,10 @@ vec4 deck(vec3 d) {
   if (seg.x < 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
   int N = uDeckSteps;
-  // Steps stay short; a long grazing path ends in one closing step.
-  float ds = min((t1 - t0) / float(N), 1.1);
+  // Steps start short and grow, so far cloud reaches the horizon.
+  float len = t1 - t0;
+  float ds = min(len / float(N), 0.45);
+  float grow = clamp(pow(max(len / (ds * float(N)), 1.0), 1.7 / float(N)), 1.0, 1.3);
   float t = t0 + ds * fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
   // Town light under the deck, sampled at both ends of the segment.
   float ua = towns(uCam + d.xz * t0).z, ub = towns(uCam + d.xz * t1).z;
@@ -258,6 +316,7 @@ vec4 deck(vec3 d) {
     }
     lastD = dn;
     t += ds;
+    ds *= grow;
   }
   // The rest of a long path takes the last density and light.
   if (Tc >= 0.02 && t < t1) {
@@ -271,7 +330,7 @@ vec4 deck(vec3 d) {
 /* The mid layer: thin altocumulus at 5.2 to 6.1 km, in cells and rolls. */
 float midDens(vec3 p, float lod) {
   vec2 w = p.xz + vec2(uTime * 0.02, 0.0);
-  float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, coverAt(w, 55.0, 0.71)) * step(0.01, uMid);
+  float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, fbm(w / 21.0 + 50.0, 3) * 1.1 - 0.03) * step(0.01, uMid);
   if (c <= 0.0) return 0.0;
   float hgt = smoothstep(5.2, 5.45, p.y) * smoothstep(6.1, 5.75, p.y);
   vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 3.2, lod);
@@ -282,7 +341,8 @@ vec4 midLayer(vec3 d) {
   if (seg.x < 0.0 || uMid <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
   const int N = 8;
-  float ds = min((t1 - t0) / float(N), 1.5);
+  float ds = min((t1 - t0) / float(N), 1.0);
+  float grow = clamp(pow(max((t1 - t0) / (ds * float(N)), 1.0), 1.7 / float(N)), 1.0, 1.45);
   float t = t0 + ds * fract(0.37 + 52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
   float phase = cloudPhase(dot(d, uSun));
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.15);
@@ -302,6 +362,7 @@ vec4 midLayer(vec3 d) {
       Tc *= 1.0 - a;
     }
     t += ds;
+    ds *= grow;
   }
   return vec4(col, Tc);
 }
@@ -313,7 +374,7 @@ vec4 cirrus(vec3 d, vec3 sk) {
   float b = (R + H) * d.y;
   float ta = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.1) * (R + 12.1)));
   float tb = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.8) * (R + 12.8)));
-  tb = min(tb, ta + 60.0);
+  tb = min(tb, ta + 70.0);
   const int N = 5;
   float ds = (tb - ta) / float(N);
   float mu = max(dot(d, uSun), 0.0);
@@ -335,7 +396,7 @@ vec4 cirrus(vec3 d, vec3 sk) {
     t += ds;
   }
   // Far streaks fade into the horizon glow.
-  float a = (1.0 - Tc) * exp(-ta / 320.0);
+  float a = (1.0 - Tc) * exp(-ta / 220.0);
   return vec4(light * a, 1.0 - a);
 }
 
@@ -348,7 +409,7 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   if (tg < 0.0) {
     // A tight glow round the sun, finer than the table holds.
     float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
-    vec3 sk = L + uFloor + uSunL * 0.03 * exp(-ang * 22.0);
+    vec3 sk = L + uFloor + uSunL * 0.03 * exp(-ang * 22.0) + aurora(d);
     // Far deck and mid-layer tops rise above the ground's horizon.
     vec4 cl = deck(d), ml = midLayer(d), ci = cirrus(d, sk);
     sk = sk * cl.a + cl.rgb;
