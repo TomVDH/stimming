@@ -89,6 +89,9 @@ const save = (k, v) => { try { localStorage.setItem(`stimming.shadyos.${k}`, Str
 const opts = { mode: saved('mode') || 'smear', age: saved('age') != null ? +saved('age') : 0.6, haunt: saved('haunt') !== 'off' };
 // The untitled files survive between visits.
 let untitled = Math.max(43, +saved('untitled') || 0);
+// ?haunt=fast runs every haunt beat within a minute, for tuning.
+const FAST = new URLSearchParams(location.search).get('haunt') === 'fast';
+const T = FAST ? { spook: 6000, away: 2000, pause: 0, saver: 8000, standby: 14000 } : { spook: 60000 + Math.random() * 180000, away: 12000, pause: 15000, saver: 45000, standby: 58500 };
 
 /* =====================================================================
    Painter: canvas 2D draws the desktop and each window face once.
@@ -251,7 +254,7 @@ function topStrip() {
 
 /* ---------- the clock: real time, a live uptime, one 3:33 ---------- */
 const clockCv = document.createElement('canvas'), stripBase = document.createElement('canvas');
-let strip = null, lastClock = '', spookAt = performance.now() + 60000 + Math.random() * 180000, spookTo = 0, frozenUp = '';
+let strip = null, lastClock = '', spookAt = performance.now() + T.spook, spookTo = 0, frozenUp = '';
 const loadDay = new Date().setHours(0, 0, 0, 0);
 const pad = n => String(n).padStart(2, '0');
 function clockText() {
@@ -1076,7 +1079,7 @@ function tidy() {
 }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { hiddenAt = performance.now(); return; }
-  if (opts.haunt && messy && hiddenAt && performance.now() - hiddenAt > 12000 && scene) tidy();
+  if (opts.haunt && messy && hiddenAt && performance.now() - hiddenAt > T.away && scene) tidy();
 });
 // The saver: windows drift into one line, row or column by aspect.
 function lineUp() {
@@ -1093,7 +1096,7 @@ function lineUp() {
 
 /* ---------- frame loop: lively, drifting, asleep ---------- */
 // nap: 0 awake, 1 saver, 2 dimming, 3 standby.
-const DIM = 0.14, SAVER = 45000, STANDBY = 58500;
+const DIM = 0.14, DIM_MS = 1500, SAVER = T.saver, STANDBY = T.standby;
 let raf = 0, visible = true, last = 0, lastInput = performance.now(), lastDraw = 0;
 let nap = 0, napT = 0, dimT0 = 0, flickT0 = -1e9, backlight = 1;
 function kick() { if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(frame); } }
@@ -1126,7 +1129,7 @@ function frame(now) {
   try {
     // The drawn pointer follows the hand, except for one pause per visit.
     if (ptr.on) {
-      if (drag?.mouse && opts.haunt && !balked && now - drag.t0 > 700 && now > 15000) { balked = true; balk = now; }
+      if (drag?.mouse && opts.haunt && !balked && now - drag.t0 > 700 && now > T.pause) { balked = true; balk = now; }
       if (balk && now - balk > 480) {
         const k = 1 - Math.exp(-dt * 14);
         ptr.dx += (ptr.x - ptr.dx) * k; ptr.dy += (ptr.y - ptr.dy) * k;
@@ -1161,7 +1164,7 @@ function frame(now) {
       w.x += (w.tx - w.x) * k; w.y += (w.ty - w.y) * k;
     }
     if (nap === 2) {
-      const k = (now - dimT0) / (60000 - STANDBY);
+      const k = (now - dimT0) / DIM_MS;
       backlight = reduce ? DIM : lerp(1, DIM, smooth(clamp(k)));
       if (reduce || k >= 1) nap = 3;
     }

@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-04T21:50:00Z
-updated_at: 2026-11-08T10:21:34Z
+updated_at: 2026-11-08T10:24:10Z
 parent: stimming-shdy
 ---
 
@@ -26,3 +26,5 @@ Four quiet beats make the OS feel possessed. No jump scares. See docs/plans/shad
 - The untitled count persists in `stimming.shadyos.untitled`.
 - Looked away needs 12 s away and a desk that was touched.
 - Checked in the browser pane: clock, 3:33, tidy, saver, standby, wake, drag, 375 px. Reduced motion and the pause are not yet checked by hand.
+
+- `?haunt=fast` runs every beat within a minute for tuning: 3:33 at 6 s, saver at 8 s, standby at 14 s, looked away after 2 s, pause on the first long drag.
