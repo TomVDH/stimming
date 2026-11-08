@@ -158,7 +158,8 @@ const saved = k => { try { return localStorage.getItem(`stimming.windfarm.${k}`)
 const save = (k, v) => { try { localStorage.setItem(`stimming.windfarm.${k}`, String(v)); } catch { /* storage is optional */ } };
 const VIEWS = ['Rows', 'Foot', 'Above', 'Across', 'Hub', 'Grid'];
 const opts = {
-  view: Math.max(0, VIEWS.indexOf(saved('view'))),
+  // The toy always opens on Rows.
+  view: 0,
   wind: (() => { const v = +saved('wind'); return saved('wind') == null || isNaN(v) ? 9 : clamp(v, 0, 30); })(),
   fog: saved('fog') === 'light' ? 'light' : 'thick',
   lbox: saved('lbox') === 'on' ? 'on' : 'off',
@@ -178,7 +179,7 @@ const LOOK = {
 // Rows of turbines 900 m apart along the row, rows 800 m apart.
 // Row 0 starts 1.5 km out and runs away almost along the sea camera's view.
 const FIRST = [-76, -1500], ALONG = 2.4 * Math.PI / 180, SU = 900, SV = 800;
-const ROWS = [-6, 2], PER_ROW = 17;
+const ROWS = [-2, 1], PER_ROW = 11;
 const RU = [Math.sin(ALONG), -Math.cos(ALONG)], RV = [Math.cos(ALONG), Math.sin(ALONG)];
 function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 // The ground position of turbine i in row j, without jitter.
@@ -284,10 +285,14 @@ float fogSigma(vec3 p) {
   vec2 q = p.xz - uDrift;
   // A base layer that hugs the sea, broken into banks a few km wide.
   float bank = 0.25 + 1.5 * smoothstep(0.3, 0.7, fbm3(q / 2200.0));
-  float s = exp(-y / 55.0) * bank / 3200.0;
-  // A low sheet at 35 m and a deck at 72 m; the hubs stand clear of it.
-  s += exp(-pow((y - 35.0) / 14.0, 2.0)) * smoothstep(0.5, 0.68, fbm3(q / 900.0 + 11.0)) / 900.0;
-  s += exp(-pow((y - 72.0) / 16.0, 2.0)) * smoothstep(0.45, 0.72, fbm3(q / 1400.0 + 23.0)) / 380.0;
+  float s = exp(-y / 45.0) * bank / 2000.0;
+  // Thin sheets at five heights, each torn into its own banks.
+  s += exp(-pow((y - 16.0) / 7.0, 2.0)) * smoothstep(0.4, 0.66, fbm3(q / 700.0 + 3.0)) / 800.0;
+  s += exp(-pow((y - 35.0) / 10.0, 2.0)) * smoothstep(0.45, 0.68, fbm3(q / 900.0 + 11.0)) / 850.0;
+  s += exp(-pow((y - 52.0) / 7.0, 2.0)) * smoothstep(0.5, 0.7, fbm3(q / 1100.0 + 17.0)) / 900.0;
+  // The deck at 72 m; the hubs stand clear of it.
+  s += exp(-pow((y - 72.0) / 12.0, 2.0)) * smoothstep(0.45, 0.72, fbm3(q / 1400.0 + 23.0)) / 420.0;
+  s += exp(-pow((y - 96.0) / 8.0, 2.0)) * smoothstep(0.55, 0.75, fbm3(q / 1600.0 + 31.0)) / 1500.0;
   // Dense low banks sit between the rows; the lane along row 0 stays clear.
   float lane = smoothstep(180.0, 520.0, abs(dot(p.xz - vec2(-76.0, -1500.0), vec2(0.9991, 0.0419))));
   s += smoothstep(0.5, 0.75, fbm3(q / 1700.0 + 5.0)) * exp(-y / 55.0) * lane / 140.0;
@@ -485,6 +490,7 @@ uniform float uFocal, uHalo, uBlink;
 varying float vT;
 varying float vTau;
 varying float vOn;
+varying float vSig;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
@@ -496,7 +502,10 @@ void main() {
   vOn = aKind > 0.5 ? 0.7 : uBlink;
   float lamp = aKind > 0.5 ? 1.2 : 2.2;
   float core = max(1.6, lamp * uFocal / t);
-  gl_PointSize = uHalo > 0.5 ? min(core * (3.0 + 6.0 * min(vTau, 2.5)), 160.0) : core * 2.0;
+  // The glow: the lamp lights the fog round it, about 60 m out.
+  vSig = fogSigma(position) * 900.0;
+  if (uHalo > 1.5) gl_PointSize = clamp(60.0 * uFocal / t, 6.0, 360.0);
+  else gl_PointSize = uHalo > 0.5 ? min(core * (3.0 + 6.0 * min(vTau, 2.5)), 160.0) : core * 2.0;
 }`;
 const LIGHT_FS = `
 uniform vec3 uRed;
@@ -504,13 +513,16 @@ uniform float uHalo;
 varying float vT;
 varying float vTau;
 varying float vOn;
+varying float vSig;
 void main() {
   vec2 q = gl_PointCoord * 2.0 - 1.0;
   float r2 = dot(q, q);
   if (r2 > 1.0 || vOn < 0.002) discard;
   // Both sprites fall to zero at the rim, so no edge shows.
   float edge = (1.0 - r2) * (1.0 - r2);
-  float k = uHalo > 0.5
+  float k = uHalo > 1.5
+    ? exp(-r2 * 3.0) * edge * 0.6 * clamp(0.3 + vSig, 0.0, 2.5) * vT
+    : uHalo > 0.5
     ? exp(-r2 * 2.5) * edge * 0.9 * min(vTau, 2.5) * vT
     : exp(-r2 * 9.0) * edge * 12.0 * vT;
   gl_FragColor = vec4(uRed * k * vOn, 1.0);
@@ -583,7 +595,8 @@ function pushRotors() {
 }
 
 const lightGeo = lightGeometry();
-for (const halo of [0, 1]) {
+// Three sprites per lamp: core, halo and the glow it casts into the fog.
+for (const halo of [0, 1, 2]) {
   const pts = new THREE.Points(lightGeo, new THREE.ShaderMaterial({
     uniforms: { ...U, uHalo: { value: halo } }, vertexShader: LIGHT_VS, fragmentShader: LIGHT_FS,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -630,7 +643,7 @@ void main() {
   // Film grain, strongest in the mid tones; it moves each frame.
   vec2 gp = gl_FragCoord.xy + uGrain * vec2(37.0, 17.0);
   float g = hash12(gp) + hash12(gp + 71.3) - 1.0;
-  c += g * 0.04 * (0.4 + c * (1.0 - c) * 2.4);
+  c += g * 0.06 * (0.4 + c * (1.0 - c) * 2.4);
   gl_FragColor = vec4(c, 1.0);
 }`,
 });
@@ -929,7 +942,6 @@ const stepper = document.getElementById('view'), viewOut = stepper.querySelector
 function setView(i, dir = 1) {
   i = (i + VIEWS.length) % VIEWS.length;
   if (i === opts.view && cut.next < 0) return;
-  save('view', VIEWS[i]);
   viewOut.textContent = VIEWS[i];
   viewOut.classList.remove('from-next', 'from-prev');
   void viewOut.offsetWidth;
