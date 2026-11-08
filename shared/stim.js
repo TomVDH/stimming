@@ -502,7 +502,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   const bindKey = keyBinder();
 
   /* the choice: one group, after the name */
-  let choice = null, choiceCtl = null;
+  let choice = null, choiceCtl = null, choiceShow = null;
   if (spec.choice?.options?.length) {
     const c = spec.choice;
     const state = { value: c.value ?? c.options[0].value, disabled: false };
@@ -514,9 +514,17 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
       choiceCtl.sync();
       if (fire) c.onPick?.(v);
     };
-    const display = c.display || (c.options.length > 5 ? 'stepper' : 'segments');
-    choiceCtl = makeChoice(c, display, state, pick, layer);
-    choiceCtl.sync();
+    // A rebuild swaps the display and keeps the state.
+    let shownAs = null;
+    choiceShow = display => {
+      if (display === shownAs) return;
+      choiceCtl?.el.remove();
+      choiceCtl?.sheet?.el.remove();
+      choiceCtl = makeChoice(c, display, state, pick, layer);
+      choiceCtl.sync();
+      shownAs = display;
+    };
+    choiceShow(c.display || (c.options.length > 5 ? 'stepper' : 'segments'));
     tl.append(choiceCtl.el);
     c.options.forEach(o => { if (o.key) bindKey(o.key, () => pick(o.value, true, true)); });
     choice = {
@@ -532,6 +540,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   acts.forEach(a => { const { el, handle } = makeAction(a, bindKey); bl.append(el); actions.set(a.verb, handle); });
   const slider = spec.slider ? makeSlider(spec.slider) : null;
   if (slider) br.append(slider.el);
+  const actionEls = [...bl.children];
 
   /* top right: legacy link, sound, Settings, (i) */
   const snd = iconButton('snd', SOUND_SVG, 'Sound');
@@ -539,19 +548,21 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   snd.setAttribute('aria-pressed', 'false');
   const set = iconButton('s2-set', SLIDERS, 'Settings');
   set.setAttribute('aria-expanded', 'false');
-  set.hidden = !(spec.settings?.length || spec.quality);
+  const rowsOrSite = !!(spec.settings?.length || spec.quality);
+  set.hidden = !rowsOrSite;
   tr.append(snd, set);
 
   /* the Settings sheet: toy rows, site rows, then Reset */
   const settings = new Map();
-  let toyLab = null;
-  if (!set.hidden) {
-    const sheet = makeSheet(layer, { title: 'Settings', anchor: set });
-    if (spec.settings?.length) {
-      const sec = make('div', 's2-sec');
+  let toyLab = null, toySec = null, sheet = null;
+  // A narrow stage moves the slider in here, so a slider also builds the sheet.
+  if (rowsOrSite || slider) {
+    sheet = makeSheet(layer, { title: 'Settings', anchor: set });
+    if (spec.settings?.length || slider) {
+      const sec = toySec = make('div', 's2-sec');
       toyLab = make('span', 's2-lab', name.firstChild.textContent);
       sec.append(toyLab);
-      spec.settings.forEach(row => {
+      (spec.settings || []).forEach(row => {
         const r = makeRow(row, `stimming.${id}.${row.id}`, layer);
         settings.set(row.id, r.handle);
         sec.append(r.el);
@@ -583,6 +594,34 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     info.setAttribute('aria-controls', keys.el.id = `s2-keys-${id}-${++barCount}`);
     layer.append(keys.el);
   }
+
+  /* narrow stages: corners stay, controls move down */
+  // Below 640 px the choice drops to bottom left as a stepper.
+  const place = narrow => {
+    frame.toggleAttribute('data-narrow', narrow);
+    if (sheet?.isOpen) sheet.open(false);
+    if (choiceCtl?.sheet?.isOpen) choiceCtl.sheet.open(false);
+    if (choiceShow) {
+      const c = spec.choice;
+      choiceShow(c.display === 'tray' ? 'tray' : narrow ? 'stepper' : c.display || (c.options.length > 5 ? 'stepper' : 'segments'));
+      if (narrow) bl.prepend(choiceCtl.el); else tl.append(choiceCtl.el);
+    }
+    const down = narrow && !!choiceShow;
+    (down ? br : bl).append(...actionEls);
+    if (!slider) return;
+    // The slider joins Settings only when actions hold the bottom right.
+    const inSheet = down && actionEls.length > 0;
+    slider.el.classList.toggle('s2-row', inSheet);
+    if (inSheet) toyLab.after(slider.el); else br.append(slider.el);
+    set.hidden = !(rowsOrSite || inSheet);
+  };
+  // The first layout runs at once, so a phone never shows the wide one.
+  let narrowNow = frame.getBoundingClientRect().width < 640;
+  place(narrowNow);
+  new ResizeObserver(([e]) => {
+    const narrow = e.contentRect.width < 640;
+    if (narrow !== narrowNow) place(narrowNow = narrow);
+  }).observe(frame);
 
   let legacy = null;
   const ui = {

@@ -22,7 +22,10 @@ const { buildBar } = stim;
 /* ---------- harness ---------- */
 const out = document.getElementById('out'), fx = document.getElementById('fx');
 const queue = [];
-const t = (name, fn) => queue.push([name, fn]);
+const t = (name, fn) => queue.push([name, fn, false]);
+// Headless Chrome draws no frames, so ResizeObserver tests run in the pane only.
+const HEADLESS = navigator.userAgent.includes('Headless');
+t.pane = (name, fn) => queue.push([name, fn, true]);
 const ok = (cond, msg = 'expected true') => { if (!cond) throw new Error(msg); };
 const eq = (a, b) => { if (a !== b) throw new Error(`${JSON.stringify(a)} !== ${JSON.stringify(b)}`); };
 const frames = (n = 2) => new Promise(r => { const f = k => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
@@ -419,13 +422,96 @@ t('five entries warn', () => {
   eq(got.length, 1);
 });
 
+/* ---------- Task 6: narrow layout ---------- */
+const full = () => ({
+  choice: { label: 'Palette', value: 'o0', options: opts(3) },
+  slider: { label: 'Speed', min: 0, max: 1, step: 0.1, value: 0.2 },
+  actions: [{ verb: 'flip', onPress() {} }],
+  settings: [{ type: 'toggle', id: 'n1', label: 'Glow', value: true }],
+});
+const resize = async (fx, w) => { fx.main.style.width = `${w}px`; await wait(80); };
+t.pane('narrow moves', async () => {
+  const f = fixture(full());
+  await resize(f, 375);
+  ok(f.frame.hasAttribute('data-narrow'), 'no data-narrow');
+  ok(f.layer.querySelector('.s2-bl > .s2-step'), 'choice not a stepper in bottom left');
+  ok(f.layer.querySelector('.s2-br > .s2-chip .s2-label')?.textContent === 'Flip', 'action not bottom right');
+  const sec = f.layer.querySelector('.s2-sheet--right .s2-sec');
+  eq(sec.querySelector('.s2-row')?.classList.contains('s2-slider'), true);
+  ok(!f.layer.querySelector('.s2-br .s2-slider'), 'slider still on stage');
+  await resize(f, 900);
+  ok(!f.frame.hasAttribute('data-narrow'), 'data-narrow stuck');
+  ok(f.layer.querySelector('.s2-tl > .s2-seg'), 'segments not back top left');
+  ok(f.layer.querySelector('.s2-br > .s2-slider'), 'slider not back');
+  ok(f.layer.querySelector('.s2-bl .s2-label')?.textContent === 'Flip', 'action not back bottom left');
+});
+t.pane('narrow without choice', async () => {
+  const spec = full();
+  delete spec.choice;
+  const f = fixture(spec);
+  await resize(f, 375);
+  ok(f.layer.querySelector('.s2-bl .s2-label')?.textContent === 'Flip', 'action not bottom left');
+  ok(f.layer.querySelector('.s2-br > .s2-slider'), 'slider not bottom right');
+});
+t.pane('narrow slider alone opens settings', async () => {
+  const f = fixture({ choice: { label: 'P', value: 'o0', options: opts(3) }, slider: { label: 'Speed', value: 0.5 }, actions: [{ verb: 'flip', onPress() {} }] });
+  ok(!shown(f.layer.querySelector('.s2-set')), 'settings shown with no rows');
+  await resize(f, 375);
+  ok(shown(f.layer.querySelector('.s2-set')), 'settings hidden with the slider inside');
+  await resize(f, 900);
+  ok(!shown(f.layer.querySelector('.s2-set')), 'settings stayed after the slider left');
+});
+t.pane('tray stays tray', async () => {
+  const f = fixture({ choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  await resize(f, 375);
+  ok(f.layer.querySelector('.s2-bl > .s2-tray'), 'tray chip not bottom left');
+});
+t.pane('values survive', async () => {
+  const f = fixture({ ...full(), choice: { label: 'Kind', value: 'o0', options: opts(3) } });
+  f.ui.choice.set('o2');
+  f.ui.slider.set(0.7);
+  await resize(f, 375);
+  eq(f.ui.choice.value, 'o2');
+  eq(f.layer.querySelector('.s2-step-now').textContent, 'Opt 2');
+  await resize(f, 900);
+  eq(f.ui.slider.value, 0.7);
+  eq(f.layer.querySelector('.s2-seg [aria-pressed="true"]').dataset.value, 'o2');
+});
+t.pane('crossing closes sheets', async () => {
+  const f = fixture(full());
+  click(f.layer.querySelector('.s2-set'));
+  ok(shown(f.layer.querySelector('.s2-sheet--right')), 'did not open');
+  await resize(f, 375);
+  ok(!shown(f.layer.querySelector('.s2-sheet--right')), 'still open after crossing');
+});
+t.pane('name hides', async () => {
+  const f = fixture();
+  await resize(f, 340);
+  ok(!shown(f.layer.querySelector('.s2-name')), 'name shown at 340');
+  await resize(f, 375);
+  ok(shown(f.layer.querySelector('.s2-name')), 'name hidden at 375');
+});
+
+t('narrow at build', () => {
+  const main = document.createElement('main'), stage = document.createElement('div');
+  stage.className = 'stage';
+  main.style.width = '375px';
+  main.append(stage);
+  fx.append(main);
+  buildBar(stage, { choice: { label: 'P', value: 'o0', options: opts(3) } }, { id: 'bartest' });
+  ok(stage.parentElement.hasAttribute('data-narrow'), 'not narrow at build');
+  ok(stage.parentElement.querySelector('.s2-bl > .s2-step'), 'choice not placed at build');
+});
+
 /* ---------- run ---------- */
-let pass = 0;
-for (const [name, fn] of queue) {
+let pass = 0, ran = 0;
+for (const [name, fn, paneOnly] of queue) {
+  if (paneOnly && HEADLESS) { out.textContent += `SKIP ${name} (pane only)\n`; continue; }
+  ran++;
   try { await fn(); pass++; out.textContent += `PASS ${name}\n`; }
   catch (err) { out.textContent += `FAIL ${name}: ${err.message}\n`; console.error(name, err); }
 }
-out.textContent += `DONE ${pass}/${queue.length}\n`;
+out.textContent += `DONE ${pass}/${ran}\n`;
 try { Object.keys(localStorage).filter(k => k.startsWith('stimming.bartest.')).forEach(k => localStorage.removeItem(k)); } catch (err) { /* storage is optional */ }
 </script>
 </body>
