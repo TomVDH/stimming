@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:28:16Z
-updated_at: 2026-11-08T10:43:25Z
+updated_at: 2026-11-08T10:55:48Z
 ---
 
 Build Crinkle foil (idea 107): drag to scrunch a sheet of foil, then smooth it flat again; the wrinkles catch moving specular light. Folder `foil`. It starts in the Lab. Raw WebGL2. It follows the Look rule: one sheet, no props.
@@ -21,3 +21,11 @@ Build Crinkle foil (idea 107): drag to scrunch a sheet of foil, then smooth it f
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] QA: 1280 and 375 px, clean console, idle stop, hidden tab stops the loop
 - [ ] Record the session cost
+
+## Round 2 (Tom: much better material and interactivity)
+
+- [x] Displacement map: drag pulls the foil along, hold crushes it into a ball, tap pinches; the edge really moves
+- [x] Creases live in material space and travel with the foil; squeezed foil crinkles by itself
+- [x] Material: brushed highlights, crease shading, warm key and cool rim strips, Holo colour fringes, lifting shadow
+- [x] The key light follows the mouse or the finger
+- [x] Smooth lays the foil back out flat as well as pressing the creases

@@ -53,7 +53,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--foil" id="stage" tabindex="0" role="application" aria-label="A sheet of foil under a strip light. Drag to scrunch it; smooth it flat again.">
+    <div class="stage stage--foil" id="stage" tabindex="0" role="application" aria-label="A sheet of foil under a strip light. Drag to pull and scrunch it, hold to crush it, then smooth it flat again.">
       <p class="fail" hidden>Crinkle foil needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -73,9 +73,10 @@
           <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
         </div>
         <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>scrunch the foil</dd></div>
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>pinch a pucker</dd></div>
+          <div><dt>Drag</dt><dd>pull and scrunch</dd></div>
+          <div><dt>Hold</dt><dd>crush into a ball</dd></div>
           <div><dt>Smooth</dt><dd>press it flat</dd></div>
+          <div class="fine"><dt>Move</dt><dd>steer the light</dd></div>
         </dl>
       </div>
     </div>
@@ -124,11 +125,11 @@ const opts = {
   metal: saved('metal') || 'silver',
   creases: saved('creases') != null ? +saved('creases') : 0.5,
 };
-// Each foil has one base reflectance; Holo adds a hue per facet.
+// Each foil has one base reflectance and one brush width; Holo adds hue.
 const METALS = {
-  silver: { f0: [0.9, 0.006, 250], holo: 0 },
-  gold: { f0: [0.8, 0.13, 82], holo: 0 },
-  holo: { f0: [0.88, 0.01, 250], holo: 1 },
+  silver: { f0: [0.9, 0.006, 250], holo: 0, aniso: 0.05 },
+  gold: { f0: [0.76, 0.14, 78], holo: 0, aniso: 0.04 },
+  holo: { f0: [0.9, 0.01, 250], holo: 1, aniso: 0.03 },
 };
 // Fine creases are short; coarse creases reach further.
 const reachK = () => 1.35 - opts.creases * 0.7;
@@ -141,7 +142,7 @@ stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
 if (!gl) fail();
-// The crease field holds signed slopes, so it needs float targets.
+// The crease field and the map hold signed values, so they need float targets.
 if (!gl.getExtension('EXT_color_buffer_float')) fail();
 
 const QUAD_VS = `#version 300 es
@@ -152,6 +153,11 @@ float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.y
 vec2 hash22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
+`;
+// Sheet units: the short side of the stage spans one unit, y points up.
+const UNITS = `
+vec2 toUv(vec2 q) { return q * min(uRes.x, uRes.y) / uRes + 0.5; }
+vec2 toQ(vec2 uv) { return (uv - 0.5) * uRes / min(uRes.x, uRes.y); }
 `;
 
 function program(vs, fs, attrs) {
@@ -177,7 +183,7 @@ gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
 gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-// Stamp data: centre and crease normal, then reach, slope and amount.
+// Stamp data: screen centre and crease normal, then reach, slope and amount.
 const MAXF = 4096;
 const inst = new Float32Array(MAXF * 8);
 let nInst = 0;
@@ -198,32 +204,39 @@ gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
 gl.vertexAttribDivisor(2, 1);
 gl.bindVertexArray(null);
 
-function target(w, h) {
+function target(w, h, mips = false) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
-  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  // Mips let squeezed foil sample its creases without shimmer.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+  if (mips) gl.generateMipmap(gl.TEXTURE_2D);
   [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
   const fb = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-  return { tex, fb, w, h };
+  return { tex, fb, w, h, mips, dirty: false };
 }
+// A changed field rebuilds its mips once, just before the sheet reads it.
+function mipUp(t) { if (!t.mips || !t.dirty) return; gl.bindTexture(gl.TEXTURE_2D, t.tex); gl.generateMipmap(gl.TEXTURE_2D); t.dirty = false; }
 const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
 
-/* ---------- the crease field ---------- */
-// Sheet units: the short side of the stage spans one unit, y points up.
-// A stamp draws one fold: a straight crease that fades with distance.
+/* ---------- the map and the crease field ---------- */
+// The map holds, per screen point, the offset to the foil material there.
+// The crease field lives in material space, so creases travel with the foil.
+// A stamp finds its material point through the map, then draws one fold.
 const STAMP_VS = `#version 300 es
 in vec2 aCorner; in vec4 aF; in vec4 aB;
-uniform vec2 uRes;
+uniform vec2 uRes; uniform sampler2D uD;
 out vec2 vQ; flat out vec4 vF; flat out vec4 vB;
+${UNITS}
 void main() {
-  float S = min(uRes.x, uRes.y);
-  vec2 q = aF.xy + aCorner * aB.x * 2.4;
-  vQ = q; vF = aF; vB = aB;
-  gl_Position = vec4(q * S * 2.0 / uRes, 0.0, 1.0);
+  vec2 c = aF.xy + textureLod(uD, toUv(aF.xy), 0.0).xy;
+  vec2 q = c + aCorner * aB.x * 2.4;
+  vQ = q; vF = vec4(c, aF.zw); vB = aB;
+  gl_Position = vec4(q * min(uRes.x, uRes.y) * 2.0 / uRes, 0.0, 1.0);
 }`;
 const STAMP_FS = `#version 300 es
 precision highp float;
@@ -235,7 +248,19 @@ void main() {
   float d = dot(dq, vF.zw);
   o = vec4(vB.y * w * d * inversesqrt(d * d + uEps) * vF.zw, vB.z * w, 0.0);
 }`;
-// Smoothing scales the field by the share of the press each texel saw.
+// A warp moves foil: mode 0 drags it along, mode 1 gathers it to a point.
+const WARP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uD; uniform vec2 uRes, uP, uDelta; uniform float uS, uR, uMode;
+in vec2 vUv; out vec4 o;
+${UNITS}
+void main() {
+  vec2 q = toQ(vUv), dq = q - uP;
+  float w = exp(-dot(dq, dq) / (uR * uR));
+  vec2 q2 = uMode < 0.5 ? q - uDelta * w : uP + dq * (1.0 + uS * w);
+  o = vec4(q2 + texture(uD, toUv(q2)).xy - q, 0.0, 1.0);
+}`;
+// Smoothing scales a target by the share of the press each texel saw.
 // A texel sits in the band while the front runs from x to x + uW.
 const MUL_FS = `#version 300 es
 precision highp float;
@@ -244,7 +269,7 @@ void main() {
   float e = max(0.0, min(uB, vUv.x + uW) - max(uA, vUv.x)) / uW;
   o = vec4(pow(uK, e));
 }`;
-// A resize copies the field across in sheet units.
+// A resize copies a target across in sheet units.
 const COPY_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc; uniform vec2 uNew, uOld; in vec2 vUv; out vec4 o;
@@ -255,15 +280,16 @@ void main() {
 }`;
 
 /* ---------- the sheet ---------- */
-// The sheet: field creases, fine crinkles, a mirror finish and a ceiling of lights.
+// The sheet: mapped foil, crease shading, a brushed mirror and a studio of lights.
 const SHEET_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uField;
-uniform vec2 uRes, uHalf, uStripC, uSoftC;
-uniform float uHolo, uStripA, uFine;
+uniform sampler2D uField, uD;
+uniform vec2 uRes, uHalf, uKeyC, uRimC, uSoftC;
+uniform float uHolo, uKeyA, uRimA, uFine, uAniso;
 uniform vec3 uF0, uTable;
 in vec2 vUv; out vec4 o;
 ${NOISE}
+${UNITS}
 // Fine crinkles: one short random fold per grid cell.
 vec2 crinkle(vec2 q, float k, float seed) {
   vec2 p = q * k, i = floor(p), g = vec2(0.0);
@@ -279,46 +305,93 @@ vec2 crinkle(vec2 q, float k, float seed) {
 }
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
 float sdBox(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
-// The ceiling: one strip light, one soft box and a dim room.
+vec2 mapM(vec2 q) { return q + texture(uD, toUv(q)).xy; }
+// One strip light, seen in the mirror; off shifts it for colour fringes.
+float bar(vec2 hit, vec2 c, float a, float len, float wid, float off) {
+  vec2 s = rot(-a) * (hit - c);
+  s.y += off;
+  return (1.0 - smoothstep(len * 0.7, len, abs(s.x))) * (1.0 - smoothstep(wid * 0.35, wid, abs(s.y)));
+}
+// The studio: a warm key strip, a cool rim strip, a soft box and a dim room.
 vec3 env(vec2 q, vec3 r) {
   float rz = max(r.z, 0.06);
   vec2 hit = q + r.xy / rz * 1.2;
-  vec2 s = rot(-uStripA) * (hit - uStripC);
-  float strip = (1.0 - smoothstep(0.55, 0.8, abs(s.x))) * (1.0 - smoothstep(0.018, 0.045, abs(s.y)));
+  float d = 0.014 * uHolo;
+  vec3 key = vec3(bar(hit, uKeyC, uKeyA, 0.8, 0.045, -d), bar(hit, uKeyC, uKeyA, 0.8, 0.045, 0.0), bar(hit, uKeyC, uKeyA, 0.8, 0.045, d));
+  vec3 rim = vec3(bar(hit, uRimC, uRimA, 1.3, 0.05, -d * 1.5), bar(hit, uRimC, uRimA, 1.3, 0.05, 0.0), bar(hit, uRimC, uRimA, 1.3, 0.05, d * 1.5));
   vec2 b = hit - uSoftC;
-  float soft = exp(-dot(b, b) * 5.0);
+  float soft = exp(-dot(b, b) * 4.0);
   // The room is dim and uneven, so each facet finds its own shade.
   float m = vnoise(hit * 0.9 + 4.0);
-  float room = 0.004 + 0.07 * m * m * m + 0.03 * (1.0 - smoothstep(0.2, 0.9, rz));
-  return vec3(1.0, 0.95, 0.87) * strip * 7.0 + vec3(0.55, 0.62, 0.8) * soft * 0.1 + vec3(room);
+  float room = 0.004 + 0.06 * m * m * m;
+  float low = 1.0 - smoothstep(0.15, 0.8, rz);
+  return key * vec3(1.0, 0.94, 0.85) * 7.0 + rim * vec3(0.55, 0.7, 1.0) * 1.4
+    + vec3(0.6, 0.66, 0.8) * soft * 0.06 + vec3(room) + vec3(0.035, 0.028, 0.02) * low;
 }
 void main() {
   float S = min(uRes.x, uRes.y);
-  vec2 q = (vUv * uRes - 0.5 * uRes) / S;
-  vec4 f = texture(uField, vUv);
-  // Slopes saturate, as real foil only folds so far.
-  vec2 gf = f.xy / (1.0 + 0.35 * length(f.xy));
-  float A = 1.0 - exp(-f.z * 1.3);
+  vec2 q = toQ(vUv);
+  vec2 m = mapM(q);
+  // The map's Jacobian: how much foil sits under one screen step.
+  float h = 3.0 / S;
+  mat2 J = mat2((mapM(q + vec2(h, 0.0)) - mapM(q - vec2(h, 0.0))) / (2.0 * h),
+                (mapM(q + vec2(0.0, h)) - mapM(q - vec2(0.0, h))) / (2.0 * h));
+  float det = max(determinant(J), 0.05);
+  // Squeezed foil crinkles by itself.
+  float comp = max(0.0, log(det));
+  vec4 f = texture(uField, toUv(m));
+  float A = 1.0 - exp(-(f.z * 1.3 + comp * 1.4));
   float mem = 0.04 + 0.96 * A;
-  // Scrunched foil pulls its edge in and roughens it.
-  float edge = sdBox(q, uHalf) + A * 0.05 + A * (vnoise(q * 13.0) - 0.5) * 0.06;
-  float aa = 1.5 / S;
-  float cover = 1.0 - smoothstep(-aa, aa, edge);
-  // Big folds fade where the foil holds little scrunch.
-  vec2 g = gf * (0.15 + 0.85 * A) + (crinkle(q, 9.0 * uFine, 3.0) * 0.34 + crinkle(q, 22.0 * uFine, 6.0) * 0.22) * mem;
+  // Slopes saturate, as real foil only folds so far.
+  vec2 gm = f.xy / (1.0 + 0.35 * length(f.xy)) * (0.15 + 0.85 * A);
+  // A crinkle layer fades out once its cells shrink below a few pixels.
+  float sq = sqrt(det);
+  vec3 k = vec3(11.0, 26.0, 58.0) * uFine;
+  vec3 wk = 1.0 - smoothstep(0.1, 0.2, k * sq / S);
+  gm += (crinkle(m, k.x, 3.0) * 0.3 * wk.x + crinkle(m, k.y, 6.0) * 0.22 * wk.y + crinkle(m, k.z, 9.0) * 0.14 * wk.z) * mem;
+  gm += (vec2(vnoise(m * 90.0), vnoise(m * 90.0 + 5.0)) - 0.5) * 0.006;
+  // Squeezed foil folds steeper; an even scale avoids radial streaks.
+  vec2 g = gm * min(sq, 2.2);
+  // Hard-squeezed foil becomes a ball of small screen-scale facets.
+  float ball = smoothstep(0.35, 1.6, comp);
+  g += (crinkle(q, 34.0, 12.0) * 0.32 + crinkle(q, 80.0, 15.0) * 0.18 * (1.0 - smoothstep(0.1, 0.2, 80.0 / S))) * ball;
+  g /= 1.0 + 0.25 * length(g);
   // A broad sag keeps even the flat sheet from a perfect mirror.
   g += (vec2(vnoise(q * 2.2 + 3.0), vnoise(q * 2.2 + 8.0)) - 0.5) * 0.05;
-  g += (vec2(vnoise(q * 90.0), vnoise(q * 90.0 + 5.0)) - 0.5) * 0.006;
   vec3 n = normalize(vec3(-g, 1.0));
-  vec3 r = reflect(vec3(0.0, 0.0, -1.0), n);
-  // Holo shifts the hue with the facet tilt.
-  float hue = fract(dot(g, vec2(1.1, 0.7)) + dot(q, vec2(0.22, 0.12)));
+  // The roll marks run along the material x axis.
+  vec2 tx = vec2(J[1].y, -J[0].y);
+  vec3 T = vec3(tx / max(length(tx), 1e-4), 0.0);
+  T = normalize(T - n * dot(n, T));
+  vec3 e = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec3 nk = normalize(n + T * (float(i) - 1.5) * uAniso);
+    e += env(q, reflect(vec3(0.0, 0.0, -1.0), nk));
+  }
+  e *= 0.25;
+  // Holo shifts the hue with tilt and view, like a thin film.
+  float hue = fract(dot(g, vec2(1.1, 0.7)) * 1.2 + dot(m, vec2(0.22, 0.12)) + n.z * 0.6);
   vec3 pal = 0.5 + 0.5 * cos(6.2832 * (hue + vec3(0.0, 0.33, 0.67)));
   vec3 F0 = mix(uF0, uF0 * (0.5 + 0.6 * pal), uHolo);
   vec3 F = mix(F0, vec3(1.0), pow(1.0 - n.z, 5.0) * 0.5);
-  vec3 c = env(q, r) * F + F0 * 0.006;
-  // The table: flat dark, with a soft shadow under the sheet.
-  float sh = 1.0 - 0.6 * (1.0 - smoothstep(-0.02, 0.06, sdBox(q - vec2(0.012, -0.018), uHalf) + A * 0.05));
+  vec3 c = e * F + F0 * 0.006;
+  // Valleys fall into shade; ridges catch a little more light.
+  float hm = 3.0 / S;
+  float lap = texture(uField, toUv(m + vec2(hm, 0.0))).x - texture(uField, toUv(m - vec2(hm, 0.0))).x
+            + texture(uField, toUv(m + vec2(0.0, hm))).y - texture(uField, toUv(m - vec2(0.0, hm))).y;
+  lap *= 0.5 * (0.15 + 0.85 * A);
+  c *= (1.0 - clamp(lap * 1.6, 0.0, 0.7)) * (1.0 + clamp(-lap * 0.5, 0.0, 0.25));
+  // Dense crumple traps its own light.
+  c *= 1.0 - 0.3 * A * A;
+  // The edge: rough where scrunched, with a thin lit lip.
+  float edge = sdBox(m, uHalf) + A * (vnoise(m * 13.0) - 0.5) * 0.05;
+  float aa = max(fwidth(edge), 1e-5);
+  float cover = 1.0 - smoothstep(-aa, aa, edge);
+  c += F * e * 0.25 * (1.0 - smoothstep(0.0, 4.0 * aa, -edge));
+  // The table: scrunched foil lifts, so its shadow spreads and drifts.
+  vec2 q2 = q - vec2(0.012, -0.018) * (1.0 + 3.0 * A);
+  float ws = 0.02 + 0.06 * A;
+  float sh = 1.0 - 0.65 * (1.0 - smoothstep(-ws, ws, sdBox(mapM(q2), uHalf)));
   o = vec4(mix(uTable * sh, c, cover), 1.0);
 }`;
 // The bright pass keeps only light above a soft threshold.
@@ -352,6 +425,7 @@ void main() {
 }`;
 const P = {
   stamp: program(STAMP_VS, STAMP_FS, ['aCorner', 'aF', 'aB']),
+  warp: program(QUAD_VS, WARP_FS, ['aPos']),
   mul: program(QUAD_VS, MUL_FS, ['aPos']),
   copy: program(QUAD_VS, COPY_FS, ['aPos']),
   sheet: program(QUAD_VS, SHEET_FS, ['aPos']),
@@ -360,13 +434,34 @@ const P = {
   out: program(QUAD_VS, OUT_FS, ['aPos']),
 };
 
-let W = 1, H = 1, field = null, frame = null, bl = [], wd = [];
+let W = 1, H = 1, field = null, dmap = [], di = 0, frame = null, bl = [], wd = [];
 function quad(dst, prog) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
   gl.viewport(0, 0, dst ? dst.w : W, dst ? dst.h : H);
   gl.useProgram(prog.p); gl.bindVertexArray(quadVao);
 }
 const bind = (unit, tex, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(loc, unit); };
+const zero = t => { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); };
+
+/* ---------- warps ---------- */
+// One warp pass reads the map and writes the other copy.
+function warp(mode, x, y, dx, dy, s, r) {
+  flush();
+  quad(dmap[1 - di], P.warp);
+  const u = P.warp.u;
+  bind(0, dmap[di].tex, u.uD);
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform2f(u.uP, x, y); gl.uniform2f(u.uDelta, dx, dy);
+  gl.uniform1f(u.uS, s); gl.uniform1f(u.uR, r); gl.uniform1f(u.uMode, mode);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  di = 1 - di;
+}
+// A long drag splits into short steps, so the foil never folds through itself.
+const GRAB = 0.13;
+function pull(x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0, n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 0.03));
+  for (let i = 1; i <= n; i++) warp(0, x0 + dx * i / n, y0 + dy * i / n, dx / n, dy / n, 0, GRAB);
+}
 
 /* ---------- stamps ---------- */
 function push(x, y, a, reach, slope, amt) {
@@ -382,30 +477,33 @@ function flush() {
   gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, nInst * 8);
   gl.uniform2f(P.stamp.u.uRes, field.w, field.h);
+  bind(0, dmap[di].tex, P.stamp.u.uD);
   // The crease is about one field texel wide.
-  gl.uniform1f(P.stamp.u.uEps, (1 / Math.min(field.w, field.h)) ** 2);
+  gl.uniform1f(P.stamp.u.uEps, (0.8 / Math.min(field.w, field.h)) ** 2);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nInst);
   gl.disable(gl.BLEND);
   nInst = 0;
+  field.dirty = true;
 }
-function clearField() { nInst = 0; gl.bindFramebuffer(gl.FRAMEBUFFER, field.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
 const sign = R => (R() < 0.5 ? -1 : 1);
 const gauss = R => Math.sqrt(-2 * Math.log(R() + 1e-9)) * Math.cos(6.2832 * R());
 // A seeded random stream makes the first view the same each time.
 function rng(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-// A full scrunch: big, mid and small folds round one centre.
+// A full scrunch: big, mid and small folds round one centre, then a gather.
 function scrunchAt(cx, cy, R = Math.random) {
   const k = reachK();
-  for (let i = 0; i < 80; i++) {
-    const big = i < 10, mid = i < 35;
+  for (let i = 0; i < 140; i++) {
+    const big = i < 8, mid = i < 40;
     const sp = big ? 0.24 : mid ? 0.22 : 0.2;
     const x = cx + gauss(R) * sp, y = cy + gauss(R) * sp * 0.85;
     const a = R() < 0.3 ? R() * Math.PI : Math.atan2(y - cy, x - cx) + (R() - 0.5) * 2.1;
     const reach = (big ? 0.42 : mid ? 0.2 : 0.09) * k * (0.7 + 0.6 * R());
-    push(x, y, a, reach, (big ? 0.32 : mid ? 0.26 : 0.2) * sign(R) * (0.6 + 0.8 * R()), 0);
+    push(x, y, a, reach, (big ? 0.16 : mid ? 0.2 : 0.2) * sign(R) * (0.6 + 0.8 * R()), 0);
   }
-  push(cx, cy, 0, 0.36, 0, 1.4);
+  push(cx, cy, 0, 0.3, 0, 0.8);
+  flush();
+  for (let i = 0; i < 3; i++) warp(1, cx, cy, 0, 0, 0.12, 0.3);
 }
 // A drag step: creases form across the direction of the pull.
 function scrunchStep(x, y, ux, uy, speed) {
@@ -415,7 +513,17 @@ function scrunchStep(x, y, ux, uy, speed) {
     const reach = (0.03 + 0.1 * R() * R()) * k * (1 + Math.min(speed, 3) * 0.15);
     push(x + gauss(R) * 0.05, y + gauss(R) * 0.05, a, reach, sign(R) * (0.08 + 0.14 * R()), 0);
   }
-  push(x, y, 0, 0.11, 0, 0.07);
+  push(x, y, 0, 0.1, 0, 0.05);
+}
+// A crush step: creases at all angles, a few radiating from the fist.
+function crushStep(x, y, n) {
+  const R = Math.random, k = reachK();
+  for (let i = 0; i < n; i++) {
+    const th = R() * 6.2832, r = 0.02 + 0.16 * R();
+    const a = R() < 0.3 ? th + Math.PI / 2 + (R() - 0.5) * 0.8 : R() * Math.PI;
+    push(x + Math.cos(th) * r, y + Math.sin(th) * r, a, (0.03 + 0.07 * R()) * k, sign(R) * (0.1 + 0.15 * R()), 0);
+  }
+  push(x, y, 0, 0.14, 0, 0.06);
 }
 // A tap pinches a star of creases round one point.
 function pinch(x, y) {
@@ -425,43 +533,63 @@ function pinch(x, y) {
     push(x + Math.cos(th) * r, y + Math.sin(th) * r, th + Math.PI / 2, (0.04 + 0.04 * R()) * k, sign(R) * (0.12 + 0.12 * R()), 0);
   }
   push(x, y, 0, 0.09, 0, 0.3);
+  flush();
+  warp(1, x, y, 0, 0, 0.35, 0.07);
 }
 
 /* ---------- smoothing ---------- */
-// The press sweeps left to right; creases keep a faint memory.
-const PRESS_T = 0.7, PRESS_W = 0.15, PRESS_K = 0.06;
+// The press sweeps left to right; it lays the foil back out flat.
+// Creases keep a faint memory; the shape returns almost fully.
+const PRESS_T = 0.8, PRESS_W = 0.15, PRESS_K = 0.06, PRESS_D = 0.002;
 const smooth = { on: false, x: 0 };
 // The front moves from a to b this frame.
-function mulBand(a, b, w, k) {
-  quad(field, P.mul);
+function mulBand(dst, a, b, w, k) {
+  quad(dst, P.mul);
   gl.uniform1f(P.mul.u.uA, a); gl.uniform1f(P.mul.u.uB, b); gl.uniform1f(P.mul.u.uW, w); gl.uniform1f(P.mul.u.uK, k);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.disable(gl.BLEND);
+  dst.dirty = true;
 }
 function smoothStep(dt) {
   if (!smooth.on) return;
   flush();
-  if (reduce) { mulBand(-1, 2, 0.5, PRESS_K); smooth.on = false; return; }
-  const x0 = smooth.x;
-  smooth.x = Math.min(1 + PRESS_W, x0 + Math.min(dt, 0.05) * (1 + PRESS_W) / PRESS_T);
-  mulBand(x0, smooth.x, PRESS_W, PRESS_K);
-  if (smooth.x >= 1 + PRESS_W) smooth.on = false;
+  let a = -1, b = 2, w = 0.5;
+  if (!reduce) {
+    a = smooth.x;
+    b = smooth.x = Math.min(1 + PRESS_W, a + Math.min(dt, 0.05) * (1 + PRESS_W) / PRESS_T);
+    w = PRESS_W;
+  }
+  mulBand(field, a, b, w, PRESS_K);
+  mulBand(dmap[di], a, b, w, PRESS_D);
+  if (reduce || smooth.x >= 1 + PRESS_W) smooth.on = false;
 }
 
 /* ---------- light ---------- */
-// The layout keeps the signed-off framing; the lights drift round it.
-let t = 0;
-function lights() {
+// The lights drift round the framing; the key follows the pointer when it can.
+let t = 0, hover = null, hoverT = -1e9;
+const key = { x: 0, y: 0, w: 0 };
+function layout() {
   const S = Math.min(W, H), ax = W / S, ay = H / S, tall = W < H;
   const m = tall ? 0.07 : 0.09;
-  const sx = Math.sin(t * 0.23), sy = Math.sin(t * 0.31 + 1.1), sa = Math.sin(t * 0.17 + 0.4);
+  const sx = Math.sin(t * 0.23), sy = Math.sin(t * 0.31 + 1.1), sa = Math.sin(t * 0.17 + 0.4), sb = Math.sin(t * 0.11 + 2.0);
+  const drift = tall ? [0.02 + sx * 0.25, -ay * 0.02 + sy * ay * 0.3] : [ax * 0.04 + sx * ax * 0.3, -0.03 + sy * 0.22];
   return {
     half: [ax * 0.5 - m, ay * 0.5 - m],
-    strip: tall ? [0.02 + sx * 0.25, -ay * 0.02 + sy * ay * 0.3] : [ax * 0.04 + sx * ax * 0.3, -0.03 + sy * 0.22],
-    stripA: (tall ? 1.2 : -0.38) + sa * 0.45,
+    key: [lerp(drift[0], key.x, key.w), lerp(drift[1], key.y, key.w)],
+    keyA: (tall ? 1.2 : -0.38) + sa * 0.45,
+    rim: tall ? [-0.3 + sb * 0.2, ay * 0.35] : [-ax * 0.3, 0.38 + sb * 0.1],
+    rimA: (tall ? -0.5 : 0.9) + sb * 0.3,
     soft: tall ? [-0.4 + sy * 0.2, -ay * 0.4 + sx * 0.3] : [ax * 0.42 - sy * 0.3, 0.42 - sx * 0.15],
   };
+}
+// The key eases toward the hover point or the finger.
+function lightStep(dt) {
+  const goal = hover || (drag ? [drag.x, drag.y + 0.1] : null);
+  const k = reduce ? 1 : 1 - Math.exp(-dt / 0.22);
+  if (goal) { key.x = key.w < 0.01 ? goal[0] : lerp(key.x, goal[0], k); key.y = key.w < 0.01 ? goal[1] : lerp(key.y, goal[1], k); }
+  key.w = lerp(key.w, goal ? 0.85 : 0, reduce ? 1 : 1 - Math.exp(-dt / 0.6));
+  return Math.abs(key.w - (goal ? 0.85 : 0)) > 0.01;
 }
 // The first view puts the scrunch where the blockout had it.
 function homeScrunch() {
@@ -476,17 +604,20 @@ function blur(pair) {
 }
 function render() {
   flush();
-  const L = lights(), M = METALS[opts.metal];
+  mipUp(field);
+  const L = layout(), M = METALS[opts.metal];
   quad(frame, P.sheet);
   const u = P.sheet.u;
   bind(0, field.tex, u.uField);
+  bind(1, dmap[di].tex, u.uD);
   gl.uniform2f(u.uRes, W, H);
   gl.uniform2fv(u.uHalf, L.half);
-  gl.uniform2fv(u.uStripC, L.strip);
-  gl.uniform1f(u.uStripA, L.stripA);
+  gl.uniform2fv(u.uKeyC, L.key); gl.uniform1f(u.uKeyA, L.keyA);
+  gl.uniform2fv(u.uRimC, L.rim); gl.uniform1f(u.uRimA, L.rimA);
   gl.uniform2fv(u.uSoftC, L.soft);
   gl.uniform1f(u.uFine, 0.7 + opts.creases * 0.6);
   gl.uniform1f(u.uHolo, M.holo);
+  gl.uniform1f(u.uAniso, M.aniso);
   gl.uniform3fv(u.uF0, linFit(...M.f0));
   gl.uniform3fv(u.uTable, linFit(0.1, 0.005, 70));
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -519,7 +650,7 @@ function voice() {
 }
 function tick(level) {
   const ac = kit.live();
-  if (!ac || !kit.noise || tickBudget <= 0) return;
+  if (!ac || !kit.noise || tickBudget < 1) return;
   tickBudget--;
   const now = ac.currentTime + Math.random() * 0.02, dur = 0.006 + Math.random() * 0.03;
   const src = ac.createBufferSource(); src.buffer = kit.noise;
@@ -532,12 +663,12 @@ function tick(level) {
   src.connect(bp).connect(g).connect(kit.out);
   src.start(now, Math.random() * (kit.noise.duration - 0.1), dur + 0.01);
 }
-function rustle(speed) {
+function rustle(level, bright) {
   const v = voice();
   if (!v) return;
   const at = kit.ac.currentTime;
-  v.g.gain.setTargetAtTime(Math.min(0.12, speed * 0.05), at, 0.04);
-  v.bp.frequency.setTargetAtTime(1800 + Math.min(speed, 4) * 900, at, 0.06);
+  v.g.gain.setTargetAtTime(Math.min(0.14, level), at, 0.04);
+  v.bp.frequency.setTargetAtTime(1600 + bright * 900, at, 0.06);
 }
 // The press makes one soft sweep of hiss.
 function hiss() {
@@ -545,13 +676,16 @@ function hiss() {
   if (!ac || !kit.noise) return;
   const now = ac.currentTime, src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
   const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
-  bp.frequency.setValueAtTime(5200, now); bp.frequency.exponentialRampToValueAtTime(1400, now + 0.7);
+  bp.frequency.setValueAtTime(5200, now); bp.frequency.exponentialRampToValueAtTime(1400, now + PRESS_T);
   const g = ac.createGain();
-  g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.09, now + 0.08); g.gain.exponentialRampToValueAtTime(0.0005, now + 0.8);
+  g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.09, now + 0.08); g.gain.exponentialRampToValueAtTime(0.0005, now + PRESS_T + 0.1);
   src.connect(bp).connect(g).connect(kit.out);
-  src.start(now); src.stop(now + 0.85);
+  src.start(now); src.stop(now + PRESS_T + 0.15);
 }
 function hush() { if (V && kit.ac) V.g.gain.setTargetAtTime(0, kit.ac.currentTime, 0.03); }
+// A touch device gives a faint buzz as the foil gives.
+let buzzT = 0;
+function buzz(ms, e) { if (e === 'touch' && performance.now() - buzzT > 60) { buzzT = performance.now(); navigator.vibrate?.(ms); } }
 
 /* ---------- input ---------- */
 let drag = null, speed = 0;
@@ -562,36 +696,44 @@ function toQ(e) {
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0 || drag) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
-  const [x, y] = toQ(e);
-  drag = { id: e.pointerId, x, y, x0: x, y0: y, t0: performance.now(), tm: performance.now(), run: 0, moved: false };
+  const [x, y] = toQ(e), now = performance.now();
+  drag = { id: e.pointerId, kind: e.pointerType, x, y, x0: x, y0: y, t0: now, tm: now, run: 0, moved: false, crush: 0, pend: [] };
   stage.classList.add('is-drag');
   poke();
 });
 stage.addEventListener('pointermove', e => {
-  if (!drag || e.pointerId !== drag.id) return;
   const [x, y] = toQ(e), now = performance.now();
+  if (!drag) {
+    if (e.pointerType === 'mouse') { hover = [x, y]; hoverT = now; poke(); }
+    return;
+  }
+  if (e.pointerId !== drag.id) return;
+  if (e.pointerType === 'mouse') hover = null;
   const dx = x - drag.x, dy = y - drag.y, d = Math.hypot(dx, dy);
   if (d < 1e-4) return;
   const dt = Math.max(0.004, (now - drag.tm) / 1000);
   speed = lerp(speed, d / dt, 0.4);
   if (Math.hypot(x - drag.x0, y - drag.y0) > 0.012) drag.moved = true;
-  // One step per hundredth of a unit keeps density even at any speed.
+  drag.pend.push([drag.x, drag.y, x, y]);
+  // One crease step per hundredth of a unit keeps density even at any speed.
   const ux = dx / d, uy = dy / d;
   let run = drag.run + d, s = 0;
   while (run >= 0.01) {
     run -= 0.01; s += 0.01;
-    const px = drag.x + ux * s, py = drag.y + uy * s;
-    scrunchStep(px, py, ux, uy, speed);
+    scrunchStep(drag.x + ux * s, drag.y + uy * s, ux, uy, speed);
     if (Math.random() < Math.min(0.9, speed * 0.6)) tick(0.12 + Math.min(speed, 3) * 0.06);
   }
+  if (s) buzz(4, drag.kind);
   drag.run = run; drag.x = x; drag.y = y; drag.tm = now;
   poke();
 });
+stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !drag) hover = null; });
 function end(e) {
   if (!drag || (e && e.pointerId !== drag.id)) return;
-  if (!drag.moved && performance.now() - drag.t0 < 350) {
+  if (!drag.moved && !drag.crush && performance.now() - drag.t0 < 300) {
     pinch(drag.x0, drag.y0);
     for (let i = 0; i < 6; i++) tick(0.22);
+    buzz(12, drag.kind);
   }
   drag = null; speed = 0;
   stage.classList.remove('is-drag');
@@ -602,9 +744,9 @@ stage.addEventListener('pointercancel', end);
 stage.addEventListener('lostpointercapture', end);
 
 /* ---------- loop ---------- */
-let raf = 0, last = 0, visible = true, ready = false, lastInput = performance.now(), rate = 1;
-// Dragging and pressing run at full rate; the drifting light at 30 fps.
-const lively = () => !!drag || smooth.on;
+let raf = 0, last = 0, visible = true, ready = false, lastInput = performance.now(), rate = 1, easing = false;
+// Touching, pressing, hovering and easing run at full rate; the drift at 30 fps.
+const lively = () => !!drag || smooth.on || easing || performance.now() - hoverT < 400;
 function frameFn(now) {
   raf = 0;
   const live = lively();
@@ -622,12 +764,30 @@ function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimati
 // Any input wakes the loop and resets the sleep clock.
 function poke() { lastInput = performance.now(); rate = 1; wake(); }
 function step(dt, now) {
-  // After a minute without input, the light eases to a stop over 2 s.
+  // After a minute without input, the drift eases to a stop over 2 s.
   rate = reduce ? 0 : clamp(1 - ((now - lastInput) / 1000 - 60) / 2);
   t += dt * rate;
-  tickBudget = Math.min(6, tickBudget + dt * 90);
-  if (drag && now - drag.tm > 60) speed *= Math.exp(-dt / 0.05);
-  rustle(drag ? speed : 0);
+  tickBudget = Math.min(8, tickBudget + dt * 120);
+  let level = 0, bright = 0;
+  if (drag) {
+    for (const p of drag.pend) pull(...p);
+    drag.pend.length = 0;
+    if (now - drag.tm > 60) speed *= Math.exp(-dt / 0.05);
+    level = speed * 0.05; bright = Math.min(speed, 4);
+    // A still finger crushes the foil into a ball, up to a limit.
+    if (now - drag.tm > 160 && now - drag.t0 > 220 && drag.crush < 2.5) {
+      const s = Math.min(dt, 0.05) * 0.9;
+      drag.crush += s;
+      crushStep(drag.x, drag.y, 3);
+      flush();
+      warp(1, drag.x, drag.y, 0, 0, s, 0.2);
+      level = 0.06 + 0.05 * Math.random(); bright = 2.5;
+      for (let i = 0; i < 3; i++) if (Math.random() < 0.7) tick(0.18 + 0.12 * Math.random());
+      buzz(6, drag.kind);
+    }
+  }
+  rustle(level, bright);
+  easing = lightStep(dt);
   smoothStep(dt);
   if (lively()) watchdog(dt);
   return rate > 0;
@@ -651,25 +811,32 @@ function fit() {
   // On High the first rung falls back to Standard, not to 1x.
   return quality() === 'high' && rung === 1 ? fitCanvas(canvas, { budget: 2.2e6, quality: 'standard' }) : fitCanvas(canvas, { budget: 2.2e6, maxDpr: 1 });
 }
+function copyInto(dst, src, oW, oH) {
+  quad(dst, P.copy);
+  bind(0, src.tex, P.copy.u.uSrc);
+  gl.uniform2f(P.copy.u.uNew, W, H); gl.uniform2f(P.copy.u.uOld, oW, oH);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
 function resize(force = false) {
   const f = fit();
   if (f.W === W && f.H === H && field && !force) return;
-  const old = field, oW = W, oH = H;
+  flush();
+  const oldF = field, oldD = dmap[di], oW = W, oH = H;
   W = f.W; H = f.H;
   [...bl, ...wd].forEach(drop); if (frame) drop(frame);
+  if (dmap.length) drop(dmap[1 - di]);
   frame = target(W, H);
-  // The field runs at half size; the crinkles add the fine detail.
-  field = target(Math.max(1, (W + 1) >> 1), Math.max(1, (H + 1) >> 1));
+  // The field keeps full size for crisp creases; the map is smooth at half size.
+  field = target(W, H, true);
+  const hw = Math.max(1, (W + 1) >> 1), hh = Math.max(1, (H + 1) >> 1);
+  dmap = [target(hw, hh), target(hw, hh)]; di = 0;
   const sh = rung >= 2 ? 3 : 2;
   const bw = Math.max(1, W >> sh), bh = Math.max(1, H >> sh);
   bl = [target(bw, bh), target(bw, bh)];
   wd = [target(Math.max(1, bw >> 2), Math.max(1, bh >> 2)), target(Math.max(1, bw >> 2), Math.max(1, bh >> 2))];
-  if (old) {
-    quad(field, P.copy);
-    bind(0, old.tex, P.copy.u.uSrc);
-    gl.uniform2f(P.copy.u.uNew, W, H); gl.uniform2f(P.copy.u.uOld, oW, oH);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    drop(old);
+  if (oldF) {
+    copyInto(field, oldF, oW, oH); drop(oldF); field.dirty = true;
+    copyInto(dmap[0], oldD, oW, oH); drop(oldD);
   } else {
     const [cx, cy] = homeScrunch();
     scrunchAt(cx, cy, rng(37));
@@ -690,10 +857,10 @@ creasesEl.value = String(opts.creases);
 creasesEl.addEventListener('input', () => { opts.creases = +creasesEl.value; save('creases', opts.creases); poke(); });
 choices(document.getElementById('metal'), v => { opts.metal = v; save('metal', v); poke(); }).set(opts.metal);
 document.getElementById('smooth').addEventListener('click', () => { smooth.on = true; smooth.x = 0; hiss(); poke(); });
-// Shuffle drops the old creases and scrunches one or two new spots.
+// Shuffle lays a fresh sheet and scrunches one or two spots.
 document.getElementById('shuffle').addEventListener('click', () => {
-  smooth.on = false;
-  clearField();
+  smooth.on = false; nInst = 0;
+  zero(field); zero(dmap[0]); zero(dmap[1]); field.dirty = true;
   const S = Math.min(W, H), ax = W / S, ay = H / S;
   const spots = Math.random() < 0.5 ? 1 : 2;
   for (let i = 0; i < spots; i++) scrunchAt((Math.random() - 0.5) * ax * 0.7, (Math.random() - 0.5) * ay * 0.6);
