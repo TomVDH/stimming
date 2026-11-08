@@ -174,6 +174,8 @@ const NL = 24;
 const lights = [];
 function addLight(pos, col, power, range, dir = null, cos = -2) {
   lights.push({ pos, col, power, range, dir: dir || new THREE.Vector3(0, -1, 0), cos });
+  // Lights past the cap never reach the shaders.
+  if (lights.length === NL + 1) console.warn(`port: more than ${NL} lights; the extra lights drop`);
 }
 
 // Glint list: the strongest sources throw a column of dashes on the sea.
@@ -409,7 +411,8 @@ const flameMat = new THREE.ShaderMaterial({
 });
 
 // Rails: dark steel that throws back each lamp as a sharp glint.
-// A rail under one pixel wide widens to 1.5 px and dims to match.
+// A rail under one pixel wide widens to 1.5 px.
+// Its light dims to match the true width.
 const railMat = new THREE.ShaderMaterial({
   uniforms: { ...k2, ...lightU, ...projU },
   vertexShader: /* glsl */`
@@ -486,7 +489,7 @@ const flareMat = new THREE.ShaderMaterial({
     float on = smoothstep(0.0, 0.06, b) * (1.0 - smoothstep(0.45, 0.55, b));
     vC *= mix(1.0, 0.12 + 0.88 * on, red);
     vec4 mv = viewMatrix * w;
-    // A pin keeps its colour dim, so it stays under the bloom threshold.
+    // A pin keeps its colour dim, under the bloom threshold.
     float lum = dot(vC, vec3(0.2126, 0.7152, 0.0722));
     vC *= mix(1.0, min(1.0, 0.69 / max(lum, 1e-4)), aPin);
     gl_PointSize = mix(clamp(size * uScale / -mv.z, 2.0, 48.0), clamp(size * uScale / -mv.z, 1.0, 3.0), aPin);
@@ -600,7 +603,8 @@ function box(x, y, z, w, h, d, ry = 0, list = parts, col = null) {
   if (col) paint(g, col);
   list.push(g.toNonIndexed());
 }
-// A rail box carries each vertex's offset across the rail, for pixel widening.
+// A rail box carries each vertex's offset across the rail.
+// The pixel widening uses this offset.
 function rail(x, y, z, ry) {
   const g = new THREE.BoxGeometry(0.14, 0.22, 10.05);
   const pos = g.attributes.position, across = new Float32Array(pos.count * 3);
@@ -774,7 +778,8 @@ const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2,
     if (s < 360) addLight(head, new THREE.Vector3(...SODIUM), 0.45, 9);
   }
 }
-// Terminal portal: the deck lands on an embankment and enters a lit block.
+// Terminal portal: the deck lands on an embankment.
+// The track then enters a lit block.
 const PORTAL_S = LEN + 10;
 // A box on the straight track past LEN.
 // Across 99 marks a part with no joints.
@@ -789,9 +794,11 @@ function slab(s0, s1, u0, u1, y0, y1) {
   castParts.push(h);
 }
 {
-  // The embankment is a sloped wedge from the deck down to the sea.
+  // The embankment slopes from the deck down to the sea.
   sweep([[-10, -3.6], [10, -3.6], [13, -30], [-13, -30]], LEN - 40, PORTAL_S, 4);
-  // The block is 60 m wide, 80 m deep and 42 m tall.
+  // The block is 60 m wide.
+  // The block is 80 m deep.
+  // The block is 42 m tall.
   // The mouth is 9 m wide.
   slab(PORTAL_S, PORTAL_S + 80, -30, -4.5, 0, 42);
   slab(PORTAL_S, PORTAL_S + 80, 4.5, 30, 0, 42);
@@ -919,6 +926,8 @@ const train = (() => {
   // The tail is orange-red, so the warning-light blink skips it.
   lampG.setAttribute('color', new THREE.Float32BufferAttribute([...scale([1, 0.2, 0.1], 6), ...scale([1, 0.2, 0.1], 6), ...scale(WHITE, 9), ...scale(WHITE, 9)], 3));
   lampG.setAttribute('size', new THREE.Float32BufferAttribute([70, 70, 120, 120], 1));
+  // The train lamps are flares, not pins.
+  lampG.setAttribute('aPin', new THREE.Float32BufferAttribute(new Float32Array(4), 1));
   const lamps = new THREE.Points(lampG, flareMat);
   lamps.renderOrder = 3; lamps.frustumCulled = false; lamps.userData.live = true; scene.add(lamps);
   const head = new THREE.Vector3();
@@ -1074,9 +1083,20 @@ const buildings = [];
       plumes.lit.push(3.2 - k * 0.45);
     }
   }
+  // The terminal block footprint, as a test on a world point.
+  const blockC = atX(PORTAL_S + 40);
+  const inBlock = (x, z) => {
+    const dx = x - blockC.x, dz = z - blockC.z;
+    const a = dx * blockC.tan.x + dz * blockC.tan.y, b = dz * blockC.tan.x - dx * blockC.tan.y;
+    return Math.abs(a) < 43 && Math.abs(b) < 33;
+  };
   // Gantry cranes along the quay, booms over the water, lights along the booms.
   for (let i = 0; i < 7; i++) {
-    const x = CX + (i / 6 - 0.5) * 1500 + range(-40, 40), z = QUAY - 20, h = range(60, 85);
+    let x = CX + (i / 6 - 0.5) * 1500 + range(-40, 40);
+    const z = QUAY - 20, h = range(60, 85);
+    // A crane leg in the block moves the crane away from it.
+    const away = Math.sign(x - blockC.x) || 1;
+    while ([-20, 20].some(dx => inBlock(x + dx, z) || inBlock(x + dx, z - 22))) x += away * 4;
     for (const dx of [-20, 20]) for (const dz of [0, -22]) box(x + dx, 0, z + dz, 2.6, h, 2.6);
     box(x, h, z - 11, 46, 5, 28);
     box(x, h + 2, z + 34, 5, 3.5, 92);
@@ -1097,7 +1117,11 @@ const buildings = [];
     if (i % 2 === 0) addLight(head, new THREE.Vector3(1, 0.72, 0.42), 2.5, 50, dir, Math.cos(0.6));
   }
   // Red blinkers on every tall top.
-  tops.forEach((t, i) => { if (i % 2 === 0) flare(t, scale(RED, 7), 200); else pin(t, scale(RED, 7)); if (i % 2 === 0) addGlint(t, RED, 1.5, 0.15); });
+  // Even tops flare and throw a glint; odd tops are pins.
+  tops.forEach((t, i) => {
+    if (i % 2) pin(t, scale(RED, 7));
+    else { flare(t, scale(RED, 7), 200); addGlint(t, RED, 1.5, 0.15); }
+  });
   // Window fields: a few warm and cool sources stand in for lit facades.
   for (let i = 0; i < 14; i++) addGlint(new THREE.Vector3(CX + range(-950, 950), range(12, 40), QUAY - range(80, 260)), i % 3 ? SODIUM : FLUO, 1.0, 0.12);
 }
@@ -1317,7 +1341,8 @@ sea.updateMatrixWorld();
 // The bake calls the mirror once; the sea mesh never draws itself.
 const mirror = sea.onBeforeRender;
 sea.onBeforeRender = () => {};
-// Rides render the mirror every second call; the sea keeps the last one.
+// Rides render the mirror on every second call.
+// The sea keeps the last mirror between calls.
 let mirrorTick = 0;
 const mirrorHalf = function (...a) { if ((mirrorTick++ & 1) === 0) mirror.apply(this, a); };
 
@@ -1664,10 +1689,12 @@ function bake(renderer) {
 
   /* Motion: one clock drives the ambient life; trains run out and back. */
 train.place(175, 1, sea);
-// t counts seconds since the train left its end; 99 means already at cruise.
+// t counts seconds since the train left its end.
+// A t of 99 means the train is at cruise.
 const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false, t: 99 };
 let runPause = 6;
-// END sits behind the mouth plane, so the tail hides out of view.
+// END sits 2 m behind the warm plane in the mouth.
+// The tail hides there, out of view.
 const END = PORTAL_S + 32, START = -160;
 let time = 0, rt = 0, paceNow = 1, parked = false;
 // A parked train (QA) holds still at any speed setting.
@@ -1740,8 +1767,9 @@ function sendTrain() {
 // A tap on the water drops a ripple; a tap on the sky sends a train.
 function tap(ndc) {
   if (!ndc) return sendTrain();
-  // During a ride, any tap returns to the wide shot.
+  // A tap during the ease back does nothing.
   if (chase.mode === 2) return;
+  // A tap during a ride ends it.
   if (chase.mode === 1) return endChase();
   if (!chase.mode && train.on && hitTrain(ndc)) return startChase();
   ray.setFromCamera(ndc, camera);
@@ -1808,7 +1836,8 @@ function startChase() {
   chase.mode = 1; chase.t = 0;
   chase.s = run.s + run.dir * LEAD;
   chase.fresh = true;
-  // A ride stops the idle slowdown. The train still brakes at the ends.
+  // A ride stops the idle slowdown.
+  // The train still brakes at the ends.
   run.user = true;
   setLive(true);
 }
