@@ -142,12 +142,15 @@ let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
 // Each sky sets the latitude and where the camera points.
+// The dome is the town glow azimuth, in degrees.
 const SKIES = {
-  north: { lat: 51, az: 0, fov: 74, pole: true },
-  south: { lat: -34, az: 180, fov: 66, pole: false },
-  equator: { lat: 0.5, az: 90, fov: 62, pole: false },
+  north: { lat: 51, az: 0, fov: 74, pole: true, dome: 28 },
+  south: { lat: -34, az: 180, fov: 66, pole: false, dome: 152 },
+  equator: { lat: 0.5, az: 90, fov: 62, pole: false, dome: 116 },
 };
 const OMEGA = 0.055;  // sky turn in radians per second, sped up
+// Plate energy per unit of star brightness per second.
+const FLUX = 11;
 // Exposure maps the slider to how long trails last, in seconds.
 const tau = () => 4 * Math.pow(18, opts.expo);
 
@@ -171,6 +174,12 @@ float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
 float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
 `;
+// The ridge line in pixels; the bloom and final passes share it.
+const RIDGE = `
+float ridgeY(float x, vec2 res, float horizon, float seed) {
+  float u = x / res.y;
+  return horizon + res.y * (0.06 * fbm(vec2(u * 1.1 + seed, 1.0)) + 0.012 * fbm(vec2(u * 8.0 + seed, 4.0)) - 0.036);
+}`;
 
 /* ---------- K1: accumulation and decay ---------- */
 // Sonar and Cloud chamber copy this section.
@@ -213,53 +222,87 @@ void main() {
 const SKY_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc; uniform vec2 uRes; uniform float uFocal, uTime;
-uniform vec3 uF, uR, uU, uP, uB1, uB2, uGal;
-uniform float uTheta, uMono;
+uniform vec3 uF, uR, uU, uP, uB1, uB2, uGal, uGC;
+uniform float uTheta, uMono, uDomeAz;
 in vec2 vUv; out vec4 o;
 ${NOISE}
 void main() {
   vec2 px = vUv * uRes - uRes * 0.5;
   vec3 d = normalize(uF + uR * px.x / uFocal + uU * px.y / uFocal);
-  float el = d.y;
-  vec3 zen = vec3(0.004, 0.006, 0.018), hor = vec3(0.03, 0.04, 0.075);
-  vec3 c = mix(hor, zen, pow(clamp(el, 0.0, 1.0), 0.55));
+  float el = d.y, up = max(el, 0.0);
+  vec3 zen = vec3(0.0012, 0.0021, 0.0068), hor = vec3(0.014, 0.019, 0.034);
+  vec3 c = mix(hor, zen, pow(clamp(el, 0.0, 1.0), 0.42));
   // Airglow lies as a faint green band a few degrees up.
-  c += vec3(0.012, 0.03, 0.016) * exp(-pow((el - 0.1) / 0.07, 2.0));
-  c += vec3(0.03, 0.022, 0.016) * exp(-max(el, 0.0) * 22.0);
+  c += vec3(0.004, 0.012, 0.006) * exp(-pow((el - 0.12) / 0.08, 2.0));
+  // A distant town lights a warm dome low on one side.
+  float da = atan(d.x, -d.z) - uDomeAz; da = atan(sin(da), cos(da));
+  c += vec3(0.042, 0.021, 0.008) * exp(-up * 10.0) * exp(-da * da * 2.2);
+  c += vec3(0.011, 0.011, 0.014) * exp(-up * 34.0);
   // Back to sky coordinates, then turn by -theta.
   float cp = cos(-uTheta), sp = sin(-uTheta);
   vec3 q = vec3(dot(d, uB1), dot(d, uB2), dot(d, uP));
   vec3 e = vec3(cp * q.x - sp * q.y, sp * q.x + cp * q.y, q.z);
   float g = dot(e, uGal);
   vec2 gp = vec2(atan(e.y, e.x) * 3.0, g * 9.0);
-  float band = exp(-g * g * 28.0) * (0.35 + 0.65 * fbm(gp * 1.6)) * (0.6 + 0.6 * fbm(gp * 4.0 + 3.0));
-  float dust = smoothstep(0.55, 0.75, fbm(gp * 2.4 + 9.0)) * exp(-g * g * 90.0);
-  c += vec3(0.05, 0.048, 0.055) * band * (1.0 - dust * 0.8) * smoothstep(-0.02, 0.2, el);
+  // The core of the galaxy is wider, brighter and warmer.
+  float core = smoothstep(0.2, 1.0, dot(e, uGC));
+  float wide = mix(30.0, 9.0, core);
+  float band = exp(-g * g * wide) * (0.3 + 0.7 * fbm(gp * 1.6)) * (0.55 + 0.7 * fbm(gp * 4.0 + 3.0));
+  float dust = smoothstep(0.5, 0.72, fbm(gp * 2.4 + 9.0)) * exp(-g * g * 110.0);
+  vec3 mw = mix(vec3(0.034, 0.036, 0.046), vec3(0.075, 0.06, 0.045), core) * (1.0 + 1.6 * core);
+  c += mw * band * (1.0 - dust * 0.85) * smoothstep(-0.02, 0.25, el);
   // The plate holds raw light; a soft curve keeps cores from clipping.
   vec3 acc = texture(uSrc, vUv).rgb;
   acc = mix(acc, vec3(dot(acc, vec3(0.3, 0.5, 0.2))), uMono);
   c += 1.0 - exp(-acc * 1.6);
   o = vec4(c, 1.0);
 }`;
-// The final pass: the ridge, grain, vignette and output curve.
-const OUT_FS = `#version 300 es
+// Bloom input: bright parts only, with the ridge cut out.
+const BRIGHT_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform vec2 uRes; uniform float uHorizon, uTime, uSeed;
+uniform sampler2D uSrc; uniform vec2 uRes; uniform float uHorizon, uSeed;
 in vec2 vUv; out vec4 o;
-${NOISE}
+${NOISE}${RIDGE}
 void main() {
   vec3 c = texture(uSrc, vUv).rgb;
   vec2 px = vUv * uRes;
-  float x = px.x / uRes.y;
-  float ridge = uHorizon + uRes.y * (0.035 * fbm(vec2(x * 2.2 + uSeed, 1.0)) + 0.012 * fbm(vec2(x * 9.0 + uSeed, 4.0)) - 0.02);
+  c *= smoothstep(-1.5, 1.5, px.y - ridgeY(px.x, uRes, uHorizon, uSeed));
+  float l = max(c.r, max(c.g, c.b));
+  o = vec4(c * smoothstep(0.1, 0.7, l), 1.0);
+}`;
+// A nine-tap Gaussian in five reads, along one axis.
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uDir; in vec2 vUv; out vec4 o;
+void main() {
+  vec3 s = texture(uSrc, vUv).rgb * 0.227027;
+  s += (texture(uSrc, vUv + uDir * 1.384615).rgb + texture(uSrc, vUv - uDir * 1.384615).rgb) * 0.316216;
+  s += (texture(uSrc, vUv + uDir * 3.230769).rgb + texture(uSrc, vUv - uDir * 3.230769).rgb) * 0.070270;
+  o = vec4(s, 1.0);
+}`;
+// The final pass: the ridge, bloom, grain, vignette and output curve.
+const OUT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc, uB1, uB2; uniform vec2 uRes; uniform float uHorizon, uTime, uSeed;
+in vec2 vUv; out vec4 o;
+${NOISE}${RIDGE}
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb;
+  vec2 px = vUv * uRes;
+  float ridge = ridgeY(px.x, uRes, uHorizon, uSeed);
   float m = smoothstep(ridge - 1.2, ridge + 1.2, px.y);
-  // The ridge keeps a faint lift from the sky glow at its edge.
-  vec3 land = vec3(0.006, 0.007, 0.012) + vec3(0.02, 0.022, 0.03) * exp(-max(ridge - px.y, 0.0) / (uRes.y * 0.01));
+  // The land holds a trace of sky light, darker toward the frame foot.
+  float below = max(ridge - px.y, 0.0) / uRes.y;
+  vec3 land = vec3(0.0016, 0.0019, 0.003) * (0.4 + 0.6 * exp(-below * 12.0));
   c = mix(land, c, m);
+  // Lens bloom spreads over the ridge edge, as glare does.
+  c += texture(uB1, vUv).rgb * 0.32 + texture(uB2, vUv).rgb * 0.22;
   vec2 q = vUv - 0.5;
-  c *= 1.0 - dot(q * vec2(1.0, 1.3), q) * 0.9;
-  c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * 0.007;
+  c *= 1.0 - dot(q * vec2(1.0, 1.3), q) * 0.8;
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  // Grain is coarser in the shadows, as on film.
+  float lum = dot(c, vec3(0.3, 0.55, 0.15));
+  c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * mix(0.022, 0.008, clamp(lum * 3.0, 0.0, 1.0));
   o = vec4(c, 1.0);
 }`;
 
@@ -281,6 +324,8 @@ const P = {
   decay: program(QUAD_VS, DECAY, ['aPos']),
   seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
   sky: program(QUAD_VS, SKY_FS, ['aPos']),
+  bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
+  blur: program(QUAD_VS, BLUR_FS, ['aPos']),
   out: program(QUAD_VS, OUT_FS, ['aPos']),
 };
 
@@ -360,7 +405,10 @@ function mulberry(a) {
 }
 const MAXSTAR = 9000;
 const star = { ra: new Float32Array(MAXSTAR), cd: new Float32Array(MAXSTAR), sd: new Float32Array(MAXSTAR), b: new Float32Array(MAXSTAR), col: new Float32Array(MAXSTAR * 3), ph: new Float32Array(MAXSTAR) };
-const GAL = (() => { const v = [0.45, -0.55, 0.7]; const l = Math.hypot(...v); return v.map(x => x / l); })();
+const unit = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+const GAL = unit([0.45, -0.55, 0.7]);
+// The galactic core lies in the plane, at a right angle to its pole.
+const GC = unit([GAL[1] * 1 - GAL[2] * 0.2, GAL[2] * 0.6 - GAL[0] * 1, GAL[0] * 0.2 - GAL[1] * 0.6]);
 {
   const rand = mulberry(11);
   for (let i = 0; i < MAXSTAR; i++) {
@@ -376,9 +424,12 @@ const GAL = (() => { const v = [0.45, -0.55, 0.7]; const l = Math.hypot(...v); r
     star.sd[i] = z; star.cd[i] = Math.sqrt(1 - z * z);
     // Brightness follows a steep power law: few bright, many faint.
     star.b[i] = 0.04 + 2.6 * Math.pow(rand(), 9);
-    // Temperature sets hue: cool stars warm, hot stars blue.
+    // Temperature sets hue: cool stars orange, hot stars blue.
     const T = rand();
-    const lc = T < 0.25 ? linFit(0.88, 0.07, 60) : T < 0.7 ? linFit(0.95, 0.015, 95) : linFit(0.88, 0.06, 245);
+    const u = T < 0.38 ? T / 0.38 : (T - 0.7) / 0.3;
+    const lc = T < 0.38 ? linFit(lerp(0.8, 0.93, u), lerp(0.15, 0.05, u), lerp(45, 78, u))
+      : T < 0.7 ? linFit(0.96, 0.025, 92)
+      : linFit(0.9, lerp(0.04, 0.12, u), 255);
     star.col.set(lc, i * 3);
     star.ph[i] = rand() * TAU;
   }
@@ -432,25 +483,46 @@ function starWeight(i, el) {
   // Air near the horizon dims and reddens the light.
   return star.b[i] * clamp((el + 0.02) / 0.2) ** 1.5;
 }
-function pushSeg(n, a, b, i, k, width) {
+// The shift moves colour between red and blue for low stars.
+function pushSeg(n, a, b, i, k, width, shift = 0) {
   const o = n * 8;
   inst[o] = a[0]; inst[o + 1] = a[1]; inst[o + 2] = b[0]; inst[o + 3] = b[1];
   const lo = clamp(a[2] * 4);
-  inst[o + 4] = star.col[i * 3] * k; inst[o + 5] = star.col[i * 3 + 1] * k * (0.8 + 0.2 * lo); inst[o + 6] = star.col[i * 3 + 2] * k * (0.6 + 0.4 * lo);
+  inst[o + 4] = star.col[i * 3] * k * (1 + shift);
+  inst[o + 5] = star.col[i * 3 + 1] * k * (0.8 + 0.2 * lo);
+  inst[o + 6] = star.col[i * 3 + 2] * k * (0.6 + 0.4 * lo) * (1 - shift);
   inst[o + 7] = width;
 }
+// Scintillation: low stars flicker in brightness and colour.
+// It follows sky time, so trails bead the same at any frame rate.
+const scint = { k: 1, shift: 0 };
+function scintillate(i, th, el) {
+  const s = th / OMEGA, p = star.ph[i];
+  const amp = 0.06 + 0.8 * clamp(1 - el * 5) ** 2;
+  const a = Math.sin(s * (2.1 + (i % 5) * 0.37) + p) + 0.6 * Math.sin(s * (3.7 + (i % 3) * 0.51) + p * 2.3);
+  scint.k = 1 + amp * a * 0.6;
+  scint.shift = amp * 0.45 * Math.sin(s * (1.7 + (i % 4) * 0.29) + p * 3.1);
+  return scint;
+}
 // Arcs from th0 to th1, split so each piece stays short.
+// Energy per piece is flux times dwell time, so slow stars burn in.
 function exposeArcs(th0, th1, gain) {
-  const steps = Math.min(6, Math.max(1, Math.ceil(Math.abs(th1 - th0) / 0.01)));
+  const steps = Math.min(120, Math.max(1, Math.ceil(Math.abs(th1 - th0) / 0.006)));
+  const dts = Math.abs(th1 - th0) / steps / OMEGA;
   let n = 0;
   const count = Math.min(opts.count, MAXSTAR);
   for (let i = 0; i < count; i++) {
+    const width = (0.55 + 0.5 * Math.min(1, star.b[i])) * dpr;
     for (let s = 0; s < steps; s++) {
       const a0 = lerp(th0, th1, s / steps), a1 = lerp(th0, th1, (s + 1) / steps);
       if (!project(i, a0, pa) || !project(i, a1, pb)) continue;
-      const w = starWeight(i, (pa[2] + pb[2]) / 2);
+      const el = (pa[2] + pb[2]) / 2;
+      const w = starWeight(i, el);
       if (w <= 0.002) continue;
-      pushSeg(n++, pa, pb, i, w * gain, (0.55 + 0.5 * Math.min(1, star.b[i])) * dpr);
+      const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+      const dwell = dts * Math.min(1, 1.8 * width / Math.max(L, 1e-4));
+      const sc = scintillate(i, (a0 + a1) / 2, el);
+      pushSeg(n++, pa, pb, i, w * FLUX * dwell * sc.k * gain, width, sc.shift);
       if (n >= MAXSEG) { segPass(acc[ai], n); n = 0; }
     }
   }
@@ -464,8 +536,12 @@ function drawLiveStars(dst) {
     let w = starWeight(i, pa[2]);
     if (w <= 0.004) continue;
     // Low stars twinkle more through thicker air.
-    if (!reduce) w *= 1 + (0.18 + 0.5 * clamp(1 - pa[2] * 3)) * Math.sin(t * (3 + (i % 7)) + star.ph[i]);
-    pushSeg(n++, pa, pa, i, w * 0.9, (0.65 + 0.7 * Math.min(1.4, star.b[i])) * dpr);
+    let shift = 0;
+    if (!reduce) {
+      const sc = scintillate(i, t * OMEGA * 2.4, pa[2]);
+      w *= sc.k; shift = sc.shift;
+    }
+    pushSeg(n++, pa, pa, i, w * 0.9, (0.65 + 0.7 * Math.min(1.4, star.b[i])) * dpr, shift);
   }
   segPass(dst, n);
 }
@@ -476,8 +552,12 @@ function drawMeteors(dt) {
     const a = m.age / m.life, b = Math.min(1, (m.age + dt) / m.life);
     m.age += dt;
     const p0 = [lerp(m.x0, m.x1, a), lerp(m.y0, m.y1, a), 1], p1 = [lerp(m.x0, m.x1, b), lerp(m.y0, m.y1, b), 1];
+    // A meteor swells, flares once and burns out, green at its brightest.
+    const mid = (a + b) / 2;
+    const env = Math.sin(PI * mid) ** 1.4 * (1 + 1.2 * Math.exp(-(((mid - m.flare) / 0.06) ** 2))) * (0.85 + 0.3 * Math.random());
+    const g = env * m.k;
     const o = n * 8;
-    inst.set([p0[0], p0[1], p1[0], p1[1], 2.2 * m.k, 2.4 * m.k, 2.6 * m.k, 1.1 * dpr], o);
+    inst.set([p0[0], p0[1], p1[0], p1[1], 1.3 * g, 2.1 * g, 1.6 * g, (0.7 + 0.35 * env) * dpr], o);
     n++;
     if (m.age >= m.life) meteors.splice(k, 1);
   }
@@ -486,7 +566,7 @@ function drawMeteors(dt) {
 function spawnMeteor() {
   const a = Math.random() * TAU, len = (0.15 + Math.random() * 0.25) * W;
   const x0 = W * (0.15 + Math.random() * 0.7), y0 = cam.horizon + (H - cam.horizon) * (0.35 + Math.random() * 0.55);
-  meteors.push({ x0, y0, x1: x0 + Math.cos(a) * len, y1: Math.max(cam.horizon, y0 + Math.sin(a) * len * 0.6 - len * 0.3), age: 0, life: 0.35 + Math.random() * 0.4, k: 0.5 + Math.random() * 0.8 });
+  meteors.push({ x0, y0, x1: x0 + Math.cos(a) * len, y1: Math.max(cam.horizon, y0 + Math.sin(a) * len * 0.6 - len * 0.3), age: 0, life: 0.35 + Math.random() * 0.4, k: 0.5 + Math.random() * 0.8, flare: 0.45 + Math.random() * 0.35 });
 }
 
 /* ---------- loop ---------- */
@@ -523,20 +603,49 @@ function render() {
   gl.uniform1f(u.uTime, t);
   gl.uniform3fv(u.uF, cam.F); gl.uniform3fv(u.uR, cam.R); gl.uniform3fv(u.uU, cam.U);
   gl.uniform3fv(u.uP, cam.P); gl.uniform3fv(u.uB1, cam.B1); gl.uniform3fv(u.uB2, cam.B2);
-  gl.uniform3fv(u.uGal, GAL);
+  gl.uniform3fv(u.uGal, GAL); gl.uniform3fv(u.uGC, GC);
   gl.uniform1f(u.uTheta, theta);
   gl.uniform1f(u.uMono, opts.tint === 'mono' ? 1 : 0);
+  gl.uniform1f(u.uDomeAz, SKIES[opts.sky].dome * D2R);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   drawLiveStars(frame);
+  const seed = { north: 3.1, south: 11.7, equator: 21.4 }[opts.sky];
+  bloomPass(seed);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
   gl.useProgram(P.out.p); gl.bindVertexArray(quadVao);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.tex);
-  gl.uniform1i(P.out.u.uSrc, 0);
+  [frame, bloom[0], bloom[3]].forEach((b, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, b.tex); });
+  gl.uniform1i(P.out.u.uSrc, 0); gl.uniform1i(P.out.u.uB1, 1); gl.uniform1i(P.out.u.uB2, 2);
   gl.uniform2f(P.out.u.uRes, W, H);
   gl.uniform1f(P.out.u.uHorizon, cam.horizon);
   gl.uniform1f(P.out.u.uTime, t);
-  gl.uniform1f(P.out.u.uSeed, { north: 3.1, south: 11.7, equator: 21.4 }[opts.sky]);
+  gl.uniform1f(P.out.u.uSeed, seed);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.activeTexture(gl.TEXTURE0);
+}
+// Bloom: bright pass at half size, then a blur at half and quarter size.
+// bloom[0] holds the near glow; bloom[3] holds the wide halo.
+let bloom = [];
+function quadInto(dst, prog, src) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(prog.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(prog.u.uSrc, 0);
+}
+function blur(dst, src, dx, dy) {
+  quadInto(dst, P.blur, src);
+  gl.uniform2f(P.blur.u.uDir, dx / dst.w, dy / dst.h);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function bloomPass(seed) {
+  const [h1, h2, q1, q2] = bloom;
+  gl.bindVertexArray(quadVao);
+  quadInto(h1, P.bright, frame);
+  gl.uniform2f(P.bright.u.uRes, W, H);
+  gl.uniform1f(P.bright.u.uHorizon, cam.horizon);
+  gl.uniform1f(P.bright.u.uSeed, seed);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  blur(h2, h1, 1, 0); blur(h1, h2, 0, 1);
+  blur(q1, h1, 1, 0); blur(q2, q1, 0, 1);
 }
 
 /* ---------- shutter ---------- */
@@ -568,9 +677,11 @@ function resize() {
   const fit = fitCanvas(canvas, { budget: 2.2e6 });
   if (fit.W === W && fit.H === H && acc.length) return;
   W = fit.W; H = fit.H; dpr = fit.dpr;
-  acc.forEach(drop); if (frame) drop(frame);
+  acc.forEach(drop); bloom.forEach(drop); if (frame) drop(frame);
   acc = [target(W, H), target(W, H)]; ai = 0;
   frame = target(W, H);
+  const hw = Math.max(1, W >> 1), hh = Math.max(1, H >> 1), qw = Math.max(1, W >> 2), qh = Math.max(1, H >> 2);
+  bloom = [target(hw, hh), target(hw, hh), target(qw, qh), target(qw, qh)];
   setCamera();
   preExpose();
   if (ready) { render(); wake(); }
