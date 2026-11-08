@@ -17,7 +17,11 @@
 :root { --stage: oklch(0.1 0.01 260); }
 .stage--window { cursor: grab; touch-action: none; }
 .stage--window.dragging { cursor: grabbing; }
-.stage--window.on-shade { cursor: ns-resize; }
+/* The Dim chip shows its level as four small pips. */
+#dimBtn .pips { display: inline-flex; gap: 3px; margin-left: 7px; }
+#dimBtn .pips i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.22; }
+#dimBtn[data-level="1"] .pips i:nth-child(-n+1), #dimBtn[data-level="2"] .pips i:nth-child(-n+2),
+#dimBtn[data-level="3"] .pips i:nth-child(-n+3), #dimBtn[data-level="4"] .pips i { opacity: 0.95; }
 .stage--window canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.8s ease;
@@ -52,7 +56,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a night flight, the wing below. Towns glow on the ground; storms flash inside the clouds. Drag to drift along, pull the shade, tap a storm to make it flash.">
+    <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a night flight, the wing below. Towns glow on the ground; storms flash inside the clouds. Drag to peer around, dim the glass, tap a storm to make it flash.">
       <p class="fail" hidden>Window seat needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -61,9 +65,9 @@
         <button class="chip" type="button" data-value="night" aria-pressed="false">Midnight</button>
         <button class="chip" type="button" data-value="dawn" aria-pressed="false">Dawn</button>
       </div>
-      <label class="slider"><span>Storm</span><input type="range" id="storm" min="0" max="1" step="0.01" value="0.5" aria-label="Storm: how many cells and how often they flash"></label>
+      <label class="slider"><span>Storm</span><input type="range" id="storm" min="0" max="1" step="0.01" value="0" aria-label="Storm: how many cells and how often they flash"></label>
       <div class="actions">
-        <button class="chip" id="shadeBtn" type="button">Shade</button>
+        <button class="chip" id="dimBtn" type="button" data-level="0" aria-label="Dim the glass: clear">Dim<span class="pips" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
       </div>
       <div class="edge">
         <div class="adder" id="setter">
@@ -84,7 +88,6 @@
         <dl class="how" aria-label="How to play">
           <div><dt>Drag</dt><dd>lean and peer</dd></div>
           <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>lean closer</dd></div>
-          <div><dt>Shade</dt><dd>drag its lip</dd></div>
           <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>a storm flashes</dd></div>
         </dl>
       </div>
@@ -133,9 +136,10 @@ const save = (k, v) => { try { localStorage.setItem(`stimming.window.${k}`, Stri
 const num = (k, d) => { const v = saved(k); return v != null && isFinite(+v) ? +v : d; };
 const opts = {
   hour: saved('hour') || 'dusk',
-  storm: num('storm', 0.5),
+  storm: num('storm', 0),
   cloud: num('cloud', 0.5),
   towns: num('towns', 1),
+  dim: num('dim', 0),
 };
 // A test hook sets values from the address, for screenshots.
 const qs = new URLSearchParams(location.search);
@@ -205,16 +209,16 @@ const ROLL = -6 * D2R;     // the camera tilts a little: a slanted, close look
 const WIN = {
   out: [0.2, 0.31], rOut: 0.19,     // the rim, where the bezel meets the wall
   inn: [0.16, 0.265], rIn: 0.15,    // the pane, at the bottom of the recess
-  depth: 0.07, slot: 0.026,         // pane depth and shade depth
+  depth: 0.07, slot: 0.026,         // pane depth and the old shade slot
   // Behind the scratch pane: the inner pane, then the outer pane in the skin.
   zIn: 0.082, zOut: 0.106,
   skin: [0.146, 0.248], rSkin: 0.136, // the skin opening, a little smaller
 };
 // The eye sits close, a little aft and above the window.
 // The head moves within a box around the rest pose, in metres.
-const EYE = [-0.14, 0.06, -0.4];
+const EYE = [-0.13, 0.06, -0.33];
 const AIM = [0.03, 0.0, 0.05];
-const REACH = { x: [-0.22, 0.2], y: [-0.1, 0.16], z: [-0.1, 0.22] };
+const REACH = { x: [-0.22, 0.2], y: [-0.1, 0.16], z: [-0.14, 0.17] };
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
@@ -377,7 +381,7 @@ function stepFlashes(dt) {
   }
 }
 
-/* ---------- head and shade ---------- */
+/* ---------- head and glass ---------- */
 // Drag moves the head; hover adds a small sway on mouse devices.
 const head = { x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0, hx: 0, hy: 0, thx: 0, thy: 0 };
 function moveHead(dx, dy, dz) {
@@ -385,9 +389,12 @@ function moveHead(dx, dy, dz) {
   head.ty = clamp(head.ty + dy, REACH.y[0], REACH.y[1]);
   head.tz = clamp(head.tz + dz, REACH.z[0], REACH.z[1]);
 }
-const shade = { v: 0.05, target: 0.05 };
-// The shade's lip height in window metres.
-const lipY = () => WIN.inn[1] + 0.02 - shade.v * (2 * WIN.inn[1] + 0.04);
+// The glass dims in five steps, from clear to deep blue.
+// The tint spreads from the rim inward: the edge leads, the centre follows.
+const dim = { edge: opts.dim / 4, core: opts.dim / 4 };
+const DIM_K = [4.6, 3.3, 2.2];
+// Light through the tinted pane, per colour channel.
+const dimT = v => DIM_K.map(k => Math.exp(-v * k));
 
 /* ---------- loop ---------- */
 let raf = 0, last = 0, visible = true, ready = false;
@@ -412,7 +419,9 @@ function step(dt) {
   const kh = 1 - Math.exp(-dt / 0.18);
   head.x += (head.tx - head.x) * kh; head.y += (head.ty - head.y) * kh; head.z += (head.tz - head.z) * kh;
   head.hx += (head.thx - head.hx) * k; head.hy += (head.thy - head.hy) * k;
-  shade.v += (shade.target - shade.v) * (1 - Math.exp(-dt / 0.12));
+  const goal = opts.dim / 4;
+  dim.edge += (goal - dim.edge) * (1 - Math.exp(-dt / (reduce ? 0.15 : 0.7)));
+  dim.core += (dim.edge - dim.core) * (1 - Math.exp(-dt / (reduce ? 0.15 : 1.8)));
   stepCells(dt);
   stepFlashes(dt);
 }
@@ -481,10 +490,12 @@ function render() {
   shared(u);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, outBuf.tex); gl.uniform1i(u.uOut, 2);
   gl.uniform1f(u.uDpr, dpr);
-  gl.uniform1f(u.uShade, shade.v);
+  gl.uniform1f(u.uDimE, dim.edge); gl.uniform1f(u.uDimC, dim.core);
   gl.uniform1f(u.uFlash, flash);
   gl.uniform1i(u.uSteps, marchSteps());
-  gl.uniform3fv(u.uGlow, sky.glow); gl.uniform3fv(u.uDisc, sky.disc); gl.uniform3fv(u.uTint, sky.tint);
+  // Less window light reaches the cabin through dimmed glass, and it turns blue.
+  const tg = dimT((dim.edge + dim.core) / 2);
+  gl.uniform3fv(u.uGlow, sky.glow.map((v, i) => v * tg[i])); gl.uniform3fv(u.uDisc, sky.disc); gl.uniform3fv(u.uTint, sky.tint);
   gl.uniform1f(u.uSunR, sky.sunR); gl.uniform1f(u.uSquash, sky.squash);
   gl.uniform1f(u.uMoon, sky.h.moon ? 1 : 0); gl.uniform1f(u.uStars, sky.h.stars);
   flareUniforms(u);
@@ -504,7 +515,7 @@ function sdBox2(x, y, bx, by, rr) {
   return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
 }
 // How much of a source shows through the glass, from 0 to 1.
-// The ray must clear the rim, the shade and the pane's edge.
+// The ray must clear the rim and the pane's edges.
 // rad is the source's angular radius; points get a 4 mm soft edge.
 function seen(dirA, rad = 0) {
   const e = basis.eye;
@@ -515,7 +526,6 @@ function seen(dirA, rad = 0) {
     const x = e[0] + dirA[0] * tt, y = e[1] + dirA[1] * tt;
     const bx = WIN.out[0] + (WIN.inn[0] - WIN.out[0]) * k, by = WIN.out[1] + (WIN.inn[1] - WIN.out[1]) * k;
     let sd = z === WIN.zOut ? sdBox2(x, y, WIN.skin[0], WIN.skin[1], WIN.rSkin) : sdBox2(x, y, bx, by, WIN.rOut + (WIN.rIn - WIN.rOut) * k);
-    if (z === WIN.slot && shade.v > 0.001) sd = Math.max(sd, y - lipY());
     // The disc's radius on this plane, in metres.
     const rr = Math.max(rad * tt, 0.002);
     cover = Math.min(cover, clamp(0.5 - sd / (2 * rr)));
@@ -565,7 +575,11 @@ const flr = new Float32Array(16), flrC = new Float32Array(12);
 const flareSeen = [0, 0, 0, 0];
 function flareUniforms(u) {
   flr.fill(0); flrC.fill(0);
+  // Each source shines through the tinted pane, dimmer and bluer.
+  const tc = dimT(dim.core), tl = lum(tc);
   const put = (i, dirW, gain, size, col, rad = 0) => {
+    gain *= tl;
+    col = col.map((v, c) => v * tc[c] / tl);
     const sp = screenOf(dirW);
     const vis = sp ? seen(norm(toAir(dirW)), rad) : 0;
     // Visibility eases, so a source does not pop at the rim.
@@ -618,19 +632,6 @@ function resize(force = false) {
 
 /* ---------- input ---------- */
 const toPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr]; };
-// The shade's lip is the grab zone for the shade.
-function onLip(x, y) {
-  setBasis();
-  const a = toScreen([-WIN.inn[0], lipY(), WIN.slot]), b = toScreen([WIN.inn[0], lipY(), WIN.slot]);
-  const ab = [b[0] - a[0], b[1] - a[1]], L2 = ab[0] ** 2 + ab[1] ** 2;
-  const k = clamp(((x - a[0]) * ab[0] + (y - a[1]) * ab[1]) / L2);
-  return Math.hypot(x - a[0] - ab[0] * k, y - a[1] - ab[1] * k) < 24 * dpr;
-}
-// Screen pixels per metre of shade travel, near the lip.
-function shadeScale() {
-  const a = toScreen([0, 0.1, WIN.slot]), b = toScreen([0, -0.1, WIN.slot]);
-  return Math.hypot(a[0] - b[0], a[1] - b[1]) / 0.2;
-}
 // A tap on a tower lights it at that spot; elsewhere it lights the deck.
 function tapAt(x, y) {
   setBasis();
@@ -663,7 +664,7 @@ stage.addEventListener('pointerdown', e => {
   const [x, y] = toPx(e);
   touches.set(e.pointerId, [x, y]);
   if (touches.size === 2) { pinch = spread(); if (drag) drag.moved = true; return; }
-  drag = { x0: x, y0: y, x, y, moved: false, shade: onLip(x, y), s0: shade.target };
+  drag = { x0: x, y0: y, x, y, moved: false };
   stage.classList.add('dragging');
 });
 stage.addEventListener('pointermove', e => {
@@ -677,9 +678,8 @@ stage.addEventListener('pointermove', e => {
     pinch = s2;
     return;
   }
-  if (!drag) { stage.classList.toggle('on-shade', onLip(x, y)); return; }
+  if (!drag) return;
   if (Math.hypot(x - drag.x0, y - drag.y0) > 6 * dpr) drag.moved = true;
-  if (drag.shade) { shade.target = clamp(drag.s0 - (y - drag.y0) / shadeScale() / (2 * WIN.inn[1] + 0.04)); return; }
   // The head follows the drag: right moves toward the nose, up rises.
   const k = 0.42 / Math.min(W, H);
   moveHead((x - drag.x) * k, (y - drag.y) * k, 0);
@@ -688,7 +688,7 @@ stage.addEventListener('pointermove', e => {
 function release(e) {
   touches.delete(e.pointerId);
   if (touches.size) return;
-  if (drag && !drag.moved && !drag.shade) tapAt(drag.x0, drag.y0);
+  if (drag && !drag.moved) tapAt(drag.x0, drag.y0);
   drag = null;
   stage.classList.remove('dragging');
 }
@@ -722,7 +722,14 @@ choices(document.getElementById('towns'), v => { opts.towns = +v; save('towns', 
 // Quality sets the canvas size, the pass 1 size and the march steps.
 qualitySetting(document.getElementById('sets'));
 onQuality(() => resize(true));
-document.getElementById('shadeBtn').addEventListener('click', () => { shade.target = shade.target > 0.5 ? 0.05 : 0.92; });
+// Dim steps through five levels, then back to clear.
+const dimBtn = document.getElementById('dimBtn');
+const showDim = () => {
+  dimBtn.dataset.level = String(opts.dim);
+  dimBtn.setAttribute('aria-label', opts.dim ? `Dim the glass: level ${opts.dim} of 4` : 'Dim the glass: clear');
+};
+showDim();
+dimBtn.addEventListener('click', () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); showDim(); });
 
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.

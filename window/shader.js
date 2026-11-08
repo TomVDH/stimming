@@ -471,7 +471,7 @@ void main() {
 export const cabinFS = ({ ALT, WIN }) => `#version 300 es
 precision highp float;
 ${common({ ALT, WIN })}
-uniform vec2 uRes; uniform float uTime, uDpr, uFocal, uShade, uFlash;
+uniform vec2 uRes; uniform float uTime, uDpr, uFocal, uFlash, uDimE, uDimC;
 uniform vec3 uF, uR, uU;
 uniform int uSteps;
 uniform sampler2D uOut;
@@ -658,37 +658,8 @@ void main() {
     if (hit > 0.0) {
       for (int k = 0; k < 5; k++) { float m = 0.5 * (z0 + hit); if (sdRecess(at(da, m), m) > 0.0) hit = m; else z0 = m; }
     }
-    // The shade slides in its slot, just behind the rim.
-    vec2 pS = at(da, SLOT);
-    float lipY = INB.y + 0.02 - uShade * (2.0 * INB.y + 0.04);
-    bool inSlot = sdRecess(pS, SLOT) < 0.0;
-    bool onShade = uShade > 0.001 && inSlot && pS.y > lipY && (hit < 0.0 || hit > SLOT);
     vec3 inner;
-    if (onShade) {
-      float above = pS.y - lipY;
-      // Grained plastic with a slight bow; the middle stands out into the light.
-      float bx = pS.x / INB.x, bow = 1.0 - bx * bx;
-      float grain = vnoise(vec2(pS.x * 2600.0, pS.y * 500.0)) * 0.6 + vnoise(pS * 9000.0) * 0.4;
-      vec3 sh = alb * 1.15 * (cabin * (0.5 + 0.7 * smoothstep(-0.2, 0.2, pS.y)) * (0.88 + 0.16 * bow) + eCol * E * 0.12);
-      sh *= 0.94 + 0.08 * grain;
-      // The lip: a chunky moulded bar along the shade's lower edge.
-      const float LIP = 0.014;
-      if (above < LIP) {
-        float u = above / LIP;
-        // Its face bulges: lit along the top, shaded underneath.
-        vec3 lip = alb * 1.3 * cabin * (0.7 + 0.55 * smoothstep(0.0, 0.7, u) - 0.25 * smoothstep(0.6, 1.0, u));
-        // A finger groove scoops into the middle of the lip.
-        float groove = smoothstep(1.0, 0.75, abs(pS.x) / 0.035) * smoothstep(0.12, 0.32, u) * smoothstep(0.88, 0.66, u);
-        lip *= 1.0 - 0.5 * groove * (1.2 - u);
-        lip *= 0.96 + 0.06 * grain;
-        // Window light catches the lip's lower edge.
-        lip += alb * (outGlow * 1.6 + eCol * E * 0.8) * smoothstep(0.0028, 0.0, above);
-        sh = lip;
-      }
-      // A shadow line runs where the lip meets the panel.
-      sh *= 1.0 - 0.5 * smoothstep(0.0022, 0.0, abs(above - LIP));
-      inner = sh;
-    } else if (hit > 0.0) {
+    if (hit > 0.0) {
       // Bezel: the tunnel wall faces into the hole and toward the cabin.
       vec2 ph = at(da, hit);
       float k = hit / DEPTH;
@@ -729,14 +700,17 @@ void main() {
         gasket += outGlow * 0.45 * smoothstep(aaI, 0.0, abs(sI));
         view = mix(view, gasket, smoothstep(-aaO, aaO, sSk));
       }
+      // The middle pane dims: the tint spreads in from the rim, a little mottled.
+      float eIn = smoothstep(0.0, 1.0, clamp(-sSk / 0.12, 0.0, 1.0));
+      float dm = mix(uDimE, uDimC, eIn) + (uDimE - uDimC) * (vnoise(pO * 40.0) - 0.5) * 0.6;
+      vec3 Tg = exp(-max(dm, 0.0) * vec3(4.6, 3.3, 2.2));
+      view = mix(view, view * Tg, smoothstep(aaO, -aaO, sSk));
       // Scratches on the scratch pane ring each bright source.
-      view += scratches(pG, px);
+      view += scratches(pG, px) * Tg;
       // A faint reflection of the lit cabin in the glass.
       view += vec3(0.0018, 0.0015, 0.0012) * smoothstep(0.2, -0.15, pG.x + pG.y * 0.5);
       float bh = length(pG - vec2(0.0, -INB.y * 0.72));
       view = mix(view, vec3(0.0), smoothstep(0.0028, 0.0018, bh) * 0.85);
-      // The shade's lip casts a short shadow down the glass.
-      view *= 1.0 - 0.45 * smoothstep(lipY - 0.03, lipY, pG.y) * step(0.001, uShade);
       inner = view;
     }
     // Soften the step from wall to rim over about a pixel.

@@ -28,3 +28,5 @@ Out: cabin wall detail, shade light leaks, the physical slide, shade sound.
 - Pass 1 now skips every pixel outside the skin opening, which is smaller than the scratch pane.
 - The scratch halos and ghosts are built but not yet seen in the pane: the sun sat outside the window in the check.
 - Tom asked for a larger, Dreamliner-like window: the visible glass is now about 27 by 47 cm, and the eye sits 40 cm from the wall.
+- Tom swapped the pull-down shade for Dreamliner-style glass dimming (five levels; the tint spreads in from the rim). The last shade build is commit 7fc2126: restore `window/index.html` and `window/shader.js` from it to go back.
+- Storm now starts at zero. The eye sits 33 cm from the wall, so the glass fills most of the frame height.
