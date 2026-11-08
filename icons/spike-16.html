@@ -68,6 +68,10 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
       <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
+    <radialGradient id="lit" cx="0.32" cy="0.26" r="0.7">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
     <!-- The lightbox: warm and bright at the top left, cool at the foot. -->
     <linearGradient id="ik-box" x1="0" y1="0" x2="0.7" y2="1">
       <stop offset="0" style="stop-color: oklch(0.98 0.02 85)"/>
@@ -125,42 +129,6 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       });
   };
 
-  // The new plume: a billowing cap whose ends roll under, a thin trail above, three wavy tendrils below.
-  // Billows: cx, cy, r. The two small ones are the rolled-under ends of the vortex ring.
-  const BILLOWS = [[46, 58, 12.5], [64, 50, 14.5], [82, 58, 12.5], [35, 66, 7], [93, 66, 7], [64, 63, 11]];
-  const TRAIL = 'M65 8c-3 10 3 20-1 30';
-  const TENDRILS = ['M50 68C43 80 57 86 48 99', 'M64 72C71 84 57 92 64 108', 'M78 68C85 80 71 86 80 99'];
-  const TIPS = [[48, 99, 4.6], [64, 108, 4.6], [80, 99, 4.6]];
-  // Each rolled end shows its curl: a short spiral inside the lobe.
-  const CURLS = ['M39 64c-6-3-3-13 5-11c5 1 5 8 0 8', 'M89 64c6-3 3-13-5-11c-5 1-5 8 0 8'];
-  const billowSvg = attrs => BILLOWS.map(([x, y, r]) => `<circle class="bil" cx="${x}" cy="${y}" r="${r}" ${attrs}/>`).join('');
-  // The bloom: the plume sinks in, the billows swell from small, the tendrils draw down, the tips pop.
-  const bloom = (svg, rise = 18) => {
-    const plume = svg.querySelector('.plume'), bils = svg.querySelectorAll('.bil'), tens = svg.querySelectorAll('.ten'), tips = svg.querySelectorAll('.tip');
-    return hoverLoop(
-      () => loop({ repeatDelay: 0.6 })
-        .fromTo(plume, { y: -rise }, { y: 0, duration: 1.3, ease: 'power2.out' })
-        .fromTo(bils, { scale: 0.45, transformOrigin: '50% 50%' }, { scale: 1, duration: 1.1, stagger: { each: 0.06, from: 'center' }, ease: 'back.out(1.6)' }, 0.1)
-        .fromTo(tens, { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.9, stagger: 0.12, ease: 'sine.in' }, 0.8)
-        .fromTo(tips, { scale: 0, transformOrigin: '50% 50%' }, { scale: 1, duration: 0.4, stagger: 0.12, ease: 'back.out(2.4)' }, 1.5),
-      () => {
-        gsap.to(plume, { y: 0, duration: 0.3, overwrite: true });
-        gsap.to(bils, { scale: 1, transformOrigin: '50% 50%', duration: 0.3, overwrite: true });
-        gsap.to(tens, { strokeDashoffset: 0, duration: 0.3, overwrite: true });
-        gsap.to(tips, { scale: 1, duration: 0.3, overwrite: true });
-      });
-  };
-  // The plume as one shaded group: billows, curls, tendrils and tips.
-  const plumeSvg = ({ ink, edge, curl, ten, trail, tw = 4.2 }) => `
-    <g class="plume">
-      <path d="${TRAIL}" fill="none" stroke="${trail}" stroke-width="2.6" stroke-linecap="round"/>
-      <g fill="none" stroke="${ten}" stroke-width="${tw}" stroke-linecap="round">${TENDRILS.map(d => `<path class="ten" pathLength="1" d="${d}"/>`).join('')}</g>
-      <g fill="${ten}">${TIPS.map(([x, y, r]) => `<circle class="tip" cx="${x}" cy="${y}" r="${r}"/>`).join('')}</g>
-      <g fill="${ink}" stroke="${edge}" stroke-width="1.6">${billowSvg('')}</g>
-      <g fill="${ink}">${billowSvg('')}</g>
-      <g fill="none" stroke="${curl}" stroke-width="2.2" stroke-linecap="round">${CURLS.map(d => `<path d="${d}"/>`).join('')}</g>
-    </g>`;
-
   const DIRS = [];
 
   /* ================= Current ================= */
@@ -195,119 +163,187 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     },
   });
 
+  // A teardrop: the tip at the top, a round belly of radius r centred at cx, cy.
+  const tear = (cx, cy, r, h) => `M${cx} ${cy - h}C${f(cx + r * 0.18)} ${f(cy - h * 0.55)} ${cx + r} ${f(cy - r * 0.85)} ${cx + r} ${cy}A${r} ${r} 0 0 1 ${cx - r} ${cy}C${cx - r} ${f(cy - r * 0.85)} ${f(cx - r * 0.18)} ${f(cy - h * 0.55)} ${cx} ${cy - h}Z`;
+  // A glossy drop: deep ink, the shared glint, a rim, and two highlights, as the bubbles have.
+  const dropSvg = (id, cx, cy, r, h, hue, L = 0.5) => `
+    <radialGradient id="${id}" cx="0.36" cy="0.42" r="0.75">
+      <stop offset="0" style="stop-color: oklch(${L + 0.18} 0.15 ${hue})"/>
+      <stop offset="0.7" style="stop-color: oklch(${L} 0.19 ${hue})"/>
+      <stop offset="1" style="stop-color: oklch(${L - 0.2} 0.15 ${hue})"/>
+    </radialGradient>
+    <path d="${tear(cx, cy, r, h)}" fill="url(#${id})"/>
+    <path d="${tear(cx, cy, r, h)}" fill="url(#lit)"/>
+    <path d="${tear(cx, cy, r, h)}" fill="none" stroke="url(#rim)" stroke-width="${f(Math.max(1.2, r * 0.07))}"/>
+    <ellipse cx="${f(cx - r * 0.42)}" cy="${f(cy - r * 0.38)}" rx="${f(r * 0.3)}" ry="${f(r * 0.15)}" transform="rotate(-50 ${f(cx - r * 0.42)} ${f(cy - r * 0.38)})" fill="#fff" fill-opacity="0.85"/>
+    <circle cx="${f(cx + r * 0.5)}" cy="${f(cy + r * 0.48)}" r="${f(r * 0.08)}" fill="#fff" fill-opacity="0.55"/>`;
+
   /* ================= A · Shaded object ================= */
 
-  // A backlit glass slab on its hard shadow; a billowing indigo plume hangs in the light.
+  // A porthole on dark water; side light catches a glowing ring of ink and its fine curls.
   DIRS.push({
     toy: 'ink', l: 'A', name: 'Shaded object', emblemUrl: 'spike/emblems/ink-a.svg',
-    box: [14, 6, 106, 108],
-    art(svg) {
-      svg.innerHTML = `
-        <rect x="21" y="13" width="99" height="101" rx="8" fill="oklch(0.07 0.01 260)"/>
-        <rect x="14" y="6" width="99" height="101" rx="8" fill="url(#ik-box)"/>
-        <rect x="14" y="6" width="99" height="101" rx="8" fill="none" stroke="url(#rim)" stroke-width="1.6"/>
-        ${plumeSvg({ ink: 'url(#ik-ink)', edge: 'oklch(0.7 0.1 255)', curl: 'oklch(0.72 0.1 255)', ten: 'oklch(0.36 0.16 266)', trail: 'oklch(0.55 0.12 262)' })}`;
-      return bloom(svg);
-    },
-  });
-
-  /* ================= B · Stencil cut-out ================= */
-
-  // A bright tile with the plume's silhouette cut through; the curls stay as bridges.
-  DIRS.push({
-    toy: 'ink', l: 'B', name: 'Stencil cut-out', emblemUrl: 'spike/emblems/ink-b.svg',
-    box: [12, 6, 104, 108],
+    box: [12, 12, 104, 104],
     art(svg, id) {
       svg.innerHTML = `
-        <defs><mask id="${id}m">
-          <rect x="12" y="6" width="104" height="108" rx="16" fill="#fff"/>
-          ${plumeSvg({ ink: '#000', edge: '#000', curl: '#fff', ten: '#000', trail: '#000', tw: 5 })}
-        </mask></defs>
-        <rect x="12" y="6" width="104" height="108" rx="16" fill="url(#ik-box)" mask="url(#${id}m)"/>
-        <rect x="12" y="6" width="104" height="108" rx="16" fill="none" stroke="url(#rim)" stroke-width="1.6"/>`;
-      return bloom(svg);
-    },
-  });
-
-  /* ================= C · Single-weight line ================= */
-
-  // One glowing stroke: the cap's top edge, both rolled ends spiralling under, three wavy tendrils.
-  DIRS.push({
-    toy: 'ink', l: 'C', name: 'Single-weight line', emblemUrl: 'spike/emblems/ink-c.svg',
-    box: [24, 6, 80, 108],
-    art(svg) {
-      const CAP = 'M30 68c-8-4-6-16 4-15c6 1 6 9 1 9M34 53c0-14 14-18 24-12c4-12 22-12 24 0c10-6 24-2 24 12M98 68c8-4 6-16-4-15c-6 1-6 9-1 9';
-      svg.innerHTML = `
-        <g class="plume" fill="none" stroke="oklch(0.84 0.1 258)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-          <path class="ten" pathLength="1" d="${TRAIL}"/>
-          <path class="ten" pathLength="1" d="${CAP}"/>
-          ${TENDRILS.map(d => `<path class="ten" pathLength="1" d="${d}"/>`).join('')}
-          ${TIPS.map(([x, y]) => `<circle class="tip" cx="${x}" cy="${y}" r="3.6"/>`).join('')}
-        </g>`;
-      const tens = svg.querySelectorAll('.ten'), tips = svg.querySelectorAll('.tip');
+        <defs>
+          <clipPath id="${id}c"><circle cx="64" cy="64" r="50"/></clipPath>
+          <radialGradient id="${id}w" cx="0.3" cy="0.28" r="0.85"><stop offset="0" style="stop-color: oklch(0.25 0.05 252)"/><stop offset="1" style="stop-color: oklch(0.1 0.03 266)"/></radialGradient>
+          <linearGradient id="${id}t" gradientUnits="userSpaceOnUse" x1="0" y1="66" x2="0" y2="106"><stop offset="0" style="stop-color: oklch(0.62 0.16 258)"/><stop offset="1" style="stop-color: oklch(0.62 0.16 258)" stop-opacity="0"/></linearGradient>
+          <linearGradient id="${id}r" gradientUnits="userSpaceOnUse" x1="0" y1="10" x2="0" y2="48"><stop offset="0" style="stop-color: oklch(0.7 0.12 255)" stop-opacity="0"/><stop offset="1" style="stop-color: oklch(0.7 0.12 255)"/></linearGradient>
+          <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter>
+        </defs>
+        <circle cx="64" cy="64" r="50" fill="url(#${id}w)"/>
+        <g clip-path="url(#${id}c)">
+          <path d="M6 26L48 6L122 96L104 124Z" fill="oklch(0.9 0.04 240)" opacity="0.06"/>
+          <g class="plume">
+            <path class="fil" pathLength="1" d="M66 12c-4 12 4 22-2 36" fill="none" stroke="url(#${id}r)" stroke-width="1.6" stroke-linecap="round"/>
+            <g fill="none" stroke="url(#${id}t)" stroke-width="2.6" stroke-linecap="round" filter="url(#${id}b)" opacity="0.9">
+              <path d="M52 68c-6 10 6 18-2 30"/><path d="M64 70c6 12-6 20 2 34"/><path d="M76 68c6 10-6 16 2 28"/>
+            </g>
+            <g class="cap" filter="url(#${id}b)">
+              <circle cx="49" cy="61" r="12" fill="oklch(0.58 0.18 264)"/>
+              <circle cx="79" cy="61" r="12" fill="oklch(0.58 0.18 264)"/>
+              <ellipse cx="64" cy="55" rx="20" ry="9" fill="oklch(0.68 0.15 258)"/>
+            </g>
+            <g fill="none" stroke="oklch(0.9 0.08 245)" stroke-width="1.2" stroke-linecap="round">
+              <path class="fil" pathLength="1" d="M42 66c-7-4-3-15 6-13c7 2 6 11-1 10"/>
+              <path class="fil" pathLength="1" d="M86 66c7-4 3-15-6-13c-7 2-6 11 1 10"/>
+              <path class="fil" pathLength="1" d="M44 52c7-11 33-11 40 0"/>
+            </g>
+          </g>
+        </g>
+        <circle cx="64" cy="64" r="50" fill="url(#lit)" opacity="0.5"/>
+        <circle cx="64" cy="64" r="49.2" fill="none" stroke="url(#rim)" stroke-width="1.8"/>
+        <circle cx="64" cy="64" r="50" fill="none" stroke="oklch(0.34 0.04 262)" stroke-width="1"/>`;
+      const plume = svg.querySelector('.plume'), cap = svg.querySelector('.cap'), fils = svg.querySelectorAll('.fil');
       return hoverLoop(
-        () => loop({ repeatDelay: 0.5 })
-          .fromTo(tens, { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.9, stagger: 0.18, ease: 'sine.inOut' })
-          .fromTo(tips, { scale: 0, transformOrigin: '50% 50%' }, { scale: 1, duration: 0.35, stagger: 0.1, ease: 'back.out(2.4)' }, '-=0.3'),
+        () => loop({ repeatDelay: 0.4 })
+          .fromTo(plume, { y: -16 }, { y: 4, duration: 2.2, ease: 'sine.out' })
+          .fromTo(cap, { scaleX: 0.6, scaleY: 0.8, transformOrigin: '50% 50%' }, { scaleX: 1.08, scaleY: 1, transformOrigin: '50% 50%', duration: 2.2, ease: 'sine.out' }, 0)
+          .fromTo(fils, { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.4, stagger: 0.12, ease: 'sine.inOut' }, 0.3),
         () => {
-          gsap.to(tens, { strokeDashoffset: 0, duration: 0.3, overwrite: true });
-          gsap.to(tips, { scale: 1, duration: 0.3, overwrite: true });
+          gsap.to(plume, { y: 0, duration: 0.4, overwrite: true });
+          gsap.to(cap, { scaleX: 1, scaleY: 1, duration: 0.4, overwrite: true });
+          gsap.to(fils, { strokeDashoffset: 0, duration: 0.4, overwrite: true });
         });
     },
   });
 
-  /* ================= D · Isometric block ================= */
+  /* ================= B · One drop ================= */
 
-  // A block of lit water seen corner-on; the plume billows inside its wide front face.
-  {
-    const UL = [14, 30], C0 = [80, 54], UR = [110, 38], T = [44, 14];
-    const LL = [14, 92], BB = [80, 116], LR = [110, 100];
-    // The front face maps the 128 icon square: x runs to C0, y runs down.
-    const FACE = `matrix(${f((C0[0] - UL[0]) / 128)} ${f((C0[1] - UL[1]) / 128)} 0 ${f((LL[1] - UL[1]) / 128)} ${UL[0]} ${UL[1]})`;
-    DIRS.push({
-      toy: 'ink', l: 'D', name: 'Isometric block', emblemUrl: 'spike/emblems/ink-d.svg',
-      box: [14, 14, 96, 102],
-      art(svg, id) {
-        svg.innerHTML = `
-          <defs><clipPath id="${id}f"><path d="${poly([UL, C0, BB, LL])}"/></clipPath></defs>
-          <path d="${poly([UL, C0, BB, LL])}" fill="url(#ik-box)"/>
-          <path d="${poly([C0, UR, LR, BB])}" fill="oklch(0.6 0.03 235)"/>
-          <path d="${poly([T, UR, C0, UL])}" fill="oklch(0.97 0.02 85)"/>
-          <g clip-path="url(#${id}f)"><g transform="${FACE}">
-            ${plumeSvg({ ink: 'url(#ik-ink)', edge: 'oklch(0.7 0.1 255)', curl: 'oklch(0.72 0.1 255)', ten: 'oklch(0.36 0.16 266)', trail: 'oklch(0.55 0.12 262)', tw: 5 })}
-          </g></g>
-          <path d="${poly([T, UR, C0, UL])}" fill="none" stroke="url(#rim)" stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M${C0[0]} ${C0[1]}V${BB[1]}" stroke="oklch(0.99 0.01 85 / 0.7)" stroke-width="1.2"/>`;
-        return bloom(svg, 26);
-      },
-    });
-  }
+  // One glossy drop of indigo ink, the moment before it meets the water.
+  DIRS.push({
+    toy: 'ink', l: 'B', name: 'One drop', emblemUrl: 'spike/emblems/ink-b.svg',
+    box: [30, 12, 68, 104],
+    art(svg, id) {
+      svg.innerHTML = `
+        <ellipse class="ripple" cx="64" cy="112" rx="30" ry="4" fill="none" stroke="oklch(0.7 0.1 255)" stroke-width="1.4" opacity="0"/>
+        <g class="drop">${dropSvg(`${id}d`, 64, 78, 30, 64, 266)}</g>`;
+      const drop = svg.querySelector('.drop'), rip = svg.querySelector('.ripple');
+      return hoverLoop(
+        () => loop({ repeatDelay: 0.3 })
+          .to(drop, { scaleY: 1.06, scaleX: 0.95, transformOrigin: '50% 100%', duration: 0.5, ease: 'sine.inOut' })
+          .to(drop, { y: 18, opacity: 0, duration: 0.45, ease: 'power2.in' })
+          .fromTo(rip, { opacity: 0.9, attr: { rx: 6, ry: 1 } }, { opacity: 0, attr: { rx: 40, ry: 6 }, duration: 0.8, ease: 'power2.out' }, '-=0.1')
+          .fromTo(drop, { y: -20, opacity: 0, scaleX: 1, scaleY: 1 }, { y: 0, opacity: 1, duration: 0.6, ease: 'power2.out' }),
+        () => {
+          gsap.to(drop, { y: 0, opacity: 1, scaleX: 1, scaleY: 1, duration: 0.3, overwrite: true });
+          gsap.to(rip, { opacity: 0, duration: 0.2, overwrite: true });
+        });
+    },
+  });
+
+  /* ================= C · Three drops ================= */
+
+  // Indigo, carmine and saffron fall in a loose cascade, each with its own glint.
+  DIRS.push({
+    toy: 'ink', l: 'C', name: 'Three drops', emblemUrl: 'spike/emblems/ink-c.svg',
+    box: [16, 12, 96, 100],
+    art(svg, id) {
+      svg.innerHTML = `
+        <g class="dr">${dropSvg(`${id}a`, 44, 82, 24, 50, 266)}</g>
+        <g class="dr">${dropSvg(`${id}b`, 88, 64, 17, 36, 18, 0.52)}</g>
+        <g class="dr">${dropSvg(`${id}c`, 76, 30, 11, 24, 78, 0.7)}</g>`;
+      const drs = svg.querySelectorAll('.dr');
+      return hoverLoop(
+        () => loop().to(drs, { y: 6, duration: 0.7, ease: 'sine.inOut', yoyo: true, repeat: 1, stagger: 0.18 }),
+        () => gsap.to(drs, { y: 0, duration: 0.3, overwrite: true }));
+    },
+  });
+
+  /* ================= D · Backlit slab ================= */
+
+  // A lit slab of water on its hard shadow; the ink blooms in it like watercolour, dark core, pale edge.
+  DIRS.push({
+    toy: 'ink', l: 'D', name: 'Backlit slab', emblemUrl: 'spike/emblems/ink-d.svg',
+    box: [12, 12, 110, 110],
+    art(svg, id) {
+      svg.innerHTML = `
+        <defs>
+          <clipPath id="${id}c"><rect x="12" y="12" width="104" height="104" rx="12"/></clipPath>
+          <radialGradient id="${id}l" cx="0.34" cy="0.3" r="0.9"><stop offset="0" style="stop-color: oklch(0.99 0.02 85)"/><stop offset="0.6" style="stop-color: oklch(0.9 0.02 90)"/><stop offset="1" style="stop-color: oklch(0.76 0.03 235)"/></radialGradient>
+          <filter id="${id}s" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3.2"/></filter>
+          <filter id="${id}m" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.2"/></filter>
+        </defs>
+        <rect x="18" y="18" width="104" height="104" rx="12" fill="oklch(0.07 0.01 260)"/>
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#${id}l)"/>
+        <g clip-path="url(#${id}c)" style="isolation: isolate">
+          <g class="ink" style="mix-blend-mode: multiply">
+            <path d="M66 14c-4 12 4 22-2 34" fill="none" stroke="oklch(0.62 0.12 262)" stroke-width="2.2" stroke-linecap="round" filter="url(#${id}m)"/>
+            <g class="bl" fill="oklch(0.74 0.1 262)" filter="url(#${id}s)">
+              <circle cx="48" cy="62" r="15"/><circle cx="80" cy="62" r="15"/><ellipse cx="64" cy="55" rx="22" ry="11"/>
+              <path d="M50 70c-8 12 8 20-2 34M64 72c8 14-8 22 2 36M78 70c8 12-8 18 2 30" fill="none" stroke="oklch(0.74 0.1 262)" stroke-width="5" stroke-linecap="round"/>
+            </g>
+            <g class="bl" fill="oklch(0.4 0.17 266)" filter="url(#${id}m)">
+              <circle cx="49" cy="62" r="9"/><circle cx="79" cy="62" r="9"/><ellipse cx="64" cy="56" rx="15" ry="6"/>
+            </g>
+          </g>
+        </g>
+        <rect x="12" y="12" width="104" height="104" rx="12" fill="url(#lit)" opacity="0.45"/>
+        <rect x="12.8" y="12.8" width="102.4" height="102.4" rx="11.4" fill="none" stroke="url(#rim)" stroke-width="1.6"/>`;
+      const ink = svg.querySelector('.ink'), bls = svg.querySelectorAll('.bl'), fils = svg.querySelectorAll('.fil');
+      return hoverLoop(
+        () => loop({ repeatDelay: 0.4 })
+          .fromTo(ink, { y: -14 }, { y: 2, duration: 2.2, ease: 'sine.out' })
+          .fromTo(bls, { scale: 0.6, transformOrigin: '50% 40%' }, { scale: 1.06, transformOrigin: '50% 40%', duration: 2.2, ease: 'sine.out' }, 0)
+          .fromTo(fils, { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.4, stagger: 0.12, ease: 'sine.inOut' }, 0.4),
+        () => {
+          gsap.to(ink, { y: 0, duration: 0.4, overwrite: true });
+          gsap.to(bls, { scale: 1, duration: 0.4, overwrite: true });
+          gsap.to(fils, { strokeDashoffset: 0, duration: 0.4, overwrite: true });
+        });
+    },
+  });
 
   /* ================= E · Abstract mark ================= */
 
-  // Three inks overlap on the light and mix by absorption: green, violet and dark where they meet.
-  {
-    const DOTS = [[52, 52, 'oklch(0.55 0.17 266)'], [76, 52, 'oklch(0.86 0.15 85)'], [64, 73, 'oklch(0.6 0.21 18)']];
-    DIRS.push({
-      toy: 'ink', l: 'E', name: 'Abstract mark', emblemUrl: 'spike/emblems/ink-e.svg',
-      box: [24, 26, 80, 84],
-      art(svg) {
-        svg.innerHTML = `<g style="isolation: isolate">${DOTS.map(([x, y, c]) => `<circle class="dot" cx="${x}" cy="${y}" r="21" fill="${c}" style="mix-blend-mode: multiply"/>`).join('')}</g>`;
-        const dots = [...svg.querySelectorAll('.dot')];
-        // Hover pulls the inks apart, then lets them run back together.
-        return hoverLoop(
-          () => {
-            const tl = loop({ yoyo: true, repeatDelay: 0.2 });
-            dots.forEach((d, i) => {
-              const [x, y] = DOTS[i];
-              tl.to(d, { x: (x - 64) * 0.5, y: (y - 59) * 0.5, duration: 0.9, ease: 'sine.inOut' }, 0);
-            });
-            return tl;
-          },
-          () => gsap.to(dots, { x: 0, y: 0, duration: 0.4, overwrite: true }));
-      },
-    });
-  }
+  // A brush ring in ink, heavy at the foot and thin where it opens, with one drop at the gap.
+  DIRS.push({
+    toy: 'ink', l: 'E', name: 'Brush ring', emblemUrl: 'spike/emblems/ink-e.svg',
+    box: [18, 14, 92, 96],
+    art(svg, id) {
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="${id}g" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" style="stop-color: oklch(0.72 0.12 255)"/><stop offset="1" style="stop-color: oklch(0.42 0.18 266)"/></linearGradient>
+          <mask id="${id}k"><rect x="0" y="0" width="128" height="128" fill="#fff"/><path class="gap" d="M64 64L118 6L128 40Z" fill="#000"/></mask>
+        </defs>
+        <g class="ring" mask="url(#${id}k)">
+          <path d="M22 66a42 42 0 1 0 84 0a42 42 0 1 0 -84 0ZM34 61a32 32 0 1 0 64 0a32 32 0 1 0 -64 0Z" fill="url(#${id}g)" fill-rule="evenodd"/>
+          <path d="M22 66a42 42 0 1 0 84 0a42 42 0 1 0 -84 0ZM34 61a32 32 0 1 0 64 0a32 32 0 1 0 -64 0Z" fill="url(#lit)" fill-rule="evenodd"/>
+        </g>
+        <g class="dot">${dropSvg(`${id}d`, 102, 26, 7, 15, 266)}</g>`;
+      const ring = svg.querySelector('.ring'), dot = svg.querySelector('.dot');
+      return hoverLoop(
+        () => loop()
+          .to(ring, { rotation: 360, svgOrigin: '64 64', duration: 6, ease: 'none' }, 0)
+          .to(dot, { y: 8, duration: 0.75, ease: 'sine.inOut', yoyo: true, repeat: 7 }, 0),
+        () => {
+          gsap.to(ring, { rotation: 0, svgOrigin: '64 64', duration: 0.5, overwrite: true });
+          gsap.to(dot, { y: 0, duration: 0.3, overwrite: true });
+        });
+    },
+  });
 
   /* ================= Gallery ================= */
 
