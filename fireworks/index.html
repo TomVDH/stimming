@@ -574,11 +574,11 @@ function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1) {
   lastDeath = Math.max(lastDeath, t0 + life);
 }
 // Upload only the slots a launch wrote; a wrap gives two ranges.
+// Ranges add up until the next render, which uploads and clears them.
 function commitStars() {
   if (dirtyFrom < 0) return;
   const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
   for (const at of [aA, aB, aC, aD]) {
-    at.clearUpdateRanges();
     at.addUpdateRange(a * 4, run * 4);
     if (n > run) at.addUpdateRange(0, (n - run) * 4);
     at.needsUpdate = true;
@@ -614,19 +614,37 @@ const water = new THREE.Mesh(new THREE.PlaneGeometry(18000, 2600).rotateX(-Math.
   uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, uRipple: { value: 1 } },
   vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
   void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uRipple; varying vec3 vP; varying vec4 vM; ${HEAD}
+  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uRipple; uniform float uTime; varying vec3 vP; varying vec4 vM; ${HEAD}
   void main() {
     vec3 v = normalize(vP - cameraPosition);
-    // Slow swell bends the mirror; far water bends less on screen.
-    float n = k2noise(vP.xz * vec2(0.04, 0.11)) + 0.5 * k2noise(vP.xz * vec2(0.13, 0.4) + 3.1) - 0.75;
-    vec3 nrm = normalize(vec3(n * 0.06 * uRipple, 1.0, n * 0.03 * uRipple));
+    float dist = length(vP.xz - cameraPosition.xz);
+    // A long swell, a chop and a fine ripple, stretched across the view.
+    // The waves move only while the loop runs.
+    float t = uTime * 0.6;
+    vec2 p = vP.xz;
+    float w1 = k2noise(p * vec2(0.02, 0.06) + vec2(t * 0.15, t * 0.4));
+    float w2 = k2noise(p * vec2(0.07, 0.2) + vec2(-t * 0.3, t * 0.9) + 5.0);
+    float w3 = k2noise(p * vec2(0.25, 0.6) + vec2(t * 0.8, -t * 1.3) + 11.0);
+    float n = (w1 - 0.5) + 0.5 * (w2 - 0.5) + 0.25 * (w3 - 0.5);
+    // Near water bends the mirror more on screen than far water.
+    float near = 1.0 / (1.0 + dist / 300.0);
+    vec3 nrm = normalize(vec3(n * 0.08 * uRipple, 1.0, n * 0.05 * uRipple));
     vec3 r = reflect(v, nrm);
     float fres = 0.02 + 0.98 * pow(1.0 - max(dot(-v, nrm), 0.0), 5.0);
-    vec2 uv = vM.xy / vM.w + vec2(n * 0.004, n * 0.01) * uRipple;
-    // Five taps smear each light into a vertical streak.
+    vec2 uv = vM.xy / vM.w + vec2(n * 0.012, n * 0.03) * uRipple * near;
+    // Nine taps smear each light into a streak, longer where the view grazes.
+    float len = (0.0015 + 0.006 * smoothstep(150.0, 1500.0, dist)) * uRipple;
     vec4 m = vec4(0.0);
-    for (int i = -2; i <= 2; i++) m += texture2D(tMirror, uv + vec2(0.0, float(i) * 0.01 * uRipple)) * (1.0 - abs(float(i)) * 0.3);
-    m /= 3.4;
+    float ws = 0.0;
+    for (int i = -4; i <= 4; i++) {
+      float fi = float(i), w = exp(-fi * fi / 8.0);
+      m += texture2D(tMirror, uv + vec2(0.0, fi * len)) * w;
+      ws += w;
+    }
+    m /= ws;
+    // Crests catch the light; near troughs break the streaks into glints.
+    float crest = smoothstep(0.5, 0.8, w2 * 0.6 + w3 * 0.4);
+    m.rgb *= mix(1.0, 0.35 + 1.6 * crest, 0.25 + 0.6 * near);
     vec3 skyR = k2sky(r) * (1.0 - clamp(m.a, 0.0, 1.0));
     vec3 c = vec3(0.0004, 0.0006, 0.001) + (skyR + m.rgb * 1.4) * fres;
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
