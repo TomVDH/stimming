@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T11:43:01Z
+updated_at: 2026-11-08T11:47:05Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -34,3 +34,5 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - [x] Storm pack: lightning lights the fog and cloud base from inside, thunder late for the distance; rain streaks lit by the lamps; drops on the lens; wave spray in a gale; rain hiss. Not yet seen by eye in a full storm
 
 - [x] Rain on the front glass after Train Ride: still beads at three sizes, running drops with trails swept by the wind, refraction, dark rims, glints of the light behind
+
+- [x] Tom: glass rain replaced; a slight fog on the glass and soft bokeh drops that sprinkle in, lit by the light behind
