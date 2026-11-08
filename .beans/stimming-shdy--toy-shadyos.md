@@ -1,11 +1,11 @@
 ---
 # stimming-shdy
 title: 'Toy: ShadyOS'
-status: todo
+status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:30:00Z
-updated_at: 2026-11-04T21:50:00Z
+updated_at: 2026-11-08T10:21:34Z
 ---
 
 Build ShadyOS from docs/plans/shadyos.md. An original glossy glass desktop OS, a bootleg "ultimate edition" a script kiddie skinned in 2008, aged and quietly possessed. The OS itself is the fidget. It starts in the Lab.
@@ -34,3 +34,5 @@ Build ShadyOS from docs/plans/shadyos.md. An original glossy glass desktop OS, a
 - Tom's rule exception for this toy: OS chrome carries text on the stage (titles, short dialog lines, the clock).
 - 7.css was studied as a reference for the era's glass recipe only; nothing from it is loaded or copied.
 - Headless SwiftShader is a floor for fps; a real-device check is still needed.
+
+- 2026-11-08: now on the main shelf as alpha. Polish runs on main from the ShadyOS session.

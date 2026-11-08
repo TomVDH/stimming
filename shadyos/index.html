@@ -66,7 +66,7 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, audioKit, qualitySetting, onQuality } from '../shared/stim.js';
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, audioKit, qualitySetting, onQuality, oklchRgb } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -86,7 +86,9 @@ onReducedChange(v => { reduce = v; });
 /* ---------- settings ---------- */
 const saved = k => { try { return localStorage.getItem(`stimming.shadyos.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.shadyos.${k}`, String(v)); } catch { /* storage is optional */ } };
-const opts = { mode: saved('mode') || 'smear', age: saved('age') != null ? +saved('age') : 0.6 };
+const opts = { mode: saved('mode') || 'smear', age: saved('age') != null ? +saved('age') : 0.6, haunt: saved('haunt') !== 'off' };
+// The untitled files survive between visits.
+let untitled = Math.max(43, +saved('untitled') || 0);
 
 /* =====================================================================
    Painter: canvas 2D draws the desktop and each window face once.
@@ -239,8 +241,47 @@ function topStrip() {
   g.fillStyle = lin(0, 0, 0, 24, [[0, 'oklch(1 0 0 / 0.22)'], [0.5, 'oklch(1 0 0 / 0.06)'], [1, 'oklch(1 0 0 / 0)']]); g.fillRect(0, 0, PW, 24);
   g.fillStyle = 'oklch(0.05 0.02 240 / 0.7)'; g.fillRect(0, 24, PW, 1);
   bead(16, 12, 6, [0.62, 0.12, 190]);
-  txt('3:33', PW - 14, 16.5, 12.5, 'oklch(0.97 0.01 90)', { w: 700, align: 'right', shadow: 'oklch(0 0 0 / 0.8)' });
-  txt('up 6,809 days', PW - 52, 16.5, 11, 'oklch(0.85 0.02 90 / 0.8)', { align: 'right', shadow: 'oklch(0 0 0 / 0.8)' });
+  // The clock corner keeps a clean copy, so the clock repaints alone.
+  const x0 = Math.round(Math.max(30, PW - 300) * PD);
+  const cw = Math.round(PW * PD) - x0, ch = Math.ceil(25 * PD);
+  stripBase.width = cw; stripBase.height = ch; stripBase.getContext('2d').drawImage(cv, x0, 0, cw, ch, 0, 0, cw, ch);
+  strip = { x: x0, w: PW, cw, ch };
+  lastClock = '';
+}
+
+/* ---------- the clock: real time, a live uptime, one 3:33 ---------- */
+const clockCv = document.createElement('canvas'), stripBase = document.createElement('canvas');
+let strip = null, lastClock = '', spookAt = performance.now() + 60000 + Math.random() * 180000, spookTo = 0, frozenUp = '';
+const loadDay = new Date().setHours(0, 0, 0, 0);
+const pad = n => String(n).padStart(2, '0');
+function clockText() {
+  const d = new Date(), now = performance.now();
+  // Once per visit, the clock reads 3:33 for one minute.
+  if (opts.haunt && !spookTo && now >= spookAt && visible) spookTo = now + 60000;
+  const spook = spookTo && now < spookTo;
+  const days = 6809 + Math.round((new Date(d).setHours(0, 0, 0, 0) - loadDay) / 864e5);
+  const up = `up ${days.toLocaleString('en-US')} days ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  // The uptime stops while the clock reads 3:33.
+  if (spook) frozenUp ||= up; else frozenUp = '';
+  return [spook ? '3:33' : `${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`, frozenUp || up];
+}
+function paintClock() {
+  if (!strip || !deskTex) return;
+  const [time, up] = clockText(), key = time + up;
+  if (key === lastClock) return;
+  lastClock = key;
+  // A small canvas holds the corner; the page never reads pixels back.
+  const c = clockCv, w = strip.cw, h = strip.ch;
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(stripBase, 0, 0);
+  g.setTransform(PD, 0, 0, PD, -strip.x, 0); PW = strip.w;
+  g.font = `700 12.5px ${SANS}`;
+  const tw = g.measureText(time).width;
+  txt(time, PW - 14, 16.5, 12.5, 'oklch(0.97 0.01 90)', { w: 700, align: 'right', shadow: 'oklch(0 0 0 / 0.8)' });
+  txt(up, PW - 26 - tw, 16.5, 10.5, 'oklch(0.85 0.02 90 / 0.8)', { align: 'right', font: MONO, shadow: 'oklch(0 0 0 / 0.8)' });
+  gl.bindTexture(gl.TEXTURE_2D, deskTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, strip.x, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  blurDirty = true;
 }
 function watermark(x, y, align) {
   ['ShadyOS Ultimate XTreme Edition SP3', 'Build 6809 · tw34k3d by d4rkm0th · activation: bypassed'].forEach((l, i) =>
@@ -313,18 +354,22 @@ function files(x, y, w, h) {
   const lx = x + sw + 1, lw = w - sw - 1;
   g.fillStyle = lin(0, y + 35, 0, y + 53, [[0, 'oklch(0.97 0.005 90)'], [1, 'oklch(0.88 0.01 90)']]); g.fillRect(lx, y + 35, lw, 18);
   txt('Name', lx + 26, y + 48, 10.5, 'oklch(0.35 0.01 240)', { w: 600 }); txt('Modified', lx + lw * 0.62, y + 48, 10.5, 'oklch(0.35 0.01 240)', { w: 600 });
-  const rows = [['xtreme_skinpack_v4', '14 Mar 2008'], ['keygen_FINAL_real', '14 Mar 2008'], ['tw34ks (dont delete)', '14 Mar 2008'], ['your notes', 'Today, 3:31'], ['setup (2)', '14 Mar 2008'], ['untitled 41', 'Today, 3:33'], ['untitled 42', 'Today, 3:33'], ['untitled 43', 'Today, 3:33']];
+  const all = [['xtreme_skinpack_v4', '14 Mar 2008'], ['keygen_FINAL_real', '14 Mar 2008'], ['tw34ks (dont delete)', '14 Mar 2008'], ['your notes', 'Today, 3:31'], ['setup (2)', '14 Mar 2008']];
+  for (let k = 41; k <= untitled; k++) all.push([`untitled ${k}`, 'Today, 3:33']);
+  // A long list scrolls to its newest file.
+  const fit = Math.floor((h - 94) / 19) + 1, rows = all.slice(-fit), off = all.length - rows.length;
   rows.forEach(([n, d], i) => {
-    const ry = y + 54 + i * 19; if (ry > y + h - 40) return;
-    g.fillStyle = i % 2 ? 'oklch(0.92 0.02 225 / 0.6)' : 'oklch(0.96 0.015 88)'; g.fillRect(lx, ry, lw, 19);
-    if (i === 3) { rr(lx + 2, ry + 0.5, lw - 4, 18, 3); g.fillStyle = lin(0, ry, 0, ry + 19, [[0, 'oklch(0.97 0.02 220)'], [0.9, 'oklch(0.88 0.05 225)'], [1, 'oklch(0.95 0.03 220)']]); g.fill(); g.strokeStyle = 'oklch(0.78 0.08 225)'; g.stroke(); }
+    const ry = y + 54 + i * 19;
+    g.fillStyle = (i + off) % 2 ? 'oklch(0.92 0.02 225 / 0.6)' : 'oklch(0.96 0.015 88)'; g.fillRect(lx, ry, lw, 19);
+    if (n === 'your notes') { rr(lx + 2, ry + 0.5, lw - 4, 18, 3); g.fillStyle = lin(0, ry, 0, ry + 19, [[0, 'oklch(0.97 0.02 220)'], [0.9, 'oklch(0.88 0.05 225)'], [1, 'oklch(0.95 0.03 220)']]); g.fill(); g.strokeStyle = 'oklch(0.78 0.08 225)'; g.stroke(); }
     g.fillStyle = lin(0, ry + 4, 0, ry + 15, [[0, 'oklch(0.98 0.01 90)'], [1, 'oklch(0.85 0.02 85)']]); g.fillRect(lx + 9, ry + 3, 10, 13);
     g.strokeStyle = 'oklch(0.6 0.02 80)'; g.lineWidth = 0.6; g.strokeRect(lx + 9, ry + 3, 10, 13);
     txt(n, lx + 26, ry + 13.5, 12, 'oklch(0.22 0.02 240)'); txt(d, lx + lw * 0.62, ry + 13.5, 12, 'oklch(0.45 0.01 240)');
   });
-  rr(x + w - 11, y + 60, 8, 60, 4); g.fillStyle = lin(x + w - 11, 0, x + w - 3, 0, [[0, 'oklch(0.75 0.08 210)'], [0.5, 'oklch(0.55 0.11 220)'], [1, 'oklch(0.7 0.08 210)']]); g.fill();
+  const th = off ? Math.max(22, 60 * rows.length / all.length) : 60, ty = off ? y + h - 26 - th : y + 60;
+  rr(x + w - 11, ty, 8, th, 4); g.fillStyle = lin(x + w - 11, 0, x + w - 3, 0, [[0, 'oklch(0.75 0.08 210)'], [0.5, 'oklch(0.55 0.11 220)'], [1, 'oklch(0.7 0.08 210)']]); g.fill();
   g.fillStyle = lin(0, y + h - 20, 0, y + h, [[0, 'oklch(0.88 0.01 90)'], [1, 'oklch(0.8 0.015 90)']]); g.fillRect(x, y + h - 20, w, 20);
-  txt('8 items, 0 KB available', x + w / 2, y + h - 6, 10.5, 'oklch(0.4 0.01 240)', { align: 'center' });
+  txt(`${all.length} items, 0 KB available`, x + w / 2, y + h - 6, 10.5, 'oklch(0.4 0.01 240)', { align: 'center' });
 }
 function note(x, y, w, h, lines) {
   g.fillStyle = 'oklch(0.94 0.04 95)'; g.fillRect(x, y, w, h);
@@ -402,6 +447,19 @@ function paintWindow(win) {
     if (win.kind === 'dialog') dialog(x, y, w, h, win);
     g.restore();
   }
+  return c;
+}
+
+// The kid's pointer: a flame-glass arrow, tip at (2, 2).
+const CUR = [16, 24];
+function paintCursor() {
+  const c = document.createElement('canvas');
+  begin(c, CUR[0], CUR[1]);
+  const pts = [[0, 0], [0, 16.5], [4, 12.8], [6.8, 19], [9.6, 17.8], [6.9, 11.8], [11.8, 11.8]];
+  const path = () => { g.beginPath(); pts.forEach(([x, y]) => g.lineTo(x + 2, y + 2)); g.closePath(); };
+  path(); g.fillStyle = lin(0, 2, 0, 21, [[0, 'oklch(0.93 0.14 88)'], [0.45, 'oklch(0.74 0.19 52)'], [1, 'oklch(0.52 0.21 27)']]); g.fill();
+  g.save(); path(); g.clip(); g.fillStyle = lin(0, 2, 8, 9, [[0, 'oklch(1 0 0 / 0.6)'], [0.6, 'oklch(1 0 0 / 0.15)'], [0.61, 'oklch(1 0 0 / 0)']]); g.fillRect(0, 0, CUR[0], CUR[1]); g.restore();
+  path(); g.lineJoin = 'round'; g.strokeStyle = 'oklch(0.12 0.02 270)'; g.lineWidth = 1.3; g.stroke();
   return c;
 }
 
@@ -494,7 +552,7 @@ void main() {
 // The aged screen: warp, warm cast, bleed, burn, grain, dust.
 const POST_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform vec2 uFb; uniform float uAge, uTime, uDpr; in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uFb; uniform float uAge, uTime, uDpr, uDim; in vec2 vUv; out vec4 o;
 float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 void main() {
   vec2 q = vUv * 2.0 - 1.0;
@@ -519,15 +577,38 @@ void main() {
   // A vignette, heavier with age.
   float v = smoothstep(1.35, 0.35, length(q * vec2(0.92, 1.05)));
   c *= mix(1.0, v, 0.5 + 0.3 * uAge);
+  // Standby dims the backlight; the stuck pixel stays lit.
+  c *= uDim;
   // One stuck green pixel.
   vec2 sp = floor(vec2(0.71, 0.63) * uFb);
   if (all(equal(floor(px), sp))) c = vec3(0.3, 1.0, 0.35);
   o = vec4(c, 1.0);
 }`;
 
+// The OS pointer: one textured quad, in CSS pixels.
+const SPRITE_VS = `#version 300 es
+in vec2 aPos; uniform vec4 uRect; uniform vec2 uRes; out vec2 vUv;
+void main() { vUv = vec2(aPos.x, -aPos.y) * 0.5 + 0.5; vec2 p = (uRect.xy + vUv * uRect.zw) / uRes * 2.0 - 1.0; gl_Position = vec4(p.x, -p.y, 0.0, 1.0); }`;
+const SPRITE_FS = `#version 300 es
+precision highp float; uniform sampler2D uSrc; in vec2 vUv; out vec4 o; void main() { o = texture(uSrc, vUv); }`;
+// Glitter: one point per spark, a four-ray star.
+const GLIT_VS = `#version 300 es
+in vec2 aPos; in float aSize; in vec4 aCol; uniform vec2 uRes; uniform float uDpr; out vec4 vCol;
+void main() { vCol = aCol; vec2 p = aPos / uRes * 2.0 - 1.0; gl_Position = vec4(p.x, -p.y, 0.0, 1.0); gl_PointSize = aSize * uDpr; }`;
+const GLIT_FS = `#version 300 es
+precision highp float; in vec4 vCol; out vec4 o;
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0, a = abs(p);
+  float rays = exp(-a.x * 9.0) * exp(-a.y * 2.4) + exp(-a.y * 9.0) * exp(-a.x * 2.4);
+  float core = exp(-dot(p, p) * 12.0);
+  float k = clamp(rays * 0.9 + core, 0.0, 1.0) * (1.0 - smoothstep(0.8, 1.0, max(a.x, a.y)));
+  o = vec4(mix(vCol.rgb, vec3(1.0), core * 0.7), 1.0) * k * vCol.a;
+}`;
+
 const P = {
   copy: prog(QUAD_VS, COPY_FS), blur: prog(QUAD_VS, BLUR_FS), fade: prog(QUAD_VS, FADE_FS),
   win: prog(WIN_VS, WIN_FS), shadow: prog(QUAD_VS, SHADOW_FS), post: prog(QUAD_VS, POST_FS),
+  sprite: prog(SPRITE_VS, SPRITE_FS), glit: prog(GLIT_VS, GLIT_FS),
 };
 const quad = gl.createVertexArray(); gl.bindVertexArray(quad);
 const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -548,6 +629,17 @@ gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf); gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.ST
 gl.enableVertexAttribArray(aUvW); gl.vertexAttribPointer(aUvW, 2, gl.FLOAT, false, 0, 0);
 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
 gl.bindVertexArray(null);
+
+// Glitter buffer: x, y, size, then premultiplied rgba per spark.
+const GMAX = 220, gdata = new Float32Array(GMAX * 7), sparks = [];
+const gvao = gl.createVertexArray(); gl.bindVertexArray(gvao);
+const gbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, gbuf); gl.bufferData(gl.ARRAY_BUFFER, gdata.byteLength, gl.DYNAMIC_DRAW);
+[['aPos', 2, 0], ['aSize', 1, 8], ['aCol', 4, 12]].forEach(([n, k, o]) => {
+  const l = gl.getAttribLocation(P.glit.p, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, k, gl.FLOAT, false, 28, o);
+});
+gl.bindVertexArray(null);
+const curTex = tex(1, 1); upload(curTex, paintCursor());
+const GLINT = [[0.86, 0.13, 200], [0.8, 0.17, 340], [0.9, 0.15, 85]].map(c => oklchRgb(...c));
 
 /* ---------- scene state ---------- */
 let W = 0, H = 0, dpr = 1, FW = 0, FH = 0;
@@ -579,7 +671,7 @@ function seedScene() {
   const phone = W < 600;
   if (phone) {
     makeWin({ kind: 'nfo', skin: 'kid', title: 'd4rkm0th.nfo', x: 10, y: 34, w: W - 20, h: 236 });
-    makeWin({ kind: 'dialog', title: 'Notice', x: 18, y: H * 0.5, w: W - 36, h: 132, head: 'You looked away.', body: 'So I tidied up.', yes: 'Thanks' });
+    makeWin({ kind: 'dialog', title: 'Notice', x: 18, y: H * 0.5, w: W - 36, h: 132, head: 'This copy is genuine :)', body: 'Please do not shut down.', yes: 'Keep on' });
   } else {
     makeWin({ kind: 'nfo', skin: 'kid', title: 'd4rkm0th.nfo', x: W * 0.6, y: H * 0.08, w: 390, h: 240 });
     makeWin({ kind: 'files', title: 'Basement', x: W * 0.05, y: H * 0.12, w: 600, h: 330 });
@@ -596,6 +688,7 @@ function resize() {
   spots = bakeDesktop(deskCanvas, W, H);
   if (deskTex) gl.deleteTexture(deskTex);
   deskTex = tex(1, 1); upload(deskTex, deskCanvas);
+  paintClock();
   const oldAcc = acc;
   [scene, b1, b2].forEach(free);
   scene = target(FW, FH); acc = target(FW, FH);
@@ -679,17 +772,41 @@ function render(t) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, scene.f); gl.viewport(0, 0, FW, FH);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   wins.forEach(win => { if (win.state === 'min') return; drawShadow(win); drawWin(win); });
+  drawGlitter(); drawPointer();
   gl.disable(gl.BLEND);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, FW, FH);
   gl.useProgram(P.post.p); gl.bindTexture(gl.TEXTURE_2D, scene.t);
   const u = P.post.u;
   gl.uniform1i(u.uSrc, 0); gl.uniform2f(u.uFb, FW, FH); gl.uniform1f(u.uAge, opts.age); gl.uniform1f(u.uTime, reduce ? 0 : t * 0.001); gl.uniform1f(u.uDpr, dpr);
+  gl.uniform1f(u.uDim, backlight);
   fsq(P.post);
+}
+function drawGlitter() {
+  if (!sparks.length) return;
+  sparks.forEach((p, i) => {
+    const a = Math.pow(p.life, 1.4) * (0.65 + 0.35 * Math.sin(p.life * 40 + p.ph)), c = GLINT[p.c], o = i * 7;
+    gdata[o] = p.x; gdata[o + 1] = p.y; gdata[o + 2] = p.s;
+    gdata[o + 3] = c[0] * a; gdata[o + 4] = c[1] * a; gdata[o + 5] = c[2] * a; gdata[o + 6] = a;
+  });
+  gl.useProgram(P.glit.p); gl.bindVertexArray(gvao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gbuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, gdata, 0, sparks.length * 7);
+  gl.uniform2f(P.glit.u.uRes, W, H); gl.uniform1f(P.glit.u.uDpr, dpr);
+  gl.drawArrays(gl.POINTS, 0, sparks.length);
+}
+function drawPointer() {
+  if (!ptr.on) return;
+  gl.useProgram(P.sprite.p); gl.bindVertexArray(quad);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, curTex);
+  const u = P.sprite.u;
+  gl.uniform1i(u.uSrc, 0); gl.uniform2f(u.uRes, W, H); gl.uniform4f(u.uRect, ptr.dx - 2, ptr.dy - 2, CUR[0], CUR[1]);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
 /* ---------- physics: springy windows ---------- */
 const stamps = [];
 let drag = null;
+// A fast window knocks on the screen edge.
+function bump(win) { if (Math.abs(win.vx) + Math.abs(win.vy) > 240) click(); }
 function stiff() { return opts.mode === 'jelly' && !reduce ? [170, 9] : [900, 55]; }
 function step(win, dt) {
   // The anchor flies after a fling and bounces off the edges.
@@ -763,7 +880,7 @@ function addWindow() {
   if (kind === 'note') makeWin({ kind, title: 'your notes', x, y, w: 300, h: 220, lines: NOTES[noteN % NOTES.length], pop: true });
   else if (kind === 'files') makeWin({ kind, title: 'Basement', x, y, w: 560, h: 310, pop: true });
   else makeWin({ kind, skin: 'kid', title: 'd4rkm0th.nfo', x, y, w: 390, h: 240, pop: true });
-  noteN++;
+  noteN++; messy = true;
   // Keep the desktop at ten windows.
   while (wins.filter(w => w.kind !== 'dialog').length > 10) killWin(wins.find(w => w.kind !== 'dialog'));
   click(); wake();
@@ -772,7 +889,10 @@ const CASCADE = [['Activation not needed.', 'It is late. Stay a while.'], ['Are 
 let cascading = false;
 function cascade() {
   if (cascading) return;
-  cascading = true;
+  cascading = true; messy = true;
+  // File creep: each error leaves one more untitled file behind.
+  untitled++; save('untitled', untitled);
+  wins.forEach(w => { if (w.kind === 'files') upload(w.tex, paintWindow(w)); });
   const n = 6, bw = Math.min(360, W - 40), bx = W < 600 ? 20 : W * 0.58, by = H * 0.12;
   for (let i = 0; i < n; i++) setTimeout(() => {
     const [head, body] = CASCADE[i];
@@ -799,8 +919,18 @@ function hit(x, y) {
   return null;
 }
 let press = null, lastTap = { t: 0, id: 0 };
+// The OS draws its own mouse pointer; touch has none.
+const ptr = { on: false, x: 0, y: 0, dx: 0, dy: 0, lx: 0, ly: 0, run: 0 };
+function track(e) {
+  if (e.pointerType !== 'mouse') { if (ptr.on) { ptr.on = false; canvas.style.cursor = ''; } return; }
+  const [x, y] = at(e);
+  if (!ptr.on) { ptr.dx = ptr.lx = x; ptr.dy = ptr.ly = y; }
+  ptr.on = true; ptr.x = x; ptr.y = y; canvas.style.cursor = 'none';
+}
+canvas.addEventListener('pointerleave', () => { if (!press && ptr.on) { ptr.on = false; wake(); } });
 canvas.addEventListener('pointerdown', e => {
   const [x, y] = at(e);
+  track(e);
   canvas.setPointerCapture(e.pointerId);
   const win = hit(x, y);
   press = { id: e.pointerId, x0: x, y0: y, t0: performance.now(), win, mode: 'press', hx: [[x, y, performance.now()]] };
@@ -808,25 +938,33 @@ canvas.addEventListener('pointerdown', e => {
   wake();
 });
 canvas.addEventListener('pointermove', e => {
-  if (!press || e.pointerId !== press.id) return;
+  track(e);
+  if (!press || e.pointerId !== press.id) { if (ptr.on) wake(); return; }
   const [x, y] = at(e), now = performance.now();
   press.hx.push([x, y, now]); if (press.hx.length > 6) press.hx.shift();
+  press.px = x; press.py = y;
   if (press.mode === 'press' && Math.hypot(x - press.x0, y - press.y0) > 8 && press.win) {
     press.mode = 'drag';
-    drag = { win: press.win, gx: press.x0 - press.win.x, gy: press.y0 - press.win.y, lx: press.win.x, ly: press.win.y };
+    drag = { win: press.win, gx: press.x0 - press.win.x, gy: press.y0 - press.win.y, t0: now, mouse: e.pointerType === 'mouse' };
     press.win.vx = press.win.vy = 0;
+    messy = true;
     rub(true);
   }
-  if (press.mode === 'drag') {
-    const win = drag.win;
-    win.x = x - drag.gx; win.y = clamp(y - drag.gy, 28 - win.h * 0.6, H - 20);
-    wake();
-  }
+  wake();
 });
+// A drag follows the drawn pointer, so a pause holds the window too.
+function follow() {
+  if (!drag || press?.px === undefined) return;
+  const win = drag.win, [x, y] = drag.mouse ? [ptr.dx, ptr.dy] : [press.px, press.py];
+  win.x = x - drag.gx; win.y = clamp(y - drag.gy, 28 - win.h * 0.6, H - 20);
+}
 function endPress(e, cancel) {
   if (!press || e.pointerId !== press.id) return;
   const [x, y] = at(e), now = performance.now();
   if (press.mode === 'drag') {
+    // A release ends any pause; the window jumps to the hand.
+    if (drag.mouse) { balk = 0; ptr.dx = ptr.x; ptr.dy = ptr.y; }
+    follow();
     // Fling speed comes from the last few samples.
     const h = press.hx, a = h[0], b = h[h.length - 1], dt = Math.max(16, b[2] - a[2]) / 1000;
     const win = drag.win;
@@ -913,15 +1051,122 @@ function rub(on) {
   }
 }
 
+/* ---------- the haunt: a tidy-up, a saver, a pause ---------- */
+let messy = false, hiddenAt = 0, aways = 0, balk = 0, balked = false;
+const AWAY = [['You looked away.', 'So I tidied up.'], ['You looked away again.', 'I put it all back.'], ['Welcome back.', 'Nothing happened.']];
+// Put a window at x, y at once, with a still mesh.
+function place(win, x, y) {
+  win.x = clamp(x, 4, Math.max(4, W - win.w - 4)); win.y = clamp(y, 28, Math.max(28, H - win.h - 6));
+  win.vx = win.vy = 0; win.lsx = undefined;
+  for (let k = 0; k < NV; k++) { win.pos[k * 2] = win.x + uvs[k * 2] * win.w; win.pos[k * 2 + 1] = win.y + uvs[k * 2 + 1] * win.h; win.vel[k * 2] = win.vel[k * 2 + 1] = 0; }
+}
+// Back from a hidden tab: the desk sits tidied, and a dialog says so.
+function tidy() {
+  messy = false;
+  wins.filter(w => w.kind === 'dialog').forEach(killWin);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, acc.f); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); clearing = 0; blurDirty = true;
+  const phone = W < 600, gap = phone ? 22 : 30;
+  wins.filter(w => w.state === 'open').sort((a, b) => b.w * b.h - a.w * a.h).forEach((w, i) => { place(w, (phone ? 10 : 24) + i * gap, 36 + i * gap); raise(w); });
+  const [head, body] = AWAY[Math.min(aways++, AWAY.length - 1)], bw = Math.min(360, W - 36);
+  setTimeout(() => {
+    if (document.hidden) return;
+    makeWin({ kind: 'dialog', title: 'Notice', x: (W - bw) / 2, y: H * 0.42, w: bw, h: 126, head, body, yes: 'Thanks', pop: true });
+    ding(1); wake();
+  }, 700);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = performance.now(); return; }
+  if (opts.haunt && messy && hiddenAt && performance.now() - hiddenAt > 12000 && scene) tidy();
+});
+// The saver: windows drift into one line, row or column by aspect.
+function lineUp() {
+  const list = wins.filter(w => w.state === 'open' && !w.closing && drag?.win !== w).sort((a, b) => a.id - b.id), n = list.length;
+  if (!n) return;
+  const row = W >= H, last = list[n - 1], span = Math.max(0, row ? W - 32 - last.w : H - 90 - last.h);
+  list.forEach((w, i) => {
+    const t = n > 1 ? i / (n - 1) : 0.5;
+    w.tx = row ? 16 + span * t : (W - w.w) / 2; w.ty = row ? Math.max(40, H * 0.34 - w.h / 2) : 34 + span * t;
+    w.tk = 0.26 + ((w.id * 7) % 5) * 0.03;
+    if (reduce) place(w, w.tx, w.ty);
+  });
+}
+
 /* ---------- frame loop: lively, drifting, asleep ---------- */
+// nap: 0 awake, 1 saver, 2 dimming, 3 standby.
+const DIM = 0.14, SAVER = 45000, STANDBY = 58500;
 let raf = 0, visible = true, last = 0, lastInput = performance.now(), lastDraw = 0;
-function wake() { lastInput = performance.now(); if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+let nap = 0, napT = 0, dimT0 = 0, flickT0 = -1e9, backlight = 1;
+function kick() { if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+function wake() {
+  lastInput = performance.now();
+  if (nap) rouse();
+  clearTimeout(napT); napT = setTimeout(saver, SAVER);
+  kick();
+}
+function rouse() {
+  // Input after standby wakes the backlight with a small flicker.
+  if (nap >= 2 && !reduce) flickT0 = performance.now();
+  nap = 0; backlight = 1;
+  wins.forEach(w => { w.tx = undefined; });
+}
+function saver() {
+  if (!visible) return;
+  nap = 1;
+  if (opts.haunt) lineUp();
+  napT = setTimeout(() => { if (visible) { nap = 2; dimT0 = performance.now(); kick(); } }, STANDBY - SAVER);
+  kick();
+}
+// The flicker: dark, on, half, on.
+function flicker(t) { return t < 60 ? 0.3 : t < 110 ? 1 : t < 170 ? 0.55 : t < 260 ? 1.04 : 1; }
 function frame(now) {
   raf = 0;
   if (!scene) return;
   const dt = Math.min(1 / 30, (now - last) / 1000); last = now;
   let busy = !!drag || clearing > 0 || cascading;
   try {
+    // The drawn pointer follows the hand, except for one pause per visit.
+    if (ptr.on) {
+      if (drag?.mouse && opts.haunt && !balked && now - drag.t0 > 700 && now > 15000) { balked = true; balk = now; }
+      if (balk && now - balk > 480) {
+        const k = 1 - Math.exp(-dt * 14);
+        ptr.dx += (ptr.x - ptr.dx) * k; ptr.dy += (ptr.y - ptr.dy) * k;
+        if (Math.hypot(ptr.x - ptr.dx, ptr.y - ptr.dy) < 0.5) balk = 0;
+      } else if (!balk) { ptr.dx = ptr.x; ptr.dy = ptr.y; }
+      if (ptr.dx !== ptr.lx || ptr.dy !== ptr.ly) {
+        busy = true;
+        // The kid's glitter trail: about one spark per seven pixels.
+        if (!reduce) {
+          const d = Math.hypot(ptr.dx - ptr.lx, ptr.dy - ptr.ly); ptr.run += d;
+          for (; ptr.run > 7 && sparks.length < GMAX; ptr.run -= 7) {
+            const t = Math.random();
+            sparks.push({ x: lerp(ptr.lx, ptr.dx, t) + (Math.random() - 0.5) * 6, y: lerp(ptr.ly, ptr.dy, t) + 6 + (Math.random() - 0.5) * 6,
+              vx: (Math.random() - 0.5) * 30, vy: -10 - Math.random() * 25, life: 1, rate: 1 / (0.45 + Math.random() * 0.45),
+              s: 5 + Math.random() * 5, c: (Math.random() * 3) | 0, ph: Math.random() * 6.3 });
+          }
+          ptr.run = Math.min(ptr.run, 7);
+        }
+        ptr.lx = ptr.dx; ptr.ly = ptr.dy;
+      }
+    }
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const p = sparks[i];
+      p.life -= dt * p.rate; p.vy += 80 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.life <= 0) { sparks[i] = sparks[sparks.length - 1]; sparks.pop(); }
+    }
+    if (sparks.length) busy = true;
+    follow();
+    // The saver eases each window toward its place in the line.
+    if (nap) for (const w of wins) if (w.tx !== undefined && w.state === 'open' && drag?.win !== w) {
+      const k = 1 - Math.exp(-dt * w.tk);
+      w.x += (w.tx - w.x) * k; w.y += (w.ty - w.y) * k;
+    }
+    if (nap === 2) {
+      const k = (now - dimT0) / (60000 - STANDBY);
+      backlight = reduce ? DIM : lerp(1, DIM, smooth(clamp(k)));
+      if (reduce || k >= 1) nap = 3;
+    }
+    const ft = now - flickT0;
+    if (ft < 300) { backlight = flicker(ft); busy = true; } else if (!nap) backlight = 1;
     for (const win of [...wins]) if (step(win, dt) && win.busy) busy = true;
     // Smear: stamp the moving window along its path.
     if (opts.mode === 'smear') for (const win of wins) {
@@ -942,10 +1187,10 @@ function frame(now) {
       rubber.g.gain.setTargetAtTime(clamp(sp * 0.08, 0, 0.09), rubber.g.context.currentTime, 0.04);
       rubber.f.frequency.setTargetAtTime(600 + sp * 500, rubber.g.context.currentTime, 0.05);
     }
-    const idle = now - lastInput;
-    // Drifting grain runs at 30 fps; a minute without input sleeps.
-    if (busy || now - lastDraw > 31) { render(now); lastDraw = now; markReady(); }
-    if (busy || (!reduce && idle < 60000)) raf = requestAnimationFrame(frame);
+    paintClock();
+    // Drifting grain runs at 30 fps; standby stops the loop.
+    if (busy || nap === 3 || now - lastDraw > 31) { render(now); lastDraw = now; markReady(); }
+    if (busy || (!reduce && nap < 3)) raf = requestAnimationFrame(frame);
     else kit.rest(() => !raf);
   } catch (err) { raf = 0; throw err; }
 }
@@ -969,7 +1214,7 @@ new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => { W = 0; resize(); });
 resize();
 // QA reads the window list with ?qa.
-if (new URLSearchParams(location.search).has('qa')) window.__shadyos = { wins };
+if (new URLSearchParams(location.search).has('qa')) window.__shadyos = { wins, clockCv, tidy, saver, spook: () => { spookAt = 0; } };
 </script>
 </body>
 </html>
