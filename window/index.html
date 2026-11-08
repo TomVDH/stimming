@@ -453,16 +453,19 @@ const auroraOn = () => (opts.hour === 'night' && opts.aurora === 'on' ? 1 : 0);
 /* ---------- events ---------- */
 // Rare sights happen on their own: a meteor, a rocket launch, a passing jet.
 const EV = { wait: rnd(10, 20), meteor: null, rocket: null, jet: null };
+// A test hook: ?event=meteor, fireball, rocket or jet calls that sight soon and often.
+const forced = qs.get('event');
+if (forced) EV.wait = 2;
 function startEvent() {
   const pool = [];
   if (!EV.meteor) pool.push('meteor', 'meteor');
   if (!EV.rocket) pool.push('rocket');
   if (!EV.jet) pool.push('jet');
-  if (!pool.length) return;
-  const kind = pool[Math.floor(Math.random() * pool.length)];
-  if (kind === 'meteor') EV.meteor = newMeteor();
+  if (!pool.length && !forced) return;
+  const kind = forced ? (forced === 'fireball' ? 'meteor' : forced) : pool[Math.floor(Math.random() * pool.length)];
+  if (kind === 'meteor') { EV.meteor = newMeteor(); if (forced === 'fireball') Object.assign(EV.meteor, { fire: true, dur: 3.2, tail: 0.5 }); }
   if (kind === 'rocket') EV.rocket = { x: cam.x + rnd(60, 220), z: cam.z + rnd(420, 600), hd: rnd(0, TAU), s: 0 };
-  if (kind === 'jet') EV.jet = { x: cam.x + rnd(55, 75), z: cam.z + rnd(16, 45), y: rnd(10.2, 12.2), s: 0, hist: [] };
+  if (kind === 'jet') EV.jet = { x: cam.x + (forced ? 40 : rnd(55, 75)), z: cam.z + rnd(16, 45), y: rnd(10.2, 12.2), s: 0, hist: [] };
 }
 
 // A meteor streaks across the part of the sky the window shows.
@@ -495,7 +498,7 @@ function sunlit(p) {
 
 function stepEvents(dt) {
   EV.wait -= dt;
-  if (EV.wait <= 0) { startEvent(); EV.wait = rnd(22, 55) * (reduce ? 2.5 : 1); }
+  if (EV.wait <= 0) { startEvent(); EV.wait = forced ? (forced === 'rocket' ? 120 : forced === 'jet' ? 90 : 6) : rnd(22, 55) * (reduce ? 2.5 : 1); }
   const m = EV.meteor;
   if (m) {
     m.age += dt;
