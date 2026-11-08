@@ -75,11 +75,11 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--windfarm" id="stage" tabindex="0" role="application" aria-label="Offshore wind turbines in night fog, red lights blinking. The Wind slider sets their speed; tap or press Space to send a gust down the rows; drag to look around; the arrows change the view.">
+    <div class="stage stage--windfarm" id="stage" tabindex="0" role="application" aria-label="Offshore wind turbines in night fog, red lights blinking. The Wind slider sets their speed; tap or press Space to send a gust down the rows; drag to look around.">
       <p class="fail" hidden>Wind farm needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="stepper" id="view" role="group" aria-label="View">
+      <div class="stepper" id="view" role="group" aria-label="View" hidden>
         <button class="chip icon" type="button" data-step="-1" aria-label="Previous view" title="Previous view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
         <span class="name"><output aria-live="polite">Rows</output><span class="sizer" aria-hidden="true">Across</span></span>
         <button class="chip icon" type="button" data-step="1" aria-label="Next view" title="Next view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
@@ -106,7 +106,6 @@
           <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>send a gust down the rows</dd></div>
           <div><dt>Drag</dt><dd>look around</dd></div>
           <div class="fine"><dt>Space</dt><dd>a gust</dd></div>
-          <div class="fine"><dt>← →</dt><dd>change the view</dd></div>
         </dl>
       </div>
     </div>
@@ -157,6 +156,8 @@ const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t *
 const saved = k => { try { return localStorage.getItem(`stimming.windfarm.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.windfarm.${k}`, String(v)); } catch { /* storage is optional */ } };
 const VIEWS = ['Rows', 'Foot', 'Above', 'Across', 'Hub', 'Grid'];
+// Only Rows shows for now; the other views wait, parked.
+const VIEW_PICKER = false;
 const opts = {
   // The toy always opens on Rows.
   view: 0,
@@ -266,7 +267,7 @@ function stepWind(dt, clock, calm) {
 
 /* ---------- shared uniforms ---------- */
 const U = {
-  uFocal: { value: 1 }, uTime: { value: 0 }, uWind: { value: opts.wind },
+  uFocal: { value: 1 }, uTime: { value: 0 }, uWind: { value: opts.wind }, uRes: { value: new THREE.Vector2(1, 1) },
   uDrift: { value: new THREE.Vector2() }, uFogK: { value: 1 }, uSteps: { value: 16 },
   uFront: { value: new THREE.Vector4(-1e9, -1e9, -1e9, -1e9) }, uFrontK: { value: new THREE.Vector4() },
   uWindDir: { value: new THREE.Vector2(...WIND_DIR) }, uBlink: { value: 1 },
@@ -301,9 +302,9 @@ float fogSigma(vec3 p) {
   float bank = 0.25 + 1.5 * smoothstep(0.3, 0.7, fbm3(q / 2200.0));
   float s = exp(-y / 45.0) * bank / 2000.0;
   // Thin sheets at five heights, each torn into its own banks.
-  s += exp(-pow((y - 16.0) / 7.0, 2.0)) * smoothstep(0.4, 0.66, fbm3(q / 700.0 + 3.0)) / 800.0;
-  s += exp(-pow((y - 35.0) / 10.0, 2.0)) * smoothstep(0.45, 0.68, fbm3(q / 900.0 + 11.0)) / 850.0;
-  s += exp(-pow((y - 52.0) / 7.0, 2.0)) * smoothstep(0.5, 0.7, fbm3(q / 1100.0 + 17.0)) / 900.0;
+  s += exp(-pow((y - 16.0) / 7.0, 2.0)) * smoothstep(0.4, 0.66, fbm3(q / 700.0 + 3.0 + vec2(y, -y) * 0.02)) / 800.0;
+  s += exp(-pow((y - 35.0) / 10.0, 2.0)) * smoothstep(0.45, 0.68, fbm3(q / 900.0 + 11.0 + vec2(-y, y) * 0.015)) / 850.0;
+  s += exp(-pow((y - 52.0) / 7.0, 2.0)) * smoothstep(0.5, 0.7, fbm3(q / 1100.0 + 17.0 + vec2(y, y) * 0.02)) / 900.0;
   // The deck at 72 m; the hubs stand clear of it.
   s += exp(-pow((y - 72.0) / 12.0, 2.0)) * smoothstep(0.45, 0.72, fbm3(q / 1400.0 + 23.0)) / 420.0;
   s += exp(-pow((y - 96.0) / 8.0, 2.0)) * smoothstep(0.55, 0.75, fbm3(q / 1600.0 + 31.0)) / 1500.0;
@@ -352,10 +353,13 @@ uniform float uTime, uWind;
 uniform vec4 uFront, uFrontK;
 uniform vec2 uWindDir;
 varying vec2 vUv;
-// Sky: a dark overcast; the horizon takes the colour of deep fog.
+// Sky: a dark overcast with a slow cloud base at 600 m; the horizon takes the colour of deep fog.
 vec3 sky(vec3 d) {
   float e = max(d.y, 0.0);
-  return mix(fogLight(d), uZen, smoothstep(0.0, 0.9, e));
+  vec2 P = d.xz / (e + 0.03) * 600.0 - uDrift * 0.6;
+  float cl = fbm3(P / 2600.0) * 0.7 + fbm3(P / 900.0 + 9.0) * 0.3;
+  vec3 over = uZen * (0.55 + 0.95 * smoothstep(0.25, 0.8, cl));
+  return mix(fogLight(d), over, smoothstep(0.0, 0.9, e));
 }
 // Swell: five long waves that build with the wind.
 // Each wave fades once a pixel spans its length. Returns slope in xy, height in z.
@@ -411,45 +415,74 @@ attribute float aAngle;
 attribute float aPitch;
 varying vec3 vW;
 varying vec3 vN;
+varying vec3 vBase;
+varying vec3 vLamp;
+varying float vRad;
 // The rotor turns about the hub axis, which runs along local z.
 const vec2 HUB = vec2(0.0, 112.0);
 uniform float uYaw;
 vec3 yaw(vec3 v) { float c = cos(uYaw), s = sin(uYaw); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
 void main() {
   vec3 p = position, n = normal;
+  vRad = -1.0;
   if (aPart > 1.5) {
     // Pitch turns each blade about its own long axis.
     float ba = aBlade * 2.0943951;
     vec2 tdir = vec2(cos(ba), sin(ba)), rdir = vec2(-sin(ba), cos(ba));
     vec2 q = p.xy - HUB;
     float chord = dot(q, tdir), radial = dot(q, rdir);
+    vRad = radial / 80.0;
     float cp = cos(aPitch), sp = sin(aPitch);
     q = rdir * radial + tdir * chord * cp;
     p.z += chord * sp;
-    n = vec3(-tdir * sp, cp);
+    // The airfoil normal turns with the blade: chord and face parts mix.
+    float na = dot(n.xy, tdir), nr = dot(n.xy, rdir), nb = n.z;
+    n = vec3(tdir * (na * cp - nb * sp) + rdir * nr, na * sp + nb * cp);
     // Then the whole rotor turns by the instance angle.
     float c = cos(aAngle), s = sin(aAngle);
     p.xy = HUB + mat2(c, s, -s, c) * q;
     n.xy = mat2(c, s, -s, c) * n.xy;
   }
   p = yaw(p); n = yaw(n);
-  vec4 w = modelMatrix * instanceMatrix * vec4(p, 1.0);
+  mat4 m = modelMatrix * instanceMatrix;
+  vec4 w = m * vec4(p, 1.0);
   vW = w.xyz; vN = n;
+  vBase = (m * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  // The flashing lamp sits on the nacelle roof, toward the rear.
+  vLamp = vBase + yaw(vec3(0.0, 115.6, -5.0));
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const TURB_FS = FOG + `
-uniform vec3 uPaint, uZen, uHorC, uDeep;
+uniform vec3 uPaint, uZen, uHorC, uDeep, uRed;
+uniform float uBlink;
 varying vec3 vW;
 varying vec3 vN;
+varying vec3 vBase;
+varying vec3 vLamp;
+varying float vRad;
 void main() {
   vec3 d = normalize(vW - cameraPosition);
   float t = length(vW - cameraPosition);
   vec3 n = normalize(vN);
   if (dot(n, d) > 0.0) n = -n;
+  // Blade tips carry a dark red band; the tower foot is a muted yellow.
+  vec3 paint = uPaint;
+  if (vRad > 0.86) paint = vec3(0.32, 0.05, 0.04);
+  else if (vRad < -0.5 && vW.y < 16.0) paint = vec3(0.36, 0.3, 0.08);
   // Dark shapes against the fog: overcast light from above, the dark sea below.
   float up = n.y * 0.5 + 0.5;
   vec3 amb = mix(uFog * 0.35, uFog * 0.8 + uZen * 1.2, up);
-  vec3 c = uPaint * (amb + uSun * 0.35 * max(dot(n, uSD), 0.0));
+  vec3 c = paint * (amb + uSun * 0.35 * max(dot(n, uSD), 0.0));
+  // A soft sheen where the paint faces the low glow.
+  vec3 h = normalize(uSD - d);
+  c += uSun * 0.25 * pow(max(dot(n, h), 0.0), 24.0);
+  // The flashing lamp reddens the nacelle roof and the hub.
+  vec3 toL = vLamp - vW;
+  float dl2 = dot(toL, toL);
+  c += uRed * uBlink * 6.0 * max(dot(n, normalize(toL)), 0.15) / (dl2 + 6.0);
+  // The steady tower lamps light a red band round the tower at 62 m.
+  float dy = vW.y - 62.0, rr = length(vW.xz - vBase.xz) - 3.3;
+  c += uRed * 0.5 / (dy * dy + rr * rr * 4.0 + 2.5);
   vec4 f = fogMarch(cameraPosition, d, t, hash12(gl_FragCoord.xy));
   gl_FragColor = vec4(c * f.a + f.rgb, 1.0);
 }`;
@@ -457,14 +490,23 @@ void main() {
 // One turbine in metres: tower 110 m, rotor radius 80 m.
 function turbineGeometry() {
   const P = [], N = [], K = [], B = [];
-  const tri = (a, b, c, n, k, bl = -1) => { P.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) { N.push(...n); K.push(k); B.push(bl); } };
-  const quad = (a, b, c, d, n, k) => { tri(a, b, c, n, k); tri(a, c, d, n, k); };
-  // Tower: a tapered tube with twelve sides.
-  const S = 12, R0 = 3.6, R1 = 2.2, H = 110;
+  // Each vertex may carry its own normal, so curved parts shade smooth.
+  const tri = (a, b, c, n, k, bl = -1) => {
+    P.push(...a, ...b, ...c);
+    const ns = Array.isArray(n[0]) ? n : [n, n, n];
+    for (let i = 0; i < 3; i++) { N.push(...ns[i]); K.push(k); B.push(bl); }
+  };
+  const quad = (a, b, c, d, n, k) => {
+    const ns = Array.isArray(n[0]) ? n : [n, n, n, n];
+    tri(a, b, c, [ns[0], ns[1], ns[2]], k); tri(a, c, d, [ns[0], ns[2], ns[3]], k);
+  };
+  // Tower: a smooth tapered tube with 24 sides.
+  const S = 24, R0 = 3.6, R1 = 2.2, H = 110;
   for (let i = 0; i < S; i++) {
-    const a0 = i / S * Math.PI * 2, a1 = (i + 1) / S * Math.PI * 2, am = (a0 + a1) / 2;
+    const a0 = i / S * Math.PI * 2, a1 = (i + 1) / S * Math.PI * 2;
+    const n0 = [Math.cos(a0), 0.012, Math.sin(a0)], n1 = [Math.cos(a1), 0.012, Math.sin(a1)];
     quad([Math.cos(a0) * R0, 0, Math.sin(a0) * R0], [Math.cos(a0) * R1, H, Math.sin(a0) * R1],
-      [Math.cos(a1) * R1, H, Math.sin(a1) * R1], [Math.cos(a1) * R0, 0, Math.sin(a1) * R0], [Math.cos(am), 0.012, Math.sin(am)], 0);
+      [Math.cos(a1) * R1, H, Math.sin(a1) * R1], [Math.cos(a1) * R0, 0, Math.sin(a1) * R0], [n0, n0, n1, n1], 0);
   }
   // Nacelle: a box from the tower top to the hub.
   const box = (x0, x1, y0, y1, z0, z1, k) => {
@@ -477,16 +519,25 @@ function turbineGeometry() {
   };
   box(-2.4, 2.4, 109, 115, -9, 5, 1);
   box(-1.6, 1.6, 110.4, 113.6, 5, 7.5, 1);
-  // Blades: three flat tapers in the rotor plane, slightly swept.
+  // Spinner: a blunt cone on the hub, facing the wind.
+  for (let i = 0; i < 16; i++) {
+    const a0 = i / 16 * Math.PI * 2, a1 = (i + 1) / 16 * Math.PI * 2, r = 1.9;
+    const v0 = [Math.cos(a0) * r, 112 + Math.sin(a0) * r, 7.2], v1 = [Math.cos(a1) * r, 112 + Math.sin(a1) * r, 7.2];
+    const n0 = [Math.cos(a0) * 0.8, Math.sin(a0) * 0.8, 0.6], n1 = [Math.cos(a1) * 0.8, Math.sin(a1) * 0.8, 0.6];
+    tri(v0, v1, [0, 112, 10.4], [n0, n1, [0, 0, 1]], 1);
+  }
+  // Blades: tapers in the rotor plane, slightly swept.
+  // Normals lean toward each edge, so the airfoil reads as curved.
   const L = 80;
   for (let b = 0; b < 3; b++) {
     const a = b * Math.PI * 2 / 3, ca = Math.cos(a), sa = Math.sin(a);
     const at3 = (r, c) => [ca * c - sa * r, 112 + sa * c + ca * r, 6.6];
+    const nm = u => { const l = Math.hypot(0.7 * u, 1); return [ca * 0.7 * u / l, sa * 0.7 * u / l, 1 / l]; };
     const root = 1.6, chord = 3.4, tip = 0.5, sweep = 1.8;
     const p = [at3(1.5, -root), at3(1.5, root), at3(L * 0.22, chord), at3(L, tip + sweep), at3(L, sweep - tip), at3(L * 0.22, -chord * 0.4)];
-    const n = [0, 0, 1];
-    tri(p[0], p[1], p[2], n, 2, b); tri(p[0], p[2], p[5], n, 2, b);
-    tri(p[5], p[2], p[3], n, 2, b); tri(p[5], p[3], p[4], n, 2, b);
+    const n = [nm(-1), nm(1), nm(1), nm(1), nm(-1), nm(-1)];
+    tri(p[0], p[1], p[2], [n[0], n[1], n[2]], 2, b); tri(p[0], p[2], p[5], [n[0], n[2], n[5]], 2, b);
+    tri(p[5], p[2], p[3], [n[5], n[2], n[3]], 2, b); tri(p[5], p[3], p[4], [n[5], n[3], n[4]], 2, b);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
@@ -627,6 +678,71 @@ for (const halo of [0, 1, 2]) {
   scene.add(pts);
 }
 
+// Each lamp lays a broken red streak on the water below it.
+// A screen quad sits on the lamp's mirror point and stretches with the waves.
+const REFL_VS = FOG + `
+attribute vec2 aCorner;
+attribute float aKind;
+uniform float uFocal, uBlink, uWind, uTime;
+uniform vec2 uRes;
+varying vec2 vC;
+varying float vK;
+varying float vSeed;
+void main() {
+  vec3 L = position, M = vec3(L.x, -L.y, L.z);
+  vec4 clip = projectionMatrix * viewMatrix * vec4(M, 1.0);
+  float t = clip.w;
+  vec3 sea = vec3(L.x, 0.0, L.z);
+  vec4 f = fogMarch(cameraPosition, normalize(sea - cameraPosition), length(sea - cameraPosition), 0.5);
+  vec4 fl = fogMarch(sea, normalize(L - sea), L.y, 0.5);
+  vK = f.a * sqrt(fl.a) * (aKind > 0.5 ? 0.6 : uBlink);
+  // The streak is as wide as the lamp, and longer in a rough sea.
+  float lamp = max(1.4, (aKind > 0.5 ? 1.2 : 2.2) * uFocal / max(t, 1.0));
+  float halfH = L.y * uFocal / max(t, 1.0) * (0.18 + 0.025 * uWind);
+  clip.xy += aCorner * vec2(lamp * 1.8, halfH) * 2.0 / uRes * clip.w;
+  gl_Position = t < 1.0 ? vec4(2.0, 2.0, 2.0, 1.0) : clip;
+  vC = aCorner;
+  vSeed = fract(L.x * 0.0137 + L.z * 0.0071) * 40.0;
+}`;
+const REFL_FS = FOG + `
+uniform vec3 uRed;
+uniform float uTime;
+varying vec2 vC;
+varying float vK;
+varying float vSeed;
+void main() {
+  float x = vC.x, y = vC.y;
+  float core = exp(-x * x * 5.0) * (1.0 - y * y);
+  // Ripples break the streak into flickering bars.
+  float bars = smoothstep(0.35, 0.85, vnoise(vec2(y * 16.0 + vSeed, uTime * 1.3 + vSeed)));
+  float k = core * (0.25 + 0.75 * bars) * 1.6 * vK;
+  if (k < 0.0005) discard;
+  gl_FragColor = vec4(uRed * k, 1.0);
+}`;
+{
+  const src = lightGeo.attributes.position.array, kinds = lightGeo.attributes.aKind.array, n = kinds.length;
+  const P = new Float32Array(n * 12), C = new Float32Array(n * 8), Kd = new Float32Array(n * 4), I = [];
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  for (let i = 0; i < n; i++) for (let v = 0; v < 4; v++) {
+    const o = i * 4 + v;
+    P.set(src.slice(i * 3, i * 3 + 3), o * 3);
+    C.set(corners[v], o * 2);
+    Kd[o] = kinds[i];
+    if (v === 0) I.push(o, o + 1, o + 2, o, o + 2, o + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('aCorner', new THREE.BufferAttribute(C, 2));
+  g.setAttribute('aKind', new THREE.BufferAttribute(Kd, 1));
+  g.setIndex(I);
+  const refl = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: U, vertexShader: REFL_VS, fragmentShader: REFL_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  refl.frustumCulled = false; refl.renderOrder = 4;
+  scene.add(refl);
+}
+
 /* ---------- post ---------- */
 // Bloom runs on its own small mips; the grade adds ACES, a cool balance, vignette and grain.
 const composer = new EffectComposer(renderer);
@@ -634,12 +750,12 @@ composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.85, 1.2);
 composer.addPass(bloom);
 const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uExp: { value: 1.8 }, uCut: { value: 0 }, uFogC: { value: new THREE.Vector3(...LOOK.fog) }, uGrain: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uExp: { value: 1.8 }, uCut: { value: 0 }, uFogC: { value: new THREE.Vector3(...LOOK.fog) }, uGrain: { value: 0 }, uStreak: { value: 1 } },
   vertexShader: QUAD_VS,
   fragmentShader: `
 uniform sampler2D tDiffuse;
 uniform vec2 uRes;
-uniform float uExp, uCut, uGrain;
+uniform float uExp, uCut, uGrain, uStreak;
 uniform vec3 uFogC;
 varying vec2 vUv;
 float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -648,7 +764,19 @@ const mat3 ACES_IN = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 
 const mat3 ACES_OUT = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
 vec3 rrtOdt(vec3 v) { return (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081); }
 void main() {
-  vec3 c = texture2D(tDiffuse, vUv).rgb;
+  // Lens fringing: red and blue part a little toward the edges.
+  vec2 cuv = vUv - 0.5;
+  float r2 = dot(cuv, cuv);
+  vec3 c = vec3(texture2D(tDiffuse, vUv - cuv * 0.012 * r2).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv + cuv * 0.012 * r2).b);
+  // Anamorphic streaks: bright lamps smear sideways in a thin line.
+  if (uStreak > 0.5) {
+    vec3 st = vec3(0.0);
+    for (int i = 1; i <= 16; i++) {
+      float o = float(i) / 16.0 * 0.2, w = exp(-float(i) * 0.2);
+      st += (max(texture2D(tDiffuse, vUv + vec2(o, 0.0)).rgb - 0.22, 0.0) + max(texture2D(tDiffuse, vUv - vec2(o, 0.0)).rgb - 0.22, 0.0)) * w;
+    }
+    c += st * 0.05 * vec3(1.0, 0.75, 1.3);
+  }
   // A view change passes through a wall of fog.
   c = mix(c, uFogC * 1.6, uCut);
   c *= uExp;
@@ -730,6 +858,7 @@ function resize() {
   const k = rung >= 2 ? 0.25 : 0.5;
   bgRT.setSize(Math.max(2, Math.round(W * k)), Math.max(2, Math.round(H * k)));
   grade.uniforms.uRes.value.set(W, H);
+  U.uRes.value.set(W, H);
   // Letterbox bars crop the stage to 2.39 : 1.
   stage.style.setProperty('--lb', `${Math.max(0, (h - w / 2.39) / 2)}px`);
   aimCamera();
@@ -763,7 +892,7 @@ function watchdog(dt) {
   if (slowT < 2) return;
   slowT = 0; runT = 2; rung++;
   if (rung === 1) low = true;
-  if (rung === 2) bloom.enabled = false;
+  if (rung === 2) { bloom.enabled = false; grade.uniforms.uStreak.value = 0; }
   if (rung === 3) U.uSteps.value = 10;
   resize();
 }
@@ -1012,7 +1141,7 @@ stage.addEventListener('pointercancel', () => { pt.down = false; stage.classList
 stage.addEventListener('lostpointercapture', () => { pt.down = false; stage.classList.remove('held'); });
 stage.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) gust(0); return; }
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+  if (VIEW_PICKER && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
     const d = e.key === 'ArrowLeft' ? -1 : 1;
     setView((cut.next >= 0 ? cut.next : opts.view) + d, d);
