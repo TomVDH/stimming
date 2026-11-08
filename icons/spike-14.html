@@ -264,11 +264,37 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= A · Shaded object ================= */
 
-  // An asphalt block on a hard shadow; a soft slick floats in its puddle.
-  // The sky's sheen slides against the pointer, as a reflection would.
+  // Real thin-film colour: oil on water, sampled over the visible band.
+  // The table maps film thickness, drawn as grey, to the colour it reflects.
+  const filmTable = (n = 48, dMax = 700) => {
+    const g = (l, m, a, b) => { const t = (l - m) / (l < m ? a : b); return Math.exp(-0.5 * t * t); };
+    const LAM = Array.from({ length: 16 }, (_, i) => 400 + i * 20), W = [], sum = [0, 0, 0];
+    for (const l of LAM) {
+      const X = 1.056 * g(l, 599.8, 37.9, 31) + 0.362 * g(l, 442, 16, 26.7) - 0.065 * g(l, 501.1, 20.4, 26.2);
+      const Y = 0.821 * g(l, 568.8, 46.9, 40.5) + 0.286 * g(l, 530.9, 16.3, 31.1);
+      const Z = 1.217 * g(l, 437, 11.8, 36) + 0.681 * g(l, 459, 26, 13.8);
+      const w = [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.204 * Y + 1.057 * Z];
+      W.push(w); w.forEach((v, c) => (sum[c] += v));
+    }
+    const out = [[], [], []];
+    for (let i = 0; i < n; i++) {
+      const d = (dMax * i) / (n - 1), rgb = [0, 0, 0];
+      LAM.forEach((l, j) => { const I = 0.5 - 0.5 * Math.cos((4 * Math.PI * 1.47 * d) / l); W[j].forEach((v, c) => (rgb[c] += (I * v) / sum[c])); });
+      const lum = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+      rgb.forEach((v, c) => { const s = Math.max(0, lum + (v - lum) * 1.2) * 0.85; out[c].push(f(Math.min(1, Math.pow(s, 1 / 2.2)))); });
+    }
+    return out;
+  };
+
+  // A wet asphalt block on a hard shadow, with a puddle in it.
+  // The slick is a thickness field the pointer smears; a filter turns it into
+  // true interference colour, so every smear shows real film bands.
   {
-    const EDGE = smoothD(ring(66, 64, 38, 33, 0.09, 0.6, 14));
-    const REST = bands(68, 66, 34, 5, ORDER.length, 0.84);
+    const EDGE = smoothD(ring(64, 63, 40, 35, 0.09, 0.6, 14));
+    const REST = bands(67, 65, 31, 5, 8, 0.86, [-0.4, -0.3]);
+    // Thickness per band, outer edge to centre; a dip makes the marbling.
+    const LEVEL = [0.07, 0.24, 0.4, 0.33, 0.54, 0.7, 0.6, 0.86];
+    const TABLE = typeof document === 'undefined' ? [[], [], []] : filmTable();
     DIRS.push({
       toy: 'oilslick', l: 'A', name: 'Shaded object',
       box: [16, 16, 98, 98],
@@ -276,36 +302,57 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         svg.innerHTML = `
           <defs>
             <clipPath id="${id}c"><path d="${EDGE}"/></clipPath>
-            <filter id="${id}s" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="0.8"/></filter>
-            <linearGradient id="${id}k" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0.3" stop-color="#fff" stop-opacity="0"/><stop offset="0.45" stop-color="#fff" stop-opacity="0.22"/><stop offset="0.6" stop-color="#fff" stop-opacity="0"/>
-            </linearGradient>
+            <filter id="${id}f" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+              <feGaussianBlur stdDeviation="1.8"/>
+              <feComponentTransfer>
+                <feFuncR type="table" tableValues="${TABLE[0].join(' ')}"/>
+                <feFuncG type="table" tableValues="${TABLE[1].join(' ')}"/>
+                <feFuncB type="table" tableValues="${TABLE[2].join(' ')}"/>
+              </feComponentTransfer>
+            </filter>
+            <radialGradient id="${id}sky" cx="0.72" cy="0.22" r="0.85">
+              <stop offset="0" stop-color="oklch(0.42 0.03 240)"/><stop offset="1" stop-color="oklch(0.1 0.012 255)"/>
+            </radialGradient>
+            <radialGradient id="${id}dim" cx="0.72" cy="0.22" r="0.9">
+              <stop offset="0.35" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/>
+            </radialGradient>
+            <pattern id="${id}grit" width="7" height="7" patternUnits="userSpaceOnUse">
+              <circle cx="1.5" cy="2" r="0.7" fill="#fff" opacity="0.07"/><circle cx="5" cy="5.5" r="0.5" fill="#000" opacity="0.3"/>
+            </pattern>
           </defs>
           <rect x="22" y="22" width="92" height="92" fill="${HOLE}"/>
-          <rect x="16" y="16" width="92" height="92" fill="oklch(0.24 0.008 250)"/>
-          <rect x="16" y="16" width="92" height="92" fill="url(#lit)" opacity="0.25"/>
-          <path d="${EDGE}" fill="${PUDDLE}"/>
+          <rect x="16" y="16" width="92" height="92" fill="oklch(0.26 0.008 250)"/>
+          <rect x="16" y="16" width="92" height="92" fill="url(#${id}grit)"/>
+          <rect x="16" y="16" width="92" height="92" fill="url(#lit)" opacity="0.3"/>
+          <path d="${EDGE}" fill="url(#${id}sky)"/>
           <g clip-path="url(#${id}c)">
-            <g filter="url(#${id}s)">${ORDER.map(c => `<path class="b" fill="${c}"/>`).join('')}</g>
-            <circle class="h" r="0" fill="${HOLE}"/>
-            <rect class="k" x="0" y="0" width="128" height="128" fill="url(#${id}k)"/>
+            <g filter="url(#${id}f)" style="mix-blend-mode: screen" opacity="0.9">
+              <rect x="0" y="0" width="128" height="128" fill="#000"/>
+              ${LEVEL.map(v => `<path class="b" fill="rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})"/>`).join('')}
+              <circle class="h" r="0" fill="#000"/>
+            </g>
+            <path d="${EDGE}" fill="url(#${id}dim)"/>
+            <ellipse class="k" cx="88" cy="34" rx="9" ry="4" transform="rotate(-30 88 34)" fill="#fff" opacity="0.5"/>
           </g>
-          <path d="${EDGE}" fill="none" stroke="oklch(0.08 0.01 260 / 0.7)" stroke-width="1.6"/>`;
+          <path d="${EDGE}" fill="none" stroke="url(#rim)" stroke-width="1.6"/>
+          <path d="${EDGE}" fill="none" stroke="oklch(0.08 0.01 260 / 0.6)" stroke-width="0.8"/>`;
         const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h'), k = svg.querySelector('.k');
         const draw = () => {
           paths.forEach((p, i) => p.setAttribute('d', smoothD(F.pts[i])));
-          h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.8));
+          h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.9));
         };
         draw();
         const base = finger(F, draw);
-        const sheen = p => gsap.to(k, { x: p ? (64 - p[0]) * 0.5 : 0, y: p ? (64 - p[1]) * 0.5 : 0, duration: 0.4, overwrite: 'auto' });
-        return { enter(p) { base.enter(p); sheen(p); }, move(p) { base.move(p); sheen(p); }, leave() { base.leave(); sheen(null); } };
+        // The sky's glint slides against the pointer, as a reflection does.
+        const glint = p => gsap.to(k, { x: p ? (64 - p[0]) * 0.25 : 0, y: p ? (64 - p[1]) * 0.25 : 0, duration: 0.5, ease: 'power2.out', overwrite: 'auto' });
+        return { enter(p) { base.enter(p); glint(p); }, move(p) { base.move(p); glint(p); }, leave() { base.leave(); glint(null); } };
       },
+      // The emblem: the block, the puddle cut out, and two film bands.
       emblem: emb(`
         <rect x="16" y="16" width="92" height="92" fill="#fff"/>
         <path d="${EDGE}" fill="#000"/>
-        <g fill="none" stroke="#fff" stroke-width="3">
-        ${REST.filter((_, k) => k % 2 === 1).map(L => `<path d="${smoothD(L)}"/>`).join('\n')}
+        <g fill="none" stroke="#fff" stroke-width="3.2">
+        ${[REST[2], REST[5]].map(L => `<path d="${smoothD(L)}"/>`).join('\n')}
         </g>
       `),
     });
