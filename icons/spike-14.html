@@ -258,72 +258,6 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     return out;
   };
 
-  /* ================= Current ================= */
-
-  // The menu icon: a wet asphalt block on a hard shadow, with a puddle in it.
-  // The slick is a thickness field the pointer smears; a filter turns it into
-  // true interference colour, so every smear shows real film bands.
-  {
-    const EDGE = smoothD(ring(64, 63, 40, 35, 0.09, 0.6, 14));
-    const REST = bands(67, 65, 31, 5, 8, 0.86, [-0.4, -0.3]);
-    // Thickness per band, outer edge to centre; a dip makes the marbling.
-    const LEVEL = [0.07, 0.24, 0.4, 0.33, 0.54, 0.7, 0.6, 0.86];
-    const TABLE = typeof document === 'undefined' ? [[], [], []] : filmTable();
-    DIRS.push({
-      toy: 'oilslick', l: 'Current', name: 'Menu icon', emblemUrl: '../shared/emblems/oilslick.svg',
-      box: [16, 16, 98, 98],
-      art(svg, id) {
-        svg.innerHTML = `
-          <defs>
-            <clipPath id="${id}c"><path d="${EDGE}"/></clipPath>
-            <filter id="${id}f" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-              <feGaussianBlur stdDeviation="1.8"/>
-              <feComponentTransfer>
-                <feFuncR type="table" tableValues="${TABLE[0].join(' ')}"/>
-                <feFuncG type="table" tableValues="${TABLE[1].join(' ')}"/>
-                <feFuncB type="table" tableValues="${TABLE[2].join(' ')}"/>
-              </feComponentTransfer>
-            </filter>
-            <radialGradient id="${id}sky" cx="0.72" cy="0.22" r="0.85">
-              <stop offset="0" stop-color="oklch(0.42 0.03 240)"/><stop offset="1" stop-color="oklch(0.1 0.012 255)"/>
-            </radialGradient>
-            <radialGradient id="${id}dim" cx="0.72" cy="0.22" r="0.9">
-              <stop offset="0.35" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/>
-            </radialGradient>
-            <pattern id="${id}grit" width="7" height="7" patternUnits="userSpaceOnUse">
-              <circle cx="1.5" cy="2" r="0.7" fill="#fff" opacity="0.07"/><circle cx="5" cy="5.5" r="0.5" fill="#000" opacity="0.3"/>
-            </pattern>
-          </defs>
-          <rect x="22" y="22" width="92" height="92" fill="${HOLE}"/>
-          <rect x="16" y="16" width="92" height="92" fill="oklch(0.26 0.008 250)"/>
-          <rect x="16" y="16" width="92" height="92" fill="url(#${id}grit)"/>
-          <rect x="16" y="16" width="92" height="92" fill="url(#lit)" opacity="0.3"/>
-          <path d="${EDGE}" fill="url(#${id}sky)"/>
-          <g clip-path="url(#${id}c)">
-            <g filter="url(#${id}f)" style="mix-blend-mode: screen" opacity="0.9">
-              <rect x="0" y="0" width="128" height="128" fill="#000"/>
-              ${LEVEL.map(v => `<path class="b" fill="rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})"/>`).join('')}
-              <circle class="h" r="0" fill="#000"/>
-            </g>
-            <path d="${EDGE}" fill="url(#${id}dim)"/>
-            <ellipse class="k" cx="88" cy="34" rx="9" ry="4" transform="rotate(-30 88 34)" fill="#fff" opacity="0.5"/>
-          </g>
-          <path d="${EDGE}" fill="none" stroke="url(#rim)" stroke-width="1.6"/>
-          <path d="${EDGE}" fill="none" stroke="oklch(0.08 0.01 260 / 0.6)" stroke-width="0.8"/>`;
-        const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h'), k = svg.querySelector('.k');
-        const draw = () => {
-          paths.forEach((p, i) => p.setAttribute('d', smoothD(F.pts[i])));
-          h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.9));
-        };
-        draw();
-        const base = finger(F, draw);
-        // The sky's glint slides against the pointer, as a reflection does.
-        const glint = p => gsap.to(k, { x: p ? (64 - p[0]) * 0.25 : 0, y: p ? (64 - p[1]) * 0.25 : 0, duration: 0.5, ease: 'power2.out', overwrite: 'auto' });
-        return { enter(p) { base.enter(p); glint(p); }, move(p) { base.move(p); glint(p); }, leave() { base.leave(); glint(null); } };
-      },
-    });
-  }
-
   // Film colour by thickness, 0 to 1, as CSS; a thick sample keeps more orders.
   const FT = typeof document === 'undefined' ? [[0], [0], [0]] : filmTable(96, 900);
   const filmCss = t => {
@@ -439,7 +373,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       return smoothD(ring(cx, cy, r * 0.88, r * 1.1, 0.03, k * 0.9, 40));
     });
     const DASH = k => ['30 4 66 0', '58 3 39 0', '22 3 40 4 31 0', '70 4 26 0', '44 3 53 0'][k % 5];
-    DIRS.push({
+    const B = {
       toy: 'oilslick', l: 'B', name: 'Stencil cut-out',
       box: [14, 14, 100, 100],
       art(svg, id) {
@@ -470,7 +404,10 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         </mask>
         <rect x="14" y="14" width="100" height="100" rx="16" fill="#fff" mask="url(#m)"/>
       `),
-    });
+    };
+    DIRS.push(B);
+    // The menu icon is B.
+    DIRS.unshift({ ...B, l: 'Current', name: 'Menu icon', emblem: null, emblemUrl: '../shared/emblems/oilslick.svg' });
   }
 
   /* ================= C · Single-weight line ================= */
