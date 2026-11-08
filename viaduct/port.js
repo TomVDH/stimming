@@ -1372,6 +1372,7 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
     tBack: { value: backRT.texture }, tDepth: { value: backRT.depthTexture }, tFog: { value: fogRT.texture }, tNorm: { value: normRT.texture }, ...trainU,
     tMirror: { value: sea.getRenderTarget().texture }, uMirrorM: { value: mirrorM }, uInvVP: { value: invVP },
     uGX: { value: new Float32Array(NG) },
+    uFarK: { value: 1 },
   },
   depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth,
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
@@ -1385,7 +1386,7 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
   uniform vec4 uGC[${NG}];
   uniform vec4 uRip[4];
   uniform float uGX[${NG}];
-  uniform float uRT, uReflK;
+  uniform float uRT, uReflK, uFarK;
   uniform float uSwellK, uSwellT, uGlintK, uGlintW, uBankK, uRingK, uRippleK;
   uniform vec3 uDeep;
   varying vec2 vUv;
@@ -1430,11 +1431,14 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
     float graze = max(V.y, 0.04);
     vec2 off = vec2(N.x * 0.7 * graze * 0.6, -N.z * 0.7 * 0.9);
     float stretch = 0.06 + 0.1 * (1.0 - smoothstep(0.04, 0.4, graze));
+    // Far water scatters each reflection into a wider swath.
+    float far = uFarK * smoothstep(60.0, 2400.0, dist);
     vec3 refl = vec3(0.0);
     float wsum = 0.0;
     for (int i = -3; i <= 3; i++) {
       float t = float(i) / 3.0, wgt = exp(-t * t * 2.2);
-      refl += texture2D(tMirror, clamp(uv + off + vec2(sl.x * 0.03 * t, t * stretch), 0.001, 0.999)).rgb * wgt;
+      float sx = (fract(float(i) * 0.618 + 0.3) - 0.5) * 0.05 * far;
+      refl += texture2D(tMirror, clamp(uv + off + vec2(sl.x * 0.03 * t + sx, t * stretch), 0.001, 0.999)).rgb * wgt;
       wsum += wgt;
     }
     refl = refl / wsum * uReflK;
@@ -1450,19 +1454,21 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
     vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
     vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
     vec3 st = vec3(0.0);
+    // Columns widen with distance from the camera, and dim to match.
+    float widen = 1.0 + 2.5 * far, cmax = 0.16 + 0.12 * uFarK;
     for (int i = 0; i < ${NG}; i++) {
       // Each column runs straight down under its light; skip far columns.
       float cx = abs(uGX[i] - sx0);
-      if (cx > 0.16) continue;
+      if (cx > cmax) continue;
       vec3 L = uGP[i].xyz - P;
       float dl = length(L);
       vec3 err = R0 - L / dl;
       float ex = dot(err, right) + (dn2 - 0.5) * 0.004, ey = err.y, need = ey * 0.5;
       float m = mix(exp(-pow((tilt - need) / uGlintW, 2.0)), 0.35 * exp(-pow(need / 0.09, 2.0)), farK);
       float fall = ey > 0.0 ? exp(-ey / uGC[i].w) : exp(-pow(ey / 0.02, 2.0));
-      float sx = max(0.0035, 3.0 / dl);
+      float sx = max(0.0035, 3.0 / dl) * widen;
       float ahead = smoothstep(0.96, 0.995, dot(normalize(R0.xz), normalize(L.xz)));
-      st += uGC[i].rgb * uGP[i].w * m * fall * ahead * exp(-ex * ex / (sx * sx)) * smoothstep(0.16, 0.1, cx);
+      st += uGC[i].rgb * uGP[i].w * m * fall * ahead * exp(-ex * ex / (sx * sx)) * smoothstep(cmax, cmax * 0.6, cx) * inversesqrt(widen);
     }
     float bank = exp(-length(P.xz - uGlow.xz) / (uGlowR * 1.3));
     col += uAmber * uBankK * bank * (0.4 + 0.6 * F) * (0.75 + 0.5 * smoothstep(-0.03, 0.03, -sl.y));
@@ -1698,6 +1704,7 @@ knob('Sea', 'swellK', 'Swell height', 0, 4, 0.01, uni(U.uSwellK));
 knob('Sea', 'swellT', 'Swell speed', 0, 4, 0.01, uni(U.uSwellT));
 knob('Sea', 'glintK', 'Glint brightness', 0, 4, 0.01, uni(U.uGlintK));
 knob('Sea', 'glintW', 'Glint spread', 0.004, 0.08, 0.001, uni(U.uGlintW));
+knob('Sea', 'farK', 'Far spread', 0, 3, 0.01, uni(comp.material.uniforms.uFarK));
 knob('Sea', 'bankK', 'Golden sheen', 0, 0.3, 0.001, uni(U.uBankK));
 knob('Sea', 'rippleK', 'Tap ripple size', 0, 4, 0.01, uni(U.uRippleK));
 knob('Sea', 'ringK', 'Ripple shine', 0, 0.2, 0.001, uni(U.uRingK));
