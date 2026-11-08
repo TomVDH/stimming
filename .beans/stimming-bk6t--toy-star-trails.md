@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T14:00:00Z
-updated_at: 2026-11-08T11:22:16Z
+updated_at: 2026-11-08T11:31:05Z
 ---
 
 Build Star trails from docs/toy-dev-plan.md, section 1. It sits on the main shelf as beta. It follows the Look rule: one horizon line, no props.
@@ -23,4 +23,4 @@ Build Star trails from docs/toy-dev-plan.md, section 1. It sits on the main shel
 - [ ] QA: 1280 and 375 px, clean console, idle stop, hidden tab stops the loop
 - [ ] Record the session cost
 
-- [ ] Icon and emblem: Tom picks from icons/spike-13.html (Current, A to E)
+- [x] Icon and emblem: direction A is the menu icon and the intro emblem
