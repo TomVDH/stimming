@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.13 0.01 70); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sunbeam dust</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Sunbeam dust: one shaft of light in a dark room, full of motes. */
+:root { --stage: oklch(0.06 0.004 70); }
+.stage--sunbeam { cursor: crosshair; }
+.stage--sunbeam canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--sunbeam canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--sunbeam canvas { transition: none; } }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 70 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Sunbeam dust</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--sunbeam" id="stage" tabindex="0" role="application" aria-label="A shaft of light crosses a dark room. Dust motes drift and glint inside it.">
+      <p class="fail" hidden>Sunbeam dust needs WebGL2 with float targets, which this browser does not have.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="rig" role="group" aria-label="Light">
+        <button class="chip" type="button" data-value="morning" aria-pressed="true"><span class="dot" style="background:oklch(0.9 0.09 70)"></span>Morning</button>
+        <button class="chip" type="button" data-value="noon" aria-pressed="false"><span class="dot" style="background:oklch(0.96 0.03 95)"></span>Noon</button>
+        <button class="chip" type="button" data-value="golden" aria-pressed="false"><span class="dot" style="background:oklch(0.8 0.14 55)"></span>Golden</button>
+        <button class="chip" type="button" data-value="moon" aria-pressed="false"><span class="dot" style="background:oklch(0.7 0.04 250)"></span>Moon</button>
+      </div>
+      <label class="slider"><span>Dust</span><input type="range" id="dust" min="0.1" max="1" step="0.01" value="0.6" aria-label="Dust: how many motes"></label>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Window</span><div class="choices" id="win" role="group" aria-label="Window">
+              <button class="chip" type="button" data-value="open" aria-pressed="false">Open</button>
+              <button class="chip" type="button" data-value="panes" aria-pressed="true">Panes</button>
+            </div></div>
+            <div class="group"><span>Focus</span><div class="choices" id="focus" role="group" aria-label="Focus">
+              <button class="chip" type="button" data-value="near" aria-pressed="false">Near</button>
+              <button class="chip" type="button" data-value="beam" aria-pressed="true">Beam</button>
+              <button class="chip" type="button" data-value="far" aria-pressed="false">Far</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt>Light</dt><dd>pick the hour</dd></div>
+          <div><dt>Dust</dt><dd>more or fewer motes</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Sunbeam dust</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, qualitySetting, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+// Sound arrives in a later task; the toggle stays hidden until then.
+initPage({ id: 'sunbeam', silent: true });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
+
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rad = d => (d * Math.PI) / 180;
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.sunbeam.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.sunbeam.${k}`, String(v)); } catch { /* storage is optional */ } };
+const opts = {
+  rig: saved('rig') || 'morning',
+  dust: saved('dust') != null ? +saved('dust') : 0.6,
+  win: saved('win') || 'panes',
+  focus: saved('focus') || 'beam',
+};
+let reduce = reduced();
+onReducedChange(v => { reduce = v; poke(); });
+
+/* ---------- the light rigs ---------- */
+// Elevation and azimuth place the sun; azimuth turns the beam toward the lens.
+// Glare scales the haze; dust scales how many motes the light shows.
+const RIGS = {
+  morning: { el: 25, az: -22, col: [0.9, 0.09, 70], power: 1.0, glare: 1.0, dust: 1.0, grade: [1.1, 1.0, 0.86] },
+  noon: { el: 55, az: 6, col: [0.96, 0.03, 95], power: 1.35, glare: 0.75, dust: 1.0, grade: [1.0, 1.0, 1.0] },
+  golden: { el: 12, az: -30, col: [0.8, 0.14, 55], power: 1.1, glare: 1.35, dust: 1.0, grade: [1.08, 0.98, 0.86] },
+  moon: { el: 30, az: -6, col: [0.7, 0.04, 250], power: 0.32, glare: 0.9, dust: 0.45, grade: [0.92, 0.98, 1.08] },
+};
+// The live rig eases toward the picked one over 1.2 s.
+const rigOf = name => {
+  const r = RIGS[name], el = rad(r.el), az = rad(r.az);
+  return {
+    d: [Math.cos(el) * Math.cos(az), -Math.sin(el), Math.cos(el) * Math.sin(az)],
+    col: linFit(...r.col).map(c => c * r.power), glare: r.glare, dust: r.dust, grade: r.grade.slice(),
+  };
+};
+const live = rigOf(opts.rig);
+let rigFrom = rigOf(opts.rig), rigTo = rigOf(opts.rig), rigT = 1;
+
+/* ---------- the room ---------- */
+// One wall holds the window out of frame; the floor catches the light.
+const ROOM = { wall: -5.2, floor: -1.6, win: [-0.6, 2.35, 0.78, 0.58] };
+// Motes fill this box; outside the beam they stay dark.
+const BOX = { min: [-5.1, -1.6, -4.5], max: [5.2, 3.2, 4.8] };
+
+/* ---------- WebGL2 ---------- */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) fail();
+
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+const NOISE = `
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float hash13(vec3 p3) { p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+float vnoise3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
+float fbm3(vec3 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++) { s += a * vnoise3(p); p = p * 2.07 + 11.3; a *= 0.5; } return s / 0.875; }
+`;
+
+/* ---------- beam integrator ---------- */
+// The beam is the window rectangle swept along the light.
+// A point traces back along the light to the wall; the window mask decides.
+const BEAM = `
+uniform vec3 uD; uniform vec4 uWin; uniform float uWall, uFloor, uPanes;
+// The sun's disc blurs each edge more with distance from the window.
+float penOf(float a) { return 0.012 + a * 0.011; }
+float beamMask(vec3 p, out float a) {
+  a = (p.x - uWall) / uD.x;
+  if (a <= 0.0) return 0.0;
+  vec2 q = p.zy - uD.zy * a - uWin.xy;
+  float pen = penOf(a);
+  vec2 e = abs(q);
+  float m = smoothstep(-pen, pen, uWin.z - e.x) * smoothstep(-pen, pen, uWin.w - e.y);
+  // A mullion and a transom cast one cross of shadow.
+  vec2 c = q - vec2(0.0, uWin.w * 0.3);
+  float bar = min(abs(c.x), abs(c.y));
+  m *= mix(1.0, smoothstep(0.03 - pen, 0.03 + pen, bar), uPanes);
+  // Old glass and dust on the sill streak the light along its path.
+  // Sheets of shade read as lines, so the noise varies mostly across.
+  float st = vnoise(q * vec2(5.5, 0.7) + 3.7) * 0.65 + vnoise(q * vec2(16.0, 1.6) - 1.3) * 0.35;
+  // Haze drinks a little light, so the shaft dims toward the floor.
+  return m * (0.45 + 1.1 * st * st) * exp(-a * 0.05);
+}
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+// The glow toward the sun rolls off, so a low sun never blows out.
+float phase(float c) { float p = hg(c, 0.55); return p / (1.0 + p * 2.2); }
+`;
+const BEAM_FS = `#version 300 es
+precision highp float;
+uniform vec3 uO, uR, uU, uF, uCol; uniform vec2 uTan, uRes; uniform float uGlare, uT;
+in vec2 vUv; out vec4 o;
+${NOISE}
+${BEAM}
+// One axis of the window slab clips the ray's range.
+void slab(float A, float B, float c, float h, inout float t0, inout float t1) {
+  if (abs(B) < 1e-6) { if (abs(A - c) > h) t1 = -1.0; return; }
+  float a = (c - h - A) / B, b = (c + h - A) / B;
+  t0 = max(t0, min(a, b)); t1 = min(t1, max(a, b));
+}
+void main() {
+  vec3 d = normalize(uF + (vUv.x * 2.0 - 1.0) * uTan.x * uR + (vUv.y * 2.0 - 1.0) * uTan.y * uU);
+  float tF = d.y < 0.0 ? (uFloor - uO.y) / d.y : 1e4;
+  float t0 = 0.05, t1 = min(tF, 40.0);
+  if (d.x < 0.0) t1 = min(t1, (uWall - uO.x) / d.x);
+  // The window's trace is linear in t, so two slabs bound the beam.
+  vec2 A = uO.zy - uD.zy * (uO.x - uWall) / uD.x;
+  vec2 B = d.zy - uD.zy * d.x / uD.x;
+  float pad = 0.35;
+  slab(A.x, B.x, uWin.x, uWin.z + pad, t0, t1);
+  slab(A.y, B.y, uWin.y, uWin.w + pad, t0, t1);
+  vec3 c = vec3(0.0);
+  if (t1 > t0) {
+    // Jittered samples along the chord; the jitter holds still per pixel.
+    const int N = 14;
+    float ds = (t1 - t0) / float(N);
+    float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    vec3 drift = vec3(uT * 0.031, uT * 0.012, -uT * 0.019);
+    float sum = 0.0;
+    for (int i = 0; i < N; i++) {
+      vec3 p = uO + d * (t0 + (float(i) + j) * ds);
+      float a, m = beamMask(p, a);
+      if (m > 0.001) { float n = fbm3(p * 0.32 + drift) * 0.7 + fbm3(p * 1.3 - drift * 1.7) * 0.3; n = smoothstep(0.32, 0.72, n); sum += m * (0.1 + 1.3 * n * n) * ds; }
+    }
+    c += uCol * sum * (0.025 + phase(dot(uD, -d))) * 2.4 * uGlare;
+  }
+  // The floor shows only where the light lands, plus a faint bounce.
+  if (tF < 40.0) {
+    vec3 p = uO + d * tF;
+    float a, m = beamMask(p, a);
+    float grain = 0.82 + 0.3 * fbm(p.xz * vec2(0.9, 7.0)) + 0.06 * fbm(p.xz * 30.0);
+    float lit = (0.25 - uD.y) * 1.25 * grain;
+    vec2 pc = (vec3(uWall, uWin.y, uWin.x) + uD * ((uFloor - uWin.y) / uD.y)).xz;
+    float bounce = exp(-dot(p.xz - pc, p.xz - pc) * 0.12) * 0.012;
+    c += uCol * (m * lit + bounce * grain) * exp(-tF * 0.015);
+  }
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------- motes ---------- */
+// Each mote is a tumbling flake; it glints when its face meets the half vector.
+const MOTE_VS = `#version 300 es
+precision highp float;
+in vec4 aP;
+uniform mat4 uVP; uniform vec3 uO, uF, uCol; uniform float uFocus, uAp, uH, uDpr, uT, uDust, uFlash;
+out vec3 vI; out float vB, vK;
+${NOISE}
+${BEAM}
+void main() {
+  vec3 p = aP.xyz;
+  float z = dot(p - uO, uF);
+  if (z < 0.08) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vI = vec3(0.0); return; }
+  float a, m = beamMask(p, a);
+  vec3 toCam = normalize(uO - p);
+  // The flake turns about a random axis at its own pace.
+  float h1 = hash12(aP.ww * 91.7 + 3.1), h2 = hash12(aP.ww * 37.3 + 9.4);
+  float th = aP.w * 6.2832 + uT * (0.5 + h1 * 1.4) * uFlash;
+  float ph = h2 * 6.2832 + uT * 0.37 * uFlash;
+  vec3 n = vec3(sin(th) * cos(ph), cos(th), sin(th) * sin(ph));
+  vec3 hv = normalize(toCam - uD);
+  float glint = pow(abs(dot(n, hv)), 90.0);
+  float lit = max(m, 0.002) * uDust;
+  vec3 e = uCol * lit * (0.12 + phase(dot(uD, toCam)) * 1.6) * (0.45 + glint * mix(2.0, 16.0, uFlash));
+  // A thin lens: blur grows with distance from the focal plane.
+  float coc = uAp * abs(z - uFocus) / z * uH;
+  float base = 2.1 * uDpr;
+  float size = clamp(max(base, coc), base, 120.0 * uDpr);
+  vI = e * pow(base / size, 1.55) * 4.0;
+  vB = smoothstep(4.0 * uDpr, 18.0 * uDpr, size);
+  vK = (size + 2.0) / size;
+  gl_PointSize = size + 2.0;
+  gl_Position = uVP * vec4(p, 1.0);
+}`;
+const MOTE_FS = `#version 300 es
+precision highp float;
+in vec3 vI; in float vB, vK; out vec4 o;
+void main() {
+  float r = length(gl_PointCoord * 2.0 - 1.0) * vK;
+  if (r > vK) discard;
+  float dot1 = exp(-r * r * 3.2);
+  // Large discs keep a flat face and a brighter rim, as a round aperture does.
+  float disc = smoothstep(1.0, 0.9, r);
+  float rim = smoothstep(0.55, 0.96, r) * disc;
+  float shape = mix(dot1, disc * 0.8 + rim * 0.75, vB);
+  o = vec4(vI * shape, 1.0);
+}`;
+
+/* ---------- post ---------- */
+// The bright pass keeps only glints and the floor patch.
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; in vec2 vUv; out vec4 o;
+void main() { vec3 c = texture(uSrc, vUv).rgb; float l = max(c.r, max(c.g, c.b)); o = vec4(min(c, vec3(6.0)) * smoothstep(0.55, 1.6, l), 1.0); }`;
+// A nine-tap blur runs once per axis.
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uDir; in vec2 vUv; out vec4 o;
+void main() {
+  vec3 s = texture(uSrc, vUv).rgb * 0.227;
+  s += (texture(uSrc, vUv + uDir * 1.385).rgb + texture(uSrc, vUv - uDir * 1.385).rgb) * 0.316;
+  s += (texture(uSrc, vUv + uDir * 3.231).rgb + texture(uSrc, vUv - uDir * 3.231).rgb) * 0.070;
+  o = vec4(s, 1.0);
+}`;
+// The final pass: bloom, grade, vignette, grain and output curve.
+const OUT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc, uBloom, uWide; uniform vec2 uRes; uniform vec3 uGrade;
+in vec2 vUv; out vec4 o;
+${NOISE}
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb + texture(uBloom, vUv).rgb * 0.35 + texture(uWide, vUv).rgb * 0.22;
+  c *= uGrade;
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q * vec2(1.0, 1.25), q) * 0.9;
+  c = 1.0 - exp(-c * 1.6);
+  c += (hash12(vUv * uRes) - 0.5) * 0.008;
+  o = vec4(pow(max(c, 0.0), vec3(1.0 / 2.2)), 1.0);
+}`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+const P = {
+  beam: program(QUAD_VS, BEAM_FS, ['aPos']),
+  mote: program(MOTE_VS, MOTE_FS, ['aP']),
+  bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
+  blur: program(QUAD_VS, BLUR_FS, ['aPos']),
+  out: program(QUAD_VS, OUT_FS, ['aPos']),
+};
+
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// The motes start spread through the room, so the first frame is full.
+const MOTES = 256 * 256;
+const moteData = new Float32Array(MOTES * 4);
+for (let i = 0; i < MOTES; i++) {
+  for (let k = 0; k < 3; k++) moteData[i * 4 + k] = lerp(BOX.min[k], BOX.max[k], Math.random());
+  moteData[i * 4 + 3] = Math.random();
+}
+const moteVao = gl.createVertexArray();
+gl.bindVertexArray(moteVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, moteData, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+
+/* ---------- camera ---------- */
+// Portrait turns the camera so the beam still crosses the frame.
+const cam = { o: [0, 0, 0], f: [0, 0, -1], r: [1, 0, 0], u: [0, 1, 0], tan: [1, 1], vp: new Float32Array(16) };
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(...a) || 1; return a.map(x => x / l); };
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function aim(W, H) {
+  const asp = W / H, tall = asp < 0.85;
+  let look = [0.1, -0.22, 0], fov = rad(44);
+  cam.o = [0.3, 0.15, 5.4];
+  if (tall) {
+    // Portrait stands past the patch and looks back up the shaft.
+    const d = live.d, [zc, yc] = ROOM.win;
+    const a = Math.min(9, (ROOM.floor - yc) / d[1]);
+    const h = norm([d[0], 0, d[2]]), side = [-h[2], 0, h[0]];
+    const pc = [ROOM.wall + d[0] * a, yc + d[1] * a, zc + d[2] * a];
+    const k = [3.4, 1.3, 1.0, 0.42];
+    cam.o = [0, 1, 2].map(i => pc[i] + h[i] * k[0] + side[i] * k[1] + (i === 1 ? k[2] : 0));
+    look = [0, 1, 2].map(i => ROOM.wall * (i === 0) + [0, yc, zc][i] * (i > 0) + d[i] * a * k[3]);
+    fov = rad(64);
+  }
+  cam.f = norm(sub(look, cam.o));
+  cam.r = norm(cross(cam.f, [0, 1, 0]));
+  cam.u = cross(cam.r, cam.f);
+  cam.tan = [Math.tan(fov / 2) * asp, Math.tan(fov / 2)];
+  // The view-projection matrix matches the beam pass's rays exactly.
+  const n = 0.05, fa = 60, [r, u, f, o] = [cam.r, cam.u, cam.f, cam.o];
+  const sx = 1 / cam.tan[0], sy = 1 / cam.tan[1], A = (fa + n) / (fa - n), B = (2 * fa * n) / (fa - n);
+  const tx = -dot3(r, o), ty = -dot3(u, o), tz = -dot3(f, o);
+  // Column-major: clip = P * V, with view z along the forward axis.
+  const m = cam.vp;
+  m[0] = sx * r[0]; m[4] = sx * r[1]; m[8] = sx * r[2]; m[12] = sx * tx;
+  m[1] = sy * u[0]; m[5] = sy * u[1]; m[9] = sy * u[2]; m[13] = sy * ty;
+  m[2] = A * f[0]; m[6] = A * f[1]; m[10] = A * f[2]; m[14] = A * tz - B;
+  m[3] = f[0]; m[7] = f[1]; m[11] = f[2]; m[15] = tz;
+}
+// Focus distances in metres along the view axis.
+const focusOf = () => (opts.focus === 'near' ? 1.6 : opts.focus === 'far' ? 11 : Math.hypot(...sub([-1.2, 0.7, -0.4], cam.o)));
+
+/* ---------- state ---------- */
+let W = 1, H = 1, dpr = 1, frame = null, bl = [], wd = [];
+let t = 0, ready = false, panes = opts.win === 'panes' ? 1 : 0;
+
+/* ---------- render ---------- */
+function quad(dst, prog) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : W, dst ? dst.h : H);
+  gl.useProgram(prog.p); gl.bindVertexArray(quadVao);
+}
+const bind = (unit, tex, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(loc, unit); };
+function blur(pair) {
+  quad(pair[1], P.blur); bind(0, pair[0].tex, P.blur.u.uSrc); gl.uniform2f(P.blur.u.uDir, 1 / pair[0].w, 0); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  quad(pair[0], P.blur); bind(0, pair[1].tex, P.blur.u.uSrc); gl.uniform2f(P.blur.u.uDir, 0, 1 / pair[0].h); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function beamUniforms(u) {
+  gl.uniform3fv(u.uD, live.d);
+  gl.uniform4fv(u.uWin, ROOM.win);
+  gl.uniform1f(u.uWall, ROOM.wall);
+  gl.uniform1f(u.uFloor, ROOM.floor);
+  gl.uniform1f(u.uPanes, panes);
+}
+function render() {
+  quad(frame, P.beam);
+  let u = P.beam.u;
+  beamUniforms(u);
+  gl.uniform3fv(u.uO, cam.o); gl.uniform3fv(u.uR, cam.r); gl.uniform3fv(u.uU, cam.u); gl.uniform3fv(u.uF, cam.f);
+  gl.uniform2fv(u.uTan, cam.tan);
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform3fv(u.uCol, live.col);
+  gl.uniform1f(u.uGlare, live.glare);
+  gl.uniform1f(u.uT, t);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // Motes add their light on top of the beam.
+  gl.useProgram(P.mote.p);
+  u = P.mote.u;
+  beamUniforms(u);
+  gl.uniformMatrix4fv(u.uVP, false, cam.vp);
+  gl.uniform3fv(u.uO, cam.o); gl.uniform3fv(u.uF, cam.f);
+  gl.uniform3fv(u.uCol, live.col);
+  gl.uniform1f(u.uFocus, focusOf());
+  gl.uniform1f(u.uAp, 0.022);
+  gl.uniform1f(u.uH, H);
+  gl.uniform1f(u.uDpr, dpr);
+  gl.uniform1f(u.uT, t);
+  gl.uniform1f(u.uDust, live.dust);
+  // Under reduced motion the glints stay but do not flash.
+  gl.uniform1f(u.uFlash, reduce ? 0 : 1);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindVertexArray(moteVao);
+  gl.drawArrays(gl.POINTS, 0, Math.round(MOTES * opts.dust));
+  gl.disable(gl.BLEND);
+  // Two blur sizes give a tight halo and a wide bloom.
+  quad(bl[0], P.bright); bind(0, frame.tex, P.bright.u.uSrc); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  blur(bl);
+  quad(wd[0], P.bright); bind(0, bl[0].tex, P.bright.u.uSrc); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  blur(wd); blur(wd);
+  quad(null, P.out);
+  bind(0, frame.tex, P.out.u.uSrc); bind(1, bl[0].tex, P.out.u.uBloom); bind(2, wd[0].tex, P.out.u.uWide);
+  gl.uniform2f(P.out.u.uRes, W, H);
+  gl.uniform3fv(P.out.u.uGrade, live.grade);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ---------- loop ---------- */
+let raf = 0, last = 0, visible = true, lastInput = performance.now(), rate = 1;
+// Lively frames run at full rate; drifting frames at 30 fps.
+const lively = () => rigT < 1;
+function frameFn(now) {
+  raf = 0;
+  const isLive = lively();
+  if (!isLive && last && now - last < 31) { raf = requestAnimationFrame(frameFn); return; }
+  const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+  last = now;
+  let more = false;
+  try { more = step(dt, now); render(); }
+  finally { if (visible && (isLive || more)) raf = requestAnimationFrame(frameFn); }
+}
+function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+// Any input wakes the loop and resets the sleep clock.
+function poke() { lastInput = performance.now(); rate = 1; wake(); }
+
+const ease = x => x * x * (3 - 2 * x);
+function step(dt, now) {
+  // After a minute without input, the drift eases to a stop over 2 s.
+  rate = reduce ? 0 : clamp(1 - ((now - lastInput) / 1000 - 60) / 2);
+  t += dt * rate;
+  if (rigT < 1) {
+    rigT = Math.min(1, rigT + dt / 1.2);
+    const k = reduce ? 1 : ease(rigT);
+    if (reduce) rigT = 1;
+    live.d = norm(rigFrom.d.map((v, i) => lerp(v, rigTo.d[i], k)));
+    live.col = rigFrom.col.map((v, i) => lerp(v, rigTo.col[i], k));
+    live.grade = rigFrom.grade.map((v, i) => lerp(v, rigTo.grade[i], k));
+    live.glare = lerp(rigFrom.glare, rigTo.glare, k);
+    live.dust = lerp(rigFrom.dust, rigTo.dust, k);
+    if (W < H * 0.85) aim(W, H);
+  }
+  const pw = opts.win === 'panes' ? 1 : 0;
+  panes = reduce ? pw : lerp(panes, pw, 1 - Math.exp(-dt / 0.15));
+  if (Math.abs(panes - pw) < 0.002) panes = pw;
+  if (lively()) watchdog(dt);
+  return rate > 0 || panes !== pw;
+}
+
+/* ---------- performance ---------- */
+// Slow frames step quality down one rung; it never steps back up.
+let runT = 0, avg = 1 / 60, slowT = 0, rung = 0;
+function watchdog(dt) {
+  if (!dt || rung >= 2) return;
+  runT += dt;
+  avg = lerp(avg, dt, 0.1);
+  if (runT < 4) return;
+  slowT = avg > 1 / 38 ? slowT + dt : 0;
+  if (slowT > 2) { rung++; slowT = 0; resize(true); }
+}
+
+/* ---------- size ---------- */
+function fit() {
+  if (!rung) return fitCanvas(canvas, { budget: 1.8e6 });
+  // On High the first rung falls back to Standard, not to 1x.
+  return quality() === 'high' && rung < 2 ? fitCanvas(canvas, { budget: 1.8e6, quality: 'standard' }) : fitCanvas(canvas, { budget: 1.8e6, maxDpr: 1 });
+}
+function resize(force = false) {
+  const f = fit();
+  if (f.W === W && f.H === H && frame && !force) return;
+  W = f.W; H = f.H; dpr = W / Math.max(1, f.w);
+  [...bl, ...wd].forEach(drop); if (frame) drop(frame);
+  frame = target(W, H);
+  const sh = rung >= 2 ? 3 : 2;
+  const bw = Math.max(1, W >> sh), bh = Math.max(1, H >> sh);
+  bl = [target(bw, bh), target(bw, bh)];
+  wd = [target(Math.max(1, bw >> 2), Math.max(1, bh >> 2)), target(Math.max(1, bw >> 2), Math.max(1, bh >> 2))];
+  aim(W, H);
+  render();
+  wake();
+}
+
+/* ---------- bar ---------- */
+function popover(box, btn) {
+  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+const dustEl = document.getElementById('dust');
+dustEl.value = String(opts.dust);
+dustEl.addEventListener('input', () => { opts.dust = +dustEl.value; save('dust', opts.dust); render(); poke(); });
+choices(document.getElementById('rig'), v => {
+  if (v === opts.rig) return;
+  opts.rig = v; save('rig', v);
+  // The light eases from where it is now to the new rig.
+  rigFrom = { d: live.d.slice(), col: live.col.slice(), grade: live.grade.slice(), glare: live.glare, dust: live.dust };
+  rigTo = rigOf(v); rigT = 0;
+  poke();
+}).set(opts.rig);
+choices(document.getElementById('win'), v => { opts.win = v; save('win', v); poke(); }).set(opts.win);
+choices(document.getElementById('focus'), v => { opts.focus = v; save('focus', v); render(); poke(); }).set(opts.focus);
+
+/* ---------- start ---------- */
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => { rung = 0; resize(true); });
+resize();
+gl.finish();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => {
+  visible = v;
+  if (v) wake();
+  else if (raf) { cancelAnimationFrame(raf); raf = 0; }
+});
+wake();
+</script>
+</body>
+</html>
