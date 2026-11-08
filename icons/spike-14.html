@@ -234,13 +234,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   const DIRS = [];
 
-  /* ================= Current ================= */
-
-  // The menu icon is direction A; it is filled in once A exists.
-  const CURRENT = { toy: 'oilslick', l: 'Current', name: 'Menu icon', emblemUrl: '../shared/emblems/oilslick.svg' };
-  DIRS.push(CURRENT);
-
-  /* ================= A · Shaded object ================= */
+  /* ================= Film colour ================= */
 
   // Real thin-film colour: oil on water, sampled over the visible band.
   // The table maps film thickness, drawn as grey, to the colour it reflects.
@@ -264,7 +258,9 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     return out;
   };
 
-  // A wet asphalt block on a hard shadow, with a puddle in it.
+  /* ================= Current ================= */
+
+  // The menu icon: a wet asphalt block on a hard shadow, with a puddle in it.
   // The slick is a thickness field the pointer smears; a filter turns it into
   // true interference colour, so every smear shows real film bands.
   {
@@ -274,7 +270,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     const LEVEL = [0.07, 0.24, 0.4, 0.33, 0.54, 0.7, 0.6, 0.86];
     const TABLE = typeof document === 'undefined' ? [[], [], []] : filmTable();
     DIRS.push({
-      toy: 'oilslick', l: 'A', name: 'Shaded object',
+      toy: 'oilslick', l: 'Current', name: 'Menu icon', emblemUrl: '../shared/emblems/oilslick.svg',
       box: [16, 16, 98, 98],
       art(svg, id) {
         svg.innerHTML = `
@@ -325,210 +321,292 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         const glint = p => gsap.to(k, { x: p ? (64 - p[0]) * 0.25 : 0, y: p ? (64 - p[1]) * 0.25 : 0, duration: 0.5, ease: 'power2.out', overwrite: 'auto' });
         return { enter(p) { base.enter(p); glint(p); }, move(p) { base.move(p); glint(p); }, leave() { base.leave(); glint(null); } };
       },
-      // The emblem: the block, the puddle cut out, and two film bands.
-      emblem: emb(`
-        <rect x="16" y="16" width="92" height="92" fill="#fff"/>
-        <path d="${EDGE}" fill="#000"/>
-        <g fill="none" stroke="#fff" stroke-width="3.2">
-        ${[REST[2], REST[5]].map(L => `<path d="${smoothD(L)}"/>`).join('\n')}
-        </g>
-      `),
+    });
+  }
+
+  // Film colour by thickness, 0 to 1, as CSS; a thick sample keeps more orders.
+  const FT = typeof document === 'undefined' ? [[0], [0], [0]] : filmTable(96, 900);
+  const filmCss = t => {
+    const i = Math.max(0, Math.min(FT[0].length - 1, Math.round(t * (FT[0].length - 1))));
+    return `rgb(${Math.round(FT[0][i] * 255)} ${Math.round(FT[1][i] * 255)} ${Math.round(FT[2][i] * 255)})`;
+  };
+  // An open Catmull-Rom curve through the points.
+  const openD = P => {
+    let d = `M${f(P[0][0])} ${f(P[0][1])}`;
+    for (let i = 0; i < P.length - 1; i++) {
+      const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+      d += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+    }
+    return d;
+  };
+  // A pointer control from three plain functions; focus plays a demo.
+  const ctl = (aim, rest, demo) => {
+    let tl = null;
+    return {
+      enter(p) { if (p) aim(p); else tl = demo(); },
+      move(p) { if (p && !tl) aim(p); },
+      leave() { tl?.kill(); tl = null; rest(); },
+    };
+  };
+
+  /* ================= A · Shaded object ================= */
+
+  // A glossy swatch of oil that tilts to face the pointer.
+  // Film colour shifts with view angle, so the bands sweep as it tilts.
+  {
+    const S = 33, HT = 7, DV = 260, O = [64, 60];
+    const REST = { ax: 18, ay: -22 };
+    // Rotate a slab corner about x, then y, and project it.
+    const proj = (x, y, z, ax, ay) => {
+      const a = (ax * Math.PI) / 180, b = (ay * Math.PI) / 180;
+      const y1 = y * Math.cos(a) - z * Math.sin(a), z1 = y * Math.sin(a) + z * Math.cos(a);
+      const x2 = x * Math.cos(b) + z1 * Math.sin(b), z2 = -x * Math.sin(b) + z1 * Math.cos(b);
+      const k = DV / (DV - z2);
+      return [O[0] + x2 * k, O[1] + y1 * k, z2];
+    };
+    const geo = (ax, ay) => {
+      const c = [[-S, -S], [S, -S], [S, S], [-S, S]];
+      const top = c.map(([x, y]) => proj(x, y, HT / 2, ax, ay)), bot = c.map(([x, y]) => proj(x, y, -HT / 2, ax, ay));
+      // A side shows when it faces the viewer: its outward x or y leans toward us.
+      const sides = [];
+      const a = (ax * Math.PI) / 180, b = (ay * Math.PI) / 180;
+      if (Math.sin(b) < 0) sides.push([1, 2]);
+      if (Math.sin(b) > 0) sides.push([3, 0]);
+      if (Math.sin(a) > 0) sides.push([2, 3]);
+      if (Math.sin(a) < 0) sides.push([0, 1]);
+      return { top, bot, sides: sides.map(([i, j]) => [top[i], top[j], bot[j], bot[i]]) };
+    };
+    // The sheen is one soft band of film colour; its ends fade to clear.
+    const STOPS = Array.from({ length: 9 }, (_, i) => filmCss(0.24 + (i / 8) * 0.3));
+    const swatch = (svg, id, st) => {
+      const g = geo(st.ax, st.ay), T = g.top;
+      svg.querySelector('.sh').setAttribute('d', poly(T.map(p => [p[0] + 6 + st.ay * 0.12, p[1] + 8 - st.ax * 0.12])));
+      svg.querySelectorAll('.sd').forEach((e, i) => e.setAttribute('d', g.sides[i] ? poly(g.sides[i]) : 'M0 0'));
+      svg.querySelector('.tp').setAttribute('d', poly(T));
+      svg.querySelector('.sn').setAttribute('d', poly(T));
+      svg.querySelector('.rm').setAttribute('d', poly(T));
+      // The band phase follows the tilt; steeper views shift the colour.
+      const ph = (st.ax - st.ay) / 50 - 0.3, gr = svg.querySelector('linearGradient');
+      const dx = T[2][0] - T[0][0], dy = T[2][1] - T[0][1];
+      gr.setAttribute('x1', f(T[0][0] + dx * ph)); gr.setAttribute('y1', f(T[0][1] + dy * ph));
+      gr.setAttribute('x2', f(T[0][0] + dx * (ph + 0.9))); gr.setAttribute('y2', f(T[0][1] + dy * (ph + 0.9)));
+      svg.querySelector('.sn').setAttribute('opacity', f(0.55 + 0.35 * Math.min(1, Math.hypot(st.ax, st.ay) / 30)));
+    };
+    DIRS.push({
+      toy: 'oilslick', l: 'A', name: 'Shaded object',
+      box: [22, 20, 88, 92],
+      art(svg, id) {
+        svg.innerHTML = `
+          <defs><linearGradient id="${id}g" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="${STOPS[0]}" stop-opacity="0"/>
+            ${STOPS.map((c, i) => `<stop offset="${f(0.2 + (i / 8) * 0.6)}" stop-color="${c}"/>`).join('')}
+            <stop offset="1" stop-color="${STOPS[8]}" stop-opacity="0"/>
+          </linearGradient></defs>
+          <path class="sh" fill="${HOLE}"/>
+          <path class="sd" fill="oklch(0.2 0.01 260)"/><path class="sd" fill="oklch(0.14 0.01 260)"/>
+          <path class="tp" fill="oklch(0.1 0.01 260)"/>
+          <path class="sn" fill="url(#${id}g)"/>
+          <path class="rm" fill="url(#lit)" stroke="url(#rim)" stroke-width="1.4" stroke-linejoin="round"/>`;
+        const st = { ...REST }, draw = () => swatch(svg, id, st);
+        draw();
+        const to = (ax, ay, d = 0.45) => gsap.to(st, { ax, ay, duration: d, ease: 'power2.out', onUpdate: draw, overwrite: 'auto' });
+        return ctl(
+          p => to(((p[1] - 64) / 64) * -32, ((p[0] - 64) / 64) * 32),
+          () => to(REST.ax, REST.ay, 0.6),
+          () => gsap.timeline({ repeat: -1, onUpdate: draw }).to(st, { ax: -24, ay: 26, duration: 0.9, ease: 'sine.inOut' }).to(st, { ax: 26, ay: -20, duration: 0.9, ease: 'sine.inOut' }));
+      },
+      emblem: (() => {
+        const g = geo(REST.ax, REST.ay), T = g.top;
+        return emb(`
+          ${g.sides.map(s => `<path d="${poly(s)}" fill="#888"/>`).join('\n')}
+          <path d="${poly(T)}" fill="#fff"/>
+          <path d="M${f(T[0][0] + (T[1][0] - T[0][0]) * 0.55)} ${f(T[0][1] + (T[1][1] - T[0][1]) * 0.55)}L${f(T[3][0] + (T[2][0] - T[3][0]) * 0.25)} ${f(T[3][1] + (T[2][1] - T[3][1]) * 0.25)}" stroke="#000" stroke-width="5"/>
+          <path d="M${f(T[0][0] + (T[1][0] - T[0][0]) * 0.85)} ${f(T[0][1] + (T[1][1] - T[0][1]) * 0.85)}L${f(T[3][0] + (T[2][0] - T[3][0]) * 0.55)} ${f(T[3][1] + (T[2][1] - T[3][1]) * 0.55)}" stroke="#000" stroke-width="3"/>
+        `);
+      })(),
     });
   }
 
   /* ================= B · Stencil cut-out ================= */
 
-  // A hex in film colours on a hard shadow; three bands are cut through it.
+  // A fingerprint pressed into oil: its ridges are cut through a film tile.
+  // The core of the whorl follows the pointer, as a pressing finger would.
   {
-    const hex = (cx, cy, r) => Array.from({ length: 6 }, (_, i) => { const a = (-90 + 60 * i) * (Math.PI / 180); return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; });
-    const HEX = poly(hex(60, 60, 48)), SHADOW = poly(hex(66, 67, 48));
-    const REST = bands(60, 61, 34, 10, 3, 0.9, [0.8, -0.6]);
+    const BASE = [64, 62], N = 10;
+    const ridges = core => Array.from({ length: N }, (_, k) => {
+      const t = k / (N - 1), r = 3.4 + k * 3.7;
+      const cx = core[0] + (BASE[0] - core[0]) * t, cy = core[1] + (BASE[1] - core[1]) * t;
+      return smoothD(ring(cx, cy, r * 0.88, r * 1.1, 0.03, k * 0.9, 40));
+    });
+    const DASH = k => ['30 4 66 0', '58 3 39 0', '22 3 40 4 31 0', '70 4 26 0', '44 3 53 0'][k % 5];
     DIRS.push({
       toy: 'oilslick', l: 'B', name: 'Stencil cut-out',
-      box: [18, 12, 90, 103],
+      box: [14, 14, 100, 100],
       art(svg, id) {
         svg.innerHTML = `
-          <defs><clipPath id="${id}c"><path d="${HEX}"/></clipPath></defs>
-          <path d="${SHADOW}" fill="${HOLE}"/>
-          <path d="${HEX}" fill="url(#os-film)"/>
-          <path d="${HEX}" fill="url(#lit)"/>
-          <g clip-path="url(#${id}c)" fill="none" style="stroke: var(--bg)" stroke-width="6" stroke-linecap="round">
-            ${REST.map(() => '<path class="b" pathLength="100" stroke-dasharray="44 7 49 0"/>').join('')}
-            <circle class="h" r="0" style="fill: var(--bg); stroke: none"/>
+          <defs><clipPath id="${id}c"><ellipse cx="64" cy="64" rx="34" ry="42"/></clipPath></defs>
+          <rect x="20" y="20" width="100" height="100" rx="16" fill="${HOLE}"/>
+          <rect x="14" y="14" width="100" height="100" rx="16" fill="url(#os-film)"/>
+          <rect x="14" y="14" width="100" height="100" rx="16" fill="url(#lit)"/>
+          <g clip-path="url(#${id}c)" fill="none" style="stroke: var(--bg)" stroke-width="2.6" stroke-linecap="round">
+            ${Array.from({ length: N }, (_, k) => `<path class="r" pathLength="100" stroke-dasharray="${DASH(k)}"/>`).join('')}
           </g>`;
-        const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h');
-        const draw = () => {
-          paths.forEach((p, i) => p.setAttribute('d', smoothD(F.pts[i])));
-          h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.9));
-        };
+        const paths = [...svg.querySelectorAll('.r')], st = { x: BASE[0], y: BASE[1] };
+        const draw = () => ridges([st.x, st.y]).forEach((d, k) => paths[k].setAttribute('d', d));
         draw();
-        return finger(F, draw, p => p, [60, 60]);
+        const to = (x, y, d = 0.35) => gsap.to(st, { x, y, duration: d, ease: 'power2.out', onUpdate: draw, overwrite: 'auto' });
+        // The core stays inside the fingertip.
+        const aim = p => { const dx = p[0] - BASE[0], dy = p[1] - BASE[1], m = Math.hypot(dx, dy), s = m > 16 ? 16 / m : 1; to(BASE[0] + dx * s, BASE[1] + dy * s); };
+        return ctl(aim, () => to(BASE[0], BASE[1], 0.6),
+          () => gsap.timeline({ repeat: -1, onUpdate: draw }).to(st, { x: 76, y: 52, duration: 0.7, ease: 'sine.inOut' }).to(st, { x: 52, y: 74, duration: 0.9, ease: 'sine.inOut' }).to(st, { x: 64, y: 62, duration: 0.6, ease: 'sine.inOut' }));
       },
       emblem: emb(`
+        <clipPath id="c"><ellipse cx="64" cy="64" rx="34" ry="42"/></clipPath>
         <mask id="m">
-        <path d="${HEX}" fill="#fff"/>
-        <g fill="none" stroke="#000" stroke-width="7" stroke-linecap="round">
-        ${REST.map(L => `<path d="${smoothD(L)}" pathLength="100" stroke-dasharray="44 8 48 0"/>`).join('\n')}
+        <rect x="14" y="14" width="100" height="100" rx="16" fill="#fff"/>
+        <g clip-path="url(#c)" fill="none" stroke="#000" stroke-width="3.4" stroke-linecap="round">
+        ${ridges(BASE).map((d, k) => `<path d="${d}" pathLength="100" stroke-dasharray="${DASH(k)}"/>`).join('\n')}
         </g>
         </mask>
-        <path d="${HEX}" fill="#fff" mask="url(#m)"/>
+        <rect x="14" y="14" width="100" height="100" rx="16" fill="#fff" mask="url(#m)"/>
       `),
     });
   }
 
   /* ================= C · Single-weight line ================= */
 
-  // One unbroken line: a wobbly spiral in the film colours.
+  // Seven sheen lines lie on still water; the pointer parts them like a wake.
   {
-    const spiral = (cx, cy, turns, r0, r1, n = 150) => Array.from({ length: n }, (_, i) => {
-      const t = i / (n - 1), a = t * turns * TAU, r = r0 + (r1 - r0) * t, k = 1 + 0.07 * Math.sin(3 * a);
-      return [cx + r * k * Math.cos(a), cy + r * k * 0.88 * Math.sin(a)];
+    const N = 7, M = 34;
+    const lines = (q, t, amp) => Array.from({ length: N }, (_, k) => {
+      const y0 = 28 + k * 12;
+      return Array.from({ length: M }, (_, i) => {
+        const x = 14 + (i / (M - 1)) * 100;
+        let y = y0 + 2.2 * Math.sin(x * 0.09 + k * 0.8 + t);
+        if (q) {
+          const d2 = (x - q[0]) ** 2 + (y0 - q[1]) ** 2;
+          y += amp * Math.exp(-d2 / 260) * (y0 >= q[1] ? 1 : -1);
+        }
+        return [x, y];
+      });
     });
-    // An open Catmull-Rom curve: the spiral has two loose ends.
-    const openD = P => {
-      let d = `M${f(P[0][0])} ${f(P[0][1])}`;
-      for (let i = 0; i < P.length - 1; i++) {
-        const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
-        d += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
-      }
-      return d;
-    };
-    const REST = [spiral(64, 64, 4.2, 3, 46)];
+    const COLS = Array.from({ length: N }, (_, k) => filmCss(0.2 + k * 0.075));
     DIRS.push({
       toy: 'oilslick', l: 'C', name: 'Single-weight line',
-      box: [16, 22, 96, 84],
+      box: [12, 18, 104, 90],
       art(svg) {
-        svg.innerHTML = `<path class="b" fill="none" stroke="url(#os-line)" stroke-width="3.6" stroke-linecap="round"/>`;
-        const F = film(REST), p = svg.querySelector('.b');
-        const draw = () => p.setAttribute('d', openD(F.pts[0]));
+        svg.innerHTML = `<g fill="none" stroke-width="3.5" stroke-linecap="round">${COLS.map(c => `<path class="l" stroke="${c}"/>`).join('')}</g>`;
+        const paths = [...svg.querySelectorAll('.l')], st = { t: 0, amp: 0, x: 64, y: 64 };
+        const draw = () => lines([st.x, st.y], st.t, st.amp).forEach((P, k) => paths[k].setAttribute('d', openD(P)));
         draw();
-        return finger(F, draw);
+        let run = null;
+        // The water keeps moving while the pointer is over it.
+        const go = () => { run ||= gsap.to(st, { t: '+=6.2832', duration: 3, ease: 'none', repeat: -1, onUpdate: draw }); };
+        return ctl(
+          p => { go(); gsap.to(st, { x: p[0], y: p[1], amp: 9, duration: 0.25, ease: 'power2.out', overwrite: 'auto' }); },
+          () => { run?.kill(); run = null; gsap.to(st, { amp: 0, t: 0, duration: 0.7, ease: 'power2.inOut', onUpdate: draw, overwrite: 'auto' }); },
+          () => { go(); return gsap.timeline({ repeat: -1 }).fromTo(st, { x: 10, y: 60, amp: 9 }, { x: 118, y: 66, duration: 2.2, ease: 'sine.inOut' }); });
       },
-      emblem: emb(`<path d="${openD(REST[0])}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>`),
+      emblem: emb(`
+        <g fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round">
+        ${lines(null, 0, 0).map(P => `<path d="${openD(P)}"/>`).join('\n')}
+        </g>
+      `),
     });
   }
 
   /* ================= D · Isometric block ================= */
 
-  // A thin asphalt slab with a puddle on top. A drop falls where the pointer
-  // enters, rings spread from it, and then the pointer smears the film.
+  // A block of water with a layer of oil on top. The pointer pulls the layer
+  // thicker or thinner, and its colour runs through the film's orders.
   {
-    const T = [64, 18], UR = [110, 44.6], C0 = [64, 71.2], UL = [18, 44.6];
-    const LL = [18, 62.6], BB = [64, 89.2], LR = [110, 62.6];
-    const CEN = [64, 44.6], SX = 1.2247, SY = 0.7071;
-    const ISO = `translate(${CEN[0]} ${CEN[1]}) scale(${SX} ${SY})`;
-    const POOL = smoothD(ring(0, 0, 33, 33, 0.08, 0.7, 14));
-    const REST = bands(1, 1, 28, 4, ORDER.length, 1, [-0.3, -0.2]);
-    const toLocal = p => [(p[0] - CEN[0]) / SX, (p[1] - CEN[1]) / SY];
+    const T = [64, 44], UR = [104, 67], C0 = [64, 90], UL = [24, 67], H = 18, MAXH = 16;
+    const up = (p, h) => [p[0], p[1] - h];
+    const REST_H = 3.2;
+    const layer = (svg, id, h) => {
+      const t = [T, UR, C0, UL].map(p => up(p, h));
+      svg.querySelector('.ol').setAttribute('d', poly([UL, C0, ...[C0, UL].map(p => up(p, h)).reverse()]));
+      svg.querySelector('.or').setAttribute('d', poly([C0, UR, up(UR, h), up(C0, h)]));
+      svg.querySelector('.ot').setAttribute('d', poly(t));
+      const c = h / MAXH, g = svg.querySelectorAll('linearGradient stop');
+      g[0].setAttribute('stop-color', filmCss(Math.max(0, c - 0.05))); g[1].setAttribute('stop-color', filmCss(c)); g[2].setAttribute('stop-color', filmCss(Math.min(1, c + 0.05)));
+      svg.querySelector('.ol').setAttribute('fill', filmCss(c)); svg.querySelector('.or').setAttribute('fill', filmCss(c));
+    };
     DIRS.push({
       toy: 'oilslick', l: 'D', name: 'Isometric block',
-      box: [14, 4, 100, 90],
+      box: [24, 26, 80, 82],
       art(svg, id) {
         svg.innerHTML = `
-          <defs>
-            <clipPath id="${id}c"><path d="${POOL}"/></clipPath>
-            <filter id="${id}s" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="0.6"/></filter>
-          </defs>
-          <path d="${poly([UL, C0, BB, LL])}" fill="oklch(0.27 0.01 250)"/>
-          <path d="${poly([C0, UR, LR, BB])}" fill="oklch(0.18 0.01 250)"/>
-          <path d="${poly([T, UR, C0, UL])}" fill="oklch(0.33 0.008 250)"/>
-          <g transform="${ISO}">
-            <path d="${POOL}" fill="${PUDDLE}"/>
-            <g clip-path="url(#${id}c)">
-              <g filter="url(#${id}s)">${ORDER.map(c => `<path class="b" fill="${c}"/>`).join('')}</g>
-              <circle class="h" r="0" fill="${HOLE}"/>
-              <g class="rings" fill="none" stroke="oklch(0.95 0.02 95)" stroke-width="1.2" vector-effect="non-scaling-stroke">
-                <circle r="0" opacity="0" vector-effect="non-scaling-stroke"/><circle r="0" opacity="0" vector-effect="non-scaling-stroke"/>
-              </g>
-            </g>
-          </g>
-          <path class="drop" d="${dropD(0, 0, 3.4)}" fill="oklch(0.84 0.14 88)" opacity="0"/>
-          <path d="${poly([T, UR, C0, UL])}" fill="none" stroke="url(#rim)" stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M${C0[0]} ${C0[1]}V${BB[1]}" stroke="oklch(0.9 0.02 250 / 0.25)" stroke-width="1.2"/>`;
-        const F = film(REST), paths = [...svg.querySelectorAll('.b')], h = svg.querySelector('.h');
-        const drop = svg.querySelector('.drop'), rings = [...svg.querySelectorAll('.rings circle')];
+          <defs><linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="1"><stop offset="0"/><stop offset="0.5"/><stop offset="1"/></linearGradient></defs>
+          <path d="${poly([UL, C0, [C0[0], C0[1] + H], [UL[0], UL[1] + H]])}" fill="oklch(0.3 0.06 245)"/>
+          <path d="${poly([C0, UR, [UR[0], UR[1] + H], [C0[0], C0[1] + H]])}" fill="oklch(0.2 0.05 245)"/>
+          <path d="${poly([T, UR, C0, UL])}" fill="oklch(0.16 0.03 245)"/>
+          <path class="ol"/><path class="or"/>
+          <path d="M0 0" class="ds" fill="#000" opacity="0.35"/>
+          <path class="ot" fill="url(#${id}g)"/>
+          <path class="ot2" fill="url(#lit)" opacity="0.5"/>`;
+        const st = { h: REST_H };
         const draw = () => {
-          paths.forEach((p, i) => p.setAttribute('d', smoothD(F.pts[i])));
-          h.setAttribute('cx', f(F.at[0])); h.setAttribute('cy', f(F.at[1])); h.setAttribute('r', f(F.hole * 0.8));
+          layer(svg, id, st.h);
+          svg.querySelector('.ds').setAttribute('d', poly([C0, UR, up(UR, st.h), up(C0, st.h)]));
+          svg.querySelector('.ot2').setAttribute('d', svg.querySelector('.ot').getAttribute('d'));
         };
         draw();
-        const base = finger(F, draw, toLocal, [64, 44.6]);
-        let fall = null;
-        // The drop lands on the top face, then pushes rings out through the film.
-        const dropAt = p => {
-          const q = toLocal(p), r = Math.hypot(q[0], q[1]), s = r > 24 ? 24 / r : 1, at = [q[0] * s, q[1] * s];
-          const sx = CEN[0] + at[0] * SX, sy = CEN[1] + at[1] * SY;
-          fall?.kill();
-          fall = gsap.timeline()
-            .fromTo(drop, { x: sx, y: sy - 36, opacity: 1 }, { y: sy, duration: 0.32, ease: 'power2.in' })
-            .set(drop, { opacity: 0 })
-            .add(() => { const st = { n: 0 }; gsap.to(st, { n: 1, duration: 0.5, onUpdate: () => { F.push(at, 1.4); F.hole = 0; draw(); } }); })
-            .fromTo(rings, { attr: { cx: at[0], cy: at[1], r: 1 }, opacity: 0.9 }, { attr: { r: 20 }, opacity: 0, duration: 0.9, ease: 'power2.out', stagger: 0.18 });
-        };
-        return { enter(p) { base.enter(p); dropAt(p || [64, 44.6]); }, move: base.move, leave() { fall?.progress(1); base.leave(); } };
+        const to = (h, d = 0.35) => gsap.to(st, { h, duration: d, ease: 'power2.out', onUpdate: draw, overwrite: 'auto' });
+        return ctl(
+          p => to(Math.max(0.4, Math.min(MAXH, ((96 - p[1]) / 72) * MAXH))),
+          () => to(REST_H, 0.6),
+          () => gsap.timeline({ repeat: -1, onUpdate: draw }).to(st, { h: MAXH, duration: 1.4, ease: 'sine.inOut' }).to(st, { h: 0.4, duration: 1.4, ease: 'sine.inOut' }));
       },
       emblem: emb(`
-        <path d="${poly([T, UR, LR, BB, LL, UL])}" fill="#fff"/>
-        <path d="M${C0[0]} ${C0[1]}V${BB[1]}" stroke="#000" stroke-width="3"/>
-        <g transform="${ISO}">
-        <path d="${POOL}" fill="#000"/>
-        <g fill="none" stroke="#fff" stroke-width="2.8">
-        ${REST.filter((_, k) => k % 3 === 1).map(L => `<path d="${smoothD(L)}" vector-effect="non-scaling-stroke"/>`).join('\n')}
-        </g>
-        </g>
+        <path d="${poly([UL, C0, [C0[0], C0[1] + H], [UL[0], UL[1] + H]])}" fill="#fff"/>
+        <path d="${poly([C0, UR, [UR[0], UR[1] + H], [C0[0], C0[1] + H]])}" fill="#aaa"/>
+        <path d="${poly([T, UR, C0, UL].map(p => up(p, 6)))}" fill="#fff"/>
+        <path d="${poly([UL, C0, up(C0, 6), up(UL, 6)])}" fill="#000"/>
+        <path d="${poly([C0, UR, up(UR, 6), up(C0, 6)])}" fill="#000"/>
       `),
     });
   }
 
   /* ================= E · Abstract mark ================= */
 
-  // One heavy drop of oil. Its sheen turns to face the pointer, and the
-  // bands slide as the pointer comes closer, as film does with view angle.
+  // A black splat of oil with a film-lit rim; its droplets flee the pointer,
+  // and the rim's sheen turns to face it.
   {
-    const C = [64, 76], R = 30, D = dropD(C[0], C[1], R);
+    const BLOB = smoothD(ring(62, 64, 30, 27, 0.15, 1.2, 16));
+    const DROPS = [[18, 40, 4.6], [70, 44, 3.2], [128, 41, 5], [196, 45, 2.6], [250, 42, 4], [310, 46, 3]].map(([a, d, r]) => [62 + d * Math.cos((a * Math.PI) / 180), 64 + d * Math.sin((a * Math.PI) / 180), r]);
     DIRS.push({
       toy: 'oilslick', l: 'E', name: 'Abstract mark',
-      box: [30, 14, 68, 94],
+      box: [14, 14, 100, 100],
       art(svg, id) {
+        const STOPS = Array.from({ length: 8 }, (_, i) => filmCss(0.25 + i * 0.07));
         svg.innerHTML = `
-          <defs>
-            <linearGradient id="${id}g" x1="0" y1="0" x2="0.55" y2="0" spreadMethod="repeat">
-              ${ORDER.slice(1).map((c, i, a) => `<stop offset="${f(i / (a.length - 1))}" stop-color="${c}"/>`).join('')}
-            </linearGradient>
-          </defs>
-          <path d="${D}" transform="translate(5 6)" fill="${HOLE}"/>
-          <path d="${D}" fill="url(#${id}g)"/>
-          <path d="${D}" fill="url(#lit)"/>
-          <path d="${D}" fill="none" stroke="oklch(0.08 0.01 260 / 0.6)" stroke-width="1.4"/>`;
-        const g = svg.querySelector('linearGradient'), st = { a: -30, s: 0 };
-        const paint = () => g.setAttribute('gradientTransform', `rotate(${f(st.a)} 0.5 0.5) translate(${f(st.s)} 0)`);
+          <defs><linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="0">${STOPS.map((c, i) => `<stop offset="${f(i / 7)}" stop-color="${c}"/>`).join('')}</linearGradient></defs>
+          <path d="${BLOB}" transform="translate(5 6)" fill="${HOLE}"/>
+          <path d="${BLOB}" fill="oklch(0.1 0.01 260)"/>
+          ${DROPS.map(([x, y, r]) => `<circle class="d" cx="${f(x)}" cy="${f(y)}" r="${r}" fill="oklch(0.1 0.01 260)" stroke="url(#${id}g)" stroke-width="1.4"/>`).join('')}
+          <path d="${BLOB}" fill="none" stroke="url(#${id}g)" stroke-width="3.2"/>
+          <ellipse cx="50" cy="50" rx="7" ry="3.4" transform="rotate(-35 50 50)" fill="#fff" opacity="0.4"/>`;
+        const g = svg.querySelector('linearGradient'), drops = [...svg.querySelectorAll('.d')], st = { a: -40 };
+        const paint = () => g.setAttribute('gradientTransform', `rotate(${f(st.a)} 0.5 0.5)`);
         paint();
         const aim = p => {
-          const a = (Math.atan2(p[1] - C[1], p[0] - C[0]) * 180) / Math.PI, d = Math.hypot(p[0] - C[0], p[1] - C[1]);
-          gsap.to(st, { a, s: 0.6 - d / 80, duration: 0.5, ease: 'power2.out', onUpdate: paint, overwrite: 'auto' });
+          gsap.to(st, { a: (Math.atan2(p[1] - 64, p[0] - 62) * 180) / Math.PI, duration: 0.5, ease: 'power2.out', onUpdate: paint, overwrite: 'auto' });
+          drops.forEach((e, i) => {
+            const [x, y] = DROPS[i], dx = x - p[0], dy = y - p[1], m = Math.hypot(dx, dy) + 1e-3, w = 9 * Math.exp(-(m * m) / 500);
+            gsap.to(e, { x: (dx / m) * w, y: (dy / m) * w, duration: 0.3, ease: 'power2.out', overwrite: 'auto' });
+          });
         };
-        let spin = null;
-        return {
-          enter(p) { if (p) aim(p); else spin = gsap.to(st, { a: '+=360', s: '+=0.55', duration: 2.4, ease: 'sine.inOut', repeat: -1, onUpdate: paint }); },
-          move(p) { if (p && !spin) aim(p); },
-          leave() { spin?.kill(); spin = null; gsap.to(st, { a: -30, s: 0, duration: 0.6, ease: 'power2.inOut', onUpdate: paint, overwrite: 'auto' }); },
-        };
+        return ctl(aim,
+          () => { gsap.to(st, { a: -40, duration: 0.6, onUpdate: paint, overwrite: 'auto' }); gsap.to(drops, { x: 0, y: 0, duration: 0.6, ease: 'elastic.out(1, 0.5)', overwrite: 'auto' }); },
+          () => { const s = { a: 0 }; return gsap.to(s, { a: 1, duration: 2.4, repeat: -1, ease: 'none', onUpdate: () => aim([62 + 40 * Math.cos(s.a * 6.2832), 64 + 40 * Math.sin(s.a * 6.2832)]) }); });
       },
       emblem: emb(`
-        <mask id="m">
-        <path d="${D}" fill="#fff"/>
-        <g fill="none" stroke="#000" stroke-width="3.5">
-        <path d="${dropD(C[0], C[1], R * 0.66)}"/>
-        <path d="${dropD(C[0], C[1], R * 0.33)}"/>
-        </g>
-        </mask>
-        <path d="${D}" fill="#fff" mask="url(#m)"/>
+        <path d="${BLOB}" fill="#fff"/>
+        ${DROPS.map(([x, y, r]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${r}" fill="#fff"/>`).join('\n')}
       `),
     });
   }
-
-  // Current mirrors A, the menu icon.
-  { const A = DIRS.find(d => d.l === 'A'); Object.assign(CURRENT, { art: A.art, box: A.box }); }
 
   /* ================= Gallery ================= */
 
