@@ -1692,6 +1692,7 @@ function sendTrain() {
 function tap(ndc) {
   if (!ndc) return sendTrain();
   // During a ride, any tap returns to the wide shot.
+  if (chase.mode === 2) return;
   if (chase.mode === 1) return endChase();
   if (!chase.mode && train.on && hitTrain(ndc)) return startChase();
   ray.setFromCamera(ndc, camera);
@@ -1716,12 +1717,24 @@ function release() { steering = false; }
 
 /* ---------- chase: a tap on the train rides a low camera beside it ---------- */
 // Mode 0 is the wide shot, 1 rides, 2 eases back to the wide shot.
-const chase = { mode: 0, t: 0, s: 0 };
+const chase = { mode: 0, t: 0, s: 0, fresh: false };
 // The camera rides this far off the track, on this side, this far ahead.
-const SIDE = 1, OFF = 16, LEAD = 45, REL = 16, IN = 1.4, OUT = 1.8, FOV = 30;
+const SIDE = 1, OFF = 16, LEAD = 45, REL = 16, IN = 2.2, OUT = 2.6, FOV = 30;
 let bakeWith = null;
-const camP = new THREE.Vector3(), lookT = new THREE.Vector3(), wideP = new THREE.Vector3(), wideT = new THREE.Vector3(), aimT = new THREE.Vector3();
-const smooth = t => t * t * (3 - 2 * t);
+const camP = new THREE.Vector3(), lookT = new THREE.Vector3(), wideP = new THREE.Vector3(), wideT = new THREE.Vector3();
+const smooth = smoother;
+// The ride camera follows springs. They keep their own state, so a resize cannot move them.
+const springP = new THREE.Vector3(), springPV = new THREE.Vector3(), springA = new THREE.Vector3(), springAV = new THREE.Vector3();
+const goalP = new THREE.Vector3(), goalA = new THREE.Vector3();
+// A critically damped spring: omega is 2 / tau, and the step is exact.
+function spring(cur, vel, goal, dt, tau = 0.35) {
+  const w = 2 / tau, e = Math.exp(-w * dt);
+  for (const a of ['x', 'y', 'z']) {
+    const x = cur[a] - goal[a], t = vel[a] + w * x;
+    cur[a] = goal[a] + (x + t * dt) * e;
+    vel[a] = (vel[a] - w * t * dt) * e;
+  }
+}
 // A moving camera cannot use the bake, so the still parts draw live.
 function setLive(on) {
   statics.visible = skyG.visible = on;
@@ -1739,7 +1752,8 @@ function lens(fov) {
 function startChase() {
   chase.mode = 1; chase.t = 0;
   chase.s = run.s + run.dir * LEAD;
-  // A ride keeps the train at full speed.
+  chase.fresh = true;
+  // A ride stops the idle slowdown. The train still brakes at the ends.
   run.user = true;
   setLive(true);
 }
@@ -1749,7 +1763,7 @@ function updateChase(dt) {
   chase.t += dt;
   const dir = run.dir;
   // The camera rolls a little slower than the train, so the train slides past.
-  chase.s += dir * Math.max(0, speed() - REL) * dt;
+  chase.s += dir * Math.max(0, trainSpeed(run.s, run.dir, run.t) - REL) * dt;
   const c = atX(chase.s, TRACK + SIDE * OFF);
   camP.set(c.x, DECK + 3.2, c.z);
   // Aim at the part of the train just behind the camera, nose to tail.
@@ -1762,8 +1776,15 @@ function updateChase(dt) {
   const cw = view.w >= view.h ? CAM.w : CAM.p;
   wideP.set(cw.px, cw.py, cw.pz); wideT.set(cw.tx, cw.ty, cw.tz);
   const k = chase.mode === 1 ? smooth(Math.min(1, chase.t / IN)) : 1 - smooth(Math.min(1, chase.t / OUT));
-  camera.position.lerpVectors(wideP, camP, k);
-  camera.lookAt(aimT.lerpVectors(wideT, lookT, k));
+  goalP.lerpVectors(wideP, camP, k);
+  goalP.y += 12 * Math.sin(Math.PI * k);
+  goalA.lerpVectors(wideT, lookT, k);
+  // The springs start at the wide pose.
+  if (chase.fresh) { chase.fresh = false; springP.copy(wideP); springA.copy(wideT); springPV.set(0, 0, 0); springAV.set(0, 0, 0); }
+  spring(springP, springPV, goalP, dt);
+  spring(springA, springAV, goalA, dt);
+  camera.position.copy(springP);
+  camera.lookAt(springA);
   lens(cw.fov + (FOV - cw.fov) * k);
   if (chase.mode === 2 && chase.t >= OUT) {
     // Back on the wide shot: the bake takes over again, with a fresh mirror.
