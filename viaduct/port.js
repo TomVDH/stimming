@@ -287,7 +287,7 @@ const precast = new THREE.ShaderMaterial({
     float tone = 0.8 + 0.32 * k2hash(vec2(floor(vSU.x / 4.0), 3.0 + pier * 4.0));
     // Joints: a dark groove each 4 m, faded out where it would alias.
     float dj = abs(fract(vSU.x / 4.0 + 0.5) - 0.5) * 4.0, aa = fwidth(vSU.x);
-    float joint = mix(mix(0.3, 1.0, smoothstep(0.05, 0.05 + 1.5 * aa, dj)), 1.0, max(pier, smoothstep(0.4, 1.4, aa)));
+    float joint = mix(mix(0.3, 1.0, smoothstep(0.05, 0.05 + 1.5 * aa, dj)), 1.0, max(pier, smoothstep(0.2, 0.8, aa)));
     // Rain streaks run down every wall.
     float vert = 1.0 - abs(N.y);
     float along = mix(vSU.x, vP.x + vP.z, pier);
@@ -409,19 +409,37 @@ const flameMat = new THREE.ShaderMaterial({
 });
 
 // Rails: dark steel that throws back each lamp as a sharp glint.
-const steel = new THREE.ShaderMaterial({
-  uniforms: { ...k2, ...lightU },
-  vertexShader: WORLD_VS,
+// A rail under one pixel wide widens to 1.5 px and dims to match.
+const railMat = new THREE.ShaderMaterial({
+  uniforms: { ...k2, ...lightU, ...projU },
+  vertexShader: /* glsl */`
+  attribute vec3 aAcross;
+  uniform float uScale;
+  varying vec3 vP;
+  varying vec3 vN;
+  varying float vCover;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    // World size of one pixel at this vertex.
+    float px = length(cameraPosition - w.xyz) / (uScale * 400.0);
+    float widen = max(1.0, 1.5 * px / 0.14);
+    w.xyz += aAcross * (widen - 1.0);
+    vP = w.xyz;
+    vN = normalize(mat3(modelMatrix) * normal);
+    vCover = 1.0 / widen;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`,
   fragmentShader: /* glsl */`
   varying vec3 vP;
   varying vec3 vN;
+  varying float vCover;
   ${HEAD}
   ${LIGHTS_GLSL}
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(cameraPosition - vP);
     vec3 c = vec3(0.02) * k2lights(vP, N) + k2spec(vP, N, V, 9.0) * 8.0 + k2sky(reflect(-V, N)) * 1.4;
-    gl_FragColor = vec4(k2haze(c, vP, 1.0), 1.0);
+    gl_FragColor = vec4(k2haze(c * vCover, vP, 1.0), 1.0);
   }`,
 });
 
@@ -582,6 +600,19 @@ function box(x, y, z, w, h, d, ry = 0, list = parts, col = null) {
   if (col) paint(g, col);
   list.push(g.toNonIndexed());
 }
+// A rail box carries each vertex's offset across the rail, for pixel widening.
+function rail(x, y, z, ry) {
+  const g = new THREE.BoxGeometry(0.14, 0.22, 10.05);
+  const pos = g.attributes.position, across = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) across[i * 3] = Math.sign(pos.getX(i)) * 0.07;
+  g.setAttribute('aAcross', new THREE.BufferAttribute(across, 3));
+  const m = new THREE.Matrix4().makeRotationY(ry);
+  g.applyMatrix4(m);
+  const a = g.attributes.aAcross, v = new THREE.Vector3();
+  for (let i = 0; i < a.count; i++) a.setXYZ(i, ...v.fromBufferAttribute(a, i).transformDirection(m).multiplyScalar(0.07).toArray());
+  g.translate(x, y + 0.11, z);
+  railParts.push(g.toNonIndexed());
+}
 // A facade box carries its window strength as a vertex attribute.
 function fbox(x, y, z, w, h, d, win) {
   const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
@@ -712,7 +743,7 @@ const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2,
   for (let s = S0; s < LEN + 10; s += 10) {
     for (const side of [-0.75, 0.75]) {
       const r = atX(s + 5, side + TRACK);
-      box(r.x, DECK, r.z, 0.14, 0.22, 10.05, r.yaw, railParts);
+      rail(r.x, DECK, r.z, r.yaw);
     }
   }
   // Blade piers: a pile cap at the waterline, a slim shaft, a flared head.
@@ -1106,7 +1137,7 @@ const search = (() => {
 // Bake static geometry into a few draw calls.
 if (parts.length) scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
 if (castParts.length) scene.add(new THREE.Mesh(mergeGeometries(castParts), precast));
-if (railParts.length) scene.add(new THREE.Mesh(mergeGeometries(railParts), steel));
+if (railParts.length) scene.add(new THREE.Mesh(mergeGeometries(railParts), railMat));
 if (facadeParts.length) scene.add(new THREE.Mesh(mergeGeometries(facadeParts), facade));
 if (glowParts.length) scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
 {
