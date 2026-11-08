@@ -105,6 +105,7 @@ float k2fogDensity(vec3 p) {
 }
 // A short march sums the fog along the view ray inside the volume.
 float k2portFog(vec3 P) {
+  if (uPortFog <= 0.0) return 0.0;
   vec3 ro = cameraPosition, rd = P - ro;
   float L = length(rd);
   vec3 dir = rd / max(L, 1e-3);
@@ -1284,6 +1285,9 @@ sea.updateMatrixWorld();
 // The bake calls the mirror once; the sea mesh never draws itself.
 const mirror = sea.onBeforeRender;
 sea.onBeforeRender = () => {};
+// Rides render the mirror every second call; the sea keeps the last one.
+let mirrorTick = 0;
+const mirrorHalf = function (...a) { if ((mirrorTick++ & 1) === 0) mirror.apply(this, a); };
 
 /* ---------- K2: precipitation ---------- */
 // Light rain around the camera; drops brighten where light falls on them.
@@ -1611,7 +1615,15 @@ function bake(renderer) {
   statics.visible = false; live.visible = true; comp.visible = true;
   invVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   uploadLights();
-  if (chase.mode) setLive(true);
+  if (chase.mode) {
+    setLive(true);
+    // The bake used the wide pose. A ride goes back to its spring pose.
+    if (!chase.fresh) {
+      camera.position.copy(springP);
+      camera.lookAt(springA);
+      lens(chase.fov);
+    }
+  }
 }
 /* ---------- end bake ---------- */
 
@@ -1739,7 +1751,7 @@ function spring(cur, vel, goal, dt, tau = 0.35) {
 function setLive(on) {
   statics.visible = skyG.visible = on;
   comp.visible = !on;
-  sea.onBeforeRender = on ? mirror : () => {};
+  sea.onBeforeRender = on ? mirrorHalf : () => {};
   if (on) scene.add(sea); else scene.remove(sea);
 }
 function lens(fov) {
@@ -1785,7 +1797,8 @@ function updateChase(dt) {
   spring(springA, springAV, goalA, dt);
   camera.position.copy(springP);
   camera.lookAt(springA);
-  lens(cw.fov + (FOV - cw.fov) * k);
+  chase.fov = cw.fov + (FOV - cw.fov) * k;
+  lens(chase.fov);
   if (chase.mode === 2 && chase.t >= OUT) {
     // Back on the wide shot: the bake takes over again, with a fresh mirror.
     chase.mode = 0;
