@@ -533,7 +533,7 @@ vec3 scratches(vec2 pG, vec2 px) {
     float cs = l == 0 ? 0.006 : 0.0105;
     vec2 g = pG / cs + float(l) * 17.3;
     vec2 id = floor(g), f = fract(g) - 0.5;
-    if (hash12(id + 3.1) > 0.6) continue;
+    if (hash12(id + 3.1) > 0.3) continue;
     float a = hash12(id) * PI;
     vec2 t = vec2(cos(a), sin(a));
     float along = dot(f, t), across = dot(f, vec2(-t.y, t.x));
@@ -545,7 +545,7 @@ vec3 scratches(vec2 pG, vec2 px) {
       vec2 r = px - fl.xy;
       float dist = length(r);
       float al = dot(r / max(dist, 1.0), t);
-      s += uFlrC[i] * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.2)) * 0.45;
+      s += uFlrC[i] * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.2)) * 0.32;
     }
   }
   return s;
@@ -630,7 +630,7 @@ void main() {
   float wy = p0.y;
   vec3 wall = alb * cabin * (0.55 + 0.6 * smoothstep(-0.6, 0.5, wy)) * (0.85 + 0.15 * vnoise(p0 * 900.0));
   // A seam between two wall panels gives the plane its slant.
-  wall *= 1.0 - 0.35 * smoothstep(0.004, 0.0, abs(p0.x - 0.36));
+  wall *= 1.0 - 0.35 * smoothstep(0.004, 0.0, abs(p0.x - 0.5));
   wall += alb * outGlow * 0.8 * exp(-max(sOut, 0.0) / 0.07);
   // A soft shadow rings the rim of the recess.
   wall *= 1.0 - 0.4 * exp(-max(sOut, 0.0) / 0.012);
@@ -711,7 +711,7 @@ void main() {
       vec2 pG = at(da, DEPTH), pI = at(da, Z_IN), pO = at(da, Z_OUT);
       float sSk = sdBox(pO, SKIN, RSK);
       float aaO = fwidth(sSk) * 1.2;
-      float sI = sdBox(pI, SKIN + 0.014, RSK + 0.014), aaI = fwidth(sI) * 1.5;
+      float sI = sdBox(pI, SKIN + 0.007, RSK + 0.007), aaI = fwidth(sI) * 1.5;
       vec3 view = vec3(0.0);
       if (sSk < aaO) {
         // Through the skin opening: the outside, then ice on the outer pane.
