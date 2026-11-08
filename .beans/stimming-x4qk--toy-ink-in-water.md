@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:08:28Z
-updated_at: 2026-11-08T11:39:57Z
+updated_at: 2026-11-08T11:54:07Z
 ---
 
 Ink in water (`ink`, idea 35). Ink drops fall into a tall, still tank of dark water as vortex rings, break into fingers, and glow in side light.
@@ -25,6 +25,7 @@ Plan: `docs/plans/ink.md`. D3: WebGPU only on three.js 0.186.1, as Fire (Tom, 20
 - [x] Tom, 2026-11-08: Backlit is the default light; a faint glow shows the light's side; High runs 1.6M cells
 - [x] Task 5: bar, Settings, toys.json, menu Lab entry, QA (Q1, Q2, Q3, Q7 and Q9 pass; Q6 checked in code; Tom skipped Q4 and Q8, 2026-11-08)
 - [x] Tom, 2026-11-08: main shelf as No. 32 (Beta); emblem in shared/emblems/ink.svg; the menu icon gains a light wedge from the upper left
+- [ ] Icons: five directions in spike 16 (A Shaded object, B Stencil cut-out, C Single-weight line, D Isometric block, E Abstract mark), on the sheet; Tom picks
 - [ ] Record the session cost
 
 
