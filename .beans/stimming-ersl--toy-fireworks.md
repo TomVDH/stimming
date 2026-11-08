@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T11:59:14Z
+updated_at: 2026-11-08T11:59:22Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -17,12 +17,12 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Blockout: the still bay and one frozen peony, stills at 1280 and 375 px
 - [x] Tom signs off the blockout (2026-11-08)
 - [ ] D1: Tom names what broke in Night viaduct; fix it in this copy of K2
-- [ ] Task 1: the bay at night, K2 lifted and marked
+- [x] Task 1: the bay at night, K2 lifted and marked
 - [x] Task 2: five shells on closed-form GPU stars (K6): ring buffer with range uploads, comets with sparks, hold to charge, burst lights, sleep when idle
 - [x] Q4 for Task 2: the loop stops when the show ends (0 frames for 13 s)
 - [x] Task 3: lit smoke, water reflections, finale (24 shells in 6 s to a strobe-and-crackle wall, then three gold willows)
 - [x] Task 4: sound, with delayed boom: lift thump, whoosh and 1-in-6 whistle; crack, body, sub, 3.5 s reverb and shore slap; crackle and sizzle; water bed; caps 6 booms, 2 crackles; mute and hidden stop all
-- [ ] Q9: confirm the context suspends after the show (Tom was playing during the check)
+- [x] Q9: the context suspends after the show (checked in QA)
 - [x] Task 5 (part): menu Lab entry with icon and hover hook; toys.json entry; Tom keeps nl Vuurwerk (2026-11-08)
 - [x] Task 5: QA in the pane, 2026-11-08
   - Q1 module and menu scripts parse; Q2 clean console through stepper, Settings, Smoke, Water, finale
