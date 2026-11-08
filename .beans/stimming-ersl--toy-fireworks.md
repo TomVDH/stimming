@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T11:41:18Z
+updated_at: 2026-11-08T11:47:50Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -61,3 +61,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 
 - [x] Smoke dissipates: diffusion growth, density thins with spread, a much slower lean; Thin and Thick lighter
 - [x] Stars last about a third longer, die out at random, and fall more as they burn
+
+- [x] ZzFX 1.3.2 (MIT, Tom's pick 2026-11-08) renders thump, whistle, crack, boom body and sizzle into buffers on the kit's context; synth voices play until it loads; crackle stays on the click bank

@@ -814,6 +814,50 @@ const pend = new Set();
 const jit = (a = 0.1) => 1 + (Math.random() * 2 - 1) * a;
 const dB = v => Math.pow(10, v / 20);
 let rvb = null, bed = null, crackBufs = null;
+// ZzFX (MIT, Tom's pick) renders the voices into buffers on this kit's context.
+// Until it loads, the synth voices below play instead.
+// Measured in the browser: boom body near 500 Hz over 2 s; whistle 1.35 to 2.7 kHz.
+// Crackle stays on the click bank: the ZzFX take was a hiss, not pops.
+const ZZ_URL = 'https://cdn.jsdelivr.net/npm/zzfx@1.3.2/ZzFX.js';
+// volume, randomness, frequency, attack, sustain, release, shape, curve, slide, deltaSlide,
+// pitchJump, jumpTime, repeat, noise, modulation, bitCrush, delay, sustainVol, decay, tremolo, filter
+const ZZ = {
+  boom: [1, .2, 30, .005, .15, 1.6, 4, .6, -.2, 0, 0, 0, 0, 1.2, 0, 0, 0, .7, .25, 0, -250],
+  crack: [1, .3, 900, 0, .01, .06, 4, 1, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, .02, 0, 2500],
+  thump: [1, .1, 85, .002, .02, .25, 0, 1, -8, 0, 0, 0, 0, .3, 0, 0, 0, 1, .05, 0, 0],
+  whistle: [.6, .05, 1250, .08, 1.3, .3, 0, 1, 1.9, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+  sizzle: [.5, .2, 3000, .2, 1.8, .8, 4, 1, 0, 0, 0, 0, 0, 6, 0, 0, 0, .6, .5, .3, 3500],
+};
+let zzBufs = null, zzLoad = null;
+function loadZz(ac) {
+  zzLoad ||= import(ZZ_URL).then(({ ZZFX }) => {
+    // The module opens its own context; this toy plays on the kit's.
+    ZZFX.audioContext?.close?.().catch(() => {});
+    const bufs = {};
+    for (const [k, p] of Object.entries(ZZ)) {
+      // Three takes per voice, each normalised; ZzFX randomises every build.
+      bufs[k] = [0, 1, 2].map(() => {
+        const smp = ZZFX.buildSamples(...p);
+        let pk = 1e-6;
+        for (const v of smp) pk = Math.max(pk, Math.abs(v));
+        const b = ac.createBuffer(1, smp.length, ZZFX.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < smp.length; i++) d[i] = smp[i] / pk;
+        return b;
+      });
+    }
+    zzBufs = bufs;
+  }).catch(() => {});
+}
+// One take of a ZzFX voice at time t, through out, at a jittered rate.
+function zz(ac, name, t, out, gain, rate = jit(0.08)) {
+  const s = ac.createBufferSource(), g = ac.createGain();
+  s.buffer = zzBufs[name][Math.floor(Math.random() * 3)];
+  s.playbackRate.value = rate;
+  g.gain.value = gain;
+  s.connect(g).connect(out);
+  s.start(t);
+  return [s, g];
+}
 function track(end, kind, ...nodes) { pend.add({ end, kind, nodes }); }
 function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
 const count = kind => { let n = 0; for (const h of pend) if (h.kind === kind) n++; return n; };
@@ -824,6 +868,7 @@ function stopAll() {
 }
 // Shared bus: a 3.5 s reverb, a crackle bank, and the water bed.
 function bus(ac) {
+  loadZz(ac);
   if (rvb) return;
   const len = Math.round(ac.sampleRate * 3.5), ir = ac.createBuffer(2, len, ac.sampleRate);
   for (let c = 0; c < 2; c++) {
@@ -873,6 +918,13 @@ function env(ac, t, peak, a, d) {
 }
 // The lift: a mortar thump, a rising whoosh, and one shell in six whistles.
 function lift(ac, t, T, out, lvl) {
+  if (zzBufs) {
+    const [th] = zz(ac, 'thump', t, out, lvl * 0.7);
+    const nodes = [th];
+    if (Math.random() < 1 / 6) nodes.push(zz(ac, 'whistle', t + 0.05, out, lvl * 0.08, jit(0.04) * Math.min(1.4, T / 1.6))[0]);
+    track(t + T, 'lift', ...nodes);
+    return;
+  }
   const o = ac.createOscillator();
   o.frequency.setValueAtTime(75 * jit(), t); o.frequency.exponentialRampToValueAtTime(38, t + 0.16);
   const og = env(ac, t, lvl * 0.7, 0.004, 0.22);
@@ -895,6 +947,24 @@ function lift(ac, t, T, out, lvl) {
 // The boom: a crack, a body through the distance low-pass, a sub, reverb and a slap off the shore.
 function boom(ac, t, out, lvl, lp, cal) {
   if (count('boom') >= 6) return;
+  if (zzBufs) {
+    const bl = filt(ac, 'lowpass', lp * jit(0.15));
+    bl.connect(out);
+    const [c] = zz(ac, 'crack', t, bl, lvl * 0.8, jit(0.15));
+    const [b, bg] = zz(ac, 'boom', t, bl, lvl * (0.8 + 0.2 * cal), jit(0.1) * (1.1 - 0.1 * cal));
+    // The synth sub keeps the weight under the ZzFX body.
+    const s = ac.createOscillator();
+    s.frequency.setValueAtTime(58 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(31, t + 0.5);
+    const sg = env(ac, t, lvl * (0.5 + 0.2 * cal), 0.008, 0.9);
+    s.connect(sg).connect(out); s.start(t); s.stop(t + 1.1);
+    const send = ac.createGain(); send.gain.value = 0.5;
+    bg.connect(send).connect(rvb);
+    const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 1400), dg = ac.createGain();
+    dl.delayTime.value = 0.45 * jit(0.08); dg.gain.value = 0.28;
+    bg.connect(dl).connect(dlp).connect(dg).connect(out);
+    track(t + 3, 'boom', c, b, s, send, dl);
+    return;
+  }
   const c = hiss(ac, t, 0.03), ch = filt(ac, 'highpass', 2000), cg = env(ac, t, lvl * 0.8, 0.001, 0.012);
   c.connect(ch).connect(cg).connect(out);
   const b = hiss(ac, t, 2.4, 0.5 * jit()), bl = filt(ac, 'lowpass', lp * jit(0.15)), bg = env(ac, t, lvl, 0.006, 1.1 + 0.35 * cal);
@@ -921,6 +991,7 @@ function crackle(ac, t, out, lvl) {
   track(t + 1.5, 'crackle', s, send);
 }
 function sizzle(ac, t, out, lvl, dur) {
+  if (zzBufs) { track(t + 3, 'sizzle', zz(ac, 'sizzle', t, out, lvl * 0.16, jit(0.1))[0]); return; }
   const n = hiss(ac, t, dur + 0.3), hp = filt(ac, 'highpass', 4000), g = env(ac, t, lvl * 0.14, 0.25, dur);
   n.connect(hp).connect(g).connect(out);
   track(t + dur + 0.3, 'sizzle', n);
