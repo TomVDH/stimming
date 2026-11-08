@@ -59,7 +59,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--windfarm" id="stage" tabindex="0" role="application" aria-label="Offshore wind turbines in night fog, red lights blinking. The Wind slider sets their speed; tap or press Space to send a gust down the rows; drag to look around.">
+    <div class="stage stage--windfarm" id="stage" tabindex="0" role="application" aria-label="Offshore wind turbines in night fog, red lights blinking. The Wind slider sets their speed; tap or press Space to send a gust down the rows; hold for a storm; drag to look around.">
       <p class="fail" hidden>Wind farm needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -87,9 +87,9 @@
         </div>
         <dl class="how" aria-label="How to play">
           <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>send a gust down the rows</dd></div>
+          <div><dt>Hold</dt><dd>a storm builds; let go to calm it</dd></div>
           <div><dt>Drag</dt><dd>look around</dd></div>
-          <div class="fine"><dt>Space</dt><dd>a gust</dd></div>
-          <div class="fine"><dt>← →</dt><dd>change the view</dd></div>
+          <div class="fine"><dt>Space</dt><dd>a gust; hold for a storm</dd></div>
         </dl>
       </div>
     </div>
@@ -182,6 +182,8 @@ function addTurbine(fx, d, k) {
     ang: rand(k + 7) * 2.094, omega: 0, pitch: 0.06, feathered: false,
     // No two rotors share a speed, a gust phase or a stopping angle.
     jit: 0.96 + 0.08 * rand(k + 13), ph: rand(k + 17) * 9,
+    // Each machine cuts out at its own speed near 25 m/s, so they stop one by one.
+    cut: 25 + (rand(k + 19) - 0.5) * 3.2,
   });
 }
 PLACED.forEach(([fx, d], i) => addTurbine(fx, d, 900 + i));
@@ -208,6 +210,9 @@ const S_MAX = Math.max(...farm.map(t => t.s));
 const CUT_IN = 3, RATED = 12, CUT_OUT = 25, RESTART = 22;
 // Rated rotor speed: about twelve turns a minute.
 const OMAX = 1.3;
+// Hold: a storm builds toward 30 m/s over 7 s; on release it calms over 5 s.
+const storm = { on: false, k: 0 };
+const windNow = () => opts.wind + (30 - opts.wind) * smooth(0, 1, storm.k);
 function powerCurve(w) {
   if (w < CUT_IN) return 0.04;
   if (w < RATED) return OMAX * lerp(0.15, 1, (w - CUT_IN) / (RATED - CUT_IN));
@@ -219,7 +224,7 @@ const fronts = [];
 function gustNoise(t) { return 0.8 * Math.sin(t * 0.21) + 0.5 * Math.sin(t * 0.37 + 1.3) + 0.3 * Math.sin(t * 0.83 + 4.1); }
 // Wind at one turbine: the slider, slow gusts, fronts and the wake of the turbine upwind.
 function windAt(t, clock) {
-  let w = opts.wind * (1 + 0.06 * gustNoise(clock + t.ph));
+  let w = windNow() * (1 + 0.06 * gustNoise(clock + t.ph));
   for (const f of fronts) w += f.amp * Math.exp(-(((t.s - f.s) / FRONT_W) ** 2));
   if (t.wake) w *= 0.92;
   return clamp(w, 0, 30);
@@ -234,8 +239,8 @@ function stepWind(dt, clock, calm) {
   for (const t of farm) {
     const w = windAt(t, clock);
     // Hysteresis: a storm stops the rotor at 25 m/s; it restarts below 22 m/s.
-    if (!t.feathered && w > CUT_OUT) t.feathered = true;
-    else if (t.feathered && w < RESTART) t.feathered = false;
+    if (!t.feathered && w > t.cut) t.feathered = true;
+    else if (t.feathered && w < t.cut - (CUT_OUT - RESTART)) t.feathered = false;
     const target = (t.feathered ? 0 : powerCurve(w) * t.jit) * calm;
     // Spin-up has a 4 s lag, braking a 2 s lag.
     const tau = target > t.omega ? 4 : 2;
@@ -848,14 +853,14 @@ function resize() {
   aimCamera();
   draw();
 }
-function aimCamera(breath = 0) {
+function aimCamera(breath = 0, shake = [0, 0]) {
   const tall = clamp((H / W - 0.8) / 1.4);
   shot = SHOTS[VIEWS[opts.view]](W, H, tall);
   camera.aspect = W / H;
   camera.fov = 2 * Math.atan(H / 2 / shot.f) * 180 / Math.PI;
   camera.position.set(...shot.pos);
   camera.position.y += breath * 0.6;
-  camera.rotation.set(shot.pitch + look.pitch + breath * 0.0006, shot.yaw + look.yaw, 0);
+  camera.rotation.set(shot.pitch + look.pitch + breath * 0.0006 + shake[1], shot.yaw + look.yaw + shake[0], 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   U.uFocal.value = shot.f;
@@ -887,11 +892,11 @@ let clock = 0, simT = 0, calm = 1, grainT = 0;
 const cut = { t: -1, next: -1 };
 function setFog() {
   // Wind thins the fog; Light halves it.
-  U.uFogK.value = (opts.fog === 'light' ? 0.5 : 1) * (1 - 0.55 * smooth(4, 18, opts.wind));
+  U.uFogK.value = (opts.fog === 'light' ? 0.5 : 1) * (1 - 0.55 * smooth(4, 18, windNow()));
 }
 function syncUniforms() {
   U.uTime.value = simT;
-  U.uWind.value = opts.wind;
+  U.uWind.value = windNow();
   const fv = U.uFront.value, fk = U.uFrontK.value;
   for (let i = 0; i < 4; i++) {
     const f = fronts[fronts.length - 1 - i];
@@ -915,7 +920,7 @@ function draw() {
 // Lively: full rate. Drifting: 30 fps. Asleep 60 s after the last input. Hidden: stopped.
 let raf = 0, last = 0, lastDraw = 0, visible = true, ready = false, lastInput = 0, rotorsMoving = true;
 const SLEEP_MS = 60000;
-function lively(now) { return now - lastInput < 1500 || fronts.length > 0 || cut.t >= 0 || look.yaw !== look.toYaw || look.pitch !== look.toPitch; }
+function lively(now) { return now - lastInput < 1500 || storm.on || storm.k > 0 || fronts.length > 0 || cut.t >= 0 || look.yaw !== look.toYaw || look.pitch !== look.toPitch; }
 function frameFn(now) {
   raf = 0;
   const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
@@ -944,8 +949,8 @@ function tick(dt, now) {
   grainT = (grainT + 1) % 64;
   rotorsMoving = stepWind(dt, clock, calm);
   // The fog drifts downwind, faster in a strong wind.
-  U.uDrift.value.x += WIND_DIR[0] * (3 + opts.wind * 2.5) * dt * drift;
-  U.uDrift.value.y += WIND_DIR[1] * (3 + opts.wind * 2.5) * dt * drift;
+  U.uDrift.value.x += WIND_DIR[0] * (3 + windNow() * 2.5) * dt * drift;
+  U.uDrift.value.y += WIND_DIR[1] * (3 + windNow() * 2.5) * dt * drift;
   // The nacelle lamps flash together: one second on, one second off, soft edges.
   const ph = clock % 2;
   U.uBlink.value = calm === 0 ? 1 : smooth(0, 0.12, ph) * (1 - smooth(1, 1.12, ph));
@@ -963,7 +968,14 @@ function tick(dt, now) {
   if (Math.abs(look.pitch - look.toPitch) < 1e-5) look.pitch = look.toPitch;
   // The camera breathes a little on its mount.
   const breath = reduce ? 0 : Math.sin(clock * 0.4) * calm;
-  aimCamera(breath);
+  // The storm builds while held and calms on release.
+  storm.k = clamp(storm.k + (storm.on ? dt / 7 : -dt / 5));
+  // In a storm, fronts arrive on their own every few seconds.
+  if (storm.k > 0.3 && Math.random() < dt * storm.k / 2.2) gust(Math.random() * 2 - 1, true);
+  // The mount shakes in the storm, a fraction of a pixel per m/s.
+  const sk = reduce ? 0 : smooth(0.3, 1, storm.k) * 0.00045;
+  const shake = [sk * (Math.sin(clock * 7.3) + Math.sin(clock * 12.9 + 1.1)), sk * (Math.sin(clock * 9.1 + 2.3) + Math.sin(clock * 15.7))];
+  aimCamera(breath, shake);
   voicesStep(dt);
 }
 function wake() {
@@ -1022,7 +1034,7 @@ let swishPh = 0;
 function voicesStep(dt) {
   const v = voices();
   if (!v) return;
-  const now = kit.ac.currentTime, w = opts.wind * calm;
+  const now = kit.ac.currentTime, w = windNow() * calm;
   v.windF.frequency.setTargetAtTime(250 + w * 55, now, 0.3);
   v.windG.gain.setTargetAtTime((0.04 + 0.3 * smooth(0, 25, w)) * (0.85 + 0.15 * gustNoise(clock)), now, 0.3);
   const { t, d } = nearTurbine();
@@ -1067,12 +1079,12 @@ function gustSound(pan) {
 
 /* ---------- gestures ---------- */
 // A front starts upwind, just behind the camera, and runs down the farm.
-function gust(pan = 0) {
+function gust(pan = 0, auto = false) {
   const start = Math.min(0, ...farm.map(t => t.s)) - FRONT_W * 1.5;
   fronts.push({ s: start, amp: FRONT_AMP * (0.85 + Math.random() * 0.3) });
   if (fronts.length > 6) fronts.shift();
   gustSound(pan);
-  wake();
+  if (!auto) wake();
 }
 const viewChips = [...document.querySelectorAll('#view .chip')];
 function setView(i) {
@@ -1086,17 +1098,22 @@ function setView(i) {
 viewChips.forEach(b => b.addEventListener('click', () => setView(VIEWS.indexOf(b.dataset.value))));
 
 // Pointer: a press turns into a drag after 8 px, or a hold after 260 ms; else it is a tap.
-const pt = { down: false, drag: false, x: 0, y: 0, yaw0: 0, pitch0: 0, t0: 0, id: -1 };
+const pt = { down: false, drag: false, x: 0, y: 0, yaw0: 0, pitch0: 0, t0: 0, id: -1, timer: 0 };
+function endStorm() { clearTimeout(pt.timer); if (storm.on) { storm.on = false; wake(); } }
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0 || e.target !== canvas) return;
   stage.setPointerCapture?.(e.pointerId);
   Object.assign(pt, { down: true, drag: false, x: e.clientX, y: e.clientY, yaw0: look.toYaw, pitch0: look.toPitch, t0: performance.now(), id: e.pointerId });
+  clearTimeout(pt.timer);
+  // Holding still starts the storm.
+  pt.timer = setTimeout(() => { if (pt.down && !pt.drag) { storm.on = true; wake(); } }, 260);
   wake();
 });
 stage.addEventListener('pointermove', e => {
   if (!pt.down || e.pointerId !== pt.id) return;
   const dx = e.clientX - pt.x, dy = e.clientY - pt.y;
-  if (!pt.drag && Math.hypot(dx, dy) > 8) { pt.drag = true; stage.classList.add('held'); }
+  if (storm.on) { wake(); return; }
+  if (!pt.drag && Math.hypot(dx, dy) > 8) { pt.drag = true; clearTimeout(pt.timer); stage.classList.add('held'); }
   if (!pt.drag) return;
   // The look follows the finger; it stays within a quarter of the frame.
   const css = shot.f / (W / stage.clientWidth);
@@ -1109,16 +1126,29 @@ function release(e) {
   if (!pt.down || (e && e.pointerId !== pt.id)) return;
   pt.down = false;
   stage.classList.remove('held');
-  if (pt.drag || performance.now() - pt.t0 > 260) return;
+  const held = storm.on;
+  endStorm();
+  if (held || pt.drag || performance.now() - pt.t0 > 260) return;
   // A tap sends a gust; its sound pans from the side that was tapped.
   const r = stage.getBoundingClientRect();
   gust(((e.clientX - r.left) / r.width) * 2 - 1);
 }
 stage.addEventListener('pointerup', release);
-stage.addEventListener('pointercancel', () => { pt.down = false; stage.classList.remove('held'); });
-stage.addEventListener('lostpointercapture', () => { pt.down = false; stage.classList.remove('held'); });
+stage.addEventListener('pointercancel', () => { pt.down = false; endStorm(); stage.classList.remove('held'); });
+stage.addEventListener('lostpointercapture', () => { pt.down = false; endStorm(); stage.classList.remove('held'); });
+// Space: a tap sends a gust; holding it brings the storm.
+let spaceT = 0, spaceDown = false;
 stage.addEventListener('keydown', e => {
-  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) gust(0); return; }
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (e.repeat || spaceDown) return;
+    spaceDown = true;
+    clearTimeout(pt.timer);
+    pt.timer = setTimeout(() => { if (spaceDown) { storm.on = true; wake(); } }, 260);
+    spaceT = performance.now();
+    wake();
+    return;
+  }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     e.preventDefault();
     const cur = PICKS.indexOf(VIEWS[cut.next >= 0 ? cut.next : opts.view]);
@@ -1126,6 +1156,15 @@ stage.addEventListener('keydown', e => {
     setView(VIEWS.indexOf(PICKS[(cur + d + PICKS.length) % PICKS.length]));
   }
 });
+
+stage.addEventListener('keyup', e => {
+  if (e.key !== ' ' && e.key !== 'Enter') return;
+  spaceDown = false;
+  const held = storm.on;
+  endStorm();
+  if (!held && performance.now() - spaceT < 260) gust(0);
+});
+stage.addEventListener('blur', () => { spaceDown = false; if (!pt.down) endStorm(); });
 
 /* ---------- bar ---------- */
 function popover(boxEl, btn) {

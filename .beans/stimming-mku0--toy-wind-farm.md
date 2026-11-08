@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T11:19:09Z
+updated_at: 2026-11-08T11:22:34Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -28,3 +28,5 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 
 - [x] Cinematic pass: smooth towers, spinners, airfoil blades, red tips, yellow tower feet; lamps light nacelle and tower; red lamp streaks on the sea; overcast cloud base; sheared fog sheets; anamorphic streaks and lens fringing
 - [x] The bar offers Rows and Across as chips, as on Beach walker (Tom); Foot, Above, Hub and Grid are parked
+
+- [x] Hold for a storm: wind climbs to 30 m/s over 7 s, rotors cut out one by one (each between 23.4 and 26.6 m/s), fronts arrive on their own, the mount shakes, the fog thins; release calms it over 5 s and they restart. Space: tap a gust, hold a storm
