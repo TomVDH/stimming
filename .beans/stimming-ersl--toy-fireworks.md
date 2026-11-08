@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T10:54:56Z
+updated_at: 2026-11-08T11:03:28Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -37,4 +37,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Festival: 16 campfires that light the sand, string lights, lanterns, boats, floating lanterns, homes up the hill
 - [x] Drift tier: fires flicker at 30 fps, then sleep after 60 s
 - [x] Reflections: moving swell, chop and ripple; nine-tap streaks that lengthen on far water; crest glints near; two shells in one frame keep both uploads
-- [ ] Wide shell variety, with insane ones
+- [x] Wide shell variety on a stepper: Mix and 17 shells (Chrysanthemum, Palm, Kamuro, Saturn, Pistil, Crackle, Fish, Heart, Galaxy, Cascade, Barrage, Supernova and the five first)
+- [x] Square bloom: the stock blur has sigma = radius (a near box); weights now use sigma = radius / 2.5

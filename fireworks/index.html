@@ -21,6 +21,23 @@
 }
 .stage--fireworks canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--fireworks canvas { transition: none; } }
+/* Shell is one stepper pill: an arrow each side of the name. */
+.stepper {
+  display: inline-flex; align-items: center; color: var(--fg); font-size: 13px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background-color: oklch(0.15 0.012 275 / 0.84); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+/* The arrows drop their own ring and backing, so the pill matches a chip's height. */
+#shell .chip { border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+#shell .chip svg { stroke-width: 1.8; stroke-linecap: round; }
+/* The longest name sets the width, so the arrows never move. */
+.stepper .name { display: grid; text-align: center; white-space: nowrap; }
+.stepper .name > * { grid-area: 1 / 1; }
+.stepper .sizer { visibility: hidden; }
+.stepper output.from-next { animation: name-in 0.22s ease-out; --from: 8px; }
+.stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
+@keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
+@media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
 /* Settings opens a column of tweaks at the right edge. */
 .adder { position: relative; }
 .add {
@@ -53,12 +70,10 @@
       <p class="fail" hidden>Fireworks needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="shell" role="group" aria-label="Shell">
-        <button class="chip" type="button" data-value="peony" aria-pressed="true">Peony</button>
-        <button class="chip" type="button" data-value="willow" aria-pressed="false">Willow</button>
-        <button class="chip" type="button" data-value="crossette" aria-pressed="false">Crossette</button>
-        <button class="chip" type="button" data-value="ring" aria-pressed="false">Ring</button>
-        <button class="chip" type="button" data-value="strobe" aria-pressed="false">Strobe</button>
+      <div class="stepper" id="shell" role="group" aria-label="Shell" tabindex="-1">
+        <button class="chip icon" type="button" data-step="-1" aria-label="Previous shell" title="Previous shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
+        <span class="name"><output aria-live="polite">Mix</output><span class="sizer" aria-hidden="true">Chrysanthemum</span></span>
+        <button class="chip icon" type="button" data-step="1" aria-label="Next shell" title="Next shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
       </div>
       <label class="slider"><span>Distance</span><input type="range" id="dist" min="0" max="1" step="0.01" value="0.5" aria-label="Distance: 300 to 1,500 metres"></label>
       <div class="actions">
@@ -480,6 +495,10 @@ const RAMPS = [
   linFit(0.6, 0.15, 255), // copper blue, dim on purpose
   linFit(0.82, 0.16, 80), // sodium gold
   linFit(0.97, 0.02, 90), // magnesium white
+  linFit(0.58, 0.2, 310), // strontium and copper purple
+  linFit(0.74, 0.18, 55), // calcium orange
+  linFit(0.8, 0.13, 195), // aqua
+  linFit(0.72, 0.19, 350), // pink
 ];
 const EMBER = linFit(0.5, 0.17, 35);
 const starGeo = new THREE.InstancedBufferGeometry();
@@ -506,21 +525,25 @@ const starMat = new THREE.ShaderMaterial({
   attribute vec4 aA, aB, aC, aD;
   uniform float uTime, uDpr, uSteady;
   uniform vec2 uRes;
-  uniform vec3 uG, uRamp[5], uEmber;
+  uniform vec3 uG, uRamp[9], uEmber;
   varying vec3 vCol;
   varying vec2 vQ;
+  varying vec2 vLW;
   // Linear drag, a = G - k v, in closed form: no stored state.
   vec3 starPos(vec3 p0, vec3 v0, float k, float t) {
     vec3 vt = uG / k;
     return p0 + vt * t + (v0 - vt) * (1.0 - exp(-k * t)) / k;
   }
   float hash11(float x) { return fract(sin(x * 12.9898) * 43758.5453); }
+  // Fish stars swim off in wriggles a few metres wide.
+  vec3 wig(float a, float sd) { return vec3(sin(a * 9.0 + sd), cos(a * 7.0 + sd * 1.3), sin(a * 8.0 + sd * 0.7)) * 3.0 * smoothstep(0.1, 0.4, a); }
   void main() {
     float age = uTime - aA.w, life = aC.y;
     if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     float f = age / life;
     vec3 head = starPos(aA.xyz, aB.xyz, aB.w, age);
     vec3 tail = starPos(aA.xyz, aB.xyz, aB.w, max(age - aC.z, 0.0));
+    if (abs(aD.x - 4.0) < 0.5) { head += wig(age, aD.y); tail += wig(max(age - aC.z, 0.0), aD.y); }
     vec4 ch = projectionMatrix * viewMatrix * vec4(head, 1.0);
     vec4 ct = projectionMatrix * viewMatrix * vec4(tail, 1.0);
     vec2 d = (ch.xy / ch.w - ct.xy / ct.w) * uRes;
@@ -533,8 +556,10 @@ const starMat = new THREE.ShaderMaterial({
     c.xy += off * 2.0 / uRes * c.w;
     gl_Position = c;
     vQ = vec2(position.x, position.y);
-    // aD: x kind (1 strobe, 2 willow, 3 comet), y seed, w gain.
+    vLW = vec2(len, w);
+    // aD: x kind (1 strobe, 2 willow, 3 comet, 4 fish, 5 glitter), y seed, z second colour + 1, w gain.
     vec3 chem = uRamp[int(aC.x + 0.5)];
+    if (aD.z > 0.5) chem = mix(chem, uRamp[int(aD.z - 0.5)], smoothstep(0.4, 0.55, f));
     vec3 col = chem * 0.8;
     float b = 1.0 - smoothstep(0.75, 1.0, f);
     if (aD.x < 2.5) {
@@ -545,13 +570,20 @@ const starMat = new THREE.ShaderMaterial({
     // Strobe stars blink at 12 Hz; reduced motion holds them steady.
     if (abs(aD.x - 1.0) < 0.5) b *= mix(step(0.45, hash11(aD.y + floor(age * 12.0))), 0.7, uSteady);
     if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
+    if (abs(aD.x - 5.0) < 0.5) b *= mix(0.3 + 1.2 * step(0.6, hash11(aD.y + floor(age * 25.0))), 0.7, uSteady);
     vCol = col * 4.0 * aD.w * b;
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vCol;
   varying vec2 vQ;
+  varying vec2 vLW;
   void main() {
-    float a = exp(-vQ.y * vQ.y * 3.5) * (0.08 + 0.92 * vQ.x * vQ.x * vQ.x);
+    // Distance in half-widths from the tail-to-head segment: round soft ends.
+    float len = vLW.x, w = max(vLW.y, 1e-3);
+    float s = vQ.x * (len + 2.0 * w) - w;
+    float out_ = s < 0.0 ? -s : max(s - len, 0.0);
+    float d2 = (out_ * out_) / (w * w) + vQ.y * vQ.y;
+    float a = max(exp(-d2 * 3.5) - 0.03, 0.0) * (0.08 + 0.92 * pow(clamp(s / max(len, 1.0), 0.0, 1.0), 3.0));
     gl_FragColor = vec4(vCol * a, 0.0);
   }`,
 });
@@ -561,7 +593,7 @@ stars.layers.enable(LIGHT);
 scene.add(stars);
 let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
 // Write one star into the next slot; the oldest slot gives way.
-function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1) {
+function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1, ramp2 = -1) {
   const i = head;
   head = (head + 1) % CAP;
   if (dirtyFrom < 0) dirtyFrom = i;
@@ -569,7 +601,7 @@ function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1) {
   aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
   aB.setXYZW(i, v0.x, v0.y, v0.z, k);
   aC.setXYZW(i, ramp, life, trail, size);
-  aD.setXYZW(i, kind, rnd() * 100, 0, gain);
+  aD.setXYZW(i, kind, rnd() * 100, ramp2 + 1, gain);
   starGeo.instanceCount = Math.max(starGeo.instanceCount, i + 1);
   lastDeath = Math.max(lastDeath, t0 + life);
 }
@@ -680,6 +712,12 @@ function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
   bloom.setSize = (w, h) => { const d = rung >= 2 ? 2 : 1; full(Math.max(1, w / d), Math.max(1, h / d)); };
+  // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
+  // A sigma of radius / 2.5 gives each layer a round falloff.
+  for (const m of bloom.separableBlurMaterials) {
+    const r = m.defines.KERNEL_RADIUS, sg = r / 2.5;
+    m.uniforms.gaussianCoefficients.value = Array.from({ length: r }, (_, i) => Math.exp(-0.5 * i * i / (sg * sg)));
+  }
   return bloom;
 }
 /* ---------- end K2 ---------- */
@@ -713,8 +751,10 @@ function makeOrbs() {
         // A tight core and a wide skirt; z holds the orb size.
         c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
       }
-      // A cap on the brightest pixels keeps bloom free of square tiles.
-      gl_FragColor = vec4(min(c, vec3(6.0)), 1.0);
+      // A soft roll-off above 2 keeps bloom free of square tiles.
+      float m = max(max(c.r, c.g), c.b);
+      c *= m > 2.0 ? (2.0 + log(m - 1.0)) / m : 1.0;
+      gl_FragColor = vec4(c, 1.0);
     }`,
   });
 }
@@ -775,7 +815,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.7, 0.6, 0.9], tint: [0.0012, 0.0012, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.03 };
+const POST = { bloom: [0.9, 0.5, 0.9], tint: [0.0012, 0.0012, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.03 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
@@ -787,8 +827,9 @@ composer.addPass(grade);
 composer.addPass(new OutputPass());
 
 /* ---------- shells ---------- */
-const RED = 0, GREEN = 1, BLUE = 2, GOLD = 3, WHITE = 4;
-const STROBE = 1, WILLOW = 2, COMET = 3;
+const RED = 0, GREEN = 1, BLUE = 2, GOLD = 3, WHITE = 4, PURPLE = 5, ORANGE = 6, AQUA = 7, PINK = 8;
+const COLOURS = [RED, GREEN, BLUE, GOLD, WHITE, PURPLE, ORANGE, AQUA, PINK];
+const STROBE = 1, WILLOW = 2, COMET = 3, FISH = 4, GLITTER = 5;
 const pick = list => list[Math.floor(rnd() * list.length)];
 const v = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Vector3();
 // The i-th of n directions spread evenly over the sphere.
@@ -801,20 +842,47 @@ function basis(a) {
   const u = new THREE.Vector3(Math.abs(a.y) < 0.9 ? 0 : 1, Math.abs(a.y) < 0.9 ? 1 : 0, 0).cross(a).normalize();
   return [u, a.clone().cross(u).normalize()];
 }
+// A plane that faces the shore, with a random tilt.
+const facing = (tilt = 1.6) => basis(new THREE.Vector3((rnd() - 0.5) * tilt, (rnd() - 0.5) * tilt, 1).normalize());
+// A full sphere of stars at one speed, with a little jitter.
+function sphere(pos, t0, n, speed, k, ramp, life, trail, size, kind = 0, gain = 1, ramp2 = -1) {
+  for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.94 + rnd() * 0.12)), k, ramp, life * (0.85 + rnd() * 0.3), trail, size * (0.85 + rnd() * 0.3), kind, gain, ramp2);
+}
+const blueish = r => (r === BLUE ? 0.7 : r === WHITE ? 0.8 : 1);
 // Each shell writes its stars and returns its light: [ramp, gain].
 const SHELLS = {
   peony(pos, t0, cal, s) {
-    const ramp = pick([RED, GREEN, BLUE, GOLD]), n = Math.round(100 + 70 * cal), speed = (70 + 45 * cal) * s;
-    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.94 + rnd() * 0.12)), 1.6, ramp, 1.6 + rnd() * 0.5, 0.22, 1.3 + rnd() * 0.5);
-    return [ramp, ramp === BLUE ? 0.7 : 1];
+    const r = pick([RED, GREEN, BLUE, GOLD, PURPLE, ORANGE, PINK]);
+    sphere(pos, t0, Math.round(100 + 70 * cal), (70 + 45 * cal) * s, 1.6, r, 1.85, 0.22, 1.5);
+    return [r, blueish(r)];
+  },
+  chrysanthemum(pos, t0, cal, s) {
+    const a = pick(COLOURS), b = pick(COLOURS.filter(c => c !== a));
+    sphere(pos, t0, Math.round(110 + 70 * cal), (75 + 45 * cal) * s, 1.3, a, 2.3, 0.55, 1.2, 0, 1, b);
+    return [a, blueish(a)];
   },
   willow(pos, t0, cal, s) {
-    const n = Math.round(70 + 50 * cal), speed = (55 + 35 * cal) * s;
-    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.9 + rnd() * 0.2)), 2.2, GOLD, 4.2 + rnd() * 0.6, 1.2, 1.0 + rnd() * 0.3, WILLOW, 0.8);
+    sphere(pos, t0, Math.round(70 + 50 * cal), (55 + 35 * cal) * s, 2.2, GOLD, 4.5, 1.2, 1.15, WILLOW, 0.8);
+    return [GOLD, 0.9];
+  },
+  palm(pos, t0, cal, s) {
+    // A few heavy comets fan out and droop like fronds.
+    const n = Math.round(7 + 2 * cal);
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * Math.PI * 2 + rnd() * 0.3;
+      v.set(Math.cos(th), 0.35 + rnd() * 0.5, Math.sin(th) * 0.6).normalize().multiplyScalar((60 + 30 * cal) * s);
+      writeStar(pos, t0, v, 0.9, GOLD, 2.8 + rnd() * 0.5, 0.9, 3.2, WILLOW, 1.1);
+    }
+    sphere(pos, t0, 40, 25 * s, 2.5, GOLD, 1.5, 0.3, 1.0, GLITTER, 0.6);
+    return [GOLD, 0.8];
+  },
+  kamuro(pos, t0, cal, s) {
+    // Dense gold glitter that hangs like a crown.
+    sphere(pos, t0, Math.round(160 + 70 * cal), (60 + 40 * cal) * s, 2.6, GOLD, 4.0, 0.9, 1.1, GLITTER, 0.7);
     return [GOLD, 0.9];
   },
   crossette(pos, t0, cal, s) {
-    const ramp = pick([GREEN, RED, WHITE]), n = Math.round(14 + 6 * cal), speed = (60 + 35 * cal) * s;
+    const ramp = pick([GREEN, RED, WHITE, AQUA]), n = Math.round(14 + 6 * cal), speed = (60 + 35 * cal) * s;
     let splitAt = 0;
     for (let i = 0; i < n; i++) {
       const v0 = sphereDir(i, n, new THREE.Vector3()).multiplyScalar(speed * (0.95 + rnd() * 0.1));
@@ -834,22 +902,112 @@ const SHELLS = {
     return [GOLD, 0.6];
   },
   ring(pos, t0, cal, s) {
-    const ramp = pick([RED, GREEN, BLUE, GOLD, WHITE]), n = Math.round(60 + 30 * cal), speed = (70 + 45 * cal) * s;
-    // The ring's plane faces the shore, with a random tilt.
-    const [u, w] = basis(new THREE.Vector3((rnd() - 0.5) * 1.6, (rnd() - 0.5) * 1.6, 1).normalize());
-    for (let i = 0; i < n; i++) {
-      const th = (i / n) * Math.PI * 2;
-      v.copy(u).multiplyScalar(Math.cos(th)).addScaledVector(w, Math.sin(th)).multiplyScalar(speed * (0.97 + rnd() * 0.06));
-      writeStar(pos, t0, v, 1.6, ramp, 1.7 + rnd() * 0.4, 0.2, 1.5);
-    }
-    return [ramp, ramp === BLUE ? 0.6 : 0.8];
+    const r = pick(COLOURS);
+    ring(pos, t0, Math.round(60 + 30 * cal), (70 + 45 * cal) * s, r, facing());
+    return [r, blueish(r) * 0.8];
+  },
+  saturn(pos, t0, cal, s) {
+    const a = pick(COLOURS), b = pick(COLOURS.filter(c => c !== a));
+    sphere(pos, t0, Math.round(80 + 30 * cal), (50 + 30 * cal) * s, 1.6, a, 1.8, 0.2, 1.4);
+    ring(pos, t0, Math.round(70 + 30 * cal), (90 + 55 * cal) * s, b, facing(1.2));
+    return [a, blueish(a)];
+  },
+  pistil(pos, t0, cal, s) {
+    // A core of one colour inside a shell of another.
+    const a = pick(COLOURS), b = pick(COLOURS.filter(c => c !== a));
+    sphere(pos, t0, Math.round(50 + 20 * cal), (30 + 18 * cal) * s, 1.6, a, 1.6, 0.15, 1.6);
+    sphere(pos, t0, Math.round(110 + 60 * cal), (75 + 45 * cal) * s, 1.6, b, 1.9, 0.25, 1.4);
+    return [b, blueish(b)];
   },
   strobe(pos, t0, cal, s) {
-    const n = Math.round(70 + 40 * cal), speed = (60 + 40 * cal) * s;
-    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.85 + rnd() * 0.3)), 2.0, WHITE, 2.4 + rnd() * 0.6, 0.06, 1.7, STROBE);
+    sphere(pos, t0, Math.round(70 + 40 * cal), (60 + 40 * cal) * s, 2.0, WHITE, 2.7, 0.06, 1.7, STROBE);
     return [WHITE, 0.8];
   },
+  crackle(pos, t0, cal, s) {
+    // Gold stars burn out, then each pops in a few white cracks.
+    const n = Math.round(60 + 25 * cal), speed = (55 + 35 * cal) * s;
+    for (let i = 0; i < n; i++) {
+      const v0 = sphereDir(i, n, new THREE.Vector3()).multiplyScalar(speed * (0.9 + rnd() * 0.2));
+      writeStar(pos, t0, v0, 1.6, GOLD, 0.9, 0.25, 1.2);
+      for (let j = 0; j < 4; j++) {
+        const tp = 0.9 + rnd() * 0.7;
+        posAt(pos, v0, 1.6, tp, p);
+        writeStar(p, t0 + tp, q.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(20), 3, WHITE, 0.07 + rnd() * 0.06, 0.02, 2.4, 0, 1.4);
+      }
+    }
+    addLight(pos, WHITE, t0 + 1.2, 0.35 * lightK(cal));
+    return [GOLD, 0.7];
+  },
+  fish(pos, t0, cal, s) {
+    // Stars that swim off in wriggles.
+    sphere(pos, t0, Math.round(50 + 25 * cal), (45 + 25 * cal) * s, 1.5, pick([WHITE, GOLD, AQUA]), 2.6, 0.4, 1.3, FISH);
+    return [WHITE, 0.6];
+  },
+  heart(pos, t0, cal, s) {
+    const r = pick([PINK, RED]), n = Math.round(80 + 30 * cal), speed = (55 + 30 * cal) * s;
+    const u = new THREE.Vector3(1, 0, 0), w = new THREE.Vector3(0, 1, 0).applyAxisAngle(u, (rnd() - 0.5) * 0.4);
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      const hx = Math.pow(Math.sin(t), 3), hy = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 16;
+      v.copy(u).multiplyScalar(hx).addScaledVector(w, hy).multiplyScalar(speed);
+      writeStar(pos, t0, v, 1.6, r, 2.0, 0.15, 1.6);
+    }
+    return [r, 1];
+  },
+  galaxy(pos, t0, cal, s) {
+    // Three spiral arms that spin out from a white core.
+    const [u, w] = facing(0.9), n = Math.round(200 + 80 * cal), speed = (85 + 50 * cal) * s;
+    for (let i = 0; i < n; i++) {
+      const arm = i % 3, r = Math.pow(rnd(), 0.6), ang = (arm * Math.PI * 2) / 3 + r * 3.4 + (rnd() - 0.5) * 0.35;
+      const c = Math.cos(ang), sn = Math.sin(ang);
+      v.copy(u).multiplyScalar(c).addScaledVector(w, sn).multiplyScalar(speed * r)
+        .addScaledVector(u, -sn * speed * 0.35 * r).addScaledVector(w, c * speed * 0.35 * r);
+      writeStar(pos, t0, v, 1.5, r < 0.25 ? WHITE : AQUA, 2.4, 0.25, 1.3, 0, 1, r < 0.25 ? -1 : PURPLE);
+    }
+    return [AQUA, 1];
+  },
+  cascade(pos, t0, cal, s) {
+    // Three breaks, each wider and a new colour.
+    const cols = [pick(COLOURS), pick(COLOURS), pick(COLOURS)];
+    cols.forEach((c, i) => {
+      sphere(pos, t0 + i * 0.55, Math.round(70 + 30 * cal), (45 + 30 * cal) * s * (1 + i * 0.45), 1.6, c, 1.7, 0.2, 1.3);
+      if (i) addLight(pos, c, t0 + i * 0.55, 0.7 * lightK(cal));
+    });
+    return [cols[0], 0.8];
+  },
+  supernova(pos, t0, cal, s) {
+    // A huge white flash; every star splits into three colours, then glitter hangs.
+    const n = Math.round(150 + 60 * cal), speed = (120 + 60 * cal) * s;
+    for (let i = 0; i < n; i++) {
+      const v0 = sphereDir(i, n, new THREE.Vector3()).multiplyScalar(speed * (0.9 + rnd() * 0.2));
+      const split = 0.8 + rnd() * 0.3;
+      writeStar(pos, t0, v0, 1.3, WHITE, split, 0.35, 2.0, 0, 1.3);
+      posAt(pos, v0, 1.3, split, p);
+      velAt(v0, 1.3, split, q);
+      for (let j = 0; j < 3; j++) {
+        writeStar(p, t0 + split, v.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(60 * s).addScaledVector(q, 0.5), 1.7, pick(COLOURS), 1.6 + rnd() * 0.6, 0.25, 1.3);
+      }
+    }
+    sphere(pos, t0 + 0.4, 220, speed * 0.5, 2.4, GOLD, 4.2, 0.8, 1.0, GLITTER, 0.6);
+    addLight(pos, pick(COLOURS), t0 + 0.95, 1.5 * lightK(cal));
+    return [WHITE, 4];
+  },
 };
+// A ring of stars in the plane of u and w.
+function ring(pos, t0, n, speed, r, [u, w]) {
+  for (let i = 0; i < n; i++) {
+    const th = (i / n) * Math.PI * 2;
+    v.copy(u).multiplyScalar(Math.cos(th)).addScaledVector(w, Math.sin(th)).multiplyScalar(speed * (0.97 + rnd() * 0.06));
+    writeStar(pos, t0, v, 1.6, r, 1.8 + rnd() * 0.4, 0.2, 1.5);
+  }
+}
+// The stepper's list; Barrage fires a fan of small shells.
+const SHELL_LIST = [['mix', 'Mix'], ['peony', 'Peony'], ['chrysanthemum', 'Chrysanthemum'], ['willow', 'Willow'], ['palm', 'Palm'],
+  ['kamuro', 'Kamuro'], ['crossette', 'Crossette'], ['ring', 'Ring'], ['saturn', 'Saturn'], ['pistil', 'Pistil'], ['strobe', 'Strobe'],
+  ['crackle', 'Crackle'], ['fish', 'Fish'], ['heart', 'Heart'], ['galaxy', 'Galaxy'], ['cascade', 'Cascade'], ['barrage', 'Barrage'], ['supernova', 'Supernova']];
+// Mix picks the classics often and the wild ones now and then.
+const MIX = ['peony', 'peony', 'chrysanthemum', 'chrysanthemum', 'willow', 'palm', 'kamuro', 'crossette', 'ring', 'saturn', 'pistil',
+  'strobe', 'crackle', 'fish', 'heart', 'galaxy', 'cascade', 'barrage', 'supernova'];
 
 /* ---------- burst lights over time ---------- */
 const lights = [], live = [];
@@ -880,7 +1038,7 @@ function updateLights() {
 /* ---------- launch ---------- */
 const saved = k => { try { return localStorage.getItem(`stimming.fireworks.${k}`); } catch { return null; } };
 const save = (k, val) => { try { localStorage.setItem(`stimming.fireworks.${k}`, String(val)); } catch { /* storage is optional */ } };
-const opts = { shell: SHELLS[saved('shell')] ? saved('shell') : 'peony', dist: saved('dist') != null ? +saved('dist') : 0.5 };
+const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5 };
 let simT = 0, horizonNdc = -0.28;
 // The slider maps 0 to 1 onto 300 to 1,500 m; far shells are larger.
 const shellDist = () => 300 + 1200 * opts.dist;
@@ -900,10 +1058,10 @@ function burstPoint(ndc, cal, out = new THREE.Vector3()) {
   return out.set(pt.x, lo + (hi - lo) * u, -d);
 }
 // A comet climbs from the water and the shell bursts at its apex.
-function launch(ndc, cal) {
+function fire(pos, t0, type, cal) {
   // Strong drag: the comet leaves fast and slows near the apex, about 3 s up.
-  const pos = burstPoint(ndc, cal), s = shellScale(), k = 1.2;
-  const { v0, T } = climb(pos.y - 1, k), base = new THREE.Vector3(pos.x, 1, pos.z), up = new THREE.Vector3(0, v0, 0), t0 = simT;
+  const s = shellScale(), k = 1.2;
+  const { v0, T } = climb(pos.y - 1, k), base = new THREE.Vector3(pos.x, 1, pos.z), up = new THREE.Vector3(0, v0, 0);
   writeStar(base, t0, up, k, GOLD, T, 0.35, 1.2, COMET, 0.5);
   // The comet sheds a few sparks as it climbs.
   for (let i = 0; i < 10; i++) {
@@ -911,8 +1069,18 @@ function launch(ndc, cal) {
     posAt(base, up, k, ts, p);
     writeStar(p, t0 + ts, q.set((rnd() - 0.5) * 8, (rnd() - 0.3) * 6, (rnd() - 0.5) * 8), 1.5, GOLD, 0.4 + rnd() * 0.4, 0.1, 0.8, COMET, 0.35);
   }
-  const [ramp, gain] = SHELLS[opts.shell](pos, t0 + T, cal, s);
+  const [ramp, gain] = SHELLS[type](pos, t0 + T, cal, s);
   addLight(pos, ramp, t0 + T, gain * lightK(cal));
+}
+function launch(ndc, cal) {
+  const type = opts.shell === 'mix' ? pick(MIX) : opts.shell;
+  if (type === 'barrage') {
+    // Sixteen small shells fan out across the sky, 0.11 s apart.
+    for (let i = 0; i < 16; i++) {
+      const at = new THREE.Vector2(ndc.x + (i / 15 - 0.5) * 0.9, ndc.y - 0.12 + rnd() * 0.24);
+      fire(burstPoint(at, 0.7), simT + i * 0.11, pick(['peony', 'ring', 'strobe', 'crackle', 'pistil']), 0.7 * cal);
+    }
+  } else fire(burstPoint(ndc, cal), simT, type, cal);
   commitStars();
   wake();
 }
@@ -1066,7 +1234,28 @@ function popover(box, btn) {
   addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
 }
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
-choices(document.getElementById('shell'), val => { opts.shell = val; save('shell', val); }).set(opts.shell);
+// The stepper walks the shell list and wraps at each end.
+const shellBox = document.getElementById('shell'), shellName = shellBox.querySelector('output');
+let shellAt = Math.max(0, SHELL_LIST.findIndex(([id]) => id === opts.shell));
+function stepShell(d) {
+  shellAt = (shellAt + d + SHELL_LIST.length) % SHELL_LIST.length;
+  const [id, name] = SHELL_LIST[shellAt];
+  opts.shell = id; save('shell', id);
+  shellName.textContent = name;
+  if (!d) return;
+  // The name slides in from the side of the pressed arrow.
+  shellName.classList.remove('from-next', 'from-prev');
+  void shellName.offsetWidth;
+  shellName.classList.add(d > 0 ? 'from-next' : 'from-prev');
+}
+stepShell(0);
+shellBox.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => stepShell(+b.dataset.step)));
+// Left and right arrows step while the stepper has focus.
+shellBox.addEventListener('keydown', e => {
+  const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (!d) return;
+  e.preventDefault(); e.stopPropagation(); stepShell(d);
+});
 const distEl = document.getElementById('dist');
 distEl.value = String(opts.dist);
 distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); });
