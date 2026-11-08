@@ -425,7 +425,7 @@ vec4 cirrus(vec3 d, vec3 sk) {
   float b = (R + H) * d.y;
   float ta = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.1) * (R + 12.1)));
   float tb = -b + sqrt(b * b - ((R + H) * (R + H) - (R + 12.9) * (R + 12.9)));
-  tb = min(tb, ta + 90.0);
+  tb = min(tb, ta + 55.0);
   const int N = 8;
   float ds = (tb - ta) / float(N);
   float mu = dot(d, uSun);
@@ -456,7 +456,7 @@ vec4 cirrus(vec3 d, vec3 sk) {
     t += ds;
   }
   // Far fibres fade into the horizon glow.
-  float fade = exp(-ta / 200.0);
+  float fade = exp(-ta / 110.0);
   return vec4(col * fade, 1.0 - (1.0 - Tc) * fade);
 }
 
@@ -639,7 +639,8 @@ vec3 trails(vec3 d, float tEnd) {
     // Thin far trails keep their brightness per pixel, not per km.
     col *= min(1.0, mix(a.w, b.w, k) / rad + 0.15);
     float y = q.y + H + dot(q.xz, q.xz) / 12742.0;
-    e += col * glow * (y < 3.5 ? gDeckT : 1.0);
+    // Neighbouring segments overlap at their joints; the brighter one wins.
+    e = max(e, col * glow * (y < 3.5 ? gDeckT : 1.0));
   }
   return e;
 }
