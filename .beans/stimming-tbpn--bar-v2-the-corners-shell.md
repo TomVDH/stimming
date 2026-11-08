@@ -3,8 +3,9 @@
 title: 'Bar v2: the Corners shell'
 status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-08T12:04:54Z
-updated_at: 2026-11-08T12:04:54Z
+updated_at: 2026-11-08T17:29:18Z
 parent: stimming-avdk
 ---
 
@@ -15,8 +16,8 @@ Rebuild the toy controls as the Corners shell: four stage corners, a key strip, 
 - [x] Audit bars, render stacks and meta (2026-11-08)
 - [x] Design approved by Tom (Corners, Keys, Drop sheet, Corners stay on phones, spec object, Galaxy pilot)
 - [x] Spec written: docs/plans/bar-v2.md
-- [ ] Tom reviews the spec
-- [ ] Implementation plan
+- [x] Tom reviews the spec (approved 2026-11-08)
+- [ ] Implementation plan: docs/plans/bar-v2-plan.md (written; Tom reviews)
 - [ ] Shell v2 in shared/stim.js and shared/stim.css
 - [ ] Pilot: Galaxy; Tom signs off at 1280 and 375 px
 - [ ] AGENTS.md control standard replaced; stimming-848s closed as superseded
