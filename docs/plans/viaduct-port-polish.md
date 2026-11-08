@@ -41,9 +41,9 @@ Each light site in `port.js` takes one kind, or none:
 Tom chose "Lit terminal portal" for the end of the causeway.
 
 - The causeway lands on a quay embankment at the port edge. The embankment is a sloped concrete wedge from the deck to the sea.
-- The track runs into one brutalist block: about 60 m wide, 30 m tall and 80 m deep. Plain precast faces, no props.
+- The track runs into one brutalist block: about 60 m wide, 42 m tall and 80 m deep. Plain precast faces, no props. The deck sits at 24 m, so the block must clear the 8 m mouth.
 - The block has one portal mouth on the track: 9 m wide and 8 m tall, lit from inside with a warm, even light.
-- The mouth light spills onto the last 40 m of deck. It is a light in the light list, so the bake and the relight both use it.
+- The mouth light spills onto the last 40 m of deck. It is a static light in the light list, so the bake and the live ride both use it.
 - A soft light shaft leaves the mouth into the fog. It uses the existing `cone()` material.
 - The block and the embankment use the `precast` material. They bake with the still layer.
 - The portal is the train's far end. `END` moves 20 m past the mouth. The baked block hides the train by depth as it enters; then the train hides.
