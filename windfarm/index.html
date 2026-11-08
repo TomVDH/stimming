@@ -685,7 +685,7 @@ turbines.frustumCulled = false;
 scene.add(turbines);
 /* ---------- fog wakes ---------- */
 // In moderate wind each rotor sheds three helices of condensed fog downwind.
-// Each helix is a soft band; it widens, breaks up and fades as it drifts away.
+// Each helix is a torn, wandering band; it widens and fades downwind.
 const WAKE_L = 700, WAKE_SEG = 120;
 const WAKE_VS = FOG + `
 attribute vec2 aUv;
@@ -698,14 +698,22 @@ varying vec2 vUv2;
 varying float vK;
 varying vec3 vL;
 varying float vRed;
+varying vec2 vSeed;
 vec3 yaw(vec3 v) { float c = cos(uYaw), s = sin(uYaw); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
 void main() {
   float s = aUv.x, w = aUv.y;
-  // The wake grows wider downwind; three turns span its length.
-  float r = 78.0 * (1.0 + 0.55 * s);
-  float th = aSpin + aHelix * 2.0943951 - s * 6.2832 * 3.0;
+  // Each rotor and each helix gets its own noise seed.
+  float seed = fract(aBase.x * 0.0137 + aBase.z * 0.0071) * 50.0 + aHelix * 3.7;
+  float tt = uTime * 0.04;
+  // Turbulence bends the coil: the radius swells and shrinks downwind.
+  float wob = fbm3(vec2(s * 3.0 + seed, tt)) - 0.5;
+  float r = 78.0 * (1.0 + 0.55 * s) * (1.0 + 1.1 * s * wob);
+  float th = aSpin + aHelix * 2.0943951 - s * 6.2832 * 3.0 + 2.4 * s * (fbm3(vec2(s * 2.0 + seed + 9.0, tt)) - 0.5);
   vec3 p = vec3(r * cos(th), 112.0 + r * sin(th) * (1.0 - 0.25 * s), -12.0 - s * ${WAKE_L}.0);
-  // The band spans along the axis, so it reads as a coil from any side.
+  // The wake centre meanders away from the rotor axis.
+  p.xy += vec2(fbm3(vec2(s * 1.5 + seed, tt)) - 0.5, 0.6 * (fbm3(vec2(s * 1.5 + seed + 5.0, tt)) - 0.5)) * 220.0 * s;
+  // The band spans out and along, so end-on it reads as a smear, not a line.
+  p.xy += vec2(cos(th), sin(th)) * (w - 0.5) * (18.0 + 70.0 * s);
   p.z += (w - 0.5) * (10.0 + 30.0 * s);
   // It sags a little and drifts with the fog.
   p.y -= s * s * 18.0;
@@ -719,6 +727,7 @@ void main() {
   // Near the hub the coil passes the lamp and takes its red.
   vRed = exp(-s * 10.0);
   vUv2 = vec2(s, w);
+  vSeed = vec2(seed, aHelix);
 }`;
 const WAKE_FS = FOG + `
 uniform float uTime, uWakes;
@@ -728,14 +737,17 @@ varying vec2 vUv2;
 varying float vK;
 varying vec3 vL;
 varying float vRed;
+varying vec2 vSeed;
 void main() {
   float s = vUv2.x, w = vUv2.y;
   // Soft across the band, faded in near the rotor and out downwind.
   float across = smoothstep(0.0, 0.35, w) * smoothstep(1.0, 0.65, w);
   float along = smoothstep(0.0, 0.06, s) * (1.0 - smoothstep(0.35, 1.0, s));
   // The coil breaks into puffs that drift downwind.
-  float n = fbm3(vec2(s * 22.0 - uTime * 0.6, w * 3.0 + s * 4.0));
-  float puff = smoothstep(0.42, 0.8, n) * (0.6 + 0.4 * fbm3(vec2(s * 5.0 + 3.0, w + uTime * 0.1)));
+  float n = fbm3(vec2(s * 14.0 - uTime * 0.6 + vSeed.x, w * 2.0 + s * 3.0 + vSeed.y * 3.1));
+  float puff = smoothstep(0.45, 0.85, n) * (0.6 + 0.4 * fbm3(vec2(s * 5.0 + vSeed.x, w + uTime * 0.1)));
+  // Long tears leave only shreds of each turn.
+  puff *= smoothstep(0.38, 0.62, fbm3(vec2(s * 4.0 + vSeed.x * 1.3, uTime * 0.08 + vSeed.y)));
   float a = across * along * puff * vK * uWakes;
   if (a < 0.002) discard;
   vec3 c = vL * 2.6 + uRed * vRed * 0.15 * (0.4 + 0.6 * uBlink);
@@ -779,7 +791,7 @@ function pushRotors() {
   wakes.spin.needsUpdate = true; wakes.on.needsUpdate = true;
   // Wakes form in moderate wind only, in fog; strong wind tears them apart.
   const w = windNow();
-  wakes.m.material.uniforms.uWakes.value = 0.7 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.6 : 1);
+  wakes.m.material.uniforms.uWakes.value = 0.9 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.6 : 1);
 }
 
 const lightGeo = lightGeometry();

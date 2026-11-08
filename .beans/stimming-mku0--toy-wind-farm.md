@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:10:36Z
-updated_at: 2026-11-08T17:21:50Z
+updated_at: 2026-11-08T17:46:25Z
 ---
 
 Wind farm (`windfarm`, idea 59). Offshore turbines in sea fog; the Wind slider drives rotors, sea, fog and fog wakes.
@@ -44,3 +44,5 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - [x] Tom: no bokeh spatter on the lens and no bokeh raindrops; the only bokeh is the depth of field on the lamps
 
 - Lens strikes (2026-11-08): in a storm, raindrops strike the lens. Each strike swells the DOF bokeh nearby for about half a second; most land on a lamp, so its disc pulses.
+
+- Wakes torn (2026-11-08): the coils wander, swell and tear into shreds, so end-on they no longer read as rings.
