@@ -186,10 +186,11 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= A · Shaded object ================= */
 
-  // A round porthole on the night: lit glass, coloured trails, a warm horizon.
+  // A round porthole on the night: lit glass, five trails, one hill.
   {
-    const P = [64, 50];
-    const RIDGE = 'M10 90C24 85 36 88 48 84S74 85 86 81S108 84 118 86V120H10Z';
+    const P = [64, 52];
+    const LIST = [[10, 160, 110, 1], [19, 235, 115, 2], [28, 310, 115, 0], [37, 25, 110, 1], [46, 100, 115, 2]];
+    const RIDGE = 'M10 88C30 82 46 86 64 83S98 80 118 85';
     DIRS.push({
       toy: 'trails', l: 'A', name: 'Shaded object',
       box: [12, 12, 104, 104],
@@ -199,35 +200,34 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
           <circle cx="64" cy="64" r="50" fill="url(#st-sky)"/>
           <g clip-path="url(#${id}c)">
             <rect x="14" y="14" width="100" height="100" fill="url(#st-glow)"/>
-            <g class="arcs" fill="none" stroke-linecap="round">
-              ${TRAILS.map(([r, , , c, b]) => `<path stroke="${COL[c]}" stroke-width="${f(1.3 + b * 1.4)}" stroke-opacity="${f(0.45 + b * 0.55)}"/>`).join('')}
+            <g class="arcs" fill="none" stroke-width="2.8" stroke-linecap="round">
+              ${LIST.map(([, , , c]) => `<path stroke="${COL[c]}"/>`).join('')}
             </g>
-            <line class="met" x1="88" y1="26" x2="100" y2="46" stroke="oklch(0.95 0.08 150)" stroke-width="2" stroke-linecap="round" opacity="0"/>
-            <circle cx="${P[0]}" cy="${P[1]}" r="5" fill="#fff" fill-opacity="0.16"/>
-            <circle cx="${P[0]}" cy="${P[1]}" r="2.3" fill="oklch(0.98 0.01 95)"/>
-            <path d="${RIDGE}" fill="oklch(0.08 0.015 265)"/>
+            <circle cx="${P[0]}" cy="${P[1]}" r="6" fill="#fff" fill-opacity="0.16"/>
+            <circle cx="${P[0]}" cy="${P[1]}" r="2.8" fill="oklch(0.98 0.01 95)"/>
+            <path d="${RIDGE}V120H10Z" fill="oklch(0.08 0.015 265)"/>
           </g>
           <circle cx="64" cy="64" r="50" fill="url(#lit)" opacity="0.55"/>
           <circle cx="64" cy="64" r="49.2" fill="none" stroke="url(#rim)" stroke-width="1.8"/>
           <circle cx="64" cy="64" r="50" fill="none" stroke="oklch(0.34 0.04 270)" stroke-width="1"/>`;
-        const paths = [...svg.querySelectorAll('.arcs path')], met = svg.querySelector('.met');
+        const paths = [...svg.querySelectorAll('.arcs path')];
         const st = { t: 0 };
-        const draw = () => {
-          paths.forEach((p, k) => { const [r, a0, s] = TRAILS[k]; p.setAttribute('d', arcD(P[0], P[1], r, a0, a0 + s + GROW * st.t)); });
-          // A meteor flashes once near the top of each exposure.
-          met.setAttribute('opacity', f(smooth(0.55, 0.7, st.t) * (1 - smooth(0.8, 0.95, st.t))));
-        };
+        const draw = () => paths.forEach((p, k) => { const [r, a0, s] = LIST[k]; p.setAttribute('d', arcD(P[0], P[1], r, a0, a0 + s + GROW * st.t)); });
         draw();
         return shutter(st, 2.2, draw);
       },
+      // The emblem: a heavy ring, four bold trails, the pole and a solid hill.
       emblem: emb(`
-        <clipPath id="s"><path d="M14 64A50 50 0 0 1 114 64V86C108 84 96 80 86 81S60 84 48 84S24 85 14 88Z"/></clipPath>
-        <g clip-path="url(#s)" fill="none" stroke="#fff" stroke-linecap="round">
-        ${TRAILS.slice(0, 8).map(([r, a0, s, , b]) => `<path d="${arcD(P[0], P[1], r, a0, a0 + s)}" stroke-width="${f(2.6 + b * 1.4)}"/>`).join('\n')}
+        <clipPath id="d"><circle cx="64" cy="64" r="48"/></clipPath>
+        <clipPath id="s"><path d="M10 80C30 74 46 78 64 75S98 72 118 77V0H10Z"/></clipPath>
+        <g clip-path="url(#d)">
+        <g clip-path="url(#s)" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round">
+        ${LIST.slice(0, 4).map(([r, a0, s]) => `<path d="${arcD(P[0], P[1], r, a0, a0 + s)}"/>`).join('\n')}
         </g>
-        <circle cx="${P[0]}" cy="${P[1]}" r="4" fill="#fff"/>
-        <circle cx="64" cy="64" r="50" fill="none" stroke="#fff" stroke-width="4"/>
-        <path d="M14 88C24 85 36 88 48 84S74 85 86 81S108 84 114 86" fill="none" stroke="#fff" stroke-width="3.6"/>
+        <path d="${RIDGE}V128H10Z" fill="#fff"/>
+        </g>
+        <circle cx="${P[0]}" cy="${P[1]}" r="5.5" fill="#fff"/>
+        <circle cx="64" cy="64" r="51" fill="none" stroke="#fff" stroke-width="6"/>
       `),
     });
   }
