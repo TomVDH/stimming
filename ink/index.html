@@ -62,7 +62,7 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Ink in water</h1><div class="vignette" hidden></div></section>
 </div>
 
-<!-- Blockout: one still frame. The plume is procedural; no fluid sim runs yet. -->
+
 <!-- three.js stays on 0.186.1, the WebGPU build Fire uses. -->
 <script type="importmap">
 { "imports": {
@@ -70,12 +70,11 @@
   "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
   "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
-  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js",
-  "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
 } }
 </script>
 <script type="module">
-import { initPage, linFit, pixelRatio } from '../shared/stim.js';
+import { initPage, linFit, pixelRatio, whenVisible, quality as siteQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -86,6 +85,7 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(9000)])]) });
 initPage({ id: 'ink' });
 const panel = document.getElementById('ink');
+const bar = document.querySelector('.bar');
 
 // Without WebGPU the stage shows one line and nothing runs.
 async function hasWebGPU() {
@@ -102,122 +102,37 @@ function noWebGPU() {
   markReady();
 }
 
-/* ---------- tank and grid ---------- */
+/* ---------- tank ---------- */
 // The tank is a tall, thin slab, in world units.
 const W = 0.6, H = 1, D = 0.3;
-// The blockout grid is the plan's Medium step.
-const NX = 72, NY = 120, NZ = 36;
-// The bar covers the stage foot; the tank fits above it.
-const bar = document.querySelector('.bar');
+// The tank fits the stage above the bar.
 const TOP_PX = 22, SIDE_PX = 16;
+// Each quality step sets the grid and the ray steps.
+// Cells stay cubes: the grid keeps the tank's 0.6 : 1 : 0.3 shape.
+const GRADES = {
+  low: { grid: [48, 80, 24], pressure: 10, march: 40 },
+  standard: { grid: [72, 120, 36], pressure: 12, march: 56 },
+  high: { grid: [96, 160, 48], pressure: 16, march: 64 },
+};
 
-/* ---------- the plume: one indigo drop, halfway down ---------- */
-// A seeded random keeps the still the same on every load.
-function mulberry(a) {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function bakePlume(createNoise3D) {
-  const n3 = createNoise3D(mulberry(35));
-  const data = new Uint8Array(NX * NY * NZ);
-  // The ring sits a little below the middle, tilted.
-  const cx = 0.03, cy = -0.07, cz = 0, R = 0.1, r = 0.03;
-  const tz = 0.16, tx = 0.11;
-  const cz1 = Math.cos(tz), sz1 = Math.sin(tz), cx1 = Math.cos(tx), sx1 = Math.sin(tx);
-  // Rayleigh-Taylor fingers hang from the ring: angle, length, drift.
-  const fingers = [
-    [0.3, 0.25, 0.25], [1.4, 0.15, 0.45], [2.5, 0.3, 0.15],
-    [3.6, 0.19, 0.5], [4.5, 0.27, 0.3], [5.5, 0.13, 0.35], [6.0, 0.22, 0.1],
-  ];
-  const surf = H / 2;
-  for (let k = 0; k < NZ; k++) {
-    const z = ((k + 0.5) / NZ - 0.5) * D;
-    for (let j = 0; j < NY; j++) {
-      const y = ((j + 0.5) / NY - 0.5) * H;
-      if (y < cy - 0.4) continue;
-      for (let i = 0; i < NX; i++) {
-        const x = ((i + 0.5) / NX - 0.5) * W;
-        if (Math.abs(x - cx) > 0.26) continue;
-        // A domain warp turns clean shapes into soft wisps.
-        const qx = x + 0.017 * n3(x * 7, y * 7, z * 7);
-        const qy = y + 0.017 * n3(x * 7 + 31, y * 7, z * 7);
-        const qz = z + 0.017 * n3(x * 7, y * 7 + 67, z * 7);
-        let d = 0;
-
-        // The wake trails from the surface down to the ring.
-        if (qy > cy) {
-          const s = (qy - cy) / (surf - cy);
-          const sx = cx + 0.02 * Math.sin(s * 9 + 1) * s, sz = 0.012 * Math.sin(s * 7);
-          const rr = 0.028 + (0.005 - 0.028) * Math.sqrt(s);
-          const dd = Math.hypot(qx - sx, qz - sz) / rr;
-          d += 0.42 * (1 - 0.5 * s) * Math.exp(-dd * dd);
-        }
-        // A thin lens of ink stays at the surface, where the drop went in.
-        {
-          const dd = Math.hypot((qx - cx) / 0.034, (qy - surf + 0.012) / 0.007, qz / 0.03);
-          d += 0.3 * Math.exp(-dd * dd);
-        }
-
-        // Ring frame: offsets from the centre, tilted about z, then x.
-        const ox = qx - cx, oy = qy - cy, oz = qz - cz;
-        const ax = ox * cz1 + oy * sz1, ay = -ox * sz1 + oy * cz1;
-        const rx = ax, ry = ay * cx1 + oz * sx1, rz = -ay * sx1 + oz * cx1;
-        // The vortex ring core holds the densest ink.
-        const rho = Math.hypot(rx, rz) - R;
-        const dt = Math.hypot(rho, ry * 1.15) / r;
-        d += 1.15 * Math.exp(-dt * dt);
-        // A thin dome of ink caps the ring, as a mushroom head.
-        if (ry > -0.012) {
-          const e = (Math.hypot(rx, (ry - 0.006) * 1.7, rz) - R * 1.08) / 0.014;
-          d += 0.2 * Math.exp(-e * e);
-        }
-        // Each finger drops from the ring and ends in a small ring.
-        for (const [th, len, drift] of fingers) {
-          const bx = R * Math.cos(th), bz = R * Math.sin(th);
-          const t = -ry / len;
-          if (t < -0.05 || t > 1.15) continue;
-          const tc = Math.min(1, Math.max(0, t));
-          const fx = bx * (1 + drift * tc), fz = bz * (1 + drift * tc);
-          const fr = 0.011 * (1 - 0.4 * tc);
-          const df = Math.hypot(rx - fx, rz - fz) / fr;
-          d += 0.55 * Math.exp(-df * df);
-          // The tip rolls into a small mushroom: a round head, a short skirt.
-          const ty = ry + len;
-          const hd = Math.hypot(rx - fx, ty * 1.25, rz - fz) / (0.017 + 0.03 * drift);
-          d += 0.7 * Math.exp(-hd * hd * hd * hd);
-          if (ty > -0.004) {
-            const rho2 = Math.hypot(rx - fx, rz - fz) - 0.014;
-            const dt2 = Math.hypot(rho2, (ty - 0.008) * 1.4) / 0.008;
-            d += 0.35 * Math.exp(-dt2 * dt2);
-          }
-        }
-        if (d < 0.004) continue;
-        // Fine noise breaks the ink into filaments of varied depth.
-        const f = 0.62 * n3(qx * 26, qy * 26, qz * 26) + 0.38 * n3(qx * 55, qy * 55, qz * 55);
-        d *= Math.min(1.3, Math.max(0, 0.62 + 0.7 * f));
-        data[i + NX * (j + NY * k)] = Math.min(255, Math.round(d * 255));
-      }
-    }
-  }
-  return data;
-}
+/* ---------- inks ---------- */
+// Absorption per unit mass, red, green and blue.
+const INKS = {
+  indigo: [1.0, 0.4, 0.08],
+};
 
 async function start() {
   if (!(await hasWebGPU())) return noWebGPU();
 
-  const [THREE, TSL, { createNoise3D }] = await Promise.all([
+  const [THREE, TSL, { snoiseVec3 }] = await Promise.all([
     import('three/webgpu'),
     import('three/tsl'),
-    import('simplex-noise'),
+    import('three/addons/tsl/math/curlNoise.js'),
   ]);
   const {
-    vec3, vec4, float, int, Fn, uniform, texture3D, Loop, If, min, max, exp, pow,
-    cameraPosition, positionWorld, screenCoordinate, interleavedGradientNoise, smoothstep,
+    vec3, vec4, uvec3, float, int, Fn, uniform, texture3D, textureStore, storageTexture, storage, instanceIndex,
+    Loop, If, min, max, exp, pow, floor, mix, smoothstep, mx_noise_float,
+    cameraPosition, positionWorld, screenCoordinate, interleavedGradientNoise,
   } = TSL;
 
   const renderer = new THREE.WebGPURenderer({ antialias: false });
@@ -231,43 +146,316 @@ async function start() {
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1.6;
   const canvas = renderer.domElement;
-  panel.prepend(canvas);
+  canvas.setAttribute('aria-hidden', 'true');
 
+  const grade = GRADES[siteQuality()] || GRADES.standard;
+
+  /* ---------- K3: volume fluid ---------- */
+  // Lifted from fire/index.html and retuned for ink: dye sinks and absorbs colour.
+  // Copy K3 from here, not from Fire.
+  const [GX, GY, GZ] = grade.grid;
+  const CELLS = GX * GY * GZ;
+  // Jacobi iterations stay even, so pressure ends in A.
+  const PRESSURE_ITERATIONS = grade.pressure;
+  // Dye is heavier than water, so buoyancy points down.
+  const BUOYANCY_SIGN = -1;
+  // Dye rgb holds absorption times mass; dye a holds mass.
+  const DYE_CHANNELS = 'rgb absorption, a mass';
+  const CELL = H / GY;
+  const DIMS = vec3(GX, GY, GZ);
+  const TX = 1 / GX, TY = 1 / GY, TZ = 1 / GZ;
+  const WORLD = vec3(W, H, D);
+  // At most eight emitters act in one step; each takes three vec4.
+  const EMIT_MAX = 8;
+
+  const uDt = uniform(1 / 60);
+  const uTime = uniform(0);
+  // Weight scales the pull on dyed water; the slider runs 0.2 to 2.
+  const uWeight = uniform(1);
+  const uGravity = uniform(1.0);
+  const uVorticity = uniform(2.5);
+  const uVelDamping = uniform(0.1);
+  // Faint curl noise seeds the instabilities that grow into fingers.
+  const uTurbulence = uniform(0.12);
+
+  // rgba16float is storage-writable and linearly filterable.
+  function createStorage3D(name) {
+    const texture = new THREE.Storage3DTexture(GX, GY, GZ);
+    texture.name = name;
+    texture.format = THREE.RGBAFormat;
+    texture.type = THREE.HalfFloatType;
+    texture.minFilter = texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = texture.wrapT = texture.wrapR = THREE.ClampToEdgeWrapping;
+    return texture;
+  }
+  const velTexA = createStorage3D('velocity A');
+  const velTexB = createStorage3D('velocity B');
+  // Dye A is the current field, B the forward pass, C the corrected result.
+  const dyeTexA = createStorage3D('dye A');
+  const dyeTexB = createStorage3D('dye B');
+  const dyeTexC = createStorage3D('dye C');
+  const divTex = createStorage3D('divergence');
+  const pressTexA = createStorage3D('pressure A');
+  const pressTexB = createStorage3D('pressure B');
+  const curlNoiseTex = createStorage3D('curl noise');
+  curlNoiseTex.wrapS = curlNoiseTex.wrapT = curlNoiseTex.wrapR = THREE.RepeatWrapping;
+  // Curl holds the vorticity vector in xyz and its length in w.
+  const curlTex = createStorage3D('curl');
+  // A and C swap each step through these two nodes.
+  const dyeRead = texture3D(dyeTexA);
+  const dyeWrite = storageTexture(dyeTexC).toWriteOnly();
+  const curlNoiseNode = texture3D(curlNoiseTex);
+
+  // Each emitter: position and radius, velocity and grip, absorption and mass.
+  const emitAttr = new THREE.StorageBufferAttribute(new Float32Array(EMIT_MAX * 3 * 4), 4);
+  const emitBuf = storage(emitAttr, 'vec4', EMIT_MAX * 3).toReadOnly();
+  const uEmitCount = uniform(0, 'int');
+  const queue = [];
+
+  const voxel = id => uvec3(id.mod(GX), id.div(GX).mod(GY), id.div(GX * GY));
+  const uvwOf = coord => vec3(coord).add(0.5).div(DIMS);
+  const worldOf = uvw => uvw.sub(0.5).mul(WORLD);
+
+  // Curl noise is computed once into a 3D texture.
+  const curlNoisePass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const p = uvwOf(coord).mul(vec3(W / H, 1, D / H)).mul(6);
+    const e = float(0.02);
+    const dx = vec3(e, 0, 0), dy = vec3(0, e, 0), dz = vec3(0, 0, e);
+    const x0 = snoiseVec3(p.sub(dx)), x1 = snoiseVec3(p.add(dx));
+    const y0 = snoiseVec3(p.sub(dy)), y1 = snoiseVec3(p.add(dy));
+    const z0 = snoiseVec3(p.sub(dz)), z1 = snoiseVec3(p.add(dz));
+    const x = y1.z.sub(y0.z).sub(z1.y).add(z0.y);
+    const y = z1.x.sub(z0.x).sub(x1.z).add(x0.z);
+    const z = x1.y.sub(x0.y).sub(y1.x).add(y0.x);
+    textureStore(curlNoiseTex, coord, vec4(vec3(x, y, z).div(e.mul(2)), 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Clear empties velocity, pressure and both dye fields.
+  const clearPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    textureStore(velTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexC, coord, vec4(0)).toWriteOnly();
+    textureStore(pressTexA, coord, vec4(0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Vorticity is the curl of the projected velocity.
+  const curlPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vR = texture3D(velTexA, uvw.add(vec3(TX, 0, 0)), 0).xyz;
+    const vL = texture3D(velTexA, uvw.sub(vec3(TX, 0, 0)), 0).xyz;
+    const vU = texture3D(velTexA, uvw.add(vec3(0, TY, 0)), 0).xyz;
+    const vD = texture3D(velTexA, uvw.sub(vec3(0, TY, 0)), 0).xyz;
+    const vF = texture3D(velTexA, uvw.add(vec3(0, 0, TZ)), 0).xyz;
+    const vB = texture3D(velTexA, uvw.sub(vec3(0, 0, TZ)), 0).xyz;
+    const w = vec3(
+      vU.z.sub(vD.z).sub(vF.y.sub(vB.y)),
+      vF.x.sub(vB.x).sub(vR.z.sub(vL.z)),
+      vR.y.sub(vL.y).sub(vU.x.sub(vD.x)),
+    ).div(2 * CELL);
+    textureStore(curlTex, coord, vec4(w, w.length())).toWriteOnly();
+  })().compute(CELLS);
+
+  // A sphere test for emitter i: 1 at the centre, 0 at the rim.
+  const emitWeight = (p, i) => {
+    const e0 = emitBuf.element(i.mul(3));
+    return smoothstep(0, 1, p.distance(e0.xyz).div(e0.w).oneMinus().mul(1.6));
+  };
+
+  // Advects velocity, then adds the dye's weight, curl noise and emitters.
+  const advectVelocityPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vel = texture3D(velTexA, uvw, 0).xyz;
+    const prevPos = uvw.sub(vel.div(WORLD).mul(uDt));
+    const v = texture3D(velTexA, prevPos, 0).xyz.toVar();
+    const mass = dyeRead.sample(uvw).level(0).a;
+    const dyed = mass.clamp(0, 1);
+
+    // Heavy dye sinks; Weight scales the pull.
+    v.addAssign(vec3(0, mass.mul(uWeight).mul(uGravity).mul(BUOYANCY_SIGN), 0).mul(uDt));
+    const noisePos = uvw.mul(0.8).add(vec3(0, uTime.mul(0.02), uTime.mul(0.01)));
+    v.addAssign(curlNoiseNode.sample(noisePos).level(0).xyz.mul(uTurbulence).mul(dyed).mul(uDt));
+    v.mulAssign(max(float(1).sub(uVelDamping.mul(uDt)), 0));
+
+    // Vorticity confinement keeps the fine curls; dye mass weights it.
+    const wC = texture3D(curlTex, uvw, 0);
+    const eta = vec3(
+      texture3D(curlTex, uvw.add(vec3(TX, 0, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(TX, 0, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, TY, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, TY, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, 0, TZ)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, 0, TZ)), 0).w),
+    );
+    const N = eta.div(eta.length().add(1e-5));
+    v.addAssign(N.cross(wC.xyz).mul(uVorticity.mul(CELL)).mul(dyed.mul(0.8).add(0.2)).mul(uDt));
+
+    // Emitters pull velocity toward their own inside their spheres.
+    const p = worldOf(uvw);
+    Loop(uEmitCount, ({ i }) => {
+      const e1 = emitBuf.element(i.mul(3).add(1));
+      v.assign(mix(v, e1.xyz, emitWeight(p, i).mul(e1.w)));
+    });
+
+    // Velocity fades near the tank walls.
+    const edge = min(uvw, vec3(1).sub(uvw));
+    v.mulAssign(smoothstep(0.0, 0.035, min(edge.x, min(edge.y, edge.z))));
+    textureStore(velTexB, coord, vec4(v, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  const divergencePass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vR = texture3D(velTexB, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const vL = texture3D(velTexB, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const vU = texture3D(velTexB, uvw.add(vec3(0, TY, 0)), 0).y;
+    const vD = texture3D(velTexB, uvw.sub(vec3(0, TY, 0)), 0).y;
+    const vF = texture3D(velTexB, uvw.add(vec3(0, 0, TZ)), 0).z;
+    const vB = texture3D(velTexB, uvw.sub(vec3(0, 0, TZ)), 0).z;
+    const divergence = vR.sub(vL).add(vU.sub(vD)).add(vF.sub(vB)).mul(0.5);
+    textureStore(divTex, coord, vec4(divergence, 0, 0, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Jacobi pressure solve ping-pongs between A and B.
+  const jacobi = (pressRead, pressWrite) => Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const pR = texture3D(pressRead, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const pL = texture3D(pressRead, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const pU = texture3D(pressRead, uvw.add(vec3(0, TY, 0)), 0).x;
+    const pD = texture3D(pressRead, uvw.sub(vec3(0, TY, 0)), 0).x;
+    const pF = texture3D(pressRead, uvw.add(vec3(0, 0, TZ)), 0).x;
+    const pB = texture3D(pressRead, uvw.sub(vec3(0, 0, TZ)), 0).x;
+    const divergence = texture3D(divTex, uvw, 0).x;
+    const pressure = pR.add(pL).add(pU).add(pD).add(pF).add(pB).sub(divergence).div(6);
+    textureStore(pressWrite, coord, vec4(pressure, 0, 0, 0)).toWriteOnly();
+  })().compute(CELLS);
+  const jacobiPassAB = jacobi(pressTexA, pressTexB);
+  const jacobiPassBA = jacobi(pressTexB, pressTexA);
+
+  // Subtracting the pressure gradient makes velocity divergence-free.
+  const projectPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const pR = texture3D(pressTexA, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const pL = texture3D(pressTexA, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const pU = texture3D(pressTexA, uvw.add(vec3(0, TY, 0)), 0).x;
+    const pD = texture3D(pressTexA, uvw.sub(vec3(0, TY, 0)), 0).x;
+    const pF = texture3D(pressTexA, uvw.add(vec3(0, 0, TZ)), 0).x;
+    const pB = texture3D(pressTexA, uvw.sub(vec3(0, 0, TZ)), 0).x;
+    const gradient = vec3(pR.sub(pL), pU.sub(pD), pF.sub(pB)).mul(0.5);
+    const vel = texture3D(velTexB, uvw, 0).xyz.sub(gradient);
+    textureStore(velTexA, coord, vec4(vel, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // MacCormack, step 1: a plain semi-Lagrangian pass into B.
+  const dyeForwardPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vel = texture3D(velTexA, uvw, 0).xyz;
+    const prevPos = uvw.sub(vel.div(WORLD).mul(uDt));
+    textureStore(dyeTexB, coord, dyeRead.sample(prevPos).level(0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // MacCormack, step 2: trace B back and correct by half the error.
+  // The result stays inside the neighbours' range, so it never rings.
+  // Emitters add dye here; nothing dissipates.
+  const dyeCorrectPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const step = texture3D(velTexA, uvw, 0).xyz.div(WORLD).mul(uDt);
+    const prevPos = uvw.sub(step);
+    const forward = texture3D(dyeTexB, uvw, 0);
+    const back = texture3D(dyeTexB, uvw.add(step), 0);
+    const now = dyeRead.sample(uvw).level(0);
+    const dye = forward.add(now.sub(back).mul(0.5)).toVar();
+    const base = floor(prevPos.mul(DIMS).sub(0.5));
+    const lo = vec4(1e4).toVar(), hi = vec4(-1e4).toVar();
+    for (const o of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]) {
+      const s = dyeRead.sample(base.add(vec3(...o)).add(0.5).div(DIMS)).level(0);
+      lo.assign(min(lo, s));
+      hi.assign(max(hi, s));
+    }
+    dye.assign(min(max(dye, lo), hi));
+
+    // Emitters add ink; fine noise makes the drop uneven, so fingers grow.
+    const p = worldOf(uvw);
+    Loop(uEmitCount, ({ i }) => {
+      const e2 = emitBuf.element(i.mul(3).add(2));
+      const lumpy = mx_noise_float(p.mul(90).add(e2.xyz.mul(7))).mul(0.45).add(0.8);
+      dye.addAssign(e2.mul(emitWeight(p, i)).mul(lumpy));
+    });
+    textureStore(dyeWrite, coord, max(dye, vec4(0))).toWriteOnly();
+  })().compute(CELLS);
+
+  const stepPasses = [curlPass, advectVelocityPass, divergencePass];
+  for (let i = 0; i < PRESSURE_ITERATIONS; i++) stepPasses.push(i % 2 === 0 ? jacobiPassAB : jacobiPassBA);
+  stepPasses.push(projectPass, dyeForwardPass, dyeCorrectPass);
+
+  // Queues one emitter for the next step.
+  function emit({ pos, radius, vel = [0, 0, 0], grip = 0, ink = INKS.indigo, mass = 0 }) {
+    if (queue.length < EMIT_MAX) queue.push([pos, radius, vel, grip, ink, mass]);
+  }
+  function loadEmitters() {
+    const a = emitAttr.array;
+    queue.forEach(([pos, radius, vel, grip, ink, mass], i) => {
+      a.set([...pos, radius, ...vel, grip, ink[0] * mass, ink[1] * mass, ink[2] * mass, mass], i * 12);
+    });
+    emitAttr.needsUpdate = true;
+    uEmitCount.value = queue.length;
+    queue.length = 0;
+  }
+
+  // One fixed step; the dye fields swap after it.
+  const SIM_STEP = 1 / 60;
+  function simulate() {
+    loadEmitters();
+    uDt.value = SIM_STEP;
+    uTime.value += SIM_STEP;
+    renderer.compute(stepPasses);
+    const swap = dyeRead.value;
+    dyeRead.value = dyeWrite.value;
+    dyeWrite.value = swap;
+  }
+
+  /* ---------- drop ---------- */
+  // A drop is a short downward jet of ink just under the surface.
+  // The jet rolls into a vortex ring by itself.
+  const DROP_RADIUS = 5 * CELL, DROP_SPEED = 0.5;
+  function drop(x, z, ink = INKS.indigo) {
+    // A small random tilt makes the ring wobble before it breaks.
+    const tilt = (Math.random() - 0.5) * 0.12, yaw = Math.random() * Math.PI * 2;
+    const vel = [Math.sin(tilt) * Math.cos(yaw) * DROP_SPEED, -DROP_SPEED, Math.sin(tilt) * Math.sin(yaw) * DROP_SPEED];
+    emit({ pos: [x, H / 2 - DROP_RADIUS - 2.5 * CELL, z], radius: DROP_RADIUS, vel, grip: 1, ink, mass: 1 });
+  }
+  /* ---------- end K3 ---------- */
+
+  /* ---------- dark field raymarch ---------- */
   const vec = (L, C, h) => new THREE.Vector3(...linFit(L, C, h));
   const scene = new THREE.Scene();
   // Outside the tank the stage is near black.
   scene.background = new THREE.Color().setRGB(...linFit(0.07, 0.008, 255), THREE.LinearSRGBColorSpace);
   const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 20);
 
-  /* ---------- dye texture ---------- */
-  const dyeTex = new THREE.Data3DTexture(bakePlume(createNoise3D), NX, NY, NZ);
-  dyeTex.format = THREE.RedFormat;
-  dyeTex.type = THREE.UnsignedByteType;
-  dyeTex.minFilter = dyeTex.magFilter = THREE.LinearFilter;
-  dyeTex.wrapS = dyeTex.wrapT = dyeTex.wrapR = THREE.ClampToEdgeWrapping;
-  dyeTex.unpackAlignment = 1;
-  dyeTex.needsUpdate = true;
-
-  /* ---------- dark field raymarch ---------- */
-  const STEPS = 72, SHADOW_STEPS = 8;
-  const BMIN = vec3(-W / 2, -H / 2, -D / 2), BMAX = vec3(W / 2, H / 2, D / 2), BSIZE = vec3(W, H, D);
-  // Indigo absorbs red and passes blue.
-  const SIGMA = new THREE.Vector3(1.0, 0.4, 0.08);
-  // Scatter adds a grey share to extinction, so the plume shades itself.
-  const uExt = uniform(SIGMA.clone().addScalar(1.3));
-  const uScatter = uniform(vec(0.62, 0.14, 265));
-  // Mass turns texture density into optical depth per world unit.
+  const STEPS = grade.march, SHADOW_STEPS = 8;
+  const BMIN = vec3(-W / 2, -H / 2, -D / 2), BMAX = vec3(W / 2, H / 2, D / 2);
+  // Mass turns dye into optical depth per world unit.
   const uMass = uniform(55);
+  // Scatter adds a grey share to extinction, so the plume shades itself.
+  const SCATTER = 1.3;
+  // Tint sets how strongly absorption colours the scattered light.
+  const uTint = uniform(2.6);
   // The light comes from the left, 70 degrees from the vertical.
   const lightDir = new THREE.Vector3(-Math.sin(1.22), Math.cos(1.22), 0.12).normalize();
   const uLightDir = uniform(lightDir);
   // Shadow rays leave the tank through the walls the light faces.
   const LIGHT_EXIT = vec3(...['x', 'y', 'z'].map(k => (lightDir[k] > 0 ? 0.5 : -0.5) * { x: W, y: H, z: D }[k]));
-  const uLight = uniform(vec(0.97, 0.02, 85).multiplyScalar(5));
+  const uLight = uniform(vec(0.97, 0.02, 85).multiplyScalar(6.6));
   const uHaze = uniform(vec(0.55, 0.03, 240).multiplyScalar(0.08));
   const uWater = uniform(vec(0.08, 0.012, 255));
 
-  const sampleDye = p => texture3D(dyeTex, p.sub(BMIN).div(BSIZE), 0).r;
+  const dyeAt = p => dyeRead.sample(p.sub(BMIN).div(WORLD)).level(0);
+  const extinction = dye => dye.rgb.add(dye.a.mul(SCATTER));
 
   // Henyey-Greenstein phase; g leans the scatter forward.
   const phase = Fn(([cosT, g]) => {
@@ -296,24 +484,28 @@ async function start() {
     const ph = phase(uLightDir.dot(rd), float(0.35));
     Loop(STEPS, () => {
       const p = ro.add(rd.mul(t)).toVar();
-      const a = sampleDye(p).mul(uMass).toVar();
+      const dye = dyeAt(p).toVar();
+      const m = dye.a.mul(uMass);
       const lit = sheet(p).toVar();
-      If(a.greaterThan(0.01), () => {
+      If(m.greaterThan(0.01), () => {
+        // The ink's colour follows its absorption per unit mass.
+        const sig = dye.rgb.div(max(dye.a, 1e-4));
+        const albedo = exp(sig.sub(min(sig.x, min(sig.y, sig.z))).mul(uTint).negate()).mul(0.6);
         // The shadow march finds how much light reaches this sample.
         const exitT = LIGHT_EXIT.sub(p).div(uLightDir);
         const sds = min(min(exitT.x, exitT.y), exitT.z).div(SHADOW_STEPS).toVar();
-        const od = float(0).toVar();
+        const od = vec3(0).toVar();
         Loop({ start: int(0), end: int(SHADOW_STEPS), type: 'int', name: 'j' }, ({ j }) => {
-          od.addAssign(sampleDye(p.add(uLightDir.mul(sds.mul(float(j).add(0.5))))));
+          od.addAssign(extinction(dyeAt(p.add(uLightDir.mul(sds.mul(float(j).add(0.5)))))));
         });
-        const Tl = exp(uExt.mul(od.mul(uMass).mul(sds)).negate());
+        const Tl = exp(od.mul(uMass).mul(sds).negate());
         // Each step scatters what it takes out, so dense cores cannot blow out.
-        L.addAssign(T.mul(uScatter).mul(Tl).mul(uLight).mul(lit).mul(ph).mul(exp(a.mul(ds).negate()).oneMinus()).mul(11));
+        L.addAssign(T.mul(albedo).mul(Tl).mul(uLight).mul(lit).mul(ph).mul(exp(m.mul(ds).negate()).oneMinus()).mul(11));
       });
       // Faint haze in the water shows the light sheet; it fades at the walls.
       const wall = smoothstep(0, 0.09, min(p.x.abs().negate().add(W / 2), p.y.add(H / 2)));
       L.addAssign(T.mul(uHaze).mul(lit).mul(wall).mul(ds));
-      T.mulAssign(exp(uExt.mul(a).mul(ds).negate()));
+      T.mulAssign(exp(extinction(dye).mul(uMass).mul(ds).negate()));
       t.addAssign(ds);
     });
     return vec4(L.add(T.mul(uWater)), 1);
@@ -321,8 +513,7 @@ async function start() {
 
   const volMat = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false });
   volMat.colorNode = march();
-  const tank = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), volMat);
-  scene.add(tank);
+  scene.add(new THREE.Mesh(new THREE.BoxGeometry(W, H, D), volMat));
 
   /* ---------- the surface ---------- */
   // The front edge of the meniscus is a bright 1 px line.
@@ -355,17 +546,66 @@ async function start() {
     camera.position.set(0, -lift, dist + D / 2);
     camera.lookAt(0, -lift, 0);
     camera.updateProjectionMatrix();
-    // Line widths stay in screen pixels.
-    const px = 1 / s;
-    front.scale.y = px * 1.2;
-    renderer.render(scene, camera);
+    // The line width stays in screen pixels.
+    front.scale.y = 1.2 / s;
+    if (!running) renderer.render(scene, camera);
   }
-  // Compile off the main path, so the intro keeps its frame rate.
+
+  /* ---------- loop ---------- */
+  // Full rate while input is fresh, 30 Hz after 12 s, asleep after 60 s.
+  const SLOW_AFTER = 12000, SLEEP_AFTER = 60000;
+  let running = false, visible = true, asleep = false, lastInput = performance.now();
+  let lastTime = 0, simAcc = 0, skip = false;
+  function frame() {
+    const now = performance.now();
+    const idle = now - lastInput;
+    if (idle > SLOW_AFTER && (skip = !skip)) return;
+    const delta = Math.min((now - lastTime) / 1000, 1 / 20);
+    lastTime = now;
+    simAcc = Math.min(simAcc + delta, SIM_STEP * 4);
+    try {
+      while (simAcc >= SIM_STEP) {
+        simulate();
+        simAcc -= SIM_STEP;
+      }
+      renderer.render(scene, camera);
+    } finally {
+      if (idle > SLEEP_AFTER) { asleep = true; sync(); }
+    }
+  }
+  function sync() {
+    const run = visible && !asleep;
+    if (run === running) return;
+    running = run;
+    lastTime = performance.now();
+    renderer.setAnimationLoop(run ? frame : null);
+  }
+  function wake() {
+    lastInput = performance.now();
+    asleep = false;
+    sync();
+  }
+  panel.addEventListener('pointerdown', wake);
+  panel.addEventListener('keydown', wake);
+
+  /* ---------- warm-up ---------- */
+  // Shaders compile off the critical path, so loading never freezes.
+  await renderer.compileComputeAsync([curlNoisePass, clearPass, ...new Set(stepPasses)]);
+  renderer.compute(curlNoisePass);
+  renderer.compute(clearPass);
+  // The first frame shows one indigo plume already on its way down.
+  drop(0.03, 0);
+  const SEED_STEPS = 240;
+  for (let i = 0; i < SEED_STEPS; i++) simulate();
   await renderer.compileAsync(scene, camera);
+
+  panel.prepend(canvas);
   new ResizeObserver(resize).observe(panel);
   resize();
   canvas.classList.add('on');
   markReady();
+  whenVisible(panel, v => { visible = v; sync(); });
+  sync();
 }
 start().catch(err => console.error(err)).finally(() => markReady());
 </script>
