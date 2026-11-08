@@ -788,7 +788,8 @@ function resize() {
   frame();
   draw();
 }
-let visible = true;
+// A page that loads hidden may get no visibility event before input.
+let visible = !document.hidden;
 function draw() {
   if (!visible) return;
   renderMirror();
@@ -801,8 +802,9 @@ let raf = 0, lastT = 0;
 const busy = () => !!press || simT < lastDeath || lights.length > 0;
 function tick(now) {
   raf = 0;
-  if (!visible) return;
-  const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0;
+  if (!visible || document.hidden) { lastT = 0; return; }
+  // Closed-form stars allow long steps; slow frames do not slow the show.
+  const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
   lastT = now;
   try {
     simT += dt;
@@ -819,7 +821,7 @@ function tick(now) {
     else { lastT = 0; updateLights(); draw(); }
   }
 }
-function wake() { if (!raf && visible) raf = requestAnimationFrame(tick); }
+function wake() { if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick); }
 /* Performance ladder: slow frames step quality down a rung, never back up. */
 let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
 function watch(now) {
