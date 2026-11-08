@@ -1285,6 +1285,34 @@ function launch(ndc, cal) {
   commitSmoke();
   wake();
 }
+/* ---------- finale ---------- */
+// The running order: [launch time, x, y, shell, calibre, comet], on the sim clock.
+// An opening, a build, a strobe wall, then three gold willows that hang.
+const FINALE = [
+  [0.0, -0.55, 0.40, 'peony', 1.2], [0.35, 0.45, 0.50, 'chrysanthemum', 1.3], [0.8, -0.15, 0.55, 'ring', 1.2],
+  [1.2, 0.65, 0.35, 'pistil', 1.3], [1.6, -0.7, 0.60, 'peony', 1.4], [2.0, 0.2, 0.45, 'chrysanthemum', 1.4],
+  [2.4, -0.35, 0.30, 'saturn', 1.3], [2.8, 0.55, 0.65, 'crossette', 1.4],
+  [3.2, -0.6, 0.70, 'kamuro', 1.5], [3.5, 0.0, 0.60, 'galaxy', 1.5], [3.8, 0.7, 0.50, 'cascade', 1.4],
+  [4.1, -0.25, 0.45, 'palm', 1.5], [4.4, 0.35, 0.75, 'peony', 1.6], [4.7, -0.75, 0.50, 'crossette', 1.5],
+  [5.0, 0.15, 0.35, 'chrysanthemum', 1.6], [5.3, 0.6, 0.60, 'saturn', 1.6],
+  [5.6, -0.8, 0.50, 'strobe', 1.4, 'glitter'], [5.65, -0.57, 0.55, 'crackle', 1.4, 'crackle'], [5.7, -0.34, 0.50, 'strobe', 1.4, 'glitter'],
+  [5.75, -0.11, 0.55, 'crackle', 1.4, 'crackle'], [5.8, 0.11, 0.50, 'strobe', 1.4, 'glitter'], [5.85, 0.34, 0.55, 'crackle', 1.4, 'crackle'],
+  [5.9, 0.57, 0.50, 'strobe', 1.4, 'glitter'], [5.95, 0.8, 0.55, 'crackle', 1.4, 'crackle'],
+  [7.0, -0.45, 0.80, 'willow', 1.9, 'gold'], [7.05, 0.0, 0.85, 'willow', 2.0, 'gold'], [7.1, 0.45, 0.80, 'willow', 1.9, 'gold'],
+];
+let finaleEnd = -1;
+// The whole show writes at once; each star waits for its own birth time.
+function finale() {
+  if (simT < finaleEnd) return;
+  for (const [t, x, y, type, cal, style] of FINALE) {
+    fire(burstPoint(new THREE.Vector2(x, horizonNdc + y * (0.92 - horizonNdc)), cal), simT + t, type, cal, style);
+  }
+  finaleEnd = simT + 9;
+  commitStars();
+  commitSmoke();
+  wake();
+}
+/* ---------- end finale ---------- */
 function orbList() {
   const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 }));
   for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.1, color: FIRE, k: 0.006 });
@@ -1435,6 +1463,7 @@ function popover(box, btn) {
   addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
 }
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
+document.getElementById('finale').addEventListener('click', finale);
 // The stepper walks the shell list and wraps at each end.
 const shellBox = document.getElementById('shell'), shellName = shellBox.querySelector('output');
 let shellAt = Math.max(0, SHELL_LIST.findIndex(([id]) => id === opts.shell));
