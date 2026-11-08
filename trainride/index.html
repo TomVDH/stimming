@@ -51,7 +51,7 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--trainride" id="stage" tabindex="0" role="application" aria-label="A night valley seen through a carriage window on a high viaduct. Rain runs back along the glass as the train goes. Drag to look along the valley.">
+    <div class="stage stage--trainride" id="stage" tabindex="0" role="application" aria-label="A night valley seen through a carriage window on a high viaduct. Rain runs back along the glass as the train goes. Drag to lean and peer along the valley; scroll or pinch to lean against the glass.">
       <p class="fail" hidden>Train Ride needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
@@ -67,7 +67,8 @@
           <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
         </div>
         <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>look along the valley</dd></div>
+          <div><dt>Drag</dt><dd>lean and peer</dd></div>
+          <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>lean to the glass</dd></div>
           <div class="fine"><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>weather</dd></div>
         </dl>
       </div>
@@ -485,7 +486,7 @@ const lampG = strip(new THREE.PlaneGeometry(1, 1.0).translate(0, 0.55, -4.1), tr
 /* Rain in the air: streaks along the wind the train makes, lit by lamps and panes. */
 {
   const n = 3600, a = new Float32Array(n * 4);
-  for (let i = 0; i < n; i++) a.set([range(-60, 60), range(-14, 10), range(-30, -1.4), rnd()], i * 4);
+  for (let i = 0; i < n; i++) a.set([range(-60, 60), range(-14, 10), range(-30, -2.0), rnd()], i * 4);
   const g = new THREE.InstancedBufferGeometry();
   // One quad per drop: x runs head to tail, y runs across.
   g.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 0, 1, 0, 1, 1, 0], 3));
@@ -528,6 +529,8 @@ const lampG = strip(new THREE.PlaneGeometry(1, 1.0).translate(0, 0.55, -4.1), tr
       for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - p; c += vec3(1.0, 0.75, 0.5) * uLP[i].w * 6.0 / (dot(L, L) + 2.0); }
       // One drop's light spreads over its streak, so long streaks dim.
       vC = c * uRain * wpx / (wpx + len * 0.35);
+      // Streaks right by the eye would smear into bands, so they fade out.
+      vC *= smoothstep(0.8, 2.2, ca.w);
     }`,
     fragmentShader: /* glsl */`
     varying vec3 vC;
@@ -550,8 +553,9 @@ const W = {
   uRes: { value: new THREE.Vector2(1, 1) },
   uTime: { value: 0 },
   uTan: { value: new THREE.Vector2(1, 1) },
-  uHead: { value: new THREE.Vector2(-0.14, 0) },
-  uC0: { value: new THREE.Vector2(0, 0) },
+  uYaw: { value: 0 },
+  uEye: { value: new THREE.Vector3(0, 0, 1) },
+  uC0: { value: new THREE.Vector2(0, 0.035) },
   uHalf: { value: new THREE.Vector2(0.6, 0.33) },
   uRad: { value: 0.08 },
   uRain: { value: 1 },
@@ -567,7 +571,9 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform sampler2D tOut;
   uniform vec2 uRes;
   uniform float uTime, uRad, uRain, uFog, uSpeed, uFlow;
-  uniform vec2 uTan, uHead, uC0;
+  uniform vec2 uTan, uC0;
+  uniform float uYaw;
+  uniform vec3 uEye;
   uniform vec2 uHalf;
   uniform vec3 uLamp[3];
   varying vec2 vUv;
@@ -631,13 +637,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   void main() {
     vec2 px = gl_FragCoord.xy / uRes;
     float asp = uRes.x / uRes.y;
-    // The head turns inside the cabin; the window stays fixed in the wall.
+    // The head leans inside the cabin; the window stays fixed in the wall.
     // Each pixel's ray meets the wall plane; p is the point it hits.
+    // uEye holds the head offset and its distance to the wall.
     vec3 dir = vec3((px * 2.0 - 1.0) * uTan, -1.0);
-    float cp = cos(uHead.x), sp = sin(uHead.x), cy = cos(uHead.y), sy = sin(uHead.y);
-    dir = vec3(dir.x, cp * dir.y - sp * dir.z, sp * dir.y + cp * dir.z);
+    float cy = cos(uYaw), sy = sin(uYaw);
     dir = vec3(cy * dir.x + sy * dir.z, dir.y, -sy * dir.x + cy * dir.z);
-    vec2 p = dir.xy / max(-dir.z, 0.05) / (2.0 * uTan.y);
+    vec2 p = (uEye.xy + dir.xy * uEye.z / max(-dir.z, 0.05)) / (2.0 * uTan.y);
     vec2 q = p - uC0;
     float d = sdRR(q, uHalf, uRad);
     float e = 0.0015;
@@ -669,12 +675,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       float fog = uFog * (0.8 + 0.35 * fbm(p * 6.0));
       fog += 0.22 * smoothstep(-0.07, 0.0, d) * (0.6 + 0.6 * vnoise(p * 30.0));
       fog = clamp(fog * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
-      vec2 uv = px + off / vec2(asp, 1.0);
+      // Close to the glass, each drop covers more of the view.
+      vec2 uv = px + off / vec2(asp, 1.0) / uEye.z;
       vec3 sharp = texture2D(tOut, uv).rgb;
       vec3 blur = sharp;
       if (fog > 0.02) {
         blur = vec3(0.0);
-        float R = 0.004 + 0.022 * fog;
+        float R = (0.004 + 0.022 * fog) / uEye.z;
         // A per-pixel turn of the spiral hides the tap pattern as grain.
         float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         for (int i = 0; i < 24; i++) {
@@ -743,7 +750,9 @@ glass.frustumCulled = false;
 scene.add(glass);
 
 /* ---------- framing ---------- */
-let look = 0, lookT = 0;
+// The head: x and y lean along the wall, z is the distance to the glass.
+const eye = new THREE.Vector3(0, 0, 1), eyeT = eye.clone();
+const REACH = { x: 0.26, y: 0.1, near: 0.3, far: 1 };
 const asp = { v: 1.6 };
 function frame(w, h, pr) {
   asp.v = w / h;
@@ -752,8 +761,6 @@ function frame(w, h, pr) {
   outCam.updateProjectionMatrix();
   const tanY = Math.tan(THREE.MathUtils.degToRad(outCam.fov) / 2);
   W.uTan.value.set(tanY * asp.v, tanY);
-  // The window sits just above the line of sight at rest.
-  W.uC0.value.set(0, Math.tan(-0.14) / (2 * tanY) + 0.035);
   outRT.setSize(Math.max(1, Math.round(w * pr)), Math.max(1, Math.round(h * pr)));
   W.uRes.value.set(w * pr, h * pr);
   OUTU.uView.value.set(w * pr, h * pr);
@@ -780,13 +787,16 @@ function jolt() {
   }
   return y * Math.min(1, speed / 25);
 }
+const proj = new THREE.Vector3();
 function place() {
   // The carriage bumps on each joint and rolls a little on the curve.
   const k = Math.min(1, speed / 25), j = jolt();
-  outCam.position.set(camX, j * 0.006, 0);
-  // The head turns; the jolt and the roll move only the world outside.
-  const yaw = look * 0.6;
-  W.uHead.value.set(-0.14, yaw);
+  // The head aims partly back at the window as it leans.
+  const yaw = Math.atan2(eye.x, eye.z) * 0.55;
+  W.uYaw.value = yaw;
+  W.uEye.value.copy(eye);
+  // The wall sits 1 m out; the jolt and the roll move only the world outside.
+  outCam.position.set(camX + eye.x, eye.y + j * 0.006, eye.z - 1);
   outCam.rotation.set(-0.14 + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
   parapet.position.x = camX;
   outCam.updateMatrixWorld();
@@ -805,10 +815,15 @@ function place() {
   });
   // The three lamps nearest the window light the frame and the fog.
   const hits = [];
-  // Lamp positions go into wall coordinates, as the shader's p.
-  const wall = 1 / (4.1 * 2 * W.uTan.value.y);
+  // Each lamp's image goes into wall coordinates, as the shader's p.
+  const [tx, ty] = W.uTan.value.toArray(), cy = Math.cos(yaw), sy0 = Math.sin(yaw);
   for (let i = 0; i < LAMPS; i++) {
-    const sx = (lampX[i] - camX) * wall, sy = 0.55 * wall;
+    proj.set(lampX[i], 0.55, -4.1).project(outCam);
+    if (proj.z > 1) continue;
+    const dx = proj.x * tx, dy = proj.y * ty;
+    const rx = cy * dx - sy0, rz = -sy0 * dx - cy;
+    const t = eye.z / Math.max(-rz, 0.05);
+    const sx = (eye.x + rx * t) / (2 * ty), sy = (eye.y + dy * t) / (2 * ty);
     const k = Math.exp(-Math.max(0, Math.abs(sx) - W.uHalf.value.x) * 3) * (Math.abs(sx) < 2.5 ? 1 : 0);
     hits.push([sx, sy, k]);
   }
@@ -832,7 +847,7 @@ function update(dt, pace) {
   W.uRain.value += (mode.rain - W.uRain.value) * Math.min(1, dt * 2);
   W.uFog.value += (mode.fog - W.uFog.value) * Math.min(1, dt * 1.2);
   OUTU.uRain.value = W.uRain.value;
-  if (!drag) look += (lookT - look) * Math.min(1, dt * 6);
+  eye.lerp(eyeT, Math.min(1, dt * 7));
   place();
 }
 place();
@@ -848,9 +863,17 @@ return {
     r.render(out, outCam);
     r.setRenderTarget(null);
   },
-  drag(dx, dy, on) { drag = on; if (on) { lookT = Math.max(-0.7, Math.min(0.7, lookT + dx * 1.4)); look = lookT; } },
+  // A drag leans the head; the window follows the finger.
+  drag(dx, dy, on) {
+    drag = on;
+    if (!on) return;
+    eyeT.x = THREE.MathUtils.clamp(eyeT.x - dx * 0.5 * eyeT.z, -REACH.x, REACH.x);
+    eyeT.y = THREE.MathUtils.clamp(eyeT.y + dy * 0.3 * eyeT.z, -REACH.y, REACH.y);
+  },
+  // Lean toward the glass or back; k above 1 comes closer.
+  lean(k) { eyeT.z = THREE.MathUtils.clamp(eyeT.z / k, REACH.near, REACH.far); },
   // A moving train draws at full rate; the sleep still stops it.
-  lively: () => drag || speed > 0.5 || Math.abs(look - lookT) > 0.002 || mk < 1,
+  lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1,
   setMode(v, now) { mode = MODES[v] || MODES.rain; mk = now ? 1 : 0; if (now) { W.uRain.value = mode.rain; W.uFog.value = mode.fog; OUTU.uRain.value = mode.rain; } },
   post: { bloom: [0.7, 0.55, 0.8], tint: [0.0008, 0.0007, 0.0009], vig: 0.45, vigIn: 0.45, grain: 0.03 },
 };
@@ -1044,21 +1067,36 @@ function wake() {
 }
 
 /* ---------- input ---------- */
-// A drag looks along the valley.
-let press = null;
+// One finger leans the head; two fingers pinch it toward the glass.
+const touches = new Map();
+let press = null, pinch = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0 || press) return;
+  if (e.button > 0) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
-  press = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, moved: false };
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2) { pinch = spread(); if (press?.moved) S.drag(0, 0, false); press = null; }
+  else if (touches.size === 1) press = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false };
   wake();
 });
 stage.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2 && pinch) {
+    const d = spread();
+    S.lean(d / pinch);
+    pinch = d;
+    wake();
+    return;
+  }
   if (!press || e.pointerId !== press.id) return;
   if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.moved = true; stage.classList.add('dragging'); }
-  if (press.moved) { S.drag((e.clientX - press.lx) / size.w, 0, true); wake(); }
-  press.lx = e.clientX;
+  if (press.moved) { S.drag((e.clientX - press.lx) / size.w, (e.clientY - press.ly) / size.h, true); wake(); }
+  press.lx = e.clientX; press.ly = e.clientY;
 });
 function endPress(e) {
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = 0;
   if (!press || e.pointerId !== press.id) return;
   if (press.moved) S.drag(0, 0, false);
   stage.classList.remove('dragging');
@@ -1067,6 +1105,8 @@ function endPress(e) {
 }
 stage.addEventListener('pointerup', endPress);
 stage.addEventListener('pointercancel', endPress);
+// Scroll up leans toward the glass; scroll down sits back.
+stage.addEventListener('wheel', e => { e.preventDefault(); S.lean(Math.exp(-e.deltaY * 0.0015)); wake(); }, { passive: false });
 
 /* ---------- bar ---------- */
 function popover(box, btn) {

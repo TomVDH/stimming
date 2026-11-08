@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-08T11:26:12Z
+updated_at: 2026-11-08T11:33:56Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -29,3 +29,8 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Carriage jolts on each rail joint, in step with the clack; slight roll
 - [x] Moving train draws at full rate; compile wait capped at 4 s
 - [ ] Real-device frame rate (pane measured 35 to 44 fps at 2464x1736 on High)
+
+## Round 3 (Tom, 2026-11-08)
+- [x] Drag leans the head (lean and peer) with a small aim; the frame stays upright
+- [x] Scroll or pinch leans toward the glass, down to 0.3 m; drops and blur scale with the distance
+- [x] Rain streaks near the eye fade out
