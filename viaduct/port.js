@@ -742,6 +742,34 @@ const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2,
     if (s < 360) addLight(head, new THREE.Vector3(...SODIUM), 0.45, 9);
   }
 }
+// Terminal portal: the deck lands on an embankment and enters a lit block.
+const PORTAL_S = LEN + 10;
+// A box on the straight track past LEN; across 99 marks no joints.
+function slab(s0, s1, u0, u1, y0, y1) {
+  const sm = (s0 + s1) / 2, c = atX(sm, (u0 + u1) / 2);
+  const g = new THREE.BoxGeometry(u1 - u0, y1 - y0, s1 - s0);
+  g.rotateY(atX(LEN).yaw);
+  g.translate(c.x, (y0 + y1) / 2, c.z);
+  const h = g.toNonIndexed();
+  h.deleteAttribute('uv'); h.clearGroups();
+  h.setAttribute('aSU', new THREE.Float32BufferAttribute(new Float32Array(h.attributes.position.count * 2).map((_, i) => (i % 2 ? 99 : sm)), 2));
+  castParts.push(h);
+}
+{
+  // The embankment is a sloped wedge from the deck down to the sea.
+  sweep([[-10, -3.6], [10, -3.6], [13, -30], [-13, -30]], LEN - 40, PORTAL_S, 4);
+  // The block is 60 m wide, 80 m deep and 42 m tall, with a 9 m mouth.
+  slab(PORTAL_S, PORTAL_S + 80, -30, -4.5, 0, 42);
+  slab(PORTAL_S, PORTAL_S + 80, 4.5, 30, 0, 42);
+  slab(PORTAL_S, PORTAL_S + 80, -4.5, 4.5, 32, 42);
+  slab(PORTAL_S, PORTAL_S + 80, -4.5, 4.5, 0, DECK);
+  // A warm plane lights the far end of the mouth.
+  const inner = atX(PORTAL_S + 30), warm = [1.2, 0.86, 0.5];
+  box(inner.x, DECK, inner.z, 9, 8, 0.2, inner.yaw, glowParts, warm);
+  const mouth = atX(PORTAL_S + 1), back = new THREE.Vector3(-mouth.tan.x, 0, -mouth.tan.y);
+  addLight(new THREE.Vector3(mouth.x, DECK + 4, mouth.z), new THREE.Vector3(1, 0.72, 0.42), 3, 30, back, Math.cos(1.0));
+  cone(new THREE.Vector3(mouth.x, DECK + 4, mouth.z), back, 60, 0.35, new THREE.Vector3(1, 0.72, 0.42), 0.25);
+}
 /* ---------- end causeway ---------- */
 
 /* ---------- train: runs the causeway out to the port and back ---------- */
@@ -1589,7 +1617,7 @@ function bake(renderer) {
 train.place(175, 1, sea);
 const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false };
 let runPause = 6;
-const END = LEN + 160, START = -160;
+const END = PORTAL_S + 20, START = -160;
 let time = 0, rt = 0, paceNow = 1, parked = false;
 // A parked train (QA) holds still at any speed setting.
 const speed = () => (parked ? 0 : run.v);
