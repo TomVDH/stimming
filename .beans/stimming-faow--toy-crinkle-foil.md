@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:28:16Z
-updated_at: 2026-11-08T11:37:36Z
+updated_at: 2026-11-08T11:39:54Z
 ---
 
 Build Crinkle foil (idea 107): drag to scrunch a sheet of foil, then smooth it flat again; the wrinkles catch moving specular light. Folder `foil`. It starts in the Lab. Raw WebGL2. It follows the Look rule: one sheet, no props.
@@ -39,4 +39,4 @@ Build Crinkle foil (idea 107): drag to scrunch a sheet of foil, then smooth it f
 ## Icons
 
 - [x] Five directions in icons/spike-15.html, emblems in icons/spike/emblems/foil-a..e.svg, row on icons/sheet.html
-- [ ] Tom picks a direction; the menu icon and the intro emblem follow
+- [x] Tom picks direction A; the menu icon and the intro emblem follow
