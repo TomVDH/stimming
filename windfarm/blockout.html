@@ -50,28 +50,27 @@ const canvas = document.getElementById('c');
 /* ---------- look: murk ---------- */
 // Colours are linear light.
 const LOOK = {
-  zen: [0.004, 0.006, 0.009], hor: [0.02, 0.024, 0.026],
-  fog: [0.03, 0.035, 0.036], sun: [0.1, 0.075, 0.055],
-  deep: [0.003, 0.006, 0.006], paint: [0.62, 0.64, 0.65],
-  red: [1, 0.035, 0.012],
+  zen: [0.005, 0.009, 0.02], hor: [0.02, 0.03, 0.045],
+  fog: [0.024, 0.036, 0.055], sun: [0.05, 0.075, 0.11],
+  deep: [0.001, 0.003, 0.006], paint: [0.3, 0.34, 0.4],
+  red: [1, 0.012, 0],
 };
 
 /* ---------- farm ---------- */
-// A wide lattice of turbines, 950 m by 760 m, turned against the view.
-// The farm's right edge is a straight row that runs away from the sea camera.
-const SU = 950, SV = 760, TURN = 0.42;
-const EDGE_A = -60, EDGE_B = 0.0136, Z_MIN = 1800, Z_MAX = 16000, X_MIN = -4200;
-// Three near towers stand close to the sea camera.
-const POLES = [[-48, -750], [-25, -1050], [2, -1400]];
+// Rows of turbines 900 m apart along the row, rows 800 m apart.
+// Row 0 starts 1.5 km out and runs away almost along the sea camera's view.
+// Seen on the long lens, it steps right and shrinks into the fog.
+const FIRST = [-76, -1500], ALONG = 2.4 * Math.PI / 180, SU = 900, SV = 800;
+const ROWS = [-6, 2], PER_ROW = 17;
 function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
-const farm = POLES.map(([x, z], i) => [x, z, rand(i + 501) * 2.094]);
+const farm = [];
 {
-  const u = [Math.cos(TURN), Math.sin(TURN)], v = [-Math.sin(TURN), Math.cos(TURN)];
-  for (let i = -50; i <= 50; i++) for (let j = -50; j <= 50; j++) {
-    const k = (i + 50) * 101 + j + 50;
-    const x = 300 + i * SU * u[0] + j * SV * v[0] + (rand(k) - 0.5) * 80;
-    const z = -2600 + i * SU * u[1] + j * SV * v[1] + (rand(k + 99) - 0.5) * 80;
-    if (-z < Z_MIN || -z > Z_MAX || x < X_MIN || x > EDGE_A + EDGE_B * -z) continue;
+  const u = [Math.sin(ALONG), -Math.cos(ALONG)], v = [Math.cos(ALONG), Math.sin(ALONG)];
+  for (let j = ROWS[0]; j <= ROWS[1]; j++) for (let i = 0; i < PER_ROW; i++) {
+    // Rows start staggered, so the farm edge runs at an angle.
+    const k = (j + 10) * 31 + i, i0 = j < 0 ? -j : 0;
+    const x = FIRST[0] + (i + i0) * SU * u[0] + j * SV * v[0] + (rand(k) - 0.5) * 40;
+    const z = FIRST[1] + (i + i0) * SU * u[1] + j * SV * v[1] + (rand(k + 99) - 0.5) * 40;
     farm.push([x, z, rand(k + 7) * 2.094]);
   }
 }
@@ -106,17 +105,17 @@ float fbm3(vec2 p) { return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 7.1) + 0.2
 float fogSigma(vec3 p) {
   float y = max(p.y, 0.0);
   // A base layer that hugs the sea, broken into banks a few km wide.
-  float bank = 0.35 + 1.3 * fbm3(p.xz / 2200.0);
+  float bank = 0.25 + 1.5 * smoothstep(0.3, 0.7, fbm3(p.xz / 2200.0));
   float s = exp(-y / 55.0) * bank / 3200.0;
   // A low sheet at 35 m and a deck at 72 m; the hubs stand clear of it.
-  s += exp(-pow((y - 35.0) / 18.0, 2.0)) * smoothstep(0.35, 0.7, fbm3(p.xz / 900.0 + 11.0)) / 700.0;
-  s += exp(-pow((y - 72.0) / 16.0, 2.0)) * smoothstep(0.3, 0.7, fbm3(p.xz / 1400.0 + 23.0)) / 120.0;
+  s += exp(-pow((y - 35.0) / 14.0, 2.0)) * smoothstep(0.5, 0.68, fbm3(p.xz / 900.0 + 11.0)) / 900.0;
+  s += exp(-pow((y - 72.0) / 16.0, 2.0)) * smoothstep(0.45, 0.72, fbm3(p.xz / 1400.0 + 23.0)) / 380.0;
   return s;
 }
 // Light the fog sends toward the eye: murk plus a dull glow round the sun.
 vec3 fogLight(vec3 d) {
   float a = acos(clamp(dot(d, uSD), -1.0, 1.0));
-  return uFog + uSun * (0.35 * exp(-a / 0.05) + 0.15 * exp(-a / 0.2));
+  return uFog + uSun * (0.5 * exp(-a / 0.12) + 0.3 * exp(-a / 0.5));
 }
 // March from ro along d to tMax. Returns inscatter in rgb, transmittance in a.
 vec4 fogMarch(vec3 ro, vec3 d, float tMax, float jitter) {
@@ -149,7 +148,7 @@ uniform vec3 uZen, uHorC, uDeep;
 // Sky: a near-black zenith; the horizon takes the colour of deep fog.
 vec3 sky(vec3 d) {
   float e = max(d.y, 0.0);
-  return mix(fogLight(d), uZen, smoothstep(0.0, 0.2, e));
+  return mix(fogLight(d), uZen, smoothstep(0.0, 0.55, e));
 }
 // Swell: a few long waves; each fades once a pixel spans its length.
 vec3 seaNormal(vec2 p, float fp) {
@@ -218,7 +217,7 @@ void main() {
   if (dot(n, d) > 0.0) n = -n;
   // Fog light from all round, darker from the sea below.
   float up = n.y * 0.5 + 0.5;
-  vec3 amb = mix(uFog * 0.5, uFog * 1.4 + uHorC, up);
+  vec3 amb = mix(uFog * 0.15, uFog * 0.6 + uHorC * 0.4, up);
   vec3 c = uPaint * (amb + uSun * 0.35 * max(dot(n, uSD), 0.0));
   vec4 f = fogMarch(cameraPosition, d, t, hash12(gl_FragCoord.xy));
   gl_FragColor = vec4(c * f.a + f.rgb, 1.0);
@@ -363,7 +362,7 @@ composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.85, 1.2);
 composer.addPass(bloom);
 const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, uRes: U.uRes, uExp: { value: 2.2 } },
+  uniforms: { tDiffuse: { value: null }, uRes: U.uRes, uExp: { value: 1.8 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: `
 uniform sampler2D tDiffuse;
@@ -371,33 +370,43 @@ uniform vec2 uRes;
 uniform float uExp;
 varying vec2 vUv;
 float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+// ACES: the fitted RRT and ODT, with its input and output matrices.
+const mat3 ACES_IN = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
+const mat3 ACES_OUT = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
+vec3 rrtOdt(vec3 v) { return (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081); }
 void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb * uExp;
-  c = c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14);
+  // A cool white balance pushes the murk toward blue.
+  c *= vec3(0.86, 0.98, 1.18);
+  c = clamp(ACES_OUT * rrtOdt(ACES_IN * c), 0.0, 1.0);
   vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-  c *= 1.0 - 0.35 * dot(q, q);
-  c = pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2));
+  c *= 1.0 - 0.4 * dot(q, q);
+  c = pow(c, vec3(1.0 / 2.2));
+  // Split tone: shadows lean blue, a little contrast in the mids.
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c += vec3(-0.012, 0.0, 0.03) * (1.0 - smoothstep(0.0, 0.5, l));
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.35);
   // Film grain, strongest in the mid tones.
   float g = hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy + 71.3) - 1.0;
-  c += g * 0.05 * (0.4 + c * (1.0 - c) * 2.4);
+  c += g * 0.04 * (0.4 + c * (1.0 - c) * 2.4);
   gl_FragColor = vec4(c, 1.0);
 }`,
 });
 composer.addPass(grade);
 
 /* ---------- cameras ---------- */
-// Rows: a long telephoto from the sea; the near towers loom.
+// Rows: a long telephoto down one row; the near rotors loom.
 // Foot: below one tower, looking up into its rotor.
 // Above: over the fog deck; hubs and lights stand out of it.
 const CAMS = [
   (W, H, tall) => {
-    const f = W * 5.9 * (1 - tall) + H * 7 * tall;
-    const hor = 0.76 + 0.06 * tall;
-    return { pos: [0, 10, 0], yaw: 0.014 * tall, pitch: Math.atan((hor - 0.5) * H / f), f };
+    const f = W * 5.9 * (1 - tall) + H * 5.2 * tall;
+    const hor = 0.74 + 0.06 * tall;
+    return { pos: [0, 10, 0], yaw: -0.012 * tall, pitch: Math.atan((hor - 0.5) * H / f), f };
   },
   (W, H, tall) => {
     const f = H * (0.9 - 0.35 * tall);
-    return { pos: [-6, 14, -662], yaw: 0.16 + 0.2 * tall, pitch: 0.42, f };
+    return { pos: [-34, 14, -1412], yaw: 0.16 + 0.2 * tall, pitch: 0.42, f };
   },
   (W, H, tall) => {
     const f = W * 2.6 * (1 - tall) + H * 2.2 * tall;
@@ -426,8 +435,8 @@ function frame() {
   U.uFocal.value = c.f;
   U.uCamWorld.value.copy(camera.matrixWorld);
   U.uInvProj.value.copy(camera.projectionMatrixInverse);
-  // The dull sun glow sits low, to the right of the sea camera's view.
-  U.uSD.value.set(0.075, 0.016, -1).normalize();
+  // A cold glow sits low, far down the row.
+  U.uSD.value.set(0.05, 0.01, -1).normalize();
   composer.render();
 }
 
