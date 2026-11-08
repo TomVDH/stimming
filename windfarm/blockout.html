@@ -26,7 +26,7 @@ const LOOK = {
   zen: [0.035, 0.05, 0.085], hor: [0.3, 0.28, 0.27], fog: [0.2, 0.21, 0.22],
   sun: [2.6, 1.9, 1.15], deep: [0.012, 0.024, 0.022], paint: [0.8, 0.81, 0.82],
   // Fog length in metres: transmittance falls by 1/e per length.
-  fogL: 3400,
+  fogL: 4000,
 };
 
 /* ---------- shot ---------- */
@@ -38,18 +38,22 @@ const HOR = 0.76;
 const SUN_R = 0.011;
 
 /* ---------- farm ---------- */
-// A grid of 60 turbines seen from near one corner.
-// The corner sits 2 km out; both grid axes run away in a narrow wedge.
-const NU = 6, NV = 10, SU = 900, SV = 600;
-const CORNER = { d: 2000, b: 0 }, AXIS_U = 2, AXIS_V = -2.5;
-const dir = deg => [Math.sin(deg * Math.PI / 180), -Math.cos(deg * Math.PI / 180)];
+// A wide lattice of turbines, 950 m by 760 m, turned against the view.
+// The farm's right edge is a straight row that runs away to the middle.
+const SU = 950, SV = 760, TURN = 0.42;
+const EDGE_A = -60, EDGE_B = 0.0136, Z_MIN = 1800, Z_MAX = 20000;
+// Three near towers stand close; their rotors sit above the frame.
+const POLES = [[-48, -750], [-25, -1050], [2, -1400]];
 function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
-const farm = [];
+const farm = POLES.map(([x, z], i) => [x, z, rand(i + 501) * 2.094]);
 {
-  const c0 = dir(CORNER.b).map(v => v * CORNER.d), u = dir(AXIS_U), v = dir(AXIS_V);
-  for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
-    const k = i * NV + j, jx = (rand(k) - 0.5) * 50, jz = (rand(k + 99) - 0.5) * 50;
-    farm.push([c0[0] + i * SU * u[0] + j * SV * v[0] + jx, c0[1] + i * SU * u[1] + j * SV * v[1] + jz, rand(k + 7) * 2.094]);
+  const u = [Math.cos(TURN), Math.sin(TURN)], v = [-Math.sin(TURN), Math.cos(TURN)];
+  for (let i = -50; i <= 50; i++) for (let j = -50; j <= 50; j++) {
+    const k = (i + 50) * 101 + j + 50;
+    const x = 300 + i * SU * u[0] + j * SV * v[0] + (rand(k) - 0.5) * 80;
+    const z = -2600 + i * SU * u[1] + j * SV * v[1] + (rand(k + 99) - 0.5) * 80;
+    if (-z < Z_MIN || -z > Z_MAX || x > EDGE_A + EDGE_B * -z || x / -z < -0.12) continue;
+    farm.push([x, z, rand(k + 7) * 2.094]);
   }
 }
 
@@ -269,20 +273,16 @@ function uniforms(p, shot) {
 }
 
 /* ---------- frame ---------- */
-// The cluster's bearings, in radians, set where the camera aims.
-const BEAR = farm.map(([x, z]) => Math.atan2(x, -z));
-const BEAR_MID = (Math.min(...BEAR) + Math.max(...BEAR)) / 2;
 // A long telephoto: the near rotor looms past the top of the frame.
-// Portrait sets the lens by height and aims the cluster nearer the middle.
+// Portrait sets the lens by height and turns a little left.
 function shot() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
   const W = Math.round(canvas.clientWidth * dpr), H = Math.round(canvas.clientHeight * dpr);
   const tall = Math.min(1, Math.max(0, (H / W - 0.8) / 1.4));
   const f = W * 5.9 * (1 - tall) + H * 7 * tall;
   const hor = H * (HOR + 0.06 * tall);
-  const aim = 0.26 + 0.04 * tall;
-  const yaw = BEAR_MID - Math.atan((aim - 0.5) * W / f);
-  // The sun sits right of the cluster, at 62 % of the width, low on the sea.
+  const yaw = -0.014 * tall;
+  // The sun sits right of the farm edge, at 62 % of the width, low on the sea.
   const sx = (W * (0.62 + 0.18 * tall) - W * 0.5) / f, sy = SUN_R * 1.5;
   const l = Math.hypot(sx, sy, 1);
   return { W, H, f, hor, yaw, sd: [sx / l, sy / l, -1 / l] };
