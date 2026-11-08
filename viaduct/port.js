@@ -941,13 +941,14 @@ const train = (() => {
       cars[i].rotation.y = c.yaw + (dir < 0 ? Math.PI : 0);
       p.set(c.x, DECK + 1.7, c.z);
       lights[carL[i]].pos.copy(p);
-      if (sea) sea.material.uniforms.uGP.value[carGl[i]].set(p.x, p.y, p.z, 0.6);
+      // A hidden train throws no glint.
+      if (sea) sea.material.uniforms.uGP.value[carGl[i]].set(p.x, p.y, p.z, on ? 0.6 : 0);
     }
     const h = atX(s + dir * 0.2, TRACK), ahead = atX(s + dir * 80, TRACK);
     head.set(h.x, DECK + 2.0, h.z);
     d.set(ahead.x - h.x, -2.5, ahead.z - h.z).normalize();
     lights[headL].pos.copy(head); lights[headL].dir.copy(d);
-    if (sea) sea.material.uniforms.uGP.value[headG].set(head.x, head.y, head.z, 3.0);
+    if (sea) sea.material.uniforms.uGP.value[headG].set(head.x, head.y, head.z, on ? 3.0 : 0);
     beam.position.copy(head);
     beam.quaternion.setFromUnitVectors(Y, d);
     const pos = lampG.attributes.position;
@@ -1648,10 +1649,13 @@ function bake(renderer) {
   uploadLights();
   if (chase.mode) {
     setLive(true);
-    // The bake used the wide pose. A ride goes back to its spring pose.
+    // The next live frame draws a fresh mirror.
+    mirrorTick = 0;
+    // The bake used the wide pose.
+    // A ride goes back to its last shot.
     if (!chase.fresh) {
-      camera.position.copy(springP);
-      camera.lookAt(springA);
+      camera.position.copy(shotP);
+      camera.lookAt(shotA);
       lens(chase.fov);
     }
   }
@@ -1669,15 +1673,17 @@ let time = 0, rt = 0, paceNow = 1, parked = false;
 // A parked train (QA) holds still at any speed setting.
 const speed = () => (parked ? 0 : run.v);
 const smoother = x => { x = Math.min(1, Math.max(0, x)); return x * x * x * (x * (6 * x - 15) + 10); };
-// The train eases out over 6 s and brakes over its last 220 m.
-// The stop point is the hide point, so the train halts as it hides.
+// The train eases out over 6 s.
+// It brakes over its last 220 m.
+// The stop point is the hide point.
 function trainSpeed(s, dir, t) {
   const cruise = speed();
   if (cruise <= 0) return 0;
   const d = dir > 0 ? END + train.SPAN - s : s - (START - train.SPAN);
   if (d <= 0) return 0;
-  // The floor keeps the train moving, so it always arrives.
-  return Math.min(cruise, Math.max(0.6, cruise * Math.min(smoother(t / 6), smoother(d / 220))));
+  // A quarter-circle brake starts smoothly and arrives in finite time.
+  const x = Math.min(1, d / 220), brake = Math.sqrt(1 - (1 - x) ** 2);
+  return Math.min(cruise, Math.max(0.05, cruise * Math.min(smoother(t / 6), brake)));
 }
 // The searchlight: auto sweep, or the pointer's aim while steering.
 const aimNow = new THREE.Vector2(-0.5, 0.55), aimTo = new THREE.Vector2();
@@ -1711,7 +1717,7 @@ function update(dt, pace) {
     run.t += dt * k;
     run.s += run.dir * trainSpeed(run.s, run.dir, run.t) * dt * k;
     // Past the far end the train is lost in the port fog; then it returns.
-    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.gone = true; run.wait = Math.max(1, runPause); run.user = false; }
+    if (run.s >= END + train.SPAN || run.s <= START - train.SPAN) { train.show(false); run.gone = true; run.wait = Math.max(1, runPause); run.user = false; }
   }
   train.place(run.s, run.dir, sea);
   updateChase(dt);
@@ -1760,16 +1766,22 @@ function release() { steering = false; }
 
 /* ---------- chase: a tap on the train rides a low camera beside it ---------- */
 // Mode 0 is the wide shot, 1 rides, 2 eases back to the wide shot.
-const chase = { mode: 0, t: 0, s: 0, fresh: false };
+const chase = { mode: 0, t: 0, s: 0, k0: 1, fresh: false };
 // The camera rides this far off the track, on this side, this far ahead.
 const SIDE = 1, OFF = 16, LEAD = 45, REL = 16, IN = 2.2, OUT = 2.6, FOV = 30;
 let bakeWith = null;
 const camP = new THREE.Vector3(), lookT = new THREE.Vector3(), wideP = new THREE.Vector3(), wideT = new THREE.Vector3();
 const smooth = smoother;
-// The ride camera follows springs. They keep their own state, so a resize cannot move them.
+// The ride camera stops this far short of the block face.
+const RIDE_END = PORTAL_S - 30;
+// The ride camera follows springs.
+// The springs keep their own state, so a resize cannot move them.
 const springP = new THREE.Vector3(), springPV = new THREE.Vector3(), springA = new THREE.Vector3(), springAV = new THREE.Vector3();
 const goalP = new THREE.Vector3(), goalA = new THREE.Vector3();
-// A critically damped spring: omega is 2 / tau, and the step is exact.
+// The shot holds the last camera pose and aim.
+const shotP = new THREE.Vector3(), shotA = new THREE.Vector3();
+// A critically damped spring has omega = 2 / tau.
+// The step is exact.
 function spring(cur, vel, goal, dt, tau = 0.35) {
   const w = 2 / tau, e = Math.exp(-w * dt);
   for (const a of ['x', 'y', 'z']) {
@@ -1800,13 +1812,17 @@ function startChase() {
   run.user = true;
   setLive(true);
 }
-function endChase() { if (chase.mode === 1) { chase.mode = 2; chase.t = 0; } }
+// The ease back starts from the ride's current blend.
+function endChase() { if (chase.mode === 1) { chase.k0 = smooth(Math.min(1, chase.t / IN)); chase.mode = 2; chase.t = 0; } }
 function updateChase(dt) {
   if (!chase.mode) return;
   chase.t += dt;
   const dir = run.dir;
   // The camera rolls a little slower than the train, so the train slides past.
   chase.s += dir * Math.max(0, trainSpeed(run.s, run.dir, run.t) - REL) * dt;
+  // Outbound, the camera stops short of the block.
+  const stop = dir > 0 && chase.s >= RIDE_END;
+  if (stop) chase.s = RIDE_END;
   const c = atX(chase.s, TRACK + SIDE * OFF);
   camP.set(c.x, DECK + 3.2, c.z);
   // Aim at the part of the train just behind the camera, nose to tail.
@@ -1814,11 +1830,14 @@ function updateChase(dt) {
   const ls = THREE.MathUtils.clamp(chase.s - dir * 10, Math.min(head, tail), Math.max(head, tail));
   const l = atX(ls, TRACK);
   lookT.set(l.x, DECK + 2.4, l.z);
-  // The ride ends 60 m after the tail passes, or when the train leaves.
-  if (chase.mode === 1 && (dir * (tail - chase.s) > 60 || !train.on)) endChase();
+  // The ride ends 60 m after the tail passes.
+  // It also ends at the camera stop.
+  // It also ends as the head enters the mouth.
+  const out = stop || (dir > 0 && head >= PORTAL_S);
+  if (chase.mode === 1 && (dir * (tail - chase.s) > 60 || !train.on || out)) endChase();
   const cw = view.w >= view.h ? CAM.w : CAM.p;
   wideP.set(cw.px, cw.py, cw.pz); wideT.set(cw.tx, cw.ty, cw.tz);
-  const k = chase.mode === 1 ? smooth(Math.min(1, chase.t / IN)) : 1 - smooth(Math.min(1, chase.t / OUT));
+  const k = chase.mode === 1 ? smooth(Math.min(1, chase.t / IN)) : chase.k0 * (1 - smooth(Math.min(1, chase.t / OUT)));
   goalP.lerpVectors(wideP, camP, k);
   goalP.y += 12 * Math.sin(Math.PI * k);
   goalA.lerpVectors(wideT, lookT, k);
@@ -1826,8 +1845,13 @@ function updateChase(dt) {
   if (chase.fresh) { chase.fresh = false; springP.copy(wideP); springA.copy(wideT); springPV.set(0, 0, 0); springAV.set(0, 0, 0); }
   spring(springP, springPV, goalP, dt);
   spring(springA, springAV, goalA, dt);
-  camera.position.copy(springP);
-  camera.lookAt(springA);
+  // The ease back blends the springs into the goal.
+  // The camera then lands on the wide pose at rest.
+  const b = chase.mode === 2 ? smooth(Math.min(1, chase.t / OUT)) : 0;
+  shotP.lerpVectors(springP, goalP, b);
+  shotA.lerpVectors(springA, goalA, b);
+  camera.position.copy(shotP);
+  camera.lookAt(shotA);
   chase.fov = cw.fov + (FOV - cw.fov) * k;
   lens(chase.fov);
   if (chase.mode === 2 && chase.t >= OUT) {
@@ -1839,9 +1863,12 @@ function updateChase(dt) {
   }
 }
 // A tap within 40 px of the train starts a ride.
+// Only the cars short of the mouth count.
 function hitTrain(ndc) {
   for (let d = 0; d <= train.SPAN; d += 6) {
-    const c = atX(run.s - run.dir * d, TRACK);
+    const ts = run.s - run.dir * d;
+    if (ts >= PORTAL_S) continue;
+    const c = atX(ts, TRACK);
     gv.set(c.x, DECK + 2.5, c.z).project(camera);
     if (gv.z < 1 && Math.hypot((gv.x - ndc.x) * view.w / 2, (gv.y - ndc.y) * view.h / 2) < 40) return true;
   }
