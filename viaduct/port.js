@@ -1460,6 +1460,20 @@ for (const [o, name] of [['w', 'Camera (wide)'], ['p', 'Camera (portrait)']]) {
   knob(name, o + 'ty', 'Look y', -800, 400, 1, io('ty'), true);
   knob(name, o + 'tz', 'Look z', -4000, -200, 1, io('tz'), true);
 }
+// Tom's Port look, pasted from the tune panel's Copy JSON.
+// Post keys (expo, bloom, orbs, vignette, grain, tint) live in post below.
+const LOOK = {
+  amber: '#a67117', deep: '#000000',
+  zen: 1.77, dome: 0.042, bankGlow: 0.19, cloudK: 1.72, cloudLo: 0.24, cloudHi: 0.69, gap: 0.013,
+  windX: -20, windZ: -13.5, cloudY: 300,
+  haze: 0.0006, hazeH: 87, portFog: 0, fogFall: 800, wisp: 0, glowR: 3000,
+  lightK: 2, coneK: 2.45, flareK: 0.43, plumeK: 0.53, flameK: 1.23, searchK: 0.61,
+  reflK: 3, swellK: 1.4, swellT: 0.72, glintK: 0.11, glintW: 0.017, bankK: 0, rippleK: 1.38, ringK: 0.114,
+  speed: 80, pause: 0, rain: 0,
+  wfov: 40.5, wpx: 45, wpy: 57, wpz: 135, wtx: -13, wtz: -2504,
+};
+// The look becomes each knob's default, so Reset returns to it.
+for (const t of TUNE) if (t.key in LOOK) { t.set(LOOK[t.key]); t.def = t.get(); }
 const tune = {
   list: TUNE,
   // set returns true when the matte painting needs a re-bake.
@@ -1467,5 +1481,5 @@ const tune = {
 };
 /* ---------- end tune ---------- */
 
-return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, steer, release, lively, lower, post: { bloom: [0.6, 0.45, 0.95], tint: [0.0015, 0.0012, 0.001], vig: 0.55, vigIn: 0.35, grain: 0.035 } };
+return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, steer, release, lively, lower, post: { expo: 0.61, bloom: [1.68, 1.18, 0.8], orbK: 0.88, orbSize: 1.19, tint: '#150f09', vig: 0.01, vigIn: 0.35, grain: 0.094 } };
 }

@@ -190,6 +190,8 @@ function placeOrbs(pass, s) {
 /* ---------- K2: grade ---------- */
 // Linear grade before tone mapping: haze lift, vignette, fixed grain.
 function makeGrade({ tint, vig, vigIn, grain }) {
+  // A hex tint uses the tune panel's scale: colour over 40.
+  if (typeof tint === 'string') { const c = new THREE.Color(tint); tint = [c.r / 40, c.g / 40, c.b / 40]; }
   return new ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
@@ -355,6 +357,9 @@ async function show(id) {
   if (ticket !== loading) { next.dispose(); return; }
   cur?.dispose();
   cur = next;
+  // Each scene brings its own exposure and lamp glow; else the base.
+  renderer.toneMappingExposure = cur.post.expo ?? 1;
+  look.orbK = cur.post.orbK ?? 1; look.orbSize = cur.post.orbSize ?? 1;
   chain(cur);
   tuneScene(id);
   resize();
