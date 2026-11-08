@@ -959,14 +959,14 @@ function resize() {
   aimCamera();
   draw();
 }
-function aimCamera(breath = 0, shake = [0, 0]) {
+function aimCamera(breath = 0, shake = [0, 0], bob = [0, 0, 0]) {
   const tall = clamp((H / W - 0.8) / 1.4);
   shot = SHOTS[VIEWS[opts.view]](W, H, tall);
   camera.aspect = W / H;
   camera.fov = 2 * Math.atan(H / 2 / shot.f) * 180 / Math.PI;
   camera.position.set(...shot.pos);
-  camera.position.y += breath * 0.6;
-  camera.rotation.set(shot.pitch + look.pitch + breath * 0.0006 + shake[1], shot.yaw + look.yaw + shake[0], 0);
+  camera.position.y += breath * 0.6 + bob[0];
+  camera.rotation.set(shot.pitch + look.pitch + breath * 0.0006 + shake[1] + bob[1], shot.yaw + look.yaw + shake[0], bob[2]);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   U.uFocal.value = shot.f;
@@ -1108,7 +1108,15 @@ function tick(dt, now) {
   // The mount shakes in the storm, a fraction of a pixel per m/s.
   const sk = reduce ? 0 : smooth(0.3, 1, storm.k) * 0.00045;
   const shake = [sk * (Math.sin(clock * 7.3) + Math.sin(clock * 12.9 + 1.1)), sk * (Math.sin(clock * 9.1 + 2.3) + Math.sin(clock * 15.7))];
-  aimCamera(breath, shake);
+  // The camera rides a boat: it heaves, pitches and rolls on the swell.
+  // The sea builds with the wind, so the motion grows in a storm.
+  const sea = reduce ? 0 : (0.3 + windNow() / 30) * calm, bt = clock;
+  const bob = [
+    sea * 0.8 * (Math.sin(bt * 0.98) + 0.4 * Math.sin(bt * 1.71 + 0.6)),
+    sea * 0.0011 * (Math.sin(bt * 0.86 + 1.2) + 0.5 * Math.sin(bt * 1.53 + 2.1)),
+    sea * 0.0055 * (Math.sin(bt * 0.69 + 0.3) + 0.35 * Math.sin(bt * 1.37 + 1.7)),
+  ];
+  aimCamera(breath, shake, bob);
   voicesStep(dt);
 }
 function wake() {
