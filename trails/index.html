@@ -110,7 +110,7 @@
 }
 </script>
 <script type="module">
-import { initPage, audioKit, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, qualitySetting, onQuality } from '../shared/stim.js';
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, qualitySetting, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -566,7 +566,7 @@ function drawMeteors(dt) {
     const o = n * 8;
     inst.set([p0[0], p0[1], p1[0], p1[1], 1.3 * g, 2.1 * g, 1.6 * g, (0.7 + 0.35 * env) * dpr], o);
     n++;
-    if (m.age >= m.life) { meteors.splice(k, 1); if (!meteors.length) rest(); }
+    if (m.age >= m.life) meteors.splice(k, 1);
   }
   segPass(acc[ai], n);
 }
@@ -574,7 +574,6 @@ function spawnMeteor() {
   const a = Math.random() * TAU, len = (0.15 + Math.random() * 0.25) * W;
   const x0 = W * (0.15 + Math.random() * 0.7), y0 = cam.horizon + (H - cam.horizon) * (0.35 + Math.random() * 0.55);
   meteors.push({ x0, y0, x1: x0 + Math.cos(a) * len, y1: Math.max(cam.horizon, y0 + Math.sin(a) * len * 0.6 - len * 0.3), age: 0, life: 0.35 + Math.random() * 0.4, k: 0.5 + Math.random() * 0.8, flare: 0.45 + Math.random() * 0.35 });
-  meteorTick(meteors[meteors.length - 1]);
 }
 
 /* ---------- loop ---------- */
@@ -656,74 +655,11 @@ function bloomPass(seed) {
   blur(q1, h1, 1, 0); blur(q2, q1, 0, 1);
 }
 
-/* ---------- sound ---------- */
-// Space and Enter work the shutter, so they count as gestures.
-const kit = audioKit({ keys: new Set([' ', 'Enter']), sleepMs: 3000 });
-let V = null, T = null, toneLoad = null;
-// The context sleeps once the shutter is shut and the sky is still.
-const rest = () => kit.rest(() => !shutter && !meteors.length);
-// The first live call loads Tone; voices answer once it lands.
-function voices() {
-  if (!kit.live()) return null;
-  if (V) return V;
-  toneLoad ||= kit.tone().then(m => {
-    toneLoad = null;
-    if (m && !V) { T = m; V = buildVoices(); if (shutter) padOpen(); }
-  });
-  return null;
-}
-function buildVoices() {
-  // The pad runs at zero gain; the open shutter lifts it.
-  const padGain = new T.Gain(0).connect(kit.out);
-  const padF = new T.Filter({ type: 'lowpass', frequency: 150, Q: 0.8, rolloff: -24 }).connect(padGain);
-  const pad = ['A1', 'E2', 'B2', 'F#3'].map((n, k) => new T.FatOscillator({ frequency: n, type: 'sawtooth', count: 3, spread: 22 + k * 6, volume: -12 - k * 4 }).connect(padF).start());
-  // The click is a dry, bright noise tick over a small body thump.
-  const clickF = new T.Filter({ type: 'highpass', frequency: 2200, Q: 0.7 }).connect(kit.out);
-  const click = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.014, sustain: 0, release: 0.004 }, volume: -14 }).connect(clickF);
-  const thump = new T.MembraneSynth({ pitchDecay: 0.018, octaves: 2.5, envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.02 }, volume: -16 }).connect(kit.out);
-  const tickP = new T.Panner(0).connect(kit.out);
-  const tick = new T.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.07, sustain: 0, release: 0.04 }, volume: -24 }).connect(tickP);
-  return { pad, padF, padGain, click, thump, tick, tickP };
-}
-// Two quick clicks: the curtain, then the latch.
-function shutterClick(opening) {
-  const v = voices(); if (!v) return;
-  const t0 = kit.ac.currentTime + 0.004;
-  v.click.triggerAttackRelease(0.012, t0, opening ? 0.9 : 0.6);
-  v.click.triggerAttackRelease(0.012, t0 + (opening ? 0.034 : 0.021), opening ? 0.45 : 0.85);
-  v.thump.triggerAttackRelease(opening ? 'D2' : 'A1', 0.05, t0, 0.55);
-}
-// The pad filter opens over the exposure time.
-function padOpen() {
-  const v = voices(); if (!v) return;
-  const t0 = kit.ac.currentTime;
-  v.padGain.gain.cancelAndHoldAtTime(t0);
-  v.padGain.gain.linearRampToValueAtTime(0.42, t0 + 0.8);
-  v.padF.frequency.cancelAndHoldAtTime(t0);
-  v.padF.frequency.exponentialRampToValueAtTime(2400, t0 + Math.max(2, tau() * 1.2));
-}
-function padClose() {
-  if (!V) return;
-  const t0 = kit.ac.currentTime;
-  V.padGain.gain.cancelAndHoldAtTime(t0);
-  V.padGain.gain.setTargetAtTime(0, t0, 0.45);
-  V.padF.frequency.cancelAndHoldAtTime(t0);
-  V.padF.frequency.exponentialRampToValueAtTime(150, t0 + 1.8);
-}
-// A meteor ticks once, panned to where it starts.
-function meteorTick(m) {
-  const v = voices(); if (!v) return;
-  const t0 = kit.ac.currentTime + 0.004;
-  v.tickP.pan.setValueAtTime(clamp(m.x0 / W * 2 - 1, -1, 1) * 0.7, t0);
-  v.tick.triggerAttackRelease(2200 + Math.random() * 1800, 0.03, t0, 0.25 + 0.35 * m.k);
-}
-
 /* ---------- shutter ---------- */
 function open() {
   if (shutter) return;
   shutter = true;
   stage.classList.add('held');
-  shutterClick(true); padOpen();
   // Reduced motion draws the whole arc at once.
   if (reduce) { const th0 = theta; theta += 0.7; exposeArcs(th0, theta, 1); }
   wake();
@@ -733,7 +669,6 @@ function close() {
   shutter = false;
   closedAt = t;
   stage.classList.remove('held');
-  shutterClick(false); padClose(); rest();
   wake();
 }
 // A closed shutter shows a plate already exposed for the chosen time.
