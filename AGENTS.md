@@ -134,7 +134,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 - Perfect one thing first. Never roll a change across all toys at once. Tom picks which toys get it.
 - Commit and push after every change, one logical commit at a time.
 - Toy chats can share one checkout and one git index. Never `git add -A`, `git commit -a` or a whole-file `git add index.html`.
-  Commit index.html through a private index: `GIT_INDEX_FILE=/tmp/<id>.idx git read-tree HEAD`, then `git apply --cached` only your hunks.
+  Commit only through `tools/commit.sh -m "msg" [--hunks <patch>] -- <paths>`; it commits and pushes. For shared files, pass your hunks: `git diff HEAD -- index.html`, trimmed to yours.
   Check the menu script parses before you push. Never revert another toy's changes.
 - QA in headless Playwright with GPU flags: `--enable-gpu --ignore-gpu-blocklist --use-angle=metal --enable-unsafe-webgpu`.
   Check syntax, a clean console, the interactions, and screenshots at 1280px and 375px.
