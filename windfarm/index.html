@@ -774,24 +774,95 @@ composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.85, 1.2);
 composer.addPass(bloom);
 const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uExp: { value: 1.8 }, uCut: { value: 0 }, uFogC: { value: new THREE.Vector3(...LOOK.fog) }, uGrain: { value: 0 }, uStreak: { value: 1 }, uRain: { value: 0 }, uTimeR: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uExp: { value: 1.8 }, uCut: { value: 0 }, uFogC: { value: new THREE.Vector3(...LOOK.fog) }, uGrain: { value: 0 }, uStreak: { value: 1 }, uRain: { value: 0 }, uTimeR: { value: 0 }, uFlow: { value: 0 } },
   vertexShader: QUAD_VS,
   fragmentShader: `
 uniform sampler2D tDiffuse;
 uniform vec2 uRes;
-uniform float uExp, uCut, uGrain, uStreak, uRain, uTimeR;
+uniform float uExp, uCut, uGrain, uStreak, uRain, uTimeR, uFlow;
 uniform vec3 uFogC;
 varying vec2 vUv;
 float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 hash22(vec2 p) { return vec2(hash12(p), hash12(p + 19.19)); }
+// Still beads: one per cell. xy is the disc position, z the radius on screen, w the hit.
+vec4 beads(vec2 p, float sc, float dens) {
+  vec2 g = p * sc, i = floor(g), f = fract(g);
+  if (hash12(i + 9.0) > dens) return vec4(0.0);
+  vec2 o = 0.25 + 0.5 * hash22(i);
+  float r = 0.05 + 0.12 * hash12(i + 3.0);
+  vec2 dv = (f - o) / r;
+  if (dot(dv, dv) > 1.0) return vec4(0.0);
+  return vec4(dv, r / sc, 1.0);
+}
+// Running drops: columns along the run direction m, heads with thin trails.
+vec4 runs(vec2 p, vec2 m, out float trail) {
+  trail = 0.0;
+  vec2 ax = vec2(-m.y, m.x);
+  float u = dot(p, ax), v = dot(p, m);
+  float Wc = 0.05;
+  float col = floor(u / Wc);
+  float h = hash12(vec2(col, 3.0));
+  if (h < 0.3) return vec4(0.0);
+  float fu = (fract(u / Wc) - 0.5) * Wc + sin(v * 37.0 + h * 40.0) * 0.003 + (h - 0.65) * 0.02;
+  float sp = 0.35 + 0.7 * hash12(vec2(col, 7.0));
+  float head = mod(uFlow * sp + h * 17.0, 2.4) - 1.2;
+  float dv = v - head;
+  float hr = 0.004 + 0.0032 * h;
+  vec2 q = vec2(fu / hr, dv / (hr * 1.5));
+  if (dot(q, q) < 1.0) return vec4(ax * q.x + m * q.y, hr * 1.2, 1.0);
+  // The trail is a thin water thread behind the head.
+  float tl = 0.22 + 0.2 * h;
+  if (dv < 0.0 && dv > -tl) {
+    float age = -dv / tl;
+    float cell = v * 70.0 + h * 9.0;
+    vec2 tb = vec2(fu / 0.0015, (fract(cell) - 0.5) * 2.6);
+    if (hash12(vec2(col, floor(cell))) > 0.6 && dot(tb, tb) < 1.0) return vec4(ax * tb.x + m * tb.y, 0.0015, 0.6);
+    // The thread thins toward its tail and acts as a narrow cylinder lens.
+    float tw = 0.0018 * (1.0 - 0.6 * age);
+    if (abs(fu) < tw) return vec4(ax * (fu / tw), tw, 0.8 * (1.0 - age));
+  }
+  return vec4(0.0);
+}
+// A water lens: a dome that flips and shrinks the view behind it; the edge reads dark.
+void lens(vec4 b, float k, inout vec2 off, inout float cover, inout float rim, inout float spec) {
+  if (b.w <= 0.0) return;
+  k *= b.w;
+  float dd = dot(b.xy, b.xy), h = sqrt(max(1.0 - dd, 0.0));
+  off -= b.xy / max(h, 0.2) * b.z * 4.0 * k;
+  cover = max(cover, k * (1.0 - dd));
+  rim = max(rim, k * smoothstep(0.5, 0.98, dd));
+  vec3 N = normalize(vec3(b.xy, h * 1.4));
+  spec = max(spec, k * pow(max(dot(N, vec3(0.28, 0.5, 0.82)), 0.0), 80.0));
+}
 // ACES: the fitted RRT and ODT, with its input and output matrices.
 const mat3 ACES_IN = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
 const mat3 ACES_OUT = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
 vec3 rrtOdt(vec3 v) { return (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081); }
 void main() {
-  // Lens fringing: red and blue part a little toward the edges.
+  // Rain on the front glass, after Train Ride: still beads and running drops.
+  // Each drop is a small dome lens; it bends the view and its rim reads dark.
   vec2 cuv = vUv - 0.5;
-  float r2 = dot(cuv, cuv);
-  vec3 c = vec3(texture2D(tDiffuse, vUv - cuv * 0.012 * r2).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv + cuv * 0.012 * r2).b);
+  float asp = uRes.x / uRes.y;
+  vec2 off = vec2(0.0);
+  float cover = 0.0, rim = 0.0, spec = 0.0;
+  if (uRain > 0.001) {
+    vec2 p = cuv * vec2(asp, 1.0);
+    // The drops run down and the wind sweeps them sideways.
+    vec2 m = normalize(vec2(0.22 + 0.5 * uRain, -1.0));
+    float t1, t2;
+    lens(beads(p, 14.0, 0.3 * uRain), uRain, off, cover, rim, spec);
+    lens(beads(p + 3.7, 34.0, 0.28 * uRain), uRain, off, cover, rim, spec);
+    lens(beads(p + 7.1, 70.0, 0.24 * uRain), uRain, off, cover, rim, spec);
+    lens(runs(p, m, t1), uRain, off, cover, rim, spec);
+    vec4 r2 = runs(p * 0.7 + 1.3, m, t2);
+    r2.z /= 0.7;
+    lens(r2, uRain, off, cover, rim, spec);
+  }
+  vec2 uv = vUv + off / vec2(asp, 1.0);
+  // Lens fringing: red and blue part a little toward the edges.
+  vec2 fu = uv - 0.5;
+  float f2 = dot(fu, fu);
+  vec3 c = vec3(texture2D(tDiffuse, uv - fu * 0.012 * f2).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv + fu * 0.012 * f2).b);
   // Anamorphic streaks: bright lamps smear sideways in a thin line.
   if (uStreak > 0.5) {
     vec3 st = vec3(0.0);
@@ -802,17 +873,10 @@ void main() {
     c += st * 0.05 * vec3(1.0, 0.75, 1.3);
   }
   if (uRain > 0.001) {
-    vec2 a = vUv * vec2(uRes.x / uRes.y, 1.0);
-    // Drops on the lens: each one bends the scene behind it and fades out.
-    vec2 dp = a * 7.0, did = floor(dp), df = fract(dp) - 0.5;
-    float dh = hash12(did + 3.1), life = fract(uTimeR * 0.09 + dh * 7.0);
-    vec2 dc = vec2(hash12(did + 9.2), hash12(did + 5.7)) * 0.5 - 0.25;
-    float dr = 0.08 + 0.14 * hash12(did + 1.3);
-    float dd = length(df - dc) / dr;
-    float on = step(dd, 1.0) * step(0.8, dh) * smoothstep(0.0, 0.08, life) * smoothstep(1.0, 0.55, life) * uRain;
-    vec2 bend = (df - dc) / dr * sqrt(max(0.0, 1.0 - dd * dd));
-    vec3 seen = texture2D(tDiffuse, vUv - bend * dr * 0.06).rgb;
-    c = mix(c, seen * 1.05, on * 0.6);
+    // Drops: a dark rim, and a glint of whatever light lies behind them.
+    vec3 behind = texture2D(tDiffuse, vUv + off / vec2(asp, 1.0) * 3.0).rgb;
+    c *= 1.0 - 0.7 * rim;
+    c += spec * (uFogC * 0.6 + behind * 1.4) + cover * behind * 0.15;
   }
   // A view change passes through a wall of fog.
   c = mix(c, uFogC * 1.6, uCut);
@@ -936,7 +1000,7 @@ function watchdog(dt) {
 }
 
 /* ---------- frame ---------- */
-let clock = 0, simT = 0, calm = 1, grainT = 0;
+let clock = 0, simT = 0, calm = 1, grainT = 0, flowT = 0;
 const cut = { t: -1, next: -1 };
 function setFog() {
   // Wind thins the fog; Light halves it.
@@ -956,6 +1020,8 @@ function syncUniforms() {
   grade.uniforms.uRain.value = smooth(0.25, 0.9, storm.k);
   U.uRain.value = grade.uniforms.uRain.value;
   grade.uniforms.uTimeR.value = clock;
+  // The running drops flow faster as the storm builds.
+  grade.uniforms.uFlow.value = flowT;
   U.uFlash.value = flash.k * (reduce ? 0.35 : 1);
   setFog();
 }
@@ -999,6 +1065,7 @@ function tick(dt, now) {
   const drift = reduce ? 0 : calm;
   simT += dt * (reduce ? 0.3 : 1) * calm;
   grainT = (grainT + 1) % 64;
+  flowT += dt * (0.25 + 0.6 * storm.k);
   rotorsMoving = stepWind(dt, clock, calm);
   // The fog drifts downwind, faster in a strong wind.
   U.uDrift.value.x += WIND_DIR[0] * (3 + windNow() * 2.5) * dt * drift;
