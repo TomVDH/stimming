@@ -68,11 +68,19 @@
       <div class="edge">
         <div class="adder" id="setter">
           <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Torch</span><div class="choices" id="size" role="group" aria-label="Torch size">
+              <button class="chip" type="button" data-value="pen" aria-pressed="false">Pen</button>
+              <button class="chip" type="button" data-value="torch" aria-pressed="true">Torch</button>
+              <button class="chip" type="button" data-value="lamp" aria-pressed="false">Lamp</button>
+            </div></div>
+          </div>
         </div>
         <dl class="how" aria-label="How to play">
           <div><dt>Drag</dt><dd>write with the torch</dd></div>
-          <div><dt>Flash</dt><dd>charge the sheet</dd></div>
+          <div><dt>Hold</dt><dd>soak one spot</dd></div>
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>a dot</dd></div>
+          <div class="fine"><dt><kbd>Space</kbd> + arrows</dt><dd>write</dd></div>
         </dl>
       </div>
     </div>
@@ -96,21 +104,21 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, linFit, qualitySetting, onQuality } from '../shared/stim.js';
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, qualitySetting, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
-// Blockout: still frames only; no loop, no input, no sound.
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
 const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
 initPage({ id: 'glow' });
 // Settings holds the site-wide Quality choice.
 qualitySetting(document.getElementById('sets'));
 
 const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 
 /* ---------- settings ---------- */
@@ -120,7 +128,10 @@ const save = (k, v) => { try { localStorage.setItem(`stimming.glow.${k}`, String
 const opts = {
   tint: saved('tint') || 'green',
   fade: saved('fade') != null ? +saved('fade') : 0.5,
+  size: saved('size') || 'torch',
 };
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
 // Each phosphor glows in one hue; the torch makes it fluoresce paler.
 const TINTS = {
   green: { glow: [0.86, 0.2, 150], fluo: [0.96, 0.11, 140] },
@@ -128,9 +139,12 @@ const TINTS = {
   blue: { glow: [0.76, 0.13, 238], fluo: [0.93, 0.07, 225] },
 };
 const UV = linFit(0.42, 0.24, 298);
+// Torch size sets the pool radius as a share of the short side.
+const SIZES = { pen: 0.07, torch: 0.11, lamp: 0.17 };
 // Afterglow has a fast flash and a slow tail, in seconds.
 const tails = () => { const s = Math.pow(4, opts.fade - 0.5); return [2.5 * s, 25 * s]; };
-const afterglow = age => { const [a, b] = tails(); return 0.55 * Math.exp(-age / a) + 0.45 * Math.exp(-age / b); };
+// The visible glow mixes the two tails at fixed weights.
+const MIX = [0.55, 0.45];
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
@@ -156,9 +170,10 @@ float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a
 /* ---------- K1: accumulation and decay ---------- */
 // Copied from Star trails.
 // Change: the charge blends by MAX, so a new pass recharges, never doubles.
+// Change: red holds the fast tail, green the slow tail; each decays alone.
 const DECAY = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform float uK, uEps; in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc; uniform vec4 uK; uniform float uEps; in vec2 vUv; out vec4 o;
 void main() { vec4 c = texture(uSrc, vUv) * uK; o = max(c - uEps, 0.0); }`;
 // A segment draws as a soft line with ramped ends.
 // Adjacent segments overlap their ramps, so joins add up to one.
@@ -190,6 +205,16 @@ void main() {
   }
   o = vec4(vCol.rgb * k, 1.0);
 }`;
+// A flat value fills the whole plate, for the flash.
+const FILL_FS = `#version 300 es
+precision highp float;
+uniform vec4 uV; out vec4 o;
+void main() { o = uV; }`;
+// A plain copy carries the plate across a resize.
+const COPY_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; in vec2 vUv; out vec4 o;
+void main() { o = texture(uSrc, vUv); }`;
 
 function program(vs, fs, attrs) {
   const p = gl.createProgram();
@@ -214,7 +239,7 @@ gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
 gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-// Segment data: a.xy, b.xy in pixels, then rgb charge and width.
+// Segment data: a.xy, b.xy in pixels, then fast and slow charge and width.
 const MAXSEG = 4096;
 const inst = new Float32Array(MAXSEG * 8);
 const segVao = gl.createVertexArray();
@@ -249,8 +274,24 @@ function target(w, h) {
 }
 const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
 let acc = [], ai = 0;
-const fillAcc = v => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(v, v, v, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
+const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
 
+function decayPass(dt, speed) {
+  const src = acc[ai], dst = acc[1 - ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(P.decay.u.uSrc, 0);
+  const [a, b] = tails();
+  gl.uniform4f(P.decay.u.uK, Math.exp(-dt * speed / a), Math.exp(-dt * speed / b), 1, 1);
+  gl.uniform1f(P.decay.u.uEps, FLOAT ? 0.0002 * dt : 0.6 / 255);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ai = 1 - ai;
+}
+const maxBlend = on => {
+  if (on) { gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE); }
+  else { gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND); }
+};
 function segPass(dst, count) {
   if (!count) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
@@ -258,9 +299,9 @@ function segPass(dst, count) {
   gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, count * 8);
   gl.uniform2f(P.seg.u.uRes, dst.w, dst.h);
-  gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
+  maxBlend(true);
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
-  gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
+  maxBlend(false);
 }
 /* ---------- end K1 ---------- */
 
@@ -268,7 +309,7 @@ function segPass(dst, count) {
 // The sheet: paper fibre, glow from the charge, and the UV pool.
 const SHEET_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform vec2 uRes, uTorch; uniform float uR, uOn;
+uniform sampler2D uSrc; uniform vec2 uRes, uTorch, uMix; uniform float uR, uOn, uFlash;
 uniform vec3 uGlow, uFluo, uUv;
 in vec2 vUv; out vec4 o;
 ${NOISE}
@@ -280,7 +321,7 @@ void main() {
   float fib = fbm(q * vec2(9.0, 38.0)) * 0.6 + fbm(q * 90.0) * 0.4;
   float grain = 0.82 + 0.36 * fib;
   vec3 paper = vec3(0.0045, 0.0055, 0.005) * grain;
-  float ch = texture(uSrc, vUv).r;
+  float ch = dot(texture(uSrc, vUv).rg, uMix);
   vec3 c = paper + uGlow * ch * grain * 1.4;
   // The torch pool: a hot core, a soft disc and a faint outer halo.
   float r = length(px - uTorch) / uR;
@@ -291,6 +332,8 @@ void main() {
   c += uFluo * (core * 0.45 + disc * 0.2) * uOn * grain;
   c += uGlow * disc * 0.45 * uOn * grain;
   c += uUv * (disc * 0.12 + halo * 0.35 + smoothstep(0.75, 1.0, r) * disc * 0.7) * uOn * grain;
+  // The flash lights the bare sheet for an instant.
+  c += vec3(0.55, 0.6, 0.5) * grain * uFlash;
   o = vec4(c, 1.0);
 }`;
 // The bright pass keeps only light above a soft threshold.
@@ -325,15 +368,24 @@ void main() {
 const P = {
   decay: program(QUAD_VS, DECAY, ['aPos']),
   seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
+  fill: program(QUAD_VS, FILL_FS, ['aPos']),
+  copy: program(QUAD_VS, COPY_FS, ['aPos']),
   sheet: program(QUAD_VS, SHEET_FS, ['aPos']),
   bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
   blur: program(QUAD_VS, BLUR_FS, ['aPos']),
   out: program(QUAD_VS, OUT_FS, ['aPos']),
 };
 
-/* ---------- the trace ---------- */
-let W = 1, H = 1, dpr = 1, frame = null, bl = [], wd = [];
-const torch = { x: 0, y: 0, r: 1, on: 1 };
+/* ---------- state ---------- */
+let W = 1, H = 1, frame = null, bl = [], wd = [];
+let t = 0, ready = false, flash = 0, clearUntil = -1, lastCharge = -1e9;
+// The torch shows its pool at first, then clicks off after the intro.
+const torch = { x: 0, y: 0, r: 1, on: 1, preview: true };
+let press = null, keyOn = false, tapUntil = -1, held = 0;
+const segs = [];
+const writing = () => !!press || keyOn || t < tapUntil;
+
+/* ---------- the first view ---------- */
 // A looped hand runs left to right and ends under the torch.
 function looped(x0, x1, yc, loops, rad, wave, n) {
   const pts = [];
@@ -345,20 +397,21 @@ function looped(x0, x1, yc, loops, rad, wave, n) {
   }
   return pts;
 }
-// One stroke: each point carries the age the glow has reached.
+// One stroke: each point carries the age its glow has reached.
 function stroke(pts, age0, span, width) {
+  const [fa, sl] = tails();
   let n = 0;
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i];
-    const k = afterglow(age0 + (1 - b[2]) * span);
-    inst.set([a[0], a[1], b[0], b[1], k, k, k, width], n * 8);
+    const age = age0 + (1 - b[2]) * span;
+    inst.set([a[0], a[1], b[0], b[1], Math.exp(-age / fa), Math.exp(-age / sl), 0, width], n * 8);
     if (++n >= MAXSEG) { segPass(acc[ai], n); n = 0; }
   }
   segPass(acc[ai], n);
 }
 // The first view holds an old faint loop and a fresh line of loops.
 function preExpose() {
-  fillAcc(0);
+  clearAcc();
   const S = Math.min(W, H), tall = W < H;
   const yc = H * (tall ? 0.58 : 0.55);
   const x0 = W * (tall ? 0.12 : 0.17), x1 = W * (tall ? 0.8 : 0.7);
@@ -373,8 +426,45 @@ function preExpose() {
   const hand = looped(x0, x1, yc, tall ? 5 : 7, S * (tall ? 0.085 : 0.075), S * 0.05, 900);
   stroke(hand, 0.15, 16, width);
   const end = hand[hand.length - 1];
-  torch.x = end[0] + S * 0.01; torch.y = end[1]; torch.r = S * 0.13;
+  torch.x = end[0] + S * 0.01; torch.y = end[1];
+  lastCharge = t;
 }
+
+/* ---------- charge ---------- */
+// The torch charges the paper along its path and soaks the spot it holds.
+function charge(dt) {
+  if (!writing()) { segs.length = 0; held = 0; return; }
+  const w = torch.r * 0.09;
+  let L = 0;
+  for (const s of segs) L += Math.hypot(s[2] - s[0], s[3] - s[1]);
+  const speed = dt > 0 ? L / dt : 0;
+  // Slow strokes take a full charge; fast flicks stay faint.
+  const k = 1 - Math.exp(-60 * w / Math.max(speed, 1e-3));
+  held = speed < torch.r * 1.5 ? held + dt : held * Math.exp(-dt * 6);
+  const core = 1 - Math.exp(-(held + dt) * 8);
+  const soak = 0.9 * (1 - Math.exp(-held / 1.4));
+  let n = 0;
+  for (const s of segs) {
+    inst.set([s[0], s[1], s[2], s[3], k, k, 0, w], n * 8);
+    if (++n >= MAXSEG - 2) { segPass(acc[ai], n); n = 0; }
+  }
+  inst.set([torch.x, torch.y, torch.x, torch.y, core, core, 0, w * 1.4], n++ * 8);
+  if (soak > 0.01) inst.set([torch.x, torch.y, torch.x, torch.y, soak, soak, 0, torch.r * 0.42], n++ * 8);
+  segPass(acc[ai], n);
+  segs.length = 0;
+  lastCharge = t;
+}
+function fillPass(v) {
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.fill.p); gl.bindVertexArray(quadVao);
+  gl.uniform4f(P.fill.u.uV, v, v, 0, 1);
+  maxBlend(true);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  maxBlend(false);
+}
+// The glow left on the plate, judged from the last charge.
+const glowLeft = () => { const [a, b] = tails(), s = t - lastCharge; return MIX[0] * Math.exp(-s / a) + MIX[1] * Math.exp(-s / b); };
 
 /* ---------- render ---------- */
 function quad(dst, prog) {
@@ -394,8 +484,10 @@ function render() {
   bind(0, acc[ai].tex, u.uSrc);
   gl.uniform2f(u.uRes, W, H);
   gl.uniform2f(u.uTorch, torch.x, torch.y);
+  gl.uniform2f(u.uMix, MIX[0], MIX[1]);
   gl.uniform1f(u.uR, torch.r);
   gl.uniform1f(u.uOn, torch.on);
+  gl.uniform1f(u.uFlash, flash);
   gl.uniform3fv(u.uGlow, linFit(...T.glow));
   gl.uniform3fv(u.uFluo, linFit(...T.fluo));
   gl.uniform3fv(u.uUv, UV);
@@ -411,20 +503,135 @@ function render() {
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
+/* ---------- loop ---------- */
+let raf = 0, last = 0, visible = true, lastInput = performance.now(), rate = 1;
+// Lively frames run at full rate; drifting frames at 30 fps.
+const lively = () => writing() || torch.preview || torch.on > 0 || flash > 0 || t < clearUntil;
+function frameFn(now) {
+  raf = 0;
+  const live = lively();
+  if (!live && last && now - last < 31) { raf = requestAnimationFrame(frameFn); return; }
+  const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+  last = now;
+  let more = false;
+  try { more = step(dt, now); render(); }
+  finally { if (visible && (live || more)) raf = requestAnimationFrame(frameFn); }
+}
+function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+// Any input wakes the loop and resets the sleep clock.
+function poke() { lastInput = performance.now(); rate = 1; wake(); }
+
+function step(dt, now) {
+  t += dt;
+  // After a minute without input, the fade eases to a stop over 2 s.
+  rate = clamp(1 - ((now - lastInput) / 1000 - 60) / 2);
+  if (press && press.kind === 'press' && now - press.t0 > 260) press.kind = 'hold';
+  const want = writing() || torch.preview ? 1 : 0;
+  torch.on = reduce ? want : lerp(torch.on, want, 1 - Math.exp(-dt / (want ? 0.03 : 0.12)));
+  if (!want && torch.on < 0.003) torch.on = 0;
+  const clearing = t < clearUntil;
+  decayPass(dt, clearing ? 14 : rate);
+  if (clearUntil > 0 && !clearing) { clearUntil = -1; clearAcc(); lastCharge = -1e9; }
+  charge(dt);
+  flash = flash * Math.exp(-dt / 0.09);
+  if (flash < 0.003) flash = 0;
+  if (lively()) watchdog(dt);
+  return rate > 0 && glowLeft() > 0.003;
+}
+
+/* ---------- performance ---------- */
+// Slow frames step quality down one rung; it never steps back up.
+let runT = 0, avg = 1 / 60, slowT = 0, rung = 0;
+function watchdog(dt) {
+  if (!dt || rung >= 2) return;
+  runT += dt;
+  avg = lerp(avg, dt, 0.1);
+  if (runT < 4) return;
+  slowT = avg > 1 / 38 ? slowT + dt : 0;
+  if (slowT > 2) { rung++; slowT = 0; resize(true); }
+}
+
 /* ---------- size ---------- */
-function resize() {
-  const fit = fitCanvas(canvas, { budget: 2.2e6 });
-  if (fit.W === W && fit.H === H && acc.length) return;
-  W = fit.W; H = fit.H; dpr = fit.dpr;
-  [...acc, ...bl, ...wd].forEach(drop); if (frame) drop(frame);
+function fit() {
+  if (!rung) return fitCanvas(canvas, { budget: 2.2e6 });
+  // On High the first rung falls back to Standard, not to 1x.
+  return quality() === 'high' ? fitCanvas(canvas, { budget: 2.2e6, quality: 'standard' }) : fitCanvas(canvas, { budget: 2.2e6, maxDpr: 1 });
+}
+function resize(force = false) {
+  const f = fit();
+  if (f.W === W && f.H === H && acc.length && !force) return;
+  const old = acc, oi = ai, sx = f.W / W, sy = f.H / H;
+  W = f.W; H = f.H;
+  [...bl, ...wd].forEach(drop); if (frame) drop(frame);
   acc = [target(W, H), target(W, H)]; ai = 0;
   frame = target(W, H);
-  const bw = Math.max(1, W >> 2), bh = Math.max(1, H >> 2);
+  const sh = rung >= 2 ? 3 : 2;
+  const bw = Math.max(1, W >> sh), bh = Math.max(1, H >> sh);
   bl = [target(bw, bh), target(bw, bh)];
   wd = [target(Math.max(1, bw >> 2), Math.max(1, bh >> 2)), target(Math.max(1, bw >> 2), Math.max(1, bh >> 2))];
-  preExpose();
+  torch.r = SIZES[opts.size] * Math.min(W, H);
+  if (old.length) {
+    // The plate stretches into the new size; nothing written is lost.
+    quad(acc[0], P.copy); bind(0, old[oi].tex, P.copy.u.uSrc); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    old.forEach(drop);
+    torch.x *= sx; torch.y *= sy;
+  } else preExpose();
   render();
+  wake();
 }
+
+/* ---------- input ---------- */
+const at = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (r.bottom - e.clientY) * H / r.height]; };
+function torchTo(p) {
+  if (writing()) segs.push([torch.x, torch.y, p[0], p[1]]);
+  torch.x = p[0]; torch.y = p[1];
+}
+function lift() { torch.preview = false; }
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0 || press) return;
+  try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
+  lift();
+  const p = at(e);
+  torch.x = p[0]; torch.y = p[1];
+  press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), kind: 'press' };
+  segs.push([p[0], p[1], p[0], p[1]]);
+  poke();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  if (press.kind !== 'drag' && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 8) press.kind = 'drag';
+  for (const c of e.getCoalescedEvents?.() || [e]) torchTo(at(c));
+  poke();
+});
+const end = e => {
+  if (!press || (e && e.pointerId !== press.id)) return;
+  // A tap blinks the torch on for a moment.
+  if (press.kind === 'press') tapUntil = t + 0.14;
+  press = null;
+  poke();
+};
+stage.addEventListener('pointerup', end);
+stage.addEventListener('pointercancel', end);
+stage.addEventListener('lostpointercapture', end);
+const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+stage.addEventListener('keydown', e => {
+  const mv = ARROWS[e.key];
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (e.repeat) return;
+    lift(); keyOn = true;
+    segs.push([torch.x, torch.y, torch.x, torch.y]);
+    poke();
+  } else if (mv) {
+    e.preventDefault();
+    lift();
+    const d = torch.r * 0.2;
+    torchTo([clamp(torch.x + mv[0] * d, 0, W), clamp(torch.y + mv[1] * d, 0, H)]);
+    poke();
+  }
+});
+stage.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') { keyOn = false; poke(); } });
+stage.addEventListener('blur', () => { keyOn = false; poke(); });
 
 /* ---------- bar ---------- */
 function popover(box, btn) {
@@ -436,18 +643,37 @@ function popover(box, btn) {
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
 const fadeEl = document.getElementById('fade');
 fadeEl.value = String(opts.fade);
-fadeEl.addEventListener('input', () => { opts.fade = +fadeEl.value; save('fade', opts.fade); preExpose(); render(); });
-choices(document.getElementById('tint'), v => { opts.tint = v; save('tint', v); render(); }).set(opts.tint);
-document.getElementById('flash').addEventListener('click', () => { fillAcc(0.4); render(); });
-document.getElementById('clear').addEventListener('click', () => { fillAcc(0); render(); });
+fadeEl.addEventListener('input', () => { opts.fade = +fadeEl.value; save('fade', opts.fade); poke(); });
+choices(document.getElementById('tint'), v => { opts.tint = v; save('tint', v); render(); poke(); }).set(opts.tint);
+choices(document.getElementById('size'), v => { opts.size = v; save('size', v); torch.r = SIZES[v] * Math.min(W, H); render(); poke(); }).set(opts.size);
+// Flash charges the whole sheet; the light itself lasts an instant.
+document.getElementById('flash').addEventListener('click', () => {
+  if (!acc.length) return;
+  lift(); clearUntil = -1;
+  fillPass(0.32);
+  flash = reduce ? 0.3 : 1;
+  lastCharge = t;
+  poke();
+});
+// Clear fades the plate out fast, then empties it.
+document.getElementById('clear').addEventListener('click', () => { lift(); clearUntil = t + 0.6; poke(); });
 
 /* ---------- start ---------- */
 new ResizeObserver(() => resize()).observe(stage);
-onQuality(() => resize());
+onQuality(() => { rung = 0; resize(true); });
 resize();
 gl.finish();
+ready = true;
 markReady();
 requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => {
+  visible = v;
+  if (v) wake();
+  else if (raf) { cancelAnimationFrame(raf); raf = 0; }
+});
+// The preview pool clicks off a moment after the intro.
+Promise.race([introDone, wait(9000)]).then(() => wait(700)).then(() => { lift(); poke(); });
+wake();
 </script>
 </body>
 </html>
