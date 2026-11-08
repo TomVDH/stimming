@@ -87,6 +87,10 @@
               <button class="chip" type="button" data-value="thin" aria-pressed="true">Thin</button>
               <button class="chip" type="button" data-value="thick" aria-pressed="false">Thick</button>
             </div></div>
+            <div class="group"><span>Sky</span><div class="choices" id="sky" role="group" aria-label="Sky">
+              <button class="chip" type="button" data-value="clear" aria-pressed="false">Clear</button>
+              <button class="chip" type="button" data-value="cloud" aria-pressed="true">Cloud</button>
+            </div></div>
             <div class="group"><span>Water</span><div class="choices" id="water" role="group" aria-label="Water">
               <button class="chip" type="button" data-value="calm" aria-pressed="true">Calm</button>
               <button class="chip" type="button" data-value="ripple" aria-pressed="false">Ripple</button>
@@ -175,6 +179,9 @@ const U = {
   uHaze: { value: 0.00045 },
   uHazeH: { value: 140 },
   uTime: { value: 0 },
+  // Cloud deck: base, depth, cover, on; the offset carries the wind.
+  uCloud: { value: new THREE.Vector4(260, 300, 0.55, 1) },
+  uCloudO: { value: new THREE.Vector2() },
 };
 const LIGHTS_GLSL = /* glsl */`
 uniform vec4 uL[${LN}];
@@ -266,7 +273,63 @@ vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
 /* ---------- end K2 ---------- */
-const HEAD = `${LIGHTS_GLSL}\n${K2_NOISE}\n${K2_SKY}\n${K2_HAZE}`;
+
+/* ---------- cloud deck ---------- */
+// A broken deck of low cloud; bursts inside it light it from within.
+const CLOUD_SIGMA = 0.035;
+const CLOUD_GLSL = /* glsl */`
+uniform vec4 uCloud;
+uniform vec2 uCloudO;
+// Cloud cover over the ground at xz: 0 is clear, 1 is full.
+float cloudD(vec2 xz) {
+  float n = k2fbm((xz + uCloudO) * vec2(0.0011, 0.0019) + vec2(3.7, 1.9));
+  return smoothstep(1.0 - uCloud.z, 1.16 - uCloud.z, n);
+}
+// A column's floor and roof: dense parts hang lower and pile higher.
+vec2 cloudCol(float D) { return vec2(uCloud.x + 110.0 * (1.0 - D), uCloud.x + uCloud.y * D); }
+// The part of a point's light that comes through the deck to the eye.
+float cloudVeil(vec3 P) {
+  if (uCloud.w < 0.5 || P.y <= uCloud.x) return 1.0;
+  vec3 v = P - cameraPosition;
+  if (v.y < 1.0) return 1.0;
+  float mid = 0.5 * (uCloud.x + min(P.y, uCloud.x + uCloud.y));
+  vec3 X = cameraPosition + v * ((mid - cameraPosition.y) / v.y);
+  float D = cloudD(X.xz);
+  vec2 c = cloudCol(D);
+  return exp(-D * max(min(P.y, c.y) - c.x, 0.0) * length(v) / v.y * ${CLOUD_SIGMA});
+}`;
+// The same density on the CPU, in float32 steps, for lights and orbs.
+const f32 = Math.fround, fr = x => x - Math.floor(x);
+function chash(x, y) {
+  x = fr(f32(x * 123.34)); y = fr(f32(y * 456.21));
+  const d = f32(x * (x + 45.32) + y * (y + 45.32));
+  return fr(f32((x + d) * (y + d)));
+}
+function cnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = chash(ix, iy), b = chash(ix + 1, iy), c = chash(ix, iy + 1), d = chash(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a + (a - b + d - c) * ux) * uy;
+}
+function cloudD(x, z) {
+  const C = U.uCloud.value, O = U.uCloudO.value;
+  let px = (x + O.x) * 0.0011 + 3.7, py = (z + O.y) * 0.0019 + 1.9, s = 0, a = 0.5;
+  for (let i = 0; i < 5; i++) { s += a * cnoise(px, py); px = px * 2.03 + 17.1; py = py * 2.03 + 9.2; a *= 0.5; }
+  const t = Math.min(1, Math.max(0, (s - (1 - C.z)) / 0.16));
+  return t * t * (3 - 2 * t);
+}
+// Light through the deck: to the ground (from above) or to the eye.
+function cloudT(P, eye) {
+  const C = U.uCloud.value;
+  if (C.w < 0.5 || P.y <= C.x) return 1;
+  const depth = D => Math.max(Math.min(P.y, C.x + C.y * D) - (C.x + 110 * (1 - D)), 0);
+  if (!eye) { const D = cloudD(P.x, P.z); return 0.3 + 0.7 * Math.exp(-D * depth(D) * CLOUD_SIGMA); }
+  const o = camera.position, vy = P.y - o.y, t = (0.5 * (C.x + Math.min(P.y, C.x + C.y)) - o.y) / vy;
+  const D = cloudD(o.x + (P.x - o.x) * t, o.z + (P.z - o.z) * t);
+  return Math.exp(-D * depth(D) * P.distanceTo(o) / vy * CLOUD_SIGMA);
+}
+/* ---------- end cloud deck ---------- */
+const HEAD = `${LIGHTS_GLSL}\n${K2_NOISE}\n${CLOUD_GLSL}\n${K2_SKY}\n${K2_HAZE}`;
 
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(15000, 32, 16), new THREE.ShaderMaterial({
@@ -276,6 +339,62 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(15000, 32, 16), new THREE.Sh
 }));
 sky.renderOrder = -1;
 scene.add(sky);
+
+// The deck: four stacked sheets; a sheet shows where its column reaches it.
+const CU = { uLR: { value: new Array(LN).fill(0) }, uWarm: { value: new THREE.Vector3() } };
+const SHEETS = [500, 420, 345, 275];
+const cloudGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(30000, 16000).rotateX(Math.PI / 2).translate(0, 0, -7000));
+// Top sheet first, so each lower sheet draws over the one above.
+cloudGeo.setAttribute('aH', new THREE.InstancedBufferAttribute(new Float32Array(SHEETS), 1));
+cloudGeo.instanceCount = SHEETS.length;
+const cloud = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...CU }, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+  // Premultiplied, like the smoke; the alpha channel stays the mirror's land mask.
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`attribute float aH; varying vec3 vP; varying float vK;
+  void main() { vP = position + vec3(0.0, aH, 0.0); vK = aH * 0.01; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; varying float vK; uniform float uLR[${LN}]; uniform vec3 uWarm; ${HEAD}
+  void main() {
+    vec3 v = vP - cameraPosition;
+    if (v.y < 1.0) discard;
+    vec3 V = normalize(v);
+    float fade = 1.0 - smoothstep(4000.0, 11000.0, length(v.xz));
+    float D = cloudD(vP.xz);
+    if (D * fade < 0.01) discard;
+    vec2 c = cloudCol(D);
+    float inside = smoothstep(c.x - 30.0, c.x + 30.0, vP.y) * (1.0 - smoothstep(c.y - 50.0, c.y + 10.0, vP.y));
+    // Billows break each sheet into lumps; each sheet has its own.
+    vec2 q = (vP.xz + uCloudO) * vec2(0.006, 0.009);
+    float b = k2noise(q + vK * 3.1) * 0.5 + k2noise(q * 2.7 - vK * 1.7) * 0.3 + k2noise(q * 7.3 + vK) * 0.2;
+    float dens = D * inside * smoothstep(0.35, 0.65, b + 0.3 * D - 0.1);
+    float a = (1.0 - exp(-dens * min(75.0 / V.y, 700.0) * ${CLOUD_SIGMA})) * fade;
+    if (a < 0.003) discard;
+    vec3 lit = vec3(0.0);
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 d = uL[i].xyz - vP;
+      float fall = uLR[i] / (1.0 + dot(d, d) / 78400.0);
+      // Cloud between this point and the burst shades it.
+      float Ly = uL[i].y;
+      float dc = Ly < vP.y ? min(vP.y - c.x, vP.y - Ly) : max(min(c.y, Ly) - vP.y, 0.0);
+      float sh = exp(-max(dc, 0.0) * D * 0.018);
+      // A burst behind the cloud makes its thin parts glow.
+      float ph = pow(max(dot(V, normalize(d)), 0.0), 6.0) * (1.0 - a);
+      lit += uLC[i] * fall * (0.1 + 0.9 * sh) * (1.0 + 2.0 * ph);
+    }
+    // The festival's fires tint the underside above the beach.
+    float shore = smoothstep(-3400.0, -1800.0, vP.z) * (1.0 - smoothstep(-1500.0, -400.0, vP.z));
+    vec3 col = lit * 0.6 + uCool * 0.005 + uWarm * 0.006 * shore;
+    col = mix(col, k2hazeColor(V), k2hazeAmount(vP));
+    // Lit air in front of the deck still glows.
+    gl_FragColor = vec4((col + burstGlow(V) * 0.3) * a, a);
+  }`,
+}));
+cloud.renderOrder = 0.5;
+cloud.frustumCulled = false;
+cloud.layers.enable(LIGHT);
+scene.add(cloud);
 
 /* ---------- land: beach, hills and the far range ---------- */
 // A height field behind a wandering waterline; normals give the relief.
@@ -321,6 +440,7 @@ function landGeometry() {
 /* ---------- festival: campfires and light dots on the beach ---------- */
 const FN = 16;
 const FIRE = linFit(0.74, 0.17, 52);
+CU.uWarm.value.set(...FIRE);
 const fires = [];
 for (const [cx, n] of [[-700, 4], [-330, 2], [90, 3], [520, 4], [880, 2], [-1050, 1]]) {
   for (let i = 0; i < n && fires.length < FN; i++) fires.push(landAt(cx + (rnd() - 0.5) * 140, 18 + rnd() * 50, 1));
@@ -531,6 +651,7 @@ const starMat = new THREE.ShaderMaterial({
   uniforms: {
     uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uSteady: { value: reduced() ? 1 : 0 },
     uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
+    uCloud: U.uCloud, uCloudO: U.uCloudO,
   },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -542,6 +663,8 @@ const starMat = new THREE.ShaderMaterial({
   uniform vec3 uG, uRamp[9], uEmber;
   varying vec3 vCol, vColT, vLWH;
   varying float vS, vY, vSpark, vSeed;
+  ${K2_NOISE}
+  ${CLOUD_GLSL}
   // Linear drag, a = G - k v, in closed form: no stored state.
   vec3 starPos(vec3 p0, vec3 v0, float k, float t) {
     vec3 vt = uG / k;
@@ -563,7 +686,8 @@ const starMat = new THREE.ShaderMaterial({
     float f = age / life, tr = min(aC.z, age);
     // Three points on the true path, so the trail follows the fall.
     vec4 c0, c1, c2;
-    vec2 s0 = scr(path(age - tr), c0), s1 = scr(path(age - tr * 0.5), c1), s2 = scr(path(age), c2);
+    vec3 ph = path(age);
+    vec2 s0 = scr(path(age - tr), c0), s1 = scr(path(age - tr * 0.5), c1), s2 = scr(ph, c2);
     float L01 = length(s1 - s0), len = L01 + length(s2 - s1);
     // The core is w wide; the quad is wider to hold the head's halo.
     float w = aC.w * uDpr * (1.0 - 0.5 * f), W = w * 2.4;
@@ -590,6 +714,8 @@ const starMat = new THREE.ShaderMaterial({
     if (abs(aD.x - 1.0) < 0.5) b *= mix(step(0.45, hash11(aD.y + floor(age * 12.0))), 0.7, uSteady);
     if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
     if (abs(aD.x - 5.0) < 0.5) b *= mix(0.3 + 1.2 * step(0.6, hash11(aD.y + floor(age * 25.0))), 0.7, uSteady);
+    // Stars above the deck shine through it, dimmed by its depth.
+    b *= cloudVeil(ph);
     vCol = col3 * 4.0 * aD.w * b;
     // The tail is spent fuel: cooler and redder than the head.
     vColT = mix(vCol, uEmber * 4.0 * aD.w * b * 0.5, 0.55);
@@ -728,6 +854,7 @@ const smokeMat = new THREE.ShaderMaterial({
     float dil = pow(sB.w / size, 0.7);
     vA = sC.w * smoothstep(0.0, 1.2, age) * dil * (1.0 - smoothstep(life * 0.4, life, age));
     vHaze = 1.0 - k2hazeAmount(c) * 0.7;
+    vA *= cloudVeil(c);
   }`,
   fragmentShader: /* glsl */`
   uniform float uSmokeK;
@@ -1438,14 +1565,16 @@ function updateLights() {
     if (L.flick && age < 3 && !reduced()) I *= 0.5 + 0.5 * hash1(L.seed + Math.floor(age * 14));
     // The flash is white-hot, then takes the burst's colour over 0.15 s.
     const h = Math.min(1, Math.max(0, age / 0.15)), col = [0, 1, 2].map(c => HOT[c] + (L.col[c] - HOT[c]) * h);
-    if (I > 0.002) live.push({ pos: L.pos, col, I });
+    if (I > 0.002) live.push({ pos: L.pos, col, I, eye: L.pos.y > U.uCloud.value.x ? cloudT(L.pos, true) : 1 });
   }
-  if (press?.seed) live.push({ pos: press.seed, col: SEED, I: 0.02 + 0.1 * press.charge });
+  if (press?.seed) live.push({ pos: press.seed, col: SEED, I: 0.02 + 0.1 * press.charge, eye: 1 });
   live.sort((a, b) => b.I - a.I);
   const n = Math.min(LN, live.length);
   for (let i = 0; i < n; i++) {
     const L = live[i];
-    U.uL.value[i].set(L.pos.x, L.pos.y, L.pos.z, L.I);
+    // The deck shields the ground from bursts above it; the cloud sees them whole.
+    U.uL.value[i].set(L.pos.x, L.pos.y, L.pos.z, L.I * cloudT(L.pos, false));
+    CU.uLR.value[i] = L.I;
     U.uLC.value[i].set(L.col[0], L.col[1], L.col[2]);
   }
   U.uLN.value = n;
@@ -1454,7 +1583,7 @@ function updateLights() {
 /* ---------- launch ---------- */
 const saved = k => { try { return localStorage.getItem(`stimming.fireworks.${k}`); } catch { return null; } };
 const save = (k, val) => { try { localStorage.setItem(`stimming.fireworks.${k}`, String(val)); } catch { /* storage is optional */ } };
-const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5, smoke: saved('smoke') === 'thick' ? 'thick' : 'thin' };
+const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5, smoke: saved('smoke') === 'thick' ? 'thick' : 'thin', sky: saved('sky') === 'clear' ? 'clear' : 'cloud' };
 let simT = 0, horizonNdc = -0.28;
 // The slider maps 0 to 1 onto 300 to 1,500 m; far shells are larger.
 const shellDist = () => 300 + 1200 * opts.dist;
@@ -1559,7 +1688,7 @@ function finale() {
 }
 /* ---------- end finale ---------- */
 function orbList() {
-  const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 }));
+  const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 * L.eye }));
   for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.1, color: FIRE, k: 0.006 });
   return list;
 }
@@ -1623,6 +1752,8 @@ function tick(now) {
   try {
     simT += dt;
     U.uTime.value = simT;
+    // The deck drifts on a wind of about 6 m/s.
+    U.uCloudO.value.set(-5.5 * simT, 2.0 * simT);
     if (press) {
       press.charge = Math.min(1, (performance.now() - press.at) / 1500);
       press.seed = burstPoint(press.ndc, 1 + press.charge, press.seed || new THREE.Vector3());
@@ -1738,6 +1869,9 @@ distEl.value = String(opts.dist);
 distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); });
 choices(document.getElementById('smoke'), val => { opts.smoke = val; save('smoke', val); SU.uSmokeK.value = val === 'thick' ? 1.15 : 0.75; }).set(opts.smoke);
 SU.uSmokeK.value = opts.smoke === 'thick' ? 1.15 : 0.75;
+const setSky = v => { opts.sky = v; U.uCloud.value.w = v === 'cloud' ? 1 : 0; cloud.visible = v === 'cloud'; };
+choices(document.getElementById('sky'), v => { setSky(v); save('sky', v); updateLights(); draw(); }).set(opts.sky);
+setSky(opts.sky);
 choices(document.getElementById('water'), v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); });
 
 /* ---------- ready ---------- */
