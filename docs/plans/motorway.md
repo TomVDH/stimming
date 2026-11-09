@@ -65,11 +65,11 @@ Across the border the roads go dark. Only the towns of the neighbours glow, whit
 
 | Slot | Control |
 |---|---|
-| Top left | Choice `Air`: Clear, Haze, Fog (segments) |
+| Top left | Choice `Style`: Sodium, LED, Tactical, Thermal (segments) |
 | Bottom left | Actions: `Switch` (all lamps off, then a strike-up wave), `Rush` (a surge of traffic) |
 | Bottom right | Slider `Zoom`, 0 to 1, starts at 0 |
-| Key strip | `[SCROLL] zoom` · `[CLICK] switch a section` · `[DRAG] look` |
-| Settings | Traffic (slider, persist) · Tilt-shift (slider, persist) · Neighbours (toggle: their towns glow, persist) · Quality (shared) · Reset in the footer |
+| Key strip | `[SCROLL] zoom` (toward the pointer) · `[DRAG] pan the map` |
+| Settings | Air: Clear, Haze, Fog (persist) · Tilt-shift (slider, persist) · Neighbours (toggle, persist) · Quality (shared) · Reset in the footer |
 
 Five visible controls or fewer: Air, Switch, Rush, Zoom.
 
@@ -166,3 +166,15 @@ Five visible controls or fewer: Air, Switch, Rush, Zoom.
 
 - [ ] Settings rows and persistence, frame loop, sleep, ladder, reduced motion.
 - [ ] Browser-pane checks at 1280 and 375 px. Tick the bean. Commit.
+
+## Round 3 (Tom, 2026-11-09)
+
+- **Rush is a day run.** No clock otherwise. Rush starts a day at 04:00 and runs it in 72 s, back to 04:00, then returns to the evening rush. A readout shows the hour, the total jam length (`FILE · BOUCHON · STAU`, km, typically 290 km at 08:00 and 340 km at 17:00) and a bar across the day with the two rush hours shaded. Pressed again, Rush stops.
+- **Day cycle.** In the day run, photocells switch the lamps off at dawn (about 08:06), east to west by about 16 minutes, and strike them at dusk (about 16:54), pink to orange. The land and sea lift to a grey Belgian day; car lamps dim by day.
+- **Styles** (the top-left choice; Air moves to Settings; remembered per viewer):
+  - **Sodium:** the low-pressure sodium look.
+  - **LED:** cool white heads that come on at once, as Belgium's new lamps do.
+  - **Tactical:** a cyan briefing map with a 10 km grid, dashes flowing at the traffic's speed, jams in red, faint scanlines.
+  - **Thermal:** roads as a heat map of traffic and jams, black through purple and orange to white.
+- **Scrub the map.** Drag grabs the ground and pans; scroll and pinch zoom toward the pointer. The pan stays within 40 km of the country.
+- **Slip roads.** 1,433 km of motorway and trunk ramps from OpenStreetMap, so interchanges draw as real cloverleafs. roads.json is now 684 KB raw, 252 KB gzipped.
