@@ -136,7 +136,30 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 /* A toy in a series wears the series badge at the tile's top right. */
 .obj .series { position: absolute; top: 2%; right: 4%; width: 21%; height: auto; pointer-events: auto; transform-origin: 50% 20%; rotate: 8deg; transition: rotate 0.35s cubic-bezier(0.3, 1.6, 0.5, 1), scale 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
 a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scale: 1.15; }
-@media (prefers-reduced-motion: reduce) { .obj .series { transition: none; } }
+/* Constellation: one series tile lights its siblings and dims the rest. */
+.shelf { position: relative; }
+.shelf > li { transition: opacity 0.35s, filter 0.35s; }
+.shelf.lit > li:not(.on):not(.web) { opacity: 0.28; filter: saturate(0.3); }
+.shelf > li[data-series] .obj { isolation: isolate; }
+.shelf > li[data-series] .obj::before {
+  content: ""; position: absolute; z-index: -1; inset: 4%; border-radius: 50%; opacity: 0; transition: opacity 0.35s;
+  background: radial-gradient(closest-side, color-mix(in oklch, var(--series) 42%, transparent), transparent);
+}
+.shelf.lit > li.on .obj::before { opacity: 1; }
+.shelf.lit > li.on .obj .series { rotate: -6deg; scale: 1.15; }
+.shelf > li.web { position: absolute; inset: 0; width: auto; pointer-events: none; z-index: 1; }
+.web svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.web path { fill: none; stroke: var(--series); stroke-width: 1.2; opacity: 0.75; filter: drop-shadow(0 0 4px var(--series)); }
+.web circle { fill: var(--series); }
+.web .tag {
+  position: absolute; translate: -50% 0; white-space: nowrap; display: flex; gap: 8px; align-items: center;
+  padding: 7px 12px 7px 9px; border-radius: 999px; font: 600 14px/1 var(--sans); opacity: 0; transition: opacity 0.25s;
+  background: color-mix(in oklch, var(--series) 18%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--series) 55%, transparent);
+}
+.web .tag img { width: 18px; }
+.web .tag span { color: var(--muted); font-weight: 500; }
+.shelf.lit .web .tag { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .obj .series, .shelf > li, .shelf > li .obj::before, .web .tag { transition: none; } }
 .sketch { fill: none; stroke: var(--sketch); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Planned toys draw as outlines until they ship. */
 .planned .art, .planned .art * { fill: none !important; stroke: var(--sketch) !important; stroke-width: 2px !important; }
@@ -1064,9 +1087,65 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
             const b = Object.assign(document.createElement('img'), { className: 'series', src: s.badge, alt: '', title: s.name });
             obj.append(b);
             obj.closest('.toy').dataset.series = t.series;
+            const li = obj.closest('li');
+            li.dataset.series = t.series;
+            li.style.setProperty('--series', s.color);
           }
+          document.querySelectorAll('.shelf').forEach(shelf => constellation(shelf, series));
         } catch { /* The menu works without badges. */ }
       })();
+      // Hover or focus on a series tile lights its siblings and draws their links.
+      function constellation(shelf, series) {
+        if (!shelf.querySelector(':scope > li[data-series]')) return;
+        const NS = 'http://www.w3.org/2000/svg';
+        const still = matchMedia('(prefers-reduced-motion: reduce)');
+        const web = Object.assign(document.createElement('li'), { className: 'web' });
+        web.setAttribute('aria-hidden', 'true');
+        const svg = document.createElementNS(NS, 'svg');
+        const tag = Object.assign(document.createElement('div'), { className: 'tag' });
+        web.append(svg, tag);
+        shelf.append(web);
+        let current = null;
+        const light = li => {
+          const key = li?.dataset.series || null;
+          if (key === current && key) return;
+          current = key;
+          shelf.classList.toggle('lit', !!key);
+          if (!key) return;
+          const s = series[key];
+          shelf.style.setProperty('--series', s.color);
+          const on = [...shelf.children].filter(x => x.dataset.series === key);
+          [...shelf.children].forEach(x => x.classList.toggle('on', x.dataset.series === key));
+          const bb = shelf.getBoundingClientRect();
+          const mid = x => { const r = x.querySelector('.obj').getBoundingClientRect(); return [r.left - bb.left + r.width / 2, r.top - bb.top + r.height / 2]; };
+          const pts = on.map(mid);
+          svg.setAttribute('viewBox', `0 0 ${bb.width} ${bb.height}`);
+          svg.replaceChildren();
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', 'M' + pts.map(p => p.map(n => n.toFixed(1)).join(' ')).join('L'));
+          svg.append(path);
+          for (const [x, y] of pts) {
+            const c = document.createElementNS(NS, 'circle');
+            c.setAttribute('cx', x.toFixed(1)); c.setAttribute('cy', y.toFixed(1)); c.setAttribute('r', 3);
+            svg.append(c);
+          }
+          if (!still.matches) {
+            const L = path.getTotalLength();
+            path.animate([{ strokeDasharray: L, strokeDashoffset: L }, { strokeDasharray: L, strokeDashoffset: 0 }], { duration: 600, easing: 'ease-out', fill: 'forwards' });
+          }
+          const count = Object.assign(document.createElement('span'), { textContent: `${on.length} toys` });
+          tag.replaceChildren(Object.assign(document.createElement('img'), { src: s.badge, alt: '' }), s.name, count);
+          const [x, y] = mid(li);
+          const top = li.querySelector('.obj').getBoundingClientRect().top - bb.top;
+          tag.style.left = `${x.toFixed(1)}px`;
+          tag.style.top = `${(top - 26).toFixed(1)}px`;
+        };
+        const tileOf = e => e.target.closest('.shelf > li');
+        shelf.addEventListener('pointerover', e => { if (e.pointerType !== 'touch') light(tileOf(e)); });
+        shelf.addEventListener('pointerleave', () => light(null));
+        shelf.addEventListener('focusin', e => light(tileOf(e)));
+        shelf.addEventListener('focusout', e => { if (!shelf.contains(e.relatedTarget)) light(null); });
+      }
     </script>
     <script>
       // The main shelf deals its toys in a fresh order on every load.
