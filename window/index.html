@@ -380,6 +380,24 @@ function glow(src) {
   renderer.setRenderTarget(finalRT); renderer.render(PA.scene, quadCam);
   return finalRT;
 }
+// The bezel's light: the whole outside, softened, at a quarter size.
+// It shares the glow targets' size; the strobe and the bolts reach it the same frame.
+const envRT = [null, null];
+function envLight(src) {
+  const w = glowRT[0].width, h = glowRT[0].height;
+  if (!envRT[0] || envRT[0].width !== w || envRT[0].height !== h) { envRT.forEach(r => r && r.dispose()); envRT[0] = rt(w, h); envRT[1] = rt(w, h); }
+  const [a, b] = envRT, tx = [1 / w, 1 / h];
+  UG.tex(PB.u.uSrc, src.texture); UG.uniform2f(PB.u.uTexel, ...tx); UG.uniform1f(PB.u.uThr, 0);
+  renderer.setRenderTarget(a); renderer.render(PB.scene, quadCam);
+  UG.uniform2f(PBl.u.uTexel, ...tx);
+  for (let i = 0; i < 2; i++) {
+    UG.tex(PBl.u.uSrc, a.texture); UG.uniform2f(PBl.u.uDir, 1, 0);
+    renderer.setRenderTarget(b); renderer.render(PBl.scene, quadCam);
+    UG.tex(PBl.u.uSrc, b.texture); UG.uniform2f(PBl.u.uDir, 0, 1);
+    renderer.setRenderTarget(a); renderer.render(PBl.scene, quadCam);
+  }
+  return a;
+}
 // The recess march takes more steps on High.
 const marchSteps = () => (quality() === 'high' ? 28 : 14);
 
@@ -620,11 +638,10 @@ function step(dt) {
   stepWeather(dt);
   stepEvents(dt);
 }
-// The strobe double-flashes every 1.6 seconds.
-function strobe() {
-  const p = t % 1.6;
-  return Math.exp(-p / 0.03) + Math.exp(-Math.max(0, p - 0.12) / 0.03) * (p > 0.12 ? 1 : 0);
-}
+// An anticollision strobe: two hard 50 ms pulses, 120 ms apart, no afterglow.
+const pulse = p => (p < 0.05 || (p >= 0.12 && p < 0.17) ? 1.25 : 0);
+// The wingtip strobe double-flashes every 1.6 seconds.
+function strobe() { return pulse(t % 1.6); }
 // The aurora shows at midnight only, when Settings allow it.
 const auroraOn = () => (opts.hour === 'night' && opts.aurora === 'on' ? 1 : 0);
 /* ---------- events ---------- */
@@ -1046,7 +1063,7 @@ function airportUniforms(u) {
     const lamp = q.land * (0.15 + 2.5 * Math.max(f, 0) ** 4);
     const ph = t + a.seed * 7 + k * 0.37;
     const beacon = !reduce && (ph % 1) < 0.08 ? 1.4 : 0;
-    const sp = (ph * 0.83) % 1.2, strobe = reduce ? 0 : Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    const sp = (ph * 0.83) % 1.2, strobe = reduce ? 0 : pulse(sp);
     const kd = 300 / Math.max(dist, 8) ** 2;
     appA.set([...p, 1], i * 4);
     appC.set([(lamp + strobe * 1.5 + beacon) * kd, (lamp * 0.95 + strobe * 1.5 + beacon * 0.1) * kd, (lamp * 0.85 + strobe * 1.6 + beacon * 0.05) * kd, 0], i * 4);
@@ -1163,12 +1180,13 @@ function render() {
   renderer.setRenderTarget(next);
   renderer.render(PR.scene, quadCam);
   histFresh = false; frameN++;
-  const lit = glow(next);
+  const lit = glow(next), env = envLight(lit);
 
   // Pass 2: the cabin, the frame and the glass, to the screen.
   u = P2.u;
   shared(u);
   UG.tex(u.uOut, lit.texture);
+  UG.tex(u.uEnv, env.texture); UG.uniform1f(u.uEnvOn, 1);
   UG.uniform1f(u.uDpr, dpr);
   UG.uniform1f(u.uDimE, dim.edge); UG.uniform1f(u.uDimC, dim.core);
   UG.uniform1f(u.uFlash, flash);
