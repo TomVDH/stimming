@@ -25,7 +25,7 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 - [x] rain
 
 ## Batch 3
-- [ ] bubbles
+- [x] bubbles
 - [ ] kaleido
 - [ ] ferro
 - [ ] neon

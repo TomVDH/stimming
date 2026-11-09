@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Bubble wand: deep blue air under the shared header. */
+/* Bubble wand: deep blue air in the Bar v2 shell. */
 :root { --stage: oklch(0.2 0.04 268); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -24,32 +24,18 @@
 @media (pointer: fine) { .stage canvas { cursor: none; } }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 /* Blow is held, so a long press must not select or open a menu. */
-#blow { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-#blow.is-held { color: var(--fg); border-color: var(--fg); }
+.s2-chip[data-hold] { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 </style>
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/bubbles.svg)"></span><span class="intro-name">Bubble wand</span><span class="intro-sub">Stimming No. 25</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/bubbles.svg)"></span><span class="intro-name">Bubble wand</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--bubbles" id="air" tabindex="0" role="application" aria-label="Bubble wand. Move the pointer through the air to blow bubbles; touch a bubble to pop it. Space blows a stream, P pops them all.">
       <p class="fail" hidden>Bubble wand needs WebGL, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="actions">
-        <button class="chip" id="blow" type="button" aria-keyshortcuts="Space" title="Hold to blow a stream">Blow</button>
-        <button class="chip" id="clear" type="button" aria-keyshortcuts="P" title="Pop them all">Clear</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Sweep slowly</dt><dd>one big bubble</dd></div>
-        <div><dt>Sweep fast</dt><dd>a spray</dd></div>
-        <div><dt>Poke a bubble</dt><dd>pop it</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd> <kbd>P</kbd></dt><dd>blow, clear</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Bubble wand</h1><div class="vignette" hidden></div></section>
@@ -62,15 +48,23 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'bubbles' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+const coarse = matchMedia('(pointer: coarse)').matches;
+// Space blows while held; the page binds it below, so the shell does not.
+const ui = initPage({ id: 'bubbles', bar: {
+  actions: [
+    { verb: 'blow', onPress: () => tapBlow() },
+    { verb: 'clear', key: 'P', onPress: () => popAll() },
+  ],
+  quality: true,
+  keys: coarse
+    ? [['drag slow', 'one big bubble'], ['drag fast', 'a spray'], ['tap', 'pop']]
+    : [['move slow', 'one big bubble'], ['move fast', 'a spray'], ['click', 'pop']],
+} });
 const panel = document.getElementById('air');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
-const coarse = matchMedia('(pointer: coarse)').matches;
 const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -981,8 +975,10 @@ function sizeAir(w, h) {
   const homeX = wand.x === rest.x && wand.y === rest.y;
   W = w; H = h; S = Math.min(w, h) / 640;
   R0 = clamp(Math.min(w, h) * 0.068, coarse ? 28 : 22, 46);
-  rest.x = w * (w > h ? 0.2 : 0.27);
-  rest.y = h * (w > h ? 0.3 : 0.24);
+  // A short stage moves it left, clear of the key strip.
+  rest.x = w * (w <= h ? 0.27 : h < 480 ? 0.15 : 0.2);
+  // The handle tip hangs 2.2 rings low; it clears the bottom controls.
+  rest.y = Math.max(h * (w > h ? 0.3 : 0.24), 2.2 * R0 + 66);
   if (wand.auto && homeX) { wand.x = rest.x; wand.y = rest.y; }
   if (!form.pinching) resetForm();
 }
@@ -1159,30 +1155,43 @@ function blowStart() {
   wake();
 }
 function blowEnd() { puff.held = false; }
+// Space blows while held. A focused control keeps its own Space.
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable], button, a')) return;
-  if (e.key === ' ') {
-    e.preventDefault();
-    if (!e.repeat) blowStart();
-  } else if ((e.key === 'p' || e.key === 'P') && !e.repeat) popAll();
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || e.key !== ' ') return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], button, a, .s2-sheet')) return;
+  e.preventDefault();
+  if (!e.repeat) blowStart();
 });
 addEventListener('keyup', e => { if (e.key === ' ') blowEnd(); });
 addEventListener('blur', blowEnd);
 // Holding the Blow chip breathes a stream, as Space does.
-const blowB = document.getElementById('blow'), clearB = document.getElementById('clear');
+const blowB = [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => b.textContent.trim() === 'Blow');
+let heldAt = -1e9;
+// The chip shows Space as its key on fine pointers.
+blowB.insertAdjacentHTML('beforeend', '<kbd class="s2-kbd">Space</kbd>');
+blowB.setAttribute('aria-keyshortcuts', 'Space');
+blowB.title = 'Hold to blow a stream';
+blowB.dataset.hold = '';
 blowB.addEventListener('pointerdown', e => {
-  if (e.button > 0) return;
+  if (e.button > 0 || ui.action('blow').disabled) return;
   try { blowB.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  blowB.classList.add('is-held');
+  blowB.setAttribute('aria-pressed', 'true');
   blowStart();
 });
-const blowUp = () => { blowB.classList.remove('is-held'); blowEnd(); };
+const blowUp = () => {
+  if (!blowB.hasAttribute('aria-pressed')) return;
+  blowB.removeAttribute('aria-pressed');
+  heldAt = performance.now();
+  blowEnd();
+};
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => blowB.addEventListener(t, blowUp));
 blowB.addEventListener('contextmenu', e => e.preventDefault());
-// A keyboard press on the chip gives one short puff.
-blowB.addEventListener('click', e => { if (!e.detail) { blowStart(); blowEnd(); } });
-clearB.addEventListener('click', popAll);
+// A click after a hold does nothing; a keyboard press gives one short puff.
+function tapBlow() {
+  if (performance.now() - heldAt < 600) return;
+  blowStart();
+  blowEnd();
+}
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1193,7 +1202,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) wake
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
-  blowB.disabled = clearB.disabled = true;
+  ui.hideControls();
 }
 // Premultiplied, unsorted, depth-free: the films add light.
 function filmMaterial(vs, fs, uniforms, extra = {}) {
