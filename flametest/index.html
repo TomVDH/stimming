@@ -536,22 +536,25 @@ function draw(dst) {
   gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
-// Five bloom levels, from half size down.
+// Five bloom levels, from half size down; ladder rung 2 starts at quarter size.
+// The ladder's rung: slow frames raise it, a new quality choice clears it.
+let rung = 0, allocKey = '';
 function alloc() {
-  const W = canvas.width, H = canvas.height;
-  if (scene && scene.w === W && scene.h === H) return;
+  const W = canvas.width, H = canvas.height, sh = rung >= 2 ? 2 : 1, key = `${W}x${H}/${sh}`;
+  if (key === allocKey) return;
+  allocKey = key;
   free(scene);
   mips.forEach(free);
   scene = target(W, H);
   mips = [];
-  for (let i = 0, w = W >> 1, h = H >> 1; i < 5; i++, w >>= 1, h >>= 1) mips.push(target(Math.max(1, w), Math.max(1, h)));
+  for (let i = 0, w = W >> sh, h = H >> sh; i < 5; i++, w >>= 1, h >>= 1) mips.push(target(Math.max(1, w), Math.max(1, h)));
 }
 
 /* ---------- layout ---------- */
 // Device pixels, from the bottom left as GL counts.
 const G = { base: [0, 0, 1], wedge: [0, 0, 1], plate: [0, 0, 1, 1], inP: [0, 0], outP: [0, 0], S: 1, dpr: 1 };
 function layout() {
-  const { W, H, dpr } = fitCanvas(canvas, { maxDpr: 2 });
+  const { W, H, dpr } = fitCanvas(canvas, { maxDpr: 2, low: rung >= 1 });
   G.dpr = dpr;
   G.S = Math.min(W, H);
   if (W >= H * 0.95) {
@@ -855,6 +858,23 @@ function soundFrame() {
   }
 }
 
+/* ---------- performance ladder ---------- */
+// After 4 s of lively run time, 2 s of slow frames steps down one rung.
+// Rungs: pixel ratio, then bloom size, then grains per pinch.
+let runT = 0, slowT = 0, ftAvg = 1 / 60;
+function watchdog(raw, lively) {
+  if (!lively || raw > 0.25) return;
+  runT += raw;
+  ftAvg += (raw - ftAvg) * 0.1;
+  if (runT < 4 || rung >= 3) return;
+  slowT = ftAvg > 1 / 38 ? slowT + raw : 0;
+  if (slowT < 2) return;
+  rung++;
+  slowT = 0;
+  ftAvg = 1 / 60;
+  layout();
+}
+
 /* ---------- frame loop ---------- */
 // Lively at full rate, drifting at 30 fps, asleep 60 s after the last input.
 let raf = 0, last = 0, lastDraw = 0, visible = true, rested = false, lastInput = performance.now();
@@ -865,7 +885,8 @@ function wake() {
 }
 function frame(now) {
   raf = 0;
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
+  watchdog(raw, settling());
   last = now;
   const idle = now - lastInput;
   const lively = settling();
@@ -977,7 +998,7 @@ function drawGrains(W, H) {
 /* ---------- actions ---------- */
 // A pinch is about 14 grains; tapping the flame itself lands them at once.
 function flick(i = salt, at = spatula(), pinch = 0.9) {
-  launch(i, at[0], at[1], reduced() ? 8 : 14, pinch);
+  launch(i, at[0], at[1], reduced() || rung >= 3 ? 8 : 14, pinch);
   sfx.tick(at[0]);
   live();
 }
@@ -1132,7 +1153,7 @@ stage.addEventListener('keyup', e => {
 });
 
 new ResizeObserver(() => { layout(); if (P) render(); }).observe(stage);
-onQuality(() => { layout(); if (P) render(); });
+onQuality(() => { rung = 0; slowT = 0; layout(); if (P) render(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
