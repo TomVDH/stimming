@@ -952,22 +952,6 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   float tip = dot(d, normalize(uTip));
   vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + vec3(0.6, 0.02, 0.02) * 0.004) * exp(-(1.0 - tip) * 60.0);
   c = mix(c, fc, fa);
-  // Flashes light the murk round them: a soft ball, seen only through haze, scud and fog.
-  float murk = clamp(hz * 1.3 + scud + fa, 0.0, 1.0);
-  if (murk > 0.01) {
-    float ball = 0.0;
-    for (int i = 0; i < ${MAXFL}; i++) {
-      vec4 f = uFl[i];
-      if (f.z <= 0.0) continue;
-      vec2 rel = f.xy - uCam;
-      float dist = max(length(rel), 1.0);
-      vec3 fp = normalize(vec3(rel.x, 4.0 - H - dist * dist / 12742.0, rel.y));
-      float ang = acos(clamp(dot(d, fp), -1.0, 1.0)), rad = f.w * 1.8 / dist;
-      // The glow needs air between here and the flash: near surfaces cut it.
-      ball += f.z * exp(-ang * ang / (rad * rad)) * smoothstep(0.25, 0.8, t / dist);
-    }
-    c += vec3(0.62, 0.66, 0.9) * ball * murk * 0.5;
-  }
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
 }
@@ -1255,7 +1239,9 @@ vec4 stem(vec3 d, vec2 dh, float t0, float t1, vec4 a, vec4 b, vec4 f, float jit
     vec3 S = uSunL * 0.08 * sunK * Tl * phase;
     S += uAmb * 0.026 * (0.3 + 0.7 * h01) * (0.4 + 0.6 * Tl);
     S += vec3(1.0, 0.5, 0.2) * b.w * 0.05 * exp(-(p.y - 2.0) / 9.0);
-    S += vec3(1.0, 0.55, 0.25) * f.w * 1.6 * exp(-length(p - pf) / 6.0);
+    // The flash lights the cloud from within: blue-white, soft, reaching about 9 km.
+    float fd = length(p - pf);
+    S += vec3(0.72, 0.76, 1.0) * f.w * (4.5 * exp(-fd / 3.0) + 1.2 * exp(-fd / 9.0));
     float al = 1.0 - exp(-2.6 * dn * uTowStep);
     col += Tc * S * al;
     Tc *= 1.0 - al;
