@@ -245,8 +245,11 @@ vec3 studio(vec3 o, vec3 d) {
   float kz = dot(d, kd);
   if (kz > 0.0) {
     vec2 a = vec2(dot(d, ku), dot(d, kv)) / kz;
-    c += vec3(1.0, 0.95, 0.88) * smoothstep(0.025, 0.0, max(abs(a.x) - 0.06, abs(a.y) - 0.42)) * 4.0;
-    c += vec3(1.0, 0.95, 0.88) * smoothstep(0.02, 0.0, max(abs(a.x - 0.16) - 0.015, abs(a.y) - 0.38)) * 2.5;
+    // A soft box: hot in the middle, soft at the sides, fading at the ends.
+    float bx = abs(a.x) / 0.075, by = abs(a.y) / 0.44;
+    c += vec3(1.0, 0.95, 0.88) * smoothstep(1.0, 0.45, bx) * smoothstep(1.0, 0.55, by) * (0.7 + 0.3 * (1.0 - bx * bx)) * 4.2;
+    float sx = abs(a.x - 0.16) / 0.02, sy = abs(a.y) / 0.38;
+    c += vec3(1.0, 0.95, 0.88) * smoothstep(1.0, 0.3, sx) * smoothstep(1.0, 0.4, sy) * 2.2;
   }
   vec3 sd = normalize(vec3(0.92, 0.12, 0.25)), su = normalize(cross(sd, vec3(0.0, 1.0, 0.0))), sv = cross(su, sd);
   float sz = dot(d, sd);
@@ -688,13 +691,13 @@ void main() {
   float disp = 0.05 + 0.1 * solid;
   vec3 through = vec3(texture2D(uScene, uv - off * (1.0 - disp)).r, texture2D(uScene, uv - off).g, texture2D(uScene, uv - off * (1.0 + disp)).b);
   // Seen edge-on the wall bends light away: a narrow dark band inside the silhouette.
-  through *= 1.0 - 0.32 * smoothstep(0.6, 0.92, edge) * (1.0 - smoothstep(0.95, 1.0, edge));
+  through *= 1.0 - 0.22 * smoothstep(0.7, 0.92, edge) * (1.0 - smoothstep(0.95, 1.0, edge));
   // Thick or grazing glass shows its faint green.
-  through *= mix(vec3(1.0), vec3(0.84, 0.93, 0.89), max(solid * 0.8, pow(edge, 3.0) * 0.6));
+  through *= mix(vec3(1.0), vec3(0.86, 0.94, 0.9), max(solid * 0.7, pow(edge, 4.0) * 0.4));
   // Solid glass is darker at its edges, where light leaves it at a slant.
   through *= 1.0 - 0.25 * solid * smoothstep(0.3, 0.9, edge);
   // Light trapped in solid glass glows at its edges.
-  through += uLamp * solid * (0.025 + 0.11 * pow(edge, 2.0));
+  through += uLamp * solid * (0.018 + 0.05 * pow(edge, 2.0));
   // The thick base pipes light down from the beer above it.
   float piped = solid * step(uGYb + 0.3, uLevel) * smoothstep(uGYb - 2.0, uGYb, vW.y);
   through += uLamp * exp(-uSigma * 2.5) * 0.35 * piped * (0.6 + 0.4 * c);
@@ -713,6 +716,9 @@ void main() {
   vec3 col = through * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
   // The silhouette catches the backlight as a fine bright line.
   col += uLamp * pow(edge, 7.0) * 0.32;
+  // The inner wall shows as a second faint line inside the silhouette.
+  float inner = smoothstep(0.8, 0.85, edge) * (1.0 - smoothstep(0.87, 0.91, edge)) * (1.0 - solid);
+  col += (through * 0.5 + uLamp * 0.04) * inner;
   // The lip is a rounded bead: a crisp highlight on top, a darker band just under it.
   float lipTop = smoothstep(uGH - 0.12, uGH - 0.02, vL.y);
   float lipBand = smoothstep(uGH - 0.32, uGH - 0.2, vL.y) * (1.0 - smoothstep(uGH - 0.16, uGH - 0.1, vL.y));
@@ -722,7 +728,7 @@ void main() {
   col += uKey * 0.25 * solid * pow(max(dot(reflect(-v, n), normalize(KEY_DIR)), 0.0), 30.0);
   // The foot's rounded rim catches the lamp as a soft line.
   float rimFoot = solid * smoothstep(0.35, 0.05, abs(vL.y - 0.45)) * smoothstep(0.2, 0.7, edge);
-  col += (uLamp * 0.35 + uKey * 0.12) * rimFoot;
+  col += (uLamp * 0.14 + uKey * 0.06) * rimFoot;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
