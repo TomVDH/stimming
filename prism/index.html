@@ -131,6 +131,7 @@ const KINDS = [
   { value: 'convex', label: 'Convex mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg>' },
   { value: 'concave', label: 'Concave mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg>' },
   { value: 'sensor', label: 'Sensor pad', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg>' },
+  { value: 'gram', label: 'Spectrogram', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="11.4" width="13" height="2.6" rx="0.5"/><rect x="1.5" y="2" width="13" height="6.5" rx="0.5"/><path d="M4.5 3.4v3.7M7.2 3.4v3.7M8.4 3.4v3.7M12 3.4v3.7"/></svg>' },
 ];
 // The lamp shines white light or one laser line.
 // Each value is one wavelength bin; -1 is the full spectrum.
@@ -324,8 +325,11 @@ const SPEC = {
   convex: { a: 0.12, rc: 0.34, th: 0.024 },
   concave: { a: 0.12, rc: 0.34, th: 0.024 },
   sensor: { len: 0.2, th: 0.028 },
+  gram: { len: 0.24, th: 0.028 },
 };
-const NAMES = { prism: 'prism', lens: 'convex lens', dlens: 'concave lens', mirror: 'flat mirror', convex: 'convex mirror', concave: 'concave mirror', sensor: 'sensor pad' };
+const NAMES = { prism: 'prism', lens: 'convex lens', dlens: 'concave lens', mirror: 'flat mirror', convex: 'convex mirror', concave: 'concave mirror', sensor: 'sensor pad', gram: 'spectrogram' };
+// Pads catch light on their front face: the sensor pad and the spectrogram.
+const isPad = p => p.kind === 'sensor' || p.kind === 'gram';
 const BASE_SIDE = 0.3, MAXADD = 10, BEAM = 0.028;
 const curved = p => p.kind === 'convex' || p.kind === 'concave';
 const make = (kind, extra = {}) => ({
@@ -599,7 +603,7 @@ function trace() {
     seg(ox, oy, hx, hy, k, I, ins, fam, sig, hI * 8 + hS);
     if (nSeg >= MAXS || d >= MAXD) continue;
     if (p.kind === 'source') { glint(hx, hy, k, I * 0.5, hI); continue; }
-    if (p.kind === 'sensor') {
+    if (isPad(p)) {
       // The front face records where light lands.
       // The other faces absorb light.
       if (hS === 0 && nSH < MAXH) {
@@ -659,7 +663,7 @@ function expose() {
   GAP.fill(0, 0, nSH);
   for (let h = 0; h < nSH; h++) {
     const o = h * SHK;
-    if (SH[o + 2] < 0) continue;
+    if (SH[o + 2] < 0 || pieces[SH[o]].kind !== 'sensor') continue;
     const key = `${SH[o]}:${SH[o + 5]}:${SH[o + 6]}`;
     let g = grp.get(key);
     if (!g) grp.set(key, (g = new Int32Array(NK).fill(-1)));
@@ -678,6 +682,7 @@ function expose() {
   // Slant widens the Gaussian and keeps its energy.
   for (let h = 0; h < nSH; h++) {
     const o = h * SHK, p = pieces[SH[o]], k = SH[o + 2], acc = p.acc, s0 = p.g.s0;
+    if (p.kind !== 'sensor') continue;
     const sd = Math.hypot(s0 / Math.max(0.12, SH[o + 4]), GAP[h] * 0.6), amp = (SH[o + 3] * s0) / sd;
     const w = k < 0 ? WLIN : LINC[k], c = (SH[o + 1] + SPAN) / BINW - 0.5, rad = (3 * sd) / BINW, inv = BINW / sd;
     const lo = Math.max(0, Math.ceil(c - rad)), hi = Math.min(NBIN - 1, Math.floor(c + rad));
@@ -743,7 +748,7 @@ const LDX = -0.6, LDY = -0.8;
 // Stencil tones: flat fills, two values per part.
 const TONE = {
   concave: css(0.44, 0.1, 330), convex: css(0.46, 0.08, 200), face: css(0.92, 0.012, 235),
-  pad: css(0.3, 0.012, 266), padFace: css(0.15, 0.01, 270), sens: css(0.87, 0.18, 128),
+  pad: css(0.3, 0.012, 266), padFace: css(0.15, 0.01, 270), sens: css(0.87, 0.18, 128), gram: css(0.8, 0.15, 305),
   pipBg: css(0.09, 0.006, 270), pipCard: css(0.17, 0.01, 268), pipLine: css(0.25, 0.012, 268),
 };
 
@@ -1315,7 +1320,7 @@ function padBody(p) {
   c.fill(slab, 'evenodd');
   c.fillStyle = TONE.padFace;
   c.fillRect(-L + cap, -hh, 2 * (L - cap), hh * 0.9);
-  c.fillStyle = TONE.sens;
+  c.fillStyle = p.kind === 'gram' ? TONE.gram : TONE.sens;
   c.fillRect(-L, -hh, cap, 2 * hh);
   c.fillRect(L - cap, -hh, cap, 2 * hh);
   c.setTransform(pr, 0, 0, pr, 0, 0);
@@ -1342,7 +1347,7 @@ function wireBody(p) {
   c.globalAlpha = 1;
   c.lineWidth = 1.25;
   c.lineJoin = 'miter';
-  c.strokeStyle = p.kind === 'sensor' ? TONE.sens : WIRE;
+  c.strokeStyle = p.kind === 'sensor' ? TONE.sens : p.kind === 'gram' ? TONE.gram : WIRE;
   outline(c, p);
   c.stroke();
   // Lenses and curved mirrors show their axis as a dashed line.
@@ -1375,7 +1380,7 @@ function drawBody(p, i) {
   if (wire) return wireBody(p);
   if (p.kind === 'prism' || p.kind === 'lens' || p.kind === 'dlens') glassBody(p, i);
   else if (p.kind === 'mirror') mirrorBody(p);
-  else if (p.kind === 'sensor') padBody(p);
+  else if (isPad(p)) padBody(p);
   else arcBody(p);
 }
 // Two bright faces and a travelling glint make the chrome read.
@@ -1395,7 +1400,8 @@ function chrome(p, half, path) {
 }
 function rims(p) {
   const c = ctx, g = p.g;
-  if (wire && p.kind !== 'sensor') return;
+  if (wire && !isPad(p)) return;
+  if (p.kind === 'gram') return;
   c.globalCompositeOperation = 'lighter';
   c.globalAlpha = 1;
   c.lineCap = 'round';
@@ -1596,7 +1602,7 @@ function pipBand(p) {
 }
 function drawPip(p) {
   if (!p.pc) return;
-  const c = over, g = p.g, [x, y, rp] = pipAt(p);
+  const c = over, g = p.g, [x, y, rp] = pipAt(p), ink = p.kind === 'gram' ? TONE.gram : TONE.sens;
   if (rp < 4) return;
   c.setTransform(pr, 0, 0, pr, 0, 0);
   c.globalCompositeOperation = 'source-over';
@@ -1604,7 +1610,7 @@ function drawPip(p) {
   // A thin lime lead joins the pad to its picture.
   const dx = x - p.x, dy = y - p.y, d = Math.hypot(dx, dy);
   if (d > rp + g.th) {
-    c.strokeStyle = TONE.sens;
+    c.strokeStyle = ink;
     c.globalAlpha = 0.45;
     c.lineWidth = 1.25;
     c.lineCap = 'butt';
@@ -1630,24 +1636,30 @@ function drawPip(p) {
   c.strokeStyle = TONE.pipLine;
   c.lineWidth = 1;
   c.beginPath();
-  const gap = rp * 0.1;
-  c.moveTo(cx, y); c.lineTo(x - gap, y); c.moveTo(x + gap, y); c.lineTo(cx + 2 * k, y);
-  c.moveTo(x, cy); c.lineTo(x, y - gap); c.moveTo(x, y + gap); c.lineTo(x, cy + 1.44 * k);
-  for (let j = -4; j <= 4; j++) { if (!j) continue; const tx = x + (j / 5) * k; c.moveTo(tx, y - 3); c.lineTo(tx, y + 3); }
+  // The spectrogram draws its own scale instead of the reticle.
+  const gap = p.kind === 'gram' ? Infinity : rp * 0.1;
+  if (gap < Infinity) {
+    c.moveTo(cx, y); c.lineTo(x - gap, y); c.moveTo(x + gap, y); c.lineTo(cx + 2 * k, y);
+    c.moveTo(x, cy); c.lineTo(x, y - gap); c.moveTo(x, y + gap); c.lineTo(x, cy + 1.44 * k);
+    for (let j = -4; j <= 4; j++) { if (!j) continue; const tx = x + (j / 5) * k; c.moveTo(tx, y - 3); c.lineTo(tx, y + 3); }
+  }
   c.stroke();
-  // Exposure adds light.
-  // A wider copy is the scatter off the card.
   c.globalCompositeOperation = 'lighter';
-  c.imageSmoothingEnabled = true;
-  c.imageSmoothingQuality = 'high';
-  c.drawImage(p.pc, x - rp, y - rp, rp * 2, rp * 2);
-  c.globalAlpha = 0.22;
-  c.drawImage(p.pc, x - rp * 1.25, y - rp * 1.25, rp * 2.5, rp * 2.5);
+  if (p.kind === 'gram') gramLines(p, cx, cy, 2 * k, 1.44 * k);
+  else {
+    // Exposure adds light.
+    // A wider copy is the scatter off the card.
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    c.drawImage(p.pc, x - rp, y - rp, rp * 2, rp * 2);
+    c.globalAlpha = 0.22;
+    c.drawImage(p.pc, x - rp * 1.25, y - rp * 1.25, rp * 2.5, rp * 2.5);
+  }
   c.restore();
-  // The frame is a lime band with four cuts.
+  // The frame is a band with four cuts, in the pad's ink.
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
-  c.strokeStyle = TONE.sens;
+  c.strokeStyle = ink;
   c.lineWidth = 4;
   const cut = 6 / rp;
   for (let j = 0; j < 4; j++) {
@@ -1661,14 +1673,47 @@ function drawPip(p) {
   c.font = `600 ${p.big ? 12 : 10}px "Iosevka Term Slab", ui-monospace, monospace`;
   c.textAlign = 'center';
   c.textBaseline = 'middle';
-  c.fillStyle = TONE.sens;
+  c.fillStyle = ink;
   c.fillText(band, x, y + rp * 0.82);
+}
+// The spectrogram: one sharp line per wavelength that lands, violet left.
+// Ticks mark 450, 500, 550, 600 and 650 nm.
+function gramLines(p, x0, y0, w, h) {
+  const c = over, i = pieces.indexOf(p), bin = new Float32Array(NK);
+  for (let n = 0; n < nSH; n++) {
+    const o = n * SHK;
+    if (SH[o] !== i) continue;
+    if (SH[o + 2] < 0) for (let k = 0; k < NK; k++) bin[k] += SH[o + 3]; else bin[SH[o + 2]] += SH[o + 3];
+  }
+  const px = l => x0 + w * 0.06 + (w * 0.88 * (l - LAM[0])) / (LAM[NK - 1] - LAM[0]);
+  const top = y0 + h * 0.14, bot = y0 + h * 0.72, lw = Math.max(1.2, (w * 0.88) / NK * 0.42);
+  c.lineCap = 'butt';
+  for (let k = 0; k < NK; k++) {
+    const v = 1 - Math.exp(-bin[k] * 5);
+    if (v < 0.01) continue;
+    const [r, gg, b] = COL[k], xk = px(LAM[k]);
+    c.globalAlpha = v;
+    c.strokeStyle = `rgb(${r},${gg},${b})`;
+    c.lineWidth = lw;
+    c.beginPath(); c.moveTo(xk, top); c.lineTo(xk, bot); c.stroke();
+    c.globalAlpha = v * 0.35;
+    c.lineWidth = lw * 3.2;
+    c.beginPath(); c.moveTo(xk, top); c.lineTo(xk, bot); c.stroke();
+  }
+  c.globalAlpha = 1;
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = TONE.pipLine;
+  c.lineWidth = 1;
+  c.beginPath();
+  for (const l of [0.45, 0.5, 0.55, 0.6, 0.65]) { const xk = px(l); c.moveTo(xk, bot + 2); c.lineTo(xk, bot + 6); }
+  c.moveTo(px(LAM[0]), bot + 2); c.lineTo(px(LAM[NK - 1]), bot + 2);
+  c.stroke();
 }
 // The picture under the pointer, if any.
 function pipHit(x, y) {
   for (let i = pieces.length - 1; i > 0; i--) {
     const q = pieces[i];
-    if (q.kind !== 'sensor' || !q.pc || q.dying) continue;
+    if (!isPad(q) || !q.pc || q.dying) continue;
     const [px, py, rp] = pipAt(q);
     if (Math.hypot(x - px, y - py) < rp + 4) return q;
   }
@@ -1758,7 +1803,7 @@ function edgeLight() {
 // Each shown picture gets one glass ring.
 const pipsEl = panel.querySelector('.pips'), glass = [];
 function placeGlass() {
-  const shown = pieces.filter(q => q.kind === 'sensor' && q.pc);
+  const shown = pieces.filter(q => isPad(q) && q.pc);
   while (glass.length < shown.length) glass.push(pipsEl.appendChild(document.createElement('i')));
   glass.forEach((el, k) => {
     const q = shown[k];
@@ -1794,7 +1839,7 @@ function render() {
     pieces.forEach(build);
     trace();
     expose();
-    for (const p of pieces) if (p.kind === 'sensor') develop(p);
+    for (const p of pieces) if (p.kind === 'sensor') develop(p); else if (p.kind === 'gram') p.pc ||= true;
     pack();
     bleed();
     geomDirty = false;
@@ -1816,7 +1861,7 @@ function render() {
   over.setTransform(1, 0, 0, 1, 0, 0);
   over.clearRect(0, 0, cw, ch);
   drawSource(pieces[0]);
-  for (let i = 1; i < n; i++) if (pieces[i].kind === 'sensor') drawPip(pieces[i]);
+  for (let i = 1; i < n; i++) if (isPad(pieces[i])) drawPip(pieces[i]);
   placeGlass();
   if (sel >= 0 && ringA > 0) ring(pieces[sel]);
   placeDrop();
@@ -1979,7 +2024,7 @@ function spot(kind) {
   }
   cands.sort((a, b) => b[0] - a[0]);
   // Sensors sit far down the light, so later pieces fit in front.
-  const ts = kind === 'sensor' ? [0.72, 0.62, 0.82, 0.5] : [0.45, 0.35, 0.58, 0.28, 0.7];
+  const ts = kind === 'sensor' || kind === 'gram' ? [0.72, 0.62, 0.82, 0.5] : [0.45, 0.35, 0.58, 0.28, 0.7];
   // A spot shades a piece when that piece sits further along the same light.
   // A growing piece counts at its full size, since the trace still sees it small.
   const shades = (x, y, ux, uy, len) => pieces.some(q => {
@@ -2029,7 +2074,7 @@ function spot(kind) {
 function aim(kind, th, x, y, cx, cy) {
   const tx = cx - x, ty = cy - y, toward = a => Math.cos(a) * tx + Math.sin(a) * ty;
   const pickA = (a, b, outA, outB) => (toward(outA) >= toward(outB) ? a : b);
-  if (kind === 'sensor') return th - Math.PI / 2;
+  if (kind === 'sensor' || kind === 'gram') return th - Math.PI / 2;
   if (kind === 'lens' || kind === 'dlens') return th;
   if (kind === 'mirror') return pickA(th + Math.PI / 4, th - Math.PI / 4, th + Math.PI / 2, th - Math.PI / 2);
   if (kind === 'prism') return pickA(th + 0.4, th + Math.PI - 0.4, th + 0.8, th - 0.8);
@@ -2349,7 +2394,7 @@ function inside(p, x, y, pad) {
     if (d < Math.min(g.R, g.Rb) - e || d > Math.max(g.R, g.Rb) + e) return false;
     return ((x - g.cx) * g.axx + (y - g.cy) * g.axy) / d >= Math.cos(g.al + e / g.R);
   }
-  const n = g.n, v = g.v, extra = p.kind === 'mirror' || p.kind === 'sensor' ? Math.max(0, 9 - g.th / 2) : 0;
+  const n = g.n, v = g.v, extra = p.kind === 'mirror' || isPad(p) ? Math.max(0, 9 - g.th / 2) : 0;
   for (let e = 0; e < v.length / 2; e++) if ((x - v[2 * e]) * n[2 * e] + (y - v[2 * e + 1]) * n[2 * e + 1] > pad + extra) return false;
   return true;
 }
