@@ -197,7 +197,7 @@ export function buildStars(air, R) {
         vec3 d = normalize(position);
         float el = d.y;
         // Low stars twinkle harder through more air.
-        float tw = 1.0 + (0.12 + 0.4 * (1.0 - smoothstep(0.0, 0.5, el))) * sin(uFogTime * (7.0 + aVal.y) + aVal.y * 13.0);
+        float tw = 1.0 + (0.06 + 0.18 * (1.0 - smoothstep(0.0, 0.5, el))) * sin(uFogTime * (3.0 + aVal.y) + aVal.y * 13.0);
         vI = aVal.x * tw * smoothstep(-0.02, 0.06, el) * skyT(cameraPosition, d) * (1.0 - cloud(d, uFogTime));
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         gl_PointSize = 1.9 * uPx;
@@ -242,7 +242,8 @@ export class Emitters {
           vec3 src = vec3(wp.x, abs(wp.y), wp.z);
           vT = exp(-fogDepth(cameraPosition, src));
           vI = aVal.x;
-          vCore = max(1.5, aVal.y * uPx);
+          // Sub-pixel points shimmer as the head sways.
+          vCore = max(2.0, aVal.y * uPx);
           float glow = 18.0 * uPx * (0.6 + 0.4 * clamp(log(1.0 + aVal.x) / 9.0, 0.0, 1.0));
           vSize = max(vCore, (1.0 - vT) > 0.02 ? glow : 0.0);
           gl_Position = projectionMatrix * viewMatrix * wp;

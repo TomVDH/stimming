@@ -90,7 +90,8 @@ export class Tube {
       uniform float uHalo, uGlow, uGlow2, uFrame;
       in vec2 vUv;
       void main() {
-        float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uFrame * 5.588238, vec2(0.06711056, 0.00583715))));
+        // Fixed jitter: a moving one makes halos shimmer.
+        float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         float s = 0.0;
         const int N = 96;
         for (int i = 0; i < N; i++) {
@@ -196,7 +197,7 @@ export class Tube {
         float gt = min(uGmax, uTarget / max(lam, 1e-4));
         float g = prev.r > 0.0 ? prev.r : gt;
         float lg = log(gt) - log(g);
-        g = exp(log(g) + clamp(lg, -7.0 * uDt, 1.4 * uDt));
+        g = exp(log(g) + clamp(lg, -3.5 * uDt, 1.2 * uDt));
         // Overload: how far the ABC is past its floor.
         float over = lam * uGmax / uTarget;
         outColor = vec4(g, over, 0.0, 1.0);
@@ -346,7 +347,8 @@ export class Tube {
           float Lg = lum(uv, d);
           float Lb = lum(c + (uv - c) * (1.0 - ca), d);
           float over = texelFetch(tGain, ivec2(i, 0), 0).g;
-          float fl = 1.0 - uFlick * smoothstep(2.5, 6.0, over) * (0.25 + 0.25 * sin(uTime * 37.0 + float(i)));
+          // Only a true overload makes the protection circuit pulse.
+          float fl = 1.0 - uFlick * smoothstep(40.0, 120.0, over) * (0.06 + 0.06 * sin(uTime * 9.0 + float(i)));
           vec3 L = 1.0 - exp(-vec3(Lr, Lg, Lb) * fl);
           vec3 cc = vec3(phos(L.r).r, phos(L.g).g, phos(L.b).b);
           // Eyepiece vignette, and a dark crescent where the eye sits off axis.
