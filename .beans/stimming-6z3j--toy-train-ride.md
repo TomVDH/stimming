@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T10:32:31Z
+updated_at: 2026-11-09T10:49:45Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -67,3 +67,5 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Station platforms and name signs as the train passes (26 stations, Au ZH and Schübelbach-Buttikon added)
 - [x] Warmer interior: cream panels, wooden sill and ledge, warm light
 - [ ] Denser lights along the Lake Zurich gold coast
+
+- [x] Stops at every station: braking curve (0.9 m/s²), 18 s dwell, pull away at 1 m/s²; arrival chime
