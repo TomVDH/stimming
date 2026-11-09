@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-08T11:39:10Z
+updated_at: 2026-11-09T07:53:57Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -39,3 +39,6 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Fog patches grow after about 30 s of Rain, from the frame and the low pane; other weather dries them
 - [x] Running drops wipe tracks through fog that fog over behind them
 - [x] Cabin baked once into a cube map: faint reflection on clear glass (Fresnel) and a softer one in the fog
+
+## Gallery
+- [x] The Night viaduct gallery card opens Train Ride; viaduct/protos/window.html redirects to trainride/; new thumbnail.
