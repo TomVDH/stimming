@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.08 0.01 230); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Exoplanet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Exoplanet: a spectrograph waterfall of one star, folded by hand. */
+:root { --stage: oklch(0.08 0.01 230); }
+.stage--exoplanet canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--exoplanet canvas.on { opacity: 1; }
+.stage--exoplanet { cursor: ew-resize; }
+.stage--exoplanet.fold { cursor: grabbing; }
+/* The readout: one line of instrument telemetry under the top corners. */
+.stage--exoplanet .read {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+  font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.08em;
+  color: oklch(0.72 0.01 230 / 0.55); white-space: nowrap; pointer-events: none; z-index: 2;
+  font-variant-numeric: tabular-nums;
+}
+.stage--exoplanet .read.lock { color: oklch(0.85 0.08 200 / 0.9); }
+/* Under 900 px the readout drops under the top corners, right-aligned. */
+@media (max-width: 900px) { .stage--exoplanet .read { top: 50px; left: auto; right: 14px; transform: none; font-size: 10px; } }
+@media (prefers-reduced-motion: reduce) { .stage--exoplanet canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Exoplanet</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--exoplanet" id="stage" tabindex="0" role="application" aria-label="A spectrograph waterfall of one star. Drag left or right to fold the exposures by a trial period until the line wobble and the transit band line up.">
+      <p class="fail" hidden>Exoplanet needs WebGL 2, which this browser does not give.</p>
+      <span class="read" id="read" aria-live="off">P — · K — · δ —</span>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Exoplanet</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, linFit, reduced, audioKit } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage'), readEl = document.getElementById('read');
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const TAU = Math.PI * 2;
+
+/* ---------- targets ---------- */
+// Each target is a seed and a few numbers. Names are catalog-shaped, not real.
+// vsini broadens the lines. K is the wobble in stage pixels at 1280 px.
+// P is in days. depth is the drawn transit depth. kind wrong never folds.
+const TARGETS = [
+  { id: 't1', name: 'TOI-4811', type: 'G2', lines: 52, depth: 0.7, vsini: 2, P: 3.52, K: 4.5, dip: 0.3, kind: 'planet' },
+  { id: 't2', name: 'HD 219134 c', type: 'K3', lines: 60, depth: 0.85, vsini: 1, P: 6.76, K: 2.5, dip: 0.14, kind: 'planet' },
+  { id: 't3', name: 'WASP-1207', type: 'F6', lines: 34, depth: 0.45, vsini: 9, P: 1.09, K: 6, dip: 0.34, kind: 'planet' },
+  { id: 't4', name: 'KIC 8462852', type: 'F3', lines: 30, depth: 0.4, vsini: 12, P: 0, K: 0, dip: 0, kind: 'wrong' },
+  { id: 't5', name: 'GJ 3470', type: 'M1', lines: 60, depth: 0.9, vsini: 1, P: 12.4, K: 2, dip: 0.16, kind: 'planet' },
+  { id: 't6', name: 'HAT-P-2219', type: 'K0', lines: 56, depth: 0.75, vsini: 3, P: 2.21, K: 4, dip: 0.26, ecc: 0.35, kind: 'planet' },
+  { id: 't7', name: 'EPIC 204278916', type: 'K5', lines: 58, depth: 0.8, vsini: 2, P: 0, K: 0, dip: 0, kind: 'wrong' },
+  { id: 't8', name: 'TOI-700 d', type: 'M2', lines: 60, depth: 0.9, vsini: 1, P: 18.7, K: 1.6, dip: 0.1, kind: 'planet' },
+];
+const TYPES = ['F3', 'F6', 'G0', 'G2', 'K0', 'K3', 'K5', 'M1', 'M2'];
+// A random target. One in four is wrong.
+function shuffled(seed) {
+  const r = mulberry(seed);
+  const ti = Math.floor(r() * TYPES.length), type = TYPES[ti], hot = ti / (TYPES.length - 1);
+  const wrong = r() < 0.25;
+  const n = Math.floor(2000 + r() * 7000);
+  return {
+    id: 'rnd', name: `TOI-${n}`, type, seed,
+    lines: Math.round(30 + 30 * hot), depth: 0.4 + 0.5 * hot, vsini: 1 + (1 - hot) * 12 * r(),
+    P: wrong ? 0 : Math.exp(Math.log(0.7) + r() * (Math.log(16) - Math.log(0.7))),
+    K: wrong ? 0 : 1.6 + r() * 4.4, dip: wrong ? 0 : 0.1 + r() * 0.24,
+    ecc: r() < 0.2 ? 0.3 : 0, kind: wrong ? 'wrong' : 'planet',
+  };
+}
+function mulberry(a) {
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const seedOf = s => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
+
+/* ---------- state ---------- */
+const N = 256, TW = 4096, WIN = 12;
+let target = TARGETS[0], shuffleSeed = 7;
+let exposure = 0.33, tell = 1, cosmic = 1, logStretch = 0;
+// Trial period P in days; 0 means time order. lock holds while folded true.
+let P = 0, locked = false;
+// The pointer press in flight, and the row the cut shows.
+let press = null, holdT = 0, pinch = null, cutRow = -1, cutUntil = Infinity;
+let time = 0;
+
+const act = { shuffle() {}, reset() {}, exposure() {}, pick() {} };
+const ui = initPage({ id: 'exoplanet', bar: {
+  choice: { label: 'Target', value: 't1', display: 'stepper',
+    options: TARGETS.map((t, i) => ({ value: t.id, label: t.name, key: String(i + 1) })),
+    onPick: v => act.pick(v) },
+  slider: { label: 'Exposure', min: 0, max: 1, step: 0.01, value: exposure, onInput: v => act.exposure(v) },
+  actions: [{ verb: 'shuffle', key: ' ', onPress: () => act.shuffle() }],
+  settings: [
+    { type: 'toggle', id: 'tell', label: 'Tellurics', value: true, persist: true, onToggle: v => { tell = v ? 1 : 0; live(); } },
+    { type: 'toggle', id: 'cosmic', label: 'Cosmic rays', value: true, persist: true, onToggle: v => { cosmic = v ? 1 : 0; live(); } },
+    { type: 'choice', id: 'stretch', label: 'Stretch', value: 'linear', persist: true,
+      options: [{ value: 'linear', label: 'Linear' }, { value: 'log', label: 'Log' }], onPick: v => { logStretch = v === 'log' ? 1 : 0; live(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'fold'], ['scroll', 'fine'], ['tap', 'cut'], ['1-8', 'target']],
+} });
+{
+  const v = k => ui.setting(k)?.value;
+  tell = v('tell') === false ? 0 : 1;
+  cosmic = v('cosmic') === false ? 0 : 1;
+  logStretch = v('stretch') === 'log' ? 1 : 0;
+}
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- templates ---------- */
+// The stellar template: one continuum with Gaussian lines, broadened by rotation.
+// Units are template pixels; the window is WIN nm across TW pixels.
+const star = new Float32Array(TW), tellu = new Float32Array(TW), work = new Float32Array(TW);
+// Line cores: where the strongest lines sit, for the Rossiter bump and the cut.
+let lineCores = [], cols = [0.3, 0.7];
+function template(t) {
+  const r = mulberry(t.seed ?? seedOf(t.name));
+  star.fill(1);
+  lineCores = [];
+  cols = [0.1 + r() * 0.8, 0.1 + r() * 0.8];
+  const pxPerNm = TW / WIN;
+  for (let i = 0; i < t.lines; i++) {
+    const c = r() * TW;
+    const strong = r() < 0.12;
+    const d = (strong ? 0.75 + r() * 0.25 : Math.pow(r(), 0.8) * 0.8) * t.depth;
+    const sig = (strong ? 0.014 + r() * 0.01 : 0.005 + r() * 0.01) * pxPerNm;
+    const lo = Math.max(0, Math.floor(c - sig * 5)), hi = Math.min(TW - 1, Math.ceil(c + sig * 5));
+    for (let x = lo; x <= hi; x++) {
+      const z = (x - c) / sig;
+      // Strong lines keep Lorentz wings; weak ones are Gaussian.
+      const prof = strong ? 0.7 * Math.exp(-z * z * 0.5) + 0.3 / (1 + z * z) : Math.exp(-z * z * 0.5);
+      star[x] *= 1 - d * prof;
+    }
+    if (d > 0.45 * t.depth) lineCores.push(c / TW);
+  }
+  // Rotation: a half-ellipse kernel, its half-width from vsini.
+  const hw = Math.max(1, Math.round(0.004 * t.vsini * pxPerNm));
+  if (hw > 1) {
+    const k = [];
+    let sum = 0;
+    for (let i = -hw; i <= hw; i++) { const v = Math.sqrt(Math.max(0, 1 - (i / hw) ** 2)); k.push(v); sum += v; }
+    work.set(star);
+    for (let x = 0; x < TW; x++) {
+      let acc = 0;
+      for (let i = -hw; i <= hw; i++) acc += work[clamp(x + i, 0, TW - 1)] * k[i + hw];
+      star[x] = acc / sum;
+    }
+  }
+}
+// Earth's air: a few narrow fixed lines, mostly in the right half of the window.
+function telluric() {
+  const r = mulberry(0x5eed);
+  tellu.fill(1);
+  const pxPerNm = TW / WIN;
+  for (let i = 0; i < 11; i++) {
+    const c = (0.35 + r() * 0.62) * TW, d = 0.12 + r() * 0.42, sig = (0.003 + r() * 0.003) * pxPerNm;
+    const lo = Math.max(0, Math.floor(c - sig * 5)), hi = Math.min(TW - 1, Math.ceil(c + sig * 5));
+    for (let x = lo; x <= hi; x++) { const z = (x - c) / sig; tellu[x] *= 1 - d * Math.exp(-z * z * 0.5); }
+  }
+}
+
+/* ---------- exposures ---------- */
+// Parallel arrays, one record per exposure. Index 0 is the oldest.
+const E = {
+  t: new Float32Array(N), rv: new Float32Array(N), flux: new Float32Array(N), seed: new Float32Array(N),
+  transit: new Float32Array(N), gap: new Float32Array(N), rm: new Float32Array(N), age: new Float32Array(N),
+  y: new Float32Array(N), yTo: new Float32Array(N),
+};
+const order = new Int32Array(N), rank = new Float32Array(N);
+let tNow = 0, rndE = mulberry(1);
+// A wrong star dims in events, never on a period.
+let events = [];
+function fluxAt(t) {
+  if (target.kind === 'planet') {
+    const ph = ((t / target.P) % 1 + 1) % 1, dur = 0.035 + 0.02 * Math.cbrt(target.P / 3), d = ph > 0.5 ? ph - 1 : ph;
+    if (Math.abs(d) > dur) return { f: 1, tr: -1 };
+    const u = d / dur, edge = 0.18;
+    const k = clamp((1 - Math.abs(u)) / edge);
+    return { f: 1 - target.dip * k, tr: (u + 1) / 2 };
+  }
+  let f = 1 + 0.02 * Math.sin(t * 0.21) + 0.012 * Math.sin(t * 0.83 + 1.3);
+  for (const ev of events) {
+    if (t < ev.t0 || t > ev.t0 + ev.dur) continue;
+    const u = (t - ev.t0) / ev.dur;
+    // A slow ingress and a fast egress.
+    const k = u < ev.split ? Math.pow(u / ev.split, 1.6) : Math.pow(1 - (u - ev.split) / (1 - ev.split), 0.6);
+    f -= ev.depth * k;
+  }
+  return { f: Math.max(0.05, f), tr: -1 };
+}
+function rvAt(t) {
+  if (target.kind !== 'planet') return 0;
+  const th = TAU * t / target.P;
+  const e = target.ecc || 0;
+  return target.K * (Math.sin(th) + e * Math.sin(2 * th) * 0.8);
+}
+// Writes one exposure at slot i for time t.
+function expose(i, t) {
+  E.t[i] = t;
+  const { f, tr } = fluxAt(t);
+  E.rv[i] = rvAt(t) + 0.6 * Math.sin(TAU * t / 365) + (rndE() - 0.5) * 0.35;
+  // Sky transparency jitters a little from row to row.
+  E.flux[i] = f * (0.985 + rndE() * 0.03);
+  E.transit[i] = tr;
+  E.rm[i] = tr >= 0 ? (tr * 2 - 1) : 0;
+  E.gap[i] = rndE() < 1 / 14 ? 1 : 0;
+  E.seed[i] = Math.floor(rndE() * 65535);
+}
+function newEvents() {
+  events = [];
+  if (target.kind !== 'wrong') return;
+  let t = rndE() * 6;
+  while (t < 400) {
+    const dur = 0.6 + rndE() * 3.2;
+    events.push({ t0: t, dur, depth: 0.15 + rndE() * 0.25, split: 0.55 + rndE() * 0.3 });
+    t += dur + 2 + rndE() * 12 * (rndE() < 0.3 ? 0.2 : 1);
+  }
+}
+// A full stack for a new target. The sweep runs top to bottom over 1.5 s.
+function restack(sweep = true) {
+  rndE = mulberry((target.seed ?? seedOf(target.name)) ^ 0x9e37);
+  newEvents();
+  tNow = 0;
+  for (let i = 0; i < N; i++) { tNow += 0.28 + rndE() * 0.18; expose(i, tNow); }
+  reorder();
+  periodogram();
+  for (let i = 0; i < N; i++) { E.y[i] = E.yTo[i]; E.age[i] = sweep ? -(1 - rank[i] / N) * 1.5 - 0.1 : 1; }
+}
+// One more exposure. The oldest slot takes it.
+let oldest = 0;
+function arrive() {
+  tNow += 0.28 + rndE() * 0.18;
+  const i = oldest;
+  oldest = (oldest + 1) % N;
+  expose(i, tNow);
+  E.age[i] = 0;
+  reorder();
+  if (settling()) sfx.shutter();
+  // A new row starts where its slot is, so it sweeps in, not slides in.
+  E.y[i] = E.yTo[i];
+  periodogramDirty = true;
+}
+// Rank every exposure: by time, or by phase when folded.
+function reorder() {
+  for (let i = 0; i < N; i++) order[i] = i;
+  if (P > 0) {
+    const ph = rank;
+    for (let i = 0; i < N; i++) { const p = (E.t[i] / P) % 1; ph[i] = p + 0.5 > 1 ? p - 0.5 : p + 0.5; }
+    order.sort((a, b) => ph[a] - ph[b]);
+  } else {
+    order.sort((a, b) => E.t[b] - E.t[a]);
+  }
+  for (let k = 0; k < N; k++) { rank[order[k]] = k; E.yTo[order[k]] = k; }
+}
+let periodogramDirty = false;
+
+/* ---------- periodogram ---------- */
+// Trial periods run log-spaced from PMIN to PMAX days.
+const NPG = 400, PMIN = 0.5, PMAX = 20, LMIN = Math.log(PMIN), LMAX = Math.log(PMAX);
+const power = new Float32Array(NPG), lsP = new Float32Array(NPG), blsP = new Float32Array(NPG);
+const pgPos = p => clamp((Math.log(p) - LMIN) / (LMAX - LMIN));
+const pgPeriod = k => Math.exp(LMIN + (k / (NPG - 1)) * (LMAX - LMIN));
+const bins = new Float32Array(24), binN = new Float32Array(24);
+// Lomb-Scargle on the wobble, box fit on the brightness, summed.
+function periodogram() {
+  let mv = 0, mf = 0;
+  for (let i = 0; i < N; i++) { mv += E.rv[i]; mf += E.flux[i]; }
+  mv /= N; mf /= N;
+  let vv = 0, vf = 0;
+  for (let i = 0; i < N; i++) { vv += (E.rv[i] - mv) ** 2; vf += (E.flux[i] - mf) ** 2; }
+  vv = Math.max(vv / N, 1e-6); vf = Math.max(vf / N, 1e-6);
+  for (let k = 0; k < NPG; k++) {
+    const p = pgPeriod(k), w = TAU / p;
+    let s2 = 0, c2 = 0;
+    for (let i = 0; i < N; i++) { s2 += Math.sin(2 * w * E.t[i]); c2 += Math.cos(2 * w * E.t[i]); }
+    const tau = Math.atan2(s2, c2) / (2 * w);
+    let yc = 0, ys = 0, cc = 0, ss = 0;
+    bins.fill(0); binN.fill(0);
+    for (let i = 0; i < N; i++) {
+      const a = w * (E.t[i] - tau), c = Math.cos(a), sn = Math.sin(a), y = E.rv[i] - mv;
+      yc += y * c; ys += y * sn; cc += c * c; ss += sn * sn;
+      const b = Math.floor((((E.t[i] / p) % 1) + 1) % 1 * 24) % 24;
+      bins[b] += E.flux[i] - mf; binN[b]++;
+    }
+    lsP[k] = 0.5 * (yc * yc / Math.max(cc, 1e-6) + ys * ys / Math.max(ss, 1e-6)) / vv / (N / 2);
+    // The box: the deepest bin's depth, weighted by its share of points.
+    let best = 0;
+    for (let b = 0; b < 24; b++) {
+      if (binN[b] < 2) continue;
+      const depth = -bins[b] / binN[b];
+      if (depth <= 0) continue;
+      const v = depth * depth * (binN[b] / N) / vf;
+      if (v > best) best = v;
+    }
+    blsP[k] = best * 1.2;
+  }
+  for (let k = 0; k < NPG; k++) power[k] = clamp(0.55 * lsP[k] + 0.45 * blsP[k]);
+}
+// The power at a period, interpolated between bins.
+function powerAt(p) {
+  const x = pgPos(p) * (NPG - 1), k = Math.floor(x), f = x - k;
+  return power[k] * (1 - f) + power[Math.min(NPG - 1, k + 1)] * f;
+}
+
+/* ---------- fold ---------- */
+// The trial period moves on a log scale. Near a peak the dial stiffens.
+function scrub(dlog) {
+  if (P <= 0) P = 3;
+  const gain = 1 / (1 + 6 * powerAt(P));
+  stir = Math.min(1.5, stir + Math.abs(dlog) * 12);
+  setPeriod(Math.exp(clamp(Math.log(P) + dlog * gain, LMIN, LMAX)));
+}
+function setPeriod(p) {
+  P = p;
+  const near = target.kind === 'planet' ? Math.abs(P / target.P - 1) : 1;
+  const was = locked;
+  locked = near < 0.004;
+  if (locked && !was) onLock();
+  reorder();
+  readout();
+}
+// Inside 1.5 % the fold eases the last stretch itself.
+function pull(dt, strength) {
+  if (target.kind !== 'planet' || P <= 0) return;
+  const near = Math.abs(P / target.P - 1);
+  if (near >= 0.015 || near < 1e-6) return;
+  const k = 1 - Math.exp(-dt / 0.25 * strength);
+  setPeriod(P + (target.P - P) * k);
+  if (Math.abs(P / target.P - 1) < 1e-4) setPeriod(target.P);
+}
+let lockAt = -1e9;
+function onLock() { lockAt = performance.now(); }
+
+/* ---------- shaders ---------- */
+// Strips: one instance per exposure, in device pixels from the bottom left.
+const STRIP_VS = `#version 300 es
+layout(location=0) in vec2 aC;
+layout(location=1) in vec4 aA;
+layout(location=2) in vec4 aB;
+uniform vec2 uRes;
+uniform vec4 uBox;
+uniform float uRowH;
+out vec2 vUV;
+flat out vec4 vA;
+flat out vec4 vB;
+void main() {
+  // Snap strip edges to whole pixels; overlap one pixel so eased rows leave no seam.
+  float y0 = floor(uBox.w - (aA.x + 1.0) * uRowH + 0.5);
+  float y1 = floor(uBox.w - aA.x * uRowH + 0.5) + 1.0;
+  vec2 p = vec2(mix(uBox.x, uBox.z, aC.x), mix(y0, y1, aC.y));
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vUV = vec2(aC.x, mix(y0, y1, aC.y));
+  vA = aA;
+  vB = aB;
+}`;
+const STRIP_FS = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vUV;
+flat in vec4 vA;
+flat in vec4 vB;
+uniform sampler2D uStar;
+uniform sampler2D uTell;
+uniform vec2 uRes;
+uniform vec4 uBox;
+uniform float uDpr;
+uniform float uTell1;
+uniform float uCosmic;
+uniform float uLog;
+uniform float uNoise;
+uniform float uRm;
+uniform float uTime;
+uniform vec3 uGrey;
+uniform vec3 uBg;
+uniform vec2 uCols;
+out vec4 o;
+// A PCG hash: one integer in, one float in 0..1 out.
+uint pcg(uint v) { v = v * 747796405u + 2891336453u; uint w = ((v >> ((v >> 28u) + 4u)) ^ v) * 277803737u; return (w >> 22u) ^ w; }
+float hash(uvec2 p) { return float(pcg(p.x ^ pcg(p.y))) / 4294967295.0; }
+void main() {
+  float u = vUV.x;
+  float widthPx = uBox.z - uBox.x;
+  // The wobble is in stage pixels at 1280; scale it to this stage.
+  float rvN = vA.y * uDpr * (widthPx / (1280.0 * uDpr)) / widthPx;
+  float s = texture(uStar, vec2(u - rvN, 0.5)).r;
+  float tl = mix(1.0, texture(uTell, vec2(u, 0.5)).r, uTell1);
+  float f = s * tl;
+  // Rossiter: the hidden strip of the disc stops absorbing at its own velocity.
+  if (vB.x >= 0.0) {
+    float off = vB.z * uRm / widthPx;
+    float sh = texture(uStar, vec2(u - rvN - off, 0.5)).r;
+    f += (1.0 - sh) * 0.3 * tl;
+  }
+  // The blaze: an order is brightest at its centre.
+  f *= mix(0.42, 1.0, pow(cos((u - 0.5) * 3.14159), 1.4));
+  f *= vA.z;
+  // One hot column and one dead column, fixed on the detector.
+  float colPx = 0.5 * uDpr / widthPx;
+  f += 0.35 * step(abs(u - uCols.x), colPx);
+  f *= 1.0 - 0.75 * step(abs(u - uCols.y), colPx);
+  // Noise: photon noise with the root of the flux, read noise on top.
+  uvec2 px = uvec2(uint(u * widthPx / uDpr), uint(vA.w));
+  float n = hash(px) + hash(px + uvec2(7919u, 104729u)) - 1.0;
+  f += n * uNoise * (0.6 * sqrt(max(f, 0.0)) + 0.25);
+  // Cosmic rays: one hot pixel or a short streak, never in the same place twice.
+  float cr = hash(uvec2(px.x / 2u, uint(vA.w) * 3u + 11u));
+  f += step(1.0 - 0.0007 * uCosmic, cr) * (2.0 + 4.0 * hash(px + uvec2(3u, 5u)));
+  // A gap row is black with a dashed mark at the left.
+  float xpx = u * widthPx / uDpr;
+  float dash = step(0.5, fract(xpx / 6.0)) * step(xpx, 10.0);
+  f = mix(f, dash * 0.35, vB.y);
+  // The readout sweep: pixels beyond the read edge are still dark.
+  float age = vB.w;
+  float edge = step(u, age);
+  float lead = exp(-max(0.0, (age - u)) * 60.0) * step(0.0, age) * step(age, 1.0) * 1.5;
+  f = f * edge + lead * step(u, age);
+  if (age < 0.0) f = 0.0;
+  // The grade: a linear or log stretch, grain, vignette.
+  float v = mix(f * 0.92, log(1.0 + f * 9.0) / log(10.0), uLog);
+  float g = hash(uvec2(gl_FragCoord.xy) + uvec2(uint(uTime * 60.0) * 1931u, 0u)) - 0.5;
+  v += g * 0.025;
+  vec2 q = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  v *= 1.0 - 0.35 * dot(q, q) * dot(q, q);
+  vec3 c = uBg + uGrey * max(v, 0.0);
+  o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+}`;
+// The stage behind the strips: the bg colour with the vignette.
+const BG_VS = `#version 300 es
+layout(location=0) in vec2 aC;
+void main() { gl_Position = vec4(aC * 2.0 - 1.0, 0.0, 1.0); }`;
+const BG_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform vec3 uBg;
+out vec4 o;
+void main() {
+  vec2 q = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  vec3 c = uBg * (1.0 - 0.4 * dot(q, q));
+  o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+}`;
+
+// Marks: flat rectangles in device pixels, one instance each, additive.
+const MARK_VS = `#version 300 es
+layout(location=0) in vec2 aC;
+layout(location=1) in vec4 aR;
+layout(location=2) in vec4 aCol;
+uniform vec2 uRes;
+out vec4 vCol;
+void main() {
+  vec2 p = vec2(mix(aR.x, aR.z, aC.x), mix(aR.y, aR.w, aC.y));
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vCol = aCol;
+}`;
+const MARK_FS = `#version 300 es
+precision highp float;
+in vec4 vCol;
+out vec4 o;
+void main() { o = vec4(pow(vCol.rgb * vCol.a, vec3(1.0 / 2.2)), 1.0); }`;
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, Pg = null, quadVao = null, stripVao = null, instBuf = null, starTex = null, tellTex = null, markVao = null, markBuf = null;
+const inst = new Float32Array(N * 8);
+// Marks: the light-curve dots, the periodogram bars, the cursor and the cut.
+const MAXM = N + NPG + 520;
+const marks = new Float32Array(MAXM * 8);
+let nMarks = 0;
+function compile(vs, fs) {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+// A 1-D template texture, R16F, linear. Sampling R16F needs no extension.
+function tex1d(data) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, TW, 1, 0, gl.RED, gl.FLOAT, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function upload(t, data) {
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TW, 1, gl.RED, gl.FLOAT, data);
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = { strip: compile(STRIP_VS, STRIP_FS), bg: compile(BG_VS, BG_FS), mark: compile(MARK_VS, MARK_FS) };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  Pg = progs;
+  const corners = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+  quadVao = gl.createVertexArray();
+  gl.bindVertexArray(quadVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  // Strips: the corner buffer, then two vec4 per instance.
+  stripVao = gl.createVertexArray();
+  gl.bindVertexArray(stripVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+  gl.vertexAttribDivisor(2, 1);
+  // Marks: the same corners, a rect and a colour per instance.
+  markVao = gl.createVertexArray();
+  gl.bindVertexArray(markVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  markBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, markBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, marks.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+  gl.vertexAttribDivisor(2, 1);
+  gl.bindVertexArray(null);
+  starTex = tex1d(star);
+  tellTex = tex1d(tellu);
+}
+
+/* ---------- layout ---------- */
+// Device pixels, from the bottom left as GL counts. box is x0, y0, x1, y1.
+const G = { box: [0, 0, 1, 1], lc: [0, 0, 1, 1], pg: [0, 0, 1, 1], rowH: 1, dpr: 1, W: 1, H: 1, w: 1, h: 1 };
+let rung = 0;
+function layout() {
+  const { w, h, W, H, dpr } = fitCanvas(canvas, { maxDpr: 2, low: rung >= 1 });
+  Object.assign(G, { W, H, dpr, w, h });
+  const coarse = matchMedia('(pointer: coarse)').matches, narrow = w < 640;
+  // Reserves keep the frame clear of the bar's corners and the key strip.
+  const top = (coarse || w < 900 ? 64 : 52) * dpr, bottom = (narrow ? 128 : coarse ? 96 : 84) * dpr;
+  const lcW = Math.round(w * (narrow ? 0.08 : 0.1)) * dpr, gapX = 8 * dpr;
+  const pgH = 22 * dpr, pgGap = 10 * dpr;
+  const x0 = lcW + gapX, x1 = W - 14 * dpr;
+  const yTop = H - top, yBot = bottom + pgH + pgGap;
+  G.box = [x0, yBot, x1, yTop];
+  G.lc = [10 * dpr, yBot, lcW - 2 * dpr, yTop];
+  G.pg = [x0, bottom, x1, bottom + pgH];
+  G.rowH = (yTop - yBot) / N;
+}
+
+/* ---------- render ---------- */
+const GREY = linFit(0.72, 0.01, 230), BG = linFit(0.08, 0.01, 230), CYAN = linFit(0.85, 0.08, 200);
+function render() {
+  gl.viewport(0, 0, G.W, G.H);
+  gl.disable(gl.BLEND);
+  gl.useProgram(Pg.bg.p);
+  gl.bindVertexArray(quadVao);
+  gl.uniform2f(Pg.bg.u.uRes, G.W, G.H);
+  gl.uniform3fv(Pg.bg.u.uBg, BG);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // Strips, oldest slot first; order does not matter without blending.
+  for (let i = 0; i < N; i++) {
+    const o = i * 8;
+    inst[o] = E.y[i]; inst[o + 1] = E.rv[i]; inst[o + 2] = E.flux[i]; inst[o + 3] = E.seed[i];
+    inst[o + 4] = E.transit[i]; inst[o + 5] = E.gap[i]; inst[o + 6] = E.rm[i]; inst[o + 7] = E.age[i];
+  }
+  const s = Pg.strip, u = s.u;
+  gl.useProgram(s.p);
+  gl.bindVertexArray(stripVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, starTex);
+  gl.uniform1i(u.uStar, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, tellTex);
+  gl.uniform1i(u.uTell, 1);
+  gl.uniform2f(u.uRes, G.W, G.H);
+  gl.uniform4fv(u.uBox, G.box);
+  gl.uniform1f(u.uRowH, G.rowH);
+  gl.uniform1f(u.uDpr, G.dpr);
+  gl.uniform1f(u.uTell1, tell);
+  gl.uniform1f(u.uCosmic, cosmic);
+  gl.uniform1f(u.uLog, logStretch);
+  // Noise falls with exposure: short is loud, long is clean.
+  gl.uniform1f(u.uNoise, 0.025 + 0.16 * Math.pow(1 - exposure, 2.2));
+  gl.uniform1f(u.uRm, 0.004 * target.vsini * (G.box[2] - G.box[0]) / WIN * 1.6);
+  gl.uniform1f(u.uTime, time);
+  gl.uniform3fv(u.uGrey, GREY);
+  gl.uniform3fv(u.uBg, BG);
+  gl.uniform2f(u.uCols, cols[0], cols[1]);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, N);
+  drawMarks();
+}
+// One mark: a rect in device pixels and a colour with alpha as level.
+function mark(x0, y0, x1, y1, c, a) {
+  if (nMarks >= MAXM) return;
+  const o = nMarks++ * 8;
+  marks[o] = x0; marks[o + 1] = y0; marks[o + 2] = x1; marks[o + 3] = y1;
+  marks[o + 4] = c[0]; marks[o + 5] = c[1]; marks[o + 6] = c[2]; marks[o + 7] = a;
+}
+// The cut trace: the row's own spectrum, sampled from the templates.
+const CUTN = 512;
+function drawCut() {
+  if (cutRow < 0) return;
+  const now = performance.now();
+  if (now > cutUntil) { cutRow = -1; cutUntil = Infinity; return; }
+  const fade = cutUntil === Infinity ? 1 : clamp((cutUntil - now) / 500);
+  const i = cutRow, d = G.dpr, [x0, , x1, y1] = G.box, w = x1 - x0, h = 34 * d, base = y1 - 4 * d - h;
+  const rvN = E.rv[i] * d * (w / (1280 * d)) / w;
+  const f = E.flux[i], gap = E.gap[i] > 0.5;
+  for (let k = 0; k < CUTN; k++) {
+    const u = (k + 0.5) / CUTN;
+    let v = 0;
+    if (!gap) {
+      const si = clamp(Math.round((u - rvN) * TW), 0, TW - 1), ti = Math.round(u * TW);
+      v = star[si] * (tell ? tellu[Math.min(TW - 1, ti)] : 1) * f;
+      v *= 0.42 + 0.58 * Math.pow(Math.cos((u - 0.5) * Math.PI), 1.4);
+    }
+    const xa = x0 + u * w, ya = base + v * h;
+    mark(xa - w / CUTN * 0.5, ya - 0.7 * d, xa + w / CUTN * 0.5 + 0.5, ya + 0.7 * d, CYAN, 0.55 * fade);
+  }
+  // A tick at the left marks the row the cut comes from.
+  const yr = y1 - (E.y[i] + 0.5) * G.rowH;
+  mark(x0 - 7 * d, yr - d, x0 - 2 * d, yr + d, CYAN, 0.9 * fade);
+  mark(x0, yr - 0.5 * d, x1, yr + 0.5 * d, CYAN, 0.12 * fade);
+}
+function drawMarks() {
+  nMarks = 0;
+  const d = G.dpr, [lx0, ly0, lx1, ly1] = G.lc, [px0, py0, px1, py1] = G.pg, bh = ly1 - ly0;
+  // The light curve: one dot per row, brightness across the column.
+  for (let i = 0; i < N; i++) {
+    if (E.gap[i] > 0.5 || E.age[i] < 0) continue;
+    const x = lx0 + clamp((E.flux[i] - 0.5) / 0.56) * (lx1 - lx0);
+    const y = ly1 - (E.y[i] + 0.5) * G.rowH;
+    mark(x - d, y - d, x + d, y + d, GREY, E.transit[i] >= 0 ? 0.55 : 0.4);
+  }
+  // The periodogram: one bar per trial period, power as height.
+  const bw = (px1 - px0) / NPG;
+  for (let k = 0; k < NPG; k++) {
+    const h = clamp(power[k]) * (py1 - py0);
+    if (h < 0.5) continue;
+    mark(px0 + k * bw, py0, px0 + (k + 1) * bw + 0.5, py0 + h, GREY, 0.22);
+  }
+  // The phase cursor sweeps the folded stack; the sound follows it.
+  if (P > 0) {
+    const [bx0, , bx1, by1] = G.box, yc = by1 - phase * N * G.rowH;
+    mark(bx0, yc - 0.5 * d, bx1, yc + 0.5 * d, CYAN, locked ? 0.22 : 0.1);
+  }
+  // The cursor at the trial period, and a hairline across the band.
+  mark(px0, py0, px1, py0 + Math.max(1, d * 0.5), GREY, 0.08);
+  if (P > 0) {
+    const x = px0 + pgPos(P) * (px1 - px0);
+    mark(x - d * 0.5, py0 - 2 * d, x + d * 0.5, py1 + 2 * d, CYAN, locked ? 0.9 : 0.45);
+  }
+  drawCut();
+  gl.useProgram(Pg.mark.p);
+  gl.bindVertexArray(markVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, markBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, marks, 0, nMarks * 8);
+  gl.uniform2f(Pg.mark.u.uRes, G.W, G.H);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nMarks);
+  gl.disable(gl.BLEND);
+}
+
+/* ---------- step ---------- */
+let sinceArrive = 0;
+const cadence = () => 0.5 + 2.5 * exposure;
+function step(dt) {
+  const k = reduced() ? 1 : 1 - Math.exp(-dt / 0.11);
+  for (let i = 0; i < N; i++) {
+    E.y[i] += (E.yTo[i] - E.y[i]) * k;
+    if (Math.abs(E.yTo[i] - E.y[i]) < 0.02) E.y[i] = E.yTo[i];
+    if (E.age[i] < 1) E.age[i] = reduced() && E.age[i] >= 0 ? 1 : Math.min(1, E.age[i] + dt / 0.3);
+  }
+  sinceArrive += dt;
+  if (sinceArrive >= cadence()) { sinceArrive = 0; arrive(); }
+  if (periodogramDirty) { periodogramDirty = false; periodogram(); }
+  pull(dt, press?.fold ? 0.25 : 1);
+  if (locked && performance.now() - lockAt < 800) readout();
+}
+const moving = () => { for (let i = 0; i < N; i++) if (E.y[i] !== E.yTo[i] || E.age[i] < 1) return true; return false; };
+const settling = () => !!press || moving() || cutRow >= 0 || performance.now() - lockAt < 800 || performance.now() - lastInput < 4000 || (P > 0 && !locked && target.kind === 'planet' && Math.abs(P / target.P - 1) < 0.015);
+
+/* ---------- controls ---------- */
+act.pick = v => {
+  const t = TARGETS.find(x => x.id === v);
+  if (!t) return;
+  setTarget(t);
+};
+act.shuffle = () => {
+  shuffleSeed = (shuffleSeed * 1103515245 + 12345) >>> 0;
+  setTarget(shuffled(shuffleSeed));
+};
+act.exposure = v => { exposure = v; live(); };
+act.reset = () => {
+  P = 0; locked = false;
+  exposure = 0.33;
+  ui.slider?.set(exposure);
+  reorder();
+  readout();
+  live();
+};
+function setTarget(t) {
+  target = t;
+  onTargetT = 0;
+  growlT = 0;
+  template(t);
+  if (gl) upload(starTex, star);
+  P = 0; locked = false;
+  restack(true);
+  readout();
+  live();
+}
+// The readout. Just after a lock the digits still wander, as a fit converges.
+function readout() {
+  readEl.classList.toggle('lock', locked);
+  if (!locked) { readEl.textContent = P > 0 ? `P ${P.toFixed(3)} d · K — · δ —` : 'P — · K — · δ —'; return; }
+  const age = (performance.now() - lockAt) / 1000, j = Math.max(0, 1 - age / 0.7) ** 2;
+  const w = () => (Math.random() - 0.5) * 2 * j;
+  const Pd = target.P * (1 + 0.004 * w()), K = target.K * 31 * (1 + 0.25 * w()), dip = target.dip / 25 * 100 * (1 + 0.3 * w());
+  readEl.textContent = `P ${Pd.toFixed(4)} d · K ${Math.round(K)} m/s · δ ${dip.toFixed(2)} %`;
+}
+
+/* ---------- sound ---------- */
+// Web Audio on the shared kit: muted by default, woken by a gesture.
+const kit = audioKit({ keys: new Set([' ', '1', '2', '3', '4', '5', '6', '7', '8']) });
+let bus = null, phase = 0, onTargetT = 0, growlT = 0, lastCursorRow = -1, stir = 0;
+const pan = x => clamp((x / G.W) * 2 - 1, -1, 1) * 0.6;
+function voices() {
+  const ac = kit.live();
+  if (!ac) return null;
+  if (bus?.ac === ac) return bus;
+  const g = (v, to = kit.out) => { const n = ac.createGain(); n.gain.value = v; n.connect(to); return n; };
+  const osc = (type, f, to) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.connect(to); o.start(); return o; };
+  const noise = to => { const n = ac.createBufferSource(); n.buffer = kit.noise; n.loop = true; n.connect(to); n.start(); return n; };
+  const filt = (type, f, q, to) => { const n = ac.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; n.connect(to); return n; };
+  // The hum: two low sines a little apart, and a filtered noise floor.
+  const humG = g(0.1), hum1 = osc('sine', 54, humG), hum2 = osc('sine', 54.4, humG);
+  const floorG = g(0.05), floorF = filt('lowpass', 160, 0.7, floorG); noise(floorF);
+  // The hiss: the read noise made audible, with the exposure.
+  const hissG = g(0), hissF = filt('highpass', 2600, 0.5, hissG); noise(hissF);
+  // The stir: rows in flight rustle.
+  const stirG = g(0), stirF = filt('bandpass', 700, 0.9, stirG); noise(stirF);
+  // The planet: a pure tone that follows the wobble once the fold locks.
+  const toneP = ac.createStereoPanner(); toneP.connect(kit.out);
+  const toneG = g(0, toneP), tone = osc('sine', 220, toneG);
+  // The growl: a sub-harmonic that swells on a wrong star's dips.
+  const growlG = g(0), growlF = filt('lowpass', 110, 1.2, growlG), growl = osc('sawtooth', 27, growlF);
+  bus = { ac, hum1, hum2, humG, floorG, hissG, stirG, tone, toneG, toneP, growl, growlG };
+  return bus;
+}
+// One short filtered burst; every hit jitters.
+function burst({ f, q = 1, type = 'bandpass', dur, lvl, pan: p = 0, sweep = 0, delay = 0 }) {
+  const b = voices();
+  if (!b) return;
+  const ac = b.ac, t = ac.currentTime + 0.005 + delay;
+  const src = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain(), sp = ac.createStereoPanner();
+  src.buffer = kit.noise;
+  fl.type = type; fl.Q.value = q;
+  fl.frequency.setValueAtTime(f, t);
+  if (sweep) fl.frequency.exponentialRampToValueAtTime(sweep, t + dur);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(lvl, t + Math.min(0.01, dur * 0.25));
+  g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
+  sp.pan.value = p;
+  src.connect(fl).connect(g).connect(sp).connect(kit.out);
+  src.start(t, Math.random() * 0.6);
+  src.stop(t + dur + 0.05);
+}
+const sfx = {
+  // The shutter: a dry click from the left, where the readout starts.
+  shutter() { burst({ f: rnd(2200, 3200), q: 5, dur: rnd(0.018, 0.03), lvl: rnd(0.08, 0.13), pan: -0.35 }); },
+  // The thud: the transit crosses the cursor.
+  thud() {
+    const b = voices();
+    if (!b) return;
+    const ac = b.ac, t = ac.currentTime + 0.01;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(rnd(52, 60), t);
+    o.frequency.exponentialRampToValueAtTime(34, t + 0.35);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.32, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(1e-4, t + 0.45);
+    o.connect(g).connect(kit.out);
+    o.start(t); o.stop(t + 0.5);
+  },
+};
+// Per frame: levels follow the stage; the cursor drives the tone and the thud.
+function soundFrame(dt) {
+  onTargetT += dt;
+  // The cursor runs one orbit in 8 s, folded or not.
+  const prev = phase;
+  phase = (phase + dt / 8) % 1;
+  const row = Math.floor(phase * N);
+  const b = voices();
+  if (b) {
+    const t = b.ac.currentTime, set = (p, v, k = 0.08) => p.setTargetAtTime(v, t, k);
+    // A wrong star pulls the hum's two sines apart the longer it stays.
+    const spread = target.kind === 'wrong' ? 0.4 + 1.6 * clamp(onTargetT / 60) : locked ? 0.15 : 0.4;
+    set(b.hum2.frequency, 54 + spread, 0.5);
+    set(b.hissG.gain, 0.01 + 0.09 * Math.pow(1 - exposure, 2.2), 0.2);
+    set(b.stirG.gain, clamp(stir) * 0.16, 0.05);
+    if (locked) {
+      // The tone bends with the star's velocity at the cursor's phase.
+      const th = TAU * phase, rv = Math.sin(th) + (target.ecc || 0) * 0.8 * Math.sin(2 * th);
+      set(b.tone.frequency, 220 * Math.pow(2, rv * 0.25), 0.05);
+      set(b.toneG.gain, 0.07, 0.3);
+      set(b.toneP.pan, rv * 0.5, 0.05);
+      if (prev > phase) sfx.thud();
+    } else set(b.toneG.gain, 0, 0.15);
+    // The growl swells for 2 s each time the cursor meets a dip, at no set interval.
+    if (target.kind === 'wrong' && P > 0 && row !== lastCursorRow && growlT <= 0) {
+      const i = order[row], j = order[(row + N - 1) % N];
+      const dip = k => E.gap[k] < 0.5 && E.flux[k] < 0.8;
+      if (dip(i) && !dip(j)) growlT = 2;
+    }
+    growlT = Math.max(0, growlT - dt);
+    const sw = growlT > 1.7 ? (2 - growlT) / 0.3 : growlT / 1.7;
+    set(b.growlG.gain, 0.22 * sw, 0.08);
+  }
+  lastCursorRow = row;
+  stir = Math.max(0, stir - dt * 2.5);
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of lively run time, 2 s of slow frames steps down one rung.
+// Rungs: pixel ratio, then grain, then half the rows drawn.
+let runT = 0, slowT = 0, ftAvg = 1 / 60;
+function watchdog(raw, lively) {
+  if (!lively || raw > 0.25) return;
+  runT += raw;
+  ftAvg += (raw - ftAvg) * 0.1;
+  if (runT < 4 || rung >= 3) return;
+  slowT = ftAvg > 1 / 38 ? slowT + raw : 0;
+  if (slowT < 2) return;
+  rung++;
+  slowT = 0;
+  ftAvg = 1 / 60;
+  layout();
+}
+
+/* ---------- frame loop ---------- */
+// Lively at full rate, drifting at 30 fps, asleep 60 s after the last input.
+let raf = 0, last = 0, lastDraw = 0, visible = true, rested = false, lastInput = performance.now();
+const SLEEP = 60000, EASE = 2000;
+function live() { lastInput = performance.now(); wake(); }
+function wake() {
+  if (!raf && visible && Pg) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
+  const lively = settling();
+  watchdog(raw, lively);
+  last = now;
+  const idle = now - lastInput;
+  try {
+    // The shutter closes over the last 2 s before sleep.
+    const flow = clamp((SLEEP + EASE - idle) / EASE);
+    time += dt;
+    step(dt * (lively ? 1 : flow));
+    soundFrame(dt);
+    if (lively || now - lastDraw >= 31) { render(); lastDraw = now; }
+  } finally {
+    if (visible && (lively || idle < SLEEP + EASE)) raf = requestAnimationFrame(frame);
+    // Once the stage settles, the audio context sleeps.
+    if (!lively && !rested) { rested = true; kit.rest(() => !settling()); }
+    if (lively) rested = false;
+  }
+}
+
+/* ---------- boot ---------- */
+try {
+  telluric();
+  template(target);
+  await initGL();
+  layout();
+  // The first frame is a full stack in time order, no sweep.
+  restack(false);
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  readEl.hidden = true;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+wake();
+
+/* ---------- pointer ---------- */
+// A press turns into a fold after 8 px, or a hold after 260 ms. Else it is a tap.
+const KX = 1 / 180, KY = 1 / 1400;
+canvas.addEventListener('pointerdown', e => {
+  // A second finger turns the press into a pinch: the fine dial.
+  if (press && !pinch && e.pointerType === 'touch') {
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* no capture */ }
+    pinch = { id: e.pointerId, x: e.clientX, y: e.clientY, d: 0 };
+    press.fold = true; press.hold = false;
+    clearTimeout(holdT);
+    uncut();
+    stage.classList.add('fold');
+    live();
+    return;
+  }
+  if (press) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic pointer has no capture */ }
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, cx: e.clientX, cy: e.clientY, fold: false, hold: false };
+  holdT = setTimeout(() => { if (press && !press.fold) { press.hold = true; cut(e.clientX, e.clientY, true); } }, 260);
+  live();
+});
+canvas.addEventListener('pointermove', e => {
+  if (pinch && press && (e.pointerId === pinch.id || e.pointerId === press.id)) {
+    if (e.pointerId === pinch.id) { pinch.x = e.clientX; pinch.y = e.clientY; } else { press.cx = e.clientX; press.cy = e.clientY; }
+    const d = Math.hypot(pinch.x - press.cx, pinch.y - press.cy);
+    if (pinch.d) scrub((d - pinch.d) * KX * 0.12);
+    pinch.d = d;
+    live();
+    return;
+  }
+  if (!press || e.pointerId !== press.id) { if (!press && e.pointerType === 'mouse') cut(e.clientX, e.clientY, false); return; }
+  press.cx = e.clientX; press.cy = e.clientY;
+  // A hold that moves on becomes a fold; the cut goes away.
+  if (!press.fold && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) {
+    press.fold = true;
+    press.hold = false;
+    clearTimeout(holdT);
+    uncut();
+    press.lx = e.clientX; press.ly = e.clientY;
+    stage.classList.add('fold');
+  }
+  if (press.fold) {
+    // Across is the coarse dial; up and down is the fine one.
+    scrub((e.clientX - press.lx) * KX - (e.clientY - press.ly) * KY);
+    press.lx = e.clientX; press.ly = e.clientY;
+  } else if (press.hold) cut(e.clientX, e.clientY, true);
+  live();
+});
+function endPress(e) {
+  if (!press) return;
+  // Either finger lifting ends a pinch and the press with it.
+  if (e && e.pointerId !== press.id && !(pinch && e.pointerId === pinch.id)) return;
+  pinch = null;
+  clearTimeout(holdT);
+  if (!press.fold && !press.hold && e?.type === 'pointerup') cut(e.clientX, e.clientY, true);
+  press = null;
+  stage.classList.remove('fold');
+  live();
+}
+canvas.addEventListener('pointerup', endPress);
+canvas.addEventListener('pointercancel', endPress);
+canvas.addEventListener('lostpointercapture', endPress);
+canvas.addEventListener('pointerleave', () => { if (!press) uncut(); });
+// The wheel is the fine dial on mouse devices.
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  scrub(-dy * 0.00035);
+  live();
+}, { passive: false });
+// The cut: one row's spectrum, drawn across the top of the frame.
+// Hover shows it while the pointer rests; a tap holds it for 2 s.
+function cut(cx, cy, sticky) {
+  const r = canvas.getBoundingClientRect();
+  const x = (cx - r.left) * G.dpr, y = G.H - (cy - r.top) * G.dpr;
+  const [x0, y0, x1, y1] = G.box;
+  if (x < x0 || x > x1 || y < y0 || y > y1) { if (!sticky) uncut(); return; }
+  const k = clamp(Math.floor((y1 - y) / G.rowH), 0, N - 1);
+  cutRow = order[k];
+  cutUntil = sticky ? performance.now() + 2000 : Infinity;
+  live();
+}
+function uncut() { if (cutUntil === Infinity) cutRow = -1; }
+
+new ResizeObserver(() => { layout(); if (Pg) render(); }).observe(stage);
+onQuality(() => { rung = 0; slowT = 0; layout(); if (Pg) render(); });
+// A hidden tab stops the loop and the exposure clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; if (kit.ac?.state === 'running') kit.ac.suspend().catch(() => {}); return; }
+  wake();
+});
+</script>
+</body>
+</html>
