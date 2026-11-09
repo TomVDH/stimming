@@ -83,7 +83,9 @@ const opts = {
   iso: saved('iso') === '1',
   chart: saved('chart') === '1',
   marks: saved('marks') === '1',
+  proj: saved('proj') === 'globe' ? 'globe' : 'chart',
 };
+const GLOBE = () => opts.proj === 'globe';
 const COUNT_OPTS = [{ value: 'few', label: 'Few' }, { value: 'some', label: 'Some' }, { value: 'many', label: 'Many' }];
 // The shell builds the bar; settings rows persist under stimming.windmap.<id>.
 const ui = initPage({ id: 'windmap', bar: {
@@ -101,6 +103,7 @@ const ui = initPage({ id: 'windmap', bar: {
     { type: 'toggle', id: 'iso', label: 'Isobars', value: opts.iso, persist: true, onToggle: on => { opts.iso = on; render(); wake(); } },
     { type: 'toggle', id: 'chart', label: 'Chart', value: opts.chart, persist: true, onToggle: on => { opts.chart = on; render(); wake(); } },
     { type: 'toggle', id: 'marks', label: 'Marks', value: opts.marks, persist: true, onToggle: on => { opts.marks = on; render(); wake(); } },
+    { type: 'choice', id: 'proj', label: 'Projection', value: opts.proj, options: [{ value: 'chart', label: 'Chart' }, { value: 'globe', label: 'Globe' }], persist: true, onPick: v => setProj(v) },
   ],
   quality: true,
   keys: [['drag', 'circle to spin a storm'], ['click', 'gust'], ['hold', 'high'], ['space', 'cyclone']],
@@ -173,16 +176,25 @@ const SEG_TEX_VS = `#version 300 es
 precision highp float; precision highp sampler2D;
 in vec2 aCorner;
 uniform sampler2D uA, uB, uRamp;
-uniform int uTW; uniform vec2 uRes; uniform float uScale, uW, uGain, uDt, uVRef, uDye;
+uniform int uTW; uniform vec2 uRes; uniform float uScale, uW, uGain, uDt, uVRef, uDye, uPass;
 out vec2 vP; flat out vec4 vSeg; flat out vec4 vCol;
 void main() {
   ivec2 ij = ivec2(gl_InstanceID % uTW, gl_InstanceID / uTW);
   vec4 sa = texelFetch(uA, ij, 0), sb = texelFetch(uB, ij, 0);
   // A respawn resets the age, so the new age is below the old one.
   if (sb.z <= sa.z || uDt <= 0.0) { gl_Position = vec4(-2.0, -2.0, 0.0, 1.0); return; }
-  vec2 a = sa.xy * uScale, b = sb.xy * uScale; float w = uW;
+  // A step across the globe's seam unwraps beside the old point.
+  // The second pass draws the same step again beside the new point.
+  vec2 wa = sa.xy, wb = sb.xy;
+  float jump = wb.x - wa.x, crosses = step(1.0, abs(jump));
+  wb.x -= 2.0 * sign(jump) * crosses;
+  if (uPass > 0.5) {
+    if (crosses < 0.5) { gl_Position = vec4(-2.0, -2.0, 0.0, 1.0); return; }
+    wa.x += 2.0 * sign(jump); wb.x += 2.0 * sign(jump);
+  }
+  vec2 a = wa * uScale, b = wb * uScale; float w = uW;
   float life = mod(sb.w, 16.0), dye = floor(sb.w / 16.0) / 255.0;
-  float sp = clamp(length(sb.xy - sa.xy) / uDt / uVRef, 0.0, 1.0);
+  float sp = clamp(length(wb - wa) / uDt / uVRef, 0.0, 1.0);
   // The ramp row holds colour by speed; Dye reads it by spawn hue.
   vec3 rgb = texture(uRamp, vec2(mix(sp, dye, uDye), 0.5)).rgb * mix(1.0, 0.25 + 0.75 * sqrt(sp), uDye);
   float env = smoothstep(0.0, 0.5, sb.z) * smoothstep(life, life - 0.8, sb.z);
@@ -351,22 +363,30 @@ float snoise(vec3 v) {
 // Each vortex is Lamb-Oseen, with a small inflow near the eye.
 const FIELD = `
 const float HIGH_G = ${HIGH_G.toFixed(4)}, HIGH_Q = ${HIGH_Q.toFixed(4)}, JET_V = ${JET_V.toFixed(4)}, JET_W = ${JET_W.toFixed(4)};
-uniform float uU, uA, uT;
+uniform float uU, uA, uT, uWrap;
 uniform vec4 uVort[${MAXV}]; uniform int uNV;
 uniform vec4 uGust[${MAXG}]; uniform int uNG;
 uniform vec4 uJet[${MAXJ * 8}]; uniform int uNJ;
 ${SNOISE}
+// On the globe x wraps at 2, so offsets take the short way round.
+vec2 wd(vec2 d) { if (uWrap > 0.5) d.x -= 2.0 * floor(d.x * 0.5 + 0.5); return d; }
 // Nearest segment of jet j: distance, unit tangent, signed normal distance.
 void jetAt(vec2 p, int j, out float best, out vec2 tb, out float sd) {
   best = 1e9; tb = vec2(1.0, 0.0); sd = 0.0;
   for (int i = 0; i < 7; i++) {
-    vec2 a = uJet[j * 8 + i].xy, ab = uJet[j * 8 + i + 1].xy - a;
-    float h = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
-    vec2 dd = p - (a + ab * h); float dl = length(dd);
+    vec2 a = uJet[j * 8 + i].xy, ab = uJet[j * 8 + i + 1].xy - a, pa = wd(p - a);
+    float h = clamp(dot(pa, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+    vec2 dd = pa - ab * h; float dl = length(dd);
     if (dl < best) { best = dl; tb = ab / max(length(ab), 1e-6); sd = dot(dd, vec2(-tb.y, tb.x)); }
   }
 }
+// On the globe the noise sits on a cylinder, so x wraps with no seam.
 float psiN(vec2 p) {
+  if (uWrap > 0.5) {
+    float a = 3.14159265 * p.x;
+    return snoise(vec3(cos(a) * ${(1.6 / Math.PI).toFixed(5)}, sin(a) * ${(1.6 / Math.PI).toFixed(5)}, p.y * 1.6 + uT * 0.03))
+      + 0.3 * snoise(vec3(cos(a) * ${(3.9 / Math.PI).toFixed(5)} + 7.3, sin(a) * ${(3.9 / Math.PI).toFixed(5)}, p.y * 3.9 + uT * 0.05 + 3.1));
+  }
   return snoise(vec3(p * 1.6, uT * 0.03)) + 0.3 * snoise(vec3(p * 3.9 + 7.3, uT * 0.05 + 3.1));
 }
 vec2 vel(vec2 p) {
@@ -378,14 +398,14 @@ vec2 vel(vec2 p) {
   for (int k = 0; k < ${MAXV}; k++) {
     if (k >= uNV) break;
     vec4 q = uVort[k];
-    if (q.w < 0.0) { vec2 d = p - q.xy; v *= 1.0 - 0.85 * clamp(abs(q.z) / HIGH_G, 0.0, 1.0) * exp(-dot(d, d) / (q.w * q.w)); }
+    if (q.w < 0.0) { vec2 d = wd(p - q.xy); v *= 1.0 - 0.85 * clamp(abs(q.z) / HIGH_G, 0.0, 1.0) * exp(-dot(d, d) / (q.w * q.w)); }
   }
   for (int k = 0; k < ${MAXV}; k++) {
     if (k >= uNV) break;
     vec4 q = uVort[k];
     // A negative core radius marks a high.
     float rc = abs(q.w);
-    vec2 d = p - q.xy; float r2 = dot(d, d) + 1e-7, r = sqrt(r2), core = 1.0 - exp(-r2 / (rc * rc));
+    vec2 d = wd(p - q.xy); float r2 = dot(d, d) + 1e-7, r = sqrt(r2), core = 1.0 - exp(-r2 / (rc * rc));
     float vt = q.z / (6.2831853 * r) * core;
     v += vec2(-d.y, d.x) / r * vt;
     // Air converges into a low's eye, which turns the arms into spirals.
@@ -402,7 +422,7 @@ vec2 vel(vec2 p) {
   for (int k = 0; k < ${MAXG}; k++) {
     if (k >= uNG) break;
     vec4 g = uGust[k];
-    vec2 d = p - g.xy; float r2 = dot(d, d) + 1e-7, r = sqrt(r2);
+    vec2 d = wd(p - g.xy); float r2 = dot(d, d) + 1e-7, r = sqrt(r2);
     v += d / r * g.z / (6.2831853 * r) * (1.0 - exp(-r2 / (g.w * g.w)));
   }
   return v;
@@ -414,7 +434,7 @@ float psi(vec2 p) {
   for (int k = 0; k < ${MAXV}; k++) {
     if (k >= uNV) break;
     vec4 q = uVort[k];
-    vec2 d = p - q.xy;
+    vec2 d = wd(p - q.xy);
     s -= q.z / 12.566371 * log(dot(d, d) + q.w * q.w);
   }
   // A jet's along-flow speed integrates to a smooth step across it.
@@ -445,10 +465,11 @@ void main() {
   vec2 p = s.xy; float age = s.z + uDt, lw = s.w;
   vec2 pm = p + vel(p) * uDt * 0.5;
   p += vel(pm) * uDt;
+  if (uWrap > 0.5) p.x = mod(p.x, uWorld.x);
   bool dead = age > mod(lw, 16.0) || any(lessThan(p, vec2(-0.02))) || any(greaterThan(p, uWorld + 0.02));
   for (int k = 0; k < ${MAXV}; k++) {
     if (k >= uNV) break;
-    if (uVort[k].w > 0.0 && abs(uVort[k].z) > 0.02 && length(p - uVort[k].xy) < 0.45 * uVort[k].w) dead = true;
+    if (uVort[k].w > 0.0 && abs(uVort[k].z) > 0.02 && length(wd(p - uVort[k].xy)) < 0.45 * uVort[k].w) dead = true;
   }
   if (dead) {
     vec3 h = vec3(pcg3d(uvec3(uvec2(ij), uFrame))) * (1.0 / 4294967296.0);
@@ -464,7 +485,7 @@ void main() {
 // It draws with a multiply blend after the decay pass.
 const EYE_FS = `#version 300 es
 precision highp float;
-uniform vec4 uVort[${MAXV}]; uniform int uNV; uniform float uScale, uK;
+uniform vec4 uVort[${MAXV}]; uniform int uNV; uniform float uScale, uK, uWrap;
 out vec4 o;
 void main() {
   vec2 p = gl_FragCoord.xy / uScale;
@@ -474,7 +495,9 @@ void main() {
     vec4 q = uVort[k];
     if (q.w <= 0.0) continue;
     float s = clamp(abs(q.z) / 0.08, 0.0, 1.0);
-    float eye = 1.0 - smoothstep(0.3 * q.w, 0.85 * q.w, length(p - q.xy));
+    vec2 d = p - q.xy;
+    if (uWrap > 0.5) d.x -= 2.0 * floor(d.x * 0.5 + 0.5);
+    float eye = 1.0 - smoothstep(0.3 * q.w, 0.85 * q.w, length(d));
     m *= mix(1.0, uK, eye * s);
   }
   o = vec4(m);
@@ -483,8 +506,10 @@ void main() {
 const OUT_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc; uniform vec2 uRes; uniform float uTime, uExpo, uScale, uIso, uTick;
-uniform vec3 uBg, uGrid, uIsoCol, uGlowCol, uGustCol;
+uniform vec3 uBg, uGrid, uIsoCol, uGlowCol, uGustCol, uRimCol;
 uniform vec4 uFlash[8]; uniform int uNF;
+// The globe: an orthographic sphere of radius uDisc px, turned by yaw and pitch.
+uniform float uGlobe, uDisc, uYaw, uPitch;
 in vec2 vUv; out vec4 o;
 ${FIELD}
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -502,42 +527,68 @@ vec3 grid(vec2 px, vec2 res) {
                    (1.0 - min(dM.x, 1.0)) * step(min(px.y, res.y - px.y), uTick));
   return vec3(major, minor * (1.0 - major), tick);
 }
+// Graticule on the globe: major every 15 degrees, minor every 5.
+vec3 gridW(vec2 wp) {
+  vec2 g = wp * 12.0, fw = fwidth(g);
+  vec2 dM = abs(fract(g + 0.5) - 0.5) / fw;
+  float major = 1.0 - min(min(dM.x, dM.y), 1.0);
+  vec2 dm = abs(fract(g * 3.0 + 0.5) - 0.5) / (fw * 3.0);
+  // Minor lines fade where they crowd toward the poles and the limb.
+  float minor = (1.0 - min(min(dm.x, dm.y), 1.0)) * (1.0 - smoothstep(0.12, 0.3, max(fw.x, fw.y) * 3.0));
+  return vec3(major, minor * (1.0 - major), 0.0);
+}
 void main() {
   vec2 px = vUv * uRes;
   vec3 c = uBg;
+  vec2 wp = px / uScale, uv = vUv;
+  float rim = 0.0;
+  if (uGlobe > 0.5) {
+    vec2 sc = (px - uRes * 0.5) / uDisc;
+    float r2 = dot(sc, sc);
+    // Off the disc: slate and a faint halo of atmosphere.
+    if (r2 > 1.0) { o = vec4(c + uRimCol * 0.18 * exp(-(sqrt(r2) - 1.0) * 28.0), 1.0); return; }
+    vec3 n = vec3(sc, sqrt(1.0 - r2));
+    float cp = cos(uPitch), sp = sin(uPitch), cy = cos(uYaw), sy = sin(uYaw);
+    vec3 q = vec3(n.x, cp * n.y + sp * n.z, -sp * n.y + cp * n.z);
+    vec3 w = vec3(cy * q.x + sy * q.z, q.y, -sy * q.x + cy * q.z);
+    wp = vec2(mod(atan(w.x, w.z) / 3.14159265, 2.0), asin(clamp(w.y, -1.0, 1.0)) / 3.14159265 + 0.5);
+    uv = vec2(wp.x * 0.5, wp.y);
+    rim = pow(1.0 - n.z, 3.0);
+  }
   // Isobars: contours of the stream function, faded where they crowd.
   if (uIso > 0.0) {
-    float k = psi(px / uScale) / 0.008, fw = fwidth(k);
+    float k = psi(wp) / 0.008, fw = fwidth(k);
     float d = abs(fract(k + 0.5) - 0.5) / max(fw, 1e-5);
     float iso = (1.0 - smoothstep(0.4, 1.4, d)) * (1.0 - smoothstep(0.25, 0.6, fw));
     c = mix(c, uIsoCol, iso * 0.55 * uIso);
   }
   // The curve works on the brightest channel, so colours keep their hue.
-  vec3 acc = texture(uSrc, vUv).rgb;
+  vec3 acc = texture(uSrc, uv).rgb;
   float L = max(max(acc.r, acc.g), acc.b), m = 1.0 - exp(-L * uExpo);
   vec3 lit = acc * (m / max(L, 1e-5));
   // Very bright light bleeds toward white, as film does.
   c += mix(lit, vec3(m), 0.35 * smoothstep(1.0, 4.0, L * uExpo));
-  vec2 wp = px / uScale;
   // Each eye wears a soft ring of light that breathes with its strength.
   for (int k = 0; k < ${MAXV}; k++) {
     if (k >= uNV) break;
     vec4 q = uVort[k];
     if (q.w <= 0.0) continue;
-    float r = length(wp - q.xy), ring = exp(-pow((r - 1.5 * q.w) / (0.5 * q.w), 2.0));
+    float r = length(wd(wp - q.xy)), ring = exp(-pow((r - 1.5 * q.w) / (0.5 * q.w), 2.0));
     c += uGlowCol * ring * 0.12 * clamp(abs(q.z) / 0.2, 0.0, 1.0) * (0.85 + 0.15 * sin(uTime * 1.7 + float(k)));
   }
   // Flashes: a gust lights its point; a merge sends out a ring.
   for (int k = 0; k < 8; k++) {
     if (k >= uNF) break;
     vec4 f = uFlash[k];
-    float r = length(wp - f.xy), a = f.z;
+    float r = length(wd(wp - f.xy)), a = f.z;
     if (f.w < 0.5) c += uGustCol * 0.6 * exp(-a / 0.12) * exp(-pow(r / (0.02 + 0.15 * a), 2.0));
     else c += uGlowCol * 0.8 * exp(-a / 0.25) * exp(-pow((r - 0.42 * a) / 0.012, 2.0));
   }
   // The chart grid draws over the wind, so bright arms do not hide it.
-  vec3 gr = grid(px, uRes);
+  vec3 gr = uGlobe > 0.5 ? gridW(wp) : grid(px, uRes);
   c = mix(c, uGrid, gr.x * 0.14 + gr.y * 0.05 + gr.z * 0.22);
+  // The limb glows thinly, as a planet's air does.
+  c += uRimCol * rim * 0.25;
   o = vec4(c, 1.0);
 }`;
 // Bloom input: bright parts only, above a threshold.
@@ -586,7 +637,7 @@ const P = {
   final: program(QUAD_VS, FINAL_FS, ['aPos']),
 };
 const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.62, 0.02, 245), ISO_COL = linFit(0.62, 0.05, 75);
-const GLOW_COL = linFit(0.92, 0.04, 80), GUST_COL = linFit(0.95, 0.03, 230);
+const GLOW_COL = linFit(0.92, 0.04, 80), GUST_COL = linFit(0.95, 0.03, 230), RIM_COL = linFit(0.75, 0.08, 235);
 
 /* ---------- colour ramps ---------- */
 // One 256 by 1 row per look, in linear light.
@@ -676,18 +727,18 @@ function buildGrid() {
 // Velocity at (x, y): grid wind, then storms with inflow, then gusts.
 function cpuVel(x, y, out) {
   const { gx, gy, grid } = cpu;
-  const fx = clamp(x / AX, 0, 1) * (gx - 1), fy = clamp(y / AY, 0, 1) * (gy - 1);
+  const fx = clamp(wrapX(x) / AX, 0, 1) * (gx - 1), fy = clamp(y / AY, 0, 1) * (gy - 1);
   const i = Math.min(gx - 2, fx | 0), j = Math.min(gy - 2, fy | 0), u = fx - i, w = fy - j;
   const a = (j * gx + i) * 2, b = a + gx * 2;
   out[0] = lerp(lerp(grid[a], grid[a + 2], u), lerp(grid[b], grid[b + 2], u), w);
   out[1] = lerp(lerp(grid[a + 1], grid[a + 3], u), lerp(grid[b + 1], grid[b + 3], u), w);
   for (const v of vortices) {
     if (v.kind !== 'high') continue;
-    const d2 = (x - v.x) ** 2 + (y - v.y) ** 2, calm = 1 - 0.85 * clamp(Math.abs(v.g * v.amp) / HIGH_G) * Math.exp(-d2 / (v.rc * v.rc));
+    const d2 = wdx(x - v.x) ** 2 + (y - v.y) ** 2, calm = 1 - 0.85 * clamp(Math.abs(v.g * v.amp) / HIGH_G) * Math.exp(-d2 / (v.rc * v.rc));
     out[0] *= calm; out[1] *= calm;
   }
   for (const v of vortices) {
-    const dx = x - v.x, dy = y - v.y, r = Math.hypot(dx, dy) + 1e-4;
+    const dx = wdx(x - v.x), dy = y - v.y, r = Math.hypot(dx, dy) + 1e-4;
     const vt = vTheta(v.g * v.amp, v.rc, r);
     // Lows draw air in near the eye; highs push it out.
     const radial = v.kind === 'high' ? -outflow(v, r) : 0.25 * Math.abs(vt) * (1 - clamp((r - v.rc) / v.rc));
@@ -695,7 +746,7 @@ function cpuVel(x, y, out) {
   }
   jetVel(x, y, out);
   for (const g of gusts) {
-    const dx = x - g.x, dy = y - g.y, r2 = dx * dx + dy * dy + 1e-7, r = Math.sqrt(r2);
+    const dx = wdx(x - g.x), dy = y - g.y, r2 = dx * dx + dy * dy + 1e-7, r = Math.sqrt(r2);
     const q = g.q / (2 * Math.PI * r) * (1 - Math.exp(-r2 / (g.r * g.r)));
     out[0] += dx / r * q; out[1] += dy / r * q;
   }
@@ -706,7 +757,7 @@ const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k *
 function cpuStep(dt) {
   if (cpu.at < 0 || t - cpu.at > 0.5) buildGrid();
   if (!dt) return;
-  const n = Math.ceil(cpu.n * areaK * countK()), w = 0.75 * dpr, dye = opts.look === 'dye';
+  const n = Math.ceil(cpu.n * areaK * countK()), w = GLOBE() ? 1.1 : 0.75 * dpr, dye = opts.look === 'dye';
   const gain = 0.045 * Math.sqrt(65536 / (cpu.n * countK()));
   let m = 0;
   for (let i = 0; i < n; i++) {
@@ -714,20 +765,24 @@ function cpuStep(dt) {
     cpuVel(x0, y0, cv);
     const mx = x0 + cv[0] * dt / 2, my = y0 + cv[1] * dt / 2;
     cpuVel(mx, my, cv);
-    const x1 = x0 + cv[0] * dt, y1 = y0 + cv[1] * dt;
+    const x1 = wrapX(x0 + cv[0] * dt), y1 = y0 + cv[1] * dt;
     const age = cpu.age[i] += dt;
-    let dead = age > cpu.life[i] || x1 < -0.02 || y1 < -0.02 || x1 > AX + 0.02 || y1 > AY + 0.02;
-    for (const v of vortices) if (Math.abs(v.g * v.amp) > 0.02 && Math.hypot(x1 - v.x, y1 - v.y) < 0.45 * v.rc) dead = true;
+    let dead = age > cpu.life[i] || y1 < -0.02 || y1 > AY + 0.02 || (!GLOBE() && (x1 < -0.02 || x1 > AX + 0.02));
+    for (const v of vortices) if (v.kind === 'low' && Math.abs(v.g * v.amp) > 0.02 && Math.hypot(wdx(x1 - v.x), y1 - v.y) < 0.45 * v.rc) dead = true;
     if (dead) { respawnCpu(i); continue; }
     cpu.x[i] = x1; cpu.y[i] = y1;
+    // A step across the seam draws twice, once beside each end.
+    const jump = x1 - x0, cross = Math.abs(jump) > 1, xa = x0, xb = cross ? x1 - 2 * Math.sign(jump) : x1;
     // Colour and light follow SEG_TEX_VS.
-    const sp = clamp(Math.hypot(x1 - x0, y1 - y0) / dt / VREF);
+    const sp = clamp(Math.hypot(xb - xa, y1 - y0) / dt / VREF);
     const k = Math.round((dye ? cpu.hue[i] : sp) * 255) * 3;
     const env = smooth(0, 0.5, age) * (1 - smooth(cpu.life[i] - 0.8, cpu.life[i], age)) * cpu.lum[i];
-    const L = Math.hypot(x1 - x0, y1 - y0) * S;
-    const e = gain * env * clamp(L / (2 * w)) * (dye ? 0.25 + 0.75 * Math.sqrt(sp) : 1);
-    inst.set([x0 * S, y0 * S, x1 * S, y1 * S, rampRGB[k] * e, rampRGB[k + 1] * e, rampRGB[k + 2] * e, w], m * 8);
-    if (++m >= MAXSEG) { segPass(acc[ai], m); m = 0; }
+    const L = Math.hypot(xb - xa, y1 - y0) * PS;
+    const e = gain * (GLOBE() ? 0.6 : 1) * env * clamp(L / (2 * w)) * (dye ? 0.25 + 0.75 * Math.sqrt(sp) : 1);
+    for (const shift of cross ? [0, 2 * Math.sign(jump)] : [0]) {
+      inst.set([(xa + shift) * PS, y0 * PS, (xb + shift) * PS, y1 * PS, rampRGB[k] * e, rampRGB[k + 1] * e, rampRGB[k + 2] * e, w], m * 8);
+      if (++m >= MAXSEG) { segPass(acc[ai], m); m = 0; }
+    }
   }
   segPass(acc[ai], m);
 }
@@ -763,7 +818,18 @@ function snoise3(x, y, z) {
   return 42 * sum;
 }
 const NOISE_A = 0.009;
-const psiN = (x, y) => snoise3(x * 1.6, y * 1.6, t * 0.03) + 0.3 * snoise3(x * 3.9 + 7.3, y * 3.9 + 7.3, t * 0.05 + 3.1);
+const R1 = 1.6 / Math.PI, R2 = 3.9 / Math.PI;
+// The same field as the GLSL psiN, on a cylinder when the globe is on.
+const psiN = (x, y) => {
+  if (GLOBE()) {
+    const a = Math.PI * x, c = Math.cos(a), s = Math.sin(a);
+    return snoise3(c * R1, s * R1, y * 1.6 + t * 0.03) + 0.3 * snoise3(c * R2 + 7.3, s * R2, y * 3.9 + t * 0.05 + 3.1);
+  }
+  return snoise3(x * 1.6, y * 1.6, t * 0.03) + 0.3 * snoise3(x * 3.9 + 7.3, y * 3.9 + 7.3, t * 0.05 + 3.1);
+};
+// On the globe x wraps at 2; offsets take the short way round.
+const wdx = dx => (GLOBE() ? dx - 2 * Math.floor(dx / 2 + 0.5) : dx);
+const wrapX = x => (GLOBE() ? x - 2 * Math.floor(x / 2) : x);
 function baseVel(x, y, out) {
   const e = 0.004;
   out[0] = windU() + NOISE_A * (psiN(x, y + e) - psiN(x, y - e)) / (2 * e);
@@ -819,7 +885,7 @@ function induced(px, py, vx, vy) {
     for (let j = 0; j < n; j++) {
       if (j === i) continue;
       const o = vortices[j], ge = o.g * o.amp;
-      const dx = px[i] - px[j], dy = py[i] - py[j], r = Math.hypot(dx, dy) + 1e-6;
+      const dx = wdx(px[i] - px[j]), dy = py[i] - py[j], r = Math.hypot(dx, dy) + 1e-6;
       const vt = vTheta(ge, o.rc, r);
       vx[i] += -dy / r * vt; vy[i] += dx / r * vt;
       if (o.kind === 'high') {
@@ -865,7 +931,8 @@ function stepStorms(dt) {
   }
   for (let i = n - 1; i >= 0; i--) {
     const a = vortices[i];
-    const out = a.x < -0.05 || a.x > AX + 0.05 || a.y < -0.05 || a.y > AY + 0.05;
+    a.x = wrapX(a.x);
+    const out = a.y < -0.05 || a.y > AY + 0.05 || (!GLOBE() && (a.x < -0.05 || a.x > AX + 0.05));
     if (a.kind === 'high') {
       // A held high grows; a free one fades over about 8 s.
       if (a.held) a.g = -spin() * Math.min(HIGH_G, Math.abs(a.g) + HIGH_G * dt / 3);
@@ -890,11 +957,11 @@ function mergeStorms() {
     for (let j = i + 1; j < vortices.length; j++) {
       const a = vortices[i], b = vortices[j];
       if (a.dying || b.dying || a.kind !== b.kind || a.g * b.g <= 0) continue;
-      if (Math.hypot(a.x - b.x, a.y - b.y) > 0.6 * (a.rc + b.rc)) continue;
+      if (Math.hypot(wdx(a.x - b.x), a.y - b.y) > 0.6 * (a.rc + b.rc)) continue;
       // The held storm, else the stronger one, absorbs the other.
       const [k, o] = b.held || (!a.held && Math.abs(b.g * b.amp) > Math.abs(a.g * a.amp)) ? [b, a] : [a, b];
       const gk = Math.abs(k.g * k.amp), go = Math.abs(o.g * o.amp), w = go / (gk + go + 1e-6);
-      if (!k.held) { k.x = lerp(k.x, o.x, w); k.y = lerp(k.y, o.y, w); }
+      if (!k.held) { k.x = wrapX(k.x + wdx(o.x - k.x) * w); k.y = lerp(k.y, o.y, w); }
       k.g = clamp(k.g * k.amp + o.g * o.amp, -G_MAX, G_MAX); k.amp = 1;
       k.rc = Math.min(RC_MAX, Math.hypot(k.rc, o.rc));
       vortices.splice(vortices.indexOf(o), 1);
@@ -907,6 +974,9 @@ function mergeStorms() {
 // A jet is a ribbon of strong wind along 8 points; it meanders and fades.
 const jets = [], jetData = new Float32Array(MAXJ * 8 * 4);
 function addJet(path) {
+  // A path across the seam unwraps, so its points stay continuous.
+  path = path.map(p => p.slice());
+  for (let i = 1; i < path.length; i++) path[i][0] = path[i - 1][0] + wdx(path[i][0] - path[i - 1][0]);
   // Resample the drawn path to 8 evenly spaced points.
   const L = [0];
   for (let i = 1; i < path.length; i++) L.push(L[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
@@ -936,8 +1006,8 @@ function jetVel(x, y, out) {
     let best = 1e9, tx = 1, ty = 0;
     for (let i = 0; i < 7; i++) {
       const [ax, ay] = j.pts[i], bx = j.pts[i + 1][0] - ax, by = j.pts[i + 1][1] - ay, ll = bx * bx + by * by;
-      const h = clamp(((x - ax) * bx + (y - ay) * by) / Math.max(ll, 1e-8));
-      const d = Math.hypot(x - (ax + bx * h), y - (ay + by * h));
+      const px = wdx(x - ax), py = y - ay, h = clamp((px * bx + py * by) / Math.max(ll, 1e-8));
+      const d = Math.hypot(px - bx * h, py - by * h);
       if (d < best) { best = d; const l = Math.sqrt(ll) || 1; tx = bx / l; ty = by / l; }
     }
     const k = JET_V * j.amp * Math.exp(-(best * best) / (JET_W * JET_W));
@@ -951,6 +1021,9 @@ function onMerge(k) { whomp(k.x); flash(k.x, k.y, 'merge'); }
 /* ---------- state ---------- */
 // One world unit spans the short side, so portrait recomposes the chart.
 let W = 1, H = 1, dpr = 1, S = 1, AX = 1, AY = 1, t = 0, frameNo = 1;
+// The plate: chart mode matches the screen; the globe uses a 2 to 1 map.
+// PS is plate pixels per world unit.
+let PW = 1, PH = 1, PS = 1;
 // Drawn particles scale with stage area, so line spacing holds on a phone.
 let areaK = 1;
 
@@ -958,6 +1031,7 @@ function setField(u) {
   gl.uniform1f(u.uU, windU());
   gl.uniform1f(u.uA, NOISE_A);
   gl.uniform1f(u.uT, t);
+  gl.uniform1f(u.uWrap, GLOBE() ? 1 : 0);
   packVorts();
   gusts.forEach((g, k) => gustData.set([g.x, g.y, g.q, g.r], k * 4));
   jets.forEach((j, k) => j.pts.forEach((p, i) => jetData.set([p[0], p[1], j.amp, 0], (k * 8 + i) * 4)));
@@ -992,15 +1066,19 @@ function segTexPass(dt) {
   gl.uniform1i(u.uA, 0); gl.uniform1i(u.uB, 1); gl.uniform1i(u.uRamp, 2);
   gl.uniform1i(u.uTW, TW);
   gl.uniform2f(u.uRes, dst.w, dst.h);
-  gl.uniform1f(u.uScale, S);
-  gl.uniform1f(u.uW, 0.75 * dpr);
+  gl.uniform1f(u.uScale, PS);
+  // Plate pixels shrink on the globe, so lines draw a little wider there.
+  gl.uniform1f(u.uW, GLOBE() ? 1.1 : 0.75 * dpr);
   // Fewer particles each carry more light, so the chart reads the same.
-  gl.uniform1f(u.uGain, 0.045 * Math.sqrt(65536 / (TW * TH * countK())));
+  // The globe packs more trails per screen pixel, so each carries less light.
+  gl.uniform1f(u.uGain, 0.045 * Math.sqrt(65536 / (TW * TH * countK())) * (GLOBE() ? 0.6 : 1));
   gl.uniform1f(u.uDt, dt);
   gl.uniform1f(u.uVRef, VREF);
   gl.uniform1f(u.uDye, opts.look === 'dye' ? 1 : 0);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.uniform1f(u.uPass, 0);
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.ceil(TW * TH * areaK * countK()));
+  if (GLOBE()) { gl.uniform1f(u.uPass, 1); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.ceil(TW * TH * areaK * countK())); }
   gl.disable(gl.BLEND);
   gl.activeTexture(gl.TEXTURE0);
 }
@@ -1012,7 +1090,8 @@ function eyePass(dt) {
   const u = P.eye.u;
   packVorts();
   gl.uniform4fv(u.uVort, vortData); gl.uniform1i(u.uNV, vortices.length);
-  gl.uniform1f(u.uScale, S);
+  gl.uniform1f(u.uScale, PS);
+  gl.uniform1f(u.uWrap, GLOBE() ? 1 : 0);
   gl.uniform1f(u.uK, Math.exp(-dt / 0.12));
   gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -1048,7 +1127,9 @@ function render() {
   gl.uniform1f(u.uTick, 6 * dpr);
   gl.uniform1f(u.uIso, opts.iso ? 1 : 0);
   gl.uniform3fv(u.uIsoCol, ISO_COL);
-  gl.uniform3fv(u.uGlowCol, GLOW_COL); gl.uniform3fv(u.uGustCol, GUST_COL);
+  gl.uniform3fv(u.uGlowCol, GLOW_COL); gl.uniform3fv(u.uGustCol, GUST_COL); gl.uniform3fv(u.uRimCol, RIM_COL);
+  gl.uniform1f(u.uGlobe, GLOBE() ? 1 : 0); gl.uniform1f(u.uDisc, discR());
+  gl.uniform1f(u.uYaw, globe.yaw); gl.uniform1f(u.uPitch, globe.pitch);
   flashes.forEach((f, k) => flashData.set([f.x, f.y, f.age, f.kind === 'merge' ? 1 : 0], k * 4));
   gl.uniform4fv(u.uFlash, flashData); gl.uniform1i(u.uNF, flashes.length);
   setField(u);
@@ -1094,6 +1175,61 @@ function makeBloom() {
   bloom = [target(hw, hh), target(hw, hh), target(qw, qh), target(qw, qh)];
 }
 
+/* ---------- globe ---------- */
+// An orthographic globe turned by yaw (about the pole) and pitch.
+const globe = { yaw: 0.6, pitch: 0.25, vy: 0, vp: 0 };
+const discR = () => 0.46 * Math.min(W, H);
+const TURN = (3 * Math.PI) / 180;
+// View point on the unit disc to world (x, y); the shader does the same.
+function viewToWorld(nx, ny) {
+  const r2 = nx * nx + ny * ny;
+  if (r2 > 1) return null;
+  const nz = Math.sqrt(1 - r2), cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch), cy = Math.cos(globe.yaw), sy = Math.sin(globe.yaw);
+  const qx = nx, qy = cp * ny + sp * nz, qz = -sp * ny + cp * nz;
+  const wx = cy * qx + sy * qz, wy = qy, wz = -sy * qx + cy * qz;
+  return [wrapX(Math.atan2(wx, wz) / Math.PI), Math.asin(clamp(wy, -1, 1)) / Math.PI + 0.5];
+}
+// World (x, y) to view (nx, ny, nz); nz below 0 is the far side.
+function worldToView(x, y) {
+  const lon = x * Math.PI, lat = (y - 0.5) * Math.PI;
+  const wx = Math.cos(lat) * Math.sin(lon), wy = Math.sin(lat), wz = Math.cos(lat) * Math.cos(lon);
+  const cy = Math.cos(globe.yaw), sy = Math.sin(globe.yaw), cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch);
+  const qx = cy * wx - sy * wz, qy = wy, qz = sy * wx + cy * wz;
+  return [qx, cp * qy - sp * qz, sp * qy + cp * qz];
+}
+// Device pixel (top-down) to world; null off the disc.
+function pxToWorld(px, py) {
+  if (!GLOBE()) return [px / S, (H - py) / S];
+  return viewToWorld((px - W / 2) / discR(), (H / 2 - py) / discR());
+}
+// The globe turns slowly while drifting; a drag off the disc turns it by hand.
+function turnGlobe(dt, ease) {
+  if (!GLOBE() || press?.mode === 'turn') return;
+  const fling = Math.exp(-dt / 1.5);
+  globe.yaw += (globe.vy + (reduce ? 0 : TURN * ease)) * dt;
+  globe.pitch = clamp(globe.pitch + globe.vp * dt, -Math.PI / 3, Math.PI / 3);
+  globe.vy *= fling; globe.vp *= fling;
+}
+// Chart and Globe swap the world under every system, so the toy re-seeds.
+function setProj(v) {
+  if (v === opts.proj) return;
+  endPress(false);
+  // Storms keep their place on screen where the new view allows it.
+  const spots = vortices.map(o => { const s = toScreen(o.x, o.y); return s && [s[0] / W, s[1] / H]; });
+  opts.proj = v;
+  jets.length = 0; gusts.length = 0; flashes.length = 0;
+  resize(true, true);
+  vortices.forEach((o, k) => {
+    const f = spots[k] || [0.5, 0.5];
+    let w = pxToWorld(f[0] * W, f[1] * H);
+    // Off the disc, a storm moves in toward the centre.
+    for (let s = 0.9; !w && s > 0; s -= 0.1) w = pxToWorld(W / 2 + (f[0] - 0.5) * W * s * 0.5, H / 2 + (f[1] - 0.5) * H * s * 0.5);
+    if (w) { o.x = w[0]; o.y = w[1]; }
+    o.track = [];
+  });
+  seedState(); clearAcc(); preroll(1); render(); wake();
+}
+
 /* ---------- chart layer ---------- */
 // A 2D canvas over the wind holds tracks, fronts and pressure marks.
 const chart = { canvas: document.createElement('canvas') };
@@ -1103,7 +1239,12 @@ canvas.after(chart.canvas);
 chart.ctx = chart.canvas.getContext('2d');
 const INK = [0.82, 0.02, 80];
 // World point to chart pixels; the y axis points up in the world.
-function toScreen(x, y) { return [x * S, H - y * S]; }
+// Null means the far side of the globe.
+function toScreen(x, y) {
+  if (!GLOBE()) return [x * S, H - y * S];
+  const [nx, ny, nz] = worldToView(x, y);
+  return nz < 0.02 ? null : [W / 2 + nx * discR(), H / 2 - ny * discR()];
+}
 // Each low drops a track dot every 1.5 s, at most 40.
 function stepTracks() {
   for (const v of vortices) {
@@ -1123,7 +1264,9 @@ function drawChart() {
   // Dots grow with strength and fade over 30 s.
   for (const v of vortices) {
     for (const d of v.track || []) {
-      const [px, py] = toScreen(d.x, d.y), a = 0.6 * Math.exp(-(t - d.t) / 30) * v.amp;
+      const sp = toScreen(d.x, d.y), a = 0.6 * Math.exp(-(t - d.t) / 30) * v.amp;
+      if (!sp) continue;
+      const [px, py] = sp;
       c.fillStyle = css(INK, a);
       c.beginPath(); c.arc(px, py, (1 + 4 * clamp(d.g / 0.3)) * dpr, 0, TAU); c.fill();
     }
@@ -1135,7 +1278,9 @@ function drawChart() {
   c.textAlign = 'center'; c.textBaseline = 'middle';
   for (const v of live()) {
     if (Math.abs(v.g * v.amp) < 0.01) continue;
-    const [px, py] = toScreen(v.x, v.y);
+    const sp = toScreen(v.x, v.y);
+    if (!sp) continue;
+    const [px, py] = sp;
     c.fillStyle = css(INK, 0.9 * v.amp);
     c.fillText(v.kind === 'high' ? 'H' : 'L', px, py);
   }
@@ -1152,7 +1297,7 @@ function traceFront(v, bearing, len) {
   // Each step blends outward from the eye with the local flow.
   const dir = (px, py) => {
     cpuVel(px, py, fv);
-    const rx = px - v.x, ry = py - v.y, rl = Math.hypot(rx, ry) || 1, fl = Math.hypot(fv[0], fv[1]) || 1;
+    const rx = wdx(px - v.x), ry = py - v.y, rl = Math.hypot(rx, ry) || 1, fl = Math.hypot(fv[0], fv[1]) || 1;
     const dx = 0.6 * rx / rl + 0.4 * fv[0] / fl, dy = 0.6 * ry / rl + 0.4 * fv[1] / fl, dl = Math.hypot(dx, dy) || 1;
     return [dx / dl, dy / dl];
   };
@@ -1178,8 +1323,18 @@ function frontsFor(v) {
 }
 // Symbols sit every 14 CSS px on the side the front moves toward.
 function drawFront(c, fr, alpha) {
+  // The far side of the globe and screen jumps break the front into runs.
+  const runs = [[]];
+  let prev = null;
+  for (const [x, y] of fr.pts) {
+    const p = toScreen(x, y);
+    if (!p || (prev && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 40 * dpr)) { if (runs[runs.length - 1].length) runs.push([]); prev = p; if (!p) continue; }
+    runs[runs.length - 1].push(p); prev = p;
+  }
+  for (const px of runs) if (px.length > 1) drawRun(c, fr, alpha, px);
+}
+function drawRun(c, fr, alpha, px) {
   const ink = fr.kind === 'warm' ? WARM : fr.kind === 'cold' ? COLD : OCCL;
-  const px = fr.pts.map(([x, y]) => toScreen(x, y));
   c.strokeStyle = c.fillStyle = css(ink, alpha);
   c.lineWidth = 1.25 * dpr;
   c.beginPath(); px.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke();
@@ -1227,7 +1382,9 @@ function preroll(seconds) {
 }
 function seedCyclone() {
   vortices.length = 0;
-  spawnCyclone(AX * 0.54, AY * 0.5, 0.16 * spin(), 0.055).amp = 1;
+  // The first storm sits a little right of centre, on the chart or the globe.
+  const at = pxToWorld(W * 0.54, H * 0.5) || [AX * 0.54, AY * 0.5];
+  spawnCyclone(at[0], at[1], 0.16 * spin(), 0.055).amp = 1;
 }
 
 /* ---------- sound ---------- */
@@ -1377,6 +1534,7 @@ function frameFn(now) {
   if (lively && raw) watchdog(raw);
   const ease = quiet > SLEEP_AFTER ? 1 - (quiet - SLEEP_AFTER) / EASE_OUT : 1;
   try {
+    turnGlobe(dt, clamp(ease));
     simStep(dt * clamp(ease) ** 2);
     render();
     soundFrame(clamp(ease));
@@ -1407,21 +1565,28 @@ function fitStage() {
   if (!rung) return fitCanvas(canvas, { budget: 2.2e6 });
   return quality() === 'high' ? fitCanvas(canvas, { budget: 2.2e6, quality: 'standard' }) : fitCanvas(canvas, { budget: 2.2e6, maxDpr: 1 });
 }
-function resize(force = false) {
+// keep skips the storm rescale; a projection switch places storms itself.
+function resize(force = false, keep = false) {
   const fit = fitStage();
   if (fit.W === W && fit.H === H && acc.length && !force) return;
   W = fit.W; H = fit.H; dpr = fit.dpr;
   const wx = AX, wy = AY;
-  S = Math.min(W, H); AX = W / S; AY = H / S;
+  S = Math.min(W, H);
+  if (GLOBE()) {
+    // The globe's plate is a 2 to 1 map; watchdog rung 1 halves it.
+    AX = 2; AY = 1; PW = rung >= 1 ? 1024 : 2048; PH = PW / 2; PS = PW / 2;
+  } else { AX = W / S; AY = H / S; PW = W; PH = H; PS = S; }
   areaK = clamp((W / dpr) * (H / dpr) / (1250 * 680), 0.15, 1);
   acc.forEach(drop);
-  acc = [target(W, H), target(W, H)]; ai = 0;
+  acc = [target(PW, PH), target(PW, PH)]; ai = 0;
+  // The globe's plate wraps east to west, so the seam samples clean.
+  acc.forEach(a => { gl.bindTexture(gl.TEXTURE_2D, a.tex); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, GLOBE() ? gl.REPEAT : gl.CLAMP_TO_EDGE); });
   if (frame) drop(frame);
   frame = target(W, H);
   chart.canvas.width = W; chart.canvas.height = H;
   makeBloom();
   // Storms keep their place relative to the frame width.
-  vortices.forEach(v => { v.x *= AX / wx; v.y *= AY / wy; });
+  if (!keep && !GLOBE()) vortices.forEach(v => { v.x *= AX / wx; v.y *= AY / wy; });
   cpu.at = -1;
   if (!seeded) { seedState(); seedCyclone(); seeded = true; }
   preroll(ready ? 1 : 3);
@@ -1437,10 +1602,13 @@ function clearAll() { vortices.forEach(v => { v.dying = true; v.held = false; })
 function addCyclone() {
   let best = null, room = -1;
   for (let k = 0; k < 12; k++) {
-    const x = AX * (0.15 + 0.7 * Math.random()), y = AY * (0.2 + 0.6 * Math.random());
-    const d = live().reduce((m, v) => Math.min(m, Math.hypot(v.x - x, v.y - y)), 9);
-    if (d > room) { room = d; best = [x, y]; }
+    // Candidates come from the visible stage, so the globe's far side is skipped.
+    const w = pxToWorld(W * (0.2 + 0.6 * Math.random()), H * (0.2 + 0.6 * Math.random()));
+    if (!w) continue;
+    const d = live().reduce((m, v) => Math.min(m, Math.hypot(wdx(v.x - w[0]), v.y - w[1])), 9);
+    if (d > room) { room = d; best = w; }
   }
+  if (!best) return;
   spawnCyclone(best[0], best[1], (0.12 + 0.05 * Math.random()) * spin(), 0.045 + 0.015 * Math.random());
   wake();
 }
@@ -1450,10 +1618,13 @@ function addCyclone() {
 // Open air: 8 px of travel spins a storm; 260 ms still builds a high.
 // A spin that ends straight and long becomes a jet; a bare release is a gust.
 let press = null;
+// Pointer to world; null off the globe's disc.
 function toWorld(e) {
   const r = canvas.getBoundingClientRect();
-  return [(e.clientX - r.left) / r.width * AX, (1 - (e.clientY - r.top) / r.height) * AY];
+  return pxToWorld((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
 }
+// Device pixels per CSS pixel, for the globe's hand turn.
+const devPx = () => W / Math.max(1, canvas.getBoundingClientRect().width);
 const HOLD_MS = 260;
 function startSpin() {
   const p = press;
@@ -1471,31 +1642,33 @@ function startHigh() {
 // Each move adds the angle the pointer swept around the seed.
 function feed(w, now) {
   const p = press, v = p.v;
-  const rx = p.wl[0] - v.x, ry = p.wl[1] - v.y, r2 = rx * rx + ry * ry;
-  const dx = w[0] - p.wl[0], dy = w[1] - p.wl[1];
+  const rx = wdx(p.wl[0] - v.x), ry = p.wl[1] - v.y, r2 = rx * rx + ry * ry;
+  const dx = wdx(w[0] - p.wl[0]), dy = w[1] - p.wl[1];
   if (r2 > 0.015 * 0.015) {
     const dth = (rx * dy - ry * dx) / r2;
     v.g = clamp(v.g + 0.013 * dth, -G_MAX, G_MAX);
   }
   // The centre eases toward the middle of the drawn path.
   const k = 1 - Math.exp(-(now - p.tl) / 1500);
-  p.c[0] += (w[0] - p.c[0]) * k; p.c[1] += (w[1] - p.c[1]) * k;
-  v.x += (p.c[0] - v.x) * 0.5; v.y += (p.c[1] - v.y) * 0.5;
+  p.c[0] = wrapX(p.c[0] + wdx(w[0] - p.c[0]) * k); p.c[1] += (w[1] - p.c[1]) * k;
+  v.x = wrapX(v.x + wdx(p.c[0] - v.x) * 0.5); v.y += (p.c[1] - v.y) * 0.5;
   // Tight circles make a tight core.
   p.r += (Math.sqrt(r2) - p.r) * Math.min(1, k * 2);
   v.rc = clamp(p.r * 0.7, 0.04, 0.1);
   p.wl = w; p.tl = now;
-  p.path.push(w);
+  // The path stays continuous across the seam.
+  const last = p.path[p.path.length - 1];
+  p.path.push([last[0] + wdx(w[0] - last[0]), w[1]]);
 }
 // A grabbed storm or high follows the pointer; its speed is smoothed over 0.1 s.
 function drag(w, now) {
   const p = press, v = p.v, dt = Math.max(1e-3, (now - p.tl) / 1000);
   if (p.mode === 'grab') {
     const k = 1 - Math.exp(-dt / 0.1);
-    p.vel[0] += ((w[0] - p.wl[0]) / dt - p.vel[0]) * k;
+    p.vel[0] += (wdx(w[0] - p.wl[0]) / dt - p.vel[0]) * k;
     p.vel[1] += ((w[1] - p.wl[1]) / dt - p.vel[1]) * k;
   }
-  v.x = w[0] + p.off[0]; v.y = w[1] + p.off[1];
+  v.x = wrapX(w[0] + p.off[0]); v.y = w[1] + p.off[1];
   p.wl = w; p.tl = now;
 }
 // Straight, long and spin-free: the drag paints a jet.
@@ -1525,6 +1698,11 @@ function endPress(tap) {
   } else if (p.mode === 'high') {
     p.v.held = false;
     highDrone(false);
+  } else if (p.mode === 'turn') {
+    // A release carries the turn on, slowing with tau 1.5 s.
+    // A hand that rests 80 ms before release throws nothing.
+    const fresh = performance.now() - p.tl < 80, cap = v => clamp(v, -1.5, 1.5);
+    if (tap && fresh) { globe.vy = cap(p.tv[0]); globe.vp = cap(p.tv[1]); }
   } else if (tap) gust(p.w0[0], p.w0[1]);
   wake();
 }
@@ -1537,8 +1715,10 @@ stage.addEventListener('pointerdown', e => {
   try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic pointers cannot capture */ }
   const w = toWorld(e), now = performance.now();
   press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, w0: w, wl: w, tl: now, t0: now, mode: 'press' };
+  // Off the globe's disc, a drag turns the globe.
+  if (!w) { Object.assign(press, { mode: 'turn', xl: e.clientX, yl: e.clientY, tv: [0, 0] }); globe.vy = globe.vp = 0; wake(); return; }
   // A press inside a storm's core, or a high's calm centre, grabs it.
-  const core = live().find(v => Math.hypot(v.x - w[0], v.y - w[1]) < Math.max(0.03, 1.5 * v.rc));
+  const core = live().find(v => Math.hypot(wdx(v.x - w[0]), v.y - w[1]) < Math.max(0.03, 1.5 * v.rc));
   if (core) {
     Object.assign(press, { mode: 'grab', v: core, off: [core.x - w[0], core.y - w[1]], vel: [0, 0] });
     core.held = true; core.vx = core.vy = 0;
@@ -1547,7 +1727,21 @@ stage.addEventListener('pointerdown', e => {
 });
 stage.addEventListener('pointermove', e => {
   if (!press || e.pointerId !== press.id) return;
-  const w = toWorld(e), now = performance.now();
+  const now = performance.now();
+  if (press.mode === 'turn') {
+    // The surface follows the hand: a drag left brings the east into view.
+    const dt = Math.max(1e-3, (now - press.tl) / 1000), r = discR() / devPx();
+    const dyaw = -(e.clientX - press.xl) / r, dpitch = -(e.clientY - press.yl) / r;
+    globe.yaw += dyaw; globe.pitch = clamp(globe.pitch + dpitch, -Math.PI / 3, Math.PI / 3);
+    // The throw speed is smoothed over about 0.1 s.
+    const k = 1 - Math.exp(-dt / 0.1);
+    press.tv = [press.tv[0] + (dyaw / dt - press.tv[0]) * k, press.tv[1] + (dpitch / dt - press.tv[1]) * k];
+    press.xl = e.clientX; press.yl = e.clientY; press.tl = now;
+    wake(); return;
+  }
+  let w = toWorld(e);
+  // A drag that slips off the disc keeps its last point on the globe.
+  if (!w) w = press.wl;
   if (press.mode === 'press') {
     checkHold(now);
     if (press.mode === 'press' && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 8) startSpin();
