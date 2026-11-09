@@ -217,3 +217,19 @@ None. The instanced-strip stack and the fold suit any later waterfall toy (Sonar
 - Series. Draft: `science`. Galaxy carries none; Star trails carries `dark`.
 - Designations. The table mixes real names (KIC 8462852 is Tabby's star; HD 219134, GJ 3470 and TOI-700 are real systems) with invented ones. Default: make all eight catalog-shaped but fictional, and keep KIC 8462852 only if Tom wants the nod.
 - This plan file is copied to `docs/plans/exoplanet.md` in the repo as the first step of Task 1, so the build session reads it from there.
+
+## Rev 2: three instruments (Tom, 2026-11-09)
+
+Tom's read of Rev 1: it is an instrument readout, not a telescope, and it looks like Sonar's waterfall. The toy becomes one star seen through three instruments. The fold gesture is shared; the wrong stars stay wrong in every mode.
+
+| Instrument | The shot | Gesture | At lock | Wrong star |
+|---|---|---|---|---|
+| Transit | The star as a limb-darkened, granulated disc with four diffraction spikes, left. The light curve as dots, right, in time order or folded. | Drag folds. | The dots form one dip. A black planet disc crosses the star on every pass of the phase cursor. | The disc dims deep and ragged. No silhouette, ever. |
+| Spectrograph | Rev 1's waterfall, unchanged. | Drag folds, tap cuts. | The sine and the band. | No wobble. |
+| Coronagraph | A black mask on the star, a thin leak ring, a boil of speckles. | Hold to integrate: the speckles average down. Drag still folds. | A faint dot emerges beside the mask and, when locked, walks its orbit with the cursor. | No dot. A ragged arc of dust comes up instead. |
+
+**Bar.** The choice is a `tray`: Transit, Spectrograph, Coronagraph (keys T, S, C). Target becomes a stepper row in Settings; Shuffle stays the main way to a new star. Keys: `[DRAG] fold` · `[HOLD] expose` · `[TAP] cut` · `[SPACE] shuffle`.
+
+**Tech.** Two more fragment programs on the quad VAO: `STAR_FS` (disc, spikes, halo, scintillation, silhouette from the cursor's phase and the target's transit duration) and `CORO_FS` (mask, leak ring, speckle field from hashed octaves rotating with the sky, planet PSF at the orbit position, integration as `1 / sqrt(1 + 40 · integ)` speckle contrast). `integ` rises over 4 s while held and falls over 8 s. The light curve in Transit mode uses the marks program at full width, 3 px dots. The exposure clock, the fold, the periodogram and the sound run under every mode.
+
+**Opening shot.** Transit, target 1, time order: the star breathes, the curve scrolls, one dip is already in it.
