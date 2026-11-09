@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T22:35:00Z
+updated_at: 2026-11-09T22:45:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -174,3 +174,12 @@ Open from the critics:
 - [x] Ballast filtered: rotated gradient-noise layers (no cell grid); each layer fades by its own footprint, along the track with the motion smear and across it separately, so at speed the stones become clean streaks and far off everything settles to its mean; sleepers fade to average cover; verge noise filtered too
 - [x] No dark spots: terrain self-shadow floors at 55 %; shaded faces take strong sky fill and a green bounce; woods are rich green, not black
 - [x] The cabin bobs too: the eye takes the rail-joint jolts and a slow sway against the wall, so the window moves with the outside
+
+## Round 21: glow, glint, no avatar (Tom, 2026-11-09)
+- [x] The viewer's head-and-shoulders ghost on the glass is gone
+- [x] Glow after Window seat: quarter-size bright pass with a soft knee and four-tap block average, blurred twice (9-tap Gaussian), added back; replaces UnrealBloomPass, so lights no longer bloom into square pips
+- [x] Rails glint: anisotropic specular from each lamp, the moon and the sun, stretched along the rail
+- [x] Dev plan page trainride/dev/ (relief, line, stations, baked strip); Tom: the relief map goes into the annex later for background and explanation
+- [ ] Oncoming trains now and then
+- [ ] Landscape lights, sector by sector
+- [ ] Stations rework

@@ -58,7 +58,7 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { initPage, whenVisible, reduced, onReducedChange, quality, pixelRatio, onQuality, audioKit } from '../shared/stim.js';
@@ -1182,6 +1182,17 @@ out.add(bed);
     vec3 R = reflect(V, N);
     float F = 0.3 + 0.7 * pow(1.0 - max(-V.y, 0.0), 4.0);
     glow += (skyCol(R) * 0.8 * uDay + vec3(1.0, 0.8, 0.6) * trainLight(vP) * 0.5 + stnLight(vP, vec3(0.0, 1.0, 0.0)) * 0.08) * F;
+    // Metallic glint, stretched along the rail as polished steel shows it.
+    vec3 Ra = normalize(vec3(R.x * 0.25, R.y, R.z));
+    float gl = 0.0;
+    for (int i = 0; i < ${NL}; i++) {
+      vec3 Ld = uLP[i].xyz - vP;
+      vec3 La = normalize(vec3(Ld.x * 0.25, Ld.y, Ld.z));
+      gl += uLP[i].w * pow(max(dot(Ra, La), 0.0), 90.0) * 6.0 / (1.0 + dot(Ld, Ld) * 0.01);
+    }
+    glow += LAMPC * gl;
+    glow += vec3(0.7, 0.76, 0.88) * pow(max(dot(Ra, normalize(vec3(uMoon.x * 0.25, uMoon.y, uMoon.z))), 0.0), 220.0) * 2.0 * (1.0 - uDay);
+    glow += sunC() * pow(max(dot(Ra, normalize(vec3(uSun.x * 0.25, uSun.y, uSun.z))), 0.0), 260.0) * 1.2 * uDay * (1.0 - uRain);
   } else {
     // The web and foot: rust, darker toward the ballast; the head's lip catches light.
     alb = vec3(0.16, 0.1, 0.07) * (0.8 + 0.3 * vnoise(vec2(vP.x * 2.0, vP.y * 40.0)));
@@ -1575,26 +1586,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb;
       vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
       col = col * (1.0 - 0.8 * fog) + veil * fog * 0.9;
-      // The viewer's own head and shoulders hang in the reflection.
-      // The mirror image sits twice as far, so it shows at half size on the pane.
-      float kk = 1.0 / (2.0 * uTan.y);
-      vec2 E = uEye.xy * kk;
-      float sdH = length((p - E - vec2(0.0, 0.016) * kk) / vec2(0.044, 0.056) / kk) - 1.0;
-      vec2 sq = (p - E - vec2(0.0, -0.13) * kk) / vec2(0.11, 0.06) / kk;
-      float sdS = length(sq) - 1.0;
-      float neck = length((p - E - vec2(0.0, -0.05) * kk) / vec2(0.028, 0.06) / kk) - 1.0;
-      float me = smoothstep(0.12, -0.12, min(min(sdH, sdS), neck));
-      // The face and shoulders take the warm cabin light from above.
-      float lit = 0.5 + 0.5 * smoothstep(0.08, -0.06, (p.y - E.y) / kk);
-      vec3 self = warm * mix(0.04, 0.012, smoothstep(-0.3, 0.6, -sdH)) * lit;
-      room = mix(room, self, me * (1.0 - uDay) * 0.85);
       // By day the sunlit cabin shows a little more in the pane.
       col += room * F * mix(0.5, 1.1, uDay) * (1.0 - fog);
       // At night the lit cabin shows plainly wherever the view behind is dark.
       float darkV = 1.0 - smoothstep(0.0, 0.08, dot(col, vec3(0.2126, 0.7152, 0.0722)));
       col += room * 0.09 * darkV * (1.0 - uDay) * (1.0 - fog);
       // The inner pane of the double glazing adds a faint second image.
-      col += textureLod(tRoom, R + vec3(0.012, -0.018, 0.0), 1.5).rgb * F * 0.18 * (1.0 - fog) * (1.0 - me * 0.8);
+      col += textureLod(tRoom, R + vec3(0.012, -0.018, 0.0), 1.5).rgb * F * 0.18 * (1.0 - fog);
       // The glass reflects the lit carriage as a soft warm gradient.
       float rg = smoothstep(-0.7, 0.4, -p.y * 0.8 + p.x * 0.35) * 0.7 + 0.3 * smoothstep(0.1, 0.5, p.y);
       col += warm * 0.012 * rg * (1.0 - 0.5 * fog) * (1.0 - uDay);
@@ -2209,10 +2207,63 @@ const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, sample
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(S.scene, S.camera));
 const [bS, bR, bT] = S.post.bloom;
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), bS, bR, bT);
-// The bloom runs at half resolution.
-const bloomSize = bloom.setSize.bind(bloom);
-bloom.setSize = (w, h) => bloomSize(Math.max(1, w / 2), Math.max(1, h / 2));
+// Glow, after Window seat: a bright pass at a quarter size, blurred twice, added back.
+// Four bilinear taps average each block, so single bright pixels never turn square.
+class GlowPass extends Pass {
+  constructor() {
+    super();
+    this.strength = bS; this.radius = bR; this.threshold = bT;
+    const rt = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+    this.a = rt(); this.b = rt();
+    const VSq = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+    this.bright = new FullScreenQuad(new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThr: { value: 1 } }, vertexShader: VSq,
+      fragmentShader: `uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uThr; varying vec2 vUv;
+      void main() {
+        vec3 c = vec3(0.0);
+        for (int j = 0; j < 2; j++) for (int i = 0; i < 2; i++) c += texture2D(tSrc, vUv + (vec2(i, j) - 0.5) * uTexel * 2.0).rgb;
+        c *= 0.25;
+        float l = max(c.r, max(c.g, c.b));
+        // A soft knee keeps the edge of the glow from popping.
+        float k = clamp((l - uThr) / (uThr + 1e-4), 0.0, 1.0);
+        gl_FragColor = vec4(c * k * k, 1.0);
+      }` }));
+    this.blur = new FullScreenQuad(new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uDir: { value: new THREE.Vector2() } }, vertexShader: VSq,
+      fragmentShader: `uniform sampler2D tSrc; uniform vec2 uTexel, uDir; varying vec2 vUv;
+      void main() {
+        // Nine taps, Gaussian weights.
+        float w[5]; w[0] = 0.2270; w[1] = 0.1945; w[2] = 0.1216; w[3] = 0.0541; w[4] = 0.0162;
+        vec3 c = texture2D(tSrc, vUv).rgb * w[0];
+        for (int i = 1; i < 5; i++) { vec2 d = uDir * uTexel * float(i); c += (texture2D(tSrc, vUv + d).rgb + texture2D(tSrc, vUv - d).rgb) * w[i]; }
+        gl_FragColor = vec4(c, 1.0);
+      }` }));
+    this.add = new FullScreenQuad(new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, tGlow: { value: null }, uK: { value: 0.35 } }, vertexShader: VSq,
+      fragmentShader: `uniform sampler2D tSrc, tGlow; uniform float uK; varying vec2 vUv;
+      void main() { vec4 c = texture2D(tSrc, vUv); gl_FragColor = vec4(c.rgb + texture2D(tGlow, vUv).rgb * uK, c.a); }` }));
+  }
+  setSize(w, h) { this.w = w; this.h = h; const qw = Math.max(1, Math.round(w / 4)), qh = Math.max(1, Math.round(h / 4)); this.a.setSize(qw, qh); this.b.setSize(qw, qh); }
+  render(renderer, writeBuffer, readBuffer) {
+    const bm = this.bright.material, bl = this.blur.material, am = this.add.material;
+    bm.uniforms.tSrc.value = readBuffer.texture;
+    bm.uniforms.uTexel.value.set(1 / this.w, 1 / this.h);
+    bm.uniforms.uThr.value = this.threshold;
+    renderer.setRenderTarget(this.a); this.bright.render(renderer);
+    bl.uniforms.uTexel.value.set(1 / this.a.width, 1 / this.a.height);
+    // Radius widens the blur by stepping the taps further apart.
+    const step = 1 + this.radius * 1.5;
+    for (let k = 0; k < 2; k++) {
+      bl.uniforms.tSrc.value = this.a.texture; bl.uniforms.uDir.value.set(step, 0);
+      renderer.setRenderTarget(this.b); this.blur.render(renderer);
+      bl.uniforms.tSrc.value = this.b.texture; bl.uniforms.uDir.value.set(0, step);
+      renderer.setRenderTarget(this.a); this.blur.render(renderer);
+    }
+    am.uniforms.tSrc.value = readBuffer.texture; am.uniforms.tGlow.value = this.a.texture; am.uniforms.uK.value = this.strength;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.add.render(renderer);
+  }
+}
+const bloom = new GlowPass();
 composer.addPass(bloom);
 
 // The grade adds a tint, a vignette and fixed grain.
