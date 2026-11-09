@@ -24,6 +24,11 @@
 .stage canvas.light { mix-blend-mode: plus-lighter; }
 /* The halo spills edge light onto the page around the stage. */
 .halo { position: absolute; left: 0; top: 0; pointer-events: none; }
+/* The spectroscope covers the table while it shows. */
+.stage canvas.spectro { z-index: 2; pointer-events: none; touch-action: none; }
+.stage canvas.spectro.on { pointer-events: auto; }
+.halo { transition: opacity 0.6s ease; }
+html[data-spectro] .halo { opacity: 0; }
 /* The four lights fit the sheet's width. */
 .s2-row .s2-seg:has(.s2-dot) .s2-chip { padding: 0 5px; gap: 4px; }
 /* The remove button is a solid disc with a cut cross. */
@@ -85,6 +90,7 @@
 import * as THREE from 'three';
 import { initPage, sound, audioKit, oklchRgb, css as okCss, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+import { spectroscope, ELEMENTS } from './spectro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
@@ -97,6 +103,8 @@ const KINDS = [
   { value: 'convex', label: 'Convex mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg>' },
   { value: 'concave', label: 'Concave mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg>' },
   { value: 'sensor', label: 'Sensor pad', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg>' },
+  // The spectroscope is a view, not a piece.
+  { value: 'spectro', label: 'Spectroscope', icon: '<svg viewBox="0 0 16 16"><path d="M1.6 5.2h6.2l-3.1 5.4z"/><path d="M10.2 2v12M12.3 2v12M14.4 2v12"/></svg>' },
 ];
 // The lamp shines white light or one laser line.
 // Each value is one wavelength bin; -1 is the full spectrum.
@@ -108,19 +116,60 @@ const LIGHTS = [
 ];
 const ui = initPage({ id: 'prism', bar: {
   choice: { label: 'Piece', display: 'tray', value: 'prism', options: KINDS,
-    onPick: v => { addPiece(v); panel.focus({ preventScroll: true }); } },
+    onPick: v => {
+      if (v === 'spectro') { openSpectro(); return; }
+      if (spec.on) closeSpectro();
+      addPiece(v);
+      panel.focus({ preventScroll: true });
+    } },
   actions: [{ verb: 'clear', key: 'C', onPress: () => clearAll() }],
   settings: [
     { type: 'choice', id: 'light', label: 'Light', value: '-1', options: LIGHTS,
       onPick: v => { lightBin = +v; geomDirty = true; wake(); } },
     // The toggle keeps the old stored key, stimming.prism.wire.
     { type: 'toggle', id: 'wire', label: 'Wireframe', value: false, persist: true, onToggle: on => { wire = on; wake(); } },
+    // These rows show only with the spectroscope.
+    { type: 'choice', id: 'element', label: 'Element', value: 'li', persist: true, display: 'stepper', options: ELEMENTS,
+      onPick: v => spec.setElement(v) },
+    { type: 'choice', id: 'spectro', label: 'Spectrometer', value: 'prism', persist: true,
+      options: [{ value: 'prism', label: 'Prism' }, { value: 'grating', label: 'Grating' }], onPick: v => spec.setGrating(v === 'grating') },
+    { type: 'toggle', id: 'trace', label: 'Trace sodium', value: true, persist: true, onToggle: v => spec.setTrace(v) },
+    { type: 'toggle', id: 'cobalt', label: 'Cobalt glass', value: false, persist: true, onToggle: v => spec.setCobalt(v) },
   ],
   reset: () => reset(),
   quality: true,
   keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'resize'], ['delete', 'remove']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+/* ---------- the spectroscope view ---------- */
+// The shell has no row toggle, so rows hide by their label.
+const SPEC_ROWS = ['Element', 'Spectrometer', 'Trace sodium', 'Cobalt glass'], TABLE_ROWS = ['Light', 'Wireframe'];
+const rowsShow = (labels, show) => document.querySelectorAll('.stim-ui .s2-row').forEach(r => {
+  if (labels.includes(r.firstElementChild?.textContent)) r.hidden = !show;
+});
+rowsShow(SPEC_ROWS, false);
+const spec = spectroscope({ stage: panel, kit: { live: () => kit.live(), rest: f => kit.rest(f), get out() { return kit.out; }, get noise() { return kit.noise; } }, ui, onExit: () => closeSpectro() });
+async function openSpectro() {
+  if (spec.on) { spec.strike(); return; }
+  select(-1);
+  try { if (!(await spec.open())) return; } catch (err) { console.warn('Spectroscope:', err.message); ui.choice.set('prism'); return; }
+  document.documentElement.dataset.spectro = '';
+  rowsShow(SPEC_ROWS, true);
+  rowsShow(TABLE_ROWS, false);
+  panel.focus({ preventScroll: true });
+  hush();
+  sync();
+}
+function closeSpectro() {
+  if (!spec.on) return;
+  spec.close();
+  delete document.documentElement.dataset.spectro;
+  rowsShow(SPEC_ROWS, false);
+  rowsShow(TABLE_ROWS, true);
+  ui.choice.set('prism');
+  sync();
+  panel.focus({ preventScroll: true });
+}
 // A laser is one wavelength bin, so it never splits.
 let lightBin = -1, wire = ui.setting('wire').value;
 const dropB = panel.querySelector('.drop');
@@ -1637,12 +1686,12 @@ function placeDrop() {
 
 /* ---------- sound: Tone.js voices on the shared audio kit ---------- */
 const LEAD = 0.004;
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace', '1', '2', '3', '4', '5', '6', '7']);
 const kit = audioKit({ keys: GESTURE_KEYS });
 let V = null, T = null, toneLoad = null, tickNext = 0, toneT = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Once the table settles, the context sleeps until the next gesture.
-const rest = () => kit.rest(() => !raf && !ptrs.size);
+const rest = () => kit.rest(() => !raf && !ptrs.size && !spec.on);
 // The first live call starts the load; voices answer once it lands.
 function voices() {
   if (!kit.live()) return null;
@@ -1740,7 +1789,8 @@ function applyLayout() {
 }
 function sync() {
   const n = liveAdded();
-  ui.action('clear').disabled = !n;
+  // Clear also leaves the spectroscope.
+  ui.action('clear').disabled = !n && !spec.on;
   ui.choice.disabled = n >= MAXADD;
 }
 const backOut = t => { const u = t - 1; return 1 + 2.5 * u * u * u + 1.5 * u * u; };
@@ -1853,6 +1903,7 @@ function sweep() {
   sync();
 }
 function clearAll() {
+  if (spec.on) { closeSpectro(); return; }
   if (!ready || !liveAdded()) return;
   select(-1);
   pieces.forEach(p => { if (!p.base) kill(p); });
@@ -1905,6 +1956,7 @@ function select(i) {
   wake();
 }
 function reset() {
+  closeSpectro();
   if (!ready || (pristine() && !tween)) return;
   select(-1);
   pieces.forEach(p => { if (!p.base) kill(p); });
@@ -2099,7 +2151,7 @@ dropB.addEventListener('click', e => {
   panel.focus({ preventScroll: true });
 });
 panel.addEventListener('keydown', e => {
-  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready) return;
+  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready || spec.on) return;
   // Tab walks the pieces, then lets focus leave the table.
   const n = pieces.length, next = sel < 0 ? (e.shiftKey ? n - 1 : 0) : sel + (e.shiftKey ? -1 : 1);
   if (next < 0 || next >= n) { select(-1); return; }
@@ -2118,7 +2170,7 @@ panel.addEventListener('wheel', e => {
 }, { passive: false });
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready || spec.on) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], button, a')) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel > 0) { e.preventDefault(); remove(sel); return; }
   const k = e.key.toLowerCase(), arrow = ARROWS[e.key];
