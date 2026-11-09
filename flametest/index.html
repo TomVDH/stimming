@@ -110,7 +110,7 @@ const SOOT = linFit(0.8, 0.16, 68);
 // amt is the salt in the flame; shown chases it, so lines swell in.
 const amt = new Float32Array(SALTS.length), shown = new Float32Array(SALTS.length);
 let salt = 0, air = 0.75, cobalt = 0, grating = 0, gratingTo = 0, trace = 1;
-let feeding = false, puffAge = 9, lean = 0, leanTo = 0, time = 0;
+let feeding = false, feedAt = null, feedAcc = 0, puffE = 0, puffV = 0, lean = 0, leanTo = 0, time = 0;
 
 const act = { flick() {}, shuffle() {}, reset() {}, air() {} };
 const ui = initPage({ id: 'flametest', bar: {
@@ -412,10 +412,30 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
+// Grains and sparks: soft additive points in device pixels.
+const PT_VS = `#version 300 es
+in vec3 aP;
+in vec3 aC;
+uniform vec2 uRes;
+out vec3 vC;
+void main() {
+  gl_Position = vec4(aP.xy / uRes * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = aP.z;
+  vC = aC;
+}`;
+const PT_FS = `#version 300 es
+precision highp float;
+in vec3 vC;
+out vec4 o;
+void main() {
+  vec2 d = gl_PointCoord * 2.0 - 1.0;
+  o = vec4(vC * exp(-dot(d, d) * 3.0), 0.0);
+}`;
+
 /* ---------- WebGL ---------- */
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
-let gl = null, P = null, scene = null, mips = [], FMT = 0;
+let gl = null, P = null, scene = null, mips = [], FMT = 0, triVao = null, ptVao = null, ptBuf = null;
 function compile(vs, fs) {
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
@@ -440,7 +460,7 @@ async function initGL() {
   gl.getExtension('OES_texture_float_linear');
   FMT = gl.RGBA16F;
   const par = gl.getExtension('KHR_parallel_shader_compile');
-  const progs = { scene: compile(TRI, SCENE_FS), pre: compile(TRI, PRE_FS), down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS), out: compile(TRI, OUT_FS) };
+  const progs = { scene: compile(TRI, SCENE_FS), pre: compile(TRI, PRE_FS), down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS), out: compile(TRI, OUT_FS), pt: compile(PT_VS, PT_FS) };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
   if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
@@ -449,7 +469,19 @@ async function initGL() {
     locate(q);
   }
   P = progs;
-  gl.bindVertexArray(gl.createVertexArray());
+  // Points have their own vertex array: x, y, size, then colour.
+  ptVao = gl.createVertexArray();
+  gl.bindVertexArray(ptVao);
+  ptBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, ptBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, MAXG * 24, gl.DYNAMIC_DRAW);
+  const aP = gl.getAttribLocation(P.pt.p, 'aP'), aC = gl.getAttribLocation(P.pt.p, 'aC');
+  gl.enableVertexAttribArray(aP);
+  gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(aC);
+  gl.vertexAttribPointer(aC, 3, gl.FLOAT, false, 24, 12);
+  triVao = gl.createVertexArray();
+  gl.bindVertexArray(triVao);
 }
 function target(w, h) {
   const tex = gl.createTexture();
@@ -580,7 +612,7 @@ function render() {
   const W = canvas.width, H = canvas.height;
   buildLines();
   mixFlame();
-  const puff = puffAge < 3 ? (1 - Math.exp(-puffAge / 0.05)) * Math.exp(-puffAge / 0.6) : 0;
+  const puff = Math.min(1.3, puffV);
   const s = P.scene;
   gl.useProgram(s.p);
   gl.uniform2f(s.u.uRes, W, H);
@@ -613,6 +645,7 @@ function render() {
   }
   gl.disable(gl.BLEND);
   draw(scene);
+  drawGrains(W, H);
   // Bloom down.
   gl.useProgram(P.pre.p);
   bind(P.pre, 'uSrc', 0, scene);
@@ -657,13 +690,22 @@ function step(dt) {
     shown[i] += (amt[i] - shown[i]) * k;
     if (shown[i] < 1e-3 && !amt[i]) shown[i] = 0;
   }
-  puffAge += dt;
+  // A puff swells fast and fades over about half a second.
+  puffV += (puffE - puffV) * (1 - Math.exp(-dt / 0.04));
+  puffE *= Math.exp(-dt / 0.45);
+  if (puffE < 1e-3) puffE = 0;
+  if (feeding) {
+    feedAcc += dt * 26;
+    const at = feedAt ?? spatula();
+    while (feedAcc >= 1) { feedAcc -= 1; launch(salt, at[0], at[1], 1, 0.04); }
+  }
+  grainStep(dt);
   leanTo *= Math.exp(-dt / 0.35);
   lean += (leanTo - lean) * (1 - Math.exp(-dt / 0.15));
   grating += (gratingTo - grating) * (1 - Math.exp(-dt / 0.15));
   if (Math.abs(gratingTo - grating) < 1e-3) grating = gratingTo;
 }
-const settling = () => feeding || ptr || puffAge < 2 || amt.some(a => a > 0) || shown.some(a => a > 0)
+const settling = () => feeding || ptr || grains.length > 0 || puffE > 0 || puffV > 1e-3 || amt.some(a => a > 0) || shown.some(a => a > 0)
   || Math.abs(lean) > 1e-3 || grating !== gratingTo;
 
 /* ---------- frame loop ---------- */
@@ -691,10 +733,97 @@ function frame(now) {
   }
 }
 
+/* ---------- grains ---------- */
+// Each grain flies a ballistic arc into the flame, then flashes and burns.
+const MAXG = 360, grains = [], gData = new Float32Array(MAXG * 6);
+const rnd = (a, b) => a + Math.random() * (b - a);
+// The spatula sits low beside the flame, away from the beam.
+const spatula = () => [G.base[0] - 0.34 * G.base[2] + rnd(-4, 4) * G.dpr, G.base[1] + 0.06 * G.base[2] + rnd(-4, 4) * G.dpr];
+function launch(i, x, y, n, pinch) {
+  const [bx, by, fh] = G.base, S = G.S, g = 2.4 * S;
+  for (let k = 0; k < n && grains.length < MAXG; k++) {
+    const tx = bx + rnd(-0.07, 0.07) * fh, ty = by + rnd(0.06, 0.34) * fh;
+    const sx = x + rnd(-5, 5) * G.dpr, sy = y + rnd(-5, 5) * G.dpr;
+    const T = clamp(Math.hypot(tx - sx, ty - sy) / (1.6 * S), 0.1, 0.55) * rnd(0.85, 1.15) * (reduced() ? 1.6 : 1);
+    grains.push({ s: i, x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy + 0.5 * g * T * T) / T, t: 0, T, burn: -1, share: pinch / n, tw: rnd(0, 6) });
+  }
+}
+// Sparks rise from a burning grain and wink out.
+function sparks(p) {
+  const n = reduced() ? 1 : 2 + (Math.random() < 0.5);
+  for (let k = 0; k < n && grains.length < MAXG; k++) {
+    grains.push({ s: p.s, spark: true, x: p.x, y: p.y, vx: rnd(-0.15, 0.15) * G.S, vy: rnd(0.35, 0.7) * G.S, t: 0, life: rnd(0.25, 0.55) });
+  }
+}
+function grainStep(dt) {
+  const g = 2.4 * G.S;
+  for (let k = grains.length - 1; k >= 0; k--) {
+    const p = grains[k];
+    p.t += dt;
+    if (p.spark) {
+      p.vx += rnd(-1, 1) * G.S * 3 * dt;
+      p.x += p.vx * dt + lean * 0.3 * G.S * dt;
+      p.y += p.vy * dt;
+      if (p.t > p.life) grains.splice(k, 1);
+      continue;
+    }
+    if (p.burn < 0) {
+      p.vy -= g * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.t < p.T) continue;
+      // Arrival: the salt joins the flame and the flame puffs.
+      p.burn = 0;
+      amt[p.s] = Math.min(2.5, amt[p.s] + p.share);
+      puffE = Math.min(1.3, puffE + p.share * 1.2);
+      sparks(p);
+    } else {
+      p.burn += dt;
+      p.y += 0.3 * G.S * dt;
+      if (p.burn > 0.12) grains.splice(k, 1);
+    }
+  }
+}
+function drawGrains(W, H) {
+  const n = Math.min(grains.length, MAXG), d = G.dpr;
+  if (!n) return;
+  for (let k = 0; k < n; k++) {
+    const p = grains[k], o = k * 6, c = SALTS[p.s].lin;
+    gData[o] = p.x;
+    gData[o + 1] = p.y;
+    if (p.spark) {
+      const f = 1 - p.t / p.life;
+      gData[o + 2] = 2.2 * d;
+      for (let j = 0; j < 3; j++) gData[o + 3 + j] = (c[j] * 4 + 0.6) * f * f;
+    } else if (p.burn < 0) {
+      // A grain in flight catches the flame's light and twinkles.
+      const tw = 0.6 + 0.4 * Math.sin(p.t * 40 + p.tw);
+      gData[o + 2] = 3.4 * d;
+      for (let j = 0; j < 3; j++) gData[o + 3 + j] = (0.9 + beam[j] * 1.2) * tw;
+    } else {
+      const f = 1 - p.burn / 0.12;
+      gData[o + 2] = (3 + 10 * f) * d;
+      for (let j = 0; j < 3; j++) gData[o + 3 + j] = c[j] * 7 * f + 1.2 * f * f;
+    }
+  }
+  gl.useProgram(P.pt.p);
+  gl.uniform2f(P.pt.u.uRes, W, H);
+  gl.bindVertexArray(ptVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ptBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, gData, 0, n * 6);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+  gl.viewport(0, 0, W, H);
+  gl.drawArrays(gl.POINTS, 0, n);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(triVao);
+}
+
 /* ---------- actions ---------- */
-function flick(i = salt, pinch = 0.9) {
-  amt[i] = Math.min(2.5, amt[i] + pinch);
-  puffAge = 0;
+// A pinch is about 14 grains; tapping the flame itself lands them at once.
+function flick(i = salt, at = spatula(), pinch = 0.9) {
+  launch(i, at[0], at[1], reduced() ? 8 : 14, pinch);
   live();
 }
 act.flick = () => flick();
@@ -702,8 +831,9 @@ act.shuffle = () => {
   const a = Math.floor(Math.random() * SALTS.length);
   let b = Math.floor(Math.random() * (SALTS.length - 1));
   if (b >= a) b++;
-  flick(a, 0.8);
-  flick(b, 0.8);
+  flick(a, spatula(), 0.8);
+  const [x, y] = spatula();
+  flick(b, [x + 0.68 * G.base[2], y], 0.8);
 };
 act.air = v => { air = v; live(); };
 act.reset = () => {
@@ -714,7 +844,8 @@ act.reset = () => {
   salt = 0;
   ui.choice.set('li');
   amt[0] = shown[0] = 1;
-  puffAge = 9;
+  grains.length = 0;
+  puffE = puffV = 0;
   live();
 };
 
@@ -722,11 +853,22 @@ act.reset = () => {
 // A press becomes a drag after 8 px, or a hold after 260 ms.
 // A release that is neither is a tap.
 let ptr = null, holdTo = 0;
+// Client pixels to device pixels, from the bottom left.
+function toGL(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  return [(cx - r.left) * (canvas.width / r.width), (r.bottom - cy) * (canvas.height / r.height)];
+}
 function down(e) {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
-  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, t: performance.now(), mode: 'press' };
-  holdTo = setTimeout(() => { if (ptr?.mode === 'press') { ptr.mode = 'hold'; feeding = true; flick(); } }, 260);
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, cx: e.clientX, cy: e.clientY, t: performance.now(), mode: 'press' };
+  holdTo = setTimeout(() => {
+    if (ptr?.mode !== 'press') return;
+    ptr.mode = 'hold';
+    feeding = true;
+    feedAt = toGL(ptr.cx, ptr.cy);
+    live();
+  }, 260);
   live();
 }
 function move(e) {
@@ -743,7 +885,9 @@ function move(e) {
     leanTo = clamp(leanTo + v * 0.05 * (reduced() ? 0.5 : 1), -1.2, 1.2);
     live();
   }
-  ptr.x = e.clientX;
+  if (ptr.mode === 'hold') feedAt = toGL(e.clientX, e.clientY);
+  ptr.x = ptr.cx = e.clientX;
+  ptr.cy = e.clientY;
   ptr.t = now;
 }
 function up(e) {
@@ -752,8 +896,9 @@ function up(e) {
   const m = ptr.mode;
   ptr = null;
   feeding = false;
+  feedAt = null;
   stage.classList.remove('blow');
-  if (m === 'press' && e?.type === 'pointerup') flick();
+  if (m === 'press' && e?.type === 'pointerup') flick(salt, toGL(e.clientX, e.clientY));
   live();
 }
 
