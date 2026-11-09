@@ -116,7 +116,7 @@ const N = 256, TW = 4096, WIN = 12;
 let target = TARGETS[0], shuffleSeed = 7;
 let exposure = 0.33, tell = 1, cosmic = 1, logStretch = 0;
 // Trial period P in days; 0 means time order. lock holds while folded true.
-let P = 0, locked = false, folding = false;
+let P = 0, locked = false;
 let time = 0;
 
 const act = { shuffle() {}, reset() {}, exposure() {}, pick() {} };
@@ -264,6 +264,7 @@ function restack(sweep = true) {
   tNow = 0;
   for (let i = 0; i < N; i++) { tNow += 0.28 + rndE() * 0.18; expose(i, tNow); }
   reorder();
+  periodogram();
   for (let i = 0; i < N; i++) { E.y[i] = E.yTo[i]; E.age[i] = sweep ? -(1 - rank[i] / N) * 1.5 - 0.1 : 1; }
 }
 // One more exposure. The oldest slot takes it.
@@ -277,7 +278,7 @@ function arrive() {
   reorder();
   // A new row starts where its slot is, so it sweeps in, not slides in.
   E.y[i] = E.yTo[i];
-  if (P > 0) periodogramDirty = true;
+  periodogramDirty = true;
 }
 // Rank every exposure: by time, or by phase when folded.
 function reorder() {
@@ -292,6 +293,81 @@ function reorder() {
   for (let k = 0; k < N; k++) { rank[order[k]] = k; E.yTo[order[k]] = k; }
 }
 let periodogramDirty = false;
+
+/* ---------- periodogram ---------- */
+// Trial periods run log-spaced from PMIN to PMAX days.
+const NPG = 400, PMIN = 0.5, PMAX = 20, LMIN = Math.log(PMIN), LMAX = Math.log(PMAX);
+const power = new Float32Array(NPG), lsP = new Float32Array(NPG), blsP = new Float32Array(NPG);
+const pgPos = p => clamp((Math.log(p) - LMIN) / (LMAX - LMIN));
+const pgPeriod = k => Math.exp(LMIN + (k / (NPG - 1)) * (LMAX - LMIN));
+const bins = new Float32Array(24), binN = new Float32Array(24);
+// Lomb-Scargle on the wobble, box fit on the brightness, summed.
+function periodogram() {
+  let mv = 0, mf = 0;
+  for (let i = 0; i < N; i++) { mv += E.rv[i]; mf += E.flux[i]; }
+  mv /= N; mf /= N;
+  let vv = 0, vf = 0;
+  for (let i = 0; i < N; i++) { vv += (E.rv[i] - mv) ** 2; vf += (E.flux[i] - mf) ** 2; }
+  vv = Math.max(vv / N, 1e-6); vf = Math.max(vf / N, 1e-6);
+  for (let k = 0; k < NPG; k++) {
+    const p = pgPeriod(k), w = TAU / p;
+    let s2 = 0, c2 = 0;
+    for (let i = 0; i < N; i++) { s2 += Math.sin(2 * w * E.t[i]); c2 += Math.cos(2 * w * E.t[i]); }
+    const tau = Math.atan2(s2, c2) / (2 * w);
+    let yc = 0, ys = 0, cc = 0, ss = 0;
+    bins.fill(0); binN.fill(0);
+    for (let i = 0; i < N; i++) {
+      const a = w * (E.t[i] - tau), c = Math.cos(a), sn = Math.sin(a), y = E.rv[i] - mv;
+      yc += y * c; ys += y * sn; cc += c * c; ss += sn * sn;
+      const b = Math.floor((((E.t[i] / p) % 1) + 1) % 1 * 24) % 24;
+      bins[b] += E.flux[i] - mf; binN[b]++;
+    }
+    lsP[k] = 0.5 * (yc * yc / Math.max(cc, 1e-6) + ys * ys / Math.max(ss, 1e-6)) / vv / (N / 2);
+    // The box: the deepest bin's depth, weighted by its share of points.
+    let best = 0;
+    for (let b = 0; b < 24; b++) {
+      if (binN[b] < 2) continue;
+      const depth = -bins[b] / binN[b];
+      if (depth <= 0) continue;
+      const v = depth * depth * (binN[b] / N) / vf;
+      if (v > best) best = v;
+    }
+    blsP[k] = best * 1.2;
+  }
+  for (let k = 0; k < NPG; k++) power[k] = clamp(0.55 * lsP[k] + 0.45 * blsP[k]);
+}
+// The power at a period, interpolated between bins.
+function powerAt(p) {
+  const x = pgPos(p) * (NPG - 1), k = Math.floor(x), f = x - k;
+  return power[k] * (1 - f) + power[Math.min(NPG - 1, k + 1)] * f;
+}
+
+/* ---------- fold ---------- */
+// The trial period moves on a log scale. Near a peak the dial stiffens.
+function scrub(dlog) {
+  if (P <= 0) P = 3;
+  const gain = 1 / (1 + 6 * powerAt(P));
+  setPeriod(Math.exp(clamp(Math.log(P) + dlog * gain, LMIN, LMAX)));
+}
+function setPeriod(p) {
+  P = p;
+  const near = target.kind === 'planet' ? Math.abs(P / target.P - 1) : 1;
+  const was = locked;
+  locked = near < 0.004;
+  if (locked && !was) onLock();
+  reorder();
+  readout();
+}
+// Inside 1.5 % the fold eases the last stretch itself.
+function pull(dt, strength) {
+  if (target.kind !== 'planet' || P <= 0) return;
+  const near = Math.abs(P / target.P - 1);
+  if (near >= 0.015 || near < 1e-6) return;
+  const k = 1 - Math.exp(-dt / 0.25 * strength);
+  setPeriod(P + (target.P - P) * k);
+  if (Math.abs(P / target.P - 1) < 1e-4) setPeriod(target.P);
+}
+function onLock() {}
 
 /* ---------- shaders ---------- */
 // Strips: one instance per exposure, in device pixels from the bottom left.
@@ -401,11 +477,33 @@ void main() {
   o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 }`;
 
+// Marks: flat rectangles in device pixels, one instance each, additive.
+const MARK_VS = `#version 300 es
+layout(location=0) in vec2 aC;
+layout(location=1) in vec4 aR;
+layout(location=2) in vec4 aCol;
+uniform vec2 uRes;
+out vec4 vCol;
+void main() {
+  vec2 p = vec2(mix(aR.x, aR.z, aC.x), mix(aR.y, aR.w, aC.y));
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vCol = aCol;
+}`;
+const MARK_FS = `#version 300 es
+precision highp float;
+in vec4 vCol;
+out vec4 o;
+void main() { o = vec4(pow(vCol.rgb * vCol.a, vec3(1.0 / 2.2)), 1.0); }`;
+
 /* ---------- WebGL ---------- */
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
-let gl = null, Pg = null, quadVao = null, stripVao = null, instBuf = null, starTex = null, tellTex = null;
+let gl = null, Pg = null, quadVao = null, stripVao = null, instBuf = null, starTex = null, tellTex = null, markVao = null, markBuf = null;
 const inst = new Float32Array(N * 8);
+// Marks: the light-curve dots, the periodogram bars, the cursor and the cut.
+const MAXM = N + NPG + 520;
+const marks = new Float32Array(MAXM * 8);
+let nMarks = 0;
 function compile(vs, fs) {
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
@@ -442,7 +540,7 @@ async function initGL() {
   gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
   if (!gl) throw new Error('WebGL 2 unavailable');
   const par = gl.getExtension('KHR_parallel_shader_compile');
-  const progs = { strip: compile(STRIP_VS, STRIP_FS), bg: compile(BG_VS, BG_FS) };
+  const progs = { strip: compile(STRIP_VS, STRIP_FS), bg: compile(BG_VS, BG_FS), mark: compile(MARK_VS, MARK_FS) };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
   if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
@@ -474,6 +572,22 @@ async function initGL() {
   gl.enableVertexAttribArray(2);
   gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
   gl.vertexAttribDivisor(2, 1);
+  // Marks: the same corners, a rect and a colour per instance.
+  markVao = gl.createVertexArray();
+  gl.bindVertexArray(markVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  markBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, markBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, marks.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+  gl.vertexAttribDivisor(2, 1);
   gl.bindVertexArray(null);
   starTex = tex1d(star);
   tellTex = tex1d(tellu);
@@ -490,7 +604,7 @@ function layout() {
   // Reserves keep the frame clear of the bar's corners and the key strip.
   const top = (coarse ? 62 : 52) * dpr, bottom = (narrow ? 128 : coarse ? 96 : 84) * dpr;
   const lcW = Math.round(w * (narrow ? 0.08 : 0.1)) * dpr, gapX = 8 * dpr;
-  const pgH = 16 * dpr, pgGap = 10 * dpr;
+  const pgH = 22 * dpr, pgGap = 10 * dpr;
   const x0 = lcW + gapX, x1 = W - 14 * dpr;
   const yTop = H - top, yBot = bottom + pgH + pgGap;
   G.box = [x0, yBot, x1, yTop];
@@ -541,6 +655,47 @@ function render() {
   gl.uniform3fv(u.uBg, BG);
   gl.uniform2f(u.uCols, cols[0], cols[1]);
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, N);
+  drawMarks();
+}
+// One mark: a rect in device pixels and a colour with alpha as level.
+function mark(x0, y0, x1, y1, c, a) {
+  if (nMarks >= MAXM) return;
+  const o = nMarks++ * 8;
+  marks[o] = x0; marks[o + 1] = y0; marks[o + 2] = x1; marks[o + 3] = y1;
+  marks[o + 4] = c[0]; marks[o + 5] = c[1]; marks[o + 6] = c[2]; marks[o + 7] = a;
+}
+function drawMarks() {
+  nMarks = 0;
+  const d = G.dpr, [lx0, ly0, lx1, ly1] = G.lc, [px0, py0, px1, py1] = G.pg, bh = ly1 - ly0;
+  // The light curve: one dot per row, brightness across the column.
+  for (let i = 0; i < N; i++) {
+    if (E.gap[i] > 0.5 || E.age[i] < 0) continue;
+    const x = lx0 + clamp((E.flux[i] - 0.5) / 0.56) * (lx1 - lx0);
+    const y = ly1 - (E.y[i] + 0.5) * G.rowH;
+    mark(x - d, y - d, x + d, y + d, GREY, E.transit[i] >= 0 ? 0.55 : 0.4);
+  }
+  // The periodogram: one bar per trial period, power as height.
+  const bw = (px1 - px0) / NPG;
+  for (let k = 0; k < NPG; k++) {
+    const h = clamp(power[k]) * (py1 - py0);
+    if (h < 0.5) continue;
+    mark(px0 + k * bw, py0, px0 + (k + 1) * bw + 0.5, py0 + h, GREY, 0.22);
+  }
+  // The cursor at the trial period, and a hairline across the band.
+  mark(px0, py0, px1, py0 + Math.max(1, d * 0.5), GREY, 0.08);
+  if (P > 0) {
+    const x = px0 + pgPos(P) * (px1 - px0);
+    mark(x - d * 0.5, py0 - 2 * d, x + d * 0.5, py1 + 2 * d, CYAN, locked ? 0.9 : 0.45);
+  }
+  gl.useProgram(Pg.mark.p);
+  gl.bindVertexArray(markVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, markBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, marks, 0, nMarks * 8);
+  gl.uniform2f(Pg.mark.u.uRes, G.W, G.H);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nMarks);
+  gl.disable(gl.BLEND);
 }
 
 /* ---------- step ---------- */
@@ -555,9 +710,11 @@ function step(dt) {
   }
   sinceArrive += dt;
   if (sinceArrive >= cadence()) { sinceArrive = 0; arrive(); }
+  if (periodogramDirty) { periodogramDirty = false; periodogram(); }
+  pull(dt, press?.fold ? 0.25 : 1);
 }
 const moving = () => { for (let i = 0; i < N; i++) if (E.y[i] !== E.yTo[i] || E.age[i] < 1) return true; return false; };
-const settling = () => folding || moving();
+const settling = () => !!press || moving() || (P > 0 && !locked && target.kind === 'planet' && Math.abs(P / target.P - 1) < 0.015);
 
 /* ---------- controls ---------- */
 act.pick = v => {
@@ -590,7 +747,7 @@ function setTarget(t) {
 function readout() {
   readEl.classList.toggle('lock', locked);
   readEl.textContent = locked
-    ? `P ${target.P.toFixed(4)} d · K ${Math.round(target.K * 31)} m/s · δ ${(target.dip / 4 * 100).toFixed(2)} %`
+    ? `P ${target.P.toFixed(4)} d · K ${Math.round(target.K * 31)} m/s · δ ${(target.dip / 25 * 100).toFixed(2)} %`
     : P > 0 ? `P ${P.toFixed(3)} d · K — · δ —` : 'P — · K — · δ —';
 }
 
@@ -658,6 +815,59 @@ try {
 markReady();
 wake();
 
+/* ---------- pointer ---------- */
+// A press turns into a fold after 8 px, or a hold after 260 ms. Else it is a tap.
+let press = null, holdT = 0;
+const KX = 1 / 180, KY = 1 / 1400;
+canvas.addEventListener('pointerdown', e => {
+  if (press) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic pointer has no capture */ }
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, fold: false, hold: false };
+  holdT = setTimeout(() => { if (press && !press.fold) { press.hold = true; cut(e.clientX, e.clientY, true); } }, 260);
+  live();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) { if (!press && e.pointerType === 'mouse') cut(e.clientX, e.clientY, false); return; }
+  // A hold that moves on becomes a fold; the cut goes away.
+  if (!press.fold && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) {
+    press.fold = true;
+    press.hold = false;
+    clearTimeout(holdT);
+    uncut();
+    press.lx = e.clientX; press.ly = e.clientY;
+    stage.classList.add('fold');
+  }
+  if (press.fold) {
+    // Across is the coarse dial; up and down is the fine one.
+    scrub((e.clientX - press.lx) * KX - (e.clientY - press.ly) * KY);
+    press.lx = e.clientX; press.ly = e.clientY;
+  } else if (press.hold) cut(e.clientX, e.clientY, true);
+  live();
+});
+function endPress(e) {
+  if (!press || (e && e.pointerId !== press.id)) return;
+  clearTimeout(holdT);
+  if (!press.fold && !press.hold && e?.type === 'pointerup') cut(e.clientX, e.clientY, true);
+  press = null;
+  stage.classList.remove('fold');
+  live();
+}
+canvas.addEventListener('pointerup', endPress);
+canvas.addEventListener('pointercancel', endPress);
+canvas.addEventListener('lostpointercapture', endPress);
+canvas.addEventListener('pointerleave', () => { if (!press) uncut(); });
+// The wheel is the fine dial on mouse devices.
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  scrub(-dy * 0.00035);
+  live();
+}, { passive: false });
+// The cut: that row's spectrum, shown at the top. Built in Task 3.
+function cut() {}
+function uncut() {}
+
+window.__exo = () => ({ press, P, locked, raf, visible, target: target.name, kind: target.kind, lastInput: performance.now() - lastInput });
 new ResizeObserver(() => { layout(); if (Pg) render(); }).observe(stage);
 onQuality(() => { rung = 0; slowT = 0; layout(); if (Pg) render(); });
 // A hidden tab stops the loop and the exposure clock with it.
