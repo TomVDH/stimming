@@ -63,6 +63,7 @@ pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: o
 
 <script type="module">
 import { GLASS_RAIN } from '../shared/glassrain.js';
+import { BOKEH } from '../shared/bokeh.js';
 
 const NOISE = `
 float hash1(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -265,16 +266,7 @@ const KN = Object.fromEntries(KNOBS.map(k => [k[0], k[4]]));
 /* ---------- shader ---------- */
 const VS = `#version 300 es
 in vec2 a; void main() { gl_Position = vec4(a, 0.0, 1.0); }`;
-const FS = v => `#version 300 es
-precision highp float;
-uniform vec2 uRes, uM, uOrigin, uSize2, uLamp;
-uniform float uTime, uSpeed, uWet, uFog, uDay, uFlow, uSize, uDrive, uPatch;
-uniform vec2 uRD[4], uRV[4], uRO[4];
-uniform float ${KNOBS.map(k => k[0]).join(', ')};
-out vec4 outC;
-${GLASS_RAIN}
-${NOISE}
-// The backdrop: a late dusk or a grey day, town lights sliding past, a near lamp every 28 m.
+const BD = `// The backdrop: a late dusk or a grey day, town lights sliding past, a near lamp every 28 m.
 vec3 backdrop(vec2 uv) {
   float asp = uSize2.x / uSize2.y;
   vec2 q = vec2(uv.x * asp, uv.y);
@@ -292,6 +284,17 @@ vec3 backdrop(vec2 uv) {
   c += vec3(1.0, 0.8, 0.55) * (exp(-r2 * 900.0) * 6.0 + exp(-r2 * 30.0) * 0.12) * (1.0 - uDay);
   return c;
 }
+`;
+const FS = v => `#version 300 es
+precision highp float;
+uniform vec2 uRes, uM, uOrigin, uSize2, uLamp;
+uniform float uTime, uSpeed, uWet, uFog, uDay, uFlow, uSize, uDrive, uPatch;
+uniform vec2 uRD[4], uRV[4], uRO[4];
+uniform float ${KNOBS.map(k => k[0]).join(', ')};
+out vec4 outC;
+${GLASS_RAIN}
+${NOISE}
+uniform sampler2D tScene, tBok;
 ${v.pre || ''}
 void drops(vec2 p, inout vec2 off, inout float rim, inout float spec, inout float cover, inout float clear) {
   ${v.body}
@@ -307,13 +310,9 @@ void main() {
   if (uWet > 0.001) drops(p, off, rim, spec, cover, clear);
   float fog = clamp(grFog(p / k, uFog, -1.0, uPatch) * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
   vec2 su = uv + off / k / vec2(asp, 1.0);
-  vec3 sharp = backdrop(su), blur = sharp;
-  if (fog > 0.02) {
-    blur = vec3(0.0);
-    float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    for (int i = 0; i < 24; i++) { float a = float(i) * 2.39996 + rot, r = sqrt((float(i) + 0.5) / 24.0) * (0.004 + 0.022 * fog); blur += backdrop(su + vec2(cos(a), sin(a)) * r / vec2(asp, 1.0)); }
-    blur /= 24.0;
-  }
+  // The same path as the toy: the sharp scene, and its bokeh where the pane fogs.
+  vec3 sharp = texture(tScene, su).rgb, blur = sharp;
+  if (fog > 0.02) blur = mix(sharp, texture(tBok, su).rgb, smoothstep(0.02, 0.45, fog));
   vec3 warm = vec3(1.0, 0.85, 0.7);
   // Train glass: faintly green, about four fifths of the light through.
   vec3 col = mix(sharp, blur, smoothstep(0.05, 0.55, fog)) * vec3(0.8, 0.84, 0.81);
@@ -332,25 +331,67 @@ void main() {
 /* ---------- one context, one program per variant ---------- */
 const cv = document.getElementById('cv');
 const gl = cv.getContext('webgl2', { antialias: false });
+gl.getExtension('EXT_color_buffer_float');
+// The backdrop pass, the 4x4 box steps and the bokeh gather.
+const HEAD = `#version 300 es
+precision highp float;
+out vec4 outC;`;
+const FS_BG = `${HEAD}
+uniform vec2 uSize2, uLamp;
+uniform float uDay, uDrive;
+${NOISE}
+${BD}
+void main() { outC = vec4(backdrop(gl_FragCoord.xy / uSize2), 1.0); }`;
+const FS_DOWN = `${HEAD}
+uniform sampler2D tSrc;
+uniform vec2 uTx, uDst;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  outC = vec4(0.25 * (texture(tSrc, uv + uTx * vec2(-1.0, -1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, -1.0)).rgb
+    + texture(tSrc, uv + uTx * vec2(-1.0, 1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, 1.0)).rgb), 1.0);
+}`;
+const FS_BOK = `${HEAD}
+uniform sampler2D tSrc;
+uniform vec2 uRad, uDst;
+uniform float uBlades, uRimB;
+${BOKEH}
+void main() { outC = vec4(bokeh(tSrc, gl_FragCoord.xy / uDst, uRad, uBlades, 0.015, 500.0, uRimB), 1.0); }`;
 const buf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, buf);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-const progs = VARIANTS.map(v => {
-  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) console.error(v.id, gl.getShaderInfoLog(o)); return o; };
+const program = (name, fs) => {
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) console.error(name, gl.getShaderInfoLog(o)); return o; };
   const pr = gl.createProgram();
   gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS));
-  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS(v)));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
   gl.bindAttribLocation(pr, 0, 'a');
   gl.linkProgram(pr);
   const cache = {};
-  return { v, pr, U: n => (n in cache ? cache[n] : (cache[n] = gl.getUniformLocation(pr, n))) };
-});
+  return { pr, U: n => (n in cache ? cache[n] : (cache[n] = gl.getUniformLocation(pr, n))) };
+};
+const progs = VARIANTS.map(v => ({ v, ...program(v.id, FS(v)) }));
+const pBG = program('bg', FS_BG), pDown = program('down', FS_DOWN), pBok = program('bok', FS_BOK);
+// Half-float targets: the scene at full size, an eighth for the gather source, a half for the bokeh.
+const target = () => {
+  const tex = gl.createTexture(), fb = gl.createFramebuffer();
+  const t = { tex, fb, w: 0, h: 0, size(w, h) {
+    if (t.w === w && t.h === h) return;
+    t.w = w; t.h = h;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  } };
+  return t;
+};
+const rtScene = target(), rt4 = target(), rt8 = target(), rtBok = target();
 gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 /* ---------- controls ---------- */
 const qs = new URLSearchParams(location.search);
-const st = { a: +(qs.get('a') ?? 0), b: +(qs.get('b') ?? 1), split: 0.5, speed: +(qs.get('speed') ?? 18), wet: 1, fog: +(qs.get('fog') ?? 0), size: 1, patch: 0, day: qs.has('day') ? 1 : 0, ramp: false };
+const st = { a: +(qs.get('a') ?? 0), b: +(qs.get('b') ?? 1), split: 0.5, speed: +(qs.get('speed') ?? 18), wet: 1, fog: +(qs.get('fog') ?? 0), size: 1, patch: 0, blades: 0, rimB: 0.3, day: qs.has('day') ? 1 : 0, ramp: false };
 const selA = document.getElementById('selA'), selB = document.getElementById('selB');
 VARIANTS.forEach((v, i) => { selA.add(new Option(`${i + 1}. ${v.name}`, i)); selB.add(new Option(`${i + 1}. ${v.name}`, i)); });
 const pickAB = () => {
@@ -380,6 +421,8 @@ slider(scene, 'wet', 'Wet', 0, 1.4, 0.05, st);
 slider(scene, 'fog', 'Fog', 0, 1, 0.05, st);
 slider(scene, 'patch', 'Fog patches', 0, 1, 0.05, st);
 slider(scene, 'size', 'Zoom', 0.4, 3, 0.05, st);
+slider(scene, 'blades', 'Bokeh blades', 0, 8, 1, st, v => (v < 3 ? 'round' : v.toFixed(0)));
+slider(scene, 'rimB', 'Bokeh rim', 0, 1, 0.05, st);
 const segs = { night: () => { st.day = 0; }, day: () => { st.day = 1; } };
 for (const id of ['night', 'day']) document.getElementById(id).onclick = () => { segs[id](); document.getElementById('night').setAttribute('aria-pressed', String(!st.day)); document.getElementById('day').setAttribute('aria-pressed', String(!!st.day)); };
 document.getElementById('night').setAttribute('aria-pressed', String(!st.day)); document.getElementById('day').setAttribute('aria-pressed', String(!!st.day));
@@ -444,6 +487,23 @@ function frame(t) {
   const asp = w / h, lx = asp - (drive % 28) / 28 * (asp + 1.0) + 0.5;
   const sx = Math.round(w * st.split);
   split.style.left = `${st.split * 100}%`;
+  // Offscreen: the backdrop, two 4x4 box steps to an eighth, then the bokeh at half size.
+  gl.disable(gl.SCISSOR_TEST);
+  rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w / 2), Math.ceil(h / 2));
+  const to = rt => { gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fb); gl.viewport(0, 0, rt.w, rt.h); };
+  to(rtScene); gl.useProgram(pBG.pr);
+  gl.uniform2f(pBG.U('uSize2'), w, h); gl.uniform2f(pBG.U('uLamp'), lx, 0.62); gl.uniform1f(pBG.U('uDay'), st.day); gl.uniform1f(pBG.U('uDrive'), drive);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(pDown.pr); gl.activeTexture(gl.TEXTURE0); gl.uniform1i(pDown.U('tSrc'), 0);
+  to(rt4); gl.bindTexture(gl.TEXTURE_2D, rtScene.tex); gl.uniform2f(pDown.U('uTx'), 1 / w, 1 / h); gl.uniform2f(pDown.U('uDst'), rt4.w, rt4.h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  to(rt8); gl.bindTexture(gl.TEXTURE_2D, rt4.tex); gl.uniform2f(pDown.U('uTx'), 1 / rt4.w, 1 / rt4.h); gl.uniform2f(pDown.U('uDst'), rt8.w, rt8.h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  to(rtBok); gl.useProgram(pBok.pr); gl.bindTexture(gl.TEXTURE_2D, rt8.tex); gl.uniform1i(pBok.U('tSrc'), 0);
+  gl.uniform2f(pBok.U('uRad'), 0.024 * h / w * st.size, 0.024 * st.size); gl.uniform2f(pBok.U('uDst'), rtBok.w, rtBok.h);
+  gl.uniform1f(pBok.U('uBlades'), st.blades); gl.uniform1f(pBok.U('uRimB'), st.rimB);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, rtScene.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, rtBok.tex);
   gl.enable(gl.SCISSOR_TEST);
   for (const [vi, x0, x1] of [[st.a, 0, sx], [st.b, sx, w]]) {
     if (x1 <= x0) continue;
@@ -465,6 +525,7 @@ function frame(t) {
     gl.uniform1f(U('uFlow'), flow);
     gl.uniform1f(U('uSize'), st.size);
     gl.uniform1f(U('uDrive'), drive);
+    gl.uniform1i(U('tScene'), 0); gl.uniform1i(U('tBok'), 1);
     gl.uniform2fv(U('uRD'), RUN.flatMap(r => r.D));
     gl.uniform2fv(U('uRV'), RUN.flatMap(r => r.V));
     gl.uniform2fv(U('uRO'), RUN.flatMap(r => r.O));

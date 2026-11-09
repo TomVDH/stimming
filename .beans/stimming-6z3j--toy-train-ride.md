@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T19:34:00Z
+updated_at: 2026-11-09T19:55:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -98,3 +98,9 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] The train stops at six stations (Zurich HB, Thalwil, Wädenswil, Pfäffikon SZ, Ziegelbrücke, Murg) and runs through the rest
 - [x] Frame: no blind cassette, thinner cross bar with no latch, lighter reveal and seal
 - [ ] Window seat to adopt shared/glassrain.js (its own chat)
+
+## Round 11: one glass base, proper bokeh (Tom, 2026-11-09)
+- [x] glasslab/: full-resolution A/B split of every pane-rain shader on one backdrop; Tuned variant on knobs
+- [x] Tom: "Train ride now (shared)" is the sole base; Window seat told to adopt shared/glassrain.js
+- [x] shared/bokeh.js: disc bokeh after Buoy Business and Wind farm (48 golden-angle taps, hot texels weighted, blades, rim)
+- [x] Fog blur: the outside drops to an eighth in two 4x4 box steps, then gathers into discs at half size; no more speckled blooms
