@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T08:16:11Z
+updated_at: 2026-11-09T08:34:23Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -32,3 +32,19 @@ Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2.
 - Washing is now mixed garments with random shape, colour and pattern: sheet, towel, tee, trousers, dress, pillowcase, dishcloth, sock. The shader cuts each outline and draws hems.
 - The first 3D blockout is kept as washline/legacy.html (Classic), legacy: true in toys.json.
 - Tasks 3 to 5 still open: the overlap still for the checkpoint, sound, watchdog, QA.
+
+## Seven scenes blockout (Tom, 2026-11-09)
+
+Scene is the bar choice (stepper); Wind moved to Settings. ?env=<id> picks a scene; the last one is remembered.
+
+| Scene | Sky and land | Weather | Wardrobe and textiles |
+|---|---|---|---|
+| Summer | anime blue, cumulus bank, sea haze | none | sheets, tees, trousers, towels, dresses |
+| Riviera | warm afternoon, rooftops in haze | none | white linens, breton stripes, lemon, terracotta |
+| Monsoon | grey-green overcast, hills | rain; wet cloth darkens and turns see-through | sarongs in batik and border cloth |
+| Snow | lilac overcast, pines | snow | knit sweaters with a Nordic band, fringed scarves, mittens, socks |
+| Dusk | magenta to orange, town with poles and wires | none | robes, gingham, dots, ikat |
+| Night | navy, stars, moon, hills | none; string lights warm the cloth | pale cotton, dots, gingham |
+| Desert | bleached blue, dunes | dust | indigo and saffron ikat, scarves, robes |
+
+- Open: dunes read flat; each scene still needs tuning after Tom picks.

@@ -77,18 +77,26 @@ const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t *
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 /* ---------- the bar ---------- */
+// Seven scenes; the URL (?env=) or the last visit picks the first.
+const SCENES = [['summer', 'Summer'], ['riviera', 'Riviera'], ['monsoon', 'Monsoon'], ['snow', 'Snow'], ['dusk', 'Dusk'], ['night', 'Night'], ['desert', 'Desert']];
+const firstScene = (() => {
+  const q = new URLSearchParams(location.search).get('env');
+  let saved = null;
+  try { saved = localStorage.getItem('stimming.washline.scene'); } catch { /* storage can be blocked */ }
+  return [q, saved].find(v => SCENES.some(([id]) => id === v)) || 'summer';
+})();
 // Handlers bind once the scene exists.
-const act = { wind() {}, sun() {}, add() {}, release() {}, fabric() {}, line() {} };
+const act = { scene() {}, wind() {}, sun() {}, add() {}, release() {}, fabric() {}, line() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
-  choice: { label: 'Wind', value: 'gusty',
-    options: [{ value: 'breeze', label: 'Breeze' }, { value: 'gusty', label: 'Gusty' }, { value: 'gale', label: 'Gale' }],
-    onPick: v => act.wind(v) },
+  choice: { label: 'Scene', value: firstScene, options: SCENES.map(([value, label]) => ({ value, label })), onPick: v => act.scene(v) },
   slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.86, onInput: v => act.sun(v) },
   actions: [
     { verb: 'add', noun: 'Sheet', onPress: () => act.add() },
     { verb: 'release', onPress: () => act.release() },
   ],
   settings: [
+    { type: 'choice', id: 'wind', label: 'Wind', value: 'gusty', onPick: v => act.wind(v),
+      options: [{ value: 'breeze', label: 'Breeze' }, { value: 'gusty', label: 'Gusty' }, { value: 'gale', label: 'Gale' }] },
     { type: 'choice', id: 'fabric', label: 'Fabric', value: 'cotton', persist: true, onPick: v => act.fabric(v),
       options: [{ value: 'cotton', label: 'Cotton' }, { value: 'linen', label: 'Linen' }, { value: 'silk', label: 'Silk' }] },
     { type: 'choice', id: 'line', label: 'Line', value: 'slack', persist: true, onPick: v => act.line(v),
@@ -278,6 +286,8 @@ const COLOURS = {
   denim: [0.52, 0.08, 250], red: [0.6, 0.18, 27], coral: [0.74, 0.13, 36], yellow: [0.88, 0.14, 95],
   mint: [0.86, 0.08, 165], sage: [0.7, 0.06, 145], pink: [0.83, 0.07, 8], lilac: [0.76, 0.08, 305],
   charcoal: [0.36, 0.012, 260], orange: [0.74, 0.15, 55], khaki: [0.74, 0.05, 82],
+  lemon: [0.9, 0.15, 100], terracotta: [0.6, 0.12, 40], teal: [0.58, 0.1, 200], indigo: [0.36, 0.12, 272],
+  wine: [0.42, 0.12, 10], saffron: [0.78, 0.16, 68], heather: [0.66, 0.012, 280], oatmeal: [0.86, 0.03, 80],
 };
 const ANY = Object.keys(COLOURS);
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -309,14 +319,77 @@ const ITEMS = {
   sock: { shape: 4, w: [0.17, 0.2], h: [0.36, 0.44], pegs: [0.27], kg: 1.6, cols: ANY, pats: [0, 2],
     // Hung by the cuff: the leg, then the foot turns out.
     mask(u, v) { return v < 0.72 ? u < 0.56 : !(u > 0.82 && v > 0.9 && (u - 0.82) ** 2 + (v - 0.9) ** 2 > 0.012); } },
+  sarong: { w: [1.0, 1.2], h: [0.85, 1.0], pegs: [0, 0.5, 1], kg: 0.9, cols: ANY, pats: [8, 6], grain: 0.03 },
+  scarf: { shape: 6, w: [0.26, 0.34], h: [1.1, 1.35], pegs: [0.2, 0.8], kg: 1.6, cols: ANY, pats: [5, 1, 9], fixed: true },
+  sweater: { shape: 5, w: [0.95, 1.1], h: [0.68, 0.78], pegs: [0.32, 0.68], kg: 2.8, cols: ANY, pats: [5], fixed: true, grain: 0,
+    // Hung by the shoulders: long sleeves hang down beside the body.
+    mask(u, v) {
+      const a = Math.min(u, 1 - u), c = Math.abs(u - 0.5);
+      if (a >= 0.22) return c * c / 0.015 + v * v / 0.006 > 1;
+      return a > 0.02 && v > (0.22 - a) * 0.35 && v < 0.9 - (0.22 - a) * 0.4;
+    } },
+  mitten: { shape: 7, w: [0.15, 0.18], h: [0.25, 0.3], pegs: [0.62], kg: 3, cols: ANY, pats: [5], fixed: true, grain: 0,
+    // Hung by the cuff: the hand, a thumb out to one side.
+    mask(u, v) { return u > 0.28 ? v < 0.82 || ((u - 0.64) / 0.36) ** 2 + ((v - 0.82) / 0.18) ** 2 < 1 : v > 0.4 && v < 0.74; } },
+  robe: { shape: 8, w: [1.0, 1.2], h: [1.1, 1.3], pegs: [0.3, 0.7], kg: 1.3, cols: ANY, pats: [4, 1, 7],
+    // Hung by the shoulders: a V neck and wide, square sleeves.
+    mask(u, v) {
+      const a = Math.min(u, 1 - u), c = Math.abs(u - 0.5);
+      if (a >= 0.25) return !(v < 0.3 && c < 0.12 * (1 - v / 0.3));
+      return v > (0.25 - a) * 0.08 && v < 0.55;
+    } },
 };
-const MIX = ['sheet', 'towel', 'tee', 'trousers', 'dress', 'pillow', 'cloth', 'sock', 'tee', 'towel'];
-function rollItem(kind = pick(MIX)) {
-  const I = ITEMS[kind];
-  const a = pick(I.cols);
-  let b = pick(ANY);
-  while (b === a) b = pick(ANY);
-  return { kind, I, w: rnd(...I.w), h: rnd(...I.h), alb: COLOURS[a], alb2: COLOURS[b === 'white' || a === 'white' ? b : 'white'], pat: pick(I.pats), freq: rnd(5, 9) };
+ITEMS.towel.grain = 0.18;
+// Scenes: sky, land, weather, light and the wardrobe on the line.
+// Land: 1 hills, 2 rooftops, 3 dunes, 4 pines, 5 town with poles and wires.
+// Weather: 1 rain, 2 snow, 3 dust.
+const ENV_DEF = { cover: 0, top: 1, over: 0, stars: 0, moon: 0, land: 0, precip: 0, lights: 0, wet: 0, exp: 1, cols: null, pats: null };
+const ENVS = {
+  summer: { sky: { zen: [0.42, 0.19, 259], mid: [0.62, 0.16, 247], hor: [0.9, 0.06, 214], haze: [0.64, 0.1, 238], cloud: [0.99, 0.012, 85], shade: [0.74, 0.06, 256], land: [0.55, 0.08, 230] },
+    warm: [0.95, 0.07, 70], white: [0.99, 0.015, 90], sunK: 2.6, sun: 0.86, amb: [[0.6, 0.7, 0.9], [0.3, 0.4, 0.62]], wind: 'gusty',
+    first: ['sheet', 'tee', 'trousers', 'towel', 'dress'], firstN: ['tee', 'towel', 'trousers'],
+    mix: ['sheet', 'towel', 'tee', 'trousers', 'dress', 'pillow', 'cloth', 'sock'] },
+  riviera: { sky: { zen: [0.55, 0.13, 245], mid: [0.74, 0.08, 230], hor: [0.9, 0.06, 75], haze: [0.84, 0.06, 65], cloud: [0.97, 0.03, 75], shade: [0.8, 0.05, 40], land: [0.8, 0.07, 55] },
+    warm: [0.92, 0.12, 62], white: [0.97, 0.04, 80], sunK: 3, sun: 0.82, exp: 0.95, cover: -0.08, top: 0.8, land: 2,
+    amb: [[0.78, 0.72, 0.66], [0.55, 0.45, 0.36]], wind: 'breeze',
+    first: ['sheet', 'tee', 'towel', 'sheet', 'pillow'], firstN: ['tee', 'pillow', 'towel'],
+    mix: ['sheet', 'tee', 'towel', 'pillow', 'dress', 'cloth'], cols: ['white', 'cream', 'white', 'navy', 'sky', 'lemon', 'terracotta'], pats: [0, 0, 9, 9, 1] },
+  monsoon: { sky: { zen: [0.4, 0.03, 190], mid: [0.52, 0.03, 180], hor: [0.66, 0.03, 165], haze: [0.5, 0.04, 165], cloud: [0.72, 0.02, 175], shade: [0.42, 0.03, 200], land: [0.38, 0.05, 155] },
+    warm: [0.8, 0.03, 120], white: [0.85, 0.02, 150], sunK: 1.2, sun: 0.75, exp: 1.2, over: 0.9, land: 1, precip: 1, wet: 1,
+    amb: [[0.55, 0.62, 0.6], [0.3, 0.36, 0.34]], wind: 'gusty',
+    first: ['sarong', 'tee', 'sarong', 'towel', 'cloth'], firstN: ['sarong', 'tee', 'cloth'],
+    mix: ['sarong', 'sarong', 'tee', 'towel', 'cloth', 'robe'], cols: ['red', 'orange', 'yellow', 'teal', 'indigo', 'wine', 'saffron'], pats: [6, 6, 8, 8, 1] },
+  snow: { sky: { zen: [0.7, 0.04, 268], mid: [0.8, 0.03, 260], hor: [0.9, 0.02, 250], haze: [0.88, 0.015, 250], cloud: [0.95, 0.01, 250], shade: [0.76, 0.03, 265], land: [0.42, 0.03, 220] },
+    warm: [0.93, 0.04, 75], white: [0.96, 0.01, 250], sunK: 1.7, sun: 0.7, exp: 1.05, over: 0.65, land: 4, precip: 2,
+    amb: [[0.8, 0.82, 0.9], [0.68, 0.68, 0.74]], wind: 'breeze',
+    first: ['sweater', 'scarf', 'mitten', 'sweater', 'sock', 'scarf'], firstN: ['sweater', 'scarf', 'mitten'],
+    mix: ['sweater', 'scarf', 'mitten', 'sock', 'towel'], cols: ['red', 'cream', 'heather', 'navy', 'sage', 'wine', 'oatmeal'], pats: [5] },
+  dusk: { sky: { zen: [0.32, 0.12, 290], mid: [0.52, 0.16, 335], hor: [0.8, 0.14, 50], haze: [0.5, 0.1, 15], cloud: [0.84, 0.11, 40], shade: [0.48, 0.1, 315], land: [0.27, 0.05, 300] },
+    warm: [0.86, 0.17, 45], white: [0.9, 0.1, 55], sunK: 2.3, sun: 0.92, cover: -0.05, top: 0.7, land: 5,
+    amb: [[0.5, 0.36, 0.58], [0.55, 0.32, 0.3]], wind: 'breeze',
+    first: ['robe', 'towel', 'pillow', 'robe', 'cloth'], firstN: ['robe', 'towel', 'cloth'],
+    mix: ['robe', 'towel', 'pillow', 'sheet', 'cloth', 'tee'], cols: ['indigo', 'white', 'lilac', 'pink', 'sky', 'saffron', 'red'], pats: [4, 1, 3, 7, 0] },
+  night: { sky: { zen: [0.14, 0.05, 268], mid: [0.2, 0.06, 262], hor: [0.3, 0.06, 252], haze: [0.18, 0.04, 255], cloud: [0.34, 0.03, 260], shade: [0.17, 0.03, 265], land: [0.1, 0.02, 260] },
+    warm: [0.88, 0.03, 240], white: [0.92, 0.02, 230], sunK: 0.55, sun: 0.8, exp: 1.3, cover: -0.16, top: 0.8, stars: 1, moon: 1, land: 1, lights: 1,
+    amb: [[0.1, 0.13, 0.24], [0.05, 0.06, 0.1]], wind: 'breeze',
+    first: ['sheet', 'tee', 'pillow', 'sheet', 'dress'], firstN: ['pillow', 'tee', 'dress'],
+    mix: ['sheet', 'tee', 'pillow', 'dress', 'towel'], cols: ['white', 'cream', 'sky', 'pink', 'lilac', 'white'], pats: [0, 0, 4, 3] },
+  desert: { sky: { zen: [0.6, 0.1, 236], mid: [0.78, 0.06, 222], hor: [0.92, 0.04, 85], haze: [0.86, 0.06, 72], cloud: [0.97, 0.02, 80], shade: [0.82, 0.04, 60], land: [0.76, 0.09, 66] },
+    warm: [0.97, 0.06, 78], white: [0.99, 0.02, 85], sunK: 3.2, sun: 0.84, exp: 0.95, cover: -0.25, top: 0.6, land: 3, precip: 3,
+    amb: [[0.78, 0.74, 0.7], [0.75, 0.58, 0.42]], wind: 'gale',
+    first: ['scarf', 'sarong', 'robe', 'scarf', 'sarong'], firstN: ['scarf', 'robe', 'sarong'],
+    mix: ['scarf', 'sarong', 'robe', 'tee', 'cloth'], cols: ['indigo', 'saffron', 'red', 'denim', 'cream', 'terracotta'], pats: [7, 7, 0, 8, 1] },
+};
+let E = { ...ENV_DEF, ...ENVS.summer, id: 'summer' };
+// The scene's palette and patterns win, except for knits, which keep their own.
+function rollItem(kind = pick(E.mix)) {
+  const I = ITEMS[kind], cols = E.cols || I.cols;
+  const a = pick(cols);
+  let b = pick(E.cols || ANY);
+  for (let k = 0; k < 8 && b === a; k++) b = pick(E.cols || ANY);
+  if (b === a) b = a === 'white' ? 'navy' : 'white';
+  const pats = I.fixed || !E.pats ? I.pats : E.pats;
+  return { kind, I, w: rnd(...I.w), h: rnd(...I.h), alb: COLOURS[a], alb2: COLOURS[b], pat: pick(pats), freq: rnd(5, 9), grain: I.grain ?? 0.06 };
 }
 const FABRICS = {
   cotton: { bend: 0.25, damp: 0.992, kgm2: 0.2, tau: 0.62, sheen: 0 },
@@ -341,8 +414,7 @@ function build(narrow) {
   sim.rope = K4.makeRope(ROPE_N, -sim.half, LINE_Y, sim.half, LINE_Y, sim.half * 2 * slack, ROPE_KG);
   sim.seg = (sim.half * 2) / (ROPE_N - 1);
   // The opening line: a fresh mix each visit, filled left to right.
-  const first = narrow ? ['tee', 'towel', 'trousers'] : ['sheet', 'tee', 'trousers', 'towel', 'dress'];
-  if (!narrow) first.splice(Math.floor(Math.random() * 5), 1, pick(['pillow', 'cloth', 'sock']));
+  const first = (narrow ? E.firstN : E.first).slice();
   const items = first.map(k => rollItem(k)).sort(() => Math.random() - 0.5);
   const gap = narrow ? 0.2 : 0.26;
   const total = items.reduce((s, it) => s + it.w * sim.sc, 0) + gap * (items.length - 1);
@@ -565,14 +637,14 @@ const v3 = a => new THREE.Vector3(...a);
 const SKY = {
   zen: v3(lin(0.42, 0.19, 259)), mid: v3(lin(0.62, 0.16, 247)), hor: v3(lin(0.9, 0.06, 214)),
   haze: v3(lin(0.64, 0.1, 238)), cloud: v3(lin(0.99, 0.012, 85)), shade: v3(lin(0.74, 0.06, 256)),
-  warm: v3(lin(0.95, 0.07, 70)), white: v3(lin(0.99, 0.015, 90)),
+  warm: v3(lin(0.95, 0.07, 70)), white: v3(lin(0.99, 0.015, 90)), land: v3(lin(0.55, 0.08, 230)),
 };
 function setSun(s) {
   st.sun = s;
   // Behind the line, the sun sits just under the camera's aim, behind the washing.
   const th = Math.PI * s, el = lerp(0.3, (sim.pitch || 0.28) - 0.13, s) + 1.3 * Math.sin(th) ** 4;
   SUN.dir.set(lerp(0.4, -0.13, s), Math.tan(Math.min(el, 1.45)), Math.cos(th)).normalize();
-  SUN.col.copy(SKY.warm).lerp(SKY.white, Math.sin(th)).multiplyScalar(2.6);
+  SUN.col.copy(SKY.warm).lerp(SKY.white, Math.sin(th)).multiplyScalar(E.sunK);
   SUN.b = smooth(0.4, 0.9, s);
 }
 
@@ -582,6 +654,7 @@ const skyU = {
   uInv: { value: new THREE.Matrix4() }, uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 },
   uZen: { value: SKY.zen }, uMid: { value: SKY.mid }, uHor: { value: SKY.hor }, uHaze: { value: SKY.haze },
   uCloud: { value: SKY.cloud }, uShade: { value: SKY.shade }, uDrift: { value: new THREE.Vector2() },
+  uLandCol: { value: SKY.land }, uCover: { value: 0 }, uTop: { value: 1 }, uOver: { value: 0 }, uStars: { value: 0 }, uLand: { value: 0 }, uMoon: { value: 0 },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -589,13 +662,35 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uMid, uHor, uHaze, uCloud, uShade; uniform float uB; uniform vec2 uDrift;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uMid, uHor, uHaze, uCloud, uShade, uLandCol; uniform float uB, uCover, uTop, uOver, uStars, uLand, uMoon; uniform vec2 uDrift;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float vnoise(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + 1.0), f.x), f.y);
       }
       float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+      // Skyline height in radians at azimuth x; far rows sit lower and shift.
+      float landH(float az, float far) {
+        float x = az * (1.0 + far * 0.6) + far * 3.7;
+        if (uLand < 1.5) return 0.012 + 0.06 * fbm(vec2(x * 2.2, far * 5.0)) * (1.0 - far * 0.4);
+        if (uLand < 2.5) {
+          float b = floor(x * 18.0), f = fract(x * 18.0);
+          float h = 0.02 + 0.035 * hash(vec2(b, far));
+          if (hash(vec2(b, 9.0 + far)) > 0.5) h += 0.012 * (1.0 - abs(f - 0.5) * 2.0);
+          if (hash(vec2(b, 3.0 + far)) > 0.7 && abs(f - 0.3) < 0.05) h += 0.012;
+          return h * (1.0 - far * 0.3);
+        }
+        if (uLand < 3.5) { float d = fbm(vec2(x * 0.9, far * 4.0)); return 0.006 + 0.17 * d * d * d * (1.0 - far * 0.3); }
+        if (uLand < 4.5) {
+          float base = 0.015 + 0.03 * fbm(vec2(x * 1.5, far * 4.0));
+          // Pines of mixed height, some gaps between them.
+          float tx = x * 38.0, id = floor(tx), th = (0.015 + 0.05 * hash(vec2(id, far))) * step(0.25, hash(vec2(id, 7.0 + far)));
+          float w = 0.32 + 0.18 * hash(vec2(id, 2.0 + far));
+          return base + th * max(0.0, 1.0 - abs(fract(tx) - 0.5) / w);
+        }
+        float b = floor(x * 8.0);
+        return 0.02 + 0.08 * hash(vec2(b, far)) * step(0.3, hash(vec2(b, 5.0 + far)));
+      }
       void main() {
         vec4 w = uInv * vec4(vP, 1.0, 1.0);
         vec3 ray = normalize(w.xyz / w.w - cameraPosition);
@@ -608,8 +703,8 @@ const sky = new THREE.Mesh(
         // A cumulus bank stands on the horizon: a flat base, billows above.
         vec2 q = vec2(az * 2.6 + uDrift.x, e * 5.0);
         vec2 wq = q + 0.45 * vec2(fbm(q * 1.4 + 3.1), fbm(q * 1.4 + 7.7));
-        float top = 0.16 + 0.34 * fbm(vec2(az * 1.3 + uDrift.x * 0.5, 2.0));
-        float dens = (fbm(wq * 1.7) + 0.46 * (1.0 - smoothstep(0.0, top, e)) - 0.63) * smoothstep(-0.005, 0.02, e);
+        float top = (0.16 + 0.34 * fbm(vec2(az * 1.3 + uDrift.x * 0.5, 2.0))) * uTop;
+        float dens = (fbm(wq * 1.7) + 0.46 * (1.0 - smoothstep(0.0, top, e)) - 0.63 + uCover) * smoothstep(-0.005, 0.02, e);
         dens -= smoothstep(top, top + 0.12, e) * 0.5;
         float d = smoothstep(0.0, 0.035, dens);
         // A puff is bright where the cloud above it thins.
@@ -628,9 +723,42 @@ const sky = new THREE.Mesh(
           float wd = smoothstep(0.55, 0.85, fbm(cp + 0.3 * fbm(cp * 2.0))) * smoothstep(0.08, 0.3, e) * 0.55;
           col = mix(col, mix(uCloud, uShade, 0.25 + 0.4 * uB), wd);
         }
+        // An overcast deck: low, mottled, lit from within.
+        if (uOver > 0.0) {
+          vec2 op = ray.xz / (abs(e) + 0.12) * 0.25 + uDrift * 0.5;
+          float o = fbm(op * 1.3 + fbm(op * 2.7));
+          vec3 oc = mix(uShade, uCloud, smoothstep(0.3, 0.75, o) * 0.7 + smoothstep(-0.05, 0.5, e) * 0.3);
+          col = mix(col, oc, uOver * smoothstep(-0.05, 0.02, e));
+        }
+        // Stars on a clear night.
+        if (uStars > 0.0 && e > 0.0) {
+          vec3 sp = ray * 260.0;
+          float h = hash(floor(sp.xy) + floor(sp.z) * 7.13);
+          col += vec3(0.9, 0.95, 1.0) * step(0.9965, h) * smoothstep(0.03, 0.15, e) * uStars * (0.4 + 0.6 * hash(floor(sp.zx)));
+        }
+        // Sun or moon: a disc and its glow, dimmed by overcast.
+        float glow = uMoon > 0.5 ? 0.06 * pow(cs, 30.0) + 0.3 * pow(cs, 400.0) + 8.0 * smoothstep(0.99985, 0.99992, cs)
+                                 : 0.08 * pow(cs, 8.0) + 0.45 * pow(cs, 90.0) + 10.0 * smoothstep(0.99955, 0.99975, cs);
+        col += uSunCol * glow * (1.0 - 0.8 * uOver);
         // Below the horizon lies a pale band of haze.
         col = mix(col, mix(uHor * 1.02, uHaze, smoothstep(0.0, 0.05, -e)), smoothstep(0.0, -0.01, e));
-        col += uSunCol * (0.08 * pow(cs, 8.0) + 0.45 * pow(cs, 90.0) + 10.0 * smoothstep(0.99955, 0.99975, cs));
+        // The land: a far row in haze, a near row in colour, ground below.
+        if (uLand > 0.5) {
+          float hf = landH(az, 1.0), hn = landH(az, 0.0);
+          vec3 far = mix(uLandCol, uHor, 0.55), near = mix(uLandCol, uHaze, 0.15 + 0.2 * grain);
+          if (e < hf) col = mix(far, uHor, smoothstep(hf - 0.02, hf, e) * 0.25);
+          if (e < hn) col = mix(near * 0.9, near * 1.05, smoothstep(hn - 0.03, hn, e));
+          col += uSunCol * 0.25 * (1.0 - smoothstep(0.0, 0.004, abs(e - hn))) * uB * smoothstep(0.6, 0.95, cs);
+          // The town strings wires from pole to pole.
+          if (uLand > 4.5) {
+            float f = fract(az * 4.0 + 0.3);
+            if (abs(f - 0.5) > 0.497 && e < 0.22) col = uLandCol * 0.7;
+            for (int i = 0; i < 3; i++) {
+              float y = 0.17 + float(i) * 0.012 - 0.025 * (1.0 - pow(2.0 * f - 1.0, 2.0));
+              col = mix(col, uLandCol * 0.7, 1.0 - smoothstep(0.0008, 0.0016, abs(e - y)));
+            }
+          }
+        }
         gl_FragColor = vec4(col, 1.0);
       }` }));
 sky.frustumCulled = false;
@@ -652,8 +780,14 @@ const clothVS = /* glsl */ `
   }`;
 const clothHead = /* glsl */ `
   varying vec3 vW, vN; varying vec2 vUv;
-  uniform vec3 uSun, uSunCol, uAlb, uAlb2; uniform vec2 uSize; uniform float uB, uTau, uSheen, uFade, uPat, uFreq, uKind;
-  // Shapes: 0 plain, 1 tee, 2 trousers, 3 dress, 4 sock; u across, v down.
+  uniform vec3 uSun, uSunCol, uAlb, uAlb2, uAmbTop, uAmbBot, uLamp; uniform vec2 uSize;
+  uniform float uB, uTau, uSheen, uFade, uPat, uFreq, uKind, uGrain, uWet;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + 1.0), f.x), f.y);
+  }
+  // Shapes: 0 plain, 1 tee, 2 trousers, 3 dress, 4 sock, 5 sweater, 6 scarf, 7 mitten, 8 robe.
   bool inside(vec2 t) {
     if (t.x < 0.0 || t.y < 0.0 || t.x > 1.0 || t.y > 1.0) return false;
     float u = t.x, v = t.y, a = min(u, 1.0 - u), c = abs(u - 0.5);
@@ -668,8 +802,22 @@ const clothHead = /* glsl */ `
       if (v < 0.42) return c < 0.25 - 0.06 * (v - 0.12) / 0.3;
       return c < 0.19 + 0.31 * (v - 0.42) / 0.58;
     }
-    if (v < 0.72) return u < 0.56;
-    return !(u > 0.82 && v > 0.9 && (u - 0.82) * (u - 0.82) + (v - 0.9) * (v - 0.9) > 0.012);
+    if (uKind < 4.5) {
+      if (v < 0.72) return u < 0.56;
+      return !(u > 0.82 && v > 0.9 && (u - 0.82) * (u - 0.82) + (v - 0.9) * (v - 0.9) > 0.012);
+    }
+    if (uKind < 5.5) {
+      if (a >= 0.22) return c * c / 0.015 + v * v / 0.006 > 1.0;
+      return a > 0.02 && v > (0.22 - a) * 0.35 && v < 0.9 - (0.22 - a) * 0.4;
+    }
+    // A scarf ends in a fringe of loose strands.
+    if (uKind < 6.5) return v < 0.93 || fract(u * 16.0) < 0.5;
+    if (uKind < 7.5) {
+      if (u > 0.28) return v < 0.82 || pow((u - 0.64) / 0.36, 2.0) + pow((v - 0.82) / 0.18, 2.0) < 1.0;
+      return v > 0.4 && v < 0.74;
+    }
+    if (a >= 0.25) return !(v < 0.3 && c < 0.12 * (1.0 - v / 0.3));
+    return v > (0.25 - a) * 0.08 && v < 0.55;
   }
   // A hem is a band 1.2 cm in from any cut edge.
   float hemK() {
@@ -687,14 +835,65 @@ const clothHead = /* glsl */ `
     vec3 n = normalize(vN);
     return dot(n, v) < 0.0 ? -n : n;
   }
-  // Patterns: 1 stripes, 2 end bands, 3 gingham.
+  // Patterns: 1 stripes, 2 end bands, 3 gingham, 4 dots, 5 knit, 6 batik, 7 ikat, 8 border cloth, 9 breton.
+  // Edges widen with screen distance, so fine patterns never shimmer.
+  float gBump = 0.0;
+  float aa(float x) { return max(fwidth(x), 0.02); }
   vec3 albedo() {
-    vec2 m = vUv * uSize * uFreq;
-    float k = 0.0;
-    if (uPat > 0.5 && uPat < 1.5) { float f = fract(m.x); k = smoothstep(0.62, 0.66, f) * (1.0 - smoothstep(0.94, 0.98, f)); }
-    else if (uPat > 1.5 && uPat < 2.5) { float y = min(vUv.y, 1.0 - vUv.y); k = smoothstep(0.08, 0.1, y) * (1.0 - smoothstep(0.16, 0.18, y)); }
-    else if (uPat > 2.5) { vec2 g = smoothstep(0.46, 0.54, fract(m)) * (1.0 - smoothstep(0.96, 1.0, fract(m))); k = (g.x + g.y) * 0.5; }
-    return mix(uAlb, uAlb2, k);
+    vec2 s = vUv * uSize, m = s * uFreq;
+    float k = 0.0, vein = 0.0, p = uPat;
+    if (p > 0.5 && p < 1.5) { float f = fract(m.x), w = aa(m.x); k = smoothstep(0.62 - w, 0.62 + w, f) * (1.0 - smoothstep(0.94 - w, 0.94 + w, f)); }
+    else if (p > 1.5 && p < 2.5) { float y = min(vUv.y, 1.0 - vUv.y); k = smoothstep(0.08, 0.1, y) * (1.0 - smoothstep(0.16, 0.18, y)); }
+    else if (p > 2.5 && p < 3.5) { vec2 w = vec2(aa(m.x), aa(m.y)); vec2 g = smoothstep(0.5 - w, 0.5 + w, fract(m)); k = (g.x + g.y) * 0.5; }
+    else if (p > 3.5 && p < 4.5) {
+      vec2 g = m * 1.2; g.x += 0.5 * floor(g.y);
+      float w = aa(g.x); k = 1.0 - smoothstep(0.2 - w, 0.2 + w, length(fract(g) - 0.5));
+    }
+    else if (p > 4.5 && p < 5.5) {
+      // Knit: ribs that catch the light, and one Nordic band of zigzags.
+      float r = s.x * 70.0;
+      gBump = sin(r * 6.2832) * (1.0 - smoothstep(0.3, 0.8, aa(r)));
+      float y = vUv.y, band = step(0.2, y) * step(y, 0.3);
+      float zz = abs(fract(s.x * 9.0) - 0.5) * 2.0, row = fract((y - 0.2) / 0.1 * 2.0);
+      k = band * step(zz, row);
+      k = max(k, step(0.33, y) * step(y, 0.345));
+    }
+    else if (p > 5.5 && p < 6.5) {
+      // Batik: wax-resist blots, and dye that cracks into fine veins.
+      float n = vnoise(s * 4.0) * 0.6 + vnoise(s * 9.0) * 0.4;
+      k = smoothstep(0.49, 0.53, n);
+      vein = (1.0 - smoothstep(0.0, 0.03, abs(vnoise(s * 26.0 + 3.0) - 0.5))) * (1.0 - smoothstep(0.3, 0.8, aa(s.x * 26.0)));
+    }
+    else if (p > 6.5 && p < 7.5) {
+      // Ikat: diamonds whose edges bleed along the warp.
+      vec2 q = m * vec2(0.8, 0.4);
+      float j = (vnoise(vec2(0.0, s.y * 60.0)) - 0.5) * 0.14;
+      float d = abs(fract(q.x + j) - 0.5) + abs(fract(q.y) - 0.5);
+      k = max(1.0 - smoothstep(0.24, 0.3, d), smoothstep(0.42, 0.46, d) * 0.7);
+    }
+    else if (p > 7.5 && p < 8.5) {
+      // Border cloth: a frame, a centre ring, dots in the field.
+      float e = min(min(s.x, uSize.x - s.x), min(s.y, uSize.y - s.y));
+      float frame = max(step(0.1, e) * step(e, 0.17), step(e, 0.035));
+      float r = length(s - uSize * 0.5);
+      float ring = step(0.1, r) * step(r, 0.17);
+      float dots = (1.0 - smoothstep(0.12, 0.16, length(fract(m * 0.8) - 0.5))) * step(0.2, e);
+      k = max(max(frame, ring), dots * 0.8);
+    }
+    else if (p > 8.5) {
+      float f = fract(m.y * 1.3), w = aa(m.y * 1.3);
+      k = smoothstep(0.66 - w, 0.66 + w, f) * (1.0 - smoothstep(0.92 - w, 0.92 + w, f)) * step(0.12, vUv.y);
+    }
+    vec3 a = mix(uAlb, uAlb2, k);
+    a = mix(a, uAlb * 0.4, vein * 0.6);
+    // Thread grain: fine slubs along the weft, gone at a distance.
+    float gx = s.x * 900.0;
+    a *= 1.0 + (vnoise(vec2(gx, s.y * 40.0)) - 0.5) * 0.12 * (1.0 - smoothstep(0.4, 1.0, fwidth(gx)));
+    // Terry loops on towels.
+    float tx = s.x * 400.0;
+    a *= 1.0 + (vnoise(s * 400.0) - 0.5) * uGrain * 2.0 * (1.0 - smoothstep(0.4, 1.0, fwidth(tx)));
+    // Wet cloth darkens and deepens.
+    return mix(a, pow(a, vec3(1.5)) * 0.85, uWet);
   }
   vec3 trans(vec3 a) { return clamp(pow(a, vec3(1.4)) * 1.15, 0.0, 1.0); }`;
 const PASS = {
@@ -705,28 +904,35 @@ const PASS = {
   mul: `void main() { vec3 v; vec3 n = faceN(v);
     float c = max(abs(dot(n, v)), 0.3);
     vec3 T = pow(trans(albedo()), vec3((1.0 + hemK()) / c));
-    vec3 m = mix(vec3(0.04), T, uB * uTau + (1.0 - uB) * 0.04);
+    // Wet cloth turns see-through.
+    vec3 m = mix(vec3(0.04), T, min(1.0, (uB * uTau + (1.0 - uB) * 0.04) * (1.0 + 0.6 * uWet)));
     gl_FragColor = vec4(mix(vec3(1.0), m, uFade), 1.0); }`,
   add: `void main() { vec3 v; vec3 n = faceN(v);
     vec3 alb = albedo();
+    // Knit ribs tip the normal across the wale.
+    n = normalize(n + normalize(vec3(1.0, 0.0, 0.0) - n * n.x) * gBump * 0.3);
     float ndl = dot(n, uSun);
     float wrap = clamp((ndl + 0.35) / 1.35, 0.0, 1.0);
-    vec3 sky = mix(vec3(0.3, 0.4, 0.62), vec3(0.6, 0.7, 0.9), 0.5 + 0.5 * n.y) * (0.9 - 0.45 * uB);
+    vec3 sky = mix(uAmbBot, uAmbTop, 0.5 + 0.5 * n.y) * (0.9 - 0.45 * uB);
     // Bent cloth turns its normal fast: shade the folds.
     float fold = clamp(length(fwidth(n)) / max(length(fwidth(vW)), 1e-4) * 0.035, 0.0, 0.4);
     vec3 col = alb * (uSunCol * 0.42 * wrap * wrap + sky * 0.85) * (1.0 - fold) * (1.0 - 0.1 * hemK());
     float fuzz = pow(1.0 - abs(dot(n, v)), 4.0);
     col += (sky * 0.5 + uSunCol * 0.25 * max(ndl, 0.0)) * fuzz * 0.35;
     col += uSunCol * pow(max(dot(reflect(-uSun, n), v), 0.0), 18.0) * 0.35 * uSheen;
+    col += uSunCol * pow(max(dot(reflect(-uSun, n), v), 0.0), 40.0) * 0.4 * uWet;
+    // String lights warm the top of each piece.
+    col += alb * uLamp * (1.0 - smoothstep(0.0, 0.5, vUv.y));
     gl_FragColor = vec4(col * uFade, 1.0); }`,
 };
-const shared = { uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 }, uTau: { value: FABRIC.tau }, uSheen: { value: 0 } };
+const shared = { uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 }, uTau: { value: FABRIC.tau }, uSheen: { value: 0 },
+  uAmbTop: { value: new THREE.Vector3() }, uAmbBot: { value: new THREE.Vector3() }, uLamp: { value: new THREE.Vector3() }, uWet: { value: 0 } };
 function clothMat(kind, c) {
   const it = c.it;
   const m = new THREE.ShaderMaterial({
     uniforms: { ...shared, uFade: c.fadeU,
       uAlb: { value: v3(lin(...it.alb)) }, uAlb2: { value: v3(lin(...it.alb2)) },
-      uPat: { value: it.pat }, uFreq: { value: it.freq }, uKind: { value: it.I.shape || 0 }, uSize: { value: new THREE.Vector2(c.w, c.h) } },
+      uPat: { value: it.pat }, uFreq: { value: it.freq }, uKind: { value: it.I.shape || 0 }, uGrain: { value: it.grain }, uSize: { value: new THREE.Vector2(c.w, c.h) } },
     vertexShader: clothVS, fragmentShader: clothHead + PASS[kind],
     side: THREE.DoubleSide, depthWrite: false, transparent: true, blending: THREE.CustomBlending,
   });
@@ -776,6 +982,50 @@ const pegMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 0.085, 0.03
   new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.66, 0.08, 62)), roughness: 0.75 }), PEG_MAX);
 pegMesh.frustumCulled = false;
 scene.add(pegMesh);
+/* ---------- weather ---------- */
+// Rain, snow or dust: points that wrap through a box in front of the line.
+const PRECIP_N = 1800;
+const precipGeo = new THREE.BufferGeometry();
+precipGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PRECIP_N * 3).map(() => Math.random()), 3));
+const precipU = {
+  uTime: { value: 0 }, uKind: { value: 0 }, uWind: { value: 0 }, uPx: { value: 400 }, uAlpha: { value: 0.4 },
+  uCol: { value: new THREE.Vector3(1, 1, 1) }, uOrigin: { value: new THREE.Vector3(-6, -2.5, -3) }, uBox: { value: new THREE.Vector3(12, 7, 7) },
+};
+const precip = new THREE.Points(precipGeo, new THREE.ShaderMaterial({ uniforms: precipU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */ `
+    uniform float uTime, uKind, uWind, uPx; uniform vec3 uOrigin, uBox; varying float vK;
+    void main() {
+      vec3 v = uKind < 1.5 ? vec3(uWind * 0.35, -6.5, 0.4) : uKind < 2.5 ? vec3(uWind * 0.3, -0.6, 0.1) : vec3(uWind * 1.1 + 1.5, 0.15, 0.2);
+      vec3 q = fract(position + v * uTime / uBox);
+      if (uKind > 1.5 && uKind < 2.5) q.x = fract(q.x + 0.015 * sin(uTime * 1.1 + position.y * 40.0));
+      vec4 mv = viewMatrix * vec4(uOrigin + q * uBox, 1.0);
+      gl_Position = projectionMatrix * mv;
+      float sz = uKind < 1.5 ? 0.45 : uKind < 2.5 ? 0.045 : 0.018;
+      gl_PointSize = clamp(sz * uPx / -mv.z, 1.0, 64.0);
+      vK = fract(position.x * 13.7);
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform float uKind, uWind, uAlpha; uniform vec3 uCol; varying float vK;
+    void main() {
+      vec2 c = gl_PointCoord - 0.5;
+      float a = uKind < 1.5 ? (1.0 - smoothstep(0.008, 0.025, abs(c.x + c.y * uWind * 0.05))) * (1.0 - smoothstep(0.25, 0.5, abs(c.y)))
+                            : 1.0 - smoothstep(0.2, 0.5, length(c));
+      gl_FragColor = vec4(uCol * a * uAlpha * (0.6 + 0.4 * vK), 1.0);
+    }` }));
+precip.frustumCulled = false;
+precip.renderOrder = 20;
+precip.visible = false;
+scene.add(precip);
+// String lights: warm bulbs along the line at night.
+const BULBS = 26;
+const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.02, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), BULBS);
+{
+  const tint = [[6, 3.6, 1.4], [5.5, 2.6, 2.2], [6, 4.2, 2]];
+  for (let k = 0; k < BULBS; k++) bulbs.setColorAt(k, new THREE.Color().setRGB(...tint[k % 3]));
+}
+bulbs.frustumCulled = false;
+bulbs.visible = false;
+scene.add(bulbs);
 const sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
 const hemi = new THREE.HemisphereLight(0x9fb6ff, 0x6a7290, 0.9);
 scene.add(sunLight, sunLight.target, hemi);
@@ -819,15 +1069,26 @@ function syncScene() {
   }
   pegMesh.count = k;
   pegMesh.instanceMatrix.needsUpdate = true;
+  if (bulbs.visible) {
+    for (let b = 0; b < BULBS; b++) {
+      const i = Math.round(((b + 0.5) / BULBS) * (ROPE_N - 1));
+      at.set(r.x[i], r.y[i] - 0.03, r.z[i] + 0.01);
+      bulbs.setMatrixAt(b, mtx.compose(at, q.identity(), one));
+    }
+    bulbs.instanceMatrix.needsUpdate = true;
+  }
 }
 const DARK = new THREE.Vector3(...lin(0.22, 0.03, 262)), PALE = new THREE.Vector3(...lin(0.82, 0.01, 90));
 function syncLight() {
   shared.uB.value = skyU.uB.value = SUN.b;
   shared.uTau.value = FABRIC.tau;
   shared.uSheen.value = FABRIC.sheen;
-  renderer.toneMappingExposure = lerp(1, 0.82, SUN.b);
+  renderer.toneMappingExposure = E.exp * lerp(1, 0.82, SUN.b);
   sunLight.position.copy(SUN.dir).multiplyScalar(10);
   sunLight.color.setRGB(SUN.col.x, SUN.col.y, SUN.col.z).multiplyScalar(1 / 2.6);
+  precipU.uTime.value = st.t;
+  precipU.uWind.value = WIND[st.wind].u * st.windScale;
+  precipU.uPx.value = (view.h * renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
   // The line is pale in front light and a dark thread against the sun.
   lineU.uCol.value.copy(PALE).lerp(DARK, SUN.b);
   camera.updateMatrixWorld();
@@ -1062,6 +1323,38 @@ document.addEventListener('keydown', e => {
   act.add();
 });
 
+/* ---------- scenes ---------- */
+const PRECIP = { 1: [[0.7, 0.76, 0.82], 0.16], 2: [[1, 1, 1], 0.85], 3: [[1, 0.84, 0.6], 0.45] };
+function applyEnv(id) {
+  E = { ...ENV_DEF, ...ENVS[id], id };
+  for (const k of ['zen', 'mid', 'hor', 'haze', 'cloud', 'shade', 'land']) SKY[k].set(...lin(...E.sky[k]));
+  SKY.warm.set(...lin(...E.warm));
+  SKY.white.set(...lin(...E.white));
+  skyU.uCover.value = E.cover; skyU.uTop.value = E.top; skyU.uOver.value = E.over;
+  skyU.uStars.value = E.stars; skyU.uLand.value = E.land; skyU.uMoon.value = E.moon;
+  shared.uAmbTop.value.set(...E.amb[0]);
+  shared.uAmbBot.value.set(...E.amb[1]);
+  shared.uWet.value = E.wet;
+  shared.uLamp.value.set(...(E.lights ? [0.55, 0.34, 0.15] : [0, 0, 0]));
+  precip.visible = !!E.precip;
+  if (E.precip) { precipU.uKind.value = E.precip; precipU.uCol.value.set(...PRECIP[E.precip][0]); precipU.uAlpha.value = PRECIP[E.precip][1]; }
+  bulbs.visible = !!E.lights;
+  st.wind = E.wind;
+  ui.setting('wind')?.set(E.wind);
+  st.sun = E.sun;
+  ui.slider?.set(E.sun);
+}
+act.scene = v => {
+  if (!ENVS[v]) return;
+  applyEnv(v);
+  try { localStorage.setItem('stimming.washline.scene', v); } catch { /* storage can be blocked */ }
+  endGesture();
+  build(sim.narrow);
+  settle(2.5);
+  frameCamera();
+  wake();
+};
+
 /* ---------- controls ---------- */
 act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
 act.sun = v => { setSun(v); wake(); };
@@ -1096,6 +1389,7 @@ act.line = v => {
   if (sim.rope) sim.rope.seg = (sim.half * 2 * slack) / (ROPE_N - 1);
   wake();
 };
+applyEnv(firstScene);
 setSun(st.sun);
 act.fabric(ui.setting('fabric')?.value);
 act.line(ui.setting('line')?.value);
