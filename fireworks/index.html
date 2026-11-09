@@ -88,8 +88,9 @@
               <button class="chip" type="button" data-value="thick" aria-pressed="false">Thick</button>
             </div></div>
             <div class="group"><span>Sky</span><div class="choices" id="sky" role="group" aria-label="Sky">
+              <button class="chip" type="button" data-value="drift" aria-pressed="true">Drift</button>
               <button class="chip" type="button" data-value="clear" aria-pressed="false">Clear</button>
-              <button class="chip" type="button" data-value="cloud" aria-pressed="true">Cloud</button>
+              <button class="chip" type="button" data-value="cloud" aria-pressed="false">Cloud</button>
             </div></div>
             <div class="group"><span>Water</span><div class="choices" id="water" role="group" aria-label="Water">
               <button class="chip" type="button" data-value="calm" aria-pressed="true">Calm</button>
@@ -187,7 +188,7 @@ const FX_ROWS = [
     ['ghostFade', 'Fade (s)', 0.25, 0.02, 2, 0.005],
   ]],
   ['Clouds', [
-    ['cloudCover', 'Cover', 0.52, 0.3, 0.8, 0.005], ['cloudBase', 'Base (m)', 260, 120, 600, 5],
+    ['cloudCover', 'Cloudy cover', 0.52, 0.3, 0.8, 0.005], ['cloudBase', 'Base (m)', 260, 120, 600, 5],
     ['cloudDepth', 'Depth (m)', 300, 50, 600, 5], ['cloudGlow', 'Glow', 0.38, 0, 1.5, 0.01],
   ]],
   ['Night', [
@@ -1795,7 +1796,7 @@ function updateLights() {
 /* ---------- launch ---------- */
 const saved = k => { try { return localStorage.getItem(`stimming.fireworks.${k}`); } catch { return null; } };
 const save = (k, val) => { try { localStorage.setItem(`stimming.fireworks.${k}`, String(val)); } catch { /* storage is optional */ } };
-const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5, smoke: saved('smoke') === 'thick' ? 'thick' : 'thin', sky: saved('sky') === 'clear' ? 'clear' : 'cloud' };
+const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5, smoke: saved('smoke') === 'thick' ? 'thick' : 'thin', sky: ['clear', 'cloud'].includes(saved('weather')) ? saved('weather') : 'drift' };
 let simT = 0, horizonNdc = -0.28;
 // The slider maps 0 to 1 onto 300 to 1,500 m; far shells are larger.
 const shellDist = () => 300 + 1200 * opts.dist;
@@ -2077,6 +2078,7 @@ function tick(now) {
       if (over > 0 && !reduced()) press.seed.add(v.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(Math.min(over, 2) * 3));
     }
     tearTick();
+    weatherTick(now);
     if (lively || now - lastDraw >= 31) {
       updateLights();
       draw();
@@ -2190,9 +2192,38 @@ distEl.value = String(opts.dist);
 distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); });
 choices(document.getElementById('smoke'), val => { opts.smoke = val; save('smoke', val); SU.uSmokeK.value = val === 'thick' ? 1.15 : 0.75; }).set(opts.smoke);
 SU.uSmokeK.value = opts.smoke === 'thick' ? 1.15 : 0.75;
-const setSky = v => { opts.sky = v; U.uCloud.value.w = v === 'cloud' ? 1 : 0; cloud.visible = v === 'cloud'; };
-choices(document.getElementById('sky'), v => { setSky(v); save('sky', v); updateLights(); draw(); }).set(opts.sky);
+/* ---------- weather ---------- */
+// On Drift the deck comes and goes on its own.
+// A reload starts clear, broken, cloudy or overcast at random.
+const WX = [0, 0.35, 0.8, 1];
+const wx = { w: WX[Math.floor(Math.random() * WX.length)], to: 0, next: 0, last: 0 };
+wx.to = wx.w;
+wx.next = performance.now() + (40 + Math.random() * 80) * 1000;
+// Cover from the weather: 0 is clear, 0.8 is the tuned deck, 1 is overcast.
+function applyCover() {
+  const w = opts.sky === 'clear' ? 0 : opts.sky === 'cloud' ? 0.8 : wx.w;
+  const cover = 0.36 + ((FX.cloudCover - 0.36) * w) / 0.8, on = cover > 0.37;
+  U.uCloud.value.z = cover;
+  U.uCloud.value.w = on ? 1 : 0;
+  cloud.visible = on;
+}
+function weatherTick(now) {
+  const dt = wx.last ? Math.min(1, (now - wx.last) / 1000) : 0;
+  wx.last = now;
+  if (opts.sky !== 'drift') return;
+  // Every one to three minutes the sky turns toward another state.
+  if (now > wx.next) {
+    const other = WX.filter(x => Math.abs(x - wx.w) > 0.2);
+    wx.to = other[Math.floor(Math.random() * other.length)];
+    wx.next = now + (60 + Math.random() * 120) * 1000;
+  }
+  // A full change takes about 90 s.
+  if (wx.w !== wx.to) { wx.w += Math.max(-dt / 90, Math.min(dt / 90, wx.to - wx.w)); applyCover(); }
+}
+const setSky = v => { opts.sky = v; applyCover(); };
+choices(document.getElementById('sky'), v => { setSky(v); save('weather', v); updateLights(); draw(); }).set(opts.sky);
 setSky(opts.sky);
+/* ---------- end weather ---------- */
 choices(document.getElementById('water'), v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); });
 
 /* ---------- ready ---------- */
@@ -2212,7 +2243,8 @@ function applyFX() {
   bloomPass.strength = FX.bloom; bloomPass.radius = FX.bloomRadius; bloomPass.threshold = FX.bloomThreshold;
   flarePass.uniforms.uSt.value.set(FX.flare, FX.flareLength, FX.flareThin, FX.flareWarmth);
   flarePass.uniforms.uGh.value.set(FX.ghosts, FX.ghostSpread);
-  U.uCloud.value.x = FX.cloudBase; U.uCloud.value.y = FX.cloudDepth; U.uCloud.value.z = FX.cloudCover;
+  U.uCloud.value.x = FX.cloudBase; U.uCloud.value.y = FX.cloudDepth;
+  applyCover();
   CU.uGlow.value = FX.cloudGlow;
   U.uCool.value.copy(COOL).multiplyScalar(FX.ambient);
   U.uHaze.value = FX.haze * 0.001;
@@ -2284,7 +2316,7 @@ function devPanel() {
     if (a === 'reset') { Object.assign(FX, FX_DEF); applyFX(); resize(); try { localStorage.removeItem('stimming.fireworks.fx'); } catch { /* storage is optional */ } show(); }
   });
   // Frames drawn per second; the loop sleeps when idle, so 0 is normal.
-  setInterval(() => { if (!box.hidden) fps.textContent = `${devFrames * 2} fps · r${rung}`; devFrames = 0; }, 500);
+  setInterval(() => { if (!box.hidden) fps.textContent = `${devFrames * 2} fps · r${rung} · sky ${wx.w.toFixed(2)}→${wx.to}`; devFrames = 0; }, 500);
   show();
   return box;
 }

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T08:10:59Z
+updated_at: 2026-11-09T08:15:22Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -88,3 +88,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Dev panel (?dev, backquote): bloom, flare, cloud, night and grade knobs; Buoy Business flare model
 
 - [x] Easter egg: hold a shell past 6 s; the sky tears, an eye looks through, meteors fall into the bay (dev: Tear)
+
+- [x] Weather drift: Sky defaults to Drift; random start; slow clear-cloud changes every 1 to 3 min
