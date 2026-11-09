@@ -79,7 +79,9 @@ const ui = initPage({ id: 'vortex', bar: {
   settings: [
     { type: 'choice', id: 'laser', label: 'Laser', value: 'green', persist: true,
       options: [{ value: 'green', label: 'Green' }, { value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }], onPick: v => act.laser(v) },
-    { type: 'choice', id: 'smoke', label: 'Smoke', value: 'light', persist: true,
+    { type: 'choice', id: 'render', label: 'Smoke', value: 'volume', persist: true,
+      options: [{ value: 'volume', label: 'Volume' }, { value: 'particles', label: 'Particles' }], onPick: v => { look = v; still(); } },
+    { type: 'choice', id: 'smoke', label: 'Density', value: 'light', persist: true,
       options: [{ value: 'light', label: 'Light' }, { value: 'dense', label: 'Dense' }], onPick: v => { smoke = v; still(); } },
     { type: 'slider', id: 'breakup', label: 'Breakup', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => { breakup = v; } },
   ],
@@ -90,6 +92,8 @@ const ui = initPage({ id: 'vortex', bar: {
 let sheetMode = 'across', haze = ui.slider?.value ?? 0.5;
 let laser = ui.setting('laser')?.value ?? 'green', smoke = ui.setting('smoke')?.value ?? 'light';
 let breakup = ui.setting('breakup')?.value ?? 0.5;
+// Two smoke looks: a raymarched volume, or the particles themselves.
+let look = ui.setting('render')?.value ?? 'volume';
 
 let markReady;
 const glReady = new Promise(r => { markReady = r; });
@@ -278,10 +282,10 @@ const MUZZLE = [-1.22, -0.06, 0], SHEET_X = 0.42;
 const ROWS = 128;
 // Smoke density lives in a box, splatted into an atlas of z slices.
 const BOX_MIN = [-1.45, -1.15, -1.1], BOX_SIZE = [3.8, 2.3, 2.2];
-const VRES = [160, 96, 80], TILES = [8, 10], ATLAS = [VRES[0] * TILES[0], VRES[1] * TILES[1]];
+const VRES = [224, 128, 112], TILES = [8, 14], ATLAS = [VRES[0] * TILES[0], VRES[1] * TILES[1]];
 const SHEETS = {
-  // Across leans 24 degrees, so the camera sees it nearly edge on.
-  across: { n: [Math.cos(0.42), 0, Math.sin(0.42)], h: 0.42 * Math.cos(0.42), lens: [0.42, 1.75, 0], fan: [0, -1, 0], half: 0.6 },
+  // Across turns 20 degrees toward the camera, so the slice shows its cross-section.
+  across: { n: [Math.cos(-0.35), 0, Math.sin(-0.35)], h: 0.42 * Math.cos(-0.35), lens: [0.42, 1.75, 0], fan: [0, -1, 0], half: 0.6 },
   along: { n: [0, 0, 1], h: 0, lens: [0.25, 1.75, 0], fan: [0, -1, 0], half: 0.72 },
 };
 const cam = { eye: [0, 0, 0], R: [1, 0, 0], U: [0, 1, 0], F: [0, 0, -1], tan: 0.4, aspect: 1, portrait: false };
@@ -380,7 +384,7 @@ const HAZE_FS = HEAD + PHASE + NOISE + SHEET + VOLUME + `
 in vec2 vUv;
 out vec4 o;
 uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uRoom;
-uniform vec2 uTan, uVTexel;
+uniform vec2 uTan;
 uniform float uHaze, uTime, uW, uSmokeOn, uSigma, uSheetSmoke;
 uniform vec4 uPuff;
 uniform sampler2D uVolA, uVolB;
@@ -408,10 +412,7 @@ void main() {
   // The smoke volume, raymarched at half size, sits in front of the room.
   float Ts = 1.0;
   if (uSmokeOn > 0.5) {
-    // Four taps hide the march's dither.
-    vec2 h = uVTexel * 0.6;
-    vec4 V = 0.25 * (texture(uVolA, vUv + vec2(-h.x, -h.y)) + texture(uVolA, vUv + vec2(h.x, -h.y))
-      + texture(uVolA, vUv + vec2(-h.x, h.y)) + texture(uVolA, vUv + vec2(h.x, h.y)));
+    vec4 V = texture(uVolA, vUv);
     col = col * V.a + V.rgb;
     Ts = texture(uVolB, vUv).r;
   }
@@ -520,6 +521,44 @@ void main() {
   }
   o = vec4(p, r5);
 }`;
+// Particle look: each mote is a small crisp point, lit by the backlight and the sheet.
+const PART_VS = HEAD + PHASE + SHEET + `
+uniform sampler2D uState;
+uniform float uFade[${SLOTS}];
+uniform vec3 uEye, uR, uU, uF, uBackDir, uBack;
+uniform vec2 uFoc;
+uniform float uPx, uW, uSmoke, uSize;
+uniform int uRows;
+out vec3 vC;
+void main() {
+  int per = 64 * uRows, id = gl_VertexID, k = id / per, l = id - k * per;
+  vec4 s = texelFetch(uState, ivec2(l % 64, k * ${ROWS} + l / 64), 0);
+  float fade = uFade[k];
+  vec3 q = s.xyz - uEye;
+  float z = dot(q, uF);
+  if (fade <= 0.001 || z < 0.1) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); return; }
+  gl_Position = vec4(dot(q, uR) * uFoc.x, dot(q, uU) * uFoc.y, 0.0, z);
+  float ps = uPx * uSize / z, size = max(ps, 1.5);
+  gl_PointSize = size;
+  // Points smaller than 1.5 px keep their energy, not their size.
+  float k2 = (ps * ps) / (size * size);
+  vec3 toCam = -q / length(q);
+  float back = hg(dot(uBackDir, toCam), 0.6);
+  vec3 v = s.xyz - uLens;
+  float r = length(v), dd = dot(s.xyz, uN) - uH;
+  vec3 vl = v / r;
+  float sheet = exp(-dd * dd / (uW * uW)) * fanMask(vl) * hg(dot(vl, toCam), 0.55) / (r + 0.45);
+  vC = (uBack * back * 0.04 + uLaser * sheet * 3.0) * uSmoke * fade * max(s.w, 0.25) * k2;
+}`;
+// A tight disc with a short falloff keeps the motes crisp.
+const PART_FS = HEAD + `
+in vec3 vC;
+out vec4 o;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(c, c);
+  o = vec4(vC * exp(-4.5 * r2) * max(0.0, 1.0 - r2) * 2.0, 1.0);
+}`;
 // Each particle splats into the two z slices around it.
 const SPLAT_VS = HEAD + `
 uniform sampler2D uState;
@@ -562,10 +601,11 @@ uniform float uTime, uSigma, uFrame, uH, uGain;
 float dens(vec3 p) {
   float d = vol(p);
   if (d < 2e-3) return 0.0;
-  // Two octaves of noise erode the edges into wisps.
-  float n = texture(uNoise, p * 1.9 + uTime * vec3(0.02, 0.05, 0.01)).r * 0.6
-    + texture(uNoise, p * 5.3 - uTime * vec3(0.04, 0.0, 0.03)).r * 0.4;
-  return max(0.0, d * (0.4 + 1.2 * n) - 0.06 * (1.0 - n));
+  // Two octaves of noise erode the edges into crisp wisps.
+  float n = texture(uNoise, p * 3.1 + uTime * vec3(0.02, 0.05, 0.01)).r * 0.6
+    + texture(uNoise, p * 8.7 - uTime * vec3(0.04, 0.0, 0.03)).r * 0.4;
+  float e = d * (0.3 + 1.4 * n);
+  return e * smoothstep(0.015, 0.1, e);
 }
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
@@ -575,7 +615,7 @@ void main() {
   float t0 = max(max(lo.x, lo.y), max(lo.z, 0.0)), t1 = min(hi.x, min(hi.y, hi.z));
   if (t1 <= t0) { o = vec4(0.0, 0.0, 0.0, 1.0); o2 = vec4(1.0); return; }
   float dn = dot(d, uN), th = abs(dn) > 1e-4 ? (uH - dot(uEye, uN)) / dn : -1.0;
-  const int STEPS = 56;
+  const int STEPS = 72;
   float dt = (t1 - t0) / float(STEPS), j = ign(gl_FragCoord.xy + uFrame * 5.588);
   float T = 1.0, Ts = th < t0 ? 1.0 : -1.0;
   vec3 L = vec3(0.0);
@@ -639,8 +679,8 @@ void main() {
   c *= 0.25;
   float l = max(c.r, max(c.g, c.b));
   // A soft knee above the threshold keeps dim smoke out of the bloom.
-  float k = clamp(l - 0.18, 0.0, 0.3);
-  float w = max(l - 0.48, k * k / 1.2) / max(l, 1e-4);
+  float k = clamp(l - 0.6, 0.0, 0.3);
+  float w = max(l - 0.9, k * k / 1.2) / max(l, 1e-4);
   o = vec4(c * w, 1.0);
 }`;
 const DOWN_FS = HEAD + `
@@ -791,7 +831,7 @@ async function initGL() {
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     haze: compile(TRI, HAZE_FS), advect: compile(TRI, ADVECT_FS), seed: compile(TRI, SEED_FS),
-    splat: compile(SPLAT_VS, SPLAT_FS), vol: compile(TRI, VOL_FS), ghost: compile(GHOST_VS, DOT_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
+    part: compile(PART_VS, PART_FS), splat: compile(SPLAT_VS, SPLAT_FS), vol: compile(TRI, VOL_FS), ghost: compile(GHOST_VS, DOT_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
     up: compile(TRI, UP_FS), grade: compile(TRI, GRADE_FS),
   };
   // Polling lets the driver link off the main thread.
@@ -817,20 +857,22 @@ async function initGL() {
 
 /* ---------- layout ---------- */
 // The performance ladder's rung; slow frames raise it, a quality choice clears it.
-let rung = 0, time = 0, bloomShift = 0;
+let rung = 0, time = 0, bloomShift = 0, volShift = 0;
 const rows = () => (rung >= 3 ? ROWS / 2 : ROWS);
 function layout() {
-  const { W, H } = fitCanvas(canvas, { low: rung >= 1 });
+  const { W, H, dpr } = fitCanvas(canvas, { low: rung >= 1 });
   aimCamera(W, H);
   const shift = rung >= 2 ? 2 : 1;
-  if (scene && scene.w === W && scene.h === H && shift === bloomShift) return;
+  // The march runs at about one sample per CSS pixel; rung 2 halves it.
+  const vs = (dpr >= 1.5 ? 1 : 0) + (rung >= 2 ? 1 : 0);
+  if (scene && scene.w === W && scene.h === H && shift === bloomShift && vs === volShift) return;
   bloomShift = shift;
+  volShift = vs;
   free(scene);
   blooms.forEach(free);
   freeVol(volT);
   scene = target(W, H, gl.RGBA16F, gl.LINEAR);
-  // The volume marches at half size, or a quarter on the ladder's second rung.
-  volT = volTarget(Math.max(1, W >> shift), Math.max(1, H >> shift));
+  volT = volTarget(Math.max(1, W >> volShift), Math.max(1, H >> volShift));
   blooms = [];
   let w = Math.max(1, W >> shift), h = Math.max(1, H >> shift);
   for (let i = 0; i < 5; i++) { blooms.push(target(w, h, gl.RGBA16F, gl.LINEAR)); w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); }
@@ -966,13 +1008,13 @@ function volUniforms(q) {
   gl.uniform2fv(q.u.uAtlas, ATLAS);
 }
 // Smoke extinction per unit density; the sheet's gain on smoke.
-const SIGMA = 3.5, SHEET_SMOKE = 45;
+const SIGMA = 3.5, SHEET_SMOKE = 70;
 let frameN = 0;
 function render() {
   const W = canvas.width, H = canvas.height;
   frameN++;
   slotUniforms();
-  const smokeOn = fades.some(f => f > 0);
+  const anySmoke = fades.some(f => f > 0), smokeOn = anySmoke && look === 'volume';
   gl.disable(gl.BLEND);
   if (smokeOn) {
     // Splat every live particle into the density atlas.
@@ -987,7 +1029,7 @@ function render() {
     volUniforms(q);
     gl.uniform1i(q.u.uRows, rows());
     gl.uniform1f(q.u.uMass, 0.05 * (smoke === 'dense' ? 1.6 : 1) * ROWS / rows());
-    gl.uniform1f(q.u.uSplat, 3.5);
+    gl.uniform1f(q.u.uSplat, 2.5);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     gl.drawArraysInstanced(gl.POINTS, 0, SLOTS * 64 * rows(), 2);
@@ -1007,7 +1049,7 @@ function render() {
     gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
     gl.uniform1f(q.u.uTime, simTime);
     gl.uniform1f(q.u.uSigma, SIGMA);
-    gl.uniform1f(q.u.uGain, 0.75);
+    gl.uniform1f(q.u.uGain, 1.0);
     gl.uniform1f(q.u.uFrame, reduced() ? 0 : frameN % 64);
     gl.bindFramebuffer(gl.FRAMEBUFFER, volT.fb);
     gl.viewport(0, 0, volT.w, volT.h);
@@ -1017,13 +1059,12 @@ function render() {
   let q = P.haze;
   gl.useProgram(q.p);
   camUniforms(q);
-  sheetUniforms(q, 0.012);
+  sheetUniforms(q, 0.03);
   volUniforms(q);
   bind(q, 'uVol', 0, atlas);
   bind(q, 'uVolA', 1, volT.a);
   bind(q, 'uVolB', 2, volT.b);
   gl.uniform1f(q.u.uSmokeOn, smokeOn ? 1 : 0);
-  gl.uniform2f(q.u.uVTexel, 1 / volT.w, 1 / volT.h);
   gl.uniform1f(q.u.uSigma, SIGMA);
   gl.uniform1f(q.u.uSheetSmoke, SHEET_SMOKE);
   gl.uniform3fv(q.u.uRoom, ROOM);
@@ -1032,14 +1073,28 @@ function render() {
   gl.uniform1f(q.u.uTime, driftT);
   gl.uniform4f(q.u.uPuff, MUZZLE[0], MUZZLE[1], MUZZLE[2], ptr ? 0.25 + 0.75 * chargeNow() : 0);
   draw(scene);
-  if (ptr) {
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
-    gl.viewport(0, 0, W, H);
-    ghost(1 / cam.tan, H);
-    gl.disable(gl.BLEND);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+  gl.viewport(0, 0, W, H);
+  if (anySmoke && look === 'particles') {
+    q = P.part;
+    gl.useProgram(q.p);
+    camUniforms(q);
+    sheetUniforms(q, 0.03);
+    bind(q, 'uState', 0, state.r);
+    gl.uniform1fv(q.u.uFade, fades);
+    const f = 1 / cam.tan;
+    gl.uniform2f(q.u.uFoc, f / cam.aspect, f);
+    gl.uniform1f(q.u.uPx, 0.5 * H * f);
+    gl.uniform1f(q.u.uSize, 0.014);
+    // Half the particles carry twice the light, so the smoke keeps its brightness.
+    gl.uniform1f(q.u.uSmoke, (smoke === 'dense' ? 1.5 : 1) * ROWS / rows());
+    gl.uniform1i(q.u.uRows, rows());
+    gl.drawArrays(gl.POINTS, 0, SLOTS * 64 * rows());
   }
+  if (ptr) ghost(1 / cam.tan, H);
+  gl.disable(gl.BLEND);
   // Bloom: bright pass, four levels down, then back up.
   q = P.bright;
   gl.useProgram(q.p);
@@ -1067,7 +1122,7 @@ function render() {
   gl.useProgram(q.p);
   bind(q, 'uScene', 0, scene);
   bind(q, 'uBloom', 1, blooms[0]);
-  gl.uniform1f(q.u.uBloomK, 0.6);
+  gl.uniform1f(q.u.uBloomK, 0.5);
   gl.uniform1f(q.u.uTime, time);
   draw(null);
 }

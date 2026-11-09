@@ -59,11 +59,11 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 | Bottom right | Slider | Haze: how thick the room is |
 | Bottom left | Actions | Pair, Collide, Clear |
 | Bottom centre | Keys | `[CLICK] fire` · `[DRAG] aim` · `[HOLD] charge` · `[SPACE] pair` |
-| Settings | Rows | Laser: Green, Red, Blue · Smoke: Light, Dense · Breakup (slider, Calm to Wild) · Reset (footer) · Quality (shared) |
+| Settings | Rows | Smoke: Volume, Particles · Laser: Green, Red, Blue · Density: Light, Dense · Breakup (slider, Calm to Wild) · Reset (footer) · Quality (shared) |
 
 | Sheet | Plane | What it shows |
 |---|---|---|
-| Across | Normal along the launch axis, at 60 % of the frame | Rings cross it face first; the whole core flares |
+| Across | Turned 20° toward the camera, at 60 % of the frame (Tom: oblique, to show the cross-section) | Rings cross it face first; the slice shows the core's cross-section |
 | Along | Contains the launch axis, faces the camera at 30° | A meridional cut: two spiral eyes ride along with each ring |
 | Scan | Across, sweeping slowly back and forth | Slices through all rings in turn |
 
