@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-09T07:19:36Z
+updated_at: 2026-11-09T08:11:55Z
 parent: stimming-w1nd
 ---
 
@@ -25,3 +25,5 @@ Today the wing is one flat quad with a painted flap seam.
 Fairings: tapered canoes (round cone, squashed across the span) replace the ellipsoids. Paint gains sky fill and sun or moon diffuse.
 
 Wing: five flexed panels out to 22 m with smooth normals; winglet kept. Seam tests were inverted and shaded whole spoiler and slat panels dark; fixed. Reflection stays above the horizon.
+
+Wing after the 787 planform: LE swept 28 deg, root chord 10.7 m to tip 1.6 m, straight inboard TE to a kink at the engine; span 25 m plus winglet. Rest eye moved to x -0.04 so the tip stays in view. Panel lines follow straight planform edges at 3 cm width. Gloss: Schlick Fresnel and a three-lobe glint.
