@@ -61,6 +61,8 @@ const stage = document.getElementById('stage');
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 let voltage = 0.6, board = 'wood';
+// The board eases from wood (0) to acrylic (1).
+let boardMix = 0;
 // The handlers bind once the GL exists.
 const act = { board() {}, clear() {} };
 const ui = initPage({ id: 'lichtenberg', bar: {
@@ -436,10 +438,10 @@ void main() {
   vec4 h = texture(uHeatT, uv);
   vec4 ch = texture(uCharT, uv);
   float T = h.g, S = h.b;
-  vec3 c;
-  if (uAcrylic > 0.5) {
-    c = vec3(0.25, 0.5, 1.0) * T * T * 1.6;
-  } else {
+  // Acrylic does not burn: its fractures hold a cold blue afterglow.
+  vec3 cold = vec3(0.25, 0.42, 1.0) * T * T * 1.6;
+  vec3 c = vec3(0.0);
+  if (uAcrylic < 0.999) {
     c = ember(T) * T * T * 2.4 * (0.35 + 0.65 * ch.r);
     // Glints: one point per 3-cell patch; three in ten can light.
     vec2 g = floor(b / 3.0);
@@ -450,7 +452,7 @@ void main() {
     float gl = exp(-dd * dd / 0.9) * step(hg, 0.3) * pulse;
     c += vec3(1.0, 0.42, 0.08) * gl * S * ch.r * 6.0 * uGlint;
   }
-  o = vec4(c, 1.0);
+  o = vec4(mix(c, cold, uAcrylic), 1.0);
 }`;
 // Bloom: a soft threshold, then a 13-tap downsample.
 const DOWN_FS = HEAD + `
@@ -490,7 +492,7 @@ void main() {
 const FINAL_FS = HEAD + BOARD + `
 out vec4 o;
 uniform sampler2D uCharT, uEmit, uBloom, uWide;
-uniform vec3 uWoodA, uWoodB, uKey;
+uniform vec3 uWoodA, uWoodB, uKey, uLed;
 uniform float uTime, uGlow, uAcrylic, uFlash, uSweep;
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
@@ -502,14 +504,24 @@ void main() {
   // The key light pools at the upper left and falls off to the corners.
   vec2 kc = (vec2(sp.x, 1.0 - sp.y) - vec2(0.3, 0.22)) * vec2(uRes.x / uRes.y, 1.0);
   float key = 0.02 + 0.4 * exp(-dot(kc, kc) / 0.28);
-  vec3 col;
-  if (uAcrylic > 0.5) {
-    // A dark clear block lit from its left edge; the tree is etched inside.
-    float edge = exp(-b.x / (uGrid.x * 0.55));
-    vec3 glass = vec3(0.006, 0.008, 0.014) + vec3(0.02, 0.035, 0.06) * edge;
-    vec3 lit = vec3(0.55, 0.75, 1.0) * (0.25 + 1.6 * edge);
-    col = glass + lit * (ch.r * 0.9 + ch.g * 0.12) * (1.0 + uFlash * 3.0) + wide * 0.3;
-  } else {
+  vec3 col = vec3(0.0), acr = vec3(0.0);
+  if (uAcrylic > 0.001) {
+    // A dark clear block; an LED strip lights it from the left edge.
+    float x = b.x / uGrid.x;
+    float edge = exp(-x * 2.6) + 0.15 * exp(-(1.0 - x) * 6.0);
+    vec3 glass = vec3(0.004, 0.005, 0.01) + uLed * 0.035 * edge;
+    // A faint sheen runs across the top face.
+    float sh = exp(-pow(sp.x * 0.5 + sp.y - 1.05, 2.0) / 0.012);
+    glass += vec3(0.5, 0.55, 0.7) * sh * 0.025;
+    // A second, deeper plane of fractures sits behind the first.
+    vec4 deep = b.x < uSweep ? vec4(0.0) : texture(uCharT, texAt(b + vec2(-1.4, 1.0)));
+    float frac = ch.r * 0.8 + ch.g * 0.09 + deep.g * 0.05;
+    // Fine sparkles ride on the fractures where facets face the light.
+    float spk = pow(hash(floor(b * 2.5)), 22.0) * ch.r * 6.0;
+    vec3 lit = mix(vec3(0.9, 0.94, 1.0), uLed, 0.4) * (0.04 + 2.2 * edge * edge);
+    acr = glass + lit * (frac + spk) * (1.0 + uFlash * 3.0) + wide * 0.3;
+  }
+  if (uAcrylic < 0.999) {
     // Birch: long grain along x, warped a little, with fine fibres.
     float w = fbm(vec2(b.x * 0.012, b.y * 0.09));
     float g = 0.5 + 0.5 * sin((b.y + w * 28.0) * 0.55 + fbm(b * 0.04) * 3.0);
@@ -521,9 +533,10 @@ void main() {
     // An arc-over lights the whole board blue for a moment.
     col = alb * (uKey * key + wide * 2.2 + bloom * 0.6 + vec3(0.45, 0.55, 1.0) * uFlash);
   }
+  col = mix(col, acr, uAcrylic);
   // The sanding edge: a warm streak of fresh dust.
   float edge = exp(-pow((b.x - uSweep) / 2.5, 2.0));
-  col += uKey * key * edge * 0.5 * (1.0 - uAcrylic) + vec3(0.3, 0.4, 0.6) * edge * 0.15 * uAcrylic;
+  col += uKey * key * edge * 0.5 * (1.0 - uAcrylic) + uLed * edge * 0.25 * uAcrylic;
   col += emit + bloom * uGlow * 0.6;
   // A vignette and fine grain finish the frame.
   vec2 v = (sp - 0.5) * vec2(uRes.x / uRes.y, 1.0);
@@ -591,6 +604,7 @@ async function initGL() {
   gl.uniform3fv(P.final.u.uWoodA, oklchLinear(0.76, 0.05, 80));
   gl.uniform3fv(P.final.u.uWoodB, oklchLinear(0.64, 0.065, 66));
   gl.uniform3fv(P.final.u.uKey, oklchLinear(0.86, 0.06, 70));
+  gl.uniform3fv(P.final.u.uLed, oklchLinear(0.72, 0.16, 268));
 }
 function target(w, h, fmt = gl.RGBA16F) {
   const tex = gl.createTexture();
@@ -729,7 +743,7 @@ function boardUniforms(q) {
   gl.uniform1f(q.u.uScale, view.s);
 }
 function render(dt) {
-  const rm = reduced(), acrylic = board === 'acrylic' ? 1 : 0;
+  const rm = reduced(), acrylic = boardMix * boardMix * (3 - 2 * boardMix);
   // Heat cools: the glow over 3 s, the smoulder over 18 s.
   if (dt > 0) {
     const q = P.decay;
@@ -891,7 +905,8 @@ function wake() {
   if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 // Lively while a spark runs; drifting at 30 fps while embers glow.
-const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5 || sweep >= 0;
+const boardTo = () => (board === 'acrylic' ? 1 : 0);
+const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5 || sweep >= 0 || boardMix !== boardTo();
 const busy = (now = performance.now()) => visible && (lively() || (simT < hotUntil && now - inputAt < 60000));
 function frame(now) {
   raf = 0;
@@ -904,6 +919,9 @@ function frame(now) {
       grow(dt);
       if (burn && burn.done) sparkLive = Math.max(0, sparkLive - dt / 0.2);
       if (sweep >= 0) sweep += dt / 0.7;
+      // The board change takes 0.6 s.
+      const bt = boardTo();
+      if (boardMix !== bt) boardMix = bt > boardMix ? Math.min(bt, boardMix + dt / 0.6) : Math.max(bt, boardMix - dt / 0.6);
       if (sweep >= 1) { sweep = -1; clearBoard(); } else render(dt);
     }
   } finally {
@@ -951,7 +969,7 @@ act.clear = () => {
   if (reduced()) clearBoard(); else sweep = 0;
   live();
 };
-act.board = v => { board = v; still(); live(); };
+act.board = v => { board = v; if (reduced()) { boardMix = boardTo(); still(); } live(); };
 
 /* ---------- boot ---------- */
 try {

@@ -146,11 +146,11 @@ Touch: hold to burn, tap to zap. The choice moves bottom left as a stepper, Clea
 - [x] Branch flash, crackle jitter, trunk width growth, ember glints, the blue board light.
 - [x] Char attraction and arc-over: the path flash, the old tree re-glow, the stop.
 - [x] Clear's sanding sweep. Stills of the crawl, the freeze and an arc-over.
-- [ ] Commit: `Lichtenberg burn: branch flash, embers and arc-over`.
+- [x] Commit: `Lichtenberg burn: branch flash, embers and arc-over`.
 
 ### Task 3: Acrylic
 
-- [ ] Acrylic board: edge light, etched fractures, cold afterglow; the chip eases between boards.
+- [x] Acrylic board: edge light, etched fractures, cold afterglow; the chip eases between boards.
 - [ ] Commit: `Lichtenberg burn: the acrylic block`.
 
 ### Task 4: Sound
