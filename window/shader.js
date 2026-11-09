@@ -936,6 +936,16 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   // Haze: the far land fades out; the sky itself turns milky.
   float hz = uStorm * (t > 5e3 ? 0.7 : 1.0 - exp(-t / mix(500.0, 110.0, uStorm)));
   c = mix(c * (1.0 - 0.35 * uStorm), air, hz);
+  // Scud: loose patches of murk drift between the towers, fixed to the ground.
+  // They sit on a layer 4.5 km below the eye, or on the first surface nearer than that.
+  if (uStorm > 0.0 && d.y < 0.05) {
+    float tp = min(4.5 / max(-d.y, 0.02), t);
+    vec2 w = d.xz * tp + uCam;
+    float n = textureLod(uNoise, vec3(w / 23.0, uTime * 0.004), 0.0).r * 0.65 + textureLod(uNoise, vec3(w / 7.0, 0.37 + uTime * 0.007), 0.0).g * 0.35;
+    float scud = smoothstep(0.42, 0.72, n) * uStorm * (1.0 - exp(-tp / 40.0));
+    c = mix(c, air * 1.15, scud * 0.55);
+    skyA *= 1.0 - scud * 0.55;
+  }
   float fa = fogAt(d, t);
   // In fog, the strobe and the nav light bloom into the murk.
   float tip = dot(d, normalize(uTip));
@@ -1768,6 +1778,8 @@ uniform sampler2D uOut;
 uniform sampler2D uEnv; uniform float uEnvOn;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
 uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
+// Extra ghost strength per flare; 0 keeps the old ghosts.
+uniform float uFlrG[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
 uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
@@ -2021,7 +2033,7 @@ vec3 flare(vec2 px, vec3 base) {
       vec3 gs = k == 0 ? vec3(0.7, 0.05, 0.9) : k == 1 ? vec3(1.4, 0.09, 0.6) : k == 2 ? vec3(2.2, 0.15, 0.4) : vec3(-0.45, 0.03, 0.5);
       vec2 g = (uv - (sp + toC * gs.x)) * vec2(aspect, 1.0);
       float gr = length(g) / (gs.y * f.w);
-      a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak);
+      a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak) * (1.0 + uFlrG[i]);
     }
     add += a * f.z;
   }
@@ -2140,8 +2152,9 @@ void main() {
           grRuns(pr, m, uTime * 0.9, uRain, 1.0, L, rOff, rRim, rSpec, rCover, rClear);
           rOff /= RS;
         }
-        // The pane sits about 0.44 m from the eye.
-        vec2 rPx = px + vec2(dot(vec3(rOff, 0.0), uR), dot(vec3(rOff, 0.0), uU)) * uFocal / 0.44;
+        // The bent ray leaves the pane at pO + rOff: project that point, so the pane's tilt and the head hold.
+        vec3 Pr = vec3(pO + rOff, Z_OUT) - uEye;
+        vec2 rPx = uRes * 0.5 + vec2(dot(Pr, uR), dot(Pr, uU)) / max(dot(Pr, uF), 1e-3) * uFocal;
         view = glass(da, rPx) + ghosts(px);
         view *= 1.0 - 0.7 * rRim;
         view += (outGlow * 3.0 + cabin * 1.2) * rSpec * 0.6;

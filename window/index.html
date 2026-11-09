@@ -482,8 +482,20 @@ const cam = { x: 0, z: 0 };
 // The high wind blows toward the tail, so the anvils stream aft.
 const WIND = PI * 0.92;
 const cells = [];
+// New cells take the most open spot of eight tries, by bearing and range, so towers spread evenly.
 function newCell(ahead) {
-  const side = rnd(25, 160), a = (ahead ? rnd(70, 160) : rnd(-20, 140)) + side * rnd(-0.2, 0.4);
+  let best = null, room = -1;
+  for (let k = 0; k < 8; k++) {
+    const sd = rnd(25, 160), ah = (ahead ? rnd(70, 160) : rnd(-20, 140)) + sd * rnd(-0.2, 0.4);
+    const br = Math.atan2(sd, ah), rg = Math.hypot(sd, ah);
+    let near = 1e9;
+    for (const c of cells) {
+      const cs = c.z - cam.z, ca = c.x - cam.x;
+      near = Math.min(near, Math.abs(br - Math.atan2(cs, ca)) * 120 + Math.abs(rg - Math.hypot(cs, ca)) * 0.25);
+    }
+    if (near > room) { room = near; best = [ah, sd]; }
+  }
+  const [a, side] = best;
   return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14),
     shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2 };
 }
@@ -1283,14 +1295,15 @@ function towerCover(d) {
 }
 // Ten flare slots: sun or moon, lightning, strobe, nav light, meteor, rocket, a jet's two lights, and the impact's two.
 const FLARES = 10;
-const flr = new Float32Array(FLARES * 4), flrC = new Float32Array(FLARES * 4);
+const flr = new Float32Array(FLARES * 4), flrC = new Float32Array(FLARES * 4), flrG = new Float32Array(FLARES);
 const flareSeen = new Array(FLARES).fill(0);
 function flareUniforms(u) {
-  flr.fill(0); flrC.fill(0);
+  flr.fill(0); flrC.fill(0); flrG.fill(0);
   // Each source shines through the tinted pane, dimmer and bluer.
   const tc = dimT(dim.core), tl = lum(tc);
   // streak: how strongly the source throws a short horizontal streak.
-  const put = (i, dirW, gain, size, col, rad = 0, streak = 0) => {
+  // ghost: extra strength for the ghosts; the window lights throw strong ones.
+  const put = (i, dirW, gain, size, col, rad = 0, streak = 0, ghost = 0) => {
     gain *= tl;
     col = col.map((v, c) => v * tc[c] / tl);
     const sp = screenOf(dirW);
@@ -1299,7 +1312,7 @@ function flareUniforms(u) {
     flareSeen[i] += (vis - flareSeen[i]) * 0.35;
     if (!sp || gain * flareSeen[i] < 1e-3) return;
     flr.set([sp[0], sp[1], gain * flareSeen[i], size], i * 4);
-    flrC.set([...col, streak], i * 4);
+    flrC.set([...col, streak], i * 4); flrG[i] = ghost;
   };
   // The sun or the moon: full only once the whole disc clears the frame.
   const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun)) * (1 - 0.7 * opts.storm) * (1 - fog.level);
@@ -1307,10 +1320,10 @@ function flareUniforms(u) {
   // Lightning glows inside the cloud, so it throws no lens flare.
   // The strobe and the red nav light on the wingtip.
   const tipW = norm(toWorld(sub(TIP, basis.eye)));
-  put(2, tipW, reduce ? 0 : strobe() * 0.5, 0.5, [0.9, 0.95, 1.0], 0, 0.6);
-  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05]);
+  put(2, tipW, reduce ? 0 : strobe() * 0.8, 0.5, [0.9, 0.95, 1.0], 0, 0.6, 3.5);
+  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05], 0, 0, 6);
   eventFlares(put);
-  UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC);
+  UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC); UG.uniform1fv(u['uFlrG[0]'], flrG);
 }
 
 // Towers go in far to near, so near ones cover far ones.
