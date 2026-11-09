@@ -491,7 +491,8 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
   // The reed: a tapered stalk, three leaves at nodes, a panicle that hangs downwind.
   const float STALK_W0 = 0.008, STALK_W1 = 0.003;
   const float LEAF_W = 0.013;
-  const float PLUME_LEN = 0.2, PLUME_DROOP = 0.61;
+  // The panicle: 0.08 to 0.14 of the stalk, held 12 degrees off the stalk's top, the tip drooping.
+  const float PLUME_LEN = 0.11, PLUME_DROOP = 0.22;
   // A point at height u on a stalk whose tangent turns by th * u * u: a length-keeping bend.
   vec3 stalkAt(float u, float th, vec3 root, vec3 dir, float H) {
     float x = th * u * u * u / 3.0, y = u - th * th * u * u * u * u * u / 10.0;
@@ -515,7 +516,7 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
     float sway2 = sin(uTime * om * 0.7 + ph * 1.3) * (0.015 + 0.03 * g);
     // The sound front bends the whole stalk away from the pad.
     vec2 fp = frontPush(root.xz);
-    float th = aJ.x + 0.06 * H * g + sway + length(fp) * 0.3;
+    float th = min(aJ.x + 0.035 * H * g + sway + length(fp) * 0.3, 0.45);
     vec3 bend = normalize(hd3 + vec3(fp.x, 0.0, fp.y) * 0.6 + 1e-4);
     vec3 c, tan_;
     float w;
@@ -527,13 +528,13 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
     } else if (piece > 3.5) {
       // The panicle hangs from the top, nods behind the stalk, and droops toward its tip.
       vec3 top = stalkAt(1.0, th, root, bend, H) + cr3 * sway2 * H;
-      float lag = sin(uTime * om + ph - 0.5) * amp * 1.6 - sway;
+      float lag = sin(uTime * om + ph - 0.5) * amp * 1.3 - sway;
       float Lp = H * PLUME_LEN * aJ.w * 0.1;
       float da = th + lag + PLUME_DROOP;
       vec3 pd = normalize(bend * sin(da) + vec3(0.0, cos(da), 0.0));
-      c = top + pd * t * Lp + bend * t * t * Lp * 0.25 - vec3(0.0, t * t * Lp * 0.2, 0.0);
-      tan_ = normalize(pd + bend * 0.5 * t - vec3(0.0, 0.4 * t, 0.0));
-      w = Lp * 0.13 * sin(3.1416 * pow(t, 0.7)) + 0.003;
+      c = top + pd * t * Lp + bend * t * t * Lp * 0.3 - vec3(0.0, t * t * Lp * 0.25, 0.0);
+      tan_ = normalize(pd + bend * 0.6 * t - vec3(0.0, 0.5 * t, 0.0));
+      w = Lp * 0.17 * sin(3.1416 * pow(t, 0.7)) + 0.003;
       vHead = 1.0;
     } else {
       // Leaves alternate sides at three nodes; each rises, arcs over, and flutters in a gust.

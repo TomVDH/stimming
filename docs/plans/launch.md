@@ -198,3 +198,8 @@ QA: `__qa.birds()` lists airborne birds; the headless harness must wait in real 
 ## No launch shockwave (13:55, Tom: a shockwave hits the POV and jitters it)
 
 Gone: the camera shake tweens at ignition, liftoff and roar arrival, and the reed push wave (`uFront` stays at zero; the shader path remains for later). The camera keeps only its slow handheld wobble. The birds still lift as the sound front reaches each bed, and the roar still arrives late in the sound.
+
+## Reed plumes trimmed (14:10, Tom: the reeds still look a little weird)
+
+Cause: the panicle ran to 0.26 of the stalk and hung 35 degrees plus the stalk's lean, so each hero reed read as a palm frond blown flat; the near-field blur made blobs of them.
+Fix: panicle 0.08 to 0.14 of the stalk (`PLUME_LEN` 0.11), held 12 degrees off the stalk's top (`PLUME_DROOP` 0.22) with the tip drooping; gust bend 0.035 H and the top angle capped at 0.45 rad; plume lag 1.3 x. Compared against the pre-rewrite build served from `5fb0a40` at Dawn 0.9.
