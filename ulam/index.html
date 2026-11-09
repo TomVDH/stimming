@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ulam spiral</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Ulam spiral: a million numbers on a black stage. */
+:root { --stage: #000; }
+.stage--ulam { cursor: grab; touch-action: none; }
+.stage--ulam.held { cursor: grabbing; }
+.stage--ulam canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage--ulam canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--ulam canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Ulam spiral</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--ulam" id="stage" tabindex="0" role="application" aria-label="The whole numbers wind out from the centre in a spiral, and the primes glow. Drag to pan, scroll or pinch to zoom. Pick Square, Sacks or Hex to reshape the spiral. Sweep turns a beam of light around the centre.">
+      <p class="fail" hidden>Ulam spiral needs WebGL 2, which this browser doesn't have.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Ulam spiral</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, pixelRatio, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const TAU = Math.PI * 2;
+const SPIRALS = ['square', 'sacks', 'hex'];
+
+/* ---------- the bar ---------- */
+// Handlers bind once the renderer exists.
+const act = { spiral() {}, sweep() {}, zoom() {}, show() {}, start() {}, digits() {} };
+const ui = initPage({ id: 'ulam', silent: true, bar: {
+  choice: { label: 'Spiral', value: 'square',
+    options: [{ value: 'square', label: 'Square' }, { value: 'sacks', label: 'Sacks' }, { value: 'hex', label: 'Hex' }],
+    onPick: v => act.spiral(v) },
+  slider: { label: 'Zoom', min: 0, max: 1, step: 0.001, value: 0.5, onInput: v => act.zoom(v) },
+  actions: [{ verb: 'sweep', label: 'Sweep', onPress: () => act.sweep() }],
+  settings: [
+    { type: 'choice', id: 'show', label: 'Show', value: 'primes', persist: true, onPick: v => act.show(v),
+      options: [{ value: 'primes', label: 'Primes' }, { value: 'twins', label: 'Twins' }, { value: 'gaps', label: 'Gaps' }] },
+    { type: 'choice', id: 'start', label: 'Start', value: '1', persist: true, onPick: v => act.start(v),
+      options: [{ value: '1', label: '1' }, { value: '41', label: '41' }] },
+    { type: 'toggle', id: 'digits', label: 'Digits', value: false, persist: true, onToggle: v => act.digits(v) },
+  ],
+  quality: true,
+  keys: [['drag', 'pan'], ['scroll', 'zoom'], ['space', 'sweep']],
+} });
+
+const stage = document.getElementById('stage');
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
+
+/* ---------- sieve ---------- */
+// One byte per number: bit 0 prime, bit 1 twin, bits 2 to 7 half the gap.
+const N_HIGH = 1 << 20, N_LOW = 1 << 18, START_MAX = 41;
+function sieve(n) {
+  const top = n + START_MAX + 2;
+  const comp = new Uint8Array(top + 1);
+  comp[0] = comp[1] = 1;
+  for (let i = 2; i * i <= top; i++) if (!comp[i]) for (let j = i * i; j <= top; j += i) comp[j] = 1;
+  const kind = new Uint8Array(top + 1);
+  let last = 0;
+  for (let i = 2; i <= top; i++) {
+    if (comp[i]) continue;
+    const gap = last ? i - last : 2;
+    const twin = (i >= 2 && !comp[i - 2]) || (i + 2 <= top && !comp[i + 2]);
+    kind[i] = 1 | (twin ? 2 : 0) | (Math.min(63, gap >> 1) << 2);
+    last = i;
+  }
+  return kind;
+}
+const KIND = sieve(N_HIGH);
+
+/* ---------- K0: plane host (Collatz coral copies this block) ---------- */
+// An orthographic plane: pan, zoom about a point, bloom on a half-float target.
+// The view holds the centre in world units and the pixels per world unit.
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+} catch {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw new Error('no WebGL 2');
+}
+renderer.setClearColor(0x000000, 1);
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1;
+const scene = new THREE.Scene();
+// The shaders place every vertex in clip space; the camera only satisfies the renderer.
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.12, 0.92);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+const view = { cx: 0, cy: 0, scale: 4, w: 1, h: 1, dpr: 1 };
+const plane = {
+  extent: 512,
+  minScale: () => Math.min(view.w, view.h) / (plane.extent * 2.08),
+  maxScale: () => Math.min(view.w, view.h) / 6,
+  // The edge stops the pan, so the view never leaves the field.
+  clampPan() {
+    const hx = view.w / 2 / view.scale, hy = view.h / 2 / view.scale;
+    const lx = Math.max(0, plane.extent - hx), ly = Math.max(0, plane.extent - hy);
+    view.cx = clamp(view.cx, -lx, lx);
+    view.cy = clamp(view.cy, -ly, ly);
+  },
+  // The world point under the pointer stays under it.
+  zoomAt(scale, px, py) {
+    const s = clamp(scale, plane.minScale(), plane.maxScale());
+    const wx = view.cx + (px - view.w / 2) / view.scale, wy = view.cy - (py - view.h / 2) / view.scale;
+    view.scale = s;
+    view.cx = wx - (px - view.w / 2) / s;
+    view.cy = wy + (py - view.h / 2) / s;
+    plane.clampPan();
+  },
+  pan(dx, dy) {
+    view.cx -= dx / view.scale;
+    view.cy += dy / view.scale;
+    plane.clampPan();
+  },
+  // The slider maps 0 to 1 onto zoom on a log scale.
+  toSlider: () => Math.log(view.scale / plane.minScale()) / Math.log(plane.maxScale() / plane.minScale()),
+  fromSlider: v => plane.minScale() * (plane.maxScale() / plane.minScale()) ** v,
+};
+/* ---------- end K0 ---------- */
+
+/* ---------- colours ---------- */
+const lin = (L, C, h, k = 1) => new THREE.Vector3(...oklchLinear(L, C, h).map(x => Math.max(0, x) * k));
+const COL = {
+  prime: lin(0.95, 0.04, 85, 1.5),
+  other: lin(0.25, 0.02, 260, 1),
+  twin: lin(0.85, 0.15, 80, 2.6),
+  dimPrime: lin(0.78, 0.04, 85, 0.7),
+  gapA: lin(0.8, 0.12, 220, 2.2),
+  gapB: lin(0.75, 0.17, 40, 2.2),
+  glow: lin(0.14, 0.035, 262, 1),
+};
+
+/* ---------- the field: one instanced quad per number ---------- */
+// The vertex shader finds each number's place on three spirals.
+const ULAM_VS = /* glsl */ `
+uniform float uCellPx, uFrom, uTo, uMix, uShow, uSweep, uBeam;
+uniform vec2 uCenter, uHalf;
+uniform vec3 uPrime, uOther, uTwin, uDimPrime, uGapA, uGapB;
+attribute float aKind;
+varying vec2 vUv;
+varying vec3 vCol;
+varying float vPrime, vBig;
+
+const float PI = 3.14159265;
+// The closed-form Ulam walk: ring k, then side and offset.
+vec2 square(int n) {
+  int k = int(ceil((sqrt(float(n)) - 1.0) * 0.5));
+  if (k > 0 && (2 * k - 1) * (2 * k - 1) >= n) k--;
+  if ((2 * k + 1) * (2 * k + 1) < n) k++;
+  int t = 2 * k, m = (t + 1) * (t + 1);
+  if (n >= m - t) return vec2(k - (m - n), -k);
+  m -= t;
+  if (n >= m - t) return vec2(-k, -k + (m - n));
+  m -= t;
+  if (n >= m - t) return vec2(-k + (m - n), k);
+  return vec2(k, k - (m - n - t));
+}
+// Sacks: radius and turns both follow sqrt(n); area per number is one.
+vec2 sacks(int n) {
+  float r = sqrt(float(n));
+  float a = 2.0 * PI * r;
+  return r * 0.5641896 * vec2(cos(a), sin(a));
+}
+// Hex: ring k holds 6k cells, six sides of k.
+const ivec2 HC[6] = ivec2[6](ivec2(-1, 1), ivec2(0, 1), ivec2(1, 0), ivec2(1, -1), ivec2(0, -1), ivec2(-1, 0));
+const ivec2 HD[6] = ivec2[6](ivec2(1, 0), ivec2(1, -1), ivec2(0, -1), ivec2(-1, 0), ivec2(-1, 1), ivec2(0, 1));
+vec2 hexs(int n) {
+  int i = n - 1;
+  if (i <= 0) return vec2(0.0);
+  int k = int(ceil((sqrt(9.0 + 12.0 * float(i)) - 3.0) / 6.0));
+  if (3 * k * (k + 1) < i) k++;
+  if (k > 1 && 3 * k * (k - 1) >= i) k--;
+  int p = i - 1 - 3 * k * (k - 1);
+  int s = p / k, o = p - s * k;
+  ivec2 q = k * HC[s] + o * HD[s];
+  // The cell spacing keeps the area per number at one.
+  return 1.0745699 * vec2(float(q.x) + 0.5 * float(q.y), 0.8660254 * float(q.y));
+}
+vec2 spiral(float id, int n) {
+  if (id < 0.5) return square(n);
+  if (id < 1.5) return sacks(n);
+  return hexs(n);
+}
+float ease(float t) { return t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0; }
+
+void main() {
+  // The spiral index sets the place; Start shifts only the number there.
+  int i = gl_InstanceID + 1;
+  vec2 p = mix(spiral(uFrom, i), spiral(uTo, i), ease(uMix));
+  float k = aKind;
+  float prime = mod(k, 2.0);
+  float twin = mod(floor(k / 2.0), 2.0);
+  float half_ = floor(k / 4.0);
+
+  // A splat is at least 1.5 px; its light scales so the total holds.
+  float px = max(uCellPx, 1.5);
+  float gain = uCellPx * uCellPx / (px * px);
+  vec3 c;
+  if (prime < 0.5) c = uOther;
+  else if (uShow < 0.5) c = uPrime;
+  else if (uShow < 1.5) c = twin > 0.5 ? uTwin : uDimPrime;
+  else c = mix(uGapA, uGapB, clamp(log2(half_) / 4.0, 0.0, 1.0));
+
+  // The beam brightens primes near its angle, and lights others faintly.
+  // The centre has no angle; atan(0, 0) would give NaN, and bloom spreads it.
+  float r = length(p);
+  float d = r > 0.5 ? atan(p.y, p.x) - uSweep : PI;
+  d = mod(d + PI, 2.0 * PI) - PI;
+  float beam = uBeam * exp(-d * d / 0.0012) * smoothstep(0.5, 3.0, r);
+  c = prime > 0.5 ? c * (1.0 + 0.9 * beam) : c + uPrime * 0.03 * beam;
+
+  vCol = c * gain;
+  vPrime = prime;
+  vBig = smoothstep(2.5, 7.0, uCellPx);
+  vUv = position.xy;
+  vec2 world = p + position.xy * (px / uCellPx);
+  gl_Position = vec4((world - uCenter) / uHalf, 0.0, 1.0);
+}`;
+// Big cells take a shape; small splats fill their quad so light adds up.
+const ULAM_FS = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vCol;
+varying float vPrime, vBig;
+void main() {
+  vec2 a = abs(vUv);
+  float r = length(vUv);
+  float shape;
+  if (vPrime > 0.5) {
+    float box = 1.0 - smoothstep(0.34, 0.42, max(a.x, a.y));
+    float core = exp(-r * r * 22.0);
+    shape = box * (0.55 + 0.9 * core);
+  } else {
+    shape = (1.0 - smoothstep(0.08, 0.13, r)) * 1.4;
+  }
+  gl_FragColor = vec4(vCol * mix(1.0, shape, vBig), 1.0);
+}`;
+
+let N = N_HIGH;
+const quad = new THREE.PlaneGeometry(1, 1);
+const geo = new THREE.InstancedBufferGeometry();
+geo.index = quad.index;
+geo.setAttribute('position', quad.getAttribute('position'));
+const U = {
+  uStart: { value: 1 }, uCellPx: { value: 4 }, uFrom: { value: 0 }, uTo: { value: 0 }, uMix: { value: 0 },
+  uShow: { value: 0 }, uSweep: { value: Math.PI / 6 }, uBeam: { value: 1 },
+  uCenter: { value: new THREE.Vector2() }, uHalf: { value: new THREE.Vector2(1, 1) },
+  uPrime: { value: COL.prime }, uOther: { value: COL.other }, uTwin: { value: COL.twin }, uDimPrime: { value: COL.dimPrime },
+  uGapA: { value: COL.gapA }, uGapB: { value: COL.gapB },
+};
+// The kind attribute views the sieve from the start number on.
+function setStart(start) {
+  U.uStart.value = start;
+  geo.setAttribute('aKind', new THREE.InstancedBufferAttribute(KIND.subarray(start, start + N), 1));
+  geo.instanceCount = N;
+}
+const field = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+  uniforms: U, vertexShader: ULAM_VS, fragmentShader: ULAM_FS,
+  blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true,
+}));
+field.frustumCulled = false;
+
+/* ---------- the glow behind the centre ---------- */
+const glowU = { uCenter: U.uCenter, uHalf: U.uHalf, uGlow: { value: COL.glow }, uR: { value: 200 } };
+const glow = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
+  new THREE.ShaderMaterial({ uniforms: glowU, depthTest: false, depthWrite: false,
+    vertexShader: `varying vec2 vW; uniform vec2 uCenter, uHalf;
+      void main() { vW = uCenter + position.xy * uHalf; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: `varying vec2 vW; uniform vec3 uGlow; uniform float uR;
+      void main() { float d = length(vW) / uR; gl_FragColor = vec4(uGlow * exp(-d * d * 2.2), 1.0); }` }));
+glow.frustumCulled = false;
+glow.renderOrder = -1;
+scene.add(glow, field);
+
+/* ---------- state ---------- */
+const st = {
+  spiral: 0, from: 0, to: 0, mixT: 1, morphAt: 0,
+  sweep: false, sweepAngle: Math.PI / 6, lastInput: performance.now(),
+};
+const MORPH_S = 1.6, SWEEP_RATE = 0.25;
+// The extent per spiral bounds the pan.
+const EXTENT = { square: () => Math.sqrt(N) / 2 + 1, sacks: () => Math.sqrt(N) * 0.5642 + 1, hex: () => Math.sqrt(N / 3) * 1.0746 + 1 };
+const syncExtent = () => { plane.extent = Math.max(EXTENT[SPIRALS[st.from]](), EXTENT[SPIRALS[st.to]]()); };
+
+/* ---------- size ---------- */
+function resize() {
+  const w = stage.clientWidth || 1, h = stage.clientHeight || 1;
+  const keep = view.w > 1 ? plane.toSlider() : null;
+  view.w = w; view.h = h;
+  view.dpr = pixelRatio(w, h, { maxDpr: 2 });
+  renderer.setPixelRatio(view.dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(view.dpr);
+  composer.setSize(w, h);
+  // The first frame shows about 180 cells across the short side.
+  view.scale = keep == null ? Math.min(w, h) / 180 : plane.fromSlider(clamp(keep));
+  plane.clampPan();
+  ui.slider?.set(plane.toSlider());
+  kick();
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs only while something moves; otherwise one frame per change.
+let raf = 0, visible = true, lastT = 0, lastDraw = 0;
+function kick() { if (!raf && visible) raf = requestAnimationFrame(frame); }
+function frame(now) {
+  raf = 0;
+  let busy = false;
+  try {
+    const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
+    lastT = now;
+    if (st.mixT < 1) {
+      st.mixT = clamp((now - st.morphAt) / (MORPH_S * 1000));
+      if (st.mixT >= 1) { st.from = st.to; syncExtent(); plane.clampPan(); }
+      busy = true;
+    }
+    if (st.sweep) {
+      // The sweep sleeps 60 s after the last input.
+      if (now - st.lastInput > 60000) setSweep(false);
+      else {
+        busy = true;
+        if (reduce) {
+          const step = Math.floor(now / 1000);
+          if (step !== st.step) { st.step = step; st.sweepAngle -= TAU / 24; }
+        } else st.sweepAngle -= SWEEP_RATE * dt;
+      }
+    }
+    // A drifting sweep draws at 30 fps.
+    if (!busy || st.mixT < 1 || now - lastDraw >= 31) { draw(); lastDraw = now; }
+  } finally {
+    if (busy) kick(); else lastT = 0;
+  }
+}
+function draw() {
+  U.uCenter.value.set(view.cx, view.cy);
+  U.uHalf.value.set(view.w / 2 / view.scale, view.h / 2 / view.scale);
+  U.uCellPx.value = view.scale * view.dpr;
+  U.uFrom.value = st.from; U.uTo.value = st.to; U.uMix.value = st.mixT >= 1 ? 0 : st.mixT;
+  if (st.mixT >= 1) U.uTo.value = st.from;
+  U.uSweep.value = st.sweepAngle;
+  glowU.uR.value = Math.sqrt(N) * 0.32;
+  composer.render();
+  if (!canvas.classList.contains('on')) { canvas.classList.add('on'); markReady(); }
+}
+whenVisible(stage, v => { visible = v; if (v) kick(); else { cancelAnimationFrame(raf); raf = 0; lastT = 0; } });
+
+/* ---------- controls ---------- */
+function setSweep(on) {
+  st.sweep = on;
+  const b = [...document.querySelectorAll('.stim-ui .s2-chip')].find(el => el.textContent.trim() === 'Sweep');
+  b?.setAttribute('aria-pressed', String(on));
+  kick();
+}
+act.sweep = () => { st.lastInput = performance.now(); setSweep(!st.sweep); };
+act.zoom = v => { st.lastInput = performance.now(); const c = { x: view.w / 2, y: view.h / 2 }; plane.zoomAt(plane.fromSlider(v), c.x, c.y); kick(); };
+act.spiral = v => {
+  st.lastInput = performance.now();
+  const id = SPIRALS.indexOf(v);
+  if (id < 0 || id === st.to) return;
+  // A morph in flight starts from where it is now.
+  if (st.mixT < 1) st.from = st.to;
+  st.to = id;
+  syncExtent();
+  if (reduce) { st.from = id; st.mixT = 1; plane.clampPan(); }
+  else { st.mixT = 0; st.morphAt = performance.now(); }
+  kick();
+};
+act.show = v => { U.uShow.value = ['primes', 'twins', 'gaps'].indexOf(v); kick(); };
+act.start = v => { setStart(Number(v) === 41 ? 41 : 1); kick(); };
+act.digits = () => { kick(); };
+act.show(ui.setting('show').value);
+setStart(Number(ui.setting('start').value) === 41 ? 41 : 1);
+syncExtent();
+
+/* ---------- pointer ---------- */
+// A press becomes a drag after 8 px, or a hold after 260 ms; else a tap.
+// Only the first two pointers count; a third is ignored.
+const ptrs = new Map();
+let press = null, pinch = null;
+const local = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+stage.addEventListener('pointerdown', e => {
+  if (ptrs.size >= 2) return;
+  try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic pointers cannot capture */ }
+  const p = local(e);
+  ptrs.set(e.pointerId, p);
+  st.lastInput = performance.now();
+  stage.classList.add('held');
+  if (ptrs.size === 1) press = { id: e.pointerId, x0: p.x, y0: p.y, t0: performance.now(), drag: false };
+  else {
+    press = null;
+    const [a, b] = [...ptrs.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  }
+});
+stage.addEventListener('pointermove', e => {
+  const old = ptrs.get(e.pointerId);
+  if (!old) return;
+  const p = local(e);
+  ptrs.set(e.pointerId, p);
+  st.lastInput = performance.now();
+  if (pinch && ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    plane.pan(mx - pinch.mx, my - pinch.my);
+    plane.zoomAt(view.scale * d / pinch.d, mx, my);
+    pinch = { d, mx, my };
+  } else if (press && e.pointerId === press.id) {
+    if (!press.drag && Math.hypot(p.x - press.x0, p.y - press.y0) > 8) press.drag = true;
+    if (press.drag) plane.pan(p.x - old.x, p.y - old.y);
+  } else return;
+  ui.slider?.set(plane.toSlider());
+  kick();
+});
+function endPointer(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (ptrs.size < 2) pinch = null;
+  if (press && e.pointerId === press.id) press = null;
+  // One finger left after a pinch pans on, without a jump.
+  if (ptrs.size === 1) {
+    const [[id, p]] = [...ptrs.entries()];
+    press = { id, x0: p.x, y0: p.y, t0: performance.now(), drag: true };
+  }
+  if (!ptrs.size) stage.classList.remove('held');
+}
+stage.addEventListener('pointerup', endPointer);
+stage.addEventListener('pointercancel', endPointer);
+stage.addEventListener('lostpointercapture', endPointer);
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  st.lastInput = performance.now();
+  const p = local(e);
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  plane.zoomAt(view.scale * Math.exp(-dy * 0.0016), p.x, p.y);
+  ui.slider?.set(plane.toSlider());
+  kick();
+}, { passive: false });
+// Space sweeps from the stage or the page, never from a control.
+document.addEventListener('keydown', e => {
+  if (e.key !== ' ' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target !== document.body && e.target !== stage) return;
+  e.preventDefault();
+  act.sweep();
+});
+stage.addEventListener('keydown', e => {
+  if (e.key === '+' || e.key === '=') { plane.zoomAt(view.scale * 1.25, view.w / 2, view.h / 2); }
+  else if (e.key === '-') { plane.zoomAt(view.scale / 1.25, view.w / 2, view.h / 2); }
+  else return;
+  e.preventDefault();
+  ui.slider?.set(plane.toSlider());
+  kick();
+});
+
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+resize();
+
+</script>
+</body>
+</html>

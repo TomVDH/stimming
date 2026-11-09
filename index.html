@@ -1602,6 +1602,20 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
           </a>
         </li>
         <li>
+          <a class="toy" id="ulam" href="ulam/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 260)"/>
+                <rect x="16" y="16" width="92" height="92" fill="oklch(0.12 0.02 265)"/>
+                <path id="ulam-beam" d="M62 62L105 56V68Z" fill="oklch(0.9 0.05 85 / 0.14)"/>
+                <g fill="oklch(0.42 0.03 260)"><circle cx="62" cy="62" r="1.1"/><circle cx="62" cy="51" r="1.1"/><circle cx="51" cy="62" r="1.1"/><circle cx="62" cy="73" r="1.1"/><circle cx="73" cy="73" r="1.1"/><circle cx="84" cy="73" r="1.1"/><circle cx="84" cy="51" r="1.1"/><circle cx="73" cy="40" r="1.1"/><circle cx="62" cy="40" r="1.1"/><circle cx="51" cy="40" r="1.1"/><circle cx="40" cy="51" r="1.1"/><circle cx="40" cy="73" r="1.1"/><circle cx="40" cy="84" r="1.1"/><circle cx="51" cy="84" r="1.1"/><circle cx="73" cy="84" r="1.1"/><circle cx="84" cy="84" r="1.1"/><circle cx="95" cy="84" r="1.1"/><circle cx="95" cy="73" r="1.1"/><circle cx="95" cy="62" r="1.1"/><circle cx="95" cy="40" r="1.1"/><circle cx="84" cy="29" r="1.1"/><circle cx="73" cy="29" r="1.1"/><circle cx="62" cy="29" r="1.1"/><circle cx="51" cy="29" r="1.1"/><circle cx="40" cy="29" r="1.1"/><circle cx="29" cy="40" r="1.1"/><circle cx="29" cy="51" r="1.1"/><circle cx="29" cy="62" r="1.1"/><circle cx="29" cy="84" r="1.1"/><circle cx="40" cy="95" r="1.1"/><circle cx="51" cy="95" r="1.1"/><circle cx="62" cy="95" r="1.1"/><circle cx="84" cy="95" r="1.1"/><circle cx="95" cy="95" r="1.1"/></g>
+                <g id="ulam-primes" fill="oklch(0.95 0.04 85)"><rect x="69.5" y="58.5" width="7" height="7" data-a="0.000"/><rect x="69.5" y="47.5" width="7" height="7" data-a="0.785"/><rect x="47.5" y="47.5" width="7" height="7" data-a="2.356"/><rect x="47.5" y="69.5" width="7" height="7" data-a="-2.356"/><rect x="80.5" y="58.5" width="7" height="7" data-a="0.000"/><rect x="80.5" y="36.5" width="7" height="7" data-a="0.785"/><rect x="36.5" y="36.5" width="7" height="7" data-a="2.356"/><rect x="36.5" y="58.5" width="7" height="7" data-a="3.142"/><rect x="58.5" y="80.5" width="7" height="7" data-a="-1.571"/><rect x="91.5" y="47.5" width="7" height="7" data-a="0.322"/><rect x="91.5" y="25.5" width="7" height="7" data-a="0.785"/><rect x="25.5" y="25.5" width="7" height="7" data-a="2.356"/><rect x="25.5" y="69.5" width="7" height="7" data-a="-2.820"/><rect x="25.5" y="91.5" width="7" height="7" data-a="-2.356"/><rect x="69.5" y="91.5" width="7" height="7" data-a="-1.249"/></g>
+              </svg>
+            </span>
+            <span class="name">Ulam spiral</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="trainride" href="trainride/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -2409,6 +2423,38 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       gsap.to(wmFlow, { x: 0, duration: 0.4, overwrite: true });
     },
   };
+
+  // A beam turns toward the pointer; the primes it crosses flare.
+  {
+    const cells = [...document.querySelectorAll('#ulam-primes rect')].map(r => ({ r, a: +r.dataset.a }));
+    const beam = $('ulam-beam'), st = { a: Math.PI / 6 };
+    const REST_A = Math.PI / 6;
+    const draw = () => {
+      gsap.set(beam, { rotation: (-st.a * 180) / Math.PI, svgOrigin: '62 62' });
+      cells.forEach(({ r, a }) => {
+        const d = Math.atan2(Math.sin(a - st.a), Math.cos(a - st.a));
+        r.style.opacity = (0.5 + 0.5 * Math.exp((-d * d) / 0.06)).toFixed(2);
+      });
+    };
+    // The beam takes the short way round to its new angle.
+    const turn = (a, d = 0.3) => {
+      const cur = st.a, to = cur + Math.atan2(Math.sin(a - cur), Math.cos(a - cur));
+      gsap.to(st, { a: to, duration: d, ease: 'power2.out', onUpdate: draw, overwrite: 'auto' });
+    };
+    const aim = p => turn(Math.atan2(62 - p[1], p[0] - 62));
+    let demo = null;
+    draw();
+    toys.ulam = {
+      enter(p) {
+        if (p) { aim(p); return; }
+        demo = gsap.to(st, { a: st.a - Math.PI * 2, duration: 4, ease: 'none', repeat: -1, onUpdate: draw });
+      },
+      move(p) { if (p && !demo) aim(p); },
+      leave() { demo?.kill(); demo = null; turn(REST_A, 0.6); },
+      play() { toys.ulam.enter(null); return { kill() {} }; },
+      rest() { toys.ulam.leave(); },
+    };
+  }
 
   // A shell bursts: the star opens and fades while a red comet climbs beside it.
   const fwBurst = $('fireworks-burst'), fwCore = $('fireworks-core'), fwComet = $('fireworks-comet');
