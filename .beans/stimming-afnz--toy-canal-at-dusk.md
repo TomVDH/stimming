@@ -1,11 +1,11 @@
 ---
 # stimming-afnz
 title: 'Toy: Canal at dusk'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T09:24:41Z
+updated_at: 2026-11-09T09:25:51Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -17,7 +17,7 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - [x] Task 4: sound: rain bed, lamp relay and buzz, carillon, wind; Q9
 - [x] Task 5: bar, Settings, persistence; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
-- [ ] Tom sets the Dutch name (draft: Vaart bij valavond)
+- [x] Tom sets the Dutch name (kept: Vaart bij valavond)
 - [x] Record the session cost
 
 ## Notes
@@ -53,3 +53,15 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Task 5: Weather and Dusk persist under stimming.canal.weather and .dusk (View and Letterbox persist through the shell); a saved weather applies at once on load. The drifting loop now waits out its 31 ms gap before asking for a frame, so rAF requests stay at 30 per second.
 - QA in the browser pane (no Playwright): Q1 node --check passes for the page and the menu. Q2 clean console on the toy and the Lab menu, chips, + Boat, taps. Q3 stills at 1280 and 375 throughout. Q4 settled: 0 rAF calls in 2 s. Q5 hidden: 0 rAF calls in 2 s. Q7 three bar controls (Weather, Dusk, + Boat), three key rows. Q8 Space adds a boat. Q9 context runs after a real click and suspends once settled. Not verified: Q4 drifting rate and Q10 frame times (the hidden pane throttles rAF), and Q6 reduced motion in a browser (checked in code only).
 - Session cost: no dollar figure is available inside the session. The one build session (blockout through Task 5, with the redesigns to a Beernem-like sprawl, per-lamp light, AO and TAA) used about 780,000 tokens of context.
+
+## Summary of Changes
+
+Canal at dusk (`canal/index.html`) is built and in the Lab, Dutch name Vaart bij valavond (Tom kept the draft).
+
+- A generated Flemish in-between village after Beernem: a bending canal, a crossroads centre (church, staminee, frietkot, station), wavy street grids, estates, farms, woods, a lake, industry; about 1,800 plots on an occupancy grid over a painted ground map.
+- Light: about 1,870 streetlights with real per-lamp light through a 12 m lamp grid, photocell switch-on, tap toggles with the sodium warm-up, TV flicker, GTAO and TAA, low bloom.
+- Rain lit only by lamps, raindrop rings, broken reflections, weather easing, tap rings, paper boats with a wake.
+- Sound: rain and wind beds, lamp clicks and hum, a far carillon; Q9 passed.
+- Bar v2: Weather, Dusk, + Boat; View, Letterbox and Quality in Settings; Weather and Dusk persist.
+
+Open for a real device: frame rate (Q4 drifting, Q10), reduced motion in a browser (Q6), and a listen-through.
