@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T10:49:45Z
+updated_at: 2026-11-09T19:06:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -69,3 +69,10 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [ ] Denser lights along the Lake Zurich gold coast
 
 - [x] Stops at every station: braking curve (0.9 m/s²), 18 s dwell, pull away at 1 m/s²; arrival chime
+
+## Round 8: rain slant, platforms, frame (Tom, 2026-11-09)
+- [x] Glass runs in four classes: each lags the head wind, grips until its own speed, slants its own amount; stick-slip heads; trails bend through a speed change
+- [x] Air rain: each streak takes its own share of the wind, with a gust sway
+- [x] Platforms: coping, white safety line, tactile strip, wet asphalt with puddle mirror; canopy with LED strips on columns; sector plates A to D; masts on the open ends; fence; benches and bins; signs hang on rods under the canopy
+- [x] Station light reaches the rain, the frame, the wall and the glass
+- [x] Frame: anodised window frame, green glass edge, blind cassette with pull tab, maker's etching, cleaning scratches, viewer's own reflection, double-glazing ghost

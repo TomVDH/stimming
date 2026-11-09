@@ -249,6 +249,7 @@ const OUTU = {
   // x is the nearest platform's centre; y is its half length, 0 when none is near.
   uStn: { value: new THREE.Vector2() },
   tSign: { value: null },
+  tSect: { value: null },
 };
 
 // Light, sky and haze for night and day; uDay blends the two.
@@ -754,42 +755,294 @@ void main() {
   gl_FragColor = vec4(LAMPC * vK * (1.0 - uDay) * (core * 14.0 + halo * 1.2) * k, 1.0);
 }`);
 
-/* Station platforms: a slab, a rail at the back, and blue name signs. */
+/* Station platforms: a wet slab, a canopy on columns, masts, a fence, benches and the name signs. */
 // One platform moves to whichever station is nearest.
-const PL = 320, SIGNS = 7;
-const platMat = (rail) => new THREE.ShaderMaterial({
+// Its parts sit in platform space: x = 0 is the station's centre.
+const PL = 320, CAN = 70, SIGNS = 7;
+// Station light at night: two LED strips under the canopy, then masts on the open ends.
+const STNL = /* glsl */`
+uniform vec2 uStn;
+const vec3 STNC = vec3(0.84, 0.92, 1.0);
+const vec3 MASTC = vec3(1.0, 0.82, 0.6);
+// x is along the platform from its centre.
+float canopyAt(float x) { return smoothstep(${CAN + 2}.0, ${CAN - 4}.0, abs(x)); }
+vec3 stnLight(vec3 P, vec3 N) {
+  if (uStn.y <= 0.0 || uDay > 0.999) return vec3(0.0);
+  float x = P.x - uStn.x;
+  vec3 c = vec3(0.0);
+  // The canopy strips run along z = -3.6 and z = -8.4, under the roof.
+  float inC = canopyAt(x);
+  for (int i = 0; i < 2; i++) {
+    vec3 L = vec3(0.0, 1.32 - P.y, (i == 0 ? -3.6 : -8.4) - P.z);
+    float d2 = dot(L, L);
+    c += STNC * 18.0 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 0.8);
+  }
+  // Beyond the canopy, a mast every 24 m lights the open platform.
+  float mx = (floor(x / 24.0) + 0.5) * 24.0;
+  for (int i = -1; i <= 1; i++) {
+    float lx = mx + float(i) * 24.0;
+    if (abs(lx) < ${CAN}.0 || abs(lx) > ${PL / 2}.0) continue;
+    vec3 L = vec3(lx - x, 2.3 - P.y, -6.0 - P.z);
+    float d2 = dot(L, L);
+    c += MASTC * 9.0 * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.0);
+  }
+  return c * (1.0 - uDay);
+}`;
+const worldVS = /* glsl */`
+varying vec3 vP;
+varying vec3 vN;
+void main() {
+  mat4 m = modelMatrix;
+  #ifdef USE_INSTANCING
+  m = m * instanceMatrix;
+  #endif
+  vec4 w = m * vec4(position, 1.0);
+  vP = w.xyz;
+  vN = normalize(mat3(m) * normal);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+// A lit solid: the fragment sets alb (and may add glow) from vP and N.
+const solid = body => new THREE.ShaderMaterial({
   uniforms: OUTU,
-  vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; vN = normal; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  vertexShader: worldVS,
   fragmentShader: /* glsl */`
   varying vec3 vP;
   varying vec3 vN;
   uniform vec4 uLP[${NL}];
-  uniform float uSmear;
+  uniform float uSmear, uTime;
   ${NOISE}
   ${TRAIN}
   ${HAZE}
+  ${STNL}
   void main() {
     vec3 N = normalize(vN);
-    // Asphalt with slab joints every 5 m; the joints blur with the smear.
-    float j = (0.5 - abs(fract(vP.x / 5.0) - 0.5)) * 5.0;
-    float joint = (1.0 - smoothstep(0.0, 0.02 + uSmear * 0.5, j)) * 0.04 / (0.04 + uSmear);
-    vec3 alb = ${rail ? 'vec3(0.09, 0.095, 0.1)' : 'vec3(0.11, 0.11, 0.115) * (0.9 + 0.2 * vnoise(vec2(vP.x * 0.3, vP.z * 3.0))) * (1.0 - 0.5 * joint)'};
-    vec3 night = vec3(0.01, 0.011, 0.014) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.06;
+    vec3 V = normalize(vP - cameraPosition);
+    float x = vP.x - uStn.x;
+    vec3 alb = vec3(0.1), glow = vec3(0.0);
+    float shade = 1.0;
+    ${body}
+    vec3 night = vec3(0.008, 0.009, 0.012) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.06 + stnLight(vP, N);
     for (int i = 0; i < ${NL}; i++) {
       vec3 L = uLP[i].xyz - vP;
       float d = length(L);
       night += LAMPC * uLP[i].w * 3.0 / (d * d + 1.0) * max(dot(N, L / d) * 0.8 + 0.2, 0.0);
     }
-    vec3 day = sunC() * max(dot(N, uSun), 0.0) + skyA(N.y);
-    gl_FragColor = vec4(alb * mix(night, day, uDay), 1.0);
+    vec3 day = (sunC() * max(dot(N, uSun), 0.0) * shade + skyA(N.y)) ;
+    gl_FragColor = vec4(alb * mix(night, day, uDay) + glow, 1.0);
   }`,
 });
 const platform = new THREE.Group();
-platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.2, -6.2), platMat(false)));
-for (const y of [-0.95, -1.4]) platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.05, 0.05).translate(0, y, -10.9), platMat(true)));
-platform.children.forEach(m => { m.frustumCulled = false; });
 out.add(platform);
-// The sign: the SBB blue panel with the white rule and the name.
+// The slab: coping, a white safety line, a tactile strip, then wet asphalt.
+platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.2, -6.2), solid(/* glsl */`
+  float dz = -1.3 - vP.z;
+  float wet = uRain;
+  if (N.y > 0.5) {
+    // Concrete coping at the edge, with joints every metre that blur with the smear.
+    float j = (0.5 - abs(fract(x) - 0.5));
+    float joint = (1.0 - smoothstep(0.0, 0.01 + uSmear * 0.5, j)) * 0.03 / (0.03 + uSmear);
+    vec3 asph = vec3(0.1, 0.102, 0.108) * (0.8 + 0.4 * vnoise(vec2(x * 0.7, vP.z * 1.3))) * (0.9 + 0.2 * vnoise(vec2(x * 9.0, vP.z * 9.0)));
+    // Patched asphalt: darker repair rectangles.
+    vec2 pc = floor(vec2(x / 7.0, vP.z / 3.0));
+    if (hash1(pc) > 0.75) asph *= 0.75;
+    alb = asph;
+    float cop = 1.0 - smoothstep(0.34, 0.36, dz);
+    alb = mix(alb, vec3(0.3, 0.3, 0.29) * (1.0 - 0.6 * joint) * (0.9 + 0.2 * vnoise(vec2(x * 3.0, dz * 20.0))), cop);
+    // The edge itself is a dark lip.
+    alb *= 1.0 - 0.6 * smoothstep(0.03, 0.0, dz);
+    float line = smoothstep(1.18, 1.2, dz) * smoothstep(1.32, 1.3, dz);
+    alb = mix(alb, vec3(0.72, 0.72, 0.7) * (0.85 + 0.15 * vnoise(vec2(x * 4.0, 1.0))), line);
+    // The tactile guide: pale ribs that run along the platform.
+    float tac = smoothstep(1.58, 1.6, dz) * smoothstep(1.92, 1.9, dz);
+    alb = mix(alb, vec3(0.42, 0.42, 0.4) * (0.75 + 0.25 * step(0.5, fract(dz * 30.0))), tac);
+    // Rain darkens the slab; puddles lie in the low spots of the asphalt.
+    float pud = smoothstep(0.55, 0.62, fbm(vec2(x * 0.35, vP.z * 0.6) + 3.0)) * (1.0 - cop) * (1.0 - tac);
+    alb *= 1.0 - 0.3 * wet;
+    float gloss = wet * mix(0.25, 1.0, pud) * mix(1.0, 0.35, cop);
+    // Ripples from the rain stir the puddle mirror.
+    vec2 rp = vec2(vnoise(vec2(x, vP.z) * 6.0 + uTime * 3.0), vnoise(vec2(x, vP.z) * 6.0 - uTime * 3.0 + 9.0)) - 0.5;
+    vec3 Nr = normalize(vec3(rp.x * 0.12 * wet, 1.0, rp.y * 0.12 * wet));
+    vec3 R = reflect(V, Nr);
+    float F = 0.04 + 0.96 * pow(1.0 - max(-V.y, 0.0), 5.0);
+    if (R.y > 0.0 && uDay < 0.999) {
+      // The mirror finds the canopy strips and the mast lamps.
+      vec3 h = vP + R * ((1.32 - vP.y) / R.y);
+      float hx = h.x - uStn.x;
+      float s = (exp(-pow(h.z + 3.6, 2.0) / 0.01) + exp(-pow(h.z + 8.4, 2.0) / 0.01)) * canopyAt(hx);
+      vec3 refl = STNC * s * 3.0;
+      float mx = (floor(x / 24.0) + 0.5) * 24.0;
+      for (int i = -1; i <= 1; i++) {
+        float lx = mx + float(i) * 24.0;
+        if (abs(lx) < ${CAN}.0 || abs(lx) > ${PL / 2}.0) continue;
+        vec3 Ld = normalize(vec3(lx + uStn.x, 2.3, -6.0) - vP);
+        refl += MASTC * 6.0 * pow(max(dot(R, Ld), 0.0), 900.0);
+      }
+      glow += refl * F * gloss * (1.0 - uDay);
+    }
+    glow += skyA(1.0) * 0.3 * F * gloss * uDay;
+    // The canopy shades the slab by day.
+    shade = 1.0 - 0.75 * canopyAt(x) * step(dz, 9.0);
+  } else {
+    // The platform wall above the track: dark concrete with a drip line.
+    alb = vec3(0.12, 0.12, 0.12) * (0.85 + 0.3 * vnoise(vec2(x * 2.0, vP.y * 14.0)));
+    alb *= 0.6 + 0.4 * smoothstep(-2.5, -1.95, vP.y);
+  }
+`)));
+// The canopy roof: a dark fascia toward the track, a ribbed soffit with two LED strips.
+platform.add(new THREE.Mesh(new THREE.BoxGeometry(CAN * 2, 0.26, 8.4).translate(0, 1.45, -6.2), solid(/* glsl */`
+  if (N.y < -0.5) {
+    float j = (0.5 - abs(fract(x / 1.5) - 0.5)) * 1.5;
+    float rib = (1.0 - smoothstep(0.0, 0.03 + uSmear * 0.5, j)) * 0.06 / (0.06 + uSmear);
+    alb = vec3(0.12, 0.125, 0.13) * (1.0 - 0.5 * rib);
+    // Each strip is a slim diffuser, 8 cm wide, broken every 3 m.
+    float s = (smoothstep(0.045, 0.035, abs(vP.z + 3.6)) + smoothstep(0.045, 0.035, abs(vP.z + 8.4))) * mix(smoothstep(1.46, 1.41, abs(fract(x / 3.0) - 0.5) * 3.0), 1.0, smoothstep(0.02, 0.1, uSmear));
+    glow = STNC * s * (2.2 * (1.0 - uDay) + 0.25 * uDay);
+    shade = 0.0;
+  } else if (N.z > 0.5) {
+    alb = vec3(0.16, 0.17, 0.18);
+    // A thin lit seam runs under the fascia.
+    glow = STNC * 0.4 * smoothstep(1.36, 1.33, vP.y) * (1.0 - uDay);
+  } else alb = vec3(0.14);
+`)));
+platform.children.forEach(m => { m.frustumCulled = false; });
+
+// Smeared quads in platform space: columns, masts, the fence and the signs.
+// Each quad is 1 m wide in x; the vertex stretches it by w plus the smear.
+function pstrip(geo, w, xs, order, add, frag, attrs = {}) {
+  const g = new THREE.InstancedBufferGeometry().copy(geo);
+  g.instanceCount = xs.length;
+  g.setAttribute('aX', new THREE.InstancedBufferAttribute(new Float32Array(xs), 1));
+  for (const [k, v] of Object.entries(attrs)) g.setAttribute(k, new THREE.InstancedBufferAttribute(new Float32Array(v), 1));
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    transparent: true, depthWrite: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending,
+    vertexShader: /* glsl */`
+    attribute float aX, aI;
+    uniform float uSmear;
+    varying vec2 vL;
+    varying vec3 vW;
+    varying float vI;
+    void main() {
+      vec3 p = position;
+      p.x *= ${w.toFixed(3)} + uSmear;
+      vL = p.xy;
+      vI = aI;
+      vec4 w = modelMatrix * vec4(p + vec3(aX, 0.0, 0.0), 1.0);
+      vW = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform float uSmear, uTime;
+    uniform vec4 uLP[${NL}];
+    uniform sampler2D tSign, tSect;
+    varying vec2 vL;
+    varying vec3 vW;
+    varying float vI;
+    ${NOISE}
+    ${TRAIN}
+    ${HAZE}
+    ${STNL}
+    vec3 litBy(vec3 P, vec3 N, vec3 alb) {
+      vec3 night = vec3(0.01) + vec3(1.0, 0.66, 0.36) * trainLight(P) * 0.15 + stnLight(P, N);
+      for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - P; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
+      vec3 day = sunC() * max(dot(N, uSun), 0.0) + skyA(N.y);
+      return alb * mix(night, day, uDay);
+    }
+    ${frag}`,
+  }));
+  if (!attrs.aI) g.setAttribute('aI', new THREE.InstancedBufferAttribute(new Float32Array(xs.length), 1));
+  m.frustumCulled = false;
+  m.renderOrder = order;
+  platform.add(m);
+}
+// A box shape convolved with the motion box: a trapezoid of cover.
+const PCOVER = (w, x = 'vL.x') => /* glsl */`clamp((${w} + uSmear + 0.001 - abs(${x}) * 2.0) / (2.0 * uSmear + 0.002), 0.0, 1.0) * min(1.0, ${w} / (uSmear + 0.001))`;
+const steps = (a, b, s) => Array.from({ length: Math.floor((b - a) / s) + 1 }, (_, i) => a + i * s);
+// Canopy columns every 12 m: grey steel, a round face that catches the strips.
+const COLX = steps(-66, 66, 12);
+pstrip(new THREE.PlaneGeometry(1, 3.3).translate(0, -0.25, -6.0), 0.22, COLX, 3, false, /* glsl */`
+void main() {
+  float cov = ${PCOVER('0.22')};
+  vec3 N = normalize(vec3(clamp(vL.x / (0.11 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
+  vec3 c = litBy(vW, N, vec3(0.2, 0.22, 0.22));
+  // A dark plinth at the foot.
+  c *= 1.0 - 0.5 * smoothstep(-1.5, -1.6, vW.y);
+  gl_FragColor = vec4(c, cov);
+}`);
+// Sector plates on the columns: A to D, white on blue.
+const sectC = Object.assign(document.createElement('canvas'), { width: 512, height: 128 });
+const tSect = new THREE.CanvasTexture(sectC);
+tSect.colorSpace = THREE.SRGBColorSpace;
+OUTU.tSect.value = tSect;
+const drawSect = () => {
+  const c = sectC.getContext('2d');
+  'ABCD'.split('').forEach((l, i) => {
+    c.fillStyle = '#2d327d'; c.fillRect(i * 128, 0, 128, 128);
+    c.strokeStyle = '#fff'; c.lineWidth = 5; c.strokeRect(i * 128 + 10, 10, 108, 108);
+    c.fillStyle = '#fff'; c.font = '700 84px Gabarito, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(l, i * 128 + 64, 70);
+  });
+  tSect.needsUpdate = true;
+};
+drawSect();
+document.fonts?.ready.then(drawSect);
+pstrip(new THREE.PlaneGeometry(1, 0.44).translate(0, 0.62, -5.86), 0.44, COLX, 3, false, /* glsl */`
+void main() {
+  vec3 c = vec3(0.0);
+  float a = 0.0;
+  for (int i = 0; i < 6; i++) {
+    float x = vL.x + ((float(i) + 0.5) / 6.0 - 0.5) * uSmear;
+    if (abs(x) < 0.22) { c += texture2D(tSect, vec2((vI + x / 0.44 + 0.5) / 4.0, vL.y / 0.44 + 0.5 - 0.62 / 0.44)).rgb; a += 1.0; }
+  }
+  if (a < 0.5) discard;
+  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c / a) * 0.4, a / 6.0);
+}`, { aI: COLX.map(x => Math.min(3, Math.max(0, Math.floor((x + 70) / 35)))) });
+// Masts on the open ends: a slim pole and a lamp head with a halo.
+const MASTX = [-156, -132, -108, -84, 84, 108, 132, 156];
+pstrip(new THREE.PlaneGeometry(1, 4.3).translate(0, 0.25, -6.0), 0.12, MASTX, 3, false, /* glsl */`
+void main() {
+  float cov = ${PCOVER('0.12')};
+  vec3 N = normalize(vec3(clamp(vL.x / (0.06 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
+  vec3 c = litBy(vW, N, vec3(0.16, 0.17, 0.17));
+  gl_FragColor = vec4(c, cov);
+}`);
+pstrip(new THREE.PlaneGeometry(1, 1.2).translate(0, 2.3, -5.95), 1.2, MASTX, 4, true, /* glsl */`
+void main() {
+  float dx = max(abs(vL.x) - 0.2 - uSmear * 0.5, 0.0), dy = vW.y - 2.3;
+  float core = exp(-dx * dx / 0.0004 - dy * dy / 0.0002);
+  float r2 = dx * dx + dy * dy;
+  float halo = exp(-r2 / 0.03) * 0.15 + exp(-r2 / 0.2) * 0.02;
+  float k = 0.4 / (0.4 + uSmear);
+  gl_FragColor = vec4(MASTC * (1.0 - uDay) * (core * 12.0 + halo * (1.0 + 2.0 * uRain)) * k, 1.0);
+}`);
+// The back fence: posts every 2.5 m, two rails and a faint mesh.
+pstrip(new THREE.PlaneGeometry(1, 1.25).translate(0, -1.3, -10.9), PL, [0], 2, false, /* glsl */`
+void main() {
+  float x = vW.x - uStn.x;
+  float dp = abs(fract(x / 2.5 + 0.5) - 0.5) * 2.5;
+  float post = ${PCOVER('0.06', 'dp')};
+  float rail = max(smoothstep(0.035, 0.02, abs(vW.y + 0.72)), smoothstep(0.03, 0.015, abs(vW.y + 1.55)));
+  // The mesh blurs into a faint veil at speed.
+  float mesh = 0.12 * mix(step(0.8, fract(x * 12.0)) + step(0.85, fract(vW.y * 12.0)), 0.35, smoothstep(0.02, 0.15, uSmear));
+  float a = clamp(max(max(post, rail), mesh), 0.0, 1.0) * step(abs(x), ${PL / 2}.0) * step(vW.y, -0.68);
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.3, 0.95), vec3(0.07, 0.075, 0.075)), a);
+}`);
+// Benches and bins: plain dark shapes along the middle of the slab.
+{
+  const parts = [];
+  for (const x of [-57, -33, -9, 15, 39, 63]) {
+    parts.push([x, -1.45, -7.4, 1.8, 0.07, 0.42], [x, -1.15, -7.62, 1.8, 0.42, 0.05]);
+    for (const s of [-0.75, 0.75]) parts.push([x + s, -1.7, -7.4, 0.06, 0.42, 0.4]);
+  }
+  for (const x of [-45, -21, 27, 51]) parts.push([x, -1.55, -5.4, 0.36, 0.7, 0.36]);
+  const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), solid(/* glsl */`alb = vec3(0.13, 0.14, 0.15);`), parts.length);
+  const mtx = new THREE.Matrix4();
+  parts.forEach(([x, y, z, sx, sy, sz], i) => im.setMatrixAt(i, mtx.makeScale(sx, sy, sz).setPosition(x, y, z)));
+  im.frustumCulled = false;
+  platform.add(im);
+}
+// The name sign: the blue panel with a white rule and the name.
 const signC = Object.assign(document.createElement('canvas'), { width: 1024, height: 178 });
 const tSign = new THREE.CanvasTexture(signC);
 tSign.colorSpace = THREE.SRGBColorSpace;
@@ -800,72 +1053,46 @@ function drawSign(name) {
   if (name === signName) return;
   signName = name;
   const c = signC.getContext('2d');
-  c.fillStyle = '#2d327d';
+  // A slim dark frame, then the enamel blue with a soft top sheen.
+  c.fillStyle = '#15183a';
   c.fillRect(0, 0, 1024, 178);
+  const g = c.createLinearGradient(0, 6, 0, 172);
+  g.addColorStop(0, '#383e92');
+  g.addColorStop(0.5, '#2d327d');
+  g.addColorStop(1, '#262a6c');
+  c.fillStyle = g;
+  c.fillRect(6, 6, 1012, 166);
   c.strokeStyle = '#ffffff';
   c.lineWidth = 5;
-  c.strokeRect(14, 14, 996, 150);
+  c.strokeRect(20, 20, 984, 138);
   c.fillStyle = '#ffffff';
   c.textAlign = 'center';
   c.textBaseline = 'middle';
-  let fs = 96;
+  let fs = 92;
   do c.font = `700 ${fs}px Gabarito, sans-serif`; while (c.measureText(name).width > 900 && (fs -= 4) > 40);
   c.fillText(name, 512, 94);
   tSign.needsUpdate = true;
 }
 document.fonts?.ready.then(() => { const n = signName; signName = ''; if (n) drawSign(n); });
-{
-  // Each sign stands on two posts; the quad holds both, and blurs with the smear.
-  const g = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1.9).translate(0, -0.95, -6.0));
-  g.instanceCount = SIGNS;
-  g.setAttribute('aX', new THREE.InstancedBufferAttribute(new Float32Array(Array.from({ length: SIGNS }, (_, i) => (i - (SIGNS - 1) / 2) * 45)), 1));
-  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
-    uniforms: OUTU,
-    transparent: true, depthWrite: false,
-    vertexShader: /* glsl */`
-    attribute float aX;
-    uniform float uSmear;
-    varying vec2 vL;
-    varying vec3 vW;
-    void main() {
-      vec3 p = position;
-      p.x *= 2.6 + uSmear;
-      vL = vec2(p.x, p.y + 0.95);
-      vec4 w = modelMatrix * vec4(p + vec3(aX, 0.0, 0.0), 1.0);
-      vW = w.xyz;
-      gl_Position = projectionMatrix * viewMatrix * w;
-    }`,
-    fragmentShader: /* glsl */`
-    uniform sampler2D tSign;
-    uniform float uSmear;
-    uniform vec4 uLP[${NL}];
-    varying vec2 vL;
-    varying vec3 vW;
-    ${TRAIN}
-    ${HAZE}
-    void main() {
-      // Eight taps across the smear blur the sign along the track.
-      vec3 c = vec3(0.0);
-      float a = 0.0;
-      for (int i = 0; i < 8; i++) {
-        float x = vL.x + ((float(i) + 0.5) / 8.0 - 0.5) * uSmear;
-        // The panel spans the top 0.45 m; two posts hold it.
-        if (abs(x) < 1.3 && vL.y > 0.5) { c += texture2D(tSign, vec2(x / 2.6 + 0.5, (vL.y - 0.5) / 0.45)).rgb; a += 1.0; }
-        else if (abs(abs(x) - 0.95) < 0.03 && vL.y <= 0.5) { c += vec3(0.05); a += 1.0; }
-      }
-      if (a < 0.5) discard;
-      c /= a;
-      // Lamps and the panes light it at night; sun and sky by day.
-      vec3 night = vec3(0.02) + vec3(1.0, 0.66, 0.36) * trainLight(vW) * 0.2;
-      for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - vW; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
-      vec3 day = sunC() * max(uSun.z, 0.0) + skyA(0.0);
-      gl_FragColor = vec4(c * mix(night, day, uDay), a / 8.0);
-    }`,
-  }));
-  m.frustumCulled = false;
-  m.renderOrder = 3;
-  platform.add(m);
-}
+// Under the canopy the signs hang on rods; on the open ends they stand on posts.
+const SIGNX = Array.from({ length: SIGNS }, (_, i) => (i - (SIGNS - 1) / 2) * 45);
+pstrip(new THREE.PlaneGeometry(1, 3.25).translate(0, -0.275, -6.1), 2.6, SIGNX, 3, false, /* glsl */`
+void main() {
+  // Eight taps across the smear blur the sign along the track.
+  vec3 c = vec3(0.0);
+  float a = 0.0;
+  float y = vW.y;
+  bool hang = abs(vW.x - uStn.x) < ${CAN - 6}.0;
+  for (int i = 0; i < 8; i++) {
+    float x = vL.x + ((float(i) + 0.5) / 8.0 - 0.5) * uSmear;
+    // The panel spans 0.46 m round eye height.
+    if (abs(x) < 1.3 && y > -0.05 && y < 0.41) { c += texture2D(tSign, vec2(x / 2.6 + 0.5, (y + 0.05) / 0.46)).rgb; a += 1.0; }
+    else if (abs(abs(x) - 0.95) < 0.025 && (hang ? (y > 0.41 && y < 1.32) : y < -0.05)) { c += vec3(0.05); a += 1.0; }
+  }
+  if (a < 0.5) discard;
+  c /= a;
+  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c) * 0.3, a / 8.0);
+}`);
 
 /* Rain in the air: streaks along the wind the train makes, lit by lamps and panes. */
 {
@@ -888,6 +1115,7 @@ document.fonts?.ready.then(() => { const n = signName; signName = ''; if (n) dra
     varying vec3 vC;
     varying vec2 vQ;
     ${TRAIN}
+    ${STNL}
     void main() {
       vec3 p = aDrop.xyz;
       float fall = 8.0 + 3.0 * aDrop.w;
@@ -895,7 +1123,9 @@ document.fonts?.ready.then(() => { const n = signName; signName = ''; if (n) dra
       p.x = uCamX + mod(p.x - uCamX + 60.0, 120.0) - 60.0;
       // Seen from the train, the rain moves back and down.
       // The tail is where the drop was one shutter ago.
-      vec3 q = p - vec3(-uSpeed, -fall, 0.0) * 0.022;
+      // Each drop takes its own share of the wind, and gusts sway it.
+      float wk = 0.88 + 0.24 * fract(aDrop.w * 7.31) + 0.06 * sin(uTime * 1.7 + aDrop.x * 0.3);
+      vec3 q = p - vec3(-uSpeed * wk, -fall, (fract(aDrop.w * 3.7) - 0.5) * uSpeed * 0.06) * 0.022;
       vec4 ca = projectionMatrix * viewMatrix * vec4(p, 1.0);
       vec4 cb = projectionMatrix * viewMatrix * vec4(q, 1.0);
       vQ = position.xy;
@@ -911,6 +1141,8 @@ document.fonts?.ready.then(() => { const n = signName; signName = ''; if (n) dra
       gl_Position = vec4(s / h, mix(ca.z / ca.w, cb.z / cb.w, position.x), 1.0);
       vec3 c = vec3(0.012, 0.014, 0.019) + vec3(1.0, 0.66, 0.36) * trainLight(p) * 1.6;
       for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - p; c += LAMPC * uLP[i].w * 6.0 / (dot(L, L) + 2.0); }
+      // Station lights catch the rain at a platform.
+      c += stnLight(p, vec3(0.0, 1.0, 0.0)) * 0.3;
       // By day the drops only catch the grey sky.
       c = mix(c, vec3(0.045, 0.05, 0.056), uDay);
       // One drop's light spreads over its streak, so long streaks dim.
@@ -950,9 +1182,13 @@ const W = {
   uDay: { value: 0 },
   tRoom: { value: null },
   uSpeed: { value: 0 },
-  uFlow: { value: 0 },
+  uRD: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
+  uRV: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
+  uRO: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
   uLamp: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
   tPid: { value: null },
+  tStamp: { value: null },
+  uStnK: { value: 0 },
 };
 const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
   uniforms: W, depthTest: false, depthWrite: false,
@@ -960,15 +1196,18 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   fragmentShader: /* glsl */`
   uniform sampler2D tOut;
   uniform vec2 uRes;
-  uniform float uTime, uRad, uRain, uFog, uSpeed, uFlow, uPatch, uDay;
+  uniform float uTime, uRad, uRain, uFog, uSpeed, uPatch, uDay;
+  uniform vec2 uRD[4], uRV[4], uRO[4];
   uniform samplerCube tRoom;
   uniform vec2 uTan, uC0;
   uniform float uYaw;
   uniform vec3 uEye;
   uniform vec2 uHalf;
   uniform vec3 uLamp[3];
-  uniform sampler2D tPid;
+  uniform sampler2D tPid, tStamp;
+  uniform float uStnK;
   varying vec2 vUv;
+  const vec3 STNC = vec3(0.84, 0.92, 1.0);
   // The glass sits back in a reveal; a rubber seal holds it.
   const float REVEAL = 0.07, SEAL = 0.006;
   ${NOISE}
@@ -984,37 +1223,56 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     if (dot(dv, dv) > 1.0) return vec4(0.0);
     return vec4(dv, r / sc, 1.0);
   }
-  // Running drops: columns along the run direction m, heads with thin trails.
+  // Running drops: four classes, each a lattice that the CPU slides along its own path.
+  // uRD is the slide, uRV the velocity now, uRO the velocity a moment ago.
   // The return has the same layout as beads; trail is the clear thread.
-  vec4 runs(vec2 p, vec2 m, out float trail) {
+  const float CS = 0.07;
+  vec4 runs(vec2 p, vec2 D, vec2 V, vec2 VO, float seed, float dens, out float trail) {
     trail = 0.0;
-    vec2 ax = vec2(-m.y, m.x);
-    float u = dot(p, ax), v = dot(p, m);
-    float Wc = 0.05;
-    float col = floor(u / Wc);
-    float h = hash1(vec2(col, 3.0));
-    if (h < 0.3) return vec4(0.0);
-    float fu = (fract(u / Wc) - 0.5) * Wc + sin(v * 37.0 + h * 40.0) * 0.003 + (h - 0.65) * 0.02;
-    float sp = 0.35 + 0.7 * hash1(vec2(col, 7.0));
-    float head = mod(uFlow * sp + h * 17.0, 2.4) - 1.2;
-    float dv = v - head;
-    float hr = 0.004 + 0.0032 * h;
-    vec2 q = vec2(fu / hr, dv / (hr * 1.5));
-    if (dot(q, q) < 1.0) return vec4(ax * q.x + m * q.y, hr * 1.2, 1.0);
-    // The trail is a thin water thread behind the head; speed draws it out.
-    float tl = (0.22 + 0.2 * h) * (1.0 + uSpeed / 18.0);
-    // The head wipes a track through fog; the track fogs over behind it.
-    if (dv < 0.0 && dv > -tl * 2.0) trail = smoothstep(1.0, 0.55, abs(fu) / hr) * (1.0 + dv / (tl * 2.0));
-    if (dv < 0.0 && dv > -tl) {
-      float age = -dv / tl;
-      float cell = v * 70.0 + h * 9.0;
-      vec2 tb = vec2(fu / 0.0015, (fract(cell) - 0.5) * 2.6);
-      if (hash1(vec2(col, floor(cell))) > 0.6 && dot(tb, tb) < 1.0) return vec4(ax * tb.x + m * tb.y, 0.0015, 0.6);
+    float sp = length(V);
+    vec2 dn = sp > 1e-4 ? V / sp : vec2(0.0, -1.0);
+    vec2 dold = length(VO) > 1e-4 ? normalize(VO) : dn;
+    vec2 ax = vec2(-dn.y, dn.x);
+    // Fast drops draw long trails; the old part keeps the old slant.
+    float tl = 0.06 + sp * 0.2;
+    vec2 pp = p - D;
+    vec4 thread = vec4(0.0);
+    for (int j = 0; j < 10; j++) {
+      float t = float(j) * CS * 0.5;
+      if (t > tl + CS) break;
+      // Walk back up the bent trail to find heads that could own this pixel.
+      vec2 s = pp + dn * t + (dold - dn) * (t * t / (2.0 * tl));
+      vec2 c = floor(s / CS), ci = mod(c, 64.0);
+      if (hash1(ci + seed) > dens) continue;
+      float ph = hash1(ci + seed + 5.0);
+      // Stick-slip: each drop pauses and lurches round its lattice point.
+      float w = 1.3 + 1.7 * ph;
+      float A = min(0.35 * CS, 0.85 * sp / w);
+      vec2 head = (c + 0.2 + 0.6 * hash2(ci + seed * 1.7)) * CS + dn * A * sin(uTime * w + ph * 40.0);
+      vec2 d = pp - head;
+      float al = dot(d, dn), ac = dot(d, ax);
+      float hr = 0.0034 + 0.0042 * ph;
+      // The head: round in front, drawn out behind as speed grows.
+      vec2 q = vec2(ac / hr, al / (hr * (al > 0.0 ? 1.05 : 1.5 + sp * 0.8)));
+      if (dot(q, q) < 1.0) return vec4(ax * q.x + dn * q.y, hr * 1.2, 1.0);
+      float tb = -al;
+      if (tb <= 0.0 || tb > tl * 2.0) continue;
+      // The trail bends toward the old slant and wanders a little.
+      vec2 cp = head - dn * tb - (dold - dn) * (tb * tb / (2.0 * tl));
+      float acr = dot(pp - cp, ax) - 0.0018 * sin(tb * 52.0 + ph * 30.0) * smoothstep(0.0, 0.03, tb);
+      // The head wipes a track through fog; the track fogs over behind it.
+      trail = max(trail, smoothstep(1.0, 0.55, abs(acr) / hr) * (1.0 - tb / (tl * 2.0)));
+      if (tb > tl || thread.w > 0.0) continue;
+      float age = tb / tl;
+      // Beadlets break off along the thread.
+      float cell = tb * 70.0 + ph * 9.0;
+      vec2 bb = vec2(acr / 0.0015, (fract(cell) - 0.5) * 2.6);
+      if (hash1(vec2(ph * 91.0, floor(cell))) > 0.6 && dot(bb, bb) < 1.0) { thread = vec4(ax * bb.x + dn * bb.y, 0.0015, 0.6); continue; }
       // The thread thins toward its tail and acts as a narrow cylinder lens.
-      float tw = 0.0018 * (1.0 - 0.6 * age);
-      if (abs(fu) < tw) return vec4(ax * (fu / tw), tw, 0.8 * (1.0 - age));
+      float tw = 0.0017 * (1.0 - 0.6 * age);
+      if (abs(acr) < tw) thread = vec4(ax * (acr / tw), tw, 0.8 * (1.0 - age));
     }
-    return vec4(0.0);
+    return thread;
   }
   // A water lens: a dome that flips and shrinks the view behind it.
   // The edge bends light most, so the rim reads dark.
@@ -1051,26 +1309,43 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     vec3 warm = vec3(1.0, 0.62, 0.32);
     float roomG = 0.35 + 0.65 * smoothstep(-0.6, 0.6, p.y + 0.3 * p.x);
     vec3 col;
-    if (dW < 0.0 && d < -SEAL) {
+    // A roller-blind cassette spans the top of the opening; its pull tab hangs in the middle.
+    vec2 cr = vec2(p.x - uC0.x, uC0.y + uHalf.y - p.y);
+    bool cas = dW < 0.0 && cr.y < 0.034 && abs(cr.x) < uHalf.x - uRad * 0.3;
+    bool tab = dW < 0.0 && abs(cr.x) < 0.026 && cr.y >= 0.034 && cr.y < 0.052 && length(max(abs(vec2(cr.x, cr.y - 0.043)) - vec2(0.018, 0.001), 0.0)) < 0.008;
+    if (cas || tab) {
+      float v = cr.y / 0.034;
+      // Brushed aluminium: a lit shoulder up top, a curved lip and a dark slot below.
+      vec3 alb = vec3(0.52, 0.53, 0.55) * (0.94 + 0.06 * vnoise(vec2(p.x * 900.0, v * 3.0)));
+      float face = 0.55 + 0.45 * (1.0 - smoothstep(0.55, 1.0, v)) + 0.6 * exp(-pow((v - 0.22) / 0.07, 2.0));
+      col = alb * mix(warm * 0.06, vec3(0.32), uDay) * face;
+      col *= 1.0 - 0.8 * smoothstep(0.1, 0.0, v) - 0.85 * smoothstep(0.88, 0.97, v);
+      col += alb * STNC * uStnK * 0.3 * smoothstep(0.4, 0.9, v);
+      for (int i = 0; i < 3; i++) col += vec3(1.0, 0.82, 0.6) * uLamp[i].z * 0.25 * smoothstep(0.4, 0.9, v) * exp(-abs(uLamp[i].x - p.x) * 6.0);
+      if (tab) {
+        // The tab: dark plastic with a lit top edge.
+        float tv = (cr.y - 0.034) / 0.018;
+        col = mix(vec3(0.01), vec3(0.05), uDay) + mix(warm * 0.02, vec3(0.08), uDay) * smoothstep(0.4, 0.0, tv) + STNC * uStnK * 0.02;
+      }
+    } else if (dW < 0.0 && d < -SEAL) {
       /* ---- glass ---- */
       // Drops and fog live on the glass, so they use its plane.
       p = pg;
-      // Drops run straight down at rest; the head wind sweeps them back.
-      vec2 m = normalize(vec2(-uSpeed / 7.0, -1.0));
       vec2 off = vec2(0.0);
       float cover = 0.0, rim = 0.0, spec = 0.0, clear = 0.0;
       if (uRain > 0.001) {
         // The wind strips some beads off the pane at speed.
         float strip = 1.0 - 0.35 * smoothstep(5.0, 40.0, uSpeed);
-        float t1, t2;
         lens(beads(p, 24.0, 0.32 * uRain * strip), uRain, off, cover, rim, spec);
         lens(beads(p + 3.7, 60.0, 0.3 * uRain * strip), uRain, off, cover, rim, spec);
         lens(beads(p + 7.1, 110.0, 0.26 * uRain), uRain, off, cover, rim, spec);
-        lens(runs(p, m, t1), uRain, off, cover, rim, spec);
-        vec4 r2 = runs(p * 0.7 + 1.3, m, t2);
-        r2.z /= 0.7;
-        lens(r2, uRain, off, cover, rim, spec);
-        clear = max(t1, t2) * uRain;
+        // Each class answers the head wind with its own lag and slant.
+        for (int k = 0; k < 4; k++) {
+          float tk;
+          lens(runs(p, uRD[k], uRV[k], uRO[k], float(k) * 13.7, 0.13 + 0.03 * float(k), tk), uRain, off, cover, rim, spec);
+          clear = max(clear, tk);
+        }
+        clear *= uRain;
       }
       // Fog: the mode base and a cold rim near the frame.
       float fog = uFog * (0.8 + 0.35 * fbm(p * 6.0));
@@ -1112,10 +1387,27 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb;
       vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
       col = col * (1.0 - 0.8 * fog) + veil * fog * 0.9;
+      // The viewer's own head and shoulders hang in the reflection.
+      // The mirror image sits twice as far, so it shows at half size on the pane.
+      float kk = 1.0 / (2.0 * uTan.y);
+      vec2 E = uEye.xy * kk;
+      float sdH = length((p - E - vec2(0.0, 0.016) * kk) / vec2(0.044, 0.056) / kk) - 1.0;
+      vec2 sq = (p - E - vec2(0.0, -0.13) * kk) / vec2(0.11, 0.06) / kk;
+      float sdS = length(sq) - 1.0;
+      float neck = length((p - E - vec2(0.0, -0.05) * kk) / vec2(0.028, 0.06) / kk) - 1.0;
+      float me = smoothstep(0.12, -0.12, min(min(sdH, sdS), neck));
+      // The face and shoulders take the warm cabin light from above.
+      float lit = 0.5 + 0.5 * smoothstep(0.08, -0.06, (p.y - E.y) / kk);
+      vec3 self = warm * mix(0.04, 0.012, smoothstep(-0.3, 0.6, -sdH)) * lit;
+      room = mix(room, self, me * (1.0 - uDay) * 0.85);
       col += room * F * 0.5 * (1.0 - fog);
+      // The inner pane of the double glazing adds a faint second image.
+      col += textureLod(tRoom, R + vec3(0.012, -0.018, 0.0), 1.5).rgb * F * 0.18 * (1.0 - fog) * (1.0 - me * 0.8);
       // The glass reflects the lit carriage as a soft warm gradient.
       float rg = smoothstep(-0.7, 0.4, -p.y * 0.8 + p.x * 0.35) * 0.7 + 0.3 * smoothstep(0.1, 0.5, p.y);
       col += warm * 0.012 * rg * (1.0 - 0.5 * fog) * (1.0 - uDay);
+      // Station light washes the drops and the fog at a platform.
+      col += STNC * uStnK * (fog * 0.05 + cover * 0.08 + rim * 0.1);
       // Drops: a dark rim and a warm highlight from the room.
       col *= 1.0 - 0.7 * rim;
       // By day the bright far windows of the cabin make the highlight.
@@ -1127,9 +1419,25 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       col += warm * 0.003 * grime * roomG * (1.0 - uDay);
       // By day the outside light backlights the grime.
       col += blur * grime * 0.06 * uDay;
+      // Fine cleaning scratches: two swirls that only a bright light shows.
+      vec2 s1 = vec2(dot(p, vec2(0.8, 0.6)), dot(p, vec2(-0.6, 0.8)));
+      vec2 s2 = vec2(dot(p, vec2(0.28, -0.96)), dot(p, vec2(0.96, 0.28)));
+      float scr = smoothstep(0.78, 0.98, vnoise(s1 * vec2(5.0, 520.0))) * smoothstep(0.4, 0.7, vnoise(s1 * 3.0));
+      scr += smoothstep(0.8, 0.98, vnoise(s2 * vec2(4.0, 640.0) + 7.0)) * smoothstep(0.45, 0.75, vnoise(s2 * 2.5 + 3.0));
+      col += STNC * uStnK * scr * 0.03 + vec3(0.9) * scr * 0.01 * uDay;
+      // The maker's etching in the low corner: frosted marks.
+      vec2 st = (q - vec2(-uHalf.x + 0.03, -uHalf.y + 0.02)) / vec2(0.15, 0.03);
+      if (st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0) {
+        float et = texture2D(tStamp, st).r;
+        col += et * (vec3(0.006, 0.0055, 0.005) * (1.0 - uDay) + blur * 0.12 * uDay + STNC * uStnK * 0.04);
+      }
+      // The glass edge shows green where it meets the seal.
+      float ge = smoothstep(-SEAL - 0.004, -SEAL - 0.001, d);
+      col = mix(col, col * vec3(0.45, 0.75, 0.6) + vec3(0.004, 0.01, 0.007) * (1.0 + 8.0 * uStnK), ge * 0.8);
       for (int i = 0; i < 3; i++) {
         float k = uLamp[i].z;
         if (k <= 0.0) continue;
+        col += vec3(1.0, 0.8, 0.55) * k * scr * 0.06 * exp(-length(p - uLamp[i].xy) * 4.0);
         // A passing lamp lights the fog, the drops and the grime on the pane.
         float near = length(p - uLamp[i].xy);
         col += vec3(1.0, 0.75, 0.45) * k * fog * 0.6 * exp(-near * 5.0);
@@ -1153,15 +1461,25 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // A cream lining; the sill at the bottom is oiled wood.
         vec3 wood = mix(vec3(0.26, 0.13, 0.055), vec3(0.4, 0.22, 0.1), vnoise(vec2((h2.x + uC0.x) * 9.0, f * 2.0 + (h2.x + uC0.x) * 0.6) + vec2(0.0, vnoise(vec2(h2.x * 60.0, 0.0)) * 0.5)));
         vec3 alb = mix(vec3(0.6, 0.55, 0.47), wood, smoothstep(0.6, 0.8, n2.y));
+        // The last part toward the glass is the anodised window frame.
+        float al = smoothstep(0.7, 0.72, f);
+        alb = mix(alb, vec3(0.5, 0.51, 0.53) * (0.94 + 0.06 * vnoise(vec2(dot(h2, n2.yx * vec2(1.0, -1.0)) * 900.0, f))), al);
+        // A dark joint where the lining meets the frame.
+        alb *= 1.0 - 0.7 * smoothstep(0.02, 0.0, abs(f - 0.71));
         // Night: the cabin light falls from above, so the sill is brightest.
         vec3 night = vec3(1.0, 0.76, 0.5) * 0.06 * (0.35 + 0.65 * max(n2.y, 0.0)) * (1.0 - 0.5 * f);
         // Day: light through the glass; the reveal brightens toward it.
         vec3 day = vec3(1.0, 0.95, 0.88) * 0.55 * (0.45 + 0.4 * max(n2.y, 0.0) + 0.15 * max(-n2.y, 0.0)) * (0.55 + 0.6 * f);
         col = alb * mix(night, day, uDay);
+        // The frame's lower rail catches the ceiling light as a bright line.
+        col += al * mix(warm * 0.05, vec3(0.5), uDay) * pow(max(n2.y, 0.0), 6.0) * smoothstep(0.8, 0.95, f);
+        col += alb * STNC * uStnK * 0.25 * (0.4 + 0.6 * f);
         for (int i = 0; i < 3; i++) {
           float k = uLamp[i].z;
           if (k <= 0.0) continue;
           vec2 Lp = uLamp[i].xy - (h2 + uC0);
+          // Lamps flash along the metal frame as they pass.
+          col += al * vec3(1.0, 0.82, 0.6) * k * 0.6 * exp(-length(Lp) * 10.0);
           col += alb * vec3(1.0, 0.76, 0.48) * k * 0.5 * (0.3 + 0.7 * max(dot(n2, normalize(Lp)), 0.0)) / (1.0 + dot(Lp, Lp) * 25.0) * (0.4 + 0.6 * f);
         }
       }
@@ -1183,6 +1501,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         alb *= 1.0 + 0.8 * smoothstep(0.012, 0.004, ly) - 0.4 * smoothstep(0.03, 0.045, ly);
       }
       col = alb * light;
+      col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
       // Spill: a little lamp light reaches the wall beside the window.
       for (int i = 0; i < 3; i++) col += vec3(1.0, 0.72, 0.42) * uLamp[i].z * 0.012 * exp(-dW * 18.0) * exp(-length(uLamp[i].xy - p) * 3.0);
       // The passenger display hangs over the window.
@@ -1259,6 +1578,30 @@ function drawPid(s) {
   tPid.needsUpdate = true;
 }
 scene.add(glass);
+// The maker's etching: small frosted marks in the low corner of the pane.
+{
+  const c = Object.assign(document.createElement('canvas'), { width: 600, height: 120 });
+  const tStamp = new THREE.CanvasTexture(c);
+  W.tStamp.value = tStamp;
+  const draw = () => {
+    const g = c.getContext('2d');
+    g.clearRect(0, 0, 600, 120);
+    g.fillStyle = g.strokeStyle = '#fff';
+    g.lineWidth = 4;
+    g.beginPath(); g.arc(52, 60, 34, 0, TAU); g.stroke();
+    g.font = '700 34px Gabarito, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('E2', 52, 62);
+    g.textAlign = 'left';
+    g.font = '600 30px Gabarito, sans-serif';
+    g.fillText('43R-00 1907  AS2', 104, 42);
+    g.font = '500 24px Gabarito, sans-serif';
+    g.fillText('TEMPERED · 6 mm · M 117', 104, 84);
+    tStamp.needsUpdate = true;
+  };
+  draw();
+  document.fonts?.ready.then(draw);
+}
 
 /* ---------- the carriage, seen only in its reflection ---------- */
 // The cabin bakes once into a cube map; the glass samples it.
@@ -1325,7 +1668,7 @@ function frame(w, h, pr) {
 
 /* ---------- motion ---------- */
 // QA can start at a point on the route with ?x=.
-let time = 0, flow = 0, camX = +(qs.get('x') || 13000), speed = 0, target = 27;
+let time = 0, camX = +(qs.get('x') || 13000), speed = 0, target = 27;
 const MODES = { clear: { rain: 0, fog: 0 }, rain: { rain: 1, fog: 0 }, fogged: { rain: 0.45, fog: 0.85 } };
 let mode = MODES.rain, mk = 0, rainT = 0, dayT = 0, dayV = 0;
 const hashN = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
@@ -1365,6 +1708,8 @@ function place() {
   platform.visible = sd < 1000;
   platform.position.x = sx;
   OUTU.uStn.value.set(sx, platform.visible ? PL / 2 + 2 : 0);
+  // Inside the platform's reach, its light comes in through the window.
+  W.uStnK.value = (1 - dayV) * THREE.MathUtils.smoothstep(PL / 2 + 30 - Math.abs(camX - sx), 0, 60) * (platform.visible ? 1 : 0);
   if (platform.visible) drawSign(sn);
   sky.position.copy(outCam.position);
   outCam.updateMatrixWorld();
@@ -1424,6 +1769,32 @@ function nextStop(x) {
   }
   return x + best;
 }
+// Running drops come in four classes, big and slow to small and quick.
+// Each class feels the head wind late, by its lag, and only above its grip speed.
+// Small drops slant most; big ones keep falling.
+const RUN = [
+  { lag: 0.5, grip: 3, drag: 0.05, fall: 0.2, lift: 0.08, gust: 0.9 },
+  { lag: 1.3, grip: 6, drag: 0.042, fall: 0.15, lift: 0.0, gust: 1.4 },
+  { lag: 2.4, grip: 9, drag: 0.034, fall: 0.11, lift: -0.04, gust: 0.6 },
+  { lag: 4.0, grip: 13, drag: 0.026, fall: 0.08, lift: 0.04, gust: 1.9 },
+].map(r => ({ ...r, s: 0, old: new THREE.Vector2(0, -r.fall) }));
+const RUN_P = 0.07 * 64;
+function runFlow(dt) {
+  RUN.forEach((r, k) => {
+    r.s += (speed - r.s) * (1 - Math.exp(-dt / r.lag));
+    // Wind force grows with the square of speed, so the slant eases in.
+    const grip = THREE.MathUtils.smoothstep(r.s, r.grip, r.grip + 14);
+    const gust = 1 + 0.18 * Math.sin(time * r.gust + k * 2.1) * Math.min(1, r.s / 12);
+    const wind = r.s * r.drag * grip * gust;
+    const v = W.uRV.value[k].set(-wind, -r.fall + wind * r.lift);
+    // The old velocity trails the new one, so trails bend through a change.
+    r.old.lerp(v, 1 - Math.exp(-dt / 1.2));
+    W.uRO.value[k].copy(r.old);
+    const D = W.uRD.value[k];
+    D.addScaledVector(v, dt);
+    D.set(((D.x % RUN_P) + RUN_P) % RUN_P, ((D.y % RUN_P) + RUN_P) % RUN_P);
+  });
+}
 function update(dt, pace) {
   // The train rolls at speed while awake and slows to a stop when idle.
   let cap = target * pace;
@@ -1442,10 +1813,9 @@ function update(dt, pace) {
   if (pace === 0 && speed < 0.05) speed = 0;
   camX += speed * dt;
   time += dt;
-  flow += dt * (0.25 + speed / 14);
+  runFlow(dt);
   OUTU.uTime.value = time;
   W.uTime.value = time;
-  W.uFlow.value = flow;
   mk = Math.min(1, mk + dt * 0.8);
   // Patches show after about 30 s of rain; other weather dries them.
   rainT = mode === MODES.rain ? rainT + dt : Math.max(0, rainT - dt * 4);
