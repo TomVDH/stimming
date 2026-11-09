@@ -1249,15 +1249,10 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           <a class="toy" id="motorway" href="motorway/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 260)"/>
-                <rect x="16" y="16" width="92" height="92" fill="oklch(0.17 0.03 262)"/>
-                <path d="M16 96L52 74L108 50" fill="none" stroke="oklch(0.11 0.015 260)" stroke-width="9"/>
-                <path id="motorway-glow" d="M16 96L52 74L108 50" fill="none" stroke="#ff8a2a" stroke-width="3" opacity="0.15"/>
-                <g id="motorway-lamps" fill="#2a3040">
-                  <rect x="22" y="83" width="5" height="3"/><rect x="34" y="76" width="5" height="3"/><rect x="46" y="68" width="5" height="3"/>
-                  <rect x="58" y="63" width="5" height="3"/><rect x="70" y="57" width="5" height="3"/><rect x="82" y="52" width="5" height="3"/>
-                  <rect x="94" y="47" width="5" height="3"/>
-                </g>
+                <rect x="22" y="22" width="92" height="92" rx="4" fill="oklch(0.07 0.01 265)"/>
+                <rect x="16" y="16" width="92" height="92" rx="4" fill="oklch(0.115 0.02 262)"/>
+                <defs><clipPath id="motorway-clip"><rect x="16" y="16" width="92" height="92" rx="4"/></clipPath><filter id="motorway-glow" x="-0.3" y="-0.3" width="1.6" height="1.6"><feGaussianBlur stdDeviation="1.5"/></filter><filter id="motorway-grain" x="0" y="0" width="1" height="1"><feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="1" seed="7"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.09 0"/></filter></defs>
+                <g clip-path="url(#motorway-clip)"><path id="motorway-main" fill="none" stroke="oklch(0.62 0.15 62)" stroke-width="0.4" opacity="0.4"/><g id="motorway-halo" filter="url(#motorway-glow)" opacity="0.85" fill="none" stroke-linecap="round" stroke-linejoin="round"></g><g id="motorway-core" fill="none" stroke-linecap="round" stroke-linejoin="round"></g><g id="motorway-lamps" fill="none" stroke-width="1" stroke-dasharray="0.5 2.9" stroke-linecap="round"></g><rect x="16" y="16" width="92" height="92" filter="url(#motorway-grain)"/></g>
               </svg>
             </span>
             <span class="name">Lit motorway</span>
@@ -3109,29 +3104,41 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     });
   }
 
-  // Lamps left of the pointer strike up, neon pink then sodium; the rest go dark.
+  // Brussels from overhead: the ring and its spokes, from the toy's own map.
+  // On play the lamps die, then strike again in a ripple out from the centre.
   {
-    const lamps = [...document.querySelectorAll('#motorway-lamps rect')], glow = $('motorway-glow');
-    const X = lamps.map(l => +l.getAttribute('x') + 2.5), lit = lamps.map(() => false);
-    const edge = x => {
-      let n = 0;
-      lamps.forEach((l, i) => {
-        const on = X[i] <= x;
-        n += on;
-        if (on === lit[i]) return;
-        lit[i] = on;
-        if (on) gsap.fromTo(l, { attr: { fill: '#c0506e' } }, { attr: { fill: '#ffae4a' }, duration: 0.9, ease: 'power3.in', overwrite: true });
-        else gsap.to(l, { attr: { fill: '#2a3040' }, duration: 0.25, overwrite: true });
-      });
-      gsap.to(glow, { opacity: 0.15 + 0.7 * (n / lamps.length), duration: 0.6, overwrite: true });
-    };
-    let sweep = null;
+    const MW = {"fast":[[0,110.6,110.4,107.9,107.9,102.5,100.5,96.1,96.1,94.6,93.8,92.2,86.9,88.0,83.0],[0,88.3,83.4,92.1,87.0,94.5,93.8,96.2,96.3,102.4,100.5,107.8,108.0,110.2,110.3],[0,41.8,53.8,37.2,51.2,27.5,49.1,15.6,50.1],[0,15.6,50.1,27.5,49.2,37.0,51.2,41.7,53.9],[0,25.4,109.5,21.1,110.1,18.5,112.4],[0,18.5,112.4,21.0,110.2,25.4,109.6],[0,72.6,111.6,72.4,115.0],[0,72.4,114.8,72.5,112.0],[0,37.2,115.6,37.0,112.3,38.4,104.9,41.4,99.9,45.3,89.5,46.8,80.9,45.2,77.6,42.5,75.5,40.5,72.3,41.0,65.3,39.2,61.6,38.0,57.2,38.2,52.9,43.6,47.0,49.7,44.0,55.1,38.1,58.3,36.2,62.0,36.3,68.7,38.4,74.1,37.6,76.0,38.9,77.7,42.2,81.8,45.3,83.7,48.5,89.4,64.5,89.5,68.1,88.4,71.1],[0,88.5,71.0,89.6,68.0,89.4,64.5,83.8,48.4,81.8,45.3,77.8,42.1,76.1,38.9,74.4,37.7,68.8,38.3,62.1,36.2,58.2,36.2,55.1,38.0,49.6,44.0,43.5,46.9,38.0,53.0,37.9,56.9,39.1,61.7,40.9,65.3,40.3,72.3,42.4,75.5,45.2,77.6,46.8,80.9,45.2,89.5,41.3,99.8,38.3,104.9,36.9,112.3,37.1,115.6],[1,25.4,109.6,27.6,109.6,31.7,111.8,34.9,109.7,36.5,110.2],[1,36.5,110.2,34.9,109.7,31.7,111.7,27.6,109.6,25.4,109.5],[1,88.4,71.1,72.6,111.6],[1,72.5,112.0,88.5,71.0],[0,111.3,55.4,106.2,54.6,87.4,54.6,83.1,55.6,77.2,58.1],[0,77.3,58.2,83.8,55.4,87.5,54.7,104.2,54.6,111.3,55.5],[1,38.0,73.7,35.9,75.2],[1,35.9,75.2,38.0,73.8],[1,38.0,73.8,38.0,73.8],[1,45.5,76.4,46.8,75.6,47.1,73.9],[1,47.1,73.9,46.8,75.0,45.8,75.2,45.5,76.1],[1,58.3,67.4,62.4,74.3,58.5,67.6],[1,55.2,67.5,55.6,68.4,56.7,68.5,60.8,65.8,61.9,63.0,61.5,61.1,48.7,55.2],[1,48.7,55.3,61.5,61.1,61.8,62.9,60.8,65.7,56.7,68.5,55.6,68.4,55.2,67.4],[1,72.0,67.1,64.2,64.5],[1,65.2,65.1,72.0,67.1],[1,65.2,65.1,70.0,62.3],[1,64.2,65.7,65.2,65.1],[1,69.9,62.3,67.7,63.3],[1,72.8,60.7,70.0,62.3],[1,41.7,49.9,38.5,46.7,35.1,46.4],[1,36.0,46.6,38.6,46.8,41.7,49.9],[0,48.8,12.6,48.8,22.8,52.4,28.3,56.3,42.2],[0,56.4,42.2,52.5,28.2,48.9,22.7,48.9,13.0],[1,56.3,42.2,58.1,44.9,56.4,42.2],[1,72.3,75.5,75.7,76.4,78.1,76.2,88.3,83.4],[1,88.0,83.0,78.1,76.2,75.7,76.4,71.6,75.3],[1,84.1,50.8,76.9,68.5],[1,76.9,68.5,82.3,54.5,84.5,51.2],[1,76.9,68.5,76.9,68.5],[1,76.9,68.5,76.9,68.6],[1,77.0,68.5,76.9,68.5],[1,72.9,60.6,71.6,61.4],[1,71.6,61.5,72.4,61.1],[1,76.8,58.3,72.9,60.6],[1,71.6,61.5,72.6,60.9],[1,72.4,61.1,73.7,60.2],[1,76.8,58.3,72.8,60.7],[1,72.4,61.1,72.6,60.9],[1,72.6,60.9,76.7,58.4],[1,72.9,60.6,72.8,60.7],[1,74.6,59.6,76.7,58.4],[1,77.2,58.1,76.8,58.3],[1,76.7,58.4,77.3,58.2],[1,87.7,44.9,83.4,45.1,81.0,48.6,75.2,51.4],[1,75.3,51.4,81.1,48.7,83.5,45.2,87.6,45.1],[1,75.8,41.7,75.7,41.7],[1,79.8,34.6,77.1,37.5,75.9,42.6],[1,75.9,42.4,75.9,40.9],[1,75.9,40.9,77.3,37.3,79.9,34.6],[1,75.9,42.4,75.9,40.9],[0,78.9,41.4,81.8,39.4,83.4,37.2,89.2,25.5,90.8,20.5,91.4,17.5,91.0,14.2,89.5,10.9,87.3,8.5],[0,88.3,9.7,90.4,12.8,91.2,16.1,89.6,23.9,82.6,38.2,79.3,40.9],[1,79.9,34.6,83.1,37.9],[1,83.2,37.9,80.0,34.5],[1,79.9,25.4,80.9,26.9,81.5,31.4,79.9,34.4],[1,80.0,34.5,81.6,31.4,81.0,27.0,80.0,25.3],[1,79.9,34.6,79.9,34.6],[0,83.0,47.3,84.1,50.8],[0,84.1,50.2,83.4,47.6],[1,83.1,37.9,84.6,39.7],[1,84.6,39.7,83.2,37.9],[1,83.1,37.9,84.6,39.7],[1,84.6,39.7,83.2,37.9],[1,84.9,40.1,84.6,39.7],[1,84.6,39.7,84.8,40.1]],"main":[[25,110,14,115],[29,105,11,97],[34,113,32,109],[28,108,26,114],[32,99,29,105],[37,92,33,97,37,92],[63,81,69,109],[115,107,110,98,104,92,89,84],[25,66,16,67],[10,36,17,35],[17,35,20,39],[17,35,9,16],[37,92,40,86,37,92],[42,76,41,84],[43,71,39,75],[39,75,43,71],[41,64,48,63],[45,64,49,58],[49,58,45,63],[45,54,49,55],[49,55,45,54],[55,80,49,83],[49,83,55,80],[55,80,57,76],[57,76,55,80],[63,81,68,82],[58,72,61,75,63,81],[69,59,71,67,64,75,71,67,69,59],[68,82,64,75],[64,75,68,82],[68,82,72,83,68,82],[49,70,49,70],[55,67,56,69,58,68],[58,67,56,68,55,67],[53,51,50,54],[50,54,53,51],[57,59,60,53,57,59],[63,52,69,59],[68,59,63,52],[107,47,70,60],[70,55,72,52,75,51],[75,51,72,52,70,55],[28,44,23,41],[30,44,34,46],[54,49,54,49],[60,53,63,50],[59,45,64,49],[73,40,66,50],[66,50,73,40],[77,70,81,74,88,74],[88,74,82,74,78,70],[77,70,74,82],[74,82,77,70],[90,74,96,71],[96,71,90,74],[72,67,77,70],[77,70,72,67],[107,64,96,70],[76,43,78,44,76,42],[81,46,81,47],[95,35,102,31],[81,23,83,14,86,10]]};
+    const NS = 'http://www.w3.org/2000/svg', CEN = [57.6, 63.2];
+    const dOf = a => { let d = ''; for (let i = 0; i < a.length; i += 2) d += (i ? 'L' : 'M') + a[i] + ' ' + a[i + 1]; return d; };
+    $('motorway-main').setAttribute('d', MW.main.map(dOf).join(''));
+    const mk = (g, attrs) => { const e = document.createElementNS(NS, 'path'); for (const k in attrs) e.setAttribute(k, attrs[k]); g.appendChild(e); return e; };
+    const roads = MW.fast.map(([c, ...a]) => {
+      const d = dOf(a), w = c ? 0.6 : 1, i = (a.length >> 2) << 1;
+      return {
+        c, far: Math.hypot(a[i] - CEN[0], a[i + 1] - CEN[1]),
+        h: mk($('motorway-halo'), { d, 'stroke-width': 3 * w }),
+        k: mk($('motorway-core'), { d, 'stroke-width': 1.05 * w }),
+        l: c ? null : mk($('motorway-lamps'), { d }),
+      };
+    });
+    const FAR = Math.max(...roads.map(r => r.far));
+    const SOD = [0.74, 0.17, 62], PINK = [0.55, 0.19, 12], SALMON = [0.65, 0.16, 35];
+    const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+    const warm = w => (w < 0.5 ? mix(PINK, SALMON, w * 2) : mix(SALMON, SOD, (w - 0.5) * 2));
+    const ok = (c, l = 1) => `oklch(${(c[0] * l).toFixed(3)} ${c[1].toFixed(3)} ${c[2].toFixed(1)})`;
+    const st = { t: 9 };
+    const draw = () => roads.forEach(r => {
+      const t = st.t - 0.25 - (r.far / FAR) * 0.9 - (r.c ? 0.25 : 0);
+      const w = Math.min(1, Math.max(0, t / 1.3)), lv = (t > 0 ? 0.25 + 0.75 * w * w : (st.t < 0.25 ? 1 - st.t / 0.25 : 0)) * (r.c ? 0.7 : 1);
+      const col = t > 0 ? warm(w) : SOD;
+      r.h.setAttribute('stroke', ok(col, 0.85)); r.h.setAttribute('opacity', (0.75 * lv).toFixed(3));
+      r.k.setAttribute('stroke', ok(col)); r.k.setAttribute('opacity', lv.toFixed(3));
+      if (r.l) { r.l.setAttribute('stroke', ok(mix(col, [0.97, 0.06, 80], 0.6))); r.l.setAttribute('opacity', lv.toFixed(3)); }
+    });
+    draw();
     toys.motorway = {
-      enter(p) { edge(p ? p[0] : 128); },
-      move(p) { if (p) edge(p[0]); },
-      leave() { edge(-1); },
-      play() { const st = { x: 0 }; sweep = gsap.to(st, { x: 128, duration: 1.6, ease: 'none', onUpdate: () => edge(st.x) }); return sweep; },
-      rest() { sweep?.kill(); edge(-1); },
+      play: () => loop({ repeatDelay: 1.2 }).fromTo(st, { t: 0 }, { t: 3.2, duration: 3.2, ease: 'none', onUpdate: draw }),
+      rest() { gsap.to(st, { t: 9, duration: 0.6, overwrite: true, onUpdate: draw }); },
     };
   }
 
