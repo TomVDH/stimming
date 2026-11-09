@@ -215,16 +215,16 @@ uniform float uBase, uRest, uTime, uPump, uKick, uRM;
 // The row's light at screen x, blurred over w pixels.
 vec3 rowLight(float x, float w) {
   vec3 c = vec3(0.0);
-  for (int k = -3; k <= 3; k++) {
-    float xx = x + float(k) * w / 3.0;
+  for (int k = -6; k <= 6; k++) {
+    float xx = x + float(k) * w / 6.0;
     float u = (xx - uPipe.x) / (uPipe.y - uPipe.x);
     // Light falls off past the pipe's ends.
     float fall = exp(-pow(max(max(-u, u - 1.0), 0.0) * 4.0, 2.0));
     vec4 t = texture(uHt, vec2((clamp(u, 0.0, 1.0) * (uN - 1.0) + 0.5) / ${MAXN}.0, 0.5));
     vec3 tint = mix(vec3(0.18, 0.3, 1.0) * 0.6, vec3(1.0, 0.52, 0.2), t.a);
-    c += tint * t.b * fall * exp(-float(k * k) / 4.5);
+    c += tint * t.b * fall * exp(-float(k * k) / 18.0);
   }
-  return c / 4.5;
+  return c / 7.5;
 }
 vec3 glow(vec2 uv) { return texture(uG1, uv).rgb * 0.5 + texture(uG2, uv).rgb * 0.8 + texture(uG3, uv).rgb * 1.1; }
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
@@ -273,14 +273,14 @@ void main() {
     vec2 ur = vec2(uv.x, yr / uRes.y);
     float rough = clamp(d / (uRes.y * 0.25), 0.0, 1.0);
     vec3 refl = mix(texture(uG1, ur).rgb * 1.2, texture(uG2, ur).rgb * 1.5, smoothstep(0.0, 0.6, rough));
-    float fres = 0.22 * exp(-d / (uRes.y * 0.2)) + 0.03;
+    float fres = 0.24 * exp(-d / (uRes.y * 0.12)) + 0.02 * exp(-d / (uRes.y * 0.3));
     col = vec3(0.003, 0.0028, 0.003);
     // The pipe hides its own reflection's flames until they clear it.
     if (yr < yC + 2.0 * R) refl *= 0.0;
     col += refl * fres;
     // The pipe shades the floor close in front of it.
     float pool = smoothstep(0.0, 3.0 * R, d) * exp(-d / (uRes.y * 0.3));
-    col += rowLight(p.x, R * 3.0 + d * 1.5) * pool * 0.035;
+    col += rowLight(p.x, min(R * 3.0 + d * 1.5, uRes.y * 0.1)) * pool * 0.035;
     col *= 1.0 - 0.85 * exp(-d / (0.35 * R));
   }
 
@@ -431,7 +431,7 @@ function alloc() {
 const row = { x0: 0, x1: 0, pc: 0, R: 0, base: 0, rest: 0, fw: 0, house: 0, cap: 0 };
 let N = 72, narrow = false;
 function layout() {
-  const { w, W, H, dpr } = fitCanvas(canvas, { maxDpr: rung >= 1 ? 1 : 2 });
+  const { w, W, H, dpr } = fitCanvas(canvas, { maxDpr: 2, low: rung >= 1 });
   narrow = w < 640;
   N = narrow ? 32 : rung >= 3 ? 48 : 72;
   const R = narrow ? clamp(W * 0.03, 7 * dpr, 13 * dpr) : clamp(H * 0.03, 10 * dpr, 24 * dpr);
@@ -570,6 +570,8 @@ function frame(now) {
   try {
     const rm = reduced();
     if (!lively() && now - lastDraw < 31) return;
+    // Only full-rate frames feed the watchdog; drifting frames run slow on purpose.
+    if (lively() && now - lastDraw < 100) watchdog((now - lastDraw) / 1000);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     lastDraw = now;
@@ -598,6 +600,24 @@ function frame(now) {
     if (again && visible) raf = requestAnimationFrame(frame);
     else kit.rest(() => !raf);
   }
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of full-rate frames, an average above 1/38 s for 2 s steps down one rung.
+// Rungs: pixel ratio down, then a third-size flame buffer, then 48 flames.
+// The ladder never steps back up, except on a new quality choice.
+let runFor = 0, slowFor = 0, avgDt = 1 / 60;
+function watchdog(raw) {
+  runFor += raw;
+  avgDt += (raw - avgDt) * 0.1;
+  if (runFor < 4 || rung >= 3) return;
+  slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
+  if (slowFor < 2) return;
+  rung++;
+  slowFor = 0;
+  runFor = 2;
+  avgDt = 1 / 60;
+  layout();
 }
 
 /* ---------- sweep ---------- */
@@ -817,7 +837,7 @@ stage.addEventListener('keydown', e => {
 });
 
 new ResizeObserver(() => { layout(); for (let i = 0; i < N; i++) disp[i] = hgt[i] = hgt[i] || restPx(); render(); wake(); }).observe(stage);
-onQuality(() => { layout(); render(); });
+onQuality(() => { rung = 0; runFor = slowFor = 0; layout(); render(); });
 onReducedChange(() => { render(); wake(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
