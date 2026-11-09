@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T10:20:39Z
+updated_at: 2026-11-09T10:27:03Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -85,3 +85,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Winter v7 (Tom: where is the wood chipper; line closer, cabin behind): a snow-capped towable wood chipper with a chip heap stands by the fir; the line now runs in the foreground from a peeled-log post to the fir, the cabin set back behind it; camera closer.
 
 - Harbour v2 (Tom: clean up the wharf; stop the big buildings; every theme a different setup): no shed; the line runs down a narrow pier between two pilings over open water; one trap stack, a rope coil, a bollard, buoys on the piling; the lobster boat moored alongside; a few small houses and a lighthouse far off in fog; camera off the landward end at a slant, iso from the sea side.
+
+- Harbour v3 (Tom: "how is this coen -- villeneuve?"): Villeneuve grey fog, flat grey sky, calm dark sea, pier into the fog, a container ship as one faint broadside silhouette on the horizon (even deck load, never a skyline), muted grade; the slicker is the one colour.
