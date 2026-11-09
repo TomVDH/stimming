@@ -23,6 +23,8 @@
 .stage--windmap canvas.on { opacity: 1; }
 /* The chart layer draws over the wind and lets the pointer through. */
 .stage--windmap canvas.chart { pointer-events: none; }
+/* While + Cyclone is armed, the pointer reads as a placing tool. */
+.stage--windmap.placing { cursor: cell; }
 @media (prefers-reduced-motion: reduce) { .stage--windmap canvas { transition: none; } }
 </style>
 </head>
@@ -95,7 +97,7 @@ const ui = initPage({ id: 'windmap', bar: {
     { value: 'dye', label: 'Dye', dot: 'conic-gradient(oklch(0.78 0.13 20), oklch(0.78 0.13 140), oklch(0.78 0.13 260), oklch(0.78 0.13 20))' },
   ], onPick: v => setLook(v) },
   slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: opts.wind, onInput: v => setWind(v) },
-  actions: [{ verb: 'add', noun: 'Cyclone', onPress: () => addCyclone() }, { verb: 'clear', onPress: () => clearAll() }],
+  actions: [{ verb: 'add', noun: 'Cyclone', onPress: () => setPlacing(!placing) }, { verb: 'clear', onPress: () => clearAll() }],
   settings: [
     { type: 'choice', id: 'count', label: 'Particles', value: opts.count, options: COUNT_OPTS, persist: true, onPick: v => setCount(v) },
     { type: 'choice', id: 'trail', label: 'Trails', value: opts.trail, options: [{ value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }], persist: true, onPick: v => { opts.trail = v; wake(); } },
@@ -1605,7 +1607,23 @@ function setLook(v) { opts.look = v; save('look', v); bakeRamp(); wake(); }
 function setWind(v) { opts.wind = v; save('wind', v); wake(); }
 function setCount(v) { opts.count = v; seedState(); clearAcc(); preroll(1); render(); wake(); }
 function clearAll() { vortices.forEach(v => { v.dying = true; v.held = false; }); gusts.length = 0; jets.length = 0; clearAcc(); wake(); }
-// + Cyclone finds open air and spins the hemisphere's way.
+// + Cyclone arms placement: each tap on the map drops a storm there.
+// It stays armed until + Cyclone is pressed again or Escape.
+let placing = false, hoverW = null;
+const addChip = () => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => /cyclone/i.test(b.textContent));
+function setPlacing(on) {
+  placing = on;
+  addChip()?.setAttribute('aria-pressed', String(on));
+  stage.classList.toggle('placing', on);
+}
+addEventListener('keydown', e => { if (e.key === 'Escape' && placing) setPlacing(false); });
+// A placed storm spins the hemisphere's way; a ring marks the spot at once.
+function placeCyclone(w) {
+  spawnCyclone(w[0], w[1], (0.12 + 0.05 * Math.random()) * spin(), 0.045 + 0.015 * Math.random());
+  flash(w[0], w[1], 'merge');
+  wake();
+}
+// Space with no pointer on the map finds open air instead.
 function addCyclone() {
   let best = null, room = -1;
   for (let k = 0; k < 12; k++) {
@@ -1712,7 +1730,9 @@ function endPress(tap) {
     // A hand that rests 80 ms before release throws nothing.
     const fresh = performance.now() - p.tl < 80, cap = v => clamp(v, -1.5, 1.5);
     if (tap && fresh) { globe.vy = cap(p.tv[0]); globe.vp = cap(p.tv[1]); }
-  } else if (tap) gust(p.w0[0], p.w0[1]);
+  } else if (tap) {
+    if (placing) placeCyclone(p.w0); else gust(p.w0[0], p.w0[1]);
+  }
   wake();
 }
 // The hold timer runs on frame time, so it stays in step with the sim.
@@ -1735,6 +1755,8 @@ stage.addEventListener('pointerdown', e => {
   wake();
 });
 stage.addEventListener('pointermove', e => {
+  // Space drops a storm under a hovering pointer.
+  if (e.pointerType === 'mouse') hoverW = toWorld(e);
   if (!press || e.pointerId !== press.id) return;
   const now = performance.now();
   if (press.mode === 'turn') {
@@ -1764,12 +1786,13 @@ stage.addEventListener('pointermove', e => {
 });
 stage.addEventListener('pointerup', e => { if (press && e.pointerId === press.id) endPress(true); });
 stage.addEventListener('pointercancel', () => endPress(false));
+stage.addEventListener('pointerleave', () => { hoverW = null; });
 stage.addEventListener('lostpointercapture', () => endPress(false));
 stage.addEventListener('keydown', e => {
   wake();
   if (e.key !== ' ') return;
   e.preventDefault();
-  if (!e.repeat) addCyclone();
+  if (!e.repeat) { if (hoverW) placeCyclone(hoverW); else addCyclone(); }
 });
 
 /* ---------- start ---------- */

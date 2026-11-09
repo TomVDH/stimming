@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T09:36:12Z
+updated_at: 2026-11-09T09:41:12Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -88,3 +88,7 @@ Wind map already passes a bar spec, so the newest shell look (logo, breadcrumb n
 - Compliance points 1, 2, 4 and 5 measured at 1280 × 800, 375 × 812 (mobile) and 812 × 375: no corner leaves the stage or overlaps, no page scroll, the Settings sheet fits (it scrolls inside its box at 812 × 375), no coarse target under 34 px.
 - The toy name drops at 375 px by the shell's collision rule.
 - Diegetic check: none fits. The whole stage is the gesture surface (spin, hold, throw, jet); a drawn control would collide with those gestures.
+
+## Placement (Tom, 2026-11-09)
+
++ Cyclone now arms placement instead of spawning a storm at random: each tap on the map drops a cyclone where it lands, marked by a ring. It stays armed (the chip shows pressed) until + Cyclone again or Escape. Space drops one under a hovering mouse, or finds open air with no pointer on the map. Check t11-place: armed with no spawn, three taps place three storms within 0.03 of the taps and no gust, disarmed taps gust again, Escape disarms.
