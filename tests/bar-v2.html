@@ -76,7 +76,26 @@ t('cluster order', () => {
   const names = () => [...layer.querySelector('.s2-tr').children].map(e => e.className.split(' ')[0]);
   eq(names().join(','), 'snd,s2-set,s2-info');
   ui.applyToy({ legacy: true });
-  eq(names().join(','), 'ver,snd,s2-set,s2-info');
+  eq(names().join(','), 'snd,s2-set,s2-info');
+});
+t('classic link lives in settings', () => {
+  const { layer, ui } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }], reset() {} });
+  ui.applyToy({ legacy: true });
+  const a = layer.querySelector('.s2-sheet a[href="legacy.html"]');
+  ok(a, 'no classic link in the sheet');
+  eq(a.textContent.trim(), 'Classic');
+  ok(!layer.querySelector('.s2-tr a'), 'link still in the cluster');
+  ok(a.closest('.s2-sec').nextElementSibling?.classList.contains('s2-ft'), 'link not above the Reset footer');
+});
+t('classic alone shows settings', () => {
+  const { layer, ui } = fixture({ keys: [['click', 'place']] });
+  const set = layer.querySelector('.s2-set');
+  ok(set.hidden, 'settings shown before legacy');
+  ui.applyToy({ legacy: true });
+  ok(!set.hidden, 'settings hidden with legacy');
+  click(set);
+  ok(shown(layer.querySelector('.s2-sheet a[href="legacy.html"]')), 'classic link not shown');
+  click(set);
 });
 t('empty slot draws nothing', () => {
   const { layer } = fixture();

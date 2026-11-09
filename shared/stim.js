@@ -562,12 +562,28 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   set.hidden = !rowsOrSite;
   tr.append(snd, set);
 
-  /* the Settings sheet: toy rows, site rows, then Reset */
+  /* the Settings sheet: toy rows, site rows, the build link, then Reset */
   const settings = new Map();
-  let toyLab = null, toySec = null, sheet = null;
+  let toyLab = null, toySec = null, sheet = null, ft = null;
+  // The sheet builds on first need, so a late Classic link can join it.
+  const ensureSheet = () => {
+    if (sheet) return sheet;
+    sheet = makeSheet(layer, { title: 'Settings', anchor: set });
+    if (spec.reset) {
+      ft = make('div', 's2-ft');
+      const b = make('button', 's2-chip', 'Reset');
+      b.type = 'button';
+      b.addEventListener('click', () => { spec.reset(); sheet.open(false, true); });
+      ft.append(b);
+      sheet.el.append(ft);
+    }
+    return sheet;
+  };
+  // Sections sit above the Reset footer.
+  const addSec = sec => (ft ? ft.before(sec) : ensureSheet().el.append(sec));
   // A narrow stage moves the slider in here, so a slider also builds the sheet.
   if (rowsOrSite || slider) {
-    sheet = makeSheet(layer, { title: 'Settings', anchor: set });
+    ensureSheet();
     if (spec.settings?.length || slider) {
       const sec = toySec = make('div', 's2-sec');
       toyLab = make('span', 's2-lab', name.firstChild.textContent);
@@ -577,7 +593,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
         settings.set(row.id, r.handle);
         sec.append(r.el);
       });
-      sheet.el.append(sec);
+      addSec(sec);
     }
     if (spec.quality) {
       const sec = make('div', 's2-sec', '<span class="s2-lab">Site</span>');
@@ -585,14 +601,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
         options: [{ value: 'standard', label: 'Standard' }, { value: 'high', label: 'High' }] }, QUALITY_KEY, layer);
       onQuality(v => q.handle.set(v));
       sec.append(q.el);
-      sheet.el.append(sec);
-    }
-    if (spec.reset) {
-      const ft = make('div', 's2-ft'), b = make('button', 's2-chip', 'Reset');
-      b.type = 'button';
-      b.addEventListener('click', () => { spec.reset(); sheet.open(false, true); });
-      ft.append(b);
-      sheet.el.append(ft);
+      addSec(sec);
     }
   }
   let keys = null;
@@ -605,6 +614,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     layer.append(keys.el);
   }
 
+  let legacy = null;
   /* narrow stages: corners stay, controls move down */
   // Below 640 px the choice drops to bottom left as a stepper.
   const place = narrow => {
@@ -623,7 +633,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     const inSheet = down && actionEls.length > 0;
     slider.el.classList.toggle('s2-row', inSheet);
     if (inSheet) toyLab.after(slider.el); else br.append(slider.el);
-    set.hidden = !(rowsOrSite || inSheet);
+    set.hidden = !(rowsOrSite || inSheet || legacy);
   };
   // Bottom corners that collide on a narrow stage stack in two rows.
   const stack = () => {
@@ -642,7 +652,6 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     stack();
   }).observe(frame);
 
-  let legacy = null;
   const ui = {
     choice,
     slider: slider?.handle ?? null,
@@ -658,11 +667,17 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
       if (info?.tier) name.append(make('span', 's2-tag', String(info.tier).toUpperCase()));
       const onLegacy = /\/legacy\.html$/.test(location.pathname);
       if (legacy || !(onLegacy || info?.legacy)) return;
-      legacy = make('a', 'ver ver--build', onLegacy ? 'Fresh' : 'Classic');
+      // The Classic or Fresh link sits in Settings, under its own label.
+      legacy = make('a', 's2-chip', onLegacy ? 'Fresh' : 'Classic');
       legacy.href = onLegacy ? 'index.html' : 'legacy.html';
       legacy.title = onLegacy ? 'Back to the fresh version' : 'The classic build of this toy';
       if (onLegacy) document.documentElement.dataset.legacy = '';
-      tr.prepend(legacy);
+      const sec = make('div', 's2-sec', '<span class="s2-lab">Build</span>');
+      const row = make('div', 's2-row', '<span>Version</span>');
+      row.append(legacy);
+      sec.append(row);
+      addSec(sec);
+      set.hidden = false;
     },
     // Only the back block and the name stay, for a toy that cannot run.
     hideControls() { layer.dataset.bare = ''; },

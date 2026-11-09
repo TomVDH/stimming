@@ -41,7 +41,7 @@ The audit of 51 toys found four problems. Tom confirmed all four.
 | Slot | Holds | Limit |
 |---|---|---|
 | Top left | Back block, toy name, then the choice | One choice group. See the choice rules below. |
-| Top right | Classic or Fresh link (only with `legacy`), sound, Settings, (i) | Fixed order. Does not count to the limit. |
+| Top right | Sound, Settings, (i). The Classic or Fresh link (only with `legacy`) sits in Settings, under Build | Fixed order. Does not count to the limit. |
 | Bottom left | Actions | Three at most. |
 | Bottom right | Main slider | One at most. A word label, no number. |
 | Bottom centre | Key strip | Four entries at most. |
