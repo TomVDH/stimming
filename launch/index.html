@@ -61,6 +61,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createNoise2D } from 'simplex-noise';
+import { gsap } from 'gsap';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
@@ -96,8 +97,6 @@ const ui = initPage({ id: 'launch', silent: true, bar: {
   quality: true,
   keys: [['click', 'launch'], ['drag', 'look around'], ['space', 'launch']],
 } });
-// The launch arrives in Task 2; until then the action rests.
-ui.action('launch').disabled = true;
 
 const stage = document.getElementById('stage');
 let markReady;
@@ -143,6 +142,13 @@ const U = {
   uHazeH: { value: 22 },
   uSway: { value: 1 },
   uShore: { value: -2000 },
+  // The flame: world position and strength; its colour.
+  uFlame: { value: new THREE.Vector4(0, 0, -2000, 0) },
+  uFlameC: { value: new THREE.Vector3(1, 0.5, 0.18) },
+  // The Earth's shadow line in km of real altitude.
+  uShadowH: { value: 35 },
+  // Thick air round a low flame glows; thin air high up does not.
+  uAir: { value: 1 },
 };
 
 /* ---------- dawn: sky, sun and the Earth's shadow line ---------- */
@@ -173,7 +179,8 @@ function dawn(deg) {
   U.uGlowC.value.set(...glow.map(g => B * g * 0.35));
   // The eye opens up in the dark; the grade still keeps it a dawn.
   renderer.toneMappingExposure = 2.1 - 1.25 * t;
-  return shadowH(deg);
+  U.uShadowH.value = shadowH(deg);
+  return U.uShadowH.value;
 }
 const setDawn = () => { dawn(9 - 8 * opts.dawn); draw(); };
 
@@ -198,6 +205,17 @@ float k2fbm(vec2 p) {
 const K2_SKY = /* glsl */`
 uniform vec3 uSun;
 uniform float uDawn;
+uniform vec4 uFlame;
+uniform vec3 uFlameC;
+uniform float uAir;
+// Air round the flame glows; a view ray collects it.
+vec3 flameGlow(vec3 dir) {
+  if (uFlame.w < 0.001) return vec3(0.0);
+  vec3 v = uFlame.xyz - cameraPosition;
+  float c = dot(dir, normalize(v)) - 1.0;
+  float low = exp(-max(dir.y, 0.0) * 9.0);
+  return uFlameC * uFlame.w * uAir * (0.06 * exp(c * 900.0) + 0.02 * exp(c * 60.0) + 0.012 * exp(c * 6.0) * low);
+}
 float k2stars(vec3 dir) {
   vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
   vec2 i = floor(q), f = fract(q) - 0.5;
@@ -225,7 +243,7 @@ vec3 k2sky(vec3 dir) {
   col += ${v3(SKY.belt)} * anti * exp(-pow((up - 0.12) / 0.07, 2.0)) * t;
   col *= 0.06 + 0.94 * t * t;
   float dark = (1.0 - t) * (1.0 - t);
-  return col + vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y) * dark * 1.5;
+  return col + vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y) * dark * 1.5 + flameGlow(dir);
 }`;
 /* ---------- end K2 ---------- */
 
@@ -316,7 +334,17 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(16000, 9000).rotateX(-Math
     vec3 nrm = normalize(vec3(n * 0.006, 1.0, n * 0.004));
     vec3 r = reflect(v, nrm);
     float fres = 0.02 + 0.98 * pow(1.0 - max(dot(-v, nrm), 0.0), 5.0);
-    vec4 m = texture2D(tMirror, vM.xy / vM.w + vec2(n * 0.002, n * 0.004));
+    // Nine taps smear each light into a streak, longer where the view grazes.
+    vec2 uv = vM.xy / vM.w + vec2(n * 0.002, n * 0.004);
+    float len = 0.0008 + 0.004 * smoothstep(60.0, 1500.0, dist);
+    vec4 m = vec4(0.0);
+    float ws = 0.0;
+    for (int i = -4; i <= 4; i++) {
+      float fi = float(i), w = exp(-fi * fi / 8.0);
+      m += texture2D(tMirror, uv + vec2(0.0, fi * len)) * w;
+      ws += w;
+    }
+    m /= ws;
     vec3 wcol = vec3(0.003, 0.004, 0.005) * uAmb * 10.0 + (k2sky(r) * (1.0 - m.a) + m.rgb) * fres;
     // Mud and reed litter: dark, with a little sky on the wet bits.
     float grain = k2noise(p * 0.6) * 0.5 + k2noise(p * 3.1) * 0.5;
@@ -364,6 +392,10 @@ vec3 reedLight(vec3 P, float head, float tone, float edge) {
   vec3 alb = mix(vec3(0.11, 0.085, 0.06), vec3(0.16, 0.12, 0.08), tone);
   // Thin plume edges pass the glow; the rest stays a silhouette.
   vec3 c = alb * uAmb * 1.2 + uGlowC * toward * (0.004 + 0.05 * head * edge * edge);
+  // The flame rims the stems and plumes that stand against it.
+  vec3 F = normalize(uFlame.xyz - P);
+  float face = pow(max(dot(V, F), 0.0), 6.0);
+  c += uFlameC * uFlame.w * (0.0003 + face * (0.002 + 0.04 * head * edge * edge)) * (0.3 + 0.7 * uAir);
   return k2haze(c, P);
 }`;
 /* ---------- end reed shading ---------- */
@@ -618,6 +650,9 @@ const mistMat = new THREE.ShaderMaterial({
     if (a < 0.003) discard;
     vec3 V = normalize(v);
     vec3 col = k2hazeColor(V) * 1.1 + uAmb * 0.2;
+    // Mist near the pad lights orange on the flame side.
+    vec3 fd = uFlame.xyz - vP;
+    col += uFlameC * uFlame.w * 0.25 / (1.0 + dot(fd, fd) / 360000.0);
     gl_FragColor = vec4(col * a, a);
   }`,
 });
@@ -766,6 +801,350 @@ function commitStars() {
 }
 /* ---------- end K6 ---------- */
 
+/* ---------- trajectory: real altitude on a log scale ---------- */
+// Real altitude (km) maps to world height on a log scale.
+// 0 to 120 km then fits the frame at every distance.
+const ALT_K = 0.121, ALT_H0 = 3;
+const KINDS = {
+  // Climb rate, flame size, plume density, boosters.
+  small: { climb: 1.25, flame: 0.7, plume: 0.7, boosters: false },
+  medium: { climb: 1, flame: 1, plume: 1, boosters: false },
+  heavy: { climb: 0.9, flame: 1.45, plume: 1.4, boosters: true },
+};
+// Seconds after liftoff to real altitude in km; the first seconds hang.
+const altKm = (t, k) => (t <= 0 ? 0 : 0.06 * k.climb * t * t * THREE.MathUtils.smoothstep(t, 0, 2.5));
+const worldY = (h, D) => D * ALT_K * Math.log(1 + h / ALT_H0);
+// The gravity turn starts at T+8 and bends the path right and away.
+function rocketAt(f, t, out) {
+  const D = f.D, h = altKm(t, f.k);
+  const s = Math.pow(THREE.MathUtils.smoothstep(t, 8, 65), 1.5);
+  return out.set(f.x + D * 0.8 * s, 2 + worldY(h, D), f.z - D * 0.25 * s);
+}
+
+/* ---------- K2: orbs ---------- */
+// Soft glows round the brightest lights, squashed sideways, so light bleeds into haze.
+const ORB_N = 4;
+function makeOrbs() {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
+      uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+      uN: { value: 0 },
+      uAsp: { value: 1 },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec3 uOP[${ORB_N}];
+    uniform vec4 uOC[${ORB_N}];
+    uniform int uN;
+    uniform float uAsp;
+    varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      for (int i = 0; i < ${ORB_N}; i++) {
+        if (i >= uN) break;
+        vec2 d = vUv - uOP[i].xy;
+        float r = length(vec2(d.x * uAsp * 0.6, d.y));
+        // A tight core and a wide skirt; z holds the orb size.
+        c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+      }
+      // A soft roll-off above 2 keeps bloom free of square tiles.
+      float m = max(max(c.r, c.g), c.b);
+      c *= m > 2.0 ? (2.0 + log(m - 1.0)) / m : 1.0;
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  });
+}
+const tmpV = new THREE.Vector3();
+function placeOrbs(pass, list) {
+  camera.updateMatrixWorld();
+  let n = 0;
+  for (const o of list) {
+    if (n >= ORB_N) break;
+    tmpV.copy(o.pos).project(camera);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
+    pass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
+    pass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    n++;
+  }
+  pass.uniforms.uN.value = n;
+  pass.uniforms.uAsp.value = size.w / size.h;
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- flame: the engine, a hot core with an exhaust tail ---------- */
+const FU = { uAxis: { value: new THREE.Vector3(0, -1, 0) }, uSize: { value: 10 }, uFlick: { value: 1 } };
+const flame = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FU }, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  uniform vec4 uFlame; uniform vec3 uAxis; uniform float uSize;
+  varying vec2 vQ;
+  void main() {
+    vec3 V = normalize(cameraPosition - uFlame.xyz);
+    // The tail points down the exhaust, turned to face the eye.
+    vec3 ax = normalize(uAxis - dot(uAxis, V) * V + vec3(0.0, 1e-4, 0.0));
+    vec3 sd = normalize(cross(ax, V));
+    vQ = position.xy;
+    float along = position.y < 0.0 ? 0.6 : 3.2;
+    vec3 P = uFlame.xyz + sd * position.x * uSize * 0.6 + ax * position.y * uSize * along;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick;
+  varying vec2 vQ;
+  void main() {
+    // y below 0 is the nozzle; y above 0 runs down the tail.
+    float x = vQ.x, y = vQ.y;
+    float core = exp(-(x * x * 30.0 + y * y * (y < 0.0 ? 60.0 : 14.0)));
+    float tail = exp(-x * x * (6.0 + 30.0 * max(y, 0.0))) * exp(-max(y, 0.0) * 2.6) * step(-0.2, y);
+    vec3 c = vec3(1.0, 0.96, 0.9) * core * 14.0 + uFlameC * tail * 5.0 * uFlick;
+    gl_FragColor = vec4(c * min(uFlame.w, 1.5), 0.0);
+  }`,
+}));
+flame.frustumCulled = false;
+flame.visible = false;
+flame.renderOrder = 7;
+flame.layers.enable(MIRROR);
+scene.add(flame);
+
+/* ---------- plume: exhaust and steam on a ring of billboards ---------- */
+// Each puff is written once at birth; the shader moves and lights it.
+// aQ: birth x, y, z, time. aR: velocity x, y, z, drag.
+// aS: real altitude (km), seed, full radius, kind (0 exhaust, 1 steam).
+const PCAP = 3200;
+const puffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+const pslot = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(PCAP * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  puffGeo.setAttribute(name, a);
+  return a;
+};
+const aQ = pslot('aQ'), aR = pslot('aR'), aS = pslot('aS'), aT = pslot('aT');
+puffGeo.instanceCount = 0;
+const PU = { uShear: { value: reduced() ? 0 : 1 }, uScale: { value: 2000 } };
+const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...PU }, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aQ, aR, aS, aT;
+  uniform float uTime, uShear, uScale;
+  varying vec2 vQ; varying vec3 vP;
+  varying float vA, vH, vSeed, vKind, vNear, vSpread;
+  void main() {
+    float age = uTime - aQ.w, life = aT.x;
+    if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float h = aS.x, k = aR.w;
+    vec3 P = aQ.xyz + aR.xyz * (1.0 - exp(-k * age)) / k;
+    // The upper wind turns with height, so the trail shears into a zigzag.
+    float wind = uScale * 0.0007 * (0.3 + h / 12.0);
+    P.x += wind * age * sin(h * 0.22 + 0.8) * uShear;
+    P.z += wind * age * 0.4 * cos(h * 0.17) * uShear;
+    // Steam rises once its push is spent.
+    P.y += aT.y * age;
+    float r = aS.z * (0.12 + 0.88 * (1.0 - exp(-age / aT.z)));
+    vec3 V = normalize(cameraPosition - P);
+    vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
+    vec3 up = cross(V, rt);
+    float spin = aS.y * 6.283;
+    vec2 q = mat2(cos(spin), -sin(spin), sin(spin), cos(spin)) * position.xy;
+    vec3 W = P + (rt * q.x + up * q.y) * r;
+    vQ = position.xy; vP = P; vH = h; vSeed = aS.y; vKind = aS.w;
+    // The puff thins as it spreads; it fades in fast and out slowly.
+    vA = aT.w * smoothstep(0.0, 0.25, age) * (1.0 - smoothstep(life * 0.6, life, age)) * pow(aS.z * 0.12 / r, 0.7);
+    vNear = 1.0 - smoothstep(0.0, 6.0, age);
+    vSpread = 1.0 - exp(-age / aT.z);
+    gl_Position = projectionMatrix * viewMatrix * vec4(W, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform float uShadowH, uScale;
+  uniform vec3 uAmb;
+  varying vec2 vQ; varying vec3 vP;
+  varying float vA, vH, vSeed, vKind, vNear, vSpread;
+  ${HEAD}
+  void main() {
+    float d = length(vQ);
+    if (d > 1.0) discard;
+    // Billows: noise eats the edge of each puff.
+    float n = k2noise(vQ * 2.6 + vSeed * 31.0) * 0.6 + k2noise(vQ * 6.1 + vSeed * 17.0) * 0.4;
+    float shape = smoothstep(1.0, 0.0, d + (n - 0.5) * 0.25 * (1.0 - vSpread * 0.6));
+    float a = shape * vA;
+    if (a < 0.002) discard;
+    vec3 V = normalize(vP - cameraPosition);
+    // Sunlight above the shadow line: a gold core and blue edges.
+    float sun = smoothstep(uShadowH - 2.0, uShadowH + 2.0, vH) * (1.0 - vKind);
+    float fwd = 0.5 + 1.5 * pow(max(dot(normalize(V.xz), normalize(uSun.xz)), 0.0), 3.0);
+    vec3 gold = vec3(1.0, 0.52, 0.16), blue = vec3(0.3, 0.52, 1.0);
+    // Dense young exhaust scatters gold; the spread-out edges scatter blue.
+    float core = smoothstep(0.15, 0.8, shape) * (1.0 - 0.7 * smoothstep(0.3, 0.95, vSpread));
+    vec3 lit = mix(blue * 0.55, gold * 1.1, core) * fwd * 0.4;
+    // Below it: the dawn's ambient, and the flame near the engine.
+    vec3 fd = uFlame.xyz - vP;
+    float reach = uScale * (vKind > 0.5 ? 0.06 : 0.02);
+    vec3 fl = uFlameC * uFlame.w * (1.4 / (1.0 + dot(fd, fd) / (reach * reach)) + 0.6 * vNear * (1.0 - vKind));
+    vec3 amb = vKind > 0.5 ? k2hazeColor(V) * 1.1 : uAmb * 1.8;
+    vec3 c = mix(amb + fl, lit, sun);
+    c = vKind > 0.5 ? k2haze(c, vP) : c;
+    gl_FragColor = vec4(c * a, a);
+  }`,
+}));
+puffs.frustumCulled = false;
+puffs.renderOrder = 6;
+puffs.layers.enable(MIRROR);
+scene.add(puffs);
+let phead = 0, pdirtyFrom = -1, pdirtyN = 0;
+// Write one puff into the next slot; the oldest gives way.
+function writePuff(p, t0, v, k, h, radius, kind, life, rise, grow, alpha) {
+  const i = phead;
+  phead = (phead + 1) % PCAP;
+  if (pdirtyFrom < 0) pdirtyFrom = i;
+  pdirtyN = Math.min(PCAP, pdirtyN + 1);
+  aQ.setXYZW(i, p.x, p.y, p.z, t0);
+  aR.setXYZW(i, v.x, v.y, v.z, k);
+  aS.setXYZW(i, h, rnd(), radius, kind);
+  aT.setXYZW(i, life, rise, grow, alpha);
+  puffGeo.instanceCount = Math.max(puffGeo.instanceCount, i + 1);
+}
+function commitPuffs() {
+  if (pdirtyFrom < 0) return;
+  const a = pdirtyFrom, n = pdirtyN, run = Math.min(n, PCAP - a);
+  for (const at of [aQ, aR, aS, aT]) {
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
+  }
+  pdirtyFrom = -1; pdirtyN = 0;
+}
+
+/* ---------- launch: one flight on the sim clock ---------- */
+// The ignition runs 3 s before liftoff; the plume is gone by T+80.
+const PRE = 3, END = 83;
+let flight = null;
+const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3(), tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+// launch(kind) builds the flight and returns its paused GSAP timeline.
+function launch(kind, padX) {
+  const D = DIST[ui.setting('distance').value] ?? DIST.mid;
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false };
+  PU.uScale.value = D;
+  f.tl = gsap.timeline({ paused: true })
+    // Ignition: a flash, then the engines burn on the pad.
+    .to(f, { flash: 1, duration: 0.06, ease: 'none' }, 0)
+    .to(f, { flash: 0, duration: 1.8, ease: 'power2.out' }, 0.06)
+    .to(f, { engine: 0.6, duration: 0.5 }, 0)
+    .to(f, { engine: 1, duration: 1.2 }, PRE - 0.6)
+    // Main engine cut-off: the moving star fades out.
+    .to(f, { engine: 0, duration: 4, ease: 'power1.in' }, PRE + 52)
+    .set(f, { done: true }, END);
+  if (f.k.boosters) f.tl.call(() => separate(f), null, PRE + 18);
+  return f;
+}
+// Two spent boosters fall away as sparks with short trails.
+function separate(f) {
+  rocketAt(f, 18, rp);
+  for (const s of [-1, 1]) {
+    rv.set(s * f.D * 0.004, -f.D * 0.002, (rnd() - 0.5) * f.D * 0.002);
+    writeStar(rp, simT, rv, 0.25, 2, 9, 2.4, 2.2, 2, 0.9);
+  }
+}
+// Advance the flight to its own time and emit what it sheds.
+function flyTo(f) {
+  const te = simT - f.start;
+  f.tl.time(Math.min(te, END));
+  const t = te - PRE, k = f.k, D = f.D;
+  rocketAt(f, t, rp);
+  rocketAt(f, t - 0.05, rq);
+  const eng = f.engine, h = altKm(t, k);
+  const dist = rp.distanceTo(camera.position);
+  // The flame dims to a star as it climbs away.
+  const w = eng * (1 - 0.55 * THREE.MathUtils.smoothstep(h, 10, 60)) + f.flash * (reduced() ? 1.2 : 3);
+  U.uFlame.value.set(rp.x, rp.y, rp.z, w);
+  U.uAir.value = 1 - 0.85 * THREE.MathUtils.smoothstep(h, 1, 20);
+  FU.uAxis.value.copy(rq).sub(rp);
+  if (FU.uAxis.value.lengthSq() < 1e-6) FU.uAxis.value.set(0, -1, 0);
+  FU.uAxis.value.normalize();
+  FU.uSize.value = D * 0.0028 * k.flame * (1 - 0.6 * THREE.MathUtils.smoothstep(h, 8, 50)) * (dist / D);
+  FU.uFlick.value = 0.85 + 0.15 * Math.sin(simT * 53) * Math.sin(simT * 31);
+  flame.visible = eng > 0.01;
+  // Steam: sixty clouds billow sideways from the base in the first 8 s.
+  const steamDue = Math.min(60, Math.floor(THREE.MathUtils.clamp((te - 0.2) / 8, 0, 1) * 60));
+  while (f.steam < steamDue) {
+    const s = f.steam++ % 2 ? 1 : -1;
+    tmpA.set(f.x + (rnd() - 0.5) * D * 0.004, 4, f.z + (rnd() - 0.5) * D * 0.004);
+    rv.set(s * D * (0.006 + 0.022 * rnd()), D * 0.0008 * rnd(), (rnd() - 0.5) * D * 0.01);
+    writePuff(tmpA, f.start + (te - 0.01), rv, 0.32, 0, D * (0.012 + 0.02 * rnd()) * k.plume, 1, 45 + rnd() * 10, D * 0.0012, 3 + rnd() * 3, 0.5);
+  }
+  // Exhaust: walk the path since the last puff and drop one each spacing.
+  const q = quality() === 'high' ? 1 : 2.3;
+  if (t > 0 && eng > 0.05) {
+    let tt = f.emitT;
+    tmpB.copy(rocketAt(f, tt, tmpA));
+    while (tt < t) {
+      tt = Math.min(t, tt + 0.02);
+      rocketAt(f, tt, tmpA);
+      f.acc += tmpA.distanceTo(tmpB);
+      tmpB.copy(tmpA);
+      const hh = altKm(tt, k), hi = THREE.MathUtils.smoothstep(hh, 22, 75);
+      const gap = D * (0.0005 + 0.0016 * hi) * q / k.plume;
+      if (f.acc < gap) continue;
+      f.acc = 0;
+      // High up the exhaust flies outward: the bell opens round the engine.
+      const n = 1 + Math.round(10 * hi / q);
+      rocketAt(f, tt - 0.05, rq);
+      const back = rq.sub(tmpA).normalize();
+      for (let j = 0; j < n; j++) {
+        rv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).addScaledVector(back, -rv.dot(back)).normalize();
+        // One speed for every puff of a step: they form a shell, the bell.
+        rv.multiplyScalar(D * (0.0008 + 0.015 * hi) * (0.92 + 0.08 * rnd())).addScaledVector(back, D * 0.002 * (1 + hi * 4));
+        const r = D * (0.006 + 0.018 * hi + 0.008 * hi * rnd()) * k.plume;
+        const life = Math.max(4, Math.min(55, END - PRE - tt - rnd() * 6));
+        writePuff(tmpA, f.start + PRE + tt, rv, 0.3 - 0.15 * hi, hh, r, 0, life, 0, 2.5 + hh * 0.06, 0.45 - 0.39 * hi);
+      }
+    }
+    f.emitT = tt;
+  }
+  // Sparks shed from the base for the first 4 s.
+  if (t > -0.5 && t < 4) {
+    const due = Math.floor((t + 0.5) * 50);
+    while (f.sparkT < due) {
+      f.sparkT++;
+      rv.set((rnd() - 0.5) * 40, -10 - rnd() * 30, (rnd() - 0.5) * 40);
+      writeStar(rp, simT - rnd() * 0.03, rv, 1.2, rnd() < 0.5 ? 0 : 2, 0.5 + rnd() * 0.7, 0.12, 1.2, 2, 0.6);
+    }
+  }
+  if (f.done) endFlight();
+}
+function endFlight() {
+  flight = null;
+  follow = false;
+  U.uFlame.value.w = 0;
+  flame.visible = false;
+  ui.action('launch').disabled = false;
+}
+// The pad sits on the far shore below a screen x in -1..1.
+function padBelow(ndcX) {
+  const D = DIST[ui.setting('distance').value] ?? DIST.mid;
+  camera.updateMatrixWorld();
+  tmpA.set(ndcX, 0, 0.5).unproject(camera).sub(camera.position).normalize();
+  // Cast along the ground plane only; the pitch does not move the pad.
+  const dx = tmpA.x / Math.max(1e-3, -tmpA.z);
+  return THREE.MathUtils.clamp(dx * D, -D * 0.8, D * 0.8);
+}
+function start(ndcX) {
+  if (flight) { follow = !follow; wake(); return; }
+  flight = launch(opts.kind, padBelow(ndcX));
+  // A tall stage follows the climb from the start, so the turn stays in frame.
+  follow = size.w < size.h;
+  ui.action('launch').disabled = true;
+  wake();
+}
+// A launch from the button or Space starts left of centre, so the turn stays in frame.
+act.launch = () => start(size.w < size.h ? -0.45 : -0.2);
+let follow = false;
+const auto = { pitch: 0, yaw: 0 };
+
 /* ---------- K2: bloom ---------- */
 // Bloom on a float target; only bright sources cross the threshold.
 function makeBloom(strength, radius, threshold) {
@@ -852,6 +1231,8 @@ const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.45
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
+const orbPass = makeOrbs();
+composer.addPass(orbPass);
 const bloomPass = makeBloom(...POST.bloom);
 composer.addPass(bloomPass);
 const grade = makeGrade(POST);
@@ -862,13 +1243,30 @@ composer.addPass(new OutputPass());
 let size = { w: 1, h: 1, dpr: 1 };
 // The look offset from a drag, in radians.
 const look = { yaw: 0, pitch: 0 };
+let baseUp = 0;
+// The follow view keeps the rocket a third down from the top.
+function aimFollow(dt) {
+  let tp = 0, ty = 0;
+  if (follow && flight) {
+    const p = U.uFlame.value, dx = p.x - camera.position.x, dz = p.z - camera.position.z;
+    const elev = Math.atan2(p.y - EYE, Math.hypot(dx, dz));
+    tp = THREE.MathUtils.clamp(elev - baseUp - Math.atan(0.3 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) - look.pitch, 0, 1.0);
+    ty = -Math.atan2(dx, -dz) * 0.6;
+  }
+  const e = 1 - Math.exp(-dt * (reduced() ? 6 : 1.5));
+  auto.pitch += (tp - auto.pitch) * e;
+  auto.yaw += (ty - auto.yaw) * e;
+}
+// The flame's glow goes in the post pass as an orb.
+const orbList = () => (flight && U.uFlame.value.w > 0.01 ? [{ pos: tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z), color: [1, 0.6, 0.3], size: 0.4 + 0.4 * U.uAir.value + flight.flash * 2.5, k: U.uFlame.value.w * (0.12 + 0.3 * U.uAir.value) }] : []);
 // The horizon sits low: the climb needs a tall sky.
 function frame() {
   const portrait = size.w < size.h;
   camera.fov = portrait ? 62 : 40;
   camera.aspect = size.w / size.h;
   const hf = portrait ? 0.78 : 0.7;
-  camera.rotation.set(Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) + look.pitch, look.yaw, 0);
+  baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  camera.rotation.set(baseUp + look.pitch + auto.pitch, look.yaw + auto.yaw, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
@@ -895,7 +1293,9 @@ let visible = !document.hidden;
 function draw() {
   if (!visible) return;
   commitStars();
+  commitPuffs();
   renderMirror();
+  placeOrbs(orbPass, orbList());
   composer.render();
 }
 
@@ -903,7 +1303,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
-const busy = () => !!press;
+const busy = () => !!press || !!flight || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -914,9 +1314,11 @@ function tick(now) {
   pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
   const lively = busy();
   try {
-    simT += dt * pace;
+    simT += dt;
     U.uTime.value = simT;
     U.uSway.value = pace;
+    if (flight) flyTo(flight);
+    aimFollow(dt);
     if (lively || now - lastDraw >= 31) {
       frame();
       draw();
@@ -953,7 +1355,7 @@ whenVisible(stage, vis => {
 });
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
-onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; wake(); });
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; PU.uShear.value = on ? 0 : 1; wake(); });
 
 /* Pointer: a press turns into a look drag after 8 px; a short release is a tap. */
 let press = null;
@@ -975,10 +1377,11 @@ stage.addEventListener('pointermove', e => {
 });
 const end = e => {
   if (!press || e.pointerId !== press.id) return;
-  const tap = !press.drag && performance.now() - press.at < 260;
+  const tap = e.type === 'pointerup' && !press.drag && performance.now() - press.at < 260;
+  const r = stage.getBoundingClientRect(), ndcX = ((press.x - r.left) / r.width) * 2 - 1;
   press = null;
   stage.classList.remove('held');
-  if (tap) act.launch();
+  if (tap) start(ndcX);
   wake();
 };
 stage.addEventListener('pointerup', end);
@@ -988,7 +1391,7 @@ stage.addEventListener('lostpointercapture', end);
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
   e.preventDefault();
-  act.launch();
+  if (flight) { follow = !follow; wake(); } else act.launch();
 });
 
 function setDistance(v) { buildShore(DIST[v] ?? DIST.mid); draw(); }
