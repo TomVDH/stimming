@@ -43,7 +43,7 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 - [x] walker
 - [ ] balloons
 - [x] lava
-- [ ] tvtree
+- [x] tvtree
 
 ## Batch 6
 - [ ] coil
