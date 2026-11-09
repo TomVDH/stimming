@@ -62,6 +62,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createNoise2D } from 'simplex-noise';
+import { gsap } from 'gsap';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
@@ -89,8 +90,6 @@ const ui = initPage({ id: 'meteor', bar: {
   quality: true,
   keys: [['click', 'meteor'], ['drag', 'look around'], ['space', 'shower']],
 } });
-// The meteors arrive in Task 2; until then Shower does nothing.
-ui.action('shower').disabled = true;
 
 // Seeded random keeps the cove the same on every load.
 let seed = 1977;
@@ -146,6 +145,11 @@ const U = {
   uHB: { value: new THREE.Vector4(HB.x0, HB.z0, 1 / HB.w, 1 / HB.d) },
   // Mean sea level: drop, trough front, return crest, return height.
   uLevel: { value: new THREE.Vector4(0, 0, 0, 0) },
+  // The one moving light: position and intensity, then its colour.
+  uFireball: { value: new THREE.Vector4(0, 1000, -3000, 0) },
+  uFireCol: { value: new THREE.Vector3(1, 1, 1) },
+  // Shadow march steps; the ladder halves them.
+  uShSteps: { value: 16 },
 };
 
 /* ---------- K2: noise ---------- */
@@ -169,6 +173,18 @@ float k2fbm(vec2 p) {
 const K2_SKY = /* glsl */`
 uniform vec3 uZen, uMid, uBand, uAnti, uSun;
 uniform float uStars;
+uniform vec4 uFireball;
+uniform vec3 uFireCol;
+// Glow that a view ray collects in the air round the meteor.
+// It replaces Fireworks' burstGlow: one light, not eight.
+vec3 fireGlow(vec3 dir) {
+  if (uFireball.w < 1e-4) return vec3(0.0);
+  vec3 v = normalize(uFireball.xyz - cameraPosition);
+  float c = dot(dir, v) - 1.0;
+  // A tight core, a halo, a wide lift, and a flash over the whole sky.
+  float g = 0.08 * exp(c * 400.0) + 0.04 * exp(c * 40.0) + 0.02 * exp(c * 4.0) + 0.006 * exp(-max(dir.y, 0.0) * 2.0);
+  return uFireCol * uFireball.w * g;
+}
 float k2stars(vec3 dir) {
   vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
   vec2 i = floor(q), f = fract(q) - 0.5;
@@ -194,7 +210,7 @@ vec3 duskGlow(vec3 dir) {
 vec3 k2sky(vec3 dir) {
   vec3 col = duskGlow(dir);
   col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * 2.5 * uStars * smoothstep(0.03, 0.25, dir.y);
-  return col;
+  return col + fireGlow(dir);
 }`;
 /* ---------- end K2 ---------- */
 
@@ -212,7 +228,7 @@ float k2hazeAmount(vec3 P) {
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
   return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
 }
-vec3 k2hazeColor(vec3 dir) { return duskGlow(normalize(vec3(dir.x, 0.04, dir.z))) * 0.9; }
+vec3 k2hazeColor(vec3 dir) { return duskGlow(normalize(vec3(dir.x, 0.04, dir.z))) * 0.9 + fireGlow(dir) * 0.8; }
 vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
@@ -236,6 +252,29 @@ float hAt(vec2 xz) {
   vec2 uv = (xz - uHB.xy) * uHB.zw;
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return -30.0;
   return texture2D(tHeight, uv).r;
+}
+uniform float uShSteps;
+// March the height field from P along D: 1 is clear, 0 is blocked.
+// Steps grow so any step count reaches about 1.5 km.
+float march(vec3 P, vec3 D, float steps, float t0, out float tHit) {
+  float o = 1.0, t = t0, r = pow(500.0, 1.0 / steps);
+  tHit = 0.0;
+  for (int i = 0; i < 18; i++) {
+    if (float(i) >= steps) break;
+    vec3 Q = P + D * t;
+    float k = clamp((Q.y - hAt(Q.xz)) / (0.03 * t), 0.0, 1.0);
+    if (k < o) { o = k; tHit = t; }
+    if (o < 0.01 || Q.y > 140.0) break;
+    t *= r;
+  }
+  return o;
+}
+// The meteor's light at P, with the soft shadow of the land between.
+vec3 fireLight(vec3 P, vec3 Ng, out vec3 L) {
+  L = normalize(uFireball.xyz - P);
+  if (uFireball.w < 1e-3) return vec3(0.0);
+  float th;
+  return uFireCol * uFireball.w * march(P + Ng * 0.4, L, uShSteps, 3.0, th);
 }
 // Mean water level: a trough that runs in from the sea, then a returning crest.
 float level(vec2 xz) {
@@ -371,10 +410,14 @@ const land = new THREE.Mesh(terrainGeometry(), new THREE.ShaderMaterial({
     float wet = (1.0 - smoothstep(0.25, 0.8, vP.y - level(vP.xz))) * (1.0 - cliff);
     alb *= 1.0 - 0.5 * wet;
     vec3 col = alb * skyLight(N);
+    // The meteor lights the land; the headland throws its shadow.
+    vec3 L;
+    vec3 fl = fireLight(vP, normalize(vN), L);
+    col += alb * fl * max(dot(N, L), 0.0);
     vec3 R = reflect(V, N);
     R.y = abs(R.y);
     float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-V, N), 0.0), 5.0);
-    col += wet * fres * duskGlow(R) * 0.8;
+    col += wet * fres * (duskGlow(R) * 0.8 + fl * 3.0 * pow(max(dot(R, L), 0.0), 80.0));
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 }));
@@ -439,20 +482,6 @@ const sea = new THREE.Mesh(seaGeometry(), new THREE.ShaderMaterial({
     gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
   }`,
   fragmentShader: /* glsl */`varying vec3 vP; varying vec2 vXZ; varying float vFade; uniform float uSteps; ${HEAD} ${SEA_GLSL}
-  // Terrain along the mirrored ray: 1 is open sky, 0 is the headland.
-  float occlusion(vec3 P, vec3 R, out float tHit) {
-    float o = 1.0, t = 3.0;
-    tHit = 0.0;
-    for (int i = 0; i < 18; i++) {
-      if (float(i) >= uSteps) break;
-      vec3 Q = P + R * t;
-      float k = clamp((Q.y - hAt(Q.xz)) / (0.03 * t), 0.0, 1.0);
-      if (k < o) { o = k; tHit = t; }
-      if (o < 0.01 || Q.y > 120.0) break;
-      t *= 1.42;
-    }
-    return o;
-  }
   void main() {
     vec3 v = vP - cameraPosition;
     float dist = length(v);
@@ -473,7 +502,8 @@ const sea = new THREE.Mesh(seaGeometry(), new THREE.ShaderMaterial({
     vec3 R = reflect(V, N);
     R.y = abs(R.y) + 0.002;
     float tHit;
-    float open = occlusion(vP, R, tHit);
+    // The headland in the mirrored ray: 1 is open sky.
+    float open = march(vP, R, uSteps, 3.0, tHit);
     // The headland mirrors as a dark mass; haze softens it with distance.
     vec3 cliffC = vec3(0.1) * skyLight(-R);
     cliffC = mix(cliffC, k2hazeColor(R), 1.0 - exp(-tHit * uHaze * 2.0));
@@ -489,7 +519,16 @@ const sea = new THREE.Mesh(seaGeometry(), new THREE.ShaderMaterial({
     float fn = k2noise(vXZ * vec2(0.9, 1.6) + vec2(0.0, uTime * 0.4)) * 0.6 + k2noise(vXZ * 3.1 - uTime * 0.3) * 0.4;
     float shore = 1.0 - smoothstep(0.0, 0.45, d);
     float foam = smoothstep(0.35, 0.75, fn * (0.4 + shore)) * shore;
-    col = mix(col, vec3(0.8, 0.83, 0.85) * (skyLight(vec3(0.0, 1.0, 0.0)) + 0.25 * duskGlow(normalize(vec3(uSun.x, 0.3, uSun.z)))), foam * 0.85);
+    // The meteor lays a path of glints on the waves, broken where the land shades it.
+    vec3 L;
+    vec3 fl = fireLight(vP, vec3(0.0, 1.0, 0.0), L);
+    vec3 Hv = normalize(L - V);
+    float nh = max(dot(N, Hv), 0.0);
+    float hf = 0.02 + 0.98 * pow(1.0 - max(dot(Hv, -V), 0.0), 5.0);
+    col += fl * (pow(nh, 700.0) * 45.0 + pow(nh, 120.0) * 0.1) * hf;
+    col += fl * deep * 2.0 * max(L.y, 0.0);
+    vec3 foamLit = skyLight(vec3(0.0, 1.0, 0.0)) + 0.25 * duskGlow(normalize(vec3(uSun.x, 0.3, uSun.z))) + fl * max(L.y, 0.0);
+    col = mix(col, vec3(0.8, 0.83, 0.85) * foamLit, foam * 0.85);
     gl_FragColor = vec4(k2haze(col, vP), smoothstep(0.0, 0.06, d));
   }`,
 }));
@@ -645,13 +684,154 @@ function velAt(v0, k, t, out) {
 }
 /* ---------- end K6 ---------- */
 
+/* ---------- meteors: head and tail ---------- */
+// One instanced capsule per meteor, from tail to head, as K6 draws a star.
+// The CPU writes each live meteor's ends every frame; there are few.
+const MAXM = 16;
+const HEAD_C = linFit(0.92, 0.08, 150), TAIL_C = linFit(0.75, 0.15, 55), TRAIN_C = linFit(0.7, 0.12, 150);
+const metGeo = new THREE.InstancedBufferGeometry();
+metGeo.setAttribute('position', starGeo.getAttribute('position'));
+metGeo.setIndex(starGeo.getIndex());
+const metAttr = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(MAXM * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  metGeo.setAttribute(name, a);
+  return a;
+};
+// aMH: head xyz, gain. aMT: tail xyz, core width in px.
+const aMH = metAttr('aMH'), aMT = metAttr('aMT');
+metGeo.instanceCount = 0;
+const metMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr,
+    uHeadC: { value: new THREE.Vector3(...HEAD_C) }, uTailC: { value: new THREE.Vector3(...TAIL_C) },
+  },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aMH, aMT;
+  uniform vec2 uRes;
+  uniform float uDpr;
+  varying vec3 vLWH;
+  varying float vS, vY, vG;
+  vec2 scr(vec3 p, out vec4 clip) { clip = projectionMatrix * viewMatrix * vec4(p, 1.0); return clip.xy / clip.w * 0.5 * uRes; }
+  void main() {
+    vec4 c0, c1, c2;
+    vec2 s0 = scr(aMT.xyz, c0), s1 = scr(mix(aMT.xyz, aMH.xyz, 0.5), c1), s2 = scr(aMH.xyz, c2);
+    if (aMH.w < 1e-3 || c0.w <= 0.0 || c2.w <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float L01 = length(s1 - s0), len = L01 + length(s2 - s1);
+    float w = aMT.w * uDpr, W = w * 3.0;
+    int col = int(position.x + 0.5);
+    vec4 c = col == 0 ? c0 : col == 1 ? c1 : c2;
+    vec2 dir = len > 1e-3 ? normalize(s2 - s0) : vec2(0.0, 1.0);
+    float s = col == 0 ? -W : col == 1 ? L01 : len + W;
+    vec2 off = vec2(-dir.y, dir.x) * position.y * W + dir * (col == 0 ? -W : col == 2 ? W : 0.0);
+    c.xy += off / (0.5 * uRes) * c.w;
+    gl_Position = c;
+    vS = s; vY = position.y * W; vLWH = vec3(len, w, W); vG = aMH.w;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uHeadC, uTailC;
+  varying vec3 vLWH;
+  varying float vS, vY, vG;
+  void main() {
+    float len = vLWH.x, W = vLWH.z;
+    float w = max(vLWH.y, 0.8), dim = min(vLWH.y / 0.8, 1.0);
+    float out_ = vS < 0.0 ? -vS : max(vS - len, 0.0);
+    float core = max(exp(-(out_ * out_ + vY * vY) / (w * w) * 1.8) - 0.01, 0.0);
+    // The head burns green-white; the wake cools to orange behind it.
+    float u = clamp(vS / max(len, 1.0), 0.0, 1.0);
+    vec3 col = mix(uTailC * 0.7, uHeadC, smoothstep(0.55, 1.0, u));
+    float trail = 0.03 + 0.97 * pow(u, 2.2);
+    float dh2 = ((vS - len) * (vS - len) + vY * vY) / (W * W);
+    vec3 c = col * core * trail + uHeadC * 0.3 * exp(-dh2 * 3.0);
+    gl_FragColor = vec4(c * vG * dim, 0.0);
+  }`,
+});
+const metMesh = new THREE.Mesh(metGeo, metMat);
+metMesh.frustumCulled = false;
+metMesh.renderOrder = 3;
+scene.add(metMesh);
+/* ---------- end meteors ---------- */
+
+/* ---------- persistent train ---------- */
+// 64 points along the fireball's last path, each drifting in a sheared wind.
+// It glows green, then fades to smoke lit from below.
+const TN = 64;
+const trainGeo = new THREE.BufferGeometry();
+{
+  const ai = [], side = [], idx = [];
+  for (let i = 0; i < TN; i++) { ai.push(i, i); side.push(-1, 1); }
+  for (let i = 0; i < TN - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  trainGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(TN * 6), 3));
+  trainGeo.setAttribute('aI', new THREE.Float32BufferAttribute(ai, 1));
+  trainGeo.setAttribute('aSide', new THREE.Float32BufferAttribute(side, 1));
+  trainGeo.setIndex(idx);
+}
+const TU = {
+  uTP: { value: Array.from({ length: TN }, () => new THREE.Vector3()) },
+  // Glow, smoke opacity, width in metres, unused.
+  uTr: { value: new THREE.Vector4() },
+  uGlowC: { value: new THREE.Vector3(...TRAIN_C) },
+};
+const trainMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...TU, uRes: starMat.uniforms.uRes },
+  // The strip's winding flips as it turns on screen, so both faces draw.
+  transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  // Premultiplied: glow adds, smoke covers.
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute float aI, aSide;
+  uniform vec3 uTP[${TN}];
+  uniform vec4 uTr;
+  uniform vec2 uRes;
+  varying float vU, vSide;
+  void main() {
+    int i = int(aI + 0.5);
+    vec4 c = projectionMatrix * viewMatrix * vec4(uTP[i], 1.0);
+    vec4 ca = projectionMatrix * viewMatrix * vec4(uTP[max(i - 1, 0)], 1.0);
+    vec4 cb = projectionMatrix * viewMatrix * vec4(uTP[min(i + 1, ${TN - 1})], 1.0);
+    vec2 d = (cb.xy / cb.w - ca.xy / ca.w) * uRes;
+    d = length(d) > 1e-4 ? normalize(d) : vec2(1.0, 0.0);
+    vU = aI / ${TN - 1}.0;
+    // The middle is widest; both ends taper.
+    float wm = uTr.z * (0.35 + 0.65 * sin(3.1416 * vU));
+    float px = max(wm * projectionMatrix[1][1] * 0.5 * uRes.y / c.w, 1.2);
+    c.xy += vec2(-d.y, d.x) * aSide * px / (0.5 * uRes) * c.w;
+    vSide = aSide;
+    gl_Position = c;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec4 uTr;
+  uniform vec3 uGlowC, uBand, uZen, uFireCol;
+  uniform vec4 uFireball;
+  varying float vU, vSide;
+  void main() {
+    float prof = exp(-vSide * vSide * 3.0) - exp(-3.0);
+    float ends = smoothstep(0.0, 0.12, vU) * smoothstep(1.0, 0.8, vU);
+    // Brighter toward the burst end, where the fireball shone most.
+    vec3 glow = uGlowC * uTr.x * prof * ends * (0.3 + 0.7 * vU);
+    float a = uTr.y * prof * ends;
+    vec3 smoke = (uBand * 0.25 + uZen * 0.15 + uFireCol * uFireball.w * 0.05) * a;
+    gl_FragColor = vec4(glow + smoke, a);
+  }`,
+});
+const train = new THREE.Mesh(trainGeo, trainMat);
+train.frustumCulled = false;
+train.renderOrder = 2.5;
+train.visible = false;
+scene.add(train);
+/* ---------- end persistent train ---------- */
+
 /* ---------- K2: bloom ---------- */
 // Bloom on a float target; only bright sources cross the threshold.
-// This toy runs it at half size; rung 2 of the ladder drops it to a third.
+// This toy runs it at half size; rung 3 of the ladder drops it to a third.
 function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
-  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.33 : quality() === 'high' ? 0.7 : 0.5; full(Math.max(1, w * m), Math.max(1, h * m)); };
+  bloom.setSize = (w, h) => { const m = rung >= 3 ? 0.33 : quality() === 'high' ? 0.7 : 0.5; full(Math.max(1, w * m), Math.max(1, h * m)); };
   // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
   // A sigma of radius / 2.5 gives each layer a round falloff.
   for (const m of bloom.separableBlurMaterials) {
@@ -750,6 +930,181 @@ function setDusk(v) {
   renderer.toneMappingExposure = lerp(a.exp, b.exp, t);
 }
 
+/* ---------- events: each Size is a timeline on the sim clock ---------- */
+// gsap.timeline({ paused: true }) runs only through tl.time(simT - t0).
+// Each timeline leaves the global timeline, so GSAP's ticker stays idle.
+const rad = THREE.MathUtils.degToRad;
+const dirOf = (az, el) => new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
+const azOf = d => Math.atan2(d.x, -d.z), elOf = d => Math.asin(clamp(d.y, -1, 1));
+const paused = () => { const tl = gsap.timeline({ paused: true }); gsap.globalTimeline.remove(tl); return tl; };
+// Flash in rise seconds, fall with tau 0.35 s, then a glow tail with tau 1.5 s.
+const flash = (age, rise = 0.03) => (age < 0 ? 0 : Math.min(1, age / rise) * (0.78 * Math.exp(-age / 0.35) + 0.22 * Math.exp(-age / 1.5)));
+// A fast flicker on the sim clock, the same on every replay.
+const flick = (t, sd) => 0.82 + 0.18 * (0.5 + 0.5 * noise(t * 14, sd));
+let events = [], queued = null;
+const longOn = () => events.some(e => e.long);
+const along = (ev, p, out = new THREE.Vector3()) => out.copy(ev.S).lerp(ev.E, p);
+
+// A Pebble: a short streak, a soft flash, gone in about a second.
+function pebble(S, E) {
+  const ev = { kind: 'pebble', S, E, t0: simT, sd: rnd() * 100, st: { p: 0, g: 0 }, long: false };
+  const T = 0.6 + rnd() * 0.5;
+  ev.tl = paused();
+  // Reduced motion: the streak only fades in place.
+  if (reduced()) ev.st.p = 0.85;
+  else ev.tl.to(ev.st, { p: 1, duration: T, ease: 'none' }, 0);
+  ev.tl.to(ev.st, { g: 1, duration: T * 0.3, ease: 'power1.out' }, 0).to(ev.st, { g: 0, duration: T * 0.7, ease: 'power2.in' }, T * 0.3);
+  ev.len = T;
+  ev.frame = age => {
+    const g = ev.st.g * flick(age, ev.sd);
+    return { head: along(ev, ev.st.p), tail: along(ev, Math.max(0, ev.st.p - 0.5)), gain: 5 * g, width: 1.5,
+      light: { pos: along(ev, ev.st.p), I: 0.07 * g, mix: 0.2 } };
+  };
+  return ev;
+}
+function pebbleAt(dEnd) {
+  const az = azOf(dEnd), el = Math.max(elOf(dEnd), rad(3)), s = rnd() < 0.5 ? 1 : -1;
+  return pebble(camera.position.clone().addScaledVector(dirOf(az + s * rad(4 + rnd() * 6), el + rad(5 + rnd() * 6)), 3900),
+    camera.position.clone().addScaledVector(dirOf(az, el), 3800));
+}
+
+// A Fireball: it enters low from behind the headland on a shallow path.
+// Its light swings the headland's shadow across the bay toward the tap.
+// It brightens, breaks up, bursts, and leaves a glowing train.
+const FB_T = 4.2, FB_LEN = 25;
+function fireball(dEnd) {
+  const az = azOf(dEnd), el = clamp(elOf(dEnd), rad(2.5), rad(55));
+  const E = camera.position.clone().addScaledVector(dirOf(az, el), 3600);
+  const S = camera.position.clone().addScaledVector(dirOf(az - cliffSide * rad(48 + rnd() * 12), Math.min(el + rad(9 + rnd() * 6), rad(70))), 4200);
+  const ev = { kind: 'fireball', S, E, t0: simT, sd: rnd() * 100, st: { p: 0, g: 0, I: 0 }, long: true, len: FB_LEN };
+  const T = FB_T;
+  // Quadratic ease: the light, and so the shadow, moves fastest just before the burst.
+  ev.tl = paused()
+    .to(ev.st, { p: 1, duration: T, ease: 'power1.in' }, 0)
+    .to(ev.st, { g: 1, duration: 0.25, ease: 'power1.out' }, 0)
+    .to(ev.st, { I: 0.35, duration: T * 0.66, ease: 'power2.in' }, 0)
+    .to(ev.st, { I: 0.8, duration: T * 0.34, ease: 'power1.in' }, T * 0.66)
+    .call(() => breakup(ev), null, T * 0.66)
+    .call(() => makeTrain(ev), null, T);
+  ev.frame = age => {
+    if (age < T) {
+      const f = flick(age, ev.sd), head = along(ev, ev.st.p);
+      return { head, tail: along(ev, Math.max(0, ev.st.p - 0.38)), gain: ev.st.g * (7 + 9 * ev.st.I) * f, width: 2.6,
+        light: { pos: head, I: ev.st.I * f, mix: 0.15 } };
+    }
+    // The airburst: a hard flash at the end point, then the wake fades.
+    const a = age - T, k = Math.exp(-a / 0.25);
+    return { head: ev.E, tail: along(ev, 1 - 0.38 * k), gain: 10 * k, width: 2.6 * (1 + a),
+      light: { pos: ev.E, I: 4 * flash(a, reduced() ? 0.2 : 0.03) * Math.exp(-a / 1.5), mix: 0.15 + 0.7 * (1 - Math.exp(-a / 0.6)) } };
+  };
+  return ev;
+}
+// Fragments shed along the last third of the path, each on K6's drag path.
+const tmp3 = new THREE.Vector3(), vel3 = new THREE.Vector3();
+function breakup(ev) {
+  const T = FB_T, D = tmp3.copy(ev.E).sub(ev.S);
+  for (let i = 0; i < 40; i++) {
+    const t = T * (0.66 + 0.34 * rnd()), q = t / T;
+    const p0 = along(ev, q * q);
+    // Path speed is d/dt of (t / T)^2, times the path length.
+    vel3.copy(D).multiplyScalar(2 * q / T * (0.8 + 0.15 * rnd()));
+    const sp = vel3.length() * 0.06;
+    vel3.add(new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(sp * 2));
+    writeStar(p0, ev.t0 + t, vel3, 1.2, 0, 0.8 + rnd() * 1.4, 0.18, 1.2 + rnd(), 2, 0.5, 1);
+  }
+}
+// The train lives on its own clock, so a later fireball replaces it.
+let trainEv = null;
+function makeTrain(ev) {
+  const base = [];
+  for (let i = 0; i < TN; i++) base.push(along(ev, 0.45 + 0.55 * (i / (TN - 1))));
+  trainEv = { t0: ev.t0 + FB_T, base, sd: rnd() * 10 };
+}
+function trainFrame() {
+  if (!trainEv) { train.visible = false; return; }
+  const a = simT - trainEv.t0;
+  if (a > 20 || a < 0) { trainEv = null; train.visible = false; return; }
+  train.visible = true;
+  const still = reduced();
+  trainEv.base.forEach((b, i) => {
+    const P = TU.uTP.value[i].copy(b);
+    if (still) return;
+    // Wind shears with height, so the train bends and twists as it drifts.
+    P.x += 16 * Math.sin(b.y / 300 + 1.3 + trainEv.sd) * a;
+    P.z += 12 * Math.cos(b.y / 240 + trainEv.sd) * a;
+    P.y += 3 * Math.sin(i * 0.21 + a * 0.4) * a;
+  });
+  TU.uTr.value.set(1.6 * Math.exp(-a / 5) * Math.min(1, a / 0.2), 0.4 * sm(1, 4, a) * (1 - sm(9, 20, a)), 14 + 5 * a, 0);
+}
+
+// Start an event of the picked Size, or queue it behind a long one.
+function start(kind, d) {
+  // Impact arrives in Task 3; until then it falls as a Fireball.
+  const ev = kind === 'pebble' ? pebbleAt(d) : fireball(d);
+  ev.tl.time(0);
+  events.push(ev);
+  wake();
+}
+function onTap(d) {
+  const kind = sizePick;
+  if (kind === 'pebble' || !longOn()) return start(kind, d);
+  // One tap waits behind a long event; later taps still answer, as Pebbles.
+  if (!queued) queued = { kind, d };
+  else start('pebble', d);
+}
+// A Shower: a dozen Pebbles over 20 s, all fleeing one radiant.
+function shower() {
+  const R = dirOf(-cliffSide * rad(15) + (rnd() - 0.5) * 0.4, rad(45 + rnd() * 15));
+  const tl = paused();
+  for (let i = 0; i < 12; i++) {
+    tl.call(() => {
+      for (let n = 0; n < 8; n++) {
+        const u = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).cross(R).normalize();
+        const a1 = rad(12 + rnd() * 35), a2 = a1 + rad(6 + rnd() * 6);
+        const dS = R.clone().multiplyScalar(Math.cos(a1)).addScaledVector(u, Math.sin(a1));
+        const dE = R.clone().multiplyScalar(Math.cos(a2)).addScaledVector(u, Math.sin(a2));
+        if (dE.y < 0.05) continue;
+        const ev = pebble(camera.position.clone().addScaledVector(dS, 3900), camera.position.clone().addScaledVector(dE, 3800));
+        ev.tl.time(0);
+        events.push(ev);
+        return;
+      }
+    }, null, i * 1.6 + rnd() * 1.4);
+  }
+  events.push({ kind: 'shower', t0: simT, tl, len: 20, long: false, frame: null });
+  wake();
+}
+// Advance every event to the sim clock, then feed the light, meteors and train.
+const black = new THREE.Vector3();
+function stepEvents() {
+  let best = null, n = 0;
+  for (const ev of events) {
+    const age = simT - ev.t0;
+    ev.tl.time(Math.min(age, ev.tl.duration()));
+    if (!ev.frame || age > ev.len) continue;
+    const f = ev.frame(age);
+    if (n < MAXM && f.gain > 1e-3) {
+      aMH.setXYZW(n, f.head.x, f.head.y, f.head.z, f.gain);
+      aMT.setXYZW(n, f.tail.x, f.tail.y, f.tail.z, f.width);
+      n++;
+    }
+    if (f.light && (!best || f.light.I > best.I)) best = f.light;
+  }
+  events = events.filter(ev => simT - ev.t0 <= ev.len);
+  metGeo.instanceCount = n;
+  aMH.needsUpdate = aMT.needsUpdate = true;
+  if (cliffNext && !events.length) applyCliff();
+  if (queued && !longOn()) { const q = queued; queued = null; start(q.kind, q.d); }
+  const F = U.uFireball.value;
+  if (best && best.I > 1e-3) {
+    F.set(best.pos.x, best.pos.y, best.pos.z, best.I);
+    // The light cools from green-white toward orange as the wake takes over.
+    U.uFireCol.value.set(...HEAD_C).lerp(black.set(...TAIL_C), best.mix);
+  } else F.w = 0;
+  trainFrame();
+}
+/* ---------- end events ---------- */
+
 /* ---------- frame and draw ---------- */
 let size = { w: 1, h: 1, dpr: 1 };
 // The camera stands on the pebble bank; drag turns the head.
@@ -774,12 +1129,13 @@ function frame() {
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks bloom and the march.
+  // Rung 1 drops the pixel ratio, rung 2 halves the marches, rung 3 shrinks bloom.
   size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
   SU.uSteps.value = rung >= 2 ? 10 : 18;
+  U.uShSteps.value = rung >= 2 ? 8 : 16;
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
@@ -798,7 +1154,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
-const busy = () => !!press || simT < lastDeath;
+const busy = () => !!press || events.length > 0 || !!queued || !!trainEv || simT < lastDeath;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -813,6 +1169,7 @@ function tick(now) {
     simT += dt * (lively ? 1 : pace);
     U.uTime.value = simT;
     if (lively || now - lastDraw >= 31) {
+      stepEvents();
       draw();
       watch(now, lively);
       lastDraw = now;
@@ -836,7 +1193,7 @@ function watch(now, lively) {
   if (now - watchFrom < 4000) return;
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
-  if (watchSum / watchN > (lively ? 1000 / 38 : 1000 / 22) && rung < 2) { rung++; resize(); }
+  if (watchSum / watchN > (lively ? 1000 / 38 : 1000 / 22) && rung < 3) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
@@ -849,13 +1206,14 @@ new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
 onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; wake(); });
 
-/* Pointer: a drag looks around; a tap brings a meteor (Task 2). */
+/* Pointer: a drag looks around; a tap brings a meteor there. */
 // A press turns into a drag after 8 px, or a hold after 260 ms.
 let press = null;
 const LOOK = { yaw: 0.6, pitch: 0.16 };
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
-  stage.setPointerCapture(e.pointerId);
+  // Capture can fail for a pointer the browser no longer tracks.
+  try { stage.setPointerCapture(e.pointerId); } catch {}
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), drag: false, yaw: look.yaw, pitch: look.pitch };
   wake();
 });
@@ -873,14 +1231,20 @@ stage.addEventListener('pointermove', e => {
 });
 const endPress = e => {
   if (!press || e.pointerId !== press.id) return;
+  const tap = e.type === 'pointerup' && !press.drag;
   press = null;
+  if (tap) {
+    const r = stage.getBoundingClientRect();
+    const ndc = new THREE.Vector3(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1, 0.5);
+    onTap(ndc.unproject(camera).sub(camera.position).normalize());
+  }
   stage.classList.remove('look');
   wake();
 };
 stage.addEventListener('pointerup', endPress);
 stage.addEventListener('pointercancel', endPress);
 stage.addEventListener('lostpointercapture', endPress);
-// Space calls a shower once the meteors exist.
+// Space starts a shower.
 stage.addEventListener('keydown', e => {
   if (e.code !== 'Space') return;
   e.preventDefault();
@@ -889,17 +1253,21 @@ stage.addEventListener('keydown', e => {
 
 /* ---------- settings ---------- */
 act.dusk = v => { setDusk(v); draw(); wake(); };
+act.shower = () => shower();
 act.letterbox = v => { letterbox = v; frame(); draw(); };
-act.cliff = v => {
-  // No event is in flight yet, so the cove rebuilds at once.
-  cliffSide = v === 'right' ? -1 : 1;
+// A new cliff side waits until no event is in flight.
+let cliffNext = null;
+act.cliff = v => { cliffNext = v; if (!events.length) applyCliff(); };
+function applyCliff() {
+  cliffSide = cliffNext === 'right' ? -1 : 1;
+  cliffNext = null;
   land.geometry.dispose();
   land.geometry = terrainGeometry();
   bakeHeight();
   setDusk(dusk);
   frame();
   draw();
-};
+}
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.

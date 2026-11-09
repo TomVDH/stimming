@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:41:23Z
-updated_at: 2026-11-09T07:54:39Z
+updated_at: 2026-11-09T08:09:53Z
 ---
 
 Coast and meteor (`meteor`), plan `docs/plans/meteor.md`. Rank 10. Uses K2 and K6 from `fireworks/index.html`. Bar v2.
@@ -16,8 +16,9 @@ Not Window seat (`stimming-w1nd`): that toy looks down from 11 km at night, thro
 
 - [x] Task 1: lift K2 and K6 from Fireworks; terrain, sea, dusk sky
 - [x] Task 1: Q1, Q2, stills at 1280 and 375 px at three Dusk values
-- [ ] Task 1: blockout checkpoint with Tom (stills sent 2026-11-09, waiting)
-- [ ] Task 2: Pebble and Fireball: moving light, shadow march, glitter, head, tail, fragments, flash, train
+- [x] Task 1: blockout checkpoint with Tom (signed off 2026-11-09)
+- [x] Task 2: Pebble and Fireball: moving light, shadow march, glitter, head, tail, fragments, flash, train
+- [ ] Task 2: checkpoint with Tom (stills sent 2026-11-09, waiting)
 - [ ] Task 3: Impact: flash dome, shock ring, condensation dome, steam, draw-back, return
 - [ ] Task 4: Sound
 - [ ] Task 5: Bar, Settings, persistence; Q1 to Q10
@@ -34,3 +35,13 @@ Not Window seat (`stimming-w1nd`): that toy looks down from 11 km at night, thro
 - Kit changes in this copy only: K2 sky has dusk palettes (three keyframes) in place of the night sky; K2 grade gains a letterbox; K2 bloom runs at half size. K6 has 4096 slots, meteor ramps, no cloud veil and no fish, willow or glitter kinds.
 - Drag looks around (yaw 34 deg, pitch 9 deg). Tap does nothing yet.
 - Stills: side-session notes folder, `meteor-*.png`.
+
+## Task 2 (2026-11-09)
+
+- `uFireball` (position, intensity) and `uFireCol` feed the sky, haze, land and sea. `march()` walks `heightTex` toward the light (16 steps; rung 2 drops it to 8, before bloom at rung 3); the sea reflection uses the same march.
+- Fireball: enters low from behind the headland, 48 to 60 deg round from the tap, on a shallow path (`power1.in`, so the shadow moves fastest before the burst). Breakup at two thirds sheds 40 K6 fragments; the airburst flashes (Fireworks flash curve, 200 ms rise in reduced motion); the persistent train (64 points, sheared wind) glows green and fades to smoke over 20 s.
+- Pebble: a short streak and a soft light; reduced motion fades it in place. Shower: 12 Pebbles over 20 s from one radiant.
+- Each Size is a paused GSAP timeline, removed from the global timeline, driven by `tl.time(simT - t0)`.
+- Queue: one tap waits behind a long event; later taps answer as Pebbles. A Cliff change waits until no event is in flight.
+- Impact still falls as a Fireball until Task 3.
+- Not verified: the live frame loop (rAF counts, sleep) and real pointer taps; the pane stayed hidden, so checks ran through a probe page.
