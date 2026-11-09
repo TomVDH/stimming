@@ -1,11 +1,11 @@
 ---
 # stimming-x4qk
 title: 'Toy: Ink in water'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-08T10:08:28Z
-updated_at: 2026-11-09T07:26:15Z
+updated_at: 2026-11-09T07:33:14Z
 ---
 
 Ink in water (`ink`, idea 35). Ink drops fall into a tall, still tank of dark water as vortex rings, break into fingers, and glow in side light.
@@ -26,7 +26,7 @@ Plan: `docs/plans/ink.md`. D3: WebGPU only on three.js 0.186.1, as Fire (Tom, 20
 - [x] Task 5: bar, Settings, toys.json, menu Lab entry, QA (Q1, Q2, Q3, Q7 and Q9 pass; Q6 checked in code; Tom skipped Q4 and Q8, 2026-11-08)
 - [x] Tom, 2026-11-08: main shelf as No. 32 (Beta); emblem in shared/emblems/ink.svg; the menu icon gains a light wedge from the upper left
 - [x] Icons: five pointer-driven directions in spike 16 (A Stir, B Drop, C Thread, D Light, E Mix), on the sheet; Tom picks A, Stir: on the menu, emblem swapped, pick recorded
-- [ ] Record the session cost
+- [x] Record the session cost: the app shows no cost per session. The session ran on Opus 5.5, compacted once, and stands at 250k tokens of context.
 
 
 ## Notes
@@ -52,3 +52,8 @@ Tom renames the toy to Ink Water. The Dutch name is Inktwater, ˈɪŋktˌʋaːt�
 - The page draws only after a sim step; catch-up is two steps at most.
 - Standard's ink grid is 1.5x, not 2x.
 - High, Backlit: a draw falls from about 68 ms to about 5 to 8 ms (probe, background tab).
+
+## Summary of Changes
+
+Tom signs off Ink Water on 2026-11-09. It carries `data-done` on its intro and menu entry. The version steps to 0.7, codename Inktwater.
+The toy runs K3 on WebGPU, with the ink on a finer grid than the flow. Backlit is the default light. The menu logo is a bloom traced from the toy.
