@@ -3669,50 +3669,66 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
   }
   // A neat street grid at a calm glow. Hover sends a bright band out from the source;
   // it fades behind itself, as the toy's front does. The path follows the pointer.
+  // Each hover draws a new city: a random source, avenue and street costs.
   // Lab icons get only play and rest, so this icon tracks the pointer itself.
   {
     const el0 = $('dijkstra'), gC = $('dijkstra-cold'), gL = $('dijkstra-lit'), gT = $('dijkstra-tips');
     const path = $('dijkstra-path'), srcM = $('dijkstra-src'), tgtM = $('dijkstra-tgt');
-    const n = 7, S = 12, O = 26, AVE = 2, SRC = 42, TGT = 6;
-    // A full, even grid centred on the tile; row 2 is a fast avenue.
+    const n = 7, S = 12, O = 26, BASE = 0.24, DECAY = 28;
+    // A full, even grid centred on the tile.
     const X = [], Y = [], E = [];
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { X.push(O + i * S); Y.push(O + j * S); }
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-      if (i < n - 1) E.push([j * n + i, j * n + i + 1, j === AVE ? 0.5 : 1]);
-      if (j < n - 1) E.push([j * n + i, (j + 1) * n + i, 1]);
+      if (i < n - 1) E.push([j * n + i, j * n + i + 1, j, -1]);
+      if (j < n - 1) E.push([j * n + i, (j + 1) * n + i, -1, i]);
     }
-    const w = E.map(([, , m]) => S * m);
-    const d = X.map(() => Infinity), par = X.map(() => -1), done = X.map(() => false);
-    d[SRC] = 0;
-    for (;;) {
-      let u = -1;
-      X.forEach((_, i) => { if (!done[i] && d[i] < Infinity && (u < 0 || d[i] < d[u])) u = i; });
-      if (u < 0) break;
-      done[u] = true;
-      E.forEach(([a, b], k) => { const v = a === u ? b : b === u ? a : -1; if (v >= 0 && d[u] + w[k] < d[v]) { d[v] = d[u] + w[k]; par[v] = u; } });
-    }
-    const MAX = Math.max(...d), BASE = 0.24, DECAY = 28;
     const NSV = 'http://www.w3.org/2000/svg', mk = (tag, parent, attrs = {}) => { const e = document.createElementNS(NSV, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.append(e); return e; };
     E.forEach(([a, b]) => mk('line', gC, { x1: X[a], y1: Y[a], x2: X[b], y2: Y[b] }));
-    // Each street lights from its nearer end; its colour is set once by distance.
-    const heat = t => `oklch(${(0.84 - 0.24 * t).toFixed(2)} ${(0.11 + 0.02 * t).toFixed(2)} ${(82 - 34 * t).toFixed(0)})`;
-    const ends = E.map(([a, b]) => (d[a] <= d[b] ? [a, b] : [b, a]));
-    // A calm base glow on every street, and a hot layer the band draws on top.
-    E.forEach((_, k) => { const [p, q] = ends[k]; mk('line', gL, { x1: X[p], y1: Y[p], x2: X[q], y2: Y[q], stroke: heat(d[p] / MAX), opacity: BASE }); });
+    const base = E.map(() => mk('line', gL, { opacity: BASE }));
     const gH = mk('g', gL.parentNode, { 'stroke-width': 1.9, 'stroke-linecap': 'round' });
     gL.parentNode.insertBefore(gH, gL.nextSibling);
-    const lit = E.map((_, k) => mk('line', gH, { x1: X[ends[k][0]], y1: Y[ends[k][0]], stroke: heat(d[ends[k][0]] / MAX), opacity: 0 }));
+    const lit = E.map(() => mk('line', gH, { opacity: 0 }));
     gT.remove();
     // The old path fades out while the new one draws on.
     const ghost = mk('polyline', path.parentNode, { fill: 'none', stroke: '#fff', 'stroke-width': 2.4, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: 0 });
     path.parentNode.insertBefore(ghost, path);
-    const f = v => v.toFixed(2);
+    const heat = t => `oklch(${(0.84 - 0.24 * t).toFixed(2)} ${(0.11 + 0.02 * t).toFixed(2)} ${(82 - 34 * t).toFixed(0)})`;
+    const f = v => v.toFixed(2), pick = a => a[Math.floor(Math.random() * a.length)];
+    // The outer ring of junctions: sources and default targets sit there.
+    const RIM = X.map((_, i) => i).filter(i => i % n === 0 || i % n === n - 1 || i < n || i >= n * (n - 1));
+    let w = [], d = [], par = [], ends = [], MAX = 1, SRC = 0, TGT = 0, tgt = 0;
+    // A new city: one fast avenue each way and jittered costs, so routes wander.
+    const reroll = () => {
+      const ar = Math.floor(Math.random() * n), ac = Math.floor(Math.random() * n);
+      w = E.map(([, , r, c]) => S * (r === ar || c === ac ? 0.5 : 0.6 + Math.random() * 0.9));
+      SRC = pick(RIM);
+      d = X.map(() => Infinity); par = X.map(() => -1);
+      const done = X.map(() => false);
+      d[SRC] = 0;
+      for (;;) {
+        let u = -1;
+        X.forEach((_, i) => { if (!done[i] && d[i] < Infinity && (u < 0 || d[i] < d[u])) u = i; });
+        if (u < 0) break;
+        done[u] = true;
+        E.forEach(([a, b], k) => { const v = a === u ? b : b === u ? a : -1; if (v >= 0 && d[u] + w[k] < d[v]) { d[v] = d[u] + w[k]; par[v] = u; } });
+      }
+      MAX = Math.max(...d);
+      // The default target is a far rim junction.
+      const far = RIM.filter(i => d[i] > MAX * 0.7);
+      TGT = far.length ? pick(far) : RIM.reduce((a, i) => (d[i] > d[a] ? i : a), RIM[0]);
+      ends = E.map(([a, b]) => (d[a] <= d[b] ? [a, b] : [b, a]));
+      E.forEach((_, k) => {
+        const [p, q] = ends[k], c = heat(d[p] / MAX);
+        Object.entries({ x1: X[p], y1: Y[p], x2: X[q], y2: Y[q], stroke: c }).forEach(([key, v]) => base[k].setAttribute(key, v));
+        Object.entries({ x1: X[p], y1: Y[p], stroke: c }).forEach(([key, v]) => lit[k].setAttribute(key, v));
+      });
+      gsap.to(srcM, { attr: { x: X[SRC] - 3, y: Y[SRC] - 3 }, duration: 0.25, ease: 'power2.out', overwrite: true });
+    };
     const ptsTo = t => { const a = []; for (let v = t; v >= 0; v = par[v]) a.unshift(`${X[v]},${Y[v]}`); return a.join(' '); };
-    let tgt = TGT, on = false, at = null;
     // W is the band's place in distance units; past the grid it rests.
-    const st = { W: MAX + 400, draw: 1 };
+    const st = { W: 1e6, draw: 1 };
     const draw = () => {
-      E.forEach(([a, b], k) => {
+      E.forEach((_, k) => {
         const [p, q] = ends[k], L = lit[k], age = st.W - d[p];
         // The hot line runs down the street, then fades back to the calm glow.
         const fr = Math.min(1, Math.max(0, age / w[k]));
@@ -3747,16 +3763,22 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
       X.forEach((x, i) => { const dd = Math.hypot(x - q[0], Y[i] - q[1]); if (i !== SRC && dd < bd) { bd = dd; best = i; } });
       return best;
     };
-    let band = null;
+    reroll();
+    tgt = TGT;
+    path.setAttribute('points', ptsTo(tgt));
+    srcM.setAttribute('x', X[SRC] - 3); srcM.setAttribute('y', Y[SRC] - 3);
+    draw();
+    let on = false, at = null, band = null;
     el0.addEventListener('pointerenter', e => { at = pt(e); });
     el0.addEventListener('pointermove', e => { if (on) aim(near(pt(e))); });
     toys.dijkstra = {
       play() {
         on = true;
-        if (at) aim(near(at));
+        reroll();
+        aim(at ? near(at) : TGT, true);
         at = null;
         band?.kill();
-        band = gsap.fromTo(st, { W: 0 }, { W: MAX + DECAY * 5, duration: 2.1, ease: "power1.inOut", onUpdate: draw });
+        band = gsap.fromTo(st, { W: 0 }, { W: MAX + DECAY * 5, duration: 2.1, ease: 'power1.inOut', onUpdate: draw });
         return { kill() {} };
       },
       rest() {
