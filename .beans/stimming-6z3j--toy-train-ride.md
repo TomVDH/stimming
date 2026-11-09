@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T09:56:06Z
+updated_at: 2026-11-09T10:16:46Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -58,3 +58,11 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Lights follow the route: a bright Lake Zurich shore, dark Walensee with Quinten
 - [x] Sky dome follows the camera (it fell away past x = 20 km)
 - [ ] Tom checks the route live at speed
+
+## Round 7: real ground, window, display
+- [x] Track traced on OpenStreetMap rails, Zurich HB to Walenstadt (77 km)
+- [x] Heights from Terrarium tiles (zoom 13), lakes from OSM outlines, towns from OSM places; baked to trainride/route.png + route.json
+- [x] Window: recessed lining with parallax, rubber seal, tinted glass, light cabin wall with panel joints
+- [x] Passenger display over the window: next stop, the line ahead, clock
+- [ ] Station platforms and name signs as the train passes
+- [ ] Denser lights along the Lake Zurich gold coast

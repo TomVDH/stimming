@@ -143,22 +143,27 @@ const range = (a, b) => a + (b - a) * rnd();
 const out = new THREE.Scene();
 const outCam = new THREE.PerspectiveCamera(50, 1, 1, 40000);
 const outRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
-const NG = 16, NL = 6, TILE = 36000, LAMP_GAP = 28;
-const TAU = Math.PI * 2;
-// The route repeats every 36 km: Lake Zurich, the Linth plain, the Walensee.
+const NG = 16, NL = 6, LAMP_GAP = 28;
+const { L: TILE, NT, b: TB } = ROUTE.meta;
+const S0 = name => ROUTE.meta.stations.find(st => st[0] === name)[1];
+// Three stretches: Lake Zurich, the Linth plain, the Walensee.
 // Each weight is 0 to 1; the three always sum to 1.
 const sstep = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
+const SEG = [S0('Pfäffikon SZ'), S0('Altendorf') + 600, S0('Ziegelbrücke'), S0('Weesen') + 800];
 const seg = x => {
   const s = ((x % TILE) + TILE) % TILE;
-  const z = 1 - sstep(12000, 15000, s) + sstep(33000, 36000, s);
-  const w = sstep(18500, 21500, s) * (1 - sstep(31000, 33500, s));
+  const z = 1 - sstep(SEG[0], SEG[1], s) + sstep(TILE - 3000, TILE, s);
+  const w = sstep(SEG[2], SEG[3], s) * (1 - sstep(TILE - 3000, TILE, s));
   return { z, l: Math.max(0, 1 - z - w), w };
 };
-// The near shore sits under the line; the far shore lies one lake width out.
-const zN = x => -170 - 40 * Math.sin(TAU * x / 4500) - 25 * Math.sin(TAU * x / 1800 + 1.3);
-const lakeW = x => { const g = seg(x); return g.z * (2600 + 400 * Math.sin(TAU * x / 9000)) + g.w * (1550 + 150 * Math.sin(TAU * x / 6000 + 1)) + g.l * 40; };
-const zF = x => zN(x) - lakeW(x);
-const roadZ = x => zF(x) - 45;
+// Route map rows: t runs left of the line, denser near it.
+const jOf = t => (-8 + Math.sqrt(64 + 4 * TB * (Math.min(Math.max(t, -400), 18400) + 400))) / (2 * TB);
+const townAt = (x, t) => {
+  const i = Math.floor((((x % TILE) + TILE) % TILE) / TILE * ROUTE.w) % ROUTE.w, j = Math.round(jOf(t));
+  return ROUTE.f[(j * ROUTE.w + i) * 2 + 1] / 250;
+};
+const f8 = v => v.toFixed(8);
+const TAU = Math.PI * 2;
 
 const NOISE = /* glsl */`
 float hash1(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -191,67 +196,43 @@ float ridged(vec2 p, int oct) {
   return s;
 }`;
 
-// Lake Zurich has soft hills; the Linth plain meets steep mountains.
-// The Walensee lies under the Churfirsten: a cliff band and sharp summits.
+// Real ground from the route map: heights relative to the eye, a lake flag, town density.
 const LAND = /* glsl */`
-const float WL = -40.0;
+uniform sampler2D tH, tF;
+vec2 rt(vec2 xz) {
+  float t = clamp(-xz.y, -400.0, 18400.0);
+  float j = (-8.0 + sqrt(64.0 + ${f8(4 * TB)} * (t + 400.0))) / ${f8(2 * TB)};
+  return vec2(xz.x / ${f8(TILE)}, (j + 0.5) / ${NT}.0);
+}
 vec3 seg(float x) {
-  float s = mod(x, 36000.0);
-  float z = 1.0 - smoothstep(12000.0, 15000.0, s) + smoothstep(33000.0, 36000.0, s);
-  float w = smoothstep(18500.0, 21500.0, s) * (1.0 - smoothstep(31000.0, 33500.0, s));
+  float s = mod(x, ${f8(TILE)});
+  float z = 1.0 - smoothstep(${f8(SEG[0])}, ${f8(SEG[1])}, s) + smoothstep(${f8(TILE - 3000)}, ${f8(TILE)}, s);
+  float w = smoothstep(${f8(SEG[2])}, ${f8(SEG[3])}, s) * (1.0 - smoothstep(${f8(TILE - 3000)}, ${f8(TILE)}, s));
   return vec3(z, clamp(1.0 - z - w, 0.0, 1.0), w);
 }
-float zN(float x) { return -170.0 - 40.0 * sin(6.2831853 * x / 4500.0) - 25.0 * sin(6.2831853 * x / 1800.0 + 1.3); }
-float lakeW(float x) { vec3 g = seg(x); return g.x * (2600.0 + 400.0 * sin(6.2831853 * x / 9000.0)) + g.z * (1550.0 + 150.0 * sin(6.2831853 * x / 6000.0 + 1.0)) + g.y * 40.0; }
-float zF(float x) { return zN(x) - lakeW(x); }
-float roadZ(float x) { return zF(x) - 45.0; }
-// Distance outside the water in metres; it is negative on the water.
-float shore(vec2 xz) { float u = xz.y - zN(xz.x); return max(u, -u - lakeW(xz.x)); }
-// The Churfirsten summits: sharp tops with notches between.
-float teeth(float x) {
-  float t = x / 1150.0, f = fract(t);
-  float top = 0.85 + 0.2 * hash1(vec2(floor(t), 3.0));
-  return 0.7 + (top - 0.7) * (1.0 - pow(abs(f - 0.5) * 2.0, 0.75));
-}
-// Height in metres: the lakes lie at -40, the line at 0.
-// oct sets the peak detail; ray marches use fewer octaves.
+float wet(vec2 xz) { return textureLod(tF, rt(xz), 0.0).r; }
+float town(vec2 xz) { return textureLod(tF, rt(xz), 0.0).g; }
+// Distance outside the water, roughly in metres; negative on the water.
+float shore(vec2 xz) { return (0.5 - wet(xz)) * 30.0; }
+// oct above 4 adds relief finer than the 13 m elevation grid.
 float landO(vec2 xz, int oct) {
-  vec3 g = seg(xz.x);
-  float lw = lakeW(xz.x), u = xz.y - zN(xz.x);
-  // Near side: the bank climbs to just under the line.
-  float h = WL + 1.5 + 30.0 * smoothstep(15.0, 140.0, u);
-  // v is the distance past the far shore.
-  float v = max(-u - lw, 0.0);
-  float r = ridged(xz * 0.00035 + vec2(0.0, 3.0), oct);
-  if (g.x > 0.001) {
-    float hz = 430.0 * pow(smoothstep(0.0, 2800.0, v), 0.8) * (0.7 + 0.6 * fbm(xz * 0.0007));
-    hz += 110.0 * r * smoothstep(400.0, 2500.0, v) - 120.0 * smoothstep(3500.0, 7000.0, v);
-    hz += 650.0 * smoothstep(9000.0, 15000.0, v) * (0.5 + 0.7 * r);
-    h += g.x * hz;
+  vec2 uv = rt(xz);
+  float h = textureLod(tH, uv, 0.0).r;
+  if (oct > 4) {
+    float d = (1.0 - textureLod(tF, uv, 0.0).r) * smoothstep(20.0, 80.0, -xz.y);
+    h += (gnoise(xz * 0.03) * 2.0 + gnoise(xz * 0.11) * 0.6) * d;
   }
-  if (g.y > 0.001) {
-    float hl = 1450.0 * pow(smoothstep(1800.0, 5200.0, v), 1.2) * (0.35 + 0.9 * r);
-    hl += 1300.0 * smoothstep(7000.0, 13000.0, v) * r;
-    h += g.y * hl;
-  }
-  if (g.z > 0.001) {
-    // Each step rises at a steeper angle than the last, so the summits make the skyline.
-    // The cliff band wanders up and down the wall.
-    float cb = 260.0 * gnoise(vec2(xz.x * 0.0012, 4.0)) + 110.0 * gnoise(vec2(xz.x * 0.005, 9.0));
-    float hw = (380.0 + cb * 0.6) * smoothstep(0.0, 700.0 + cb, v) + 300.0 * smoothstep(650.0 + cb, 900.0 + cb, v);
-    hw += 620.0 * smoothstep(900.0 + cb, 2600.0, v) * teeth(xz.x);
-    hw -= 800.0 * smoothstep(2800.0, 4800.0, v);
-    hw += 70.0 * (r - 0.4) * smoothstep(100.0, 700.0, v);
-    h += g.z * hw;
-  }
-  float wd = max(u, -u - lw);
-  h += gnoise(xz * 0.006) * 12.0 * smoothstep(10.0, 140.0, wd);
-  // The lake bed lies flat, just under the water.
-  return mix(h, WL - 1.5, smoothstep(12.0, -3.0, wd));
+  return h;
 }
 float land(vec2 xz) { return landO(xz, 7); }`;
 
+// The route map: half-float heights, and a lake flag with town density.
+const tH = new THREE.DataTexture(ROUTE.h, ROUTE.w, ROUTE.ht, THREE.RedFormat, THREE.HalfFloatType);
+const tF = new THREE.DataTexture(ROUTE.f, ROUTE.w, ROUTE.ht, THREE.RGFormat, THREE.UnsignedByteType);
+for (const t of [tH, tF]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
 const OUTU = {
+  tH: { value: tH },
+  tF: { value: tF },
   uTime: { value: 0 },
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
   uSun: { value: new THREE.Vector3(-0.55, 0.5, 0.67).normalize() },
@@ -367,7 +348,7 @@ const sky = (() => {
 /* Terrain: rows widen and thin with distance, out to 18 km. */
 // Each row snaps to its own spacing, so the land never swims.
 const terrain = (() => {
-  const N = 420, M = 360, Z0 = 15, Z1 = 18000;
+  const N = 420, M = 360, Z0 = 2, Z1 = 18000;
   const pos = new Float32Array((N + 1) * (M + 1) * 3);
   let k = 0;
   for (let j = 0; j <= M; j++) {
@@ -426,10 +407,10 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   void main() {
     vec3 V = normalize(cameraPosition - vP);
     float dist = length(cameraPosition - vP);
-    float wd = shore(vP.xz), u = vP.z - zN(vP.x);
-    float vd = max(-u - lakeW(vP.x), 0.0);
+    float wd = shore(vP.xz);
     vec3 sg = seg(vP.x);
-    float hh = vP.y + 40.0;
+    // Height above the lakes, near enough.
+    float hh = vP.y + 20.0;
     vec3 N = normalize(vN);
     // Close land gets fine relief from noise.
     float near = smoothstep(1400.0, 250.0, dist);
@@ -459,14 +440,15 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       float row = abs(fract(vP.x / 2.2) - 0.5) * 2.0 * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x / 2.2)));
       alb = mix(alb, mix(vec3(0.09, 0.125, 0.035), vec3(0.12, 0.1, 0.065), 0.4 + row * 0.4), vine);
     }
-    // Towns: one long string on the Lake Zurich shore, villages elsewhere.
+    // Towns from the map, densest on the Lake Zurich shore.
     // Each roof has a pale wall toward the train.
-    float vm = sg.x * step(1.0, vd) * (0.6 * smoothstep(800.0, 60.0, vd) + 0.15 * smoothstep(3200.0, 800.0, vd)), house = 0.0;
+    float vm = min(town(vP.xz) * 1.2, 1.0), house = 0.0;
     for (int i = 0; i < ${NG}; i++) vm = max(vm, smoothstep(170.0, 50.0, length(vP.xz - uGP[i].xz)));
     if (vm > 0.0 && wd > 6.0) {
       vec2 g = vP.xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
       float hs = hash1(floor(g) + 31.0);
-      if (hs < vm * 0.7 && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
+      // Roofs show from 200 m out; closer they would read as flat tiles.
+      if (hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
         house = 1.0;
         alb = f.y > 0.2 ? vec3(0.5, 0.47, 0.42) : hs < 0.25 ? vec3(0.13, 0.045, 0.025) : hs < 0.5 ? vec3(0.075, 0.048, 0.032) : vec3(0.085, 0.085, 0.09);
       }
@@ -474,7 +456,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     // Forest: patches on the slopes, thick on the near bank, none above the treeline.
     // A fine noise frays the edges of each wood.
     float fm = fbm(vP.xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3 + (vnoise(vP.xz * 0.04) - 0.5) * 0.1;
-    float forest = max(smoothstep(0.5, 0.6, fm), smoothstep(25.0, 80.0, u) * 0.85);
+    float forest = smoothstep(0.5, 0.6, fm);
     forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
     // Crowns show up close; the pattern fades before it can shimmer.
     float crown = vnoise(vP.xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.45))));
@@ -492,8 +474,6 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float sl = mix(1450.0, 1080.0, sg.z);
     float snow = smoothstep(sl, sl + 200.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
     alb = mix(alb, vec3(0.85, 0.88, 0.93), snow);
-    // A road runs along the far shore, but not under the Churfirsten.
-    alb = mix(alb, vec3(0.1), smoothstep(5.0, 3.0, abs(vP.z - roadZ(vP.x))) * (1.0 - house) * (1.0 - sg.z) * smoothstep(6000.0, 1500.0, dist));
     // Day: sun with soft terrain shadows, and sky light.
     vec3 day = sunC() * max(dot(N, uSun), 0.0) * mix(vSh, 1.0, uRain * 0.7) + skyA(N.y);
     // Night: the moon behind the peaks, and a faint sky.
@@ -512,28 +492,29 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float water = smoothstep(2.0, -2.0, wd);
     if (water > 0.0) {
       // Ripples fade with distance, so far water lies still.
-      float calm = mix(1.0, 0.12, smoothstep(60.0, 220.0, lakeW(vP.x))) * (1.0 - 0.75 * smoothstep(300.0, 1600.0, dist));
+      float calm = mix(0.15, 0.06, smoothstep(200.0, 1500.0, dist));
       float r0 = vnoise(vec2(vP.x * 0.08, vP.z * 0.5 + uTime * 0.6));
-      float r1 = vnoise(vec2(vP.x * 0.3, vP.z * 1.6 - uTime * 0.8));
+      // Fine ripples fade out before they can alias.
+      float r1 = 0.5 + (vnoise(vec2(vP.x * 0.3, vP.z * 1.6 - uTime * 0.8)) - 0.5) * (1.0 - smoothstep(0.2, 0.6, length(fwidth(vP.xz * vec2(0.3, 1.6)))));
       vec3 Nw = normalize(vec3(((r0 - 0.5) * 0.08 + (r1 - 0.5) * 0.08) * calm, 1.0, ((vnoise(vec2(vP.x * 0.08 + 3.0, vP.z * 0.5)) - 0.5) * 0.2 + (r1 - 0.5) * 0.3) * calm));
       vec3 R = reflect(-V, Nw);
       R.y = max(R.y, 0.005);
       float F = 0.02 + 0.98 * pow(1.0 - max(dot(Nw, V), 0.0), 5.0);
       vec3 refl = skyCol(R);
       // The reflected ray climbs to the far slopes; a coarse march finds them.
-      float t = 30.0;
-      for (int i = 0; i < 16; i++) {
+      float t = 20.0;
+      for (int i = 0; i < 32; i++) {
         vec3 q = vP + R * t;
         float hq = landO(q.xz, 3);
         if (hq > q.y) {
-          float qh = hq + 40.0;
+          float qh = hq + 20.0;
           vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
           a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sg.z), mix(1650.0, 1280.0, sg.z), qh));
           vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
           refl = mix(a * lit, hazeCol(R, q), hazeAmt(q));
           break;
         }
-        t *= 1.6;
+        t *= 1.25;
       }
       // Lake Zurich is blue-green; the Walensee is emerald.
       vec3 wc = mix(vec3(0.0, 0.003, 0.005), mix(vec3(0.006, 0.035, 0.05), vec3(0.004, 0.055, 0.045), sg.z), uDay) * (1.0 - F) + refl * max(F, 0.08);
@@ -572,37 +553,19 @@ const glints = [];
   const SOD = [1.0, 0.55, 0.2], WARM = [1.0, 0.75, 0.45], WHITE = [0.85, 0.92, 1.0];
   const light = (x, z, c, k, sz) => { pos.push(x, 3 + rnd() * 6, z); col.push(...c.map(q => q * k)); size.push(sz); };
   const pick = () => rnd() < 0.6 ? WARM : rnd() < 0.7 ? SOD : WHITE;
-  // Weighted pick of a point on the route.
-  const along = key => { let x = rnd() * TILE; while (seg(x)[key] < rnd()) x = rnd() * TILE; return x; };
-  // Lake Zurich: the far shore is one long string of towns.
-  for (let k = 0; k < 2600; k++) {
-    const x = along('z');
-    light(x, zF(x) - (rnd() < 0.78 ? range(15, 700) * rnd() : range(700, 3200)), pick(), range(1.4, 3.2), range(24, 50));
+  // Each real town and village gets a cluster; the map spreads the rest.
+  const KIND = { c: [1400, 1400, 1.4], t: [420, 650, 1.2], s: [220, 400, 0.9], v: [110, 260, 0.8] };
+  for (const [ps, pt, kind] of ROUTE.meta.places) {
+    const [n, r, k] = KIND[kind];
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * TAU, d = r * Math.sqrt(rnd()), t = pt + Math.sin(a) * d * 0.6;
+      if (t > 40) light(ps + Math.cos(a) * d, -t, pick(), range(1.4, 3.2), range(24, 50));
+    }
+    if (kind !== 's') glints.push({ x: ps, z: -pt, col: WARM, k });
   }
-  for (let x = 0; x < TILE; x += 1500) if (seg(x).z > 0.6) glints.push({ x, z: zF(x) - 150, col: WARM, k: range(0.8, 1.3) });
-  // The Linth plain: four villages and scattered farms.
-  for (const cx of [15800, 17400, 33300, 34600]) {
-    const cz = zF(cx) - range(300, 1800);
-    for (let k = 0; k < 45; k++) light(cx + range(-200, 200) * Math.sqrt(rnd()), cz + range(-120, 120) * Math.sqrt(rnd()), pick(), range(1.6, 3.4), range(30, 55));
-    glints.push({ x: cx, z: cz, col: WARM, k: range(0.7, 1.2) });
-  }
-  for (let k = 0; k < 160; k++) { const x = along('l'); light(x, zF(x) - range(100, 3000), WARM, range(1.2, 3), range(22, 40)); }
-  // The Walensee: only Quinten and a few farms under the cliffs.
-  {
-    const cx = 25600, cz = zF(cx) - 50;
-    for (let k = 0; k < 30; k++) light(cx + range(-120, 120) * Math.sqrt(rnd()), cz - range(0, 120), WARM, range(1.4, 3), range(26, 46));
-    glints.push({ x: cx, z: cz, col: WARM, k: 0.8 });
-  }
-  for (let k = 0; k < 25; k++) { const x = range(21500, 31000); light(x, zF(x) - range(60, 700), WARM, range(1, 2.4), range(20, 34)); }
-  // The shore road runs along Lake Zurich and the plain, not the Walensee.
-  for (let x = 0; x < TILE; x += 40) if (seg(x).w < 0.5) light(x, roadZ(x), SOD, 2.0, 34);
-  // Two bridges cross the Linth canal; a negative size marks them.
-  const narrow = [];
-  for (let x = 0; x < TILE; x += 50) if (lakeW(x) < 45 && narrow.every(b => Math.abs(b - x) > 2500)) narrow.push(x);
-  for (const bx of narrow.slice(0, 2)) for (let k = 0; k <= 6; k++) {
-    const z = zN(bx) - k * 7;
-    light(bx - 5, z, WHITE, 2.4, -36); light(bx + 5, z, WHITE, 2.4, -36);
-    if (k === 3) glints.push({ x: bx, z, col: WHITE, k: 1.4 });
+  for (let i = 0; i < 60000 && pos.length < 3 * 16000; i++) {
+    const x = rnd() * TILE, t = 60 + 7000 * rnd() ** 1.4;
+    if (rnd() < townAt(x, t) * 0.9) light(x, -t, pick(), range(1.2, 3), range(22, 40));
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -621,10 +584,11 @@ const glints = [];
     ${LAND}
     void main() {
       vec3 w = position;
-      w.x = uCamX + mod(w.x - uCamX + ${TILE / 2}.0, ${TILE}.0) - ${TILE / 2}.0;
-      // Lights go out by day, and none stand in the water but the bridges.
-      if (uDay > 0.995 || (size > 0.0 && shore(w.xz) < 8.0)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); vP = w; return; }
-      w.y += land(w.xz);
+      w.x = uCamX + mod(w.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+      // Lights go out by day, and none stand in the water.
+      if (uDay > 0.995 || shore(w.xz) < 6.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); vP = w; return; }
+      // Far lights lift a little, so the coarse far mesh never hides them.
+      w.y += land(w.xz) + length(w.xz - cameraPosition.xz) * 0.008;
       vP = w;
       // Distant lights shimmer a little in the valley air.
       vC = color * (1.0 - uDay) * (0.85 + 0.15 * sin(uTime * 3.0 + position.x * 0.37 + position.z * 0.11));
@@ -869,6 +833,7 @@ const W = {
   uSpeed: { value: 0 },
   uFlow: { value: 0 },
   uLamp: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
+  tPid: { value: null },
 };
 const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
   uniforms: W, depthTest: false, depthWrite: false,
@@ -883,7 +848,10 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform vec3 uEye;
   uniform vec2 uHalf;
   uniform vec3 uLamp[3];
+  uniform sampler2D tPid;
   varying vec2 vUv;
+  // The glass sits back in a reveal; a rubber seal holds it.
+  const float REVEAL = 0.07, SEAL = 0.006;
   ${NOISE}
   float sdRR(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
   // Still beads: one per cell.
@@ -951,8 +919,12 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     vec3 dir = vec3((px * 2.0 - 1.0) * uTan, -1.0);
     float cy = cos(uYaw), sy = sin(uYaw);
     dir = vec3(cy * dir.x + sy * dir.z, dir.y, -sy * dir.x + cy * dir.z);
-    vec2 p = (uEye.xy + dir.xy * uEye.z / max(-dir.z, 0.05)) / (2.0 * uTan.y);
-    vec2 q = p - uC0;
+    // p is where the ray meets the wall face; pg is where it meets the glass.
+    float k0 = 1.0 / max(-dir.z, 0.05);
+    vec2 p = (uEye.xy + dir.xy * uEye.z * k0) / (2.0 * uTan.y);
+    vec2 pg = (uEye.xy + dir.xy * (uEye.z + REVEAL) * k0) / (2.0 * uTan.y);
+    float dW = sdRR(p - uC0, uHalf, uRad);
+    vec2 q = pg - uC0;
     float d = sdRR(q, uHalf, uRad);
     float e = 0.0015;
     vec2 g = normalize(vec2(sdRR(q + vec2(e, 0.0), uHalf, uRad) - sdRR(q - vec2(e, 0.0), uHalf, uRad), sdRR(q + vec2(0.0, e), uHalf, uRad) - sdRR(q - vec2(0.0, e), uHalf, uRad)) + 1e-6);
@@ -960,8 +932,10 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     vec3 warm = vec3(1.0, 0.62, 0.32);
     float roomG = 0.35 + 0.65 * smoothstep(-0.6, 0.6, p.y + 0.3 * p.x);
     vec3 col;
-    if (d < 0.0) {
+    if (dW < 0.0 && d < -SEAL) {
       /* ---- glass ---- */
+      // Drops and fog live on the glass, so they use its plane.
+      p = pg;
       // Drops run straight down at rest; the head wind sweeps them back.
       vec2 m = normalize(vec2(-uSpeed / 7.0, -1.0));
       vec2 off = vec2(0.0);
@@ -981,7 +955,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       }
       // Fog: the mode base and a cold rim near the frame.
       float fog = uFog * (0.8 + 0.35 * fbm(p * 6.0));
-      fog += 0.22 * smoothstep(-0.07, 0.0, d) * (0.6 + 0.6 * vnoise(p * 30.0));
+      fog += 0.22 * smoothstep(-0.07, -SEAL, d) * (0.6 + 0.6 * vnoise(p * 30.0));
       // Long rain fogs the pane in patches.
       // They start at the cold frame and the low pane, then spread.
       if (uPatch > 0.001) {
@@ -1007,6 +981,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         blur /= 24.0;
       }
       col = mix(sharp, blur, smoothstep(0.05, 0.55, fog));
+      // Train glass is faintly green and passes about four fifths of the light.
+      col *= vec3(0.8, 0.84, 0.81);
       // Fog scatters light into a milky veil, warm from the room.
       // The carriage reflects in the pane; R points back into the cabin.
       vec3 V = normalize(dir);
@@ -1041,42 +1017,119 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         col += vec3(1.0, 0.8, 0.55) * k * (cover * 0.5 + rim * 0.9) * exp(-near * 7.0);
         col += vec3(1.0, 0.78, 0.5) * k * grime * 0.02 * exp(-near * 4.0);
       }
-    } else {
-      /* ---- frame and wall ---- */
-      float seal = 0.008, fw = 0.034;
-      // The carriage wall: dark, warm, lit softly from above.
-      vec3 wall = mix(vec3(0.03, 0.021, 0.015), vec3(0.075, 0.068, 0.06), uDay) * (0.25 + 0.9 * smoothstep(-0.7, 0.8, p.y)) * (0.92 + 0.08 * vnoise(p * 80.0));
-      // Contact shadow round the frame.
-      wall *= 0.55 + 0.45 * smoothstep(fw, fw + 0.06, d);
-      if (d < seal) {
-        col = mix(vec3(0.006, 0.005, 0.005), vec3(0.012), uDay);
-      } else if (d < fw) {
-        // A rounded rail: its normal turns from the glass to the wall.
-        float t = (d - seal) / (fw - seal);
-        float s = cos(t * 3.14159);
-        vec3 N = normalize(vec3(-g * s * 0.9, 0.55 + 0.45 * sin(t * 3.14159)));
-        vec3 Lr = normalize(vec3(0.15, 0.75, 0.65));
-        float sp = pow(max(dot(reflect(-Lr, N), vec3(0.0, 0.0, 1.0)), 0.0), 18.0);
-        col = vec3(0.04, 0.04, 0.042) * (max(dot(N, Lr), 0.0) * 0.8 + 0.15) * mix(vec3(1.0), warm, 0.5) * roomG + warm * sp * 0.035;
-        // By day the light through the glass catches the inner lip.
-        vec3 Ld = normalize(vec3(-g, -0.3));
-        col = mix(col, vec3(0.17) * (max(dot(N, Ld), 0.0) * 1.2 + 0.12), uDay);
+    } else if (dW < 0.0) {
+      /* ---- seal and reveal ---- */
+      vec3 lit = vec3(0.0);
+      if (d < 0.0) {
+        // The rubber seal: near black, with a soft sheen on its round edge.
+        float r = 1.0 - abs(d / SEAL * 2.0 + 1.0);
+        col = mix(vec3(0.006), vec3(0.02), uDay) + mix(warm * 0.012 * roomG, vec3(0.05), uDay) * r * r;
+      } else {
+        // The ray strikes the reveal between the wall face and the glass.
+        float a = 0.0, b = 1.0;
+        for (int i = 0; i < 6; i++) { float m = 0.5 * (a + b); if (sdRR(mix(p, pg, m) - uC0, uHalf, uRad) < 0.0) a = m; else b = m; }
+        float f = 0.5 * (a + b);
+        vec2 h2 = mix(p, pg, f) - uC0;
+        vec2 n2 = -normalize(vec2(sdRR(h2 + vec2(e, 0.0), uHalf, uRad) - sdRR(h2 - vec2(e, 0.0), uHalf, uRad), sdRR(h2 + vec2(0.0, e), uHalf, uRad) - sdRR(h2 - vec2(0.0, e), uHalf, uRad)) + 1e-6);
+        vec3 alb = vec3(0.42, 0.42, 0.43);
+        // Night: the cabin light falls from above, so the sill is brightest.
+        vec3 night = vec3(1.0, 0.82, 0.62) * 0.05 * (0.35 + 0.65 * max(n2.y, 0.0)) * (1.0 - 0.5 * f);
+        // Day: light through the glass; the reveal brightens toward it.
+        vec3 day = vec3(0.85, 0.9, 1.0) * 0.55 * (0.45 + 0.4 * max(n2.y, 0.0) + 0.15 * max(-n2.y, 0.0)) * (0.55 + 0.6 * f);
+        col = alb * mix(night, day, uDay);
         for (int i = 0; i < 3; i++) {
           float k = uLamp[i].z;
           if (k <= 0.0) continue;
-          vec3 L = normalize(vec3(uLamp[i].xy - p, 0.12));
-          float ss = pow(max(dot(reflect(-L, N), vec3(0.0, 0.0, 1.0)), 0.0), 30.0);
-          float fall = 1.0 / (1.0 + pow(length(uLamp[i].xy - p) / 0.22, 2.0));
-          col += vec3(1.0, 0.76, 0.48) * k * fall * (max(dot(N, L), 0.0) * 0.25 + ss * 2.2);
+          vec2 Lp = uLamp[i].xy - (h2 + uC0);
+          col += alb * vec3(1.0, 0.76, 0.48) * k * 0.5 * (0.3 + 0.7 * max(dot(n2, normalize(Lp)), 0.0)) / (1.0 + dot(Lp, Lp) * 25.0) * (0.4 + 0.6 * f);
         }
-      } else col = wall;
-      // Spill: a little lamp light reaches the wall beside the frame.
-      for (int i = 0; i < 3; i++) col += vec3(1.0, 0.72, 0.42) * uLamp[i].z * 0.012 * exp(-max(d - fw, 0.0) * 18.0) * exp(-length(uLamp[i].xy - p) * 3.0) * step(fw, d);
+      }
+    } else {
+      /* ---- wall and passenger display ---- */
+      vec3 alb = vec3(0.52, 0.51, 0.49) * (0.97 + 0.06 * vnoise(p * 60.0));
+      vec3 light = mix(vec3(1.0, 0.82, 0.62) * 0.045 * (0.35 + 0.85 * smoothstep(-0.7, 0.8, p.y)), vec3(0.85, 0.9, 1.0) * 0.2 * (0.6 + 0.4 * smoothstep(-0.7, 0.8, p.y)), uDay);
+      // Panel joints beside and under the window.
+      float jx = abs(abs(p.x - uC0.x) - uHalf.x - 0.15), jy = abs(p.y - uC0.y + uHalf.y + 0.1);
+      alb *= 1.0 - 0.35 * smoothstep(0.003, 0.0, min(jx, jy));
+      // A groove where the lining meets the wall, and a soft shadow round it.
+      alb *= 1.0 - 0.45 * smoothstep(0.005, 0.0, abs(dW - 0.004));
+      alb *= 0.8 + 0.2 * smoothstep(0.0, 0.05, dW);
+      col = alb * light;
+      // Spill: a little lamp light reaches the wall beside the window.
+      for (int i = 0; i < 3; i++) col += vec3(1.0, 0.72, 0.42) * uLamp[i].z * 0.012 * exp(-dW * 18.0) * exp(-length(uLamp[i].xy - p) * 3.0);
+      // The passenger display hangs over the window.
+      float top = uC0.y + uHalf.y;
+      vec2 ph = vec2(min(uHalf.x * 0.55, 0.32), 0.033), pc = vec2(uC0.x, top + 0.026 + ph.y);
+      float db = sdRR(p - pc, ph + 0.007, 0.008);
+      col *= 0.75 + 0.25 * smoothstep(0.0, 0.02, db + 0.004 * sign(pc.y - p.y));
+      if (db < 0.0) {
+        col = mix(vec3(0.012, 0.013, 0.015), vec3(0.03, 0.032, 0.035), uDay);
+        vec2 su = (p - pc) / ph * 0.5 + 0.5;
+        if (sdRR(p - pc, ph, 0.003) < 0.0) {
+          vec3 scr = texture2D(tPid, su).rgb;
+          col = scr * mix(0.5, 1.0, uDay) + mix(warm * 0.006, vec3(0.012), uDay) * (1.0 - su.y);
+        }
+      }
     }
     gl_FragColor = vec4(col, 1.0);
   }`,
 }));
 glass.frustumCulled = false;
+
+/* Passenger display: the next stop, the line ahead and the clock. */
+const pid = Object.assign(document.createElement('canvas'), { width: 1280, height: 132 });
+const pc2 = pid.getContext('2d');
+const tPid = new THREE.CanvasTexture(pid);
+tPid.colorSpace = THREE.SRGBColorSpace;
+tPid.anisotropy = 4;
+W.tPid.value = tPid;
+// Station distances come from the rail graph; they scale onto the map length.
+const STN = ROUTE.meta.stations.map(([n, d]) => [n.replace('Zürich Hauptbahnhof', 'Zürich HB'), d * TILE / ROUTE.meta.stations.at(-1)[1]]);
+let pidKey = '';
+document.fonts?.ready.then(() => { pidKey = ''; });
+function drawPid(s) {
+  const n = STN.length, i = STN.findIndex(st => st[1] > s);
+  const next = i < 0 ? 0 : i, prev = (next - 1 + n) % n;
+  const sN = i < 0 ? TILE : STN[next][1], sP = STN[prev][1];
+  const f = Math.min(1, Math.max(0, (s - sP) / (sN - sP)));
+  const now = new Date(), clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const key = `${next}|${Math.round(f * 300)}|${clock}`;
+  if (key === pidKey) return;
+  pidKey = key;
+  const c = pc2;
+  c.fillStyle = '#0a0e13';
+  c.fillRect(0, 0, 1280, 132);
+  c.textAlign = 'left';
+  c.fillStyle = '#8193a6';
+  c.font = '500 26px Gabarito, sans-serif';
+  c.fillText('Nächster Halt', 30, 44);
+  c.fillStyle = '#ffffff';
+  c.font = '700 50px Gabarito, sans-serif';
+  c.fillText(STN[next][0], 30, 100);
+  c.textAlign = 'right';
+  c.font = '600 50px Gabarito, sans-serif';
+  c.fillText(clock, 1250, 86);
+  // The line: the last stop, then the next three; the red dot is the train.
+  const xs = [520, 690, 860, 1030], y = 56, mx = xs[0] + (xs[1] - xs[0]) * f;
+  c.lineWidth = 5;
+  c.strokeStyle = '#4a5664';
+  c.beginPath(); c.moveTo(xs[0], y); c.lineTo(mx, y); c.stroke();
+  c.strokeStyle = '#ffffff';
+  c.beginPath(); c.moveTo(mx, y); c.lineTo(xs[3] + 45, y); c.stroke();
+  c.textAlign = 'center';
+  c.font = '600 24px Gabarito, sans-serif';
+  xs.forEach((x, k) => {
+    const st = STN[(prev + k) % n];
+    c.fillStyle = k === 0 ? '#4a5664' : '#0a0e13';
+    c.strokeStyle = k === 0 ? '#4a5664' : '#ffffff';
+    c.beginPath(); c.arc(x, y, 9, 0, TAU); c.fill(); c.stroke();
+    c.fillStyle = k === 0 ? '#6b7988' : '#e3e8ee';
+    c.fillText(st[0].replace(' SBB', '').replace(' SZ', ''), x, 104);
+  });
+  c.fillStyle = '#eb0000';
+  c.beginPath(); c.arc(mx, y, 11, 0, TAU); c.fill();
+  tPid.needsUpdate = true;
+}
 scene.add(glass);
 
 /* ---------- the carriage, seen only in its reflection ---------- */
@@ -1144,7 +1197,7 @@ function frame(w, h, pr) {
 
 /* ---------- motion ---------- */
 // QA can start at a point on the route with ?x=.
-let time = 0, flow = 0, camX = +(qs.get('x') || 4203.3), speed = 0, target = 27;
+let time = 0, flow = 0, camX = +(qs.get('x') || 13000), speed = 0, target = 27;
 const MODES = { clear: { rain: 0, fog: 0 }, rain: { rain: 1, fog: 0 }, fogged: { rain: 0.45, fog: 0.85 } };
 let mode = MODES.rain, mk = 0, rainT = 0, dayT = 0, dayV = 0;
 const hashN = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
@@ -1213,6 +1266,7 @@ function place() {
   }
   hits.sort((a, b) => b[2] - a[2]);
   for (let i = 0; i < 3; i++) W.uLamp.value[i].set(...(hits[i] || [0, 0, 0]));
+  drawPid(((camX % TILE) + TILE) % TILE);
   OUTU.uDay.value = dayV;
   W.uDay.value = dayV;
   OUTU.uSmear.value = speed / 40;
@@ -1291,6 +1345,31 @@ try {
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
+/* ---------- route ---------- */
+// The line from Zurich HB to Walenstadt, traced on OpenStreetMap rails.
+// Heights come from the Terrarium tiles (Mapzen, AWS Open Data).
+// route.png: R and G hold the height in decimetres plus 500 m.
+// B is 255 on a lake, else town density up to 250.
+async function loadRoute() {
+  const [meta, img] = await Promise.all([
+    fetch('route.json').then(r => r.json()),
+    new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
+  ]);
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  const n = c.width * c.height, h = new Uint16Array(n), f = new Uint8Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    h[i] = THREE.DataUtils.toHalfFloat((px[i * 4] * 256 + px[i * 4 + 1]) / 10 - 500);
+    const b = px[i * 4 + 2];
+    f[i * 2] = b === 255 ? 255 : 0;
+    f[i * 2 + 1] = b === 255 ? 0 : b;
+  }
+  return { meta, w: c.width, ht: c.height, h, f };
+}
+const ROUTE = await loadRoute();
 const S = build({ THREE });
 
 /* Post chain: render, half-resolution bloom, grade, output. */
