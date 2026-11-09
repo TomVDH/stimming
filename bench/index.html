@@ -233,21 +233,37 @@ void main() {
 const SCAL_FS = HEAD + `
 uniform sampler2D uVel, uSrc;
 uniform vec2 uTex;
-uniform float uA, uDt, uDiff;
+uniform float uA, uDt, uDiff, uLevel, uClock, uDelay, uSnap;
+uniform vec4 uAbove;
 uniform int uN;
 uniform vec4 uSc[${MAXS}];
 uniform vec4 uScV[${MAXS}];
+// Reads stay below the surface, so the air above never leaks in.
+vec4 at(vec2 q) { return texture(uSrc, vec2(q.x, min(q.y, uLevel - 0.5 * uTex.y))); }
 void main() {
+  // Above the surface waits what the level will cover next.
+  if (vUv.y > uLevel) { o = uAbove; return; }
   vec2 v = texture(uVel, vUv).xy, b = vUv - uDt * v / vec2(uA, 1.0);
-  vec4 n = texture(uSrc, b);
-  vec4 avg = 0.25 * (texture(uSrc, vUv + vec2(uTex.x, 0.0)) + texture(uSrc, vUv - vec2(uTex.x, 0.0))
-    + texture(uSrc, vUv + vec2(0.0, uTex.y)) + texture(uSrc, vUv - vec2(0.0, uTex.y)));
+  vec4 n = at(b);
+  vec4 avg = 0.25 * (at(vUv + vec2(uTex.x, 0.0)) + at(vUv - vec2(uTex.x, 0.0))
+    + at(vUv + vec2(0.0, uTex.y)) + at(vUv - vec2(0.0, uTex.y)));
   vec4 s = mix(n, avg, uDiff);
   vec2 p = vUv * vec2(uA, 1.0);
   for (int i = 0; i < ${MAXS}; i++) {
     if (i >= uN) break;
     vec2 d = (p - uSc[i].xy) / uSc[i].z;
     s += uScV[i] * exp(-dot(d, d));
+  }
+  if (uClock > 0.5) {
+    // g: mix fraction. b: progress, fastest where the two liquids mix evenly.
+    float m = clamp(s.g, 0.0, 1.0);
+    s.g = m;
+    s.b += uDt * 4.0 * m * (1.0 - m) / uDelay;
+    // a: the starch complex. It forms past p = 1 and spreads as a front.
+    float nb = max(max(at(vUv + vec2(uTex.x, 0.0)).a, at(vUv - vec2(uTex.x, 0.0)).a),
+      max(at(vUv + vec2(0.0, uTex.y)).a, at(vUv - vec2(0.0, uTex.y)).a));
+    float go = max(step(1.0, s.b), step(0.82, s.b) * step(0.35, nb));
+    s.a = clamp(s.a + uDt * uSnap * go, 0.0, 1.0);
   }
   o = s;
 }`;
@@ -300,6 +316,8 @@ uniform float uLevel;    // liquid level, 0 to 1 of the inside
 uniform float uRods;     // 1 shows the graphite rods
 uniform float uClear;    // 1 for a clear liquid
 uniform float uTime;
+uniform vec3 uAmber, uInk;
+uniform vec4 uJet;       // pour stream: u, half width (px), on
 uniform vec3 uPanel, uRoom;
 uniform vec3 uLab[6];
 uniform float uPH[6];
@@ -359,7 +377,19 @@ void main() {
 
   // The liquid colour: an indicator, or a clear liquid.
   vec4 sc = texture(uScal, q);
-  vec3 tint = uClear > 0.5 ? vec3(0.955, 0.972, 0.965) : clamp(ramp(7.0 - 4.0 * tanh(sc.x)) / uPanel, 0.004, 1.0);
+  vec3 tint = clamp(ramp(7.0 - 4.0 * tanh(sc.x)) / uPanel, 0.004, 1.0);
+  float shl = 0.0;
+  if (uClear > 0.5) {
+    // Clear liquids; an amber edge leads the blue-black complex.
+    float a = sc.a, amb = smoothstep(0.03, 0.3, a) * (1.0 - smoothstep(0.35, 0.85, a));
+    tint = mix(vec3(0.955, 0.972, 0.965), uAmber, amb * 0.85);
+    tint = mix(tint, uInk, smoothstep(0.25, 1.0, a));
+    // Where the two clear liquids meet, the light bends: faint schlieren.
+    vec2 tx = 1.0 / vec2(textureSize(uScal, 0));
+    vec2 gm = vec2(texture(uScal, q + vec2(tx.x, 0.0)).g - texture(uScal, q - vec2(tx.x, 0.0)).g,
+      texture(uScal, q + vec2(0.0, tx.y)).g - texture(uScal, q - vec2(0.0, tx.y)).g);
+    shl = min(0.22, length(gm) * 0.9) * (1.0 - smoothstep(0.2, 0.6, a));
+  }
 
   bool inside = abs(u) < 1.0 && p.y > yBot && p.y < yT + ry * e;
   bool shell = abs(uo) < 1.0 && p.y > yBotO && p.y < yT + ry * eo && !inside;
@@ -371,6 +401,7 @@ void main() {
     if (p.y < yFront) {
       // Beer-Lambert through the cylinder: thickest down the middle.
       col = bg * pow(tint, vec3(depth)) + bg * tint * 0.03;
+      col *= 1.0 - shl;
     } else if (p.y < yBack) {
       // The surface, seen a little from above, catches the lab light.
       float s = (p.y - yFront) / max(yBack - yFront, 1.0);
@@ -381,6 +412,20 @@ void main() {
     col *= 1.0 - 0.28 * exp(-pow((dl + 3.0 * px) / (2.2 * px), 2.0));
     col += vec3(0.5) * exp(-pow(dl / (1.1 * px), 2.0)) * (0.5 + 0.5 * e);
     col += vec3(0.18) * exp(-pow((p.y - yBack) / (1.0 * px), 2.0)) * e;
+  }
+
+  // The pour: a clear stream from above the frame into the surface.
+  if (uJet.z > 0.5) {
+    float jx = x0 + uJet.x * hw, n = (p.x - jx) / uJet.y;
+    float ys = yL - ry * sqrt(max(0.0, 1.0 - uJet.x * uJet.x));
+    if (abs(n) < 1.0 && p.y > ys) {
+      float nz = sqrt(1.0 - n * n);
+      vec3 j = bg * (0.62 + 0.4 * nz) + vec3(0.25) * exp(-pow((n + 0.4) / 0.18, 2.0));
+      col = mix(col, j, smoothstep(1.0, 0.8, abs(n)));
+    }
+    // Where it lands, the surface churns white.
+    vec2 d = vec2((p.x - jx) / (uJet.y * 3.0), (p.y - ys) / (uJet.y * 1.2));
+    col += vec3(0.2) * exp(-dot(d, d)) * (0.6 + 0.4 * sin(uTime * 40.0 + p.x * 0.3));
   }
 
   // Graphite rods dip into the liquid from above the frame.
@@ -507,6 +552,10 @@ async function initGL() {
   gl.uniform3fv(P.beaker.u.uPanel, oklchLinear(0.92, 0.01, 240));
   gl.uniform3fv(P.beaker.u.uRoom, oklchLinear(0.14, 0.012, 260));
   gl.uniform1fv(P.beaker.u.uPH, PH);
+  // Clock colours as transmittance against the panel.
+  const pan = oklchLinear(0.92, 0.01, 240), tr = c => oklchLinear(...c).map((v, i) => clamp(v / pan[i], 0.003, 1));
+  gl.uniform3fv(P.beaker.u.uAmber, tr([0.7, 0.13, 70]));
+  gl.uniform3fv(P.beaker.u.uInk, tr([0.18, 0.06, 270]));
   setIndicator(indicator);
 }
 function setIndicator(v) {
@@ -649,6 +698,13 @@ function advectScalar(tex, dt) {
   gl.uniform1f(s.u.uA, TA);
   gl.uniform1f(s.u.uDt, dt);
   gl.uniform1f(s.u.uDiff, 1 - Math.exp(-dt * 0.6));
+  gl.uniform1f(s.u.uLevel, level);
+  const clk = mode === 'clock';
+  gl.uniform1f(s.u.uClock, clk ? 1 : 0);
+  gl.uniform4f(s.u.uAbove, 0, clk ? 1 : 0, 0, 0);
+  gl.uniform1f(s.u.uDelay, delay());
+  // The snap takes 0.15 s; reduced motion fades it over 0.6 s.
+  gl.uniform1f(s.u.uSnap, reduced() ? 1 / 0.6 : 1 / 0.15);
   gl.uniform1i(s.u.uN, nSc);
   gl.uniform4fv(s.u.uSc, sc);
   gl.uniform4fv(s.u.uScV, scV);
@@ -684,6 +740,7 @@ function beaker() {
   gl.uniform1f(b.u.uLevel, level);
   gl.uniform1f(b.u.uRods, mode === 'electro' ? 1 : 0);
   gl.uniform1f(b.u.uClear, mode === 'clock' ? 1 : 0);
+  gl.uniform4f(b.u.uJet, pourU(), Math.max(2 * dpr, box.hw * 0.035), pourOn() ? 1 : 0, 0);
   gl.uniform1f(b.u.uTime, time);
   draw(null);
 }
@@ -800,6 +857,31 @@ function seedRainbow() {
   bubbles.length = 0;
 }
 
+/* ---------- clock ---------- */
+// Liquid A fills 45 %; pouring B raises the level to 85 % at most.
+const CLK = { A: 0.45, MAX: 0.85, RATE: 0.075 };
+const delay = () => 4 + 16 * EXP.clock.value;
+let pouring = false, splashUntil = 0, pourX = TA / 2, pEst = 0, snapped = false;
+const pourOn = () => mode === 'clock' && (pouring || performance.now() < splashUntil) && level < CLK.MAX;
+const pourU = () => (pourX / TA) * 2 - 1;
+function aimPour(cx, cy) {
+  pourX = clamp(toFluid(cx, cy).x, TA * 0.12, TA * 0.88);
+}
+function clockStep(dt) {
+  if (mode !== 'clock') return;
+  if (pourOn()) {
+    level = Math.min(CLK.MAX, level + CLK.RATE * dt);
+    // The jet drives down into the surface and carries liquid B.
+    splat(pourX, level - 0.03, 0, -0.16, 0.035);
+    scalarSplat(pourX, level - 0.02, 0.03, 0, 8 * dt);
+    if (level >= CLK.MAX) stage.classList.add('full');
+  }
+  // A well-mixed estimate of progress keeps the loop awake through the snap.
+  const mb = (level - CLK.A) / level;
+  pEst += dt * 4 * mb * (1 - mb) / delay();
+  if (!snapped && pEst >= 1) snapped = true;
+}
+
 /* ---------- frame loop ---------- */
 let raf = 0, last = 0, visible = true, liveUntil = 0, stirT = -1;
 const live = (ms = 5000) => { liveUntil = Math.max(liveUntil, performance.now() + ms); wake(); };
@@ -814,6 +896,7 @@ function frame(now) {
     time += dt;
     stirStep(dt);
     electroStep(dt);
+    clockStep(dt);
     simStep(reduced() ? dt * 0.8 : dt);
     beaker();
     drawBubbles();
@@ -822,7 +905,8 @@ function frame(now) {
   }
 }
 // The loop sleeps once the current is off, the bubbles are gone and the flow settles.
-const busy = (now = performance.now()) => visible && (now < liveUntil || stirT >= 0 || amps() > 0 || bubbles.length > 0);
+const busy = (now = performance.now()) => visible && (now < liveUntil || stirT >= 0 || amps() > 0 || bubbles.length > 0
+  || pourOn() || (mode === 'clock' && level > CLK.A + 0.002 && pEst < 2.5));
 function still() { if (P) { beaker(); drawBubbles(); } }
 
 /* ---------- stirring ---------- */
@@ -844,7 +928,7 @@ function down(e) {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
   ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t: performance.now(), mode: 'press' };
-  holdTo = setTimeout(() => { if (ptr?.mode === 'press') { ptr.mode = 'hold'; hold(true); } }, 260);
+  holdTo = setTimeout(() => { if (ptr?.mode === 'press') { ptr.mode = 'hold'; aimPour(ptr.x, ptr.y); hold(true); } }, 260);
 }
 function move(e) {
   if (!ptr || e.pointerId !== ptr.id) return;
@@ -863,6 +947,7 @@ function move(e) {
     if (b.y < level) splat(b.x, b.y, vx * 0.6 * k, vy * 0.6 * k, 0.06);
     live();
   }
+  if (ptr.mode === 'hold') aimPour(e.clientX, e.clientY);
   ptr.x = e.clientX;
   ptr.y = e.clientY;
   ptr.t = now;
@@ -873,17 +958,19 @@ function up(e) {
   const m = ptr.mode;
   ptr = null;
   stage.classList.remove('stir');
-  if (m === 'press' && e?.type === 'pointerup') tap();
+  if (m === 'press' && e?.type === 'pointerup') { aimPour(e.clientX, e.clientY); tap(); }
   if (m === 'hold') hold(false);
 }
-// Hold switches the current on; a tap gives a 0.4 s pulse.
-// The pour arrives with Task 3.
+// Electrolysis: hold switches the current on; a tap gives a 0.4 s pulse.
+// Clock: hold pours; a tap gives a small splash.
 function hold(on) {
   if (mode === 'electro') power = on;
+  else pouring = on;
   live();
 }
 function tap() {
   if (mode === 'electro') pulseUntil = performance.now() + 400;
+  else splashUntil = performance.now() + 150;
   live();
 }
 
@@ -891,8 +978,11 @@ function tap() {
 // Reset gives fresh indicator; opening Electrolysis shows the formed rainbow.
 function resetBeaker(rainbow = false) {
   stirT = -1;
-  power = false;
-  pulseUntil = 0;
+  power = pouring = false;
+  pulseUntil = splashUntil = 0;
+  pEst = 0;
+  snapped = false;
+  stage.classList.remove('full');
   level = EXP[mode].level;
   bubbles.length = 0;
   buildSites();
