@@ -253,3 +253,8 @@ Tom picked Hemelvaart /ˈɦeːməlˌvaːrt/ from the four options. `toys.json` h
 
 Four directions in the toy's night palette, each with its own intro emblem: A Long exposure (the flight as one line of light, star trails, soft reeds), B Rack focus (reeds sharp and the launch a bokeh disc; hover pulls focus), C Strata (flat dawn bands, one hairline), D Tally (ten reeds as a count; the tenth carries the spark).
 `icons/spike-34.html`; emblems in `icons/spike/emblems/launch34-a..d.svg`, exported with `?dump`. The menu tile and `shared/emblems/launch.svg` stay on spike 33 A until Tom picks.
+
+## Tom picks Strata; emblem refined (2026-11-09, Tom: thinner, like the original)
+
+The Strata emblem is redrawn as line work: the band edges as six fine lines that tighten toward the horizon, four shorter water lines, a 2 px hairline to a small dot, a dashed mirror of it, and two reed pairs with a halo.
+It is live as `shared/emblems/launch.svg`. The menu tile still shows spike 33 A; the Strata tile is the next step.
