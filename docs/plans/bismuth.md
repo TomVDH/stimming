@@ -16,6 +16,23 @@
 | Kits | none |
 | Before the build | nothing |
 
+## Loop v2: Ratchet grow (Tom, 2026-11-09)
+
+Tom found the first loop flat: a dark frame, small crystals, colour that took 9 to 26 s, and an abstract drag-up. He chose Ratchet grow. It replaces the Loop, the Bar keys and the cap below.
+
+| Gesture | Answer |
+|---|---|
+| Hold | Terraces click out on one big hero crystal. The first click is instant; then the clicks speed up from 0.26 s to 0.07 s. Each new rim flashes white, then its film blooms round the spiral in about 1 s. |
+| Click or tap | One terrace, one tick. No harvest. |
+| Circle round the hero | It turns one to one; letting go leaves a spin. |
+| Release after a hold | Harvest: the hero arcs up, flips once, shrinks and lands on the pile behind. A new seed rises at the centre. |
+
+- The camera frames the hero and pulls back as it grows (16 terraces at most).
+- The pile holds 7 crystals (4 on a phone); a full pile remelts its oldest one.
+- Each terrace settles on its own film band (64 to 228 nm), so every crystal shows the rainbow.
+- The key light swings slowly round the far side, so glints travel.
+- Bar: Habit (Spiral, Hopper, Cluster), Heat (bloom speed, ember, hum), actions Harvest (H) and Clear (X). Space holds the ratchet.
+
 ## Why instanced boxes, not a raymarched SDF
 
 A hopper crystal is only boxes: square frames that step in and down. The choice is instanced boxes.
