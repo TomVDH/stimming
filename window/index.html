@@ -12,6 +12,33 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="./shader.js">
+<link rel="modulepreload" href="../shared/glassrain.js">
+<link rel="modulepreload" href="./sky.js">
+<link rel="modulepreload" href="./noise3d.js">
+<link rel="modulepreload" href="./wing3.js">
+<link rel="modulepreload" href="./bolts3.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/lines/Line2.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/lines/LineGeometry.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/lines/LineMaterial.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/lines/LineSegments2.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/lines/LineSegmentsGeometry.js">
 <style>
 /* Window seat: a night flight, seen through one cabin window. */
 :root { --stage: oklch(0.1 0.01 260); }
@@ -42,20 +69,9 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality, audioKit, sound } from '../shared/stim.js';
+import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality, audioKit, sound, stage as mark, pageReady } from '../shared/stim.js';
+mark('libs');
 import { intro as playIntro } from '../shared/intro.js';
 import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
 import { bake, lookup, horizonEl, NU, NV } from './sky.js';
@@ -64,12 +80,21 @@ import { createWing3 } from './wing3.js';
 import { createBolts } from './bolts3.js';
 import * as THREE from 'three';
 
-const wait = ms => new Promise(r => setTimeout(r, ms));
-let markReady;
-const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+playIntro({ ready: pageReady() });
+mark('build');
+// Pure maths runs in a module worker; the intro stays smooth.
+// A worker that fails hands the bake to the main thread.
+function offThread(file, fn, args) {
+  const src = `import { ${fn.name} } from '${new URL(file, location.href)}'; onmessage = e => postMessage(${fn.name}(...e.data));`;
+  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+  return new Promise((res, rej) => {
+    const wk = new Worker(url, { type: 'module' });
+    wk.onmessage = e => { wk.terminate(); res(e.data); };
+    wk.onerror = e => { wk.terminate(); rej(e); };
+    wk.postMessage(args);
+  }).catch(() => fn(...args)).finally(() => URL.revokeObjectURL(url));
+}
 
 const PI = Math.PI, TAU = PI * 2, D2R = PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
@@ -118,10 +143,11 @@ const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', golden: 'Go
 const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 // The baked sky and the light terms that follow from it.
 let sky = null;
-function buildSky() {
+const skyArgs = h => [ALT, HOR + h.rel * D2R, h.E];
+function buildSky(baked) {
   const h = HOURS[opts.hour] || HOURS.dusk;
   const el = HOR + h.rel * D2R, az = h.az * D2R;
-  const b = bake(ALT, el, h.E);
+  const b = baked || bake(...skyArgs(h));
   // Night eyes see little colour: moonlit haze goes grey-blue.
   if (h.moon) for (let i = 0; i < b.L.length; i += 4) {
     const y = lum([b.L[i], b.L[i + 1], b.L[i + 2]]);
@@ -185,7 +211,7 @@ const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 // three.js owns the context, the targets and the textures.
-const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+const fail = () => { stage.querySelector('.fail').hidden = false; mark('first-frame'); throw new Error('no webgl2'); };
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' }); } catch { fail(); }
 const gl = renderer.getContext();
@@ -263,7 +289,9 @@ function uploadSky() {
 }
 // The cloud noise volume: 64 cubed, tiling, with mipmaps for far cloud.
 const NOISE_N = 64;
-const noiseTex = new THREE.Data3DTexture(bakeNoise(NOISE_N), NOISE_N, NOISE_N, NOISE_N);
+// Sky and noise bake side by side, before the bar exists.
+const [noiseVol, firstSky] = await Promise.all([offThread('./noise3d.js', bakeNoise, [NOISE_N]), offThread('./sky.js', bake, skyArgs(HOURS[opts.hour] || HOURS.dusk))]);
+const noiseTex = new THREE.Data3DTexture(noiseVol, NOISE_N, NOISE_N, NOISE_N);
 Object.assign(noiseTex, {
   format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: true, unpackAlignment: 1,
   minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
@@ -1527,7 +1555,7 @@ onQuality(() => resize(true));
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
 for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(20, 40); c.s = 1; cells.push(c); }
-buildSky();
+buildSky(firstSky);
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);
 resize();
@@ -1535,7 +1563,7 @@ render();
 // One finished frame folds shader work into the intro.
 gl.finish();
 ready = true;
-markReady();
+mark('first-frame');
 requestAnimationFrame(() => canvas.classList.add('on'));
 /* ---------- banking ---------- */
 // The autopilot rolls to a new bank now and then, and holds it.

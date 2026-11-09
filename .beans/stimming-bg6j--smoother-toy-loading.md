@@ -35,7 +35,9 @@ Tom asked for staged, chunked loading with caching, toy by toy, heaviest first. 
 - [x] Shell: `stage()`, `idle()`, `pageReady()`, `later()`; one `toys.json` request per page
 - [x] TV tree: preloads, stage marks, first-frame `ready`, tree mesh in a worker
 - [ ] Tom checks TV tree on Pages
-- [ ] Next toys, one by one: Fireworks, Window seat, Walker, Domino Day, Prism, Glass
+- [x] All 35 other main-shelf toys: preloads, stage marks, first-frame `ready`; results in `docs/plans/loading.md`
+- [ ] Tom checks sound and a direct cold link on Pages
+- [ ] Trails, Wind map: parallel shader compile
 - [ ] Slow-load cue: candidates in `introlab/` for Tom to pick
 - [ ] Elective offline cache: service worker behind a "Keep offline" switch
 

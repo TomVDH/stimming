@@ -12,6 +12,25 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/capabilities/WebGPU.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/BloomNode.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/AfterImageNode.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/math/curlNoise.js">
 <style>
 /* Galaxy: a WebGPU star field on a black panel. */
 :root { --stage: #000; }
@@ -42,21 +61,12 @@
   </section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
-  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
-  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
-  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
-} }
-</script>
 <script type="module">
-import { initPage, sound, oklchLinear, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, oklchLinear, onQuality, pixelRatio, stage, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+stage('libs');
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 // The Add choice: what a click on the sky places.
 const KINDS = [
   { value: 'star', label: 'Star', icon: '<svg viewBox="0 0 16 16"><circle class="solid" cx="8" cy="8" r="3.4"/><path d="M8 1.2v2M8 12.8v2M1.2 8h2M12.8 8h2"/></svg>' },
@@ -249,6 +259,8 @@ async function hasWebGPU() {
 function noWebGPU() {
   panel.querySelector('.fail').hidden = false;
   ui.hideControls();
+  // The fail line counts as the first frame, so the intro lifts.
+  stage('first-frame');
 }
 
 /* ---------- constants ---------- */
@@ -352,6 +364,7 @@ async function start() {
     import('three/addons/tsl/display/AfterImageNode.js'),
     import('three/addons/tsl/math/curlNoise.js'),
   ]);
+  stage('build');
   const {
     Fn, If, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select, uv, smoothstep,
     mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, atomicLoad, pass, max, atan,
@@ -2030,7 +2043,7 @@ async function start() {
     }
     renderPipeline.render();
     sample(now);
-    if (++frames === 3) canvas.classList.add('on');
+    if (++frames === 3) { canvas.classList.add('on'); stage('first-frame'); }
   }
 
   // The loop runs only while the panel is on screen.

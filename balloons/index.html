@@ -12,6 +12,17 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <style>
 /* Balloon letters: foil letters on a deep violet stage. */
 :root { --stage: oklch(0.17 0.04 292); }
@@ -43,14 +54,9 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Balloon letters</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
-</script>
 <script type="module">
-import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 const panel = document.getElementById('stage'), keysIn = document.getElementById('keys');
 // Each foil dot is a small swatch of its foil.
 const FOIL_OPTS = [
@@ -86,7 +92,6 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
 function lin(L, C, h) {
@@ -2080,6 +2085,7 @@ async function start() {
     console.error(err);
     return failed();
   }
+  stage('build');
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   } catch (err) {
@@ -2231,6 +2237,7 @@ async function start() {
   lastPoke = performance.now();
   draw();
   requestAnimationFrame(() => canvas.classList.add('on'));
+  stage('first-frame');
   wake();
   // The rest of the alphabet builds while nothing else is happening.
   for (const ch of 'AEOSTNRLDUCMPBGYKWFHVJXQZ0123456789!?') {
@@ -2242,9 +2249,9 @@ start().catch(err => { console.error(err); failed(); });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

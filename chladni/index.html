@@ -12,6 +12,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: every module downloads in parallel. -->
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Chladni plate: a lit steel plate, gold sand and a tuning rail. */
 :root {
@@ -80,7 +84,8 @@
 </div>
 
 <script type="module">
-import { initPage, sound, pixelRatio, onQuality } from '../shared/stim.js';
+import { initPage, sound, pixelRatio, onQuality, stage, idle } from '../shared/stim.js';
+stage('libs');
 const ui = initPage({ id: 'chladni', bar: {
   actions: [
     { verb: 'shuffle', key: 'S', onPress: () => { if (ready) shuffle(); } },
@@ -100,7 +105,6 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 
 /* ---------- vectors and matrices, column-major ---------- */
@@ -1258,6 +1262,7 @@ canvas.addEventListener('webglcontextrestored', async () => {
   } catch (err) { console.error(err); failed(); }
 });
 async function boot() {
+  stage('build');
   await idle();
   fit();
   if (!W) {
@@ -1269,7 +1274,7 @@ async function boot() {
   seed();
   ready = true;
   render();
-  requestAnimationFrame(() => canvas.classList.add('on'));
+  requestAnimationFrame(() => { canvas.classList.add('on'); stage('first-frame'); });
   const ro = new ResizeObserver(fit);
   ro.observe(panel);
   // The plate and the rail follow the shell when it refits.
@@ -1287,9 +1292,9 @@ else addEventListener('load', boot, { once: true });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

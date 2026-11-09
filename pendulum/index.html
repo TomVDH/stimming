@@ -12,6 +12,17 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <style>
 /* Pendulum wave: a row of strings under the corner controls. */
 :root { --stage: oklch(0.205 0.012 272); }
@@ -57,14 +68,9 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Pendulum wave</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
-</script>
 <script type="module">
-import { initPage, audioKit, whenVisible, reduced, onReducedChange, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, whenVisible, reduced, onReducedChange, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 // Storage is optional; private windows can refuse it.
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (err) { return null; } },
@@ -96,7 +102,6 @@ let reduce = reduced();
 onReducedChange(on => { reduce = on; });
 const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 
 /* ---------- the machine: each count has its own tuned rig ---------- */
 // Pendulum n swings K + n times per CYCLE seconds.
@@ -1178,6 +1183,7 @@ async function start() {
     console.error(err);
     return failed();
   }
+  stage('build');
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   } catch (err) {
@@ -1261,6 +1267,7 @@ async function start() {
   ready = true;
   draw(false);
   requestAnimationFrame(() => canvas.classList.add('on'));
+  stage('first-frame');
   // A count picked during the intro builds that row first.
   if (nextN !== N) build(nextN);
   await introGone();
@@ -1270,9 +1277,9 @@ start().catch(err => { console.error(err); failed(); });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

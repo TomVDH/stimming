@@ -12,6 +12,16 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <style>
 /* Morpher: one distance-field shape and candy blobs on a dark panel. */
 :root { --stage: oklch(0.195 0.014 275); }
@@ -54,22 +64,16 @@
   </section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js"
-} }
-</script>
 <script type="module">
-import { initPage, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, onQuality, pixelRatio, stage as mark, idle, pageReady } from '../shared/stim.js';
+mark('libs');
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 let reduce = reduced();
 
 /* ---------- colour: OKLCH in, OKLab out ---------- */
@@ -845,6 +849,7 @@ async function start() {
     console.error(err);
     return failed();
   }
+  mark('build');
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
   } catch (err) {
@@ -874,7 +879,7 @@ async function start() {
   // The shape arrives with a boing.
   kick(1.1);
   wakeToy();
-  requestAnimationFrame(() => canvas.classList.add('on'));
+  requestAnimationFrame(() => { canvas.classList.add('on'); mark('first-frame'); });
 }
 start().catch(err => { console.error(err); failed(); });
 </script>

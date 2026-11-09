@@ -32,7 +32,8 @@ Helpers in `shared/stim.js`:
 6. Find the longest main-thread task with the harness. Slice it with `await idle()`, or move pure maths into a worker.
 7. Move anything the first frame does not need into `later()`.
 
-Tom picks each toy. The order is heaviest first, by the table below.
+All 36 main-shelf toys follow the recipe.
+A page with its own `stage` variable imports the helper under another name (`stage as mark`).
 
 ## The menu
 
@@ -114,3 +115,67 @@ Journey: open the menu, rest on the tile, click. Three runs each.
 
 - The stall was `treeSurface()`, about 300 ms of meshing. The first tree now meshes in a worker; a failed worker falls back to the old path.
 - The local server sends `no-store`, so same-origin files never come from cache here. On Pages the page and `channels.js` are warm too.
+
+### All main-shelf toys, 2026-11-09
+
+Same harness as the baseline, fast link, one cold run per toy.
+Every toy sets `libs`, `build` and `first-frame` in order, with no page errors.
+
+| Toy | Long tasks before (ms) | After (ms) | Longest after (ms) |
+|---|---|---|---|
+| window | 2357 | 139 | 139 |
+| fireworks | 1439 | 161 | 161 |
+| walker | 1326 | 102 | 102 |
+| domino | 933 | 0 | 0 |
+| tvtree | 895 | 0 | 0 |
+| prism | 697 | 72 | 72 |
+| glass | 619 | 0 | 0 |
+| kaleido | 580 | 0 | 0 |
+| trails | 510 | 93 | 93 |
+| windmap | 444 | 0 | 0 |
+| scope | 353 | 74 | 74 |
+| shadyos | 332 | 0 | 0 |
+| pins | 294 | 0 | 0 |
+| sonar | 290 | 0 | 0 |
+| ferro | 287 | 0 | 0 |
+| putty | 243 | 0 | 0 |
+| magnet | 217 | 0 | 0 |
+| balloons | 197 | 0 | 0 |
+| soap | 195 | 74 | 74 |
+| chamber | 186 | 0 | 0 |
+| bubbles | 114 | 0 | 0 |
+| pop | 100 | 88 | 88 |
+| pendulum | 88 | 94 | 94 |
+| pool | 86 | 0 | 0 |
+| galaxy | 53 | 0 | 0 |
+| vortex | 0 | 0 | 0 |
+| rain | 0 | 0 | 0 |
+| neon | 0 | 0 | 0 |
+| morpher | 0 | 0 | 0 |
+| lava | 0 | 0 | 0 |
+| ink | 0 | 0 | 0 |
+| fire | 0 | 53 | 53 |
+| fidget | 0 | 0 | 0 |
+| eyes | 0 | 0 | 0 |
+| dijkstra | 0 | 0 | 0 |
+| chladni | 0 | 0 | 0 |
+
+Per-toy work beyond the recipe:
+
+- Window seat: the sky bake and the 64³ noise bake run in a module worker.
+- Fireworks: `sfx/*.mp3` load in `later()`; the synth covers a click before they arrive.
+- Sonar: `ping.mp3` loads in `later()`.
+- Prism: the five programs compile with `compileAsync` before the first render.
+- Glass: the backdrop renders after the async compile, not in the first resize.
+- Kaleido: the settle loop yields every 12 ms.
+- Dijkstra: `maps/index.json` preloads; the city is random, so its file does not.
+- Fidget: the part modules still load one at a time.
+
+Open:
+
+- Trails and Wind map: a cold shader compile of 350–500 ms remains. `KHR_parallel_shader_compile` polling is the likely fix.
+- Walker, Window seat, Fireworks: the stall that remains is three.js program link.
+- Direct cold visit in the harness: the jsDelivr DNS lookup takes about 1 s when it starts with the font lookups.
+  Main shows the same stall in about half its runs. A visit from the menu never shows it.
+  Check a direct link on Pages in a real browser.
+- Sound on the first gesture is not exercised by the harness.

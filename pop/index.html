@@ -12,6 +12,30 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/ShaderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/CopyShader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm">
 <style>
 /* Pop field: a honeycomb of bubbles laid straight on the page. */
 :root { --stage: var(--bg); }
@@ -44,18 +68,6 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -67,11 +79,12 @@ import { converter } from 'culori';
 const toRgbC = converter('rgb');
 import { gsap } from 'gsap';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb, onQuality, pixelRatio, stage, pageReady } from '../shared/stim.js';
+stage('libs');
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
+stage('build');
 // Shuffle, Reset and the material pick bind once the sheet exists.
 const act = { roll() {}, reset() {}, mat() {} };
 const MAT_NAMES = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel', 'lava', 'ice', 'holo', 'paper', 'gum', 'topo', 'popcorn', 'disco'];
@@ -2048,6 +2061,7 @@ if (!reduce) {
   draw();
   requestAnimationFrame(ms => refill(ms / 1000 + 0.15));
 }
+stage('first-frame');
 </script>
 </body>
 </html>

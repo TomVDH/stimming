@@ -12,6 +12,24 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="./spectro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <style>
 /* Prism: one beam and one prism on a black table, at full width. */
 :root { --stage: oklch(0.1 0.008 272); }
@@ -84,26 +102,14 @@ html[data-spectro] .halo { opacity: 0; }
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Prism</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
 import * as THREE from 'three';
-import { initPage, sound, audioKit, oklchRgb, css as okCss, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, audioKit, oklchRgb, css as okCss, onQuality, pixelRatio, stage, pageReady } from '../shared/stim.js';
+stage('libs');
 import { intro as playIntro } from '../shared/intro.js';
 import { spectroscope, ELEMENTS } from './spectro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 // Each pick in the Piece tray adds one piece.
 const KINDS = [
   { value: 'prism', label: 'Prism', icon: '<svg viewBox="0 0 16 16"><path d="M8 2.2l6.2 11H1.8z"/></svg>' },
@@ -1118,6 +1124,12 @@ function sizeGL() {
   G.dust.minFilter = THREE.LinearFilter;
   G.dust.generateMipmaps = false;
   lightDirty = true;
+}
+// Async compile keeps the shader builds off the main thread.
+async function warmGL() {
+  const jobs = [G.r.compileAsync(G.beams, G.cam)];
+  for (const m of [G.down, G.up, G.comp]) { G.full.material = m; jobs.push(G.r.compileAsync(G.pass, G.cam)); }
+  try { await Promise.all(jobs); } catch (err) { /* first render compiles instead */ }
 }
 function pass(mat, tg) {
   G.full.material = mat;
@@ -2547,7 +2559,8 @@ function failed() {
   panel.querySelectorAll('canvas').forEach(c => { c.hidden = true; });
   ui.hideControls();
 }
-function boot() {
+async function boot() {
+  stage('build');
   if (!ctx || !ctx.createRadialGradient || !initGL()) return failed();
   zoomChip = document.createElement('button');
   zoomChip.type = 'button';
@@ -2559,10 +2572,11 @@ function boot() {
   zoomChip.addEventListener('click', () => { resetView(); panel.focus({ preventScroll: true }); });
   panel.append(zoomChip);
   fit();
+  await warmGL();
   ready = true;
   sync();
   render();
-  requestAnimationFrame(() => panel.querySelectorAll('canvas').forEach(c => c.classList.add('on')));
+  requestAnimationFrame(() => { panel.querySelectorAll('canvas').forEach(c => c.classList.add('on')); stage('first-frame'); });
   // Resizes settle before the smoke and dust rebuild.
   let fitT = 0;
   new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fit, 140); }).observe(panel);

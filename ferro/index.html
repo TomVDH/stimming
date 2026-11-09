@@ -12,6 +12,18 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
 <style>
 /* Ferrofluid: the dish fills the stage under the Bar v2 corners. */
 :root { --stage: oklch(0.185 0.006 265); }
@@ -37,14 +49,9 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Ferrofluid</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
-</script>
 <script type="module">
-import { initPage, sound, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, oklchRgb, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 // The fluid choice restores from its own key.
 const FLUID_KEY = 'stimming.ferro.fluid';
 let fluidNow = 'ink';
@@ -75,7 +82,6 @@ RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
 const TAU = Math.PI * 2, S3 = Math.sqrt(3) / 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 // Small screens get a coarser mesh and larger spikes.
 const small = Math.min(innerWidth, innerHeight) < 700;
 
@@ -1390,6 +1396,7 @@ async function start() {
     console.error(err);
     return failed();
   }
+  stage('build');
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   } catch (err) {
@@ -1594,15 +1601,16 @@ async function start() {
   if (!mag.via) { mag.via = 'intro'; mag.present = true; mag.x = 0; mag.z = 0.05; }
   draw();
   requestAnimationFrame(() => canvas.classList.add('on'));
+  stage('first-frame');
   stir();
 }
 start().catch(err => { console.error(err); failed(); });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>
