@@ -177,6 +177,14 @@ playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
 const NOISE = `
 // A NaN pixel would spread through the bloom as a black block.
 vec3 safe(vec3 c) { return (any(isnan(c)) || any(isinf(c))) ? vec3(0.0) : c; }
+float h3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float vn(vec3 x) {
+  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float fbm3(vec3 p) { return 0.55 * vn(p) + 0.3 * vn(p * 2.1 + 3.1) + 0.15 * vn(p * 4.3 + 7.7); }
+float hgPhase(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.0795775; }
 float hash11(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 vec2 hash2(vec2 p) { vec3 q = fract(p.xyx * vec3(0.1031, 0.103, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }
@@ -384,13 +392,6 @@ const VAPOR_FS = NOISE + ROOM + `
 uniform vec3 uO, uA, uBoxMin, uBoxMax;
 uniform float uAmt, uAge;
 varying vec3 vW;
-float h3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-float vn(vec3 x) {
-  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
-             mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-}
-float fbm3(vec3 p) { return 0.55 * vn(p) + 0.3 * vn(p * 2.1 + 3.1) + 0.15 * vn(p * 4.3 + 7.7); }
 float dens(vec3 x) {
   vec3 rel = x - uO;
   float s = dot(rel, uA);
@@ -406,7 +407,6 @@ float dens(vec3 x) {
   float edge = smoothstep(0.0, 1.2, min(e.x, min(e.y, e.z)));
   return max(core * (n * 1.7 - 0.55), 0.0) * uAmt * 0.8 * edge;
 }
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5) * 0.0795775; }
 void main() {
   vec3 ro = cameraPosition, rd = normalize(vW - ro);
   vec3 t0 = (uBoxMin - ro) / rd, t1 = (uBoxMax - ro) / rd;
@@ -431,7 +431,7 @@ void main() {
       float powder = 1.0 - exp(-tau * 2.0);
       float lt = clamp(mix(beer + multi, (beer + multi) * powder, 0.4) + 0.08, 0.0, 1.0);
       // Backlit: the lamp's light scatters forward through the fog toward the eye.
-      float ph = hg(-dot(V, L), 0.55) * 12.566;
+      float ph = hgPhase(-dot(V, L), 0.55) * 12.566;
       vec3 sc = uLamp * ph * lt * 0.22 + vec3(0.015, 0.016, 0.018);
       float ext = d * 1.8 * dt;
       col += T * sc * (1.0 - exp(-ext));
@@ -560,7 +560,7 @@ void main() {
   // The curved beer gathers light into soft moving streaks: a caustic shimmer.
   // A cylinder bends light into near-vertical bands.
   float sh = noise(vec2(atan(X.x, X.z) * 4.0 + uTime * 0.1, X.y * 0.18 - uTime * 0.04)) * noise(vec2(atan(X.x, X.z) * 7.0 - uTime * 0.07, X.y * 0.3));
-  light *= 0.82 + 0.55 * sh;
+  light *= 0.9 + 0.28 * sh;
   // Beer-Lambert along the true path gives the gold its depth.
   vec3 T = exp(-uSigma * t);
   vec3 col = light * T;
@@ -616,9 +616,26 @@ void main() {
 }`;
 const FOAM_FS = NOISE + ROOM + PROF + `
 uniform vec3 uFoamCol, uSigma, uKey;
-uniform float uLevel, uTop, uCell, uCoarse;
+uniform float uLevel, uTop, uCell, uCoarse, uDome;
 varying vec3 vW, vN;
 varying float vS, vHit;
+// The head as a volume, lit as Fire lights its smoke.
+// Foam extinction is high; bubble cells vary it.
+float foamD(vec3 p) {
+  float lev = LEV(p.xz), R = max(gp(clamp(p.y, uGYb, uGH)).y, 0.1);
+  float rr = length(p.xz) / R;
+  float top = uTop + dot(uSlope, p.xz) + uDome * (1.0 - rr * rr);
+  if (p.y < lev || p.y > top || rr > 1.0) return 0.0;
+  return 2.6 * (0.6 + 0.8 * vn(p * 5.0));
+}
+// Light from the lamp through the foam to p: a five-step march.
+float foamT(vec3 p, vec3 Lg) {
+  float tau = 0.0;
+  for (int i = 0; i < 5; i++) tau += foamD(p + Lg * (0.18 + 0.42 * float(i)));
+  tau *= 0.42;
+  float beer = exp(-tau), multi = exp(-tau * 0.25) * 0.5, powder = 1.0 - exp(-tau * 2.0);
+  return mix(beer + multi, (beer + multi) * powder, 0.35);
+}
 void main() {
   vec3 v = normalize(cameraPosition - vW);
   vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
@@ -638,7 +655,7 @@ void main() {
   float dome = clamp(0.5 + 1.4 * dot(F.zw, vec2(0.6, -0.5)), 0.0, 1.0);
   float film = 1.0 - smoothstep(0.02, 0.09, F.y - F.x);
   float fine = 1.0 - smoothstep(0.02, 0.08, F2.y - F2.x);
-  float tex = vS > 0.999 ? 0.92 + 0.08 * film : 0.9 + 0.07 * dome + 0.05 * film + 0.03 * fine;
+  float tex = vS > 0.999 ? 0.95 + 0.05 * film : 0.94 + 0.04 * dome + 0.03 * film + 0.02 * fine;
   // The top takes the key light; the sides fall off and shade toward the beer.
   float top = vS > 0.999 ? 1.0 : 0.0;
   vec3 col = uFoamCol * (0.4 + 0.68 * key) * side * tex * mix(0.8 + 0.2 * sf, 1.08, top);
@@ -651,6 +668,20 @@ void main() {
   // The head's foot: wet, dense and golden, blending softly into the beer.
   vec3 wet = uLamp * exp(-uSigma * 2.2) * 0.6 + uFoamCol * 0.22;
   col = mix(col, wet, pow(1.0 - smoothstep(0.0, 0.3, sf), 1.6) * 0.75);
+  // A soft gradient: warm cream low, cool white high.
+  col *= mix(vec3(1.0, 0.95, 0.88), vec3(1.0, 1.0, 1.02), sf);
+  // Volume light: the lamp behind soaks through thin foam and scatters forward.
+  // Three samples just inside the surface, along the view ray.
+  vec3 lampW = vec3(LAMP.x * 0.4, LAMP.y + 4.0, BACK_Z);
+  vec3 Lw = normalize(lampW - toW(vW));
+  vec3 Lg = transpose(mat3(uG2W)) * Lw;
+  float ph = hgPhase(-dot(dirW(v), Lw), 0.45) * 12.566;
+  float lit = 0.0;
+  for (int i = 0; i < 3; i++) lit += foamT(vW - v * (0.06 + 0.22 * float(i)), Lg);
+  lit /= 3.0;
+  // Light through the head picks up gold from the beer below it.
+  vec3 through = uLamp * mix(exp(-uSigma * 1.6), vec3(1.0), 0.35 + 0.65 * sf) * lit * ph;
+  col += through * 0.18 * uFoamCol;
   // In the crater, golden beer shows between loose bubbles.
   col = mix(col, uLamp * exp(-uSigma * 1.5) * 0.7 * (0.7 + 0.6 * film), smoothstep(0.25, 0.9, vHit) * 0.75);
   gl_FragColor = vec4(safe(col), 1.0);
@@ -854,7 +885,9 @@ void main() {
   float F = 0.04 + 0.96 * pow(edge, 5.0);
   vec3 col = through * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
   // The silhouette catches the backlight as a fine bright line.
-  col += uLamp * pow(edge, 7.0) * 0.32;
+  col += uLamp * pow(edge, 7.0) * 0.22;
+  // A soft warm rim light wraps the bowl.
+  col += uLamp * 0.1 * pow(edge, 3.0) * (1.0 - solid);
   // The inner wall shows as a second faint line inside the silhouette.
   float inner = smoothstep(0.8, 0.85, edge) * (1.0 - smoothstep(0.87, 0.91, edge)) * (1.0 - solid);
   col += (through * 0.5 + uLamp * 0.04) * inner;
@@ -887,11 +920,11 @@ void main() {
   c = aces(c * 0.95);
   c = pow(c, vec3(1.0 / 2.2));
   // A gentle S-curve and a warm lift in the shadows.
-  c = mix(c, c * c * (3.0 - 2.0 * c), 0.35);
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
   c += vec3(0.012, 0.006, 0.0) * (1.0 - c);
   float l = dot(c, vec3(0.3, 0.59, 0.11));
   float gr = hash(gl_FragCoord.xy * 0.73 + fract(uTime * 7.3) * 113.0) + hash(gl_FragCoord.xy * 1.31 + fract(uTime * 3.1) * 71.0) - 1.0;
-  c += gr * (0.016 + 0.03 * l * (1.0 - l));
+  c += gr * (0.007 + 0.012 * l * (1.0 - l));
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -910,6 +943,7 @@ let glassBack = null, glassMask = null;
 // Material flags: draw only inside the glass's silhouette.
 const INSIDE = { stencilWrite: true, stencilWriteMask: 0, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc,
   stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp };
+let bottleTop = null, streamTop = null;
 let gTex = null, glassMesh = null, beerMesh = null, foamMesh = null, bottleMesh = null, fizzMesh = null, labTex = null, streamMesh = null, vaporMesh = null;
 const quadGeo = new THREE.PlaneGeometry(2, 2);
 function fullQuad(mat, order) {
@@ -1213,10 +1247,20 @@ function build() {
     uniforms: { ...U, uScene: { value: rtScene.texture }, uChill: { value: 0.5 }, uCold: { value: 0 }, uMistAge: { value: 0.2 } },
   }));
   top.add(glassMesh);
+  // The lifted bottle and the jet draw again after the glass, depth-tested:
+  // what is in front of the glass shows; what is behind stays refracted.
+  bottleTop = new THREE.Mesh(bottleMesh.geometry, bottleMesh.material);
+  bottleTop.matrixAutoUpdate = false;
+  bottleTop.frustumCulled = false;
+  bottleTop.renderOrder = 5;
+  streamTop = new THREE.Mesh(streamMesh.geometry, streamMesh.material);
+  streamTop.frustumCulled = false;
+  streamTop.renderOrder = 6;
+  top.add(bottleTop, streamTop);
 
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType }));
   composer.addPass(new StagePass());
-  bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.3, 0.5, 1.05);
+  bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.36, 0.65, 1.0);
   composer.addPass(bloom);
   finalPass = new ShaderPass({ uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: 0.55 } }, vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: FINAL_FS });
   composer.addPass(finalPass);
@@ -1260,8 +1304,9 @@ function frameCamera(w, h) {
   camera.aspect = aspect;
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
-  rest.x = narrow ? 8 : 12;
-  rest.z = narrow ? -16 : -14;
+  // At rest the bottle stands clear of the glass's outline, so its rise never crosses it.
+  rest.x = narrow ? 10 : 16;
+  rest.z = narrow ? -12 : -10;
 }
 function resize() {
   const rc = stage.getBoundingClientRect();
@@ -1364,7 +1409,7 @@ function setBeer(id) {
   glassBack.geometry = glassMesh.geometry;
   glassMask.geometry = glassMesh.geometry;
   bottleMesh.geometry.dispose();
-  bottleMesh.geometry = new THREE.LatheGeometry(B.outline.map(([y, r]) => new THREE.Vector2(Math.max(r, 0.001), y)), 96);
+  bottleMesh.geometry = bottleTop.geometry = new THREE.LatheGeometry(B.outline.map(([y, r]) => new THREE.Vector2(Math.max(r, 0.001), y)), 96);
   const bu = bottleMesh.material.uniforms;
   bu.uBH.value = bottleV.h;
   bu.uLab.value.set(...B.lab);
@@ -1391,10 +1436,10 @@ function setBeer(id) {
 // A drag down tips it further; a drag up eases it back.
 // Flow follows the beer's head over the bottle's lower lip.
 const G = 981, TH0 = 0.95, _aw = new THREE.Vector3(), _rw = new THREE.Vector3();
-const pour = { on: false, auto: 0, flow: 0, gain: 0 };
+const pour = { on: false, auto: 0, flow: 0, gain: 0, hx: 0, hy: 0 };
 // lift: 0 at rest, 1 over the glass. th: tip (rad). Lw: beer level in bottle frame (cm).
 const bot = { lift: 0, th: 0, vol: 0, cap: 330, Lw: 0, head: -9, q: 0, focus: 0,
-  pos: new THREE.Vector3(), aimG: new THREE.Vector3(), mouthW: new THREE.Vector3(), axisW: new THREE.Vector3(0, 1, 0), opened: false, mouth: new THREE.Vector3(), lip: new THREE.Vector3(), v0: new THREE.Vector3(), T: 0.1, w0: 0.8 };
+  pos: new THREE.Vector3(), tpos: new THREE.Vector3(), vel: new THREE.Vector3(), aimG: new THREE.Vector3(), mouthW: new THREE.Vector3(), axisW: new THREE.Vector3(0, 1, 0), opened: false, mouth: new THREE.Vector3(), lip: new THREE.Vector3(), v0: new THREE.Vector3(), T: 0.1, w0: 0.8 };
 const vap = { puff: 0, age: 0 };
 function fillBottle() { bot.cap = beer.bottle.cl * 10; bot.vol = bot.cap; bot.opened = false; }
 // Volume below height L (measured along gravity) in vessel V tipped by th.
@@ -1431,8 +1476,9 @@ function bottleStep(dt) {
     if (full || bot.vol < bot.cap * keep || pour.auto > 30) { pour.auto = 0; fill.post = 1; }
   }
   if (engaged) {
-    bot.lift = Math.min(1, bot.lift + dt * 1.6);
-    if (bot.lift < 1) bot.th += (bot.lift * TH0 - bot.th) * ease(dt, 0.1);
+    bot.lift = Math.min(1, bot.lift + dt * 1.1);
+    // It tips only once it is over the glass.
+    if (bot.lift < 1) bot.th += (smooth(0.5, 1, bot.lift) * TH0 - bot.th) * ease(dt, 0.1);
     else {
       // Aim for a head over the lip; the drag sets it. A full glass tips back.
       const target = full ? -0.6 : clamp(0.85 + pour.gain, 0.1, 1.8);
@@ -1442,7 +1488,7 @@ function bottleStep(dt) {
     }
   } else {
     bot.th = Math.max(0, bot.th - dt * 1.7);
-    if (bot.th < TH0 * bot.lift + 0.02) bot.lift = Math.max(0, bot.lift - dt * 1.3);
+    if (bot.th < TH0 * smooth(0.5, 1, bot.lift) + 0.02) bot.lift = Math.max(0, bot.lift - dt * 1.0);
   }
   bot.th = clamp(bot.th, 0, 2.55);
   const th = bot.th, c = Math.cos(th), sn = Math.sin(th), h = bottleV.h;
@@ -1464,13 +1510,15 @@ function bottleStep(dt) {
   // Aim, in the glass frame: the low inner wall while canted, the surface once upright.
   const rimR = glass.ri(glass.h - 0.3);
   const tl = clamp(pose.tilt / 0.45);
-  const ax = lerp(rimR * 0.2, glass.ri(glass.h * 0.62) * 0.7, tl);
+  // A sideways drag slides the pour along the rim; the jet still lands inside.
+  const ax = clamp(lerp(rimR * 0.2, glass.ri(glass.h * 0.62) * 0.7, tl) + pour.hx, -rimR * 0.6, rimR * 0.75);
   const surf = fill.vol > 0.5 ? fill.top + fill.crown + (fill.slope + swirl.sx) * ax : glass.ybot + 0.2;
   bot.aimG.set(ax, Math.max(surf, lerp(glass.ybot + 0.2, glass.h * 0.62, tl)), -1.2);
   const aimW = _aw.copy(bot.aimG).applyMatrix4(G2W);
   // The mouth sits just above the rim's highest point.
   const rimTop = Math.max(_rw.set(-rimR, glass.h, 0).applyMatrix4(G2W).y, _rw.set(rimR, glass.h, 0).applyMatrix4(G2W).y);
-  const mouthY = rimTop + 0.7 + fill.crown;
+  // A drag up raises the bottle: a longer drop, a bigger head.
+  const mouthY = rimTop + 0.7 + fill.crown + pour.hy;
   const yT = aimW.y;
   const vy = bot.v0.y, T = (vy + Math.sqrt(vy * vy + 2 * G * Math.max(mouthY - yT, 0.1))) / G;
   bot.T = T;
@@ -1479,9 +1527,17 @@ function bottleStep(dt) {
   // Pour pose: the lip at (mx, mouthY). Rest pose: upright on the table.
   const px = mx - lipX, py = mouthY - lipYw, pz = aimW.z;
   // Rise first, then slide in level from the right: no swoop past the lens.
-  // It stays deep until the end, so it never sweeps past the lens.
-  const sy = smooth(0, 0.45, bot.lift), sx = smooth(0.3, 1, bot.lift), sz = smooth(0.65, 1, bot.lift);
-  bot.pos.set(lerp(rest.x, px, sx), lerp(0, py, sy), lerp(rest.z, pz, sz));
+  // The path: up clear of the rim, across, then down into place.
+  // Rise, come forward beside the glass, slide across above the rim, then lower in.
+  const L = bot.lift, clear = 4;
+  const ty = lerp(0, py + clear, smooth(0, 0.35, L)) - clear * smooth(0.8, 1, L);
+  bot.tpos.set(lerp(rest.x, px, smooth(0.5, 0.85, L)), ty, lerp(rest.z, pz, smooth(0.2, 0.55, L)));
+  // A critically damped spring smooths every move.
+  if (dt > 0) {
+    const w = 9;
+    bot.vel.addScaledVector(_aw.copy(bot.tpos).sub(bot.pos).multiplyScalar(w * w).addScaledVector(bot.vel, -2 * w), dt);
+    bot.pos.addScaledVector(bot.vel, dt);
+  } else { bot.pos.copy(bot.tpos); bot.vel.set(0, 0, 0); }
   bot.lip.set(bot.pos.x + lipX, bot.pos.y + lipYw, bot.pos.z);
   bot.focus = smooth(0.25, 0.75, bot.lift);
   // The neck's mouth and axis, in the room.
@@ -1535,7 +1591,7 @@ function readyPour() {
   if (fill.vol + fill.foam > fill.cap * 0.9) freshGlass();
   else if (bot.vol < bot.cap * 0.05 && bot.lift < 0.05) fillBottle();
 }
-act.pour = () => { readyPour(); pour.auto = 1e-3; live(); };
+act.pour = () => { readyPour(); pour.hx = pour.hy = 0; pour.auto = 1e-3; live(); };
 // A sip drains at a steady rate with an eased start; the head rides down.
 const sip = { beer: 0, foam: 0, t: 0 };
 act.sip = () => { pour.auto = 0; if (sip.beer < 0.05) sip.t = 0; sip.beer += fill.cap * 0.1; sip.foam += 0.15; live(); };
@@ -1637,6 +1693,9 @@ function render() {
   bottleMesh.matrixAutoUpdate = false;
   bottleMesh.matrix.copy(W2G).multiply(_m1.makeTranslation(bot.pos.x, bot.pos.y, bot.pos.z)).multiply(_m2.makeRotationZ(bot.th));
   bottleMesh.matrixWorldNeedsUpdate = true;
+  bottleTop.matrix.copy(bottleMesh.matrix);
+  bottleTop.matrixWorldNeedsUpdate = true;
+  bottleTop.visible = bot.focus > 0.001;
   const tb = back.userData.table;
   tb.matrixAutoUpdate = false;
   tb.matrix.copy(W2G);
@@ -1659,7 +1718,7 @@ function render() {
     vaporMesh.scale.setScalar(9);
   }
   const su = streamMesh.material.uniforms, sf = clamp(bot.q / 6);
-  streamMesh.visible = sf > 0.01;
+  streamMesh.visible = streamTop.visible = sf > 0.01;
   su.uFlow.value = sf;
   su.uP0.value.copy(bot.lip).applyMatrix4(W2G);
   su.uV0.value.copy(bot.v0).applyMatrix3(R_W2G);
@@ -1731,7 +1790,7 @@ function down(e) {
     return;
   }
   readyPour();
-  pour.gain = 0;
+  pour.gain = pour.hx = pour.hy = 0;
   pour.on = true;
   stage.classList.add('pour');
   live();
@@ -1780,7 +1839,12 @@ canvas.addEventListener('pointermove', e => {
       const m = Math.hypot(dx, dz), f = m > REACH ? REACH / m : 1;
       swirl.tx = dx * f; swirl.tz = dz * f;
       live();
-    } else pour.gain = clamp((e.clientY - ptr.y) / 140, -0.5, 1.2);
+    } else {
+      // Dragging moves the bottle: sideways along the rim, up for a longer drop.
+      const cm = 2 * camBase.dist * Math.tan(camera.fov * Math.PI / 360) / Math.max(canvas.clientHeight, 1);
+      pour.hx = clamp((e.clientX - ptr.x) * cm, -4, 4);
+      pour.hy = clamp((ptr.y - e.clientY) * cm, -0.5, 7);
+    }
   }
   if (e.pointerType !== 'mouse') return;
   const rc = canvas.getBoundingClientRect();
@@ -1796,7 +1860,7 @@ stage.addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.repeat) return;
   e.preventDefault();
   readyPour();
-  pour.gain = 0;
+  pour.gain = pour.hx = pour.hy = 0;
   pour.on = true;
   live();
 });
