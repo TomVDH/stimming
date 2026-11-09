@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:08:28Z
-updated_at: 2026-11-09T07:19:27Z
+updated_at: 2026-11-09T07:26:15Z
 ---
 
 Ink in water (`ink`, idea 35). Ink drops fall into a tall, still tank of dark water as vortex rings, break into fingers, and glow in side light.
@@ -44,3 +44,11 @@ Plan: `docs/plans/ink.md`. D3: WebGPU only on three.js 0.186.1, as Fire (Tom, 20
 Tom renames the toy to Ink Water. The Dutch name is Inktwater, ˈɪŋktˌʋaːtər.
 
 - [x] Logo redo: a square faux bloom mark, as if taken from the toy (direction F, Bloom: a captured frame traced into four bands; menu icon, emblem, gallery, pick)
+
+## Speed pass (2026-11-09)
+
+- The march reads one texel in clear water; noise and light run only in ink.
+- A ray stops once it is opaque.
+- The page draws only after a sim step; catch-up is two steps at most.
+- Standard's ink grid is 1.5x, not 2x.
+- High, Backlit: a draw falls from about 68 ms to about 5 to 8 ms (probe, background tab).

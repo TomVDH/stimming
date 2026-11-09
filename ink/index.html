@@ -160,7 +160,7 @@ function tankWidth() {
 const GRADES = {
   low: { cells: 120e3, pressure: 10, march: 40, dpr: 1, ink: 1.5 },
   medium: { cells: 240e3, pressure: 10, march: 48, dpr: 1.25, ink: 1.5 },
-  standard: { cells: 420e3, pressure: 12, march: 56, ink: 2 },
+  standard: { cells: 420e3, pressure: 12, march: 56, ink: 1.5 },
   high: { cells: 1.6e6, pressure: 20, march: 80, ink: 1.5 },
 };
 // The ink grid is finer than the flow grid by the grade's ink factor.
@@ -324,7 +324,7 @@ async function start() {
   ]);
   const {
     vec2, vec3, vec4, uvec3, float, int, Fn, uniform, texture3D, textureStore, storageTexture, storage, instanceIndex,
-    Loop, If, min, max, exp, pow, floor, mix, smoothstep, mx_noise_float, sin, cos,
+    Loop, If, Break, min, max, exp, pow, floor, mix, smoothstep, mx_noise_float, sin, cos,
     cameraPosition, positionWorld, screenCoordinate, interleavedGradientNoise,
   } = TSL;
 
@@ -770,35 +770,41 @@ async function start() {
       const ph = phase(uLightDir.dot(rd), float(0.35));
       Loop(steps, () => {
         const p = ro.add(rd.mul(t)).toVar();
-        // Fine noise breaks up the grid cells in thin ink.
-        const grain = mx_noise_float(p.mul(70)).mul(0.25).add(mx_noise_float(p.mul(170)).mul(0.15)).add(0.82);
-        const dye = dyeAt(p).mul(grain).toVar();
-        const m = dye.a.mul(uMass);
-        if (mode === 'dark') {
-          const lit = sheet(p).toVar();
-          If(m.greaterThan(0.01), () => {
-            // The shadow march finds how much light reaches this sample.
-            const exitT = LIGHT_EXIT.sub(p).div(uLightDir);
-            const sds = min(min(exitT.x, exitT.y), exitT.z).div(SHADOW_STEPS).toVar();
-            const od = vec3(0).toVar();
-            Loop({ start: int(0), end: int(SHADOW_STEPS), type: 'int', name: 'j' }, ({ j }) => {
-              // The shadow ray shares the jitter, so its steps do not band.
-              od.addAssign(extinction(dyeAt(p.add(uLightDir.mul(sds.mul(float(j).add(jitter)))))));
+        const raw = dyeAt(p).toVar();
+        // Clear water costs one texture read; the rest runs only in ink.
+        If(raw.a.mul(uMass).greaterThan(0.01), () => {
+          // Fine noise breaks up the grid cells in thin ink.
+          const grain = mx_noise_float(p.mul(70)).mul(0.25).add(mx_noise_float(p.mul(170)).mul(0.15)).add(0.82);
+          const dye = raw.mul(grain).toVar();
+          const m = dye.a.mul(uMass);
+          if (mode === 'dark') {
+            const lit = sheet(p);
+            If(m.greaterThan(0.01), () => {
+              // The shadow march finds how much light reaches this sample.
+              const exitT = LIGHT_EXIT.sub(p).div(uLightDir);
+              const sds = min(min(exitT.x, exitT.y), exitT.z).div(SHADOW_STEPS).toVar();
+              const od = vec3(0).toVar();
+              Loop({ start: int(0), end: int(SHADOW_STEPS), type: 'int', name: 'j' }, ({ j }) => {
+                // The shadow ray shares the jitter, so its steps do not band.
+                od.addAssign(extinction(dyeAt(p.add(uLightDir.mul(sds.mul(float(j).add(jitter)))))));
+              });
+              const Tl = exp(od.mul(uMass).mul(sds).negate());
+              // Each step scatters what it takes out, so dense cores cannot blow out.
+              L.addAssign(T.mul(albedoOf(dye)).mul(Tl).mul(uLight).mul(lit).mul(ph).mul(exp(m.mul(ds).negate()).oneMinus()).mul(14));
             });
-            const Tl = exp(od.mul(uMass).mul(sds).negate());
-            // Each step scatters what it takes out, so dense cores cannot blow out.
-            L.addAssign(T.mul(albedoOf(dye)).mul(Tl).mul(uLight).mul(lit).mul(ph).mul(exp(m.mul(ds).negate()).oneMinus()).mul(14));
-          });
-          T.mulAssign(exp(extinction(dye).mul(uMass).mul(ds).negate()));
-        } else {
-          // Through light, ink mostly absorbs; a little scatter softens thick ink.
-          // Thin ink must still read against the bright box, so the depth is raised.
-          If(m.greaterThan(0.01), () => {
-            L.addAssign(T.mul(albedoOf(dye)).mul(uBoxTop).mul(exp(m.mul(ds).mul(BACKLIT_DEPTH).negate()).oneMinus()).mul(0.12));
-          });
-          T.mulAssign(exp(dye.rgb.add(dye.a.mul(0.2)).mul(uMass).mul(ds).mul(BACKLIT_DEPTH).negate()));
-        }
+            T.mulAssign(exp(extinction(dye).mul(uMass).mul(ds).negate()));
+          } else {
+            // Through light, ink mostly absorbs; a little scatter softens thick ink.
+            // Thin ink must still read against the bright box, so the depth is raised.
+            If(m.greaterThan(0.01), () => {
+              L.addAssign(T.mul(albedoOf(dye)).mul(uBoxTop).mul(exp(m.mul(ds).mul(BACKLIT_DEPTH).negate()).oneMinus()).mul(0.12));
+            });
+            T.mulAssign(exp(dye.rgb.add(dye.a.mul(0.2)).mul(uMass).mul(ds).mul(BACKLIT_DEPTH).negate()));
+          }
+        });
         t.addAssign(ds);
+        // An opaque ray stops; later steps add nothing visible.
+        If(max(T.x, max(T.y, T.z)).lessThan(0.004), () => { Break(); });
       });
       if (mode === 'dark') {
         // Faint haze shows the light sheet; it is summed once, so it has no step bands.
@@ -950,13 +956,17 @@ async function start() {
     const raw = (now - lastTime) / 1000, delta = Math.min(raw, 1 / 20);
     lastTime = now;
     if (idle <= SLOW_AFTER) watchdog(raw);
-    simAcc = Math.min(simAcc + delta, SIM_STEP * 4);
+    // Two steps at most per frame; a slow GPU slows the ink, never spirals.
+    simAcc = Math.min(simAcc + delta, SIM_STEP * 2);
     try {
+      let stepped = false;
       while (simAcc >= SIM_STEP) {
         simulate();
         simAcc -= SIM_STEP;
+        stepped = true;
       }
-      draw();
+      // A fast display draws only when the ink moved.
+      if (stepped) draw();
     } finally {
       if (idle > SLEEP_AFTER && !press) { asleep = true; sync(); }
     }
