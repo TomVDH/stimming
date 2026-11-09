@@ -438,6 +438,9 @@ export function keyWord(word, touch) {
   return w.toUpperCase();
 }
 const COARSE = matchMedia('(pointer: coarse)');
+// A word that starts with a pointer verb stays on touch.
+// Every other word is a keyboard key.
+const POINTER_WORD = /^(double-click|double-tap|click|tap|drag|hold|release|scroll|pinch|press|swipe)\b/i;
 function makeKeys(entries, stage, info, delay) {
   const el = make('dl', 's2-keys');
   el.setAttribute('aria-label', 'How to play');
@@ -446,10 +449,14 @@ function makeKeys(entries, stage, info, delay) {
     row.append(make('dt'), make('dd'));
     row.firstChild.append(kbd);
     row.lastChild.textContent = verb;
-    return { kbd, word };
+    return { row, kbd, word };
   });
-  el.append(...rows.map(r => r.kbd.closest('div')));
-  const words = () => rows.forEach(r => { r.kbd.textContent = keyWord(r.word, COARSE.matches); });
+  el.append(...rows.map(r => r.row));
+  // Keyboard keys show on fine pointers only.
+  const words = () => rows.forEach(r => {
+    r.kbd.textContent = keyWord(r.word, COARSE.matches);
+    r.row.style.display = COARSE.matches && !POINTER_WORD.test(r.word) ? 'none' : '';
+  });
   words();
   COARSE.addEventListener?.('change', words);
   // The strip fades by opacity only, so screen readers keep it.
