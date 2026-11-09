@@ -23,8 +23,6 @@
 /* The wand stands in for the mouse pointer. */
 @media (pointer: fine) { .stage canvas { cursor: none; } }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
-/* Blow is held, so a long press must not select or open a menu. */
-.s2-chip[data-hold] { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 </style>
 </head>
 <body>
@@ -50,10 +48,10 @@
 <script type="module">
 import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
 const coarse = matchMedia('(pointer: coarse)').matches;
-// Space blows while held; the page binds it below, so the shell does not.
+// Space holds Blow; the page also binds it, as the shell matches key names.
 const ui = initPage({ id: 'bubbles', bar: {
   actions: [
-    { verb: 'blow', onPress: () => tapBlow() },
+    { verb: 'blow', key: 'Space', hold: true, onDown: () => blowStart(), onUp: () => blowEnd() },
     { verb: 'clear', key: 'P', onPress: () => popAll() },
   ],
   quality: true,
@@ -1164,34 +1162,6 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { if (e.key === ' ') blowEnd(); });
 addEventListener('blur', blowEnd);
-// Holding the Blow chip breathes a stream, as Space does.
-const blowB = [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => b.textContent.trim() === 'Blow');
-let heldAt = -1e9;
-// The chip shows Space as its key on fine pointers.
-blowB.insertAdjacentHTML('beforeend', '<kbd class="s2-kbd">Space</kbd>');
-blowB.setAttribute('aria-keyshortcuts', 'Space');
-blowB.title = 'Hold to blow a stream';
-blowB.dataset.hold = '';
-blowB.addEventListener('pointerdown', e => {
-  if (e.button > 0 || ui.action('blow').disabled) return;
-  try { blowB.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  blowB.setAttribute('aria-pressed', 'true');
-  blowStart();
-});
-const blowUp = () => {
-  if (!blowB.hasAttribute('aria-pressed')) return;
-  blowB.removeAttribute('aria-pressed');
-  heldAt = performance.now();
-  blowEnd();
-};
-['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => blowB.addEventListener(t, blowUp));
-blowB.addEventListener('contextmenu', e => e.preventDefault());
-// A click after a hold does nothing; a keyboard press gives one short puff.
-function tapBlow() {
-  if (performance.now() - heldAt < 600) return;
-  blowStart();
-  blowEnd();
-}
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
