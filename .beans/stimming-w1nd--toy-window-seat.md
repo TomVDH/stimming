@@ -72,3 +72,5 @@ Performance: the wing early-out skips the outside where it covers the view; High
 Storm blend fix: storm air hazes the background before the towers; towers haze by their own distance in storm grey; murk lights them, the moon's silver lining fades with Storm; trails and approach lights dim by distance. Sights now come on their own every 4 to 10 minutes (first after 1 to 3); Tom plans a new trigger menu later.
 
 Bar v2 port (2026-11-09): time of day is a stepper top left (seven hours: dawn, morning, noon, golden hour, dusk, blue hour, midnight); Storm slider bottom right; Dim action (key D); Settings: Cloud, Towns, Rain, Aurora, Falling and Flying sights, site Quality. The cabin light is the hour's 787 mood plus daylight through the window. Town lights go out by day (uLit). Glass scratches rebuilt: three hairline layers and cleaning swirls catch the cabin light. window/annex.json added; the shell has no annex yet.
+
+- 2026-11-09 (Tom, via toy-trainride): pane rain now uses shared/glassrain.js (grBeads, grRuns). Rain space is the pane in metres times 0.45 / 0.55, as in glasslab/. Strip 0.15 at flight speed; aft direction and flow unchanged.

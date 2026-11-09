@@ -2,6 +2,8 @@
 // Pass 1 draws the outside into its own buffer, only behind the glass.
 // Pass 2 draws the cabin, the frame and the panes; the glass samples pass 1.
 
+import { GLASS_RAIN } from '../shared/glassrain.js';
+
 export const QUAD_VS = `#version 300 es
 in vec2 aPos; void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
@@ -1977,54 +1979,8 @@ vec3 ghosts(vec2 px) {
 }
 // Ice crystals grow up from the bottom edge of the outer pane.
 // edge: the distance inside the skin opening, in metres.
-// Rain on the outer pane, after the train ride's window.
-// Still beads: one per cell, by chance.
-// xy is the spot inside the drop, z its radius in metres, w its weight.
-vec4 rainBead(vec2 p, float sc, float dens, float seed) {
-  vec2 g = p * sc, i = floor(g), f = fract(g);
-  if (hash12(i + seed) > dens) return vec4(0.0);
-  vec2 o = 0.25 + 0.5 * hash22(i + seed * 3.0);
-  float r = 0.06 + 0.14 * hash12(i + seed + 5.0);
-  vec2 dv = (f - o) / r;
-  if (dot(dv, dv) > 1.0) return vec4(0.0);
-  return vec4(dv, r / sc, 1.0);
-}
-// Running drops: the airflow drives them aft in lanes, fast heads with thin trails.
-vec4 rainRun(vec2 p, vec2 m, float flow, float Wc, float keep, float seed) {
-  vec2 ax = vec2(-m.y, m.x);
-  float u = dot(p, ax), v = dot(p, m);
-  float col = floor(u / Wc);
-  float h = hash12(vec2(col, seed));
-  if (h > keep) return vec4(0.0);
-  // Gusts make each run wander across its lane.
-  float fu = (fract(u / Wc) - 0.5) * Wc + sin(v * 60.0 + h * 40.0) * 0.0015 + (h - 0.5) * Wc * 0.4;
-  float sp = 0.6 + 0.8 * hash12(vec2(col, seed + 7.0));
-  float head = mod(flow * sp + h * 17.0, 1.6) - 0.8;
-  float dv = v - head;
-  float hr = 0.0016 + 0.0016 * h;
-  vec2 q = vec2(fu / hr, dv / (hr * 1.6));
-  if (dot(q, q) < 1.0) return vec4(ax * q.x + m * q.y, hr * 1.2, 1.0);
-  // Behind the head, a thin thread breaks into small beads.
-  float tl = 0.1 + 0.12 * h;
-  if (dv < 0.0 && dv > -tl) {
-    float age = -dv / tl;
-    float cell = v * 260.0 + h * 9.0;
-    vec2 tb = vec2(fu / 0.0008, (fract(cell) - 0.5) * 2.4);
-    if (hash12(vec2(col, floor(cell))) > 0.55 && dot(tb, tb) < 1.0) return vec4(ax * tb.x + m * tb.y, 0.0008, 0.7);
-    float tw = 0.0008 * (1.0 - 0.6 * age);
-    if (abs(fu) < tw) return vec4(ax * (fu / tw), tw, 0.8 * (1.0 - age));
-  }
-  return vec4(0.0);
-}
-// A drop acts as a lens: it flips the view behind it, and its edge reads dark.
-void rainLens(vec4 b, inout vec2 off, inout float rim, inout float spec) {
-  if (b.w <= 0.0) return;
-  float dd = dot(b.xy, b.xy), h = sqrt(max(1.0 - dd, 0.0));
-  off -= b.xy / max(h, 0.2) * b.z * 4.0 * b.w;
-  rim = max(rim, b.w * smoothstep(0.45, 0.98, dd));
-  vec3 N = normalize(vec3(b.xy, h * 1.4));
-  spec = max(spec, b.w * pow(max(dot(N, vec3(-0.3, 0.6, 0.74)), 0.0), 60.0));
-}
+// Rain on the outer pane: the shared glass-rain shader.
+${GLASS_RAIN}
 
 float ice(vec2 pO, float edge) {
   float grow = 0.02 * (0.4 + fbm(pO * 55.0, 3)) * smoothstep(-0.01, -0.12, pO.y);
@@ -2153,13 +2109,16 @@ void main() {
         float rRim = 0.0, rSpec = 0.0;
         if (uRain > 0.0) {
           vec2 m = normalize(vec2(-1.0, -0.12));
-          // At flight speed the airflow strips almost every drop.
-          // Drops race aft with thin trails; only a few tiny beads cling.
-          float bead = uRain * 0.12 * (1.0 - 0.6 * uStorm);
-          rainLens(rainBead(pO + 0.37, 160.0, 0.2 * bead, 2.0), rOff, rRim, rSpec);
-          rainLens(rainBead(pO + 0.71, 380.0, 0.35 * bead, 3.0), rOff, rRim, rSpec);
-          rainLens(rainRun(pO, m, uTime * 0.9, 0.01, 0.8 * uRain, 4.0), rOff, rRim, rSpec);
-          rainLens(rainRun(pO * 1.3 + 0.2, m, uTime * 0.9, 0.01, 0.7 * uRain, 5.0), rOff, rRim, rSpec);
+          vec3 L = vec3(-0.3, 0.6, 0.74);
+          // Rain space: the glass lab's shared look shows 0.45 units across the pane.
+          // This pane shows about 0.55 m, so drops scale by 0.45 / 0.55.
+          const float RS = 0.818;
+          vec2 pr = pO * RS;
+          float rCover = 0.0, rClear = 0.0;
+          // At flight speed the airflow strips the larger beads; runs race aft.
+          grBeads(pr, uRain, 0.15 * (1.0 - 0.6 * uStorm), L, rOff, rRim, rSpec, rCover);
+          grRuns(pr, m, uTime * 0.9, uRain, 1.0, L, rOff, rRim, rSpec, rCover, rClear);
+          rOff /= RS;
         }
         // The pane sits about 0.44 m from the eye.
         vec2 rPx = px + vec2(dot(vec3(rOff, 0.0), uR), dot(vec3(rOff, 0.0), uU)) * uFocal / 0.44;
