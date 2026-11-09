@@ -1256,7 +1256,10 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     // Little jitter: a steady march keeps hard edges hard.
     float jit = 0.3 + 0.4 * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
     // Sunlight above the shadow line; below it, the dawn glow and the flame.
-    float sun = smoothstep(uShadowH - 2.0, uShadowH + 2.0, vH) * (1.0 - vKind);
+    // The line is soft: the sun comes up over a third of the shadow height, and eases in.
+    float band = max(6.0, uShadowH * 0.35);
+    float sun = smoothstep(uShadowH - band * 0.3, uShadowH + band, vH) * (1.0 - vKind);
+    sun *= sun;
     // The key light: the sun when sunlit, else the bright horizon toward the sun.
     vec3 L = normalize(uSun), Lg = normalize(vec3(uSun.x, 0.06, uSun.z));
     vec3 Ld = normalize(mix(Lg, L, sun));
@@ -1275,7 +1278,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     float pf = 0.7 * hg(dot(rd, Fd), 0.6) + 0.3 * hg(dot(rd, Fd), -0.2);
     // The dawn key is the horizon's own colour, soft, never a flat orange.
     vec3 horizonC = k2sky(normalize(vec3(Lg.x, 0.02, Lg.z)));
-    vec3 keyC = mix(mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.55) * 2.2, mix(blue * 0.5, gold * 1.2, 0.55) * 1.6, sun);
+    vec3 keyC = mix(mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.55) * 2.2, mix(blue * 0.5, gold * 1.2, 0.55) * 1.15, sun);
     vec3 drift = vec3(0.0, -uTime * 0.03, uTime * 0.01);
     float fq = mix(1.6, 2.0, vKind);
     float T = 1.0;
@@ -1497,9 +1500,9 @@ function makeSlab(F, mode) {
       float lump = k2fbm(uvw * vec2(28.0, 70.0) + vec2(0.0, -uTime * 0.02) + age * 0.3);
       d *= 0.6 + 0.8 * lump;
       // Fresh smoke is dense; as it drifts and ages it thins to a veil.
-      float kx = uMode < 0.5 ? 4.0 * (0.15 + 0.85 * exp(-age / 28.0)) : 0.55;
+      float kx = uMode < 0.5 ? 3.0 * (0.1 + 0.9 * exp(-age / 18.0)) : 0.55;
       float a = 1.0 - exp(-d * kx);
-      if (uMode < 0.5) a *= 1.0 - 0.65 * smoothstep(6.0, 70.0, age);
+      if (uMode < 0.5) a *= 0.9 - 0.7 * smoothstep(4.0, 50.0, age);
       a *= smoothstep(0.0, 0.03, vUv.x) * smoothstep(1.0, 0.97, vUv.x) * smoothstep(1.0, 0.96, vUv.y);
       if (a < 0.004) discard;
       vec2 e = uTexel * 2.0;
