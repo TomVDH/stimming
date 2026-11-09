@@ -423,11 +423,19 @@ vec2 frontPush(vec2 p) {
   float L = length(d), e = L - uFront.z;
   return d / max(L, 1.0) * exp(-e * e / 1800.0) * uFront.w;
 }
-// A gust field: long rolling waves with a little noise on top.
+// Wind: one mean direction; lulls and gusts carried along it at 4 m/s.
+const vec2 WIND = vec2(0.94, 0.34);
+vec2 rot2(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(v.x * c - v.y * s, v.x * s + v.y * c); }
+// Gust strength at a point, 0.3 in a lull to 1.0 in a gust.
+float gustAt(vec2 p, float t) {
+  vec2 q = p - WIND * t * 4.0;
+  float slow = k2noise(q * 0.012 + vec2(t * 0.03, 0.0));
+  float front = k2noise(q * 0.06 + vec2(0.0, t * 0.05));
+  return (0.3 + 0.7 * smoothstep(0.2, 0.8, slow)) * (0.55 + 0.45 * front);
+}
+// The wind as a sideways push, for the reed banks.
 vec2 gust(vec2 p, float t) {
-  float w = sin(p.x * 0.05 + p.y * 0.02 - t * 0.7) * 0.6 + sin(p.x * 0.13 - p.y * 0.07 - t * 1.2) * 0.3;
-  w += (k2noise(p * 0.04 + vec2(t * 0.2, 0.0)) - 0.5) * 0.8;
-  return vec2(0.4, 0.15) * w * uSway;
+  return (WIND * (gustAt(p, t) - 0.5) * 0.8 + vec2(-WIND.y, WIND.x) * sin(t * 0.9 + p.x * 0.05) * 0.12) * uSway;
 }
 vec3 reedLight(vec3 P, float head, float tone, float edge) {
   vec3 V = normalize(P - cameraPosition);
@@ -480,52 +488,68 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
   varying vec3 vP; varying float vHead, vTone, vSide, vT, vSeed;
   ${HEAD}
   ${REED_GLSL}
+  // The reed: a tapered stalk, three leaves at nodes, a panicle that hangs downwind.
+  const float STALK_W0 = 0.008, STALK_W1 = 0.003;
+  const float LEAF_W = 0.013;
+  const float PLUME_LEN = 0.2, PLUME_DROOP = 0.61;
+  // A point at height u on a stalk whose tangent turns by th * u * u: a length-keeping bend.
+  vec3 stalkAt(float u, float th, vec3 root, vec3 dir, float H) {
+    float x = th * u * u * u / 3.0, y = u - th * th * u * u * u * u * u / 10.0;
+    return root + dir * (x * H) + vec3(0.0, y * H, 0.0);
+  }
+  vec3 stalkTan(float u, float th, vec3 dir) {
+    float a = th * u * u;
+    return normalize(dir * sin(a) + vec3(0.0, cos(a), 0.0));
+  }
   void main() {
-    float t = aG.x, H = aI.z;
-    float piece = aG.z;
-    // The wind combs every plume the same way, give or take 25 degrees.
-    vec2 wd = normalize(vec2(0.94, 0.34));
-    float ja = (fract(aJ.y * 1.73) - 0.5) * 0.9;
-    vec2 hd = vec2(wd.x * cos(ja) - wd.y * sin(ja), wd.x * sin(ja) + wd.y * cos(ja));
-    vec3 hd3 = vec3(hd.x, 0.0, hd.y);
+    float t = aG.x, H = aI.z, piece = aG.z;
     vec3 root = vec3(aI.x, 0.0, aI.y);
+    // Each stalk bends a little off the mean wind.
+    vec2 hd = rot2(WIND, (fract(aJ.y * 1.73) - 0.5) * 0.9);
+    vec3 hd3 = vec3(hd.x, 0.0, hd.y), cr3 = vec3(-hd.y, 0.0, hd.x);
+    // The local gust sets the bend and the sway; a tall stalk swings slower.
+    float g = gustAt(root.xz, uTime) * uSway;
+    float om = 4.5 / sqrt(max(H, 0.5)), ph = aJ.y * 6.2832;
+    float amp = 0.03 + 0.09 * g;
+    float sway = sin(uTime * om + ph) * amp;
+    float sway2 = sin(uTime * om * 0.7 + ph * 1.3) * (0.015 + 0.03 * g);
+    // The sound front bends the whole stalk away from the pad.
+    vec2 fp = frontPush(root.xz);
+    float th = aJ.x + 0.06 * H * g + sway + length(fp) * 0.3;
+    vec3 bend = normalize(hd3 + vec3(fp.x, 0.0, fp.y) * 0.6 + 1e-4);
     vec3 c, tan_;
     float w;
     vHead = 0.0;
-    // The stalk top, where the plume hangs from.
-    float lean = aJ.x;
-    vec3 top = root + vec3(0.0, 0.96 * H, 0.0) + hd3 * lean * H * 0.92;
     if (piece < 0.5) {
-      // A slim stalk that leans downwind, thinner toward the top.
-      float tt = t * 0.96;
-      c = root + vec3(0.0, tt * H, 0.0) + hd3 * lean * H * tt * tt;
-      tan_ = vec3(hd.x * 2.0 * lean * tt, 1.0, hd.y * 2.0 * lean * tt);
-      w = 0.007 * (1.0 - 0.55 * t);
+      c = stalkAt(t, th, root, bend, H) + cr3 * sway2 * H * t * t;
+      tan_ = stalkTan(t, th, bend);
+      w = mix(STALK_W0, STALK_W1, t);
     } else if (piece > 3.5) {
-      // The plume arcs out from the top, then hangs downwind.
-      float Lp = H * 0.014 * aJ.w;
-      // A feather that nods about thirty degrees off upright.
-      c = top + hd3 * (t * Lp * 0.4 + t * t * Lp * 0.15) + vec3(0.0, t * Lp * 0.85 - t * t * Lp * 0.3, 0.0);
-      tan_ = hd3 * (0.4 + 0.3 * t) + vec3(0.0, 0.85 - 0.6 * t, 0.0);
+      // The panicle hangs from the top, nods behind the stalk, and droops toward its tip.
+      vec3 top = stalkAt(1.0, th, root, bend, H) + cr3 * sway2 * H;
+      float lag = sin(uTime * om + ph - 0.5) * amp * 1.6 - sway;
+      float Lp = H * PLUME_LEN * aJ.w * 0.1;
+      float da = th + lag + PLUME_DROOP;
+      vec3 pd = normalize(bend * sin(da) + vec3(0.0, cos(da), 0.0));
+      c = top + pd * t * Lp + bend * t * t * Lp * 0.25 - vec3(0.0, t * t * Lp * 0.2, 0.0);
+      tan_ = normalize(pd + bend * 0.5 * t - vec3(0.0, 0.4 * t, 0.0));
       w = Lp * 0.13 * sin(3.1416 * pow(t, 0.7)) + 0.003;
       vHead = 1.0;
     } else {
-      // A long leaf leaves the stalk, rises a little, then arcs over.
+      // Leaves alternate sides at three nodes; each rises, arcs over, and flutters in a gust.
       float k = piece - 1.0;
-      float t0 = 0.2 + 0.2 * k + 0.08 * fract(aJ.y * (3.1 + k));
-      float sd = mod(k, 2.0) < 0.5 ? 1.0 : -1.0;
+      float node = k < 0.5 ? 0.3 : k < 1.5 ? 0.5 : 0.7;
+      float L = (0.36 - 0.05 * k) * H;
+      float sd = k < 0.5 || k > 1.5 ? 1.0 : -1.0;
+      vec3 base = stalkAt(node, th, root, bend, H) + cr3 * sway2 * H * node * node;
       vec2 own = vec2(cos(aI.w + k * 2.1), sin(aI.w + k * 2.1));
-      vec2 ld = normalize(mix(own, hd, 0.55) + vec2(-hd.y, hd.x) * sd * 0.3);
-      float L = (0.34 - 0.06 * k) * H;
-      c = root + vec3(0.0, t0 * H, 0.0) + vec3(ld.x, 0.0, ld.y) * t * L * 0.8 + vec3(0.0, t * L * 0.45 - t * t * L * 0.72, 0.0);
-      tan_ = vec3(ld.x * 0.8, 0.45 - 1.44 * t, ld.y * 0.8);
-      w = 0.012 * sin(3.1416 * min(t * 1.1, 1.0)) + 0.0006;
+      vec2 ld2 = normalize(mix(own, hd, 0.5 + 0.3 * g) + vec2(-hd.y, hd.x) * sd * 0.35);
+      vec3 ld = vec3(ld2.x, 0.0, ld2.y);
+      float fl = sin(uTime * (5.0 + 3.0 * fract(aJ.y * 7.1)) + t * 6.0 + ph) * 0.02 * (0.3 + g) * t;
+      c = base + ld * (t * L * 0.75) + vec3(0.0, t * L * 0.5 - t * t * L * 0.7, 0.0) + cr3 * fl * L;
+      tan_ = normalize(ld * 0.75 + vec3(0.0, 0.5 - 1.4 * t, 0.0));
+      w = LEAF_W * sin(3.1416 * pow(min(t * 1.08, 1.0), 0.8)) + 0.0006;
     }
-    // Wind bends the top more than the base.
-    float hy = c.y / max(H, 0.1);
-    vec2 g = gust(root.xz, uTime + aJ.y * 0.3) * hy * hy * 0.14 * H;
-    c.xz += g + vec2(sin(uTime * 1.6 + aJ.y * 6.0), cos(uTime * 1.2 + aJ.y * 4.0)) * 0.01 * hy * uSway;
-    c.xz += frontPush(root.xz) * hy * hy * 0.35 * H;
     // The ribbon turns to face the eye round its own axis.
     vec3 V = normalize(cameraPosition - c);
     vec3 side3 = normalize(cross(normalize(tan_), V));

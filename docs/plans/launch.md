@@ -182,3 +182,9 @@ Fix: the hunt scales the near blur and its cap only; far pixels have zero blur b
 
 Cause: downrange 1.1 D left the frame near T+60; the body hid at END-6.
 Fix: `rocketAt` works from the eye: `lensReach()` gives the sky's elevation span and the frame's half-width for the unzoomed lens; elevation climbs to 0.78 of the span (square root of altitude), azimuth sweeps to 0.8 of the half-width, the rocket recedes to 2.2 x the pad distance. Past T+70 the track flattens and sinks 18%: insertion. The body stays to END, sunlit above the shadow line (`uBodySun`), and fades over the last 8 s. `done: false` is set on the flight, so GSAP's set at END is a plain property. Checked at T+30, 60, 90, 115 (1280) and 60, 115 (375): in frame every time.
+
+## Living reeds (13:15, Tom: more realistic dynamic sway, a cleaner model)
+
+Wind: one mean direction (`WIND`), a gust strength per point (`gustAt`: an 80 m envelope for lulls and gusts, 16 m fronts, both carried along the wind at 4 m/s). The banks keep `gust()` as a sideways push from the same field.
+Stalk: a length-keeping bend; the tangent turns by th * u^2 (`stalkAt`, `stalkTan`, small-angle series). th = lean + 0.06 H g + sway + the sound front. Sway is a sine at 4.5 / sqrt(H) rad/s (tall stalks swing slower), amplitude 0.03 to 0.12 rad with the gust, plus a smaller cross-wind sine.
+Leaves: three, alternating sides at nodes 0.3, 0.5, 0.7 H, lengths 0.36 to 0.26 H, a 5 to 8 Hz flutter that grows in a gust. Plume: 0.2 H panicle, 35 degrees off upright, nodding 0.5 rad behind the stalk at 1.6 x the amplitude. Taper 8 mm to 3 mm. Named constants head the shader.
