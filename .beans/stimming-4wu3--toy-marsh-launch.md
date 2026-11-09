@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T10:30:25Z
+updated_at: 2026-11-09T10:54:13Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -168,3 +168,7 @@ Also in this commit: calmer reed sway, narrower two-sided base cloud (G_W 0.7), 
 ## Thinner old smoke, cheaper reeds (03:35)
 
 The ground cloud's extinction falls with age (4.0 to 0.6 over ~30 s) and its alpha drops 65% by 70 s, so the drift is a veil. Near reeds drop from 76 to 48 triangles each; counts 6000/4500 near (was 8500/6500), 12000/9000 far (was 18000/13000). Checked at 1280x800: idle, T+12, T+45, T+80, GL error 0.
+
+## Night launch (03:58)
+
+The Dawn slider now runs from 18° of depression (full night) to 1°: `dawnDeg(v) = 1 + 17 (1 - v)^1.3`. A `uNight` uniform (0 at 9°, 1 at 18°) darkens the sky and ambient, brings the stars up, raises exposure a little, and lets the flame key the reeds (rim x2.5), the ground cloud (x3.5), the puffs (x3) and the mist (x2). Checked at night: idle, T+10, T+18, T+30; GL error 0. Menu tile and toys.json carry the Beta tag.

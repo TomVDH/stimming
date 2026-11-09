@@ -160,6 +160,8 @@ const U = {
   uFront: { value: new THREE.Vector4(0, 0, 0, 0) },
   // Thick air round a low flame glows; thin air high up does not.
   uAir: { value: 1 },
+  // Night: 0 at 9° of depression, 1 at 18°; the flame carries the light.
+  uNight: { value: 0 },
   // Wisps: a random offset per load, and how much sky they cover.
   uWisp: { value: new THREE.Vector3(Math.random() * 200, Math.random() * 200, 0.3 + Math.random() * 0.7) },
 };
@@ -182,20 +184,25 @@ const skyB = t => 0.06 + 0.94 * t * t;
 function dawn(deg) {
   depression = deg;
   const t = THREE.MathUtils.clamp((9 - deg) / 8, 0, 1);
+  // Past 9° the dawn is gone: the sky and the ambient fall toward night.
+  const n = THREE.MathUtils.clamp((deg - 9) / 9, 0, 1);
   const r = THREE.MathUtils.degToRad(deg);
   U.uSun.value.set(SUN_AZ.x * Math.cos(r), -Math.sin(r), SUN_AZ.y * Math.cos(r));
   U.uDawn.value = t;
+  U.uNight.value = n;
   // Ambient: the zenith and the low band; glow: the sun-side horizon.
-  const B = skyB(t);
+  const B = skyB(t) * (1 - 0.8 * n);
   U.uAmb.value.set(...SKY.zen.map((z, i) => B * (z * (0.6 + 0.6 * t) + SKY.low[i] * 0.45)));
   const glow = SKY.amber.map((a, i) => a + (SKY.ember[i] - a) * (1 - t));
-  U.uGlowC.value.set(...glow.map(g => B * g * 0.35));
+  U.uGlowC.value.set(...glow.map(g => B * g * 0.35 * (1 - 0.7 * n)));
   // The eye opens up in the dark; the grade still keeps it a dawn.
-  renderer.toneMappingExposure = 2.1 - 1.25 * t;
+  renderer.toneMappingExposure = 2.1 - 1.25 * t + 0.3 * n;
   U.uShadowH.value = shadowH(deg);
   return U.uShadowH.value;
 }
-const setDawn = () => { dawn(9 - 8 * opts.dawn); draw(); };
+// The slider runs from full night (18° down) to the last of the dawn (1°).
+const dawnDeg = v => 1 + 17 * Math.pow(1 - v, 1.3);
+const setDawn = () => { dawn(dawnDeg(opts.dawn)); draw(); };
 
 /* ---------- K2: noise ---------- */
 // Lifted from Fireworks, which lifted it from Night viaduct's Port.
@@ -221,6 +228,7 @@ uniform float uDawn;
 uniform vec4 uFlame;
 uniform vec3 uFlameC;
 uniform float uAir;
+uniform float uNight;
 uniform vec3 uWisp;
 // Wisps: thin streaks of high cloud on a sheet 7 km up.
 // Unlit they are grey shapes; near dawn their undersides catch the glow.
@@ -240,7 +248,7 @@ vec3 flameGlow(vec3 dir) {
   vec3 v = uFlame.xyz - cameraPosition;
   float c = dot(dir, normalize(v)) - 1.0;
   float low = exp(-max(dir.y, 0.0) * 9.0);
-  return uFlameC * uFlame.w * uAir * (0.06 * exp(c * 900.0) + 0.02 * exp(c * 60.0) + 0.012 * exp(c * 6.0) * low);
+  return uFlameC * uFlame.w * uAir * (1.0 + 0.4 * uNight) * (0.06 * exp(c * 900.0) + 0.02 * exp(c * 60.0) + 0.012 * exp(c * 6.0) * low);
 }
 float k2stars(vec3 dir) {
   vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
@@ -268,7 +276,9 @@ vec3 k2sky(vec3 dir) {
   col *= 1.0 - 0.35 * anti * exp(-up * 12.0) * t;
   col += ${v3(SKY.belt)} * anti * exp(-pow((up - 0.12) / 0.07, 2.0)) * t;
   col *= 0.06 + 0.94 * t * t;
-  float dark = (1.0 - t) * (1.0 - t);
+  // Night: the ember line goes out, the sky falls to near black, the stars come up.
+  col *= 1.0 - 0.8 * uNight;
+  float dark = (1.0 - t) * (1.0 - t) * (1.0 + 2.0 * uNight);
   col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y) * dark * 1.5;
   return wisps(dir, col, t, cs) + flameGlow(dir);
 }`;
@@ -432,7 +442,8 @@ vec3 reedLight(vec3 P, float head, float tone, float edge) {
   // The flame rims the stems and plumes that stand against it.
   vec3 F = normalize(uFlame.xyz - P);
   float face = pow(max(dot(V, F), 0.0), 5.0);
-  c += uFlameC * uFlame.w * (0.0003 + face * (0.0015 + head * (0.003 + 0.012 * edge * edge))) * (0.3 + 0.7 * uAir);
+  // At night the flame is the only key: it rims the reeds three times as hard.
+  c += uFlameC * uFlame.w * (0.0003 + face * (0.0015 + head * (0.003 + 0.012 * edge * edge)) * (1.0 + 1.5 * uNight)) * (0.3 + 0.7 * uAir);
   return k2haze(c, P);
 }`;
 /* ---------- end reed shading ---------- */
@@ -844,7 +855,7 @@ const mistMat = new THREE.ShaderMaterial({
     vec3 col = k2hazeColor(V) * 1.1 + uAmb * 0.2;
     // Mist near the pad lights orange on the flame side.
     vec3 fd = uFlame.xyz - vP;
-    col += uFlameC * uFlame.w * 0.25 / (1.0 + dot(fd, fd) / 360000.0);
+    col += uFlameC * uFlame.w * 0.25 * (1.0 + uNight) / (1.0 + dot(fd, fd) / 360000.0);
     gl_FragColor = vec4(col * a, a);
   }`,
 });
@@ -1255,7 +1266,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     vec3 fdv = uFlame.xyz - vC;
     float reach = uScale * (vKind > 0.5 ? 0.06 : 0.012);
     // Ground clouds lose the flame's light as it climbs away.
-    vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind)) * mix(1.0, uAir, vKind);
+    vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind)) * mix(1.0, uAir, vKind) * (1.0 + 2.0 * uNight);
     // Little fill: smoke turned from the dawn stays a dark shape.
     // Sky fill gives a cool grey body; smoke turned from the dawn stays dim.
     vec3 amb = mix(vec3(dot(uAmb, vec3(0.33))), uAmb, 0.6) * 0.9;
@@ -1523,7 +1534,7 @@ function makeSlab(F, mode) {
       }
       vec3 fdv = uFlame.xyz - vP;
       float reach = uScale * 0.05;
-      c += uFlameC * uFlame.w * uAir * 1.2 / (1.0 + dot(fdv, fdv) / (reach * reach)) * (0.3 + 0.7 * max(dot(n, normalize(fdv)), 0.0)) * pw;
+      c += uFlameC * uFlame.w * uAir * 1.2 * (1.0 + 2.5 * uNight) / (1.0 + dot(fdv, fdv) / (reach * reach)) * (0.3 + 0.7 * max(dot(n, normalize(fdv)), 0.0)) * pw;
       c = mix(c, k2hazeColor(V), 0.3 * k2hazeAmount(vP));
       gl_FragColor = vec4(c * a, a);
     }`,
@@ -2526,7 +2537,7 @@ function setLens() {
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
-dawn(9 - 8 * opts.dawn);
+dawn(dawnDeg(opts.dawn));
 buildBanks();
 buildShore(PAD);
 setBox(ui.setting('letterbox').value);
