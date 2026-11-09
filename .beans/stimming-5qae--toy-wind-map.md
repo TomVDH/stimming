@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T07:51:03Z
+updated_at: 2026-11-09T08:44:33Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -55,3 +55,15 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
   - Q6 reduced motion: clean; slower particles, long trails. Q7 four controls, three key rows. Q8 Space adds a cyclone. Q9 see Task 4.
   - Q10 at High (2496 by 1504) with Many particles during two spin-ups: median 6.2 ms, p90 47.5 ms, max 134 ms per frame in a throttled background tab. Tom checks fps on a real device.
   - Stills at 1280 and 375 px on Bar v2.
+
+## Round 2 (Tom, 2026-11-09)
+
+Spec: docs/superpowers/specs/2026-11-09-windmap-round-2-design.md.
+
+- [ ] Icon round (five pointer-driven directions), Tom picks
+- [ ] Emblem; promotion to the main shelf as No. 33 (Beta)
+- [ ] Chart grid
+- [ ] Light pass: bloom, eye glow, gust flash, merge ring
+- [ ] Gestures: high pressure, flick, jet stream
+- [ ] Chart layer: fronts, tracks, H and L
+- [ ] Globe projection
