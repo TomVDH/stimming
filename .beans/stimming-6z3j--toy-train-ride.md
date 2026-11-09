@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T20:20:00Z
+updated_at: 2026-11-09T20:28:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -116,3 +116,6 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] No cabin decor: table, seat ahead, two-tone wall and grille removed; one centred window in a bright, clean wall, as in Window seat
 - [x] Scratches after Window seat: hairlines in three sizes that glint across the line to each passing lamp, and cloth swirls; the noise scratches are gone
 - [x] Faint cabin reflection on the glass stays (cube map, the viewer's ghost, the double-glazing ghost)
+- [x] Window fills the view with a slim margin of wall; stop line off (the station signs name each stop)
+- [x] Cross bar is a slim flush satin mullion with hairline seals
+- [x] Lighter top reveal at night; phone view tilts less, so it is not mostly track bed
