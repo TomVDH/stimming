@@ -1976,7 +1976,8 @@ function draw() {
   borderLine.material.uniforms.uLine.value = (0.06 * ss(0.35, 0.85, z) + 0.12 * (1 - ss(3, 9, bt))) * ss(0, 1.4, bt);
   // Traffic lights up behind the lamps.
   // By day car lamps barely show; the map styles keep their traffic.
-  carMat.uniforms.uBoot.value = ss(4, 9, bt) * (look_.cars ? 1 : 0) * (1 - 0.85 * U.uSun.value);
+  // During the opening, high views show only the lit arteries; traffic joins after.
+  carMat.uniforms.uBoot.value = ss(4, 9, bt) * (look_.cars ? 1 : 0) * (1 - 0.85 * U.uSun.value) * (1 - (1 - reveal) * ss(0.25, 0.7, z));
   U.uBootK.value = ss(1.4, 7, bt);
   U.uVol.value = hourly(VOL, clock.h);
   // From high up the strips carry the light; the sprites add nothing but work.
@@ -1996,11 +1997,12 @@ function draw() {
   carMat.uniforms.uHeadAt.value = 0.55 + 0.4 * ss(0.4, 1, z);
   ribMat.uniforms.uAm.value = hourly(AM, clock.h);
   ribMat.uniforms.uPm.value = hourly(PM, clock.h);
-  ribMat.uniforms.uJamK.value = ss(0.45, 0.85, z);
+  // Jams show only once the opening has settled.
+  ribMat.uniforms.uJamK.value = ss(0.45, 0.85, z) * reveal;
   placeMarks(frameDt);
   trainMat.uniforms.uFar.value = 1 + 10 * ss(0.35, 1, z);
-  // Rail lines read clearer from altitude.
-  railLines.material.uniforms.uRailK.value = (0.03 + 0.05 * ss(0.4, 1, z)) * (1 + U.uSun.value);
+  // Rail stays a faint hint under the roads.
+  railLines.material.uniforms.uRailK.value = (0.006 + 0.01 * ss(0.4, 1, z)) * (1 + U.uSun.value);
   grade.uniforms.uSeed.value = (t * 7.31) % 1;
   sky.material.uniforms.uInvVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   composer.render();
@@ -2158,6 +2160,8 @@ const boot = { t0: null };
 U.uOn.value = 1; U.uHot.value = 0; U.uSwT.value = 1e6;
 // The opening holds on the signs, then pulls slowly out to the whole country.
 const pull = { t0: -1, dur: 32, hold: 3.5 };
+// Traffic and jam red fade in once the pull has finished, over about 6 s.
+let reveal = 0;
 const stopPull = () => { pull.t0 = -1; };
 function bootUp() {
   boot.t0 = nowS();
@@ -2187,6 +2191,8 @@ function tick(now) {
       moving = true;
       if (k >= 1) stopPull();
     }
+    const revealTo = pull.t0 >= 0 || boot.t0 === null ? 0 : 1;
+    if (reveal !== revealTo) { reveal = reduced() ? revealTo : Math.min(1, Math.max(0, reveal + Math.sign(revealTo - reveal) * dt / 6)); moving = true; }
     if (Math.abs(zTo - z) > 1e-4) { z = reduced() ? zTo : z + (zTo - z) * (1 - Math.exp(-dt * 4)); moving = true; } else z = zTo;
     holdAnchor();
     for (const k of ['d', 'h', 'size', 'halo', 'glow', 'wide', 'stars']) {
