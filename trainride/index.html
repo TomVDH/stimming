@@ -178,9 +178,25 @@ float town(vec2 xz) { return textureLod(tF, rt(xz), 0.0).g; }
 // Distance outside the water, roughly in metres; negative on the water.
 float shore(vec2 xz) { return (0.5 - wet(xz)) * 30.0; }
 // oct above 4 adds relief finer than the 13 m elevation grid.
+// Cubic B-spline height: four bilinear taps.
+// Bilinear heights crease along the grid; the cubic keeps slopes smooth.
+float hCubic(vec2 uv) {
+  vec2 sz = vec2(${ROUTE.w}.0, ${ROUTE.ht}.0);
+  vec2 tc = uv * sz - 0.5, f = fract(tc);
+  tc -= f;
+  vec2 f2 = f * f, f3 = f2 * f;
+  vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0, w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0, w3 = f3 / 6.0;
+  vec2 s0 = w0 + w1, s1 = w2 + w3;
+  vec2 p0 = (tc - 0.5 + w1 / s0) / sz, p1 = (tc + 1.5 + w3 / s1) / sz;
+  return s0.y * (s0.x * textureLod(tH, p0, 0.0).r + s1.x * textureLod(tH, vec2(p1.x, p0.y), 0.0).r)
+       + s1.y * (s0.x * textureLod(tH, vec2(p0.x, p1.y), 0.0).r + s1.x * textureLod(tH, p1, 0.0).r);
+}
+// Bilinear height: cheap, for shadow and mirror marches.
+float landC(vec2 xz) { return textureLod(tH, rt(xz), 0.0).r; }
 float landO(vec2 xz, int oct) {
   vec2 uv = rt(xz);
-  float h = textureLod(tH, uv, 0.0).r;
+  float h = hCubic(uv);
   if (oct > 4) {
     float d = (1.0 - textureLod(tF, uv, 0.0).r) * smoothstep(20.0, 80.0, -xz.y);
     h += (gnoise(xz * 0.03) * 2.0 + gnoise(xz * 0.11) * 0.6) * d;
@@ -350,7 +366,6 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   uniform float uCamX, uDay;
   uniform vec3 uSun;
   varying vec3 vP, vN;
-  varying float vSh;
   ${NOISE}
   ${LAND}
   void main() {
@@ -365,22 +380,11 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     }
     float e = max(dx * 0.5, 1.0);
     vN = normalize(vec3(w.y - land(w.xz + vec2(e, 0.0)), e, w.y - land(w.xz + vec2(0.0, e))));
-    // By day a short march toward the sun gives soft terrain shadows.
-    vSh = 1.0;
-    if (uDay > 0.01) {
-      float t = 20.0;
-      for (int i = 0; i < 11; i++) {
-        vec3 q = w + uSun * t;
-        vSh = min(vSh, clamp(6.0 * (q.y - landO(q.xz, 4)) / t + 0.5, 0.0, 1.0));
-        t *= 1.75;
-      }
-    }
     vP = w;
     gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vP, vN;
-  varying float vSh;
   uniform float uTime;
   ${NOISE}
   ${LAND}
@@ -414,24 +418,21 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float hh = vP.y + 20.0;
     // Far triangles are wide; their interpolated normals give rock patches triangle edges.
     // Past 600 m the normal comes from the height map at this pixel instead.
-    vec3 N = normalize(vN);
-    if (dist > 600.0) {
-      float e = clamp(dist * 0.004, 2.0, 40.0), h0 = landO(vP.xz, 4);
-      vec3 Nf = normalize(vec3(h0 - landO(vP.xz + vec2(e, 0.0), 4), e, h0 - landO(vP.xz + vec2(0.0, e), 4)));
-      N = normalize(mix(N, Nf, smoothstep(600.0, 1200.0, dist)));
-    }
+    // The normal comes from the cubic height map at each pixel, so no triangle shows.
+    float ne = clamp(dist * 0.004, 2.0, 40.0), nh0 = landO(vP.xz, 4);
+    vec3 N = normalize(vec3(nh0 - landO(vP.xz + vec2(ne, 0.0), 4), ne, nh0 - landO(vP.xz + vec2(0.0, ne), 4)));
     // Close land gets fine relief from noise.
     float near = smoothstep(1400.0, 250.0, dist);
-    if (near > 0.0) N = normalize(N + vec3(gnoise(vP.xz * 0.07), 0.0, gnoise(vP.xz * 0.07 + 9.0)) * 0.5 * near);
+    if (near > 0.0) N = normalize(N + vec3(gnoise(vP.xz * 0.04), 0.0, gnoise(vP.xz * 0.04 + 9.0)) * 0.15 * near);
     float slope = 1.0 - N.y;
     float n1 = fbm(vP.xz * 0.002);
     // Meadow: lush in the valley, browner up high.
     // Pixar-lite: clean, saturated meadow greens in broad soft bands.
-    vec3 alb = mix(vec3(0.07, 0.17, 0.035), vec3(0.15, 0.2, 0.05), smoothstep(0.35, 0.65, fbm(vP.xz * 0.0017 + 3.0)));
+    // Soft sage to warm meadow, in wide calm bands.
+    vec3 alb = mix(vec3(0.1, 0.165, 0.06), vec3(0.16, 0.19, 0.08), smoothstep(0.3, 0.7, fbm(vP.xz * 0.0012 + 3.0)));
     alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
     // Grass texture close by; it fades before it can shimmer.
-    float grain = vnoise(vP.xz * 0.9) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.9))));
-    alb *= (0.9 + 0.2 * vnoise(vP.xz * 0.05)) * (0.94 + 0.12 * grain);
+    alb *= 0.95 + 0.1 * vnoise(vP.xz * 0.02);
     // Farms: a patchwork of fields on the flat floor.
     float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd);
     if (flatL > 0.0) {
@@ -439,8 +440,12 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       vec2 fp = mat2(0.94, 0.34, -0.34, 0.94) * vP.xz / vec2(85.0, 36.0);
       fp.x += floor(fp.y) * 0.37;
       float fh = hash1(floor(fp));
-      vec3 fc = fh < 0.6 ? alb * (0.75 + 0.6 * fh) : fh < 0.8 ? vec3(0.1, 0.19, 0.035) : fh < 0.93 ? vec3(0.16, 0.15, 0.06) : vec3(0.09, 0.07, 0.045);
-      alb = mix(alb, fc, flatL * 0.6);
+      vec3 fc = fh < 0.6 ? alb * (0.85 + 0.35 * fh) : fh < 0.8 ? vec3(0.1, 0.19, 0.035) : fh < 0.93 ? vec3(0.15, 0.17, 0.06) : vec3(0.11, 0.12, 0.05);
+      // Field edges blend over a few metres, so no hard line crosses the meadow.
+      vec2 fe0 = abs(fract(fp) - 0.5) * vec2(85.0, 36.0);
+      float soft = smoothstep(0.0, 6.0, min(42.5 - fe0.x, 18.0 - fe0.y));
+      // Close fields fill the window as flat slabs; they fade in from 300 m.
+      alb = mix(alb, fc, flatL * 0.4 * soft * smoothstep(250.0, 600.0, dist));
     }
     // Vineyards on the sunny slopes above Lake Zurich.
     float vine = sg.x * smoothstep(0.06, 0.12, slope) * smoothstep(0.45, 0.3, slope) * smoothstep(400.0, 150.0, hh) * step(12.0, hh) * smoothstep(0.15, 0.4, N.z);
@@ -456,23 +461,29 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     if (vm > 0.0 && wd > 6.0) {
       vec2 g = vP.xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
       float hs = hash1(floor(g) + 31.0);
+      // Far roofs merge into a soft town tint; single pixels would speckle.
+      float hf = 1.0 - smoothstep(0.12, 0.35, length(fwidth(g)));
+      alb = mix(alb, vec3(0.2, 0.18, 0.15), vm * 0.45 * (1.0 - hf));
       // Roofs show from 200 m out; closer they would read as flat tiles.
-      if (hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
+      if (hf > 0.0 && hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
         house = 1.0;
-        alb = f.y > 0.2 ? vec3(0.5, 0.47, 0.42) : hs < 0.25 ? vec3(0.13, 0.045, 0.025) : hs < 0.5 ? vec3(0.075, 0.048, 0.032) : vec3(0.085, 0.085, 0.09);
+        vec3 hc = f.y > 0.2 ? vec3(0.42, 0.4, 0.36) : hs < 0.25 ? vec3(0.2, 0.1, 0.07) : hs < 0.5 ? vec3(0.14, 0.1, 0.08) : vec3(0.15, 0.15, 0.16);
+        alb = mix(alb, hc, hf);
       }
     }
     // Forest: patches on the slopes, thick on the near bank, none above the treeline.
     // A fine noise frays the edges of each wood.
     float fm = fbm(vP.xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3 + (vnoise(vP.xz * 0.04) - 0.5) * 0.1;
-    float forest = smoothstep(0.5, 0.6, fm);
+    // Flat floors stay open; lone woods there read as dark holes.
+    fm -= 0.3 * smoothstep(0.08, 0.02, slope);
+    float forest = smoothstep(0.5, 0.7, fm);
     forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
     // Crowns show up close; the pattern fades before it can shimmer.
     float crown = vnoise(vP.xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.45))));
     // Dark spruce mixes with brighter beech.
     // Woods stay rich green, not black: deep spruce and bright beech.
-    vec3 wood = mix(vec3(0.03, 0.065, 0.03), vec3(0.07, 0.12, 0.035), smoothstep(0.35, 0.65, fbm(vP.xz * 0.003 + 7.0)));
-    alb = mix(alb, wood * (0.8 + 0.4 * crown), forest);
+    vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), smoothstep(0.35, 0.65, fbm(vP.xz * 0.003 + 7.0)));
+    alb = mix(alb, wood * (0.92 + 0.16 * crown), forest);
     // Rock on steep faces and high crags; snow above the snow line.
     float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
     // Limestone: pale grey with bedding lines and dark water streaks.
@@ -491,13 +502,26 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       fp2.x += floor(fp2.y) * 0.37;
       vec2 fe = abs(fract(fp2) - 0.5);
       float hedge = smoothstep(0.47, 0.495, max(fe.x, fe.y)) * step(0.45, hash1(floor(fp2) + 5.0)) * (1.0 - smoothstep(0.03, 0.08, length(fwidth(fp2))));
-      alb = mix(alb, vec3(0.02, 0.04, 0.015), hedge * flatL * 0.8);
+      alb = mix(alb, vec3(0.03, 0.05, 0.02), hedge * flatL * 0.5 * smoothstep(300.0, 700.0, dist));
     }
     // Valleys and the feet of slopes see less sky.
     float ao = 0.7 + 0.3 * smoothstep(-0.25, 0.25, n1 - 0.5 + (1.0 - slope) * 0.2);
     // Wrapped key light: the sun bends softly round each hill.
     // Terrain self-shadow stays gentle: the coarse vertex march must never punch black holes.
-    float shSoft = mix(0.55 + 0.45 * vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist)));
+    // Terrain shadow: a short march toward the sun at each pixel, soft-edged.
+    float vSh = 1.0;
+    if (uDay > 0.01 && dist > 60.0) {
+      // The march starts on the smooth map, a little up: small bumps must not shade themselves.
+      vec3 o = vec3(vP.x, max(vP.y, landC(vP.xz)) + 4.0, vP.z);
+      float st = 30.0;
+      for (int i = 0; i < 11; i++) {
+        vec3 q = o + uSun * st;
+        vSh = min(vSh, clamp(4.0 * (q.y - landC(q.xz)) / st + 0.5, 0.0, 1.0));
+        st *= 1.75;
+      }
+      vSh = smoothstep(0.0, 1.0, vSh);
+    }
+    float shSoft = mix(0.72 + 0.28 * vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist)));
     float wrapD = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
     float keyL = wrapD * wrapD * shSoft;
     // Shade is tinted cool blue, never dead black.
@@ -602,7 +626,7 @@ const glints = [];
 {
   const pos = [], col = [], size = [];
   const SOD = [1.0, 0.55, 0.2], WARM = [1.0, 0.75, 0.45], WHITE = [0.85, 0.92, 1.0];
-  const light = (x, z, c, k, sz) => { pos.push(x, 3 + rnd() * 6, z); col.push(...c.map(q => q * k)); size.push(sz); };
+  const light = (x, z, c, k, sz) => { pos.push(x, 2 + rnd() * 4, z); col.push(...c.map(q => q * k)); size.push(sz); };
   const pick = () => rnd() < 0.6 ? WARM : rnd() < 0.7 ? SOD : WHITE;
   // Each real town and village gets a cluster; the map spreads the rest.
   const KIND = { c: [1400, 1400, 1.4], t: [420, 650, 1.2], s: [220, 400, 0.9], v: [110, 260, 0.8] };
@@ -618,7 +642,8 @@ const glints = [];
   for (let i = 0; i < 6000; i++) {
     const x = ((range(-2600, 3400) % TILE) + TILE) % TILE, t = 70 + 3200 * rnd() ** 1.6;
     const c = rnd() < 0.45 ? WHITE : rnd() < 0.6 ? WARM : SOD;
-    pos.push(x, 3 + rnd() ** 2 * (rnd() < 0.04 ? 80 : 26), -t);
+    // Lights sit on the ground or on low buildings, never floating.
+    pos.push(x, 2 + rnd() ** 2 * 12, -t);
     col.push(...c.map(q => q * range(1.2, 3)));
     size.push(range(22, 44));
   }
@@ -679,7 +704,8 @@ const glints = [];
       // Lights go out by day, and none stand in the water.
       if (uDay > 0.995 || shore(w.xz) < 6.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); vP = w; return; }
       // Far lights lift a little, so the coarse far mesh never hides them.
-      w.y += land(w.xz) + length(w.xz - cameraPosition.xz) * 0.008;
+      // The far mesh is filtered now, so far lights need only a small lift.
+      w.y += land(w.xz) + length(w.xz - cameraPosition.xz) * 0.002;
       vP = w;
       // Distant lights shimmer a little in the valley air.
       vC = color * (1.0 - uDay) * (0.85 + 0.15 * sin(uTime * 3.0 + position.x * 0.37 + position.z * 0.11));
@@ -801,16 +827,18 @@ function strip(geo, w, cy, add, order, frag) {
 }
 // A box shape convolved with the motion box: a trapezoid of cover.
 const COVER = w => /* glsl */`clamp((${w} + uSmear + 0.001 - abs(vL.x) * 2.0) / (2.0 * uSmear + 0.002), 0.0, 1.0) * min(1.0, ${w} / (uSmear + 0.001))`;
-strip(new THREE.PlaneGeometry(1, 7.4).translate(0, 1.1, -3.0), 0.24, 1.1, false, 3, /* glsl */`
+strip(new THREE.PlaneGeometry(1, 7.4).translate(0, 1.1, -2.8), 0.34, 1.1, false, 3, /* glsl */`
 void main() {
-  float cov = ${COVER('0.24')};
+  // A mast zips past in a few frames; the blur keeps more of its body, so it reads.
+  float cov = pow(${COVER('0.34')}, 0.55);
   // An H-beam catenary mast: two lit flanges round a darker web, blurred by the smear.
-  float fl = mix(smoothstep(0.07, 0.1, abs(vL.x)), 0.5, smoothstep(0.02, 0.15, uSmear));
+  float fl = mix(smoothstep(0.1, 0.14, abs(vL.x)), 0.5, smoothstep(0.02, 0.15, uSmear));
   float k = max(vK, 0.0);
   vec3 cn = vec3(0.003, 0.003, 0.004) + vec3(1.0, 0.66, 0.36) * trainLight(vW) * 0.03;
   cn += LAMPC * k * 0.06 * exp(-max(0.1 - vW.y, 0.0) * 1.5) * step(vW.y, 0.23);
-  vec3 N = normalize(vec3(clamp(vL.x / (0.12 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
-  vec3 cd = vec3(0.08, 0.085, 0.09) * (sunC() * max(dot(N, uSun), 0.0) + skyA(0.0));
+  vec3 N = normalize(vec3(clamp(vL.x / (0.17 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
+  // Dark galvanised steel, a silhouette against the bright view.
+  vec3 cd = vec3(0.05, 0.052, 0.055) * (sunC() * max(dot(N, uSun), 0.0) + skyA(0.0) * 0.8);
   vec3 c = mix(cn, cd, uDay) * (0.55 + 0.6 * fl);
   // The cantilever bracket and its insulator sit near the top.
   c = mix(c, mix(vec3(0.01), vec3(0.25, 0.23, 0.2), uDay), smoothstep(0.04, 0.0, abs(vW.y - 3.9)) * 0.8);
@@ -873,7 +901,7 @@ vec3 stnLight(vec3 P, vec3 N) {
     if (i > 1 && uIsl < 0.5) break;
     vec3 L = vec3(0.0, 1.32 - P.y, (i == 0 ? -3.6 : i == 1 ? -8.4 : i == 2 ? -16.6 : -20.6) - P.z);
     float d2 = dot(L, L);
-    c += STNC * 8.0 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 0.8);
+    c += STNC * 3.5 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.5);
   }
   // Beyond the canopy, a mast every 24 m lights the open platform.
   float mx = (floor(x / 24.0) + 0.5) * 24.0;
@@ -882,7 +910,7 @@ vec3 stnLight(vec3 P, vec3 N) {
     if (abs(lx) < ${CAN}.0 || abs(lx) > ${PL / 2}.0) continue;
     vec3 L = vec3(lx - x, 2.3 - P.y, -6.0 - P.z);
     float d2 = dot(L, L);
-    c += MASTC * 9.0 * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.0);
+    c += MASTC * 5.0 * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.5);
   }
   return c * (1.0 - uDay);
 }`;
@@ -927,7 +955,7 @@ const solid = body => new THREE.ShaderMaterial({
     }
     // Station day light, Pixar-lite: a wrapped sun and a strong sky fill with a warm bounce.
     float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
-    vec3 day = sunC() * wrapS * wrapS * shade + skyA(N.y) * 1.7 + sunC() * vec3(0.06, 0.055, 0.045);
+    vec3 day = sunC() * wrapS * wrapS * shade + skyA(N.y) * 1.15 + sunC() * vec3(0.08, 0.07, 0.055);
     gl_FragColor = vec4(alb * mix(night, day, uDay) + glow, 1.0);
   }`,
 });
@@ -941,10 +969,7 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
     // Concrete coping at the edge, with joints every metre that blur with the smear.
     float j = (0.5 - abs(fract(x) - 0.5));
     float joint = (1.0 - smoothstep(0.0, 0.01 + uSmear * 0.5, j)) * 0.03 / (0.03 + uSmear);
-    vec3 asph = vec3(0.2, 0.198, 0.19) * (0.93 + 0.14 * vnoise(vec2(x * 0.7, vP.z * 1.3))) * (0.96 + 0.08 * vnoise(vec2(x * 9.0, vP.z * 9.0)));
-    // Patched asphalt: darker repair rectangles.
-    vec2 pc = floor(vec2(x / 7.0, vP.z / 3.0));
-    if (hash1(pc) > 0.75) asph *= 0.9;
+    vec3 asph = vec3(0.3, 0.29, 0.27) * (0.96 + 0.08 * vnoise(vec2(x * 0.5, vP.z * 0.9)));
     alb = asph;
     float cop = 1.0 - smoothstep(0.34, 0.36, dz);
     alb = mix(alb, vec3(0.46, 0.45, 0.42) * (1.0 - 0.6 * joint) * (0.9 + 0.2 * vnoise(vec2(x * 3.0, dz * 20.0))), cop);
@@ -996,7 +1021,7 @@ const canopyBody = (z1, z2) => /* glsl */`
     alb = vec3(0.34, 0.35, 0.36) * (1.0 - 0.35 * rib);
     // Each strip is a slim diffuser, 8 cm wide, broken every 3 m.
     float s = (smoothstep(0.045, 0.035, abs(vP.z - (${z1}))) + smoothstep(0.045, 0.035, abs(vP.z - (${z2})))) * mix(smoothstep(1.46, 1.41, abs(fract(x / 3.0) - 0.5) * 3.0), 1.0, smoothstep(0.02, 0.1, uSmear));
-    glow = STNC * s * (2.2 * (1.0 - uDay) + 0.25 * uDay);
+    glow = STNC * s * 1.4 * (1.0 - uDay);
     shade = 0.0;
   } else if (N.z > 0.5) {
     alb = vec3(0.6, 0.6, 0.58);
@@ -1048,7 +1073,7 @@ function pstrip(geo, w, xs, order, add, frag, attrs = {}) {
       vec3 night = vec3(0.01) + vec3(1.0, 0.66, 0.36) * trainLight(P) * 0.15 + stnLight(P, N);
       for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - P; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
       float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
-      vec3 day = sunC() * wrapS * wrapS + skyA(N.y) * 1.7 + sunC() * vec3(0.06, 0.055, 0.045);
+      vec3 day = sunC() * wrapS * wrapS + skyA(N.y) * 1.15 + sunC() * vec3(0.08, 0.07, 0.055);
       return alb * mix(night, day, uDay);
     }
     ${frag}`,
@@ -1070,7 +1095,7 @@ const COLFRAG = /* glsl */`
 void main() {
   float cov = ${PCOVER('0.22')};
   vec3 N = normalize(vec3(clamp(vL.x / (0.11 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
-  vec3 c = litBy(vW, N, vec3(0.42, 0.44, 0.44));
+  vec3 c = litBy(vW, N, vec3(0.34, 0.35, 0.35));
   // A dark plinth at the foot.
   c *= 1.0 - 0.5 * smoothstep(-1.5, -1.6, vW.y);
   gl_FragColor = vec4(c, cov);
@@ -1363,19 +1388,15 @@ function drawSign(name) {
   if (name === signName) return;
   signName = name;
   const c = signC.getContext('2d');
-  // A slim dark frame, then the enamel blue with a soft top sheen.
-  c.fillStyle = '#15183a';
+  // A slim dark frame, then flat muted navy enamel.
+  c.fillStyle = '#1c1f33';
   c.fillRect(0, 0, 1024, 178);
-  const g = c.createLinearGradient(0, 6, 0, 172);
-  g.addColorStop(0, '#383e92');
-  g.addColorStop(0.5, '#2d327d');
-  g.addColorStop(1, '#262a6c');
-  c.fillStyle = g;
+  c.fillStyle = '#2c3360';
   c.fillRect(6, 6, 1012, 166);
-  c.strokeStyle = '#ffffff';
-  c.lineWidth = 5;
+  c.strokeStyle = '#d8dade';
+  c.lineWidth = 4;
   c.strokeRect(20, 20, 984, 138);
-  c.fillStyle = '#ffffff';
+  c.fillStyle = '#e4e5e8';
   c.textAlign = 'center';
   c.textBaseline = 'middle';
   let fs = 92;
@@ -1401,8 +1422,8 @@ void main() {
   }
   if (a < 0.5) discard;
   c /= a;
-  // The enamel catches stray light, so the name stays legible in shade.
-  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c) * (mix(0.3, 1.0, uDay) + 1.2 * uHall) + c * mix(0.04, 0.35, uDay), a / 8.0);
+  // Matte enamel: lit like the platform, no light of its own.
+  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c) * (0.8 + 0.6 * uHall), a / 8.0);
 }`);
 
 /* Rain in the air: streaks along the wind the train makes, lit by lamps and panes. */
@@ -1654,9 +1675,11 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // The shared drops are sized for a pane 0.44 m away; this one is 1 m.
       vec3 Ls = vec3(0.28, 0.5, 0.82);
       vec2 pr = p * 0.45;
-      grBeads(pr, uRain, 1.0 - 0.5 * smoothstep(5.0, 40.0, uSpeed), Ls, off, rim, spec, cover);
+      // Fewer, calmer beads: the pane must not read as speckle.
+      grBeads(pr, uRain, 1.0 - 0.5 * smoothstep(5.0, 40.0, uSpeed), 0.4, Ls, off, rim, spec, cover);
       // Runs slant with the train's speed; trails stretch as it rises.
-      grRuns(pr, uRunM, uFlow, uRain, 1.0 + uSpeed / 18.0, Ls, off, rim, spec, cover, clear);
+      // Slow or still, drops hold and slip; by 18 m/s the air drives them freely.
+      grRuns(pr, uRunM, uFlow, uRain, 1.0 + uSpeed / 18.0, 1.0 - smoothstep(4.0, 18.0, uSpeed), Ls, off, rim, spec, cover, clear);
       off /= 0.45;
       float fog = grFog(p, uFog, dg, uPatch);
       // The deep frame shades the glass right next to it.
@@ -2229,6 +2252,8 @@ return {
   get day() { return dayV; },
   setTime(v, now) { dayT = v === 'day' ? 1 : 0; if (now) { dayV = dayT; place(); } },
   setSpeed(v) { target = v; },
+  // Dev: stand still at a point, as at a stop, for stills.
+  hold(x) { camX = x; speed = 0; stopX = x; dwell = 1e9; place(); },
   // Dev scrub: jump to a point on the line; the next stop is found again.
   seek(x) { camX = x; stopX = null; dwell = 0; place(); },
   get length() { return TILE; },
@@ -2672,6 +2697,8 @@ addEventListener('keydown', e => {
 /* ---------- dev scrub (?dev) ---------- */
 // A strip over the stage scrubs the whole line; readouts show km, the nearest station and speed.
 if (qs.has('dev')) {
+  // QA scripts drive the scene through this handle.
+  window.__train = { S, wake };
   const L = S.length;
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;width:min(720px,calc(100vw - 32px));padding:8px 12px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.85);backdrop-filter:blur(8px);font:12px/1.3 Gabarito,sans-serif;color:#dde;display:grid;gap:6px';

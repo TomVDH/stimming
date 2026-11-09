@@ -183,3 +183,12 @@ Open from the critics:
 - [x] Oncoming trains now and then: a 150 or 210 m two-unit train every one to two and a half minutes on the second track at 31 m/s; window band and doors blurred by the relative speed; lit windows at night, headlights; its bow wave knocks the carriage; ?opp=seconds calls one for QA
 - [x] Landscape lights by sector: a streetlight string on the far lake shore from the map's lake mask, houses climbing above it; dense in Zurich and the gold coast, sparse on the Linth plain, nearly dark on the Walensee; a sodium motorway string over the Linth plain; Quinten's few lights across from Murg
 - [x] Stations, Pixar-lite: light concrete platform with a crisp white line, calm mottling, pale canopy soffit and white fascia, lighter columns and platform wall; wrapped sun, strong sky fill and a warm bounce on every station surface; canopy lights halved to suit
+- [x] Zurich lights sit on the ground; no floating cluster
+- [x] Catenary masts: wider, darker, less smear fade, so they flick past the window
+- [x] Pane rain calmer: shared grBeads takes a dens factor (Train Ride 0.4); runs stick and slip below 18 m/s (grRuns stick); Window seat calls unchanged
+- [x] Dev: window.__train.S.hold(x) parks the train at a route metre
+- [x] Terrain seams: cubic B-spline height sampling (bilinear creased along the 13 m grid); per-pixel normals at every distance; terrain shadows marched per pixel with a bias, no triangle-edged shadows
+- [x] Dark spots: no lone woods on flat floors, lighter woods; farm fields blend at their edges and fade in from 300 m; hedges only far
+- [ ] Walensee: the mirrored far shore at Murg shows jagged grey blocks
+- [x] Signs matte: no self light, flat muted navy, soft white rule; station LED strips dark by day, half as strong at night; columns and slab matte, warm light concrete, calmer sky fill
+- [x] Terrain restyle, smooth and neat: muted sage meadows in wide bands, no grain, far roofs merge into a soft town tint (no speckle), gentle woods, softer shadows

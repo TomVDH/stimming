@@ -1,7 +1,7 @@
 ---
 # stimming-w1nd
 title: 'Toy: Window seat'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
@@ -84,3 +84,5 @@ Bar v2 port (2026-11-09): time of day is a stepper top left (seven hours: dawn, 
 - 2026-11-09 (Tom): the wingtip strobe and the red nav light throw no flare ghosts.
 - 2026-11-09 (Tom): flashes light the tower volume from within (blue-white, 3 km core, 9 km reach) in the march; the haze ball glow is gone (it eclipsed out of the clouds). Turbulence rises with fog-bank thickness, whatever the storm.
 - 2026-11-09 (Tom): the storm slider sets a target; the weather eases to it over about 5 s. Surplus cells retire oldest first and die back over 15 s; new cells arrive one every 1.5 to 4 s, half in view, and tower up over 20 s.
+- 2026-11-09: Tom signed off Window seat. data-done on the intro and the menu tile; stage dropped; v0.9 Vensterplaats. Thunder after flashes and the shade slide stay open for a later pass.
+- 2026-11-09 (Tom): fake GI. The bezel and gasket take light from the far side of the opening (the sill sees the sky), from an outside copy softened to a sixteenth; the sun or moon throws a patch through the opening onto the wall that faces it; the cabin wall gets only a weak spill. This removes the ghost of the scene on the gasket. Scratches dim to a trace and brighten only against a bright view behind.

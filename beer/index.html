@@ -285,6 +285,15 @@ uniform vec2 uSlope;   // the beer surface's tilt: rise per cm in x and z
 #define LEV(xz) (uLevel + dot(uSlope, (xz)))
 const float GMAX = ${GMAX.toFixed(1)};
 vec4 gp(float y) { return texture2D(uGP, vec2(clamp(y / GMAX, 0.0, 1.0), 0.5)); }
+// Where a tilted level meets the inner wall in one direction: radius, height.
+vec2 wallHit(vec2 dir, float lev) {
+  float y = clamp(lev, uGYb + 0.02, uGH), r = texture2D(uGP, vec2(y / GMAX, 0.5)).y;
+  for (int i = 0; i < 6; i++) {
+    y = clamp(lev + dot(uSlope, dir * r), uGYb + 0.02, uGH);
+    r = mix(r, texture2D(uGP, vec2(y / GMAX, 0.5)).y, 0.7);
+  }
+  return vec2(r, y);
+}
 `;
 const FULL_VS = `
 varying vec2 vUv;
@@ -401,11 +410,11 @@ float dens(vec3 x) {
   q.y += 0.12 * s * s;
   float rad = 0.2 + 0.25 * s + 0.35 * min(uAge, 2.0);
   float core = smoothstep(rad, 0.0, length(q)) * exp(-s / (1.2 + 1.5 * min(uAge, 2.0)));
-  float n = fbm3(rel * 1.9 - uA * (uAge * 3.0 + uTime * 0.6) + vec3(0.0, uTime * 0.2, 0.0));
+  float n = fbm3(rel * 1.1 - uA * (uAge * 2.0 + uTime * 0.4) + vec3(0.0, uTime * 0.15, 0.0));
   // Fade at the box's walls, as Fire fades at its volume's edge.
   vec3 e = min(x - uBoxMin, uBoxMax - x);
   float edge = smoothstep(0.0, 1.2, min(e.x, min(e.y, e.z)));
-  return max(core * (n * 1.7 - 0.55), 0.0) * uAmt * 0.8 * edge;
+  return core * smoothstep(0.3, 0.8, n) * uAmt * 0.7 * edge;
 }
 void main() {
   vec3 ro = cameraPosition, rd = normalize(vW - ro);
@@ -489,16 +498,18 @@ void main() {
   vec3 behind = texture2D(uBehind, clamp(uv + nv * 0.05, 0.001, 0.999)).rgb;
   // The path through the tube: longest at its centre.
   float path = 2.0 * vR * c;
-  // Clear gold: the room behind, tinted; saturated past what the thin path gives.
-  vec3 Tg = exp(-uSigma * (1.2 + path * 4.0));
-  vec3 col = behind * mix(vec3(1.0), Tg, 0.75) * 1.15;
-  // Subsurface glow, and the lamp piped along the jet as a core line.
-  col += uLamp * Tg * (0.04 + 0.1 * c);
-  col += uLamp * Tg * 0.5 * pow(c, 10.0);
-  float F = 0.03 + 0.97 * pow(1.0 - c, 5.0);
-  col = col * (1.0 - F) + studio(vP, reflect(-v, n)) * F;
-  // See-through in the middle, denser at the rim where the path bends most.
-  float a = smoothstep(0.0, 0.03, vS) * uFlow * (0.7 + 0.3 * (1.0 - c));
+  // Clear gold: the room behind shows through, tinted by the beer.
+  vec3 Tg = exp(-uSigma * (0.5 + path * 2.2));
+  vec3 col = behind * mix(vec3(1.0), Tg, 0.85) * 1.1;
+  // Light scattered inside, and the lamp piped along the jet as a core line.
+  col += uLamp * Tg * (0.05 + 0.1 * c);
+  col += uLamp * Tg * 0.45 * pow(c, 12.0);
+  // Reflections add light; they never darken the edge.
+  vec3 rw = normalize(dirW(reflect(-v, n)));
+  col += uKey * 0.9 * pow(max(dot(rw, normalize(KEY_DIR)), 0.0), 50.0);
+  col += uLamp * 0.12 * pow(1.0 - c, 3.0);
+  // The silhouette fades out, so the jet has no hard outline.
+  float a = smoothstep(0.0, 0.03, vS) * uFlow * smoothstep(0.0, 0.45, c) * 0.8;
   gl_FragColor = vec4(safe(col) * a, a);
 }`;
 
@@ -512,13 +523,19 @@ uniform float uLevel;
 varying vec3 vW, vN;
 void main() {
   vec2 dir = normalize(position.xz + 1e-6);
-  // Two steps: the radius at the flat level, then the tilted level there.
-  float top = max(LEV(dir * gp(clamp(uLevel, uGYb, uGH)).y * aTS.y), uGYb + 0.05);
-  float y = mix(uGYb + 0.05, top, aTS.x);
-  vec4 P = gp(y);
-  float r = P.y * aTS.y;
-  vec3 pos = vec3(dir.x * r, y, dir.y * r);
-  vec3 n = aTS.x > 0.999 && aTS.y < 0.999 ? normalize(vec3(-uSlope.x, 1.0, -uSlope.y)) : normalize(vec3(dir.x, -P.w, dir.y));
+  // The top is one flat plane; its edge sits where that plane meets the wall.
+  vec2 wh = wallHit(dir, uLevel);
+  vec3 pos, n;
+  if (aTS.x > 0.999) {
+    vec2 xz = dir * wh.x * aTS.y;
+    pos = vec3(xz.x, clamp(LEV(xz), uGYb + 0.05, uGH), xz.y);
+    n = aTS.y < 0.999 ? normalize(vec3(-uSlope.x, 1.0, -uSlope.y)) : normalize(vec3(dir.x, -gp(pos.y).w, dir.y));
+  } else {
+    float y = mix(uGYb + 0.05, max(wh.y, uGYb + 0.05), aTS.x);
+    vec4 P = gp(y);
+    pos = vec3(dir.x * P.y, y, dir.y * P.y);
+    n = normalize(vec3(dir.x, -P.w, dir.y));
+  }
   vW = pos; vN = n;
   gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
 }`;
@@ -581,22 +598,31 @@ void main() {
 const FOAM_VS = PROF + `
 attribute vec2 aTS;
 uniform float uLevel, uTop, uDome, uRock, uTime, uMound;
+uniform vec2 uSwirl;   // the swirl's share of the surface slope
 uniform vec3 uHit;     // jet landing x, z; strength 0..1
 varying vec3 vW, vN;
 varying float vS, vHit;
 ${NOISE}
 void main() {
   vec2 dir = normalize(position.xz + 1e-6);
-  float Rw = gp(clamp(uLevel, uGYb, uGH)).y;
-  vec2 xz0 = dir * Rw * aTS.y;
+  // The head's foot sits on the beer's plane, edge to edge with it.
+  vec2 wb = wallHit(dir, uLevel);
+  float Rw = max(wb.x, 0.5), t0 = max(uTop - uLevel, 0.0);
   // A young head is a mound where the jet lands; it spreads as it grows.
-  float t0 = max(uTop - uLevel, 0.0);
-  vec2 dm = xz0 - uHit.xy;
-  float th = max(t0 * mix(1.0, 2.6 * exp(-dot(dm, dm) / (Rw * Rw * 0.3)), uMound), 0.02);
-  float y = LEV(xz0) - 0.05 + aTS.x * (th + 0.05);
-  vec4 P = gp(min(y, uGH - 0.05));
-  float r = P.y * aTS.y;
-  vec3 pos = vec3(dir.x * r, y, dir.y * r);
+  // Foam is stiff: its top follows a swirl far less than the beer under it.
+  #define TH(q) max(t0 * mix(1.0, 2.6 * exp(-dot((q) - uHit.xy, (q) - uHit.xy) / (Rw * Rw * 0.3)), uMound) - 0.65 * dot(uSwirl, (q)), 0.02)
+  float thw = TH(dir * wb.x);
+  vec3 pos;
+  if (aTS.x > 0.999) {
+    float rT = gp(min(wb.y + thw, uGH - 0.05)).y;
+    vec2 xz = dir * rT * aTS.y;
+    float k4 = aTS.y * aTS.y; k4 *= k4;
+    pos = vec3(xz.x, mix(LEV(xz) + TH(xz), wb.y + thw, k4), xz.y);
+  } else {
+    float y = wb.y - 0.05 + aTS.x * (thw + 0.05);
+    float r = gp(min(y, uGH - 0.05)).y;
+    pos = vec3(dir.x * r, y, dir.y * r);
+  }
   vec3 n = normalize(vec3(dir.x, 0.0, dir.y));
   if (aTS.x > 0.999) {
     // The top domes and stands in soft peaks.
@@ -617,6 +643,7 @@ void main() {
 const FOAM_FS = NOISE + ROOM + PROF + `
 uniform vec3 uFoamCol, uSigma, uKey;
 uniform float uLevel, uTop, uCell, uCoarse, uDome;
+uniform vec2 uSwirl;
 varying vec3 vW, vN;
 varying float vS, vHit;
 // The head as a volume, lit as Fire lights its smoke.
@@ -624,7 +651,7 @@ varying float vS, vHit;
 float foamD(vec3 p) {
   float lev = LEV(p.xz), R = max(gp(clamp(p.y, uGYb, uGH)).y, 0.1);
   float rr = length(p.xz) / R;
-  float top = uTop + dot(uSlope, p.xz) + uDome * (1.0 - rr * rr);
+  float top = uTop + dot(uSlope - 0.65 * uSwirl, p.xz) + uDome * (1.0 - rr * rr);
   if (p.y < lev || p.y > top || rr > 1.0) return 0.0;
   return 2.6 * (0.6 + 0.8 * vn(p * 5.0));
 }
@@ -644,7 +671,7 @@ void main() {
   float r = length(vW.xz);
   // A creamy head: soft key light with wrap, darker toward the sides for its round body.
   float key = clamp((dot(n, normalize(KEY_DIR)) + 0.5) / 1.5, 0.0, 1.0);
-  float side = vS > 0.999 ? 1.0 : 0.72 + 0.28 * pow(max(dot(normalize(vec3(vW.x, 0.0, vW.z)), v), 0.0), 0.7);
+  float side = vS > 0.999 ? 1.0 : 0.6 + 0.4 * pow(max(dot(normalize(vec3(vW.x, 0.0, vW.z)), v), 0.0), 0.8);
   vec2 q = vS > 0.999 ? vW.xz : vec2(atan(vW.x, vW.z) * max(r, 1.0), vW.y);
   // Fine bubbles show only as a faint texture; coarser on top as the head ages.
   float cs = uCell * (1.0 + 0.8 * sf * step(0.999, vS)) * (1.0 + uCoarse) * (1.0 + 2.5 * vHit);
@@ -658,7 +685,7 @@ void main() {
   float tex = vS > 0.999 ? 0.95 + 0.05 * film : 0.94 + 0.04 * dome + 0.03 * film + 0.02 * fine;
   // The top takes the key light; the sides fall off and shade toward the beer.
   float top = vS > 0.999 ? 1.0 : 0.0;
-  vec3 col = uFoamCol * (0.4 + 0.68 * key) * side * tex * mix(0.8 + 0.2 * sf, 1.08, top);
+  vec3 col = uFoamCol * (0.36 + 0.56 * key) * side * tex * mix(0.8 + 0.2 * sf, 1.04, top);
   // Bubbles pressed on the glass catch tiny glints.
   col += uKey * 0.5 * key * smoothstep(0.86, 1.0, 1.0 - F.x) * step(0.7, hash(floor(q / cs) + 3.0)) * (1.0 - top);
   // The lamp glows through the head: warm and golden at its foot, cream on top.
@@ -917,7 +944,7 @@ void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb;
   vec2 q = vUv - 0.5;
   c *= 1.0 - uVig * smoothstep(0.2, 0.75, length(q * vec2(1.2, 1.0)));
-  c = aces(c * 0.95);
+  c = aces(c * 0.78);
   c = pow(c, vec3(1.0 / 2.2));
   // A gentle S-curve and a warm lift in the shadows.
   c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
@@ -1193,7 +1220,7 @@ function build() {
   fizzMesh.renderOrder = 2;
   foamMesh = new THREE.Mesh(bodyGeometry(24, 128, 24), new THREE.ShaderMaterial({
     vertexShader: FOAM_VS, fragmentShader: FOAM_FS,
-    uniforms: { ...U, uFoamCol: { value: new THREE.Vector3(1, 1, 1) }, uMound: { value: 0 }, uDome: { value: 0 }, uRock: { value: 0 }, uCell: { value: 0.15 }, uCoarse: { value: 0 }, uHit: { value: new THREE.Vector3() } },
+    uniforms: { ...U, uFoamCol: { value: new THREE.Vector3(1, 1, 1) }, uMound: { value: 0 }, uSwirl: { value: new THREE.Vector2() }, uDome: { value: 0 }, uRock: { value: 0 }, uCell: { value: 0.15 }, uCoarse: { value: 0 }, uHit: { value: new THREE.Vector3() } },
   }));
   foamMesh.frustumCulled = false;
   foamMesh.renderOrder = 3;
@@ -1260,7 +1287,7 @@ function build() {
 
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType }));
   composer.addPass(new StagePass());
-  bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.36, 0.65, 1.0);
+  bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.3, 0.65, 1.08);
   composer.addPass(bloom);
   finalPass = new ShaderPass({ uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: 0.55 } }, vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: FINAL_FS });
   composer.addPass(finalPass);
@@ -1332,8 +1359,9 @@ const G2W = new THREE.Matrix4(), W2G = new THREE.Matrix4(), _m1 = new THREE.Matr
 const R_W2G = new THREE.Matrix3(), GRAV = new THREE.Vector3();
 function updatePose() {
   // The glass tips on the edge of its foot, as a hand would tip it.
-  const px = glass.ro(0.2);
-  G2W.makeTranslation(swirl.x + px, 0, swirl.z).multiply(_m1.makeRotationZ(-pose.tilt)).multiply(_m2.makeTranslation(-px, 0, 0));
+  // The hand also draws it back, so the bowl stays where it was.
+  const px = glass.ro(0.2), back = Math.sin(pose.tilt) * glass.h * 0.5;
+  G2W.makeTranslation(swirl.x + px - back, 0, swirl.z).multiply(_m1.makeRotationZ(-pose.tilt)).multiply(_m2.makeTranslation(-px, 0, 0));
   W2G.copy(G2W).invert();
   R_W2G.setFromMatrix4(W2G);
   GRAV.set(0, -1, 0).applyMatrix3(R_W2G);
@@ -1386,11 +1414,38 @@ function freshGlass() {
   settleLevels();
 }
 
+/* ---------- stand-in shapes ---------- */
+// A glass from its sizes: foot, stem, then a bowl through its widest point to the rim.
+function glassFromSizes(g) {
+  const n = 64, pts = [], stem = g.stem > 0, top = g.base + g.stem;
+  for (let i = 0; i < n; i++) {
+    const y = g.h * i / (n - 1);
+    let r;
+    if (stem && y < g.base) r = g.foot;
+    else if (stem && y < top) r = lerp(g.foot, 0.55, smooth(g.base, g.base + 0.9, y));
+    else if (y < g.maxAt) r = lerp(stem ? 0.55 : g.max * 0.85, g.max, Math.sin(clamp((y - (stem ? top : 0)) / Math.max(g.maxAt - (stem ? top : 0), 0.1)) * Math.PI / 2));
+    else r = lerp(g.max, g.rim, smooth(g.maxAt, g.h, y));
+    pts.push([y, r]);
+  }
+  return { outline: pts, ybot: stem ? top + 0.3 : Math.max(g.base, 0.6) };
+}
+// A bottle from its sizes: body, shoulder, neck.
+function bottleFromSizes(b) {
+  const n = 96, pts = [];
+  for (let i = 0; i < n; i++) {
+    const y = b.h * i / (n - 1), neck = b.h - b.nl;
+    pts.push([y, y < 0.3 ? lerp(b.r * 0.6, b.r, y / 0.3) : y < b.sh ? b.r : y < neck ? lerp(b.r, b.nr, smooth(b.sh, neck, y)) : b.nr]);
+  }
+  return pts;
+}
+
 /* ---------- beer ---------- */
 const look = { sigma: [0, 0, 0], foam: [1, 1, 1] };
 function setBeer(id) {
   beer = BEERS.find(b => b.id === id) || BEERS[0];
-  const G = beer.glass, B = beer.bottle;
+  // Five beers have no measured outline yet; their sizes give a stand-in shape.
+  const G = beer.glass.outline ? beer.glass : { ...beer.glass, ...glassFromSizes(beer.glass) };
+  const B = beer.bottle.outline ? beer.bottle : { ...beer.bottle, outline: bottleFromSizes(beer.bottle) };
   const gv = vesselProfile(G.outline, GMAX, G.ybot, () => G.wall);
   glass.load(gv);
   const bv = vesselProfile(B.outline, BMAX, B.kind === 'champ' ? 1.8 : 0.6, ro => (ro < 1.7 ? 0.42 : 0.3));
@@ -1412,7 +1467,7 @@ function setBeer(id) {
   bottleMesh.geometry = bottleTop.geometry = new THREE.LatheGeometry(B.outline.map(([y, r]) => new THREE.Vector2(Math.max(r, 0.001), y)), 96);
   const bu = bottleMesh.material.uniforms;
   bu.uBH.value = bottleV.h;
-  bu.uLab.value.set(...B.lab);
+  bu.uLab.value.set(...(B.lab || [0, 0, 0, 0]));
   bu.uTintB.value.set(...hexLin(B.glass).map(c => Math.min(c * 5, 1)));
   bu.uPainted.value = B.paint ? 1 : 0;
   if (B.paint) bu.uPaint.value.set(...hexLin(B.paint));
@@ -1478,7 +1533,7 @@ function bottleStep(dt) {
   if (engaged) {
     bot.lift = Math.min(1, bot.lift + dt * 1.1);
     // It tips only once it is over the glass.
-    if (bot.lift < 1) bot.th += (smooth(0.5, 1, bot.lift) * TH0 - bot.th) * ease(dt, 0.1);
+    if (bot.lift < 1) bot.th += (smooth(0.1, 0.55, bot.lift) * TH0 - bot.th) * ease(dt, 0.1);
     else {
       // Aim for a head over the lip; the drag sets it. A full glass tips back.
       const target = full ? -0.6 : clamp(0.85 + pour.gain, 0.1, 1.8);
@@ -1488,7 +1543,7 @@ function bottleStep(dt) {
     }
   } else {
     bot.th = Math.max(0, bot.th - dt * 1.7);
-    if (bot.th < TH0 * smooth(0.5, 1, bot.lift) + 0.02) bot.lift = Math.max(0, bot.lift - dt * 1.0);
+    if (bot.th < TH0 * smooth(0.1, 0.55, bot.lift) + 0.02) bot.lift = Math.max(0, bot.lift - dt * 1.0);
   }
   bot.th = clamp(bot.th, 0, 2.55);
   const th = bot.th, c = Math.cos(th), sn = Math.sin(th), h = bottleV.h;
@@ -1511,9 +1566,12 @@ function bottleStep(dt) {
   const rimR = glass.ri(glass.h - 0.3);
   const tl = clamp(pose.tilt / 0.45);
   // A sideways drag slides the pour along the rim; the jet still lands inside.
-  const ax = clamp(lerp(rimR * 0.2, glass.ri(glass.h * 0.62) * 0.7, tl) + pour.hx, -rimR * 0.6, rimR * 0.75);
-  const surf = fill.vol > 0.5 ? fill.top + fill.crown + (fill.slope + swirl.sx) * ax : glass.ybot + 0.2;
-  bot.aimG.set(ax, Math.max(surf, lerp(glass.ybot + 0.2, glass.h * 0.62, tl)), -1.2);
+  const ax = clamp(lerp(rimR * 0.2, glass.ri(glass.h * 0.5) * 0.5, tl) + pour.hx, -rimR * 0.6, rimR * 0.75);
+  // The jet lands on the beer, or on the bowl's floor while the glass is empty.
+  let floorY = glass.ybot + 0.2;
+  for (let y = glass.ybot; y < glass.h; y += 0.1) if (glass.ri(y) >= Math.abs(ax) + 0.3) { floorY = y; break; }
+  const surf = fill.vol > 0.5 ? fill.top + fill.crown + (fill.slope + swirl.sx) * ax : -99;
+  bot.aimG.set(ax, Math.max(surf, floorY), -0.6);
   const aimW = _aw.copy(bot.aimG).applyMatrix4(G2W);
   // The mouth sits just above the rim's highest point.
   const rimTop = Math.max(_rw.set(-rimR, glass.h, 0).applyMatrix4(G2W).y, _rw.set(rimR, glass.h, 0).applyMatrix4(G2W).y);
@@ -1528,10 +1586,11 @@ function bottleStep(dt) {
   const px = mx - lipX, py = mouthY - lipYw, pz = aimW.z;
   // Rise first, then slide in level from the right: no swoop past the lens.
   // The path: up clear of the rim, across, then down into place.
-  // Rise, come forward beside the glass, slide across above the rim, then lower in.
-  const L = bot.lift, clear = 4;
-  const ty = lerp(0, py + clear, smooth(0, 0.35, L)) - clear * smooth(0.8, 1, L);
-  bot.tpos.set(lerp(rest.x, px, smooth(0.5, 0.85, L)), ty, lerp(rest.z, pz, smooth(0.2, 0.55, L)));
+  // Rise and tip beside the glass, come forward, then bring the mouth over the rim.
+  // The bottle never crosses the bowl: it is tipped before it moves in.
+  const L = bot.lift, clear = 3;
+  const ty = lerp(0, py + clear, smooth(0, 0.4, L)) - clear * smooth(0.75, 1, L);
+  bot.tpos.set(lerp(rest.x, px, smooth(0.45, 0.95, L)), ty, lerp(rest.z, pz, smooth(0.1, 0.5, L)));
   // A critically damped spring smooths every move.
   if (dt > 0) {
     const w = 9;
@@ -1624,12 +1683,12 @@ function swirlStep(dt) {
   const depth = Math.max(fill.level - glass.ybot, 0.2);
   const w = Math.sqrt(G * kk * Math.tanh(kk * depth));
   // A head damps the wave.
-  const zeta = 0.05 + 0.25 * clamp(fill.foam / Math.max(fill.vol, 1));
-  const ex = -ax / G, ez = -az / G;
+  const zeta = 0.1 + 0.3 * clamp(fill.foam / Math.max(fill.vol, 1));
+  const ex = -0.55 * ax / G, ez = -0.55 * az / G;
   swirl.wx += (-w * w * (swirl.sx - ex) - 2 * zeta * w * swirl.wx) * dt;
   swirl.wz += (-w * w * (swirl.sz - ez) - 2 * zeta * w * swirl.wz) * dt;
-  swirl.sx = clamp(swirl.sx + swirl.wx * dt, -1.2, 1.2);
-  swirl.sz = clamp(swirl.sz + swirl.wz * dt, -1.2, 1.2);
+  swirl.sx = clamp(swirl.sx + swirl.wx * dt, -0.45, 0.45);
+  swirl.sz = clamp(swirl.sz + swirl.wz * dt, -0.45, 0.45);
   if (fill.vol < 1) { swirl.sx = swirl.sz = swirl.wx = swirl.wz = 0; return; }
   const tilt = Math.hypot(swirl.sx, swirl.sz), rimR = glass.ri(glass.h - 0.1);
   // Swirling frees gas: the head swells a little.
@@ -1637,7 +1696,7 @@ function swirlStep(dt) {
   fill.post = Math.min(fill.post + stir * dt * 0.02, 1);
   fx.surge = Math.min(fx.surge + stir * dt * 0.03, 1);
   // Spill past the rim.
-  const overTop = fill.top + fill.crown + tilt * rimR - glass.h;
+  const overTop = fill.top + fill.crown + 0.35 * tilt * rimR - glass.h;
   if (overTop > 0 && fill.foam > 0) { const d = Math.min(fill.foam, overTop * 90 * dt); fill.foam -= d; swirl.spilt += d; }
   const overBeer = fill.level + tilt * rimR - glass.h;
   if (overBeer > 0) { const d = Math.min(fill.vol, overBeer * 140 * dt); fill.vol -= d; swirl.spilt += d; }
@@ -1673,6 +1732,7 @@ function render() {
   // The jet lands at its parabola's end.
   fu.uHit.value.set(bot.aimG.x, bot.aimG.z, clamp(bot.q / 30) * clamp(thick / 0.6));
   fu.uMound.value = fx.mound;
+  fu.uSwirl.value.set(swirl.sx, swirl.sz);
   fu.uRock.value = (beer.rock || 0.2) * clamp(thick / 2.5) * (0.5 + 0.5 * Math.exp(-fill.age / beer.half));
   fu.uCoarse.value = Math.sqrt(fill.age / beer.half) * 0.6;
   const zu = fizzMesh.material.uniforms;
@@ -1843,7 +1903,7 @@ canvas.addEventListener('pointermove', e => {
       // Dragging moves the bottle: sideways along the rim, up for a longer drop.
       const cm = 2 * camBase.dist * Math.tan(camera.fov * Math.PI / 360) / Math.max(canvas.clientHeight, 1);
       pour.hx = clamp((e.clientX - ptr.x) * cm, -4, 4);
-      pour.hy = clamp((ptr.y - e.clientY) * cm, -0.5, 7);
+      pour.hy = clamp((ptr.y - e.clientY) * cm, -0.5, 4);
     }
   }
   if (e.pointerType !== 'mouse') return;
