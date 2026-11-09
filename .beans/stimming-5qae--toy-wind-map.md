@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T07:35:05Z
+updated_at: 2026-11-09T07:40:02Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -16,7 +16,7 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 - [x] Task 1: checkpoint: Tom signs off the blockout stills
 - [x] Task 2: vortices, inflow, dynamics, merge, spin-up gesture, gust
 - [x] Task 2: two same-sign storms 0.2 apart orbit, then merge at 9.5 s (stills at 0, 2, 4, 7, 10 s)
-- [ ] Task 3: Silk, Heat, Dye; isobars; CPU fallback
+- [x] Task 3: Silk, Heat, Dye; isobars; CPU fallback
 - [ ] Task 4: sound: bed, howl, gust, merge
 - [ ] Task 5: bar, Settings, persistence; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
@@ -36,3 +36,8 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 - Same-sign pairs within 0.4 pull in at 0.05 of their induced speed; the pair motion runs in 10 ms RK2 steps, since explicit 50 ms steps fling close pairs apart.
 - An eye pass fades the plate fast inside each core, so a moving eye stays clear.
 - Dipole: opposite storms 0.15 apart sail off in a straight line, gap held. A 13th storm fades the weakest over 0.6 s.
+
+- Task 3: the plate curve works on the brightest channel, so Heat and Dye keep their hue; very bright light bleeds a little toward white. Silk is unchanged.
+- Dye particles live 6 to 14 s (others 2 to 6 s); life now sits below 16 in the state texel, spawn hue above it.
+- Isobars: contours of the same stream function every 0.008, faded where they crowd. Storms use a Kaufmann core for the stream function.
+- CPU fallback (no EXT_color_buffer_float): 4,000 / 6,000 / 8,000 particles over a 128 by 72 base-wind grid rebuilt every 0.5 s; storms and gusts add exactly per particle. Tested by masking the extension: no console errors, 2.8 ms per frame.

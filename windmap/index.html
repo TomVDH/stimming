@@ -52,7 +52,7 @@
   <header data-shell></header>
   <main>
     <div class="stage stage--windmap" id="stage" tabindex="0" role="application" aria-label="A wind chart with no land. Silk lines trace the wind. Circle to spin up a storm; tap for a gust.">
-      <p class="fail" hidden>Wind map needs WebGL2 with float targets, which this browser does not have.</p>
+      <p class="fail" hidden>Wind map needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices" id="look" role="group" aria-label="Look">
@@ -81,6 +81,10 @@
             <div class="group"><span>Hemisphere</span><div class="choices" id="hemi" role="group" aria-label="Hemisphere">
               <button class="chip" type="button" data-value="north" aria-pressed="true">North</button>
               <button class="chip" type="button" data-value="south" aria-pressed="false">South</button>
+            </div></div>
+            <div class="group"><span>Isobars</span><div class="choices" id="iso" role="group" aria-label="Isobars">
+              <button class="chip" type="button" data-value="off" aria-pressed="true">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="false">On</button>
             </div></div>
           </div>
         </div>
@@ -138,6 +142,7 @@ const opts = {
   count: saved('count') || 'some',
   trail: saved('trail') || 'long',
   hemi: saved('hemi') || 'north',
+  iso: saved('iso') || 'off',
 };
 let reduce = reduced();
 onReducedChange(v => { reduce = v; wake(); });
@@ -153,6 +158,8 @@ const pace = () => (reduce ? 0.4 : 1);
 const windU = () => lerp(0.025, 0.16, opts.wind);
 // Speed at the top of the colour ramp, in world units per second.
 const VREF = 0.3;
+// Particles live 2 to 6 s; Dye lives 6 to 14 s, so the mixing shows.
+const lifeSpan = () => (opts.look === 'dye' ? [6, 8] : [2, 4]);
 // Twelve storms live at once; four more slots let the weakest fade out.
 const MAXV = 16, MAXLIVE = 12, MAXG = 4;
 
@@ -162,12 +169,12 @@ const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no float targets'); };
+const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
 if (!gl) fail();
 // Float targets hold particle state and smooth trails.
 const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
-// The CPU path for no float targets arrives in a later task.
-if (!FLOAT) fail();
+// Without them, a smaller swarm moves on the CPU over a velocity grid.
+const CPU = !FLOAT;
 
 const QUAD_VS = `#version 300 es
 in vec2 aPos; out vec2 vUv;
@@ -209,7 +216,7 @@ void main() {
   // A respawn resets the age, so the new age is below the old one.
   if (sb.z <= sa.z || uDt <= 0.0) { gl_Position = vec4(-2.0, -2.0, 0.0, 1.0); return; }
   vec2 a = sa.xy * uScale, b = sb.xy * uScale; float w = uW;
-  float life = mod(sb.w, 8.0), dye = floor(sb.w / 8.0) / 255.0;
+  float life = mod(sb.w, 16.0), dye = floor(sb.w / 16.0) / 255.0;
   float sp = clamp(length(sb.xy - sa.xy) / uDt / uVRef, 0.0, 1.0);
   // The ramp row holds colour by speed; Dye reads it by spawn hue.
   vec3 rgb = texture(uRamp, vec2(mix(sp, dye, uDye), 0.5)).rgb * mix(1.0, 0.25 + 0.75 * sqrt(sp), uDye);
@@ -406,11 +413,23 @@ vec2 vel(vec2 p) {
     v += d / r * g.z / (6.2831853 * r) * (1.0 - exp(-r2 / (g.w * g.w)));
   }
   return v;
+}
+// The stream function: isobars follow it, as the wind does.
+// Each storm uses a Kaufmann core, close to Lamb-Oseen outside it.
+float psi(vec2 p) {
+  float s = uU * p.y + uA * psiN(p);
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    vec2 d = p - q.xy;
+    s -= q.z / 12.566371 * log(dot(d, d) + q.w * q.w);
+  }
+  return s;
 }`;
 // One RK2 step per particle; the dead respawn at a hashed point.
 const UPDATE_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
-uniform sampler2D uState; uniform float uDt; uniform vec2 uWorld; uniform uint uFrame;
+uniform sampler2D uState; uniform float uDt; uniform vec2 uWorld, uLife; uniform uint uFrame;
 out vec4 o;
 ${FIELD}
 uvec3 pcg3d(uvec3 v) {
@@ -426,7 +445,7 @@ void main() {
   vec2 p = s.xy; float age = s.z + uDt, lw = s.w;
   vec2 pm = p + vel(p) * uDt * 0.5;
   p += vel(pm) * uDt;
-  bool dead = age > mod(lw, 8.0) || any(lessThan(p, vec2(-0.02))) || any(greaterThan(p, uWorld + 0.02));
+  bool dead = age > mod(lw, 16.0) || any(lessThan(p, vec2(-0.02))) || any(greaterThan(p, uWorld + 0.02));
   for (int k = 0; k < ${MAXV}; k++) {
     if (k >= uNV) break;
     if (abs(uVort[k].z) > 0.02 && length(p - uVort[k].xy) < 0.45 * uVort[k].w) dead = true;
@@ -435,9 +454,9 @@ void main() {
     vec3 h = vec3(pcg3d(uvec3(uvec2(ij), uFrame))) * (1.0 / 4294967296.0);
     p = h.xy * uWorld;
     age = 0.0;
-    // Life sits below 8; the spawn hue rides above it in steps of 8.
+    // Life sits below 16; the spawn hue rides above it in steps of 16.
     float hue = clamp(p.y / uWorld.y * 0.82 + 0.06 * sin(p.x * 3.0), 0.0, 1.0);
-    lw = 2.0 + 4.0 * h.z + 8.0 * floor(hue * 255.0);
+    lw = uLife.x + uLife.y * h.z + 16.0 * floor(hue * 255.0);
   }
   o = vec4(p, age, lw);
 }`;
@@ -462,9 +481,10 @@ void main() {
 // The chart: slate, a graticule every 15 degrees, then the plate.
 const OUT_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform vec2 uRes; uniform float uTime, uExpo;
-uniform vec3 uBg, uGrid;
+uniform sampler2D uSrc; uniform vec2 uRes; uniform float uTime, uExpo, uScale, uIso;
+uniform vec3 uBg, uGrid, uIsoCol;
 in vec2 vUv; out vec4 o;
+${FIELD}
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 void main() {
   vec2 px = vUv * uRes;
@@ -474,8 +494,19 @@ void main() {
   vec2 f = abs(fract(g + 0.5) - 0.5) / fwidth(g);
   float line = 1.0 - min(min(f.x, f.y), 1.0);
   c = mix(c, uGrid, line);
+  // Isobars: contours of the stream function, faded where they crowd.
+  if (uIso > 0.0) {
+    float k = psi(px / uScale) / 0.008, fw = fwidth(k);
+    float d = abs(fract(k + 0.5) - 0.5) / max(fw, 1e-5);
+    float iso = (1.0 - smoothstep(0.4, 1.4, d)) * (1.0 - smoothstep(0.25, 0.6, fw));
+    c = mix(c, uIsoCol, iso * 0.55 * uIso);
+  }
+  // The curve works on the brightest channel, so colours keep their hue.
   vec3 acc = texture(uSrc, vUv).rgb;
-  c += 1.0 - exp(-acc * uExpo);
+  float L = max(max(acc.r, acc.g), acc.b), m = 1.0 - exp(-L * uExpo);
+  vec3 lit = acc * (m / max(L, 1e-5));
+  // Very bright light bleeds toward white, as film does.
+  c += mix(lit, vec3(m), 0.35 * smoothstep(1.0, 4.0, L * uExpo));
   vec2 q = vUv - 0.5;
   c *= 1.0 - dot(q * vec2(1.0, 1.3), q) * 0.7;
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
@@ -492,22 +523,27 @@ const P = {
   eye: program(QUAD_VS, EYE_FS, ['aPos']),
   out: program(QUAD_VS, OUT_FS, ['aPos']),
 };
-const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.26, 0.022, 245);
+const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.26, 0.022, 245), ISO_COL = linFit(0.62, 0.05, 75);
 
 /* ---------- colour ramps ---------- */
 // One 256 by 1 row per look, in linear light.
 const ramp = gl.createTexture();
 const RAMPS = {
   silk: u => linFit(lerp(0.55, 0.99, Math.sqrt(u)), 0.012, 250).map(v => v * lerp(0.05, 1, u * u)),
+  // Heat runs slow blue, through green, to fast amber; slow air is dimmer.
   heat: u => (u < 0.5
-    ? [0, 1, 2].map(i => lerp(linFit(0.45, 0.08, 250)[i], linFit(0.75, 0.14, 150)[i], u * 2))
-    : [0, 1, 2].map(i => lerp(linFit(0.75, 0.14, 150)[i], linFit(0.85, 0.17, 70)[i], u * 2 - 1))),
-  dye: u => linFit(0.8, 0.13, 20 + 330 * u),
+    ? [0, 1, 2].map(i => lerp(HEAT[0][i], HEAT[1][i], u * 2))
+    : [0, 1, 2].map(i => lerp(HEAT[1][i], HEAT[2][i], u * 2 - 1))).map(v => v * lerp(0.3, 1, u)),
+  dye: u => linFit(0.78, 0.15, 20 + 330 * u),
 };
+const HEAT = [linFit(0.45, 0.08, 250), linFit(0.75, 0.14, 150), linFit(0.85, 0.17, 70)];
+// The CPU path reads the same row from here.
+const rampRGB = new Float32Array(256 * 3);
 function bakeRamp() {
   const px = new Uint8Array(256 * 4), f = RAMPS[opts.look];
   for (let i = 0; i < 256; i++) {
     const c = f(i / 255);
+    rampRGB.set(c, i * 3);
     px.set([c[0] * 255, c[1] * 255, c[2] * 255, 255], i * 4);
   }
   gl.bindTexture(gl.TEXTURE_2D, ramp);
@@ -528,18 +564,102 @@ function stateTarget(w, h, data) {
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
   return { tex, fb, w, h };
 }
-let stA = null, stB = null, TW = 1, TH = 1;
+let stA = null, stB = null, TW = 1, TH = 1, seeded = false;
 function seedState() {
+  if (CPU) return seedCpu();
   [TW, TH] = COUNTS[opts.count];
   const d = new Float32Array(TW * TH * 4);
   for (let i = 0; i < TW * TH; i++) {
-    const x = Math.random() * AX, y = Math.random() * AY, life = 2 + 4 * Math.random();
+    const [l0, ls] = lifeSpan(), x = Math.random() * AX, y = Math.random() * AY, life = l0 + ls * Math.random();
     const hue = clamp(y / AY * 0.82 + 0.06 * Math.sin(x * 3));
-    d.set([x, y, Math.random() * life, life + 8 * Math.floor(hue * 255)], i * 4);
+    d.set([x, y, Math.random() * life, life + 16 * Math.floor(hue * 255)], i * 4);
   }
   if (stA) { drop(stA); drop(stB); }
   stA = stateTarget(TW, TH, d);
   stB = stateTarget(TW, TH, null);
+}
+
+/* ---------- CPU particles ---------- */
+// The CPU path moves up to 8,000 particles over a grid of base wind.
+// The grid rebuilds every 0.5 s; storms and gusts add exactly per particle.
+const CPU_COUNTS = { few: 4000, some: 6000, many: 8000 };
+const cpu = { n: 0, x: null, y: null, age: null, life: null, hue: null, lum: null, grid: null, gx: 0, gy: 0, at: -1 };
+function seedCpu() {
+  const n = cpu.n = CPU_COUNTS[opts.count], [l0, ls] = lifeSpan();
+  ['x', 'y', 'age', 'life', 'hue', 'lum'].forEach(k => { cpu[k] = new Float32Array(n); });
+  for (let i = 0; i < n; i++) {
+    cpu.life[i] = l0 + ls * Math.random();
+    respawnCpu(i);
+    cpu.age[i] = Math.random() * cpu.life[i];
+    // A few bright threads stand out over many faint ones.
+    cpu.lum[i] = 0.12 + 3 * Math.random() ** 6;
+  }
+  cpu.at = -1;
+}
+function respawnCpu(i) {
+  const [l0, ls] = lifeSpan(), x = Math.random() * AX, y = Math.random() * AY;
+  cpu.x[i] = x; cpu.y[i] = y; cpu.age[i] = 0; cpu.life[i] = l0 + ls * Math.random();
+  cpu.hue[i] = clamp(y / AY * 0.82 + 0.06 * Math.sin(x * 3));
+}
+function buildGrid() {
+  const gx = cpu.gx = AX >= AY ? 128 : 72, gy = cpu.gy = AX >= AY ? 72 : 128;
+  if (!cpu.grid || cpu.grid.length !== gx * gy * 2) cpu.grid = new Float32Array(gx * gy * 2);
+  for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
+    baseVel(i / (gx - 1) * AX, j / (gy - 1) * AY, bv);
+    cpu.grid[(j * gx + i) * 2] = bv[0]; cpu.grid[(j * gx + i) * 2 + 1] = bv[1];
+  }
+  cpu.at = t;
+}
+// Velocity at (x, y): grid wind, then storms with inflow, then gusts.
+function cpuVel(x, y, out) {
+  const { gx, gy, grid } = cpu;
+  const fx = clamp(x / AX, 0, 1) * (gx - 1), fy = clamp(y / AY, 0, 1) * (gy - 1);
+  const i = Math.min(gx - 2, fx | 0), j = Math.min(gy - 2, fy | 0), u = fx - i, w = fy - j;
+  const a = (j * gx + i) * 2, b = a + gx * 2;
+  out[0] = lerp(lerp(grid[a], grid[a + 2], u), lerp(grid[b], grid[b + 2], u), w);
+  out[1] = lerp(lerp(grid[a + 1], grid[a + 3], u), lerp(grid[b + 1], grid[b + 3], u), w);
+  for (const v of vortices) {
+    const dx = x - v.x, dy = y - v.y, r = Math.hypot(dx, dy) + 1e-4;
+    const vt = vTheta(v.g * v.amp, v.rc, r);
+    const inflow = 0.25 * Math.abs(vt) * (1 - clamp((r - v.rc) / v.rc));
+    out[0] += (-dy * vt - dx * inflow) / r; out[1] += (dx * vt - dy * inflow) / r;
+  }
+  for (const g of gusts) {
+    const dx = x - g.x, dy = y - g.y, r2 = dx * dx + dy * dy + 1e-7, r = Math.sqrt(r2);
+    const q = g.q / (2 * Math.PI * r) * (1 - Math.exp(-r2 / (g.r * g.r)));
+    out[0] += dx / r * q; out[1] += dy / r * q;
+  }
+  return out;
+}
+const cv = [0, 0];
+const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+function cpuStep(dt) {
+  if (cpu.at < 0 || t - cpu.at > 0.5) buildGrid();
+  if (!dt) return;
+  const n = Math.ceil(cpu.n * areaK), w = 0.75 * dpr, dye = opts.look === 'dye';
+  const gain = 0.045 * Math.sqrt(65536 / cpu.n);
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const x0 = cpu.x[i], y0 = cpu.y[i];
+    cpuVel(x0, y0, cv);
+    const mx = x0 + cv[0] * dt / 2, my = y0 + cv[1] * dt / 2;
+    cpuVel(mx, my, cv);
+    const x1 = x0 + cv[0] * dt, y1 = y0 + cv[1] * dt;
+    const age = cpu.age[i] += dt;
+    let dead = age > cpu.life[i] || x1 < -0.02 || y1 < -0.02 || x1 > AX + 0.02 || y1 > AY + 0.02;
+    for (const v of vortices) if (Math.abs(v.g * v.amp) > 0.02 && Math.hypot(x1 - v.x, y1 - v.y) < 0.45 * v.rc) dead = true;
+    if (dead) { respawnCpu(i); continue; }
+    cpu.x[i] = x1; cpu.y[i] = y1;
+    // Colour and light follow SEG_TEX_VS.
+    const sp = clamp(Math.hypot(x1 - x0, y1 - y0) / dt / VREF);
+    const k = Math.round((dye ? cpu.hue[i] : sp) * 255) * 3;
+    const env = smooth(0, 0.5, age) * (1 - smooth(cpu.life[i] - 0.8, cpu.life[i], age)) * cpu.lum[i];
+    const L = Math.hypot(x1 - x0, y1 - y0) * S;
+    const e = gain * env * clamp(L / (2 * w)) * (dye ? 0.25 + 0.75 * Math.sqrt(sp) : 1);
+    inst.set([x0 * S, y0 * S, x1 * S, y1 * S, rampRGB[k] * e, rampRGB[k + 1] * e, rampRGB[k + 2] * e, w], m * 8);
+    if (++m >= MAXSEG) { segPass(acc[ai], m); m = 0; }
+  }
+  segPass(acc[ai], m);
 }
 
 /* ---------- the field on the CPU ---------- */
@@ -708,6 +828,7 @@ function updatePass(dt) {
   gl.uniform1i(u.uState, 0);
   gl.uniform1f(u.uDt, dt);
   gl.uniform2f(u.uWorld, AX, AY);
+  gl.uniform2fv(u.uLife, lifeSpan());
   gl.uniform1ui(u.uFrame, frameNo++);
   setField(u);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -757,6 +878,7 @@ function simStep(dt) {
   const adv = dt * pace();
   if (!holdStorms) stepStorms(adv);
   eyePass(dt);
+  if (CPU) { cpuStep(adv); return; }
   updatePass(adv);
   segTexPass(adv);
   [stA, stB] = [stB, stA];
@@ -771,6 +893,10 @@ function render() {
   gl.uniform1f(u.uTime, t);
   gl.uniform1f(u.uExpo, 1.5);
   gl.uniform3fv(u.uBg, BG); gl.uniform3fv(u.uGrid, GRID);
+  gl.uniform1f(u.uScale, S);
+  gl.uniform1f(u.uIso, opts.iso === 'on' ? 1 : 0);
+  gl.uniform3fv(u.uIsoCol, ISO_COL);
+  setField(u);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 // The first frame shows a plate already exposed: run the flow a while.
@@ -821,7 +947,8 @@ function resize() {
   acc = [target(W, H), target(W, H)]; ai = 0;
   // Storms keep their place relative to the frame width.
   vortices.forEach(v => { v.x *= AX / wx; v.y *= AY / wy; });
-  if (!stA) { seedState(); seedCyclone(); }
+  cpu.at = -1;
+  if (!seeded) { seedState(); seedCyclone(); seeded = true; }
   preroll(ready ? 1 : 3);
   if (ready) { render(); wake(); }
 }
@@ -841,6 +968,7 @@ choices(document.getElementById('look'), v => { opts.look = v; save('look', v); 
 choices(document.getElementById('count'), v => { opts.count = v; save('count', v); seedState(); clearAcc(); preroll(1); wake(); }).set(opts.count);
 choices(document.getElementById('trail'), v => { opts.trail = v; save('trail', v); wake(); }).set(opts.trail);
 choices(document.getElementById('hemi'), v => { opts.hemi = v; save('hemi', v); wake(); }).set(opts.hemi);
+choices(document.getElementById('iso'), v => { opts.iso = v; save('iso', v); render(); wake(); }).set(opts.iso);
 // + Cyclone finds open air and spins the hemisphere's way.
 function addCyclone() {
   let best = null, room = -1;
