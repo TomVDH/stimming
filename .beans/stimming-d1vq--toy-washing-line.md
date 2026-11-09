@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T09:52:39Z
+updated_at: 2026-11-09T09:58:04Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -75,3 +75,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Fidelity pass (Tom: shadows, shading, contrast; the line must always contrast): dark cord tinted per theme with a 1.7 px minimum screen width; stronger sun, lower fill; cloth fold darkening; contact shadows; drifting cloud shadows on ground and grass; a per-theme grade (S-curve, saturation, lift, vignette).
 
 - Winter v3 (Tom: winter is not good): clear cold afternoon with a low sun and long blue shadows; line from a white clapboard farmhouse corner (warm lit window, snow on the sill) to a barked cottonwood; shelterbelt of bare trees on the horizon, a small red barn, telephone poles; wind-carved snow relief (normal map) and low drifts; camera at eye height from the tree side into the sun.
+
+- Winter v4 (Tom: strange trees; tie it to a big timber tree by a cabin in northern BC): log cabin corner (notched crossing logs, chinking, lit window, snowy eave, woodpile) to an old fir with furrowed bark; smooth-shaded snowy spruce forest; Coast Mountains in haze; chopping block with an axe; Iso hides the fir crown as a cutaway.

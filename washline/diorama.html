@@ -563,7 +563,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 const scene = new THREE.Scene();
 // Two cameras: a wide lens, and a true isometric view.
-const persp = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+const persp = new THREE.PerspectiveCamera(30, 1, 0.1, 900);
 const isoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 140);
 let viewMode = ui.setting('view')?.value === 'iso' ? 'iso' : 'wide', camera = persp;
 // The composer target takes 4x MSAA, so cut-out edges stay smooth.
@@ -1149,87 +1149,179 @@ barkTex.colorSpace = THREE.SRGBColorSpace;
 barkTex.wrapS = barkTex.wrapT = THREE.RepeatWrapping;
 barkTex.repeat.set(1, 3);
 
-// Winter: a clear cold afternoon. The line runs from a farmhouse corner to a cottonwood.
-// Far off: a shelterbelt of bare trees, a small red barn, telephone poles.
+// A snowy spruce: stacked, ragged tiers, snow lying in patches on top.
+function spruceGeometry(h, r, tiers, seed = 0) {
+  const geos = [];
+  const trunk = new THREE.CylinderGeometry(r * 0.06, r * 0.1, h * 0.35, 8).translate(0, h * 0.17, 0);
+  geos.push(trunk);
+  for (let i = 0; i < tiers; i++) {
+    const t = i / tiers, rr = r * (1 - t * 0.85) * rnd(0.9, 1.1), hh = (h / tiers) * 1.8;
+    const g = new THREE.ConeGeometry(rr, hh, 32, 4, true).translate(0, h * 0.12 + t * h * 0.82 + hh / 2, 0);
+    const p = g.attributes.position;
+    // Ragged bough tips at each tier's rim.
+    for (let k = 0; k < p.count; k++) {
+      const x = p.getX(k), z = p.getZ(k), d = Math.hypot(x, z);
+      if (d > rr * 0.6) { const f = 1 + 0.22 * noise3D(x * 3 + seed, i, z * 3); p.setX(k, x * f); p.setZ(k, z * f); p.setY(k, p.getY(k) - 0.15 * rr * Math.abs(noise3D(x * 2, z * 2, seed))); }
+    }
+    geos.push(g);
+  }
+  // Indexed tiers keep smooth normals, so the boughs read soft, not faceted.
+  const g = mergeGeometries(geos);
+  g.computeVertexNormals();
+  // Dark needles; snow where a surface faces up, in drifts and patches.
+  const p = g.attributes.position, n = g.attributes.normal, col = new Float32Array(p.count * 3);
+  const needle = lin(0.3, 0.05, 155), snowC = [0.92, 0.94, 0.97], barkC = lin(0.3, 0.04, 40);
+  for (let k = 0; k < p.count; k++) {
+    const y = p.getY(k), up = n.getY(k), isTrunk = y < h * 0.12 && Math.hypot(p.getX(k), p.getZ(k)) < r * 0.12;
+    const patch = noise3D(p.getX(k) * 1.7 + seed, y * 1.3, p.getZ(k) * 1.7) * 0.5 + 0.5;
+    const sn = smooth(0.3, 0.6, up) * smooth(0.38, 0.55, patch);
+    const nd = needle.map(v => v * rnd(0.8, 1.1));
+    const c = isTrunk ? barkC : [0, 1, 2].map(j => lerp(nd[j], snowC[j], sn));
+    col[k * 3] = c[0]; col[k * 3 + 1] = c[1]; col[k * 3 + 2] = c[2];
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+// Deep-furrowed red-brown bark, as on an old fir or cedar.
+const firBarkTex = new THREE.CanvasTexture(tex2D(128, 512, (g, w, h) => {
+  g.fillStyle = '#5a3828'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 26; i++) {
+    const x = rnd(0, w), wd = rnd(3, 9);
+    g.fillStyle = `rgba(20,12,8,${rnd(0.45, 0.8)})`; g.beginPath(); g.moveTo(x, 0);
+    for (let y = 0; y <= h; y += 24) g.lineTo(x + rnd(-5, 5), y);
+    for (let y = h; y >= 0; y -= 24) g.lineTo(x + wd + rnd(-3, 3), y);
+    g.fill();
+  }
+  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '150,100,70' : '40,25,18'},${rnd(0.1, 0.35)})`; g.fillRect(rnd(0, w), rnd(0, h), rnd(2, 8), rnd(6, 26)); }
+}));
+firBarkTex.colorSpace = THREE.SRGBColorSpace;
+firBarkTex.wrapS = firBarkTex.wrapT = THREE.RepeatWrapping;
+firBarkTex.repeat.set(2, 3);
+const logTex = new THREE.CanvasTexture(tex2D(512, 64, (g, w, h) => {
+  g.fillStyle = '#9c7446'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 70; i++) { g.strokeStyle = `rgba(${Math.random() < 0.5 ? '70,45,25' : '200,160,110'},${rnd(0.1, 0.3)})`; g.lineWidth = rnd(0.5, 2);
+    const y = rnd(0, h); g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(w / 3, y + rnd(-4, 4), (2 * w) / 3, y + rnd(-4, 4), w, y + rnd(-3, 3)); g.stroke(); }
+  for (let i = 0; i < 6; i++) { g.fillStyle = 'rgba(60,35,20,0.55)'; g.beginPath(); g.ellipse(rnd(0, w), rnd(10, h - 10), 6, 4, 0, 0, TAU); g.fill(); }
+}));
+logTex.colorSpace = THREE.SRGBColorSpace;
+logTex.wrapS = logTex.wrapT = THREE.RepeatWrapping;
+
+// Winter, northern BC: a log cabin corner to a big timber fir, spruce forest, mountains.
 function buildWinter(grp) {
   const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
   const snowMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fb, roughness: 0.85 });
-  // The farmhouse: white clapboard, a lit window, snow on the sill and the roof edge.
-  const clap = new THREE.MeshStandardMaterial({ map: clapTex, roughness: 0.85 });
-  const house = add(new THREE.Mesh(new THREE.BoxGeometry(9, 7, 9), clap));
-  house.position.set(-POST_X - 0.1 - 4.5, 3.5, 1.2);
-  const trim = new THREE.MeshStandardMaterial({ color: 0xf1eee6, roughness: 0.6 });
-  const corner = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 7, 0.18), trim));
-  corner.position.set(-POST_X - 0.07, 3.5, 5.62);
-  const glow = new THREE.MeshStandardMaterial({ color: 0x2a1a10, emissive: new THREE.Color().setRGB(3.2, 1.9, 0.8), roughness: 0.3 });
-  const win = add(new THREE.Mesh(new THREE.PlaneGeometry(1.05, 1.35).rotateY(Math.PI / 2), glow), false);
-  win.position.set(-POST_X - 0.095, 1.75, 2.6);
-  for (const [w, h, y, z] of [[0.07, 1.5, 1.75, 2.0], [0.07, 1.5, 1.75, 3.2], [0.07, 0.07, 2.47, 2.6], [0.07, 0.07, 1.75, 2.6], [0.07, 1.4, 1.75, 2.6]]) {
-    const b = add(new THREE.Mesh(new THREE.BoxGeometry(0.07, h, w === 0.07 && h < 1 ? 1.25 : 0.07), trim));
-    b.position.set(-POST_X - 0.07, y, z);
+  // The cabin wall: round logs stacked on light chinking; the line ties to a ring.
+  const WX = -POST_X - 0.12, R = 0.17, z0 = -4.5, z1 = 4.4, LOGS = 14;
+  const logMat = new THREE.MeshStandardMaterial({ map: logTex, roughness: 0.85 });
+  const chink = add(new THREE.Mesh(new THREE.BoxGeometry(0.1, LOGS * R * 2, z1 - z0), new THREE.MeshStandardMaterial({ color: 0xd9d2c3, roughness: 0.95 })));
+  chink.position.set(WX - 0.12, LOGS * R, (z0 + z1) / 2);
+  const wallLogs = new THREE.InstancedMesh(new THREE.CylinderGeometry(R, R, z1 - z0 + 0.7, 18).rotateX(Math.PI / 2), logMat, LOGS);
+  const crossLogs = new THREE.InstancedMesh(new THREE.CylinderGeometry(R, R, 7, 18).rotateZ(Math.PI / 2), logMat, LOGS);
+  for (let k = 0; k < LOGS; k++) {
+    wallLogs.setMatrixAt(k, m.compose(p.set(WX, R + k * 2 * R, (z0 + z1) / 2 + 0.05), q.identity(), sc.set(rnd(0.95, 1.05), 1, rnd(0.95, 1.05))));
+    // The corner: crossing logs stand out past the wall, a half log higher.
+    crossLogs.setMatrixAt(k, m.compose(p.set(WX - 3.15, 2 * R + k * 2 * R, z1), q.identity(), sc.set(1, rnd(0.95, 1.05), rnd(0.95, 1.05))));
   }
-  const sill = add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 1.4), trim));
-  sill.position.set(-POST_X - 0.02, 1.03, 2.6);
-  const sillSnow = add(new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 1.36), snowMat), false);
-  sillSnow.position.set(-POST_X - 0.02, 1.08, 2.6);
+  add(wallLogs); add(crossLogs);
+  // A small window, honey trim, warm light inside.
+  const glow = new THREE.MeshStandardMaterial({ color: 0x2a1a10, emissive: new THREE.Color().setRGB(3.4, 2.0, 0.8), roughness: 0.3 });
+  const win = add(new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.0).rotateY(Math.PI / 2), glow), false);
+  win.position.set(WX + R + 0.01, 1.75, 2.4);
+  const trim = new THREE.MeshStandardMaterial({ color: 0x7a5a36, roughness: 0.7 });
+  for (const [h, w, y, z] of [[1.16, 0.08, 1.75, 1.91], [1.16, 0.08, 1.75, 2.89], [0.08, 1.06, 2.29, 2.4], [0.08, 1.06, 1.21, 2.4], [1.0, 0.04, 1.75, 2.4], [0.04, 0.9, 1.75, 2.4]]) {
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.06, h, w), trim)).position.set(WX + R + 0.03, y, z);
+  }
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 1.1), snowMat), false).position.set(WX + R + 0.06, 1.2, 2.4);
   const ring = add(new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 8, 18).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3c3a38, metalness: 0.8, roughness: 0.6 })));
-  ring.position.set(-POST_X - 0.06, LINE_Y, 0);
-  const bank = add(new THREE.Mesh(new THREE.SphereGeometry(1, 28, 12), snowMat), false);
-  bank.scale.set(0.8, 0.4, 5.5);
-  bank.position.set(-POST_X - 0.1, 0, 1.2);
-  contact(grp, -POST_X - 0.3, 1.2, 0.5, 5, 0.5);
-  // The cottonwood: a barked trunk, four main limbs, its crown out of the frame.
-  const bark = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.95 });
-  const tree = add(new THREE.Mesh(treeGeometry(3.6, 0.26, 4, 4), bark));
-  tree.position.set(POST_X + 0.24, 0, 0);
-  const band = add(new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.008, 6, 24).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 })));
-  band.position.set(POST_X + 0.24, LINE_Y, 0);
-  contact(grp, POST_X + 0.24, 0, 0.6, 0.6, 0.6);
-  // A shelterbelt of bare trees lines the horizon, grey lace in the haze.
-  const belt = new THREE.InstancedMesh(treeGeometry(4, 0.18, 5), new THREE.MeshStandardMaterial({ color: 0x4a4542, roughness: 1 }), 70);
-  for (let k = 0; k < 70; k++) belt.setMatrixAt(k, m.compose(p.set(-110 + k * 3.2 + rnd(-1, 1), 0, -78 + rnd(-3, 3)), q.setFromEuler(new THREE.Euler(0, rnd(0, TAU), 0)), sc.setScalar(rnd(1.6, 2.4))));
-  grp.add(belt);
-  // A small red barn sits out on the plain.
-  const barn = new THREE.Group();
-  const red = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.42, 0.13, 28)), roughness: 0.9 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 7), red); body.position.y = 3;
-  const roofShape = new THREE.Shape([new THREE.Vector2(-3.9, 0), new THREE.Vector2(3.9, 0), new THREE.Vector2(0, 3.6)]);
-  const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofShape, { depth: 10.6, bevelEnabled: false }).translate(0, 0, -5.3).rotateY(Math.PI / 2), snowMat);
-  roof.position.y = 6;
-  barn.add(body, roof);
-  barn.position.set(16, 0, -30);
-  barn.rotation.y = -0.5;
-  barn.traverse(o => { o.castShadow = o.receiveShadow = true; });
-  grp.add(barn);
-  // Telephone poles march off along a snowed-in road.
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x3f3730, roughness: 0.9 });
-  const tops = [];
-  for (let k = 0; k < 9; k++) {
-    const z = 4 - k * 13, x = 14 - z * 0.12;
-    const pole = add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 9, 10), poleMat));
-    pole.position.set(x, 4.5, z);
-    const arm = add(new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.12), poleMat));
-    arm.position.set(x, 8.4, z);
-    tops.push([x, z]);
+  ring.position.set(WX + R + 0.01, LINE_Y, 0);
+  // The eave overhangs the wall, deep in snow.
+  const eave = add(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, z1 - z0 + 1.4), new THREE.MeshStandardMaterial({ color: 0x4a3426, roughness: 0.9 })));
+  eave.position.set(WX + 0.1, LOGS * R * 2 + 0.25, (z0 + z1) / 2);
+  eave.rotation.z = -0.35;
+  const eaveSnow = add(new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.32, z1 - z0 + 1.5), snowMat), false);
+  eaveSnow.position.set(WX + 0.12, LOGS * R * 2 + 0.46, (z0 + z1) / 2);
+  eaveSnow.rotation.z = -0.35;
+  // Split rounds stacked under the eave, a cap of snow on top.
+  const rounds = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 0.42, 9).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.9 }), 70);
+  let k = 0;
+  for (let row = 0; row < 6; row++) for (let i = 0; i < 12 && k < 70; i++) {
+    const r = rnd(0.1, 0.15);
+    rounds.setMatrixAt(k++, m.compose(p.set(WX + R + 0.26, 0.13 + row * 0.24, -3.7 + i * 0.27 + (row % 2) * 0.12), q.setFromEuler(new THREE.Euler(rnd(0, 3), 0, 0)), sc.set(1, r, r)));
   }
-  const wireMat = new THREE.LineBasicMaterial({ color: 0x2c2a28 });
-  for (const off of [-0.8, -0.3, 0.3, 0.8]) for (let k = 0; k < tops.length - 1; k++) {
-    const pts = [], [x0, z0] = tops[k], [x1, z1] = tops[k + 1];
-    for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push(new THREE.Vector3(lerp(x0, x1, t) + off, 8.45 - 0.5 * Math.sin(Math.PI * t), lerp(z0, z1, t))); }
-    grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+  rounds.count = k;
+  add(rounds);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 3.4), snowMat), false).position.set(WX + R + 0.26, 1.5, -2.2);
+  contact(grp, WX + 0.3, 0, 0.6, 4.6, 0.55);
+  // The line's far end: an old timber fir, its boughs heavy with snow above the frame.
+  const fir = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.5, 14, 22), new THREE.MeshStandardMaterial({ map: firBarkTex, roughness: 0.95 }));
+  trunk.position.y = 7;
+  const crown = new THREE.Mesh(spruceGeometry(18, 2.6, 18, 3), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
+  crown.position.y = 2.2;
+  // Iso looks down through the crown, as a cutaway.
+  crown.userData.isoHide = true;
+  fir.add(trunk, crown);
+  fir.position.set(POST_X + 0.42, 0, -0.3);
+  fir.traverse(o => { o.castShadow = o.receiveShadow = true; });
+  grp.add(fir);
+  const band = add(new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.01, 6, 28).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 })));
+  band.position.set(POST_X + 0.42, LINE_Y, -0.3);
+  contact(grp, POST_X + 0.42, -0.3, 1.0, 1.0, 0.7);
+  // A chopping block with an axe left in it.
+  const block = add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.33, 0.5, 20), new THREE.MeshStandardMaterial({ map: firBarkTex, roughness: 0.9 })));
+  block.position.set(-1.7, 0.25, 2.4);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.02, 20), new THREE.MeshStandardMaterial({ color: 0xc9a67a, roughness: 0.8 }))).position.set(-1.7, 0.51, 2.4);
+  const axe = new THREE.Group();
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0xb08850, roughness: 0.6 }));
+  handle.position.y = 0.4;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.03), new THREE.MeshStandardMaterial({ color: 0x5e6266, metalness: 0.9, roughness: 0.35 }));
+  head.position.set(0.06, 0.0, 0);
+  axe.add(handle, head);
+  axe.position.set(-1.7, 0.52, 2.4);
+  axe.rotation.set(0.2, 0.6, -0.9);
+  axe.traverse(o => { o.castShadow = true; });
+  grp.add(axe);
+  contact(grp, -1.7, 2.4, 0.5, 0.5, 0.6);
+  // Spruce forest all round the clearing, thinning into the haze.
+  const spruce = spruceGeometry(1, 0.3, 14, 7);
+  const forestMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+  const N = 340, forest = new THREE.InstancedMesh(spruce, forestMat, N);
+  let f = 0;
+  while (f < N) {
+    const x = rnd(-90, 90), z = rnd(-110, 30);
+    if (Math.hypot(x * 0.8, z) < 12 || (z > -12 && x > -8)) continue;
+    const hgt = rnd(9, 22) * (z < -60 ? 1.3 : 1);
+    forest.setMatrixAt(f++, m.compose(p.set(x, 0, z), q.setFromEuler(new THREE.Euler(0, rnd(0, TAU), rnd(-0.03, 0.03))), sc.set(hgt, hgt, hgt)));
   }
-  // Wind-carved drifts ripple across the yard.
-  const driftN = 40, drifts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 20, 10), snowMat, driftN);
-  for (let k = 0; k < driftN; k++) drifts.setMatrixAt(k, m.compose(p.set(rnd(-16, 22), 0, rnd(-30, -3)), q.setFromEuler(new THREE.Euler(0, rnd(-0.4, 0.4), 0)), sc.set(rnd(3, 7), rnd(0.08, 0.22), rnd(0.8, 1.6))));
+  forest.castShadow = forest.receiveShadow = true;
+  grp.add(forest);
+  // The Coast Mountains: a ridge of snow and rock far behind the forest.
+  const mg = new THREE.PlaneGeometry(900, 260, 220, 60).rotateX(-Math.PI / 2);
+  const mp = mg.attributes.position, mc = new Float32Array(mp.count * 3);
+  for (let i = 0; i < mp.count; i++) {
+    const x = mp.getX(i), z = mp.getZ(i), d = (z + 130) / 260;
+    let hgt = 0, a = 1, fq = 0.006;
+    for (let o = 0; o < 5; o++) { hgt += a * (1 - Math.abs(noise3D(x * fq, z * fq, 9.1))); a *= 0.5; fq *= 2.1; }
+    hgt = Math.pow(hgt / 1.9, 2.4) * 260 * (1 - d * 0.6);
+    mp.setY(i, hgt);
+  }
+  mg.computeVertexNormals();
+  const mn = mg.attributes.normal;
+  for (let i = 0; i < mp.count; i++) {
+    const hgt = mp.getY(i), steep = 1 - mn.getY(i);
+    const snowy = hgt > 55 + 40 * noise3D(mp.getX(i) * 0.02, 0, mp.getZ(i) * 0.02) && steep < 0.55;
+    const c = snowy ? [0.9, 0.92, 0.96] : lin(0.38 + 0.08 * Math.random(), 0.02, 250);
+    mc[i * 3] = c[0]; mc[i * 3 + 1] = c[1]; mc[i * 3 + 2] = c[2];
+  }
+  mg.setAttribute('color', new THREE.BufferAttribute(mc, 3));
+  const range = new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
+  range.position.set(0, -2, -300);
+  grp.add(range);
+  // Low drifts behind the line; footprints from the lens to the line.
+  const driftN = 26, drifts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 20, 10), snowMat, driftN);
+  for (let d = 0; d < driftN; d++) drifts.setMatrixAt(d, m.compose(p.set(rnd(-10, 18), 0, rnd(-14, -3)), q.setFromEuler(new THREE.Euler(0, rnd(-0.4, 0.4), 0)), sc.set(rnd(3, 6), rnd(0.08, 0.2), rnd(0.8, 1.6))));
   add(drifts);
-  // A galvanised tub by the house, half full of snow.
-  const tub = add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.3, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xa9adb2, metalness: 0.8, roughness: 0.4, side: THREE.DoubleSide })));
-  tub.position.set(-2.4, 0.15, 1.6);
-  const tubSnow = add(new THREE.Mesh(new THREE.CircleGeometry(0.29, 24).rotateX(-Math.PI / 2), snowMat), false);
-  tubSnow.position.set(-2.4, 0.27, 1.6);
-  contact(grp, -2.4, 1.6, 0.45, 0.45, 0.6);
-  // Footprints lead from the lens out to the line.
   const printTex = new THREE.CanvasTexture(tex2D(64, 128, (g) => {
     g.fillStyle = 'rgba(90,110,150,0.6)';
     g.beginPath(); g.ellipse(32, 44, 18, 30, 0, 0, TAU); g.fill();
@@ -1237,9 +1329,9 @@ function buildWinter(grp) {
   }));
   printTex.colorSpace = THREE.SRGBColorSpace;
   const steps = 26, prints = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.12, 0.26).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: printTex, transparent: true, depthWrite: false }), steps);
-  for (let k = 0; k < steps; k++) {
-    const t = k / (steps - 1), x = lerp(-0.4, 1.8, t) + (k % 2 ? 0.13 : -0.13), z = lerp(0.6, 8, t);
-    prints.setMatrixAt(k, m.compose(p.set(x, 0.004, z), q.setFromEuler(new THREE.Euler(0, -0.27 + rnd(-0.08, 0.08), 0)), sc.set(1, 1, 1)));
+  for (let s2 = 0; s2 < steps; s2++) {
+    const t = s2 / (steps - 1), x = lerp(-0.4, 1.8, t) + (s2 % 2 ? 0.13 : -0.13), z = lerp(0.6, 8, t);
+    prints.setMatrixAt(s2, m.compose(p.set(x, 0.004, z), q.setFromEuler(new THREE.Euler(0, -0.27 + rnd(-0.08, 0.08), 0)), sc.set(1, 1, 1)));
   }
   grp.add(prints);
 }
@@ -1569,6 +1661,7 @@ function frameCamera() {
     camera = persp;
   }
   renderPass.camera = camera;
+  setGroup?.traverse(o => { if (o.userData.isoHide) o.visible = viewMode !== 'iso'; });
   // Iso reads as a model: a soft tilt-shift band through the line.
   tiltH.enabled = tiltV.enabled = viewMode === 'iso';
   camera.updateProjectionMatrix();
@@ -1763,10 +1856,10 @@ const THEMES = {
     sky: { zen: [0.6, 0.085, 246], mid: [0.76, 0.055, 240], hor: [0.9, 0.045, 62], haze: [0.9, 0.02, 250], cloud: [0.97, 0.02, 40], shade: [0.8, 0.03, 265] },
     warm: [0.9, 0.08, 58], white: [0.97, 0.03, 70], sunK: 3.4, glow: 1, exp: 0.95, shadow: 0.85, elK: 0.18,
     line: [0.26, 0.025, 50], grade: { con: 1.12, sat: 1.02, vig: 0.24, lift: [0.0, 0.005, 0.025] }, clouds: 0,
-    fog: [[0.9, 0.02, 250], 28, 170], hemi: [[0.72, 0.07, 245], [0.94, 0.01, 250], 0.75],
+    fog: [[0.86, 0.035, 245], 30, 420], hemi: [[0.72, 0.07, 245], [0.94, 0.01, 250], 0.75],
     ground: 'snow', grass: { n: 0.01, h: [0.1, 0.32], cols: [[0.74, 0.06, 80], [0.8, 0.05, 85], [0.62, 0.05, 70]] },
     wind: 'breeze', sun: 0.72, stiff: 3, frost: 1, snow: 0, daisies: 0,
-    // From the tree side at eye height, into a low sun, toward the farmhouse.
+    // From the fir side at eye height, into a low sun, toward the cabin.
     cam: { pos: [2.6, 1.4, 6.8], look: [-0.9, 1.5, -0.4], lookN: [-0.4, 1.6, -0.4], fov: 52, fovN: 70 }, iso: { yaw: Math.PI / 4, at: [-0.3, 1.0, 0] },
     mix: ['longjohns', 'sheet', 'flannel', 'sock', 'sock', 'towel', 'flannel', 'sheet'], build: buildWinter,
   },
