@@ -23,12 +23,35 @@ Tom asked for different looks: city grids, circuit boards and natural networks. 
 | Web | Generator | Look | Faces |
 |---|---|---|---|
 | **Cells** (default) | Voronoi of a Poisson disc; cell size varies by noise | Ivory to teal to indigo; hairline isochrone contours | Glass panes tinted by distance |
-| **Streets** | A noise-warped grid; every fifth line is an avenue (wide, 0.55 cost); some side streets close, but never so a part cuts off | Sodium ivory to amber to rust; every crossing is a lamp | City blocks; windows switch on behind the front |
+| **Streets** | A real city grab from OpenStreetMap (see below); the noise-warped grid is the fallback when no grab loads | A night city: sodium streets light the ground, roofs, water and parks round them | Buildings, water and green as shaded masks |
 | **Circuit** | A lattice with 0 and 45 degree traces; chips with pins; power rails every seventh row (wide, 0.7 cost) | Pale gold to olive to teal on a dark green mask; dull copper unlit; hard-edged traces; vias on junctions and ends | Chips; a status light shows when current arrives |
 | **Roots** | A relative neighbourhood graph of a Poisson disc plus a few loops; links curve; trunks thicken by the tips they feed and carry light faster | Pale green to teal to slate on soft soil | None |
 
 Why Cells stays the default: degree-3 junctions make paths wind, and the panes give the heat map an area.
 All four are built at the stage's own aspect in under 30 ms at 1280 px.
+
+## Streets: real city grabs (Tom, 2026-11-09)
+
+Tom: "realistic streets based on random OpenStreetMap grabs; cache at least 120".
+
+- `dijkstra/maps/fetch.py` asks Overpass for a 1300 m square near each of about 190 city centres, with a seeded random offset.
+- It keeps streets (motorway to service, no parking aisles), buildings (the largest 3500), water (with islands as holes), rivers, canals and green.
+- Streets split at junctions; bends simplify (RDP, 1 m) and become hidden joints. Only the largest connected part stays.
+- Coordinates are integer deltas at 0.5 m (buildings at 1 m). One grab is about 200 KB raw, 75 KB gzipped.
+- `maps/index.json` lists the grabs. The page picks one at random; Shuffle flies to another city.
+- Road class sets width and speed: motorway 2.6 px and 0.5 cost, down to service 0.7 px and 1.15 cost.
+- Credit: a quiet `CITY · © OPENSTREETMAP` link at the bottom right, as the ODbL needs.
+
+**Shading.** Areas fill an RGBA8 mask through the stencil (even-odd fans): R buildings, G water, B green, A a tone per building. Four blurred levels follow. The final pass shades a night city:
+
+| Surface | Shading |
+|---|---|
+| Ground | Moonlight with occlusion near buildings and a moon shadow down-right; the street light spills onto it |
+| Roofs | A tone each; a bevel lit on the moon side; eaves catch the street light |
+| Water | Near black; it mirrors the street light in moving ripples |
+| Green | A dark canopy texture, lit softly |
+
+The bloom chain has no threshold on a city, so lit streets light their surroundings. Before the flood the city is moonlit and dark; the flood switches the streets on.
 
 ## Look: demure and elegant (Tom, 2026-11-09)
 
@@ -175,7 +198,8 @@ The choice moves bottom left as a stepper, Shuffle and Clear bottom right, Speed
 - [x] First frame: seeded web, source and target, wave at 55 %.
 - [x] Syntax check, clean console, stills at 1280 and 375 px. **Checkpoint with Tom.**
 - [x] Commit: `Dijkstra flood: blockout, light floods a Voronoi web`.
-- [ ] Round 2 (Tom): four webs (Cells, Streets, Circuit, Roots) on the top-left choice; Search moves to Settings; the demure, high-fidelity look. Stills of each web. **Checkpoint with Tom.**
+- [x] Round 2 (Tom): four webs (Cells, Streets, Circuit, Roots) on the top-left choice; Search moves to Settings; the demure, high-fidelity look.
+- [ ] Round 3 (Tom): Streets from 120 or more cached OpenStreetMap grabs; the shaded night city. Stills. **Checkpoint with Tom.**
 
 ### Task 2: Finesse and mud
 

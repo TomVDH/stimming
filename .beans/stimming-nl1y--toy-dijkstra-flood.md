@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:10:04Z
-updated_at: 2026-11-09T09:35:17Z
+updated_at: 2026-11-09T09:52:56Z
 ---
 
 Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a node: light floods a Voronoi web in Dijkstra order; drag a target: the shortest path snaps on and re-routes. Raw WebGL2, Bar v2.
@@ -17,7 +17,10 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - [x] Task 1: syntax, console, stills at 1280 and 375 px (round 1 sent)
 - [x] Round 2: four webs (Cells, Streets, Circuit, Roots); Search moves to Settings
 - [x] Round 2: demure, high-fidelity look (hairlines, muted ramps, hairline front, low bloom)
-- [ ] Round 2: checkpoint with Tom (stills sent, waits on sign-off)
+- [x] Round 2: stills sent; Tom asked for real streets
+- [x] Round 3: OpenStreetMap fetch script; shaded night city (masks, bevels, shadows, water, light spill)
+- [ ] Round 3: cache 120 or more grabs (fetch running)
+- [ ] Round 3: checkpoint with Tom
 - [ ] Task 2: scouts, sparks, queue shimmer, path snap; mud brush
 - [ ] Task 3: Seek (A*) and Race
 - [ ] Task 4: sound: pops, lock chord, blips; Q9
@@ -35,3 +38,5 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - Stills came from a throwaway probe page (pane hidden); the probe is deleted.
 
 - Round 2 (Tom, 2026-11-09): "different aesthetics: city grids, network / PCBs, natural networks", then "way too flashy; demure and elegant". Each web has its own generator, OKLCH ramp, ground and stroke style. Edges and the path use MAX blending, so joints do not bead. Pixel budget 4.2 M for hairlines.
+
+- Round 3 (Tom, 2026-11-09): "realistic streets based on random OpenStreetMap grabs; cache at least 120" and "much better shading". Overpass (overpass-api.de) is at capacity, so the fetch runs about 45 s per city with backoff. Data is ODbL; the page credits OpenStreetMap.

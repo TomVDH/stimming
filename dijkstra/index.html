@@ -21,6 +21,13 @@
 }
 .stage--dijkstra canvas.on { opacity: 1; }
 .stage--dijkstra { cursor: crosshair; }
+/* The map credit: required by the OpenStreetMap licence, kept quiet. */
+.stage--dijkstra .osm {
+  position: absolute; right: 14px; bottom: 50px; z-index: 2;
+  font: 500 9px/1 var(--slab, ui-monospace, monospace); letter-spacing: 0.07em; text-transform: uppercase;
+  color: oklch(0.85 0.01 260 / 0.38); text-decoration: none;
+}
+.stage--dijkstra .osm:hover { color: oklch(0.95 0.01 260 / 0.8); }
 @media (prefers-reduced-motion: reduce) { .stage--dijkstra canvas { transition: none; } }
 </style>
 </head>
@@ -286,7 +293,37 @@ function edges() {
   const ea = [], eb = [], wmul = [], width = [];
   return { ea, eb, wmul, width, add(a, b, wm = 1, wd = 1) { ea.push(a); eb.push(b); wmul.push(wm); width.push(wd); } };
 }
-// Streets: a warped grid; every fifth line is a wide, fast avenue.
+// Streets from a city grab: the square map covers the stage.
+// Big roads are wide and fast; crossings are lamps; bends hide.
+const ROAD_W = [2.6, 2.1, 1.8, 1.5, 1.0, 0.7], ROAD_M = [0.5, 0.62, 0.72, 0.82, 1, 1.15];
+function cityWeb(W, H, d) {
+  const s = Math.max(W, H) / (2 * d.half), cx = W / 2, cy = H / 2;
+  // Coordinates arrive as integer deltas at 1 / q metres.
+  const dec = (arr, q) => {
+    const out = new Float32Array(arr.length);
+    let x = 0, y = 0;
+    for (let i = 0; i < arr.length; i += 2) { x += arr[i]; y += arr[i + 1]; out[i] = cx + (x / q) * s; out[i + 1] = cy + (y / q) * s; }
+    return out;
+  };
+  const v = dec(d.v, d.q), X = [], Y = [];
+  for (let i = 0; i < v.length; i += 2) { X.push(v[i]); Y.push(v[i + 1]); }
+  const e = edges(), deg = new Int32Array(X.length);
+  for (let i = 0; i < d.e.length; i += 3) {
+    const a = d.e[i], b = d.e[i + 1], c = d.e[i + 2];
+    e.add(a, b, ROAD_M[c], ROAD_W[c]);
+    deg[a]++; deg[b]++;
+  }
+  const kind = Float32Array.from(deg, n => (n >= 3 ? 3 : 0));
+  const areas = {
+    s,
+    b: d.b.map(r => dec(r, d.bq)),
+    w: d.w.map(poly => poly.map(r => dec(r, d.q))),
+    g: d.g.map(poly => poly.map(r => dec(r, d.q))),
+    r: d.r.map(([k, ...pts]) => ({ wide: k ? 24 : 11, p: dec(pts, d.q) })),
+  };
+  return { X, Y, ...e, faces: [], kind, areas };
+}
+// Streets without a grab: a warped grid; every fifth line is an avenue.
 function streetsWeb(W, H, rnd) {
   const phone = Math.min(W, H) < 640, s = phone ? 22 : 28, M = s * 2;
   const na = noise2(rnd), nb = noise2(rnd);
@@ -434,14 +471,15 @@ function finish(g, W, H) {
     w[e] = len[e] * (g.wmul ? g.wmul[e] : 1);
   }
   return {
-    W, H, N, E, X, Y, ea, eb, len, w, row: deg, nb, ne, faces: g.faces || [], kind,
+    W, H, N, E, X, Y, ea, eb, len, w, row: deg, nb, ne, faces: g.faces || [], kind, areas: g.areas || null,
     width: g.width ? Float32Array.from(g.width) : new Float32Array(E).fill(1),
     dist: new Float32Array(N), par: new Int32Array(N), tEnter: new Float32Array(N),
     tent0: new Float32Array(N), tImp: new Float32Array(N), maxD: 1,
   };
 }
 // Each web kind has its own generator and seed stream.
-function buildWeb(W, H, seed, k) {
+function buildWeb(W, H, seed, k, grab) {
+  if (k === 'streets' && grab) return finish(cityWeb(W, H, grab), W, H);
   const rnd = mulberry(seed + KINDS.indexOf(k) * 7919);
   const make = { cells: cellsWeb, streets: streetsWeb, circuit: circuitWeb, roots: rootsWeb }[k];
   return finish(make(W, H, rnd), W, H);
@@ -831,17 +869,66 @@ void main() {
     + tap(vec2(-1, -1)) + tap(vec2(1, -1)) + tap(vec2(-1, 1)) + tap(vec2(1, 1));
   o = vec4(s / 16.0 + texture(uAdd, vUv).rgb, 1.0);
 }`;
+// Area masks: polygons fill a channel through the stencil, even-odd.
+// Alpha carries a tone per building, so roofs differ.
+const MASK_VS = `#version 300 es
+layout(location = 0) in vec3 aP;
+uniform vec4 uMap;
+out float vTone;
+void main() { vTone = aP.z; gl_Position = vec4(aP.xy * uMap.xy + uMap.zw, 0.0, 1.0); }`;
+const MASK_FS = HEAD + `
+in float vTone;
+out vec4 o;
+void main() { o = vec4(1.0, 1.0, 1.0, vTone); }`;
 const FINAL_FS = HEAD + `
 in vec2 vUv;
 out vec4 o;
-uniform sampler2D uScene, uBloom;
-uniform vec2 uRes;
-uniform float uGlow, uTime;
+uniform sampler2D uScene, uBloom, uLight, uMask, uMaskS, uMaskA, uMaskW;
+uniform vec2 uRes, uSun;
+uniform float uGlow, uTime, uCity, uDpr;
+uniform vec3 uAmb;
+float vhash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(vhash(i), vhash(i + vec2(1, 0)), f.x), mix(vhash(i + vec2(0, 1)), vhash(i + vec2(1, 1)), f.x), f.y);
+}
+// The city at night: moonlit ground, roofs and water, lit by the streets.
+vec3 city(vec2 uv, vec3 light) {
+  vec4 m = texture(uMask, uv), a = texture(uMaskA, uv), wd = texture(uMaskW, uv);
+  vec2 p = gl_FragCoord.xy / uDpr;
+  float b = m.r, wat = m.g * (1.0 - b), grn = m.b * (1.0 - b) * (1.0 - m.g);
+  float land = max(0.0, 1.0 - b - wat - grn);
+  // Buildings cast a moon shadow down and to the right: crisp near, soft far.
+  float sh = (0.6 * texture(uMaskS, uv + uSun).r + 0.4 * texture(uMaskA, uv + uSun * 2.5).r) * (1.0 - b);
+  // Ground between buildings sits in their ambient occlusion.
+  float ao = 1.0 - 0.5 * a.r * (1.0 - b) - 0.25 * wd.r * (1.0 - b);
+  vec3 ground = vec3(0.045, 0.043, 0.042) * (0.92 + 0.16 * vnoise(p / 2.5)) * (uAmb * (1.0 - 0.7 * sh) + light * 1.4) * ao;
+  // Roofs: a tone each; the moon side of each eave catches light, the far side falls dark.
+  float bev = texture(uMaskS, uv - uSun * 0.5).r - texture(uMaskS, uv + uSun * 0.5).r;
+  float eave = clamp((m.r - a.r) * 2.2, 0.0, 1.0);
+  float tone = 0.55 + 0.45 * m.a;
+  vec3 roof = vec3(0.06, 0.059, 0.058) * tone * (0.9 + 0.2 * vnoise(p / 9.0)) * (uAmb * (1.15 + 0.9 * clamp(bev, -0.6, 1.0)) + light * (0.12 + 0.9 * eave));
+  // Water: near black; it mirrors the street light in broken ripples.
+  float rip = vnoise(vec2(p.x / 16.0, p.y / 2.6 + uTime * 0.2)) * 0.6 + vnoise(vec2(p.x / 6.0, p.y / 1.4 - uTime * 0.3)) * 0.4;
+  rip = smoothstep(0.35, 0.85, rip);
+  vec3 water = vec3(0.01, 0.016, 0.026) * uAmb + light * (0.2 + 1.3 * rip) * 0.8;
+  // Green: a dark canopy, lit softly at its edges.
+  float can = 0.55 * vnoise(p / 4.0) + 0.45 * vnoise(p / 11.0);
+  vec3 green = vec3(0.022, 0.036, 0.024) * (0.5 + 0.9 * can) * (uAmb * 1.1 + light * 0.7) * (1.0 - 0.5 * sh);
+  return ground * land + roof * b + water * wat + green * grn;
+}
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 void main() {
-  vec3 col = texture(uScene, vUv).rgb + texture(uBloom, vUv).rgb * uGlow;
+  vec3 bloom = texture(uBloom, vUv).rgb;
+  vec3 col = texture(uScene, vUv).rgb + bloom * uGlow * (1.0 - 0.6 * uCity);
+  if (uCity > 0.5) {
+    vec3 light = texture(uLight, vUv).rgb * 6.0 + bloom * 2.0;
+    // A thin haze over the city glows with the light below it.
+    col += city(vUv, light) + light * 0.012;
+  }
   vec2 v = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
   col *= 1.0 - 0.35 * smoothstep(0.5, 1.3, length(v));
   vec3 c = srgb(aces(col * 1.05));
@@ -906,7 +993,7 @@ async function initGL() {
   const progs = {
     face: compile(FACE_VS, FACE_FS), edge: compile(CAPSULE_VS, EDGE_FS), node: compile(NODE_VS, NODE_FS),
     path: compile(CAPSULE_VS, PATH_FS), mark: compile(NODE_VS, MARK_FS), bg: compile(TRI, BG_FS),
-    down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS), final: compile(TRI, FINAL_FS),
+    down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS), final: compile(TRI, FINAL_FS), mask: compile(MASK_VS, MASK_FS),
   };
   // Polling lets the driver link off the main thread; after 3 s it waits.
   const all = Object.values(progs), t0 = performance.now();
@@ -922,6 +1009,7 @@ async function initGL() {
   vao('node', [4, 4], true);
   vao('path', [4, 4], true);
   vao('mark', [4, 4], true);
+  vao('area', [3], false);
   lutT = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, lutT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -929,10 +1017,10 @@ async function initGL() {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
-function target(w, h) {
+function target(w, h, fmt = gl.RGBA16F) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -946,6 +1034,7 @@ function free(t) {
   if (!t) return;
   gl.deleteTexture(t.tex);
   gl.deleteFramebuffer(t.fb);
+  if (t.rb) gl.deleteRenderbuffer(t.rb);
 }
 function bind(prog, name, unit, tex) {
   gl.activeTexture(gl.TEXTURE0 + unit);
@@ -962,11 +1051,20 @@ function tri(dst) {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 // Screen targets: the scene at full size, five bloom levels below it.
+// The area mask has a stencil, and three blurred levels for shading.
+let mask = null, maskB = [];
 function allocScreen() {
   const W = canvas.width, H = canvas.height;
   if (scene && scene.w === W && scene.h === H) return;
-  [scene, ...mips, ...ups].forEach(free);
+  [scene, ...mips, ...ups, mask, ...maskB].forEach(free);
   scene = target(W, H);
+  mask = target(W, H, gl.RGBA8);
+  mask.rb = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, mask.rb);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, W, H);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, mask.rb);
+  maskB = [];
+  for (let i = 1, w = W, h = H; i <= 4; i++) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); maskB.push(target(w, h, gl.RGBA8)); }
   mips = []; ups = [];
   let w = W, h = H;
   for (let i = 0; i < 5; i++) {
@@ -1087,6 +1185,79 @@ function checkLock() {
 }
 const done = () => !web || W >= web.maxD + TAIL;
 
+/* ---------- city areas ---------- */
+// Fans from each ring's first point; the stencil makes them an even-odd fill.
+function areaMasks() {
+  to(mask);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clearStencil(0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+  const A = web.areas;
+  if (A) {
+    // One vertex list; each draw is a run of rings with its colour channel.
+    const v = [], runs = [];
+    // Each ring takes a tone from its first point, so it never flickers.
+    const add = (rings, chan, stencil) => {
+      const first = v.length / 3;
+      for (const r of rings) {
+        const t = (Math.sin(r[0] * 12.9898 + r[1] * 78.233) * 43758.5453) % 1;
+        const tone = Math.abs(t);
+        for (let i = 2; i + 3 < r.length; i += 2) v.push(r[0], r[1], tone, r[i], r[i + 1], tone, r[i + 2], r[i + 3], tone);
+      }
+      if (v.length / 3 > first) runs.push({ first, n: v.length / 3 - first, chan, stencil });
+    };
+    add(A.b, 0, true);
+    A.w.forEach(poly => add(poly, 1, true));
+    A.g.forEach(poly => add(poly, 2, true));
+    // Rivers and canals: thick strips along their lines.
+    const first = v.length / 3;
+    for (const { wide, p } of A.r) {
+      const hw = (wide * A.s) / 2;
+      for (let i = 0; i + 3 < p.length; i += 2) {
+        const ax = p[i], ay = p[i + 1], bx = p[i + 2], by = p[i + 3], L = Math.hypot(bx - ax, by - ay) || 1;
+        const nx = (-(by - ay) / L) * hw, ny = ((bx - ax) / L) * hw;
+        v.push(ax + nx, ay + ny, 0, bx + nx, by + ny, 0, ax - nx, ay - ny, 0, ax - nx, ay - ny, 0, bx + nx, by + ny, 0, bx - nx, by - ny, 0);
+      }
+    }
+    if (v.length / 3 > first) runs.push({ first, n: v.length / 3 - first, chan: 1, stencil: false });
+    fillVbo('area', new Float32Array(v), v.length / 3);
+    const q = P.mask;
+    gl.useProgram(q.p);
+    gl.uniform4f(q.u.uMap, 2 / view.w, -2 / view.h, -1, 1);
+    gl.bindVertexArray(vbo.area.a);
+    for (const r of runs) {
+      const ch = [0, 1, 2].map(k => k === r.chan);
+      if (r.stencil) {
+        gl.enable(gl.STENCIL_TEST);
+        gl.colorMask(false, false, false, false);
+        gl.stencilFunc(gl.ALWAYS, 0, 0xff);
+        gl.stencilOp(gl.KEEP, gl.KEEP, gl.INVERT);
+        gl.drawArrays(gl.TRIANGLES, r.first, r.n);
+        gl.colorMask(ch[0], ch[1], ch[2], r.chan === 0);
+        gl.stencilFunc(gl.NOTEQUAL, 0, 0xff);
+        gl.stencilOp(gl.ZERO, gl.ZERO, gl.ZERO);
+        gl.drawArrays(gl.TRIANGLES, r.first, r.n);
+        gl.disable(gl.STENCIL_TEST);
+      } else {
+        gl.colorMask(ch[0], ch[1], ch[2], false);
+        gl.drawArrays(gl.TRIANGLES, r.first, r.n);
+      }
+    }
+    gl.colorMask(true, true, true, true);
+  }
+  // Blurred levels give occlusion, eaves and shadows.
+  const d = P.down;
+  gl.useProgram(d.p);
+  let from = mask;
+  for (const t of maskB) {
+    bind(d, 'uSrc', 0, from.tex);
+    gl.uniform2f(d.u.uTex, 1 / from.w, 1 / from.h);
+    gl.uniform1f(d.u.uThr, 0);
+    tri(t);
+    from = t;
+  }
+}
+
 /* ---------- drawing ---------- */
 function common(q) {
   gl.uniform4f(q.u.uMap, 2 / view.w, -2 / view.h, -1, 1);
@@ -1100,7 +1271,7 @@ function common(q) {
   gl.uniform1f(q.u.uStyle, look.i);
   if (q.u.uCold) gl.uniform3fv(q.u.uCold, COLD);
 }
-let COLD, BASE, BG, HOT, look = STYLES.cells;
+let COLD, BASE, BG, HOT, AMB, look = STYLES.cells;
 // A web kind brings its colours and heat ramp.
 function applyLook() {
   look = STYLES[kind];
@@ -1122,7 +1293,7 @@ function instanced(name, q, R) {
 function render() {
   let q = P.bg;
   gl.useProgram(q.p);
-  gl.uniform3fv(q.u.uBg, BG);
+  gl.uniform3fv(q.u.uBg, web.areas ? [0, 0, 0] : BG);
   gl.uniform1f(q.u.uStyle, look.i);
   gl.uniform1f(q.u.uDpr, view.dpr);
   tri(scene);
@@ -1170,9 +1341,20 @@ function render() {
   gl.useProgram(q.p);
   bind(q, 'uScene', 0, scene.tex);
   bind(q, 'uBloom', 1, ups[0].tex);
+  bind(q, 'uLight', 2, ups[1].tex);
+  bind(q, 'uMask', 3, mask.tex);
+  bind(q, 'uMaskS', 6, maskB[0].tex);
+  bind(q, 'uMaskA', 4, maskB[1].tex);
+  bind(q, 'uMaskW', 5, maskB[3].tex);
+  const isCity = web.areas ? 1 : 0;
   gl.uniform2f(q.u.uRes, canvas.width, canvas.height);
+  // The moon sits up and to the left, so shadows fall down and right.
+  gl.uniform2f(q.u.uSun, (-3 * view.dpr) / canvas.width, (3 * view.dpr) / canvas.height);
+  gl.uniform3fv(q.u.uAmb, AMB);
   gl.uniform1f(q.u.uGlow, glow);
   gl.uniform1f(q.u.uTime, simT);
+  gl.uniform1f(q.u.uCity, isCity);
+  gl.uniform1f(q.u.uDpr, view.dpr);
   tri(null);
   frameNo++;
 }
@@ -1183,7 +1365,7 @@ function bloomPass() {
   for (let i = 0; i < mips.length; i++) {
     bind(d, 'uSrc', 0, src.tex);
     gl.uniform2f(d.u.uTex, 1 / src.w, 1 / src.h);
-    gl.uniform1f(d.u.uThr, i === 0 ? 1.0 : 0);
+    gl.uniform1f(d.u.uThr, i === 0 ? (web.areas ? 0.02 : 1.0) : 0);
     tri(mips[i]);
     src = mips[i];
   }
@@ -1198,28 +1380,70 @@ function bloomPass() {
   }
 }
 
+/* ---------- city grabs ---------- */
+// Grabs are OpenStreetMap squares, cached in maps/ by maps/fetch.py.
+let cityIndex = null, grab = null;
+const grabs = new Map();
+const listGrabs = () => (cityIndex ||= fetch('maps/index.json').then(r => r.json()).catch(() => []));
+function loadGrab(id) {
+  if (!grabs.has(id)) grabs.set(id, fetch(`maps/${id}.json`).then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status)))));
+  return grabs.get(id);
+}
+// The current grab stays; a fresh pick is any other city.
+async function pickGrab(fresh) {
+  if (grab && !fresh) return grab;
+  const list = await listGrabs();
+  if (!list.length) return null;
+  let row;
+  do row = list[Math.floor(Math.random() * list.length)]; while (list.length > 1 && row.id === grab?.id);
+  try { grab = await loadGrab(row.id); grab.id = row.id; } catch { grab = null; }
+  return grab;
+}
+const credit = document.createElement('a');
+credit.className = 'osm';
+credit.href = 'https://www.openstreetmap.org/copyright';
+credit.target = '_blank';
+credit.rel = 'noopener';
+credit.hidden = true;
+stage.append(credit);
+function showCredit() {
+  const on = kind === 'streets' && web?.areas && grab;
+  credit.hidden = !on;
+  if (on) credit.textContent = `${grab.name} · © OpenStreetMap`;
+}
+
 /* ---------- layout ---------- */
 // The web takes the stage's size; a new size builds a new web in place.
-function layout() {
+async function layout() {
   // Hairlines need the screen's own pixels, so the pixel budget is generous.
   const { w, h, dpr } = fitCanvas(canvas, { maxDpr: 2, budget: 4.2e6 });
+  const resized = !mask || mask.w !== canvas.width || mask.h !== canvas.height;
   const rebuild = !web || Math.abs(web.W - w) > 1 || Math.abs(web.H - h) > 1;
   view = { w, h, dpr };
   allocScreen();
-  if (rebuild) makeWeb(w, h, true);
+  if (rebuild) await makeWeb(w, h, true);
+  else if (resized) areaMasks();
 }
 // The first frame: a seeded source and target per orientation.
 function defaults(w, h) {
   return h > w ? { s: [0.5, 0.8], t: [0.42, 0.18] } : { s: [0.22, 0.6], t: [0.8, 0.28] };
 }
-function makeWeb(w, h, finished) {
-  web = buildWeb(w, h, seed, kind);
+// A build that a newer one overtakes is dropped.
+let buildNo = 0;
+async function makeWeb(w, h, finished, fresh = false) {
+  const no = ++buildNo;
+  const g = kind === 'streets' ? await pickGrab(fresh) : null;
+  if (no !== buildNo) return;
+  web = buildWeb(w, h, seed, kind, g);
+  areaMasks();
+  showCredit();
   const d = defaults(w, h);
   const s = srcAt || d.s, t = tgtAt || d.t;
   src = -1; tgt = -1;
   flood(nearest(s[0] * w, s[1] * h));
   setTarget(nearest(t[0] * w, t[1] * h, true));
   if (finished) { W = web.maxD + TAIL; checkLock(); marks(); }
+  still();
 }
 
 /* ---------- frame loop ---------- */
@@ -1277,16 +1501,15 @@ function up(e) {
 }
 
 /* ---------- actions ---------- */
+// Shuffle seeds a new web; on Streets it flies to another city.
 act.shuffle = () => {
   seed = (Math.random() * 1e9) | 0;
-  makeWeb(view.w, view.h, false);
-  live();
+  makeWeb(view.w, view.h, false, true).then(live);
 };
 act.reset = () => {
   seed = 4242;
   srcAt = tgtAt = null;
-  makeWeb(view.w, view.h, false);
-  live();
+  makeWeb(view.w, view.h, false).then(live);
 };
 act.still = () => still();
 // A new web kind floods its new web from the same spots.
@@ -1294,8 +1517,7 @@ act.web = v => {
   kind = v;
   try { localStorage.setItem(WEB_KEY, v); } catch { /* Storage can be blocked. */ }
   applyLook();
-  makeWeb(view.w, view.h, false);
-  live();
+  makeWeb(view.w, view.h, false).then(live);
 };
 
 /* ---------- boot ---------- */
@@ -1303,7 +1525,8 @@ try {
   await initGL();
   applyLook();
   HOT = linFit(0.97, 0.06, 85);
-  layout();
+  AMB = linFit(0.62, 0.035, 255).map(v => v * 1.1);
+  await layout();
   // The first frame shows the front at 55 % of the web.
   W = web.maxD * 0.55;
   checkLock();
@@ -1334,8 +1557,8 @@ stage.addEventListener('keydown', e => {
 });
 
 let resizeT = 0;
-new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (P) { layout(); still(); } }, 120); }).observe(stage);
-onQuality(() => { if (P) { layout(); still(); } });
+new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (P) layout().then(still); }, 120); }).observe(stage);
+onQuality(() => { if (P) layout().then(still); });
 // A hidden tab stops the loop and the clocks with it.
 whenVisible(stage, v => {
   visible = v;
