@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.15 0.012 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wind map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Wind map: a chart with no land, and the wind drawn in silk. */
+:root { --stage: oklch(0.17 0.015 250); }
+.stage--windmap { cursor: crosshair; }
+.stage--windmap canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--windmap canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--windmap canvas { transition: none; } }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 250 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Wind map</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--windmap" id="stage" tabindex="0" role="application" aria-label="A wind chart with no land. Silk lines trace the wind. Circle to spin up a storm; tap for a gust.">
+      <p class="fail" hidden>Wind map needs WebGL2 with float targets, which this browser does not have.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="look" role="group" aria-label="Look">
+        <button class="chip" type="button" data-value="silk" aria-pressed="true"><span class="dot" style="background:oklch(0.95 0.01 250)"></span>Silk</button>
+        <button class="chip" type="button" data-value="heat" aria-pressed="false"><span class="dot" style="background:oklch(0.8 0.15 110)"></span>Heat</button>
+        <button class="chip" type="button" data-value="dye" aria-pressed="false"><span class="dot" style="background:conic-gradient(oklch(0.78 0.13 20), oklch(0.78 0.13 140), oklch(0.78 0.13 260), oklch(0.78 0.13 20))"></span>Dye</button>
+      </div>
+      <label class="slider"><span>Wind</span><input type="range" id="wind" min="0" max="1" step="0.01" value="0.5" aria-label="Wind: the strength of the base flow"></label>
+      <div class="actions">
+        <button class="chip" id="add" type="button">+ Cyclone</button>
+        <button class="chip" id="clear" type="button">Clear</button>
+      </div>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Particles</span><div class="choices" id="count" role="group" aria-label="Particles">
+              <button class="chip" type="button" data-value="few" aria-pressed="false">Few</button>
+              <button class="chip" type="button" data-value="some" aria-pressed="true">Some</button>
+              <button class="chip" type="button" data-value="many" aria-pressed="false">Many</button>
+            </div></div>
+            <div class="group"><span>Trails</span><div class="choices" id="trail" role="group" aria-label="Trails">
+              <button class="chip" type="button" data-value="short" aria-pressed="false">Short</button>
+              <button class="chip" type="button" data-value="long" aria-pressed="true">Long</button>
+            </div></div>
+            <div class="group"><span>Hemisphere</span><div class="choices" id="hemi" role="group" aria-label="Hemisphere">
+              <button class="chip" type="button" data-value="north" aria-pressed="true">North</button>
+              <button class="chip" type="button" data-value="south" aria-pressed="false">South</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt>Drag</dt><dd>circle to spin a storm</dd></div>
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>gust</dd></div>
+          <div class="fine"><dt><kbd>Space</kbd></dt><dd>cyclone</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Wind map</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, qualitySetting, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+// Sound arrives in a later task; the toggle stays hidden until then.
+initPage({ id: 'windmap', silent: true });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
+
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.windmap.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.windmap.${k}`, String(v)); } catch { /* storage is optional */ } };
+const opts = {
+  look: saved('look') || 'silk',
+  wind: saved('wind') != null ? +saved('wind') : 0.5,
+  count: saved('count') || 'some',
+  trail: saved('trail') || 'long',
+  hemi: saved('hemi') || 'north',
+};
+let reduce = reduced();
+onReducedChange(v => { reduce = v; wake(); });
+
+// State texture sizes per Particles setting.
+const COUNTS = { few: [128, 128], some: [256, 128], many: [256, 256] };
+// Trail decay times in seconds.
+const TRAILS = { short: 0.6, long: 2.5 };
+// Reduced motion keeps trails long and slows particles to 40 %.
+const tau = () => (reduce ? TRAILS.long : TRAILS[opts.trail]);
+const pace = () => (reduce ? 0.4 : 1);
+// The base wind in world units per second.
+const windU = () => lerp(0.025, 0.16, opts.wind);
+// Speed at the top of the colour ramp, in world units per second.
+const VREF = 0.3;
+const MAXV = 12, MAXG = 4;
+
+/* ---------- WebGL2 ---------- */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no float targets'); };
+if (!gl) fail();
+// Float targets hold particle state and smooth trails.
+const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
+// The CPU path for no float targets arrives in a later task.
+if (!FLOAT) fail();
+
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+/* ---------- K1: accumulation and decay ---------- */
+// Copied from Star trails; Kelvin dropper can copy SEG_TEX_VS from here.
+// Two float targets ping-pong; each frame fades the plate by exp(-dt/tau).
+const DECAY = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform float uK, uEps; in vec2 vUv; out vec4 o;
+void main() { vec4 c = texture(uSrc, vUv) * uK; o = max(c - uEps, 0.0); }`;
+// A segment draws as a soft line with ramped ends.
+// Adjacent segments overlap their ramps, so joins add up to one.
+const SEG_VS = `#version 300 es
+in vec2 aCorner; in vec4 aSeg; in vec4 aCol;
+uniform vec2 uRes;
+out vec2 vP; flat out vec4 vSeg; flat out vec4 vCol;
+void main() {
+  vec2 a = aSeg.xy, b = aSeg.zw; float w = aCol.a;
+  vec2 d = b - a; float L = length(d);
+  vec2 t = L > 1e-3 ? d / L : vec2(1, 0), n = vec2(-t.y, t.x);
+  float r = w * 3.0 + 1.0;
+  vec2 p = mix(a, b, aCorner.x * 0.5 + 0.5) + t * aCorner.x * r + n * aCorner.y * r;
+  vP = p; vSeg = aSeg; vCol = aCol;
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// GPU particles: point a is the old state, point b the new state.
+// Each instance reads its own texel; a respawn draws nothing.
+const SEG_TEX_VS = `#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 aCorner;
+uniform sampler2D uA, uB, uRamp;
+uniform int uTW; uniform vec2 uRes; uniform float uScale, uW, uGain, uDt, uVRef, uDye;
+out vec2 vP; flat out vec4 vSeg; flat out vec4 vCol;
+void main() {
+  ivec2 ij = ivec2(gl_InstanceID % uTW, gl_InstanceID / uTW);
+  vec4 sa = texelFetch(uA, ij, 0), sb = texelFetch(uB, ij, 0);
+  // A respawn resets the age, so the new age is below the old one.
+  if (sb.z <= sa.z || uDt <= 0.0) { gl_Position = vec4(-2.0, -2.0, 0.0, 1.0); return; }
+  vec2 a = sa.xy * uScale, b = sb.xy * uScale; float w = uW;
+  float life = mod(sb.w, 8.0), dye = floor(sb.w / 8.0) / 255.0;
+  float sp = clamp(length(sb.xy - sa.xy) / uDt / uVRef, 0.0, 1.0);
+  // The ramp row holds colour by speed; Dye reads it by spawn hue.
+  vec3 rgb = texture(uRamp, vec2(mix(sp, dye, uDye), 0.5)).rgb * mix(1.0, 0.25 + 0.75 * sqrt(sp), uDye);
+  float env = smoothstep(0.0, 0.5, sb.z) * smoothstep(life, life - 0.8, sb.z);
+  // A few bright threads stand out over many faint ones.
+  float h = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+  env *= 0.12 + 3.0 * h * h * h * h * h * h;
+  vec2 d = b - a; float L = length(d);
+  // Short segments overlap, so they carry less energy each.
+  // A still particle draws nothing, so stagnant air stays dark.
+  float e = uGain * env * clamp(L / (2.0 * w), 0.0, 1.0);
+  vec2 t = L > 1e-3 ? d / L : vec2(1, 0), n = vec2(-t.y, t.x);
+  float r = w * 3.0 + 1.0;
+  vec2 p = mix(a, b, aCorner.x * 0.5 + 0.5) + t * aCorner.x * r + n * aCorner.y * r;
+  vP = p; vSeg = vec4(a, b); vCol = vec4(rgb * e, w);
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const SEG_FS = `#version 300 es
+precision highp float;
+in vec2 vP; flat in vec4 vSeg; flat in vec4 vCol; out vec4 o;
+void main() {
+  vec2 a = vSeg.xy, b = vSeg.zw; float w = vCol.a;
+  vec2 d = b - a; float L = length(d);
+  float k;
+  if (L < 0.05) { float r = length(vP - a) / w; k = exp(-r * r); }
+  else {
+    vec2 t = d / L; float s = dot(vP - a, t); float q = dot(vP - a, vec2(-t.y, t.x)) / w;
+    float h = w * 1.2;
+    k = exp(-q * q) * clamp((s + h) / (2.0 * h), 0.0, 1.0) * clamp((L + h - s) / (2.0 * h), 0.0, 1.0);
+  }
+  o = vec4(vCol.rgb * k, 1.0);
+}`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  // Array uniforms answer to their bare name.
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+
+const corners = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// Segment data: a.xy, b.xy in pixels, then rgb energy and width.
+// The CPU path fills it; the GPU path reads textures instead.
+const MAXSEG = 8000;
+const inst = new Float32Array(MAXSEG * 8);
+const segVao = gl.createVertexArray();
+gl.bindVertexArray(segVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const instBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1);
+gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+gl.vertexAttribDivisor(1, 1);
+gl.enableVertexAttribArray(2);
+gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+gl.vertexAttribDivisor(2, 1);
+gl.bindVertexArray(null);
+
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+let acc = [], ai = 0;
+const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
+
+function decayPass(dt) {
+  const src = acc[ai], dst = acc[1 - ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(P.decay.u.uSrc, 0);
+  gl.uniform1f(P.decay.u.uK, Math.exp(-dt / tau()));
+  gl.uniform1f(P.decay.u.uEps, FLOAT ? 0.0004 * dt : 0.6 / 255);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ai = 1 - ai;
+}
+function segPass(dst, count) {
+  if (!count) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.seg.p); gl.bindVertexArray(segVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, count * 8);
+  gl.uniform2f(P.seg.u.uRes, dst.w, dst.h);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+  gl.disable(gl.BLEND);
+}
+/* ---------- end K1 ---------- */
+
+/* ---------- the field ---------- */
+// Simplex noise 3D: Ian McEwan, Ashima Arts, and Stefan Gustavson.
+// Copyright (C) 2011 Ashima Arts. MIT License.
+// https://github.com/ashima/webgl-noise and https://github.com/stegu/webgl-noise
+const SNOISE = `
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+float snoise(vec3 v) {
+  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x), p1 = vec3(a0.zw, h.y), p2 = vec3(a1.xy, h.z), p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}`;
+// The base stream function is noise in two octaves.
+// Velocity is its curl, so the flow has no divergence.
+// Each vortex is Lamb-Oseen, with a small inflow near the eye.
+const FIELD = `
+uniform float uU, uA, uT;
+uniform vec4 uVort[${MAXV}]; uniform int uNV;
+uniform vec4 uGust[${MAXG}]; uniform int uNG;
+${SNOISE}
+float psiN(vec2 p) {
+  return snoise(vec3(p * 1.6, uT * 0.03)) + 0.3 * snoise(vec3(p * 3.9 + 7.3, uT * 0.05 + 3.1));
+}
+vec2 vel(vec2 p) {
+  const float e = 0.004;
+  float dx = psiN(p + vec2(e, 0.0)) - psiN(p - vec2(e, 0.0));
+  float dy = psiN(p + vec2(0.0, e)) - psiN(p - vec2(0.0, e));
+  vec2 v = vec2(uU + uA * dy / (2.0 * e), -uA * dx / (2.0 * e));
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    vec2 d = p - q.xy; float r2 = dot(d, d) + 1e-7, r = sqrt(r2);
+    float vt = q.z / (6.2831853 * r) * (1.0 - exp(-r2 / (q.w * q.w)));
+    v += vec2(-d.y, d.x) / r * vt;
+    // Air converges into the eye, which turns the arms into spirals.
+    v -= d / r * 0.25 * abs(vt) * (1.0 - smoothstep(q.w, 2.0 * q.w, r));
+  }
+  for (int k = 0; k < ${MAXG}; k++) {
+    if (k >= uNG) break;
+    vec4 g = uGust[k];
+    vec2 d = p - g.xy; float r2 = dot(d, d) + 1e-7, r = sqrt(r2);
+    v += d / r * g.z / (6.2831853 * r) * (1.0 - exp(-r2 / (g.w * g.w)));
+  }
+  return v;
+}`;
+// One RK2 step per particle; the dead respawn at a hashed point.
+const UPDATE_FS = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D;
+uniform sampler2D uState; uniform float uDt; uniform vec2 uWorld; uniform uint uFrame;
+out vec4 o;
+${FIELD}
+uvec3 pcg3d(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  return v;
+}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  vec4 s = texelFetch(uState, ij, 0);
+  vec2 p = s.xy; float age = s.z + uDt, lw = s.w;
+  vec2 pm = p + vel(p) * uDt * 0.5;
+  p += vel(pm) * uDt;
+  bool dead = age > mod(lw, 8.0) || any(lessThan(p, vec2(-0.02))) || any(greaterThan(p, uWorld + 0.02));
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    if (length(p - uVort[k].xy) < 0.3 * uVort[k].w) dead = true;
+  }
+  if (dead) {
+    vec3 h = vec3(pcg3d(uvec3(uvec2(ij), uFrame))) * (1.0 / 4294967296.0);
+    p = h.xy * uWorld;
+    age = 0.0;
+    // Life sits below 8; the spawn hue rides above it in steps of 8.
+    float hue = clamp(p.y / uWorld.y * 0.82 + 0.06 * sin(p.x * 3.0), 0.0, 1.0);
+    lw = 2.0 + 4.0 * h.z + 8.0 * floor(hue * 255.0);
+  }
+  o = vec4(p, age, lw);
+}`;
+// The chart: slate, a graticule every 15 degrees, then the plate.
+const OUT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uRes; uniform float uTime, uExpo;
+uniform vec3 uBg, uGrid;
+in vec2 vUv; out vec4 o;
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+void main() {
+  vec2 px = vUv * uRes;
+  vec3 c = uBg;
+  // The short side spans 90 degrees, so six cells across it.
+  vec2 g = (px - uRes * 0.5) / min(uRes.x, uRes.y) * 6.0;
+  vec2 f = abs(fract(g + 0.5) - 0.5) / fwidth(g);
+  float line = 1.0 - min(min(f.x, f.y), 1.0);
+  c = mix(c, uGrid, line);
+  vec3 acc = texture(uSrc, vUv).rgb;
+  c += 1.0 - exp(-acc * uExpo);
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q * vec2(1.0, 1.3), q) * 0.7;
+  c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  float lum = dot(c, vec3(0.3, 0.55, 0.15));
+  c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * mix(0.02, 0.008, clamp(lum * 3.0, 0.0, 1.0));
+  o = vec4(c, 1.0);
+}`;
+
+const P = {
+  decay: program(QUAD_VS, DECAY, ['aPos']),
+  seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
+  segTex: program(SEG_TEX_VS, SEG_FS, ['aCorner']),
+  update: program(QUAD_VS, UPDATE_FS, ['aPos']),
+  out: program(QUAD_VS, OUT_FS, ['aPos']),
+};
+const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.26, 0.022, 245);
+
+/* ---------- colour ramps ---------- */
+// One 256 by 1 row per look, in linear light.
+const ramp = gl.createTexture();
+const RAMPS = {
+  silk: u => linFit(lerp(0.55, 0.99, Math.sqrt(u)), 0.012, 250).map(v => v * lerp(0.05, 1, u * u)),
+  heat: u => (u < 0.5
+    ? [0, 1, 2].map(i => lerp(linFit(0.45, 0.08, 250)[i], linFit(0.75, 0.14, 150)[i], u * 2))
+    : [0, 1, 2].map(i => lerp(linFit(0.75, 0.14, 150)[i], linFit(0.85, 0.17, 70)[i], u * 2 - 1))),
+  dye: u => linFit(0.8, 0.13, 20 + 330 * u),
+};
+function bakeRamp() {
+  const px = new Uint8Array(256 * 4), f = RAMPS[opts.look];
+  for (let i = 0; i < 256; i++) {
+    const c = f(i / 255);
+    px.set([c[0] * 255, c[1] * 255, c[2] * 255, 255], i * 4);
+  }
+  gl.bindTexture(gl.TEXTURE_2D, ramp);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+}
+
+/* ---------- particle state ---------- */
+// RGBA32F texels hold (x, y, age, life plus spawn hue).
+function stateTarget(w, h, data) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+let stA = null, stB = null, TW = 1, TH = 1;
+function seedState() {
+  [TW, TH] = COUNTS[opts.count];
+  const d = new Float32Array(TW * TH * 4);
+  for (let i = 0; i < TW * TH; i++) {
+    const x = Math.random() * AX, y = Math.random() * AY, life = 2 + 4 * Math.random();
+    const hue = clamp(y / AY * 0.82 + 0.06 * Math.sin(x * 3));
+    d.set([x, y, Math.random() * life, life + 8 * Math.floor(hue * 255)], i * 4);
+  }
+  if (stA) { drop(stA); drop(stB); }
+  stA = stateTarget(TW, TH, d);
+  stB = stateTarget(TW, TH, null);
+}
+
+/* ---------- storms ---------- */
+// Each vortex is { x, y, g, rc }: centre, circulation, core radius.
+const vortices = [];
+const gusts = [];
+const spin = () => (opts.hemi === 'south' ? -1 : 1);
+const vortData = new Float32Array(MAXV * 4), gustData = new Float32Array(MAXG * 4);
+
+/* ---------- state ---------- */
+// One world unit spans the short side, so portrait recomposes the chart.
+let W = 1, H = 1, dpr = 1, S = 1, AX = 1, AY = 1, t = 0, frameNo = 1;
+// Drawn particles scale with stage area, so line spacing holds on a phone.
+let areaK = 1;
+
+function setField(u) {
+  gl.uniform1f(u.uU, windU());
+  gl.uniform1f(u.uA, 0.009);
+  gl.uniform1f(u.uT, t);
+  vortices.forEach((v, k) => vortData.set([v.x, v.y, v.g, v.rc], k * 4));
+  gusts.forEach((g, k) => gustData.set([g.x, g.y, g.q, g.r], k * 4));
+  gl.uniform4fv(u.uVort, vortData); gl.uniform1i(u.uNV, vortices.length);
+  gl.uniform4fv(u.uGust, gustData); gl.uniform1i(u.uNG, gusts.length);
+}
+function updatePass(dt) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, stB.fb); gl.viewport(0, 0, TW, TH);
+  gl.useProgram(P.update.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, stA.tex);
+  const u = P.update.u;
+  gl.uniform1i(u.uState, 0);
+  gl.uniform1f(u.uDt, dt);
+  gl.uniform2f(u.uWorld, AX, AY);
+  gl.uniform1ui(u.uFrame, frameNo++);
+  setField(u);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function segTexPass(dt) {
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.segTex.p); gl.bindVertexArray(quadVao);
+  [stA, stB].forEach((s, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, s.tex); });
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, ramp);
+  const u = P.segTex.u;
+  gl.uniform1i(u.uA, 0); gl.uniform1i(u.uB, 1); gl.uniform1i(u.uRamp, 2);
+  gl.uniform1i(u.uTW, TW);
+  gl.uniform2f(u.uRes, dst.w, dst.h);
+  gl.uniform1f(u.uScale, S);
+  gl.uniform1f(u.uW, 0.75 * dpr);
+  // Fewer particles each carry more light, so the chart reads the same.
+  gl.uniform1f(u.uGain, 0.045 * Math.sqrt(65536 / (TW * TH)));
+  gl.uniform1f(u.uDt, dt);
+  gl.uniform1f(u.uVRef, VREF);
+  gl.uniform1f(u.uDye, opts.look === 'dye' ? 1 : 0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.ceil(TW * TH * areaK));
+  gl.disable(gl.BLEND);
+  gl.activeTexture(gl.TEXTURE0);
+}
+// One sim step: fade the plate, move the particles, draw their segments.
+function simStep(dt) {
+  t += dt;
+  decayPass(dt);
+  const adv = dt * pace();
+  updatePass(adv);
+  segTexPass(adv);
+  [stA, stB] = [stB, stA];
+}
+function render() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P.out.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[ai].tex);
+  const u = P.out.u;
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform1f(u.uTime, t);
+  gl.uniform1f(u.uExpo, 1.5);
+  gl.uniform3fv(u.uBg, BG); gl.uniform3fv(u.uGrid, GRID);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+// The first frame shows a plate already exposed: run the flow a while.
+function preroll(seconds) {
+  const n = Math.ceil(seconds * 30);
+  for (let i = 0; i < n; i++) simStep(1 / 30);
+}
+function seedCyclone() {
+  vortices.length = 0;
+  vortices.push({ x: AX * 0.54, y: AY * 0.5, g: 0.16 * spin(), rc: 0.055 });
+}
+
+/* ---------- loop ---------- */
+// Drifting runs at 30 fps; 60 s after the last input it eases to sleep.
+const SLEEP_AFTER = 60000, EASE_OUT = 2000;
+let raf = 0, last = 0, visible = true, ready = false, lastInput = performance.now();
+function frameFn(now) {
+  raf = 0;
+  const quiet = now - lastInput;
+  if (quiet > SLEEP_AFTER + EASE_OUT) return;
+  // Drifting frames hold to 30 fps.
+  if (last && now - last < 31) { raf = requestAnimationFrame(frameFn); return; }
+  const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+  last = now;
+  const ease = quiet > SLEEP_AFTER ? 1 - (quiet - SLEEP_AFTER) / EASE_OUT : 1;
+  try {
+    simStep(dt * clamp(ease) ** 2);
+    render();
+  } finally {
+    if (visible) raf = requestAnimationFrame(frameFn);
+  }
+}
+function resume() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+function wake() { lastInput = performance.now(); resume(); }
+
+/* ---------- size ---------- */
+function resize() {
+  const fit = fitCanvas(canvas, { budget: 2.2e6 });
+  if (fit.W === W && fit.H === H && acc.length) return;
+  W = fit.W; H = fit.H; dpr = fit.dpr;
+  const wx = AX, wy = AY;
+  S = Math.min(W, H); AX = W / S; AY = H / S;
+  areaK = clamp((W / dpr) * (H / dpr) / (1250 * 680), 0.15, 1);
+  acc.forEach(drop);
+  acc = [target(W, H), target(W, H)]; ai = 0;
+  // Storms keep their place relative to the frame width.
+  vortices.forEach(v => { v.x *= AX / wx; v.y *= AY / wy; });
+  if (!stA) { seedState(); seedCyclone(); }
+  preroll(ready ? 1 : 3);
+  if (ready) { render(); wake(); }
+}
+
+/* ---------- bar ---------- */
+function popover(box, btn) {
+  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+const windEl = document.getElementById('wind');
+windEl.value = String(opts.wind);
+windEl.addEventListener('input', () => { opts.wind = +windEl.value; save('wind', opts.wind); wake(); });
+choices(document.getElementById('look'), v => { opts.look = v; save('look', v); bakeRamp(); wake(); }).set(opts.look);
+choices(document.getElementById('count'), v => { opts.count = v; save('count', v); seedState(); clearAcc(); preroll(1); wake(); }).set(opts.count);
+choices(document.getElementById('trail'), v => { opts.trail = v; save('trail', v); wake(); }).set(opts.trail);
+choices(document.getElementById('hemi'), v => { opts.hemi = v; save('hemi', v); wake(); }).set(opts.hemi);
+document.getElementById('add').addEventListener('click', () => {
+  if (vortices.length >= MAXV) vortices.shift();
+  vortices.push({ x: AX * (0.2 + 0.6 * Math.random()), y: AY * (0.25 + 0.5 * Math.random()), g: 0.14 * spin(), rc: 0.05 });
+  wake();
+});
+document.getElementById('clear').addEventListener('click', () => { vortices.length = 0; gusts.length = 0; clearAcc(); wake(); });
+stage.addEventListener('pointerdown', wake);
+stage.addEventListener('keydown', wake);
+
+/* ---------- start ---------- */
+bakeRamp();
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+resize();
+render();
+gl.finish();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => { visible = v; if (v) resume(); });
+wake();
+</script>
+</body>
+</html>
