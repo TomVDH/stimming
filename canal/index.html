@@ -119,9 +119,9 @@ const CANAL_X = 12;
 let rung = 0;
 
 /* ---------- lamps ---------- */
-// Ten tappable lamps, then six fixed lights at the frietkot, staminee, station and church.
+// Ten tappable lamps, then fixed lights: frietkot, staminee, station, church, farms, yard.
 // Every lit shader reads this one array.
-const LN = 16, TAPS = 10;
+const LN = 19, TAPS = 10;
 const U = {
   uLamp: { value: Array.from({ length: LN }, () => new THREE.Vector4()) },
   uLampC: { value: Array.from({ length: LN }, () => new THREE.Vector3()) },
@@ -168,6 +168,9 @@ const VENUES = [
   { p: [-87, 6, -114], c: [0.9, 0.05, 230], k: 2.2 },
   { p: [44, 1.5, -206], c: [0.85, 0.1, 70], k: 9 },
   { p: [56, 1.5, -194], c: [0.85, 0.1, 70], k: 9 },
+  { p: [397, 6, -319], c: [0.75, 0.15, 60], k: 4 },
+  { p: [-353, 6, -332], c: [0.75, 0.15, 60], k: 4 },
+  { p: [526, 9, -60], c: [0.92, 0.04, 240], k: 6 },
 ];
 VENUES.forEach((v, i) => {
   U.uLamp.value[TAPS + i].set(v.p[0], QUAY + v.p[1], v.p[2], 0);
@@ -327,8 +330,27 @@ function tree(x, z, r) {
   );
 }
 // One ordinary plot; returns its frontage and its geometry, or trees for an empty lot.
-function plotGeos() {
+// Mixes: village along the old roads, estate on new streets, sparse out in the fields, industry.
+function plotGeos(mode = 'village') {
   const t = rnd(), s = rnd() * 100;
+  if (mode === 'estate') {
+    // Detached fermettes and bungalows, each on its own lawn.
+    if (t < 0.4) { const w = 11 + 4 * rnd(); return { w, geos: house(w, 3, 9, 5.5, s, rnd() < 0.6 ? RENDER : BRICK) }; }
+    if (t < 0.75) { const w = 11 + 3 * rnd(); return { w, geos: house(w, 3.2, 10, 2.4, s, BRICK) }; }
+    if (t < 0.9) { const w = 9 + rnd(); return { w, geos: house(w, 5.6, 10, 3.6, s, brickKind()) }; }
+    return { w: 14 + 8 * rnd(), geos: null };
+  }
+  if (mode === 'industry') {
+    const w = 30 + 25 * rnd();
+    return { w, geos: house(w, 8, 25 + 15 * rnd(), 1.4, s, METAL, { win: false }).map(g => g.translate(0, 0, 6)) };
+  }
+  if (mode === 'sparse') {
+    if (t < 0.2) { const w = 11 + 4 * rnd(); return { w, geos: house(w, 3, 9, 5.5, s, rnd() < 0.55 ? RENDER : BRICK) }; }
+    if (t < 0.3) { const w = 11 + 3 * rnd(); return { w, geos: house(w, 3.2, 10, 2.4, s, BRICK) }; }
+    if (t < 0.38) { const w = 5.8 + rnd(); return { w, geos: house(w, 6.4 + rnd(), 11, 4.2, s, BRICK) }; }
+    if (t < 0.45) { const w = 24 + 14 * rnd(); return { w, geos: house(w, 7, 20, 1.6, s, METAL, { win: false }).map(g => g.translate(0, 0, 6)) }; }
+    return { w: 25 + 45 * rnd(), geos: null };
+  }
   if (t < 0.24) {
     // A short terrace of two to four houses; the end walls stay blank.
     const n = 2 + Math.floor(rnd() * 3), b = 5.8 + 0.8 * rnd(), k = brickKind(), geos = [];
@@ -354,11 +376,11 @@ function plotGeos() {
 }
 // A ribbon of plots along a street; dir runs along it, back points away from it.
 // Spans in skip stay empty.
-function ribbon(x0, z0, dir, back, len, skip = []) {
+function ribbon(x0, z0, dir, back, len, skip = [], mode = 'village') {
   const D = new THREE.Vector3(...dir), B = new THREE.Vector3(...back);
   const flip = new THREE.Vector3().crossVectors(UP, B).dot(D) < 0;
   for (let a = 0; a < len;) {
-    const { w, geos } = plotGeos();
+    const { w, geos } = plotGeos(mode);
     if (skip.some(([s0, s1]) => a + w > s0 && a < s1)) { a += 6; continue; }
     const set = 2 + 8 * rnd() ** 2;
     const at = flip ? a + w : a;
@@ -457,20 +479,66 @@ function posts() {
 /* ---------- end bridge, quay walls and lamp posts ---------- */
 
 /* ---------- layout ---------- */
-// Ribbons line the canal road and the main road; the centre keeps its own pieces.
+// Every street the ground draws: x0, z0, x1, z1 and half its width.
+const ROADS = [];
+const road = (x0, z0, x1, z1, h = 3) => ROADS.push([x0, z0, x1, z1, h]);
+road(-900, ROAD_Z, 900, ROAD_Z, 4);
+road(21, 500, 21, -1300, 2.75);
+// A side street with plots both sides; the ends stay clear of the crossings.
+function street(x0, z0, x1, z1, mode, { h = 3, from = 10, to = 6 } = {}) {
+  road(x0, z0, x1, z1, h);
+  const L = Math.hypot(x1 - x0, z1 - z0), dx = (x1 - x0) / L, dz = (z1 - z0) / L;
+  for (const s of [-1, 1]) {
+    const bx = -dz * s, bz = dx * s;
+    ribbon(x0 + dx * from + bx * (h + 3), z0 + dz * from + bz * (h + 3), [dx, 0, dz], [bx, 0, bz], L - from - to, [], mode);
+  }
+}
+// A farm: a long farmhouse, a barn and a shed round a yard, with a few trees.
+function farm(x, z, a) {
+  const B = [Math.cos(a), 0, Math.sin(a)], u = [-B[2], B[0]];
+  const at = (du, dd) => [x + u[0] * du + B[0] * dd, z + u[1] * du + B[2] * dd];
+  const s = rnd() * 100;
+  place(house(16, 3, 9, 5.5, s, RENDER), ...at(0, 0), B);
+  place(house(12, 5, 22, 5, s + 1, BRICK, { win: false, gable: true }), ...at(22, -4), B);
+  place(house(30, 6, 18, 1.6, s + 2, METAL, { win: false }), ...at(-6, 22), B);
+  for (let i = 0; i < 4; i++) { const [tx, tz] = at(-14 - rnd() * 10, -6 + rnd() * 30); tree(tx, tz, 3 + rnd() * 2); }
+}
+// The canal road and the main road: the old ribbons, denser near the centre.
 ribbon(26, 400, [0, 0, -1], [1, 0, 0], 1300, [[530, 600]]);
-ribbon(36, ROAD_Z + 6, [1, 0, 0], [0, 0, 1], 460);
-ribbon(108, ROAD_Z - 6, [1, 0, 0], [0, 0, -1], 400);
+ribbon(36, ROAD_Z + 6, [1, 0, 0], [0, 0, 1], 440, [[102, 126], [472, 496]]);
+ribbon(500, ROAD_Z + 6, [1, 0, 0], [0, 0, 1], 400, [], 'sparse');
+ribbon(108, ROAD_Z - 6, [1, 0, 0], [0, 0, -1], 360, [[120, 144]]);
+ribbon(470, ROAD_Z - 6, [1, 0, 0], [0, 0, -1], 430, [], 'sparse');
 ribbon(-28, ROAD_Z + 6, [-1, 0, 0], [0, 0, 1], 40);
 ribbon(-28, ROAD_Z - 6, [-1, 0, 0], [0, 0, -1], 40);
-ribbon(-112, ROAD_Z + 6, [-1, 0, 0], [0, 0, 1], 360);
-ribbon(-112, ROAD_Z - 6, [-1, 0, 0], [0, 0, -1], 360);
+ribbon(-112, ROAD_Z + 6, [-1, 0, 0], [0, 0, 1], 340, [[76, 100]]);
+ribbon(-112, ROAD_Z - 6, [-1, 0, 0], [0, 0, -1], 340, [[26, 50]]);
+ribbon(-460, ROAD_Z + 6, [-1, 0, 0], [0, 0, 1], 440, [], 'sparse');
+ribbon(-460, ROAD_Z - 6, [-1, 0, 0], [0, 0, -1], 440, [], 'sparse');
 // Houses round the square.
 ribbon(42, -236, [1, 0, 0], [0, 0, -1], 60);
+// Side streets, two estates, an industrial street and field roads.
+street(150, ROAD_Z + 4, 150, 140, 'village');
+street(154, -40, 330, -40, 'estate');
+street(154, 50, 330, 50, 'estate');
+street(330, -40, 330, 50, 'estate', { from: 4, to: 4 });
+street(240, ROAD_Z - 4, 240, -470, 'village');
+street(240, -470, 480, -640, 'sparse', { from: 6 });
+street(520, ROAD_Z + 4, 520, 60, 'industry', { h: 4 });
+street(-200, ROAD_Z + 4, -200, 120, 'village');
+street(-204, 10, -390, 10, 'estate');
+street(-390, 10, -390, -100, 'estate', { from: 4, to: 8 });
+street(-150, ROAD_Z - 4, -150, -430, 'village');
+street(-150, -430, -430, -580, 'sparse', { from: 6 });
+farm(390, -330, 0.3);
+farm(-340, -330, 2.6);
+farm(430, 250, -0.4);
+farm(-330, 260, 3.4);
+farm(660, -520, 0.1);
 poplars(400, -700);
 treeLine(-2200, -1100, 2200, -1100, 12);
-treeLine(560, 500, 560, -1100, 10);
-treeLine(-520, 500, -520, -1100, 11);
+treeLine(820, 500, 820, -1100, 10);
+treeLine(-760, 500, -760, -1100, 11);
 church(); staminee(); frietkot(); station(); bridge(); walls(); posts();
 /* ---------- end layout ---------- */
 
@@ -670,20 +738,31 @@ scene.add(water);
 
 /* ---------- ground: towpaths, roads, the square, the railway and fields ---------- */
 const groundMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } },
+  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM },
+    uRoad: { value: ROADS.map(r => new THREE.Vector4(r[0], r[1], r[2], r[3])) }, uRoadH: { value: ROADS.map(r => r[4]) } },
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform mat4 uTexM; varying vec3 vP; ${HEAD}
+  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform mat4 uTexM; uniform vec4 uRoad[${ROADS.length}]; uniform float uRoadH[${ROADS.length}]; varying vec3 vP; ${HEAD}
   float band(float x, float a, float b) { return step(a, x) * (1.0 - step(b, x)); }
+  // Distance to the edge of the nearest street; negative on the asphalt.
+  float roadD(vec2 p) {
+    float d = 1e5;
+    for (int i = 0; i < ${ROADS.length}; i++) {
+      vec2 a = uRoad[i].xy, ba = uRoad[i].zw - a, pa = p - a;
+      d = min(d, length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)) - uRoadH[i]);
+    }
+    return d;
+  }
   void main() {
     vec3 V = normalize(vP - cameraPosition);
     float x = vP.x, z = vP.z, ax = abs(x);
     // Asphalt: both towpaths, the canal road and the main road.
-    float tar = max(max(1.0 - step(${CANAL_X + 4}.0, ax), band(x, 18.5, 24.0)), 1.0 - step(4.0, abs(z - ${ROAD_Z}.0)));
+    float rd = roadD(vP.xz);
+    float tar = max(1.0 - step(${CANAL_X + 4}.0, ax), 1.0 - step(0.0, rd));
     // The square: pale paving.
     float sq = band(x, 42.0, 102.0) * band(z, -234.0, -164.0) * (1.0 - tar);
     // The railway: a gravel bed with two tracks.
     float rail = band(x, -86.0, -74.0) * (1.0 - tar);
-    float dRoad = min(min(abs(x - 21.0), abs(z - ${ROAD_Z}.0)), ax - 12.0);
+    float dRoad = min(rd, ax - 12.0);
     float field = smoothstep(45.0, 70.0, dRoad);
     // Fields: parcels of grass, ploughland and stubble, each with its own furrows.
     vec2 pc = floor(vec2(x / 90.0, z / 140.0 + 0.5 * floor(x / 90.0)));
@@ -698,7 +777,7 @@ const groundMat = new THREE.ShaderMaterial({
     float n = k2noise(vP.xz * 0.7), n2 = k2fbm(vP.xz * 0.04);
     vec3 grass = vec3(0.026, 0.038, 0.017) * (0.75 + 0.5 * n2);
     vec3 alb = mix(grass, parcel, field);
-    alb = mix(alb, vec3(0.032, 0.032, 0.034) * (0.9 + 0.2 * n), tar);
+    alb = mix(alb, vec3(0.046, 0.046, 0.05) * (0.9 + 0.2 * n), tar);
     alb = mix(alb, vec3(0.07, 0.068, 0.064) * (0.9 + 0.2 * n), sq);
     float steel = 0.0;
     if (rail > 0.5) {
@@ -799,16 +878,18 @@ let size = { w: 1, h: 1, dpr: 1 };
 // Look offsets from a drag; they ease toward the target.
 const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 // Sky eye circles the crossing from high up; drag turns it round a little.
-const SKY_T = new THREE.Vector3(0, 0, -175);
+const SKY_T = new THREE.Vector3(40, 0, -150), SKY_P = new THREE.Vector3(110, 0, -150);
 let view = 'sky';
 function frame() {
   const portrait = size.w < size.h;
   camera.aspect = size.w / size.h;
   if (view === 'sky') {
     camera.fov = portrait ? 46 : 34;
-    const dist = portrait ? 360 : 330, el = (portrait ? 0.86 : 0.42) - look.pitch * 2, az = -0.5 + look.yaw * 2;
-    camera.position.set(SKY_T.x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), SKY_T.z + dist * Math.cos(el) * Math.cos(az));
-    camera.lookAt(SKY_T);
+    // Phones look along the main road, over the bridge; wide screens look across the canal.
+    const dist = portrait ? 560 : 560, el = (portrait ? 0.72 : 0.5) - look.pitch * 2, az = (portrait ? -1.45 : -0.5) + look.yaw * 2;
+    const T = portrait ? SKY_P : SKY_T;
+    camera.position.set(T.x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), T.z + dist * Math.cos(el) * Math.cos(az));
+    camera.lookAt(T);
     // From the air the ground gets less sky; the exposure opens up.
     renderer.toneMappingExposure = 1.7;
     camera.updateProjectionMatrix();
