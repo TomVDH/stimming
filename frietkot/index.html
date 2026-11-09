@@ -79,7 +79,7 @@ import { FIG_GLSL } from './figures.js';
 
 const stage = document.getElementById('stage');
 // Handlers bind once the scene exists.
-const act = { order() {}, sauce() {}, wind() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, camcorder() {}, reset() {} };
+const act = { order() {}, sauce() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, camcorder() {}, reset() {} };
 const QS = new URLSearchParams(location.search);
 
 /* ---------- sauces and neon ---------- */
@@ -99,10 +99,9 @@ const ui = initPage({ id: 'frietkot', bar: {
   // A diorama: one verb. An order runs the double fry and fills a cone.
   actions: [{ verb: 'order', key: 'O', onPress: () => act.order() }],
   settings: [
-    // The night first: weather and wind. Then the place: neon and traffic. Then the lens.
+    // The night first, then the place, then the lens.
     { type: 'choice', id: 'weather', label: 'Weather', display: 'stepper', value: 'shift', persist: true, onPick: v => act.weather(v),
       options: [{ value: 'shift', label: 'Shifting' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
-    { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.3, persist: true, onInput: v => act.wind(v) },
     { type: 'choice', id: 'neon', label: 'Neon', display: 'stepper', value: 'red', persist: true, onPick: v => act.neon(v),
       options: [{ value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }, { value: 'green', label: 'Green' }] },
     { type: 'toggle', id: 'traffic', label: 'Traffic', value: true, persist: true, onToggle: on => act.traffic(on) },
@@ -1929,6 +1928,47 @@ const rain = new THREE.Mesh(rainGeo, rainMat);
 rain.frustumCulled = false;
 rain.renderOrder = 4;
 scene.add(rain);
+// Rain curtains: soft sheets of falling rain at several depths, lit where the lamps reach.
+// Near ones carry fine streaks; far ones only a moving veil. Together they give the rain volume.
+const curtainMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uRainK: { value: 0 }, uFall: rainMat.uniforms.uFall },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: /* glsl */`
+  ${LIGHT}
+  ${NOISE}
+  uniform float uRainK, uFall, uTime;
+  varying vec3 vP;
+  void main() {
+    if (uRainK < 0.01) discard;
+    float dist = length(vP - cameraPosition);
+    // Streaks: thin, long, falling; finer with distance until they blur to a veil.
+    float fine = smoothstep(40.0, 8.0, dist);
+    float st = vnoise(vec2(vP.x * 22.0 + vP.z * 3.0, vP.y * 0.5 + uTime * uFall * 0.5));
+    st = mix(0.35, pow(st, 7.0) * 3.0, fine);
+    // Gusty sheets drift through: the density swells and thins.
+    float sheet = smoothstep(0.3, 0.75, fbm(vec2(vP.x * 0.06 + uTime * 0.08 + vP.z * 0.02, vP.y * 0.05 + uTime * 0.02)));
+    // Light that reaches the curtain: the window, the neon, the sky.
+    vec3 L = uLamp - vP;
+    vec3 li = uLampCol * apMask(vP) * uOut / (dot(L, L) + 0.6);
+    vec3 Ln = neonPt(vP) - vP;
+    li += uNeonCol / (dot(Ln, Ln) + 0.4);
+    vec3 c = (li * 0.012 + uHaze * 0.35 + uSky * 0.6) * st * (0.35 + 0.65 * sheet);
+    // Fade at the top and bottom, and near the lens.
+    c *= smoothstep(0.0, 1.5, vP.y) * smoothstep(14.0, 6.0, vP.y) * smoothstep(1.0, 4.0, dist) * uRainK;
+    gl_FragColor = vec4(clamp(c, 0.0, 0.5), 1.0);
+  }`,
+});
+const curtains = new THREE.Group();
+for (const z of [9.0, 4.5, -2.5, -9.0, -18.0, -32.0, -50.0]) {
+  const w = 30 + (16 - z) * 1.3;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 14), curtainMat);
+  m.position.set(-1, 7, z);
+  m.renderOrder = 4;
+  curtains.add(m);
+}
+curtains.visible = false;
+scene.add(curtains);
 // count, fall speed, wetness, haze, shaft density.
 const WEATHER = {
   dry: { n: 0, fall: 6, wet: 0, haze: 0.009, dens: 0.0022 },
@@ -1970,6 +2010,8 @@ function applyWeather(dt, snap) {
   const wetT = mix(a.wet, b.wet);
   wx.wet = snap ? wetT : wx.wet + (wetT - wx.wet) * Math.min(1, dt / (wetT > wx.wet ? 10 : 90));
   wx.rain = n / RAIN_N;
+  curtainMat.uniforms.uRainK.value = Math.min(1, wx.rain * 1.4);
+  curtains.visible = wx.rain > 0.01;
   U.uWet.value = wx.wet;
   U.uRipple.value = Math.min(1, wx.rain * 2) * wx.wet;
   U.uHazeK.value = mix(a.haze, b.haze);
@@ -2059,6 +2101,8 @@ const figMat = new THREE.ShaderMaterial({
   ${FIG_GLSL}
   void main() {
     if (vA < 0.001) discard;
+    // The sky's glow on outlines, as a neutral grey: no blue cast on the people.
+    vec3 skyN = vec3(dot(uSky, vec3(0.333))) * vec3(1.0, 0.94, 0.88);
     float kind = floor(vPose.x + 0.05);
     float umb = step(0.1, vPose.x - kind);
     int k = int(kind + 0.5);
@@ -2138,19 +2182,19 @@ const figMat = new THREE.ShaderMaterial({
       a = smoothstep(aa + soft, -aa - soft, min(d, cone));
       float rim = smoothstep(-0.05, 0.0, d);
       // Away from the lamps, the sky glow still draws the outline.
-      c = mix(vec3(0.004) + front * (0.05 + 0.2 * rim) + back * rim * 0.09 + uSky * 9.0 * rim, back * (0.02 + 0.06 * fall), inside);
+      c = mix(vec3(0.004) + front * (0.05 + 0.2 * rim) + back * rim * 0.09 + skyN * 9.0 * rim, back * (0.02 + 0.06 * fall), inside);
     } else if (style < 1.5) {
       // Line: one bright contour, as if drawn in light; a faint fill keeps it solid.
       float line = smoothstep(aa * 1.5, 0.0, abs(d) - 0.011);
       float fill = smoothstep(aa, -aa, d) * 0.35;
       a = max(line, fill);
-      vec3 ink = back * mix(0.05, 0.03, inside) + front * 0.25 + uSky * 4.0 + vec3(0.02);
+      vec3 ink = back * mix(0.05, 0.03, inside) + front * 0.25 + skyN * 4.0 + vec3(0.02);
       c = mix(vec3(0.004), ink, line / max(a, 1e-3));
     } else {
       // Haze: an out-of-focus shape; light from behind bleeds round the edge.
       a = smoothstep(0.08, -0.06, d) * 0.95;
       float edge = smoothstep(-0.14, 0.06, d);
-      c = mix(vec3(0.004) + back * edge * 0.14 + front * (0.04 + 0.15 * edge) + uSky * 4.0 * edge, back * (0.02 + 0.05 * fall), inside);
+      c = mix(vec3(0.004) + back * edge * 0.14 + front * (0.04 + 0.15 * edge) + skyN * 4.0 * edge, back * (0.02 + 0.05 * fall), inside);
     }
     if (cone < 0.0) { c = back * 0.05 + front * 0.2 + uSky; a = max(a, smoothstep(aa, -aa, cone)); }
     // Staff: a white apron front catches the lamp.
@@ -3066,14 +3110,41 @@ const tiltPass = d => {
 /* ---------- post chain ---------- */
 const POST = { bloom: [0.36, 0.75, 0.88], tint: [0.0004, 0.0005, 0.0009], vig: 0.55, vigIn: 0.4, grain: 0.07 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+// Depth for the rim light: near edges against far ground or sky.
+rt.depthTexture = new THREE.DepthTexture(1, 1);
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
 // A guard before the bloom: a stray bright or broken pixel must not flash the frame.
-composer.addPass(new ShaderPass({
-  uniforms: { tDiffuse: { value: null } },
+// The same pass draws a soft toon rim where a near object meets the far night behind it.
+const guard = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, uPx: { value: new THREE.Vector2(1, 1) }, uRim: { value: 0.035 } },
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */`uniform sampler2D tDiffuse; varying vec2 vUv; void main() { vec3 c = texture2D(tDiffuse, vUv).rgb; if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0); gl_FragColor = vec4(min(c, vec3(6.0)), 1.0); }`,
-}));
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse, tDepth;
+  uniform vec2 uPx;
+  uniform float uRim;
+  varying vec2 vUv;
+  float lin(vec2 uv) { float z = texture2D(tDepth, uv).r * 2.0 - 1.0; return 240.0 / (1200.1 - z * 1199.9); }
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb;
+    if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
+    float z = lin(vUv);
+    if (z < 30.0) {
+      // Look a few pixels up and to the sides: a much farther depth there marks a silhouette.
+      float e = 0.0;
+      for (int i = 0; i < 6; i++) {
+        float a = 0.6 + float(i) * 0.38;
+        vec2 o = vec2(cos(a) * 1.6, sin(a)) * uPx * 2.5;
+        e = max(e, smoothstep(1.25, 2.2, lin(vUv + o) / z));
+      }
+      // Flat, faint, warm: a toon edge, not a glow.
+      c += vec3(1.0, 0.86, 0.72) * uRim * step(0.5, e) * smoothstep(30.0, 10.0, z);
+    }
+    gl_FragColor = vec4(min(c, vec3(6.0)), 1.0);
+  }`,
+});
+composer.addPass(guard);
+
 composer.addPass(makeBloom(...POST.bloom));
 const tilts = [tiltPass([1, 0]), tiltPass([0, 1])];
 for (const p of tilts) composer.addPass(p);
@@ -3151,6 +3222,8 @@ function resize() {
   grade.uniforms.uRes.value.set(W, H);
   tilts[0].uniforms.uStep.value.set(1 / W, 0);
   tilts[1].uniforms.uStep.value.set(0, 1 / H);
+  guard.uniforms.uPx.value.set(1 / W, 1 / H);
+  guard.uniforms.tDepth.value = rt.depthTexture;
   frame();
   draw();
 }
@@ -3195,7 +3268,8 @@ function tick(now) {
     soundTick(dt * run);
     stepSitters(dt * run);
     stepWeather(dt * run);
-    rainMat.uniforms.uDrift.value = wind * gust * 2.5;
+    // A fixed drift: a changing one would jump every drop sideways.
+    rainMat.uniforms.uDrift.value = 0.35;
     if (now - clockAt > 10000) { clockAt = now; setClock(); }
     // A hold on the shack keeps the basket shaking.
     if (press?.hold && now - lastShake > 700) act.shake();
@@ -3643,7 +3717,6 @@ act.sauce = v => { setDollop(v); wake(); };
 // The neon dollop takes the colour of the sauce picked.
 function setDollop(v) { const sc = SAUCES.find(o => o.value === v) ?? SAUCES[0]; const d = FRY_SIGN.find(o => o.role === 'dollop'); if (d) d.m.uniforms.uCol.value.set(...linFit(...sc.lch)).multiplyScalar(1.2); }
 setDollop('mayo');
-act.wind = v => { wind = v; wake(); };
 act.neon = v => { setNeon(v); draw(); };
 act.tilt = v => { tiltK = v; frame(); draw(); };
 act.traffic = on => { traffic = on; wake(); };
@@ -3671,7 +3744,8 @@ act.reset = () => {
   wake();
 };
 syncActions();
-wind = ui.setting('wind')?.value ?? 0.3;
+// A light, steady breeze: steam leans a little; rain falls almost straight.
+wind = 0.2;
 tiltK = ui.setting('tilt')?.value ?? 0.4;
 setNeon(ui.setting('neon')?.value ?? 'red');
 traffic = ui.setting('traffic')?.value ?? true;
