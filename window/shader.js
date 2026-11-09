@@ -217,7 +217,7 @@ vec3 ground(vec2 w, float fw) {
   vec3 tw = towns(w, ang2, mixW);
   float T = tw.x;
   // The impact lights the land round it; the crater glows on for minutes.
-  g += boomLight(w, 20.0) * 0.25;
+  g += boomLight(w, 45.0) * 0.25;
   if (uBoomL.y > 0.0) { vec2 cq = w - uBoom.xy; g += vec3(1.0, 0.4, 0.1) * uBoomL.y * 0.6 * exp(-dot(cq, cq) / 3.0); }
   // The light dome: haze over each town glows from the streets below.
   g += vec3(1.0, 0.55, 0.24) * tw.z * 0.009;
@@ -374,7 +374,7 @@ vec4 deck(vec3 d) {
       S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
       S += flashAt(w, 1.0) * 0.6 * (0.4 + 0.6 * h01);
       // The impact lights the deck, and its shock ring races out across the tops.
-      S += boomLight(w, 30.0) * 0.9 * (0.4 + 0.6 * h01);
+      S += boomLight(w, 70.0) * 0.9 * (0.4 + 0.6 * h01);
       if (uBoom.w > 0.0) { float rr = length(w - uBoom.xy) - uBoom.z; S += vec3(1.0, 0.92, 0.82) * uBoom.w * 0.35 * exp(-rr * rr / 2.5) * h01; }
       float a = 1.0 - exp(-SIG * dn * ds);
       col += Tc * S * a;
@@ -497,7 +497,7 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
     if (uBoomL.x > 0.0) {
       vec3 bd = normalize(vec3(uBoom.x - uCam.x, 0.0, uBoom.y - uCam.y));
       float ba = acos(clamp(dot(normalize(vec3(d.x, 0.0, d.z)), bd), -1.0, 1.0));
-      sk += vec3(1.0, 0.58, 0.32) * uBoomL.x * 0.25 * exp(-ba / 0.12) * exp(-max(d.y - uHorEl, 0.0) / 0.08);
+      sk += vec3(1.0, 0.58, 0.32) * uBoomL.x * 0.3 * exp(-ba / 0.3) * exp(-max(d.y - uHorEl, 0.0) / 0.2);
     }
     // Far deck and mid-layer tops rise above the ground's horizon.
     vec4 cl = deck(d), ml = midLayer(d), ci = cirrus(d, sk);
@@ -993,39 +993,51 @@ vec3 meteor(vec3 d) {
     // A fireball's wake widens behind it, into a teardrop.
     float fade = behind >= 0.0 ? exp(-behind / uMet.y) : 0.0;
     float wid = px * (fire ? 1.6 : 0.9) + max(behR, 0.0) * (fire ? 0.08 : 0.015);
-    float line = (exp(-off * off / (wid * wid)) + 0.22 * exp(-off * off / (9.0 * wid * wid))) * fade * step(0.0, along);
+    // The wake runs back past the start: the meteor burned before it came into view.
+    float line = (exp(-off * off / (wid * wid)) + 0.22 * exp(-off * off / (9.0 * wid * wid))) * fade;
     // Hot white at the head, its own colour behind, a little orange at the end.
     vec3 col = mix(vec3(1.0, 0.97, 0.92), tint, smoothstep(0.0, 0.25, 1.0 - fade));
     col = mix(col, vec3(1.0, 0.55, 0.3), smoothstep(0.55, 0.95, 1.0 - fade) * 0.6);
     vec3 hd = normalize(mix(uMetA, uMetB, head));
     float hr = acos(clamp(dot(d, hd), -1.0, 1.0)) / px;
     float core = exp(-hr * hr / (fire ? 4.0 : 1.4)) + exp(-hr / (fire ? 12.0 : 4.0)) * (fire ? 0.3 : 0.07);
-    c += (vec3(1.0, 0.98, 0.95) * core * 1.8 + col * line) * uMet.z * fl;
-    // A fireball breaks up late: sparks fall back, each trailing its own short streak.
-    if (fire && head > 0.55) {
-      float br = (head - 0.55) / 0.45;
+    // After the breakup, the main body is smaller.
+    float split = fire ? 1.0 - 0.55 * smoothstep(0.62, 0.7, head) : 1.0;
+    c += (vec3(1.0, 0.98, 0.95) * core * 1.8 * split + col * line) * uMet.z * fl;
+    // A fireball breaks up: fragments fan out from the break point, each with its own streak.
+    if (fire && head > 0.62) {
+      float br = head - 0.62;
+      vec3 bp = normalize(mix(uMetA, uMetB, 0.62));
       vec3 tg = normalize(uMetB - uMetA);
-      for (int k = 0; k < 6; k++) {
+      for (int k = 0; k < 7; k++) {
         float fk = float(k);
-        float back = (0.008 + 0.022 * fk) * br * total;
-        float side = (hash12(vec2(fk, uMetF.y)) - 0.5) * 18.0 * px * br;
-        vec3 sp = normalize(hd - tg * back + n * side);
-        // Spark-local offsets: along the path and across it, in pixels.
-        float sa = dot(d - sp, tg) / px, so = dot(d - sp, n) / px;
-        float trail = exp(-so * so / 0.8) * exp(-max(-sa, 0.0) / (3.0 + 4.0 * br)) * step(sa, 1.0);
-        float spark = exp(-(sa * sa + so * so) / 0.9);
-        float life = 0.6 + 0.4 * sin(uTime * 43.0 + fk * 2.3);
-        c += vec3(1.0, 0.7, 0.38) * (spark * 1.2 + trail * 0.35) * uMet.z * 0.5 * life;
+        float h1 = hash12(vec2(fk, uMetF.y)), h2 = hash12(vec2(fk + 7.0, uMetF.y));
+        // Each fragment keeps its own speed and drifts to one side.
+        vec3 fd = tg * (0.5 + 0.5 * h2) + n * (h1 - 0.5) * 0.6;
+        vec3 fp = normalize(bp + fd * br * total);
+        // The streak from the break point to the fragment, faded toward the break.
+        vec3 ab = fp - bp, ap = d - bp;
+        float hh = clamp(dot(ap, ab) / max(dot(ab, ab), 1e-10), 0.0, 1.0);
+        float dist = length(ap - ab * hh) / px;
+        float trailK = exp(-(1.0 - hh) * length(ab) / px / (25.0 + 40.0 * h2));
+        float wk = 0.7 + 1.1 * h2;
+        float hr2 = length(d - fp) / px;
+        float coreK = exp(-hr2 * hr2 / (1.2 + 2.5 * h2));
+        // Small fragments burn out before the big ones.
+        float life = smoothstep(0.38, 0.12, br * (0.6 + 0.9 * h1));
+        float fl2 = 0.75 + 0.25 * sin(uTime * 53.0 + fk * 3.1);
+        vec3 fc = mix(vec3(1.0, 0.72, 0.42), tint, h1 * 0.7);
+        c += fc * (coreK * 1.6 + exp(-dist * dist / (wk * wk)) * trailK * 0.55) * life * fl2 * uMet.z * 0.6;
       }
     }
   }
   // The persistent train: a glowing thread that twists in the high wind.
   // Green-cyan at first, then dull red, then a grey ghost.
-  if (uMet.w > 0.0 && along > 0.0 && along < head) {
+  if (uMet.w > 0.0 && along > -0.4 && along < head) {
     float age = uMetF.z;
     float tw = px * (1.4 + 26.0 * age);
     float wob = (sin(along * 13.0 + age * 3.0 + uMetF.y) + 0.5 * sin(along * 31.0 - age * 2.0)) * px * 22.0 * age;
-    float g = exp(-pow((off - wob) / tw, 2.0)) * smoothstep(0.0, 0.1, along) * smoothstep(0.0, 0.05, head - along + 0.02);
+    float g = exp(-pow((off - wob) / tw, 2.0)) * smoothstep(-0.4, -0.2, along) * smoothstep(0.0, 0.05, head - along + 0.02);
     vec3 tc = mix(vec3(0.3, 1.0, 0.65), vec3(0.95, 0.4, 0.3), smoothstep(0.05, 0.4, age));
     tc = mix(tc, vec3(0.5, 0.48, 0.5), smoothstep(0.4, 0.9, age));
     c += tc * uMet.w * 0.3 * g / (1.0 + 6.0 * age);

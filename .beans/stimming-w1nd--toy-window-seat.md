@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
-updated_at: 2026-11-04T23:30:00Z
+updated_at: 2026-11-09T07:22:34Z
 ---
 
 Window seat (idea 56). Tom, 2026-11-04: S tier, diegetic. Airliner first; an orbit seat may follow. Full window frame (bezel, shade).
@@ -51,3 +51,5 @@ Decisions:
 ## Events (Tom, 2026-11-08)
 
 They happen on their own, every 22 to 55 s: a meteor (one in four a green fireball with a lingering train), a rocket launch (its high plume lit by the sun at dusk and dawn: the twilight jellyfish), and a passing jet with strobes and a moonlit or sunlit contrail. Tap-to-flash lightning stays.
+
+Sights round 3: rocket launches 140-200 km out and heads away on a flatter climb; fireball enters from 30-42 deg, its wake runs past the start, and it breaks into seven fragments at 62 %; impact strikes 110-160 km out with a 30 km dome, 80 km plume, 36 ejecta, a wider sky glow and a shock front that shakes the cabin on arrival. Not yet seen: the pane was hidden.
