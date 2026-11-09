@@ -1335,6 +1335,147 @@ puffs.renderOrder = 6;
 puffs.layers.enable(MIRROR);
 scene.add(puffs);
 let phead = 0, pdirtyFrom = -1, pdirtyN = 0;
+/* ---------- ground cloud: one volume, marched once ---------- */
+// Every liftoff cloud is a blob in one density field, so they merge into one mass.
+// The field is a sum of soft spheres; world noise carves lumps into it.
+const GC_N = 32;
+const gc = [];
+const GU = {
+  uGC: { value: Array.from({ length: GC_N }, () => new THREE.Vector4()) },
+  uGW: { value: new Float32Array(GC_N) },
+  uBoxMin: { value: new THREE.Vector3() }, uBoxMax: { value: new THREE.Vector3() },
+  uSteps: { value: 16 },
+};
+const groundCloud = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...GU, uScale: PU.uScale }, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`varying vec3 vW; void main() { vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform vec4 uGC[${GC_N}];
+  uniform float uGW[${GC_N}];
+  uniform vec3 uBoxMin, uBoxMax, uAmb;
+  uniform float uScale, uTime, uSteps;
+  varying vec3 vW;
+  ${HEAD}
+  float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+  float n3(vec3 p) {
+    vec3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), u.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), u.x), u.y),
+               mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), u.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), u.x), u.y), u.z);
+  }
+  float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+  // The soft-sphere field: blobs add up, so neighbours fuse.
+  float field(vec3 w) {
+    float f = 0.0;
+    for (int i = 0; i < ${GC_N}; i++) {
+      vec4 s = uGC[i];
+      if (s.w <= 0.0) continue;
+      vec3 d = (w - s.xyz) / s.w;
+      d.y *= 1.6;
+      float r2 = dot(d, d);
+      if (r2 > 1.2) continue;
+      f += uGW[i] * exp(-r2 * 2.6) * (1.0 + 0.8 * clamp(-d.y * 2.0 + 0.3, 0.0, 1.0));
+    }
+    return f;
+  }
+  // Density: the field shaped by lumpy noise, with a hard cut for defined edges.
+  float dens(vec3 w, bool cheap) {
+    if (w.y < 0.0) return 0.0;
+    float F = field(w);
+    if (F < 0.04) return 0.0;
+    vec3 wp = w / (uScale * 0.032) + vec3(0.0, -uTime * 0.03, uTime * 0.01);
+    float n = cheap ? n3(wp) * 0.6 + n3(wp * 2.3 + 11.0) * 0.4
+      : n3(wp * 0.45 + 5.0) * 0.3 + (0.55 * n3(wp) + 0.3 * n3(wp * 2.13 + 3.1) + 0.15 * n3(wp * 4.37 + 7.7)) * 0.35
+        + 0.35 * (1.0 - abs(2.0 * (n3(wp * 2.3 + 11.0) * 0.7 + n3(wp * 5.1 + 3.0) * 0.3) - 1.0));
+    // The field says where cloud can be; the noise says where it is.
+    float m = min(F, 1.2);
+    return smoothstep(0.46, 0.74, n * (0.45 + 0.75 * m)) * smoothstep(0.08, 0.3, F) * 1.3;
+  }
+  void main() {
+    vec3 rd = normalize(vW - cameraPosition);
+    // March between the box's two hits.
+    vec3 inv = 1.0 / rd;
+    vec3 ta = (uBoxMin - cameraPosition) * inv, tb = (uBoxMax - cameraPosition) * inv;
+    vec3 tmin = min(ta, tb), tmax = max(ta, tb);
+    float t0 = max(max(tmin.x, tmin.y), max(tmin.z, 0.0)), t1 = min(min(tmax.x, tmax.y), tmax.z);
+    if (t1 <= t0) discard;
+    float N = uSteps, dt = (t1 - t0) / N;
+    float jit = 0.4 + 0.2 * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    vec3 Lg = normalize(vec3(uSun.x, 0.06, uSun.z));
+    vec3 horizonC = k2sky(normalize(vec3(Lg.x, 0.02, Lg.z)));
+    vec3 keyC = mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.55) * 2.2;
+    float pd = 0.75 * hg(dot(rd, Lg), 0.72) + 0.25 * hg(dot(rd, Lg), -0.2);
+    vec3 amb = mix(vec3(dot(uAmb, vec3(0.33))), uAmb, 0.6) * 0.9;
+    float reach = uScale * 0.035;
+    // The shadow step length: a third of the biggest blob.
+    float sstep = uScale * 0.012;
+    float T = 1.0;
+    vec3 col = vec3(0.0);
+    for (float i = 0.0; i < 40.0; i++) {
+      if (i >= N) break;
+      vec3 w = cameraPosition + rd * (t0 + (i + jit) * dt);
+      float d = dens(w, false);
+      if (d <= 0.0) continue;
+      float od = d * dt / (uScale * 0.03) * 1.4;
+      // Self-shadow: one cheap sample toward the dawn, one straight up.
+      // Two shadow samples toward the dawn and one up give a soft falloff, not a hard patch.
+      float sk = exp(-(dens(w + Lg * sstep * 0.5, true) * 0.6 + dens(w + Lg * sstep * 1.3, true) * 0.5) * 1.8);
+      float up = exp(-(dens(w + vec3(0.0, sstep * 0.5, 0.0), true) * 0.6 + dens(w + vec3(0.0, sstep * 1.2, 0.0), true) * 0.4) * 1.7);
+      vec3 fdv = uFlame.xyz - w;
+      vec3 Fd = normalize(fdv + vec3(0.0, 1e-3, 0.0));
+      float pf = 0.7 * hg(dot(rd, Fd), 0.6) + 0.3 * hg(dot(rd, Fd), -0.2);
+      float sf = exp(-dens(w + Fd * sstep, true) * 1.4);
+      vec3 flame = uFlameC * uFlame.w * uAir * 1.6 / (1.0 + dot(fdv, fdv) / (reach * reach));
+      float pw = 1.0 - exp(-d * 4.0);
+      // Grey in the shadows, pale on the lit tops; the flame only warms the near side.
+      vec3 grey = vec3(dot(amb, vec3(0.33)));
+      vec3 Li = keyC * sk * pd * pw * 1.6 + flame * sf * (0.05 + pf * 1.2) * pw * 0.6 + mix(grey, amb, 0.5) * (0.45 + 2.2 * up * sk);
+      float ab = 1.0 - exp(-od);
+      col += T * ab * Li;
+      T *= 1.0 - ab;
+      if (T < 0.02) break;
+    }
+    float a = 1.0 - T;
+    if (a < 0.003) discard;
+    col = mix(col, k2hazeColor(rd) * a, 0.3 * k2hazeAmount(0.5 * (uBoxMin + uBoxMax)));
+    gl_FragColor = vec4(col, a);
+  }`,
+}));
+groundCloud.frustumCulled = false;
+groundCloud.renderOrder = 5.5;
+groundCloud.visible = false;
+groundCloud.layers.enable(MIRROR);
+scene.add(groundCloud);
+// Place every blob for this frame; the box wraps them all.
+const gMin = new THREE.Vector3(), gMax = new THREE.Vector3();
+function updateGround() {
+  const D = PU.uScale.value;
+  let n = 0, any = false;
+  gMin.set(1e9, 1e9, 1e9); gMax.set(-1e9, -1e9, -1e9);
+  for (let i = 0; i < GC_N; i++) {
+    const b = gc[i], s = GU.uGC.value[i];
+    if (!b) { s.set(0, 0, 0, 0); GU.uGW.value[i] = 0; continue; }
+    const age = simT - b.born;
+    if (age < 0 || age > b.life) { s.set(0, 0, 0, 0); GU.uGW.value[i] = 0; continue; }
+    const e = (1 - Math.exp(-b.k * age)) / b.k;
+    const x = b.p0.x + b.v.x * e, z = b.p0.z + b.v.z * e;
+    const r = b.r * (0.3 + 0.7 * (1 - Math.exp(-age / b.grow)));
+    const y = r * 0.22 + b.rise * age;
+    s.set(x, y, z, r);
+    GU.uGW.value[i] = 1.3 * Math.min(1, age * 2) * (1 - THREE.MathUtils.smoothstep(age, b.life * 0.55, b.life));
+    gMin.x = Math.min(gMin.x, x - r); gMin.z = Math.min(gMin.z, z - r);
+    gMax.x = Math.max(gMax.x, x + r); gMax.y = Math.max(gMax.y, y + r * 0.7); gMax.z = Math.max(gMax.z, z + r);
+    any = true; n++;
+  }
+  groundCloud.visible = any;
+  if (!any) return;
+  gMin.y = 0;
+  GU.uBoxMin.value.copy(gMin); GU.uBoxMax.value.copy(gMax);
+  groundCloud.position.copy(gMin).add(gMax).multiplyScalar(0.5);
+  groundCloud.scale.subVectors(gMax, gMin);
+  GU.uSteps.value = rung >= 2 ? 10 : quality() === 'high' ? 20 : 14;
+}
+
 // Write one puff into the next slot; the oldest gives way.
 function writePuff(p, t0, v, k, h, radius, kind, life, rise, grow, alpha) {
   const i = phead;
@@ -1455,14 +1596,17 @@ function flyTo(f) {
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
   // Ground clouds: the blast hits the ground and rolls out sideways, low and heavy.
   // Most come in the seconds round liftoff; later ones push the front further.
-  const steamDue = Math.min(90, Math.floor(Math.pow(THREE.MathUtils.clamp((te - 0.3) / (PRE + 7), 0, 1), 0.7) * 90));
+  const steamDue = Math.min(48, Math.floor(Math.pow(THREE.MathUtils.clamp((te - 0.3) / (PRE + 7), 0, 1), 0.7) * 48));
   while (f.steam < steamDue) {
     const n = f.steam++, s = n % 2 ? 1 : -1, r = D * (0.024 + 0.034 * rnd()) * k.plume;
     // Some roll toward or away from the eye, so the wall has depth.
     const along = rnd() < 0.2 ? 0.2 : 1, late = THREE.MathUtils.clamp((te - PRE) / 6, 0, 1);
-    tmpA.set(f.x + (rnd() - 0.5) * D * 0.006, r * 0.22, f.z + (rnd() - 0.5) * D * 0.006);
-    rv.set(s * along * D * (0.012 + 0.03 * rnd()) * (1 + 0.6 * late), 0, (1 - along) * s * D * 0.03 + (rnd() - 0.5) * D * 0.006);
-    writePuff(tmpA, f.start + (te - 0.01), rv, 0.32, 0, r, 1, 45 + rnd() * 12, D * 0.00012, 2 + rnd() * 3, 1.3);
+    // Each blob joins the one ground volume; the oldest slot gives way.
+    gc[n % GC_N] = {
+      p0: new THREE.Vector3(f.x + (rnd() - 0.5) * D * 0.006, 0, f.z + (rnd() - 0.5) * D * 0.006),
+      v: new THREE.Vector3(s * along * D * (0.012 + 0.03 * rnd()) * (1 + 0.6 * late), 0, (1 - along) * s * D * 0.03 + (rnd() - 0.5) * D * 0.006),
+      k: 0.32, r, born: simT, life: 45 + rnd() * 12, rise: D * 0.00012, grow: 2 + rnd() * 3,
+    };
   }
   // Exhaust: walk the path since the last puff and drop one each spacing.
   const q = quality() === 'high' ? 1 : 2.3;
@@ -1512,6 +1656,8 @@ function flyTo(f) {
 }
 function endFlight() {
   flight.tl.kill();
+  gc.length = 0;
+  groundCloud.visible = false;
   body.visible = false;
   U.uFront.value.w = 0;
   birds.forEach(b => { b.a = 0; b.up = false; });
@@ -2131,6 +2277,7 @@ function draw() {
   if (!visible || !compiled) return;
   commitStars();
   commitPuffs();
+  updateGround();
   renderMirror();
   placeOrbs(orbPass, orbList());
   // Focus rides on the pad: the flight's distance, else the setting's.

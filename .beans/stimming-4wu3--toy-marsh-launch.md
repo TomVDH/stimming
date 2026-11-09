@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T09:03:13Z
+updated_at: 2026-11-09T09:14:04Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -122,3 +122,8 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 
 - Ground-cloud density: big slow lumps carry small ridged ones (90 m field, ridged at 2.3x and 5.1x), then a hard smoothstep cut (0.42 to 0.6), so every lump has an edge.
 - Lighting: tops lit by the sky, undersides in self-shadow (tk squared), fill cut to 0.1. Ten march steps with a steadier jitter, so the march leaves no grain.
+
+## One ground-cloud volume (2026-11-09, Tom: pills, not contiguous)
+
+- The liftoff clouds are no longer separate puffs. Up to 32 blobs feed one soft-sphere field; a box round them is marched once per pixel (14 steps Standard, 20 High, 10 on rung 2), so neighbours fuse into one mass.
+- World noise (90 m lumps, ridged detail) carves the field, with a medium-soft cut. Two shadow samples toward the dawn and two up give rounded shading; grey in the hollows, pale on the tops; the flame only warms the near side.
