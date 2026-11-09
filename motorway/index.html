@@ -618,8 +618,8 @@ const ribMat = new THREE.ShaderMaterial({
       vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * half_;
       w.y = 0.04 + 0.01 * aInfo.z;
       vLat = aSide * half_; vS = aS; vEnd = aEnd; vLit = aInfo.x; vRoad = aInfo.y; vCls = aInfo.z; vHoff = aInfo.w; vW = w;
-      // Town-bound lanes jam in the morning, outbound lanes in the evening.
-      vJam = aJam.x * (aJam.y > 1.5 ? max(uAm, uPm) * 0.7 : (aJam.y > 0.5 ? uAm : uPm));
+      // Each point weighs the morning and the evening rush.
+      vJam = min(1.0, aJam.x * uAm + aJam.y * uPm);
       gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
     }`,
   fragmentShader: /* glsl */`
@@ -1189,13 +1189,13 @@ function measureJams() {
   jamBy.fill(0);
   TW.forEach((W, r) => {
     if (!W) return;
-    const S = dense[r].s, I = TI[r], H = TH[r], two = !ROADS[r].o;
+    const S = dense[r].s, H = TH[r], two = !ROADS[r].o;
     for (let i = 0; i < W.length - 1; i++) {
       if (W[i] < 0.3) continue;
       const len = S[i + 1] - S[i];
       let q = 0;
-      if (W[i] * (I[i] ? am : pm) > 0.45) q += len;
-      if (two && W[i] * (I[i] ? pm : am) > 0.45) q += len;
+      if (congAt(r, i, 1, am, pm) > 0.45) q += len;
+      if (two && congAt(r, i, -1, am, pm) > 0.45) q += len;
       m += q;
       if (H[i] >= 0) jamBy[H[i]] += q / 1000;
     }
@@ -1223,7 +1223,28 @@ dense.forEach((d, r) => {
   }
   TW[r] = W; TI[r] = I; TH[r] = H;
 });
-const congAt = (r, k, dir, am, pm) => TW[r][k] * ((TI[r][k] ^ (dir < 0 ? 1 : 0)) ? am : pm);
+// Real jams: October 2024, from the Flemish traffic centre's indicators.
+// Each road point holds minutes of slowed traffic, morning and afternoon.
+// Roads without that data keep the hand-placed jam points.
+const WA = [], WP = [];
+const vcW = m => Math.min(1, Math.pow(Math.max(0, m) / 220, 0.8));
+dense.forEach((d, r) => {
+  if (!TW[r]) return;
+  const n = d.p.length, A = new Float32Array(n), P = new Float32Array(n), vc = DATA.vc?.roads?.[r];
+  if (vc) {
+    // Values and a presence mask ride the same curve as the points.
+    const ride = F => { const o = []; sample(ROADS[r].p, STEP[ROADS[r].c], F, o); return o; };
+    const has = vc[0].map(v => (v >= 0 ? 100 : 0));
+    const am = ride(vc[0].map(v => Math.max(0, v) * 100)), pm = ride(vc[1].map(v => Math.max(0, v) * 100)), m = ride(has);
+    for (let i = 0; i < n; i++) if (m[i] > 0.01) { A[i] = vcW(am[i] / m[i]); P[i] = vcW(pm[i] / m[i]); }
+  } else {
+    for (let i = 0; i < n; i++) { const w = TW[r][i]; if (TI[r][i]) A[i] = w; else P[i] = w; }
+  }
+  WA[r] = A; WP[r] = P;
+  for (let i = 0; i < n; i++) TW[r][i] = Math.max(A[i], P[i]);
+});
+// Forward travel weighs the morning and evening shapes; the way back swaps them.
+const congAt = (r, k, dir, am, pm) => Math.min(1, dir < 0 ? WP[r][k] * am + WA[r][k] * pm : WA[r][k] * am + WP[r][k] * pm);
 
 // Cars: ten per km on each carriageway, three per km each way on trunk roads.
 const CARS = (() => {
@@ -1277,13 +1298,17 @@ const CARS = (() => {
   });
   return C;
 })();
-// Jam weight and town-bound flag per ribbon vertex; the clock lights them red from altitude.
+// Morning and evening jam weights per ribbon vertex; the clock lights them red from altitude.
 ribbons.children.forEach(m => {
   const g = m.geometry, J = new Float32Array(g.attributes.aS.count * 2);
   let v = 0;
   g.userData.list.forEach(r => {
-    const n = dense[r].p.length, W = TW[r], I = TI[r], two = !ROADS[r].o;
-    for (let i = 0; i < n; i++) for (let k = 0; k < 2; k++, v++) { J[v * 2] = W ? W[i] : 0; J[v * 2 + 1] = W ? (two ? 2 : I[i]) : 0; }
+    const n = dense[r].p.length, A = WA[r], P = WP[r], two = !ROADS[r].o;
+    for (let i = 0; i < n; i++) for (let k = 0; k < 2; k++, v++) {
+      // A two-way road shows both directions, a little softer.
+      const m = A ? Math.max(A[i], P[i]) * 0.7 : 0;
+      J[v * 2] = A ? (two ? m : A[i]) : 0; J[v * 2 + 1] = A ? (two ? m : P[i]) : 0;
+    }
   });
   g.setAttribute('aJam', new THREE.BufferAttribute(J, 2));
 });
@@ -1939,7 +1964,7 @@ function draw() {
   // Only true light sources bloom; a low radius keeps the coarse levels out.
   bloom.radius = 0.15 + 0.3 * ss(0.4, 1, z);
   bloom.strength = glowK * (0.75 - 0.2 * ss(0.4, 1, z));
-  bloom.threshold = 0.95;
+  bloom.threshold = 0.95 - 0.2 * ss(0.4, 1, z);
   tilt0.uniforms.uBand.value = 0.06 + 0.08 * z;
   // From orbit the ribbons need a lift to read.
   // A phone draws the country smaller, so its strips need more lift.
