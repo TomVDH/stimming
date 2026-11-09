@@ -2088,13 +2088,13 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           <a class="toy" id="dijkstra" href="dijkstra/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 275)"/>
-                <rect x="16" y="16" width="92" height="92" fill="oklch(0.14 0.02 275)"/>
-                <g id="dijkstra-edges" stroke="oklch(0.36 0.05 265)" stroke-width="1.6" stroke-linecap="square"><line x1="30" y1="90" x2="44" y2="74"/><line x1="30" y1="90" x2="60" y2="82"/><line x1="44" y1="74" x2="34" y2="56"/><line x1="44" y1="74" x2="66" y2="58"/><line x1="34" y1="56" x2="40" y2="30"/><line x1="40" y1="30" x2="50" y2="40"/><line x1="50" y1="40" x2="66" y2="58"/><line x1="50" y1="40" x2="74" y2="34"/><line x1="66" y1="58" x2="82" y2="72"/><line x1="66" y1="58" x2="60" y2="82"/><line x1="60" y1="82" x2="78" y2="96"/><line x1="78" y1="96" x2="98" y2="88"/><line x1="78" y1="96" x2="82" y2="72"/><line x1="82" y1="72" x2="90" y2="50"/><line x1="82" y1="72" x2="98" y2="88"/><line x1="90" y1="50" x2="74" y2="34"/><line x1="90" y1="50" x2="96" y2="28"/><line x1="74" y1="34" x2="96" y2="28"/></g>
-                <polyline id="dijkstra-path" points="30,90 44,74 66,58 82,72 90,50 96,28" fill="none" stroke="oklch(0.95 0.08 85)" stroke-width="3" stroke-linejoin="miter" pathLength="1" stroke-dasharray="1"/>
-                <g id="dijkstra-nodes" fill="oklch(0.5 0.06 265)"><rect x="28" y="88" width="4" height="4"/><rect x="42" y="72" width="4" height="4"/><rect x="32" y="54" width="4" height="4"/><rect x="48" y="38" width="4" height="4"/><rect x="64" y="56" width="4" height="4"/><rect x="58" y="80" width="4" height="4"/><rect x="76" y="94" width="4" height="4"/><rect x="80" y="70" width="4" height="4"/><rect x="88" y="48" width="4" height="4"/><rect x="72" y="32" width="4" height="4"/><rect x="94" y="26" width="4" height="4"/><rect x="96" y="86" width="4" height="4"/><rect x="38" y="28" width="4" height="4"/></g>
-                <rect id="dijkstra-src" x="26.5" y="86.5" width="7" height="7" fill="oklch(0.98 0.03 200)"/>
-                <rect id="dijkstra-tgt" x="91" y="23" width="10" height="10" fill="none" stroke="oklch(0.95 0.08 85)" stroke-width="1.8"/>
+                <rect x="22" y="22" width="92" height="92" rx="6" fill="oklch(0.07 0.01 265)"/>
+                <rect x="16" y="16" width="92" height="92" rx="6" fill="oklch(0.13 0.018 275)"/>
+                <defs><filter id="dijkstra-glow" x="-0.5" y="-0.5" width="2" height="2"><feGaussianBlur stdDeviation="1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                <g filter="url(#dijkstra-glow)"><g id="dijkstra-cold" stroke="oklch(0.27 0.02 270)" stroke-width="1.3" stroke-linecap="square"></g><g id="dijkstra-lit" stroke-width="1.7" stroke-linecap="round"></g><g id="dijkstra-tips" fill="oklch(0.98 0.04 90)"></g>
+                <polyline id="dijkstra-path" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" pathLength="1" stroke-dasharray="1"/>
+                <rect id="dijkstra-src" width="6" height="6" fill="#fff"/>
+                <rect id="dijkstra-tgt" width="8.4" height="8.4" fill="none" stroke-width="1.4"/></g>
               </svg>
             </span>
             <span class="name">Dijkstra</span>
@@ -3574,98 +3574,107 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
       rest() { toys.vortex.leave(); },
     };
   }
-  // Light floods the web from the node nearest the pointer; the path follows it.
+  // A neat street grid: light flows out along every street with a soft tip.
+  // The path draws on to the junction nearest the pointer; the rest recedes.
   // Lab icons get only play and rest, so this icon tracks the pointer itself.
   {
-    const el = $('dijkstra'), path = $('dijkstra-path'), srcM = $('dijkstra-src'), tgtM = $('dijkstra-tgt');
-    const lines = [...$('dijkstra-edges').children], dots = [...$('dijkstra-nodes').children];
-    const P = [[30, 90], [44, 74], [34, 56], [50, 40], [66, 58], [60, 82], [78, 96], [82, 72], [90, 50], [74, 34], [96, 28], [98, 88], [40, 30]];
-    const E = [[0, 1], [0, 5], [1, 2], [1, 4], [2, 12], [12, 3], [3, 4], [3, 9], [4, 7], [4, 5], [5, 6], [6, 11], [6, 7], [7, 8], [7, 11], [8, 9], [8, 10], [9, 10]];
-    const COLD_E = 'oklch(0.36 0.05 265)', COLD_N = 'oklch(0.5 0.06 265)', HOT = 'oklch(0.95 0.08 85)', SPAN = 0.6;
-    const heat = f => `oklch(${(0.93 - 0.32 * f).toFixed(2)} ${(0.1 + 0.15 * f).toFixed(2)} ${((200 + 205 * f) % 360).toFixed(0)})`;
-    const len = (a, b) => Math.hypot(P[a][0] - P[b][0], P[a][1] - P[b][1]);
-    // A plain O(n²) Dijkstra over thirteen nodes.
+    const el0 = $('dijkstra'), gC = $('dijkstra-cold'), gL = $('dijkstra-lit'), gT = $('dijkstra-tips');
+    const path = $('dijkstra-path'), srcM = $('dijkstra-src'), tgtM = $('dijkstra-tgt');
+    const n = 7, S = 12, O = 26, AVE = 2, SRC = 42, TGT = 13;
+    // Two merged blocks close their inner streets; row 2 is a fast avenue.
+    const MERGED = [[1, 3, 3, 5], [4, 1, 6, 3]];
+    const X = [], Y = [], E = [];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { X.push(O + i * S); Y.push(O + j * S); }
+    const cut = (mi, mj) => MERGED.some(([a, b, c, d]) => mi > a && mi < c && mj > b && mj < d);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      if (i < n - 1 && !cut(i + 0.5, j)) E.push([j * n + i, j * n + i + 1, j === AVE ? 0.5 : 1]);
+      if (j < n - 1 && !cut(i, j + 0.5)) E.push([j * n + i, (j + 1) * n + i, 1]);
+    }
+    const w = E.map(([, , m]) => S * m);
     const run = s => {
-      const d = P.map(() => Infinity), par = P.map(() => -1), done = P.map(() => false);
+      const d = X.map(() => Infinity), par = X.map(() => -1), done = X.map(() => false);
       d[s] = 0;
       for (;;) {
         let u = -1;
-        P.forEach((_, i) => { if (!done[i] && d[i] < Infinity && (u < 0 || d[i] < d[u])) u = i; });
+        X.forEach((_, i) => { if (!done[i] && d[i] < Infinity && (u < 0 || d[i] < d[u])) u = i; });
         if (u < 0) break;
         done[u] = true;
-        for (const [a, b] of E) {
-          const v = a === u ? b : b === u ? a : -1;
-          if (v >= 0 && d[u] + len(u, v) < d[v]) { d[v] = d[u] + len(u, v); par[v] = u; }
-        }
+        E.forEach(([a, b], k) => { const v = a === u ? b : b === u ? a : -1; if (v >= 0 && d[u] + w[k] < d[v]) { d[v] = d[u] + w[k]; par[v] = u; } });
       }
       return { d, par, max: Math.max(...d) };
     };
+    const NSV = 'http://www.w3.org/2000/svg', mk = (tag, parent, attrs = {}) => { const e = document.createElementNS(NSV, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.append(e); return e; };
+    E.forEach(([a, b]) => mk('line', gC, { x1: X[a], y1: Y[a], x2: X[b], y2: Y[b] }));
+    const lit = E.map(() => mk('line', gL)), tips = E.map(() => mk('circle', gT, { r: 1.5 }));
+    // Heat: sodium near the source, rust far away; white is the path's.
+    const heat = t => `oklch(${(0.86 - 0.3 * t).toFixed(2)} ${(0.13 + 0.03 * t).toFixed(2)} ${(84 - 46 * t).toFixed(0)})`;
+    const f = v => v.toFixed(1);
+    let g = run(SRC), tgt = TGT, on = false, at = null, tl = null;
+    const st = { W: g.max * 1.05, dim: 0, draw: 1 };
+    const draw = () => {
+      E.forEach(([a, b], k) => {
+        const [p, q] = g.d[a] <= g.d[b] ? [a, b] : [b, a];
+        const fr = Math.min(1, Math.max(0, (st.W - g.d[p]) / w[k])), L = lit[k], T = tips[k];
+        if (!(fr > 0)) { L.setAttribute('display', 'none'); T.setAttribute('display', 'none'); return; }
+        const x = X[p] + (X[q] - X[p]) * fr, y = Y[p] + (Y[q] - Y[p]) * fr;
+        L.removeAttribute('display');
+        L.setAttribute('x1', X[p]); L.setAttribute('y1', Y[p]); L.setAttribute('x2', f(x)); L.setAttribute('y2', f(y));
+        L.setAttribute('stroke', heat(g.d[p] / g.max));
+        if (fr < 1) { T.removeAttribute('display'); T.setAttribute('cx', f(x)); T.setAttribute('cy', f(y)); T.setAttribute('opacity', f(0.5 + 0.5 * Math.sin(fr * Math.PI))); }
+        else T.setAttribute('display', 'none');
+      });
+      gL.setAttribute('opacity', f(1 - 0.78 * st.dim));
+      const locked = st.W >= g.d[tgt];
+      if (locked) {
+        const pts = [];
+        for (let v = tgt; v >= 0; v = g.par[v]) pts.unshift(`${X[v]},${Y[v]}`);
+        path.setAttribute('points', pts.join(' '));
+        path.setAttribute('stroke-dashoffset', f(1 - st.draw));
+        path.removeAttribute('display');
+      } else path.setAttribute('display', 'none');
+      srcM.setAttribute('x', X[SRC] - 3); srcM.setAttribute('y', Y[SRC] - 3);
+      tgtM.setAttribute('x', X[tgt] - 4.2); tgtM.setAttribute('y', Y[tgt] - 4.2);
+      tgtM.setAttribute('stroke', locked ? '#fff' : 'oklch(0.62 0.02 270)');
+    };
     const pt = e => {
-      const svg = el.querySelector('svg'), r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+      const svg = el0.querySelector('svg'), r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
       return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
     };
-    const near = (q, skip) => {
-      let best = 0, bd = Infinity;
-      P.forEach((p, i) => { const d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (i !== skip && d < bd) { bd = d; best = i; } });
+    const near = q => {
+      let best = TGT, bd = Infinity;
+      X.forEach((x, i) => { const dd = Math.hypot(x - q[0], Y[i] - q[1]); if (i !== SRC && dd < bd) { bd = dd; best = i; } });
       return best;
     };
-    let g = run(0), src = 0, tgt = 10, on = false, tl = null, at = null;
-    const reach = i => (g.d[i] / g.max) * SPAN;
-    const place = () => {
-      srcM.setAttribute('x', P[src][0] - 3.5); srcM.setAttribute('y', P[src][1] - 3.5);
-      tgtM.setAttribute('x', P[tgt][0] - 5); tgtM.setAttribute('y', P[tgt][1] - 5);
-    };
-    // The path walks parents back from the target; a new one sweeps on.
-    const showPath = sweep => {
-      const pts = [];
-      for (let v = tgt; v >= 0; v = g.par[v]) pts.unshift(P[v].join(','));
-      path.setAttribute('points', pts.join(' '));
-      gsap.set(path, { opacity: 1 });
-      if (sweep) gsap.fromTo(path, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.18, ease: 'power2.out', overwrite: true });
-    };
-    const lit = () => !tl || tl.time() >= reach(tgt);
-    // Nodes flash white in pop order, then cool to their heat colour.
-    const flood = s => {
+    // One run: the flood flows out, the path draws on, then the rest recedes.
+    const play = () => {
       tl?.kill();
-      src = s;
-      if (tgt === src) tgt = near(P[src], src);
-      g = run(src);
-      place();
-      gsap.set(path, { opacity: 0 });
-      const check = () => { if (path.style.opacity === '0' && lit()) showPath(true); };
-      tl = gsap.timeline({ onUpdate: check, onComplete: check });
-      dots.forEach((r, i) => {
-        tl.set(r, { attr: { fill: '#fff' } }, reach(i));
-        tl.to(r, { attr: { fill: heat(g.d[i] / g.max) }, duration: 0.3, ease: 'power1.out' }, reach(i) + 0.06);
-      });
-      lines.forEach((l, k) => {
-        const f = Math.min(g.d[E[k][0]], g.d[E[k][1]]) / g.max;
-        tl.to(l, { attr: { stroke: heat(f) }, duration: 0.2 }, f * SPAN + 0.03);
-      });
+      Object.assign(st, { W: 0, dim: 0, draw: 0 });
+      const lockAt = (g.d[tgt] / (g.max * 1.05)) * 1.3;
+      tl = gsap.timeline({ onUpdate: draw })
+        .to(st, { W: g.max * 1.05, duration: 1.3, ease: 'none' }, 0)
+        .to(st, { draw: 1, duration: 0.3, ease: 'power2.out' }, lockAt)
+        .to(st, { dim: 1, duration: 0.9, ease: 'sine.inOut' }, lockAt + 0.35);
     };
-    const aim = q => {
-      const t = near(q, src);
+    draw();
+    el0.addEventListener('pointerenter', e => { at = pt(e); });
+    el0.addEventListener('pointermove', e => {
+      if (!on) return;
+      const t = near(pt(e));
       if (t === tgt) return;
       tgt = t;
-      place();
-      if (lit()) showPath(true); else gsap.set(path, { opacity: 0 });
-    };
-    // Rest: the web goes cold; the first source and target return.
-    const settle = () => {
-      tl?.kill();
-      tl = null;
-      src = 0; tgt = 10; g = run(0);
-      place();
-      showPath(false);
-      gsap.to(dots, { attr: { fill: COLD_N }, duration: 0.4, overwrite: true });
-      gsap.to(lines, { attr: { stroke: COLD_E }, duration: 0.4, overwrite: true });
-      gsap.set(path, { strokeDashoffset: 0, stroke: HOT });
-    };
-    el.addEventListener('pointerenter', e => { at = pt(e); });
-    el.addEventListener('pointermove', e => { if (on) aim(pt(e)); });
+      // A new destination re-routes at once; the path draws on again.
+      if (st.W >= g.d[tgt]) gsap.fromTo(st, { draw: 0 }, { draw: 1, duration: 0.22, ease: 'power2.out', onUpdate: draw, overwrite: false });
+      draw();
+    });
     toys.dijkstra = {
-      play() { on = true; flood(at ? near(at) : 0); at = null; return { kill() {} }; },
-      rest() { if (!on) return; on = false; settle(); },
+      play() { on = true; tgt = at ? near(at) : TGT; at = null; play(); return { kill() {} }; },
+      rest() {
+        if (!on) return;
+        on = false;
+        tl?.kill();
+        tgt = TGT;
+        tl = gsap.to(st, { W: g.max * 1.05, dim: 0, draw: 1, duration: 0.6, ease: 'power2.out', onUpdate: draw });
+      },
     };
   }
 
