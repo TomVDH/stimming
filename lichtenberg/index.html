@@ -54,7 +54,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced } from '../shared/stim.js';
+import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -287,7 +287,8 @@ function finish(why) {
   distance();
   hotUntil = Math.max(hotUntil, simT + 45);
   // A user burn takes its last cells into the char at once.
-  if (B.user) { upload(B.seg0, B.n); stamp(B.seg0, B.n, 1); }
+  if (B.user) { upload(B.seg0, B.n); stamp(B.seg0, B.n, 1); lastHot = simT; }
+  if (B.user && (why === 'arc' || why === 'edge')) snap(B.px[B.n - 1]);
   // The arc runs through the old tree, so it heats up again.
   if (B.user && arcOld) stamp(arcOld.seg0, arcOld.n, 0.6);
 }
@@ -837,6 +838,100 @@ function bloomPass() {
   }
 }
 
+/* ---------- sound ---------- */
+// Raw Web Audio on the shared kit: muted by default, woken by a gesture.
+const kit = audioKit({ keys: new Set([' ']), sleepMs: 2500 });
+let au = null, lastHot = -100;
+const panOf = x => clamp((x / GW) * 2 - 1, -1, 1) * 0.8;
+function voices() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return null;
+  if (au?.ac === ac) return au;
+  // Buzz: a 100 Hz saw and odd harmonics, through a wobbling bandpass.
+  const bp = new BiquadFilterNode(ac, { type: 'bandpass', frequency: 900, Q: 1.4 });
+  const gain = new GainNode(ac, { gain: 0 }), pan = new StereoPannerNode(ac);
+  const saw = new OscillatorNode(ac, { type: 'sawtooth', frequency: 100 });
+  const odd = new OscillatorNode(ac, { type: 'square', frequency: 300 });
+  const lfo = new OscillatorNode(ac, { frequency: 5.3 }), lfoG = new GainNode(ac, { gain: 220 });
+  lfo.connect(lfoG).connect(bp.frequency);
+  saw.connect(bp);
+  odd.connect(new GainNode(ac, { gain: 0.25 })).connect(bp);
+  bp.connect(gain).connect(pan).connect(kit.out);
+  // Sizzle: looped noise above 3.5 kHz, for hot wood only.
+  const hiss = new AudioBufferSourceNode(ac, { buffer: kit.noise, loop: true });
+  const hissG = new GainNode(ac, { gain: 0 });
+  hiss.connect(new BiquadFilterNode(ac, { type: 'highpass', frequency: 3500 })).connect(hissG).connect(kit.out);
+  [saw, odd, lfo, hiss].forEach(o => o.start());
+  au = { ac, gain, pan, hissG, cracks: 0, cooled: true };
+  return au;
+}
+// One crack: a few milliseconds of noise; branches crack louder and lower.
+function crack(x, branch, level = 1) {
+  const a = voices();
+  if (!a || a.cracks >= 4) return;
+  a.cracks++;
+  const ac = a.ac, t = ac.currentTime + Math.random() * 0.012, len = 0.002 + Math.random() * 0.006;
+  const src = new AudioBufferSourceNode(ac, { buffer: kit.noise });
+  const f = new BiquadFilterNode(ac, { type: 'bandpass', frequency: (branch ? 1800 : 2600) + Math.random() * 3400, Q: 0.9 });
+  const g = new GainNode(ac, { gain: 0 });
+  g.gain.setValueAtTime((branch ? 0.5 : 0.22) * (0.6 + 0.8 * Math.random()) * level, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + len + 0.01);
+  src.connect(f).connect(g).connect(new StereoPannerNode(ac, { pan: panOf(x) })).connect(kit.out);
+  src.start(t, Math.random() * 0.9, len + 0.02);
+}
+// The snap: a broadband crack, a falling thump and a short tail.
+function snap(x) {
+  const a = voices();
+  if (!a) return;
+  const ac = a.ac, t = ac.currentTime + 0.005;
+  const p = new StereoPannerNode(ac, { pan: panOf(x) * 0.6 });
+  p.connect(kit.out);
+  const n = new AudioBufferSourceNode(ac, { buffer: kit.noise }), ng = new GainNode(ac, { gain: 0 });
+  ng.gain.setValueAtTime(0.8 + 0.2 * Math.random(), t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+  n.connect(ng).connect(p);
+  n.start(t, Math.random() * 0.5, 0.12);
+  const tail = new AudioBufferSourceNode(ac, { buffer: kit.noise }), tg = new GainNode(ac, { gain: 0 });
+  tg.gain.setValueAtTime(0.25, t);
+  tg.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  tail.connect(new BiquadFilterNode(ac, { type: 'lowpass', frequency: 1400 })).connect(tg).connect(p);
+  tail.start(t, Math.random() * 0.2, 0.75);
+  const o = new OscillatorNode(ac, { frequency: 85 + Math.random() * 20 }), og = new GainNode(ac, { gain: 0 });
+  o.frequency.exponentialRampToValueAtTime(42, t + 0.3);
+  og.gain.setValueAtTime(0.7, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+  o.connect(og).connect(p);
+  o.start(t);
+  o.stop(t + 0.5);
+}
+// Once per frame: the buzz follows the tip; hot wood sizzles and ticks.
+function soundFrame() {
+  const B = burn, growing = B && !B.done;
+  const a = growing ? voices() : au?.ac === kit.ac && kit.ac?.state === 'running' ? au : null;
+  if (!a) return;
+  a.cracks = 0;
+  const t = a.ac.currentTime;
+  a.gain.gain.setTargetAtTime(growing ? 0.05 + 0.1 * Math.min(1, (B.rate || 0) / 500) : 0, t, growing ? 0.02 : 0.05);
+  if (growing) a.pan.pan.setTargetAtTime(panOf(B.px[B.n - 1]), t, 0.03);
+  const heat = board === 'wood' ? Math.exp(-(simT - lastHot) / 5) : 0;
+  a.hissG.gain.setTargetAtTime(0.035 * heat, t, 0.2);
+  if (!growing && heat > 0.02 && Math.random() < heat * 0.25 && burns.length) {
+    const L = burns[burns.length - 1], o = (L.seg0 + Math.floor(Math.random() * L.n)) * STRIDE;
+    crack(seg[o + 2], false, 0.35 * heat);
+  }
+  // The context may sleep once the wood has cooled.
+  if (heat < 0.02 && !growing && !a.cooled) { a.cooled = true; kit.rest(() => !lively()); }
+  if (heat >= 0.02) a.cooled = false;
+}
+function silence() {
+  if (au?.ac === kit.ac) {
+    const t = au.ac.currentTime;
+    au.gain.gain.setValueAtTime(0, t);
+    au.hissG.gain.setValueAtTime(0, t);
+  }
+  kit.rest(() => true);
+}
+
 /* ---------- growth ---------- */
 const etaFor = () => 2.0 + rnd() * 0.9;
 let held = false, zapTo = 0;
@@ -848,10 +943,15 @@ function grow(dt) {
   let rate = 80 * (1 + 1.5 * B.held) * (0.35 + 1.3 * voltage);
   if (!held) rate = 420;
   if (reduced()) rate *= 0.5;
-  B.acc = (B.acc || 0) + Math.min(rate, 700) * dt;
+  B.rate = Math.min(rate, 700);
+  B.acc = (B.acc || 0) + B.rate * dt;
   let steps = 0;
   while (B.acc >= 1 && steps < 28 && !B.done) {
     step();
+    // Some steps crack; a new branch always does.
+    const k = B.n - 1, sk = B.segOf[k];
+    const branch = sk >= 0 && (seg[sk * STRIDE + 6] & BRANCH) > 0;
+    if (branch || Math.random() < 0.3) crack(B.px[k], branch);
     B.acc -= 1;
     steps++;
     if (!held && B.n >= zapTo) finish('zap');
@@ -923,9 +1023,11 @@ function frame(now) {
       const bt = boardTo();
       if (boardMix !== bt) boardMix = bt > boardMix ? Math.min(bt, boardMix + dt / 0.6) : Math.max(bt, boardMix - dt / 0.6);
       if (sweep >= 1) { sweep = -1; clearBoard(); } else render(dt);
+      soundFrame();
     }
   } finally {
     if (busy(now)) raf = requestAnimationFrame(frame);
+    else silence();
   }
 }
 function still() { if (P) render(0); }
@@ -1015,7 +1117,7 @@ onQuality(() => { layout(); still(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; silence(); return; }
   if (busy()) wake(); else still();
 });
 </script>

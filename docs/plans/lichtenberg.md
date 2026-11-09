@@ -151,11 +151,11 @@ Touch: hold to burn, tap to zap. The choice moves bottom left as a stepper, Clea
 ### Task 3: Acrylic
 
 - [x] Acrylic board: edge light, etched fractures, cold afterglow; the chip eases between boards.
-- [ ] Commit: `Lichtenberg burn: the acrylic block`.
+- [x] Commit: `Lichtenberg burn: the acrylic block`.
 
 ### Task 4: Sound
 
-- [ ] Buzz, crackle, snap and sizzle, panned with the tip. Q9.
+- [x] Buzz, crackle, snap and sizzle, panned with the tip. Q9.
 - [ ] Commit: `Lichtenberg burn: buzz, crackle and snap`.
 
 ### Task 5: Settings, frame loop and QA
