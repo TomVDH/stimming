@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T09:08:30Z
+updated_at: 2026-11-09T09:17:01Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -13,7 +13,7 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - [x] Task 1: K2 lift from Fireworks; facades, quay, bridge, belfry, sky, haze, mirror water
 - [x] Task 1: Q1, Q2, stills at three Dusk values in Dry at 1280 and 375 px; checkpoint with Tom
 - [x] Task 2: lamp picking, sodium warm-up, pools on wet cobbles, windows and TV flicker
-- [ ] Task 3: rain lit only by light, ripple rings, chip easing, paper boat
+- [x] Task 3: rain lit only by light, ripple rings, chip easing, paper boat
 - [ ] Task 4: sound: rain bed, lamp relay and buzz, carillon, wind; Q9
 - [ ] Task 5: bar, Settings, persistence; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
@@ -45,3 +45,5 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 
 - Tom signed off the blockout (2026-11-09, Go to Task 2).
 - Task 2: every streetlight (1,871, with the ten canal lamps moved to stand between the towpath camera and the bridge) can be tapped. A third texture row per lamp holds a forced state and the tap time; lampState() in the shaders gives level and colour. Sodium warms from oklch(0.5 0.12 10) to sodium orange over 3 s with an ease-out from 15 %; LED takes 0.3 s; off fades in 0.4 s. The photocell switch-on shares the pink-to-orange shift. pickAt(x, y) takes the nearest head within 28 px; inside the church tower box the church wins unless a head is within 10 px; the church tap lifts uBell, which fades over about 6 s. Canal-lamp head undersides glow with their state. One lit window in fifteen is a television. Window taps and ripples are left for Task 3.
+
+- Task 3: up to 60,000 rain streaks (16,000 on the towpath) wrap through a box that follows the view; each drop sums the lamps in its 12 m cell in the vertex shader, so rain shows only in lamp cones. Raindrop rings on a 0.9 m grid break the canal and the puddles; reduced motion turns rings off. Rain smears lamp reflections into long broken pillars; Dry keeps them crisp. The chips ease wind, smear and rain over 2 to 3 s; haze thickens with rain. A tap on the canal starts a ring. + Boat (Space) floats a paper boat from the bridge to the towpath camera: it rocks harder in rain, trails a V-wake, reflects, and lights up under lit lamps. The GTAO pass hides rain and lamp heads while it draws depth. Window taps are not built.
