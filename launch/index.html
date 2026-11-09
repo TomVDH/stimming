@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.14 0.014 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marsh launch</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Marsh launch: a reed marsh before dawn. */
+:root { --stage: oklch(0.12 0.03 265); }
+.stage--launch canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--launch canvas.on { opacity: 1; }
+.stage--launch.held canvas { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--launch canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Marsh launch</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--launch" id="stage" tabindex="0" role="application" aria-label="A reed marsh before dawn. A rocket waits on the far shore. Drag to look around.">
+      <p class="fail" hidden>Marsh launch needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Marsh launch</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createNoise2D } from 'simplex-noise';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+/* ---------- settings ---------- */
+const store = {
+  get(k) { try { return localStorage.getItem(`stimming.launch.${k}`); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(`stimming.launch.${k}`, String(v)); } catch { /* storage off */ } },
+};
+// Distance to the pad in metres; the roar delay follows it.
+const DIST = { near: 1200, mid: 2000, far: 3400 };
+const opts = {
+  kind: ['small', 'medium', 'heavy'].includes(store.get('kind')) ? store.get('kind') : 'medium',
+  dawn: Number.isFinite(+store.get('dawn')) && store.get('dawn') !== null ? Math.min(1, Math.max(0, +store.get('dawn'))) : 0.4,
+};
+
+/* ---------- bar ---------- */
+const act = { launch() {} };
+const ui = initPage({ id: 'launch', silent: true, bar: {
+  choice: {
+    label: 'Rocket', value: opts.kind,
+    options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'heavy', label: 'Heavy' }],
+    onPick: v => { opts.kind = v; store.set('kind', v); },
+  },
+  // Dawn moves the sun from 9 to 1 degrees under the horizon.
+  slider: { label: 'Dawn', min: 0, max: 1, step: 0.005, value: opts.dawn, onInput: v => { opts.dawn = v; store.set('dawn', v); setDawn(); } },
+  actions: [{ verb: 'launch', label: 'Launch', onPress: () => act.launch() }],
+  settings: [
+    { type: 'choice', id: 'distance', label: 'Distance', value: 'mid', persist: true,
+      options: [{ value: 'near', label: 'Near' }, { value: 'mid', label: 'Mid' }, { value: 'far', label: 'Far' }],
+      onPick: v => setDistance(v) },
+    { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
+  ],
+  quality: true,
+  keys: [['click', 'launch'], ['drag', 'look around'], ['space', 'launch']],
+} });
+// The launch arrives in Task 2; until then the action rests.
+ui.action('launch').disabled = true;
+
+const stage = document.getElementById('stage');
+let markReady;
+const sceneReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+
+// Seeded random keeps the marsh the same on every load.
+let seed = 5511;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false; ui.hideControls(); markReady();
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 30000);
+// The eye stands on a low dike above the reeds.
+const EYE = 4;
+camera.position.set(0, EYE, 0);
+camera.rotation.order = 'YXZ';
+// Layer 1 holds what the water mirrors.
+const MIRROR = 1;
+// The performance ladder's rung; slow frames raise it, never lower it.
+let rung = 0;
+
+/* ---------- uniforms ---------- */
+const U = {
+  uTime: { value: 0 },
+  uSun: { value: new THREE.Vector3(0, -0.1, -1) },
+  uDawn: { value: 0.5 },
+  uAmb: { value: new THREE.Vector3() },
+  uGlowC: { value: new THREE.Vector3() },
+  uHaze: { value: 0.0005 },
+  uHazeH: { value: 22 },
+  uSway: { value: 1 },
+  uShore: { value: -2000 },
+};
+
+/* ---------- dawn: sky, sun and the Earth's shadow line ---------- */
+// The sun sits ahead and to the left; the climb bends right, into dark sky.
+const SUN_AZ = new THREE.Vector2(-0.4, -0.92).normalize();
+// Sky colours, shared by the GPU sky and the CPU ambient.
+const SKY = {
+  zen: [0.018, 0.04, 0.13], low: [0.05, 0.055, 0.085], rose: [0.24, 0.075, 0.09],
+  amber: [1.5, 0.34, 0.03], ember: [0.9, 0.16, 0.02], belt: [0.18, 0.08, 0.12],
+};
+const v3 = a => `vec3(${a.map(x => x.toFixed(4)).join(', ')})`;
+// Air above this height (km) is sunlit with the sun δ degrees down.
+const R_EARTH = 6371;
+function shadowH(deg) { return R_EARTH * (1 / Math.cos(THREE.MathUtils.degToRad(deg)) - 1); }
+let depression = 6;
+// Brightness of the whole sky, 0 at δ = 9 and 1 at δ = 1.
+const skyB = t => 0.06 + 0.94 * t * t;
+function dawn(deg) {
+  depression = deg;
+  const t = THREE.MathUtils.clamp((9 - deg) / 8, 0, 1);
+  const r = THREE.MathUtils.degToRad(deg);
+  U.uSun.value.set(SUN_AZ.x * Math.cos(r), -Math.sin(r), SUN_AZ.y * Math.cos(r));
+  U.uDawn.value = t;
+  // Ambient: the zenith and the low band; glow: the sun-side horizon.
+  const B = skyB(t);
+  U.uAmb.value.set(...SKY.zen.map((z, i) => B * (z * (0.6 + 0.6 * t) + SKY.low[i] * 0.45)));
+  const glow = SKY.amber.map((a, i) => a + (SKY.ember[i] - a) * (1 - t));
+  U.uGlowC.value.set(...glow.map(g => B * g * 0.35));
+  // The eye opens up in the dark; the grade still keeps it a dawn.
+  renderer.toneMappingExposure = 2.1 - 1.25 * t;
+  return shadowH(deg);
+}
+const setDawn = () => { dawn(9 - 8 * opts.dawn); draw(); };
+
+/* ---------- K2: noise ---------- */
+// Lifted from Fireworks, which lifted it from Night viaduct's Port.
+const K2_NOISE = /* glsl */`
+float k2hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float k2noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(k2hash(i), k2hash(i + vec2(1, 0)), u.x), mix(k2hash(i + vec2(0, 1)), k2hash(i + vec2(1, 1)), u.x), u.y);
+}
+float k2fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * k2noise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; }
+  return s;
+}`;
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: sky ---------- */
+// The night sky becomes a dawn sky here: a sun below the horizon.
+// Kept from Fireworks: k2stars. New: the glow, the rose band and the Earth's shadow.
+const K2_SKY = /* glsl */`
+uniform vec3 uSun;
+uniform float uDawn;
+float k2stars(vec3 dir) {
+  vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
+  vec2 i = floor(q), f = fract(q) - 0.5;
+  float h = k2hash(i);
+  // About one cell in two hundred holds a star.
+  float on = step(0.995, h);
+  vec2 o = vec2(k2hash(i + 7.1), k2hash(i + 3.3)) - 0.5;
+  return on * exp(-dot(f - o * 0.6, f - o * 0.6) * 60.0) * (0.02 + 0.05 * k2hash(i + 1.7));
+}
+vec3 k2sky(vec3 dir) {
+  float t = uDawn, up = max(dir.y, 0.0);
+  vec2 sh = normalize(uSun.xz), dh = normalize(dir.xz + vec2(1e-5));
+  float cs = dot(dh, sh);
+  // A broad lobe toward the sun, and a tight one round its azimuth.
+  float near = pow(cs * 0.5 + 0.5, 4.0), tight = pow(max(cs, 0.0), 8.0);
+  vec3 col = ${v3(SKY.zen)} * (0.6 + 0.6 * t);
+  col += ${v3(SKY.low)} * exp(-up * 5.0);
+  col += ${v3(SKY.rose)} * near * exp(-up * 6.0) * (0.4 + 0.6 * t);
+  // The dark sky keeps a thin ember line; a bright one a wide amber glow.
+  vec3 glow = mix(${v3(SKY.ember)}, ${v3(SKY.amber)}, t);
+  col += glow * (0.3 * near + 0.9 * tight) * exp(-up * (30.0 - 16.0 * t));
+  // Opposite the sun: the Earth's shadow, with the pink belt above it.
+  float anti = pow(max(-cs, 0.0), 2.0);
+  col *= 1.0 - 0.35 * anti * exp(-up * 12.0) * t;
+  col += ${v3(SKY.belt)} * anti * exp(-pow((up - 0.12) / 0.07, 2.0)) * t;
+  col *= 0.06 + 0.94 * t * t;
+  float dark = (1.0 - t) * (1.0 - t);
+  return col + vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y) * dark * 1.5;
+}`;
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: haze ---------- */
+// Height haze along the view ray; its colour is the low sky ahead.
+// Fireworks' burst glow is cut here.
+const K2_HAZE = /* glsl */`
+uniform float uHaze;
+uniform float uHazeH;
+float k2hazeAmount(vec3 P) {
+  vec3 v = P - cameraPosition;
+  float dist = length(v);
+  float k = 1.0 / uHazeH;
+  float h0 = max(cameraPosition.y, 0.0), h1 = max(P.y, 0.0), dh = h1 - h0;
+  // Exponential height fog integrated along the ray.
+  float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+  return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
+}
+vec3 k2hazeColor(vec3 dir) { return k2sky(normalize(vec3(dir.x, 0.015, dir.z))) * 0.9; }
+vec3 k2haze(vec3 c, vec3 P) {
+  return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
+}`;
+/* ---------- end K2 ---------- */
+
+/* ---------- marsh map: the pool and the channels ---------- */
+// The same water map runs on the CPU (placement) and the GPU (shading).
+// Each channel: centre z, amplitude, frequency, phase, half width.
+const CH = [[-125, 8, 0.011, 0.5, 8], [-300, 14, 0.006, 2.1, 14], [-720, 24, 0.0032, 4.0, 26]];
+const POOL = [4, -38, 34, 20];
+const chZ = (c, x) => c[0] + c[1] * Math.sin(x * c[2] + c[3]) + 0.4 * c[1] * Math.sin(x * c[2] * 2.3 + c[3] * 1.7);
+const chW = (c, x) => c[4] * (1 + 0.3 * Math.sin(x * c[2] * 3 + c[3]));
+const poolR = th => 1 + 0.16 * Math.sin(3 * th + 1) + 0.09 * Math.sin(5 * th + 2);
+// Signed distance to open water in metres; below zero is water.
+function wet(x, z) {
+  const dx = (x - POOL[0]) / POOL[2], dz = (z - POOL[1]) / POOL[3];
+  let d = (Math.hypot(dx, dz) - poolR(Math.atan2(dz, dx))) * POOL[3];
+  for (const c of CH) d = Math.min(d, Math.abs(z - chZ(c, x)) - chW(c, x));
+  return d;
+}
+const f4 = x => x.toFixed(4);
+const MAP_GLSL = /* glsl */`
+uniform float uShore;
+float wet(vec2 p) {
+  vec2 q = (p - vec2(${POOL[0]}.0, ${POOL[1]}.0)) / vec2(${POOL[2]}.0, ${POOL[3]}.0);
+  float th = atan(q.y, q.x);
+  float d = (length(q) - (1.0 + 0.16 * sin(3.0 * th + 1.0) + 0.09 * sin(5.0 * th + 2.0))) * ${POOL[3]}.0;
+  ${CH.map(c => `d = min(d, abs(p.y - (${f4(c[0])} + ${f4(c[1])} * sin(p.x * ${f4(c[2])} + ${f4(c[3])}) + ${f4(0.4 * c[1])} * sin(p.x * ${f4(c[2] * 2.3)} + ${f4(c[3] * 1.7)}))) - ${f4(c[4])} * (1.0 + 0.3 * sin(p.x * ${f4(c[2] * 3)} + ${f4(c[3])})));`).join('\n  ')}
+  return d;
+}`;
+/* ---------- end marsh map ---------- */
+const HEAD = `${K2_NOISE}\n${K2_SKY}\n${K2_HAZE}\n${MAP_GLSL}`;
+
+/* ---------- sky dome ---------- */
+const sky = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), new THREE.ShaderMaterial({
+  uniforms: U, side: THREE.BackSide, depthWrite: false,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} void main() { gl_FragColor = vec4(k2sky(normalize(vP - cameraPosition)), 1.0); }`,
+}));
+sky.renderOrder = -1;
+scene.add(sky);
+
+/* ---------- ground: water, mud and the far flats ---------- */
+// Mirror: a camera under y = 0 sees only the MIRROR layer.
+const mirrorCam = new THREE.PerspectiveCamera();
+mirrorCam.layers.set(MIRROR);
+const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+const texM = new THREE.Matrix4();
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(16000, 9000).rotateX(-Math.PI / 2).translate(0, 0, -4400), new THREE.ShaderMaterial({
+  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } },
+  vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uTime; uniform vec3 uAmb, uGlowC; varying vec3 vP; varying vec4 vM; ${HEAD}
+  void main() {
+    vec3 v = normalize(vP - cameraPosition);
+    vec2 p = vP.xz;
+    float dist = length(p - cameraPosition.xz);
+    // Past the last channel the reeds stop: flats of mud and shallow pools.
+    float flats = smoothstep(-790.0, -840.0, p.y);
+    float pools = smoothstep(0.48, 0.56, k2fbm(p * vec2(0.004, 0.012) + 3.1));
+    // A lagoon lies in front of the far shore.
+    float lagoon = smoothstep(uShore + 140.0, uShore + 110.0, p.y) * step(uShore, p.y);
+    float d = wet(p);
+    float aa = max(fwidth(d), 0.05);
+    float water = max(1.0 - smoothstep(-aa, aa, d), flats * max(pools, lagoon));
+    if (p.y < uShore) water = 0.0;
+    // Still water: a faint breath of ripple only.
+    float n = k2noise(p * vec2(0.08, 0.25) + uTime * vec2(0.02, 0.05)) - 0.5;
+    vec3 nrm = normalize(vec3(n * 0.006, 1.0, n * 0.004));
+    vec3 r = reflect(v, nrm);
+    float fres = 0.02 + 0.98 * pow(1.0 - max(dot(-v, nrm), 0.0), 5.0);
+    vec4 m = texture2D(tMirror, vM.xy / vM.w + vec2(n * 0.002, n * 0.004));
+    vec3 wcol = vec3(0.003, 0.004, 0.005) * uAmb * 10.0 + (k2sky(r) * (1.0 - m.a) + m.rgb) * fres;
+    // Mud and reed litter: dark, with a little sky on the wet bits.
+    float grain = k2noise(p * 0.6) * 0.5 + k2noise(p * 3.1) * 0.5;
+    vec3 mud = uAmb * (0.12 + 0.08 * grain) + uGlowC * 0.02 * flats;
+    vec3 c = mix(mud, wcol, water);
+    gl_FragColor = vec4(k2haze(c, vP), 1.0);
+  }`,
+}));
+scene.add(ground);
+const bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+const tgt = new THREE.Vector3(), fwd = new THREE.Vector3();
+function renderMirror() {
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(fwd);
+  tgt.copy(camera.position).add(fwd);
+  mirrorCam.position.set(camera.position.x, -camera.position.y, camera.position.z);
+  mirrorCam.up.set(0, -1, 0);
+  mirrorCam.lookAt(tgt.x, -tgt.y, tgt.z);
+  mirrorCam.fov = camera.fov; mirrorCam.aspect = camera.aspect;
+  mirrorCam.near = camera.near; mirrorCam.far = camera.far;
+  mirrorCam.updateProjectionMatrix();
+  mirrorCam.updateMatrixWorld();
+  texM.copy(bias).multiply(mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
+  renderer.setRenderTarget(mirrorRT);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(scene, mirrorCam);
+  renderer.setRenderTarget(null);
+}
+
+/* ---------- reed shading ---------- */
+// Dark stems take the sky's ambient and glow at the edges toward the sun.
+const REED_GLSL = /* glsl */`
+uniform vec3 uAmb, uGlowC;
+uniform float uSway;
+// A gust field: long rolling waves with a little noise on top.
+vec2 gust(vec2 p, float t) {
+  float w = sin(p.x * 0.05 + p.y * 0.02 - t * 1.1) * 0.6 + sin(p.x * 0.13 - p.y * 0.07 - t * 1.9) * 0.3;
+  w += (k2noise(p * 0.04 + vec2(t * 0.3, 0.0)) - 0.5) * 0.8;
+  return vec2(0.9, 0.35) * w * uSway;
+}
+vec3 reedLight(vec3 P, float head, float tone, float edge) {
+  vec3 V = normalize(P - cameraPosition);
+  float toward = pow(max(dot(normalize(V.xz), normalize(uSun.xz)), 0.0), 4.0);
+  vec3 alb = mix(vec3(0.11, 0.085, 0.06), vec3(0.16, 0.12, 0.08), tone);
+  // Thin plume edges pass the glow; the rest stays a silhouette.
+  vec3 c = alb * uAmb * 1.2 + uGlowC * toward * (0.004 + 0.05 * head * edge * edge);
+  return k2haze(c, P);
+}`;
+/* ---------- end reed shading ---------- */
+
+/* ---------- reeds: instanced stalks with plumes and two leaves ---------- */
+// One instance is a stalk, a plume and two leaves, each a camera-facing ribbon.
+// aG: x = t along the piece, y = side, z = piece (0 stalk, 1 and 2 leaves).
+function reedGeometry() {
+  const g = [], idx = [];
+  const piece = (k, n) => {
+    const base = g.length / 3;
+    for (let i = 0; i <= n; i++) for (const s of [-1, 1]) g.push(i / n, s, k);
+    for (let i = 0; i < n; i++) { const a = base + i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  };
+  piece(0, 12); piece(1, 6); piece(2, 6);
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.setAttribute('aG', new THREE.Float32BufferAttribute(g, 3));
+  geo.setIndex(idx);
+  return geo;
+}
+const REED_MAX = 12000;
+const reedGeo = reedGeometry();
+// aI: x, z, height, heading; aJ: lean, phase, tone, plume size.
+const aI = new THREE.InstancedBufferAttribute(new Float32Array(REED_MAX * 4), 4);
+const aJ = new THREE.InstancedBufferAttribute(new Float32Array(REED_MAX * 4), 4);
+reedGeo.setAttribute('aI', aI);
+reedGeo.setAttribute('aJ', aJ);
+const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
+  uniforms: U, side: THREE.DoubleSide,
+  vertexShader: /* glsl */`
+  attribute vec3 aG; attribute vec4 aI, aJ;
+  uniform float uTime;
+  varying vec3 vP; varying float vHead, vTone, vSide, vT, vSeed;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    float t = aG.x, H = aI.z;
+    vec2 head = vec2(cos(aI.w), sin(aI.w));
+    vec3 root = vec3(aI.x, 0.0, aI.y);
+    vec3 c, tan_;
+    float w;
+    vHead = 0.0;
+    if (aG.z < 0.5) {
+      // The stalk leans a little and droops under its plume.
+      // Past t = 0.86 the plume nods over and hangs.
+      float nod = max(t - 0.86, 0.0);
+      c = root + vec3(0.0, t * H - nod * nod * H * 1.2, 0.0) + vec3(head.x, 0.0, head.y) * (aJ.x * H * t * t + nod * H * 0.35);
+      tan_ = vec3(head.x * (2.0 * aJ.x * t + 0.35), 1.0 - nod * 2.4, head.y * (2.0 * aJ.x * t + 0.35));
+      if (nod <= 0.0) tan_ = vec3(head.x * 2.0 * aJ.x * t, 1.0, head.y * 2.0 * aJ.x * t);
+      // The plume swells over the top part, then tapers to a point.
+      float pl = smoothstep(0.84, 0.9, t) * (1.0 - smoothstep(0.94, 1.0, t));
+      w = mix(0.008, 0.008 * aJ.w, pl);
+      vHead = smoothstep(0.83, 0.9, t);
+    } else {
+      // A leaf leaves the stalk, rises, then arcs down.
+      float side = aG.z < 1.5 ? 1.0 : -1.0;
+      float t0 = aG.z < 1.5 ? 0.3 + 0.2 * fract(aJ.y) : 0.5 + 0.2 * fract(aJ.y * 3.7), L = 0.2 * H;
+      vec2 ld = vec2(head.x * 0.4 - head.y * side, head.y * 0.4 + head.x * side);
+      ld = normalize(ld);
+      c = root + vec3(0.0, t0 * H, 0.0) + vec3(ld.x, 0.0, ld.y) * t * L * 0.85 + vec3(0.0, t * L * 0.5 - t * t * L * 0.6, 0.0);
+      tan_ = vec3(ld.x * 0.75, 0.6 - 1.1 * t, ld.y * 0.75);
+      w = 0.016 * sin(3.1416 * min(t * 1.15, 1.0)) + 0.001;
+    }
+    // Wind bends the top more than the base.
+    float hy = c.y / max(H, 0.1);
+    vec2 g = gust(root.xz, uTime + aJ.y * 0.3) * hy * hy * 0.35 * H;
+    c.xz += g + vec2(sin(uTime * 2.3 + aJ.y * 6.0), cos(uTime * 1.7 + aJ.y * 4.0)) * 0.03 * hy * uSway;
+    // The ribbon turns to face the eye round its own axis.
+    vec3 V = normalize(cameraPosition - c);
+    vec3 side3 = normalize(cross(normalize(tan_), V));
+    // Thin ribbons never fall under half a pixel; far ones widen.
+    float px = length(cameraPosition - c) * 0.0012;
+    vec3 P = c + side3 * aG.y * max(w, px);
+    vP = P; vTone = aJ.z; vSide = aG.y; vT = t; vSeed = aJ.y;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP; varying float vHead, vTone, vSide, vT, vSeed;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    // Plume edges fray into loose hairs.
+    if (vHead > 0.01 && abs(vSide) > 0.3 + 0.7 * k2noise(vec2(vT * 140.0, vSeed * 7.0))) discard;
+    gl_FragColor = vec4(reedLight(vP, vHead, vTone, abs(vSide)), 1.0);
+  }`,
+}));
+reeds.frustumCulled = false;
+reeds.layers.enable(MIRROR);
+scene.add(reeds);
+// Place the stalks in clumps on dry ground; most sit near the eye.
+const noise = createNoise2D(rnd);
+U.uSway.value = reduced() ? 0 : 1;
+function plantReeds(count) {
+  // A fixed seed plants the same marsh after every resize.
+  seed = 5511;
+  let n = 0, tries = 0;
+  while (n < count && tries++ < count * 40) {
+    // A square bias puts most stalks in the near fringe.
+    const u = rnd();
+    const z = -5 - 58 * u * u;
+    const half = 1.3 * -z + 6;
+    const x = (rnd() * 2 - 1) * half;
+    if (wet(x, z) < 0.6 + rnd() * 1.5) continue;
+    // Clumps: dense beds with thin gaps between them.
+    const clump = noise(x * 0.07, z * 0.07) * 0.7 + noise(x * 0.3, z * 0.3) * 0.3;
+    if (clump < -0.25 + rnd() * 0.5) continue;
+    // The near fringe frames the pool: low and thin in the middle, tall at the sides.
+    const side = z > -20 ? THREE.MathUtils.smoothstep(Math.abs(x / z), 0.1, 0.34) : 1;
+    if (rnd() > 0.3 + 0.7 * side) continue;
+    // A few tall stalks at the sides cross the horizon.
+    const tall = z > -10 && side > 0.8 && rnd() < 0.06;
+    const H = tall ? 4.3 + rnd() * 0.8 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
+    aI.setXYZW(n, x, z, H, rnd() * Math.PI * 2);
+    aJ.setXYZW(n, 0.04 + rnd() * 0.12, rnd() * 10, rnd(), 4 + rnd() * 4);
+    n++;
+  }
+  reedGeo.instanceCount = n;
+  aI.needsUpdate = aJ.needsUpdate = true;
+}
+
+/* ---------- reed banks: far beds as feathered ribbons ---------- */
+// Beyond the pool, each channel bank is one long wall of reeds.
+// Its crest is noise in metres, so it feathers like plumes.
+const bankMat = new THREE.ShaderMaterial({
+  uniforms: U, transparent: true, side: THREE.DoubleSide,
+  vertexShader: /* glsl */`
+  attribute vec2 aB;
+  uniform float uTime;
+  varying vec3 vP; varying vec2 vB;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    vec3 P = position;
+    // The crest sways with the same gusts as the near stalks.
+    P.xz += gust(P.xz, uTime) * aB.y * 0.25;
+    vP = P; vB = aB;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP; varying vec2 vB;
+  uniform float uTime;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    // vB.x runs along the bank in metres; vB.y climbs from 0 to 1.
+    float s = vB.x;
+    float crest = 0.62 + 0.12 * k2noise(vec2(s * 0.08, 1.3)) + 0.1 * k2noise(vec2(s * 0.6, 4.1));
+    // Fine plumes and gaps along the top edge.
+    crest += 0.12 * (k2noise(vec2(s * 3.1, 7.7)) - 0.5) + 0.06 * (k2noise(vec2(s * 9.0 + uTime * 0.2, 2.2)) - 0.5);
+    float e = vB.y - crest;
+    float aa = max(fwidth(e), 0.004);
+    float a = 1.0 - smoothstep(-aa, aa, e);
+    if (a < 0.01) discard;
+    float head = smoothstep(crest - 0.25, crest, vB.y);
+    gl_FragColor = vec4(reedLight(vP, head, 0.4, 0.8), a);
+  }`,
+});
+const banks = new THREE.Group();
+scene.add(banks);
+// One wall along z(x), height 3.2 m, with a step every two metres or less.
+function bankWall(zOf, x0, x1, H, order) {
+  const n = Math.ceil((x1 - x0) / Math.min(4, (x1 - x0) / 400));
+  const pos = [], b = [], idx = [];
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + (x1 - x0) * i / n, z = zOf(x);
+    pos.push(x, 0, z, x, H, z);
+    b.push(x, 0, x, 1);
+    if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('aB', new THREE.Float32BufferAttribute(b, 2));
+  geo.setIndex(idx);
+  const m = new THREE.Mesh(geo, bankMat);
+  m.renderOrder = order;
+  m.frustumCulled = false;
+  m.layers.enable(MIRROR);
+  return m;
+}
+// The far edge of the pool, or a line at 52 m where the pool is not.
+function poolFar(x) {
+  let far = null;
+  for (let z = -18; z > -75; z -= 0.5) if (wet(x, z) < 0) far = z;
+  return far === null ? -52 - 4 * Math.sin(x * 0.05) : Math.min(far - 1.5, -52 - 4 * Math.sin(x * 0.05));
+}
+function buildBanks() {
+  banks.clear();
+  // Draw far walls first, so near ones blend over them.
+  const walls = [[poolFar, -140, 140, 2.5, 52]];
+  CH.forEach(c => {
+    const span = -c[0] * 1.6 + 200;
+    // Near bank, then far bank; each sits a metre back from the water.
+    walls.push([x => chZ(c, x) + chW(c, x) + 1, -span, span, 2.3, -c[0] - c[4]]);
+    walls.push([x => chZ(c, x) - chW(c, x) - 1, -span, span, 2.2, -c[0] + c[4]]);
+    // A second wall inside each bed thickens the mass behind the edge.
+    walls.push([x => chZ(c, x) - chW(c, x) - 18 - 8 * Math.sin(x * 0.01), -span, span, 2.4, -c[0] + c[4] + 18]);
+  });
+  walls.sort((a, b) => b[4] - a[4]);
+  walls.forEach(([zOf, x0, x1, H], i) => banks.add(bankWall(zOf, x0, x1, H, 1 + i * 0.01)));
+}
+
+/* ---------- far shore: one dark line of land and trees ---------- */
+const shoreMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform vec3 uAmb; varying vec3 vP; ${HEAD}
+  void main() { gl_FragColor = vec4(k2haze(uAmb * 0.05, vP), 1.0); }`,
+});
+const shore = new THREE.Group();
+scene.add(shore);
+function buildShore(D) {
+  shore.clear();
+  const pos = [], idx = [], n = 1500, X = 7000;
+  let s = 9001;
+  const sn = createNoise2D(() => (s = (s * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i <= n; i++) {
+    const x = -X + 2 * X * i / n;
+    // A low bank with tree lines, gaps and a few tall stands.
+    const trees = Math.max(0, sn(x * 0.004, 0.5)) * 14 + Math.max(0, sn(x * 0.03, 2.5)) * 6 + Math.max(0, sn(x * 0.0015, 9.1) - 0.3) * 18;
+    const top = 1.6 + trees;
+    const z = -D - 30 * sn(x * 0.0008, 4.4);
+    pos.push(x, 0, z, x, top, z, x, 0.6, z - 2500);
+    if (i < n) {
+      const a = i * 3;
+      idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4, a + 1, a + 4, a + 2, a + 2, a + 4, a + 5);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  const m = new THREE.Mesh(geo, shoreMat);
+  m.frustumCulled = false;
+  m.layers.enable(MIRROR);
+  shore.add(m);
+  U.uShore.value = -D;
+}
+
+/* ---------- mist: low sheets over the far flats ---------- */
+const mistMat = new THREE.ShaderMaterial({
+  uniforms: U, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`attribute float aH; varying vec3 vP; varying float vK;
+  void main() { vP = position + vec3(0.0, aH, 0.0); vK = aH; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform float uTime; uniform vec3 uAmb, uGlowC; varying vec3 vP; varying float vK; ${HEAD}
+  void main() {
+    vec3 v = vP - cameraPosition;
+    float dist = length(v.xz);
+    vec2 q = vP.xz * vec2(0.0025, 0.009) + vec2(uTime * 0.004, 0.0) + vK * 1.7;
+    float d = smoothstep(0.38, 0.7, k2fbm(q)) * smoothstep(150.0, 400.0, dist) * (1.0 - smoothstep(uShore - 600.0, uShore - 1800.0, vP.z));
+    // A sheet seen edge-on holds more mist.
+    float a = d * (1.0 - exp(-0.03 / max(abs(normalize(v).y), 0.002))) * 0.8;
+    if (a < 0.003) discard;
+    vec3 V = normalize(v);
+    vec3 col = k2hazeColor(V) * 1.1 + uAmb * 0.2;
+    gl_FragColor = vec4(col * a, a);
+  }`,
+});
+const mistGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(14000, 6000).rotateX(-Math.PI / 2).translate(0, 0, -3100));
+mistGeo.setAttribute('aH', new THREE.InstancedBufferAttribute(new Float32Array([7, 3.5, 1.2]), 1));
+mistGeo.instanceCount = 3;
+const mist = new THREE.Mesh(mistGeo, mistMat);
+mist.frustumCulled = false;
+mist.renderOrder = 5;
+scene.add(mist);
+
+/* ---------- K6: burst particles ---------- */
+// Lifted from Fireworks; the launch's sparks and boosters use it.
+// The cloud deck veil is cut: this sky has no deck.
+const CAP = 8000;
+const G = new THREE.Vector3(0, -9.8, 0);
+const RAMPS = [
+  linFit(0.82, 0.16, 80), // sodium gold
+  linFit(0.97, 0.02, 90), // magnesium white
+  linFit(0.74, 0.18, 55), // calcium orange
+];
+const EMBER = linFit(0.5, 0.17, 35);
+const starGeo = new THREE.InstancedBufferGeometry();
+// Three columns, tail (0), middle (1) and head (2), so a trail can bend.
+// y runs across the streak.
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0, 2, -1, 0, 2, 1, 0], 3));
+starGeo.setIndex([0, 2, 3, 0, 3, 1, 2, 4, 5, 2, 5, 3]);
+const slot = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  starGeo.setAttribute(name, a);
+  return a;
+};
+const aA = slot('aA'), aBs = slot('aB'), aC = slot('aC'), aD = slot('aD');
+starGeo.instanceCount = 0;
+const starMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uSteady: { value: reduced() ? 1 : 0 },
+    uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
+  },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aA, aB, aC, aD;
+  uniform float uTime, uDpr, uSteady;
+  uniform vec2 uRes;
+  uniform vec3 uG, uRamp[${RAMPS.length}], uEmber;
+  varying vec3 vCol, vColT, vLWH;
+  varying float vS, vY, vSpark, vSeed;
+  // Linear drag, a = G - k v, in closed form: no stored state.
+  vec3 starPos(vec3 p0, vec3 v0, float k, float t) {
+    vec3 vt = uG / k;
+    return p0 + vt * t + (v0 - vt) * (1.0 - exp(-k * t)) / k;
+  }
+  float hash11(float x) { return fract(sin(x * 12.9898) * 43758.5453); }
+  vec3 path(float t) { return starPos(aA.xyz, aB.xyz, aB.w, t); }
+  // Screen position in pixels, and the clip position for output.
+  vec2 scr(vec3 p, out vec4 clip) { clip = projectionMatrix * viewMatrix * vec4(p, 1.0); return clip.xy / clip.w * 0.5 * uRes; }
+  void main() {
+    float age = uTime - aA.w, life = aC.y;
+    if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float f = age / life, tr = min(aC.z, age);
+    // Three points on the true path, so the trail follows the fall.
+    vec4 c0, c1, c2;
+    vec3 ph = path(age);
+    vec2 s0 = scr(path(age - tr), c0), s1 = scr(path(age - tr * 0.5), c1), s2 = scr(ph, c2);
+    float L01 = length(s1 - s0), len = L01 + length(s2 - s1);
+    // The core is w wide; the quad is wider to hold the head's halo.
+    float w = aC.w * uDpr * (1.0 - 0.5 * f), W = w * 2.4;
+    int col = int(position.x + 0.5);
+    vec4 c = col == 0 ? c0 : col == 1 ? c1 : c2;
+    vec2 dir = col == 0 ? s1 - s0 : col == 1 ? s2 - s0 : s2 - s1;
+    dir = length(dir) > 1e-3 ? normalize(dir) : vec2(0.0, 1.0);
+    float s = col == 0 ? -W : col == 1 ? L01 : len + W;
+    vec2 off = vec2(-dir.y, dir.x) * position.y * W + dir * (col == 0 ? -W : col == 2 ? W : 0.0);
+    c.xy += off / (0.5 * uRes) * c.w;
+    gl_Position = c;
+    vS = s; vY = position.y * W; vLWH = vec3(len, w, W); vSeed = aD.y;
+    // aD: x kind (1 strobe, 2 flicker), y seed, z second colour + 1, w gain.
+    vec3 chem = uRamp[int(aC.x + 0.5)];
+    if (aD.z > 0.5) chem = mix(chem, uRamp[int(aD.z - 0.5)], smoothstep(0.4, 0.55, f));
+    float b = 1.0 - smoothstep(0.75, 1.0, f);
+    // White-hot first, then the chemical colour, then an ember red.
+    vec3 col3 = mix(vec3(1.0, 0.95, 0.85) * 1.6, chem, smoothstep(0.02, 0.12, f));
+    col3 = mix(col3, uEmber * 0.5, smoothstep(0.6, 1.0, f));
+    if (abs(aD.x - 1.0) < 0.5) b *= mix(step(0.45, hash11(aD.y + floor(age * 12.0))), 0.7, uSteady);
+    if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
+    vCol = col3 * 4.0 * aD.w * b;
+    // The tail is spent fuel: cooler and redder than the head.
+    vColT = mix(vCol, uEmber * 4.0 * aD.w * b * 0.5, 0.55);
+    vSpark = abs(aD.x - 2.0) < 0.5 ? 0.8 : 0.25;
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vCol, vColT, vLWH;
+  varying float vS, vY, vSpark, vSeed;
+  void main() {
+    float len = vLWH.x, W = vLWH.z;
+    // A core thinner than a pixel aliases; widen it and dim it to match.
+    float w = max(vLWH.y, 0.8), dim = min(vLWH.y / 0.8, 1.0);
+    // Distance from the tail-to-head path: a capsule with round ends.
+    float out_ = vS < 0.0 ? -vS : max(vS - len, 0.0);
+    float d2 = (out_ * out_ + vY * vY) / (w * w);
+    float core = max(exp(-d2 * 1.8) - 0.01, 0.0);
+    // Brightness falls off exponentially from the head down the trail.
+    float u = clamp(vS / max(len, 1.0), 0.0, 1.0);
+    float trail = 0.05 + 0.95 * exp(-3.0 * (1.0 - u));
+    // Glints every few pixels along the tail; they move as the star moves.
+    float g = step(0.55, fract(sin(floor(vS / 3.0) * 12.9898 + vSeed) * 43758.5453));
+    float sp = mix(1.0, 0.4 + 1.4 * g, vSpark * (1.0 - u));
+    // The head carries a soft halo, wider than the core.
+    float dh2 = ((vS - len) * (vS - len) + vY * vY) / (W * W);
+    float halo = 0.22 * exp(-dh2 * 3.0);
+    vec3 c = mix(vColT, vCol, u) * core * trail * sp + vCol * halo;
+    gl_FragColor = vec4(c * dim, 0.0);
+  }`,
+});
+const stars = new THREE.Mesh(starGeo, starMat);
+stars.frustumCulled = false;
+stars.layers.enable(MIRROR);
+scene.add(stars);
+let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
+// Write one star into the next slot; the oldest slot gives way.
+function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1, ramp2 = -1) {
+  const i = head;
+  head = (head + 1) % CAP;
+  if (dirtyFrom < 0) dirtyFrom = i;
+  dirtyN = Math.min(CAP, dirtyN + 1);
+  aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
+  aBs.setXYZW(i, v0.x, v0.y, v0.z, k);
+  aC.setXYZW(i, ramp, life, trail, size);
+  aD.setXYZW(i, kind, rnd() * 100, ramp2 + 1, gain);
+  starGeo.instanceCount = Math.max(starGeo.instanceCount, i + 1);
+  lastDeath = Math.max(lastDeath, t0 + life);
+}
+// Upload only the slots a launch wrote; a wrap gives two ranges.
+function commitStars() {
+  if (dirtyFrom < 0) return;
+  const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
+  for (const at of [aA, aBs, aC, aD]) {
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
+  }
+  dirtyFrom = -1; dirtyN = 0;
+}
+/* ---------- end K6 ---------- */
+
+/* ---------- K2: bloom ---------- */
+// Bloom on a float target; only bright sources cross the threshold.
+function makeBloom(strength, radius, threshold) {
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+  const full = bloom.setSize.bind(bloom);
+  // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
+  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
+  // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
+  // A sigma of radius / 2.5 gives each layer a round falloff.
+  for (const m of bloom.separableBlurMaterials) {
+    const r = m.defines.KERNEL_RADIUS, sg = r / 2.5;
+    m.uniforms.gaussianCoefficients.value = Array.from({ length: r }, (_, i) => Math.exp(-0.5 * i * i / (sg * sg)));
+  }
+  // Bilinear upsampling of the small mips draws square feathers.
+  // A cubic B-spline read of each mip keeps the glow round.
+  const cm = bloom.compositeMaterial;
+  cm.fragmentShader = cm.fragmentShader
+    .replace('void main() {', /* glsl */`vec4 bsw(float v) {
+      vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v, s = n * n * n;
+      float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
+      return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
+    }
+    vec4 bic(sampler2D t, vec2 uv) {
+      vec2 ts = vec2(textureSize(t, 0)), p = uv * ts - 0.5, fp = fract(p);
+      p -= fp;
+      vec4 xc = bsw(fp.x), yc = bsw(fp.y);
+      vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy, w = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+      vec4 o = (c + vec4(xc.yw, yc.yw) / w) / ts.xxyy;
+      float sx = w.x / (w.x + w.y), sy = w.z / (w.z + w.w);
+      return mix(mix(texture2D(t, o.yw), texture2D(t, o.xw), sx), mix(texture2D(t, o.yz), texture2D(t, o.xz), sx), sy);
+    }
+    void main() {`)
+    .replace(/texture2D\(blurTexture([1-5]), vUv\)/g, 'bic(blurTexture$1, vUv)');
+  cm.needsUpdate = true;
+  return bloom;
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: grade ---------- */
+// Linear grade before tone mapping: haze lift, vignette, fixed grain.
+// New here: uBox draws letterbox bars at 2.39 to 1.
+function makeGrade({ tint, vig, vigIn, grain }) {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uRes: { value: new THREE.Vector2(1, 1) },
+      uTint: { value: new THREE.Vector3(...tint) },
+      uVig: { value: vig },
+      uVigIn: { value: vigIn },
+      uGrain: { value: grain },
+      uBox: { value: 0 },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec2 uRes;
+    uniform vec3 uTint;
+    uniform float uVig, uVigIn, uGrain, uBox;
+    varying vec2 vUv;
+    // An integer hash per pixel; float hashes draw faint stripes here.
+    float h(vec2 p) {
+      uvec2 q = uvec2(p);
+      uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+      n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+      return float(n) / 4294967295.0;
+    }
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
+      vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+      c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c *= 1.0 + (h(gl_FragCoord.xy) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+      // Bars cover what lies outside a 2.39 frame; tall stages get none.
+      float bar = max(0.0, 0.5 - 0.5 * (uRes.x / uRes.y) / 2.39);
+      if (uBox > 0.5 && (vUv.y < bar || vUv.y > 1.0 - bar)) c = vec3(0.0);
+      gl_FragColor = vec4(max(c, 0.0), 1.0);
+    }`,
+  });
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- post chain ---------- */
+const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.45, vigIn: 0.45, grain: 0.03 };
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = makeBloom(...POST.bloom);
+composer.addPass(bloomPass);
+const grade = makeGrade(POST);
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+/* ---------- frame and draw ---------- */
+let size = { w: 1, h: 1, dpr: 1 };
+// The look offset from a drag, in radians.
+const look = { yaw: 0, pitch: 0 };
+// The horizon sits low: the climb needs a tall sky.
+function frame() {
+  const portrait = size.w < size.h;
+  camera.fov = portrait ? 62 : 40;
+  camera.aspect = size.w / size.h;
+  const hf = portrait ? 0.78 : 0.7;
+  camera.rotation.set(Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) + look.pitch, look.yaw, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the mirror.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
+  renderer.setPixelRatio(size.dpr);
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  const m = rung >= 2 ? 0.35 : quality() === 'high' ? 0.75 : 0.5;
+  mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
+  grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  starMat.uniforms.uDpr.value = size.dpr;
+  // Rung 3 thins the reeds.
+  plantReeds(rung >= 3 ? 5000 : quality() === 'high' ? REED_MAX : 9000);
+  frame();
+  draw();
+}
+// A page that loads hidden may get no visibility event before input.
+let visible = !document.hidden;
+function draw() {
+  if (!visible) return;
+  commitStars();
+  renderMirror();
+  composer.render();
+}
+
+/* Frame loop: the reeds drift at 30 fps, then sleep 60 s after input. */
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
+const busy = () => !!press;
+function tick(now) {
+  raf = 0;
+  if (!visible || document.hidden) { lastT = 0; return; }
+  const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
+  lastT = now;
+  // Ambient sway eases out over 2 s once idle; reduced motion holds it still.
+  const awake = !reduced() && now - lastInput < SLEEP;
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  const lively = busy();
+  try {
+    simT += dt * pace;
+    U.uTime.value = simT;
+    U.uSway.value = pace;
+    if (lively || now - lastDraw >= 31) {
+      frame();
+      draw();
+      watch(now, lively);
+      lastDraw = now;
+    }
+  } finally {
+    if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
+    else { lastT = 0; draw(); }
+  }
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
+}
+/* Performance ladder: slow frames step quality down a rung, never back up. */
+let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
+function watch(now, lively) {
+  const gap = now - prevDraw;
+  prevDraw = now;
+  if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
+  if (!watchFrom) watchFrom = now;
+  if (now - watchFrom < 4000) return;
+  watchN++; watchSum += gap;
+  if (watchN < 2 || now - watchFrom < 6000) return;
+  if (watchSum / watchN > (lively ? 1000 / 38 : 1000 / 22) && rung < 3) { rung++; resize(); }
+  watchFrom = now - 4000; watchN = watchSum = 0;
+}
+whenVisible(stage, vis => {
+  visible = vis;
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw();
+  wake();
+});
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; wake(); });
+
+/* Pointer: a press turns into a look drag after 8 px; a short release is a tap. */
+let press = null;
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture(e.pointerId);
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, yaw: look.yaw, pitch: look.pitch, at: performance.now(), drag: false };
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const dx = e.clientX - press.x, dy = e.clientY - press.y;
+  if (!press.drag && Math.hypot(dx, dy) > 8) { press.drag = true; stage.classList.add('held'); }
+  if (!press.drag) return;
+  // One stage height of travel turns the view by the lens angle.
+  const k = THREE.MathUtils.degToRad(camera.fov) / size.h;
+  look.yaw = THREE.MathUtils.clamp(press.yaw + dx * k, -0.32, 0.32);
+  look.pitch = THREE.MathUtils.clamp(press.pitch + dy * k, -0.06, 0.5);
+});
+const end = e => {
+  if (!press || e.pointerId !== press.id) return;
+  const tap = !press.drag && performance.now() - press.at < 260;
+  press = null;
+  stage.classList.remove('held');
+  if (tap) act.launch();
+  wake();
+};
+stage.addEventListener('pointerup', end);
+stage.addEventListener('pointercancel', end);
+stage.addEventListener('lostpointercapture', end);
+// Space launches; the shell ignores it while a sheet has focus.
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
+  e.preventDefault();
+  act.launch();
+});
+
+function setDistance(v) { buildShore(DIST[v] ?? DIST.mid); draw(); }
+function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
+
+/* ---------- ready ---------- */
+// The intro holds until shaders compile and the first frame draws.
+dawn(9 - 8 * opts.dawn);
+buildBanks();
+buildShore(DIST[ui.setting('distance').value] ?? DIST.mid);
+setBox(ui.setting('letterbox').value);
+resize();
+renderer.compileAsync(scene, camera).then(() => {
+  draw();
+  canvas.classList.add('on');
+  markReady();
+  wake();
+}, () => { canvas.classList.add('on'); markReady(); });
+</script>
+</body>
+</html>
