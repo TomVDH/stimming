@@ -1,11 +1,11 @@
 ---
 # stimming-yaug
 title: 'Toy: Bench'
-status: in-progress
+status: draft
 type: feature
 priority: normal
 created_at: 2026-11-09T07:29:16Z
-updated_at: 2026-11-09T08:04:30Z
+updated_at: 2026-11-09T08:10:53Z
 ---
 
 Build Bench from docs/plans/bench.md (D5: yes, one page, two chips). It starts in the Lab. One backlit beaker, two experiments: Electrolysis (a rainbow from acid to base, bubbles 2:1) and Clock (the iodine clock snaps to ink black). Bar v2.
@@ -34,3 +34,7 @@ Build Bench from docs/plans/bench.md (D5: yes, one page, two chips). It starts i
 - Task 5 QA (pane, 1024 px, 120 Hz): Q1 pass; Q2 clean console; Q4 0 frames idle; Q5 0 frames hidden; Q7 4 controls, 4 key rows; Q8 Space, S, R work; Q9 pass; Q10 current on: median 8.3 ms, p95 9.3 ms. Q6 (reduced motion) checked in code only; the pane cannot emulate it.
 - Final review (fresh reviewer): fixed Space repeat scrolling the page, Space hold sticking on blur, a short hide silencing sound, the clock's stay-awake guess, fizz after the seed run, frame-rate-bound stir and pour. The clock now reads a 16-sample-per-block probe every tenth frame: it keeps the loop awake while the reaction moves (six delays at most) and fires the snap sound as the first blue-black appears.
 - Session cost: not readable in dollars here (Ultra plan); about 335k tokens of context.
+
+## Parked (2026-11-09)
+
+Tom: not satisfied. Stashed: the Lab menu entry and its icon hook are gone. The page stays at bench/ and in toys.json, reachable by URL only. Open: Tom's verdict on what to change, the Dutch name, Q6 in a real browser.
