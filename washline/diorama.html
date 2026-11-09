@@ -1229,6 +1229,8 @@ function buildWinter(grp) {
   const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
   const snowMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fb, roughness: 0.85 });
+  // Everything from here to the fir is the cabin; it moves back as one piece.
+  const cabinFrom = grp.children.length;
   // The cabin: 5.4 by 4.6 m, seven logs to the eave, its gable end toward the line.
   const R = 0.17, LOGS = 7, XB = -POST_X - 0.12, XA = XB - 5.4, ZA = -2.3, ZB = 2.3, EAVE = LOGS * 2 * R + R;
   const logMat = [new THREE.MeshStandardMaterial({ map: logTex, roughness: 0.85 }), new THREE.MeshStandardMaterial({ map: endTex, roughness: 0.8 }), new THREE.MeshStandardMaterial({ map: endTex, roughness: 0.8 })];
@@ -1303,8 +1305,6 @@ function buildWinter(grp) {
   const door = add(new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.95, 0.06), new THREE.MeshStandardMaterial({ map: logTex, color: 0x8a6c4c, roughness: 0.85 })));
   door.position.set(XB - 1.4, 0.98, ZB + R + 0.02);
   for (const [y, r] of [[0.4, 0], [1.6, 0], [1.0, 0.98]]) { const b = add(new THREE.Mesh(new THREE.BoxGeometry(r ? 1.25 : 0.95, 0.09, 0.04), trim)); b.position.set(XB - 1.4, y, ZB + R + 0.07); b.rotation.z = r; }
-  const ring = add(new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 8, 18).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3c3a38, metalness: 0.8, roughness: 0.6 })));
-  ring.position.set(XB + R + 0.01, LINE_Y, 0);
   // Split rounds stacked along the front wall, a cap of snow on top.
   const rounds = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 0.42, 10).rotateX(Math.PI / 2), [new THREE.MeshStandardMaterial({ color: 0x6e5238, roughness: 0.9 }), new THREE.MeshStandardMaterial({ map: endTex }), new THREE.MeshStandardMaterial({ map: endTex })], 60);
   let k = 0;
@@ -1359,6 +1359,26 @@ function buildWinter(grp) {
   grp.add(chair);
   contact(grp, XB + 0.9, ZB + 1.3, 0.55, 0.55, 0.5);
   contact(grp, (XA + XB) / 2, 0, 3.2, 2.8, 0.45);
+  // The cabin stands back behind the line, its front to the view.
+  const cabin = new THREE.Group();
+  for (const o of grp.children.slice(cabinFrom)) cabin.add(o);
+  cabin.position.set(5.2, 0, -8.6);
+  grp.add(cabin);
+  cabin.updateMatrixWorld();
+  smokeU.uBase.value.applyMatrix4(cabin.matrixWorld);
+  // The line's near end: a peeled log post, a snow cap on its crossbar.
+  {
+    const peel = new THREE.MeshStandardMaterial({ map: logTex, roughness: 0.85 });
+    const post = add(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.8, 14), peel));
+    post.position.set(-POST_X - 0.08, 1.4, 0);
+    const bar = add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.9, 12).rotateX(Math.PI / 2), peel));
+    bar.position.set(-POST_X - 0.08, 2.55, 0);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.92), snowMat), false).position.set(-POST_X - 0.08, 2.63, 0);
+    add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 6).scale(1, 0.45, 1), snowMat), false).position.set(-POST_X - 0.08, 2.82, 0);
+    const hook = add(new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.0035, 8, 18).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3c3a38, metalness: 0.8, roughness: 0.6 })));
+    hook.position.set(-POST_X + 0.005, LINE_Y, 0);
+    contact(grp, -POST_X - 0.08, 0, 0.3, 0.3, 0.7);
+  }
   // The line's far end: an old timber fir, its boughs heavy with snow above the frame.
   const fir = new THREE.Group();
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.5, 14, 22), new THREE.MeshStandardMaterial({ map: firBarkTex, roughness: 0.95 }));
@@ -1406,7 +1426,7 @@ function buildWinter(grp) {
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x3a332d, roughness: 0.9 });
   const tops = [];
   for (let i = 0; i < 12; i++) {
-    const z = 6 - i * 11, x = 9 + i * 2.4;
+    const z = -7 - i * 11, x = 12 + i * 2.4;
     const pole = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 8.5, 10), poleMat));
     pole.position.set(x, 4.25, z);
     pole.rotation.z = rnd(-0.03, 0.03);
@@ -1430,6 +1450,46 @@ function buildWinter(grp) {
     const pts = [];
     for (let i = 0; i < 30; i++) pts.push(new THREE.Vector3(-14 + i * 2.6, y - 0.04 * Math.random(), -6 - i * 0.9));
     grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+  }
+  // A towable wood chipper stands idle in the yard, a pile of chips at its chute.
+  {
+    const orange = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.62, 0.16, 50)), roughness: 0.45, metalness: 0.2 });
+    const steel = new THREE.MeshStandardMaterial({ color: 0x3d4044, roughness: 0.5, metalness: 0.7 });
+    const rubber = new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.9 });
+    const ch = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.75, 0.9), orange); body.position.set(0, 0.85, 0);
+    const engine = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.8), orange); engine.position.set(-0.6, 1.5, 0);
+    const grille = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.35, 0.6), steel); grille.position.set(-0.96, 1.5, 0);
+    // The feed hopper: a square funnel that opens to the back.
+    const hopper = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.3, 0.9, 4, 1, true).rotateY(Math.PI / 4).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.62, 0.16, 50)), roughness: 0.45, side: THREE.DoubleSide }));
+    hopper.position.set(1.15, 1.0, 0);
+    // The discharge chute curls up and over.
+    const chute = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0.1, 1.2, 0), new THREE.Vector3(0.05, 2.0, 0), new THREE.Vector3(-0.4, 2.35, 0), new THREE.Vector3(-0.95, 2.2, 0)]), 20, 0.13, 12), orange);
+    const wheelG = new THREE.CylinderGeometry(0.34, 0.34, 0.22, 24).rotateX(Math.PI / 2);
+    const hubG = new THREE.CylinderGeometry(0.14, 0.14, 0.24, 16).rotateX(Math.PI / 2);
+    for (const sz of [-0.58, 0.58]) {
+      const w = new THREE.Mesh(wheelG, rubber); w.position.set(0.1, 0.34, sz); ch.add(w);
+      const hb = new THREE.Mesh(hubG, steel); hb.position.set(0.1, 0.34, sz); ch.add(hb);
+    }
+    const tongue = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.08), steel); tongue.position.set(-1.45, 0.5, 0); tongue.rotation.z = 0.12;
+    const jack = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), steel); jack.position.set(-2.1, 0.25, 0);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.82), snowMat); cap.position.set(-0.6, 1.82, 0);
+    const cap2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.07, 0.86), snowMat); cap2.position.set(0.25, 1.26, 0);
+    ch.add(body, engine, grille, hopper, chute, tongue, jack, cap, cap2);
+    ch.position.set(3.4, 0, -4.6);
+    ch.rotation.y = -0.5;
+    ch.traverse(o => { o.castShadow = o.receiveShadow = true; });
+    grp.add(ch);
+    contact(grp, 3.4, -4.6, 1.6, 0.9, 0.55, -0.5);
+    // Chips heap where the chute points, dusted with snow.
+    const chipTex = new THREE.CanvasTexture(tex2D(128, 128, (g) => {
+      g.fillStyle = '#8a6a48'; g.fillRect(0, 0, 128, 128);
+      for (let i = 0; i < 900; i++) { g.fillStyle = Math.random() < 0.25 ? 'rgba(240,244,250,0.9)' : `hsl(${rnd(25, 40)}, ${rnd(30, 50)}%, ${rnd(30, 60)}%)`; g.fillRect(rnd(0, 128), rnd(0, 128), rnd(2, 5), rnd(1, 3)); }
+    }));
+    chipTex.colorSpace = THREE.SRGBColorSpace;
+    const heap = add(new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12, 0, TAU, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ map: chipTex, roughness: 1 })));
+    heap.scale.set(0.9, 0.45, 0.8);
+    heap.position.set(2.5, 0, -5.4);
   }
   // Low drifts behind the line; footprints from the lens to the line.
   const driftN = 26, drifts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 20, 10), snowMat, driftN);
@@ -1975,8 +2035,8 @@ const THEMES = {
     fog: [[0.91, 0.005, 250], 0, 0], fogExp: 0.027, hemi: [[0.94, 0.006, 250], [0.92, 0.006, 250], 1.35],
     ground: 'snow', grass: { n: 0.01, h: [0.1, 0.32], cols: [[0.6, 0.04, 80], [0.66, 0.04, 85], [0.5, 0.03, 70]] },
     wind: 'breeze', sun: 0.4, stiff: 3, frost: 1, snow: 1, daisies: 0,
-    // From the fir side at eye height, toward the cabin, into the whiteout.
-    cam: { pos: [3.6, 1.55, 11.5], look: [-2.2, 1.8, -0.8], lookN: [-1.4, 1.9, -0.8], fov: 46, fovN: 66 }, iso: { yaw: Math.PI / 4, at: [-1.6, 1.2, 0.4] },
+    // Close in front of the line; the cabin stands behind it in the whiteout.
+    cam: { pos: [1.6, 1.45, 6.4], look: [-0.4, 1.75, -3.0], lookN: [-0.2, 1.8, -3.0], fov: 52, fovN: 70 }, iso: { yaw: Math.PI / 4, at: [0.2, 1.2, -3.0] },
     mix: ['blanket', 'flannel', 'longjohns', 'sock', 'sock', 'flannel', 'towel'], build: buildWinter,
   },
 };
