@@ -633,7 +633,8 @@ function makeGrid(gw, gh) {
   Object.assign(S, { gw, gh, n });
   if (gl) {
     // Height needs 32 bits where the GPU can filter them: half floats fray the reflections.
-    for (const k of ['A', 'B', 'C']) { if (tex[k]) gl.deleteTexture(tex[k]); tex[k] = dataTex(gw, gh, k === 'A' && floatLinear ? gl.RGBA32F : gl.RGBA16F); }
+    // 32-bit floats also skip a slow half-float conversion on every upload.
+    for (const k of ['A', 'B', 'C']) { if (tex[k]) gl.deleteTexture(tex[k]); tex[k] = dataTex(gw, gh, floatLinear ? gl.RGBA32F : gl.RGBA16F); }
   }
 }
 
@@ -679,8 +680,12 @@ function fluidity(T, s) {
 }
 function flow(dt) {
   const { gw, gh, n } = S, { h, T, v, u, w } = F, { wall, fl, nh, eT, eV, eU, eW } = tmp;
+  // Rows with no chocolate skip the face loop.
+  const rowHas = tmp.rowHas || (tmp.rowHas = new Uint8Array(gh));
+  rowHas.fill(0);
   for (let i = 0; i < n; i++) {
     const hi = h[i];
+    if (hi > 0) rowHas[(i / gw) | 0] = 1;
     fl[i] = hi > 1e-4 ? fluidity(T[i], v[i] + u[i]) : 0;
     nh[i] = hi; eT[i] = hi * T[i]; eV[i] = hi * v[i]; eU[i] = hi * u[i]; eW[i] = hi * w[i];
   }
@@ -705,8 +710,8 @@ function flow(dt) {
   };
   for (let y = 0; y < gh; y++) {
     const r = y * gw;
-    for (let x = 0; x < gw - 1; x++) face(r + x, r + x + 1);
-    if (y < gh - 1) for (let x = 0; x < gw; x++) face(r + x, r + x + gw);
+    if (rowHas[y]) for (let x = 0; x < gw - 1; x++) face(r + x, r + x + 1);
+    if (y < gh - 1 && (rowHas[y] || rowHas[y + 1])) for (let x = 0; x < gw; x++) face(r + x, r + x + gw);
   }
   for (let i = 0; i < n; i++) {
     const hi = nh[i];
@@ -1059,7 +1064,8 @@ function step(dt) {
     deposit(pour.x + Math.cos(a) * cr, pour.y + Math.sin(a * 0.8) * cr, 7 * dt, 2.4, KIND[kind].melt, 0, 0, KIND[kind].w);
   }
   pour.on += ((pour.live || pour.t > 0 ? 1 : 0) - pour.on) * (1 - Math.exp(-dt / 0.08));
-  const sub = Math.max(1, Math.ceil(dt / (1 / 120)));
+  // The mobility cap keeps one substep per 60 fps frame stable.
+  const sub = Math.max(1, Math.ceil(dt * 60 - 1e-3));
   let moved = 0;
   for (let k = 0; k < sub; k++) moved += flow(dt / sub);
   busy = Math.max(cells(sdt), moved * 40);
