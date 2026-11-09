@@ -206,6 +206,11 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
   scene.add(sun, sun.target);
   const flashL = new THREE.AmbientLight(0xb8bdff, 0);
   scene.add(flashL);
+  // The brightest bolt lights the skin from its own side.
+  const boltL = new THREE.DirectionalLight(0xc8ccff, 0);
+  scene.add(boltL, boltL.target);
+  // A fog bank swallows the wing; the shader sets the bank's density.
+  scene.fog = new THREE.FogExp2(0x000000, 0);
   // The tip strobe and the red nav light light the skin near the tip.
   const strobeL = new THREE.PointLight(0xffffff, 0, 30, 2), navL = new THREE.PointLight(0xff2010, 0.4, 14, 2);
   scene.add(strobeL, navL);
@@ -246,7 +251,7 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       air.rotation.x = bank;
       // The roll rate drives the controls; a low-pass keeps them smooth.
@@ -280,6 +285,12 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
       sun.target.updateMatrixWorld();
       if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }
       flashL.intensity = flash * 0.06;
+      boltL.intensity = bolt ? Math.min(bolt.level, 2.5) * 0.9 : 0;
+      if (bolt) boltL.position.copy(bolt.dir).multiplyScalar(50);
+      // The bank's sight range, as the shader's fogAt sets it: 120 km to 40 m.
+      const vis = 120000 * Math.exp(-8 * Math.pow(fogLevel, 1.6));
+      scene.fog.density = fogLevel > 0.05 ? 1.2 / vis : 0;
+      scene.fog.color.setRGB(...sky.amb.map(v => v * 0.03 * (1 + flash * 3)));
       const tw = V(...tip);
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 120;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));

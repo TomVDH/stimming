@@ -42,5 +42,8 @@ Round 3 (Tom, 2026-11-09: nicer weather on a performance-efficient three.js buil
   The saving buys finer towers on Standard: 40 steps at 0.5 km, 3 octaves (was 32, 0.6, 2); deck 20 steps (was 18). Cost stays inside bench noise (about 5 to 6 ms).
   Test hooks: ?seed fixes the storm (reseeded before the cells, as three.js ids draw randoms); ?freeze holds the simulation for A/B shots.
   Not done: quarter-size clouds and haze bands. The look gain is modest: crisper billows, less march noise.
-- [ ] Step 3: branching bolts with glow, cloud tops lit from inside, the wing in the storm's fog and light
+- [x] Step 3: bolts (`window/bolts3.js`): each tower flash gets a seeded, branching channel as fat lines, a white core in a blue halo, flickering with the flash's strokes.
+  Cloud to ground below a thin deck; otherwise a crawler through the anvil. The lines sit on the far plane, so the wing hides them; a fog bank swallows them.
+  The brightest bolt lights the wing from its side; a fog bank fogs the wing (FogExp2 from the shader's sight range). Cloud tops were already lit from inside.
+  Test hook: `__ws.flash(x, z, big, cell)`; a flash's `kind` forces 'ground' or 'crawl'.
 - [ ] Step 4: rain on the glass as instanced drops, bloom, phone check

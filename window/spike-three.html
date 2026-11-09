@@ -62,6 +62,7 @@ import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
 import { bake, lookup, horizonEl, NU, NV } from './sky.js';
 import { bakeNoise } from './noise3d.js';
 import { createWing3 } from './wing3.js';
+import { createBolts } from './bolts3.js';
 import * as THREE from 'three';
 
 // A test hook: ?seed fixes the random stream, for benches.
@@ -306,7 +307,7 @@ void main() {
 const MR = passMaterial(RESOLVE_FS);
 const PR = { u: slots(MR), scene: passScene(MR) };
 const hist = [null, null];
-let histFresh = true, frameN = 0;
+let histFresh = true, frameN = 0, lastBolt = null;
 function sizeHist() {
   if (hist[0] && hist[0].width === outBuf.w && hist[0].height === outBuf.h) return;
   hist.forEach(h => h && h.dispose());
@@ -348,6 +349,7 @@ const FAIRS = [10, 14.5, 19].map((z, j) => {
   return { a: [te[0] + 2.0 * k, te[1] - 0.33 * k, z, 0.3 * k], b: [te[0] - 1.3 * k, te[1] - 0.46 * k, z, 0.045 * k] };
 });
 const wing3 = createWing3({ renderer, ST, flex, LET, NAC, FAIRS });
+const bolts = createBolts();
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
@@ -1080,9 +1082,13 @@ function render() {
   renderer.setRenderTarget(outRT);
   renderer.clear();
   // The aircraft goes first; the outside then fills only the uncovered pixels.
-  wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorld(TIP), turb: 0.4 + opts.storm });
+  wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorld(TIP), turb: 0.4 + opts.storm, bolt: lastBolt, fogLevel: fog.level });
   renderer.render(wing3.scene, wing3.cam);
   renderer.render(P1.scene, quadCam);
+  // Bolts add their light over the outside; the wing's depth hides them.
+  // A thick bank swallows them.
+  lastBolt = bolts.update({ flashes, camXZ: [cam.x, cam.z], H: ALT, wingCam: wing3.cam, outW: outBuf.w, outH: outBuf.h, cover: opts.cloud, haze: smooth(0.3, 0.9, fog.level) });
+  renderer.render(bolts.scene, bolts.cam);
   // Resolve into the next history target; the cabin pass reads that.
   sizeHist();
   const [prev, next] = frameN % 2 ? [hist[1], hist[0]] : [hist[0], hist[1]];
@@ -1361,7 +1367,7 @@ onQuality(() => resize(true));
 // The flight opens with a few cells already standing.
 if (window.__reseed) window.__reseed();
 for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(20, 40); c.s = 1; cells.push(c); }
-window.__ws = { cells, flashes, EV, newMeteor, cam, apList, render, gl };
+window.__ws = { cells, flashes, EV, newMeteor, cam, apList, render, gl, flash };
 buildSky();
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);
