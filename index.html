@@ -1698,6 +1698,32 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
           </a>
         </li>
         <li>
+          <a class="toy" id="meteor" href="meteor/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <defs>
+                  <linearGradient id="meteor-sky" x1="0" y1="16" x2="0" y2="74" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.26 0.08 262)"/><stop offset="0.65" stop-color="oklch(0.42 0.08 320)"/><stop offset="1" stop-color="oklch(0.74 0.15 55)"/></linearGradient>
+                  <linearGradient id="meteor-tail" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="oklch(0.75 0.15 55)" stop-opacity="0"/><stop offset="1" stop-color="oklch(0.92 0.08 150)"/></linearGradient>
+                  <clipPath id="meteor-clip"><rect x="16" y="16" width="92" height="92"/></clipPath>
+                </defs>
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 260)"/>
+                <rect x="16" y="16" width="92" height="92" fill="url(#meteor-sky)"/>
+                <g clip-path="url(#meteor-clip)">
+                  <rect id="meteor-flash" x="16" y="16" width="92" height="58" fill="oklch(0.92 0.08 150)" opacity="0"/>
+                  <rect x="16" y="74" width="92" height="22" fill="oklch(0.25 0.05 300)"/>
+                  <rect id="meteor-glint" x="60" y="76" width="4" height="18" fill="oklch(0.88 0.1 130)" opacity="0.35"/>
+                  <path id="meteor-shade" d="M52 74H70L84 96H52Z" fill="oklch(0.11 0.03 290)" opacity="0.5"/>
+                  <path d="M16 96V36L24 34L30 41L38 43L44 57L48 74H52V96Z" fill="oklch(0.1 0.02 280)"/>
+                  <rect x="16" y="96" width="92" height="12" fill="oklch(0.17 0.02 300)"/>
+                  <rect id="meteor-tail-line" x="0" y="-1.5" width="30" height="3" fill="url(#meteor-tail)"/>
+                  <rect id="meteor-head" x="-2.6" y="-2.6" width="5.2" height="5.2" fill="oklch(0.97 0.05 150)"/>
+                </g>
+              </svg>
+            </span>
+            <span class="name">Coast and meteor</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="launch" href="launch/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -2655,6 +2681,29 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       leave: off,
       play() { on(); return { kill() {} }; },
       rest: off,
+    };
+  }
+
+  // A meteor crosses the dusk sky; its light swings the headland's shadow.
+  {
+    const head = $('meteor-head'), tail = $('meteor-tail-line'), shade = $('meteor-shade'), glint = $('meteor-glint'), flash = $('meteor-flash');
+    const S = [30, 20], D = [58, 36], ang = Math.atan2(D[1], D[0]) * 180 / Math.PI, st = { p: 0.55 };
+    const draw = () => {
+      const p = st.p, hx = S[0] + D[0] * p, hy = S[1] + D[1] * p, len = Math.min(p, 0.45) * Math.hypot(...D);
+      head.setAttribute('transform', `translate(${hx} ${hy}) rotate(${ang})`);
+      tail.setAttribute('transform', `translate(${hx} ${hy}) rotate(${ang}) translate(${-len} 0) scale(${len / 30} 1)`);
+      // The light moves right, so the shadow on the bay shortens.
+      const reach = 56 * (1 - (hx - S[0]) / D[0]);
+      shade.setAttribute('d', `M52 74H${(52 + reach * 0.5).toFixed(1)}L${(52 + reach).toFixed(1)} 96H52Z`);
+      glint.setAttribute('x', (hx - 2).toFixed(1));
+      glint.setAttribute('opacity', (0.15 + 0.6 * p).toFixed(2));
+    };
+    draw();
+    toys.meteor = {
+      play: () => loop({ repeatDelay: 0.6 })
+        .fromTo(st, { p: 0 }, { p: 1, duration: 1.2, ease: 'power1.in', onUpdate: draw })
+        .fromTo(flash, { opacity: 0.4 }, { opacity: 0, duration: 0.5, ease: 'power2.out' }),
+      rest() { gsap.to(st, { p: 0.55, duration: 0.4, overwrite: true, onUpdate: draw }); gsap.to(flash, { opacity: 0, duration: 0.2, overwrite: true }); },
     };
   }
 
