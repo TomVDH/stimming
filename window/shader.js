@@ -80,6 +80,10 @@ uniform vec3 uJetF0, uJetF1, uJetW0, uJetW1, uJetT0, uJetT1; uniform float uJetO
 uniform vec4 uBall, uBallC, uBallS;
 // The impact: site xz, shock ring radius, ring strength; then flash light, crater glow.
 uniform vec4 uBoom; uniform vec2 uBoomL;
+// The storm: haze and cover follow uStorm.
+// uFog is the fog bank now.
+// uSpr: red sprites high over the storm, as map xz, level, seed.
+uniform float uStorm, uFog; uniform vec4 uSpr[2];
 out vec4 o;
 
 // A ray from the eye hits the sphere at height hl, from above.
@@ -834,6 +838,86 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   return g * T + L + uFloor * 0.5;
 }
 
+
+/* Storm air: milky haze far off, fog banks close by, sprites up high. */
+// The air's own light: the horizon sky, greyed and dimmed.
+// Lightning lights the murk from inside.
+vec3 stormGlow(vec3 d) {
+  vec2 hz = normalize(d.xz + 1e-5);
+  float e = uHorEl + 0.03;
+  vec3 hc = skyL(vec3(hz.x * cos(e), sin(e), hz.y * cos(e))) * 0.5 + skyL(vec3(0.0, 1.0, 0.0)) * 0.5;
+  vec3 air = mix(vec3(dot(hc, vec3(0.3, 0.5, 0.2))), hc, 0.3) * vec3(0.9, 0.96, 1.06) * (0.55 - 0.25 * uStorm);
+  // Each flash lights the murk round its bearing, and some everywhere.
+  float g = 0.0;
+  for (int i = 0; i < ${MAXFL}; i++) {
+    vec4 l = uFl[i];
+    if (l.z <= 0.0) continue;
+    vec3 fd = normalize(vec3(l.x - uCam.x, 5.0 - H, l.y - uCam.y));
+    float m = max(dot(d, fd), 0.0);
+    g += l.z * (0.08 + 0.5 * m * m * m * m + 1.5 * pow(m, 40.0));
+  }
+  return air + vec3(0.75, 0.77, 1.0) * g * 0.02 * max(uStorm, uFog);
+}
+// How much of the view the fog bank hides, t km out.
+// Wisps rush aft past the window as the plane flies through them.
+float fogAt(vec3 d, float t) {
+  if (uFog <= 0.0) return 0.0;
+  vec3 q = vec3(uCam.x, uTime * 0.02, uCam.y);
+  float w = textureLod(uNoise, (d * 0.09 + q) / 0.7, 0.0).r * 0.6 + textureLod(uNoise, (d * 0.3 + q) / 1.9, 0.0).r * 0.4;
+  // Visibility falls from 120 km to 40 m as the bank thickens.
+  float vis = 120.0 * exp(-8.0 * pow(uFog, 1.6)) / (0.35 + 1.3 * w);
+  return (1.0 - exp(-min(t, 60.0) / vis)) * smoothstep(0.0, 0.12, uFog);
+}
+// Storm air over a colour, t km out; sky rays pass 1e4.
+// It also dims skyA, so stars and the disc fade too.
+vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
+  if (uStorm <= 0.0 && uFog <= 0.0) return c;
+  vec3 air = stormGlow(d);
+  // Haze: the far land fades out; the sky itself turns milky.
+  float hz = uStorm * (t > 5e3 ? 0.4 : 1.0 - exp(-t / mix(500.0, 110.0, uStorm)));
+  c = mix(c * (1.0 - 0.35 * uStorm), air, hz);
+  float fa = fogAt(d, t);
+  // In fog, the strobe and the nav light bloom into the murk.
+  float tip = dot(d, normalize(uTip));
+  vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + vec3(0.6, 0.02, 0.02) * 0.004) * exp(-(1.0 - tip) * 60.0);
+  c = mix(c, fc, fa);
+  skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
+  return c;
+}
+// Red sprites: brief red glows 50 to 90 km up.
+// Tendrils hang under a red crown; their feet turn blue.
+vec3 sprites(vec3 d) {
+  vec3 e = vec3(0.0);
+  float hl = max(length(d.xz), 1e-4);
+  vec2 dh = d.xz / hl;
+  for (int i = 0; i < 2; i++) {
+    vec4 s = uSpr[i];
+    if (s.z <= 0.0) continue;
+    vec2 C = s.xy - uCam;
+    // The ray passes the sprite closest at along km out.
+    float along = dot(dh, C);
+    if (along <= 0.0) continue;
+    float lat = dh.x * C.y - dh.y * C.x;
+    float y = H + d.y / hl * along + along * along / (2.0 * R);
+    if (y < 35.0 || y > 95.0) continue;
+    float f = 0.0;
+    for (int k = 0; k < 7; k++) {
+      vec2 h = hash22(vec2(s.w, float(k) * 3.7));
+      // Tendrils splay out as they fall from the crown.
+      float x0 = (h.x - 0.5) * (6.0 + 0.35 * (80.0 - y)), w = 0.25 + 0.6 * h.y;
+      float top = 76.0 + 6.0 * h.y, bot = 40.0 + 18.0 * h.x;
+      float str = smoothstep(0.3, 0.8, vnoise(vec2((lat - x0) * 3.0, y * 0.15 + s.w + float(k))));
+      float fall = smoothstep(bot, bot + 14.0, y) * smoothstep(top + 2.0, top - 4.0, y);
+      f += exp(-(lat - x0) * (lat - x0) / (w * w)) * fall * fall * (0.3 + 0.7 * str);
+    }
+    // The crown: a diffuse red glow that spreads above the tendrils.
+    float crown = exp(-(y - 80.0) * (y - 80.0) / 30.0) * exp(-lat * lat / 90.0);
+    vec3 col = mix(vec3(0.35, 0.3, 1.0), vec3(1.0, 0.12, 0.22), smoothstep(48.0, 62.0, y));
+    e += (col * f + vec3(1.0, 0.18, 0.28) * crown * 0.8) * s.z;
+  }
+  return e * 0.03;
+}
+
 /* Storm towers: cumulonimbus volumes, one per cell. */
 // uTw: centre xz on the map, radius, top height, all in km.
 // uTwB: seed, strength, anvil bearing, town glow under the cell.
@@ -1438,11 +1522,17 @@ void main() {
   float tl = quad(d, uLet, uLetN, uvL);
   if (tl > 0.0 && tl < tw) { tw = tl; nW = uLetN; uvW = vec2(uvL.x, 0.97); }
   // The wing is the nearest thing outside: where it shows, nothing behind it needs tracing.
-  if (tw < 1e5) { o = vec4(wingCol(d, nW, uvW, tw, E, uStrobe), 0.0); return; }
-  float skyA;
-  vec3 c = outside(d, uFocal * uOutRes.x / uRes.x, skyA);
+  float skyA = 0.0;
+  // Wing distances are in metres; the storm air takes km.
+  if (tw < 1e5) { o = vec4(stormAir(wingCol(d, nW, uvW, tw, E, uStrobe), d, tw * 0.001, skyA), 0.0); return; }
+  vec3 c = vec3(0.0);
   float tg = hitLayer(d, 0.0);
+  // In a thick fog bank nothing far shows; skip the far view.
+  bool blind = fogAt(d, 60.0) > 0.995;
+  if (!blind) {
+  c = outside(d, uFocal * uOutRes.x / uRes.x, skyA);
   c = towers(d, tg > 0.0 ? tg : 1e4, c, skyA);
+  if (tg < 0.0 && uSpr[0].z + uSpr[1].z > 0.0) c += sprites(d) * skyA;
   // The impact's fireball: a billowing ball that rises, cools to smoke and flattens into the cap.
   if (uBallS.y > 0.0) {
     vec3 sq = vec3(1.0, 1.0 / uBallS.x, 1.0);
@@ -1496,6 +1586,7 @@ void main() {
     // Its glow spills into the air round it.
     c += glowC * 0.2 * exp(-max(q - uBall.w, 0.0) / (uBall.w * 0.7 + 1.0));
   }
+  }
   // The passing jet: a small moonlit body of fuselage, wing and fin.
   if (uJetOn > 0.0) {
     float tj = 1e9; vec3 nj = vec3(0.0, 1.0, 0.0);
@@ -1509,7 +1600,9 @@ void main() {
   }
   if (uTrN > 1) c += trails(d, tg > 0.0 ? tg : 1e4);
   c += approach(d, tg > 0.0 ? tg : 1e4);
+  c = stormAir(c, d, tg > 0.0 ? tg : 1e4, skyA);
   float tNear = tw;
+  float skyN = 0.0;
   // The engine nacelle hangs under the wing; its inlet shows ahead of the leading edge.
   float tn = capsule(d, uNacA, uNacB, uNacR);
   if (tn > 0.0 && tn < tNear) {
@@ -1525,6 +1618,7 @@ void main() {
     }
     // Panel lines ring the cowling.
     c *= 1.0 - 0.35 * smoothstep(0.008, 0.0, abs(h - 0.35)) - 0.3 * smoothstep(0.008, 0.0, abs(h - 0.7));
+    c = stormAir(c, d, tn * 0.001, skyN);
     tNear = tn; skyA = 0.0;
   }
   // Flap-track fairings: canoes under the trailing edge, tails pointing aft.
@@ -1537,6 +1631,7 @@ void main() {
       // A seam marks where the moving tail section starts.
       float k = dot(p - uFairA[i].xyz, uChord) / max(dot(uFairB[i].xyz - uFairA[i].xyz, uChord), 1e-3);
       c *= 1.0 - 0.4 * smoothstep(0.012, 0.0, abs(k - 0.62));
+      c = stormAir(c, d, tf * 0.001, skyN);
       tNear = tf; skyA = 0.0;
     }
   }
@@ -1547,7 +1642,7 @@ void main() {
 export const cabinFS = ({ ALT, WIN }) => `#version 300 es
 precision highp float;
 ${common({ ALT, WIN })}
-uniform vec2 uRes; uniform float uTime, uDpr, uFocal, uFlash, uDimE, uDimC, uRain;
+uniform vec2 uRes; uniform float uTime, uDpr, uFocal, uFlash, uDimE, uDimC, uRain, uStorm;
 uniform vec3 uF, uR, uU;
 uniform int uSteps;
 uniform sampler2D uOut;
@@ -1666,6 +1761,27 @@ vec3 meteor(vec3 d) {
   return c;
 }
 
+
+// Rain in the air outside: streaks that race aft past the window.
+// Three layers: near ones are longer, wider and faster.
+float rainStreaks(vec2 px) {
+  if (uStorm <= 0.05) return 0.0;
+  vec2 q = px / uDpr;
+  float s = 0.0;
+  for (int l = 0; l < 3; l++) {
+    float fl = float(l), k = 1.0 + fl * 0.9;
+    // Drops fall a little as they race aft, so the streaks slant.
+    float row = 9.0 / k;
+    vec2 g = vec2((q.x - q.y * 0.1) + uTime * 2600.0 * k, q.y) / vec2(220.0 * k, row);
+    vec2 id = floor(g), f = fract(g);
+    vec2 h = hash22(id + fl * 31.7);
+    if (h.x > uStorm * 0.18) continue;
+    float len = 0.25 + 0.5 * h.y;
+    float across = abs(f.y - 0.5) * row;
+    s += smoothstep(0.45 * k, 0.0, across) * smoothstep(0.0, 0.05, f.x) * smoothstep(len, len - 0.15, f.x) * hash12(id + 7.1) * 0.6;
+  }
+  return s;
+}
 vec3 glass(vec3 da, vec2 px) {
   vec4 out1 = texture(uOut, px / uRes);
   vec3 view = out1.rgb;
@@ -1683,6 +1799,9 @@ vec3 glass(vec3 da, vec2 px) {
   float ang = acos(clamp(dot(d, normalize(uTip)), -1.0, 1.0)) * uFocal / uDpr;
   view += vec3(1.0, 0.06, 0.04) * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
   view += vec3(0.9, 0.95, 1.0) * uStrobe * (exp(-ang * ang / 5.0) * 4.0 + exp(-ang / 40.0) * 0.12);
+  // Rain streaks catch the sky glow, the strobe and the lightning.
+  float rs = rainStreaks(px);
+  if (rs > 0.0) view += rs * (uGlow * 0.012 + vec3(0.8, 0.85, 1.0) * (uFlash * 0.012 + uStrobe * 0.012 * exp(-ang / 150.0)));
   return view;
 }
 

@@ -264,7 +264,7 @@ function program(vs, fs, attrs) {
   for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
   return { p, u };
 }
-const MAXCELL = 6, MAXFL = 4;
+const MAXCELL = 8, MAXFL = 6;
 const P1 = program(QUAD_VS, outsideFS({ ALT, WIN, MAXCELL, MAXFL }), ['aPos']);
 const P2 = program(QUAD_VS, cabinFS({ ALT, WIN }), ['aPos']);
 // Pass 1 needs a float target for its bright lamps and discs.
@@ -423,7 +423,8 @@ const flashes = [];
 // A flash inside a tower sits at height y, in km.
 function flash(x, z, big = 1, cell = null, y = cell ? rnd(3.5, cell.top - 1.5) : 2.4) {
   const strokes = [0];
-  const n = 1 + Math.floor(Math.random() * 4);
+  // A heavy storm flickers: more strokes per flash.
+  const n = 1 + Math.floor(Math.random() * (4 + opts.storm * 5));
   for (let i = 1; i < n; i++) strokes.push(strokes[i - 1] + rnd(0.05, 0.22));
   flashes.push({ x, z, y, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, level: 0 });
   if (flashes.length > MAXFL) flashes.shift();
@@ -452,8 +453,52 @@ function stepFlashes(dt) {
         const l = g.lean * ((y - g.base) / (g.top - g.base)) ** 2;
         flash(c.x + ax * l + Math.cos(a) * r, c.z + az * l + Math.sin(a) * r, 1, c, y);
       }
+      // A big flash can throw a red sprite high over the cell.
+      if (opts.storm > 0.4 && Math.random() < 0.03 * opts.storm) sprite(c);
     }
   }
+  // A heavy storm also flashes inside the deck all round the plane.
+  if (opts.storm > 0.3 && Math.random() < (opts.storm - 0.3) * 1.6 * dt) {
+    const a = rnd(0.2, PI - 0.2), r = rnd(15, 140);
+    flash(cam.x + Math.cos(a) * r, cam.z + Math.sin(a) * r, rnd(0.6, 1.3));
+  }
+}
+
+/* ---------- storm weather ---------- */
+// Sprites: red glows 50 to 90 km up.
+// Each lasts a fraction of a second.
+const sprites = [];
+// They stand over the storm's far side, low enough to see.
+function sprite(c) {
+  const dx = c.x - cam.x, dz = c.z - cam.z, k = Math.max(1, rnd(260, 420) / Math.hypot(dx, dz));
+  sprites.push({ x: cam.x + dx * k, z: cam.z + dz * k, age: -rnd(0.03, 0.12), life: rnd(0.15, 0.4), seed: rnd(0, 100), level: 0 });
+  if (sprites.length > 2) sprites.shift();
+}
+// Fog banks: the plane flies into thick cloud now and then.
+// An episode rises, holds and clears.
+// A heavier storm brings more of them.
+const fog = { level: 0, ep: null, hold: qs.has('fog') ? +qs.get('fog') : null };
+function stepWeather(dt) {
+  for (let i = sprites.length - 1; i >= 0; i--) {
+    const sp = sprites[i];
+    sp.age += dt;
+    sp.level = sp.age < 0 ? 0 : Math.min(1, sp.age / 0.03) * Math.exp(-Math.max(sp.age - 0.03, 0) / (sp.life * 0.5));
+    if (sp.age > sp.life * 3) sprites.splice(i, 1);
+  }
+  if (fog.hold != null) { fog.level = fog.hold; return; }
+  if (!fog.ep && opts.storm > 0.3 && Math.random() < (opts.storm - 0.3) * 0.01 * dt) {
+    fog.ep = { age: 0, rise: rnd(2, 5), hold: rnd(4, 18), fall: rnd(3, 7), peak: rnd(0.55, 1) };
+  }
+  let goal = 0;
+  const e = fog.ep;
+  if (e) {
+    e.age += dt;
+    goal = e.peak * Math.min(smooth(0, e.rise, e.age), 1 - smooth(e.rise + e.hold, e.rise + e.hold + e.fall, e.age));
+    if (e.age > e.rise + e.hold + e.fall) fog.ep = null;
+  }
+  // Thin wisps drift by between the banks.
+  goal = Math.max(goal, opts.storm > 0.3 ? (opts.storm - 0.3) * 0.25 * (0.5 + 0.5 * Math.sin(t * 0.07)) : 0);
+  fog.level += (goal - fog.level) * (1 - Math.exp(-dt / 0.6));
 }
 
 /* ---------- head and glass ---------- */
@@ -473,6 +518,7 @@ const dimT = v => DIM_K.map(k => Math.exp(-v * k));
 
 /* ---------- loop ---------- */
 let raf = 0, last = 0, visible = true, ready = false;
+const spr = new Float32Array(8);
 const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4);
 function frameFn(now) {
   raf = 0;
@@ -499,6 +545,7 @@ function step(dt) {
   dim.core += (dim.edge - dim.core) * (1 - Math.exp(-dt / (reduce ? 0.15 : 1.8)));
   stepCells(dt);
   stepFlashes(dt);
+  stepWeather(dt);
   stepEvents(dt);
 }
 // The strobe double-flashes every 1.6 seconds.
@@ -971,17 +1018,25 @@ function render() {
   gl.uniform2f(u.uOutRes, outBuf.w, outBuf.h);
   gl.uniform1f(u.uTowns, opts.towns);
   gl.uniform2f(u.uCam, cam.x, cam.z);
-  gl.uniform1f(u.uCover, opts.cloud);
+  // A storm closes the deck, fills the mid layer, thickens the cirrus.
+  const st = opts.storm;
+  gl.uniform1f(u.uCover, opts.cloud + (Math.min(opts.cloud, 0.34) - opts.cloud) * st);
+  gl.uniform1f(u.uStorm, st);
+  gl.uniform1f(u.uFog, fog.level);
+  spr.fill(0);
+  sprites.forEach((sp, i) => spr.set([sp.x, sp.z, sp.level, sp.seed], i * 4));
+  gl.uniform4fv(u['uSpr[0]'], spr);
   // Cirrus thickens as the deck closes.
-  gl.uniform1f(u.uCirrus, clamp(1.4 - opts.cloud * 1.5, 0.3, 1));
+  gl.uniform1f(u.uCirrus, clamp(1.4 - opts.cloud * 1.5, 0.3, 1) * (1 - st) + st);
   gl.uniform1i(u.uDeckSteps, quality() === 'high' ? 26 : 18);
   gl.uniform1i(u.uLightSteps, quality() === 'high' ? 4 : 3);
   // The mid layer fills in as the deck closes.
-  gl.uniform1f(u.uMid, clamp(1.6 - opts.cloud * 2.1, 0.2, 1));
+  gl.uniform1f(u.uMid, clamp(1.6 - opts.cloud * 2.1, 0.2, 1) * (1 - st) + st);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_3D, noiseTex); gl.uniform1i(u.uNoise, 3);
   gl.uniform1f(u.uFlash, flash);
   // At midnight the aurora glows over the clouds and tints their tops green.
-  const aur = auroraOn();
+  // A storm's overcast hides the aurora.
+  const aur = auroraOn() * (1 - smooth(0, 0.6, opts.storm));
   gl.uniform1f(u.uAurora, aur);
   gl.uniform3fv(u.uAmb, sky.amb.map((v, i) => v + [0.0004, 0.004, 0.0018][i] * aur)); gl.uniform3fv(u.uSunL, sky.sunL); gl.uniform3fv(u.uFloor, sky.h.floor);
   // The wing goes in world space, so it banks with the cabin.
@@ -1029,7 +1084,9 @@ function render() {
   gl.uniform1f(u.uDimE, dim.edge); gl.uniform1f(u.uDimC, dim.core);
   gl.uniform1f(u.uFlash, flash);
   gl.uniform1i(u.uSteps, marchSteps());
-  gl.uniform1f(u.uRain, opts.rain);
+  // The storm brings rain to the window, up to heavy.
+  gl.uniform1f(u.uRain, Math.max(opts.rain, smooth(0.2, 0.9, opts.storm)));
+  gl.uniform1f(u.uStorm, opts.storm);
   // Less window light reaches the cabin through dimmed glass, and it turns blue.
   const tg = dimT((dim.edge + dim.core) / 2);
   gl.uniform3fv(u.uCabin, sky.h.cabin);
@@ -1136,7 +1193,7 @@ function flareUniforms(u) {
     flrC.set([...col, streak], i * 4);
   };
   // The sun or the moon: full only once the whole disc clears the frame.
-  const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun));
+  const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun)) * (1 - 0.7 * opts.storm) * (1 - fog.level);
   put(0, sky.sun, sky.h.flare * clear ** 3, 0.5 + 0.5 * clear, sky.flareCol, sky.sunR, sky.h.moon ? 0 : 0.4);
   // The brightest flash in a storm.
   let best = null;
