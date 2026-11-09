@@ -20,6 +20,7 @@ Build Lichtenberg burn from docs/plans/lichtenberg.md. It starts in the Lab. Pre
 - [x] Task 4: sound: buzz, crackle, snap, sizzle; Q9
 - [x] Task 5: Settings, frame loop, watchdog; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
+- [x] Visual overhaul (Tom, 2026-11-09): painted panel, violet spark, extras
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
 
@@ -42,3 +43,5 @@ Build Lichtenberg burn from docs/plans/lichtenberg.md. It starts in the Lab. Pre
 - Session cost: no dollar figure available in this session; left open for Tom.
 
 - Menu icon: interactive. A spark tree grows where the pointer enters, reaches for the pointer as it moves, and cools to orange then fades on leave. Lab icons get only play and rest, so the icon adds its own pointer listeners.
+
+- Visual overhaul (Tom's picks): electric violet spark, painted teal panel, flying sparks, smoke wisps, char groove, ember flicker. Grid 2.5 px, 10,000 cells a burn, 60 steps a frame. The char texture keeps mips; a blurred level gives the blister reach. Live strokes stamp recent segments each frame and the whole tree every 0.25 s. Glints sum neighbour patches, so no square clips. Acrylic: four fracture depths, red and blue fringe, pointer tilt. QA headless (M4): console clean, 88 fps during a burn, one 70 ms hitch, 1280 and 375 px. Real-phone fps, reduced motion, 812 x 375 and tests/bar-v2.html unchecked.

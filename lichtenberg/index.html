@@ -31,7 +31,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--lichtenberg" id="stage" tabindex="0" role="application" aria-label="A wooden board. Press and hold to send a high-voltage spark tree across it; release to freeze the burn.">
+    <div class="stage stage--lichtenberg" id="stage" tabindex="0" role="application" aria-label="A painted panel. Press and hold to send a high-voltage spark tree across it; release to freeze the burn.">
       <p class="fail" hidden>Lichtenberg burn needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -70,7 +70,7 @@ let branching = 0.4, emberLife = 0.35, glow = 1;
 const tauGlow = () => 1.5 + 4.5 * emberLife, tauSmoulder = () => 8 + 28 * emberLife;
 const ui = initPage({ id: 'lichtenberg', bar: {
   choice: { label: 'Board', value: 'wood', options: [
-    { value: 'wood', label: 'Wood' }, { value: 'acrylic', label: 'Acrylic' },
+    { value: 'wood', label: 'Panel' }, { value: 'acrylic', label: 'Acrylic' },
   ], onPick: v => act.board(v) },
   slider: { label: 'Voltage', min: 0.2, max: 1, step: 0.01, value: voltage, onInput: v => { voltage = v; } },
   actions: [{ verb: 'clear', key: 'C', onPress: () => act.clear() }],
@@ -113,8 +113,8 @@ function mulberry(a) {
 let rnd = mulberry(7193);
 
 /* ---------- board grid ---------- */
-// One cell is 4 CSS px; the grid takes the stage's aspect at boot and on Clear.
-const CELL = 4;
+// One cell is 2.5 CSS px; the grid takes the stage's aspect at boot and on Clear.
+const CELL = 2.5;
 let GW = 0, GH = 0;
 let old = null;      // 1 where an earlier burn charred the cell
 let oldId = null;    // index into burns for old char, or -1
@@ -164,18 +164,18 @@ function distance() {
 
 /* ---------- segments ---------- */
 // One instance per segment: a.xy, b.xy, width, birth, flags, spare, parent id, child id.
-const STRIDE = 10, MAXSEG = 65536;
+const STRIDE = 10, MAXSEG = 262144;
 const seg = new Float32Array(MAXSEG * STRIDE);
 let nSeg = 0;
 const BRANCH = 1, PATH = 2;
 // Width follows the tips a segment feeds, as current does.
-const widthOf = tips => Math.min(1.1, 0.2 + 0.12 * Math.log2(tips));
+const widthOf = tips => Math.min(2.8, 0.26 + 0.27 * Math.log2(tips));
 
 /* ---------- DBM: dielectric breakdown, charge superposition ---------- */
 // Kim, Sewall and Lin (2007): each cell adds 1 - R1 / r to every candidate.
 const R1 = 0.5;
 // The ladder's last rung lowers the cell cap and steps per frame.
-const maxCells = () => (rung >= 3 ? 2500 : 4000), maxSteps = () => (rung >= 3 ? 16 : 28);
+const maxCells = () => (rung >= 3 ? 5000 : 10000), maxSteps = () => (rung >= 3 ? 30 : 60);
 let rung = 0;
 let burn = null;
 function newBurn(bx, by, eta) {
@@ -263,7 +263,7 @@ function step() {
   for (let c = 0; c < n; c++) {
     // Old char conducts, so the tree reaches for it.
     const d = dOld[B.ky[c] * GW + B.kx[c]];
-    const w = Math.pow((B.kphi[c] - lo) / span, B.eta) * (1 + 2 * Math.exp(-d / 4));
+    const w = Math.pow((B.kphi[c] - lo) / span, B.eta) * (1 + 2 * Math.exp(-d / 6));
     wts[c] = w;
     sum += w;
   }
@@ -272,7 +272,7 @@ function step() {
   const gx = B.kx[c], gy = B.ky[c], par = B.kpar[c];
   addCell(gx, gy, par);
   // The board edge and old char close the circuit.
-  const far = Math.hypot(gx - B.rx, gy - B.ry) > 4;
+  const far = Math.hypot(gx - B.rx, gy - B.ry) > 8;
   if (gx === 0 || gy === 0 || gx === GW - 1 || gy === GH - 1) return finish('edge');
   if (far && dOld[gy * GW + gx] <= 1.5) { B.hit = touched(gx, gy); return finish('arc'); }
   if (B.n >= maxCells() || nSeg >= MAXSEG) finish('full');
@@ -311,7 +311,11 @@ function finish(why) {
   hotUntil = Math.max(hotUntil, simT + tauSmoulder() * 2.5);
   // A user burn takes its last cells into the char at once.
   if (B.user) { upload(B.seg0, B.n); stamp(B.seg0, B.n, 1); lastHot = simT; }
-  if (B.user && (why === 'arc' || why === 'edge')) snap(B.px[B.n - 1]);
+  if (B.user && (why === 'arc' || why === 'edge')) {
+    snap(B.px[B.n - 1]);
+    // The arc-over throws a burst of sparks from the contact.
+    for (let i = 0; i < 28; i++) spit(B.px[B.n - 1], B.py[B.n - 1], 1, 0, 70, Math.PI * 2);
+  }
   // The arc runs through the old tree, so it heats up again.
   if (B.user && arcOld) stamp(arcOld.seg0, arcOld.n, 0.6);
 }
@@ -376,14 +380,14 @@ float segD() {
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
   return length(pa - ba * h);
 }`;
-// Char: R is the black core, G the brown halo; both deepen with age.
+// Char: R is the black core, G the scorch halo; both deepen with age.
 const CHAR_FS = HEAD + SEGD + `
 uniform float uNow, uPx;
 void main() {
   float d = segD(), w = vInfo.x * 0.5;
   float depth = clamp((uNow - vInfo.y) * 1.4 + 0.35, 0.0, 1.0);
   float core = clamp((w * 0.8 - d) / uPx + 0.5, 0.0, 1.0) * depth;
-  float halo = exp(-pow(d / (w + 0.8), 2.0)) * depth * 0.8;
+  float halo = exp(-pow(d / (w + 1.0), 2.0)) * depth * 0.85;
   o = vec4(core, halo, 0.0, 1.0);
 }`;
 // Heat: G is the glow, B the slow smoulder; thick trunks run hotter.
@@ -391,11 +395,11 @@ const HEAT_FS = HEAD + SEGD + `
 uniform float uHeat;
 void main() {
   float d = segD(), w = vInfo.x * 0.5;
-  float t = (0.35 + 0.65 * clamp(vInfo.x / 1.2, 0.0, 1.0)) * uHeat;
-  float h = exp(-pow(d / (w + 0.45), 2.0)) * t;
+  float t = (0.35 + 0.65 * clamp(vInfo.x / 2.0, 0.0, 1.0)) * uHeat;
+  float h = exp(-pow(d / (w + 0.6), 2.0)) * t;
   o = vec4(0.0, h, h, 1.0);
 }`;
-// The spark: a white-hot core and a blue halo, flashing as each step lands.
+// The spark: a magenta-white core and a violet halo, flashing as each step lands.
 const SPARK_FS = HEAD + SEGD + `
 uniform float uNow, uLive, uArc, uArcAll, uFrame, uPx, uFlick;
 float hash(float n) { return fract(sin(n * 0.3183 + uFrame * 1.731) * 43758.5453); }
@@ -408,15 +412,25 @@ void main() {
   float core = exp(-r * r);
   float halo = exp(-d / (w + 0.5));
   // Trunks hum steadily; fresh tips and new forks flash hottest.
-  float I = 0.12 + 0.45 * clamp(vInfo.x / 1.1, 0.0, 1.0);
+  float I = 0.12 + 0.45 * clamp(vInfo.x / 2.0, 0.0, 1.0);
   I += (branch ? 3.0 : 1.4) * exp(-age / 0.07) + 0.7 * exp(-age / 0.35);
   I *= mix(1.0, 0.45 + 1.1 * hash(vId), uFlick);
   I *= uLive;
   if (path || uArcAll > 0.5) I += uArc * (6.0 + 2.0 * clamp(vInfo.x, 0.0, 1.5));
-  // The core clips near white; the halo carries the blue into the bloom.
+  // The core clips near white; the halo carries the violet into the bloom.
   // A touched old tree flashes as a thin line, with no halo.
   if (uArcAll > 0.5) halo = 0.0;
-  vec3 c = vec3(0.8, 0.87, 1.0) * core * min(I, 1.5) * 1.2 + vec3(0.15, 0.22, 1.0) * halo * I * 0.5;
+  vec3 c = vec3(0.92, 0.6, 1.0) * core * min(I, 1.5) * 0.55 + vec3(0.55, 0.06, 1.0) * halo * min(I, 3.0) * 0.16;
+  o = vec4(c, 1.0);
+}`;
+// Flying sparks: short streaks thrown off the growing tips.
+const FLY_FS = HEAD + SEGD + `
+uniform float uPx;
+void main() {
+  float d = segD(), w = vInfo.x * 0.5;
+  float r = d / (w + uPx * 0.8);
+  float I = vInfo.y;
+  vec3 c = vec3(1.0, 0.82, 1.0) * exp(-r * r) * I * 1.6 + vec3(0.6, 0.12, 1.0) * exp(-d / (w * 3.0 + 0.5)) * I * 0.3;
   o = vec4(c, 1.0);
 }`;
 // Board space: the fragment's cell, from the cover-fit mapping.
@@ -439,6 +453,33 @@ float fbm(vec2 p) {
   float s = 0.0, a = 0.5;
   for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
   return s;
+}
+// Voronoi: x is the distance to the nearest point, y the distance to an edge.
+vec2 voro(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  float d1 = 8.0, d2 = 8.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(x, y);
+    vec2 r = g + vec2(hash(i + g), hash(i + g + 19.19)) - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+  }
+  return vec2(sqrt(d1), sqrt(d2) - sqrt(d1));
+}
+// Glints: one round point per patch; neighbours are summed, so none clip.
+float glints(vec2 b, float size, float rate, float rad, float t, float flick) {
+  vec2 g0 = floor(b / size);
+  float s = 0.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = g0 + vec2(x, y);
+    float hg = hash(g + 7.3);
+    if (hg > rate) continue;
+    vec2 gp = (g + 0.2 + 0.6 * vec2(hash(g + 1.7), hash(g + 4.1))) * size;
+    vec2 dd = b - gp;
+    float pulse = 0.55 + 0.45 * sin(t * (0.8 + 2.2 * hg) * flick + hg * 40.0);
+    s += exp(-dot(dd, dd) / rad) * pulse;
+  }
+  return s;
 }`;
 const DECAY_FS = HEAD + `
 in vec2 vUv;
@@ -451,9 +492,11 @@ const EMBER_FS = HEAD + BOARD + `
 out vec4 o;
 uniform sampler2D uHeatT, uCharT;
 uniform float uTime, uFlick, uAcrylic, uGlint, uSweep;
+// The channel cools violet, hot pink, orange, then deep red.
 vec3 ember(float T) {
-  vec3 c = mix(vec3(0.55, 0.04, 0.0), vec3(1.0, 0.32, 0.04), smoothstep(0.05, 0.45, T));
-  return mix(c, vec3(1.0, 0.78, 0.45), smoothstep(0.6, 1.0, T));
+  vec3 c = mix(vec3(0.5, 0.03, 0.0), vec3(1.0, 0.3, 0.05), smoothstep(0.05, 0.35, T));
+  c = mix(c, vec3(1.0, 0.16, 0.52), smoothstep(0.35, 0.65, T));
+  return mix(c, vec3(0.78, 0.42, 1.0), smoothstep(0.65, 1.0, T));
 }
 void main() {
   vec2 b = boardAt(gl_FragCoord.xy), uv = texAt(b);
@@ -462,19 +505,16 @@ void main() {
   vec4 h = texture(uHeatT, uv);
   vec4 ch = texture(uCharT, uv);
   float T = h.g, S = h.b;
-  // Acrylic does not burn: its fractures hold a cold blue afterglow.
-  vec3 cold = vec3(0.25, 0.42, 1.0) * T * T * 1.6;
+  // Embers breathe: slow noise drifts along the channel.
+  float br = vnoise(b * 0.22 + vec2(uTime * 0.9, -uTime * 0.6)) * 0.6 + vnoise(b * 0.6 - uTime * 1.7) * 0.4;
+  T *= mix(1.0, 0.55 + 0.9 * br, uFlick);
+  // Acrylic does not burn: its fractures hold a cold violet afterglow.
+  vec3 cold = vec3(0.6, 0.3, 1.0) * T * T * 1.6;
   vec3 c = vec3(0.0);
   if (uAcrylic < 0.999) {
     c = ember(T) * T * T * 2.4 * (0.35 + 0.65 * ch.r);
-    // Glints: one point per 3-cell patch; three in ten can light.
-    vec2 g = floor(b / 3.0);
-    float hg = hash(g + 7.3);
-    vec2 gp = (g + 0.2 + 0.6 * vec2(hash(g + 1.7), hash(g + 4.1))) * 3.0;
-    float dd = length(b - gp);
-    float pulse = 0.55 + 0.45 * sin(uTime * (0.8 + 2.2 * hg) * uFlick + hg * 40.0);
-    float gl = exp(-dd * dd / 0.9) * step(hg, 0.3) * pulse;
-    c += vec3(1.0, 0.42, 0.08) * gl * S * ch.r * 6.0 * uGlint;
+    float gl = glints(b, 5.0, 0.3, 1.6, uTime, uFlick);
+    c += vec3(1.0, 0.42, 0.08) * gl * S * ch.r * 5.0 * uGlint;
   }
   o = vec4(mix(c, cold, uAcrylic), 1.0);
 }`;
@@ -512,50 +552,109 @@ void main() {
     + tap(vec2(-1, -1)) + tap(vec2(1, -1)) + tap(vec2(-1, 1)) + tap(vec2(1, 1));
   o = vec4(s / 16.0 + texture(uAdd, vUv).rgb, 1.0);
 }`;
-// The board: birch under a warm key light, char on top, the glow lighting it.
+// The board: a painted panel under a warm key light; the burn cuts into it.
 const FINAL_FS = HEAD + BOARD + `
 out vec4 o;
-uniform sampler2D uCharT, uEmit, uBloom, uWide;
-uniform vec3 uWoodA, uWoodB, uKey, uLed;
-uniform float uTime, uGlow, uAcrylic, uFlash, uSweep;
+uniform sampler2D uCharT, uEmit, uBloom, uWide, uHeatT;
+uniform vec3 uWoodA, uWoodB, uPaintA, uPaintB, uKey, uLed;
+uniform vec2 uTilt;
+uniform float uTime, uGlow, uAcrylic, uFlash, uSweep, uK, uSmoke, uFlick;
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+vec4 charAt(vec2 b) { return b.x < uSweep ? vec4(0.0) : texture(uCharT, texAt(b)); }
+// The burn's depth: the char core cuts deepest, the scorch a little.
+float pit(vec2 b) { vec4 c = charAt(b); return c.r * 0.8 + c.g * 0.3; }
 void main() {
   vec2 frag = gl_FragCoord.xy, b = boardAt(frag), uv = texAt(b);
   vec2 sp = frag / uRes;
-  vec4 ch = b.x < uSweep ? vec4(0.0) : texture(uCharT, uv);
+  vec4 ch = charAt(b);
   vec3 emit = texture(uEmit, sp).rgb, bloom = texture(uBloom, sp).rgb, wide = texture(uWide, sp).rgb;
   // The key light pools at the upper left and falls off to the corners.
   vec2 kc = (vec2(sp.x, 1.0 - sp.y) - vec2(0.3, 0.22)) * vec2(uRes.x / uRes.y, 1.0);
-  float key = 0.02 + 0.4 * exp(-dot(kc, kc) / 0.28);
+  float key = 0.07 + 0.55 * exp(-dot(kc, kc) / 0.45);
   vec3 col = vec3(0.0), acr = vec3(0.0);
   if (uAcrylic > 0.001) {
     // A dark clear block; an LED strip lights it from the left edge.
     float x = b.x / uGrid.x;
     float edge = exp(-x * 2.6) + 0.15 * exp(-(1.0 - x) * 6.0);
-    vec3 glass = vec3(0.004, 0.005, 0.01) + uLed * 0.035 * edge;
-    // A faint sheen runs across the top face.
-    float sh = exp(-pow(sp.x * 0.5 + sp.y - 1.05, 2.0) / 0.012);
-    glass += vec3(0.5, 0.55, 0.7) * sh * 0.025;
-    // A second, deeper plane of fractures sits behind the first.
-    vec4 deep = b.x < uSweep ? vec4(0.0) : texture(uCharT, texAt(b + vec2(-1.4, 1.0)));
-    float frac = ch.r * 0.8 + ch.g * 0.09 + deep.g * 0.05;
+    vec3 glass = vec3(0.005, 0.004, 0.012) + uLed * 0.035 * edge;
+    // A faint sheen runs across the top face and follows the tilt.
+    float sh = exp(-pow(sp.x * 0.5 + sp.y - 1.05 + uTilt.x * 0.2 + uTilt.y * 0.1, 2.0) / 0.012);
+    glass += vec3(0.55, 0.5, 0.7) * sh * 0.025;
+    // Three deeper planes of fractures sit behind the first; tilt shifts them.
+    vec2 dv = vec2(-1.3, 0.9) + uTilt * 4.0;
+    float deep = charAt(b + dv).g * 0.12 + charAt(b + dv * 2.1).g * 0.07 + charAt(b + dv * 3.4).g * 0.04;
+    // The front plane splits a little red and blue at its edges.
+    vec2 fx = vec2(0.3 / uK + 0.12, 0.0);
+    vec3 front = vec3(charAt(b + fx).r, ch.r, charAt(b - fx).r) * 0.8 + ch.g * 0.09;
     // Fine sparkles ride on the fractures where facets face the light.
-    float spk = pow(hash(floor(b * 2.5)), 22.0) * ch.r * 6.0;
-    vec3 lit = mix(vec3(0.9, 0.94, 1.0), uLed, 0.4) * (0.04 + 2.2 * edge * edge);
-    acr = glass + lit * (frac + spk) * (1.0 + uFlash * 3.0) + wide * 0.3;
+    float spk = glints(b, 2.2, 0.18, 0.12, uTime * 3.0, uFlick) * ch.r * 4.0;
+    vec3 lit = mix(vec3(0.95, 0.92, 1.0), uLed, 0.4) * (0.04 + 2.2 * edge * edge);
+    acr = glass + lit * (front + deep + spk) * (1.0 + uFlash * 3.0) + wide * 0.3;
   }
   if (uAcrylic < 0.999) {
-    // Birch: long grain along x, warped a little, with fine fibres.
-    float w = fbm(vec2(b.x * 0.012, b.y * 0.09));
-    float g = 0.5 + 0.5 * sin((b.y + w * 28.0) * 0.55 + fbm(b * 0.04) * 3.0);
-    float fib = vnoise(vec2(b.x * 0.35, b.y * 3.2));
-    vec3 alb = mix(uWoodA, uWoodB, g * 0.35 + fib * 0.2 + w * 0.3);
-    // Char: a caramel halo, then a black core.
-    alb *= mix(vec3(1.0), vec3(0.42, 0.26, 0.15), clamp(ch.g, 0.0, 1.0) * 0.75);
-    alb *= 1.0 - 0.96 * ch.r;
-    // An arc-over lights the whole board blue for a moment.
-    col = alb * (uKey * key + wide * 2.2 + bloom * 0.6 + vec3(0.45, 0.55, 1.0) * uFlash);
+    // Paint: brush strokes run along a shallow diagonal.
+    vec2 bp = vec2(b.x * 0.96 + b.y * 0.28, b.y * 0.96 - b.x * 0.28);
+    float stroke = fbm(vec2(bp.x * 0.012, bp.y * 0.32));
+    float fine = vnoise(vec2(bp.x * 0.09, bp.y * 2.4));
+    vec3 alb = mix(uPaintA, uPaintB, clamp(stroke * 0.7 + fine * 0.15, 0.0, 1.0));
+    // Bare birch under the paint, long grain along x.
+    float w = fbm(vec2(b.x * 0.008, b.y * 0.06));
+    float g = 0.5 + 0.5 * sin((b.y + w * 40.0) * 0.35 + fbm(b * 0.03) * 3.0);
+    vec3 bare = mix(uWoodA, uWoodB, g * 0.4 + w * 0.3);
+    // The burn's wider reach comes from a blurred char level.
+    float lod = log2(max(uK, 1.0)) + 2.2;
+    float reach = textureLod(uCharT, uv, lod).g * 0.6 + textureLod(uCharT, uv, lod + 1.0).g * 0.4;
+    if (b.x < uSweep) reach = 0.0;
+    float nz = vnoise(b * 0.7);
+    float blis = smoothstep(0.03, 0.2, reach + (nz - 0.5) * 0.06);
+    float scorch = smoothstep(0.14, 0.62, ch.g + (nz - 0.5) * 0.12);
+    float peel = smoothstep(0.64, 0.9, ch.g + (nz - 0.5) * 0.16);
+    float core = ch.r;
+    // Blisters: the paint bubbles and pales round the burn.
+    vec2 bv = voro(b * 0.85 + 3.1);
+    float bub = blis * (1.0 - scorch) * smoothstep(0.62, 0.05, bv.x);
+    alb = mix(alb, alb * 1.35 + 0.015, bub * 0.55);
+    // Fine crazing cracks the blistered paint.
+    vec2 cz = voro(b * 1.6 + 11.0);
+    float craze = blis * (1.0 - smoothstep(0.0, 0.07, cz.y)) * (1.0 - peel);
+    alb *= 1.0 - craze * 0.6;
+    // Scorch browns the paint; the peel shows toasted wood.
+    alb = mix(alb, vec3(0.05, 0.03, 0.016), scorch * 0.9);
+    alb = mix(alb, bare * vec3(0.34, 0.19, 0.09), peel * (1.0 - core));
+    // Char: cracked charcoal plates in a black groove.
+    vec2 cv = voro(b * 1.3 + 7.7);
+    float plate = smoothstep(0.02, 0.1, cv.y);
+    vec3 coal = vec3(0.012, 0.011, 0.013) + vec3(0.03, 0.028, 0.034) * plate * hash(floor(b * 1.3 + 7.7) + 2.0);
+    alb = mix(alb, coal, core);
+    // Relief: the groove from the char, fine bumps from the paint.
+    float e = 0.45;
+    vec2 gr = vec2(pit(b + vec2(e, 0.0)) - pit(b - vec2(e, 0.0)), pit(b + vec2(0.0, e)) - pit(b - vec2(0.0, e))) / (2.0 * e);
+    float hd = (stroke + fine * 0.3) * 0.12 + bub * 0.6 - craze * 0.15 + core * plate * 0.35;
+    float px = 1.0 / uScale;
+    vec2 gd = vec2(dFdx(hd), -dFdy(hd)) / px;
+    vec3 n = normalize(vec3(gr * 1.6 + gd * 0.35, 1.0));
+    vec3 L = normalize(vec3(-0.55, -0.5, 0.67));
+    float lam = max(dot(n, L), 0.0) / L.z;
+    // Satin paint and glassy charcoal catch the key light.
+    vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+    float gloss = mix(0.06, 0.22, core * plate) * (1.0 - scorch * (1.0 - core));
+    float spec = pow(max(dot(n, H), 0.0), mix(40.0, 18.0, core)) * gloss;
+    // An arc-over lights the whole board violet for a moment.
+    col = alb * (uKey * key * lam + wide * 2.2 + bloom * 0.6 + vec3(0.7, 0.45, 1.0) * uFlash) + uKey * key * spec * 1.4 + (wide + bloom) * spec * 0.8;
+    // Smoke: hot channels breathe a drifting haze.
+    if (uSmoke > 0.0) {
+      vec2 drift = vec2(fbm(b * 0.04 + vec2(0.0, uTime * 0.2)), fbm(b * 0.04 + vec2(5.2, uTime * 0.2 + 3.0))) - 0.5;
+      float sm = 0.0;
+      for (int i = 1; i <= 3; i++) {
+        float k = float(i);
+        sm += texture(uHeatT, texAt(b + drift * k * 10.0 + vec2(k * 1.5, -k * 3.5))).g / k;
+      }
+      sm *= smoothstep(0.25, 0.75, fbm(b * 0.07 + drift * 2.5 + vec2(uTime * 0.12, -uTime * 0.3)));
+      float a = clamp(sm * 0.9, 0.0, 0.5) * uSmoke;
+      vec3 haze = vec3(0.6, 0.57, 0.66) * (uKey * key * 0.7 + wide * 1.6 + bloom * 0.4);
+      col = mix(col, haze, a);
+    }
   }
   col = mix(col, acr, uAcrylic);
   // The sanding edge: a warm streak of fresh dust.
@@ -573,7 +672,7 @@ void main() {
 /* ---------- WebGL ---------- */
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
-let gl = null, P = null, triVao = null, segVao = null, segBuf = null;
+let gl = null, P = null, triVao = null, segVao = null, segBuf = null, flyVao = null, flyBuf = null;
 let charT = null, heat = null, emit = null, mips = [], ups = [];
 let K = 4;  // char texels per cell
 function compile(vs, fs) {
@@ -606,7 +705,7 @@ async function initGL() {
   const progs = {
     char: compile(STROKE_VS, CHAR_FS), heat: compile(STROKE_VS, HEAT_FS), spark: compile(STROKE_VS, SPARK_FS),
     decay: compile(TRI, DECAY_FS), ember: compile(TRI, EMBER_FS), down: compile(TRI, DOWN_FS),
-    up: compile(TRI, UP_FS), final: compile(TRI, FINAL_FS),
+    up: compile(TRI, UP_FS), final: compile(TRI, FINAL_FS), fly: compile(STROKE_VS, FLY_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -625,26 +724,36 @@ async function initGL() {
   gl.bindBuffer(gl.ARRAY_BUFFER, segBuf);
   gl.bufferData(gl.ARRAY_BUFFER, seg.byteLength, gl.DYNAMIC_DRAW);
   for (let l = 0; l < 3; l++) { gl.enableVertexAttribArray(l); gl.vertexAttribDivisor(l, 1); }
+  flyVao = gl.createVertexArray();
+  flyBuf = gl.createBuffer();
+  gl.bindVertexArray(flyVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, flyBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, flyData.byteLength, gl.DYNAMIC_DRAW);
+  for (let l = 0; l < 3; l++) { gl.enableVertexAttribArray(l); gl.vertexAttribDivisor(l, 1); }
   gl.bindVertexArray(triVao);
   gl.useProgram(P.final.p);
-  gl.uniform3fv(P.final.u.uWoodA, oklchLinear(0.76, 0.05, 80));
-  gl.uniform3fv(P.final.u.uWoodB, oklchLinear(0.64, 0.065, 66));
-  gl.uniform3fv(P.final.u.uKey, oklchLinear(0.86, 0.06, 70));
-  gl.uniform3fv(P.final.u.uLed, oklchLinear(0.72, 0.16, 268));
+  gl.uniform3fv(P.final.u.uWoodA, oklchLinear(0.78, 0.05, 80));
+  gl.uniform3fv(P.final.u.uWoodB, oklchLinear(0.66, 0.065, 66));
+  gl.uniform3fv(P.final.u.uPaintA, oklchLinear(0.56, 0.08, 198));
+  gl.uniform3fv(P.final.u.uPaintB, oklchLinear(0.5, 0.07, 208));
+  gl.uniform3fv(P.final.u.uKey, oklchLinear(0.88, 0.05, 70));
+  gl.uniform3fv(P.final.u.uLed, oklchLinear(0.7, 0.19, 305));
 }
-function target(w, h, fmt = gl.RGBA16F) {
+function target(w, h, fmt = gl.RGBA16F, mips = false) {
   const tex = gl.createTexture();
+  const levels = mips ? Math.floor(Math.log2(Math.max(w, h))) + 1 : 1;
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texStorage2D(gl.TEXTURE_2D, levels, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   const fb = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  const t = { tex, fb, w, h };
+  const t = { tex, fb, w, h, mips };
   wipe(t);
+  if (mips) mip(t);
   return t;
 }
 const pair = (w, h) => ({ r: target(w, h), w: target(w, h), swap() { [this.r, this.w] = [this.w, this.r]; } });
@@ -659,6 +768,11 @@ function wipe(t) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
+}
+// The char's blurred levels give the paint's blister reach.
+function mip(t) {
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.generateMipmap(gl.TEXTURE_2D);
 }
 function bind(prog, name, unit, t) {
   gl.activeTexture(gl.TEXTURE0 + unit);
@@ -677,8 +791,8 @@ function tri(dst) {
 // Board targets: char at K texels per cell, heat at half that.
 function allocBoard(dpr) {
   free(charT); free(heat);
-  K = Math.min(4 * Math.min(dpr, 2), 2048 / Math.max(GW, GH));
-  charT = target(Math.round(GW * K), Math.round(GH * K), gl.RGBA8);
+  K = Math.min(CELL * Math.min(dpr, 2), 3072 / Math.max(GW, GH));
+  charT = target(Math.round(GW * K), Math.round(GH * K), gl.RGBA8, true);
   heat = pair(Math.round(GW * K / 2), Math.round(GH * K / 2));
 }
 // Screen targets: emission at full size, five bloom levels below it.
@@ -720,13 +834,15 @@ function toBoard(cx, cy) {
 /* ---------- drawing ---------- */
 // The ambient clock drives glints; it eases to a stop before sleep.
 let ambT = 0;
-let simT = 0, frameNo = 0, arcT = -10, hotUntil = 0, sparkLive = 0, arcOld = null;
+let simT = 0, frameNo = 0, arcT = -10, hotUntil = 0, sparkLive = 0, arcOld = null, fullAt = 0;
+// Acrylic tilts toward the pointer, so its deep planes shift.
+const tilt = { x: 0, y: 0, tx: 0, ty: 0 };
 // Clear's sweep runs 0 to 1; -1 means no sweep.
 let sweep = -1;
 const sweepX = () => (sweep < 0 ? -1e4 : (1 - (1 - sweep) ** 2) * (GW + 6) - 3);
-function segRange(s0, n) {
-  gl.bindVertexArray(segVao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, segBuf);
+function segRange(s0, n, vao = segVao, buf = segBuf) {
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   const off = s0 * STRIDE * 4;
   gl.vertexAttribPointer(0, 4, gl.FLOAT, false, STRIDE * 4, off);
   gl.vertexAttribPointer(1, 4, gl.FLOAT, false, STRIDE * 4, off + 16);
@@ -752,7 +868,7 @@ function stamp(s0, n, heatK, now = simT) {
   let q = P.char;
   gl.useProgram(q.p);
   boardMap(q, 1 / K);
-  gl.uniform1f(q.u.uPad, 1.6);
+  gl.uniform1f(q.u.uPad, 2.4);
   gl.uniform1f(q.u.uNow, now);
   to(charT);
   segRange(s0, n);
@@ -767,6 +883,7 @@ function stamp(s0, n, heatK, now = simT) {
   }
   gl.blendEquation(gl.FUNC_ADD);
   gl.disable(gl.BLEND);
+  mip(charT);
 }
 function boardUniforms(q) {
   gl.uniform2f(q.u.uRes, canvas.width, canvas.height);
@@ -788,8 +905,15 @@ function render(dt) {
   const B = burn;
   const liveN = B ? B.n : 0;
   if (B && sparkLive > 0) {
-    upload(B.seg0, Math.min(liveN, nSeg - B.seg0));
-    if (!B.done) stamp(B.seg0, Math.min(liveN, nSeg - B.seg0), 1);
+    const n = Math.min(liveN, nSeg - B.seg0);
+    upload(B.seg0, n);
+    if (!B.done) {
+      // Recent segments stamp each frame; the whole tree, as trunks widen.
+      let s = B.seg0 + n;
+      if (simT - fullAt > 0.25) { s = B.seg0; fullAt = simT; }
+      else while (s > B.seg0 && seg[(s - 1) * STRIDE + 5] > simT - 0.6) s--;
+      stamp(s, B.seg0 + n - s, 1);
+    }
   }
   // Emission: embers from the heat, then the live spark.
   let q = P.ember;
@@ -831,6 +955,21 @@ function render(dt) {
     }
     gl.disable(gl.BLEND);
   }
+  if (nFly) {
+    q = P.fly;
+    gl.useProgram(q.p);
+    gl.uniform4f(q.u.uMap, 2 * view.s / canvas.width, -2 * view.s / canvas.height, 2 * view.ox / canvas.width - 1, 1 - 2 * view.oy / canvas.height);
+    gl.uniform1f(q.u.uPx, 1 / view.s);
+    gl.uniform1f(q.u.uPad, 0.8);
+    gl.uniform1f(q.u.uJit, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, flyBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, flyData, 0, nFly * STRIDE);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    to(emit);
+    segRange(0, nFly, flyVao, flyBuf);
+    gl.disable(gl.BLEND);
+  }
   bloomPass();
   q = P.final;
   gl.useProgram(q.p);
@@ -839,6 +978,11 @@ function render(dt) {
   bind(q, 'uEmit', 1, emit);
   bind(q, 'uBloom', 2, ups[0]);
   bind(q, 'uWide', 3, ups[2]);
+  bind(q, 'uHeatT', 4, heat.r);
+  gl.uniform1f(q.u.uK, K);
+  gl.uniform1f(q.u.uSmoke, rm ? 0 : 1);
+  gl.uniform1f(q.u.uFlick, rm ? 0 : 1);
+  gl.uniform2f(q.u.uTilt, tilt.x, tilt.y);
   gl.uniform1f(q.u.uTime, simT);
   gl.uniform1f(q.u.uGlow, glow);
   gl.uniform1f(q.u.uAcrylic, acrylic);
@@ -866,6 +1010,37 @@ function bloomPass() {
     bind(u, 'uAdd', 1, mips[i]);
     gl.uniform2f(u.u.uTex, 1 / s.w, 1 / s.h);
     tri(ups[i]);
+  }
+}
+
+/* ---------- flying sparks ---------- */
+// Sparks fly off the growing tips as short streaks and burn out.
+const MAXFLY = 384, flyData = new Float32Array(MAXFLY * STRIDE);
+const flies = [];
+let nFly = 0;
+function spit(x, y, dx, dy, speed, spread) {
+  if (flies.length >= MAXFLY || reduced()) return;
+  const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * spread, v = speed * (0.5 + Math.random());
+  flies.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: 0.12 + Math.random() * 0.3, k: 0.6 + Math.random() * 0.6 });
+}
+function flyStep(dt) {
+  nFly = 0;
+  for (let i = flies.length - 1; i >= 0; i--) {
+    const f = flies[i];
+    f.t += dt;
+    if (f.t >= f.life) { flies.splice(i, 1); continue; }
+    const drag = Math.exp(-dt * 2.5);
+    f.vx = f.vx * drag + (Math.random() - 0.5) * 60 * dt;
+    f.vy = f.vy * drag + (Math.random() - 0.5) * 60 * dt;
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+  }
+  for (const f of flies) {
+    const o = nFly++ * STRIDE;
+    flyData[o] = f.x - f.vx * 0.03; flyData[o + 1] = f.y - f.vy * 0.03;
+    flyData[o + 2] = f.x; flyData[o + 3] = f.y;
+    flyData[o + 4] = 0.28; flyData[o + 5] = (1 - f.t / f.life) ** 1.5 * f.k;
+    flyData[o + 6] = 0; flyData[o + 7] = 0; flyData[o + 8] = 0; flyData[o + 9] = 0;
   }
 }
 
@@ -942,7 +1117,7 @@ function soundFrame() {
   if (!a) return;
   a.cracks = 0;
   const t = a.ac.currentTime;
-  a.gain.gain.setTargetAtTime(growing ? 0.05 + 0.1 * Math.min(1, (B.rate || 0) / 500) : 0, t, growing ? 0.02 : 0.05);
+  a.gain.gain.setTargetAtTime(growing ? 0.05 + 0.1 * Math.min(1, (B.rate || 0) / 1250) : 0, t, growing ? 0.02 : 0.05);
   if (growing) a.pan.pan.setTargetAtTime(panOf(B.px[B.n - 1]), t, 0.03);
   const heat = board === 'wood' ? Math.exp(-(simT - lastHot) / (tauGlow() * 1.7)) : 0;
   a.hissG.gain.setTargetAtTime(0.035 * heat, t, 0.2);
@@ -965,17 +1140,17 @@ function silence() {
 
 /* ---------- growth ---------- */
 // Sparse is eta near 3; bushy is eta near 1.6.
-const etaFor = () => 3.0 - 1.4 * branching - 0.45 + rnd() * 0.9;
+const etaFor = () => 4.0 - 1.8 * branching - 0.4 + rnd() * 0.8;
 let held = false, zapTo = 0;
 function grow(dt) {
   const B = burn;
   if (!B || B.done) return;
   if (held) B.held += dt;
   // Growth speeds up as the channel heats; a zap runs fast and short.
-  let rate = 80 * (1 + 1.5 * B.held) * (0.35 + 1.3 * voltage);
-  if (!held) rate = 420;
+  let rate = 200 * (1 + 1.5 * B.held) * (0.35 + 1.3 * voltage);
+  if (!held) rate = 1000;
   if (reduced()) rate *= 0.5;
-  B.rate = Math.min(rate, 700);
+  B.rate = Math.min(rate, 1800);
   B.acc = (B.acc || 0) + B.rate * dt;
   let steps = 0;
   while (B.acc >= 1 && steps < maxSteps() && !B.done) {
@@ -984,6 +1159,11 @@ function grow(dt) {
     const k = B.n - 1, sk = B.segOf[k];
     const branch = sk >= 0 && (seg[sk * STRIDE + 6] & BRANCH) > 0;
     if (branch || Math.random() < 0.3) crack(B.px[k], branch);
+    // Forks throw sparks; plain steps do, now and then.
+    const pk = B.par[k];
+    if (pk >= 0 && Math.random() < (branch ? 0.3 : 0.025) * (0.5 + voltage)) {
+      spit(B.px[k], B.py[k], B.px[k] - B.px[pk], B.py[k] - B.py[pk], 30 + 40 * voltage, 1.3);
+    }
     B.acc -= 1;
     steps++;
     if (!held && B.n >= zapTo) finish('zap');
@@ -1003,7 +1183,7 @@ function release(tap) {
   const B = burn;
   if (!B || B.done) return;
   // A tap lets the spark run a few dozen steps; a hold freezes at once.
-  if (tap) zapTo = B.n + 30 + Math.floor(Math.random() * 30);
+  if (tap) zapTo = B.n + 75 + Math.floor(Math.random() * 75);
   else finish('freeze');
   live();
 }
@@ -1013,11 +1193,11 @@ function release(tap) {
 function preburn() {
   rnd = mulberry(7193);
   // Portrait stages get their own spots; counts follow the board's area.
-  const spots = GH > GW ? [[0.7, 0.15, 900], [0.3, 0.86, 700]] : [[0.24, 0.62, 1500], [0.74, 0.3, 1100], [0.62, 0.78, 700]];
-  const area = Math.min(1, (GW * GH) / (312 * 188));
+  const spots = GH > GW ? [[0.7, 0.15, 2200], [0.3, 0.86, 1700]] : [[0.24, 0.62, 3700], [0.74, 0.3, 2700], [0.62, 0.78, 1700]];
+  const area = Math.min(1, (GW * GH) / (499 * 301));
   spots.forEach(([x, y, n], k) => {
     n = Math.round(n * (0.35 + 0.65 * area));
-    newBurn(x * GW, y * GH, 1.8 + rnd() * 0.6);
+    newBurn(x * GW, y * GH, 3.6 + rnd() * 0.8);
     while (!burn.done && burn.n < n) step();
     if (!burn.done) finish('freeze');
     upload(burn.seg0, burn.n);
@@ -1038,7 +1218,8 @@ function wake() {
 }
 // Lively while a spark runs; drifting at 30 fps while embers glow.
 const boardTo = () => (board === 'acrylic' ? 1 : 0);
-const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5 || sweep >= 0 || boardMix !== boardTo();
+const tilting = () => boardMix > 0 && Math.abs(tilt.x - tilt.tx) + Math.abs(tilt.y - tilt.ty) > 0.002;
+const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5 || sweep >= 0 || boardMix !== boardTo() || flies.length > 0 || tilting();
 const busy = (now = performance.now()) => visible && (lively() || (simT < hotUntil && now - inputAt < 60000));
 // Watchdog: slow lively frames step the ladder down, never back up.
 let runT = 0, slowT = 0, ftAvg = 1 / 60;
@@ -1064,6 +1245,10 @@ function frame(now) {
       lastDraw = now;
       simT += dt;
       grow(dt);
+      flyStep(dt);
+      const tk = Math.min(1, dt * 5);
+      tilt.x += (tilt.tx - tilt.x) * tk;
+      tilt.y += (tilt.ty - tilt.y) * tk;
       if (burn && burn.done) sparkLive = Math.max(0, sparkLive - dt / 0.2);
       if (sweep >= 0) sweep += dt / 0.7;
       // The board change takes 0.6 s.
@@ -1103,6 +1288,7 @@ function clearBoard() {
   burn = null;
   arcOld = null;
   nSeg = 0;
+  flies.length = 0;
   sparkLive = 0;
   grid();
   allocBoard(view.dpr);
@@ -1143,6 +1329,13 @@ inputAt = performance.now();
 wake();
 
 canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', e => {
+  if (board !== 'acrylic' || reduced()) return;
+  const r = canvas.getBoundingClientRect();
+  tilt.tx = ((e.clientX - r.left) / r.width - 0.5) * 0.5;
+  tilt.ty = ((e.clientY - r.top) / r.height - 0.5) * 0.5;
+  if (tilting()) live();
+});
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
