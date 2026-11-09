@@ -275,8 +275,11 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 
 ### Task 5: Sound
 
-- [ ] Neon hum, sizzle by boil, scoop rattle, paper, road. Pans.
-- [ ] Commit: `Frietkot: hum, sizzle and road`.
+- [x] Neon hum, sizzle by boil, scoop rattle, paper, road. Pans.
+- [x] Rain hiss and drips, wind by gust, the hall's kick at 126 BPM and murmur.
+- [x] Engines per vehicle with Doppler; the dud moped coughs on each kick.
+- [x] Muted by default; the context sleeps with the loop and on a hidden stage.
+- [x] Commit: `Frietkot: hum, sizzle and road`.
 
 ### Task 6: Settings, 375 px, QA
 

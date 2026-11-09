@@ -62,7 +62,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, oklchLinear, reduced, onReducedChange, quality } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, oklchLinear, reduced, onReducedChange, quality, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FIG_GLSL } from './figures.js';
 
@@ -2347,7 +2347,7 @@ function stepPeople(dt) {
         }
       }
       // Each kick puffs blue smoke out of the exhaust.
-      if (f.state === 'kick' && rnd() < dt * 2) emit([f.parked.x - f.parked.face * 0.7, 0.35, f.parked.z], 2, { speed: 0.1, spread: 0.05, size: 0.07, life: 2.2, kind: 2 });
+      if (f.state === 'kick' && rnd() < dt * 2) { emit([f.parked.x - f.parked.face * 0.7, 0.35, f.parked.z], 2, { speed: 0.1, spread: 0.05, size: 0.07, life: 2.2, kind: 2 }); sfxCough(f.parked.x, f.parked.z); }
       if (f.state === 'party' || f.state === 'line' || f.state === 'dealWait' || f.state === 'dealSwap' || f.state === 'dealIdle') f.t = 1e9;
       if (f.t <= 0 && f.state !== 'parked' && f.state !== 'idle') {
         if (f.state === 'wait') served(f);
@@ -2890,6 +2890,7 @@ function tick(now) {
     stepFrySign(simT, dt);
     stepMoths(dt * run);
     stepCone(dt * run);
+    soundTick(dt * run);
     stepSitters(dt * run);
     stepWeather(dt * run);
     rainMat.uniforms.uDrift.value = wind * gust * 2.5;
@@ -2913,7 +2914,8 @@ function tick(now) {
     }
   } finally {
     if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
-    else lastT = 0;
+    // Once all is still, the sound context sleeps too.
+    else { lastT = 0; kit.rest(() => !raf && !sndPending()); }
   }
 }
 function wake() {
@@ -2936,6 +2938,7 @@ function watch(now, lively) {
 }
 whenVisible(stage, vis => {
   visible = vis;
+  if (!vis) sndHush();
   if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
   draw();
   wake();
@@ -3024,6 +3027,238 @@ stage.addEventListener('pointerup', e => {
 stage.addEventListener('pointercancel', end);
 stage.addEventListener('lostpointercapture', end);
 
+/* ---------- sound ---------- */
+// Sound is muted by default and starts on a gesture.
+// The kit sleeps when the toy settles.
+// Beds: neon hum, fryer, road, rain, wind and the party.
+// Each vehicle carries its own engine voice.
+const kit = audioKit({ keys: new Set(['f', 'F', 's', 'S', 'c', 'C', ' ']) });
+let SND = null;
+const sndVoices = new Set();
+let sndPend = 0;
+const jit = (x, k) => x * (1 + (Math.random() - 0.5) * 2 * k);
+const sndPending = () => (kit.ac ? kit.ac.currentTime < sndPend : false);
+function sndTrack(node, end) { sndVoices.add(node); sndPend = Math.max(sndPend, end); node.onended = () => sndVoices.delete(node); }
+function impulse(ac, sec, decay) {
+  const n = Math.round(ac.sampleRate * sec), b = ac.createBuffer(2, n, ac.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); }
+  return b;
+}
+function noiseLoop(ac, rate) {
+  const n = ac.createBufferSource();
+  n.buffer = kit.noise; n.loop = true; n.playbackRate.value = rate;
+  n.start(0, Math.random());
+  return n;
+}
+const sndProj = new THREE.Vector3();
+// A voice's pan from its place on screen.
+function panAt(x, y, z) {
+  sndProj.set(x, y, z).project(camera);
+  return Math.max(-0.95, Math.min(0.95, sndProj.x * 0.85));
+}
+function graph() {
+  const ac = kit.live();
+  if (!ac) return null;
+  if (SND?.ac === ac) return SND;
+  const bus = ac.createGain();
+  bus.connect(kit.out);
+  // A short village-square reverb: walls close by, open sky above.
+  const verb = ac.createConvolver();
+  verb.buffer = impulse(ac, 2.2, 3);
+  const verbG = ac.createGain(); verbG.gain.value = 0.35;
+  verb.connect(verbG).connect(bus);
+  const bed = (rate, type, f, q, pan = 0) => {
+    const g = ac.createGain(); g.gain.value = 0;
+    const flt = ac.createBiquadFilter(); flt.type = type; flt.frequency.value = f; flt.Q.value = q;
+    const pn = ac.createStereoPanner(); pn.pan.value = pan;
+    noiseLoop(ac, rate).connect(flt).connect(g).connect(pn).connect(bus);
+    return { g, flt };
+  };
+  // Mains at 50 Hz makes the transformer hum at 100 Hz.
+  const humG = ac.createGain(); humG.gain.value = 0;
+  const humF = ac.createBiquadFilter(); humF.type = 'lowpass'; humF.frequency.value = 700;
+  const humP = ac.createStereoPanner(); humP.pan.value = panAt(0, 2.7, 1.3);
+  for (const [f, a] of [[100, 1], [300, 0.35], [500, 0.15]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = 'sine'; o.frequency.value = f; og.gain.value = a;
+    o.connect(og).connect(humF); o.start();
+  }
+  humF.connect(humG).connect(humP).connect(bus);
+  const fry = bed(1, 'bandpass', 3800, 0.7, panAt(-1, 1.2, 0.3));
+  const road = bed(0.25, 'lowpass', 140, 0.7);
+  const rainB = bed(1, 'bandpass', 4200, 0.35);
+  const windB = bed(0.3, 'lowpass', 260, 0.8);
+  // The party, muffled by the hall wall: a murmur of voices.
+  const crowd = bed(0.6, 'bandpass', 520, 1.2, panAt(HALL.x1 - 5, 2, HALL.z));
+  SND = { ac, bus, verb, humG, fry, road, rainB, windB, crowd, nextBeat: ac.currentTime + 0.1, engines: new Map(), crackAcc: 0 };
+  return SND;
+}
+// A distant kick drum from the parish hall, low-passed by the brick.
+function partyKick(g, t) {
+  const ac = g.ac, o = ac.createOscillator(), e = ac.createGain(), lp = ac.createBiquadFilter(), pn = ac.createStereoPanner();
+  o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+  e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(0.09, t + 0.005); e.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  lp.type = 'lowpass'; lp.frequency.value = 180;
+  pn.pan.value = panAt(HALL.x0 + 7, 2, HALL.z);
+  o.connect(lp).connect(e).connect(pn).connect(g.bus);
+  o.start(t); o.stop(t + 0.32);
+  sndTrack(o, t + 0.32);
+}
+// One fat bubble bursting in the oil: a tick through a narrow band.
+function crackle(g, t, x, level) {
+  const ac = g.ac, n = ac.createBufferSource(), bp = ac.createBiquadFilter(), e = ac.createGain(), pn = ac.createStereoPanner();
+  n.buffer = kit.noise; n.playbackRate.value = jit(1, 0.3);
+  bp.type = 'bandpass'; bp.frequency.value = jit(2600, 0.5); bp.Q.value = 2.5;
+  e.gain.setValueAtTime(jit(0.12, 0.6) * level, t); e.gain.exponentialRampToValueAtTime(0.0001, t + jit(0.02, 0.5));
+  pn.pan.value = panAt(x, 1.2, WELL_Z);
+  n.connect(bp).connect(e).connect(pn).connect(g.bus);
+  n.start(t, Math.random() * 0.8); n.stop(t + 0.05);
+  sndTrack(n, t + 0.05);
+}
+// A rain drop on the cobbles.
+function drip(g, t) {
+  const ac = g.ac, o = ac.createOscillator(), e = ac.createGain(), pn = ac.createStereoPanner();
+  const f = 1500 * Math.pow(2.4, Math.random());
+  o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.8, t + 0.04);
+  e.gain.setValueAtTime(0.0001, t); e.gain.linearRampToValueAtTime(jit(0.012, 0.5), t + 0.002); e.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  pn.pan.value = (Math.random() - 0.5) * 1.6;
+  o.connect(e).connect(pn).connect(g.bus);
+  o.start(t); o.stop(t + 0.06);
+  sndTrack(o, t + 0.06);
+}
+// A car hums low, a motorbike growls, a brommer buzzes.
+function engineFor(g, f) {
+  const ac = g.ac, o = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), e = ac.createGain(), pn = ac.createStereoPanner();
+  const tyre = ac.createBufferSource(), tf = ac.createBiquadFilter(), tg = ac.createGain();
+  const car = f.kind === 8, bike = f.kind === 1;
+  o.type = 'sawtooth'; o2.type = 'square';
+  const base = car ? 42 : f.scale ? 118 : 70;
+  o.frequency.value = base; o2.frequency.value = base * 1.5;
+  lp.type = 'lowpass'; lp.frequency.value = car ? 260 : 900;
+  e.gain.value = 0;
+  const o2g = ac.createGain(); o2g.gain.value = bike ? 0 : 0.25;
+  tyre.buffer = kit.noise; tyre.loop = true; tf.type = 'bandpass'; tf.frequency.value = bike ? 1800 : 900; tf.Q.value = 0.6; tg.gain.value = bike ? 0.5 : 0.35;
+  o.connect(lp); o2.connect(o2g).connect(lp);
+  tyre.connect(tf).connect(tg).connect(e);
+  if (!bike) lp.connect(e);
+  e.connect(pn).connect(g.bus);
+  o.start(); o2.start(); tyre.start(0, Math.random());
+  return { o, o2, e, pn, tyre, base, px: f.x, bike };
+}
+function soundTick(dt) {
+  const g = graph();
+  if (!g) return;
+  const ac = g.ac, t = ac.currentTime;
+  // Hum: steady, with a buzz when the wall sign sputters.
+  g.humG.gain.setTargetAtTime(sputter > 0 ? 0.03 : 0.012, t, 0.02);
+  // The fryer: simmer always, a roar of sizzle with the boil.
+  const boil = wells.reduce((a, w) => a + Math.max(0, w.boil - SIMMER), 0);
+  g.fry.g.gain.setTargetAtTime(0.012 + 0.16 * Math.min(1.4, boil), t, 0.08);
+  g.fry.flt.frequency.setTargetAtTime(3000 + 2200 * Math.min(1, boil), t, 0.1);
+  g.crackAcc += dt * (4 + 60 * Math.min(1.5, boil));
+  while (g.crackAcc >= 1) { g.crackAcc -= 1; const w = wells[Math.floor(Math.random() * 2)]; crackle(g, t + Math.random() * dt, w.x, 0.4 + boil); }
+  g.road.g.gain.setTargetAtTime(0.03, t, 1);
+  g.rainB.g.gain.setTargetAtTime(0.14 * wx.rain, t, 0.5);
+  g.windB.g.gain.setTargetAtTime(0.02 + 0.07 * wind * gust, t, 0.5);
+  g.crowd.g.gain.setTargetAtTime(0.012, t, 1);
+  for (let n = wx.rain * 30 * dt; n > 0; n--) if (Math.random() < n) drip(g, t + Math.random() * dt);
+  // The party's beat, scheduled a little ahead on the audio clock.
+  while (g.nextBeat < t + 0.2) { if (g.nextBeat > t) partyKick(g, g.nextBeat); g.nextBeat += 1 / HALL.beat; }
+  // Each engine follows its vehicle: level, pan, pitch and Doppler.
+  const live = new Set();
+  for (const f of people) {
+    if (!(f.kind === 8 || f.kind === 6 || (f.kind === 1 && f.speed > 3))) continue;
+    live.add(f);
+    let v = g.engines.get(f);
+    if (!v) { v = engineFor(g, f); g.engines.set(f, v); }
+    const d = Math.hypot(f.x - camera.position.x, f.z - camera.position.z);
+    const vx = dt > 0 ? (f.x - v.px) / dt : 0;
+    v.px = f.x;
+    // Approaching sounds higher, leaving lower: 343 m/s.
+    const toward = -vx * Math.sign(f.x - camera.position.x || 1);
+    const dop = 343 / Math.max(200, 343 - toward);
+    const rev = 0.7 + 0.5 * Math.min(1, f.speed / (SPEED[f.kind] || 8));
+    v.o.frequency.setTargetAtTime(v.base * rev * dop, t, 0.05);
+    v.o2.frequency.setTargetAtTime(v.base * 1.5 * rev * dop, t, 0.05);
+    v.e.gain.setTargetAtTime((v.bike ? 0.05 : 0.14) / (1 + d * 0.12), t, 0.05);
+    v.pn.pan.setTargetAtTime(panAt(f.x, 0.8, f.z), t, 0.05);
+  }
+  for (const [f, v] of g.engines) {
+    if (live.has(f)) continue;
+    v.e.gain.setTargetAtTime(0, t, 0.1);
+    v.o.stop(t + 0.5); v.o2.stop(t + 0.5); v.tyre.stop(t + 0.5);
+    g.engines.delete(f);
+  }
+}
+// A drop: wet fries hit the oil with a crash of sizzle.
+function sfxDrop(x) {
+  const g = graph();
+  if (!g) return;
+  const ac = g.ac, t = ac.currentTime + 0.005, n = ac.createBufferSource(), hp = ac.createBiquadFilter(), e = ac.createGain(), pn = ac.createStereoPanner();
+  n.buffer = kit.noise; hp.type = 'highpass'; hp.frequency.value = jit(1800, 0.2);
+  e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(0.5, t + 0.02); e.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+  pn.pan.value = panAt(x, 1.2, WELL_Z);
+  n.connect(hp).connect(e).connect(pn).connect(g.bus);
+  e.connect(g.verb);
+  n.start(t, Math.random() * 0.5); n.stop(t + 1.2);
+  sndTrack(n, t + 1.2);
+}
+// The wire basket rattles against the rim, never twice the same.
+function sfxShake(x) {
+  const g = graph();
+  if (!g) return;
+  const ac = g.ac;
+  for (let i = 0; i < 9; i++) {
+    const t = ac.currentTime + 0.01 + i * jit(0.07, 0.35), o = ac.createOscillator(), e = ac.createGain(), pn = ac.createStereoPanner();
+    o.type = 'triangle'; o.frequency.value = jit(2300, 0.25);
+    e.gain.setValueAtTime(jit(0.05, 0.5), t); e.gain.exponentialRampToValueAtTime(0.0001, t + jit(0.06, 0.4));
+    pn.pan.value = panAt(x, 1.3, WELL_Z);
+    o.connect(e).connect(pn).connect(g.bus);
+    o.start(t); o.stop(t + 0.08);
+    sndTrack(o, t + 0.08);
+    crackle(g, t, x, 1.2);
+  }
+}
+// The cone: a paper rustle, then the soft slap of sauce.
+function sfxCone() {
+  const g = graph();
+  if (!g) return;
+  const ac = g.ac, t = ac.currentTime + 0.01;
+  const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), e = ac.createGain(), pn = ac.createStereoPanner();
+  n.buffer = kit.noise; bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 0.8;
+  e.gain.setValueAtTime(0.0001, t); e.gain.linearRampToValueAtTime(0.06, t + 0.05); e.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  pn.pan.value = panAt(CONE_AT.x, CONE_AT.y, CONE_AT.z);
+  n.connect(bp).connect(e).connect(pn).connect(g.bus);
+  n.start(t, Math.random()); n.stop(t + 0.45);
+  sndTrack(n, t + 0.45);
+  const o = ac.createOscillator(), oe = ac.createGain(), ts = t + 0.75;
+  o.frequency.setValueAtTime(180, ts); o.frequency.exponentialRampToValueAtTime(70, ts + 0.08);
+  oe.gain.setValueAtTime(0.0001, ts); oe.gain.exponentialRampToValueAtTime(0.08, ts + 0.005); oe.gain.exponentialRampToValueAtTime(0.0001, ts + 0.12);
+  o.connect(oe).connect(pn);
+  o.start(ts); o.stop(ts + 0.14);
+  sndTrack(o, ts + 0.14);
+}
+// Each kick of the dud moped gives one engine cough.
+function sfxCough(x, z) {
+  const g = graph();
+  if (!g) return;
+  const ac = g.ac, t = ac.currentTime + 0.01, o = ac.createOscillator(), e = ac.createGain(), lp = ac.createBiquadFilter(), pn = ac.createStereoPanner();
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(jit(90, 0.2), t); o.frequency.exponentialRampToValueAtTime(40, t + 0.25);
+  lp.type = 'lowpass'; lp.frequency.value = 500;
+  e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(0.07, t + 0.02); e.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  pn.pan.value = panAt(x, 0.5, z);
+  o.connect(lp).connect(e).connect(pn).connect(g.bus);
+  o.start(t); o.stop(t + 0.32);
+  sndTrack(o, t + 0.32);
+}
+// A hidden stage cuts every engine and scheduled sound.
+function sndHush() {
+  for (const n of sndVoices) { try { n.stop(); } catch (err) { /* already stopped */ } }
+  sndVoices.clear();
+  if (SND) { for (const [, v] of SND.engines) { try { v.o.stop(); v.o2.stop(); v.tyre.stop(); } catch (err) { /* stopped */ } } SND.engines.clear(); }
+  kit.rest();
+}
+
 /* ---------- bar ---------- */
 // Drop needs a free basket: empty, or holding blanched fries.
 // Fill needs golden fries on the hook.
@@ -3041,6 +3276,7 @@ act.drop = () => {
   w.vy = -1.5;
   w.friesMat.uniforms.uAlb.value.set(...FRIES_COL[w.stage]);
   spit(w, reduced() ? 8 : 26);
+  sfxDrop(w.x);
   // Wet fries flash a burst of steam.
   emitWell(w, reduced() ? 8 : 22, { speed: 0.8 });
   flare = 1;
@@ -3053,6 +3289,7 @@ act.shake = () => {
   const w = wells.filter(o => o.inOil).sort((a, b) => a.t - b.t)[0] ?? wells.find(o => o.fry >= 0);
   if (!w) { flare = Math.max(flare, 0.2); wake(); return; }
   w.shake = 1;
+  sfxShake(w.x);
   if (w.inOil) { w.dip = 0.35; spit(w, reduced() ? 4 : 12); }
   // The shake throws a cloud toward the window.
   emitWell(w, reduced() ? 12 : (w.inOil ? 46 : 18), { speed: 0.7, size: 0.16, life: 7.5, out: w.inOil ? 0.5 : 0.25 });
@@ -3065,6 +3302,7 @@ act.fill = () => {
   w.shake = 0.5;
   emitWell(w, 6, { speed: 0.4, size: 0.1 });
   fillCone(ui.choice?.value ?? 'mayo');
+  sfxCone();
   syncActions();
   wake();
 };

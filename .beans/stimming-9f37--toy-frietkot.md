@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:14:44Z
-updated_at: 2026-11-09T11:04:51Z
+updated_at: 2026-11-09T11:11:27Z
 ---
 
 Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chip shack stands alone on an empty village square at night: a warm steamy service window, a humming neon strip, a low wide toy-scale shot. Drop fries, shake the basket, pick a sauce, fill a cone.
@@ -16,7 +16,7 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 - [x] Task 2: the fryer: double fry, boil and foam, basket, frites colour
 - [x] Task 3: steam: buoyancy, condensation gap, wind, backlit glow
 - [x] Task 4: sauce and cone; moths; a passing scooter or car
-- [ ] Task 5: sound: sizzle by boil, neon hum, scoop rattle, distant road
+- [x] Task 5: sound: sizzle by boil, neon hum, scoop rattle, distant road
 - [ ] Task 6: Settings, persistence, 375 px pass, QA
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name (draft: Frietkot bij nacht)
