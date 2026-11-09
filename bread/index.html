@@ -71,7 +71,7 @@ import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
 // The bar handlers bind once the scene exists.
-const act = { coin() {}, car() {}, tube() {}, rain() {}, tilt() {}, moths() {}, letterbox() {}, reset() {} };
+const act = { coin() {}, car() {}, tube() {}, rain() {}, tilt() {}, moths() {}, letterbox() {}, reset() {}, view() {} };
 const QS = new URLSearchParams(location.search);
 const ui = initPage({ id: 'bread', silent: true, bar: {
   slider: { label: 'Tube', min: 0, max: 1, step: 0.01, value: 0.25, onInput: v => act.tube(v) },
@@ -80,6 +80,8 @@ const ui = initPage({ id: 'bread', silent: true, bar: {
     { verb: 'add', noun: 'Car', key: 'C', onPress: () => act.car() },
   ],
   settings: [
+    { type: 'choice', id: 'view', label: 'View', value: 'road', persist: true, onPick: v => act.view(v),
+      options: [{ value: 'road', label: 'Road' }, { value: 'edge', label: 'Village edge' }] },
     { type: 'toggle', id: 'rain', label: 'Rain', value: false, persist: true, onToggle: on => act.rain(on) },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
     { type: 'slider', id: 'moths', label: 'Moths', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => act.moths(v) },
@@ -115,7 +117,7 @@ stage.prepend(canvas);
 RectAreaLightUniformsLib.init();
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 3000);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 3600);
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = 0;
 // Linear RGB from OKLCH, scaled by a power.
@@ -270,6 +272,74 @@ const windows = [];
   clock.position.set(cx, 32, cz + 5.05);
   scene.add(clock);
 }
+/* ---------- the horizon ---------- */
+// The Flemish horizon is never empty: farms, willow lines, pylons and turbines.
+const beacons = [];
+{
+  const parts = [];
+  // Rows of pollard willows and alders mark the field edges.
+  for (const [x0, x1, z] of [[-420, -150, -300], [60, 380, -360], [-260, -40, -640], [140, 520, -700], [-700, -300, -980], [300, 760, -1250]]) {
+    for (let x = x0; x < x1; x += 4 + rnd() * 5) {
+      const h = 2.6 + rnd() * 2.2;
+      parts.push(new THREE.SphereGeometry(1, 10, 6).scale(2.4 + rnd() * 1.6, h, 2.4).translate(x, h * 0.8, z + rnd() * 4));
+    }
+  }
+  // Farms: a long barn, a house and a few trees; most have a lit window.
+  for (const [x, z, flip] of [[-250, -560, 1], [190, -470, -1], [430, -820, 1], [-520, -880, -1], [120, -1600, 1], [-330, -1450, 1]]) {
+    parts.push(new THREE.BoxGeometry(26, 8, 12).translate(x, 4, z));
+    parts.push(roof(12, 7, 26, false).rotateY(Math.PI / 2).translate(x, 8, z));
+    parts.push(new THREE.BoxGeometry(9, 6, 9).translate(x + flip * 20, 3, z + 4));
+    parts.push(roof(9, 6, 9, true).translate(x + flip * 20, 6, z + 4));
+    for (let t = 0; t < 3; t++) {
+      const h = 10 + rnd() * 6;
+      parts.push(new THREE.SphereGeometry(1, 10, 8).scale(5 + rnd() * 3, h / 2, 5).translate(x - flip * (18 + t * 7), h / 2, z - 6 + rnd() * 8));
+    }
+    if (rnd() < 0.8) windows.push([x + flip * 20 + 1.5, 2.6, z + 8.6, false]);
+  }
+  // The next village over, far left: one spire and a low row.
+  parts.push(new THREE.BoxGeometry(8, 30, 8).translate(-760, 15, -2300));
+  parts.push(new THREE.ConeGeometry(4.5, 26, 4).rotateY(Math.PI / 4).translate(-760, 43, -2300));
+  parts.push(new THREE.BoxGeometry(120, 8, 20).translate(-720, 4, -2280));
+  // A high-voltage line crosses the land on lattice pylons.
+  const wire = [];
+  const PYL = [[-900, -820], [-560, -900], [-220, -980], [700, -1150], [1040, -1230]];
+  const tips = PYL.map(([x, z]) => {
+    parts.push(new THREE.CylinderGeometry(1.2, 4.5, 44, 4).rotateY(Math.PI / 4).translate(x, 22, z));
+    parts.push(new THREE.BoxGeometry(20, 1.2, 1.2).translate(x, 32, z));
+    parts.push(new THREE.BoxGeometry(14, 1.2, 1.2).translate(x, 39, z));
+    parts.push(new THREE.ConeGeometry(1.4, 6, 4).translate(x, 47, z));
+    return [[x - 10, 32, z], [x + 10, 32, z], [x - 7, 39, z], [x + 7, 39, z]];
+  });
+  // Each span sags as a catenary, here a parabola in twelve steps.
+  for (let i = 0; i < tips.length - 1; i++) {
+    if (PYL[i + 1][0] - PYL[i][0] > 500) continue;
+    for (let k = 0; k < 4; k++) {
+      const a = tips[i][k], b = tips[i + 1][k];
+      for (let s = 0; s < 12; s++) {
+        const p = t => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - 9 * 4 * t * (1 - t), a[2] + (b[2] - a[2]) * t];
+        wire.push(...p(s / 12), ...p((s + 1) / 12));
+      }
+    }
+  }
+  const wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+  scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: inkMat.color, fog: false })));
+  // Wind turbines stand far off on the right, each with a red beacon.
+  for (const [x, z, a] of [[520, -2500, 0.3], [700, -2700, 1.4], [880, -2450, 2.2], [1100, -2600, 0.9]]) {
+    parts.push(new THREE.CylinderGeometry(1.4, 2.6, 92, 10).translate(x, 46, z));
+    parts.push(new THREE.BoxGeometry(4, 4, 9).translate(x, 93, z));
+    for (let b = 0; b < 3; b++) {
+      const ang = a + (b * Math.PI * 2) / 3;
+      parts.push(new THREE.BoxGeometry(1.6, 46, 0.6).translate(0, 23, 0).rotateZ(ang).translate(x, 93, z + 4.6));
+    }
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(1.3, 8, 6), new THREE.MeshBasicMaterial({ color: lin(0.62, 0.24, 28, 8), fog: false }));
+    beacon.position.set(x, 96, z);
+    scene.add(beacon);
+    beacons.push(beacon);
+  }
+  scene.add(new THREE.Mesh(mergeGeometries(parts.map(g => (g.index ? g.toNonIndexed() : g))), inkMat));
+}
+
 // Lit windows: tiny warm squares; bloom makes them points of light.
 const farMat = new THREE.MeshBasicMaterial({ color: WARM.clone().multiplyScalar(5), fog: false });
 const tvMat = new THREE.MeshBasicMaterial({ color: lin(0.7, 0.12, 250, 4), fog: false });
@@ -289,9 +359,7 @@ for (const [x, z, r] of [[ROAD.x1 + 1.2, -420, 0.3], [ROAD.x1 + 1.2, -900, 0.5],
 /* ---------- the stop ---------- */
 // The machine stands alone on a small concrete pad on the far verge.
 const STOP = new THREE.Group();
-// It faces the road at an angle, so the eye sees it three-quarter on.
-STOP.position.set(ROAD.x1 + 2.3, 0, -36);
-STOP.rotation.y = -0.45;
+// setView() places it; on the road it faces the road three-quarter on.
 scene.add(STOP);
 const concrete = new THREE.MeshStandardMaterial({ color: lin(0.55, 0.008, 80), map: noiseTex(64, 0.25), roughness: 0.92 });
 const enamel = new THREE.MeshStandardMaterial({ color: lin(0.86, 0.02, 95), roughness: 0.4, metalness: 0.05 });
@@ -517,6 +585,121 @@ const moon = new THREE.DirectionalLight(lin(0.7, 0.04, 250), 0.22);
 moon.position.set(-20, 18, -200);
 scene.add(moon);
 
+/* ---------- village edge ---------- */
+// The second view: the machine stands against the blind gable of the last house.
+// The terrace runs along the road; the fields open out beyond its end wall.
+const EDGE = { x0: 4.6, x1: 13.6, z: -40, n: 4, w: 7.5, h: 6.4, rh: 4.6 };
+const edgeSet = new THREE.Group();
+edgeSet.visible = false;
+scene.add(edgeSet);
+// Brick: a running bond of warm red-brown bricks in grey mortar.
+const brickCanvas = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6d665c'; g.fillRect(0, 0, 512, 512);
+  const bw = 64, bh = 24;
+  for (let r = 0; r < 512 / bh; r++) {
+    for (let k = -1; k < 512 / bw + 1; k++) {
+      const x = k * bw + (r % 2) * (bw / 2), l = 30 + rnd() * 12, hue = 18 + rnd() * 14;
+      g.fillStyle = `hsl(${hue} ${42 + rnd() * 18}% ${l}%)`;
+      g.fillRect(x + 2, r * bh + 2, bw - 4, bh - 4);
+    }
+  }
+  return c;
+})();
+const brickTex = (rx, ry) => {
+  const t = new THREE.CanvasTexture(brickCanvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.anisotropy = 4;
+  return t;
+};
+// A 512 px tile holds eight bricks across (1.76 m) and 21 courses (1.6 m).
+const brickBox = new THREE.MeshStandardMaterial({ map: brickTex(5.1, 4), roughness: 0.92 });
+const brickMetre = new THREE.MeshStandardMaterial({ map: brickTex(1 / 1.76, 1 / 1.6), roughness: 0.92 });
+const tiles = new THREE.MeshStandardMaterial({ color: lin(0.24, 0.03, 30), roughness: 0.7 });
+{
+  const { x0, x1, z, n, w, h, rh } = EDGE, cx = (x0 + x1) / 2, d = x1 - x0;
+  for (let i = 0; i < n; i++) {
+    const hz = z - w / 2 - i * w, hh = h + (i % 2) * 0.5;
+    const house = cast(new THREE.Mesh(new THREE.BoxGeometry(d, hh, w), brickBox));
+    house.position.set(cx, hh / 2, hz);
+    edgeSet.add(house);
+    // The ridge runs along the street; the roof overhangs the walls a little.
+    const r = cast(new THREE.Mesh(roof(d + 0.5, rh, w + 0.05, true), tiles));
+    r.position.set(cx, hh, hz);
+    edgeSet.add(r);
+  }
+  // The blind gable: a brick triangle on the end wall, under the roof.
+  const s = new THREE.Shape();
+  // It keeps the roof's slope and sits just in front of the roof's end face.
+  const gh = rh * (d / (d + 0.5));
+  s.moveTo(-d / 2, 0); s.lineTo(d / 2, 0); s.lineTo(0, gh); s.closePath();
+  const gableGeo = new THREE.ShapeGeometry(s);
+  const gable = cast(new THREE.Mesh(gableGeo, brickMetre));
+  gable.position.set(cx, h, z + 0.04);
+  edgeSet.add(gable);
+  // A concrete apron before the wall, and a pavement along the terrace.
+  const apron = cast(new THREE.Mesh(new THREE.BoxGeometry(d + 1.6, 0.1, 4.5), concrete));
+  apron.position.set(cx - 0.8, 0.05, z + 2.25);
+  edgeSet.add(apron);
+  const pave = cast(new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 40), concrete));
+  pave.position.set(x0 - 0.8, 0.06, z - 14);
+  edgeSet.add(pave);
+  // A garden hedge runs from the back corner out into the field.
+  const hedge = cast(new THREE.Mesh(new THREE.BoxGeometry(18, 1.5, 1.1), new THREE.MeshStandardMaterial({ color: lin(0.2, 0.04, 140), roughness: 1 })));
+  hedge.position.set(x1 + 9, 0.75, z - 0.6);
+  edgeSet.add(hedge);
+}
+// One sodium street lamp on the pavement, left of the machine.
+const LAMP = new THREE.Vector3(EDGE.x0 - 1.0, 7.2, EDGE.z + 2.6);
+{
+  const pole = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, LAMP.y, 8), trim));
+  pole.position.set(LAMP.x, LAMP.y / 2, LAMP.z);
+  edgeSet.add(pole);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.08), trim);
+  arm.position.set(LAMP.x - 0.6, LAMP.y, LAMP.z);
+  edgeSet.add(arm);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.26), trim);
+  head.position.set(LAMP.x - 1.2, LAMP.y - 0.04, LAMP.z);
+  edgeSet.add(head);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.2).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: lin(0.8, 0.16, 58, 12), side: THREE.DoubleSide }));
+  glow.position.set(LAMP.x - 1.2, LAMP.y - 0.11, LAMP.z);
+  edgeSet.add(glow);
+}
+// The sodium light rakes the wall from the left; the machine throws its shadow right.
+const sodiumLight = new THREE.SpotLight(lin(0.78, 0.16, 58), 220, 30, 1.05, 0.6, 2);
+sodiumLight.position.set(LAMP.x - 1.2, LAMP.y - 0.15, LAMP.z);
+sodiumLight.target.position.set(EDGE.x0 + 3.5, 0, EDGE.z + 1);
+sodiumLight.castShadow = true;
+sodiumLight.shadow.mapSize.set(1024, 1024);
+sodiumLight.shadow.bias = -0.0015;
+sodiumLight.shadow.radius = 3;
+edgeSet.add(sodiumLight, sodiumLight.target);
+// The hood washes the brick above it with yellow light.
+const wallWash = new THREE.PointLight(lin(0.86, 0.17, 88), 3, 5, 2);
+edgeSet.add(wallWash);
+
+/* ---------- views ---------- */
+// Road: the machine alone on the verge. Edge: against the blind gable.
+const VIEWS = {
+  road: { at: [ROAD.x1 + 2.3, 0, -36], rot: -0.45 },
+  edge: { at: [(EDGE.x0 + EDGE.x1) / 2, 0, EDGE.z + 0.38], rot: 0 },
+};
+let view = 'road';
+function setView(v) {
+  view = VIEWS[v] ? v : 'road';
+  const V = VIEWS[view];
+  STOP.position.set(...V.at);
+  STOP.rotation.y = V.rot;
+  STOP.updateMatrixWorld(true);
+  edgeSet.visible = view === 'edge';
+  wallWash.position.copy(STOP.localToWorld(new THREE.Vector3(0, HOOD.y + 0.5, -0.2)));
+}
+setView('road');
+
 /* ---------- moths ---------- */
 // Soft points round the tube; the flight comes in Task 3.
 const MOTHS = 24;
@@ -684,13 +867,20 @@ const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 // A dead-level eye on the road; a shifted lens drops the horizon low.
 // A long lens flattens the land, as in Beach walker.
 const SHOT = {
-  wide: { pos: [0.9, 1.15, 0], yaw: -0.06, vfov: 12.5, horizon: 0.64 },
-  tall: { pos: [4.0, 1.15, -12], yaw: -0.012, vfov: 22, horizon: 0.58 },
+  road: {
+    wide: { pos: [0.9, 1.15, 0], yaw: -0.06, vfov: 12.5, horizon: 0.64 },
+    tall: { pos: [4.0, 1.15, -12], yaw: -0.012, vfov: 22, horizon: 0.58 },
+  },
+  // Dead frontal on the blind gable, centred: a deadpan frame.
+  edge: {
+    wide: { pos: [9.1, 1.2, -16], yaw: 0, vfov: 36, horizon: 0.79 },
+    tall: { pos: [9.1, 1.2, -12], yaw: 0, vfov: 46, horizon: 0.72 },
+  },
 };
 const TUBE_W = new THREE.Vector3(), probe = new THREE.Vector3();
 let focal = 1;
 function frame() {
-  const portrait = size.w < size.h, S = portrait ? SHOT.tall : SHOT.wide;
+  const portrait = size.w < size.h, S = SHOT[view][portrait ? 'tall' : 'wide'];
   const w = size.w, h = size.h;
   const hy = h * S.horizon + look.pitch * h;
   focal = h / (2 * Math.tan((S.vfov * Math.PI) / 360));
@@ -740,6 +930,8 @@ onReducedChange(() => draw());
 // Blockout: the look only. Motion and sound come in later tasks.
 act.tilt = v => { tilt.uniforms.uAmt.value = v; draw(); };
 act.letterbox = on => { stage.toggleAttribute('data-letterbox', on); };
+act.view = v => { setView(v); frame(); draw(); };
+setView(QS.get('view') || ui.setting('view')?.value || 'road');
 act.tilt(ui.setting('tilt')?.value ?? 0.6);
 act.letterbox(!!ui.setting('letterbox')?.value);
 

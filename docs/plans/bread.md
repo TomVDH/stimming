@@ -38,6 +38,12 @@ One lit stop in a vast dark landscape, at toy scale.
 
 Shapes stay few and plain. Light, haze and glow carry the scene.
 
+## Views (Tom, 2026-11-09)
+
+- **Road:** the long-lens shot down the road, the machine alone on the verge.
+- **Village edge:** the machine against the blind brick gable of the last terrace house, dead frontal and centred. One sodium street lamp rakes the wall from the left; the machine throws its shadow right. The fields and the horizon open out on both sides of the wall.
+- **Horizon (both views):** never empty. Willow lines on field edges, farms with a lit window, a high-voltage line on lattice pylons, wind turbines with red beacons, the next village's spire far left.
+
 ## Hero moments
 
 1. **The coin.** A clink, the green lamp blinks, the tall carousel turns behind the doors with a motor whirr and stops with a little overshoot. One small door swings open on its tier. Warm light spills out onto the pad, and steam curls up through the tube light.
@@ -91,6 +97,7 @@ Four visible controls.
 
 | Row | Type | Values | Persist |
 |---|---|---|---|
+| View | choice | Road, Village edge | yes |
 | Rain | toggle | Off, On | yes |
 | Tilt-shift | slider | 0 to 1, default 0.6 | yes |
 | Moths | slider | 0 to 1, default 0.5 | yes |
