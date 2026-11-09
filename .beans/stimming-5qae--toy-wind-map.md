@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T09:45:21Z
+updated_at: 2026-11-09T10:09:38Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -97,3 +97,5 @@ Wind map already passes a bar spec, so the newest shell look (logo, breadcrumb n
 
 - The globe is the standard view (saved Flat still wins). Its disc is 0.40 of the short side, down from 0.46. A pole axis pierces it: bright stubs outside the sphere, faint and dashed inside, a cap on the facing pole.
 - Bar: the choice is now View, Globe or Flat with icons. Actions are + Cyclone, Isobars and Fronts; the two toggles stay pressed while on and persist. Fronts is the old Chart layer (fronts and tracks). Look moves to Settings; Clear becomes the Settings Reset; Marks reads H and L marks.
+
+- [x] Menu icon: clean-up (arms grow from the eyes, flow spans the tile, one halo each)
