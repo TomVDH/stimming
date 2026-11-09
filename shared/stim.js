@@ -260,7 +260,13 @@ function keyBinder() {
     e.preventDefault();
     fn();
   });
-  return (key, fn) => map.set(String(key).toLowerCase(), fn);
+  // A held key lets go on its keyup, wherever focus went.
+  const ups = new Map();
+  document.addEventListener('keyup', e => ups.get(e.key.toLowerCase())?.());
+  return (key, fn, up) => {
+    map.set(String(key).toLowerCase(), fn);
+    if (up) ups.set(String(key).toLowerCase(), up);
+  };
 }
 
 /* choice: segments, stepper or tray */
@@ -370,19 +376,54 @@ function actionLabel(a) {
 function makeAction(a, bindKey) {
   const b = make('button', 's2-chip', `${a.verb === 'shuffle' ? DIE : ''}<span class="s2-label">${actionLabel(a)}</span>`);
   b.type = 'button';
-  let disabled = false;
+  let disabled = false, held = false;
   const press = () => { if (!disabled) a.onPress?.(); };
-  b.addEventListener('click', press);
+  // A held action runs onDown on press and onUp on release.
+  const down = () => {
+    if (disabled || held) return;
+    held = true;
+    b.setAttribute('aria-pressed', 'true');
+    a.onDown?.();
+  };
+  const up = () => {
+    if (!held) return;
+    held = false;
+    b.setAttribute('aria-pressed', 'false');
+    a.onUp?.();
+  };
+  if (a.hold) {
+    b.dataset.hold = '';
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      try { b.setPointerCapture(e.pointerId); } catch {}
+      down();
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => b.addEventListener(t, up));
+    // Touch long-press must not open a menu.
+    b.addEventListener('contextmenu', e => e.preventDefault());
+    // Enter and Space hold the focused chip.
+    b.addEventListener('keydown', e => {
+      if (e.key !== ' ' && e.key !== 'Enter') return;
+      e.preventDefault();
+      if (!e.repeat) down();
+    });
+    b.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') up(); });
+    b.addEventListener('blur', up);
+    addEventListener('blur', up);
+  } else b.addEventListener('click', press);
   if (a.key) {
     b.append(make('kbd', 's2-kbd', a.key));
     b.setAttribute('aria-keyshortcuts', a.key);
-    bindKey(a.key, press);
+    if (a.hold) bindKey(a.key, down, up);
+    else bindKey(a.key, press);
   }
   const handle = {
     get value() { return a.verb; },
     set(v, fire = false) { if (fire) press(); },
+    get held() { return held; },
     get disabled() { return disabled; },
-    set disabled(d) { disabled = !!d; b.setAttribute('aria-disabled', String(disabled)); },
+    set disabled(d) { disabled = !!d; b.setAttribute('aria-disabled', String(disabled)); if (disabled) up(); },
   };
   return { el: b, handle };
 }

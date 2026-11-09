@@ -228,6 +228,58 @@ t('action key', () => {
   eq(onPress.calls.length, 2);
   eq(layer.querySelector('.s2-bl .s2-chip kbd')?.textContent, 'J');
 });
+const ptr = (el, type) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, button: 0, isPrimary: true }));
+const keyup = k => document.body.dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true, cancelable: true }));
+// Each test takes its own key, since old fixtures keep their listeners.
+const blow = (k = 'B') => ({ verb: 'blow', key: k, hold: true, onDown: spy(), onUp: spy() });
+t('held action breathes while held', () => {
+  const a = blow();
+  const { layer } = fixture({ actions: [a] });
+  const b = layer.querySelector('.s2-bl .s2-chip');
+  ptr(b, 'pointerdown');
+  eq(a.onDown.calls.length, 1);
+  eq(b.getAttribute('aria-pressed'), 'true');
+  ptr(b, 'pointerup');
+  click(b);
+  eq(a.onUp.calls.length, 1);
+  eq(a.onDown.calls.length, 1);
+  eq(b.getAttribute('aria-pressed'), 'false');
+  ptr(b, 'pointerdown');
+  ptr(b, 'pointercancel');
+  eq(a.onUp.calls.length, 2);
+});
+t('held action key goes down and up', () => {
+  const a = blow('N');
+  fixture({ actions: [a] });
+  key('n');
+  key('n', { repeat: true });
+  eq(a.onDown.calls.length, 1);
+  keyup('n');
+  eq(a.onUp.calls.length, 1);
+  keyup('n');
+  eq(a.onUp.calls.length, 1);
+});
+t('held action has no long-press menu', () => {
+  const { layer } = fixture({ actions: [blow()] });
+  const b = layer.querySelector('.s2-bl .s2-chip');
+  const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+  b.dispatchEvent(e);
+  ok(e.defaultPrevented, 'context menu opens');
+  eq(getComputedStyle(b).touchAction, 'none');
+});
+t('held action lets go on blur and disable', () => {
+  const a = blow('V');
+  const { layer, ui } = fixture({ actions: [a] });
+  const b = layer.querySelector('.s2-bl .s2-chip');
+  ptr(b, 'pointerdown');
+  dispatchEvent(new Event('blur'));
+  eq(a.onUp.calls.length, 1);
+  key('v');
+  ui.action('blow').disabled = true;
+  eq(a.onUp.calls.length, 2);
+  ptr(b, 'pointerdown');
+  eq(a.onDown.calls.length, 2);
+});
 t('keys ignore modifiers', () => {
   const onPress = spy();
   fixture({ actions: [{ verb: 'blow', key: 'K', onPress }] });

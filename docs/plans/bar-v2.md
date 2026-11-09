@@ -77,6 +77,8 @@ Palette options carry a square colour dot.
 
 An action can be disabled (`aria-disabled`) when it would do nothing.
 
+A held action (`hold: true`, `onDown`, `onUp`) runs while the chip, its key, or Enter/Space on the focused chip is held. It looks pressed while held, opens no long-press menu, and lets go on release, cancel, window blur or disable.
+
 **Key strip.** Bottom centre, above the bottom row when a bottom slot is used.
 - Each entry is a keycap, then a verb in lower case. Example: `[CLICK] place`.
 - Mouse and touch words swap by pointer type: `CLICK`/`TAP`, `SCROLL`/`PINCH`, `DOUBLE-CLICK`/`DOUBLE-TAP`.
