@@ -28,9 +28,10 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - [x] Round 5: Jam replaces mud (drag slows streets x3, a second stroke x8, a third walls them; brake lights crawl)
 - [x] Round 5: long press and a dragged destination replay the search; the path waits for the light
 - [x] Round 5: once the path locks, every other street and node recedes over 3.5 s
-- [x] Round 6: Courier: a car drives the found path, crawls through jams, replans or U-turns, blinks when boxed in
+- [x] Round 6: Courier built, then removed (Tom: take the car off)
 - [x] Round 6: Blackout: double-tap cuts power round a point; the path and the car re-route; Clear restores
-- [x] Round 6: a jam stroke settles live instead of replaying, so the courier keeps driving
+- [x] Round 6: a jam stroke settles live instead of replaying
+- [x] Round 6: Speed slider removed; the flood runs at a fixed 0.45 (Tom)
 - [ ] Round 6: 2800 m grabs (fetch.py HALF 1400, 11000 buildings); refetch running, old grabs still load
 - [ ] Round 5: checkpoint with Tom
 - [ ] Task 2: scouts, sparks, queue shimmer, path snap

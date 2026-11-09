@@ -68,8 +68,10 @@ const stage = document.getElementById('stage');
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 // The handlers bind once the GL exists.
-const act = { algo() {}, web() {}, shuffle() {}, remap() {}, clear() {}, reset() {}, still() {}, tree() {}, courier() {} };
-let speedK = 1, glow = 0.5, treeOn = true, courierOn = true;
+const act = { algo() {}, web() {}, shuffle() {}, remap() {}, clear() {}, reset() {}, still() {}, tree() {} };
+// The flood runs at one set pace, a little above the old slowest.
+const speedK = 0.45;
+let glow = 0.5, treeOn = true;
 const KINDS = ['cells', 'streets', 'circuit', 'roots'];
 // Seven searches; the top-left choice picks one and persists by hand.
 // Districts floods from several sources; each claims the streets it reaches first.
@@ -82,7 +84,6 @@ let algo = 'dijkstra', kind = 'streets';
 try { const a = localStorage.getItem(ALGO_KEY); if (ALGOS.some(o => o.value === a)) algo = a; } catch { /* Storage can be blocked. */ }
 const ui = initPage({ id: 'dijkstra', bar: {
   choice: { label: 'Search', value: algo, options: ALGOS, onPick: v => act.algo(v) },
-  slider: { label: 'Speed', min: 0.3, max: 2.5, step: 0.01, value: speedK, onInput: v => { speedK = v; } },
   actions: [
     { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
     { verb: 'remap', key: 'M', onPress: () => act.remap() },
@@ -94,7 +95,6 @@ const ui = initPage({ id: 'dijkstra', bar: {
       { value: 'circuit', label: 'Circuit' }, { value: 'roots', label: 'Roots' },
     ], onPick: v => act.web(v) },
     { type: 'toggle', id: 'tree', label: 'Tree', value: true, persist: true, onToggle: v => act.tree(v) },
-    { type: 'toggle', id: 'courier', label: 'Courier', value: true, persist: true, onToggle: v => act.courier(v) },
     { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.5, persist: true, onInput: v => { glow = v; act.still(); } },
   ],
   reset: () => act.reset(),
@@ -103,7 +103,6 @@ const ui = initPage({ id: 'dijkstra', bar: {
 } });
 glow = ui.setting('glow')?.value ?? glow;
 treeOn = ui.setting('tree')?.value ?? treeOn;
-courierOn = ui.setting('courier')?.value ?? courierOn;
 kind = ui.setting('web')?.value ?? kind;
 if (!KINDS.includes(kind)) kind = 'streets';
 // Clear has nothing to wipe until a wall exists.
@@ -495,7 +494,7 @@ function finish(g, W, H) {
     areas: g.areas || { s: 1, b: [], w: [], g: [], r: [] }, cut: new Uint8Array(E),
     w0: Float32Array.from(w), jam: new Uint8Array(E), jamStroke: new Int32Array(E).fill(-1),
     own: new Int8Array(N).fill(-1), flow: new Float32Array(N), reached: 1,
-    dark: new Float32Array(E).fill(-1), darkN: new Uint8Array(N), hC: mkHeap(2 * E + 16),
+    dark: new Float32Array(E).fill(-1), darkN: new Uint8Array(N),
     hA: mkHeap(2 * E + 16), hB: mkHeap(2 * E + 16), pathList: null, lockAt: Infinity,
     width: g.width ? Float32Array.from(g.width) : new Float32Array(E).fill(1),
     dist: new Float32Array(N), par: new Int32Array(N), tEnter: new Float32Array(N),
@@ -804,7 +803,6 @@ flat in vec4 vD;
 flat in vec4 vX;
 out vec4 o;
 uniform float uScout, uTreeG, uFlowN, uRecede;
-uniform vec3 uCar;
 void main() {
   vec2 a = vAB.xy, b = vAB.zw, ab = b - a;
   float L2 = max(dot(ab, ab), 1e-6), L = sqrt(L2);
@@ -855,8 +853,6 @@ void main() {
   // A found path stays; every other street slowly recedes.
   float onP = step(9.5, vX.w);
   on *= 1.0 - 0.86 * uRecede * (1.0 - onP);
-  // Streets dim round the courier, so the car reads against them.
-  on *= mix(1.0, 0.12 + 0.88 * smoothstep(5.0, 26.0, length(vP - uCar.xy)), uCar.z);
   vec3 c = mix(uCold * core, on, lit);
   // Jam: slow brake lights crawl both ways, on two lanes.
   float jam = vX.w - 10.0 * onP;
@@ -959,7 +955,6 @@ flat in vec4 vD;
 out vec4 o;
 uniform float uReveal, uNow, uFlash, uPulse;
 uniform vec3 uHot;
-uniform vec3 uCar;
 void main() {
   vec2 a = vAB.xy, b = vAB.zw, ab = b - a;
   float L2 = max(dot(ab, ab), 1e-6);
@@ -974,8 +969,6 @@ void main() {
   float seg = exp(-(uNow - vD.z) / 0.3);
   vec3 c = uHot * (core + halo) * (1.0 + 0.5 * pulse);
   c += uHot * (uFlash * 0.5 + seg * 0.35 + head * 0.8) * (core + halo);
-  // The path dims round the courier, so the car reads against it.
-  c *= mix(1.0, 0.12 + 0.88 * smoothstep(5.0, 26.0, length(vP - uCar.xy)), uCar.z);
   o = vec4(c, 1.0);
 }`;
 // Markers: the source as a point in a ring, the target as a thin reticle.
@@ -994,18 +987,6 @@ void main() {
   vec3 hot = vN1.x > -0.5 ? mix(ownCol(vN1.x) * 1.6, vec3(1.0), 0.2) : uHot;
   if (kind < 0.5) {
     c = hot * (exp(-r * r / 4.0) * 1.7 + exp(-pow(r - 8.0, 2.0) / 0.35) * 0.75);
-  } else if (kind > 1.5) {
-    // The courier: a warm head, a headlight cone ahead, a red tail behind.
-    vec2 dir = vN1.yz;
-    float f = dot(vQ, dir), sd = dir.x * vQ.y - dir.y * vQ.x;
-    float body = exp(-(f * f / 6.0 + sd * sd / 3.0));
-    float cone = step(0.0, f) * exp(-sd * sd / (0.3 * f * f + 1.5)) * exp(-f / 7.0);
-    // The tail light streaks back along the street, red against the white path.
-    float tail = step(f, -1.0) * exp(-sd * sd / 1.4) * exp((f + 1.0) / 8.0);
-    // Stuck: the hazards blink amber.
-    float haz = on < 0.5 ? step(0.5, fract(uTime * 1.6)) : 0.0;
-    c = vec3(1.0, 0.95, 0.85) * body * 3.0 + vec3(1.0, 0.75, 0.4) * cone * 1.1 * on + vec3(1.0, 0.06, 0.02) * tail * 2.2
-      + vec3(1.0, 0.6, 0.1) * haz * exp(-r * r / 10.0) * 1.4;
   } else {
     float ring = exp(-pow(r - 8.0, 2.0) / 0.35) + exp(-pow(r - 13.0, 2.0) / 0.25) * 0.35;
     c = mix(vec3(0.75, 0.8, 0.9), uHot, on) * ring * (0.6 + 0.4 * on) + uHot * on * exp(-r * r / 2.0) * 1.2;
@@ -1389,7 +1370,6 @@ function marks() {
   else {
     if (src >= 0) m.push(g.X[src], g.Y[src], 0, 1, -1, 0, 0, 0);
     if (tgt >= 0) m.push(g.X[tgt], g.Y[tgt], 1, lockT >= 0 ? 1 : 0, -1, 0, 0, 0);
-    if (car.on && courierOn) m.push(car.x, car.y, 2, car.stuck ? 0 : 1, -1, car.dx, car.dy, 0);
   }
   fillVbo('mark', new Float32Array(m), m.length / 8);
 }
@@ -1403,7 +1383,6 @@ function replay() {
   search(algo, src, tgt);
   W = 0;
   lockT = -1;
-  car.on = false;
   pathBirth = new Map();
   route();
   checkLock();
@@ -1415,7 +1394,6 @@ function settle() {
   W = web.maxD + TAIL;
   route();
   checkLock(true);
-  if (car.on) replanCar();
   marks();
 }
 // A dragged destination drops its path; the search replays on release.
@@ -1425,7 +1403,6 @@ function carry(i) {
   web.pathList = null;
   web.lockAt = Infinity;
   lockT = -1;
-  car.on = false;
   route();
   marks();
 }
@@ -1435,7 +1412,6 @@ function checkLock(quiet = false) {
   if (reached && lockT < 0) {
     lockT = quiet ? simT - 5 : simT;
     if (!quiet) pathBirth.forEach((_, k) => pathBirth.set(k, simT));
-    if (!car.on) startCar();
     marks();
   }
   if (!reached && lockT >= 0) { lockT = -1; marks(); }
@@ -1462,88 +1438,6 @@ function brush(x, y) {
   if (!hit) return;
   if (clearBtn) clearBtn.disabled = false;
   settle();
-}
-
-/* ---------- courier ---------- */
-// A car drives the found path; it replans when its route closes or slows.
-const car = { on: false, route: [], k: 0, s: 0, x: 0, y: 0, dx: 1, dy: 0, wait: 0, stuck: false };
-// The edge that joins two neighbours, or -1.
-function edgeOf(a, b) {
-  const g = web;
-  for (let j = g.row[a]; j < g.row[a + 1]; j++) if (g.nb[j] === b) return g.ne[j];
-  return -1;
-}
-// The car's own Dijkstra, so the light's search stays intact.
-function carRoute(from, to) {
-  const g = web, N = g.N, d = new Float32Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), H = g.hC;
-  H.n = 0;
-  d[from] = 0;
-  H.push(from, 0);
-  while (H.n) {
-    const u = H.pop();
-    if (H.key > d[u]) continue;
-    if (u === to) break;
-    for (let j = g.row[u]; j < g.row[u + 1]; j++) {
-      const v = g.nb[j], e = g.ne[j];
-      if (g.cut[e]) continue;
-      const c = d[u] + g.w[e];
-      if (c < d[v]) { d[v] = c; prev[v] = u; H.push(v, c); }
-    }
-  }
-  if (d[to] === Infinity) return null;
-  const r = [];
-  for (let v = to; v >= 0; v = prev[v]) r.unshift(v);
-  return r;
-}
-function startCar() {
-  car.on = algo !== 'districts' && path.length > 1;
-  car.route = path.slice();
-  car.k = 0; car.s = 0; car.wait = 0.5; car.stuck = false;
-  placeCar();
-}
-// A closed or slower route sends the car a new way from where it is.
-function replanCar() {
-  if (!car.on || tgt < 0) return;
-  const a = car.route[car.k], b = car.route[car.k + 1];
-  if (b === undefined) return;
-  const g = web, e = edgeOf(a, b), L = Math.hypot(g.X[b] - g.X[a], g.Y[b] - g.Y[a]);
-  // Ahead is open: replan from the next junction.
-  if (e >= 0 && !g.cut[e]) {
-    const r = carRoute(b, tgt);
-    if (r) { car.route = [a, ...r]; car.k = 0; car.stuck = false; return; }
-  }
-  // A closed street turns the car round; at a junction it simply leaves.
-  const r = carRoute(a, tgt);
-  car.stuck = !r;
-  if (!r) return;
-  if (car.s > 0) { car.route = [b, ...r]; car.s = L - car.s; } else car.route = r;
-  car.k = 0;
-}
-function placeCar() {
-  const g = web, a = car.route[car.k], b = car.route[car.k + 1];
-  if (a === undefined) return;
-  if (b === undefined) { car.x = g.X[a]; car.y = g.Y[a]; return; }
-  const L = Math.hypot(g.X[b] - g.X[a], g.Y[b] - g.Y[a]) || 1, f = clamp(car.s / L);
-  car.x = g.X[a] + (g.X[b] - g.X[a]) * f; car.y = g.Y[a] + (g.Y[b] - g.Y[a]) * f;
-  car.dx = (g.X[b] - g.X[a]) / L; car.dy = (g.Y[b] - g.Y[a]) / L;
-}
-// The car crawls through jams and runs fast on main roads.
-function driveCar(dt) {
-  if (!car.on || !courierOn || car.stuck) return;
-  if (car.wait > 0) { car.wait -= dt; if (car.wait <= 0 && car.k >= car.route.length - 1) startCar(); return; }
-  const g = web;
-  let left = dt;
-  while (left > 0 && car.k < car.route.length - 1) {
-    const a = car.route[car.k], b = car.route[car.k + 1], e = edgeOf(a, b);
-    // A car already on a street may finish it, even once it closes.
-    if (e < 0 || (g.cut[e] && car.s <= 0)) { replanCar(); if (car.stuck) break; continue; }
-    const L = Math.max(g.len[e], 0.01), v = (75 * speedK) / Math.max(g.w[e] / L, 0.2);
-    const need = (L - car.s) / v;
-    if (need > left) { car.s += v * left; left = 0; } else { left -= need; car.s = 0; car.k++; }
-  }
-  // At the destination the car waits, then sets off again.
-  if (car.k >= car.route.length - 1) car.wait = 1.4;
-  placeCar();
 }
 
 /* ---------- blackout ---------- */
@@ -1652,7 +1546,6 @@ function common(q) {
   if (q.u.uCold) gl.uniform3fv(q.u.uCold, COLD);
   if (q.u.uOwn) gl.uniform3fv(q.u.uOwn, OWN);
   if (q.u.uRecede) gl.uniform1f(q.u.uRecede, recede());
-  if (q.u.uCar) gl.uniform3f(q.u.uCar, car.x, car.y, car.on && courierOn && lockT >= 0 ? 1 : 0);
 }
 // The rest recedes over 3.5 s, from 0.8 s after the path locks.
 const RECEDE = 3.5;
@@ -1829,7 +1722,6 @@ async function makeWeb(w, h, finished, fresh = false) {
   areaMasks();
   showCredit();
   src = -1; tgt = -1;
-  car.on = false;
   // A fresh map gets fresh pins; otherwise the pins keep their place.
   if (fresh) {
     const [s, t] = randomPins();
@@ -1853,8 +1745,7 @@ function wake() {
   if (!raf && visible && P && started) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 // Lively while the front runs or a drag is live; drifting while the path pulses.
-const lively = () => !done() || drag || (lockT >= 0 && simT - lockT < 0.8 + RECEDE)
-  || (car.on && courierOn && performance.now() - inputAt < 60000);
+const lively = () => !done() || drag || (lockT >= 0 && simT - lockT < 0.8 + RECEDE);
 const busy = (now = performance.now()) => visible && (lively() || now - inputAt < 60000);
 function frame(now) {
   raf = 0;
@@ -1867,7 +1758,6 @@ function frame(now) {
       lastDraw = now;
       simT += dt;
       if (!done()) { W += speed() * dt; checkLock(); }
-      if (car.on && courierOn) { driveCar(dt); marks(); }
       render();
     }
   } finally {
@@ -1970,7 +1860,7 @@ function up(e) {
   }
   // A tap moves the source and plays the search again.
   else if (tap) { const i = nearest(x0, y0); if (i >= 0 && i !== tgt) { pin('src', i); replay(); } }
-  // A jam stroke has already settled live, so the courier keeps driving.
+  // A jam stroke has already settled live.
   else if (m === 'src' || m === 'tgt') replay();
   live();
 }
@@ -2019,7 +1909,6 @@ function keyWords() {
   if (dd[2]) dd[2].textContent = many ? 'move, drop or jam' : 'pin or jam';
 }
 act.tree = v => { treeOn = v; still(); live(); };
-act.courier = v => { courierOn = v; if (v && lockT >= 0 && !car.on) startCar(); marks(); still(); live(); };
 act.reset = () => {
   seed = 4242;
   srcAt = tgtAt = null;
