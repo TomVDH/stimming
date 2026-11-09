@@ -379,6 +379,20 @@ float vol(vec3 p) {
 }
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 `;
+// Cigarette-smoke detail: warped ridged noise pulls the density into thin curling strands.
+const STRANDS = `
+uniform sampler3D uNoise;
+uniform float uSmokeT;
+float strands(vec3 p) {
+  vec3 q = p * 3.2 + uSmokeT * vec3(0.02, 0.05, 0.01);
+  vec3 w = vec3(texture(uNoise, q).r, texture(uNoise, q + 17.3).r, texture(uNoise, q + 41.7).r) - 0.5;
+  float n1 = texture(uNoise, p * 4.0 + w * 0.6).r;
+  float n2 = texture(uNoise, p * 8.5 + w * 1.2 - uSmokeT * 0.03).r;
+  float r1 = 1.0 - abs(2.0 * n1 - 1.0), r2 = 1.0 - abs(2.0 * n2 - 1.0);
+  r1 *= r1; r2 *= r2;
+  return r1 * r1 * 0.6 + r2 * r2 * r2 * 0.7;
+}
+`;
 // Sheet uniforms are shared by the haze and the smoke.
 const SHEET = `
 uniform vec3 uN, uLens, uFan, uLaser;
@@ -387,7 +401,7 @@ float fanMask(vec3 vl) { return smoothstep(uFanCos - 0.025, uFanCos + 0.025, dot
 `;
 
 // The room: a dark gradient, a backlight shaft in fbm haze, and the laser sheet.
-const HAZE_FS = HEAD + PHASE + NOISE + SHEET + VOLUME + `
+const HAZE_FS = HEAD + PHASE + NOISE + SHEET + VOLUME + STRANDS + `
 in vec2 vUv;
 out vec4 o;
 uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uRoom;
@@ -450,7 +464,7 @@ void main() {
     float glow = dens * (0.45 + 0.55 * sp) * uHaze * 0.55;
     if (uSmokeOn > 0.5 && lit > 0.0) {
       // Smoke in the plane flares; smoke nearer the lens shades the fan below it.
-      glow += vol(q) * uSheetSmoke * (0.7 + 0.3 * sp);
+      glow += vol(q) * (0.25 + 1.4 * strands(q)) * uSheetSmoke * (0.7 + 0.3 * sp);
       float reach = min(r, 1.8), st = reach / 14.0, sum = 0.0, j = ign(gl_FragCoord.xy);
       // The march starts a core width out, so a ring does not shade its own slice.
       for (int i = 0; i < 14; i++) sum += vol(q - vl * (0.08 + (float(i) + j) * st));
@@ -538,10 +552,11 @@ void main() {
   vec3 rad = cos(phi) * uE1 + sin(phi) * uE2;
   vec3 p;
   if (r2 < 0.7) {
-    float rho = uCoreR * 1.3 * sqrt(-2.0 * log(max(r3, 1e-5))), psi = 6.2831853 * r4;
+    // The core is a thin sheet rolled two turns, as the shear layer rolls up.
+    float psi = 6.2831853 * 2.0 * r3;
+    float rho = uCoreR * 1.8 * r3 + (r4 - 0.5) * uCoreR * 0.15;
     p = uC + rad * (uR + rho * cos(psi)) + uA * (rho * sin(psi));
-    // Two light and two dark bands round the core; the spin winds them into a spiral.
-    r5 = (0.6 + 0.4 * r5) * mix(0.3, 1.0, 0.5 + 0.5 * sin(2.0 * psi));
+    r5 = 0.6 + 0.4 * r5;
   } else if (r2 < 0.82) {
     // Uniform in an oblate bubble round the ring.
     float z = r4 * 2.0 - 1.0, rr = pow(r3, 0.333);
@@ -628,7 +643,7 @@ uniform sampler2D uSrc;
 uniform ivec2 uDir, uTile;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy), t = c / uTile, base = t * uTile, l = c - base;
-  const float W[5] = float[5](0.07, 0.24, 0.38, 0.24, 0.07);
+  const float W[5] = float[5](0.0, 0.2, 0.6, 0.2, 0.0);
   float v = 0.0;
   for (int i = 0; i < 5; i++) {
     ivec2 q = clamp(l + uDir * (i - 2), ivec2(0), uTile - 1);
@@ -638,24 +653,18 @@ void main() {
 }`;
 // The smoke volume, as in Fire: detail noise, a short self-shadow march,
 // Beer-Lambert with a multi-scatter lift, and forward scatter.
-const VOL_FS = HEAD + PHASE + SHEET + VOLUME + `
+const VOL_FS = HEAD + PHASE + SHEET + VOLUME + STRANDS + `
 in vec2 vUv;
 layout(location = 0) out vec4 o;
 layout(location = 1) out vec4 o2;
-uniform sampler3D uNoise;
 uniform vec3 uEye, uR, uU, uF, uBackDir, uBack;
 uniform vec2 uTan;
 uniform float uTime, uSigma, uFrame, uGain;
 float dens(vec3 p) {
   float d = vol(p);
-  if (d < 2e-3) return 0.0;
-  // Fine noise breaks the edges into wisps; the body stays rolled and smooth.
-  float n = texture(uNoise, p * 2.6 + uTime * vec3(0.02, 0.05, 0.01)).r * 0.6
-    + texture(uNoise, p * 6.9 - uTime * vec3(0.04, 0.0, 0.03)).r * 0.4;
-  float e = d * (0.7 + 0.6 * n);
-  // A threshold gives the silhouette a crisp edge over a smooth body.
-  // Thin smoke survives at a quarter, so wakes still trail.
-  return e * mix(0.25, 1.0, smoothstep(0.03, 0.16, e));
+  if (d < 1e-3) return 0.0;
+  // Thin and translucent: most of the smoke sits in fine strands.
+  return d * (0.25 + 1.4 * strands(p));
 }
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
@@ -675,21 +684,27 @@ void main() {
     float t = t0 + (float(i) + j) * dt;
     if (Ts < 0.0 && t >= th) Ts = T;
     vec3 p = uEye + t * d;
-    float dd = dens(p);
-    if (dd <= 0.0) continue;
+    if (vol(p) < 1e-3) continue;
+    // Inside smoke, four substeps resolve strands finer than one step.
     float tau = (vol(p - uBackDir * 0.06) + vol(p - uBackDir * 0.18) + vol(p - uBackDir * 0.36)) * 0.12 * uSigma;
     float beer = exp(-tau);
     float lit = beer + 0.5 * exp(-0.25 * tau) * 0.6;
-    float powder = 1.0 - exp(-2.0 * dd * uSigma * 0.08);
-    // Multiple scatter in the room fills the shadow side a little.
-    vec3 S = uBack * uGain * (lit * ph * mix(1.0, powder, 0.35) + 0.14 * exp(-0.3 * tau));
-    // Laser light that spills off the sheet tints smoke close to it.
-    vec3 lv = p - uLens;
-    float lr = length(lv), pd = dot(p, uN) - uH;
-    S += uLaser * exp(-pd * pd / 0.02) * fanMask(lv / lr) / (lr * lr + 0.15) * 0.5 * beer;
-    float Tstep = exp(-dd * uSigma * dt);
-    L += T * S * (1.0 - Tstep);
-    T *= Tstep;
+    for (int k = 0; k < 4; k++) {
+      vec3 pk = uEye + (t + (float(k) - 1.5) * dt * 0.25) * d;
+      float dd = dens(pk);
+      if (dd <= 0.0) continue;
+      float powder = 1.0 - exp(-2.0 * dd * uSigma * 0.08);
+      // Multiple scatter in the room fills the shadow side a little.
+      // Fine smoke scatters blue a little more than red.
+      vec3 S = uBack * vec3(0.86, 0.93, 1.08) * uGain * (lit * ph * mix(1.0, powder, 0.35) + 0.08 * exp(-0.3 * tau));
+      // Laser light that spills off the sheet tints smoke close to it.
+      vec3 lv = p - uLens;
+      float lr = length(lv), pd = dot(p, uN) - uH;
+      S += uLaser * exp(-pd * pd / 0.02) * fanMask(lv / lr) / (lr * lr + 0.15) * 0.5 * beer;
+      float Tstep = exp(-dd * uSigma * dt * 0.25);
+      L += T * S * (1.0 - Tstep);
+      T *= Tstep;
+    }
     if (T < 0.01) break;
   }
   if (Ts < 0.0) Ts = T;
@@ -980,7 +995,7 @@ function slotUniforms() {
     ons[k] = r.on ? 1 : 0;
     cores[k] = r.a;
     const lobes = r.on ? clamp(r.amp * Math.exp(lobeRate() * r.age) / (r.R0 * 0.22)) : 1;
-    turbs[k] = r.dying || s.burst ? 0.05 + 0.12 * breakup : (0.004 + 0.06 * breakup * lobes * lobes) * (r.on ? 1 : 0.6);
+    turbs[k] = r.dying || s.burst ? 0.05 + 0.12 * breakup : (0.012 + 0.06 * breakup * lobes * lobes) * (r.on ? 1 : 0.6);
   }
 }
 function uploadNodes() {
@@ -1070,7 +1085,7 @@ function volUniforms(q) {
 }
 // Smoke extinction per unit density; the sheet's gain on smoke.
 // The laser sheet is 5 cm thick in scene units.
-const SIGMA = 7, SHEET_SMOKE = 45, SHEET_W = 0.05;
+const SIGMA = 2.4, SHEET_SMOKE = 45, SHEET_W = 0.05;
 let frameN = 0;
 function render() {
   const W = canvas.width, H = canvas.height;
@@ -1115,11 +1130,12 @@ function render() {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_3D, noiseTex);
     gl.uniform1i(q.u.uNoise, 1);
+    gl.uniform1f(q.u.uSmokeT, simTime);
     sheetUniforms(q, SHEET_W);
     gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
     gl.uniform1f(q.u.uTime, simTime);
     gl.uniform1f(q.u.uSigma, SIGMA);
-    gl.uniform1f(q.u.uGain, 2.2);
+    gl.uniform1f(q.u.uGain, 2.6);
     gl.uniform1f(q.u.uFrame, reduced() ? 0 : frameN % 64);
     gl.bindFramebuffer(gl.FRAMEBUFFER, volT.fb);
     gl.viewport(0, 0, volT.w, volT.h);
@@ -1134,6 +1150,10 @@ function render() {
   bind(q, 'uVol', 0, atlas);
   bind(q, 'uVolA', 1, volT.a);
   bind(q, 'uVolB', 2, volT.b);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+  gl.uniform1i(q.u.uNoise, 3);
+  gl.uniform1f(q.u.uSmokeT, simTime);
   gl.uniform1f(q.u.uSmokeOn, smokeOn ? 1 : 0);
   gl.uniform1f(q.u.uSigma, SIGMA);
   gl.uniform1f(q.u.uSheetSmoke, SHEET_SMOKE);

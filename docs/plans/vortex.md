@@ -82,7 +82,8 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 - **Forward scatter.** The sheet's lens is behind the plane, so smoke glows brightest on the far side of a ring (Henyey-Greenstein, g 0.6).
 - **Fan falloff.** The sheet spreads from a line lens: brightness falls as 1/r from the lens.
 - **Leapfrog period** grows with the gap between the two rings.
-- **Spiral roll-up.** Core smoke is seeded in two light and two dark bands; the core's spin winds them into a spiral.
+- **Spiral roll-up.** The core is seeded as a thin sheet rolled two turns, as a shear layer rolls up; the slice shows its turns.
+- **Cigarette density (Tom).** Thin and translucent, blue-grey: low extinction, warped ridged noise for strands, four substeps inside smoke.
 - **Fog sinks.** Smoke is a touch heavier than air: old rings and their smoke drift down at 2.5 cm/s.
 - **Slow spread.** A random walk, weak at first and stronger with age, thins the smoke.
 - **Irregular lobes.** Two azimuthal modes (m and m + 3) with their own phases grow late, so no ring breaks up as a clean polygon.
