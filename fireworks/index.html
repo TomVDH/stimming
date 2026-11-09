@@ -131,6 +131,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise2D } from 'simplex-noise';
 import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange, quality, setQuality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
@@ -727,6 +728,75 @@ const dotMat = new THREE.ShaderMaterial({
 const dotPts = new THREE.Points(dotGeo, dotMat);
 dotPts.layers.enable(LIGHT);
 scene.add(dotPts);
+
+/* ---------- barges ---------- */
+// Seven firing barges at anchor, a little in front of where the shells burst.
+// The Distance setting moves the line; every shell leaves from the nearest one.
+const BARGE_X = [-1050, -700, -350, 0, 350, 700, 1050].map(x => x + (rnd() - 0.5) * 80);
+const bargeMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN;
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; ${HEAD}
+  void main() {
+    vec3 N = normalize(vN), lit = vec3(0.0);
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 L = uL[i].xyz - vP;
+      float d2 = dot(L, L);
+      lit += uLC[i] * uL[i].w * max(dot(N, L * inversesqrt(d2)), 0.0) / (1.0 + d2 / 1.4e6);
+    }
+    // Deck lamps wash the tops and the racks in warm light.
+    vec3 deck = vec3(1.0, 0.62, 0.3) * 0.02 * max(N.y, 0.0) + vec3(1.0, 0.62, 0.3) * 0.006 * max(N.z, 0.0);
+    vec3 c = vec3(0.07, 0.065, 0.06) * (uCool * 0.006 * (0.4 + 0.6 * N.y) + lit * 1.7) + vec3(0.07, 0.065, 0.06) * deck * 8.0;
+    gl_FragColor = vec4(k2haze(c, vP), 1.0);
+  }`,
+});
+const barges = new THREE.Group();
+{
+  const parts = [];
+  const box = (w, h, d, x, y, z) => parts.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z));
+  for (const bx of BARGE_X) {
+    // A low hull, two mortar racks and a small wheelhouse.
+    box(110, 6, 26, bx, 1.5, 0);
+    box(24, 4.5, 10, bx - 24, 6.6, 1);
+    box(24, 4.5, 10, bx + 8, 6.6, -2);
+    box(10, 9, 9, bx + 44, 8.8, 4);
+    box(1, 16, 1, bx + 44, 17, 4);
+  }
+  const g = mergeGeometries(parts);
+  const hull = new THREE.Mesh(g, bargeMat);
+  hull.layers.enable(LIGHT);
+  barges.add(hull);
+  // Work lights: red at the corners, white over the racks.
+  const L = { pos: [], col: [], k: [], str: [] }, RED_L = linFit(0.62, 0.22, 25);
+  const lamp = (x, y, z, col, k) => { L.pos.push(x, y, z); L.col.push(...col); L.k.push(k, 2.0, 0.03, rnd() * 100); L.str.push(-1); };
+  for (const bx of BARGE_X) {
+    lamp(bx - 54, 5, 13.5, RED_L, 1.0); lamp(bx + 54, 5, 13.5, RED_L, 1.0);
+    // A row of deck lamps along the near rail, and a white light up the mast.
+    for (let k = 0; k < 9; k++) lamp(bx - 44 + k * 11, 5.2, 13.6, WARM, 0.5);
+    lamp(bx + 44, 25.5, 4, COOLW, 1.1); lamp(bx + 44, 13.5, 9, WARM, 0.8);
+  }
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.Float32BufferAttribute(L.pos, 3));
+  lg.setAttribute('aCol', new THREE.Float32BufferAttribute(L.col, 3));
+  lg.setAttribute('aK', new THREE.Float32BufferAttribute(L.k, 4));
+  lg.setAttribute('aStr', new THREE.Float32BufferAttribute(L.str, 1));
+  const lamps = new THREE.Points(lg, dotMat);
+  lamps.frustumCulled = false;
+  lamps.layers.enable(LIGHT);
+  barges.add(lamps);
+}
+scene.add(barges);
+// The line sits 150 m in front of the burst plane, so the hulls read.
+const placeBarges = () => { barges.position.z = -shellDist() + 150; barges.updateMatrixWorld(); };
+// The nearest barge's deck, with a little scatter between its racks.
+function bargeBase(x, out) {
+  let best = BARGE_X[0];
+  for (const bx of BARGE_X) if (Math.abs(bx - x) < Math.abs(best - x)) best = bx;
+  return out.set(best + (rnd() - 0.5) * 40, 6, barges.position.z + (rnd() - 0.5) * 10);
+}
+/* ---------- end barges ---------- */
 
 /* ---------- the crowd ---------- */
 // Excitement rises with the burst light and falls back over about 9 s.
@@ -2009,10 +2079,14 @@ function fire(pos, t0, type, cal, style = pick(COMETS)) {
   // Strong drag: the comet leaves fast and slows near the apex, about 3 s up.
   const s = shellScale(), k = 1.2;
   if (style === 'dark') cal *= 1.3;
-  const { v0, T } = climb(pos.y - 1, k);
-  // The mortar leans up to about 9 degrees; drag eases the drift too.
-  const dx = (rnd() - 0.5) * 0.3 * pos.y, vx = (dx * k) / (1 - Math.exp(-k * T));
-  const base = new THREE.Vector3(pos.x - dx, 1, pos.z), up = new THREE.Vector3(vx, v0, 0);
+  // The shell leaves the nearest barge; a mortar leans at most about 27 degrees.
+  const base = bargeBase(pos.x, new THREE.Vector3());
+  pos.x = base.x + THREE.MathUtils.clamp(pos.x - base.x, -0.5 * pos.y, 0.5 * pos.y);
+  const { v0, T } = climb(pos.y - base.y, k), e = (1 - Math.exp(-k * T)) / k;
+  const up = new THREE.Vector3((pos.x - base.x) / e, v0, (pos.z - base.z) / e);
+  // The mortar's muzzle flash lights the barge and the water.
+  addLight(v.copy(base).setY(8), ORANGE, t0, 0.2 * lightK(cal));
+  for (let i = 0; i < 3; i++) writePuff(q.copy(base).add(v.set((rnd() - 0.5) * 8, 2 + rnd() * 4, (rnd() - 0.5) * 6)), t0 + rnd() * 0.1, v.set((rnd() - 0.5) * 3, 5 + rnd() * 4, (rnd() - 0.5) * 3), 6 + rnd() * 4, 1.6, 7 + rnd() * 3, 0.35);
   const col = pick(COLOURS);
   // The tail is a stream of embers shed along the climb, not one rigid streak.
   // Each ember cools white, then to its colour, then to red, and fades.
@@ -2390,7 +2464,8 @@ shellBox.addEventListener('keydown', e => {
 });
 const distEl = document.getElementById('dist');
 distEl.value = String(opts.dist);
-distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); });
+distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); placeBarges(); draw(); });
+placeBarges();
 choices(document.getElementById('smoke'), val => { opts.smoke = val; save('smoke', val); SU.uSmokeK.value = val === 'thick' ? 1.15 : 0.75; }).set(opts.smoke);
 SU.uSmokeK.value = opts.smoke === 'thick' ? 1.15 : 0.75;
 /* ---------- weather ---------- */
