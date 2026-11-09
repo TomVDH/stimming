@@ -1,0 +1,1086 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.11 0.02 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dijkstra flood</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Dijkstra flood: light floods a web in shortest-path order. */
+:root { --stage: oklch(0.11 0.02 275); }
+.stage--dijkstra canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--dijkstra canvas.on { opacity: 1; }
+.stage--dijkstra { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--dijkstra canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Dijkstra flood</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--dijkstra" id="stage" tabindex="0" role="application" aria-label="A web of glowing nodes. Tap a node to flood light out from it in shortest-path order; drag to move the target and watch the shortest path re-route.">
+      <p class="fail" hidden>Dijkstra flood needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Dijkstra flood</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, linFit, reduced } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+// The handlers bind once the GL exists.
+const act = { shuffle() {}, clear() {}, reset() {}, still() {} };
+let speedK = 1, glow = 1, mode = 'flood';
+const ui = initPage({ id: 'dijkstra', bar: {
+  choice: { label: 'Mode', value: 'flood', options: [
+    { value: 'flood', label: 'Flood' }, { value: 'seek', label: 'Seek' }, { value: 'race', label: 'Race' },
+  ], onPick: v => { mode = v; } },
+  slider: { label: 'Speed', min: 0.3, max: 2.5, step: 0.01, value: speedK, onInput: v => { speedK = v; } },
+  actions: [
+    { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
+    { verb: 'clear', key: 'C', onPress: () => act.clear() },
+  ],
+  settings: [
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.6, step: 0.01, value: 1, persist: true, onInput: v => { glow = v; act.still(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['click', 'source'], ['drag', 'target'], ['space', 'flood']],
+} });
+glow = ui.setting('glow')?.value ?? glow;
+// Clear wipes mud; the blockout has no mud yet.
+if (ui.action('clear')) ui.action('clear').disabled = true;
+// Touch screens have no Space key, so its entry hides.
+const COARSE = matchMedia('(pointer: coarse)');
+function touchKeys() {
+  const row = [...stage.parentElement.querySelectorAll('.s2-keys > div')][2];
+  if (row) row.hidden = COARSE.matches;
+}
+touchKeys();
+COARSE.addEventListener?.('change', touchKeys);
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+// The flood holds still until the intro leaves.
+const introGone = new Promise(r => {
+  if (!document.querySelector('.intro')) return r();
+  const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); r(); } });
+  mo.observe(document.body, { childList: true, subtree: true });
+  setTimeout(r, 12000);
+});
+
+/* ---------- random ---------- */
+// Seeded random keeps the first web the same on every load.
+function mulberry(a) {
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Value noise on a seeded lattice sets the cell size.
+function noise2(rnd) {
+  const N = 64, v = new Float32Array(N * N).map(() => rnd());
+  const at = (x, y) => v[((y & (N - 1)) * N) + (x & (N - 1))];
+  return (x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    let fx = x - ix, fy = y - iy;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    const a = at(ix, iy) + (at(ix + 1, iy) - at(ix, iy)) * fx;
+    const b = at(ix, iy + 1) + (at(ix + 1, iy + 1) - at(ix, iy + 1)) * fx;
+    return a + (b - a) * fy;
+  };
+}
+
+/* ---------- web: Poisson sites, Delaunay, Voronoi ---------- */
+// The web: node positions, edges, and fan faces for the heat map.
+let web = null;
+// Dart throwing with a cell size that varies by noise.
+function sites(W, H, rnd) {
+  const phone = Math.min(W, H) < 640;
+  const rMin = phone ? 26 : 34, rMax = phone ? 48 : 64;
+  const n2 = noise2(rnd);
+  const M = rMax * 1.4;
+  const x0 = -M, y0 = -M, x1 = W + M, y1 = H + M;
+  const cell = rMin / Math.SQRT2, gw = Math.ceil((x1 - x0) / cell) + 1, gh = Math.ceil((y1 - y0) / cell) + 1;
+  const grid = new Int32Array(gw * gh).fill(-1);
+  const px = [], py = [], pr = [];
+  const reach = Math.ceil(rMax / cell);
+  // Guard sites ring the margin box, so hull cells stay well shaped.
+  const put = (x, y, r) => { const gx = Math.floor((x - x0) / cell), gy = Math.floor((y - y0) / cell); grid[gy * gw + gx] = px.length; px.push(x); py.push(y); pr.push(r); };
+  const nx = Math.ceil((x1 - x0) / (rMax * 0.8)), ny = Math.ceil((y1 - y0) / (rMax * 0.8));
+  for (let i = 0; i < nx; i++) { const x = x0 + ((x1 - x0) * i) / nx; put(x, y0, rMax); put(x + (x1 - x0) / nx / 2, y1, rMax); }
+  for (let j = 0; j < ny; j++) { const y = y0 + ((y1 - y0) * (j + 0.5)) / ny; put(x0, y, rMax); put(x1, y, rMax); }
+  let fails = 0;
+  while (fails < 4000) {
+    const x = x0 + rnd() * (x1 - x0), y = y0 + rnd() * (y1 - y0);
+    const k = n2(x / 230 + 11, y / 230 + 7);
+    const r = rMin + (rMax - rMin) * clamp((k - 0.2) / 0.6);
+    const gx = Math.floor((x - x0) / cell), gy = Math.floor((y - y0) / cell);
+    let ok = grid[gy * gw + gx] < 0;
+    for (let dy = -reach; ok && dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
+      const cx = gx + dx, cy = gy + dy;
+      if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) continue;
+      const j = grid[cy * gw + cx];
+      if (j < 0) continue;
+      const ex = px[j] - x, ey = py[j] - y, rr = (r + pr[j]) * 0.5;
+      if (ex * ex + ey * ey < rr * rr) { ok = false; break; }
+    }
+    if (!ok) { fails++; continue; }
+    fails = 0;
+    grid[gy * gw + gx] = px.length;
+    px.push(x); py.push(y); pr.push(r);
+  }
+  return { px, py, M };
+}
+// Bowyer-Watson: insert each site, re-fan the cavity it opens.
+function delaunay(px, py) {
+  const n = px.length;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    minX = Math.min(minX, px[i]); maxX = Math.max(maxX, px[i]);
+    minY = Math.min(minY, py[i]); maxY = Math.max(maxY, py[i]);
+  }
+  const d = Math.max(maxX - minX, maxY - minY) * 20, mx = (minX + maxX) / 2, my = (minY + maxY) / 2;
+  const X = [...px, mx - d, mx, mx + d], Y = [...py, my - d, my + d, my - d];
+  const circ = (a, b, c) => {
+    const ax = X[a], ay = Y[a], bx = X[b], by = Y[b], cx = X[c], cy = Y[c];
+    const D = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+    const a2 = ax * ax + ay * ay, b2 = bx * bx + by * by, c2 = cx * cx + cy * cy;
+    const ux = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / D;
+    const uy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / D;
+    return [ux, uy, (ax - ux) ** 2 + (ay - uy) ** 2];
+  };
+  let tris = [[n, n + 1, n + 2, ...circ(n, n + 1, n + 2)]];
+  for (let i = 0; i < n; i++) {
+    const x = X[i], y = Y[i], keep = [], edges = new Map();
+    for (const t of tris) {
+      if ((x - t[3]) ** 2 + (y - t[4]) ** 2 < t[5]) {
+        for (const [u, v] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) {
+          const key = u < v ? u * 100003 + v : v * 100003 + u;
+          edges.set(key, edges.has(key) ? null : [u, v]);
+        }
+      } else keep.push(t);
+    }
+    for (const e of edges.values()) if (e) keep.push([e[0], e[1], i, ...circ(e[0], e[1], i)]);
+    tris = keep;
+  }
+  return tris.filter(t => t[0] < n && t[1] < n && t[2] < n);
+}
+// The Voronoi web: circumcentres become nodes; shared sides become edges.
+function buildWeb(W, H, seed) {
+  const rnd = mulberry(seed);
+  const { px, py, M } = sites(W, H, rnd);
+  const tris = delaunay(px, py);
+  const lim = M * 2;
+  const inBox = (x, y) => x > -lim && y > -lim && x < W + lim && y < H + lim;
+  // Short edges merge their two nodes, so no node pair clumps.
+  const parent = tris.map((_, i) => i);
+  const find = i => { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+  const side = new Map();
+  tris.forEach((t, k) => {
+    for (const [u, v] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) {
+      const key = u < v ? u * 100003 + v : v * 100003 + u;
+      const s = side.get(key);
+      if (s) s.push(k); else side.set(key, [k]);
+    }
+  });
+  for (const pair of side.values()) {
+    if (pair.length !== 2) continue;
+    const [a, b] = pair;
+    if (Math.hypot(tris[a][3] - tris[b][3], tris[a][4] - tris[b][4]) < 6) parent[find(a)] = find(b);
+  }
+  // One node per merged group, at the mean of its circumcentres.
+  const nodeOf = new Int32Array(tris.length).fill(-1), sx = [], sy = [], cnt = [];
+  const groupNode = new Map();
+  tris.forEach((t, k) => {
+    const g = find(k);
+    let id = groupNode.get(g);
+    if (id === undefined) { id = sx.length; groupNode.set(g, id); sx.push(0); sy.push(0); cnt.push(0); }
+    sx[id] += t[3]; sy[id] += t[4]; cnt[id]++;
+    nodeOf[k] = id;
+  });
+  const nx = sx.map((v, i) => v / cnt[i]), ny = sy.map((v, i) => v / cnt[i]);
+  const keepN = nx.map((x, i) => inBox(x, ny[i]));
+  // Renumber the kept nodes densely.
+  const remap = new Int32Array(nx.length).fill(-1), X = [], Y = [];
+  keepN.forEach((k, i) => { if (k) { remap[i] = X.length; X.push(nx[i]); Y.push(ny[i]); } });
+  const ea = [], eb = [], seen = new Set();
+  for (const pair of side.values()) {
+    if (pair.length !== 2) continue;
+    const a = remap[nodeOf[pair[0]]], b = remap[nodeOf[pair[1]]];
+    if (a < 0 || b < 0 || a === b) continue;
+    const key = a < b ? a * 100003 + b : b * 100003 + a;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ea.push(a); eb.push(b);
+  }
+  // Faces: each site's cell, as a ring of node ids in angle order.
+  const ring = px.map(() => []);
+  const hull = new Uint8Array(px.length);
+  for (const [key, pair] of side) if (pair.length !== 2) { const u = Math.floor(key / 100003); hull[u] = 1; hull[key - u * 100003] = 1; }
+  tris.forEach((t, k) => { for (let j = 0; j < 3; j++) ring[t[j]].push(k); });
+  const faces = [];
+  ring.forEach((ks, s) => {
+    if (hull[s] || ks.length < 3) return;
+    const cx = px[s], cy = py[s];
+    if (cx < -M || cy < -M || cx > W + M || cy > H + M) return;
+    ks.sort((p, q) => Math.atan2(tris[p][4] - cy, tris[p][3] - cx) - Math.atan2(tris[q][4] - cy, tris[q][3] - cx));
+    const ids = [];
+    for (const k of ks) { const id = remap[nodeOf[k]]; if (id < 0) return; if (ids[ids.length - 1] !== id) ids.push(id); }
+    if (ids[0] === ids[ids.length - 1]) ids.pop();
+    if (ids.length >= 3) faces.push({ cx, cy, ids });
+  });
+  // Adjacency in compressed rows: neighbour and edge per slot.
+  const N = X.length, E = ea.length, deg = new Int32Array(N + 1);
+  for (let e = 0; e < E; e++) { deg[ea[e] + 1]++; deg[eb[e] + 1]++; }
+  for (let i = 0; i < N; i++) deg[i + 1] += deg[i];
+  const fill = deg.slice(0, N), nb = new Int32Array(2 * E), ne = new Int32Array(2 * E);
+  for (let e = 0; e < E; e++) {
+    nb[fill[ea[e]]] = eb[e]; ne[fill[ea[e]]++] = e;
+    nb[fill[eb[e]]] = ea[e]; ne[fill[eb[e]]++] = e;
+  }
+  const len = new Float32Array(E);
+  for (let e = 0; e < E; e++) len[e] = Math.hypot(X[ea[e]] - X[eb[e]], Y[ea[e]] - Y[eb[e]]);
+  return {
+    W, H, N, E, X, Y, ea, eb, len, w: Float32Array.from(len), row: deg, nb, ne, faces,
+    dist: new Float32Array(N), par: new Int32Array(N), tEnter: new Float32Array(N),
+    tent0: new Float32Array(N), tImp: new Float32Array(N), maxD: 1,
+  };
+}
+
+/* ---------- Dijkstra ---------- */
+// A binary heap of node ids keyed by tentative distance.
+const heap = { id: new Int32Array(1 << 15), k: new Float32Array(1 << 15), n: 0 };
+function hpush(id, k) {
+  let i = heap.n++;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (heap.k[p] <= k) break;
+    heap.id[i] = heap.id[p]; heap.k[i] = heap.k[p]; i = p;
+  }
+  heap.id[i] = id; heap.k[i] = k;
+}
+function hpop() {
+  const top = heap.id[0], id = heap.id[--heap.n], k = heap.k[heap.n];
+  let i = 0;
+  for (;;) {
+    let c = 2 * i + 1;
+    if (c >= heap.n) break;
+    if (c + 1 < heap.n && heap.k[c + 1] < heap.k[c]) c++;
+    if (heap.k[c] >= k) break;
+    heap.id[i] = heap.id[c]; heap.k[i] = heap.k[c]; i = c;
+  }
+  heap.id[i] = id; heap.k[i] = k;
+  return top;
+}
+// The run records pop distance, parent, first discovery and improvements.
+function dijkstra(src) {
+  const g = web, { dist, par, tEnter, tent0, tImp } = g;
+  dist.fill(Infinity); tEnter.fill(Infinity); tent0.fill(Infinity); tImp.fill(-1); par.fill(-1);
+  const done = new Uint8Array(g.N);
+  heap.n = 0;
+  dist[src] = 0; tEnter[src] = 0; tent0[src] = 0;
+  hpush(src, 0);
+  let maxD = 1;
+  while (heap.n) {
+    const u = hpop();
+    if (done[u]) continue;
+    done[u] = 1;
+    const du = dist[u];
+    if (du > maxD) maxD = du;
+    for (let s = g.row[u]; s < g.row[u + 1]; s++) {
+      const v = g.nb[s];
+      if (done[v]) continue;
+      const nd = du + g.w[g.ne[s]];
+      if (tEnter[v] === Infinity) { tEnter[v] = du; tent0[v] = nd; }
+      if (nd < dist[v]) {
+        if (dist[v] !== Infinity) tImp[v] = du;
+        dist[v] = nd; par[v] = u;
+        hpush(v, nd);
+      }
+    }
+  }
+  g.maxD = maxD;
+}
+
+/* ---------- colour ---------- */
+// Heat ramp stops in OKLCH, near to far; hue runs the short way round.
+const PALETTE = [
+  [0, 0.97, 0.05, 200], [0.14, 0.86, 0.14, 205], [0.34, 0.68, 0.2, 262],
+  [0.55, 0.6, 0.26, 318], [0.76, 0.63, 0.22, 12], [1, 0.58, 0.17, 45],
+];
+function lutData(stops) {
+  const out = new Float32Array(256 * 4);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    let k = 0;
+    while (k < stops.length - 2 && t > stops[k + 1][0]) k++;
+    const [ta, La, Ca, ha] = stops[k], [tb, Lb, Cb, hb] = stops[k + 1];
+    const f = clamp((t - ta) / (tb - ta));
+    let dh = hb - ha;
+    if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+    const c = linFit(La + (Lb - La) * f, Ca + (Cb - Ca) * f, (ha + dh * f + 360) % 360);
+    out.set([c[0], c[1], c[2], 1], i * 4);
+  }
+  return out;
+}
+
+/* ---------- shaders ---------- */
+const HEAD = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+`;
+const TRI = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// The heat ramp and the shared clock uniforms.
+const LUT = `
+uniform sampler2D uLut;
+uniform float uW, uMax, uBand, uPx, uTime, uFlick;
+uniform vec3 uCold;
+vec3 lut(float t) { return texture(uLut, vec2(clamp(t / uMax, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5)).rgb; }
+`;
+// Faces: fan triangles carry an arrival time and a rim weight.
+const FACE_VS = `#version 300 es
+layout(location = 0) in vec4 aV;
+uniform vec4 uMap;
+out float vT;
+out float vRim;
+void main() {
+  vT = aV.z;
+  vRim = aV.w;
+  gl_Position = vec4(aV.xy * uMap.xy + uMap.zw, 0.0, 1.0);
+}`;
+// Panes glow by distance once the front passes; contours mark equal distance.
+const FACE_FS = HEAD + LUT + `
+in float vT;
+in float vRim;
+out vec4 o;
+uniform vec3 uBase;
+uniform float uStep;
+void main() {
+  float age = uW - vT;
+  float lit = clamp(age / max(fwidth(vT), 1e-3) + 0.5, 0.0, 1.0);
+  float rim = vRim * vRim;
+  vec3 h = lut(vT);
+  vec3 c = uBase * (0.5 + 0.5 * rim);
+  // A pane is darker inside and brighter at its rim, as lit glass.
+  vec3 glass = h * (0.02 + 0.09 * rim * rim);
+  float k = vT / uStep;
+  float dl = abs(fract(k + 0.5) - 0.5);
+  glass += h * (1.0 - smoothstep(0.0, fwidth(k) * 1.3, dl)) * 0.1;
+  // The front: a bright band that sweeps the panes and settles.
+  float band = exp(-max(age, 0.0) / uBand);
+  vec3 front = mix(h, vec3(1.0), 0.3) * band * (0.35 + 0.75 * rim);
+  // A faint pre-glow runs just ahead of the front.
+  float pre = exp(min(age, 0.0) / (uBand * 0.3)) * 0.1;
+  c += (glass + front) * lit + h * pre * (1.0 - lit);
+  o = vec4(c, 1.0);
+}`;
+// Capsule quads for edges and the path, in stage CSS px.
+const CAPSULE_VS = `#version 300 es
+layout(location = 0) in vec4 aAB;
+layout(location = 1) in vec4 aD;
+uniform vec4 uMap;
+uniform float uR;
+out vec2 vP;
+flat out vec4 vAB;
+flat out vec4 vD;
+void main() {
+  vec2 a = aAB.xy, b = aAB.zw, d = b - a;
+  float L = length(d);
+  vec2 t = L > 1e-4 ? d / L : vec2(1.0, 0.0), n = vec2(-t.y, t.x);
+  int v = gl_VertexID;
+  int k = v == 0 ? 0 : v == 1 || v == 4 ? 1 : v == 2 || v == 3 ? 2 : 3;
+  float s = (k & 1) == 0 ? -1.0 : 1.0, q = k < 2 ? -1.0 : 1.0;
+  vec2 p = (s < 0.0 ? a - t * uR : b + t * uR) + n * uR * q;
+  vP = p;
+  vAB = aAB;
+  vD = aD;
+  gl_Position = vec4(p * uMap.xy + uMap.zw, 0.0, 1.0);
+}`;
+// Edges: light runs along each edge at its cost; scouts and meeting sparks ride on it.
+const EDGE_FS = HEAD + LUT + `
+in vec2 vP;
+flat in vec4 vAB;
+flat in vec4 vD;
+out vec4 o;
+uniform float uScout;
+void main() {
+  vec2 a = vAB.xy, b = vAB.zw, ab = b - a;
+  float L2 = max(dot(ab, ab), 1e-6), L = sqrt(L2);
+  float s = clamp(dot(vP - a, ab) / L2, 0.0, 1.0);
+  float d = length(vP - a - ab * s);
+  float dA = vD.x, dB = vD.y, w = vD.z;
+  float t = min(dA + s * w, dB + (1.0 - s) * w);
+  float age = uW - t;
+  float cw = max(0.6, uPx * 0.9);
+  float core = exp(-d * d / (cw * cw));
+  float halo = exp(-d / 2.4) * 0.5;
+  vec3 h = lut(t);
+  float lit = clamp(age / max(fwidth(t), 1e-3) + 0.5, 0.0, 1.0);
+  float head = exp(-max(age, 0.0) / (uBand * 0.55));
+  vec3 on = h * (core * 0.5 + halo * 0.08) + mix(h, vec3(1.0), 0.65) * head * (core * 2.4 + halo * 1.1);
+  vec3 c = mix(uCold * core, on, lit);
+  // Relax scouts: a fast spark from the settled end to the queued end.
+  vec3 sc = vec3(0.85, 0.95, 1.0) * (core * 1.6 + halo) * uFlick;
+  float pa = (uW - dA) / (uScout * w);
+  if (dA < dB && pa > 0.0 && pa < 1.0) { float x = (s - pa) * L; c += sc * exp(-x * x / 5.0) * (1.0 - pa); }
+  float pb = (uW - dB) / (uScout * w);
+  if (dB < dA && pb > 0.0 && pb < 1.0) { float x = (s - 1.0 + pb) * L; c += sc * exp(-x * x / 5.0) * (1.0 - pb); }
+  // Two fronts meet inside a non-tree edge: a spark at the meeting point.
+  float sm = (dB - dA + w) / (2.0 * w);
+  if (sm > 0.06 && sm < 0.94) {
+    float am = uW - (dA + dB + w) * 0.5;
+    if (am > 0.0) { vec2 m = a + ab * sm - vP; c += vec3(1.0, 0.92, 0.85) * exp(-am / (uBand * 0.5)) * exp(-dot(m, m) / 4.0) * 2.2; }
+  }
+  o = vec4(c, 1.0);
+}`;
+// Nodes: dim points; queued nodes shimmer; popped nodes ignite.
+const NODE_VS = `#version 300 es
+layout(location = 0) in vec4 aN0;
+layout(location = 1) in vec4 aN1;
+uniform vec4 uMap;
+uniform float uR;
+out vec2 vQ;
+flat out vec4 vN0;
+flat out vec4 vN1;
+void main() {
+  int v = gl_VertexID;
+  int k = v == 0 ? 0 : v == 1 || v == 4 ? 1 : v == 2 || v == 3 ? 2 : 3;
+  vec2 q = vec2((k & 1) == 0 ? -1.0 : 1.0, k < 2 ? -1.0 : 1.0) * uR;
+  vQ = q;
+  vN0 = aN0;
+  vN1 = aN1;
+  gl_Position = vec4((aN0.xy + q) * uMap.xy + uMap.zw, 0.0, 1.0);
+}`;
+const NODE_FS = HEAD + LUT + `
+in vec2 vQ;
+flat in vec4 vN0;
+flat in vec4 vN1;
+out vec4 o;
+void main() {
+  float r = length(vQ);
+  float dist = vN0.z, tEnter = vN0.w, tent0 = vN1.x, tImp = vN1.y, id = vN1.z;
+  float pt = exp(-r * r / 2.2);
+  vec3 c = uCold * pt * 1.3;
+  float age = uW - dist;
+  if (age >= 0.0) {
+    // Ignition: a white flash as the node pops, then its heat colour.
+    float ig = exp(-age / (uBand * 0.8));
+    c = lut(dist) * pt * 1.8 + vec3(1.0) * min(ig, 1.0) * (exp(-r * r / 5.0) * 2.6 + exp(-r / 5.0) * 0.45);
+  } else if (uW >= tEnter) {
+    // In the queue: a shimmering ring tinted by the tentative distance.
+    float tent = uW < tImp ? tent0 : dist;
+    float rr = 2.6 + 4.5 * clamp((tent - uW) / (uBand * 3.0), 0.0, 1.0);
+    float ring = exp(-pow(r - rr, 2.0) / 0.9);
+    float sh = mix(1.0, 0.5 + 0.5 * sin(uTime * 31.0 + id * 2.399), uFlick);
+    c += lut(tent) * ring * 1.4 * sh;
+  }
+  o = vec4(c, 1.0);
+}`;
+// The path: a hot line that sweeps on, with pulses riding source to target.
+const PATH_FS = HEAD + LUT + `
+in vec2 vP;
+flat in vec4 vAB;
+flat in vec4 vD;
+out vec4 o;
+uniform float uReveal, uNow, uFlash, uPulse;
+uniform vec3 uHot;
+void main() {
+  vec2 a = vAB.xy, b = vAB.zw, ab = b - a;
+  float L2 = max(dot(ab, ab), 1e-6);
+  float s = clamp(dot(vP - a, ab) / L2, 0.0, 1.0);
+  float d = length(vP - a - ab * s);
+  float cum = mix(vD.x, vD.y, s);
+  if (cum > uReveal) discard;
+  float core = exp(-d * d / 2.2), halo = exp(-d / 6.0);
+  float ph = fract((cum - uPulse) / 110.0);
+  float pulse = pow(ph, 14.0);
+  float head = exp(-(uReveal - cum) / 30.0) * step(uReveal, 1e5);
+  float seg = exp(-(uNow - vD.z) / 0.25);
+  vec3 c = uHot * (core * 1.5 + halo * 0.3) * (0.75 + 1.6 * pulse);
+  c += vec3(1.0) * (uFlash + seg * 0.8 + head * 1.5) * (core * 2.5 + halo * 0.5);
+  o = vec4(c, 1.0);
+}`;
+// Markers: the source as a hot core, the target as a reticle ring.
+const MARK_FS = HEAD + LUT + `
+in vec2 vQ;
+flat in vec4 vN0;
+flat in vec4 vN1;
+out vec4 o;
+uniform vec3 uHot;
+void main() {
+  float r = length(vQ);
+  float kind = vN0.z, on = vN0.w;
+  vec3 c;
+  if (kind < 0.5) {
+    float br = 0.85 + 0.15 * sin(uTime * 2.2);
+    c = vec3(1.0, 0.97, 0.92) * (exp(-r * r / 9.0) * 3.0 + exp(-r / 7.0) * 0.6 * br);
+    c += lut(0.0) * exp(-pow(r - 13.0, 2.0) / 2.0) * 0.5 * br;
+  } else {
+    float ring = exp(-pow(r - 10.0, 2.0) / 1.1) + exp(-pow(r - 16.0, 2.0) / 0.6) * 0.35;
+    vec3 tint = mix(uCold * 6.0, uHot * 1.6, on);
+    c = tint * ring + uHot * on * exp(-r * r / 6.0) * 1.5;
+  }
+  o = vec4(c, 1.0);
+}`;
+// Bloom: a soft threshold, then a 13-tap downsample.
+const DOWN_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec2 uTex;
+uniform float uThr;
+vec3 tap(vec2 d) { return texture(uSrc, vUv + d * uTex).rgb; }
+void main() {
+  vec3 a = tap(vec2(-2, 2)), b = tap(vec2(0, 2)), c = tap(vec2(2, 2));
+  vec3 d = tap(vec2(-2, 0)), e = tap(vec2(0, 0)), f = tap(vec2(2, 0));
+  vec3 g = tap(vec2(-2, -2)), h = tap(vec2(0, -2)), i = tap(vec2(2, -2));
+  vec3 j = tap(vec2(-1, 1)), k = tap(vec2(1, 1)), l = tap(vec2(-1, -1)), m = tap(vec2(1, -1));
+  vec3 s = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
+  if (uThr > 0.0) {
+    // A cap stops dense flashes from blowing the bloom out.
+    s = min(s, vec3(5.0));
+    float br = max(s.r, max(s.g, s.b));
+    s *= max(br - uThr, 0.0) / max(br, 1e-4);
+  }
+  o = vec4(s, 1.0);
+}`;
+// Bloom: a 9-tap tent upsample, added to the level below.
+const UP_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc, uAdd;
+uniform vec2 uTex;
+vec3 tap(vec2 d) { return texture(uSrc, vUv + d * uTex).rgb; }
+void main() {
+  vec3 s = tap(vec2(0)) * 4.0 + (tap(vec2(-1, 0)) + tap(vec2(1, 0)) + tap(vec2(0, -1)) + tap(vec2(0, 1))) * 2.0
+    + tap(vec2(-1, -1)) + tap(vec2(1, -1)) + tap(vec2(-1, 1)) + tap(vec2(1, 1));
+  o = vec4(s / 16.0 + texture(uAdd, vUv).rgb, 1.0);
+}`;
+const FINAL_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uScene, uBloom;
+uniform vec2 uRes;
+uniform float uGlow, uTime;
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+void main() {
+  vec3 col = texture(uScene, vUv).rgb + texture(uBloom, vUv).rgb * uGlow;
+  vec2 v = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.45 * smoothstep(0.45, 1.25, length(v));
+  vec3 c = srgb(aces(col * 1.15));
+  c += (hash(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.012;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, triVao = null, lutT = null;
+let scene = null, mips = [], ups = [];
+const vbo = {};
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+// One vertex array per draw kind; instanced kinds step per instance.
+function vao(name, sizes, instanced) {
+  const a = gl.createVertexArray(), b = gl.createBuffer();
+  gl.bindVertexArray(a);
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  const stride = sizes.reduce((s, n) => s + n, 0) * 4;
+  let off = 0;
+  sizes.forEach((n, l) => {
+    gl.enableVertexAttribArray(l);
+    gl.vertexAttribPointer(l, n, gl.FLOAT, false, stride, off);
+    if (instanced) gl.vertexAttribDivisor(l, 1);
+    off += n * 4;
+  });
+  vbo[name] = { a, b, n: 0 };
+}
+function fillVbo(name, data, n) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo[name].b);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  vbo[name].n = n;
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('float targets unavailable');
+  gl.getExtension('OES_texture_float_linear');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    face: compile(FACE_VS, FACE_FS), edge: compile(CAPSULE_VS, EDGE_FS), node: compile(NODE_VS, NODE_FS),
+    path: compile(CAPSULE_VS, PATH_FS), mark: compile(NODE_VS, MARK_FS),
+    down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS), final: compile(TRI, FINAL_FS),
+  };
+  // Polling lets the driver link off the main thread; after 3 s it waits.
+  const all = Object.values(progs), t0 = performance.now();
+  if (par) while (!gl.isContextLost() && performance.now() - t0 < 3000 && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  triVao = gl.createVertexArray();
+  vao('face', [4], false);
+  vao('edge', [4, 4], true);
+  vao('node', [4, 4], true);
+  vao('path', [4, 4], true);
+  vao('mark', [4, 4], true);
+  lutT = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, lutT);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 256, 1, 0, gl.RGBA, gl.FLOAT, lutData(PALETTE));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+function free(t) {
+  if (!t) return;
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fb);
+}
+function bind(prog, name, unit, tex) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(prog.u[name], unit);
+}
+function to(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+}
+function tri(dst) {
+  to(dst);
+  gl.bindVertexArray(triVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// Screen targets: the scene at full size, five bloom levels below it.
+function allocScreen() {
+  const W = canvas.width, H = canvas.height;
+  if (scene && scene.w === W && scene.h === H) return;
+  [scene, ...mips, ...ups].forEach(free);
+  scene = target(W, H);
+  mips = []; ups = [];
+  let w = W, h = H;
+  for (let i = 0; i < 5; i++) {
+    w = Math.max(1, w >> 1); h = Math.max(1, h >> 1);
+    mips.push(target(w, h));
+    if (i < 4) ups.push(target(w, h));
+  }
+}
+
+/* ---------- state ---------- */
+// The wave clock W runs in distance units; light reaches a point when W passes it.
+let W = 0, src = -1, tgt = -1, seed = 4242;
+let simT = 0, frameNo = 0, ambT = 0;
+// The lock: the time the path snapped on, or -1 while the front is short of the target.
+let lockT = -1;
+let path = [], pathLen = 0, pathBirth = new Map();
+const BAND = 42, TAIL = 260;
+const speed = () => 230 * speedK * (reduced() ? 0.6 : 1);
+let view = { w: 1, h: 1, dpr: 1 };
+
+// Positions are kept as fractions, so a new web keeps them in place.
+let srcAt = null, tgtAt = null;
+function nearest(x, y, needReach = false) {
+  const g = web;
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < g.N; i++) {
+    if (g.X[i] < 4 || g.Y[i] < 4 || g.X[i] > g.W - 4 || g.Y[i] > g.H - 4) continue;
+    if (needReach && g.dist[i] === Infinity) continue;
+    const d = (g.X[i] - x) ** 2 + (g.Y[i] - y) ** 2;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+// Arrival times change per flood, so every buffer refills.
+function upload() {
+  const g = web, D = i => (g.dist[i] === Infinity ? 1e9 : g.dist[i]);
+  const ed = new Float32Array(g.E * 8);
+  for (let e = 0; e < g.E; e++) {
+    const a = g.ea[e], b = g.eb[e];
+    ed.set([g.X[a], g.Y[a], g.X[b], g.Y[b], D(a), D(b), g.w[e], 0], e * 8);
+  }
+  fillVbo('edge', ed, g.E);
+  const nd = new Float32Array(g.N * 8);
+  for (let i = 0; i < g.N; i++) {
+    const te = g.tEnter[i] === Infinity ? 1e9 : g.tEnter[i];
+    const t0 = g.tent0[i] === Infinity ? 1e9 : g.tent0[i];
+    nd.set([g.X[i], g.Y[i], D(i), te, t0, g.tImp[i], i, 0], i * 8);
+  }
+  fillVbo('node', nd, g.N);
+  // Each face fans from its site; the site takes the mean arrival time.
+  const fv = [];
+  for (const f of g.faces) {
+    const ids = f.ids;
+    if (ids.some(i => g.dist[i] === Infinity)) continue;
+    let m = 0;
+    for (const i of ids) m += g.dist[i];
+    m /= ids.length;
+    for (let k = 0; k < ids.length; k++) {
+      const a = ids[k], b = ids[(k + 1) % ids.length];
+      fv.push(f.cx, f.cy, m, 0, g.X[a], g.Y[a], g.dist[a], 1, g.X[b], g.Y[b], g.dist[b], 1);
+    }
+  }
+  fillVbo('face', new Float32Array(fv), fv.length / 4);
+}
+// The path walks parents from the target back to the source.
+function route() {
+  const g = web, old = pathBirth, next = new Map();
+  path = [];
+  if (src < 0 || tgt < 0 || g.dist[tgt] === Infinity) { pathLen = 0; fillVbo('path', new Float32Array(0), 0); return; }
+  for (let v = tgt; v >= 0; v = g.par[v]) path.unshift(v);
+  const pd = new Float32Array(Math.max(0, path.length - 1) * 8);
+  let cum = 0;
+  for (let k = 0; k + 1 < path.length; k++) {
+    const a = path[k], b = path[k + 1], L = Math.hypot(g.X[b] - g.X[a], g.Y[b] - g.Y[a]);
+    const key = a * 100003 + b, born = old.get(key) ?? simT;
+    next.set(key, born);
+    pd.set([g.X[a], g.Y[a], g.X[b], g.Y[b], cum, cum + L, born, 0], k * 8);
+    cum += L;
+  }
+  pathLen = cum;
+  pathBirth = next;
+  fillVbo('path', pd, path.length - 1);
+}
+function marks() {
+  const g = web, m = [];
+  if (src >= 0) m.push(g.X[src], g.Y[src], 0, 1, 0, 0, 0, 0);
+  if (tgt >= 0) m.push(g.X[tgt], g.Y[tgt], 1, lockT >= 0 ? 1 : 0, 0, 0, 0, 0);
+  fillVbo('mark', new Float32Array(m), m.length / 8);
+}
+// A new source floods from W = 0; the target waits for the front.
+function flood(i, w0 = 0) {
+  if (i < 0) return;
+  src = i;
+  srcAt = [web.X[i] / web.W, web.Y[i] / web.H];
+  dijkstra(src);
+  W = w0;
+  lockT = -1;
+  pathBirth = new Map();
+  upload();
+  route();
+  checkLock();
+  marks();
+}
+function setTarget(i) {
+  if (i < 0 || i === tgt) return;
+  tgt = i;
+  tgtAt = [web.X[i] / web.W, web.Y[i] / web.H];
+  route();
+  checkLock();
+  marks();
+}
+// The path locks the moment the front reaches the target.
+function checkLock() {
+  const reached = tgt >= 0 && web.dist[tgt] <= W;
+  if (reached && lockT < 0) { lockT = simT; pathBirth.forEach((_, k) => pathBirth.set(k, simT)); marks(); }
+  if (!reached && lockT >= 0) { lockT = -1; marks(); }
+}
+const done = () => !web || W >= web.maxD + TAIL;
+
+/* ---------- drawing ---------- */
+function common(q) {
+  gl.uniform4f(q.u.uMap, 2 / view.w, -2 / view.h, -1, 1);
+  if (q.u.uLut) bind(q, 'uLut', 7, lutT);
+  gl.uniform1f(q.u.uW, W);
+  gl.uniform1f(q.u.uMax, web.maxD);
+  gl.uniform1f(q.u.uBand, BAND);
+  gl.uniform1f(q.u.uPx, 1 / view.dpr);
+  gl.uniform1f(q.u.uTime, ambT);
+  gl.uniform1f(q.u.uFlick, reduced() ? 0 : 1);
+  if (q.u.uCold) gl.uniform3fv(q.u.uCold, COLD);
+}
+let COLD, BASE, BG, HOT;
+function instanced(name, q, R) {
+  if (!vbo[name].n) return;
+  gl.useProgram(q.p);
+  common(q);
+  gl.uniform1f(q.u.uR, R);
+  gl.bindVertexArray(vbo[name].a);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, vbo[name].n);
+}
+function render() {
+  to(scene);
+  gl.clearColor(BG[0], BG[1], BG[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  let q = P.face;
+  gl.useProgram(q.p);
+  common(q);
+  gl.uniform3fv(q.u.uBase, BASE);
+  gl.uniform1f(q.u.uStep, Math.max(40, web.maxD / 16));
+  gl.bindVertexArray(vbo.face.a);
+  gl.drawArrays(gl.TRIANGLES, 0, vbo.face.n);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  q = P.edge;
+  gl.useProgram(q.p);
+  gl.uniform1f(q.u.uScout, 0.35);
+  instanced('edge', q, 7);
+  instanced('node', P.node, 14);
+  if (lockT >= 0 && path.length > 1) {
+    q = P.path;
+    gl.useProgram(q.p);
+    const t = simT - lockT, rm = reduced();
+    // The path sweeps on from the source in 0.22 s.
+    gl.uniform1f(q.u.uReveal, rm ? 1e6 : t < 0.22 ? (t / 0.22) * pathLen : 1e6);
+    gl.uniform1f(q.u.uNow, simT);
+    gl.uniform1f(q.u.uFlash, (rm ? 0.3 : 1) * Math.exp(-t / 0.3));
+    gl.uniform1f(q.u.uPulse, ambT * 150 * (rm ? 0.5 : 1));
+    gl.uniform3fv(q.u.uHot, HOT);
+    instanced('path', q, 12);
+  }
+  q = P.mark;
+  gl.useProgram(q.p);
+  gl.uniform3fv(q.u.uHot, HOT);
+  instanced('mark', q, 22);
+  gl.disable(gl.BLEND);
+  bloomPass();
+  q = P.final;
+  gl.useProgram(q.p);
+  bind(q, 'uScene', 0, scene.tex);
+  bind(q, 'uBloom', 1, ups[0].tex);
+  gl.uniform2f(q.u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(q.u.uGlow, glow);
+  gl.uniform1f(q.u.uTime, simT);
+  tri(null);
+  frameNo++;
+}
+function bloomPass() {
+  const d = P.down;
+  gl.useProgram(d.p);
+  let src = scene;
+  for (let i = 0; i < mips.length; i++) {
+    bind(d, 'uSrc', 0, src.tex);
+    gl.uniform2f(d.u.uTex, 1 / src.w, 1 / src.h);
+    gl.uniform1f(d.u.uThr, i === 0 ? 0.7 : 0);
+    tri(mips[i]);
+    src = mips[i];
+  }
+  const u = P.up;
+  gl.useProgram(u.p);
+  for (let i = ups.length - 1; i >= 0; i--) {
+    const s = i === ups.length - 1 ? mips[i + 1] : ups[i + 1];
+    bind(u, 'uSrc', 0, s.tex);
+    bind(u, 'uAdd', 1, mips[i].tex);
+    gl.uniform2f(u.u.uTex, 1 / s.w, 1 / s.h);
+    tri(ups[i]);
+  }
+}
+
+/* ---------- layout ---------- */
+// The web takes the stage's size; a new size builds a new web in place.
+function layout() {
+  const { w, h, dpr } = fitCanvas(canvas, { maxDpr: 2 });
+  const rebuild = !web || Math.abs(web.W - w) > 1 || Math.abs(web.H - h) > 1;
+  view = { w, h, dpr };
+  allocScreen();
+  if (rebuild) makeWeb(w, h, true);
+}
+// The first frame: a seeded source and target per orientation.
+function defaults(w, h) {
+  return h > w ? { s: [0.5, 0.8], t: [0.42, 0.18] } : { s: [0.22, 0.6], t: [0.8, 0.28] };
+}
+function makeWeb(w, h, finished) {
+  web = buildWeb(w, h, seed);
+  const d = defaults(w, h);
+  const s = srcAt || d.s, t = tgtAt || d.t;
+  src = -1; tgt = -1;
+  flood(nearest(s[0] * w, s[1] * h));
+  setTarget(nearest(t[0] * w, t[1] * h, true));
+  if (finished) { W = web.maxD + TAIL; checkLock(); marks(); }
+}
+
+/* ---------- frame loop ---------- */
+let raf = 0, last = 0, lastDraw = 0, visible = true, inputAt = 0, started = false;
+const live = () => { inputAt = performance.now(); wake(); };
+function wake() {
+  if (!raf && visible && P && started) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+// Lively while the front runs or a drag is live; drifting while the path pulses.
+const lively = () => !done() || drag || (lockT >= 0 && simT - lockT < 1.2);
+const busy = (now = performance.now()) => visible && (lively() || now - inputAt < 60000);
+function frame(now) {
+  raf = 0;
+  try {
+    if (lively() || now - lastDraw >= 31) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      // Ambient motion eases out over the 2 s before sleep.
+      ambT += dt * clamp((60000 - (now - inputAt)) / 2000);
+      last = now;
+      lastDraw = now;
+      simT += dt;
+      if (!done()) { W += speed() * dt; checkLock(); }
+      render();
+    }
+  } finally {
+    if (busy(now)) raf = requestAnimationFrame(frame);
+  }
+}
+function still() { if (P && web) render(); }
+
+/* ---------- pointer ---------- */
+// A press that travels 8 px is a drag; a release before that is a tap.
+let ptr = null, drag = false;
+const local = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = local(e);
+  ptr = { id: e.pointerId, x0: x, y0: y };
+  live();
+}
+function move(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const [x, y] = local(e);
+  if (!drag && Math.hypot(x - ptr.x0, y - ptr.y0) > 8) drag = true;
+  if (drag) { setTarget(nearest(x, y, true)); live(); }
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  const tap = !drag && e?.type === 'pointerup';
+  if (tap) flood(nearest(ptr.x0, ptr.y0));
+  ptr = null;
+  drag = false;
+  live();
+}
+
+/* ---------- actions ---------- */
+act.shuffle = () => {
+  seed = (Math.random() * 1e9) | 0;
+  makeWeb(view.w, view.h, false);
+  live();
+};
+act.reset = () => {
+  seed = 4242;
+  srcAt = tgtAt = null;
+  makeWeb(view.w, view.h, false);
+  live();
+};
+act.still = () => still();
+
+/* ---------- boot ---------- */
+try {
+  await initGL();
+  COLD = linFit(0.42, 0.06, 262).map(v => v * 0.55);
+  BASE = linFit(0.17, 0.03, 275);
+  BG = linFit(0.12, 0.022, 275);
+  HOT = linFit(0.97, 0.06, 85);
+  layout();
+  // The first frame shows the front at 55 % of the web.
+  W = web.maxD * 0.55;
+  checkLock();
+  marks();
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+introGone.then(() => { started = true; live(); });
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+// Space floods again from the current source.
+stage.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat) return;
+  e.preventDefault();
+  flood(src);
+  live();
+});
+
+let resizeT = 0;
+new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (P) { layout(); still(); } }, 120); }).observe(stage);
+onQuality(() => { if (P) { layout(); still(); } });
+// A hidden tab stops the loop and the clocks with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (busy()) wake(); else still();
+});
+</script>
+</body>
+</html>
