@@ -51,7 +51,7 @@ Decisions:
 - [ ] Checkpoint 4: Tom tests live
 - [ ] Sound: cabin drone, far thunder after each flash, shade slide
 - [x] Menu Lab entry: tilted window with horizon, wing and sun; hover glints the sun with a flare streak
-- [ ] Remove the `window.__ws` test hook
+- [x] Remove the `window.__ws` test hook (gone with the three.js swap, 2026-11-09)
 - [ ] QA: 1280 and 375 px, clean console, reduced motion, hidden tab stops the loop
 - [ ] Record the session cost
 
@@ -74,3 +74,5 @@ Storm blend fix: storm air hazes the background before the towers; towers haze b
 Bar v2 port (2026-11-09): time of day is a stepper top left (seven hours: dawn, morning, noon, golden hour, dusk, blue hour, midnight); Storm slider bottom right; Dim action (key D); Settings: Cloud, Towns, Rain, Aurora, Falling and Flying sights, site Quality. The cabin light is the hour's 787 mood plus daylight through the window. Town lights go out by day (uLit). Glass scratches rebuilt: three hairline layers and cleaning swirls catch the cabin light. window/annex.json added; the shell has no annex yet.
 
 - 2026-11-09 (Tom, via toy-trainride): pane rain now uses shared/glassrain.js (grBeads, grRuns). Rain space is the pane in metres times 0.45 / 0.55, as in glasslab/. Strip 0.15 at flight speed; aft direction and flow unchanged.
+
+- 2026-11-09: the three.js build (stimming-glot) is now the toy; the raw WebGL2 build is legacy.html.

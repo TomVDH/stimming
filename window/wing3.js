@@ -215,9 +215,7 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
   const strobeL = new THREE.PointLight(0xffffff, 0, 30, 2), navL = new THREE.PointLight(0xff2010, 0.4, 14, 2);
   scene.add(strobeL, navL);
 
-  // A debug handle for the spike only.
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
-  window.__w3 = { scene, air, sun, paint, flapPaint, hinged, THREE, cam };
   const mo = { t: null, bank: 0, rate: 0, shadowT: -1 };
   cam.matrixAutoUpdate = false;
   const pmrem = new THREE.PMREMGenerator(renderer);

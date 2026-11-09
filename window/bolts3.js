@@ -38,7 +38,7 @@ export function createBolts() {
     const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const g = f.cell ? f.cell : null;
     // Cloud to ground below a thin deck; otherwise a crawler in the anvil.
-    const ground = f.kind ? f.kind === 'ground' : g && rnd() < 0.55 * (1 - cover);
+    const ground = g && rnd() < 0.55 * (1 - cover);
     const top = g ? g.top : 11, ax = g ? [Math.cos(g.shear), Math.sin(g.shear)] : [1, 0];
     let a, b;
     if (ground) {
@@ -77,7 +77,9 @@ export function createBolts() {
   return {
     scene, cam,
     // Poses the bolts for this frame and reports the brightest, for the wing.
-    update({ flashes, camXZ, H, wingCam, outW, outH, cover, haze }) {
+    update({ flashes, camXZ, H, wingCam, outW, outH, cover, haze, sun = 0 }) {
+      // Daylight washes a bolt out: full sun leaves about a seventh.
+      const day = 1 / (1 + 0.25 * sun);
       cam.matrixWorld.copy(wingCam.matrixWorld);
       cam.matrixWorldInverse.copy(wingCam.matrixWorldInverse);
       cam.fov = wingCam.fov; cam.aspect = wingCam.aspect; cam.updateProjectionMatrix();
@@ -93,7 +95,7 @@ export function createBolts() {
         b.group.position.set(-camXZ[0], -H - (dx * dx + dz * dz) / R_EARTH2, -camXZ[1]);
         b.group.children.forEach(l => {
           const k = l.material.userData.glow * Math.min(f.level, 2.5) * (b.ground ? 1 - 0.85 * cover : 1);
-          l.material.color.setHex(l.material.userData.hex).multiplyScalar(k * 2.5 * (1 - haze));
+          l.material.color.setHex(l.material.userData.hex).multiplyScalar(k * 2.5 * (1 - haze) * day);
           l.material.resolution.set(outW, outH);
         });
         if (!best || f.level > best.level) best = { level: f.level, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };

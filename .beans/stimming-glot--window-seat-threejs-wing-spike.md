@@ -1,7 +1,7 @@
 ---
 # stimming-glot
 title: 'Window seat: three.js wing spike'
-status: in-progress
+status: completed
 type: task
 created_at: 2026-11-09T18:24:15Z
 updated_at: 2026-11-09T18:24:15Z
@@ -51,4 +51,7 @@ Round 3 (Tom, 2026-11-09: nicer weather on a performance-efficient three.js buil
   Phone: 375 x 812 and 812 x 375 hold, clean console. The tip strobe on the wing toned down (it blew out with glow).
 - [ ] Rain on the glass stays the shader's; instanced drops not done.
 - [ ] Wing fog only tracks fog banks, not the storm's haze; check in a storm at Dusk.
-- [ ] Tom: compare page, then decide whether the three.js build replaces the live toy.
+- [x] Tom (2026-11-09, "go go"): the three.js build replaces the live toy.
+  `window/index.html` is the three.js build; the raw WebGL2 build is `window/legacy.html` (noindex), reached by the Classic link (`legacy: true` in toys.json).
+  `window/compare.html` shows Classic beside Fresh. The spike page is gone; its test hooks (?seed, ?freeze, __ws, __w3, bolt kind) are stripped.
+  Bolts dim in sunlight (a seventh at full sun). QA: 1280, 375 x 812, 812 x 375, reduced motion, hidden tab draws nothing; clean console.
