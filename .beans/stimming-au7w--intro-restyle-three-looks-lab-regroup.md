@@ -20,3 +20,5 @@ Three restyle looks (Brut, Label, Poster) as lab varieties on Classic's timing t
 ## Notes
 
 Headless QA, 2026-11-09: phase-to-phase beats match Classic within one frame; the logo's centre holds at 1280x800, 375x812 and 812x375; Classic screenshots are byte-equal to main at pop, flash and rest. Open: Tom picks one look in the lab.
+
+Second round, 2026-11-09: Plate, Signal and Readout added on Tom's request. Same checks pass (beats within one frame, logo fixed, fit clean at the three sizes).

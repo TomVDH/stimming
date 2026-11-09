@@ -121,6 +121,12 @@ export const VARIETIES = {
     { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
   poster: look('poster', 'Poster: the title leads, near-black glass', { nameK: 1.45, logoK: 0.85, padK: 1.35, blur: 48, dim: 0.28 },
     { fonts: { fd: 'Gabarito', fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  plate: look('plate', 'Plate: the title sits on a white plate', { nameK: 0.8, blur: 30, dim: 0.38 },
+    { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  signal: look('signal', 'Signal: one stack, the box and title in signal yellow', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
+    { stack: true, fonts: { fd: 'Gabarito', fn: 'B612', fs: 'B612', fsn: 'B612' } }),
+  readout: look('readout', 'Readout: the title rides above the logo, all slab caps', { nameK: 0.6, logoK: 0.9, padK: 0.8, blur: 24, dim: 0.4 },
+    { fonts: { fd: SLAB, fn: SLAB, fs: SLAB, fsn: SLAB } }),
   // Snap runs 20% longer than the base table, every beat in proportion.
   snap: {
     label: 'Snap', group: 'Earlier', read: true,
