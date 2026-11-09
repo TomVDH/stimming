@@ -244,7 +244,8 @@ vec3 studio(vec3 o, vec3 d) {
   float kz = dot(d, kd);
   if (kz > 0.0) {
     vec2 a = vec2(dot(d, ku), dot(d, kv)) / kz;
-    c += vec3(1.0, 0.95, 0.88) * smoothstep(0.08, 0.0, max(abs(a.x) - 0.15, abs(a.y) - 0.42)) * 5.0;
+    c += vec3(1.0, 0.95, 0.88) * smoothstep(0.025, 0.0, max(abs(a.x) - 0.06, abs(a.y) - 0.42)) * 4.0;
+    c += vec3(1.0, 0.95, 0.88) * smoothstep(0.02, 0.0, max(abs(a.x - 0.16) - 0.015, abs(a.y) - 0.38)) * 2.5;
   }
   vec3 sd = normalize(vec3(0.92, 0.12, 0.25)), su = normalize(cross(sd, vec3(0.0, 1.0, 0.0))), sv = cross(su, sd);
   float sz = dot(d, sd);
@@ -399,14 +400,21 @@ void main() {
   // Rays the glass bends away from it read dark, so the edges deepen.
   vec3 Ld = normalize(vec3(LAMP.x * 0.4, LAMP.y + 4.0, BACK_Z) - X);
   float k = max(dot(normalize(d2), Ld), 0.0);
-  float panel = pow(k, 6.0) * 1.0 + pow(k, 40.0) * 0.9;
-  vec3 light = behind + uLamp * panel;
+  float panel = pow(k, 3.0) * 0.45 + pow(k, 14.0) * 0.9 + pow(k, 60.0) * 1.1;
+  // The panel is brighter at its top; the beer is brightest high and darkens toward the floor.
+  float lift = smoothstep(uGYb, uLevel + 1.0, X.y);
+  vec3 light = behind + uLamp * panel * (0.55 + 0.6 * lift);
+  // The curved beer gathers light into soft moving streaks: a caustic shimmer.
+  float sh = noise(vec2(X.x * 1.6 + uTime * 0.12, X.y * 0.45 - uTime * 0.05)) * noise(vec2(X.x * 3.1 - uTime * 0.08, X.y * 0.9));
+  light *= 0.82 + 0.55 * sh;
   // Beer-Lambert along the true path gives the gold its depth.
   vec3 T = exp(-uSigma * t);
   vec3 col = light * T;
   // Haze and the surge scatter a little light forward, tinted by the beer.
   float ext = (uHaze * 0.5 + uSurge * 0.12) * t;
   col = col * exp(-ext) + uLamp * 0.45 * exp(-uSigma * (0.8 + 0.6 * t)) * (1.0 - exp(-ext));
+  // Just under the head the beer is full of fine bubbles: a bright, creamy band.
+  col += uLamp * exp(-uSigma * 1.2) * 0.35 * smoothstep(uLevel - 0.7, uLevel - 0.02, vW.y);
   col = col * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -452,10 +460,20 @@ void main() {
   // Fine bubbles show only as a faint texture; coarser on top as the head ages.
   float cs = uCell * (1.0 + 0.8 * sf) * (1.0 + uCoarse);
   vec4 F = voro(q / cs);
-  float tex = 0.9 + 0.1 * smoothstep(0.0, 0.5, F.y - F.x) + 0.06 * (noise(q * 3.0) - 0.5);
-  vec3 col = uFoamCol * (0.32 + 0.68 * key) * side * tex;
+  // A second, finer layer fills the gaps: real foam mixes bubble sizes.
+  vec4 F2 = voro(q / (cs * 0.45) + 7.3);
+  // Each bubble is a small dome: lit up left, shaded down right, with a bright film edge.
+  float dome = clamp(0.5 + 1.4 * dot(F.zw, vec2(0.6, -0.5)), 0.0, 1.0);
+  float film = 1.0 - smoothstep(0.02, 0.09, F.y - F.x);
+  float fine = 1.0 - smoothstep(0.02, 0.08, F2.y - F2.x);
+  float tex = vS > 0.999 ? 0.92 + 0.08 * film : 0.8 + 0.18 * dome + 0.12 * film + 0.05 * fine;
+  // The top takes the key light; the sides fall off and shade toward the beer.
+  float top = vS > 0.999 ? 1.0 : 0.0;
+  vec3 col = uFoamCol * (0.28 + 0.75 * key) * side * tex * mix(0.68 + 0.32 * sf, 1.08, top);
+  // Bubbles pressed on the glass catch tiny glints.
+  col += uKey * 0.5 * key * smoothstep(0.86, 1.0, 1.0 - F.x) * step(0.7, hash(floor(q / cs) + 3.0)) * (1.0 - top);
   // The lamp glows through the head: warm and golden at its foot, cream on top.
-  vec3 glow = uLamp * exp(-uSigma * (1.2 * (1.0 - sf))) * (0.08 + 0.35 * pow(1.0 - abs(dot(n, v)), 2.0));
+  vec3 glow = uLamp * exp(-uSigma * (1.2 * (1.0 - sf))) * (0.05 + 0.5 * pow(1.0 - abs(dot(n, v)), 3.0));
   col += glow;
   // A wet, golden line where the head meets the beer.
   col = mix(col, uLamp * exp(-uSigma * 3.0) * 0.55 + uFoamCol * 0.15, (1.0 - smoothstep(0.0, 0.12, sf)) * 0.6);
@@ -483,8 +501,9 @@ void main() {
   if (uOn > 0.5 && depth > 0.3) {
     if (kind < 0.5) {
       // A train: bubbles leave the site at a steady rate and reach the top at the end of their life.
-      float life = 2.4, n = 40.0;
-      float age = fract((uTime / life) + k / n + seed) * life;
+      // Each site fires at its own pace, and no two gaps are quite equal.
+      float life = 1.9 + 1.6 * h1(seed * 3.7), n = 40.0;
+      float age = fract((uTime / life) + (k + 0.45 * (h1(seed * 11.0 + k * 0.731) - 0.5)) / n + seed) * life;
       float y0 = max(aB.y, uGYb + 0.15);
       float A = (uLevel - y0) / (life * life * life);
       c = vec3(aB.x, y0 + A * age * age * age, aB.z);
@@ -626,8 +645,11 @@ void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb;
   vec2 q = vUv - 0.5;
   c *= 1.0 - uVig * smoothstep(0.2, 0.75, length(q * vec2(1.2, 1.0)));
-  c = aces(c * 0.9);
+  c = aces(c * 0.95);
   c = pow(c, vec3(1.0 / 2.2));
+  // A gentle S-curve and a warm lift in the shadows.
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.35);
+  c += vec3(0.012, 0.006, 0.0) * (1.0 - c);
   float l = dot(c, vec3(0.3, 0.59, 0.11));
   float gr = hash(gl_FragCoord.xy * 0.73 + fract(uTime * 7.3) * 113.0) + hash(gl_FragCoord.xy * 1.31 + fract(uTime * 3.1) * 71.0) - 1.0;
   c += gr * (0.016 + 0.03 * l * (1.0 - l));
@@ -702,7 +724,10 @@ function fizzGeometry() {
   const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const sites = [];
   // The etched mark: a ring of sites in the floor. Scratches: points on the wall.
-  for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; sites.push([0.55 * Math.sin(a), glass.ybot + 0.2, 0.55 * Math.cos(a), 1]); }
+  for (let i = 0; i < 7; i++) {
+    const a = (i + 0.3 * r()) / 7 * Math.PI * 2, rr = 0.35 + 0.6 * r();
+    sites.push([rr * Math.sin(a), glass.ybot + 0.2, rr * Math.cos(a), 1]);
+  }
   for (let i = 7; i < NTRAIN; i++) {
     const y = lerp(glass.ybot + 0.8, glass.ybot + 6, r()), a = r() * Math.PI * 2, rr = Math.max(glass.ri(y) - 0.12, 0.3);
     sites.push([rr * Math.sin(a), y, rr * Math.cos(a), 1]);
@@ -908,7 +933,7 @@ function frameCamera(w, h) {
   const gh = glass.h;
   const at = new THREE.Vector3(narrow ? 0.6 : 2.2, gh * 0.6, 0);
   const dist = 34;
-  camera.position.set(at.x * 0.3, at.y + 1.6, dist);
+  camera.position.set(at.x * 0.3, at.y + 3.4, dist);
   camera.lookAt(at);
   // The frame holds the bowl; on phones it also holds the glass's width.
   // The frame always keeps the glass's width, with room for the pour beside it.

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:16:41Z
-updated_at: 2026-11-09T11:11:00Z
+updated_at: 2026-11-09T11:13:42Z
 ---
 
 Build Beer pour from docs/plans/beer.md. It starts in the Lab, on Bar v2. Pour a Belgian beer into a backlit glass: bubbles rise in trains, the head climbs, swells and settles, and each sip leaves a lacing ring.
@@ -52,3 +52,5 @@ Ten questions answered; see docs/plans/beer.md, Overhaul brief. three.js rebuild
 - Overhaul 2 checkpoint (2026-11-09): sprite fizz (trains, wall bubbles, surge, pops and spray), refracting beer lathe, foam cells, misted glass shell, blurred behind layer for depth of field. The ray tracer stays as beer/tracer.html (noindex). Hold-to-pour is interim until Overhaul 3.
 
 - Lookdev pass (2026-11-09): clean glass (edge band, softbox glints, lip line; mist only via Settings > Cold glass), beer shader fixed (it failed to compile in d6aac3c: projectionMatrix undeclared in the fragment stage), product-shot light panel behind the glass, straight bubble trains, creamy head.
+
+- Lookdev pass 2: beer depth gradient and caustic shimmer, cream line, head volume with mixed bubble sizes and glints, crisp narrow softbox streaks, warmer graded S-curve, higher camera to show the head's top, irregular nucleation trains.
