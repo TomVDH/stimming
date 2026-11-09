@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T07:40:02Z
+updated_at: 2026-11-09T07:45:52Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -17,7 +17,7 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 - [x] Task 2: vortices, inflow, dynamics, merge, spin-up gesture, gust
 - [x] Task 2: two same-sign storms 0.2 apart orbit, then merge at 9.5 s (stills at 0, 2, 4, 7, 10 s)
 - [x] Task 3: Silk, Heat, Dye; isobars; CPU fallback
-- [ ] Task 4: sound: bed, howl, gust, merge
+- [x] Task 4: sound: bed, howl, gust, merge
 - [ ] Task 5: bar, Settings, persistence; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name and motto (draft: Windkaart)
@@ -41,3 +41,7 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 - Dye particles live 6 to 14 s (others 2 to 6 s); life now sits below 16 in the state texel, spawn hue above it.
 - Isobars: contours of the same stream function every 0.008, faded where they crowd. Storms use a Kaufmann core for the stream function.
 - CPU fallback (no EXT_color_buffer_float): 4,000 / 6,000 / 8,000 particles over a 128 by 72 base-wind grid rebuilt every 0.5 s; storms and gusts add exactly per particle. Tested by masking the extension: no console errors, 2.8 ms per frame.
+
+- Task 4: pink-noise bed through a 400 to 1,200 Hz band that follows the mean wind and storm strength; three resonant howls at 200 + 600 |Γ| Hz, panned to the three strongest storms; a gust whoosh with a sweeping band; a merge whomp (membrane at about 38 Hz plus low-passed brown noise). Every hit jitters pitch, time and level.
+- One-shots wait for a waking context, so Tone never warns about a suspended one.
+- Q9 (background tab, real click): context runs after the tap; after the loop sleeps it is suspended within 3 s; hidden tab suspends it too. No console errors or warnings. Levels are set by ear on paper only: Tom checks them on a real device.

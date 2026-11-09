@@ -115,7 +115,7 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, qualitySetting, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, qualitySetting, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -124,8 +124,7 @@ const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
-// Sound arrives in a later task; the toggle stays hidden until then.
-initPage({ id: 'windmap', silent: true });
+initPage({ id: 'windmap' });
 // Settings holds the site-wide Quality choice.
 qualitySetting(document.getElementById('sets'));
 
@@ -727,6 +726,7 @@ function spawnCyclone(x, y, g, rc = 0.05, held = false) {
 function gust(x, y) {
   if (gusts.length >= MAXG) gusts.shift();
   gusts.push({ x, y, q: reduce ? 0.05 : 0.13, r: 0.03 });
+  whoosh(x);
 }
 // Storms ride the flow, feel each other, drift poleward and weaken.
 const bv = [0, 0];
@@ -802,8 +802,8 @@ function mergeStorms() {
     }
   }
 }
-// Sound and light for a merge arrive in later tasks.
-function onMerge() {}
+// A merge thumps low, panned to where it happens.
+function onMerge(k) { whomp(k.x); }
 
 /* ---------- state ---------- */
 // One world unit spans the short side, so portrait recomposes the chart.
@@ -911,6 +911,103 @@ function seedCyclone() {
   spawnCyclone(AX * 0.54, AY * 0.5, 0.16 * spin(), 0.055).amp = 1;
 }
 
+/* ---------- sound ---------- */
+// Space adds a cyclone, so it counts as a gesture.
+const kit = audioKit({ keys: new Set([' ']), sleepMs: 2000 });
+let V = null, T = null, toneLoad = null;
+// The first live call loads Tone; voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
+  });
+  return null;
+}
+function buildVoices() {
+  // Wind bed: pink noise through a band that opens with the wind.
+  const bedGain = new T.Gain(0).connect(kit.out);
+  const bedF = new T.Filter({ type: 'bandpass', frequency: 500, Q: 0.7 }).connect(bedGain);
+  const bed = new T.Noise('pink').connect(bedF).start();
+  // Storm howl: one noise feeds three resonant bands, one per strong storm.
+  const howlSrc = new T.Noise('white').start();
+  const howl = [0, 1, 2].map(() => {
+    const g = new T.Gain(0).connect(kit.out);
+    const p = new T.Panner(0).connect(g);
+    const f = new T.Filter({ type: 'bandpass', frequency: 300, Q: 9 }).connect(p);
+    howlSrc.connect(f);
+    return { g, p, f };
+  });
+  // Gust: a short noise burst through a sweeping band.
+  const gustP = new T.Panner(0).connect(kit.out);
+  const gustF = new T.Filter({ type: 'bandpass', frequency: 600, Q: 1.4 }).connect(gustP);
+  const gust = new T.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.04, decay: 0.55, sustain: 0, release: 0.1 }, volume: -6 }).connect(gustF);
+  // Merge: a low membrane thump under low-passed brown noise.
+  const mergeP = new T.Panner(0).connect(kit.out);
+  const thump = new T.MembraneSynth({ pitchDecay: 0.09, octaves: 3, envelope: { attack: 0.003, decay: 0.7, sustain: 0, release: 0.2 }, volume: -4 }).connect(mergeP);
+  const rumbleF = new T.Filter({ type: 'lowpass', frequency: 260, Q: 0.6 }).connect(mergeP);
+  const rumble = new T.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.02, decay: 1.1, sustain: 0, release: 0.3 }, volume: -2 }).connect(rumbleF);
+  return { bedGain, bedF, bed, howlSrc, howl, gustP, gustF, gust, mergeP, thump, rumble };
+}
+// Pitch, time and level jitter, so no hit repeats exactly.
+const jit = (a = 0.08) => 1 + (Math.random() * 2 - 1) * a;
+const panX = x => clamp(x / AX * 2 - 1, -1, 1) * 0.8;
+// The bed follows the mean wind; each strong storm howls where it is.
+function soundFrame(level) {
+  const v = voices(); if (!v) return;
+  const now = kit.ac.currentTime;
+  const storms = live().map(s => ({ s, a: Math.abs(s.g * s.amp) })).sort((a, b) => b.a - a.a);
+  const mean = windU() + 0.6 * storms.reduce((m, o) => m + o.a, 0);
+  v.bedGain.gain.setTargetAtTime(level * clamp(0.03 + mean * 0.6, 0, 0.22), now, 0.2);
+  v.bedF.frequency.setTargetAtTime(400 + 800 * clamp(mean / 0.4), now, 0.3);
+  v.howl.forEach((h, k) => {
+    const o = storms[k];
+    h.g.gain.setTargetAtTime(o ? level * clamp(o.a / 0.3) * 2.2 : 0, now, 0.3);
+    if (!o) return;
+    // A slow waver keeps the howl from sounding like a held tone.
+    h.f.frequency.setTargetAtTime((200 + 600 * o.a) * (1 + 0.03 * Math.sin(t * 1.3 + k * 2.1)), now, 0.2);
+    h.p.pan.setTargetAtTime(panX(o.s.x), now, 0.2);
+  });
+}
+// The bed and howl fade, then the context sleeps.
+function hush() {
+  if (V) {
+    const now = kit.ac.currentTime;
+    V.bedGain.gain.setTargetAtTime(0, now, 0.1);
+    V.howl.forEach(h => h.g.gain.setTargetAtTime(0, now, 0.1));
+  }
+  kit.rest(() => !raf || !visible);
+}
+// One-shots wait for a waking context, so Tone never plays into a suspended one.
+function whenRunning(fn) {
+  if (kit.ac.state === 'running') fn();
+  else kit.ac.resume().then(() => { if (kit.live()) fn(); }).catch(() => {});
+}
+function whoosh(x) {
+  const v = voices(); if (!v) return;
+  whenRunning(() => whooshNow(v, x));
+}
+function whooshNow(v, x) {
+  const t0 = kit.ac.currentTime + 0.005, f = jit(0.15);
+  v.gustP.pan.setValueAtTime(panX(x), t0);
+  v.gustF.frequency.cancelScheduledValues(t0);
+  v.gustF.frequency.setValueAtTime(350 * f, t0);
+  v.gustF.frequency.exponentialRampToValueAtTime(1800 * f, t0 + 0.12 * jit());
+  v.gustF.frequency.exponentialRampToValueAtTime(500 * f, t0 + 0.6);
+  v.gust.triggerAttackRelease(0.5 * jit(), t0, 0.7 * jit(0.15));
+}
+function whomp(x) {
+  const v = voices(); if (!v) return;
+  whenRunning(() => whompNow(v, x));
+}
+function whompNow(v, x) {
+  const t0 = kit.ac.currentTime + 0.005;
+  v.mergeP.pan.setValueAtTime(panX(x), t0);
+  v.thump.triggerAttackRelease(38 * jit(0.12), 0.6, t0, 0.9 * jit(0.1));
+  v.rumble.triggerAttackRelease(1.0 * jit(), t0 + 0.01, 0.8 * jit(0.15));
+}
+
 /* ---------- loop ---------- */
 // Drifting runs at 30 fps; 60 s after the last input it eases to sleep.
 const SLEEP_AFTER = 60000, EASE_OUT = 2000;
@@ -918,7 +1015,7 @@ let raf = 0, last = 0, visible = true, ready = false, lastInput = performance.no
 function frameFn(now) {
   raf = 0;
   const quiet = now - lastInput;
-  if (quiet > SLEEP_AFTER + EASE_OUT) return;
+  if (quiet > SLEEP_AFTER + EASE_OUT) { hush(); return; }
   // Drifting frames hold to 30 fps; input and gusts run at full rate.
   const lively = press || quiet < 1500 || gusts.length;
   if (!lively && last && now - last < 31) { raf = requestAnimationFrame(frameFn); return; }
@@ -928,6 +1025,7 @@ function frameFn(now) {
   try {
     simStep(dt * clamp(ease) ** 2);
     render();
+    soundFrame(clamp(ease));
   } finally {
     if (visible) raf = requestAnimationFrame(frameFn);
   }
@@ -1061,7 +1159,7 @@ gl.finish();
 ready = true;
 markReady();
 requestAnimationFrame(() => canvas.classList.add('on'));
-whenVisible(stage, v => { visible = v; if (v) resume(); });
+whenVisible(stage, v => { visible = v; if (v) resume(); else hush(); });
 wake();
 </script>
 </body>
