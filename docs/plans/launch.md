@@ -244,3 +244,7 @@ The new emblem is drawn for the mask, not exported from the icon: seven wind-ben
 Checked as the intro draws it: white on dark at 152 px, dark in the white flash box, and at 44 px. `shared/emblems/launch.svg`, `icons/spike/emblems/launch33-a..c.svg` and the `emblem()` in `icons/spike-33.html` hold the same drawing.
 A plate variant (grey dawn sky, white plume, reeds cut out in black) exists as a second option; it is not in the repo.
 Dutch name: Tom rejected Tien tellen. Options put to Tom: Aftellen, Hemelvaart, Rietkraag, Tien seconden. `toys.json` stays as it is until Tom picks.
+
+## Dutch name: Hemelvaart (Tom's pick, 2026-11-09)
+
+Tom picked Hemelvaart /ˈɦeːməlˌvaːrt/ from the four options. `toys.json` holds it; the page fallback carries no Dutch, so nothing else changes.

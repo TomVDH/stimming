@@ -31,7 +31,7 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Review 2: living reed sway, cleaner reed model
 - [x] Review 2: birds nearer the eye, spruced up
 - [x] Review 2: no launch shockwave: camera jolts and the reed push wave gone
-- [ ] Tom picks the Dutch name: Tien tellen is rejected (2026-11-09); options are Aftellen, Hemelvaart, Rietkraag, Tien seconden
+- [x] Dutch name: Tom picked Hemelvaart (2026-11-09); Tien tellen was rejected
 - [x] Icon: Tom chose spike 33 A, Ascent at dawn (2026-11-09), after rounds 28, 29, 31 and 32; the menu tile, hover and emblem follow it.
 - [x] Emblem redrawn for the intro (2026-11-09): bent reeds on a bank, a white plume, a spark; no ground slab
 - [ ] Tom checks the new emblem in the intro
