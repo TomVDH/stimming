@@ -134,7 +134,7 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
     const piv = new THREE.Group(); piv.position.copy(a); air.add(piv);
     geo.translate(-a.x, -a.y, -a.z);
     add(geo, mat, piv);
-    hinged.push({ piv, axis: b.clone().sub(a).normalize(), role, ph: Math.random() * 9 });
+    hinged.push({ piv, axis: b.clone().sub(a).normalize(), role, ph: hinged.length * 2.39 });
   };
   // Flap hinges sit on the nose's centre line.
   const noseAt = z => at(FLAP + 0.02, z, 1).lerp(at(FLAP + 0.02, z, -1), 0.5);

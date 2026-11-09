@@ -38,6 +38,9 @@ Round 3 (Tom, 2026-11-09: nicer weather on a performance-efficient three.js buil
 - [x] Step 1: three.js owns the frame. Both shaders run as RawShaderMaterial passes; sky, noise and trail are three.js textures; the outside target is a 4x MSAA half-float target.
   The wing draws first; the outside quad sits on the far plane, so depth skips pixels under the wing. Shadows redraw at 5 Hz.
   Bench (M4, 1248x752, Dusk, Storm 1, render plus readPixels): live 5.2 ms median, port 5.5 ms.
-- [ ] Step 2: clouds at quarter size, traced in a rotating subset, with history blend; spend the saving on fuller cloud and haze bands
+- [x] Step 2: temporal resolve. The cloud marches jitter per frame (R2 offsets); a resolve pass blends a quarter of each new frame into history, clamped to the 3x3 neighbourhood.
+  The saving buys finer towers on Standard: 40 steps at 0.5 km, 3 octaves (was 32, 0.6, 2); deck 20 steps (was 18). Cost stays inside bench noise (about 5 to 6 ms).
+  Test hooks: ?seed fixes the storm (reseeded before the cells, as three.js ids draw randoms); ?freeze holds the simulation for A/B shots.
+  Not done: quarter-size clouds and haze bands. The look gain is modest: crisper billows, less march noise.
 - [ ] Step 3: branching bolts with glow, cloud tops lit from inside, the wing in the storm's fog and light
 - [ ] Step 4: rain on the glass as instanced drops, bloom, phone check
