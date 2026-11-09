@@ -44,6 +44,8 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [ ] Sound
 - [ ] Checkpoint 2: Tom reviews motion and sound
 - [ ] Pass: parked by Tom 2026-11-04; Port first
+- [ ] Pass snowbound, sub-project 1: shared `train.js`, span, storm and moon gaps, long freight with plough (spec `docs/plans/viaduct-pass-snowbound.md`)
+- [ ] Pass snowbound, sub-project 2: avalanche on tap
 - [ ] Prototypes: Tom picks any to grow (all six final in the gallery)
 - [ ] Menu Lab entry: icon and `toys.viaduct` hook kept as they are
 - [ ] QA Q1 to Q10 (docs/plans/README.md)
