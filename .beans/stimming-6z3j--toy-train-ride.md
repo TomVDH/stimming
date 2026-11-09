@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T22:10:00Z
+updated_at: 2026-11-09T22:20:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -167,3 +167,7 @@ Open from the critics:
 - [x] Station: sign contrast, platform gradient, saturated back wall
 - [x] Track band takes up to a third of the glass on some crops
 - Done: the seated eye sits 7 cm left and 5 cm low, so the jambs foreshorten unequally; shore-light columns vary in length and width; the mirrored shore averages two rays; terrain shadows fade out close up; station signs read in shade; the gaze tilts 1 degree less, so the track takes less glass
+
+## Round 20: Pixar-lite land, cleaner track bed (Tom, 2026-11-09)
+- [x] Terrain: wrapped key light, shade tinted cool blue (never black), warm rim on edges turned from the eye (strongest against the sun), moon rim at night; cleaner saturated greens, less grain
+- [x] Track bed: warm grey ballast with soft speed bands, contact shadow under each rail, a grassy far verge melting into a grass slope; rail web lighter rust, not a black void
