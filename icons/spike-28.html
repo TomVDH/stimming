@@ -286,7 +286,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
   };
 
   // Emblem: the same globe as a luminance mask, white is solid.
-  const emblemOf = (G, extra = '') => {
+  const emblemOf = (G, extra = '', pre = '', clip = false) => {
     const { V, F } = G, [cx, cy] = V.c, R = V.R;
     G.draw(true);
     const strands = G.lines().map(pts => dOf(V, pts)).join('');
@@ -299,20 +299,21 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       const p = scr(V, v), ang = (atan2(-v[1], v[0]) * 180) / PI, r = 4.6;
       eyes += `<ellipse transform="translate(${f(p[0])} ${f(p[1])}) rotate(${f(ang)})" rx="${f(r * v[2])}" ry="${r}" fill="#000"/>`;
     });
-    return `${EMB_HEAD}
+    return `${EMB_HEAD}${clip ? '<clipPath id="sq"><rect x="14" y="14" width="100" height="100" rx="6"/></clipPath>' : ''}
+  ${pre}${clip ? '<g clip-path="url(#sq)">' : ''}
   <circle cx="${cx}" cy="${cy}" r="${R}" fill="#3a3a3a"/>
   <path d="${strands}" stroke="#bdbdbd" stroke-width="1.1" stroke-linecap="round" fill="none"/>
   <path d="${arms}" stroke="#fff" stroke-width="2.8" stroke-linecap="round" fill="none"/>
   ${eyes}${extra}
   <circle cx="${cx}" cy="${cy}" r="${R}" stroke="#fff" stroke-width="2" fill="none"/>
-  <path d="${ax.out}" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <path d="${ax.out}" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>${clip ? '</g>' : ''}
 </svg>
 `;
   };
 
   // Shared hover plumbing: a ticker while live, a settle on leave.
   const live = (svg, step) => {
-    let on = false, last = 0;
+    let on = false;
     const tick = (t, dt) => step(Math.min(dt, 50) / 1000, t);
     return {
       start() { if (on) return; on = true; svg.classList.add('live'); gsap.ticker.add(tick); },
@@ -321,29 +322,58 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
   };
   const GC = [64, 64];
 
+  // Direction A and its square variants share one build.
+  // disc: the bare globe. tile: on a square block. crop: a big globe cut by the square.
+  const silk = (svg, id, mode) => {
+    let host = svg, o = { c: GC, R: 40, yaw: 0.6, pitch: 0.32, seeds: 130 };
+    if (mode !== 'disc') {
+      el('rect', { x: 20, y: 20, width: 100, height: 100, rx: 6, fill: SHADOW }, svg);
+      el('rect', { x: 14, y: 14, width: 100, height: 100, rx: 6, fill: 'oklch(0.21 0.026 248)' }, svg);
+      el('rect', { x: 14, y: 14, width: 100, height: 1.2, fill: 'oklch(0.32 0.03 242)' }, svg);
+    }
+    if (mode === 'tile') o = { ...o, R: 33, seeds: 120, sw: 0.7, eyeR: 3 };
+    if (mode === 'crop') {
+      const cd = el('defs', {}, svg), cp = el('clipPath', { id: `${id}q` }, cd);
+      el('rect', { x: 14, y: 14, width: 100, height: 100, rx: 6 }, cp);
+      host = el('g', { 'clip-path': `url(#${id}q)` }, svg);
+      o = { ...o, c: [66, 68], R: 51, seeds: 160, sw: 0.85, eyeR: 4.6, armW: 2, len: 0.6 };
+    }
+    const G = globe(host, id, o);
+    const REST = { lon: 0.85, lat: 0.42, g: 0.45 };
+    const s = storm(REST.lon, REST.lat, REST.g);
+    G.F.storms.push(s);
+    G.draw();
+    const run = live(svg, (dt) => { G.F.ph += dt * 0.6; s.spin = (s.spin || 0) + dt * 2.4; G.draw(); });
+    const aim = p => { const [lon, lat] = toLL(unview(G.V, p)); gsap.to(s, { lon, lat, g: 0.85, duration: 0.5, ease: 'power2.out', overwrite: 'auto' }); };
+    let demo = null;
+    return {
+      G,
+      enter(p) { run.start(); if (p) { aim(p); return; } const d = { a: 0 }; demo = gsap.to(d, { a: TAU, duration: 3.4, repeat: -1, ease: 'none', onUpdate: () => aim([64 + 18 * cos(d.a), 60 + 14 * sin(d.a)]) }); },
+      move(p) { if (p && !demo) aim(p); },
+      leave() { demo?.kill(); demo = null; gsap.to(s, { ...REST, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onComplete: () => { run.stop(); G.draw(); } }); },
+    };
+  };
+
   /* ================= Directions ================= */
 
   const DIRS = [
     {
       l: 'A', name: 'Silk globe',
       idea: 'The toy\'s globe: silk strands wrap the sphere under its pole axis. The pointer drags a storm across the disc; it winds up and foreshortens at the limb.',
-      make(svg, id) {
-        const G = globe(svg, id, { c: GC, R: 40, yaw: 0.6, pitch: 0.32, seeds: 130 });
-        const REST = { lon: 0.85, lat: 0.42, g: 0.45 };
-        const s = storm(REST.lon, REST.lat, REST.g);
-        G.F.storms.push(s);
-        G.draw();
-        const run = live(svg, (dt) => { G.F.ph += dt * 0.6; s.spin = (s.spin || 0) + dt * 2.4; G.draw(); });
-        const aim = p => { const [lon, lat] = toLL(unview(G.V, p)); gsap.to(s, { lon, lat, g: 0.85, duration: 0.5, ease: 'power2.out', overwrite: 'auto' }); };
-        let demo = null;
-        return {
-          G,
-          enter(p) { run.start(); if (p) { aim(p); return; } const d = { a: 0 }; demo = gsap.to(d, { a: TAU, duration: 3.4, repeat: -1, ease: 'none', onUpdate: () => aim([64 + 18 * cos(d.a), 60 + 14 * sin(d.a)]) }); },
-          move(p) { if (p && !demo) aim(p); },
-          leave() { demo?.kill(); demo = null; gsap.to(s, { ...REST, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onComplete: () => { run.stop(); G.draw(); } }); },
-        };
-      },
+      make: (svg, id) => silk(svg, id, 'disc'),
       emblem(c) { return emblemOf(c.G); },
+    },
+    {
+      l: 'A2', name: 'Silk square',
+      idea: 'A on a square tile with a hard shadow, like the menu blocks. The globe casts its own shadow onto the tile.',
+      make: (svg, id) => silk(svg, id, 'tile'),
+      emblem(c) { return emblemOf(c.G, '', '<rect x="14" y="14" width="100" height="100" rx="6" fill="#2a2a2a"/>'); },
+    },
+    {
+      l: 'A3', name: 'Silk crop',
+      idea: 'A close up: a big globe cropped by the square, so the limb and its glow curve through the corners. The pole stub pokes in at the top.',
+      make: (svg, id) => silk(svg, id, 'crop'),
+      emblem(c) { return emblemOf(c.G, '', '<rect x="14" y="14" width="100" height="100" rx="6" fill="#1c1c1c"/>', true); },
     },
     {
       l: 'B', name: 'Fujiwhara',
