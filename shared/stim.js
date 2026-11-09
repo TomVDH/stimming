@@ -250,6 +250,8 @@ function makeSheet(layer, { title, anchor, align = 'right', focusPressed = false
 
 /* shortcut keys: one listener per bar */
 // Keys skip modified presses, text fields and open sheets.
+// A key name reads like e.key in lower case.
+const keyName = k => { k = String(k).toLowerCase(); return k === 'space' || k === 'spacebar' ? ' ' : k; };
 function keyBinder() {
   const map = new Map();
   document.addEventListener('keydown', e => {
@@ -264,8 +266,8 @@ function keyBinder() {
   const ups = new Map();
   document.addEventListener('keyup', e => ups.get(e.key.toLowerCase())?.());
   return (key, fn, up) => {
-    map.set(String(key).toLowerCase(), fn);
-    if (up) ups.set(String(key).toLowerCase(), up);
+    map.set(keyName(key), fn);
+    if (up) ups.set(keyName(key), up);
   };
 }
 
