@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Wind map 28</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+/* Comets run along the strands only while a tile is live. */
+.comet { opacity: 0; animation: wm-flow 1.1s linear infinite paused; transition: opacity 0.3s; }
+.live .comet { opacity: 1; animation-play-state: running; }
+@keyframes wm-flow { to { stroke-dashoffset: -24; } }
+@media (prefers-reduced-motion: reduce) { .comet { animation: none; } }
+</style>
+</head>
+<body>
+<h1>Icon spike: Wind map 28</h1>
+<p class="lede">Wind map on the globe. Each shows at 256, 128 and 64. Move the pointer over a tile.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  gsap.ticker.fps(60);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const set = (e, a) => { for (const k in a) e.setAttribute(k, a[k]); };
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const { sin, cos, sqrt, hypot, atan2, asin, acos, exp, abs, PI } = Math;
+  const TAU = 2 * PI;
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  const SHADOW = 'oklch(0.07 0.01 265)';
+  const SILK = 'oklch(0.96 0.01 245)', CREAM = 'oklch(0.93 0.05 80)', RIM = 'oklch(0.74 0.08 232)';
+  const lineD = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L');
+
+  /* ================= Sphere maths ================= */
+
+  // World unit vectors: y is the pole; longitude grows east.
+  const sph = (lon, lat) => [cos(lat) * sin(lon), sin(lat), cos(lat) * cos(lon)];
+  const unit = v => { const n = hypot(v[0], v[1], v[2]) || 1; return [v[0] / n, v[1] / n, v[2] / n]; };
+  // World to view; z points at the viewer. Yaw turns the pole, pitch tips it, roll leans it.
+  const view = (V, w) => {
+    const cy = cos(V.yaw), sy = sin(V.yaw), cp = cos(V.pitch), sp = sin(V.pitch), cr = cos(V.roll), sr = sin(V.roll);
+    const qx = cy * w[0] - sy * w[2], qy = w[1], qz = sy * w[0] + cy * w[2];
+    const vx = qx, vy = cp * qy - sp * qz, vz = sp * qy + cp * qz;
+    return [vx * cr - vy * sr, vx * sr + vy * cr, vz];
+  };
+  const scr = (V, v, k = 1) => [V.c[0] + v[0] * V.R * k, V.c[1] - v[1] * V.R * k];
+  // Tile point to world; a point off the disc snaps inside its edge.
+  const unview = (V, p) => {
+    let x = (p[0] - V.c[0]) / V.R, y = (V.c[1] - p[1]) / V.R;
+    const cr = cos(V.roll), sr = sin(V.roll);
+    [x, y] = [x * cr + y * sr, -x * sr + y * cr];
+    const r = hypot(x, y);
+    if (r > 0.9) { x *= 0.9 / r; y *= 0.9 / r; }
+    const z = sqrt(Math.max(0, 1 - x * x - y * y));
+    const cp = cos(V.pitch), sp = sin(V.pitch), cy = cos(V.yaw), sy = sin(V.yaw);
+    const qy = cp * y + sp * z, qz = -sp * y + cp * z;
+    return [cy * x + sy * qz, qy, -sy * x + cy * qz];
+  };
+  const toLL = w => [atan2(w[0], w[2]), asin(clamp(w[1], -1, 1))];
+
+  /* ================= Wind field ================= */
+
+  // A westerly in bands, a slow meander, and point storms on the sphere.
+  // Arms read the field with inflow and less westerly.
+  const vel = (x, F, inflow) => {
+    const X = x[0], Y = x[1], Z = x[2], lat = asin(clamp(Y, -1, 1)), lon = atan2(X, Z);
+    const u = F.U * (0.55 + 0.45 * cos(3 * lat)) * (inflow ? 0.35 : 1);
+    const m = inflow ? 0 : F.U * 0.32 * sin(3 * lon + 2 * lat + F.ph);
+    let vx = Z * u - Y * X * m, vy = (1 - Y * Y) * m, vz = -X * u - Y * Z * m;
+    for (const s of F.storms) {
+      if (!s.amp) continue;
+      const p = s.p, c = clamp(p[0] * X + p[1] * Y + p[2] * Z, -1, 1), th = Math.max(acos(c), 1e-3), sn = Math.max(sin(th), 1e-3);
+      const vt = (s.g * s.amp / th) * (1 - exp(-(th * th) / (s.rc * s.rc)));
+      vx += ((p[1] * Z - p[2] * Y) / sn) * vt; vy += ((p[2] * X - p[0] * Z) / sn) * vt; vz += ((p[0] * Y - p[1] * X) / sn) * vt;
+      if (inflow) {
+        const vin = 0.4 * abs(vt) * (1 - clamp((th - s.rc) / (2 * s.rc), 0, 1));
+        vx += ((p[0] - c * X) / sn) * vin; vy += ((p[1] - c * Y) / sn) * vin; vz += ((p[2] - c * Z) / sn) * vin;
+      }
+    }
+    return [vx, vy, vz];
+  };
+  // One streamline on the sphere by midpoint steps of fixed arc length.
+  // A negative dir runs time backward.
+  const trace = (x0, F, dir, inflow, len, h) => {
+    let x = x0, sp = 0;
+    const pts = [x];
+    for (let run = 0; run < len; run += h) {
+      let v = vel(x, F, inflow), n = hypot(v[0], v[1], v[2]) || 1;
+      const mx = unit([x[0] + (v[0] / n) * h * dir * 0.5, x[1] + (v[1] / n) * h * dir * 0.5, x[2] + (v[2] / n) * h * dir * 0.5]);
+      v = vel(mx, F, inflow); n = hypot(v[0], v[1], v[2]) || 1;
+      sp += n;
+      x = unit([x[0] + (v[0] / n) * h * dir, x[1] + (v[1] / n) * h * dir, x[2] + (v[2] / n) * h * dir]);
+      pts.push(x);
+    }
+    pts.speed = sp / Math.max(1, pts.length - 1);
+    return pts;
+  };
+  // Seeds spread evenly over the whole sphere.
+  const fib = n => Array.from({ length: n }, (_, i) => {
+    const y = 1 - (2 * (i + 0.5)) / n, r = sqrt(1 - y * y), a = i * 2.39996;
+    return [r * sin(a), y, r * cos(a)];
+  });
+  // World points to a path; the far side breaks the pen.
+  const dOf = (V, pts, test = v => v[2] > 0.02) => {
+    let d = '', pen = false;
+    for (const w of pts) {
+      const v = view(V, w);
+      if (!test(v)) { pen = false; continue; }
+      const s = scr(V, v);
+      d += (pen ? 'L' : 'M') + f(s[0]) + ' ' + f(s[1]);
+      pen = true;
+    }
+    return d;
+  };
+  // A storm's spiral arms grow out of its eye, backward in time.
+  const armsOf = (s, F, n, len) => {
+    const p = s.p, a1 = unit(abs(p[1]) < 0.9 ? [-p[2], 0, p[0]] : [1, 0, 0]);
+    const a2 = [p[1] * a1[2] - p[2] * a1[1], p[2] * a1[0] - p[0] * a1[2], p[0] * a1[1] - p[1] * a1[0]];
+    return Array.from({ length: n }, (_, k) => {
+      const a = (k / n) * TAU + (s.spin || 0), o = 0.07;
+      return trace(unit([p[0] + (a1[0] * cos(a) + a2[0] * sin(a)) * o, p[1] + (a1[1] * cos(a) + a2[1] * sin(a)) * o, p[2] + (a1[2] * cos(a) + a2[2] * sin(a)) * o]), F, -1, true, len, 0.03);
+    });
+  };
+  const storm = (lon, lat, g, rc = 0.2) => ({ lon, lat, g, rc, amp: 1, p: sph(lon, lat) });
+
+  /* ================= The globe ================= */
+
+  const rad = (defs, id, stops, at = {}) => { const g = el('radialGradient', { id, ...at }, defs); stops.forEach(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g)); return g; };
+  const glowF = (defs, id, sd) => { const g = el('filter', { id, x: -0.5, y: -0.5, width: 2, height: 2 }, defs); el('feGaussianBlur', { stdDeviation: sd, result: 'b' }, g); const m = el('feMerge', {}, g); el('feMergeNode', { in: 'b' }, m); el('feMergeNode', { in: 'SourceGraphic' }, m); };
+  // Graticule every 30 degrees, front side only.
+  const gratD = V => {
+    let d = '';
+    for (let lo = 0; lo < 6; lo++) d += dOf(V, Array.from({ length: 37 }, (_, i) => sph((lo * PI) / 6, -PI / 2 + (i * PI) / 36)));
+    for (const la of [-PI / 3, -PI / 6, 0, PI / 6, PI / 3]) d += dOf(V, Array.from({ length: 73 }, (_, i) => sph((i * TAU) / 72, la)));
+    return d;
+  };
+  // The pole axis: stubs outside the disc, and a faint dashed run inside.
+  const axisOf = V => {
+    const n = view(V, [0, 1, 0]), hid = k => { const z = n[2] * k, r = abs(k) * hypot(n[0], n[1]); return z < 0 && r < 1; };
+    const stub = (a, b) => { const pts = []; for (let i = 0; i <= 12; i++) { const k = a + ((b - a) * i) / 12; if (!hid(k)) pts.push(scr(V, n, k)); } return pts.length > 1 ? lineD(pts) : ''; };
+    return { out: stub(1, 1.26) + stub(-1.26, -1), inner: lineD([scr(V, n, -1), scr(V, n, 1)]), cap: n[2] >= 0 ? scr(V, n, 1) : scr(V, n, -1) };
+  };
+
+  // The globe kit: body, atmosphere, graticule, silk strands, storms, axis.
+  // o: c, R, yaw, pitch, roll, seeds, len, sw (strand width), arms, eyeR.
+  const globe = (svg, id, o) => {
+    const V = { c: o.c, R: o.R, yaw: o.yaw, pitch: o.pitch, roll: o.roll || 0 };
+    const defs = el('defs', {}, svg);
+    const [cx, cy] = V.c, R = V.R;
+    rad(defs, `${id}b`, [[0, 'oklch(0.36 0.03 242)'], [0.55, 'oklch(0.24 0.026 250)'], [1, 'oklch(0.15 0.02 258)']], { cx: 0.36, cy: 0.3, r: 0.85 });
+    rad(defs, `${id}h`, [[0.78, RIM, 0.5], [0.9, RIM, 0.16], [1, RIM, 0]]);
+    rad(defs, `${id}r`, [[0.72, RIM, 0], [0.94, RIM, 0.16], [1, RIM, 0.42]]);
+    rad(defs, `${id}m`, [[0, '#fff'], [0.6, '#e6e6e6'], [1, '#4a4a4a']], { gradientUnits: 'userSpaceOnUse', cx: f(cx - 0.3 * R), cy: f(cy - 0.34 * R), r: f(1.55 * R) });
+    const mask = el('mask', { id: `${id}k` }, defs);
+    el('circle', { cx, cy, r: R, fill: `url(#${id}m)` }, mask);
+    glowF(defs, `${id}g`, 1.2);
+    if (!o.bare) {
+      el('circle', { cx: cx + 5, cy: cy + 5, r: R, fill: SHADOW }, svg);
+      el('circle', { cx, cy, r: R * 1.18, fill: `url(#${id}h)` }, svg);
+    }
+    const body = el('circle', { cx, cy, r: R, fill: `url(#${id}b)` }, svg);
+    const under = el('g', {}, svg);
+    const grat = el('path', { fill: 'none', stroke: 'oklch(0.78 0.025 238)', 'stroke-width': 0.45, opacity: 0.2 }, svg);
+    const sg = el('g', { mask: `url(#${id}k)`, fill: 'none', 'stroke-linecap': 'round' }, svg);
+    const ag = el('g', { mask: `url(#${id}k)`, fill: 'none', 'stroke-linecap': 'round', stroke: CREAM }, svg);
+    const eg = el('g', {}, svg);
+    el('circle', { cx, cy, r: R, fill: `url(#${id}r)` }, svg);
+    el('circle', { cx, cy, r: R, fill: 'none', stroke: RIM, 'stroke-width': 0.7, opacity: 0.75 }, svg);
+    const axIn = el('path', { fill: 'none', stroke: 'oklch(0.85 0.03 238)', 'stroke-width': 0.6, 'stroke-dasharray': '2 2.4', opacity: 0.32 }, svg);
+    const axOut = el('path', { fill: 'none', stroke: 'oklch(0.9 0.03 238)', 'stroke-width': 1.3, 'stroke-linecap': 'round' }, svg);
+    const cap = el('circle', { r: 1.5, fill: 'oklch(0.95 0.03 238)' }, svg);
+    const seeds = fib(o.seeds || 120);
+    const base = seeds.map(() => el('path', { stroke: SILK, 'stroke-width': o.sw || 0.75 }, sg));
+    const comet = seeds.map(() => el('path', { class: 'comet', stroke: '#fff', 'stroke-width': (o.sw || 0.75) * 1.5, 'stroke-dasharray': '4 20' }, sg));
+    const armP = [], eyes = [];
+    let lines = null, arms = null;
+    const F = { U: 1, ph: 0, storms: [] };
+    // Traces depend on the field only; a turn of the globe reprojects them.
+    const retrace = () => {
+      F.storms.forEach(s => { s.p = sph(s.lon, s.lat); });
+      lines = seeds.map(w => {
+        const a = trace(w, F, -1, false, o.len || 0.75, 0.04), b = trace(w, F, 1, false, o.len || 0.75, 0.04);
+        const pts = [...a.reverse(), ...b.slice(1)];
+        pts.speed = (a.speed + b.speed) / 2;
+        return pts;
+      });
+      arms = F.storms.map(s => s.amp > 0.02 ? armsOf(s, F, o.arms || 3, (o.armLen || 0.8) * Math.min(1, 0.4 + s.amp * abs(s.g) * 1.2)) : []);
+    };
+    const draw = (dirty = true) => {
+      if (dirty || !lines) retrace();
+      grat.setAttribute('d', gratD(V));
+      lines.forEach((pts, i) => {
+        const z = view(V, seeds[i])[2];
+        if (z < -0.5) { base[i].setAttribute('d', ''); comet[i].setAttribute('d', ''); return; }
+        const d = dOf(V, pts, o.test);
+        base[i].setAttribute('d', d); comet[i].setAttribute('d', d);
+        // Faster air reads brighter.
+        const b = clamp((pts.speed - 0.6) / 1.6, 0, 1);
+        base[i].setAttribute('opacity', f(0.3 + 0.6 * b));
+        comet[i].setAttribute('stroke-opacity', f(0.35 + 0.6 * b));
+      });
+      let k = 0;
+      arms.forEach((list, si) => list.forEach(pts => {
+        const p = armP[k] || (armP[k] = el('path', { 'stroke-width': o.armW || 1.5 }, ag));
+        p.setAttribute('d', dOf(V, pts)); p.setAttribute('opacity', f(clamp(F.storms[si].amp, 0, 1))); k++;
+      }));
+      for (; k < armP.length; k++) armP[k].setAttribute('d', '');
+      F.storms.forEach((s, i) => {
+        const e = eyes[i] || (eyes[i] = { ring: el('ellipse', { fill: 'none', stroke: CREAM, filter: `url(#${id}g)` }, eg), core: el('ellipse', { fill: 'oklch(0.12 0.02 255)' }, eg) });
+        const v = view(V, s.p), show = v[2] > 0.08 && s.amp > 0.05;
+        e.ring.setAttribute('display', show ? '' : 'none'); e.core.setAttribute('display', show ? '' : 'none');
+        if (!show) return;
+        const p = scr(V, v), ang = (atan2(-v[1], v[0]) * 180) / PI, r = (o.eyeR || 3.4) * (0.7 + 0.3 * clamp(s.amp, 0, 1.4));
+        const tf = `translate(${f(p[0])} ${f(p[1])}) rotate(${f(ang)})`;
+        set(e.core, { transform: tf, rx: f(r * v[2]), ry: f(r) });
+        set(e.ring, { transform: tf, rx: f(r * 1.9 * v[2]), ry: f(r * 1.9), 'stroke-width': f(0.9 + 0.5 * clamp(abs(s.g) * s.amp, 0, 1)), opacity: f(0.5 * clamp(s.amp, 0, 1)) });
+      });
+      for (let i = F.storms.length; i < eyes.length; i++) { eyes[i].ring.setAttribute('display', 'none'); eyes[i].core.setAttribute('display', 'none'); }
+      const ax = axisOf(V);
+      axOut.setAttribute('d', ax.out); axIn.setAttribute('d', ax.inner); set(cap, { cx: f(ax.cap[0]), cy: f(ax.cap[1]) });
+    };
+    return { V, F, draw, svg, defs, body, under, sg, eg, base, comet, lines: () => lines, arms: () => arms };
+  };
+
+  // Emblem: the same globe as a luminance mask, white is solid.
+  const emblemOf = (G, extra = '') => {
+    const { V, F } = G, [cx, cy] = V.c, R = V.R;
+    G.draw(true);
+    const strands = G.lines().map(pts => dOf(V, pts)).join('');
+    const arms = G.arms().flat().map(pts => dOf(V, pts)).join('');
+    const ax = axisOf(V);
+    let eyes = '';
+    F.storms.forEach(s => {
+      const v = view(V, s.p);
+      if (v[2] < 0.08 || s.amp < 0.05) return;
+      const p = scr(V, v), ang = (atan2(-v[1], v[0]) * 180) / PI, r = 4.6;
+      eyes += `<ellipse transform="translate(${f(p[0])} ${f(p[1])}) rotate(${f(ang)})" rx="${f(r * v[2])}" ry="${r}" fill="#000"/>`;
+    });
+    return `${EMB_HEAD}
+  <circle cx="${cx}" cy="${cy}" r="${R}" fill="#3a3a3a"/>
+  <path d="${strands}" stroke="#bdbdbd" stroke-width="1.1" stroke-linecap="round" fill="none"/>
+  <path d="${arms}" stroke="#fff" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+  ${eyes}${extra}
+  <circle cx="${cx}" cy="${cy}" r="${R}" stroke="#fff" stroke-width="2" fill="none"/>
+  <path d="${ax.out}" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>
+</svg>
+`;
+  };
+
+  // Shared hover plumbing: a ticker while live, a settle on leave.
+  const live = (svg, step) => {
+    let on = false, last = 0;
+    const tick = (t, dt) => step(Math.min(dt, 50) / 1000, t);
+    return {
+      start() { if (on) return; on = true; svg.classList.add('live'); gsap.ticker.add(tick); },
+      stop() { if (!on) return; on = false; svg.classList.remove('live'); gsap.ticker.remove(tick); },
+    };
+  };
+  const GC = [64, 64];
+
+  /* ================= Directions ================= */
+
+  const DIRS = [
+    {
+      l: 'A', name: 'Silk globe',
+      idea: 'The toy\'s globe: silk strands wrap the sphere under its pole axis. The pointer drags a storm across the disc; it winds up and foreshortens at the limb.',
+      make(svg, id) {
+        const G = globe(svg, id, { c: GC, R: 40, yaw: 0.6, pitch: 0.32, seeds: 130 });
+        const REST = { lon: 0.85, lat: 0.42, g: 0.45 };
+        const s = storm(REST.lon, REST.lat, REST.g);
+        G.F.storms.push(s);
+        G.draw();
+        const run = live(svg, (dt) => { G.F.ph += dt * 0.6; s.spin = (s.spin || 0) + dt * 2.4; G.draw(); });
+        const aim = p => { const [lon, lat] = toLL(unview(G.V, p)); gsap.to(s, { lon, lat, g: 0.85, duration: 0.5, ease: 'power2.out', overwrite: 'auto' }); };
+        let demo = null;
+        return {
+          G,
+          enter(p) { run.start(); if (p) { aim(p); return; } const d = { a: 0 }; demo = gsap.to(d, { a: TAU, duration: 3.4, repeat: -1, ease: 'none', onUpdate: () => aim([64 + 18 * cos(d.a), 60 + 14 * sin(d.a)]) }); },
+          move(p) { if (p && !demo) aim(p); },
+          leave() { demo?.kill(); demo = null; gsap.to(s, { ...REST, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onComplete: () => { run.stop(); G.draw(); } }); },
+        };
+      },
+      emblem(c) { return emblemOf(c.G); },
+    },
+    {
+      l: 'B', name: 'Fujiwhara',
+      idea: 'Two storms on the globe orbit their shared centre and spiral in. They merge with a ring of light, then a new pair splits off. The pointer leads the pair.',
+      make(svg, id) {
+        const G = globe(svg, id, { c: GC, R: 40, yaw: 0.6, pitch: 0.32, seeds: 120, armLen: 0.6 });
+        const ring = el('ellipse', { fill: 'none', stroke: CREAM, 'stroke-width': 1.2, opacity: 0 }, G.eg);
+        const st = { lon: 0.62, lat: 0.3, a: 0.4, d: 0.34 };
+        const s1 = storm(0, 0, 0.6, 0.18), s2 = storm(0, 0, 0.45, 0.16);
+        G.F.storms.push(s1, s2);
+        const place = () => {
+          const ca = cos(st.a), sa = sin(st.a), cl = Math.max(0.3, cos(st.lat));
+          s1.lon = st.lon + (st.d / 2) * ca / cl; s1.lat = st.lat + (st.d / 2) * sa;
+          s2.lon = st.lon - (st.d / 2) * ca / cl; s2.lat = st.lat - (st.d / 2) * sa;
+        };
+        place(); G.draw();
+        let merged = 0;
+        // The pair closes in as it orbits; inside the core they merge.
+        const run = live(svg, (dt) => {
+          G.F.ph += dt * 0.5;
+          if (merged > 0) {
+            merged += dt;
+            const v = view(G.V, s1.p), p = scr(G.V, v), k = clamp(merged / 0.9, 0, 1), ang = (atan2(-v[1], v[0]) * 180) / PI;
+            set(ring, { transform: `translate(${f(p[0])} ${f(p[1])}) rotate(${f(ang)})`, rx: f((4 + 22 * k) * Math.max(0.1, v[2])), ry: f(4 + 22 * k), opacity: f(0.9 * (1 - k)) });
+            s2.amp = 0; s1.g = 0.6 + 0.35 * clamp(merged / 0.4, 0, 1);
+            if (merged > 1.8) { merged = 0; st.d = 0.38; s2.amp = 1; s1.g = 0.6; ring.setAttribute('opacity', 0); }
+          } else {
+            st.a += dt * (1.2 + 1.6 / (st.d + 0.15));
+            st.d -= dt * 0.11;
+            if (st.d < 0.05) merged = 1e-3;
+          }
+          s1.spin = (s1.spin || 0) + dt * 2.6; s2.spin = (s2.spin || 0) + dt * 2.6;
+          place(); G.draw();
+        });
+        const aim = p => { const [lon, lat] = toLL(unview(G.V, p)); gsap.to(st, { lon, lat, duration: 0.5, ease: 'power2.out', overwrite: 'auto' }); };
+        return {
+          G,
+          enter(p) { run.start(); if (p) aim(p); },
+          move(p) { if (p) aim(p); },
+          leave() {
+            merged = 0; s2.amp = 1; s1.g = 0.6; ring.setAttribute('opacity', 0);
+            gsap.to(st, { lon: 0.62, lat: 0.3, a: 0.4, d: 0.34, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onUpdate: () => { place(); G.draw(); }, onComplete: () => run.stop() });
+          },
+        };
+      },
+      emblem(c) { return emblemOf(c.G); },
+    },
+    {
+      l: 'C', name: 'Desk globe',
+      idea: 'A tilted globe on a block stand with a half meridian ring. The pointer spins it: left turns it west, right east. The storm and the strands ride round with it.',
+      box: [14, 12, 100, 104],
+      make(svg, id) {
+        const ROLL = -0.41, c = [64, 56], R = 34;
+        // The stand: an iso slab and a short stem, under the globe.
+        const T = 6, sl = [[64, 92], [94, 101], [64, 110], [34, 101]], dn = p => [p[0], p[1] + T];
+        el('path', { d: lineD([sl[1], sl[2], sl[3], dn(sl[3]), dn(sl[2]), dn(sl[1])]) + 'Z', fill: SHADOW, transform: 'translate(4 4)' }, svg);
+        el('path', { d: lineD([sl[3], sl[2], dn(sl[2]), dn(sl[3])]) + 'Z', fill: 'oklch(0.27 0.02 245)' }, svg);
+        el('path', { d: lineD([sl[2], sl[1], dn(sl[1]), dn(sl[2])]) + 'Z', fill: 'oklch(0.19 0.02 250)' }, svg);
+        el('path', { d: lineD(sl) + 'Z', fill: 'oklch(0.36 0.02 242)' }, svg);
+        const G = globe(svg, id, { c, R, yaw: 0.2, pitch: 0.18, roll: ROLL, seeds: 120, sw: 0.7 });
+        // The meridian ring: a half circle in the axis plane, on the lit side.
+        const n = view(G.V, [0, 1, 0]), top = scr(G.V, n, 1.2), bot = scr(G.V, n, -1.2), Rr = R * 1.2;
+        const ringD = `M${f(top[0])} ${f(top[1])}A${f(Rr)} ${f(Rr)} 0 0 0 ${f(bot[0])} ${f(bot[1])}`;
+        el('path', { d: ringD, fill: 'none', stroke: SHADOW, 'stroke-width': 3, transform: 'translate(2 2)' }, svg);
+        el('path', { d: ringD, fill: 'none', stroke: 'oklch(0.62 0.03 240)', 'stroke-width': 2.4 }, svg);
+        el('path', { d: ringD, fill: 'none', stroke: 'oklch(0.82 0.03 238)', 'stroke-width': 0.7, transform: 'translate(-0.6 -0.4)' }, svg);
+        el('path', { d: lineD([bot, [64, 92]]), stroke: 'oklch(0.5 0.02 242)', 'stroke-width': 2.2 }, svg);
+        const s = storm(0.9, 0.45, 0.7);
+        G.F.storms.push(s);
+        G.draw();
+        const spin = { w: 0, aim: 0.9 };
+        const run = live(svg, (dt) => {
+          spin.w += (spin.aim - spin.w) * Math.min(1, dt * 3);
+          G.V.yaw -= spin.w * dt;
+          s.spin = (s.spin || 0) + dt * 2;
+          G.draw(false);
+          if (spin.aim === 0 && abs(spin.w) < 0.02) run.stop();
+        });
+        return {
+          G,
+          enter(p) { spin.aim = p ? clamp((p[0] - 64) / 30, -1, 1) * 2.4 : 0.9; run.start(); },
+          move(p) { if (p) spin.aim = clamp((p[0] - 64) / 30, -1, 1) * 2.4; },
+          leave() { spin.aim = 0; },
+        };
+      },
+      emblem(c) {
+        const n = view(c.G.V, [0, 1, 0]), top = scr(c.G.V, n, 1.2), bot = scr(c.G.V, n, -1.2), Rr = c.G.V.R * 1.2;
+        return emblemOf(c.G, `<path d="M${f(top[0])} ${f(top[1])}A${f(Rr)} ${f(Rr)} 0 0 0 ${f(bot[0])} ${f(bot[1])}" stroke="#fff" stroke-width="3.4" fill="none"/>
+  <path d="M64 92L94 101L64 110L34 101Z" fill="#8a8a8a"/><path d="${lineD([bot, [64, 92]])}" stroke="#8a8a8a" stroke-width="3"/>`);
+      },
+    },
+    {
+      l: 'D', name: 'Night side',
+      idea: 'Half the globe in sun, half in night. On the night side the wind glows warm. The pointer moves the sun, and the terminator sweeps across the storm.',
+      make(svg, id) {
+        const G = globe(svg, id, { c: GC, R: 40, yaw: 0.6, pitch: 0.32, seeds: 130 });
+        const [cx, cy] = GC, R = 40;
+        // Night is the base; the day side is a lit shape over it.
+        G.body.setAttribute('fill', 'oklch(0.1 0.02 265)');
+        rad(G.defs, `${id}d`, [[0, 'oklch(0.5 0.04 232)'], [0.6, 'oklch(0.33 0.035 242)'], [1, 'oklch(0.24 0.03 250)']], { gradientUnits: 'userSpaceOnUse', r: R * 1.1 });
+        const dayG = G.defs.querySelector(`#${id}d`);
+        const day = el('path', { fill: `url(#${id}d)` }, G.under);
+        G.svg.insertBefore(G.under, G.body.nextSibling);
+        // Night strands sit on a glow layer over the day strands.
+        const ng = el('g', { mask: G.sg.getAttribute('mask'), fill: 'none', 'stroke-linecap': 'round', stroke: 'oklch(0.86 0.13 72)', filter: `url(#${id}g)` });
+        G.sg.after(ng);
+        const night = G.base.map(() => el('path', { 'stroke-width': 0.8 }, ng));
+        const L = unit([-0.55, 0.45, 0.6]);
+        const sun = { x: L[0], y: L[1], z: L[2] };
+        const s = storm(0.85, 0.42, 0.55);
+        G.F.storms.push(s);
+        const paint = () => {
+          const l = unit([sun.x, sun.y, sun.z]), m = unit([l[0], l[1], 0]), a = [-m[1], m[0]];
+          const pts = [];
+          for (let i = 0; i <= 32; i++) { const t = (i / 32) * PI; pts.push([cx + (a[0] * cos(t) + m[0] * sin(t)) * R, cy - (a[1] * cos(t) + m[1] * sin(t)) * R]); }
+          for (let i = 32; i >= 0; i--) { const t = (i / 32) * PI; pts.push([cx + (a[0] * cos(t) - m[0] * l[2] * sin(t)) * R, cy - (a[1] * cos(t) - m[1] * l[2] * sin(t)) * R]); }
+          day.setAttribute('d', lineD(pts) + 'Z');
+          set(dayG, { cx: f(cx + m[0] * R * 0.55), cy: f(cy - m[1] * R * 0.55) });
+          // Strands split at the terminator: day in silk, night in warm glow.
+          const isDay = v => v[2] > 0.02 && v[0] * l[0] + v[1] * l[1] + v[2] * l[2] > 0;
+          const isNight = v => v[2] > 0.02 && v[0] * l[0] + v[1] * l[1] + v[2] * l[2] <= 0;
+          G.lines().forEach((p, i) => {
+            G.base[i].setAttribute('d', dOf(G.V, p, isDay)); G.comet[i].setAttribute('d', dOf(G.V, p, isDay));
+            night[i].setAttribute('d', dOf(G.V, p, isNight)); night[i].setAttribute('opacity', f(0.45 + 0.55 * clamp((p.speed - 0.6) / 1.6, 0, 1)));
+          });
+        };
+        G.draw(); paint();
+        const run = live(svg, (dt) => { G.F.ph += dt * 0.5; s.spin = (s.spin || 0) + dt * 2.2; G.draw(); paint(); });
+        const aim = p => { const x = (p[0] - cx) / R, y = (cy - p[1]) / R, k = unit([x * 1.4, y * 1.4, 0.25]); gsap.to(sun, { x: k[0], y: k[1], z: k[2], duration: 0.5, ease: 'power2.out', overwrite: 'auto' }); };
+        let demo = null;
+        return {
+          G,
+          enter(p) { run.start(); if (p) { aim(p); return; } const d = { a: 2.4 }; demo = gsap.to(d, { a: 2.4 - TAU, duration: 4, repeat: -1, ease: 'none', onUpdate: () => aim([cx + 30 * cos(d.a), cy - 30 * sin(d.a)]) }); },
+          move(p) { if (p && !demo) aim(p); },
+          leave() { demo?.kill(); demo = null; gsap.to(sun, { x: L[0], y: L[1], z: L[2], duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onComplete: () => { run.stop(); G.draw(); paint(); } }); },
+        };
+      },
+      emblem(c) {
+        const { V } = c.G, l = unit([-0.55, 0.45, 0.6]), [cx, cy] = V.c, R = V.R, m = unit([l[0], l[1], 0]), a = [-m[1], m[0]], pts = [];
+        for (let i = 0; i <= 32; i++) { const t = (i / 32) * PI; pts.push([cx + (a[0] * cos(t) + m[0] * sin(t)) * R, cy - (a[1] * cos(t) + m[1] * sin(t)) * R]); }
+        for (let i = 32; i >= 0; i--) { const t = (i / 32) * PI; pts.push([cx + (a[0] * cos(t) - m[0] * l[2] * sin(t)) * R, cy - (a[1] * cos(t) - m[1] * l[2] * sin(t)) * R]); }
+        const isNight = v => v[2] > 0.02 && v[0] * l[0] + v[1] * l[1] + v[2] * l[2] <= 0;
+        const night = c.G.lines().map(p => dOf(V, p, isNight)).join('');
+        return emblemOf(c.G, `<path d="${lineD(pts)}Z" fill="#777" opacity="0.6"/><path d="${night}" stroke="#fff" stroke-width="1.5" stroke-linecap="round" fill="none"/>`);
+      },
+    },
+    {
+      l: 'E', name: 'Mark',
+      idea: 'A flat mark: a graticule globe and one bold three-arm spiral with a warm eye. The pointer spins the storm and turns the meridians.',
+      make(svg, id) {
+        const [cx, cy] = GC, R = 40;
+        const defs = el('defs', {}, svg);
+        rad(defs, `${id}b`, [[0, 'oklch(0.34 0.03 242)'], [1, 'oklch(0.2 0.025 255)']], { cx: 0.36, cy: 0.3, r: 0.9 });
+        const cp = el('clipPath', { id: `${id}c` }, defs);
+        el('circle', { cx, cy, r: R }, cp);
+        el('circle', { cx: cx + 5, cy: cy + 5, r: R, fill: SHADOW }, svg);
+        el('circle', { cx, cy, r: R, fill: `url(#${id}b)` }, svg);
+        const gg = el('g', { 'clip-path': `url(#${id}c)`, fill: 'none', stroke: 'oklch(0.7 0.03 238)', 'stroke-width': 0.8, opacity: 0.45 }, svg);
+        const mer = [0, 1, 2].map(() => el('ellipse', { cx, cy, ry: R }, gg));
+        [-0.5, 0, 0.5].forEach(k => el('ellipse', { cx, cy: f(cy - k * R * 0.95), rx: f(R * sqrt(1 - k * k * 0.9)), ry: f(R * 0.22 * sqrt(1 - k * k)) }, gg));
+        const arms = el('path', { fill: SILK }, el('g', { 'clip-path': `url(#${id}c)` }, svg));
+        el('circle', { cx, cy, r: 6.4, fill: 'none', stroke: CREAM, 'stroke-width': 1.6, opacity: 0.8 }, svg);
+        el('circle', { cx, cy, r: 3.8, fill: 'oklch(0.12 0.02 255)' }, svg);
+        el('circle', { cx, cy, r: R, fill: 'none', stroke: RIM, 'stroke-width': 1.2 }, svg);
+        const st = { rot: 0, yaw: 0.35, w: 0 };
+        // Log-spiral arms, tapered, cut from the disc.
+        const armsD = rot => {
+          let d = '';
+          for (let k = 0; k < 3; k++) {
+            const a0 = rot + (k * TAU) / 3, out = [], back = [];
+            for (let i = 0; i <= 28; i++) {
+              const t = i / 28, th = a0 + t * 2.3, r = 7 + 33 * t, w = 3.6 * (1 - t) + 0.3;
+              const px = cx + r * cos(th), py = cy + r * sin(th), nx = -sin(th + 0.5), ny = cos(th + 0.5);
+              out.push([px + nx * w, py + ny * w]); back.push([px - nx * w, py - ny * w]);
+            }
+            d += lineD([...out, ...back.reverse()]) + 'Z';
+          }
+          return d;
+        };
+        const paint = () => {
+          arms.setAttribute('d', armsD(st.rot));
+          mer.forEach((e, k) => e.setAttribute('rx', f(R * abs(sin(st.yaw + (k * PI) / 3)))));
+        };
+        paint();
+        const run = live(svg, (dt) => { st.rot -= dt * (1.2 + st.w * 3); paint(); });
+        return {
+          paint, st, R,
+          enter(p) { run.start(); if (p) this.move(p); },
+          move(p) { if (!p) return; st.w = clamp(1 - hypot(p[0] - cx, p[1] - cy) / 50, 0, 1); gsap.to(st, { yaw: 0.35 + ((p[0] - cx) / R) * 0.9, duration: 0.4, overwrite: 'auto', onUpdate: paint }); },
+          leave() { gsap.to(st, { yaw: 0.35, w: 0, duration: 0.7, ease: 'power2.inOut', overwrite: 'auto', onComplete: () => run.stop() }); },
+        };
+      },
+      emblem(c) {
+        c.st.rot = 0; c.paint();
+        const svg = c.paint && document.querySelector('#windmap28-e .t128 svg');
+        const arms = svg.querySelector('path').getAttribute('d');
+        return `${EMB_HEAD}
+  <circle cx="64" cy="64" r="40" fill="#3a3a3a"/>
+  <path d="${arms}" fill="#fff"/>
+  <circle cx="64" cy="64" r="5" fill="#000"/>
+  <circle cx="64" cy="64" r="40" stroke="#fff" stroke-width="3" fill="none"/>
+</svg>
+`;
+      },
+    },
+  ];
+
+  /* ================= Gallery ================= */
+
+  const NAME = 'Wind map';
+  const fitIcon = (svg, box) => {
+    const b = box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : { x: 14, y: 14, width: 100, height: 100 }, side = Math.max(b.width, b.height);
+    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-windmap';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  window.CTRL = {};
+  for (const D of DIRS) {
+    const file = `windmap28-${D.l.toLowerCase()}`;
+    const url = `spike/emblems/${file}.svg`;
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header><b>${D.l}</b><span>· ${D.name}</span></header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      <div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>
+      <p class="idea">${D.idea}</p>`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.make(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (tileEl.classList.contains('t128')) window.CTRL[file] = { D, c };
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // Emblems come from each direction's rest state.
+  for (const [file, { D, c }] of Object.entries(window.CTRL)) window.EMBLEMS[file] = D.emblem(c);
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>
