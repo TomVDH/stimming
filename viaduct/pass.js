@@ -2,6 +2,7 @@
 // The moon breaks through drifting gaps in the cloud.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { makeTrain } from './train.js';
 
 export function build() {
 // Seeded random keeps the scene the same on every load.
@@ -32,7 +33,7 @@ float k2fbm(vec2 p) {
 const K2_STORM = /* glsl */`
 uniform vec3 uMoon, uMoonSky, uMoonC, uAir, uZen, uAmb, uSnowC;
 uniform float uTime, uCloudY, uHaze, uHazeH, uMoonK, uMoonAir, uGapLo, uGapHi, uGapScale;
-uniform float uBaseOn, uMoonOn, uGapIn, uStarK, uLightK, uFlareK;
+uniform float uBaseOn, uMoonOn, uGapIn, uStarK, uLightK, uFlareK, uConeK;
 uniform vec2 uWind;
 // Gap mask at a point on the cloud plane: 1 in a gap, 0 under cloud.
 float k2gapAt(vec2 q) {
@@ -100,7 +101,7 @@ const k2 = {
   uGapLo: { value: 0.5 }, uGapHi: { value: 0.66 }, uGapScale: { value: 0.0011 },
   uBaseOn: { value: 1 }, uMoonOn: { value: 1 }, uGapIn: { value: 1 }, uStarK: { value: 1 },
   uWind: { value: new THREE.Vector2(26, 9) },
-  uFlareK: { value: 1 }, uLightK: { value: 1 },
+  uFlareK: { value: 1 }, uLightK: { value: 1 }, uConeK: { value: 1 },
 };
 
 // Light list: position + power, colour + range, spot axis + cone.
@@ -543,6 +544,158 @@ if (steelParts.length) scene.add(new THREE.Mesh(mergeGeometries(steelParts), ste
   scene.add(m);
 }
 
+/* ---------- train: a long freight with a plough ---------- */
+// Volumetric cone: soft silhouette, bright core, long fade, no hard base.
+function cone(len, halfAngle, color, k, fallK) {
+  const g = new THREE.ConeGeometry(Math.tan(halfAngle), 1, 48, 6, true);
+  g.translate(0, -0.5, 0);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: { ...k2, uColor: { value: color }, uK: { value: k }, uFall: { value: fallK } },
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+    varying vec3 vP;
+    varying vec3 vN;
+    varying float vAlong;
+    void main() {
+      vAlong = clamp(-position.y, 0.0, 1.0);
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xyz;
+      vN = normalize(mat3(modelMatrix) * normal);
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform vec3 uColor;
+    uniform float uK, uFall;
+    varying vec3 vP;
+    varying vec3 vN;
+    varying float vAlong;
+    ${HEAD}
+    void main() {
+      vec3 V = normalize(cameraPosition - vP);
+      float rim = pow(abs(dot(normalize(vN), V)), 3.0);
+      float fall = exp(-vAlong * uFall) * smoothstep(0.0, 0.12, vAlong) * smoothstep(1.0, 0.7, vAlong);
+      float f = k2hazeAmount(vP);
+      // Snowy air makes the beam read more.
+      gl_FragColor = vec4(uColor * rim * fall * uK * uConeK * (0.6 + 0.8 * f), 1.0);
+    }`,
+  }));
+  m.scale.set(len, len, len);
+  m.renderOrder = 2;
+  return m;
+}
+const CONSIST = ['loco', 'loco-b', 'box', 'hopper', 'box', 'box', 'hopper', 'car', 'box', 'hopper', 'box', 'car', 'hopper', 'box', 'box', 'hopper', 'box', 'car'];
+const train = (() => {
+  const shape = makeTrain({ consist: CONSIST, plough: true });
+  const N = shape.parts.length, SPAN = shape.span;
+  const path = (s, side = 0) => atX(s, TRACK + side);
+  // Hull: dark paint, panel seams, snow caked on the roof and the windward flank.
+  const hullMat = new THREE.ShaderMaterial({
+    uniforms: { ...k2, ...lightU },
+    vertexColors: true,
+    vertexShader: /* glsl */`
+    attribute float aKind;
+    attribute float aTop;
+    varying vec3 vP;
+    varying vec3 vN;
+    varying vec3 vL;
+    varying vec3 vNL;
+    varying vec3 vC;
+    varying float vKind;
+    varying float vTop;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vP = w.xyz; vL = position; vNL = normal; vC = color; vKind = aKind; vTop = aTop;
+      vN = normalize(mat3(modelMatrix) * normal);
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    varying vec3 vN;
+    varying vec3 vL;
+    varying vec3 vNL;
+    varying vec3 vC;
+    varying float vKind;
+    varying float vTop;
+    ${HEAD}
+    ${LIGHTS_GLSL}
+    float line(float d, float w, float aa) { return 1.0 - smoothstep(w, w + aa * 1.5 + 0.005, abs(d)); }
+    void main() {
+      vec3 N = normalize(vN), NL = normalize(vNL);
+      float side = step(0.8, abs(NL.x));
+      float az = fwidth(vL.z), ay = fwidth(vL.y);
+      // Panel seams every 2.6 m and one at the waist, on the flanks only.
+      float seam = side * max(line(fract(vL.z / 2.6 + 0.5) * 2.6 - 1.3, 0.02, az), line(vL.y - 2.9, 0.015, ay));
+      vec3 albedo = vC * (1.0 - 0.6 * seam);
+      albedo *= mix(0.35, 1.0, smoothstep(1.55, 1.62, vL.y));
+      // Snow cakes the roof in drifts.
+      float n = k2noise(vL.zx * vec2(0.7, 1.9) + vec2(vKind * 5.0, 0.0));
+      float roof = vTop * smoothstep(0.2, 0.7, n) * 0.85;
+      // Wind packs snow on the low windward flank.
+      float face = side * smoothstep(0.1, 0.7, dot(N.xz, -normalize(uWind)));
+      float flank = face * smoothstep(0.4, 0.7, k2noise(vL.zy * vec2(0.5, 1.6))) * smoothstep(3.2, 1.6, vL.y);
+      albedo = mix(albedo, uSnowC, max(roof, flank * 0.85));
+      vec3 c = k2lit(albedo, vP, N);
+      // The cab slit glows across the nose.
+      vec3 em = vec3(1.0, 0.62, 0.3) * 2.4 * vKind * step(0.3, NL.z) * step(abs(vL.x), 1.15) * line(vL.y - 3.5, 0.11, ay);
+      // A cold marker line runs along each flank.
+      em += vec3(0.7, 0.85, 1.0) * 0.9 * side * step(1.5, vL.y) * line(vL.y - 1.7, 0.03, ay);
+      gl_FragColor = vec4(c + em * (1.0 - 0.7 * k2hazeAmount(vP)), 1.0);
+    }`,
+  });
+  const cars = shape.parts.map(p => {
+    const m = new THREE.Mesh(p.geo, hullMat);
+    m.userData.live = true;
+    scene.add(m);
+    return m;
+  });
+  // Lamps: two tails, two heads, then a marker pin each side per wagon.
+  const NP = 4 + (N - 2) * 2;
+  const lampG = new THREE.BufferGeometry();
+  lampG.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(NP * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  const col = [...scale([1, 0.2, 0.1], 6), ...scale([1, 0.2, 0.1], 6), ...scale(WHITE, 9), ...scale(WHITE, 9)], size = [70, 70, 120, 120], pinK = [0, 0, 0, 0];
+  for (let i = 4; i < NP; i++) { col.push(...scale([1, 0.45, 0.12], 1.4)); size.push(14); pinK.push(1); }
+  lampG.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  lampG.setAttribute('size', new THREE.Float32BufferAttribute(size, 1));
+  lampG.setAttribute('aPin', new THREE.Float32BufferAttribute(pinK, 1));
+  const lamps = new THREE.Points(lampG, flareMat);
+  lamps.renderOrder = 3; lamps.frustumCulled = false; lamps.userData.live = true; scene.add(lamps);
+  const head = new THREE.Vector3();
+  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.6, size: 1.3, train: true });
+  // The headlight is a spot in the light list, aimed down the track.
+  const headL = lights.length, HEAD_P = 14;
+  addLight(new THREE.Vector3(), new THREE.Vector3(1, 0.95, 0.85), HEAD_P, 60, new THREE.Vector3(0, 0, -1), Math.cos(0.3));
+  const beam = cone(160, 0.2, new THREE.Vector3(1, 0.95, 0.85), 2.2, 2.4);
+  beam.userData.live = true;
+  scene.add(beam);
+  const Y = new THREE.Vector3(0, -1, 0), dir3 = new THREE.Vector3();
+  // Place the train: s is the nose's place on the track, dir its heading.
+  function place(s, dir) {
+    shape.lay(s, dir, path, (i, x, z, yaw) => { cars[i].position.set(x, DECK, z); cars[i].rotation.y = yaw; });
+    const L = shape.lamps(s, dir, path), h = L.head, ahead = path(s + dir * 80);
+    head.set(h.x, DECK + 2.0, h.z);
+    // The beam dips to meet the rails about 30 m ahead.
+    dir3.set(ahead.x - h.x, -5.5, ahead.z - h.z).normalize();
+    lights[headL].pos.copy(head); lights[headL].dir.copy(dir3);
+    lights[headL].power = on ? HEAD_P : 0;
+    beam.position.copy(head);
+    beam.quaternion.setFromUnitVectors(Y, dir3);
+    const pos = lampG.attributes.position;
+    for (const k of [0, 1]) {
+      pos.setXYZ(k, L.tails[k].x, DECK + 1.6, L.tails[k].z);
+      pos.setXYZ(k + 2, L.heads[k].x, DECK + 1.75, L.heads[k].z);
+    }
+    // Marker pins sit at mid flank on every wagon.
+    for (let i = 2, k = 4; i < N; i++) {
+      for (const u of [-1.7, 1.7]) { const c = path(s - dir * shape.parts[i].off, u); pos.setXYZ(k++, c.x, DECK + 1.9, c.z); }
+    }
+    pos.needsUpdate = true;
+  }
+  let on = true;
+  function show(v) { on = v; for (const c of cars) c.visible = v; lamps.visible = beam.visible = v; lights[headL].power = v ? HEAD_P : 0; }
+  return { place, show, SPAN, headL, head, get on() { return on; } };
+})();
+/* ---------- end train ---------- */
+
 /* Sky: the storm ceiling, drawn on a far sphere. */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(30000, 48, 24), new THREE.ShaderMaterial({
   uniforms: { ...k2 },
@@ -598,16 +751,38 @@ statics.traverse(o => {
 const rtOpt = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
 const baseRT = new THREE.WebGLRenderTarget(1, 1, { ...rtOpt, depthTexture: new THREE.DepthTexture(1, 1) });
 const moonRT = new THREE.WebGLRenderTarget(1, 1, rtOpt);
+// World normals of the still layer, so the headlight can relight it.
+const normRT = new THREE.WebGLRenderTarget(1, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+const normalMat = new THREE.ShaderMaterial({
+  vertexShader: /* glsl */`varying vec3 vN; void main() { vN = mat3(modelMatrix) * normal; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vN; void main() { vec3 N = length(vN) > 0.01 ? normalize(vN) : vec3(0.0, 1.0, 0.0); gl_FragColor = vec4(N * 0.5 + 0.5, 1.0); }`,
+});
+// The headlight slot for the relight: position and power, colour and range, spot.
+const headU = { uTP: { value: new THREE.Vector4() }, uTC: { value: new THREE.Vector4() }, uTD: { value: new THREE.Vector4() } };
 const invVP = new THREE.Matrix4();
 const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-  uniforms: { ...k2, tBase: { value: baseRT.texture }, tMoon: { value: moonRT.texture }, tDepth: { value: baseRT.depthTexture }, uInvVP: { value: invVP } },
+  uniforms: { ...k2, ...headU, tBase: { value: baseRT.texture }, tMoon: { value: moonRT.texture }, tDepth: { value: baseRT.depthTexture }, tNorm: { value: normRT.texture }, uInvVP: { value: invVP } },
   depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth,
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
   fragmentShader: /* glsl */`
-  uniform sampler2D tBase, tMoon, tDepth;
+  uniform sampler2D tBase, tMoon, tDepth, tNorm;
   uniform mat4 uInvVP;
+  uniform vec4 uTP, uTC, uTD;
   varying vec2 vUv;
   ${HEAD}
+  // Headlight on a baked pixel: a pool on the snow and a soft highlight.
+  vec3 headLight(vec3 P, vec3 N, vec3 V) {
+    if (uTP.w <= 0.0) return vec3(0.0);
+    vec3 L = uTP.xyz - P;
+    float d = length(L);
+    if (d > uTC.w * 8.0) return vec3(0.0);
+    L /= d;
+    float att = uTP.w * uLightK / (1.0 + pow(d / uTC.w, 2.0));
+    float spot = smoothstep(uTD.w, uTD.w + 0.12, dot(-L, uTD.xyz));
+    float diff = max(dot(N, L) * 0.85 + 0.15, 0.0);
+    float sp = pow(max(dot(N, normalize(L + V)), 0.0), 40.0) * 0.6;
+    return uTC.rgb * att * spot * (0.35 * diff + sp);
+  }
   void main() {
     vec4 base = texture2D(tBase, vUv);
     float z = texture2D(tDepth, vUv).r;
@@ -615,7 +790,11 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
     vec3 P = wp.xyz / wp.w;
     vec3 col = base.rgb;
     // The moon reaches the still layer only through the gaps.
-    if (base.a > 0.001) col += texture2D(tMoon, vUv).rgb * k2gap(P);
+    if (base.a > 0.001) {
+      col += texture2D(tMoon, vUv).rgb * k2gap(P);
+      vec4 nz = texture2D(tNorm, vUv);
+      if (nz.a > 0.5) col += headLight(P, normalize(nz.xyz * 2.0 - 1.0), normalize(cameraPosition - P)) * (1.0 - k2hazeAmount(P));
+    }
     if (base.a < 0.999) {
       vec4 fp = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
       col += k2sky(normalize(fp.xyz / fp.w - cameraPosition)) * (1.0 - base.a);
@@ -640,6 +819,8 @@ function bake(renderer) {
   camera.updateMatrixWorld();
   statics.visible = true; live.visible = false; skyG.visible = false; comp.visible = false;
   renderer.setClearColor(0x000000, 0);
+  // No headlight may stay baked on the deck.
+  lightU.uLP.value[train.headL].w = 0;
   k2.uGapIn.value = 0;
   k2.uBaseOn.value = 1; k2.uMoonOn.value = 0;
   renderer.setRenderTarget(baseRT); renderer.clear(); renderer.render(scene, camera);
@@ -647,26 +828,76 @@ function bake(renderer) {
   renderer.setRenderTarget(moonRT); renderer.clear(); renderer.render(scene, camera);
   // Live parts take moon through the gaps themselves.
   k2.uGapIn.value = 1; k2.uBaseOn.value = 1;
+  // Normals: see-through parts stay out, so they never take the headlight.
+  normRT.setSize(Math.round(w * pr), Math.round(h * pr));
+  const hid = [];
+  statics.traverse(o => { if (o.visible && [].concat(o.material || []).some(m => m.transparent)) { o.visible = false; hid.push(o); } });
+  scene.overrideMaterial = normalMat;
+  renderer.setRenderTarget(normRT); renderer.clear(); renderer.render(scene, camera);
+  scene.overrideMaterial = null;
+  for (const o of hid) o.visible = true;
   renderer.setRenderTarget(prevT);
   renderer.setClearColor(clearC, prevA);
   statics.visible = false; live.visible = true; comp.visible = true;
   invVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+  uploadLights();
   bakes++;
 }
 /* ---------- end bake ---------- */
 
-/* Motion: one clock drives the wind and the cloud gaps. */
-let time = 0;
+/* Motion: one clock drives the wind and the gaps; the freight runs end to end. */
+// t counts seconds since the train left its end; 99 means at cruise.
+const run = { s: 120, dir: 1, v: 13, wait: 0, gone: false, user: false, t: 99 };
+let runPause = 8;
+// The tail hides 30 m into the hill past each cut.
+const END = CUT_B + 30, START = CUT_A - 30;
+let time = 0, paceNow = 1, parked = false;
+// A parked train (QA) holds still at any speed setting.
+const speed = () => (parked ? 0 : run.v);
+const smoother = x => { x = Math.min(1, Math.max(0, x)); return x * x * x * (x * (6 * x - 15) + 10); };
+// The train eases out over 6 s and brakes over its last 220 m.
+function trainSpeed(s, dir, t) {
+  const cruise = speed();
+  if (cruise <= 0) return 0;
+  const d = dir > 0 ? END + train.SPAN - s : s - (START - train.SPAN);
+  if (d <= 0) return 0;
+  // A quarter-circle brake starts smoothly and arrives in finite time.
+  const x = Math.min(1, d / 220), brake = Math.sqrt(1 - (1 - x) ** 2);
+  return Math.min(cruise, Math.max(0.05, cruise * Math.min(smoother(t / 6), brake)));
+}
 function update(dt, pace) {
   time += dt * pace;
   k2.uTime.value = time;
+  paceNow = pace;
+  const k = run.user ? 1 : pace;
+  if (run.gone) {
+    run.wait -= dt * k;
+    if (run.wait <= 0) { run.gone = false; run.dir = -run.dir; run.s = run.dir > 0 ? START : END; run.t = 0; train.show(true); }
+  } else {
+    run.t += dt * k;
+    run.vNow = trainSpeed(run.s, run.dir, run.t);
+    run.s += run.dir * run.vNow * dt * k;
+    if (run.s >= END + train.SPAN || run.s <= START - train.SPAN) { train.show(false); run.gone = true; run.wait = Math.max(1, runPause); run.user = false; run.vNow = 0; }
+  }
+  train.place(run.s, run.dir);
+  uploadLights();
+  headU.uTP.value.copy(lightU.uLP.value[train.headL]);
+  headU.uTC.value.copy(lightU.uLC.value[train.headL]);
+  headU.uTD.value.copy(lightU.uLD.value[train.headL]);
 }
-const lively = () => false;
+function sendTrain() {
+  if (run.gone) run.wait = 0;
+  run.user = true;
+}
+// Any tap sends a freight.
+function tap() { sendTrain(); }
+// A moving train runs at full rate, so it never steps.
+const lively = () => run.user || (train.on && !run.gone && paceNow > 0);
 function lower() {}
 
 // Dispose frees every geometry, material and texture this scene made.
 function dispose() {
-  baseRT.dispose(); moonRT.dispose();
+  baseRT.dispose(); moonRT.dispose(); normRT.dispose(); normalMat.dispose();
   statics.visible = skyG.visible = true;
   scene.traverse(o => {
     o.geometry?.dispose();
@@ -674,5 +905,10 @@ function dispose() {
   });
 }
 
-return { scene, camera, frame, bake, dispose, orbs, update, lively, lower, get bakes() { return bakes; }, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
+// QA can park the train with ?train=<s>, in metres along the track.
+const parkAt = new URLSearchParams(location.search).get('train');
+if (parkAt !== null) { parked = true; run.s = +parkAt; }
+train.place(run.s, run.dir);
+
+return { scene, camera, frame, bake, dispose, orbs, update, tap, lively, lower, get bakes() { return bakes; }, get run() { return run; }, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
 }
