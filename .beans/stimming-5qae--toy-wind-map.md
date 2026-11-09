@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T09:25:40Z
+updated_at: 2026-11-09T09:36:12Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -81,3 +81,10 @@ Browser pane, background tab, in-memory frame pump; checks live in the git-ignor
 - Globe: off-disc taps do nothing; the wrap is continuous (max step 0.012 world, Γ steady); a projection switch mid-gesture frees the storm.
 - Q2, Q4 to Q6 and Q9 pass in both projections. Q10 with every option on at High, background tab: chart 37 ms median, globe 23 ms.
 - Session time: about 01:50 to 03:00.
+
+## Bar v2 latest shell check (2026-11-09)
+
+Wind map already passes a bar spec, so the newest shell look (logo, breadcrumb name, corner entrance, key-strip halo, 36 px coarse chips) applies with no toy change.
+- Compliance points 1, 2, 4 and 5 measured at 1280 × 800, 375 × 812 (mobile) and 812 × 375: no corner leaves the stage or overlaps, no page scroll, the Settings sheet fits (it scrolls inside its box at 812 × 375), no coarse target under 34 px.
+- The toy name drops at 375 px by the shell's collision rule.
+- Diegetic check: none fits. The whole stage is the gesture surface (spin, hold, throw, jet); a drawn control would collide with those gestures.
