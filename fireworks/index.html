@@ -1211,19 +1211,23 @@ const SFX_GAIN = {
 };
 let sfx = null, sfxLoad = null;
 // Each take loads on its own, four at a time, with two retries.
+// They decode at page load on an offline context, so the first shell is recorded.
 // A failed take is skipped; the synth covers its role.
-function loadSfx(ac) {
+function loadSfx() {
   if (sfxLoad) return;
-  const got = {}, names = Object.keys(SFX_GAIN);
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OAC) return;
+  const dec = new OAC(1, 1, 44100), got = {}, names = Object.keys(SFX_GAIN);
   const one = (n, tries = 3) => fetch(`sfx/${n}.mp3`)
     .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-    .then(b => ac.decodeAudioData(b))
+    .then(b => dec.decodeAudioData(b))
     .then(buf => { got[n] = buf; sfx = got; })
     .catch(() => tries > 1 && new Promise(r => setTimeout(r, 500)).then(() => one(n, tries - 1)));
   let i = 0;
   const next = () => (i < names.length ? one(names[i++]).then(next) : null);
   sfxLoad = Promise.all([next(), next(), next(), next()]);
 }
+loadSfx();
 const has = n => !!sfx?.[n];
 // The synth's distance cut runs 6 kHz to 900 Hz; recordings get 12 kHz to 2.5 kHz.
 const recLp = lp => 12000 * Math.pow(lp / 6000, 0.55);
@@ -1252,7 +1256,6 @@ function stopAll() {
 // Shared bus: a 3.5 s reverb, a crackle bank, and the water bed.
 function bus(ac) {
   loadZz(ac);
-  loadSfx(ac);
   if (rvb) return;
   const len = Math.round(ac.sampleRate * 3.5), ir = ac.createBuffer(2, len, ac.sampleRate);
   for (let c = 0; c < 2; c++) {
@@ -1302,12 +1305,18 @@ function env(ac, t, peak, a, d) {
 }
 // The lift: a mortar thump, a rising whoosh, and one shell in six whistles.
 function lift(ac, t, T, out, lvl) {
-  // One launch in four whistles on a recorded take, stretched to the climb.
-  const sw = sfx && Math.random() < 0.25 && count('whistle') < 2 ? take('whistle') : null;
-  if (sw) {
-    const name = sw, rate = Math.min(1.25, Math.max(0.85, sfx[name].duration / (T * 0.95)));
-    track(t + T, 'whistle', smp(ac, name, t, out, lvl * 0.5, rate)[0]);
+  if (has('report')) {
+    // The mortar: the report slowed to a deep thud, cut short.
+    const lp = filt(ac, 'lowpass', 520), g = env(ac, t, 1, 0.003, 0.65);
+    g.connect(lp).connect(out);
+    const nodes = [smp(ac, 'report', t, g, lvl * 1.1, 0.42 * jit(0.06))[0]];
+    // One launch in three whistles on a recorded take, stretched to the climb.
+    const sw = Math.random() < 1 / 3 && count('whistle') < 2 ? take('whistle') : null;
+    if (sw) nodes.push(smp(ac, sw, t + 0.05, out, lvl * 0.55, Math.min(1.25, Math.max(0.85, sfx[sw].duration / (T * 0.95))))[0]);
+    track(t + T, sw ? 'whistle' : 'lift', ...nodes);
+    return;
   }
+  const sw = null;
   if (zzBufs) {
     const [th] = zz(ac, 'thump', t, out, lvl * 0.7);
     const nodes = [th];
@@ -1343,7 +1352,7 @@ function boom(ac, t, out, lvl, lp, cal, set = 'boom') {
     // Recordings carry their own distance, so the filter only trims far ones.
     const bl = filt(ac, 'lowpass', recLp(lp));
     bl.connect(out);
-    const [b, bg] = smp(ac, nm, t, bl, lvl * 1.3, jit(0.06) * (1.08 - 0.08 * cal));
+    const [b, bg] = smp(ac, nm, t, bl, lvl * 2.1, jit(0.06) * (1.08 - 0.08 * cal));
     const send = ac.createGain(); send.gain.value = 0.25;
     bg.connect(send).connect(rvb);
     const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 1400), dg = ac.createGain();
@@ -2319,8 +2328,6 @@ const ndcOf = e => {
 };
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
-  // The first touch starts the recordings loading, ahead of the first boom.
-  if (kit.ac) bus(kit.ac);
   stage.setPointerCapture(e.pointerId);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: ndcOf(e), charge: 0, seed: null, moved: false };
   wake();
