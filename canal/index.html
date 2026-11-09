@@ -211,12 +211,12 @@ const LAMP_POS = [
 LAMP_POS.forEach((p, i) => U.uLamp.value[i].set(p.x, p.y, p.z, 0));
 // Fixed lights: position, colour as OKLCH, and full strength.
 const VENUES = [
-  { p: [25, 2.5, -144], c: [0.9, 0.08, 80], k: 3 },
-  { p: [50, 3, -166], c: [0.75, 0.14, 60], k: 2.5 },
+  { p: [254, 2.5, -166], c: [0.9, 0.08, 80], k: 3 },
+  { p: [176, 3, -193], c: [0.75, 0.14, 60], k: 2.5 },
   { p: [-87, 6, -142], c: [0.9, 0.05, 230], k: 2.2 },
   { p: [-87, 6, -114], c: [0.9, 0.05, 230], k: 2.2 },
-  { p: [44, 1.5, -206], c: [0.85, 0.1, 70], k: 9 },
-  { p: [56, 1.5, -194], c: [0.85, 0.1, 70], k: 9 },
+  { p: [183, 1.5, -243.5], c: [0.85, 0.1, 70], k: 9 },
+  { p: [195, 1.5, -231], c: [0.85, 0.1, 70], k: 9 },
   { p: [397, 6, -319], c: [0.75, 0.15, 60], k: 4 },
   { p: [-353, 6, -332], c: [0.75, 0.15, 60], k: 4 },
   { p: [250, 9, 290], c: [0.92, 0.04, 240], k: 6 },
@@ -412,7 +412,7 @@ scene.add(sky);
 /* ---------- buildings ---------- */
 // Surface kinds in aInfo.w.
 const BRICK = 0, RENDER = 1, CONCRETE = 2, STEEL = 3, CHURCH = 4, METAL = 5, TREE = 6, FRIT = 7, SIGN = 8, STAM = 9, LAMPHEAD = 10;
-const AWNING = 11, BUMPER = 12, PAINT = 13, BIKES = 14, SHOOT = 15, PRIZE = 16, DUCKPOND = 17;
+const AWNING = 11, BUMPER = 12, PAINT = 13, BIKES = 14, SHOOT = 15, PRIZE = 16, DUCKPOND = 17, SCHOOL_K = 18;
 const fr = x => x - Math.floor(x);
 const v2 = ps => new THREE.Shape(ps.map(([x, y]) => new THREE.Vector2(x, y)));
 const UP = new THREE.Vector3(0, 1, 0);
@@ -575,21 +575,55 @@ function treeLine(ax, az, bx, bz, h) {
 
 /* ---------- the village centre ---------- */
 // The church: a nave under a slate roof, a square tower and a spire.
+// The kerkplein lies inland, south of the main road: x 160 to 270, z -262 to -166.
+const SQ = { x0: 160, x1: 270, z0: -262, z1: -166 };
+// The church closes the square's south side; its tower stands at the west end.
+const TOWER_C = [195, -243.5];
 function church() {
-  place(house(30, 11, 13, 7, 41.3, CHURCH, { win: false }), 92, -199, [0, 0, -1]);
-  const at = (g, y) => parts.push(tag(g.translate(56, QUAY + y, -205.5), [0, 0, 41.3, CHURCH]));
-  at(new THREE.BoxGeometry(9, 32, 9), 16);
-  at(new THREE.ConeGeometry(6.3, 24, 4).rotateY(Math.PI / 4), 44);
+  place(house(36, 12, 15, 8, 41.3, CHURCH, { win: false }), 236, -236, [0, 0, -1]);
+  const at = (g, y) => parts.push(tag(g.translate(TOWER_C[0], QUAY + y, TOWER_C[1]), [0, 0, 41.3, CHURCH]));
+  at(new THREE.BoxGeometry(10, 36, 10), 18);
+  at(new THREE.ConeGeometry(7, 26, 4).rotateY(Math.PI / 4), 49);
 }
-// The staminee: a corner café on the square, its ground floor lit and a sign over the door.
+// The staminee: a café on the west side of the square, its terrace under parasols and a festoon.
 function staminee() {
-  place(house(9, 6, 11, 4, 17.7, STAM), 51, -167, [0, 0, -1]);
-  parts.push(tag(new THREE.BoxGeometry(1.6, 0.5, 0.2).translate(46.5, QUAY + 3.3, -166.8), [0, 0, 1, SIGN]));
+  place(house(10, 6.5, 12, 4.5, 17.7, STAM), 172, -200, [-1, 0, 0]);
+  parts.push(tag(new THREE.BoxGeometry(0.2, 0.5, 1.6).translate(172.2, QUAY + 3.4, -195), [0, 0, 1, SIGN]));
+  const cols = [1, 2, 1, 2, 1, 2];
+  [[176, -197], [180, -197], [176, -192.5], [180, -192.5], [176, -188], [180, -188]].forEach(([x, z], i) => {
+    parts.push(tag(new THREE.CylinderGeometry(0.4, 0.4, 0.06, 12).translate(x, QUAY + 0.75, z), [0, 0, 5, PAINT]));
+    parts.push(tag(new THREE.CylinderGeometry(0.04, 0.04, 2.4, 5).translate(x, QUAY + 1.2, z), [0, 0, 0, STEEL]));
+    parts.push(tag(new THREE.ConeGeometry(1.5, 0.5, 8).translate(x, QUAY + 2.4, z), [0, 0, cols[i], PAINT]));
+  });
+  for (let i = 0; i <= 12; i++) bulb(174, QUAY + 3.2 - 0.5 * Math.sin(Math.PI * i / 12), -199 + i * 1.1, [1, 0.8, 0.45], i, 0);
+  for (let i = 0; i <= 12; i++) bulb(182, QUAY + 3.2 - 0.5 * Math.sin(Math.PI * i / 12), -199 + i * 1.1, [1, 0.8, 0.45], i + 3, 0);
 }
-// The frietkot: a flat shack by the crossing, all counter and light, a sign on the roof.
+// The frietkot: a flat shack in the square's north-east corner, all counter and light.
 function frietkot() {
-  place([tag(new THREE.BoxGeometry(8, 3.2, 5).translate(4, 1.6, 2.5), [8, 3.2, 3.3, FRIT], true)], 27, -140, [1, 0, 0]);
-  parts.push(tag(new THREE.BoxGeometry(0.3, 1, 3.6).translate(29.5, QUAY + 3.7, -144), [0, 0, 2, SIGN]));
+  place([tag(new THREE.BoxGeometry(8, 3.2, 5).translate(4, 1.6, 2.5), [8, 3.2, 3.3, FRIT], true)], 258, -168, [0, 0, -1]);
+  parts.push(tag(new THREE.BoxGeometry(3.6, 1, 0.3).translate(254, QUAY + 3.7, -170.5), [0, 0, 2, SIGN]));
+}
+// The basisschool: a long two-storey block south of the church, a playground and a bike shed.
+const SCHOOL = { x0: 196, x1: 258, z0: -322, z1: -270 };
+function school() {
+  place(house(48, 7, 11, 0, 88.1, SCHOOL_K), 250, -280, [0, 0, -1]);
+  worldOn(gc);
+  gc.fillStyle = '#5f5e5c'; gc.fillRect(202, -318, 48, 26);
+  gc.strokeStyle = '#d8c24a'; gc.lineWidth = 0.25;
+  gc.beginPath(); gc.arc(214, -305, 4, 0, 6.283); gc.stroke();
+  gc.strokeRect(222, -312, 20, 13);
+  gc.strokeStyle = '#d8e0d0';
+  for (let i = 0; i < 6; i++) gc.strokeRect(205 + (i % 2) * 1.2, -300 + i * 1.2, 1.2, 1.2);
+  // A low fence round the playground.
+  for (const [x0, z0, x1, z1] of [[202, -318, 250, -318], [202, -292, 202, -318], [250, -292, 250, -318]]) {
+    const L = Math.hypot(x1 - x0, z1 - z0);
+    parts.push(tag(new THREE.BoxGeometry(x1 === x0 ? 0.06 : L, 1.2, x1 === x0 ? L : 0.06).translate((x0 + x1) / 2, QUAY + 0.6, (z0 + z1) / 2), [0, 0, 0, STEEL]));
+  }
+  parts.push(tag(new THREE.BoxGeometry(12, 0.12, 2.6).translate(240, QUAY + 2.3, -295), [0, 0, 4, PAINT]));
+  parts.push(tag(new THREE.BoxGeometry(11, 0.9, 1.8).translate(240, QUAY + 0.45, -295), [0, 0, 0, BIKES]));
+  for (let x = 235; x <= 245; x += 5) parts.push(tag(new THREE.CylinderGeometry(0.05, 0.05, 2.3, 5).translate(x, QUAY + 1.15, -296.2), [0, 0, 0, STEEL]));
+  for (const [tx, tz] of [[206, -296], [228, -316], [246, -316]]) tree(tx, tz, 3);
+  lampOf(226, -298, 6, [0.93, 0.03, 230], 0.8, 18, 0.3);
 }
 // The station: a low brick building, a platform and a row of platform lights.
 function station() {
@@ -756,7 +790,7 @@ function estate(p, side) {
 /* ---------- end roads ---------- */
 
 /* ---------- plots ---------- */
-const CENTRES = [[44, -170], [-44, -160]];
+const CENTRES = [[60, -170], [215, -215], [-44, -160]];
 // The mix by distance from the centre: core, village, then sparse.
 function modeAt(x, z) {
   const d = Math.min(...CENTRES.map(([cx, cz]) => Math.hypot(x - cx, z - cz)));
@@ -911,7 +945,7 @@ const BULBS = [];
 const bulb = (x, y, z, col, ph = 0, kind = 0) => BULBS.push({ x, y, z, col, ph, kind });
 // Where the kermis rides stand on the square.
 // Where the rides and the two games stand on the square.
-const KERMIS = { carousel: [62, -186], cars: [82, -188], shoot: [97, -181], ducks: [79.5, -170] };
+const KERMIS = { carousel: [195, -196], cars: [222, -198], shoot: [263, -183], ducks: [246.5, -176] };
 // A local frame on the square: origin x, z; back points away from the front.
 function frameAt(x, z, back) {
   const B = new THREE.Vector3(...back), Ux = new THREE.Vector3().crossVectors(UP, B);
@@ -958,7 +992,7 @@ function stall(x, z, a, seed) {
 function kermis() {
   let s = 0;
   // A smoutebollen stall and two more behind the church; the games have their own stalls.
-  for (const [x, z, a] of [[54, -171, Math.PI / 2], [52, -219, -Math.PI / 2], [95, -228, -Math.PI / 2]]) {
+  for (const [x, z, a] of [[186, -172, Math.PI / 2], [176, -224, Math.PI / 2], [258, -224, Math.PI]]) {
     stall(x, z, a, ++s);
     lampOf(x + 2 * Math.sin(a), z - 2 * Math.cos(a), 2.6, [0.85, 0.1, 75], 1.4, 12, 0.15);
   }
@@ -977,7 +1011,7 @@ function kermis() {
   shootingStall();
   duckStall();
   // Festoons cross the square between corner poles.
-  const poles = [[56, -178], [100, -178], [100, -196], [56, -196]];
+  const poles = [[186, -182], [258, -182], [258, -214], [186, -214]];
   for (const [x, z] of poles) parts.push(tag(new THREE.CylinderGeometry(0.1, 0.12, 6, 6).translate(x, QUAY + 3, z), [0, 0, 0, STEEL]));
   for (const [a, b] of [[0, 1], [1, 2], [2, 3], [3, 0], [0, 2]]) {
     const [x0, z0] = poles[a], [x1, z1] = poles[b], n = Math.round(Math.hypot(x1 - x0, z1 - z0) / 1.3);
@@ -1058,14 +1092,13 @@ fields();
 // Kept clear: the canal and towpaths, the railway, the square, the church and the station.
 for (let z = MAP.z0; z < MAP.z0 + MAP.size; z += 2) reserve(canalX(z) - 18, z, canalX(z) + 18, z + 2);
 reserve(-92, MAP.z0, -68, MAP.z0 + MAP.size);
-reserve(40, -236, 104, -164);
-reserve(48, -216, 96, -195);
-reserve(26, -150, 34, -138);
+reserve(SQ.x0 - 3, SQ.z0 - 3, SQ.x1 + 3, SQ.z1 + 3);
+reserve(SCHOOL.x0, SCHOOL.z0, SCHOOL.x1, SCHOOL.z1);
 reserve(-128, -154, -84, -102);
 reserve(-100, -156, -66, -46);
 worldOn(gc);
 gc.fillStyle = '#5b5650'; gc.fillRect(-88, MAP.z0, 16, MAP.size);
-gc.fillStyle = '#8a857c'; gc.fillRect(42, -234, 60, 70);
+gc.fillStyle = '#8a857c'; gc.fillRect(SQ.x0, SQ.z0, SQ.x1 - SQ.x0, SQ.z1 - SQ.z0);
 voetbal();
 reserve(LAKE[0] - LAKE[2] - 10, LAKE[1] - LAKE[3] - 10, LAKE[0] + LAKE[2] + 10, LAKE[1] + LAKE[3] + 10);
 worldOn(gc);
@@ -1077,8 +1110,7 @@ polyRoad([[-1500, ROAD_Z], [-17, ROAD_Z]], 4, 'auto');
 polyRoad([[17, ROAD_Z], [1500, ROAD_Z]], 4, 'auto');
 polyRoad(Array.from({ length: 76 }, (_, i) => { const z = 1000 - i * 40; return [canalX(z) + 21, z]; }), 2.75, 'auto');
 // Short core streets round the square.
-polyRoad([[38, -239], [108, -239]], 3, 'core');
-polyRoad([[107, -164], [107, -240]], 3, 'core');
+polyRoad([[SQ.x0 - 4, ROAD_Z - 4], [SQ.x0 - 4, SQ.z0 - 4], [SQ.x1 + 4, SQ.z0 - 4], [SQ.x1 + 4, ROAD_Z - 4]], 3, 'core');
 // Each old road leaves the main road at x and heads out at angle a.
 const RAD = [
   ...[[130, -1.3, 1300], [250, -0.7, 1300], [420, -0.25, 1100], [60, 1.45, 1100], [170, 1.0, 1200], [330, 0.45, 1100]],
@@ -1148,7 +1180,7 @@ for (let z = 1000; z > -2000; z -= 10 + 4 * rnd()) if (Math.abs(z - ROAD_Z) > 26
 treeLine(-1600, -2050, 1600, -2050, 14);
 treeLine(1550, 1000, 1550, -2000, 12);
 treeLine(-1550, 1000, -1550, -2000, 12);
-church(); staminee(); frietkot(); station(); bridge(); walls(); posts(); kermis(); railway();
+church(); staminee(); frietkot(); school(); station(); bridge(); walls(); posts(); kermis(); railway();
 // Roads go back on top, so no garden covers the asphalt.
 worldOn(gc);
 gc.strokeStyle = '#4a4a4e'; gc.lineCap = gc.lineJoin = 'round';
@@ -1389,7 +1421,8 @@ const solidMat = new THREE.ShaderMaterial({
     float hv = k2hash(vec2(sd, 1.3));
     vec3 base;
     // Brick: red-orange, yellow-brown or purple-brown.
-    if (is(kind, 0.0) || is(kind, 9.0)) base = hv < 0.45 ? vec3(0.22, 0.08, 0.042) : hv < 0.75 ? vec3(0.25, 0.16, 0.075) : vec3(0.12, 0.06, 0.05);
+    if (is(kind, 18.0)) base = vec3(0.3, 0.22, 0.11);
+    else if (is(kind, 0.0) || is(kind, 9.0)) base = hv < 0.45 ? vec3(0.22, 0.08, 0.042) : hv < 0.75 ? vec3(0.25, 0.16, 0.075) : vec3(0.12, 0.06, 0.05);
     // Render: white or cream.
     else if (is(kind, 1.0) || is(kind, 7.0)) base = hv < 0.6 ? vec3(0.6, 0.58, 0.53) : vec3(0.55, 0.5, 0.4);
     else if (is(kind, 2.0)) base = vec3(0.2, 0.2, 0.19) * (0.85 + 0.3 * k2noise(vP.xy * vec2(0.4, 0.15)));
@@ -1418,7 +1451,7 @@ const solidMat = new THREE.ShaderMaterial({
     // Parked bikes: dark, broken by thin uprights.
     else if (is(kind, 14.0)) base = vec3(0.025) * (0.6 + 0.8 * step(0.7, fract((abs(N.x) > 0.5 ? vP.z : vP.x) * 1.6)));
     else base = vec3(0.02);
-    vec3 alb = is(kind, 0.0) || is(kind, 9.0) ? brick(vP, N, base) : base;
+    vec3 alb = is(kind, 0.0) || is(kind, 9.0) || is(kind, 18.0) ? brick(vP, N, base) : base;
     // Roofs: grey concrete tile, red-brown tile or black glaze; the church has slate.
     float roof = (kind < 1.5 || is(kind, 4.0) || is(kind, 9.0)) && N.y > 0.25 && N.y < 0.98 ? 1.0 : 0.0;
     float rk = k2hash(vec2(sd, 2.0));
@@ -1465,7 +1498,8 @@ const solidMat = new THREE.ShaderMaterial({
       if (is(kind, 7.0)) {
         if (v > 0.9 && v < 2.5 && u > 0.6 && u < w - 0.6) { emit = vec3(1.0, 0.86, 0.62) * mix(0.6, 4.5, lit); alb = vec3(0.0); }
       } else {
-        float n = max(1.0, floor(w / 1.9)), cw = w / n;
+        // Classrooms have wide windows.
+        float n = max(1.0, floor(w / (is(kind, 18.0) ? 3.2 : 1.9))), cw = w / n;
         float ci = floor(u / cw), cu = (fract(u / cw) - 0.5) * cw;
         float fh = h / max(1.0, floor(h / 2.6));
         float ri = floor(v / fh), rv = v - ri * fh;
@@ -1483,7 +1517,8 @@ const solidMat = new THREE.ShaderMaterial({
         vec2 d = abs(vec2(cu, rv) - c) - hw;
         float id = k2hash(vec2(sd * 3.7 + ci, ri * 1.9 + 0.3));
         // About four windows in ten light up as Dusk passes their mark.
-        float mark = id < 0.42 ? -0.05 + id / 0.42 * 0.95 : 9.0;
+        // A school stays mostly dark after hours.
+        float mark = id < (is(kind, 18.0) ? 0.08 : 0.42) ? -0.05 + id / 0.42 * 0.95 : 9.0;
         float on = smoothstep(mark, mark + 0.03, uDusk);
         // The staminee's ground floor is always lit, amber.
         bool cafe = is(kind, 9.0) && ri < 0.5;
@@ -1955,7 +1990,7 @@ const groundMat = new THREE.ShaderMaterial({
     vec3 alb = pow(mp.rgb, vec3(2.2)) * 0.45 * (0.85 + 0.3 * n2);
     alb = mix(alb, vec3(0.046, 0.046, 0.05) * (0.9 + 0.2 * n), tow);
     // The square and the railway bed take their own detail.
-    float sq = band(x, 42.0, 102.0) * band(z, -234.0, -164.0);
+    float sq = band(x, ${SQ.x0}.0, ${SQ.x1}.0) * band(z, ${SQ.z0}.0, ${SQ.z1}.0);
     float steel = 0.0;
     if (band(x, -86.0, -74.0) * (1.0 - tar) > 0.5) {
       float r = abs(abs(x + 80.0) - 2.6) - 0.72;
@@ -2144,7 +2179,7 @@ let zoom = 1, fly = null;
 const orbit = (T, dist, el, az) => new THREE.Vector3(T.x + dist * Math.cos(el) * Math.sin(az), T.y + dist * Math.sin(el), T.z + dist * Math.cos(el) * Math.cos(az));
 // Target, distance, elevation and azimuth for each place; phones sit higher and further back.
 const PLACES = {
-  kerk: { T: [76, -196], d: [100, 140], el: [0.42, 0.56], az: [-0.95, -0.75] },
+  kerk: { T: [215, -212], d: [140, 190], el: [0.42, 0.56], az: [-0.95, -0.75] },
   station: { T: [-84, -110], d: [110, 150], el: [0.36, 0.5], az: [0.75, 0.55] },
   voetbal: { T: [PITCH[0], PITCH[1]], d: [150, 200], el: [0.45, 0.6], az: [-0.6, -0.4] },
 };
@@ -2474,7 +2509,7 @@ function carillon() {
   const lp = ac.createBiquadFilter(), dry = ac.createGain(), send = ac.createGain(), p = ac.createStereoPanner();
   lp.type = 'lowpass'; lp.frequency.value = view === 'kerk' && zoom < 2 ? 4200 : 2200;
   dry.gain.value = 0.35; send.gain.value = 0.9;
-  p.pan.value = panAt(56, QUAY + 30, -205.5);
+  p.pan.value = panAt(TOWER_C[0], QUAY + 30, TOWER_C[1]);
   lp.connect(dry).connect(p).connect(g.bus);
   lp.connect(send).connect(g.verb);
   const cents = (Math.random() - 0.5) * 0.06;
@@ -2512,7 +2547,7 @@ function lamp(i) {
   };
 }
 // The church tower's corners, for picking.
-const TOWER = [[51.5, -210], [60.5, -201]];
+const TOWER = [[TOWER_C[0] - 5, TOWER_C[1] - 5], [TOWER_C[0] + 5, TOWER_C[1] + 5]];
 const proj = new THREE.Vector3();
 const toPx = (x, y, z, r) => { proj.set(x, y, z).project(camera); return proj.z > 1 ? null : [(proj.x * 0.5 + 0.5) * r.width, (0.5 - proj.y * 0.5) * r.height]; };
 // What a tap at client x, y hits: the nearest lamp head within 28 px, or the church.
@@ -2528,7 +2563,7 @@ function pickAt(cx, cy) {
   });
   // The church: the screen box of the tower and spire.
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const x of [TOWER[0][0], TOWER[1][0]]) for (const z of [TOWER[0][1], TOWER[1][1]]) for (const y of [QUAY, QUAY + 56]) {
+  for (const x of [TOWER[0][0], TOWER[1][0]]) for (const z of [TOWER[0][1], TOWER[1][1]]) for (const y of [QUAY, QUAY + 62]) {
     const q = toPx(x, y, z, r);
     if (!q) continue;
     x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]);
