@@ -1964,13 +1964,33 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         <li>
           <a class="toy" id="vortex" href="vortex/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 265)"/>
-                <rect x="16" y="16" width="92" height="92" fill="oklch(0.15 0.012 265)"/>
-                <path d="M64 16H69L78 108H55Z" fill="oklch(0.72 0.2 142)" opacity="0.22"/>
-                <path d="M65.6 16H67.4L67.6 108H65.4Z" fill="oklch(0.86 0.26 142)" opacity="0.7"/>
-                <ellipse id="vortex-ring" cx="0" cy="0" rx="5" ry="12" fill="none" stroke="oklch(0.84 0.02 250)" stroke-width="3.4"/>
-                <ellipse id="vortex-flare" cx="0" cy="0" rx="5" ry="12" fill="none" stroke="oklch(0.92 0.25 142)" stroke-width="3.8"/>
+              <svg class="art" viewBox="0 0 128 128" data-box="14 14 100 100" aria-hidden="true">
+                <defs>
+                  <radialGradient id="vortex-room" cx="0.3" cy="0.15" r="1"><stop offset="0" stop-color="oklch(0.32 0.02 250)"/><stop offset="0.5" stop-color="oklch(0.16 0.014 262)"/><stop offset="1" stop-color="oklch(0.09 0.012 268)"/></radialGradient>
+                  <linearGradient id="vortex-fan" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.92 0.24 142)" stop-opacity="0.8"/><stop offset="0.5" stop-color="oklch(0.7 0.2 142)" stop-opacity="0.26"/><stop offset="1" stop-color="oklch(0.5 0.15 142)" stop-opacity="0.04"/></linearGradient>
+                  <linearGradient id="vortex-tube" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="oklch(0.98 0.01 240)"/><stop offset="0.45" stop-color="oklch(0.8 0.02 245)"/><stop offset="1" stop-color="oklch(0.42 0.02 255)"/></linearGradient>
+                  <filter id="vortex-smoke" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.07" numOctaves="3" seed="3" result="n"/><feOffset id="vortex-churn" in="n" dx="0" dy="0" result="m"/><feDisplacementMap in="SourceGraphic" in2="m" scale="7" xChannelSelector="R" yChannelSelector="G" result="d"/><feGaussianBlur in="d" stdDeviation="0.7"/></filter>
+                  <filter id="vortex-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                  <clipPath id="vortex-clip"><rect x="14" y="14" width="100" height="100" rx="7"/></clipPath>
+                </defs>
+                <!-- A smoke torus crosses the green laser fan; the slice glows as a band through the tube. -->
+                <rect x="20" y="20" width="100" height="100" rx="7" fill="oklch(0.07 0.01 265)"/>
+                <rect x="14" y="14" width="100" height="100" rx="7" fill="url(#vortex-room)"/>
+                <g clip-path="url(#vortex-clip)">
+                  <path d="M4 82C24 79 38 74 52 66" fill="none" stroke="oklch(0.75 0.02 245)" stroke-width="9" stroke-linecap="round" opacity="0.32" filter="url(#vortex-smoke)"/>
+                  <g id="vortex-ring" transform="translate(67.3 60.7)">
+                    <ellipse rx="19" ry="30" fill="none" stroke="oklch(0.3 0.02 258)" stroke-width="17" filter="url(#vortex-smoke)"/>
+                    <ellipse rx="19" ry="30" fill="none" stroke="url(#vortex-tube)" stroke-width="13" filter="url(#vortex-smoke)" transform="translate(-1.5 -1.5)"/>
+                  </g>
+                  <path d="M62 2L80 2L96 126L46 126Z" fill="url(#vortex-fan)"/>
+                  <path d="M38 112L98 100" stroke="oklch(0.88 0.27 142)" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+                  <g filter="url(#vortex-glow)">
+                    <path id="vortex-band" fill="oklch(0.88 0.27 142)" fill-rule="evenodd" opacity="0.4"/>
+                    <path id="vortex-edge" fill="none" stroke="oklch(0.95 0.2 142)" stroke-width="1.3"/>
+                  </g>
+                </g>
+                <rect x="14" y="14" width="100" height="100" rx="7" fill="url(#lit)" opacity="0.4"/>
+                <rect x="14.9" y="14.9" width="98.2" height="98.2" rx="6.2" fill="none" stroke="url(#rim)" stroke-width="1.8"/>
               </svg>
             </span>
             <span class="name">Smoke ring cannon</span>
@@ -3355,37 +3375,44 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
       rest() { if (!on) return; on = false; cool(); },
     };
   }
-  // A smoke ring flies at the pointer and flares green as it crosses the sheet.
+  // A smoke ring slides through the laser sheet; the slice glows as a band through its tube.
+  // Lab icons get only play and rest, so this icon tracks the pointer itself.
   {
-    const ring = $('vortex-ring'), flare = $('vortex-flare');
-    const REST = 0.57, st = { p: REST, y: 62 };
+    const ringG = $('vortex-ring'), band = $('vortex-band'), edge = $('vortex-edge'), churnOff = $('vortex-churn');
+    // Icon units: the centreline is 30 tall, the tube 6.5 thick; the sheet stands at x 70.
+    const RR = 30, AA = 6.5, KX = 19 / 30, U0 = -3.5, n2 = v => v.toFixed(2);
+    const oval = r => `M${n2(70 + r * KX)} 60A${n2(r * KX)} ${n2(r)} 0 1 0 ${n2(70 - r * KX)} 60A${n2(r * KX)} ${n2(r)} 0 1 0 ${n2(70 + r * KX)} 60Z`;
+    const st = { u: U0 };
     const draw = () => {
-      const x = 26 + st.p * 70, y = 62 + (st.y - 62) * st.p, k = 0.8 + 0.35 * st.p;
-      const tr = `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${k.toFixed(2)})`;
-      ring.setAttribute('transform', tr);
-      flare.setAttribute('transform', tr);
-      flare.setAttribute('opacity', Math.max(0, 1 - Math.abs(x - 66) / 7).toFixed(2));
-      ring.setAttribute('opacity', (1 - Math.max(0, st.p - 0.85) / 0.15).toFixed(2));
+      const u = st.u;
+      ringG.setAttribute('transform', `translate(${n2(70 + u * 0.77)} ${n2(60 - u * 0.2)})`);
+      if (Math.abs(u) >= AA) { band.setAttribute('d', ''); edge.setAttribute('d', ''); return; }
+      const h = Math.sqrt(AA * AA - u * u), d = oval(RR + h) + oval(RR - h);
+      band.setAttribute('d', d);
+      edge.setAttribute('d', d);
     };
     draw();
-    let flight = null, inside = false;
-    const aim = p => { st.y = Math.max(34, Math.min(90, p[1])); };
-    const fly = () => {
-      flight = gsap.fromTo(st, { p: 0 }, { p: 1, duration: 1.4, ease: 'power1.out', onUpdate: draw,
-        onComplete: () => { flight = inside ? gsap.delayedCall(0.15, fly) : null; } });
-    };
+    let churn = null, demo = null;
+    const scrubTo = p => gsap.to(st, { u: Math.max(-1, Math.min(1, (p[0] - 64) / 36)) * 12, duration: 0.35, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
     toys.vortex = {
-      enter(p) { inside = true; if (p) aim(p); if (!flight) fly(); },
-      move(p) { if (p) aim(p); },
+      enter(p) {
+        if (!churn) { const o = { v: 0 }; churn = gsap.to(o, { v: 60, duration: 6, repeat: -1, ease: 'none', onUpdate: () => churnOff.setAttribute('dx', n2(o.v)) }); }
+        if (p) scrubTo(p);
+        else if (!demo) demo = gsap.fromTo(st, { u: -12 }, { u: 12, duration: 1.8, ease: 'sine.inOut', yoyo: true, repeat: -1, onUpdate: draw });
+      },
+      move(p) { if (!p) return; demo?.kill(); demo = null; scrubTo(p); },
       leave() {
-        inside = false;
-        flight?.kill();
-        flight = null;
-        gsap.to(st, { p: REST, y: 62, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: draw });
+        churn?.kill(); churn = null; demo?.kill(); demo = null;
+        gsap.to(st, { u: U0, duration: 0.8, ease: 'power3.out', overwrite: 'auto', onUpdate: draw });
       },
       play() { toys.vortex.enter(null); return { kill() {} }; },
       rest() { toys.vortex.leave(); },
     };
+    const vEl = $('vortex'), vSvg = vEl.querySelector('svg');
+    vEl.addEventListener('pointermove', e => {
+      const r = vSvg.getBoundingClientRect();
+      toys.vortex.move([((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128]);
+    });
   }
   // Light floods the web from the node nearest the pointer; the path follows it.
   // Lab icons get only play and rest, so this icon tracks the pointer itself.
