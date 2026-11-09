@@ -623,12 +623,21 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     if (inSheet) toyLab.after(slider.el); else br.append(slider.el);
     set.hidden = !(rowsOrSite || inSheet);
   };
+  // Bottom corners that collide on a narrow stage stack in two rows.
+  const stack = () => {
+    frame.removeAttribute('data-stack');
+    if (!narrowNow || !bl.childElementCount || !br.childElementCount) return;
+    frame.toggleAttribute('data-stack', bl.getBoundingClientRect().right + 8 > br.getBoundingClientRect().left);
+  };
   // The first layout runs at once, so a phone never shows the wide one.
   let narrowNow = frame.getBoundingClientRect().width < 640;
   place(narrowNow);
+  stack();
+  document.fonts?.ready.then(stack);
   new ResizeObserver(([e]) => {
     const narrow = e.contentRect.width < 640;
     if (narrow !== narrowNow) place(narrowNow = narrow);
+    stack();
   }).observe(frame);
 
   let legacy = null;

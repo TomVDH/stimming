@@ -538,6 +538,28 @@ t('narrow tray sheet rises from its chip', () => {
   click(chip);
 });
 
+/* ---------- migration fixes ---------- */
+const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+t('narrow choice and three actions do not overlap', () => {
+  const { layer } = narrowFixture({
+    choice: { label: 'Finish', value: 'a', options: [{ value: 'a', label: 'Anodised', dot: '#888' }, { value: 'b', label: 'Brushed steel', dot: '#aaa' }] },
+    actions: [{ verb: 'shuffle', onPress() {} }, { verb: 'flip', label: 'Flip', onPress() {} }, { verb: 'shake', label: 'Shake', onPress() {} }],
+    keys: [['click', 'press']],
+  });
+  const bl = layer.querySelector('.s2-bl').getBoundingClientRect(), br = layer.querySelector('.s2-br').getBoundingClientRect();
+  ok(apart(bl, br), `bl ${Math.round(bl.left)}..${Math.round(bl.right)} overlaps br ${Math.round(br.left)}..${Math.round(br.right)}`);
+  const k = layer.querySelector('.s2-keys').getBoundingClientRect();
+  ok(k.bottom <= Math.min(bl.top, br.top), `key strip bottom ${Math.round(k.bottom)} under a bottom row`);
+});
+t('narrow short rows stay on one line', () => {
+  const { frame, layer } = narrowFixture({
+    choice: { label: 'P', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+    actions: [{ verb: 'clear', onPress() {} }],
+  });
+  ok(!frame.hasAttribute('data-stack'), 'stacked without need');
+  eq(Math.round(layer.querySelector('.s2-bl').getBoundingClientRect().bottom), Math.round(layer.querySelector('.s2-br').getBoundingClientRect().bottom));
+});
+
 /* ---------- run ---------- */
 let pass = 0, ran = 0;
 for (const [name, fn, paneOnly] of queue) {
