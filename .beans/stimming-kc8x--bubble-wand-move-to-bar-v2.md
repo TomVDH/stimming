@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T10:50:38Z
-updated_at: 2026-11-09T10:58:10Z
+updated_at: 2026-11-09T10:59:02Z
 parent: stimming-80dc
 ---
 
@@ -40,7 +40,7 @@ The wand is already the pointer. Proposal: hold anywhere on the air to blow thro
 
 Bubble wand passes one bar spec to initPage. Blow (held, Space) and Clear (P) sit bottom left. Settings holds the site Quality row. Key strip: move slow, move fast, click; touch words on phones.
 Fixed: the resting wand handle reached the bottom chips and the key strip on short touch stages; it now rests above the bottom row and further left on short stages. Space no longer blows from inside the Settings sheet. The intro fallback dropped its stale number line.
-Blow uses the shell's held action (99844f5): onDown and onUp. The page still binds Space itself; the shell matches key names, not ' '.
+Blow uses the shell's held action (99844f5): onDown and onUp. Space binds through the shell (3d22888); the page keeps no key handler.
 
 ## Mobile and compliance
 Checked at 1280 x 800, 375 x 812 (mobile preset) and 812 x 375, plus 760 x 375 for touch in landscape. No corner overlaps another or the key strip. No control leaves the stage. No sideways scroll. The Settings sheet fits. Touch chips are 36 px, sheet chips 34 px. The resting wand clears every corner. Console clean.
