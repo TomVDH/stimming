@@ -127,7 +127,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -184,7 +184,8 @@ const KX = 111320 * Math.cos(LAT0 * Math.PI / 180), KY = 110570;
 const geoRaw = (lon, lat) => [(lon - LON0) * KX, -(lat - LAT0) * KY];
 
 // The coast, west to north-east. The sea lies to its left.
-const COAST = [[1.2, 50.85], [2.0, 51.0], [2.54, 51.09], [3.37, 51.37], [3.6, 51.5], [3.9, 51.7], [4.1, 52.0], [4.6, 52.6]];
+// Both ends run far off screen, so the line's round caps never show.
+const COAST = [[-1.5, 49.6], [0.1, 49.5], [1.1, 49.93], [1.6, 50.25], [1.6, 50.73], [2.0, 51.0], [2.54, 51.09], [3.37, 51.37], [3.6, 51.5], [3.9, 51.7], [4.1, 52.0], [4.6, 52.6], [4.75, 53.1], [5.5, 53.6], [8.0, 54.2]];
 // Towns: lon, lat, radius in km, level. Inside the border they glow warm.
 const TOWNS = [
   [4.36, 50.85, 9, 1], [4.41, 51.22, 7, 0.9], [3.72, 51.05, 5, 0.7], [5.57, 50.63, 6, 0.75], [4.44, 50.41, 6, 0.7],
@@ -1847,6 +1848,7 @@ function draw() {
   U.uNow.value = t;
   const D = place(z);
   if (z < 0.3) stepDeck(t);
+  updateSound(t);
   // Air eases toward the chip.
   ribMat.uniforms.uHalf.value = 60 + air.wide * 2;
   ribMat.uniforms.uGlow.value = air.glow;
@@ -1990,6 +1992,7 @@ act.cut = () => {
   const far = Math.max(...BORDER_M.map(([x, z]) => Math.hypot(x - f.x, z - f.z)));
   cut.dur = far / U.uCutV.value + 1.2;
   cut.on = true;
+  thump();
   // The country sits dark for a few seconds before the grid returns.
   cut.timer = setTimeout(relight, (cut.dur + 4) * 1000);
   busyUntil = performance.now() + (cut.dur + 22) * 1000;
@@ -2005,9 +2008,64 @@ function relight() {
     U.uHot.value = Math.exp(-(t - U.uCutT.value) / 20);
     U.uRipV.value = 60000; U.uRip.value.set(...BXL);
     U.uSwT.value = t;
+    strikeTicks();
   }
   U.uCutT.value = -100;
   wake();
+}
+
+/* ---------- sound ---------- */
+// Three beds: the ballast buzz close up, road hiss, and wind at altitude.
+const kit = audioKit({ gain: 0.5, noiseSeconds: 2 });
+let beds = null;
+function makeBeds(ac) {
+  const loop = (type, f, q) => {
+    const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
+    const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+    const g = ac.createGain(); g.gain.value = 0;
+    src.connect(fl).connect(g).connect(kit.out); src.start();
+    return g;
+  };
+  // Mains at 50 Hz gives a 100 Hz hum with odd harmonics.
+  const buzz = ac.createGain(); buzz.gain.value = 0; buzz.connect(kit.out);
+  [[100, 1], [300, 0.4], [500, 0.18], [700, 0.08]].forEach(([f, a]) => {
+    const o = ac.createOscillator(); o.frequency.value = f;
+    const g = ac.createGain(); g.gain.value = a;
+    o.connect(g).connect(buzz); o.start();
+  });
+  return { buzz, hiss: loop('bandpass', 900, 0.5), wind: loop('lowpass', 380, 0.7) };
+}
+function updateSound(t) {
+  const ac = kit.live();
+  if (!ac) return;
+  beds ||= makeBeds(ac);
+  const at = ac.currentTime, set = (g, v) => g.gain.setTargetAtTime(v, at, 0.12);
+  const near = 1 - ss(0, 0.28, z);
+  set(beds.buzz, 0.05 * jsLamp(t).l * near);
+  // Passing cars swell and fade the hiss.
+  set(beds.hiss, 0.5 * traffic * (1 - ss(0.1, 0.45, z)) * (0.7 + 0.3 * Math.sin(t * 1.3) * Math.sin(t * 0.47)));
+  set(beds.wind, 0.35 * ss(0.3, 1, z) * (0.6 + 0.4 * Math.sin(t * 0.31) ** 2));
+}
+// The ignitor ticks as a lamp strikes.
+function strikeTicks(n = 4) {
+  const ac = kit.live();
+  if (!ac) return;
+  for (let i = 0; i < n; i++) {
+    const at = ac.currentTime + i * 0.06 + Math.random() * 0.03;
+    const src = ac.createBufferSource(); src.buffer = kit.noise;
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+    const g = ac.createGain(); g.gain.setValueAtTime(0.5, at); g.gain.exponentialRampToValueAtTime(1e-4, at + 0.012);
+    src.connect(hp).connect(g).connect(kit.out); src.start(at, Math.random()); src.stop(at + 0.02);
+  }
+}
+// The grid drops with a low thump.
+function thump() {
+  const ac = kit.live();
+  if (!ac) return;
+  const at = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(70, at); o.frequency.exponentialRampToValueAtTime(30, at + 0.6);
+  g.gain.setValueAtTime(0.6, at); g.gain.exponentialRampToValueAtTime(1e-4, at + 0.8);
+  o.connect(g).connect(kit.out); o.start(at); o.stop(at + 0.85);
 }
 
 /* ---------- boot ---------- */
@@ -2057,7 +2115,7 @@ function tick(now) {
   } finally {
     const t = performance.now();
     if (visible && !document.hidden && (moving || press || t < busyUntil || awake(t) || clock.day)) raf = requestAnimationFrame(tick);
-    else lastT = 0;
+    else { lastT = 0; kit.rest(); }
   }
 }
 function wake() {
@@ -2198,13 +2256,14 @@ act.near = on => { land.material.uniforms.uNear.value = sky.material.uniforms.uN
 // Switch: all lamps die, or strike again in a ripple from the view centre.
 act.sw = () => {
   const t = nowS();
-  if (U.uOn.value) { U.uOn.value = 0; U.uOffT.value = t; busyUntil = performance.now() + 600; }
+  if (U.uOn.value) { U.uOn.value = 0; U.uOffT.value = t; busyUntil = performance.now() + 600; thump(); }
   else {
     // A lamp that went out moments ago is still hot and restrikes orange.
     U.uHot.value = Math.exp(-(t - U.uOffT.value) / 20);
     // Ripple speed grows with altitude, so the country lights in seconds.
     U.uRipV.value = Math.max(500, lastD * 0.25);
     U.uOn.value = 1; U.uSwT.value = t; U.uRip.value.set(tgt.x, tgt.z);
+    strikeTicks();
     busyUntil = performance.now() + 1000 * (8 + 300000 / U.uRipV.value);
   }
   wake();
