@@ -21,6 +21,8 @@
   opacity: 0; transition: opacity 0.8s ease;
 }
 .stage--windmap canvas.on { opacity: 1; }
+/* The chart layer draws over the wind and lets the pointer through. */
+.stage--windmap canvas.chart { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .stage--windmap canvas { transition: none; } }
 </style>
 </head>
@@ -54,7 +56,7 @@
 }
 </script>
 <script type="module">
-import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, linFit, css, quality, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -66,6 +68,7 @@ playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firs
 
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
+const TAU = Math.PI * 2;
 
 /* ---------- settings ---------- */
 // Settings persist per browser; storage is optional.
@@ -78,6 +81,8 @@ const opts = {
   trail: saved('trail') || 'long',
   hemi: saved('hemi') || 'north',
   iso: saved('iso') === '1',
+  chart: saved('chart') === '1',
+  marks: saved('marks') === '1',
 };
 const COUNT_OPTS = [{ value: 'few', label: 'Few' }, { value: 'some', label: 'Some' }, { value: 'many', label: 'Many' }];
 // The shell builds the bar; settings rows persist under stimming.windmap.<id>.
@@ -94,6 +99,8 @@ const ui = initPage({ id: 'windmap', bar: {
     { type: 'choice', id: 'trail', label: 'Trails', value: opts.trail, options: [{ value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }], persist: true, onPick: v => { opts.trail = v; wake(); } },
     { type: 'choice', id: 'hemi', label: 'Hemisphere', value: opts.hemi, options: [{ value: 'north', label: 'North' }, { value: 'south', label: 'South' }], persist: true, onPick: v => { opts.hemi = v; wake(); } },
     { type: 'toggle', id: 'iso', label: 'Isobars', value: opts.iso, persist: true, onToggle: on => { opts.iso = on; render(); wake(); } },
+    { type: 'toggle', id: 'chart', label: 'Chart', value: opts.chart, persist: true, onToggle: on => { opts.chart = on; render(); wake(); } },
+    { type: 'toggle', id: 'marks', label: 'Marks', value: opts.marks, persist: true, onToggle: on => { opts.marks = on; render(); wake(); } },
   ],
   quality: true,
   keys: [['drag', 'circle to spin a storm'], ['click', 'gust'], ['hold', 'high'], ['space', 'cyclone']],
@@ -1019,7 +1026,7 @@ function simStep(dt) {
   ageFlashes(dt);
   decayPass(dt);
   const adv = dt * pace();
-  if (!holdStorms) stepStorms(adv);
+  if (!holdStorms) { stepStorms(adv); stepTracks(); }
   eyePass(dt);
   if (CPU) { cpuStep(adv); return; }
   updatePass(adv);
@@ -1055,6 +1062,7 @@ function render() {
   gl.uniform1f(P.final.u.uTime, t);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.activeTexture(gl.TEXTURE0);
+  drawChart();
 }
 // Bloom: a bright pass at half size, then blurs at half and quarter size.
 // bloom[0] holds the near glow; bloom[3] holds the wide halo.
@@ -1085,6 +1093,55 @@ function makeBloom() {
   const hw = Math.max(1, W >> sh), hh = Math.max(1, H >> sh), qw = Math.max(1, W >> (sh + 1)), qh = Math.max(1, H >> (sh + 1));
   bloom = [target(hw, hh), target(hw, hh), target(qw, qh), target(qw, qh)];
 }
+
+/* ---------- chart layer ---------- */
+// A 2D canvas over the wind holds tracks, fronts and pressure marks.
+const chart = { canvas: document.createElement('canvas') };
+chart.canvas.className = 'chart on';
+chart.canvas.setAttribute('aria-hidden', 'true');
+canvas.after(chart.canvas);
+chart.ctx = chart.canvas.getContext('2d');
+const INK = [0.82, 0.02, 80];
+// World point to chart pixels; the y axis points up in the world.
+function toScreen(x, y) { return [x * S, H - y * S]; }
+// Each low drops a track dot every 1.5 s, at most 40.
+function stepTracks() {
+  for (const v of vortices) {
+    if (v.kind !== 'low') continue;
+    v.track ||= [];
+    const lastT = v.track.length ? v.track[v.track.length - 1].t : -1e9;
+    if (t - lastT >= 1.5) {
+      v.track.push({ x: v.x, y: v.y, g: Math.abs(v.g * v.amp), t });
+      if (v.track.length > 40) v.track.shift();
+    }
+  }
+}
+function drawChart() {
+  const c = chart.ctx;
+  c.clearRect(0, 0, W, H);
+  if (!opts.chart) return;
+  // Dots grow with strength and fade over 30 s.
+  for (const v of vortices) {
+    for (const d of v.track || []) {
+      const [px, py] = toScreen(d.x, d.y), a = 0.6 * Math.exp(-(t - d.t) / 30) * v.amp;
+      c.fillStyle = css(INK, a);
+      c.beginPath(); c.arc(px, py, (1 + 4 * clamp(d.g / 0.3)) * dpr, 0, TAU); c.fill();
+    }
+  }
+  drawFronts(c);
+  if (!opts.marks) return;
+  // L at each low and H at each high, in the slab face.
+  c.font = `600 ${14 * dpr}px "Iosevka Term Slab", ui-monospace, monospace`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (const v of live()) {
+    if (Math.abs(v.g * v.amp) < 0.01) continue;
+    const [px, py] = toScreen(v.x, v.y);
+    c.fillStyle = css(INK, 0.9 * v.amp);
+    c.fillText(v.kind === 'high' ? 'H' : 'L', px, py);
+  }
+}
+// Fronts arrive in the next task.
+function drawFronts() {}
 
 /* ---------- flashes ---------- */
 // A gust lights its point for 0.3 s; a merge ring runs 0.6 s.
@@ -1299,6 +1356,7 @@ function resize(force = false) {
   acc = [target(W, H), target(W, H)]; ai = 0;
   if (frame) drop(frame);
   frame = target(W, H);
+  chart.canvas.width = W; chart.canvas.height = H;
   makeBloom();
   // Storms keep their place relative to the frame width.
   vortices.forEach(v => { v.x *= AX / wx; v.y *= AY / wy; });
