@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: #000; }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Night vision</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Night vision: an image intensifier tube over a moonless field. */
+:root { --stage: #000; }
+.nvg canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  touch-action: none; cursor: grab;
+}
+.nvg.held canvas { cursor: grabbing; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/nvg.svg)"></span><span class="intro-name">Night vision</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--nvg nvg" id="view" tabindex="0" role="application" aria-label="Night vision goggles over a dark field. Drag to look around, scroll or pinch to magnify. Choose one, two or four tubes. I switches the infrared illuminator, C looks through your camera.">
+      <canvas id="c"></canvas>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Night vision</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { initPage, audioKit, fitCanvas, onQuality, quality, whenVisible, reduced } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { buildField } from './field.js';
+import { Tube } from './tube.js';
+
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+// The intro also waits for the first place to build.
+let worldUp;
+const worldReady = new Promise(r => { worldUp = r; });
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, worldReady]) });
+
+const view = document.getElementById('view');
+const canvas = document.getElementById('c');
+const st = { format: 'dual', ir: false, cam: false, gain: 0.55, phos: 'green', persist: 0.5, grain: 0.5, place: 'harbour', focus: 0 };
+
+const ui = initPage({ id: 'nvg', bar: {
+  choice: { label: 'Tubes', display: 'segments', value: 'dual',
+    options: [{ value: 'mono', label: 'Mono' }, { value: 'dual', label: 'Dual' }, { value: 'quad', label: 'Quad' }],
+    onPick: v => setFormat(v) },
+  // Manual gain: brighter and grainier.
+  slider: { label: 'Gain', min: 0, max: 1, step: 0.01, value: 0.55, onInput: v => { st.gain = v; } },
+  actions: [
+    { verb: 'ir', label: 'IR', key: 'I', onPress: () => toggleIr() },
+    { verb: 'camera', label: 'Camera', key: 'C', onPress: () => toggleCam() },
+  ],
+  settings: [
+    { type: 'choice', id: 'place', label: 'Place', value: 'harbour', persist: true,
+      options: [{ value: 'harbour', label: 'Harbour' }, { value: 'field', label: 'Field' }, { value: 'room', label: 'Room' }, { value: 'raid', label: 'Raid' }], onPick: v => setPlace(v) },
+    // Objective focus in dioptres: zero is infinity.
+    { type: 'slider', id: 'focus', label: 'Focus', min: 0, max: 1, step: 0.01, value: 0, onInput: v => { st.focus = v; } },
+    { type: 'choice', id: 'phos', label: 'Phosphor', value: 'green', persist: true,
+      options: [{ value: 'green', label: 'Green' }, { value: 'white', label: 'White' }], onPick: v => { st.phos = v; } },
+    { type: 'slider', id: 'persist', label: 'Afterglow', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => { st.persist = v; } },
+    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => { st.grain = v; } },
+  ],
+  reset: () => resetAll(),
+  quality: true,
+  keys: [['drag', 'look'], ['scroll', 'magnify'], ['double-click', 'focus'], ['I', 'illuminator']],
+} });
+st.phos = ui.setting('phos').value;
+st.persist = ui.setting('persist').value;
+st.grain = ui.setting('grain').value;
+st.place = ui.setting('place').value;
+
+// Action chips show their on state.
+const chip = verb => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => b.textContent.trim().toLowerCase().startsWith(verb));
+const press = (verb, on) => chip(verb)?.setAttribute('aria-pressed', String(on));
+
+/* ---------- renderer ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false });
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.setPixelRatio(1);
+renderer.autoClear = false;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const tube = new Tube(renderer);
+
+/* ---------- places ---------- */
+// Each place builds once, on first visit.
+const BUILD = {
+  field: async () => buildField({ grass: quality() === 'high' ? 85000 : 55000 }),
+  harbour: async () => (await import('./harbour.js')).buildHarbour(),
+  room: async () => (await import('./apartment.js')).buildApartment(),
+  raid: async () => (await import('./raid.js')).buildRaid(),
+};
+const worlds = {};
+let world = null, sceneScale = 1;
+async function place(name) {
+  worlds[name] ||= await BUILD[name]();
+  return worlds[name];
+}
+// Each place sets its own start view and objective focus.
+function enter() {
+  world.setPx(sceneScale);
+  yaw = world.look.yaw0 ?? 0; pitch = world.look.start ?? 0.04;
+  st.focus = world.focus ? Math.min(1, 1 / (world.focus * 2.5)) : 0;
+  ui.setting('focus').set(st.focus);
+  renderer.shadowMap.enabled = !!world.shadows;
+}
+async function setPlace(v) {
+  st.place = v;
+  const w = await place(v);
+  if (st.place !== v) return;
+  world = w;
+  enter();
+  sfx.clunk();
+  tube.cold();
+  powerOn(0.2);
+}
+
+/* ---------- layout ---------- */
+// Each format places tubes of diameter D in a row.
+const FORMATS = {
+  mono: { n: 1, sep: 0, fit: 0.94 },
+  dual: { n: 2, sep: 0.66, fit: 0.95 },
+  quad: { n: 4, sep: 0.8, fit: 0.985 },
+};
+// Per-tube gain trims: no two tubes match.
+const TRIM = [1.0, 0.93, 1.05, 0.96];
+let css = { w: 1, h: 1 }, D = 1, zoom = 1, zoomTo = 1;
+
+function layout() {
+  const f = FORMATS[st.format];
+  const span = 1 + f.sep * (f.n - 1);
+  // A tall stage stacks the tubes in a column.
+  const tall = css.h > css.w * 1.15;
+  const along = tall ? css.h : css.w, across = tall ? css.w : css.h;
+  D = Math.min(across * f.fit, (along * f.fit) / span);
+  const cx = css.w / 2, cy = css.h / 2, list = [];
+  for (let i = 0; i < f.n; i++) {
+    const o = (i - (f.n - 1) / 2) * f.sep * D;
+    list.push({ x: tall ? cx : cx + o, y: tall ? cy - o : cy, r: D / 2, trim: TRIM[i] });
+  }
+  tube.setTubes(list);
+}
+
+function resize() {
+  const r = view.getBoundingClientRect();
+  css = { w: Math.max(1, r.width), h: Math.max(1, r.height) };
+  const { W, H } = fitCanvas(canvas, { maxDpr: 2, budget: 2.4e6 });
+  renderer.setSize(W, H, false);
+  const hi = quality() === 'high';
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  let s = hi ? dpr * 0.85 : 1;
+  const cap = hi ? 3.2e6 : 1.25e6;
+  s = Math.min(s, Math.sqrt(cap / (css.w * css.h)));
+  // Grain: about one CSS pixel per cell, finer on High.
+  tube.resize(css.w, css.h, s, hi ? 0.95 : 1.2, 4);
+  sceneScale = s;
+  world?.setPx(s);
+  layout();
+  tube.cold();
+  powerOn(0.25);
+}
+
+/* ---------- look ---------- */
+// Grab the world and drag it; one tube spans forty degrees.
+let yaw = 0, pitch = 0.04, yawV = 0, pitchV = 0;
+const drag = { id: null, x: 0, y: 0 };
+const pinch = new Map();
+canvas.addEventListener('pointerdown', e => {
+  pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (drag.id !== null) return;
+  drag.id = e.pointerId; drag.x = e.clientX; drag.y = e.clientY;
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  view.classList.add('held');
+});
+canvas.addEventListener('pointermove', e => {
+  if (pinch.size === 2 && pinch.has(e.pointerId)) {
+    const [a, b] = [...pinch.values()];
+    const d0 = Math.hypot(a.x - b.x, a.y - b.y);
+    pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const [c, d] = [...pinch.values()];
+    zoomTo = Math.min(3, Math.max(1, zoomTo * Math.hypot(c.x - d.x, c.y - d.y) / Math.max(d0, 1)));
+    return;
+  }
+  if (e.pointerId !== drag.id) return;
+  const k = (40 / D) * (Math.PI / 180) / zoom;
+  yaw += (e.clientX - drag.x) * k;
+  pitch += (e.clientY - drag.y) * k;
+  const lim = world?.look ?? { yaw: [-1.3, 1.3], pitch: [-0.3, 0.6] };
+  yaw = Math.max(lim.yaw[0], Math.min(lim.yaw[1], yaw));
+  pitch = Math.max(lim.pitch[0], Math.min(lim.pitch[1], pitch));
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+const release = e => {
+  pinch.delete(e.pointerId);
+  if (e.pointerId !== drag.id) return;
+  drag.id = null;
+  view.classList.remove('held');
+};
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => canvas.addEventListener(t, release));
+// Double-click focuses the objective on what sits under the pointer.
+canvas.addEventListener('dblclick', e => {
+  if (st.cam) return;
+  const r = canvas.getBoundingClientRect();
+  const d = tube.depthAt(e.clientX - r.left, e.clientY - r.top);
+  const v = d > 0 && d < 4000 ? Math.min(1, 1 / (d * 2.5)) : 0;
+  st.focus = v;
+  ui.setting('focus').set(v);
+  sfx.click();
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomTo = Math.min(3, Math.max(1, zoomTo * Math.exp(-e.deltaY * 0.0015)));
+}, { passive: false });
+
+/* ---------- power ---------- */
+// The tube warms up over a fraction of a second.
+let powerAt = 0, clock = 0;
+function powerOn(delay = 0) { powerAt = clock + delay; }
+function setFormat(v) {
+  st.format = v;
+  sfx.clunk();
+  layout();
+  tube.cold();
+  powerOn(0.18);
+}
+
+/* ---------- illuminator and camera ---------- */
+function toggleIr() {
+  st.ir = !st.ir;
+  press('ir', st.ir);
+  sfx.click();
+}
+
+let video = null, stream = null, vtex = null;
+async function toggleCam() {
+  if (st.cam) return camOff();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+  } catch (err) {
+    press('camera', false);
+    return;
+  }
+  video ||= Object.assign(document.createElement('video'), { muted: true, playsInline: true });
+  video.srcObject = stream;
+  await video.play().catch(() => {});
+  vtex?.dispose();
+  vtex = new THREE.VideoTexture(video);
+  vtex.minFilter = vtex.magFilter = THREE.LinearFilter;
+  const facing = stream.getVideoTracks()[0]?.getSettings().facingMode;
+  tube.sigU.tCam.value = vtex;
+  tube.sigU.uMirror.value = facing === 'environment' ? 0 : 1;
+  tube.sigU.uCam.value = 1;
+  st.cam = true;
+  press('camera', true);
+  sfx.clunk();
+  tube.cold();
+  powerOn(0.15);
+}
+function camOff() {
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+  tube.sigU.uCam.value = 0;
+  st.cam = false;
+  press('camera', false);
+  sfx.clunk();
+  tube.cold();
+  powerOn(0.15);
+}
+// The video fills the stage, cropped like CSS cover.
+function camFit() {
+  if (!video?.videoWidth) return;
+  const A = css.w / css.h, V = video.videoWidth / video.videoHeight;
+  let sx = 1, sy = 1;
+  if (V > A) sx = A / V; else sy = V / A;
+  sx /= zoom; sy /= zoom;
+  tube.sigU.uCamXf.value.set(sx, sy, 0.5 - sx / 2, 0.5 - sy / 2);
+  tube.sigU.uCamExpo.value = st.ir ? 30 : 14;
+}
+
+/* ---------- sound ---------- */
+// The tube's power supply whines high; switches click and clunk.
+const kit = audioKit({ keys: new Set(['i', 'I', 'c', 'C']) });
+const sfx = (() => {
+  let whine = null, wGain = null;
+  function ensure() {
+    const ac = kit.live();
+    if (!ac) return null;
+    if (!whine) {
+      whine = ac.createOscillator();
+      whine.frequency.value = 11800;
+      const lfo = ac.createOscillator(), lg = ac.createGain();
+      lfo.frequency.value = 7.3; lg.gain.value = 24;
+      lfo.connect(lg).connect(whine.frequency);
+      wGain = ac.createGain();
+      wGain.gain.value = 0;
+      whine.connect(wGain).connect(kit.out);
+      whine.start(); lfo.start();
+    }
+    return ac;
+  }
+  function burst(dur, f, q, level) {
+    const ac = ensure();
+    if (!ac || !kit.noise) return;
+    const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = kit.noise;
+    bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+    const t = ac.currentTime;
+    g.gain.setValueAtTime(level, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp).connect(g).connect(kit.out);
+    src.start(t, Math.random() * 0.5, dur + 0.02);
+  }
+  return {
+    click() { burst(0.025, 3200, 1.2, 0.5); },
+    clunk() {
+      burst(0.09, 180, 0.8, 0.9);
+      burst(0.03, 1400, 2, 0.25);
+      const ac = ensure();
+      if (!ac) return;
+      // The whine drops out and climbs back as the tube restarts.
+      const t = ac.currentTime;
+      whine.frequency.cancelScheduledValues(t);
+      whine.frequency.setValueAtTime(3000, t + 0.15);
+      whine.frequency.exponentialRampToValueAtTime(11800, t + 0.9);
+    },
+    level(v) {
+      if (!ensure()) return;
+      wGain.gain.setTargetAtTime(v, kit.ac.currentTime, 0.08);
+    },
+  };
+})();
+
+/* ---------- reset ---------- */
+function resetAll() {
+  zoomTo = 1;
+  if (world) enter();
+  ui.slider.set(0.55); st.gain = 0.55;
+  if (st.ir) toggleIr();
+  if (st.cam) camOff();
+  ui.choice.set('dual');
+  setFormat('dual');
+}
+
+/* ---------- loop ---------- */
+const sway = { x: 0, y: 0 };
+let last = performance.now(), running = false, timeOffset = 0, fpsAvg = 60;
+const pupil = new THREE.Vector2();
+let focusD = 0;
+function frame(now) {
+  if (!world) return;
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  clock += dt;
+  fpsAvg += ((dt > 0 ? 1 / dt : 60) - fpsAvg) * 0.05;
+  const t = clock + timeOffset;
+
+  // A head-mounted view drifts with breath and posture.
+  const calm = reduced() ? 0 : 1;
+  sway.x = calm * (0.004 * Math.sin(t * 0.31) + 0.0025 * Math.sin(t * 0.83 + 1.3));
+  sway.y = calm * (0.003 * Math.sin(t * 0.23 + 0.4) + 0.002 * Math.sin(t * 1.1));
+  zoom += (zoomTo - zoom) * Math.min(1, dt * 8);
+
+  const cam = world.camera;
+  cam.position.copy(world.eye);
+  cam.rotation.order = 'YXZ';
+  cam.rotation.set(pitch + sway.y, yaw + sway.x, 0);
+  // Focal length so that one tube spans forty degrees.
+  const fpx = (D / 2) / Math.tan(20 * Math.PI / 180) * zoom;
+  cam.fov = 2 * Math.atan(css.h / 2 / fpx) * 180 / Math.PI;
+  cam.aspect = css.w / css.h;
+  cam.updateProjectionMatrix();
+  // The focus ring turns with a little lag.
+  focusD += (st.focus * 2.5 - focusD) * Math.min(1, dt * 7);
+  tube.setFocus(focusD > 1e-4 ? 1 / focusD : Infinity, fpx);
+
+  if (!st.cam) world.update(t, dt, { irOn: st.ir });
+  else camFit();
+
+  // The eye sits a little off the eyepiece axis and wanders.
+  pupil.set(Math.sin(t * 0.17) * 0.12 + sway.x * 30, Math.cos(t * 0.13) * 0.1 - 0.08 + sway.y * 30);
+
+  const pAge = clock - powerAt;
+  const power = pAge < 0 ? 0 : 1 - Math.exp(-pAge / 0.28);
+  const tu = tube.mTube.uniforms;
+  tu.uPower.value = power;
+  // A cold tube sparks hard while it comes up.
+  tu.uScint.value = 0.00008 * (1 + 30 * Math.exp(-Math.max(pAge, 0) / 0.25));
+  tu.uKq.value = 0.55 * Math.pow(4, (0.5 - st.grain) * 2);
+  // Afterglow sets the slow phosphor tail: its share and its time.
+  tu.uTail.value = 0.012 + 0.09 * st.persist;
+  tu.uTau.value = 0.05 + 0.2 * st.persist;
+  tube.mGain.uniforms.uGmax.value = 0.022 * Math.pow(14, st.gain);
+  tube.sigU.uCamExpo.value = st.ir ? 30 : 14;
+  // A lit harbour gathers more photons than a starlit field.
+  tube.sigU.uExpo.value = world.expo ?? 1;
+  const ou = tube.mOut.uniforms;
+  ou.uPhos.value += ((st.phos === 'white' ? 1 : 0) - ou.uPhos.value) * Math.min(1, dt * 10);
+  ou.uPupil.value.copy(pupil);
+  ou.uFlick.value = reduced() ? 0 : 1;
+
+  tube.render(world.scene, cam, dt, t, world.pre);
+  sfx.level(0.006 + 0.012 * st.gain * power);
+}
+
+function setRunning(on) {
+  if (on === running) return;
+  running = on;
+  last = performance.now();
+  renderer.setAnimationLoop(on ? frame : null);
+  if (!on) sfx.level(0);
+}
+
+new ResizeObserver(() => resize()).observe(view);
+onQuality(() => resize());
+resize();
+world = await place(st.place).catch(() => place('field'));
+enter();
+worldUp();
+whenVisible(view, setRunning);
+
+// QA hooks: jump the clock, flip state.
+window.__qa = { gain() {
+  const b = new Uint16Array(16);
+  renderer.readRenderTargetPixels(tube.gain[0], 0, 0, 4, 1, b);
+  return [...b].map(v => +THREE.DataUtils.fromHalfFloat(v).toFixed(3));
+}, get world() { return world; }, zoom(v) { zoomTo = v; }, place: v => { ui.setting("place").set(v); return setPlace(v); }, jump(s) { timeOffset += s; }, time: () => clock + timeOffset, fps: () => fpsAvg, ir: toggleIr, format: v => { ui.choice.set(v); setFormat(v); }, st, tube, look(y, p) { yaw = y; pitch = p; } };
+</script>
+</body>
+</html>
