@@ -60,6 +60,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, oklchLinear } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { BEERS as ALL_BEERS } from './catalogue.js?v=3';
@@ -756,6 +757,9 @@ uniform vec2 uRes;
 uniform vec3 uKey, uSigma;
 uniform float uLevel, uCold, uMistAge;
 uniform vec4 uMetal;
+uniform sampler2D uLogoTex;
+uniform vec3 uLogo;     // centre height (cm), width (cm), on or off
+uniform vec3 uLogoCol;
 varying vec3 vW, vN, vL;
 void main() {
   vec3 n = normalize(vN), v = normalize(cameraPosition - vW);
@@ -805,6 +809,18 @@ void main() {
   float inner = smoothstep(0.8, 0.85, edge) * (1.0 - smoothstep(0.87, 0.91, edge)) * (1.0 - solid);
   col += (through * 0.5 + uLamp * 0.04) * inner;
   // The lip is a rounded bead: a crisp highlight on top, a darker band just under it.
+  // The printed logo wraps the glass: u runs along the wall's arc, v up its height.
+  if (uLogo.z > 0.5 && vL.z > 0.0) {
+    float arc = atan(vL.x, vL.z) * length(vL.xz);
+    vec2 q = vec2(arc / uLogo.y + 0.5, (vL.y - uLogo.x) / (uLogo.y * 0.5) + 0.5);
+    if (q.x > 0.0 && q.x < 1.0 && q.y > 0.0 && q.y < 1.0) {
+      float a = texture2D(uLogoTex, q).a;
+      // Ceramic print: matt ink, lit by the key, glowing a little with the lamp behind.
+      float diff = 0.3 + 0.7 * max(dot(n, normalize(KEY_DIR)), 0.0);
+      vec3 ink = uLogoCol * (0.1 + 0.7 * diff) + uLamp * uLogoCol * 0.12;
+      col = mix(col, ink, a * 0.9);
+    }
+  }
   // A silver or gold rim: a band of metal, lit by the key and the lamp.
   if (uMetal.a > 0.5) {
     float band = smoothstep(uGH - 0.42, uGH - 0.36, vL.y);
@@ -1002,6 +1018,35 @@ function fizzGeometry() {
 }
 
 /* ---------- labels ---------- */
+const logoCanvas = document.createElement('canvas');
+logoCanvas.width = 1024; logoCanvas.height = 512;
+let logoTex = null;
+// The glass's print: a wordmark per beer; generated type stands in for the real artwork.
+const LOGOS = {
+  duvel: { col: '#C8102E', w: 5.6, at: 0.6, draw(c) { c.font = 'italic 900 250px Georgia, "Times New Roman", serif'; c.fillText('Duvel', 512, 270); } },
+  kwak: { col: '#F4F1EA', w: 6.2, at: 0.8, draw(c) {
+    c.font = 'italic 700 150px "Snell Roundhand", "Brush Script MT", Georgia, serif'; c.fillText('Pauwel Kwak', 512, 235);
+    c.lineWidth = 7; c.beginPath(); c.moveTo(150, 345); c.bezierCurveTo(380, 395, 640, 300, 880, 350); c.stroke();
+  } },
+  averbode: { col: '#565C62', w: 5.2, at: 0.66, draw(c) {
+    // A four-point compass star over the name.
+    c.save(); c.translate(512, 120); c.lineWidth = 8;
+    c.beginPath(); c.moveTo(0, -72); c.lineTo(14, -14); c.lineTo(72, 0); c.lineTo(14, 14); c.lineTo(0, 72); c.lineTo(-14, 14); c.lineTo(-72, 0); c.lineTo(-14, -14); c.closePath(); c.stroke(); c.restore();
+    c.font = '500 132px Georgia, "Times New Roman", serif'; c.fillText('AVERBODE', 512, 300);
+    c.font = '500 52px Georgia, "Times New Roman", serif'; c.fillText('ABDIJ  \u00b7  ABBAYE', 512, 420);
+  } },
+};
+function drawLogo(b, G) {
+  const L = LOGOS[b.id], u = glassMesh.material.uniforms, c = logoCanvas.getContext('2d');
+  c.clearRect(0, 0, 1024, 512);
+  if (!L) { u.uLogo.value.set(0, 1, 0); logoTex.needsUpdate = true; return; }
+  c.fillStyle = c.strokeStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  if ('letterSpacing' in c) c.letterSpacing = b.id === 'averbode' ? '10px' : '0px';
+  L.draw(c);
+  logoTex.needsUpdate = true;
+  u.uLogo.value.set(G.ybot + L.at * (G.h - G.ybot), L.w, 1);
+  u.uLogoCol.value.set(...hexLin(L.col));
+}
 const labCanvas = document.createElement('canvas');
 labCanvas.width = 1024;
 labCanvas.height = 512;
@@ -1145,6 +1190,9 @@ function build() {
   const lin = renderer.extensions.has('OES_texture_float_linear');
   gTex.magFilter = gTex.minFilter = lin ? THREE.LinearFilter : THREE.NearestFilter;
   U.uGP.value = gTex;
+  logoTex = new THREE.CanvasTexture(logoCanvas);
+  logoTex.colorSpace = THREE.NoColorSpace;
+  logoTex.anisotropy = 8;
   labTex = new THREE.CanvasTexture(labCanvas);
   labTex.colorSpace = THREE.NoColorSpace;
   labTex.anisotropy = 8;
@@ -1209,7 +1257,7 @@ function build() {
   glassMask.renderOrder = -5;
   mid.add(glassMask, glassBack, beerMesh, fizzMesh, foamMesh, streamMesh);
   // The stand draws in the middle layer (seen through the glass) and again in front of it.
-  const wood = new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.6, metalness: 0, envMap: liquid.envMap, envMapIntensity: 0.5 });
+  const wood = new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.82, metalness: 0, envMap: liquid.envMap, envMapIntensity: 0.25 });
   stands.push(buildStand(wood), buildStand(wood));
   stands[0].traverse(o => { o.renderOrder = 0.5; });
   stands[1].traverse(o => { o.renderOrder = 4; });
@@ -1220,7 +1268,7 @@ function build() {
   top.add(fullQuad(showTex(rtScene.texture), -10));
   glassMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
     vertexShader: GLASS_VS, fragmentShader: GLASS_FS, depthWrite: true, side: THREE.DoubleSide,
-    uniforms: { ...U, uScene: { value: rtScene.texture }, uMetal: { value: new THREE.Vector4() }, uChill: { value: 0.5 }, uCold: { value: 0 }, uMistAge: { value: 0.2 } },
+    uniforms: { ...U, uScene: { value: rtScene.texture }, uMetal: { value: new THREE.Vector4() }, uLogoTex: { value: logoTex }, uLogo: { value: new THREE.Vector3() }, uLogoCol: { value: new THREE.Vector3(1, 1, 1) }, uChill: { value: 0.5 }, uCold: { value: 0 }, uMistAge: { value: 0.2 } },
   }));
   top.add(glassMesh);
   // The lifted bottle and the jet draw again after the glass, depth-tested:
@@ -1370,6 +1418,7 @@ function freshGlass() {
 /* ---------- the wooden stand (Kwak) ---------- */
 // The glass's round bottom rests in the base; the top plate holds its waist.
 const STAND_LIFT = 1.0, stands = [];
+let logoG = null;
 function liftOutline(g, lift) {
   const src = g.outline, n = src.length, st = src[1][0] - src[0][0], H = g.h + lift, pts = [];
   for (let i = 0; i < n; i++) {
@@ -1384,12 +1433,12 @@ function woodTexture() {
   const cv = document.createElement('canvas');
   cv.width = cv.height = 256;
   const c = cv.getContext('2d');
-  c.fillStyle = '#c99a62'; c.fillRect(0, 0, 256, 256);
+  c.fillStyle = '#5a3a22'; c.fillRect(0, 0, 256, 256);
   // Long grain lines, lighter and darker.
   let seed = 7;
   const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   for (let i = 0; i < 90; i++) {
-    c.strokeStyle = `rgba(${r() < 0.5 ? '120,74,34' : '236,196,140'},${0.06 + 0.14 * r()})`;
+    c.strokeStyle = `rgba(${r() < 0.6 ? '34,20,10' : '150,104,62'},${0.08 + 0.16 * r()})`;
     c.lineWidth = 0.6 + 2.2 * r();
     const y = r() * 256, w = 4 * r();
     c.beginPath(); c.moveTo(0, y); c.bezierCurveTo(85, y + w, 170, y - w, 256, y + (r() - 0.5) * 3); c.stroke();
@@ -1402,27 +1451,28 @@ function woodTexture() {
 }
 function buildStand(wood) {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(12.6, 1.4, 9.2), wood);
-  base.position.set(2.1, 0.7, 0);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 11.3, 32), wood);
-  post.position.set(6.0, 1.4 + 5.65, 0);
-  // The top plate: a slot open at the front lets the glass slide in.
-  const sh = new THREE.Shape(), R = 2.05;
-  sh.moveTo(-3.4, 3.7); sh.lineTo(7.6, 3.7); sh.lineTo(7.6, -3.7); sh.lineTo(R, -3.7); sh.lineTo(R, 0);
+  // The base is as thick as the lift, so the bulb rests on top of it.
+  const base = new THREE.Mesh(new RoundedBoxGeometry(11.4, STAND_LIFT, 8.4, 4, 0.32), wood);
+  base.position.set(1.9, STAND_LIFT / 2, 0);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 9.9, 32), wood);
+  post.position.set(5.6, STAND_LIFT + 4.95, 0);
+  // The top plate holds the waist; a slot open at the front lets the glass slide in.
+  const sh = new THREE.Shape(), R = 1.85;
+  sh.moveTo(-2.9, 3.2); sh.lineTo(6.9, 3.2); sh.lineTo(6.9, -3.2); sh.lineTo(R, -3.2); sh.lineTo(R, 0);
   sh.absarc(0, 0, R, 0, Math.PI, false);
-  sh.lineTo(-R, -3.7); sh.lineTo(-3.4, -3.7); sh.closePath();
-  const pg = new THREE.ExtrudeGeometry(sh, { depth: 1.5, bevelEnabled: true, bevelSize: 0.1, bevelThickness: 0.1, bevelSegments: 2, curveSegments: 28 }).rotateX(-Math.PI / 2);
+  sh.lineTo(-R, -3.2); sh.lineTo(-2.9, -3.2); sh.closePath();
+  const pg = new THREE.ExtrudeGeometry(sh, { depth: 0.8, bevelEnabled: true, bevelSize: 0.16, bevelThickness: 0.16, bevelSegments: 4, curveSegments: 32 }).rotateX(-Math.PI / 2);
   const uv = pg.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.09, uv.getY(i) * 0.09);
   const plate = new THREE.Mesh(pg, wood);
-  plate.position.y = 12.7;
+  plate.position.y = 10.9;
   g.add(base, post, plate);
   g.visible = false;
   return g;
 }
 // Lights for three's own materials: the key softbox, the lamp behind, a little fill.
 function addLights(scene) {
-  const key = new THREE.DirectionalLight(0xfff1e2, 3.4);
+  const key = new THREE.DirectionalLight(0xfff1e2, 2.2);
   key.position.set(-15, 15, 21.6);
   const rim = new THREE.DirectionalLight(0xffb060, 2.2);
   rim.position.set(-3, 8, -30);
@@ -1465,20 +1515,25 @@ function setBeer(id) {
   for (const st of stands) st.visible = !!G.stand;
   const mc = G.metal === 'gold' ? [1.0, 0.78, 0.36] : [0.86, 0.87, 0.9];
   glassMesh.material.uniforms.uMetal.value.set(...mc, G.metal ? 1 : 0);
+  drawLogo(beer, G);
+  logoG = G;
   const B = beer.bottle.outline ? beer.bottle : { ...beer.bottle, outline: bottleFromSizes(beer.bottle) };
   const gv = vesselProfile(G.outline, GMAX, G.ybot, () => G.wall);
   glass.load(gv);
   const bv = vesselProfile(B.outline, BMAX, B.kind === 'champ' ? 1.8 : 0.6, ro => (ro < 1.7 ? 0.42 : 0.3));
   bottleV.load(bv);
   // The measured colour, as in photos: Duvel reads pale straw gold.
-  look.sigma = sigmaFor(beer).map(x => x * 1.05);
+  // Pale beers keep the measured colour; amber and dark ones run richer, as they read by eye.
+  const rich = 1.05 + 1.7 * smooth(8, 35, beer.ebc ?? 8);
+  look.sigma = sigmaFor(beer).map(x => x * rich);
   look.foam = hexLin(beer.foam);
   gTex.image.data.set(glass.prof);
   gTex.needsUpdate = true;
   U.uGH.value = glass.h;
   U.uGYb.value = glass.ybot;
   U.uSigma.value.set(...look.sigma);
-  U.uHaze.value = beer.haze;
+  // Malt colour brings body: a little scatter keeps amber beer from reading as tinted glass.
+  U.uHaze.value = Math.max(beer.haze, 0.16 * smooth(12, 40, beer.ebc ?? 8));
   glassMesh.geometry.dispose();
   glassMesh.geometry = glassGeometry(G.outline, glass.prof);
   glassBack.geometry = glassMesh.geometry;
@@ -1902,7 +1957,7 @@ try {
 }
 markReady();
 wake();
-document.fonts.ready.then(() => { drawLabel(beer); uploadLabel(); live(); });
+document.fonts.ready.then(() => { drawLabel(beer); uploadLabel(); if (logoG) drawLogo(beer, logoG); live(); });
 
 canvas.addEventListener('pointerdown', down);
 // A mouse hover leans the camera round the glass.

@@ -119,3 +119,9 @@ Known, not fixed:
   - Background blur: radius down from 2.2 to 1.35 px, with per-pixel jitter in the taps so it breaks into grain; film grain about doubled.
 - [ ] Kwak: the stand's base draws over the bulb's foot; cut a hollow.
 - [ ] Label art for all three is still generated type, not the real artwork.
+
+- Materials, stand, glass prints (2026-11-09, Tom: Kwak is way too translucent; refresh the holder or drop it; shrink-wrap the logos on the glasses):
+  - Beer body by colour: absorption runs 1.05x at EBC 8 up to 2.75x at EBC 35, and amber or darker beer gets a floor of scatter (haze up to 0.16). Duvel (EBC 7) is unchanged; Kwak (EBC 32) reads deep red-amber and no longer shows the room through it.
+  - The stand is kept and restyled: dark oiled walnut, a rounded base, a thinner post and plate, matt. The base is as thick as the lift, so the bulb rests on it.
+  - Glass prints: a wordmark per beer is drawn to a canvas and wrapped round the glass in the glass shader (u along the wall's arc, v up its height), as matt ceramic ink. Duvel red, Kwak white script, Averbode charcoal with its compass star. Generated type, not the real artwork.
+- [ ] Kwak's white print is hard to read against its head; real glasses have the same problem, but check.
