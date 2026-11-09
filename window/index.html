@@ -383,14 +383,20 @@ function glow(src) {
 // The bezel's light: the whole outside, softened, at a quarter size.
 // It shares the glow targets' size; the strobe and the bolts reach it the same frame.
 const envRT = [null, null];
+// It steps down twice, to a sixteenth, so it carries broad colour and no shapes.
+const envSmall = [null, null];
 function envLight(src) {
-  const w = glowRT[0].width, h = glowRT[0].height;
-  if (!envRT[0] || envRT[0].width !== w || envRT[0].height !== h) { envRT.forEach(r => r && r.dispose()); envRT[0] = rt(w, h); envRT[1] = rt(w, h); }
-  const [a, b] = envRT, tx = [1 / w, 1 / h];
-  UG.tex(PB.u.uSrc, src.texture); UG.uniform2f(PB.u.uTexel, ...tx); UG.uniform1f(PB.u.uThr, 0);
+  const w0 = glowRT[0].width, h0 = glowRT[0].height;
+  if (!envRT[0] || envRT[0].width !== w0 || envRT[0].height !== h0) { envRT.forEach(r => r && r.dispose()); envRT[0] = rt(w0, h0); envRT[1] = rt(w0, h0); }
+  UG.tex(PB.u.uSrc, src.texture); UG.uniform2f(PB.u.uTexel, 1 / w0, 1 / h0); UG.uniform1f(PB.u.uThr, 0);
+  renderer.setRenderTarget(envRT[0]); renderer.render(PB.scene, quadCam);
+  const w = Math.max(1, w0 >> 2), h = Math.max(1, h0 >> 2);
+  if (!envSmall[0] || envSmall[0].width !== w || envSmall[0].height !== h) { envSmall.forEach(r => r && r.dispose()); envSmall[0] = rt(w, h); envSmall[1] = rt(w, h); }
+  const [a, b] = envSmall, tx = [1 / w, 1 / h];
+  UG.tex(PB.u.uSrc, envRT[0].texture); UG.uniform2f(PB.u.uTexel, ...tx);
   renderer.setRenderTarget(a); renderer.render(PB.scene, quadCam);
   UG.uniform2f(PBl.u.uTexel, ...tx);
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     UG.tex(PBl.u.uSrc, a.texture); UG.uniform2f(PBl.u.uDir, 1, 0);
     renderer.setRenderTarget(b); renderer.render(PBl.scene, quadCam);
     UG.tex(PBl.u.uSrc, b.texture); UG.uniform2f(PBl.u.uDir, 0, 1);
@@ -1255,6 +1261,7 @@ function render() {
   shared(u);
   UG.tex(u.uOut, lit.texture);
   UG.tex(u.uEnv, env.texture); UG.uniform1f(u.uEnvOn, 1);
+  UG.uniform3fv(u.uSunC, sky.sunL);
   UG.uniform1f(u.uDpr, dpr);
   UG.uniform1f(u.uDimE, dim.edge); UG.uniform1f(u.uDimC, dim.core);
   UG.uniform1f(u.uFlash, flash);
