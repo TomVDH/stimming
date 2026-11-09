@@ -184,9 +184,9 @@ Four visible controls.
 
 ### Task 3: Tube, moths and cars
 
-- [ ] Tube flicker and strike, end glow, Tube slider.
-- [ ] Moth spirals, scatter, landing on sleep.
-- [ ] Car pass with spot shadow, beam cones and tail lights; `+ Car`; auto cars.
+- [x] Tube flicker and strike, end glow, Tube slider.
+- [x] Moth spirals, scatter, landing on sleep.
+- [x] Car pass with spot shadow, beam cones and tail lights; `+ Car`; auto cars.
 - [ ] Commit: `Broodautomaat: tube, moths and passing cars`.
 
 ### Task 4: Rain

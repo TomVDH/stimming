@@ -549,8 +549,11 @@ const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.76, 12).r
 tube.position.copy(TUBE_POS);
 STOP.add(tube);
 // The end caps stay dark grey; a dying tube glows orange there.
+const capMats = [];
 for (const s of [-1, 1]) {
-  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.04, 10).rotateZ(Math.PI / 2), trim);
+  const cm = new THREE.MeshBasicMaterial({ color: 0x222222 });
+  capMats.push(cm);
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.04, 10).rotateZ(Math.PI / 2), cm);
   c.position.set(TUBE_POS.x + s * 0.4, TUBE_POS.y, TUBE_POS.z);
   STOP.add(c);
 }
@@ -699,26 +702,277 @@ function setView(v) {
 }
 setView('road');
 
+/* ---------- easing ---------- */
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const inOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const inQuad = k => k * k;
+
 /* ---------- moths ---------- */
-// Soft points round the tube; the flight comes in Task 3.
-const MOTHS = 24;
+// Each moth keeps a fixed angle to the light, so it circles the tube.
+// Now and then one dives in and ticks the glass; a scatter throws them wide.
+// On sleep they land on the lit cabinet; any input lifts them again.
+const MOTHS = 24, TAU = Math.PI * 2;
+const ORBIT = TUBE_POS.clone().add(new THREE.Vector3(0, 0.12, 0.22));
+const mothList = Array.from({ length: MOTHS }, () => ({
+  th: rnd() * TAU, w: (1.2 + rnd() * 1.6) * (rnd() < 0.5 ? -1 : 1), r0: 0.22 + rnd() * 0.5,
+  tilt: 0.3 + rnd() * 1.1, ph: rnd() * 100, kick: 0, perch: 0,
+  // A landing spot on the upper front panel, near the light.
+  at: new THREE.Vector3((rnd() - 0.5) * (M.w - 0.12), M.y0 + M.h - 0.08 - rnd() * 0.55, M.front + 0.03),
+}));
 const mothGeo = new THREE.BufferGeometry();
-{
-  const p = new Float32Array(MOTHS * 3);
-  for (let i = 0; i < MOTHS; i++) {
-    const a = rnd() * Math.PI * 2, r = 0.12 + rnd() * 0.55;
-    p.set([TUBE_POS.x + Math.cos(a) * r * 1.1, TUBE_POS.y - 0.05 + (rnd() - 0.4) * 0.7, TUBE_POS.z + Math.sin(a) * r * 0.5 + 0.2], i * 3);
-  }
-  mothGeo.setAttribute('position', new THREE.BufferAttribute(p, 3));
-}
+mothGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MOTHS * 3), 3));
+mothGeo.setAttribute('aFlap', new THREE.BufferAttribute(new Float32Array(MOTHS), 1));
 const mothMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-  uniforms: { uCol: { value: TUBE.clone().multiplyScalar(2.2) }, uPx: { value: 1 } },
-  vertexShader: /* glsl */`uniform float uPx; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = uPx * 0.035 / -mv.z; gl_Position = projectionMatrix * mv; }`,
-  fragmentShader: /* glsl */`uniform vec3 uCol; void main() { vec2 q = gl_PointCoord - 0.5; float d = length(q * vec2(1.0, 1.8)); gl_FragColor = vec4(uCol * smoothstep(0.5, 0.1, d), 1.0); }`,
+  uniforms: { uCol: { value: TUBE.clone().multiplyScalar(3.2) }, uPx: { value: 1 }, uLit: { value: 1 } },
+  vertexShader: /* glsl */`
+  attribute float aFlap; uniform float uPx; varying float vFlap;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    // Beating wings change the size; a landed moth folds them.
+    gl_PointSize = uPx * 0.035 * (0.55 + 0.45 * aFlap) / -mv.z;
+    gl_Position = projectionMatrix * mv;
+    vFlap = aFlap;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uCol; uniform float uLit; varying float vFlap;
+  void main() {
+    vec2 q = gl_PointCoord - 0.5;
+    float d = length(q * vec2(1.0, 1.4 + 0.8 * (1.0 - vFlap)));
+    gl_FragColor = vec4(uCol * uLit * smoothstep(0.5, 0.1, d), 1.0);
+  }`,
 });
 const moths = new THREE.Points(mothGeo, mothMat);
+moths.frustumCulled = false;
 STOP.add(moths);
+let mothCount = MOTHS;
+const mp = new THREE.Vector3();
+// perchGoal: 1 lands every moth, 0 sends them flying.
+let perchGoal = 0;
+function stepMoths(dt, t) {
+  const pos = mothGeo.attributes.position.array, flap = mothGeo.attributes.aFlap.array;
+  for (let i = 0; i < mothCount; i++) {
+    const m = mothList[i];
+    m.perch += (perchGoal - m.perch) * (1 - Math.exp(-dt * (perchGoal ? 1.6 : 2.4)));
+    m.kick *= Math.exp(-dt / 1.3);
+    const flying = 1 - m.perch;
+    m.th += m.w * dt * (1 + 0.6 * Math.sin(t * 1.3 + m.ph)) * flying;
+    // The radius breathes; a rare dive takes the moth to the glass.
+    let r = m.r0 * (1 + 0.35 * Math.sin(t * 0.7 + m.ph)) + m.kick;
+    r *= 1 - 0.8 * Math.pow(Math.max(0, Math.sin(t * 0.37 + m.ph * 1.7)), 24);
+    const s = Math.sin(m.th), c = Math.cos(m.th);
+    mp.set(ORBIT.x + r * c * 1.6, ORBIT.y + r * s * Math.sin(m.tilt), ORBIT.z + r * s * Math.cos(m.tilt) * 0.7);
+    // Erratic flutter on top of the orbit.
+    mp.x += 0.03 * Math.sin(t * 13 + m.ph);
+    mp.y += 0.03 * Math.sin(t * 11 + m.ph * 2);
+    mp.z = Math.max(M.front + 0.05, mp.z + 0.03 * Math.sin(t * 9 + m.ph * 3));
+    const k = inOut(clamp01(m.perch));
+    mp.lerp(m.at, k);
+    pos[i * 3] = mp.x; pos[i * 3 + 1] = mp.y; pos[i * 3 + 2] = mp.z;
+    flap[i] = flying * Math.abs(Math.sin(t * 34 + m.ph));
+  }
+  mothGeo.attributes.position.needsUpdate = true;
+  mothGeo.attributes.aFlap.needsUpdate = true;
+}
+function scatter(a = 1) {
+  for (const m of mothList) m.kick += (0.4 + rnd() * 0.9) * a;
+}
+const mothsSettled = () => mothList.slice(0, mothCount).every(m => Math.abs(m.perch - perchGoal) < 0.002);
+
+/* ---------- tube life ---------- */
+// The tube's level and its end glow drive every tube-lit thing.
+// A dying tube glows orange-pink at its ends; the starter ticks before each try.
+const TUBE_K = { mat: 9, light: 26, fill: 2.2, flare: 0.14 };
+const CAP_DARK = lin(0.25, 0.01, 260), CAP_HOT = lin(0.72, 0.17, 30, 6);
+const tubeState = { level: 1, ends: 0, age: 0.25, next: 8, play: null };
+function applyTube() {
+  const l = tubeState.level;
+  tubeMat.color.copy(TUBE).multiplyScalar(TUBE_K.mat * l + 0.03);
+  tubeLight.intensity = TUBE_K.light * l;
+  tubeFill.intensity = TUBE_K.fill * l;
+  if (typeof flare !== 'undefined') flare.uniforms.uGain.value = TUBE_K.flare * l;
+  mothMat.uniforms.uLit.value = 0.2 + 0.8 * l;
+  for (const c of capMats) c.color.copy(CAP_DARK).lerp(CAP_HOT, tubeState.ends);
+}
+// Plays [time, level, ends] keys; levels step, as a real tube snaps.
+function playTube(keys) {
+  if (tubeState.play) return false;
+  const dur = keys[keys.length - 1][0] || 0.2;
+  tubeState.play = anim(dur, k => {
+    const now = k * dur;
+    let cur = keys[0];
+    for (const kf of keys) if (kf[0] <= now) cur = kf;
+    tubeState.level = cur[1];
+    tubeState.ends = cur[2];
+    applyTube();
+  }, () => { tubeState.play = null; tubeState.level = 1; tubeState.ends = 0; applyTube(); });
+  return true;
+}
+// A strike: the tube dies, its ends warm, the starter tries, then it catches.
+function strike() {
+  if (reduced()) { if (playTube([[0, 0.4, 0], [0.3, 1, 0]])) scatter(0.4); return; }
+  const keys = [[0, 0, 0.25]];
+  let t = 0;
+  const tries = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < tries; i++) {
+    t += 0.3 + Math.random() * 0.45;
+    keys.push([t, 0, 1]);
+    t += 0.04;
+    keys.push([t, 0.45 + Math.random() * 0.55, 0.7]);
+    t += 0.04 + Math.random() * 0.07;
+    keys.push([t, 0, 0.85]);
+  }
+  t += 0.28;
+  keys.push([t, 1, 0.35], [t + 0.05, 0.35, 0.25], [t + 0.1, 1, 0.12], [t + 0.7, 1, 0]);
+  if (playTube(keys)) scatter(1);
+}
+// A blink: one to three quick dips while the tube stays lit.
+function blink() {
+  const keys = [[0, 1, 0]];
+  let t = 0;
+  for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) {
+    t += 0.05 + Math.random() * 0.25;
+    keys.push([t, 0.15 + Math.random() * 0.35, 0.15]);
+    t += 0.03 + Math.random() * 0.08;
+    keys.push([t, 1, 0]);
+  }
+  keys.push([t + 0.05, 1, 0]);
+  if (playTube(keys)) scatter(0.25);
+}
+// The Tube slider sets the age: steady at 0, dying at 1.
+function stepTube(dt, awake) {
+  if (!awake || reduced() || tubeState.age < 0.02 || tubeState.play) return;
+  tubeState.next -= dt;
+  if (tubeState.next > 0) return;
+  if (Math.random() < tubeState.age * 0.4) strike(); else blink();
+  tubeState.next = (16 - 13 * tubeState.age) * (0.4 + Math.random());
+}
+
+/* ---------- passing cars ---------- */
+// One car runs the road at a time; its dipped beams sweep the land.
+// The beams throw the machine's shadow across the fields as it passes.
+const carSpot = new THREE.SpotLight(lin(0.96, 0.03, 85), 0, 150, 0.4, 0.6, 1.6);
+carSpot.castShadow = true;
+carSpot.shadow.mapSize.set(1024, 1024);
+carSpot.shadow.bias = -0.0008;
+carSpot.shadow.camera.near = 0.5;
+carSpot.shadow.camera.far = 150;
+scene.add(carSpot, carSpot.target);
+const carGroup = new THREE.Group();
+carGroup.visible = false;
+scene.add(carGroup);
+{
+  const paint = new THREE.MeshStandardMaterial({ color: lin(0.16, 0.01, 260), roughness: 0.35, metalness: 0.6 });
+  const glass = new THREE.MeshStandardMaterial({ color: lin(0.08, 0.01, 260), roughness: 0.1, metalness: 0.4 });
+  const body = new THREE.Mesh(new RoundedBoxGeometry(1.8, 0.7, 4.3, 2, 0.12), paint);
+  body.position.y = 0.55;
+  const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.6, 0.55, 2.2, 2, 0.15), glass);
+  cabin.position.set(0, 1.12, -0.25);
+  carGroup.add(body, cabin);
+}
+// Lamps are sprites: they glow toward the eye and bloom into points far off.
+const glowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, '#fff'); gr.addColorStop(0.25, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const lampSprite = (col, k, x, y, z) => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: col.clone().multiplyScalar(k), blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  s.position.set(x, y, z);
+  carGroup.add(s);
+  return s;
+};
+const heads = [-0.62, 0.62].map(x => lampSprite(lin(0.97, 0.03, 85), 10, x, 0.62, 2.18));
+const tails = [-0.66, 0.66].map(x => lampSprite(lin(0.55, 0.22, 28), 6, x, 0.7, -2.18));
+// The beams: open cones in the haze, faint near the lamp's own axis.
+const beamMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { uAmt: { value: 0 }, uCol: { value: lin(0.95, 0.03, 85) } },
+  vertexShader: /* glsl */`
+  varying float vAlong; varying vec3 vN, vV;
+  void main() {
+    vAlong = uv.y;
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vN = normalize(mat3(modelMatrix) * normal);
+    vV = normalize(cameraPosition - wp.xyz);
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform float uAmt; uniform vec3 uCol; varying float vAlong; varying vec3 vN, vV;
+  void main() {
+    // The cone is thickest where its wall faces the eye; light fades with reach.
+    // Guards keep a degenerate apex normal from writing NaN into the bloom.
+    float thick = abs(dot(normalize(vN + vec3(1e-5)), normalize(vV + vec3(1e-5))));
+    float a = pow(clamp(vAlong, 0.0, 1.0), 1.8) * (0.2 + 0.8 * thick) * uAmt * 0.07;
+    if (!(a >= 0.0)) a = 0.0;
+    gl_FragColor = vec4(uCol * min(a, 1.0), 1.0);
+  }`,
+});
+const BEAM_L = 34;
+const beamGeo = new THREE.ConeGeometry(5.5, BEAM_L, 24, 1, true).translate(0, -BEAM_L / 2, 0).rotateX(-Math.PI / 2);
+const beams = [-0.62, 0.62].map(x => {
+  const b = new THREE.Mesh(beamGeo, beamMat);
+  b.position.set(x, 0.62, 2.2);
+  // Dipped beams aim a little down.
+  b.rotation.x = 0.05;
+  b.frustumCulled = false;
+  carGroup.add(b);
+  return b;
+});
+// Belgium drives on the right: toward the eye in the left lane, away in the right.
+const car = { on: false, z: 0, dir: 1, speed: 24, timer: 9 };
+const fwd = new THREE.Vector3(), toEye = new THREE.Vector3();
+function addCar(dir = Math.random() < 0.5 ? 1 : -1) {
+  if (car.on) return false;
+  car.on = true;
+  car.dir = dir;
+  car.speed = 21 + Math.random() * 7;
+  car.z = dir > 0 ? -760 : 70;
+  carGroup.position.set(dir > 0 ? -1.5 : 1.5, 0, car.z);
+  carGroup.rotation.y = dir > 0 ? 0 : Math.PI;
+  carGroup.visible = true;
+  carSpot.intensity = 260;
+  kick();
+  return true;
+}
+function stepCars(dt, awake) {
+  if (!car.on) {
+    if (!awake || reduced()) return;
+    car.timer -= dt;
+    if (car.timer <= 0) { addCar(); car.timer = 25 + Math.random() * 35; }
+    return;
+  }
+  car.z += car.dir * car.speed * dt;
+  carGroup.position.z = car.z;
+  carGroup.updateMatrixWorld();
+  fwd.set(0, 0, car.dir);
+  // The spot sits between the lamps and aims 25 m ahead, down on the road.
+  carSpot.position.set(carGroup.position.x, 0.65, car.z + car.dir * 2.2);
+  carSpot.target.position.set(carGroup.position.x + 0.4 * car.dir, 0, car.z + car.dir * 27);
+  carSpot.target.updateMatrixWorld();
+  toEye.subVectors(camera.position, carGroup.position).normalize();
+  const facing = fwd.dot(toEye), dist = camera.position.distanceTo(carGroup.position);
+  // Far lamps grow a little, so they still read as points on the horizon.
+  const grow = 1 + Math.min(4, dist / 120);
+  for (const s of heads) { s.material.opacity = clamp01((facing + 0.2) / 0.8); s.scale.setScalar(0.32 * grow); }
+  for (const s of tails) { s.material.opacity = clamp01((-facing + 0.2) / 0.8); s.scale.setScalar(0.2 * grow); }
+  // Looking down the beam shows the glare, not the cone.
+  beamMat.uniforms.uAmt.value = 1 - clamp01((facing - 0.35) / 0.5);
+  const end = car.dir > 0 ? car.z > 60 : car.z < -760;
+  if (end) { car.on = false; carGroup.visible = false; carSpot.intensity = 0; }
+}
+// The car counts as lively while it is near the eye or the machine.
+const carNear = () => car.on && Math.min(Math.abs(car.z - camera.position.z), Math.abs(car.z - STOP.position.z)) < 160;
+
+/* ---------- beacons ---------- */
+// The turbines' red beacons flash together, one second on, one off.
+function stepBeacons(t) {
+  const on = (t % 2) < 1;
+  for (const b of beacons) b.visible = on;
+}
 
 /* ---------- K2: bloom ---------- */
 // Lifted from Canal at dusk: bloom on a float target; only bright sources cross the threshold.
@@ -917,15 +1171,18 @@ function resize() {
   draw();
 }
 /* ---------- frame loop ---------- */
-// Full rate while something moves; the loop sleeps when all is still.
-// Moths and the tube add ambient drift in Task 3.
-let visible = !document.hidden, raf = 0, lastT = 0, lastInput = performance.now();
+// Lively (input, a sale, a car near, a flicker): full rate.
+// Drifting (moths, beacons, the tube's own flicker): 30 fps.
+// Asleep: 60 s after the last input the moths land, then the loop stops.
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +QS.get('sleep') || 60000;
+let visible = !document.hidden, raf = 0, lastT = 0, lastDraw = 0, simT = 0, lastInput = performance.now();
 const anims = new Set();
 // One tween: fn gets progress 0 to 1; done runs once at the end.
 function anim(dur, fn, done) {
   const a = { t: 0, dur: Math.max(0.001, dur), fn, done };
   anims.add(a);
-  wake();
+  kick();
   return a;
 }
 const after = (s, fn) => anim(s, () => {}, fn);
@@ -945,18 +1202,33 @@ function tick(now) {
       a.fn(k);
       if (k >= 1) { anims.delete(a); a.done?.(); }
     }
+    simT += dt;
+    // Reduced motion: no ambient drift, so the moths stay landed.
+    const awake = !reduced() && now - lastInput < SLEEP;
+    perchGoal = awake ? 0 : 1;
     stepSteam(dt);
     stepLook(dt);
-    frame();
-    draw();
+    stepTube(dt, awake);
+    stepMoths(dt, simT);
+    stepCars(dt, awake);
+    stepBeacons(simT);
+    lively = anims.size > 0 || steam.on > 0.001 || lookBusy() || carNear();
+    if (lively || now - lastDraw >= 31) { frame(); draw(); lastDraw = now; }
+    keep = lively || awake || car.on || !mothsSettled();
   } finally {
-    if (visible && (anims.size || steam.on > 0.001 || lookBusy())) raf = requestAnimationFrame(tick);
-    else lastT = 0;
+    if (visible && keep) raf = requestAnimationFrame(tick);
+    else { lastT = 0; frame(); draw(); }
   }
+}
+let lively = false, keep = true;
+// kick runs the loop; wake also counts as input and resets the sleep clock.
+function kick() {
+  keep = true;
+  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
 }
 function wake() {
   lastInput = performance.now();
-  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
+  kick();
 }
 whenVisible(stage, vis => {
   visible = vis;
@@ -969,9 +1241,6 @@ onQuality(() => resize());
 onReducedChange(() => wake());
 
 /* ---------- easing ---------- */
-const clamp01 = x => Math.max(0, Math.min(1, x));
-const inOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
-const inQuad = k => k * k;
 // A motor stop: an eased turn that runs 2 % past and settles back.
 const motor = k => (reduced() ? inOut(k) : inOut(clamp01(k / 0.82)) + 0.02 * Math.sin(Math.PI * clamp01((k - 0.62) / 0.38)));
 // A sprung swing: it overshoots once and settles.
@@ -1161,10 +1430,21 @@ function nearMachine(px, py, r) {
   const pad = Math.max(18, (x1 - x0) * 0.25);
   return px > x0 - pad && px < x1 + pad && py > y0 - pad && py < y1 + pad;
 }
+const sp = (v, r) => { v.project(camera); return [(v.x * 0.5 + 0.5) * r.width, (0.5 - v.y * 0.5) * r.height]; };
+function nearTube(px, py, r) {
+  const [ax, ay] = sp(STOP.localToWorld(new THREE.Vector3(-0.45, TUBE_POS.y, TUBE_POS.z)), r);
+  const [bx, by] = sp(STOP.localToWorld(new THREE.Vector3(0.45, TUBE_POS.y, TUBE_POS.z)), r);
+  const [, ty] = sp(STOP.localToWorld(new THREE.Vector3(0, HOOD.y + HOOD.R, M.front)), r);
+  const pad = 16;
+  return px > Math.min(ax, bx) - pad && px < Math.max(ax, bx) + pad && py > ty - pad && py < Math.max(ay, by) + pad;
+}
 function tapAt(cx, cy) {
   const r = stage.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
   ndc.set((px / r.width) * 2 - 1, -(py / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
+  wake();
+  // The tube and the hood: a tap there strikes the tube and scatters the moths.
+  if (nearTube(px, py, r)) { strike(); return; }
   const hit = ray.intersectObject(STOP, true).length > 0 || nearMachine(px, py, r);
   if (!hit) return;
   if (machine.state === 'open') take(); else coin();
@@ -1216,8 +1496,18 @@ stage.addEventListener('keydown', e => {
 });
 
 /* ---------- bar ---------- */
-act.coin = () => (machine.state === 'open' ? take() : coin());
-act.reset = () => restock();
+act.coin = () => { wake(); return machine.state === 'open' ? take() : coin(); };
+act.car = () => { wake(); addCar(); };
+act.tube = v => { tubeState.age = v; tubeState.next = Math.min(tubeState.next, 2); wake(); };
+act.moths = v => {
+  mothCount = Math.round(v * MOTHS);
+  mothGeo.setDrawRange(0, mothCount);
+  wake();
+};
+act.tube(ui.slider?.value ?? 0.25);
+act.moths(ui.setting('moths')?.value ?? 0.5);
+applyTube();
+act.reset = () => { wake(); restock(); };
 act.tilt = v => { tilt.uniforms.uAmt.value = v; draw(); };
 act.letterbox = on => { stage.toggleAttribute('data-letterbox', on); };
 act.view = v => { setView(v); frame(); draw(); };
