@@ -204,6 +204,32 @@ uniform vec4 uPour;     // x, y (px, GL), radius (px), on
 uniform vec4 uBox;      // softbox centre x, y (px), half size x, y
 uniform vec4 uCam;      // camera x, y, z; softbox z
 uniform vec3 uCol0, uCol1, uCol2;
+// Breaks: A = segment ends (px), B = age, kind (0 snap, 1 crumble), seed, radius.
+// T = tap point (px) and the chocolate mix there.
+#define NC 8
+uniform vec4 uCrA[NC], uCrB[NC], uCrT[NC];
+uniform int uNCr;
+// Voronoi edge distance and cell id, for crushed chocolate.
+vec2 voro(vec2 p) {
+  vec2 n = floor(p), f = fract(p), mg = vec2(0.0), mr = vec2(0.0);
+  float md = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), r = g + hash3(n + g).xy - f;
+    float d = dot(r, r);
+    if (d < md) { md = d; mr = r; mg = g; }
+  }
+  md = 8.0;
+  for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
+    vec2 g = mg + vec2(i, j), r = g + hash3(n + g).xy - f;
+    if (dot(mr - r, mr - r) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(r - mr)));
+  }
+  return vec2(md, hash(n + mg));
+}
+float segDist(vec2 p, vec2 a, vec2 b) {
+  vec2 ab = b - a;
+  float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+  return length(p - a - ab * t);
+}
 
 vec4 cubic(float v) {
   vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
@@ -226,8 +252,12 @@ vec4 bicubic(sampler2D t, vec2 uv) {
 // The pour stream lands as a raised coil.
 float pourBump(vec2 fc) {
   if (uPour.w <= 0.0) return 0.0;
-  float d = length(fc - uPour.xy) / uPour.z;
-  return uPour.w * 1.4 * exp(-d * d * 1.6);
+  vec2 q = (fc - uPour.xy) / uPour.z;
+  float d = length(q);
+  // The stream lands end on; its rope coils round it as it folds.
+  float stream = 1.6 * exp(-d * d * 2.2);
+  float coil = exp(-pow((d - 1.35) / 0.38, 2.0)) * (0.55 + 0.45 * sin(atan(q.y, q.x) + uTime * 14.0));
+  return uPour.w * (stream + coil * 0.7);
 }
 float height(vec2 fc) {
   vec2 g = vec2(fc.x, uRes.y - fc.y) / uCellPx;
@@ -294,6 +324,13 @@ void main() {
   float hx = height(fc + vec2(e, 0.0)) - height(fc - vec2(e, 0.0));
   float hy = height(fc + vec2(0.0, e)) - height(fc - vec2(0.0, e));
   vec3 N = normalize(vec3(-hx * uHk / (2.0 * e), -hy * uHk / (2.0 * e), 1.0));
+  // Heat shimmer: hot air above the melt wobbles the reflections.
+  float hot = smoothstep(38.0, 46.0, A.g) * smoothstep(0.05, 0.3, A.r) * (1.0 - uRM);
+  if (hot > 0.0) {
+    vec2 hq = fc / (34.0 * uDpr);
+    vec2 wob = vec2(noise(hq + uTime * vec2(0.3, 1.2)), noise(hq + 9.0 - uTime * vec2(1.1, 0.4))) - 0.5;
+    N = normalize(N + vec3(wob, 0.0) * 0.07 * hot);
+  }
   // Blade marks: fine grooves along the last stroke.
   float sm = length(B.ba);
   float ang = 0.5 * atan(B.a, B.b);
@@ -389,6 +426,76 @@ void main() {
     float body = (1.0 - smoothstep(1.6 * uDpr, 2.6 * uDpr, abs(along + 3.0 * uDpr))) * inLen;
     vec3 steel = vec3(0.32, 0.34, 0.37) + vec3(1.4) * exp(-pow((along + 3.0 * uDpr) / (0.7 * uDpr), 2.0));
     col = mix(col, steel, body * uBladeK.y);
+  }
+
+  // Breaks: a clean straight snap, or a dull crumble with crumbs.
+  for (int c = 0; c < NC; c++) {
+    if (c >= uNCr) break;
+    vec4 cA = uCrA[c], cB = uCrB[c], cT = uCrT[c];
+    float age = cB.x;
+    vec3 calb = cT.z < 0.5 ? mix(uCol0, uCol1, cT.z * 2.0) : mix(uCol1, uCol2, cT.z * 2.0 - 1.0);
+    if (cB.y < 0.5) {
+      // The crack runs out from the tap at speed, faster than the eye.
+      vec2 ab = cA.zw - cA.xy;
+      float L = max(length(ab), 1e-3);
+      vec2 dir = ab / L, nrm = vec2(-dir.y, dir.x);
+      vec2 rel = fc - cA.xy;
+      float s = dot(rel, dir);
+      if (s > -2.0 * uDpr && s < L + 2.0 * uDpr) {
+        float wob = (noise(vec2(s / (7.0 * uDpr), cB.z)) - 0.5) * 1.4 * uDpr;
+        float d = dot(rel, nrm) - wob;
+        float run = abs(s - dot(cT.xy - cA.xy, dir)) - age * 2600.0 * uDpr;
+        if (run < 0.0) {
+          float w = mix(0.6, 1.8, smoothstep(0.0, 0.12, age)) * uDpr;
+          float gapM = 1.0 - smoothstep(w * 0.45, w, abs(d));
+          // The far piece sits a hair lower, so the near edge catches the light.
+          float lip = exp(-pow((d + w * 1.3) / (0.7 * uDpr), 2.0));
+          float flash = exp(-age * 12.0) * exp(-pow(d / (4.0 * uDpr), 2.0));
+          col = mix(col, vec3(0.003, 0.0025, 0.002), gapM);
+          col += key * 0.3 * lip + vec3(1.0, 0.88, 0.7) * flash * 0.9;
+        }
+      }
+    } else {
+      // A failed set bends and crushes into loose fragments.
+      vec2 rel = fc - cT.xy;
+      float R = cB.w;
+      if (dot(rel, rel) < R * R * 2.0) {
+        float grow = smoothstep(0.0, 0.3, age);
+        float rr = length(rel) + (noise(rel / (9.0 * uDpr) + cB.z) - 0.5) * 0.45 * R;
+        float inner = (1.0 - smoothstep(0.45 * R, 0.75 * R, rr / max(grow, 0.01)));
+        float outer = (1.0 - smoothstep(0.8 * R, 1.3 * R, rr / max(grow, 0.01))) * grow;
+        vec2 fine = voro(rel / (6.0 * uDpr) + cB.z);
+        vec2 big = voro(rel / (17.0 * uDpr) + cB.z * 1.7);
+        // Each fragment tilts its own way, so it takes its own light.
+        col = mix(col, col * (0.45 + 0.9 * fine.y), inner * 0.85);
+        col = mix(col, col * (0.75 + 0.45 * big.y), outer * 0.6);
+        float crack = max((1.0 - smoothstep(0.04, 0.12, fine.x)) * inner, (1.0 - smoothstep(0.02, 0.07, big.x)) * outer * 0.45);
+        col = mix(col, col * 0.18, crack);
+        // The struck spot sags before it breaks.
+        col *= 1.0 - 0.25 * exp(-dot(rel, rel) / (R * R * 0.2)) * grow;
+      }
+    }
+    // Chips fly from a snap; crumbs drop near a crumble and stay.
+    if (length(fc - cT.xy) < 260.0 * uDpr) {
+      bool snapK = cB.y < 0.5;
+      for (int k = 0; k < 12; k++) {
+        if (snapK && k >= 5) break;
+        vec3 r3 = hash3(vec2(cB.z * 7.0, float(k) + 1.0));
+        float an = r3.x * 6.2832;
+        float spd = (snapK ? mix(90.0, 260.0, r3.y) : mix(10.0, 45.0, r3.y)) * uDpr;
+        float tt = min(age, 0.55);
+        vec2 pos = cT.xy + vec2(cos(an), sin(an)) * spd * tt * (1.0 - tt * 0.8);
+        float up = max(0.0, (snapK ? 150.0 : 40.0) * uDpr * tt - 520.0 * uDpr * tt * tt);
+        float sz = mix(1.6, 3.4, r3.z) * uDpr;
+        float shd = 1.0 - smoothstep(sz * 0.5, sz * 1.6, length(fc - pos - vec2(up * 0.45, -up * 0.55)));
+        col *= 1.0 - 0.6 * shd;
+        vec2 bq = fc - pos - vec2(0.0, up);
+        // Angular bits: a box metric reads as a shard, not a bead.
+        float body = 1.0 - smoothstep(sz * 0.55, sz, max(abs(bq.x * 0.8 + bq.y * 0.6), abs(bq.y * 0.8 - bq.x * 0.6)));
+        vec3 chip = calb * key * (snapK ? 0.9 : 1.4) + (snapK ? vec3(0.4) * step(0.0, bq.y) : vec3(0.05));
+        col = mix(col, chip, body);
+      }
+    }
   }
 
   // Thermal read-out: strip-thermometer colours on the chocolate.
@@ -899,12 +1006,23 @@ function render() {
   gl.uniform4f(U.uBlade, bx, by, blade.dx, -blade.dy);
   gl.uniform2f(U.uBladeK, blade.half * S.cs * dpr, blade.on);
   const [qx, qy] = toPx(pour.x, pour.y);
-  gl.uniform4f(U.uPour, qx, qy, 1.6 * S.cs * dpr, pour.on);
+  gl.uniform4f(U.uPour, qx, qy, 2.8 * S.cs * dpr, pour.on);
   gl.uniform4f(U.uBox, ...view.box);
   gl.uniform4f(U.uCam, ...view.cam);
   gl.uniform3f(U.uCol0, ...cols.c0);
   gl.uniform3f(U.uCol1, ...cols.c1);
   gl.uniform3f(U.uCol2, ...cols.c2);
+  const cpx = S.cs * dpr, nb = breaks.length;
+  crA.fill(0); crB.fill(0); crT.fill(0);
+  breaks.forEach((b, k) => {
+    crA.set([b.x0 * cpx, H - b.y0 * cpx, b.x1 * cpx, H - b.y1 * cpx], k * 4);
+    crB.set([b.age, b.kind, b.seed, b.r * cpx], k * 4);
+    crT.set([b.tx * cpx, H - b.ty * cpx, b.w, 0], k * 4);
+  });
+  gl.uniform4fv(U.uCrA, crA);
+  gl.uniform4fv(U.uCrB, crB);
+  gl.uniform4fv(U.uCrT, crT);
+  gl.uniform1i(U.uNCr, nb);
   draw(null);
 }
 
@@ -917,15 +1035,21 @@ const live = () => { lastInput = performance.now(); quietFor = 0; wake(); };
 function wake() {
   if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
-const lively = () => dragging || pour.live || pour.t > 0 || blade.on > 0.01 || Math.abs(ptr.on - ptr.onT) > 0.01;
+const lively = () => breaks.some(b => b.age < 1.2) || dragging || pour.live || pour.t > 0 || blade.on > 0.01 || Math.abs(ptr.on - ptr.onT) > 0.01;
 function step(dt) {
+  for (const b of breaks) b.age += dt;
+  // A break heals when its chocolate melts again.
+  for (let k = breaks.length - 1; k >= 0; k--) {
+    const b = breaks[k], i = cellAt(b.tx, b.ty);
+    if (F.h[i] < 0.01 || F.v[i] + F.u[i] < 0.3) breaks.splice(k, 1);
+  }
   // Pace speeds heat and crystals, not the hand.
   const sdt = dt * (pace === 'brisk' ? 2.2 : 1.2);
   if (pour.live || pour.t > 0) {
     pour.t = Math.max(0, pour.t - dt);
     // The stream coils as it lands, so the ribbon folds onto itself.
-    const a = time * 15, cr = 1.1;
-    deposit(pour.x + Math.cos(a) * cr, pour.y + Math.sin(a * 0.8) * cr, 7 * dt, 1.7, KIND[kind].melt, 0, 0, KIND[kind].w);
+    const a = time * 15, cr = 2.2;
+    deposit(pour.x + Math.cos(a) * cr, pour.y + Math.sin(a * 0.8) * cr, 7 * dt, 2.4, KIND[kind].melt, 0, 0, KIND[kind].w);
   }
   pour.on += ((pour.live || pour.t > 0 ? 1 : 0) - pour.on) * (1 - Math.exp(-dt / 0.08));
   const sub = Math.max(1, Math.ceil(dt / (1 / 120)));
@@ -1033,10 +1157,48 @@ function up(e) {
   live();
 }
 function leave(e) { if (!press && e.pointerType === 'mouse') { ptr.onT = 0; live(); } }
+function cellAt(x, y) { return clamp(Math.floor(y), 0, S.gh - 1) * S.gw + clamp(Math.floor(x), 0, S.gw - 1); }
 function tapAt(x, y) {
-  const i = clamp(Math.floor(y), 0, S.gh - 1) * S.gw + clamp(Math.floor(x), 0, S.gw - 1);
-  // The snap test arrives in Task 3; liquid takes a dimple now.
-  if (F.v[i] + F.u[i] < 0.5 && F.h[i] > 0.02) dimple(x, y);
+  const i = cellAt(x, y), solid = F.v[i] + F.u[i];
+  if (F.h[i] > 0.03 && solid > 0.7) snap(x, y);
+  else if (solid < 0.5 && F.h[i] > 0.02) dimple(x, y);
+}
+
+/* ---------- the snap test ---------- */
+// Tempered chocolate breaks in one straight line, edge to edge.
+// Chocolate with unstable crystals bends and crumbles where it is struck.
+const NCR = 8, breaks = [];
+const crA = new Float32Array(NCR * 4), crB = new Float32Array(NCR * 4), crT = new Float32Array(NCR * 4);
+function snap(x, y) {
+  let m = 0, mv = 0, mu = 0, mw = 0;
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    const j = cellAt(x + dx, y + dy), h = F.h[j];
+    m += h; mv += h * F.v[j]; mu += h * F.u[j]; mw += h * F.w[j];
+  }
+  const q = mv / Math.max(mv + mu, 1e-6), w = mw / Math.max(m, 1e-6);
+  const clean = q > 0.72;
+  const a = Math.random() * Math.PI, ux = Math.cos(a), uy = Math.sin(a);
+  // The crack runs on until the chocolate ends.
+  const reach = sg => {
+    const max = Math.min(S.gw, S.gh) * 0.7;
+    let t = 0;
+    while (t < max) {
+      const xx = x + ux * sg * (t + 0.5), yy = y + uy * sg * (t + 0.5);
+      if (xx < 0 || yy < 0 || xx >= S.gw || yy >= S.gh) break;
+      const j = cellAt(xx, yy);
+      if (F.h[j] < 0.03 || F.v[j] + F.u[j] < 0.5) break;
+      t += 0.5;
+    }
+    return t;
+  };
+  const t0 = reach(-1), t1 = reach(1);
+  breaks.push({
+    kind: clean ? 0 : 1, age: 0, seed: Math.random() * 50, w, tx: x, ty: y,
+    x0: x - ux * t0, y0: y - uy * t0, x1: x + ux * t1, y1: y + uy * t1,
+    r: Math.min(S.gw, S.gh) * (narrow ? 0.1 : 0.07),
+  });
+  if (breaks.length > NCR) breaks.shift();
+  return clean;
 }
 
 act.pour = () => {
@@ -1046,11 +1208,12 @@ act.pour = () => {
   live();
 };
 act.clear = () => {
+  breaks.length = 0;
   for (const k of ['h', 'v', 'u', 'bl', 'sc', 'ss', 'act', 'sh']) F[k].fill(0);
   F.T.set(F.ts);
   live();
 };
-act.reset = () => { seed(); live(); };
+act.reset = () => { breaks.length = 0; seed(); live(); };
 
 /* ---------- boot ---------- */
 try {

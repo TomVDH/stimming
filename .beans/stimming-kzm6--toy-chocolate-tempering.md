@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:17:15Z
-updated_at: 2026-11-09T09:42:37Z
+updated_at: 2026-11-09T09:47:22Z
 parent: stimming-oh7b
 ---
 
@@ -15,7 +15,7 @@ Build Chocolate tempering from docs/plans/chocolate.md. It starts in the Lab, on
 - [x] Task 1: blockout built and pushed (marble, height-field chocolate, studio reflection, flow, scraper, crystal kinetics, thermal halo)
 - [x] Task 1: checkpoint with Tom on the stills at 1280 and 375 px (signed off 2026-11-09)
 - [x] Task 2: the set: gloss, sparkles, bloom streaks, contraction
-- [ ] Task 3: snap test, pour ribbon, heat shimmer
+- [x] Task 3: snap test, pour ribbon, heat shimmer
 - [ ] Task 4: sound
 - [ ] Task 5: Settings, ladder, sleep, Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an interactive GSAP hook
