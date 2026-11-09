@@ -1,11 +1,11 @@
 ---
 # stimming-465y
 title: 'Toy annex: the page under the stage'
-status: draft
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-09T09:37:22Z
-updated_at: 2026-11-09T09:45:59Z
+updated_at: 2026-11-09T09:46:34Z
 ---
 
 Wireframe the annex a visitor scrolls into under a toy's stage, and the transition into it. Successor to the parked section.about.
@@ -16,7 +16,7 @@ Lab: annexlab/index.html (noindex, stand-in stage, three directions). Data: docs
 - [x] Lab page with three directions
 - [x] Data proposal
 - [x] Stills at 1280 and 375 x 812 to Tom
-- [ ] Tom's pick recorded here
+- [x] Tom's pick recorded here
 
 ## Directions
 
@@ -28,4 +28,12 @@ All: corners fade in the first quarter; one exit progress drives everything (vie
 
 ## Pick
 
-(waiting for Tom)
+Tom picked A · Recede (2026-11-09). The 12 px lip is the stage cue.
+
+Still open: Bar v2 rule 4 (page scrolls past the stage only into the annex); keep or drop the signoff note kind.
+
+## Build (next)
+- [ ] Annex shell in shared/ (fixed stage, sheet, exit timeline, JS fallback, reduced motion)
+- [ ] annex.json loader and shared/credits.json
+- [ ] Bar v2 bottom corners lift by the lip
+- [ ] One toy first; Tom picks which

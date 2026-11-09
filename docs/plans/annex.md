@@ -2,7 +2,7 @@
 
 The annex is the page under a toy's stage. It replaces the parked `section.about`.
 Lab: `annexlab/` (noindex). `?d=a|b|c` picks a direction. `?rm=1` shows reduced motion. `?js=1` forces the fallback driver.
-Bean: `stimming-465y`. Status: wireframes, waiting for Tom's pick.
+Bean: `stimming-465y`. Status: Tom picked A · Recede (2026-11-09). The lip is the stage cue.
 
 ## Directions
 
@@ -60,7 +60,5 @@ Notes show the last three, with "Show all N notes".
 
 ## Questions for Tom
 
-1. Which direction, or which parts of each?
-2. Rule 4 of "Mobile and compliance" says the page never scrolls past the stage. The annex changes it to: the page scrolls past the stage only into the annex, never sideways.
-3. `data-done` is internal. Notes of kind `signoff` would make sign-offs visible. Keep or drop that kind?
-4. A cue on the stage: A's lip, or nothing, or "About" in the Settings footer?
+1. Rule 4 of "Mobile and compliance" says the page never scrolls past the stage. The annex changes it to: the page scrolls past the stage only into the annex, never sideways.
+2. `data-done` is internal. Notes of kind `signoff` would make sign-offs visible. Keep or drop that kind?
