@@ -5,7 +5,7 @@ status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T10:43:41Z
+updated_at: 2026-11-09T10:49:43Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -93,3 +93,10 @@ Open for a real device: frame rate (Q4 drifting, Q10), reduced motion in a brows
 - Traffic: white head lamps show from the front, red tail lamps from behind.
 - A staande wip stands on the nearest open lawn to the kerkplein: a 27 m mast, three tiers of feather birds, a red top light, a shelter and a gilde house.
 - The sky dome follows the camera; far from the origin it fell past the far plane and showed black.
+
+## Notes: pigeons and chapels
+
+- 28 pigeon lofts stand at the far end of back gardens: stained boards, a landing cage on the roof.
+- Forty pigeons wheel over the loft nearest the kerkplein; they go home after Dusk 0.72. A tap on that loft sends them up for 45 s with a wing clatter.
+- Two kapelletjes stand at crossroads 450 to 1300 m out: white, a candle that flickers behind the grille, a lime each side.
+- The WWI gedenkzuil from the map stands on stepped plinths, lit from its foot.
