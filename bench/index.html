@@ -139,7 +139,7 @@ const TA = 2 / 3;
 let SW = 0, SH = 0;
 // The performance ladder: slow frames first drop the pixel ratio, then the grid.
 // A new quality choice clears the pixel-ratio step; the grid step stays.
-let lowDpr = false, lowGrid = false;
+let lowDpr = false, lowGrid = false, probeT = null, probeBuf = null;
 const MAXS = 12, JACOBI = 24;
 
 const TRI = `#version 300 es
@@ -270,6 +270,23 @@ void main() {
 }`;
 /* ---------- end K5 ---------- */
 
+// The probe: one texel per 16 x 16 block, set where the clock still moves.
+// It reads 16 texels per block, one in each 4 x 4 cell, to stay cheap.
+// r: a reaction still pending. g: the complex has begun.
+const PROBE_FS = HEAD + `
+uniform sampler2D uSrc;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy) * 16, top = textureSize(uSrc, 0) - 1;
+  float pend = 0.0, front = 0.0;
+  for (int k = 0; k < 16; k++) {
+    ivec2 q = min(c + ivec2(k % 4, k / 4) * 4 + 2, top);
+    vec4 s = texelFetch(uSrc, q, 0);
+    float m = clamp(s.g, 0.0, 1.0);
+    if ((s.b < 1.0 && 4.0 * m * (1.0 - m) > 0.15) || (s.a > 0.001 && s.a < 0.999)) pend = 1.0;
+    if (s.a > 0.05) front = 1.0;
+  }
+  o = vec4(pend, front, 0.0, 1.0);
+}`;
 const COPY_FS = HEAD + `
 uniform sampler2D uSrc;
 void main() { o = texture(uSrc, vUv); }`;
@@ -530,7 +547,7 @@ async function initGL() {
   const progs = {
     force: compile(TRI, FORCE_FS), adv: compile(TRI, ADV_FS), div: compile(TRI, DIV_FS), jac: compile(TRI, JAC_FS),
     grad: compile(TRI, GRAD_FS), scal: compile(TRI, SCAL_FS), beaker: compile(TRI, BEAKER_FS),
-    seed: compile(TRI, SEED_FS), bub: compile(BUB_VS, BUB_FS), copy: compile(TRI, COPY_FS),
+    seed: compile(TRI, SEED_FS), bub: compile(BUB_VS, BUB_FS), copy: compile(TRI, COPY_FS), probe: compile(TRI, PROBE_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -626,6 +643,10 @@ function alloc() {
   div = target(sw, sh, FMT.one);
   SW = sw;
   SH = sh;
+  // The probe target: bytes, so readPixels works everywhere.
+  if (probeT) { gl.deleteTexture(probeT.tex); gl.deleteFramebuffer(probeT.fb); }
+  probeT = target(Math.ceil(sw / 16), Math.ceil(sh / 16), gl.RGBA8);
+  probeBuf = new Uint8Array(probeT.w * probeT.h * 4);
 }
 
 /* ---------- forces and scalar splats ---------- */
@@ -868,6 +889,8 @@ function seedRainbow() {
   for (let i = 0; i < 60; i++) { electroStep(1 / 30); simStep(1 / 30); }
   power = false;
   bubbles.length = 0;
+  fizz[0] = fizz[1] = 0;
+  pops.length = 0;
 }
 
 /* ---------- sound ---------- */
@@ -1044,7 +1067,7 @@ function soundFrame(dt) {
 // Liquid A fills 45 %; pouring B raises the level to 85 % at most.
 const CLK = { A: 0.45, MAX: 0.85, RATE: 0.075 };
 const delay = () => 4 + 16 * EXP.clock.value;
-let pouring = false, splashUntil = 0, pourX = TA / 2, pEst = 0, pFront = 0, snapped = false;
+let pouring = false, splashUntil = 0, pourX = TA / 2, clockAge = 0, probeN = 0, clockPending = false, snapped = false;
 const pourOn = () => mode === 'clock' && (pouring || performance.now() < splashUntil) && level < CLK.MAX;
 const pourU = () => (pourX / TA) * 2 - 1;
 function aimPour(cx, cy) {
@@ -1055,16 +1078,24 @@ function clockStep(dt) {
   if (pourOn()) {
     level = Math.min(CLK.MAX, level + CLK.RATE * dt);
     // The jet drives down into the surface and carries liquid B.
-    splat(pourX, level - 0.03, 0, -0.16, 0.035);
+    splat(pourX, level - 0.03, 0, -9.6 * dt, 0.035);
+    clockPending = true;
     scalarSplat(pourX, level - 0.02, 0.03, 0, 8 * dt);
     if (level >= CLK.MAX) stage.classList.add('full');
   }
-  // A well-mixed estimate of progress keeps the loop awake through the snap.
-  const mb = (level - CLK.A) / level;
-  pEst += dt * 4 * mb * (1 - mb) / delay();
-  // An even mix somewhere snaps first: one delay after the pour begins.
-  if (mb > 0) pFront += dt / delay();
-  if (!snapped && pFront >= 1) { snapped = true; sfx.snap(); }
+  if (level <= CLK.A + 0.001) return;
+  clockAge += dt;
+  // Every tenth frame, a small readback says if the reaction still moves.
+  if (++probeN % 10) return;
+  gl.useProgram(P.probe.p);
+  bind(P.probe, 'uSrc', 0, scal.r);
+  draw(probeT);
+  gl.readPixels(0, 0, probeT.w, probeT.h, gl.RGBA, gl.UNSIGNED_BYTE, probeBuf);
+  let pend = false, front = false;
+  for (let i = 0; i < probeBuf.length; i += 4) { pend ||= probeBuf[i] > 127; front ||= probeBuf[i + 1] > 127; }
+  clockPending = pend;
+  // The snap sounds as the first blue-black appears.
+  if (front && !snapped) { snapped = true; sfx.snap(); }
 }
 
 /* ---------- frame loop ---------- */
@@ -1106,7 +1137,7 @@ function frame(now) {
 }
 // The loop sleeps once the current is off, the bubbles are gone and the flow settles.
 const busy = (now = performance.now()) => visible && (now < liveUntil || stirT >= 0 || amps() > 0 || bubbles.length > 0
-  || pourOn() || (mode === 'clock' && level > CLK.A + 0.002 && pEst < 2.5));
+  || pourOn() || (mode === 'clock' && clockPending && clockAge < 6 * delay() + 2));
 function still() { if (P) { beaker(); drawBubbles(); } }
 
 /* ---------- stirring ---------- */
@@ -1116,7 +1147,8 @@ function stirStep(dt) {
   stirT += dt;
   const k = reduced() ? 0.5 : 1, a = stirT * TAU * 1.4;
   const cx = TA / 2 + Math.cos(a) * TA * 0.24, cy = level * 0.5 + Math.sin(a) * level * 0.26;
-  splat(cx, cy, -Math.sin(a) * 1.4 * k, Math.cos(a) * 1.4 * k * 0.9, 0.09);
+  const f = 1.4 * k * dt * 60;
+  splat(cx, cy, -Math.sin(a) * f, Math.cos(a) * f * 0.9, 0.09);
   // The rod meets the glass twice a lap.
   const half = Math.floor(a / Math.PI);
   if (half !== stirHalf) { stirHalf = half; sfx.clink(Math.cos(a)); }
@@ -1186,7 +1218,8 @@ function resetBeaker(rainbow = false) {
   stirT = -1;
   power = pouring = false;
   pulseUntil = splashUntil = 0;
-  pEst = pFront = 0;
+  clockAge = 0;
+  clockPending = false;
   snapped = false;
   stage.classList.remove('full');
   level = EXP[mode].level;
@@ -1234,24 +1267,30 @@ canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
 // Space holds, on keyboards only.
 let spaceHeld = false;
+// Repeats must not scroll the page either.
 stage.addEventListener('keydown', e => {
-  if (e.code !== 'Space' || e.repeat) return;
+  if (e.code !== 'Space') return;
   e.preventDefault();
+  if (e.repeat || spaceHeld) return;
   spaceHeld = true;
   hold(true);
 });
-stage.addEventListener('keyup', e => {
-  if (e.code !== 'Space' || !spaceHeld) return;
+const spaceUp = () => {
+  if (!spaceHeld) return;
   spaceHeld = false;
   hold(false);
-});
+};
+stage.addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
+// The keyup goes elsewhere once focus leaves, so a blur ends the hold.
+stage.addEventListener('blur', spaceUp);
+addEventListener('blur', spaceUp);
 
 new ResizeObserver(() => { layout(); still(); }).observe(stage);
 onQuality(() => { lowDpr = false; layout(); still(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; hushLoops(); kit.rest(() => true); return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; hushLoops(); kit.rest(() => !visible); return; }
   if (busy()) wake(); else still();
 });
 </script>
