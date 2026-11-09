@@ -5,7 +5,7 @@ status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T10:49:43Z
+updated_at: 2026-11-09T11:03:16Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -100,3 +100,8 @@ Open for a real device: frame rate (Q4 drifting, Q10), reduced motion in a brows
 - Forty pigeons wheel over the loft nearest the kerkplein; they go home after Dusk 0.72. A tap on that loft sends them up for 45 s with a wing clatter.
 - Two kapelletjes stand at crossroads 450 to 1300 m out: white, a candle that flickers behind the grille, a lime each side.
 - The WWI gedenkzuil from the map stands on stepped plinths, lit from its foot.
+
+## Notes: rotondekunst
+
+- The roundabout north of Sint-Amandus carries the toy's paper boat in corten steel, 8 m long, bow to the church, on a grass dome inside a kerb.
+- Six ground spots wash it from below once Dusk passes 0.12.

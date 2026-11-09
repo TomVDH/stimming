@@ -465,7 +465,7 @@ scene.add(sky);
 /* ---------- buildings ---------- */
 // Surface kinds in aInfo.w.
 const BRICK = 0, RENDER = 1, CONCRETE = 2, STEEL = 3, CHURCH = 4, METAL = 5, TREE = 6, FRIT = 7, SIGN = 8, STAM = 9, LAMPHEAD = 10;
-const AWNING = 11, BUMPER = 12, PAINT = 13, BIKES = 14, SHOOT = 15, PRIZE = 16, DUCKPOND = 17, SCHOOL_K = 18, WOOD = 19;
+const AWNING = 11, BUMPER = 12, PAINT = 13, BIKES = 14, SHOOT = 15, PRIZE = 16, DUCKPOND = 17, SCHOOL_K = 18, WOOD = 19, CORTEN = 20;
 const fr = x => x - Math.floor(x);
 const v2 = ps => new THREE.Shape(ps.map(([x, y]) => new THREE.Vector2(x, y)));
 const UP = new THREE.Vector3(0, 1, 0);
@@ -1371,6 +1371,38 @@ function gedenkzuil() {
   for (const a of [0.4, 3.5]) lampOf(x + Math.cos(a) * 2.2, z + Math.sin(a) * 2.2, 0.4, [0.92, 0.04, 85], 0.5, 9, 0.15);
   reserve(x - 3, z - 3, x + 3, z + 3, 2);
 }
+// Rotondekunst: the toy's paper boat in corten steel, 8 m long, on the roundabout nearest the church.
+let ROTONDE = null;
+function rotonde() {
+  let best = null;
+  for (const r of ROADS) {
+    const p = r.pts, n = p.length;
+    if (n < 6 || Math.hypot(p[0][0] - p[n - 1][0], p[0][1] - p[n - 1][1]) > 1) continue;
+    const c = centroid(p), rad = p.reduce((s, q) => s + Math.hypot(q[0] - c[0], q[1] - c[1]), 0) / n;
+    if (rad < 40 && dist2(c, ...SQ.C) < 400 * 400 && (!best || dist2(c, ...SQ.C) < dist2(best, ...SQ.C))) best = c;
+  }
+  if (!best) return;
+  const [x, z] = best;
+  // The island fills the ring road's inner edge.
+  let rin = 99;
+  for (const r of ROADS) if (r.c <= 7) for (const q of r.pts) rin = Math.min(rin, Math.hypot(q[0] - x, q[1] - z));
+  const R = Math.max(4, Math.min(12, rin - 4.3));
+  ROTONDE = [x, z, R];
+  reserve(x - R, z - R, x + R, z + R, 2);
+  worldOn(gc);
+  gc.fillStyle = '#8a857c'; gc.beginPath(); gc.arc(x, z, R + 0.4, 0, 6.283); gc.fill();
+  // A kerb ring and a low grass mound.
+  parts.push(tag(new THREE.CylinderGeometry(R + 0.3, R + 0.3, 0.25, 40, 1, true).translate(x, QUAY + 0.12, z), [0, 0, 0, CONCRETE]));
+  // The dome's sphere is sized so its rim meets the kerb; it rises 0.6 m.
+  const Rs = R / Math.sin(0.5), sy = 0.6 / (Rs * (1 - Math.cos(0.5)));
+  parts.push(tag(new THREE.SphereGeometry(Rs, 40, 6, 0, 6.283, 0, 0.5).scale(1, sy, 1).translate(x, QUAY + 0.05 - Rs * Math.cos(0.5) * sy, z), [0, 0, 7, TREE]));
+  // The bow points at the church; the boat rides a little bow-up, as on a swell.
+  const dx = TOWER_C[0] - x, dz = TOWER_C[1] - z;
+  const boat = boatGeometry().scale(6.5, 6.5, 6.5).rotateZ(0.14).rotateX(0.08).rotateY(Math.atan2(-dz, dx)).translate(x, QUAY + 0.7, z);
+  parts.push(tag(boat, [0, 0, 0, CORTEN]));
+  // Six ground spots round the boat.
+  for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283 + 0.3; bulb(x + Math.cos(a) * R * 0.8, QUAY + 0.55, z + Math.sin(a) * R * 0.8, [1, 0.85, 0.6], 0, 3); }
+}
 /* ---------- end places ---------- */
 
 /* ---------- layout ---------- */
@@ -1403,6 +1435,7 @@ wip();
 lofts(28);
 chapels(2);
 gedenkzuil();
+rotonde();
 bridge(); walls(); posts();
 poplars(1000, -2000);
 // A belt of round trees along the far towpath, open near the village.
@@ -1840,6 +1873,8 @@ const solidMat = new THREE.ShaderMaterial({
     else if (is(kind, 17.0)) base = vec3(0.03, 0.1, 0.2) * (0.85 + 0.3 * k2noise(vP.xz * 6.0 + uTime));
     // Parked bikes: dark, broken by thin uprights.
     else if (is(kind, 14.0)) base = vec3(0.025) * (0.6 + 0.8 * step(0.7, fract((abs(N.x) > 0.5 ? vP.z : vP.x) * 1.6)));
+    // Corten steel: rust brown, darker in streaks that run down from the folds.
+    else if (is(kind, 20.0)) base = vec3(0.24, 0.08, 0.03) * (0.7 + 0.5 * k2fbm(vP.xz * 1.3 + vP.y * 2.0)) * (0.8 + 0.25 * k2noise(vec2((vP.x + vP.z) * 3.0, vP.y * 0.4)));
     // Stained wood in upright boards, for pigeon lofts.
     else if (is(kind, 19.0)) base = vec3(0.1, 0.065, 0.04) * (0.7 + 0.35 * step(0.12, fract((abs(N.x) > 0.5 ? vP.z : vP.x) * 6.0)));
     else base = vec3(0.02);
@@ -1877,6 +1912,8 @@ const solidMat = new THREE.ShaderMaterial({
       vec4 ls = lampState(uCanal0 + int(sd + 0.5), lp, lc);
       emit = ls.rgb * ls.a * 5.0;
     }
+    // Ground spots wash the corten from below; the light fades up the sheet.
+    if (is(kind, 20.0)) emit = alb * vec3(1.0, 0.8, 0.55) * 2.6 * exp(-max(vP.y - ${(QUAY + 0.8).toFixed(2)}, 0.0) / 2.2) * smoothstep(0.12, 0.3, uDusk);
     if (is(kind, 8.0)) emit = (sd < 1.5 ? vec3(1.0, 0.12, 0.08) : sd < 2.5 ? vec3(1.0, 0.7, 0.15) : vec3(0.75, 0.88, 1.0)) * mix(0.4, 4.0, lit);
     // Windows sit only on fronts and backs, where u runs along the wall.
     float w = vInfo.x, h = vInfo.y;
