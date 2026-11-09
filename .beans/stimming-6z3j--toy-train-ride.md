@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T22:00:00Z
+updated_at: 2026-11-09T22:10:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -161,8 +161,9 @@ Two critic agents reviewed seven stills (realism; feel and craft). Fixed:
 - [x] Scratches near-invisible away from lights; they glint only near a lamp
 - [x] Day wall lifted a little (still dark, per Tom); phone and short-landscape crops keep room for the header and chips
 Open from the critics:
-- [ ] Reveal drawn as a projected box from an off-centre seated eye (unequal jambs)
-- [ ] Pillar reflections of shore lights: random lengths, clipped to water
-- [ ] Hard teal/blue seam in day water (reflected far shore edge); dark blob on near hills
-- [ ] Station: sign contrast, platform gradient, saturated back wall
-- [ ] Track band takes up to a third of the glass on some crops
+- [x] Reveal drawn as a projected box from an off-centre seated eye (unequal jambs)
+- [x] Pillar reflections of shore lights: random lengths, clipped to water
+- [x] Hard teal/blue seam in day water (reflected far shore edge); dark blob on near hills
+- [x] Station: sign contrast, platform gradient, saturated back wall
+- [x] Track band takes up to a third of the glass on some crops
+- Done: the seated eye sits 7 cm left and 5 cm low, so the jambs foreshorten unequally; shore-light columns vary in length and width; the mirrored shore averages two rays; terrain shadows fade out close up; station signs read in shade; the gaze tilts 1 degree less, so the track takes less glass

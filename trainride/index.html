@@ -383,6 +383,26 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   ${NOISE}
   ${LAND}
   ${HAZE}
+  // The reflected ray climbs to the far slopes; a coarse march finds them.
+  // Four halvings between the last miss and the hit place the shore.
+  vec3 mirrorLand(vec3 P, vec3 Rm, vec3 sky, float sgz) {
+    float t = 20.0;
+    for (int i = 0; i < 32; i++) {
+      vec3 q = P + Rm * t;
+      if (landO(q.xz, 3) > q.y) {
+        float lo = t / 1.25, hi = t;
+        for (int b = 0; b < 4; b++) { float m = 0.5 * (lo + hi); vec3 qm = P + Rm * m; if (landO(qm.xz, 3) > qm.y) hi = m; else lo = m; }
+        q = P + Rm * hi;
+        float qh = landO(q.xz, 3) + 20.0;
+        vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
+        a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sgz), mix(1650.0, 1280.0, sgz), qh));
+        vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
+        return mix(a * lit, hazeCol(Rm, q), hazeAmt(q));
+      }
+      t *= 1.25;
+    }
+    return sky;
+  }
   void main() {
     vec3 V = normalize(cameraPosition - vP);
     float dist = length(cameraPosition - vP);
@@ -471,7 +491,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     }
     // Valleys and the feet of slopes see less sky.
     float ao = 0.7 + 0.3 * smoothstep(-0.25, 0.25, n1 - 0.5 + (1.0 - slope) * 0.2);
-    vec3 day = sunC() * max(dot(N, uSun), 0.0) * mix(vSh, 1.0, uRain * 0.7) + skyA(N.y) * ao;
+    vec3 day = sunC() * max(dot(N, uSun), 0.0) * mix(vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist))) + skyA(N.y) * ao;
     // Against the sun, grass and leaves glow at their edges.
     float back = pow(max(dot(-V, uSun), 0.0), 6.0) * (1.0 - uRain);
     day += sunC() * back * (0.12 * (1.0 - rock) + 0.2 * forest) * vec3(0.9, 1.0, 0.6);
@@ -515,26 +535,8 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       // The land in the mirror uses a calmer normal, so far slopes do not break into blobs.
       vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.3, 1.0, -slopeW.y * 0.3)));
       Rm.y = max(Rm.y, 0.005);
-      // The reflected ray climbs to the far slopes; a coarse march finds them.
-      float t = 20.0;
-      for (int i = 0; i < 32; i++) {
-        vec3 q = vP + Rm * t;
-        float hq = landO(q.xz, 3);
-        if (hq > q.y) {
-          // Four halvings between the last miss and this hit smooth the shoreline in the mirror.
-          float lo = t / 1.25, hi = t;
-          for (int b = 0; b < 4; b++) { float m = 0.5 * (lo + hi); vec3 qm = vP + Rm * m; if (landO(qm.xz, 3) > qm.y) hi = m; else lo = m; }
-          q = vP + Rm * hi;
-          hq = landO(q.xz, 3);
-          float qh = hq + 20.0;
-          vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
-          a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sg.z), mix(1650.0, 1280.0, sg.z), qh));
-          vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
-          refl = mix(a * lit, hazeCol(Rm, q), hazeAmt(q));
-          break;
-        }
-        t *= 1.25;
-      }
+      // Two mirror rays a hair apart, averaged, so the mirrored shoreline has a soft edge.
+      refl = 0.5 * (mirrorLand(vP, Rm, refl, sg.z) + mirrorLand(vP, normalize(Rm + vec3(0.0, 0.006, 0.0)), refl, sg.z));
       // Lake Zurich is blue-green; the Walensee is emerald; shallows near the shore run lighter.
       float shallow = smoothstep(-25.0, -2.0, wd);
       vec3 deep = mix(vec3(0.006, 0.035, 0.05), vec3(0.004, 0.055, 0.045), sg.z);
@@ -559,9 +561,11 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
           float dl = length(L);
           vec3 err = R0 - L / dl;
           float ex = dot(err, right), ey = err.y;
+          // Each light's column has its own length and width.
+          float hl = fract(float(i) * 0.618 + uGP[i].x * 0.0013);
           float mm = exp(-pow((tilt - ey * 0.5) / 0.03, 2.0));
-          float fall = ey > 0.0 ? exp(-ey / 0.25) : exp(-pow(ey / 0.02, 2.0));
-          float sx = max(0.003, 3.0 / dl);
+          float fall = ey > 0.0 ? exp(-ey / (0.12 + 0.3 * hl)) : exp(-pow(ey / 0.02, 2.0));
+          float sx = max(0.003, 3.0 / dl) * (0.7 + 0.6 * fract(hl * 7.3));
           cols += uGC[i].rgb * uGP[i].w * mm * fall * exp(-ex * ex / (sx * sx)) * 0.9;
         }
         vec3 errM = R0 - uMoon;
@@ -1254,7 +1258,8 @@ void main() {
   }
   if (a < 0.5) discard;
   c /= a;
-  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c) * (0.3 + 1.2 * uHall), a / 8.0);
+  // The enamel catches stray light, so the name stays legible in shade.
+  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c) * (mix(0.3, 1.0, uDay) + 1.2 * uHall) + c * mix(0.04, 0.35, uDay), a / 8.0);
 }`);
 
 /* Rain in the air: streaks along the wind the train makes, lit by lamps and panes. */
@@ -1833,16 +1838,17 @@ let baked = false;
 
 /* ---------- framing ---------- */
 // The head: x and y lean along the wall, z is the distance to the glass.
-const eye = new THREE.Vector3(0, 0, 1), eyeT = eye.clone();
+// The seated eye sits a little low and to one side, so the recess's sides differ.
+const eye = new THREE.Vector3(-0.07, -0.05, 1), eyeT = eye.clone();
 const REACH = { x: 0.26, y: 0.1, near: 0.3, far: 1 };
 const asp = { v: 1.6 };
 // The gaze tilts down to the track; a tall phone view needs less tilt.
-let pitch0 = -0.135;
+let pitch0 = -0.115;
 function frame(w, h, pr) {
   asp.v = w / h;
   outCam.aspect = w / h;
   outCam.fov = w >= h ? 48 : 66;
-  pitch0 = w >= h ? -0.135 : -0.02;
+  pitch0 = w >= h ? -0.115 : -0.02;
   outCam.updateProjectionMatrix();
   const tanY = Math.tan(THREE.MathUtils.degToRad(outCam.fov) / 2);
   W.uTan.value.set(tanY * asp.v, tanY);
