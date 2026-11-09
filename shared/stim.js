@@ -261,6 +261,8 @@ function keyBinder() {
 
 /* choice: segments, stepper or tray */
 const dot = o => (o.dot ? `<span class="s2-dot" style="background: ${o.dot}"></span>` : '');
+// An option icon leads its label in segments and the stepper.
+const ico = o => (o.icon ? `<span class="s2-ico" aria-hidden="true">${o.icon}</span>` : '');
 function makeChoice(spec, display, state, pick, layer) {
   const { options, label } = spec;
   const find = v => options.find(o => o.value === v);
@@ -280,7 +282,7 @@ function makeChoice(spec, display, state, pick, layer) {
     el.setAttribute('role', 'group');
     el.setAttribute('aria-label', label);
     const chips = options.map(o => {
-      const b = make('button', 's2-chip', `${dot(o)}${o.label}`);
+      const b = make('button', 's2-chip', `${dot(o)}${ico(o)}${o.label}`);
       b.type = 'button';
       b.dataset.value = o.value;
       b.addEventListener('click', () => pick(o.value, true, true));
@@ -307,7 +309,7 @@ function makeChoice(spec, display, state, pick, layer) {
     arrows(el, step);
     return { el, sync() {
       const o = find(state.value);
-      now.innerHTML = o ? `${dot(o)}${o.label}` : '';
+      now.innerHTML = o ? `${dot(o)}${ico(o)}${o.label}` : '';
       el.setAttribute('aria-disabled', String(state.disabled));
     } };
   }
