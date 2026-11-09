@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T07:45:52Z
+updated_at: 2026-11-09T07:51:03Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -18,10 +18,10 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 - [x] Task 2: two same-sign storms 0.2 apart orbit, then merge at 9.5 s (stills at 0, 2, 4, 7, 10 s)
 - [x] Task 3: Silk, Heat, Dye; isobars; CPU fallback
 - [x] Task 4: sound: bed, howl, gust, merge
-- [ ] Task 5: bar, Settings, persistence; Q1 to Q10
+- [x] Task 5: bar (Bar v2), Settings, persistence; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name and motto (draft: Windkaart)
-- [ ] Record the session cost
+- [x] Record the session cost: not metered per session in the app; one session, 2026-11-09 00:10 to about 01:05, 445k context tokens
 
 ## Notes
 
@@ -45,3 +45,13 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 - Task 4: pink-noise bed through a 400 to 1,200 Hz band that follows the mean wind and storm strength; three resonant howls at 200 + 600 |Γ| Hz, panned to the three strongest storms; a gust whoosh with a sweeping band; a merge whomp (membrane at about 38 Hz plus low-passed brown noise). Every hit jitters pitch, time and level.
 - One-shots wait for a waking context, so Tone never warns about a suspended one.
 - Q9 (background tab, real click): context runs after the tap; after the loop sleeps it is suspended within 3 s; hidden tab suspends it too. No console errors or warnings. Levels are set by ear on paper only: Tom checks them on a real device.
+
+- Task 5: the bar moved to Bar v2 (docs/plans/bar-v2.md lists Wind map among the ten v2 Lab toys). Settings rows persist under stimming.windmap.<id>; the look and Wind persist by hand.
+- Performance ladder: after 4 s, full-rate frames slower than 1/38 s for 2 s step one rung: pixel ratio first (High falls to Standard), then half the drawn particles. A new quality choice clears it.
+- The shell shows keyboard keys on touch; Wind map drops its Space entry on coarse pointers itself.
+- QA (browser pane, background tab, in-memory frame pump, no Playwright):
+  - Q1 node --check passes (page and menu). Q2 every chip, action, setting, slider and gesture: no errors or warnings.
+  - Q4 lively 60 frames/s, drifting 30 frames/s, the loop stops 61 s after the last input, no frames asleep, a tap wakes it. Q5 hidden: no frames.
+  - Q6 reduced motion: clean; slower particles, long trails. Q7 four controls, three key rows. Q8 Space adds a cyclone. Q9 see Task 4.
+  - Q10 at High (2496 by 1504) with Many particles during two spin-ups: median 6.2 ms, p90 47.5 ms, max 134 ms per frame in a throttled background tab. Tom checks fps on a real device.
+  - Stills at 1280 and 375 px on Bar v2.
