@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T21:45:00Z
+updated_at: 2026-11-09T22:00:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -151,3 +151,18 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Cross bar: a 19 mm mullion; by day dark against the view with a sunlit top edge, by night lit from the lamp above
 - [x] Faked GI: the baked cabin traces sun patches through our window wall onto floor and far wall, bounces a warm wash, rebakes when day and night change; on the wall itself the sunlit faces of the recess spill warm light beside them and the sunlit floor fills from below
 - [x] Catenary masts every 50 m (H-beam, bracket); every other one has a lamp, every one within 450 m of a station; lamps lowered to just above eye level so they show
+
+## Round 19: adversarial pass on the window (2026-11-09)
+Two critic agents reviewed seven stills (realism; feel and craft). Fixed:
+- [x] Night: the lit cabin reflects plainly over the dark parts of the view
+- [x] Transom higher (13 % from the top, clear of the horizon), one warm-grey material in every state, casts its own sun shadow across the lit jamb
+- [x] Sun patches off under fog and rain, at 20 % under a station canopy, off under the HB hall
+- [x] Runs through fog read as clear channels, not dark lines
+- [x] Scratches near-invisible away from lights; they glint only near a lamp
+- [x] Day wall lifted a little (still dark, per Tom); phone and short-landscape crops keep room for the header and chips
+Open from the critics:
+- [ ] Reveal drawn as a projected box from an off-centre seated eye (unequal jambs)
+- [ ] Pillar reflections of shore lights: random lengths, clipped to water
+- [ ] Hard teal/blue seam in day water (reflected far shore edge); dark blob on near hills
+- [ ] Station: sign contrast, platform gradient, saturated back wall
+- [ ] Track band takes up to a third of the glass on some crops

@@ -1394,7 +1394,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     vec3 s = vec3(0.0);
     float fw = max(fwidth(p.x), 1e-6);
     // Every scratch catches the cabin light, or the daylight, a little.
-    vec3 amb = mix(warm * 0.02 * roomG, vec3(0.05), uDay) + STNC * uStnK * 0.03;
+    // Away from a light, scratches stay all but invisible.
+    vec3 amb = (mix(warm * 0.02 * roomG, vec3(0.05), uDay) + STNC * uStnK * 0.03) * 0.25;
     for (int l = 0; l < 3; l++) {
       float cs = l == 0 ? 0.005 : l == 1 ? 0.009 : 0.019;
       vec2 g = p / cs + float(l) * 17.3;
@@ -1455,7 +1456,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     vec2 q = pg - uC0;
     float d = sdRR(q, uHalf, uRad);
     // The cross bar sits a fifth down from the top; dg is the distance to any edge.
-    float yb = uHalf.y * 0.6;
+    float yb = uHalf.y * 0.74;
     float dg = max(d, BAR + 0.0015 - abs(q.y - yb));
     float e = 0.0015;
     vec2 g = normalize(vec2(sdRR(q + vec2(e, 0.0), uHalf, uRad) - sdRR(q - vec2(e, 0.0), uHalf, uRad), sdRR(q + vec2(0.0, e), uHalf, uRad) - sdRR(q - vec2(0.0, e), uHalf, uRad)) + 1e-6);
@@ -1489,8 +1490,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       float by = (q.y - yb) / BAR;
       float edge = smoothstep(1.0, 1.0 + SEAL / BAR, abs(by));
       vec3 alb = vec3(0.62, 0.63, 0.65) * (0.96 + 0.04 * vnoise(vec2(q.x * 500.0, by)));
-      vec3 nightB = vec3(1.0, 0.88, 0.74) * 0.16 * (0.4 + 0.6 * smoothstep(-1.0, 1.0, by));
-      vec3 dayB = vec3(1.0, 0.97, 0.92) * 0.07 + vec3(1.0, 0.9, 0.74) * 1.5 * smoothstep(0.45, 0.95, by) * max(uSunW.y, 0.0) * sunAt(pg.x);
+      vec3 nightB = vec3(1.0, 0.88, 0.74) * 0.12 * (0.45 + 0.55 * smoothstep(-1.0, 1.0, by));
+      vec3 dayB = vec3(1.0, 0.97, 0.92) * 0.15 + vec3(1.0, 0.9, 0.74) * 1.5 * smoothstep(0.45, 0.95, by) * max(uSunW.y, 0.0) * sunAt(pg.x);
       col = alb * mix(nightB, dayB, uDay);
       col += alb * STNC * uStnK * 0.25;
       for (int i = 0; i < 3; i++) col += vec3(1.0, 0.82, 0.6) * uLamp[i].z * 0.25 * exp(-length(uLamp[i].xy - pg) * 8.0);
@@ -1550,6 +1551,9 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       room = mix(room, self, me * (1.0 - uDay) * 0.85);
       // By day the sunlit cabin shows a little more in the pane.
       col += room * F * mix(0.5, 1.1, uDay) * (1.0 - fog);
+      // At night the lit cabin shows plainly wherever the view behind is dark.
+      float darkV = 1.0 - smoothstep(0.0, 0.08, dot(col, vec3(0.2126, 0.7152, 0.0722)));
+      col += room * 0.09 * darkV * (1.0 - uDay) * (1.0 - fog);
       // The inner pane of the double glazing adds a faint second image.
       col += textureLod(tRoom, R + vec3(0.012, -0.018, 0.0), 1.5).rgb * F * 0.18 * (1.0 - fog) * (1.0 - me * 0.8);
       // The glass reflects the lit carriage as a soft warm gradient.
@@ -1558,7 +1562,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Station light washes the drops and the fog at a platform.
       col += STNC * uStnK * (fog * 0.05 + cover * 0.08 + rim * 0.1);
       // Drops: a dark rim and a warm highlight from the room.
-      col *= 1.0 - 0.5 * rim;
+      // In fog the runs are clear channels, not dark lines.
+      col *= 1.0 - 0.5 * rim * (1.0 - 0.8 * fog);
       // By day the bright far windows of the cabin make the highlight.
       col += mix(warm * 0.35 * roomG, vec3(0.6, 0.63, 0.66), uDay) * spec;
       // Dried tracks of old rain: grime that only a lamp shows.
@@ -1625,6 +1630,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // The point is lit only if that ray passes through the opening.
         vec2 lat = uSunW.xy / max(-uSunW.z, 0.05) * (1.0 - f) * REVEAL / (2.0 * uTan.y);
         float through = smoothstep(0.002, -0.002, sdRR(h2 + lat, uHalf, uRad));
+        // The transom blocks the sun too: its shadow crosses the lit jamb.
+        through *= smoothstep(BAR * 0.8, BAR * 1.4, abs(h2.y + lat.y - uHalf.y * 0.74));
         // Lambert: the face's normal lies in the wall plane.
         float face = max(dot(n2, uSunW.xy), 0.0);
         day += vec3(1.0, 0.9, 0.74) * 2.6 * face * through * sunAt(h2.x + uC0.x);
@@ -1651,7 +1658,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Night: one ceiling lamp above the window; its pool fades softly down and out.
       vec2 lp = (p - vec2(uC0.x, 0.78)) * vec2(0.45, 1.0);
       float pool = 0.22 + 0.95 * exp(-dot(lp, lp) * 2.2);
-      vec3 light = mix(vec3(1.0, 0.88, 0.74) * 0.16 * pool, vec3(1.0, 0.98, 0.95) * 0.03 * (0.8 + 0.25 * up), uDay);
+      vec3 light = mix(vec3(1.0, 0.88, 0.74) * 0.16 * pool, vec3(1.0, 0.98, 0.95) * 0.05 * (0.8 + 0.25 * up), uDay);
 
       // A groove where the lining meets the wall, and a soft shadow round it.
       alb *= 1.0 - 0.3 * smoothstep(0.005, 0.0, abs(dW - 0.004));
@@ -1854,7 +1861,9 @@ function frame(w, h, pr) {
   // One window, centred in a bright wall.
   // The window fills the view; a slim margin of wall frames it.
   if (w >= h) { W.uHalf.value.set(asp.v * 0.5 - 0.065, 0.435); W.uRad.value = 0.075; W.uC0.value.set(0, -0.01); }
-  else { W.uHalf.value.set(asp.v * 0.5 - 0.045, 0.45); W.uRad.value = 0.05; W.uC0.value.set(0, -0.01); }
+  else { W.uHalf.value.set(asp.v * 0.5 - 0.07, 0.38); W.uRad.value = 0.05; W.uC0.value.set(0, -0.005); }
+  // A short landscape phone keeps room for the header and the chips.
+  if (w >= h && h < 450) { W.uHalf.value.y = 0.36; W.uC0.value.set(0, -0.005); }
   // The stop line spans most of the window; its canvas keeps the type's aspect.
   const phx = w >= h ? Math.min(W.uHalf.value.x * 0.7, 0.42) : W.uHalf.value.x * 0.95, phy = w >= h ? 0.033 : 0.026;
   // No wall is left over the window, so the stop line stays off; the station signs name it.
@@ -1978,7 +1987,10 @@ function place() {
   for (let i = 0; i < 3; i++) W.uLamp.value[i].set(...(hits[i] || [0, 0, 0]));
   posts.sort((a, b) => Math.abs(a) - Math.abs(b));
   // Sun shadows need sun: rain and night take them away.
-  const sunK = dayV * (1 - Math.min(1, OUTU.uRain.value) * 0.85);
+  // Fog on the pane scatters the sun too, so no sharp patches under fog.
+  let sunK = dayV * (1 - Math.min(1, OUTU.uRain.value) * 0.85) * (1 - Math.min(1, W.uFog.value * 1.1));
+  // A station canopy or the HB hall roof shades the window.
+  if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 ? dx < 200 : dx < CAN) sunK *= OUTU.uHall.value > 0.5 ? 0.0 : 0.2; }
   for (let i = 0; i < 3; i++) W.uPost.value[i].set(posts[i] ?? 9, 0, sunK);
   drawPid(((camX % TILE) + TILE) % TILE);
   OUTU.uDay.value = dayV;
