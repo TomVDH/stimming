@@ -2018,19 +2018,25 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           <a class="toy" id="launch" href="launch/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <!-- Twilight plume (spike 29 A): exhaust climbs a dark tile; the sun under the horizon lights it above the shadow line. -->
                 <defs>
-                  <radialGradient id="launch-dark" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="oklch(0.48 0.03 262)"/><stop offset="0.72" stop-color="oklch(0.34 0.03 266)" stop-opacity="0.9"/><stop offset="1" stop-color="oklch(0.28 0.03 270)" stop-opacity="0"/></radialGradient>
-                  <radialGradient id="launch-lit" cx="0.42" cy="0.4" r="0.6"><stop offset="0" stop-color="oklch(0.98 0.05 92)"/><stop offset="0.55" stop-color="oklch(0.88 0.14 72)"/><stop offset="0.86" stop-color="oklch(0.7 0.15 22)" stop-opacity="0.9"/><stop offset="1" stop-color="oklch(0.6 0.14 15)" stop-opacity="0"/></radialGradient>
-                  <filter id="launch-glow" x="-0.5" y="-0.5" width="2" height="2"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-                  <clipPath id="launch-clip"><rect x="14" y="14" width="94" height="94"/></clipPath>
+                  <linearGradient id="launch-sky" x1="0" y1="16" x2="0" y2="80" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.2 0.06 270)"/><stop offset="0.7" stop-color="oklch(0.32 0.08 320)"/><stop offset="1" stop-color="oklch(0.66 0.14 50)"/></linearGradient>
+                  <linearGradient id="launch-glow" x1="0" y1="80" x2="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.5 0.03 270)"/><stop offset="0.55" stop-color="oklch(0.58 0.04 270)"/><stop offset="0.8" stop-color="oklch(0.88 0.14 80)"/></linearGradient>
+                  <clipPath id="launch-clip"><rect x="16" y="16" width="92" height="92"/></clipPath>
                 </defs>
-                <rect x="20" y="20" width="94" height="94" fill="oklch(0.07 0.01 265)"/>
-                <rect x="14" y="14" width="94" height="94" fill="oklch(0.13 0.022 268)"/>
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 260)"/>
+                <rect x="16" y="16" width="92" height="92" fill="url(#launch-sky)"/>
                 <g clip-path="url(#launch-clip)">
-                  <rect id="launch-sky" x="14" y="2" width="94" height="60" fill="oklch(0.2 0.04 300)" opacity="0.55"/>
-                  <g id="launch-puffs"></g>
-                  <rect id="launch-head" x="88.2" y="18.2" width="3.6" height="3.6" fill="oklch(0.99 0.03 95)" filter="url(#launch-glow)"/>
+                  <path id="launch-plume" d="M58 80C58 66 59 52 66 34" stroke="url(#launch-glow)" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+                  <circle id="launch-rocket" cx="61" cy="57" r="2.4" fill="oklch(0.97 0.05 90)"/>
+                  <rect x="16" y="78" width="92" height="3" fill="oklch(0.11 0.02 280)"/>
+                  <rect x="16" y="81" width="92" height="27" fill="oklch(0.2 0.05 310)"/>
+                  <rect x="16" y="81" width="92" height="2" fill="oklch(0.55 0.12 45)" opacity="0.7"/>
+                  <g stroke="oklch(0.08 0.01 280)" stroke-width="1.6" stroke-linecap="square" fill="oklch(0.08 0.01 280)">
+                    <path d="M20 108L18 86M25 108L27 82M30 108L29 90M34 108L37 94M90 108L88 92M95 108L98 80M100 108L102 86M105 108L103 90"/>
+                    <path d="M16 108V98L24 96L32 99L40 104L48 108ZM84 108L90 101L98 97L108 96V108Z" stroke="none"/>
+                    <ellipse cx="27.5" cy="80" rx="1.6" ry="3.4" transform="rotate(14 27.5 80)"/><ellipse cx="18" cy="84" rx="1.4" ry="3" transform="rotate(-10 18 84)"/>
+                    <ellipse cx="98.5" cy="78" rx="1.6" ry="3.4" transform="rotate(16 98.5 78)"/><ellipse cx="102.4" cy="84" rx="1.4" ry="3" transform="rotate(10 102.4 84)"/>
+                  </g>
                 </g>
               </svg>
             </span>
@@ -3405,43 +3411,44 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     };
   }
 
-  // Twilight plume: puffs climb a bent path; pointer y is the Dawn slider.
-  // Below the shadow line a puff is cold; above it the hidden sun lights it.
+  // A rocket climbs from the shore below the pointer; its plume turns gold up high.
   {
-    const puffsG = $('launch-puffs'), head = $('launch-head'), sky = $('launch-sky');
-    const f = n => +n.toFixed(2), clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-    // The same seeded stream as the spike, so the tile matches the sheet.
-    let seed = 41;
-    const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-    const P0 = [42, 116], P1 = [46, 62], P2 = [90, 20];
-    const at = t => [(1 - t) * (1 - t) * P0[0] + 2 * (1 - t) * t * P1[0] + t * t * P2[0], (1 - t) * (1 - t) * P0[1] + 2 * (1 - t) * t * P1[1] + t * t * P2[1]];
-    const N = 46, puffs = [], dark = [], lit = [];
-    for (let i = 0; i < N; i++) {
-      const t = i / (N - 1), p = at(t), q = at(Math.min(1, t + 0.01));
-      const dx = q[0] - p[0], dy = q[1] - p[1], m = Math.hypot(dx, dy) || 1;
-      const rad = 2.6 + 9.5 * Math.pow(t, 0.85), j = (rnd() - 0.5) * rad * 0.7;
-      puffs.push({ x: p[0] - (dy / m) * j, y: p[1] + (dx / m) * j, r: rad * (0.8 + 0.4 * rnd()) });
-    }
-    const circle = (p, k, fill) => { const c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', f(p.x)); c.setAttribute('cy', f(p.y)); c.setAttribute('r', f(p.r * k)); c.setAttribute('fill', fill); puffsG.append(c); return c; };
-    puffs.forEach(p => dark.push(circle(p, 1, 'url(#launch-dark)')));
-    puffs.forEach(p => lit.push(circle(p, 1.08, 'url(#launch-lit)')));
-    const st = { u: 0.42 };
-    const draw = () => {
-      const sh = 122 - 110 * st.u;
-      sky.setAttribute('y', f(sh - 60));
-      puffs.forEach((p, i) => { const w = sstep(sh + 7, sh - 7, p.y); lit[i].setAttribute('opacity', f(w)); dark[i].setAttribute('opacity', f(1 - 0.5 * w)); });
-      head.setAttribute('opacity', f(sstep(sh + 4, sh - 4, P2[1])));
+    const plume = $('launch-plume'), rocket = $('launch-rocket');
+    const st = { p: 0.55, x: 58 };
+    let len = 1, flight = null, inside = false;
+    const shape = x => {
+      plume.setAttribute('d', `M${x} 80C${x} 66 ${x + 1} 52 ${x + 8} 34`);
+      len = plume.getTotalLength();
+      plume.style.strokeDasharray = len;
     };
+    const draw = () => {
+      const pt = plume.getPointAtLength(st.p * len);
+      rocket.setAttribute('cx', pt.x.toFixed(1));
+      rocket.setAttribute('cy', pt.y.toFixed(1));
+      plume.style.strokeDashoffset = (len * (1 - st.p)).toFixed(1);
+    };
+    // Each flight starts from the latest pointer x.
+    const fly = () => {
+      shape(st.x);
+      st.p = 0;
+      draw();
+      flight = gsap.to(st, { p: 1, duration: 1.6, ease: 'power2.in', onUpdate: draw,
+        onComplete: () => { flight = inside ? gsap.delayedCall(0.3, fly) : null; } });
+    };
+    const aimX = p => { st.x = Math.max(30, Math.min(88, p[0])); };
+    shape(st.x);
     draw();
-    const to = (u, d = 0.35, ease = 'power2.out') => gsap.to(st, { u, duration: d, ease, overwrite: 'auto', onUpdate: draw });
-    const aim = p => to(clamp((118 - p[1]) / 100, 0, 1));
-    let sweep = null;
     toys.launch = {
-      // With no pointer, the dawn sweeps up and down the plume.
-      enter(p) { if (p) { aim(p); return; } sweep = gsap.fromTo(st, { u: 0.05 }, { u: 1, duration: 2.4, ease: 'sine.inOut', yoyo: true, repeat: -1, onUpdate: draw }); },
-      move(p) { if (p && !sweep) aim(p); },
-      leave() { sweep?.kill(); sweep = null; to(0.42, 0.8, 'power3.out'); },
+      enter(p) { inside = true; if (p) aimX(p); if (!flight) fly(); },
+      move(p) { if (p) aimX(p); },
+      leave() {
+        inside = false;
+        flight?.kill();
+        flight = null;
+        st.x = 58;
+        shape(58);
+        gsap.fromTo(st, { p: 0 }, { p: 0.55, duration: 0.5, ease: 'power1.out', overwrite: true, onUpdate: draw });
+      },
       play() { toys.launch.enter(null); return { kill() {} }; },
       rest() { toys.launch.leave(); },
     };
