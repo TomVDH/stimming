@@ -123,10 +123,12 @@ export const VARIETIES = {
     { fonts: { fd: 'Gabarito', fn: SLAB, fs: SLAB, fsn: SLAB } }),
   plate: look('plate', 'Plate: the title sits on a white plate', { nameK: 0.8, blur: 30, dim: 0.38 },
     { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
-  signal: look('signal', 'Signal: one stack, the box and title in signal yellow', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
-    { stack: true, fonts: { fd: 'Gabarito', fn: 'B612', fs: 'B612', fsn: 'B612' } }),
+  signal: look('signal', 'Signal: white flash, then the logo and title take the toy’s colour', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
+    { stack: true, ink: true, fonts: { fd: 'Gabarito', fn: 'B612', fs: 'B612', fsn: 'B612' } }),
   readout: look('readout', 'Readout: the title rides above the logo, all slab caps', { nameK: 0.6, logoK: 0.9, padK: 0.8, blur: 24, dim: 0.4 },
     { fonts: { fd: SLAB, fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  // Strobe keeps Classic's style; its blinks and cuts fit inside Classic's beats.
+  strobe: { label: 'Strobe: the box blinks, lines cut in hard', group: 'Restyle', timing: CLASSIC, flash: 'strobe', reveal: 'cut', exit: 'cut', read: true },
   // Snap runs 20% longer than the base table, every beat in proportion.
   snap: {
     label: 'Snap', group: 'Earlier', read: true,
@@ -171,17 +173,25 @@ export const VARIETIES = {
     timing: { lead: 3, flash: 11, unfurl: 300, wipe: 280, fade: 450, readBase: 400 },
     reveal: 'lift', exit: 'drop', read: true,
   },
-  strobe: {
-    label: 'Strobe: the box blinks, lines cut in hard', group: 'Earlier',
-    timing: { flash: 8, nlLag: 4, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, fade: 300, readBase: 450 },
-    flash: 'strobe', reveal: 'cut', exit: 'cut', read: true,
-  },
   shutter: {
     label: 'Shutter: slits open, a tube switches off', group: 'Earlier',
     timing: { lead: 3, flash: 11, unfurl: 280, wipe: 300, fade: 380, readBase: 400 },
     reveal: 'slit', exit: 'crt', read: true,
   },
 };
+
+// Signal's ink per toy: one colour or a gradient. These are proposals.
+const INKS = {
+  morpher: 'linear-gradient(100deg, oklch(0.84 0.17 340), oklch(0.84 0.14 250))',
+  pop: 'oklch(0.9 0.2 128)',
+  fidget: 'oklch(0.83 0.17 62)',
+  domino: 'linear-gradient(100deg, oklch(0.74 0.2 28), oklch(0.9 0.18 100))',
+  pins: 'oklch(0.89 0.06 240)',
+  galaxy: 'linear-gradient(100deg, oklch(0.8 0.16 305), oklch(0.87 0.13 200))',
+  prism: 'linear-gradient(100deg, oklch(0.74 0.2 28), oklch(0.9 0.18 100), oklch(0.86 0.2 145), oklch(0.84 0.13 215), oklch(0.74 0.17 300))',
+};
+// Any other toy gets one bright colour; its id picks the hue.
+const inkOf = id => INKS[id] || `oklch(0.88 0.16 ${[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)})`;
 
 // A look's style can never change a beat; these keys are dropped from it.
 const BEAT = /^(lead|pop|flash|unfurl|hold|wipe|fade|read\w+|\w+Lag)$/;
@@ -227,9 +237,10 @@ const REVEAL = {
   cut: {
     shut: { clipPath: 'inset(0 0 100% 0)' },
     // A hard cut: the line shows inverted for one frame, then settles.
-    open: el => {
+    // The promise lasts as long as an unfurl, so the beat keeps its length.
+    open: (el, T) => {
       Object.assign(el.style, { clipPath: 'none', background: '#fff', color: 'var(--intro-bg)' });
-      return wait(1).then(() => { el.style.background = ''; el.style.color = ''; });
+      return wait(1).then(() => { el.style.background = ''; el.style.color = ''; }).then(() => wait(frames(T.unfurl) - 1));
     },
   },
   stamp: {
@@ -323,6 +334,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   const T = { ...tableOf(variety), ...timing };
   root.classList.add('is-live');
   if (V.look) root.dataset.look = V.look;
+  if (V.ink) root.style.setProperty('--ink', inkOf(id || toyId()));
   if (V.layout) root.dataset.layout = V.layout;
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
@@ -432,11 +444,12 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   const blow = both ? text : big;
 
   // The box flashes on and holds.
-  await wait(T.lead);
+  // Strobe's blinks take their frames out of the lead, so the box lands on the beat.
+  const blinks = V.flash === 'strobe' ? Math.min(2, Math.floor(T.lead / 2)) : 0;
+  await wait(T.lead - 2 * blinks);
   await gate('glass');
-  if (V.flash === 'strobe') {
-    // Strobe: two short blinks before the box lands.
-    for (let k = 0; k < 2; k++) { box(true); text.style.opacity = 1; await wait(1); box(false); await wait(1); }
+  if (blinks) {
+    for (let k = 0; k < blinks; k++) { box(true); text.style.opacity = 1; await wait(1); box(false); await wait(1); }
   }
   box(true);
   text.style.opacity = 1;
@@ -518,7 +531,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (exit === 'erase') await each(el => play(el, p => ({ clipPath: `inset(0 ${pct(p)} 0 0)` }), T.wipe, accel));
   if (exit === 'drop') await each(el => play(el, p => ({ clipPath: `inset(${pct(p)} 0 0 0)`, transform: `translateY(${(0.6 * p).toFixed(3)}em)` }), T.wipe, accel));
   if (exit === 'fold') await each(el => play(el, p => ({ transformOrigin: '50% 0', transform: `perspective(30em) rotateX(${(90 * p).toFixed(2)}deg)` }), T.wipe, accel));
-  if (exit === 'cut') { box(true); await wait(1); text.style.opacity = 0; }
+  // The cut takes one frame; the rest of the exit beat stays dark.
+  if (exit === 'cut') { box(true); await wait(1); text.style.opacity = 0; await wait(frames(T.wipe) - 1); }
   if (exit === 'crt') {
     // The column collapses to a line, then the line shrinks to a dot.
     text.style.transformOrigin = '50% 50%';

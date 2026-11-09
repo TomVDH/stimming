@@ -22,3 +22,5 @@ Three restyle looks (Brut, Label, Poster) as lab varieties on Classic's timing t
 Headless QA, 2026-11-09: phase-to-phase beats match Classic within one frame; the logo's centre holds at 1280x800, 375x812 and 812x375; Classic screenshots are byte-equal to main at pop, flash and rest. Open: Tom picks one look in the lab.
 
 Second round, 2026-11-09: Plate, Signal and Readout added on Tom's request. Same checks pass (beats within one frame, logo fixed, fit clean at the three sizes).
+
+Third round, 2026-11-09: Signal takes a per-toy ink (colour or gradient) after a white flash. Strobe moved into Restyle on the shared beats. Open: Tom's lab was on Snap when he compared timing; he has not yet said whether the looks keep Classic's table or move to Snap's.
