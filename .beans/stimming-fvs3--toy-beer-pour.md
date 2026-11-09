@@ -45,7 +45,7 @@ Ten questions answered; see docs/plans/beer.md, Overhaul brief. three.js rebuild
 
 - [x] Overhaul 1: three.js scene, macro camera, depth of field, backdrop, Duvel glass and bottle
 - [ ] Overhaul 2: GPU fizz (trains, wall bubbles, surge, pops); checkpoint with Tom
-- [ ] Overhaul 3: grab-the-bottle pour, stream, liquid
+- [ ] Overhaul 3: grab-the-bottle pour, stream, liquid (pour and stream done; glass tilt open)
 - [ ] Overhaul 4: head, sips, lacing
 - [ ] Overhaul 5: the other 24 beers
 
@@ -58,3 +58,5 @@ Ten questions answered; see docs/plans/beer.md, Overhaul brief. three.js rebuild
 - Lookdev pass 3: tighter, lower lamp so the glass above the head stays clear; gentler bloom; soft table edge; the glass base glows with light piped from the beer; vertical caustic bands in the beer. Checked at 1280 and 375.
 
 - Camera orbit: a slow drift round the glass's axis plus a mouse-hover lean; off under reduced motion. Glass: back-wall highlights, slight chromatic fringe, solid stem and foot that bend the view, rounded lip highlight, soft table horizon under the lamp.
+
+- Pour pass (2026-11-09): the bottle lifts from the table, swings over the glass and tips. A tilted-bottle volume model sets its beer level; flow follows the head over the lower lip (weir law). The jet is a camera-facing ribbon on its parabola: it thins as it falls and beads near the end. Hold pours; a drag down tips further; a full glass tips it back. The Pour action stops with a little left for the yeast. The lifted bottle cross-fades from the blurred layer to a sharp one. About 15 s per Duvel. Checked at 1024 and 375.
