@@ -9,7 +9,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&family=Yellowtail&family=Sacramento&family=Tilt+Neon&family=Neonderthaw&family=Monoton&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&family=Tilt+Neon&family=Neonderthaw&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
@@ -64,10 +64,11 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, oklchLinear, reduced, onReducedChange, quality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+import { FIG_GLSL } from './figures.js';
 
 const stage = document.getElementById('stage');
 // Handlers bind once the scene exists.
-const act = { sauce() {}, wind() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, reset() {} };
+const act = { sauce() {}, wind() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, camcorder() {}, reset() {} };
 const QS = new URLSearchParams(location.search);
 
 /* ---------- sauces and neon ---------- */
@@ -97,15 +98,16 @@ const ui = initPage({ id: 'frietkot', bar: {
       options: [{ value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }, { value: 'green', label: 'Green' }] },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'traffic', label: 'Traffic', value: true, persist: true, onToggle: on => act.traffic(on) },
-    { type: 'choice', id: 'weather', label: 'Weather', value: 'dry', persist: true, onPick: v => act.weather(v),
-      options: [{ value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
+    { type: 'toggle', id: 'camcorder', label: 'Camcorder', value: true, persist: true, onToggle: on => act.camcorder(on) },
+    { type: 'choice', id: 'weather', label: 'Weather', value: 'shift', persist: true, onPick: v => act.weather(v),
+      options: [{ value: 'shift', label: 'Shifting' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
     { type: 'choice', id: 'people', label: 'People', value: 'ink', persist: true, onPick: v => act.people(v),
       options: [{ value: 'ink', label: 'Ink' }, { value: 'line', label: 'Line' }, { value: 'haze', label: 'Haze' }] },
     { type: 'toggle', id: 'moths', label: 'Moths', value: true, persist: true, onToggle: on => act.moths(on) },
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'drop fries'], ['hold', 'shake'], ['drag', 'look round']],
+  keys: [['click', 'drop fries'], ['hold', 'shake'], ['drag', 'look round'], ['scroll', 'zoom']],
 } });
 
 // Seeded random keeps the square the same on every load.
@@ -175,7 +177,7 @@ const U = {
   // Outside, the window light reads brighter than the lamp's falloff gives.
   uOut: { value: 6.5 },
   uVeh0: { value: new THREE.Vector4() },
-  uPartyP: { value: new THREE.Vector3(-15.5, 2.2, -60.5) },
+  uPartyP: { value: new THREE.Vector3(-24, 2.2, -60.5) },
   uPartyCol: { value: new THREE.Vector3() },
   uVeh1: { value: new THREE.Vector4() },
   uWet: { value: 0 },
@@ -443,12 +445,16 @@ M.menu = new THREE.ShaderMaterial({
   }`,
 });
 // The seating room's glass: warm light through condensation, people as soft shapes.
+// Who sits in the seating room: x, standing (0 sat, 1 up), presence, lean.
+const SIT_N = 5;
+const sitU = Array.from({ length: SIT_N }, () => new THREE.Vector4());
 const annexGlass = new THREE.ShaderMaterial({
-  uniforms: U,
+  uniforms: { ...U, uSit: { value: sitU } },
   vertexShader: VS,
   fragmentShader: /* glsl */`
   ${NOISE}
   uniform float uTime;
+  uniform vec4 uSit[${SIT_N}];
   varying vec3 vP, vN;
   // Soft shapes: the fog blurs everything behind the glass.
   float blob(vec2 p, vec2 c, vec2 r) { return smoothstep(1.6, 0.2, length((p - c) / r)); }
@@ -458,22 +464,80 @@ const annexGlass = new THREE.ShaderMaterial({
     float fog = 0.55 + 0.45 * fbm(p * 3.0 + vec2(0.0, uTime * 0.02));
     // Drops run down through the fog in clear streaks.
     float streak = smoothstep(0.92, 1.0, hash12(vec2(floor(p.x * 40.0), 1.0))) * fbm(vec2(p.x * 40.0, p.y * 3.0));
-    // Two seated figures: a head and shoulders each, blurred by the fog.
+    // Slim shapes behind the fog: they come in, sit, eat, talk, get up and go.
     float sit = 0.0;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < ${SIT_N}; i++) {
+      vec4 o = uSit[i];
+      if (o.z < 0.01) continue;
       float fi = float(i);
-      // They shift in their seats, lean in to talk, lift a fork, and now and then one gets up.
-      float stand = smoothstep(0.85, 1.0, sin(uTime * 0.11 + fi * 2.3));
-      vec2 c = vec2(3.3 + fi * 1.05 + 0.18 * sin(uTime * 0.23 + fi * 1.7) + 0.06 * sin(uTime * 0.9 + fi),
-                    1.32 + 0.03 * sin(uTime * 0.7 + fi * 2.0) + 0.35 * stand);
-      float lean = 0.06 * sin(uTime * 0.5 + fi * 3.0);
-      sit = max(sit, max(blob(p, c + vec2(lean, 0.27), vec2(0.1, 0.12)), blob(p, c, vec2(0.24, 0.2))));
-      sit = max(sit, blob(p, c + vec2(0.2 + 0.05 * sin(uTime * 1.3 + fi), 0.12 + 0.1 * max(0.0, sin(uTime * 0.8 + fi * 1.9))), vec2(0.05, 0.05)));
+      vec2 c = vec2(o.x, mix(1.18, 1.5, o.y) + 0.02 * sin(uTime * 0.7 + fi * 2.0));
+      float body = blob(p, c - vec2(0.0, mix(0.0, 0.2, o.y)), vec2(0.12, mix(0.2, 0.36, o.y)));
+      float head = blob(p, c + vec2(o.w, 0.29), vec2(0.07, 0.085));
+      // A fork rises to the mouth now and then, only when sat.
+      float fork = blob(p, c + vec2(0.13, 0.08 + 0.12 * max(0.0, sin(uTime * 0.9 + fi * 1.9))), vec2(0.035, 0.04)) * (1.0 - o.y);
+      sit = max(sit, max(max(body, head), fork) * o.z);
     }
     // The pane is brightest in its middle, where the lamp inside hangs.
     float x = fract((p.x - 2.9) / 1.5), mid = 1.0 - 0.6 * pow(abs(x - 0.4) * 2.0, 2.0);
     vec3 c = warm * (0.35 + 0.45 * fog) * (1.0 - 0.45 * sit) * (1.0 - 0.4 * streak) * mid;
     gl_FragColor = vec4(c * 0.16, 1.0);
+  }`,
+});
+// Food photos of the period: a burger, fries in a cone, a long sausage, a big special burger.
+// Painted from shapes; no words, no marks of any brand.
+const foodMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec2 vUv; varying float vX; void main() { vUv = uv; vX = (modelMatrix * vec4(position, 1.0)).x; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  varying vec2 vUv;
+  varying float vX;
+  float el(vec2 p, vec2 c, vec2 r) { return length((p - c) / r) - 1.0; }
+  float bx(vec2 p, vec2 c, vec2 h) { vec2 q = abs(p - c) - h; return max(q.x, q.y); }
+  vec3 lay(vec3 base, vec3 col, float d) { return mix(base, col, smoothstep(0.02, -0.02, d)); }
+  void main() {
+    // The panel is 2.7 to 1; work in a box 2.7 wide and 1 high.
+    vec2 p = vec2(vUv.x * 2.7, vUv.y);
+    float i = floor((vX - (${S.ap[0].toFixed(2)})) / ((${(S.ap[1] - S.ap[0] - 0.15).toFixed(3)}) / 4.0));
+    vec3 c = mix(vec3(0.95, 0.75, 0.35), vec3(0.85, 0.35, 0.12), vUv.y);
+    vec2 m = vec2(1.0, 0.48);
+    if (i < 0.5) {
+      // A burger: bun, sesame, lettuce, cheese, patty, bun.
+      c = lay(c, vec3(0.75, 0.42, 0.14), el(p, m + vec2(0.0, 0.18), vec2(0.42, 0.22)));
+      c = lay(c, vec3(0.25, 0.65, 0.15), bx(p, m + vec2(0.0, 0.01 + 0.02 * sin(p.x * 30.0)), vec2(0.46, 0.04)));
+      c = lay(c, vec3(1.0, 0.75, 0.1), bx(p, m + vec2(0.0, -0.05), vec2(0.44, 0.03)));
+      c = lay(c, vec3(0.28, 0.12, 0.05), bx(p, m + vec2(0.0, -0.12), vec2(0.43, 0.05)));
+      c = lay(c, vec3(0.8, 0.5, 0.2), el(p, m + vec2(0.0, -0.24), vec2(0.42, 0.08)));
+      for (int k = 0; k < 6; k++) c = lay(c, vec3(1.0, 0.95, 0.8), el(p, m + vec2(-0.25 + float(k) * 0.1, 0.27 + 0.03 * sin(float(k) * 2.0)), vec2(0.02, 0.012)));
+    } else if (i < 1.5) {
+      // Fries in a paper cone, a white dollop on top.
+      vec2 q = p - vec2(1.35, 0.1);
+      float cone = max(abs(q.x) - 0.06 - q.y * 0.35, max(-q.y, q.y - 0.55));
+      for (int k = 0; k < 9; k++) c = lay(c, vec3(1.0, 0.82, 0.3) * (0.85 + 0.15 * sin(float(k) * 3.0)), bx(p, vec2(1.18 + float(k) * 0.045, 0.72 + 0.08 * sin(float(k) * 1.7)), vec2(0.015, 0.14)));
+      c = lay(c, vec3(0.95, 0.94, 0.88), cone);
+      c = lay(c, vec3(0.85, 0.1, 0.08), max(cone, abs(fract(q.y * 6.0) - 0.5) - 0.22));
+      c = lay(c, vec3(1.0, 0.97, 0.85), el(p, vec2(1.35, 0.86), vec2(0.13, 0.07)));
+    } else if (i < 2.5) {
+      // A long sausage with a zigzag of red sauce and chopped onion.
+      c = lay(c, vec3(0.45, 0.2, 0.08), el(p, m, vec2(0.7, 0.13)));
+      float zz = abs(p.y - m.y - 0.05 * (abs(fract(p.x * 5.0) - 0.5) * 4.0 - 1.0)) - 0.025;
+      c = lay(c, vec3(0.85, 0.15, 0.05), max(zz, el(p, m, vec2(0.66, 0.12))));
+      for (int k = 0; k < 8; k++) c = lay(c, vec3(0.97, 0.95, 0.85), el(p, m + vec2(-0.5 + float(k) * 0.14, 0.08), vec2(0.02, 0.015)));
+    } else {
+      // The big special: a tall burger, three sauces dripping from the top bun.
+      c = lay(c, vec3(0.7, 0.38, 0.12), el(p, m + vec2(0.0, 0.22), vec2(0.4, 0.2)));
+      c = lay(c, vec3(1.0, 0.85, 0.2), bx(p, m + vec2(-0.2, 0.06 - 0.05 * fract(p.x * 4.0)), vec2(0.1, 0.05)));
+      c = lay(c, vec3(0.4, 0.18, 0.06), bx(p, m + vec2(0.0, 0.04 - 0.06 * fract(p.x * 3.0 + 0.3)), vec2(0.08, 0.06)));
+      c = lay(c, vec3(0.85, 0.15, 0.05), bx(p, m + vec2(0.2, 0.05 - 0.05 * fract(p.x * 5.0)), vec2(0.09, 0.05)));
+      c = lay(c, vec3(0.3, 0.13, 0.05), bx(p, m + vec2(0.0, -0.08), vec2(0.42, 0.07)));
+      c = lay(c, vec3(0.8, 0.5, 0.2), el(p, m + vec2(0.0, -0.24), vec2(0.4, 0.08)));
+    }
+    // A white price tab in the corner, and a thin frame.
+    c = lay(c, vec3(1.0), bx(p, vec2(2.38, 0.2), vec2(0.18, 0.1)));
+    c = lay(c, vec3(0.9, 0.1, 0.08), bx(p, vec2(2.38, 0.2), vec2(0.13, 0.05)));
+    float frame = smoothstep(0.03, 0.0, min(min(p.x, 2.7 - p.x), min(p.y, 1.0 - p.y)));
+    c = mix(c, vec3(0.08), frame);
+    // Backlit: bright, a little brighter in the middle.
+    gl_FragColor = vec4(c * (0.8 + 0.4 * (1.0 - abs(vUv.x - 0.5))) * 1.1, 1.0);
   }`,
 });
 // The light box over the seating room: warm white over a red band.
@@ -509,7 +573,7 @@ function slab(pts, z0, z1, mat, parent = shack) {
   return m;
 }
 // Bike rack places, staggered so the bikes overlap like a real jumble.
-const RACK = Array.from({ length: 6 }, (_, i) => ({ x: -3.3 - i * 0.55, z: 2.6 + (i % 2) * 0.32, bike: null }));
+const RACK = Array.from({ length: 6 }, (_, i) => ({ x: -5.8 - i * 0.55, z: 3.4 + (i % 2) * 0.32, bike: null }));
 {
   const [ax0, ax1, ay0, ay1] = S.ap, t = 0.06, Z = S.apZ, X0 = S.x0, X1 = S.x1, Z0 = S.z0;
   // Plinth, set back so the shack floats a little.
@@ -533,6 +597,13 @@ const RACK = Array.from({ length: 6 }, (_, i) => ({ x: -3.3 - i * 0.55, z: 2.6 +
   box(X0 + t, X1 - t, S.floor, 0.95, Z0 + t, Z0 + 0.7, M.steel);
   box(X0 + t, -0.2, 2.15, 2.45, Z0 + t, Z0 + 0.65, M.steel);
   for (const [x0, x1] of [[-2.2, -1.25], [-1.15, -0.2], [-0.1, 0.85]]) box(x0, x1, 1.45, 2.05, Z0 + t + 0.01, Z0 + t + 0.04, M.menu);
+  // Backlit food photos in a strip over the counter, facing the queue.
+  for (let i = 0; i < 4; i++) {
+    const w = (ax1 - ax0 - 0.15) / 4, x = ax0 + 0.075 + w * (i + 0.5);
+    const ph = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.06, 0.24), foodMat);
+    ph.position.set(x, ay1 - 0.15, Z - t - 0.03);
+    shack.add(ph);
+  }
   // A drinks cooler with a lit door at the back right.
   box(1.05, 1.75, S.floor, 2.0, Z0 + t, Z0 + 0.7, M.dark);
   box(1.1, 1.7, 0.4, 1.95, Z0 + 0.7, Z0 + 0.71, M.cooler);
@@ -923,6 +994,18 @@ const winMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.9, 1.3), new T
   lateWins.forEach((w, i) => { m4.makeTranslation(w.x, w.y, w.z); winMesh.setMatrixAt(i, m4); w.k = w.on ? 1 : 0; });
   scene.add(winMesh);
 }
+// Each lit window also lights the wall round it, so it sits in a house.
+const haloMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vUv = uv; vC = instanceColor; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vec2 q = (vUv - 0.5) * 2.0; gl_FragColor = vec4(vC * 0.07 * exp(-dot(q, q) * 2.2), 1.0); }`,
+});
+const haloMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.6, 3.0), haloMat, lateWins.length);
+{
+  const m4 = new THREE.Matrix4();
+  lateWins.forEach((w, i) => { m4.makeTranslation(w.x, w.y, w.z - 0.01); haloMesh.setMatrixAt(i, m4); haloMesh.setColorAt(i, new THREE.Color(0, 0, 0)); });
+  scene.add(haloMesh);
+}
 const WARM = new THREE.Color().setRGB(...linFit(0.82, 0.1, 70).map(v => v * 0.9));
 const SCREEN = new THREE.Color().setRGB(...linFit(0.7, 0.08, 250).map(v => v * 0.8));
 const OFF = new THREE.Color().setRGB(0.004, 0.004, 0.006);
@@ -933,8 +1016,10 @@ function paintWins() {
     // A screen flickers as the picture changes.
     if (w.tv && w.k > 0) tmpC.multiplyScalar(0.75 + 0.25 * Math.sin(simT * 3.1 + i) * Math.sin(simT * 1.3 + i * 2));
     winMesh.setColorAt(i, tmpC);
+    haloMesh.setColorAt(i, tmpC);
   });
   winMesh.instanceColor.needsUpdate = true;
+  haloMesh.instanceColor.needsUpdate = true;
 }
 let winFlip = 3;
 // Now and then a light goes on or off across the square.
@@ -949,8 +1034,42 @@ function stepWins(dt) {
   paintWins();
 }
 
+const HALL = { x0: -31, x1: -17, z: -62, d: 11, h: 5.2, wins: 5, beat: 126 / 60 };
+const HALL_WINS = HALL.wins, HALL_X0 = HALL.x0, HALL_X1 = HALL.x1;
+// The parish hall's brick: lit by its own windows, its door and a lamp over the door,
+// so the building reads round the light and nothing seems to float.
+const hallMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: VS,
+  fragmentShader: /* glsl */`
+  ${NOISE}
+  uniform vec3 uPartyCol, uHaze, uSky;
+  uniform float uHazeK;
+  varying vec3 vP, vN;
+  void main() {
+    vec3 n = normalize(vN);
+    // Brick courses, dark red-brown.
+    vec2 b = vec2(vP.x * 4.0 + floor(vP.y * 13.0) * 0.5, vP.y * 13.0);
+    float mortar = smoothstep(0.08, 0.0, min(fract(b.x), fract(b.y)));
+    vec3 alb = mix(vec3(0.16, 0.07, 0.05), vec3(0.09, 0.08, 0.07), mortar) * (0.8 + 0.4 * hash12(floor(b)));
+    vec3 c = alb * uSky * 3.0;
+    float front = step(0.5, n.z);
+    // Each tall window throws its colour on the wall round it.
+    for (int i = 0; i < ${HALL_WINS}; i++) {
+      vec2 w = vec2(${HALL_X0.toFixed(1)} + 1.5 + float(i) * 3.0, 2.3);
+      vec2 dv = (vP.xy - w) / vec2(1.4, 1.9);
+      c += alb * uPartyCol * 1.4 * exp(-dot(dv, dv)) * front;
+    }
+    // The open door and the lamp over it.
+    vec2 dd = (vP.xy - vec2(${(HALL_X1 - 1.4).toFixed(1)}, 2.9)) / vec2(1.6, 1.4);
+    c += alb * vec3(1.0, 0.7, 0.4) * 3.0 * exp(-dot(dd, dd)) * front;
+    // The roof edge holds a little sky.
+    c += alb * uSky * 6.0 * smoothstep(0.3, 1.0, n.y);
+    float dist = length(vP - cameraPosition);
+    gl_FragColor = vec4(mix(c, uHaze, 1.0 - exp(-dist * uHazeK)), 1.0);
+  }`,
+});
 // The parish hall across the square: a party is on. Tall windows flash in colour on the beat.
-const HALL = { x0: -23, x1: -8, z: -62, d: 11, h: 5.2, wins: 5, beat: 126 / 60 };
 {
   const g = new THREE.BoxGeometry(HALL.x1 - HALL.x0, HALL.h, HALL.d).translate((HALL.x0 + HALL.x1) / 2, HALL.h / 2, HALL.z - HALL.d / 2);
   const sh = new THREE.Shape();
@@ -959,7 +1078,7 @@ const HALL = { x0: -23, x1: -8, z: -62, d: 11, h: 5.2, wins: 5, beat: 126 / 60 }
   const roof = new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: false });
   // The roof ridge runs along the hall, parallel to the square.
   roof.rotateY(Math.PI / 2).translate(HALL.x0, HALL.h, HALL.z);
-  scene.add(new THREE.Mesh(mergeGeometries([g.toNonIndexed(), roof.index ? roof.toNonIndexed() : roof]), M.gable));
+  scene.add(new THREE.Mesh(mergeGeometries([g.toNonIndexed(), roof.index ? roof.toNonIndexed() : roof]), hallMat));
 }
 const partyMat = new THREE.ShaderMaterial({
   uniforms: { uTime: U.uTime, uBeat: { value: HALL.beat } },
@@ -984,7 +1103,7 @@ const partyMat = new THREE.ShaderMaterial({
     float bob = sin(uTime * uBeat * 3.1416 + i * 1.7);
     float dancers = smoothstep(0.32, 0.18, length((vUv - vec2(0.3 + 0.1 * sin(uTime * 0.7 + i), 0.18 + 0.03 * bob)) / vec2(0.9, 1.6)))
                   + smoothstep(0.28, 0.15, length((vUv - vec2(0.72, 0.15 - 0.03 * bob)) / vec2(0.9, 1.7)));
-    vec3 col = (c * 1.4 * pulse + vec3(1.0, 0.95, 0.9) * speck * 1.6) * bars * (1.0 - 0.75 * clamp(dancers, 0.0, 1.0));
+    vec3 col = (c * 0.7 * pulse + vec3(1.0, 0.95, 0.9) * speck * 0.8) * bars * (1.0 - 0.75 * clamp(dancers, 0.0, 1.0));
     gl_FragColor = vec4(col, 1.0);
   }`,
 });
@@ -995,9 +1114,13 @@ for (let i = 0; i < HALL.wins; i++) {
 }
 // The door stands open: warm light, and a couple outside for a smoke.
 {
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.5), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.85, 0.09, 70).map(v => v * 1.6)) }));
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.5), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.85, 0.09, 70).map(v => v * 0.8)) }));
   door.position.set(HALL.x1 - 1.4, 1.25, HALL.z + 0.03);
   scene.add(door);
+  // A small lamp over the door.
+  const lamp = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 0.18), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.9, 0.08, 75).map(v => v * 2.5)) }));
+  lamp.position.set(HALL.x1 - 1.4, 2.85, HALL.z + 0.06);
+  scene.add(lamp);
 }
 // The colour the hall throws onto the square, on the beat.
 const partyCol = new THREE.Color();
@@ -1005,18 +1128,51 @@ function stepParty(t) {
   const i = Math.floor(t * HALL.beat / 8);
   partyCol.setHSL((t * 0.11 + i * 0.37) % 1, 1, 0.5);
   const pulse = 0.3 + 0.7 * Math.exp(-((t * HALL.beat) % 1) * 6);
-  U.uPartyCol.value.set(partyCol.r, partyCol.g, partyCol.b).multiplyScalar(5 * pulse);
+  U.uPartyCol.value.set(partyCol.r, partyCol.g, partyCol.b).multiplyScalar(2.2 * pulse);
 }
 
+// The seating room: up to five come in by the far door, sit, eat, talk, get up and go.
+const SEATS = [3.2, 3.75, 4.7, 5.25];
+const sitters = [];
+let sitIn = 4;
+function stepSitters(dt) {
+  sitIn -= dt;
+  const free = SEATS.filter(x => !sitters.some(o => o.seat === x));
+  if (sitIn <= 0 && free.length && sitters.length < SIT_N) {
+    sitters.push({ x: 5.85, seat: free[Math.floor(rnd() * free.length)], up: 1, a: 0, state: 'in', t: 25 + rnd() * 50, lean: 0, ph: rnd() * 6 });
+    sitIn = 6 + rnd() * 10;
+  }
+  for (const o of sitters) {
+    o.ph += dt;
+    o.lean = 0.05 * Math.sin(o.ph * 0.6) + 0.03 * Math.sin(o.ph * 1.7);
+    if (o.state === 'in') {
+      o.a = Math.min(1, o.a + dt * 2);
+      o.x += Math.sign(o.seat - o.x) * Math.min(Math.abs(o.seat - o.x), dt * 0.9);
+      if (Math.abs(o.x - o.seat) < 0.01) o.state = 'sit';
+    } else if (o.state === 'sit') {
+      o.up = Math.max(0, o.up - dt * 1.5);
+      if ((o.t -= dt) <= 0) o.state = 'rise';
+    } else if (o.state === 'rise') {
+      o.up = Math.min(1, o.up + dt * 1.5);
+      if (o.up >= 1) o.state = 'out';
+    } else {
+      o.x += Math.min(5.95 - o.x, dt * 0.9);
+      if (o.x > 5.8) o.a -= dt * 2;
+    }
+  }
+  for (let i = sitters.length - 1; i >= 0; i--) if (sitters[i].a < 0) sitters.splice(i, 1);
+  sitU.forEach((u, i) => { const o = sitters[i]; u.set(o?.x ?? 0, o?.up ?? 0, o?.a ?? 0, o?.lean ?? 0); });
+}
+// Two already sit when the night starts.
+sitters.push({ x: 3.2, seat: 3.2, up: 0, a: 1, state: 'sit', t: 40, lean: 0, ph: 1 }, { x: 4.7, seat: 4.7, up: 0, a: 1, state: 'sit', t: 70, lean: 0, ph: 3 });
+
 // The tower clock: an open dial. Only the marks and the hands are lit; the stone shows between.
-// Three dials to pick from: a bars, b ring and minutes, c four long marks and dots.
-const CLOCKS = { a: 0, b: 1, c: 2 };
 const clockMat = new THREE.ShaderMaterial({
-  uniforms: { uH: { value: 0 }, uM: { value: 0 }, uStyle: { value: 0 } },
+  uniforms: { uH: { value: 0 }, uM: { value: 0 } },
   transparent: true, depthWrite: false,
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */`
-  uniform float uH, uM, uStyle;
+  uniform float uH, uM;
   varying vec2 vUv;
   float hand(vec2 p, float a, float len, float w, float aa) {
     vec2 d = vec2(sin(a), cos(a));
@@ -1032,21 +1188,8 @@ const clockMat = new THREE.ShaderMaterial({
   void main() {
     vec2 p = (vUv - 0.5) * 2.0;
     float r = length(p), aa = fwidth(r) * 1.2;
-    float ink = 0.0;
-    if (uStyle < 0.5) {
-      // Twelve bold bars; the quarters run longer.
-      ink = max(bars(p, 12.0, 0.66, 0.92, 0.05, aa), bars(p, 4.0, 0.5, 0.92, 0.06, aa));
-    } else if (uStyle < 1.5) {
-      // A thin ring, sixty minute stripes, twelve hour bars.
-      ink = max(smoothstep(0.03 + aa, 0.03 - aa, abs(r - 0.95)), bars(p, 60.0, 0.82, 0.9, 0.012, aa));
-      ink = max(ink, bars(p, 12.0, 0.7, 0.9, 0.035, aa));
-    } else {
-      // Four long marks at the quarters, round dots for the other hours.
-      ink = bars(p, 4.0, 0.58, 0.95, 0.055, aa);
-      float a = atan(p.x, p.y), k = floor(a / 6.2832 * 12.0 + 0.5);
-      vec2 c = 0.84 * vec2(sin(k * 6.2832 / 12.0), cos(k * 6.2832 / 12.0));
-      ink = max(ink, smoothstep(0.055 + aa, 0.055 - aa, length(p - c)));
-    }
+    // Twelve bold bars; the quarters run longer.
+    float ink = max(bars(p, 12.0, 0.66, 0.92, 0.05, aa), bars(p, 4.0, 0.5, 0.92, 0.06, aa));
     ink = max(ink, max(hand(p, uH, 0.5, 0.055, aa), hand(p, uM, 0.78, 0.035, aa)));
     ink = max(ink, smoothstep(0.07 + aa, 0.07 - aa, r));
     if (ink < 0.01) discard;
@@ -1215,7 +1358,7 @@ steam.renderOrder = 3;
 scene.add(steam);
 let wind = 0.3, emitAcc = 0, fryPuffs = 0, livePuffs = 0, puffCap = PUFFS;
 // Wind grows with height above the square, as in a log profile.
-const windAt = y => wind * 1.6 * Math.log(1 + Math.max(0, y) / 0.3) / Math.log(1 + 10 / 0.3);
+const windAt = y => wind * gust * 1.6 * Math.log(1 + Math.max(0, y) / 0.3) / Math.log(1 + 10 / 0.3);
 // kind 0: the vent plume; kind 1: fryer steam, denser and hotter.
 function emit(src, n, { speed = 0.3, spread = 0.06, size = 0.12, life = 6, kind = 0, out = 0 } = {}) {
   for (let k = 0; k < n; k++) {
@@ -1297,7 +1440,8 @@ const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a
 
 /* ---------- neon script ---------- */
 // The owners' names, bent in glass tube across the roof box.
-const SIGN = { text: 'Frituur Stefan & Hilde', x: -0.45, y: S.top + 0.43, z: 1.152, w: 3.5, h: 0.62 };
+// Two lines, as on the old signs: FRITUUR in tube capitals, the owners in script.
+const SIGN = { top: 'FRITUUR', name: 'Bij Bruno en Anja', x: -0.45, y: S.top + 0.43, z: 1.152, w: 3.5, h: 0.62 };
 const signCanvas = document.createElement('canvas');
 signCanvas.width = 2048;
 signCanvas.height = 364;
@@ -1326,28 +1470,28 @@ const signMat = new THREE.ShaderMaterial({
   m.renderOrder = 2;
   shack.add(m);
 }
-// Four neon hands to pick from, each at a size that fills the box.
-const FONTS = {
-  a: ['Sacramento', 300], b: ['Tilt Neon', 190], c: ['Neonderthaw', 300], d: ['Monoton', 150], e: ['Yellowtail', 230],
-};
-let fontKey = 'a';
+// The sign's two hands: tube capitals over a neon script.
+const CAPS = ['Tilt Neon', 150], SCRIPT = ['Neonderthaw', 200];
+function fitText(g, text, family, px, maxW) {
+  g.font = `${px}px "${family}"`;
+  const w = g.measureText(text).width;
+  if (w > maxW) g.font = `${Math.floor(px * maxW / w)}px "${family}"`;
+}
 function drawSign() {
-  const [family, px] = FONTS[fontKey] ?? FONTS.a;
   const g = signCanvas.getContext('2d');
   g.clearRect(0, 0, signCanvas.width, signCanvas.height);
   g.fillStyle = '#fff';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = `${px}px "${family}"`;
-  const w = g.measureText(SIGN.text).width;
-  if (w > 1900) g.font = `${Math.floor(px * 1900 / w)}px "${family}"`;
-  g.fillText(SIGN.text, 1024, 190);
+  const [cf, cp] = CAPS, [sf, sp] = SCRIPT;
+  fitText(g, SIGN.top, cf, cp, 1500);
+  g.fillText(SIGN.top, 1024, 105);
+  fitText(g, SIGN.name, sf, sp, 1900);
+  g.fillText(SIGN.name, 1024, 262);
   signTex.needsUpdate = true;
 }
-function setFont(k) {
-  fontKey = FONTS[k] ? k : 'a';
-  const [family, px] = FONTS[fontKey];
-  return document.fonts.load(`${px}px "${family}"`).catch(() => {}).then(() => { drawSign(); draw(); });
+function loadSign() {
+  return Promise.all([document.fonts.load(`${SCRIPT[1]}px "${SCRIPT[0]}"`), document.fonts.load(`${CAPS[1]}px "${CAPS[0]}"`)]).catch(() => {}).then(() => drawSign());
 }
 
 /* ---------- weather ---------- */
@@ -1413,34 +1557,65 @@ rain.renderOrder = 4;
 scene.add(rain);
 // count, fall speed, wetness, haze, shaft density.
 const WEATHER = {
-  dry: { n: 0, fall: 8, wet: 0, haze: 0.009, dens: 0.0022 },
+  dry: { n: 0, fall: 6, wet: 0, haze: 0.009, dens: 0.0022 },
   drizzle: { n: 2600, fall: 4.5, wet: 0.6, haze: 0.014, dens: 0.0035 },
-  rain: { n: RAIN_N, fall: 8.5, wet: 1, haze: 0.016, dens: 0.004 },
-  fog: { n: 0, fall: 8, wet: 0.35, haze: 0.04, dens: 0.008 },
+  rain: { n: RAIN_N * 0.85, fall: 8.5, wet: 1, haze: 0.016, dens: 0.004 },
+  fog: { n: 0, fall: 4.5, wet: 0.35, haze: 0.04, dens: 0.008 },
 };
 let weatherKey = 'dry';
 const HAZE0 = U.uHaze.value.clone();
+// Shifting: Belgian weather that will not settle; it moves through a cycle of fronts.
+const CYCLE = ['dry', 'drizzle', 'rain', 'drizzle', 'dry', 'fog', 'drizzle'];
+const wx = { i: 0, t: 0, dur: 70, wet: 0, rain: 0, fog: 0 };
+let gust = 1;
 function setWeather(k) {
-  weatherKey = WEATHER[k] ? k : 'dry';
-  const W = WEATHER[weatherKey];
-  rainGeo.instanceCount = W.n;
-  rain.visible = W.n > 0;
-  rainMat.uniforms.uFall.value = W.fall;
+  weatherKey = WEATHER[k] || k === 'shift' ? k : 'shift';
+  wx.t = 0;
+  wx.dur = 50 + rnd() * 70;
+  applyWeather(0, true);
+}
+// Blend the front now passing into the next; the cobbles dry slower than they wet.
+function applyWeather(dt, snap) {
+  let a = WEATHER[weatherKey], b = a, u = 0;
+  if (weatherKey === 'shift') {
+    a = WEATHER[CYCLE[wx.i]]; b = WEATHER[CYCLE[(wx.i + 1) % CYCLE.length]];
+    u = smooth(wx.dur - 20, wx.dur, wx.t);
+  }
+  const mix = (x, y) => x + (y - x) * u;
+  const n = mix(a.n, b.n) * (0.75 + 0.25 * gust);
+  rainGeo.instanceCount = Math.round(Math.min(RAIN_N, n));
+  rain.visible = n > 1;
+  const fall = mix(a.fall, b.fall);
+  rainMat.uniforms.uFall.value = fall;
   // A streak is the drop's path over one 1/30 s frame, drawn a little long.
-  rainMat.uniforms.uLen.value = W.fall / 30 * 1.6;
-  rainMat.uniforms.uRainA.value = weatherKey === 'rain' ? 1 : 0.7;
-  U.uWet.value = W.wet;
-  U.uRipple.value = W.n > 0 ? W.wet : 0;
-  U.uHazeK.value = W.haze;
+  rainMat.uniforms.uLen.value = fall / 30 * 1.6;
+  rainMat.uniforms.uRainA.value = 0.7 + 0.3 * Math.min(1, n / RAIN_N);
+  const wetT = mix(a.wet, b.wet);
+  wx.wet = snap ? wetT : wx.wet + (wetT - wx.wet) * Math.min(1, dt / (wetT > wx.wet ? 10 : 90));
+  wx.rain = n / RAIN_N;
+  U.uWet.value = wx.wet;
+  U.uRipple.value = Math.min(1, wx.rain * 2) * wx.wet;
+  U.uHazeK.value = mix(a.haze, b.haze);
   // Fog catches the town glow and hides the far side of the square.
-  U.uHaze.value.copy(HAZE0).multiplyScalar(weatherKey === 'fog' ? 1.8 : 1);
-  shaftMat.uniforms.uDens.value = W.dens;
+  wx.fog = Math.max(0, (U.uHazeK.value - 0.016) / 0.024);
+  U.uHaze.value.copy(HAZE0).multiplyScalar(1 + 0.8 * wx.fog);
+  shaftMat.uniforms.uDens.value = mix(a.dens, b.dens);
+}
+function stepWeather(dt) {
+  if (weatherKey === 'shift') {
+    wx.t += dt;
+    if (wx.t > wx.dur) { wx.i = (wx.i + 1) % CYCLE.length; wx.t = 0; wx.dur = 50 + rnd() * 70; }
+  }
+  // Gusts come and go: the rain slants and thickens, the steam is torn sideways.
+  gust = 1 + 0.8 * Math.max(0, Math.sin(simT * 0.13) * Math.sin(simT * 0.71 + 1.3)) + 0.2 * Math.sin(simT * 2.3) * Math.sin(simT * 0.37);
+  applyWeather(dt, false);
 }
 
 /* ---------- people ---------- */
-// Flat soft shapes, not modelled bodies. Each leaves a smooth trail of fading echoes,
-// so the square plays like a long-exposure time-lapse.
-const ECHO = 9, FIGS = 26, ECHO_DT = 0.045;
+// Flat soft shapes, not modelled bodies.
+// Stop-motion on twos: each figure jumps 12 times a second at 24 fps,
+// sits a few millimetres off true each step, and trails a smear of 12 echoes.
+const ECHO = 12, FIGS = 30, STEP = 12, SHUTTER = 0.16;
 // kind 0: on foot; 1: on a bike; 2: a parked bike; 3: staff inside; 4: smoking;
 // 5: a dog; 6: on a motorbike; 7: a parked motorbike; 8: a car; 9: a parked car.
 // A kind plus 0.2 carries an umbrella.
@@ -1455,10 +1630,12 @@ figGeo.setAttribute('aPose', fPose);
 const fGait = new THREE.InstancedBufferAttribute(new Float32Array(FIGS * ECHO), 1);
 figGeo.setAttribute('aGait', fGait);
 const fScale = new THREE.InstancedBufferAttribute(new Float32Array(FIGS * ECHO).fill(1), 1);
+const fVar = new THREE.InstancedBufferAttribute(new Float32Array(FIGS * ECHO * 3), 3);
+figGeo.setAttribute('aVar', fVar);
 figGeo.setAttribute('aScale', fScale);
 figGeo.instanceCount = FIGS * ECHO;
 const figMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uStyle: { value: 0 }, uDog: { value: 0 } },
+  uniforms: { ...U, uStyle: { value: 0 }, uPass: { value: 1 } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   vertexShader: /* glsl */`
@@ -1466,6 +1643,9 @@ const figMat = new THREE.ShaderMaterial({
   attribute vec4 aPose;
   attribute float aGait;
   attribute float aScale;
+  attribute vec3 aVar;
+  uniform float uPass;
+  varying vec3 vVar;
   varying vec3 vP;
   varying vec2 vQ;
   varying vec4 vPose;
@@ -1474,181 +1654,26 @@ const figMat = new THREE.ShaderMaterial({
     vPose = aPose;
     vA = aPos.w;
     vGait = aGait;
+    vVar = aVar;
     // Mirror the shape to face the way it moves.
     vQ = vec2(position.x * aScale * aPose.z, position.y);
     // Upright billboards: they turn to the lens round the vertical only.
     vec3 right = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
     vP = aPos.xyz + right * position.x * aScale + vec3(0.0, position.y, 0.0);
-    gl_Position = aPos.w > 0.001 ? projectionMatrix * viewMatrix * vec4(vP, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
+    // Two passes: staff before the steam, everyone outside after it.
+    bool staff = aPose.x > 2.5 && aPose.x < 3.5;
+    bool mine = uPass < 0.5 ? staff : !staff;
+    gl_Position = aPos.w > 0.001 && mine ? projectionMatrix * viewMatrix * vec4(vP, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
   }`,
   fragmentShader: /* glsl */`
   ${LIGHT}
-  uniform float uStyle, uDog;
+  uniform float uStyle, uTime;
+  varying vec3 vVar;
   varying vec3 vP;
   varying vec2 vQ;
   varying vec4 vPose;
   varying float vA, vGait;
-  const float PI = 3.14159;
-  float cap(vec2 p, vec2 a, vec2 b, float r) {
-    vec2 pa = p - a, ba = b - a;
-    return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)) - r;
-  }
-  // A capsule that narrows from ra at a to rb at b.
-  float taper(vec2 p, vec2 a, vec2 b, float ra, float rb) {
-    vec2 pa = p - a, ba = b - a;
-    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-    return length(pa - ba * h) - mix(ra, rb, h);
-  }
-  float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
-  // Angles run from straight down; forward is positive.
-  vec2 dir(float a) { return vec2(sin(a), -cos(a)); }
-  // A two-bone limb; tip returns the end point.
-  float limb(vec2 p, vec2 a, float a1, float l1, float a2, float l2, float r1, float r2, out vec2 tip) {
-    vec2 k = a + l1 * dir(a1);
-    tip = k + l2 * dir(a2);
-    return min(taper(p, a, k, r1, r2 * 1.05), taper(p, k, tip, r2, r2 * 0.8));
-  }
-  // On foot. Hips swing, the knee folds on the forward swing, arms counter-swing.
-  // hold: 1 a cone held out. smoke: 0 hand low, 1 hand at the mouth.
-  float walker(vec2 p, float ph, float gait, float hold, float smoke, out vec2 hand) {
-    float bob = 0.022 * abs(sin(ph)) * gait;
-    vec2 hip = vec2(0.0, 0.93 + bob), sh = vec2(0.04, 1.42 + bob);
-    float head = length((p - vec2(0.07, 1.63 + bob)) / vec2(0.92, 1.08)) - 0.1;
-    float neck = cap(p, sh + vec2(0.0, 0.05), vec2(0.06, 1.55 + bob), 0.045);
-    float torso = taper(p, hip + vec2(-0.01, 0.07), sh, 0.125, 0.165);
-    float d = smin(head, smin(neck, torso, 0.05), 0.03);
-    vec2 tip;
-    for (int i = 0; i < 2; i++) {
-      float q = ph + float(i) * PI;
-      float th = 0.42 * sin(q) * gait;
-      float bend = 0.8 * smoothstep(0.0, 1.0, cos(q)) * gait + 0.04;
-      d = smin(d, limb(p, hip + vec2(0.0, -0.02), th, 0.45, th - bend, 0.46, 0.078, 0.058, tip), 0.05);
-      d = min(d, cap(p, tip + vec2(-0.02, 0.02), tip + vec2(0.1, 0.0), 0.034));
-    }
-    for (int i = 0; i < 2; i++) {
-      float q = ph + float(i) * PI;
-      float ua = -0.34 * sin(q) * gait, fa = ua + 0.22 + 0.18 * gait;
-      // The front arm carries the cone or the cigarette.
-      if (i == 0 && hold > 1.5) { ua = 0.5; fa = 2.45; }
-      else if (i == 0 && hold > 0.5) { ua = 0.32; fa = 1.3; }
-      if (i == 0 && smoke >= 0.0) { ua = mix(0.28, 0.12, smoke); fa = mix(1.25, 2.75, smoke); }
-      d = smin(d, limb(p, sh + vec2(-0.02, -0.04), ua, 0.29, fa, 0.27, 0.048, 0.04, tip), 0.03);
-      if (i == 0) hand = tip;
-    }
-    return d;
-  }
-  // A plain upright shape: head and a long soft body, no limbs.
-  float pillar(vec2 p, float ph, float gait) {
-    float sway = 0.03 * sin(ph) * gait;
-    float d = length(p - vec2(0.06 + sway, 1.62)) - 0.12;
-    d = smin(d, taper(p, vec2(0.0, 0.12), vec2(0.03 + sway, 1.4), 0.12, 0.175), 0.08);
-    return d;
-  }
-  float bike(vec2 p) {
-    vec2 bb = vec2(0.0, 0.33), rh = vec2(-0.52, 0.33), fh = vec2(0.52, 0.33), seat = vec2(-0.12, 0.86), head = vec2(0.38, 0.84);
-    float w = min(abs(length(p - rh) - 0.3), abs(length(p - fh) - 0.3)) - 0.02;
-    w = min(w, min(length(p - rh), length(p - fh)) - 0.035);
-    float f = min(min(cap(p, bb, seat, 0.018), cap(p, seat, head, 0.018)), min(cap(p, bb, head + vec2(0.0, -0.05), 0.02), cap(p, bb, rh, 0.016)));
-    f = min(f, min(cap(p, seat, rh, 0.014), cap(p, head, fh, 0.018)));
-    f = min(f, min(cap(p, head, head + vec2(-0.04, 0.14), 0.016), cap(p, seat + vec2(-0.08, 0.03), seat + vec2(0.06, 0.03), 0.024)));
-    return min(w, f);
-  }
-  // On a bike: the legs follow the pedals by a two-bone reach.
-  float rider(vec2 p, float ph, out vec2 hand) {
-    vec2 hip = vec2(-0.1, 0.95), sh = vec2(0.14, 1.42);
-    float d = smin(length(p - vec2(0.24, 1.62)) - 0.1, taper(p, hip, sh, 0.12, 0.16), 0.05);
-    for (int i = 0; i < 2; i++) {
-      vec2 pedal = vec2(0.0, 0.33) + 0.16 * vec2(cos(ph + float(i) * PI), sin(ph + float(i) * PI));
-      vec2 v = pedal - hip;
-      float D = length(v), h = sqrt(max(0.0, 0.46 * 0.46 - D * D * 0.25));
-      vec2 knee = hip + v * 0.5 + normalize(vec2(-v.y, v.x)) * h;
-      d = smin(d, min(taper(p, hip, knee, 0.078, 0.06), taper(p, knee, pedal, 0.058, 0.045)), 0.04);
-    }
-    hand = vec2(0.36, 0.98);
-    return smin(d, taper(p, sh + vec2(0.0, -0.04), hand, 0.048, 0.04), 0.03);
-  }
-  float rbox(vec2 p, vec2 c, vec2 h, float r) { vec2 q = abs(p - c) - h + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
-  // Three dogs to pick from. a: a wiry terrier, square-headed, bearded.
-  float leg(vec2 p, vec2 top, float len, float a, float r0, float r1) { return taper(p, top, top + len * dir(a), r0, r1); }
-  float terrier(vec2 p, float ph, float gait) {
-    float d = taper(p, vec2(-0.25, 0.5), vec2(0.18, 0.53), 0.12, 0.13);
-    d = smin(d, rbox(p, vec2(0.33, 0.68), vec2(0.085, 0.08), 0.035), 0.05);
-    d = min(d, rbox(p, vec2(0.45, 0.62), vec2(0.06, 0.05), 0.025));
-    d = min(d, taper(p, vec2(0.38, 0.57), vec2(0.42, 0.5), 0.035, 0.02));
-    d = min(d, taper(p, vec2(0.3, 0.74), vec2(0.36, 0.8), 0.04, 0.012));
-    d = min(d, taper(p, vec2(-0.26, 0.56), vec2(-0.3, 0.76 + 0.03 * sin(ph * 2.0)), 0.03, 0.016));
-    for (int i = 0; i < 4; i++) {
-      float fi = float(i), front = i < 2 ? 1.0 : 0.0;
-      vec2 top = vec2(mix(-0.2, 0.14, front) + 0.05 * mod(fi, 2.0), 0.46);
-      d = min(d, leg(p, top, 0.42, 0.42 * sin(ph + fi * 1.57 + mod(fi, 2.0) * PI) * gait, 0.04, 0.028));
-    }
-    // A wiry coat roughens the outline.
-    return d + 0.008 * sin(p.x * 140.0) * sin(p.y * 120.0);
-  }
-  // b: a dachshund, long and low, ears hanging.
-  float dachs(vec2 p, float ph, float gait) {
-    float d = taper(p, vec2(-0.42, 0.3), vec2(0.28, 0.32), 0.1, 0.105);
-    d = smin(d, length(p - vec2(0.39, 0.42)) - 0.075, 0.05);
-    d = min(d, taper(p, vec2(0.42, 0.42), vec2(0.6, 0.36), 0.05, 0.028));
-    d = min(d, taper(p, vec2(0.36, 0.46), vec2(0.33, 0.31), 0.04, 0.028));
-    d = min(d, taper(p, vec2(-0.43, 0.32), vec2(-0.6, 0.38 + 0.02 * sin(ph * 2.0)), 0.03, 0.012));
-    for (int i = 0; i < 4; i++) {
-      float fi = float(i), front = i < 2 ? 1.0 : 0.0;
-      vec2 top = vec2(mix(-0.34, 0.2, front) + 0.05 * mod(fi, 2.0), 0.26);
-      d = min(d, leg(p, top, 0.24, 0.5 * sin(ph * 1.4 + fi * 1.57 + mod(fi, 2.0) * PI) * gait, 0.035, 0.025));
-    }
-    return d;
-  }
-  // c: a big shaggy sheepdog, all fleece.
-  float shaggy(vec2 p, float ph, float gait) {
-    float d = taper(p, vec2(-0.3, 0.62), vec2(0.2, 0.66), 0.2, 0.21);
-    d = smin(d, length(p - vec2(0.36, 0.8)) - 0.15, 0.09);
-    d = smin(d, length(p - vec2(0.49, 0.74)) - 0.07, 0.05);
-    for (int i = 0; i < 4; i++) {
-      float fi = float(i), front = i < 2 ? 1.0 : 0.0;
-      vec2 top = vec2(mix(-0.26, 0.16, front) + 0.06 * mod(fi, 2.0), 0.5);
-      d = smin(d, leg(p, top, 0.48, 0.32 * sin(ph * 0.9 + fi * 1.57 + mod(fi, 2.0) * PI) * gait, 0.075, 0.065), 0.04);
-    }
-    // Fleece: soft lumps all round the edge.
-    float a = atan(p.y - 0.6, p.x);
-    return d + 0.025 * sin(a * 23.0 + p.y * 9.0) * sin(p.x * 31.0);
-  }
-  float moto(vec2 p) {
-    float w = min(abs(length(p - vec2(-0.72, 0.33)) - 0.28) - 0.055, abs(length(p - vec2(0.74, 0.33)) - 0.28) - 0.055);
-    float body = taper(p, vec2(-0.42, 0.66), vec2(0.32, 0.8), 0.15, 0.19);
-    body = smin(body, rbox(p, vec2(0.0, 0.48), vec2(0.24, 0.14), 0.06), 0.08);
-    float parts = min(cap(p, vec2(0.46, 0.96), vec2(0.74, 0.33), 0.03), cap(p, vec2(0.44, 0.98), vec2(0.3, 1.06), 0.025));
-    parts = min(parts, taper(p, vec2(-0.4, 0.7), vec2(-0.8, 0.76), 0.07, 0.05));
-    parts = min(parts, cap(p, vec2(-0.2, 0.38), vec2(-0.72, 0.36), 0.03));
-    return min(min(w, body), parts);
-  }
-  float motoRider(vec2 p) {
-    float d = smin(length(p - vec2(0.2, 1.43)) - 0.14, taper(p, vec2(-0.22, 0.92), vec2(0.1, 1.3), 0.13, 0.16), 0.05);
-    d = smin(d, taper(p, vec2(0.08, 1.24), vec2(0.38, 1.0), 0.05, 0.042), 0.03);
-    return smin(d, min(taper(p, vec2(-0.2, 0.9), vec2(0.16, 0.74), 0.085, 0.07), taper(p, vec2(0.16, 0.74), vec2(0.06, 0.36), 0.07, 0.05)), 0.04);
-  }
-  // A small hatchback in profile.
-  float car(vec2 p, out float glass) {
-    float body = rbox(p, vec2(0.0, 0.6), vec2(2.05, 0.28), 0.16);
-    vec2 q = p - vec2(-0.25, 1.08);
-    float cab = rbox(p, vec2(-0.25, 1.08), vec2(1.15, 0.32), 0.14);
-    cab = max(cab, dot(q, normalize(vec2(0.75, 0.66))) - 0.78);
-    cab = max(cab, dot(q, normalize(vec2(-0.4, 0.92))) - 0.3);
-    float d = smin(body, cab, 0.06);
-    float arch = min(length(p - vec2(-1.3, 0.34)), length(p - vec2(1.3, 0.34)));
-    d = max(d, -(arch - 0.38));
-    d = min(d, arch - 0.31);
-    glass = smoothstep(0.03, -0.02, cab + 0.08) * step(0.92, p.y);
-    return d;
-  }
-  float umbrella(vec2 p) {
-    vec2 c = vec2(0.14, 1.96);
-    float dome = max(length((p - c) / vec2(1.0, 0.6)) - 0.55, c.y - 0.02 - p.y);
-    // Scallops along the hem, where the ribs end.
-    float hem = length(vec2(mod(p.x - c.x + 0.55, 0.275) - 0.1375, p.y - c.y + 0.02)) - 0.13;
-    dome = max(dome, -hem);
-    return min(dome, cap(p, c + vec2(0.0, 0.32), vec2(c.x, 1.36), 0.014));
-  }
+  ${FIG_GLSL}
   void main() {
     if (vA < 0.001) discard;
     float kind = floor(vPose.x + 0.05);
@@ -1658,17 +1683,56 @@ const figMat = new THREE.ShaderMaterial({
     vec2 p = vQ, hand = vec2(0.27, 1.1);
     float d = 1e3, glass = 0.0;
     bool smoker = k == 4;
-    if (k == 0 || k == 3 || k == 4) {
-      float hold = umb > 0.5 ? 2.0 : (smoker ? 0.0 : extra);
-      d = style > 1.5 ? pillar(p, ph, vGait) : walker(p, ph, vGait, hold, smoker ? extra : -1.0, hand);
+    float build = vVar.x, pose = vVar.y, seed = vVar.z;
+    // kind 10: someone up to no good, in a long coat and a hat.
+    if (k == 10 && build < 0.5) build = 5.0;
+    if (k == 3) build = 9.0;
+    if (k == 0 || k == 3 || k == 4 || k == 10) {
+      float hold = umb > 0.5 ? 2.0 : (smoker || k == 10 ? 0.0 : extra);
+      d = style > 1.5 ? pillar(p, ph, vGait) : walker(p, ph, vGait, hold, smoker ? extra : -1.0, build, pose, uTime, seed, hand);
       if (style > 1.5) hand = vec2(0.24, smoker ? mix(1.1, 1.5, extra) : 1.1);
-      if (umb > 0.5) d = min(d, umbrella(p));
+      if (umb > 0.5) d = min(d, umbrella(p, hand, 0.1 + 0.12 * vGait));
     }
     if (k == 1 || k == 2) d = bike(p);
     if (k == 1) d = min(d, style > 1.5 ? pillar(p - vec2(0.05, 0.5), ph, 0.0) : rider(p, ph, hand));
-    if (k == 5) d = uDog < 0.5 ? terrier(p, ph, vGait) : uDog < 1.5 ? dachs(p, ph, vGait) : shaggy(p, ph, vGait);
-    if (k == 6 || k == 7) d = moto(p);
-    if (k == 6) d = min(d, motoRider(p));
+    if (k == 5) d = mutt(p, ph, vGait);
+    if (k == 13) {
+      int th = int(extra + 0.5);
+      if (th == 0) {
+        // A boombox, thumping on the beat: two speakers and a carry handle.
+        vec2 b = p - vec2(0.0, 0.12 + 0.012 * abs(sin(uTime * 6.6)));
+        d = rbox(b, vec2(0.0), vec2(0.22, 0.1), 0.02);
+        d = min(d, max(abs(length(b - vec2(0.0, 0.08)) - 0.16) - 0.012, 0.18 - b.y));
+        d = max(d, -(abs(length(b - vec2(-0.12, 0.0)) - 0.055) - 0.008));
+        d = max(d, -(abs(length(b - vec2(0.12, 0.0)) - 0.055) - 0.008));
+      } else if (th == 1) {
+        // A crushed can, spinning after each kick.
+        vec2 cn = mat2(cos(ph), sin(ph), -sin(ph), cos(ph)) * (p - vec2(0.0, 0.04));
+        d = rbox(cn, vec2(0.0), vec2(0.055, 0.032), 0.008);
+      } else {
+        // A shopping trolley with a friend inside, both arms up.
+        vec2 q = vec2(p.x - (p.y - 0.7) * 0.12, p.y);
+        float bask = rbox(q, vec2(0.0, 0.72), vec2(0.42, 0.28), 0.02);
+        d = max(bask, -rbox(q, vec2(0.0, 0.74), vec2(0.38, 0.24), 0.01) + 0.0);
+        d = min(d, min(cap(p, vec2(-0.38, 0.44), vec2(-0.33, 0.1), 0.015), cap(p, vec2(0.38, 0.44), vec2(0.33, 0.1), 0.015)));
+        d = min(d, min(cap(p, vec2(-0.36, 0.1), vec2(0.36, 0.1), 0.015), min(length(p - vec2(-0.33, 0.06)) - 0.06, length(p - vec2(0.33, 0.06)) - 0.06)));
+        d = min(d, cap(p, vec2(-0.48, 0.98), vec2(-0.64, 1.04), 0.02));
+        float rider = smin(length(p - vec2(0.05, 1.33)) - 0.1, taper(p, vec2(0.0, 0.85), vec2(0.04, 1.2), 0.15, 0.14), 0.05);
+        rider = min(rider, cap(p, vec2(-0.02, 1.15), vec2(-0.15, 1.52 + 0.05 * sin(uTime * 7.0)), 0.04));
+        rider = min(rider, cap(p, vec2(0.1, 1.15), vec2(0.26, 1.52 + 0.05 * sin(uTime * 7.0 + 2.0)), 0.04));
+        d = min(d, max(rider, -bask + 0.0) < 0.0 ? rider : min(rider, d));
+      }
+    }
+    // The deal: a small paper packet, held where everyone can see it.
+    float pack = (k == 10 && extra > 0.5) ? rbox(p, hand + vec2(0.05, 0.03), vec2(0.1, 0.07), 0.02) : 1e3;
+    d = min(d, pack);
+    if (k == 6 || k == 7) {
+      // A wheelie: the bike tips back on its rear wheel.
+      vec2 mp = p;
+      if (k == 6 && extra > 0.01) { float wa = -extra * 0.45; vec2 c0 = vec2(-0.72, 0.05); mp = mat2(cos(wa), sin(wa), -sin(wa), cos(wa)) * (p - c0) + c0; }
+      d = moto(mp);
+      if (k == 6) d = min(d, motoRider(mp));
+    }
     if (k == 8 || k == 9) d = car(p, glass);
     // A paper cone, held out at the hand.
     float cone = (k == 0 && extra > 0.5 && umb < 0.5) ? taper(p, hand + vec2(0.01, -0.02), hand + vec2(0.05, 0.15), 0.012, 0.055) : 1e3;
@@ -1685,10 +1749,12 @@ const figMat = new THREE.ShaderMaterial({
     vec3 c;
     if (style < 0.5) {
       // Ink: a filled shape, dark outside with a thin rim; soft and lamp-lit inside.
-      float soft = k == 3 ? 0.03 : 0.012;
+      // Echoes are softer: they are the smear of a long shutter.
+      float soft = (k == 3 ? 0.016 : 0.012) + (1.0 - min(vA * 2.0, 1.0)) * 0.05;
       a = smoothstep(aa + soft, -aa - soft, min(d, cone));
       float rim = smoothstep(-0.05, 0.0, d);
-      c = mix(vec3(0.004) + front * (0.05 + 0.2 * rim) + back * rim * 0.09 + uSky * 3.0 * rim, back * (0.02 + 0.06 * fall), inside);
+      // Away from the lamps, the sky glow still draws the outline.
+      c = mix(vec3(0.004) + front * (0.05 + 0.2 * rim) + back * rim * 0.09 + uSky * 9.0 * rim, back * (0.02 + 0.06 * fall), inside);
     } else if (style < 1.5) {
       // Line: one bright contour, as if drawn in light; a faint fill keeps it solid.
       float line = smoothstep(aa * 1.5, 0.0, abs(d) - 0.011);
@@ -1698,11 +1764,30 @@ const figMat = new THREE.ShaderMaterial({
       c = mix(vec3(0.004), ink, line / max(a, 1e-3));
     } else {
       // Haze: an out-of-focus shape; light from behind bleeds round the edge.
-      a = smoothstep(0.14, -0.1, d) * 0.95;
-      float edge = smoothstep(-0.2, 0.1, d);
+      a = smoothstep(0.08, -0.06, d) * 0.95;
+      float edge = smoothstep(-0.14, 0.06, d);
       c = mix(vec3(0.004) + back * edge * 0.14 + front * (0.04 + 0.15 * edge) + uSky * 4.0 * edge, back * (0.02 + 0.05 * fall), inside);
     }
     if (cone < 0.0) { c = back * 0.05 + front * 0.2 + uSky; a = max(a, smoothstep(aa, -aa, cone)); }
+    // Staff: a white apron front catches the lamp.
+    if (k == 3) {
+      float apron = smoothstep(0.55, 0.6, p.y) * smoothstep(1.38, 1.33, p.y) * smoothstep(-0.1, -0.04, p.x) * step(d, 0.0);
+      c = mix(c, back * 0.16, apron * inside);
+    }
+    // The packet shines like contraband in a cartoon.
+    if (pack < 0.02) {
+      float pk = smoothstep(0.01, -0.01, pack);
+      c = mix(c, vec3(0.75, 0.6, 0.35) * (back * 0.08 + front * 0.4 + 0.08), pk);
+      a = max(a, pk);
+      c += vec3(1.0, 0.95, 0.8) * exp(-dot(p - hand - vec2(0.09, 0.07), p - hand - vec2(0.09, 0.07)) / 0.0006) * (1.0 + sin(uTime * 9.0)) * 3.0;
+    }
+    // Dark glasses at night: a glint on the shady face.
+    if (k == 10) {
+      vec2 g = vec2(0.13, 1.645);
+      float gl = exp(-dot(p - g, p - g) / 0.0004) * (0.6 + 0.4 * sin(uTime * 3.0 + seed * 7.0));
+      c += vec3(1.0) * gl * 2.0;
+      a = max(a, gl);
+    }
     // A car's glass holds a little sky.
     c += (uSky * 14.0 + back * 0.02) * glass;
     // The ember glows hot, brighter on each draw.
@@ -1723,8 +1808,19 @@ const figMat = new THREE.ShaderMaterial({
 });
 const figs = new THREE.Mesh(figGeo, figMat);
 figs.frustumCulled = false;
-figs.renderOrder = 2;
+// After the steam (3) and the rain (4): the queue stands in front of the window's steam.
+figs.renderOrder = 5;
 scene.add(figs);
+// The staff draw first, so the steam inside the shack lies over them.
+const figsIn = new THREE.Mesh(figGeo, new THREE.ShaderMaterial({
+  uniforms: { ...figMat.uniforms, uPass: { value: 0 } },
+  vertexShader: figMat.vertexShader, fragmentShader: figMat.fragmentShader,
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+}));
+figsIn.frustumCulled = false;
+figsIn.renderOrder = 2;
+scene.add(figsIn);
 
 // Long shadows: the window light throws each figure out across the cobbles.
 const shQuad = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
@@ -1778,6 +1874,9 @@ function apMaskJS(x, y, z) {
 
 // Where people stand: at the window and round the standing table.
 const QUEUE = [-1.6, -0.55, 0.45].map(x => ({ x, z: 2.0, who: null }));
+// When the window is busy, a line forms out across the square.
+const LINE = [[-2.35, 2.7], [-2.85, 3.35], [-3.3, 4.0], [-3.7, 4.65], [-4.05, 5.3], [-4.35, 5.95]];
+const line = [];
 // Parking: bikes at the rack, a motorbike by the seating room, a car out on the square.
 const PARK = { 6: { x: 4.3, z: 3.0, park: 7 }, 8: { x: 7.6, z: 6.4, park: 9 } };
 const TABLE = { x: 1.9, z: 3.4 };
@@ -1785,33 +1884,81 @@ const EDGE = 15;
 const people = [];
 let traffic = true, spawnIn = 2;
 const WALK = 1.35 * 1.3, SPEED = { 0: WALK, 1: 4.5, 6: 9, 8: 8 };
-const wetOut = () => weatherKey === 'rain' || weatherKey === 'drizzle';
+const wetOut = () => wx.rain > 0.2;
+// Builds, as figures.js reads them: 0 average, 1 tall, 2 broad, 4 old, 6 hood, 7 cap, 8 long hair.
+function anyBuild() { const r = rnd(); return r < 0.38 ? 0 : r < 0.5 ? 1 : r < 0.62 ? 2 : r < 0.68 ? 4 : r < 0.76 ? 6 : r < 0.86 ? 7 : 8; }
+function youthBuild() { return [6, 7, 8, 0, 1, 6, 7][Math.floor(rnd() * 7)]; }
 function person(o) {
-  const f = { kind: 0, x: 0, z: 0, y: 0, face: 1, ph: 0, gait: 0, path: [], speed: WALK, state: 'idle', t: 0, hold: 0, ember: 0, trail: [], trailT: 0, alpha: 0, gone: false, umb: false, ...o };
+  const f = { kind: 0, x: 0, z: 0, y: 0, face: 1, ph: 0, gait: 0, path: [], speed: WALK, state: 'idle', t: 0, hold: 0, ember: 0, hist: [], alpha: 0, gone: false, umb: false, build: anyBuild(), seed: rnd(), walkPose: rnd() < 0.3 ? 1 : 0, ...o };
   people.push(f);
   return f;
 }
+// What a figure does with its arms, by what it is doing.
+function poseOf(f) {
+  if (f.kind === 3) return f.task === 'fry' ? 8 : f.task === 'serve' ? 9 : 0;
+  if (f.kind !== 0 && f.kind !== 10) return 0;
+  if (f.state === 'wait' || f.state === 'line' || f.state === 'loiter' || f.state === 'kick') return f.standPose ?? 1;
+  if (f.state === 'eat') return 7;
+  if (f.state === 'dealFlee' && f.kind === 10 && !f.hold) return 1;
+  return f.path.length ? f.walkPose : 0;
+}
+// A smoker's habits: how often they draw, for how long, and where they start.
+function lightUp(f, t) {
+  f.kind = 4;
+  f.smk = { period: 3.5 + rnd() * 5, draw: 0.12 + rnd() * 0.18, ph0: rnd(), clock: 0, exhaleIn: -1 };
+  if (t) f.t = t;
+}
 // In the wet, many walk under an umbrella.
-const dress = () => ({ umb: wetOut() && rnd() < (weatherKey === 'rain' ? 0.75 : 0.4) });
+const dress = () => ({ umb: wetOut() && rnd() < (wx.rain > 0.6 ? 0.75 : 0.4) });
 const go = (f, pts, state) => { f.path = pts.map(([x, z]) => ({ x, z })); f.state = state; };
 function freeSpot() { return QUEUE.filter(q => !q.who).sort(() => rnd() - 0.5)[0] ?? null; }
+// Go to a free place at the window, or join the end of the line.
+function queueUp(f) {
+  const spot = line.length ? null : freeSpot();
+  if (spot) { f.spot = spot; spot.who = f; go(f, [[spot.x, spot.z + 1.2], [spot.x, spot.z]], 'order'); return true; }
+  if (line.length >= LINE.length) return false;
+  line.push(f);
+  const [lx, lz] = LINE[line.length - 1];
+  go(f, [[lx + 0.4, lz + 1.0], [lx, lz]], 'toLine');
+  return true;
+}
+// The first in line steps up when a place at the window frees; the rest shuffle on.
+function stepLine() {
+  if (!line.length || line[0].state !== 'line') return;
+  const spot = freeSpot();
+  if (!spot) return;
+  const f = line.shift();
+  f.spot = spot; spot.who = f;
+  go(f, [[spot.x - 0.3, spot.z + 0.5], [spot.x, spot.z]], 'order');
+  line.forEach((o, i) => { if (o.state === 'line' || o.state === 'toLine') go(o, [LINE[i]], 'toLine'); });
+}
 function spawn() {
   const side = rnd() < 0.5 ? -1 : 1, z = 5 + rnd() * 5, r = rnd(), sx = side * EDGE - 1;
   // Now and then someone comes back for a bike left at the rack.
   const left = RACK.filter(q => q.bike?.left);
   if (left.length && rnd() < 0.1 + left.length * 0.03) return collect(left[Math.floor(rnd() * left.length)], side);
-  if (r < 0.12) return spawnGroup(side);
-  if (r < 0.24) return spawnDog(side);
-  const vk = r < 0.36 ? 6 : r < 0.47 ? 8 : r < 0.66 ? 1 : 0;
+  if (r < 0.1) return spawnGroup(side);
+  if (r < 0.2) return spawnDog(side);
+  const vk = r < 0.28 ? 6 : r < 0.36 ? 8 : r < 0.5 ? 1 : 0;
   // Some vehicles only pass, lamps lit; the rest stop for food.
   if (vk && rnd() < 0.45) {
     const f = person({ kind: vk, x: sx - side * (vk === 8 ? 3 : 0), z: vk === 8 ? 7.6 + rnd() * 2 : z, speed: SPEED[vk], alpha: 1 });
     go(f, [[-side * (EDGE + 4) - 1, f.z + (rnd() - 0.5)]], 'pass');
     return;
   }
+  if (!vk) {
+    const f = person({ kind: 0, x: sx, z, alpha: 1, ...dress() });
+    if (!queueUp(f)) go(f, [[-side * EDGE - 1, z + (rnd() - 0.5) * 2]], 'out');
+    return;
+  }
   const spot = freeSpot();
-  if (!spot) return;
-  if (vk) {
+  if (!spot) {
+    // The window is busy: they ride on by.
+    const f = person({ kind: vk, x: sx - side * (vk === 8 ? 3 : 0), z: vk === 8 ? 7.6 + rnd() * 2 : z, speed: SPEED[vk], alpha: 1 });
+    go(f, [[-side * (EDGE + 4) - 1, f.z + (rnd() - 0.5)]], 'pass');
+    return;
+  }
+  {
     // A bike takes a free hoop; a motorbike or a car has one place of its own.
     const slot = vk === 1 ? RACK.find(q => !q.bike) : null;
     if (vk === 1 && !slot) return;
@@ -1823,26 +1970,22 @@ function spawn() {
     go(f, vk === 8 ? [[pk.x, pk.z]] : [[pk.x + side * 2, pk.z + 1.5], [pk.x, pk.z]], 'park');
     return;
   }
-  const f = person({ kind: 0, x: sx, z, alpha: 1, spot, ...dress() });
-  spot.who = f;
-  go(f, [[spot.x, spot.z + 1.2], [spot.x, spot.z]], 'order');
 }
 // A group of young people: they gather round the standing table, then go on together.
 function spawnGroup(side) {
-  const n = 3 + Math.floor(rnd() * 3), z = 6 + rnd() * 3, t = 14 + rnd() * 10;
+  const n = 3 + Math.floor(rnd() * 3), z = 6 + rnd() * 3, t = 25 + rnd() * 20;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + rnd() * 0.5;
-    const f = person({ kind: 0, x: side * (EDGE + i * 0.9) - 1, z: z + (rnd() - 0.5) * 1.2, alpha: 1, speed: WALK * (0.9 + rnd() * 0.15), hangT: t + i * 0.4, smokes: rnd() < 0.35, ...dress() });
+    const f = person({ kind: 0, x: side * (EDGE + i * 0.9) - 1, z: z + (rnd() - 0.5) * 1.2, alpha: 1, speed: WALK * (0.9 + rnd() * 0.15), hangT: t + i * 0.4 + rnd() * 6, smokes: rnd() < 0.4, build: youthBuild(), standPose: [4, 3, 1, 2, 5, 4][Math.floor(rnd() * 6)], ...dress() });
     go(f, [[TABLE.x + Math.cos(a) * (0.9 + rnd() * 0.5), TABLE.z + 0.9 + Math.sin(a) * 0.6]], 'hang');
   }
 }
 // Someone with a dog: some only pass; some stop at the window and the dog waits.
 function spawnDog(side) {
-  const z = 5 + rnd() * 4, spot = rnd() < 0.5 ? freeSpot() : null;
-  const f = person({ kind: 0, x: side * EDGE - 1, z, alpha: 1, speed: WALK * 0.85, spot, ...dress() });
+  const z = 5 + rnd() * 4;
+  const f = person({ kind: 0, x: side * EDGE - 1, z, alpha: 1, speed: WALK * 0.85, ...dress() });
   person({ kind: 5, x: f.x - side * 0.9, z: z + 0.3, alpha: 1, state: 'dog', owner: f, face: -side });
-  if (spot) { spot.who = f; go(f, [[spot.x, spot.z + 1.2], [spot.x, spot.z]], 'order'); }
-  else go(f, [[-side * EDGE - 1, z + (rnd() - 0.5) * 2]], 'out');
+  if (rnd() < 0.5 || !queueUp(f)) go(f, [[-side * EDGE - 1, z + (rnd() - 0.5) * 2]], 'out');
 }
 // Someone walks back to a bike left at the rack, and rides it away.
 function collect(slot, side) {
@@ -1851,28 +1994,111 @@ function collect(slot, side) {
   const f = person({ kind: 0, x: side * EDGE - 1, z: 5 + rnd() * 4, alpha: 1, ride: 1, slot, parked: b, ...dress() });
   go(f, [[b.x + 0.6, b.z + 1.2], [b.x + 0.6, b.z]], 'toRide');
 }
+// A shady deal by the side of the kiosk, played for laughs:
+// a long coat and a hat glance left, right, left; a packet changes hands; both bolt.
+let dealIn = 30 + rnd() * 30;
+function spawnDeal() {
+  const d = person({ kind: 10, x: -EDGE - 1, z: 4.5, alpha: 1, speed: WALK * 0.75, role: 'dealer', shiftT: 0.4 });
+  go(d, [[-5.0, 3.4], [-3.05, 1.5]], 'dealWait');
+  const b = person({ kind: 10, build: 6, x: EDGE + 2, z: 6.5, alpha: 1, speed: WALK * 1.1, role: 'buyer', partner: d });
+  d.partner = b;
+  b.delay = 4 + rnd() * 3;
+}
+// The village youth. One scene at a time, chosen at random:
+// a brommer gang, a boombox at the table, a can kicked across, the rack as a bench,
+// a trolley ride, a couple in the hall door.
+let youthIn = 8 + rnd() * 8;
+function spawnYouth() {
+  if (people.some(o => o.youth && !o.gone)) return;
+  const r = rnd();
+  if (r < 0.24) return spawnGang();
+  if (r < 0.42) return spawnBoombox();
+  if (r < 0.58) return spawnCanKick();
+  if (r < 0.74) return spawnRackSit();
+  if (r < 0.88) return spawnTrolley();
+  return spawnKiss();
+}
+// Brommers ride in together, park by the hall, hang about, then ride off.
+// One will not start: the rider kicks and kicks, then pulls away on a wheelie.
+function spawnGang() {
+  const n = 3 + Math.floor(rnd() * 2), t = 30 + rnd() * 20, dud = Math.floor(rnd() * n);
+  for (let i = 0; i < n; i++) {
+    const sx = -4.4 - i * 1.4, sz = 6.4 + (i % 2) * 0.5;
+    const f = person({ kind: 6, ride: 6, scale: 0.85, vmax: 6, speed: 6, x: -EDGE - 3 - i * 3, z: sz, youth: true, gang: true, hangT: t + rnd() * 4,
+      build: youthBuild(), smokes: rnd() < 0.5, standPose: [4, 3, 1, 2][Math.floor(rnd() * 4)], dud: i === dud, wheelie: i === dud, pk: { x: sx, z: sz, park: 7 } });
+    go(f, [[sx, sz]], 'park');
+  }
+}
+// A boombox on the standing table; the group dances round it.
+function spawnBoombox() {
+  const t = 30 + rnd() * 15, side = rnd() < 0.5 ? -1 : 1;
+  const box = person({ kind: 13, thing: 0, x: TABLE.x, y: 1.12, z: TABLE.z, alpha: 0, state: 'boom', youth: true, t: 1e9 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + rnd() * 0.4;
+    const f = person({ kind: 0, x: side * (EDGE + i) - 1, z: 6 + rnd() * 2, alpha: 1, youth: true, hangT: t, build: youthBuild(), standPose: i ? 10 : 4, box });
+    go(f, [[TABLE.x + Math.cos(a) * 1.0, TABLE.z + 0.9 + Math.sin(a) * 0.6]], 'hang');
+  }
+}
+// Someone kicks a can all the way across the square.
+function spawnCanKick() {
+  const side = rnd() < 0.5 ? -1 : 1, z = 6 + rnd() * 2;
+  const f = person({ kind: 0, x: side * EDGE - 1, z, alpha: 1, youth: true, build: youthBuild(), walkPose: 12, speed: WALK * 0.7 });
+  f.can = person({ kind: 13, thing: 1, x: f.x - side * 0.5, z: z + 0.1, alpha: 1, state: 'can', youth: true, kicker: f });
+  go(f, [[-side * EDGE - 1, z + (rnd() - 0.5)]], 'out');
+}
+// Two sit on the bike rack, sharing a cone.
+function spawnRackSit() {
+  const t = 25 + rnd() * 15;
+  [RACK[1], RACK[4]].forEach((r, i) => {
+    const f = person({ kind: 0, x: -EDGE - 1 - i * 1.2, z: 5 + i, alpha: 1, youth: true, hangT: t, build: youthBuild(), standPose: 11, hold: i ? 1 : 0 });
+    go(f, [[r.x + 0.26, r.z + 0.45], [r.x + 0.26, r.z - 0.08]], 'hang');
+  });
+}
+// One runs, pushing a friend in a shopping trolley, both arms up.
+function spawnTrolley() {
+  const side = rnd() < 0.5 ? -1 : 1, z = 7 + rnd() * 1.5;
+  const f = person({ kind: 0, x: side * EDGE - 1, z, alpha: 1, youth: true, build: youthBuild(), walkPose: 15, run: true, speed: WALK * 2.1 });
+  f.trolley = person({ kind: 13, thing: 2, x: f.x - side * 0.8, z: z + 0.02, alpha: 1, state: 'trolley', youth: true, kicker: f });
+  go(f, [[-side * (EDGE + 3) - 1, z + (rnd() - 0.5)]], 'out');
+}
+// A couple in the parish hall door, in each other's arms.
+function spawnKiss() {
+  const t = 30 + rnd() * 20;
+  for (const [dx, face] of [[-0.25, 1], [0.25, -1]]) {
+    const f = person({ kind: 0, x: HALL.x1 - 1.4 + dx, z: HALL.z + 0.7, alpha: 1, youth: true, state: 'loiter', t, face, standPose: 14, build: face > 0 ? 0 : 8 });
+    f.couple = true;
+  }
+}
 // The two in the shack: one minds the fryer, one serves.
 const staff = [
-  person({ kind: 3, x: -1.0, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work' }),
-  person({ kind: 3, x: 0.6, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work' }),
+  person({ kind: 3, x: -1.0, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work', build: 9 }),
+  person({ kind: 3, x: 0.6, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work', build: 9 }),
 ];
 let breakIn = 40;
 function stepPeople(dt) {
   if (traffic) {
     spawnIn -= dt;
-    if (spawnIn <= 0) { spawn(); spawnIn = (3 + rnd() * 5) * (weatherKey === 'rain' ? 1.6 : 1); }
+    if (spawnIn <= 0) { spawn(); spawnIn = (2.5 + rnd() * 3) * (1 + wx.rain * 0.6); }
+    youthIn -= dt;
+    if (youthIn <= 0) { spawnYouth(); youthIn = 18 + rnd() * 22; }
+    dealIn -= dt;
+    if (dealIn <= 0 && !people.some(o => o.kind === 10)) { spawnDeal(); dealIn = 45 + rnd() * 40; }
   }
+  stepLine();
   // Staff targets: the fryer that boils, the first customer waiting.
   const hot = wells.filter(w => w.inOil).sort((a, b) => b.boil - a.boil)[0];
   const waiting = people.find(f => f.state === 'wait');
   if (staff[0].state === 'work') staff[0].tx = hot ? hot.x : -1.0 + 0.4 * Math.sin(simT * 0.2);
   if (staff[1].state === 'work') staff[1].tx = waiting ? Math.max(-1.9, Math.min(2.1, waiting.x)) : 0.6 + 0.8 * Math.sin(simT * 0.13 + 2);
+  // At the boil the cook scoops; at a waiting customer the server hands over.
+  staff[0].task = hot && Math.abs(staff[0].x - hot.x) < 0.3 ? 'fry' : '';
+  staff[1].task = waiting && Math.abs(staff[1].x - waiting.x) < 0.3 ? 'serve' : '';
   // Now and then the server steps out for a smoke by the side wall.
   breakIn -= dt;
   if (breakIn <= 0 && staff[1].state === 'work' && !waiting) {
     staff[1].state = 'out';
     breakIn = 60 + rnd() * 40;
-    person({ kind: 4, x: S.x0 - 0.5, z: 1.7, alpha: 1, state: 'smoke', t: 14 + rnd() * 6, staffer: staff[1], face: 1 });
+    lightUp(person({ x: S.x0 - 0.5, z: 1.7, alpha: 1, state: 'smoke', staffer: staff[1], face: 1, build: 9 }), 20 + rnd() * 20);
   }
   for (const f of people) {
     if (f.kind === 3) {
@@ -1885,6 +2111,25 @@ function stepPeople(dt) {
       f.gait += ((Math.abs(v) > 0.05 ? 1 : 0) - f.gait) * Math.min(1, dt * 5);
       continue;
     }
+    if (f.kind === 13) {
+      // A can flies ahead at each kick and the kicker catches up; a trolley rolls ahead of its pusher.
+      const o = f.kicker;
+      if (f.state === 'boom') {
+        const on = people.some(q => q.box === f && q.state === 'loiter');
+        f.alpha = Math.max(0, Math.min(1, f.alpha + (on ? dt * 2 : -dt)));
+        if (!on && f.alpha <= 0 && !people.some(q => q.box === f && !q.gone && q.state === 'hang')) f.gone = true;
+        continue;
+      }
+      if (!o || o.gone) { f.gone = true; continue; }
+      if (f.thing === 1) {
+        const per = 2 * Math.PI / 3, since = ((simT * 3 + o.seed * 5) % (2 * Math.PI)) / 3;
+        const lead = 0.35 + 1.3 * Math.max(0, 1 - since / per);
+        f.x = o.x + o.face * lead; f.z = o.z + 0.12;
+        f.ph += dt * 14 * Math.max(0, 1 - since / per);
+      } else { f.x = o.x + o.face * 0.8; f.z = o.z + 0.02; f.face = o.face; }
+      continue;
+    }
+    if (f.kind === 6) f.wh = f.wheelie && f.state === 'out' ? Math.min(1, (f.wh ?? 0) + dt * 1.2) : 0;
     if (f.kind === 5) {
       const o = f.owner;
       if (o.gone) { f.gone = true; continue; }
@@ -1897,10 +2142,14 @@ function stepPeople(dt) {
       f.gait += ((v > 0.2 ? 1 : 0) - f.gait) * Math.min(1, dt * 6);
       continue;
     }
+    if (f.delay > 0) { f.delay -= dt; if (f.delay <= 0) go(f, [[-1.6, 3.2], [-2.45, 1.6]], 'dealCome'); continue; }
+    if (f.fleeHold > 0 && (f.fleeHold -= dt) <= 0) f.hold = 0;
     if (f.path.length) {
       const q = f.path[0], dx = q.x - f.x, dz = q.z - f.z, d = Math.hypot(dx, dz);
       // Vehicles pull away slowly and brake into their place.
-      if (f.accel) f.speed = Math.min(SPEED[f.kind], f.speed + dt * f.accel);
+      if (f.accel) f.speed = Math.min(f.vmax ?? SPEED[f.kind], f.speed + dt * f.accel);
+      // Runners run: the stride opens into a run.
+      if (f.run) f.gait = Math.min(2, f.gait + dt * 3);
       const brake = f.state === 'park' && f.kind !== 0 ? Math.max(0.2, Math.min(1, d / 5)) : 1;
       const step = f.speed * brake * dt;
       if (Math.abs(dx) > 0.01) f.face = Math.sign(dx);
@@ -1915,34 +2164,61 @@ function stepPeople(dt) {
       f.gait -= f.gait * Math.min(1, dt * 5);
       f.t -= dt;
       if (f.kind === 4) {
-        // A draw every few seconds: the ember flares, then smoke leaves the mouth.
-        const cyc = ((f.t * 0.23 + f.x) % 1 + 1) % 1;
-        const was = f.ember;
-        f.ember = cyc < 0.25 ? Math.sin(cyc / 0.25 * Math.PI) : 0;
-        if (was > 0.5 && f.ember <= 0.5) emit([f.x + 0.2 * f.face, 1.5, f.z], 3, { speed: 0.15, spread: 0.05, size: 0.06, life: 3, kind: 2 });
+        // Each smoker keeps a rhythm: a draw, the hand lowers, a pause, then the exhale.
+        const k = f.smk ?? (lightUp(f), f.smk);
+        k.clock += dt;
+        const cyc = (k.clock / k.period + k.ph0) % 1, was = f.ember;
+        f.ember = cyc < k.draw ? Math.sin(cyc / k.draw * Math.PI) : 0;
+        if (was > 0.3 && f.ember <= 0.3) k.exhaleIn = 0.5 + rnd() * 0.9;
+        if (k.exhaleIn > 0 && (k.exhaleIn -= dt) <= 0) {
+          k.exhaleIn = -1;
+          emit([f.x + 0.18 * f.face, 1.55, f.z], 4 + Math.floor(rnd() * 5), { speed: 0.1 + rnd() * 0.2, spread: 0.08, size: 0.05 + rnd() * 0.04, life: 2.5 + rnd() * 2, kind: 2 });
+        }
       }
-      if (f.state === 'party') f.t = 1e9;
+      // The deal: the dealer glances about; the buyer waits a moment before coming in.
+      if (f.state === 'dealWait') {
+        if ((f.shiftT -= dt) <= 0) { f.face = -f.face; f.shiftT = 0.25 + rnd() * 0.45; }
+      }
+      if (f.state === 'dealSwap') {
+        f.swapT -= dt;
+        const d = f.role === 'dealer' ? f : f.partner;
+        if (f.role === 'dealer') { if (rnd() < dt * 3) f.face = -f.face; f.hold = f.swapT > 1.0 ? 1 : 0; }
+        else f.hold = f.swapT <= 1.0 ? 1 : 0;
+        if (f.swapT <= 0) {
+          const side = f.role === 'dealer' ? -1 : 1;
+          f.speed = WALK * 1.7;
+          go(f, [[f.x + side * 2, f.z + 2], [side * (EDGE + 2), f.z + 5]], 'dealFlee');
+          if (f.role === 'buyer') f.fleeHold = 1.4;
+        }
+      }
+      // Each kick puffs blue smoke out of the exhaust.
+      if (f.state === 'kick' && rnd() < dt * 2) emit([f.parked.x - f.parked.face * 0.7, 0.35, f.parked.z], 2, { speed: 0.1, spread: 0.05, size: 0.07, life: 2.2, kind: 2 });
+      if (f.state === 'party' || f.state === 'line' || f.state === 'dealWait' || f.state === 'dealSwap' || f.state === 'dealIdle') f.t = 1e9;
       if (f.t <= 0 && f.state !== 'parked' && f.state !== 'idle') {
         if (f.state === 'wait') served(f);
         else if (f.staffer) { f.staffer.state = 'work'; f.gone = true; }
+        else if (f.state === 'kick') { f.started = true; f.state = 'toRide'; arrive(f); }
+        else if (f.gang && f.state === 'loiter') { f.kind = 0; f.smk = null; go(f, [[f.parked.x + 0.6, f.parked.z]], 'toRide'); }
         else if (f.state === 'eat' || f.state === 'smoke' || f.state === 'loiter') leave(f);
       }
     }
   }
   // Drop those who walked off the square.
   for (let i = people.length - 1; i >= 0; i--) if (people[i].gone) people.splice(i, 1);
-  // Echo trail: a sample of each figure every 0.1 s.
+  // Each figure keeps a short history, for the stepped pose and its smear.
   for (const f of people) {
-    f.trailT -= dt;
-    if (f.trailT <= 0) {
-      f.trailT += ECHO_DT;
-      f.trail.unshift({ x: f.x, z: f.z, ph: f.ph, face: f.face });
-      if (f.trail.length > ECHO) f.trail.pop();
-    }
+    f.hist.push({ t: simT, x: f.x, z: f.z, ph: f.ph, face: f.face });
+    while (f.hist.length > 2 && f.hist[1].t < simT - 0.8) f.hist.shift();
   }
 }
 function arrive(f) {
   if (f.state === 'pass' || f.state === 'out') { f.gone = true; return; }
+  if (f.state === 'park' && f.gang) {
+    f.parked = person({ kind: 7, x: f.x, z: f.z, face: f.face, alpha: 1, state: 'parked', scale: 0.85 });
+    f.kind = 0; f.speed = WALK;
+    go(f, [[f.x + 0.7, f.z + 0.5]], 'hang');
+    return;
+  }
   if (f.state === 'park') {
     // The vehicle stays; its rider or driver walks up to the window.
     const pk = f.pk;
@@ -1953,14 +2229,31 @@ function arrive(f) {
     go(f, [[f.spot.x, f.spot.z + 1.0], [f.spot.x, f.spot.z]], 'order');
     return;
   }
-  if (f.state === 'order') { f.state = 'wait'; f.t = 4 + rnd() * 5; f.face = 1; return; }
-  if (f.state === 'hang') { f.state = 'loiter'; f.t = f.hangT; f.face = Math.sign(TABLE.x - f.x) || 1; if (f.smokes) f.kind = 4; return; }
-  if (f.state === 'toTable') { f.state = f.smokes ? 'smoke' : 'eat'; f.t = 9 + rnd() * 8; f.kind = f.smokes ? 4 : 0; f.hold = f.smokes ? 0 : 1; return; }
+  if (f.state === 'order') { f.state = 'wait'; f.t = 4 + rnd() * 5; f.face = 1; f.standPose = [6, 3, 1, 2, 1, 6][Math.floor(rnd() * 6)]; return; }
+  if (f.state === 'toLine') { f.state = 'line'; f.face = 1; f.standPose ??= [1, 2, 3, 1, 0][Math.floor(rnd() * 5)]; return; }
+  if (f.state === 'dealWait') { f.state = 'dealWait'; return; }
+  if (f.state === 'dealCome') {
+    // The swap: face to face, the packet changes hands.
+    const d = f.partner;
+    f.face = -1; d.face = 1;
+    f.state = d.state = 'dealSwap';
+    f.swapT = d.swapT = 2.2;
+    return;
+  }
+  if (f.state === 'dealFlee') { f.gone = true; return; }
+  if (f.state === 'hang') { f.state = 'loiter'; f.t = f.hangT; f.face = f.gang ? -1 : (Math.sign(TABLE.x - f.x) || 1); if (f.smokes) lightUp(f); return; }
+  if (f.state === 'toTable') { f.state = f.smokes ? 'smoke' : 'eat'; f.t = f.smokes ? 18 + rnd() * 25 : 10 + rnd() * 10; f.hold = f.smokes ? 0 : 1; if (f.smokes) lightUp(f); return; }
+  if (f.state === 'toRide' && f.dud && !f.started) {
+    // It will not start: kick, kick, kick.
+    f.state = 'kick'; f.t = 4 + rnd() * 3; f.standPose = 13; f.face = f.parked.face;
+    return;
+  }
   if (f.state === 'toRide') {
     f.parked.gone = true;
     if (f.slot) f.slot.bike = null;
     f.kind = f.ride; f.x = f.parked.x; f.z = f.parked.z;
     f.speed = 0.5; f.accel = f.ride === 1 ? 6 : 3;
+    if (f.gang) f.scale = 0.85;
     const side = f.ride === 8 ? f.parked.face : (rnd() < 0.5 ? -1 : 1);
     go(f, [[f.x + side * 3, f.z + (f.ride === 8 ? 0 : 2)], [side * (EDGE + 4) - 1, f.z + (f.ride === 8 ? 0 : 4)]], 'out');
   }
@@ -1981,6 +2274,7 @@ function served(f) {
 }
 function leave(f) {
   f.kind = 0;
+  f.smk = null;
   const side = rnd() < 0.5 ? -1 : 1;
   go(f, [[f.x, f.z + 2.5], [side * EDGE - 1, f.z + 4 + rnd() * 4]], 'out');
 }
@@ -1988,48 +2282,63 @@ function leave(f) {
 {
   const f = person({ kind: 0, x: QUEUE[1].x, z: QUEUE[1].z, alpha: 1, state: 'wait', t: 5, spot: QUEUE[1], face: 1 });
   QUEUE[1].who = f;
-  person({ kind: 4, x: TABLE.x - 0.45, z: TABLE.z, alpha: 1, state: 'smoke', t: 12, face: 1 });
+  lightUp(person({ x: TABLE.x - 0.45, z: TABLE.z, alpha: 1, state: 'smoke', face: 1 }), 30);
   // Two stand outside the parish hall door for a smoke, all night.
-  person({ kind: 4, x: HALL.x1 - 2.6, z: HALL.z + 0.8, alpha: 1, state: 'party', t: 1e9, face: 1 });
+  lightUp(person({ x: HALL.x1 - 2.6, z: HALL.z + 0.8, alpha: 1, state: 'party', face: 1 }), 1e9);
   person({ kind: 0, x: HALL.x1 - 0.2, z: HALL.z + 1.0, alpha: 1, state: 'party', t: 1e9, face: -1 });
   // Two bikes already stand at the rack, left from earlier.
   for (const i of [0, 3]) RACK[i].bike = person({ kind: 2, x: RACK[i].x, z: RACK[i].z, face: i ? -1 : 1, alpha: 1, state: 'parked', left: true });
 }
 // Height of each kind's top, for its shadow; half length of vehicles, for their lamps.
-const TALL = { 2: 0.9, 5: 0.6, 6: 1.5, 7: 1.1, 8: 1.4, 9: 1.4 };
+const TALL = { 2: 0.9, 5: 0.6, 6: 1.5, 7: 1.1, 8: 1.4, 9: 1.4, 10: 1.85, 13: 0.9 };
 const SCALE = { 6: 1.1, 7: 1.1, 8: 2.4, 9: 2.4 };
 const NOSE = { 1: [0.5, 0.35], 6: [0.82, 1.6], 8: [2.1, 3.2] };
+// Where a figure was at time t, from its history, in between samples.
+function sampleAt(f, t) {
+  const h = f.hist;
+  if (!h.length || t >= h[h.length - 1].t) return { x: f.x, z: f.z, ph: f.ph, face: f.face };
+  if (t <= h[0].t) return h[0];
+  let i = h.length - 1;
+  while (i > 0 && h[i - 1].t > t) i--;
+  const a = h[i - 1], b = h[i], u = (t - a.t) / Math.max(1e-6, b.t - a.t);
+  return { x: a.x + (b.x - a.x) * u, z: a.z + (b.z - a.z) * u, ph: a.ph + (b.ph - a.ph) * u, face: u < 0.5 ? a.face : b.face };
+}
 function writePeople() {
-  const P = fPos.array, Q = fPose.array, G = fGait.array, Z = fScale.array, SA = sAttr.array, SB = sAttr2.array;
+  const P = fPos.array, Q = fPose.array, G = fGait.array, Z = fScale.array, V = fVar.array, SA = sAttr.array, SB = sAttr2.array;
   P.fill(0); SB.fill(0);
   const L = S.lamp, echoes = reduced() ? 1 : ECHO;
+  const ts = Math.floor(simT * STEP) / STEP;
   people.slice(0, FIGS).forEach((f, i) => {
+    const m0 = { ...sampleAt(f, ts) };
+    // A puppet never lands quite where it should.
+    const jh = Math.sin((ts * 97.1 + i * 13.7) * 12.9898) * 43758.5453;
+    m0.x += ((jh % 1) - 0.5) * 0.02; m0.z += (((jh * 7.3) % 1) - 0.5) * 0.02;
+    f.sx = m0.x; f.sz = m0.z;
     const kv = f.kind + (f.umb && f.kind === 0 && wetOut() ? 0.2 : 0);
     for (let k = 0; k < echoes; k++) {
-      const e = k === 0 ? { x: f.x, z: f.z, ph: f.ph, face: f.face } : f.trail[k];
-      if (!e) continue;
-      // Echoes fade with age; still figures leave no trail.
-      const moved = k === 0 ? 1 : Math.min(1, Math.hypot(e.x - f.x, e.z - f.z) * 3);
+      const e = k === 0 ? m0 : sampleAt(f, ts - k * SHUTTER / ECHO);
+      // Echoes fade along the shutter; still figures leave no smear.
+      const moved = k === 0 ? 1 : Math.min(1, Math.hypot(e.x - m0.x, e.z - m0.z) * 4);
       const j = (i * ECHO + k) * 4;
-      // A soft exponential tail: the echoes blend into one smear.
-      P.set([e.x, f.y, e.z, f.alpha * (k === 0 ? 1 : 0.34 * Math.exp(-k * 0.38) * moved)], j);
-      Q.set([kv, e.ph, e.face, f.kind === 4 ? f.ember : f.hold], j);
+      P.set([e.x, f.y, e.z, f.alpha * (k === 0 ? 1 : 0.5 * (1 - k / ECHO) ** 1.6 * moved)], j);
+      Q.set([kv, e.ph, e.face, f.kind === 4 ? f.ember : f.kind === 6 ? (f.wh ?? 0) : f.kind === 13 ? f.thing : f.hold], j);
       G[i * ECHO + k] = f.gait ?? 0;
-      Z[i * ECHO + k] = SCALE[f.kind] ?? 1;
+      Z[i * ECHO + k] = f.scale ?? SCALE[f.kind] ?? 1;
+      V.set([f.build ?? 0, poseOf(f), f.seed ?? 0], (i * ECHO + k) * 3);
     }
     // The shadow runs from the feet away from the lamp, as far as the top's.
-    const m = f.kind === 3 ? 0 : apMaskJS(f.x, 1.0, f.z);
+    const m = f.kind === 3 ? 0 : apMaskJS(m0.x, 1.0, m0.z);
     if (m > 0.01) {
       const hy = TALL[f.kind] ?? 1.75, k = L[1] / (L[1] - hy);
-      const gx = L[0] + k * (f.x - L[0]), gz = L[2] + k * (f.z - L[2]);
-      SA.set([f.x, f.z, Math.atan2(gz - f.z, gx - f.x), Math.hypot(gx - f.x, gz - f.z)], i * 4);
+      const gx = L[0] + k * (m0.x - L[0]), gz = L[2] + k * (m0.z - L[2]);
+      SA.set([m0.x, m0.z, Math.atan2(gz - m0.z, gx - m0.x), Math.hypot(gx - m0.x, gz - m0.z)], i * 4);
       SB[i * 2] = 0.8 * m * f.alpha;
     }
   });
   // The two strongest lamps on the move light the square.
-  const lamps = people.filter(f => NOSE[f.kind]).map(f => ({ x: f.x + f.face * NOSE[f.kind][0], z: f.z, dir: f.face, w: NOSE[f.kind][1] })).sort((a, b) => b.w - a.w);
+  const lamps = people.filter(f => NOSE[f.kind] && f.sx != null).map(f => ({ x: f.sx + f.face * NOSE[f.kind][0], z: f.sz, dir: f.face, w: NOSE[f.kind][1] })).sort((a, b) => b.w - a.w);
   for (const [n, u] of [[0, U.uVeh0], [1, U.uVeh1]]) { const v = lamps[n]; u.value.set(v?.x ?? 0, v?.z ?? 0, v?.dir ?? 1, v?.w ?? 0); }
-  fPos.needsUpdate = fPose.needsUpdate = fGait.needsUpdate = fScale.needsUpdate = sAttr.needsUpdate = sAttr2.needsUpdate = true;
+  fPos.needsUpdate = fPose.needsUpdate = fGait.needsUpdate = fScale.needsUpdate = fVar.needsUpdate = sAttr.needsUpdate = sAttr2.needsUpdate = true;
 }
 
 /* ---------- K2: bloom ---------- */
@@ -2059,25 +2368,44 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uVig: { value: vig },
       uVigIn: { value: vigIn },
       uGrain: { value: grain },
+      uDV: { value: 1 },
+      uFrame: { value: 0 },
+      uFlick: { value: 0 },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
     uniform sampler2D tDiffuse;
     uniform vec2 uRes;
     uniform vec3 uTint;
-    uniform float uVig, uVigIn, uGrain;
+    uniform float uVig, uVigIn, uGrain, uDV, uFrame, uFlick;
     varying vec2 vUv;
     // An integer hash per pixel; float hashes draw faint stripes here.
     float h(vec2 p) {
-      uvec2 q = uvec2(p);
+      // The grain changes every frame, like film.
+      uvec2 q = uvec2(p) + uvec2(uint(uFrame) * 7919u, uint(uFrame) * 104729u);
       uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
       n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
       return float(n) / 4294967295.0;
     }
     void main() {
-      vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      if (uDV > 0.5) {
+        // Tape colour: full-detail brightness, colour smeared sideways over a few pixels.
+        vec2 dx = vec2(2.0 / uRes.x, 0.0);
+        vec3 wide = (texture2D(tDiffuse, vUv - dx * 1.5).rgb + c + texture2D(tDiffuse, vUv + dx * 1.5).rgb) / 3.0;
+        float y = dot(c, vec3(0.2126, 0.7152, 0.0722)), yw = dot(wide, vec3(0.2126, 0.7152, 0.0722));
+        // Keep each pixel's brightness; take its colour from the smear. Never below zero.
+        c = wide * (y / max(yw, 1e-4));
+        // Red sits a pixel off from blue, as through a cheap lens.
+        c.r = mix(c.r, texture2D(tDiffuse, vUv + dx * 0.6).r, 0.5);
+        // Shadows lean cool green, blacks lift a little.
+        c = c * mix(vec3(0.95, 1.03, 1.0), vec3(1.0), smoothstep(0.0, 0.15, y)) + vec3(0.0015, 0.002, 0.002);
+      }
+      c += uTint;
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
       c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+      // Stop-motion: the exposure flickers a little from step to step.
+      c *= 1.0 + uFlick;
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= 1.0 + (h(gl_FragCoord.xy) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
       gl_FragColor = vec4(max(c, 0.0), 1.0);
@@ -2119,7 +2447,7 @@ const tiltPass = d => {
 };
 
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.45, 0.45, 0.95], tint: [0.0004, 0.0005, 0.0009], vig: 0.55, vigIn: 0.4, grain: 0.035 };
+const POST = { bloom: [0.45, 0.45, 0.95], tint: [0.0004, 0.0005, 0.0009], vig: 0.55, vigIn: 0.4, grain: 0.07 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
@@ -2135,21 +2463,32 @@ let tiltK = 0.6;
 let size = { w: 1, h: 1, dpr: 1 };
 // Look offsets from a drag; they ease toward the target.
 const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
+// Zoom: 1 is the full wide lens; scroll and pinch narrow it to 0.68.
+let zoom = 1, zoomT = 1, camcorder = true;
 const focusPt = new THREE.Vector3(0.6, 1.6, 0.8);
 function frame() {
   const portrait = size.w < size.h * 0.9;
   camera.aspect = size.w / size.h;
   // A low, wide lens on the cobbles; the shack sits right of centre.
   // Phones step in, centre the shack, and keep sky above for the plume.
-  const T = portrait ? new THREE.Vector3(1.8, 3.5, 0) : new THREE.Vector3(-1.4, 2.3, 0);
-  const P = portrait ? new THREE.Vector3(1.6, 0.95, 18) : new THREE.Vector3(-1.0, 1.05, 21);
-  camera.fov = portrait ? 58 : 38;
+  const T = portrait ? new THREE.Vector3(1.4, 3.4, 0) : new THREE.Vector3(-1.3, 2.2, 0);
+  const P = portrait ? new THREE.Vector3(1.2, 0.95, 16) : new THREE.Vector3(-1.0, 1.05, 16.5);
+  // A wide lens; scroll or pinch zooms in a little; the zoom ring breathes slowly.
+  const hh = camcorder && !reduced() ? 1 : 0;
+  const n = (a, b, c, o) => Math.sin(simT * a + o) * 0.6 + Math.sin(simT * b + o * 2.1) * 0.3 + Math.sin(simT * c + o * 3.7) * 0.1;
+  camera.fov = (portrait ? 64 : 47) * zoom + hh * n(0.19, 0.31, 0.47, 0.5) * 0.35;
+  // Handheld: the lens drifts and sways by a few centimetres.
+  T.x += hh * n(0.43, 1.13, 2.3, 2.0) * 0.035;
+  T.y += hh * n(0.61, 1.57, 3.1, 2.7) * 0.025;
+  P.x += hh * n(0.71, 1.37, 2.9, 0.3) * 0.02;
+  P.y += hh * n(0.53, 1.91, 3.7, 1.1) * 0.015;
   // A drag swings the lens round the shack a little.
   const off = P.clone().sub(T);
   off.applyAxisAngle(new THREE.Vector3(0, 1, 0), look.yaw);
   camera.position.copy(T).add(off);
   camera.position.y = Math.max(0.35, P.y + look.pitch * 6);
   camera.lookAt(T);
+  camera.rotateZ(hh * n(0.37, 0.83, 1.9, 4.2) * 0.004);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   // The sharp band sits on the shack.
@@ -2181,8 +2520,13 @@ function resize() {
   draw();
 }
 let visible = !document.hidden;
+let frameN = 0;
 function draw() {
   if (!visible) return;
+  // A new grain each frame; a new exposure each step.
+  grade.uniforms.uFrame.value = ++frameN % 100000;
+  const st = Math.floor(simT * STEP);
+  grade.uniforms.uFlick.value = camcorder ? (Math.sin(st * 12.9898) * 43758.5453 % 1) * 0.024 : 0;
   writeSteam();
   writePeople();
   composer.render();
@@ -2192,7 +2536,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +QS.get('sleep') || 60000;
 let clockAt = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), simT = 0, flare = 0, lastShake = 0, pace = reduced() ? 0 : 1;
-const busy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003 || fryerBusy() || fryPuffs > 0;
+const busy = () => Math.abs(zoomT - zoom) > 1e-4 || !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003 || fryerBusy() || fryPuffs > 0;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2210,7 +2554,9 @@ function tick(now) {
     stepPeople(dt * run);
     stepWins(dt * run);
     stepParty(simT);
-    rainMat.uniforms.uDrift.value = wind * 2.5;
+    stepSitters(dt * run);
+    stepWeather(dt * run);
+    rainMat.uniforms.uDrift.value = wind * gust * 2.5;
     if (now - clockAt > 10000) { clockAt = now; setClock(); }
     // A hold on the shack keeps the basket shaking.
     if (press?.hold && now - lastShake > 700) act.shake();
@@ -2220,9 +2566,10 @@ function tick(now) {
     setLight();
     const k = 1 - Math.exp(-dt * (reduced() ? 6 : 10));
     look.yaw += (look.ty - look.yaw) * k;
+    zoom += (zoomT - zoom) * k;
     look.pitch += (look.tp - look.pitch) * k;
-    // Lively: every frame. Drifting: 48 fps, twice film rate, so the trails stay smooth.
-    if (lively || now - lastDraw >= 1000 / 48 - 2) {
+    // Tom, 2026-11-09: the square plays at film rate, 24 fps; the smear carries the motion.
+    if (now - lastDraw >= 1000 / 24 - 2) {
       frame();
       draw();
       watch(now, lively);
@@ -2247,7 +2594,8 @@ function watch(now, lively) {
   if (now - watchFrom < 4000) return;
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
-  if (watchSum / watchN > (lively ? 1000 / 38 : 1000 / 30) && rung < 2) { rung++; resize(); }
+  // Frames come every 42 ms at 24 fps; slower than 20 fps is slow.
+  if (watchSum / watchN > 1000 / 20 && rung < 2) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
@@ -2262,6 +2610,35 @@ onReducedChange(() => wake());
 
 /* Pointer: a press turns into a drag after 8 px, or a hold after 260 ms. */
 let press = null;
+const clampZoom = z => Math.max(0.68, Math.min(1, z));
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomT = clampZoom(zoomT * Math.exp(e.deltaY * 0.0012));
+  wake();
+}, { passive: false });
+// Two fingers pinch the zoom.
+const touches = new Map();
+let pinch = null;
+stage.addEventListener('pointerdown', e => {
+  touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (touches.size === 2) {
+    const [a, b] = [...touches.values()];
+    pinch = { d0: Math.hypot(a[0] - b[0], a[1] - b[1]), z0: zoomT };
+    if (press) { clearTimeout(press.timer); press.drag = true; }
+  }
+});
+stage.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pinch && touches.size === 2) {
+    const [a, b] = [...touches.values()];
+    zoomT = clampZoom(pinch.z0 * pinch.d0 / Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1])));
+    wake();
+  }
+});
+const unTouch = e => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+stage.addEventListener('pointerup', unTouch);
+stage.addEventListener('pointercancel', unTouch);
 // The shack's screen box, for taps and holds.
 const SHACK_BOX = [[S.x0 - 0.1, 0, S.z0], [A.x1 + 0.1, 3.5, 1.5]];
 function onShack(cx, cy) {
@@ -2277,7 +2654,7 @@ function onShack(cx, cy) {
   return px > x0 - 12 && px < x1 + 12 && py > y0 - 12 && py < y1 + 12;
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0) return;
+  if (e.button > 0 || touches.size > 1) return;
   stage.setPointerCapture(e.pointerId);
   const hit = onShack(e.clientX, e.clientY);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), drag: false, hold: false, hit, yaw: look.ty, pitch: look.tp };
@@ -2288,7 +2665,7 @@ stage.addEventListener('pointerdown', e => {
 stage.addEventListener('pointermove', e => {
   if (!press || e.pointerId !== press.id) return;
   if (!press.drag && !press.hold && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.drag = true; stage.classList.add('held'); }
-  if (!press.drag) return;
+  if (!press.drag || pinch) return;
   // Drag swings the lens round the shack, a little each way.
   if (reduced()) return;
   const s = 1.2 / Math.max(size.w, size.h);
@@ -2359,15 +2736,14 @@ act.wind = v => { wind = v; wake(); };
 act.neon = v => { setNeon(v); draw(); };
 act.tilt = v => { tiltK = v; frame(); draw(); };
 act.traffic = on => { traffic = on; wake(); };
+// Camcorder: the handheld sway and the tape look of the late nineties.
+act.camcorder = on => { camcorder = on; grade.uniforms.uDV.value = on ? 1 : 0; frame(); draw(); };
 act.weather = v => { setWeather(v); wake(); draw(); };
-setWeather(QS.get('weather') ?? ui.setting('weather')?.value ?? 'dry');
+setWeather(ui.setting('weather')?.value ?? 'shift');
 // Three looks for the people, for Tom to pick from.
 const LOOKS = { ink: 0, line: 1, haze: 2 };
 act.people = v => { figMat.uniforms.uStyle.value = LOOKS[v] ?? 0; draw(); };
-// Variants for Tom to compare: ?clock=a|b|c, ?font=a..e, ?dog=a|b|c.
-const DOGS = { a: 0, b: 1, c: 2 };
-clockMat.uniforms.uStyle.value = CLOCKS[QS.get('clock')] ?? 0;
-figMat.uniforms.uDog.value = DOGS[QS.get('dog')] ?? 0;
+
 act.people(QS.get('people') ?? ui.setting('people')?.value ?? 'ink');
 act.moths = () => {};
 act.reset = () => {
@@ -2382,6 +2758,7 @@ wind = ui.slider?.value ?? 0.3;
 tiltK = ui.setting('tilt')?.value ?? 0.6;
 setNeon(ui.setting('neon')?.value ?? 'red');
 traffic = ui.setting('traffic')?.value ?? true;
+act.camcorder(ui.setting('camcorder')?.value ?? true);
 setLight();
 // The vent plume starts 6 s old, so the first frame is a picture.
 for (let i = 0; i < 180; i++) stepSteam(1 / 30);
@@ -2392,7 +2769,7 @@ paintWins();
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
 resize();
-Promise.all([renderer.compileAsync(scene, camera), setFont(QS.get('font') ?? 'a')]).then(() => {
+Promise.all([renderer.compileAsync(scene, camera), loadSign()]).then(() => {
   draw();
   canvas.classList.add('on');
   markReady();
