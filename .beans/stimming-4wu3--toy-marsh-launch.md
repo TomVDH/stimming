@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T09:14:04Z
+updated_at: 2026-11-09T09:34:12Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -127,3 +127,11 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 
 - The liftoff clouds are no longer separate puffs. Up to 32 blobs feed one soft-sphere field; a box round them is marched once per pixel (14 steps Standard, 20 High, 10 on rung 2), so neighbours fuse into one mass.
 - World noise (90 m lumps, ridged detail) carves the field, with a medium-soft cut. Two shadow samples toward the dawn and two up give rounded shading; grey in the hollows, pale on the tops; the flame only warms the near side.
+
+## Ground cloud as a 2D fluid (2026-11-09, Tom: still pills; use the Fire toy's approach)
+
+- Fire's K3 is WebGPU TSL on three 0.186 and cannot load here. Built the same idea in WebGL: a 2D grid fluid (384 x 144, half-float ping-pong targets, 18 Jacobi passes) on one slab across the pad. Side on, two dimensions carry the whole cloud.
+- The exhaust is a body-force jet onto the pad; the pressure solve turns it into a ground sheet. Fresh smoke lifts (buoyancy decays with age), old smoke weighs down and spreads; a damping lid keeps it low; curl noise and gusts roll it.
+- The slab shader warps the lookup with two noise scales for billow detail, lights by the density slope with dawn key, top light and flame, and shadows through the density toward the dawn.
+- Acacias cut; the shore is one clean line; a faint lattice gantry stands beside the pad.
+- Lesson: velocities in uv per second must stay near 0.05 (about 100 m/s); forces ten times larger blew the smoke out of the grid within a step.
