@@ -314,6 +314,76 @@ function sizeHist() {
   for (let i = 0; i < 2; i++) hist[i] = new THREE.WebGLRenderTarget(outBuf.w, outBuf.h, { type: floatOK ? THREE.HalfFloatType : THREE.UnsignedByteType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
   histFresh = true;
 }
+// Glow: a bright pass at a quarter of the outside size, blurred twice, added back.
+// History stays clean, so the glow never feeds itself.
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform float uThr;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  // Four bilinear taps, a quarter texel out, average the 4x4 source block.
+  vec3 c = vec3(0.0);
+  for (int j = 0; j < 2; j++) for (int i = 0; i < 2; i++) c += texture(uSrc, uv + (vec2(i, j) - 0.5) * uTexel * 0.5).rgb;
+  c *= 0.25;
+  float l = max(c.r, max(c.g, c.b));
+  // A soft knee keeps the edge of the glow from popping.
+  float k = clamp((l - uThr) / (uThr + 1e-4), 0.0, 1.0);
+  o = vec4(c * k * k, 1.0);
+}`;
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uTexel, uDir;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  // Nine taps, Gaussian weights, one texel apart.
+  const float w[5] = float[5](0.2270, 0.1945, 0.1216, 0.0541, 0.0162);
+  vec3 c = texture(uSrc, uv).rgb * w[0];
+  for (int i = 1; i < 5; i++) {
+    vec2 d = uDir * uTexel * float(i);
+    c += (texture(uSrc, uv + d).rgb + texture(uSrc, uv - d).rgb) * w[i];
+  }
+  o = vec4(c, 1.0);
+}`;
+const ADD_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc, uGlow; uniform vec2 uTexel; uniform float uK;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec4 c = texture(uSrc, uv);
+  o = vec4(c.rgb + texture(uGlow, uv).rgb * uK, c.a);
+}`;
+const MB = passMaterial(BRIGHT_FS), MBl = passMaterial(BLUR_FS), MA = passMaterial(ADD_FS);
+const PB = { u: slots(MB), scene: passScene(MB) }, PBl = { u: slots(MBl), scene: passScene(MBl) }, PA = { u: slots(MA), scene: passScene(MA) };
+const glowRT = [null, null];
+let finalRT = null;
+const rt = (w, h) => new THREE.WebGLRenderTarget(w, h, { type: floatOK ? THREE.HalfFloatType : THREE.UnsignedByteType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+function sizeGlow() {
+  const w = Math.max(1, outBuf.w >> 2), h = Math.max(1, outBuf.h >> 2);
+  if (glowRT[0] && glowRT[0].width === w && glowRT[0].height === h) return;
+  [...glowRT, finalRT].forEach(r => r && r.dispose());
+  glowRT[0] = rt(w, h); glowRT[1] = rt(w, h); finalRT = rt(outBuf.w, outBuf.h);
+}
+function glow(src) {
+  sizeGlow();
+  const [a, b] = glowRT, tx = [1 / a.width, 1 / a.height];
+  UG.tex(PB.u.uSrc, src.texture); UG.uniform2f(PB.u.uTexel, ...tx); UG.uniform1f(PB.u.uThr, 0.55);
+  renderer.setRenderTarget(a); renderer.render(PB.scene, quadCam);
+  UG.uniform2f(PBl.u.uTexel, ...tx);
+  // Two rounds of a separable blur widen the glow without gaps.
+  for (let i = 0; i < 2; i++) {
+    UG.tex(PBl.u.uSrc, a.texture); UG.uniform2f(PBl.u.uDir, 1, 0);
+    renderer.setRenderTarget(b); renderer.render(PBl.scene, quadCam);
+    UG.tex(PBl.u.uSrc, b.texture); UG.uniform2f(PBl.u.uDir, 0, 1);
+    renderer.setRenderTarget(a); renderer.render(PBl.scene, quadCam);
+  }
+  UG.tex(PA.u.uSrc, src.texture); UG.tex(PA.u.uGlow, a.texture);
+  UG.uniform2f(PA.u.uTexel, 1 / outBuf.w, 1 / outBuf.h); UG.uniform1f(PA.u.uK, 0.7);
+  renderer.setRenderTarget(finalRT); renderer.render(PA.scene, quadCam);
+  return finalRT;
+}
 // The recess march takes more steps on High.
 const marchSteps = () => (quality() === 'high' ? 28 : 14);
 
@@ -1098,11 +1168,12 @@ function render() {
   renderer.setRenderTarget(next);
   renderer.render(PR.scene, quadCam);
   histFresh = false; frameN++;
+  const lit = glow(next);
 
   // Pass 2: the cabin, the frame and the glass, to the screen.
   u = P2.u;
   shared(u);
-  UG.tex(u.uOut, next.texture);
+  UG.tex(u.uOut, lit.texture);
   UG.uniform1f(u.uDpr, dpr);
   UG.uniform1f(u.uDimE, dim.edge); UG.uniform1f(u.uDimC, dim.core);
   UG.uniform1f(u.uFlash, flash);

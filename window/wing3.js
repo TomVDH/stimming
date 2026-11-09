@@ -292,7 +292,7 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
       scene.fog.density = fogLevel > 0.05 ? 1.2 / vis : 0;
       scene.fog.color.setRGB(...sky.amb.map(v => v * 0.03 * (1 + flash * 3)));
       const tw = V(...tip);
-      strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 120;
+      strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));
     },
   };

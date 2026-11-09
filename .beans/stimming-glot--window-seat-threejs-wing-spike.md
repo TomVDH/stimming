@@ -46,4 +46,9 @@ Round 3 (Tom, 2026-11-09: nicer weather on a performance-efficient three.js buil
   Cloud to ground below a thin deck; otherwise a crawler through the anvil. The lines sit on the far plane, so the wing hides them; a fog bank swallows them.
   The brightest bolt lights the wing from its side; a fog bank fogs the wing (FogExp2 from the shader's sight range). Cloud tops were already lit from inside.
   Test hook: `__ws.flash(x, z, big, cell)`; a flash's `kind` forces 'ground' or 'crawl'.
-- [ ] Step 4: rain on the glass as instanced drops, bloom, phone check
+- [x] Step 4: glow. A bright pass at a quarter of the outside size, two rounds of a separable blur, added before the cabin pass; history stays clean. Lights, bolts and the wing's glints bloom.
+  Bench (M4, Dusk, Storm 1, ?seed&freeze, min / median of 60): live about 2.9 / 3.5 to 5.5 ms; spike about 4.0 / 5.1 to 5.9 ms. Glow costs about 0.5 ms.
+  Phone: 375 x 812 and 812 x 375 hold, clean console. The tip strobe on the wing toned down (it blew out with glow).
+- [ ] Rain on the glass stays the shader's; instanced drops not done.
+- [ ] Wing fog only tracks fog banks, not the storm's haze; check in a storm at Dusk.
+- [ ] Tom: compare page, then decide whether the three.js build replaces the live toy.
