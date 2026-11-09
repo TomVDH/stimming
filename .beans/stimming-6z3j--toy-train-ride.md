@@ -192,3 +192,6 @@ Open from the critics:
 - [ ] Walensee: the mirrored far shore at Murg shows jagged grey blocks
 - [x] Signs matte: no self light, flat muted navy, soft white rule; station LED strips dark by day, half as strong at night; columns and slab matte, warm light concrete, calmer sky fill
 - [x] Terrain restyle, smooth and neat: muted sage meadows in wide bands, no grain, far roofs merge into a soft town tint (no speckle), gentle woods, softer shadows
+- [x] Props, placed on the GPU from the map (a placement pass per kind writes base point and size per texel): broadleaf and spruce trees (woods dense, lone trees on meadows, none past 1 km), low shrubs beyond the second track, Swiss chalets (plaster ground floor, timber above, shuttered windows lit at night), barns on farms, plaster blocks in Zurich, timber fences that follow the ground, white round bales in groups, a country road with timber poles and three sagging wires
+- [ ] Props: check fps on the MacBook; shrubs may read as blobs
+- [x] Audio study: trainride/dev/sonograph.png of Tom's inside-train recording, sections and peaks marked keep or cut
