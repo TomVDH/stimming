@@ -102,7 +102,7 @@
       </div>
       <label class="slider"><span>Distance</span><input type="range" id="dist" min="0" max="1" step="0.01" value="0.5" aria-label="Distance: 300 to 1,500 metres"></label>
       <div class="actions">
-        <button class="chip" id="finale" type="button">+ Finale</button>
+        <button class="chip" id="finale" type="button">Showtime</button>
       </div>
       <div class="edge">
         <div class="adder" id="setter">
@@ -894,7 +894,7 @@ function crowdTick() {
   crowd.E += (target - crowd.E) * (1 - Math.exp(-dt / tau));
   if (crowd.E < 0.002) crowd.E = 0;
   CU2.uCrowd.value = crowd.E;
-  // Flashes per second: about 3 after one shell, about 40 in a finale.
+  // Flashes per second: about 3 after one shell, about 40 at Showtime's peak.
   if (reduced() || crowd.E < 0.04) return;
   const rate = 1 + 40 * crowd.E * crowd.E;
   let n = 0;
@@ -2382,34 +2382,62 @@ function launch(ndc, cal) {
   commitSmoke();
   wake();
 }
-/* ---------- finale ---------- */
-// The running order: [launch time, x, y, shell, calibre, comet], on the sim clock.
-// An opening, a build, a strobe wall, then three gold willows that hang.
-const FINALE = [
-  [0.0, -0.55, 0.40, 'peony', 1.2], [0.35, 0.45, 0.50, 'chrysanthemum', 1.3], [0.8, -0.15, 0.55, 'ring', 1.2],
-  [1.2, 0.65, 0.35, 'pistil', 1.3], [1.6, -0.7, 0.60, 'peony', 1.4], [2.0, 0.2, 0.45, 'chrysanthemum', 1.4],
-  [2.4, -0.35, 0.30, 'saturn', 1.3], [2.8, 0.55, 0.65, 'crossette', 1.4],
-  [3.2, -0.6, 0.70, 'kamuro', 1.5], [3.5, 0.0, 0.60, 'galaxy', 1.5], [3.8, 0.7, 0.50, 'cascade', 1.4],
-  [4.1, -0.25, 0.45, 'palm', 1.5], [4.4, 0.35, 0.75, 'peony', 1.6], [4.7, -0.75, 0.50, 'crossette', 1.5],
-  [5.0, 0.15, 0.35, 'chrysanthemum', 1.6], [5.3, 0.6, 0.60, 'saturn', 1.6],
-  [5.6, -0.8, 0.50, 'strobe', 1.4, 'glitter'], [5.65, -0.57, 0.55, 'crackle', 1.4, 'crackle'], [5.7, -0.34, 0.50, 'strobe', 1.4, 'glitter'],
-  [5.75, -0.11, 0.55, 'crackle', 1.4, 'crackle'], [5.8, 0.11, 0.50, 'strobe', 1.4, 'glitter'], [5.85, 0.34, 0.55, 'crackle', 1.4, 'crackle'],
-  [5.9, 0.57, 0.50, 'strobe', 1.4, 'glitter'], [5.95, 0.8, 0.55, 'crackle', 1.4, 'crackle'],
-  [7.0, -0.45, 0.80, 'willow', 1.9, 'gold'], [7.05, 0.0, 0.85, 'willow', 2.0, 'gold'], [7.1, 0.45, 0.80, 'willow', 1.9, 'gold'],
-];
-let finaleEnd = -1;
-// The whole show writes at once; each star waits for its own birth time.
-function finale() {
-  if (simT < finaleEnd) return;
-  for (const [t, x, y, type, cal, style] of FINALE) {
-    fire(burstPoint(new THREE.Vector2(x, horizonNdc + y * (0.92 - horizonNdc)), cal), simT + t, type, cal, style);
-  }
-  finaleEnd = simT + 9;
-  commitStars();
-  commitSmoke();
+/* ---------- showtime ---------- */
+// The show as cues: [time, x, y, shell, calibre, comet, site], x and y as for a tap.
+// Five acts: an opening, the classics, the zany ones, a build, and the finale.
+// Each run jitters a little, so no two shows match.
+function buildShow() {
+  const S = [], j = () => (Math.random() - 0.5) * 0.04;
+  // Only the salutes ride dark comets; their white flash would wash out a pattern.
+  const lit = () => pick(['gold', 'glitter', 'colour', 'spin', 'crackle']);
+  const add = (t, x, y, type, cal, style = lit(), site = 'barge') => S.push([t, x + j(), y + j(), type, cal, style, site]);
+  // Opening: three dark comets end in white salutes; a cake sweeps the beach.
+  [-0.5, 0, 0.5].forEach((x, i) => add(i * 0.25, x, 0.58, 'strobe', 1.3, 'dark'));
+  for (let i = 0; i < 12; i++) add(0.9 + i * 0.12, -0.8 + (1.6 * i) / 11, 0.28 + 0.06 * (i % 2), i % 2 ? 'ring' : 'peony', 0.85, 'gold', 'beach');
+  // The classics: mirrored pairs that climb, then three showpieces.
+  ['peony', 'chrysanthemum', 'ring', 'pistil', 'saturn', 'crossette'].forEach((type, k) => {
+    for (const sd of [-1, 1]) add(3.6 + k * 1.05 + (sd > 0 ? 0.12 : 0), sd * (0.22 + 0.08 * k), 0.42 + 0.05 * k, type, 1.4);
+  });
+  add(10.0, 0, 0.72, 'galaxy', 1.7); add(10.7, -0.42, 0.55, 'cascade', 1.5); add(10.9, 0.42, 0.55, 'palm', 1.5);
+  // The zany act.
+  add(12.2, 0, 0.6, 'smiley', 1.6);
+  add(13.4, -0.5, 0.58, 'butterfly', 1.5); add(13.6, 0.5, 0.58, 'star', 1.5);
+  add(14.9, 0, 0.78, 'rainbow', 1.8);
+  add(16.1, -0.4, 0.6, 'jelly', 1.5); add(16.3, 0.4, 0.55, 'cube', 1.5); add(16.9, 0, 0.45, 'heart', 1.4);
+  add(18.0, -0.6, 0.4, 'swarm', 1.3); add(18.2, 0.6, 0.4, 'swarm', 1.3); add(18.6, 0, 0.32, 'fish', 1.0, 'spin', 'beach');
+  // The build: comets left and right, faster and higher, then a crown.
+  for (let i = 0; i < 16; i++) add(19.6 + i * 0.24, (i % 2 ? -1 : 1) * (0.15 + 0.04 * i), 0.34 + 0.02 * i, ['strobe', 'crackle', 'peony'][i % 3], 1.1 + 0.02 * i, i % 3 === 1 ? 'crackle' : 'gold', i % 2 ? 'beach' : 'barge');
+  add(23.9, 0, 0.78, 'kamuro', 1.9, 'gold'); add(24.5, -0.5, 0.55, 'crossette', 1.5); add(24.6, 0.5, 0.55, 'crossette', 1.5);
+  for (let i = 0; i < 9; i++) add(25.8 + i * 0.07, -0.8 + (1.6 * i) / 8, 0.5 + 0.04 * (i % 2), i % 2 ? 'crackle' : 'strobe', 1.35, i % 2 ? 'crackle' : 'glitter');
+  // The finale: a wall of chrysanthemums, a beach rattle, gold willows, a supernova, three salutes.
+  for (let i = 0; i < 10; i++) add(28.0 + i * 0.08, -0.85 + (1.7 * i) / 9, 0.5 + 0.15 * Math.abs(Math.sin(i * 1.3)), 'chrysanthemum', 1.5);
+  for (let i = 0; i < 20; i++) add(28.6 + i * 0.07, (Math.random() - 0.5) * 1.6, 0.25 + Math.random() * 0.12, 'crackle', 0.8, 'crackle', 'beach');
+  [-0.45, 0, 0.45].forEach((x, i) => add(30.4 + i * 0.05, x, 0.82, 'willow', 2.0, 'gold'));
+  add(31.6, 0, 0.74, 'supernova', 2.2);
+  [-0.35, 0.35, 0].forEach((x, i) => add(33.0 + i * 0.3, x, 0.62, 'strobe', 1.5, 'dark'));
+  return S.sort((p, q) => p[0] - q[0]);
+}
+let show = null;
+// Cues fire about 0.6 s before they are due, so the ring buffer holds one act, not the show.
+function showtime() {
+  if (show) return;
+  show = { t0: simT, cues: buildShow(), i: 0 };
   wake();
 }
-/* ---------- end finale ---------- */
+function showTick() {
+  if (!show) return;
+  let n = 0;
+  while (show.i < show.cues.length && show.t0 + show.cues[show.i][0] <= simT + 0.6) {
+    const [t, x, y, type, cal, style, site] = show.cues[show.i++];
+    const ndc = new THREE.Vector2(x, horizonNdc + y * (0.92 - horizonNdc));
+    const pos = site === 'beach' ? burstPoint(ndc, cal, undefined, beachDist()) : burstPoint(ndc, cal);
+    fire(pos, Math.max(simT, show.t0 + t), type, cal, style, site);
+    n++;
+  }
+  if (n) { commitStars(); commitSmoke(); }
+  if (show.i >= show.cues.length && simT > show.t0 + show.cues[show.cues.length - 1][0] + 1) show = null;
+}
+/* ---------- end showtime ---------- */
 function orbList() {
   const list = live.filter(L => !L.wide).slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 * L.eye * FX.orbs }));
   for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.1, color: FIRE, k: 0.006 });
@@ -2462,7 +2490,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1;
-const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear || !!bolt || simT - kickAt < 0.6;
+const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear || !!bolt || !!show || simT - kickAt < 0.6;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2488,6 +2516,7 @@ function tick(now) {
     }
     tearTick();
     weatherTick(now);
+    showTick();
     chargeTick();
     kickTick();
     if (lively || now - lastDraw >= 31) {
@@ -2680,7 +2709,7 @@ function popover(box, btn) {
   addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
 }
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
-document.getElementById('finale').addEventListener('click', finale);
+document.getElementById('finale').addEventListener('click', showtime);
 // The stepper walks the shell list and wraps at each end.
 const shellBox = document.getElementById('shell'), shellName = shellBox.querySelector('output');
 let shellAt = Math.max(0, SHELL_LIST.findIndex(([id]) => id === opts.shell));
@@ -2850,7 +2879,7 @@ function devPanel() {
   box.className = 'fxdev';
   box.setAttribute('aria-label', 'Look knobs');
   box.innerHTML = `<header><b>Look</b><output></output><button data-a="close" aria-label="Close">×</button></header>
-    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Finale</button><button data-a="tear">Tear</button><button data-a="bolt">Bolt</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
+    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Showtime</button><button data-a="tear">Tear</button><button data-a="bolt">Bolt</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
     <h3>Sounds</h3><p class="snd"><output></output></p><div class="acts takes">${Object.keys(SFX_GAIN).map(n => `<button data-take="${n}">${n}</button>`).join('')}</div>
     ${FX_ROWS.map(([name, rows]) => `<h3>${name}</h3>` + rows.map(([k, label, , min, max, step]) =>
       `<label data-k="${k}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><input type="number" min="${min}" max="${max}" step="${step}"></label>`).join('')).join('')}`;
@@ -2886,7 +2915,7 @@ function devPanel() {
     if (q) { setQuality(q); show(); }
     if (a === 'close') box.hidden = true;
     if (a === 'fire') launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
-    if (a === 'finale') finale();
+    if (a === 'finale') showtime();
     if (a === 'bolt') { strike(); wake(); }
     if (a === 'tear' && !tear) overcharge(new THREE.Vector2((rnd() - 0.5) * 0.6, horizonNdc + 0.6 * (0.92 - horizonNdc)));
     if (a === 'copy') navigator.clipboard?.writeText(JSON.stringify(changed(), null, 2));

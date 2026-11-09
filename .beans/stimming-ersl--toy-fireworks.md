@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T08:52:31Z
+updated_at: 2026-11-09T08:54:44Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -114,3 +114,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Aim scatter on each launch; phone flashes as blue LED pops with a tiny anamorphic streak
 
 - [x] Shell menu: a drawing per shell in the stepper, and a grid of all 25 behind the name
+
+- [x] Showtime replaces + Finale: a five-act show of about 34 s, scheduled cue by cue
