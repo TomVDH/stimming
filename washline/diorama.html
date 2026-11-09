@@ -1158,13 +1158,13 @@ barkTex.wrapS = barkTex.wrapT = THREE.RepeatWrapping;
 barkTex.repeat.set(1, 3);
 
 // A snowy spruce: stacked, ragged tiers, snow lying in patches on top.
-function spruceGeometry(h, r, tiers, seed = 0) {
+function spruceGeometry(h, r, tiers, seed = 0, snowAmt = 1, base = 0.12) {
   const geos = [];
   const trunk = new THREE.CylinderGeometry(r * 0.06, r * 0.1, h * 0.35, 8).translate(0, h * 0.17, 0);
   geos.push(trunk);
   for (let i = 0; i < tiers; i++) {
     const t = i / tiers, rr = r * (1 - t * 0.85) * rnd(0.9, 1.1), hh = (h / tiers) * 1.8;
-    const g = new THREE.ConeGeometry(rr, hh, 32, 4, true).translate(0, h * 0.12 + t * h * 0.82 + hh / 2, 0);
+    const g = new THREE.ConeGeometry(rr, hh, 32, 4, true).translate(0, h * base + t * h * (0.94 - base) + hh / 2, 0);
     const p = g.attributes.position;
     // Ragged bough tips at each tier's rim.
     for (let k = 0; k < p.count; k++) {
@@ -1182,7 +1182,7 @@ function spruceGeometry(h, r, tiers, seed = 0) {
   for (let k = 0; k < p.count; k++) {
     const y = p.getY(k), up = n.getY(k), isTrunk = y < h * 0.12 && Math.hypot(p.getX(k), p.getZ(k)) < r * 0.12;
     const patch = noise3D(p.getX(k) * 1.7 + seed, y * 1.3, p.getZ(k) * 1.7) * 0.5 + 0.5;
-    const sn = smooth(0.3, 0.6, up) * smooth(0.38, 0.55, patch);
+    const sn = smooth(0.3, 0.6, up) * smooth(0.38, 0.55, patch) * snowAmt;
     const nd = needle.map(v => v * rnd(0.8, 1.1));
     const c = isTrunk ? barkC : [0, 1, 2].map(j => lerp(nd[j], snowC[j], sn));
     col[k * 3] = c[0]; col[k * 3 + 1] = c[1]; col[k * 3 + 2] = c[2];
@@ -1389,41 +1389,48 @@ function buildWinter(grp) {
   axe.traverse(o => { o.castShadow = true; });
   grp.add(axe);
   contact(grp, -1.7, 2.4, 0.5, 0.5, 0.6);
-  // Spruce forest all round the clearing, thinning into the haze.
-  const spruce = spruceGeometry(1, 0.3, 14, 7);
+  // Spruce rows stand at set depths; each row pales into the whiteout.
+  // Boughs sweep the snow; the forest holds less snow, so its rows read as greys.
+  const spruce = spruceGeometry(1, 0.3, 14, 7, 0.25, 0.02);
   const forestMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
-  const N = 340, forest = new THREE.InstancedMesh(spruce, forestMat, N);
+  const rows = [[-10, 10, -60, -5], [-17, 18, -70, 30], [-26, 22, -80, 60], [-38, 26, -90, 90], [-54, 30, -110, 110]];
+  const N = rows.reduce((s2, r) => s2 + r[1], 0), forest = new THREE.InstancedMesh(spruce, forestMat, N);
   let f = 0;
-  while (f < N) {
-    const x = rnd(-90, 90), z = rnd(-110, 30);
-    if (Math.hypot(x * 0.8, z) < 12 || (z > -12 && x > -8)) continue;
-    const hgt = rnd(9, 22) * (z < -60 ? 1.3 : 1);
-    forest.setMatrixAt(f++, m.compose(p.set(x, 0, z), q.setFromEuler(new THREE.Euler(0, rnd(0, TAU), rnd(-0.03, 0.03))), sc.set(hgt, hgt, hgt)));
+  for (const [z, n, x0, x1] of rows) for (let i = 0; i < n; i++) {
+    const hgt = rnd(9, 18) * (1 + (-z - 10) / 60);
+    forest.setMatrixAt(f++, m.compose(p.set(lerp(x0, x1, (i + rnd(0.1, 0.9)) / n), 0, z + rnd(-2.5, 2.5)), q.setFromEuler(new THREE.Euler(0, rnd(0, TAU), rnd(-0.03, 0.03))), sc.set(hgt, hgt, hgt)));
   }
   forest.castShadow = forest.receiveShadow = true;
   grp.add(forest);
-  // The Coast Mountains: a ridge of snow and rock far behind the forest.
-  const mg = new THREE.PlaneGeometry(900, 260, 300, 90).rotateX(-Math.PI / 2);
-  const mp = mg.attributes.position, mc = new Float32Array(mp.count * 3);
-  for (let i = 0; i < mp.count; i++) {
-    const x = mp.getX(i), z = mp.getZ(i), d = (z + 130) / 260;
-    let hgt = 0, a = 1, fq = 0.006;
-    for (let o = 0; o < 4; o++) { hgt += a * (1 - Math.abs(noise3D(x * fq, z * fq, 9.1))); a *= 0.45; fq *= 2.0; }
-    hgt = Math.pow(hgt / 1.8, 1.8) * 210 * (1 - d * 0.6);
-    mp.setY(i, hgt);
+  // Telephone poles walk off along a buried road and vanish into the white.
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x3a332d, roughness: 0.9 });
+  const tops = [];
+  for (let i = 0; i < 12; i++) {
+    const z = 6 - i * 11, x = 9 + i * 2.4;
+    const pole = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 8.5, 10), poleMat));
+    pole.position.set(x, 4.25, z);
+    pole.rotation.z = rnd(-0.03, 0.03);
+    const arm = add(new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.11, 0.11), poleMat));
+    arm.position.set(x, 7.9, z);
+    arm.rotation.y = 0.2;
+    tops.push([x, z]);
   }
-  mg.computeVertexNormals();
-  const mn = mg.attributes.normal;
-  for (let i = 0; i < mp.count; i++) {
-    const hgt = mp.getY(i), steep = 1 - mn.getY(i);
-    const snowy = hgt > 55 + 40 * noise3D(mp.getX(i) * 0.02, 0, mp.getZ(i) * 0.02) && steep < 0.55;
-    const c = snowy ? [0.9, 0.92, 0.96] : lin(0.38 + 0.08 * Math.random(), 0.02, 250);
-    mc[i * 3] = c[0]; mc[i * 3 + 1] = c[1]; mc[i * 3 + 2] = c[2];
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x2c2a28, fog: true });
+  for (const off of [-0.7, -0.25, 0.25, 0.7]) for (let i = 0; i < tops.length - 1; i++) {
+    const pts = [], [x0, z0] = tops[i], [x1, z1] = tops[i + 1];
+    for (let j = 0; j <= 12; j++) { const t = j / 12; pts.push(new THREE.Vector3(lerp(x0, x1, t) + off, 7.95 - 0.45 * Math.sin(Math.PI * t), lerp(z0, z1, t))); }
+    grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
   }
-  mg.setAttribute('color', new THREE.BufferAttribute(mc, 3));
-  const range = new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
-  range.position.set(0, -2, -300);
-  grp.add(range);
+  // A fence line crosses the field toward the trees, post by post.
+  const fposts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.06, 1.3, 8), poleMat, 30);
+  for (let i = 0; i < 30; i++) fposts.setMatrixAt(i, m.compose(p.set(-14 + i * 2.6, 0.62, -6 - i * 0.9), q.setFromEuler(new THREE.Euler(rnd(-0.06, 0.06), 0, rnd(-0.08, 0.08))), sc.set(1, rnd(0.85, 1.1), 1)));
+  fposts.castShadow = true;
+  grp.add(fposts);
+  for (const y of [0.55, 1.05]) {
+    const pts = [];
+    for (let i = 0; i < 30; i++) pts.push(new THREE.Vector3(-14 + i * 2.6, y - 0.04 * Math.random(), -6 - i * 0.9));
+    grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+  }
   // Low drifts behind the line; footprints from the lens to the line.
   const driftN = 26, drifts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 20, 10), snowMat, driftN);
   for (let d = 0; d < driftN; d++) drifts.setMatrixAt(d, m.compose(p.set(rnd(-10, 18), 0, rnd(-14, -3)), q.setFromEuler(new THREE.Euler(0, rnd(-0.4, 0.4), 0)), sc.set(rnd(3, 6), rnd(0.08, 0.2), rnd(0.8, 1.6))));
@@ -1767,6 +1774,8 @@ function frameCamera() {
     persp.lookAt(...(narrow ? C.lookN : C.look));
     camera = persp;
   }
+  // Iso stands far off; thin the fog so the model stays clear.
+  if (scene.fog?.isFogExp2) scene.fog.density = T.fogExp * (viewMode === 'iso' ? 0.3 : 1);
   renderPass.camera = camera;
   setGroup?.traverse(o => { if (o.userData.isoHide) o.visible = viewMode !== 'iso'; });
   // Iso reads as a model: a soft tilt-shift band through the line.
@@ -1960,13 +1969,13 @@ const THEMES = {
     mix: ['sheet', 'tee', 'trousers', 'towel', 'dress', 'tee', 'sock', 'towel', 'cloth', 'sock'], build: buildPrairie,
   },
   winter: {
-    sky: { zen: [0.6, 0.085, 246], mid: [0.76, 0.055, 240], hor: [0.9, 0.045, 62], haze: [0.9, 0.02, 250], cloud: [0.97, 0.02, 40], shade: [0.8, 0.03, 265] },
-    warm: [0.9, 0.08, 58], white: [0.97, 0.03, 70], sunK: 3.4, glow: 1, exp: 0.95, shadow: 0.85, elK: 0.18,
-    line: [0.26, 0.025, 50], grade: { con: 1.12, sat: 1.02, vig: 0.24, lift: [0.0, 0.005, 0.025] }, clouds: 0,
-    fog: [[0.84, 0.04, 245], 40, 360], hemi: [[0.72, 0.07, 245], [0.94, 0.01, 250], 0.75],
-    ground: 'snow', grass: { n: 0.01, h: [0.1, 0.32], cols: [[0.74, 0.06, 80], [0.8, 0.05, 85], [0.62, 0.05, 70]] },
-    wind: 'breeze', sun: 0.72, stiff: 3, frost: 1, snow: 0, daisies: 0,
-    // From the fir side at eye height, into a low sun, toward the cabin.
+    sky: { zen: [0.84, 0.008, 250], mid: [0.88, 0.006, 250], hor: [0.91, 0.005, 250], haze: [0.91, 0.005, 250], cloud: [0.9, 0.006, 250], shade: [0.88, 0.006, 250] },
+    warm: [0.93, 0.01, 250], white: [0.95, 0.008, 250], sunK: 1.6, glow: 0.05, exp: 0.98, shadow: 0.3, elK: 0.6,
+    line: [0.22, 0.02, 50], grade: { con: 1.1, sat: 0.82, vig: 0.22, lift: [0.0, 0.004, 0.012] }, clouds: 0,
+    fog: [[0.91, 0.005, 250], 0, 0], fogExp: 0.027, hemi: [[0.94, 0.006, 250], [0.92, 0.006, 250], 1.35],
+    ground: 'snow', grass: { n: 0.01, h: [0.1, 0.32], cols: [[0.6, 0.04, 80], [0.66, 0.04, 85], [0.5, 0.03, 70]] },
+    wind: 'breeze', sun: 0.4, stiff: 3, frost: 1, snow: 1, daisies: 0,
+    // From the fir side at eye height, toward the cabin, into the whiteout.
     cam: { pos: [3.6, 1.55, 11.5], look: [-2.2, 1.8, -0.8], lookN: [-1.4, 1.9, -0.8], fov: 46, fovN: 66 }, iso: { yaw: Math.PI / 4, at: [-1.6, 1.2, 0.4] },
     mix: ['blanket', 'flannel', 'longjohns', 'sock', 'sock', 'flannel', 'towel'], build: buildWinter,
   },
@@ -1984,8 +1993,9 @@ function applyTheme(id) {
   SKY.warm.set(...lin(...T.warm));
   SKY.white.set(...lin(...T.white));
   skyU.uGlowK.value = T.glow;
-  scene.fog.color.setRGB(...lin(...T.fog[0]));
-  scene.fog.near = T.fog[1]; scene.fog.far = T.fog[2];
+  // Whiteout themes use dense exponential fog; it lays the land out in paling layers.
+  const fogC = new THREE.Color().setRGB(...lin(...T.fog[0]));
+  scene.fog = T.fogExp ? new THREE.FogExp2(fogC, T.fogExp) : new THREE.Fog(fogC, T.fog[1], T.fog[2]);
   hemi.color.setRGB(...lin(...T.hemi[0]));
   hemi.groundColor.setRGB(...lin(...T.hemi[1]));
   hemi.intensity = T.hemi[2];

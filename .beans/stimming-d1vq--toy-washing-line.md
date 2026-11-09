@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T10:07:01Z
+updated_at: 2026-11-09T10:10:21Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -79,3 +79,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Winter v4 (Tom: strange trees; tie it to a big timber tree by a cabin in northern BC): log cabin corner (notched crossing logs, chinking, lit window, snowy eave, woodpile) to an old fir with furrowed bark; smooth-shaded snowy spruce forest; Coast Mountains in haze; chopping block with an axe; Iso hides the fir crown as a cutaway.
 
 - Winter v5 (Tom: higher fidelity, more distant, cabin far too tall, make it Canadiana): real-scale saddle-notched log cabin (2.4 m eave, end-grain log ends, board gables, snow-loaded roof, icicles, fieldstone chimney with woodsmoke, lit window, Z-braced door, snowshoes, woodpile); red canoe hull-up, red Muskoka chair, point blanket on the line; camera pulled back.
+
+- Winter v6 (Tom: not enough fog or Coen layering; think Fargo): overcast whiteout, exponential fog (thinned for Iso), spruce in rows at set depths grading dark to pale, boughs to the snow (no trunks), telephone poles and a fence line vanishing into white, light snow, muted grade; the lit window is the one warm note.
