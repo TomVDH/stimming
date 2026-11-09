@@ -207,43 +207,82 @@ const lineMat = new THREE.MeshStandardMaterial({ color: lin(0.78, 0.01, 90), rou
 }
 
 /* ---------- far land ---------- */
-// Silhouettes against the skyglow: poplars, a church, a few farm windows.
+// Silhouettes against the skyglow: poplars, hedges and a Flemish village.
 const inkMat = new THREE.MeshBasicMaterial({ color: lin(0.07, 0.012, 265), fog: false });
+// The village sits deeper in the haze, so its ink is a shade lighter.
+const villMat = new THREE.MeshBasicMaterial({ color: lin(0.1, 0.018, 35), fog: false });
+// A roof prism: a triangle of width w and height rh, extruded to depth d.
+// Gable-front roofs face the eye; eave-front roofs run along the street.
+function roof(w, rh, d, gable) {
+  const s = new THREE.Shape();
+  const a = gable ? w : d;
+  s.moveTo(-a / 2, 0); s.lineTo(a / 2, 0); s.lineTo(0, rh); s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: gable ? d : w, bevelEnabled: false });
+  return gable ? g.translate(0, 0, -d / 2) : g.rotateY(Math.PI / 2).translate(-w / 2, 0, 0);
+}
+const VZ = -1100;
+const windows = [];
 {
   const parts = [];
-  // A row of poplars crosses the fields on the horizon, left of the road.
-  for (let i = 0; i < 18; i++) {
-    const x = -12 - i * 12 - rnd() * 3, z = -440 - i * 2, h = 16 + rnd() * 5;
+  // A row of poplars crosses the fields left of the road.
+  for (let i = 0; i < 9; i++) {
+    const x = -58 - i * 12 - rnd() * 3, z = -440 - i * 2, h = 16 + rnd() * 5;
     parts.push(new THREE.SphereGeometry(1, 12, 12).scale(1.6 + rnd() * 0.6, h / 2, 1.6).translate(x, h / 2 + 1, z));
   }
-  // Low hedges and tree clumps, scattered along the horizon.
+  // Low hedges and tree clumps along the horizon, clear of the village.
   for (let i = 0; i < 18; i++) {
     const a = -1.2 + i * 0.16 + rnd() * 0.05, r = 700 + rnd() * 300, h = 8 + rnd() * 10;
+    if (Math.abs(a) < 0.16) continue;
     parts.push(new THREE.SphereGeometry(1, 20, 8).scale(10 + rnd() * 18, h * 0.8, 8).translate(Math.sin(a) * r, 0, -Math.cos(a) * r));
   }
-  // The next village's church: a tower and a needle spire.
-  const cx = -120, cz = -520;
-  parts.push(new THREE.BoxGeometry(9, 34, 9).translate(cx, 17, cz));
-  parts.push(new THREE.ConeGeometry(6.5, 30, 4).rotateY(Math.PI / 4).translate(cx, 49, cz));
-  parts.push(new THREE.BoxGeometry(30, 15, 14).translate(cx + 20, 7.5, cz + 2));
-  // A farm: a long barn and a house, half right.
-  parts.push(new THREE.BoxGeometry(34, 8, 12).translate(170, 4, -340));
-  parts.push(new THREE.ConeGeometry(14, 7, 4).rotateY(Math.PI / 4).scale(1.3, 1, 0.5).translate(170, 11.5, -340));
-  scene.add(new THREE.Mesh(mergeGeometries(parts.map(g => g.toNonIndexed())), inkMat));
+  scene.add(new THREE.Mesh(mergeGeometries(parts.map(g => (g.index ? g.toNonIndexed() : g))), inkMat));
 }
-// Far windows: tiny warm squares; bloom makes them points of light.
-const farMat = new THREE.MeshBasicMaterial({ color: WARM.clone().multiplyScalar(6), fog: false });
-for (const [x, y, z, w] of [[160, 3, -333.5, 1.6], [176, 3.2, -333.5, 1.4], [-108, 9, -515, 1.2], [-300, 2.2, -420, 1.6], [420, 2.4, -600, 2], [60, 2, -700, 2.2]]) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.8), farMat);
+{
+  // The village: brick rows with steep roofs where the road ends.
+  const parts = [];
+  for (const [row, z0, n] of [[0, VZ, 18], [1, VZ - 30, 12]]) {
+    let x = -96 + rnd() * 6;
+    for (let i = 0; i < n; i++) {
+      const w = 6 + rnd() * 3.5, h = (row ? 6 : 5) + rnd() * 3, d = 10, gable = rnd() < 0.45;
+      const rh = gable ? w * 0.75 : d * 0.55;
+      // The road runs on through the village; no house stands on it.
+      if (Math.abs(x + w / 2) < 6) x += 12;
+      const cx = x + w / 2, cz = z0 + rnd() * 6;
+      parts.push(new THREE.BoxGeometry(w, h, d).translate(cx, h / 2, cz));
+      parts.push(roof(w, rh, d, gable).translate(cx, h, cz));
+      // A few windows are lit; one in eight glows television blue.
+      if (!row) for (const wy of [1.6, h - 1.8]) {
+        if (rnd() < 0.42) windows.push([cx + (rnd() - 0.5) * (w - 2.4), wy, cz + d / 2 + 0.05, rnd() < 0.12]);
+      }
+      x += w + (rnd() < 0.25 ? 3 + rnd() * 6 : 0.1);
+    }
+  }
+  // The church: a brick tower with corner pinnacles, a needle spire and a long nave.
+  const cx = -24, cz = VZ - 22;
+  parts.push(new THREE.BoxGeometry(10, 40, 10).translate(cx, 20, cz));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(new THREE.ConeGeometry(0.9, 6, 4).translate(cx + sx * 4.4, 43, cz + sz * 4.4));
+  parts.push(new THREE.ConeGeometry(5.2, 32, 4).rotateY(Math.PI / 4).translate(cx, 56, cz));
+  parts.push(new THREE.BoxGeometry(16, 17, 40).translate(cx, 8.5, cz - 25));
+  parts.push(roof(16, 11, 40, true).translate(cx, 17, cz - 25));
+  scene.add(new THREE.Mesh(mergeGeometries(parts.map(g => (g.index ? g.toNonIndexed() : g))), villMat));
+  // The church clock is lit, a pale disc high on the tower.
+  const clock = new THREE.Mesh(new THREE.CircleGeometry(1.4, 24), new THREE.MeshBasicMaterial({ color: lin(0.9, 0.05, 85, 1.5), fog: false }));
+  clock.position.set(cx, 32, cz + 5.05);
+  scene.add(clock);
+}
+// Lit windows: tiny warm squares; bloom makes them points of light.
+const farMat = new THREE.MeshBasicMaterial({ color: WARM.clone().multiplyScalar(5), fog: false });
+const tvMat = new THREE.MeshBasicMaterial({ color: lin(0.7, 0.12, 250, 4), fog: false });
+for (const [x, y, z, tv] of windows) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.3), tv ? tvMat : farMat);
   m.position.set(x, y, z);
-  m.lookAt(0, y, 0);
   scene.add(m);
 }
-// Far sodium lamps down the road mark how long the road is.
+// Sodium lamps run down the road and into the village.
 const sodiumMat = new THREE.MeshBasicMaterial({ color: lin(0.8, 0.16, 58, 14), fog: false });
-for (const z of [-420, -900]) {
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(z < -500 ? 0.5 : 0.3, 10, 8), sodiumMat);
-  lamp.position.set(ROAD.x1 + 1.2, 6, z);
+for (const [x, z, r] of [[ROAD.x1 + 1.2, -420, 0.3], [ROAD.x1 + 1.2, -900, 0.5], [ROAD.x0 - 1.2, VZ + 30, 0.6], [ROAD.x1 + 1.2, VZ - 20, 0.6]]) {
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), sodiumMat);
+  lamp.position.set(x, 6, z);
   scene.add(lamp);
 }
 
@@ -596,7 +635,7 @@ const flare = new ShaderPass({
     uSun: { value: new THREE.Vector2(0.5, 0.5) },
     uAspect: { value: 1 },
     uCol: { value: new THREE.Vector3(...TUBE.toArray()) },
-    uGain: { value: 0.32 },
+    uGain: { value: 0.14 },
   },
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */`
@@ -609,7 +648,7 @@ const flare = new ShaderPass({
     float r = length(vec2(ax * 0.6, ay));
     vec3 add = uCol * (0.02 * exp(-r * 1.5) + 0.06 * exp(-r * 5.0) + 0.3 * exp(-r * 22.0));
     // Three nested bands: a soft core, a wide sheath and a broad haze.
-    float line = 0.6 * exp(-abs(ay) * 110.0) + 0.12 * exp(-abs(ay) * 20.0) + 0.03 * exp(-abs(ay) * 4.0);
+    float line = 0.4 * exp(-abs(ay) * 130.0) + 0.12 * exp(-abs(ay) * 20.0) + 0.03 * exp(-abs(ay) * 4.0);
     add += mix(uCol, vec3(0.55, 0.72, 1.0), 0.45) * line * exp(-abs(ax) / 1.1);
     // Ghosts sit on the line from the source through the frame centre.
     vec2 toC = vec2(0.5) - uSun;
@@ -646,7 +685,7 @@ const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 // A long lens flattens the land, as in Beach walker.
 const SHOT = {
   wide: { pos: [0.9, 1.15, 0], yaw: -0.06, vfov: 12.5, horizon: 0.64 },
-  tall: { pos: [1.2, 1.15, -12], yaw: -0.16, vfov: 22, horizon: 0.58 },
+  tall: { pos: [4.0, 1.15, -12], yaw: -0.012, vfov: 22, horizon: 0.58 },
 };
 const TUBE_W = new THREE.Vector3(), probe = new THREE.Vector3();
 let focal = 1;

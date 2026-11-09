@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:15:30Z
-updated_at: 2026-11-09T09:44:20Z
+updated_at: 2026-11-09T09:47:43Z
 ---
 
 Build Broodautomaat from docs/plans/bread.md. It starts in the Lab. A bread vending machine glows alone at the edge of a dark Flemish village road at night: drop a coin, the carousel turns, a hatch opens on a warm loaf; cars sweep past; a fluorescent tube flickers with moths.
@@ -31,3 +31,5 @@ Build Broodautomaat from docs/plans/bread.md. It starts in the Lab. A bread vend
 - Tom (2026-11-09): rebuild as the classic Flemish broodautomaat. Now a cream cabinet, a curved yellow hood with the word BROODAUTOMAAT, eight small doors over an eight-tier carousel, and a steel coin unit. The tube hangs under the hood's lip. New stills sent.
 
 - Tom (2026-11-09): more sweeping and Coen brothers, cue from Beach walker. Now a dead-level long-lens shot down a straight road to the horizon, with a shifted lens for a low horizon, warm haze, a low moon sheen on the asphalt, horizon poplars, far sodium lamps and a Buoy Business flare on the tube. New stills sent.
+
+- Tom (2026-11-09): look approved, with less flare and a quintessential Flemish village in the background. Flare gain cut to 0.14; a village of brick gables with a church, spire and lit clock now closes the road. Phones stand on the verge so the village and the machine share the frame.

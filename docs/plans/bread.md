@@ -28,11 +28,11 @@
 One lit stop in a vast dark landscape, at toy scale.
 
 - **Camera (Tom, 2026-11-09: more sweeping, Coen brothers, cue from Beach walker):** a dead-level eye on the road, 1.15 m up. A long lens (12.5° vertical) flattens the land. A shifted lens drops the horizon to the lower third, so the sky fills the frame. The road runs straight to the horizon; the machine stands small on the right verge, three-quarter on, 36 m away.
-- **Lens:** a Buoy Business flare on the tube (veil, orb, a thin anamorphic streak, ghosts), lifted from Beach walker's `POST_FS`.
+- **Lens:** a faint Buoy Business flare on the tube (veil, orb, a thin anamorphic streak, ghosts), lifted from Beach walker's `POST_FS`. Tom asked for less flare.
 - **Machine (Tom, 2026-11-09: the classic Flemish type):** a tall narrow cream cabinet on a small concrete pad. A column of eight small glass doors sits left of centre, one per tier, with a lit button beside each. Behind the doors, a stacked carousel of eight tiers turns, one loaf per compartment, lit cool white. A steel coin unit sits at the right: price window, slot, green ready lamp, return cup.
 - **Hood:** a curved yellow lightbox on top with the plain word BROODAUTOMAAT. No brand. A bare fluorescent tube hangs under its front lip.
 - **Road:** a straight two-lane country road from the eye to the horizon, with worn edge lines and a dashed centre line. A low moon down the road puts a cold sheen on the asphalt.
-- **Land:** flat fields to a far horizon, in warm haze. A row of poplars on the horizon, left of the road. Two far sodium lamps down the road, a church, a few farm windows. The horizon has a sodium skyglow from a town out of frame.
+- **Land:** flat fields to a far horizon, in warm haze. Poplars left of the road. Sodium lamps lead down the road into a Flemish village 1.1 km away (Tom, 2026-11-09): brick rows with steep gables, a church tower with corner pinnacles, a needle spire and a lit clock, a few lit windows, one television blue. The horizon has a sodium skyglow from a town out of frame.
 - **Sky:** deep blue-black, a few stars, a thin band of low cloud lit orange from below.
 - **Tilt-shift:** a sharp band through the machine; above and below, the blur grows. The scene reads as a model.
 
