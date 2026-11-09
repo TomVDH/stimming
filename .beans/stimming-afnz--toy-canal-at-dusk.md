@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T08:47:12Z
+updated_at: 2026-11-09T08:53:57Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -38,3 +38,5 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Tom (2026-11-09): better night light. About 1,860 streetlights along every road: orange sodium on the old roads, warm-white LED on about half the estate lights and all industry. Each switches on at its own photocell mark between Dusk 0.28 and 0.43. Pools are painted once on a 2048 px plan texture, stretched along the road; the ground and the lower walls read them. The night haze picks up a warm town glow; the west afterglow warms the walls that face it. Light points blend colour only, so the mirror's sky mask holds.
 
 - Tom (2026-11-09): less bloom, better blending and buildings. Bloom drops to 0.16 at threshold 1.2; streetlight heads are smaller with a faint halo. Pools take a five-stop falloff, stretch 2.4 to 1 along the road, and pass a soft knee in the shader. Lawns under lamps lose their colour. Roads repaint over gardens, which had covered asphalt and lit green. Houses gain chimneys, dormers, rear extensions, doors, bungalow garage doors, a blue-stone plinth, eaves shade, tile courses, felt flat roofs, and soft contact shadows; trees cast soft shadows on the plan.
+
+- Tom (2026-11-09): real per-lamp light, on three.js 0.170 and WebGL 2 (no renderer change). The streetlights are static, so they pack once into a float texture (position, mark, colour, reach) and a 250 x 250 grid of 12 m cells, each listing its eight nearest lamps. Every lit fragment, also in the mirror pass, sums those lamps: windowed inverse-square falloff, a downward cone, Lambert diffuse, and a Blinn gloss on wet asphalt and glass. The painted pool texture is gone. Frame cost on a real device is not measured yet; the hidden-pane timing is not reliable.

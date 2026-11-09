@@ -137,9 +137,9 @@ const U = {
   uTime: { value: 0 },
   // The church tower brightens while the bells ring.
   uBell: { value: 0 },
-  // Streetlight pools painted on a plan texture, and how far they are switched on.
-  tPool: { value: null },
-  uPoolK: { value: 0 },
+  // Streetlights: their data in one texture, their 12 m grid of nearest lamps in another.
+  tSL: { value: null },
+  tGrid: { value: null },
   // Town light in the night haze.
   uTown: { value: new THREE.Vector3() },
 };
@@ -255,13 +255,36 @@ uniform vec3 uWin;
 // Sky light on a surface: the zenith from above, the horizon from the side.
 // The afterglow in the west warms the walls that face it.
 vec3 skyAmb(vec3 N) { return mix(uHor * 0.8, uZen * 1.3, 0.5 + 0.5 * N.y) * 0.9 + uGlowC * 1.2 * max(dot(N, uSun), 0.0); }
-// Streetlight on the ground plan: the plan spans x -1500 to 1500 and z -2000 to 1000.
-uniform sampler2D tPool;
-uniform float uPoolK;
-// A soft knee keeps overlapping pools from clipping.
-vec3 poolAt(vec2 xz) {
-  vec3 p = pow(texture2D(tPool, (xz - vec2(-1500.0, -2000.0)) / 3000.0).rgb, vec3(2.2));
-  return (1.0 - exp(-p * 2.5)) / 2.5 * uPoolK;
+// Streetlights: each fragment reads the lamps listed for its 12 m cell, up to eight.
+// The plan spans x -1500 to 1500 and z -2000 to 1000.
+uniform highp sampler2D tSL;
+uniform highp sampler2D tGrid;
+// Diffuse light comes back; spec gathers the glossy share for wet or glass surfaces.
+vec3 streetLit(vec3 P, vec3 N, vec3 V, float gloss, inout vec3 spec) {
+  vec2 c = floor((P.xz - vec2(-1500.0, -2000.0)) / 12.0);
+  if (c.x < 0.0 || c.y < 0.0 || c.x > 249.0 || c.y > 249.0) return vec3(0.0);
+  ivec2 ci = ivec2(c);
+  vec4 a = texelFetch(tGrid, ivec2(ci.x * 2, ci.y), 0), b = texelFetch(tGrid, ivec2(ci.x * 2 + 1, ci.y), 0);
+  float ids[8] = float[8](a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w);
+  vec3 s = vec3(0.0);
+  for (int k = 0; k < 8; k++) {
+    if (ids[k] < 0.0) break;
+    int id = int(ids[k]);
+    ivec2 at = ivec2(id % 2048, (id / 2048) * 2);
+    vec4 lp = texelFetch(tSL, at, 0), lc = texelFetch(tSL, at + ivec2(0, 1), 0);
+    // Each lamp passes its own photocell mark.
+    float on = smoothstep(lp.w, lp.w + 0.025, uDusk);
+    if (on <= 0.0) continue;
+    vec3 d = lp.xyz - P;
+    float dd = dot(d, d), dist = sqrt(dd);
+    vec3 l = d / dist;
+    // A smooth window ends the reach at the lamp's radius; the head throws light downward.
+    float win = clamp(1.0 - pow(dist / lc.w, 4.0), 0.0, 1.0);
+    float k2 = on * win * win * smoothstep(-0.15, 0.45, l.y) * 160.0 / (dd + 1.0);
+    s += lc.rgb * k2 * max(dot(N, l), 0.0);
+    spec += lc.rgb * k2 * gloss * pow(max(dot(N, normalize(l - V)), 0.0), 48.0);
+  }
+  return s;
 }`;
 
 /* ---------- dusk ---------- */
@@ -283,7 +306,6 @@ function setDusk(d) {
   U.uStars.value = Math.max(0, (d - 0.55) / 0.45);
   // Streetlights switch on between 0.28 and 0.45; their light lifts the night haze.
   const sl = Math.min(1, Math.max(0, (d - 0.28) / 0.17)), sk = sl * sl * (3 - 2 * sl);
-  U.uPoolK.value = sk;
   U.uTown.value.set(...TOWN.map(x => x * sk));
   // The frietkot, staminee, station and church lights come on as it darkens.
   const on = Math.min(1, Math.max(0, (d - 0.1) / 0.3));
@@ -920,39 +942,48 @@ for (const { pts, h, mode } of PL) {
     const x = p.x - p.dz * s * (h + 0.8), z = p.z + p.dx * s * (h + 0.8);
     if (Math.abs(x - canalX(z)) < 17) continue;
     const led = mode === 'industry' || ((mode === 'estate' || mode === 'town') && rnd() < 0.45);
-    SL.push({ x, z, y: mode === 'industry' ? 10 : 7, led, a: Math.atan2(p.dz, p.dx) });
+    SL.push({ x, z, y: mode === 'industry' ? 10 : 7, led, mark: 0.28 + 0.15 * rnd() });
   }
 }
 const SODIUM = linFit(0.72, 0.17, 62), LED = linFit(0.93, 0.025, 85);
-// Pools: a soft disc of light under each head, painted once on a plan texture.
-const poolC = document.createElement('canvas');
-poolC.width = poolC.height = 2048;
+// Lamp data: position and mark in one row, colour and reach in the next.
+const SLW = 2048, SLH = 2 * Math.ceil(SL.length / SLW);
 {
-  const g = poolC.getContext('2d'), k = 2048 / MAP.size;
-  g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 2048);
-  g.globalCompositeOperation = 'lighter';
-  for (const l of SL) {
-    const r = (l.led ? 9 : 11) * k;
-    // Each pool stretches along its road, so lit streets read as strands.
-    g.setTransform(1, 0, 0, 1, (l.x - MAP.x0) * k, (l.z - MAP.z0) * k);
-    g.rotate(l.a);
-    g.scale(2.4, 0.8);
-    const grd = g.createRadialGradient(0, 0, 0, 0, 0, r);
-    // A near-Gaussian falloff from five stops.
-    const [cr, cg, cb] = l.led ? [235, 228, 212] : [255, 165, 72];
-    for (const [t, a] of [[0, 0.6], [0.25, 0.46], [0.5, 0.22], [0.75, 0.06], [1, 0]]) grd.addColorStop(t, `rgba(${cr},${cg},${cb},${a})`);
-    g.fillStyle = grd;
-    g.fillRect(-r, -r, 2 * r, 2 * r);
-  }
+  const d = new Float32Array(SLW * SLH * 4);
+  SL.forEach((l, i) => {
+    const o = ((Math.floor(i / SLW) * 2) * SLW + (i % SLW)) * 4, c = l.led ? LED : SODIUM;
+    d.set([l.x, QUAY + l.y, l.z, l.mark], o);
+    // LED heads are dimmer and tighter than the old sodium ones.
+    d.set(l.led ? [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, 20] : [c[0], c[1], c[2], 24], o + SLW * 4);
+  });
+  U.tSL.value = new THREE.DataTexture(d, SLW, SLH, THREE.RGBAFormat, THREE.FloatType);
+  U.tSL.value.needsUpdate = true;
 }
-U.tPool.value = new THREE.CanvasTexture(poolC);
-U.tPool.value.flipY = false;
-U.tPool.value.minFilter = THREE.LinearMipmapLinearFilter;
+// The grid: for each 12 m cell, the eight nearest lamps that reach it.
+{
+  const C = 12, N = 250, lists = Array.from({ length: N * N }, () => []);
+  SL.forEach((l, i) => {
+    const R = (l.led ? 20 : 24) + C * 0.75;
+    const i0 = Math.max(0, Math.floor((l.x - R - MAP.x0) / C)), i1 = Math.min(N - 1, Math.floor((l.x + R - MAP.x0) / C));
+    const j0 = Math.max(0, Math.floor((l.z - R - MAP.z0) / C)), j1 = Math.min(N - 1, Math.floor((l.z + R - MAP.z0) / C));
+    for (let j = j0; j <= j1; j++) for (let k = i0; k <= i1; k++) {
+      const dx = MAP.x0 + (k + 0.5) * C - l.x, dz = MAP.z0 + (j + 0.5) * C - l.z, dd = Math.hypot(dx, dz);
+      if (dd < R) lists[j * N + k].push([dd, i]);
+    }
+  });
+  const g = new Float32Array(N * 2 * N * 4).fill(-1);
+  lists.forEach((L, c) => {
+    L.sort((p, q) => p[0] - q[0]);
+    L.slice(0, 8).forEach(([, i], k) => { g[((Math.floor(c / N) * 2 * N) + (c % N) * 2 + (k >> 2)) * 4 + (k & 3)] = i; });
+  });
+  U.tGrid.value = new THREE.DataTexture(g, 2 * N, N, THREE.RGBAFormat, THREE.FloatType);
+  U.tGrid.value.needsUpdate = true;
+}
 // The heads: glowing points that switch on one by one round their photocell mark.
 const slGeo = new THREE.BufferGeometry();
 slGeo.setAttribute('position', new THREE.Float32BufferAttribute(SL.flatMap(l => [l.x, QUAY + l.y, l.z]), 3));
 slGeo.setAttribute('aCol', new THREE.Float32BufferAttribute(SL.flatMap(l => (l.led ? LED : SODIUM)), 3));
-slGeo.setAttribute('aMark', new THREE.Float32BufferAttribute(SL.map(() => 0.28 + 0.15 * rnd()), 1));
+slGeo.setAttribute('aMark', new THREE.Float32BufferAttribute(SL.map(l => l.mark), 1));
 const SLU = { uDpr: { value: 1 } };
 const heads = new THREE.Points(slGeo, new THREE.ShaderMaterial({
   uniforms: { ...U, ...SLU }, transparent: true, depthWrite: false,
@@ -1126,8 +1157,9 @@ const solidMat = new THREE.ShaderMaterial({
     // Walls darken toward the ground, where less sky reaches.
     col *= 0.6 + 0.4 * smoothstep(0.0, 3.0, vP.y - ${QUAY.toFixed(2)});
     col += alb * lampLit(vP, N) * (is(kind, 4.0) ? 1.0 + 2.0 * uBell : 1.0);
-    // Streetlight reaches the lower walls and, less, the roofs.
-    col += alb * poolAt(vP.xz) * 9.0 * (1.0 - smoothstep(0.0, 9.0, vP.y - ${QUAY.toFixed(2)})) * (N.y > 0.5 ? 0.3 : 1.0);
+    // Every streetlight in reach lights walls, roofs and trees; glass catches a glint.
+    vec3 glint = vec3(0.0);
+    col += alb * streetLit(vP, N, V, glass, glint) + glint * 0.5;
     // Dark glass holds a dim copy of the sky.
     col += (glass * 0.25 + roof * 0.06 + felt * 0.03) * k2sky(reflect(V, N)) + emit;
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
@@ -1258,11 +1290,10 @@ const groundMat = new THREE.ShaderMaterial({
     vec4 m = texture2D(tMirror, M.xy / M.w);
     vec3 refl = mix(k2sky(R), m.rgb, clamp(m.a, 0.0, 1.0) * pud);
     col += refl * fres * (max(tar, sq) * mix(0.3, 0.9, wet) + steel * 0.8 + 0.05);
-    // Streetlight pools; wet asphalt throws back a glossy share.
-    vec3 pool = poolAt(vP.xz);
-    // Grass takes less of it and loses its colour under lamplight; a small share shows the lamp's own colour.
+    // Streetlights; grass loses its colour under them, wet asphalt throws back a gloss.
     vec3 albP = mix(vec3(dot(alb, vec3(0.2126, 0.7152, 0.0722))), alb, tar);
-    col += pool * (albP * 16.0 * mix(0.3, 1.0, tar) + 0.005 + 0.04 * wet);
+    vec3 sheen = vec3(0.0);
+    col += albP * streetLit(vP, N, V, wet * 0.25, sheen) + sheen;
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
