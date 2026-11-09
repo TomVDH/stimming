@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T09:41:12Z
+updated_at: 2026-11-09T09:45:21Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -92,3 +92,8 @@ Wind map already passes a bar spec, so the newest shell look (logo, breadcrumb n
 ## Placement (Tom, 2026-11-09)
 
 + Cyclone now arms placement instead of spawning a storm at random: each tap on the map drops a cyclone where it lands, marked by a ring. It stays armed (the chip shows pressed) until + Cyclone again or Escape. Space drops one under a hovering mouse, or finds open air with no pointer on the map. Check t11-place: armed with no spawn, three taps place three storms within 0.03 of the taps and no gust, disarmed taps gust again, Escape disarms.
+
+## Globe standard, quick toggles (Tom, 2026-11-09)
+
+- The globe is the standard view (saved Flat still wins). Its disc is 0.40 of the short side, down from 0.46. A pole axis pierces it: bright stubs outside the sphere, faint and dashed inside, a cap on the facing pole.
+- Bar: the choice is now View, Globe or Flat with icons. Actions are + Cyclone, Isobars and Fronts; the two toggles stay pressed while on and persist. Fronts is the old Chart layer (fronts and tracks). Look moves to Settings; Clear becomes the Settings Reset; Marks reads H and L marks.

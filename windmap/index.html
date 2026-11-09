@@ -85,27 +85,38 @@ const opts = {
   iso: saved('iso') === '1',
   chart: saved('chart') === '1',
   marks: saved('marks') === '1',
-  proj: saved('proj') === 'globe' ? 'globe' : 'chart',
+  // The globe is the standard view; Flat is the old chart.
+  proj: saved('proj') === 'chart' ? 'chart' : 'globe',
 };
 const GLOBE = () => opts.proj === 'globe';
 const COUNT_OPTS = [{ value: 'few', label: 'Few' }, { value: 'some', label: 'Some' }, { value: 'many', label: 'Many' }];
 // The shell builds the bar; settings rows persist under stimming.windmap.<id>.
+// Icons for the view choice: a globe with its axis, and a flat chart.
+const ICON_GLOBE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><ellipse cx="8" cy="8" rx="2.4" ry="5.5"/><path d="M2.5 8h11M8 0.8v2.2M8 13v2.2"/></svg>';
+const ICON_FLAT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9"/><path d="M1.5 8h13M6 3.5v9M10.5 3.5v9"/></svg>';
 const ui = initPage({ id: 'windmap', bar: {
-  choice: { label: 'Look', value: opts.look, options: [
-    { value: 'silk', label: 'Silk', dot: 'oklch(0.95 0.01 250)' },
-    { value: 'heat', label: 'Heat', dot: 'oklch(0.8 0.15 110)' },
-    { value: 'dye', label: 'Dye', dot: 'conic-gradient(oklch(0.78 0.13 20), oklch(0.78 0.13 140), oklch(0.78 0.13 260), oklch(0.78 0.13 20))' },
-  ], onPick: v => setLook(v) },
+  choice: { label: 'View', value: opts.proj, options: [
+    { value: 'globe', label: 'Globe', icon: ICON_GLOBE },
+    { value: 'chart', label: 'Flat', icon: ICON_FLAT },
+  ], onPick: v => setProj(v) },
   slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: opts.wind, onInput: v => setWind(v) },
-  actions: [{ verb: 'add', noun: 'Cyclone', onPress: () => setPlacing(!placing) }, { verb: 'clear', onPress: () => clearAll() }],
+  // Isobars and Fronts are quick toggles; their chips stay pressed while on.
+  actions: [
+    { verb: 'add', noun: 'Cyclone', onPress: () => setPlacing(!placing) },
+    { verb: 'isobars', onPress: () => setIso(!opts.iso) },
+    { verb: 'fronts', onPress: () => setFronts(!opts.chart) },
+  ],
+  reset: () => clearAll(),
   settings: [
+    { type: 'choice', id: 'look', label: 'Look', value: opts.look, options: [
+      { value: 'silk', label: 'Silk', dot: 'oklch(0.95 0.01 250)' },
+      { value: 'heat', label: 'Heat', dot: 'oklch(0.8 0.15 110)' },
+      { value: 'dye', label: 'Dye', dot: 'conic-gradient(oklch(0.78 0.13 20), oklch(0.78 0.13 140), oklch(0.78 0.13 260), oklch(0.78 0.13 20))' },
+    ], persist: true, onPick: v => setLook(v) },
     { type: 'choice', id: 'count', label: 'Particles', value: opts.count, options: COUNT_OPTS, persist: true, onPick: v => setCount(v) },
     { type: 'choice', id: 'trail', label: 'Trails', value: opts.trail, options: [{ value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }], persist: true, onPick: v => { opts.trail = v; wake(); } },
     { type: 'choice', id: 'hemi', label: 'Hemisphere', value: opts.hemi, options: [{ value: 'north', label: 'North' }, { value: 'south', label: 'South' }], persist: true, onPick: v => { opts.hemi = v; wake(); } },
-    { type: 'toggle', id: 'iso', label: 'Isobars', value: opts.iso, persist: true, onToggle: on => { opts.iso = on; render(); wake(); } },
-    { type: 'toggle', id: 'chart', label: 'Chart', value: opts.chart, persist: true, onToggle: on => { opts.chart = on; render(); wake(); } },
-    { type: 'toggle', id: 'marks', label: 'Marks', value: opts.marks, persist: true, onToggle: on => { opts.marks = on; render(); wake(); } },
-    { type: 'choice', id: 'proj', label: 'Projection', value: opts.proj, options: [{ value: 'chart', label: 'Chart' }, { value: 'globe', label: 'Globe' }], persist: true, onPick: v => setProj(v) },
+    { type: 'toggle', id: 'marks', label: 'H and L marks', value: opts.marks, persist: true, onToggle: on => { opts.marks = on; render(); wake(); } },
   ],
   quality: true,
   keys: [['drag', 'circle to spin a storm'], ['click', 'gust'], ['hold', 'high'], ['space', 'cyclone']],
@@ -1187,7 +1198,8 @@ function makeBloom() {
 /* ---------- globe ---------- */
 // An orthographic globe turned by yaw (about the pole) and pitch.
 const globe = { yaw: 0.6, pitch: 0.25, vy: 0, vp: 0 };
-const discR = () => 0.46 * Math.min(W, H);
+// The globe sits a little inside the stage, so its axis and limb have room.
+const discR = () => 0.4 * Math.min(W, H);
 const TURN = (3 * Math.PI) / 180;
 // View point on the unit disc to world (x, y); the shader does the same.
 function viewToWorld(nx, ny) {
@@ -1222,6 +1234,7 @@ function turnGlobe(dt, ease) {
 // Chart and Globe swap the world under every system, so the toy re-seeds.
 function setProj(v) {
   if (v === opts.proj) return;
+  save('proj', v);
   endPress(false);
   // Storms keep their place on screen where the new view allows it.
   const spots = vortices.map(o => { const s = toScreen(o.x, o.y); return s && [s[0] / W, s[1] / H]; });
@@ -1269,6 +1282,7 @@ function stepTracks() {
 function drawChart() {
   const c = chart.ctx;
   c.clearRect(0, 0, W, H);
+  if (GLOBE()) drawAxis(c);
   if (!opts.chart) return;
   // Dots grow with strength and fade over 30 s.
   for (const v of vortices) {
@@ -1294,6 +1308,27 @@ function drawChart() {
     c.fillText(v.kind === 'high' ? 'H' : 'L', px, py);
   }
 }
+// The pole axis pierces the globe: bright outside, faint and dashed inside.
+function drawAxis(c) {
+  const cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch), R = discR();
+  const at = k => [W / 2, H / 2 - cp * k * R];
+  // Outside the sphere a point hides only behind the disc's far side.
+  const shown = k => Math.abs(k) > 1 && !(sp * k < 0 && Math.abs(cp * k) < 1);
+  c.lineCap = 'round';
+  for (const k0 of [-1.24, 1]) {
+    const pts = [];
+    for (let i = 0; i <= 24; i++) { const k = k0 + (i / 24) * 0.24; if (shown(k)) pts.push(at(k)); }
+    if (pts.length < 2) continue;
+    c.strokeStyle = css([0.82, 0.03, 240], 0.75); c.lineWidth = 1.6 * dpr; c.setLineDash([]);
+    c.beginPath(); c.moveTo(...pts[0]); c.lineTo(...pts[pts.length - 1]); c.stroke();
+  }
+  c.strokeStyle = css([0.82, 0.03, 240], 0.2); c.lineWidth = 1 * dpr; c.setLineDash([4 * dpr, 4 * dpr]);
+  c.beginPath(); c.moveTo(...at(-1)); c.lineTo(...at(1)); c.stroke();
+  c.setLineDash([]);
+  // A pole that faces the viewer gets a small cap.
+  for (const k of [1, -1]) if (sp * k >= 0) { c.fillStyle = css([0.9, 0.03, 240], 0.8); c.beginPath(); c.arc(...at(k), 2.2 * dpr, 0, TAU); c.fill(); }
+}
+
 /* ---------- fronts ---------- */
 // Each low older than 3 s trails a warm front and a cold front.
 // They start at 1.5 rc on a bearing that turns with the storm's age.
@@ -1604,6 +1639,13 @@ function resize(force = false, keep = false) {
 
 /* ---------- bar ---------- */
 function setLook(v) { opts.look = v; save('look', v); bakeRamp(); wake(); }
+// Quick toggles keep their chip pressed while on, and persist.
+const chipFor = re => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => re.test(b.textContent));
+function setIso(on) { opts.iso = on; save('iso', on ? '1' : '0'); chipFor(/isobars/i)?.setAttribute('aria-pressed', String(on)); render(); wake(); }
+function setFronts(on) { opts.chart = on; save('chart', on ? '1' : '0'); chipFor(/fronts/i)?.setAttribute('aria-pressed', String(on)); render(); wake(); }
+// The chips show their saved state from the first frame.
+chipFor(/isobars/i)?.setAttribute('aria-pressed', String(opts.iso));
+chipFor(/fronts/i)?.setAttribute('aria-pressed', String(opts.chart));
 function setWind(v) { opts.wind = v; save('wind', v); wake(); }
 function setCount(v) { opts.count = v; seedState(); clearAcc(); preroll(1); render(); wake(); }
 function clearAll() { vortices.forEach(v => { v.dying = true; v.held = false; }); gusts.length = 0; jets.length = 0; clearAcc(); wake(); }
