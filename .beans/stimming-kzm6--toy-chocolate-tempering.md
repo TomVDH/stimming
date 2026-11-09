@@ -1,13 +1,15 @@
 ---
 # stimming-kzm6
 title: 'Toy: Chocolate tempering'
-status: in-progress
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-09T09:17:15Z
-updated_at: 2026-11-09T09:55:12Z
+updated_at: 2026-11-09T18:50:00Z
 parent: stimming-oh7b
 ---
+
+Parked by Tom 2026-11-09: the toy does not read; its purpose is unclear. Rethink before more work.
 
 Build Chocolate tempering from docs/plans/chocolate.md. It starts in the Lab, on Bar v2. Spread and fold molten chocolate on a cold Belgian black marble slab; hit the form V window (31 to 32 °C for dark) and it sets with a mirror gloss and a clean snap; miss it and it sets dull with grey fat bloom and crumbles.
 
