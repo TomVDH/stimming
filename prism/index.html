@@ -27,6 +27,13 @@
 /* A drag from the tray carries a piece; the open sheet fades meanwhile. */
 .s2-grid .s2-chip { touch-action: none; }
 html[data-carry] .s2-sheet { opacity: 0; pointer-events: none; }
+/* The zoom chip shows only while the view is zoomed; a press resets it. */
+.zoomchip {
+  position: absolute; left: 50%; top: 8px; z-index: 1; transform: translateX(-50%);
+  font: 500 11px/1 var(--slab); letter-spacing: 0.07em; text-transform: uppercase; gap: 6px;
+}
+.zoomchip[hidden] { display: none; }
+.zoomchip svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 /* The spectroscope covers the table while it shows. */
 .stage canvas.spectro { z-index: 2; pointer-events: none; touch-action: none; }
 .stage canvas.spectro.on { pointer-events: auto; }
@@ -141,7 +148,7 @@ const ui = initPage({ id: 'prism', bar: {
   ],
   reset: () => reset(),
   quality: true,
-  keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'resize'], ['delete', 'remove']],
+  keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'size, zoom'], ['delete', 'remove']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 /* ---------- the spectroscope view ---------- */
@@ -269,6 +276,11 @@ const make = (kind, extra = {}) => ({
   kind, ...SPEC[kind], u: 0.5, v: 0.5, rot: 0, k: 1, x: 0, y: 0, r: 0, g: {}, snap: null, z: 1, z0: 1, zp: 1, base: false, dying: false, ...extra,
 });
 let pieces = [make('source', { base: true }), make('prism', { side: BASE_SIDE, base: true })];
+// The view zooms and pans the table: screen = table * VZ + (VX, VY).
+// S0 is the short side at rest; S follows the zoom.
+let VZ = 1, VX = 0, VY = 0, S0 = 1;
+const ZMAX = 3;
+const wu = x => (x - VX) / (VZ * W), wv = y => (y - VY) / (VZ * H);
 let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeT = 0, safeB = 0;
 
 function corners(p, hw, hh) {
@@ -296,8 +308,8 @@ function normals(v) {
 // Local -y is the front of mirrors and pads.
 // The knob sits on the front.
 function build(p) {
-  p.x = p.u * W;
-  p.y = p.v * H;
+  p.x = p.u * W * VZ + VX;
+  p.y = p.v * H * VZ + VY;
   const g = p.g, c = Math.cos(p.rot), s = Math.sin(p.rot), Sz = S * Math.max(0.02, p.z) * p.k;
   if (p.kind === 'source') {
     g.hw = (p.w * S) / 2;
@@ -472,12 +484,14 @@ function nearest(ox, oy, dx, dy) {
     } else polyHit(g.v, g.n, i, ox, oy, dx, dy);
   }
 }
+// Light runs to the table's edge, which a zoom can push off screen.
 function toEdge(ox, oy, dx, dy) {
   let t = Infinity;
-  if (dx > 1e-9) { const u = (W - ox) / dx; if (u < t) { t = u; eSide = 1; } }
-  else if (dx < -1e-9) { const u = -ox / dx; if (u < t) { t = u; eSide = 3; } }
-  if (dy > 1e-9) { const u = (H - oy) / dy; if (u < t) { t = u; eSide = 2; } }
-  else if (dy < -1e-9) { const u = -oy / dy; if (u < t) { t = u; eSide = 0; } }
+  const x0 = VX, y0 = VY, x1 = VX + W * VZ, y1 = VY + H * VZ;
+  if (dx > 1e-9) { const u = (x1 - ox) / dx; if (u < t) { t = u; eSide = 1; } }
+  else if (dx < -1e-9) { const u = (x0 - ox) / dx; if (u < t) { t = u; eSide = 3; } }
+  if (dy > 1e-9) { const u = (y1 - oy) / dy; if (u < t) { t = u; eSide = 2; } }
+  else if (dy < -1e-9) { const u = (y0 - oy) / dy; if (u < t) { t = u; eSide = 0; } }
   return Math.max(0, t);
 }
 function fresnel(n1, n2, ci) {
@@ -701,7 +715,7 @@ function buildDust() {
   const [t, tx] = mk(), tw = Math.ceil(w / q), th = Math.ceil(h / q);
   t.width = tw;
   t.height = th;
-  const img = tx.createImageData(tw, th), sc = q / (dp * 0.2 * S);
+  const img = tx.createImageData(tw, th), sc = q / (dp * 0.2 * S0);
   for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
     // Warped noise draws slow wisps of smoke.
     const X = x * sc, Y = y * sc;
@@ -779,6 +793,8 @@ function bleed() {
     for (let n = 0; n < nEd; n++) {
       const o = n * 5;
       if (EDG[o + 2] !== s || EDG[o + 4] < 0.01) continue;
+      // A zoom pushes some table edges off screen; their light stays unseen.
+      if (EDG[o] < -1 || EDG[o] > W + 1 || EDG[o + 1] < -1 || EDG[o + 1] > H + 1) continue;
       st.on = true;
       const k = EDG[o + 3], col = COL[k < 0 ? WHITE : k], w = (k < 0 ? 0.45 : 0.2) * EDG[o + 4] / 255;
       const c = (s & 1 ? EDG[o + 1] : EDG[o]) / bw - 0.5;
@@ -1863,12 +1879,12 @@ function tick(x, pitch = 1) {
 // A tall stage turns the scene, so the fan runs down the long side.
 const PHI_TALL = 1.2;
 function composition() {
-  const tall = H > W * 1.15, phi = tall ? PHI_TALL : 0, R = (BASE_SIDE * S) / Math.sqrt(3);
+  const tall = H > W * 1.15, phi = tall ? PHI_TALL : 0, R = (BASE_SIDE * S0) / Math.sqrt(3);
   const cx = W * 0.5, cy = (safeT + H - safeB) * 0.5;
   const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = tall ? 0.3 * (H - safeT - safeB) : 0.36 * W;
   const mx = (R / 2) * Math.cos((7 * Math.PI) / 6), my = (R / 2) * Math.sin((7 * Math.PI) / 6);
   const sx = mx - Math.cos(dir) * dist, sy = my - Math.sin(dir) * dist, cp = Math.cos(phi), sn = Math.sin(phi);
-  const m = (SPEC.source.w * S) / 2 + 10;
+  const m = (SPEC.source.w * S0) / 2 + 10;
   const X = clamp(cx + sx * cp - sy * sn, m, W - m), Y = clamp(cy + sx * sn + sy * cp, m, H - m);
   return [[X / W, Y / H, dir + phi], [cx / W, cy / H, phi]];
 }
@@ -1969,8 +1985,8 @@ function addPiece(kind) {
   if (!ready || liveAdded() >= MAXADD) return;
   measureBar();
   const p = make(kind), [x, y, rot] = spot(kind);
-  p.u = x / W;
-  p.v = y / H;
+  p.u = wu(x);
+  p.v = wv(y);
   p.rot = rot;
   p.z = reduce ? 1 : 0.02;
   p.zp = reduce ? 1 : 0;
@@ -2005,8 +2021,8 @@ function carryStart(e) {
   measureBar();
   carry.seg = SEG.slice(0, nSeg * SG);
   const [x, y] = at(e), p = make(kind);
-  p.u = x / W;
-  p.v = y / H;
+  p.u = wu(x);
+  p.v = wv(y);
   p.rot = carryAim(kind, x, y);
   p.z = reduce ? 1 : 0.02;
   p.zp = reduce ? 1 : 0;
@@ -2137,11 +2153,12 @@ function setSize(p, k) {
   changed(p, d);
 }
 function moveTo(p, x, y) {
-  const m = 0.03 * S, nx = clamp(x, m, W - m), ny = clamp(y, m, H - m), d = Math.hypot(nx - p.x, ny - p.y) / S;
+  // Pieces stay on the table, which runs past the screen when zoomed.
+  const m = 0.03 * S, nx = clamp(x, VX + m, VX + W * VZ - m), ny = clamp(y, VY + m, VY + H * VZ - m), d = Math.hypot(nx - p.x, ny - p.y) / S;
   p.x = nx;
   p.y = ny;
-  p.u = nx / W;
-  p.v = ny / H;
+  p.u = wu(nx);
+  p.v = wv(ny);
   changed(p, d);
 }
 let sel = -1, ringA = 0, turnA = 0, turnUntil = 0, tween = null, coarse = matchMedia('(pointer: coarse)').matches;
@@ -2153,8 +2170,42 @@ function select(i) {
   turnA = 0;
   wake();
 }
+/* ---------- view: zoom and pan ---------- */
+// The view never shows past the table's edge.
+let viewTween = null, zoomChip = null;
+function setView(z, x, y, quiet) {
+  VZ = clamp(z, 1, ZMAX);
+  VX = clamp(x, W - W * VZ, 0);
+  VY = clamp(y, H - H * VZ, 0);
+  S = S0 * VZ;
+  geomDirty = true;
+  if (zoomChip) {
+    zoomChip.hidden = VZ < 1.01;
+    zoomChip.firstChild.textContent = `${VZ.toFixed(1)}×`;
+    zoomChip.style.top = `${Math.round(safeT + 8)}px`;
+  }
+  if (!quiet) wake();
+}
+// A zoom keeps the table point under (sx, sy) in place.
+function zoomAt(z, sx, sy) {
+  const nz = clamp(z, 1, ZMAX), wx = (sx - VX) / VZ, wy = (sy - VY) / VZ;
+  viewTween = null;
+  setView(nz, sx - wx * nz, sy - wy * nz);
+}
+function resetView() {
+  if (VZ === 1 && !VX && !VY) return;
+  viewTween = { t: 0, dur: reduce ? 0.01 : 0.35, from: [VZ, VX, VY] };
+  wake();
+}
+function stepView(dt) {
+  viewTween.t = Math.min(1, viewTween.t + dt / viewTween.dur);
+  const e = 1 - (1 - viewTween.t) ** 3, [z, x, y] = viewTween.from;
+  setView(lerp(z, 1, e), lerp(x, 0, e), lerp(y, 0, e), true);
+  if (viewTween.t >= 1) viewTween = null;
+}
 function reset() {
   closeSpectro();
+  resetView();
   if (!ready || (pristine() && !tween)) return;
   select(-1);
   pieces.forEach(p => { if (!p.base) kill(p); });
@@ -2215,6 +2266,7 @@ function frame(ms) {
   last = ms;
   let busy = false;
   if (tween) { stepTween(dt); busy = true; }
+  if (viewTween) { stepView(dt); busy = true; }
   if (stepPop(dt)) busy = true;
   if (sel >= 0 && ringA < 1) { ringA = reduce ? 1 : Math.min(1, ringA + dt / 0.18); busy = true; }
   const want = performance.now() < turnUntil ? 1 : 0;
@@ -2258,7 +2310,7 @@ function pick(x, y, pad) {
 }
 const onRing = (p, x, y, band) => Math.abs(Math.hypot(x - p.x, y - p.y) - ringR(p)) < band;
 const ptrs = new Map();
-let drag = null, twist = null, tapDown = null;
+let drag = null, twist = null, tapDown = null, pan = null, lastTap = null;
 function startDrag(i, x, y, id, turn, shift) {
   const p = pieces[i];
   drag = { i, id, turn, shift, ox: p.x - x, oy: p.y - y, raw: p.rot, aPrev: Math.atan2(y - p.y, x - p.x) };
@@ -2271,19 +2323,38 @@ function startSize(i, x, y, id) {
   drag = { i, id, size: true, k0: p.k, d0: Math.max(4, Math.hypot(x - p.x, y - p.y)) };
   panel.style.cursor = 'nwse-resize';
 }
+// Two fingers on a piece turn and size it; on bare table they zoom and pan.
+let pinch = null;
 function startTwist() {
   const [a, b] = [...ptrs.values()];
-  let i = drag ? drag.i : sel;
+  let i = drag && !drag.size ? drag.i : pick(a.x, a.y, 18);
   if (i < 0) i = pick(b.x, b.y, 18);
   drag = null;
-  if (i < 0) return;
+  pan = null;
+  if (i <= 0) {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    pinch = { d0: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), z0: VZ, wx: (mx - VX) / VZ, wy: (my - VY) / VZ };
+    viewTween = null;
+    return;
+  }
   select(i);
   const p = pieces[i];
   twist = { i, raw: p.rot, aPrev: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: p.x, py: p.y, d0: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), k0: p.k };
   turning();
 }
 panel.addEventListener('pointerdown', e => {
-  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready) return;
+  // A right or middle drag pans a zoomed view from anywhere.
+  if (e.pointerType === 'mouse' && e.button !== 0) {
+    if ((e.button === 1 || e.button === 2) && VZ > 1.01 && !ptrs.size) {
+      e.preventDefault();
+      try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+      const [x, y] = at(e);
+      ptrs.set(e.pointerId, { x, y, x0: x, y0: y });
+      pan = { id: e.pointerId, x0: x, y0: y, vx: VX, vy: VY, on: false };
+    }
+    return;
+  }
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   const [x, y] = at(e);
   ptrs.set(e.pointerId, { x, y, x0: x, y0: y });
@@ -2298,7 +2369,11 @@ panel.addEventListener('pointerdown', e => {
   // An enlarged picture lets go of its pad, so the ring does not sit under it.
   if (pq) { tapDown = null; pq.big = !pq.big; if (pq.big && pieces[sel] === pq) select(-1); tick(x, pq.big ? 1.2 : 0.9); geomDirty = true; wake(); return; }
   const i = pick(x, y, pad);
-  if (i < 0) { tapDown = { x, y }; return; }
+  if (i < 0) {
+    tapDown = { x, y };
+    if (VZ > 1.01) pan = { id: e.pointerId, x0: x, y0: y, vx: VX, vy: VY, on: false };
+    return;
+  }
   tapDown = null;
   select(i);
   startDrag(i, x, y, e.pointerId, e.shiftKey, e.shiftKey);
@@ -2317,6 +2392,18 @@ panel.addEventListener('pointermove', e => {
     return;
   }
   [q.x, q.y] = at(e);
+  if (pinch) {
+    if (ptrs.size < 2) return;
+    const [a, b] = [...ptrs.values()], z = clamp(pinch.z0 * Math.hypot(b.x - a.x, b.y - a.y) / pinch.d0, 1, ZMAX);
+    setView(z, (a.x + b.x) / 2 - pinch.wx * z, (a.y + b.y) / 2 - pinch.wy * z);
+    return;
+  }
+  // A drag on bare table pans a zoomed view.
+  if (pan && pan.id === e.pointerId) {
+    if (!pan.on && Math.hypot(q.x - pan.x0, q.y - pan.y0) > 6) { pan.on = true; panel.style.cursor = 'grabbing'; }
+    if (pan.on) { viewTween = null; setView(VZ, pan.vx + q.x - pan.x0, pan.vy + q.y - pan.y0); }
+    return;
+  }
   if (twist) {
     if (ptrs.size < 2) return;
     const [a, b] = [...ptrs.values()], p = pieces[twist.i], ang = Math.atan2(b.y - a.y, b.x - a.x);
@@ -2348,9 +2435,16 @@ function lift(e) {
   if (!q) return;
   ptrs.delete(e.pointerId);
   if (twist && ptrs.size < 2) twist = null;
+  if (pinch && ptrs.size < 2) pinch = null;
+  if (pan && pan.id === e.pointerId) { if (pan.on) { tapDown = null; panel.style.cursor = ''; } pan = null; }
   if (drag && drag.id === e.pointerId) { drag = null; panel.style.cursor = e.pointerType === 'mouse' ? 'grab' : ''; }
-  // A tap on bare table clears the selection.
-  if (tapDown && !ptrs.size && Math.hypot(q.x - tapDown.x, q.y - tapDown.y) < 8) select(-1);
+  // A tap on bare table clears the selection; a double tap resets the view.
+  if (tapDown && !ptrs.size && Math.hypot(q.x - tapDown.x, q.y - tapDown.y) < 8) {
+    select(-1);
+    const now = performance.now();
+    if (lastTap && now - lastTap.t < 320 && Math.hypot(q.x - lastTap.x, q.y - lastTap.y) < 24) { resetView(); lastTap = null; }
+    else lastTap = { t: now, x: q.x, y: q.y };
+  }
   if (!ptrs.size) tapDown = null;
   wake();
 }
@@ -2377,7 +2471,12 @@ panel.addEventListener('blur', e => { if (!ptrs.size && !panel.contains(e.relate
 panel.addEventListener('wheel', e => {
   if (!ready) return;
   const [x, y] = at(e), i = pick(x, y, 6);
-  if (i <= 0) return;
+  // The wheel over bare table zooms the view.
+  if (i <= 0) {
+    e.preventDefault();
+    zoomAt(VZ * Math.exp(-clamp(e.deltaY, -60, 60) * (e.ctrlKey ? 0.012 : 0.003)), x, y);
+    return;
+  }
   e.preventDefault();
   if (sel !== i) select(i);
   setSize(pieces[i], pieces[i].k * Math.exp(-clamp(e.deltaY, -60, 60) * 0.004));
@@ -2389,9 +2488,11 @@ addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel > 0) { e.preventDefault(); remove(sel); return; }
   const k = e.key.toLowerCase(), arrow = ARROWS[e.key];
   const grow = e.key === '+' || e.key === '=' ? 1 : e.key === '-' || e.key === '_' ? -1 : 0;
+  if (e.key === '0') { resetView(); return; }
   if (!arrow && !grow && k !== 'q' && k !== 'e' && e.key !== 'Escape') return;
   if (e.key === 'Escape') { select(-1); return; }
   e.preventDefault();
+  if (grow && sel <= 0) { zoomAt(VZ * (grow > 0 ? 1.15 : 1 / 1.15), W / 2, H / 2); return; }
   if (sel < 0) select(0);
   const p = pieces[sel];
   if (grow) setSize(p, p.k * (grow > 0 ? 1.08 : 1 / 1.08));
@@ -2423,7 +2524,7 @@ function fit(force) {
   rect = null;
   const p = pixelRatio(w, h, { budget: 2.2e6, low: lowDpr });
   const nw = Math.floor(w * p), nh = Math.floor(h * p);
-  if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
+  if (w !== W || h !== H) { W = w; H = h; S0 = Math.min(w, h); setView(VZ, VX, VY, true); geomDirty = true; }
   measureBar();
   placeHalo();
   if (pristine() && !tween) applyLayout();
@@ -2448,6 +2549,15 @@ function failed() {
 }
 function boot() {
   if (!ctx || !ctx.createRadialGradient || !initGL()) return failed();
+  zoomChip = document.createElement('button');
+  zoomChip.type = 'button';
+  zoomChip.className = 's2-chip zoomchip';
+  zoomChip.hidden = true;
+  zoomChip.title = 'Reset the zoom (0 or double-tap)';
+  zoomChip.innerHTML = '<span>1.0×</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 0 1.4-3.3"/><path d="M3.5 2.5v2.6h2.6"/></svg>';
+  zoomChip.addEventListener('pointerdown', e => e.stopPropagation());
+  zoomChip.addEventListener('click', () => { resetView(); panel.focus({ preventScroll: true }); });
+  panel.append(zoomChip);
   fit();
   ready = true;
   sync();
