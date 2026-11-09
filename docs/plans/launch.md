@@ -248,3 +248,8 @@ Dutch name: Tom rejected Tien tellen. Options put to Tom: Aftellen, Hemelvaart, 
 ## Dutch name: Hemelvaart (Tom's pick, 2026-11-09)
 
 Tom picked Hemelvaart /ˈɦeːməlˌvaːrt/ from the four options. `toys.json` holds it; the page fallback carries no Dutch, so nothing else changes.
+
+## Icon spike 34 (2026-11-09, Tom: more abstract yet beautiful; the intro icon must be nice too)
+
+Four directions in the toy's night palette, each with its own intro emblem: A Long exposure (the flight as one line of light, star trails, soft reeds), B Rack focus (reeds sharp and the launch a bokeh disc; hover pulls focus), C Strata (flat dawn bands, one hairline), D Tally (ten reeds as a count; the tenth carries the spark).
+`icons/spike-34.html`; emblems in `icons/spike/emblems/launch34-a..d.svg`, exported with `?dump`. The menu tile and `shared/emblems/launch.svg` stay on spike 33 A until Tom picks.
