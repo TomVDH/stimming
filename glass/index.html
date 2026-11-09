@@ -1661,8 +1661,12 @@ function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
 const ndcOf = (x, y, z) => tmpV.set(x, y, z).project(camera);
 // The camera looks straight ahead; a lens shift keeps verticals upright.
 // The frame fills the panel; a strip of floor shows below it.
+// The corner rows take these pixels at the top and the bottom of the stage.
+const TOPPX = 60, BOTPX = 58;
 function fit(w, h) {
-  const A = w / h, kh = A < 1.1 ? 0.68 : 0.77, e5 = 1 / Math.tan((FOV * Math.PI) / 360);
+  // The frame fits the band between the corner rows.
+  const A = w / h, band = h > 200 ? (h - TOPPX - BOTPX) / h : 1;
+  const kh = Math.min(A < 1.1 ? 0.68 : 0.77, Math.max(0.45, band)), e5 = 1 / Math.tan((FOV * Math.PI) / 360);
   camera.aspect = A;
   const fw = Math.round(((FH * A * 0.93) / kh) * 50) / 50;
   if (fw !== FW || !built) {
@@ -1676,8 +1680,8 @@ function fit(w, h) {
   camera.position.set(0, ey, FD / 2 + d);
   camera.rotation.set(0, 0, 0);
   camera.updateProjectionMatrix();
-  // The frame clears the top corner row; a tall stage centres it.
-  const mt = Math.max(clamp(60 / h, MT, 0.12), A < 1.1 ? (1 - kh) / 2 : 0);
+  // The frame sits in the middle of that band.
+  const mt = h > 200 ? Math.max(0, TOPPX + (h - TOPPX - BOTPX - kh * h) / 2) / h : MT;
   camera.projectionMatrix.elements[9] = (e5 * (FH - ey)) / d - (1 - 2 * mt);
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
   camera.updateMatrixWorld();

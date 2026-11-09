@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T09:09:19Z
-updated_at: 2026-11-09T09:19:32Z
+updated_at: 2026-11-09T09:22:11Z
 parent: stimming-x6ef
 ---
 
@@ -39,3 +39,7 @@ Move glass/index.html to Bar v2. Brief: docs/plans/bar-v2-migration.md. Epic: st
 ## Diegetic proposal (awaits Tom)
 
 Hammer, gun and brick lie on the floor under the frame; click one to pick it up. It replaces the Tool row in Settings and restores one-tap tool switching on phones. Still: side-session-notes/glass-diegetic-tools.jpg.
+
+## Mobile and compliance
+
+Checked at 1280, 375 x 812 (mobile preset) and 812 x 375. The frame fits the band between the corner rows in pixels (60 px top, 58 px bottom), so landscape no longer runs under the corners. No page scroll; the sheet fits. The key strip touches the frame's lower bevel on landscape until it fades, never the pane.
