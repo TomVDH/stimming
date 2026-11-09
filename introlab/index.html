@@ -136,7 +136,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, fitIntro, popFit, tableOf, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=33';
+import { intro, fitIntro, popFit, tableOf, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=34';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -178,7 +178,7 @@ const FSEL = { fd: '--intro-display', fn: '--intro-nl', fs: '--intro-tag', fsn: 
 for (const k of Object.keys(FSEL)) FSEL[k] = Object.assign(document.getElementById(k), { token: FSEL[k] });
 const fsame = document.getElementById('fsame');
 const varSel = document.getElementById('variety'), took = document.getElementById('took');
-// Varieties sit in their groups; Snap ships.
+// Varieties sit in their groups; the picker marks the default.
 const vgroups = {};
 for (const [k, v] of Object.entries(VARIETIES)) {
   const g = vgroups[v.group] ||= varSel.appendChild(Object.assign(document.createElement('optgroup'), { label: v.group }));
@@ -517,12 +517,12 @@ function drawTL() {
 })();
 drawTL();
 document.getElementById('reset').addEventListener('click', () => { delete tune[varSel.value]; paintAll(); save(); held ? applyPose() : replay(); });
-// Copy gives the shipped table for the default, or a variety's timing line.
+// Copy gives the base table for Classic, or a variety's own changes.
 document.getElementById('copy').addEventListener('click', async e => {
   const t = T(), v = varSel.value;
   const diff = Object.fromEntries(Object.entries(t).filter(([k, x]) => x !== TIMING[k]));
   const obj = o => JSON.stringify(o, null, 2).replace(/"(\w+)":/g, '$1:');
-  const text = v === DEFAULT_VARIETY ? `export const TIMING = ${obj(t)};` : `${v}: timing ${obj(diff)}`;
+  const text = v === 'classic' ? `export const TIMING = ${obj(t)};` : `${v}: timing ${obj(diff)}`;
   try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied'; } catch (err) { e.target.textContent = 'Copy failed'; }
   setTimeout(() => { e.target.textContent = 'Copy table'; }, 1200);
 });

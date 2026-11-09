@@ -104,10 +104,10 @@ export const TIMING = {
 // glyph and words make the quiet line at the foot; nudge pulses the speaker.
 export const SOUND_NOTE = { glyph: true, words: 'Best with sound', nudge: false };
 
-// Classic ships for now. The others are proposals for the intro lab.
+// Signal ships for now (Tom, 2026-11-09). The others stay in the intro lab for later.
 // Each variety may change the timing, the flash, how the box leaves, how lines open and the exit.
 // read: true holds for reading time; false holds to T.hold from the start.
-export const DEFAULT_VARIETY = 'classic';
+export const DEFAULT_VARIETY = 'signal';
 // Classic's beats; the restyle looks share this one table.
 const CLASSIC = { lead: 4, pop: 9, flash: 16, unfurl: 400, nlLag: 5, subLag: 5, tagLag: 5, tagNlLag: 5, sndLag: 5, readBase: 1000, readPer: 15, readCap: 2200, wipe: 400, fade: 600 };
 // A look restyles Classic: look names its CSS block, style holds sizes and places.
