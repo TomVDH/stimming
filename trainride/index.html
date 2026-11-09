@@ -452,7 +452,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       vec2 fp2 = mat2(0.94, 0.34, -0.34, 0.94) * vP.xz / vec2(85.0, 36.0);
       fp2.x += floor(fp2.y) * 0.37;
       vec2 fe = abs(fract(fp2) - 0.5);
-      float hedge = smoothstep(0.47, 0.495, max(fe.x, fe.y)) * step(0.45, hash1(floor(fp2) + 5.0)) * (1.0 - smoothstep(0.2, 0.6, length(fwidth(fp2)) * 8.0));
+      float hedge = smoothstep(0.47, 0.495, max(fe.x, fe.y)) * step(0.45, hash1(floor(fp2) + 5.0)) * (1.0 - smoothstep(0.03, 0.08, length(fwidth(fp2))));
       alb = mix(alb, vec3(0.02, 0.04, 0.015), hedge * flatL * 0.8);
     }
     // Valleys and the feet of slopes see less sky.
@@ -1363,7 +1363,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   varying vec2 vUv;
   const vec3 STNC = vec3(0.84, 0.92, 1.0);
   // The glass sits back in a reveal; a rubber seal holds it.
-  const float REVEAL = 0.06, SEAL = 0.004, BAR = 0.0045;
+  // The carriage wall is 13 cm deep, so the sun's slant shows on the reveal.
+  const float REVEAL = 0.13, SEAL = 0.004, BAR = 0.0045;
   ${NOISE}
   float sdRR(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
   ${GLASS_RAIN}
@@ -1591,8 +1592,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // Day: light through the glass; the reveal brightens toward it.
         // Day: a dim cabin; the faces that look away from the sun take it directly.
         vec3 day = vec3(1.0, 0.97, 0.92) * 0.06 * (0.5 + 0.7 * f);
-        float face = max(dot(n2, normalize(uSunW.xy + vec2(1e-4))), 0.0);
-        day += vec3(1.0, 0.9, 0.74) * 1.8 * face * smoothstep(0.15, 0.7, f) * sunAt(h2.x + uC0.x);
+        // True shadow: from this point, step toward the sun to the glass plane.
+        // The point is lit only if that ray passes through the opening.
+        vec2 lat = uSunW.xy / max(-uSunW.z, 0.05) * (1.0 - f) * REVEAL / (2.0 * uTan.y);
+        float through = smoothstep(0.002, -0.002, sdRR(h2 + lat, uHalf, uRad));
+        // Lambert: the face's normal lies in the wall plane.
+        float face = max(dot(n2, uSunW.xy), 0.0);
+        day += vec3(1.0, 0.9, 0.74) * 2.6 * face * through * sunAt(h2.x + uC0.x);
         col = alb * mix(night, day, uDay);
         // The frame's lower rail catches the ceiling light as a bright line.
         col += al * mix(warm * 0.05, vec3(0.5), uDay) * pow(max(n2.y, 0.0), 6.0) * smoothstep(0.8, 0.95, f);
