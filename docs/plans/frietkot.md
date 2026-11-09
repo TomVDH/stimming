@@ -197,6 +197,15 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 - [x] The ember flares on each draw; thin smoke leaves the mouth.
 - [x] Traffic in Settings turns the arrivals on and off.
 
+### Task 3c: The square comes alive (Tom, 2026-11-09)
+
+- [x] Figures: two-bone legs with knees, counter-swinging arms, edges filtered by pixel size. Three looks to pick from in Settings > People: Ink (dark shape, thin rim), Line (a contour drawn in light), Haze (an out-of-focus shape).
+- [x] More traffic: an arrival every 3 to 8 s. Groups of three to five young people gather round the standing table, some smoking. People walk dogs; some stop at the window and the dog waits. Motorbikes and cars pass or stop: they brake into a place, the rider or driver walks up, then they pull away slowly. Their headlights sweep the cobbles; tail lights glow red.
+- [x] Weather in Settings: Dry, Drizzle, Rain, Fog. Rain shows only where light falls on it. Wet cobbles go dark and glossy; the window reflection smears into a streak; rain rings spread in the reflections. In the wet, many walk under umbrellas. Fog thickens the beam and hides the far side.
+- [x] The camera swings only a little (yaw 0.1, pitch 0.05 rad); the set is built for this frame.
+- [x] Village windows go on and off, one at a time; a screen flickers blue. The tower clock is lit and shows the real local time.
+- [x] Neon script on the roof box: "Frituur Stefan & Hilde" (Tom). The cone glyph stands on the box at its right end.
+
 ### Task 4: Sauce, cone, moths, traffic
 
 - [ ] The cone fills; the sauce lands in its colour.

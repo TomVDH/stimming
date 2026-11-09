@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:14:44Z
-updated_at: 2026-11-09T09:51:41Z
+updated_at: 2026-11-09T10:07:00Z
 ---
 
 Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chip shack stands alone on an empty village square at night: a warm steamy service window, a humming neon strip, a low wide toy-scale shot. Drop fries, shake the basket, pick a sauce, fill a cone.
@@ -30,3 +30,5 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 - Tom signed off the blockout (2026-11-09). Task 2: the fryer moved to just inside the window and the tiles went teal, because a back-wall fryer is hidden by the sill from the low lens. Drop picks a free basket (blanched fries get their second fry); Shake lifts the basket in the oil, shakes it and kicks the boil; Fill takes golden fries.
 
 - Tom (2026-11-09): vague 2D human shapes (staff, customers, bikes, smokers) with a slight blur and time-lapse; a deeper frietkot after 90s and 2000s frietbaraks. Built as Task 3b: a 5 x 3.6 m shack with mosaic, menu boards and a cooler; a seating room with steamed amber windows and a light box; flat soft figures with echo trails and long shadows.
+
+- Tom (2026-11-09): more traffic, weather, less camera freedom, motorbikes and cars that stop, groups, dog walkers, village lights on and off, a lit tower clock, neon 'Frituur Stefan & Hilde'; three figure looks to pick from. All built as Task 3c. Rain dashes came from half-float overflow; the rain light is clamped.
