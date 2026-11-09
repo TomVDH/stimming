@@ -1870,38 +1870,78 @@ const cars = [];
     scene.add(c);
   }
 }
-// The train: four double-deck coaches with two rows of lit windows.
+// The train: four double-deck coaches after the Belgian M7, a cab car at each end.
+// White body, a navy band low on the double deck, two rows of windows, red doors over the bogies.
+// The cab nose is yellow with a dark windscreen.
 const trainMat = new THREE.ShaderMaterial({
   uniforms: U,
-  vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vL;
-  void main() { vL = position; vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vL; ${HEAD}
+  vertexShader: /* glsl */`attribute float aPart; varying vec3 vP; varying vec3 vN; varying vec3 vL; varying float vPart;
+  void main() { vL = position; vPart = aPart; vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vL; varying float vPart; ${HEAD}
   void main() {
-    vec3 N = normalize(vN), V = normalize(vP - cameraPosition);
-    vec3 alb = vec3(0.55, 0.56, 0.58), emit = vec3(0.0);
-    if (N.y > 0.5) alb = vec3(0.12, 0.12, 0.13);
+    vec3 N = normalize(vN), V = normalize(vP - cameraPosition), Nl = normalize(vN);
+    vec3 alb = vec3(0.72, 0.73, 0.74), emit = vec3(0.0);
+    float glass = 0.0, az = abs(vL.z);
+    vec3 warm = vec3(1.0, 0.92, 0.76) * 1.3;
+    if (vPart > 1.5) alb = vec3(0.03);
+    else if (vPart > 0.5) {
+      // The cab: yellow, a grey buffer beam, a dark windscreen across the slope.
+      alb = vec3(0.62, 0.42, 0.02);
+      if (vL.y < 1.45) alb = vec3(0.14);
+      if (vL.y > 2.55 && vL.y < 3.85 && N.y > -0.2 && az > 12.2) { alb = vec3(0.015); glass = 1.0; }
+    } else if (N.y > 0.5) alb = vec3(0.22);
     else if (abs(N.x) > 0.5) {
-      // A red stripe low down; two decks of windows above it.
-      if (vL.y > 0.35 && vL.y < 0.55) alb = vec3(0.4, 0.03, 0.03);
-      bool win = fract(vL.z / 1.7) < 0.78 && abs(vL.z) < 12.4;
-      bool deck = (vL.y > 1.0 && vL.y < 1.75) || (vL.y > 2.55 && vL.y < 3.3);
-      if (win && deck) { alb = vec3(0.0); emit = vec3(1.0, 0.92, 0.75) * 1.4; }
+      if (az < 9.2) {
+        // The double deck: a navy band below, two rows of windows above it.
+        if (vL.y < 0.75) alb = vec3(0.02, 0.03, 0.2);
+        float f = fract((vL.z + 9.2) / 1.62);
+        bool low = vL.y > 1.05 && vL.y < 1.8 && f > 0.08 && f < 0.86 && az < 8.8;
+        bool high = vL.y > 2.6 && vL.y < 3.5 && f > 0.05 && f < 0.9 && az < 8.9;
+        if (low || high) { alb = vec3(0.03, 0.04, 0.06); emit = warm; glass = 1.0; }
+      } else {
+        // The end sections: red double doors with two small panes, one window above the bogie.
+        float dz = abs(az - 11.0);
+        if (dz < 0.78 && vL.y > 1.25 && vL.y < 3.35) {
+          alb = vec3(0.5, 0.04, 0.03);
+          if (abs(dz - 0.38) < 0.2 && vL.y > 2.15 && vL.y < 3.05) { alb = vec3(0.03); emit = warm * 0.8; glass = 1.0; }
+        } else if (az > 12.2 && az < 13.0 && vL.y > 2.5 && vL.y < 3.3) { alb = vec3(0.03); emit = warm * 0.6; glass = 1.0; }
+      }
     }
     vec3 sp = vec3(0.0);
-    vec3 col = alb * (skyAmb(N) + streetLit(vP, N, V, 0.3, sp)) + sp * 0.3 + emit;
+    vec3 col = alb * (skyAmb(N) + streetLit(vP, N, V, 0.3 + glass, sp)) + sp * 0.4 + emit + glass * 0.15 * k2sky(reflect(V, N));
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
-const train = new THREE.Group();
+// One coach: a low double-deck middle, raised end sections over dark bogies, and a cab where asked.
+function coach(cabEnd) {
+  const pieces = [], add = (g, part) => { if (g.attributes.uv) g.deleteAttribute('uv'); g = g.index ? g.toNonIndexed() : g; g.setAttribute('aPart', new THREE.Float32BufferAttribute(new Array(g.attributes.position.count).fill(part), 1)); pieces.push(g); };
+  add(new THREE.BoxGeometry(2.85, 4.0, 18.4).translate(0, 2.3, 0), 0);
+  for (const s of [-1, 1]) {
+    add(new THREE.BoxGeometry(2.4, 0.8, 2.8).translate(0, 0.7, s * 11.0), 2);
+    if (s === cabEnd) {
+      // The nose: a profile along z, swept across the width.
+      const shape = new THREE.Shape([[0, 1.1], [3.4, 1.1], [4.4, 1.7], [4.6, 2.5], [3.4, 4.2], [0, 4.3]].map(([a, b]) => new THREE.Vector2(a, b)));
+      const nose = new THREE.ExtrudeGeometry(shape, { depth: 2.85, bevelEnabled: false, curveSegments: 1 });
+      nose.rotateY(s > 0 ? -Math.PI / 2 : Math.PI / 2).translate(s > 0 ? 1.425 : -1.425, 0, s * 9.2);
+      add(nose, 1);
+    } else add(new THREE.BoxGeometry(2.85, 3.2, 4.0).translate(0, 2.7, s * 11.2), 0);
+  }
+  return mergeGeometries(pieces);
+}
+const train = new THREE.Group(), trainLights = [];
 {
   for (let i = 0; i < 4; i++) {
-    const car = new THREE.Mesh(new THREE.BoxGeometry(2.9, 4.2, 26).translate(0, 2.3, 0), trainMat);
-    car.position.z = (i - 1.5) * 26.6;
+    const car = new THREE.Mesh(coach(i === 0 ? -1 : i === 3 ? 1 : 0), trainMat);
+    car.position.z = (i - 1.5) * 26.8;
     train.add(car);
   }
-  const lamps = [];
-  for (const s of [-1, 1]) for (const dx of [-0.9, 0.9]) lamps.push({ x: dx, y: 1.2, z: s * 53.2, col: [1, 0.95, 0.85], ph: 0, kind: 3 });
-  train.add(bulbPoints(lamps));
+  // Each end has white head lamps and red tail lamps; the running direction picks which show.
+  for (const s of [-1, 1]) for (const col of [[1, 0.95, 0.85], [1, 0.05, 0.03]]) {
+    const p = bulbPoints([-0.9, 0.9].map(x => ({ x, y: 1.75, z: s * 54.3, col, ph: 0, kind: 3 })));
+    p.userData = { s, head: col[1] > 0.5 };
+    trainLights.push(p);
+    train.add(p);
+  }
   train.traverse(o => o.layers.enable(LIGHT));
   train.visible = false;
   scene.add(train);
@@ -1961,6 +2001,8 @@ function stepPlaces(dt) {
   let near = false;
   if (tr) {
     train.position.set(RAIL.x[tr.dir > 0 ? 1 : 0], QUAY + 0.4, tr.z);
+    // White lamps lead, red lamps trail.
+    for (const l of trainLights) l.visible = l.userData.head === (l.userData.s === tr.dir);
     near = Math.abs(tr.z - RAIL.cross) < 53 + 260;
   }
   // The arms come down in about 6 s and go up again once the train is clear.
