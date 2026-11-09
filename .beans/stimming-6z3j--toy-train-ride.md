@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T10:16:46Z
+updated_at: 2026-11-09T10:32:31Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -64,5 +64,6 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Heights from Terrarium tiles (zoom 13), lakes from OSM outlines, towns from OSM places; baked to trainride/route.png + route.json
 - [x] Window: recessed lining with parallax, rubber seal, tinted glass, light cabin wall with panel joints
 - [x] Passenger display over the window: next stop, the line ahead, clock
-- [ ] Station platforms and name signs as the train passes
+- [x] Station platforms and name signs as the train passes (26 stations, Au ZH and Schübelbach-Buttikon added)
+- [x] Warmer interior: cream panels, wooden sill and ledge, warm light
 - [ ] Denser lights along the Lake Zurich gold coast
