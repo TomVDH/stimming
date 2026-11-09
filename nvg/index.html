@@ -80,7 +80,7 @@ const ui = initPage({ id: 'nvg', bar: {
   ],
   settings: [
     { type: 'choice', id: 'place', label: 'Place', value: 'harbour', persist: true,
-      options: [{ value: 'harbour', label: 'Harbour' }, { value: 'field', label: 'Field' }], onPick: v => setPlace(v) },
+      options: [{ value: 'harbour', label: 'Harbour' }, { value: 'field', label: 'Field' }, { value: 'room', label: 'Room' }, { value: 'raid', label: 'Raid' }], onPick: v => setPlace(v) },
     // Objective focus in dioptres: zero is infinity.
     { type: 'slider', id: 'focus', label: 'Focus', min: 0, max: 1, step: 0.01, value: 0, onInput: v => { st.focus = v; } },
     { type: 'choice', id: 'phos', label: 'Phosphor', value: 'green', persist: true,
@@ -107,6 +107,7 @@ renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping;
 renderer.setPixelRatio(1);
 renderer.autoClear = false;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const tube = new Tube(renderer);
 
@@ -115,6 +116,8 @@ const tube = new Tube(renderer);
 const BUILD = {
   field: async () => buildField({ grass: quality() === 'high' ? 85000 : 55000 }),
   harbour: async () => (await import('./harbour.js')).buildHarbour(),
+  room: async () => (await import('./apartment.js')).buildApartment(),
+  raid: async () => (await import('./raid.js')).buildRaid(),
 };
 const worlds = {};
 let world = null, sceneScale = 1;
@@ -122,13 +125,20 @@ async function place(name) {
   worlds[name] ||= await BUILD[name]();
   return worlds[name];
 }
+// Each place sets its own start view and objective focus.
+function enter() {
+  world.setPx(sceneScale);
+  yaw = world.look.yaw0 ?? 0; pitch = world.look.start ?? 0.04;
+  st.focus = world.focus ? Math.min(1, 1 / (world.focus * 2.5)) : 0;
+  ui.setting('focus').set(st.focus);
+  renderer.shadowMap.enabled = !!world.shadows;
+}
 async function setPlace(v) {
   st.place = v;
   const w = await place(v);
   if (st.place !== v) return;
   world = w;
-  world.setPx(sceneScale);
-  yaw = 0; pitch = world.look.start ?? 0.04;
+  enter();
   sfx.clunk();
   tube.cold();
   powerOn(0.2);
@@ -350,8 +360,8 @@ const sfx = (() => {
 
 /* ---------- reset ---------- */
 function resetAll() {
-  yaw = 0; pitch = world?.look.start ?? 0.04; zoomTo = 1;
-  st.focus = 0; ui.setting('focus').set(0);
+  zoomTo = 1;
+  if (world) enter();
   ui.slider.set(0.55); st.gain = 0.55;
   if (st.ir) toggleIr();
   if (st.cam) camOff();
@@ -430,8 +440,7 @@ new ResizeObserver(() => resize()).observe(view);
 onQuality(() => resize());
 resize();
 world = await place(st.place).catch(() => place('field'));
-world.setPx(sceneScale);
-pitch = world.look.start ?? 0.04;
+enter();
 worldUp();
 whenVisible(view, setRunning);
 
@@ -440,7 +449,7 @@ window.__qa = { gain() {
   const b = new Uint16Array(16);
   renderer.readRenderTargetPixels(tube.gain[0], 0, 0, 4, 1, b);
   return [...b].map(v => +THREE.DataUtils.fromHalfFloat(v).toFixed(3));
-}, get world() { return world; }, zoom(v) { zoomTo = v; }, jump(s) { timeOffset += s; }, time: () => clock + timeOffset, fps: () => fpsAvg, ir: toggleIr, format: v => { ui.choice.set(v); setFormat(v); }, st, tube, look(y, p) { yaw = y; pitch = p; } };
+}, get world() { return world; }, zoom(v) { zoomTo = v; }, place: v => { ui.setting("place").set(v); return setPlace(v); }, jump(s) { timeOffset += s; }, time: () => clock + timeOffset, fps: () => fpsAvg, ir: toggleIr, format: v => { ui.choice.set(v); setFormat(v); }, st, tube, look(y, p) { yaw = y; pitch = p; } };
 </script>
 </body>
 </html>

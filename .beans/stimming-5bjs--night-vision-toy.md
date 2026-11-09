@@ -18,3 +18,7 @@ New Lab toy: night vision goggles as a shader showcase. 3D night scene by defaul
 - [x] Fidelity pass: height fog, lamp fog glow, depth of field, wide glare, rim blur
 - [x] Harbour at 3 a.m. as the default place; field kept
 - [x] Easter eggs: IR laser, freighter IR strobe
+- [x] Flicker: overload pulse fired at normal brightness; fixed (frame jump 7.4 to 0.7)
+- [x] Room place (apartment)
+- [x] Raid place (city under AA fire)
+- [ ] Faint light lines at two room wall junctions
