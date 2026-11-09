@@ -1,6 +1,6 @@
 ---
 # stimming-4wu3
-title: 'Toy: Marsh launch'
+title: 'Toy: Ten seconds (was Marsh launch)'
 status: in-progress
 type: feature
 priority: normal
@@ -31,7 +31,8 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Review 2: living reed sway, cleaner reed model
 - [x] Review 2: birds nearer the eye, spruced up
 - [x] Review 2: no launch shockwave: camera jolts and the reed push wave gone
-- [ ] Tom sets the Dutch name (proposal: Moeraslancering)
+- [ ] Tom confirms the Dutch name (set to Tien tellen, 2026-11-09; was Moeraslancering)
+- [ ] Icon spike 28 (Slant, Rim, Ring): Tom picks a direction; the menu tile follows
 - [ ] Record the session cost
 
 ## Blockout notes (2026-11-09)
