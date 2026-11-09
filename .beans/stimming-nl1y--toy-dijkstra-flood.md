@@ -26,6 +26,8 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - [x] Round 5: Districts (a seventh search: up to five sources, each claims its streets)
 - [x] Round 5: Tree (after the flood, the shortest-path tree gathers; trunks widen by flow; Settings toggle, key T)
 - [x] Round 5: Jam replaces mud (drag slows streets x3, a second stroke x8, a third walls them; brake lights crawl)
+- [x] Round 5: long press and a dragged destination replay the search; the path waits for the light
+- [x] Round 5: once the path locks, every other street and node recedes over 3.5 s
 - [ ] Round 5: checkpoint with Tom
 - [ ] Task 2: scouts, sparks, queue shimmer, path snap
 - [ ] Task 3: Seek (A*) and Race

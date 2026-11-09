@@ -807,7 +807,7 @@ flat in vec4 vAB;
 flat in vec4 vD;
 flat in vec4 vX;
 out vec4 o;
-uniform float uScout, uTreeG, uFlowN;
+uniform float uScout, uTreeG, uFlowN, uRecede;
 void main() {
   vec2 a = vAB.xy, b = vAB.zw, ab = b - a;
   float L2 = max(dot(ab, ab), 1e-6), L = sqrt(L2);
@@ -849,9 +849,12 @@ void main() {
     float ph = fract(t / 46.0 + uTime * 0.55);
     on += mix(h, vec3(1.0), 0.3) * core * pow(ph, 14.0) * 0.5 * te * uFlick;
   } else on *= 1.0 - 0.82 * te;
+  // A found path stays; every other street slowly recedes.
+  float onP = step(9.5, vX.w);
+  on *= 1.0 - 0.86 * uRecede * (1.0 - onP);
   vec3 c = mix(uCold * core, on, lit);
   // Jam: slow brake lights crawl both ways, on two lanes.
-  float jam = vX.w;
+  float jam = vX.w - 10.0 * onP;
   if (jam > 0.5) {
     float sd = (ab.x * ap.y - ab.y * ap.x) / L;
     float lane = sd > 0.0 ? 1.0 : -1.0, off = abs(sd) - 1.1;
@@ -863,7 +866,7 @@ void main() {
     c += brake * (core * 0.12 * jam + car * (0.45 + 0.3 * jam));
   }
   // Relax scouts: a faint tick from the settled end to the queued end.
-  vec3 sc = mix(h, vec3(1.0), 0.3) * core * 0.45 * uFlick;
+  vec3 sc = mix(h, vec3(1.0), 0.3) * core * 0.45 * uFlick * (1.0 - uRecede * (1.0 - onP));
   float pa = (uW - dA) / (uScout * w);
   if (dA < dB && pa > 0.0 && pa < 1.0) { float x = (s - pa) * L; c += sc * exp(-x * x / 3.0) * (1.0 - pa); }
   float pb = (uW - dB) / (uScout * w);
@@ -909,6 +912,7 @@ flat in vec4 vN0;
 flat in vec4 vN1;
 flat in vec4 vN2;
 out vec4 o;
+uniform float uRecede;
 vec3 lutO(float t) { return heat(t, vN2.x); }
 void main() {
   float r = length(vQ);
@@ -923,7 +927,7 @@ void main() {
       float ig = min(exp(-age / (uBand * 0.6)), 1.0);
       c = mix(lutO(dist), vec3(1.0, 0.9, 0.72), 0.45) * lp * (0.9 + 0.6 * ig);
     }
-    o = vec4(c, 1.0);
+    o = vec4(c * (1.0 - 0.86 * uRecede * (1.0 - vN2.y)), 1.0);
     return;
   }
   float pt = kind > 1.5 ? exp(-pow(r - 2.2, 2.0) / 0.2) + 0.15 * exp(-r * r / 0.6) : exp(-r * r / 1.1);
@@ -940,7 +944,7 @@ void main() {
     float br = mix(1.0, 0.8 + 0.2 * sin(uTime * 4.0 + id * 2.399), uFlick);
     c += lutO(tent) * ring * 0.55 * br;
   }
-  o = vec4(c, 1.0);
+  o = vec4(c * (1.0 - 0.86 * uRecede * (1.0 - vN2.y)), 1.0);
 }`;
 // The path: a fine bright line that draws on, with slow pulses toward the target.
 const PATH_FS = HEAD + LUT + `
@@ -1318,21 +1322,31 @@ function upload() {
     // A tree edge carries its child's flow; others carry none.
     const fl = g.par[b] === a ? g.flow[b] : g.par[a] === b ? g.flow[a] : 0;
     ed.set([g.X[a], g.Y[a], g.X[b], g.Y[b], D(a), D(b), spanOf(e, a, b), g.cut[e] ? -g.width[e] : g.width[e],
-      g.own[a], g.own[b], fl, g.cut[e] ? 0 : g.jam[e]], e * 12);
+      g.own[a], g.own[b], fl, (g.cut[e] ? 0 : g.jam[e]) + (g.onPath?.[e] ? 10 : 0)], e * 12);
   }
   fillVbo('edge', ed, g.E);
   const nd = new Float32Array(g.N * 12);
   for (let i = 0; i < g.N; i++) {
     const te = g.tEnter[i] === Infinity ? 1e9 : g.tEnter[i];
     const t0 = g.tent0[i] === Infinity ? 1e9 : g.tent0[i];
-    nd.set([g.X[i], g.Y[i], D(i), te, t0, g.tImp[i], i, g.kind[i], g.own[i], 0, 0, 0], i * 12);
+    nd.set([g.X[i], g.Y[i], D(i), te, t0, g.tImp[i], i, g.kind[i], g.own[i], g.onNode?.[i] ? 1 : 0, 0, 0], i * 12);
   }
   fillVbo('node', nd, g.N);
 }
 // The path comes from the search; new segments flash once.
+// Path edges and nodes are marked, so the rest can recede.
 function route() {
   const g = web, old = pathBirth, next = new Map();
   path = g.pathList || [];
+  g.onPath = new Uint8Array(g.E);
+  g.onNode = new Uint8Array(g.N);
+  for (let k = 0; k < path.length; k++) {
+    const a = path[k], b = path[k + 1];
+    g.onNode[a] = 1;
+    if (b === undefined) continue;
+    for (let j = g.row[a]; j < g.row[a + 1]; j++) if (g.nb[j] === b) g.onPath[g.ne[j]] = 1;
+  }
+  upload();
   if (path.length < 2) { pathLen = 0; fillVbo('path', new Float32Array(0), 0); return; }
   const pd = new Float32Array((path.length - 1) * 8);
   let cum = 0;
@@ -1367,7 +1381,6 @@ function replay() {
   W = 0;
   lockT = -1;
   pathBirth = new Map();
-  upload();
   route();
   checkLock();
   marks();
@@ -1376,18 +1389,19 @@ function replay() {
 function settle() {
   search(algo, src, tgt);
   W = web.maxD + TAIL;
-  upload();
   route();
   checkLock(true);
   marks();
 }
-// The destination moves; Dijkstra reads the finished field, others search again.
-function aim(i, flash) {
-  if (algo === 'districts' || i < 0 || i === tgt || i === src) return;
+// A dragged destination drops its path; the search replays on release.
+function carry(i) {
+  if (i < 0 || i === tgt || i === src) return;
   pin('tgt', i);
-  if (algo === 'dijkstra') { pathFor(tgt); route(); checkLock(!flash); marks(); }
-  else if (W >= web.maxD + TAIL) settle();
-  else { const w0 = W; search(algo, src, tgt); W = w0; upload(); route(); checkLock(!flash); marks(); }
+  web.pathList = null;
+  web.lockAt = Infinity;
+  lockT = -1;
+  route();
+  marks();
 }
 // The path locks the moment the light reaches it; a quiet lock skips the flash.
 function checkLock(quiet = false) {
@@ -1505,6 +1519,14 @@ function common(q) {
   gl.uniform1f(q.u.uStyle, look.i);
   if (q.u.uCold) gl.uniform3fv(q.u.uCold, COLD);
   if (q.u.uOwn) gl.uniform3fv(q.u.uOwn, OWN);
+  if (q.u.uRecede) gl.uniform1f(q.u.uRecede, recede());
+}
+// The rest recedes over 3.5 s, from 0.8 s after the path locks.
+const RECEDE = 3.5;
+function recede() {
+  if (lockT < 0 || algo === 'districts') return 0;
+  const k = clamp((simT - lockT - 0.8) / RECEDE);
+  return k * k * (3 - 2 * k);
 }
 // Five district hues, muted, spaced round the wheel.
 const OWN = new Float32Array([[0.8, 0.09, 75], [0.78, 0.08, 195], [0.74, 0.1, 15], [0.76, 0.08, 290], [0.8, 0.09, 140]]
@@ -1697,7 +1719,7 @@ function wake() {
   if (!raf && visible && P && started) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 // Lively while the front runs or a drag is live; drifting while the path pulses.
-const lively = () => !done() || drag || (lockT >= 0 && simT - lockT < 1.2);
+const lively = () => !done() || drag || (lockT >= 0 && simT - lockT < 0.8 + RECEDE);
 const busy = (now = performance.now()) => visible && (lively() || now - inputAt < 60000);
 function frame(now) {
   raf = 0;
@@ -1772,7 +1794,7 @@ function move(e) {
     const k = +ptr.mode.slice(1), i = nearest(x, y);
     if (i >= 0 && !srcs.includes(i)) { srcs[k] = i; setSrcs(srcs); settle(); }
   } else if (ptr.mode === 'src') { const i = nearest(x, y); if (i >= 0 && i !== src && i !== tgt) { pin('src', i); settle(); } }
-  else if (ptr.mode === 'tgt') aim(nearest(x, y), false);
+  else if (ptr.mode === 'tgt') carry(nearest(x, y));
   else if (ptr.mode === 'wall') {
     // Steps along the stroke, so a fast drag leaves no gaps.
     const n = Math.max(1, Math.ceil(Math.hypot(x - ptr.lx, y - ptr.ly) / 6));
@@ -1801,7 +1823,7 @@ function up(e) {
   }
   // A tap moves the source and plays the search again.
   else if (tap) { const i = nearest(x0, y0); if (i >= 0 && i !== tgt) { pin('src', i); replay(); } }
-  else if (m === 'src' || m === 'wall') replay();
+  else if (m === 'src' || m === 'tgt' || m === 'wall') replay();
   live();
 }
 // A long press must not open the context menu.
