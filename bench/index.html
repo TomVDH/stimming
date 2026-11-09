@@ -56,7 +56,7 @@
 }
 </script>
 <script type="module">
-import { initPage, keyWord, whenVisible, fitCanvas, onQuality, oklchLinear, reduced } from '../shared/stim.js';
+import { initPage, keyWord, whenVisible, fitCanvas, onQuality, oklchLinear, reduced, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -793,7 +793,7 @@ function electroStep(dt) {
     for (const s of sites) {
       // The cathode makes twice the gas: two volumes of hydrogen to one of oxygen.
       s.ph += dt * I * per * s.rate * (s.rod === 1 ? 2 : 1);
-      while (s.ph >= 1) { s.ph -= 1; if (bubbles.length < MAXB) spawn(s); }
+      while (s.ph >= 1) { s.ph -= 1; if (bubbles.length < MAXB) { spawn(s); fizz[s.rod]++; } }
     }
     // Acid and base form at the rods; their sum cancels on its own.
     const h = (level - ROD_B) / 3;
@@ -811,7 +811,7 @@ function electroStep(dt) {
     b.w += b.f * dt;
     b.r = b.r0 * (1 + 0.6 * (b.y - b.y0));
     b.x = b.x0 + Math.sin(b.w) * b.a * wob;
-    if (b.y > level - b.r * 0.5) { bubbles.splice(i, 1); continue; }
+    if (b.y > level - b.r * 0.5) { pops.push([b.rod, b.r]); bubbles.splice(i, 1); continue; }
     const k = b.rod * 3 + clamp(Math.floor((b.y - ROD_B) / h), 0, 2);
     band[k]++;
     bandX[k] += b.x;
@@ -857,11 +857,181 @@ function seedRainbow() {
   bubbles.length = 0;
 }
 
+/* ---------- sound ---------- */
+// Plain Web Audio on the kit's context: mute, gesture start and sleep come with it.
+const kit = audioKit({ keys: new Set([' ', 's', 'S', 'r', 'R']) });
+const jit = (k = 0.06) => 1 + (Math.random() * 2 - 1) * k;
+const pans = [];
+// Each rod has its own place in the stereo field.
+function panTo(ac, x) {
+  const p = ac.createStereoPanner();
+  p.pan.value = clamp(x, -1, 1);
+  p.connect(kit.out);
+  return p;
+}
+function rodBus(ac, i) { return (pans[i] ||= panTo(ac, i ? 0.4 : -0.4)); }
+const sfx = {
+  // Fizz: a tick of high noise as a bubble leaves its site.
+  click(rod, t) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = kit.noise;
+    f.type = 'highpass';
+    f.frequency.value = 3800 * jit(0.3);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.03 * jit(0.5), t + 0.0008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.006 * jit(0.3));
+    src.connect(f).connect(g).connect(rodBus(ac, rod));
+    src.start(t, Math.random() * 0.9, 0.012);
+  },
+  // A pop chirps up; small bubbles ring higher.
+  pop(rod, r, t) {
+    const ac = kit.live();
+    if (!ac) return;
+    const o = ac.createOscillator(), g = ac.createGain(), f0 = clamp(13 / r, 700, 3800) * jit(0.12);
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 1.7, t + 0.03);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.03 * jit(0.4), t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+    o.connect(g).connect(rodBus(ac, rod));
+    o.start(t);
+    o.stop(t + 0.05);
+  },
+  // A glass rod strikes the beaker: three inharmonic partials.
+  clink(x = 0) {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.005, f = 2600 * jit(0.18), out = panTo(ac, x * 0.6);
+    [[1, 0.045, 0.32], [2.76, 0.02, 0.16], [5.4, 0.01, 0.08]].forEach(([k, a, d]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = f * k * jit(0.01);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(a * jit(0.3), t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d * jit(0.2));
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + d + 0.05);
+    });
+  },
+  // The snap: a soft low whomp and one glassy chime.
+  snap() {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.01, o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(64 * jit(0.05), t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.7);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.32, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+    o.connect(g).connect(kit.out);
+    o.start(t);
+    o.stop(t + 1.2);
+    const c = 1568 * jit(0.03);
+    [[1, 0.05, 2.6], [2.76, 0.018, 1.2], [4.1, 0.008, 0.6]].forEach(([k, a, d]) => {
+      const p = ac.createOscillator(), h = ac.createGain();
+      p.frequency.value = c * k;
+      h.gain.setValueAtTime(0.0001, t + 0.04);
+      h.gain.linearRampToValueAtTime(a, t + 0.045);
+      h.gain.exponentialRampToValueAtTime(0.0001, t + 0.04 + d);
+      p.connect(h).connect(kit.out);
+      p.start(t + 0.04);
+      p.stop(t + d + 0.1);
+    });
+  },
+};
+// Two held voices: the supply's hum and the pour.
+let hum = null, pourV = null;
+function humTo(level) {
+  const ac = kit.live();
+  if (!ac || (!hum && level <= 0)) return;
+  if (!hum) {
+    const g = ac.createGain();
+    g.gain.value = 0;
+    g.connect(kit.out);
+    const o = [[100, 1], [200, 0.35], [300, 0.12]].map(([f, a]) => {
+      const x = ac.createOscillator(), y = ac.createGain();
+      x.frequency.value = f;
+      y.gain.value = a;
+      x.connect(y).connect(g);
+      x.start();
+      return x;
+    });
+    hum = { g, o, level: 0 };
+  }
+  if (Math.abs(level - hum.level) < 0.01 && level > 0) return;
+  hum.level = level;
+  hum.g.gain.setTargetAtTime(level * 0.05, ac.currentTime, 0.06);
+  if (level <= 0) {
+    const h = hum;
+    hum = null;
+    h.o.forEach(x => x.stop(ac.currentTime + 0.4));
+  }
+}
+// The pour: bandpassed noise with a wandering gurgle, panned with the stream.
+function pourTo(on, x = 0) {
+  const ac = kit.live();
+  if (!ac || (!pourV && !on)) return;
+  if (!pourV && on) {
+    const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
+    src.buffer = kit.noise;
+    src.loop = true;
+    bp.type = 'bandpass';
+    bp.frequency.value = 650;
+    bp.Q.value = 1.6;
+    lfo.frequency.value = 7;
+    depth.gain.value = 260;
+    lfo.connect(depth).connect(bp.frequency);
+    const pan = panTo(ac, x * 0.6);
+    g.gain.value = 0;
+    src.connect(bp).connect(g).connect(pan);
+    src.start();
+    lfo.start();
+    g.gain.setTargetAtTime(0.16, ac.currentTime, 0.04);
+    pourV = { src, lfo, g, pan };
+  }
+  if (!pourV) return;
+  if (on) {
+    pourV.pan.pan.setTargetAtTime(x * 0.6, ac.currentTime, 0.05);
+    if (Math.random() < 0.08) pourV.lfo.frequency.setTargetAtTime(5 + Math.random() * 6, ac.currentTime, 0.1);
+    return;
+  }
+  const v = pourV;
+  pourV = null;
+  v.g.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+  v.src.stop(ac.currentTime + 0.3);
+  v.lfo.stop(ac.currentTime + 0.3);
+}
+// Held voices stop on mute and on a hidden tab.
+function hushLoops() {
+  const ac = kit.ac;
+  if (hum && ac) { hum.o.forEach(x => x.stop()); hum = null; }
+  if (pourV && ac) { pourV.src.stop(); pourV.lfo.stop(); pourV = null; }
+}
+sound.onChange(on => { if (!on) hushLoops(); });
+// Per frame: fizz and pops spread across the frame, so no tick lands on the grid.
+const fizz = [0, 0], pops = [];
+function soundFrame(dt) {
+  const ac = kit.live();
+  humTo(amps());
+  pourTo(pourOn(), pourU());
+  if (ac) {
+    const t0 = ac.currentTime + 0.01;
+    fizz.forEach((n, rod) => {
+      for (let i = 0; i < Math.min(n, 5); i++) sfx.click(rod, t0 + Math.random() * dt);
+    });
+    pops.slice(0, 4).forEach(([rod, r]) => sfx.pop(rod, r, t0 + Math.random() * dt));
+  }
+  fizz[0] = fizz[1] = 0;
+  pops.length = 0;
+}
+
 /* ---------- clock ---------- */
 // Liquid A fills 45 %; pouring B raises the level to 85 % at most.
 const CLK = { A: 0.45, MAX: 0.85, RATE: 0.075 };
 const delay = () => 4 + 16 * EXP.clock.value;
-let pouring = false, splashUntil = 0, pourX = TA / 2, pEst = 0, snapped = false;
+let pouring = false, splashUntil = 0, pourX = TA / 2, pEst = 0, pFront = 0, snapped = false;
 const pourOn = () => mode === 'clock' && (pouring || performance.now() < splashUntil) && level < CLK.MAX;
 const pourU = () => (pourX / TA) * 2 - 1;
 function aimPour(cx, cy) {
@@ -879,11 +1049,13 @@ function clockStep(dt) {
   // A well-mixed estimate of progress keeps the loop awake through the snap.
   const mb = (level - CLK.A) / level;
   pEst += dt * 4 * mb * (1 - mb) / delay();
-  if (!snapped && pEst >= 1) snapped = true;
+  // An even mix somewhere snaps first: one delay after the pour begins.
+  if (mb > 0) pFront += dt / delay();
+  if (!snapped && pFront >= 1) { snapped = true; sfx.snap(); }
 }
 
 /* ---------- frame loop ---------- */
-let raf = 0, last = 0, visible = true, liveUntil = 0, stirT = -1;
+let raf = 0, last = 0, visible = true, liveUntil = 0, stirT = -1, stirHalf = 0, clinkAt = 0;
 const live = (ms = 5000) => { liveUntil = Math.max(liveUntil, performance.now() + ms); wake(); };
 function wake() {
   if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
@@ -900,8 +1072,10 @@ function frame(now) {
     simStep(reduced() ? dt * 0.8 : dt);
     beaker();
     drawBubbles();
+    soundFrame(dt);
   } finally {
     if (busy(now)) raf = requestAnimationFrame(frame);
+    else { humTo(0); pourTo(false); kit.rest(() => !raf && !hum && !pourV); }
   }
 }
 // The loop sleeps once the current is off, the bubbles are gone and the flow settles.
@@ -917,6 +1091,9 @@ function stirStep(dt) {
   const k = reduced() ? 0.5 : 1, a = stirT * TAU * 1.4;
   const cx = TA / 2 + Math.cos(a) * TA * 0.24, cy = level * 0.5 + Math.sin(a) * level * 0.26;
   splat(cx, cy, -Math.sin(a) * 1.4 * k, Math.cos(a) * 1.4 * k * 0.9, 0.09);
+  // The rod meets the glass twice a lap.
+  const half = Math.floor(a / Math.PI);
+  if (half !== stirHalf) { stirHalf = half; sfx.clink(Math.cos(a)); }
   if (stirT > 1) stirT = -1;
 }
 
@@ -945,6 +1122,9 @@ function move(e) {
     const m = Math.hypot(vx, vy), cap = 2.5;
     if (m > cap) { vx *= cap / m; vy *= cap / m; }
     if (b.y < level) splat(b.x, b.y, vx * 0.6 * k, vy * 0.6 * k, 0.06);
+    // A fast stroke near the wall clinks the glass.
+    const wall = Math.min(b.x, TA - b.x) < TA * 0.1;
+    if (wall && b.y < level && Math.hypot(vx, vy) > 0.8 && now - clinkAt > 140) { clinkAt = now; sfx.clink((b.x / TA) * 2 - 1); }
     live();
   }
   if (ptr.mode === 'hold') aimPour(e.clientX, e.clientY);
@@ -980,7 +1160,7 @@ function resetBeaker(rainbow = false) {
   stirT = -1;
   power = pouring = false;
   pulseUntil = splashUntil = 0;
-  pEst = 0;
+  pEst = pFront = 0;
   snapped = false;
   stage.classList.remove('full');
   level = EXP[mode].level;
@@ -1000,7 +1180,7 @@ act.mode = v => {
   relabel();
   resetBeaker(true);
 };
-act.stir = () => { stirT = 0; live(); };
+act.stir = () => { stirT = 0; stirHalf = -1; live(); };
 act.reset = () => resetBeaker();
 act.indicator = v => { if (!P) { indicator = v; return; } setIndicator(v); still(); };
 
@@ -1045,7 +1225,7 @@ onQuality(() => { layout(); still(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; hushLoops(); kit.rest(() => true); return; }
   if (busy()) wake(); else still();
 });
 </script>
