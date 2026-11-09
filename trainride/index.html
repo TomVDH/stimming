@@ -354,6 +354,12 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float dx = position.z;
     vec3 w = vec3((floor(uCamX / dx) + position.x) * dx, 0.0, position.y);
     w.y = land(w.xz);
+    // Far rows sit up to 30 m apart; a cliff between two rows would show as teeth.
+    // Five taps over the row's footprint turn that step into an even slope.
+    if (dx > 6.0) {
+      float a = dx * 0.5, b = dx * 0.9;
+      w.y = w.y * 0.4 + 0.15 * (land(w.xz + vec2(a, 0.0)) + land(w.xz - vec2(a, 0.0)) + land(w.xz + vec2(0.0, b)) + land(w.xz - vec2(0.0, b)));
+    }
     float e = max(dx * 0.5, 1.0);
     vN = normalize(vec3(w.y - land(w.xz + vec2(e, 0.0)), e, w.y - land(w.xz + vec2(0.0, e))));
     // By day a short march toward the sun gives soft terrain shadows.
@@ -383,7 +389,14 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     vec3 sg = seg(vP.x);
     // Height above the lakes, near enough.
     float hh = vP.y + 20.0;
+    // Far triangles are wide; their interpolated normals give rock patches triangle edges.
+    // Past 600 m the normal comes from the height map at this pixel instead.
     vec3 N = normalize(vN);
+    if (dist > 600.0) {
+      float e = clamp(dist * 0.004, 2.0, 40.0), h0 = landO(vP.xz, 4);
+      vec3 Nf = normalize(vec3(h0 - landO(vP.xz + vec2(e, 0.0), 4), e, h0 - landO(vP.xz + vec2(0.0, e), 4)));
+      N = normalize(mix(N, Nf, smoothstep(600.0, 1200.0, dist)));
+    }
     // Close land gets fine relief from noise.
     float near = smoothstep(1400.0, 250.0, dist);
     if (near > 0.0) N = normalize(N + vec3(gnoise(vP.xz * 0.07), 0.0, gnoise(vP.xz * 0.07 + 9.0)) * 0.5 * near);
@@ -474,7 +487,8 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       c += alb * pool * (1.0 - uDay);
     }
     // Water: rippled on the river, calm on the lakes.
-    float water = smoothstep(2.0, -2.0, wd);
+    // Lakes are flat; the coarse lake mask must not paint water up a cliff.
+    float water = smoothstep(2.0, -2.0, wd) * smoothstep(0.985, 0.997, normalize(vN).y);
     if (water > 0.0) {
       // Waves: four octaves of gradient noise, each faded by its own footprint, so none aliases.
       // Far water keeps only the long swell; the fine chop shows close in.
@@ -1487,6 +1501,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       grRuns(pr, uRunM, uFlow, uRain, 1.0 + uSpeed / 18.0, Ls, off, rim, spec, cover, clear);
       off /= 0.45;
       float fog = grFog(p, uFog, dg, uPatch);
+      // The deep frame shades the glass right next to it.
+      float contact = smoothstep(-0.035, 0.0, dg);
       fog = clamp(fog * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
       // Close to the glass, each drop covers more of the view.
       vec2 uv = px + off / vec2(asp, 1.0) / uEye.z;
@@ -1497,6 +1513,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       col = mix(sharp, blur, smoothstep(0.05, 0.55, fog));
       // Train glass is faintly green and passes about four fifths of the light.
       col *= vec3(0.8, 0.84, 0.81);
+      col *= 1.0 - 0.45 * contact;
       // Fog scatters light into a milky veil, warm from the room.
       // The carriage reflects in the pane; R points back into the cabin.
       vec3 V = normalize(dir);
@@ -1589,9 +1606,11 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         night *= 0.55 + 0.45 * exp(-pow((h2.x) * 0.9, 2.0));
         // The rounded outer edge of the lining catches a soft line of light.
         night *= 1.0 + 0.35 * smoothstep(0.12, 0.0, f);
+        night *= 1.0 - 0.45 * smoothstep(0.2, 1.0, f);
         // Day: light through the glass; the reveal brightens toward it.
         // Day: a dim cabin; the faces that look away from the sun take it directly.
-        vec3 day = vec3(1.0, 0.97, 0.92) * 0.06 * (0.5 + 0.7 * f);
+        // The recess: cabin light reaches the lip, and the depth falls into shade.
+        vec3 day = vec3(1.0, 0.97, 0.92) * 0.07 * (1.0 - 0.6 * smoothstep(0.0, 0.9, f));
         // True shadow: from this point, step toward the sun to the glass plane.
         // The point is lit only if that ray passes through the opening.
         vec2 lat = uSunW.xy / max(-uSunW.z, 0.05) * (1.0 - f) * REVEAL / (2.0 * uTan.y);
@@ -1600,6 +1619,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         float face = max(dot(n2, uSunW.xy), 0.0);
         day += vec3(1.0, 0.9, 0.74) * 2.6 * face * through * sunAt(h2.x + uC0.x);
         col = alb * mix(night, day, uDay);
+        // A rounded bevel where the recess turns onto the wall catches a thin line of light.
+        col += alb * mix(vec3(1.0, 0.9, 0.78) * 0.07, vec3(0.12), uDay) * smoothstep(0.05, 0.0, f) * (0.5 + 0.5 * max(n2.y, 0.0));
         // The frame's lower rail catches the ceiling light as a bright line.
         col += al * mix(warm * 0.05, vec3(0.5), uDay) * pow(max(n2.y, 0.0), 6.0) * smoothstep(0.8, 0.95, f);
         col += alb * STNC * uStnK * 0.25 * (0.4 + 0.6 * f);
@@ -1621,9 +1642,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       vec2 lp = (p - vec2(uC0.x, 0.78)) * vec2(0.45, 1.0);
       float pool = 0.22 + 0.95 * exp(-dot(lp, lp) * 2.2);
       vec3 light = mix(vec3(1.0, 0.88, 0.74) * 0.16 * pool, vec3(1.0, 0.98, 0.95) * 0.03 * (0.8 + 0.25 * up), uDay);
-      // By day the window throws a soft glow onto the wall round it; posts flicker through it.
-      float glowW = exp(-max(dW, 0.0) * 30.0);
-      light += vec3(1.0, 0.97, 0.9) * uDay * glowW * (0.04 + 0.3 * sunAt(p.x));
+
       // A groove where the lining meets the wall, and a soft shadow round it.
       alb *= 1.0 - 0.3 * smoothstep(0.005, 0.0, abs(dW - 0.004));
       alb *= 0.9 + 0.1 * smoothstep(0.0, 0.05, dW);

@@ -137,3 +137,5 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Lakes: the elevation tiles held lake beds (to -170 m); tools/lakes.py sets every lake cell, and anything deeper, to one surface 12 m below the eye; no more cliffs into the Walensee near Weesen
 - [x] Field hedges fade out sooner, so they never dash
 - [ ] Far cliff shores still show the coarse far mesh as small teeth
+- [x] Inset: no glow on the wall round the window; the recess darkens toward the glass, a lit bevel at the wall edge, a contact shadow on the glass by the frame
+- [x] Water only on flat ground, so the coarse lake mask never paints a cliff; far land takes per-pixel normals; far vertices filter their height
