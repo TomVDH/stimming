@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:50:29Z
+updated_at: 2026-11-09T08:53:10Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -101,3 +101,10 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Landscape: the plain runs to the horizon; mesas at 5, 12 and 30 km stand on it; 280 flat-crowned acacias line the far shore and dot the plain.
 - Sky: random horizontal wisps on a sheet 7 km up, grey before dawn, pink and gold underlit near sunrise.
 - Bokeh: Aperture, Focus (far left is auto) and Highlights sliders in Settings, after the Bokeh and Texture rows.
+
+## The composed shot (2026-11-09, Tom: an unsuspecting marsh shot; the launch surprises)
+
+- Default framing: a 34-degree lens (54 on tall stages), horizon on the lower third, tall hero reeds framing a gap with a mesa in it.
+- The pad is fixed on the right third, behind the reeds; a tap or Space only starts the launch (tap-to-place is gone).
+- The flash bursts through the reeds; 0.9 s later the operator starts to follow, then pushes in at liftoff.
+- The climb leans east, toward the dawn glow, so the arc crosses the frame right to left.

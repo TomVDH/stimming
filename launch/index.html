@@ -573,9 +573,9 @@ function plantReeds(count) {
     // The near fringe frames the pool: low and thin in the middle, tall at the sides.
     const side = z > -20 ? THREE.MathUtils.smoothstep(Math.abs(x / z), 0.1, 0.34) : 1;
     if (rnd() > 0.3 + 0.7 * side) continue;
-    // A few tall stalks at the sides cross the horizon.
-    const tall = z > -10 && side > 0.8 && rnd() < 0.06;
-    const H = tall ? 4.3 + rnd() * 0.8 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
+    // Hero stalks at the sides rise past the horizon and frame the shot.
+    const tall = z > -13 && side > 0.6 && rnd() < 0.16;
+    const H = tall ? 5.6 + rnd() * 1.2 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
     aI.setXYZW(n, x, z, H, rnd() * Math.PI * 2);
     aJ.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
     n++;
@@ -1032,11 +1032,12 @@ const KINDS = {
 // Seconds after liftoff to real altitude in km; the first seconds hang.
 const altKm = (t, k) => (t <= 0 ? 0 : 0.06 * k.climb * t * t * THREE.MathUtils.smoothstep(t, 0, 2.5));
 const worldY = (h, D) => D * 0.5 * Math.sqrt(Math.max(h, 0) / 120);
-// An orbiter rises straight, then leans over slowly from T+14; it never levels out.
+// An orbiter rises straight, then leans east, toward the dawn, from T+14.
+// It never levels out; the arc crosses the frame from the right third to the glow.
 function rocketAt(f, t, out) {
   const D = f.D, h = altKm(t, f.k);
   const s = Math.pow(THREE.MathUtils.smoothstep(t, 14, 80), 1.4);
-  return out.set(f.x + D * 0.5 * s, 2 + worldY(h, D), f.z - D * 0.1 * s);
+  return out.set(f.x - D * 0.55 * s, 2 + worldY(h, D), f.z - D * 0.3 * s);
 }
 // World metres per real metre at altitude h: the scale of the body and flame.
 const scaleAt = (h, D) => Math.min(1, (worldY(h + 0.02, D) - worldY(h, D)) / 20);
@@ -1417,6 +1418,8 @@ function flyTo(f) {
   FU.uAxis.value.normalize();
   FU.uFlick.value = 0.85 + 0.15 * Math.sin(simT * 53) * Math.sin(simT * 31);
   flame.visible = eng > 0.01;
+  // Nine tenths of a second after the flash, the operator starts to follow.
+  if (te > 0.9 && !f.userFollow && !f.followed) { follow = true; f.followed = true; }
   // Body and flame shrink as the altitude scale compresses.
   const sk = scaleAt(h, D), [bl, bw] = BODY[f.kind];
   body.visible = te < END - 20;
@@ -1493,27 +1496,23 @@ function endFlight() {
   flame.visible = false;
   ui.action('launch').disabled = false;
 }
-// The pad sits on the far shore below a screen x in -1..1.
-function padBelow(ndcX) {
-  const D = DIST.mid;
-  camera.updateMatrixWorld();
-  tmpA.set(ndcX, 0, 0.5).unproject(camera).sub(camera.position).normalize();
-  // Cast along the ground plane only; the pitch does not move the pad.
-  const dx = tmpA.x / Math.max(1e-3, -tmpA.z);
-  return THREE.MathUtils.clamp(dx * D, -D * 0.8, D * 0.8);
+// The pad stands where the shot puts it: small, on the right third, easy to miss.
+function padX() {
+  const portrait = size.w < size.h;
+  const tanH = Math.tan(THREE.MathUtils.degToRad((portrait ? 54 : 34) / 2)) * size.w / size.h;
+  return DIST.mid * (portrait ? 0.24 : 0.34) * tanH;
 }
-function start(ndcX) {
+function start() {
   // Every start is a gesture: it may wake the sound.
   if (sound.on) kit.wake();
-  if (flight) { follow = !follow; wake(); return; }
-  flight = launch(opts.kind, padBelow(ndcX));
-  // A tall stage follows the climb from the start, so the turn stays in frame.
-  follow = size.w < size.h;
+  if (flight) { follow = !follow; flight.userFollow = true; wake(); return; }
+  flight = launch(opts.kind, padX());
+  // The operator is caught out: the camera holds, then turns to the rocket.
+  follow = false;
   ui.action('launch').disabled = true;
   wake();
 }
-// A launch from the button or Space starts left of centre, so the turn stays in frame.
-act.launch = () => start(size.w < size.h ? -0.3 : -0.12);
+act.launch = () => start();
 let follow = false;
 const auto = { pitch: 0, yaw: 0 };
 
@@ -2042,9 +2041,10 @@ const orbList = () => (flight && U.uFlame.value.w > 0.01 ? [{ pos: tmpB.set(U.uF
 // The horizon sits low: the climb needs a tall sky.
 function frame() {
   const portrait = size.w < size.h;
-  const fov = portrait ? 62 : 40;
+  // A longer lens compresses the marsh; the horizon sits on the lower third.
+  const fov = portrait ? 54 : 34;
   camera.aspect = size.w / size.h;
-  const hf = portrait ? 0.78 : 0.7;
+  const hf = portrait ? 0.74 : 0.67;
   // The launch zoom narrows the lens; the horizon holds its place in the frame.
   camera.fov = fov * (flight && !reduced() ? flight.zoom : 1);
   baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
@@ -2207,10 +2207,9 @@ stage.addEventListener('pointermove', e => {
 const end = e => {
   if (!press || e.pointerId !== press.id) return;
   const tap = e.type === 'pointerup' && !press.drag && performance.now() - press.at < 260;
-  const r = stage.getBoundingClientRect(), ndcX = ((press.x - r.left) / r.width) * 2 - 1;
   press = null;
   stage.classList.remove('held');
-  if (tap) start(ndcX);
+  if (tap) start();
   wake();
 };
 stage.addEventListener('pointerup', end);
