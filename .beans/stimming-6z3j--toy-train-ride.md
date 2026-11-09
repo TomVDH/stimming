@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T09:38:00Z
+updated_at: 2026-11-09T09:56:06Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -51,3 +51,10 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Lamp posts redone: steel post, slim head, LED bar, beam in rain; dead and flickering lamps
 - [x] Day look: Swiss valley, blue sky and cumulus, aerial haze, ACES with a punchier grade; T or the Night/Day chips
 - [ ] Check lamps and smear at speed in a live tab (headless stills are static)
+
+## Round 6: Zurich to the Walensee
+- [x] One 36 km loop: Lake Zurich (towns, vineyards, Oberland), the Linth plain and canal, the Walensee under the Churfirsten
+- [x] Lakes at -40 m; the eye lifts under the Churfirsten
+- [x] Lights follow the route: a bright Lake Zurich shore, dark Walensee with Quinten
+- [x] Sky dome follows the camera (it fell away past x = 20 km)
+- [ ] Tom checks the route live at speed

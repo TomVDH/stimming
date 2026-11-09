@@ -124,7 +124,7 @@ const opts = {
   speed: saved('speed') != null ? +saved('speed') : 0.6,
   time: saved('time') || 'night',
 };
-// QA can open a look with ?time= and ?mode=; these are not saved.
+// QA can open a look with ?time=, ?mode= and ?x=; these are not saved.
 const qs = new URLSearchParams(location.search);
 if (qs.get('time')) opts.time = qs.get('time');
 if (qs.get('mode')) opts.mode = qs.get('mode');
@@ -143,12 +143,22 @@ const range = (a, b) => a + (b - a) * rnd();
 const out = new THREE.Scene();
 const outCam = new THREE.PerspectiveCamera(50, 1, 1, 40000);
 const outRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
-const NG = 16, NL = 6, TILE = 9000, LAMP_GAP = 28;
+const NG = 16, NL = 6, TILE = 36000, LAMP_GAP = 28;
 const TAU = Math.PI * 2;
-// The valley path and its lakes repeat every tile, so the lights stay true.
-const valleyZ = x => -620 + 150 * Math.sin(TAU * x / 4500) + 60 * Math.sin(TAU * x / 1800 + 1.3);
-const lakeW = x => 24 + 620 * Math.max(0, Math.sin(TAU * x / TILE + 0.5)) ** 3 + 260 * Math.max(0, Math.sin(TAU * x / 3000 + 2)) ** 4;
-const roadZ = x => valleyZ(x) - lakeW(x) - 140 - 90 * Math.sin(TAU * x / 2250);
+// The route repeats every 36 km: Lake Zurich, the Linth plain, the Walensee.
+// Each weight is 0 to 1; the three always sum to 1.
+const sstep = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
+const seg = x => {
+  const s = ((x % TILE) + TILE) % TILE;
+  const z = 1 - sstep(12000, 15000, s) + sstep(33000, 36000, s);
+  const w = sstep(18500, 21500, s) * (1 - sstep(31000, 33500, s));
+  return { z, l: Math.max(0, 1 - z - w), w };
+};
+// The near shore sits under the line; the far shore lies one lake width out.
+const zN = x => -170 - 40 * Math.sin(TAU * x / 4500) - 25 * Math.sin(TAU * x / 1800 + 1.3);
+const lakeW = x => { const g = seg(x); return g.z * (2600 + 400 * Math.sin(TAU * x / 9000)) + g.w * (1550 + 150 * Math.sin(TAU * x / 6000 + 1)) + g.l * 40; };
+const zF = x => zN(x) - lakeW(x);
+const roadZ = x => zF(x) - 45;
 
 const NOISE = /* glsl */`
 float hash1(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -181,38 +191,70 @@ float ridged(vec2 p, int oct) {
   return s;
 }`;
 
-// The river winds along the valley floor and opens into lakes.
-// Past the far shore rise pastures, wooded ridges, then the high peaks.
+// Lake Zurich has soft hills; the Linth plain meets steep mountains.
+// The Walensee lies under the Churfirsten: a cliff band and sharp summits.
 const LAND = /* glsl */`
-float valleyZ(float x) { return -620.0 + 150.0 * sin(6.2831853 * x / 4500.0) + 60.0 * sin(6.2831853 * x / 1800.0 + 1.3); }
-float lakeW(float x) { return 24.0 + 620.0 * pow(max(sin(6.2831853 * x / 9000.0 + 0.5), 0.0), 3.0) + 260.0 * pow(max(sin(6.2831853 * x / 3000.0 + 2.0), 0.0), 4.0); }
-float roadZ(float x) { return valleyZ(x) - lakeW(x) - 140.0 - 90.0 * sin(6.2831853 * x / 2250.0); }
+const float WL = -40.0;
+vec3 seg(float x) {
+  float s = mod(x, 36000.0);
+  float z = 1.0 - smoothstep(12000.0, 15000.0, s) + smoothstep(33000.0, 36000.0, s);
+  float w = smoothstep(18500.0, 21500.0, s) * (1.0 - smoothstep(31000.0, 33500.0, s));
+  return vec3(z, clamp(1.0 - z - w, 0.0, 1.0), w);
+}
+float zN(float x) { return -170.0 - 40.0 * sin(6.2831853 * x / 4500.0) - 25.0 * sin(6.2831853 * x / 1800.0 + 1.3); }
+float lakeW(float x) { vec3 g = seg(x); return g.x * (2600.0 + 400.0 * sin(6.2831853 * x / 9000.0)) + g.z * (1550.0 + 150.0 * sin(6.2831853 * x / 6000.0 + 1.0)) + g.y * 40.0; }
+float zF(float x) { return zN(x) - lakeW(x); }
+float roadZ(float x) { return zF(x) - 45.0; }
 // Distance outside the water in metres; it is negative on the water.
-float shore(vec2 xz) { float u = xz.y - valleyZ(xz.x); return max(u - 22.0, -u - lakeW(xz.x)); }
-// Height in metres: the floor lies at -130, the viaduct at 0.
+float shore(vec2 xz) { float u = xz.y - zN(xz.x); return max(u, -u - lakeW(xz.x)); }
+// The Churfirsten summits: sharp tops with notches between.
+float teeth(float x) {
+  float t = x / 1150.0, f = fract(t);
+  float top = 0.85 + 0.2 * hash1(vec2(floor(t), 3.0));
+  return 0.7 + (top - 0.7) * (1.0 - pow(abs(f - 0.5) * 2.0, 0.75));
+}
+// Height in metres: the lakes lie at -40, the line at 0.
 // oct sets the peak detail; ray marches use fewer octaves.
 float landO(vec2 xz, int oct) {
-  float u = xz.y - valleyZ(xz.x), lw = lakeW(xz.x);
-  float h = -128.0;
-  // Near side: one steep wooded slope up to just under the viaduct.
-  h += 108.0 * smoothstep(40.0, 470.0, u);
+  vec3 g = seg(xz.x);
+  float lw = lakeW(xz.x), u = xz.y - zN(xz.x);
+  // Near side: the bank climbs to just under the line.
+  float h = WL + 1.5 + 30.0 * smoothstep(15.0, 140.0, u);
   // v is the distance past the far shore.
   float v = max(-u - lw, 0.0);
-  h += 150.0 * smoothstep(100.0, 1400.0, v) * (0.4 + fbm(xz * 0.0011));
-  float amp = 120.0 + 1900.0 * pow(smoothstep(500.0, 13000.0, v), 1.15);
-  h += amp * ridged(xz * 0.00028 + vec2(0.0, 3.0), oct) * smoothstep(0.0, 900.0, v);
-  h += 350.0 * smoothstep(4000.0, 11000.0, v);
-  float wd = max(u - 22.0, -u - lw);
-  h += gnoise(xz * 0.006) * 16.0 * smoothstep(10.0, 140.0, wd);
-  // The water bed lies flat, just under the floor.
-  return mix(h, -131.5, smoothstep(12.0, -3.0, wd));
+  float r = ridged(xz * 0.00035 + vec2(0.0, 3.0), oct);
+  if (g.x > 0.001) {
+    float hz = 430.0 * pow(smoothstep(0.0, 2800.0, v), 0.8) * (0.7 + 0.6 * fbm(xz * 0.0007));
+    hz += 110.0 * r * smoothstep(400.0, 2500.0, v) - 120.0 * smoothstep(3500.0, 7000.0, v);
+    hz += 650.0 * smoothstep(9000.0, 15000.0, v) * (0.5 + 0.7 * r);
+    h += g.x * hz;
+  }
+  if (g.y > 0.001) {
+    float hl = 1450.0 * pow(smoothstep(1800.0, 5200.0, v), 1.2) * (0.35 + 0.9 * r);
+    hl += 1300.0 * smoothstep(7000.0, 13000.0, v) * r;
+    h += g.y * hl;
+  }
+  if (g.z > 0.001) {
+    // Each step rises at a steeper angle than the last, so the summits make the skyline.
+    // The cliff band wanders up and down the wall.
+    float cb = 260.0 * gnoise(vec2(xz.x * 0.0012, 4.0)) + 110.0 * gnoise(vec2(xz.x * 0.005, 9.0));
+    float hw = (380.0 + cb * 0.6) * smoothstep(0.0, 700.0 + cb, v) + 300.0 * smoothstep(650.0 + cb, 900.0 + cb, v);
+    hw += 620.0 * smoothstep(900.0 + cb, 2600.0, v) * teeth(xz.x);
+    hw -= 800.0 * smoothstep(2800.0, 4800.0, v);
+    hw += 70.0 * (r - 0.4) * smoothstep(100.0, 700.0, v);
+    h += g.z * hw;
+  }
+  float wd = max(u, -u - lw);
+  h += gnoise(xz * 0.006) * 12.0 * smoothstep(10.0, 140.0, wd);
+  // The lake bed lies flat, just under the water.
+  return mix(h, WL - 1.5, smoothstep(12.0, -3.0, wd));
 }
 float land(vec2 xz) { return landO(xz, 7); }`;
 
 const OUTU = {
   uTime: { value: 0 },
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
-  uSun: { value: new THREE.Vector3(-0.72, 0.5, 0.2).normalize() },
+  uSun: { value: new THREE.Vector3(-0.55, 0.5, 0.67).normalize() },
   uDay: { value: 0 },
   uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
   uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
@@ -250,13 +292,13 @@ vec3 skyCol(vec3 d) {
 }
 float hazeAmt(vec3 P) {
   float dist = length(P - cameraPosition);
-  // Night: valley haze with a 90 m scale height, and mist on the floor.
-  float k = 1.0 / 90.0, h0 = cameraPosition.y + 140.0, h1 = max(P.y + 140.0, 0.0), dh = h1 - h0;
+  // Night: valley haze with a 90 m scale height, and mist on the water.
+  float k = 1.0 / 90.0, h0 = cameraPosition.y + 50.0, h1 = max(P.y + 50.0, 0.0), dh = h1 - h0;
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
-  float mist = smoothstep(-70.0, -125.0, P.y) * smoothstep(100.0, 500.0, dist) * 0.1;
+  float mist = smoothstep(0.0, -38.0, P.y) * smoothstep(100.0, 500.0, dist) * 0.1;
   float night = clamp(1.0 - exp(-dist * 0.0004 * avg - dist * (0.00001 + 0.00003 * uRain)) + mist, 0.0, 1.0);
   // Day: thin blue air with a 1.5 km scale height; rain thickens it.
-  float kd = 1.0 / 1500.0, g0 = cameraPosition.y + 130.0, g1 = max(P.y + 130.0, 0.0), dg = g1 - g0;
+  float kd = 1.0 / 1500.0, g0 = cameraPosition.y + 40.0, g1 = max(P.y + 40.0, 0.0), dg = g1 - g0;
   float avd = abs(dg) < 1.0 ? exp(-g0 * kd) : (exp(-g0 * kd) - exp(-g1 * kd)) / (dg * kd);
   float day = 1.0 - exp(-dist * (0.00005 + 0.00016 * uRain) * avd);
   return mix(night, day, uDay);
@@ -271,7 +313,8 @@ vec3 hazeCol(vec3 d, vec3 P) {
 }`;
 
 /* Sky dome: stars and moonlit cloud by night, cumulus by day. */
-{
+// The dome follows the camera, so a long ride never leaves it.
+const sky = (() => {
   const m = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), new THREE.ShaderMaterial({
     uniforms: OUTU, side: THREE.BackSide, depthWrite: false,
     vertexShader: /* glsl */`varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
@@ -318,7 +361,8 @@ vec3 hazeCol(vec3 d, vec3 P) {
   m.renderOrder = -1;
   m.frustumCulled = false;
   out.add(m);
-}
+  return m;
+})();
 
 /* Terrain: rows widen and thin with distance, out to 18 km. */
 // Each row snaps to its own spacing, so the land never swims.
@@ -382,8 +426,10 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   void main() {
     vec3 V = normalize(cameraPosition - vP);
     float dist = length(cameraPosition - vP);
-    float wd = shore(vP.xz), u = vP.z - valleyZ(vP.x);
-    float hh = vP.y + 130.0;
+    float wd = shore(vP.xz), u = vP.z - zN(vP.x);
+    float vd = max(-u - lakeW(vP.x), 0.0);
+    vec3 sg = seg(vP.x);
+    float hh = vP.y + 40.0;
     vec3 N = normalize(vN);
     // Close land gets fine relief from noise.
     float near = smoothstep(1400.0, 250.0, dist);
@@ -392,7 +438,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float n1 = fbm(vP.xz * 0.002);
     // Meadow: lush in the valley, browner up high.
     vec3 alb = mix(vec3(0.07, 0.15, 0.03), vec3(0.13, 0.16, 0.045), fbm(vP.xz * 0.0017 + 3.0));
-    alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(900.0, 1400.0, hh + (n1 - 0.5) * 300.0));
+    alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
     // Grass texture close by; it fades before it can shimmer.
     float grain = vnoise(vP.xz * 0.9) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.9))));
     alb *= (0.8 + 0.4 * vnoise(vP.xz * 0.05)) * (0.85 + 0.3 * grain);
@@ -406,8 +452,16 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       vec3 fc = fh < 0.6 ? alb * (0.75 + 0.6 * fh) : fh < 0.8 ? vec3(0.1, 0.19, 0.035) : fh < 0.93 ? vec3(0.16, 0.15, 0.06) : vec3(0.09, 0.07, 0.045);
       alb = mix(alb, fc, flatL * 0.6);
     }
-    // Villages: chalet roofs, each with a pale wall toward the train.
-    float vm = 0.0, house = 0.0;
+    // Vineyards on the sunny slopes above Lake Zurich.
+    float vine = sg.x * smoothstep(0.06, 0.12, slope) * smoothstep(0.45, 0.3, slope) * smoothstep(400.0, 150.0, hh) * step(12.0, hh) * smoothstep(0.15, 0.4, N.z);
+    vine *= step(0.72, hash1(floor(vP.xz / vec2(55.0, 30.0) + vec2(floor(vP.z / 30.0) * 0.41, 0.0)) + 11.0)) * step(3.0, wd);
+    if (vine > 0.0) {
+      float row = abs(fract(vP.x / 2.2) - 0.5) * 2.0 * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x / 2.2)));
+      alb = mix(alb, mix(vec3(0.09, 0.125, 0.035), vec3(0.12, 0.1, 0.065), 0.4 + row * 0.4), vine);
+    }
+    // Towns: one long string on the Lake Zurich shore, villages elsewhere.
+    // Each roof has a pale wall toward the train.
+    float vm = sg.x * step(1.0, vd) * (0.6 * smoothstep(800.0, 60.0, vd) + 0.15 * smoothstep(3200.0, 800.0, vd)), house = 0.0;
     for (int i = 0; i < ${NG}; i++) vm = max(vm, smoothstep(170.0, 50.0, length(vP.xz - uGP[i].xz)));
     if (vm > 0.0 && wd > 6.0) {
       vec2 g = vP.xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
@@ -418,19 +472,28 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       }
     }
     // Forest: patches on the slopes, thick on the near bank, none above the treeline.
-    float fm = fbm(vP.xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3;
-    float forest = max(smoothstep(0.52, 0.58, fm), smoothstep(90.0, 170.0, u) * 0.92);
-    forest *= smoothstep(1250.0, 1000.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * step(3.0, wd);
+    // A fine noise frays the edges of each wood.
+    float fm = fbm(vP.xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3 + (vnoise(vP.xz * 0.04) - 0.5) * 0.1;
+    float forest = max(smoothstep(0.5, 0.6, fm), smoothstep(25.0, 80.0, u) * 0.85);
+    forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
     // Crowns show up close; the pattern fades before it can shimmer.
     float crown = vnoise(vP.xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.45))));
-    alb = mix(alb, vec3(0.012, 0.028, 0.012) * (0.6 + 0.8 * crown), forest);
+    // Dark spruce mixes with brighter beech.
+    vec3 wood = mix(vec3(0.012, 0.028, 0.012), vec3(0.03, 0.055, 0.018), smoothstep(0.35, 0.65, fbm(vP.xz * 0.003 + 7.0)));
+    alb = mix(alb, wood * (0.6 + 0.8 * crown), forest);
     // Rock on steep faces and high crags; snow above the snow line.
-    float rock = max(smoothstep(0.4, 0.6, slope), smoothstep(1500.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
-    alb = mix(alb, vec3(0.11, 0.105, 0.1) * (0.75 + 0.5 * vnoise(vec2(vP.x * 0.01, vP.y * 0.08))), rock);
-    float snow = smoothstep(1650.0, 1900.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
+    float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
+    // Limestone: pale grey with bedding lines and dark water streaks.
+    float strata = vnoise(vec2(vP.x * 0.004, vP.y * 0.12));
+    float streak = vnoise(vec2(vP.x * 0.05, vP.y * 0.01)) * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x * 0.12)));
+    vec3 lime = mix(vec3(0.11, 0.105, 0.1), vec3(0.2, 0.19, 0.17), sg.z) * (0.75 + 0.35 * strata) * (0.8 + 0.3 * streak);
+    alb = mix(alb, lime, rock);
+    // Spring snow lingers near the summits.
+    float sl = mix(1450.0, 1080.0, sg.z);
+    float snow = smoothstep(sl, sl + 200.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
     alb = mix(alb, vec3(0.85, 0.88, 0.93), snow);
-    // A road runs along the far shore.
-    alb = mix(alb, vec3(0.1), smoothstep(5.0, 3.0, abs(vP.z - roadZ(vP.x))) * (1.0 - house) * smoothstep(6000.0, 1500.0, dist));
+    // A road runs along the far shore, but not under the Churfirsten.
+    alb = mix(alb, vec3(0.1), smoothstep(5.0, 3.0, abs(vP.z - roadZ(vP.x))) * (1.0 - house) * (1.0 - sg.z) * smoothstep(6000.0, 1500.0, dist));
     // Day: sun with soft terrain shadows, and sky light.
     vec3 day = sunC() * max(dot(N, uSun), 0.0) * mix(vSh, 1.0, uRain * 0.7) + skyA(N.y);
     // Night: the moon behind the peaks, and a faint sky.
@@ -463,16 +526,17 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
         vec3 q = vP + R * t;
         float hq = landO(q.xz, 3);
         if (hq > q.y) {
-          float qh = hq + 130.0;
+          float qh = hq + 40.0;
           vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
-          a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(1650.0, 1900.0, qh));
+          a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sg.z), mix(1650.0, 1280.0, sg.z), qh));
           vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
           refl = mix(a * lit, hazeCol(R, q), hazeAmt(q));
           break;
         }
         t *= 1.6;
       }
-      vec3 wc = mix(vec3(0.0, 0.003, 0.005), vec3(0.008, 0.045, 0.06), uDay) * (1.0 - F) + refl * max(F, 0.08);
+      // Lake Zurich is blue-green; the Walensee is emerald.
+      vec3 wc = mix(vec3(0.0, 0.003, 0.005), mix(vec3(0.006, 0.035, 0.05), vec3(0.004, 0.055, 0.045), sg.z), uDay) * (1.0 - F) + refl * max(F, 0.08);
       // Lights and the moon lay broken columns on the water at night.
       if (uDay < 0.99) {
         vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
@@ -506,32 +570,39 @@ const glints = [];
 {
   const pos = [], col = [], size = [];
   const SOD = [1.0, 0.55, 0.2], WARM = [1.0, 0.75, 0.45], WHITE = [0.85, 0.92, 1.0];
-  // Villages cluster on the far shore and the lower near slope.
-  for (let v = 0; v < 15; v++) {
-    const cx = (v + rnd() * 0.6) * TILE / 15, far = rnd() < 0.65;
-    const cz = far ? valleyZ(cx) - lakeW(cx) - range(60, 260) - range(0, 500) : valleyZ(cx) + range(60, 220);
-    const n = 30 + (rnd() * 60 | 0);
-    for (let k = 0; k < n; k++) {
-      const x = cx + range(-160, 160) * Math.sqrt(rnd()), z = cz + range(-90, 90) * Math.sqrt(rnd());
-      const c = rnd() < 0.6 ? WARM : rnd() < 0.7 ? SOD : WHITE;
-      pos.push(x, 3 + rnd() * 6, z); col.push(...c.map(q => q * range(1.6, 3.4))); size.push(range(30, 60));
-    }
-    glints.push({ x: cx, z: cz, col: WARM, k: range(0.7, 1.3) });
+  const light = (x, z, c, k, sz) => { pos.push(x, 3 + rnd() * 6, z); col.push(...c.map(q => q * k)); size.push(sz); };
+  const pick = () => rnd() < 0.6 ? WARM : rnd() < 0.7 ? SOD : WHITE;
+  // Weighted pick of a point on the route.
+  const along = key => { let x = rnd() * TILE; while (seg(x)[key] < rnd()) x = rnd() * TILE; return x; };
+  // Lake Zurich: the far shore is one long string of towns.
+  for (let k = 0; k < 2600; k++) {
+    const x = along('z');
+    light(x, zF(x) - (rnd() < 0.78 ? range(15, 700) * rnd() : range(700, 3200)), pick(), range(1.4, 3.2), range(24, 50));
   }
-  // A road runs along the far shore with lamps in a line.
-  for (let x = 0; x < TILE; x += 42) { pos.push(x, 4, roadZ(x)); col.push(...SOD.map(q => q * 2.0)); size.push(34); }
-  // Lone farms scatter over the far slopes.
-  for (let k = 0; k < 420; k++) {
-    const x = rnd() * TILE, z = rnd() < 0.85 ? valleyZ(x) - lakeW(x) - range(30, 3400) : valleyZ(x) + range(40, 300);
-    pos.push(x, 4, z); col.push(...WARM.map(q => q * range(1.2, 3.2))); size.push(range(22, 40));
+  for (let x = 0; x < TILE; x += 1500) if (seg(x).z > 0.6) glints.push({ x, z: zF(x) - 150, col: WARM, k: range(0.8, 1.3) });
+  // The Linth plain: four villages and scattered farms.
+  for (const cx of [15800, 17400, 33300, 34600]) {
+    const cz = zF(cx) - range(300, 1800);
+    for (let k = 0; k < 45; k++) light(cx + range(-200, 200) * Math.sqrt(rnd()), cz + range(-120, 120) * Math.sqrt(rnd()), pick(), range(1.6, 3.4), range(30, 55));
+    glints.push({ x: cx, z: cz, col: WARM, k: range(0.7, 1.2) });
   }
-  // Two bridges cross the river where it runs narrow; a negative size marks them.
+  for (let k = 0; k < 160; k++) { const x = along('l'); light(x, zF(x) - range(100, 3000), WARM, range(1.2, 3), range(22, 40)); }
+  // The Walensee: only Quinten and a few farms under the cliffs.
+  {
+    const cx = 25600, cz = zF(cx) - 50;
+    for (let k = 0; k < 30; k++) light(cx + range(-120, 120) * Math.sqrt(rnd()), cz - range(0, 120), WARM, range(1.4, 3), range(26, 46));
+    glints.push({ x: cx, z: cz, col: WARM, k: 0.8 });
+  }
+  for (let k = 0; k < 25; k++) { const x = range(21500, 31000); light(x, zF(x) - range(60, 700), WARM, range(1, 2.4), range(20, 34)); }
+  // The shore road runs along Lake Zurich and the plain, not the Walensee.
+  for (let x = 0; x < TILE; x += 40) if (seg(x).w < 0.5) light(x, roadZ(x), SOD, 2.0, 34);
+  // Two bridges cross the Linth canal; a negative size marks them.
   const narrow = [];
-  for (let x = 0; x < TILE; x += 50) if (lakeW(x) < 25 && narrow.every(b => Math.abs(b - x) > 2500)) narrow.push(x);
-  for (const bx of narrow.slice(0, 2)) for (let k = -6; k <= 6; k++) {
-    const z = valleyZ(bx) + k * 8;
-    pos.push(bx - 6, 8, z, bx + 6, 8, z); col.push(...WHITE.map(q => q * 2.4), ...WHITE.map(q => q * 2.4)); size.push(-36, -36);
-    if (k === 0) glints.push({ x: bx, z, col: WHITE, k: 1.6 });
+  for (let x = 0; x < TILE; x += 50) if (lakeW(x) < 45 && narrow.every(b => Math.abs(b - x) > 2500)) narrow.push(x);
+  for (const bx of narrow.slice(0, 2)) for (let k = 0; k <= 6; k++) {
+    const z = zN(bx) - k * 7;
+    light(bx - 5, z, WHITE, 2.4, -36); light(bx + 5, z, WHITE, 2.4, -36);
+    if (k === 3) glints.push({ x: bx, z, col: WHITE, k: 1.4 });
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -576,7 +647,6 @@ const glints = [];
   p.renderOrder = 2;
   out.add(p);
 }
-glints.slice(0, NG).forEach((g, i) => OUTU.uGC.value[i].set(...g.col, 0));
 
 // The carriage's lit panes throw warm light out onto the rain and the parapet.
 // They fade by day.
@@ -1073,7 +1143,8 @@ function frame(w, h, pr) {
 }
 
 /* ---------- motion ---------- */
-let time = 0, flow = 0, camX = 1203.3, speed = 0, target = 27;
+// QA can start at a point on the route with ?x=.
+let time = 0, flow = 0, camX = +(qs.get('x') || 4203.3), speed = 0, target = 27;
 const MODES = { clear: { rain: 0, fog: 0 }, rain: { rain: 1, fog: 0 }, fogged: { rain: 0.45, fog: 0.85 } };
 let mode = MODES.rain, mk = 0, rainT = 0, dayT = 0, dayV = 0;
 const hashN = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
@@ -1100,8 +1171,11 @@ function place() {
   W.uEye.value.copy(eye);
   // The wall sits 1 m out; the jolt and the roll move only the world outside.
   outCam.position.set(camX + eye.x, eye.y + j * 0.006, eye.z - 1);
-  outCam.rotation.set(-0.08 + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
+  // Under the Churfirsten the eye lifts to the summits.
+  const sg = seg(camX);
+  outCam.rotation.set(-0.08 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
   parapet.position.x = camX;
+  sky.position.copy(outCam.position);
   outCam.updateMatrixWorld();
   OUTU.uCamX.value = camX;
   // Lamps sit every 28 m; the window sees the few round the camera.
@@ -1115,10 +1189,13 @@ function place() {
   for (const a of lampAttrs) a.needsUpdate = true;
   const night = 1 - dayV;
   for (let i = 0; i < NL; i++) OUTU.uLP.value[i].set(lampX[i + 1], 0.47, -4.0, lampK[i + 1] * night);
-  // Glint sources wrap round the camera like the lights.
-  glints.slice(0, NG).forEach((g, i) => {
+  // The sixteen nearest towns light the haze, the ground and the water.
+  glints.map(g => {
     const x = camX + ((((g.x - camX + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2;
-    OUTU.uGP.value[i].set(x, -110, g.z, g.k);
+    return [Math.abs(x - camX), x, g];
+  }).sort((a, b) => a[0] - b[0]).slice(0, NG).forEach(([, x, g], i) => {
+    OUTU.uGP.value[i].set(x, -20, g.z, g.k);
+    OUTU.uGC.value[i].set(...g.col, 0);
   });
   // The three lamps nearest the window light the frame and the fog.
   const hits = [];
