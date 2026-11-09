@@ -16,33 +16,41 @@
 | Kits | bloom and pass helpers copied from Lichtenberg burn; no kit lift |
 | Before the build | nothing |
 
-## The web: a Voronoi web
+## The webs (Tom, 2026-11-09)
 
-Three candidates. The plan picks the Voronoi web.
+Tom asked for different looks: city grids, circuit boards and natural networks. The top-left choice picks one of four webs. Each has its own generator, ramp, ground and stroke style.
 
-| Web | Look | Verdict |
-|---|---|---|
-| Jittered mesh (Delaunay) | Triangles, nodes of degree 6 | The wave reads as a plain circle; paths run almost straight. Kept as a Settings option, because the Voronoi build makes it for free. |
-| City street net | A grid with diagonals | Diamond waves are nice, but blocks and avenues are props. Cut. |
-| **Voronoi web** | Cells like leaf veins or cracked glaze; nodes of degree 3 | **Picked.** |
+| Web | Generator | Look | Faces |
+|---|---|---|---|
+| **Cells** (default) | Voronoi of a Poisson disc; cell size varies by noise | Ivory to teal to indigo; hairline isochrone contours | Glass panes tinted by distance |
+| **Streets** | A noise-warped grid; every fifth line is an avenue (wide, 0.55 cost); some side streets close, but never so a part cuts off | Sodium ivory to amber to rust; every crossing is a lamp | City blocks; windows switch on behind the front |
+| **Circuit** | A lattice with 0 and 45 degree traces; chips with pins; power rails every seventh row (wide, 0.7 cost) | Pale gold to olive to teal on a dark green mask; dull copper unlit; hard-edged traces; vias on junctions and ends | Chips; a status light shows when current arrives |
+| **Roots** | A relative neighbourhood graph of a Poisson disc plus a few loops; links curve; trunks thicken by the tips they feed and carry light faster | Pale green to teal to slate on soft soil | None |
 
-Why the Voronoi web:
+Why Cells stays the default: degree-3 junctions make paths wind, and the panes give the heat map an area.
+All four are built at the stage's own aspect in under 30 ms at 1280 px.
 
-1. **Paths wind.** Degree-3 junctions force turns, so the shortest path is a visible, non-obvious answer, not a ruler line.
-2. **The cells are panes.** Each cell is a face to fill with the distance heat map. The flood becomes stained glass lighting up, not only lines.
-3. **Density can vary.** A Poisson disc with a noise-driven radius gives dense knots and open fields. The wave visibly slows and frays in the knots, because their paths wind more.
+## Look: demure and elegant (Tom, 2026-11-09)
+
+Tom: "way too flashy; we want demure and elegant", with more fidelity.
+
+- Strokes are hairlines at the screen's own pixels (pixel budget 4.2 M). Only avenues, rails and trunks are wider.
+- Ramps are muted OKLCH, chroma 0.08 or less.
+- The front is a hairline isochrone with a faint trailing tint, not a white band.
+- Ignition is a soft brightening; queued nodes show a hairline ring; scouts and meeting points are faint.
+- The path is a fine warm line with slow pulses. Bloom has a high threshold and a low default.
 
 ## The shot
 
-A dark stage. A fine web of cells covers it, edge to edge, in faint cold lines with dim node points.
-One source glows. Light has flooded out from it, so cells near it glow white-cyan and far cells deep magenta and ember, with faint contour lines.
-A shortest path runs from the source to a target ring as a hot white line with travelling pulses.
+A dark stage. A fine web covers it, edge to edge, in faint cold hairlines.
+One source glows. Light has flooded out from it, so lines near it are ivory and far lines settle into the web's far colour, with faint contour lines.
+A shortest path runs from the source to a target ring as a fine warm line with slow pulses.
 The first frame is that picture, with the wave at 55 % of the web. When the intro clears, the wave runs on and the path locks with a chord.
 
 ## Hero moments
 
-1. **The flood.** Tap a node. A ring of light leaves it at once and pours outward through the web. The front is a bright band sweeping across the panes; behind it the panes settle to their heat colour.
-2. **Ignition.** Each node flashes white as the front reaches it, in exact Dijkstra pop order, then cools to its distance colour.
+1. **The flood.** Tap a node. Light leaves it at once and pours outward through the web. The front is a hairline isochrone sweeping across the faces; behind it the faces settle to their heat colour.
+2. **Ignition.** Each node brightens softly as the front reaches it, in exact Dijkstra pop order, then settles to its distance colour.
 3. **Relax scouts.** As a node settles, a thin fast spark runs out along each of its edges to the neighbour: the relaxation. The neighbour starts to shimmer: it is in the queue.
 4. **Fronts collide.** On an edge outside the path tree, light enters from both ends and meets inside the edge. A small spark marks the exact meeting point.
 5. **The lock.** When the front reaches the target, the path snaps on from source to target in 0.2 s with a flash, then pulses ride along it. A chord sounds.
@@ -63,7 +71,7 @@ The first frame is that picture, with the wave at 55 % of the web. When the intr
 - **Tentative distances settle.** A queued node shows its tentative distance as a ring colour. When a better route relaxes it, the ring colour jumps to the final value. When it pops, the ring collapses into the ignition flash.
 - **Contours are exact isochrones.** The faint lines on the panes sit at equal distance steps, so they read as the wavefront's past positions.
 
-## Modes (the top-left choice)
+## Search (Settings)
 
 Three, each kept because it adds joy, not only teaching.
 
@@ -79,20 +87,14 @@ Three, each kept because it adds joy, not only teaching.
 
 | Slot | Control | Content |
 |---|---|---|
-| Top left | Choice (segments) | Flood, Seek, Race |
+| Top left | Choice (segments) | Web: Cells, Streets, Circuit, Roots |
 | Bottom left | Actions | Shuffle (a new web, key `S`), Clear (wipe the mud, key `C`) |
 | Bottom right | Slider | Speed: how fast the front travels |
 | Bottom centre | Keys | `[CLICK] source` · `[DRAG] target` · `[HOLD + DRAG] mud` · `[SPACE] flood` |
 
 Four visible controls: one choice, two actions, one slider.
 
-**Settings sheet:** Web (Cells, Mesh), Palette (Ember, Ice, Aurora), Contours (Off, On), Drift (Off, On), Glow (slider). All persist. Site Quality row. Reset in the footer (Clear is shown).
-
-| Palette | Near to far (OKLCH hue path) |
-|---|---|
-| Ember (default) | white-cyan 200, blue 265, magenta 315, red 15, ember 45 |
-| Ice | white 230, cyan 210, blue 255, violet 290 |
-| Aurora | white-green 150, teal 185, blue 250, violet 300 |
+**Settings sheet:** Search (Flood, Seek, Race), Contours (Off, On), Drift (Off, On), Glow (slider). All persist; the Web choice persists too. Site Quality row. Reset in the footer (Clear is shown).
 
 ## Tech
 
@@ -103,7 +105,7 @@ Four visible controls: one choice, two actions, one slider.
 3. Bowyer-Watson Delaunay, O(n²), fine for under 1,000 sites.
 4. Voronoi: one node per triangle at its circumcentre; one edge per shared triangle side. Nodes far outside the stage drop out.
 5. Faces: each inside site's cell is a fan from the site to its circumcentres in angle order.
-6. **Mesh** web: nodes are the sites, edges the Delaunay sides, faces the triangles.
+6. Streets, Circuit and Roots: see The webs.
 
 **Weights.** `w = length · (1 + mud)`. Mud lives in a CPU grid of 8 CSS px cells, sampled at the edge's midpoint and quarter points, and in an R8 texture for the look.
 
@@ -134,7 +136,7 @@ Four visible controls: one choice, two actions, one slider.
 
 ## Finesse
 
-- The tap answers in the same frame: a white ring leaves the source before the first node pops.
+- The tap answers in the same frame: the source lights before the first node pops.
 - The front is never a flat ring: it frays in knots and drags in mud.
 - Pulses ride the path at constant speed in screen space, whatever the path's cost.
 - The bloom never washes the screen: a threshold and a cap on the ignition flash.
@@ -167,12 +169,13 @@ The choice moves bottom left as a stepper, Shuffle and Clear bottom right, Speed
 
 **Produces:** the web builder, Dijkstra, the wave clock, the faces, edges, nodes, path and marker passes, bloom and the final pass. Tap and drag work.
 
-- [ ] Poisson sites, Delaunay, Voronoi web, faces.
-- [ ] Dijkstra; wave clock; faces, edges, nodes, path, markers, bloom, final.
-- [ ] Tap sets the source; drag moves the target; Space re-floods. Bar v2 shell with the choice, Speed, Shuffle and Clear wired (Seek and Race fall back to Flood for now).
-- [ ] First frame: seeded web, source and target, wave at 55 %.
-- [ ] Syntax check, clean console, stills at 1280 and 375 px. **Checkpoint with Tom.**
-- [ ] Commit: `Dijkstra flood: blockout, light floods a Voronoi web`.
+- [x] Poisson sites, Delaunay, Voronoi web, faces.
+- [x] Dijkstra; wave clock; faces, edges, nodes, path, markers, bloom, final.
+- [x] Tap sets the source; drag moves the target; Space re-floods. Bar v2 shell with the choice, Speed, Shuffle and Clear wired (Seek and Race fall back to Flood for now).
+- [x] First frame: seeded web, source and target, wave at 55 %.
+- [x] Syntax check, clean console, stills at 1280 and 375 px. **Checkpoint with Tom.**
+- [x] Commit: `Dijkstra flood: blockout, light floods a Voronoi web`.
+- [ ] Round 2 (Tom): four webs (Cells, Streets, Circuit, Roots) on the top-left choice; Search moves to Settings; the demure, high-fidelity look. Stills of each web. **Checkpoint with Tom.**
 
 ### Task 2: Finesse and mud
 
@@ -194,7 +197,7 @@ The choice moves bottom left as a stepper, Shuffle and Clear bottom right, Speed
 
 ### Task 5: Settings, frame loop and QA
 
-- [ ] Web, Palette, Contours, Drift, Glow; persistence. Frame loop states, watchdog ladder, reduced motion.
+- [ ] Search, Contours, Drift, Glow; persistence. Frame loop states, watchdog ladder, reduced motion.
 - [ ] Q1 to Q10 in the browser pane. Tick the bean and record the cost. Commit.
 
 ## Kit handoff

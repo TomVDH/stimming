@@ -61,25 +61,34 @@ const stage = document.getElementById('stage');
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 // The handlers bind once the GL exists.
-const act = { shuffle() {}, clear() {}, reset() {}, still() {} };
-let speedK = 1, glow = 1, mode = 'flood';
+const act = { web() {}, shuffle() {}, clear() {}, reset() {}, still() {} };
+let speedK = 1, glow = 0.5, mode = 'flood';
+// The web choice persists by hand; the shell stores only Settings rows.
+const KINDS = ['cells', 'streets', 'circuit', 'roots'], WEB_KEY = 'stimming.dijkstra.web';
+let kind = 'cells';
+try { const k = localStorage.getItem(WEB_KEY); if (KINDS.includes(k)) kind = k; } catch { /* Storage can be blocked. */ }
 const ui = initPage({ id: 'dijkstra', bar: {
-  choice: { label: 'Mode', value: 'flood', options: [
-    { value: 'flood', label: 'Flood' }, { value: 'seek', label: 'Seek' }, { value: 'race', label: 'Race' },
-  ], onPick: v => { mode = v; } },
+  choice: { label: 'Web', value: kind, options: [
+    { value: 'cells', label: 'Cells' }, { value: 'streets', label: 'Streets' },
+    { value: 'circuit', label: 'Circuit' }, { value: 'roots', label: 'Roots' },
+  ], onPick: v => act.web(v) },
   slider: { label: 'Speed', min: 0.3, max: 2.5, step: 0.01, value: speedK, onInput: v => { speedK = v; } },
   actions: [
     { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
   ],
   settings: [
-    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.6, step: 0.01, value: 1, persist: true, onInput: v => { glow = v; act.still(); } },
+    { type: 'choice', id: 'search', label: 'Search', value: 'flood', persist: true, options: [
+      { value: 'flood', label: 'Flood' }, { value: 'seek', label: 'Seek' }, { value: 'race', label: 'Race' },
+    ], onPick: v => { mode = v; } },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.5, persist: true, onInput: v => { glow = v; act.still(); } },
   ],
   reset: () => act.reset(),
   quality: true,
   keys: [['click', 'source'], ['drag', 'target'], ['space', 'flood']],
 } });
 glow = ui.setting('glow')?.value ?? glow;
+mode = ui.setting('search')?.value ?? mode;
 // Clear wipes mud; the blockout has no mud yet.
 if (ui.action('clear')) ui.action('clear').disabled = true;
 // Touch screens have no Space key, so its entry hides.
@@ -131,9 +140,7 @@ function noise2(rnd) {
 // The web: node positions, edges, and fan faces for the heat map.
 let web = null;
 // Dart throwing with a cell size that varies by noise.
-function sites(W, H, rnd) {
-  const phone = Math.min(W, H) < 640;
-  const rMin = phone ? 26 : 34, rMax = phone ? 48 : 64;
+function sites(W, H, rnd, rMin, rMax) {
   const n2 = noise2(rnd);
   const M = rMax * 1.4;
   const x0 = -M, y0 = -M, x1 = W + M, y1 = H + M;
@@ -202,10 +209,10 @@ function delaunay(px, py) {
   }
   return tris.filter(t => t[0] < n && t[1] < n && t[2] < n);
 }
-// The Voronoi web: circumcentres become nodes; shared sides become edges.
-function buildWeb(W, H, seed) {
-  const rnd = mulberry(seed);
-  const { px, py, M } = sites(W, H, rnd);
+// Cells: a Voronoi web; circumcentres become nodes, shared sides edges.
+function cellsWeb(W, H, rnd) {
+  const phone = Math.min(W, H) < 640;
+  const { px, py, M } = sites(W, H, rnd, phone ? 18 : 22, phone ? 36 : 46);
   const tris = delaunay(px, py);
   const lim = M * 2;
   const inBox = (x, y) => x > -lim && y > -lim && x < W + lim && y < H + lim;
@@ -266,22 +273,178 @@ function buildWeb(W, H, seed) {
     if (ids[0] === ids[ids.length - 1]) ids.pop();
     if (ids.length >= 3) faces.push({ cx, cy, ids });
   });
-  // Adjacency in compressed rows: neighbour and edge per slot.
+  return { X, Y, ea, eb, faces };
+}
+// Union-find joins components; join reports a merge.
+function joiner(n) {
+  const p = Int32Array.from({ length: n }, (_, i) => i);
+  const find = i => { while (p[i] !== i) i = p[i] = p[p[i]]; return i; };
+  return { join(a, b) { a = find(a); b = find(b); if (a === b) return false; p[a] = b; return true; } };
+}
+// An edge list with a weight factor and a width per edge.
+function edges() {
+  const ea = [], eb = [], wmul = [], width = [];
+  return { ea, eb, wmul, width, add(a, b, wm = 1, wd = 1) { ea.push(a); eb.push(b); wmul.push(wm); width.push(wd); } };
+}
+// Streets: a warped grid; every fifth line is a wide, fast avenue.
+function streetsWeb(W, H, rnd) {
+  const phone = Math.min(W, H) < 640, s = phone ? 22 : 28, M = s * 2;
+  const na = noise2(rnd), nb = noise2(rnd);
+  const cols = Math.ceil((W + 2 * M) / s) + 1, rows = Math.ceil((H + 2 * M) / s) + 1;
+  const id = (i, j) => j * cols + i, X = [], Y = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const bx = -M + i * s, by = -M + j * s;
+    X.push(bx + (na(bx / 380 + 3, by / 380) - 0.5) * s * 1.8);
+    Y.push(by + (nb(bx / 380, by / 380 + 5) - 0.5) * s * 1.8);
+  }
+  const AV = 5, oi = Math.floor(rnd() * AV), oj = Math.floor(rnd() * AV);
+  const cand = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    if (i + 1 < cols) cand.push([id(i, j), id(i + 1, j), (j - oj) % AV === 0]);
+    if (j + 1 < rows) cand.push([id(i, j), id(i, j + 1), (i - oi) % AV === 0]);
+  }
+  // Some side streets close; closed ones that join two parts reopen.
+  const J = joiner(X.length), e = edges(), shut = [];
+  const add = c => { J.join(c[0], c[1]); e.add(c[0], c[1], c[2] ? 0.55 : 1, c[2] ? 2.2 : 1); };
+  for (const c of cand) if (c[2] || rnd() > 0.16) add(c); else shut.push(c);
+  for (const c of shut) if (J.join(c[0], c[1])) e.add(c[0], c[1], 1, 1);
+  const faces = [];
+  for (let j = 0; j + 1 < rows; j++) for (let i = 0; i + 1 < cols; i++) {
+    const ids = [id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1)];
+    faces.push({ cx: ids.reduce((v, k) => v + X[k], 0) / 4, cy: ids.reduce((v, k) => v + Y[k], 0) / 4, ids });
+  }
+  // Every crossing is a street lamp.
+  return { X, Y, ...e, faces, kind: new Float32Array(X.length).fill(3) };
+}
+// Circuit: traces on a lattice at 0 and 45 degrees, chips and power rails.
+function circuitWeb(W, H, rnd) {
+  const phone = Math.min(W, H) < 640, s = phone ? 18 : 22, M = s * 2;
+  const cols = Math.ceil((W + 2 * M) / s) + 1, rows = Math.ceil((H + 2 * M) / s) + 1;
+  const id = (i, j) => j * cols + i, X = [], Y = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) { X.push(-M + i * s); Y.push(-M + j * s); }
+  // Chips: lattice rectangles; inner points go, border points are pins.
+  const inner = new Int32Array(cols * rows).fill(-1), pin = new Int32Array(cols * rows).fill(-1), chips = [];
+  const m = Math.ceil(M / s) + 1;
+  for (let t = 0; t < 120 && chips.length < (phone ? 3 : 6); t++) {
+    const w = 3 + Math.floor(rnd() * 4), h = 2 + Math.floor(rnd() * 3);
+    const i0 = m + Math.floor(rnd() * (cols - 2 * m - w)), j0 = m + Math.floor(rnd() * (rows - 2 * m - h));
+    let free = true;
+    for (let j = j0 - 2; free && j <= j0 + h + 2; j++) for (let i = i0 - 2; i <= i0 + w + 2; i++) if (inner[id(i, j)] >= 0 || pin[id(i, j)] >= 0) { free = false; break; }
+    if (!free) continue;
+    const k = chips.length;
+    for (let j = j0; j <= j0 + h; j++) for (let i = i0; i <= i0 + w; i++) {
+      if (i > i0 && i < i0 + w && j > j0 && j < j0 + h) inner[id(i, j)] = k; else pin[id(i, j)] = k;
+    }
+    chips.push([i0, j0, w, h]);
+  }
+  // An edge never enters a chip and never runs along its own border.
+  const ok = (a, b) => inner[a] < 0 && inner[b] < 0 && !(pin[a] >= 0 && pin[a] === pin[b]);
+  const RAIL = 7, rj = Math.floor(rnd() * RAIL), cand = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const rail = (j - rj) % RAIL === 0;
+    if (i + 1 < cols) cand.push([id(i, j), id(i + 1, j), rail ? 1 : 0.5, rail]);
+    if (j + 1 < rows) cand.push([id(i, j), id(i, j + 1), 0.45, false]);
+    if (i + 1 < cols && j + 1 < rows) cand.push(rnd() < 0.5 ? [id(i, j), id(i + 1, j + 1), 0.2, false] : [id(i + 1, j), id(i, j + 1), 0.2, false]);
+  }
+  const J = joiner(X.length), e = edges(), spare = [];
+  for (const c of cand) {
+    if (!ok(c[0], c[1])) continue;
+    if (rnd() < c[2]) { J.join(c[0], c[1]); e.add(c[0], c[1], c[3] ? 0.7 : 1, c[3] ? 2.2 : 1); } else spare.push(c);
+  }
+  for (const c of spare) if (J.join(c[0], c[1])) e.add(c[0], c[1], 1, 1);
+  const faces = chips.map(([i0, j0, w, h]) => {
+    const ids = [];
+    for (let i = i0; i < i0 + w; i++) ids.push(id(i, j0));
+    for (let j = j0; j < j0 + h; j++) ids.push(id(i0 + w, j));
+    for (let i = i0 + w; i > i0; i--) ids.push(id(i, j0 + h));
+    for (let j = j0 + h; j > j0; j--) ids.push(id(i0, j));
+    return { cx: X[id(i0, j0)] + (w * s) / 2, cy: Y[id(i0, j0)] + (h * s) / 2, ids };
+  });
+  // Vias sit on junctions and trace ends; pins show as pads.
+  const deg = new Int32Array(X.length);
+  e.ea.forEach((a, k) => { deg[a]++; deg[e.eb[k]]++; });
+  const kind = Float32Array.from(deg, (d, i) => (pin[i] >= 0 ? 2 : d === 1 || d >= 3 ? 2 : 0));
+  return { X, Y, ...e, faces, kind };
+}
+// Roots: a relative neighbourhood graph, curved, thick along its trunks.
+function rootsWeb(W, H, rnd) {
+  const phone = Math.min(W, H) < 640;
+  const { px, py } = sites(W, H, rnd, phone ? 22 : 28, phone ? 42 : 52);
+  const n = px.length, nbr = px.map(() => new Set());
+  for (const t of delaunay(px, py)) for (let j = 0; j < 3; j++) { nbr[t[j]].add(t[(j + 1) % 3]); nbr[t[(j + 1) % 3]].add(t[j]); }
+  const d = (a, b) => Math.hypot(px[a] - px[b], py[a] - py[b]);
+  // A pair links when no third site sits closer to both; a few extra links make loops.
+  const links = [];
+  for (let a = 0; a < n; a++) for (const b of nbr[a]) {
+    if (b < a) continue;
+    const L = d(a, b);
+    let rng = true;
+    for (const c of [...nbr[a], ...nbr[b]]) if (c !== a && c !== b && Math.max(d(a, c), d(b, c)) < L) { rng = false; break; }
+    if (rng || rnd() < 0.08) links.push([a, b]);
+  }
+  // A tree from the centre counts the tips each link feeds; trunks grow thick.
+  const adj = px.map(() => []);
+  links.forEach(([a, b], k) => { adj[a].push([b, k]); adj[b].push([a, k]); });
+  let hub = 0;
+  for (let i = 1; i < n; i++) if (Math.hypot(px[i] - W / 2, py[i] - H / 2) < Math.hypot(px[hub] - W / 2, py[hub] - H / 2)) hub = i;
+  const par = new Int32Array(n).fill(-2), viaLink = new Int32Array(n).fill(-1), order = [hub];
+  par[hub] = -1;
+  for (let q = 0; q < order.length; q++) for (const [v, k] of adj[order[q]]) if (par[v] === -2) { par[v] = order[q]; viaLink[v] = k; order.push(v); }
+  const tips = new Float32Array(n).fill(1), lw = new Float32Array(links.length).fill(0.55);
+  for (let q = order.length - 1; q > 0; q--) { const v = order[q]; tips[par[v]] += tips[v]; lw[viaLink[v]] = Math.min(3.2, 0.55 + 0.42 * Math.log2(tips[v])); }
+  // Each link bends as a quadratic curve through hidden joints.
+  const X = [...px], Y = [...py], e = edges(), deg = new Int32Array(n);
+  const kind = [];
+  links.forEach(([a, b], k) => {
+    deg[a]++; deg[b]++;
+    const L = d(a, b), bend = (rnd() - 0.5) * 0.5 * L;
+    const cx = (px[a] + px[b]) / 2 - ((py[b] - py[a]) / L) * bend, cy = (py[a] + py[b]) / 2 + ((px[b] - px[a]) / L) * bend;
+    const K = Math.max(2, Math.round(L / 14)), wd = lw[k], wm = 1 / (0.6 + 0.4 * wd);
+    let prev = a;
+    for (let j = 1; j < K; j++) {
+      const t = j / K, u = 1 - t;
+      X.push(u * u * px[a] + 2 * u * t * cx + t * t * px[b]);
+      Y.push(u * u * py[a] + 2 * u * t * cy + t * t * py[b]);
+      kind[X.length - 1] = 0;
+      e.add(prev, X.length - 1, wm, wd);
+      prev = X.length - 1;
+    }
+    e.add(prev, b, wm, wd);
+  });
+  for (let i = 0; i < n; i++) kind[i] = deg[i] === 1 ? 2 : deg[i] >= 3 ? 1 : 0;
+  return { X, Y, ...e, faces: [], kind: Float32Array.from(kind) };
+}
+// Adjacency in compressed rows: neighbour and edge per slot.
+function finish(g, W, H) {
+  const { X, Y, ea, eb } = g;
   const N = X.length, E = ea.length, deg = new Int32Array(N + 1);
   for (let e = 0; e < E; e++) { deg[ea[e] + 1]++; deg[eb[e] + 1]++; }
+  // A node with no edge never shows.
+  const kind = g.kind ? Float32Array.from(g.kind) : new Float32Array(N).fill(1);
+  for (let i = 0; i < N; i++) if (!deg[i + 1]) kind[i] = 0;
   for (let i = 0; i < N; i++) deg[i + 1] += deg[i];
   const fill = deg.slice(0, N), nb = new Int32Array(2 * E), ne = new Int32Array(2 * E);
   for (let e = 0; e < E; e++) {
     nb[fill[ea[e]]] = eb[e]; ne[fill[ea[e]]++] = e;
     nb[fill[eb[e]]] = ea[e]; ne[fill[eb[e]]++] = e;
   }
-  const len = new Float32Array(E);
-  for (let e = 0; e < E; e++) len[e] = Math.hypot(X[ea[e]] - X[eb[e]], Y[ea[e]] - Y[eb[e]]);
+  const len = new Float32Array(E), w = new Float32Array(E);
+  for (let e = 0; e < E; e++) {
+    len[e] = Math.hypot(X[ea[e]] - X[eb[e]], Y[ea[e]] - Y[eb[e]]);
+    w[e] = len[e] * (g.wmul ? g.wmul[e] : 1);
+  }
   return {
-    W, H, N, E, X, Y, ea, eb, len, w: Float32Array.from(len), row: deg, nb, ne, faces,
+    W, H, N, E, X, Y, ea, eb, len, w, row: deg, nb, ne, faces: g.faces || [], kind,
+    width: g.width ? Float32Array.from(g.width) : new Float32Array(E).fill(1),
     dist: new Float32Array(N), par: new Int32Array(N), tEnter: new Float32Array(N),
     tent0: new Float32Array(N), tImp: new Float32Array(N), maxD: 1,
   };
+}
+// Each web kind has its own generator and seed stream.
+function buildWeb(W, H, seed, k) {
+  const rnd = mulberry(seed + KINDS.indexOf(k) * 7919);
+  const make = { cells: cellsWeb, streets: streetsWeb, circuit: circuitWeb, roots: rootsWeb }[k];
+  return finish(make(W, H, rnd), W, H);
 }
 
 /* ---------- Dijkstra ---------- */
@@ -340,11 +503,26 @@ function dijkstra(src) {
 }
 
 /* ---------- colour ---------- */
-// Heat ramp stops in OKLCH, near to far; hue runs the short way round.
-const PALETTE = [
-  [0, 0.97, 0.05, 200], [0.14, 0.86, 0.14, 205], [0.34, 0.68, 0.2, 262],
-  [0.55, 0.6, 0.26, 318], [0.76, 0.63, 0.22, 12], [1, 0.58, 0.17, 45],
-];
+// Each web has a look: heat ramp stops near to far, and OKLCH ground colours.
+// The style index picks the shader branch; cold is the unlit line colour and its level.
+const STYLES = {
+  cells: {
+    i: 0, bg: [0.13, 0.015, 265], base: [0.15, 0.017, 265], cold: [0.5, 0.03, 255, 0.3],
+    lut: [[0, 0.96, 0.02, 90], [0.18, 0.84, 0.06, 195], [0.45, 0.66, 0.08, 235], [0.75, 0.48, 0.08, 275], [1, 0.36, 0.06, 300]],
+  },
+  streets: {
+    i: 1, bg: [0.12, 0.008, 60], base: [0.14, 0.008, 60], cold: [0.5, 0.02, 70, 0.22],
+    lut: [[0, 0.96, 0.03, 85], [0.2, 0.86, 0.07, 75], [0.45, 0.72, 0.1, 60], [0.75, 0.56, 0.1, 45], [1, 0.42, 0.07, 30]],
+  },
+  circuit: {
+    i: 2, bg: [0.15, 0.03, 170], base: [0.21, 0.006, 250], cold: [0.55, 0.06, 70, 0.26],
+    lut: [[0, 0.95, 0.03, 95], [0.2, 0.85, 0.08, 88], [0.45, 0.72, 0.08, 125], [0.75, 0.6, 0.07, 165], [1, 0.46, 0.05, 190]],
+  },
+  roots: {
+    i: 3, bg: [0.12, 0.02, 215], base: [0.12, 0.02, 215], cold: [0.5, 0.03, 190, 0.22],
+    lut: [[0, 0.96, 0.02, 120], [0.2, 0.86, 0.06, 150], [0.45, 0.72, 0.08, 175], [0.75, 0.56, 0.07, 205], [1, 0.42, 0.06, 240]],
+  },
+};
 function lutData(stops) {
   const out = new Float32Array(256 * 4);
   for (let i = 0; i < 256; i++) {
@@ -376,8 +554,9 @@ void main() {
 // The heat ramp and the shared clock uniforms.
 const LUT = `
 uniform sampler2D uLut;
-uniform float uW, uMax, uBand, uPx, uTime, uFlick;
+uniform float uW, uMax, uBand, uPx, uTime, uFlick, uStyle;
 uniform vec3 uCold;
+float hash2(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 vec3 lut(float t) { return texture(uLut, vec2(clamp(t / uMax, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5)).rgb; }
 `;
 // Faces: fan triangles carry an arrival time and a rim weight.
@@ -386,35 +565,74 @@ layout(location = 0) in vec4 aV;
 uniform vec4 uMap;
 out float vT;
 out float vRim;
+out vec2 vP;
 void main() {
   vT = aV.z;
+  vP = aV.xy;
   vRim = aV.w;
   gl_Position = vec4(aV.xy * uMap.xy + uMap.zw, 0.0, 1.0);
 }`;
-// Panes glow by distance once the front passes; contours mark equal distance.
+// Faces by style: glass panes, city blocks or chips.
+// A hairline isochrone marks the front on every face.
 const FACE_FS = HEAD + LUT + `
 in float vT;
 in float vRim;
+in vec2 vP;
 out vec4 o;
 uniform vec3 uBase;
 uniform float uStep;
 void main() {
-  float age = uW - vT;
-  float lit = clamp(age / max(fwidth(vT), 1e-3) + 0.5, 0.0, 1.0);
+  float age = uW - vT, fw = max(fwidth(vT), 1e-3);
+  float lit = clamp(age / fw + 0.5, 0.0, 1.0);
   float rim = vRim * vRim;
   vec3 h = lut(vT);
-  vec3 c = uBase * (0.5 + 0.5 * rim);
-  // A pane is darker inside and brighter at its rim, as lit glass.
-  vec3 glass = h * (0.02 + 0.09 * rim * rim);
-  float k = vT / uStep;
-  float dl = abs(fract(k + 0.5) - 0.5);
-  glass += h * (1.0 - smoothstep(0.0, fwidth(k) * 1.3, dl)) * 0.1;
-  // The front: a bright band that sweeps the panes and settles.
-  float band = exp(-max(age, 0.0) / uBand);
-  vec3 front = mix(h, vec3(1.0), 0.3) * band * (0.35 + 0.75 * rim);
-  // A faint pre-glow runs just ahead of the front.
-  float pre = exp(min(age, 0.0) / (uBand * 0.3)) * 0.1;
-  c += (glass + front) * lit + h * pre * (1.0 - lit);
+  float band = exp(-max(age, 0.0) / uBand) * lit;
+  float line = 1.0 - smoothstep(0.0, fw * 1.4, abs(age));
+  vec3 front = mix(h, vec3(1.0), 0.2) * (line * 0.45 + band * 0.12);
+  vec3 c;
+  if (uStyle < 0.5) {
+    // Panes take a faint tint by distance; contours mark equal distance.
+    c = uBase * (0.75 + 0.25 * rim);
+    float k = vT / uStep, dl = abs(fract(k + 0.5) - 0.5);
+    vec3 glass = h * (0.018 + 0.045 * rim * rim) + h * (1.0 - smoothstep(0.0, fwidth(k) * 1.2, dl)) * 0.07;
+    c += glass * lit + front;
+  } else if (uStyle < 1.5) {
+    // City blocks: dark roofs; windows switch on behind the front.
+    c = uBase * (0.85 + 0.15 * rim);
+    vec2 cell = floor(vP / 3.0), f = fract(vP / 3.0);
+    float win = step(hash2(cell), 0.16) * step(0.25, f.x) * step(f.x, 0.75) * step(0.3, f.y) * step(f.y, 0.7) * step(vRim, 0.78);
+    float on = clamp((age - hash2(cell + 9.1) * uBand * 8.0) / (uBand * 0.5), 0.0, 1.0);
+    c += mix(h, vec3(1.0, 0.88, 0.66), 0.4) * win * on * (0.08 + 0.22 * hash2(cell + 3.3));
+    c += front * 0.6;
+  } else {
+    // Chips: a matte body with a lighter bevel; a status light shows the arrival.
+    c = uBase * (0.9 + 0.08 * hash2(floor(vP * 0.7)) + 0.6 * smoothstep(0.82, 0.95, vRim) * (1.0 - smoothstep(0.95, 1.0, vRim)));
+    float edge = smoothstep(0.93, 1.0, vRim), led = 1.0 - smoothstep(0.04, 0.08, vRim);
+    c += h * lit * (edge * (0.08 + 0.35 * band) + led * 0.9);
+  }
+  o = vec4(c, 1.0);
+}`;
+// The ground under the web: a solder mask for circuits, soft soil for roots.
+const BG_FS = HEAD + `
+out vec4 o;
+uniform vec3 uBg;
+uniform float uStyle, uDpr;
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+void main() {
+  vec2 p = gl_FragCoord.xy / uDpr;
+  vec3 c = uBg;
+  if (uStyle > 1.5 && uStyle < 2.5) {
+    // A fine grid of plated holes, and a faint mottle in the mask.
+    vec2 g = fract(p / 8.0) - 0.5;
+    c *= 0.9 + 0.12 * vnoise(p / 90.0) + 0.35 * exp(-dot(g, g) * 120.0);
+  } else if (uStyle > 2.5) {
+    c *= 0.65 + 0.55 * vnoise(p / 160.0) + 0.25 * vnoise(p / 37.0);
+  }
   o = vec4(c, 1.0);
 }`;
 // Capsule quads for edges and the path, in stage CSS px.
@@ -433,7 +651,9 @@ void main() {
   int v = gl_VertexID;
   int k = v == 0 ? 0 : v == 1 || v == 4 ? 1 : v == 2 || v == 3 ? 2 : 3;
   float s = (k & 1) == 0 ? -1.0 : 1.0, q = k < 2 ? -1.0 : 1.0;
-  vec2 p = (s < 0.0 ? a - t * uR : b + t * uR) + n * uR * q;
+  // Wide edges get a wider quad; the path passes no width.
+  float R = uR * max(1.0, aD.w);
+  vec2 p = (s < 0.0 ? a - t * R : b + t * R) + n * R * q;
   vP = p;
   vAB = aAB;
   vD = aD;
@@ -454,25 +674,28 @@ void main() {
   float dA = vD.x, dB = vD.y, w = vD.z;
   float t = min(dA + s * w, dB + (1.0 - s) * w);
   float age = uW - t;
-  float cw = max(0.6, uPx * 0.9);
+  // Hairlines: about one device pixel, wider only for avenues, rails and trunks.
+  float wd = vD.w, cw = max(0.42, uPx * 0.75) * wd;
   float core = exp(-d * d / (cw * cw));
-  float halo = exp(-d / 2.4) * 0.5;
+  // Circuit traces have hard edges, as etched copper does.
+  if (uStyle > 1.5 && uStyle < 2.5) core = 1.0 - smoothstep(cw * 0.75, cw * 0.75 + uPx, d);
+  float halo = exp(-d / (1.4 * sqrt(wd))) * 0.06;
   vec3 h = lut(t);
   float lit = clamp(age / max(fwidth(t), 1e-3) + 0.5, 0.0, 1.0);
-  float head = exp(-max(age, 0.0) / (uBand * 0.55));
-  vec3 on = h * (core * 0.5 + halo * 0.08) + mix(h, vec3(1.0), 0.65) * head * (core * 2.4 + halo * 1.1);
+  float head = exp(-max(age, 0.0) / (uBand * 0.4));
+  vec3 on = h * (core * 0.6 + halo) + mix(h, vec3(1.0), 0.25) * head * (core * 0.9 + halo * 2.0);
   vec3 c = mix(uCold * core, on, lit);
-  // Relax scouts: a fast spark from the settled end to the queued end.
-  vec3 sc = vec3(0.85, 0.95, 1.0) * (core * 1.6 + halo) * uFlick;
+  // Relax scouts: a faint tick from the settled end to the queued end.
+  vec3 sc = mix(h, vec3(1.0), 0.3) * core * 0.45 * uFlick;
   float pa = (uW - dA) / (uScout * w);
-  if (dA < dB && pa > 0.0 && pa < 1.0) { float x = (s - pa) * L; c += sc * exp(-x * x / 5.0) * (1.0 - pa); }
+  if (dA < dB && pa > 0.0 && pa < 1.0) { float x = (s - pa) * L; c += sc * exp(-x * x / 3.0) * (1.0 - pa); }
   float pb = (uW - dB) / (uScout * w);
-  if (dB < dA && pb > 0.0 && pb < 1.0) { float x = (s - 1.0 + pb) * L; c += sc * exp(-x * x / 5.0) * (1.0 - pb); }
-  // Two fronts meet inside a non-tree edge: a spark at the meeting point.
+  if (dB < dA && pb > 0.0 && pb < 1.0) { float x = (s - 1.0 + pb) * L; c += sc * exp(-x * x / 3.0) * (1.0 - pb); }
+  // Two fronts meet inside a non-tree edge: a small point marks the meeting.
   float sm = (dB - dA + w) / (2.0 * w);
   if (sm > 0.06 && sm < 0.94) {
     float am = uW - (dA + dB + w) * 0.5;
-    if (am > 0.0) { vec2 m = a + ab * sm - vP; c += vec3(1.0, 0.92, 0.85) * exp(-am / (uBand * 0.5)) * exp(-dot(m, m) / 4.0) * 2.2; }
+    if (am > 0.0) { vec2 m = a + ab * sm - vP; c += mix(h, vec3(1.0), 0.4) * exp(-am / (uBand * 0.6)) * exp(-dot(m, m) / 1.5) * 0.6; }
   }
   o = vec4(c, 1.0);
 }`;
@@ -501,25 +724,37 @@ flat in vec4 vN1;
 out vec4 o;
 void main() {
   float r = length(vQ);
-  float dist = vN0.z, tEnter = vN0.w, tent0 = vN1.x, tImp = vN1.y, id = vN1.z;
-  float pt = exp(-r * r / 2.2);
-  vec3 c = uCold * pt * 1.3;
+  float dist = vN0.z, tEnter = vN0.w, tent0 = vN1.x, tImp = vN1.y, id = vN1.z, kind = vN1.w;
+  // Kind 0 hides; 1 is a dot; 2 a via or bulb ring; 3 a street lamp.
+  if (kind < 0.5) discard;
   float age = uW - dist;
+  if (kind > 2.5) {
+    float lp = exp(-r * r / 0.8);
+    vec3 c = uCold * lp * 0.4;
+    if (age >= 0.0) {
+      float ig = min(exp(-age / (uBand * 0.6)), 1.0);
+      c = mix(lut(dist), vec3(1.0, 0.9, 0.72), 0.45) * lp * (0.9 + 0.6 * ig);
+    }
+    o = vec4(c, 1.0);
+    return;
+  }
+  float pt = kind > 1.5 ? exp(-pow(r - 2.2, 2.0) / 0.2) + 0.15 * exp(-r * r / 0.6) : exp(-r * r / 1.1);
+  vec3 c = uCold * pt;
   if (age >= 0.0) {
-    // Ignition: a white flash as the node pops, then its heat colour.
-    float ig = exp(-age / (uBand * 0.8));
-    c = lut(dist) * pt * 1.8 + vec3(1.0) * min(ig, 1.0) * (exp(-r * r / 5.0) * 2.6 + exp(-r / 5.0) * 0.45);
+    // Ignition: a soft brightening as the node pops, then its heat colour.
+    float ig = min(exp(-age / (uBand * 0.6)), 1.0);
+    c = lut(dist) * pt * 1.1 + mix(lut(dist), vec3(1.0), 0.4) * ig * exp(-r * r / 3.0) * 1.1;
   } else if (uW >= tEnter) {
-    // In the queue: a shimmering ring tinted by the tentative distance.
+    // In the queue: a hairline ring tinted by the tentative distance.
     float tent = uW < tImp ? tent0 : dist;
-    float rr = 2.6 + 4.5 * clamp((tent - uW) / (uBand * 3.0), 0.0, 1.0);
-    float ring = exp(-pow(r - rr, 2.0) / 0.9);
-    float sh = mix(1.0, 0.5 + 0.5 * sin(uTime * 31.0 + id * 2.399), uFlick);
-    c += lut(tent) * ring * 1.4 * sh;
+    float rr = 2.8 + 2.4 * clamp((tent - uW) / (uBand * 4.0), 0.0, 1.0);
+    float ring = exp(-pow(r - rr, 2.0) / 0.22);
+    float br = mix(1.0, 0.8 + 0.2 * sin(uTime * 4.0 + id * 2.399), uFlick);
+    c += lut(tent) * ring * 0.55 * br;
   }
   o = vec4(c, 1.0);
 }`;
-// The path: a hot line that sweeps on, with pulses riding source to target.
+// The path: a fine bright line that draws on, with slow pulses toward the target.
 const PATH_FS = HEAD + LUT + `
 in vec2 vP;
 flat in vec4 vAB;
@@ -534,16 +769,16 @@ void main() {
   float d = length(vP - a - ab * s);
   float cum = mix(vD.x, vD.y, s);
   if (cum > uReveal) discard;
-  float core = exp(-d * d / 2.2), halo = exp(-d / 6.0);
-  float ph = fract((cum - uPulse) / 110.0);
-  float pulse = pow(ph, 14.0);
-  float head = exp(-(uReveal - cum) / 30.0) * step(uReveal, 1e5);
-  float seg = exp(-(uNow - vD.z) / 0.25);
-  vec3 c = uHot * (core * 1.5 + halo * 0.3) * (0.75 + 1.6 * pulse);
-  c += vec3(1.0) * (uFlash + seg * 0.8 + head * 1.5) * (core * 2.5 + halo * 0.5);
+  float core = exp(-d * d / max(0.8, uPx * uPx * 1.2)), halo = exp(-d / 3.0) * 0.1;
+  float ph = fract((cum - uPulse) / 140.0);
+  float pulse = pow(ph, 8.0);
+  float head = exp(-(uReveal - cum) / 24.0) * step(uReveal, 1e5);
+  float seg = exp(-(uNow - vD.z) / 0.3);
+  vec3 c = uHot * (core + halo) * (1.0 + 0.5 * pulse);
+  c += uHot * (uFlash * 0.5 + seg * 0.35 + head * 0.8) * (core + halo);
   o = vec4(c, 1.0);
 }`;
-// Markers: the source as a hot core, the target as a reticle ring.
+// Markers: the source as a point in a ring, the target as a thin reticle.
 const MARK_FS = HEAD + LUT + `
 in vec2 vQ;
 flat in vec4 vN0;
@@ -555,13 +790,10 @@ void main() {
   float kind = vN0.z, on = vN0.w;
   vec3 c;
   if (kind < 0.5) {
-    float br = 0.85 + 0.15 * sin(uTime * 2.2);
-    c = vec3(1.0, 0.97, 0.92) * (exp(-r * r / 9.0) * 3.0 + exp(-r / 7.0) * 0.6 * br);
-    c += lut(0.0) * exp(-pow(r - 13.0, 2.0) / 2.0) * 0.5 * br;
+    c = uHot * (exp(-r * r / 2.5) * 1.6 + exp(-pow(r - 6.5, 2.0) / 0.25) * 0.6);
   } else {
-    float ring = exp(-pow(r - 10.0, 2.0) / 1.1) + exp(-pow(r - 16.0, 2.0) / 0.6) * 0.35;
-    vec3 tint = mix(uCold * 6.0, uHot * 1.6, on);
-    c = tint * ring + uHot * on * exp(-r * r / 6.0) * 1.5;
+    float ring = exp(-pow(r - 6.5, 2.0) / 0.25) + exp(-pow(r - 10.5, 2.0) / 0.2) * 0.3;
+    c = mix(uCold * 3.0, uHot * 0.9, on) * ring + uHot * on * exp(-r * r / 1.5) * 1.2;
   }
   o = vec4(c, 1.0);
 }`;
@@ -611,8 +843,8 @@ float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33);
 void main() {
   vec3 col = texture(uScene, vUv).rgb + texture(uBloom, vUv).rgb * uGlow;
   vec2 v = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-  col *= 1.0 - 0.45 * smoothstep(0.45, 1.25, length(v));
-  vec3 c = srgb(aces(col * 1.15));
+  col *= 1.0 - 0.35 * smoothstep(0.5, 1.3, length(v));
+  vec3 c = srgb(aces(col * 1.05));
   c += (hash(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.012;
   o = vec4(c, 1.0);
 }`;
@@ -673,7 +905,7 @@ async function initGL() {
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     face: compile(FACE_VS, FACE_FS), edge: compile(CAPSULE_VS, EDGE_FS), node: compile(NODE_VS, NODE_FS),
-    path: compile(CAPSULE_VS, PATH_FS), mark: compile(NODE_VS, MARK_FS),
+    path: compile(CAPSULE_VS, PATH_FS), mark: compile(NODE_VS, MARK_FS), bg: compile(TRI, BG_FS),
     down: compile(TRI, DOWN_FS), up: compile(TRI, UP_FS), final: compile(TRI, FINAL_FS),
   };
   // Polling lets the driver link off the main thread; after 3 s it waits.
@@ -692,7 +924,6 @@ async function initGL() {
   vao('mark', [4, 4], true);
   lutT = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, lutT);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 256, 1, 0, gl.RGBA, gl.FLOAT, lutData(PALETTE));
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -752,8 +983,8 @@ let simT = 0, frameNo = 0, ambT = 0;
 // The lock: the time the path snapped on, or -1 while the front is short of the target.
 let lockT = -1;
 let path = [], pathLen = 0, pathBirth = new Map();
-const BAND = 42, TAIL = 260;
-const speed = () => 230 * speedK * (reduced() ? 0.6 : 1);
+const BAND = 26, TAIL = 200;
+const speed = () => 170 * speedK * (reduced() ? 0.6 : 1);
 let view = { w: 1, h: 1, dpr: 1 };
 
 // Positions are kept as fractions, so a new web keeps them in place.
@@ -764,6 +995,7 @@ function nearest(x, y, needReach = false) {
   for (let i = 0; i < g.N; i++) {
     if (g.X[i] < 4 || g.Y[i] < 4 || g.X[i] > g.W - 4 || g.Y[i] > g.H - 4) continue;
     if (needReach && g.dist[i] === Infinity) continue;
+    if (g.kind[i] < 0.5) continue;
     const d = (g.X[i] - x) ** 2 + (g.Y[i] - y) ** 2;
     if (d < bd) { bd = d; best = i; }
   }
@@ -775,14 +1007,14 @@ function upload() {
   const ed = new Float32Array(g.E * 8);
   for (let e = 0; e < g.E; e++) {
     const a = g.ea[e], b = g.eb[e];
-    ed.set([g.X[a], g.Y[a], g.X[b], g.Y[b], D(a), D(b), g.w[e], 0], e * 8);
+    ed.set([g.X[a], g.Y[a], g.X[b], g.Y[b], D(a), D(b), g.w[e], g.width[e]], e * 8);
   }
   fillVbo('edge', ed, g.E);
   const nd = new Float32Array(g.N * 8);
   for (let i = 0; i < g.N; i++) {
     const te = g.tEnter[i] === Infinity ? 1e9 : g.tEnter[i];
     const t0 = g.tent0[i] === Infinity ? 1e9 : g.tent0[i];
-    nd.set([g.X[i], g.Y[i], D(i), te, t0, g.tImp[i], i, 0], i * 8);
+    nd.set([g.X[i], g.Y[i], D(i), te, t0, g.tImp[i], i, g.kind[i]], i * 8);
   }
   fillVbo('node', nd, g.N);
   // Each face fans from its site; the site takes the mean arrival time.
@@ -865,9 +1097,20 @@ function common(q) {
   gl.uniform1f(q.u.uPx, 1 / view.dpr);
   gl.uniform1f(q.u.uTime, ambT);
   gl.uniform1f(q.u.uFlick, reduced() ? 0 : 1);
+  gl.uniform1f(q.u.uStyle, look.i);
   if (q.u.uCold) gl.uniform3fv(q.u.uCold, COLD);
 }
-let COLD, BASE, BG, HOT;
+let COLD, BASE, BG, HOT, look = STYLES.cells;
+// A web kind brings its colours and heat ramp.
+function applyLook() {
+  look = STYLES[kind];
+  const lin = v => linFit(v[0], v[1], v[2]);
+  COLD = lin(look.cold).map(v => v * look.cold[3]);
+  BASE = lin(look.base);
+  BG = lin(look.bg);
+  gl.bindTexture(gl.TEXTURE_2D, lutT);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 256, 1, 0, gl.RGBA, gl.FLOAT, lutData(look.lut));
+}
 function instanced(name, q, R) {
   if (!vbo[name].n) return;
   gl.useProgram(q.p);
@@ -877,23 +1120,31 @@ function instanced(name, q, R) {
   gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, vbo[name].n);
 }
 function render() {
-  to(scene);
-  gl.clearColor(BG[0], BG[1], BG[2], 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  let q = P.face;
+  let q = P.bg;
   gl.useProgram(q.p);
-  common(q);
-  gl.uniform3fv(q.u.uBase, BASE);
-  gl.uniform1f(q.u.uStep, Math.max(40, web.maxD / 16));
-  gl.bindVertexArray(vbo.face.a);
-  gl.drawArrays(gl.TRIANGLES, 0, vbo.face.n);
+  gl.uniform3fv(q.u.uBg, BG);
+  gl.uniform1f(q.u.uStyle, look.i);
+  gl.uniform1f(q.u.uDpr, view.dpr);
+  tri(scene);
+  if (vbo.face.n) {
+    q = P.face;
+    gl.useProgram(q.p);
+    common(q);
+    gl.uniform3fv(q.u.uBase, BASE);
+    gl.uniform1f(q.u.uStep, Math.max(40, web.maxD / 16));
+    gl.bindVertexArray(vbo.face.a);
+    gl.drawArrays(gl.TRIANGLES, 0, vbo.face.n);
+  }
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE);
+  // MAX blending keeps joints and crossings from beading.
+  gl.blendEquation(gl.MAX);
   q = P.edge;
   gl.useProgram(q.p);
   gl.uniform1f(q.u.uScout, 0.35);
-  instanced('edge', q, 7);
-  instanced('node', P.node, 14);
+  instanced('edge', q, 4);
+  gl.blendEquation(gl.FUNC_ADD);
+  instanced('node', P.node, 8);
   if (lockT >= 0 && path.length > 1) {
     q = P.path;
     gl.useProgram(q.p);
@@ -901,15 +1152,18 @@ function render() {
     // The path sweeps on from the source in 0.22 s.
     gl.uniform1f(q.u.uReveal, rm ? 1e6 : t < 0.22 ? (t / 0.22) * pathLen : 1e6);
     gl.uniform1f(q.u.uNow, simT);
-    gl.uniform1f(q.u.uFlash, (rm ? 0.3 : 1) * Math.exp(-t / 0.3));
-    gl.uniform1f(q.u.uPulse, ambT * 150 * (rm ? 0.5 : 1));
+    gl.uniform1f(q.u.uFlash, (rm ? 0.3 : 1) * Math.exp(-t / 0.4));
+    gl.uniform1f(q.u.uPulse, ambT * 90 * (rm ? 0.5 : 1));
     gl.uniform3fv(q.u.uHot, HOT);
-    instanced('path', q, 12);
+    // MAX blending keeps the path's joints from beading.
+    gl.blendEquation(gl.MAX);
+    instanced('path', q, 6);
+    gl.blendEquation(gl.FUNC_ADD);
   }
   q = P.mark;
   gl.useProgram(q.p);
   gl.uniform3fv(q.u.uHot, HOT);
-  instanced('mark', q, 22);
+  instanced('mark', q, 13);
   gl.disable(gl.BLEND);
   bloomPass();
   q = P.final;
@@ -929,7 +1183,7 @@ function bloomPass() {
   for (let i = 0; i < mips.length; i++) {
     bind(d, 'uSrc', 0, src.tex);
     gl.uniform2f(d.u.uTex, 1 / src.w, 1 / src.h);
-    gl.uniform1f(d.u.uThr, i === 0 ? 0.7 : 0);
+    gl.uniform1f(d.u.uThr, i === 0 ? 1.0 : 0);
     tri(mips[i]);
     src = mips[i];
   }
@@ -947,7 +1201,8 @@ function bloomPass() {
 /* ---------- layout ---------- */
 // The web takes the stage's size; a new size builds a new web in place.
 function layout() {
-  const { w, h, dpr } = fitCanvas(canvas, { maxDpr: 2 });
+  // Hairlines need the screen's own pixels, so the pixel budget is generous.
+  const { w, h, dpr } = fitCanvas(canvas, { maxDpr: 2, budget: 4.2e6 });
   const rebuild = !web || Math.abs(web.W - w) > 1 || Math.abs(web.H - h) > 1;
   view = { w, h, dpr };
   allocScreen();
@@ -958,7 +1213,7 @@ function defaults(w, h) {
   return h > w ? { s: [0.5, 0.8], t: [0.42, 0.18] } : { s: [0.22, 0.6], t: [0.8, 0.28] };
 }
 function makeWeb(w, h, finished) {
-  web = buildWeb(w, h, seed);
+  web = buildWeb(w, h, seed, kind);
   const d = defaults(w, h);
   const s = srcAt || d.s, t = tgtAt || d.t;
   src = -1; tgt = -1;
@@ -1034,13 +1289,19 @@ act.reset = () => {
   live();
 };
 act.still = () => still();
+// A new web kind floods its new web from the same spots.
+act.web = v => {
+  kind = v;
+  try { localStorage.setItem(WEB_KEY, v); } catch { /* Storage can be blocked. */ }
+  applyLook();
+  makeWeb(view.w, view.h, false);
+  live();
+};
 
 /* ---------- boot ---------- */
 try {
   await initGL();
-  COLD = linFit(0.42, 0.06, 262).map(v => v * 0.55);
-  BASE = linFit(0.17, 0.03, 275);
-  BG = linFit(0.12, 0.022, 275);
+  applyLook();
   HOT = linFit(0.97, 0.06, 85);
   layout();
   // The first frame shows the front at 55 % of the web.
