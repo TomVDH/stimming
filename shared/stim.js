@@ -649,22 +649,28 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     if (inSheet) toyLab.after(slider.el); else br.append(slider.el);
     set.hidden = !(rowsOrSite || inSheet || legacy);
   };
-  // Bottom corners that collide on a narrow stage stack in two rows.
-  const stack = () => {
+  /* fit: measure the corners, never trust a breakpoint alone */
+  // Both top corners plus their insets and a gap.
+  const span = () => tl.getBoundingClientRect().width + tr.getBoundingClientRect().width + 32;
+  let narrowNow = frame.getBoundingClientRect().width < 640;
+  const fit = () => {
+    const w = frame.getBoundingClientRect().width;
+    if ((w < 640) !== narrowNow) place(narrowNow = w < 640);
+    // A crowded top row sends the choice down, as on a phone.
+    if (!narrowNow && span() > w) place(narrowNow = true);
+    // A top row that still collides drops the toy name.
+    frame.removeAttribute('data-tight');
+    frame.toggleAttribute('data-tight', span() > w);
+    // Bottom corners that collide stack in two rows.
     frame.removeAttribute('data-stack');
-    if (!narrowNow || !bl.childElementCount || !br.childElementCount) return;
-    frame.toggleAttribute('data-stack', bl.getBoundingClientRect().right + 8 > br.getBoundingClientRect().left);
+    if (narrowNow && bl.childElementCount && br.childElementCount)
+      frame.toggleAttribute('data-stack', bl.getBoundingClientRect().right + 8 > br.getBoundingClientRect().left);
   };
   // The first layout runs at once, so a phone never shows the wide one.
-  let narrowNow = frame.getBoundingClientRect().width < 640;
   place(narrowNow);
-  stack();
-  document.fonts?.ready.then(stack);
-  new ResizeObserver(([e]) => {
-    const narrow = e.contentRect.width < 640;
-    if (narrow !== narrowNow) place(narrowNow = narrow);
-    stack();
-  }).observe(frame);
+  fit();
+  document.fonts?.ready.then(fit);
+  new ResizeObserver(fit).observe(frame);
 
   const ui = {
     choice,
@@ -679,6 +685,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
       name.querySelectorAll('.s2-tag').forEach(t => t.remove());
       if (info?.sub) name.append(make('span', 's2-tag', 'LAB'));
       if (info?.tier) name.append(make('span', 's2-tag', String(info.tier).toUpperCase()));
+      fit();
       const onLegacy = /\/legacy\.html$/.test(location.pathname);
       if (legacy || !(onLegacy || info?.legacy)) return;
       // The Classic or Fresh link sits in Settings, under its own label.

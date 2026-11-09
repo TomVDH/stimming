@@ -21,7 +21,7 @@ Bean: `stimming-80dc`. One session per toy. The orchestrating session starts the
    - A toy whose own on-screen legend teaches its keys sets `keys: false`.
 5. **Port.** Replace `<header data-shell>`, `.bar`, `dl.how` and local tray or popover code with one `bar` spec to `initPage`. Delete the dead CSS and JS.
 6. **Fix and upgrade.** Fix the bugs from step 2. Upgrade where it is cheap and clearly better: idle pages do no per-frame work, 30 fps or better, `prefers-reduced-motion`, sound muted by default. Keep every look Tom approved.
-7. **Check** in the browser pane at 1280 px and 375 px: placement, the narrow layout, sheets, keys, Escape, reload keeps persisted values, a clean console. Leave Tom's tab on the plain toy page.
+7. **Check** in the browser pane at 1280 px, 375 × 812 portrait and 812 × 375 landscape (mobile preset, so touch words and 34 px targets show): placement, no overlaps, the narrow layout, sheets fit, keys, Escape, reload keeps persisted values, a clean console. Hold the spec's "Mobile and compliance" list (`docs/plans/bar-v2.md`). The toy's own canvas UI must hold it too: nothing it draws hides under a corner. Leave Tom's tab on the plain toy page.
 8. **Commit and push** through `tools/commit.sh`, one logical commit at a time. Tick the toy in the migration bean.
 9. **Report** in three short lists: what moved where, bugs fixed, diegetic proposal (or "none fits").
 

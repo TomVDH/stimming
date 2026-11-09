@@ -503,12 +503,15 @@ t.pane('crossing closes sheets', async () => {
   await resize(f, 375);
   ok(!shown(f.layer.querySelector('.s2-sheet--right')), 'still open after crossing');
 });
-t.pane('name hides', async () => {
-  const f = fixture();
-  await resize(f, 340);
-  ok(!shown(f.layer.querySelector('.s2-name')), 'name shown at 340');
-  await resize(f, 375);
-  ok(shown(f.layer.querySelector('.s2-name')), 'name hidden at 375');
+t('short name stays on a phone', () => {
+  const { layer, ui } = narrowFixture({ keys: [['click', 'place']], settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }] }, 343);
+  ui.applyToy({ name: 'Pin art' });
+  ok(shown(layer.querySelector('.s2-name')), 'name hidden at 343');
+});
+t('crowded name drops out', () => {
+  const { layer, ui } = narrowFixture(crowded(), 320);
+  ui.applyToy({ name: 'Smoke ring cannon', sub: 'lab', legacy: true });
+  ok(!shown(layer.querySelector('.s2-name')), 'name shown when crowded');
 });
 
 t('narrow at build', () => {
@@ -618,10 +621,10 @@ t('logo sits unboxed at the far left', () => {
   eq(letters.length, 8);
   ok(letters[0].getBoundingClientRect().width > 0, 'logo has no width');
 });
-t('logo letters carry their colours', () => {
+t('logo rests white', () => {
   const { layer } = fixture();
-  const [a, b] = layer.querySelectorAll('.s2-back .mark span');
-  ok(getComputedStyle(a).color !== getComputedStyle(b).color, 'letters share one colour');
+  const fg = getComputedStyle(layer.querySelector('.s2-name')).color;
+  [...layer.querySelectorAll('.s2-back .mark span')].forEach(l => eq(getComputedStyle(l).color, fg));
 });
 t('phone logo stays whole', () => {
   const { layer } = narrowFixture({}, 343);
@@ -672,6 +675,39 @@ t('key strip reads over bright stages', () => {
   const k = layer.querySelector('.s2-keys');
   ok(getComputedStyle(k).textShadow !== 'none', 'strip text has no halo');
   ok(getComputedStyle(k.querySelector('kbd')).backgroundColor !== 'rgba(0, 0, 0, 0)', 'keycap has no backing');
+});
+
+/* ---------- phone matrix: a crowded bar at every width ---------- */
+const crowded = () => ({
+  choice: { label: 'Kind', value: 'o0', options: Array.from({ length: 6 }, (_, i) => ({ value: `o${i}`, label: `Option ${i} long` })) },
+  slider: { label: 'Gravity', min: 0, max: 1, step: 0.1, value: 0.5 },
+  actions: [{ verb: 'shuffle', onPress() {} }, { verb: 'flip', label: 'Flip', onPress() {} }, { verb: 'shake', label: 'Shake', onPress() {} }],
+  settings: Array.from({ length: 6 }, (_, i) => ({ type: 'toggle', id: `s${i}`, label: `Setting ${i}`, value: false })),
+  quality: true, reset() {},
+  keys: [['click', 'place'], ['hold + drag', 'throw a cluster'], ['drag', 'move'], ['scroll', 'zoom']],
+});
+const boxes = layer => ['.s2-tl', '.s2-tr', '.s2-bl', '.s2-br', '.s2-keys']
+  .map(sel => [sel, layer.querySelector(sel)]).filter(([, el]) => shown(el) && el.children.length)
+  .map(([sel, el]) => [sel, el.getBoundingClientRect()]);
+const inside = (r, f) => r.left >= f.left - 0.5 && r.right <= f.right + 0.5 && r.top >= f.top - 0.5 && r.bottom <= f.bottom + 0.5;
+[320, 360, 375, 414, 600, 700, 812, 1280].forEach(w => {
+  t(`crowded bar fits at ${w} px`, () => {
+    const { frame, layer, ui } = narrowFixture(crowded(), w);
+    ui.applyToy({ name: 'Smoke ring cannon', sub: 'lab', legacy: true });
+    const f = frame.getBoundingClientRect(), b = boxes(layer);
+    b.forEach(([sel, r]) => ok(inside(r, f), `${sel} leaves the frame`));
+    for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++)
+      ok(apart(b[i][1], b[j][1]), `${b[i][0]} overlaps ${b[j][0]}`);
+  });
+  t(`settings sheet fits at ${w} px`, () => {
+    const { frame, layer, ui } = narrowFixture(crowded(), w);
+    ui.applyToy({ legacy: true });
+    const set = layer.querySelector('.s2-set');
+    click(set);
+    const r = layer.querySelector('.s2-sheet--right').getBoundingClientRect();
+    click(set);
+    ok(inside(r, frame.getBoundingClientRect()), `sheet ${Math.round(r.left)},${Math.round(r.top)}..${Math.round(r.right)},${Math.round(r.bottom)} leaves the frame`);
+  });
 });
 
 /* ---------- run ---------- */

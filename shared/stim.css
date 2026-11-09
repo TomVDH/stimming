@@ -304,7 +304,8 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
   --lift: 2px 2px 0 oklch(0.05 0.01 275);
   --chip: 26px;
 }
-@media (pointer: coarse) { .stim2 { --chip: 34px; } }
+/* Coarse pointers get 34 px targets and one size up in text. */
+@media (pointer: coarse) { .stim2 { --chip: 34px; } .stim2 .stim-ui { font-size: 12px; } .stim2 :is(.s2-tag, .s2-lab) { font-size: 10px; } }
 /* With no bar under the stage, the page bottom matches the fit margin. */
 .stim2 .wrap { padding-bottom: 20px; }
 
@@ -315,6 +316,8 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
   font: 500 11px/1 var(--slab); letter-spacing: 0.07em; text-transform: uppercase;
 }
 .stim-ui > div { position: absolute; display: flex; align-items: center; gap: 6px; }
+/* Corners size to their content, so the shell can measure collisions. */
+.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br) { width: max-content; }
 .stim-ui > * > * { pointer-events: auto; }
 .s2-tl { top: 12px; left: 12px; }
 .s2-tr { top: 12px; right: 12px; }
@@ -334,8 +337,11 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
   transition: color 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 /* Hover lifts a control onto a hard shadow; a pick inverts it. */
-:is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .s2-seg, .s2-step):hover {
-  color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); transform: translate(-1px, -1px); box-shadow: var(--lift);
+/* Touch screens get no hover state, so a tap never leaves a lift behind. */
+@media (hover: hover) {
+  :is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .s2-seg, .s2-step):hover {
+    color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); transform: translate(-1px, -1px); box-shadow: var(--lift);
+  }
 }
 /* The pick outranks hover, so a hovered pick keeps its ink. */
 .stim-ui :is(.s2-chip[aria-pressed="true"], .s2-set[aria-expanded="true"], .s2-tray[aria-expanded="true"]) {
@@ -355,8 +361,11 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
 .s2-arrow { display: inline-block; width: 0; overflow: hidden; font: 700 16px/1 var(--slab); opacity: 0; transition: width 0.18s ease, opacity 0.18s ease; }
 .s2-back:is(:hover, :focus-visible) .s2-arrow { width: 0.75em; opacity: 1; }
 .s2-back .mark { font: 800 calc(var(--chip) * 0.7)/1 var(--sans); letter-spacing: -0.02em; text-transform: none; }
-.s2-back .mark span { color: var(--c); }
-.s2-back:is(:hover, :focus-visible) .mark span { animation: stim-wave 0.9s steps(1, end) both; animation-delay: calc(var(--i) * 33.333ms); }
+/* The mark rests white; hover, focus or a tap waves it into colour. */
+.s2-back .mark span { color: var(--fg); transition: color 0.2s ease; }
+.s2-back:is(:hover, :focus-visible, :active) .mark span {
+  color: var(--c); animation: stim-wave 0.9s steps(1, end) backwards; animation-delay: calc(var(--i) * 33.333ms);
+}
 /* The name follows the logo as a breadcrumb, unboxed. */
 .s2-name {
   display: inline-flex; align-items: center; gap: 8px; height: var(--chip); margin-right: 6px;
@@ -388,6 +397,8 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
   top: calc(12px + var(--chip) + 8px); z-index: 2; pointer-events: auto;
   display: grid; align-items: stretch; gap: 0; box-sizing: border-box; width: 280px; max-width: calc(100% - 20px);
   color: var(--fg); background: oklch(0.12 0.012 275 / 0.97); border: 1px solid var(--fg); box-shadow: var(--hard);
+  /* A short stage scrolls the sheet inside its own box. */
+  max-height: calc(100% - 2 * 12px - var(--chip) - 8px); overflow-y: auto; overscroll-behavior: contain;
 }
 .stim-ui > .s2-sheet--left { left: 12px; }
 .stim-ui > .s2-sheet--right { right: 12px; }
@@ -454,7 +465,8 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
 
 /* Narrow stages: an empty toy section hides; the name goes below 360 px. */
 .s2-sec:not(:has(.s2-row)) { display: none; }
-@container stim (width < 360px) { .s2-name { display: none; } }
+/* A crowded top row drops the name; the shell measures it. */
+.stim-frame[data-tight] .s2-name { display: none; }
 @container stim (width < 300px) { .s2-back .mark span:not(:first-child) { display: none; } }
 
 /* Entrance: the corners wait out the intro, then slide in from their edges. */

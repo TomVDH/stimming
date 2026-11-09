@@ -87,15 +87,32 @@ An action can be disabled (`aria-disabled`) when it would do nothing.
 
 **Diegetic toys.** A toy's own on-screen UI draws on its canvas, under the shell layer. The shell never reads it.
 
-### Phones (stage narrower than 640 px)
+### Phones (stage narrower than 640 px, or a top row that does not fit)
 
-- Top left: the logo and the toy name. The name hides below 360 px.
+- The shell measures the corners on every resize; breakpoints alone never decide. A wide stage whose top row collides takes the phone layout.
+- Top left: the logo and the toy name. The name drops out only when the top row still collides. The logo shrinks to its `S` below 300 px.
 - Top right: unchanged.
 - Bottom left: the choice, always as a `stepper` (or as its `tray` chip). With no choice, the actions.
 - Bottom right: the actions. With no choice, the slider.
 - The slider moves to the first row of the Settings sheet when the bottom right holds actions.
-- Touch targets are 34 px.
+- Touch targets are 34 px, and control text goes up one size.
+- Touch screens get no hover state, so a tap never leaves a lift behind.
 - The key strip uses touch words and sits above the bottom row.
+- Bottom corners that collide stack in two rows.
+- Sheets never leave the stage: a short stage scrolls the sheet inside its own box.
+
+### Mobile and compliance (Tom, 2026-11-09)
+
+Every shell change and every toy port holds these. `tests/bar-v2.html` checks the first four with a crowded bar at 320, 360, 375, 414, 600, 700, 812 and 1280 px.
+
+1. No control leaves the stage, and no corner overlaps another or the key strip.
+2. The Settings sheet fits the stage at every width.
+3. A short name stays on a phone; a long one drops out before it collides.
+4. The page never scrolls sideways or past the stage.
+5. Touch targets are 34 px on coarse pointers (WCAG 2.5.8 asks for 24).
+6. Every control has a visible focus ring and a keyboard path.
+7. Reduced motion stops every transition and the entrance.
+8. Text keeps 4.5:1 contrast: the key strip carries a dark halo on bright stages.
 
 ## 2. Look
 
@@ -202,7 +219,7 @@ A page without `bar` renders exactly as today. v1 is removed only after the last
 No Playwright (Tom). Check in the built-in browser pane.
 
 1. The console is clean on load and after every control.
-2. At 1280 px and 375 px: no control overlaps another; the stage stays fully visible.
+2. At 1280 px, 375 px portrait and 812 × 375 landscape: no control overlaps another; the stage stays fully visible; sheets fit.
 3. Keyboard: Tab reaches every control in slot order; Escape closes a sheet; arrow keys step the choice.
 4. Touch words show under touch emulation; mouse words show with a mouse.
 5. The key strip fades after three gestures and returns on (i).

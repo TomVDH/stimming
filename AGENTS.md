@@ -120,6 +120,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
   - Everything else goes in the Settings sheet; the site quality row sits there too.
   - The key strip shows keycap then verb (`[CLICK] place`), swaps words by pointer, and fades after three gestures or 8 s; (i) brings it back.
   - Phones (stage under 640 px): the choice moves bottom left as a stepper or tray chip, actions bottom right, the slider into Settings. Touch targets are 34 px.
+  - Mobile and compliance (Tom, 2026-11-09): every shell change and toy port holds the spec's list. Check 1280 px, 375 × 812 and 812 × 375. The shell measures collisions; never rely on a breakpoint alone. `tests/bar-v2.html` must pass.
   - Un-migrated pages keep v1 (`header[data-shell]`, `.bar`, `choices()`) until Tom moves them. Galaxy is the reference port.
 - Copy: no blurbs or taglines on the toy. Writing lives only in the vignette: a short heading, two plain paragraphs, a small figure.
 - Sound is synthesized with Web Audio. It is muted by default and starts after a user gesture. The choice is remembered in `stimming.<id>.sound`.
