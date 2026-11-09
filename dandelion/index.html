@@ -31,21 +31,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--dandelion" id="stage" tabindex="0" role="application" aria-label="A dandelion seed head in a golden meadow. Drag across it to blow the seeds away, or press and hold for a stronger gust. Space blows a gust, arrow keys blow that way, and R regrows the head.">
+    <div class="stage stage--dandelion" id="stage" tabindex="0" role="application" aria-label="A dandelion seed head in a golden meadow. Drag across it to blow the seeds away, or press and hold for a stronger gust. Hold Blow or Space for a steady gust, the arrow keys blow that way, and Regrow or R grows a new head.">
       <p class="fail" hidden>Dandelion needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="actions">
-        <button class="chip" id="regrow" type="button" aria-keyshortcuts="R" aria-disabled="true">Regrow</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>blow</dd></div>
-        <div><dt>Hold</dt><dd>stronger gust</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>gust</dd></div>
-        <div class="fine"><dt><kbd>R</kbd></dt><dd>regrow</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Dandelion</h1><div class="vignette" hidden></div></section>
@@ -58,10 +46,18 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'dandelion' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+const ui = initPage({ id: 'dandelion', bar: {
+  actions: [
+    { verb: 'blow', key: 'Space', hold: true, onDown: () => blowDown(), onUp: () => blowUp() },
+    { verb: 'regrow', key: 'R', onPress: () => regrow() },
+  ],
+  quality: true,
+  keys: [['drag', 'blow'], ['hold', 'strong gust'], ['← ↑ → ↓', 'blow that way']],
+} });
+// Both actions wait for the scene.
+ui.action('blow').disabled = true;
+ui.action('regrow').disabled = true;
 const panel = document.getElementById('stage');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -357,8 +353,10 @@ let phase = 'full', phaseT = 0, nod = 0;
 const sway = [0, 0, 0], swayV = [0, 0, 0], hp = [0, 0, 0], hq = [0, 0, 0, 1];
 const DUR = { bare: 1.3, close: 1.3, bud: 0.55, open: 2.7 };
 const dur = k => DUR[k] * (reduce ? 0.3 : 1);
-const regrowB = document.getElementById('regrow');
-const showChip = () => regrowB.setAttribute('aria-disabled', String(phase === 'full' && attached === N));
+// Regrow does nothing while the head is full or regrowing.
+const showChip = () => {
+  ui.action('regrow').disabled = !ready || phase === 'close' || phase === 'bud' || phase === 'open' || (phase === 'full' && attached === N);
+};
 function setPhase(p) { phase = p; phaseT = 0; showChip(); }
 function regrow() {
   if (!ready || phase === 'close' || phase === 'bud' || phase === 'open') return;
@@ -1084,22 +1082,20 @@ function keyGust(key, dir) {
   kb = { key, t: 0, held: true, emit: 0, dir: dir.map(c => c / l) };
   wake();
 }
+// The Blow chip and Space blow along the last arrow.
+function blowDown() { if (ready) keyGust('blow', kdir); }
+function blowUp() { if (kb?.key === 'blow') kb.held = false; }
+// Arrow keys blow that way and aim the Blow chip.
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  const k = e.key;
-  if (k === 'r' || k === 'R') { if (!e.repeat) regrow(); }
-  else if (k === ' ' || ARROWS[k]) {
-    if (k === ' ' && e.target.closest?.('button, a')) return;
-    e.preventDefault();
-    if (e.repeat || !ready) return;
-    if (ARROWS[k]) kdir = ARROWS[k];
-    keyGust(k, kdir);
-  }
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ARROWS[e.key]) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  e.preventDefault();
+  if (e.repeat || !ready) return;
+  kdir = ARROWS[e.key];
+  keyGust(e.key, kdir);
 });
 addEventListener('keyup', e => { if (kb && e.key === kb.key) kb.held = false; });
 addEventListener('blur', () => { if (kb) kb.held = false; });
-regrowB.addEventListener('click', regrow);
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1230,6 +1226,7 @@ async function start() {
   // Async compile keeps the shader builds off the main thread.
   await renderer.compileAsync(scene, camera);
   ready = true;
+  ui.action('blow').disabled = false;
   showChip();
   draw();
   requestAnimationFrame(() => canvas.classList.add('on'));

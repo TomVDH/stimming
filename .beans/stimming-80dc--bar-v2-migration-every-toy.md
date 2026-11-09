@@ -48,7 +48,7 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 ## Batch 6
 - [ ] coil
 - [ ] cube
-- [ ] dandelion
+- [x] dandelion
 - [ ] flap
 - [ ] flock
 
