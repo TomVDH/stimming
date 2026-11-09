@@ -466,6 +466,12 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     // Towns from the map, densest on the Lake Zurich shore.
     // Each roof has a pale wall toward the train.
     float vm = min(town(vP.xz) * 1.2, 1.0), house = 0.0;
+    // Dense town ground: paving, yards and small lawns in place of meadow.
+    float urb = smoothstep(0.35, 0.8, vm) * step(4.0, wd);
+    if (urb > 0.0) {
+      float lawn = smoothstep(0.45, 0.6, vnoise(vP.xz * 0.025) * 0.7 + vnoise(vP.xz * 0.11) * 0.3);
+      alb = mix(alb, mix(vec3(0.27, 0.26, 0.24), alb * 0.95, lawn), urb * 0.85);
+    }
     for (int i = 0; i < ${NG}; i++) vm = max(vm, smoothstep(170.0, 50.0, length(vP.xz - uGP[i].xz)));
     if (vm > 0.0 && wd > 6.0) {
       vec2 g = vP.xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
@@ -770,7 +776,7 @@ const PROPL = /* glsl */`
 vec3 propLit(vec3 P, vec3 N, vec3 alb, float ao, float trans) {
   vec3 V = normalize(cameraPosition - P);
   float w = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
-  vec3 day = sunC() * vec3(1.0, 0.95, 0.85) * w * w + skyA(N.y) * 1.7 * ao + sunC() * vec3(0.05, 0.065, 0.04) * (1.0 - w);
+  vec3 day = sunC() * vec3(1.0, 0.95, 0.85) * w * w + skyA(N.y) * 1.25 * ao + sunC() * vec3(0.07, 0.07, 0.05) * (1.0 - w) * (0.6 + 0.4 * (1.0 - N.y));
   // Leaves glow when the sun stands behind them.
   day += sunC() * trans * pow(max(dot(-V, uSun), 0.0), 4.0) * 0.3 * vec3(0.9, 1.0, 0.6) * (1.0 - uRain);
   vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * clamp((dot(N, uMoon) + 0.25) / 1.25, 0.0, 1.0) + vec3(0.012, 0.016, 0.026);
@@ -832,7 +838,7 @@ function joinParts(list, soft) {
 function propMesh(geo, pl, vs, fs, opts = {}) {
   geo.instanceCount = pl.n;
   const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-    uniforms: Object.assign({}, OUTU, { tPl: { value: pl.tex } }),
+    uniforms: Object.assign({}, OUTU, { tPl: { value: pl.tex } }, opts.uniforms),
     side: opts.side ?? THREE.FrontSide,
     transparent: !!opts.transparent, depthWrite: !opts.transparent,
     vertexShader: /* glsl */`
@@ -872,7 +878,8 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     if (s > 0.6 || y + 20.0 > 1350.0 + (hash1(vec2(k, a.z)) - 0.5) * 300.0) return vec4(0.0);
     float f = forestAt(xz, s), tw = town(xz);
     // Woods stand thick; the open meadow keeps a few lone trees.
-    if (h > f * 0.92 + 0.02 * (1.0 - f) - tw * 0.7) return vec4(0.0);
+    // Towns keep street and garden trees.
+    if (h > f * 0.92 + 0.02 * (1.0 - f) + 0.05 * tw - tw * f * 0.6) return vec4(0.0);
     // Spruce holds the high, steep ground; broadleaf the low.
     float sp = clamp((smoothstep(250.0, 900.0, y + 20.0) + s * 1.5) * 0.7 + 0.2, 0.1, 0.95);
     float kind = hash1(vec2(a.z * 0.133, k + 4.0)) < sp ? 1.0 : 0.0;
@@ -941,23 +948,27 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
   propMesh(joinParts([...crown.map(([r, x, y, z]) => [new THREE.IcosahedronGeometry(r, 1).translate(x, y - 1.2, z), 1, [0, 3.6, 0]])], 0.6), shrubs, treeVS(0, true), treeFS(0));
 }
 {
-  // Houses: chalets in the villages, barns on the farms, plaster blocks in Zurich.
-  const HP = 3000, n = PW * 48, d = new Float32Array(n * 4);
-  for (let i = 0; i < n; i++) d.set([rnd() * HP, -(24 + 1500 * rnd() ** 1.4), rnd() * 1000, 0], i * 4);
+  // Houses from OSM footprints (tools/buildings.py): Zurich's blocks, the shore villages, the farms.
+  // Each has its real place, footprint and heading; a share survive, so the land leads.
+  const B = ROUTE.bld, n = B.length / 8, d = new Float32Array(n * 4), at = new Float32Array(PW * Math.ceil(n / PW) * 4);
+  for (let i = 0; i < n; i++) {
+    const o = i * 8, s = (B[o] | B[o + 1] << 8) * 1.2, t = (B[o + 2] | B[o + 3] << 8) / 10;
+    const w = B[o + 4] / 4, l = B[o + 5] / 4, h = B[o + 6] / 4, yaw = B[o + 7] / 256 * Math.PI, area = w * l;
+    // Kind 2 is a city block, 1 a barn or hall, 0 a house.
+    const kind = (s < 5500 && (area > 160 || h > 11)) || h > 14 ? 2 : area > 450 && (h === 0 || h < 10) ? 1 : 0;
+    // Unknown heights: blocks four to six floors; houses two, big ones three.
+    const H = h || (kind === 2 ? 3.1 * (4 + Math.floor(rnd() * 3)) + 0.6 : kind === 1 ? 6 + rnd() * 2 : area > 220 ? 8.6 : 5.6 + rnd() * 1.2);
+    d.set([s, -t, kind, rnd()], i * 4);
+    at.set([Math.min(w, 40), Math.min(H, 60), Math.min(l, 80), yaw], i * 4);
+  }
+  const tAt = new THREE.DataTexture(at, PW, at.length / 4 / PW, THREE.RGBAFormat, THREE.FloatType);
+  tAt.needsUpdate = true;
   const houses = placer(d, /* glsl */`
   vec4 place(vec4 a) {
-    vec2 wk = wrapP(a.x, ${HP}.0), xz = vec2(wk.x, a.y);
-    float k = wk.y, h = hash1(vec2(a.z * 0.0517, k + 0.5));
-    if (atStation(xz, 20.0) || shore(xz) < 10.0 || onRoad(xz, 9.0)) return vec4(0.0);
-    float s = slopeAt(xz, 8.0), y = land(xz);
-    if (s > 0.3 || y + 20.0 > 1100.0) return vec4(0.0);
-    float tw = town(xz), f = forestAt(xz, s);
-    // Villages follow the map; lone farms dot the open meadow.
-    float p = tw * 0.55 + 0.014 * (1.0 - f) * smoothstep(0.12, 0.03, s);
-    if (f > 0.6 || h > p) return vec4(0.0);
-    float rx = mod(xz.x, ${f8(TILE)});
-    float kind = (rx < 4500.0 && tw > 0.45) ? 2.0 : (tw < 0.15 && hash1(vec2(a.z, k + 3.0)) < 0.45) ? 1.0 : 0.0;
-    return vec4(xz.x, y, xz.y, 1.0 + kind * 10.0 + 0.9 * hash1(vec2(a.z, k + 7.0)));
+    float x = uCamX + mod(a.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+    vec2 xz = vec2(x, a.y);
+    if (a.y > -15.0 || abs(x - uCamX) > 6000.0 || atStation(xz, 10.0) || shore(xz) < 3.0) return vec4(0.0);
+    return vec4(x, land(xz), a.y, 1.0 + a.z * 10.0 + 0.9 * a.w);
   }`);
   // A unit gable roof: ridge along z, so each gable faces the train and the lake.
   const roof = (() => {
@@ -971,29 +982,28 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
   })();
   const geo = joinParts([[new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), 0], [roof.slopes, 1], [roof.gables, 2]]);
   propMesh(geo, houses, /* glsl */`
+  uniform sampler2D tAt;
   varying vec3 vL, vS;
   varying float vK, vV;
   void main() {
     vec4 q = inst();
     if (q.w <= 0.0) { ${HIDE} }
     float kind = floor(q.w / 10.0), v = q.w - kind * 10.0 - 1.0;
-    float h2 = hash1(q.xz * 0.37), h3 = hash1(q.xz * 0.53 + 2.0);
-    vec3 S;
-    float rh;
-    if (kind < 0.5) { S = vec3(9.0 + 5.0 * v, 5.5 + 2.5 * h2, 8.0 + 3.0 * h3); rh = 0.3 * S.x; }
-    else if (kind < 1.5) { S = vec3(14.0 + 6.0 * v, 5.0 + 2.0 * h2, 16.0 + 7.0 * h3); rh = 0.42 * S.x; }
-    else { S = vec3(16.0 + 14.0 * v, 12.0 + 12.0 * h2, 12.0 + 4.0 * h3); rh = 0.06 * S.x; }
+    vec4 A = texelFetch(tAt, ivec2(gl_InstanceID % ${PW}, gl_InstanceID / ${PW}), 0);
+    vec3 S = A.xyz;
+    // Roofs: a gentle pitch on houses, steeper on barns, flat on wide or some city blocks.
+    float rh = kind < 0.5 ? min(0.3 * S.x, 5.0) : kind < 1.5 ? min(0.36 * S.x, 7.0) : (S.x > 22.0 || v < 0.3 ? 0.4 : min(0.22 * S.x, 4.5));
     vec3 p = position, l;
     // Walls reach 4 m into the ground, so a slope never shows a gap.
     if (part < 0.5) l = vec3(p.x * S.x, p.y < 0.01 ? -4.0 : S.y, p.z * S.z);
     // The roof overhangs the walls and the gables.
     else if (part < 1.5) l = vec3(p.x * S.x * 1.14, S.y + 0.1 + p.y * rh, p.z * S.z * 1.12);
     else l = vec3(p.x * S.x, S.y + p.y * rh, p.z * S.z);
-    float yaw = (hash1(q.xz * 0.19) - 0.5) * (kind > 1.5 ? 0.3 : 0.7), c = cos(yaw), s = sin(yaw);
+    float yaw = A.w, c = cos(yaw), s = sin(yaw);
     vec3 w = vec3(c * l.x + s * l.z, l.y, -s * l.x + c * l.z);
     vP = q.xyz + w;
     vN = vec3(0.0, 1.0, 0.0);
-    vL = l; vS = S; vK = kind; vV = hash1(q.xz * 0.77);
+    vL = l; vS = S; vK = kind; vV = v;
     vPart = part;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`, /* glsl */`
@@ -1006,26 +1016,36 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     if (vPart > 0.5 && vPart < 1.5) {
       // Roofs: brown tile, dark timber shingle or grey slate; flat tops in town.
       alb = vV < 0.5 ? vec3(0.2, 0.1, 0.065) : vV < 0.8 ? vec3(0.14, 0.09, 0.06) : vec3(0.17, 0.17, 0.19);
-      if (vK > 1.5) alb = vec3(0.24, 0.24, 0.25);
+      if (vK > 1.5) alb = vV < 0.6 ? vec3(0.24, 0.12, 0.08) : vV < 0.85 ? vec3(0.2, 0.2, 0.22) : vec3(0.3, 0.3, 0.29);
       // The eaves' underside sits in shade.
       if (N.y < -0.2) alb *= 0.4;
     } else {
       vec3 plaster = mix(vec3(0.78, 0.75, 0.68), vec3(0.86, 0.83, 0.76), vV);
       vec3 wood = mix(vec3(0.28, 0.16, 0.08), vec3(0.36, 0.22, 0.12), fract(vV * 7.0));
       // A chalet: a plaster ground floor, timber above and in the gable.
-      alb = vL.y < 2.9 && vPart < 1.5 ? plaster : wood;
+      alb = (vL.y < 2.9 && vPart < 1.5) || fract(vV * 13.0) > 0.35 ? plaster : wood;
       if (vK > 0.5 && vK < 1.5) alb = vL.y < 0.8 ? plaster * 0.8 : mix(vec3(0.3, 0.22, 0.15), vec3(0.36, 0.27, 0.18), vV);
-      if (vK > 1.5) alb = mix(vec3(0.8, 0.77, 0.7), vec3(0.82, 0.78, 0.6), step(0.6, vV));
+      // City plaster: cream, ochre, salmon, pale grey or sage, one per block.
+      if (vK > 1.5) {
+        float pc = fract(vV * 5.3);
+        alb = pc < 0.3 ? vec3(0.8, 0.76, 0.66) : pc < 0.5 ? vec3(0.78, 0.62, 0.38) : pc < 0.65 ? vec3(0.8, 0.6, 0.5) : pc < 0.85 ? vec3(0.66, 0.66, 0.64) : vec3(0.62, 0.68, 0.58);
+        // A darker ground floor: shops and doors.
+        if (vL.y < 3.4 && fract(vV * 3.1) < 0.5) alb *= 0.55;
+      }
       // Windows with shutters, on rows of 2.8 m; barns have none.
       bool xface = abs(abs(vL.x) - vS.x * 0.5) < 0.05;
       float u = xface ? vL.z : vL.x, half_ = (xface ? vS.z : vS.x) * 0.5;
-      float gap = vK > 1.5 ? 3.0 : 2.6, ww = vK > 1.5 ? 0.75 : 0.5;
-      float cu = fract(u / gap) - 0.5, row = floor((vL.y - 0.9) / 2.8), cv = vL.y - 0.9 - row * 2.8;
+      bool city = vK > 1.5;
+      float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : 2.6, ww = city ? 0.45 : 0.5, fh = city ? 3.1 : 2.8, wh = city ? 1.5 : 1.3;
+      float y0 = city ? 4.0 : 0.9;
+      float cu = fract(u / gap) - 0.5, row = floor((vL.y - y0) / fh), cv = vL.y - y0 - row * fh;
       float fade = 1.0 - smoothstep(0.25, 0.6, length(fwidth(vec2(u, vL.y))) * 2.0);
-      if (vK < 0.5 || vK > 1.5) if (row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && cv < 1.3 && vPart < 1.5) {
+      if (vK < 0.5 || city) if (row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && cv < wh && vPart < 1.5) {
         float ax = abs(cu) * gap;
         float lit = step(0.5, hash1(vec2(floor(u / gap), row) + vV * 31.0));
-        if (ax < ww) {
+        // City windows sit in a pale frame.
+        if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
+        else if (ax < ww) {
           alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
           glow = vec3(1.0, 0.72, 0.42) * 1.4 * lit * (1.0 - uDay) * fade;
         } else if (vK < 0.5 && ax < ww + 0.42) {
@@ -1038,7 +1058,7 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     float ao = smoothstep(-0.5, 2.0, vL.y);
     vec3 c = propLit(vP, N, alb, ao, 0.0) + glow;
     gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
-  }`, { side: THREE.DoubleSide });
+  }`, { side: THREE.DoubleSide, uniforms: { tAt: { value: tAt } } });
 }
 {
   // Fences: runs of 4 m timber segments, most along the line, some leading away.
@@ -1052,7 +1072,7 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
   vec4 place(vec4 a) {
     vec2 wk = wrapP(a.x, ${FP}.0), xz = vec2(wk.x, a.y);
     if (xz.y > -12.0 || atStation(xz, 40.0) || shore(xz) < 2.0 || onRoad(xz, 3.0)) return vec4(0.0);
-    if (hash1(vec2(a.w * 0.0173, wk.y + 0.5)) > 0.55 * (1.0 - town(xz))) return vec4(0.0);
+    if (town(xz) > 0.2 || hash1(vec2(a.w * 0.0173, wk.y + 0.5)) > 0.55 * (1.0 - town(xz))) return vec4(0.0);
     float s = slopeAt(xz, 4.0);
     if (s > 0.35 || forestAt(xz, s) > 0.45) return vec4(0.0);
     return vec4(xz.x, 0.0, xz.y, a.z + 10.0);
@@ -2708,6 +2728,8 @@ return {
   get brake() { return A_DN; },
   // The oncoming train's front, relative to the eye; NaN when none runs.
   get oppAt() { return opp.on ? opp.x - camX : NaN; },
+  get oppLen() { return opp.len; },
+  get oppV() { return opp.v; },
   get camX() { return camX; },
   get rain() { return W.uRain.value; },
   get day() { return dayV; },
@@ -2781,9 +2803,11 @@ renderer.toneMappingExposure = 1.0;
 // route.png: R and G hold the height in decimetres plus 500 m.
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
-  const [meta, img] = await Promise.all([
+  const [meta, img, bld] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
+    // OSM buildings, 8 bytes each; the ride runs without them.
+    fetch('buildings.bin').then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).catch(() => new ArrayBuffer(0)),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -2797,7 +2821,7 @@ async function loadRoute() {
     f[i * 2] = b === 255 ? 255 : 0;
     f[i * 2 + 1] = b === 255 ? 0 : b;
   }
-  return { meta, w: c.width, ht: c.height, h, f };
+  return { meta, w: c.width, ht: c.height, h, f, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
@@ -2936,8 +2960,9 @@ function watchdog(dt) {
 // trainride/dev/sonograph.png marks each clip's source and the peaks cut out.
 // bed: a clean cruise stretch, looped; level and pitch follow the speed.
 // away and stop: the pull-away and the arrival, timed to the train.
-// points, joints and pass: one-shots on the switches, the joints and the oncoming train.
-const CLIPS = ['bed', 'away', 'stop', 'points', 'joints', 'pass', 'idle'];
+// points and joints: one-shots on the switches and the rail joints.
+// whoosh: a trackside pass-by (freesound community, train-passing), muffled as if through the glass.
+const CLIPS = ['bed', 'away', 'stop', 'points', 'joints', 'whoosh', 'idle'];
 const SEAM = 1.5;
 let clipLoad = null, clips = null;
 function seamless(buf, ac) {
@@ -2959,91 +2984,56 @@ function loadClips(ac) {
     }).catch(() => { clipLoad = null; });
   return clipLoad;
 }
+// The recording bus: background level, a trimmed low end and a gentle treble lift.
+let recBus = null;
+function bus(ac) {
+  if (recBus) return recBus;
+  const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 140; lo.gain.value = -4;
+  const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3200; hi.gain.value = 5;
+  const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 7000; air.Q.value = 0.8; air.gain.value = 2.5;
+  recBus = ac.createGain(); recBus.gain.value = 0.42;
+  recBus.connect(lo).connect(hi).connect(air).connect(kit.out);
+  return recBus;
+}
 // A looping layer with its own gain.
 function loopLayer(ac, buf) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.loop = true; g.gain.value = 0;
-  src.connect(g).connect(kit.out);
+  src.connect(g).connect(bus(ac));
   src.start(0, Math.random() * buf.duration);
   return { src, g };
 }
 // A one-shot from offset, with short fades; returns its gain to duck or stop it.
-function shot(ac, buf, level, offset = 0, fadeIn = 0.03) {
+function shot(ac, buf, level, offset = 0, fadeIn = 0.03, rate = 1) {
   const src = ac.createBufferSource(), g = ac.createGain(), now = ac.currentTime;
-  src.buffer = buf;
+  src.buffer = buf; src.playbackRate.value = rate;
   g.gain.setValueAtTime(0, now);
   g.gain.linearRampToValueAtTime(level, now + fadeIn);
-  src.connect(g).connect(kit.out);
+  src.connect(g).connect(bus(ac));
   src.start(now, Math.min(offset, buf.duration - 0.1));
-  return { src, g, end: now + buf.duration - offset };
+  return { src, g, end: now + (buf.duration - offset) / rate };
 }
 function fadeOut(ac, s, tau = 0.6) {
   if (!s) return;
   s.g.gain.setTargetAtTime(0, ac.currentTime, tau);
   s.src.stop(ac.currentTime + tau * 6);
 }
-// Rain hisses on the glass and each rail joint clacks; the recording does the rest.
-const kit = audioKit({ gain: 0.6, noiseSeconds: 2 });
-const JOINT = 25, BOGIE = [0, 2.6, 16, 18.6];
-let V = null, joint = null, dropBudget = 0;
-function loopNoise(ac, type, f, q) {
-  const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
-  const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-  const g = ac.createGain(); g.gain.value = 0;
-  src.connect(fl).connect(g).connect(kit.out);
-  src.start(0, Math.random() * kit.noise.duration);
-  return { fl, g };
-}
+// Recordings only: no synth voices.
+const kit = audioKit({ gain: 0.6, noiseSeconds: 0 });
+let V = null;
 function voices() {
   const ac = kit.live();
-  if (!ac || !kit.noise) return null;
-  V ||= { rain: loopNoise(ac, 'bandpass', 4200, 0.5), rumble: loopNoise(ac, 'lowpass', 150, 0.7) };
+  if (!ac) return null;
+  V ||= {};
   if (!clips) loadClips(ac);
   else if (!V.bed) { V.bed = loopLayer(ac, clips.bed); V.idle = loopLayer(ac, clips.idle); }
   return V;
 }
-function burst(ac, at, { f, q, dur, level, type = 'bandpass' }) {
-  const src = ac.createBufferSource(); src.buffer = kit.noise;
-  const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(level, at + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0005, at + dur);
-  src.connect(fl).connect(g).connect(kit.out);
-  src.start(at, Math.random() * (kit.noise.duration - dur - 0.05), dur + 0.02);
-}
-// One wheel on one joint: a click of steel and a low thump.
-function clack(ac, at, level) {
-  burst(ac, at, { f: 1100 + Math.random() * 500, q: 1.4, dur: 0.035, level: level * 0.35 });
-  const o = ac.createOscillator(), g = ac.createGain();
-  o.frequency.setValueAtTime(95, at); o.frequency.exponentialRampToValueAtTime(48, at + 0.09);
-  g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(level * 0.5, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0005, at + 0.12);
-  o.connect(g).connect(kit.out);
-  o.start(at); o.stop(at + 0.14);
-}
 function voice(dt) {
   const v = voices();
-  if (!v) return;
-  const ac = kit.ac, now = ac.currentTime, sp = S.speed, k = Math.min(1, sp / 30);
-  v.rain.g.gain.setTargetAtTime(0.05 * S.rain, now, 0.2);
-  if (v.bed) recorded(v, ac, now, sp, k);
-  else {
-    // The synth rumble stands in until the recording loads.
-    v.rumble.g.gain.setTargetAtTime(0.32 * Math.pow(k, 0.8), now, 0.2);
-    v.rumble.fl.frequency.setTargetAtTime(110 + 90 * k, now, 0.3);
-  }
-  // Single drops tick on the pane at a rate set by the rain.
-  dropBudget = Math.min(4, dropBudget + dt * 9 * S.rain);
-  while (dropBudget >= 1) {
-    dropBudget--;
-    if (Math.random() < 0.6) burst(ac, now + Math.random() * 0.05, { f: 2400 + Math.random() * 4000, q: 2, dur: 0.008 + Math.random() * 0.01, level: 0.05 + 0.06 * Math.random() });
-  }
-  // Each bogie wheel crosses the joint in turn; the gap shrinks with speed.
-  const j = Math.floor(S.camX / JOINT);
-  // With the recording on, the synth clacks sit far under it.
-  const ck = v.bed ? 0.3 : 1;
-  if (joint !== null && j !== joint && sp > 2) for (const b of BOGIE) clack(ac, now + b / sp, (0.25 + 0.5 * k) * ck);
-  joint = j;
+  if (!v || !v.bed) return;
+  const ac = kit.ac, sp = S.speed;
+  recorded(v, ac, ac.currentTime, sp, Math.min(1, sp / 30));
 }
 // The recording drives the ride: bed by speed, pull-away and arrival timed to the train.
 const REC = { away: null, stop: null, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
@@ -3055,7 +3045,6 @@ function recorded(v, ac, now, sp, k) {
   v.bed.g.gain.setTargetAtTime(1.1 * Math.min(1, sp / 22) ** 0.7 * dip, now, 0.8);
   v.bed.src.playbackRate.setTargetAtTime(0.82 + 0.22 * Math.min(1, sp / 32), now, 1.0);
   v.idle.g.gain.setTargetAtTime(S.dwelling && !REC.stop ? 0.5 : 0, now, 1.2);
-  v.rumble.g.gain.setTargetAtTime(0, now, 0.3);
   // Pull away: the doors close and the motors wind up with the train.
   if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5); }
   if (REC.away && (now > REC.away.end || sp < REC.prevSp - 0.05)) { fadeOut(ac, REC.away, 1.5); REC.away = null; }
@@ -3074,37 +3063,18 @@ function recorded(v, ac, now, sp, k) {
   // A worn joint now and then, louder at speed.
   if (sp > 12 && S.camX > REC.nextJoint) { shot(ac, clips.joints, 0.55 * k); REC.nextJoint = S.camX + 600 + Math.random() * 1400; }
   if (REC.nextJoint > S.camX + 3000 || REC.nextJoint < S.camX - 3000) REC.nextJoint = S.camX + 800;
-  // The oncoming train: a rush of air and steel as its front draws level.
-  const o = S.oppAt;
-  if (o === o && o < 80 && !REC.opp) { shot(ac, clips.pass, 1.0, 0.6); REC.opp = true; }
+  // The oncoming train: the whoosh's loud stretch starts 2.5 s in and lasts 7.5 s.
+  // It plays a little faster for a short train, and starts so the fronts meet on that mark.
+  const o = S.oppAt, vr = sp + S.oppV, rate = Math.min(1.3, Math.max(1, 7.5 / (S.oppLen / vr)));
+  if (o === o && o < vr * 2.5 / rate && !REC.opp) { shot(ac, clips.whoosh, 0.45, 0, 0.3, rate); REC.opp = true; }
   if (o !== o) REC.opp = false;
   REC.prevSp = sp;
   // Dev: the layer state, for QA.
   if (window.__train) window.__rec = `away=${!!REC.away} stop=${REC.stop ? (ac.currentTime - REC.stop.end + REC.stop.src.buffer.duration).toFixed(1) : '-'} bed=${v.bed.g.gain.value.toFixed(2)} idle=${v.idle.g.gain.value.toFixed(2)}`;
 }
-// The arrival chime: two soft falling notes; the recording has its own.
-function chime() {
-  const ac = kit.live();
-  if (!ac || clips) return;
-  const now = ac.currentTime;
-  [[659.3, 0], [523.3, 0.42]].forEach(([f, t]) => {
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.type = 'sine';
-    o.frequency.value = f;
-    g.gain.setValueAtTime(0, now + t);
-    g.gain.linearRampToValueAtTime(0.12, now + t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0005, now + t + 1.3);
-    o.connect(g).connect(kit.out);
-    o.start(now + t);
-    o.stop(now + t + 1.4);
-  });
-}
-S.onArrive = chime;
 function hush() {
   if (!V || !kit.ac) return;
   const now = kit.ac.currentTime;
-  V.rain.g.gain.setTargetAtTime(0, now, 0.15);
-  V.rumble.g.gain.setTargetAtTime(0, now, 0.15);
   for (const l of [V.bed, V.idle]) l?.g.gain.setTargetAtTime(0, now, 0.15);
   fadeOut(kit.ac, REC.away, 0.15); fadeOut(kit.ac, REC.stop, 0.15);
   REC.away = REC.stop = null;
