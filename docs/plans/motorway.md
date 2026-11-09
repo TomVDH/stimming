@@ -74,7 +74,11 @@ Five visible controls or fewer: Air, Switch, Rush, Zoom.
 
 **Units and path.** Metres; the hero lamp stands at the origin. The zoom `z` maps to a camera distance `D = 9 · (4.4e5 / 9)^z`. Pitch eases from +6° (looking up at the head) to −72°. The target slides from the lamp head to the country's centre between `z` 0.45 and 0.95. Yaw turns from the hero road's heading to north-up (or the portrait angle) between `z` 0.5 and 1. Near and far planes follow `D`.
 
-**Network.** Every Belgian motorway as lon, lat waypoints: all A roads, the R0, R1, R2, R3, R4 and R8 rings, the Liège links, and a few unlit neighbour roads. About 1,760 km lit, 35,000 lamp poles and 36 interchanges with high masts. Projected equirectangular around 50.6° N, 4.5° E. Catmull-Rom resampling at 50 m with a little noise gives an organic hand-drawn line. The hero stretch (E40 between Ghent and Brussels) is straight for 4 km around the origin. Each road splits into sections of about 25 km. Roads past the border are flagged unlit.
+**Network.** Baked from OpenStreetMap once, offline, into `motorway/roads.json` (Tom, 2026-11-09). Nothing streams at runtime. The file holds every motorway carriageway (3,464 km), trunk road (1,959 km) and primary road (5,294 km) in Belgium, the neighbours' motorways within 60 km of the border (5,995 km), the true border and its land outline, 142 interchanges and a per-point fade for the neighbours. It is 449 KB raw, 170 KB gzipped. Credit: OpenStreetMap contributors, ODbL, under the toy's title.
+
+**Bake.** `build_roads.py` (kept in the session notes, not shipped) chains OSM ways, simplifies them by Douglas-Peucker (10 m motorway to 60 m neighbours), finds interchanges (fast roads that cross at an angle) and bakes the fade. The page only samples curves and fills buffers: the network builds in about 0.2 s, under the intro.
+
+**Efficiency.** Ribbons and lamp sprites live in 30 km tiles with padded bounding spheres, so the camera culls what it cannot see. Above zoom 0.72 the sprites switch off; below it, lamp tiles past three view depths are skipped. A frame costs 7 to 10 ms at every zoom on a Retina canvas, post included.
 
 **Ribbon.** One mesh for all roads. Each vertex carries arc length `s`, lateral side, section id and lit flag. The vertex shader widens it to at least 1.2 px, so roads read from orbit. The fragment shader draws asphalt, the central reserve, lane dashes, verge, and the lamp pools: periodic in `s` with 50 m spacing, an ellipse along the road. When `fwidth(s)` passes the spacing, the pools fade to their average.
 

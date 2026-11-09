@@ -23,6 +23,9 @@
 }
 .stage--motorway canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--motorway canvas { transition: none; } }
+/* The map credit stays small and quiet. */
+.about .credit { font-size: 12px; opacity: 0.55; margin: 0.4em 0 0; }
+.about .credit a { color: inherit; }
 </style>
 </head>
 <body>
@@ -38,6 +41,7 @@
   </main>
   <section class="about" aria-labelledby="toy-name">
     <h1 class="display" id="toy-name">Lit motorway</h1>
+    <p class="credit">Roads and border © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ODbL.</p>
     <div class="vignette" hidden></div>
   </section>
 </div>
@@ -115,94 +119,8 @@ const LAT0 = 50.6, LON0 = 4.5;
 const KX = 111320 * Math.cos(LAT0 * Math.PI / 180), KY = 110570;
 const geoRaw = (lon, lat) => [(lon - LON0) * KX, -(lat - LAT0) * KY];
 
-// The country outline, hand-drawn. Lamps stand only inside it.
-const BORDER = [
-  [2.54, 51.09], [3.37, 51.37], [3.6, 51.29], [3.85, 51.21], [4.24, 51.36], [4.43, 51.47], [4.75, 51.5],
-  [4.93, 51.44], [5.05, 51.47], [5.12, 51.42], [5.22, 51.36], [5.27, 51.31], [5.5, 51.3], [5.84, 51.16], [5.64, 50.86], [5.69, 50.76], [6.02, 50.75],
-  [6.27, 50.62], [6.4, 50.33], [6.13, 50.13], [5.98, 50.08], [5.82, 49.93], [5.74, 49.83], [5.87, 49.72], [5.9, 49.65], [5.82, 49.55], [5.47, 49.5], [5.1, 49.77],
-  [4.85, 49.8], [4.87, 50.15], [4.82, 49.95], [4.43, 49.94], [4.15, 50.0], [4.15, 50.14], [4.03, 50.35],
-  [3.73, 50.35], [3.67, 50.44], [3.6, 50.5], [3.42, 50.51], [3.28, 50.54], [3.25, 50.62], [3.17, 50.7],
-  [3.1, 50.78], [2.94, 50.77], [2.86, 50.7], [2.62, 50.82],
-];
 // The coast, west to north-east. The sea lies to its left.
 const COAST = [[1.2, 50.85], [2.0, 51.0], [2.54, 51.09], [3.37, 51.37], [3.6, 51.5], [3.9, 51.7], [4.1, 52.0], [4.6, 52.6]];
-
-// Every Belgian motorway, as lon, lat waypoints; Catmull-Rom smooths them.
-// A ring closes on itself. Roads past the border carry on unlit.
-const R = (n, p, ring = false) => ({ n, p, ring });
-const ROADS = [
-  // A10/E40: Ostend, Bruges, Ghent, Brussels. Straight through the hero point.
-  R('E40', [[2.93, 51.21], [2.98, 51.2], [3.09, 51.18], [3.21, 51.165], [3.33, 51.13], [3.5, 51.07], [3.62, 51.035], [3.7, 51.02], [3.78, 51.0], [3.88, 50.98], [3.95, 50.95529], [3.98, 50.94471], [4.05, 50.92], [4.12, 50.9], [4.17, 50.876], [4.27, 50.868], [4.31, 50.865]]),
-  // A18/E40: Jabbeke, Veurne, Dunkirk, Calais.
-  R('A18', [[3.09, 51.18], [2.97, 51.16], [2.85, 51.13], [2.74, 51.09], [2.67, 51.07], [2.6, 51.06], [2.54, 51.05], [2.4, 51.02], [2.2, 50.97], [1.9, 50.95]]),
-  // A3/E40: Brussels, Leuven, Liege, Aachen, Cologne.
-  R('E40', [[4.4, 50.853], [4.44, 50.865], [4.475, 50.87], [4.55, 50.866], [4.62, 50.865], [4.7, 50.86], [4.78, 50.83], [4.86, 50.81], [4.93, 50.79], [5.03, 50.76], [5.14, 50.73], [5.25, 50.7], [5.36, 50.685], [5.47, 50.672], [5.55, 50.675], [5.64, 50.672], [5.73, 50.655], [5.82, 50.645], [5.92, 50.66], [5.98, 50.675], [6.06, 50.7], [6.13, 50.75], [6.3, 50.8], [6.5, 50.86], [6.95, 50.94]]),
-  // R0: the Brussels ring.
-  R('R0', [[4.27, 50.868], [4.3, 50.905], [4.37, 50.917], [4.44, 50.906], [4.475, 50.87], [4.48, 50.84], [4.455, 50.797], [4.42, 50.765], [4.37, 50.75], [4.31, 50.78], [4.26, 50.8], [4.25, 50.84]], true),
-  // A12: Brussels, Boom, Antwerp, Bergen op Zoom.
-  R('A12', [[4.37, 50.917], [4.35, 50.95], [4.33, 51.03], [4.36, 51.09], [4.385, 51.15], [4.39, 51.183]]),
-  R('A12', [[4.41, 51.25], [4.38, 51.3], [4.36, 51.34], [4.33, 51.38], [4.31, 51.42], [4.3, 51.49], [4.33, 51.6], [4.35, 51.75]]),
-  // A1/E19: Brussels, Mechelen, Antwerp; then Breda and Rotterdam.
-  R('A1', [[4.4, 50.875], [4.42, 50.89], [4.44, 50.906], [4.46, 50.97], [4.48, 51.0], [4.47, 51.06], [4.455, 51.13], [4.43, 51.178]]),
-  R('A1', [[4.455, 51.245], [4.5, 51.27], [4.55, 51.3], [4.62, 51.35], [4.73, 51.45], [4.76, 51.48], [4.78, 51.58], [4.68, 51.68], [4.6, 51.75], [4.48, 51.92]]),
-  // R1: the Antwerp ring, still open on its north side.
-  R('R1', [[4.35, 51.218], [4.375, 51.205], [4.385, 51.185], [4.41, 51.176], [4.44, 51.183], [4.46, 51.2], [4.465, 51.222], [4.455, 51.245], [4.43, 51.255], [4.41, 51.25]]),
-  // R2: round the port, through the Liefkenshoek tunnel.
-  R('R2', [[4.455, 51.245], [4.43, 51.28], [4.37, 51.3], [4.3, 51.29], [4.27, 51.26], [4.25, 51.222]]),
-  // A13/E313: Antwerp, Herentals, Hasselt, Liege.
-  R('A13', [[4.465, 51.21], [4.55, 51.195], [4.65, 51.19], [4.75, 51.17], [4.82, 51.15], [4.92, 51.12], [5.0, 51.1], [5.12, 51.04], [5.22, 50.98], [5.28, 50.95], [5.34, 50.91], [5.38, 50.84], [5.43, 50.77], [5.46, 50.72], [5.47, 50.672]]),
-  // A21/E34: Ranst, Turnhout, Eindhoven, Venlo.
-  R('A21', [[4.55, 51.195], [4.62, 51.22], [4.7, 51.25], [4.85, 51.3], [4.95, 51.305], [5.1, 51.31], [5.2, 51.35], [5.32, 51.39], [5.45, 51.42], [5.7, 51.45], [6.0, 51.38]]),
-  // A2/E314: Leuven, Genk, Maasmechelen, Heerlen, Aachen.
-  R('A2', [[4.72, 50.866], [4.78, 50.91], [4.85, 50.95], [4.97, 50.955], [5.13, 50.97], [5.22, 50.98], [5.38, 50.99], [5.5, 50.97], [5.6, 50.965], [5.68, 50.96], [5.73, 50.95], [5.85, 50.95], [5.95, 50.9], [6.08, 50.8]]),
-  // A14/E17: Antwerp, Sint-Niklaas, Ghent, Kortrijk, Lille, Paris.
-  R('A14', [[4.35, 51.218], [4.31, 51.2], [4.25, 51.18], [4.13, 51.15], [4.04, 51.12], [3.95, 51.09], [3.8, 51.06], [3.76, 51.04], [3.7, 51.02], [3.65, 50.98], [3.6, 50.94], [3.5, 50.9], [3.42, 50.87], [3.32, 50.83], [3.25, 50.8], [3.22, 50.775], [3.14, 50.76], [3.08, 50.68], [2.95, 50.5], [2.8, 50.3]]),
-  // A11/E34: Antwerp, Beveren, Zelzate, Eeklo, Zeebrugge.
-  R('A11', [[4.25, 51.222], [4.12, 51.22], [3.95, 51.2], [3.82, 51.19], [3.7, 51.19], [3.56, 51.2], [3.45, 51.22], [3.35, 51.26], [3.28, 51.29], [3.205, 51.31]]),
-  // N31: Bruges to Zeebrugge.
-  R('N31', [[3.21, 51.165], [3.245, 51.2], [3.24, 51.25], [3.205, 51.31]]),
-  // R4: the Ghent ring.
-  R('R4', [[3.7, 51.02], [3.78, 51.025], [3.81, 51.06], [3.79, 51.1], [3.73, 51.125], [3.67, 51.1], [3.645, 51.06]], true),
-  // A17/E403: Bruges, Roeselare, Kortrijk, Tournai.
-  R('A17', [[3.21, 51.165], [3.15, 51.1], [3.13, 51.03], [3.12, 50.95], [3.17, 50.88], [3.23, 50.835], [3.27, 50.78], [3.33, 50.71], [3.37, 50.64], [3.4, 50.6]]),
-  // R8: the Kortrijk ring.
-  R('R8', [[3.23, 50.835], [3.28, 50.845], [3.31, 50.825], [3.29, 50.8], [3.24, 50.805]], true),
-  // A19: Kortrijk to Ypres.
-  R('A19', [[3.23, 50.835], [3.12, 50.84], [3.0, 50.85], [2.9, 50.86]]),
-  // A8/E429: Brussels, Halle, Enghien, Ath, Tournai, Lille.
-  R('A8', [[4.26, 50.8], [4.22, 50.73], [4.12, 50.7], [4.03, 50.69], [3.88, 50.66], [3.78, 50.64], [3.6, 50.62], [3.42, 50.6], [3.35, 50.62], [3.24, 50.64], [3.1, 50.64]]),
-  // A16 and A15/E42: Tournai, Mons, Charleroi, Namur, Liege.
-  R('E42', [[3.4, 50.6], [3.5, 50.55], [3.6, 50.52], [3.72, 50.48], [3.83, 50.46], [3.95, 50.47], [4.04, 50.48], [4.12, 50.485], [4.2, 50.47], [4.3, 50.46], [4.38, 50.45], [4.44, 50.452], [4.56, 50.47], [4.7, 50.5], [4.8, 50.52], [4.89, 50.53], [5.05, 50.56], [5.15, 50.59], [5.25, 50.61], [5.36, 50.64], [5.45, 50.665], [5.47, 50.672]]),
-  // A27/E42: Battice, Verviers, Malmedy, St Vith, Prum.
-  R('A27', [[5.82, 50.645], [5.87, 50.6], [5.9, 50.53], [5.95, 50.45], [6.03, 50.41], [6.08, 50.35], [6.12, 50.29], [6.19, 50.24], [6.42, 50.21]]),
-  // A7/E19: Brussels, Nivelles, Houdeng.
-  R('A7', [[4.31, 50.78], [4.32, 50.73], [4.33, 50.68], [4.33, 50.62], [4.31, 50.58], [4.22, 50.53], [4.12, 50.485]]),
-  // A7/E19: Saint-Ghislain to Valenciennes and Paris.
-  R('A7', [[3.83, 50.46], [3.76, 50.44], [3.7, 50.43], [3.66, 50.41], [3.52, 50.36], [3.3, 50.2]]),
-  // A54: Nivelles to Charleroi.
-  R('A54', [[4.31, 50.58], [4.36, 50.53], [4.4, 50.49], [4.44, 50.452]]),
-  // R3: the Charleroi ring.
-  R('R3', [[4.44, 50.452], [4.52, 50.44], [4.55, 50.4], [4.5, 50.36], [4.42, 50.355], [4.36, 50.38], [4.37, 50.43]], true),
-  // A4/E411: Brussels, Wavre, Namur, Neufchateau, Arlon, Luxembourg, Metz.
-  R('A4', [[4.4, 50.815], [4.43, 50.803], [4.455, 50.797], [4.52, 50.77], [4.6, 50.71], [4.68, 50.62], [4.78, 50.57], [4.89, 50.53], [4.92, 50.47], [4.98, 50.4], [5.04, 50.32], [5.1, 50.25], [5.18, 50.17], [5.27, 50.05], [5.36, 49.93], [5.43, 49.85], [5.55, 49.78], [5.65, 49.73], [5.75, 49.69], [5.81, 49.67], [5.93, 49.64], [6.13, 49.61], [6.17, 49.4], [6.17, 49.12]]),
-  // A26/E25: Liege, Sprimont, Bastogne, Neufchateau.
-  R('A26', [[5.62, 50.61], [5.65, 50.55], [5.67, 50.51], [5.71, 50.47], [5.72, 50.38], [5.73, 50.25], [5.78, 50.13], [5.74, 50.03], [5.68, 49.97], [5.55, 49.9], [5.43, 49.85]]),
-  // A28: Aubange to the French border.
-  R('A28', [[5.81, 49.67], [5.84, 49.6], [5.85, 49.55], [5.9, 49.5]]),
-  // A25/E25: Liege, Vise, Maastricht, Eindhoven.
-  R('A25', [[5.6, 50.655], [5.63, 50.68], [5.7, 50.74], [5.7, 50.77], [5.7, 50.85], [5.78, 51.0], [5.88, 51.15], [5.6, 51.35], [5.45, 51.42]]),
-  // A602: through Liege, from Loncin to Chenee.
-  R('A602', [[5.47, 50.672], [5.52, 50.66], [5.55, 50.64], [5.57, 50.62], [5.6, 50.61], [5.62, 50.61]]),
-  // A601: Vottem to Herstal.
-  R('A601', [[5.57, 50.672], [5.6, 50.665], [5.6, 50.655]]),
-  // France: Lille to Dunkirk; Valenciennes to Lille.
-  R('A25F', [[3.08, 50.68], [2.9, 50.68], [2.72, 50.74], [2.5, 50.92], [2.4, 51.02]]),
-  R('A23F', [[3.08, 50.64], [3.25, 50.5], [3.52, 50.36]]),
-  // The Netherlands: Breda to Eindhoven; Bergen op Zoom to the north.
-  R('A58', [[4.3, 51.49], [4.55, 51.53], [4.78, 51.58], [5.05, 51.56], [5.3, 51.5], [5.45, 51.42]]),
-  // Germany: Aachen to Dusseldorf.
-  R('A44', [[6.13, 50.75], [6.25, 50.9], [6.45, 51.05], [6.7, 51.2]]),
-];
 // Towns: lon, lat, radius in km, level. Inside the border they glow warm.
 const TOWNS = [
   [4.36, 50.85, 9, 1], [4.41, 51.22, 7, 0.9], [3.72, 51.05, 5, 0.7], [5.57, 50.63, 6, 0.75], [4.44, 50.41, 6, 0.7],
@@ -218,8 +136,111 @@ const TOWNS = [
 ];
 const HERO_LL = [3.965, 50.95];
 
-const BORDER_M = BORDER.map(([lo, la]) => geoRaw(lo, la));
-// Point in polygon, by ray crossing.
+// Roads and border come from OpenStreetMap, simplified offline into roads.json.
+// Classes: 0 motorway, 1 trunk, 2 primary, 3 a neighbour's motorway.
+let DATA;
+try {
+  const r = await fetch('./roads.json');
+  if (!r.ok) throw new Error(`roads.json ${r.status}`);
+  DATA = await r.json();
+} catch (err) {
+  const f = stage.querySelector('.fail');
+  f.textContent = 'Lit motorway could not load its road map. Reload to try again.';
+  f.hidden = false; ui.hideControls?.(); markReady();
+  throw err;
+}
+const decode = a => {
+  const out = [];
+  let x = 0, y = 0;
+  for (let i = 0; i < a.length; i += 2) { x += a[i]; y += a[i + 1]; out.push(geoRaw(x / DATA.q, y / DATA.q)); }
+  return out;
+};
+const ROADS = DATA.roads.map(r => ({ c: r[0], o: r[1] === 1, p: decode(r.slice(2)) }));
+
+/* ---------- network ---------- */
+// Lamps stand every 50 m on fast roads and every 40 m on main roads.
+const HEAD_H = 12, HEAD_OFF = 4;
+const GAP = [50, 50, 40, 50], STEP = [40, 60, 110, 220];
+// Hermite curves smooth each polyline; samples fall evenly along it.
+// A baked per-point value F rides along, linearly, into fo.
+function sample(P, step, F = null, fo = null) {
+  const out = [], n = P.length;
+  const L = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-6;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n - 1, i + 2)];
+    const l1 = L(p1, p2), k1 = l1 / (L(p0, p1) + l1), k2 = l1 / (l1 + L(p2, p3));
+    // Tangents scale to the segment, so short segments do not overshoot.
+    const m1 = [(p2[0] - p0[0]) * k1, (p2[1] - p0[1]) * k1], m2 = [(p3[0] - p1[0]) * k2, (p3[1] - p1[1]) * k2];
+    const k = Math.max(1, Math.ceil(l1 / step));
+    for (let j = 0; j < k; j++) {
+      const t = j / k, t2 = t * t, t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+      out.push([h00 * p1[0] + h10 * m1[0] + h01 * p2[0] + h11 * m2[0], h00 * p1[1] + h10 * m1[1] + h01 * p2[1] + h11 * m2[1]]);
+      if (F) fo.push((F[i] + (F[i + 1] - F[i]) * t) / 100);
+    }
+  }
+  out.push(P[n - 1].slice());
+  if (F) fo.push(F[n - 1] / 100);
+  return out;
+}
+// Light per sample: 1 at home; past the border the baked fade.
+const dense = ROADS.map((R, r) => {
+  const F = DATA.fade[r] || null, lit = F ? [] : null;
+  const p = sample(R.p, STEP[R.c], F, lit), s = [0];
+  for (let i = 1; i < p.length; i++) s.push(s[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  return { p, s, lit };
+});
+const tangent = (p, i) => {
+  const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)];
+  const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  return [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+};
+
+// The hero carriageway: the motorway sample nearest the hero lon, lat.
+const [hx, hz] = geoRaw(...HERO_LL);
+let hA = -1, hAi = 0, hd = Infinity;
+dense.forEach((d, r) => {
+  if (ROADS[r].c !== 0) return;
+  d.p.forEach((q, i) => { const e = Math.hypot(q[0] - hx, q[1] - hz); if (e < hd) { hd = e; hA = r; hAi = i; } });
+});
+const TA = tangent(dense[hA].p, hAi), PA = dense[hA].p[hAi].slice();
+// n is the right-hand side of travel; the other carriageway lies to the left.
+const NA = [-TA[1], TA[0]];
+// The other carriageway: the nearest motorway segment that runs the other way.
+let hB = -1, hBs = 0, sep = 18;
+{
+  let best = 80;
+  dense.forEach((d, r) => {
+    if (r === hA || ROADS[r].c !== 0) return;
+    const { p, s } = d;
+    for (let i = 0; i < p.length - 1; i++) {
+      const a = p[i], b = p[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((PA[0] - a[0]) * dx + (PA[1] - a[1]) * dz) / l2));
+      const e = Math.hypot(a[0] + dx * t - PA[0], a[1] + dz * t - PA[1]);
+      if (e < best && (dx * TA[0] + dz * TA[1]) / Math.sqrt(l2) < -0.8) { best = e; hB = r; hBs = s[i] + Math.sqrt(l2) * t; sep = e; }
+    }
+  });
+}
+sep = Math.min(40, Math.max(12, sep));
+// The reserve's centre at the hero lamp is the world origin, for precision.
+const ORIGIN = [PA[0] - NA[0] * sep / 2, PA[1] - NA[1] * sep / 2];
+dense.forEach(d => d.p.forEach(q => { q[0] -= ORIGIN[0]; q[1] -= ORIGIN[1]; }));
+const geo = (lon, lat) => { const [x, z] = geoRaw(lon, lat); return [x - ORIGIN[0], z - ORIGIN[1]]; };
+const shift = pts => pts.map(([x, z]) => [x - ORIGIN[0], z - ORIGIN[1]]);
+const BORDER_M = shift(decode(DATA.border));
+const OUTLINE = DATA.outline.map(a => shift(decode(a)));
+const HT = new THREE.Vector3(TA[0], 0, TA[1]);
+const HN = new THREE.Vector3(NA[0], 0, NA[1]);
+// Lamp phase per road; both hero carriageways put a lamp at the hero station.
+const PHASE = dense.map(() => 0);
+PHASE[hA] = dense[hA].s[hAi] % GAP[0];
+if (hB >= 0) PHASE[hB] = hBs % GAP[0];
+// Heads hang left of travel on a carriageway; two-way roads hang them right.
+const HOFF = ROADS.map(R => (R.o ? 5 : -5));
+HOFF[hA] = sep / 2 - HEAD_OFF;
+if (hB >= 0) HOFF[hB] = sep / 2 - HEAD_OFF;
+
+// Point in polygon, by ray crossing; only the towns ask.
 function inBelgium(x, z) {
   let c = false;
   for (let i = 0, j = BORDER_M.length - 1; i < BORDER_M.length; j = i++) {
@@ -228,36 +249,6 @@ function inBelgium(x, z) {
   }
   return c;
 }
-
-/* ---------- network ---------- */
-// Lamps stand every 50 m; the ribbon samples every 40 m.
-const LAMP_GAP = 50, STEP = 40, HEAD_H = 12, HEAD_OFF = 4;
-const dense = ROADS.map(({ p: pts, ring }) => {
-  const curve = new THREE.CatmullRomCurve3(pts.map(([lo, la]) => { const [x, z] = geoRaw(lo, la); return new THREE.Vector3(x, 0, z); }), ring, 'centripetal');
-  const len = curve.getLength();
-  curve.arcLengthDivisions = Math.max(200, Math.ceil(len / 200));
-  curve.updateArcLengths();
-  const n = Math.max(2, Math.ceil(curve.getLength() / STEP));
-  const p = curve.getSpacedPoints(n);
-  const s = [0];
-  for (let i = 1; i < p.length; i++) s.push(s[i - 1] + p[i].distanceTo(p[i - 1]));
-  return { p, s };
-});
-// The hero point: the E40 sample nearest the hero lon, lat.
-const [hx, hz] = geoRaw(...HERO_LL);
-let heroI = 0;
-dense[0].p.forEach((q, i) => { if (Math.hypot(q.x - hx, q.z - hz) < Math.hypot(dense[0].p[heroI].x - hx, dense[0].p[heroI].z - hz)) heroI = i; });
-const ORIGIN = dense[0].p[heroI].clone();
-const HERO_S = dense[0].s[heroI];
-// Every coordinate is relative to the hero lamp, so the close shot keeps precision.
-dense.forEach(d => d.p.forEach(q => q.sub(ORIGIN)));
-const geo = (lon, lat) => { const [x, z] = geoRaw(lon, lat); return [x - ORIGIN.x, z - ORIGIN.z]; };
-BORDER_M.forEach(q => { q[0] -= ORIGIN.x; q[1] -= ORIGIN.z; });
-const HT = dense[0].p[heroI + 1].clone().sub(dense[0].p[heroI - 1]).normalize();
-// n is the right-hand side of travel along T.
-const HN = new THREE.Vector3(-HT.z, 0, HT.x);
-// Lamp phase per road; the E40 puts a lamp on the hero point.
-const PHASE = ROADS.map((_, r) => (r === 0 ? HERO_S % LAMP_GAP : 0));
 
 // A lamp's random seed; the ribbon shader hashes the same way.
 const hash = (k, r, side) => { const v = Math.sin(k * 12.9898 + r * 78.233 + side * 37.719) * 43758.5453; return v - Math.floor(v); };
@@ -410,28 +401,34 @@ land.renderOrder = -1;
 scene.add(land);
 
 /* ribbon: every road as one strip, widened to stay visible from orbit */
-const RIB = (() => {
+// Tiles of 30 km let the camera skip what lies outside its view.
+const TILE = 30000;
+const tileOf = (x, z) => `${Math.floor(x / TILE)},${Math.floor(z / TILE)}`;
+const bucket = (items, at) => { const m = new Map(); items.forEach(it => { const k = tileOf(...at(it)); if (!m.has(k)) m.set(k, []); m.get(k).push(it); }); return [...m.values()]; };
+// A sphere round a tile, padded for the strips' widening from far away.
+const sphereOf = (pos, pad) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeBoundingSphere(); g.boundingSphere.radius += pad; return g.boundingSphere; };
+const ribbonGeo = list => {
   let nv = 0;
-  dense.forEach(d => { nv += d.p.length * 2; });
-  const aC = new Float32Array(nv * 3), aN = new Float32Array(nv * 2), aSide = new Float32Array(nv), aS = new Float32Array(nv), aInfo = new Float32Array(nv * 2);
-  const idx = [];
-  let v = 0;
-  dense.forEach((d, r) => {
-    const { p, s } = d, base = v;
-    for (let i = 0; i < p.length; i++) {
-      const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)];
-      let tx = b.x - a.x, tz = b.z - a.z;
+  list.forEach(r => { nv += dense[r].p.length * 2; });
+  const aC = new Float32Array(nv * 3), aN = new Float32Array(nv * 2), aSide = new Float32Array(nv), aS = new Float32Array(nv), aInfo = new Float32Array(nv * 4);
+  const idx = new Uint32Array((nv - 2 * list.length) * 3);
+  let v = 0, q = 0;
+  list.forEach(r => {
+    const { p, s, lit } = dense[r], base = v, c = ROADS[r].c, n = p.length, ph = PHASE[r], ho = HOFF[r];
+    for (let i = 0; i < n; i++) {
+      const a = p[i > 0 ? i - 1 : 0], b = p[i < n - 1 ? i + 1 : n - 1];
+      let tx = b[0] - a[0], tz = b[1] - a[1];
       const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
-      const lit = inBelgium(p[i].x, p[i].z) ? 1 : 0;
-      for (const side of [-1, 1]) {
-        aC.set([p[i].x, 0, p[i].z], v * 3);
-        aN.set([-tz, tx], v * 2);
+      const l = lit ? lit[i] : 1;
+      for (let side = -1; side <= 1; side += 2) {
+        aC[v * 3] = p[i][0]; aC[v * 3 + 2] = p[i][1];
+        aN[v * 2] = -tz; aN[v * 2 + 1] = tx;
         aSide[v] = side;
-        aS[v] = s[i] - PHASE[r];
-        aInfo.set([lit, r], v * 2);
+        aS[v] = s[i] - ph;
+        aInfo[v * 4] = l; aInfo[v * 4 + 1] = r; aInfo[v * 4 + 2] = c; aInfo[v * 4 + 3] = ho;
         v++;
       }
-      if (i > 0) { const q = base + i * 2; idx.push(q - 2, q - 1, q, q - 1, q + 1, q); }
+      if (i > 0) { const w = base + i * 2; idx[q] = w - 2; idx[q + 1] = w - 1; idx[q + 2] = w; idx[q + 3] = w - 1; idx[q + 4] = w + 1; idx[q + 5] = w; q += 6; }
     }
   });
   const g = new THREE.BufferGeometry();
@@ -439,31 +436,35 @@ const RIB = (() => {
   g.setAttribute('aN', new THREE.BufferAttribute(aN, 2));
   g.setAttribute('aSide', new THREE.BufferAttribute(aSide, 1));
   g.setAttribute('aS', new THREE.BufferAttribute(aS, 1));
-  g.setAttribute('aInfo', new THREE.BufferAttribute(aInfo, 2));
-  g.setIndex(idx);
+  g.setAttribute('aInfo', new THREE.BufferAttribute(aInfo, 4));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.boundingSphere = sphereOf(aC, 3000);
   return g;
-})();
+};
 const ribMat = new THREE.ShaderMaterial({
   uniforms: { ...U, uHalf: { value: 60 }, uLampE: { value: 1.6 }, uFar: { value: 1 }, uGlow: { value: 0.1 }, uWide: { value: 25 } },
   vertexShader: /* glsl */`
-    attribute vec2 aN; attribute float aSide, aS; attribute vec2 aInfo;
+    attribute vec2 aN; attribute float aSide, aS; attribute vec4 aInfo;
     uniform float uPxK, uHalf;
-    varying float vLat, vS, vLit, vK, vRoad, vHalf;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff;
     varying vec3 vW;
     void main() {
       float d = distance(cameraPosition, position);
-      float half_ = max(uHalf, 2.6 * d * uPxK);
-      vK = uHalf / half_;
+      // Main roads draw narrower and dimmer than the fast roads.
+      float main_ = step(1.5, aInfo.z) * step(aInfo.z, 2.5);
+      float h0 = uHalf * mix(1.0, 0.6, main_);
+      float half_ = max(h0, mix(2.6, 1.6, main_) * d * uPxK);
+      vK = h0 / half_;
       vHalf = half_;
       vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * half_;
-      w.y = 0.04;
-      vLat = aSide * half_; vS = aS; vLit = aInfo.x; vRoad = aInfo.y; vW = w;
+      w.y = 0.04 + 0.01 * aInfo.z;
+      vLat = aSide * half_; vS = aS; vLit = aInfo.x; vRoad = aInfo.y; vCls = aInfo.z; vHoff = aInfo.w; vW = w;
       gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
     }`,
   fragmentShader: /* glsl */`
     ${COMMON}
     uniform float uLampE, uFar, uGlow, uWide;
-    varying float vLat, vS, vLit, vK, vRoad, vHalf;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff;
     varying vec3 vW;
     // Ground light under one head, 1 directly below; the optic throws it along the road.
     float pool(float ds, float dl) { float q = ds * ds * 0.35 + dl * dl + 144.0; return 1728.0 / (q * sqrt(q)); }
@@ -471,28 +472,34 @@ const ribMat = new THREE.ShaderMaterial({
     void main() {
       float a = abs(vLat);
       float fs = fwidth(vS), fl = fwidth(vLat);
-      float k0 = floor(vS / 50.0 + 0.5);
+      bool main_ = vCls > 1.5 && vCls < 2.5;
+      float gap = main_ ? 40.0 : 50.0, lvl = main_ ? 0.55 : 1.0;
+      // The head row hangs at -vHoff across the strip.
+      float dl = vLat + vHoff;
+      float k0 = floor(vS / gap + 0.5);
       vec3 E = vec3(0.0), Eavg = vec3(0.0);
       for (int j = -1; j <= 1; j++) {
-        float k = k0 + float(j), ds = vS - k * 50.0;
-        for (int sd = 0; sd < 2; sd++) {
-          float side = sd == 0 ? -1.0 : 1.0;
-          vec4 st = lampState(vW.xz, hash3(k, vRoad, side));
-          float dl = vLat - side * 4.0;
-          E += st.rgb * st.a * pool(ds, dl);
-          if (j == 0) Eavg += st.rgb * st.a * 116.8 / (dl * dl + 144.0);
-        }
+        float k = k0 + float(j), ds = vS - k * gap;
+        vec4 st = lampState(vW.xz, hash3(k, vRoad, 0.0));
+        E += st.rgb * st.a * pool(ds, dl);
+        if (j == 0) Eavg += st.rgb * st.a * (5840.0 / gap) / (dl * dl + 144.0);
       }
+      E *= lvl; Eavg *= lvl;
       // Pools blur to their average once they alias.
       E = mix(E, Eavg, smoothstep(6.0, 25.0, fs));
-      // Asphalt, the concrete reserve, the lines and the verge.
-      float alb = a < 2.0 ? 0.16 : (a < 15.8 ? 0.055 : 0.07 * exp(-(a - 15.8) / 18.0));
-      float dash = step(mod(vS, 12.0), 3.0);
-      float m = band(a, 2.3, 0.15) + band(a, 12.8, 0.15) + (band(a, 5.8, 0.12) + band(a, 9.3, 0.12)) * dash;
+      // Asphalt, the lines and the verge: three lanes one way, or one lane each way.
+      float dash = step(mod(vS, 12.0), 3.0), alb, m;
+      if (vHoff > 0.0) {
+        alb = vLat > -6.0 && vLat < 8.4 ? 0.055 : 0.07 * exp(-max(-6.0 - vLat, vLat - 8.4) / 18.0);
+        m = band(vLat, -5.3, 0.15) + band(vLat, 5.3, 0.15) + (band(vLat, -1.75, 0.12) + band(vLat, 1.75, 0.12)) * dash;
+      } else {
+        alb = a < 4.2 ? 0.055 : 0.07 * exp(-(a - 4.2) / 18.0);
+        m = band(vLat, -3.6, 0.12) + band(vLat, 3.6, 0.12) + band(vLat, 0.0, 0.12) * dash;
+      }
       alb += m * 0.3 * (1.0 - smoothstep(0.15, 1.0, fl));
       vec3 col = alb * E * uLampE;
       // Light caught in the low air over the road.
-      col += Eavg * uGlow * exp(-a / uWide);
+      col += Eavg * uGlow * exp(-abs(dl) / uWide);
       // Unresolved, the strip carries its mean light, kept legible from orbit.
       vec3 farC = Eavg * uLampE * 0.045 + Eavg * uGlow * 0.4;
       // A soft lateral falloff draws the far strip as a glowing tube.
@@ -503,68 +510,55 @@ const ribMat = new THREE.ShaderMaterial({
     }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
 });
-const ribbon = new THREE.Mesh(RIB, ribMat);
-ribbon.frustumCulled = false;
-ribbon.renderOrder = 1;
-scene.add(ribbon);
+// Each tile holds the roads whose middle lies in it.
+const ribbons = new THREE.Group();
+bucket(dense.map((_, r) => r), r => { const p = dense[r].p; return p[p.length >> 1]; }).forEach(list => {
+  const m = new THREE.Mesh(ribbonGeo(list), ribMat);
+  m.renderOrder = 1;
+  ribbons.add(m);
+});
+scene.add(ribbons);
 
 /* lamps: one sprite per head */
 const LAMPS = [];
 dense.forEach((d, r) => {
-  const { p, s } = d;
+  const R = ROADS[r];
+  if (R.c > 2) return;
+  const { p, s } = d, gap = GAP[R.c], ho = HOFF[r];
   let i = 0;
-  for (let k = Math.ceil((s[0] - PHASE[r]) / LAMP_GAP); ; k++) {
-    const t = PHASE[r] + k * LAMP_GAP;
+  for (let k = Math.ceil((s[0] - PHASE[r]) / gap); ; k++) {
+    const t = PHASE[r] + k * gap;
     if (t > s[s.length - 1]) break;
-    while (s[i + 1] < t) i++;
+    while (i < s.length - 2 && s[i + 1] < t) i++;
     const f = (t - s[i]) / (s[i + 1] - s[i] || 1);
-    const x = p[i].x + (p[i + 1].x - p[i].x) * f, z = p[i].z + (p[i + 1].z - p[i].z) * f;
-    if (!inBelgium(x, z)) continue;
-    let tx = p[i + 1].x - p[i].x, tz = p[i + 1].z - p[i].z;
+    const x = p[i][0] + (p[i + 1][0] - p[i][0]) * f, z = p[i][1] + (p[i + 1][1] - p[i][1]) * f;
+    let tx = p[i + 1][0] - p[i][0], tz = p[i + 1][1] - p[i][1];
     const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
-    LAMPS.push({ x, z, tx, tz, r, k });
+    // The head hangs to the left of travel by its offset.
+    const lx = x + tz * ho, lz = z - tx * ho;
+    LAMPS.push({ x: lx, z: lz, tx, tz, r, k, c: R.c });
   }
 });
-/* interchanges: where two roads meet inside the border */
+/* interchanges: baked offline where fast roads cross inside the border */
 // High masts ring each knot; a wide pool lights its loops.
-const JUNCS = (() => {
-  const cell = 600, grid = new Map(), key = (a, b) => `${a},${b}`;
-  dense.forEach((d, r) => d.p.forEach((q, i) => {
-    if (i % 2) return;
-    const k = key(Math.floor(q.x / cell), Math.floor(q.z / cell));
-    if (!grid.has(k)) grid.set(k, []);
-    grid.get(k).push([q.x, q.z, r]);
-  }));
-  const out = [];
-  dense.forEach((d, r) => d.p.forEach((q, i) => {
-    if (i % 3) return;
-    const cx = Math.floor(q.x / cell), cz = Math.floor(q.z / cell);
-    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [x, z, r2] of grid.get(key(cx + a, cz + b)) ?? []) {
-      if (r2 === r || Math.hypot(x - q.x, z - q.z) > 160) continue;
-      const jx = (x + q.x) / 2, jz = (z + q.z) / 2;
-      if (!inBelgium(jx, jz) || out.some(j => Math.hypot(j.x - jx, j.z - jz) < 2500)) continue;
-      // The hero overpass is no interchange.
-      if (Math.hypot(jx, jz) < 3000) continue;
-      out.push({ x: jx, z: jz });
-    }
-  }));
-  return out;
-})();
-const HEADS_ALL = [];
-LAMPS.forEach(l => [-1, 1].forEach(side => HEADS_ALL.push([l.x - l.tz * side * HEAD_OFF, HEAD_H - 0.15, l.z + l.tx * side * HEAD_OFF, l.r, l.k, side])));
+const JUNCS = [];
+for (let i = 0; i < DATA.junctions.length; i += 2) JUNCS.push({ x: DATA.junctions[i] - ORIGIN[0], z: -DATA.junctions[i + 1] - ORIGIN[1] });
+// Each head: position, road, lamp index, side and level.
+const HEADS_ALL = LAMPS.map(l => [l.x, HEAD_H - 0.15, l.z, l.r, l.k, 0, l.c === 2 ? 0.55 : 1]);
 // Six high masts, 30 m tall, round each knot.
-JUNCS.forEach((j, n) => { for (let m = 0; m < 6; m++) { const a = (m / 6) * Math.PI * 2 + n; HEADS_ALL.push([j.x + Math.cos(a) * 170, 30, j.z + Math.sin(a) * 170, 100 + n, m, 0]); } });
-const SPR = (() => {
+JUNCS.forEach((j, n) => { for (let m = 0; m < 6; m++) { const a = (m / 6) * Math.PI * 2 + n; HEADS_ALL.push([j.x + Math.cos(a) * 170, 30, j.z + Math.sin(a) * 170, 20000 + n, m, 0, 1.3]); } });
+const sprGeo = list => {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
   g.setIndex([0, 1, 2, 0, 2, 3]);
-  const n = HEADS_ALL.length, aP = new Float32Array(n * 3), aI = new Float32Array(n * 4);
-  HEADS_ALL.forEach(([x, y, z, r, k, side], q) => { aP.set([x, y, z], q * 3); aI.set([r, k, side, 0], q * 4); });
+  const n = list.length, aP = new Float32Array(n * 3), aI = new Float32Array(n * 4);
+  list.forEach((h, q) => { aP[q * 3] = h[0]; aP[q * 3 + 1] = h[1]; aP[q * 3 + 2] = h[2]; aI[q * 4] = h[3]; aI[q * 4 + 1] = h[4]; aI[q * 4 + 2] = h[5]; aI[q * 4 + 3] = h[6]; });
   g.setAttribute('aP', new THREE.InstancedBufferAttribute(aP, 3));
   g.setAttribute('aI', new THREE.InstancedBufferAttribute(aI, 4));
   g.instanceCount = n;
+  g.boundingSphere = sphereOf(aP, 200);
   return g;
-})();
+};
 const sprMat = new THREE.ShaderMaterial({
   uniforms: { ...U, uSize: { value: 9 }, uCore: { value: 0.05 }, uCoreI: { value: 3 }, uHaloI: { value: 0.35 }, uPxMin: { value: 1.5 } },
   vertexShader: /* glsl */`
@@ -582,6 +576,7 @@ const sprMat = new THREE.ShaderMaterial({
       float px = uSize / mpp, pe = max(px, uPxMin);
       vGain = (px * px) / (pe * pe);
       vSt = lampState(aP.xz, hash3(aI.y, aI.x, aI.z));
+      vSt.a *= aI.w;
       vQ = position.xy;
       vW = aP;
       // Pull the sprite toward the eye, so its own housing does not cut it.
@@ -612,9 +607,12 @@ const sprMat = new THREE.ShaderMaterial({
     }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
 });
-const sprites = new THREE.Mesh(SPR, sprMat);
-sprites.frustumCulled = false;
-sprites.renderOrder = 2;
+const sprites = new THREE.Group();
+bucket(HEADS_ALL, h => [h[0], h[2]]).forEach(list => {
+  const m = new THREE.Mesh(sprGeo(list), sprMat);
+  m.renderOrder = 2;
+  sprites.add(m);
+});
 scene.add(sprites);
 // The knots' ground pools, one quad each, kept visible from orbit.
 const padMat = new THREE.ShaderMaterial({
@@ -667,6 +665,57 @@ const pads = (() => {
 })();
 scene.add(pads);
 
+/* border: a faint line on the land, read best from orbit */
+const borderLine = (() => {
+  let nv = 0;
+  OUTLINE.forEach(o => { nv += o.length * 2; });
+  const aC = new Float32Array(nv * 3), aN = new Float32Array(nv * 2), aSide = new Float32Array(nv), idx = [];
+  let v = 0;
+  OUTLINE.forEach(o => {
+    const base = v;
+    o.forEach((q, i) => {
+      const [tx, tz] = tangent(o, i);
+      for (const side of [-1, 1]) { aC.set([q[0], 0, q[1]], v * 3); aN.set([-tz, tx], v * 2); aSide[v] = side; v++; }
+      if (i > 0) { const w = base + i * 2; idx.push(w - 2, w - 1, w, w - 1, w + 1, w); }
+    });
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(aC, 3));
+  g.setAttribute('aN', new THREE.BufferAttribute(aN, 2));
+  g.setAttribute('aSide', new THREE.BufferAttribute(aSide, 1));
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, uLine: { value: 0 }, uLineC: { value: new THREE.Vector3(...linFit(0.8, 0.04, 245)) } },
+    vertexShader: /* glsl */`
+      attribute vec2 aN; attribute float aSide;
+      uniform float uPxK;
+      varying float vA;
+      varying vec3 vW;
+      void main() {
+        float h = max(25.0, 1.1 * distance(cameraPosition, position) * uPxK);
+        vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * h;
+        w.y = 0.08;
+        vA = aSide; vW = w;
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      ${COMMON}
+      uniform float uLine;
+      uniform vec3 uLineC;
+      varying float vA;
+      varying vec3 vW;
+      void main() {
+        float f = 1.0 - abs(vA);
+        gl_FragColor = vec4(uLineC * f * f * uLine * fogT(vW), 1.0);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 1;
+  return m;
+})();
+scene.add(borderLine);
+
 /* ---------- the close set ---------- */
 // Local frame at the hero lamp: x along the road, z to the right side, y up.
 const set = new THREE.Group();
@@ -685,7 +734,7 @@ for (const z of [-19, 19]) box(1.2, 6.1, 1.2, OVER, 3.05, z);
 for (const z of [-31, 31]) box(13, 7.5, 12, OVER, 3.75, z, new THREE.MeshStandardMaterial({ color: 0x3a3f36, roughness: 1 }));
 
 // Poles, arms and housings for the lamps near the hero, as instances.
-const NEAR = LAMPS.filter(l => l.r === 0 && Math.hypot(l.x, l.z) < 1500);
+const NEAR = LAMPS.filter(l => l.r === hA && Math.hypot(l.x, l.z) < 1500);
 const poleGeo = mergeGeometries([
   new THREE.CylinderGeometry(0.09, 0.14, HEAD_H + 0.3, 8).translate(0, (HEAD_H + 0.3) / 2, 0),
   ...[-1, 1].map(sd => new THREE.BoxGeometry(0.08, 0.08, HEAD_OFF).rotateX(sd * 0.08).translate(0, HEAD_H + 0.3, sd * HEAD_OFF / 2)),
@@ -698,7 +747,8 @@ const refrs = new THREE.InstancedMesh(refrGeo, refrMat, NEAR.length);
 const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), yAx = new THREE.Vector3(0, 1, 0);
 NEAR.forEach((l, i) => {
   q4.setFromAxisAngle(yAx, -Math.atan2(l.tz, l.tx));
-  m4.compose(new THREE.Vector3(l.x, 0, l.z), q4, new THREE.Vector3(1, 1, 1));
+  // The pole stands on the reserve's centre, one arm per carriageway.
+  m4.compose(new THREE.Vector3(l.x + l.tz * HEAD_OFF, 0, l.z - l.tx * HEAD_OFF), q4, new THREE.Vector3(1, 1, 1));
   poles.setMatrixAt(i, m4);
   refrs.setMatrixAt(i, m4);
 });
@@ -706,7 +756,8 @@ scene.add(poles, refrs);
 // The central barrier, in 40 m pieces near the hero.
 {
   const near = [];
-  const { p } = dense[0];
+  // The reserve's centre runs half the separation left of the hero carriageway.
+  const p = dense[hA].p.map((q, i) => { const [tx, tz] = tangent(dense[hA].p, i); return new THREE.Vector3(q[0] + tz * sep / 2, 0, q[1] - tx * sep / 2); });
   for (let i = 1; i < p.length; i++) if (Math.hypot(p[i].x, p[i].z) < 900) near.push(i);
   const bar = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.9, 0.6).translate(0, 0.45, 0), concrete, near.length);
   near.forEach((i, j) => {
@@ -718,8 +769,7 @@ scene.add(poles, refrs);
   scene.add(bar);
 }
 // Point lights at the eight heads nearest the hero light the solids.
-const HEADS = [];
-NEAR.forEach(l => [-1, 1].forEach(sd => HEADS.push(new THREE.Vector3(l.x - l.tz * sd * HEAD_OFF, HEAD_H - 0.2, l.z + l.tx * sd * HEAD_OFF))));
+const HEADS = LAMPS.filter(l => (l.r === hA || l.r === hB) && Math.hypot(l.x, l.z) < 300).map(l => new THREE.Vector3(l.x, HEAD_H - 0.2, l.z));
 HEADS.sort((a, b) => a.lengthSq() - b.lengthSq());
 const LIGHT_I = 1.6 * 144 * Math.PI;
 const lights = HEADS.slice(0, 8).map(h => {
@@ -896,8 +946,17 @@ function draw() {
   tilt0.uniforms.uBand.value = 0.06 + 0.08 * z;
   // From orbit the ribbons need a lift to read.
   // A phone draws the country smaller, so its strips need more lift.
-  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 170 : 100) * ss(0.3, 0.9, z);
+  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 60 : 36) * ss(0.35, 1, z) + 22 * ss(0.9, 1, z);
   padMat.uniforms.uFar.value = 1 + 40 * ss(0.3, 0.9, z);
+  // The border line shows only once the climb is high.
+  borderLine.material.uniforms.uLine.value = 0.06 * ss(0.35, 0.85, z);
+  // From high up the strips carry the light; the sprites add nothing but work.
+  sprites.visible = z < 0.72;
+  // Lamp tiles far past the view's depth are sub-pixel and fogged; skip them.
+  if (sprites.visible) {
+    const reach = Math.max(6000, D * 3);
+    sprites.children.forEach(m => { const b = m.geometry.boundingSphere; m.visible = camera.position.distanceTo(b.center) - b.radius < reach; });
+  }
   grade.uniforms.uSeed.value = (t * 7.31) % 1;
   sky.material.uniforms.uInvVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   composer.render();
