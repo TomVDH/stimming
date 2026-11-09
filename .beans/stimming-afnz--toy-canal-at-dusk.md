@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T08:03:15Z
+updated_at: 2026-11-09T08:14:54Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -30,3 +30,5 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Tom (2026-11-09): the bridge read awkward; he asked for a frietkot, church, staminee and station, and a sky eye view. The village now centres on a crossroads: a flat road bridge, a floodlit church on its square, a staminee on the corner with a red sign, a frietkot by the bridge, a small station on a railway line with cool platform lights. Six fixed lights (frietkot, staminee, station, church floods) share the lamp array after the ten tappable lamps. Sky eye is the default view; Settings > View keeps the towpath view.
 
 - Tom (2026-11-09): more sprawl. Added side streets off the main road, two estates of fermettes and bungalows, an industrial street of sheds, field roads, five farms with yard lights. One road list feeds the ground shader and the ribbons. Sky eye pulls back; phones look along the main road over the bridge.
+
+- Tom (2026-11-09): far more, from aerial photos. Studied Esri orthophotos of Beernem, Moerbrugge and Balgerhoeke. The plan is now generated: wandering old roads out from the centre, ring lanes, field lanes, 22 estates of cul-de-sacs, an old core of crooked wall-to-wall streets, an industrial zone by the canal, 16 farms, woods, hedgerow trees, a sports ground. A 2 m occupancy grid packs about 1,800 plots without overlap; a 2048 px painted ground map holds parcels, hedges, gardens, driveways and asphalt. About 250k triangles in one merged mesh.
