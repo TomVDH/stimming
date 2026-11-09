@@ -20,41 +20,6 @@
 .stage canvas.grab { cursor: grab; }
 .stage canvas.turning { cursor: grabbing; }
 .vignette figure svg { color: var(--fg); }
-/* Time is one stepper pill: an arrow each side of the name. */
-.stepper {
-  display: inline-flex; align-items: center; color: var(--fg); font-size: 13px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background-color: oklch(0.15 0.012 275 / 0.84); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-}
-/* The arrows drop their own ring and backing, so the pill matches a chip's height. */
-#time .chip { border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
-#time .chip svg { stroke-width: 1.8; stroke-linecap: round; }
-/* The longest name sets the width, so the arrows never move. */
-.stepper .name { display: grid; text-align: center; white-space: nowrap; }
-.stepper .name > * { grid-area: 1 / 1; }
-.stepper .sizer { visibility: hidden; }
-.stepper output.from-next { animation: name-in 0.22s ease-out; --from: 8px; }
-.stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
-@keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
-@media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
-/* Settings and the (i) sit together at the right edge. */
-.tail { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-/* Settings opens a column of tweaks above the bar. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; flex-direction: column; align-items: stretch;
-  gap: 10px; min-width: 15em; padding: 12px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .row, .sets .slider { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.sets .row > span, .sets .slider span { white-space: nowrap; }
-.sets .chip { justify-content: center; }
-@media (prefers-reduced-motion: reduce) { .add { transition: none; } }
 </style>
 </head>
 <body>
@@ -63,44 +28,11 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The breeze blows on its own and sometimes dies down. The arrow keys blow gusts, V switches wide and close views and R resets.">
       <canvas class="sky" aria-hidden="true"></canvas>
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Beach walker needs canvas drawing, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="stepper" id="time" role="group" aria-label="Time of day">
-        <button class="chip icon" type="button" data-step="-1" aria-label="Previous time" title="Previous time"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
-        <span class="name"><output aria-live="polite">Sunset</output><span class="sizer" aria-hidden="true">End of the world</span></span>
-        <button class="chip icon" type="button" data-step="1" aria-label="Next time" title="Next time"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
-      </div>
-      <div class="choices" id="view" role="group" aria-label="Camera">
-        <button class="chip" type="button" data-value="wide" aria-pressed="true" aria-keyshortcuts="V">Wide</button>
-        <button class="chip" type="button" data-value="close" aria-pressed="false" aria-keyshortcuts="V">Close</button>
-      </div>
-      <div class="tail">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <div class="row"><span>Legs</span>
-              <div class="choices" id="legs" role="group" aria-label="Legs">
-                <button class="chip" type="button" data-value="4" aria-pressed="false">8</button>
-                <button class="chip" type="button" data-value="6" aria-pressed="true">12</button>
-              </div>
-            </div>
-            <button class="chip" id="cycle" type="button" aria-pressed="false">Cycle the day</button>
-            <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
-          </div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>blow wind</dd></div>
-          <div><dt>Drag the hub</dt><dd>crank by hand</dd></div>
-          <div class="fine"><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>gust</dd></div>
-          <div class="fine"><dt><kbd>V</kbd></dt><dd>wide or close</dd></div>
-        </dl>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -132,14 +64,16 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 <script type="module">
-import { initPage, audioKit, sound, choices, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'walker' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
+import { initPage, audioKit, sound, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas:not(.sky)');
 const skyCanvas = stage.querySelector('canvas.sky');
-const bar = document.querySelector('.bar');
+// Storage is optional; private windows can refuse it.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (err) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
+};
+const TIME_KEY = 'stimming.walker.time', VIEW_KEY = 'stimming.walker.view';
 const ctx = canvas.getContext('2d');
 if (!ctx) { stage.querySelector('.fail').hidden = false; throw new Error('no canvas'); }
 
@@ -450,9 +384,8 @@ function fit() {
   wc.width = bg.width = r.W; wc.height = bg.height = r.H;
   // The walker stays small in a wide, empty scene.
   s = Math.max(0.2, Math.min(h / 680, w / 520));
-  // The bar sits on the stage; the feet stay just above it.
-  const barH = bar.offsetHeight || 90;
-  trackY = Math.round(clamp(h * 0.85, h * 0.5, h - barH - 12));
+  // The feet stay above the bottom row of controls.
+  trackY = Math.round(clamp(h * 0.85, h * 0.5, h - 64));
   // Close view: the horizon crosses the body; the legs stand on wet sand.
   horClose = Math.max(20, Math.round(trackY - Math.max(96 * s, h * 0.2)));
   // A long lens: a large sun, low over the sea, behind the walker.
@@ -1545,7 +1478,11 @@ function step(dt) {
   if (todCycle && !reduce) {
     todPhase += (dt * PI) / 120;
     tod = (1 - Math.cos(todPhase)) / 2;
-    mood = todLook(tod); moodMix = 1;
+    const day = todLook(tod);
+    // The look on screen eases into the cycle, so a jump never shows.
+    if (moodMix < 1) { moodMix = Math.min(1, moodMix + dt * 0.5); mood = blendLook(moodA, day, moodMix * moodMix * (3 - 2 * moodMix)); }
+    else mood = day;
+    cycleName();
     lens();
   } else if (moodMix < 1) {
     // A picked look eases in over about two seconds.
@@ -1893,7 +1830,7 @@ function draw() {
 // The loop runs while anything moves, then sleeps.
 let raf = 0, last = 0, visible = true;
 const busy = () => mode === 'crank' || u !== 0 || windUser !== 0 || keyWind !== 0 || breezeAmt > 0 || breezeOn
-  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05 || vane !== 0 || viewK !== viewTo || todCycle || moodMix < 1;
+  || Math.abs(wind) > 0.003 || Math.abs(camX - bodyX) > 0.05 || vane !== 0 || viewK !== viewTo || (todCycle && !reduce) || moodMix < 1;
 function frame(now) {
   raf = 0;
   const dt = clamp((now - last) / 1000, 0.001, 0.05);
@@ -1902,7 +1839,14 @@ function frame(now) {
   draw();
   if (visible && busy()) raf = requestAnimationFrame(frame);
   // The surf keeps the context awake; without it, audio sleeps when idle.
-  else { windBed(0); if (!surf) kit.rest(() => !raf); }
+  else { windBed(0); if (!surf) kit.rest(() => !raf); lullWake(); }
+}
+// A lull lets the loop sleep; a timer brings the breeze back.
+let lullTimer = 0;
+function lullWake() {
+  clearTimeout(lullTimer);
+  if (!visible || lullLeft <= 0) return;
+  lullTimer = setTimeout(() => { lullLeft = 0; lullIn = 25 + Math.random() * 30; wake(); }, lullLeft * 1000);
 }
 function wake() {
   if (raf || !visible) return;
@@ -1967,68 +1911,75 @@ canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('pointerleave', () => { if (!mode && hubHover) { hubHover = false; canvas.classList.remove('grab'); if (!raf) draw(); } });
 
-// Wide stands the walker far off; Close is the standard view.
-const viewPick = choices(document.getElementById('view'), v => setWide(v === 'wide'));
-function setWide(on) { viewTo = on ? 1 : 0; viewPick.set(on ? 'wide' : 'close'); wake(); }
-if (!sea) document.getElementById('view').hidden = true;
-// Settings opens a tray; a press outside or Escape closes it.
-const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
-const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
-setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
-document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
-addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
-// Time sets the hour; Cycle runs it slowly, sunset to night and back to afternoon.
-const cycleBtn = document.getElementById('cycle');
-// The stepper walks eight looks and wraps at each end.
+/* ---------- controls ---------- */
+// Time walks eight looks: five hours of the day, then three other worlds.
 const TIMES = [['0', 'Noon'], ['0.3', 'Golden hour'], ['0.6', 'Sunset'], ['0.8', 'Dusk'], ['1', 'Night'],
   ['end', 'End of the world'], ['alien', 'Alien night'], ['hole', 'Black hole']];
-const timeBox = document.getElementById('time'), timeName = timeBox.querySelector('output');
-let timeAt = 2;
-function stepTime(d) {
-  timeAt = (timeAt + d + TIMES.length) % TIMES.length;
-  const [v, name] = TIMES[timeAt];
-  timeName.textContent = name;
-  // The name slides in from the side of the pressed arrow.
-  timeName.classList.remove('from-next', 'from-prev');
-  void timeName.offsetWidth;
-  timeName.classList.add(d > 0 ? 'from-next' : 'from-prev');
-  moodA = mood; moodB = WORLDS[v] ?? todLook(Number(v)); moodMix = 0;
-  if (!WORLDS[v]) tod = Number(v);
-  if (todCycle) { todCycle = false; cycleBtn.setAttribute('aria-pressed', 'false'); }
+const lookOf = v => WORLDS[v] ?? todLook(Number(v));
+// The flat 2D scene has no time of day and no camera move.
+const savedTime = sea && TIMES.some(([v]) => v === store.get(TIME_KEY)) ? store.get(TIME_KEY) : '0.6';
+const ui = initPage({ id: 'walker', bar: {
+  choice: sea ? { label: 'Time', display: 'stepper', value: savedTime,
+    options: TIMES.map(([value, label]) => ({ value, label })), onPick: v => pickTime(v) } : null,
+  // Close swaps the far wide shot for the near one.
+  actions: sea ? [{ verb: 'close', label: 'Close', key: 'V', onPress: () => setWide(viewTo === 0) }] : [],
+  settings: [
+    { type: 'choice', id: 'legs', label: 'Legs', value: '6', persist: true,
+      options: [{ value: '4', label: '8' }, { value: '6', label: '12' }], onPick: v => { build(+v); draw(); wake(); } },
+    ...(sea ? [{ type: 'toggle', id: 'cycle', label: 'Cycle the day', value: false, persist: true, onToggle: on => setCycle(on) }] : []),
+  ],
+  reset: () => reset(),
+  quality: true,
+  keys: [['drag', 'blow wind'], ['drag the hub', 'crank by hand'], ['← →', 'gust'], ['V', 'wide or close']],
+} });
+
+// Wide stands the walker far off; Close is the near view.
+const closeBtn = document.querySelector('.stim-ui button[aria-keyshortcuts="V"]');
+function setWide(on, ease = true) {
+  viewTo = on ? 1 : 0;
+  if (!ease) { viewK = viewTo; lens(); }
+  closeBtn?.setAttribute('aria-pressed', String(!on));
+  if (ease) store.set(VIEW_KEY, on ? 'wide' : 'close');
   wake();
 }
-timeBox.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => stepTime(+b.dataset.step)));
-// Left and right arrows step while the stepper has focus.
-timeBox.addEventListener('keydown', e => {
-  const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
-  if (!d) return;
-  e.preventDefault(); e.stopPropagation(); stepTime(d);
-});
-cycleBtn.addEventListener('click', () => {
-  todCycle = !todCycle; cycleBtn.setAttribute('aria-pressed', String(todCycle));
-  todPhase = Math.acos(clamp(1 - 2 * tod, -1, 1));
+// A picked time eases in over about two seconds and stops the cycle.
+function pickTime(v, ease = true) {
+  if (ease) store.set(TIME_KEY, v);
+  moodA = mood; moodB = lookOf(v); moodMix = ease ? 0 : 1;
+  if (!ease) mood = moodB;
+  if (!WORLDS[v]) tod = Number(v);
+  if (todCycle) { todCycle = false; ui.setting('cycle')?.set(false); }
+  lens();
   wake();
-});
-if (!sea) { document.getElementById('time').hidden = true; cycleBtn.hidden = true; }
+}
+// Cycle swings the hour slowly between noon and night.
+function setCycle(on) {
+  todCycle = on;
+  todPhase = Math.acos(clamp(1 - 2 * tod, -1, 1));
+  if (on) { moodA = mood; moodMix = 0; }
+  wake();
+}
+// While the day cycles, the Time stepper names the nearest hour.
+function cycleName() {
+  let best = 0;
+  for (let k = 1; k < 5; k++) if (Math.abs(+TIMES[k][0] - tod) < Math.abs(+TIMES[best][0] - tod)) best = k;
+  if (ui.choice && ui.choice.value !== TIMES[best][0]) ui.choice.set(TIMES[best][0]);
+}
 function reset() {
   theta = 0; u = 0; bodyX = 0; camX = 0; windUser = 0; keyWind = 0; wind = 0; rel = 0; vane = 0; prints = [];
   breezeOn = true; breezeAmt = 0; lullLeft = 0; lullIn = 25 + Math.random() * 30;
   build(pairs);
   draw();
+  wake();
 }
-document.getElementById('reset').addEventListener('click', reset);
-const legsPick = choices(document.getElementById('legs'), v => { build(+v); draw(); wake(); });
 
+// The arrow keys gust and R resets; text fields and sheets keep their keys.
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  const tag = e.target.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, .s2-sheet')) return;
   const k = e.key;
-  if (k === 'ArrowLeft' || k === 'ArrowRight') {
-    if (tag === 'BUTTON') return;
-    e.preventDefault(); keyWind = k === 'ArrowRight' ? 1 : -1; wake();
-  } else if (k === 'r' || k === 'R') reset();
-  else if (k === 'v' || k === 'V') setWide(viewTo === 0);
+  if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); keyWind = k === 'ArrowRight' ? 1 : -1; wake(); }
+  else if ((k === 'r' || k === 'R') && !e.repeat) reset();
 });
 addEventListener('keyup', e => {
   if ((e.key === 'ArrowLeft' && keyWind < 0) || (e.key === 'ArrowRight' && keyWind > 0)) keyWind = 0;
@@ -2038,11 +1989,16 @@ addEventListener('blur', () => { keyWind = 0; });
 onReducedChange(on => { reduce = on; camX = bodyX; if (!raf) draw(); });
 
 /* ---------- start ---------- */
-build(+legsPick.value || 6);
+build(+ui.setting('legs').value || 6);
 new ResizeObserver(fit).observe(stage);
 onQuality(fit);
 fit();
-// After the intro, one soft puff shows the stride.
+// The saved time and view return at once, with no ease.
+if (sea) {
+  pickTime(savedTime, false);
+  setWide(store.get(VIEW_KEY) !== 'close', false);
+  if (ui.setting('cycle')?.value) setCycle(true);
+}
 // The breeze starts the walk once the page is up.
 wake();
 
