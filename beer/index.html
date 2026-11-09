@@ -62,7 +62,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, oklchLinear } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import { BEERS } from './catalogue.js';
+import { BEERS as ALL_BEERS } from './catalogue.js?v=3';
+// The three beers in work come first.
+const FIRST = ['duvel', 'kwak', 'averbode'];
+const BEERS = [...FIRST.map(id => ALL_BEERS.find(b => b.id === id)), ...ALL_BEERS.filter(b => !FIRST.includes(b.id))];
 
 const stage = document.getElementById('stage');
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
@@ -364,7 +367,7 @@ const BOTTLE_FS = NOISE + ROOM + `
 uniform sampler2D uLabel;
 uniform vec4 uLab;     // body label v0, v1; neck label v0, v1 (bottle cm)
 uniform float uBH, uBLevel, uPainted, uAlpha;
-uniform vec3 uTintB, uPaint, uBeerCol;
+uniform vec3 uTintB, uPaint, uBeerCol, uCap;
 varying vec3 vW, vN;
 varying vec2 vUv;
 void main() {
@@ -386,6 +389,11 @@ void main() {
   if (lab.a > 0.5) {
     float diff = max(dot(n, normalize(KEY_DIR)), 0.0);
     c = pow(lab.rgb, vec3(2.2)) * (0.03 + 0.55 * diff) + uLamp * pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.3 + studio(vW, reflect(-v, n)) * 0.04;
+  }
+  // The crown cap: lacquered metal.
+  if (y > uBH - 0.62) {
+    float diff = max(dot(n, normalize(KEY_DIR)), 0.0);
+    c = uCap * (0.06 + 0.5 * diff) + studio(vW, reflect(-v, n)) * (0.15 + 0.6 * F) * mix(vec3(1.0), uCap, 0.6);
   }
   gl_FragColor = vec4(c, uAlpha);
 }`;
@@ -747,6 +755,7 @@ uniform sampler2D uScene;
 uniform vec2 uRes;
 uniform vec3 uKey, uSigma;
 uniform float uLevel, uCold, uMistAge;
+uniform vec4 uMetal;
 varying vec3 vW, vN, vL;
 void main() {
   vec3 n = normalize(vN), v = normalize(cameraPosition - vW);
@@ -796,6 +805,12 @@ void main() {
   float inner = smoothstep(0.8, 0.85, edge) * (1.0 - smoothstep(0.87, 0.91, edge)) * (1.0 - solid);
   col += (through * 0.5 + uLamp * 0.04) * inner;
   // The lip is a rounded bead: a crisp highlight on top, a darker band just under it.
+  // A silver or gold rim: a band of metal, lit by the key and the lamp.
+  if (uMetal.a > 0.5) {
+    float band = smoothstep(uGH - 0.42, uGH - 0.36, vL.y);
+    vec3 mt = uMetal.rgb * (0.1 + studio(vW, reflect(-v, n)) * 0.7 + uLamp * 0.25 * pow(edge, 2.0) + uKey * 0.12);
+    col = mix(col, mt, band * 0.92);
+  }
   float lipTop = smoothstep(uGH - 0.12, uGH - 0.02, vL.y);
   float lipBand = smoothstep(uGH - 0.32, uGH - 0.2, vL.y) * (1.0 - smoothstep(uGH - 0.16, uGH - 0.1, vL.y));
   col *= 1.0 - 0.25 * lipBand;
@@ -828,7 +843,7 @@ void main() {
   c += vec3(0.012, 0.006, 0.0) * (1.0 - c);
   float l = dot(c, vec3(0.3, 0.59, 0.11));
   float gr = hash(gl_FragCoord.xy * 0.73 + fract(uTime * 7.3) * 113.0) + hash(gl_FragCoord.xy * 1.31 + fract(uTime * 3.1) * 71.0) - 1.0;
-  c += gr * (0.007 + 0.012 * l * (1.0 - l));
+  c += gr * (0.013 + 0.024 * l * (1.0 - l));
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -1039,9 +1054,12 @@ function drawLabel(b) {
   }
   const tw = L.shape === 'diamond' || L.shape === 'round' ? W * 0.2 : W * 0.3;
   const ty = L.shape === 'printed' ? cy : cy - bh * 0.06;
+  // Some labels carry the name on a coloured band.
+  if (L.band) { c.fillStyle = L.band; c.fillRect(0, ty - 50, W, 100); }
+  const small = L.band ? L.band : L.shape === 'printed' ? acc : ink;
   text(name, W / 2, ty, tw, 76, 800, L.shape === 'printed' ? acc : ink);
-  text(b.style.toUpperCase(), W / 2, ty + bh * 0.2, tw * 0.9, 22, 600, L.shape === 'printed' ? acc : ink);
-  text(`${b.abv}% VOL`, W / 2, ty + bh * 0.3, tw * 0.6, 20, 600, L.shape === 'printed' ? acc : ink);
+  text(b.style.toUpperCase(), W / 2, ty + bh * 0.24, tw * 0.9, 22, 600, small);
+  text(`${b.abv}% VOL`, W / 2, ty + bh * 0.33, tw * 0.6, 20, 600, small);
   c.restore();
   // The neck band.
   c.fillStyle = L.shape === 'printed' ? acc : acc === ink ? bg : acc;
@@ -1061,9 +1079,11 @@ varying vec2 vUv;
 void main() {
   vec3 c = vec3(0.0);
   float w = 0.0;
-  for (int i = -6; i <= 6; i++) { float k = exp(-float(i * i) / 18.0); c += texture2D(t, vUv + uStep * float(i)) * k; w += k; }
+  // Each pixel jitters its taps: the blur breaks into fine grain, as on film.
+  float j = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+  for (int i = -6; i <= 6; i++) { float k = exp(-float(i * i) / 18.0); c += texture2D(t, vUv + uStep * (float(i) + j)).rgb * k; w += k; }
   gl_FragColor = vec4(c / w, 1.0);
-}`.replace('texture2D(t, vUv + uStep * float(i)) * k', 'texture2D(t, vUv + uStep * float(i)).rgb * k');
+}`;
 let rtBlur, blurScene, blurMat;
 class StagePass extends Pass {
   render(r, writeBuffer) {
@@ -1074,7 +1094,7 @@ class StagePass extends Pass {
     r.clear();
     r.render(back, camera);
     // Blur across, then down, back into the behind target.
-    const px = 2.2 * dpr;
+    const px = 1.35 * dpr;
     blurMat.uniforms.t.value = rtBlur.texture;
     blurMat.uniforms.uStep.value.set(px / rtBlur.width, 0);
     r.setRenderTarget(rtBehind);
@@ -1140,7 +1160,7 @@ function build() {
   back.userData.table = table;
   bottleMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
     vertexShader: BOTTLE_VS, fragmentShader: BOTTLE_FS, side: THREE.DoubleSide, transparent: true,
-    uniforms: { ...U, uLabel: { value: labTex }, uLab: { value: new THREE.Vector4() }, uBH: { value: 20 }, uBLevel: { value: 0 }, uPainted: { value: 0 }, uAlpha: { value: 1 },
+    uniforms: { ...U, uLabel: { value: labTex }, uLab: { value: new THREE.Vector4() }, uBH: { value: 20 }, uBLevel: { value: 0 }, uPainted: { value: 0 }, uAlpha: { value: 1 }, uCap: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
       uTintB: { value: new THREE.Vector3() }, uPaint: { value: new THREE.Vector3() }, uBeerCol: { value: new THREE.Vector3() } },
   }));
   back.add(bottleMesh);
@@ -1188,12 +1208,19 @@ function build() {
   glassMask.frustumCulled = false;
   glassMask.renderOrder = -5;
   mid.add(glassMask, glassBack, beerMesh, fizzMesh, foamMesh, streamMesh);
+  // The stand draws in the middle layer (seen through the glass) and again in front of it.
+  const wood = new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.6, metalness: 0, envMap: liquid.envMap, envMapIntensity: 0.5 });
+  stands.push(buildStand(wood), buildStand(wood));
+  stands[0].traverse(o => { o.renderOrder = 0.5; });
+  stands[1].traverse(o => { o.renderOrder = 4; });
+  mid.add(stands[0]);
+  addLights(mid);
 
   // Top: the middle as seen, and the glass over it.
   top.add(fullQuad(showTex(rtScene.texture), -10));
   glassMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
     vertexShader: GLASS_VS, fragmentShader: GLASS_FS, depthWrite: true, side: THREE.DoubleSide,
-    uniforms: { ...U, uScene: { value: rtScene.texture }, uChill: { value: 0.5 }, uCold: { value: 0 }, uMistAge: { value: 0.2 } },
+    uniforms: { ...U, uScene: { value: rtScene.texture }, uMetal: { value: new THREE.Vector4() }, uChill: { value: 0.5 }, uCold: { value: 0 }, uMistAge: { value: 0.2 } },
   }));
   top.add(glassMesh);
   // The lifted bottle and the jet draw again after the glass, depth-tested:
@@ -1207,7 +1234,8 @@ function build() {
   streamTop = new THREE.Mesh(streamMesh.geometry, liquidTop);
   streamTop.frustumCulled = false;
   streamTop.renderOrder = 6;
-  top.add(bottleTop, streamTop);
+  top.add(bottleTop, streamTop, stands[1]);
+  addLights(top);
 
   // Four samples smooth the edges of the glass, the bottle and the jet.
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
@@ -1339,6 +1367,68 @@ function freshGlass() {
   settleLevels();
 }
 
+/* ---------- the wooden stand (Kwak) ---------- */
+// The glass's round bottom rests in the base; the top plate holds its waist.
+const STAND_LIFT = 1.0, stands = [];
+function liftOutline(g, lift) {
+  const src = g.outline, n = src.length, st = src[1][0] - src[0][0], H = g.h + lift, pts = [];
+  for (let i = 0; i < n; i++) {
+    const y = H * i / (n - 1), u = (y - lift) / st;
+    let r = 0;
+    if (u >= 0) { const k = Math.min(Math.floor(u), n - 2); r = lerp(src[k][1], src[k + 1][1], clamp(u - k)); }
+    pts.push([y, r]);
+  }
+  return { ...g, outline: pts, h: H, ybot: g.ybot + lift };
+}
+function woodTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#c99a62'; c.fillRect(0, 0, 256, 256);
+  // Long grain lines, lighter and darker.
+  let seed = 7;
+  const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 90; i++) {
+    c.strokeStyle = `rgba(${r() < 0.5 ? '120,74,34' : '236,196,140'},${0.06 + 0.14 * r()})`;
+    c.lineWidth = 0.6 + 2.2 * r();
+    const y = r() * 256, w = 4 * r();
+    c.beginPath(); c.moveTo(0, y); c.bezierCurveTo(85, y + w, 170, y - w, 256, y + (r() - 0.5) * 3); c.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+function buildStand(wood) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(12.6, 1.4, 9.2), wood);
+  base.position.set(2.1, 0.7, 0);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 11.3, 32), wood);
+  post.position.set(6.0, 1.4 + 5.65, 0);
+  // The top plate: a slot open at the front lets the glass slide in.
+  const sh = new THREE.Shape(), R = 2.05;
+  sh.moveTo(-3.4, 3.7); sh.lineTo(7.6, 3.7); sh.lineTo(7.6, -3.7); sh.lineTo(R, -3.7); sh.lineTo(R, 0);
+  sh.absarc(0, 0, R, 0, Math.PI, false);
+  sh.lineTo(-R, -3.7); sh.lineTo(-3.4, -3.7); sh.closePath();
+  const pg = new THREE.ExtrudeGeometry(sh, { depth: 1.5, bevelEnabled: true, bevelSize: 0.1, bevelThickness: 0.1, bevelSegments: 2, curveSegments: 28 }).rotateX(-Math.PI / 2);
+  const uv = pg.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.09, uv.getY(i) * 0.09);
+  const plate = new THREE.Mesh(pg, wood);
+  plate.position.y = 12.7;
+  g.add(base, post, plate);
+  g.visible = false;
+  return g;
+}
+// Lights for three's own materials: the key softbox, the lamp behind, a little fill.
+function addLights(scene) {
+  const key = new THREE.DirectionalLight(0xfff1e2, 3.4);
+  key.position.set(-15, 15, 21.6);
+  const rim = new THREE.DirectionalLight(0xffb060, 2.2);
+  rim.position.set(-3, 8, -30);
+  scene.add(key, rim, new THREE.AmbientLight(0x5a4636, 0.9));
+}
+
 /* ---------- stand-in shapes ---------- */
 // A glass from its sizes: foot, stem, then a bowl through its widest point to the rim.
 function glassFromSizes(g) {
@@ -1369,7 +1459,12 @@ const look = { sigma: [0, 0, 0], foam: [1, 1, 1], tint: [1, 0.8, 0.4] };
 function setBeer(id) {
   beer = BEERS.find(b => b.id === id) || BEERS[0];
   // Five beers have no measured outline yet; their sizes give a stand-in shape.
-  const G = beer.glass.outline ? beer.glass : { ...beer.glass, ...glassFromSizes(beer.glass) };
+  let G = beer.glass.outline ? beer.glass : { ...beer.glass, ...glassFromSizes(beer.glass) };
+  // A glass in a stand sits on the stand's base, not on the table.
+  if (G.stand) G = liftOutline(G, STAND_LIFT);
+  for (const st of stands) st.visible = !!G.stand;
+  const mc = G.metal === 'gold' ? [1.0, 0.78, 0.36] : [0.86, 0.87, 0.9];
+  glassMesh.material.uniforms.uMetal.value.set(...mc, G.metal ? 1 : 0);
   const B = beer.bottle.outline ? beer.bottle : { ...beer.bottle, outline: bottleFromSizes(beer.bottle) };
   const gv = vesselProfile(G.outline, GMAX, G.ybot, () => G.wall);
   glass.load(gv);
@@ -1399,6 +1494,7 @@ function setBeer(id) {
   bu.uLab.value.set(...(B.lab || [0, 0, 0, 0]));
   bu.uTintB.value.set(...hexLin(B.glass).map(c => Math.min(c * 5, 1)));
   bu.uPainted.value = B.paint ? 1 : 0;
+  bu.uCap.value.set(...hexLin(B.cap || '#8A8F94'));
   if (B.paint) bu.uPaint.value.set(...hexLin(B.paint));
   bu.uBeerCol.value.set(...look.sigma.map(s => Math.exp(-s * 3)));
   const fu = foamMesh.material.uniforms;
@@ -1419,7 +1515,7 @@ function setBeer(id) {
 // Hold to pour: the bottle lifts, swings over the glass and tips.
 // A drag down tips it further; a drag up eases it back.
 // Flow follows the beer's head over the bottle's lower lip.
-const G = 981, TH0 = 0.95, _aw = new THREE.Vector3(), _rw = new THREE.Vector3();
+const G = 981, TH0 = 0.95, _aw = new THREE.Vector3(), _rw = new THREE.Vector3(), _jp = new THREE.Vector3(), _jv = new THREE.Vector3();
 const pour = { on: false, auto: 0, flow: 0, gain: 0, hx: 0, hy: 0 };
 // lift: 0 at rest, 1 over the glass. th: tip (rad). Lw: beer level in bottle frame (cm).
 const bot = { lift: 0, th: 0, vol: 0, cap: 330, Lw: 0, head: -9, q: 0, focus: 0,
@@ -1507,7 +1603,8 @@ function bottleStep(dt) {
   const yT = aimW.y;
   const vy = bot.v0.y, T = (vy + Math.sqrt(vy * vy + 2 * G * Math.max(mouthY - yT, 0.1))) / G;
   bot.T = T;
-  const mx = aimW.x - bot.v0.x * T;
+  // The lip stays inside the rim, so the jet always enters the glass.
+  const mx = Math.min(aimW.x - bot.v0.x * T, _rw.set(rimR * 0.55, glass.h, 0).applyMatrix4(G2W).x);
   const lipX = -rm * c - h * sn, lipYw = lipY;
   // Pour pose: the lip at (mx, mouthY). Rest pose: upright on the table.
   const px = mx - lipX, py = mouthY - lipYw, pz = aimW.z;
@@ -1526,8 +1623,21 @@ function bottleStep(dt) {
   } else { bot.pos.copy(bot.tpos); bot.vel.set(0, 0, 0); }
   bot.lip.set(bot.pos.x + lipX, bot.pos.y + lipYw, bot.pos.z);
   bot.focus = smooth(0.25, 0.75, bot.lift);
+  bot.landed = false;
   // The jet rests on the lower lip: its centre is one radius in from it.
   bot.jet.set(bot.lip.x + c * bot.w0 * 0.42, bot.lip.y + sn * bot.w0 * 0.42, bot.lip.z);
+  // Follow the jet to where it lands: the head, the beer, the floor or the far wall.
+  {
+    const jp = _jp.copy(bot.jet).applyMatrix4(W2G), jv = _jv.copy(bot.v0).applyMatrix3(R_W2G);
+    let tEnd = 0.36;
+    for (let i = 1; i <= 90; i++) {
+      const t = i * 0.004, x = jp.x + jv.x * t + 0.5 * GRAV.x * G * t * t, y = jp.y + jv.y * t + 0.5 * GRAV.y * G * t * t;
+      if (y > glass.h - 0.1) continue;
+      const sY = fill.vol > 0.5 ? fill.top + fill.crown + (fill.slope + swirl.sx) * x : glass.ybot + 0.15;
+      if (y <= Math.max(sY, glass.ybot + 0.15) || Math.hypot(x, jp.z) >= glass.ri(y) - 0.22) { tEnd = t; bot.aimG.set(x, y, jp.z); bot.landed = true; break; }
+    }
+    bot.T = tEnd;
+  }
   // The glass takes what the jet brings; a long drop whips up more head.
   if (dv > 0) {
     const drop = Math.max(bot.lip.y - yT, 0);

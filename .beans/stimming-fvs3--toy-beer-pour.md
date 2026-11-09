@@ -108,3 +108,14 @@ Known, not fixed:
   - The middle layer and the final layer take four samples, so edges no longer stair-step.
   - Speed: flow is 75 x head^1.5 (was 34); lift, tip, return and the glass's tilt are about 1.6 times quicker. A Duvel pours in about 6 s (was about 15 s).
   - The jet leaves the lip at 60% of the old speed, so it falls steeply instead of shooting across.
+
+- Duvel, Kwak, Averbode first (2026-11-09, Tom: look up the bottle design, colour and above all the glass's shape):
+  - The stepper lists Duvel, Pauwel Kwak and Averbode first.
+  - Kwak: the coachman's glass (bulb, narrow waist, long trumpet), drawn after Commons photos (`Beerglass_kwak_koetsier.jpg`, `Kwak.jpg`), standing in its wooden holder: base, post and a slotted top plate, as three.js meshes with a wood-grain texture. The glass is poured upright in the stand (tilt 0). Label: cream-gold oval, red border, the name on a red band; gold cap.
+  - Averbode: a stemmed goblet with an angular bowl and a silver rim, drawn after shop photos (Bing image search). Label: white with charcoal text; white cap. The bowl reads a little taller and straighter than the photos: refine.
+  - Both outlines are hand-drawn control points in `beer/data/silhouettes.json` (`drawn: true`), not measured from a photo's pixels as the other twenty are.
+  - Bottles carry their crown cap's colour; glasses with a metal rim show it.
+  - The jet now follows its own parabola to where it lands (head, beer, floor or far wall), and the lip stays inside the rim.
+  - Background blur: radius down from 2.2 to 1.35 px, with per-pixel jitter in the taps so it breaks into grain; film grain about doubled.
+- [ ] Kwak: the stand's base draws over the bulb's foot; cut a hollow.
+- [ ] Label art for all three is still generated type, not the real artwork.

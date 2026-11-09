@@ -706,6 +706,7 @@ export const BEERS = [
     "#C8102E",
     "#1A1A1A"
    ],
+   "band": null,
    "elements": "large red script wordmark with dark outline on white; small text 'Moortgat' and strength line; clean, lots of white"
   },
   "pour": {
@@ -1156,6 +1157,7 @@ export const BEERS = [
     "#151515",
     "#B8963E"
    ],
+   "band": null,
    "elements": "bold black 'Omer.' wordmark (with full stop) on light ground, gold seal/rules; very typographic, minimal"
   },
   "pour": {
@@ -1180,19 +1182,279 @@ export const BEERS = [
   "rock": 0.2,
   "fizz": 0.66,
   "glass": {
-   "kind": "chalice",
+   "kind": "tulip",
    "h": 18.5,
-   "rim": 4.5,
-   "max": 4.6,
-   "maxAt": 12.0,
-   "stem": 5.0,
+   "rim": 3.85,
+   "max": 4.75,
+   "maxAt": 10.9,
+   "stem": 5.5,
    "foot": 3.9,
-   "base": 0.8,
+   "base": 0.3,
    "wall": 0.18,
    "etch": false,
-   "metal": null,
+   "metal": "silver",
    "rock": false,
-   "hex": false
+   "hex": false,
+   "outline": [
+    [
+     0.0,
+     3.9
+    ],
+    [
+     0.294,
+     3.445
+    ],
+    [
+     0.587,
+     2.274
+    ],
+    [
+     0.881,
+     1.208
+    ],
+    [
+     1.175,
+     0.727
+    ],
+    [
+     1.468,
+     0.553
+    ],
+    [
+     1.762,
+     0.498
+    ],
+    [
+     2.056,
+     0.489
+    ],
+    [
+     2.349,
+     0.483
+    ],
+    [
+     2.643,
+     0.477
+    ],
+    [
+     2.937,
+     0.472
+    ],
+    [
+     3.23,
+     0.466
+    ],
+    [
+     3.524,
+     0.46
+    ],
+    [
+     3.817,
+     0.455
+    ],
+    [
+     4.111,
+     0.455
+    ],
+    [
+     4.405,
+     0.46
+    ],
+    [
+     4.698,
+     0.466
+    ],
+    [
+     4.992,
+     0.474
+    ],
+    [
+     5.286,
+     0.481
+    ],
+    [
+     5.579,
+     0.487
+    ],
+    [
+     5.873,
+     0.507
+    ],
+    [
+     6.167,
+     0.592
+    ],
+    [
+     6.46,
+     0.78
+    ],
+    [
+     6.754,
+     1.075
+    ],
+    [
+     7.048,
+     1.472
+    ],
+    [
+     7.341,
+     1.909
+    ],
+    [
+     7.635,
+     2.338
+    ],
+    [
+     7.929,
+     2.763
+    ],
+    [
+     8.222,
+     3.167
+    ],
+    [
+     8.516,
+     3.52
+    ],
+    [
+     8.81,
+     3.838
+    ],
+    [
+     9.103,
+     4.12
+    ],
+    [
+     9.397,
+     4.33
+    ],
+    [
+     9.69,
+     4.484
+    ],
+    [
+     9.984,
+     4.608
+    ],
+    [
+     10.278,
+     4.683
+    ],
+    [
+     10.571,
+     4.721
+    ],
+    [
+     10.865,
+     4.736
+    ],
+    [
+     11.159,
+     4.727
+    ],
+    [
+     11.452,
+     4.704
+    ],
+    [
+     11.746,
+     4.68
+    ],
+    [
+     12.04,
+     4.653
+    ],
+    [
+     12.333,
+     4.619
+    ],
+    [
+     12.627,
+     4.586
+    ],
+    [
+     12.921,
+     4.55
+    ],
+    [
+     13.214,
+     4.514
+    ],
+    [
+     13.508,
+     4.479
+    ],
+    [
+     13.802,
+     4.445
+    ],
+    [
+     14.095,
+     4.409
+    ],
+    [
+     14.389,
+     4.373
+    ],
+    [
+     14.683,
+     4.336
+    ],
+    [
+     14.976,
+     4.298
+    ],
+    [
+     15.27,
+     4.261
+    ],
+    [
+     15.563,
+     4.221
+    ],
+    [
+     15.857,
+     4.183
+    ],
+    [
+     16.151,
+     4.146
+    ],
+    [
+     16.444,
+     4.108
+    ],
+    [
+     16.738,
+     4.071
+    ],
+    [
+     17.032,
+     4.033
+    ],
+    [
+     17.325,
+     3.997
+    ],
+    [
+     17.619,
+     3.96
+    ],
+    [
+     17.913,
+     3.924
+    ],
+    [
+     18.206,
+     3.887
+    ],
+    [
+     18.5,
+     3.851
+    ]
+   ],
+   "ybot": 7.0,
+   "src": "https://www.bing.com/images/search?q=averbode+bier+glas+33cl"
   },
   "bottle": {
    "kind": "belgian",
@@ -1204,7 +1466,7 @@ export const BEERS = [
    "nr": 1.4,
    "glass": "#3B2410",
    "paint": null,
-   "cap": null,
+   "cap": "#E9E9E6",
    "outline": [
     [
      0.0,
@@ -1602,11 +1864,12 @@ export const BEERS = [
   "label": {
    "shape": "rect",
    "colours": [
-    "#F3EEE3",
-    "#9E1B32",
-    "#B58B3A"
+    "#F4F2EC",
+    "#3A3F45",
+    "#9BA1A6"
    ],
-   "elements": "abbey name in serif caps, abbey emblem; restrained monastic look (check against real label)"
+   "band": null,
+   "elements": "compass-star emblem, AVERBODE in serif caps, ABDIJ - ABBAYE; white, quiet (from shop photos)"
   },
   "pour": {
    "tilt": 45,
@@ -2302,6 +2565,7 @@ export const BEERS = [
     "#FFFFFF",
     "#3B7A3A"
    ],
+   "band": null,
    "elements": "cartoon gnome with red pointed cap and white beard; rounded hand-drawn 'La Chouffe' lettering; forest/ardennes motifs"
   },
   "pour": {
@@ -2753,6 +3017,7 @@ export const BEERS = [
     "#C7A250",
     "#5A0E18"
    ],
+   "band": null,
    "elements": "cherries; Boon wordmark; 'Lembeek' place name"
   },
   "pour": {
@@ -3464,6 +3729,7 @@ export const BEERS = [
     "#1A1A1A",
     "#C5A253"
    ],
+   "band": null,
    "elements": "large cherries illustration; Lindemans wordmark; 'Kriek' title"
   },
   "pour": {
@@ -4175,6 +4441,7 @@ export const BEERS = [
     "#B8963E",
     "#A51E22"
    ],
+   "band": null,
    "elements": "traditional typographic label, 'Oude Geuze' and 'Lembeek'"
   },
   "pour": {
@@ -4886,6 +5153,7 @@ export const BEERS = [
     "#C8202F",
     "#FFFFFF"
    ],
+   "band": null,
    "elements": "red roundel with white interlaced A-W monogram at top of diamond; 'Westmalle' blackletter-style wordmark across; 'Trappist Ale' and 'Tripel' below"
   },
   "pour": {
@@ -5598,6 +5866,7 @@ export const BEERS = [
     "#C9A65A",
     "#B8963E"
    ],
+   "band": null,
    "elements": "same diamond layout as Tripel in dark purple; thin gold keyline; white wordmark"
   },
   "pour": {
@@ -6309,6 +6578,7 @@ export const BEERS = [
     "#C9A65A",
     "#111111"
    ],
+   "band": null,
    "elements": "Chimay wordmark in a serif, abbey crest/emblem, blue colour band coding the beer"
   },
   "pour": {
@@ -7020,6 +7290,7 @@ export const BEERS = [
     "#3A2D4A",
     "#C9A65A"
    ],
+   "band": null,
    "elements": "white 'ORVAL' outlined letters across a lilac diamond, trout with a gold ring in its mouth, 'Trappist Ale' below"
   },
   "pour": {
@@ -7730,6 +8001,7 @@ export const BEERS = [
     "#1F4E9A",
     "#1A1A1A"
    ],
+   "band": null,
    "elements": "simple typographic label, big '10'; blue codes the 10 (6 red, 8 green)"
   },
   "pour": {
@@ -8047,6 +8319,7 @@ export const BEERS = [
     "#FFFFFF",
     "#1A1A1A"
    ],
+   "band": null,
    "elements": "label mimics the yellow cap; white area with best-before and batch code"
   },
   "pour": {
@@ -8746,6 +9019,7 @@ export const BEERS = [
     "#C39A4B",
     "#1A1A1A"
    ],
+   "band": null,
    "elements": "'Tripel Karmeliet' in script, Carmelite and grain motifs (three grains), warm earth palette"
   },
   "pour": {
@@ -8782,7 +9056,268 @@ export const BEERS = [
    "etch": false,
    "metal": null,
    "rock": false,
-   "hex": false
+   "hex": false,
+   "outline": [
+    [
+     0.0,
+     1.899
+    ],
+    [
+     0.389,
+     2.695
+    ],
+    [
+     0.778,
+     3.131
+    ],
+    [
+     1.167,
+     3.343
+    ],
+    [
+     1.556,
+     3.467
+    ],
+    [
+     1.944,
+     3.542
+    ],
+    [
+     2.333,
+     3.591
+    ],
+    [
+     2.722,
+     3.611
+    ],
+    [
+     3.111,
+     3.606
+    ],
+    [
+     3.5,
+     3.574
+    ],
+    [
+     3.889,
+     3.522
+    ],
+    [
+     4.278,
+     3.455
+    ],
+    [
+     4.667,
+     3.355
+    ],
+    [
+     5.056,
+     3.231
+    ],
+    [
+     5.444,
+     3.094
+    ],
+    [
+     5.833,
+     2.939
+    ],
+    [
+     6.222,
+     2.765
+    ],
+    [
+     6.611,
+     2.588
+    ],
+    [
+     7.0,
+     2.419
+    ],
+    [
+     7.389,
+     2.255
+    ],
+    [
+     7.778,
+     2.098
+    ],
+    [
+     8.167,
+     1.964
+    ],
+    [
+     8.556,
+     1.852
+    ],
+    [
+     8.944,
+     1.755
+    ],
+    [
+     9.333,
+     1.675
+    ],
+    [
+     9.722,
+     1.623
+    ],
+    [
+     10.111,
+     1.585
+    ],
+    [
+     10.5,
+     1.561
+    ],
+    [
+     10.889,
+     1.558
+    ],
+    [
+     11.278,
+     1.566
+    ],
+    [
+     11.667,
+     1.588
+    ],
+    [
+     12.056,
+     1.628
+    ],
+    [
+     12.444,
+     1.678
+    ],
+    [
+     12.833,
+     1.732
+    ],
+    [
+     13.222,
+     1.797
+    ],
+    [
+     13.611,
+     1.872
+    ],
+    [
+     14.0,
+     1.949
+    ],
+    [
+     14.389,
+     2.028
+    ],
+    [
+     14.778,
+     2.108
+    ],
+    [
+     15.167,
+     2.19
+    ],
+    [
+     15.556,
+     2.28
+    ],
+    [
+     15.944,
+     2.369
+    ],
+    [
+     16.333,
+     2.462
+    ],
+    [
+     16.722,
+     2.551
+    ],
+    [
+     17.111,
+     2.643
+    ],
+    [
+     17.5,
+     2.733
+    ],
+    [
+     17.889,
+     2.822
+    ],
+    [
+     18.278,
+     2.91
+    ],
+    [
+     18.667,
+     2.994
+    ],
+    [
+     19.056,
+     3.079
+    ],
+    [
+     19.444,
+     3.163
+    ],
+    [
+     19.833,
+     3.248
+    ],
+    [
+     20.222,
+     3.333
+    ],
+    [
+     20.611,
+     3.415
+    ],
+    [
+     21.0,
+     3.499
+    ],
+    [
+     21.389,
+     3.582
+    ],
+    [
+     21.778,
+     3.664
+    ],
+    [
+     22.167,
+     3.746
+    ],
+    [
+     22.556,
+     3.825
+    ],
+    [
+     22.944,
+     3.908
+    ],
+    [
+     23.333,
+     3.982
+    ],
+    [
+     23.722,
+     4.054
+    ],
+    [
+     24.111,
+     4.127
+    ],
+    [
+     24.5,
+     4.201
+    ]
+   ],
+   "ybot": 0.45,
+   "src": "https://commons.wikimedia.org/wiki/File:Beerglass_kwak_koetsier.jpg",
+   "stand": true
   },
   "bottle": {
    "kind": "belgian",
@@ -9190,17 +9725,18 @@ export const BEERS = [
    "src": "https://cdn.webshopapp.com/shops/65337/files/423155637/kwak-amber-pauwel.jpg"
   },
   "label": {
-   "shape": "rect",
+   "shape": "oval",
    "colours": [
-    "#C86A1E",
-    "#3A2414",
-    "#F2E6CC",
+    "#EBD498",
+    "#FFFFFF",
+    "#B3191E",
     "#C39A4B"
    ],
-   "elements": "'Kwak' wordmark, coachman/coach-inn motif"
+   "band": "#B3191E",
+   "elements": "white 'Kwak' wordmark on a red band across a cream-gold oval with a red border; portrait medallion above; red and gold neck label (from photos)"
   },
   "pour": {
-   "tilt": 40,
+   "tilt": 0,
    "head": 2.5,
    "yeast": false
   }
@@ -9909,6 +10445,7 @@ export const BEERS = [
     "#FFFFFF",
     "#D4AF37"
    ],
+   "band": null,
    "elements": "pink elephants, green crocodiles and dragons dancing on a circus ball; 'Delirium Tremens' lettering; whole bottle is the canvas"
   },
   "pour": {
@@ -10620,6 +11157,7 @@ export const BEERS = [
     "#C9A24D",
     "#7FA06A"
    ],
+   "band": null,
    "elements": "white 'Hoegaarden' letters trimmed in blue below two gold shields; botanical illustrations (since UK refresh)"
   },
   "pour": {
@@ -11331,6 +11869,7 @@ export const BEERS = [
     "#8F1D21",
     "#1A1A1A"
    ],
+   "band": null,
    "elements": "abbey stained-glass window motif, 'Leffe' wordmark, red ribbon banner, gilded borders"
   },
   "pour": {
@@ -12041,6 +12580,7 @@ export const BEERS = [
     "#C9A65A",
     "#F1E7D2"
    ],
+   "band": null,
    "elements": "'Rodenbach' wordmark, 'Grand Cru', oak foeder motif"
   },
   "pour": {
@@ -12752,6 +13292,7 @@ export const BEERS = [
     "#151515",
     "#A51E22"
    ],
+   "band": null,
    "elements": "gold dragon (from the Ghent belfry) on the white bottle, 'Gulden Draak' lettering in black/red"
   },
   "pour": {
@@ -13463,6 +14004,7 @@ export const BEERS = [
     "#B3202A",
     "#C9A24D"
    ],
+   "band": null,
    "elements": "cartoon monk holding a glass, 'St. Bernardus' wordmark, 'Abt 12'"
   },
   "pour": {
@@ -14175,6 +14717,7 @@ export const BEERS = [
     "#24539B",
     "#1A1A1A"
    ],
+   "band": null,
    "elements": "grinning court jester (the 'Zot') in a two-colour cap; 'Brugse Zot' wordmark"
   },
   "pour": {
@@ -14885,6 +15428,7 @@ export const BEERS = [
     "#C9A24D",
     "#7E1B1F"
    ],
+   "band": null,
    "elements": "Emperor Charles V (Carolus) imagery and gold coin, 'Gouden Carolus' gold lettering on black"
   },
   "pour": {
@@ -15596,6 +16140,7 @@ export const BEERS = [
     "#3A2414",
     "#C9A24D"
    ],
+   "band": null,
    "elements": "'Straffe Hendrik' wordmark with the brewery's half-moon logo; old-Bruges motif"
   },
   "pour": {
@@ -16307,6 +16852,7 @@ export const BEERS = [
     "#C9A24D",
     "#1A1A1A"
    ],
+   "band": null,
    "elements": "red 'Stella Artois' serif wordmark, gold horn-and-star emblem, 'Anno 1366', ornate gold border"
   },
   "pour": {
