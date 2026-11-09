@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T08:18:57Z
-updated_at: 2026-11-09T08:24:12Z
+updated_at: 2026-11-09T08:28:04Z
 parent: stimming-i8rd
 ---
 
@@ -28,7 +28,7 @@ Visible controls: 4 of 5.
 ## Checklist
 
 - [x] Map controls (this table)
-- [x] Diegetic check (proposed; waits on Tom)
+- [x] Diegetic check: knock and drag on the frame, built on Tom's yes
 - [x] Port to one bar spec; delete dead markup and wiring
 - [x] Fix bugs found on the way
 - [x] Check in the pane at 1280 px and 375 px
@@ -36,7 +36,7 @@ Visible controls: 4 of 5.
 
 ## Diegetic proposal
 
-Knock the orange frame to shake flat (replaces Shake; Esc stays). Drag a frame side to flip (replaces Flip; Enter stays). Still: side-session-notes pins-diegetic.jpg. Build only on Tom's yes.
+Knock the orange frame to shake flat (replaces Shake; Esc stays). Drag a frame side to flip (replaces Flip; Enter stays). Built on Tom's yes (2026-11-09). Shake and Flip buttons removed; Shuffle stays. The frame warms and the cursor opens on hover.
 
 ## Open
 
