@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T12:04:54Z
-updated_at: 2026-11-08T18:01:13Z
+updated_at: 2026-11-09T07:04:21Z
 parent: stimming-avdk
 ---
 
@@ -19,7 +19,7 @@ Rebuild the toy controls as the Corners shell: four stage corners, a key strip, 
 - [x] Tom reviews the spec (approved 2026-11-08)
 - [x] Implementation plan: docs/plans/bar-v2-plan.md (Tom chose Native)
 - [x] Shell v2 in shared/stim.js and shared/stim.css (tests/bar-v2.html, 53 tests)
-- [ ] Pilot: Galaxy; Tom signs off at 1280 and 375 px
-- [ ] AGENTS.md control standard replaced; stimming-848s closed as superseded
+- [x] Pilot: Galaxy; Tom signs off at 1280 and 375 px
+- [x] AGENTS.md control standard replaced; stimming-848s closed as superseded
 - [ ] Start the ten-toy Lab session on Bar v2
 - [ ] Record the session cost

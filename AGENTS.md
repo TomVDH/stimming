@@ -38,9 +38,9 @@ Read `README.md` for the toy list and the full rules.
   `icons/sheet.html` is the one icons page: every toy's directions (Current, A to E) as Icon, Transition (the luminance emblem) or Both; scrub and cut.
   The galleries are `icons/spike-1.html` to `spike-11.html`; emblems sit in `icons/spike/emblems/<id>-<a..e>.svg`.
 - `shared/stim.css` and `shared/stim.js` are the shared shell.
-  `stim.js` exports `initPage({ id })`, `sound`, `audioKit`, `choices`, `fitCanvas`, `whenVisible`, `reduced` and the OKLCH helpers.
+  `stim.js` exports `initPage({ id, bar })`, `sound`, `audioKit`, `choices`, `fitCanvas`, `whenVisible`, `reduced` and the OKLCH helpers.
   It also holds the site-wide graphics quality (`stimming.quality`): `quality()`, `setQuality()`, `onQuality()`, `pixelRatio()` and `qualitySetting(tray)`. High renders at the screen's own pixel ratio (up to 3) with no pixel budget; Standard keeps each toy's caps. `fitCanvas` follows it. On High, a toy's slow-frame step falls back to Standard, not to 1x; a new quality choice clears it.
-- Toy page skeleton (the main seven use it):
+- Toy page skeleton, v1 (the main shelf uses it, except Galaxy on Bar v2):
   1. `<header data-shell>`. `initPage` fills it with the mark, a back arrow and the sound toggle.
   2. `.stage.stage--<id>`, then `.bar` with `.choices`, `.actions` and `dl.how`.
   3. `section.about` with `h1.display` and a `.vignette`.
@@ -104,18 +104,23 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 - Intro layout: under the logo, main title (`name`) and translation (`nl`, `ipa`). At the foot of the screen, subtitle (`tag`) and subtitle translation (`tagNl`), both lifted -14 (`tagY`, `tagNlY`), then the audio notice centred: headphones plus "Best with sound". The number, when not in the box, sits bottom left. The classic notice stays off for now (`classic` param; it sits under the main title). `textFlash` wipes the title in as a box during the flash; the other lines open at settle (off for now; toggle in the lab). Each line has a Y knob (`clsY`, `nameY`, `nlY`, `tagY`, `tagNlY`, `sndY`); the lab's Static mode holds every line on screen to tune them. Stages: big flash box with the inverted logo, flash box at size, then rest mode, where the titles animate in. The logo's centre is one fixed point (`--origin` in `shared/intro.css`) at every stage and never moves; the copy hangs below it and shrinks to fit. Lab toys also carry a lab tag (`sub`).
 - Fresh is the standard: the menu always opens a toy's `index.html`. Classic stays an option wherever an older build exists.
 - Legacy: when a toy ports to the library set, its pre-port page is kept as `<id>/legacy.html` (with `noindex`). Set `legacy: true` on the toy in `toys.json`; the shell header then shows one link to the other build, Classic or Fresh, with the intro's flash box.
-- Control bar standard (Tom, 2026-11-03). Left to right, one row:
-  1. Choice: at most one group. Up to five options as segmented chips, one pressed (palettes: dot plus name). More than five: one stepper, `‹ Name ›`.
-  2. Main slider: at most one, labelled with a word, no number readout.
-  3. Actions: at most three. `+ Noun` adds; `Shuffle` (die icon plus the word) randomizes everywhere; `Clear` empties; `Reset` returns to the start. Clear and Reset never sit side by side: Reset then lives in Settings. One-word literal verbs are fine (Drip, Blow, Release).
-  4. Right edge: Settings (sliders icon) for everything else, then the (i).
-  At most five visible controls; a choice group counts as one; Settings and (i) do not count. Chips carry text; icon-only is only for Settings and (i).
-  The shared shell gives the bar its inset, scrim and chip backing; toys do not restyle it.
-- Controls: one bar under the stage, five visible controls at most.
-  1. Choices first, as segmented chips with `aria-pressed`.
-  2. Then actions, with the shared verbs Clear, Reset and Shuffle.
-  3. Then the how-to line: four entries at most, gesture then result.
-  Keys show on mouse devices only. Click/Tap uses the `fine`/`touch` span pair.
+- Control bar standard: Bar v2, the Corners shell (Tom, 2026-11-09). Full spec: `docs/plans/bar-v2.md`.
+  The toy passes one `bar` spec object to `initPage`; the shell builds every control in the `.stim-ui` layer over the stage.
+
+  | Slot | Holds | Limit |
+  |---|---|---|
+  | Top left | Back block, toy name, then the choice | One choice group: `segments` (five or fewer), `stepper` (more), or `tray` (icons) |
+  | Top right | Classic or Fresh link (only with `legacy`), sound, Settings, (i) | Fixed order; does not count to the limit |
+  | Bottom left | Actions | Three at most |
+  | Bottom right | Main slider | One at most; a word label, no number |
+  | Bottom centre | Key strip | Four entries at most |
+
+  - At most five visible controls; a choice group counts as one. An empty slot draws nothing.
+  - Shared verbs: `+ Noun` adds, `Shuffle` (die icon) randomizes, `Clear` empties, `Reset` returns to the start. With Clear shown, Reset lives in the Settings footer. One-word literal verbs are fine (Drip, Blow, Release).
+  - Everything else goes in the Settings sheet; the site quality row sits there too.
+  - The key strip shows keycap then verb (`[CLICK] place`), swaps words by pointer, and fades after three gestures or 8 s; (i) brings it back.
+  - Phones (stage under 640 px): the choice moves bottom left as a stepper or tray chip, actions bottom right, the slider into Settings. Touch targets are 34 px.
+  - Un-migrated pages keep v1 (`header[data-shell]`, `.bar`, `choices()`) until Tom moves them. Galaxy is the reference port.
 - Copy: no blurbs or taglines on the toy. Writing lives only in the vignette: a short heading, two plain paragraphs, a small figure.
 - Sound is synthesized with Web Audio. It is muted by default and starts after a user gesture. The choice is remembered in `stimming.<id>.sound`.
 - Hold 30 fps or better. Idle pages do no per-frame work. Respect `prefers-reduced-motion`.
