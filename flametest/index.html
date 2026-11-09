@@ -56,7 +56,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, fitCanvas, onQuality, linFit, css, reduced } from '../shared/stim.js';
+import { initPage, whenVisible, fitCanvas, onQuality, linFit, css, reduced, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -740,9 +740,124 @@ function step(dt) {
 const settling = () => feeding || ptr || loupe.v !== loupe.to || grains.length > 0 || puffE > 0 || puffV > 1e-3 || amt.some(a => a > 0) || shown.some(a => a > 0)
   || Math.abs(lean) > 1e-3 || grating !== gratingTo;
 
+/* ---------- sound ---------- */
+// Web Audio on the shared kit: muted by default, woken by a gesture.
+const kit = audioKit({ keys: new Set([' ', '1', '2', '3', '4', '5', '6', '7']) });
+// Light frequency moved down 40 octaves, in Hz times nm: 589 nm sings near 463 Hz.
+const F_LIGHT = 2.99792458e17 / 2 ** 40;
+const MAXV = 24;
+let bus = null;
+const pan = x => clamp((x / canvas.width) * 2 - 1, -1, 1) * 0.7;
+function voices() {
+  const ac = kit.live();
+  if (!ac) return null;
+  if (bus?.ac === ac) return bus;
+  // The roar: noise through a band that opens with the air valve.
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), roar = ac.createGain(), rp = ac.createStereoPanner();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.6;
+  lp.type = 'lowpass';
+  lp.frequency.value = 1600;
+  roar.gain.value = 0;
+  src.connect(bp).connect(lp).connect(roar).connect(rp).connect(kit.out);
+  src.start();
+  // The chord: one sine per bright line, panned toward the plate.
+  const chord = ac.createGain(), cp = ac.createStereoPanner();
+  chord.gain.value = 0.55;
+  chord.connect(cp).connect(kit.out);
+  bus = { ac, bp, roar, rp, cp, chord, tones: new Map() };
+  return bus;
+}
+// One noise burst through a filter; every hit jitters.
+function burst({ f, q = 1, type = 'bandpass', dur, lvl, x = canvas.width / 2, sweep = 0 }) {
+  const b = voices();
+  if (!b) return;
+  const ac = b.ac, t = ac.currentTime + 0.005;
+  const src = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain(), sp = ac.createStereoPanner();
+  src.buffer = kit.noise;
+  fl.type = type;
+  fl.Q.value = q;
+  fl.frequency.setValueAtTime(f, t);
+  if (sweep) fl.frequency.exponentialRampToValueAtTime(sweep, t + dur);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(lvl, t + Math.min(0.012, dur * 0.25));
+  g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
+  sp.pan.value = pan(x);
+  src.connect(fl).connect(g).connect(sp).connect(kit.out);
+  src.start(t, Math.random() * 0.6);
+  src.stop(t + dur + 0.05);
+}
+const sfx = {
+  tick(x) { burst({ f: rnd(3200, 4800), q: 2, dur: rnd(0.02, 0.035), lvl: rnd(0.25, 0.35), x }); },
+  lastWhoomp: 0,
+  whoomp(k) {
+    const now = performance.now();
+    if (now - sfx.lastWhoomp < 140) return;
+    sfx.lastWhoomp = now;
+    burst({ f: rnd(90, 120), type: 'lowpass', q: 0.7, sweep: rnd(500, 700), dur: rnd(0.28, 0.36), lvl: clamp(0.3 + k, 0.3, 0.8), x: G.base[0] });
+  },
+  lastCrackle: 0,
+  crackle(x) {
+    const now = performance.now();
+    if (now - sfx.lastCrackle < 22) return;
+    sfx.lastCrackle = now;
+    burst({ f: rnd(2000, 6500), q: rnd(3, 8), dur: rnd(0.006, 0.014), lvl: rnd(0.08, 0.2), x });
+  },
+};
+// The chord follows the live lines; the roar follows the air and the puff.
+const live2 = [];
+function soundFrame() {
+  const b = voices();
+  if (!b) return;
+  const t = b.ac.currentTime;
+  b.rp.pan.setTargetAtTime(pan(G.base[0]), t, 0.1);
+  b.cp.pan.setTargetAtTime(pan((G.plate[0] + G.plate[2]) / 2), t, 0.1);
+  b.bp.frequency.setTargetAtTime(320 + 900 * air + 700 * puffV, t, 0.05);
+  b.roar.gain.setTargetAtTime(0.05 + 0.07 * air + 0.1 * sootK() + 0.14 * Math.min(1, puffV), t, 0.06);
+  live2.length = 0;
+  const filt = l => (cobalt ? 1 - 0.94 * Math.exp(-(((l - 590) / 28) ** 2)) : 1);
+  let other = 0;
+  SALTS.forEach((s, i) => { if (i !== NA) other += shown[i]; });
+  SALTS.forEach((s, i) => {
+    const a = i === NA ? shown[i] + trace * (0.015 + 0.07 * other) : shown[i];
+    s.lines.forEach((l, j) => { const w = l[1] * a * (l[2] ? 0.5 : 1) * filt(l[0]); if (w > 0.03) live2.push([`${i}:${j}`, l[0], w, l[2] || 0]); });
+  });
+  live2.sort((p, q) => q[2] - p[2]);
+  live2.length = Math.min(live2.length, MAXV);
+  const on = new Set();
+  for (const [key, nm, w, wid] of live2) {
+    on.add(key);
+    let v = b.tones.get(key);
+    if (!v) {
+      const o = b.ac.createOscillator(), g = b.ac.createGain();
+      o.type = 'sine';
+      // A band is a smear of lines, so it wavers a little.
+      o.frequency.value = F_LIGHT / nm;
+      if (wid) o.detune.value = rnd(-12, 12);
+      g.gain.value = 0;
+      o.connect(g).connect(b.chord);
+      o.start();
+      v = { o, g };
+      b.tones.set(key, v);
+    }
+    v.g.gain.setTargetAtTime(0.07 * Math.min(1.2, w), t, 0.08);
+    v.off = 0;
+  }
+  // A silent tone stops after half a second.
+  for (const [key, v] of b.tones) {
+    if (on.has(key)) continue;
+    v.g.gain.setTargetAtTime(0, t, 0.08);
+    v.off ||= t;
+    if (t - v.off > 0.5) { v.o.stop(); v.o.disconnect(); b.tones.delete(key); }
+  }
+}
+
 /* ---------- frame loop ---------- */
 // Lively at full rate, drifting at 30 fps, asleep 60 s after the last input.
-let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now();
+let raf = 0, last = 0, lastDraw = 0, visible = true, rested = false, lastInput = performance.now();
 const SLEEP = 60000, EASE = 2000;
 function live() { lastInput = performance.now(); wake(); }
 function wake() {
@@ -756,12 +871,16 @@ function frame(now) {
   const lively = settling();
   try {
     step(dt);
+    soundFrame();
     // The flicker eases to a stop over the last 2 s before sleep.
     const flow = clamp((SLEEP + EASE - idle) / EASE) * (reduced() ? 0.25 : 1);
     time += dt * (lively ? Math.max(flow, reduced() ? 0.25 : 1) : flow);
     if (lively || now - lastDraw >= 31) { render(); lastDraw = now; }
   } finally {
     if (visible && (lively || idle < SLEEP + EASE)) raf = requestAnimationFrame(frame);
+    // Once the salt has burnt off, the audio context sleeps.
+    if (!lively && !rested) { rested = true; kit.rest(() => !settling()); }
+    if (lively) rested = false;
   }
 }
 
@@ -809,6 +928,9 @@ function grainStep(dt) {
       amt[p.s] = Math.min(2.5, amt[p.s] + p.share);
       puffE = Math.min(1.3, puffE + p.share * 1.2);
       sparks(p);
+      // A pinch whoomps; a feeding trickle only crackles.
+      if (p.share > 0.05) sfx.whoomp(p.share * 3);
+      sfx.crackle(p.x);
     } else {
       p.burn += dt;
       p.y += 0.3 * G.S * dt;
@@ -856,6 +978,7 @@ function drawGrains(W, H) {
 // A pinch is about 14 grains; tapping the flame itself lands them at once.
 function flick(i = salt, at = spatula(), pinch = 0.9) {
   launch(i, at[0], at[1], reduced() ? 8 : 14, pinch);
+  sfx.tick(at[0]);
   live();
 }
 act.flick = () => flick();
@@ -1013,7 +1136,7 @@ onQuality(() => { layout(); if (P) render(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; if (kit.ac?.state === 'running') kit.ac.suspend().catch(() => {}); return; }
   wake();
 });
 </script>
