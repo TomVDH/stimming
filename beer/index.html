@@ -416,15 +416,16 @@ void main() {
   vec3 behind = texture2D(uBehind, clamp(uv + nv * 0.05, 0.001, 0.999)).rgb;
   // The path through the tube: longest at its centre.
   float path = 2.0 * vR * c;
-  vec3 T = exp(-uSigma * path * 1.4);
-  vec3 col = behind * T * 1.25;
-  // Subsurface: light scattered inside glows gold, deepest in the core.
-  col += uLamp * exp(-uSigma * (0.3 + path * 0.8)) * (0.1 + 0.18 * c);
-  // The lamp behind pipes along the jet as a bright core line.
-  col += uLamp * exp(-uSigma * 0.4) * 0.35 * pow(c, 8.0);
+  // Clear gold: the room behind, tinted; saturated past what the thin path gives.
+  vec3 Tg = exp(-uSigma * (1.2 + path * 4.0));
+  vec3 col = behind * mix(vec3(1.0), Tg, 0.75) * 1.15;
+  // Subsurface glow, and the lamp piped along the jet as a core line.
+  col += uLamp * Tg * (0.04 + 0.1 * c);
+  col += uLamp * Tg * 0.5 * pow(c, 10.0);
   float F = 0.03 + 0.97 * pow(1.0 - c, 5.0);
   col = col * (1.0 - F) + studio(vP, reflect(-v, n)) * F;
-  float a = smoothstep(0.0, 0.03, vS) * uFlow;
+  // See-through in the middle, denser at the rim where the path bends most.
+  float a = smoothstep(0.0, 0.03, vS) * uFlow * (0.7 + 0.3 * (1.0 - c));
   gl_FragColor = vec4(safe(col) * a, a);
 }`;
 
@@ -506,16 +507,20 @@ void main() {
 /* ---------- the head ---------- */
 const FOAM_VS = PROF + `
 attribute vec2 aTS;
-uniform float uLevel, uTop, uDome, uRock, uTime;
+uniform float uLevel, uTop, uDome, uRock, uTime, uMound;
 uniform vec3 uHit;     // jet landing x, z; strength 0..1
 varying vec3 vW, vN;
 varying float vS, vHit;
 ${NOISE}
 void main() {
   vec2 dir = normalize(position.xz + 1e-6);
-  vec2 xz0 = dir * gp(clamp(uLevel, uGYb, uGH)).y * aTS.y;
-  float tilt = dot(uSlope, xz0);
-  float y = mix(uLevel - 0.05, uTop, aTS.x) + tilt;
+  float Rw = gp(clamp(uLevel, uGYb, uGH)).y;
+  vec2 xz0 = dir * Rw * aTS.y;
+  // A young head is a mound where the jet lands; it spreads as it grows.
+  float t0 = max(uTop - uLevel, 0.0);
+  vec2 dm = xz0 - uHit.xy;
+  float th = max(t0 * mix(1.0, 2.6 * exp(-dot(dm, dm) / (Rw * Rw * 0.3)), uMound), 0.02);
+  float y = LEV(xz0) - 0.05 + aTS.x * (th + 0.05);
   vec4 P = gp(min(y, uGH - 0.05));
   float r = P.y * aTS.y;
   vec3 pos = vec3(dir.x * r, y, dir.y * r);
@@ -588,6 +593,7 @@ const FIZZ_VS = PROF + `
 attribute vec4 aA;     // kind, seed, index, spare
 attribute vec4 aB;     // per-kind data
 uniform float uTime, uLevel, uSurge, uWall, uWallT, uFizz, uFocus, uCoc, uPx, uOn;
+uniform vec4 uSplash;   // landing point, strength
 varying vec2 vQ;
 varying float vA, vKind, vR;
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
@@ -654,6 +660,19 @@ void main() {
     }
     if (c.y > LEV(c.xz) - R * 0.6 && kind < 2.5) alpha = 0.0;
   }
+  // Splash: while the jet lands, spray droplets leap from where it hits.
+  if (kind > 3.5 && uSplash.w > 0.05 && h1(seed * 8.3) < 0.7) {
+    float t = fract(uTime * 2.2 * (0.6 + h1(seed * 1.7)) + seed * 3.1);
+    float an = h1(seed * 2.9) * 6.2832, sp = 6.0 + 16.0 * h1(seed * 5.3);
+    vec3 vel = vec3(cos(an) * sp, 22.0 + 30.0 * h1(seed * 7.1), sin(an) * sp);
+    float tt = t * 0.22;
+    c = uSplash.xyz + vel * tt + vec3(0.0, -490.0 * tt * tt, 0.0);
+    // Droplets stay inside the glass and end at the surface.
+    float rw = max(gp(clamp(c.y, uGYb, uGH)).y - 0.2, 0.0);
+    c.xz *= min(1.0, rw / max(length(c.xz), 1e-3));
+    R = 0.012 + 0.014 * h1(seed * 9.7);
+    alpha = step(t, 0.9) * uSplash.w * step(uGYb, c.y) * step(c.y, uGH);
+  }
   // Out of focus, a bubble spreads into a soft disc and dims.
   vec4 view = viewMatrix * vec4(c, 1.0);
   float dz = -view.z;
@@ -710,7 +729,7 @@ void main() {
   if (dot(n, v) < 0.0) n = -n;
   float edge = 1.0 - max(dot(n, v), 0.0);
   float F = 0.04 + 0.96 * pow(edge, 5.0);
-  vec3 col = studio(vW, reflect(-v, n)) * F * 0.55 + uLamp * pow(edge, 7.0) * 0.25;
+  vec3 col = studio(vW, reflect(-v, n)) * F * 0.35 + uLamp * pow(edge, 7.0) * 0.12;
   // The far lip: a fine line across the back of the rim.
   col += uKey * 0.18 * smoothstep(uGH - 0.2, uGH - 0.02, vL.y);
   gl_FragColor = vec4(col, 1.0);
@@ -735,7 +754,7 @@ void main() {
   float disp = 0.05 + 0.1 * solid;
   vec3 through = vec3(texture2D(uScene, uv - off * (1.0 - disp)).r, texture2D(uScene, uv - off).g, texture2D(uScene, uv - off * (1.0 + disp)).b);
   // Seen edge-on the wall bends light away: a narrow dark band inside the silhouette.
-  through *= 1.0 - 0.22 * smoothstep(0.7, 0.92, edge) * (1.0 - smoothstep(0.95, 1.0, edge));
+  through *= 1.0 - 0.15 * smoothstep(0.75, 0.94, edge) * (1.0 - smoothstep(0.95, 1.0, edge));
   // Thick or grazing glass shows its faint green.
   through *= mix(vec3(1.0), vec3(0.88, 0.95, 0.92), max(solid * 0.35, pow(edge, 4.0) * 0.4));
   // Solid glass is darker at its edges, where light leaves it at a slant.
@@ -1057,13 +1076,13 @@ function build() {
   fizzMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
     vertexShader: FIZZ_VS, fragmentShader: FIZZ_FS, transparent: true, depthWrite: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-    uniforms: { ...U, uWall: { value: 0 }, uWallT: { value: 0 }, uFizz: { value: 0.6 }, uFocus: { value: 30 }, uCoc: { value: 0.5 }, uPx: { value: 0.001 }, uOn: { value: 0 } },
+    uniforms: { ...U, uWall: { value: 0 }, uWallT: { value: 0 }, uSplash: { value: new THREE.Vector4() }, uFizz: { value: 0.6 }, uFocus: { value: 30 }, uCoc: { value: 0.5 }, uPx: { value: 0.001 }, uOn: { value: 0 } },
   }));
   fizzMesh.frustumCulled = false;
   fizzMesh.renderOrder = 2;
   foamMesh = new THREE.Mesh(bodyGeometry(24, 128, 24), new THREE.ShaderMaterial({
     vertexShader: FOAM_VS, fragmentShader: FOAM_FS,
-    uniforms: { ...U, uFoamCol: { value: new THREE.Vector3(1, 1, 1) }, uDome: { value: 0 }, uRock: { value: 0 }, uCell: { value: 0.15 }, uCoarse: { value: 0 }, uHit: { value: new THREE.Vector3() } },
+    uniforms: { ...U, uFoamCol: { value: new THREE.Vector3(1, 1, 1) }, uMound: { value: 0 }, uDome: { value: 0 }, uRock: { value: 0 }, uCell: { value: 0.15 }, uCoarse: { value: 0 }, uHit: { value: new THREE.Vector3() } },
   }));
   foamMesh.frustumCulled = false;
   foamMesh.renderOrder = 3;
@@ -1174,8 +1193,9 @@ const pose = { tilt: 0 };
 const G2W = new THREE.Matrix4(), W2G = new THREE.Matrix4(), _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 const R_W2G = new THREE.Matrix3(), GRAV = new THREE.Vector3();
 function updatePose() {
-  const py = glass.h * 0.5;
-  G2W.makeTranslation(swirl.x, py, swirl.z).multiply(_m1.makeRotationZ(-pose.tilt)).multiply(_m2.makeTranslation(0, -py, 0));
+  // The glass tips on the edge of its foot, as a hand would tip it.
+  const px = glass.ro(0.2);
+  G2W.makeTranslation(swirl.x + px, 0, swirl.z).multiply(_m1.makeRotationZ(-pose.tilt)).multiply(_m2.makeTranslation(-px, 0, 0));
   W2G.copy(G2W).invert();
   R_W2G.setFromMatrix4(W2G);
   GRAV.set(0, -1, 0).applyMatrix3(R_W2G);
@@ -1183,7 +1203,8 @@ function updatePose() {
 }
 // Duvel's ritual: pour into a glass held at 45°, then right it as it fills.
 function poseStep(dt) {
-  const ritual = (beer.pour?.tilt ?? 45) * Math.PI / 180;
+  // The ritual angle, capped: a macro shot reads 45° as a lurch.
+  const ritual = Math.min(beer.pour?.tilt ?? 45, 28) * Math.PI / 180;
   const pouring = bot.lift > 0.3 && (pour.on || pour.auto > 0);
   const frac = (fill.vol + fill.foam) / Math.max(fill.cap, 1);
   const target = pouring ? ritual * clamp(1 - frac / 0.55) : 0;
@@ -1196,7 +1217,7 @@ function poseStep(dt) {
 // vol: beer (cm³); foam: head (cm³); age: mean foam age (s).
 // crown: height of the head's dome above the rim (cm); crownCap: its most volume.
 const fill = { vol: 0, foam: 0, age: 0, level: 0, top: 0, post: 0, cap: 1, crown: 0, crownCap: 0, slope: 0 };
-const fx = { surge: 0, wall: 0, wallT: 0, chill: 0.55, cold: 0, mistAge: 0.15 };
+const fx = { surge: 0, wall: 0, wallT: 0, chill: 0.55, cold: 0, mistAge: 0.15, mound: 0 };
 function settleLevels() {
   fill.cap = glass.volBelow(glass.h - 0.05);
   fill.vol = Math.min(fill.vol, fill.cap);
@@ -1343,12 +1364,14 @@ function bottleStep(dt) {
   const sp = Math.sqrt(2 * G * Math.max(bot.head, 0.05));
   bot.v0.set(-sn * sp, c * sp, 0);
   bot.w0 = clamp(2 * Math.sqrt(Math.max(bot.q, 0.5) / (Math.PI * sp)), 0.12, 1.6);
+  // At the mouth the jet still fills most of the neck.
+  bot.w0 = Math.max(bot.w0, 1.2 * clamp(bot.q / 15));
   // Aim, in the glass frame: the low inner wall while canted, the surface once upright.
   const rimR = glass.ri(glass.h - 0.3);
   const tl = clamp(pose.tilt / 0.45);
-  const ax = lerp(rimR * 0.2, glass.ri(glass.h * 0.62) * 0.82, tl);
+  const ax = lerp(rimR * 0.2, glass.ri(glass.h * 0.62) * 0.7, tl);
   const surf = fill.vol > 0.5 ? fill.top + fill.crown + (fill.slope + swirl.sx) * ax : glass.ybot + 0.2;
-  bot.aimG.set(ax, Math.max(surf, lerp(glass.ybot + 0.2, glass.h * 0.62, tl)), 0);
+  bot.aimG.set(ax, Math.max(surf, lerp(glass.ybot + 0.2, glass.h * 0.62, tl)), -1.2);
   const aimW = _aw.copy(bot.aimG).applyMatrix4(G2W);
   // The mouth sits just above the rim's highest point.
   const rimTop = Math.max(_rw.set(-rimR, glass.h, 0).applyMatrix4(G2W).y, _rw.set(rimR, glass.h, 0).applyMatrix4(G2W).y);
@@ -1359,9 +1382,11 @@ function bottleStep(dt) {
   const mx = aimW.x - bot.v0.x * T;
   const lipX = -rm * c - h * sn, lipYw = lipY;
   // Pour pose: the lip at (mx, mouthY). Rest pose: upright on the table.
-  const px = mx - lipX, py = mouthY - lipYw, pz = aimW.z + 0.6;
-  const s = smooth(0, 1, bot.lift), arc = Math.sin(Math.PI * bot.lift) * 4;
-  bot.pos.set(lerp(rest.x, px, s), lerp(0, py, s) + arc, lerp(rest.z, pz, s));
+  const px = mx - lipX, py = mouthY - lipYw, pz = aimW.z;
+  // Rise first, then slide in level from the right: no swoop past the lens.
+  // It stays deep until the end, so it never sweeps past the lens.
+  const sy = smooth(0, 0.45, bot.lift), sx = smooth(0.3, 1, bot.lift), sz = smooth(0.65, 1, bot.lift);
+  bot.pos.set(lerp(rest.x, px, sx), lerp(0, py, sy), lerp(rest.z, pz, sz));
   bot.lip.set(bot.pos.x + lipX, bot.pos.y + lipYw, bot.pos.z);
   bot.focus = smooth(0.25, 0.75, bot.lift);
   // The glass takes what the jet brings; a long drop whips up more head.
@@ -1392,6 +1417,9 @@ function foamStep(dt) {
   if (fill.foam < 0.3 && bot.q < 0.5) fill.foam = 0;
   fill.age += dt;
   // The surge clears; wall bubbles let go over minutes; the cold glass fogs.
+  const thickH = fill.top - fill.level;
+  const moundT = (bot.q > 1 ? 1 : 0) * (1 - smooth(0.6, 2.2, thickH));
+  fx.mound += (moundT - fx.mound) * ease(dt, moundT > fx.mound ? 0.3 : 1.5);
   fx.surge *= Math.exp(-dt / 9);
   fx.wall *= Math.exp(-dt / 150);
   fx.wallT += dt;
@@ -1486,11 +1514,13 @@ function render() {
   fu.uDome.value = Math.min(0.5, thick * 0.12) + fill.crown;
   // The jet lands at its parabola's end.
   fu.uHit.value.set(bot.aimG.x, bot.aimG.z, clamp(bot.q / 30) * clamp(thick / 0.6));
+  fu.uMound.value = fx.mound;
   fu.uRock.value = (beer.rock || 0.2) * clamp(thick / 2.5) * (0.5 + 0.5 * Math.exp(-fill.age / beer.half));
   fu.uCoarse.value = Math.sqrt(fill.age / beer.half) * 0.6;
   const zu = fizzMesh.material.uniforms;
   zu.uOn.value = fill.vol > 1 ? 1 : 0;
   zu.uWall.value = fx.wall;
+  zu.uSplash.value.set(bot.aimG.x, bot.aimG.y, bot.aimG.z, clamp((bot.q - 2) / 20));
   zu.uWallT.value = fx.wallT;
   zu.uFizz.value = fizz * beer.fizz;
   zu.uFocus.value = camera.position.distanceTo(new THREE.Vector3(0, glass.h * 0.55, 3));
