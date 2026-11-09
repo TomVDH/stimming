@@ -19,7 +19,7 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 - [x] Task 5: sound: sizzle by boil, neon hum, scoop rattle, distant road
 - [x] Task 6: Settings, persistence, 375 px pass, QA
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
-- [ ] Tom sets the Dutch name (draft: Frietkot bij nacht)
+- [x] Tom sets the Dutch name: Frietkot
 - [ ] Record the session cost
 
 ## Notes
