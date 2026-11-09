@@ -5,7 +5,7 @@ status: in-progress
 type: epic
 priority: normal
 created_at: 2026-11-09T08:16:14Z
-updated_at: 2026-11-09T08:23:38Z
+updated_at: 2026-11-09T08:24:12Z
 ---
 
 Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Brief: docs/plans/bar-v2-migration.md. Spec: docs/plans/bar-v2.md.
@@ -13,7 +13,7 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 ## Batch 1
 - [x] pop
 - [ ] prism
-- [ ] pins
+- [x] pins
 - [x] fidget
 - [x] morpher
 
