@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:08:28Z
-updated_at: 2026-11-09T07:06:27Z
+updated_at: 2026-11-09T07:19:27Z
 ---
 
 Ink in water (`ink`, idea 35). Ink drops fall into a tall, still tank of dark water as vortex rings, break into fingers, and glow in side light.
@@ -43,4 +43,4 @@ Plan: `docs/plans/ink.md`. D3: WebGPU only on three.js 0.186.1, as Fire (Tom, 20
 
 Tom renames the toy to Ink Water. The Dutch name is Inktwater, ˈɪŋktˌʋaːtər.
 
-- [ ] Logo redo: a square faux bloom mark, as if taken from the toy
+- [x] Logo redo: a square faux bloom mark, as if taken from the toy (direction F, Bloom: a captured frame traced into four bands; menu icon, emblem, gallery, pick)
