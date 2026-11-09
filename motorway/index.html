@@ -132,7 +132,7 @@ import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
 // Bar handlers bind once the scene exists.
-const act = { air() {}, style() {}, zoom() {}, sw() {}, rush() {}, tilt() {}, near() {}, reset() {}, cut() {}, atlas() {} };
+const act = { air() {}, style() {}, zoom() {}, sw() {}, rush() {}, tilt() {}, near() {}, reset() {}, cut() {}, atlas() {}, glow() {}, detail() {} };
 const QS = new URLSearchParams(location.search);
 const T0 = performance.now();
 const nowS = () => (performance.now() - T0) / 1000;
@@ -141,7 +141,7 @@ const ui = initPage({ id: 'motorway', bar: {
     { value: 'sodium', label: 'Sodium' }, { value: 'led', label: 'LED' },
     { value: 'tactical', label: 'Tactical' }, { value: 'thermal', label: 'Thermal' },
   ], onPick: v => act.style(v) },
-  slider: { label: 'Zoom', min: 0, max: 1, step: 0.001, value: QS.has('z') ? +QS.get('z') : 1, onInput: v => act.zoom(v) },
+  slider: { label: 'Zoom', min: 0, max: 1, step: 0.001, value: QS.has('z') ? +QS.get('z') : 0, onInput: v => act.zoom(v) },
   actions: [
     { verb: 'switch', key: 'S', onPress: () => act.sw() },
     { verb: 'rush', key: 'R', onPress: () => act.rush() },
@@ -152,6 +152,9 @@ const ui = initPage({ id: 'motorway', bar: {
       options: [{ value: 'clear', label: 'Clear' }, { value: 'haze', label: 'Haze' }, { value: 'fog', label: 'Fog' }] },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'near', label: 'Neighbours', value: true, persist: true, onToggle: on => act.near(on) },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.8, persist: true, onInput: v => act.glow(v) },
+    { type: 'choice', id: 'detail', label: 'Bloom detail', value: 'full', persist: true, onPick: v => act.detail(v),
+      options: [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] },
     { type: 'toggle', id: 'atlas', label: 'Atlas', value: false, persist: true, onToggle: on => act.atlas(on) },
   ],
   reset: () => act.reset(),
@@ -1066,28 +1069,65 @@ scene.add(poles, refrs);
 // A sign gantry spans the jammed carriageway; its own lamps keep the signs blue.
 const GX = 22 * JAM.dir, JZ = JAM.side * sep / 2;
 {
-  const zA = JZ - JAM.side * 7.5, zB = JZ + JAM.side * 10;
-  for (const z of [zA, zB]) box(0.45, 8.4, 0.45, GX, 4.2, z, steel);
-  box(0.5, 0.5, Math.abs(zB - zA) + 0.6, GX, 8.1, (zA + zB) / 2, steel);
-  const sign = (lines, w, z) => {
-    const c = document.createElement('canvas'), H = 128, W = Math.round(H * w / 3);
-    c.width = W * 2; c.height = H * 2;
-    const g = c.getContext('2d');
-    g.scale(2, 2);
-    g.fillStyle = '#1d4fa8'; g.fillRect(0, 0, W, H);
-    g.strokeStyle = '#fff'; g.lineWidth = 5; g.strokeRect(6, 6, W - 12, H - 12);
-    g.fillStyle = '#fff'; g.textBaseline = 'middle';
-    lines.forEach(([t, sz, x, y]) => { g.font = `600 ${sz}px Gabarito, system-ui, sans-serif`; g.fillText(t, x, y); });
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 3).rotateY(-JAM.dir * Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.62, 0.62, 0.62) }));
-    m.position.set(GX - JAM.dir * 0.3, 9.9, z);
-    set.add(m);
+  const zA = JZ - JAM.side * 7.5, zB = JZ + JAM.side * 10, zm = (zA + zB) / 2, span = Math.abs(zB - zA);
+  const paint = new THREE.MeshStandardMaterial({ color: 0x9a9ea4, roughness: 0.6, metalness: 0.5 });
+  // Two legs, two chords and a zigzag web make a light truss.
+  for (const z of [zA, zB]) box(0.4, 8.6, 0.4, GX, 4.3, z, paint);
+  for (const y of [7.6, 8.6]) box(0.18, 0.18, span + 0.4, GX + JAM.dir * 0.4, y, zm, paint);
+  {
+    const n = Math.round(span / 1.2), web = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 1.4, 0.07), paint, n);
+    for (let i = 0; i < n; i++) {
+      q4.setFromAxisAngle(new THREE.Vector3(1, 0, 0), (i % 2 ? 1 : -1) * 0.78);
+      m4.compose(new THREE.Vector3(GX + JAM.dir * 0.4, 8.1, Math.min(zA, zB) + (i + 0.5) * span / n), q4, new THREE.Vector3(1, 1, 1));
+      web.setMatrixAt(i, m4);
+    }
+    set.add(web);
+  }
+  // Signs are drawn at 4x, so the letters stay sharp up close.
+  const K = 4, PX = 64;
+  const rr = (g, x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
+  const arrowDown = (g, x, y, s) => {
+    g.beginPath();
+    g.moveTo(x - s * 0.12, y); g.lineTo(x + s * 0.12, y); g.lineTo(x + s * 0.12, y + s * 0.55);
+    g.lineTo(x + s * 0.32, y + s * 0.55); g.lineTo(x, y + s); g.lineTo(x - s * 0.32, y + s * 0.55); g.lineTo(x - s * 0.12, y + s * 0.55);
+    g.closePath(); g.fill();
   };
-  // The panels hang over the lanes, read by the drivers below.
+  const arrowExit = (g, x, y, s) => { g.save(); g.translate(x, y); g.rotate(-Math.PI * 0.75); arrowDown(g, 0, -s / 2, s); g.restore(); };
+  const panel = (w, h, z, drawFn) => {
+    const W = Math.round(w * PX), H = Math.round(h * PX), c = document.createElement('canvas');
+    c.width = W * K; c.height = H * K;
+    const g = c.getContext('2d');
+    g.scale(K, K);
+    g.fillStyle = '#1b4f9c'; rr(g, 0, 0, W, H, 10); g.fill();
+    g.strokeStyle = '#f4f6f8'; g.lineWidth = 4; rr(g, 7, 7, W - 14, H - 14, 7); g.stroke();
+    g.fillStyle = '#f4f6f8'; g.textBaseline = 'middle';
+    drawFn(g, W, H);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); tex.generateMipmaps = true;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h).rotateY(-JAM.dir * Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.5, 0.5, 0.52), toneMapped: true }));
+    m.position.set(GX - JAM.dir * 0.05, 8.1, z);
+    set.add(m);
+    // A lamp bar on brackets lights each panel from above.
+    box(0.08, 0.08, w * 0.9, GX - JAM.dir * 0.9, 9.75, z, new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 3.0, 2.7) }));
+    for (const dz of [-w * 0.4, w * 0.4]) box(0.9, 0.06, 0.06, GX - JAM.dir * 0.45, 9.75, z + dz, paint);
+  };
   const across = v => JZ + JAM.side * v;
-  sign([['E19', 34, 22, 40], ['Antwerpen', 40, 22, 88]], 6.5, across(-2.5));
-  sign([['Mechelen-Noord', 34, 22, 40], ['Bonheiden  ↗', 34, 22, 88]], 7, across(5));
+  // Through lanes: the E-road number in its green box, the city, an arrow per lane.
+  panel(6.2, 3.0, across(-2.2), (g, W, H) => {
+    g.fillStyle = '#1d7a3e'; rr(g, 22, 22, 92, 50, 6); g.fill();
+    g.strokeStyle = '#f4f6f8'; g.lineWidth = 3; rr(g, 26, 26, 84, 42, 4); g.stroke();
+    g.fillStyle = '#f4f6f8'; g.font = '700 34px Gabarito, system-ui, sans-serif'; g.textAlign = 'center';
+    g.fillText('E19', 68, 48);
+    g.textAlign = 'left'; g.font = '600 46px Gabarito, system-ui, sans-serif'; g.fillText('Antwerpen', 132, 48);
+    for (const x of [W * 0.3, W * 0.7]) arrowDown(g, x, H * 0.52, H * 0.36);
+  });
+  // The exit panel: the town, the next one, and the slant arrow.
+  panel(5.6, 3.0, across(5.2), (g, W, H) => {
+    g.textAlign = 'left';
+    g.font = '600 40px Gabarito, system-ui, sans-serif'; g.fillText('Mechelen-Noord', 26, H * 0.34);
+    g.font = '500 32px Gabarito, system-ui, sans-serif'; g.globalAlpha = 0.9; g.fillText('Bonheiden', 26, H * 0.66); g.globalAlpha = 1;
+    arrowExit(g, W - 52, H * 0.66, 58);
+  });
 }
 // Cars cross the overpass, headlights first.
 const deckCars = (() => {
@@ -1776,10 +1816,10 @@ const tilt0 = new ShaderPass({
       vec4 c = min(texture2D(tDiffuse, vUv), vec4(5.0));
       if (r < 0.3) { gl_FragColor = c; return; }
       vec4 acc = c; float wsum = 1.0;
-      // A Vogel spiral of 32 taps gives round bokeh; a per-pixel turn hides its pattern.
+      // A Vogel spiral of 48 taps gives round bokeh; a per-pixel turn hides its pattern.
       float spin = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-      for (int i = 1; i < 32; i++) {
-        float fi = float(i), rr = sqrt((fi - 0.5) / 31.0), a = fi * 2.39996 + spin;
+      for (int i = 1; i < 48; i++) {
+        float fi = float(i), rr = sqrt((fi - 0.5) / 47.0), a = fi * 2.39996 + spin;
         acc += min(texture2D(tDiffuse, vUv + vec2(cos(a), sin(a)) * rr * r * uPx), vec4(5.0));
         wsum += 1.0;
       }
@@ -1820,6 +1860,7 @@ const air = { ...AIR.haze };
 let airTo = AIR.haze;
 
 /* ---------- state ---------- */
+let glowK = ui.setting('glow')?.value ?? 0.8, bloomFull = (ui.setting('detail')?.value ?? 'full') === 'full';
 let lastD = 1, z = ui.slider?.value ?? 1, zTo = z, tilt = ui.setting('tilt')?.value ?? 0.6;
 const size = { w: 1, h: 1 };
 let rung = 0;
@@ -1831,7 +1872,8 @@ function resize() {
   renderer.setSize(size.w, size.h, false);
   composer.setPixelRatio(pr);
   composer.setSize(size.w, size.h);
-  const b = rung > 1 ? 0.35 : 0.5;
+  // Full detail renders the bloom at screen size, so glows stay round, not blocky.
+  const b = (bloomFull ? 1 : 0.5) * (rung > 1 ? 0.7 : 1);
   bloom.resolution.set(size.w * pr * b, size.h * pr * b);
   camera.aspect = size.w / size.h;
   camera.fov = camera.aspect < 0.8 ? 58 : 40;
@@ -1842,7 +1884,7 @@ function resize() {
 }
 
 // Exposure by zoom: the country needs more than the close lamp.
-const EXPO = [[0, 0.9], [0.3, 1.1], [0.6, 1.6], [1, 2.1]];
+const EXPO = [[0, 0.9], [0.3, 1.1], [0.6, 1.4], [1, 1.6]];
 function draw() {
   const t = nowS();
   U.uNow.value = t;
@@ -1872,20 +1914,23 @@ function draw() {
   lastD = D;
   U.uHour.value = clock.h;
   // Daylight: dawn about 08:00, dusk about 17:00, in November.
-  U.uSun.value = clock.day ? ss(7.5, 8.7, clock.h) * (1 - ss(16.3, 17.5, clock.h)) : 0;
+  // The toy stays night; Rush runs the traffic clock only.
+  U.uSun.value = 0;
   // The near heads follow the global switch.
   const st = jsLamp(t);
   refrMat.color.setRGB(...st.c).multiplyScalar(5 * st.l);
   lights.forEach(L => { L.color.setRGB(...st.c); L.intensity = LIGHT_I * st.l; });
   // From orbit thin lines would alias in a wide blur; the tilt eases off.
-  tilt0.uniforms.uMax.value = tilt * (9 + 5 * z) * (1 - 0.65 * ss(0.55, 1, z));
+  // A smaller disc keeps the blur smooth; wide discs break into blocks.
+  tilt0.uniforms.uMax.value = tilt * (6 + 3 * z) * (1 - 0.65 * ss(0.55, 1, z));
   // The bloom spreads wider and softer from orbit, so thin lines glow round.
-  bloom.radius = 0.4 + 0.45 * ss(0.4, 1, z);
-  bloom.strength = 0.7 + 0.15 * ss(0.4, 1, z);
+  bloom.radius = 0.35 + 0.25 * ss(0.4, 1, z);
+  bloom.strength = glowK * (0.75 - 0.2 * ss(0.4, 1, z));
+  bloom.threshold = 0.7 + 0.25 * ss(0.4, 1, z);
   tilt0.uniforms.uBand.value = 0.06 + 0.08 * z;
   // From orbit the ribbons need a lift to read.
   // A phone draws the country smaller, so its strips need more lift.
-  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 60 : 36) * ss(0.35, 1, z) + 22 * ss(0.9, 1, z);
+  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 34 : 20) * ss(0.35, 1, z) + 8 * ss(0.9, 1, z);
   padMat.uniforms.uFar.value = 1 + 40 * ss(0.3, 0.9, z);
   // The border line shows only once the climb is high.
   // At boot the outline draws in bright, then settles as the roads light.
@@ -2072,8 +2117,12 @@ function thump() {
 // The page opens on the dark outline; the network then strikes up from Brussels.
 const boot = { t0: null };
 U.uOn.value = 1; U.uHot.value = 0; U.uSwT.value = 1e6;
+// The opening holds on the signs, then pulls slowly out to the whole country.
+const pull = { t0: -1, dur: 32, hold: 3.5 };
+const stopPull = () => { pull.t0 = -1; };
 function bootUp() {
   boot.t0 = nowS();
+  if (!QS.has('z') && !reduced()) pull.t0 = boot.t0;
   U.uSwT.value = boot.t0 + 1.4;
   U.uRipV.value = 60000;
   U.uRip.value.set(...geo(4.352, 50.847));
@@ -2091,6 +2140,14 @@ function tick(now) {
   lastT = now;
   let moving = false;
   try {
+    if (pull.t0 >= 0) {
+      const k = Math.min(1, Math.max(0, (nowS() - pull.t0 - pull.hold) / pull.dur));
+      // A slow ease in and out; the camera never lurches.
+      zTo = k * k * (3 - 2 * k);
+      ui.slider?.set(zTo);
+      moving = true;
+      if (k >= 1) stopPull();
+    }
     if (Math.abs(zTo - z) > 1e-4) { z = reduced() ? zTo : z + (zTo - z) * (1 - Math.exp(-dt * 4)); moving = true; } else z = zTo;
     for (const k of ['d', 'h', 'size', 'halo', 'glow', 'wide', 'stars']) {
       const d = airTo[k] - air[k];
@@ -2147,6 +2204,7 @@ onReducedChange(() => wake());
 
 /* ---------- input ---------- */
 const setZoom = (v, fromSlider = false) => {
+  stopPull();
   v = Math.min(1, Math.max(0, v));
   // Zooming in draws the pan home, so the last step lands on the jam shot.
   if (v < zTo) panTo.multiplyScalar(Math.min(1, ss(0.02, 0.3, v) / Math.max(1e-3, ss(0.02, 0.3, zTo))));
@@ -2197,6 +2255,7 @@ const pts = new Map();
 let pinch = null;
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
+  stopPull();
   stage.setPointerCapture(e.pointerId);
   pts.set(e.pointerId, [e.clientX, e.clientY]);
   if (pts.size === 2) {
@@ -2279,11 +2338,13 @@ act.rush = () => {
   if (clock.day) { endDay(); wake(); return; }
   if (!study.curves) { dayCurves(); buildChart(); }
   clock.day = true; clock.h = 4; study.on = true; study.playing = true; playBtn.textContent = 'Pause';
-  U.uRush.value = 1;
+  U.uRush.value = 0;
   measureJams();
   if (atlas) { panel.classList.add('on'); strip.classList.add('on'); buildChart(); }
   wake();
 };
+act.glow = v => { glowK = v; draw(); };
+act.detail = v => { bloomFull = v === 'full'; resize(); };
 act.atlas = on => {
   atlas = on; markLayer.hidden = !on; trains.visible = on;
   panel.classList.toggle('on', on && clock.day); strip.classList.toggle('on', on && clock.day);
