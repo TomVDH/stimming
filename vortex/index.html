@@ -68,7 +68,7 @@ const act = { sheet() {}, pair() {}, collide() {}, clear() {}, laser() {}, reset
 const LASER = { green: [0.87, 0.29, 142], red: [0.63, 0.25, 29], blue: [0.55, 0.24, 264] };
 const ui = initPage({ id: 'vortex', bar: {
   choice: { label: 'Sheet', value: 'across', options: [
-    { value: 'across', label: 'Across' }, { value: 'along', label: 'Along' }, { value: 'scan', label: 'Scan' },
+    { value: 'across', label: 'Across' }, { value: 'scan', label: 'Scan' },
   ], onPick: v => act.sheet(v) },
   slider: { label: 'Haze', min: 0, max: 1, step: 0.01, value: 0.5, onInput: v => { haze = v; still(); } },
   actions: [
@@ -284,23 +284,22 @@ const ROWS = 128;
 const BOX_MIN = [-1.45, -1.15, -1.1], BOX_SIZE = [3.8, 2.3, 2.2];
 const VRES = [224, 128, 112], TILES = [8, 14], ATLAS = [VRES[0] * TILES[0], VRES[1] * TILES[1]];
 const SHEETS = {
-  // Across turns 20 degrees toward the camera, so the slice shows its cross-section.
-  across: { n: [Math.cos(-0.35), 0, Math.sin(-0.35)], h: 0.42 * Math.cos(-0.35), lens: [0.42, 1.75, 0], fan: [0, -1, 0], half: 0.6 },
-  along: { n: [0, 0, 1], h: 0, lens: [0.25, 1.75, 0], fan: [0, -1, 0], half: 0.72 },
+  // Across stands square to the launch axis; the camera sees it at about 50 degrees.
+  across: { n: [1, 0, 0], h: SHEET_X, lens: [SHEET_X, 1.75, 0], fan: [0, -1, 0], half: 0.6 },
 };
 const cam = { eye: [0, 0, 0], R: [1, 0, 0], U: [0, 1, 0], F: [0, 0, -1], tan: 0.4, aspect: 1, portrait: false };
 const norm = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-// Wide frames look from the front left; tall frames roll so rings rise.
+// Wide frames look from the front left; tall frames look down the range.
 function aimCamera(W, H) {
   const portrait = W / H < 0.85;
-  const T = portrait ? [0.3, -0.02, 0] : [0.18, 0.02, 0];
-  const yaw = 28 * Math.PI / 180, pitch = 9 * Math.PI / 180, dist = portrait ? 3.5 : 3.3;
+  // A wide lens close in: near rings loom, far rings shrink into the room.
+  const T = portrait ? [0.1, -0.1, 0] : [0.25, -0.05, 0];
+  const yaw = (portrait ? 70 : 38) * Math.PI / 180, pitch = (portrait ? 16 : 13) * Math.PI / 180, dist = portrait ? 2.6 : 2.4;
   const eye = [T[0] - Math.sin(yaw) * Math.cos(pitch) * dist, T[1] + Math.sin(pitch) * dist, T[2] + Math.cos(yaw) * Math.cos(pitch) * dist];
   const F = norm(T.map((v, i) => v - eye[i]));
   let R = norm(cross(F, [0, 1, 0])), U = cross(R, F);
-  if (portrait) [R, U] = [U.map(v => -v), R];
-  Object.assign(cam, { eye, R, U, F, aspect: W / H, portrait, tan: Math.tan((portrait ? 60 : 46) * Math.PI / 360) });
+  Object.assign(cam, { eye, R, U, F, aspect: W / H, portrait, tan: Math.tan((portrait ? 70 : 60) * Math.PI / 360) });
 }
 // A screen point to a world ray direction.
 function rayAt(cx, cy) {
@@ -385,7 +384,7 @@ in vec2 vUv;
 out vec4 o;
 uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uRoom;
 uniform vec2 uTan;
-uniform float uHaze, uTime, uW, uSmokeOn, uSigma, uSheetSmoke;
+uniform float uHaze, uTime, uW, uSmokeOn, uSigma, uSheetSmoke, uFloor;
 uniform vec4 uPuff;
 uniform sampler2D uVolA, uVolB;
 void main() {
@@ -409,6 +408,19 @@ void main() {
     float pd = length(m - dot(m, d) * d), pr = 0.07 + 0.12 * uPuff.w;
     col += uBack * uPuff.w * exp(-pd * pd / (pr * pr)) * (0.6 + 0.6 * fbm(uPuff.xyz * 6.0 + drift * 4.0)) * 0.22;
   }
+  // The floor: dark, lit only by the backlight pool and the laser line.
+  float tf = d.y < -1e-4 ? (uFloor - uEye.y) / d.y : 1e9;
+  if (tf < 1e9) {
+    vec3 f = uEye + tf * d;
+    float pool = exp(-dot(f.xz - vec2(0.4, -0.4), f.xz - vec2(0.4, -0.4)) / 2.5);
+    vec3 fl = uRoom * 0.55 + uBack * pool * 0.022 * (0.7 + 0.6 * fbm(f * 2.5));
+    vec3 lv = f - uLens;
+    float lr = length(lv), ld = dot(f, uN) - uH;
+    float line = exp(-ld * ld / (uW * uW * 1.5)) * fanMask(lv / lr) / (lr * lr + 0.15);
+    fl += uLaser * line * (0.5 + 0.5 * speckle(f * 260.0)) * 0.6;
+    // Haze swallows the far floor.
+    col = mix(col, fl, exp(-tf * 0.12));
+  }
   // The smoke volume, raymarched at half size, sits in front of the room.
   float Ts = 1.0;
   if (uSmokeOn > 0.5) {
@@ -419,7 +431,7 @@ void main() {
   // The laser sheet: the ray meets its plane once.
   float dn = dot(d, uN);
   float th = (uH - dot(uEye, uN)) / dn;
-  if (abs(dn) > 1e-4 && th > 0.0) {
+  if (abs(dn) > 1e-4 && th > 0.0 && th < tf) {
     vec3 q = uEye + th * d, v = q - uLens;
     float r = length(v);
     vec3 vl = v / r;
@@ -427,7 +439,7 @@ void main() {
     float dens = 0.45 + 0.8 * fbm(q * 1.6 + drift * 2.0);
     float sp = speckle(q * 260.0 + vec3(0.0, uTime * 0.6, 0.0));
     float lit = fanMask(vl) * thick * hg(dot(vl, -d), 0.5) / (r * r + 0.15);
-    float glow = dens * (0.45 + 0.55 * sp) * uHaze * 0.9;
+    float glow = dens * (0.45 + 0.55 * sp) * uHaze * 0.55;
     if (uSmokeOn > 0.5 && lit > 0.0) {
       // Smoke in the plane flares; smoke nearer the lens shades the fan below it.
       glow += vol(q) * uSheetSmoke * (0.7 + 0.3 * sp);
@@ -885,7 +897,6 @@ let BACK = oklchLinear(0.82, 0.025, 250), ROOM = oklchLinear(0.105, 0.012, 265);
 // Scan sweeps the Across sheet back and forth on the drift clock.
 let driftT = 0;
 function sheetNow() {
-  if (sheetMode === 'along') return SHEETS.along;
   const s = SHEETS.across;
   if (sheetMode !== 'scan') return s;
   const x = SHEET_X + 0.75 * Math.sin(driftT * 0.35);
@@ -973,7 +984,6 @@ function advect(dt) {
 }
 // A ring that crosses the sheet ticks once, panned to the ring.
 function crossings() {
-  if (sheetMode === 'along') return;
   const s = sheetNow();
   for (const r of rings) {
     if (!r.on) continue;
@@ -1067,6 +1077,7 @@ function render() {
   gl.uniform1f(q.u.uSmokeOn, smokeOn ? 1 : 0);
   gl.uniform1f(q.u.uSigma, SIGMA);
   gl.uniform1f(q.u.uSheetSmoke, SHEET_SMOKE);
+  gl.uniform1f(q.u.uFloor, BOX_MIN[1]);
   gl.uniform3fv(q.u.uRoom, ROOM);
   gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
   gl.uniform1f(q.u.uHaze, 0.25 + 1.5 * haze);
@@ -1199,14 +1210,12 @@ function watch(raw) {
 const later = (dt, fn) => { queue.push({ t: simTime + dt, fn }); queue.sort((a, b) => a.t - b.t); };
 
 /* ---------- firing ---------- */
-// The aim is the pointer's ray, met with the plane z = 0.
+// The aim is the pointer's ray, met with a plane that faces the camera at the sheet.
 function aimAt(cx, cy) {
-  const d = rayAt(cx, cy), e = cam.eye;
-  let dir = [1, 0, 0];
-  if (Math.abs(d[2]) > 1e-4) {
-    const t = -e[2] / d[2];
-    if (t > 0) dir = norm([0, 1, 2].map(i => e[i] + d[i] * t - MUZZLE[i]));
-  }
+  const d = rayAt(cx, cy), e = cam.eye, F = cam.F;
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const t = dot([SHEET_X - e[0], -e[1], -e[2]], F) / Math.max(1e-4, dot(d, F));
+  let dir = norm([0, 1, 2].map(i => e[i] + d[i] * t - MUZZLE[i]));
   // The cannon turns 50 degrees at most from its axis.
   const lim = Math.cos(50 * Math.PI / 180);
   if (dir[0] < lim) {

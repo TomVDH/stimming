@@ -55,7 +55,7 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 
 | Slot | Control | Content |
 |---|---|---|
-| Top left | Choice `Sheet` (segments) | Across, Along, Scan |
+| Top left | Choice `Sheet` (segments) | Across, Scan |
 | Bottom right | Slider | Haze: how thick the room is |
 | Bottom left | Actions | Pair, Collide, Clear |
 | Bottom centre | Keys | `[CLICK] fire` · `[DRAG] aim` · `[HOLD] charge` · `[SPACE] pair` |
@@ -63,8 +63,7 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 
 | Sheet | Plane | What it shows |
 |---|---|---|
-| Across | Turned 20° toward the camera, at 60 % of the frame (Tom: oblique, to show the cross-section) | Rings cross it face first; the slice shows the core's cross-section |
-| Along | Contains the launch axis, faces the camera at 30° | A meridional cut: two spiral eyes ride along with each ring |
+| Across | Square to the launch axis; the camera sees it at about 50° (Tom: oblique, to show the cross-section) | Rings cross it face first; the slice shows the core's cross-section |
 | Scan | Across, sweeping slowly back and forth | Slices through all rings in turn |
 
 | Laser | Colour (OKLCH) | Note |
@@ -121,12 +120,16 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 - **Reduced motion:** rings fly at 60 % speed, no speckle shimmer, no haze drift. The flare still shows, more softly.
 - **Idle:** lively while rings or tendrils move. Scan drifts at 30 fps. The haze drift sleeps 60 s after the last input. Hidden stops the loop and the sim clock.
 
+## Camera (Tom, 2026-11-09: make the 3D evident; Along cut)
+
+- A wide lens close in: fov 60°, 2.4 units out, 38° yaw and 13° pitch. Near rings loom; far rings shrink into the room.
+- A dark floor catches only light: the backlight pool and the laser line where the sheet meets it.
+- Aiming meets the pointer's ray with a plane that faces the camera at the sheet.
+
 ## At 375 px
 
-- The camera rolls 90°: the muzzle sits at the bottom centre and rings rise up the frame.
-- The lens widens (fov 46° to 60°) and the camera pulls back, so a full ring and the sheet both fit.
-- Across shows as a band across the upper middle; the lens fan comes in from the side.
-- Particles per slot halve under the pixel budget; point size scales with the frame.
+- The camera looks down the range from behind the muzzle (70° yaw, fov 70°). The sheet faces you; the floor line is the horizon.
+- Particles per slot halve under the pixel budget.
 - Touch: tap fires, a drag aims, a hold charges. The Pair action stands in for Space.
 
 ## Review focus
